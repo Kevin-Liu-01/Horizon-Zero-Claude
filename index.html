@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Horizon Zero Claude</title>
+  <link rel="stylesheet" href="/src/style.css" />
+</head>
+<body>
+  <div id="app"></div>
+
+  <div id="loading" class="overlay">
+    <div class="load-inner">
+      <h1 class="game-title">HORIZON<span>ZERO CLAUDE</span></h1>
+      <div class="load-bar"><div id="load-fill"></div></div>
+      <div id="load-label">Waking the machines…</div>
+    </div>
+  </div>
+
+  <div id="title" class="overlay hidden">
+    <div class="title-inner">
+      <h1 class="game-title">HORIZON<span>ZERO CLAUDE</span></h1>
+      <p class="tagline">The valley belongs to the machines. Take it back.</p>
+      <button id="btn-start">BEGIN THE HUNT</button>
+      <div class="controls-grid">
+        <div><b>WASD</b> Move</div><div><b>Shift</b> Sprint</div>
+        <div><b>C</b> Crouch</div><div><b>Space</b> Dodge</div>
+        <div><b>RMB</b> Aim</div><div><b>LMB</b> Draw / Loose</div>
+        <div><b>1·2·3</b> Arrow type</div><div><b>Q</b> Focus</div>
+        <div><b>F</b> Medicine</div><div><b>Esc</b> Pause</div>
+      </div>
+    </div>
+  </div>
+
+  <div id="hud" class="hidden"></div>
+
+  <script type="module" src="/src/main.js"></script>
+</body>
+</html>
