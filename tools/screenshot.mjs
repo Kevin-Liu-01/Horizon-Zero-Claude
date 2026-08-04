@@ -28,7 +28,7 @@ const getFlag = (flag, dflt) => {
 const params = getFlag('--params', '');
 const wait = parseInt(getFlag('--wait', '1200'), 10);
 const evalJs = getFlag('--eval', null);
-const PORT = 5173;
+const PORT = parseInt(getFlag('--port', process.env.SHOT_PORT || '5173'), 10);
 
 function portOpen(port) {
   return new Promise((resolve) => {

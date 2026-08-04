@@ -113,3 +113,120 @@ Eye/sensor color: blue calm, yellow suspicious, red hostile.
 | behemoth | 4.5 m | height |
 | thunderjaw | 7.5 m | height (≈15m long) |
 | npc | 1.8 m | height |
+
+---
+
+# INTERFACE CONTRACTS (builders MUST follow these exactly)
+
+## File ownership (a builder edits ONLY its own files)
+
+| builder | owns |
+|---|---|
+| vegetation | src/world/vegetation.js |
+| camp | src/world/camp.js |
+| player-anim | src/entities/playerAnimator.js |
+| machines | src/entities/machines/* (index.js, machine.js, watcher.js, sawtooth.js, behemoth.js, thunderjaw.js) |
+| combat | src/combat/* (combat.js + any new files there) |
+| hud | src/ui/hud.js, src/ui/focus.js, src/ui/hud.css (import from hud.js via `import './hud.css'`) |
+| audio | src/audio/audio.js |
+
+Core files (main.js, engine.js, assets.js, input.js, events.js, terrain.js,
+environment.js, player.js, style.css) are FROZEN for builders — read them, don't
+edit them. If a contract gap blocks you, note it in your final report instead.
+
+## Shared ctx (constructor arg for every system)
+
+ctx = { game, params, engine, scene, camera, renderer, input, events, assets,
+        terrain, environment, vegetation, camp, player, machines, combat, focus,
+        hud, audio, state, settings }
+Construction order: terrain, environment, vegetation, camp, player, machines,
+combat, focus, audio, hud — a system may only touch systems built BEFORE it
+in its constructor; anything else must be lazy (looked up inside update()).
+
+## ctx.player (already implemented — READ ONLY for builders)
+
+position:Vector3 (feet, world), velocity, heading (yaw rad), moveSpeed (m/s),
+crouching, aiming, dodging, inTallGrass, health, maxHealth (100), medicine,
+camYaw, camPitch, model (THREE.Group with skeleton), animator, dodge(),
+takeDamage(amount, from). Damage to player: events.emit('player-damage',
+{ amount, from }).
+
+## Machine contract (machines builder implements; others consume)
+
+ctx.machines.list = Machine[] where Machine has at least:
+  kind: 'watcher'|'sawtooth'|'behemoth'|'thunderjaw'
+  root: THREE.Group (world-placed; meshes raycastable)
+  position: Vector3 (alias of root.position)
+  alive: bool, health, maxHealth
+  state: 'patrol'|'suspicious'|'alert'|'attack'|'search'|'return'|'dead'
+  displayName: string ('Watcher', …)
+  takeDamage(hit) -> { damage:number, weak:bool, killed:bool }
+    where hit = { point:Vector3(world), object:THREE.Object3D, baseDamage:number,
+                  type:'hunter'|'fire'|'shock', dir:Vector3 }
+  Machine handles weak-point multipliers, armor, burn DoT, shock stun internally.
+Every machine root subtree must set object.userData.machine = <machine ref> on
+all meshes so combat raycasts can resolve the owning machine.
+
+## Events (names are law)
+
+'game-start' —
+'player-damage' { amount, from }        (anyone -> player)
+'player-hurt' { health, max }           (player -> HUD/audio)
+'player-died' / 'player-respawn' —
+'player-dodge' —
+'medicine-used' { left }
+'arrow-fired' { type, drawStrength }
+'arrow-hit' { point, machine|null, damage, weak, type }   (combat -> HUD/audio)
+'machine-damaged' { machine, damage, weak, point }
+'machine-killed' { machine }
+'machine-alerted' { machine }           (first transition to alert/attack)
+'machine-attack' { machine, kind }      (each attack execution, for audio/fx)
+'focus-pulse' —                         (focus -> audio)
+'objective-changed' { title, detail }   (hud quest sequencer -> itself/audio)
+'victory' —                             (hud emits when thunderjaw dies)
+
+## Combat contract (combat builder implements)
+
+- RMB aim state comes from player.aiming; LMB hold = draw (combat sets
+  player.drawStrength 0..1; playerAnimator reads it), release = loose.
+- Arrow types: 1 hunter (dmg 30·draw), 2 fire (18 + burn 20/4s), 3 shock
+  (16 + 2.5s stun). Infinite hunter; fire/shock limited (24 each, HUD shows).
+- Raycast arrows against machine roots (userData.machine) + terrain heightfield.
+- Expose: combat.arrowType, combat.arrowCounts, combat.drawStrength (0..1).
+- Bow: build a simple procedural bow mesh, attach to Aloy LEFT hand bone
+  ('hand_l_014'); nock visual arrow while drawing.
+- Emits 'arrow-fired', 'arrow-hit', spawns spark/impact particles itself.
+
+## PlayerAnimator contract (player-anim builder)
+
+- Replaces stub entirely; owns ALL bone posing of the aloy rig every frame.
+- Reads player state: moveSpeed, crouching, aiming, dodging, drawStrength
+  (via ctx.combat?.drawStrength ?? 0), inTallGrass, health.
+- Must expose: getBoneWorld(name, outVec3) helper; bones map; and
+  handAttach(side) -> THREE.Bone for combat to parent the bow to.
+- Key bones: pelvis_05, spine_01_06..spine_05_010, neck_01_0102, head_0104,
+  clavicle_l_011/r_042, upperarm_l_012/r_043, lowerarm_l_013/r_044,
+  hand_l_014/r_045, thigh_l_0185/r_0211, calf_l_0186/r_0212,
+  foot_l_0189/r_0215, ball_l_0190/r_0216. (Names are exact.)
+- The model's bind pose is an A-pose facing +Z at wrapper level.
+
+## Focus contract (hud builder)
+
+- Q key: 3s pulse. Machines get additive glow/outline visible through terrain
+  (e.g. clone meshes w/ depthTest:false purple shader at low opacity, or
+  emissive boost + fresnel shell). Patrol routes optional.
+
+## Terrain API (frozen)
+
+terrain.getHeight(x,z), terrain.getNormal(x,z,out?), terrain.isInTallGrass(x,z),
+terrain.tallGrassDensity(x,z) (0..1), WORLD_SIZE=720, playable radius ≈ 330.
+
+## Verification loop (every builder, every iteration)
+
+1. `node tools/screenshot.mjs <name> --port <YOUR_PORT> --params "px=..&pz=..&yaw=..&pitch=.."`
+   (also supports --eval "JS with __GAME__/__CTX__" and --wait ms)
+2. Read the PNG. Exit code 2 = console errors were printed — fix them first.
+3. Compare against the gauntlet bar at the top of this file. Iterate.
+Each builder was assigned a unique port; NEVER use another builder's port.
+To simulate gameplay in a shot: --eval can call __CTX__ hooks, e.g.
+"__CTX__.machines.list[0].state='attack'" or move the player.

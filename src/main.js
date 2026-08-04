@@ -60,7 +60,9 @@ class Game {
     ctx.audio = this._add(new GameAudio(ctx));
     ctx.hud = this._add(new HUD(ctx));
 
-    document.getElementById('loading').classList.add('hidden');
+    const loadingEl = document.getElementById('loading');
+    if (params.has('shot')) loadingEl.remove();
+    else loadingEl.classList.add('hidden');
 
     // Screenshot/automation harness support
     if (params.has('shot')) {
