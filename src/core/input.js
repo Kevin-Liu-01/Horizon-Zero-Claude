@@ -49,9 +49,15 @@ export class Input {
   }
 
   requestPointerLock() {
-    this.dom.requestPointerLock?.({ unadjustedMovement: true })?.catch?.(() => {
-      this.dom.requestPointerLock();
-    });
+    try {
+      const p = this.dom.requestPointerLock?.({ unadjustedMovement: true });
+      p?.catch?.(() => {
+        try {
+          const q = this.dom.requestPointerLock();
+          q?.catch?.(() => {}); // no user activation — a later click will re-lock
+        } catch { /* ignore */ }
+      });
+    } catch { /* ignore */ }
   }
   exitPointerLock() {
     document.exitPointerLock?.();

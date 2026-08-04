@@ -154,12 +154,16 @@ export class Terrain {
       this.getNormal(x, z, nrm);
       const slope = 1 - nrm.y; // 0 flat, ->1 steep
       const dryness = this.grassNoise.fbm(x * 0.01 + 9, z * 0.01 - 4, 2) * 0.5 + 0.5;
+      const rim = THREE.MathUtils.smoothstep(Math.hypot(x, z), WORLD_HALF * 0.78, WORLD_HALF * 1.02);
 
       tmp.copy(cGrass).lerp(cDry, dryness * 0.85);
       if (slope > 0.12) tmp.lerp(cDirt, THREE.MathUtils.smoothstep(slope, 0.12, 0.3));
       if (slope > 0.28) tmp.lerp(cRock, THREE.MathUtils.smoothstep(slope, 0.28, 0.5));
-      if (h > 34) tmp.lerp(cRock, 0.65);
-      if (h > 52) tmp.lerp(cSnow, THREE.MathUtils.smoothstep(h, 52, 70));
+      // rim mountains read as rock banding into snowcaps, not khaki lumps
+      tmp.lerp(cRock, rim * 0.75);
+      if (h > 34) tmp.lerp(cRock, 0.5);
+      const snowLine = 40 - rim * 10;
+      if (h > snowLine) tmp.lerp(cSnow, THREE.MathUtils.smoothstep(h, snowLine, snowLine + 22));
 
       colors[i * 3] = tmp.r;
       colors[i * 3 + 1] = tmp.g;
@@ -173,6 +177,28 @@ export class Terrain {
       roughness: 1,
       metalness: 0,
     });
+    // Cheap world-space value-noise breakup so the ground isn't smooth clay.
+    mat.onBeforeCompile = (shader) => {
+      shader.vertexShader = shader.vertexShader
+        .replace('#include <common>', '#include <common>\nvarying vec3 vWPos;')
+        .replace('#include <worldpos_vertex>',
+          '#include <worldpos_vertex>\nvWPos = (modelMatrix * vec4(transformed, 1.0)).xyz;');
+      shader.fragmentShader = shader.fragmentShader
+        .replace('#include <common>', `#include <common>
+varying vec3 vWPos;
+float thash(vec2 p){ return fract(sin(dot(p, vec2(127.1,311.7)))*43758.5453); }
+float tnoise(vec2 p){
+  vec2 i=floor(p), f=fract(p); f=f*f*(3.-2.*f);
+  return mix(mix(thash(i),thash(i+vec2(1,0)),f.x),
+             mix(thash(i+vec2(0,1)),thash(i+vec2(1,1)),f.x),f.y);
+}`)
+        .replace('#include <color_fragment>', `#include <color_fragment>
+{
+  float dn = tnoise(vWPos.xz * 0.9) * 0.6 + tnoise(vWPos.xz * 0.16) * 0.4;
+  diffuseColor.rgb *= 0.88 + dn * 0.24;                       // macro mottling
+  diffuseColor.rgb *= 0.94 + tnoise(vWPos.xz * 7.0) * 0.12;   // fine grain
+}`);
+    };
     this.mesh = new THREE.Mesh(geo, mat);
     this.mesh.receiveShadow = true;
     this.mesh.name = 'terrain-mesh';

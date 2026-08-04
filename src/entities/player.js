@@ -4,6 +4,12 @@ import { PlayerAnimator } from './playerAnimator.js';
 
 const CAMP_POS = new THREE.Vector3(18, 0, 26);
 
+const _wish = new THREE.Vector3();
+const _side = new THREE.Vector3();
+const _pivot = new THREE.Vector3();
+const _camDir = new THREE.Vector3();
+const _desired = new THREE.Vector3();
+
 /**
  * Third-person player: capsule kinematics on the terrain heightfield,
  * over-shoulder orbit camera, aim mode, health/stamina/medicine.
@@ -49,10 +55,9 @@ export class Player {
     ctx.input.onDown('Space', () => this.dodge());
 
     ctx.events.on('player-damage', ({ amount, from }) => this.takeDamage(amount, from));
-    // Field-dressing the kill: machines yield a medicine pouch.
+    // Field-dressing the kill: machines yield a medicine pouch (HUD polls the count).
     ctx.events.on('machine-killed', () => {
       this.medicine = Math.min(5, this.medicine + 1);
-      this.ctx.events.emit('medicine-used', { left: this.medicine });
     });
 
     this._snapToGround();
@@ -79,6 +84,7 @@ export class Player {
     this.ctx.state = 'dead';
     this.ctx.events.emit('player-died');
     setTimeout(() => {
+      if (this.ctx.state !== 'dead') return; // victory/pause may have superseded
       this.health = this.maxHealth;
       this.medicine = 3;
       this.position.set(CAMP_POS.x, 0, CAMP_POS.z);
@@ -104,7 +110,7 @@ export class Player {
     const input = this.ctx.input;
     const f = (input.isDown('KeyW') ? 1 : 0) - (input.isDown('KeyS') ? 1 : 0);
     const r = (input.isDown('KeyD') ? 1 : 0) - (input.isDown('KeyA') ? 1 : 0);
-    const dir = new THREE.Vector3();
+    const dir = _wish.set(0, 0, 0);
     if (f === 0 && r === 0) return dir;
     // camera sits at +(sin,cos)·camYaw from the pivot, so view-forward is the negation
     const sin = Math.sin(this.camYaw), cos = Math.cos(this.camYaw);
@@ -210,19 +216,19 @@ export class Player {
     const pivotHeight = this.crouching ? 1.1 : 1.55;
     const shoulder = this.aiming ? 0.55 : 0.32;
 
-    const pivot = new THREE.Vector3(
+    const pivot = _pivot.set(
       this.position.x, this.position.y + pivotHeight, this.position.z,
     );
     // shoulder offset perpendicular to view
-    const side = new THREE.Vector3(Math.cos(this.camYaw), 0, -Math.sin(this.camYaw));
+    const side = _side.set(Math.cos(this.camYaw), 0, -Math.sin(this.camYaw));
     pivot.addScaledVector(side, shoulder);
 
-    const dir = new THREE.Vector3(
+    const dir = _camDir.set(
       Math.sin(this.camYaw) * Math.cos(this.camPitch),
       Math.sin(this.camPitch),
       Math.cos(this.camYaw) * Math.cos(this.camPitch),
     );
-    const desired = pivot.clone().addScaledVector(dir, this.camDist);
+    const desired = _desired.copy(pivot).addScaledVector(dir, this.camDist);
 
     // terrain collision: keep camera above ground
     const minY = this.ctx.terrain.getHeight(desired.x, desired.z) + 0.4;
