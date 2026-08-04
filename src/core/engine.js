@@ -1,4 +1,8 @@
 import * as THREE from 'three';
+import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
+import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
 
 /**
  * Renderer + scene + camera + frame loop. Systems register with the game, not here.
@@ -28,6 +32,15 @@ export class Engine {
     this.clock = new THREE.Clock();
     this.timeScale = 1;
 
+    this.composer = new EffectComposer(this.renderer);
+    this.composer.addPass(new RenderPass(this.scene, this.camera));
+    this.bloom = new UnrealBloomPass(
+      new THREE.Vector2(window.innerWidth, window.innerHeight),
+      0.35, 0.5, 1.08,
+    );
+    this.composer.addPass(this.bloom);
+    this.composer.addPass(new OutputPass());
+
     window.addEventListener('resize', () => this.resize());
   }
 
@@ -36,10 +49,11 @@ export class Engine {
     this.camera.aspect = w / h;
     this.camera.updateProjectionMatrix();
     this.renderer.setSize(w, h);
+    this.composer.setSize(w, h);
     this.onResize?.(w, h);
   }
 
   render() {
-    this.renderer.render(this.scene, this.camera);
+    this.composer.render();
   }
 }

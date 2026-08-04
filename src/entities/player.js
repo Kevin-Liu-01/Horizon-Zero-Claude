@@ -49,6 +49,11 @@ export class Player {
     ctx.input.onDown('Space', () => this.dodge());
 
     ctx.events.on('player-damage', ({ amount, from }) => this.takeDamage(amount, from));
+    // Field-dressing the kill: machines yield a medicine pouch.
+    ctx.events.on('machine-killed', () => {
+      this.medicine = Math.min(5, this.medicine + 1);
+      this.ctx.events.emit('medicine-used', { left: this.medicine });
+    });
 
     this._snapToGround();
   }
