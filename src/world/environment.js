@@ -10,7 +10,7 @@ export class Environment {
     const { scene } = ctx;
 
     // --- Fog: warm atmospheric haze
-    scene.fog = new THREE.FogExp2('#c9b28a', 0.0016);
+    scene.fog = new THREE.FogExp2('#c3a985', 0.0011);
 
     // --- Sun
     const sunDir = new THREE.Vector3(-0.55, 0.38, -0.72).normalize();

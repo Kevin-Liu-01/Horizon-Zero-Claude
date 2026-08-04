@@ -106,8 +106,9 @@ export class Player {
     const r = (input.isDown('KeyD') ? 1 : 0) - (input.isDown('KeyA') ? 1 : 0);
     const dir = new THREE.Vector3();
     if (f === 0 && r === 0) return dir;
+    // camera sits at +(sin,cos)·camYaw from the pivot, so view-forward is the negation
     const sin = Math.sin(this.camYaw), cos = Math.cos(this.camYaw);
-    dir.set(sin * f + cos * r, 0, cos * f - sin * r).normalize();
+    dir.set(-sin * f + cos * r, 0, -cos * f - sin * r).normalize();
     return dir;
   }
 

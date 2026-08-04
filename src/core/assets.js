@@ -12,7 +12,8 @@ import { MeshoptDecoder } from 'three/examples/jsm/libs/meshopt_decoder.module.j
  * Consumers clone via SkeletonUtils when they need independent skinned instances.
  */
 const SPECS = {
-  aloy:       { url: '/models/aloy.glb',       targetHeight: 1.72, yaw: 0 },
+  // yOffset: skirt tassels hang below the feet, so bbox-min grounding floats her
+  aloy:       { url: '/models/aloy.glb',       targetHeight: 1.72, yaw: 0, yOffset: -0.055 },
   watcher:    { url: '/models/watcher.glb',    targetHeight: 2.1,  yaw: 0 },
   sawtooth:   { url: '/models/sawtooth.glb',   targetHeight: 2.4,  yaw: 0 },
   behemoth:   { url: '/models/behemoth.glb',   targetHeight: 4.5,  yaw: 0 },
@@ -54,7 +55,7 @@ export class Assets {
     const inner = new THREE.Group();
     inner.name = `${name}-inner`;
     inner.add(src);
-    src.position.set(-center.x, -box.min.y, -center.z);
+    src.position.set(-center.x, -box.min.y + (spec.yOffset ?? 0) / scale, -center.z);
     inner.scale.setScalar(scale);
     inner.rotation.y = spec.yaw;
 

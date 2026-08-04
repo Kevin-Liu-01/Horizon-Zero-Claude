@@ -1,0 +1,363 @@
+/* HZD-style HUD skin. Lives under #hud (fixed, pointer-events:none, z-index 40).
+   Palette comes from :root vars in style.css. */
+
+#hud {
+  font-family: var(--font);
+  color: var(--hzc-text);
+  user-select: none;
+}
+
+/* ------------------------------ damage vignette ------------------------------ */
+.hzc-vignette {
+  position: absolute; inset: 0;
+  opacity: 0;
+  background: radial-gradient(ellipse at center,
+    transparent 40%, rgba(150, 22, 10, 0.5) 76%, rgba(110, 8, 4, 0.85) 100%);
+}
+
+/* ------------------------------ top-left: vitals ----------------------------- */
+.hzc-topleft { position: absolute; top: 26px; left: 30px; width: 290px; }
+.hzc-health-label {
+  font-size: 9px; letter-spacing: 0.36em;
+  color: rgba(232, 236, 236, 0.7);
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.6);
+  margin-bottom: 5px;
+}
+.hzc-healthbar {
+  height: 7px;
+  background: var(--hzc-scrim);
+  border: 1px solid rgba(232, 236, 236, 0.28);
+  padding: 1px;
+}
+.hzc-healthfill {
+  height: 100%; width: 100%;
+  background: linear-gradient(90deg, #e8f6f8, #9fdfe8);
+  box-shadow: 0 0 8px rgba(53, 200, 220, 0.35);
+  transition: width 0.16s ease-out;
+}
+.hzc-healthfill.low {
+  background: linear-gradient(90deg, #e04f3f, #e8865f);
+  box-shadow: 0 0 10px rgba(224, 79, 63, 0.6);
+}
+.hzc-meds { display: flex; gap: 6px; margin-top: 8px; align-items: center; }
+.hzc-med {
+  width: 17px; height: 7px;
+  background: rgba(232, 236, 236, 0.08);
+  border: 1px solid rgba(232, 236, 236, 0.25);
+  transform: skewX(-18deg);
+}
+.hzc-med.full {
+  background: var(--hzc-accent);
+  border-color: var(--hzc-accent);
+  box-shadow: 0 0 6px rgba(53, 200, 220, 0.55);
+}
+.hzc-med-key {
+  font-size: 9px; letter-spacing: 0.24em;
+  color: rgba(232, 236, 236, 0.38);
+  margin-left: 5px;
+}
+
+/* ------------------------------- compass strip ------------------------------- */
+.hzc-compass {
+  position: absolute; top: 20px; left: 50%;
+  transform: translateX(-50%);
+  width: 480px;
+}
+.hzc-compass-window {
+  position: relative; height: 36px; overflow: hidden;
+  background: linear-gradient(180deg, rgba(8, 14, 18, 0.42), rgba(8, 14, 18, 0.08));
+  -webkit-mask-image: linear-gradient(90deg, transparent 0, #000 14%, #000 86%, transparent 100%);
+  mask-image: linear-gradient(90deg, transparent 0, #000 14%, #000 86%, transparent 100%);
+}
+.hzc-compass-window::after {
+  content: '';
+  position: absolute; left: 0; right: 0; bottom: 0; height: 1px;
+  background: rgba(232, 236, 236, 0.25);
+}
+.hzc-compass-track, .hzc-compass-pips { position: absolute; inset: 0; }
+.hzc-tick {
+  position: absolute; top: 23px; left: 50%;
+  width: 1px; height: 7px;
+  background: rgba(232, 236, 236, 0.45);
+  visibility: hidden;
+}
+.hzc-cdir {
+  position: absolute; top: 8px; left: 50%;
+  font-size: 10px; letter-spacing: 0.1em;
+  color: rgba(232, 236, 236, 0.62);
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.55);
+  visibility: hidden;
+}
+.hzc-cdir.main {
+  top: 5px;
+  font-size: 14px; font-weight: 500;
+  color: rgba(232, 236, 236, 0.95);
+}
+.hzc-cdir.north { color: var(--hzc-accent); }
+.hzc-pip {
+  position: absolute; bottom: 4px; left: 50%;
+  width: 7px; height: 7px;
+  background: #5fd4e4;
+  box-shadow: 0 0 6px rgba(53, 200, 220, 0.7);
+  visibility: hidden;
+}
+.hzc-pip[data-s='wary'] { background: var(--hzc-warn); box-shadow: 0 0 6px rgba(232, 163, 61, 0.8); }
+.hzc-pip[data-s='hostile'] { background: var(--hzc-danger); box-shadow: 0 0 7px rgba(224, 79, 63, 0.9); }
+.hzc-compass-caret {
+  position: absolute; top: -1px; left: 50%;
+  transform: translateX(-50%);
+  width: 0; height: 0;
+  border-left: 4px solid transparent;
+  border-right: 4px solid transparent;
+  border-top: 5px solid var(--hzc-accent);
+}
+.hzc-bearing {
+  text-align: center;
+  font-size: 9px; letter-spacing: 0.34em; text-indent: 0.34em;
+  color: rgba(232, 236, 236, 0.6);
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.55);
+  margin-top: 4px;
+}
+
+/* --------------------------- machine health (top-center) --------------------- */
+.hzc-mhb {
+  position: absolute; top: 96px; left: 50%;
+  transform: translateX(-50%);
+  width: 340px; text-align: center;
+  opacity: 0; transition: opacity 0.35s ease;
+}
+.hzc-mhb.show { opacity: 1; }
+.hzc-mhb-name {
+  font-size: 10px; letter-spacing: 0.44em; text-indent: 0.44em;
+  color: var(--hzc-warn);
+  margin-bottom: 4px;
+}
+.hzc-mhb-bar {
+  height: 5px;
+  background: rgba(8, 14, 18, 0.6);
+  border: 1px solid rgba(232, 236, 236, 0.22);
+  padding: 1px;
+}
+.hzc-mhb-fill {
+  height: 100%; width: 100%;
+  background: linear-gradient(90deg, #e8a33d, #f4c66e);
+  box-shadow: 0 0 8px rgba(232, 163, 61, 0.5);
+  transition: width 0.14s ease-out;
+}
+
+/* ------------------------------ objective card ------------------------------- */
+.hzc-objective {
+  position: absolute; top: 26px; right: 30px;
+  width: 300px; text-align: right;
+  padding: 10px 16px 12px;
+  background: linear-gradient(270deg, rgba(8, 14, 18, 0.5), rgba(8, 14, 18, 0));
+  border-right: 1px solid var(--hzc-accent);
+}
+.hzc-obj-kicker {
+  font-size: 9px; letter-spacing: 0.42em;
+  color: var(--hzc-accent);
+  margin-bottom: 6px;
+}
+.hzc-obj-title { font-size: 15px; letter-spacing: 0.2em; font-weight: 500; }
+.hzc-obj-detail {
+  font-size: 10px; letter-spacing: 0.14em;
+  color: rgba(232, 236, 236, 0.6);
+  margin-top: 5px;
+  text-transform: uppercase;
+}
+.hzc-obj-progress {
+  font-size: 11px; letter-spacing: 0.26em;
+  color: var(--hzc-warn);
+  margin-top: 7px;
+}
+.hzc-objective.bump { animation: hzcObjBump 0.55s ease; }
+@keyframes hzcObjBump {
+  0% { transform: translateX(14px); opacity: 0.15; }
+  100% { transform: none; opacity: 1; }
+}
+
+/* -------------------------------- crosshair ---------------------------------- */
+.hzc-cross { position: absolute; left: 50%; top: 50%; width: 0; height: 0; }
+.hzc-dot {
+  position: absolute; left: -1.5px; top: -1.5px;
+  width: 3px; height: 3px; border-radius: 50%;
+  background: rgba(232, 236, 236, 0.92);
+  box-shadow: 0 0 4px rgba(0, 0, 0, 0.65);
+}
+.hzc-ring {
+  position: absolute; left: -36px; top: -36px;
+  width: 72px; height: 72px;
+  opacity: 0; transition: opacity 0.12s ease;
+}
+.hzc-ring.show { opacity: 1; }
+.hzc-ring svg { width: 100%; height: 100%; display: block; }
+.hzc-ring .track { fill: none; stroke: rgba(232, 236, 236, 0.22); stroke-width: 2; }
+.hzc-ring .prog {
+  fill: none; stroke: var(--hzc-accent); stroke-width: 2.5; stroke-linecap: round;
+  filter: drop-shadow(0 0 4px rgba(53, 200, 220, 0.85));
+}
+.hzc-ring .prog.full {
+  stroke: var(--hzc-warn);
+  filter: drop-shadow(0 0 6px rgba(232, 163, 61, 0.95));
+}
+
+/* --------------------------- bottom-right: quiver ---------------------------- */
+.hzc-arrows { position: absolute; right: 30px; bottom: 28px; display: flex; gap: 10px; }
+.hzc-arrow {
+  min-width: 88px;
+  padding: 8px 12px 7px;
+  text-align: center;
+  background: var(--hzc-scrim);
+  border: 1px solid rgba(232, 236, 236, 0.14);
+  border-bottom: 2px solid rgba(232, 236, 236, 0.22);
+}
+.hzc-arrow .k {
+  font-size: 8px; letter-spacing: 0.32em; text-indent: 0.32em;
+  color: rgba(232, 236, 236, 0.38);
+  margin-bottom: 3px;
+}
+.hzc-arrow .n {
+  font-size: 10px; letter-spacing: 0.3em; text-indent: 0.3em;
+  color: rgba(232, 236, 236, 0.7);
+}
+.hzc-arrow .c {
+  font-size: 16px; font-weight: 500; letter-spacing: 0.06em;
+  color: rgba(232, 236, 236, 0.92);
+  margin-top: 3px;
+}
+.hzc-arrow.active {
+  border-color: var(--hzc-accent);
+  border-bottom-color: var(--hzc-accent);
+  background: rgba(53, 200, 220, 0.1);
+  box-shadow: 0 0 16px rgba(53, 200, 220, 0.18);
+}
+.hzc-arrow.active .n { color: var(--hzc-accent); }
+.hzc-arrow.empty .c { color: var(--hzc-danger); }
+
+/* ------------------------------ damage numbers ------------------------------- */
+.hzc-dmglayer { position: absolute; inset: 0; overflow: hidden; }
+.hzc-dmg {
+  position: absolute; left: 0; top: 0;
+  font-size: 16px; font-weight: 600; letter-spacing: 0.05em;
+  color: #fff;
+  text-shadow: 0 0 6px rgba(0, 0, 0, 0.8);
+  visibility: hidden;
+  will-change: transform, opacity;
+}
+.hzc-dmg.weak {
+  font-size: 21px;
+  color: var(--hzc-warn);
+  text-shadow: 0 0 10px rgba(232, 163, 61, 0.7), 0 0 3px rgba(0, 0, 0, 0.8);
+}
+
+/* --------------------------------- kill feed --------------------------------- */
+.hzc-toasts {
+  position: absolute; left: 50%; top: 67%;
+  transform: translateX(-50%);
+  display: flex; flex-direction: column; align-items: center; gap: 6px;
+}
+.hzc-toast {
+  font-size: 12px; letter-spacing: 0.3em; text-indent: 0.3em;
+  color: var(--hzc-text);
+  background: var(--hzc-scrim);
+  border-left: 1px solid var(--hzc-warn);
+  border-right: 1px solid var(--hzc-warn);
+  padding: 7px 20px;
+  white-space: nowrap;
+  animation: hzcToast 3.2s ease forwards;
+}
+.hzc-toast b { color: var(--hzc-warn); font-weight: 600; }
+@keyframes hzcToast {
+  0% { opacity: 0; transform: translateY(10px); }
+  8% { opacity: 1; transform: none; }
+  78% { opacity: 1; }
+  100% { opacity: 0; transform: translateY(-12px); }
+}
+
+/* -------------------------------- death screen ------------------------------- */
+.hzc-death {
+  position: absolute; inset: 0;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  background: #000;
+  opacity: 0; visibility: hidden;
+  transition: opacity 1.1s ease, visibility 1.1s;
+}
+.hzc-death.show { opacity: 1; visibility: visible; }
+.hzc-death-title {
+  font-size: 46px; font-weight: 200;
+  letter-spacing: 0.6em; text-indent: 0.6em;
+  color: var(--hzc-danger);
+}
+.hzc-death-sub {
+  margin-top: 20px;
+  font-size: 11px; letter-spacing: 0.36em; text-indent: 0.36em;
+  color: rgba(232, 236, 236, 0.5);
+}
+
+/* ------------------------------- victory screen ------------------------------ */
+.hzc-victory {
+  position: absolute; inset: 0;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  background: radial-gradient(ellipse at 50% 45%, rgba(8, 14, 18, 0.5) 0%, rgba(6, 9, 12, 0.94) 82%);
+  opacity: 0; visibility: hidden;
+  transition: opacity 1.4s ease, visibility 1.4s;
+}
+.hzc-victory.show { opacity: 1; visibility: visible; }
+.hzc-victory-kicker {
+  font-size: 11px; letter-spacing: 0.5em; text-indent: 0.5em;
+  color: var(--hzc-warn);
+  margin-bottom: 18px;
+}
+.hzc-victory-title {
+  font-size: 52px; font-weight: 200;
+  letter-spacing: 0.42em; text-indent: 0.42em;
+  color: var(--hzc-text);
+  text-shadow: 0 0 30px rgba(53, 200, 220, 0.4);
+}
+.hzc-victory-line {
+  width: 300px; height: 1px;
+  background: var(--hzc-accent);
+  box-shadow: 0 0 12px var(--hzc-accent);
+  margin: 28px 0 18px;
+}
+.hzc-victory-sub {
+  font-size: 11px; letter-spacing: 0.3em; text-indent: 0.3em;
+  color: rgba(232, 236, 236, 0.65);
+}
+
+/* --------------------------------- pause menu -------------------------------- */
+.hzc-pause {
+  position: absolute; inset: 0;
+  display: none;
+  align-items: center; justify-content: center;
+  background: rgba(6, 9, 12, 0.78);
+  backdrop-filter: blur(3px);
+  pointer-events: auto;
+}
+.hzc-pause.show { display: flex; }
+.hzc-pause-inner { text-align: center; }
+.hzc-pause-title {
+  font-size: 30px; font-weight: 200;
+  letter-spacing: 0.55em; text-indent: 0.55em;
+  margin-bottom: 36px;
+}
+.hzc-btn {
+  font-family: var(--font);
+  font-size: 13px; letter-spacing: 0.32em; text-indent: 0.32em;
+  padding: 13px 42px;
+  color: var(--hzc-text);
+  background: transparent;
+  border: 1px solid var(--hzc-accent);
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+.hzc-btn:hover {
+  background: rgba(53, 200, 220, 0.12);
+  box-shadow: 0 0 18px rgba(53, 200, 220, 0.3);
+}
+.hzc-pause-hints {
+  margin-top: 38px;
+  font-size: 10px; letter-spacing: 0.22em;
+  color: rgba(232, 236, 236, 0.38);
+  line-height: 2.1;
+}
