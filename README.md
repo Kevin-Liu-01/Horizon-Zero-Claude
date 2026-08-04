@@ -6,7 +6,7 @@ A browser-native, third-person robot-dinosaur hunting game in the spirit of
 builder agents, adversarial critic agents, and concrete reference standards
 ("does this look like HZD, or a programmer demo?") iterated until it passes.
 
-![Horizon Zero Claude](shots/hero.png)
+![Horizon Zero Claude](docs/media/hero.png)
 
 ## Play
 
@@ -46,6 +46,29 @@ finally the Thunderjaw in the southern wastes.
   procedural WebAudio soundscape (not a single audio file).
 - A puppeteer screenshot harness (`npm run shot`) that the builder/critic
   agents used to judge their own work — the gauntlet loop's eyes.
+
+## Gallery
+
+| | |
+|---|---|
+| ![Camp](docs/media/camp.png) | ![Thunderjaw](docs/media/thunderjaw.png) |
+| ![Focus](docs/media/focus.png) | ![Title](docs/media/title.png) |
+
+## How it was built (the Gauntlet Loop)
+
+1. **Scaffold** — asset pipeline, engine, terrain, player controller, and a
+   puppeteer screenshot harness so agents can *see* their work.
+2. **Build fleet** — 7 parallel builder agents (vegetation, camp, animation,
+   machines, combat, HUD, audio), each iterating build → screenshot →
+   self-critique against the spec's interface contracts.
+3. **Critic fleet** — 6 adversarial critics (world, character, machines,
+   combat/HUD, QA torture-testing, static code review) hunting for anything
+   that "reads as a programmer demo" vs HZD stills — with instrumented
+   measurements (bone-to-terrain distances, draw calls, state-machine probes).
+4. **Fix fleet** — 6 fixers applying every finding, verified numerically
+   (foot contact ±5mm, standoff distances, weak-point hit resolution).
+5. **Verify fleet** — final re-critique: SHIP/HOLD per dimension, last two
+   HOLDs fixed by hand, re-verified.
 
 ## Credits
 

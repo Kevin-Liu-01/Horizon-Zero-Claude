@@ -65,9 +65,11 @@ export class Environment {
     const group = new THREE.Group();
     group.name = 'far-ridges';
     const noise = new SimplexNoise(777);
+    // colors pre-mixed toward the horizon sky (fog is too thin at this range to
+    // do it for us) — farther ring lighter/cooler, both lighter than fogged terrain
     const rings = [
-      { r: 620, h: 120, color: '#8d8874', opacity: 1 },
-      { r: 900, h: 170, color: '#98948a', opacity: 1 },
+      { r: 620, h: 120, color: '#c5bba7', opacity: 1 },
+      { r: 900, h: 170, color: '#d8d0c0', opacity: 1 },
     ];
     for (const ring of rings) {
       const segs = 160;

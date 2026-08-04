@@ -21,7 +21,7 @@ export class Watcher extends Machine {
       displayName: 'Watcher',
       rigged: true,
       yawFix: Math.PI, // model faces -Z in asset space
-      maxHealth: 90,
+      maxHealth: 130, // full-draw body shot must not one-shot (eye still ~2)
       armor: 0.05,
       walkSpeed: 2.7,
       runSpeed: 7,
@@ -74,15 +74,51 @@ export class Watcher extends Machine {
     this.addEye(eyeParent, 0, 0, 0, 0.55);
     this.addWeakPoint('eye', eyeParent, 0, 0, 0, 0.42);
 
+    // effective leg pendulum length (hip→foot, world meters) — the walk cycle
+    // amplitude is derived from it so stance feet plant instead of moonwalking
+    this.root.updateWorldMatrix(true, true);
+    this._legLen = 1.0;
+    if (this.bones.rHip && this.bones.rFoot) {
+      const f = new THREE.Vector3();
+      this.bones.rHip.getWorldPosition(_v);
+      this.bones.rFoot.getWorldPosition(f);
+      this._legLen = Math.max(0.5, _v.distanceTo(f));
+    }
+
     this._gait = Math.random() * Math.PI * 2;
     this._lookW = 0;       // 0 = scanning, 1 = snapped onto target
     this._lookYaw = 0;
     this._lookPitch = 0;
     this._peckPose = 0;
+    this._rear = 0;        // alert rear-up pose blend
   }
 
   onAlerted() {
     this.manager.alertNearby(this, 60);
+  }
+
+  /** Death crumple: legs buckle, neck kinks slack — not a parked robot. */
+  onDeathPose(k) {
+    this._resetPose();
+    const b = this.bones;
+    for (const side of [1, -1]) {
+      const hip = side > 0 ? b.rHip : b.lHip;
+      const shin = side > 0 ? b.rShin : b.lShin;
+      const foot = side > 0 ? b.rFoot : b.lFoot;
+      this._rot(hip, 'x', (0.7 + side * 0.15) * k);
+      this._rot(shin, 'x', 1.15 * k);
+      this._rot(foot, 'x', -0.7 * k);
+    }
+    const n = this.neck.length || 1;
+    for (let i = 0; i < this.neck.length; i++) {
+      this._rot(this.neck[i], 'x', -0.95 * k / n);
+      this._rot(this.neck[i], 'z', 0.85 * this._deathSide * k / n);
+    }
+    this._rot(b.cam, 'x', -0.4 * k);
+    const tn = this.tail.length || 1;
+    for (let i = 0; i < this.tail.length; i++) {
+      this._rot(this.tail[i], 'z', 0.5 * this._deathSide * k / tn);
+    }
   }
 
   chooseAttack(dist) {
@@ -126,24 +162,43 @@ export class Watcher extends Machine {
 
     /* ---- legs: distance-locked gait (no foot slide) ---- */
     const speed = this._speed;
-    const stride = 1.05;
+    const runK = THREE.MathUtils.clamp(speed / this.runSpeed, 0, 1);
+    const stride = 1.05 + 0.5 * runK;
     this._gait += dt * speed * (Math.PI / stride);
     const moveK = THREE.MathUtils.clamp(speed / 2.2, 0, 1);
-    const amp = moveK * (0.32 + 0.1 * THREE.MathUtils.clamp(speed / this.runSpeed, 0, 1));
+    // stride geometry: hip must sweep ~stride/legLen rad over the stance
+    // half-cycle or the planted foot moonwalks under the body
+    const amp = moveK * THREE.MathUtils.clamp(stride / (2 * this._legLen), 0.3, 0.8);
 
+    const HALF = Math.PI / 2;
+    const TAU = Math.PI * 2;
     for (const side of [1, -1]) {
       const hip = side > 0 ? b.rHip : b.lHip;
       const shin = side > 0 ? b.rShin : b.lShin;
       const foot = side > 0 ? b.rFoot : b.lFoot;
-      const ph = this._gait + (side > 0 ? 0 : Math.PI);
-      const swing = Math.sin(ph) * amp;
-      const lift = Math.max(0, Math.sin(ph + Math.PI / 2)) * amp * 1.5;
-      this._rot(hip, 'x', swing - lift * 0.25);
-      this._rot(shin, 'x', lift);
-      this._rot(foot, 'x', -(swing + lift) * 0.55);
+      let ph = this._gait + (side > 0 ? 0 : Math.PI);
+      ph = ((ph % TAU) + TAU) % TAU;
+      let swing, lift;
+      if (ph >= HALF && ph <= 3 * HALF) {
+        // stance [pi/2..3pi/2]: LINEAR counter-sweep — gait phase advances
+        // with distance, so the planted foot stays world-fixed
+        swing = 1 - 2 * (ph - HALF) / Math.PI;
+        lift = 0;
+      } else {
+        // swing-through: smooth return with the foot tucked up
+        const u = (ph < HALF ? ph + HALF : ph - 3 * HALF) / Math.PI;
+        swing = -Math.cos(Math.PI * u);
+        lift = Math.sin(Math.PI * u);
+      }
+      // shin +x drives the ankle forward/DOWN on this rig — tuck is negative
+      const hipRot = amp * (swing + 0.35 * lift);
+      const shinRot = -amp * 1.5 * lift;
+      this._rot(hip, 'x', hipRot);
+      this._rot(shin, 'x', shinRot);
+      this._rot(foot, 'x', -(hipRot + shinRot) * 0.6);
     }
     // body bob: two footfalls per cycle
-    this.body.position.y = Math.abs(Math.sin(this._gait)) * 0.055 * moveK
+    this.body.position.y = Math.abs(Math.sin(this._gait)) * 0.07 * moveK
       + Math.sin(t * 1.7) * 0.012; // idle breathe
     this.body.rotation.z = Math.sin(this._gait) * 0.035 * moveK;
 
@@ -152,6 +207,11 @@ export class Watcher extends Machine {
     const wary = this.state === 'suspicious' || this.state === 'search';
     const wantLook = hostile || wary ? 1 : 0;
     this._lookW = THREE.MathUtils.damp(this._lookW, wantLook, hostile ? 10 : 4, dt);
+    // sharp rear-up when it first goes hostile
+    this._rear = THREE.MathUtils.damp(
+      this._rear, this.state === 'alert' ? 1 : 0, this.state === 'alert' ? 14 : 5, dt,
+    );
+    this.body.rotation.x = -this._rear * 0.15; // chest lifts off the ground line
 
     // where to look: player (hostile) or last stimulus (wary), in root space
     let tgtYaw = 0, tgtPitch = 0;
@@ -173,7 +233,10 @@ export class Watcher extends Machine {
     const nod = Math.sin(t * 1.6) * 0.04 * scanW;
     const n = this.neck.length || 1;
     const yaw = (scan + this._lookYaw) * 1.15;
-    const pitch = (this._lookPitch * 1.2 + nod + this._peckPose * 0.85);
+    // periscope: the neck carries the head high while scanning (watcher, not
+    // low drone), and rears up harder on alert
+    const periscope = 0.5 * scanW + this._rear * 0.45;
+    const pitch = (periscope + this._lookPitch * 1.2 + nod + this._peckPose * 0.85);
     for (let i = 0; i < this.neck.length; i++) {
       this._rot(this.neck[i], 'z', yaw / n);
       this._rot(this.neck[i], 'x', pitch / n);

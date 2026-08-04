@@ -42,7 +42,8 @@ export function glowTexture() {
   return _glowTex;
 }
 
-const _ringGeo = new THREE.TorusGeometry(1, 0.055, 8, 48);
+const _ringGeo = new THREE.TorusGeometry(1, 0.09, 8, 48);
+const _ringGeoSoft = new THREE.TorusGeometry(1, 0.16, 8, 48);
 const _sphereGeo = new THREE.SphereGeometry(1, 10, 8);
 
 export class Machine {
@@ -89,6 +90,17 @@ export class Machine {
     this.model = opts.rigged ? skeletonClone(src.root) : src.root.clone();
     this.holder.add(this.model);
 
+    // metal sanity: metalness-heavy PBR with no env goes jet-black in shadow.
+    // Modest clamps (lead adds a scene env map in parallel) keep plates readable.
+    this.model.traverse((o) => {
+      if (!o.isMesh || !o.material) return;
+      const mats = Array.isArray(o.material) ? o.material : [o.material];
+      for (const m of mats) {
+        if (m.metalness !== undefined) m.metalness = Math.min(m.metalness, 0.7);
+        if (m.roughness !== undefined) m.roughness = Math.max(m.roughness, 0.35);
+      }
+    });
+
     const spawn = opts.spawn;
     this.spawnPos = new THREE.Vector3(spawn.x, 0, spawn.z);
     this.position.set(spawn.x, ctx.terrain.getHeight(spawn.x, spawn.z), spawn.z);
@@ -110,6 +122,10 @@ export class Machine {
     this.stunT = 0;
     this.burnT = 0;
     this._burnDps = 0;
+    this._burnAnchor = new THREE.Vector3(); // body-local stuck-arrow point
+    this._burnAnchorSet = false;
+    this._arcClock = 0;
+    this._eyeFlare = 0; // one-frame sensor flare (attack telegraphs)
     this._attack = null;
     this._attackCd = 1 + Math.random() * 2;
     this._speed = 0;
@@ -121,6 +137,8 @@ export class Machine {
     // death
     this._deathT = 0;
     this._deathSide = Math.random() < 0.5 ? 1 : -1;
+    this._deathRoll = 0.9 + Math.random() * 0.3;
+    this._deathTwist = (Math.random() - 0.5) * 0.9;
     this._beaconSpawned = false;
 
     // sensors / glow
@@ -188,14 +206,16 @@ export class Machine {
     spr.position.set(x / s, y / s, z / s);
     spr.scale.setScalar(scale / s);
     spr.userData.machine = this;
+    spr.raycast = () => {}; // glow is FX, not a hitbox (weak hits must hit the model)
     parent.add(spr);
     this._eyeMats.push({ mat, base: 1, kind: 'sprite' });
     if (core > 0) {
-      const cm = new THREE.MeshBasicMaterial({ toneMapped: false });
+      const cm = new THREE.MeshBasicMaterial({ toneMapped: false, transparent: true });
       const mesh = new THREE.Mesh(_sphereGeo, cm);
       mesh.scale.setScalar(core / s);
       mesh.position.set(x / s, y / s, z / s);
       mesh.userData.machine = this;
+      mesh.raycast = () => {};
       parent.add(mesh);
       this._eyeMats.push({ mat: cm, base: 1, kind: 'basic' });
     }
@@ -241,7 +261,14 @@ export class Machine {
     const damage = (hit.baseDamage ?? 10) * mult;
     this.health = Math.max(0, this.health - damage);
 
-    if (hit.type === 'fire') { this.burnT = 4; this._burnDps = 5; }
+    if (hit.type === 'fire') {
+      this.burnT = 4; this._burnDps = 5;
+      if (hit.point) {
+        this._burnAnchor.copy(hit.point);
+        this.body.worldToLocal(this._burnAnchor);
+        this._burnAnchorSet = true;
+      }
+    }
     if (hit.type === 'shock') { this.stunT = Math.max(this.stunT, 2.5); this._cancelAttack(); }
 
     // getting shot always reveals the shooter's rough position
@@ -311,26 +338,43 @@ export class Machine {
       return;
     }
 
-    // burn DoT ticks even while stunned
+    // attack-timer cooldowns tick unconditionally (lowLOD coarse steps and
+    // stun must not freeze them — subclasses implement tickCooldowns)
+    this.tickCooldowns?.(dt);
+
+    // burn DoT ticks even while stunned — sustained flames + smoke at the
+    // stuck-arrow point (SPEC: "orange flame particles")
     if (this.burnT > 0) {
       this.burnT -= dt;
       this.health -= this._burnDps * dt;
       this._flameClock -= dt;
       if (this._flameClock <= 0 && !this.lowLOD) {
-        this._flameClock = 0.14;
-        _v1.copy(this.position);
-        _v1.x += (Math.random() - 0.5) * this.bodyRadius;
-        _v1.y += this.height * (0.3 + Math.random() * 0.5);
-        _v1.z += (Math.random() - 0.5) * this.bodyRadius;
+        this._flameClock = 0.07;
+        if (this._burnAnchorSet) {
+          _v1.copy(this._burnAnchor);
+          this.body.localToWorld(_v1);
+        } else {
+          _v1.copy(this.position);
+          _v1.y += this.height * 0.5;
+        }
+        _v1.x += (Math.random() - 0.5) * 0.25;
+        _v1.y += (Math.random() - 0.5) * 0.2;
+        _v1.z += (Math.random() - 0.5) * 0.25;
         this._flamePuff(_v1);
+        if (Math.random() < 0.3) this._burnSmoke(_v1);
       }
       if (this.health <= 0) { this._die(); return; }
     }
 
     if (this.stunT > 0) {
       this.stunT -= dt;
-      // shock: frozen — shiver only
+      // shock: frozen — shiver + jittering electric arcs (SPEC: "electric arcs")
       this.body.position.x = (Math.random() - 0.5) * 0.035;
+      this._arcClock -= dt;
+      if (this._arcClock <= 0 && !this.lowLOD) {
+        this._arcClock = 0.09;
+        this._arcFlash();
+      }
       this._speed = 0;
       this._conform(dt);
       this._updateFx(dt);
@@ -650,9 +694,12 @@ export class Machine {
   _updateDeath(dt) {
     this._deathT += dt;
     const k = THREE.MathUtils.smoothstep(Math.min(this._deathT / 1.15, 1), 0, 1);
-    this.body.rotation.z = this._deathSide * 0.5 * k;
-    this.body.rotation.x = 0.12 * k;
-    this.body.position.y = -this.height * 0.16 * k;
+    // crash onto the side with a yaw twist — a wreck, not a parked machine
+    this.body.rotation.z = this._deathSide * this._deathRoll * k;
+    this.body.rotation.x = 0.15 * k;
+    this.body.rotation.y = this._deathTwist * k;
+    this.body.position.y = -this.height * 0.1 * k;
+    this.onDeathPose?.(k); // subclass crumple (bones etc.)
     if (!this._beaconSpawned && this._deathT > 1.4) {
       this._beaconSpawned = true;
       this._spawnBeacon();
@@ -675,7 +722,16 @@ export class Machine {
     this._fx.push({
       update: (dt2) => {
         t += dt2;
-        mat.opacity = 0.22 + Math.sin(t * 2.4) * 0.1;
+        // fade out as the camera walks up so it never becomes a screen-tall slab
+        const cam = this.ctx.camera;
+        let fade = 1;
+        if (cam) {
+          const d = Math.hypot(
+            cam.position.x - beam.position.x, cam.position.z - beam.position.z,
+          );
+          fade = THREE.MathUtils.smoothstep(d, 3.5, 11);
+        }
+        mat.opacity = (0.22 + Math.sin(t * 2.4) * 0.1) * fade;
         return true; // persistent loot beacon
       },
     });
@@ -696,6 +752,7 @@ export class Machine {
     geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
     const mat = new THREE.PointsMaterial({
       color: 0xffc061, size: 0.14, transparent: true, opacity: 1,
+      map: glowTexture(), // soft round sparks, not bare squares
       blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false,
     });
     const pts = new THREE.Points(geo, mat);
@@ -724,9 +781,11 @@ export class Machine {
   }
 
   _smokeBurst(worldPos, n) {
+    // warm-gray wisps, capped near bodyRadius so smoke never blots the screen
+    const cap = Math.max(0.9, this.bodyRadius);
     for (let i = 0; i < n; i++) {
       const mat = new THREE.SpriteMaterial({
-        map: glowTexture(), color: 0x1c1a18, transparent: true,
+        map: glowTexture(), color: 0x56493d, transparent: true,
         opacity: 0.0, depthWrite: false,
       });
       const s = new THREE.Sprite(mat);
@@ -735,12 +794,12 @@ export class Machine {
         worldPos.y + (Math.random() - 0.3) * 1.2,
         worldPos.z + (Math.random() - 0.5) * this.bodyRadius * 1.4,
       );
-      const scale0 = 0.8 + Math.random() * 1.2;
+      const scale0 = cap * (0.35 + Math.random() * 0.25);
       s.scale.setScalar(scale0);
       this.ctx.scene.add(s);
-      const rise = 0.5 + Math.random() * 0.9;
-      const dur = 2.6 + Math.random() * 2.4;
-      const delay = Math.random() * 0.8;
+      const rise = 0.6 + Math.random() * 0.9;
+      const dur = 1.3 + Math.random() * 1.1;
+      const delay = Math.random() * 0.5;
       let t = -delay;
       this._fx.push({
         update: (dt) => {
@@ -748,8 +807,8 @@ export class Machine {
           if (t < 0) return true;
           const k = t / dur;
           s.position.y += rise * dt;
-          s.scale.setScalar(scale0 + k * 3.2);
-          mat.opacity = 0.42 * Math.sin(Math.min(k, 1) * Math.PI);
+          s.scale.setScalar(scale0 + k * cap * 0.7);
+          mat.opacity = 0.24 * Math.sin(Math.min(k, 1) * Math.PI);
           if (k >= 1) { this.ctx.scene.remove(s); mat.dispose(); return false; }
           return true;
         },
@@ -780,18 +839,110 @@ export class Machine {
     });
   }
 
+  /** Sooty wisp rising off a burning part. */
+  _burnSmoke(worldPos) {
+    const mat = new THREE.SpriteMaterial({
+      map: glowTexture(), color: 0x4a4038, transparent: true, opacity: 0.22,
+      depthWrite: false,
+    });
+    const s = new THREE.Sprite(mat);
+    s.position.copy(worldPos);
+    s.position.y += 0.25;
+    const scale0 = 0.35 + Math.random() * 0.25;
+    s.scale.setScalar(scale0);
+    this.ctx.scene.add(s);
+    let t = 0;
+    const dur = 0.9;
+    this._fx.push({
+      update: (dt) => {
+        t += dt;
+        s.position.y += dt * 1.1;
+        s.scale.setScalar(scale0 + (t / dur) * 0.7);
+        mat.opacity = 0.22 * (1 - t / dur);
+        if (t > dur) { this.ctx.scene.remove(s); mat.dispose(); return false; }
+        return true;
+      },
+    });
+  }
+
+  /** Jittering electric arc streak across the body while shock-stunned. */
+  _arcFlash() {
+    const mat = new THREE.SpriteMaterial({
+      map: glowTexture(), color: 0xbfe8ff, transparent: true, opacity: 0.95,
+      blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false,
+      rotation: Math.random() * Math.PI,
+    });
+    const s = new THREE.Sprite(mat);
+    s.position.set(
+      this.position.x + (Math.random() - 0.5) * this.bodyRadius * 1.5,
+      this.position.y + this.height * (0.25 + Math.random() * 0.6),
+      this.position.z + (Math.random() - 0.5) * this.bodyRadius * 1.5,
+    );
+    // elongated thin sprite reads as an arc streak
+    const L = 0.5 + Math.random() * this.bodyRadius * 0.8;
+    s.scale.set(L, 0.09 + Math.random() * 0.08, 1);
+    this.ctx.scene.add(s);
+    let t = 0;
+    this._fx.push({
+      update: (dt) => {
+        t += dt;
+        mat.rotation += dt * 20 * (Math.random() - 0.5);
+        mat.opacity = Math.random() < 0.4 ? 0.2 : 0.95;
+        if (t > 0.12) { this.ctx.scene.remove(s); mat.dispose(); return false; }
+        return true;
+      },
+    });
+  }
+
+  /** Kicked-up ground dust (charge scrapes, landings). Non-additive earth puff. */
+  _dustPuff(x, y, z, scale0 = 0.8) {
+    const mat = new THREE.SpriteMaterial({
+      map: glowTexture(), color: 0x6f5637, transparent: true, opacity: 0,
+      depthWrite: false,
+    });
+    const s = new THREE.Sprite(mat);
+    s.position.set(x, y, z);
+    s.scale.setScalar(scale0);
+    this.ctx.scene.add(s);
+    let t = 0;
+    const dur = 0.9 + Math.random() * 0.4;
+    this._fx.push({
+      update: (dt) => {
+        t += dt;
+        const k = t / dur;
+        s.position.y += dt * 0.7;
+        s.scale.setScalar(scale0 * (1 + k * 1.3));
+        // fast ramp-in, slow settle — stays readable most of its life
+        mat.opacity = 0.62 * Math.min(1, k * 4) * (1 - k * k);
+        if (k >= 1) { this.ctx.scene.remove(s); mat.dispose(); return false; }
+        return true;
+      },
+    });
+  }
+
   /** Expanding radial shockwave ring; damages the player once at impact radius. */
   spawnShockRing(cx, cz, maxR, dur, damage, dmgRadius) {
+    const y = this.ctx.terrain.getHeight(cx, cz) + 0.35;
+    // hot core ring: white-hot fading to orange, holds bright until late so it
+    // still reads at dodge distance
     const mat = new THREE.MeshBasicMaterial({
-      color: 0xffb054, transparent: true, opacity: 0.95,
+      color: 0xfff3d8, transparent: true, opacity: 0.95,
       blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false,
     });
     const ring = new THREE.Mesh(_ringGeo, mat);
     ring.rotation.x = -Math.PI / 2;
-    const y = this.ctx.terrain.getHeight(cx, cz) + 0.35;
     ring.position.set(cx, y, cz);
     this.ctx.scene.add(ring);
-    // dust ring sprite
+    // trailing ground-dust ring just behind the wavefront
+    const dringMat = new THREE.MeshBasicMaterial({
+      color: 0x9a8262, transparent: true, opacity: 0.4,
+      depthWrite: false,
+    });
+    const dring = new THREE.Mesh(_ringGeoSoft, dringMat);
+    dring.rotation.x = -Math.PI / 2;
+    dring.position.set(cx, y - 0.05, cz);
+    this.ctx.scene.add(dring);
+    // central dust plume
     const dmat = new THREE.SpriteMaterial({
       map: glowTexture(), color: 0xc9a878, transparent: true, opacity: 0.5, depthWrite: false,
     });
@@ -799,6 +950,8 @@ export class Machine {
     dust.position.set(cx, y + 0.6, cz);
     dust.scale.setScalar(2);
     this.ctx.scene.add(dust);
+    const _hot = new THREE.Color(0xfff3d8);
+    const _cool = new THREE.Color(0xff7a24);
     let t = 0;
     let dealt = false;
     this._fx.push({
@@ -806,9 +959,13 @@ export class Machine {
         t += dt;
         const k = Math.min(t / dur, 1);
         const r = 0.6 + (maxR - 0.6) * k;
-        ring.scale.set(r, r, 1.4 + k * 3);
-        mat.opacity = 0.95 * (1 - k);
-        dust.scale.setScalar(2 + k * maxR * 1.5);
+        ring.scale.set(r, r, 2.2 + k * 4.5);
+        mat.color.copy(_hot).lerp(_cool, Math.min(1, k * 1.6));
+        mat.opacity = k < 0.7 ? 0.9 : 0.9 * (1 - (k - 0.7) / 0.3);
+        const rd = Math.max(0.4, r * 0.82);
+        dring.scale.set(rd, rd, 2.6 + k * 5);
+        dringMat.opacity = k < 0.6 ? 0.38 : 0.38 * (1 - (k - 0.6) / 0.4);
+        dust.scale.setScalar(2 + k * maxR * 1.2);
         dmat.opacity = 0.5 * (1 - k);
         if (!dealt && damage > 0) {
           const p = this.ctx.player;
@@ -824,7 +981,8 @@ export class Machine {
         }
         if (k >= 1) {
           this.ctx.scene.remove(ring); this.ctx.scene.remove(dust);
-          mat.dispose(); dmat.dispose();
+          this.ctx.scene.remove(dring);
+          mat.dispose(); dmat.dispose(); dringMat.dispose();
           return false;
         }
         return true;
@@ -853,11 +1011,14 @@ export class Machine {
       default: target = EYE_COLORS.calm; pulse = 0.85 + 0.2 * Math.sin(t * 2.1);
     }
     if (this.stunT > 0) pulse = Math.random() < 0.5 ? 1.6 : 0.2;
+    if (this._eyeFlare > 0) { pulse *= 1 + this._eyeFlare; this._eyeFlare = 0; }
     this._eyeColor.lerp(target, Math.min(1, dt * 7));
 
     for (const e of this._eyeMats) {
       if (e.kind === 'sprite' || e.kind === 'basic') {
         e.mat.color.copy(this._eyeColor).multiplyScalar(pulse);
+        // solid eye cores would linger as black balls on a dead machine
+        if (e.kind === 'basic') e.mat.opacity = this.state === 'dead' ? 0 : 1;
       } else {
         e.mat.emissive.copy(this._eyeColor);
         e.mat.emissiveIntensity = e.base * pulse;

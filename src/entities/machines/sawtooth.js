@@ -55,22 +55,26 @@ export class Sawtooth extends Machine {
         cleanup: () => { this.body.rotation.y = 0; },
       };
     }
-    if (dist <= this.attackRange * 1.15 && dist > 3) {
-      const jump = Math.min(dist - 0.5, 8);
+    if (dist <= this.attackRange && dist > 3) {
       return {
         kind: 'pounce',
         windup: 0.55, strike: 0.5, recover: 1.1, cooldown: 3.2,
         track: true,
+        jump: 5,
         onWindup: () => { this._crouchTarget = 1; },
-        onStrike: () => {
-          // commit to the player's position at launch — dodge beats it
+        onStrike: (a) => {
+          // commit to the player's position at launch — dodge beats it;
+          // leap scales to the live range, landing 1.5m short (standoff)
           const p = this.ctx.player;
           this._pounceDir.set(Math.sin(this.heading), 0, Math.cos(this.heading));
           if (p) {
             this._pounceDir.set(
               p.position.x - this.position.x, 0, p.position.z - this.position.z,
-            ).normalize();
+            );
+            const d = this._pounceDir.length();
+            this._pounceDir.normalize();
             this.heading = Math.atan2(this._pounceDir.x, this._pounceDir.z);
+            a.jump = THREE.MathUtils.clamp(d - 1.5, 2, this.attackRange);
           }
           this._airborne = true;
         },
@@ -78,13 +82,14 @@ export class Sawtooth extends Machine {
           if (a.phase === 'windup') {
             this._crouch = Math.min(1, this._crouch + dt * 5); // coil down
           } else if (a.phase === 'strike') {
-            const step = (jump / 0.5) * dt;
+            const step = (a.jump / 0.5) * dt;
             this.moveRoot(this._pounceDir.x * step, this._pounceDir.z * step);
             const arc = Math.sin(a.phaseT * Math.PI) * 1.4;
             this.position.y = this.ctx.terrain.getHeight(this.position.x, this.position.z) + arc;
-            if (a.phaseT > 0.55 && !a.hit) {
+            // damage window covers the whole landing half of the leap
+            if (a.phaseT > 0.5 && !a.hit && this.damagePlayer(25, 2.9)) {
               a.hit = true;
-              this.damagePlayer(25, 2.9);
+              this.knockbackPlayer(8);
             }
           } else {
             this._airborne = false;

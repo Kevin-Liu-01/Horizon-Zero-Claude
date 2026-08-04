@@ -19,6 +19,7 @@ const VERT = /* glsl */ `
   attribute float iBirth;
   attribute float iLife;
   attribute float iSize;
+  attribute float iStretch;
   varying vec2 vUv;
   varying vec3 vColor;
   varying float vFade;
@@ -33,13 +34,22 @@ const VERT = /* glsl */ `
     vUv = uv;
     vec4 mv = modelViewMatrix * vec4(p, 1.0);
     float s = iSize * (0.55 + 0.45 * vFade) * step(k, 1.0);
-    mv.xy += position.xy * s; // billboard in view space
+    // velocity-aligned elongation in view space -> hot streak sparks
+    vec3 vel = iVel * exp(-uDrag * age);
+    vel.y -= uGravity * age / (1.0 + uDrag * age * 0.6);
+    vec2 vv = (modelViewMatrix * vec4(vel, 0.0)).xy;
+    float vl = length(vv);
+    vec2 ax = vl > 1e-4 ? vv / vl : vec2(1.0, 0.0);
+    vec2 ay = vec2(-ax.y, ax.x);
+    float elong = 1.0 + iStretch * min(vl * 0.25, 5.0);
+    mv.xy += (ax * (position.x * elong) + ay * position.y) * s;
     gl_Position = projectionMatrix * mv;
   }
 `;
 
 const FRAG = /* glsl */ `
   uniform float uOpacity;
+  uniform float uCore;
   varying vec2 vUv;
   varying vec3 vColor;
   varying float vFade;
@@ -50,7 +60,9 @@ const FRAG = /* glsl */ `
     if (d > 1.0) discard;
     float a = 1.0 - d;
     a *= a;
-    gl_FragColor = vec4(vColor, a * vFade * uOpacity);
+    // white-hot pinpoint falling off to the tint color (uCore=0 -> flat tint)
+    vec3 col = mix(vColor, vec3(1.0, 0.97, 0.86), uCore * pow(1.0 - d, 6.0));
+    gl_FragColor = vec4(col, a * vFade * uOpacity);
   }
 `;
 
@@ -64,6 +76,7 @@ export class ParticlePool {
     drag = 1.8,
     blending = THREE.AdditiveBlending,
     opacity = 1,
+    core = 0,
   } = {}) {
     this.max = max;
     this.cursor = 0;
@@ -83,12 +96,14 @@ export class ParticlePool {
     this.aBirth = new THREE.InstancedBufferAttribute(new Float32Array(max).fill(-1e4), 1);
     this.aLife = new THREE.InstancedBufferAttribute(new Float32Array(max).fill(1), 1);
     this.aSize = new THREE.InstancedBufferAttribute(new Float32Array(max), 1);
+    this.aStretch = new THREE.InstancedBufferAttribute(new Float32Array(max), 1);
     geo.setAttribute('iPos', this.aPos);
     geo.setAttribute('iVel', this.aVel);
     geo.setAttribute('iColor', this.aCol);
     geo.setAttribute('iBirth', this.aBirth);
     geo.setAttribute('iLife', this.aLife);
     geo.setAttribute('iSize', this.aSize);
+    geo.setAttribute('iStretch', this.aStretch);
     geo.boundingSphere = new THREE.Sphere(new THREE.Vector3(), 1e6);
 
     this.material = new THREE.ShaderMaterial({
@@ -97,6 +112,7 @@ export class ParticlePool {
         uGravity: { value: gravity },
         uDrag: { value: drag },
         uOpacity: { value: opacity },
+        uCore: { value: core },
       },
       vertexShader: VERT,
       fragmentShader: FRAG,
@@ -112,7 +128,7 @@ export class ParticlePool {
     scene.add(this.mesh);
   }
 
-  emit(x, y, z, vx, vy, vz, r, g, b, size, life) {
+  emit(x, y, z, vx, vy, vz, r, g, b, size, life, stretch = 0) {
     const i = this.cursor;
     this.cursor = (i + 1) % this.max;
     this.aPos.setXYZ(i, x, y, z);
@@ -121,12 +137,14 @@ export class ParticlePool {
     this.aBirth.setX(i, this._time);
     this.aLife.setX(i, Math.max(0.01, life));
     this.aSize.setX(i, size);
+    this.aStretch.setX(i, stretch);
     this._dirty = true;
   }
 
   /**
    * Cone burst around `normal` at `point`.
-   * colors: array of [r,g,b]; speed/size/life: [min,max] ranges.
+   * colors: array of [r,g,b]; speed/size/life/stretch: [min,max] ranges.
+   * stretch > 0 elongates the quad along its screen-space velocity (streaks).
    */
   burst(point, normal, {
     count = 12,
@@ -135,6 +153,7 @@ export class ParticlePool {
     size = [0.08, 0.18],
     life = [0.25, 0.55],
     colors = [[1, 0.8, 0.5]],
+    stretch = [0, 0],
   } = {}) {
     for (let i = 0; i < count; i++) {
       _rand.set(Math.random() - 0.5, Math.random() - 0.5, Math.random() - 0.5)
@@ -148,6 +167,7 @@ export class ParticlePool {
         c[0], c[1], c[2],
         size[0] + Math.random() * (size[1] - size[0]),
         life[0] + Math.random() * (life[1] - life[0]),
+        stretch[0] + Math.random() * (stretch[1] - stretch[0]),
       );
     }
   }
@@ -162,6 +182,7 @@ export class ParticlePool {
       this.aBirth.needsUpdate = true;
       this.aLife.needsUpdate = true;
       this.aSize.needsUpdate = true;
+      this.aStretch.needsUpdate = true;
       this._dirty = false;
     }
   }

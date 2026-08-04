@@ -30,7 +30,19 @@ const _v3 = new THREE.Vector3();
 const _v4 = new THREE.Vector3();
 const _v5 = new THREE.Vector3();
 const _v6 = new THREE.Vector3();
+const _v7 = new THREE.Vector3();
+const _dA = new THREE.Vector3();   // aim direction (char space)
+const _anch = new THREE.Vector3(); // draw anchor (cheek)
+const _sh = new THREE.Vector3();   // live shoulder position
+const _grip = new THREE.Vector3(); // bow grip / nock scratch
+const _pole = new THREE.Vector3(); // IK elbow pole
+const _hand = new THREE.Vector3(); // achieved IK hand position
+const _nrm = new THREE.Vector3();  // terrain normal
 const _m4 = new THREE.Matrix4();
+const _m3 = new THREE.Matrix3();
+
+// ball-bone center sits at sole level at bind
+const BALL_REST = 0.005;
 
 const { damp, clamp, smoothstep } = THREE.MathUtils;
 
@@ -142,6 +154,8 @@ export class PlayerAnimator {
     this._dirLoR = dir('loArmR', 'handR');
     this._lenUpR = len('upArmR', 'loArmR');
     this._lenLoR = len('loArmR', 'handR');
+    this._lenUpL = len('upArmL', 'loArmL');
+    this._lenLoL = len('loArmL', 'handL');
     // how far the A-pose arms sit from vertical (for the arms-down stance layer)
     this._armDropL = Math.acos(clamp(-this._dirUpL.y, -1, 1));
     this._armDropR = Math.acos(clamp(-this._dirUpR.y, -1, 1));
@@ -164,6 +178,9 @@ export class PlayerAnimator {
     this._accel = new THREE.Vector3();
     this._prevHeading = 0;
     this._yawRate = 0;
+    this._grnd = 0;            // ground-conform pelvis offset (damped)
+    this._lvx = 0; this._lvz = 0;   // local (char-space) velocity, damped
+    this._mx = 0; this._mz = 1;     // local move direction, damped
     this._qTorso = new THREE.Quaternion();
     this._boneWorldCache = {};
 
@@ -278,6 +295,20 @@ export class PlayerAnimator {
     this._prevHeading = p.heading ?? 0;
     this._yawRate = damp(this._yawRate, clamp(dh / dt, -6, 6), 8, dt);
 
+    /* ---- local (char-space) velocity + move direction (strafe/backpedal) ---- */
+    const hh = p.heading ?? 0;
+    const shh = Math.sin(hh), chh = Math.cos(hh);
+    const vwx = p.velocity?.x ?? 0, vwz = p.velocity?.z ?? 0;
+    this._lvx = damp(this._lvx, vwx * chh - vwz * shh, 10, dt);
+    this._lvz = damp(this._lvz, vwx * shh + vwz * chh, 10, dt);
+    const lsp = Math.hypot(this._lvx, this._lvz);
+    this._mx = damp(this._mx, lsp > 0.35 ? this._lvx / lsp : 0, 9, dt);
+    this._mz = damp(this._mz, lsp > 0.35 ? this._lvz / lsp : 1, 9, dt);
+    const mInv = 1 / (Math.hypot(this._mx, this._mz) || 1);
+    const mx = this._mx * mInv, mz = this._mz * mInv;
+    const fwdness = Math.abs(mz);           // 1 = pure fwd/back, 0 = pure strafe
+    const fwdGate = smoothstep(mz, 0.2, 0.8); // toe-off only for forward gait
+
     /* ---- reset every posed bone to bind (pose is rebuilt, never accumulated) */
     for (let i = 0; i < this._posed.length; i++) {
       const e = this._posed[i];
@@ -285,6 +316,9 @@ export class PlayerAnimator {
     }
     this._qTorso.identity();
     const b = this.b;
+    // feet positions may carry ground-clamp offsets; reset them too
+    if (b.footL) b.footL.bone.position.copy(b.footL.bindP);
+    if (b.footR) b.footR.bone.position.copy(b.footR.bindP);
 
     // pelvis translation offsets accumulated in char space (meters)
     let pdx = 0, pdy = 0, pdz = 0;
@@ -292,17 +326,19 @@ export class PlayerAnimator {
     let stPitch = 0, stYaw = 0, stRoll = 0;
 
     /* =================== LAYER 0: base stance (weight 1) =================== */
-    // arms fall from A-pose to relaxed hang; kills the A-pose in every state
-    const hangL = -(this._armDropL - 0.16);
-    const hangR = (this._armDropR - 0.16);
+    // arms fall from A-pose to relaxed hang; kills the A-pose in every state.
+    // Faded out while aiming so the arm IK maps exactly from bind directions.
+    const hangW = 1 - aimW;
+    const hangL = -(this._armDropL - 0.16) * hangW;
+    const hangR = (this._armDropR - 0.16) * hangW;
     this._rot(b.upArmL, Z_AXIS, hangL);
     this._rot(b.upArmR, Z_AXIS, hangR);
-    this._rot(b.upArmL, X_AXIS, -0.1);
-    this._rot(b.upArmR, X_AXIS, -0.1);
-    this._rot(b.loArmL, X_AXIS, -0.28); // slight elbow bend
-    this._rot(b.loArmR, X_AXIS, -0.28);
-    this._rot(b.clavL, Z_AXIS, -0.05);
-    this._rot(b.clavR, Z_AXIS, 0.05);
+    this._rot(b.upArmL, X_AXIS, -0.1 * hangW);
+    this._rot(b.upArmR, X_AXIS, -0.1 * hangW);
+    this._rot(b.loArmL, X_AXIS, -0.28 * hangW); // slight elbow bend
+    this._rot(b.loArmR, X_AXIS, -0.28 * hangW);
+    this._rot(b.clavL, Z_AXIS, -0.05 * hangW);
+    this._rot(b.clavR, Z_AXIS, 0.05 * hangW);
     // relaxed finger curl (A-pose ships with stiff splayed hands)
     this._curlFingers(this._fingerL, 0.32, 0.15);
     this._curlFingers(this._fingerR, 0.32, 0.15);
@@ -357,7 +393,11 @@ export class PlayerAnimator {
       const midW = smoothstep(speed, 1.4, 4.4); // jog-ness
       const swing = (0.28 + 0.28 * midW + 0.2 * runW) * moveW * crAmp;
 
-      // legs — phase L = ph, R = ph + PI. thigh fwd = -X rot
+      // swing axis follows the local move direction: X for fwd/back gait,
+      // blending toward Z for lateral steps (side-stepping, aim strafing)
+      const swingAxis = _v7.set(mz, 0, -mx);
+
+      // legs — phase L = ph, R = ph + PI. thigh fwd = -swingAxis rot
       for (let side = 0; side < 2; side++) {
         const s = side === 0 ? 1 : -1;
         const lph = side === 0 ? ph : ph + Math.PI;
@@ -369,31 +409,36 @@ export class PlayerAnimator {
         const foot = side === 0 ? b.footL : b.footR;
         const ball = side === 0 ? b.ballL : b.ballR;
 
-        const thighA = -swing * c + 0.08 * moveW; // slight forward bias
-        const kneeA = (0.1 + (0.62 + 0.6 * runW) * swingBend + stanceLoad) * moveW * crAmp;
-        this._rot(thigh, X_AXIS, thighA);
-        this._rot(calf, X_AXIS, kneeA);
+        const thighA = -swing * c + 0.08 * moveW * fwdness; // slight forward bias
+        const kneeA = (0.1 + (0.62 + 0.6 * runW) * swingBend + stanceLoad)
+          * moveW * crAmp * (0.55 + 0.45 * fwdness);
+        this._rot(thigh, swingAxis, thighA);
+        this._rot(calf, swingAxis, kneeA);
         // ankle: partially cancel carried chain rotation (foot ~level in stance),
-        // plantar-flex push at toe-off just past lph = PI
+        // plantar-flex push at toe-off just past lph = PI (forward gait only)
         const footA = -(thighA * 0.62 + kneeA * 0.55)
-          + 0.4 * moveW * Math.pow(Math.max(0, Math.sin(lph - 1.9)), 2);
-        this._rot(foot, X_AXIS, footA);
-        this._rot(ball, X_AXIS, -0.35 * moveW * Math.pow(Math.max(0, Math.sin(lph - 1.6)), 2));
-        // subtle out-toe
+          + 0.4 * moveW * fwdGate * Math.pow(Math.max(0, Math.sin(lph - 1.9)), 2);
+        this._rot(foot, swingAxis, footA);
+        this._rot(ball, X_AXIS, -0.35 * moveW * fwdGate * Math.pow(Math.max(0, Math.sin(lph - 1.6)), 2));
+        // subtle out-toe; hips abduct into a wider base when stepping laterally
         this._rot(thigh, Y_AXIS, s * 0.04 * moveW);
+        this._rot(thigh, Z_AXIS, s * 0.06 * moveW * (1 - fwdness));
       }
 
       // pelvis: vertical bob (2x cadence), lateral weight transfer, yaw/roll
       // constant drop keeps the flexed stance leg planted (no floating feet)
       const bobA = (0.02 + 0.05 * runW) * moveW;
       pdy += -bobA * (0.5 - 0.5 * Math.cos(2 * ph - 0.6))
-        - (0.05 * midW + 0.035 * runW) * moveW;
-      pdx += Math.cos(ph + 0.4) * 0.021 * moveW * (1 - runW * 0.75);
-      this._rotT(b.pelvis, Y_AXIS, -cph * (0.075 + 0.05 * runW) * moveW);
+        - (0.04 * midW + 0.028 * runW) * moveW;
+      // weight transfer happens perpendicular to the move direction
+      const wt = Math.cos(ph + 0.4) * 0.021 * moveW * (1 - runW * 0.75);
+      pdx += wt * mz;
+      pdz += -wt * mx;
+      this._rotT(b.pelvis, Y_AXIS, -cph * (0.075 + 0.05 * runW) * moveW * (0.5 + 0.5 * fwdness));
       this._rotT(b.pelvis, Z_AXIS, sph * 0.045 * moveW * (1 - runW * 0.4));
 
       // spine: counter-yaw so shoulders oppose hips, forward lean with speed
-      const counter = cph * (0.05 + 0.035 * runW) * moveW;
+      const counter = cph * (0.05 + 0.035 * runW) * moveW * (0.4 + 0.6 * fwdness);
       this._rotT(b.spine2, Y_AXIS, counter);
       this._rotT(b.spine3, Y_AXIS, counter);
       this._rotT(b.spine4, Y_AXIS, counter * 0.7);
@@ -426,17 +471,19 @@ export class PlayerAnimator {
     /* =================== LAYER 3: crouch (weight crouchW) ================== */
     if (crouchW > 0.01) {
       const deep = crouchW * (p.inTallGrass ? 1.12 : 1);
-      pdy += -0.31 * deep;
-      pdz += -0.03 * deep;
-      // legs coiled, slightly apart
-      this._rot(b.thighL, X_AXIS, -0.88 * deep);
-      this._rot(b.thighR, X_AXIS, -0.88 * deep);
-      this._rot(b.thighL, Z_AXIS, 0.1 * deep);
-      this._rot(b.thighR, Z_AXIS, -0.1 * deep);
-      this._rot(b.calfL, X_AXIS, 1.28 * deep);
-      this._rot(b.calfR, X_AXIS, 1.28 * deep);
-      this._rot(b.footL, X_AXIS, -0.42 * deep);
-      this._rot(b.footR, X_AXIS, -0.42 * deep);
+      // pelvis drop matches the leg-coil shortening (ground conform pass
+      // clamps the residual so boots stay planted, not hovering)
+      pdy += -0.45 * deep;
+      pdz += -0.04 * deep;
+      // legs coiled deep, slightly apart, feet dorsiflexed to stay flat
+      this._rot(b.thighL, X_AXIS, -1.05 * deep);
+      this._rot(b.thighR, X_AXIS, -1.05 * deep);
+      this._rot(b.thighL, Z_AXIS, 0.12 * deep);
+      this._rot(b.thighR, Z_AXIS, -0.12 * deep);
+      this._rot(b.calfL, X_AXIS, 1.75 * deep);
+      this._rot(b.calfR, X_AXIS, 1.75 * deep);
+      this._rot(b.footL, X_AXIS, -0.62 * deep);
+      this._rot(b.footR, X_AXIS, -0.62 * deep);
       // hunched spine, arms ready in front
       const hunch = 0.34 * deep * (1 - aimW * 0.55);
       this._rotT(b.spine1, X_AXIS, hunch * 0.3);
@@ -461,31 +508,42 @@ export class PlayerAnimator {
     }
 
     /* ================= LAYER 5: aim/draw overlay (weight aimW) ============= */
-    if (aimW > 0.01) this._aimLayer(aimW, this._drawS, p);
+    if (aimW > 0.01) this._aimLayer(aimW, this._drawS, p, moveW);
 
     /* ==================== LAYER 6: dodge tuck (dodgeW) ===================== */
     if (dodgeW > 0.01) {
       const k = this._dodgeT;
-      // forward somersault: whole-body roll about the lateral axis
-      const roll = smoothstep(k, 0.04, 0.96) * Math.PI * 2;
-      const tuck = Math.pow(Math.sin(Math.PI * clamp(k, 0, 1)), 0.75) * dodgeW;
-      this._rotT(b.pelvis, X_AXIS, -roll * dodgeW);
-      pdy += (-0.42 * Math.sin(Math.PI * k) + 0.06) * dodgeW;
-      const curl = 0.5 * tuck;
-      this._rotT(b.spine1, X_AXIS, curl * 0.5);
-      this._rotT(b.spine2, X_AXIS, curl * 0.5);
+      // grounded shoulder roll: tuck leads (full tuck by k~0.25), the body
+      // rolls low over the ground, then the tuck releases into the recovery
+      const tuck = smoothstep(k, 0.02, 0.24) * (1 - smoothstep(k, 0.86, 1.0)) * dodgeW;
+      // full forward shoulder roll; once complete (2PI = identity) it is
+      // zeroed so the dodgeW fade-out can't visibly "unwind" the body
+      const rollT = smoothstep(k, 0.06, 0.9);
+      const roll = rollT >= 1 ? 0 : rollT * Math.PI * 2;
+      this._rotT(b.pelvis, X_AXIS, roll * dodgeW);
+      // pelvis drops to ~0.28m mid-roll — hips ride the ground, not the air
+      pdy += -0.68 * Math.pow(Math.sin(Math.PI * clamp(k, 0, 1)), 0.8) * dodgeW;
+      const curl = 0.85 * tuck;
+      this._rotT(b.spine1, X_AXIS, curl * 0.45);
+      this._rotT(b.spine2, X_AXIS, curl * 0.45);
       this._rotT(b.spine3, X_AXIS, curl * 0.4);
       this._rot(b.neck1, X_AXIS, curl * 0.5);
-      this._rot(b.head, X_AXIS, curl * 0.4);
-      // tuck limbs
-      this._rot(b.thighL, X_AXIS, -1.5 * tuck);
-      this._rot(b.thighR, X_AXIS, -1.35 * tuck);
-      this._rot(b.calfL, X_AXIS, 1.9 * tuck);
-      this._rot(b.calfR, X_AXIS, 1.75 * tuck);
-      this._rot(b.upArmL, X_AXIS, -0.9 * tuck);
-      this._rot(b.upArmR, X_AXIS, -0.9 * tuck);
-      this._rot(b.loArmL, X_AXIS, -1.3 * tuck);
-      this._rot(b.loArmR, X_AXIS, -1.3 * tuck);
+      this._rot(b.head, X_AXIS, curl * 0.45);
+      // legs tuck hard into the chest
+      this._rot(b.thighL, X_AXIS, -1.8 * tuck);
+      this._rot(b.thighR, X_AXIS, -1.65 * tuck);
+      this._rot(b.calfL, X_AXIS, 2.25 * tuck);
+      this._rot(b.calfR, X_AXIS, 2.1 * tuck);
+      this._rot(b.footL, X_AXIS, 0.5 * tuck);
+      this._rot(b.footR, X_AXIS, 0.5 * tuck);
+      // arms hugged across the chest for the whole roll, not just mid-tuck
+      const hug = dodgeW * 0.35 + tuck * 0.65;
+      this._rot(b.upArmL, X_AXIS, -1.05 * hug);
+      this._rot(b.upArmR, X_AXIS, -1.05 * hug);
+      this._rot(b.upArmL, Z_AXIS, -0.3 * hug);
+      this._rot(b.upArmR, Z_AXIS, 0.3 * hug);
+      this._rot(b.loArmL, X_AXIS, -1.5 * hug);
+      this._rot(b.loArmR, X_AXIS, -1.5 * hug);
     }
 
     /* ===================== LAYER 7: hit react / death ====================== */
@@ -526,89 +584,234 @@ export class PlayerAnimator {
 
     /* ------------------- apply pelvis translation offset ------------------- */
     const pe = b.pelvis;
-    _v2.set(pdx, pdy, pdz).applyMatrix3(this._pelvisM3);
+    _v2.set(pdx, pdy + this._grnd, pdz).applyMatrix3(this._pelvisM3);
     pe.bone.position.copy(pe.bindP).add(_v2);
+
+    /* --------- ground conform: pelvis clamp + per-foot terrain clamp ------- */
+    this._groundConform(dt, moveW, dodgeW, pdx, pdy, pdz);
 
     /* ------------------ secondary motion: dyn_ spring chains --------------- */
     this._springs(dt, t, ph, speed, moveW, runW);
   }
 
+  /* -------------------------- ground conforming --------------------------- */
+
+  /**
+   * Post-pose pass: samples the terrain under each foot, pitches stance feet
+   * to the slope, clamps the pelvis so the planted foot's ball bone touches
+   * the ground (idle: lower foot; moving: stance foot), then raises any foot
+   * whose ball would still sink below the terrain.
+   */
+  _groundConform(dt, moveW, dodgeW, pdx, pdy, pdz) {
+    const terr = this.ctx.terrain;
+    const b = this.b;
+    if (!terr?.getHeight || !b.ballL || !b.ballR || !b.footL || !b.footR) return;
+    const pe = b.pelvis;
+    const offW = Math.max(dodgeW, this._deadW);
+    if (offW > 0.25) {
+      // rolling / dying: release the conform smoothly and leave the pose alone
+      this._grnd = damp(this._grnd, 0, 8, dt);
+      _v2.set(pdx, pdy + this._grnd, pdz).applyMatrix3(this._pelvisM3);
+      pe.bone.position.copy(pe.bindP).add(_v2);
+      return;
+    }
+
+    const stanceW = (1 - moveW) * (1 - offW * 4);
+    const h = this.ctx.player?.heading ?? 0;
+    const shh = Math.sin(h), chh = Math.cos(h);
+    let cL = 0, cR = 0;
+    for (let side = 0; side < 2; side++) {
+      const ball = side === 0 ? b.ballL : b.ballR;
+      const foot = side === 0 ? b.footL : b.footR;
+      ball.bone.updateWorldMatrix(true, false);
+      _v1.setFromMatrixPosition(ball.bone.matrixWorld);
+      // stance feet pitch to the terrain slope under them
+      if (stanceW > 0.05 && terr.getNormal) {
+        terr.getNormal(_v1.x, _v1.z, _nrm);
+        const grade = -(_nrm.x * shh + _nrm.z * chh) / Math.max(0.35, _nrm.y);
+        this._rot(foot, X_AXIS, clamp(Math.atan(grade), -0.45, 0.45) * stanceW);
+        ball.bone.updateWorldMatrix(true, false);
+        _v1.setFromMatrixPosition(ball.bone.matrixWorld);
+      }
+      const c = _v1.y - terr.getHeight(_v1.x, _v1.z) - BALL_REST;
+      if (side === 0) cL = c; else cR = c;
+    }
+
+    // pelvis clamp: at rest follow the LOWER foot (max clearance) so it
+    // plants; while moving track the stance foot (min clearance) so strides
+    // never hover or punch through
+    const want = -((1 - moveW) * Math.max(cL, cR) + moveW * Math.min(cL, cR));
+    const g0 = this._grnd;
+    const rate = 6 + 14 * (1 - moveW);
+    this._grnd = clamp(damp(g0, g0 + clamp(want, -0.5, 0.5), rate, dt), -0.38, 0.32);
+    const dg = this._grnd - g0;
+    _v2.set(pdx, pdy + this._grnd, pdz).applyMatrix3(this._pelvisM3);
+    pe.bone.position.copy(pe.bindP).add(_v2);
+
+    // per-foot clamp: raise any foot whose ball would still be underground
+    for (let side = 0; side < 2; side++) {
+      const c = (side === 0 ? cL : cR) + dg;
+      if (c < -0.004) {
+        const foot = side === 0 ? b.footL : b.footR;
+        const raise = Math.min(-c, 0.4) * (1 - offW * 4);
+        _m4.copy(foot.bone.parent.matrixWorld).invert();
+        _m3.setFromMatrix4(_m4);
+        _v2.set(0, raise, 0).applyMatrix3(_m3);
+        foot.bone.position.add(_v2);
+      }
+    }
+  }
+
   /* ----------------------------- aim overlay ------------------------------ */
 
-  _aimLayer(aimW, drawS, p) {
+  _aimLayer(aimW, drawS, p, moveW) {
     const b = this.b;
     const pitch = clamp(p.camPitch ?? 0, -0.6, 1.05);
+    const stanceW = aimW * (1 - moveW * 0.85);
 
-    // archer stance: chest opens right, spine carries part of the aim pitch
-    this._rotT(b.spine1, Y_AXIS, -0.07 * aimW);
-    this._rotT(b.spine2, Y_AXIS, -0.08 * aimW);
-    this._rotT(b.spine3, Y_AXIS, -0.08 * aimW);
+    // staggered archer stance: hips bladed, left side toward the target
+    this._rotT(b.pelvis, Y_AXIS, -0.3 * stanceW);
+    this._rot(b.thighL, X_AXIS, -0.05 * stanceW);
+    this._rot(b.thighR, X_AXIS, 0.12 * stanceW);
+    this._rot(b.calfR, X_AXIS, 0.14 * stanceW);
+    this._rot(b.footL, Y_AXIS, 0.2 * stanceW);
+    this._rot(b.footR, Y_AXIS, 0.24 * stanceW);
+
+    // chest: bladed toward the target, opening further as the draw builds;
+    // spine carries part of the aim pitch
+    const chestYaw = -(0.2 + 0.15 * drawS) * aimW;
+    const spineYaw = (chestYaw + 0.3 * stanceW) / 3;
+    this._rotT(b.spine1, Y_AXIS, spineYaw);
+    this._rotT(b.spine2, Y_AXIS, spineYaw);
+    this._rotT(b.spine3, Y_AXIS, spineYaw);
     this._rotT(b.spine2, X_AXIS, pitch * 0.14 * aimW);
     this._rotT(b.spine3, X_AXIS, pitch * 0.15 * aimW);
     this._rotT(b.spine4, X_AXIS, pitch * 0.13 * aimW);
     // slight brace lean into the bow
     this._rotT(b.spine2, Z_AXIS, 0.05 * aimW);
 
-    // head: look along the aim ray, counter the chest twist
-    this._rot(b.neck1, Y_AXIS, 0.1 * aimW);
-    this._rot(b.head, Y_AXIS, 0.13 * aimW);
+    // head: face the target (counter the chest blade), carry the aim pitch
+    this._rot(b.neck1, Y_AXIS, -chestYaw * 0.45);
+    this._rot(b.head, Y_AXIS, -chestYaw * 0.6);
     this._rot(b.neck1, X_AXIS, pitch * 0.2 * aimW);
     this._rot(b.head, X_AXIS, pitch * 0.28 * aimW);
 
-    // torso-compensated aim direction (so the arm tracks the camera exactly)
-    _q3.copy(this._qTorso).conjugate();
     const sp = Math.sin(pitch), cp = Math.cos(pitch);
+    const cmb = this.ctx.combat;
+    const bow = cmb?.bow;
+    const pull = bow?.pull ?? 0.52;
+    const restZ = bow?.restZ ?? 0.055;
 
-    // ---- LEFT ARM: bow arm, extended along aim ray
-    _v3.set(0.12, -sp, cp).normalize().applyQuaternion(_q3);
-    _q1.setFromUnitVectors(this._dirUpL, _v3);
-    if (aimW < 0.999) _q1.slerp(Q_IDENT, 1 - aimW);
-    this._rotQ(b.upArmL, _q1);
-    // straighten the elbow (bind has a bend); keep a hint of flex
-    _q1.setFromUnitVectors(this._dirLoL, this._dirUpL);
-    _q1.slerp(Q_IDENT, 1 - aimW * 0.9);
-    this._rotQ(b.loArmL, _q1);
+    // aim ray in character space. The bow is oriented by combat toward the
+    // crosshair-true aimPoint, so the string/nock line must follow the SAME
+    // ray or the string hand drifts off the nock when aiming at near ground.
+    _dA.set(0, -sp, cp); // fallback: camera pitch (heading = camera yaw)
+    if (p.aiming && cmb?.aimPoint && p.position) {
+      const hy = p.heading ?? 0;
+      const sy = Math.sin(hy), cy = Math.cos(hy);
+      _v7.copy(cmb.aimPoint);
+      _v7.x -= p.position.x + sy * 0.45; // approx grip: 0.45m ahead of chest
+      _v7.y -= p.position.y + 1.43;
+      _v7.z -= p.position.z + cy * 0.45;
+      if (_v7.lengthSq() > 4) {
+        _v7.normalize();
+        _dA.set(_v7.x * cy - _v7.z * sy, _v7.y, _v7.x * sy + _v7.z * cy);
+      }
+    }
+    const effPitch = Math.asin(clamp(-_dA.y, -1, 1)); // arm-line pitch
+
+    // draw anchor at the right cheek/jaw, from the LIVE head position
+    this._charOf(b.head.bone, _anch);
+    _v7.set(-0.055, -0.055, 0.1).applyAxisAngle(X_AXIS, effPitch * 0.85);
+    _anch.add(_v7);
+
+    // nock offset relative to the hand in char space, from the LIVE bow rig
+    // (combat may offset/cant the bow model under the grip): the bow group's
+    // basis is +Z = aim dir, Y ~ world up projected off the ray
+    const cant = bow?.model?.rotation?.z ?? 0;
+    const gOffX = bow?.model?.position?.x ?? 0;
+    const gOffY = bow?.model?.position?.y ?? 0;
+    const gOffZ = bow?.model?.position?.z ?? 0;
+    const ox = -Math.sin(cant) * 0.018 + gOffX;
+    const oy = Math.cos(cant) * 0.018 + gOffY;
+    const oz = restZ - pull * drawS + gOffZ;
+    _v3.copy(_dA).multiplyScalar(oz);
+    _v7.set(0, 1, 0).addScaledVector(_dA, -_dA.y).normalize(); // bow up axis
+    _v3.addScaledVector(_v7, oy);
+    _v7.cross(_dA).normalize();                                // bow x axis
+    _v3.addScaledVector(_v7, ox); // _v3 = hand -> nock, char space
+
+    // bow-grip target: relaxed extended hold at rest, blending onto the
+    // anchor-aligned arrow line as the draw builds — so the string nock
+    // arrives exactly at the cheek at full draw
+    const dEase = smoothstep(drawS, 0.08, 0.9) * aimW;
+    _grip.set(0.02, 1.4, 0.03).addScaledVector(_dA, 0.42);
+    _v7.copy(_anch).sub(_v3);
+    _grip.lerp(_v7, dEase);
+
+    // ---- LEFT ARM: bow arm, 2-bone IK to the grip (live shoulder position)
+    this._charOf(b.upArmL.bone, _sh);
+    _pole.set(0.55, -0.8, -0.05); // elbow out + down
+    this._ikArm(b.upArmL, b.loArmL, _sh, _grip, _pole, aimW,
+      this._dirUpL, this._dirLoL, this._lenUpL, this._lenLoL, _hand);
     // wrist: brace hand upright behind the bow
     this._rot(b.handL, X_AXIS, 0.25 * aimW);
     this._curlFingers(this._fingerL, 0.5 * aimW, 0.3 * aimW);
 
-    // ---- RIGHT ARM: string hand, 2-bone reach from nock point to cheek.
-    // All positions/directions below live in character space; the applied
-    // rotations are compensated by qTorso so the reach lands where intended.
-    const S = this._charPos.upArmR;                       // shoulder
-    const L1 = this._lenUpR, L2 = this._lenLoR;
-    _v3.set(
-      0.02 - 0.12 * drawS,
-      1.38 + 0.05 * drawS - S.y,
-      0.44 - 0.42 * drawS,
-    ).applyAxisAngle(X_AXIS, pitch * 0.8).add(S);         // target (pitches with aim)
-    _v1.subVectors(_v3, S);                               // reach vector
-    const dLen = clamp(_v1.length(), 0.22, (L1 + L2) * 0.98);
-    _v1.normalize();
-    const A = Math.acos(clamp((L1 * L1 + dLen * dLen - L2 * L2) / (2 * L1 * dLen), -1, 1));
-    // pole: elbow out+down while at the string, level+back at full draw
-    _v4.set(-0.85, -0.5 + 0.62 * drawS, 0.1 - 0.5 * drawS)
-      .addScaledVector(_v1, -_v4.dot(_v1));
-    if (_v4.lengthSq() < 1e-6) _v4.set(-1, 0, 0);
-    _v4.normalize();
-    // upper-arm dir: reach dir rotated toward the pole by the IK angle
-    _v5.copy(_v1).multiplyScalar(Math.cos(A)).addScaledVector(_v4, Math.sin(A));
-    _v6.copy(S).addScaledVector(_v5, L1);                 // elbow position
-    _v6.subVectors(_v3, _v6).normalize();                 // elbow -> target dir
-    // apply upper arm (torso-compensated)
-    _v2.copy(_v5).applyQuaternion(_q3);
-    _q1.setFromUnitVectors(this._dirUpR, _v2);
-    if (aimW < 0.999) _q1.slerp(Q_IDENT, 1 - aimW);
-    this._rotQ(b.upArmR, _q1);
-    // lower arm lives in the frame carried by (qTorso * R1): compensate both
-    _q2.copy(this._qTorso).multiply(_q1).conjugate();
-    _v6.applyQuaternion(_q2);
-    _q1.setFromUnitVectors(this._dirLoR, _v6);
-    if (aimW < 0.999) _q1.slerp(Q_IDENT, 1 - aimW);
-    this._rotQ(b.loArmR, _q1);
+    // string nock implied by the ACHIEVED grip — matches the rendered string
+    _grip.copy(_hand).add(_v3);
+
+    // ---- RIGHT ARM: string hand rides the nock at every draw length;
+    // wrist sits just behind so the hooked fingers land on the string
+    _v7.copy(_grip).addScaledVector(_dA, -0.068);
+    this._charOf(b.upArmR.bone, _sh);
+    _pole.set(-0.85, -0.35 + 0.5 * drawS, -0.45 * drawS); // out+down -> level-back
+    this._ikArm(b.upArmR, b.loArmR, _sh, _v7, _pole, aimW,
+      this._dirUpR, this._dirLoR, this._lenUpR, this._lenLoR, null);
     // string fingers: two-finger hook tightening with draw
     this._rot(b.handR, Z_AXIS, -0.2 * aimW);
     this._curlFingers(this._fingerR, (0.45 + 0.3 * drawS) * aimW, 0.25 * aimW);
+  }
+
+  /** Live character-space position of a bone (model space, +Z forward). */
+  _charOf(bone, out) {
+    bone.updateWorldMatrix(true, false);
+    out.setFromMatrixPosition(bone.matrixWorld);
+    return this.model.worldToLocal(out);
+  }
+
+  /**
+   * 2-bone arm IK in character space with torso compensation.
+   * S = live shoulder, target = wrist goal, pole = elbow hint. Applies the
+   * rotations to upE/loE at weight w; writes the achieved (clamped) wrist
+   * position to outHand when given.
+   */
+  _ikArm(upE, loE, S, target, pole, w, dirUp, dirLo, L1, L2, outHand) {
+    _v1.subVectors(target, S);
+    const dLen = clamp(_v1.length(), 0.05, (L1 + L2) * 0.985);
+    _v1.normalize();
+    _v2.copy(S).addScaledVector(_v1, dLen); // clamped wrist position
+    if (outHand) outHand.copy(_v2);
+    const A = Math.acos(clamp((L1 * L1 + dLen * dLen - L2 * L2) / (2 * L1 * dLen), -1, 1));
+    _v4.copy(pole).addScaledVector(_v1, -pole.dot(_v1));
+    if (_v4.lengthSq() < 1e-6) _v4.set(-_v1.y, _v1.x, 0.01);
+    _v4.normalize();
+    // upper-arm dir: reach dir rotated toward the pole by the IK angle
+    _v5.copy(_v1).multiplyScalar(Math.cos(A)).addScaledVector(_v4, Math.sin(A));
+    _v6.copy(S).addScaledVector(_v5, L1);   // elbow position
+    _v6.subVectors(_v2, _v6).normalize();   // elbow -> wrist dir
+    // apply upper arm (torso-compensated: parent chain carries qTorso)
+    _q3.copy(this._qTorso).conjugate();
+    _v5.applyQuaternion(_q3);
+    _q1.setFromUnitVectors(dirUp, _v5);
+    if (w < 0.999) _q1.slerp(Q_IDENT, 1 - w);
+    this._rotQ(upE, _q1);
+    // lower arm lives in the frame carried by (qTorso * R1): compensate both
+    _q2.copy(this._qTorso).multiply(_q1).conjugate();
+    _v6.applyQuaternion(_q2);
+    _q1.setFromUnitVectors(dirLo, _v6);
+    if (w < 0.999) _q1.slerp(Q_IDENT, 1 - w);
+    this._rotQ(loE, _q1);
   }
 
   _curlFingers(list, curl, thumbCurl) {
@@ -627,11 +830,14 @@ export class PlayerAnimator {
     const gaitPump = Math.sin(2 * ph) * (0.35 + 0.9 * runW) * moveW;
     for (let i = 0; i < this._chains.length; i++) {
       const c = this._chains[i];
-      // forces: accel lag, gait bounce, yaw swing, faint idle breeze
+      // forces: accel lag, velocity drag (hair streams back at speed),
+      // gait bounce, yaw swing, faint idle breeze
       const fx = az * c.accel * 9
+        + this._lvz * c.accel * 26
         + gaitPump * c.gait * 9
         + Math.sin(t * 1.35 + c.seed) * 0.06;
       const fz = -ax * c.accel * 9
+        - this._lvx * c.accel * 26
         - this._yawRate * 0.35
         + Math.sin(t * 1.1 + c.seed * 2.3) * 0.05;
       c.vx += (-c.k * c.ax - c.c * c.vx + fx) * dt;

@@ -13,14 +13,21 @@ const bronzeMat = new THREE.MeshStandardMaterial({ color: 0x9c6a2e, metalness: 0
 const accentMat = new THREE.MeshStandardMaterial({
   color: 0x06222e, emissive: 0x43d6ff, emissiveIntensity: 2.6, roughness: 0.4,
 });
-const stringMat = new THREE.MeshStandardMaterial({ color: 0xd8d0be, roughness: 0.9 });
+// bright + faintly emissive so the string reads over-shoulder at golden hour
+const stringMat = new THREE.MeshStandardMaterial({
+  color: 0xf3ead6, roughness: 0.55, emissive: 0x9a9078, emissiveIntensity: 0.6,
+});
 
 const unitCyl = new THREE.CylinderGeometry(1, 1, 1, 5, 1);
+const STRING_R = 0.007;
 
 const _mid = new THREE.Vector3();
 const _d = new THREE.Vector3();
 const _Y = new THREE.Vector3(0, 1, 0);
 const _nock = new THREE.Vector3();
+const _p2 = new THREE.Vector3();
+const _q2 = new THREE.Quaternion();
+const _s2 = new THREE.Vector3();
 
 function setSegment(mesh, a, b, r) {
   _mid.addVectors(a, b).multiplyScalar(0.5);
@@ -36,7 +43,8 @@ export class Bow {
     this.group = new THREE.Group();
     this.group.name = 'bow';
     this.model = new THREE.Group();
-    this.model.rotation.z = 0.14; // slight HZD-style cant
+    this.model.rotation.z = 0.22; // HZD-style cant so the bow never reads edge-on
+    this.model.position.y = -0.1; // grip (riser center) sits in the palm
     this.group.add(this.model);
 
     // --- limbs: mirrored recurve spline
@@ -52,7 +60,7 @@ export class Bow {
     for (let i = half.length - 1; i >= 1; i--) pts.push(new THREE.Vector3(0, -half[i][0], half[i][1]));
     for (let i = 0; i < half.length; i++) pts.push(new THREE.Vector3(0, half[i][0], half[i][1]));
     const curve = new THREE.CatmullRomCurve3(pts, false, 'catmullrom', 0.35);
-    const limbs = new THREE.Mesh(new THREE.TubeGeometry(curve, 72, 0.019, 7), bodyMat);
+    const limbs = new THREE.Mesh(new THREE.TubeGeometry(curve, 72, 0.022, 7), bodyMat);
     limbs.castShadow = true;
     this.model.add(limbs);
 
@@ -93,8 +101,10 @@ export class Bow {
     this.strBot = new THREE.Mesh(unitCyl, stringMat);
     this.model.add(this.strTop, this.strBot);
 
-    // --- nocked arrow visual
+    // --- nocked arrow visual (cross-section fattened so it reads on screen;
+    // z stays 1 so length and nock alignment are true)
     this.nockArrow = makeArrow();
+    this.nockArrow.group.scale.set(1.6, 1.6, 1);
     this.model.add(this.nockArrow.group);
 
     this.restZ = 0.055;
@@ -108,8 +118,8 @@ export class Bow {
   setDraw(draw, showArrow) {
     const nz = this.restZ - draw * this.pull;
     _nock.set(0, 0.018, nz);
-    setSegment(this.strTop, this._tipTop, _nock, 0.0042);
-    setSegment(this.strBot, _nock, this._tipBot, 0.0042);
+    setSegment(this.strTop, this._tipTop, _nock, STRING_R);
+    setSegment(this.strBot, _nock, this._tipBot, STRING_R);
     this.nockArrow.group.visible = showArrow;
     if (showArrow) this.nockArrow.group.position.set(0, 0.018, nz);
   }
@@ -118,10 +128,28 @@ export class Bow {
     setArrowType(this.nockArrow, type);
   }
 
-  /** World position of the nock (arrow tail) for a given draw. */
+  /**
+   * World position of the string nock (arrow tail) for a given draw 0..1.
+   * Contract for the animator: IK the string hand here. Robust when the bow
+   * is hidden/scaled-out — falls back to a unit-scale reconstruction at the
+   * hand attach point (i.e. the rest nock), never a degenerate point.
+   */
   getNockWorld(draw, out) {
     out.set(0, 0.018, this.restZ - draw * this.pull);
     this.model.updateWorldMatrix(true, false);
-    return this.model.localToWorld(out);
+    _s2.setFromMatrixScale(this.model.matrixWorld);
+    if (this.group.visible && Math.min(_s2.x, _s2.y, _s2.z) > 0.5) {
+      return this.model.localToWorld(out);
+    }
+    // hidden or mid scale-in: rebuild the frame with unit world scale
+    out.applyMatrix4(this.model.matrix);        // model offset + cant -> group space
+    out.applyQuaternion(this.group.quaternion); // group aim -> hand space (unit scale)
+    const parent = this.group.parent;
+    if (parent) {
+      parent.updateWorldMatrix(true, false);
+      parent.matrixWorld.decompose(_p2, _q2, _s2);
+      out.applyQuaternion(_q2).add(_p2);
+    }
+    return out;
   }
 }

@@ -53,6 +53,7 @@ export class Camp {
     this._matte = [];
     this._metal = [];
     this._cloth = [];
+    this._small = []; // small clutter: merged like matte but casts no shadow
 
     this._buildFirepit();
     this._buildSeatLogs();
@@ -116,7 +117,7 @@ export class Camp {
     const fy = this.firePosition.y;
 
     // ash bed
-    this._matte.push(this._tinted(
+    this._small.push(this._tinted(
       new THREE.CircleGeometry(0.55, 20).rotateX(-Math.PI / 2),
       composeMat(FIRE_X, fy + 0.03, FIRE_Z),
       '#3a342d', 0.12,
@@ -136,7 +137,7 @@ export class Camp {
         rng() * Math.PI, rng() * Math.PI, rng() * Math.PI,
         s * (0.9 + rng() * 0.35), s * (0.6 + rng() * 0.25), s * (0.9 + rng() * 0.3),
       );
-      this._matte.push(this._tinted(geo, m, rng() > 0.5 ? '#75695c' : '#7d6f5c', 0.09));
+      this._small.push(this._tinted(geo, m, rng() > 0.5 ? '#675f53' : '#6e6355', 0.11));
     }
 
     // charred tepee logs, tips crossing above center
@@ -147,16 +148,16 @@ export class Camp {
       const ta = ang + 2.5;
       const tx = FIRE_X + Math.cos(ta) * 0.10;
       const tz = FIRE_Z + Math.sin(ta) * 0.10;
-      this._tube(this._matte,
+      this._tube(this._small,
         [bx, fy + 0.03, bz], [tx, fy + 0.72, tz],
         0.055, 0.038, '#221a14', 0.18);
     }
     // two half-burnt logs lying at the edge
-    this._tube(this._matte,
+    this._tube(this._small,
       [FIRE_X - 0.55, fy + 0.09, FIRE_Z - 0.15],
       [FIRE_X + 0.25, fy + 0.12, FIRE_Z + 0.42],
       0.06, 0.05, '#31251a', 0.2);
-    this._tube(this._matte,
+    this._tube(this._small,
       [FIRE_X + 0.5, fy + 0.08, FIRE_Z - 0.4],
       [FIRE_X - 0.1, fy + 0.1, FIRE_Z - 0.55],
       0.055, 0.045, '#2a1f16', 0.2);
@@ -168,20 +169,20 @@ export class Camp {
     for (const side of [-1, 1]) {
       const ux = FIRE_X + sx * 0.8 * side, uz = FIRE_Z + sz * 0.8 * side;
       const gy = this._groundY(ux, uz);
-      this._tube(this._matte, [ux, gy - 0.05, uz], [ux, gy + barH, uz], 0.028, 0.022, '#5b4630');
+      this._tube(this._small, [ux, gy - 0.05, uz], [ux, gy + barH, uz], 0.028, 0.022, '#5b4630');
       // fork stub
-      this._tube(this._matte,
+      this._tube(this._small,
         [ux, gy + barH - 0.06, uz],
         [ux + sz * 0.12 * side, gy + barH + 0.14, uz - sx * 0.12 * side],
         0.016, 0.012, '#5b4630');
     }
     const barY = fy + barH + 0.02;
-    this._tube(this._matte,
+    this._tube(this._small,
       [FIRE_X - sx * 0.95, barY, FIRE_Z - sz * 0.95],
       [FIRE_X + sx * 0.95, barY, FIRE_Z + sz * 0.95],
       0.02, 0.02, '#66513a');
     // hanging pot
-    this._tube(this._matte, [FIRE_X, barY, FIRE_Z], [FIRE_X, barY - 0.22, FIRE_Z], 0.006, 0.006, '#2c2118');
+    this._tube(this._small, [FIRE_X, barY, FIRE_Z], [FIRE_X, barY - 0.22, FIRE_Z], 0.006, 0.006, '#2c2118');
     this._metal.push(this._tinted(
       new THREE.SphereGeometry(0.13, 10, 8),
       composeMat(FIRE_X, barY - 0.32, FIRE_Z, 0, 0, 0, 1, 0.8, 1),
@@ -204,7 +205,7 @@ export class Camp {
         0.15, 0.13, '#4c3a26', 0.1);
       // stub branch on one log for character
       if (L.len > 1.7) {
-        this._tube(this._matte,
+        this._tube(this._small,
           [L.x + dx * 0.4, y + 0.24, L.z + dz * 0.4],
           [L.x + dx * 0.4 + 0.18, y + 0.44, L.z + dz * 0.4 + 0.1],
           0.03, 0.02, '#4c3a26', 0.1);
@@ -249,6 +250,34 @@ export class Camp {
     return g;
   }
 
+  /** Stitched-hide patchwork: per-patch tint blocks + darkened seam bands. */
+  _paintTentCloth(geo, matrix, seed) {
+    geo.applyMatrix4(matrix);
+    const uv = geo.attributes.uv;
+    const n = geo.attributes.position.count;
+    const arr = new Float32Array(n * 3);
+    const palette = ['#a86f44', '#6e4123', '#96613c', '#7c4a2b', '#b07f58', '#5f3a20']
+      .map((c) => new THREE.Color(c));
+    for (let i = 0; i < n; i++) {
+      const u = uv.getX(i), v = uv.getY(i);
+      const pu = Math.min(3, (u * 4) | 0), pv = Math.min(2, (v * 3) | 0);
+      const hash = (pu * 5 + pv * 11 + seed * 7) % palette.length;
+      _c.copy(palette[hash]);
+      // per-patch luminance swing so hides read as distinct pieces in full sun
+      const lum = 0.78 + 0.44 * (((pu * 13 + pv * 29 + seed * 3) % 7) / 6);
+      // seams: darken near the patch grid lines (stitch shadow)
+      const fu = Math.abs(u * 4 - Math.round(u * 4));
+      const fv = Math.abs(v * 3 - Math.round(v * 3));
+      const seam = Math.min(1, Math.min(fu, fv) * 6.5);
+      const k = lum * (0.58 + 0.42 * seam) * (0.96 + this.rng() * 0.08);
+      arr[i * 3] = _c.r * k;
+      arr[i * 3 + 1] = _c.g * k;
+      arr[i * 3 + 2] = _c.b * k;
+    }
+    geo.setAttribute('color', new THREE.BufferAttribute(arr, 3));
+    return geo;
+  }
+
   _buildTent(x, z, s) {
     const W = 2.7 * s, H = 1.85 * s, D = 3.1 * s;
     // opening faces the fire
@@ -263,7 +292,8 @@ export class Camp {
     const tm = composeMat(x, base + 0.02, z, 0, yaw, 0);
 
     const cloth = this._tentCloth(W, H, D);
-    this._cloth.push(this._tinted(cloth, tm, '#98613c', 0.07));
+    this._tentSeed = (this._tentSeed ?? 0) + 1;
+    this._cloth.push(this._paintTentCloth(cloth, tm, this._tentSeed));
 
     // dark back closure (reads as shadowed interior)
     const shape = new THREE.Shape();
@@ -298,6 +328,30 @@ export class Camp {
 
   /* -------------------------- crates & props -------------------------- */
 
+  /** Horizontal plank bands with per-plank luminance + subtle grain waves. */
+  _paintPlanks(geo, matrix, color) {
+    const posA = geo.attributes.position;
+    const n = posA.count;
+    const arr = new Float32Array(n * 3);
+    _c.set(color);
+    const bandK = [];
+    for (let b = 0; b < 3; b++) bandK.push(0.52 + this.rng() * 0.62);
+    for (let i = 0; i < n; i++) {
+      const t = (posA.getY(i) + 0.5) * 3; // 0..3 across three planks
+      const band = Math.min(2, Math.max(0, Math.round(t - 0.5)));
+      const grain = 0.95 + 0.05 * Math.sin(posA.getX(i) * 31 + posA.getZ(i) * 17 + band * 9);
+      let k = bandK[band] * grain * (1 + (this.rng() * 2 - 1) * 0.04);
+      // recessed dark gap where planks meet
+      if (Math.abs(t - 1) < 0.02 || Math.abs(t - 2) < 0.02) k *= 0.45;
+      arr[i * 3] = Math.min(1, _c.r * k * 1.04);
+      arr[i * 3 + 1] = Math.min(1, _c.g * k);
+      arr[i * 3 + 2] = Math.min(1, _c.b * k * 0.9);
+    }
+    geo.setAttribute('color', new THREE.BufferAttribute(arr, 3));
+    geo.applyMatrix4(matrix);
+    return geo;
+  }
+
   _buildCrates(x, z) {
     const rng = this.rng;
     const crates = [
@@ -309,7 +363,8 @@ export class Camp {
       const cx = x + c.dx, cz = z + c.dz;
       const y = this._groundY(cx, cz) + (c.stack ?? 0) + c.s / 2 - 0.02;
       const m = composeMat(cx, y, cz, 0, c.yaw, 0, c.s);
-      this._matte.push(this._tinted(new THREE.BoxGeometry(1, 1, 1), m.clone(), '#77603f', 0.09));
+      this._matte.push(this._paintPlanks(
+        new THREE.BoxGeometry(1, 1, 1, 1, 6, 1), m.clone(), '#5f4526'));
       // corner framing posts, slightly proud
       for (const [px, pz] of [[-0.5, -0.5], [0.5, -0.5], [-0.5, 0.5], [0.5, 0.5]]) {
         const post = new THREE.BoxGeometry(0.1, 1.06, 0.1).translate(px, 0, pz);
@@ -320,8 +375,8 @@ export class Camp {
     const sx = x - 0.55, sz = z + 0.5;
     this._matte.push(this._tinted(
       new THREE.SphereGeometry(0.34, 10, 8),
-      composeMat(sx, this._groundY(sx, sz) + 0.2, sz, 0, rng() * 2, 0.15, 1, 0.62, 0.85),
-      '#6d5a3e', 0.1,
+      composeMat(sx, this._groundY(sx, sz) + 0.17, sz, 0, rng() * 2, 0.15, 1, 0.52, 0.85),
+      '#57452b', 0.16,
     ));
   }
 
@@ -339,7 +394,7 @@ export class Camp {
     this._metal.push(this._tinted(blade, bm, '#454f58', 0.06));
     // leather lashing right under the blade, flush with the shaft
     const wrap = new THREE.CylinderGeometry(0.032, 0.028, 0.24, 7).translate(0, -0.12, 0);
-    this._matte.push(this._tinted(wrap, bm.clone(), '#53301f', 0.08));
+    this._small.push(this._tinted(wrap, bm.clone(), '#53301f', 0.08));
   }
 
   _buildStuckSpear(x, z) {
@@ -372,13 +427,13 @@ export class Camp {
     // machine-part trophies hanging from the crossbar
     const midX = x - px * 0.42, midZ = z - pz * 0.42;
     const midTopY = this._groundY(midX, midZ) + h;
-    this._tube(this._matte, [midX, midTopY, midZ], [midX, midTopY - 0.3, midZ], 0.006, 0.006, '#2c2118');
+    this._tube(this._small, [midX, midTopY, midZ], [midX, midTopY - 0.3, midZ], 0.006, 0.006, '#2c2118');
     const plate = new THREE.BoxGeometry(0.2, 0.3, 0.035);
     this._metal.push(this._tinted(plate, composeMat(midX, midTopY - 0.45, midZ, 0.1, yawToFire + 0.4, 0.05), '#93a4b0', 0.07));
 
     const lx = x + px * 0.45, lz = z + pz * 0.45;
     const lTopY = this._groundY(lx, lz) + h;
-    this._tube(this._matte, [lx, lTopY, lz], [lx, lTopY - 0.26, lz], 0.006, 0.006, '#2c2118');
+    this._tube(this._small, [lx, lTopY, lz], [lx, lTopY - 0.26, lz], 0.006, 0.006, '#2c2118');
     // glowing watcher-eye lens trophy — own emissive material, pulsed in update
     this._lensMat = new THREE.MeshStandardMaterial({
       color: '#0a2630', emissive: '#38d9f7', emissiveIntensity: 1.6,
@@ -399,7 +454,7 @@ export class Camp {
       const row = i < 3 ? 0 : 1;
       const off = (i % 3) - 1 + (row ? 0.5 : 0) - (row && i === 4 ? 1 : 0);
       const ox = Math.cos(yaw) * off * 0.17, oz = Math.sin(yaw) * off * 0.17;
-      this._tube(this._matte,
+      this._tube(this._small,
         [x + ox - Math.sin(yaw) * 0.4, y + 0.08 + row * 0.15, z + oz + Math.cos(yaw) * 0.4],
         [x + ox + Math.sin(yaw) * 0.4, y + 0.08 + row * 0.15, z + oz - Math.cos(yaw) * 0.4],
         0.075, 0.065, i % 2 ? '#54402b' : '#4a3826', 0.12);
@@ -422,18 +477,23 @@ export class Camp {
       this.group.add(mesh);
       return mesh;
     };
-    make(this._matte, new THREE.MeshStandardMaterial({
+    const matteMat = new THREE.MeshStandardMaterial({
       vertexColors: true, roughness: 0.95, metalness: 0,
-    }));
-    make(this._metal, new THREE.MeshStandardMaterial({
+    });
+    make(this._matte, matteMat);
+    // small clutter + all-metal trinkets are too small to pay shadow draws for
+    const small = make(this._small, matteMat);
+    if (small) small.castShadow = false;
+    const metal = make(this._metal, new THREE.MeshStandardMaterial({
       vertexColors: true, roughness: 0.35, metalness: 0.85,
     }));
+    if (metal) metal.castShadow = false;
     make(this._cloth, new THREE.MeshStandardMaterial({
       vertexColors: true, roughness: 0.92, metalness: 0, side: THREE.DoubleSide,
       // faked warm bounce so shaded hide doesn't go cold gray at golden hour
       emissive: '#3d2010', emissiveIntensity: 0.45,
     }));
-    this._matte = this._metal = this._cloth = null;
+    this._matte = this._metal = this._cloth = this._small = null;
   }
 
   /* -------------------------- ground & glow --------------------------- */
@@ -512,10 +572,11 @@ export class Camp {
     for (let i = 0; i < N; i++) {
       seed[i] = rng();
       const glow = i < 10; // a few soft glow sprites at the base
-      size[i] = glow ? 0.3 + rng() * 0.18 : 0.07 + rng() * 0.13;
+      // ~2x sprite size so the fire reads across the camp even in daylight
+      size[i] = glow ? 0.55 + rng() * 0.35 : 0.15 + rng() * 0.25;
       rad[i] = glow ? 0.08 + rng() * 0.1 : 0.05 + rng() * 0.22;
       speed[i] = glow ? 0.55 + rng() * 0.3 : 0.8 + rng() * 0.75;
-      alpha[i] = glow ? 0.16 : 0.55 + rng() * 0.3;
+      alpha[i] = glow ? 0.2 : 0.62 + rng() * 0.3;
     }
     const geo = new THREE.BufferGeometry();
     geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(N * 3), 3));
@@ -564,8 +625,11 @@ export class Camp {
           core *= core;
           vec3 col = mix(vec3(1.0, 0.82, 0.4), vec3(1.0, 0.44, 0.10), smoothstep(0.05, 0.6, vLife));
           col = mix(col, vec3(0.7, 0.14, 0.03), smoothstep(0.55, 1.0, vLife));
+          // white-hot heart early in life so flames punch through daylight
+          float hot = core * (1.0 - smoothstep(0.0, 0.45, vLife));
+          col = mix(col, vec3(1.0, 0.96, 0.8), hot * 0.85);
           float a = core * (1.0 - vLife) * smoothstep(0.0, 0.07, vLife) * vAlpha;
-          gl_FragColor = vec4(col * a * 1.25, a);
+          gl_FragColor = vec4(col * a * 1.55, a);
         }
       `,
     });
@@ -741,7 +805,67 @@ export class Camp {
   /* ------------------------------ npc ---------------------------------- */
 
   _placeNpc() {
-    const npc = this.ctx.assets.models.npc.root.clone();
+    // The raw NPC model is dozens of submeshes (a major draw-call cost, twice
+    // over with the shadow pass). Bake world transforms and merge everything
+    // sharing a material so the whole character renders in <=10 draws.
+    const src = this.ctx.assets.models.npc.root.clone();
+    src.updateMatrixWorld(true);
+
+    // meshopt models quantize attributes (Int16/Uint8, normalized) with array
+    // types that vary per primitive; expand to plain Float32 so transforms
+    // bake losslessly and mergeGeometries accepts them
+    const toFloat = (attr) => {
+      const out = new Float32Array(attr.count * attr.itemSize);
+      for (let i = 0; i < attr.count; i++) {
+        for (let k = 0; k < attr.itemSize; k++) {
+          out[i * attr.itemSize + k] = attr.getComponent(i, k); // denormalizes
+        }
+      }
+      return new THREE.BufferAttribute(out, attr.itemSize);
+    };
+
+    const byMat = new Map(); // material.uuid -> { material, geos }
+    src.traverse((o) => {
+      if (!o.isMesh || !o.geometry || !o.material || Array.isArray(o.material)) return;
+      let bucket = byMat.get(o.material.uuid);
+      if (!bucket) {
+        bucket = { material: o.material, geos: [] };
+        byMat.set(o.material.uuid, bucket);
+      }
+      const flatSrc = o.geometry.index ? o.geometry.toNonIndexed() : o.geometry;
+      const g = new THREE.BufferGeometry();
+      for (const name of ['position', 'normal', 'uv']) {
+        const a = flatSrc.getAttribute(name);
+        if (a) g.setAttribute(name, toFloat(a));
+      }
+      if (flatSrc !== o.geometry) flatSrc.dispose();
+      g.applyMatrix4(o.matrixWorld); // bake into npc-root space
+      bucket.geos.push(g);
+    });
+
+    const npc = new THREE.Group();
+    npc.name = 'camp-npc';
+    for (const { material, geos } of byMat.values()) {
+      // merge on the shared attribute set so all primitives line up
+      let names = null;
+      for (const g of geos) {
+        const ks = Object.keys(g.attributes);
+        names = names ? names.filter((n) => ks.includes(n)) : ks;
+      }
+      for (const g of geos) {
+        for (const name of Object.keys(g.attributes)) {
+          if (!names.includes(name)) g.deleteAttribute(name);
+        }
+      }
+      const merged = mergeGeometries(geos, false);
+      for (const g of geos) g.dispose();
+      if (!merged) continue;
+      const mesh = new THREE.Mesh(merged, material);
+      mesh.castShadow = true;
+      mesh.receiveShadow = true;
+      npc.add(mesh);
+    }
+
     const x = 23.0, z = 31.9;
     // standing against the seat log behind, facing the fire
     npc.position.set(x, this._groundY(x, z) - 0.03, z);

@@ -37,9 +37,13 @@ const shockMat = new THREE.SpriteMaterial({
   map: glowTex, blending: THREE.AdditiveBlending, depthWrite: false, color: 0x7fd4ff,
 });
 
-const shaftMat = new THREE.MeshStandardMaterial({ color: 0x59452c, roughness: 0.85 });
+// pale ash shaft so arrows read against dark machine plating at combat range
+const shaftMat = new THREE.MeshStandardMaterial({ color: 0xc9a86b, roughness: 0.72 });
 const headMats = {
-  hunter: new THREE.MeshStandardMaterial({ color: 0xaab4bc, metalness: 0.9, roughness: 0.35 }),
+  hunter: new THREE.MeshStandardMaterial({
+    color: 0xc4ced6, metalness: 0.9, roughness: 0.3,
+    emissive: 0xd8ecf4, emissiveIntensity: 0.85,
+  }),
   fire: new THREE.MeshStandardMaterial({
     color: 0x7a4020, metalness: 0.6, roughness: 0.4,
     emissive: 0xff5a1a, emissiveIntensity: 1.6,
@@ -50,23 +54,37 @@ const headMats = {
   }),
 };
 const fletchMats = {
-  hunter: new THREE.MeshStandardMaterial({ color: 0xe9dfc4, roughness: 0.9 }),
-  fire: new THREE.MeshStandardMaterial({ color: 0xd8622a, roughness: 0.9 }),
-  shock: new THREE.MeshStandardMaterial({ color: 0x5ec0ea, roughness: 0.9 }),
+  hunter: new THREE.MeshStandardMaterial({
+    color: 0xf7ecd0, roughness: 0.85, emissive: 0x8a7a4e, emissiveIntensity: 0.45,
+  }),
+  fire: new THREE.MeshStandardMaterial({
+    color: 0xff8a3a, roughness: 0.85, emissive: 0xff5a14, emissiveIntensity: 0.8,
+  }),
+  shock: new THREE.MeshStandardMaterial({
+    color: 0x8fd8ff, roughness: 0.85, emissive: 0x2ea8e8, emissiveIntensity: 0.8,
+  }),
 };
 
 /* ---------------------------- shared geometries --------------------------- */
 
 const shaftGeo = new THREE.CylinderGeometry(0.0048, 0.0048, ARROW_LEN - 0.05, 5, 1)
   .rotateX(Math.PI / 2).translate(0, 0, (ARROW_LEN - 0.05) / 2);
-const headGeo = new THREE.ConeGeometry(0.012, 0.06, 6)
-  .rotateX(Math.PI / 2).translate(0, 0, ARROW_LEN - 0.03);
+// head + a small tail-tip nub merged into one mesh: the per-type (emissive)
+// head material lights BOTH ends of a stuck arrow at zero extra draw calls.
+const headGeo = mergeGeometries([
+  new THREE.ConeGeometry(0.012, 0.06, 6)
+    .rotateX(Math.PI / 2).translate(0, 0, ARROW_LEN - 0.03),
+  // tail nub is what the shooter sees of their own stuck arrow (dead-on),
+  // so it is deliberately chunky
+  new THREE.CylinderGeometry(0.016, 0.011, 0.05, 6)
+    .rotateX(Math.PI / 2).translate(0, 0, 0.025),
+]);
 
 const finsGeo = (() => {
   const parts = [];
   for (let i = 0; i < 3; i++) {
-    const fin = new THREE.BoxGeometry(0.0022, 0.03, 0.085)
-      .translate(0, 0.019, 0.085)
+    const fin = new THREE.BoxGeometry(0.0026, 0.046, 0.115)
+      .translate(0, 0.027, 0.078)
       .rotateZ((i / 3) * Math.PI * 2);
     parts.push(fin);
   }
@@ -149,6 +167,7 @@ export class ArrowPool {
       const a = makeArrow();
       a.group.visible = false;
       a.mode = 'idle'; // idle | fly | stuck
+      a.fresh = false;
       a.pos = new THREE.Vector3(); // tail position
       a.vel = new THREE.Vector3();
       a.type = 'hunter';
@@ -181,6 +200,7 @@ export class ArrowPool {
     a.group.visible = true;
     a.mode = 'fly';
     a.age = 0;
+    a.fresh = true; // first collision segment sweeps from the tail, not the tip
     a.type = type;
     a.baseDamage = baseDamage;
     a.draw = draw;
@@ -190,6 +210,32 @@ export class ArrowPool {
     _q.setFromUnitVectors(_Z, dir);
     a.group.quaternion.copy(_q);
     a.group.position.copy(a.pos);
+    return a;
+  }
+
+  /**
+   * Plant an already-resolved hit (point-blank shots the flight sweep can't
+   * see because the nock spawns inside the target). Sticks an arrow at
+   * `point` along `dir` and parents it to the machine so it rides along.
+   */
+  stickImmediate(point, dir, type, machine) {
+    const a = this._alloc();
+    if (a.group.parent !== this.ctx.scene) {
+      a.group.parent?.remove(a.group);
+      this.ctx.scene.add(a.group);
+    }
+    a.group.scale.setScalar(1);
+    a.group.visible = true;
+    a.mode = 'stuck';
+    a.age = 0;
+    a.type = type;
+    setArrowType(a, type);
+    a.vel.set(0, 0, 0);
+    a.pos.copy(point).addScaledVector(dir, -(ARROW_LEN - 0.12));
+    a.group.position.copy(a.pos);
+    _q.setFromUnitVectors(_Z, dir);
+    a.group.quaternion.copy(_q);
+    if (machine?.root) machine.root.attach(a.group);
     return a;
   }
 
@@ -232,7 +278,10 @@ export class ArrowPool {
     if (dt <= 0) return;
 
     _dir.copy(a.vel).normalize();
-    _oldTip.copy(a.pos).addScaledVector(_dir, ARROW_LEN);
+    _oldTip.copy(a.pos);
+    // after the first step the tail has already swept the tip's start point
+    if (!a.fresh) _oldTip.addScaledVector(_dir, ARROW_LEN);
+    a.fresh = false;
 
     a.vel.y -= 9.8 * dt;
     a.vel.multiplyScalar(Math.max(0, 1 - 0.05 * dt)); // slight drag

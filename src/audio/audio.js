@@ -19,7 +19,7 @@ export class GameAudio {
     this._voicesStarted = 0;
     this._counts = {
       steps: 0, birds: 0, plucks: 0, shots: 0, hits: 0, stings: 0,
-      attacks: 0, explosions: 0, radar: 0, chimes: 0,
+      attacks: 0, explosions: 0, radar: 0, chimes: 0, machineSteps: 0,
     };
     this._stridePhase = 0.35;
     this._gust = 0;
@@ -40,6 +40,8 @@ export class GameAudio {
     this._pan = 0;
     this._att = 1;
     this._t = 0;
+    this._prevMed = null;         // last seen medicine count (chime on decrease)
+    this._attackCd = new Map();   // machine-attack kind -> last one-shot ms
     this._testQueue = null;
     this._testT = 0;
 
@@ -88,6 +90,15 @@ export class GameAudio {
     this._buildWind();
     this._buildMusic();
     this._buildCreak();
+
+    // update() stops running outside 'playing' (pause/death/victory screens),
+    // which would freeze the creak loop at a nonzero gain; police it here.
+    this._stateWatch = setInterval(() => {
+      if (this.ctx.state !== 'playing'
+        && (this._creakLevel > 0 || this.creakGain?.gain.value > 0)) {
+        this._killCreak();
+      }
+    }, 200);
 
     if (this.ctx.params?.get?.('audiotest')) this._buildTestQueue();
   }
@@ -222,6 +233,14 @@ export class GameAudio {
     this.creakGain.gain.value = 0;
     this.creakOsc.connect(lp).connect(this.creakGain).connect(this.sfxBus);
     this.creakOsc.start();
+  }
+
+  /** Hard-silence the bow-creak loop (death/pause: update() stops driving it). */
+  _killCreak() {
+    this._creakLevel = 0;
+    if (!this.creakGain) return;
+    try { this.creakGain.gain.cancelScheduledValues(this.ac.currentTime); } catch {}
+    this.creakGain.gain.value = 0;
   }
 
   /* ------------------------------- helpers ------------------------------- */
@@ -502,6 +521,32 @@ export class GameAudio {
     this._env(eg2.gain, t0, 0.14, 0.004, 0.16);
     const o = this._osc('sine', 92, t0, 0.2, eg2);
     o.frequency.exponentialRampToValueAtTime(44, t0 + 0.17);
+  }
+
+  /**
+   * Heavy-machine footfall: short quiet sub thud, steeply distance-scaled.
+   * Deliberately NOT a roar/boom and never drives combat tension — a calm
+   * thunderjaw stomping on patrol should read as distant weight, not threat.
+   */
+  _machineStep(pan, att, big) {
+    // steepen falloff beyond the normal 1/(1+0.03d) so far steps stay subtle
+    const a = att * att;
+    if (a < 0.015) return;
+    const g = this._voice(0.45, 1, pan, this.sfxBus);
+    if (!g) return;
+    this._counts.machineSteps++;
+    const t0 = this._now();
+    const vol = (big ? 0.2 : 0.13) * a;
+    const lp = this._lp(170);
+    const eg = this.ac.createGain();
+    lp.connect(eg).connect(g);
+    this._env(eg.gain, t0, vol, 0.006, 0.16);
+    this._noise(t0, 0.2, lp);
+    const eg2 = this.ac.createGain();
+    eg2.connect(g);
+    this._env(eg2.gain, t0, vol * 1.1, 0.006, 0.2);
+    const o = this._osc('sine', big ? 68 : 82, t0, 0.26, eg2);
+    o.frequency.exponentialRampToValueAtTime(big ? 28 : 38, t0 + 0.2);
   }
 
   _sting(pan, att) {
@@ -820,10 +865,23 @@ export class GameAudio {
     ev.on('machine-attack', armed(({ machine, kind } = {}) => {
       if (machine?.position) this._spatial(machine.position);
       else { this._pan = 0; this._att = 0.7; }
-      const stompy = /stomp|slam|charge|quake|shock/i.test(kind || '');
       const big = machine?.kind === 'thunderjaw' || machine?.kind === 'behemoth';
-      if (stompy || (big && !kind)) this._boom(this._pan, Math.max(this._att, 0.4));
-      else this._roar(this._pan, Math.max(this._att, 0.4), big);
+      // Locomotion footfalls are ambience, not aggression: quiet low thud,
+      // and never refresh the combat-tension timer.
+      if (kind === 'step') {
+        this._machineStep(this._pan, this._att, big);
+        return;
+      }
+      // Per-kind cooldown so burst emitters (disc volleys, retriggered
+      // attacks) can't stack roars; tension still refreshes below.
+      const key = kind || 'attack';
+      const nowMs = performance.now();
+      if (nowMs - (this._attackCd.get(key) ?? -1e9) >= 800) {
+        this._attackCd.set(key, nowMs);
+        const stompy = /stomp|slam|charge|quake|shock/i.test(kind || '');
+        if (stompy || (big && !kind)) this._boom(this._pan, Math.max(this._att, 0.4));
+        else this._roar(this._pan, Math.max(this._att, 0.4), big);
+      }
       this._lastTenseT = this._t;
     }));
 
@@ -837,9 +895,17 @@ export class GameAudio {
     }));
 
     ev.on('player-hurt', armed(() => this._hurt()));
-    ev.on('medicine-used', armed(() => this._chime()));
-    ev.on('player-died', armed(() => this._droneFall()));
-    ev.on('player-respawn', armed(() => this._chime()));
+    // Heal chime is driven by an actual medicine DECREASE observed in
+    // update() — the 'medicine-used' event also fires for pouch refills.
+    ev.on('player-died', armed(() => {
+      this._killCreak(); // update() stops on the death screen
+      this._droneFall();
+    }));
+    ev.on('player-respawn', armed(() => {
+      // resync so the respawn medicine reset never reads as a "use"
+      this._prevMed = this.ctx.player?.medicine ?? null;
+      this._chime();
+    }));
     ev.on('player-dodge', armed(() => this._dodgeWhoosh()));
     ev.on('victory', armed(() => this._victory()));
     ev.on('focus-pulse', armed(() => this._focus()));
@@ -901,12 +967,14 @@ export class GameAudio {
     }
     this.rustleGain.gain.value = rustle;
 
-    // --- footsteps from locomotion cadence (half stride cycle per step)
+    // --- footsteps synced to the animator gait (same formula, one footfall
+    //     per half stride cycle): stepLen = clamp(0.5+0.3*v, 0.6, 1.92),
+    //     footfalls/s = v / stepLen
     if (p && playing) {
       const sp = p.moveSpeed;
       if (sp > 0.6 && !p.dodging && p.health > 0) {
-        const strideLen = clamp(0.8 + sp * 0.45, 1.2, 4.6);
-        this._stridePhase += (sp / strideLen) * dt;
+        const stepLen = clamp(0.5 + 0.3 * sp, 0.6, 1.92);
+        this._stridePhase += (sp / (2 * stepLen)) * dt;
         if (this._stridePhase >= 0.5) {
           this._stridePhase -= 0.5;
           this._footstep(clamp(sp / 8.2, 0, 1), p.crouching, p.inTallGrass);
@@ -916,19 +984,35 @@ export class GameAudio {
       }
     }
 
-    // --- bow creak follows drawStrength (lazy: combat builds after audio)
-    const draw = ctx.combat?.drawStrength ?? 0;
-    let creakTarget = 0;
-    if (draw > 0.03) {
-      const rising = draw > this._prevDraw + 0.0001;
-      creakTarget = rising ? 0.02 + draw * 0.05 : 0.005 + draw * 0.008;
+    // --- heal chime only when medicine is actually consumed (count drops);
+    //     pouch pickups/refills raise the count and must stay silent
+    if (p) {
+      const med = p.medicine ?? 0;
+      if (this._prevMed !== null && med < this._prevMed && p.health > 0) {
+        this._chime();
+      }
+      this._prevMed = med;
     }
-    this._creakLevel += (creakTarget - this._creakLevel) * Math.min(1, dt * 14);
-    this.creakGain.gain.value = this._creakLevel;
-    // stick-slip flutter makes the saw read as wood under strain
-    this.creakOsc.frequency.value =
-      46 + draw * 52 + Math.sin(t * 37) * 2.5 * draw;
-    this._prevDraw = draw;
+
+    // --- bow creak follows drawStrength (lazy: combat builds after audio);
+    //     hard-muted outside 'playing' so it can't drone over death/pause
+    if (ctx.state !== 'playing' || (p && p.health <= 0)) {
+      this._killCreak();
+      this._prevDraw = 0;
+    } else {
+      const draw = ctx.combat?.drawStrength ?? 0;
+      let creakTarget = 0;
+      if (draw > 0.03) {
+        const rising = draw > this._prevDraw + 0.0001;
+        creakTarget = rising ? 0.02 + draw * 0.05 : 0.005 + draw * 0.008;
+      }
+      this._creakLevel += (creakTarget - this._creakLevel) * Math.min(1, dt * 14);
+      this.creakGain.gain.value = this._creakLevel;
+      // stick-slip flutter makes the saw read as wood under strain
+      this.creakOsc.frequency.value =
+        46 + draw * 52 + Math.sin(t * 37) * 2.5 * draw;
+      this._prevDraw = draw;
+    }
 
     // --- machine polling (throttled): combat tension + nearest idle watcher
     this._pollT -= dt;

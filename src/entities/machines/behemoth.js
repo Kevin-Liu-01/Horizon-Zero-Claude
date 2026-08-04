@@ -42,6 +42,7 @@ export class Behemoth extends Machine {
 
     this._gait = Math.random() * Math.PI * 2;
     this._slamCd = 3;
+    this._dustClock = 0;
     this._chargeDir = new THREE.Vector3();
   }
 
@@ -73,8 +74,8 @@ export class Behemoth extends Machine {
       const runT = THREE.MathUtils.clamp(dist / 13, 0.7, 2.4);
       return {
         kind: 'charge',
-        windup: 0.7, strike: runT, recover: 1.1, cooldown: 4.5,
-        onWindup: () => { this._chargeHit = false; },
+        windup: 0.85, strike: runT, recover: 1.1, cooldown: 4.5,
+        onWindup: () => { this._chargeHit = false; this._dustClock = 0; },
         onStrike: () => {
           const p = this.ctx.player;
           if (p) this.heading = Math.atan2(
@@ -83,8 +84,20 @@ export class Behemoth extends Machine {
         },
         onUpdate: (a, dt) => {
           if (a.phase === 'windup') {
-            // paw the ground: head dips twice
-            this.body.rotation.x = Math.abs(Math.sin(a.phaseT * Math.PI * 2)) * 0.14;
+            // telegraph: rear back, eyes flare, hooves scrape up dust
+            const paw = Math.abs(Math.sin(a.phaseT * Math.PI * 2.5)) * 0.09;
+            this.body.rotation.x = -0.2 * Math.sin(a.phaseT * Math.PI) + paw;
+            this._eyeFlare = 1.6;
+            this._dustClock -= dt;
+            if (this._dustClock <= 0 && !this.lowLOD) {
+              this._dustClock = 0.1;
+              const fx = Math.sin(this.heading), fz = Math.cos(this.heading);
+              const side = (Math.random() - 0.5) * this.bodyRadius * 1.6;
+              const px = this.position.x + fx * this.bodyRadius * 0.9 - fz * side;
+              const pz = this.position.z + fz * this.bodyRadius * 0.9 + fx * side;
+              this._dustPuff(px, this.ctx.terrain.getHeight(px, pz) + 0.5, pz,
+                1.1 + Math.random() * 0.7);
+            }
           } else if (a.phase === 'strike') {
             const p = this.ctx.player;
             if (p) {
@@ -105,9 +118,10 @@ export class Behemoth extends Machine {
               const dd = Math.hypot(
                 p.position.x - this.position.x, p.position.z - this.position.z,
               );
-              if (dd < this.bodyRadius + 1.6) {
+              // stop the run BEFORE embedding in the player, then hit
+              if (dd < this.bodyRadius + 2) {
                 this._chargeHit = true;
-                this.damagePlayer(30, this.bodyRadius + 2);
+                this.damagePlayer(30, this.bodyRadius + 2.6);
                 this.knockbackPlayer(14);
                 a.t = a.windup + a.strike; // stop the run on impact
               }
@@ -122,8 +136,12 @@ export class Behemoth extends Machine {
     return null;
   }
 
-  animate(dt, t) {
+  /** Ticked from Machine.update() — runs even under lowLOD/stun. */
+  tickCooldowns(dt) {
     this._slamCd -= dt;
+  }
+
+  animate(dt, t) {
     if (this.state === 'dead') return;
     const speed = this._speed;
     const stride = 2.4;

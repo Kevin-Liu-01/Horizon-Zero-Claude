@@ -14,15 +14,19 @@ const MIN_LOOSE = 0.15;      // below this, release cancels
 const FOV_HIP = 55;
 const FOV_AIM = 44;
 
+// saturated hot-metal oranges; the spark pool normal-blends with a white-hot
+// core so these hues hold up against bright sky instead of washing out
 const SPARK_COLORS = [
-  [1.0, 0.86, 0.55], [1.0, 0.70, 0.32], [1.0, 0.95, 0.80], [0.95, 0.55, 0.22],
+  [1.0, 0.55, 0.08], [1.0, 0.40, 0.03], [1.0, 0.68, 0.16], [0.95, 0.28, 0.01],
 ];
-const SHOCK_COLORS = [[0.45, 0.85, 1.0], [0.7, 0.95, 1.0], [0.25, 0.6, 1.0]];
-const EMBER_COLORS = [[1.0, 0.55, 0.15], [1.0, 0.35, 0.08], [1.0, 0.75, 0.3]];
+const SHOCK_COLORS = [[0.30, 0.80, 1.0], [0.55, 0.90, 1.0], [0.15, 0.55, 1.0]];
+const EMBER_COLORS = [[1.0, 0.50, 0.10], [1.0, 0.32, 0.05], [1.0, 0.70, 0.22]];
 const DIRT_COLORS = [[0.42, 0.34, 0.22], [0.52, 0.43, 0.28], [0.35, 0.28, 0.18]];
 
 const _zero = new THREE.Vector3();
 const _up = new THREE.Vector3(0, 1, 0);
+const _chest = new THREE.Vector3();
+const _pbDir = new THREE.Vector3();
 const _camDir = new THREE.Vector3();
 const _aimDir = new THREE.Vector3();
 const _neg = new THREE.Vector3();
@@ -38,6 +42,8 @@ const _m = new THREE.Matrix4();
 const _ray = new THREE.Raycaster();
 
 const AIM_RADII = { watcher: 2.6, sawtooth: 3.6, behemoth: 5.2, thunderjaw: 10 };
+const AIM_CY = { watcher: 1.0, sawtooth: 1.2, behemoth: 2.2, thunderjaw: 3.6 };
+const AIM_MAGNET = 1.15; // soft-lock: max miss distance (m) the assist absorbs
 
 export class Combat {
   constructor(ctx) {
@@ -50,7 +56,10 @@ export class Combat {
     this.aimPoint = new THREE.Vector3();       // camera-ray world hit (crosshair-true)
 
     // --- FX pools (GPU-integrated instanced quads; 3 draw calls total)
-    this.sparks = new ParticlePool(ctx.scene, { max: 320, gravity: 13, drag: 2.4, opacity: 1 });
+    this.sparks = new ParticlePool(ctx.scene, {
+      max: 320, gravity: 13, drag: 2.4, opacity: 1,
+      blending: THREE.NormalBlending, core: 0.35,
+    });
     this.trail = new ParticlePool(ctx.scene, { max: 512, gravity: 0.4, drag: 4.5, opacity: 0.55 });
     this.dirt = new ParticlePool(ctx.scene, {
       max: 256, gravity: 6.5, drag: 1.7, blending: THREE.NormalBlending, opacity: 0.85,
@@ -205,6 +214,7 @@ export class Combat {
     }
 
     const machines = ctx.machines?.list;
+    let hitMachine = false;
     if (machines) {
       for (const m of machines) {
         if (m.alive === false || !m.root) continue;
@@ -219,7 +229,40 @@ export class Combat {
         _ray.near = 0.1;
         _ray.far = best;
         const hits = _ray.intersectObject(m.root, true);
-        if (hits.length && hits[0].distance < best) best = hits[0].distance;
+        if (hits.length && hits[0].distance < best) { best = hits[0].distance; hitMachine = true; }
+      }
+
+      // soft-lock magnetism: slim machines (watcher neck gaps etc.) let the
+      // exact center ray slip through; if it hit nothing, snap to the machine
+      // whose body center passes within AIM_MAGNET of the crosshair ray.
+      if (!hitMachine) {
+        let bestM = null, bestOff = AIM_MAGNET;
+        for (const m of machines) {
+          if (m.alive === false || !m.root) continue;
+          _oc.copy(m.position);
+          _oc.y += AIM_CY[m.kind] ?? 1.2;
+          _oc.sub(cam.position);
+          const tAlong = _oc.dot(_camDir);
+          if (tAlong < 2 || tAlong > best + 2) continue;
+          _p.copy(cam.position).addScaledVector(_camDir, tAlong);
+          _oc.add(cam.position); // back to world center
+          const off = _p.distanceTo(_oc);
+          if (off < bestOff) { bestOff = off; bestM = m; }
+        }
+        if (bestM) {
+          _oc.copy(bestM.position);
+          _oc.y += AIM_CY[bestM.kind] ?? 1.2;
+          _p.subVectors(_oc, cam.position).normalize();
+          _ray.camera = cam;
+          _ray.set(cam.position, _p);
+          _ray.near = 0.1;
+          _ray.far = best + (AIM_RADII[bestM.kind] ?? 2.5);
+          const hits = _ray.intersectObject(bestM.root, true);
+          if (hits.length) {
+            this.aimPoint.copy(hits[0].point);
+            return;
+          }
+        }
       }
     }
 
@@ -233,33 +276,92 @@ export class Combat {
     const type = this.arrowType;
     if (!this._hasAmmo(type)) return;
     const ds = this.drawStrength;
+    const baseDamage = type === 'hunter' ? 30 * ds : type === 'fire' ? 18 : 16;
+
+    // --- point-blank guarantee: machines park in melee range, where the nock
+    // spawns inside/behind their mesh and a single-sided raycast exits through
+    // backfaces without ever hitting. Sweep chest -> aim direction BEFORE
+    // spawning; a machine surface within ~2.6m becomes an immediate hit.
+    if (this._pointBlankHit(type, baseDamage, ds)) return;
 
     const speed = 28 + ds * 34;
     this.bow.getNockWorld(ds, _spawn);
     _fireDir.subVectors(this.aimPoint, _spawn);
-    // crosshair-true: compensate ballistic drop over the flight time
+    // crosshair-true: compensate ballistic drop over the flight time.
+    // tof capped so distant terrain aim points don't lob the arrow skyward.
     const dist = _fireDir.length();
     if (dist > 1e-3) {
-      const tof = dist / speed;
+      const tof = Math.min(dist / speed, 1.1);
       _fireDir.y += 0.5 * 9.8 * tof * tof * (1 + 0.05 * tof); // + slight drag allowance
     }
     ctx.camera.getWorldDirection(_camDir);
     if (_fireDir.lengthSq() < 1e-4 || _fireDir.dot(_camDir) <= 0) _fireDir.copy(_camDir);
     _fireDir.normalize();
 
-    const baseDamage = type === 'hunter' ? 30 * ds : type === 'fire' ? 18 : 16;
     this.arrows.fire(_spawn, _fireDir, speed, type, baseDamage, ds);
+    this._afterLoose(type, ds);
+  }
 
+  _afterLoose(type, ds) {
     if (type !== 'hunter') this.arrowCounts[type] -= 1;
-
     // tiny camera kick upward
-    const p = ctx.player;
+    const p = this.ctx.player;
     if (p) {
       p.camPitch -= 0.006 + 0.012 * ds;
       p.camYaw += (Math.random() - 0.5) * 0.004;
     }
+    this.ctx.events.emit('arrow-fired', { type, drawStrength: ds });
+  }
 
-    ctx.events.emit('arrow-fired', { type, drawStrength: ds });
+  /**
+   * Segment-test chest -> aim point against nearby machines; if a surface is
+   * within PB_RANGE, plant a stuck arrow there and apply the hit immediately.
+   * Returns true when the shot was consumed.
+   */
+  _pointBlankHit(type, baseDamage, ds) {
+    const ctx = this.ctx;
+    const player = ctx.player;
+    const machines = ctx.machines?.list;
+    if (!player || !machines) return false;
+
+    const PB_RANGE = 2.6;
+    _chest.copy(player.position);
+    _chest.y += 1.35;
+    _pbDir.subVectors(this.aimPoint, _chest);
+    if (_pbDir.lengthSq() < 1e-6) ctx.camera.getWorldDirection(_pbDir);
+    _pbDir.normalize();
+
+    let bestD = PB_RANGE, bestHit = null, bestM = null;
+    for (const m of machines) {
+      if (m.alive === false || !m.root) continue;
+      const r = AIM_RADII[m.kind] ?? 2.5;
+      if (m.position.distanceTo(_chest) > r + PB_RANGE + 2) continue;
+      _ray.camera = ctx.camera; // machines may contain Sprites (eye glows)
+      _ray.set(_chest, _pbDir);
+      _ray.near = 0;
+      _ray.far = bestD;
+      const hits = _ray.intersectObject(m.root, true);
+      if (hits.length && hits[0].distance < bestD) {
+        bestD = hits[0].distance;
+        bestHit = hits[0];
+        bestM = m;
+      }
+    }
+    if (!bestHit) return false;
+
+    this.arrows.stickImmediate(bestHit.point, _pbDir, type, bestM);
+    this._afterLoose(type, ds);
+    this._onImpact({
+      point: bestHit.point,
+      normal: _neg.copy(_pbDir).negate(),
+      dir: _pbDir,
+      object: bestHit.object,
+      machine: bestM,
+      type,
+      baseDamage,
+      draw: ds,
+    });
+    return true;
   }
 
   /* ------------------------------- impacts ------------------------------- */
@@ -300,24 +402,36 @@ export class Combat {
     const player = ctx.player;
 
     if (machine) {
+      // fast, small, saturated grinder sparks — snappy, not confetti
       this.sparks.burst(hit.point, hit.normal, {
-        count: weak ? 34 : 20,
-        speed: [3, weak ? 12 : 9],
-        spread: 0.9,
-        size: [0.12, 0.28],
-        life: [0.2, 0.55],
+        count: weak ? 24 : 15,
+        speed: [8, 16],
+        spread: 0.55,
+        size: [0.04, 0.12],
+        life: [0.12, 0.3],
         colors: SPARK_COLORS,
+      });
+      // stretched streak variant: thin hot lines whipping off the plate
+      this.sparks.burst(hit.point, hit.normal, {
+        count: weak ? 14 : 9,
+        speed: [10, 18],
+        spread: 0.45,
+        size: [0.028, 0.055],
+        life: [0.1, 0.26],
+        colors: SPARK_COLORS,
+        stretch: [3, 6],
       });
       // short bright core flash so hits read at combat distance
       this.sparks.burst(hit.point, hit.normal, {
         count: 3, speed: [0.1, 0.6], spread: 1,
-        size: [0.4, weak ? 0.9 : 0.6], life: [0.05, 0.12],
-        colors: [[1, 0.95, 0.8]],
+        size: [0.3, weak ? 0.7 : 0.5], life: [0.05, 0.11],
+        colors: [[1, 0.9, 0.7]],
       });
       if (hit.type === 'shock') {
         this.sparks.burst(hit.point, hit.normal, {
-          count: 12, speed: [2, 7], spread: 1.1,
-          size: [0.1, 0.22], life: [0.12, 0.35], colors: SHOCK_COLORS,
+          count: 12, speed: [4, 10], spread: 0.9,
+          size: [0.06, 0.16], life: [0.1, 0.3], colors: SHOCK_COLORS,
+          stretch: [1, 3],
         });
       }
       if (weak) {

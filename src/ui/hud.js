@@ -80,6 +80,7 @@ export class HUD {
     this._killCounts = Object.create(null);
     this._stage = 0;
     this._victoryFired = false;
+    this._victoryShown = false;
     this._lastObjTitle = null;
 
     this._build();
@@ -138,19 +139,25 @@ export class HUD {
     this._objDetail = div('hzc-obj-detail', this._objEl);
     this._objProg = div('hzc-obj-progress', this._objEl);
 
-    // crosshair
+    // crosshair — every stroke is doubled (dark under, light over) so it
+    // stays readable against bright sky and chrome machine plating alike
     const cross = div('hzc-cross', root);
     div('hzc-dot', cross);
     this._ring = div('hzc-ring', cross);
     this._ring.innerHTML =
       '<svg viewBox="0 0 72 72">' +
+      '<circle class="track-under" cx="36" cy="36" r="26"/>' +
       '<circle class="track" cx="36" cy="36" r="26"/>' +
+      '<circle class="prog-under" cx="36" cy="36" r="26" transform="rotate(-90 36 36)"/>' +
       '<circle class="prog" cx="36" cy="36" r="26" transform="rotate(-90 36 36)"/>' +
       '</svg>';
     this._prog = this._ring.querySelector('.prog');
+    this._progUnder = this._ring.querySelector('.prog-under');
     this._ringC = 2 * Math.PI * 26;
-    this._prog.style.strokeDasharray = this._ringC.toFixed(2);
-    this._prog.style.strokeDashoffset = this._ringC.toFixed(2);
+    for (const el of [this._prog, this._progUnder]) {
+      el.style.strokeDasharray = this._ringC.toFixed(2);
+      el.style.strokeDashoffset = this._ringC.toFixed(2);
+    }
 
     // quiver
     const ar = div('hzc-arrows', root);
@@ -220,12 +227,21 @@ export class HUD {
     ev.on('player-hurt', () => {
       this._hurtFlash = Math.min(1.2, this._hurtFlash + 0.75);
     });
-    ev.on('player-died', () => this._deathEl.classList.add('show'));
+    ev.on('player-died', () => {
+      if (this._victoryShown) return; // victory owns the screen — no death card
+      this._deathEl.classList.add('show');
+    });
     ev.on('player-respawn', () => {
       this._deathEl.classList.remove('show');
       this._hurtFlash = 0;
       this._vignette.style.opacity = '0';
       this._lastVin = 0;
+      // Race guard: if victory fired during the respawn window, player.js just
+      // reset state to 'playing' underneath the overlay — re-assert victory.
+      if (this._victoryShown) {
+        this.ctx.state = 'victory';
+        this.ctx.input.exitPointerLock();
+      }
     });
     ev.on('victory', () => this._showVictory());
     ev.on('game-start', () => this._renderObjective(false));
@@ -242,6 +258,16 @@ export class HUD {
           this.ctx.game?.started &&
           !this.ctx.params.has('shot')) {
         this.setPaused(true);
+      }
+    });
+    // Esc-unpause can't re-acquire pointer lock (no user activation, and
+    // browsers enforce a cooldown after Esc). Any click while playing and
+    // unlocked counts as the activation we need to restore mouse-look.
+    document.addEventListener('mousedown', () => {
+      if (this.ctx.state === 'playing' &&
+          !this.ctx.input.pointerLocked &&
+          !this.ctx.params.has('shot')) {
+        this.ctx.input.requestPointerLock();
       }
     });
   }
@@ -284,7 +310,9 @@ export class HUD {
     if (advanced && this._stage < QUEST.length) this._toast('<b>OBJECTIVE COMPLETE</b>');
     this._renderObjective(advanced);
 
-    if (this._stage >= QUEST.length && !this._victoryFired) {
+    // Killing the Thunderjaw completes the hunt (SPEC) even if earlier quest
+    // stages are unfinished; the full chain also lands here on its last kill.
+    if (!this._victoryFired && (kind === 'thunderjaw' || this._stage >= QUEST.length)) {
       this._victoryFired = true;
       // let the kill explosion breathe before the fanfare
       setTimeout(() => this.ctx.events.emit('victory'), 1400);
@@ -319,8 +347,12 @@ export class HUD {
 
   _showVictory() {
     this._victoryFired = true;
+    this._victoryShown = true;
     this._pauseEl.classList.remove('show');
+    this._deathEl.classList.remove('show');
     this._victoryEl.classList.add('show');
+    // hide every gameplay HUD layer under the overlay (see hud.css)
+    this.rootEl.classList.add('endgame');
     this.ctx.state = 'victory';
     this.ctx.input.exitPointerLock();
   }
@@ -501,7 +533,9 @@ export class HUD {
     if (!aiming) return;
     const dsRaw = this.ctx.combat?.drawStrength;
     const ds = typeof dsRaw === 'number' ? Math.max(0, Math.min(1, dsRaw)) : 0;
-    this._prog.style.strokeDashoffset = (this._ringC * (1 - ds)).toFixed(1);
+    const off = (this._ringC * (1 - ds)).toFixed(1);
+    this._prog.style.strokeDashoffset = off;
+    this._progUnder.style.strokeDashoffset = off;
     this._prog.classList.toggle('full', ds > 0.985);
   }
 
@@ -530,7 +564,7 @@ export class HUD {
   }
 
   _updateVignette(dt, t, p) {
-    this._hurtFlash = Math.max(0, this._hurtFlash - dt * 1.5);
+    this._hurtFlash = Math.max(0, this._hurtFlash - dt * 0.9);
     const hp = p.health / p.maxHealth;
     const low = hp < 0.35 ? (0.35 - hp) / 0.35 : 0;
     const pulse = low > 0 ? low * (0.38 + 0.1 * Math.sin(t * 4.2)) : 0;

@@ -9,9 +9,10 @@ import { Machine, glowTexture } from './machine.js';
 
 const _v = new THREE.Vector3();
 const _v2 = new THREE.Vector3();
+const _v3 = new THREE.Vector3();
 const _Y = new THREE.Vector3(0, 1, 0);
 const _beamGeo = new THREE.CylinderGeometry(1, 1, 1, 8, 1, true);
-const _discGeo = new THREE.SphereGeometry(0.32, 12, 10);
+const _discGeo = new THREE.CylinderGeometry(0.34, 0.34, 0.09, 14); // flat sawblade disc
 
 export class Thunderjaw extends Machine {
   constructor(ctx, manager, opts) {
@@ -38,8 +39,8 @@ export class Thunderjaw extends Machine {
     const h = this.height;       // 7.5
     const len = this.size.x;     // ~15 along asset x -> body +Z
     // head sensor eyes
-    this.addEye(this.body, 0.5, h * 0.50, len * 0.44, 0.6, 0.11);
-    this.addEye(this.body, -0.5, h * 0.50, len * 0.44, 0.6, 0.11);
+    this.addEye(this.body, 0.5, h * 0.46, len * 0.45, 0.6, 0.11);
+    this.addEye(this.body, -0.5, h * 0.46, len * 0.45, 0.6, 0.11);
     // anchors
     this._mouth = new THREE.Object3D();
     this._mouth.position.set(0, h * 0.44, len * 0.46);
@@ -48,10 +49,13 @@ export class Thunderjaw extends Machine {
     this._launcher.position.set(0, h * 0.78, -len * 0.05);
     this.body.add(this._launcher);
 
-    // weak points
-    this.addWeakPoint('head sensor', this.body, 0, h * 0.50, len * 0.42, 1.15);
-    this.addWeakPoint('chest core', this.body, 0, h * 0.34, len * 0.22, 1.25);
-    this.addWeakPoint('tail tip', this.body, 0, h * 0.62, -len * 0.44, 1.1);
+    // weak points — kept small and OFF the center-mass aim line so lazy
+    // torso shots don't score weak hits (head high, core low on the belly)
+    // anchor must sit ON the snout mesh (h*0.55 floats ~2.7m off it) or aimed
+    // head shots can never resolve inside the weak radius
+    this.addWeakPoint('head sensor', this.body, 0, h * 0.44, len * 0.46, 0.95);
+    this.addWeakPoint('chest core', this.body, 0, h * 0.25, len * 0.24, 0.85);
+    this.addWeakPoint('tail tip', this.body, 0, h * 0.62, -len * 0.45, 0.8);
 
     this._gait = Math.random() * Math.PI * 2;
     this._lastStep = 0;
@@ -149,24 +153,47 @@ export class Thunderjaw extends Machine {
     const glow = new THREE.Sprite(glowMat);
     this._mouth.add(glow);
 
-    const beamMat = new THREE.MeshBasicMaterial({
-      color: 0xff4030, transparent: true, opacity: 0,
+    // beam = white-hot core + soft outer glow; the core doubles as the thin
+    // red aim ray that pre-traces the sweep line during windup
+    const coreMat = new THREE.MeshBasicMaterial({
+      color: 0xff2413, transparent: true, opacity: 0,
+      blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false,
+    });
+    const core = new THREE.Mesh(_beamGeo, coreMat);
+    core.visible = false;
+    this.ctx.scene.add(core);
+    const outerMat = new THREE.MeshBasicMaterial({
+      color: 0xff3a20, transparent: true, opacity: 0,
       blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false,
       side: THREE.DoubleSide,
     });
-    const beam = new THREE.Mesh(_beamGeo, beamMat);
-    beam.visible = false;
-    this.ctx.scene.add(beam);
-    const hitMat = new THREE.SpriteMaterial({
-      map: glowTexture(), color: 0xffa060, transparent: true, opacity: 0,
-      blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false,
-    });
-    const hitGlow = new THREE.Sprite(hitMat);
-    hitGlow.scale.setScalar(3.2);
-    this.ctx.scene.add(hitGlow);
+    const outer = new THREE.Mesh(_beamGeo, outerMat);
+    outer.visible = false;
+    this.ctx.scene.add(outer);
 
     let baseAngle = 0;
     let tick = 0;
+    let sparkClock = 0;
+    let hx = 0, hy = 0, hz = 0; // beam ground-hit point
+
+    // place core (and optionally outer) from the mouth to the ground at ang
+    const aimBeam = (ang, coreR, outerR) => {
+      hx = this.position.x + Math.sin(ang) * range;
+      hz = this.position.z + Math.cos(ang) * range;
+      hy = this.ctx.terrain.getHeight(hx, hz) + 0.15;
+      this._mouth.getWorldPosition(_v);
+      _v2.set(hx, hy, hz);
+      core.position.lerpVectors(_v, _v2, 0.5);
+      const dir = _v2.sub(_v); // _v2 now = delta
+      const L = dir.length();
+      core.quaternion.setFromUnitVectors(_Y, dir.normalize());
+      core.scale.set(coreR, L, coreR);
+      if (outerR > 0) {
+        outer.position.copy(core.position);
+        outer.quaternion.copy(core.quaternion);
+        outer.scale.set(outerR, L, outerR);
+      }
+    };
 
     return {
       kind: 'laser',
@@ -181,53 +208,60 @@ export class Thunderjaw extends Machine {
         if (a.phase === 'windup') {
           glow.scale.setScalar(0.4 + a.phaseT * 2.2);
           glowMat.opacity = a.phaseT * 0.9;
+          // thin low-opacity aim ray traces the coming sweep, left to right
+          const p = this.ctx.player;
+          const predict = p
+            ? Math.atan2(p.position.x - this.position.x, p.position.z - this.position.z)
+            : this.heading;
+          aimBeam(predict + (-0.42 + a.phaseT * 0.84), 0.035, 0);
+          core.visible = true;
+          coreMat.color.setHex(0xff2413);
+          coreMat.opacity = 0.16 + a.phaseT * 0.14;
         } else if (a.phase === 'strike') {
           glow.scale.setScalar(2.2);
           glowMat.opacity = 0.9;
-          beam.visible = true;
+          core.visible = true;
+          outer.visible = true;
+          coreMat.color.setHex(0xfff6ec); // white-hot ~0.1m core
+          coreMat.opacity = 0.95;
+          outerMat.opacity = 0.3;
           // sweep across the player's position, left to right
-          const ang = baseAngle + (-0.42 + a.phaseT * 0.84);
-          const gx = this.position.x + Math.sin(ang) * range;
-          const gz = this.position.z + Math.cos(ang) * range;
-          const gy = this.ctx.terrain.getHeight(gx, gz) + 0.15;
-          this._mouth.getWorldPosition(_v);
-          _v2.set(gx, gy, gz);
-          beam.position.lerpVectors(_v, _v2, 0.5);
-          const dir = _v2.sub(_v); // _v2 now = delta
-          const L = dir.length();
-          beam.quaternion.setFromUnitVectors(_Y, dir.normalize());
-          beam.scale.set(0.22, L, 0.22);
-          beamMat.opacity = 0.85;
-          hitGlow.position.set(gx, gy + 0.4, gz);
-          hitMat.opacity = 0.8;
+          aimBeam(baseAngle + (-0.42 + a.phaseT * 0.84), 0.055, 0.32);
+          // sparks spray off the ground-hit point
+          sparkClock -= dt;
+          if (sparkClock <= 0 && !this.lowLOD) {
+            sparkClock = 0.17;
+            _v.set(hx, hy + 0.25, hz);
+            this._sparkBurst(_v, 10);
+          }
           // periodic burn ticks while the beam is on the player
           tick -= dt;
           if (tick <= 0) {
-            tick = 0.3;
+            tick = 0.15;
             const p = this.ctx.player;
-            if (p && Math.hypot(p.position.x - gx, p.position.z - gz) < 2.4) {
+            if (p && Math.hypot(p.position.x - hx, p.position.z - hz) < 2.6) {
               this.ctx.events.emit('player-damage', { amount: 6, from: this });
             }
           }
         } else {
-          beamMat.opacity *= Math.max(0, 1 - a.phaseT * 3);
+          coreMat.opacity *= Math.max(0, 1 - a.phaseT * 3);
+          outerMat.opacity *= Math.max(0, 1 - a.phaseT * 3);
           glowMat.opacity *= Math.max(0, 1 - a.phaseT * 3);
-          hitMat.opacity *= Math.max(0, 1 - a.phaseT * 3);
-          if (a.phaseT > 0.4) beam.visible = false;
+          if (a.phaseT > 0.4) { core.visible = false; outer.visible = false; }
         }
       },
       cleanup: () => {
         this._mouth.remove(glow);
-        this.ctx.scene.remove(beam);
-        this.ctx.scene.remove(hitGlow);
-        glowMat.dispose(); beamMat.dispose(); hitMat.dispose();
+        this.ctx.scene.remove(core);
+        this.ctx.scene.remove(outer);
+        glowMat.dispose(); coreMat.dispose(); outerMat.dispose();
       },
     };
   }
 
   /* --------------------------- disc launcher --------------------------- */
 
-  _fireDisc() {
+  _fireDisc(lateral = 0) {
     const p = this.ctx.player;
     this._launcher.getWorldPosition(_v);
     const start = _v.clone();
@@ -241,6 +275,12 @@ export class Thunderjaw extends Machine {
         this.position.x + Math.sin(this.heading) * 30, this.position.y,
         this.position.z + Math.cos(this.heading) * 30,
       );
+    // fan the volley: offset each disc perpendicular to the throw line
+    if (lateral !== 0) {
+      _v2.set(target.x - start.x, 0, target.z - start.z).normalize();
+      target.x += -_v2.z * lateral;
+      target.z += _v2.x * lateral;
+    }
     const T = THREE.MathUtils.clamp(start.distanceTo(target) / 14, 1.3, 2.6);
     const g = -9.8;
     const vel = new THREE.Vector3(
@@ -253,11 +293,11 @@ export class Thunderjaw extends Machine {
     const disc = new THREE.Mesh(_discGeo, mat);
     disc.position.copy(start);
     const glowMat = new THREE.SpriteMaterial({
-      map: glowTexture(), color: 0xff4028, transparent: true, opacity: 0.9,
+      map: glowTexture(), color: 0xff4028, transparent: true, opacity: 0.85,
       blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false,
     });
     const glow = new THREE.Sprite(glowMat);
-    glow.scale.setScalar(1.5);
+    glow.scale.setScalar(0.9);
     disc.add(glow);
     const trailMat = new THREE.MeshBasicMaterial({
       color: 0xff5a20, transparent: true, opacity: 0.5,
@@ -268,6 +308,8 @@ export class Thunderjaw extends Machine {
     this.ctx.scene.add(trail);
 
     let t = 0;
+    let smokeClock = 0;
+    let spin = 0;
     const terrain = this.ctx.terrain;
     this._fx.push({
       update: (dt) => {
@@ -276,11 +318,25 @@ export class Thunderjaw extends Machine {
         disc.position.x += vel.x * dt;
         disc.position.y += vel.y * dt;
         disc.position.z += vel.z * dt;
+        // sawblade orientation: disc plane contains the velocity, spinning
+        _v2.copy(vel).normalize();
+        _v3.crossVectors(_v2, _Y);
+        if (_v3.lengthSq() < 1e-4) _v3.set(1, 0, 0);
+        _v3.normalize();
+        disc.quaternion.setFromUnitVectors(_Y, _v3);
+        spin += dt * 22;
+        disc.rotateOnAxis(_Y, spin); // quaternion is rebuilt above, so spin is absolute
+        // smoke trail puffs
+        smokeClock -= dt;
+        if (smokeClock <= 0 && !this.lowLOD) {
+          smokeClock = 0.09;
+          this._burnSmoke(disc.position);
+        }
         // trail stretches back along velocity
         const L = Math.min(2.2, vel.length() * 0.16);
         trail.position.copy(disc.position).addScaledVector(_v2.copy(vel).normalize(), -L / 2);
         trail.quaternion.setFromUnitVectors(_Y, _v2);
-        trail.scale.set(0.09, L, 0.09);
+        trail.scale.set(0.07, L, 0.07);
         const groundY = terrain.getHeight(disc.position.x, disc.position.z);
         const p = this.ctx.player;
         const nearPlayer = p && disc.position.distanceToSquared(p.position) < 1.6;
@@ -316,8 +372,9 @@ export class Thunderjaw extends Machine {
           const due = Math.floor(a.phaseT * 3) + 1; // 3 discs across the phase
           while (fired < due && fired < 3) {
             fired += 1;
-            this._fireDisc();
-            this.ctx.events.emit('machine-attack', { machine: this, kind: 'disc' });
+            // fan: left / center / right ('machine-attack' already emitted
+            // once by _startAttack — do NOT re-emit per disc)
+            this._fireDisc((fired - 2) * 2.4 + (Math.random() - 0.5) * 0.8);
           }
         } else {
           this.body.rotation.x = -0.08 * (1 - a.phaseT);
@@ -329,11 +386,15 @@ export class Thunderjaw extends Machine {
 
   /* --------------------------- locomotion --------------------------- */
 
-  animate(dt, t) {
+  /** Ticked from Machine.update() — runs even under lowLOD/stun. */
+  tickCooldowns(dt) {
     this._cdStomp -= dt;
     this._cdLaser -= dt;
     this._cdDisc -= dt;
     this._cdTail -= dt;
+  }
+
+  animate(dt, t) {
     if (this.state === 'dead') return;
 
     const speed = this._speed;
@@ -341,11 +402,13 @@ export class Thunderjaw extends Machine {
     this._gait += dt * speed * (Math.PI / stride);
     const moveK = THREE.MathUtils.clamp(speed / 2.6, 0, 1);
 
-    // heavy footstep events for audio/rumble
+    // heavy footstep events for audio/rumble — combat only, so calm patrol
+    // half a map away doesn't flood the mixer with stomps
     const step = Math.floor(this._gait / Math.PI);
     if (step !== this._lastStep) {
       this._lastStep = step;
-      if (moveK > 0.3 && this.playerDist < 140) {
+      const engaged = this.state === 'attack' || this.state === 'alert';
+      if (engaged && moveK > 0.3 && this.playerDist < 140) {
         this.ctx.events.emit('machine-attack', { machine: this, kind: 'step' });
       }
     }

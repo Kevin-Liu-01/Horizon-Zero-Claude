@@ -110,13 +110,14 @@ export class Machines {
       m.update(dt, t);
     }
 
-    // keep idle machines from parking inside the player
+    // hard standoff: machines never interpenetrate the player — applies during
+    // attacks too (lunges/pounces/charges stop at melee range, not inside her)
     if (p) {
       for (const m of this.list) {
-        if (!m.alive || m._attack) continue;
+        if (!m.alive) continue;
         _v.subVectors(m.position, p.position);
         _v.y = 0;
-        const min = m.bodyRadius * 0.6 + 0.4;
+        const min = m.bodyRadius + 0.6;
         const d2 = _v.lengthSq();
         if (d2 < min * min && d2 > 1e-6) {
           const d = Math.sqrt(d2);

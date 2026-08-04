@@ -12,15 +12,31 @@
   position: absolute; inset: 0;
   opacity: 0;
   background: radial-gradient(ellipse at center,
-    transparent 40%, rgba(150, 22, 10, 0.5) 76%, rgba(110, 8, 4, 0.85) 100%);
+    transparent 36%, rgba(200, 30, 15, 0.55) 70%, rgba(130, 10, 5, 0.92) 100%);
 }
+
+/* ------------------------------ focus scan tint ------------------------------ */
+/* Fullscreen cool-down of the golden-hour grade while the Focus window is
+   open. Prepended as the first #hud child so all HUD chrome draws above it. */
+.hzc-focus-tint {
+  position: absolute; inset: 0;
+  opacity: 0;
+  transition: opacity 0.35s ease;
+  /* cool grade: a flat desaturating blue-gray veil plus darker cool corners.
+     (a fullscreen backdrop-filter costs ~5fps — plain compositing is free) */
+  background:
+    radial-gradient(ellipse at center,
+      rgba(70, 105, 150, 0.16) 0%, rgba(30, 58, 108, 0.30) 72%, rgba(14, 28, 64, 0.5) 100%),
+    linear-gradient(rgba(96, 116, 138, 0.14), rgba(96, 116, 138, 0.14));
+}
+.hzc-focus-tint.on { opacity: 1; }
 
 /* ------------------------------ top-left: vitals ----------------------------- */
 .hzc-topleft { position: absolute; top: 26px; left: 30px; width: 290px; }
 .hzc-health-label {
   font-size: 9px; letter-spacing: 0.36em;
-  color: rgba(232, 236, 236, 0.7);
-  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.6);
+  color: rgba(232, 236, 236, 0.88);
+  text-shadow: 0 1px 6px rgba(0, 0, 0, 0.9), 0 0 2px rgba(0, 0, 0, 0.8);
   margin-bottom: 5px;
 }
 .hzc-healthbar {
@@ -65,7 +81,7 @@
 }
 .hzc-compass-window {
   position: relative; height: 36px; overflow: hidden;
-  background: linear-gradient(180deg, rgba(8, 14, 18, 0.42), rgba(8, 14, 18, 0.08));
+  background: linear-gradient(180deg, rgba(8, 14, 18, 0.65), rgba(8, 14, 18, 0.3));
   -webkit-mask-image: linear-gradient(90deg, transparent 0, #000 14%, #000 86%, transparent 100%);
   mask-image: linear-gradient(90deg, transparent 0, #000 14%, #000 86%, transparent 100%);
 }
@@ -78,20 +94,21 @@
 .hzc-tick {
   position: absolute; top: 23px; left: 50%;
   width: 1px; height: 7px;
-  background: rgba(232, 236, 236, 0.45);
+  background: rgba(232, 236, 236, 0.6);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.7);
   visibility: hidden;
 }
 .hzc-cdir {
   position: absolute; top: 8px; left: 50%;
   font-size: 10px; letter-spacing: 0.1em;
-  color: rgba(232, 236, 236, 0.62);
-  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.55);
+  color: rgba(232, 236, 236, 0.85);
+  text-shadow: 0 1px 6px rgba(0, 0, 0, 0.9), 0 0 2px rgba(0, 0, 0, 0.75);
   visibility: hidden;
 }
 .hzc-cdir.main {
   top: 5px;
   font-size: 14px; font-weight: 500;
-  color: rgba(232, 236, 236, 0.95);
+  color: rgba(232, 236, 236, 0.97);
 }
 .hzc-cdir.north { color: var(--hzc-accent); }
 .hzc-pip {
@@ -114,9 +131,13 @@
 .hzc-bearing {
   text-align: center;
   font-size: 9px; letter-spacing: 0.34em; text-indent: 0.34em;
-  color: rgba(232, 236, 236, 0.6);
-  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.55);
-  margin-top: 4px;
+  color: rgba(232, 236, 236, 0.85);
+  text-shadow: 0 1px 6px rgba(0, 0, 0, 0.9), 0 0 2px rgba(0, 0, 0, 0.75);
+  /* soft scrim pill behind the digits so they hold up against the sun */
+  background: radial-gradient(ellipse 46px 11px at center,
+    rgba(8, 14, 18, 0.62) 0%, rgba(8, 14, 18, 0.45) 55%, transparent 100%);
+  margin-top: 2px;
+  padding: 2px 0 3px;
 }
 
 /* --------------------------- machine health (top-center) --------------------- */
@@ -177,12 +198,14 @@
 }
 
 /* -------------------------------- crosshair ---------------------------------- */
+/* Every stroke rides on a wider dark under-stroke so the reticle reads against
+   bright sky and specular machine plating alike. */
 .hzc-cross { position: absolute; left: 50%; top: 50%; width: 0; height: 0; }
 .hzc-dot {
-  position: absolute; left: -1.5px; top: -1.5px;
-  width: 3px; height: 3px; border-radius: 50%;
-  background: rgba(232, 236, 236, 0.92);
-  box-shadow: 0 0 4px rgba(0, 0, 0, 0.65);
+  position: absolute; left: -2.5px; top: -2.5px;
+  width: 5px; height: 5px; border-radius: 50%;
+  background: rgba(240, 244, 244, 0.95);
+  box-shadow: 0 0 0 1.5px rgba(8, 12, 14, 0.75), 0 1px 5px rgba(0, 0, 0, 0.6);
 }
 .hzc-ring {
   position: absolute; left: -36px; top: -36px;
@@ -190,10 +213,14 @@
   opacity: 0; transition: opacity 0.12s ease;
 }
 .hzc-ring.show { opacity: 1; }
-.hzc-ring svg { width: 100%; height: 100%; display: block; }
-.hzc-ring .track { fill: none; stroke: rgba(232, 236, 236, 0.22); stroke-width: 2; }
+.hzc-ring svg { width: 100%; height: 100%; display: block; overflow: visible; }
+.hzc-ring .track-under { fill: none; stroke: rgba(8, 12, 14, 0.6); stroke-width: 3; }
+.hzc-ring .track { fill: none; stroke: rgba(240, 244, 244, 0.5); stroke-width: 1.5; }
+.hzc-ring .prog-under {
+  fill: none; stroke: rgba(8, 12, 14, 0.7); stroke-width: 4; stroke-linecap: round;
+}
 .hzc-ring .prog {
-  fill: none; stroke: var(--hzc-accent); stroke-width: 2.5; stroke-linecap: round;
+  fill: none; stroke: var(--hzc-accent); stroke-width: 2.25; stroke-linecap: round;
   filter: drop-shadow(0 0 4px rgba(53, 200, 220, 0.85));
 }
 .hzc-ring .prog.full {
@@ -251,27 +278,26 @@
 }
 
 /* --------------------------------- kill feed --------------------------------- */
+/* Bottom-left feed column — never over the crosshair or the action. */
 .hzc-toasts {
-  position: absolute; left: 50%; top: 67%;
-  transform: translateX(-50%);
-  display: flex; flex-direction: column; align-items: center; gap: 6px;
+  position: absolute; left: 30px; bottom: 96px;
+  display: flex; flex-direction: column; align-items: flex-start; gap: 5px;
 }
 .hzc-toast {
-  font-size: 12px; letter-spacing: 0.3em; text-indent: 0.3em;
+  font-size: 10px; letter-spacing: 0.24em; text-indent: 0.24em;
   color: var(--hzc-text);
   background: var(--hzc-scrim);
-  border-left: 1px solid var(--hzc-warn);
-  border-right: 1px solid var(--hzc-warn);
-  padding: 7px 20px;
+  border-left: 2px solid var(--hzc-warn);
+  padding: 6px 14px 6px 11px;
   white-space: nowrap;
   animation: hzcToast 3.2s ease forwards;
 }
 .hzc-toast b { color: var(--hzc-warn); font-weight: 600; }
 @keyframes hzcToast {
-  0% { opacity: 0; transform: translateY(10px); }
+  0% { opacity: 0; transform: translateX(-14px); }
   8% { opacity: 1; transform: none; }
   78% { opacity: 1; }
-  100% { opacity: 0; transform: translateY(-12px); }
+  100% { opacity: 0; transform: translateX(-8px); }
 }
 
 /* -------------------------------- death screen ------------------------------- */
@@ -295,6 +321,13 @@
 }
 
 /* ------------------------------- victory screen ------------------------------ */
+/* Once the endgame overlay is up, every gameplay HUD layer disappears —
+   !important so it also beats the inline visibility/opacity written by the
+   per-frame updaters (pips, damage numbers, vignette). */
+#hud.endgame > :not(.hzc-victory):not(.hzc-pause) {
+  visibility: hidden !important;
+  opacity: 0 !important;
+}
 .hzc-victory {
   position: absolute; inset: 0;
   display: flex; flex-direction: column; align-items: center; justify-content: center;

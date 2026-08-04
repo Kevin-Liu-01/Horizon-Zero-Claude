@@ -3,3 +3,4 @@ dist/
 .DS_Store
 *.glb
 !public/models/*.glb
+shots/
