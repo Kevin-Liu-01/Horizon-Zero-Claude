@@ -414,6 +414,16 @@ export class Gather {
   _onGather(node) {
     const ctx = this.ctx;
     if (node.kind === 'herb') {
+      // pouch full: don't waste the herb (canon blocks the gather)
+      const p = ctx.player;
+      if (p && p.pouch >= p.maxPouch - 0.5) {
+        ctx.events.emit('item-gained', {
+          id: 'pouch-full', count: 0, total: 0,
+          name: 'Medicine Pouch Full', glyph: '✚', color: '#7fb069',
+        });
+        this._makeEntry(node); // once:true dropped it — re-arm untouched
+        return;
+      }
       // herbs fill the medicine pouch, not the satchel (mechanics.md §6)
       ctx.player?.addPouch?.(25);
       ctx.events.emit('item-gained', {

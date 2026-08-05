@@ -17,19 +17,21 @@ npm run dev        # http://localhost:5173
 
 | Input | Action |
 |---|---|
-| WASD | Move |
-| Shift | Sprint |
+| WASD · Shift | Move · Sprint |
 | C | Crouch (stealth in tall grass) |
-| Space | Dodge roll |
-| RMB | Aim |
-| LMB (hold, aiming) | Draw / loose arrow |
-| 1 · 2 · 3 | Hunter / Fire / Shock arrows |
-| Q | Focus pulse (scan machines through terrain) |
-| F | Medicine |
-| Esc | Pause |
+| Space / LCtrl | Dodge roll |
+| RMB · LMB | Aim · Draw / loose |
+| Shift (aiming) | Concentration (slow-mo gauge) |
+| Tab (hold) | Weapon wheel — time slows, craft ammo with R |
+| 1–4 · Z/X | Weapon quick-slots · cycle ammo |
+| V · T | Focus toggle · tag machine |
+| E (hold) | Interact — loot, gather herbs & ridge-wood |
+| Q (hold) | Medicine pouch → health |
+| R · I · Esc | Craft ammo · inventory · pause |
 
 **The hunt:** clear the valley — 4 Watchers, 2 Sawtooths, the Behemoth, and
-finally the Thunderjaw in the southern wastes.
+finally the Thunderjaw in the southern wastes. Freeze it brittle, tearblast
+its disc launchers off, then pick one up and kill it with its own gun.
 
 ## What's inside
 
@@ -37,13 +39,23 @@ finally the Thunderjaw in the southern wastes.
 - Six Sketchfab GLB models (435 MB raw) crunched to ~22 MB via
   `gltf-transform` (meshopt + quantization + WebP), `npm run optimize`.
 - **Procedural animation** — the models shipped with zero animation clips.
-  Aloy's locomotion/aim cycles and the Watcher's walk, neck-scan, and tail
-  sway are all runtime bone posing; the big machines move with root-motion
-  + procedural sway.
-- Analytic simplex-FBM heightfield terrain, GPU-instanced wind-swaying grass,
-  golden-hour sky shader, machine AI state machines with sight/hearing
-  perception and stealth, part-based damage with weak points, fully
-  procedural WebAudio soundscape (not a single audio file).
+  Aloy's locomotion (banked turns, plant-and-turn, exertion breathing,
+  quiver-flourish nock, dodge roll), the Watcher's walk/neck-scan, and the
+  death crumples are all runtime bone posing; the big machines move with
+  root-motion + procedural sway.
+- **Component damage** — every machine carries tearable parts at canon
+  locations (blaze canisters that explode, force loaders that gate attacks,
+  the Thunderjaw's radar/jaw cannons/disc launchers) with three damage
+  channels: impact, tear, and elemental buildup (burn / stun / freeze-brittle).
+  Torn parts fall with physics and can be looted — or picked up and fired.
+- **Real HZD systems, from research** (`docs/research/`): 4 weapons × 8 ammo
+  types with the canon crafting economy, hold-Tab weapon wheel with time-slow,
+  Concentration gauge, medicine pouch (hold Q), Focus with component
+  highlights / patrol paths / info cards / tagging, satchel inventory,
+  gatherable herbs and ridge-wood, and the 2020 PC port's keybinds.
+- Terraced badlands terrain with a dried river, worn trails, and 2M+ blades
+  of wind-swaying instanced grass; bundled OFL fonts (Michroma/Rajdhani);
+  fully procedural WebAudio soundscape (not a single audio file).
 - A puppeteer screenshot harness (`npm run shot`) that the builder/critic
   agents used to judge their own work — the gauntlet loop's eyes.
 
@@ -51,8 +63,9 @@ finally the Thunderjaw in the southern wastes.
 
 | | |
 |---|---|
-| ![Camp](docs/media/camp.png) | ![Thunderjaw](docs/media/thunderjaw.png) |
-| ![Focus](docs/media/focus.png) | ![Title](docs/media/title.png) |
+| ![Weapon wheel](docs/media/wheel.png) | ![Focus](docs/media/focus.png) |
+| ![Camp](docs/media/camp.png) | ![Inventory](docs/media/inventory.png) |
+| ![River](docs/media/river.png) | ![Thunderjaw](docs/media/thunderjaw.png) |
 
 ## How it was built (the Gauntlet Loop)
 
