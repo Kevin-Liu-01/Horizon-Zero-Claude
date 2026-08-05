@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
-import { SimplexNoise } from './terrain.js';
+import { SimplexNoise, pathFactor } from './terrain.js';
 
 /**
  * Vegetation: chunked GPU-instanced wind-swaying grass (red-gold stealth
@@ -271,6 +271,8 @@ export class Vegetation {
           const tall = terrain.tallGrassDensity(x, z);
           const isTall = tall > 0.3 && rng() < tall * 1.3;
           if (!isTall && rng() > 0.68) continue;
+          // worn dirt paths stay bare (tall grass already thinned by terrain)
+          if (pathFactor(x, z) > 0.25 + rng() * 0.4) continue;
 
           const h = terrain.getHeight(x, z);
           if (h > 30) continue; // rocky heights

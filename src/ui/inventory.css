@@ -1,0 +1,254 @@
+/* Inventory screen + loot popup — HZD panel language (docs/research/ui.md):
+   dark blue-gray translucent panels, 1px light borders, sharp corners with
+   triangle motifs, parchment text, yellow highlight, forest-green tint on
+   inventory screens specifically. Rajdhani everywhere. */
+
+/* ------------------------------- screen -------------------------------- */
+
+.hzc-inv {
+  position: fixed; inset: 0;
+  display: none;
+  align-items: center; justify-content: center;
+  background: rgba(5, 10, 9, 0.52);
+  backdrop-filter: blur(3px);
+  z-index: 46;
+  font-family: var(--font);
+  color: var(--hzc-text);
+}
+.hzc-inv.show { display: flex; }
+
+.hzc-inv-panel {
+  position: relative;
+  width: min(640px, 88vw);
+  max-height: 78vh;
+  display: flex; flex-direction: column;
+  padding: 26px 34px 20px;
+  background:
+    linear-gradient(160deg, rgba(16, 28, 23, 0.88) 0%, rgba(10, 16, 15, 0.92) 60%,
+      rgba(8, 13, 13, 0.94) 100%);
+  border: 1px solid rgba(239, 230, 213, 0.25);
+  box-shadow: 0 18px 60px rgba(0, 0, 0, 0.55);
+}
+
+/* triangle corner motifs (the Focus geodesic-triangle language) */
+.hzc-inv-corner {
+  position: absolute; width: 0; height: 0;
+  border-style: solid;
+  opacity: 0.85;
+}
+.hzc-inv-corner.tl { top: -1px; left: -1px;
+  border-width: 10px 10px 0 0; border-color: var(--hzc-accent) transparent transparent transparent; }
+.hzc-inv-corner.tr { top: -1px; right: -1px;
+  border-width: 0 10px 10px 0; border-color: transparent var(--hzc-accent) transparent transparent; }
+.hzc-inv-corner.bl { bottom: -1px; left: -1px;
+  border-width: 10px 0 0 10px; border-color: transparent transparent transparent var(--hzc-accent); }
+.hzc-inv-corner.br { bottom: -1px; right: -1px;
+  border-width: 0 0 10px 10px; border-color: transparent transparent var(--hzc-accent) transparent; }
+
+.hzc-inv-head { text-align: center; margin-bottom: 14px; }
+.hzc-inv-kicker {
+  font-size: 11px; font-weight: 600;
+  letter-spacing: 0.5em; text-indent: 0.5em;
+  color: var(--hzc-accent);
+}
+.hzc-inv-title {
+  margin-top: 2px;
+  font-size: 26px; font-weight: 700;
+  letter-spacing: 0.34em; text-indent: 0.34em;
+  color: var(--hzc-text);
+}
+
+.hzc-inv-tabs {
+  display: flex; gap: 6px;
+  border-bottom: 1px solid rgba(239, 230, 213, 0.18);
+  margin-bottom: 4px;
+}
+.hzc-inv-tab {
+  flex: 1;
+  padding: 9px 0 7px;
+  font-family: var(--font);
+  font-size: 13px; font-weight: 600;
+  letter-spacing: 0.26em; text-indent: 0.26em;
+  color: rgba(239, 230, 213, 0.45);
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  cursor: pointer;
+  transition: color 0.15s ease, border-color 0.15s ease, background 0.15s ease;
+}
+.hzc-inv-tab:hover { color: rgba(239, 230, 213, 0.8); }
+.hzc-inv-tab.active {
+  color: var(--hzc-text);
+  border-bottom-color: var(--hzc-warn);
+  background: linear-gradient(rgba(242, 194, 48, 0.07), transparent);
+}
+
+.hzc-inv-body {
+  overflow-y: auto;
+  min-height: 220px;
+  padding: 10px 2px 6px;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(239, 230, 213, 0.25) transparent;
+}
+
+.hzc-inv-row {
+  display: flex; align-items: center;
+  gap: 14px;
+  padding: 7px 10px;
+  border-bottom: 1px solid rgba(239, 230, 213, 0.09);
+}
+.hzc-inv-row.active {
+  background: rgba(242, 194, 48, 0.08);
+  border-left: 2px solid var(--hzc-warn);
+  padding-left: 8px;
+}
+.hzc-inv-glyph {
+  width: 26px; height: 26px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 15px;
+  border: 1px solid rgba(239, 230, 213, 0.2);
+  background: rgba(12, 16, 20, 0.6);
+  flex: none;
+}
+.hzc-inv-name {
+  flex: 1;
+  font-size: 14px; font-weight: 600;
+  letter-spacing: 0.18em;
+  color: rgba(239, 230, 213, 0.92);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.hzc-inv-count {
+  font-size: 15px; font-weight: 700;
+  letter-spacing: 0.08em;
+  color: var(--hzc-warn);
+  min-width: 44px; text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.hzc-inv-group {
+  margin: 12px 0 2px;
+  padding: 0 2px 4px;
+  font-size: 11px; font-weight: 600;
+  letter-spacing: 0.4em;
+  color: var(--hzc-accent);
+  border-bottom: 1px solid rgba(89, 193, 198, 0.25);
+}
+.hzc-inv-group:first-child { margin-top: 0; }
+
+.hzc-inv-empty {
+  padding: 42px 10px;
+  text-align: center;
+  font-size: 12px; letter-spacing: 0.3em; text-indent: 0.3em;
+  color: rgba(239, 230, 213, 0.35);
+}
+
+/* medicine pouch meter at the top of RESOURCES */
+.hzc-inv-pouch {
+  display: flex; align-items: center; gap: 12px;
+  padding: 6px 10px 12px;
+  border-bottom: 1px solid rgba(239, 230, 213, 0.14);
+  margin-bottom: 4px;
+}
+.hzc-inv-pouch-label {
+  font-size: 11px; font-weight: 600; letter-spacing: 0.3em;
+  color: var(--hzc-med);
+  flex: none;
+}
+.hzc-inv-pouch-bar {
+  flex: 1; height: 5px;
+  background: rgba(12, 16, 20, 0.8);
+  border: 1px solid rgba(127, 176, 105, 0.4);
+}
+.hzc-inv-pouch-fill {
+  height: 100%;
+  background: var(--hzc-med);
+  box-shadow: 0 0 8px rgba(127, 176, 105, 0.5);
+  transition: width 0.2s ease;
+}
+.hzc-inv-pouch-num {
+  font-size: 13px; font-weight: 700;
+  color: rgba(239, 230, 213, 0.8);
+  font-variant-numeric: tabular-nums;
+  flex: none;
+}
+
+.hzc-inv-foot {
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid rgba(239, 230, 213, 0.14);
+  text-align: center;
+  font-size: 11px; letter-spacing: 0.22em;
+  color: rgba(239, 230, 213, 0.45);
+}
+.hzc-inv-foot kbd {
+  display: inline-block;
+  padding: 1px 7px;
+  font-family: var(--font);
+  font-size: 11px; font-weight: 700;
+  color: var(--hzc-text);
+  border: 1px solid rgba(239, 230, 213, 0.4);
+  border-radius: 2px;
+  background: rgba(12, 16, 20, 0.6);
+}
+
+/* ----------------------------- loot popup ------------------------------ */
+
+.hzc-loot {
+  position: fixed;
+  right: 6.5%;
+  top: 50%;
+  transform: translateY(-40%) translateX(14px);
+  width: 250px;
+  padding: 12px 16px 10px;
+  background: rgba(12, 16, 20, 0.78);
+  border: 1px solid rgba(239, 230, 213, 0.25);
+  border-left: 2px solid var(--hzc-warn);
+  z-index: 44;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.22s ease, transform 0.22s ease;
+  font-family: var(--font);
+  color: var(--hzc-text);
+}
+.hzc-loot.show {
+  opacity: 1;
+  transform: translateY(-40%) translateX(0);
+}
+
+.hzc-loot-kicker {
+  font-size: 10px; font-weight: 600;
+  letter-spacing: 0.42em;
+  color: var(--hzc-warn);
+  margin-bottom: 7px;
+}
+.hzc-loot-rows { display: flex; flex-direction: column; gap: 4px; }
+.hzc-loot-row {
+  display: flex; align-items: center; gap: 10px;
+}
+.hzc-loot-glyph {
+  width: 20px; height: 20px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 12px;
+  border: 1px solid rgba(239, 230, 213, 0.18);
+  background: rgba(8, 12, 14, 0.6);
+  flex: none;
+}
+.hzc-loot-name {
+  flex: 1;
+  font-size: 12px; font-weight: 600;
+  letter-spacing: 0.14em;
+  color: rgba(239, 230, 213, 0.92);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.hzc-loot-n {
+  font-size: 13px; font-weight: 700;
+  color: var(--hzc-warn);
+  font-variant-numeric: tabular-nums;
+}
+.hzc-loot-foot {
+  margin-top: 8px;
+  padding-top: 6px;
+  border-top: 1px solid rgba(239, 230, 213, 0.14);
+  font-size: 9px; letter-spacing: 0.3em;
+  color: rgba(239, 230, 213, 0.4);
+}

@@ -1,0 +1,184 @@
+/* Focus v2 UI skin — owned by the focus builder.
+   Namespace: hzcf- (kept independent of hud.css, which is owned elsewhere).
+   Palette + fonts come from :root vars in style.css. */
+
+/* ------------------------------- screen tint ------------------------------- */
+/* Persistent while Focus is ON: cool desaturating veil + purple haze/vignette
+   + ultra-faint holographic scanlines. Plain compositing only (no backdrop
+   filters — those cost real frames fullscreen). */
+.hzcf-tint {
+  position: absolute; inset: 0;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.4s ease;
+  background:
+    repeating-linear-gradient(
+      0deg,
+      rgba(143, 123, 232, 0.028) 0px, rgba(143, 123, 232, 0.028) 1px,
+      transparent 1px, transparent 4px),
+    radial-gradient(ellipse at center,
+      rgba(123, 92, 214, 0.10) 0%, rgba(74, 54, 140, 0.22) 68%,
+      rgba(26, 18, 64, 0.52) 100%),
+    linear-gradient(rgba(96, 106, 148, 0.16), rgba(96, 106, 148, 0.16));
+}
+.hzcf-tint.on { opacity: 1; }
+
+/* ------------------------------- DOM layer -------------------------------- */
+/* Sits UNDER #hud (z-index 40) so HUD chrome always draws above Focus glass. */
+#hzcf-layer {
+  position: fixed; inset: 0;
+  pointer-events: none;
+  z-index: 39;
+  font-family: var(--font-focus, 'Chakra Petch', monospace);
+  overflow: hidden;
+}
+
+/* small focus reticle at screen center while Focus is on */
+.hzcf-reticle {
+  position: absolute; left: 50%; top: 50%;
+  width: 26px; height: 26px;
+  margin: -13px 0 0 -13px;
+  opacity: 0;
+  transition: opacity 0.3s ease;
+}
+.hzcf-reticle.on { opacity: 0.85; }
+.hzcf-reticle::before {
+  content: '';
+  position: absolute; inset: 8px;
+  border: 1px solid rgba(180, 162, 255, 0.9);
+  transform: rotate(45deg);
+  box-shadow: 0 0 6px rgba(123, 92, 214, 0.8);
+}
+.hzcf-reticle::after {
+  content: '';
+  position: absolute; left: 50%; top: 50%;
+  width: 2px; height: 2px; margin: -1px 0 0 -1px;
+  background: #cfc4ff;
+  box-shadow: 0 0 5px #8f7be8;
+}
+
+/* ------------------------------- info card -------------------------------- */
+.hzcf-card {
+  position: absolute;
+  width: 252px;
+  padding: 10px 12px 9px;
+  color: var(--hzc-text, #efe6d5);
+  background: rgba(12, 16, 24, 0.78);
+  border: 1px solid rgba(156, 140, 255, 0.5);
+  box-shadow:
+    0 0 16px rgba(123, 92, 214, 0.28),
+    inset 0 0 22px rgba(123, 92, 214, 0.10);
+  clip-path: polygon(0 0, calc(100% - 14px) 0, 100% 14px, 100% 100%, 0 100%);
+  opacity: 0;
+  transform: translateY(6px);
+  transition: opacity 0.22s ease, transform 0.22s ease;
+}
+.hzcf-card.show {
+  opacity: 1;
+  transform: translateY(0);
+  animation: hzcf-card-in 0.24s ease;
+}
+@keyframes hzcf-card-in {
+  0% { clip-path: polygon(0 0, calc(100% - 14px) 0, 100% 14px, 100% 0, 0 0); }
+  100% { clip-path: polygon(0 0, calc(100% - 14px) 0, 100% 14px, 100% 100%, 0 100%); }
+}
+.hzcf-card::before { /* holographic scanlines inside the card */
+  content: '';
+  position: absolute; inset: 0;
+  pointer-events: none;
+  background: repeating-linear-gradient(0deg,
+    rgba(156, 140, 255, 0.05) 0 1px, transparent 1px 3px);
+}
+.hzcf-card-accent { /* thin purple energy line down the left edge */
+  position: absolute; left: 0; top: 0; bottom: 0; width: 3px;
+  background: linear-gradient(#9c8cff, rgba(106, 90, 224, 0.15));
+  box-shadow: 0 0 8px rgba(143, 123, 232, 0.9);
+}
+.hzcf-card-head {
+  display: flex; align-items: baseline; justify-content: space-between;
+  gap: 8px;
+}
+.hzcf-name {
+  font-size: 16px; font-weight: 600;
+  letter-spacing: 0.14em;
+  color: #efe9ff;
+  text-shadow: 0 0 8px rgba(143, 123, 232, 0.7);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.hzcf-lv {
+  font-size: 12px; font-weight: 600;
+  letter-spacing: 0.1em;
+  color: var(--hzc-warn, #f2c230);
+  text-shadow: 0 0 6px rgba(242, 194, 48, 0.55);
+  flex: none;
+}
+.hzcf-class {
+  font-size: 9px; letter-spacing: 0.34em;
+  color: rgba(180, 168, 232, 0.75);
+  margin: 1px 0 6px;
+}
+.hzcf-div {
+  height: 1px; margin: 0 0 6px;
+  background: linear-gradient(90deg,
+    rgba(156, 140, 255, 0.65), rgba(156, 140, 255, 0.08));
+}
+.hzcf-row {
+  display: flex; align-items: center; gap: 7px;
+  font-size: 11px; letter-spacing: 0.14em;
+  margin: 3px 0;
+  color: rgba(239, 230, 213, 0.92);
+}
+.hzcf-row .hzcf-lbl {
+  color: rgba(180, 168, 232, 0.8);
+  font-size: 10px; letter-spacing: 0.22em;
+  width: 52px; flex: none;
+}
+.hzcf-glyph {
+  width: 15px; height: 15px; flex: none;
+  filter: drop-shadow(0 0 4px currentColor);
+}
+.hzcf-glyph svg { width: 100%; height: 100%; display: block; }
+.hzcf-g-fire   { color: #f0a03c; }
+.hzcf-g-freeze { color: #59c1c6; }
+.hzcf-g-shock  { color: #4fa3e3; }
+.hzcf-g-none   { color: rgba(239, 230, 213, 0.5); font-size: 11px; width: auto; }
+.hzcf-comp {
+  margin-top: 5px;
+  color: var(--hzc-warn, #f2c230);
+  text-shadow: 0 0 6px rgba(242, 194, 48, 0.4);
+  font-weight: 600;
+}
+.hzcf-comp .hzcf-comp-n { font-size: 13px; margin-right: 5px; }
+
+/* ------------------------------- tag markers ------------------------------- */
+.hzcf-tag {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  text-align: center;
+  will-change: left, top;
+}
+.hzcf-diamond {
+  width: 13px; height: 13px;
+  margin: 0 auto;
+  border: 2px solid #ffdf6b;
+  background: rgba(242, 194, 48, 0.22);
+  transform: rotate(45deg);
+  box-shadow: 0 0 9px rgba(242, 194, 48, 0.85), inset 0 0 4px rgba(255, 223, 107, 0.6);
+  animation: hzcf-diamond-pulse 1.6s ease-in-out infinite;
+}
+@keyframes hzcf-diamond-pulse {
+  0%, 100% { transform: rotate(45deg) scale(1); }
+  50%      { transform: rotate(45deg) scale(0.82); }
+}
+.hzcf-dist {
+  margin-top: 7px;
+  font-size: 11px; font-weight: 600;
+  letter-spacing: 0.1em;
+  color: #ffdf6b;
+  text-shadow: 0 0 6px rgba(0, 0, 0, 0.9), 0 0 10px rgba(242, 194, 48, 0.45);
+}
+.hzcf-tag.clamped .hzcf-diamond {
+  border-style: dashed;
+  background: rgba(242, 194, 48, 0.1);
+}
+.hzcf-tag.clamped .hzcf-dist { opacity: 0.85; }

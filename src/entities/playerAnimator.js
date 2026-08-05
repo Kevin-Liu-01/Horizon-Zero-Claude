@@ -184,6 +184,24 @@ export class PlayerAnimator {
     this._qTorso = new THREE.Quaternion();
     this._boneWorldCache = {};
 
+    // --- naturalness state (round 2 polish) ---
+    this._breathPh = Math.random();          // breath cycle 0..1 (asymmetric)
+    this._brNow = 0.4; this._brLag = 0.4;    // lung fill + lagged copy
+    this._puff = 0;                          // exertion 0..1 (winded after sprint)
+    this._wsCur = 0; this._wsTgt = 0.7;      // idle weight shift (event-driven)
+    this._wsTimer = 1.2 + Math.random() * 2;
+    this._poseT = 1; this._poseType = 0; this._poseDur = 1.6; // idle posture events
+    this._jitL = 0; this._jitR = 0;          // per-side gait phase jitter (~3%)
+    this._quiverT = 1; this._prevRawDraw = 0; // nock flourish timeline
+    this._holdT = 0;                         // full-draw hold time -> tremble
+    this._plantT = 1;                        // plant-and-turn overlay timeline
+    this._stableX = 0; this._stableZ = 1;    // recent stable travel direction
+    this._settleT = 1; this._prevSpd = 0; this._recentSpd = 0; // stop settle
+    this._recT = 1;                          // dodge recovery-step timeline
+    this._dieT = 0; this._wasDead = false;   // death crumple timeline
+    this._dodgeAxis = new THREE.Vector3(1, 0, 0); // roll axis follows input dir
+    this._leanAcc = 0; this._bank = 0;       // smoothed accel lean / turn bank
+
     ctx.events?.on('player-hurt', () => { this._hit = 1; });
   }
 
@@ -259,14 +277,46 @@ export class PlayerAnimator {
     this._runW = damp(this._runW, smoothstep(speed, 4.9, 7.9), 9, dt);
     this._crouchW = damp(this._crouchW, p.crouching ? 1 : 0, 10, dt);
     this._aimW = damp(this._aimW, p.aiming && !dead ? 1 : 0, 13, dt);
-    this._deadW = damp(this._deadW, dead ? 1 : 0, dead ? 5 : 10, dt);
+    this._deadW = damp(this._deadW, dead ? 1 : 0, dead ? 12 : 10, dt);
     this._drawS = damp(this._drawS, clamp(draw, 0, 1), 16, dt);
     this._hit = damp(this._hit, 0, 9, dt);
 
+    // death crumple runs on its own clock (knee buckle -> fold -> keel over)
+    if (dead && !this._wasDead) this._dieT = 0;
+    this._wasDead = dead;
+    if (dead) this._dieT += dt;
+
+    // quiver-reach flourish: string hand dips to the back quiver at draw start
+    if (draw > 0.02 && this._prevRawDraw <= 0.02 && p.aiming && !dead) this._quiverT = 0;
+    this._prevRawDraw = draw;
+    this._quiverT = Math.min(this._quiverT + dt / 0.2, 1);
+
+    // draw-hold fatigue: arms tremble after ~3s at full draw
+    if (p.aiming && this._drawS > 0.92) this._holdT += dt;
+    else this._holdT = Math.max(0, this._holdT - dt * 4);
+
     if (p.dodging && !this._wasDodging) this._dodgeT = 0;
+    if (!p.dodging && this._wasDodging && this._dodgeT > 0.5) this._recT = 0;
     this._wasDodging = p.dodging;
     if (p.dodging) this._dodgeT = Math.min(this._dodgeT + dt / 0.42, 1);
     this._dodgeW = damp(this._dodgeW, p.dodging ? 1 : 0, p.dodging ? 30 : 12, dt);
+
+    /* ---- breathing: asymmetric cycle (quick inhale, slow exhale, pause);
+       rate and depth rise with exertion so it never reads as a sine wave ---- */
+    const puffT = this._runW * 0.9 + this._moveW * 0.1;
+    this._puff = damp(this._puff, puffT, puffT > this._puff ? 0.45 : 0.14, dt);
+    this._breathPh = (this._breathPh + dt * (0.21 + 0.15 * this._puff)) % 1;
+    const bu = this._breathPh;
+    let brF; // lung fill 0..1
+    if (bu < 0.38) { const k = bu / 0.38; brF = k * k * (3 - 2 * k); }
+    else if (bu < 0.9) { const k = (bu - 0.38) / 0.52; brF = 1 - k * k * (2.4 - 1.4 * k); }
+    else brF = 0;
+    this._brNow = damp(this._brNow, brF, 24, dt);
+    this._brLag = damp(this._brLag, this._brNow, 8, dt);
+
+    // organic asymmetry: per-side gait phase jitter (~3% cycle), slow wander
+    this._jitL = 0.10 * Math.sin(t * 0.53 + 1.7) + 0.06 * Math.sin(t * 1.31);
+    this._jitR = 0.10 * Math.sin(t * 0.61 + 4.2) + 0.06 * Math.sin(t * 1.47 + 2);
 
     const moveW = this._moveW * (1 - this._deadW);
     const runW = this._runW;
@@ -309,6 +359,39 @@ export class PlayerAnimator {
     const fwdness = Math.abs(mz);           // 1 = pure fwd/back, 0 = pure strafe
     const fwdGate = smoothstep(mz, 0.2, 0.8); // toe-off only for forward gait
 
+    /* ---- plant-and-turn: travel direction reverses >120deg at speed ---- */
+    const wsp = Math.hypot(vwx, vwz);
+    if (wsp > 2.2) {
+      const ivx = vwx / wsp, ivz = vwz / wsp;
+      if (ivx * this._stableX + ivz * this._stableZ < -0.5
+          && this._plantT >= 1 && this._moveW > 0.5 && !p.dodging && this._aimW < 0.5) {
+        this._plantT = 0;
+        this._stableX = ivx; this._stableZ = ivz;
+      } else {
+        this._stableX = damp(this._stableX, ivx, 4, dt);
+        this._stableZ = damp(this._stableZ, ivz, 4, dt);
+      }
+    }
+    this._plantT = Math.min(this._plantT + dt / 0.34, 1);
+
+    /* ---- stop settle: coming off a jog/sprint to a stand ---- */
+    this._recentSpd = Math.max(this._recentSpd - dt * 3.5, speed);
+    if (speed < 0.6 && this._prevSpd >= 0.6 && this._recentSpd > 2.6
+        && this._settleT >= 1 && !p.dodging && !dead) this._settleT = 0;
+    this._prevSpd = speed;
+    this._settleT = Math.min(this._settleT + dt / 0.42, 1);
+    this._recT = Math.min(this._recT + dt / 0.38, 1);
+
+    /* ---- dodge roll axis follows the input direction, not just facing ---- */
+    if (p.dodging) {
+      const dd = p._dodgeDir;
+      if (dd && (dd.x || dd.z)) {
+        const ddx = dd.x * chh - dd.z * shh, ddz = dd.x * shh + dd.z * chh;
+        const il = 1 / (Math.hypot(ddx, ddz) || 1);
+        this._dodgeAxis.set(ddz * il, 0, -ddx * il);
+      } else this._dodgeAxis.set(1, 0, 0);
+    }
+
     /* ---- reset every posed bone to bind (pose is rebuilt, never accumulated) */
     for (let i = 0; i < this._posed.length; i++) {
       const e = this._posed[i];
@@ -344,28 +427,53 @@ export class PlayerAnimator {
     this._curlFingers(this._fingerR, 0.32, 0.15);
 
     /* ==================== LAYER 1: idle (weight idleW) ==================== */
+    // weight-shift/posture scheduler: events on a random clock, not a metronome
+    if (idleW > 0.3 && !dead) {
+      this._wsTimer -= dt;
+      if (this._wsTimer <= 0) {
+        this._wsTimer = 2.6 + Math.random() * 3.6;
+        const side = Math.random() < 0.74 ? -Math.sign(this._wsTgt || 1) : Math.sign(this._wsTgt || 1);
+        this._wsTgt = side * (0.55 + Math.random() * 0.45);
+        if (this._poseT >= 1 && this._aimW < 0.2 && Math.random() < 0.34) {
+          this._poseT = 0;
+          this._poseType = (Math.random() * 3) | 0;
+          this._poseDur = 1.5 + Math.random() * 0.9;
+        }
+      }
+    } else this._wsTimer = Math.min(this._wsTimer, 0.6);
+    this._wsCur = damp(this._wsCur, idleW > 0.3 ? this._wsTgt : 0, 1.7, dt);
+    this._poseT = Math.min(this._poseT + dt / (this._poseDur || 1.6), 1);
+
     if (idleW > 0.01) {
       const wAim = 1 - aimW * 0.6;
-      // breathing ~13 breaths/min
-      const br = Math.sin(t * 1.45);
-      const br2 = Math.sin(t * 1.45 + 0.7);
+      const brA = 1 + 1.4 * this._puff;
+      const br = (this._brNow - 0.42) * 2 * brA;
+      const br2 = (this._brLag - 0.42) * 2 * brA; // shoulders lag the chest
       this._rotT(b.spine3, X_AXIS, br * 0.014 * idleW * wAim);
       this._rotT(b.spine4, X_AXIS, br * 0.02 * idleW * wAim);
       this._rot(b.clavL, Z_AXIS, -br2 * 0.016 * idleW * wAim);
       this._rot(b.clavR, Z_AXIS, br2 * 0.016 * idleW * wAim);
       stPitch += br * 0.034 * idleW * wAim;
+      // winded after a sprint: visible heave, torso drops toward the knees
+      const puffW = smoothstep(this._puff, 0.45, 0.9) * idleW * (1 - aimW) * (1 - crouchW);
+      if (puffW > 0.02) {
+        this._rotT(b.spine2, X_AXIS, (0.1 + br * 0.05) * puffW);
+        this._rot(b.upArmL, X_AXIS, -0.15 * puffW);
+        this._rot(b.upArmR, X_AXIS, -0.15 * puffW);
+        stPitch += (0.1 + br * 0.05) * puffW;
+      }
 
-      // slow weight shift side to side
-      const ws = Math.sin(t * 0.42);
+      // weight shifts arrive every few seconds on the scheduler above
+      const ws = this._wsCur;
       const wsW = idleW * (1 - crouchW) * (1 - aimW);
-      pdx += ws * 0.024 * wsW;
-      pdy += (Math.cos(t * 0.84) - 1) * 0.004 * wsW;
-      this._rotT(b.pelvis, Z_AXIS, -ws * 0.035 * wsW);
-      this._rotT(b.spine2, Z_AXIS, ws * 0.028 * wsW);
-      stRoll += -ws * 0.007 * wsW;
+      pdx += ws * 0.026 * wsW;
+      pdy += -Math.abs(ws) * 0.006 * wsW;
+      this._rotT(b.pelvis, Z_AXIS, -ws * 0.038 * wsW);
+      this._rotT(b.spine2, Z_AXIS, ws * 0.03 * wsW);
+      stRoll += -ws * 0.008 * wsW;
       // unweighted knee softens
-      const softL = Math.max(0, -ws) * 0.09 * wsW;
-      const softR = Math.max(0, ws) * 0.09 * wsW;
+      const softL = Math.max(0, -ws) * 0.1 * wsW;
+      const softR = Math.max(0, ws) * 0.1 * wsW;
       this._rot(b.thighL, X_AXIS, -softL * 0.5);
       this._rot(b.calfL, X_AXIS, softL);
       this._rot(b.footL, X_AXIS, -softL * 0.5);
@@ -378,13 +486,37 @@ export class PlayerAnimator {
       this._rot(b.upArmL, X_AXIS, asw);
       this._rot(b.upArmR, X_AXIS, -asw);
 
-      // occasional lazy look-around (suppressed while aiming)
+      // head: lazy wander plus fast micro-drift (two incommensurate bands)
       const lookW = idleW * (1 - aimW);
-      const lookY = (Math.sin(t * 0.21) * Math.sin(t * 0.13 + 2.1)) * 0.3 * lookW;
-      const lookP = Math.sin(t * 0.17 + 4) * 0.05 * lookW;
+      const lookY = (Math.sin(t * 0.21) * Math.sin(t * 0.13 + 2.1)) * 0.3 * lookW
+        + (Math.sin(t * 1.9 + 0.6) * Math.sin(t * 1.23)) * 0.022 * lookW;
+      const lookP = Math.sin(t * 0.17 + 4) * 0.05 * lookW
+        + Math.sin(t * 2.3 + 1.1) * 0.012 * lookW;
       this._rot(b.neck1, Y_AXIS, lookY * 0.35);
       this._rot(b.head, Y_AXIS, lookY * 0.65);
       this._rot(b.head, X_AXIS, lookP);
+
+      // occasional posture change: shoulder roll / glance back / scan horizon
+      if (this._poseT < 1) {
+        const pk = this._poseT;
+        const bell = smoothstep(pk, 0, 0.3) * (1 - smoothstep(pk, 0.68, 1)) * lookW;
+        if (this._poseType === 0) {          // roll the shoulders, straighten up
+          const wave = Math.sin(pk * Math.PI * 2);
+          this._rot(b.clavL, Z_AXIS, (-0.1 - wave * 0.05) * bell);
+          this._rot(b.clavR, Z_AXIS, (0.1 + wave * 0.05) * bell);
+          this._rotT(b.spine2, X_AXIS, -0.05 * bell);
+          this._rot(b.head, X_AXIS, -0.05 * bell);
+        } else if (this._poseType === 1) {   // glance over a shoulder
+          const s = Math.sign(this._wsTgt || 1);
+          this._rot(b.neck1, Y_AXIS, s * 0.28 * bell);
+          this._rot(b.head, Y_AXIS, s * 0.34 * bell);
+          this._rotT(b.spine3, Y_AXIS, s * 0.08 * bell);
+        } else {                             // lift the chin, scan the horizon
+          this._rot(b.head, X_AXIS, -0.14 * bell);
+          this._rot(b.head, Y_AXIS, Math.sin(pk * Math.PI * 1.5 + 0.4) * 0.22 * bell);
+          this._rot(b.neck1, X_AXIS, -0.06 * bell);
+        }
+      }
     }
 
     /* ================ LAYER 2: locomotion (weight moveW) ================== */
@@ -397,10 +529,12 @@ export class PlayerAnimator {
       // blending toward Z for lateral steps (side-stepping, aim strafing)
       const swingAxis = _v7.set(mz, 0, -mx);
 
-      // legs — phase L = ph, R = ph + PI. thigh fwd = -swingAxis rot
+      // legs — phase L = ph, R = ph + PI, plus per-side wandering jitter so
+      // the two sides never mirror perfectly (nothing alive is symmetric)
       for (let side = 0; side < 2; side++) {
         const s = side === 0 ? 1 : -1;
-        const lph = side === 0 ? ph : ph + Math.PI;
+        const lph = side === 0 ? ph + this._jitL : ph + Math.PI + this._jitR;
+        const amp = side === 0 ? 1.035 : 0.965; // slight L/R stride asymmetry
         const c = Math.cos(lph);
         const swingBend = Math.pow(Math.max(0, -Math.sin(lph - 0.3)), 1.3);
         const stanceLoad = Math.max(0, Math.sin(lph * 2)) * Math.max(0, Math.sin(lph)) * 0.14;
@@ -409,9 +543,9 @@ export class PlayerAnimator {
         const foot = side === 0 ? b.footL : b.footR;
         const ball = side === 0 ? b.ballL : b.ballR;
 
-        const thighA = -swing * c + 0.08 * moveW * fwdness; // slight forward bias
+        const thighA = (-swing * c + 0.08 * moveW * fwdness) * amp;
         const kneeA = (0.1 + (0.62 + 0.6 * runW) * swingBend + stanceLoad)
-          * moveW * crAmp * (0.55 + 0.45 * fwdness);
+          * moveW * crAmp * (0.55 + 0.45 * fwdness) * amp;
         this._rot(thigh, swingAxis, thighA);
         this._rot(calf, swingAxis, kneeA);
         // ankle: partially cancel carried chain rotation (foot ~level in stance),
@@ -420,6 +554,11 @@ export class PlayerAnimator {
           + 0.4 * moveW * fwdGate * Math.pow(Math.max(0, Math.sin(lph - 1.9)), 2);
         this._rot(foot, swingAxis, footA);
         this._rot(ball, X_AXIS, -0.35 * moveW * fwdGate * Math.pow(Math.max(0, Math.sin(lph - 1.6)), 2));
+        // heel-strike roll: toes pitch up into contact, then the sole slaps
+        // down and weight rolls heel -> ball (ball bone) -> toe-off
+        const heel = Math.pow(Math.max(0, Math.cos(lph - 0.35)), 6) * moveW * fwdGate;
+        this._rot(foot, swingAxis, -0.26 * heel);
+        this._rot(ball, X_AXIS, 0.12 * heel);
         // subtle out-toe; hips abduct into a wider base when stepping laterally
         this._rot(thigh, Y_AXIS, s * 0.04 * moveW);
         this._rot(thigh, Z_AXIS, s * 0.06 * moveW * (1 - fwdness));
@@ -427,14 +566,16 @@ export class PlayerAnimator {
 
       // pelvis: vertical bob (2x cadence), lateral weight transfer, yaw/roll
       // constant drop keeps the flexed stance leg planted (no floating feet)
-      const bobA = (0.02 + 0.05 * runW) * moveW;
+      // crouch-walk stays low and level: bob/swagger damped while crouched
+      const bobA = (0.02 + 0.05 * runW) * moveW * (1 - crouchW * 0.5);
       pdy += -bobA * (0.5 - 0.5 * Math.cos(2 * ph - 0.6))
         - (0.04 * midW + 0.028 * runW) * moveW;
       // weight transfer happens perpendicular to the move direction
       const wt = Math.cos(ph + 0.4) * 0.021 * moveW * (1 - runW * 0.75);
       pdx += wt * mz;
       pdz += -wt * mx;
-      this._rotT(b.pelvis, Y_AXIS, -cph * (0.075 + 0.05 * runW) * moveW * (0.5 + 0.5 * fwdness));
+      this._rotT(b.pelvis, Y_AXIS, -cph * (0.075 + 0.05 * runW) * moveW
+        * (0.5 + 0.5 * fwdness) * (1 - crouchW * 0.45));
       this._rotT(b.pelvis, Z_AXIS, sph * 0.045 * moveW * (1 - runW * 0.4));
 
       // spine: counter-yaw so shoulders oppose hips, forward lean with speed
@@ -444,28 +585,47 @@ export class PlayerAnimator {
       this._rotT(b.spine4, Y_AXIS, counter * 0.7);
       stYaw += counter * 2.4 - cph * (0.075 + 0.05 * runW) * moveW;
 
+      // push-off lean at start / brake lean at stop (smoothed acceleration),
+      // kept alive across the moveW ramp so starts and stops read as weight
+      this._leanAcc = damp(this._leanAcc, clamp(this._accel.z * 0.032, -0.22, 0.26), 9, dt);
       const lean = (0.04 + 0.09 * midW + 0.18 * runW) * moveW
-        + clamp(this._accel.z * 0.024, -0.2, 0.2) * moveW;
-      const leanRoll = clamp(-this._accel.x * 0.02 - this._yawRate * 0.05, -0.16, 0.16) * moveW;
+        + this._leanAcc * clamp(moveW * 3, 0, 1);
+      // banked turn: pelvis + whole spine roll into the yaw rate, more at speed
+      const spd01 = smoothstep(speed, 1.5, 8);
+      this._bank = damp(this._bank,
+        clamp(-this._yawRate * (0.055 + 0.095 * spd01) - this._accel.x * 0.018, -0.3, 0.3) * moveW,
+        10, dt);
+      const bank = this._bank;
       this._rotT(b.spine1, X_AXIS, lean * 0.35);
       this._rotT(b.spine2, X_AXIS, lean * 0.35);
       this._rotT(b.spine3, X_AXIS, lean * 0.3);
-      this._rotT(b.spine2, Z_AXIS, leanRoll);
+      this._rotT(b.pelvis, Z_AXIS, bank * 0.3);
+      this._rotT(b.spine1, Z_AXIS, bank * 0.3);
+      this._rotT(b.spine2, Z_AXIS, bank * 0.35);
+      this._rotT(b.spine3, Z_AXIS, bank * 0.25);
       stPitch += lean;
-      stRoll += leanRoll;
+      stRoll += bank * 0.9; // head stays level on the horizon through the bank
 
-      // arms: counter-swing (left arm back when left leg fwd), gated by aim
-      const armW = moveW * (1 - aimW);
+      // arms: counter-swing with relaxed follow-through — the elbow trails the
+      // shoulder and the wrist trails the elbow (phase lag down the chain)
+      const armW = moveW * (1 - aimW) * (1 - crouchW * 0.75);
       const armA = (0.24 + 0.34 * midW + 0.28 * runW) * armW;
-      const pumpL = Math.max(0, -cph) * (0.14 * midW + 0.3 * runW) * armW;
-      const pumpR = Math.max(0, cph) * (0.14 * midW + 0.3 * runW) * armW;
-      this._rot(b.upArmL, X_AXIS, armA * cph);
-      this._rot(b.upArmR, X_AXIS, -armA * cph);
-      // elbows: bent at run, pumping
+      const aphL = ph + this._jitL, aphR = ph + this._jitR;
+      const shL = Math.cos(aphL), shR = -Math.cos(aphR);
+      const elL = Math.cos(aphL - 0.5), elR = -Math.cos(aphR - 0.5);
+      const wrL = Math.cos(aphL - 1.0), wrR = -Math.cos(aphR - 1.0);
+      const pumpL = Math.max(0, -elL) * (0.14 * midW + 0.3 * runW) * armW;
+      const pumpR = Math.max(0, -elR) * (0.14 * midW + 0.3 * runW) * armW;
+      this._rot(b.upArmL, X_AXIS, armA * shL);
+      this._rot(b.upArmR, X_AXIS, armA * shR);
+      // elbows: bent at run, pumping on the lagged phase
       this._rot(b.loArmL, X_AXIS, -(0.12 + 0.5 * midW + 0.45 * runW) * armW - pumpL);
       this._rot(b.loArmR, X_AXIS, -(0.12 + 0.5 * midW + 0.45 * runW) * armW - pumpR);
-      this._rot(b.clavL, Y_AXIS, cph * 0.05 * armW);
-      this._rot(b.clavR, Y_AXIS, cph * 0.05 * armW);
+      // loose wrists swing last
+      this._rot(b.handL, X_AXIS, wrL * 0.18 * armW);
+      this._rot(b.handR, X_AXIS, wrR * 0.18 * armW);
+      this._rot(b.clavL, Y_AXIS, shL * 0.05 * armW);
+      this._rot(b.clavR, Y_AXIS, shL * 0.05 * armW);
     }
 
     /* =================== LAYER 3: crouch (weight crouchW) ================== */
@@ -490,11 +650,58 @@ export class PlayerAnimator {
       this._rotT(b.spine2, X_AXIS, hunch * 0.34);
       this._rotT(b.spine3, X_AXIS, hunch * 0.36);
       stPitch += hunch;
-      const armR = crouchW * (1 - aimW) * (1 - moveW * 0.6);
+      // tense and ready: hands stay up near the bow even while creeping,
+      // shoulders pulled up, fingers half-closed
+      const armR = crouchW * (1 - aimW) * (1 - moveW * 0.2);
       this._rot(b.upArmL, X_AXIS, -0.38 * armR);
-      this._rot(b.upArmR, X_AXIS, -0.38 * armR);
-      this._rot(b.loArmL, X_AXIS, -0.55 * armR);
-      this._rot(b.loArmR, X_AXIS, -0.55 * armR);
+      this._rot(b.upArmR, X_AXIS, -0.44 * armR);
+      this._rot(b.loArmL, X_AXIS, -0.6 * armR);
+      this._rot(b.loArmR, X_AXIS, -0.72 * armR);
+      this._rot(b.clavL, Z_AXIS, -0.07 * deep);
+      this._rot(b.clavR, Z_AXIS, 0.07 * deep);
+      this._curlFingers(this._fingerL, 0.2 * armR, 0.1 * armR);
+      this._curlFingers(this._fingerR, 0.2 * armR, 0.1 * armR);
+    }
+
+    /* ========= LAYER 3b: plant-turn / stop-settle / roll-recovery ========== */
+    // plant-and-turn: on a >120deg reversal she sinks, plants wide and drives
+    // out of the turn instead of pivoting like a turret
+    if (this._plantT < 1) {
+      const pw = Math.sin(Math.PI * this._plantT) * (1 - dodgeW) * (1 - this._deadW);
+      pdy += -0.11 * pw;
+      this._rot(b.thighL, X_AXIS, -0.18 * pw);
+      this._rot(b.thighR, X_AXIS, -0.24 * pw);
+      this._rot(b.calfL, X_AXIS, 0.42 * pw);
+      this._rot(b.calfR, X_AXIS, 0.34 * pw);
+      this._rotT(b.spine2, X_AXIS, 0.16 * pw);
+      this._rotT(b.spine3, X_AXIS, 0.1 * pw);
+      stPitch += 0.26 * pw;
+      const armF = pw * (1 - aimW);
+      this._rot(b.upArmL, Z_AXIS, 0.22 * armF);
+      this._rot(b.upArmR, Z_AXIS, -0.22 * armF);
+    }
+    // stop settle: a soft dip-and-recover step when a run ends
+    if (this._settleT < 1) {
+      const sw = Math.sin(Math.PI * this._settleT)
+        * (1 - dodgeW) * (1 - this._deadW) * (1 - moveW * 0.6);
+      pdy += -0.045 * sw;
+      this._rot(b.calfL, X_AXIS, 0.16 * sw);
+      this._rot(b.calfR, X_AXIS, 0.2 * sw);
+      this._rotT(b.spine2, X_AXIS, 0.09 * sw);
+      stPitch += 0.12 * sw;
+    }
+    // dodge recovery: a low catch-step out of the roll, arms out for balance
+    if (this._recT < 1) {
+      const rw = Math.sin(Math.PI * this._recT) * (1 - dodgeW) * (1 - this._deadW);
+      pdy += -0.12 * rw;
+      this._rot(b.thighR, X_AXIS, -0.38 * rw);
+      this._rot(b.calfR, X_AXIS, 0.55 * rw);
+      this._rot(b.calfL, X_AXIS, 0.26 * rw);
+      this._rotT(b.spine2, X_AXIS, 0.17 * rw);
+      stPitch += 0.19 * rw;
+      const armB = rw * (1 - aimW);
+      this._rot(b.upArmL, Z_AXIS, 0.34 * armB);
+      this._rot(b.upArmR, Z_AXIS, -0.34 * armB);
     }
 
     /* ============= LAYER 4: head stabilization (before aim look) =========== */
@@ -508,22 +715,31 @@ export class PlayerAnimator {
     }
 
     /* ================= LAYER 5: aim/draw overlay (weight aimW) ============= */
-    if (aimW > 0.01) this._aimLayer(aimW, this._drawS, p, moveW);
+    if (aimW > 0.01) this._aimLayer(aimW, this._drawS, p, moveW, t);
 
     /* ==================== LAYER 6: dodge tuck (dodgeW) ===================== */
     if (dodgeW > 0.01) {
       const k = this._dodgeT;
-      // grounded shoulder roll: tuck leads (full tuck by k~0.25), the body
+      // anticipation: a ~60ms crouch dip before the roll commits
+      const dip = smoothstep(k, 0, 0.1) * (1 - smoothstep(k, 0.12, 0.3)) * dodgeW;
+      // grounded shoulder roll: tuck leads (full tuck by k~0.3), the body
       // rolls low over the ground, then the tuck releases into the recovery
-      const tuck = smoothstep(k, 0.02, 0.24) * (1 - smoothstep(k, 0.86, 1.0)) * dodgeW;
-      // full forward shoulder roll; once complete (2PI = identity) it is
+      const tuck = smoothstep(k, 0.08, 0.28) * (1 - smoothstep(k, 0.86, 1.0)) * dodgeW;
+      // full shoulder roll about the axis of TRAVEL (input direction, so a
+      // side dodge rolls sideways); once complete (2PI = identity) it is
       // zeroed so the dodgeW fade-out can't visibly "unwind" the body
-      const rollT = smoothstep(k, 0.06, 0.9);
+      const rollT = smoothstep(k, 0.14, 0.92);
       const roll = rollT >= 1 ? 0 : rollT * Math.PI * 2;
-      this._rotT(b.pelvis, X_AXIS, roll * dodgeW);
+      this._rotT(b.pelvis, this._dodgeAxis, roll * dodgeW);
       // pelvis drops to ~0.28m mid-roll — hips ride the ground, not the air
-      pdy += -0.68 * Math.pow(Math.sin(Math.PI * clamp(k, 0, 1)), 0.8) * dodgeW;
-      const curl = 0.85 * tuck;
+      pdy += -0.68 * Math.pow(Math.sin(Math.PI * clamp((k - 0.08) / 0.92, 0, 1)), 0.8) * dodgeW
+        - 0.12 * dip;
+      // anticipation knee coil
+      this._rot(b.thighL, X_AXIS, -0.3 * dip);
+      this._rot(b.thighR, X_AXIS, -0.3 * dip);
+      this._rot(b.calfL, X_AXIS, 0.45 * dip);
+      this._rot(b.calfR, X_AXIS, 0.45 * dip);
+      const curl = 0.85 * tuck + 0.2 * dip;
       this._rotT(b.spine1, X_AXIS, curl * 0.45);
       this._rotT(b.spine2, X_AXIS, curl * 0.45);
       this._rotT(b.spine3, X_AXIS, curl * 0.4);
@@ -555,24 +771,34 @@ export class PlayerAnimator {
       this._rot(b.spine2, Z_AXIS, 0.06 * h);
     }
     if (this._deadW > 0.01) {
+      // crumple sequence on the death clock: knees buckle -> torso folds ->
+      // she keels over sideways and settles (not a static slump pose)
       const d = this._deadW;
-      pdy += -0.62 * d;
-      this._rot(b.thighL, X_AXIS, -1.35 * d);
-      this._rot(b.thighR, X_AXIS, -1.15 * d);
-      this._rot(b.calfL, X_AXIS, 2.15 * d);
-      this._rot(b.calfR, X_AXIS, 2.0 * d);
-      this._rot(b.footL, X_AXIS, -0.8 * d);
-      this._rot(b.footR, X_AXIS, -0.8 * d);
-      const slump = 0.62 * d;
+      const k1 = smoothstep(this._dieT, 0.0, 0.28);  // knee buckle
+      const k2 = smoothstep(this._dieT, 0.18, 0.6);  // torso fold
+      const k3 = smoothstep(this._dieT, 0.5, 1.05);  // sideways settle
+      pdy += (-0.5 * k1 - 0.3 * k3) * d;
+      this._rot(b.thighL, X_AXIS, -1.3 * k1 * d);
+      this._rot(b.thighR, X_AXIS, (-0.95 * k1 - 0.2 * k3) * d);
+      this._rot(b.calfL, X_AXIS, 2.3 * k1 * d);
+      this._rot(b.calfR, X_AXIS, (1.9 * k1 + 0.2 * k3) * d);
+      this._rot(b.footL, X_AXIS, -0.8 * k1 * d);
+      this._rot(b.footR, X_AXIS, -0.7 * k1 * d);
+      const slump = 0.72 * k2 * d;
       this._rotT(b.spine1, X_AXIS, slump * 0.35);
       this._rotT(b.spine2, X_AXIS, slump * 0.4);
       this._rotT(b.spine3, X_AXIS, slump * 0.35);
-      this._rot(b.neck1, X_AXIS, 0.3 * d);
-      this._rot(b.head, X_AXIS, 0.42 * d);
-      this._rot(b.upArmL, X_AXIS, -0.25 * d);
-      this._rot(b.upArmR, X_AXIS, -0.25 * d);
-      this._rot(b.upArmL, Z_AXIS, 0.15 * d);
-      this._rot(b.upArmR, Z_AXIS, -0.15 * d);
+      this._rotT(b.pelvis, Z_AXIS, -0.55 * k3 * d);  // keel to the right
+      this._rotT(b.spine2, Z_AXIS, -0.3 * k3 * d);
+      this._rot(b.neck1, X_AXIS, 0.32 * k2 * d);
+      this._rot(b.head, X_AXIS, 0.42 * k2 * d);
+      this._rot(b.head, Z_AXIS, -0.28 * k3 * d);
+      // arms go limp and fall outward as she settles
+      this._rot(b.upArmL, X_AXIS, (-0.25 * k2) * d);
+      this._rot(b.upArmR, X_AXIS, (-0.2 * k2) * d);
+      this._rot(b.upArmL, Z_AXIS, (0.15 * k2 + 0.18 * k3) * d);
+      this._rot(b.upArmR, Z_AXIS, (-0.15 * k2 - 0.25 * k3) * d);
+      this._rot(b.loArmL, X_AXIS, -0.2 * k3 * d);
     }
 
     // weary slump at low health
@@ -664,7 +890,7 @@ export class PlayerAnimator {
 
   /* ----------------------------- aim overlay ------------------------------ */
 
-  _aimLayer(aimW, drawS, p, moveW) {
+  _aimLayer(aimW, drawS, p, moveW, t) {
     const b = this.b;
     const pitch = clamp(p.camPitch ?? 0, -0.6, 1.05);
     const stanceW = aimW * (1 - moveW * 0.85);
@@ -718,6 +944,17 @@ export class PlayerAnimator {
         _dA.set(_v7.x * cy - _v7.z * sy, _v7.y, _v7.x * sy + _v7.z * cy);
       }
     }
+
+    // breathing sway (steadier under Concentration) + draw-hold tremble after
+    // ~3s at full draw. Combat keeps the bow/arrow crosshair-true — this only
+    // sways the body/hands, so it reads as effort without hurting accuracy.
+    const conc = this.ctx.combat?.concentration?.active ? 0.35 : 1;
+    const trem = smoothstep(this._holdT, 3, 4.6) * aimW;
+    _dA.y += (this._brNow - 0.5) * 0.011 * conc + trem * 0.006 * Math.sin(t * 43);
+    _dA.applyAxisAngle(Y_AXIS,
+      0.005 * conc * Math.sin(t * 0.57 + 1.3) + trem * 0.005 * Math.sin(t * 51));
+    _dA.normalize();
+
     const effPitch = Math.asin(clamp(-_dA.y, -1, 1)); // arm-line pitch
 
     // draw anchor at the right cheek/jaw, from the LIVE head position
@@ -748,6 +985,10 @@ export class PlayerAnimator {
     _grip.set(0.02, 1.4, 0.03).addScaledVector(_dA, 0.42);
     _v7.copy(_anch).sub(_v3);
     _grip.lerp(_v7, dEase);
+    if (trem > 0.01) { // fatigued bow arm shakes too
+      _grip.x += trem * 0.006 * Math.sin(t * 47 + 1);
+      _grip.y += trem * 0.005 * Math.sin(t * 59);
+    }
 
     // ---- LEFT ARM: bow arm, 2-bone IK to the grip (live shoulder position)
     this._charOf(b.upArmL.bone, _sh);
@@ -764,13 +1005,22 @@ export class PlayerAnimator {
     // ---- RIGHT ARM: string hand rides the nock at every draw length;
     // wrist sits just behind so the hooked fingers land on the string
     _v7.copy(_grip).addScaledVector(_dA, -0.068);
+    // nock flourish: for the first 0.2s of a draw the string hand sweeps back
+    // over the shoulder to the quiver, fingers open, then lands on the string
+    let qOpen = 1;
+    if (this._quiverT < 1) {
+      const qw = Math.sin(Math.PI * this._quiverT) * aimW;
+      _v6.set(-0.16, 1.56, -0.3); // quiver mouth, behind the right shoulder
+      _v7.lerp(_v6, qw * 0.85);
+      qOpen = 0.45 + 0.55 * this._quiverT;
+    }
     this._charOf(b.upArmR.bone, _sh);
     _pole.set(-0.85, -0.35 + 0.5 * drawS, -0.45 * drawS); // out+down -> level-back
     this._ikArm(b.upArmR, b.loArmR, _sh, _v7, _pole, aimW,
       this._dirUpR, this._dirLoR, this._lenUpR, this._lenLoR, null);
-    // string fingers: two-finger hook tightening with draw
+    // string fingers: two-finger hook tightening with draw (open at the quiver)
     this._rot(b.handR, Z_AXIS, -0.2 * aimW);
-    this._curlFingers(this._fingerR, (0.45 + 0.3 * drawS) * aimW, 0.25 * aimW);
+    this._curlFingers(this._fingerR, (0.45 + 0.3 * drawS) * aimW * qOpen, 0.25 * aimW);
   }
 
   /** Live character-space position of a bone (model space, +Z forward). */

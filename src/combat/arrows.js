@@ -33,9 +33,18 @@ const glowTex = radialTexture([
 const flameMat = new THREE.SpriteMaterial({
   map: flameTex, blending: THREE.AdditiveBlending, depthWrite: false, color: 0xffb050,
 });
-const shockMat = new THREE.SpriteMaterial({
-  map: glowTex, blending: THREE.AdditiveBlending, depthWrite: false, color: 0x7fd4ff,
-});
+// per-element glow sprites (shared materials; sprites swap between them)
+const glowMats = {
+  shock: new THREE.SpriteMaterial({
+    map: glowTex, blending: THREE.AdditiveBlending, depthWrite: false, color: 0x7fd4ff,
+  }),
+  freeze: new THREE.SpriteMaterial({
+    map: glowTex, blending: THREE.AdditiveBlending, depthWrite: false, color: 0xcfeaff,
+  }),
+  tearblast: new THREE.SpriteMaterial({
+    map: glowTex, blending: THREE.AdditiveBlending, depthWrite: false, color: 0x7fe8e0,
+  }),
+};
 
 // pale ash shaft so arrows read against dark machine plating at combat range
 const shaftMat = new THREE.MeshStandardMaterial({ color: 0xc9a86b, roughness: 0.72 });
@@ -44,25 +53,59 @@ const headMats = {
     color: 0xc4ced6, metalness: 0.9, roughness: 0.3,
     emissive: 0xd8ecf4, emissiveIntensity: 0.85,
   }),
+  hardpoint: new THREE.MeshStandardMaterial({
+    color: 0x8a4a20, metalness: 0.85, roughness: 0.35,
+    emissive: 0xff9a3a, emissiveIntensity: 1.1,
+  }),
   fire: new THREE.MeshStandardMaterial({
     color: 0x7a4020, metalness: 0.6, roughness: 0.4,
     emissive: 0xff5a1a, emissiveIntensity: 1.6,
   }),
+  precision: new THREE.MeshStandardMaterial({
+    color: 0xd8e8f0, metalness: 0.95, roughness: 0.22,
+    emissive: 0x9fe8ff, emissiveIntensity: 1.4,
+  }),
+  tearblast: new THREE.MeshStandardMaterial({
+    color: 0x1e4a50, metalness: 0.7, roughness: 0.35,
+    emissive: 0x4fe0d8, emissiveIntensity: 1.9,
+  }),
   shock: new THREE.MeshStandardMaterial({
     color: 0x2a4a5c, metalness: 0.7, roughness: 0.35,
     emissive: 0x37c9ff, emissiveIntensity: 1.8,
+  }),
+  freeze: new THREE.MeshStandardMaterial({
+    color: 0x9fc6dc, metalness: 0.6, roughness: 0.3,
+    emissive: 0xbfe6ff, emissiveIntensity: 1.7,
   }),
 };
 const fletchMats = {
   hunter: new THREE.MeshStandardMaterial({
     color: 0xf7ecd0, roughness: 0.85, emissive: 0x8a7a4e, emissiveIntensity: 0.45,
   }),
+  hardpoint: new THREE.MeshStandardMaterial({
+    color: 0xffb45e, roughness: 0.85, emissive: 0xc86a1e, emissiveIntensity: 0.6,
+  }),
   fire: new THREE.MeshStandardMaterial({
     color: 0xff8a3a, roughness: 0.85, emissive: 0xff5a14, emissiveIntensity: 0.8,
+  }),
+  precision: new THREE.MeshStandardMaterial({
+    color: 0xd8f2ff, roughness: 0.85, emissive: 0x6fc8f0, emissiveIntensity: 0.75,
+  }),
+  tearblast: new THREE.MeshStandardMaterial({
+    color: 0x8fe8e0, roughness: 0.85, emissive: 0x2eb8b0, emissiveIntensity: 0.8,
   }),
   shock: new THREE.MeshStandardMaterial({
     color: 0x8fd8ff, roughness: 0.85, emissive: 0x2ea8e8, emissiveIntensity: 0.8,
   }),
+  freeze: new THREE.MeshStandardMaterial({
+    color: 0xe0f2ff, roughness: 0.85, emissive: 0x8ab8e0, emissiveIntensity: 0.7,
+  }),
+};
+
+// head silhouette variation per ammo (scale on the merged head mesh)
+const HEAD_SCALE = {
+  hunter: 1, hardpoint: 1.7, fire: 1.15, precision: 1.25,
+  tearblast: 2.1, shock: 1.1, freeze: 1.1,
 };
 
 /* ---------------------------- shared geometries --------------------------- */
@@ -104,7 +147,7 @@ export function makeArrow() {
   flame.position.set(0, 0.015, ARROW_LEN - 0.1);
   flame.scale.setScalar(0.09);
   flame.visible = false;
-  const glow = new THREE.Sprite(shockMat);
+  const glow = new THREE.Sprite(glowMats.shock);
   glow.position.set(0, 0, ARROW_LEN - 0.08);
   glow.scale.setScalar(0.15);
   glow.visible = false;
@@ -117,11 +160,62 @@ export function makeArrow() {
 export function setArrowType(arrow, type) {
   arrow.head.material = headMats[type] ?? headMats.hunter;
   arrow.fins.material = fletchMats[type] ?? fletchMats.hunter;
+  const hs = HEAD_SCALE[type] ?? 1;
+  arrow.head.scale.set(hs, hs, Math.min(hs, 1.3));
   arrow.flame.visible = type === 'fire';
-  arrow.glow.visible = type === 'shock';
+  const glowType = type === 'shock' || type === 'freeze' || type === 'tearblast';
+  arrow.glow.visible = glowType;
+  if (glowType) arrow.glow.material = glowMats[type];
 }
 
-/* -------------------------------- the pool -------------------------------- */
+/* ----------------------------- bomb visuals ------------------------------- */
+
+const bombCoreMat = new THREE.MeshStandardMaterial({
+  color: 0x2a2118, metalness: 0.7, roughness: 0.45,
+});
+const bombBandMat = new THREE.MeshStandardMaterial({
+  color: 0x3a1a06, emissive: 0xff8a2a, emissiveIntensity: 2.2, roughness: 0.4,
+});
+const discCoreMat = new THREE.MeshStandardMaterial({
+  color: 0x38404a, metalness: 0.85, roughness: 0.35,
+});
+const discRimMat = new THREE.MeshStandardMaterial({
+  color: 0x3a0e06, emissive: 0xff4a22, emissiveIntensity: 2.6, roughness: 0.4,
+});
+
+/** Bomb / disc projectile visual. kind: 'blast-bomb' | 'disc'. */
+export function makeBombVisual(kind) {
+  const group = new THREE.Group();
+  let glow;
+  if (kind === 'disc') {
+    const core = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.16, 0.045, 14), discCoreMat);
+    core.castShadow = true;
+    const rim = new THREE.Mesh(new THREE.TorusGeometry(0.16, 0.02, 8, 20), discRimMat);
+    rim.rotation.x = Math.PI / 2;
+    const hub = new THREE.Mesh(new THREE.SphereGeometry(0.05, 8, 6), discRimMat);
+    glow = new THREE.Sprite(glowMats.tearblast);
+    glow.material = new THREE.SpriteMaterial({
+      map: glowTex, blending: THREE.AdditiveBlending, depthWrite: false, color: 0xff6a3a,
+    });
+    glow.scale.setScalar(0.5);
+    group.add(core, rim, hub, glow);
+  } else {
+    const core = new THREE.Mesh(new THREE.IcosahedronGeometry(0.085, 1), bombCoreMat);
+    core.castShadow = true;
+    const band = new THREE.Mesh(new THREE.TorusGeometry(0.085, 0.018, 8, 18), bombBandMat);
+    const band2 = new THREE.Mesh(new THREE.TorusGeometry(0.085, 0.014, 8, 18), bombBandMat);
+    band2.rotation.x = Math.PI / 2;
+    glow = new THREE.Sprite(new THREE.SpriteMaterial({
+      map: glowTex, blending: THREE.AdditiveBlending, depthWrite: false, color: 0xffa050,
+    }));
+    glow.scale.setScalar(0.34);
+    group.add(core, band, band2, glow);
+  }
+  group.traverse((o) => { o.raycast = NOOP_RAYCAST; });
+  return { group, glow };
+}
+
+/* -------------------------------- the pools ------------------------------- */
 
 // broad-phase capsule radii / center heights per machine kind
 const HIT_RADII = { watcher: 2.6, sawtooth: 3.6, behemoth: 5.2, thunderjaw: 10, aloy: 0 };
@@ -129,8 +223,14 @@ const HIT_CY = { watcher: 1.0, sawtooth: 1.2, behemoth: 2.2, thunderjaw: 3.6 };
 
 const TRAIL_COLORS = {
   hunter: [0.62, 0.52, 0.34],
+  hardpoint: [0.95, 0.62, 0.22],
   fire: [1.0, 0.45, 0.12],
+  precision: [0.55, 0.85, 1.0],
+  tearblast: [0.4, 0.88, 0.85],
   shock: [0.3, 0.75, 1.0],
+  freeze: [0.72, 0.88, 1.0],
+  'blast-bomb': [1.0, 0.55, 0.18],
+  disc: [1.0, 0.35, 0.14],
 };
 
 const _Z = new THREE.Vector3(0, 0, 1);
@@ -157,11 +257,74 @@ function distPointSeg(p, a, b) {
   return _cl.distanceTo(p);
 }
 
+/**
+ * Sweep a segment [a -> a + dir*len] against machines + terrain.
+ * Returns { dist, object, machine } with dist = Infinity when nothing hit.
+ * Shared by arrows and bombs.
+ */
+function sweepSegment(ctx, machines, a, dir, len, out) {
+  out.dist = Infinity;
+  out.object = null;
+  out.machine = null;
+  if (machines) {
+    for (const m of machines) {
+      if (m.alive === false || !m.root) continue;
+      const r = HIT_RADII[m.kind] ?? 2.5;
+      if (r <= 0) continue;
+      _c.copy(m.position);
+      _c.y += HIT_CY[m.kind] ?? 1.2;
+      _s.copy(a).addScaledVector(dir, len);
+      if (distPointSeg(_c, a, _s) > r) continue;
+      _ray.camera = ctx.camera; // machines may contain Sprites (eye glows)
+      _ray.set(a, dir);
+      _ray.near = 0;
+      _ray.far = Math.min(len, out.dist);
+      const hits = _ray.intersectObject(m.root, true);
+      if (hits.length && hits[0].distance < out.dist) {
+        out.dist = hits[0].distance;
+        out.object = hits[0].object;
+        out.machine = m;
+      }
+    }
+  }
+  const terr = ctx.terrain;
+  if (terr) {
+    const step = 0.3;
+    let sPrev = 0;
+    const above0 = a.y > terr.getHeight(a.x, a.z);
+    if (!above0) {
+      if (out.dist > 0) { out.dist = 0; out.object = null; out.machine = null; }
+    } else {
+      const limit = Math.min(len, out.dist);
+      for (let s = step; sPrev < limit; s += step) {
+        const sc = Math.min(s, limit);
+        _s.copy(a).addScaledVector(dir, sc);
+        const above = _s.y > terr.getHeight(_s.x, _s.z);
+        if (!above) {
+          let lo = sPrev, hi = sc;
+          for (let i = 0; i < 7; i++) {
+            const mid = (lo + hi) / 2;
+            _s.copy(a).addScaledVector(dir, mid);
+            if (_s.y > terr.getHeight(_s.x, _s.z)) lo = mid; else hi = mid;
+          }
+          if (hi < out.dist) { out.dist = hi; out.object = null; out.machine = null; }
+          break;
+        }
+        sPrev = sc;
+        if (sc >= limit) break;
+      }
+    }
+  }
+  return out;
+}
+
+const _sweep = { dist: Infinity, object: null, machine: null };
+
 export class ArrowPool {
   constructor(ctx, trailFx, size = 28) {
     this.ctx = ctx;
     this.trailFx = trailFx;
-    this.onImpact = null; // ({point, normal, object, machine, dir, type, baseDamage, draw}) => void
+    this.onImpact = null; // ({point, normal, object, machine, dir, type, draw}) => void
     this.list = [];
     for (let i = 0; i < size; i++) {
       const a = makeArrow();
@@ -171,7 +334,6 @@ export class ArrowPool {
       a.pos = new THREE.Vector3(); // tail position
       a.vel = new THREE.Vector3();
       a.type = 'hunter';
-      a.baseDamage = 0;
       a.draw = 0;
       a.age = 0;
       a.seed = Math.random() * 20;
@@ -190,7 +352,7 @@ export class ArrowPool {
     return best;
   }
 
-  fire(origin, dir, speed, type, baseDamage, draw) {
+  fire(origin, dir, speed, type, draw) {
     const a = this._alloc();
     if (a.group.parent !== this.ctx.scene) {
       a.group.parent?.remove(a.group);
@@ -202,7 +364,6 @@ export class ArrowPool {
     a.age = 0;
     a.fresh = true; // first collision segment sweeps from the tail, not the tip
     a.type = type;
-    a.baseDamage = baseDamage;
     a.draw = draw;
     setArrowType(a, type);
     a.pos.copy(origin);
@@ -262,10 +423,11 @@ export class ArrowPool {
         }
       }
       // elemental flicker
-      if (a.type === 'fire' && a.group.visible) {
+      if (!a.group.visible) continue;
+      if (a.type === 'fire') {
         const s = 0.085 * (1 + 0.35 * Math.sin(t * 23 + a.seed) * Math.sin(t * 31 + a.seed * 2));
         a.flame.scale.set(s, s * 1.5, 1);
-      } else if (a.type === 'shock' && a.group.visible) {
+      } else if (a.glow.visible) {
         const s = 0.15 * (1 + 0.2 * Math.sin(t * 15 + a.seed));
         a.glow.scale.set(s, s, 1);
       }
@@ -298,60 +460,10 @@ export class ArrowPool {
     if (segLen < 1e-6) return;
     _segDir.multiplyScalar(1 / segLen);
 
-    let hitDist = Infinity, hitObj = null, hitMachine = null;
-
-    // --- machines: sphere broad-phase, then precise raycast of the segment
-    if (machines) {
-      for (const m of machines) {
-        if (m.alive === false || !m.root) continue;
-        const r = HIT_RADII[m.kind] ?? 2.5;
-        if (r <= 0) continue;
-        _c.copy(m.position);
-        _c.y += HIT_CY[m.kind] ?? 1.2;
-        if (distPointSeg(_c, _oldTip, _newTip) > r) continue;
-        _ray.camera = this.ctx.camera; // machines may contain Sprites (eye glows)
-        _ray.set(_oldTip, _segDir);
-        _ray.near = 0;
-        _ray.far = Math.min(segLen, hitDist);
-        const hits = _ray.intersectObject(m.root, true);
-        if (hits.length && hits[0].distance < hitDist) {
-          hitDist = hits[0].distance;
-          hitObj = hits[0].object;
-          hitMachine = m;
-        }
-      }
-    }
-
-    // --- terrain: analytic march + bisection along the segment
-    const terr = this.ctx.terrain;
-    if (terr) {
-      const step = 0.3;
-      let sPrev = 0;
-      let abovePrev = _oldTip.y > terr.getHeight(_oldTip.x, _oldTip.z);
-      if (!abovePrev) {
-        if (0 < hitDist) { hitDist = 0; hitObj = null; hitMachine = null; }
-      } else {
-        const limit = Math.min(segLen, hitDist);
-        for (let s = step; sPrev < limit; s += step) {
-          const sc = Math.min(s, limit);
-          _s.copy(_oldTip).addScaledVector(_segDir, sc);
-          const above = _s.y > terr.getHeight(_s.x, _s.z);
-          if (!above) {
-            // bisect [sPrev, sc]
-            let lo = sPrev, hi = sc;
-            for (let i = 0; i < 7; i++) {
-              const mid = (lo + hi) / 2;
-              _s.copy(_oldTip).addScaledVector(_segDir, mid);
-              if (_s.y > terr.getHeight(_s.x, _s.z)) lo = mid; else hi = mid;
-            }
-            if (hi < hitDist) { hitDist = hi; hitObj = null; hitMachine = null; }
-            break;
-          }
-          sPrev = sc;
-          if (sc >= limit) break;
-        }
-      }
-    }
+    sweepSegment(this.ctx, machines, _oldTip, _segDir, segLen, _sweep);
+    const hitDist = _sweep.dist;
+    const hitObj = _sweep.object;
+    const hitMachine = _sweep.machine;
 
     // --- tracer trail breadcrumbs
     if (this.trailFx) {
@@ -398,8 +510,120 @@ export class ArrowPool {
       object: hitObj,
       machine: hitMachine,
       type: a.type,
-      baseDamage: a.baseDamage,
       draw: a.draw,
     });
+  }
+}
+
+/**
+ * Lobbed bomb / disc projectiles. Same ballistic integration as arrows so the
+ * sling's trajectory preview can simulate honestly; explodes on any impact
+ * (combat owns the AoE + FX via onImpact).
+ */
+export class BombPool {
+  constructor(ctx, trailFx, size, kind) {
+    this.ctx = ctx;
+    this.trailFx = trailFx;
+    this.kind = kind;
+    this.gravity = kind === 'disc' ? 5.5 : 9.8;
+    this.onImpact = null;
+    this.list = [];
+    for (let i = 0; i < size; i++) {
+      const b = makeBombVisual(kind);
+      b.group.visible = false;
+      b.mode = 'idle';
+      b.pos = new THREE.Vector3();
+      b.vel = new THREE.Vector3();
+      b.type = kind;
+      b.age = 0;
+      b.spin = 0;
+      ctx.scene.add(b.group);
+      this.list.push(b);
+    }
+  }
+
+  fire(origin, dir, speed, type) {
+    let best = this.list[0];
+    for (const b of this.list) {
+      if (b.mode === 'idle') { best = b; break; }
+      if (b.age > best.age) best = b;
+    }
+    const b = best;
+    b.group.visible = true;
+    b.mode = 'fly';
+    b.age = 0;
+    b.type = type;
+    b.spin = Math.random() * Math.PI * 2;
+    b.pos.copy(origin);
+    b.vel.copy(dir).multiplyScalar(speed);
+    b.group.position.copy(b.pos);
+    return b;
+  }
+
+  update(dt, t) {
+    const machines = this.ctx.machines?.list;
+    for (const b of this.list) {
+      if (b.mode !== 'fly') continue;
+      b.age += dt;
+      if (b.age > 10 || b.pos.y < -80) { b.mode = 'idle'; b.group.visible = false; continue; }
+      if (dt <= 0) continue;
+
+      _oldTip.copy(b.pos);
+      b.vel.y -= this.gravity * dt;
+      b.vel.multiplyScalar(Math.max(0, 1 - 0.05 * dt));
+      b.pos.addScaledVector(b.vel, dt);
+
+      // spin: discs whirl flat, bombs tumble
+      b.spin += dt * (this.kind === 'disc' ? 22 : 7);
+      if (this.kind === 'disc') {
+        b.group.rotation.set(0.35, b.spin, 0);
+      } else {
+        b.group.rotation.set(b.spin, b.spin * 0.7, 0);
+      }
+      b.group.position.copy(b.pos);
+
+      _segDir.subVectors(b.pos, _oldTip);
+      const segLen = _segDir.length();
+      if (segLen < 1e-6) continue;
+      _segDir.multiplyScalar(1 / segLen);
+
+      // ember trail
+      if (this.trailFx) {
+        const col = TRAIL_COLORS[b.type] ?? TRAIL_COLORS['blast-bomb'];
+        const n = Math.min(4, Math.max(1, Math.ceil(segLen / 0.5)));
+        for (let i = 0; i < n; i++) {
+          const s = segLen * ((i + 0.5) / n);
+          _s.copy(_oldTip).addScaledVector(_segDir, s);
+          this.trailFx.emit(
+            _s.x, _s.y, _s.z,
+            (Math.random() - 0.5) * 0.5, (Math.random() - 0.5) * 0.5, (Math.random() - 0.5) * 0.5,
+            col[0], col[1], col[2],
+            0.1 + Math.random() * 0.07,
+            0.26 + Math.random() * 0.14,
+          );
+        }
+      }
+
+      sweepSegment(this.ctx, machines, _oldTip, _segDir, segLen, _sweep);
+      if (!Number.isFinite(_sweep.dist)) continue;
+
+      _hitP.copy(_oldTip).addScaledVector(_segDir, _sweep.dist);
+      if (_sweep.machine) _n.copy(_segDir).negate();
+      else if (this.ctx.terrain) this.ctx.terrain.getNormal(_hitP.x, _hitP.z, _n);
+      else _n.set(0, 1, 0);
+
+      b.mode = 'idle';
+      b.group.visible = false;
+
+      this.onImpact?.({
+        point: _hitP,   // scratch — consumer must clone to retain
+        normal: _n,     // scratch
+        dir: _segDir,   // scratch
+        object: _sweep.object,
+        machine: _sweep.machine,
+        type: b.type,
+        draw: 1,
+      });
+    }
   }
 }

@@ -1,10 +1,29 @@
-/* HZD-style HUD skin. Lives under #hud (fixed, pointer-events:none, z-index 40).
-   Palette comes from :root vars in style.css. */
+/* HZD-accurate HUD skin (round 2). Lives under #hud (fixed, pointer-events:none,
+   z-index 40). Fonts + palette vars come from :root in style.css.
+   Language per docs/research/ui.md: parchment text (#EFE6D5) with yellow
+   (#F5C95C) highlights, dark blue-gray translucent panels, 1px light borders,
+   sharp corners with occasional 45-degree cuts, small triangle motifs. */
 
 #hud {
   font-family: var(--font);
   color: var(--hzc-text);
   user-select: none;
+  --hzc-gold: #f5c95c;
+  --hzc-parch-dim: rgba(239, 230, 213, 0.6);
+  --hzc-panel: rgba(12, 16, 20, 0.72);
+  --hzc-border: rgba(239, 230, 213, 0.22);
+  --hzc-fire: #f0a03c;
+  --hzc-shock: #4fa3e3;
+  --hzc-freeze: #59c1c6;
+  --hzc-tear: #4ec9b0;
+  --hzc-alert: #d64541;
+}
+
+/* shared panel language: dark translucent, thin border, cut corner */
+.hzc-panel {
+  background: var(--hzc-panel);
+  border: 1px solid var(--hzc-border);
+  clip-path: polygon(10px 0, 100% 0, 100% calc(100% - 10px), calc(100% - 10px) 100%, 0 100%, 0 10px);
 }
 
 /* ------------------------------ damage vignette ------------------------------ */
@@ -16,14 +35,11 @@
 }
 
 /* ------------------------------ focus scan tint ------------------------------ */
-/* Fullscreen cool-down of the golden-hour grade while the Focus window is
-   open. Prepended as the first #hud child so all HUD chrome draws above it. */
+/* Kept for src/ui/focus.js which prepends this element into #hud. */
 .hzc-focus-tint {
   position: absolute; inset: 0;
   opacity: 0;
   transition: opacity 0.35s ease;
-  /* cool grade: a flat desaturating blue-gray veil plus darker cool corners.
-     (a fullscreen backdrop-filter costs ~5fps — plain compositing is free) */
   background:
     radial-gradient(ellipse at center,
       rgba(70, 105, 150, 0.16) 0%, rgba(30, 58, 108, 0.30) 72%, rgba(14, 28, 64, 0.5) 100%),
@@ -31,49 +47,73 @@
 }
 .hzc-focus-tint.on { opacity: 1; }
 
-/* ------------------------------ top-left: vitals ----------------------------- */
-.hzc-topleft { position: absolute; top: 26px; left: 30px; width: 290px; }
-.hzc-health-label {
-  font-size: 9px; letter-spacing: 0.36em;
-  color: rgba(232, 236, 236, 0.88);
-  text-shadow: 0 1px 6px rgba(0, 0, 0, 0.9), 0 0 2px rgba(0, 0, 0, 0.8);
-  margin-bottom: 5px;
+/* --------------------- top-left: health + medicine pouch --------------------- */
+.hzc-topleft {
+  position: absolute; top: 26px; left: 30px; width: 292px;
+  transition: opacity 0.6s ease;
 }
+.hzc-topleft.idle { opacity: 0.45; } /* dynamic HUD: dim when untouched + full */
+
+/* RED bar divided into 4 segments by thin ticks (research 2. Health Meter) */
 .hzc-healthbar {
-  height: 7px;
-  background: var(--hzc-scrim);
-  border: 1px solid rgba(232, 236, 236, 0.28);
+  position: relative;
+  height: 10px;
+  background: #3a1f1c;
+  border: 1px solid rgba(239, 230, 213, 0.3);
   padding: 1px;
+  clip-path: polygon(5px 0, 100% 0, 100% 100%, 0 100%, 0 5px);
+  box-shadow: 0 1px 8px rgba(0, 0, 0, 0.45);
 }
 .hzc-healthfill {
   height: 100%; width: 100%;
-  background: linear-gradient(90deg, #e8f6f8, #9fdfe8);
-  box-shadow: 0 0 8px rgba(53, 200, 220, 0.35);
+  background: linear-gradient(180deg, #c94a3b, #b03a2e 55%, #952f24);
   transition: width 0.16s ease-out;
 }
-.hzc-healthfill.low {
-  background: linear-gradient(90deg, #e04f3f, #e8865f);
-  box-shadow: 0 0 10px rgba(224, 79, 63, 0.6);
+.hzc-healthfill.low { animation: hzcHealthLow 1.1s ease-in-out infinite; }
+@keyframes hzcHealthLow {
+  0%, 100% { filter: brightness(1); }
+  50% { filter: brightness(1.65); }
 }
-.hzc-meds { display: flex; gap: 6px; margin-top: 8px; align-items: center; }
-.hzc-med {
-  width: 17px; height: 7px;
-  background: rgba(232, 236, 236, 0.08);
-  border: 1px solid rgba(232, 236, 236, 0.25);
-  transform: skewX(-18deg);
-}
-.hzc-med.full {
-  background: var(--hzc-accent);
-  border-color: var(--hzc-accent);
-  box-shadow: 0 0 6px rgba(53, 200, 220, 0.55);
-}
-.hzc-med-key {
-  font-size: 9px; letter-spacing: 0.24em;
-  color: rgba(232, 236, 236, 0.38);
-  margin-left: 5px;
+.hzc-health-seg {
+  position: absolute; top: 0; bottom: 0;
+  width: 2px;
+  background: #1e1e1e;
 }
 
-/* ------------------------------- compass strip ------------------------------- */
+/* thin GREEN pouch meter directly under the health bar */
+.hzc-pouchrow { display: flex; align-items: center; gap: 7px; margin-top: 4px; }
+.hzc-pouchbar {
+  flex: 0 0 auto;
+  width: 224px; height: 5px;
+  background: rgba(10, 16, 12, 0.72);
+  border: 1px solid rgba(239, 230, 213, 0.22);
+  padding: 1px;
+}
+.hzc-pouchfill {
+  height: 100%; width: 60%;
+  background: var(--hzc-med);
+  box-shadow: 0 0 6px rgba(127, 176, 105, 0.4);
+  transition: width 0.14s ease-out;
+}
+.hzc-pouchrow.healing .hzc-pouchfill { animation: hzcPouchPulse 0.55s ease-in-out infinite; }
+@keyframes hzcPouchPulse {
+  0%, 100% { filter: brightness(1); box-shadow: 0 0 6px rgba(127, 176, 105, 0.4); }
+  50% { filter: brightness(1.8); box-shadow: 0 0 12px rgba(127, 176, 105, 0.9); }
+}
+.hzc-pouch-key {
+  font-family: var(--font);
+  font-weight: 600; font-size: 9px; letter-spacing: 0.08em;
+  color: var(--hzc-parch-dim);
+  border: 1px solid rgba(239, 230, 213, 0.35);
+  padding: 0 5px;
+  line-height: 13px;
+  clip-path: polygon(3px 0, 100% 0, 100% calc(100% - 3px), calc(100% - 3px) 100%, 0 100%, 0 3px);
+  opacity: 0;
+  transition: opacity 0.3s ease;
+}
+.hzc-pouch-key.show { opacity: 1; }
+
+/* ------------------------------- compass ribbon ------------------------------ */
 .hzc-compass {
   position: absolute; top: 20px; left: 50%;
   transform: translateX(-50%);
@@ -81,61 +121,62 @@
 }
 .hzc-compass-window {
   position: relative; height: 36px; overflow: hidden;
-  background: linear-gradient(180deg, rgba(8, 14, 18, 0.65), rgba(8, 14, 18, 0.3));
+  background: linear-gradient(180deg, rgba(12, 16, 20, 0.6), rgba(12, 16, 20, 0.26));
   -webkit-mask-image: linear-gradient(90deg, transparent 0, #000 14%, #000 86%, transparent 100%);
   mask-image: linear-gradient(90deg, transparent 0, #000 14%, #000 86%, transparent 100%);
 }
 .hzc-compass-window::after {
   content: '';
   position: absolute; left: 0; right: 0; bottom: 0; height: 1px;
-  background: rgba(232, 236, 236, 0.25);
+  background: rgba(239, 230, 213, 0.28);
 }
 .hzc-compass-track, .hzc-compass-pips { position: absolute; inset: 0; }
 .hzc-tick {
-  position: absolute; top: 23px; left: 50%;
-  width: 1px; height: 7px;
-  background: rgba(232, 236, 236, 0.6);
+  position: absolute; top: 24px; left: 50%;
+  width: 1px; height: 6px;
+  background: rgba(239, 230, 213, 0.5);
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.7);
   visibility: hidden;
 }
 .hzc-cdir {
-  position: absolute; top: 8px; left: 50%;
-  font-size: 10px; letter-spacing: 0.1em;
-  color: rgba(232, 236, 236, 0.85);
+  position: absolute; top: 9px; left: 50%;
+  font-size: 10px; font-weight: 500; letter-spacing: 0.1em;
+  color: var(--hzc-parch-dim);
   text-shadow: 0 1px 6px rgba(0, 0, 0, 0.9), 0 0 2px rgba(0, 0, 0, 0.75);
   visibility: hidden;
 }
 .hzc-cdir.main {
-  top: 5px;
-  font-size: 14px; font-weight: 500;
-  color: rgba(232, 236, 236, 0.97);
+  top: 6px;
+  font-size: 14px; font-weight: 600;
+  color: var(--hzc-text);
 }
-.hzc-cdir.north { color: var(--hzc-accent); }
+.hzc-cdir.north { color: var(--hzc-gold); }
+/* diamond machine pips, awareness-colored (white calm / yellow / red) */
 .hzc-pip {
-  position: absolute; bottom: 4px; left: 50%;
-  width: 7px; height: 7px;
-  background: #5fd4e4;
-  box-shadow: 0 0 6px rgba(53, 200, 220, 0.7);
+  position: absolute; bottom: 5px; left: 50%;
+  width: 6px; height: 6px;
+  background: rgba(239, 230, 213, 0.85);
+  outline: 1px solid rgba(10, 12, 14, 0.55);
+  box-shadow: 0 0 5px rgba(239, 230, 213, 0.45);
   visibility: hidden;
 }
-.hzc-pip[data-s='wary'] { background: var(--hzc-warn); box-shadow: 0 0 6px rgba(232, 163, 61, 0.8); }
-.hzc-pip[data-s='hostile'] { background: var(--hzc-danger); box-shadow: 0 0 7px rgba(224, 79, 63, 0.9); }
+.hzc-pip[data-s='wary'] { background: var(--hzc-gold); box-shadow: 0 0 6px rgba(245, 201, 92, 0.8); }
+.hzc-pip[data-s='hostile'] { background: var(--hzc-alert); box-shadow: 0 0 7px rgba(214, 69, 65, 0.9); }
 .hzc-compass-caret {
   position: absolute; top: -1px; left: 50%;
   transform: translateX(-50%);
   width: 0; height: 0;
   border-left: 4px solid transparent;
   border-right: 4px solid transparent;
-  border-top: 5px solid var(--hzc-accent);
+  border-top: 5px solid var(--hzc-gold);
 }
 .hzc-bearing {
   text-align: center;
-  font-size: 9px; letter-spacing: 0.34em; text-indent: 0.34em;
-  color: rgba(232, 236, 236, 0.85);
+  font-size: 9px; font-weight: 600; letter-spacing: 0.34em; text-indent: 0.34em;
+  color: var(--hzc-parch-dim);
   text-shadow: 0 1px 6px rgba(0, 0, 0, 0.9), 0 0 2px rgba(0, 0, 0, 0.75);
-  /* soft scrim pill behind the digits so they hold up against the sun */
   background: radial-gradient(ellipse 46px 11px at center,
-    rgba(8, 14, 18, 0.62) 0%, rgba(8, 14, 18, 0.45) 55%, transparent 100%);
+    rgba(12, 16, 20, 0.62) 0%, rgba(12, 16, 20, 0.45) 55%, transparent 100%);
   margin-top: 2px;
   padding: 2px 0 3px;
 }
@@ -149,46 +190,142 @@
 }
 .hzc-mhb.show { opacity: 1; }
 .hzc-mhb-name {
-  font-size: 10px; letter-spacing: 0.44em; text-indent: 0.44em;
-  color: var(--hzc-warn);
+  font-size: 11px; font-weight: 600; letter-spacing: 0.4em; text-indent: 0.4em;
+  color: var(--hzc-text);
+  text-shadow: 0 1px 6px rgba(0, 0, 0, 0.9);
   margin-bottom: 4px;
 }
+.hzc-mhb-name b { color: var(--hzc-gold); font-weight: 600; }
 .hzc-mhb-bar {
   height: 5px;
-  background: rgba(8, 14, 18, 0.6);
-  border: 1px solid rgba(232, 236, 236, 0.22);
+  background: rgba(12, 16, 20, 0.65);
+  border: 1px solid var(--hzc-border);
   padding: 1px;
 }
+/* yellow-white fill on dark backing (research: enemy health bars) */
 .hzc-mhb-fill {
   height: 100%; width: 100%;
-  background: linear-gradient(90deg, #e8a33d, #f4c66e);
-  box-shadow: 0 0 8px rgba(232, 163, 61, 0.5);
+  background: linear-gradient(90deg, #e8c268, #f2ead8);
+  box-shadow: 0 0 8px rgba(232, 194, 104, 0.45);
   transition: width 0.14s ease-out;
 }
+/* 3 elemental buildup micro-meters (fire / shock / freeze) */
+.hzc-mhb-elems {
+  display: flex; gap: 6px; justify-content: center;
+  margin-top: 4px;
+  height: 9px;
+}
+.hzc-elem {
+  display: none;
+  align-items: center; gap: 3px;
+  width: 104px;
+}
+.hzc-elem.show { display: flex; }
+.hzc-elem svg { width: 8px; height: 8px; flex: 0 0 auto; display: block; }
+.hzc-elem-bar {
+  flex: 1;
+  height: 3px;
+  background: rgba(12, 16, 20, 0.7);
+  border: 1px solid rgba(239, 230, 213, 0.16);
+}
+.hzc-elem-fill { height: 100%; width: 0; transition: width 0.12s ease-out; }
+.hzc-elem[data-e='fire'] { color: var(--hzc-fire); }
+.hzc-elem[data-e='shock'] { color: var(--hzc-shock); }
+.hzc-elem[data-e='freeze'] { color: var(--hzc-freeze); }
+.hzc-elem[data-e='fire'] .hzc-elem-fill { background: var(--hzc-fire); }
+.hzc-elem[data-e='shock'] .hzc-elem-fill { background: var(--hzc-shock); }
+.hzc-elem[data-e='freeze'] .hzc-elem-fill { background: var(--hzc-freeze); }
+.hzc-elem.triggered .hzc-elem-fill { animation: hzcElemTrig 0.4s ease-in-out infinite; }
+@keyframes hzcElemTrig {
+  0%, 100% { filter: brightness(1); }
+  50% { filter: brightness(2); }
+}
+
+/* ------------------------- awareness indicators (world) ---------------------- */
+/* Per-machine, projected above the machine; clamped to the screen edge when the
+   threat is off-screen. Yellow circle fills with detection -> full red when
+   hostile -> flashing jagged red diamond while that machine is attacking. */
+.hzc-awares { position: absolute; inset: 0; overflow: hidden; }
+.hzc-aware {
+  position: absolute; left: 0; top: 0;
+  width: 0; height: 0;
+  visibility: hidden;
+  will-change: transform;
+}
+.hzc-aware-circle {
+  position: absolute; left: -9px; top: -9px;
+  width: 18px; height: 18px;
+  border-radius: 50%;
+  border: 1.5px solid var(--hzc-gold);
+  background: conic-gradient(var(--hzc-gold) 0%, rgba(8, 10, 12, 0.35) 0);
+  box-shadow: 0 0 7px rgba(0, 0, 0, 0.6), 0 0 9px rgba(245, 201, 92, 0.35);
+  display: none;
+}
+.hzc-aware[data-m='fill'] .hzc-aware-circle { display: block; }
+.hzc-aware[data-m='alert'] .hzc-aware-circle {
+  display: block;
+  border-color: var(--hzc-alert);
+  background: var(--hzc-alert);
+  box-shadow: 0 0 8px rgba(0, 0, 0, 0.6), 0 0 12px rgba(214, 69, 65, 0.75);
+}
+.hzc-aware-diamond {
+  position: absolute; left: -15px; top: -15px;
+  width: 30px; height: 30px;
+  display: none;
+}
+.hzc-aware[data-m='attack'] .hzc-aware-diamond {
+  display: block;
+  animation: hzcAwareFlash 0.22s steps(2, end) infinite;
+}
+.hzc-aware-diamond svg { width: 100%; height: 100%; display: block; }
+.hzc-aware-diamond svg polygon {
+  fill: var(--hzc-alert);
+  stroke: rgba(20, 4, 2, 0.85);
+  stroke-width: 1;
+}
+@keyframes hzcAwareFlash {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.3; transform: scale(0.86); }
+}
+.hzc-aware.edge { transform-origin: center; }
+.hzc-aware.edge .hzc-aware-circle,
+.hzc-aware.edge .hzc-aware-diamond { transform: scale(0.85); }
 
 /* ------------------------------ objective card ------------------------------- */
 .hzc-objective {
   position: absolute; top: 26px; right: 30px;
   width: 300px; text-align: right;
-  padding: 10px 16px 12px;
-  background: linear-gradient(270deg, rgba(8, 14, 18, 0.5), rgba(8, 14, 18, 0));
-  border-right: 1px solid var(--hzc-accent);
+  padding: 11px 16px 12px;
+  background: linear-gradient(270deg, rgba(12, 16, 20, 0.66), rgba(12, 16, 20, 0.06));
+  border-right: 1px solid var(--hzc-gold);
+}
+.hzc-objective::after {
+  /* triangle motif anchoring the card to its accent rule */
+  content: '';
+  position: absolute; right: -1px; top: 0;
+  width: 0; height: 0;
+  border-top: 7px solid var(--hzc-gold);
+  border-left: 7px solid transparent;
 }
 .hzc-obj-kicker {
-  font-size: 9px; letter-spacing: 0.42em;
-  color: var(--hzc-accent);
-  margin-bottom: 6px;
+  font-family: var(--font-display);
+  font-size: 8px; letter-spacing: 0.46em;
+  color: var(--hzc-gold);
+  margin-bottom: 7px;
 }
-.hzc-obj-title { font-size: 15px; letter-spacing: 0.2em; font-weight: 500; }
+.hzc-obj-title {
+  font-size: 16px; font-weight: 600; letter-spacing: 0.18em;
+  color: var(--hzc-text);
+}
 .hzc-obj-detail {
   font-size: 10px; letter-spacing: 0.14em;
-  color: rgba(232, 236, 236, 0.6);
+  color: var(--hzc-parch-dim);
   margin-top: 5px;
   text-transform: uppercase;
 }
 .hzc-obj-progress {
-  font-size: 11px; letter-spacing: 0.26em;
-  color: var(--hzc-warn);
+  font-size: 11px; font-weight: 600; letter-spacing: 0.26em;
+  color: var(--hzc-gold);
   margin-top: 7px;
 }
 .hzc-objective.bump { animation: hzcObjBump 0.55s ease; }
@@ -198,13 +335,11 @@
 }
 
 /* -------------------------------- crosshair ---------------------------------- */
-/* Every stroke rides on a wider dark under-stroke so the reticle reads against
-   bright sky and specular machine plating alike. */
 .hzc-cross { position: absolute; left: 50%; top: 50%; width: 0; height: 0; }
 .hzc-dot {
   position: absolute; left: -2.5px; top: -2.5px;
   width: 5px; height: 5px; border-radius: 50%;
-  background: rgba(240, 244, 244, 0.95);
+  background: rgba(242, 237, 226, 0.95);
   box-shadow: 0 0 0 1.5px rgba(8, 12, 14, 0.75), 0 1px 5px rgba(0, 0, 0, 0.6);
 }
 .hzc-ring {
@@ -215,51 +350,152 @@
 .hzc-ring.show { opacity: 1; }
 .hzc-ring svg { width: 100%; height: 100%; display: block; overflow: visible; }
 .hzc-ring .track-under { fill: none; stroke: rgba(8, 12, 14, 0.6); stroke-width: 3; }
-.hzc-ring .track { fill: none; stroke: rgba(240, 244, 244, 0.5); stroke-width: 1.5; }
+.hzc-ring .track { fill: none; stroke: rgba(242, 237, 226, 0.45); stroke-width: 1.5; }
 .hzc-ring .prog-under {
   fill: none; stroke: rgba(8, 12, 14, 0.7); stroke-width: 4; stroke-linecap: round;
 }
 .hzc-ring .prog {
-  fill: none; stroke: var(--hzc-accent); stroke-width: 2.25; stroke-linecap: round;
-  filter: drop-shadow(0 0 4px rgba(53, 200, 220, 0.85));
+  fill: none; stroke: var(--hzc-gold); stroke-width: 2.25; stroke-linecap: round;
+  filter: drop-shadow(0 0 4px rgba(245, 201, 92, 0.85));
 }
 .hzc-ring .prog.full {
-  stroke: var(--hzc-warn);
-  filter: drop-shadow(0 0 6px rgba(232, 163, 61, 0.95));
+  stroke: #fff4dd;
+  filter: drop-shadow(0 0 7px rgba(255, 244, 221, 0.95));
 }
 
-/* --------------------------- bottom-right: quiver ---------------------------- */
-.hzc-arrows { position: absolute; right: 30px; bottom: 28px; display: flex; gap: 10px; }
-.hzc-arrow {
-  min-width: 88px;
-  padding: 8px 12px 7px;
-  text-align: center;
-  background: var(--hzc-scrim);
-  border: 1px solid rgba(232, 236, 236, 0.14);
-  border-bottom: 2px solid rgba(232, 236, 236, 0.22);
+/* thin yellow Concentration gauge beside the reticle (drains while slow-mo) */
+.hzc-conc {
+  position: absolute; left: 47px; top: -30px;
+  width: 4px; height: 60px;
+  background: rgba(12, 16, 20, 0.66);
+  border: 1px solid rgba(239, 230, 213, 0.28);
+  opacity: 0; transition: opacity 0.15s ease;
 }
-.hzc-arrow .k {
-  font-size: 8px; letter-spacing: 0.32em; text-indent: 0.32em;
-  color: rgba(232, 236, 236, 0.38);
-  margin-bottom: 3px;
+.hzc-conc.show { opacity: 1; }
+.hzc-conc-fill {
+  position: absolute; left: 0; right: 0; bottom: 0;
+  height: 100%;
+  background: var(--hzc-gold);
+  box-shadow: 0 0 6px rgba(245, 201, 92, 0.7);
 }
-.hzc-arrow .n {
-  font-size: 10px; letter-spacing: 0.3em; text-indent: 0.3em;
-  color: rgba(232, 236, 236, 0.7);
+.hzc-conc.active .hzc-conc-fill { animation: hzcConcPulse 0.5s ease-in-out infinite; }
+@keyframes hzcConcPulse {
+  0%, 100% { filter: brightness(1); }
+  50% { filter: brightness(1.6); }
 }
-.hzc-arrow .c {
-  font-size: 16px; font-weight: 500; letter-spacing: 0.06em;
-  color: rgba(232, 236, 236, 0.92);
+
+/* ---------------------------- interaction prompt ----------------------------- */
+.hzc-interact {
+  position: absolute; left: 50%; top: 63%;
+  transform: translateX(-50%);
+  display: none;
+  flex-direction: column; align-items: center; gap: 7px;
+}
+.hzc-interact.show { display: flex; }
+.hzc-int-ring {
+  position: relative;
+  width: 42px; height: 42px; border-radius: 50%;
+  background: conic-gradient(var(--hzc-gold) 0%, rgba(239, 230, 213, 0.18) 0);
+  display: flex; align-items: center; justify-content: center;
+}
+.hzc-int-ring::before {
+  content: '';
+  position: absolute; inset: 4px;
+  border-radius: 50%;
+  background: rgba(12, 16, 20, 0.78);
+  border: 1px solid rgba(239, 230, 213, 0.25);
+}
+.hzc-int-key {
+  position: relative;
+  font-family: var(--font);
+  font-weight: 700; font-size: 15px;
+  color: var(--hzc-text);
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.8);
+}
+.hzc-int-label {
+  font-size: 11px; font-weight: 600; letter-spacing: 0.3em; text-indent: 0.3em;
+  color: var(--hzc-text);
+  text-transform: uppercase;
+  background: var(--hzc-panel);
+  border: 1px solid var(--hzc-border);
+  padding: 3px 12px 2px;
+  clip-path: polygon(6px 0, 100% 0, 100% calc(100% - 6px), calc(100% - 6px) 100%, 0 100%, 0 6px);
+}
+
+/* --------------------------- bottom-right: weapon HUD ------------------------- */
+.hzc-weapon {
+  position: absolute; right: 30px; bottom: 28px;
+  min-width: 196px;
+  padding: 10px 16px 9px;
+  text-align: right;
+  background: var(--hzc-panel);
+  border: 1px solid var(--hzc-border);
+  clip-path: polygon(0 0, 100% 0, 100% 100%, 14px 100%, 0 calc(100% - 14px));
+}
+.hzc-wpn-name {
+  font-size: 10px; font-weight: 600; letter-spacing: 0.3em; text-indent: 0.3em;
+  color: var(--hzc-gold);
+  text-transform: uppercase;
+  margin-bottom: 5px;
+}
+.hzc-wpn-row {
+  display: flex; align-items: center; justify-content: flex-end; gap: 10px;
+}
+.hzc-wpn-glyph { width: 26px; height: 26px; }
+.hzc-wpn-glyph svg { width: 100%; height: 100%; display: block; }
+.hzc-wpn-count {
+  font-size: 27px; font-weight: 700; letter-spacing: 0.04em;
+  color: var(--hzc-text);
+  line-height: 1;
+  min-width: 44px;
+}
+.hzc-wpn-count.empty { color: var(--hzc-alert); }
+.hzc-wpn-ammoname {
+  font-size: 9px; letter-spacing: 0.24em;
+  color: var(--hzc-parch-dim);
+  text-transform: uppercase;
   margin-top: 3px;
 }
-.hzc-arrow.active {
-  border-color: var(--hzc-accent);
-  border-bottom-color: var(--hzc-accent);
-  background: rgba(53, 200, 220, 0.1);
-  box-shadow: 0 0 16px rgba(53, 200, 220, 0.18);
+.hzc-wpn-hint {
+  display: flex; justify-content: flex-end; align-items: center; gap: 5px;
+  font-size: 8px; letter-spacing: 0.2em;
+  color: rgba(239, 230, 213, 0.42);
+  margin-top: 7px;
 }
-.hzc-arrow.active .n { color: var(--hzc-accent); }
-.hzc-arrow.empty .c { color: var(--hzc-danger); }
+.hzc-wpn-hint kbd {
+  font-family: var(--font);
+  font-weight: 600; font-size: 9px;
+  color: rgba(239, 230, 213, 0.7);
+  border: 1px solid rgba(239, 230, 213, 0.3);
+  padding: 0 4px;
+  line-height: 12px;
+  clip-path: polygon(3px 0, 100% 0, 100% calc(100% - 3px), calc(100% - 3px) 100%, 0 100%, 0 3px);
+}
+
+/* ------------------------- bottom-right: item toasts -------------------------- */
+.hzc-items {
+  position: absolute; right: 30px; bottom: 128px;
+  display: flex; flex-direction: column; align-items: flex-end; gap: 4px;
+}
+.hzc-item {
+  display: flex; align-items: center; gap: 8px;
+  font-size: 11px; font-weight: 500; letter-spacing: 0.16em;
+  color: var(--hzc-text);
+  text-transform: uppercase;
+  background: var(--hzc-panel);
+  border: 1px solid var(--hzc-border);
+  padding: 4px 11px 4px 9px;
+  white-space: nowrap;
+  animation: hzcItemToast 3s ease forwards;
+}
+.hzc-item svg { width: 13px; height: 13px; display: block; }
+.hzc-item b { color: var(--hzc-gold); font-weight: 600; margin-left: 2px; }
+@keyframes hzcItemToast {
+  0% { opacity: 0; transform: translateX(16px); }
+  7% { opacity: 1; transform: none; }
+  80% { opacity: 1; }
+  100% { opacity: 0; }
+}
 
 /* ------------------------------ damage numbers ------------------------------- */
 .hzc-dmglayer { position: absolute; inset: 0; overflow: hidden; }
@@ -273,12 +509,16 @@
 }
 .hzc-dmg.weak {
   font-size: 21px;
-  color: var(--hzc-warn);
-  text-shadow: 0 0 10px rgba(232, 163, 61, 0.7), 0 0 3px rgba(0, 0, 0, 0.8);
+  color: var(--hzc-fire);
+  text-shadow: 0 0 10px rgba(240, 160, 60, 0.7), 0 0 3px rgba(0, 0, 0, 0.8);
+}
+.hzc-dmg.tear {
+  font-size: 15px; font-weight: 700; letter-spacing: 0.14em;
+  color: var(--hzc-tear);
+  text-shadow: 0 0 10px rgba(78, 201, 176, 0.75), 0 0 3px rgba(0, 0, 0, 0.85);
 }
 
 /* --------------------------------- kill feed --------------------------------- */
-/* Bottom-left feed column — never over the crosshair or the action. */
 .hzc-toasts {
   position: absolute; left: 30px; bottom: 96px;
   display: flex; flex-direction: column; align-items: flex-start; gap: 5px;
@@ -286,13 +526,14 @@
 .hzc-toast {
   font-size: 10px; letter-spacing: 0.24em; text-indent: 0.24em;
   color: var(--hzc-text);
-  background: var(--hzc-scrim);
-  border-left: 2px solid var(--hzc-warn);
+  background: var(--hzc-panel);
+  border: 1px solid var(--hzc-border);
+  border-left: 2px solid var(--hzc-gold);
   padding: 6px 14px 6px 11px;
   white-space: nowrap;
   animation: hzcToast 3.2s ease forwards;
 }
-.hzc-toast b { color: var(--hzc-warn); font-weight: 600; }
+.hzc-toast b { color: var(--hzc-gold); font-weight: 600; }
 @keyframes hzcToast {
   0% { opacity: 0; transform: translateX(-14px); }
   8% { opacity: 1; transform: none; }
@@ -310,20 +551,23 @@
 }
 .hzc-death.show { opacity: 1; visibility: visible; }
 .hzc-death-title {
-  font-size: 46px; font-weight: 200;
-  letter-spacing: 0.6em; text-indent: 0.6em;
+  font-family: var(--font-stinger);
+  font-size: 44px; font-weight: 700;
+  letter-spacing: 0.55em; text-indent: 0.55em;
   color: var(--hzc-danger);
+  text-shadow: 0 0 34px rgba(176, 58, 46, 0.55);
+}
+.hzc-death-rule {
+  width: 260px; height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(176, 58, 46, 0.8), transparent);
+  margin: 26px 0 20px;
 }
 .hzc-death-sub {
-  margin-top: 20px;
   font-size: 11px; letter-spacing: 0.36em; text-indent: 0.36em;
-  color: rgba(232, 236, 236, 0.5);
+  color: rgba(239, 230, 213, 0.5);
 }
 
 /* ------------------------------- victory screen ------------------------------ */
-/* Once the endgame overlay is up, every gameplay HUD layer disappears —
-   !important so it also beats the inline visibility/opacity written by the
-   per-frame updaters (pips, damage numbers, vignette). */
 #hud.endgame > :not(.hzc-victory):not(.hzc-pause) {
   visibility: hidden !important;
   opacity: 0 !important;
@@ -331,31 +575,41 @@
 .hzc-victory {
   position: absolute; inset: 0;
   display: flex; flex-direction: column; align-items: center; justify-content: center;
-  background: radial-gradient(ellipse at 50% 45%, rgba(8, 14, 18, 0.5) 0%, rgba(6, 9, 12, 0.94) 82%);
+  background: radial-gradient(ellipse at 50% 45%, rgba(12, 16, 20, 0.5) 0%, rgba(6, 9, 12, 0.94) 82%);
   opacity: 0; visibility: hidden;
   transition: opacity 1.4s ease, visibility 1.4s;
 }
 .hzc-victory.show { opacity: 1; visibility: visible; }
 .hzc-victory-kicker {
+  font-family: var(--font-display);
   font-size: 11px; letter-spacing: 0.5em; text-indent: 0.5em;
-  color: var(--hzc-warn);
-  margin-bottom: 18px;
+  color: var(--hzc-gold);
+  margin-bottom: 20px;
 }
 .hzc-victory-title {
-  font-size: 52px; font-weight: 200;
-  letter-spacing: 0.42em; text-indent: 0.42em;
+  font-family: var(--font-stinger);
+  font-size: 46px; font-weight: 600;
+  letter-spacing: 0.4em; text-indent: 0.4em;
   color: var(--hzc-text);
-  text-shadow: 0 0 30px rgba(53, 200, 220, 0.4);
+  text-shadow: 0 0 30px rgba(245, 201, 92, 0.35);
 }
 .hzc-victory-line {
   width: 300px; height: 1px;
-  background: var(--hzc-accent);
-  box-shadow: 0 0 12px var(--hzc-accent);
+  background: linear-gradient(90deg, transparent, var(--hzc-gold), transparent);
+  box-shadow: 0 0 12px rgba(245, 201, 92, 0.5);
   margin: 28px 0 18px;
+  position: relative;
+}
+.hzc-victory-line::after {
+  content: '';
+  position: absolute; left: 50%; top: -3px;
+  width: 7px; height: 7px;
+  transform: translateX(-50%) rotate(45deg);
+  background: var(--hzc-gold);
 }
 .hzc-victory-sub {
   font-size: 11px; letter-spacing: 0.3em; text-indent: 0.3em;
-  color: rgba(232, 236, 236, 0.65);
+  color: rgba(239, 230, 213, 0.65);
 }
 
 /* --------------------------------- pause menu -------------------------------- */
@@ -368,29 +622,48 @@
   pointer-events: auto;
 }
 .hzc-pause.show { display: flex; }
-.hzc-pause-inner { text-align: center; }
+.hzc-pause-inner {
+  text-align: center;
+  padding: 44px 56px 38px;
+  background: var(--hzc-panel);
+  border: 1px solid var(--hzc-border);
+  clip-path: polygon(22px 0, 100% 0, 100% calc(100% - 22px), calc(100% - 22px) 100%, 0 100%, 0 22px);
+}
 .hzc-pause-title {
-  font-size: 30px; font-weight: 200;
-  letter-spacing: 0.55em; text-indent: 0.55em;
-  margin-bottom: 36px;
+  font-family: var(--font-display);
+  font-size: 26px; font-weight: 400;
+  letter-spacing: 0.5em; text-indent: 0.5em;
+  color: var(--hzc-text);
+  margin-bottom: 34px;
 }
 .hzc-btn {
   font-family: var(--font);
+  font-weight: 600;
   font-size: 13px; letter-spacing: 0.32em; text-indent: 0.32em;
   padding: 13px 42px;
   color: var(--hzc-text);
-  background: transparent;
-  border: 1px solid var(--hzc-accent);
+  background: rgba(12, 16, 20, 0.5);
+  border: 1px solid rgba(245, 201, 92, 0.7);
   cursor: pointer;
   transition: all 0.2s ease;
+  clip-path: polygon(10px 0, 100% 0, 100% calc(100% - 10px), calc(100% - 10px) 100%, 0 100%, 0 10px);
 }
 .hzc-btn:hover {
-  background: rgba(53, 200, 220, 0.12);
-  box-shadow: 0 0 18px rgba(53, 200, 220, 0.3);
+  background: rgba(245, 201, 92, 0.14);
+  box-shadow: 0 0 18px rgba(245, 201, 92, 0.3);
 }
 .hzc-pause-hints {
-  margin-top: 38px;
-  font-size: 10px; letter-spacing: 0.22em;
-  color: rgba(232, 236, 236, 0.38);
-  line-height: 2.1;
+  margin-top: 34px;
+  display: grid;
+  grid-template-columns: repeat(2, auto);
+  gap: 6px 32px;
+  font-size: 10px; letter-spacing: 0.16em;
+  color: rgba(239, 230, 213, 0.5);
+  text-align: left;
+  text-transform: uppercase;
+}
+.hzc-pause-hints b {
+  color: rgba(239, 230, 213, 0.85);
+  font-weight: 600;
+  margin-right: 7px;
 }

@@ -6,6 +6,82 @@
   <title>Horizon Zero Claude</title>
   <link rel="icon" href="/favicon.svg" />
   <link rel="stylesheet" href="/src/style.css" />
+  <style>
+    /* Title-screen v2 skin (HUD builder owns this file; style.css is frozen).
+       Language per docs/research/ui.md: parchment text, yellow accents, dark
+       translucent panels w/ 1px light borders + 45-degree cut corners. */
+    /* Research 5: the real title screen sits over a LIVE vista — the scene
+       already renders during the 'title' state, so let it show through. */
+    #title.overlay {
+      background: radial-gradient(ellipse at 50% 38%,
+        rgba(6, 9, 12, 0.44) 0%, rgba(6, 9, 12, 0.62) 55%, rgba(6, 9, 12, 0.88) 100%);
+    }
+    #title .title-inner { text-align: center; max-width: 880px; padding: 0 24px; }
+    #title .game-title { font-size: 58px; letter-spacing: 0.3em; text-indent: 0.3em; }
+    #title .game-title span { color: #f5c95c; text-shadow: 0 0 22px rgba(245, 201, 92, 0.3); }
+
+    .tagline-rule {
+      width: 320px; height: 1px; margin: 26px auto 0;
+      background: linear-gradient(90deg, transparent, rgba(239, 230, 213, 0.5), transparent);
+      position: relative;
+    }
+    .tagline-rule::after {
+      content: ''; position: absolute; left: 50%; top: -3px;
+      width: 7px; height: 7px; transform: translateX(-50%) rotate(45deg);
+      background: #f5c95c;
+    }
+
+    #btn-start {
+      border-color: rgba(245, 201, 92, 0.75);
+      clip-path: polygon(12px 0, 100% 0, 100% calc(100% - 12px), calc(100% - 12px) 100%, 0 100%, 0 12px);
+      background: rgba(12, 16, 20, 0.55);
+    }
+    #btn-start:hover {
+      background: rgba(245, 201, 92, 0.14);
+      box-shadow: 0 0 26px rgba(245, 201, 92, 0.3);
+    }
+
+    .keybinds-panel {
+      margin: 42px auto 0;
+      padding: 18px 26px 20px;
+      background: rgba(12, 16, 20, 0.72);
+      border: 1px solid rgba(239, 230, 213, 0.22);
+      clip-path: polygon(16px 0, 100% 0, 100% calc(100% - 16px), calc(100% - 16px) 100%, 0 100%, 0 16px);
+      display: inline-block;
+    }
+    .keybinds-title {
+      font-family: var(--font-display);
+      font-size: 9px; letter-spacing: 0.5em; text-indent: 0.5em;
+      color: #f5c95c;
+      margin-bottom: 16px;
+    }
+    .controls-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(200px, auto));
+      gap: 7px 34px;
+      font-size: 12px; letter-spacing: 0.1em;
+      color: rgba(239, 230, 213, 0.66);
+      text-align: left;
+      text-transform: uppercase;
+    }
+    .controls-grid > div { display: flex; align-items: center; gap: 9px; white-space: nowrap; }
+    .controls-grid kbd {
+      font-family: var(--font);
+      font-weight: 600; font-size: 11px; letter-spacing: 0.06em;
+      color: #efe6d5;
+      background: rgba(239, 230, 213, 0.08);
+      border: 1px solid rgba(239, 230, 213, 0.35);
+      border-bottom-width: 2px;
+      padding: 1px 7px 0;
+      min-width: 24px;
+      text-align: center;
+      clip-path: polygon(4px 0, 100% 0, 100% calc(100% - 4px), calc(100% - 4px) 100%, 0 100%, 0 4px);
+    }
+    .controls-grid .sep { color: rgba(239, 230, 213, 0.3); margin: 0 -4px; }
+    @media (max-width: 1100px) {
+      .controls-grid { grid-template-columns: repeat(2, minmax(200px, auto)); }
+    }
+  </style>
 </head>
 <body>
   <div id="app"></div>
@@ -21,14 +97,31 @@
   <div id="title" class="overlay hidden">
     <div class="title-inner">
       <h1 class="game-title">HORIZON<span>ZERO CLAUDE</span></h1>
+      <div class="tagline-rule"></div>
       <p class="tagline">The valley belongs to the machines. Take it back.</p>
       <button id="btn-start">BEGIN THE HUNT</button>
-      <div class="controls-grid">
-        <div><b>WASD</b> Move</div><div><b>Shift</b> Sprint</div>
-        <div><b>C</b> Crouch</div><div><b>Space</b> Dodge</div>
-        <div><b>RMB</b> Aim</div><div><b>LMB</b> Draw / Loose</div>
-        <div><b>1·2·3</b> Arrow type</div><div><b>Q</b> Focus</div>
-        <div><b>F</b> Medicine</div><div><b>Esc</b> Pause</div>
+
+      <div class="keybinds-panel">
+        <div class="keybinds-title">FIELD MANUAL</div>
+        <div class="controls-grid">
+          <div><kbd>WASD</kbd> Move</div>
+          <div><kbd>Shift</kbd> Sprint</div>
+          <div><kbd>Shift</kbd> Concentration (while aiming)</div>
+          <div><kbd>C</kbd> Crouch</div>
+          <div><kbd>Space</kbd><span class="sep">/</span><kbd>Ctrl</kbd> Dodge roll</div>
+          <div><kbd>RMB</kbd> Aim</div>
+          <div><kbd>LMB</kbd> Draw / loose</div>
+          <div><kbd>Tab</kbd> Weapon wheel (hold)</div>
+          <div><kbd>1–4</kbd> Weapon quick-slots</div>
+          <div><kbd>Z</kbd><span class="sep">/</span><kbd>X</kbd> Cycle ammo</div>
+          <div><kbd>V</kbd> Focus</div>
+          <div><kbd>T</kbd> Tag machine (in Focus)</div>
+          <div><kbd>E</kbd> Interact (hold)</div>
+          <div><kbd>Q</kbd> Medicine (hold)</div>
+          <div><kbd>R</kbd> Craft ammo</div>
+          <div><kbd>I</kbd> Inventory</div>
+          <div><kbd>Esc</kbd> Pause</div>
+        </div>
       </div>
     </div>
   </div>

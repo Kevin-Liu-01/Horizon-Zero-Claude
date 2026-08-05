@@ -1,10 +1,13 @@
 import * as THREE from 'three';
-import { Machine } from './machine.js';
+import { Machine, rollLoot } from './machine.js';
+import { lensMesh, antennaMesh } from './parts.js';
 
 /**
- * Watcher: rigged raptor scout. Fully procedural bone animation — leg walk
- * cycle, neck scan sweep, tail sway, alert head-snap, lunge-peck attack.
- * Weak point: the eye. Chirps an alert to nearby machines.
+ * Watcher: rigged raptor scout (HZD level 5, HP 90). Fully procedural bone
+ * animation — leg walk cycle, neck scan sweep, tail sway, alert head-snap,
+ * lunge-peck attack. Components per research doc 1.3: the EYE is the fight
+ * (weak part, not tearable — one sharpshot-class hit kills), plus a body
+ * antenna tear-off. Chirps an alert to nearby machines.
  */
 
 const _v = new THREE.Vector3();
@@ -21,8 +24,9 @@ export class Watcher extends Machine {
       displayName: 'Watcher',
       rigged: true,
       yawFix: Math.PI, // model faces -Z in asset space
-      maxHealth: 130, // full-draw body shot must not one-shot (eye still ~2)
+      maxHealth: 90, // HZD-accurate (research 1.1); eye weak hit still ~3x
       armor: 0.05,
+      level: 5,
       walkSpeed: 2.7,
       runSpeed: 7,
       turnRate: 3,
@@ -73,6 +77,33 @@ export class Watcher extends Machine {
     const eyeParent = this.bones.cam ?? this.holder;
     this.addEye(eyeParent, 0, 0, 0, 0.55);
     this.addWeakPoint('eye', eyeParent, 0, 0, 0, 0.42);
+
+    // --- components (research 1.3): eye = weak part, NOT tearable — "the
+    // eye IS the fight". Lens mesh gives Focus a highlight target and makes
+    // aimed eye shots resolve on real geometry.
+    this.addPart({
+      name: 'eye', displayName: 'Eye',
+      mesh: lensMesh({ r: 0.2 }),
+      parent: eyeParent, pos: [0, 0, 0],
+      tearHp: Infinity, weak: true, weakMult: 3,
+      loot: [{ id: 'watcher-lens', n: 1 }],
+    });
+    // body antenna: cosmetic tear-off on the spine (sparks when shot)
+    this.addPart({
+      name: 'antenna', displayName: 'Antenna',
+      mesh: antennaMesh({ len: 0.62 }),
+      pos: [0, 1.22, -0.38], snap: true, snapTarget: [0, 0.7, -0.3],
+      tearHp: 18, settleY: 0.1,
+      loot: [{ id: 'wire', n: 1 }],
+    });
+
+    // corpse loot (research: shards + element resources + wire; lens trade)
+    this.lootTable = rollLoot([
+      { id: 'metal-shards', min: 10, max: 18 },
+      { id: 'wire', min: 1, max: 2 },
+      { id: 'sparker', min: 0, max: 2 },
+      { id: 'watcher-lens', n: 1, chance: 0.8 },
+    ]);
 
     // effective leg pendulum length (hip→foot, world meters) — the walk cycle
     // amplitude is derived from it so stance feet plant instead of moonwalking

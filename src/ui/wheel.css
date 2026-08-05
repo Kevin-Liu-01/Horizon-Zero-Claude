@@ -1,0 +1,255 @@
+/* HZD weapon wheel — dark translucent radial, thin light rings, Rajdhani. */
+
+#hzc-wheel {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.14s ease-out;
+  font-family: var(--font, 'Rajdhani', sans-serif);
+  color: var(--hzc-text, #efe6d5);
+  user-select: none;
+}
+#hzc-wheel.open { opacity: 1; }
+
+#hzc-wheel .ww-scrim {
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(
+    ellipse at center,
+    rgba(6, 12, 15, 0.28) 30%,
+    rgba(4, 8, 10, 0.66) 100%
+  );
+  backdrop-filter: blur(5px) saturate(0.82);
+  -webkit-backdrop-filter: blur(5px) saturate(0.82);
+}
+
+#hzc-wheel .ww-wrap {
+  position: relative;
+  width: 620px;
+  height: 620px;
+  transform: scale(0.94);
+  transition: transform 0.16s ease-out;
+}
+#hzc-wheel.open .ww-wrap { transform: scale(1); }
+
+/* rings */
+#hzc-wheel .ww-rings {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+#hzc-wheel .ww-ring {
+  fill: none;
+  stroke: rgba(137, 196, 202, 0.34);
+  stroke-width: 1;
+}
+#hzc-wheel .ww-ring-in { stroke: rgba(137, 196, 202, 0.22); }
+#hzc-wheel .ww-ring-out {
+  stroke: rgba(137, 196, 202, 0.14);
+  stroke-dasharray: 2 7;
+}
+#hzc-wheel .ww-arc {
+  fill: none;
+  stroke: var(--hzc-accent, #59c1c6);
+  stroke-width: 2.5;
+  stroke-linecap: round;
+  opacity: 0;
+  filter: drop-shadow(0 0 6px rgba(89, 193, 198, 0.8));
+  transition: opacity 0.1s;
+}
+#hzc-wheel .ww-arc.on { opacity: 0.95; }
+
+/* slots */
+#hzc-wheel .ww-slot {
+  position: absolute;
+  width: 210px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  opacity: 0.78;
+  transition: opacity 0.1s, transform 0.1s;
+}
+#hzc-wheel .ww-slot.hover { opacity: 1; transform: scale(1.06); }
+#hzc-wheel .ww-up    { top: -8px;  left: 50%; margin-left: -105px; }
+#hzc-wheel .ww-down  { bottom: -8px; left: 50%; margin-left: -105px; }
+#hzc-wheel .ww-right { right: -66px; top: 50%; margin-top: -46px; }
+#hzc-wheel .ww-left  { left: -66px;  top: 50%; margin-top: -46px; }
+
+#hzc-wheel .ww-slot-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  letter-spacing: 0.22em;
+  font-size: 15px;
+  font-weight: 600;
+  text-transform: uppercase;
+  text-shadow: 0 1px 6px rgba(0, 0, 0, 0.8);
+  white-space: nowrap;
+}
+#hzc-wheel .ww-slot.hover .ww-slot-name { color: var(--hzc-accent, #59c1c6); }
+#hzc-wheel .ww-slot.equipped .ww-slot-head::after {
+  content: '';
+  width: 5px;
+  height: 5px;
+  transform: rotate(45deg);
+  background: var(--hzc-warn, #f2c230);
+  box-shadow: 0 0 6px var(--hzc-warn, #f2c230);
+}
+
+#hzc-wheel kbd {
+  font-family: var(--font, 'Rajdhani', sans-serif);
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
+  padding: 2px 6px 3px;
+  border: 1px solid rgba(239, 230, 213, 0.45);
+  border-radius: 2px;
+  color: rgba(239, 230, 213, 0.9);
+  background: rgba(8, 14, 18, 0.5);
+}
+
+/* ammo petals */
+#hzc-wheel .ww-ammos {
+  display: flex;
+  gap: 10px;
+  justify-content: center;
+}
+#hzc-wheel .ww-ammo {
+  width: 52px;
+  padding: 6px 4px 4px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  background: rgba(8, 14, 18, 0.6);
+  border: 1px solid rgba(137, 196, 202, 0.18);
+  border-radius: 3px;
+  transition: border-color 0.1s, background 0.1s;
+}
+#hzc-wheel .ww-ammo-ic {
+  width: 24px;
+  height: 24px;
+  color: var(--ac, #e8d9b0);
+  filter: drop-shadow(0 0 4px rgba(0, 0, 0, 0.7));
+}
+#hzc-wheel .ww-ammo-n {
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  color: rgba(239, 230, 213, 0.85);
+}
+#hzc-wheel .ww-ammo.sel {
+  border-color: var(--ac, #59c1c6);
+  background: rgba(12, 22, 26, 0.82);
+  box-shadow: 0 0 10px -2px var(--ac, #59c1c6);
+}
+#hzc-wheel .ww-ammo.empty .ww-ammo-ic { opacity: 0.35; }
+#hzc-wheel .ww-ammo.empty .ww-ammo-n { color: var(--hzc-danger, #b03a2e); }
+
+/* center card */
+#hzc-wheel .ww-center {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 252px;
+  height: 252px;
+  margin: -126px 0 0 -126px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(8, 15, 19, 0.78) 58%, rgba(8, 15, 19, 0.25) 100%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  text-align: center;
+  padding: 18px;
+}
+#hzc-wheel .ww-weapon-name {
+  font-size: 21px;
+  font-weight: 700;
+  letter-spacing: 0.26em;
+  text-transform: uppercase;
+  color: var(--hzc-text, #efe6d5);
+}
+#hzc-wheel .ww-ammo-name {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: rgba(239, 230, 213, 0.85);
+}
+#hzc-wheel .ww-ammo-name i {
+  display: inline-block;
+  width: 18px;
+  height: 18px;
+}
+#hzc-wheel .ww-divider {
+  width: 120px;
+  height: 1px;
+  margin: 3px 0;
+  background: linear-gradient(90deg, transparent, rgba(137, 196, 202, 0.55), transparent);
+}
+#hzc-wheel .ww-recipe {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-height: 20px;
+}
+#hzc-wheel .ww-ing {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  font-size: 12.5px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  color: rgba(239, 230, 213, 0.75);
+}
+#hzc-wheel .ww-ing i { width: 15px; height: 15px; color: var(--hzc-accent, #59c1c6); }
+#hzc-wheel .ww-ing b { font-weight: 600; color: rgba(239, 230, 213, 0.5); }
+#hzc-wheel .ww-ing.no { color: var(--hzc-danger, #b03a2e); }
+#hzc-wheel .ww-ing.no i { color: var(--hzc-danger, #b03a2e); }
+
+#hzc-wheel .ww-craft {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 22px;
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0.2em;
+  color: var(--hzc-warn, #f2c230);
+}
+#hzc-wheel .ww-craft.disabled { opacity: 0.35; }
+#hzc-wheel .ww-craft.flash { animation: ww-craft-flash 0.45s ease-out; }
+#hzc-wheel .ww-craft.deny { animation: ww-craft-deny 0.3s ease-out; }
+@keyframes ww-craft-flash {
+  0% { text-shadow: 0 0 14px var(--hzc-warn, #f2c230); transform: scale(1.14); }
+  100% { text-shadow: none; transform: scale(1); }
+}
+@keyframes ww-craft-deny {
+  0%, 66% { color: var(--hzc-danger, #b03a2e); }
+  25% { transform: translateX(-3px); }
+  50% { transform: translateX(3px); }
+}
+
+#hzc-wheel .ww-hint {
+  margin-top: 4px;
+  font-size: 10.5px;
+  letter-spacing: 0.18em;
+  color: rgba(239, 230, 213, 0.5);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+#hzc-wheel .ww-hint kbd { font-size: 9px; padding: 1px 4px 2px; }

@@ -15,7 +15,24 @@ export const EYE_COLORS = {
   wary: new THREE.Color('#ffb31f'),
   hostile: new THREE.Color('#ff2413'),
   dead: new THREE.Color('#050505'),
+  flash: new THREE.Color(3.0, 3.0, 2.55), // white-hot attack telegraph
 };
+
+const FROST_COLOR = new THREE.Color(0xbfe9ff);
+const ELEM_DECAY = 7;      // buildup meter decay per second
+const TELEGRAPH_T = 0.4;   // eye-flash duration at attack windup (canon dodge cue)
+
+/** Roll a loot spec [{id, n | min/max, chance?}] into concrete [{id, n}]. */
+export function rollLoot(spec) {
+  const out = [];
+  for (const s of spec) {
+    if (s.chance !== undefined && Math.random() > s.chance) continue;
+    const n = s.n ?? (s.min !== undefined
+      ? THREE.MathUtils.randInt(s.min, s.max ?? s.min) : 1);
+    if (n > 0) out.push({ id: s.id, n });
+  }
+  return out;
+}
 
 // shared scratch (never allocate in hot loops)
 const _v1 = new THREE.Vector3();
@@ -24,6 +41,7 @@ const _v3 = new THREE.Vector3();
 const _q1 = new THREE.Quaternion();
 const _q2 = new THREE.Quaternion();
 const _UP = new THREE.Vector3(0, 1, 0);
+const _snapRay = new THREE.Raycaster();
 
 let _glowTex = null;
 export function glowTexture() {
@@ -90,6 +108,29 @@ export class Machine {
     this.model = opts.rigged ? skeletonClone(src.root) : src.root.clone();
     this.holder.add(this.model);
 
+    // per-machine unique materials: elemental frost tint and state emissives
+    // must never bleed onto the other clone of the same sculpt
+    const _uniq = new Map();
+    const _own = (m) => { if (!_uniq.has(m)) _uniq.set(m, m.clone()); return _uniq.get(m); };
+    this.model.traverse((o) => {
+      if (!o.isMesh || !o.material) return;
+      o.material = Array.isArray(o.material) ? o.material.map(_own) : _own(o.material);
+    });
+
+    // Mirrored (negative-scale) nodes render fine but are INVISIBLE to
+    // raycasts under FrontSide culling (three tests winding in LOCAL space,
+    // and WebGLRenderer flips frontFace for negative determinants — the
+    // Raycaster does not). Arrows, aim assist and part hull-snaps must hit
+    // both halves, so double-side exactly those meshes.
+    this.model.updateWorldMatrix(true, true);
+    this.model.traverse((o) => {
+      if (!o.isMesh || !o.material) return;
+      if (o.matrixWorld.determinant() < 0) {
+        const mats = Array.isArray(o.material) ? o.material : [o.material];
+        for (const m of mats) m.side = THREE.DoubleSide;
+      }
+    });
+
     // metal sanity: metalness-heavy PBR with no env goes jet-black in shadow.
     // Modest clamps (lead adds a scene env map in parallel) keep plates readable.
     this.model.traverse((o) => {
@@ -152,6 +193,22 @@ export class Machine {
     this._flameClock = 0;
     this.lowLOD = false;
 
+    // --- component system (spec v2 machine parts contract)
+    this.parts = [];
+    this.elemental = { fire: 0, shock: 0, freeze: 0 };
+    this._elemHold = 0;
+    this.brittleT = 0;      // freeze status: impact x2 + frost tint
+    this._frostK = 0;
+    this._frostMats = null; // lazy-collected on first freeze
+    this._iceClock = 0;
+    this._telegraphT = 0;   // white-hot eye flash at attack windup
+    this.level = opts.level ?? 1;
+    this.elemWeak = opts.elemWeak ?? null;     // buildup x1.6
+    this.elemResist = opts.elemResist ?? null; // buildup x0.5
+    this.lootTable = [];    // rolled by subclasses (research doc tables)
+    this._looted = false;
+    this._lootRegistered = false;
+
     this._normal = new THREE.Vector3(0, 1, 0);
 
     this.root.traverse((o) => { o.userData.machine = this; });
@@ -168,7 +225,7 @@ export class Machine {
       const glows = m.emissiveMap || m.emissive.r + m.emissive.g + m.emissive.b > 0.05;
       if (!glows) return;
       if (!seen.has(m)) {
-        const c = m.clone();
+        const c = m; // already unique per machine (constructor material pass)
         // Flat emissive (no map) = sensor/glow bits -> full state color.
         // Lens/lamp materials: drop the (blue) emissive map so flat state
         // color shows. Body strips keep their map and only pulse intensity.
@@ -246,37 +303,251 @@ export class Machine {
     }
   }
 
+  /* ------------------------- component parts ------------------------- */
+
+  /**
+   * Anchor a procedural add-on part (spec v2). `pos` is in METERS in parent
+   * space (parent defaults to this.body: +Z forward, y up from the feet).
+   * `snap: true` raycasts the sculpt so the part sits flush on the hull,
+   * oriented +Y along the surface normal unless `orient: false`.
+   */
+  addPart(opts) {
+    const parent = opts.parent ?? this.body;
+    const s = this._worldScale(parent);
+    const holder = new THREE.Group();
+    holder.name = `part-${opts.name}`;
+    holder.add(opts.mesh);
+    const pos = new THREE.Vector3(...(opts.pos ?? [0, 0, 0]));
+    let normal = null;
+    if (opts.snap && parent === this.body) {
+      // Sketchfab sculpts aren't reliably raycastable on both halves
+      // (mirrored-node exports, one-sided shells): snap the authored point
+      // AND its x-mirror, keep whichever lands closer to the author intent.
+      let hit = this._snapToHull(pos, opts.snapTarget);
+      const mp = pos.clone();
+      mp.x = -mp.x;
+      const mt = opts.snapTarget
+        ? [-(opts.snapTarget[0] ?? 0), opts.snapTarget[1], opts.snapTarget[2]]
+        : undefined;
+      const mhit = this._snapToHull(mp, mt);
+      if (mhit) {
+        mhit.pos.x = -mhit.pos.x;
+        mhit.normal.x = -mhit.normal.x;
+        if (!hit || mhit.pos.distanceToSquared(pos) < hit.pos.distanceToSquared(pos)) {
+          hit = mhit;
+        }
+      }
+      if (hit) {
+        pos.copy(hit.pos);
+        normal = hit.normal;
+        if (opts.proud) pos.addScaledVector(normal, opts.proud);
+      }
+    }
+    holder.position.set(pos.x / s, pos.y / s, pos.z / s);
+    holder.scale.setScalar(1 / s);
+    if (normal && opts.orient !== false) holder.quaternion.setFromUnitVectors(_UP, normal);
+    else if (opts.rot) holder.rotation.set(opts.rot[0], opts.rot[1], opts.rot[2]);
+
+    const tearHp = opts.tearHp ?? 40;
+    const part = {
+      name: opts.name,
+      displayName: opts.displayName ?? opts.name,
+      mesh: holder,
+      tearHp,
+      maxTearHp: tearHp,
+      hp: opts.hp,
+      attached: true,
+      weak: !!opts.weak,
+      weakMult: opts.weakMult ?? 2,
+      tearable: Number.isFinite(tearHp),
+      elemental: opts.elemental ?? null,   // 'blaze' | 'freeze' | null
+      linkedAttack: opts.linkedAttack ?? null,
+      loot: opts.loot ?? [],
+      pickupWeapon: opts.pickupWeapon ?? null,
+      settleY: opts.settleY ?? 0.24,
+      sparkleWhileTorn: !!opts.sparkleWhileTorn,
+      update: opts.update ?? null,
+      onTorn: opts.onTorn ?? null,
+      anchor: pos.clone(), // parent-local meters (for exposed-zone follow-ups)
+      machine: this,
+      interactable: null,
+    };
+    holder.traverse((o) => { o.userData.machine = this; o.userData.part = part; });
+    parent.add(holder);
+    this.parts.push(part);
+    return part;
+  }
+
+  /**
+   * Cast a ray from outside `pos` toward `target` (body-local meters) and
+   * return the hull surface point + outward normal in body space, so parts
+   * hug the sculpt regardless of per-model proportions.
+   */
+  _snapToHull(pos, target) {
+    this.root.updateWorldMatrix(true, true);
+    _v1.copy(pos);
+    this.body.localToWorld(_v1);
+    _v2.set(
+      target?.[0] ?? 0,
+      target?.[1] ?? pos.y,
+      target?.[2] ?? pos.z * 0.3,
+    );
+    this.body.localToWorld(_v2);
+    const dir = _v3.subVectors(_v2, _v1);
+    const len = dir.length();
+    if (len < 1e-4) return null;
+    dir.divideScalar(len);
+    _snapRay.set(_v1.clone().addScaledVector(dir, -this.height), dir);
+    _snapRay.near = 0;
+    _snapRay.far = this.height * 2 + len;
+    _snapRay.camera = this.ctx.camera;
+    const hits = _snapRay.intersectObject(this.model, true);
+    if (!hits.length) return null;
+    const h = hits[0];
+    const n = h.face
+      ? h.face.normal.clone().transformDirection(h.object.matrixWorld)
+      : dir.clone().negate();
+    if (n.dot(dir) > 0) n.negate(); // outward
+    const q = this.body.getWorldQuaternion(_q1).invert();
+    n.applyQuaternion(q).normalize();
+    const local = this.body.worldToLocal(h.point.clone());
+    return { pos: local.addScaledVector(n, 0.02), normal: n };
+  }
+
+  /**
+   * True when an attack id is gated behind a part and EVERY part providing
+   * it has been torn off (canon attack-removal loop).
+   */
+  attackDisabled(id) {
+    let linked = false;
+    for (const p of this.parts) {
+      if (p.linkedAttack !== id) continue;
+      linked = true;
+      if (p.attached) return false;
+    }
+    return linked;
+  }
+
+  _updateParts(dt, t) {
+    for (const p of this.parts) {
+      if (p.attached && p.update) p.update(dt, t, p);
+    }
+  }
+
+  _disposeSubtree(obj) {
+    obj.traverse((o) => {
+      o.geometry?.dispose?.();
+      const mats = Array.isArray(o.material) ? o.material : (o.material ? [o.material] : []);
+      for (const m of mats) m.dispose?.();
+    });
+  }
+
   /* ------------------------- damage contract ------------------------- */
 
+  /**
+   * Damage model v2 — three channels (spec v2):
+   * hit = { point, object, impact, tear, element:'none'|'fire'|'shock'|'freeze',
+   *         elementAmount, dir, type }
+   * Backward compat: hit.baseDamage (round-1 combat) is treated as impact,
+   * with legacy fire/shock arrow types mapped onto elemental buildup.
+   * Returns { damage, tear, weak, killed, tornPart|null, triggeredElement|null }.
+   */
   takeDamage(hit) {
-    if (!this.alive) return { damage: 0, weak: false, killed: false };
+    if (!this.alive) {
+      return { damage: 0, tear: 0, weak: false, killed: false, tornPart: null, triggeredElement: null };
+    }
+    hit = hit || {};
+
+    // --- channel mapping (legacy compat)
+    let impact = hit.impact;
+    let tear = hit.tear;
+    let element = hit.element && hit.element !== 'none' ? hit.element : null;
+    let elementAmount = hit.elementAmount ?? 0;
+    if (impact === undefined && hit.baseDamage !== undefined) {
+      impact = hit.baseDamage;
+      if (tear === undefined) tear = hit.baseDamage * 0.35;
+      if (!element) {
+        if (hit.type === 'fire') { element = 'fire'; elementAmount = 40; }
+        else if (hit.type === 'shock') { element = 'shock'; elementAmount = 45; }
+        else if (hit.type === 'freeze') { element = 'freeze'; elementAmount = 40; }
+      }
+    }
+    impact = impact ?? 0;
+    tear = tear ?? 0;
+
+    // --- which part owns the struck object?
+    let part = null;
+    let o = hit.object;
+    while (o) {
+      if (o.userData?.part) { part = o.userData.part; break; }
+      o = o.parent;
+    }
+    if (part && !part.attached) part = null; // stray debris
+
+    // --- impact channel (weak spots multiply IMPACT only)
+    let mult = 1 - this.armor;
     let weak = false;
     if (hit.point) {
       for (const wp of this.weakPoints) {
         wp.obj.getWorldPosition(_v1);
-        if (_v1.distanceToSquared(hit.point) <= wp.radius * wp.radius) { weak = true; break; }
+        if (_v1.distanceToSquared(hit.point) <= wp.radius * wp.radius) {
+          const wm = wp.mult ?? 3;
+          mult = Math.max(mult, wm);
+          if (wm >= 2) weak = true;
+        }
       }
     }
-    const mult = weak ? 3 : 1 - this.armor;
-    const damage = (hit.baseDamage ?? 10) * mult;
+    if (part?.weak) {
+      mult = Math.max(mult, part.weakMult);
+      if (part.weakMult >= 2) weak = true;
+    }
+    if (this.brittleT > 0) mult *= 2; // BRITTLE: frozen metal shatters
+    const damage = impact * mult;
     this.health = Math.max(0, this.health - damage);
 
-    if (hit.type === 'fire') {
-      this.burnT = 4; this._burnDps = 5;
-      if (hit.point) {
-        this._burnAnchor.copy(hit.point);
-        this.body.worldToLocal(this._burnAnchor);
-        this._burnAnchorSet = true;
+    // --- tear channel (rips components off; never touches health)
+    let tornPart = null;
+    if (part && part.tearable && tear > 0) {
+      part.tearHp -= tear;
+      if (part.tearHp <= 0) {
+        tornPart = part;
+        this._tearPart(part, hit);
       }
     }
-    if (hit.type === 'shock') { this.stunT = Math.max(this.stunT, 2.5); this._cancelAttack(); }
+
+    // --- element channel (canister detonation beats buildup)
+    let triggeredElement = null;
+    if (element) {
+      const canister = part && part.attached && part.elemental
+        && ((part.elemental === 'blaze' && element === 'fire')
+          || (part.elemental === 'freeze' && element === 'freeze')
+          || (part.elemental === 'shock' && element === 'shock'));
+      if (canister) {
+        triggeredElement = element;
+        this._detonateCanister(part);
+      } else if (elementAmount > 0) {
+        let amt = elementAmount;
+        if (element === this.elemWeak) amt *= 1.6;
+        if (element === this.elemResist) amt *= 0.5;
+        this.elemental[element] = Math.min(100, (this.elemental[element] ?? 0) + amt);
+        this._elemHold = 1.6;
+        if (this.elemental[element] >= 100) {
+          this.elemental[element] = 0;
+          triggeredElement = element;
+          this._triggerElement(element, hit.point);
+        }
+      }
+    }
 
     // getting shot always reveals the shooter's rough position
     this.suspicion = 1;
     this._unseenT = 0;
     if (this.ctx.player) this.lastKnown.copy(this.ctx.player.position);
 
-    this.ctx.events.emit('machine-damaged', { machine: this, damage, weak, point: hit.point });
+    this.ctx.events.emit('machine-damaged', {
+      machine: this, damage, weak, point: hit.point,
+      tear, tornPart, triggeredElement,
+    });
 
     let killed = false;
     if (this.health <= 0) { killed = true; this._die(); }
@@ -284,7 +555,206 @@ export class Machine {
           || this.state === 'search' || this.state === 'return') {
       this.setState('alert');
     }
-    return { damage, weak, killed };
+    return { damage, tear, weak, killed, tornPart, triggeredElement };
+  }
+
+  /* -------------------- elemental statuses & canisters -------------------- */
+
+  _triggerElement(el, point) {
+    if (el === 'fire') {
+      this.burnT = 8;
+      this._burnDps = 4 + this.maxHealth * 0.02;
+      if (point) {
+        this._burnAnchor.copy(point);
+        this.body.worldToLocal(this._burnAnchor);
+        this._burnAnchorSet = true;
+      }
+    } else if (el === 'shock') {
+      this.stunT = Math.max(this.stunT, 3);
+      this._cancelAttack();
+    } else if (el === 'freeze') {
+      this.brittleT = 8;
+      _v1.copy(point ?? this.position);
+      if (!point) _v1.y += this.height * 0.5;
+      this._sparkBurst(_v1, 26, 0xbfefff); // icy shatter glints
+    }
+  }
+
+  /** Matching-element hit on an attached canister: elemental explosion. */
+  _detonateCanister(part) {
+    if (!part.attached) return;
+    part.attached = false;
+    part.tearHp = 0;
+    part.mesh.updateWorldMatrix(true, false);
+    const pos = new THREE.Vector3().setFromMatrixPosition(part.mesh.matrixWorld);
+    part.mesh.parent?.remove(part.mesh);
+    this._disposeSubtree(part.mesh);
+
+    const el = part.elemental === 'blaze' ? 'fire'
+      : part.elemental === 'freeze' ? 'freeze' : 'shock';
+    this._explosionFX(pos, el);
+    const dmg = el === 'fire' ? 120 : 80; // AoE to the machine itself (spec v2)
+    this.health = Math.max(0, this.health - dmg);
+    this._triggerElement(el, pos);
+
+    const p = this.ctx.player;
+    if (p) {
+      const d = pos.distanceTo(p.position);
+      if (d < 5) {
+        this.ctx.events.emit('player-damage', {
+          amount: Math.max(6, Math.round(30 * (1 - d / 6))), from: this,
+        });
+        this.knockbackPlayer(9);
+      }
+      p._shake = Math.min(1, (p._shake ?? 0) + 0.45);
+    }
+    this.ctx.events.emit('machine-damaged', {
+      machine: this, damage: dmg, weak: false, point: pos,
+      tear: 0, tornPart: null, triggeredElement: el,
+    });
+  }
+
+  /* ----------------------- part tear-off & physics ----------------------- */
+
+  _tearPart(part, hit) {
+    if (!part.attached) return;
+    part.attached = false;
+    part.tearHp = 0;
+    const mesh = part.mesh;
+    this.ctx.scene.attach(mesh); // keep world transform
+    // debris must not resolve as the machine for combat raycasts — shooting
+    // a grounded part would otherwise damage the machine remotely
+    mesh.traverse((o) => { delete o.userData.machine; });
+
+    // launch: outward from the body + along the arrow + up
+    const vel = new THREE.Vector3(
+      (Math.random() - 0.5) * 1.5,
+      3.6 + Math.random() * 2.2,
+      (Math.random() - 0.5) * 1.5,
+    );
+    _v1.subVectors(mesh.position, this.position);
+    _v1.y = 0;
+    if (_v1.lengthSq() > 1e-4) vel.addScaledVector(_v1.normalize(), 2.2);
+    if (hit?.dir) { vel.x += hit.dir.x * 3; vel.z += hit.dir.z * 3; }
+    const angVel = new THREE.Vector3(
+      (Math.random() - 0.5) * 7, (Math.random() - 0.5) * 7, (Math.random() - 0.5) * 7,
+    );
+    _v1.copy(mesh.position);
+    this._sparkBurst(_v1, 22);
+    this._smokeBurst(_v1, 3);
+
+    // lootable where it falls (items system lands concurrently — optional-chain)
+    const entry = {
+      position: mesh.position, // live ref: prompt follows the falling part
+      radius: 2.4,
+      label: part.pickupWeapon ? 'PICK UP' : 'LOOT',
+      hold: 0.45,
+      once: true,
+      loot: part.loot,
+      part,
+      machine: this,
+    };
+    if (part.pickupWeapon) entry.pickupWeapon = part.pickupWeapon;
+    const rec = { part, entry, done: false };
+    entry.onInteract = () => this._removeTornPart(rec);
+    part.interactable = this.ctx.interactables?.register?.(entry) ?? entry;
+
+    // gravity + terrain bounce (2 bounces then settle), 60s despawn
+    let life = 0;
+    let bounces = 0;
+    let settled = false;
+    const settleY = part.settleY;
+    const terrain = this.ctx.terrain;
+    const dq = new THREE.Quaternion();
+    const axis = new THREE.Vector3();
+    rec.update = (dt) => {
+      if (rec.done) return false;
+      life += dt;
+      if (life > 60) { this._removeTornPart(rec); return false; }
+      if (!settled) {
+        vel.y -= 21 * dt;
+        mesh.position.addScaledVector(vel, dt);
+        const wa = angVel.length();
+        if (wa > 1e-4) {
+          dq.setFromAxisAngle(axis.copy(angVel).divideScalar(wa), wa * dt);
+          mesh.quaternion.premultiply(dq);
+        }
+        const gy = terrain.getHeight(mesh.position.x, mesh.position.z) + settleY;
+        if (mesh.position.y <= gy) {
+          mesh.position.y = gy;
+          bounces += 1;
+          if (bounces > 2 || Math.abs(vel.y) < 1.6) {
+            settled = true;
+            this._dustPuff(mesh.position.x, gy + 0.15, mesh.position.z, 0.9);
+          } else {
+            vel.y = -vel.y * 0.38;
+            vel.x *= 0.55;
+            vel.z *= 0.55;
+            angVel.multiplyScalar(0.45);
+            this._dustPuff(mesh.position.x, gy + 0.12, mesh.position.z, 0.7);
+          }
+        }
+      } else if (part.sparkleWhileTorn && Math.random() < dt * 2) {
+        axis.copy(mesh.position);
+        axis.y += 0.35;
+        this._sparkBurst(axis, 5); // live cables spitting sparks (disc launcher)
+      }
+      return true;
+    };
+    this._fx.push(rec);
+
+    part.onTorn?.(part, this);
+    this.ctx.events.emit('part-torn', { machine: this, part });
+  }
+
+  _removeTornPart(rec) {
+    if (rec.done) return;
+    rec.done = true;
+    rec.entry.consumed = true;
+    const mesh = rec.part.mesh;
+    mesh.parent?.remove(mesh);
+    this._disposeSubtree(mesh);
+  }
+
+  /** Elemental explosion FX: fireball/ice-burst + ring + sparks + smoke. */
+  _explosionFX(pos, el) {
+    const hot = new THREE.Color(el === 'fire' ? 0xfff1d8 : el === 'freeze' ? 0xf2ffff : 0xffffff);
+    const mid = new THREE.Color(el === 'fire' ? 0xff7a1e : el === 'freeze' ? 0x63d8ff : 0x8fb8ff);
+    const late = new THREE.Color(el === 'fire' ? 0xc23a10 : el === 'freeze' ? 0x2a7ab8 : 0x4a5fb8);
+    this.spawnShockRing(pos.x, pos.z, 5.5, 0.5, 0, 0);
+    this._sparkBurst(pos, 34, mid.getHex());
+    if (el === 'fire') this._smokeBurst(pos, 8);
+    for (let i = 0; i < 6; i++) {
+      const mat = new THREE.SpriteMaterial({
+        map: glowTexture(), transparent: true, opacity: 0.95,
+        blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false,
+      });
+      mat.color.copy(i === 0 ? hot : mid);
+      const s = new THREE.Sprite(mat);
+      s.position.set(
+        pos.x + (i === 0 ? 0 : (Math.random() - 0.5) * 1.6),
+        pos.y + (i === 0 ? 0 : (Math.random() - 0.2) * 1.4),
+        pos.z + (i === 0 ? 0 : (Math.random() - 0.5) * 1.6),
+      );
+      const s0 = i === 0 ? 1.6 : 0.7 + Math.random() * 0.7;
+      s.scale.setScalar(s0);
+      this.ctx.scene.add(s);
+      let t = 0;
+      const dur = i === 0 ? 0.5 : 0.34 + Math.random() * 0.25;
+      const from = mat.color.clone();
+      this._fx.push({
+        update: (dt) => {
+          t += dt;
+          const k = Math.min(1, t / dur);
+          s.scale.setScalar(s0 + k * (i === 0 ? 5.5 : 2.4));
+          s.position.y += dt * 1.4;
+          mat.opacity = 0.95 * (1 - k * k);
+          mat.color.lerpColors(from, late, k);
+          if (k >= 1) { this.ctx.scene.remove(s); mat.dispose(); return false; }
+          return true;
+        },
+      });
+    }
   }
 
   _die() {
@@ -366,6 +836,9 @@ export class Machine {
       if (this.health <= 0) { this._die(); return; }
     }
 
+    // elemental buildup decay + brittle/frost status (runs through stun too)
+    this._updateElemental(dt);
+
     if (this.stunT > 0) {
       this.stunT -= dt;
       // shock: frozen — shiver + jittering electric arcs (SPEC: "electric arcs")
@@ -396,9 +869,56 @@ export class Machine {
     }
 
     this._conform(dt);
-    if (!this.lowLOD) this.animate?.(dt, t);
+    if (!this.lowLOD) {
+      this.animate?.(dt, t);
+      this._updateParts(dt, t); // radar spin, canister glow pulses, …
+    }
     this._updateFx(dt);
     this._updateEyes(dt, t);
+  }
+
+  _updateElemental(dt) {
+    if (this._elemHold > 0) {
+      this._elemHold -= dt;
+    } else {
+      const e = this.elemental;
+      if (e.fire > 0) e.fire = Math.max(0, e.fire - ELEM_DECAY * dt);
+      if (e.shock > 0) e.shock = Math.max(0, e.shock - ELEM_DECAY * dt);
+      if (e.freeze > 0) e.freeze = Math.max(0, e.freeze - ELEM_DECAY * dt);
+    }
+    if (this.brittleT > 0) {
+      this.brittleT -= dt;
+      this._iceClock -= dt;
+      if (this._iceClock <= 0 && !this.lowLOD) {
+        this._iceClock = 0.22;
+        this._arcFlash(0xaef2ff); // icy glints crawling over frozen plates
+      }
+    }
+    const k = THREE.MathUtils.damp(this._frostK, this.brittleT > 0 ? 1 : 0, 5, dt);
+    if (Math.abs(k - this._frostK) > 1e-4 || k > 0.003) {
+      this._frostK = k;
+      this._applyFrost();
+    }
+  }
+
+  /** BRITTLE visual: whole-body frost tint (lazy per-machine material list). */
+  _applyFrost() {
+    if (!this._frostMats) {
+      this._frostMats = [];
+      this.body.traverse((o) => {
+        if (!o.isMesh || !o.material) return;
+        const mats = Array.isArray(o.material) ? o.material : [o.material];
+        for (const m of mats) {
+          if (!m.isMeshStandardMaterial || !m.color) continue;
+          this._frostMats.push({ m, c: m.color.clone(), r: m.roughness });
+        }
+      });
+    }
+    const k = this._frostK * 0.8;
+    for (const f of this._frostMats) {
+      f.m.color.copy(f.c).lerp(FROST_COLOR, k);
+      f.m.roughness = THREE.MathUtils.lerp(f.r, 0.12, k);
+    }
   }
 
   _statePatrol(dt) {
@@ -484,6 +1004,9 @@ export class Machine {
     a.struck = false;
     a.phase = 'windup';
     this._attack = a;
+    // canon dodge cue: white-hot eye flash at every attack windup
+    this._telegraphT = TELEGRAPH_T;
+    this.ctx.events.emit('machine-telegraph', { machine: this });
     this.ctx.events.emit('machine-attack', { machine: this, kind: a.kind });
     a.onWindup?.(a);
   }
@@ -707,6 +1230,21 @@ export class Machine {
   }
 
   _spawnBeacon() {
+    // corpse loot: register the lootable with the machine's rolled table
+    // (items builder owns the take-all popup; optional-chain across builders)
+    if (!this._lootRegistered) {
+      this._lootRegistered = true;
+      this.ctx.interactables?.register?.({
+        position: this.position,
+        radius: Math.max(2.6, this.bodyRadius + 1.6),
+        label: 'LOOT',
+        hold: 0.45,
+        once: true,
+        loot: this.lootTable,
+        machine: this,
+        onInteract: () => { this._looted = true; },
+      });
+    }
     const h = Math.max(4, this.height * 1.4);
     const geo = new THREE.CylinderGeometry(0.09, 0.16, h, 8, 1, true);
     const mat = new THREE.MeshBasicMaterial({
@@ -722,6 +1260,17 @@ export class Machine {
     this._fx.push({
       update: (dt2) => {
         t += dt2;
+        if (this._looted) {
+          // corpse emptied: the beacon dies out
+          mat.opacity -= dt2 * 0.8;
+          if (mat.opacity <= 0.01) {
+            this.ctx.scene.remove(beam);
+            geo.dispose();
+            mat.dispose();
+            return false;
+          }
+          return true;
+        }
         // fade out as the camera walks up so it never becomes a screen-tall slab
         const cam = this.ctx.camera;
         let fade = 1;
@@ -737,7 +1286,7 @@ export class Machine {
     });
   }
 
-  _sparkBurst(worldPos, n) {
+  _sparkBurst(worldPos, n, color = 0xffc061) {
     const pos = new Float32Array(n * 3);
     const vel = new Float32Array(n * 3);
     for (let i = 0; i < n; i++) {
@@ -751,7 +1300,7 @@ export class Machine {
     const geo = new THREE.BufferGeometry();
     geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
     const mat = new THREE.PointsMaterial({
-      color: 0xffc061, size: 0.14, transparent: true, opacity: 1,
+      color, size: 0.14, transparent: true, opacity: 1,
       map: glowTexture(), // soft round sparks, not bare squares
       blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false,
     });
@@ -866,9 +1415,9 @@ export class Machine {
   }
 
   /** Jittering electric arc streak across the body while shock-stunned. */
-  _arcFlash() {
+  _arcFlash(color = 0xbfe8ff) {
     const mat = new THREE.SpriteMaterial({
-      map: glowTexture(), color: 0xbfe8ff, transparent: true, opacity: 0.95,
+      map: glowTexture(), color, transparent: true, opacity: 0.95,
       blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false,
       rotation: Math.random() * Math.PI,
     });
@@ -1012,7 +1561,15 @@ export class Machine {
     }
     if (this.stunT > 0) pulse = Math.random() < 0.5 ? 1.6 : 0.2;
     if (this._eyeFlare > 0) { pulse *= 1 + this._eyeFlare; this._eyeFlare = 0; }
-    this._eyeColor.lerp(target, Math.min(1, dt * 7));
+    if (this._telegraphT > 0 && this.alive) {
+      // attack-windup telegraph: eye burns white-hot for ~0.4s
+      this._telegraphT -= dt;
+      target = EYE_COLORS.flash;
+      pulse = Math.max(pulse, 2.6);
+      this._eyeColor.lerp(target, Math.min(1, dt * 25));
+    } else {
+      this._eyeColor.lerp(target, Math.min(1, dt * 7));
+    }
 
     for (const e of this._eyeMats) {
       if (e.kind === 'sprite' || e.kind === 'basic') {

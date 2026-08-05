@@ -81,9 +81,156 @@ export class SimplexNoise {
 export const WORLD_SIZE = 720;         // playable square, meters
 export const WORLD_HALF = WORLD_SIZE / 2;
 
+const SS = THREE.MathUtils.smoothstep; // (x, min, max)
+
+/**
+ * Terracing: pulls a height toward stepped strata benches. Continuous and
+ * C1-friendly (smooth bench lips), cheap enough for the analytic hot path.
+ */
+function terrace(h, step, sharp) {
+  const t = h / step;
+  const fl = Math.floor(t);
+  let f = (t - fl - 0.5) * sharp + 0.5;
+  f = f < 0 ? 0 : f > 1 ? 1 : f;
+  const sm = f * f * (3 - 2 * f);
+  return (fl + sm) * step;
+}
+
+/* --------------------------- dried river (west) ---------------------------
+ * Pure trig so getHeight stays fast. Meanders roughly N-S through the west
+ * meadow, fading out well before the mountain rim so it stays crossable and
+ * never cuts a canyon through the ring.
+ */
+function riverCenterX(z) {
+  return -125 + 38 * Math.sin(z * 0.008) + 14 * Math.sin(z * 0.023 + 1.7);
+}
+function riverHalfWidth(z) {
+  return 13 + 3 * Math.sin(z * 0.021 + 0.5);
+}
+
+/* ------------------------- worn dirt paths (camp) --------------------------
+ * A few trodden routes radiating from the hunter camp (22,30):
+ *   west to the dried river crossing, south toward the Thunderjaw territory,
+ *   south-east up onto the highland shelf, and a short north trail.
+ * pathFactor(x,z) -> 0..1 "how worn is the ground here". Used by the terrain
+ * splat for packed-dirt coloring and to thin tall grass; harmless (0) for any
+ * caller/area that ignores it.
+ */
+const PATH_POINTS = [
+  // west: camp -> river ford -> a little beyond the far bank
+  [[22, 30], [-16, 24], [-52, 14], [-84, 6], [-109, 8], [-136, 12]],
+  // south: camp -> Thunderjaw flats
+  [[22, 30], [27, -8], [35, -52], [28, -104], [23, -160], [30, -202]],
+  // south-east: camp -> highland shelf
+  [[22, 30], [58, 50], [96, 80], [136, 116], [168, 148], [188, 172]],
+  // north spur
+  [[22, 30], [9, 72], [-2, 118], [-13, 156]],
+];
+const PATH_CORE = 1.7;   // full-strength half width (m)
+const PATH_EDGE = 4.6;   // fades to zero by here (m)
+
+function _catmullRom(a, b, c, d, t) {
+  const t2 = t * t, t3 = t2 * t;
+  return 0.5 * (2 * b + (-a + c) * t
+    + (2 * a - 5 * b + 4 * c - d) * t2
+    + (-a + 3 * b - 3 * c + d) * t3);
+}
+
+let _pathSegs = null;
+function _buildPathSegs() {
+  _pathSegs = [];
+  for (const pts of PATH_POINTS) {
+    // sample the control polygon into a smooth polyline
+    const line = [];
+    const per = 7;
+    for (let i = 0; i < pts.length - 1; i++) {
+      const p0 = pts[Math.max(0, i - 1)], p1 = pts[i];
+      const p2 = pts[i + 1], p3 = pts[Math.min(pts.length - 1, i + 2)];
+      for (let j = 0; j < per; j++) {
+        const t = j / per;
+        line.push([
+          _catmullRom(p0[0], p1[0], p2[0], p3[0], t),
+          _catmullRom(p0[1], p1[1], p2[1], p3[1], t),
+        ]);
+      }
+    }
+    line.push([pts[pts.length - 1][0], pts[pts.length - 1][1]]);
+
+    // segments carry a wear strength that fades toward the far end
+    const M = line.length - 1;
+    for (let i = 0; i < M; i++) {
+      const [ax, az] = line[i], [bx, bz] = line[i + 1];
+      const s0 = 1 - SS(i / M, 0.68, 1.0);
+      const s1 = 1 - SS((i + 1) / M, 0.68, 1.0);
+      const dx = bx - ax, dz = bz - az;
+      _pathSegs.push({
+        ax, az, bx, bz, dx, dz,
+        len2: Math.max(1e-6, dx * dx + dz * dz),
+        s0, s1,
+        minx: Math.min(ax, bx) - PATH_EDGE, maxx: Math.max(ax, bx) + PATH_EDGE,
+        minz: Math.min(az, bz) - PATH_EDGE, maxz: Math.max(az, bz) + PATH_EDGE,
+      });
+    }
+  }
+}
+
+/** Exact analytic path wear — used for baking (splat mask + grid cache). */
+function _pathFactorExact(x, z) {
+  if (!_pathSegs) _buildPathSegs();
+  let f = 0;
+  const segs = _pathSegs;
+  for (let i = 0; i < segs.length; i++) {
+    const s = segs[i];
+    if (x < s.minx || x > s.maxx || z < s.minz || z > s.maxz) continue;
+    let t = ((x - s.ax) * s.dx + (z - s.az) * s.dz) / s.len2;
+    t = t < 0 ? 0 : t > 1 ? 1 : t;
+    const ex = x - (s.ax + s.dx * t), ez = z - (s.az + s.dz * t);
+    const d = Math.sqrt(ex * ex + ez * ez);
+    let v = 1 - SS(d, PATH_CORE, PATH_EDGE);
+    if (v <= 0) continue;
+    v *= s.s0 + (s.s1 - s.s0) * t;
+    if (v > f) f = v;
+  }
+  return f;
+}
+
+// grid-cached bilinear lookup so gameplay-frequency callers stay cheap
+const PG_N = 288, PG_HALF = 352;
+let _pathGrid = null;
+function _buildPathGrid() {
+  _pathGrid = new Float32Array(PG_N * PG_N);
+  const cell = (PG_HALF * 2) / PG_N;
+  for (let iz = 0; iz < PG_N; iz++) {
+    const z = -PG_HALF + (iz + 0.5) * cell;
+    for (let ix = 0; ix < PG_N; ix++) {
+      _pathGrid[iz * PG_N + ix] = _pathFactorExact(-PG_HALF + (ix + 0.5) * cell, z);
+    }
+  }
+}
+
+/** Worn-path factor 0..1 at world (x,z). Fast (cached grid, bilinear). */
+export function pathFactor(x, z) {
+  if (!_pathGrid) _buildPathGrid();
+  const cell = (PG_HALF * 2) / PG_N;
+  const fx = (x + PG_HALF) / cell - 0.5;
+  const fz = (z + PG_HALF) / cell - 0.5;
+  const ix = Math.floor(fx), iz = Math.floor(fz);
+  if (ix < 0 || iz < 0 || ix >= PG_N - 1 || iz >= PG_N - 1) return 0;
+  const tx = fx - ix, tz = fz - iz;
+  const g = _pathGrid, i0 = iz * PG_N + ix;
+  const a = g[i0] + (g[i0 + 1] - g[i0]) * tx;
+  const b = g[i0 + PG_N] + (g[i0 + PG_N + 1] - g[i0 + PG_N]) * tx;
+  return a + (b - a) * tz;
+}
+
 /**
  * Heightfield terrain: analytic height function sampled both by the mesh and
  * by gameplay queries, so they always agree.
+ *
+ * v2 landform: rolling meadow center; dried river cut meandering N-S through
+ * the west meadow (smooth crossable banks); rocky terraced highland shelf in
+ * the SE; ridged-noise mountain rim with strata benches and snow only on the
+ * upper peaks.
  */
 export class Terrain {
   constructor(ctx) {
@@ -97,19 +244,75 @@ export class Terrain {
     ctx.scene.add(this.group);
   }
 
+  /** Ridged fbm (0..~0.94): sharp crests, good for mountains. */
+  _ridged(x, z, oct) {
+    const n = this.noise;
+    let amp = 0.5, sum = 0, fx = x, fz = z;
+    for (let o = 0; o < oct; o++) {
+      const v = 1 - Math.abs(n.noise2D(fx, fz));
+      sum += v * v * amp;
+      amp *= 0.5; fx *= 2.05; fz *= 2.05;
+    }
+    return sum;
+  }
+
   /** Analytic terrain height at world (x, z). */
   getHeight(x, z) {
     const n = this.noise;
-    // Broad rolling hills
-    let h = n.fbm(x * 0.0035, z * 0.0035, 4) * 9;
-    // Medium undulation
-    h += n.fbm(x * 0.012 + 100, z * 0.012 - 60, 3) * 2.2;
-    // Rim mountains: rise sharply outside 78% of world radius
     const r = Math.sqrt(x * x + z * z);
-    const rim = THREE.MathUtils.smoothstep(r, WORLD_HALF * 0.78, WORLD_HALF * 1.08);
-    h += rim * (46 + n.fbm(x * 0.008 + 31, z * 0.008 + 7, 4) * 22);
+
+    // Dried-river floodplain corridor (west): damps the mid/fine relief so the
+    // banks stay gentle and crossable no matter what the noise does.
+    let corridor = 0, riverGate = 0, rd = Infinity, hw = 1;
+    if (x > -222 && x < -30 && r < 304) {
+      const cxr = riverCenterX(z);
+      hw = riverHalfWidth(z);
+      rd = Math.abs(x - cxr);
+      if (rd < hw + 26) {
+        riverGate = 1 - SS(r, 250, 302);
+        corridor = (1 - SS(rd, hw * 0.5, hw + 24)) * riverGate;
+      }
+    }
+
+    // Broad rolling meadow
+    let h = n.fbm(x * 0.0035, z * 0.0035, 4) * 9;
+    // Medium undulation + close-range relief (flattened across the floodplain)
+    h += (n.fbm(x * 0.012 + 100, z * 0.012 - 60, 3) * 2.2
+      + n.fbm(x * 0.05 - 31, z * 0.05 + 58, 2) * 0.5) * (1 - corridor * 0.8);
+
     // Gentle valley basin toward the center
-    h -= (1 - THREE.MathUtils.smoothstep(r, 0, WORLD_HALF * 0.5)) * 2.5;
+    h -= (1 - SS(r, 0, WORLD_HALF * 0.5)) * 2.5;
+
+    // Rocky SE highland shelf (terraced sediment benches)
+    const u = (x + z) * 0.70711;
+    if (u > 118 && r < 348) {
+      const v = Math.abs((z - x) * 0.70711);
+      const m = SS(u, 120, 178) * (1 - SS(v, 85, 150)) * (1 - SS(r, 288, 344));
+      if (m > 0.002) {
+        let sh = 8.5 + this._ridged(x * 0.010 + 7, z * 0.010 - 13, 3) * 7.5;
+        sh = terrace(sh, 3.4, 2.2);
+        h += m * sh;
+      }
+    }
+
+    // Dried river cut through the west meadow (crossable, fades before rim)
+    if (rd < hw && riverGate > 0) {
+      const t = 1 - rd / hw;
+      const bowl = t * t * (3 - 2 * t);
+      h -= (1.55 * bowl + 0.25 * bowl * bowl) * riverGate;
+      // braided bed unevenness
+      h += bowl * riverGate * n.noise2D(x * 0.06 + 5, z * 0.06 - 9) * 0.22;
+    }
+
+    // Rim mountains: ridged crests rising outside ~78% of the world radius,
+    // pulled toward horizontal strata benches
+    const rim = SS(r, WORLD_HALF * 0.78, WORLD_HALF * 1.06);
+    if (rim > 0) {
+      const ridge = this._ridged(x * 0.006 + 31, z * 0.006 + 7, 4);
+      h += rim * rim * (34 + ridge * 46);
+      const ta = 0.55 * SS(rim, 0.15, 0.7);
+      if (ta > 0.002) h = h * (1 - ta) + terrace(h, 6.8, 2.4) * ta;
+    }
     return h;
   }
 
@@ -121,64 +324,155 @@ export class Terrain {
     return out;
   }
 
-  /** Density of tall (stealth) grass at a point, 0..1. */
+  /** Density of tall (stealth) grass at a point, 0..1. Thin on worn paths. */
   tallGrassDensity(x, z) {
     const v = this.grassNoise.fbm(x * 0.016, z * 0.016, 2);
-    return THREE.MathUtils.smoothstep(v, 0.12, 0.42);
+    let d = SS(v, 0.12, 0.42);
+    if (d > 0) {
+      const p = pathFactor(x, z);
+      if (p > 0.03) d *= 1 - p * 0.85;
+    }
+    return d;
   }
 
   isInTallGrass(x, z) {
     return this.tallGrassDensity(x, z) > 0.45;
   }
 
+  /* ------------------------------ splat mask ------------------------------
+   * 512^2 RGBA baked once: R = worn path, G = river-bank moisture,
+   * B = dried river bed. Sampled in the fragment shader for crisp ground
+   * features that vertex colors (≈2 m spacing) would alias away.
+   */
+  _buildMask() {
+    const N = 512;
+    const data = new Uint8Array(N * N * 4);
+    const scale = WORLD_SIZE / N;
+    for (let iz = 0; iz < N; iz++) {
+      const wz = (iz + 0.5) * scale - WORLD_HALF;
+      for (let ix = 0; ix < N; ix++) {
+        const wx = (ix + 0.5) * scale - WORLD_HALF;
+        const o = (iz * N + ix) * 4;
+        if (Math.abs(wx) > 348 || Math.abs(wz) > 348) continue; // clean border
+        const r = Math.sqrt(wx * wx + wz * wz);
+
+        const path = _pathFactorExact(wx, wz);
+
+        const rd = Math.abs(wx - riverCenterX(wz));
+        const hw = riverHalfWidth(wz);
+        const gate = 1 - SS(r, 250, 302);
+        const moist = (1 - SS(rd, hw * 0.7, hw + 26)) * gate;
+        const bed = (1 - SS(rd, hw * 0.25, hw * 0.8)) * gate;
+
+        data[o] = (path * 255) | 0;
+        data[o + 1] = (moist * 255) | 0;
+        data[o + 2] = (bed * 255) | 0;
+        data[o + 3] = 255;
+      }
+    }
+    const tex = new THREE.DataTexture(data, N, N, THREE.RGBAFormat);
+    tex.minFilter = THREE.LinearFilter;
+    tex.magFilter = THREE.LinearFilter;
+    tex.wrapS = tex.wrapT = THREE.ClampToEdgeWrapping;
+    tex.needsUpdate = true;
+    return tex;
+  }
+
   _buildMesh() {
-    const segs = 360;
-    const geo = new THREE.PlaneGeometry(WORLD_SIZE * 1.35, WORLD_SIZE * 1.35, segs, segs);
+    const segs = 500;
+    const size = WORLD_SIZE * 1.35;
+    const geo = new THREE.PlaneGeometry(size, size, segs, segs);
     geo.rotateX(-Math.PI / 2);
     const pos = geo.attributes.position;
-    const colors = new Float32Array(pos.count * 3);
+    const count = pos.count;
+    const side = segs + 1;
+    const step = size / segs;
 
-    const cGrass = new THREE.Color('#7a8b3f');
-    const cDry = new THREE.Color('#a99354');
+    // pass 1: heights (cached so the color pass gets slopes for free)
+    const H = new Float32Array(count);
+    for (let i = 0; i < count; i++) {
+      const h = this.getHeight(pos.getX(i), pos.getZ(i));
+      pos.setY(i, h);
+      H[i] = h;
+    }
+
+    // pass 2: colors from cached heights + finite-difference slope
+    const colors = new Float32Array(count * 3);
+    const cLush = new THREE.Color('#5a7530');   // moist rich green
+    const cGrass = new THREE.Color('#7a8b3f');  // meadow base
+    const cDry = new THREE.Color('#a99354');    // sun-dried gold
+    const cOchre = new THREE.Color('#a87840');  // umber/ochre dry patches
     const cDirt = new THREE.Color('#6e5a3e');
     const cRock = new THREE.Color('#7d7a72');
-    const cSnow = new THREE.Color('#d8d8da');
+    const cSilt = new THREE.Color('#948468');   // pale dried riverbed
+    const cSnow = new THREE.Color('#dcdfe2');
     const tmp = new THREE.Color();
-    const nrm = new THREE.Vector3();
+    const gn = this.grassNoise;
 
-    for (let i = 0; i < pos.count; i++) {
-      const x = pos.getX(i), z = pos.getZ(i);
-      const h = this.getHeight(x, z);
-      pos.setY(i, h);
+    for (let iz = 0; iz <= segs; iz++) {
+      for (let ix = 0; ix <= segs; ix++) {
+        const i = iz * side + ix;
+        const x = pos.getX(i), z = pos.getZ(i);
+        const h = H[i];
 
-      this.getNormal(x, z, nrm);
-      const slope = 1 - nrm.y; // 0 flat, ->1 steep
-      const dryness = this.grassNoise.fbm(x * 0.01 + 9, z * 0.01 - 4, 2) * 0.5 + 0.5;
-      const rim = THREE.MathUtils.smoothstep(Math.hypot(x, z), WORLD_HALF * 0.78, WORLD_HALF * 1.02);
+        // slope (tan) from cached neighbors
+        const iL = ix > 0 ? i - 1 : i, iR = ix < segs ? i + 1 : i;
+        const iD = iz > 0 ? i - side : i, iU = iz < segs ? i + side : i;
+        const gx = (H[iR] - H[iL]) / (((iR - iL) || 1) * step);
+        const gz = (H[iU] - H[iD]) / ((((iU - iD) / side) || 1) * step);
+        const m = Math.sqrt(gx * gx + gz * gz);
 
-      tmp.copy(cGrass).lerp(cDry, dryness * 0.85);
-      if (slope > 0.12) tmp.lerp(cDirt, THREE.MathUtils.smoothstep(slope, 0.12, 0.3));
-      if (slope > 0.28) tmp.lerp(cRock, THREE.MathUtils.smoothstep(slope, 0.28, 0.5));
-      // rim mountains read as rock banding into snowcaps, not khaki lumps
-      tmp.lerp(cRock, rim * 0.75);
-      if (h > 34) tmp.lerp(cRock, 0.5);
-      const snowLine = 40 - rim * 10;
-      if (h > snowLine) tmp.lerp(cSnow, THREE.MathUtils.smoothstep(h, snowLine, snowLine + 22));
+        const r = Math.hypot(x, z);
+        const rim = SS(r, WORLD_HALF * 0.78, WORLD_HALF * 1.02);
 
-      colors[i * 3] = tmp.r;
-      colors[i * 3 + 1] = tmp.g;
-      colors[i * 3 + 2] = tmp.b;
+        // moisture / dryness fields
+        const dryness = gn.fbm(x * 0.01 + 9, z * 0.01 - 4, 2) * 0.5 + 0.5;
+        const umber = SS(gn.fbm(x * 0.023 - 40, z * 0.023 + 31, 2), 0.18, 0.52);
+        const rd = Math.abs(x - riverCenterX(z));
+        const hw = riverHalfWidth(z);
+        const gate = 1 - SS(r, 250, 302);
+        const moist = (1 - SS(rd, hw * 0.7, hw + 30)) * gate;
+        const bed = (1 - SS(rd, hw * 0.3, hw * 0.95)) * gate;
+
+        tmp.copy(cGrass).lerp(cDry, dryness * 0.85);
+        tmp.lerp(cOchre, umber * (1 - moist) * 0.5);
+        tmp.lerp(cLush, moist * 0.65);
+        tmp.lerp(cSilt, bed * 0.55); // fragment mask sharpens this
+
+        // slope splat: dirt then bare rock
+        if (m > 0.5) tmp.lerp(cDirt, SS(m, 0.5, 0.85));
+        if (m > 0.75) tmp.lerp(cRock, SS(m, 0.75, 1.25));
+
+        // rim reads as rock, snow only on the high peaks (less on cliffs)
+        tmp.lerp(cRock, rim * 0.7);
+        if (h > 30) tmp.lerp(cRock, SS(h, 30, 46) * 0.55);
+        const snow = SS(h, 52, 64);
+        if (snow > 0) {
+          tmp.lerp(cSnow, snow * (0.3 + 0.7 * rim) * (1 - 0.65 * SS(m, 1.3, 2.2)));
+        }
+
+        colors[i * 3] = tmp.r;
+        colors[i * 3 + 1] = tmp.g;
+        colors[i * 3 + 2] = tmp.b;
+      }
     }
     geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
     geo.computeVertexNormals();
 
+    const maskTex = this._buildMask();
     const mat = new THREE.MeshStandardMaterial({
       vertexColors: true,
       roughness: 1,
       metalness: 0,
     });
-    // Cheap world-space value-noise breakup so the ground isn't smooth clay.
+    // World-space splat detail: value-noise breakup + mask-driven features
+    // (worn paths, moist banks, dried bed) + strata banding on steep faces.
     mat.onBeforeCompile = (shader) => {
+      shader.uniforms.uMask = { value: maskTex };
+      shader.uniforms.uDirtCol = { value: new THREE.Color('#7d5f3c') };
+      shader.uniforms.uSiltCol = { value: new THREE.Color('#8f8065') };
+      shader.uniforms.uMoistCol = { value: new THREE.Color('#46521f') };
+      shader.uniforms.uStrataCol = { value: new THREE.Color('#8a7458') };
       shader.vertexShader = shader.vertexShader
         .replace('#include <common>', '#include <common>\nvarying vec3 vWPos;')
         .replace('#include <worldpos_vertex>',
@@ -186,6 +480,11 @@ export class Terrain {
       shader.fragmentShader = shader.fragmentShader
         .replace('#include <common>', `#include <common>
 varying vec3 vWPos;
+uniform sampler2D uMask;
+uniform vec3 uDirtCol;
+uniform vec3 uSiltCol;
+uniform vec3 uMoistCol;
+uniform vec3 uStrataCol;
 float thash(vec2 p){ return fract(sin(dot(p, vec2(127.1,311.7)))*43758.5453); }
 float tnoise(vec2 p){
   vec2 i=floor(p), f=fract(p); f=f*f*(3.-2.*f);
@@ -197,6 +496,29 @@ float tnoise(vec2 p){
   float dn = tnoise(vWPos.xz * 0.9) * 0.6 + tnoise(vWPos.xz * 0.16) * 0.4;
   diffuseColor.rgb *= 0.88 + dn * 0.24;                       // macro mottling
   diffuseColor.rgb *= 0.94 + tnoise(vWPos.xz * 7.0) * 0.12;   // fine grain
+
+  vec3 mask = texture2D(uMask, clamp(vWPos.xz * ${(1 / WORLD_SIZE).toFixed(8)} + 0.5, 0.001, 0.999)).rgb;
+
+  // moist dark soil + greener growth along the dried river
+  diffuseColor.rgb = mix(diffuseColor.rgb, uMoistCol * (0.8 + dn * 0.35), mask.g * 0.55);
+
+  // dried riverbed: pale cracked silt with pebble grain
+  float peb = tnoise(vWPos.xz * 2.6) * 0.6 + tnoise(vWPos.xz * 9.0) * 0.4;
+  diffuseColor.rgb = mix(diffuseColor.rgb, uSiltCol * (0.72 + peb * 0.5), mask.b * 0.9);
+
+  // worn dirt paths: packed earth with trodden unevenness
+  float pw = mask.r * (0.55 + 0.45 * tnoise(vWPos.xz * 1.4));
+  diffuseColor.rgb = mix(diffuseColor.rgb, uDirtCol * (0.85 + dn * 0.25), min(pw * 1.15, 0.92));
+
+  // world-space strata banding on steep faces (kept subtle: sediment, not stripes)
+  vec3 wn = normalize(cross(dFdx(vWPos), dFdy(vWPos)));
+  float steep = smoothstep(0.28, 0.62, 1.0 - abs(wn.y));
+  if (steep > 0.003) {
+    float bp = vWPos.y * 0.55 + tnoise(vWPos.xz * 0.045) * 4.5;
+    float band = smoothstep(-0.2, 0.6, sin(bp));
+    vec3 sc = mix(uStrataCol * 0.74, uStrataCol * 1.16, band);
+    diffuseColor.rgb = mix(diffuseColor.rgb, sc, steep * 0.38);
+  }
 }`);
     };
     this.mesh = new THREE.Mesh(geo, mat);

@@ -1,10 +1,15 @@
 import * as THREE from 'three';
-import { Machine, glowTexture } from './machine.js';
+import { Machine, rollLoot, glowTexture } from './machine.js';
+import { radarMesh, discLauncherMesh, tailTipMesh, plateMesh, pulseGlow } from './parts.js';
 
 /**
- * Thunderjaw: apex boss. Stomp shockwave, tail sweep, telegraphed mouth
- * laser sweep, arcing disc-launcher projectiles. Weak points: head sensor,
- * chest core, tail tip.
+ * Thunderjaw: apex boss (HZD level 27). Stomp shockwave, tail sweep,
+ * arcing disc-launcher projectiles, and the ENRAGE-gated mouth laser sweep
+ * (health < 40%, canon cue). Components per research doc 4.7: back Radar
+ * (sees through grass until torn; tearing halves detection), Disc Launchers
+ * x2 above the hips (torn -> heavy-weapon PICKUPS — the franchise's
+ * signature moment), tail tip (torn -> no tail attacks), armor plates x4.
+ * Weak points: head sensor, chest core, tail tip.
  */
 
 const _v = new THREE.Vector3();
@@ -20,42 +25,123 @@ export class Thunderjaw extends Machine {
       kind: 'thunderjaw',
       displayName: 'Thunderjaw',
       rigged: false,
-      yawFix: -Math.PI / 2, // model faces +X in asset space
-      maxHealth: 1200,
+      // Round-1 shipped -PI/2 ("faces +X") — verified WRONG by heading-0
+      // screenshot: the sculpt's snout runs along asset -Z (length axis z),
+      // so it strafed sideways. PI puts the head on body +Z.
+      yawFix: Math.PI,
+      maxHealth: 1800, // spec v2 retune
       armor: 0.3,
+      level: 27,
+      elemResist: 'shock', // research 4.1
       walkSpeed: 3.4,
       runSpeed: 6.5,
       turnRate: 1.15,
       sightRange: 62,
       sightHalf: THREE.MathUtils.degToRad(60),
       hearRange: 42,
-      stealthRange: 10,
+      // RADAR: sees crouched players in grass at range (research 0.3) —
+      // tear the radar off to get stealth back
+      stealthRange: 34,
       eyeHeight: 5.2,
       attackRange: 55,
       bodyRadius: 4,
       ...opts,
     });
 
-    const h = this.height;       // 7.5
-    const len = this.size.x;     // ~15 along asset x -> body +Z
-    // head sensor eyes
-    this.addEye(this.body, 0.5, h * 0.46, len * 0.45, 0.6, 0.11);
-    this.addEye(this.body, -0.5, h * 0.46, len * 0.45, 0.6, 0.11);
+    const h = this.height;       // 7.5 (tail crest peak)
+    const len = this.size.z;     // ~10.3 along asset z -> body Z after yawFix
+    const w = this.size.x;       // ~5 across the leg stance
+    // head sensor eyes (head rides LOW on this sculpt; tail is the h peak)
+    this.addEye(this.body, 0.45, h * 0.38, len * 0.44, 0.6, 0.11);
+    this.addEye(this.body, -0.45, h * 0.38, len * 0.44, 0.6, 0.11);
     // anchors
     this._mouth = new THREE.Object3D();
-    this._mouth.position.set(0, h * 0.44, len * 0.46);
+    this._mouth.position.set(0, h * 0.32, len * 0.46);
     this.body.add(this._mouth);
     this._launcher = new THREE.Object3D();
-    this._launcher.position.set(0, h * 0.78, -len * 0.05);
+    this._launcher.position.set(0, h * 0.62, -len * 0.18);
     this.body.add(this._launcher);
 
     // weak points — kept small and OFF the center-mass aim line so lazy
-    // torso shots don't score weak hits (head high, core low on the belly)
-    // anchor must sit ON the snout mesh (h*0.55 floats ~2.7m off it) or aimed
-    // head shots can never resolve inside the weak radius
-    this.addWeakPoint('head sensor', this.body, 0, h * 0.44, len * 0.46, 0.95);
+    // torso shots don't score weak hits (head low-front, core low mid-chest)
+    this.addWeakPoint('head sensor', this.body, 0, h * 0.38, len * 0.44, 0.95);
     this.addWeakPoint('chest core', this.body, 0, h * 0.25, len * 0.24, 0.85);
-    this.addWeakPoint('tail tip', this.body, 0, h * 0.62, -len * 0.45, 0.8);
+    this.addWeakPoint('tail tip', this.body, 0, h * 0.85, -len * 0.42, 0.8);
+
+    // --- components (research 4.7)
+    // 1. Radar (top of back): rotating fin; while attached the Thunderjaw
+    //    sees through tall grass. Torn -> detection range halves.
+    const radarM = radarMesh();
+    this.addPart({
+      name: 'radar', displayName: 'Radar',
+      mesh: radarM,
+      pos: [0, h * 1.3, -len * 0.05], snap: true,
+      snapTarget: [0, h * 0.2, -len * 0.05], orient: false,
+      tearHp: 80, settleY: 0.5,
+      loot: [{ id: 'echo-shell', n: 2 }, { id: 'wire', n: 3 }],
+      update: (dt) => { radarM.userData.fin.rotation.y += dt * 1.7; },
+      onTorn: () => {
+        this.sightRange *= 0.5;
+        this.hearRange *= 0.5;
+        this.stealthRange = 8; // grass hides the player again
+      },
+    });
+    // 2. Disc Launchers x2 (above each hip): tear off -> physics drop ->
+    //    PICK UP as a heavy weapon (weapons system reads pickupWeapon flag).
+    this._launcherParts = [];
+    for (const side of [1, -1]) {
+      this._launcherParts.push(this.addPart({
+        name: side > 0 ? 'disc-launcher-r' : 'disc-launcher-l',
+        displayName: 'Disc Launcher',
+        mesh: discLauncherMesh(),
+        pos: [side * w * 0.28, h * 1.2, -len * 0.18], snap: true,
+        snapTarget: [side * w * 0.06, h * 0.3, -len * 0.18], orient: false,
+        rot: [0, side * 0.18, 0],
+        tearHp: 100, linkedAttack: 'disc', pickupWeapon: 'disc-launcher',
+        settleY: 0.42, sparkleWhileTorn: true, loot: [],
+        update: (dt, t, p) => pulseGlow(p.mesh.children[0], t, 2.6),
+      }));
+    }
+    // 3. Tail tip: torn -> tail attacks disabled.
+    this.addPart({
+      name: 'tail-tip', displayName: 'Tail',
+      mesh: tailTipMesh(),
+      // the sculpt's tail curl defeats hull rays — placed visually on the
+      // upcurved crest, spike tilted to continue the curve
+      pos: [0.4, h * 0.74, -len * 0.28], snap: false,
+      rot: [0.6, 0, 0],
+      tearHp: 90, linkedAttack: 'tail', settleY: 0.3,
+      loot: [{ id: 'metal-shards', n: 15 }, { id: 'wire', n: 2 }],
+    });
+    // 4. Armor plates x4 (nod to the real 93): shear off under tear,
+    //    exposing brighter under-plate that takes bonus impact.
+    // chest flanks ride LOW on this sculpt; hip/thigh shells sit higher+wider
+    const plateSpots = [[1, 0.2, 0.3], [-1, 0.2, 0.3], [1, -0.18, 0.42], [-1, -0.18, 0.42]];
+    for (let i = 0; i < plateSpots.length; i++) {
+      const [sx, sz, sy] = plateSpots[i];
+      this.addPart({
+        name: `armor-plate-${i + 1}`, displayName: 'Armor Plate',
+        mesh: plateMesh({ w: 1.05, l: 1.4, t: 0.12, color: 0xc9ced4 }),
+        pos: [sx * w * 0.55, h * sy, len * sz], snap: true,
+        snapTarget: [sx * -w * 0.1, h * sy, len * sz],
+        tearHp: 50, settleY: 0.14,
+        loot: [{ id: 'metal-shards', n: 6 }],
+        onTorn: (part, m) => {
+          m.addWeakPoint('exposed', m.body,
+            part.anchor.x, part.anchor.y, part.anchor.z, 1.1, 1.3);
+        },
+      });
+    }
+
+    // corpse loot (research loot table — the apex prize)
+    this.lootTable = rollLoot([
+      { id: 'metal-shards', min: 90, max: 130 },
+      { id: 'blaze', min: 3, max: 4 },
+      { id: 'chillwater', min: 2, max: 3 },
+      { id: 'sparker', min: 2, max: 3 },
+      { id: 'echo-shell', min: 3, max: 4 },
+      { id: 'machine-heart', n: 1 },
+    ]);
 
     this._gait = Math.random() * Math.PI * 2;
     this._lastStep = 0;
@@ -63,6 +149,7 @@ export class Thunderjaw extends Machine {
     this._cdLaser = 4;
     this._cdDisc = 7;
     this._cdTail = 3;
+    this._discAlt = 0;
   }
 
   _playerBehind() {
@@ -76,7 +163,8 @@ export class Thunderjaw extends Machine {
   }
 
   chooseAttack(dist) {
-    if (this._playerBehind() && dist < 15 && this._cdTail <= 0) {
+    if (this._playerBehind() && dist < 15 && this._cdTail <= 0
+        && !this.attackDisabled('tail')) {
       this._cdTail = 6;
       return this._tailSweep();
     }
@@ -84,11 +172,14 @@ export class Thunderjaw extends Machine {
       this._cdStomp = 6;
       return this._stomp();
     }
-    if (dist > 13 && dist < 65 && this._cdLaser <= 0) {
+    // ENRAGE cue (canon): the mouth laser only comes out under 40% health
+    if (dist > 13 && dist < 65 && this._cdLaser <= 0
+        && this.health < this.maxHealth * 0.4) {
       this._cdLaser = 9.5;
       return this._laser(dist);
     }
-    if (dist > 16 && dist < 90 && this._cdDisc <= 0) {
+    if (dist > 16 && dist < 90 && this._cdDisc <= 0
+        && !this.attackDisabled('disc')) {
       this._cdDisc = 8.5;
       return this._discs();
     }
@@ -263,7 +354,15 @@ export class Thunderjaw extends Machine {
 
   _fireDisc(lateral = 0) {
     const p = this.ctx.player;
-    this._launcher.getWorldPosition(_v);
+    // fire from a live launcher part (alternating); fall back to the spine
+    // anchor if both were torn mid-volley
+    const live = this._launcherParts?.filter((lp) => lp.attached) ?? [];
+    if (live.length) {
+      this._discAlt = (this._discAlt + 1) % live.length;
+      live[this._discAlt].mesh.getWorldPosition(_v);
+    } else {
+      this._launcher.getWorldPosition(_v);
+    }
     const start = _v.clone();
     const target = p
       ? new THREE.Vector3(
@@ -361,6 +460,9 @@ export class Thunderjaw extends Machine {
 
   _discs() {
     let fired = 0;
+    // volley scales with surviving launchers: 2 -> 3 discs, 1 -> 2 discs
+    const launchers = this._launcherParts?.filter((lp) => lp.attached).length ?? 2;
+    const volley = 1 + launchers;
     return {
       kind: 'disc',
       windup: 0.6, strike: 1.1, recover: 0.7, cooldown: 1.8,
@@ -369,12 +471,12 @@ export class Thunderjaw extends Machine {
           this.body.rotation.x = -0.08 * a.phaseT;
         } else if (a.phase === 'strike') {
           this.body.rotation.x = -0.08;
-          const due = Math.floor(a.phaseT * 3) + 1; // 3 discs across the phase
-          while (fired < due && fired < 3) {
+          const due = Math.floor(a.phaseT * volley) + 1;
+          while (fired < due && fired < volley) {
             fired += 1;
             // fan: left / center / right ('machine-attack' already emitted
             // once by _startAttack — do NOT re-emit per disc)
-            this._fireDisc((fired - 2) * 2.4 + (Math.random() - 0.5) * 0.8);
+            this._fireDisc((fired - (volley + 1) / 2) * 2.4 + (Math.random() - 0.5) * 0.8);
           }
         } else {
           this.body.rotation.x = -0.08 * (1 - a.phaseT);

@@ -4,6 +4,13 @@
  * metallic partial stacks). The AudioContext is created/resumed only on the
  * first user gesture or 'game-start'. One shared noise buffer + precomputed
  * pluck buffers are reused for all one-shots; simultaneous voices are capped.
+ *
+ * v2 (HZD-accuracy round): sonifies weapon wheel, Concentration (breath +
+ * heartbeat + music low-pass), part tear-off, item pickup, ammo crafting,
+ * attack telegraph blips, elemental canister explosions, brittle-freeze
+ * shatter, disc-launcher thump and the Focus hologram hum. All new envelopes
+ * are scheduled in AudioContext time / performance.now() (REAL time), so
+ * engine.timeScale changes (wheel slow-mo, Concentration) never warp them.
  */
 
 const PENTA = [220.0, 261.63, 293.66, 329.63, 392.0, 440.0]; // A min pentatonic
@@ -20,6 +27,10 @@ export class GameAudio {
     this._counts = {
       steps: 0, birds: 0, plucks: 0, shots: 0, hits: 0, stings: 0,
       attacks: 0, explosions: 0, radar: 0, chimes: 0, machineSteps: 0,
+      // v2
+      parts: 0, items: 0, wheel: 0, switches: 0, crafts: 0, breaths: 0,
+      telegraphs: 0, canisters: 0, shatters: 0, discs: 0, heals: 0,
+      focusToggles: 0, concentrations: 0,
     };
     this._stridePhase = 0.35;
     this._gust = 0;
@@ -40,10 +51,27 @@ export class GameAudio {
     this._pan = 0;
     this._att = 1;
     this._t = 0;
-    this._prevMed = null;         // last seen medicine count (chime on decrease)
     this._attackCd = new Map();   // machine-attack kind -> last one-shot ms
     this._testQueue = null;
     this._testT = 0;
+
+    // v2 state — all timers below are wall-clock (performance.now) so the
+    // wheel's / Concentration's engine.timeScale never stretches them.
+    this._lastRealMs = performance.now();
+    this._prevHealing = false;
+    this._healLevel = 0;
+    this._concActive = false;     // Concentration slow-mo (Shift while aiming)
+    this._concNextHbMs = 0;       // next heartbeat thump, wall-clock ms
+    this._concSetMs = -1e9;       // last event-driven flip (poll grace window)
+    this._lpFreq = 16000;         // music low-pass current cutoff
+    this._focusOn = false;        // Focus mode hum ('focus-on'/'focus-off')
+    this._focusOffLag = 0;
+    this._humLevel = 0;
+    this._partTornMs = -1e9;      // dedupe 'part-torn' vs machine-damaged.tornPart
+    this._shatterCdMs = -1e9;
+    this._focusBlipMs = -1e9;
+    this._itemMs = -1e9;
+    this._itemBurst = 0;
 
     const arm = () => { this._init(); this.ac?.resume?.().catch(() => {}); };
     ctx.events.on('game-start', arm);
@@ -82,7 +110,13 @@ export class GameAudio {
     this.musicBus = ac.createGain(); this.musicBus.gain.value = 0.8;
     this.ambBus.connect(this.master);
     this.sfxBus.connect(this.master);
-    this.musicBus.connect(this.master);
+    // Music routes through a sweepable low-pass: Concentration dips it to a
+    // muffled underwater bed (canon slow-mo feel), update() sweeps it back.
+    this.musicLP = ac.createBiquadFilter();
+    this.musicLP.type = 'lowpass';
+    this.musicLP.frequency.value = this._lpFreq;
+    this.musicLP.Q.value = 0.4;
+    this.musicBus.connect(this.musicLP).connect(this.master);
 
     this._noiseBuf = this._makeNoiseBuffer(2.0);
     this._pluckBufs = PENTA.map((f) => this._makePluckBuffer(f));
@@ -90,13 +124,26 @@ export class GameAudio {
     this._buildWind();
     this._buildMusic();
     this._buildCreak();
+    this._buildFocusHum();
+    this._buildHealShimmer();
 
     // update() stops running outside 'playing' (pause/death/victory screens),
-    // which would freeze the creak loop at a nonzero gain; police it here.
+    // which would freeze looped layers at a nonzero gain; police them here.
     this._stateWatch = setInterval(() => {
-      if (this.ctx.state !== 'playing'
-        && (this._creakLevel > 0 || this.creakGain?.gain.value > 0)) {
-        this._killCreak();
+      if (this.ctx.state === 'playing') return;
+      if (this._creakLevel > 0 || this.creakGain?.gain.value > 0) this._killCreak();
+      this._concActive = false;
+      if (this._lpFreq < 15000 && this.musicLP) {
+        this._lpFreq = 16000;
+        this.musicLP.frequency.value = 16000;
+      }
+      // hum/heal loops mute while not playing; _focusOn persists so the hum
+      // resumes if the player unpauses with Focus still engaged
+      if (this._humLevel > 0 && this.humGain) {
+        this._humLevel = 0; this.humGain.gain.value = 0;
+      }
+      if (this._healLevel > 0 && this.healGain) {
+        this._healLevel = 0; this.healGain.gain.value = 0;
       }
     }, 200);
 
@@ -233,6 +280,80 @@ export class GameAudio {
     this.creakGain.gain.value = 0;
     this.creakOsc.connect(lp).connect(this.creakGain).connect(this.sfxBus);
     this.creakOsc.start();
+  }
+
+  /**
+   * Focus hologram hum: persistent detuned triangle pair (slow beat) + a thin
+   * data-shimmer noise band + 5 Hz flutter. Runs forever at gain 0; update()
+   * fades humGain while Focus mode is active ('focus-on'/'focus-off').
+   */
+  _buildFocusHum() {
+    const ac = this.ac;
+    this.humGain = ac.createGain();
+    this.humGain.gain.value = 0;
+    this.humGain.connect(this.sfxBus);
+    // flutter stage: LFO wiggles a unity gain so update() owns humGain.value
+    const flutter = ac.createGain();
+    flutter.gain.value = 1;
+    flutter.connect(this.humGain);
+    const lfo = ac.createOscillator();
+    lfo.frequency.value = 5.2;
+    const lfg = ac.createGain();
+    lfg.gain.value = 0.14;
+    lfo.connect(lfg).connect(flutter.gain);
+    lfo.start();
+
+    const lp = ac.createBiquadFilter();
+    lp.type = 'lowpass';
+    lp.frequency.value = 2400;
+    lp.connect(flutter);
+    const mk = (type, f, rel) => {
+      const o = ac.createOscillator();
+      o.type = type;
+      o.frequency.value = f;
+      const g = ac.createGain();
+      g.gain.value = rel;
+      o.connect(g).connect(lp);
+      o.start();
+    };
+    mk('triangle', 462, 1);      // beat pair ≈ 3.5 Hz — "projected light" wobble
+    mk('triangle', 465.5, 1);
+    mk('sine', 924, 0.3);        // octave sheen
+    const ns = ac.createBufferSource();
+    ns.buffer = this._noiseBuf;
+    ns.loop = true;
+    const bp = ac.createBiquadFilter();
+    bp.type = 'bandpass';
+    bp.frequency.value = 3150;
+    bp.Q.value = 9;
+    const ng = ac.createGain();
+    ng.gain.value = 0.35;
+    ns.connect(bp).connect(ng).connect(flutter);
+    ns.start(0, 0.45);
+  }
+
+  /** Soft green shimmer while the pouch is transfusing (player.healing). */
+  _buildHealShimmer() {
+    const ac = this.ac;
+    this.healGain = ac.createGain();
+    this.healGain.gain.value = 0;
+    this.healGain.connect(this.sfxBus);
+    const ns = ac.createBufferSource();
+    ns.buffer = this._noiseBuf;
+    ns.loop = true;
+    const bp = ac.createBiquadFilter();
+    bp.type = 'bandpass';
+    bp.frequency.value = 1500;
+    bp.Q.value = 3;
+    ns.connect(bp).connect(this.healGain);
+    ns.start(0, 0.9);
+    const o = ac.createOscillator();
+    o.type = 'sine';
+    o.frequency.value = 528;
+    const og = ac.createGain();
+    og.gain.value = 0.35;
+    o.connect(og).connect(this.healGain);
+    o.start();
   }
 
   /** Hard-silence the bow-creak loop (death/pause: update() stops driving it). */
@@ -428,6 +549,42 @@ export class GameAudio {
     this._noise(t0, 0.38, bp2);
   }
 
+  /** Blast-sling lob (heavy=false) / disc-launcher shot (heavy=true). */
+  _discThump(heavy) {
+    const g = this._voice(0.8, 1, 0, this.sfxBus);
+    if (!g) return;
+    this._counts.discs++;
+    const t0 = this._now();
+    const v = heavy ? 1 : 0.6;
+    // deep barrel thump
+    const eg = this.ac.createGain();
+    eg.connect(g);
+    this._env(eg.gain, t0, 0.32 * v, 0.006, 0.28);
+    const o = this._osc('sine', heavy ? 135 : 175, t0, 0.36, eg);
+    o.frequency.exponentialRampToValueAtTime(heavy ? 36 : 58, t0 + 0.27);
+    const lp = this._lp(heavy ? 420 : 620);
+    const eg2 = this.ac.createGain();
+    lp.connect(eg2).connect(g);
+    this._env(eg2.gain, t0, 0.17 * v, 0.005, 0.2);
+    this._noise(t0, 0.24, lp);
+    // mechanical action clack
+    const bp = this._bp(1900, 3);
+    const eg3 = this.ac.createGain();
+    bp.connect(eg3).connect(g);
+    this._env(eg3.gain, t0, 0.06 * v, 0.002, 0.04);
+    this._noise(t0, 0.05, bp);
+    // projectile leaving
+    const bp2 = this._bp(700, 1.2);
+    const eg4 = this.ac.createGain();
+    bp2.connect(eg4).connect(g);
+    bp2.frequency.setValueAtTime(700, t0);
+    bp2.frequency.exponentialRampToValueAtTime(heavy ? 240 : 1400, t0 + 0.3);
+    eg4.gain.setValueAtTime(0.0001, t0 + 0.02);
+    eg4.gain.exponentialRampToValueAtTime(0.05 * v + 0.02, t0 + 0.08);
+    eg4.gain.exponentialRampToValueAtTime(0.0008, t0 + 0.32);
+    this._noise(t0 + 0.02, 0.32, bp2);
+  }
+
   _clank(pan, att, weak) {
     const g = this._voice(0.9, att, pan, this.sfxBus);
     if (!g) return;
@@ -504,6 +661,299 @@ export class GameAudio {
     eg.gain.exponentialRampToValueAtTime(0.12, t0 + 0.07);
     eg.gain.exponentialRampToValueAtTime(0.0008, t0 + 0.55);
     this._noise(t0, 0.58, bp);
+  }
+
+  /** Freeze-arrow splash: icy hiss + falling crystalline whine. */
+  _frostHiss(pan, att) {
+    const g = this._voice(0.45, att, pan, this.sfxBus);
+    if (!g) return;
+    const t0 = this._now();
+    const hp = this._hp(4800);
+    const eg = this.ac.createGain();
+    hp.connect(eg).connect(g);
+    this._env(eg.gain, t0, 0.055, 0.008, 0.24);
+    this._noise(t0, 0.3, hp);
+    const eg2 = this.ac.createGain();
+    eg2.connect(g);
+    this._env(eg2.gain, t0, 0.022, 0.006, 0.2);
+    const o = this._osc('sine', 2300, t0, 0.26, eg2);
+    o.frequency.exponentialRampToValueAtTime(860, t0 + 0.22);
+  }
+
+  /** Brittle (frozen) machine takes a hit: glassy shatter tink. */
+  _shatter(pan, att) {
+    const nowMs = performance.now();
+    if (nowMs - this._shatterCdMs < 80) return; // rapid hits: don't stack glass
+    this._shatterCdMs = nowMs;
+    const g = this._voice(0.5, att, pan, this.sfxBus);
+    if (!g) return;
+    this._counts.shatters++;
+    const t0 = this._now();
+    for (let i = 0; i < 5; i++) {
+      const t = t0 + Math.random() * 0.035;
+      const eg = this.ac.createGain();
+      eg.connect(g);
+      const dec = 0.03 + Math.random() * 0.09;
+      this._env(eg.gain, t, 0.035, 0.002, dec);
+      this._osc('sine', 2500 + Math.random() * 3600, t, dec + 0.04, eg);
+    }
+    const hp = this._hp(6500);
+    const eg2 = this.ac.createGain();
+    hp.connect(eg2).connect(g);
+    this._env(eg2.gain, t0, 0.045, 0.002, 0.05);
+    this._noise(t0, 0.08, hp);
+  }
+
+  /** Component ripped off: falling metal shear + body clank + debris clatter. */
+  _partTorn(pan, att) {
+    const g = this._voice(1.3, att, pan, this.sfxBus);
+    if (!g) return;
+    this._counts.parts++;
+    const t0 = this._now();
+    // metal shear: falling saw scream through a tight sweeping bandpass
+    const bp = this._bp(1500, 3.5);
+    const eg = this.ac.createGain();
+    bp.connect(eg).connect(g);
+    bp.frequency.setValueAtTime(1500, t0);
+    bp.frequency.exponentialRampToValueAtTime(320, t0 + 0.3);
+    this._env(eg.gain, t0, 0.16, 0.006, 0.3);
+    const saw = this._osc('sawtooth', 880, t0, 0.36, bp);
+    saw.frequency.exponentialRampToValueAtTime(190, t0 + 0.3);
+    // rip noise
+    const hp = this._hp(2400);
+    const eg2 = this.ac.createGain();
+    hp.connect(eg2).connect(g);
+    this._env(eg2.gain, t0, 0.1, 0.004, 0.14);
+    this._noise(t0, 0.18, hp);
+    // struck-body ring
+    const ratios = [1, 2.76, 5.4];
+    const amps = [0.1, 0.06, 0.03];
+    for (let i = 0; i < 3; i++) {
+      const eg3 = this.ac.createGain();
+      eg3.connect(g);
+      this._env(eg3.gain, t0 + 0.02, amps[i], 0.003, 0.34 / (1 + i * 0.5));
+      this._osc('sine', 340 * ratios[i] * (1 + (Math.random() - 0.5) * 0.03),
+        t0 + 0.02, 0.42, eg3);
+    }
+    // clatter: debris tinks bouncing away, decaying
+    let t = t0 + 0.22;
+    for (let i = 0; i < 4; i++) {
+      const eg4 = this.ac.createGain();
+      eg4.connect(g);
+      const dec = 0.05 + Math.random() * 0.08;
+      this._env(eg4.gain, t, 0.05 / (1 + i * 0.45), 0.002, dec);
+      this._osc('sine', 900 + Math.random() * 1500, t, dec + 0.05, eg4);
+      t += 0.07 + Math.random() * 0.12;
+    }
+  }
+
+  /** Pickup tick; leafy=true for medicinal herbs (soft plant rustle). */
+  _itemTick(leafy, delay = 0) {
+    const g = this._voice(0.45 + delay, 1, 0, this.sfxBus);
+    if (!g) return;
+    this._counts.items++;
+    const t0 = this._now() + delay;
+    if (leafy) {
+      const swish = (t, dur) => {
+        const hp = this._hp(3000);
+        const eg = this.ac.createGain();
+        hp.connect(eg).connect(g);
+        this._env(eg.gain, t, 0.035, 0.015, dur);
+        this._noise(t, dur + 0.03, hp);
+      };
+      swish(t0, 0.06);
+      swish(t0 + 0.07, 0.09);
+      const eg = this.ac.createGain();
+      eg.connect(g);
+      this._env(eg.gain, t0 + 0.05, 0.028, 0.01, 0.14);
+      const o = this._osc('sine', 780, t0 + 0.05, 0.2, eg);
+      o.frequency.exponentialRampToValueAtTime(1180, t0 + 0.17);
+    } else {
+      const eg = this.ac.createGain();
+      eg.connect(g);
+      this._env(eg.gain, t0, 0.04, 0.004, 0.07);
+      const o = this._osc('sine', 1480, t0, 0.1, eg);
+      o.frequency.exponentialRampToValueAtTime(1150, t0 + 0.08);
+      const hp = this._hp(5500);
+      const eg2 = this.ac.createGain();
+      hp.connect(eg2).connect(g);
+      this._env(eg2.gain, t0, 0.02, 0.002, 0.025);
+      this._noise(t0, 0.04, hp);
+    }
+  }
+
+  /** Weapon-wheel time dilation: whoosh down (open) / back up + tick (close). */
+  _wheelWhoosh(opening) {
+    const g = this._voice(0.7, 1, 0, this.sfxBus);
+    if (!g) return;
+    this._counts.wheel++;
+    const t0 = this._now();
+    const bp = this._bp(opening ? 2000 : 320, 1.1);
+    const eg = this.ac.createGain();
+    bp.connect(eg).connect(g);
+    bp.frequency.setValueAtTime(opening ? 2000 : 320, t0);
+    bp.frequency.exponentialRampToValueAtTime(
+      opening ? 300 : 1900, t0 + (opening ? 0.42 : 0.3));
+    eg.gain.setValueAtTime(0.0001, t0);
+    eg.gain.exponentialRampToValueAtTime(0.085, t0 + 0.06);
+    eg.gain.exponentialRampToValueAtTime(0.0008, t0 + (opening ? 0.5 : 0.36));
+    this._noise(t0, 0.55, bp);
+    // pitch drop / rise sells the slow-mo
+    const eg2 = this.ac.createGain();
+    eg2.connect(g);
+    this._env(eg2.gain, t0, 0.045, 0.03, opening ? 0.4 : 0.28);
+    const o = this._osc('sine', opening ? 260 : 95, t0, 0.5, eg2);
+    o.frequency.exponentialRampToValueAtTime(
+      opening ? 88 : 240, t0 + (opening ? 0.38 : 0.26));
+    if (!opening) {
+      // soft re-engage tick as time snaps back
+      const bp2 = this._bp(2600, 4);
+      const eg3 = this.ac.createGain();
+      bp2.connect(eg3).connect(g);
+      this._env(eg3.gain, t0 + 0.24, 0.05, 0.003, 0.04);
+      this._noise(t0 + 0.24, 0.05, bp2);
+    }
+  }
+
+  /** Weapon switch: dry mechanical double-click + low thock. */
+  _switchClick() {
+    const g = this._voice(0.3, 1, 0, this.sfxBus);
+    if (!g) return;
+    this._counts.switches++;
+    const t0 = this._now();
+    const tick = (t, f, vol) => {
+      const bp = this._bp(f, 5);
+      const eg = this.ac.createGain();
+      bp.connect(eg).connect(g);
+      this._env(eg.gain, t, vol, 0.002, 0.03);
+      this._noise(t, 0.04, bp);
+    };
+    tick(t0, 2900, 0.055);
+    tick(t0 + 0.05, 3600, 0.04);
+    const eg = this.ac.createGain();
+    eg.connect(g);
+    this._env(eg.gain, t0 + 0.01, 0.045, 0.004, 0.06);
+    const o = this._osc('sine', 210, t0 + 0.01, 0.1, eg);
+    o.frequency.exponentialRampToValueAtTime(128, t0 + 0.09);
+  }
+
+  /** Ammo crafted: two woody taps + a fletching zip. */
+  _craftSound() {
+    const g = this._voice(0.7, 1, 0, this.sfxBus);
+    if (!g) return;
+    this._counts.crafts++;
+    const t0 = this._now();
+    const tap = (t, f) => {
+      const bp = this._bp(f, 1.6);
+      const eg = this.ac.createGain();
+      bp.connect(eg).connect(g);
+      this._env(eg.gain, t, 0.09, 0.003, 0.06);
+      this._noise(t, 0.08, bp);
+      const eg2 = this.ac.createGain();
+      eg2.connect(g);
+      this._env(eg2.gain, t, 0.05, 0.003, 0.07);
+      const o = this._osc('sine', f * 0.35, t, 0.11, eg2);
+      o.frequency.exponentialRampToValueAtTime(f * 0.24, t + 0.08);
+    };
+    tap(t0, 620);
+    tap(t0 + 0.13, 540);
+    // fletch zip: fast rising high sweep
+    const bp = this._bp(1800, 2.2);
+    const eg = this.ac.createGain();
+    bp.connect(eg).connect(g);
+    bp.frequency.setValueAtTime(1700, t0 + 0.26);
+    bp.frequency.exponentialRampToValueAtTime(5400, t0 + 0.4);
+    eg.gain.setValueAtTime(0.0001, t0 + 0.26);
+    eg.gain.exponentialRampToValueAtTime(0.05, t0 + 0.3);
+    eg.gain.exponentialRampToValueAtTime(0.0008, t0 + 0.44);
+    this._noise(t0 + 0.26, 0.2, bp);
+  }
+
+  /** Concentration breath: inhale (start) / exhale (end). */
+  _breath(inhale) {
+    const g = this._voice(0.6, 1, 0, this.sfxBus);
+    if (!g) return;
+    this._counts.breaths++;
+    const t0 = this._now();
+    const bp = this._bp(inhale ? 480 : 1250, 0.8);
+    const eg = this.ac.createGain();
+    bp.connect(eg).connect(g);
+    bp.frequency.setValueAtTime(inhale ? 480 : 1250, t0);
+    bp.frequency.exponentialRampToValueAtTime(
+      inhale ? 1450 : 430, t0 + (inhale ? 0.38 : 0.32));
+    eg.gain.setValueAtTime(0.0001, t0);
+    eg.gain.exponentialRampToValueAtTime(
+      inhale ? 0.055 : 0.04, t0 + (inhale ? 0.3 : 0.08));
+    eg.gain.exponentialRampToValueAtTime(0.0008, t0 + (inhale ? 0.44 : 0.4));
+    this._noise(t0, 0.5, bp);
+  }
+
+  /** Eye-flash attack telegraph: short rising blip — THE audible dodge cue. */
+  _telegraphBlip(pan, att) {
+    const g = this._voice(0.35, Math.max(att, 0.45), pan, this.sfxBus);
+    if (!g) return;
+    this._counts.telegraphs++;
+    const t0 = this._now();
+    const eg = this.ac.createGain();
+    eg.connect(g);
+    this._env(eg.gain, t0, 0.085, 0.012, 0.2);
+    const o = this._osc('sine', 640, t0, 0.26, eg);
+    o.frequency.exponentialRampToValueAtTime(1550, t0 + 0.2);
+    const eg2 = this.ac.createGain();
+    eg2.connect(g);
+    this._env(eg2.gain, t0, 0.02, 0.012, 0.16);
+    const o2 = this._osc('square', 1280, t0, 0.22, eg2);
+    o2.frequency.exponentialRampToValueAtTime(3100, t0 + 0.2);
+  }
+
+  /** Elemental canister / status trigger: element-flavored detonation. */
+  _canisterBoom(pan, att, element) {
+    this._counts.canisters++;
+    const a = Math.max(att, 0.5);
+    const el = String(element || 'fire');
+    if (/freeze|frost|ice|chill|brittle/i.test(el)) {
+      // freeze burst: cold whump + icy blast + crystalline shards
+      const g = this._voice(1.1, a, pan, this.sfxBus);
+      if (!g) return;
+      const t0 = this._now();
+      const eg = this.ac.createGain();
+      eg.connect(g);
+      this._env(eg.gain, t0, 0.2, 0.006, 0.3);
+      const o = this._osc('sine', 190, t0, 0.38, eg);
+      o.frequency.exponentialRampToValueAtTime(60, t0 + 0.3);
+      const hp = this._hp(3800);
+      const eg2 = this.ac.createGain();
+      hp.connect(eg2).connect(g);
+      this._env(eg2.gain, t0, 0.16, 0.004, 0.45);
+      this._noise(t0, 0.5, hp);
+      for (let i = 0; i < 6; i++) {
+        const t = t0 + 0.04 + Math.random() * 0.3;
+        const eg3 = this.ac.createGain();
+        eg3.connect(g);
+        const dec = 0.05 + Math.random() * 0.12;
+        this._env(eg3.gain, t, 0.04, 0.002, dec);
+        this._osc('sine', 2200 + Math.random() * 3800, t, dec + 0.05, eg3);
+      }
+    } else if (/shock|stun|spark/i.test(el)) {
+      this._zap(pan, a);
+      this._zap(pan * 0.5, a * 0.8);
+      this._boom(pan, a * 0.9);
+    } else {
+      // blaze canister: the big one — layered blast + fire-crackle tail
+      this._explosion(pan, a, 1.35);
+      const g = this._voice(1.2, a, pan, this.sfxBus);
+      if (!g) return;
+      const bp = this._bp(2900, 1.4);
+      bp.connect(g);
+      let t = this._now() + 0.1;
+      for (let i = 0; i < 7; i++) {
+        const eg = this.ac.createGain();
+        eg.connect(bp);
+        this._env(eg.gain, t, 0.05 + Math.random() * 0.05, 0.002, 0.03);
+        this._noise(t, 0.045, eg);
+        t += 0.04 + Math.random() * 0.1;
+      }
+    }
   }
 
   _thud(pan, att) {
@@ -732,6 +1182,10 @@ export class GameAudio {
   }
 
   _focus() {
+    // 'focus-on' + 'focus-pulse' can land the same frame — one blip is enough
+    const nowMs = performance.now();
+    if (nowMs - this._focusBlipMs < 150) return;
+    this._focusBlipMs = nowMs;
     const g = this._voice(0.7, 1, 0, this.sfxBus);
     if (!g) return;
     const t0 = this._now();
@@ -745,6 +1199,18 @@ export class GameAudio {
     hp.connect(eg2).connect(g);
     this._env(eg2.gain, t0, 0.02, 0.05, 0.35);
     this._noise(t0, 0.4, hp);
+  }
+
+  /** Focus powering down: short falling shimmer. */
+  _focusOff() {
+    const g = this._voice(0.4, 1, 0, this.sfxBus);
+    if (!g) return;
+    const t0 = this._now();
+    const eg = this.ac.createGain();
+    eg.connect(g);
+    this._env(eg.gain, t0, 0.04, 0.015, 0.28);
+    const o = this._osc('sine', 1100, t0, 0.32, eg);
+    o.frequency.exponentialRampToValueAtTime(460, t0 + 0.28);
   }
 
   _dodgeWhoosh() {
@@ -837,34 +1303,108 @@ export class GameAudio {
   _bindEvents() {
     const ev = this.ctx.events;
     const armed = (fn) => (payload) => { if (this.ac) fn(payload); };
+    // spatialize from a point/position with a neutral fallback
+    const at = (pos, fallbackAtt = 0.7) => {
+      if (pos) this._spatial(pos);
+      else { this._pan = 0; this._att = fallbackAtt; }
+    };
 
-    ev.on('arrow-fired', armed(({ drawStrength } = {}) =>
-      this._bowRelease(drawStrength ?? 0.6)));
+    ev.on('arrow-fired', armed(({ type, drawStrength } = {}) => {
+      const id = String(type || '');
+      if (/disc/i.test(id)) this._discThump(true);                       // disc launcher: heavy
+      else if (/blast|bomb|sling/i.test(id) && !/tear/i.test(id)) this._discThump(false); // blast sling lob
+      else this._bowRelease(drawStrength ?? 0.6);
+    }));
 
     ev.on('arrow-hit', armed(({ point, machine, weak, type } = {}) => {
-      if (point) this._spatial(point);
-      else { this._pan = 0; this._att = 0.8; }
+      at(point, 0.8);
+      const id = String(type || '');
       const att = Math.max(this._att, 0.35);
       if (machine) {
         this._clank(this._pan, att, !!weak);
-        if (type === 'shock') this._zap(this._pan, att);
-        else if (type === 'fire') this._ignite(this._pan, att);
+        if (/shock|spark/i.test(id)) this._zap(this._pan, att);
+        else if (/fire|blaze/i.test(id)) this._ignite(this._pan, att);
+        else if (/freeze|chill/i.test(id)) this._frostHiss(this._pan, att);
+        else if (/blast|disc|bomb/i.test(id)) this._explosion(this._pan, att, 0.8);
       } else {
-        this._thud(this._pan, this._att);
-        if (type === 'fire') this._ignite(this._pan, this._att);
+        if (/blast|disc|bomb/i.test(id)) this._explosion(this._pan, this._att, 0.75);
+        else this._thud(this._pan, this._att);
+        if (/fire|blaze/i.test(id)) this._ignite(this._pan, this._att);
+        else if (/freeze|chill/i.test(id)) this._frostHiss(this._pan, this._att);
       }
     }));
 
+    // v2: torn components — metal shear + clatter. Machines emit 'part-torn';
+    // the tornPart field on 'machine-damaged' is a fallback (120ms dedupe so
+    // both surfaces landing together play once).
+    const partTornAt = (pos) => {
+      const nowMs = performance.now();
+      if (nowMs - this._partTornMs < 120) return;
+      this._partTornMs = nowMs;
+      at(pos);
+      this._partTorn(this._pan, Math.max(this._att, 0.45));
+    };
+    ev.on('part-torn', armed((e = {}) =>
+      partTornAt(e?.point ?? e?.machine?.position ?? e?.part?.mesh?.position ?? null)));
+
+    ev.on('machine-damaged', armed((e = {}) => {
+      const pos = e.point ?? e.machine?.position ?? null;
+      if (e.tornPart) partTornAt(pos);
+      if (e.triggeredElement) {
+        at(pos);
+        this._canisterBoom(this._pan, this._att, e.triggeredElement);
+        this._lastTenseT = this._t;
+      }
+      const brittle = e.brittle ?? e.machine?.brittle ?? e.machine?.frozen ?? false;
+      if (brittle && !e.triggeredElement) {
+        at(pos);
+        this._shatter(this._pan, Math.max(this._att, 0.4));
+      }
+    }));
+
+    // v2: pickups — burst-staggered so a Take All reads as a fast tick roll
+    ev.on('item-gained', armed((e = {}) => {
+      const nowMs = performance.now();
+      if (nowMs - this._itemMs > 200) this._itemBurst = 0;
+      this._itemMs = nowMs;
+      const delay = Math.min(this._itemBurst * 0.055, 0.5);
+      this._itemBurst++;
+      this._itemTick(/herb|medicinal|plant/i.test(String(e.id || '')), delay);
+    }));
+
+    // v2: weapon wheel + crafting + concentration
+    ev.on('wheel-open', armed(() => this._wheelWhoosh(true)));
+    ev.on('wheel-close', armed(() => this._wheelWhoosh(false)));
+    ev.on('weapon-switch', armed(() => this._switchClick()));
+    ev.on('ammo-crafted', armed(() => this._craftSound()));
+    ev.on('concentration-start', armed(() => this._concSet(true)));
+    ev.on('concentration-end', armed(() => this._concSet(false)));
+
+    // v2: the audible dodge cue (eye-flash windup)
+    ev.on('machine-telegraph', armed(({ machine } = {}) => {
+      at(machine?.position ?? null);
+      this._telegraphBlip(this._pan, this._att);
+    }));
+
+    // v2: Focus mode hum (focus builder emits these; harmless if absent)
+    ev.on('focus-on', armed(() => {
+      this._focusOn = true;
+      this._counts.focusToggles++;
+      this._focus();
+    }));
+    ev.on('focus-off', armed(() => {
+      this._focusOn = false;
+      this._focusOff();
+    }));
+
     ev.on('machine-alerted', armed(({ machine } = {}) => {
-      if (machine?.position) this._spatial(machine.position);
-      else { this._pan = 0; this._att = 0.7; }
+      at(machine?.position ?? null);
       this._sting(this._pan, Math.max(this._att, 0.5));
       this._lastTenseT = this._t;
     }));
 
     ev.on('machine-attack', armed(({ machine, kind } = {}) => {
-      if (machine?.position) this._spatial(machine.position);
-      else { this._pan = 0; this._att = 0.7; }
+      at(machine?.position ?? null);
       const big = machine?.kind === 'thunderjaw' || machine?.kind === 'behemoth';
       // Locomotion footfalls are ambience, not aggression: quiet low thud,
       // and never refresh the combat-tension timer.
@@ -886,8 +1426,7 @@ export class GameAudio {
     }));
 
     ev.on('machine-killed', armed(({ machine } = {}) => {
-      if (machine?.position) this._spatial(machine.position);
-      else { this._pan = 0; this._att = 0.7; }
+      at(machine?.position ?? null);
       const size = machine?.kind === 'thunderjaw' ? 1.5
         : machine?.kind === 'behemoth' ? 1.3
           : machine?.kind === 'sawtooth' ? 1.15 : 1;
@@ -895,21 +1434,34 @@ export class GameAudio {
     }));
 
     ev.on('player-hurt', armed(() => this._hurt()));
-    // Heal chime is driven by an actual medicine DECREASE observed in
-    // update() — the 'medicine-used' event also fires for pouch refills.
+    // Heal audio keys off player.healing edges observed in update() — the
+    // pouch drains continuously, so count-based chimes would spam.
     ev.on('player-died', armed(() => {
       this._killCreak(); // update() stops on the death screen
       this._droneFall();
     }));
     ev.on('player-respawn', armed(() => {
-      // resync so the respawn medicine reset never reads as a "use"
-      this._prevMed = this.ctx.player?.medicine ?? null;
+      this._prevHealing = false;
       this._chime();
     }));
     ev.on('player-dodge', armed(() => this._dodgeWhoosh()));
     ev.on('victory', armed(() => this._victory()));
     ev.on('focus-pulse', armed(() => this._focus()));
     ev.on('objective-changed', armed(() => this._objectiveBlip()));
+  }
+
+  /** Concentration slow-mo entered/left (idempotent; event + poll driven). */
+  _concSet(on) {
+    if (on === this._concActive) return;
+    this._concActive = on;
+    this._concSetMs = performance.now();
+    if (on) {
+      this._counts.concentrations++;
+      this._breath(true);
+      this._concNextHbMs = performance.now() + 380;
+    } else {
+      this._breath(false);
+    }
   }
 
   /* ------------------------------ self-test ------------------------------ */
@@ -937,6 +1489,26 @@ export class GameAudio {
       [6.3, () => this._pluck()],
       [6.7, () => this._victory()],
       [7.4, () => this._droneFall()],
+      // ---- v2 additions ----
+      [8.2, () => this._partTorn(0.2, 1)],
+      [8.9, () => this._itemTick(false)],
+      [9.2, () => this._itemTick(true)],
+      [9.7, () => this._wheelWhoosh(true)],
+      [10.3, () => this._switchClick()],
+      [10.7, () => this._wheelWhoosh(false)],
+      [11.2, () => this._craftSound()],
+      [11.9, () => this._concSet(true)],   // breath in + heartbeat + music LP
+      [13.6, () => this._concSet(false)],  // breath out, LP sweeps back
+      [14.2, () => this._telegraphBlip(0, 1)],
+      [14.7, () => this._canisterBoom(0, 1, 'fire')],
+      [16.2, () => this._canisterBoom(0.3, 1, 'shock')],
+      [17.2, () => this._canisterBoom(-0.3, 1, 'freeze')],
+      [18.2, () => this._shatter(0, 1)],
+      [18.6, () => this._frostHiss(0, 1)],
+      [19.0, () => this._discThump(true)],
+      [19.6, () => this._discThump(false)],
+      [20.2, () => { this._focusOn = true; this._focus(); }],  // hum fades in
+      [22.2, () => { this._focusOn = false; this._focusOff(); }],
     ];
   }
 
@@ -948,6 +1520,11 @@ export class GameAudio {
     const ctx = this.ctx;
     const p = ctx.player;
     const playing = ctx.state === 'playing' || ctx.params?.has?.('shot');
+    // Wall-clock dt: engine.timeScale scales `dt`, but slow-mo layers
+    // (concentration heartbeat, hum/heal/LP fades) must run in real time.
+    const nowMs = performance.now();
+    const rdt = clamp((nowMs - this._lastRealMs) / 1000, 0, 0.1);
+    this._lastRealMs = nowMs;
 
     // --- wind gusts: layered slow sines drive bed + rustle + filter sweep
     const gust = clamp(
@@ -984,14 +1561,19 @@ export class GameAudio {
       }
     }
 
-    // --- heal chime only when medicine is actually consumed (count drops);
-    //     pouch pickups/refills raise the count and must stay silent
+    // --- medicine pouch transfusion (hold Q): chime on start + soft green
+    //     shimmer while the pouch drains (player.healing, real-time fade)
     if (p) {
-      const med = p.medicine ?? 0;
-      if (this._prevMed !== null && med < this._prevMed && p.health > 0) {
+      const healing = !!p.healing;
+      if (healing && !this._prevHealing && p.health > 0) {
+        this._counts.heals++;
         this._chime();
       }
-      this._prevMed = med;
+      this._prevHealing = healing;
+      const target = healing && playing && p.health > 0 ? 0.02 : 0;
+      this._healLevel += (target - this._healLevel) * Math.min(1, rdt * 6);
+      if (this._healLevel < 0.0004) this._healLevel = 0;
+      if (this.healGain) this.healGain.gain.value = this._healLevel;
     }
 
     // --- bow creak follows drawStrength (lazy: combat builds after audio);
@@ -1013,6 +1595,43 @@ export class GameAudio {
         46 + draw * 52 + Math.sin(t * 37) * 2.5 * draw;
       this._prevDraw = draw;
     }
+
+    // --- Concentration: reconcile with combat's gauge if exposed (covers a
+    //     missed event either way), heartbeat on a WALL-CLOCK interval, and
+    //     the music ducks under a low-pass while active
+    const conc = ctx.combat?.concentration;
+    if (conc) {
+      // grace window: if the event lands a frame before combat flips .active,
+      // don't let the poll cancel and re-trigger (double breaths)
+      if (this._concActive && !conc.active
+        && nowMs - this._concSetMs > 300) this._concSet(false);
+      else if (!this._concActive && conc.active && playing) this._concSet(true);
+    }
+    if (this._concActive && playing) {
+      if (nowMs >= this._concNextHbMs) {
+        this._heartbeat();
+        this._concNextHbMs = nowMs + 850;
+      }
+    }
+    const lpTarget = this._concActive && playing ? 460 : 16000;
+    this._lpFreq += (lpTarget - this._lpFreq)
+      * Math.min(1, rdt * (this._concActive ? 10 : 5));
+    this.musicLP.frequency.value = this._lpFreq;
+
+    // --- Focus hologram hum: fades with real time while Focus mode is on.
+    //     Safety: if the focus system reports inactive for a sustained
+    //     stretch (missed 'focus-off'), drop the hum. Lenient window so a
+    //     short pulse-style .active flag can't cut a legitimate mode hum.
+    if (this._focusOn && ctx.focus && ctx.focus.active === false) {
+      this._focusOffLag += rdt;
+      if (this._focusOffLag > 2.5) this._focusOn = false;
+    } else {
+      this._focusOffLag = 0;
+    }
+    const humTarget = this._focusOn && playing ? 0.02 : 0;
+    this._humLevel += (humTarget - this._humLevel) * Math.min(1, rdt * 7);
+    if (this._humLevel < 0.0004) this._humLevel = 0;
+    if (this.humGain) this.humGain.gain.value = this._humLevel;
 
     // --- machine polling (throttled): combat tension + nearest idle watcher
     this._pollT -= dt;
@@ -1084,8 +1703,8 @@ export class GameAudio {
       }
     }
 
-    // --- low-health heartbeat
-    if (p && playing && p.health > 0 && p.health < 30) {
+    // --- low-health heartbeat (skipped while Concentration drives its own)
+    if (p && playing && p.health > 0 && p.health < 30 && !this._concActive) {
       this._hbOn = true;
       this._heartT -= dt;
       if (this._heartT <= 0) {
@@ -1099,7 +1718,7 @@ export class GameAudio {
 
     // --- staggered one-shot self test (?audiotest=1)
     if (this._testQueue && this._testQueue.length) {
-      this._testT += dt;
+      this._testT += rdt; // real time: the test must ignore slow-mo too
       while (this._testQueue.length && this._testQueue[0][0] <= this._testT) {
         this._testQueue.shift()[1]();
       }
@@ -1135,6 +1754,11 @@ export class GameAudio {
         heartbeat: this._hbOn,
         watcherDist: this._watcherDist === Infinity
           ? null : Math.round(this._watcherDist),
+        // v2 layers
+        musicLP: Math.round(this._lpFreq),
+        concentration: this._concActive,
+        focusHum: r(this._humLevel),
+        healShimmer: r(this._healLevel),
       },
       counts: { ...this._counts },
     };
