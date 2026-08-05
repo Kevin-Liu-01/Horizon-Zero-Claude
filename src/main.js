@@ -7,8 +7,11 @@ import { Environment } from './world/environment.js';
 import { Vegetation } from './world/vegetation.js';
 import { Camp } from './world/camp.js';
 import { Player } from './entities/player.js';
+import { Inventory } from './items/inventory.js';
+import { Interactables } from './items/interactables.js';
 import { Machines } from './entities/machines/index.js';
 import { Combat } from './combat/combat.js';
+import { WeaponWheel } from './ui/wheel.js';
 import { FocusSystem } from './ui/focus.js';
 import { HUD } from './ui/hud.js';
 import { GameAudio } from './audio/audio.js';
@@ -23,7 +26,8 @@ class Game {
       engine: null, scene: null, camera: null, renderer: null,
       input: null, events: new Events(), assets: new Assets(),
       terrain: null, environment: null, vegetation: null, camp: null,
-      player: null, machines: null, combat: null, focus: null,
+      player: null, inventory: null, machines: null, combat: null,
+      wheel: null, focus: null, interactables: null,
       hud: null, audio: null,
       state: 'loading', // loading | title | playing | paused | dead | victory
       settings: { quality: params.get('q') || 'high' },
@@ -54,9 +58,12 @@ class Game {
     ctx.vegetation = this._add(new Vegetation(ctx));
     ctx.camp = this._add(new Camp(ctx));
     ctx.player = this._add(new Player(ctx));
+    ctx.inventory = this._add(new Inventory(ctx));
     ctx.machines = this._add(new Machines(ctx));
     ctx.combat = this._add(new Combat(ctx));
+    ctx.wheel = this._add(new WeaponWheel(ctx));
     ctx.focus = this._add(new FocusSystem(ctx));
+    ctx.interactables = this._add(new Interactables(ctx));
     ctx.audio = this._add(new GameAudio(ctx));
     ctx.hud = this._add(new HUD(ctx));
 

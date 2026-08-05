@@ -1,12 +1,61 @@
 * { margin: 0; padding: 0; box-sizing: border-box; }
 
+/* Bundled OFL fonts (see docs/research/ui.md) */
+@font-face {
+  font-family: 'Michroma';
+  src: url('/fonts/Michroma-Regular.ttf') format('truetype');
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Orbitron';
+  src: url('/fonts/Orbitron-Variable.ttf') format('truetype');
+  font-weight: 400 900;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Rajdhani';
+  src: url('/fonts/Rajdhani-Medium.ttf') format('truetype');
+  font-weight: 500;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Rajdhani';
+  src: url('/fonts/Rajdhani-SemiBold.ttf') format('truetype');
+  font-weight: 600;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Rajdhani';
+  src: url('/fonts/Rajdhani-Bold.ttf') format('truetype');
+  font-weight: 700;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Chakra Petch';
+  src: url('/fonts/ChakraPetch-Regular.ttf') format('truetype');
+  font-weight: 400;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Chakra Petch';
+  src: url('/fonts/ChakraPetch-SemiBold.ttf') format('truetype');
+  font-weight: 600;
+  font-display: swap;
+}
+
 :root {
-  --hzc-accent: #35c8dc;
-  --hzc-warn: #e8a33d;
-  --hzc-danger: #e04f3f;
-  --hzc-text: #e8ecec;
+  --hzc-accent: #59c1c6;         /* HZD teal */
+  --hzc-warn: #f2c230;           /* weak-point / gauge yellow */
+  --hzc-danger: #b03a2e;         /* health red */
+  --hzc-med: #7fb069;            /* medicine green */
+  --hzc-focus: #7b5cd6;          /* focus purple */
+  --hzc-hostile: #e8762c;        /* hostile orange */
+  --hzc-text: #efe6d5;           /* parchment */
   --hzc-scrim: rgba(8, 14, 18, 0.55);
-  --font: 'Avenir Next', 'Futura', 'Segoe UI', system-ui, sans-serif;
+  --font: 'Rajdhani', 'Segoe UI', system-ui, sans-serif;
+  --font-display: 'Michroma', 'Orbitron', sans-serif;
+  --font-stinger: 'Orbitron', sans-serif;
+  --font-focus: 'Chakra Petch', monospace;
 }
 
 html, body {
@@ -31,19 +80,21 @@ html, body {
 .overlay.hidden { display: flex; }
 
 .game-title {
-  font-size: 64px;
-  font-weight: 200;
-  letter-spacing: 0.35em;
+  font-family: var(--font-display);
+  font-size: 54px;
+  font-weight: 400;
+  letter-spacing: 0.28em;
   text-align: center;
   color: var(--hzc-text);
-  text-shadow: 0 0 24px rgba(53, 200, 220, 0.35);
+  text-shadow: 0 0 24px rgba(89, 193, 198, 0.35);
 }
 .game-title span {
   display: block;
-  font-size: 30px;
-  letter-spacing: 0.62em;
+  font-family: var(--font-display);
+  font-size: 24px;
+  letter-spacing: 0.5em;
   color: var(--hzc-accent);
-  margin-top: 6px;
+  margin-top: 10px;
 }
 
 .load-inner, .title-inner { text-align: center; }

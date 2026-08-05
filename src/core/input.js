@@ -13,7 +13,10 @@ export class Input {
     this._upHandlers = new Map();
 
     window.addEventListener('keydown', (e) => {
-      if (!this.enabled || e.repeat) return;
+      if (!this.enabled) return;
+      // keep game keys from stealing browser focus / scrolling while playing
+      if (e.code === 'Tab' || e.code === 'Space' || e.code === 'KeyI') e.preventDefault();
+      if (e.repeat) return;
       this.keys.add(e.code);
       this._downHandlers.get(e.code)?.forEach((fn) => fn(e));
     });

@@ -38,8 +38,11 @@ export class Player {
 
     this.maxHealth = 100;
     this.health = this.maxHealth;
-    this.medicine = 3;
-    this._healPool = 0;
+    // HZD medicine pouch: a 0..100 meter filled by medicinal herbs; holding Q
+    // transfers pouch -> health over time (research: docs/research/mechanics.md)
+    this.pouch = 60;
+    this.maxPouch = 100;
+    this.healing = false;
     this.inTallGrass = false;
 
     // --- camera orbit
@@ -51,14 +54,10 @@ export class Player {
 
     this.animator = new PlayerAnimator(ctx, this.model);
 
-    ctx.input.onDown('KeyF', () => this.useMedicine());
     ctx.input.onDown('Space', () => this.dodge());
+    ctx.input.onDown('ControlLeft', () => this.dodge()); // HZD PC dodge bind
 
     ctx.events.on('player-damage', ({ amount, from }) => this.takeDamage(amount, from));
-    // Field-dressing the kill: machines yield a medicine pouch (HUD polls the count).
-    ctx.events.on('machine-killed', () => {
-      this.medicine = Math.min(5, this.medicine + 1);
-    });
 
     this._snapToGround();
   }
@@ -73,12 +72,13 @@ export class Player {
     if (this.health <= 0) this._die();
   }
 
-  useMedicine() {
-    if (this.medicine <= 0 || this.health >= this.maxHealth) return;
-    this.medicine -= 1;
-    this._healPool += 45;
-    this.ctx.events.emit('medicine-used', { left: this.medicine });
+  /** Herbs and looted medicine refill the pouch meter. */
+  addPouch(amount) {
+    this.pouch = Math.min(this.maxPouch, this.pouch + amount);
   }
+
+  /** Deprecated alias for the pre-pouch HUD; do not use in new code. */
+  get medicine() { return Math.ceil(this.pouch / 25); }
 
   _die() {
     this.ctx.state = 'dead';
@@ -86,7 +86,7 @@ export class Player {
     setTimeout(() => {
       if (this.ctx.state !== 'dead') return; // victory/pause may have superseded
       this.health = this.maxHealth;
-      this.medicine = 3;
+      this.pouch = 60;
       this.position.set(CAMP_POS.x, 0, CAMP_POS.z);
       this._snapToGround();
       this.ctx.state = 'playing';
@@ -197,11 +197,13 @@ export class Player {
     this.model.position.copy(this.position);
     this.model.rotation.y = this.heading;
 
-    // --- healing over time
-    if (this._healPool > 0) {
-      const heal = Math.min(this._healPool, 22 * dt);
-      this._healPool -= heal;
-      this.health = Math.min(this.maxHealth, this.health + heal);
+    // --- hold Q: transfer medicine pouch into health (HZD pouch mechanic)
+    this.healing = input.isDown('KeyQ') && this.pouch > 0.5 && this.health < this.maxHealth;
+    if (this.healing) {
+      const rate = 16; // hp per second, 1 pouch unit = 1 hp
+      const amt = Math.min(rate * dt, this.pouch, this.maxHealth - this.health);
+      this.pouch -= amt;
+      this.health += amt;
     }
 
     this._updateCamera(dt);
