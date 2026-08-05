@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { makeArrow, setArrowType, makeBombVisual } from './arrows.js';
 
 /**
@@ -56,6 +57,36 @@ function setSegment(mesh, a, b, r) {
 }
 
 const NOOP = () => {};
+
+/* ------------------------- static-part baking ----------------------------
+ * Weapons are now ALWAYS on screen (stowed across Aloy's back when not
+ * wielded), so every static detail part is baked into ONE mesh per material
+ * instead of one mesh per part — the hunter bow drops from ~13 draw calls
+ * to 4 (+2 dynamic string segments).
+ */
+
+const _tq = new THREE.Quaternion();
+
+/** Unit cylinder from a to b with radius r, baked into geometry space. */
+function segGeo(a, b, r, radial = 5) {
+  const g = new THREE.CylinderGeometry(1, 1, 1, radial, 1);
+  _d.subVectors(b, a);
+  const len = Math.max(1e-5, _d.length());
+  g.scale(r, len, r);
+  _tq.setFromUnitVectors(_Y, _d.multiplyScalar(1 / len));
+  g.applyQuaternion(_tq);
+  _mid.addVectors(a, b).multiplyScalar(0.5);
+  g.translate(_mid.x, _mid.y, _mid.z);
+  return g;
+}
+
+/** Merge pre-transformed geometries into a single mesh. */
+function bakeMesh(mat, parts, shadow = false) {
+  const geo = parts.length === 1 ? parts[0] : mergeGeometries(parts);
+  const mesh = new THREE.Mesh(geo, mat);
+  mesh.castShadow = shadow;
+  return mesh;
+}
 
 /* --------------------------- shared base class --------------------------- */
 
@@ -146,52 +177,62 @@ class RecurveBow extends WeaponModel {
     limbs.castShadow = true;
     this.model.add(limbs);
 
-    // --- riser / grip
-    const riser = new THREE.Mesh(
-      new THREE.CapsuleGeometry(0.03, 0.2 * Math.min(size, 1.15), 3, 8), bronzeMat,
+    // --- static detail, baked per material (see bakeMesh note above)
+    const bronzeParts = [];
+    const accentParts = [];
+    const ironParts = [];
+
+    // riser / grip + grip rings
+    bronzeParts.push(
+      new THREE.CapsuleGeometry(0.03, 0.2 * Math.min(size, 1.15), 3, 8)
+        .translate(0, 0, 0.035),
     );
-    riser.position.set(0, 0, 0.035);
-    riser.castShadow = true;
-    this.model.add(riser);
     for (const y of [-0.115, 0.115]) {
-      const ring = new THREE.Mesh(new THREE.TorusGeometry(0.033, 0.007, 6, 14), accentMat);
-      ring.rotation.x = Math.PI / 2;
-      ring.position.set(0, y * Math.min(size, 1.15), 0.035);
-      this.model.add(ring);
+      accentParts.push(
+        new THREE.TorusGeometry(0.033, 0.007, 6, 14)
+          .rotateX(Math.PI / 2)
+          .translate(0, y * Math.min(size, 1.15), 0.035),
+      );
     }
 
-    // --- limb detail: bronze inlays mid-limb, glowing accents near tips
+    // limb detail: bronze inlays mid-limb, glowing accents near tips
     const tangent = new THREE.Vector3();
-    const addBand = (u, mat, r, h) => {
+    const addBand = (u, arr, r, h) => {
       const p = curve.getPointAt(u);
       curve.getTangentAt(u, tangent);
-      const band = new THREE.Mesh(unitCyl, mat);
-      band.position.copy(p);
-      band.scale.set(r, h, r);
-      band.quaternion.setFromUnitVectors(_Y, tangent);
-      this.model.add(band);
+      const g = new THREE.CylinderGeometry(1, 1, 1, 5, 1);
+      g.scale(r, h, r);
+      _tq.setFromUnitVectors(_Y, tangent);
+      g.applyQuaternion(_tq);
+      g.translate(p.x, p.y, p.z);
+      arr.push(g);
     };
-    addBand(0.20, accentMat, limbR + 0.004, 0.05);
-    addBand(0.80, accentMat, limbR + 0.004, 0.05);
-    addBand(0.30, bronzeMat, limbR + 0.002, 0.10);
-    addBand(0.70, bronzeMat, limbR + 0.002, 0.10);
-    addBand(0.045, bronzeMat, limbR, 0.055);
-    addBand(0.955, bronzeMat, limbR, 0.055);
+    addBand(0.20, accentParts, limbR + 0.004, 0.05);
+    addBand(0.80, accentParts, limbR + 0.004, 0.05);
+    addBand(0.30, bronzeParts, limbR + 0.002, 0.10);
+    addBand(0.70, bronzeParts, limbR + 0.002, 0.10);
+    addBand(0.045, bronzeParts, limbR, 0.055);
+    addBand(0.955, bronzeParts, limbR, 0.055);
 
-    // --- sharpshot scope: aperture ring + glowing sight bead above the grip
+    // sharpshot scope: aperture ring + glowing sight bead above the grip
     if (opts.scope) {
-      const mount = new THREE.Mesh(unitCyl, ironMat);
-      mount.scale.set(0.011, 0.075, 0.011);
-      mount.position.set(0, 0.16 * size, 0.055);
-      mount.rotation.x = 0.5;
-      this.model.add(mount);
-      const aperture = new THREE.Mesh(new THREE.TorusGeometry(0.036, 0.008, 8, 20), ironMat);
-      aperture.position.set(0, 0.19 * size, 0.085);
-      this.model.add(aperture); // faces +Z: a sight ring down the arrow line
-      const bead = new THREE.Mesh(new THREE.SphereGeometry(0.011, 8, 6), accentMat);
-      bead.position.set(0, 0.19 * size, 0.085);
-      this.model.add(bead);
+      ironParts.push(
+        new THREE.CylinderGeometry(1, 1, 1, 5, 1)
+          .scale(0.011, 0.075, 0.011)
+          .rotateX(0.5)
+          .translate(0, 0.16 * size, 0.055),
+        // faces +Z: a sight ring down the arrow line
+        new THREE.TorusGeometry(0.036, 0.008, 8, 20)
+          .translate(0, 0.19 * size, 0.085),
+      );
+      accentParts.push(
+        new THREE.SphereGeometry(0.011, 8, 6).translate(0, 0.19 * size, 0.085),
+      );
     }
+
+    this.model.add(bakeMesh(bronzeMat, bronzeParts));
+    this.model.add(bakeMesh(accentMat, accentParts));
+    if (ironParts.length) this.model.add(bakeMesh(ironMat, ironParts));
 
     // --- string: two segments from the tips to the (pullable) nock point
     this._tipTop = pts[pts.length - 1].clone();
@@ -239,34 +280,33 @@ class BlastSling extends WeaponModel {
     // (nock = hand + bow-up*0.018 + model offset) lands ON the pouch
     const POUCH_Y = 0.018;
 
-    // handle down through the palm, fork rising above it
-    const handle = new THREE.Mesh(unitCyl, woodPale);
-    handle.scale.set(0.024, 0.34, 0.024);
-    handle.position.set(0, -0.08, 0);
-    handle.castShadow = true;
-    this.model.add(handle);
+    // handle + Y fork baked into one wood mesh; caps/rings baked per material
+    const woodParts = [
+      new THREE.CylinderGeometry(1, 1, 1, 5, 1)
+        .scale(0.024, 0.34, 0.024)
+        .translate(0, -0.08, 0),
+    ];
+    const bronzeParts = [];
+    const amberParts = [];
+    this._forkTips = [];
+    for (const s of [-1, 1]) {
+      const a = new THREE.Vector3(0, 0.06, 0);
+      const b = new THREE.Vector3(s * 0.155, 0.24, 0.05);
+      woodParts.push(segGeo(a, b, 0.018));
+      bronzeParts.push(new THREE.SphereGeometry(0.022, 8, 6).translate(b.x, b.y, b.z));
+      amberParts.push(
+        new THREE.TorusGeometry(0.03, 0.007, 6, 12)
+          .rotateY(Math.PI / 2)
+          .translate(b.x, b.y, b.z),
+      );
+      this._forkTips.push(b);
+    }
+    this.model.add(bakeMesh(woodPale, woodParts, true));
+    this.model.add(bakeMesh(bronzeMat, bronzeParts));
+    this.model.add(bakeMesh(amberGlow, amberParts));
     const grip = new THREE.Mesh(new THREE.CapsuleGeometry(0.03, 0.12, 3, 8), leatherMat);
     grip.position.set(0, -0.13, 0);
     this.model.add(grip);
-
-    // Y fork in X so the cords straddle the flight line; tips above the pouch
-    this._forkTips = [];
-    for (const s of [-1, 1]) {
-      const prong = new THREE.Mesh(unitCyl, woodPale);
-      const a = new THREE.Vector3(0, 0.06, 0);
-      const b = new THREE.Vector3(s * 0.155, 0.24, 0.05);
-      setSegment(prong, a, b, 0.018);
-      prong.castShadow = true;
-      this.model.add(prong);
-      const cap = new THREE.Mesh(new THREE.SphereGeometry(0.022, 8, 6), bronzeMat);
-      cap.position.copy(b);
-      this.model.add(cap);
-      const ring = new THREE.Mesh(new THREE.TorusGeometry(0.03, 0.007, 6, 12), amberGlow);
-      ring.position.copy(b);
-      ring.rotation.y = Math.PI / 2;
-      this.model.add(ring);
-      this._forkTips.push(b);
-    }
 
     // cords + pouch (hangs between/below the fork tips)
     this.cordL = new THREE.Mesh(unitCyl, stringMat);
@@ -314,54 +354,33 @@ class DiscLauncher extends WeaponModel {
     this.pull = 0;
     this.restZ = 0.6;
 
-    const barrel = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.075, 0.09, 0.78, 10).rotateX(Math.PI / 2), ironMat,
-    );
-    barrel.position.set(0, 0.05, 0.25);
-    barrel.castShadow = true;
-    this.model.add(barrel);
-
-    const shroudGeo = new THREE.CylinderGeometry(0.1, 0.105, 0.34, 10).rotateX(Math.PI / 2);
-    const shroud = new THREE.Mesh(shroudGeo, woodBlack);
-    shroud.position.set(0, 0.05, 0.1);
-    shroud.castShadow = true;
-    this.model.add(shroud);
-
-    // side rails
-    for (const s of [-1, 1]) {
-      const rail = new THREE.Mesh(new THREE.BoxGeometry(0.02, 0.05, 0.62), ironMat);
-      rail.position.set(s * 0.1, 0.05, 0.22);
-      this.model.add(rail);
-    }
-
-    // ammo drum under the barrel
-    const drum = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.085, 0.085, 0.16, 10).rotateZ(Math.PI / 2), woodBlack,
-    );
-    drum.position.set(0, -0.06, 0.16);
-    this.model.add(drum);
-    for (const s of [-1, 1]) {
-      const cap = new THREE.Mesh(new THREE.TorusGeometry(0.055, 0.012, 6, 14), redGlow);
-      cap.position.set(s * 0.082, -0.06, 0.16);
-      cap.rotation.y = Math.PI / 2;
-      this.model.add(cap);
-    }
-
-    // muzzle ring + core glow
-    const muzzle = new THREE.Mesh(new THREE.TorusGeometry(0.085, 0.014, 8, 16), ironMat);
-    muzzle.position.set(0, 0.05, 0.64);
-    this.model.add(muzzle);
-    this.coreRing = new THREE.Mesh(new THREE.TorusGeometry(0.062, 0.011, 8, 16), redGlow);
-    this.coreRing.position.set(0, 0.05, 0.645);
-    this.model.add(this.coreRing);
-
-    // rear grip block + shoulder hook
-    const stock = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.12, 0.2), woodBlack);
-    stock.position.set(0, 0.02, -0.16);
-    this.model.add(stock);
-    const hook = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.16, 0.04), ironMat);
-    hook.position.set(0, -0.02, -0.27);
-    this.model.add(hook);
+    // barrel + rails + muzzle + hook (iron), shroud + drum + stock (black
+    // composite), drum caps + core ring (glow) — one baked mesh per material
+    const ironParts = [
+      new THREE.CylinderGeometry(0.075, 0.09, 0.78, 10)
+        .rotateX(Math.PI / 2).translate(0, 0.05, 0.25),
+      new THREE.BoxGeometry(0.02, 0.05, 0.62).translate(-0.1, 0.05, 0.22),
+      new THREE.BoxGeometry(0.02, 0.05, 0.62).translate(0.1, 0.05, 0.22),
+      new THREE.TorusGeometry(0.085, 0.014, 8, 16).translate(0, 0.05, 0.64),
+      new THREE.BoxGeometry(0.07, 0.16, 0.04).translate(0, -0.02, -0.27),
+    ];
+    const blackParts = [
+      new THREE.CylinderGeometry(0.1, 0.105, 0.34, 10)
+        .rotateX(Math.PI / 2).translate(0, 0.05, 0.1),
+      new THREE.CylinderGeometry(0.085, 0.085, 0.16, 10)
+        .rotateZ(Math.PI / 2).translate(0, -0.06, 0.16),
+      new THREE.BoxGeometry(0.09, 0.12, 0.2).translate(0, 0.02, -0.16),
+    ];
+    const glowParts = [
+      new THREE.TorusGeometry(0.055, 0.012, 6, 14)
+        .rotateY(Math.PI / 2).translate(-0.082, -0.06, 0.16),
+      new THREE.TorusGeometry(0.055, 0.012, 6, 14)
+        .rotateY(Math.PI / 2).translate(0.082, -0.06, 0.16),
+      new THREE.TorusGeometry(0.062, 0.011, 8, 16).translate(0, 0.05, 0.645),
+    ];
+    this.model.add(bakeMesh(ironMat, ironParts, true));
+    this.model.add(bakeMesh(woodBlack, blackParts));
+    this.model.add(bakeMesh(redGlow, glowParts));
 
     // the disc peeking out of the muzzle while loaded
     this.discVis = makeBombVisual('disc');

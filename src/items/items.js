@@ -43,18 +43,20 @@ export const ITEMS = {
   'disc-launcher': { name: 'Disc Launcher', category: 'valuable', glyph: '◬', color: '#f2c230' }, // ◬
 };
 
-/** Ammo identity for the AMMO tab / toasts (counts live in ctx.combat). */
+/** Ammo identity for the AMMO tab / toasts (counts live in ctx.combat).
+ *  Keys match the weapons builder's ammo ids (src/combat/weapons.js) EXACTLY;
+ *  every ammo gets its own glyph + color so the tab reads at a glance. */
 export const AMMO_INFO = {
-  hunter:    { name: 'Hunter Arrow',    glyph: '➳', color: '#efe6d5' },
-  hardpoint: { name: 'Hardpoint Arrow', glyph: '➳', color: '#c9a86a' },
-  fire:      { name: 'Fire Arrow',      glyph: '➳', color: '#f0a03c' },
-  precision: { name: 'Precision Arrow', glyph: '➳', color: '#efe6d5' },
-  tearblast: { name: 'Tearblast Arrow', glyph: '➳', color: '#59c1c6' },
-  harvest:   { name: 'Harvest Arrow',   glyph: '➳', color: '#7fb069' },
-  shock:     { name: 'Shock Arrow',     glyph: '➳', color: '#4fa3e3' },
-  freeze:    { name: 'Freeze Arrow',    glyph: '➳', color: '#59c1c6' },
-  blast:     { name: 'Blast Bomb',      glyph: '●', color: '#e8762c' },
-  disc:      { name: 'Disc',            glyph: '◎', color: '#f2c230' },
+  hunter:       { name: 'Hunter Arrow',    glyph: '➳', color: '#e8d9b0' },
+  hardpoint:    { name: 'Hardpoint Arrow', glyph: '➶', color: '#ffb45e' },
+  fire:         { name: 'Fire Arrow',      glyph: '✹', color: '#ff7a1e' },
+  precision:    { name: 'Precision Arrow', glyph: '✜', color: '#9fe8ff' },
+  tearblast:    { name: 'Tearblast Arrow', glyph: '✷', color: '#6fd6e8' },
+  harvest:      { name: 'Harvest Arrow',   glyph: '❧', color: '#7fb069' },
+  shock:        { name: 'Shock Arrow',     glyph: 'ϟ', color: '#57c8ff' },
+  freeze:       { name: 'Freeze Arrow',    glyph: '✻', color: '#bfe6ff' },
+  'blast-bomb': { name: 'Blast Bomb',      glyph: '✸', color: '#ff9a3c' },
+  disc:         { name: 'Explosive Disc',  glyph: '◎', color: '#ff5a30' },
 };
 
 const _fallbackCache = new Map();

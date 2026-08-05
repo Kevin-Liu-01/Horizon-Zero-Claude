@@ -146,8 +146,9 @@ export class Gather {
       vertexColors: true, roughness: 0.9, metalness: 0, side: THREE.DoubleSide,
       emissive: '#1c2f14', emissiveIntensity: 0.5, // shaded side stays readable
     });
-    // Bloom-hot green-cyan bulbs (loot/plant color per docs/research/ui.md).
-    this._bulbBase = new THREE.Color(0.32, 1.7, 0.78);
+    // Bloom-hot green bulbs (#4dff88-family, per docs/research/ui.md): blue
+    // kept low so the bloom halo stays leafy green instead of icy white.
+    this._bulbBase = new THREE.Color(0.16, 2.4, 0.32);
     this._bulbMat = new THREE.MeshBasicMaterial({ toneMapped: false });
     this._bulbMat.color.copy(this._bulbBase);
 
@@ -262,7 +263,10 @@ export class Gather {
     this.woodMesh = new THREE.InstancedMesh(geo, mat, spots.length);
     this.woodMesh.name = 'ridge-wood';
     this.woodMesh.frustumCulled = false;
-    this.woodMesh.castShadow = false;
+    // wood casts shadow so the bundles sit grounded instead of hovering
+    // (herbs stay castShadow=false — their contact reads fine and it saves a
+    // shadow-pass draw)
+    this.woodMesh.castShadow = true;
     this.woodMesh.receiveShadow = true;
 
     const terrain = this.ctx.terrain;

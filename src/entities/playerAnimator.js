@@ -197,12 +197,22 @@ export class PlayerAnimator {
     this._plantT = 1;                        // plant-and-turn overlay timeline
     this._stableX = 0; this._stableZ = 1;    // recent stable travel direction
     this._settleT = 1; this._prevSpd = 0; this._recentSpd = 0; // stop settle
+    this._settleAmp = 0;                     // settle strength from recent speed
     this._recT = 1;                          // dodge recovery-step timeline
+    this._looseT = 1; this._looseDraw = 0;   // arrow-release follow-through
+    this._carryW = 0;                        // heavy two-hand carry weight
     this._dieT = 0; this._wasDead = false;   // death crumple timeline
     this._dodgeAxis = new THREE.Vector3(1, 0, 0); // roll axis follows input dir
     this._leanAcc = 0; this._bank = 0;       // smoothed accel lean / turn bank
 
     ctx.events?.on('player-hurt', () => { this._hit = 1; });
+    // loose follow-through: string hand kicks back, fingers thrown open
+    ctx.events?.on('arrow-fired', () => {
+      if (!this.ctx.combat?.activeWeapon?.heavy) {
+        this._looseT = 0;
+        this._looseDraw = this._drawS; // draw length at the moment of release
+      }
+    });
   }
 
   /* ---------------------------- contract API ---------------------------- */
@@ -290,6 +300,12 @@ export class PlayerAnimator {
     if (draw > 0.02 && this._prevRawDraw <= 0.02 && p.aiming && !dead) this._quiverT = 0;
     this._prevRawDraw = draw;
     this._quiverT = Math.min(this._quiverT + dt / 0.2, 1);
+    this._looseT = Math.min(this._looseT + dt / 0.15, 1);
+
+    // heavy pickup weapon (disc launcher): two-hand waist carry replaces the
+    // bow aim overlay entirely while it is held
+    const heavy = !!this.ctx.combat?.activeWeapon?.heavy && !dead;
+    this._carryW = damp(this._carryW, heavy ? 1 : 0, 10, dt);
 
     // draw-hold fatigue: arms tremble after ~3s at full draw
     if (p.aiming && this._drawS > 0.92) this._holdT += dt;
@@ -321,8 +337,9 @@ export class PlayerAnimator {
     const moveW = this._moveW * (1 - this._deadW);
     const runW = this._runW;
     const crouchW = this._crouchW * (1 - this._deadW);
-    const aimW = this._aimW * (1 - this._dodgeW) * (1 - this._deadW);
     const dodgeW = this._dodgeW;
+    const carryW = this._carryW * (1 - dodgeW) * (1 - this._deadW);
+    const aimW = this._aimW * (1 - this._dodgeW) * (1 - this._deadW) * (1 - carryW);
     const idleW = (1 - moveW) * (1 - this._deadW);
 
     /* ---- gait phase: stride frequency tied to speed (no foot skating) ---- */
@@ -376,8 +393,12 @@ export class PlayerAnimator {
 
     /* ---- stop settle: coming off a jog/sprint to a stand ---- */
     this._recentSpd = Math.max(this._recentSpd - dt * 3.5, speed);
-    if (speed < 0.6 && this._prevSpd >= 0.6 && this._recentSpd > 2.6
-        && this._settleT >= 1 && !p.dodging && !dead) this._settleT = 0;
+    if (speed < 1.4 && this._prevSpd >= 1.4 && this._recentSpd > 2.6
+        && this._settleT >= 1 && !p.dodging && !dead) {
+      this._settleT = 0;
+      // settle strength scales with how fast she was going (sprint = heavy)
+      this._settleAmp = clamp(this._recentSpd / 8.2, 0.4, 1.15);
+    }
     this._prevSpd = speed;
     this._settleT = Math.min(this._settleT + dt / 0.42, 1);
     this._recT = Math.min(this._recT + dt / 0.38, 1);
@@ -410,8 +431,8 @@ export class PlayerAnimator {
 
     /* =================== LAYER 0: base stance (weight 1) =================== */
     // arms fall from A-pose to relaxed hang; kills the A-pose in every state.
-    // Faded out while aiming so the arm IK maps exactly from bind directions.
-    const hangW = 1 - aimW;
+    // Faded out while aiming/carrying so the arm IK maps from bind directions.
+    const hangW = 1 - Math.max(aimW, carryW);
     const hangL = -(this._armDropL - 0.16) * hangW;
     const hangR = (this._armDropR - 0.16) * hangW;
     this._rot(b.upArmL, Z_AXIS, hangL);
@@ -463,14 +484,19 @@ export class PlayerAnimator {
         stPitch += (0.1 + br * 0.05) * puffW;
       }
 
-      // weight shifts arrive every few seconds on the scheduler above
+      // weight shifts arrive every few seconds on the scheduler above;
+      // hip rides out over the planted foot, shoulders counter-lean back
+      // over the base so it reads at gameplay camera distance
       const ws = this._wsCur;
       const wsW = idleW * (1 - crouchW) * (1 - aimW);
-      pdx += ws * 0.026 * wsW;
-      pdy += -Math.abs(ws) * 0.006 * wsW;
-      this._rotT(b.pelvis, Z_AXIS, -ws * 0.038 * wsW);
-      this._rotT(b.spine2, Z_AXIS, ws * 0.03 * wsW);
-      stRoll += -ws * 0.008 * wsW;
+      pdx += ws * 0.064 * wsW;
+      pdy += -Math.abs(ws) * 0.011 * wsW;
+      this._rotT(b.pelvis, Z_AXIS, -ws * 0.05 * wsW);
+      this._rotT(b.spine2, Z_AXIS, ws * 0.042 * wsW);
+      this._rotT(b.spine3, Z_AXIS, ws * 0.028 * wsW);
+      this._rot(b.clavL, Z_AXIS, ws * 0.02 * wsW);
+      this._rot(b.clavR, Z_AXIS, ws * 0.02 * wsW);
+      stRoll += -ws * 0.015 * wsW;
       // unweighted knee softens
       const softL = Math.max(0, -ws) * 0.1 * wsW;
       const softR = Math.max(0, ws) * 0.1 * wsW;
@@ -481,8 +507,8 @@ export class PlayerAnimator {
       this._rot(b.calfR, X_AXIS, softR);
       this._rot(b.footR, X_AXIS, -softR * 0.5);
 
-      // idle arm micro-sway
-      const asw = Math.sin(t * 0.8 + 1.3) * 0.02 * wsW;
+      // idle arm micro-sway (off while the heavy carry IK owns the arms)
+      const asw = Math.sin(t * 0.8 + 1.3) * 0.02 * wsW * (1 - carryW);
       this._rot(b.upArmL, X_AXIS, asw);
       this._rot(b.upArmR, X_AXIS, -asw);
 
@@ -534,7 +560,7 @@ export class PlayerAnimator {
       for (let side = 0; side < 2; side++) {
         const s = side === 0 ? 1 : -1;
         const lph = side === 0 ? ph + this._jitL : ph + Math.PI + this._jitR;
-        const amp = side === 0 ? 1.035 : 0.965; // slight L/R stride asymmetry
+        const amp = side === 0 ? 1.018 : 0.982; // slight L/R stride asymmetry
         const c = Math.cos(lph);
         const swingBend = Math.pow(Math.max(0, -Math.sin(lph - 0.3)), 1.3);
         const stanceLoad = Math.max(0, Math.sin(lph * 2)) * Math.max(0, Math.sin(lph)) * 0.14;
@@ -593,7 +619,7 @@ export class PlayerAnimator {
       // banked turn: pelvis + whole spine roll into the yaw rate, more at speed
       const spd01 = smoothstep(speed, 1.5, 8);
       this._bank = damp(this._bank,
-        clamp(-this._yawRate * (0.055 + 0.095 * spd01) - this._accel.x * 0.018, -0.3, 0.3) * moveW,
+        clamp(-this._yawRate * (0.055 + 0.14 * spd01) - this._accel.x * 0.018, -0.3, 0.3) * moveW,
         10, dt);
       const bank = this._bank;
       this._rotT(b.spine1, X_AXIS, lean * 0.35);
@@ -608,7 +634,7 @@ export class PlayerAnimator {
 
       // arms: counter-swing with relaxed follow-through — the elbow trails the
       // shoulder and the wrist trails the elbow (phase lag down the chain)
-      const armW = moveW * (1 - aimW) * (1 - crouchW * 0.75);
+      const armW = moveW * (1 - aimW) * (1 - carryW) * (1 - crouchW * 0.75);
       const armA = (0.24 + 0.34 * midW + 0.28 * runW) * armW;
       const aphL = ph + this._jitL, aphR = ph + this._jitR;
       const shL = Math.cos(aphL), shR = -Math.cos(aphR);
@@ -652,7 +678,7 @@ export class PlayerAnimator {
       stPitch += hunch;
       // tense and ready: hands stay up near the bow even while creeping,
       // shoulders pulled up, fingers half-closed
-      const armR = crouchW * (1 - aimW) * (1 - moveW * 0.2);
+      const armR = crouchW * (1 - aimW) * (1 - carryW) * (1 - moveW * 0.2);
       this._rot(b.upArmL, X_AXIS, -0.38 * armR);
       this._rot(b.upArmR, X_AXIS, -0.44 * armR);
       this._rot(b.loArmL, X_AXIS, -0.6 * armR);
@@ -680,26 +706,47 @@ export class PlayerAnimator {
       this._rot(b.upArmL, Z_AXIS, 0.22 * armF);
       this._rot(b.upArmR, Z_AXIS, -0.22 * armF);
     }
-    // stop settle: a soft dip-and-recover step when a run ends
+    // stop settle: dip-and-recover scaled by how fast she was going — off a
+    // sprint she takes one visible braking step (catch-step leg pose) with
+    // the torso set back against the momentum before it settles forward
     if (this._settleT < 1) {
-      const sw = Math.sin(Math.PI * this._settleT)
-        * (1 - dodgeW) * (1 - this._deadW) * (1 - moveW * 0.6);
-      pdy += -0.045 * sw;
-      this._rot(b.calfL, X_AXIS, 0.16 * sw);
-      this._rot(b.calfR, X_AXIS, 0.2 * sw);
-      this._rotT(b.spine2, X_AXIS, 0.09 * sw);
-      stPitch += 0.12 * sw;
+      const gate = (1 - dodgeW) * (1 - this._deadW) * (1 - moveW * 0.35);
+      const amp = this._settleAmp || 0.5;
+      const sw = Math.sin(Math.PI * this._settleT) * gate * amp;
+      pdy += -0.16 * sw;
+      // braking step: right leg plants forward and takes the load
+      this._rot(b.thighR, X_AXIS, -0.5 * sw);
+      this._rot(b.calfR, X_AXIS, 0.7 * sw);
+      this._rot(b.calfL, X_AXIS, 0.3 * sw);
+      this._rot(b.footR, X_AXIS, -0.2 * sw);
+      // brake-lean early in the settle, then a small forward settle
+      const brk = Math.sin(Math.PI * clamp(this._settleT * 1.7, 0, 1)) * gate * amp;
+      this._rotT(b.spine1, X_AXIS, -0.1 * brk);
+      this._rotT(b.spine2, X_AXIS, -0.12 * brk + 0.1 * sw);
+      this._rotT(b.spine3, X_AXIS, 0.06 * sw);
+      stPitch += -0.2 * brk + 0.16 * sw;
+      const armS = (brk * 0.5 + sw * 0.3) * (1 - aimW) * (1 - carryW);
+      this._rot(b.upArmL, Z_AXIS, 0.2 * armS);
+      this._rot(b.upArmR, Z_AXIS, -0.2 * armS);
     }
-    // dodge recovery: a low catch-step out of the roll, arms out for balance
+    // dodge recovery: a low catch-step out of the roll, arms out for balance.
+    // The ~35% leg tuck left over from the roll is unwound here over ~0.25s
+    // so the untuck reads as part of the catch step, not a pop
     if (this._recT < 1) {
-      const rw = Math.sin(Math.PI * this._recT) * (1 - dodgeW) * (1 - this._deadW);
-      pdy += -0.12 * rw;
-      this._rot(b.thighR, X_AXIS, -0.38 * rw);
-      this._rot(b.calfR, X_AXIS, 0.55 * rw);
-      this._rot(b.calfL, X_AXIS, 0.26 * rw);
-      this._rotT(b.spine2, X_AXIS, 0.17 * rw);
-      stPitch += 0.19 * rw;
-      const armB = rw * (1 - aimW);
+      const g = (1 - dodgeW) * (1 - this._deadW);
+      const rw = Math.sin(Math.PI * this._recT) * g;
+      const tk = 0.35 * (1 - smoothstep(this._recT, 0, 0.66)) * g;
+      pdy += -0.17 * rw - 0.22 * tk;
+      this._rot(b.thighL, X_AXIS, -1.8 * tk);
+      this._rot(b.thighR, X_AXIS, -1.65 * tk - 0.38 * rw);
+      this._rot(b.calfL, X_AXIS, 2.25 * tk + 0.26 * rw);
+      this._rot(b.calfR, X_AXIS, 2.1 * tk + 0.55 * rw);
+      this._rot(b.footL, X_AXIS, 0.4 * tk);
+      this._rot(b.footR, X_AXIS, 0.4 * tk);
+      this._rotT(b.spine2, X_AXIS, 0.17 * rw + 0.32 * tk);
+      this._rotT(b.spine1, X_AXIS, 0.14 * tk);
+      stPitch += 0.19 * rw + 0.4 * tk;
+      const armB = rw * (1 - aimW) * (1 - carryW);
       this._rot(b.upArmL, Z_AXIS, 0.34 * armB);
       this._rot(b.upArmR, Z_AXIS, -0.34 * armB);
     }
@@ -717,23 +764,34 @@ export class PlayerAnimator {
     /* ================= LAYER 5: aim/draw overlay (weight aimW) ============= */
     if (aimW > 0.01) this._aimLayer(aimW, this._drawS, p, moveW, t);
 
+    /* ========== LAYER 5b: heavy two-hand carry (disc launcher) ============ */
+    if (carryW > 0.01) this._carryLayer(carryW, p, t);
+
     /* ==================== LAYER 6: dodge tuck (dodgeW) ===================== */
     if (dodgeW > 0.01) {
       const k = this._dodgeT;
       // anticipation: a ~60ms crouch dip before the roll commits
       const dip = smoothstep(k, 0, 0.1) * (1 - smoothstep(k, 0.12, 0.3)) * dodgeW;
-      // grounded shoulder roll: tuck leads (full tuck by k~0.3), the body
-      // rolls low over the ground, then the tuck releases into the recovery
-      const tuck = smoothstep(k, 0.08, 0.28) * (1 - smoothstep(k, 0.86, 1.0)) * dodgeW;
+      // grounded shoulder roll: tuck leads (full tuck by k~0.3), then releases
+      // across the whole back third of the roll — but only down to ~35%; the
+      // residual tuck is handed to the recovery-step layer to unwind so the
+      // exit never pops straight
+      const tuck = smoothstep(k, 0.08, 0.28)
+        * (1 - 0.65 * smoothstep(k, 0.68, 1.0)) * dodgeW;
       // full shoulder roll about the axis of TRAVEL (input direction, so a
       // side dodge rolls sideways); once complete (2PI = identity) it is
       // zeroed so the dodgeW fade-out can't visibly "unwind" the body
       const rollT = smoothstep(k, 0.14, 0.92);
       const roll = rollT >= 1 ? 0 : rollT * Math.PI * 2;
       this._rotT(b.pelvis, this._dodgeAxis, roll * dodgeW);
-      // pelvis drops to ~0.28m mid-roll — hips ride the ground, not the air
-      pdy += -0.68 * Math.pow(Math.sin(Math.PI * clamp((k - 0.08) / 0.92, 0, 1)), 0.8) * dodgeW
-        - 0.12 * dip;
+      // pelvis drops to ~0.28m mid-roll — hips ride the ground, not the air.
+      // The whole back half eases up to a HELD ~38% depth at exit (instead of
+      // a sine snapping to zero) — the recovery-step dip carries it from there
+      const kk = clamp((k - 0.08) / 0.92, 0, 1);
+      const rollDepth = kk < 0.5
+        ? Math.pow(Math.sin(Math.PI * kk), 0.8)
+        : 1 - 0.62 * smoothstep(kk, 0.5, 1.0);
+      pdy += -0.68 * rollDepth * dodgeW - 0.12 * dip;
       // anticipation knee coil
       this._rot(b.thighL, X_AXIS, -0.3 * dip);
       this._rot(b.thighR, X_AXIS, -0.3 * dip);
@@ -990,6 +1048,13 @@ export class PlayerAnimator {
       _grip.y += trem * 0.005 * Math.sin(t * 59);
     }
 
+    // loose follow-through kick: fast attack, ~0.15s decay, then the damped
+    // draw path blends the hand back to rest
+    const lk = this._looseT < 1
+      ? (this._looseT < 0.25 ? this._looseT / 0.25
+        : 1 - smoothstep(this._looseT, 0.25, 1))
+      : 0;
+
     // ---- LEFT ARM: bow arm, 2-bone IK to the grip (live shoulder position)
     this._charOf(b.upArmL.bone, _sh);
     _pole.set(0.55, -0.8, -0.05); // elbow out + down
@@ -998,13 +1063,24 @@ export class PlayerAnimator {
     // wrist: brace hand upright behind the bow
     this._rot(b.handL, X_AXIS, 0.25 * aimW);
     this._curlFingers(this._fingerL, 0.5 * aimW, 0.3 * aimW);
+    if (lk > 0.001) {
+      // release: bow arm + clavicle dip ~2.5deg as the limbs dump energy
+      this._rot(b.clavL, Z_AXIS, -0.045 * lk * aimW);
+      this._rot(b.upArmL, X_AXIS, 0.05 * lk * aimW);
+    }
 
     // string nock implied by the ACHIEVED grip — matches the rendered string
     _grip.copy(_hand).add(_v3);
 
     // ---- RIGHT ARM: string hand rides the nock at every draw length;
-    // wrist sits just behind so the hooked fingers land on the string
-    _v7.copy(_grip).addScaledVector(_dA, -0.068);
+    // wrist sits just behind so the hooked fingers land on the string.
+    // On loose the STRING snaps forward but the hand does not follow it —
+    // it holds at the cheek and kicks ~7cm further back along -aim, then
+    // blends down to the rest path (real archery follow-through)
+    const hold = this._looseT < 1
+      ? Math.max(0, (this._looseDraw ?? 0) * (1 - smoothstep(this._looseT, 0.25, 1)) - drawS)
+      : 0;
+    _v7.copy(_grip).addScaledVector(_dA, -0.068 - 0.075 * lk - pull * hold);
     // nock flourish: for the first 0.2s of a draw the string hand sweeps back
     // over the shoulder to the quiver, fingers open, then lands on the string
     let qOpen = 1;
@@ -1018,9 +1094,55 @@ export class PlayerAnimator {
     _pole.set(-0.85, -0.35 + 0.5 * drawS, -0.45 * drawS); // out+down -> level-back
     this._ikArm(b.upArmR, b.loArmR, _sh, _v7, _pole, aimW,
       this._dirUpR, this._dirLoR, this._lenUpR, this._lenLoR, null);
-    // string fingers: two-finger hook tightening with draw (open at the quiver)
-    this._rot(b.handR, Z_AXIS, -0.2 * aimW);
-    this._curlFingers(this._fingerR, (0.45 + 0.3 * drawS) * aimW * qOpen, 0.25 * aimW);
+    // string fingers: two-finger hook tightening with draw (open at the
+    // quiver, thrown fully open for the loose follow-through)
+    this._rot(b.handR, Z_AXIS, (-0.2 + 0.14 * lk) * aimW);
+    this._curlFingers(this._fingerR,
+      (0.45 + 0.3 * drawS) * aimW * qOpen * (1 - 0.9 * lk),
+      0.25 * aimW * (1 - 0.7 * lk));
+  }
+
+  /* --------------------- heavy two-hand carry overlay ---------------------- */
+
+  /**
+   * Disc launcher (combat.activeWeapon.heavy): the launcher hangs off the
+   * left-hand grip, so both hands brace it at the waist — left hand forward
+   * on the grip, right hand back at the stock — with a slight lean-back
+   * against the mass and a wide, planted base.
+   */
+  _carryLayer(w, p, t) {
+    const b = this.b;
+    // torso sets back against the held mass; head counters to stay level
+    this._rotT(b.pelvis, X_AXIS, 0.04 * w);
+    this._rotT(b.spine1, X_AXIS, -0.07 * w);
+    this._rotT(b.spine2, X_AXIS, -0.09 * w);
+    this._rotT(b.spine3, X_AXIS, -0.05 * w);
+    this._rot(b.neck1, X_AXIS, 0.08 * w);
+    this._rot(b.head, X_AXIS, 0.1 * w);
+    // wide stable base, knees soft under the load
+    this._rot(b.thighL, Z_AXIS, 0.07 * w);
+    this._rot(b.thighR, Z_AXIS, -0.07 * w);
+    this._rot(b.calfL, X_AXIS, 0.1 * w);
+    this._rot(b.calfR, X_AXIS, 0.1 * w);
+
+    // hands track the camera pitch a little so the barrel dip reads;
+    // crouching drops the whole carry with the pelvis
+    const pitch = clamp(p.camPitch ?? 0, -0.5, 0.7);
+    const heave = (this._brNow - 0.5) * 0.01 - 0.4 * this._crouchW; // breath + crouch
+    // left hand: fore grip at the waist
+    _grip.set(0.08, 1.03 - 0.1 * pitch + heave, 0.36);
+    this._charOf(b.upArmL.bone, _sh);
+    _pole.set(0.7, -0.6, 0.1);
+    this._ikArm(b.upArmL, b.loArmL, _sh, _grip, _pole, w,
+      this._dirUpL, this._dirLoL, this._lenUpL, this._lenLoL, null);
+    // right hand: reaches across to the rear stock
+    _grip.set(-0.02, 0.97 - 0.05 * pitch + heave, 0.1);
+    this._charOf(b.upArmR.bone, _sh);
+    _pole.set(-0.8, -0.55, -0.15);
+    this._ikArm(b.upArmR, b.loArmR, _sh, _grip, _pole, w,
+      this._dirUpR, this._dirLoR, this._lenUpR, this._lenLoR, null);
+    this._curlFingers(this._fingerL, 0.55 * w, 0.35 * w);
+    this._curlFingers(this._fingerR, 0.55 * w, 0.35 * w);
   }
 
   /** Live character-space position of a bone (model space, +Z forward). */

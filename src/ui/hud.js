@@ -13,6 +13,11 @@ const QUEST = [
 const XP = { watcher: 120, sawtooth: 480, behemoth: 900, thunderjaw: 2500 };
 const LEVELS = { watcher: 5, sawtooth: 15, behemoth: 25, thunderjaw: 27 };
 
+// canon status durations (research: triggered buildup becomes a countdown ring)
+const ELEM_TRIG = { fire: 8, shock: 3, freeze: 8 };
+const DEATH_OVERLAY_DELAY = 1400; // ms — let the crumple play before the card
+const COMBAT_IDLE_S = 5;          // dynamic HUD: weapon panel fades after this
+
 /* ------------------------------ glyph library ------------------------------ */
 /* Flat "tribal glyph" icons per docs/research/ui.md — inline SVG, currentColor. */
 
@@ -147,10 +152,15 @@ export class HUD {
     this._mhbTarget = null;
     this._mhbTimer = 0;
     this._mhbShown = false;
+    this._deathTimer = 0;          // pending death-overlay setTimeout handle
 
     this._pips = new Map();        // machine -> compass pip element
     this._awares = new Map();      // machine -> awareness indicator entry
     this._attackFlash = new Map(); // machine -> remaining flash seconds
+    this._elemTrigs = new Map();   // machine -> { fire|shock|freeze: secondsLeft }
+    this._anyHostile = false;      // any machine alert/attack this frame
+    this._combatIdleT = 0;         // seconds since last combat-ish activity
+    this._lastWpnIdle = null;
 
     // quest sequencer
     this._killCounts = Object.create(null);
@@ -170,6 +180,8 @@ export class HUD {
     const root = this.rootEl;
 
     this._vignette = div('hzc-vignette', root);
+    // watcher flash-bang overlay ('watcher-flash' when close + facing it)
+    this._wflash = div('hzc-wflash', root);
 
     // top-left vitals: segmented RED health, thin GREEN pouch meter under it
     const tl = div('hzc-topleft', root);
@@ -236,7 +248,7 @@ export class HUD {
     // crosshair — every stroke is doubled (dark under, light over) so it
     // stays readable against bright sky and chrome machine plating alike
     const cross = div('hzc-cross', root);
-    div('hzc-dot', cross);
+    this._dotEl = div('hzc-dot', cross);
     this._ring = div('hzc-ring', cross);
     this._ring.innerHTML =
       '<svg viewBox="0 0 72 72">' +
@@ -267,6 +279,7 @@ export class HUD {
 
     // weapon HUD bottom-right
     const wpn = div('hzc-weapon', root);
+    this._wpnEl = wpn;
     this._wpnName = div('hzc-wpn-name', wpn, 'HUNTER BOW');
     const wrow = div('hzc-wpn-row', wpn);
     this._wpnGlyph = div('hzc-wpn-glyph', wrow, svgIcon('arrow', '#efe6d5'));
@@ -333,6 +346,7 @@ export class HUD {
     ev.on('machine-damaged', (e) => {
       const m = e?.machine;
       if (!m) return;
+      this._combatIdleT = 0;
       if (m !== this._mhbTarget) {
         this._mhbTarget = m;
         this._renderMhbName(m);
@@ -341,23 +355,46 @@ export class HUD {
       }
       this._mhbTimer = 4;
       this._spawnDamage(e);
+      // status triggered -> start a local countdown (fire 8s / shock 3s /
+      // freeze 8s); the buildup meter renders it FULL->empty in triggered style
+      const trig = e.triggeredElement;
+      if (trig && ELEM_TRIG[trig]) {
+        let rec = this._elemTrigs.get(m);
+        if (!rec) { rec = {}; this._elemTrigs.set(m, rec); }
+        rec[trig] = ELEM_TRIG[trig];
+      }
     });
     ev.on('machine-killed', (e) => this._onKill(e));
     ev.on('machine-attack', (e) => {
       if (e?.machine) this._attackFlash.set(e.machine, 1.35);
+      this._combatIdleT = 0;
     });
     ev.on('machine-telegraph', (e) => {
       if (e?.machine) this._attackFlash.set(e.machine, 0.65);
+      this._combatIdleT = 0;
     });
+    ev.on('machine-alerted', () => { this._combatIdleT = 0; });
+    ev.on('arrow-fired', () => { this._combatIdleT = 0; });
     ev.on('item-gained', (e) => this._itemToast(e));
     ev.on('player-hurt', () => {
       this._hurtFlash = Math.min(1.2, this._hurtFlash + 0.75);
+      this._combatIdleT = 0;
     });
+    // watcher blind-flash: white screen hit when close + facing the machine
+    ev.on('watcher-flash', (e) => this._watcherFlash(e));
     ev.on('player-died', () => {
       if (this._victoryShown) return; // victory owns the screen — no death card
-      this._deathEl.classList.add('show');
+      // vignette hits immediately; the overlay waits so the crumple can play
+      // (the world keeps updating during 'dead' since round 2)
+      this._hurtFlash = Math.min(1.4, this._hurtFlash + 1.0);
+      clearTimeout(this._deathTimer);
+      this._deathTimer = setTimeout(() => {
+        if (this._victoryShown || this.ctx.state !== 'dead') return;
+        this._deathEl.classList.add('show');
+      }, DEATH_OVERLAY_DELAY);
     });
     ev.on('player-respawn', () => {
+      clearTimeout(this._deathTimer);
       this._deathEl.classList.remove('show');
       this._hurtFlash = 0;
       this._vignette.style.opacity = '0';
@@ -427,6 +464,7 @@ export class HUD {
 
     if (m === this._mhbTarget) this._mhbTimer = Math.min(this._mhbTimer, 0.9);
     this._attackFlash.delete(m);
+    this._elemTrigs.delete(m);
 
     let advanced = false;
     while (this._stage < QUEST.length &&
@@ -475,6 +513,7 @@ export class HUD {
   _showVictory() {
     this._victoryFired = true;
     this._victoryShown = true;
+    clearTimeout(this._deathTimer);
     this._pauseEl.classList.remove('show');
     this._deathEl.classList.remove('show');
     this._victoryEl.classList.add('show');
@@ -524,7 +563,8 @@ export class HUD {
     el.dataset.n = String(n);
     el.innerHTML = `${svgIcon(glyph, color)}<span>${name}</span><b>×${n}</b>`;
     this._itemsEl.appendChild(el);
-    while (this._itemsEl.children.length > 6) this._itemsEl.firstChild.remove();
+    // cap at 5 so the stack can't climb into the kill feed above it
+    while (this._itemsEl.children.length > 5) this._itemsEl.firstChild.remove();
     setTimeout(() => el.remove(), 3050);
   }
 
@@ -607,9 +647,51 @@ export class HUD {
     this._updateMachineBar(dt);
     this._updateCrosshair(p);
     this._updateWeapon();
+    this._updateCombatIdle(dt, p);
     this._updateInteract();
     this._updateDamageNumbers(dt);
     this._updateVignette(dt, t, p);
+  }
+
+  /* ----------------------- dynamic HUD: combat idle ------------------------ */
+
+  /** Weapon panel + reticle dot recede when holstered & out of combat ~5s. */
+  _updateCombatIdle(dt, p) {
+    const c = this.ctx.combat;
+    const engaged = !!p.aiming
+      || (c?.drawStrength ?? 0) > 0.02
+      || !!c?.concentration?.active
+      || !!this.ctx.wheel?.open
+      || this._anyHostile
+      || this._mhbShown;
+    if (engaged) this._combatIdleT = 0;
+    else this._combatIdleT += dt;
+    const idle = this._combatIdleT > COMBAT_IDLE_S;
+    if (idle !== this._lastWpnIdle) {
+      this._lastWpnIdle = idle;
+      this._wpnEl.classList.toggle('idle', idle);
+      this._dotEl.classList.toggle('idle', idle);
+    }
+  }
+
+  /* --------------------------- watcher blind-flash -------------------------- */
+
+  _watcherFlash(e) {
+    const m = e?.machine;
+    const p = this.ctx.player;
+    if (!m?.position || !p?.position) return;
+    const dx = m.position.x - p.position.x;
+    const dz = m.position.z - p.position.z;
+    const dist = Math.hypot(dx, dz);
+    if (dist > 12) return;
+    // camera forward is (-sin camYaw, -cos camYaw); facing = flash blinds
+    const inv = dist > 0.001 ? 1 / dist : 0;
+    const facing = (dx * -Math.sin(p.camYaw) + dz * -Math.cos(p.camYaw)) * inv;
+    if (facing < 0.2) return;
+    const el = this._wflash;
+    el.classList.remove('show');
+    void el.offsetWidth; // restart the 1.5s animation
+    el.classList.add('show');
   }
 
   /* --------------------------- health + pouch ------------------------------ */
@@ -729,6 +811,7 @@ export class HUD {
       }
     }
 
+    this._anyHostile = false;
     const list = this.ctx.machines?.list;
     if (!Array.isArray(list)) return;
     const cam = this.ctx.camera;
@@ -740,6 +823,7 @@ export class HUD {
       let mode = null;
       let frac = 0;
       if (m.alive !== false) {
+        if (m.state === 'alert' || m.state === 'attack') this._anyHostile = true;
         if (this._attackFlash.has(m)) {
           mode = 'attack';
         } else if (m.state === 'alert' || m.state === 'attack') {
@@ -805,6 +889,19 @@ export class HUD {
   }
 
   _updateMachineBar(dt) {
+    // tick live status countdowns even while the bar is hidden
+    if (this._elemTrigs.size) {
+      for (const [mm, rec] of this._elemTrigs) {
+        let any = false;
+        for (const k in rec) {
+          rec[k] -= dt;
+          if (rec[k] <= 0) delete rec[k];
+          else any = true;
+        }
+        if (!any || mm.alive === false) this._elemTrigs.delete(mm);
+      }
+    }
+
     const m = this._mhbTarget;
     if (m) {
       const hostile = m.alive !== false && (m.state === 'alert' || m.state === 'attack');
@@ -826,16 +923,25 @@ export class HUD {
     }
 
     // elemental buildup micro-meters (machines builder lands machine.elemental
-    // concurrently — read every shape defensively, hide when absent)
+    // concurrently — read every shape defensively, hide when absent).
+    // While a triggered status runs, the meter flips to a local COUNTDOWN
+    // (full -> empty over the status duration) in the pulsing triggered style,
+    // instead of sitting empty the moment the buildup fires.
     const el = m.elemental;
+    const trigRec = this._elemTrigs.get(m);
     let sig = '';
     for (const k of ['fire', 'shock', 'freeze']) {
       const raw = el ? el[k] : null;
       let val = typeof raw === 'number' ? raw : raw?.value ?? raw?.buildup ?? 0;
       if (val > 1.5) val /= 100; // 0..100 scale -> 0..1
       val = clamp01(val);
-      const trig = !!(raw && typeof raw === 'object'
+      let trig = !!(raw && typeof raw === 'object'
         ? (raw.triggered ?? raw.active) : val >= 0.999);
+      const cd = trigRec ? trigRec[k] ?? 0 : 0;
+      if (cd > 0) {
+        val = clamp01(cd / ELEM_TRIG[k]); // draining countdown
+        trig = true;
+      }
       sig += k + (val * 50 | 0) + (trig ? 'T' : '');
       const e = this._elemEls[k];
       const shown = val > 0.02 || trig;

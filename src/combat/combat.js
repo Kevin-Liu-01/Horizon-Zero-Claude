@@ -28,6 +28,13 @@ const FOV_HIP = 55;
 const CONC_TIME = 6;         // seconds of Concentration drain (and refill)
 const CONC_TIMESCALE = 0.35;
 
+// Stowed carry (HZD: Aloy always wears her bow diagonally across the back).
+// Offsets are in character space (+Z forward, y up from feet, +X = her left),
+// converted into spine-bone space once at bind pose in _initStow().
+const STOW_POS = { x: 0.10, y: 1.30, z: -0.17 }; // grip up-left on the back
+const STOW_TILT = -0.62;  // roll about the back normal: limbs run diagonal
+const STOW_LEAN = -0.10;  // hug the back plane slightly
+
 // saturated hot-metal oranges; the spark pool normal-blends with a white-hot
 // core so these hues hold up against bright sky instead of washing out
 const SPARK_COLORS = [
@@ -56,6 +63,7 @@ const _ws = new THREE.Vector3();
 const _pw = new THREE.Vector3();
 const _simP = new THREE.Vector3();
 const _simV = new THREE.Vector3();
+const _losDir = new THREE.Vector3();
 const _wq = new THREE.Quaternion();
 const _qDes = new THREE.Quaternion();
 const _m = new THREE.Matrix4();
@@ -219,6 +227,11 @@ export class Combat {
     }
     this.bow = this._models['hunter-bow'];
 
+    // stowed-carry calibration (bow across the back when not wielded) —
+    // computed at bind pose, before the animator has posed the skeleton
+    this._stow = null;
+    this._initStow();
+
     // --- trajectory preview (blast sling): dotted arc + landing ring
     const MAXDOTS = 48;
     const trajGeo = new THREE.BufferGeometry();
@@ -260,16 +273,18 @@ export class Combat {
     this._concHeldPrev = false;
     this._pickupClock = 0;
 
-    // --- input (keybinds v2)
+    // --- input (keybinds v2) — all gated by state so nothing equips/cycles
+    //     underneath the pause menu / death screen
     const wheelOpen = () => !!ctx.wheel?.open;
+    const inPlay = () => ctx.state === 'playing' || ctx.params.has('shot');
     for (let s = 1; s <= 4; s++) {
       ctx.input.onDown(`Digit${s}`, () => {
         if (wheelOpen()) ctx.wheel?.hoverSlot?.(s);
-        else this.setWeapon(s);
+        else if (inPlay()) this.setWeapon(s);
       });
     }
-    ctx.input.onDown('KeyZ', () => { if (!wheelOpen()) this.cycleAmmo(-1); });
-    ctx.input.onDown('KeyX', () => { if (!wheelOpen()) this.cycleAmmo(1); });
+    ctx.input.onDown('KeyZ', () => { if (!wheelOpen() && inPlay()) this.cycleAmmo(-1); });
+    ctx.input.onDown('KeyX', () => { if (!wheelOpen() && inPlay()) this.cycleAmmo(1); });
     ctx.input.onDown('KeyR', () => {
       if (!wheelOpen() && this.ctx.state === 'playing') this.craftAmmo();
     });
@@ -414,12 +429,56 @@ export class Combat {
   _reset() {
     this._cancelDraw();
     this._extDraw = false;
-    if (this._hsActive) { this.ctx.engine.timeScale = 1; this._hsActive = false; }
+    this._hsActive = false;
     if (this.concentration.active) {
       this.concentration.active = false;
       this.ctx.events.emit('concentration-end');
     }
     if (this._disc) this._dropDisc(true);
+    // unconditional: death must never inherit concentration/hitstop slow-mo
+    this.ctx.engine.timeScale = 1;
+  }
+
+  /**
+   * Calibrate the stowed-carry transform: where the active bow sits on
+   * Aloy's back (spine bone space) when not wielded. Computed from the bind
+   * pose so it tracks the spine through idle/run/crouch afterwards.
+   */
+  _initStow() {
+    if (this._stow) return this._stow;
+    const anim = this.ctx.player?.animator;
+    const bone = anim?.bones?.['spine_03_08'] ?? null;
+    const root = this.ctx.player?.model ?? null;
+    if (!bone || !root) return null;
+    try {
+      root.updateWorldMatrix(true, true);
+      const mP = new THREE.Vector3();
+      const mQ = new THREE.Quaternion();
+      const mS = new THREE.Vector3();
+      root.matrixWorld.decompose(mP, mQ, mS);
+      // desired grip point, character space -> world (offsets are meters)
+      const grip = new THREE.Vector3(STOW_POS.x, STOW_POS.y, STOW_POS.z)
+        .applyQuaternion(mQ).add(mP);
+      // desired orientation: flip so the string faces her back, then a
+      // diagonal tilt (limbs across the back) and a slight lean into it
+      const qChar = new THREE.Quaternion()
+        .setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI);
+      qChar.premultiply(new THREE.Quaternion()
+        .setFromAxisAngle(new THREE.Vector3(0, 0, 1), STOW_TILT));
+      qChar.premultiply(new THREE.Quaternion()
+        .setFromAxisAngle(new THREE.Vector3(1, 0, 0), STOW_LEAN));
+      const qDes = mQ.clone().multiply(qChar);
+      // world -> spine-bone local
+      const boneInv = new THREE.Matrix4().copy(bone.matrixWorld).invert();
+      const pos = grip.applyMatrix4(boneInv);
+      const bQ = new THREE.Quaternion();
+      bone.matrixWorld.decompose(new THREE.Vector3(), bQ, new THREE.Vector3());
+      const quat = bQ.invert().multiply(qDes);
+      this._stow = { bone, pos, quat };
+    } catch {
+      this._stow = null;
+    }
+    return this._stow;
   }
 
   /* --------------------------------- update ------------------------------- */
@@ -508,35 +567,17 @@ export class Combat {
     this._lmbPrev = lmb;
     if (player) player.drawStrength = this.drawStrength; // animator contract
 
-    // --- weapon model visibility + world-space orientation
+    // --- weapon model placement: in the left hand while wielded, stowed
+    //     across the back (spine bone) otherwise — Aloy always carries her
+    //     bow like in HZD. The 14/s fade crossfades hand <-> back at 0.5.
     const wield = aiming || (isDisc && playing);
     this._bowVis = THREE.MathUtils.damp(this._bowVis, wield ? 1 : 0, 14, realDt);
     const vis = this._bowVis;
     const model = this.bow;
-    model.group.visible = vis > 0.02;
-    if (model.group.visible) {
-      if (this._nockType !== ammoId) {
-        model.setArrowType?.(ammoId);
-        this._nockType = ammoId;
-      }
-      model.setDraw(this.drawStrength, this._hasAmmo(ammoId));
-
-      const node = this._bowNode;
-      node.updateWorldMatrix(true, false);
-      node.matrixWorld.decompose(_wp, _wq, _ws);
-      _aimDir.subVectors(this.aimPoint, _wp);
-      if (!aiming || _aimDir.lengthSq() < 0.25) cam.getWorldDirection(_aimDir);
-      _aimDir.normalize();
-      _m.lookAt(_zero, _neg.copy(_aimDir).negate(), _up); // basis +Z = aim dir
-      _qDes.setFromRotationMatrix(_m);
-      _wq.invert();
-      model.group.quaternion.copy(_wq.multiply(_qDes));
-      // cancel skeleton scale so the weapon stays in meters; vis = scale-in
-      model.group.scale.set(
-        vis / Math.max(1e-6, _ws.x),
-        vis / Math.max(1e-6, _ws.y),
-        vis / Math.max(1e-6, _ws.z),
-      );
+    if (wield || vis > 0.5) {
+      this._placeInHand(model, vis, aiming, ammoId, cam);
+    } else {
+      this._placeOnBack(model, 1 - vis, isDisc);
     }
 
     // --- trajectory preview (lobbed weapons while aiming)
@@ -553,6 +594,65 @@ export class Combat {
 
     // --- heavy-pickup coordination (machines/items builders land blind)
     this._pollWeaponPickups(realDt);
+  }
+
+  /** Wielded: parent to the hand attach, orient +Z at the aim point. */
+  _placeInHand(model, vis, aiming, ammoId, cam) {
+    const node = this._bowNode;
+    if (model.group.parent !== node) {
+      node.add(model.group);
+      model.group.position.set(0, 0, 0); // stow path moves it; hand is origin
+      this._nockType = null;
+    }
+    model.group.visible = vis > 0.02;
+    if (!model.group.visible) return;
+    if (this._nockType !== ammoId) {
+      model.setArrowType?.(ammoId);
+      this._nockType = ammoId;
+    }
+    model.setDraw(this.drawStrength, this._hasAmmo(ammoId));
+
+    node.updateWorldMatrix(true, false);
+    node.matrixWorld.decompose(_wp, _wq, _ws);
+    _aimDir.subVectors(this.aimPoint, _wp);
+    if (!aiming || _aimDir.lengthSq() < 0.25) cam.getWorldDirection(_aimDir);
+    _aimDir.normalize();
+    _m.lookAt(_zero, _neg.copy(_aimDir).negate(), _up); // basis +Z = aim dir
+    _qDes.setFromRotationMatrix(_m);
+    _wq.invert();
+    model.group.quaternion.copy(_wq.multiply(_qDes));
+    // cancel skeleton scale so the weapon stays in meters; vis = scale-in
+    model.group.scale.set(
+      vis / Math.max(1e-6, _ws.x),
+      vis / Math.max(1e-6, _ws.y),
+      vis / Math.max(1e-6, _ws.z),
+    );
+  }
+
+  /** Unwielded: ride the spine bone, diagonal across the back (HZD carry). */
+  _placeOnBack(model, stowVis, isDisc) {
+    const st = this._initStow();
+    // the disc launcher is carried in-hands only — never on the back
+    if (!st || isDisc) {
+      model.group.visible = false;
+      return;
+    }
+    if (model.group.parent !== st.bone) {
+      st.bone.add(model.group);
+      this._nockType = null;
+    }
+    model.group.visible = stowVis > 0.02;
+    if (!model.group.visible) return;
+    model.setDraw(0, false); // stowed bows carry no nocked arrow
+    model.group.position.copy(st.pos);
+    model.group.quaternion.copy(st.quat);
+    st.bone.updateWorldMatrix(true, false);
+    _ws.setFromMatrixScale(st.bone.matrixWorld);
+    model.group.scale.set(
+      stowVis / Math.max(1e-6, _ws.x),
+      stowVis / Math.max(1e-6, _ws.y),
+      stowVis / Math.max(1e-6, _ws.z),
+    );
   }
 
   _tsTarget() { return this.concentration.active ? CONC_TIMESCALE : 1; }
@@ -913,14 +1013,23 @@ export class Combat {
         out.tornPart = out.tornPart ?? res?.tornPart ?? null;
         if (!out.machine) out.machine = m;
       }
-      // tear burst rips at every attached part inside the radius
+      // tear burst rips at attached parts NEAR the impact only: tight radius
+      // + rough line-of-sight so one tearblast can't strip far-side
+      // components through a 15m machine's body
       if (tear > 0 && Array.isArray(m.parts)) {
+        const tearR = Math.min(radius, 2.2);
         for (const part of m.parts) {
           if (!part || part.attached === false || !part.mesh || part.mesh === excludeObject) continue;
           try { part.mesh.getWorldPosition(_pw); } catch { continue; }
           const dd = _pw.distanceTo(point);
-          if (dd > radius) continue;
-          const fall = THREE.MathUtils.clamp(1 - dd / (radius * 1.15), 0.25, 1);
+          if (dd > tearR) continue;
+          // far-side rejection: skip parts buried beyond the impact surface
+          // (roughly along the shot direction — no line of sight to the burst)
+          if (dd > 0.7) {
+            _losDir.subVectors(_pw, point).multiplyScalar(1 / dd);
+            if (_losDir.dot(dir) > 0.55) continue;
+          }
+          const fall = THREE.MathUtils.clamp(1 - dd / (tearR * 1.15), 0.25, 1);
           let res = null;
           try {
             res = m.takeDamage({

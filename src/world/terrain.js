@@ -108,6 +108,35 @@ function riverHalfWidth(z) {
   return 13 + 3 * Math.sin(z * 0.021 + 0.5);
 }
 
+/**
+ * Dried-river channel factor 0..1: ~1 across the silt bed, fading to 0 at the
+ * bank tops. Exported so vegetation/gather scatter can keep the channel bare
+ * (grass, pines and rocks all reject high values). Cheap: trig + smoothsteps
+ * behind a coarse bounding test.
+ */
+export function riverFactor(x, z) {
+  if (x < -200 || x > -50) return 0;
+  const r2 = x * x + z * z;
+  if (r2 > 302 * 302) return 0;
+  const hw = riverHalfWidth(z);
+  const rd = Math.abs(x - riverCenterX(z));
+  if (rd >= hw * 1.05) return 0;
+  return (1 - SS(rd, hw * 0.3, hw * 1.05)) * (1 - SS(Math.sqrt(r2), 250, 302));
+}
+
+/**
+ * SE rocky-highland shelf mask 0..1 (matches the landform term in getHeight).
+ * Exported so vegetation can thin filler grass over the rocky benches.
+ */
+export function shelfFactor(x, z) {
+  const u = (x + z) * 0.70711;
+  if (u <= 118) return 0;
+  const r = Math.sqrt(x * x + z * z);
+  if (r >= 344) return 0;
+  const v = Math.abs((z - x) * 0.70711);
+  return SS(u, 120, 178) * (1 - SS(v, 85, 150)) * (1 - SS(r, 288, 344));
+}
+
 /* ------------------------- worn dirt paths (camp) --------------------------
  * A few trodden routes radiating from the hunter camp (22,30):
  *   west to the dried river crossing, south toward the Thunderjaw territory,
@@ -289,17 +318,28 @@ export class Terrain {
       const v = Math.abs((z - x) * 0.70711);
       const m = SS(u, 120, 178) * (1 - SS(v, 85, 150)) * (1 - SS(r, 288, 344));
       if (m > 0.002) {
-        let sh = 8.5 + this._ridged(x * 0.010 + 7, z * 0.010 - 13, 3) * 7.5;
-        sh = terrace(sh, 3.4, 2.2);
-        h += m * sh;
+        // the worn trail smooths the bench risers into a climbable ramp:
+        // full path wear kills the terracing AND softens the ridged relief
+        // so the trail never meets a stair-step cliff
+        const pf = Math.min(1, pathFactor(x, z) * 1.75);
+        const sh = 8.5
+          + this._ridged(x * 0.010 + 7, z * 0.010 - 13, 3) * 7.5 * (1 - 0.4 * pf);
+        const ter = terrace(sh, 3.4, 2.2);
+        h += m * (pf > 0.002 ? ter + (sh - ter) * pf : ter);
       }
     }
 
-    // Dried river cut through the west meadow (crossable, fades before rim)
+    // Dried river cut through the west meadow (fades before rim). ~2.6 m deep
+    // mid-channel (smoothstep banks stay <= ~0.3 slope over the 13 m half
+    // width); the worn crossing packs a shallow gravel bar so the ford is a
+    // genuine easy crossing.
     if (rd < hw && riverGate > 0) {
       const t = 1 - rd / hw;
       const bowl = t * t * (3 - 2 * t);
-      h -= (1.55 * bowl + 0.25 * bowl * bowl) * riverGate;
+      const ford = 1 - 0.45 * pathFactor(x, z);
+      // depth scales with local width so bank slope stays ~<=0.29 everywhere
+      const dMax = Math.min(2.95, hw * 0.195);
+      h -= dMax * (0.87 * bowl + 0.13 * bowl * bowl) * riverGate * ford;
       // braided bed unevenness
       h += bowl * riverGate * n.noise2D(x * 0.06 + 5, z * 0.06 - 9) * 0.22;
     }
@@ -324,13 +364,18 @@ export class Terrain {
     return out;
   }
 
-  /** Density of tall (stealth) grass at a point, 0..1. Thin on worn paths. */
+  /** Density of tall (stealth) grass at a point, 0..1. Thin on worn paths,
+   *  bare across the dried riverbed, sparse on the rocky SE shelf. */
   tallGrassDensity(x, z) {
     const v = this.grassNoise.fbm(x * 0.016, z * 0.016, 2);
     let d = SS(v, 0.12, 0.42);
     if (d > 0) {
       const p = pathFactor(x, z);
       if (p > 0.03) d *= 1 - p * 0.85;
+      const rf = riverFactor(x, z);
+      if (rf > 0.02) d *= 1 - rf * 0.96;
+      const sf = shelfFactor(x, z);
+      if (sf > 0.02) d *= 1 - sf * 0.5;
     }
     return d;
   }
@@ -341,8 +386,9 @@ export class Terrain {
 
   /* ------------------------------ splat mask ------------------------------
    * 512^2 RGBA baked once: R = worn path, G = river-bank moisture,
-   * B = dried river bed. Sampled in the fragment shader for crisp ground
-   * features that vertex colors (≈2 m spacing) would alias away.
+   * B = dried river bed, A = SE rocky-shelf mask. Sampled in the fragment
+   * shader for crisp ground features that vertex colors (≈2 m spacing)
+   * would alias away.
    */
   _buildMask() {
     const N = 512;
@@ -361,13 +407,14 @@ export class Terrain {
         const rd = Math.abs(wx - riverCenterX(wz));
         const hw = riverHalfWidth(wz);
         const gate = 1 - SS(r, 250, 302);
-        const moist = (1 - SS(rd, hw * 0.7, hw + 26)) * gate;
+        // riparian greening hugs ~1.5 half-widths of the channel
+        const moist = (1 - SS(rd, hw * 0.55, hw * 1.6)) * gate;
         const bed = (1 - SS(rd, hw * 0.25, hw * 0.8)) * gate;
 
         data[o] = (path * 255) | 0;
         data[o + 1] = (moist * 255) | 0;
         data[o + 2] = (bed * 255) | 0;
-        data[o + 3] = 255;
+        data[o + 3] = (shelfFactor(wx, wz) * 255) | 0;
       }
     }
     const tex = new THREE.DataTexture(data, N, N, THREE.RGBAFormat);
@@ -398,15 +445,17 @@ export class Terrain {
 
     // pass 2: colors from cached heights + finite-difference slope
     const colors = new Float32Array(count * 3);
-    const cLush = new THREE.Color('#5a7530');   // moist rich green
+    const cLush = new THREE.Color('#46651e');   // moist rich green (riparian)
     const cGrass = new THREE.Color('#7a8b3f');  // meadow base
     const cDry = new THREE.Color('#a99354');    // sun-dried gold
     const cOchre = new THREE.Color('#a87840');  // umber/ochre dry patches
     const cDirt = new THREE.Color('#6e5a3e');
     const cRock = new THREE.Color('#7d7a72');
+    const cRockWarm = new THREE.Color('#8b7355'); // warm umber rock variant
     const cSilt = new THREE.Color('#948468');   // pale dried riverbed
     const cSnow = new THREE.Color('#dcdfe2');
     const tmp = new THREE.Color();
+    const tmp2 = new THREE.Color();
     const gn = this.grassNoise;
 
     for (let iz = 0; iz <= segs; iz++) {
@@ -431,20 +480,35 @@ export class Terrain {
         const rd = Math.abs(x - riverCenterX(z));
         const hw = riverHalfWidth(z);
         const gate = 1 - SS(r, 250, 302);
-        const moist = (1 - SS(rd, hw * 0.7, hw + 30)) * gate;
+        // deeper, more saturated greening tight to the channel (~1.5 hw)
+        const moist = (1 - SS(rd, hw * 0.55, hw * 1.6)) * gate;
         const bed = (1 - SS(rd, hw * 0.3, hw * 0.95)) * gate;
 
         tmp.copy(cGrass).lerp(cDry, dryness * 0.85);
         tmp.lerp(cOchre, umber * (1 - moist) * 0.5);
-        tmp.lerp(cLush, moist * 0.65);
+        tmp.lerp(cLush, moist * 0.85);
         tmp.lerp(cSilt, bed * 0.55); // fragment mask sharpens this
 
         // slope splat: dirt then bare rock
         if (m > 0.5) tmp.lerp(cDirt, SS(m, 0.5, 0.85));
         if (m > 0.75) tmp.lerp(cRock, SS(m, 0.75, 1.25));
 
-        // rim reads as rock, snow only on the high peaks (less on cliffs)
-        tmp.lerp(cRock, rim * 0.7);
+        // SE highland shelf: rock + ochre read at much gentler slopes so the
+        // benches look like layered stone, not grassy mounds
+        const sf = shelfFactor(x, z);
+        if (sf > 0.02) {
+          tmp.lerp(cOchre, sf * 0.25 * (1 - SS(m, 0.3, 0.7)));
+          tmp.lerp(cRock, sf * (0.45 + 0.4 * SS(m, 0.16, 0.55)));
+        }
+
+        // rim reads as rock — vary cool gray -> warm umber by low-freq noise
+        // so big faces (esp. the south rim) don't wash into one flat beige
+        if (rim > 0.01) {
+          const rv = gn.fbm(x * 0.0065 - 21, z * 0.0065 + 44, 2) * 0.5 + 0.5;
+          tmp2.copy(cRock).lerp(cRockWarm, rv * 0.85);
+          tmp.lerp(tmp2, rim * 0.7);
+          tmp.multiplyScalar(1 + (rv - 0.5) * 0.26 * rim);
+        }
         if (h > 30) tmp.lerp(cRock, SS(h, 30, 46) * 0.55);
         const snow = SS(h, 52, 64);
         if (snow > 0) {
@@ -497,27 +561,41 @@ float tnoise(vec2 p){
   diffuseColor.rgb *= 0.88 + dn * 0.24;                       // macro mottling
   diffuseColor.rgb *= 0.94 + tnoise(vWPos.xz * 7.0) * 0.12;   // fine grain
 
-  vec3 mask = texture2D(uMask, clamp(vWPos.xz * ${(1 / WORLD_SIZE).toFixed(8)} + 0.5, 0.001, 0.999)).rgb;
+  vec4 mask = texture2D(uMask, clamp(vWPos.xz * ${(1 / WORLD_SIZE).toFixed(8)} + 0.5, 0.001, 0.999));
 
   // moist dark soil + greener growth along the dried river
-  diffuseColor.rgb = mix(diffuseColor.rgb, uMoistCol * (0.8 + dn * 0.35), mask.g * 0.55);
+  diffuseColor.rgb = mix(diffuseColor.rgb, uMoistCol * (0.8 + dn * 0.35), mask.g * 0.72);
 
   // dried riverbed: pale cracked silt with pebble grain
   float peb = tnoise(vWPos.xz * 2.6) * 0.6 + tnoise(vWPos.xz * 9.0) * 0.4;
   diffuseColor.rgb = mix(diffuseColor.rgb, uSiltCol * (0.72 + peb * 0.5), mask.b * 0.9);
 
+  // rocky SE highland: gravelly stone breakup across the shelf flats
+  float shelf = mask.a;
+  if (shelf > 0.004) {
+    float rg = tnoise(vWPos.xz * 1.9) * 0.55 + tnoise(vWPos.xz * 0.33) * 0.45;
+    vec3 rockC = mix(vec3(0.30, 0.285, 0.245), vec3(0.52, 0.49, 0.42), rg);
+    diffuseColor.rgb = mix(diffuseColor.rgb, rockC, shelf * 0.55);
+  }
+
   // worn dirt paths: packed earth with trodden unevenness
   float pw = mask.r * (0.55 + 0.45 * tnoise(vWPos.xz * 1.4));
   diffuseColor.rgb = mix(diffuseColor.rgb, uDirtCol * (0.85 + dn * 0.25), min(pw * 1.15, 0.92));
 
-  // world-space strata banding on steep faces (kept subtle: sediment, not stripes)
+  // world-space strata banding on steep faces; the shelf mask lowers the
+  // slope threshold so bench risers band too. Band step/phase drift with a
+  // low-freq sector noise and each bench gets its own albedo variance so the
+  // banding reads as sediment, not wallpaper stripes.
   vec3 wn = normalize(cross(dFdx(vWPos), dFdy(vWPos)));
-  float steep = smoothstep(0.28, 0.62, 1.0 - abs(wn.y));
+  float steep = smoothstep(0.28 - 0.235 * shelf, 0.62 - 0.42 * shelf, 1.0 - abs(wn.y));
   if (steep > 0.003) {
-    float bp = vWPos.y * 0.55 + tnoise(vWPos.xz * 0.045) * 4.5;
-    float band = smoothstep(-0.2, 0.6, sin(bp));
-    vec3 sc = mix(uStrataCol * 0.74, uStrataCol * 1.16, band);
-    diffuseColor.rgb = mix(diffuseColor.rgb, sc, steep * 0.38);
+    float sector = tnoise(vWPos.xz * 0.012);
+    float bp = vWPos.y * mix(0.34, 0.82, sector)
+             + tnoise(vWPos.xz * 0.045) * 4.5 + sector * 9.7;
+    float band = smoothstep(-0.25, 0.55, sin(bp) + 0.5 * sin(bp * 2.31 + sector * 6.0));
+    float bvar = thash(vec2(floor(bp * 0.159) * 0.171, floor(sector * 5.0) * 0.37));
+    vec3 sc = mix(uStrataCol * 0.70, uStrataCol * 1.18, band) * (0.82 + 0.34 * bvar);
+    diffuseColor.rgb = mix(diffuseColor.rgb, sc, steep * (0.38 + 0.30 * shelf));
   }
 }`);
     };

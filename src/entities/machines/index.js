@@ -98,6 +98,13 @@ export class Machines {
       if (p) {
         const far = m.position.distanceToSquared(p.position) > LOD_DIST * LOD_DIST;
         m.lowLOD = far;
+        // part meshes are sub-pixel beyond LOD range — drop their draw calls
+        if (far !== m._partsHidden) {
+          m._partsHidden = far;
+          for (const part of m.parts) {
+            if (part.attached) part.mesh.visible = !far;
+          }
+        }
         if (far) {
           // coarse tick: batch time and step a few times per second
           m._lodAccum = (m._lodAccum ?? 0) + dt;
@@ -110,19 +117,30 @@ export class Machines {
       m.update(dt, t);
     }
 
-    // hard standoff: machines never interpenetrate the player — applies during
-    // attacks too (lunges/pounces/charges stop at melee range, not inside her)
+    // hard standoff: machines never interpenetrate the player — in EVERY
+    // state (patrol/return wander included: a behemoth must not stroll
+    // through an idle Aloy) and along the whole BODY, not just the center:
+    // long machines are treated as a capsule (rear / center / snout spheres,
+    // spaced by standoffHalfLen) so snouts and tails can't sweep through her.
     if (p) {
       for (const m of this.list) {
         if (!m.alive) continue;
-        _v.subVectors(m.position, p.position);
-        _v.y = 0;
         const min = m.bodyRadius + 0.6;
-        const d2 = _v.lengthSq();
-        if (d2 < min * min && d2 > 1e-6) {
-          const d = Math.sqrt(d2);
-          _v.multiplyScalar((min - d) / d);
-          m.moveRoot(_v.x, _v.z);
+        const L = m.standoffHalfLen ?? 0;
+        const fx = Math.sin(m.heading), fz = Math.cos(m.heading);
+        for (let s = -1; s <= 1; s++) {
+          const off = s * L;
+          _v.set(
+            m.position.x + fx * off - p.position.x, 0,
+            m.position.z + fz * off - p.position.z,
+          );
+          const d2 = _v.lengthSq();
+          if (d2 < min * min && d2 > 1e-6) {
+            const d = Math.sqrt(d2);
+            _v.multiplyScalar((min - d) / d);
+            m.moveRoot(_v.x, _v.z);
+          }
+          if (L === 0) break;
         }
       }
     }

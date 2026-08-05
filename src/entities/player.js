@@ -147,6 +147,8 @@ export class Player {
     if (wish.lengthSq() > 0.01) {
       targetSpeed = this.crouching ? 2.1 : sprinting ? 8.2 : 4.6;
       if (this.aiming) targetSpeed = 2.4;
+      // hauling a torn-off heavy weapon slows the hunt (canon -35%)
+      if (this.ctx.combat?.activeWeapon?.heavy) targetSpeed *= 0.65;
     }
 
     if (this.dodging) {

@@ -1,15 +1,21 @@
 import * as THREE from 'three';
 import { Machine, rollLoot, glowTexture } from './machine.js';
-import { radarMesh, discLauncherMesh, tailTipMesh, plateMesh, pulseGlow } from './parts.js';
+import {
+  radarMesh, discLauncherMesh, tailTipMesh, plateMesh, cannonMesh,
+  canisterMesh, coreMesh, pulseGlow,
+} from './parts.js';
 
 /**
  * Thunderjaw: apex boss (HZD level 27). Stomp shockwave, tail sweep,
- * arcing disc-launcher projectiles, and the ENRAGE-gated mouth laser sweep
- * (health < 40%, canon cue). Components per research doc 4.7: back Radar
- * (sees through grass until torn; tearing halves detection), Disc Launchers
- * x2 above the hips (torn -> heavy-weapon PICKUPS — the franchise's
- * signature moment), tail tip (torn -> no tail attacks), armor plates x4.
- * Weak points: head sensor, chest core, tail tip.
+ * jaw-cannon tracer bursts, arcing disc-launcher projectiles, and the
+ * ENRAGE-gated mouth laser sweep (health < 40%, canon cue). Components per
+ * research doc 4.3/4.7: back Radar (sees through grass until torn; tearing
+ * halves detection), Disc Launchers x2 above the hips (torn -> heavy-weapon
+ * PICKUPS — the franchise's signature moment), mandibular Cannons x2 (torn
+ * -> cannon bursts gone), tail tip (torn -> no tail attacks), Blaze/Freeze
+ * canisters (belly flank / throat), and the canon armor-strip loop: heart +
+ * head plates hide DISABLED weak points that come online (glowing core
+ * exposed) when the plate is torn off.
  */
 
 const _v = new THREE.Vector3();
@@ -42,15 +48,15 @@ export class Thunderjaw extends Machine {
       // RADAR: sees crouched players in grass at range (research 0.3) —
       // tear the radar off to get stealth back
       stealthRange: 34,
-      eyeHeight: 5.2,
+      eyeHeight: 3.6, // canon 9.4 m scale: head rides at ~0.38 h
       attackRange: 55,
       bodyRadius: 4,
       ...opts,
     });
 
-    const h = this.height;       // 7.5 (tail crest peak)
-    const len = this.size.z;     // ~10.3 along asset z -> body Z after yawFix
-    const w = this.size.x;       // ~5 across the leg stance
+    const h = this.height;       // 9.4 (canon; tail crest peak)
+    const len = this.size.z;     // ~12.9 along asset z -> body Z after yawFix
+    const w = this.size.x;       // ~6.3 across the leg stance
     // head sensor eyes (head rides LOW on this sculpt; tail is the h peak)
     this.addEye(this.body, 0.45, h * 0.38, len * 0.44, 0.6, 0.11);
     this.addEye(this.body, -0.45, h * 0.38, len * 0.44, 0.6, 0.11);
@@ -63,9 +69,13 @@ export class Thunderjaw extends Machine {
     this.body.add(this._launcher);
 
     // weak points — kept small and OFF the center-mass aim line so lazy
-    // torso shots don't score weak hits (head low-front, core low mid-chest)
-    this.addWeakPoint('head sensor', this.body, 0, h * 0.38, len * 0.44, 0.95);
-    this.addWeakPoint('chest core', this.body, 0, h * 0.25, len * 0.24, 0.85);
+    // torso shots don't score weak hits. Heart + head sensor start DISABLED
+    // under armor plates (canon strip loop, research 4.3): tear the plate to
+    // bring the weak point online.
+    this._wpHead = this.addWeakPoint('head sensor', this.body, 0, h * 0.38, len * 0.44, 0.95);
+    this._wpHead.enabled = false;
+    this._wpHeart = this.addWeakPoint('heart', this.body, 0, h * 0.25, len * 0.24, 0.85);
+    this._wpHeart.enabled = false;
     this.addWeakPoint('tail tip', this.body, 0, h * 0.85, -len * 0.42, 0.8);
 
     // --- components (research 4.7)
@@ -113,10 +123,76 @@ export class Thunderjaw extends Machine {
       tearHp: 90, linkedAttack: 'tail', settleY: 0.3,
       loot: [{ id: 'metal-shards', n: 15 }, { id: 'wire', n: 2 }],
     });
-    // 4. Armor plates x4 (nod to the real 93): shear off under tear,
-    //    exposing brighter under-plate that takes bonus impact.
-    // chest flanks ride LOW on this sculpt; hip/thigh shells sit higher+wider
-    const plateSpots = [[1, 0.2, 0.3], [-1, 0.2, 0.3], [1, -0.18, 0.42], [-1, -0.18, 0.42]];
+    // 4. Mandibular cannons x2 (research 4.3): jaw-side tracer guns. Torn
+    //    off -> the cannon burst attack is gone (mid-range pressure relief).
+    this._cannonParts = [];
+    for (const side of [1, -1]) {
+      this._cannonParts.push(this.addPart({
+        name: side > 0 ? 'cannon-r' : 'cannon-l', displayName: 'Cannon',
+        mesh: cannonMesh(),
+        // authored directly (hull snap converges on the snout centerline)
+        pos: [side * 0.82, h * 0.3, len * 0.42], snap: false,
+        rot: [0, side * 0.07, 0], // slight outward toe
+        tearHp: 70, linkedAttack: 'cannon', settleY: 0.24,
+        loot: [{ id: 'metal-shards', n: 8 }, { id: 'wire', n: 1 }],
+      }));
+    }
+    // 5. Elemental canisters (research 4.3): blaze on the belly flank,
+    //    freeze at the throat — matching-element hits detonate on the boss.
+    this.addPart({
+      name: 'blaze-canister', displayName: 'Blaze Canister',
+      mesh: canisterMesh({ color: 0xff7a1e, r: 0.26, h: 0.78 }),
+      pos: [w * 0.32, h * 0.28, len * 0.04], snap: true,
+      snapTarget: [0, h * 0.3, len * 0.04],
+      tearHp: 55, elemental: 'blaze', settleY: 0.3,
+      loot: [{ id: 'blaze', n: 3 }],
+      update: (dt, t, p) => pulseGlow(p.mesh.children[0], t, 3.4),
+    });
+    this.addPart({
+      name: 'freeze-canister', displayName: 'Freeze Canister',
+      mesh: canisterMesh({ color: 0x63e8ff, r: 0.24, h: 0.7 }),
+      pos: [0, h * 0.22, len * 0.38], snap: true,
+      snapTarget: [0, h * 0.32, len * 0.22],
+      tearHp: 55, elemental: 'freeze', settleY: 0.3,
+      loot: [{ id: 'chillwater', n: 2 }],
+      update: (dt, t, p) => pulseGlow(p.mesh.children[0], t, 3.8),
+    });
+    // 6. Armor plates (nod to the real 93). The HEART and HEAD plates sit
+    //    exactly over the disabled weak points: tearing one exposes a small
+    //    glowing core and switches the weak point ON (canon armor-strip
+    //    loop). Two more hip/thigh shells expose bonus-impact under-plate.
+    const coverPlate = (name, wp, coreColor, pos, rot) => {
+      // authored directly over the weak-point anchor (hull snap converges on
+      // the snout); the hidden weak point is re-seated exactly under the plate
+      wp.obj.position.set(pos[0], pos[1], pos[2]);
+      this.addPart({
+        name, displayName: 'Armor Plate',
+        mesh: plateMesh({ w: 1.15, l: 1.5, t: 0.13, color: 0xc9ced4 }),
+        pos, snap: false, rot,
+        tearHp: 55, settleY: 0.14,
+        loot: [{ id: 'metal-shards', n: 6 }],
+        onTorn: (part, m) => {
+          wp.enabled = true; // weak point comes online
+          // exposed core: small emissive machine-gut left in the socket
+          const core = coreMesh({ color: coreColor, r: 0.34 });
+          m.addPart({
+            name: `${name}-core`,
+            displayName: wp.name === 'heart' ? 'Heart' : 'Data Nexus',
+            mesh: core,
+            pos: [part.anchor.x, part.anchor.y, part.anchor.z],
+            snap: false, orient: false,
+            tearHp: Infinity, weak: true, weakMult: 3,
+            update: (dt2, t2, p2) => pulseGlow(p2.mesh.children[0], t2, 6),
+          });
+        },
+      });
+    };
+    // heart: low chest, plate face angled forward-down; head: snout top
+    coverPlate('heart-plate', this._wpHeart, 0xff9a3d,
+      [0, h * 0.26, len * 0.3], [1.25, 0, 0]);
+    coverPlate('head-plate', this._wpHead, 0x9fd8ff,
+      [0, h * 0.44, len * 0.42], [0.4, 0, 0]);
+    const plateSpots = [[1, -0.18, 0.42], [-1, -0.18, 0.42]];
     for (let i = 0; i < plateSpots.length; i++) {
       const [sx, sz, sy] = plateSpots[i];
       this.addPart({
@@ -148,8 +224,10 @@ export class Thunderjaw extends Machine {
     this._cdStomp = 2;
     this._cdLaser = 4;
     this._cdDisc = 7;
+    this._cdCannon = 4;
     this._cdTail = 3;
     this._discAlt = 0;
+    this._cannonAlt = 0;
   }
 
   _playerBehind() {
@@ -183,6 +261,13 @@ export class Thunderjaw extends Machine {
       this._cdDisc = 8.5;
       return this._discs();
     }
+    // jaw cannon tracer burst (research 4.4): mid-range pressure that keeps
+    // the fight honest after the disc launchers are torn off
+    if (dist > 13 && dist < 70 && this._cdCannon <= 0
+        && !this.attackDisabled('cannon')) {
+      this._cdCannon = 7;
+      return this._cannonBurst(dist);
+    }
     return null;
   }
 
@@ -193,7 +278,8 @@ export class Thunderjaw extends Machine {
       kind: 'stomp',
       windup: 0.85, strike: 0.25, recover: 1.2, cooldown: 1.2,
       onStrike: () => {
-        this.spawnShockRing(this.position.x, this.position.z, 12, 0.8, 25, 8);
+        // damage ladder (research 5): apex hits 35-55
+        this.spawnShockRing(this.position.x, this.position.z, 12, 0.8, 40, 8);
       },
       onUpdate: (a) => {
         if (a.phase === 'windup') {
@@ -219,8 +305,8 @@ export class Thunderjaw extends Machine {
       windup: 0.55, strike: 0.5, recover: 0.9, cooldown: 1.4,
       track: false,
       onStrike: () => {
-        this.damagePlayer(20, 15); // full-circle rear hit, checked once
-        this.knockbackPlayer(10);
+        this.damagePlayer(45, 15); // full-circle rear hit, checked once
+        this.knockbackPlayer(12);
       },
       onUpdate: (a) => {
         // whole body wheels around — tail lashes through the rear arc
@@ -331,7 +417,7 @@ export class Thunderjaw extends Machine {
             tick = 0.15;
             const p = this.ctx.player;
             if (p && Math.hypot(p.position.x - hx, p.position.z - hz) < 2.6) {
-              this.ctx.events.emit('player-damage', { amount: 6, from: this });
+              this.ctx.events.emit('player-damage', { amount: 8, from: this });
             }
           }
         } else {
@@ -347,6 +433,124 @@ export class Thunderjaw extends Machine {
         this.ctx.scene.remove(outer);
         glowMat.dispose(); coreMat.dispose(); outerMat.dispose();
       },
+    };
+  }
+
+  /* --------------------------- jaw cannons --------------------------- */
+
+  /** Single cannon tracer: fast glowing bolt from a live cannon muzzle to a
+   *  ground point; sparks on impact, 8 dmg within 1.2 m of the player. */
+  _fireTracer(target, burst) {
+    const live = this._cannonParts?.filter((cp) => cp.attached) ?? [];
+    if (live.length) {
+      this._cannonAlt = (this._cannonAlt + 1) % live.length;
+      const muzzle = live[this._cannonAlt].mesh.children[0]?.userData?.muzzle;
+      (muzzle ?? live[this._cannonAlt].mesh).getWorldPosition(_v);
+    } else {
+      this._mouth.getWorldPosition(_v);
+    }
+    const start = _v.clone();
+    const vel = new THREE.Vector3().subVectors(target, start);
+    const dist = vel.length();
+    vel.normalize().multiplyScalar(60);
+    const mat = new THREE.MeshBasicMaterial({
+      color: 0xffc46b, transparent: true, opacity: 0.95,
+      blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false,
+    });
+    const bolt = new THREE.Mesh(_beamGeo, mat);
+    const L = 1.6; // tracer streak length
+    bolt.scale.set(0.05, L, 0.05);
+    bolt.position.copy(start);
+    _v2.copy(vel).normalize();
+    bolt.quaternion.setFromUnitVectors(_Y, _v2);
+    this.ctx.scene.add(bolt);
+    let flown = 0;
+    const terrain = this.ctx.terrain;
+    this._fx.push({
+      update: (dt) => {
+        const step = 60 * dt;
+        flown += step;
+        bolt.position.addScaledVector(vel, dt);
+        const p = this.ctx.player;
+        let hitPlayer = false;
+        if (p && burst.hits < 5) { // cap a full burst at 40 dmg
+          const dx = bolt.position.x - p.position.x;
+          const dy = bolt.position.y - (p.position.y + 1.0);
+          const dz = bolt.position.z - p.position.z;
+          hitPlayer = dx * dx + dy * dy + dz * dz < 1.45;
+        }
+        const gy = terrain.getHeight(bolt.position.x, bolt.position.z);
+        if (hitPlayer || bolt.position.y <= gy + 0.1 || flown >= dist + 4) {
+          if (hitPlayer) {
+            burst.hits += 1;
+            this.ctx.events.emit('player-damage', { amount: 8, from: this });
+          }
+          _v.set(bolt.position.x, Math.max(bolt.position.y, gy) + 0.25, bolt.position.z);
+          this._sparkBurst(_v, 6, 0xffc46b);
+          if (!hitPlayer) this._dustPuff(bolt.position.x, gy + 0.3, bolt.position.z, 0.6);
+          this.ctx.scene.remove(bolt);
+          mat.dispose();
+          return false;
+        }
+        return true;
+      },
+    });
+  }
+
+  /**
+   * Cannon Burst (research 4.4 "lead-up"): tracers walk fire from short of
+   * the player up onto them over ~1.5 s. Dodge sideways to break the walk.
+   * Gone entirely once both jaw cannons are torn off.
+   */
+  _cannonBurst(dist) {
+    const burst = { hits: 0 };
+    let fired = 0;
+    const total = 12;
+    const from = new THREE.Vector3();
+    const target = new THREE.Vector3();
+    return {
+      kind: 'cannon',
+      windup: 0.7, strike: 1.55, recover: 0.7, cooldown: 2,
+      onStrike: () => {
+        const p = this.ctx.player;
+        if (p) {
+          // walk-up origin: 40% of the way out, biased short
+          from.copy(p.position).sub(this.position).multiplyScalar(0.45).add(this.position);
+        } else {
+          from.set(
+            this.position.x + Math.sin(this.heading) * dist * 0.5, 0,
+            this.position.z + Math.cos(this.heading) * dist * 0.5,
+          );
+        }
+        from.y = this.ctx.terrain.getHeight(from.x, from.z);
+      },
+      onUpdate: (a, dt) => {
+        if (a.phase === 'windup') {
+          this.body.rotation.x = 0.05 * a.phaseT; // muzzle dips as jaw braces
+          this._eyeFlare = 0.8 + a.phaseT;
+        } else if (a.phase === 'strike') {
+          const due = Math.min(total, Math.floor(a.phaseT * total) + 1);
+          while (fired < due) {
+            fired += 1;
+            const k = fired / total; // walk 0 -> 1 toward the live player pos
+            const p = this.ctx.player;
+            if (p) {
+              target.lerpVectors(from, p.position, Math.min(1, k * 1.25));
+              target.y = p.position.y * Math.min(1, k * 1.25)
+                + from.y * (1 - Math.min(1, k * 1.25));
+            } else {
+              target.copy(from);
+            }
+            target.x += (Math.random() - 0.5) * 1.4;
+            target.z += (Math.random() - 0.5) * 1.4;
+            target.y += 0.6;
+            this._fireTracer(target, burst);
+          }
+        } else {
+          this.body.rotation.x = 0.05 * (1 - a.phaseT);
+        }
+      },
+      cleanup: () => { this.body.rotation.x = 0; },
     };
   }
 
@@ -444,7 +648,7 @@ export class Thunderjaw extends Machine {
           const px = disc.position.x, pz = disc.position.z;
           this.spawnShockRing(px, pz, 3.2, 0.4, 0, 0);
           if (p && Math.hypot(p.position.x - px, p.position.z - pz) < 2.6) {
-            this.ctx.events.emit('player-damage', { amount: 15, from: this });
+            this.ctx.events.emit('player-damage', { amount: 35, from: this });
           }
           _v.set(px, groundY + 0.6, pz);
           this._sparkBurst(_v, 18);
@@ -493,6 +697,7 @@ export class Thunderjaw extends Machine {
     this._cdStomp -= dt;
     this._cdLaser -= dt;
     this._cdDisc -= dt;
+    this._cdCannon -= dt;
     this._cdTail -= dt;
   }
 

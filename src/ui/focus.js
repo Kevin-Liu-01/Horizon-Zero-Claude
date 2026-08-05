@@ -573,8 +573,12 @@ export class FocusSystem {
   /* ----------------------------- patrol path lines ------------------------- */
 
   _pathMat() {
+    // Patrol lines are canon "drawn on the ground you can see": segments are
+    // DEPTH-TESTED so terrain occludes them (no x-ray streaks at vista
+    // angles), while the machine glow shells elsewhere stay depthTest:false.
+    // Opacity also dims with camera distance and fades out beyond ~120m.
     return new THREE.ShaderMaterial({
-      transparent: true, depthWrite: false, depthTest: false,
+      transparent: true, depthWrite: false, depthTest: true,
       blending: THREE.AdditiveBlending, side: THREE.DoubleSide, fog: false,
       uniforms: {
         uTime: { value: 0 },
@@ -584,12 +588,15 @@ export class FocusSystem {
       },
       vertexShader: /* glsl */ `
         varying vec2 vUv;
+        varying vec3 vWorld;
         void main() {
           vUv = uv; // uv.x = meters along the loop, uv.y = 0..1 across
+          vWorld = position; // ribbon geometry is authored in world space
           gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
         }`,
       fragmentShader: /* glsl */ `
         varying vec2 vUv;
+        varying vec3 vWorld;
         uniform float uTime;
         uniform float uFade;
         uniform vec3 uColorA;
@@ -600,8 +607,11 @@ export class FocusSystem {
           float dash = smoothstep(0.52, 0.30, abs(m - 0.42));
           float across = 1.0 - abs(vUv.y * 2.0 - 1.0);
           float soft = across * across;
+          float dCam = distance(vWorld, cameraPosition);
+          float dim = mix(1.0, 0.35, smoothstep(14.0, 90.0, dCam)); // legible near, quiet far
+          float far = 1.0 - smoothstep(95.0, 125.0, dCam);          // gone past ~120m
           vec3 col = mix(uColorA, uColorB, dash) * (0.9 + 2.1 * dash);
-          gl_FragColor = vec4(col, (0.22 + 0.78 * dash) * soft * uFade);
+          gl_FragColor = vec4(col, (0.22 + 0.78 * dash) * soft * uFade * dim * far);
         }`,
     });
   }
@@ -654,7 +664,9 @@ export class FocusSystem {
         const dl = Math.hypot(dx, dz) || 1;
         dx /= dl; dz /= dl;
         const px = -dz, pz = dx; // XZ perpendicular
-        const y = (terrain?.getHeight?.(cur.x, cur.z) ?? 0) + 0.18;
+        // 0.3m above ground: segments depth-test now, so keep them clear of
+        // terrain curvature between samples without looking like they float
+        const y = (terrain?.getHeight?.(cur.x, cur.z) ?? 0) + 0.3;
         const d = i < pts.length ? cur.d : cur.d + total; // wrap distance
         const j = i * 6;
         pos[j] = cur.x + px * hw;     pos[j + 1] = y; pos[j + 2] = cur.z + pz * hw;

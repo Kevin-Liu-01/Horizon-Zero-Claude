@@ -95,6 +95,10 @@ export class Machine {
     const src = ctx.assets.models[this.kind];
     this.size = src.size;
     this.height = src.size.y;
+    // capsule half-length for player standoff: long bodies (snout/tail) must
+    // not sweep through the player even when the CENTER keeps its distance
+    this.standoffHalfLen = opts.standoffHalfLen
+      ?? Math.max(0, Math.max(this.size.x, this.size.z) * 0.5 - this.bodyRadius);
     this.root = new THREE.Group();
     this.root.name = `${this.kind}-machine`;
     this.position = this.root.position;
@@ -195,6 +199,7 @@ export class Machine {
 
     // --- component system (spec v2 machine parts contract)
     this.parts = [];
+    this._partGlows = []; // identity-colored part emissives/sprites (die on death)
     this.elemental = { fire: 0, shock: 0, freeze: 0 };
     this._elemHold = 0;
     this.brittleT = 0;      // freeze status: impact x2 + frost tint
@@ -252,8 +257,10 @@ export class Machine {
   }
 
   /** Add a state-colored glow sprite (+ optional solid core) at a local offset
-   *  given in METERS (world units), regardless of the parent's scale. */
-  addEye(parent, x, y, z, scale = 0.4, core = 0) {
+   *  given in METERS (world units), regardless of the parent's scale.
+   *  `intensity` scales the halo brightness (keep < 1 when the eye also has
+   *  an emissive lens mesh, or the additive stack blows out to white). */
+  addEye(parent, x, y, z, scale = 0.4, core = 0, intensity = 1) {
     const s = this._worldScale(parent);
     const mat = new THREE.SpriteMaterial({
       map: glowTexture(), blending: THREE.AdditiveBlending,
@@ -265,7 +272,7 @@ export class Machine {
     spr.userData.machine = this;
     spr.raycast = () => {}; // glow is FX, not a hitbox (weak hits must hit the model)
     parent.add(spr);
-    this._eyeMats.push({ mat, base: 1, kind: 'sprite' });
+    this._eyeMats.push({ mat, base: intensity, kind: 'sprite' });
     if (core > 0) {
       const cm = new THREE.MeshBasicMaterial({ toneMapped: false, transparent: true });
       const mesh = new THREE.Mesh(_sphereGeo, cm);
@@ -279,15 +286,18 @@ export class Machine {
     return spr;
   }
 
-  /** Weak-point sphere. Offset in meters; radius is in world meters. */
+  /** Weak-point sphere. Offset in meters; radius is in world meters.
+   *  Returns the record — set `.enabled = false` for armor-hidden weak spots
+   *  (canon strip loop: tear the plate, weak point comes online). */
   addWeakPoint(name, parent, x, y, z, radius, mult = 3) {
     const s = this._worldScale(parent);
     const obj = new THREE.Object3D();
     obj.position.set(x / s, y / s, z / s);
     obj.userData.machine = this;
     parent.add(obj);
-    this.weakPoints.push({ name, obj, radius, mult });
-    return obj;
+    const rec = { name, obj, radius, mult, enabled: true };
+    this.weakPoints.push(rec);
+    return rec;
   }
 
   /** Testability: spawn wireframe markers at weak points for screenshots. */
@@ -373,9 +383,49 @@ export class Machine {
       interactable: null,
     };
     holder.traverse((o) => { o.userData.machine = this; o.userData.part = part; });
+    // wire part emissives into the light systems:
+    // - `userData.sensor` materials join the eye-state system (state color,
+    //   telegraph flash, dark on death — "the light dies out")
+    // - all other part glows keep their identity color but fade out on death
+    holder.traverse((o) => {
+      if (!o.material) return;
+      const mats = Array.isArray(o.material) ? o.material : [o.material];
+      for (const m of mats) {
+        if (o.isSprite) {
+          this._partGlows.push({ part, mat: m, sprite: true, base: m.opacity });
+        } else if (m.emissive && m.emissive.r + m.emissive.g + m.emissive.b > 0.05) {
+          if (m.userData?.sensor) {
+            this._eyeMats.push({ mat: m, base: m.emissiveIntensity, kind: 'emissive', part });
+          } else {
+            this._partGlows.push({ part, mat: m, sprite: false, base: m.emissiveIntensity });
+          }
+        }
+      }
+    });
     parent.add(holder);
     this.parts.push(part);
     return part;
+  }
+
+  /** Drop every live reference to a detached part's materials so state
+   *  tinting (frost, eye state, death fade) never writes to debris or to
+   *  disposed materials. Sensor lights on the part go dark (disconnected). */
+  _purgePartRefs(part) {
+    if (this._frostMats) {
+      for (const f of this._frostMats) {
+        if (f.part === part) f.m.color.copy(f.c); // un-tint the debris
+      }
+      this._frostMats = this._frostMats.filter((f) => f.part !== part);
+    }
+    this._eyeMats = this._eyeMats.filter((e) => {
+      if (e.part !== part) return true;
+      if (e.mat.emissive) {
+        e.mat.emissive.copy(EYE_COLORS.dead);
+        e.mat.emissiveIntensity = 0.4;
+      }
+      return false;
+    });
+    this._partGlows = this._partGlows.filter((g) => g.part !== part);
   }
 
   /**
@@ -489,6 +539,7 @@ export class Machine {
     let weak = false;
     if (hit.point) {
       for (const wp of this.weakPoints) {
+        if (wp.enabled === false) continue; // still hidden under armor
         wp.obj.getWorldPosition(_v1);
         if (_v1.distanceToSquared(hit.point) <= wp.radius * wp.radius) {
           const wm = wp.mult ?? 3;
@@ -585,6 +636,7 @@ export class Machine {
     if (!part.attached) return;
     part.attached = false;
     part.tearHp = 0;
+    this._purgePartRefs(part); // materials are disposed right below
     part.mesh.updateWorldMatrix(true, false);
     const pos = new THREE.Vector3().setFromMatrixPosition(part.mesh.matrixWorld);
     part.mesh.parent?.remove(part.mesh);
@@ -620,7 +672,10 @@ export class Machine {
     if (!part.attached) return;
     part.attached = false;
     part.tearHp = 0;
+    // debris must never inherit frost tint / eye state / death fades
+    this._purgePartRefs(part);
     const mesh = part.mesh;
+    mesh.visible = true; // detached debris ignores the machine's part LOD
     this.ctx.scene.attach(mesh); // keep world transform
     // debris must not resolve as the machine for combat raycasts — shooting
     // a grounded part would otherwise damage the machine remotely
@@ -901,7 +956,9 @@ export class Machine {
     }
   }
 
-  /** BRITTLE visual: whole-body frost tint (lazy per-machine material list). */
+  /** BRITTLE visual: whole-body frost tint (lazy per-machine material list).
+   *  Entries remember their owning part so tear-off debris is un-tinted and
+   *  dropped from the list (never write to detached/disposed materials). */
   _applyFrost() {
     if (!this._frostMats) {
       this._frostMats = [];
@@ -910,7 +967,7 @@ export class Machine {
         const mats = Array.isArray(o.material) ? o.material : [o.material];
         for (const m of mats) {
           if (!m.isMeshStandardMaterial || !m.color) continue;
-          this._frostMats.push({ m, c: m.color.clone(), r: m.roughness });
+          this._frostMats.push({ m, c: m.color.clone(), r: m.roughness, part: o.userData.part ?? null });
         }
       });
     }
@@ -1573,7 +1630,7 @@ export class Machine {
 
     for (const e of this._eyeMats) {
       if (e.kind === 'sprite' || e.kind === 'basic') {
-        e.mat.color.copy(this._eyeColor).multiplyScalar(pulse);
+        e.mat.color.copy(this._eyeColor).multiplyScalar(pulse * (e.base ?? 1));
         // solid eye cores would linger as black balls on a dead machine
         if (e.kind === 'basic') e.mat.opacity = this.state === 'dead' ? 0 : 1;
       } else {
@@ -1581,6 +1638,15 @@ export class Machine {
         e.mat.emissiveIntensity = e.base * pulse;
       }
     }
-    for (const m of this._emisMats) m.emissiveIntensity = 0.6 + pulse * 0.7;
+    // death: EVERY light dies out (research 0.4) — body strips fade with the
+    // eyes, and identity-colored part glows (canisters/loaders/vents) gutter
+    const lightK = this.state === 'dead' ? Math.max(0, 1 - this._deathT * 0.55) : 1;
+    for (const m of this._emisMats) m.emissiveIntensity = (0.6 + pulse * 0.7) * lightK;
+    if (lightK < 1) {
+      for (const g of this._partGlows) {
+        if (g.sprite) g.mat.opacity = g.base * lightK;
+        else g.mat.emissiveIntensity = g.base * lightK;
+      }
+    }
   }
 }

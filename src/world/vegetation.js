@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
-import { SimplexNoise, pathFactor } from './terrain.js';
+import { SimplexNoise, pathFactor, riverFactor, shelfFactor } from './terrain.js';
 
 /**
  * Vegetation: chunked GPU-instanced wind-swaying grass (red-gold stealth
@@ -108,6 +108,7 @@ const TREE_VERT_HEAD = /* glsl */ `
 #include <common>
 uniform float uTime;
 uniform vec2 uWindDir;
+varying vec3 vTreeW;
 `;
 
 const TREE_VERT_BODY = /* glsl */ `
@@ -117,6 +118,21 @@ float phase = iOrigin.x * 0.37 + iOrigin.z * 0.61;
 float hFrac = clamp( ( transformed.y - iOrigin.y ) / 9.0, 0.0, 1.4 );
 float swayT = sin( uTime * 1.05 + phase ) + 0.4 * sin( uTime * 2.3 + phase * 1.7 );
 transformed.xz += uWindDir * swayT * 0.05 * hFrac * hFrac;
+vTreeW = ( modelMatrix * vec4( transformed, 1.0 ) ).xyz;
+`;
+
+// Near-camera screen-door fade: when the orbit camera swings inside a canopy
+// the foliage dithers away instead of walling the lens with flat green polys.
+const TREE_FRAG_FADE = /* glsl */ `
+{
+  float dCam = distance( vTreeW, cameraPosition );
+  float keep = smoothstep( 1.1, 3.8, dCam );
+  if ( keep < 0.999 ) {
+    float dith = fract( 52.9829189 * fract(
+      dot( gl_FragCoord.xy, vec2( 0.06711056, 0.00583715 ) ) ) );
+    if ( dith >= keep ) discard;
+  }
+}
 `;
 
 export class Vegetation {
@@ -273,6 +289,10 @@ export class Vegetation {
           if (!isTall && rng() > 0.68) continue;
           // worn dirt paths stay bare (tall grass already thinned by terrain)
           if (pathFactor(x, z) > 0.25 + rng() * 0.4) continue;
+          // dried riverbed: bare silt, only a few strays surviving on banks
+          if (riverFactor(x, z) > 0.12 + rng() * 0.3) continue;
+          // rocky SE highland: thin the filler so the stone splat reads
+          if (!isTall && shelfFactor(x, z) * 0.85 > rng()) continue;
 
           const h = terrain.getHeight(x, z);
           if (h > 30) continue; // rocky heights
@@ -526,6 +546,9 @@ export class Vegetation {
         .replace('#include <begin_vertex>', TREE_VERT_BODY)
         .replace('#include <project_vertex>', PROJECT_NO_INSTANCE)
         .replace('#include <worldpos_vertex>', WORLDPOS_NO_INSTANCE);
+      shader.fragmentShader = shader.fragmentShader
+        .replace('#include <common>', '#include <common>\nvarying vec3 vTreeW;')
+        .replace('#include <color_fragment>', '#include <color_fragment>\n' + TREE_FRAG_FADE);
     };
     this._treeMat = mat;
 
@@ -540,6 +563,7 @@ export class Vegetation {
       const x = Math.cos(ang) * r, z = Math.sin(ang) * r;
 
       if (forest.fbm(x * 0.006, z * 0.006, 3) < 0.06) continue; // clusters only
+      if (riverFactor(x, z) > 0.08) continue; // none in the dried channel/ford
       const h = terrain.getHeight(x, z);
       if (h > 34) continue; // no pines on high rock
       const gx = (terrain.getHeight(x + 0.9, z) - h) / 0.9;
@@ -655,6 +679,7 @@ export class Vegetation {
       const r = Math.sqrt(rng()) * 338;
       const ang = rng() * Math.PI * 2;
       const x = Math.cos(ang) * r, z = Math.sin(ang) * r;
+      if (riverFactor(x, z) > 0.3) continue; // keep the silt bed clear
       const h = terrain.getHeight(x, z);
       if (h > 45) continue;
       const gx = (terrain.getHeight(x + 0.8, z) - h) / 0.8;

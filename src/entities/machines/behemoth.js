@@ -34,7 +34,10 @@ export class Behemoth extends Machine {
       hearRange: 32,
       eyeHeight: 3.4,
       attackRange: 26,
-      bodyRadius: 2.3,
+      bodyRadius: 2.6,
+      // capsule reach: the grinder-jaw snout overhangs well past the hull
+      // center — keep it clear of an idle player in every state
+      standoffHalfLen: 2.3,
       territory: { x: spawn.x, z: spawn.z, r: 70 },
       ...opts,
     });
@@ -116,7 +119,8 @@ export class Behemoth extends Machine {
         kind: 'slam',
         windup: 0.8, strike: 0.3, recover: 1.2, cooldown: 1.6,
         onStrike: () => {
-          this.spawnShockRing(this.position.x, this.position.z, 14, 0.85, 25, 9);
+          // damage ladder (research 5): behemoth hits 30-40
+          this.spawnShockRing(this.position.x, this.position.z, 14, 0.85, 32, 9);
         },
         onUpdate: (a) => {
           if (a.phase === 'windup') {
@@ -187,10 +191,12 @@ export class Behemoth extends Machine {
               const dd = Math.hypot(
                 p.position.x - this.position.x, p.position.z - this.position.z,
               );
-              // stop the run BEFORE embedding in the player, then hit
-              if (dd < this.bodyRadius + 2) {
+              // stop the run BEFORE embedding in the player, then hit —
+              // reach accounts for the capsule standoff (snout half-length)
+              const reach = this.bodyRadius + this.standoffHalfLen + 0.9;
+              if (dd < reach) {
                 this._chargeHit = true;
-                this.damagePlayer(30, this.bodyRadius + 2.6);
+                this.damagePlayer(38, reach + 0.8);
                 this.knockbackPlayer(14);
                 a.t = a.windup + a.strike; // stop the run on impact
               }
@@ -292,7 +298,7 @@ export class Behemoth extends Machine {
               const px = rock.position.x, pz = rock.position.z;
               this.spawnShockRing(px, pz, 3.4, 0.42, 0, 0);
               if (p2 && Math.hypot(p2.position.x - px, p2.position.z - pz) < 2.8) {
-                this.ctx.events.emit('player-damage', { amount: 25, from: this });
+                this.ctx.events.emit('player-damage', { amount: 35, from: this });
                 this.knockbackPlayer(10);
               }
               _bv.set(px, gy + 0.5, pz);

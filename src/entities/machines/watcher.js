@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { Machine, rollLoot } from './machine.js';
+import { Machine, rollLoot, glowTexture } from './machine.js';
 import { lensMesh, antennaMesh } from './parts.js';
 
 /**
@@ -73,17 +73,19 @@ export class Watcher extends Machine {
     this.neck.forEach(snap);
     this.tail.forEach(snap);
 
-    // sensor eye on the head camera bone
+    // sensor eye on the head camera bone — THE identifying feature
+    // (research 0.4/1.2): big state-colored iris + halo, readable at 20 m+
     const eyeParent = this.bones.cam ?? this.holder;
-    this.addEye(eyeParent, 0, 0, 0, 0.55);
+    this.addEye(eyeParent, 0, 0, 0, 0.66, 0, 0.55); // soft halo over the lens
     this.addWeakPoint('eye', eyeParent, 0, 0, 0, 0.42);
 
     // --- components (research 1.3): eye = weak part, NOT tearable — "the
-    // eye IS the fight". Lens mesh gives Focus a highlight target and makes
-    // aimed eye shots resolve on real geometry.
+    // eye IS the fight". The lens iris is sensor-tagged (parts.js) so it
+    // burns with the exact state color, and gives Focus a highlight target
+    // and aimed eye shots real geometry to resolve on.
     this.addPart({
       name: 'eye', displayName: 'Eye',
-      mesh: lensMesh({ r: 0.2 }),
+      mesh: lensMesh({ r: 0.26 }),
       parent: eyeParent, pos: [0, 0, 0],
       tearHp: Infinity, weak: true, weakMult: 3,
       loot: [{ id: 'watcher-lens', n: 1 }],
@@ -122,10 +124,18 @@ export class Watcher extends Machine {
     this._lookPitch = 0;
     this._peckPose = 0;
     this._rear = 0;        // alert rear-up pose blend
+    this._cdFlash = 2;     // Blinding Stun Flash cooldown (research 1.4)
+    this._cdBlast = 4;     // Energy Blast cooldown (research 1.4)
   }
 
   onAlerted() {
     this.manager.alertNearby(this, 60);
+  }
+
+  /** Ticked from Machine.update() — runs even under lowLOD/stun. */
+  tickCooldowns(dt) {
+    this._cdFlash -= dt;
+    this._cdBlast -= dt;
   }
 
   /** Death crumple: legs buckle, neck kinks slack — not a parked robot. */
@@ -153,6 +163,17 @@ export class Watcher extends Machine {
   }
 
   chooseAttack(dist) {
+    // Blinding Stun Flash (research 1.4): 6-11 m, eye flares super-bright,
+    // 1.5 s screen whiteout is the HUD's side ('watcher-flash')
+    if (dist > 5.5 && dist < 11.5 && this._cdFlash <= 0) {
+      this._cdFlash = 12;
+      return this._flashAttack();
+    }
+    // Energy Blast (research 1.4/1.7): concussive orb when it can't close in
+    if (dist > 7 && dist < 26 && this._cdBlast <= 0) {
+      this._cdBlast = 6.5;
+      return this._energyBlast();
+    }
     if (dist > this.attackRange * 1.25) return null;
     return {
       kind: 'peck',
@@ -174,6 +195,151 @@ export class Watcher extends Machine {
       },
       cleanup: () => { this._peckPose = 0; },
     };
+  }
+
+  /** Blinding Stun Flash: crane up, lens ramps white-hot, then a blinding
+   *  burst. No damage — the payoff is the player's 1.5 s whiteout. */
+  _flashAttack() {
+    return {
+      kind: 'flash',
+      windup: 0.8, strike: 0.2, recover: 1.0, cooldown: 2.4,
+      onUpdate: (a) => {
+        if (a.phase === 'windup') {
+          this._peckPose = a.phaseT * 0.9;    // crane up, eye on the player
+          this._eyeFlare = 1 + a.phaseT * 3;  // lens ramps to white-hot
+        } else if (a.phase === 'recover') {
+          this._peckPose = 0.9 * (1 - a.phaseT);
+        }
+      },
+      onStrike: () => {
+        this._eyeFlare = 8;
+        (this.bones.cam ?? this.body).getWorldPosition(_v);
+        this._flashBurst(_v);
+        this.ctx.events.emit('watcher-flash', { machine: this });
+      },
+      cleanup: () => { this._peckPose = 0; },
+    };
+  }
+
+  /** Energy Blast: kiting variety — small concussive orb, 12 dmg. */
+  _energyBlast() {
+    return {
+      kind: 'energy-blast',
+      windup: 0.6, strike: 0.15, recover: 0.75, cooldown: 2.2,
+      onUpdate: (a) => {
+        if (a.phase === 'windup') {
+          this._peckPose = a.phaseT * 0.5;
+          this._eyeFlare = 0.6 + a.phaseT * 1.6;
+        } else if (a.phase === 'recover') {
+          this._peckPose = -0.3 * (1 - a.phaseT); // recoil dip
+        }
+      },
+      onStrike: () => this._fireOrb(),
+      cleanup: () => { this._peckPose = 0; },
+    };
+  }
+
+  /** Expanding white-out burst at the eye (flash strike FX). */
+  _flashBurst(pos) {
+    for (let i = 0; i < 2; i++) {
+      const mat = new THREE.SpriteMaterial({
+        map: glowTexture(), color: i === 0 ? 0xffffff : 0xcfe8ff,
+        transparent: true, opacity: 0.95, blending: THREE.AdditiveBlending,
+        depthWrite: false, toneMapped: false,
+      });
+      const s = new THREE.Sprite(mat);
+      s.position.copy(pos);
+      const s0 = i === 0 ? 1.2 : 2.4;
+      s.scale.setScalar(s0);
+      this.ctx.scene.add(s);
+      let t = 0;
+      const dur = i === 0 ? 0.35 : 0.55;
+      this._fx.push({
+        update: (dt) => {
+          t += dt;
+          const k = Math.min(1, t / dur);
+          s.scale.setScalar(s0 + k * (i === 0 ? 10 : 5));
+          mat.opacity = 0.95 * (1 - k * k);
+          if (k >= 1) { this.ctx.scene.remove(s); mat.dispose(); return false; }
+          return true;
+        },
+      });
+    }
+  }
+
+  /** Concussive energy orb: glow-trailed projectile from the eye. */
+  _fireOrb() {
+    const p = this.ctx.player;
+    (this.bones.cam ?? this.body).getWorldPosition(_v);
+    const start = _v.clone();
+    const tgt = p
+      ? new THREE.Vector3(
+        p.position.x + p.velocity.x * 0.5,
+        p.position.y + 1.0,
+        p.position.z + p.velocity.z * 0.5,
+      )
+      : new THREE.Vector3(
+        start.x + Math.sin(this.heading) * 20, start.y,
+        start.z + Math.cos(this.heading) * 20,
+      );
+    const vel = tgt.sub(start);
+    const d = vel.length();
+    vel.normalize().multiplyScalar(17);
+    vel.y += d * 0.05; // slight lob
+    const coreMat = new THREE.SpriteMaterial({
+      map: glowTexture(), color: 0xd8f2ff, transparent: true, opacity: 1,
+      blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false,
+    });
+    const core = new THREE.Sprite(coreMat);
+    core.scale.setScalar(0.4);
+    core.position.copy(start);
+    const glowMat = new THREE.SpriteMaterial({
+      map: glowTexture(), color: 0x54b8ff, transparent: true, opacity: 0.55,
+      blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false,
+    });
+    const glow = new THREE.Sprite(glowMat);
+    glow.scale.setScalar(1.1);
+    glow.position.copy(start);
+    this.ctx.scene.add(core);
+    this.ctx.scene.add(glow);
+    let t = 0;
+    const terrain = this.ctx.terrain;
+    const done = () => {
+      this.ctx.scene.remove(core);
+      this.ctx.scene.remove(glow);
+      coreMat.dispose();
+      glowMat.dispose();
+      return false;
+    };
+    this._fx.push({
+      update: (dt) => {
+        t += dt;
+        vel.y -= 3.5 * dt; // slow energy droop, flies almost flat
+        core.position.addScaledVector(vel, dt);
+        glow.position.copy(core.position);
+        glowMat.opacity = 0.5 + Math.sin(t * 30) * 0.15;
+        const p2 = this.ctx.player;
+        let nearPlayer = false;
+        if (p2) {
+          const dx = core.position.x - p2.position.x;
+          const dy = core.position.y - (p2.position.y + 1.0);
+          const dz = core.position.z - p2.position.z;
+          nearPlayer = dx * dx + dy * dy + dz * dz < 1.7;
+        }
+        const gy = terrain.getHeight(core.position.x, core.position.z);
+        if (nearPlayer || core.position.y <= gy + 0.15 || t > 3.5) {
+          const px = core.position.x, pz = core.position.z;
+          this.spawnShockRing(px, pz, 1.8, 0.28, 0, 0);
+          if (p2 && Math.hypot(p2.position.x - px, p2.position.z - pz) < 1.7) {
+            this.ctx.events.emit('player-damage', { amount: 12, from: this });
+          }
+          _v.set(px, Math.max(core.position.y, gy + 0.4), pz);
+          this._sparkBurst(_v, 8, 0x9fd8ff);
+          return done();
+        }
+        return true;
+      },
+    });
   }
 
   _rot(bone, axis, angle) {

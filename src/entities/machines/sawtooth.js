@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { Machine, rollLoot } from './machine.js';
-import { canisterMesh, plateMesh, pulseGlow } from './parts.js';
+import { canisterMesh, plateMesh, antennaMesh, powerCellMesh, pulseGlow } from './parts.js';
 
 /**
  * Sawtooth: big-cat stalker (static sculpt, procedural root motion; HZD
@@ -38,21 +38,50 @@ export class Sawtooth extends Machine {
     // eyes: pair on the head (body space: +Z forward)
     this.addEye(this.body, 0.2, h * 0.74, len * 0.38, 0.32, 0.06);
     this.addEye(this.body, -0.2, h * 0.74, len * 0.38, 0.32, 0.06);
-    // weak point: chest blaze canister
-    this.addWeakPoint('chest', this.body, 0, h * 0.52, len * 0.20, 0.65);
 
     // --- components (research 2.7)
     // 1. Blaze Canister, center chest — THE Sawtooth fantasy: glows orange,
-    //    fire arrow detonates it, tear pops it off as lootable Blaze.
-    this.addPart({
+    //    fire arrow detonates it, tear pops it off as lootable Blaze. WEAK
+    //    part (machines.md: the glowing chest is the aim marker) so hitting
+    //    it pops orange weak-hit numbers.
+    const canister = this.addPart({
       name: 'blaze-canister', displayName: 'Blaze Canister',
       mesh: canisterMesh({ color: 0xff7a1e, r: 0.15, h: 0.46 }),
       pos: [0, h * 0.5, len * 0.36], snap: true, snapTarget: [0, h * 0.48, 0],
       orient: false, proud: -0.08, // recessed into the chest housing
       tearHp: 40, elemental: 'blaze', settleY: 0.24,
+      weak: true, weakMult: 2.5,
       loot: [{ id: 'blaze', n: 3 }],
       update: (dt, t, p) => pulseGlow(p.mesh.children[0], t, 4),
     });
+    // chest weak spot sits AT the canister socket (stays after tear-off, so
+    // the exposed chest keeps rewarding precise shots with orange numbers)
+    this.addWeakPoint('chest', this.body,
+      canister.anchor.x, canister.anchor.y, canister.anchor.z, 0.7, 2);
+    // power cell atop the hindquarters (research 2.7.4): shock detonation
+    // -> shock explosion + self-stun; tear -> lootable Sparker
+    this.addPart({
+      name: 'power-cell', displayName: 'Power Cell',
+      mesh: powerCellMesh({ color: 0xffd23d }),
+      pos: [0, h * 0.74, -len * 0.3], snap: true, snapTarget: [0, h * 0.4, -len * 0.28],
+      tearHp: 35, elemental: 'shock', settleY: 0.2,
+      loot: [{ id: 'sparker', n: 2 }],
+      update: (dt, t, p) => pulseGlow(p.mesh.children[0], t, 5),
+    });
+    // fan of three long antennae behind the shoulders (research 2.2):
+    // cosmetic tear-offs, tips glow with the eye state
+    for (let i = 0; i < 3; i++) {
+      const side = i - 1; // -1, 0, 1
+      this.addPart({
+        name: `antenna-${i + 1}`, displayName: 'Antenna',
+        mesh: antennaMesh({ len: 0.72 + Math.abs(side) * 0.1 }),
+        pos: [side * 0.24, h * 0.82, len * 0.1 - Math.abs(side) * 0.12],
+        snap: true, snapTarget: [0, h * 0.5, len * 0.08],
+        orient: false, rot: [-0.55, 0, side * 0.35], // swept back like a crest
+        tearHp: 14, settleY: 0.1,
+        loot: [{ id: 'wire', n: 1 }],
+      });
+    }
     // 2. Hip armor plates x2 on the upper haunches — tearing exposes brighter
     //    "muscle" that takes +25% impact (research: plates cover bonus zones).
     for (const side of [1, -1]) {
@@ -89,7 +118,8 @@ export class Sawtooth extends Machine {
       return {
         kind: 'swipe',
         windup: 0.45, strike: 0.18, recover: 0.8, cooldown: 1.6,
-        onStrike: () => this.damagePlayer(12, 4, 0.1),
+        // damage ladder (research 5): sawtooth hits 22-30
+        onStrike: () => this.damagePlayer(22, 4, 0.1),
         onUpdate: (a) => {
           // rear back, then slash across
           if (a.phase === 'windup') this.body.rotation.y = a.phaseT * 0.4;
@@ -131,7 +161,7 @@ export class Sawtooth extends Machine {
             const arc = Math.sin(a.phaseT * Math.PI) * 1.4;
             this.position.y = this.ctx.terrain.getHeight(this.position.x, this.position.z) + arc;
             // damage window covers the whole landing half of the leap
-            if (a.phaseT > 0.5 && !a.hit && this.damagePlayer(25, 2.9)) {
+            if (a.phaseT > 0.5 && !a.hit && this.damagePlayer(30, 2.9)) {
               a.hit = true;
               this.knockbackPlayer(8);
             }

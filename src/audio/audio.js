@@ -30,7 +30,7 @@ export class GameAudio {
       // v2
       parts: 0, items: 0, wheel: 0, switches: 0, crafts: 0, breaths: 0,
       telegraphs: 0, canisters: 0, shatters: 0, discs: 0, heals: 0,
-      focusToggles: 0, concentrations: 0,
+      focusToggles: 0, concentrations: 0, tags: 0, flashes: 0,
     };
     this._stridePhase = 0.35;
     this._gust = 0;
@@ -1201,6 +1201,56 @@ export class GameAudio {
     this._noise(t0, 0.4, hp);
   }
 
+  /** Focus tag placed on a machine: crisp two-note holo blip. */
+  _tagBlip() {
+    const g = this._voice(0.4, 1, 0, this.sfxBus);
+    if (!g) return;
+    this._counts.tags++;
+    const t0 = this._now();
+    const note = (t, f0, f1) => {
+      const eg = this.ac.createGain();
+      eg.connect(g);
+      this._env(eg.gain, t, 0.045, 0.005, 0.09);
+      const o = this._osc('sine', f0, t, 0.13, eg);
+      o.frequency.exponentialRampToValueAtTime(f1, t + 0.09);
+    };
+    note(t0, 1320, 1560);
+    note(t0 + 0.09, 1760, 2090);
+    // tiny data tick under the notes
+    const bp = this._bp(4200, 6);
+    const eg2 = this.ac.createGain();
+    bp.connect(eg2).connect(g);
+    this._env(eg2.gain, t0, 0.02, 0.002, 0.03);
+    this._noise(t0, 0.04, bp);
+  }
+
+  /** Watcher blinding strobe: bright white-hot zap sting (dodge/avert cue). */
+  _flashZap(pan, att) {
+    const g = this._voice(0.7, Math.max(att, 0.5), pan, this.sfxBus);
+    if (!g) return;
+    this._counts.flashes++;
+    const t0 = this._now();
+    // searing rising whine
+    const eg = this.ac.createGain();
+    eg.connect(g);
+    this._env(eg.gain, t0, 0.09, 0.006, 0.4);
+    const o = this._osc('sawtooth', 1150, t0, 0.48, eg);
+    o.frequency.exponentialRampToValueAtTime(3400, t0 + 0.09);
+    o.frequency.exponentialRampToValueAtTime(2600, t0 + 0.42);
+    // electric burst
+    const hp = this._hp(5200);
+    const eg2 = this.ac.createGain();
+    hp.connect(eg2).connect(g);
+    this._env(eg2.gain, t0, 0.08, 0.003, 0.3);
+    this._noise(t0, 0.34, hp);
+    // capacitor discharge thump grounds the sting
+    const eg3 = this.ac.createGain();
+    eg3.connect(g);
+    this._env(eg3.gain, t0, 0.07, 0.004, 0.12);
+    const sub = this._osc('sine', 220, t0, 0.16, eg3);
+    sub.frequency.exponentialRampToValueAtTime(88, t0 + 0.13);
+  }
+
   /** Focus powering down: short falling shimmer. */
   _focusOff() {
     const g = this._voice(0.4, 1, 0, this.sfxBus);
@@ -1372,9 +1422,12 @@ export class GameAudio {
       this._itemTick(/herb|medicinal|plant/i.test(String(e.id || '')), delay);
     }));
 
-    // v2: weapon wheel + crafting + concentration
+    // v2: weapon wheel + crafting + concentration. The close whoosh only
+    // belongs to live play — Esc/pause/death closing the wheel stays silent.
     ev.on('wheel-open', armed(() => this._wheelWhoosh(true)));
-    ev.on('wheel-close', armed(() => this._wheelWhoosh(false)));
+    ev.on('wheel-close', armed(() => {
+      if (this.ctx.state === 'playing') this._wheelWhoosh(false);
+    }));
     ev.on('weapon-switch', armed(() => this._switchClick()));
     ev.on('ammo-crafted', armed(() => this._craftSound()));
     ev.on('concentration-start', armed(() => this._concSet(true)));
@@ -1384,6 +1437,16 @@ export class GameAudio {
     ev.on('machine-telegraph', armed(({ machine } = {}) => {
       at(machine?.position ?? null);
       this._telegraphBlip(this._pan, this._att);
+    }));
+
+    // Focus tag marker placed (focus builder emits 'machine-tagged')
+    ev.on('machine-tagged', armed(() => this._tagBlip()));
+
+    // Watcher blinding strobe — machines builder may emit this; the
+    // optional-chained position read keeps it harmless if it never fires.
+    ev.on('watcher-flash', armed((e = {}) => {
+      at(e?.machine?.position ?? null);
+      this._flashZap(this._pan, this._att);
     }));
 
     // v2: Focus mode hum (focus builder emits these; harmless if absent)
@@ -1509,6 +1572,8 @@ export class GameAudio {
       [19.6, () => this._discThump(false)],
       [20.2, () => { this._focusOn = true; this._focus(); }],  // hum fades in
       [22.2, () => { this._focusOn = false; this._focusOff(); }],
+      [22.8, () => this._tagBlip()],
+      [23.3, () => this._flashZap(0, 1)],
     ];
   }
 

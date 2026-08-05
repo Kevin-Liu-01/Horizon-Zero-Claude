@@ -34,6 +34,22 @@
     transparent 36%, rgba(200, 30, 15, 0.55) 70%, rgba(130, 10, 5, 0.92) 100%);
 }
 
+/* ---------------------------- watcher blind-flash ---------------------------- */
+/* 1.5s white-hot flash when a nearby watcher fires its blinding strobe at you */
+.hzc-wflash {
+  position: absolute; inset: 0;
+  opacity: 0;
+  background: radial-gradient(ellipse at center,
+    rgba(255, 255, 255, 0.99) 0%, rgba(238, 244, 255, 0.92) 46%, rgba(196, 210, 240, 0.6) 100%);
+}
+.hzc-wflash.show { animation: hzcWFlash 1.5s ease-out forwards; }
+@keyframes hzcWFlash {
+  0% { opacity: 0; }
+  5% { opacity: 0.96; }
+  26% { opacity: 0.6; }
+  100% { opacity: 0; }
+}
+
 /* ------------------------------ focus scan tint ------------------------------ */
 /* Kept for src/ui/focus.js which prepends this element into #hud. */
 .hzc-focus-tint {
@@ -341,7 +357,9 @@
   width: 5px; height: 5px; border-radius: 50%;
   background: rgba(242, 237, 226, 0.95);
   box-shadow: 0 0 0 1.5px rgba(8, 12, 14, 0.75), 0 1px 5px rgba(0, 0, 0, 0.6);
+  transition: opacity 0.8s ease;
 }
+.hzc-dot.idle { opacity: 0.28; } /* dynamic HUD: recede when out of combat */
 .hzc-ring {
   position: absolute; left: -36px; top: -36px;
   width: 72px; height: 72px;
@@ -431,7 +449,9 @@
   background: var(--hzc-panel);
   border: 1px solid var(--hzc-border);
   clip-path: polygon(0 0, 100% 0, 100% 100%, 14px 100%, 0 calc(100% - 14px));
+  transition: opacity 0.8s ease;
 }
+.hzc-weapon.idle { opacity: 0.22; } /* dynamic HUD: fade when holstered + calm */
 .hzc-wpn-name {
   font-size: 10px; font-weight: 600; letter-spacing: 0.3em; text-indent: 0.3em;
   color: var(--hzc-gold);
@@ -518,27 +538,28 @@
   text-shadow: 0 0 10px rgba(78, 201, 176, 0.75), 0 0 3px rgba(0, 0, 0, 0.85);
 }
 
-/* --------------------------------- kill feed --------------------------------- */
+/* ---------------------- kill feed / XP toasts (bottom-right) ----------------- */
+/* Research: XP popups live bottom-right, stacked ABOVE the item toasts. */
 .hzc-toasts {
-  position: absolute; left: 30px; bottom: 96px;
-  display: flex; flex-direction: column; align-items: flex-start; gap: 5px;
+  position: absolute; right: 30px; bottom: 292px;
+  display: flex; flex-direction: column; align-items: flex-end; gap: 5px;
 }
 .hzc-toast {
   font-size: 10px; letter-spacing: 0.24em; text-indent: 0.24em;
   color: var(--hzc-text);
   background: var(--hzc-panel);
   border: 1px solid var(--hzc-border);
-  border-left: 2px solid var(--hzc-gold);
-  padding: 6px 14px 6px 11px;
+  border-right: 2px solid var(--hzc-gold);
+  padding: 6px 11px 6px 14px;
   white-space: nowrap;
   animation: hzcToast 3.2s ease forwards;
 }
 .hzc-toast b { color: var(--hzc-gold); font-weight: 600; }
 @keyframes hzcToast {
-  0% { opacity: 0; transform: translateX(-14px); }
+  0% { opacity: 0; transform: translateX(14px); }
   8% { opacity: 1; transform: none; }
   78% { opacity: 1; }
-  100% { opacity: 0; transform: translateX(-8px); }
+  100% { opacity: 0; transform: translateX(8px); }
 }
 
 /* -------------------------------- death screen ------------------------------- */

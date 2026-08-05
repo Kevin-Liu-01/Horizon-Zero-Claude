@@ -42,18 +42,36 @@ export class WeaponWheel {
 
     this._build();
 
+    const inPlay = () => ctx.state === 'playing' || ctx.params.has('shot');
     ctx.input.onDown('Tab', () => {
       if (this.open) return;
-      if (ctx.state !== 'playing' && !ctx.params.has('shot')) return;
+      if (!inPlay()) return;
       this._openWheel();
     });
+    // gate the release by state: a Tab let go over the pause/death screen
+    // must NOT equip the hovered weapon or play the close whoosh
     ctx.input.onUp('Tab', () => {
-      if (this.open) this._closeWheel(true);
+      if (!this.open) return;
+      if (inPlay()) this._closeWheel(true);
+      else this._forceClose();
     });
     ctx.input.onDown('KeyZ', () => { if (this.open) this._cycle(-1); });
     ctx.input.onDown('KeyX', () => { if (this.open) this._cycle(1); });
     ctx.input.onDown('KeyR', () => { if (this.open) this._craft(); });
-    ctx.events.on('player-died', () => { if (this.open) this._closeWheel(false); });
+
+    // force-close (silent) whenever the game leaves 'playing' while the
+    // wheel is up: death, victory, pause. Pause never reaches update()
+    // (main.js halts system updates), so hook the transitions directly.
+    ctx.events.on('player-died', () => this._forceClose());
+    ctx.events.on('victory', () => this._forceClose());
+    ctx.input.onDown('Escape', () => this._forceClose());
+    document.addEventListener('pointerlockchange', () => {
+      // Esc in the browser can eat the keydown and just drop pointer lock —
+      // the HUD pauses on that signal, so the wheel must fold with it
+      if (document.pointerLockElement == null && !ctx.params.has('shot')) {
+        this._forceClose();
+      }
+    });
   }
 
   /* --------------------------------- DOM ---------------------------------- */
@@ -154,6 +172,18 @@ export class WeaponWheel {
     this.ctx.events.emit('wheel-close');
   }
 
+  /**
+   * Silent close for state transitions (pause/death/victory): no equip, no
+   * 'wheel-close' whoosh, and time is restored HERE because combat.update
+   * may be frozen (main.js stops system updates while paused).
+   */
+  _forceClose() {
+    if (!this.open) return;
+    this.open = false;
+    this.root.classList.remove('open');
+    this.ctx.engine.timeScale = 1;
+  }
+
   hoverSlot(slotN) {
     const idx = (this.ctx.combat?.weapons ?? []).findIndex((w) => w.slot === slotN);
     if (idx >= 0) this.hover = idx;
@@ -183,7 +213,7 @@ export class WeaponWheel {
 
     const ctx = this.ctx;
     if (ctx.state !== 'playing' && !ctx.params.has('shot')) {
-      this._closeWheel(false);
+      this._forceClose();
       return;
     }
     // safety: blur can eat the keyup

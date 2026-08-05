@@ -124,10 +124,13 @@ export class Interactables {
 
     // nearest entry within its own radius (defensive: cross-builder entries
     // may carry plain {x,y,z} positions, vanish mid-frame, or be retired by
-    // setting removed/disabled/consumed instead of calling unregister)
+    // setting removed/disabled/consumed instead of calling unregister).
+    // Weapon pickups (Thunderjaw disc launchers) get radius >= 3.5 AND a 3.5x
+    // selection weight so a shard pile 0.3m closer can't shadow the launcher.
+    const PICKUP_W2 = 3.5 * 3.5;
     const px = p.position.x, py = p.position.y, pz = p.position.z;
     let best = null;
-    let bestD2 = Infinity;
+    let bestScore = Infinity;
     const list = this.list;
     for (let i = list.length - 1; i >= 0; i--) {
       const e = list[i];
@@ -138,9 +141,12 @@ export class Interactables {
       const dx = (pos.x ?? 0) - px;
       const dy = (pos.y ?? py) - py;
       const dz = (pos.z ?? 0) - pz;
-      const r = e.radius ?? DEFAULT_RADIUS;
+      let r = e.radius ?? DEFAULT_RADIUS;
+      if (e.pickupWeapon && r < 3.5) r = 3.5;
       const d2 = dx * dx + dy * dy * 0.25 + dz * dz; // forgiving vertically
-      if (d2 <= r * r && d2 < bestD2) { bestD2 = d2; best = e; }
+      if (d2 > r * r) continue;
+      const score = e.pickupWeapon ? d2 / PICKUP_W2 : d2;
+      if (score < bestScore) { bestScore = score; best = e; }
     }
 
     if (!best) {

@@ -52,8 +52,9 @@ export const AMMO = {
   'tearblast': {
     id: 'tearblast', name: 'Tearblast Arrow', weapon: 'sharpshot-bow',
     impact: 6, tear: 150, element: 'none', elementAmount: 0,
+    // tight burst: strips 1-2 neighbouring parts, never the far side
     drawScaled: false, projectile: 'arrow', speed: 52,
-    aoe: { radius: 4.5, impact: 0, tear: 110 }, burst: 'tear',
+    aoe: { radius: 2.2, impact: 0, tear: 110 }, burst: 'tear',
     start: 4, cap: 10, batch: 2,
     recipe: [['ridge-wood', 4], ['echo-shell', 2]],
     color: '#6fd6e8',

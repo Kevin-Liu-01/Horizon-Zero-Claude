@@ -118,7 +118,10 @@ class Game {
     const dt = rawDt * ctx.engine.timeScale;
     const t = ctx.engine.clock.elapsedTime;
 
-    if (ctx.state === 'playing' || ctx.state === 'title' || params.has('shot')) {
+    // world keeps living through death/victory so the crumple + scene read,
+    // only hard pauses (pause menu / inventory) freeze the simulation
+    if (ctx.state === 'playing' || ctx.state === 'title' || ctx.state === 'dead'
+      || ctx.state === 'victory' || params.has('shot')) {
       for (const s of this.systems) s.update?.(dt, t);
     }
     ctx.input.endFrame();
