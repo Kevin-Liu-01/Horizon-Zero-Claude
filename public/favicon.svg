@@ -1,1 +1,15 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><circle cx="16" cy="16" r="13" fill="none" stroke="%2335c8dc" stroke-width="3"/><circle cx="16" cy="16" r="5" fill="%23e8a33d"/></svg>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+  <!-- Claude spark as rising machine-dawn — Horizon Zero Claude -->
+  <g stroke="#DA7756" stroke-width="8.5" stroke-linecap="round">
+    <line x1="0" y1="-14" x2="0" y2="-42" transform="translate(50 50)"/>
+    <line x1="0" y1="-14" x2="0" y2="-30" transform="translate(50 50) rotate(38)"/>
+    <line x1="0" y1="-14" x2="0" y2="-44" transform="translate(50 50) rotate(72)"/>
+    <line x1="0" y1="-14" x2="0" y2="-29" transform="translate(50 50) rotate(109)"/>
+    <line x1="0" y1="-14" x2="0" y2="-40" transform="translate(50 50) rotate(144)"/>
+    <line x1="0" y1="-14" x2="0" y2="-28" transform="translate(50 50) rotate(180)"/>
+    <line x1="0" y1="-14" x2="0" y2="-43" transform="translate(50 50) rotate(217)"/>
+    <line x1="0" y1="-14" x2="0" y2="-27" transform="translate(50 50) rotate(252)"/>
+    <line x1="0" y1="-14" x2="0" y2="-41" transform="translate(50 50) rotate(288)"/>
+    <line x1="0" y1="-14" x2="0" y2="-30" transform="translate(50 50) rotate(323)"/>
+  </g>
+</svg>

@@ -15,6 +15,7 @@ import { WeaponWheel } from './ui/wheel.js';
 import { FocusSystem } from './ui/focus.js';
 import { HUD } from './ui/hud.js';
 import { GameAudio } from './audio/audio.js';
+import { Studio } from './studio/studio.js';
 
 const params = new URLSearchParams(location.search);
 
@@ -66,6 +67,7 @@ class Game {
     ctx.interactables = this._add(new Interactables(ctx));
     ctx.audio = this._add(new GameAudio(ctx));
     ctx.hud = this._add(new HUD(ctx));
+    ctx.studio = this._add(new Studio(ctx)); // last: its camera write wins the frame
 
     const loadingEl = document.getElementById('loading');
     if (params.has('shot')) loadingEl.remove();
@@ -121,7 +123,7 @@ class Game {
     // world keeps living through death/victory so the crumple + scene read,
     // only hard pauses (pause menu / inventory) freeze the simulation
     if (ctx.state === 'playing' || ctx.state === 'title' || ctx.state === 'dead'
-      || ctx.state === 'victory' || params.has('shot')) {
+      || ctx.state === 'victory' || ctx.state === 'studio' || params.has('shot')) {
       for (const s of this.systems) s.update?.(dt, t);
     }
     ctx.input.endFrame();

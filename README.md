@@ -90,4 +90,13 @@ Thunderjaw, Behemoth scans, HZD character fanart) — used here as fan-art in a
 non-commercial tech demo. Horizon Zero Dawn is © Guerrilla Games / Sony
 Interactive Entertainment; this project is an unaffiliated homage.
 
+Round 3 machine-variety models (see models-staging/MANIFEST.md for full manifest):
+
+- "Mechanical Horse" by jake young — [Poly Pizza](https://poly.pizza/m/d4bayjeM1aD), CC-BY 3.0 (Strider)
+- "Robocat" by Jordan Hill — [Poly Pizza](https://poly.pizza/m/d78wyEWCmTC), CC-BY 3.0 (Scrapper)
+- "Robot Enemy Flying" and Ultimate Monsters pack by [Quaternius](https://quaternius.com) — CC0
+  (Glinthawk, Longleg)
+- Fox rig reference — Khronos glTF-Sample-Assets, CC0/CC-BY 4.0
+- Julius Sans One typeface — LatinoType, SIL Open Font License (wordmark/display)
+
 🤖 Built with [Claude Code](https://claude.com/claude-code)

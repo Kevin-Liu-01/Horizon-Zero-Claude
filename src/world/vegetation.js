@@ -1,6 +1,10 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
-import { SimplexNoise, pathFactor, riverFactor, shelfFactor } from './terrain.js';
+import {
+  SimplexNoise, pathFactor, riverFactor, shelfFactor,
+  riverCenterX, riverHalfWidth,
+} from './terrain.js';
+import { Props } from './props.js';
 
 /**
  * Vegetation: chunked GPU-instanced wind-swaying grass (red-gold stealth
@@ -32,6 +36,17 @@ const FAR_CANDIDATES = 7800;      // ~15% of near density, tufts ~2x bigger
 const NEAR_FADE = [-2, -1, 108, 140];   // vec4: fade-in lo/hi, fade-out lo/hi
 const FAR_FADE = [96, 136, 258, 306];
 const CAMP = { x: 22, z: 30 };
+// ruin clusters + watchtower (see props.js) — keep trees/bushes from
+// spawning through the structures
+const KEEPOUT = [[-150, -55, 14], [135, -35, 14], [-45, 185, 14], [33, -14, 9]];
+function inKeepout(x, z) {
+  for (let i = 0; i < KEEPOUT.length; i++) {
+    const k = KEEPOUT[i];
+    const dx = x - k[0], dz = z - k[1];
+    if (dx * dx + dz * dz < k[2] * k[2]) return true;
+  }
+  return false;
+}
 
 /* ----------------------------- deterministic RNG --------------------------- */
 function mulberry32(seed) {
@@ -156,7 +171,22 @@ export class Vegetation {
     this._buildFarGrass();
     this._buildTrees();
     this._buildRocks();
+    this._buildBushes();
+    this._buildFlowers();
+    // static world props (riverbed litter, deadfall, ruins, watchtower)
+    this.props = new Props(ctx);
     this.buildMs = performance.now() - t0;
+  }
+
+  /** Riparian moisture 0..1 — greener, damper ground flanking the dried river. */
+  _moisture(x, z) {
+    const r2 = x * x + z * z;
+    if (x < -215 || x > -38 || r2 > 302 * 302) return 0;
+    const hw = riverHalfWidth(z);
+    const rd = Math.abs(x - riverCenterX(z));
+    if (rd > hw * 2.05) return 0;
+    const SS = THREE.MathUtils.smoothstep;
+    return (1 - SS(rd, hw * 0.5, hw * 2.0)) * (1 - SS(Math.sqrt(r2), 250, 302));
   }
 
   /* -------------------------------- grass -------------------------------- */
@@ -436,7 +466,11 @@ export class Vegetation {
 
   /* -------------------------------- trees -------------------------------- */
 
-  _pineGeometry(seed, height, layers) {
+  _pineGeometry(seed, height, layers, opts = {}) {
+    const radiusK = opts.radiusK ?? 0.23;
+    const droop = opts.droop ?? 0.06;
+    const colBase = opts.cBase ?? '#465c2b';
+    const colTop = opts.cTop ?? '#6d7631';
     const rng = mulberry32(seed);
     const noise = new SimplexNoise(seed * 17 + 3);
     const parts = [];
@@ -461,14 +495,14 @@ export class Vegetation {
     trunk.translate(0, trunkH * 0.75, 0);
     parts.push(paint(trunk, new THREE.Color('#5c4531'), 0.06));
 
-    const cBase = new THREE.Color('#465c2b');
-    const cTop = new THREE.Color('#6d7631'); // sunburnt warmer top
+    const cBase = new THREE.Color(colBase);
+    const cTop = new THREE.Color(colTop); // sunburnt warmer top
     const tmp = new THREE.Color();
     const canopyStart = trunkH * 1.0;
     const canopySpan = height - canopyStart;
     for (let i = 0; i < layers; i++) {
       const f = i / (layers - 1);
-      const r = (height * 0.23) * (1.0 - f * 0.8) * (0.8 + rng() * 0.5) + 0.2;
+      const r = (height * radiusK) * (1.0 - f * 0.8) * (0.8 + rng() * 0.5) + 0.2;
       const lh = (canopySpan / layers) * 2.7;
       const cone = new THREE.ConeGeometry(r, lh, 12, 2);
 
@@ -492,7 +526,7 @@ export class Vegetation {
 
       cone.rotateY(rng() * Math.PI);
       // slight droop tilt per layer
-      cone.rotateZ((rng() - 0.5) * 0.06);
+      cone.rotateZ((rng() - 0.5) * droop);
       cone.translate(
         (rng() - 0.5) * 0.3,
         canopyStart + canopySpan * f * 0.78 + lh * 0.33,
@@ -519,6 +553,150 @@ export class Vegetation {
     return mergeGeometries(parts);
   }
 
+  /** Weathered bare snag: leaning trunk + gnarled tapering branches. */
+  _deadTreeGeometry(seed, height = 8) {
+    const rng = mulberry32(seed);
+    const parts = [];
+    const up = new THREE.Vector3(0, 1, 0);
+    const dir = new THREE.Vector3();
+    const mid = new THREE.Vector3();
+    const q = new THREE.Quaternion();
+    const cWood = new THREE.Color('#7c7060');
+    const cDark = new THREE.Color('#4e453a');
+    const tmp = new THREE.Color();
+    const tube = (a, b, r0, r1, shade) => {
+      dir.set(b[0] - a[0], b[1] - a[1], b[2] - a[2]);
+      const len = dir.length();
+      const g = new THREE.CylinderGeometry(r1, r0, len, 6);
+      q.setFromUnitVectors(up, dir.normalize());
+      g.applyQuaternion(q);
+      g.translate((a[0] + b[0]) / 2, (a[1] + b[1]) / 2, (a[2] + b[2]) / 2);
+      const n = g.attributes.position.count;
+      const arr = new Float32Array(n * 3);
+      for (let i = 0; i < n; i++) {
+        tmp.copy(cWood).lerp(cDark, shade + (rng() - 0.5) * 0.25);
+        arr[i * 3] = tmp.r; arr[i * 3 + 1] = tmp.g; arr[i * 3 + 2] = tmp.b;
+      }
+      g.setAttribute('color', new THREE.BufferAttribute(arr, 3));
+      parts.push(g);
+    };
+
+    // trunk in two lean segments, snapped tip
+    const lean = (rng() - 0.5) * 0.5;
+    const lz = (rng() - 0.5) * 0.5;
+    const midH = height * (0.5 + rng() * 0.12);
+    const topH = height * (0.86 + rng() * 0.2);
+    tube([0, -0.3, 0], [lean * 0.5, midH, lz * 0.5], 0.30, 0.185, 0.28);
+    tube([lean * 0.5, midH - 0.05, lz * 0.5], [lean, topH, lz], 0.185, 0.05, 0.34);
+    // root flares
+    for (let i = 0; i < 3; i++) {
+      const a = rng() * Math.PI * 2;
+      tube([Math.cos(a) * 0.42, -0.25, Math.sin(a) * 0.42], [0, 0.6, 0], 0.1, 0.16, 0.42);
+    }
+    // gnarled branches, a few snapped short
+    const nBr = 5 + (rng() * 3 | 0);
+    for (let i = 0; i < nBr; i++) {
+      const f = 0.35 + (i / nBr) * 0.55 + rng() * 0.06;
+      const by = height * f;
+      const bx = lean * f, bz = lz * f;
+      const a = rng() * Math.PI * 2;
+      const broken = rng() < 0.35;
+      const L = (broken ? 0.5 + rng() * 0.6 : 1.3 + rng() * 1.6) * (1.2 - f * 0.55);
+      const rise = 0.25 + rng() * 0.5;
+      const ex = bx + Math.cos(a) * L, ez = bz + Math.sin(a) * L;
+      const ey = by + L * rise;
+      tube([bx, by, bz], [ex, ey, ez], 0.085 * (1.15 - f * 0.5), broken ? 0.05 : 0.016, 0.3 + rng() * 0.2);
+      if (!broken && rng() < 0.6) {
+        const a2 = a + (rng() - 0.5) * 1.4;
+        const L2 = L * (0.35 + rng() * 0.3);
+        tube([ex, ey, ez], [ex + Math.cos(a2) * L2, ey + L2 * (0.3 + rng() * 0.4), ez + Math.sin(a2) * L2],
+          0.03, 0.012, 0.4);
+      }
+    }
+    return mergeGeometries(parts);
+  }
+
+  /** Slim pale-barked birch with small airy light-green canopy blobs. */
+  _birchGeometry(seed, height = 7.5) {
+    const rng = mulberry32(seed);
+    const noise = new SimplexNoise(seed * 13 + 1);
+    const parts = [];
+    const tmp = new THREE.Color();
+
+    // trunk: pale chalky bark with dark horizontal flecks
+    const trunkH = height * 0.62;
+    const trunk = new THREE.CylinderGeometry(0.085, 0.17, trunkH, 8, 6);
+    trunk.translate(0, trunkH / 2, 0);
+    {
+      const p = trunk.attributes.position;
+      const arr = new Float32Array(p.count * 3);
+      const cBark = new THREE.Color('#d3cbb8');
+      const cFleck = new THREE.Color('#3b3a33');
+      for (let i = 0; i < p.count; i++) {
+        const y = p.getY(i);
+        const band = Math.abs(noise.noise2D(Math.atan2(p.getZ(i), p.getX(i)) * 1.2 + seed, y * 3.1));
+        tmp.copy(cBark).lerp(cFleck, band > 0.72 ? 0.85 : band * 0.12);
+        tmp.multiplyScalar(0.94 + rng() * 0.12);
+        arr[i * 3] = tmp.r; arr[i * 3 + 1] = tmp.g; arr[i * 3 + 2] = tmp.b;
+      }
+      trunk.setAttribute('color', new THREE.BufferAttribute(arr, 3));
+    }
+    parts.push(trunk);
+
+    // 2 thin limbs reaching into the canopy
+    for (let i = 0; i < 2; i++) {
+      const a = rng() * Math.PI * 2;
+      const limb = new THREE.CylinderGeometry(0.028, 0.06, height * 0.36, 5);
+      limb.translate(0, height * 0.18, 0);
+      limb.rotateZ(0.5 + rng() * 0.3);
+      limb.rotateY(a);
+      limb.translate(0, trunkH * 0.92, 0);
+      const p = limb.attributes.position;
+      const arr = new Float32Array(p.count * 3);
+      for (let k = 0; k < p.count; k++) {
+        tmp.set('#c9c1ae').multiplyScalar(0.85 + rng() * 0.2);
+        arr[k * 3] = tmp.r; arr[k * 3 + 1] = tmp.g; arr[k * 3 + 2] = tmp.b;
+      }
+      limb.setAttribute('color', new THREE.BufferAttribute(arr, 3));
+      parts.push(limb);
+    }
+
+    // airy canopy: noise-displaced squashed blobs, luminous yellow-green
+    const cLo = new THREE.Color('#7c8b3a');
+    const cHi = new THREE.Color('#b6b661');
+    const blobs = 3;
+    for (let b = 0; b < blobs; b++) {
+      const r = height * (0.16 + rng() * 0.07);
+      const blob = new THREE.IcosahedronGeometry(r, 1);
+      const p = blob.attributes.position;
+      const v = new THREE.Vector3();
+      for (let i = 0; i < p.count; i++) {
+        v.fromBufferAttribute(p, i);
+        const d = 1 + 0.38 * noise.fbm(v.x * 1.6 + b * 9, v.y * 1.4 - v.z * 1.2, 2);
+        v.multiplyScalar(d);
+        v.y *= 0.78;
+        p.setXYZ(i, v.x, v.y, v.z);
+      }
+      blob.computeVertexNormals();
+      const arr = new Float32Array(p.count * 3);
+      for (let i = 0; i < p.count; i++) {
+        const rim = THREE.MathUtils.clamp((p.getY(i) / r) * 0.5 + 0.55, 0, 1.15);
+        tmp.copy(cLo).lerp(cHi, rim * (0.5 + rng() * 0.35));
+        arr[i * 3] = tmp.r; arr[i * 3 + 1] = tmp.g; arr[i * 3 + 2] = tmp.b;
+      }
+      blob.setAttribute('color', new THREE.BufferAttribute(arr, 3));
+      const a = (b / blobs) * Math.PI * 2 + rng();
+      blob.translate(
+        Math.cos(a) * r * 0.75,
+        trunkH + height * 0.14 + b * height * 0.085 + (rng() - 0.5) * 0.3,
+        Math.sin(a) * r * 0.75,
+      );
+      parts.push(blob);
+    }
+    // icosahedron blobs are non-indexed, cylinders indexed — unify first
+    return mergeGeometries(parts.map((g) => (g.index ? g.toNonIndexed() : g)));
+  }
+
   _buildTrees() {
     const terrain = this.ctx.terrain;
     const forest = new SimplexNoise(777);
@@ -528,7 +706,16 @@ export class Vegetation {
       this._pineGeometry(37, 13.5, 8),
       this._pineGeometry(53, 7.2, 5),
       this._pineGeometry(71, 12.2, 7),
+      // broader, darker storm-shaped fir
+      this._pineGeometry(97, 9.6, 5, { radiusK: 0.34, droop: 0.16, cBase: '#3d5226', cTop: '#5f6c2e' }),
+      // pale-barked birches
+      this._birchGeometry(131, 7.6),
+      this._birchGeometry(151, 8.8),
+      // weathered bare snags
+      this._deadTreeGeometry(61, 8),
+      this._deadTreeGeometry(83, 10),
     ];
+    const PINES = [0, 1, 2, 3, 4], FIR = 5, BIRCH = [6, 7], DEAD = [8, 9];
     const mat = new THREE.MeshStandardMaterial({
       vertexColors: true,
       roughness: 0.95,
@@ -555,33 +742,62 @@ export class Vegetation {
     const rng = mulberry32(50421);
     const placed = variants.map(() => []);
     const all = [];
-    const TARGET = 500;
+    const TARGET = 560;
     let count = 0;
-    for (let a = 0; a < 20000 && count < TARGET; a++) {
-      const r = Math.sqrt(THREE.MathUtils.lerp(60 * 60, 330 * 330, rng()));
+    for (let a = 0; a < 26000 && count < TARGET; a++) {
+      const r = Math.sqrt(THREE.MathUtils.lerp(55 * 55, 330 * 330, rng()));
       const ang = rng() * Math.PI * 2;
       const x = Math.cos(ang) * r, z = Math.sin(ang) * r;
 
-      if (forest.fbm(x * 0.006, z * 0.006, 3) < 0.06) continue; // clusters only
+      const grove = forest.fbm(x * 0.006, z * 0.006, 3);
+      const moist = this._moisture(x, z);
       if (riverFactor(x, z) > 0.08) continue; // none in the dried channel/ford
+      if (pathFactor(x, z) > 0.3) continue;   // keep the trails open
       const h = terrain.getHeight(x, z);
-      if (h > 34) continue; // no pines on high rock
+      if (h > 34) continue; // no trees on high rock
       const gx = (terrain.getHeight(x + 0.9, z) - h) / 0.9;
       const gz = (terrain.getHeight(x, z + 0.9) - h) / 0.9;
       const slope = Math.hypot(gx, gz);
-      if (slope > 0.62) continue; // no pines on cliffs
-      // prefer hillsides: thin out the flat meadow floor
-      if (slope < 0.07 && h < 5 && rng() < 0.75) continue;
+      if (slope > 0.62) continue; // none on cliffs
       if (Math.hypot(x - CAMP.x, z - CAMP.z) < 16) continue;
-      // min spacing so trunks don't intersect
+      if (inKeepout(x, z)) continue;
+
+      // grove-and-clearing structure: dense mixed stands inside the forest
+      // noise, sparse fringes, and rare lone silhouettes in the open
+      let v, spacing2;
+      if (grove > 0.10) {
+        const w = rng();
+        v = w < 0.60 ? PINES[(rng() * 5) | 0]
+          : w < 0.78 ? FIR
+          : w < (moist > 0.25 ? 0.95 : 0.90) ? BIRCH[(rng() * 2) | 0]
+          : DEAD[(rng() * 2) | 0];
+        spacing2 = 12;
+      } else if (grove > 0.015) {
+        if (rng() > 0.30) continue;
+        const w = rng();
+        v = w < 0.42 ? PINES[(rng() * 5) | 0]
+          : w < 0.58 ? FIR
+          : w < 0.82 ? BIRCH[(rng() * 2) | 0]
+          : DEAD[(rng() * 2) | 0];
+        spacing2 = 22;
+      } else {
+        if (rng() > 0.10) continue;
+        const w = rng();
+        v = w < 0.42 ? DEAD[(rng() * 2) | 0]
+          : w < 0.72 ? BIRCH[(rng() * 2) | 0]
+          : PINES[(rng() * 5) | 0];
+        spacing2 = 110;
+      }
+      // birches crowd the moist riverbanks
+      if (moist > 0.4 && rng() < 0.5) v = BIRCH[(rng() * 2) | 0];
+
       let crowded = false;
       for (let i = 0; i < all.length; i++) {
         const dx = all[i].x - x, dz = all[i].z - z;
-        if (dx * dx + dz * dz < 16) { crowded = true; break; }
+        if (dx * dx + dz * dz < spacing2) { crowded = true; break; }
       }
       if (crowded) continue;
 
-      const v = Math.min(variants.length - 1, (rng() * variants.length) | 0);
       all.push({ x, z });
       placed[v].push({
         x, z, y: h - 0.18,
@@ -618,11 +834,214 @@ export class Vegetation {
         mesh.setColorAt(i, col);
       }
       mesh.name = `pines-${v}`;
-      mesh.castShadow = true;
+      // birches skip the shadow pass: thin trunks + airy canopy read fine
+      // without, and it saves two shadow draws
+      mesh.castShadow = !BIRCH.includes(v);
       mesh.receiveShadow = true;
       mesh.frustumCulled = false; // instances span the world
       this.group.add(mesh);
     }
+  }
+
+  /* -------------------------------- bushes -------------------------------- */
+
+  _bushGeometry(seed) {
+    const rng = mulberry32(seed);
+    const noise = new SimplexNoise(seed * 7 + 11);
+    const parts = [];
+    const cLo = new THREE.Color('#33421d');
+    const cHi = new THREE.Color('#7a8038');
+    const tmp = new THREE.Color();
+    const blobs = 2 + (rng() * 2 | 0);
+    for (let b = 0; b < blobs; b++) {
+      const r = 0.42 + rng() * 0.3;
+      const g = new THREE.IcosahedronGeometry(r, 1);
+      const p = g.attributes.position;
+      const v = new THREE.Vector3();
+      for (let i = 0; i < p.count; i++) {
+        v.fromBufferAttribute(p, i);
+        const d = 1 + 0.42 * noise.fbm(v.x * 2.1 + b * 7, v.y * 1.9 - v.z * 1.6, 2);
+        v.multiplyScalar(d);
+        v.y *= 0.62;
+        p.setXYZ(i, v.x, v.y, v.z);
+      }
+      g.computeVertexNormals();
+      const arr = new Float32Array(p.count * 3);
+      for (let i = 0; i < p.count; i++) {
+        const f = THREE.MathUtils.clamp(p.getY(i) / (r * 0.62) * 0.5 + 0.6, 0.05, 1.1);
+        tmp.copy(cLo).lerp(cHi, f * (0.55 + rng() * 0.3));
+        arr[i * 3] = tmp.r; arr[i * 3 + 1] = tmp.g; arr[i * 3 + 2] = tmp.b;
+      }
+      g.setAttribute('color', new THREE.BufferAttribute(arr, 3));
+      g.translate((rng() - 0.5) * r * 1.5, r * 0.42 + (rng() - 0.4) * 0.1, (rng() - 0.5) * r * 1.5);
+      parts.push(g);
+    }
+    return mergeGeometries(parts);
+  }
+
+  _buildBushes() {
+    const terrain = this.ctx.terrain;
+    const forest = new SimplexNoise(777); // same field as the groves
+    const variants = [this._bushGeometry(301), this._bushGeometry(407)];
+    const mat = new THREE.MeshStandardMaterial({
+      vertexColors: true,
+      roughness: 0.95,
+      metalness: 0,
+      flatShading: true,
+      emissive: '#161d0c',
+      emissiveIntensity: 0.7,
+    });
+
+    const rng = mulberry32(66103);
+    const placed = [[], []];
+    const TARGET = 380;
+    let count = 0;
+    for (let a = 0; a < 24000 && count < TARGET; a++) {
+      const r = Math.sqrt(rng()) * 330;
+      const ang = rng() * Math.PI * 2;
+      const x = Math.cos(ang) * r, z = Math.sin(ang) * r;
+
+      const grove = forest.fbm(x * 0.006, z * 0.006, 3);
+      const moist = this._moisture(x, z);
+      // shrubs skirt the grove edges + riverbanks; only a few stray into the open
+      const edge = grove > 0.0 && grove < 0.14;
+      if (!edge && moist < 0.3 && rng() < 0.8) continue;
+      if (riverFactor(x, z) > 0.12) continue;
+      if (pathFactor(x, z) > 0.3) continue;
+      if (shelfFactor(x, z) > 0.6 && rng() < 0.7) continue;
+      const h = terrain.getHeight(x, z);
+      if (h > 30) continue;
+      const gx = (terrain.getHeight(x + 0.8, z) - h) / 0.8;
+      const gz = (terrain.getHeight(x, z + 0.8) - h) / 0.8;
+      if (gx * gx + gz * gz > 0.32) continue;
+      if (Math.hypot(x - CAMP.x, z - CAMP.z) < 13) continue;
+      if (inKeepout(x, z)) continue;
+
+      placed[(rng() * 2) | 0].push({
+        x, z, y: h - 0.06,
+        yaw: rng() * Math.PI * 2,
+        s: (0.6 + rng() * 0.85) * (moist > 0.3 ? 1.25 : 1),
+        tint: 0.8 + rng() * 0.34,
+        green: moist > 0.3 ? 0.12 : 0,
+      });
+      count++;
+    }
+    this.bushCount = count;
+
+    const m = new THREE.Matrix4();
+    const q = new THREE.Quaternion();
+    const eul = new THREE.Euler();
+    const pos = new THREE.Vector3();
+    const scl = new THREE.Vector3();
+    const col = new THREE.Color();
+    for (let v = 0; v < 2; v++) {
+      const list = placed[v];
+      if (!list.length) continue;
+      const mesh = new THREE.InstancedMesh(variants[v], mat, list.length);
+      for (let i = 0; i < list.length; i++) {
+        const it = list[i];
+        pos.set(it.x, it.y, it.z);
+        eul.set(0, it.yaw, 0);
+        q.setFromEuler(eul);
+        scl.set(it.s, it.s * (0.8 + (i % 5) * 0.08), it.s);
+        m.compose(pos, q, scl);
+        mesh.setMatrixAt(i, m);
+        col.setRGB(it.tint * (1 - it.green), it.tint, it.tint * (1 - it.green * 0.5));
+        mesh.setColorAt(i, col);
+      }
+      mesh.name = `bushes-${v}`;
+      mesh.castShadow = false; // low shrubs: shadow cost not worth it
+      mesh.receiveShadow = true;
+      mesh.frustumCulled = false;
+      this.group.add(mesh);
+    }
+  }
+
+  /* ------------------------------- flowers -------------------------------- */
+
+  _buildFlowers() {
+    const terrain = this.ctx.terrain;
+    // tiny crossed-quad petals that ride the grass wind shader
+    const petals = [];
+    for (const rot of [0, Math.PI / 2]) {
+      const p = new THREE.PlaneGeometry(0.11, 0.085);
+      p.translate(0, 0.16, 0);
+      p.rotateY(rot);
+      const uv = p.attributes.uv;
+      for (let i = 0; i < uv.count; i++) uv.setY(i, 0.9); // bright gradient tip
+      petals.push(p);
+    }
+    const geo = mergeGeometries(petals, false);
+
+    const bloom = new SimplexNoise(6021);
+    const rng = mulberry32(140590);
+    const palette = ['#f2ead2', '#e8b84b', '#8a6fd0', '#d4593a', '#d9a8b8', '#e6dc7a']
+      .map((c) => new THREE.Color(c));
+    const items = [];
+    const TARGET = 2400;
+    for (let a = 0; a < 60000 && items.length < TARGET; a++) {
+      const r = Math.sqrt(rng()) * 315;
+      const ang = rng() * Math.PI * 2;
+      const x = Math.cos(ang) * r, z = Math.sin(ang) * r;
+
+      // meadow patches: bloom noise gates whole drifts of color
+      const patch = bloom.fbm(x * 0.03, z * 0.03, 2);
+      if (patch < 0.30) continue;
+      if (rng() > 0.7) continue;
+      if (terrain.tallGrassDensity(x, z) > 0.5) continue; // open filler grass only
+      if (riverFactor(x, z) > 0.1 || pathFactor(x, z) > 0.28) continue;
+      if (shelfFactor(x, z) > 0.45) continue;
+      const h = terrain.getHeight(x, z);
+      if (h > 26) continue;
+      const gx = (terrain.getHeight(x + 0.7, z) - h) / 0.7;
+      const gz = (terrain.getHeight(x, z + 0.7) - h) / 0.7;
+      if (gx * gx + gz * gz > 0.14) continue;
+      const cdx = x - CAMP.x, cdz = z - CAMP.z;
+      if (cdx * cdx + cdz * cdz < 110) continue;
+
+      // patch-coherent color with occasional strays
+      const pi = (patch * 31 + (rng() < 0.12 ? rng() * 6 : 0)) | 0;
+      items.push({
+        x, z, y: h - 0.02,
+        yaw: rng() * Math.PI * 2,
+        s: 0.75 + rng() * 0.65,
+        c: palette[pi % palette.length],
+        phase: rng() * 6.283,
+      });
+    }
+    this.flowerCount = items.length;
+    if (!items.length) return;
+
+    const info = new Float32Array(items.length * 2);
+    for (let i = 0; i < items.length; i++) {
+      info[i * 2] = items[i].phase;
+      info[i * 2 + 1] = 0.5; // gentle flex
+    }
+    geo.setAttribute('aInfo', new THREE.InstancedBufferAttribute(info, 2));
+
+    this._flowerMat = this._grassMaterial([-2, -1, 88, 118]);
+    this._flowerMat.side = THREE.DoubleSide;
+    const mesh = new THREE.InstancedMesh(geo, this._flowerMat, items.length);
+    const m = new THREE.Matrix4();
+    const q = new THREE.Quaternion();
+    const eul = new THREE.Euler();
+    const pos = new THREE.Vector3();
+    const scl = new THREE.Vector3();
+    for (let i = 0; i < items.length; i++) {
+      const it = items[i];
+      pos.set(it.x, it.y, it.z);
+      eul.set(0, it.yaw, 0);
+      q.setFromEuler(eul);
+      scl.setScalar(it.s);
+      m.compose(pos, q, scl);
+      mesh.setMatrixAt(i, m);
+      mesh.setColorAt(i, it.c);
+    }
+    mesh.name = 'meadow-flowers';
+    mesh.castShadow = false;
+    mesh.receiveShadow = false;
+    mesh.frustumCulled = false;
+    this.group.add(mesh);
   }
 
   /* -------------------------------- rocks -------------------------------- */

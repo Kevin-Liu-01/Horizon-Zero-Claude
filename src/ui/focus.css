@@ -108,8 +108,8 @@
 .hzcf-lv {
   font-size: 12px; font-weight: 600;
   letter-spacing: 0.1em;
-  color: var(--hzc-warn, #f2c230);
-  text-shadow: 0 0 6px rgba(242, 194, 48, 0.55);
+  color: #ffd34d; /* reference component-yellow, replaces mustard */
+  text-shadow: 0 0 6px rgba(255, 211, 77, 0.5);
   flex: none;
 }
 .hzcf-class {
@@ -144,8 +144,8 @@
 .hzcf-g-none   { color: rgba(239, 230, 213, 0.5); font-size: 11px; width: auto; }
 .hzcf-comp {
   margin-top: 5px;
-  color: var(--hzc-warn, #f2c230);
-  text-shadow: 0 0 6px rgba(242, 194, 48, 0.4);
+  color: #ffd34d;
+  text-shadow: 0 0 6px rgba(255, 211, 77, 0.4);
   font-weight: 600;
 }
 .hzcf-comp .hzcf-comp-n { font-size: 13px; margin-right: 5px; }
@@ -160,10 +160,10 @@
 .hzcf-diamond {
   width: 13px; height: 13px;
   margin: 0 auto;
-  border: 2px solid #ffdf6b;
-  background: rgba(242, 194, 48, 0.22);
+  border: 2px solid #ffd34d;
+  background: rgba(255, 211, 77, 0.2);
   transform: rotate(45deg);
-  box-shadow: 0 0 9px rgba(242, 194, 48, 0.85), inset 0 0 4px rgba(255, 223, 107, 0.6);
+  box-shadow: 0 0 9px rgba(255, 211, 77, 0.8), inset 0 0 4px rgba(255, 223, 107, 0.55);
   animation: hzcf-diamond-pulse 1.6s ease-in-out infinite;
 }
 @keyframes hzcf-diamond-pulse {
@@ -174,8 +174,8 @@
   margin-top: 7px;
   font-size: 11px; font-weight: 600;
   letter-spacing: 0.1em;
-  color: #ffdf6b;
-  text-shadow: 0 0 6px rgba(0, 0, 0, 0.9), 0 0 10px rgba(242, 194, 48, 0.45);
+  color: #ffd34d;
+  text-shadow: 0 0 6px rgba(0, 0, 0, 0.9), 0 0 10px rgba(255, 211, 77, 0.4);
 }
 .hzcf-tag.clamped .hzcf-diamond {
   border-style: dashed;

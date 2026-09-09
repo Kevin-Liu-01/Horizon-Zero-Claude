@@ -300,6 +300,15 @@ export class Machine {
     return rec;
   }
 
+  /**
+   * Round-3 contract (gate A6): [{ name, world: Vector3, planted: bool }] for
+   * every walking machine. Gait-controlled species report their IK feet;
+   * native-boned subclasses (watcher) and non-walkers override.
+   */
+  debugFeet() {
+    return this.gait ? this.gait.debugFeet() : [];
+  }
+
   /** Testability: spawn wireframe markers at weak points for screenshots. */
   debugWeakPoints() {
     for (const wp of this.weakPoints) {
@@ -435,6 +444,18 @@ export class Machine {
    */
   _snapToHull(pos, target) {
     this.root.updateWorldMatrix(true, true);
+    // NEVER raycast SkinnedMeshes here: at construction time the skeleton's
+    // boneMatrices are still zeroed, so a skinned raycast computes (and
+    // permanently caches) a degenerate mesh boundingSphere and returns
+    // garbage hit points — this is what made the mixer species' bodies
+    // vanish while their parts floated. Skinned models author part
+    // positions directly (static sculpts are converted AFTER parts are
+    // placed, so the autorig species still snap normally).
+    const targets = [];
+    this.model.traverse((o) => {
+      if (o.isMesh && !o.isSkinnedMesh) targets.push(o);
+    });
+    if (!targets.length) return null;
     _v1.copy(pos);
     this.body.localToWorld(_v1);
     _v2.set(
@@ -451,7 +472,7 @@ export class Machine {
     _snapRay.near = 0;
     _snapRay.far = this.height * 2 + len;
     _snapRay.camera = this.ctx.camera;
-    const hits = _snapRay.intersectObject(this.model, true);
+    const hits = _snapRay.intersectObjects(targets, false);
     if (!hits.length) return null;
     const h = hits[0];
     const n = h.face
@@ -1274,12 +1295,14 @@ export class Machine {
   _updateDeath(dt) {
     this._deathT += dt;
     const k = THREE.MathUtils.smoothstep(Math.min(this._deathT / 1.15, 1), 0, 1);
-    // crash onto the side with a yaw twist — a wreck, not a parked machine
+    // crash onto the side with a yaw twist — a wreck, not a parked machine.
+    // Rigged subclasses shrink _deathRoll/_deathSink: their skeletons buckle
+    // instead of the whole body sinking into the terrain as a blob.
     this.body.rotation.z = this._deathSide * this._deathRoll * k;
     this.body.rotation.x = 0.15 * k;
     this.body.rotation.y = this._deathTwist * k;
-    this.body.position.y = -this.height * 0.1 * k;
-    this.onDeathPose?.(k); // subclass crumple (bones etc.)
+    this.body.position.y = -this.height * (this._deathSink ?? 0.1) * k;
+    this.onDeathPose?.(k, this._deathT); // subclass crumple (bones etc.)
     if (!this._beaconSpawned && this._deathT > 1.4) {
       this._beaconSpawned = true;
       this._spawnBeacon();

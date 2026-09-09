@@ -147,6 +147,10 @@ export class FocusSystem {
 
   /* ------------------------------- public API ------------------------------ */
 
+  /** Tagged machines (Map machine -> marker el). HUD reads this to hang
+   *  distance labels on tagged-machine compass pips. Read-only. */
+  get tags() { return this._tags; }
+
   /** Toggle Focus mode. Pass true/false to force a state. */
   toggle(force) {
     const want = force === undefined ? !this.on : !!force;
@@ -270,7 +274,7 @@ export class FocusSystem {
       blending: THREE.AdditiveBlending, side: THREE.DoubleSide, fog: false,
       uniforms: {
         uFade: { value: 0 },
-        uColor: { value: new THREE.Color('#8f7be8') },
+        uColor: { value: new THREE.Color('#7b5cff') }, // reference pulse hex
       },
       vertexShader: /* glsl */ `
         varying vec2 vUv;
@@ -317,7 +321,7 @@ export class FocusSystem {
       blending: THREE.AdditiveBlending, side: THREE.DoubleSide, fog: false,
       uniforms: {
         uFade: { value: 0 },
-        uColor: { value: new THREE.Color('#7b5cd6') },
+        uColor: { value: new THREE.Color('#7b5cff') },
       },
       vertexShader: /* glsl */ `
         varying vec2 vUv;
@@ -330,8 +334,9 @@ export class FocusSystem {
         uniform float uFade;
         uniform vec3 uColor;
         void main() {
+          // reference pulse gradient: #7B5CFF base -> #4AC8FF at the crest
           float k = pow(vUv.y, 2.2);
-          vec3 col = mix(uColor, vec3(0.75, 0.65, 1.0), k * 0.45);
+          vec3 col = mix(uColor, vec3(0.29, 0.784, 1.0), k * 0.6);
           gl_FragColor = vec4(col * (0.3 + 1.1 * k), k * uFade);
         }`,
     });
@@ -447,7 +452,7 @@ export class FocusSystem {
     const p = this.ctx.player;
     if (p?.position && m.position
       && m.position.distanceToSquared(p.position) > VIOLET_RANGE * VIOLET_RANGE) return;
-    const mat = this._fresnelMat('#9d7bff');
+    const mat = this._fresnelMat('#5a7bff'); // reference machine-glow hex
     const meshes = [];
     let sources = [];
     m.root.traverse((o) => {
@@ -497,7 +502,7 @@ export class FocusSystem {
   /* ----------------------- yellow component highlights --------------------- */
 
   _yellowMat() {
-    const mat = this._fresnelMat('#ffcf3f');
+    const mat = this._fresnelMat('#ffd34d'); // reference component hex
     // NORMAL blending (not additive): components must read SOLID YELLOW even
     // over the violet hull shell / emissive canisters — additive washes white
     mat.blending = THREE.NormalBlending;
@@ -583,8 +588,8 @@ export class FocusSystem {
       uniforms: {
         uTime: { value: 0 },
         uFade: { value: 0 },
-        uColorA: { value: new THREE.Color('#6a5ae0') },
-        uColorB: { value: new THREE.Color('#9c8cff') },
+        uColorA: { value: new THREE.Color('#9b6bff') }, // reference path hex
+        uColorB: { value: new THREE.Color('#a980ff') },
       },
       vertexShader: /* glsl */ `
         varying vec2 vUv;
@@ -602,15 +607,18 @@ export class FocusSystem {
         uniform vec3 uColorA;
         uniform vec3 uColorB;
         void main() {
-          // flowing dashes: ~3.4m cycle marching along the route
-          float m = fract(vUv.x / 3.4 - uTime * 0.5);
-          float dash = smoothstep(0.52, 0.30, abs(m - 0.42));
-          float across = 1.0 - abs(vUv.y * 2.0 - 1.0);
+          // flowing ARROWED dashes: ~3.4m cycle marching along the route.
+          // The across-offset skews each dash into a chevron whose apex leads
+          // in the direction of travel (arrowheads, not plain ticks).
+          float edge = abs(vUv.y * 2.0 - 1.0);
+          float m = fract((vUv.x - edge * 0.85) / 3.4 - uTime * 0.5);
+          float dash = smoothstep(0.50, 0.32, abs(m - 0.42));
+          float across = 1.0 - edge;
           float soft = across * across;
           float dCam = distance(vWorld, cameraPosition);
           float dim = mix(1.0, 0.35, smoothstep(14.0, 90.0, dCam)); // legible near, quiet far
           float far = 1.0 - smoothstep(95.0, 125.0, dCam);          // gone past ~120m
-          vec3 col = mix(uColorA, uColorB, dash) * (0.9 + 2.1 * dash);
+          vec3 col = mix(uColorA, uColorB, dash) * (0.9 + 1.5 * dash);
           gl_FragColor = vec4(col, (0.22 + 0.78 * dash) * soft * uFade * dim * far);
         }`,
     });

@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>spike: reskin Aloy onto UAL skeleton</title>
+  <link rel="icon" href="data:," />
+  <style>
+    html, body { margin: 0; height: 100%; background: #2a3038; overflow: hidden; }
+    canvas { display: block; }
+    #hud {
+      position: fixed; left: 10px; top: 8px; z-index: 2;
+      font: 13px/1.4 ui-monospace, Menlo, monospace; color: #e8eef5;
+      background: rgba(0,0,0,.45); padding: 4px 8px; border-radius: 4px; pointer-events: none;
+      white-space: pre;
+    }
+    #labels { position: fixed; left: 0; bottom: 8px; width: 100%; display: flex; z-index: 2; pointer-events: none; }
+    #labels span { flex: 1; text-align: center; font: 12px ui-monospace, Menlo, monospace; color: #c9d3de; }
+  </style>
+</head>
+<body>
+  <div id="hud">booting…</div>
+  <div id="labels"><span>front 3/4</span><span>side (right)</span><span>back</span></div>
+  <script type="module" src="/src/spikes/reskin/main.js"></script>
+</body>
+</html>

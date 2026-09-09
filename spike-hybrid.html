@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Spike C — hybrid clip-derived keyposes (Aloy)</title>
+  <link rel="icon" href="/favicon.svg" />
+  <style>
+    html, body { margin: 0; height: 100%; background: #1b2027; overflow: hidden; }
+    #app canvas { display: block; }
+    #hud {
+      position: fixed; left: 12px; top: 10px; z-index: 2;
+      font: 13px/1.45 ui-monospace, SFMono-Regular, Menlo, monospace;
+      color: #e8eef6; text-shadow: 0 1px 2px #000; pointer-events: none; max-width: 92vw;
+    }
+    #hud .dim { color: #aab6c5; }
+    #tag {
+      position: fixed; right: 12px; bottom: 10px; z-index: 2;
+      font: 12px ui-monospace, SFMono-Regular, Menlo, monospace; color: #8a96a5;
+    }
+  </style>
+</head>
+<body>
+  <div id="app"></div>
+  <div id="hud">loading…</div>
+  <div id="tag">spike-hybrid · ?clip=idle|walk|jog|run|crouch|crouchwalk|roll|hit|death|jumpstart|jumpland|aimidle|blend&amp;t=s&amp;speed=&amp;crouch=&amp;view=34|front|side|back</div>
+  <script type="module" src="/src/spikes/hybrid/main.js"></script>
+</body>
+</html>

@@ -210,6 +210,41 @@ all meshes so combat raycasts can resolve the owning machine.
   foot_l_0189/r_0215, ball_l_0190/r_0216. (Names are exact.)
 - The model's bind pose is an A-pose facing +Z at wrapper level.
 
+### Round 4 addendum — clip base + procedural overlays (character lane)
+
+The animator is no longer fully procedural. The contract above is UNCHANGED
+(`bones`, `getBoneWorld`, `handAttach` return the same Bone objects; combat's
+bow parenting and stow calibration are untouched), but the pose is now built in
+two stages. Details: `docs/ROUND4-CHARACTER.md`.
+
+1. **Clip base.** `src/entities/anim/` bakes the CC0 Quaternius Universal
+   Animation Library (`public/anims/`) onto the Aloy rig ONCE at boot via a
+   char-space `Retargeter` (52 bone pairs, A→T rest correction, root motion
+   stripped) and plays the result through a plain `THREE.AnimationMixer` on the
+   player model. `LocomotionBlend` writes the action weights and scrubs their
+   `.time` from one shared, speed-driven phase — idle/walk/jog/sprint and the
+   crouch pair, plus roll and death one-shots.
+2. **Procedural overlays.** Everything the old animator did that still earns its
+   place now runs AFTER `mixer.update()` and MULTIPLIES onto the clip-posed
+   local quaternions instead of resetting bones to bind: aim/draw layer (arm IK,
+   cheek anchor, reach clamp, head-sphere guard), head look-at, ground conform +
+   foot lock, `dyn_` hair/cloth springs, hit/weary, and the plant/settle beats.
+
+New members on the contract (used by gates A12/A13 and by `player.js`):
+
+- `animator.mixer` — the `THREE.AnimationMixer`, null only in the procedural
+  fallback (clip pack failed to load).
+- `animator.dominantAction()` → `{ slot, clip, weight, time }` of the
+  highest-weight action, or null.
+- `animator.debugFeet()` → `[{ name, world:{x,y,z}, planted }]` per ball bone.
+- `animator.clipReport()` → per-clip bake + gait metrics (nominal speed, cycle
+  distance, phase offset, contact duty, ground shift).
+- `animator.rollProgress(k)` → 0..1 of `Roll_RM`'s root-motion travel at
+  normalized roll time k; `player.js` integrates it as the dodge velocity curve.
+
+`player.js` ground speeds are now chosen against the measured clip speeds:
+walk 1.5 (hold Alt) · crouch 1.5 · aim 1.8 · run 4.6 · sprint 8.2 m/s.
+
 ## Focus contract (hud builder)
 
 - Q key: 3s pulse. Machines get additive glow/outline visible through terrain

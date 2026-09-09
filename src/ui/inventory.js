@@ -217,6 +217,17 @@ export class InventoryScreen {
 /* ------------------------------------------------------------------------ */
 
 /**
+ * Loot-surface registry (round 3 loot contract). interactables.js (read-only)
+ * fires BOTH `inventory.add` (-> 'item-gained' toasts) and `popup.show` for
+ * one loot event; the HUD suppresses its toasts for ids the popup just showed
+ * by reading this registry on a microtask (`show` runs later in the same
+ * synchronous stack as the emits, so a deferred check always sees it).
+ * Popup = the single surface for list-loot (corpses / crates / weapon
+ * pickups); toasts serve auto-pickups and gathers only.
+ */
+export const LOOT_POPUP = { instance: null };
+
+/**
  * Small take-all loot popup (docs/research/mechanics.md §5: compact list of
  * icon + name + count; HFW-style auto take-all streamline). Shown by
  * interactables whenever an entry with a loot table is opened.
@@ -228,6 +239,18 @@ export class LootPopup {
     this._rows = el('div', 'hzc-loot-rows', this.root);
     this._foot = el('div', 'hzc-loot-foot', this.root, 'TAKE ALL — AUTO');
     this._timer = 0;
+    this.shownIds = new Set();   // ids of the loot event currently displayed
+    this.shownAt = -Infinity;    // performance.now() of the last show()
+    LOOT_POPUP.instance = this;
+  }
+
+  /** True while the popup is on screen (drives __HUD_DEBUG__.lootSurfaces). */
+  get visible() { return this._timer > 0; }
+
+  _record(ids) {
+    this.shownIds.clear();
+    for (const id of ids) this.shownIds.add(String(id));
+    this.shownAt = performance.now();
   }
 
   show(rows, label = 'LOOT') {
@@ -242,6 +265,7 @@ export class LootPopup {
       el('span', 'hzc-loot-n', row, `×${r.n ?? 1}`);
     }
     this._foot.textContent = 'TAKE ALL — AUTO';
+    this._record(rows.map((r) => r.id));
     this._pop();
   }
 
@@ -255,6 +279,7 @@ export class LootPopup {
     g.style.color = def.color;
     el('span', 'hzc-loot-name', row, def.name.toUpperCase());
     this._foot.textContent = text;
+    this._record([id]);
     this._pop();
   }
 

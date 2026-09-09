@@ -4,6 +4,8 @@ import {
   radarMesh, discLauncherMesh, tailTipMesh, plateMesh, cannonMesh,
   canisterMesh, coreMesh, pulseGlow,
 } from './parts.js';
+import { buildRig, RIGS } from './autorig.js';
+import { GaitController } from './gait.js';
 
 /**
  * Thunderjaw: apex boss (HZD level 27). Stomp shockwave, tail sweep,
@@ -58,11 +60,11 @@ export class Thunderjaw extends Machine {
     const len = this.size.z;     // ~12.9 along asset z -> body Z after yawFix
     const w = this.size.x;       // ~6.3 across the leg stance
     // head sensor eyes (head rides LOW on this sculpt; tail is the h peak)
-    this.addEye(this.body, 0.45, h * 0.38, len * 0.44, 0.6, 0.11);
-    this.addEye(this.body, -0.45, h * 0.38, len * 0.44, 0.6, 0.11);
+    this.addEye(this.body, 0.45, h * 0.3, len * 0.35, 0.6, 0.11);
+    this.addEye(this.body, -0.45, h * 0.3, len * 0.35, 0.6, 0.11);
     // anchors
     this._mouth = new THREE.Object3D();
-    this._mouth.position.set(0, h * 0.32, len * 0.46);
+    this._mouth.position.set(0, h * 0.28, len * 0.39);
     this.body.add(this._mouth);
     this._launcher = new THREE.Object3D();
     this._launcher.position.set(0, h * 0.62, -len * 0.18);
@@ -72,7 +74,7 @@ export class Thunderjaw extends Machine {
     // torso shots don't score weak hits. Heart + head sensor start DISABLED
     // under armor plates (canon strip loop, research 4.3): tear the plate to
     // bring the weak point online.
-    this._wpHead = this.addWeakPoint('head sensor', this.body, 0, h * 0.38, len * 0.44, 0.95);
+    this._wpHead = this.addWeakPoint('head sensor', this.body, 0, h * 0.3, len * 0.35, 0.95);
     this._wpHead.enabled = false;
     this._wpHeart = this.addWeakPoint('heart', this.body, 0, h * 0.25, len * 0.24, 0.85);
     this._wpHeart.enabled = false;
@@ -131,7 +133,7 @@ export class Thunderjaw extends Machine {
         name: side > 0 ? 'cannon-r' : 'cannon-l', displayName: 'Cannon',
         mesh: cannonMesh(),
         // authored directly (hull snap converges on the snout centerline)
-        pos: [side * 0.82, h * 0.3, len * 0.42], snap: false,
+        pos: [side * 0.82, h * 0.26, len * 0.33], snap: false,
         rot: [0, side * 0.07, 0], // slight outward toe
         tearHp: 70, linkedAttack: 'cannon', settleY: 0.24,
         loot: [{ id: 'metal-shards', n: 8 }, { id: 'wire', n: 1 }],
@@ -191,7 +193,7 @@ export class Thunderjaw extends Machine {
     coverPlate('heart-plate', this._wpHeart, 0xff9a3d,
       [0, h * 0.26, len * 0.3], [1.25, 0, 0]);
     coverPlate('head-plate', this._wpHead, 0x9fd8ff,
-      [0, h * 0.44, len * 0.42], [0.4, 0, 0]);
+      [0, h * 0.36, len * 0.34], [0.4, 0, 0]);
     const plateSpots = [[1, -0.18, 0.42], [-1, -0.18, 0.42]];
     for (let i = 0; i < plateSpots.length; i++) {
       const [sx, sz, sy] = plateSpots[i];
@@ -219,8 +221,6 @@ export class Thunderjaw extends Machine {
       { id: 'machine-heart', n: 1 },
     ]);
 
-    this._gait = Math.random() * Math.PI * 2;
-    this._lastStep = 0;
     this._cdStomp = 2;
     this._cdLaser = 4;
     this._cdDisc = 7;
@@ -228,6 +228,41 @@ export class Thunderjaw extends Machine {
     this._cdTail = 3;
     this._discAlt = 0;
     this._cannonAlt = 0;
+
+    // --- auto-rig: bipedal T-rex stomp — hind legs drive, the tail chain
+    // counterbalances laterally, footfalls dip the whole chassis
+    buildRig(this, RIGS.thunderjaw);
+    this.gait = new GaitController(this, this.rig, {
+      walk: { stride: 3.7, duty: 0.62, lift: 0.8, offsets: { L: 0, R: 0.5 } },
+      run: { stride: 5.2, duty: 0.5, lift: 1.05, offsets: { L: 0, R: 0.5 } },
+      runRef: 6.5,
+      rollAmp: 0.055,      // weight shifts over each planted foot
+      impactAmp: 0.26,     // seismic footfall dip
+      breatheRate: 0.6,
+      breatheAmp: 0.05,
+      stepDustSpeed: 0.5,  // every stomp kicks dust
+      turnRadius: 2.6,
+      pelvisFollow: 0.85,
+      lookClampYaw: 0.6,
+      stanceFlex: 0.5,     // dino knees stay flexed — reach headroom mid-stride
+    });
+    this.gait.update(0.016, 0);
+    this._deathRoll = 0.26; // a 9 m apex collapses onto buckled legs, no barrel roll
+    this._deathSink = 0.02;
+  }
+
+  /** Apex collapse: legs buckle, neck slams, the great tail crashes last. */
+  onDeathPose(k, deathT) {
+    this.gait.deathPose(k, deathT);
+  }
+
+  /** Heavy footstep events for audio/rumble — driven by ACTUAL footfalls now.
+   *  Combat only, so calm patrol half a map away doesn't flood the mixer. */
+  onFootfall(leg, li, speed, runK) {
+    const engaged = this.state === 'attack' || this.state === 'alert';
+    if (engaged && this.playerDist < 140) {
+      this.ctx.events.emit('machine-attack', { machine: this, kind: 'step' });
+    }
   }
 
   _playerBehind() {
@@ -274,26 +309,55 @@ export class Thunderjaw extends Machine {
   /* --------------------------- stomp --------------------------- */
 
   _stomp() {
+    // Foot Stomp (research 4.4): ONE leg cranes up while the body leans onto
+    // the support foot, then slams down with the shockwave — an actual stomp
+    // through the leg bones, not a body hop.
+    const p = this.ctx.player;
+    let li = 0; // stomp with the leg on the player's side
+    if (p) {
+      _v.subVectors(p.position, this.position);
+      const side = _v.x * Math.cos(this.heading) - _v.z * Math.sin(this.heading);
+      li = side >= 0 ? 1 : 0; // rig legs: [0]=L, [1]=R
+    }
+    const support = li === 0 ? 1 : 0;
     return {
       kind: 'stomp',
       windup: 0.85, strike: 0.25, recover: 1.2, cooldown: 1.2,
       onStrike: () => {
         // damage ladder (research 5): apex hits 35-55
         this.spawnShockRing(this.position.x, this.position.z, 12, 0.8, 40, 8);
+        this.gait._impact = 2.6; // seismic dip as the foot lands
       },
       onUpdate: (a) => {
+        const pose = this.gait.pose;
         if (a.phase === 'windup') {
-          this.body.rotation.x = -0.3 * a.phaseT;
-          this.body.position.y = a.phaseT * 1.2;
+          this.body.rotation.x = -0.1 * a.phaseT;
+          this.body.rotation.z = (support === 0 ? -1 : 1) * 0.07 * a.phaseT;
+          this.body.position.y = a.phaseT * 0.35;
+          pose.legLift[li] = a.phaseT;
+          pose.spineRear = 0.14 * a.phaseT;
         } else if (a.phase === 'strike') {
-          this.body.rotation.x = -0.3 + a.phaseT * 0.38;
-          this.body.position.y = (1 - a.phaseT) * 1.2;
+          const k = a.phaseT;
+          this.body.rotation.x = -0.1 + k * 0.16;
+          this.body.rotation.z *= 1 - k;
+          this.body.position.y = (1 - k) * 0.35;
+          pose.legLift[li] = Math.max(0, 1 - k * 3.5);
+          pose.spineRear = 0.14 * (1 - k);
         } else {
-          this.body.rotation.x = 0.08 * (1 - a.phaseT);
+          this.body.rotation.x = 0.06 * (1 - a.phaseT);
+          this.body.rotation.z = 0;
           this.body.position.y = 0;
+          pose.legLift[li] = 0;
+          pose.spineRear = 0;
         }
       },
-      cleanup: () => { this.body.rotation.x = 0; this.body.position.y = 0; },
+      cleanup: () => {
+        this.body.rotation.x = 0;
+        this.body.rotation.z = 0;
+        this.body.position.y = 0;
+        this.gait.pose.legLift[li] = 0;
+        this.gait.pose.spineRear = 0;
+      },
     };
   }
 
@@ -309,12 +373,24 @@ export class Thunderjaw extends Machine {
         this.knockbackPlayer(12);
       },
       onUpdate: (a) => {
-        // whole body wheels around — tail lashes through the rear arc
-        if (a.phase === 'windup') this.body.rotation.y = 0.45 * a.phaseT;
-        else if (a.phase === 'strike') this.body.rotation.y = 0.45 - 1.9 * a.phaseT;
-        else this.body.rotation.y = -1.45 * (1 - a.phaseT);
+        // the TAIL CHAIN lashes through the rear arc while the body wheels
+        // with it — the sweep visibly travels down the tail bones
+        const pose = this.gait.pose;
+        let y;
+        if (a.phase === 'windup') y = 0.45 * a.phaseT;
+        else if (a.phase === 'strike') y = 0.45 - 1.9 * a.phaseT;
+        else y = -1.45 * (1 - a.phaseT);
+        this.body.rotation.y = y * 0.55;
+        pose.tailYaw = -y * 1.35;             // whip opposes the body wheel
+        pose.spineYaw = y * 0.4;
+        pose.tailLift = a.phase === 'strike' ? -0.25 * Math.sin(a.phaseT * Math.PI) : 0;
       },
-      cleanup: () => { this.body.rotation.y = 0; },
+      cleanup: () => {
+        this.body.rotation.y = 0;
+        this.gait.pose.tailYaw = 0;
+        this.gait.pose.spineYaw = 0;
+        this.gait.pose.tailLift = 0;
+      },
     };
   }
 
@@ -703,29 +779,6 @@ export class Thunderjaw extends Machine {
 
   animate(dt, t) {
     if (this.state === 'dead') return;
-
-    const speed = this._speed;
-    const stride = 4.6;
-    this._gait += dt * speed * (Math.PI / stride);
-    const moveK = THREE.MathUtils.clamp(speed / 2.6, 0, 1);
-
-    // heavy footstep events for audio/rumble — combat only, so calm patrol
-    // half a map away doesn't flood the mixer with stomps
-    const step = Math.floor(this._gait / Math.PI);
-    if (step !== this._lastStep) {
-      this._lastStep = step;
-      const engaged = this.state === 'attack' || this.state === 'alert';
-      if (engaged && moveK > 0.3 && this.playerDist < 140) {
-        this.ctx.events.emit('machine-attack', { machine: this, kind: 'step' });
-      }
-    }
-
-    if (!this._attack) {
-      this.body.position.y = Math.abs(Math.sin(this._gait)) * 0.22 * moveK
-        + Math.sin(t * 0.7) * 0.035;
-      this.body.rotation.x = -(speed - this._accelPitch) * 0.012;
-      this.body.rotation.z = Math.sin(this._gait) * 0.028 * moveK;
-      this.body.rotation.y = 0;
-    }
+    this.gait.update(dt, t);
   }
 }

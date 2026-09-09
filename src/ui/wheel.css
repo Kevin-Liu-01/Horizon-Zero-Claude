@@ -1,4 +1,6 @@
-/* HZD weapon wheel — dark translucent radial, thin light rings, Rajdhani. */
+/* HZD weapon wheel — dark smoked-glass radial, thin parchment hairline rings,
+   off-white line icons, YELLOW selection highlight (reference-v3 PART 2),
+   Rajdhani tracked caps. No teal: palette is off-white / #FFD34D / muted gold. */
 
 #hzc-wheel {
   position: fixed;
@@ -21,8 +23,8 @@
   inset: 0;
   background: radial-gradient(
     ellipse at center,
-    rgba(6, 12, 15, 0.28) 30%,
-    rgba(4, 8, 10, 0.66) 100%
+    rgba(6, 10, 13, 0.3) 30%,
+    rgba(4, 8, 10, 0.68) 100%
   );
   backdrop-filter: blur(5px) saturate(0.82);
   -webkit-backdrop-filter: blur(5px) saturate(0.82);
@@ -37,7 +39,7 @@
 }
 #hzc-wheel.open .ww-wrap { transform: scale(1); }
 
-/* rings */
+/* rings: thin parchment hairlines */
 #hzc-wheel .ww-rings {
   position: absolute;
   inset: 0;
@@ -46,21 +48,21 @@
 }
 #hzc-wheel .ww-ring {
   fill: none;
-  stroke: rgba(137, 196, 202, 0.34);
+  stroke: rgba(239, 230, 213, 0.3);
   stroke-width: 1;
 }
-#hzc-wheel .ww-ring-in { stroke: rgba(137, 196, 202, 0.22); }
+#hzc-wheel .ww-ring-in { stroke: rgba(239, 230, 213, 0.18); }
 #hzc-wheel .ww-ring-out {
-  stroke: rgba(137, 196, 202, 0.14);
+  stroke: rgba(239, 230, 213, 0.12);
   stroke-dasharray: 2 7;
 }
 #hzc-wheel .ww-arc {
   fill: none;
-  stroke: var(--hzc-accent, #59c1c6);
+  stroke: #ffd34d;
   stroke-width: 2.5;
   stroke-linecap: round;
   opacity: 0;
-  filter: drop-shadow(0 0 6px rgba(89, 193, 198, 0.8));
+  filter: drop-shadow(0 0 6px rgba(255, 211, 77, 0.75));
   transition: opacity 0.1s;
 }
 #hzc-wheel .ww-arc.on { opacity: 0.95; }
@@ -86,21 +88,21 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  letter-spacing: 0.22em;
+  letter-spacing: 0.24em;
   font-size: 15px;
   font-weight: 600;
   text-transform: uppercase;
   text-shadow: 0 1px 6px rgba(0, 0, 0, 0.8);
   white-space: nowrap;
 }
-#hzc-wheel .ww-slot.hover .ww-slot-name { color: var(--hzc-accent, #59c1c6); }
+#hzc-wheel .ww-slot.hover .ww-slot-name { color: #ffd34d; }
 #hzc-wheel .ww-slot.equipped .ww-slot-head::after {
   content: '';
   width: 5px;
   height: 5px;
   transform: rotate(45deg);
-  background: var(--hzc-warn, #f2c230);
-  box-shadow: 0 0 6px var(--hzc-warn, #f2c230);
+  background: #c8a24b;
+  box-shadow: 0 0 6px rgba(200, 162, 75, 0.8);
 }
 
 #hzc-wheel kbd {
@@ -112,7 +114,7 @@
   border: 1px solid rgba(239, 230, 213, 0.45);
   border-radius: 2px;
   color: rgba(239, 230, 213, 0.9);
-  background: rgba(8, 14, 18, 0.5);
+  background: rgba(8, 12, 15, 0.5);
 }
 
 /* ammo petals */
@@ -128,8 +130,8 @@
   flex-direction: column;
   align-items: center;
   gap: 2px;
-  background: rgba(8, 14, 18, 0.6);
-  border: 1px solid rgba(137, 196, 202, 0.18);
+  background: rgba(8, 12, 15, 0.6);
+  border: 1px solid rgba(239, 230, 213, 0.16);
   border-radius: 3px;
   transition: border-color 0.1s, background 0.1s;
 }
@@ -145,10 +147,11 @@
   letter-spacing: 0.08em;
   color: rgba(239, 230, 213, 0.85);
 }
+/* yellow selection highlight (canon) */
 #hzc-wheel .ww-ammo.sel {
-  border-color: var(--ac, #59c1c6);
-  background: rgba(12, 22, 26, 0.82);
-  box-shadow: 0 0 10px -2px var(--ac, #59c1c6);
+  border-color: #ffd34d;
+  background: rgba(14, 18, 15, 0.85);
+  box-shadow: 0 0 10px -2px rgba(255, 211, 77, 0.75);
 }
 #hzc-wheel .ww-ammo.empty .ww-ammo-ic { opacity: 0.35; }
 #hzc-wheel .ww-ammo.empty .ww-ammo-n { color: var(--hzc-danger, #b03a2e); }
@@ -162,7 +165,7 @@
   height: 252px;
   margin: -126px 0 0 -126px;
   border-radius: 50%;
-  background: radial-gradient(circle, rgba(8, 15, 19, 0.78) 58%, rgba(8, 15, 19, 0.25) 100%);
+  background: radial-gradient(circle, rgba(8, 12, 15, 0.8) 58%, rgba(8, 12, 15, 0.25) 100%);
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -172,9 +175,10 @@
   padding: 18px;
 }
 #hzc-wheel .ww-weapon-name {
-  font-size: 21px;
-  font-weight: 700;
-  letter-spacing: 0.26em;
+  font-size: 20px;
+  font-weight: 600;
+  letter-spacing: 0.3em;
+  text-indent: 0.3em;
   text-transform: uppercase;
   color: var(--hzc-text, #efe6d5);
 }
@@ -197,7 +201,7 @@
   width: 120px;
   height: 1px;
   margin: 3px 0;
-  background: linear-gradient(90deg, transparent, rgba(137, 196, 202, 0.55), transparent);
+  background: linear-gradient(90deg, transparent, rgba(239, 230, 213, 0.45), transparent);
 }
 #hzc-wheel .ww-recipe {
   display: flex;
@@ -215,7 +219,7 @@
   letter-spacing: 0.1em;
   color: rgba(239, 230, 213, 0.75);
 }
-#hzc-wheel .ww-ing i { width: 15px; height: 15px; color: var(--hzc-accent, #59c1c6); }
+#hzc-wheel .ww-ing i { width: 15px; height: 15px; color: rgba(239, 230, 213, 0.65); }
 #hzc-wheel .ww-ing b { font-weight: 600; color: rgba(239, 230, 213, 0.5); }
 #hzc-wheel .ww-ing.no { color: var(--hzc-danger, #b03a2e); }
 #hzc-wheel .ww-ing.no i { color: var(--hzc-danger, #b03a2e); }
@@ -228,13 +232,13 @@
   font-size: 14px;
   font-weight: 700;
   letter-spacing: 0.2em;
-  color: var(--hzc-warn, #f2c230);
+  color: #ffd34d;
 }
 #hzc-wheel .ww-craft.disabled { opacity: 0.35; }
 #hzc-wheel .ww-craft.flash { animation: ww-craft-flash 0.45s ease-out; }
 #hzc-wheel .ww-craft.deny { animation: ww-craft-deny 0.3s ease-out; }
 @keyframes ww-craft-flash {
-  0% { text-shadow: 0 0 14px var(--hzc-warn, #f2c230); transform: scale(1.14); }
+  0% { text-shadow: 0 0 14px rgba(255, 211, 77, 0.9); transform: scale(1.14); }
   100% { text-shadow: none; transform: scale(1); }
 }
 @keyframes ww-craft-deny {

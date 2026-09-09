@@ -804,6 +804,76 @@ export class Camp {
 
   /* ------------------------------ npc ---------------------------------- */
 
+  /**
+   * The source model bakes a spread-arm mannequin stance into its vertices
+   * (no skeleton to pose). Since we bake world transforms anyway, repose the
+   * vertices right after the bake: both arms rotate down around shoulder
+   * pivots (the right forearm lifts toward the fire, palm out), and the head
+   * tips toward the flames. Weights blend smoothly from the shoulders/neck so
+   * the deltoids and collar stretch instead of tearing; a capsule test around
+   * each arm's axis plus a mesh-name gate keeps hip pouches, drapes and the
+   * torso untouched. All constants are in normalized npc-root space
+   * (meters, feet at y=0, +Z facing the fire once placed).
+   */
+  _reposeNpc(geo, nodeName) {
+    const pose = this._npcPose ?? (this._npcPose = (() => {
+      const arm = (sx, tx, ty, tz) => {
+        const pivot = new THREE.Vector3(sx * 0.205, 1.40, 0.01);
+        const dir = new THREE.Vector3(sx * 0.285, -0.53, 0.05); // -> hand
+        const len = dir.length();
+        dir.normalize();
+        const q = new THREE.Quaternion().setFromUnitVectors(
+          dir, new THREE.Vector3(tx, ty, tz).normalize());
+        return { pivot, dir, len, q };
+      };
+      return {
+        arms: [
+          arm(1, 0.16, -0.24, 0.55),    // fire side: palm out at chest height
+          arm(-1, -0.095, -0.57, -0.05), // other: relaxed hang by the hip
+        ],
+        headPivot: new THREE.Vector3(0, 1.52, 0.02),
+        headQ: new THREE.Quaternion().setFromEuler(new THREE.Euler(0.30, 0.10, 0)),
+        identity: new THREE.Quaternion(),
+        // only meshes that contain arm geometry (body, sleeves, arm bands);
+        // hip gear / drapes / leg fur share the space but must not deform
+        armMeshes: /^(Body_low|Clothes_1[1-7]_low|Accessories_(1[6-9]|2[01])_low)/,
+        vec: new THREE.Vector3(),
+      };
+    })());
+
+    const posA = geo.attributes.position;
+    const nrmA = geo.attributes.normal;
+    const armOk = pose.armMeshes.test(nodeName);
+    const smooth = THREE.MathUtils.smoothstep;
+    const p = _v1, d = _v2, n = pose.vec;
+    for (let i = 0; i < posA.count; i++) {
+      p.fromBufferAttribute(posA, i);
+      let quat = null, pivot = null;
+      let w = smooth(p.y, 1.44, 1.52); // head + neck band
+      if (w > 0) {
+        quat = pose.headQ;
+        pivot = pose.headPivot;
+      } else if (armOk && Math.abs(p.x) > 0.14) {
+        const a = pose.arms[p.x > 0 ? 0 : 1];
+        d.copy(p).sub(a.pivot);
+        const s = d.dot(a.dir); // meters along the arm axis
+        if (s > -0.08 && s < a.len + 0.28) {
+          const radial = d.addScaledVector(a.dir, -s).length();
+          w = (1 - smooth(radial, 0.10, 0.16)) * smooth(s, 0.03, 0.27);
+          if (w > 0) { quat = a.q; pivot = a.pivot; }
+        }
+      }
+      if (!quat || w <= 0) continue;
+      _q.copy(pose.identity).slerp(quat, w);
+      p.sub(pivot).applyQuaternion(_q).add(pivot);
+      posA.setXYZ(i, p.x, p.y, p.z);
+      if (nrmA) {
+        n.fromBufferAttribute(nrmA, i).applyQuaternion(_q);
+        nrmA.setXYZ(i, n.x, n.y, n.z);
+      }
+    }
+  }
+
   _placeNpc() {
     // The raw NPC model is dozens of submeshes (a major draw-call cost, twice
     // over with the shadow pass). Bake world transforms and merge everything
@@ -827,6 +897,11 @@ export class Camp {
     const byMat = new Map(); // material.uuid -> { material, geos }
     src.traverse((o) => {
       if (!o.isMesh || !o.geometry || !o.material || Array.isArray(o.material)) return;
+      // The cornea shell ships with KHR_materials_transmission; one transmissive
+      // material makes three.js re-render the ENTIRE scene into a transmission
+      // target every frame (~170 extra draw calls). The opaque inner eye sits
+      // right underneath and carries the iris — drop the shell outright.
+      if (o.material.name === 'Outereye') return;
       let bucket = byMat.get(o.material.uuid);
       if (!bucket) {
         bucket = { material: o.material, geos: [] };
@@ -840,6 +915,7 @@ export class Camp {
       }
       if (flatSrc !== o.geometry) flatSrc.dispose();
       g.applyMatrix4(o.matrixWorld); // bake into npc-root space
+      this._reposeNpc(g, o.name);
       bucket.geos.push(g);
     });
 
@@ -861,7 +937,8 @@ export class Camp {
       for (const g of geos) g.dispose();
       if (!merged) continue;
       const mesh = new THREE.Mesh(merged, material);
-      mesh.castShadow = true;
+      // eyeballs are ~4 cm — not worth a shadow-pass draw
+      mesh.castShadow = material.name !== 'Innereye';
       mesh.receiveShadow = true;
       npc.add(mesh);
     }

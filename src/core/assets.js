@@ -22,23 +22,46 @@ const SPECS = {
   npc:        { url: '/models/npc.glb',        targetHeight: 1.8,  yaw: 0 },
 };
 
+// Animation packs: loaded raw (rest-pose skeleton + clips), never added to the
+// scene. The clip library retargets them onto Aloy at boot (Round 4).
+//   ual: Quaternius Universal Animation Library, CC0 — public/anims/LICENSE
+const ANIMS = {
+  ual: { url: '/anims/AnimationLibrary_Godot_Standard.gltf' },
+};
+
 export class Assets {
   constructor() {
     this.models = {}; // name -> { root: Group, gltf, size: Vector3, spec }
+    this.anims = {};  // name -> raw gltf { scene, animations }
     this.loader = new GLTFLoader();
     this.loader.setMeshoptDecoder(MeshoptDecoder);
   }
 
   async loadAll(onProgress = () => {}) {
     const names = Object.keys(SPECS);
+    const animNames = Object.keys(ANIMS);
+    const total = names.length + animNames.length;
     let done = 0;
-    await Promise.all(names.map(async (name) => {
-      const spec = SPECS[name];
-      const gltf = await this.loader.loadAsync(spec.url);
-      this.models[name] = this._normalize(name, gltf, spec);
-      done += 1;
-      onProgress(done / names.length, name);
-    }));
+    await Promise.all([
+      ...names.map(async (name) => {
+        const spec = SPECS[name];
+        const gltf = await this.loader.loadAsync(spec.url);
+        this.models[name] = this._normalize(name, gltf, spec);
+        done += 1;
+        onProgress(done / total, name);
+      }),
+      ...animNames.map(async (name) => {
+        try {
+          const gltf = await this.loader.loadAsync(ANIMS[name].url);
+          gltf.scene.traverse((o) => { if (o.isMesh) o.visible = false; });
+          this.anims[name] = gltf;
+        } catch (err) {
+          console.warn(`[assets] animation pack "${name}" failed to load — animator falls back to procedural`, err);
+        }
+        done += 1;
+        onProgress(done / total, `${name} clips`);
+      }),
+    ]);
     return this.models;
   }
 

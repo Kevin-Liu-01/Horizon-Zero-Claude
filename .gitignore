@@ -4,3 +4,12 @@ dist/
 *.glb
 !public/models/*.glb
 shots/
+
+# Round 4: generated film + staging bulk
+shots/
+*.log
+.DS_Store
+models-staging/**/*.glb
+models-staging/**/*.gltf
+models-staging/**/*.bin
+models-staging/**/*.zip

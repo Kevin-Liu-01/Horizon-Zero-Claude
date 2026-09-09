@@ -1,0 +1,134 @@
+/* Animation Studio — staging/cinematography mode (Round 3, orchestrator lane) */
+#studio-ui {
+  position: fixed;
+  inset: auto 0 0 0;
+  z-index: 60;
+  display: flex;
+  justify-content: center;
+  pointer-events: none;
+  font-family: var(--font, 'Rajdhani', sans-serif);
+  user-select: none;
+}
+#studio-ui.hidden { display: none; }
+
+#studio-ui .studio-bar {
+  pointer-events: auto;
+  display: flex;
+  align-items: center;
+  gap: 22px;
+  margin-bottom: 18px;
+  padding: 12px 26px;
+  background: rgba(10, 13, 17, 0.82);
+  border: 1px solid rgba(239, 230, 213, 0.22);
+  clip-path: polygon(14px 0, 100% 0, 100% calc(100% - 14px), calc(100% - 14px) 100%, 0 100%, 0 14px);
+  backdrop-filter: blur(6px);
+}
+
+#studio-ui .studio-title {
+  font-family: 'Julius Sans One', var(--font-display, sans-serif);
+  font-size: 11px;
+  letter-spacing: 0.5em;
+  text-indent: 0.5em;
+  color: #DA7756;
+  white-space: nowrap;
+}
+
+#studio-ui .studio-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: rgba(239, 230, 213, 0.75);
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+#studio-ui .studio-group output {
+  min-width: 34px;
+  text-align: right;
+  color: #efe6d5;
+  font-weight: 600;
+}
+#studio-ui input[type='range'] {
+  width: 110px;
+  accent-color: #DA7756;
+}
+#studio-ui button {
+  pointer-events: auto;
+  font-family: inherit;
+  font-size: 11px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: #efe6d5;
+  background: rgba(239, 230, 213, 0.07);
+  border: 1px solid rgba(239, 230, 213, 0.3);
+  padding: 5px 14px;
+  cursor: pointer;
+  clip-path: polygon(8px 0, 100% 0, 100% calc(100% - 8px), calc(100% - 8px) 100%, 0 100%, 0 8px);
+}
+#studio-ui button:hover {
+  background: rgba(218, 119, 86, 0.18);
+  border-color: rgba(218, 119, 86, 0.7);
+}
+#studio-ui button.on {
+  background: rgba(218, 119, 86, 0.28);
+  border-color: #DA7756;
+}
+
+#studio-hint {
+  position: fixed;
+  top: 18px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 60;
+  padding: 7px 18px;
+  background: rgba(10, 13, 17, 0.7);
+  border: 1px solid rgba(239, 230, 213, 0.18);
+  color: rgba(239, 230, 213, 0.8);
+  font-family: var(--font, sans-serif);
+  font-size: 10px;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  clip-path: polygon(8px 0, 100% 0, 100% calc(100% - 8px), calc(100% - 8px) 100%, 0 100%, 0 8px);
+  pointer-events: none;
+}
+#studio-hint.hidden { display: none; }
+
+#hud.studio-hidden { display: none !important; }
+
+#studio-ui .studio-cast {
+  pointer-events: auto;
+  position: fixed;
+  right: 18px;
+  bottom: 86px;
+  width: 210px;
+  padding: 14px 16px;
+  background: rgba(10, 13, 17, 0.86);
+  border: 1px solid rgba(239, 230, 213, 0.22);
+  clip-path: polygon(12px 0, 100% 0, 100% calc(100% - 12px), calc(100% - 12px) 100%, 0 100%, 0 12px);
+}
+#studio-ui .studio-cast.hidden { display: none; }
+#studio-ui .cast-title {
+  font-family: 'Julius Sans One', var(--font-display, sans-serif);
+  font-size: 9px;
+  letter-spacing: 0.4em;
+  color: #DA7756;
+  margin: 10px 0 8px;
+}
+#studio-ui .cast-title:first-child { margin-top: 0; }
+#studio-ui .cast-kinds, #studio-ui .cast-states {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+#studio-ui .cast-kinds button, #studio-ui .cast-states button {
+  font-size: 10px;
+  padding: 4px 10px;
+  letter-spacing: 0.12em;
+}
+#studio-ui .cast-note {
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  color: rgba(239, 230, 213, 0.45);
+  text-transform: uppercase;
+}

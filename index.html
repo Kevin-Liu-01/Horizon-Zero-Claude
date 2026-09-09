@@ -7,19 +7,92 @@
   <link rel="icon" href="/favicon.svg" />
   <link rel="stylesheet" href="/src/style.css" />
   <style>
-    /* Title-screen v2 skin (HUD builder owns this file; style.css is frozen).
-       Language per docs/research/ui.md: parchment text, yellow accents, dark
-       translucent panels w/ 1px light borders + 45-degree cut corners. */
-    /* Research 5: the real title screen sits over a LIVE vista — the scene
-       already renders during the 'title' state, so let it show through. */
+    /* Title-screen v3 skin (HUD builder owns this file; style.css is frozen).
+       Round 3: HORIZON ZERO CLAUDE wordmark per docs/research/reference-v3.md
+       Part 3 — Julius Sans One thin tracked caps, Claude terracotta spark
+       cresting the horizon rule (spark-as-dawn). */
+    @font-face {
+      font-family: 'Julius Sans One';
+      src: url('/fonts/JuliusSansOne-Regular.ttf') format('truetype');
+      font-display: swap;
+    }
     #title.overlay {
       background: radial-gradient(ellipse at 50% 38%,
         rgba(6, 9, 12, 0.44) 0%, rgba(6, 9, 12, 0.62) 55%, rgba(6, 9, 12, 0.88) 100%);
     }
     #title .title-inner { text-align: center; max-width: 880px; padding: 0 24px; }
-    #title .game-title { font-size: 58px; letter-spacing: 0.3em; text-indent: 0.3em; }
-    #title .game-title span { color: #f5c95c; text-shadow: 0 0 22px rgba(245, 201, 92, 0.3); }
 
+    .hzc-logo { user-select: none; }
+    .hzc-logo .hzc-main {
+      font-family: 'Julius Sans One', var(--font-display), sans-serif;
+      font-weight: 400;
+      font-size: 64px;
+      letter-spacing: 0.45em;
+      text-indent: 0.45em;
+      color: #FAF9F5;
+      line-height: 1;
+      text-shadow: 0 2px 24px rgba(0, 0, 0, 0.55);
+    }
+    .hzc-dawn {
+      position: relative;
+      height: 44px;
+      margin: 6px auto 10px;
+      width: min(560px, 80vw);
+    }
+    /* horizon rule the spark crests over */
+    .hzc-dawn::before, .hzc-dawn::after {
+      content: '';
+      position: absolute;
+      bottom: 0;
+      width: calc(50% - 46px);
+      height: 1px;
+      background: linear-gradient(90deg, transparent, rgba(218, 119, 86, 0.85));
+    }
+    .hzc-dawn::before { left: 0; }
+    .hzc-dawn::after { right: 0; transform: scaleX(-1); }
+    .hzc-dawn .hzc-spark {
+      position: absolute;
+      left: 50%;
+      bottom: -26px;               /* center rides just above the rule: ~2/3 of the spark crests */
+      transform: translateX(-50%);
+      width: 76px;
+      height: 76px;
+      clip-path: inset(0 0 34% 0); /* below-horizon rays hidden, as if behind the landscape */
+      filter: drop-shadow(0 0 18px rgba(218, 119, 86, 0.55));
+    }
+    .hzc-dawn .hzc-glow {
+      position: absolute;
+      left: 50%;
+      bottom: -30px;
+      transform: translateX(-50%);
+      width: 220px;
+      height: 110px;
+      background: radial-gradient(ellipse at 50% 100%,
+        rgba(218, 119, 86, 0.28) 0%, rgba(218, 119, 86, 0.12) 45%, transparent 72%);
+      pointer-events: none;
+    }
+    .hzc-logo .hzc-sub {
+      font-family: 'Julius Sans One', var(--font-display), sans-serif;
+      font-weight: 400;
+      font-size: 20px;
+      letter-spacing: 0.65em;
+      text-indent: 0.65em;
+      color: #DA7756;
+      line-height: 1;
+      text-shadow: 0 0 18px rgba(218, 119, 86, 0.35);
+    }
+    #loading .hzc-logo .hzc-main { font-size: 46px; }
+    #loading .hzc-logo .hzc-sub { font-size: 15px; }
+    #loading .hzc-dawn { height: 34px; width: 420px; }
+    #loading .hzc-dawn .hzc-spark { width: 58px; height: 58px; bottom: -20px; }
+
+    /* tagline in the thin tracked-caps HUD language */
+    .tagline {
+      margin: 20px 0 38px;
+      font-size: 12px; letter-spacing: 0.34em; text-indent: 0.34em;
+      color: rgba(239, 230, 213, 0.6);
+      text-transform: uppercase;
+    }
     .tagline-rule {
       width: 320px; height: 1px; margin: 26px auto 0;
       background: linear-gradient(90deg, transparent, rgba(239, 230, 213, 0.5), transparent);
@@ -28,31 +101,41 @@
     .tagline-rule::after {
       content: ''; position: absolute; left: 50%; top: -3px;
       width: 7px; height: 7px; transform: translateX(-50%) rotate(45deg);
-      background: #f5c95c;
+      background: #c8a24b;
     }
 
     #btn-start {
-      border-color: rgba(245, 201, 92, 0.75);
+      border-color: rgba(218, 119, 86, 0.8);
       clip-path: polygon(12px 0, 100% 0, 100% calc(100% - 12px), calc(100% - 12px) 100%, 0 100%, 0 12px);
       background: rgba(12, 16, 20, 0.55);
     }
     #btn-start:hover {
-      background: rgba(245, 201, 92, 0.14);
-      box-shadow: 0 0 26px rgba(245, 201, 92, 0.3);
+      background: rgba(218, 119, 86, 0.16);
+      box-shadow: 0 0 26px rgba(218, 119, 86, 0.35);
     }
 
     .keybinds-panel {
+      position: relative;
       margin: 42px auto 0;
-      padding: 18px 26px 20px;
-      background: rgba(12, 16, 20, 0.72);
-      border: 1px solid rgba(239, 230, 213, 0.22);
-      clip-path: polygon(16px 0, 100% 0, 100% calc(100% - 16px), calc(100% - 16px) 100%, 0 100%, 0 16px);
+      padding: 18px 28px 20px;
+      background: linear-gradient(170deg, rgba(13, 17, 21, 0.78), rgba(8, 11, 14, 0.85));
+      border: 1px solid rgba(239, 230, 213, 0.16);
       display: inline-block;
     }
+    /* thin hairline corner brackets (tribal-tech panel language) */
+    .keybinds-panel::before, .keybinds-panel::after {
+      content: '';
+      position: absolute;
+      width: 14px; height: 14px;
+      border: 0 solid rgba(239, 230, 213, 0.4);
+      pointer-events: none;
+    }
+    .keybinds-panel::before { top: 5px; left: 5px; border-top-width: 1px; border-left-width: 1px; }
+    .keybinds-panel::after { bottom: 5px; right: 5px; border-bottom-width: 1px; border-right-width: 1px; }
     .keybinds-title {
-      font-family: var(--font-display);
-      font-size: 9px; letter-spacing: 0.5em; text-indent: 0.5em;
-      color: #f5c95c;
+      font-family: 'Julius Sans One', var(--font-display), sans-serif;
+      font-size: 10px; letter-spacing: 0.55em; text-indent: 0.55em;
+      color: #c8a24b;
       margin-bottom: 16px;
     }
     .controls-grid {
@@ -88,7 +171,27 @@
 
   <div id="loading" class="overlay">
     <div class="load-inner">
-      <h1 class="game-title">HORIZON<span>ZERO CLAUDE</span></h1>
+      <div class="hzc-logo">
+        <div class="hzc-main">HORIZON</div>
+        <div class="hzc-dawn">
+          <div class="hzc-glow"></div>
+          <svg class="hzc-spark" viewBox="0 0 100 100" aria-hidden="true">
+            <g stroke="#DA7756" stroke-width="8.5" stroke-linecap="round">
+              <line x1="0" y1="-14" x2="0" y2="-42" transform="translate(50 50)"/>
+              <line x1="0" y1="-14" x2="0" y2="-30" transform="translate(50 50) rotate(38)"/>
+              <line x1="0" y1="-14" x2="0" y2="-44" transform="translate(50 50) rotate(72)"/>
+              <line x1="0" y1="-14" x2="0" y2="-29" transform="translate(50 50) rotate(109)"/>
+              <line x1="0" y1="-14" x2="0" y2="-40" transform="translate(50 50) rotate(144)"/>
+              <line x1="0" y1="-14" x2="0" y2="-28" transform="translate(50 50) rotate(180)"/>
+              <line x1="0" y1="-14" x2="0" y2="-43" transform="translate(50 50) rotate(217)"/>
+              <line x1="0" y1="-14" x2="0" y2="-27" transform="translate(50 50) rotate(252)"/>
+              <line x1="0" y1="-14" x2="0" y2="-41" transform="translate(50 50) rotate(288)"/>
+              <line x1="0" y1="-14" x2="0" y2="-30" transform="translate(50 50) rotate(323)"/>
+            </g>
+          </svg>
+        </div>
+        <div class="hzc-sub">ZERO CLAUDE</div>
+      </div>
       <div class="load-bar"><div id="load-fill"></div></div>
       <div id="load-label">Waking the machines…</div>
     </div>
@@ -96,8 +199,27 @@
 
   <div id="title" class="overlay hidden">
     <div class="title-inner">
-      <h1 class="game-title">HORIZON<span>ZERO CLAUDE</span></h1>
-      <div class="tagline-rule"></div>
+      <div class="hzc-logo">
+        <div class="hzc-main">HORIZON</div>
+        <div class="hzc-dawn">
+          <div class="hzc-glow"></div>
+          <svg class="hzc-spark" viewBox="0 0 100 100" aria-hidden="true">
+            <g stroke="#DA7756" stroke-width="8.5" stroke-linecap="round">
+              <line x1="0" y1="-14" x2="0" y2="-42" transform="translate(50 50)"/>
+              <line x1="0" y1="-14" x2="0" y2="-30" transform="translate(50 50) rotate(38)"/>
+              <line x1="0" y1="-14" x2="0" y2="-44" transform="translate(50 50) rotate(72)"/>
+              <line x1="0" y1="-14" x2="0" y2="-29" transform="translate(50 50) rotate(109)"/>
+              <line x1="0" y1="-14" x2="0" y2="-40" transform="translate(50 50) rotate(144)"/>
+              <line x1="0" y1="-14" x2="0" y2="-28" transform="translate(50 50) rotate(180)"/>
+              <line x1="0" y1="-14" x2="0" y2="-43" transform="translate(50 50) rotate(217)"/>
+              <line x1="0" y1="-14" x2="0" y2="-27" transform="translate(50 50) rotate(252)"/>
+              <line x1="0" y1="-14" x2="0" y2="-41" transform="translate(50 50) rotate(288)"/>
+              <line x1="0" y1="-14" x2="0" y2="-30" transform="translate(50 50) rotate(323)"/>
+            </g>
+          </svg>
+        </div>
+        <div class="hzc-sub">ZERO CLAUDE</div>
+      </div>
       <p class="tagline">The valley belongs to the machines. Take it back.</p>
       <button id="btn-start">BEGIN THE HUNT</button>
 

@@ -1,6 +1,8 @@
 import * as THREE from 'three';
 import { Machine, rollLoot, glowTexture } from './machine.js';
 import { forceLoaderMesh, canisterMesh, cargoMesh, pulseGlow, rockMesh } from './parts.js';
+import { buildRig, RIGS } from './autorig.js';
+import { GaitController } from './gait.js';
 
 /**
  * Behemoth: territorial transport-class heavyweight (static sculpt; HZD
@@ -105,11 +107,34 @@ export class Behemoth extends Machine {
       { id: 'machine-heart', n: 1, chance: 0.5 },
     ]);
 
-    this._gait = Math.random() * Math.PI * 2;
     this._slamCd = 3;
     this._boulderCd = 5;
     this._dustClock = 0;
     this._chargeDir = new THREE.Vector3();
+
+    // --- auto-rig + heavy 4-beat ox gait with big mass-transfer sway
+    buildRig(this, RIGS.behemoth);
+    this.gait = new GaitController(this, this.rig, {
+      walk: { stride: 2.7, duty: 0.68, lift: 0.34, offsets: { LF: 0, RH: 0.25, RF: 0.5, LH: 0.75 } },
+      run: { stride: 4.6, duty: 0.52, lift: 0.6, offsets: { RF: 0, LF: 0.12, RH: 0.5, LH: 0.62 } },
+      runRef: 6.2,
+      rollAmp: 0.085,      // ponderous weight transfer
+      impactAmp: 0.17,     // every footfall lands with a dip
+      breatheRate: 0.85,
+      breatheAmp: 0.03,
+      stepDustSpeed: 4,
+      turnRadius: 1.9,
+      lookClampYaw: 0.6,
+      stanceFlex: 0.22,
+    });
+    this.gait.update(0.016, 0);
+    this._deathRoll = 0.34; // the skeleton buckles; the hulk shouldn't barrel-roll
+    this._deathSink = 0.03;
+  }
+
+  /** Momentum crash (research 3.x): knees fold, chin ploughs, settle bounce. */
+  onDeathPose(k, deathT) {
+    this.gait.deathPose(k, deathT);
   }
 
   chooseAttack(dist) {
@@ -123,18 +148,35 @@ export class Behemoth extends Machine {
           this.spawnShockRing(this.position.x, this.position.z, 14, 0.85, 32, 9);
         },
         onUpdate: (a) => {
+          // Quake Smash (research 3.4): rears up on the hind legs — the
+          // spine chain cranes back and BOTH front feet leave the ground,
+          // then the forehand crashes down with the shockwave.
+          const pose = this.gait.pose;
           if (a.phase === 'windup') {
-            this.body.rotation.x = -0.5 * a.phaseT;          // rear up
-            this.body.position.y = a.phaseT * 0.9;
+            this.body.rotation.x = -0.28 * a.phaseT;         // rear up
+            this.body.position.y = a.phaseT * 0.55;
+            pose.spineRear = 0.5 * a.phaseT;
+            pose.legLift[0] = pose.legLift[1] = a.phaseT;    // LF/RF lift
           } else if (a.phase === 'strike') {
-            this.body.rotation.x = -0.5 + a.phaseT * 0.62;   // crash down
-            this.body.position.y = (1 - a.phaseT) * 0.9;
+            const k = a.phaseT;
+            this.body.rotation.x = -0.28 + k * 0.36;         // crash down
+            this.body.position.y = (1 - k) * 0.55;
+            pose.spineRear = 0.5 * (1 - k * 1.4);
+            pose.legLift[0] = pose.legLift[1] = Math.max(0, 1 - k * 2.5);
+            if (k > 0.5) this.gait._impact = 2.2;            // forehand slam dip
           } else {
-            this.body.rotation.x = 0.12 * (1 - a.phaseT);
+            this.body.rotation.x = 0.08 * (1 - a.phaseT);
             this.body.position.y = 0;
+            pose.spineRear = Math.min(pose.spineRear, -0.06 * (1 - a.phaseT));
+            pose.legLift[0] = pose.legLift[1] = 0;
           }
         },
-        cleanup: () => { this.body.rotation.x = 0; this.body.position.y = 0; },
+        cleanup: () => {
+          this.body.rotation.x = 0;
+          this.body.position.y = 0;
+          this.gait.pose.spineRear = 0;
+          this.gait.pose.legLift[0] = this.gait.pose.legLift[1] = 0;
+        },
       };
     }
     // gravity boulder throw — REQUIRES an attached Force Loader (research:
@@ -185,8 +227,7 @@ export class Behemoth extends Machine {
             }
             const step = 12.5 * dt;
             this.moveRoot(Math.sin(this.heading) * step, Math.cos(this.heading) * step);
-            this._gait += step * (Math.PI / 2.4);
-            this.body.rotation.x = -0.06;
+            this.body.rotation.x = -0.06; // head-down ram (legs gallop via gait)
             if (!this._chargeHit && p) {
               const dd = Math.hypot(
                 p.position.x - this.position.x, p.position.z - this.position.z,
@@ -328,20 +369,6 @@ export class Behemoth extends Machine {
 
   animate(dt, t) {
     if (this.state === 'dead') return;
-    const speed = this._speed;
-    const stride = 2.4;
-    this._gait += dt * speed * (Math.PI / stride);
-    const moveK = THREE.MathUtils.clamp(speed / 2, 0, 1);
-
-    const inAttack = !!this._attack;
-    if (!inAttack) {
-      this.body.position.y = Math.abs(Math.sin(this._gait)) * 0.14 * moveK
-        + Math.sin(t * 0.9) * 0.02;
-      this.body.rotation.x = Math.sin(this._gait * 2) * 0.015 * moveK
-        - (speed - this._accelPitch) * 0.02;
-      this.body.rotation.z = Math.sin(this._gait) * 0.05 * moveK;
-    } else {
-      this.body.rotation.z = Math.sin(this._gait) * 0.05 * moveK;
-    }
+    this.gait.update(dt, t);
   }
 }

@@ -1,7 +1,8 @@
-/* Inventory screen + loot popup — HZD panel language (docs/research/ui.md):
-   dark blue-gray translucent panels, 1px light borders, sharp corners with
-   triangle motifs, parchment text, yellow highlight, forest-green tint on
-   inventory screens specifically. Rajdhani everywhere. */
+/* Inventory screen + loot popup — tribal-tech panel language (round 3):
+   dark smoked-glass, thin hairline rules + corner brackets, tracked caps
+   headers, parchment text, muted gold #C8A24B accents, terracotta #DA7756
+   only on hover/active. Canon forest-green tint kept on inventory screens
+   specifically (docs/research/ui.md §5). Rajdhani everywhere. */
 
 /* ------------------------------- screen -------------------------------- */
 
@@ -9,8 +10,8 @@
   position: fixed; inset: 0;
   display: none;
   align-items: center; justify-content: center;
-  background: rgba(5, 10, 9, 0.52);
-  backdrop-filter: blur(3px);
+  background: rgba(5, 10, 9, 0.55);
+  backdrop-filter: blur(6px) saturate(0.85);
   z-index: 46;
   font-family: var(--font);
   color: var(--hzc-text);
@@ -24,43 +25,41 @@
   display: flex; flex-direction: column;
   padding: 26px 34px 20px;
   background:
-    linear-gradient(160deg, rgba(16, 28, 23, 0.88) 0%, rgba(10, 16, 15, 0.92) 60%,
-      rgba(8, 13, 13, 0.94) 100%);
-  border: 1px solid rgba(239, 230, 213, 0.25);
+    linear-gradient(160deg, rgba(16, 28, 23, 0.9) 0%, rgba(10, 16, 15, 0.93) 60%,
+      rgba(8, 13, 13, 0.95) 100%);
+  border: 1px solid rgba(239, 230, 213, 0.18);
   box-shadow: 0 18px 60px rgba(0, 0, 0, 0.55);
 }
 
-/* triangle corner motifs (the Focus geodesic-triangle language) */
+/* thin hairline corner brackets (tribal-tech, replaces the solid triangles) */
 .hzc-inv-corner {
-  position: absolute; width: 0; height: 0;
-  border-style: solid;
-  opacity: 0.85;
+  position: absolute;
+  width: 14px; height: 14px;
+  border: 0 solid rgba(200, 162, 75, 0.75);
+  opacity: 0.9;
+  pointer-events: none;
 }
-.hzc-inv-corner.tl { top: -1px; left: -1px;
-  border-width: 10px 10px 0 0; border-color: var(--hzc-accent) transparent transparent transparent; }
-.hzc-inv-corner.tr { top: -1px; right: -1px;
-  border-width: 0 10px 10px 0; border-color: transparent var(--hzc-accent) transparent transparent; }
-.hzc-inv-corner.bl { bottom: -1px; left: -1px;
-  border-width: 10px 0 0 10px; border-color: transparent transparent transparent var(--hzc-accent); }
-.hzc-inv-corner.br { bottom: -1px; right: -1px;
-  border-width: 0 0 10px 10px; border-color: transparent transparent var(--hzc-accent) transparent; }
+.hzc-inv-corner.tl { top: 5px; left: 5px; border-top-width: 1px; border-left-width: 1px; }
+.hzc-inv-corner.tr { top: 5px; right: 5px; border-top-width: 1px; border-right-width: 1px; }
+.hzc-inv-corner.bl { bottom: 5px; left: 5px; border-bottom-width: 1px; border-left-width: 1px; }
+.hzc-inv-corner.br { bottom: 5px; right: 5px; border-bottom-width: 1px; border-right-width: 1px; }
 
 .hzc-inv-head { text-align: center; margin-bottom: 14px; }
 .hzc-inv-kicker {
-  font-size: 11px; font-weight: 600;
-  letter-spacing: 0.5em; text-indent: 0.5em;
-  color: var(--hzc-accent);
+  font-size: 10px; font-weight: 600;
+  letter-spacing: 0.55em; text-indent: 0.55em;
+  color: var(--hzc-terra, #da7756);
 }
 .hzc-inv-title {
-  margin-top: 2px;
-  font-size: 26px; font-weight: 700;
-  letter-spacing: 0.34em; text-indent: 0.34em;
+  margin-top: 3px;
+  font-size: 24px; font-weight: 500;
+  letter-spacing: 0.4em; text-indent: 0.4em;
   color: var(--hzc-text);
 }
 
 .hzc-inv-tabs {
   display: flex; gap: 6px;
-  border-bottom: 1px solid rgba(239, 230, 213, 0.18);
+  border-bottom: 1px solid rgba(239, 230, 213, 0.16);
   margin-bottom: 4px;
 }
 .hzc-inv-tab {
@@ -76,11 +75,12 @@
   cursor: pointer;
   transition: color 0.15s ease, border-color 0.15s ease, background 0.15s ease;
 }
-.hzc-inv-tab:hover { color: rgba(239, 230, 213, 0.8); }
+/* terracotta = the Claude hover/active accent */
+.hzc-inv-tab:hover { color: var(--hzc-terra, #da7756); }
 .hzc-inv-tab.active {
   color: var(--hzc-text);
-  border-bottom-color: var(--hzc-warn);
-  background: linear-gradient(rgba(242, 194, 48, 0.07), transparent);
+  border-bottom-color: var(--hzc-terra, #da7756);
+  background: linear-gradient(rgba(218, 119, 86, 0.08), transparent);
 }
 
 .hzc-inv-body {
@@ -98,8 +98,8 @@
   border-bottom: 1px solid rgba(239, 230, 213, 0.09);
 }
 .hzc-inv-row.active {
-  background: rgba(242, 194, 48, 0.08);
-  border-left: 2px solid var(--hzc-warn);
+  background: rgba(255, 211, 77, 0.07);
+  border-left: 2px solid #ffd34d;
   padding-left: 8px;
 }
 .hzc-inv-glyph {
@@ -107,20 +107,20 @@
   display: flex; align-items: center; justify-content: center;
   font-size: 15px;
   border: 1px solid rgba(239, 230, 213, 0.2);
-  background: rgba(12, 16, 20, 0.6);
+  background: rgba(10, 13, 16, 0.6);
   flex: none;
 }
 .hzc-inv-name {
   flex: 1;
-  font-size: 14px; font-weight: 600;
-  letter-spacing: 0.18em;
+  font-size: 14px; font-weight: 500;
+  letter-spacing: 0.2em;
   color: rgba(239, 230, 213, 0.92);
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 .hzc-inv-count {
   font-size: 15px; font-weight: 700;
   letter-spacing: 0.08em;
-  color: var(--hzc-warn);
+  color: var(--hzc-gold, #c8a24b);
   min-width: 44px; text-align: right;
   font-variant-numeric: tabular-nums;
 }
@@ -128,10 +128,10 @@
 .hzc-inv-group {
   margin: 12px 0 2px;
   padding: 0 2px 4px;
-  font-size: 11px; font-weight: 600;
-  letter-spacing: 0.4em;
-  color: var(--hzc-accent);
-  border-bottom: 1px solid rgba(89, 193, 198, 0.25);
+  font-size: 10px; font-weight: 600;
+  letter-spacing: 0.44em;
+  color: var(--hzc-gold, #c8a24b);
+  border-bottom: 1px solid rgba(200, 162, 75, 0.3);
 }
 .hzc-inv-group:first-child { margin-top: 0; }
 
@@ -156,7 +156,7 @@
 }
 .hzc-inv-pouch-bar {
   flex: 1; height: 5px;
-  background: rgba(12, 16, 20, 0.8);
+  background: rgba(10, 13, 16, 0.8);
   border: 1px solid rgba(127, 176, 105, 0.4);
 }
 .hzc-inv-pouch-fill {
@@ -188,7 +188,7 @@
   color: var(--hzc-text);
   border: 1px solid rgba(239, 230, 213, 0.4);
   border-radius: 2px;
-  background: rgba(12, 16, 20, 0.6);
+  background: rgba(10, 13, 16, 0.6);
 }
 
 /* ----------------------------- loot popup ------------------------------ */
@@ -200,9 +200,9 @@
   transform: translateY(-40%) translateX(14px);
   width: 250px;
   padding: 12px 16px 10px;
-  background: rgba(12, 16, 20, 0.78);
-  border: 1px solid rgba(239, 230, 213, 0.25);
-  border-left: 2px solid var(--hzc-warn);
+  background: rgba(10, 13, 16, 0.8);
+  border: 1px solid rgba(239, 230, 213, 0.22);
+  border-left: 2px solid var(--hzc-gold, #c8a24b);
   z-index: 44;
   pointer-events: none;
   opacity: 0;
@@ -217,8 +217,8 @@
 
 .hzc-loot-kicker {
   font-size: 10px; font-weight: 600;
-  letter-spacing: 0.42em;
-  color: var(--hzc-warn);
+  letter-spacing: 0.46em;
+  color: var(--hzc-gold, #c8a24b);
   margin-bottom: 7px;
 }
 .hzc-loot-rows { display: flex; flex-direction: column; gap: 4px; }
@@ -242,7 +242,7 @@
 }
 .hzc-loot-n {
   font-size: 13px; font-weight: 700;
-  color: var(--hzc-warn);
+  color: var(--hzc-gold, #c8a24b);
   font-variant-numeric: tabular-nums;
 }
 .hzc-loot-foot {

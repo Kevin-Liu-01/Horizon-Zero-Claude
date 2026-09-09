@@ -4,6 +4,29 @@ import { PlayerAnimator } from './playerAnimator.js';
 
 const CAMP_POS = new THREE.Vector3(18, 0, 26);
 
+// Dodge roll: the animator's Roll_RM clip carries a root-motion curve; the
+// roll travels DODGE_DIST along it over DODGE_T (HZD tap-dodge: 0.7-0.9s,
+// 2-3m; A2 gate wants >= 3m). Without the clip pack the old 0.42s impulse runs.
+const DODGE_T = 0.82;
+const DODGE_DIST = 3.4;
+const DODGE_T_IMPULSE = 0.42;
+
+/**
+ * Ground speeds (m/s). Round 4: these are chosen against the BAKED clip speeds
+ * (animator.clipReport()) so every loop plays near its own cadence — a clip
+ * driven far from its nominal speed reads as slow-motion or as a scuttle even
+ * though the phase lock keeps the feet planted:
+ *   Walk_Loop 1.17 | Jog_Fwd_Loop 6.16 | Sprint_Loop 6.96 | Crouch_Fwd 0.67
+ * WALK_SPEED is the hold-Alt stroll; CROUCH_SPEED came down from 2.1 (3.1x the
+ * crouch clip, a scuttle) and AIM_SPEED from 2.4 so aim-strafing rides the walk
+ * loop instead of dragging a quarter of the run clip into it.
+ */
+const WALK_SPEED = 1.5;
+const CROUCH_SPEED = 1.5;
+const AIM_SPEED = 1.8;
+const RUN_SPEED = 4.6;
+const SPRINT_SPEED = 8.2;
+
 const _wish = new THREE.Vector3();
 const _side = new THREE.Vector3();
 const _pivot = new THREE.Vector3();
@@ -31,9 +54,12 @@ export class Player {
     this.moveSpeed = 0;
     this.grounded = true;
     this.crouching = false;
+    this.walking = false;      // hold Alt: stroll (drives the Walk_Loop clip)
     this.aiming = false;
     this.dodging = false;
     this._dodgeTime = 0;
+    this._dodgeProg = 0;       // root-motion fraction already travelled
+    this.dodgeK = 1;           // 0..1 progress of the current roll (animator scrubs the clip)
     this._dodgeDir = new THREE.Vector3();
 
     this.maxHealth = 100;
@@ -100,8 +126,15 @@ export class Player {
     if (dir.lengthSq() < 0.01) dir.set(Math.sin(this.heading), 0, Math.cos(this.heading));
     this.dodging = true;
     this._dodgeTime = 0;
+    this._dodgeProg = 0;
+    this.dodgeK = 0;
     this._dodgeDir.copy(dir);
     this.ctx.events.emit('player-dodge');
+  }
+
+  /** Roll duration: clip-driven when the animator baked a roll, else impulse. */
+  get dodgeDuration() {
+    return this.animator?.rollProgress?.(0) != null ? DODGE_T : DODGE_T_IMPULSE;
   }
 
   /* ------------------------------ movement ------------------------------ */
@@ -143,21 +176,37 @@ export class Player {
     // --- locomotion
     const wish = this._wishDir();
     const sprinting = input.isDown('ShiftLeft') && !this.aiming && !this.crouching;
+    this.walking = input.isDown('AltLeft') && !sprinting;
     let targetSpeed = 0;
     if (wish.lengthSq() > 0.01) {
-      targetSpeed = this.crouching ? 2.1 : sprinting ? 8.2 : 4.6;
-      if (this.aiming) targetSpeed = 2.4;
+      targetSpeed = this.crouching ? CROUCH_SPEED : sprinting ? SPRINT_SPEED : RUN_SPEED;
+      if (this.aiming) targetSpeed = AIM_SPEED;
+      if (this.walking) targetSpeed = Math.min(targetSpeed, WALK_SPEED);
       // hauling a torn-off heavy weapon slows the hunt (canon -35%)
       if (this.ctx.combat?.activeWeapon?.heavy) targetSpeed *= 0.65;
     }
 
     if (this.dodging) {
       this._dodgeTime += dt;
-      const k = 1 - this._dodgeTime / 0.42;
-      if (k <= 0) this.dodging = false;
-      else {
-        this.velocity.x = this._dodgeDir.x * 11 * k;
-        this.velocity.z = this._dodgeDir.z * 11 * k;
+      const T = this.dodgeDuration;
+      const k = this._dodgeTime / T;
+      if (k >= 1) {
+        this.dodging = false;
+        this.dodgeK = 1;
+      } else {
+        this.dodgeK = k;
+        const prog = this.animator?.rollProgress?.(k);
+        let v;
+        if (prog != null) {
+          // velocity = derivative of the clip's root-motion curve, scaled so
+          // the whole roll covers DODGE_DIST (feet match the ground)
+          v = Math.max(0, prog - this._dodgeProg) / dt * DODGE_DIST;
+          this._dodgeProg = prog;
+        } else {
+          v = 11 * (1 - k);
+        }
+        this.velocity.x = this._dodgeDir.x * v;
+        this.velocity.z = this._dodgeDir.z * v;
       }
     }
 

@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import './hud.css';
+import { LOOT_POPUP } from './inventory.js';
 
 const RAD2DEG = 180 / Math.PI;
 
@@ -16,7 +17,12 @@ const LEVELS = { watcher: 5, sawtooth: 15, behemoth: 25, thunderjaw: 27 };
 // canon status durations (research: triggered buildup becomes a countdown ring)
 const ELEM_TRIG = { fire: 8, shock: 3, freeze: 8 };
 const DEATH_OVERLAY_DELAY = 1400; // ms — let the crumple play before the card
-const COMBAT_IDLE_S = 5;          // dynamic HUD: weapon panel fades after this
+const COMBAT_IDLE_S = 4;          // dynamic HUD: weapon widget hides after this
+const VITALS_IDLE_S = 4;          // dynamic HUD: full health bar hides after this
+const GHOST_HOLD_S = 0.45;        // damage-delta ghost lingers before draining
+const GHOST_DRAIN = 55;           // ghost drain rate, % of bar per second
+// toast suppression window after the take-all popup claimed a loot event (ms)
+const LOOT_CLAIM_MS = 400;
 
 /* ------------------------------ glyph library ------------------------------ */
 /* Flat "tribal glyph" icons per docs/research/ui.md — inline SVG, currentColor. */
@@ -54,13 +60,13 @@ function svgIcon(glyph, color) {
 function ammoLook(id) {
   const s = String(id ?? 'hunter').toLowerCase();
   if (s.includes('hardpoint')) return { glyph: 'hardpoint', color: '#efe6d5', name: 'Hardpoint Arrow' };
-  if (s.includes('precision')) return { glyph: 'precision', color: '#f5c95c', name: 'Precision Arrow' };
+  if (s.includes('precision')) return { glyph: 'precision', color: '#ffd34d', name: 'Precision Arrow' };
   if (s.includes('tear')) return { glyph: 'tearblast', color: '#9adfe8', name: 'Tearblast Arrow' };
   if (s.includes('fire')) return { glyph: 'fire', color: '#f0a03c', name: 'Fire Arrow' };
   if (s.includes('shock')) return { glyph: 'shock', color: '#4fa3e3', name: 'Shock Arrow' };
   if (s.includes('freeze') || s.includes('chill')) return { glyph: 'freeze', color: '#59c1c6', name: 'Freeze Arrow' };
   if (s.includes('blast') || s.includes('bomb')) return { glyph: 'blast', color: '#e8762c', name: 'Blast Bomb' };
-  if (s.includes('disc')) return { glyph: 'disc', color: '#f5c95c', name: 'Disc' };
+  if (s.includes('disc')) return { glyph: 'disc', color: '#c8a24b', name: 'Disc' };
   return { glyph: 'arrow', color: '#efe6d5', name: 'Hunter Arrow' };
 }
 
@@ -108,11 +114,14 @@ function div(cls, parent, html) {
 }
 
 /**
- * HZD-accurate presentation layer (round 2): segmented red health + green
- * medicine pouch, parchment compass ribbon with diamond pips, screen-edge
- * awareness indicators, weapon/ammo HUD, Concentration gauge, [E] interaction
- * prompt, item toasts, damage/tear numbers, machine health + elemental
- * buildup meters, quest chain, and the title/pause/death/victory screens.
+ * HZD-accurate presentation layer (round 3): thin off-white health bar with
+ * red damage-delta ghost (hidden at full health), green medicine pouch,
+ * parchment compass ribbon with awareness-colored diamond pips + distance
+ * labels, screen-edge awareness indicators, machine status stack (awareness
+ * cue / tracked-caps name / ghosted bar / elemental countdown rings),
+ * weapon/ammo HUD (drawn-only), Concentration gauge, [E] interaction prompt,
+ * popup-XOR-toast loot surfaces, damage/tear numbers, quest chain, and the
+ * pause/death/victory screens. Debug: window.__HUD_DEBUG__.lootSurfaces().
  */
 export class HUD {
   constructor(ctx) {
@@ -154,6 +163,20 @@ export class HUD {
     this._mhbShown = false;
     this._deathTimer = 0;          // pending death-overlay setTimeout handle
 
+    // damage-delta ghosting (health + machine bar) & dynamic-HUD vitals timer
+    this._hpGhostW = -1;
+    this._hpGhostHold = 0;
+    this._vitalsIdleT = VITALS_IDLE_S + 1; // boots hidden: full health at spawn
+    this._mhbGhostW = -1;
+    this._mhbGhostHold = 0;
+    this._mhbGhostM = null;
+    this._mhbAwareSig = '';
+
+    // item toasts buffer one microtask so the take-all popup (shown later in
+    // the same synchronous loot stack) can claim the event — see inventory.js
+    this._pendingItems = [];
+    this._itemFlushQueued = false;
+
     this._pips = new Map();        // machine -> compass pip element
     this._awares = new Map();      // machine -> awareness indicator entry
     this._attackFlash = new Map(); // machine -> remaining flash seconds
@@ -172,6 +195,16 @@ export class HUD {
     this._build();
     this._bindEvents();
     this._renderObjective(false);
+
+    // Round 3 gate contract (A10): report which loot surfaces are live so the
+    // gate can assert popup XOR toast-stack for a single loot event. Cheap,
+    // always installed.
+    window.__HUD_DEBUG__ = {
+      lootSurfaces: () => ({
+        popupVisible: !!LOOT_POPUP.instance?.visible,
+        toastCount: this._itemsEl ? this._itemsEl.childElementCount : 0,
+      }),
+    };
   }
 
   /* --------------------------------- DOM ---------------------------------- */
@@ -183,10 +216,12 @@ export class HUD {
     // watcher flash-bang overlay ('watcher-flash' when close + facing it)
     this._wflash = div('hzc-wflash', root);
 
-    // top-left vitals: segmented RED health, thin GREEN pouch meter under it
+    // top-left vitals: thin off-white bar on translucent dark (hides at full
+    // health), red damage-delta ghost, thin GREEN pouch meter under it
     const tl = div('hzc-topleft', root);
     this._topleftEl = tl;
     const hb = div('hzc-healthbar', tl);
+    this._healthGhost = div('hzc-healthghost', hb);
     this._healthFill = div('hzc-healthfill', hb);
     for (const pct of [25, 50, 75]) {
       const seg = div('hzc-health-seg', hb);
@@ -223,16 +258,28 @@ export class HUD {
     div('hzc-compass-caret', comp);
     this._bearingEl = div('hzc-bearing', comp, '000');
 
-    // machine health bar + elemental buildup micro-meters
+    // machine status stack (reference-v3 PART 2): awareness cue ABOVE the
+    // name/level line, bar with damage-delta ghosting, elemental countdown
+    // rings beneath — all reading the current bar target
     this._mhbEl = div('hzc-mhb', root);
+    this._mhbAware = div('hzc-mhb-aware', this._mhbEl,
+      '<div class="hzc-mhb-aware-circle"></div>' +
+      '<div class="hzc-mhb-aware-diamond"><svg viewBox="0 0 30 30">' +
+      '<polygon points="15,1 18.4,9.2 26,5.6 21.4,12.6 29,15 21.4,17.4 26,24.4 18.4,20.8 15,29 11.6,20.8 4,24.4 8.6,17.4 1,15 8.6,12.6 4,5.6 11.6,9.2"/>' +
+      '</svg></div>');
+    this._mhbAwareCircle = this._mhbAware.firstChild;
     this._mhbName = div('hzc-mhb-name', this._mhbEl, 'MACHINE');
-    this._mhbFill = div('hzc-mhb-fill', div('hzc-mhb-bar', this._mhbEl));
+    const mbar = div('hzc-mhb-bar', this._mhbEl);
+    this._mhbGhost = div('hzc-mhb-ghost', mbar);
+    this._mhbFill = div('hzc-mhb-fill', mbar);
     const elems = div('hzc-mhb-elems', this._mhbEl);
     this._elemEls = {};
     for (const e of ['fire', 'shock', 'freeze']) {
-      const row = div('hzc-elem', elems, svgIcon(e === 'fire' ? 'fire' : e === 'shock' ? 'shock' : 'freeze', 'currentColor'));
+      const row = div('hzc-elem', elems);
       row.dataset.e = e;
-      this._elemEls[e] = { row, fill: div('hzc-elem-fill', div('hzc-elem-bar', row)), w: -1, trig: null, shown: null };
+      const ring = div('hzc-elem-ring', row);
+      div('hzc-elem-ic', ring, svgIcon(e, 'currentColor'));
+      this._elemEls[e] = { row, ring, w: -1, trig: null, shown: null };
     }
 
     // awareness indicator layer (screen-projected, edge-clamped)
@@ -316,10 +363,14 @@ export class HUD {
     div('hzc-victory-line', this._victoryEl);
     div('hzc-victory-sub', this._victoryEl, 'EVERY MACHINE LIES SILENT · THE HUNT IS OVER');
 
-    // pause menu (only HUD child with pointer events)
+    // pause menu (only HUD child with pointer events) — tribal-tech panel:
+    // smoked glass, corner brackets, hairline rules, tracked caps
     this._pauseEl = div('hzc-pause', root);
     const pi = div('hzc-pause-inner', this._pauseEl);
+    for (const c of ['tl', 'tr', 'bl', 'br']) div('hzc-bracket ' + c, pi);
+    div('hzc-pause-kicker', pi, 'THE HUNT HOLDS');
     div('hzc-pause-title', pi, 'PAUSED');
+    div('hzc-pause-rule', pi);
     const btn = document.createElement('button');
     btn.className = 'hzc-btn';
     btn.textContent = 'RESUME THE HUNT';
@@ -354,6 +405,7 @@ export class HUD {
         this._lastElemSig = '';
       }
       this._mhbTimer = 4;
+      this._mhbGhostHold = GHOST_HOLD_S; // ghost lingers at pre-hit health
       this._spawnDamage(e);
       // status triggered -> start a local countdown (fire 8s / shock 3s /
       // freeze 8s); the buildup meter renders it FULL->empty in triggered style
@@ -378,6 +430,7 @@ export class HUD {
     ev.on('item-gained', (e) => this._itemToast(e));
     ev.on('player-hurt', () => {
       this._hurtFlash = Math.min(1.2, this._hurtFlash + 0.75);
+      this._hpGhostHold = GHOST_HOLD_S; // red damage-delta ghost on the bar
       this._combatIdleT = 0;
     });
     // watcher blind-flash: white screen hit when close + facing the machine
@@ -536,20 +589,50 @@ export class HUD {
 
   /* ------------------------------ item toasts ------------------------------ */
 
+  /**
+   * Loot-flow decision (round 3): a loot event that opened the take-all popup
+   * (machine corpses, supply crates, weapon pickups — anything routed through
+   * interactables' `entry.loot`) renders the POPUP ONLY; item toasts serve
+   * auto-pickups and gathers. interactables.js (read-only) emits 'item-gained'
+   * BEFORE it calls popup.show() in the same synchronous stack, so toasts are
+   * buffered one microtask and dropped when the popup claimed their ids.
+   */
   _itemToast(e) {
     let id = e?.id ?? e?.item?.id ?? (typeof e?.item === 'string' ? e.item : null);
-    let n = e?.count ?? e?.n ?? e?.qty ?? 1;
+    const n = e?.count ?? e?.n ?? e?.qty ?? 1;
     if (id == null) return;
-    id = String(id);
+    this._pendingItems.push({ id: String(id), n, e });
+    if (!this._itemFlushQueued) {
+      this._itemFlushQueued = true;
+      queueMicrotask(() => this._flushItemToasts());
+    }
+  }
 
+  _flushItemToasts() {
+    this._itemFlushQueued = false;
+    const pop = LOOT_POPUP.instance;
+    const claimed = pop && pop.visible
+      && (performance.now() - pop.shownAt) < LOOT_CLAIM_MS ? pop.shownIds : null;
+    for (const it of this._pendingItems) {
+      if (claimed && claimed.has(it.id)) continue; // popup owns this loot event
+      this._renderItemToast(it.id, it.n, it.e);
+    }
+    this._pendingItems.length = 0;
+  }
+
+  _renderItemToast(id, n, e) {
     // catalog lookup (items builder may expose one) with local fallback
     const inv = this.ctx.inventory;
     const cat = inv?.catalog ?? inv?.items;
     const entry = cat instanceof Map ? cat.get(id) : cat?.[id];
     const local = ITEMS[id] ?? {};
-    const name = entry?.name ?? local.name ?? prettify(id);
-    const glyph = entry?.glyph && GLYPHS[entry.glyph] ? entry.glyph : (local.glyph ?? 'shard');
-    const color = entry?.color ?? local.color ?? '#efe6d5';
+    const name = entry?.name ?? e?.name ?? local.name ?? prettify(id);
+    const color = entry?.color ?? e?.color ?? local.color ?? '#efe6d5';
+    const glyphKey = entry?.glyph && GLYPHS[entry.glyph] ? entry.glyph : local.glyph;
+    // unknown ids may carry a text glyph on the event itself ('✚', '◬', …)
+    const icon = glyphKey ? svgIcon(glyphKey, color)
+      : e?.glyph ? `<span class="hzc-item-tg" style="color:${color}">${e.glyph}</span>`
+        : svgIcon('shard', color);
 
     // merge into the newest row when the same item streams in
     const last = this._itemsEl.lastChild;
@@ -561,7 +644,7 @@ export class HUD {
     el.className = 'hzc-item';
     el.dataset.id = id;
     el.dataset.n = String(n);
-    el.innerHTML = `${svgIcon(glyph, color)}<span>${name}</span><b>×${n}</b>`;
+    el.innerHTML = `${icon}<span>${name}</span><b>${n > 0 ? '×' + n : ''}</b>`;
     this._itemsEl.appendChild(el);
     // cap at 5 so the stack can't climb into the kill feed above it
     while (this._itemsEl.children.length > 5) this._itemsEl.firstChild.remove();
@@ -628,11 +711,17 @@ export class HUD {
         continue;
       }
       d.el.style.visibility = 'visible';
+      // subtle rise+fade: eased drift up that decelerates, quick settle-in
+      // scale, longer readable hold — no comic bounce
       const k = d.age / d.dur;
-      const x = (v.x * 0.5 + 0.5) * this._vw + d.drift * k;
-      const y = (-v.y * 0.5 + 0.5) * this._vh - 48 * k;
-      d.el.style.transform = `translate(${x.toFixed(1)}px, ${y.toFixed(1)}px) translate(-50%,-100%)`;
-      d.el.style.opacity = (k < 0.12 ? k / 0.12 : 1 - (k - 0.12) / 0.88).toFixed(2);
+      const rise = 1 - (1 - k) * (1 - k);
+      const x = (v.x * 0.5 + 0.5) * this._vw + d.drift * rise;
+      const y = (-v.y * 0.5 + 0.5) * this._vh - 44 * rise;
+      const s = k < 0.14 ? 0.82 + 0.18 * (k / 0.14) : 1;
+      d.el.style.transform =
+        `translate(${x.toFixed(1)}px, ${y.toFixed(1)}px) translate(-50%,-100%) scale(${s.toFixed(3)})`;
+      const o = k < 0.1 ? k / 0.1 : k > 0.62 ? (1 - k) / 0.38 : 1;
+      d.el.style.opacity = o.toFixed(2);
     }
   }
 
@@ -641,7 +730,7 @@ export class HUD {
   update(dt, t) {
     const p = this.ctx.player;
     if (!p) return;
-    this._updateHealth(p);
+    this._updateHealth(dt, p);
     this._updateCompass(p);
     this._updateAwareness(dt, p);
     this._updateMachineBar(dt);
@@ -696,7 +785,7 @@ export class HUD {
 
   /* --------------------------- health + pouch ------------------------------ */
 
-  _updateHealth(p) {
+  _updateHealth(dt, p) {
     const hp = clamp01(p.health / p.maxHealth);
     const w = Math.round(hp * 200) / 2; // 0.5% granularity
     if (w !== this._lastHp) {
@@ -709,6 +798,19 @@ export class HUD {
       }
     }
 
+    // red damage-delta ghost: holds at pre-hit width, then drains to the fill
+    let gw = this._hpGhostW;
+    if (gw < 0 || gw < w) gw = w;
+    else if (gw > w) {
+      if (this._hpGhostHold > 0) this._hpGhostHold -= dt;
+      else gw = Math.max(w, gw - GHOST_DRAIN * dt);
+    }
+    const gq = Math.round(gw * 2) / 2;
+    if (gq !== this._hpGhostW) {
+      this._hpGhostW = gq;
+      this._healthGhost.style.width = gq + '%';
+    }
+
     const pouch = clamp01((p.pouch ?? 0) / (p.maxPouch || 100));
     const pw = Math.round(pouch * 100);
     if (pw !== this._lastPouch) {
@@ -719,14 +821,19 @@ export class HUD {
     if (healing !== this._lastHealing) {
       this._lastHealing = healing;
       this._pouchRow.classList.toggle('healing', healing);
+      this._topleftEl.classList.toggle('healing', healing);
     }
     const hint = (p.pouch ?? 0) > 0.5 && p.health < p.maxHealth;
     if (hint !== this._lastPouchHint) {
       this._lastPouchHint = hint;
       this._pouchKey.classList.toggle('show', hint);
     }
-    // dynamic HUD: vitals recede when full and untouched (research 2, global)
-    const idle = hp >= 0.999 && !healing;
+    // dynamic HUD: the bar HIDES at full health after a calm 4s (research 2)
+    const engaged = hp < 0.999 || healing || this._hurtFlash > 0.02
+      || this._anyHostile || gq > w + 0.25;
+    if (engaged) this._vitalsIdleT = 0;
+    else this._vitalsIdleT += dt;
+    const idle = this._vitalsIdleT > VITALS_IDLE_S;
     if (idle !== this._lastIdle) {
       this._lastIdle = idle;
       this._topleftEl.classList.toggle('idle', idle);
@@ -760,29 +867,65 @@ export class HUD {
 
     const list = this.ctx.machines?.list;
     if (!Array.isArray(list)) return;
+
+    // distance labels ("125m") ride on Focus-tagged machines and the nearest
+    // machine of the current quest stage (the hunt target)
+    const tags = this.ctx.focus?.tags;
+    const questKind = this._stage < QUEST.length ? QUEST[this._stage].kind : null;
+    let questTarget = null;
+    if (questKind) {
+      let bd = Infinity;
+      for (const m of list) {
+        if (m.kind !== questKind || m.alive === false) continue;
+        const pos = m.position ?? m.root?.position;
+        if (!pos) continue;
+        const dx = pos.x - p.position.x, dz = pos.z - p.position.z;
+        const d2 = dx * dx + dz * dz;
+        if (d2 < bd) { bd = d2; questTarget = m; }
+      }
+    }
+
     for (const m of list) {
       let pip = this._pips.get(m);
       if (!pip) {
-        pip = div('hzc-pip', this._pipLayer);
+        const el = div('hzc-pip', this._pipLayer);
+        div('hzc-pip-d', el); // the awareness-colored diamond
+        pip = {
+          el,
+          lab: div('hzc-pip-dist', el),
+          s: null, vis: null, dist: -1, labOn: null,
+        };
         this._pips.set(m, pip);
       }
       const pos = m.position ?? m.root?.position;
-      if (!pos || m.alive === false) { pip.style.visibility = 'hidden'; continue; }
+      if (!pos || m.alive === false) {
+        if (pip.vis !== false) { pip.el.style.visibility = 'hidden'; pip.vis = false; }
+        continue;
+      }
       const dx = pos.x - p.position.x;
       const dz = pos.z - p.position.z;
       const dist = Math.hypot(dx, dz);
       const d = wrap180(Math.atan2(dx, -dz) * RAD2DEG - camB);
       if (dist > 320 || dist < 2 || Math.abs(d) > this._halfWinDeg) {
-        pip.style.visibility = 'hidden';
+        if (pip.vis !== false) { pip.el.style.visibility = 'hidden'; pip.vis = false; }
         continue;
       }
-      pip.style.visibility = 'visible';
-      pip.style.transform =
-        `translateX(calc(${(d * this._pxPerDeg).toFixed(1)}px - 50%)) rotate(45deg)`;
-      pip.style.opacity = Math.max(0.3, Math.min(1, 1.25 - dist / 300)).toFixed(2);
+      if (pip.vis !== true) { pip.el.style.visibility = 'visible'; pip.vis = true; }
+      pip.el.style.transform = `translateX(${(d * this._pxPerDeg).toFixed(1)}px)`;
+      pip.el.style.opacity = Math.max(0.3, Math.min(1, 1.25 - dist / 300)).toFixed(2);
       const s = (m.state === 'alert' || m.state === 'attack') ? 'hostile'
         : (m.state === 'suspicious' || m.state === 'search') ? 'wary' : 'calm';
-      if (pip.dataset.s !== s) pip.dataset.s = s;
+      if (pip.s !== s) { pip.s = s; pip.el.dataset.s = s; }
+      const labOn = !!tags?.has?.(m) || m === questTarget;
+      if (labOn !== pip.labOn) {
+        pip.labOn = labOn;
+        pip.lab.style.display = labOn ? 'block' : 'none';
+        if (!labOn) pip.dist = -1;
+      }
+      if (labOn) {
+        const di = Math.round(dist);
+        if (di !== pip.dist) { pip.dist = di; pip.lab.textContent = di + 'm'; }
+      }
     }
   }
 
@@ -875,7 +1018,7 @@ export class HUD {
       if (mode === 'fill' && Math.abs(frac - a.frac) > 0.02) {
         a.frac = frac;
         a.circle.style.background =
-          `conic-gradient(#f5c95c ${(frac * 100).toFixed(0)}%, rgba(8,10,12,0.35) 0)`;
+          `conic-gradient(var(--hzc-yellow) ${(frac * 100).toFixed(0)}%, rgba(8, 10, 12, 0.35) 0)`;
       }
     }
   }
@@ -885,7 +1028,9 @@ export class HUD {
   _renderMhbName(m) {
     const name = String(m.displayName ?? m.kind ?? 'MACHINE').toUpperCase();
     const lv = m.level ?? LEVELS[m.kind];
-    this._mhbName.innerHTML = lv != null ? `${name}&ensp;<b>LV ${lv}</b>` : name;
+    this._mhbName.innerHTML = lv != null
+      ? `<span class="nm">${name}</span><span class="lv">LV ${lv}</span>`
+      : `<span class="nm">${name}</span>`;
   }
 
   _updateMachineBar(dt) {
@@ -922,6 +1067,43 @@ export class HUD {
       this._mhbFill.style.width = w + '%';
     }
 
+    // damage-delta ghost: pale trail holds at pre-hit health, then drains
+    let gw = this._mhbGhostW;
+    if (m !== this._mhbGhostM) { this._mhbGhostM = m; gw = w; }
+    if (gw < w) gw = w;
+    else if (gw > w) {
+      if (this._mhbGhostHold > 0) this._mhbGhostHold -= dt;
+      else gw = Math.max(w, gw - GHOST_DRAIN * dt);
+    }
+    const gq = Math.round(gw * 2) / 2;
+    if (gq !== this._mhbGhostW) {
+      this._mhbGhostW = gq;
+      this._mhbGhost.style.width = gq + '%';
+    }
+
+    // awareness cue above the stack: yellow scanning circle (fills with
+    // suspicion) -> solid red when aware -> flashing jagged red diamond while
+    // THIS machine is mid-attack ('machine-attack' / 'machine-telegraph')
+    let aMode = 'calm';
+    let aFrac = 0;
+    if (m.alive !== false) {
+      if (this._attackFlash.has(m)) aMode = 'attack';
+      else if (m.state === 'alert' || m.state === 'attack') aMode = 'alert';
+      else if (m.state === 'suspicious' || m.state === 'search') {
+        aMode = 'fill';
+        aFrac = clamp01(m.suspicion ?? 0.5);
+      }
+    }
+    const aSig = aMode + ((aFrac * 20) | 0);
+    if (aSig !== this._mhbAwareSig) {
+      this._mhbAwareSig = aSig;
+      this._mhbAware.dataset.m = aMode;
+      if (aMode === 'fill') {
+        this._mhbAwareCircle.style.background =
+          `conic-gradient(var(--hzc-yellow) ${(aFrac * 100).toFixed(0)}%, rgba(8, 10, 12, 0.4) 0)`;
+      }
+    }
+
     // elemental buildup micro-meters (machines builder lands machine.elemental
     // concurrently — read every shape defensively, hide when absent).
     // While a triggered status runs, the meter flips to a local COUNTDOWN
@@ -947,8 +1129,15 @@ export class HUD {
       const shown = val > 0.02 || trig;
       if (shown !== e.shown) { e.shown = shown; e.row.classList.toggle('show', shown); }
       if (!shown) continue;
+      // countdown ring: element color while building, off-white while the
+      // triggered status drains (canon "unfilling white circle")
       const pw = Math.round(val * 100);
-      if (pw !== e.w) { e.w = pw; e.fill.style.width = pw + '%'; }
+      if (pw !== e.w || trig !== e.trig) {
+        e.w = pw;
+        const col = trig ? 'var(--hzc-ring-cd)' : 'var(--c)';
+        e.ring.style.background =
+          `conic-gradient(${col} ${pw}%, rgba(10, 13, 16, 0.68) 0)`;
+      }
       if (trig !== e.trig) { e.trig = trig; e.row.classList.toggle('triggered', trig); }
     }
     this._lastElemSig = sig;
@@ -1050,7 +1239,7 @@ export class HUD {
     this._intEl.classList.add('show');
     this._intLabel.textContent = label;
     this._intRing.style.background =
-      `conic-gradient(#f5c95c ${(prog * 100).toFixed(0)}%, rgba(239,230,213,0.18) 0)`;
+      `conic-gradient(var(--hzc-yellow) ${(prog * 100).toFixed(0)}%, rgba(239, 230, 213, 0.18) 0)`;
   }
 
   /* ------------------------------- vignette --------------------------------- */

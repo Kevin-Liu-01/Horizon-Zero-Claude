@@ -101,10 +101,10 @@ function terrace(h, step, sharp) {
  * meadow, fading out well before the mountain rim so it stays crossable and
  * never cuts a canyon through the ring.
  */
-function riverCenterX(z) {
+export function riverCenterX(z) {
   return -125 + 38 * Math.sin(z * 0.008) + 14 * Math.sin(z * 0.023 + 1.7);
 }
-function riverHalfWidth(z) {
+export function riverHalfWidth(z) {
   return 13 + 3 * Math.sin(z * 0.021 + 0.5);
 }
 
@@ -344,14 +344,27 @@ export class Terrain {
       h += bowl * riverGate * n.noise2D(x * 0.06 + 5, z * 0.06 - 9) * 0.22;
     }
 
-    // Rim mountains: ridged crests rising outside ~78% of the world radius,
-    // pulled toward horizontal strata benches
+    // Rim mountains: ridged crests rising outside ~78% of the world radius.
+    // Silhouette character varies by bearing — jagged alpine teeth, flat-top
+    // stepped buttes, and lower saddle ridges — so the ring reads as a real
+    // range instead of one profile wallpapered 360°.
     const rim = SS(r, WORLD_HALF * 0.78, WORLD_HALF * 1.06);
     if (rim > 0) {
-      const ridge = this._ridged(x * 0.006 + 31, z * 0.006 + 7, 4);
-      h += rim * rim * (34 + ridge * 46);
-      const ta = 0.55 * SS(rim, 0.15, 0.7);
-      if (ta > 0.002) h = h * (1 - ta) + terrace(h, 6.8, 2.4) * ta;
+      const inv = 1 / r; // r >= 280 whenever rim > 0
+      const cs = x * inv, sn = z * inv;
+      // continuous around the ring: noise sampled on the unit bearing circle
+      const swell = n.fbm(cs * 1.9 + 13.7, sn * 1.9 - 8.2, 2);        // saddles
+      const character = n.noise2D(cs * 3.1 - 4.5, sn * 3.1 + 2.8);    // -1..1
+      const jag = SS(character, 0.05, 0.75);       // -> sharp alpine teeth
+      const butte = SS(-character, 0.10, 0.80);    // -> stepped mesa faces
+      const f = 0.006 + 0.0032 * jag;
+      const ridge = this._ridged(x * f + 31, z * f + 7, 4);
+      const amp = (30 + ridge * (40 + 26 * jag)) * (0.70 + 0.52 * (swell * 0.5 + 0.5));
+      h += rim * rim * amp;
+      // strata benches: butte sectors terrace hard into mesas, jagged
+      // sectors barely at all (their faces stay clean rock)
+      const ta = (0.18 + 0.60 * butte) * (1 - 0.72 * jag) * SS(rim, 0.15, 0.7);
+      if (ta > 0.002) h = h * (1 - ta) + terrace(h, 6.8 + 4.2 * butte, 2.4) * ta;
     }
     return h;
   }
@@ -407,8 +420,8 @@ export class Terrain {
         const rd = Math.abs(wx - riverCenterX(wz));
         const hw = riverHalfWidth(wz);
         const gate = 1 - SS(r, 250, 302);
-        // riparian greening hugs ~1.5 half-widths of the channel
-        const moist = (1 - SS(rd, hw * 0.55, hw * 1.6)) * gate;
+        // riparian greening reaches ~2 half-widths up the banks
+        const moist = (1 - SS(rd, hw * 0.5, hw * 2.0)) * gate;
         const bed = (1 - SS(rd, hw * 0.25, hw * 0.8)) * gate;
 
         data[o] = (path * 255) | 0;
@@ -454,6 +467,8 @@ export class Terrain {
     const cRockWarm = new THREE.Color('#8b7355'); // warm umber rock variant
     const cSilt = new THREE.Color('#948468');   // pale dried riverbed
     const cSnow = new THREE.Color('#dcdfe2');
+    const cSunlit = new THREE.Color('#b3885a'); // golden-hour lit rock faces
+    const cShade = new THREE.Color('#5d6270');  // cool blue shade faces
     const tmp = new THREE.Color();
     const tmp2 = new THREE.Color();
     const gn = this.grassNoise;
@@ -480,13 +495,13 @@ export class Terrain {
         const rd = Math.abs(x - riverCenterX(z));
         const hw = riverHalfWidth(z);
         const gate = 1 - SS(r, 250, 302);
-        // deeper, more saturated greening tight to the channel (~1.5 hw)
-        const moist = (1 - SS(rd, hw * 0.55, hw * 1.6)) * gate;
+        // deeper, more saturated greening reaching ~2 hw up the banks
+        const moist = (1 - SS(rd, hw * 0.5, hw * 2.0)) * gate;
         const bed = (1 - SS(rd, hw * 0.3, hw * 0.95)) * gate;
 
         tmp.copy(cGrass).lerp(cDry, dryness * 0.85);
         tmp.lerp(cOchre, umber * (1 - moist) * 0.5);
-        tmp.lerp(cLush, moist * 0.85);
+        tmp.lerp(cLush, moist * 0.9);
         tmp.lerp(cSilt, bed * 0.55); // fragment mask sharpens this
 
         // slope splat: dirt then bare rock
@@ -508,11 +523,29 @@ export class Terrain {
           tmp2.copy(cRock).lerp(cRockWarm, rv * 0.85);
           tmp.lerp(tmp2, rim * 0.7);
           tmp.multiplyScalar(1 + (rv - 0.5) * 0.26 * rim);
+          // aspect light: faces tipped toward the low NW sun bake in golden
+          // warmth, faces turned away cool into blue shade — the ring stops
+          // reading as one evenly-lit band
+          const sunFace = 0.55 * gx + 0.72 * gz; // slope toward the sun
+          const warm = SS(sunFace, 0.06, 1.0);
+          const shade = SS(-sunFace, 0.06, 1.0);
+          if (warm > 0.001) {
+            tmp.lerp(cSunlit, warm * rim * 0.38);
+            tmp.multiplyScalar(1 + 0.16 * warm * rim);
+          }
+          if (shade > 0.001) {
+            tmp.lerp(cShade, shade * rim * 0.34);
+            tmp.multiplyScalar(1 - 0.13 * shade * rim);
+          }
         }
         if (h > 30) tmp.lerp(cRock, SS(h, 30, 46) * 0.55);
-        const snow = SS(h, 52, 64);
+        // irregular snowline: elevation threshold wanders per bearing/pocket
+        // so caps read as windblown patches, not a painted-on contour line
+        const snowT = 47 + 9 * gn.fbm(x * 0.016 + 61, z * 0.016 - 27, 2)
+          + 5 * gn.noise2D(x * 0.05 - 8, z * 0.05 + 3);
+        const snow = SS(h, snowT, snowT + 11);
         if (snow > 0) {
-          tmp.lerp(cSnow, snow * (0.3 + 0.7 * rim) * (1 - 0.65 * SS(m, 1.3, 2.2)));
+          tmp.lerp(cSnow, snow * (0.25 + 0.75 * rim) * (1 - 0.65 * SS(m, 1.3, 2.2)));
         }
 
         colors[i * 3] = tmp.r;
@@ -564,11 +597,15 @@ float tnoise(vec2 p){
   vec4 mask = texture2D(uMask, clamp(vWPos.xz * ${(1 / WORLD_SIZE).toFixed(8)} + 0.5, 0.001, 0.999));
 
   // moist dark soil + greener growth along the dried river
-  diffuseColor.rgb = mix(diffuseColor.rgb, uMoistCol * (0.8 + dn * 0.35), mask.g * 0.72);
+  diffuseColor.rgb = mix(diffuseColor.rgb, uMoistCol * (0.8 + dn * 0.35), mask.g * 0.8);
+
+  // damp dark-soil collar where the banks meet the silt bed
+  float damp = smoothstep(0.06, 0.5, mask.b) * (1.0 - smoothstep(0.55, 0.95, mask.b));
+  diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.21, 0.175, 0.12) * (0.85 + dn * 0.3), damp * 0.5);
 
   // dried riverbed: pale cracked silt with pebble grain
   float peb = tnoise(vWPos.xz * 2.6) * 0.6 + tnoise(vWPos.xz * 9.0) * 0.4;
-  diffuseColor.rgb = mix(diffuseColor.rgb, uSiltCol * (0.72 + peb * 0.5), mask.b * 0.9);
+  diffuseColor.rgb = mix(diffuseColor.rgb, uSiltCol * (0.6 + peb * 0.72), mask.b * 0.9);
 
   // rocky SE highland: gravelly stone breakup across the shelf flats
   float shelf = mask.a;
@@ -589,13 +626,19 @@ float tnoise(vec2 p){
   vec3 wn = normalize(cross(dFdx(vWPos), dFdy(vWPos)));
   float steep = smoothstep(0.28 - 0.235 * shelf, 0.62 - 0.42 * shelf, 1.0 - abs(wn.y));
   if (steep > 0.003) {
+    // banding belongs to SOME faces only: a very low-freq gate picks which
+    // mountain sectors read as layered sediment; the rest stay clean rock.
+    // Snowy heights shed the stripes entirely.
+    float bandGate = smoothstep(0.36, 0.60, tnoise(vWPos.xz * 0.0045 + 3.1));
+    float snowGuard = 1.0 - 0.88 * smoothstep(44.0, 58.0, vWPos.y);
     float sector = tnoise(vWPos.xz * 0.012);
     float bp = vWPos.y * mix(0.34, 0.82, sector)
              + tnoise(vWPos.xz * 0.045) * 4.5 + sector * 9.7;
     float band = smoothstep(-0.25, 0.55, sin(bp) + 0.5 * sin(bp * 2.31 + sector * 6.0));
     float bvar = thash(vec2(floor(bp * 0.159) * 0.171, floor(sector * 5.0) * 0.37));
     vec3 sc = mix(uStrataCol * 0.70, uStrataCol * 1.18, band) * (0.82 + 0.34 * bvar);
-    diffuseColor.rgb = mix(diffuseColor.rgb, sc, steep * (0.38 + 0.30 * shelf));
+    diffuseColor.rgb = mix(diffuseColor.rgb, sc,
+      steep * (0.38 * mix(0.10, 1.0, bandGate) + 0.30 * shelf) * snowGuard);
   }
 }`);
     };

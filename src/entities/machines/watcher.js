@@ -118,6 +118,22 @@ export class Watcher extends Machine {
       this._legLen = Math.max(0.5, _v.distanceTo(f));
     }
 
+    // sole calibration for debugFeet (gate A6): the toe JOINT rides above the
+    // visual sole by a fixed bind offset — measure it once against the terrain
+    // under the spawn stance so reported feet are ground-contact points.
+    this._soleOff = 0;
+    {
+      let sum = 0;
+      let n = 0;
+      for (const b of [this.bones.rToe, this.bones.lToe]) {
+        if (!b) continue;
+        b.getWorldPosition(_v);
+        sum += _v.y - ctx.terrain.getHeight(_v.x, _v.z);
+        n++;
+      }
+      if (n) this._soleOff = sum / n;
+    }
+
     this._gait = Math.random() * Math.PI * 2;
     this._lookW = 0;       // 0 = scanning, 1 = snapped onto target
     this._lookYaw = 0;
@@ -130,6 +146,37 @@ export class Watcher extends Machine {
 
   onAlerted() {
     this.manager.alertNearby(this, 60);
+  }
+
+  /**
+   * Round-3 contract (gate A6). The watcher's procedural stride has no plant
+   * bookkeeping, so report the toe bones and call a foot planted only when it
+   * really is: mid-stance (the linear counter-sweep holds it world-fixed and
+   * at ground height) or standing still (bind pose feet on the ground).
+   */
+  debugFeet() {
+    const out = [];
+    const TAU = Math.PI * 2;
+    const still = this._speed < 0.15;
+    for (const side of [1, -1]) {
+      const b = (side > 0 ? this.bones.rToe : this.bones.lToe)
+        ?? (side > 0 ? this.bones.rFoot : this.bones.lFoot);
+      if (!b) continue;
+      let ph = this._gait + (side > 0 ? 0 : Math.PI);
+      ph = ((ph % TAU) + TAU) % TAU;
+      // narrow mid-stance: the rotational gait arcs the sole slightly at the
+      // stance edges (no per-foot IK on this native rig), so only the truly
+      // grounded center of the sweep counts as planted
+      const midStance = ph > Math.PI * 0.85 && ph < Math.PI * 1.15;
+      const world = b.getWorldPosition(new THREE.Vector3());
+      world.y -= this._soleOff; // joint -> sole contact (bind-calibrated)
+      out.push({
+        name: side > 0 ? 'R' : 'L',
+        world,
+        planted: this.alive && !this.lowLOD && (still || midStance),
+      });
+    }
+    return out;
   }
 
   /** Ticked from Machine.update() — runs even under lowLOD/stun. */
@@ -404,10 +451,13 @@ export class Watcher extends Machine {
     const wary = this.state === 'suspicious' || this.state === 'search';
     const wantLook = hostile || wary ? 1 : 0;
     this._lookW = THREE.MathUtils.damp(this._lookW, wantLook, hostile ? 10 : 4, dt);
-    // sharp rear-up when it first goes hostile
-    this._rear = THREE.MathUtils.damp(
-      this._rear, this.state === 'alert' ? 1 : 0, this.state === 'alert' ? 14 : 5, dt,
-    );
+    // sharp rear-up when it first goes hostile — periscope POPS up with a
+    // spring overshoot (snappier than a plain damp), then settles
+    const alertNow = this.state === 'alert';
+    const rearTarget = alertNow
+      ? 1 + 0.4 * Math.exp(-4.5 * this._stateT) * Math.sin(15 * this._stateT)
+      : 0;
+    this._rear = THREE.MathUtils.damp(this._rear, rearTarget, alertNow ? 24 : 5, dt);
     this.body.rotation.x = -this._rear * 0.15; // chest lifts off the ground line
 
     // where to look: player (hostile) or last stimulus (wary), in root space
@@ -428,17 +478,23 @@ export class Watcher extends Machine {
     const scanW = 1 - this._lookW;
     const scan = Math.sin(t * 0.75 + this._gait * 0.06) * 0.55 * scanW;
     const nod = Math.sin(t * 1.6) * 0.04 * scanW;
+    // bird strut: the head holds still through the stance then SNAPS forward
+    // at each footfall (sharp attack, slow recover — pigeon cadence)
+    const stepF = ((this._gait / Math.PI) % 1 + 1) % 1;
+    const strut = (stepF < 0.22 ? stepF / 0.22 : (1 - stepF) / 0.78)
+      * moveK * 0.24;
     const n = this.neck.length || 1;
     const yaw = (scan + this._lookYaw) * 1.15;
     // periscope: the neck carries the head high while scanning (watcher, not
     // low drone), and rears up harder on alert
     const periscope = 0.5 * scanW + this._rear * 0.45;
-    const pitch = (periscope + this._lookPitch * 1.2 + nod + this._peckPose * 0.85);
+    const pitch = (periscope + this._lookPitch * 1.2 + nod - strut * 0.5
+      + this._peckPose * 0.85);
     for (let i = 0; i < this.neck.length; i++) {
       this._rot(this.neck[i], 'z', yaw / n);
       this._rot(this.neck[i], 'x', pitch / n);
     }
-    this._rot(b.cam, 'x', this._peckPose * 0.35);
+    this._rot(b.cam, 'x', this._peckPose * 0.35 - strut);
 
     /* ---- tail sway ---- */
     const tailFreq = 1.6 + speed * 0.5;

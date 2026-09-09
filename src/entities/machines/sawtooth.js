@@ -1,6 +1,8 @@
 import * as THREE from 'three';
 import { Machine, rollLoot } from './machine.js';
 import { canisterMesh, plateMesh, antennaMesh, powerCellMesh, pulseGlow } from './parts.js';
+import { buildRig, RIGS } from './autorig.js';
+import { GaitController } from './gait.js';
 
 /**
  * Sawtooth: big-cat stalker (static sculpt, procedural root motion; HZD
@@ -108,9 +110,33 @@ export class Sawtooth extends Machine {
       { id: 'machine-heart', n: 1, chance: 0.3 },
     ]);
 
-    this._gait = Math.random() * Math.PI * 2;
     this._crouch = 0;   // stalk pose blend
     this._pounceDir = new THREE.Vector3();
+
+    // --- auto-rig (autorig.js): skeleton + skinned rebind, then the cat gait
+    buildRig(this, RIGS.sawtooth);
+    this.gait = new GaitController(this, this.rig, {
+      // lateral-sequence prowl: LF -> RH -> RF -> LH, low and long
+      walk: { stride: 1.55, duty: 0.64, lift: 0.24, offsets: { LF: 0, RH: 0.25, RF: 0.5, LH: 0.75 } },
+      // bounding charge: front pair then hind pair, airborne-ish suspension
+      run: { stride: 3.1, duty: 0.42, lift: 0.5, offsets: { LF: 0.08, RF: 0, LH: 0.58, RH: 0.5 } },
+      runRef: 9,
+      rollAmp: 0.05,
+      impactAmp: 0.07,
+      breatheRate: 1.15,
+      stepDustSpeed: 5.5,
+      turnRadius: 1.2,
+      lookClampYaw: 0.9,
+      stanceFlex: 0.1,
+    });
+    this.gait.update(0.016, 0); // settle out of the sculpt's frozen stride
+    this._deathRoll = 0.42;     // skeletal buckle does the collapsing now
+    this._deathSink = 0.03;
+  }
+
+  /** Death crumple: legs buckle one side first, spine sags, settle bounces. */
+  onDeathPose(k, deathT) {
+    this.gait.deathPose(k, deathT);
   }
 
   chooseAttack(dist) {
@@ -121,12 +147,21 @@ export class Sawtooth extends Machine {
         // damage ladder (research 5): sawtooth hits 22-30
         onStrike: () => this.damagePlayer(22, 4, 0.1),
         onUpdate: (a) => {
-          // rear back, then slash across
-          if (a.phase === 'windup') this.body.rotation.y = a.phaseT * 0.4;
-          else if (a.phase === 'strike') this.body.rotation.y = 0.4 - a.phaseT * 0.9;
-          else this.body.rotation.y = -0.5 + 0.5 * a.phaseT;
+          // rear back, then slash across — torso twist through the spine
+          // bones with the body yaw carrying the hitbox
+          let y;
+          if (a.phase === 'windup') y = a.phaseT * 0.4;
+          else if (a.phase === 'strike') y = 0.4 - a.phaseT * 0.9;
+          else y = -0.5 + 0.5 * a.phaseT;
+          this.body.rotation.y = y * 0.55;
+          this.gait.pose.spineYaw = y * 0.9;
+          this.gait.pose.crouch = 0.25;
         },
-        cleanup: () => { this.body.rotation.y = 0; },
+        cleanup: () => {
+          this.body.rotation.y = 0;
+          this.gait.pose.spineYaw = 0;
+          this.gait.pose.crouch = 0;
+        },
       };
     }
     if (dist <= this.attackRange && dist > 3) {
@@ -155,22 +190,33 @@ export class Sawtooth extends Machine {
         onUpdate: (a, dt) => {
           if (a.phase === 'windup') {
             this._crouch = Math.min(1, this._crouch + dt * 5); // coil down
+            this.gait.pose.crouch = this._crouch;
           } else if (a.phase === 'strike') {
+            this.gait.pose.crouch = this._crouch = 0;
             const step = (a.jump / 0.5) * dt;
             this.moveRoot(this._pounceDir.x * step, this._pounceDir.z * step);
             const arc = Math.sin(a.phaseT * Math.PI) * 1.4;
             this.position.y = this.ctx.terrain.getHeight(this.position.x, this.position.z) + arc;
+            this.gait.pose.tuck = Math.sin(a.phaseT * Math.PI); // legs gather mid-leap
+            this.gait.pose.spineRear = -0.18 * Math.sin(a.phaseT * Math.PI); // nose leads
             // damage window covers the whole landing half of the leap
             if (a.phaseT > 0.5 && !a.hit && this.damagePlayer(30, 2.9)) {
               a.hit = true;
               this.knockbackPlayer(8);
             }
           } else {
+            if (this._airborne) this.gait._impact = 1.6; // landing thump
             this._airborne = false;
+            this.gait.pose.tuck = 0;
+            this.gait.pose.spineRear = 0;
             this._crouch = Math.max(0, this._crouch - dt * 2);
           }
         },
-        cleanup: () => { this._airborne = false; },
+        cleanup: () => {
+          this._airborne = false;
+          this.gait.pose.tuck = 0;
+          this.gait.pose.spineRear = 0;
+        },
       };
     }
     return null;
@@ -184,29 +230,17 @@ export class Sawtooth extends Machine {
     if (limp !== this._limping) {
       this._limping = limp;
       this.runSpeed = limp ? 5.4 : 9;
+      this.gait.walk.stride = limp ? 1.25 : 1.55; // short hitching steps
+      this.gait.impactAmp = limp ? 0.11 : 0.07;
     }
-    const speed = this._speed;
-    const stride = 1.7;
-    this._gait += dt * speed * (Math.PI / stride);
-    const moveK = THREE.MathUtils.clamp(speed / 2.5, 0, 1);
-    const runK = THREE.MathUtils.clamp(speed / this.runSpeed, 0, 1);
 
-    // stalk: low and slow while suspicious/searching
+    // stalk: low prowl while suspicious/searching — long slinking stance
     const stalking = this.state === 'suspicious' || this.state === 'search';
-    this._crouch = THREE.MathUtils.damp(this._crouch, stalking ? 0.8 : (this._attack?.kind === 'pounce' && this._attack.phase === 'windup' ? 1 : 0), 4, dt);
-
-    // root motion: bob with footfalls, sway with stride, pitch with acceleration
-    const bob = Math.abs(Math.sin(this._gait)) * (0.06 + runK * 0.09) * moveK;
-    const hitch = limp ? Math.max(0, Math.sin(this._gait + 0.7)) * 0.1 * moveK : 0;
-    this.body.position.y = bob - hitch - this._crouch * 0.42 + Math.sin(t * 1.1) * 0.012;
-    this.body.rotation.x = Math.sin(this._gait * 2) * 0.02 * moveK
-      - (speed - this._accelPitch) * 0.028  // nose dips as it accelerates
-      + this._crouch * 0.1;
-    if (!this._attack || this._attack.kind !== 'swipe') {
-      this.body.rotation.y = 0;
+    if (!this._attack) {
+      this._crouch = THREE.MathUtils.damp(this._crouch, stalking ? 0.75 : 0, 4, dt);
+      this.gait.pose.crouch = this._crouch;
+      this.gait.walk.duty = stalking ? 0.7 : 0.64;
     }
-    this.body.rotation.z = Math.sin(this._gait)
-      * (0.035 + runK * 0.03 + (limp ? 0.035 : 0)) * moveK
-      + (limp ? 0.045 : 0); // held-up-paw lean
+    this.gait.update(dt, t);
   }
 }
