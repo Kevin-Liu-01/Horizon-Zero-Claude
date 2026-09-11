@@ -17,6 +17,7 @@ import { HUD } from './ui/hud.js';
 import { GameAudio } from './audio/audio.js';
 import { Studio } from './studio/studio.js';
 import { installProgression } from './core/progression.js';
+import { installMenus } from './ui/menu.js';
 
 const params = new URLSearchParams(location.search);
 
@@ -118,6 +119,7 @@ class Game {
     installProgression(ctx); // Round 4 progression lane: XP/levels/skills, quests, save/continue (registers its own systems)
     ctx.audio = this._add(new GameAudio(ctx));
     ctx.hud = this._add(new HUD(ctx));
+    installMenus(ctx); // Round 4 shell-menus lane: pause hub, world map, settings, title flow, death/victory (registers its own systems)
     ctx.studio = this._add(new Studio(ctx)); // last: its camera write wins the frame
 
     // perf-tech-10 — compile every program behind the loading bar so the first
