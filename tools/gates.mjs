@@ -198,7 +198,7 @@ let currentProfile = null;
  */
 async function launchBrowser() {
   const dir = profileDir(PORT);
-  const b = await puppeteer.launch({ headless: 'new', args: LAUNCH_ARGS, userDataDir: dir });
+  const b = await puppeteer.launch({ protocolTimeout: 900000,  headless: 'new', args: LAUNCH_ARGS, userDataDir: dir });
   const stale = currentProfile;
   currentProfile = dir;
   if (stale) disposeProfile(stale);
