@@ -62,6 +62,15 @@ export { Perception, Engage, Search, AttackPicker, Reactions, StimulusBus, SiteM
  *                       every sim step by A41c-sustained-variety.
  *   machine.ai.picker.bandBlocked(lo, hi)      the same count, non-allocating
  *   machine.ai.picker.bandUnreachable(lo, hi)  ...and the ids behind it
+ *   machine.ai.picker.movesetSize()   how many moves the species owes a
+ *                       standoff fight, counted off the TABLE alone — non-
+ *                       rear, part attached, not disabled. Reads NOTHING the
+ *                       footwork can move (not the band, not the ring
+ *                       window), which is why A41c-sustained-variety takes
+ *                       its variety bar from here: every band-derived
+ *                       reading falls by one at the same instant a regression
+ *                       pushes a row out of the fight.
+ *   machine.ai.picker.movesetRows()   ...and the ids behind it
  *   machine.ai.picker.stalled        Map(id -> s) moves given up on because
  *                       they held the ring without firing (SCORING.arrangeGiveUp)
  *   machine.ai.engage._ringWindow()  [lo, hi] radii the footwork can HOLD —

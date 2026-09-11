@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { Machine, rollLoot, glowTexture } from './machine.js';
 import { antennaMesh, canisterMesh, powerCellMesh, lensMesh, pulseGlow } from './parts.js';
 import { ClipLayerSet, BoneSpace } from '../anim/index.js';
-import { attachRigRuntime, updateRigLOD } from './rig/lod.js';
+import { attachRigRuntime, updateRigLOD, foldMachineMeshes } from './rig/lod.js';
 import { snapSockets } from './rig/sockets.js';
 import { buildShell, hideSculpt, LONGLEG_SHELL } from './rig/shells.js';
 import { FootLock, findLeg } from './rig/footlock.js';
@@ -204,6 +204,10 @@ export class Longleg extends Machine {
     buildShell(this, LONGLEG_SHELL);
     hideSculpt(this);
     attachRigRuntime(this);
+    // --- RESIDUE ROUND (A21-real-draw-calls): the draw-call fold. One
+    // skeleton, one bind frame, every rigid bone attachment re-expressed as a
+    // one-bone skin, then the material merge. Lossless — see rig/lod.js.
+    foldMachineMeshes(this);
     snapSockets(this);
 
     // --- contact foot lock over the clip pose (A45 / A46): the Walk/Run

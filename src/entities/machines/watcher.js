@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { Machine, rollLoot, glowTexture } from './machine.js';
 import { lensMesh, antennaMesh } from './parts.js';
 import { BoneSpace, RestPose } from '../anim/index.js';
-import { attachRigRuntime, updateRigLOD } from './rig/lod.js';
+import { attachRigRuntime, updateRigLOD, foldMachineMeshes } from './rig/lod.js';
 import { snapSockets } from './rig/sockets.js';
 import { FootLock } from './rig/footlock.js';
 import { groundCorpse } from './rig/ground.js';
@@ -146,6 +146,10 @@ export class Watcher extends Machine {
     // --- mesh budget + pooled FX + bone-space sockets
     attachRigRuntime(this);
     // snapSockets() builds the proxy itself, AFTER every shell/part is on
+    // --- RESIDUE ROUND (A21-real-draw-calls): the draw-call fold. One
+    // skeleton, one bind frame, every rigid bone attachment re-expressed as a
+    // one-bone skin, then the material merge. Lossless — see rig/lod.js.
+    foldMachineMeshes(this);
     snapSockets(this);
 
     // --- contact foot lock over the rotational stride (A45 / A46). The

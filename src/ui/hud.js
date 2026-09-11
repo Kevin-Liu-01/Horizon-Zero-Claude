@@ -269,6 +269,8 @@ export class HUD {
 
     this._vw = window.innerWidth;
     this._vh = window.innerHeight;
+    this._forceVw = 0;             // debug-only viewport override (see __HUD_DEBUG__)
+    this._forceVh = 0;
     this._scale = 1;
     this._t = 0;
 
@@ -374,6 +376,20 @@ export class HUD {
       compass: () => this._compassAudit(),
       surfaces: () => this._surfaceAudit(),
       scale: () => this._scaleAudit(),
+      /**
+       * ui-15 gate hook (`A71b-hud-scale-floor`). The gate runner pins every
+       * page at 1600x900 from node, so the only way to check the scale model
+       * at 720p or at 4K is to hand the HUD those numbers. `update()` honours
+       * the override until `simulateViewport()` is called with no arguments.
+       */
+      simulateViewport: (w, h) => {
+        this._forceVw = w > 0 ? Math.round(w) : 0;
+        this._forceVh = h > 0 ? Math.round(h) : 0;
+        this._vw = this._forceVw || window.innerWidth;
+        this._vh = this._forceVh || window.innerHeight;
+        this._applyScale();
+        return this._scaleAudit();
+      },
       tips: () => ({ seen: [...this._tipSeen], queued: this._tipQueue.map((t) => t.id) }),
       showTip: (id) => this._queueTip(TIPS.find((t) => t.id === id)),
       resetTips: () => { this._tipSeen.clear(); this._saveTips(); },
@@ -500,6 +516,7 @@ export class HUD {
     this._dotEl = div('hzc-dot', cross);
     this._brackets = div('hzc-brk', cross);
     for (const c of ['tl', 'tr', 'bl', 'br']) div('hzc-brk-a ' + c, this._brackets);
+    this._brkArm = this._brackets.firstElementChild;   // audit probe (0x0 parent)
     this._ring = div('hzc-ring', cross);
     this._ring.innerHTML =
       '<svg viewBox="0 0 72 72">' +
@@ -699,7 +716,10 @@ export class HUD {
 
   _scaleAudit() {
     const probe = [
-      ['health', this._healthNum],
+      // the <b> is the numeral that carries the font size; the row around it
+      // has none of its own and would report the document default (16 px) at
+      // every scale — i.e. a probe that looks like a HUD that never scales.
+      ['health', this._healthNum.querySelector('b')],
       ['track', this._trackObj],
       ['bearing', this._bearingEl],
       ['ammoName', this._wpnAmmoName],
@@ -1159,9 +1179,11 @@ export class HUD {
   update(dt, t) {
     const p = this.ctx.player;
     if (!p) return;
-    if (this._vw !== window.innerWidth || this._vh !== window.innerHeight) {
-      this._vw = window.innerWidth;
-      this._vh = window.innerHeight;
+    const vw = this._forceVw || window.innerWidth;
+    const vh = this._forceVh || window.innerHeight;
+    if (this._vw !== vw || this._vh !== vh) {
+      this._vw = vw;
+      this._vh = vh;
       this._applyScale();
     }
     this._t += dt;
@@ -2180,15 +2202,25 @@ export class HUD {
     let x = (this._v.x * 0.5 + 0.5) * this._vw;
     let y = (-this._v.y * 0.5 + 0.5) * this._vh;
     if (behind) { x = this._vw - x; y = this._vh - y; }
-    const mgn = 58;
-    const off = behind || x < mgn || x > this._vw - mgn || y < mgn || y > this._vh - mgn;
+    /**
+     * The clamp ring is ASYMMETRIC because the HUD owns the top and bottom of
+     * the screen: the compass ribbon runs along the top and the XP bar + level
+     * pip run along the bottom. A symmetric 58 px margin parked the marker
+     * exactly on the XP bar every time the objective was behind her — which is
+     * most of the time — and the label ran straight through "LEVEL 1 … XP".
+     * Filmed at shots/gates/V37-hud-language.png before this.
+     */
+    const mgnX = 58, mgnT = 76, mgnB = 124;
+    const off = behind || x < mgnX || x > this._vw - mgnX || y < mgnT || y > this._vh - mgnB;
     if (off) {
-      const cx = this._vw / 2, cy = this._vh / 2;
+      const cx = this._vw / 2;
+      const cy = (mgnT + (this._vh - mgnB)) / 2;   // centre of the playable ring
+      const halfY = (this._vh - mgnB - mgnT) / 2;
       const dx = x - cx;
-      const dy = behind ? Math.abs(y - cy) + cy * 0.35 : y - cy;
+      const dy = behind ? Math.abs(y - cy) + halfY * 0.35 : y - cy;
       const k = Math.min(
-        (cx - mgn) / Math.max(1e-4, Math.abs(dx)),
-        (cy - mgn) / Math.max(1e-4, Math.abs(dy)),
+        (cx - mgnX) / Math.max(1e-4, Math.abs(dx)),
+        halfY / Math.max(1e-4, Math.abs(dy)),
       );
       x = cx + dx * k;
       y = cy + dy * k;
@@ -2313,7 +2345,12 @@ export class HUD {
         pct: this._lastHp,
         numerals: this._healthNum.textContent.trim(),
         segments: this._topleftEl.querySelectorAll('.hzc-health-seg').length + 1,
+        // the fill is a vertical red gradient, so `backgroundColor` is
+        // transparent — the gate needs the image string to prove it is RED.
         fillColor: getComputedStyle(this._healthFill).backgroundColor,
+        fillImage: getComputedStyle(this._healthFill).backgroundImage,
+        widthPct: +(this._healthFill.getBoundingClientRect().width
+          / Math.max(1, this._healthFill.parentElement.getBoundingClientRect().width) * 100).toFixed(1),
       },
       pouch: { visible: vis(this._pouchRow), pct: this._lastPouch, pips: this._lastPouchPips,
         color: getComputedStyle(this._pouchFill).backgroundColor },
@@ -2329,8 +2366,22 @@ export class HUD {
         text: this._xpRight.textContent },
       weapon: { visible: vis(this._wpnEl), name: this._wpnName.textContent,
         dots: this._wpnDots.childElementCount, art: this._wpnArt.querySelector('svg') != null },
-      reticle: { visible: vis(this._crossEl), aiming: !!this.ctx.player?.aiming,
-        brackets: this._brackets.classList.contains('show') },
+      // `.hzc-cross` is a 0x0 anchor at screen centre — everything it draws is
+      // absolutely positioned off it, so the ANCHOR is never "visible". Grade
+      // the marks: the centre dot and the four corner brackets.
+      reticle: (() => {
+        // both `.hzc-cross` and `.hzc-brk` are 0x0 anchors that everything is
+        // positioned off, so neither is ever "visible" by rect. Grade the marks
+        // themselves, and read the bracket's opacity off its own parent.
+        const brkOn = parseFloat(getComputedStyle(this._brackets).opacity) > 0.04
+          && vis(this._brkArm);
+        return {
+          visible: vis(this._dotEl) || brkOn,
+          dot: vis(this._dotEl),
+          aiming: !!this.ctx.player?.aiming,
+          brackets: brkOn,
+        };
+      })(),
       concentration: { veil: +this._concVeil.toFixed(2), on: this._veilEl.classList.contains('on') },
       damageNumbers: {
         live: dmgLive.length,

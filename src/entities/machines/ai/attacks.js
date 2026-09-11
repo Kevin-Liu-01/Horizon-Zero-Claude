@@ -804,6 +804,53 @@ export class AttackPicker {
   }
 
   /**
+   * THE BAND-INDEPENDENT MOVESET SIZE (judge-machine-ai-followup-r2, residue).
+   *
+   * How many moves this species owes a standoff fight, counted WITHOUT
+   * consulting the engage band, the ring window, or anything else the
+   * footwork can move. Non-rear (the machine cannot promise the player is
+   * behind it), part still attached, not disabled by the species — structure
+   * and nothing else.
+   *
+   * WHY NOT `bandProfile().distinct`. The r2 fix moved `A41c`'s variety bar
+   * off ring reachability and onto the band, which closed three of the four
+   * shapes the regression can take. It did not close the fourth: the ring
+   * window IS the band (`[band[0] + hyst/2, band[1]]`), so a band floor that
+   * climbs past a row's `max` drops that row out of `bandProfile()` AND out
+   * of `bandBlocked()`'s eligibility at the same instant — the move leaves
+   * the fight, the invariant stops watching it, and the bar falls by one to
+   * meet what is left. Measured: pushing the Strider's band to `[4.95, 14]`
+   * takes `front-kick` (row `[0, 4.6]`) out of the repertoire with
+   * `blocked: 0` and the band bar dropping 3 -> 2, i.e. silently green.
+   * Counting the TABLE cannot move with any of them.
+   *
+   * Off the hot path: gates and the debug HUD only.
+   * @returns {number} non-rear rows this species can structurally still throw
+   */
+  movesetSize() {
+    let n = 0;
+    for (const row of this.rows) {
+      if (row.arc === 'rear') continue;
+      if (row.needPart && !this._partAttached(row.needPart)) continue;
+      if (this.m.attackDisabled(row.id)) continue;
+      n++;
+    }
+    return n;
+  }
+
+  /** The ids `movesetSize()` counted. Allocates; gates and the HUD only. */
+  movesetRows() {
+    const out = [];
+    for (const row of this.rows) {
+      if (row.arc === 'rear') continue;
+      if (row.needPart && !this._partAttached(row.needPart)) continue;
+      if (this.m.attackDisabled(row.id)) continue;
+      out.push(row.id);
+    }
+    return out;
+  }
+
+  /**
    * The highest-scoring row the footwork may arrange for inside the ring
    * window, with the same fresh-first tier `_score` uses. Shared by
    * `wantedRange` and `ringPlan` so the range the machine walks to and the

@@ -220,6 +220,19 @@ clears `ctx.state === 'victory'` itself only while `ctx.menus` does not exist ·
    > `tearOut` only, elemental mapping survives) and reproduces the defect
    > exactly when the old two-line copy is restored. Whoever lands the native
    > read must resolve the channel the same way.
+   >
+   > **Verified, not asserted (residue re-run).** The negative control was
+   > actually run: with the pre-fix two-line copy back in place, `A64b` FAILs
+   > with `legacyDamage 0 / legacyTear 0 / legacyFire 0` on both `easy` (1.25)
+   > and `hard` (0.85) while the modern channel still reads 47.5 / 32.3 — the
+   > defect, reproduced. Shipped code passes all five checks
+   > (38 → 47.5 → 32.3, tear flat at 14, fire 66.7 at every difficulty). On
+   > film at the judge's angle (`shots/prog-legacy-hard-bar.png` vs
+   > `shots/prog-legacy-hard-PREFIX.png`): three LEGACY-shaped
+   > `{ baseDamage: 14 }` hits on **Hard**, watcher at 10 m. Fixed build —
+   > projected `WATCHER LV 5` bar down to ~62 %, damage numerals on screen,
+   > 90 → 56.1 HP. Pre-fix build — same three hits, bar FULL, no numerals,
+   > 90 → 90 HP.
 5. **`focus-items`** — publish `items.serializeCapacities()` /
    `restoreCapacities(obj)` so purchased pocket capacities survive a save.
    `SaveSystem.apply` already clamps restored counts to `inventory.capacity(id)`.

@@ -3,7 +3,7 @@ import { Machine, rollLoot, glowTexture } from './machine.js';
 import { forceLoaderMesh, canisterMesh, cargoMesh, pulseGlow, rockMesh } from './parts.js';
 import { buildRig, RIGS } from './autorig.js';
 import { GaitController } from './gait.js';
-import { attachRigRuntime, updateRigLOD } from './rig/lod.js';
+import { attachRigRuntime, updateRigLOD, foldMachineMeshes } from './rig/lod.js';
 import { snapSockets } from './rig/sockets.js';
 import { buildShell, BEHEMOTH_SHELL } from './rig/shells.js';
 
@@ -137,6 +137,10 @@ export class Behemoth extends Machine {
       stanceFlex: 0.22,
     });
     this.gait.update(0.016, 0);
+    // --- RESIDUE ROUND (A21-real-draw-calls): the draw-call fold. One
+    // skeleton, one bind frame, every rigid bone attachment re-expressed as a
+    // one-bone skin, then the material merge. Lossless — see rig/lod.js.
+    foldMachineMeshes(this);
     snapSockets(this);          // bone-space sockets sit ON the hull (A44)
     this._deathRoll = 0.34; // the skeleton buckles; the hulk shouldn't barrel-roll
     this._deathSink = 0.03;

@@ -636,6 +636,10 @@ kbd {
 }
 .hzc-objmark.edge .hzc-objmark-d { animation: hzcObjPing 1.6s ease-in-out infinite; }
 @keyframes hzcObjPing { 0%, 100% { opacity: 1; } 50% { opacity: 0.42; } }
+/* Clamped to the edge it is a DIRECTION, not a caption: the objective's name
+   already sits in the tracker under her health, and dragging it around the
+   screen rim is what put it through the XP bar. Diamond + metres only. */
+.hzc-objmark.edge .hzc-objmark-label { display: none; }
 .hzc-objmark-dist {
   font-size: max(11px, calc(11px * var(--s)));
   font-weight: 700; letter-spacing: 0.14em;

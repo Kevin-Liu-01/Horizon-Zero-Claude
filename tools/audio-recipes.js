@@ -1275,5 +1275,128 @@
     A.burst(t, dur, { type: 'highpass', f: 2800, gain: 0.045, atk: 0.12 });
   };
 
+  /* ===================================================================== */
+  /*  MELEE — the spear (audio content half)                               */
+  /*                                                                       */
+  /*  The Round 4 spear shipped with no audio at all: `melee-hit`,         */
+  /*  `critical-hit` and `silent-strike` were emitted by src/combat/melee.js*/
+  /*  and nobody listened. These are the four rungs that verb needs. The    */
+  /*  timbre brief: a wooden HAFT carrying a metal head into machine plate  */
+  /*  — so every cue is a wood-body transient (low, damped, short) plus a   */
+  /*  metal contact (inharmonic, ringing), never one or the other.         */
+  /* ===================================================================== */
+  RECIPES['melee/whoosh'] = (A) => {
+    // the swing itself: broadband air moving past the haft, pitched by speed
+    const t = 0.01, dur = 0.34;
+    const f0 = A.rnd(380, 620);
+    A.burst(t, dur, { type: 'bandpass', f: f0, Q: 0.9, gain: 0.3, atk: 0.09, sweepTo: f0 * 3.4, rate: 1.1 });
+    A.burst(t + 0.04, dur * 0.7, { type: 'highpass', f: 1800, gain: 0.09, atk: 0.1 });
+  };
+  RECIPES['melee/light'] = (A) => {
+    // a jab: fast, bright, little body — it should read as ANNOYING a machine
+    const t = 0.01;
+    A.burst(t, 0.05, { type: 'bandpass', f: A.rnd(900, 1300), Q: 1.2, gain: 0.34, atk: 0.0012 });
+    A.metal(t, A.rnd(620, 880), 0.26, 0.3, [1, 2.76, 5.4, 8.93]);
+    A.thump(t, 128, 0.1, 0.24);                       // haft into plate
+    A.burst(t + 0.015, 0.03, { type: 'highpass', f: 5200, gain: 0.14, atk: 0.001 });
+    // the haft rebounds
+    A.metal(t + A.rnd(0.07, 0.11), A.rnd(1500, 2100), 0.05, 0.05, [1, 2.3]);
+  };
+  RECIPES['melee/heavy'] = (A) => {
+    // the overhead: body first, ring second, debris third
+    const t = 0.01;
+    A.thump(t, 74, 0.3, 0.52);
+    A.burst(t, 0.2, { type: 'bandpass', f: A.rnd(560, 780), Q: 1.0, gain: 0.46, atk: 0.0015 });
+    A.metal(t + 0.004, A.rnd(330, 440), 0.5, 0.32, [1, 2.4, 4.7, 7.9]);
+    A.burst(t, 0.035, { type: 'highpass', f: 4200, gain: 0.2, atk: 0.0008 });
+    for (let i = 0; i < 5; i++) {
+      A.metal(t + 0.05 + A.rnd(0, 0.26), A.rnd(1700, 3600), 0.05, 0.06, [1, 2.5, 4.2]);
+    }
+    // plate flexing back
+    A.sweep('sine', t + 0.02, 0.3, 210, 96, A.env(t + 0.02, 0.1, 0.01, 0.3, A.out));
+  };
+  RECIPES['melee/crit'] = (A) => {
+    // the Critical Hit: the spear goes THROUGH something structural
+    const t = 0.01;
+    A.burst(t, 0.04, { type: 'highpass', f: 6500, gain: 0.42, atk: 0.0006 });
+    A.thump(t, 56, 0.36, 0.55);
+    // shearing metal: a descending square through a resonant band
+    const zg = A.env(t, 0.3, 0.002, 0.4, A.flt('bandpass', 2200, 2.6));
+    A.sweep('square', t, 0.4, 3000, 520, zg);
+    A.metal(t + 0.01, 520, 0.55, 0.3, [1, 2.76, 5.4, 8.93]);
+    // pressure escaping the wound
+    A.burst(t + 0.06, 0.42, { type: 'bandpass', f: 2600, Q: 1.4, gain: 0.15, atk: 0.01, sweepTo: 700 });
+    for (let i = 0; i < 6; i++) {
+      A.metal(t + 0.08 + A.rnd(0, 0.4), A.rnd(1400, 3800), 0.06, 0.06, [1, 2.4]);
+    }
+  };
+  RECIPES['melee/silent'] = (A) => {
+    // Silent Strike: muffled on purpose. No ring — a hand over the mouth of a
+    // machine. The loudest thing in it is the charge leaving the chassis.
+    const t = 0.01;
+    A.burst(t, 0.12, { type: 'lowpass', f: 620, Q: 0.8, gain: 0.34, atk: 0.0015 });
+    A.thump(t, 68, 0.16, 0.3);
+    A.metal(t, 300, 0.14, 0.08, [1, 2.4]);            // damped, short
+    // the power bleeding out, quietly
+    A.sweep('sawtooth', t + 0.08, 0.72, 420, 46,
+      A.envS(t + 0.08, 0.11, 0.03, 0.32, 0.4, A.flt('lowpass', 700, 1.1)));
+    A.burst(t + 0.1, 0.6, { type: 'bandpass', f: 900, Q: 1.8, gain: 0.055, atk: 0.06, sweepTo: 300 });
+  };
+
+  /* ===================================================================== */
+  /*  TRAPS + ROPE — Tripcaster and Ropecaster (audio content half)        */
+  /*                                                                       */
+  /*  src/combat/traps.js emits `trap-placed`, `trap-triggered`,           */
+  /*  `rope-attached` and `machine-tied`; all four were silent.            */
+  /* ===================================================================== */
+  RECIPES['trap/place'] = (A) => {
+    // a stake driven into ground, then the wire clipped on and tensioned
+    const t = 0.01;
+    A.burst(t, 0.07, { type: 'bandpass', f: A.rnd(300, 430), Q: 1.1, gain: 0.36, atk: 0.0015 });
+    A.thump(t, 104, 0.1, 0.26);
+    A.metal(t + 0.06, A.rnd(1900, 2500), 0.07, 0.1, [1, 2.7]);   // the clip
+    // wire drawn taut: a rising filtered whine
+    A.burst(t + 0.1, 0.22, { type: 'bandpass', f: 1400, Q: 5.5, gain: 0.1, atk: 0.05, sweepTo: 2600 });
+  };
+  RECIPES['trap/trigger'] = (A) => {
+    // the wire is cut, then the charge goes
+    const t = 0.01;
+    A.metal(t, A.rnd(2600, 3400), 0.06, 0.16, [1, 2.2, 4.6]);     // snap
+    A.burst(t, 0.02, { type: 'highpass', f: 7000, gain: 0.22, atk: 0.0006 });
+    // charge spinning up then detonating
+    A.sweep('square', t + 0.03, 0.17, 700, 2400,
+      A.env(t + 0.03, 0.14, 0.02, 0.17, A.flt('bandpass', 1800, 3)));
+    const bt = t + 0.21;
+    A.thump(bt, 52, 0.34, 0.6);
+    A.burst(bt, 0.3, { type: 'lowpass', f: 1600, Q: 0.8, gain: 0.5, atk: 0.001, sweepTo: 260 });
+    A.burst(bt, 0.04, { type: 'highpass', f: 5000, gain: 0.24, atk: 0.0006 });
+  };
+  RECIPES['rope/attach'] = (A) => {
+    // harpoon bites plate, line pays out behind it
+    const t = 0.01;
+    A.burst(t, 0.05, { type: 'bandpass', f: A.rnd(1100, 1500), Q: 1.4, gain: 0.34, atk: 0.001 });
+    A.metal(t, A.rnd(700, 950), 0.22, 0.24, [1, 2.76, 5.4]);
+    A.thump(t, 116, 0.09, 0.2);
+    // line running out: granular ticks over a noise hiss
+    A.burst(t + 0.05, 0.4, { type: 'bandpass', f: 2200, Q: 1.1, gain: 0.075, atk: 0.02, sweepTo: 1100 });
+    for (let i = 0; i < 9; i++) {
+      A.metal(t + 0.06 + i * A.rnd(0.026, 0.05), A.rnd(2400, 4200), 0.018, 0.028, [1, 2.1]);
+    }
+  };
+  RECIPES['rope/tie'] = (A) => {
+    // the line snaps taut and the machine is held: creak, not impact
+    const t = 0.01, dur = 0.74;
+    A.burst(t, 0.04, { type: 'bandpass', f: 1700, Q: 3, gain: 0.26, atk: 0.001 });
+    // rope under load — slow AM creak on a low band
+    const lp = A.flt('bandpass', 380, 2.2);
+    const am = A.am(t, dur, 7.5, 0.5, lp);
+    A.sweep('sawtooth', t, dur, 190, 128, A.envS(t, 0.26, 0.03, dur * 0.4, dur * 0.5, am));
+    A.thump(t + 0.02, 62, 0.26, 0.3);
+    // fibres complaining
+    for (let i = 0; i < 7; i++) {
+      A.burst(t + 0.12 + A.rnd(0, 0.5), 0.05, { type: 'bandpass', f: A.rnd(900, 2200), Q: 6, gain: 0.05, atk: 0.008 });
+    }
+  };
+
   global.HZC_AUDIO_RECIPES = { RECIPES, kit, mulberry32, SR };
 })(typeof globalThis !== 'undefined' ? globalThis : window);

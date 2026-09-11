@@ -198,6 +198,39 @@ function normalizeAttrs(geo, wants) {
     for (let i = 0; i < n; i++) w[i * 4] = 1;
     g.setAttribute('skinWeight', new THREE.BufferAttribute(w, 4));
   }
+  /**
+   * RESIDUE ROUND — one ARRAY TYPE per attribute across the group.
+   *
+   * `mergeAttributes` refuses a group whose arrays disagree ("array must be of
+   * consistent array types across matching attributes"), and a glTF exporter
+   * is free to ship `JOINTS_0` as `Uint8Array` and `TEXCOORD_0` as normalised
+   * `Uint16Array` on one mesh and plain floats on its neighbour. Measured on
+   * the first two boots after the fold was wired: six merge failures on
+   * `skinIndex`, then six more on `uv` — i.e. exactly the merges the fold
+   * exists to enable, refused for a storage detail.
+   *
+   * Canonical pair: `Uint16` for the joint indices (a `Uint8` index is
+   * representable without loss), `Float32` for everything else, DECODED out
+   * of its normalised integer range first so the values survive.
+   */
+  for (const name of Object.keys(g.attributes)) {
+    const a = g.attributes[name];
+    if (name === 'skinIndex') {
+      if (!(a.array instanceof Uint16Array)) {
+        g.setAttribute(name, new THREE.BufferAttribute(Uint16Array.from(a.array), a.itemSize));
+      }
+      continue;
+    }
+    if (a.array instanceof Float32Array && !a.normalized) continue;
+    // a normalised integer stream decodes to its real range before it merges
+    const src = a.array;
+    const den = a.normalized
+      ? (src instanceof Uint8Array ? 255 : src instanceof Uint16Array ? 65535
+        : src instanceof Int8Array ? 127 : src instanceof Int16Array ? 32767 : 1) : 1;
+    const out = new Float32Array(src.length);
+    for (let i = 0; i < src.length; i++) out[i] = src[i] / den;
+    g.setAttribute(name, new THREE.BufferAttribute(out, a.itemSize));
+  }
   g.morphAttributes = {};
   return g;
 }

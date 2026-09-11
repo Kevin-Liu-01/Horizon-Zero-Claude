@@ -979,10 +979,8 @@ export const GATES = [
    *      The regression it exists to catch is precisely a row falling out of
    *      that window, so the bar fell with it: break the Strider's front-kick
    *      again and the demand silently drops from 3 moves to 2, which the two
-   *      remaining moves meet. The bar now comes from the TABLE —
-   *      `bandProfile().distinct`, the non-rear rows whose `[min,max]`
-   *      intersects the engage band — which does not move when reachability
-   *      breaks.
+   *      remaining moves meet. The bar now comes from the TABLE and nothing
+   *      else — see the residue note below.
    *   2. `ringPlan().legal` was asserted as the livelock invariant and is a
    *      tautology: `_bestArrangeable` only offers rows `_reachable` accepts
    *      and `_reachable` only returns radii inside `[row.min, row.max]`, so
@@ -990,9 +988,33 @@ export const GATES = [
    *      is still sampled (a refactor that lets the ring escape its row would
    *      trip it) but it is no longer the bar.
    *
+   * RESIDUE (same finding, verified by injection). `bandProfile().distinct`
+   * closed three of the four shapes this regression can take and not the
+   * fourth, because the ring window IS the band: `[band[0] + hyst/2,
+   * band[1]]`. Injecting each shape into a live Strider whose `front-kick`
+   * row is `[0, 4.6]` and whose healthy window is `[4.1, 14]`:
+   *
+   *   A  row max shrinks to 4.0      -> blocked 1 (front-kick)   CAUGHT
+   *   B  band floor rises to 4.5     -> blocked 1 (front-kick)   CAUGHT
+   *      (window floor 4.8 clears the row — the r1 livelock exactly)
+   *   C  hysteresis widens to 1.8    -> blocked 1 (front-kick)   CAUGHT
+   *   D  band floor rises to 4.95    -> blocked 0, band bar 3->2 MISSED
+   *
+   * In D the row leaves the band, so it leaves `bandProfile()` and leaves
+   * `_bandEligible()` in the same instant: the move is gone from the fight,
+   * the livelock invariant stops watching it, and the bar falls by one to
+   * meet the two moves that remain. Green, and the Strider is back to the
+   * two-move fight this gate was written for. So the bar is now
+   * `picker.movesetSize()` — the species' non-rear, part-attached, not-
+   * disabled TABLE rows, which read nothing the footwork can move. Today
+   * that is the SAME number for all eight species (3, except a 2-row
+   * Glinthawk), so it changes no verdict and adds no flake; it only removes
+   * the gate's ability to lower its own bar. `bandProfile()` is still
+   * reported, as diagnosis rather than as the bar.
+   *
    * Bars, per species:
-   *   - at least 2 distinct TABLE moves, and 3 when the TABLE puts 3+ non-rear
-   *     rows inside the engage band. `machine-attack` also carries species
+   *   - at least 2 distinct TABLE moves, and 3 once the species' TABLE holds
+   *     3+ non-rear rows at all. `machine-attack` also carries species
    *     flourishes (a Thunderjaw footfall `step`, a Glinthawk `screech`), so
    *     only ids that are rows in that machine's table count.
    *   - `picker.bandBlocked(lo, hi) === 0` on EVERY sim step: every row that
@@ -1012,7 +1034,7 @@ export const GATES = [
    */
   {
     id: 'A41c-sustained-variety', kind: 'action', lane: 'machine-ai',
-    title: 'Sustained duel, EVERY species: >= 2 distinct table moves in 30 SIM s (3 where the TABLE puts 3+ rows in the band), and never a band row the ring window cannot set up',
+    title: 'Sustained duel, EVERY species: >= 2 distinct table moves in 30 SIM s (3 where the TABLE holds 3+ non-rear rows), and never a band row the ring window cannot set up',
     setup: `(async () => { ${INPUT_ON} ${WAIT_VARIETY} })()`,
     settle: 600, timeout: 300000,
     assert: `(async () => {
@@ -1050,24 +1072,28 @@ export const GATES = [
         m.suspicion = 1; m._unseenT = 0; m.lastKnown.copy(p.position); m.playerDist = r;
         m.forceState('attack');
         const win = m.ai.engage._ringWindow();
-        /**
-         * THE BAR COMES FROM THE TABLE, NOT FROM REACHABILITY. bandProfile()
-         * counts the non-rear rows whose range intersects the engage band —
-         * what the species is SUPPOSED to be able to show at this standoff.
-         * Deriving it from the ring window instead (what the previous revision
-         * did) meant the regression that pushes a row out of the window also
-         * lowered the bar by one, so the gate could not see it. A species the
-         * table only gives two band moves is still asked for two.
+        /*
+         * THE BAR COMES FROM THE TABLE, AND FROM NOTHING THE FOOTWORK CAN
+         * MOVE. movesetSize() counts the species' non-rear, part-attached,
+         * not-disabled rows — it consults neither the ring window (revision 1)
+         * nor the engage band (revision 2), both of which fall by one at the
+         * exact instant a regression pushes a row out of the fight. See form D
+         * in the header for the injection that proved the band reading blind.
+         * bandProfile() is kept as diagnosis so a failure says which rows the
+         * table meant to put at this standoff.
+         * NOTE: no backticks in here — this comment lives inside the assert
+         * template literal, and one would end the string.
          */
         const prof = pk.bandProfile();
         const arrange = pk.rows.filter((row) => row.arc !== 'rear'
           && pk._reachable(row, win[0], win[1]) != null).map((row) => row.id);
+        const moveset = pk.movesetRows();
         const s = {
           kind: m.kind, ids: [], fired: [], illegal: 0, plans: 0,
           blocked: 0, blockedIds: null, steps: 0, modes: {},
           window: [+win[0].toFixed(2), +win[1].toFixed(2)], arrange,
-          bandRows: prof.ids,
-          bar: Math.max(2, Math.min(3, prof.distinct)),
+          bandRows: prof.ids, moveset,
+          bar: Math.max(2, Math.min(3, pk.movesetSize())),
         };
         st.set(m, s);
         s.probe = tickProbe(m, {
@@ -1130,6 +1156,7 @@ export const GATES = [
         report[s.kind] = {
           simSeconds: +s.probe.sim.toFixed(1), simSteps: s.probe.steps,
           attacks: s.ids.length, distinct, distinctCount: distinct.length, bar: s.bar,
+          movesetInTable: s.moveset,
           bandRowsInTable: s.bandRows, arrangeableFromRing: s.arrange,
           ringWindowM: s.window,
           blockedSteps: s.blocked, blockedRows: s.blockedIds, stepsSampled: s.steps,
@@ -1151,17 +1178,19 @@ export const GATES = [
         }
         if (distinct.length < s.bar) {
           fails.push(s.kind + ': only ' + distinct.length + ' distinct move('
-            + distinct.join(', ') + ') in ' + s.probe.sim.toFixed(1) + ' sim s — the TABLE puts '
-            + s.bandRows.length + ' non-rear row(s) ' + JSON.stringify(s.bandRows)
-            + ' inside band ' + JSON.stringify(m.ai.engage.cfg.band) + ', so the bar is ' + s.bar
-            + ' (arrangeable from ring window ' + JSON.stringify(s.window) + ': '
-            + JSON.stringify(s.arrange) + ')');
+            + distinct.join(', ') + ') in ' + s.probe.sim.toFixed(1) + ' sim s — the TABLE holds '
+            + s.moveset.length + ' non-rear row(s) ' + JSON.stringify(s.moveset)
+            + ', so the bar is ' + s.bar + '. Of those, ' + JSON.stringify(s.bandRows)
+            + ' reach into band ' + JSON.stringify(m.ai.engage.cfg.band) + ' and '
+            + JSON.stringify(s.arrange) + ' are arrangeable from ring window '
+            + JSON.stringify(s.window) + ' — a row missing from those two lists is a move '
+            + 'the standoff can no longer show, which is the defect, not a reason to ask for less');
         }
       }
       const detail = {
         species: picks.length, simSecondsEach: +ran.toFixed(1), timeScaleAsked: ACCEL,
         failures: fails, report,
-        note: 'all species duel a pinned player at once for 30 SIM seconds, each on its own bearing at its own band centre; sampled once per sim step inside each machine.update(). Only ids that are rows in that machine own table count as moves (machine-attack also carries footfall/screech flourishes). Bar = 2 distinct, or 3 when the TABLE puts 3+ non-rear rows inside the engage band (bandProfile().distinct) — read from the table, not from ring reachability, so the regression this gate exists for cannot lower its own bar. ASSERTED per step: picker.bandBlocked(ringWindow) === 0, i.e. every row that reaches into the band is arrangeable from a radius the footwork can hold; a row inside the band but outside the window is the livelock (a kick capped at 4.4 m against a 4.5 m ring floor). ringPlan().legal is sampled but NOT the bar: it is true by construction.',
+        note: 'all species duel a pinned player at once for 30 SIM seconds, each on its own bearing at its own band centre; sampled once per sim step inside each machine.update(). Only ids that are rows in that machine own table count as moves (machine-attack also carries footfall/screech flourishes). Bar = 2 distinct, or 3 once the species TABLE holds 3+ non-rear rows at all (picker.movesetSize()) — read from the table and from nothing the footwork can move, since BOTH the ring window (revision 1) and the engage band (revision 2) fall by one at the instant a regression pushes a row out of the fight, letting the gate lower its own bar. Verified by injection: a Strider band floor raised to 4.95 m drops front-kick out of the standoff with blocked 0 and the band-derived bar falling 3->2; the moveset bar holds at 3 and fails it. ASSERTED per step: picker.bandBlocked(ringWindow) === 0, i.e. every row that reaches into the band is arrangeable from a radius the footwork can hold; a row inside the band but outside the window is the livelock (a kick capped at 4.4 m against a 4.5 m ring floor). ringPlan().legal is sampled but NOT the bar: it is true by construction.',
       };
       if (ran < DUR * 0.8) {
         return { pass: null, detail: { ...detail, why: 'PENDING: the page banked only '

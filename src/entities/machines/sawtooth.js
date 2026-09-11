@@ -3,7 +3,7 @@ import { Machine, rollLoot } from './machine.js';
 import { canisterMesh, plateMesh, antennaMesh, powerCellMesh, pulseGlow } from './parts.js';
 import { buildRig, RIGS } from './autorig.js';
 import { GaitController } from './gait.js';
-import { attachRigRuntime, updateRigLOD } from './rig/lod.js';
+import { attachRigRuntime, updateRigLOD, foldMachineMeshes } from './rig/lod.js';
 import { snapSockets } from './rig/sockets.js';
 import { buildShell, hideSculpt, SAWTOOTH_SHELL } from './rig/shells.js';
 
@@ -168,6 +168,10 @@ export class Sawtooth extends Machine {
     // sculpt AFTER the rig binds and the merge pass runs, and BEFORE the
     // socket proxy is built, so the hull every gate measures is the shell
     hideSculpt(this);
+    // --- RESIDUE ROUND (A21-real-draw-calls): the draw-call fold. One
+    // skeleton, one bind frame, every rigid bone attachment re-expressed as a
+    // one-bone skin, then the material merge. Lossless — see rig/lod.js.
+    foldMachineMeshes(this);
     snapSockets(this);          // bone-space sockets sit ON the hull (A44)
     this._deathRoll = 0.42;     // skeletal buckle does the collapsing now
     this._deathSink = 0.03;

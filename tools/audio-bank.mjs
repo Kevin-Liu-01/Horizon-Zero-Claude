@@ -143,6 +143,29 @@ const BUILD = [
   { set: 'music/sting-resolve', variants: 1, dur: 3.0, ch: 2, kbps: 80, gain: 0.8, tags: ['music', 'sting'] },
   { set: 'music/sting-alert', variants: 1, dur: 1.3, ch: 2, kbps: 80, gain: 0.8, tags: ['music', 'sting'] },
   { set: 'music/sting-discover', variants: 1, dur: 2.6, ch: 2, kbps: 80, gain: 0.8, tags: ['music', 'sting'] },
+
+  /* --- the spear (audio content half) -----------------------------------
+   * `src/combat/melee.js` emits `melee-hit`, `critical-hit` and
+   * `silent-strike`; before this pass nothing in the mix listened, so the
+   * headline Round 4 melee verb was completely silent. Four rungs, matching
+   * the arrow hit ladder's logic: light / heavy / crit / silent, plus the
+   * swing that precedes all of them.
+   */
+  { set: 'melee/whoosh', variants: 3, dur: 0.4, gain: 0.85, tags: ['melee', 'swing'] },
+  { set: 'melee/light', variants: 3, dur: 0.42, gain: 1.0, tags: ['melee', 'impact'] },
+  { set: 'melee/heavy', variants: 2, dur: 0.72, gain: 1.0, tags: ['melee', 'impact'] },
+  { set: 'melee/crit', variants: 2, dur: 0.8, gain: 1.0, tags: ['melee', 'impact', 'crit'] },
+  { set: 'melee/silent', variants: 1, dur: 0.95, gain: 0.9, tags: ['melee', 'stealth'] },
+
+  /* --- Tripcaster + Ropecaster ------------------------------------------
+   * `src/combat/traps.js` emits `trap-placed`, `trap-triggered`,
+   * `rope-attached` and `machine-tied`. Same story: four emitted events, no
+   * listener, two whole weapons that made no sound of their own.
+   */
+  { set: 'trap/place', variants: 2, dur: 0.42, gain: 0.95, tags: ['trap', 'place'] },
+  { set: 'trap/trigger', variants: 2, dur: 0.62, gain: 1.0, tags: ['trap', 'blast'] },
+  { set: 'rope/attach', variants: 2, dur: 0.55, gain: 0.95, tags: ['rope', 'attach'] },
+  { set: 'rope/tie', variants: 1, dur: 0.82, gain: 0.95, tags: ['rope', 'tie'] },
 ];
 
 const JOBS = [];

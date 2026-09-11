@@ -1,0 +1,1714 @@
+EVAL: {
+  "calls": 403,
+  "out": {
+    "watcher": {
+      "dist": 11.8,
+      "H": 2.1,
+      "tier": 0,
+      "visible": 20,
+      "total": 21,
+      "parts": [
+        {
+          "n": "eye",
+          "tearHp": null,
+          "weak": true,
+          "el": null,
+          "vis": true,
+          "att": true
+        },
+        {
+          "n": "antenna",
+          "tearHp": 18,
+          "weak": false,
+          "el": null,
+          "vis": true,
+          "att": true
+        }
+      ],
+      "rows": [
+        {
+          "name": "Hipplate_R001_Main_Body_Texture_0",
+          "parent": "Hipplate_R001",
+          "vis": true,
+          "skinned": false,
+          "mat": "Main_Body_Texture#918",
+          "groups": 0,
+          "noHull": false,
+          "hiddenSculpt": false,
+          "lodHidden": false,
+          "shell": false
+        },
+        {
+          "name": "Hipplate_L001_Main_Body_Texture_0",
+          "parent": "Hipplate_L001",
+          "vis": true,
+          "skinned": false,
+          "mat": "Main_Body_Texture#918",
+          "groups": 0,
+          "noHull": false,
+          "hiddenSculpt": false,
+          "lodHidden": false,
+          "shell": false
+        },
+        {
+          "name": "Eye001_Eye_texture_0",
+          "parent": "Eye001",
+          "vis": true,
+          "skinned": false,
+          "mat": "Eye_texture#919",
+          "groups": 0,
+          "noHull": false,
+          "hiddenSculpt": false,
+          "lodHidden": false,
+          "shell": false
+        },
+        {
+          "name": "Eye_Lense_1001_Glass_Lense_0",
+          "parent": "Eye_Lense_1001",
+          "vis": true,
+          "skinned": false,
+          "mat": "Glass_Lense#920",
+          "groups": 0,
+          "noHull": false,
+          "hiddenSculpt": false,
+          "lodHidden": false,
+          "shell": false
+        },
+        {
+          "name": "Eye_Camera001_Lense_-_Blue_Cameras_0",
+          "parent": "Eye_Camera001",
+          "vis": true,
+          "skinned": false,
+          "mat": "Lense_-_Blue_Cameras#921",
+          "groups": 0,
+          "noHull": false,
+          "hiddenSculpt": false,
+          "lodHidden": false,
+          "shell": false
+        },
+        {
+          "name": "Headplate_R001_Main_Body_Texture_0",
+          "parent": "Headplate_R001",
+          "vis": true,
+          "skinned": false,
+          "mat": "Main_Body_Texture#918",
+          "groups": 0,
+          "noHull": false,
+          "hiddenSculpt": false,
+          "lodHidden": false,
+          "shell": false
+        },
+        {
+          "name": "Headplate_Frill_001_Headplate_Frill__0",
+          "parent": "Headplate_Frill_001",
+          "vis": true,
+          "skinned": false,
+          "mat": "Headplate_Frill#922",
+          "groups": 0,
+          "noHull": false,
+          "hiddenSculpt": false,
+          "lodHidden": false,
+          "shell": false
+        },
+        {
+          "name": "Headplate_Frll_R_2001_Headplate_Frill__0",
+          "parent": "Headplate_Frll_R_2001",
+          "vis": true,
+          "skinned": false,
+          "mat": "Headplate_Frill#922",
+          "groups": 0,
+          "noHull": false,
+          "hiddenSculpt": false,
+          "lodHidden": false,
+          "shell": false
+        },
+        {
+          "name": "Headplate_L001_Main_Body_Texture_0",
+          "parent": "Headplate_L001",
+          "vis": true,
+          "skinned": false,
+          "mat": "Main_Body_Texture#918",
+          "groups": 0,
+          "noHull": false,
+          "hiddenSculpt": false,
+          "lodHidden": false,
+          "shell": false
+        },
+        {
+          "name": "Headplate_Frill_L001_Headplate_Frill__0",
+          "parent": "Headplate_Frill_L001",
+          "vis": true,
+          "skinned": false,
+          "mat": "Headplate_Frill#922",
+          "groups": 0,
+          "noHull": false,
+          "hiddenSculpt": false,
+          "lodHidden": false,
+          "shell": false
+        },
+        {
+          "name": "Headplate_Frill_L_2_001_Headplate_Frill__0",
+          "parent": "Headplate_Frill_L_2_001",
+          "vis": true,
+          "skinned": false,
+          "mat": "Headplate_Frill#922",
+          "groups": 0,
+          "noHull": false,
+          "hiddenSculpt": false,
+          "lodHidden": false,
+          "shell": false
+        },
+        {
+          "name": "(unnamed)",
+          "parent": "?",
+          "vis": true,
+          "skinned": false,
+          "mat": "MeshStandardMaterial#925",
+          "groups": 0,
+          "noHull": false,
+          "hiddenSculpt": false,
+          "lodHidden": false,
+          "shell": false
+        },
+        {
+          "name": "(unnamed)",
+          "parent": "?",
+          "vis": true,
+          "skinned": false,
+          "mat": "MeshStandardMaterial#926",
+          "groups": 0,
+          "noHull": false,
+          "hiddenSculpt": false,
+          "lodHidden": false,
+          "shell": false
+        },
+        {
+          "name": "BodypLate_L001_Main_Body_Texture_0",
+          "parent": "BodypLate_L001",
+          "vis": true,
+          "skinned": false,
+          "mat": "Main_Body_Texture#918",
+          "groups": 0,
+          "noHull": false,
+          "hiddenSculpt": false,
+          "lodHidden": false,
+          "shell": false
+        },
+        {
+          "name": "Main_Bodyplate001_Main_Body_Texture_0",
+          "parent": "Main_Bodyplate001",
+          "vis": true,
+          "skinned": false,
+          "mat": "Main_Body_Texture#918",
+          "groups": 0,
+          "noHull": false,
+          "hiddenSculpt": false,
+          "lodHidden": false,
+          "shell": false
+        },
+        {
+          "name": "Bodyplate_R001_Main_Body_Texture_0",
+          "parent": "Bodyplate_R001",
+          "vis": true,
+          "skinned": false,
+          "mat": "Main_Body_Texture#918",
+          "groups": 0,
+          "noHull": false,
+          "hiddenSculpt": false,
+          "lodHidden": false,
+          "shell": false
+        },
+        {
+          "name": "(unnamed)",
+          "parent": "?",
+          "vis": true,
+          "skinned": false,
+          "mat": "MeshStandardMaterial#927",
+          "groups": 0,
+          "noHull": false,
+          "hiddenSculpt": false,
+          "lodHidden": false,
+          "shell": false
+        },
+        {
+          "name": "Object_11",
+          "parent": "Object_8",
+          "vis": true,
+          "skinned": true,
+          "mat": "Main_Body_Texture#918",
+          "groups": 0,
+          "noHull": false,
+          "hiddenSculpt": false,
+          "lodHidden": false,
+          "shell": false
+        },
+        {
+          "name": "Object_13",
+          "parent": "Object_8",
+          "vis": true,
+          "skinned": true,
+          "mat": "Headlights_-_Blue#923",
+          "groups": 0,
+          "noHull": false,
+          "hiddenSculpt": false,
+          "lodHidden": false,
+          "shell": false
+        },
+        {
+          "name": "Object_15",
+          "parent": "Object_8",
+          "vis": true,
+          "skinned": true,
+          "mat": "Main_Body_Texture#918",
+          "groups": 0,
+          "noHull": false,
+          "hiddenSculpt": false,
+          "lodHidden": false,
+          "shell": false
+        }
+      ]
+    },
+    "sawtooth": {
+      "dist": 18,
+      "H": 2.75,
+      "tier": 1,
+      "visible": 8,
+      "total": 17,
+      "parts": [
+        {
+          "n": "blaze-canister",
+          "tearHp": 40,
+          "weak": true,
+          "el": "blaze",
+          "vis": true,
+          "att": true
+        },
+        {
+          "n": "power-cell",
+          "tearHp": 35,
+          "weak": false,
+          "el": "shock",
+          "vis": true,
+          "att": true
+        },
+        {
+          "n": "antenna-1",
+          "tearHp": 14,
+          "weak": false,
+          "el": null,
+          "vis": false,
+          "att": true
+        },
+        {
+          "n": "antenna-2",
+          "tearHp": 14,
+          "weak": false,
+          "el": null,
+          "vis": false,
+          "att": true
+        },
+        {
+          "n": "antenna-3",
+          "tearHp": 14,
+          "weak": false,
+          "el": null,
+          "vis": false,
+          "att": true
+        },
+        {
+          "n": "hip-plate-r",
+          "tearHp": 30,
+          "weak": false,
+          "el": null,
+          "vis": false,
+          "att": true
+        },
+        {
+          "n": "hip-plate-l",
+          "tearHp": 30,
+          "weak": false,
+          "el": null,
+          "vis": false,
+          "att": true
+        }
+      ],
+      "rows": [
+        {
+          "name": "shell-hard",
+          "parent": "sawtooth-root",
+          "vis": true,
+          "skinned": true,
+          "mat": "MeshStandardMaterial#1033",
+          "groups": 0,
+          "noHull": false,
+          "hiddenSculpt": false,
+          "lodHidden": false,
+          "shell": true
+        },
+        {
+          "name": "shell-soft",
+          "parent": "sawtooth-root",
+          "vis": true,
+          "skinned": true,
+          "mat": "MeshStandardMaterial#1034",
+          "groups": 0,
+          "noHull": false,
+          "hiddenSculpt": false,
+          "lodHidden": false,
+          "shell": true
+        },
+        {
+          "name": "(unnamed)",
+          "parent": "?",
+          "vis": true,
+          "skinned": false,
+          "mat": "MeshStandardMaterial#1021",
+          "groups": 3,
+          "noHull": false,
+          "hiddenSculpt": false,
+          "lodHidden": false,
+          "shell": false
+        },
+        {
+          "name": "(unnamed)",
+          "parent": "?",
+          "vis": true,
+          "skinned": false,
+          "mat": "MeshStandardMaterial#1022",
+          "groups": 0,
+          "noHull": false,
+          "hiddenSculpt": false,
+          "lodHidden": false,
+          "shell": false
+        },
+        {
+          "name": "(unnamed)",
+          "parent": "rig_chest",
+          "vis": true,
+          "skinned": false,
+          "mat": "MeshBasicMaterial#1018",
+          "groups": 0,
+          "noHull": false,
+          "hiddenSculpt": false,
+          "lodHidden": false,
+          "shell": false
+        },
+        {
+          "name": "(unnamed)",
+          "parent": "rig_chest",
+          "vis": true,
+          "skinned": false,
+          "mat": "MeshBasicMaterial#1020",
+          "groups": 0,
+          "noHull": false,
+          "hiddenSculpt": false,
+          "lodHidden": false,
+          "shell": false
+        },
+        {
+          "name": "(unnamed)",
+          "parent": "?",
+          "vis": true,
+          "skinned": false,
+          "mat": "MeshStandardMaterial#1023",
+          "groups": 6,
+          "noHull": false,
+          "hiddenSculpt": false,
+          "lodHidden": false,
+          "shell": false
+        },
+        {
+          "name": "(unnamed)",
+          "parent": "?",
+          "vis": true,
+          "skinned": false,
+          "mat": "MeshStandardMaterial#1024",
+          "groups": 0,
+          "noHull": false,
+          "hiddenSculpt": false,
+          "lodHidden": false,
+          "shell": false
+        }
+      ]
+    },
+    "behemoth": {
+      "dist": 13.8,
+      "H": 4.5,
+      "tier": 0,
+      "visible": 21,
+      "total": 24,
+      "parts": [
+        {
+          "n": "force-loader-r",
+          "tearHp": 45,
+          "weak": false,
+          "el": null,
+          "vis": true,
+          "att": true
+        },
+        {
+          "n": "force-loader-l",
+          "tearHp": 45,
+          "weak": false,
+          "el": null,
+          "vis": true,
+          "att": true
+        },
+        {
+          "n": "cargo-hold",
+          "tearHp": 60,
+          "weak": false,
+          "el": null,
+          "vis": true,
+          "att": true
+        },
+        {
+          "n": "freeze-canister-r",
+          "tearHp": 40,
+          "weak": false,
+          "el": "freeze",
+          "vis": true,
+          "att": true
+        },
+        {
+          "n": "freeze-canister-l",
+          "tearHp": 40,
+          "weak": false,
+          "el": "freeze",
+          "vis": true,
+          "att": true
+        }
+      ],
+      "rows": [
+        {
+          "name": "Cylinder012_0",
+          "parent": "Sketchfab_Scene",
+          "vis": true,
+          "skinned": true,
+          "mat": "FRONT_LEG#1065",
+          "groups": 0,
+          "noHull": false,
+          "hiddenSculpt": false,
+          "lodHidden": false,
+          "shell": false
+        },
+        {
+          "name": "Cylinder_0",
+          "parent": "Sketchfab_Scene",
+          "vis": true,
+          "skinned": true,
+          "mat": "BODY#1066",
+          "groups": 0,
+          "noHull": false,
+          "hiddenSculpt": false,
+          "lodHidden": false,
+          "shell": false
+        },
+        {
+          "name": "Cylinder001_0",
+          "parent": "Sketchfab_Scene",
+          "vis": true,
+          "skinned": true,
+          "mat": "DRUM#1067",
+          "groups": 0,
+          "noHull": false,
+          "hiddenSculpt": false,
+          "lodHidden": false,
+          "shell": false
+        },
+        {
+          "name": "Cylinder004_0",
+          "parent": "Sketchfab_Scene",
+          "vis": true,
+          "skinned": true,
+          "mat": "GRAVITY#1068",
+          "groups": 0,
+          "noHull": false,
+          "hiddenSculpt": false,
+          "lodHidden": false,
+          "shell": false
+        },
+        {
+          "name": "Cube_0",
+          "parent": "Sketchfab_Scene",
+          "vis": true,
+          "skinned": true,
+          "mat": "material_8#1069",
+          "groups": 0,
+          "noHull": false,
+          "hiddenSculpt": false,
+          "lodHidden": false,
+          "shell": false
+        },
+        {
+          "name": "Cylinder010_0",
+          "parent": "Sketchfab_Scene",
+          "vis": true,
+          "skinned": true,
+          "mat": "FREEZE_CANISTER#1070",
+          "groups": 0,
+          "noHull": false,
+          "hiddenSculpt": false,
+          "lodHidden": false,
+          "shell": false
+        },
+        {
+          "name": "Cylinder011_0",
+          "parent": "Sketchfab_Scene",
+          "vis": true,
+          "skinned": true,
+          "mat": "BATTERY#1071",
+          "groups": 0,
+          "noHull": false,
+          "hiddenSculpt": false,
+          "lodHidden": false,
+          "shell": false
+        },
+        {
+          "name": "Cylinder011_1",
+          "parent": "Sketchfab_Scene",
+          "vis": true,
+          "skinned": true,
+          "mat": "PaletteMaterial001#1072",
+          "groups": 0,
+          "noHull": false,
+          "hiddenSculpt": false,
+          "lodHidden": false,
+          "shell": false
+        },
+        {
+          "name": "Cylinder025_0",
+          "parent": "Sketchfab_Scene",
+          "vis": true,
+          "skinned": true,
+          "mat": "REAR_LEG#1073",
+          "groups": 0,
+          "noHull": false,
+          "hiddenSculpt": false,
+          "lodHidden": false,
+          "shell": false
+        },
+        {
+          "name": "Cylinder009_0",
+          "parent": "Sketchfab_Scene",
+          "vis": true,
+          "skinned": true,
+          "mat": "material#1074",
+          "groups": 0,
+          "noHull": false,
+          "hiddenSculpt": false,
+          "lodHidden": false,
+          "shell": false
+        },
+        {
+          "name": "shell-hard",
+          "parent": "behemoth-root",
+          "vis": true,
+          "skinned": true,
+          "mat": "MeshStandardMaterial#1091",
+          "groups": 0,
+          "noHull": false,
+          "hiddenSculpt": false,
+          "lodHidden": false,
+          "shell": true
+        },
+        {
+          "name": "shell-soft",
+          "parent": "behemoth-root",
+          "vis": true,
+          "skinned": true,
+          "mat": "MeshStandardMaterial#1092",
+          "groups": 0,
+          "noHull": false,
+          "hiddenSculpt": false,
+          "lodHidden": false,
+          "shell": true
+        },
+        {
+          "name": "(unnamed)",
+          "parent": "rig_neck",
+          "vis": true,
+          "skinned": false,
+          "mat": "MeshBasicMaterial#1076",
+          "groups": 0,
+          "noHull": false,
+          "hiddenSculpt": false,
+          "lodHidden": false,
+          "shell": false
+        },
+        {
+          "name": "(unnamed)",
+          "parent": "rig_neck",
+          "vis": true,
+          "skinned": false,
+          "mat": "MeshBasicMaterial#1078",
+          "groups": 0,
+          "noHull": false,
+          "hiddenSculpt": false,
+          "lodHidden": false,
+          "shell": false
+        },
+        {
+          "name": "(unnamed)",
+          "parent": "?",
+          "vis": true,
+          "skinned": false,
+          "mat": "MeshStandardMaterial#1082",
+          "groups": 0,
+          "noHull": false,
+          "hiddenSculpt": false,
+          "lodHidden": false,
+          "shell": false
+        },
+        {
+          "name": "(unnamed)",
+          "parent": "?",
+          "vis": true,
+          "skinned": false,
+          "mat": "MeshStandardMaterial#1079",
+          "groups": 0,
+          "noHull": false,
+          "hiddenSculpt": false,
+          "lodHidden": false,
+          "shell": false
+        },
+        {
+          "name": "(unnamed)",
+          "parent": "?",
+          "vis": true,
+          "skinned": false,
+          "mat": "MeshStandardMaterial#1085",
+          "groups": 0,
+          "noHull": false,
+          "hiddenSculpt": false,
+          "lodHidden": false,
+          "shell": false
+        },
+        {
+          "name": "(unnamed)",
+          "parent": "?",
+          "vis": true,
+          "skinned": false,
+          "mat": "MeshStandardMaterial#1087",
+          "groups": 3,
+          "noHull": false,
+          "hiddenSculpt": false,
+          "lodHidden": false,
+          "shell": false
+        },
+        {
+          "name": "(unnamed)",
+          "parent": "?",
+          "vis": true,
+          "skinned": false,
+          "mat": "MeshStandardMaterial#1088",
+          "groups": 0,
+          "noHull": false,
+          "hiddenSculpt": false,
+          "lodHidden": false,
+          "shell": false
+        },
+        {
+          "name": "(unnamed)",
+          "parent": "?",
+          "vis": true,
+          "skinned": false,
+          "mat": "MeshStandardMaterial#1089",
+          "groups": 3,
+          "noHull": false,
+          "hiddenSculpt": false,
+          "lodHidden": false,
+          "shell": false
+        },
+        {
+          "name": "(unnamed)",
+          "parent": "?",
+          "vis": true,
+          "skinned": false,
+          "mat": "MeshStandardMaterial#1090",
+          "groups": 0,
+          "noHull": false,
+          "hiddenSculpt": false,
+          "lodHidden": false,
+          "shell": false
+        }
+      ]
+    },
+    "thunderjaw": {
+      "dist": 11.2,
+      "H": 9.4,
+      "tier": 0,
+      "visible": 19,
+      "total": 26,
+      "parts": [
+        {
+          "n": "radar",
+          "tearHp": 80,
+          "weak": false,
+          "el": null,
+          "vis": true,
+          "att": true
+        },
+        {
+          "n": "disc-launcher-r",
+          "tearHp": 100,
+          "weak": false,
+          "el": null,
+          "vis": true,
+          "att": true
+        },
+        {
+          "n": "disc-launcher-l",
+          "tearHp": 100,
+          "weak": false,
+          "el": null,
+          "vis": true,
+          "att": true
+        },
+        {
+          "n": "tail-tip",
+          "tearHp": 90,
+          "weak": false,
+          "el": null,
+          "vis": true,
+          "att": true
+        },
+        {
+          "n": "cannon-r",
+          "tearHp": 70,
+          "weak": false,
+          "el": null,
+          "vis": true,
+          "att": true
+        },
+        {
+          "n": "cannon-l",
+          "tearHp": 70,
+          "weak": false,
+          "el": null,
+          "vis": true,
+          "att": true
+        },
+        {
+          "n": "blaze-canister",
+          "tearHp": 55,
+          "weak": false,
+          "el": "blaze",
+          "vis": true,
+          "att": true
+        },
+        {
+          "n": "freeze-canister",
+          "tearHp": 55,
+          "weak": false,
+          "el": "freeze",
+          "vis": true,
+          "att": true
+        },
+        {
+          "n": "heart-plate",
+          "tearHp": 55,
+          "weak": false,
+          "el": null,
+          "vis": true,
+          "att": true
+        },
+        {
+          "n": "head-plate",
+          "tearHp": 55,
+          "weak": false,
+          "el": null,
+          "vis": true,
+          "att": true
+        },
+        {
+          "n": "armor-plate-1",
+          "tearHp": 50,
+          "weak": false,
+          "el": null,
+          "vis": true,
+          "att": true
+        },
+        {
+          "n": "armor-plate-2",
+          "tearHp": 50,
+          "weak": false,
+          "el": null,
+          "vis": true,
+          "att": true
+        }
+      ],
+      "rows": [
+        {
+          "name": "shell-hard",
+          "parent": "thunderjaw-root",
+          "vis": true,
+          "skinned": true,
+          "mat": "MeshStandardMaterial#1122",
+          "groups": 0,
+          "noHull": false,
+          "hiddenSculpt": false,
+          "lodHidden": false,
+          "shell": true
+        },
+        {
+          "name": "shell-soft",
+          "parent": "thunderjaw-root",
+          "vis": true,
+          "skinned": true,
+          "mat": "MeshStandardMaterial#1123",
+          "groups": 0,
+          "noHull": false,
+          "hiddenSculpt": false,
+          "lodHidden": false,
+          "shell": true
+        },
+        {
+          "name": "(unnamed)",
+          "parent": "rig_head",
+          "vis": true,
+          "skinned": false,
+          "mat": "MeshBasicMaterial#1096",
+          "groups": 0,
+          "noHull": false,
+          "hiddenSculpt": false,
+          "lodHidden": false,
+          "shell": false
+        },
+        {
+          "name": "(unnamed)",
+          "parent": "rig_head",
+          "vis": true,
+          "skinned": false,
+          "mat": "MeshBasicMaterial#1098",
+          "groups": 0,
+          "noHull": false,
+          "hiddenSculpt": false,
+          "lodHidden": false,
+          "shell": false
+        },
+        {
+          "name": "(unnamed)",
+          "parent": "?",
+          "vis": true,
+          "skinned": false,
+          "mat": "MeshStandardMaterial#1110",
+          "groups": 0,
+          "noHull": false,
+          "hiddenSculpt": false,
+          "lodHidden": false,
+          "shell": false
+        },
+        {
+          "name": "(unnamed)",
+          "parent": "?",
+          "vis": true,
+          "skinned": false,
+          "mat": "MeshStandardMaterial#1112",
+          "groups": 0,
+          "noHull": false,
+          "hiddenSculpt": false,
+          "lodHidden": false,
+          "shell": false
+        },
+        {
+          "name": "(unnamed)",
+          "parent": "?",
+          "vis": true,
+          "skinned": false,
+          "mat": "MeshStandardMaterial#1116",
+          "groups": 3,
+          "noHull": false,
+          "hiddenSculpt": false,
+          "lodHidden": false,
+          "shell": false
+        },
+        {
+          "name": "(unnamed)",
+          "parent": "?",
+          "vis": true,
+          "skinned": false,
+          "mat": "MeshStandardMaterial#1117",
+          "groups": 0,
+          "noHull": false,
+          "hiddenSculpt": false,
+          "lodHidden": false,
+          "shell": false
+        },
+        {
+          "name": "(unnamed)",
+          "parent": "?",
+          "vis": true,
+          "skinned": false,
+          "mat": "MeshStandardMaterial#1118",
+          "groups": 0,
+          "noHull": false,
+          "hiddenSculpt": false,
+          "lodHidden": false,
+          "shell": false
+        },
+        {
+          "name": "(unnamed)",
+          "parent": "?",
+          "vis": true,
+          "skinned": false,
+          "mat": "MeshStandardMaterial#1119",
+          "groups": 0,
+          "noHull": false,
+          "hiddenSculpt": false,
+          "lodHidden": false,
+          "shell": false
+        },
+        {
+          "name": "(unnamed)",
+          "parent": "?",
+          "vis": true,
+          "skinned": false,
+          "mat": "MeshStandardMaterial#1102",
+          "groups": 0,
+          "noHull": false,
+          "hiddenSculpt": false,
+          "lodHidden": false,
+          "shell": false
+        },
+        {
+          "name": "(unnamed)",
+          "parent": "?",
+          "vis": true,
+          "skinned": false,
+          "mat": "MeshStandardMaterial#1105",
+          "groups": 0,
+          "noHull": false,
+          "hiddenSculpt": false,
+          "lodHidden": false,
+          "shell": false
+        },
+        {
+          "name": "(unnamed)",
+          "parent": "?",
+          "vis": true,
+          "skinned": false,
+          "mat": "MeshStandardMaterial#1108",
+          "groups": 0,
+          "noHull": false,
+          "hiddenSculpt": false,
+          "lodHidden": false,
+          "shell": false
+        },
+        {
+          "name": "(unnamed)",
+          "parent": "?",
+          "vis": true,
+          "skinned": false,
+          "mat": "MeshStandardMaterial#1099",
+          "groups": 0,
+          "noHull": false,
+          "hiddenSculpt": false,
+          "lodHidden": false,
+          "shell": false
+        },
+        {
+          "name": "(unnamed)",
+          "parent": "?",
+          "vis": true,
+          "skinned": false,
+          "mat": "MeshStandardMaterial#1100",
+          "groups": 6,
+          "noHull": false,
+          "hiddenSculpt": false,
+          "lodHidden": false,
+          "shell": false
+        },
+        {
+          "name": "(unnamed)",
+          "parent": "?",
+          "vis": true,
+          "skinned": false,
+          "mat": "MeshStandardMaterial#1120",
+          "groups": 0,
+          "noHull": false,
+          "hiddenSculpt": false,
+          "lodHidden": false,
+          "shell": false
+        },
+        {
+          "name": "(unnamed)",
+          "parent": "?",
+          "vis": true,
+          "skinned": false,
+          "mat": "MeshStandardMaterial#1121",
+          "groups": 0,
+          "noHull": false,
+          "hiddenSculpt": false,
+          "lodHidden": false,
+          "shell": false
+        },
+        {
+          "name": "(unnamed)",
+          "parent": "?",
+          "vis": true,
+          "skinned": false,
+          "mat": "MeshStandardMaterial#1114",
+          "groups": 3,
+          "noHull": false,
+          "hiddenSculpt": false,
+          "lodHidden": false,
+          "shell": false
+        },
+        {
+          "name": "(unnamed)",
+          "parent": "?",
+          "vis": true,
+          "skinned": false,
+          "mat": "MeshStandardMaterial#1115",
+          "groups": 0,
+          "noHull": false,
+          "hiddenSculpt": false,
+          "lodHidden": false,
+          "shell": false
+        }
+      ]
+    },
+    "strider": {
+      "dist": 18.4,
+      "H": 2,
+      "tier": 1,
+      "visible": 6,
+      "total": 7,
+      "parts": [
+        {
+          "n": "blaze-canister",
+          "tearHp": 30,
+          "weak": true,
+          "el": "blaze",
+          "vis": true,
+          "att": true
+        },
+        {
+          "n": "lens",
+          "tearHp": null,
+          "weak": false,
+          "el": null,
+          "vis": true,
+          "att": true
+        }
+      ],
+      "rows": [
+        {
+          "name": "group622540491",
+          "parent": "?",
+          "vis": true,
+          "skinned": true,
+          "mat": "PaletteMaterial001#1232",
+          "groups": 0,
+          "noHull": false,
+          "hiddenSculpt": false,
+          "lodHidden": false,
+          "shell": false
+        },
+        {
+          "name": "(unnamed)",
+          "parent": "?",
+          "vis": true,
+          "skinned": false,
+          "mat": "MeshStandardMaterial#1240",
+          "groups": 0,
+          "noHull": false,
+          "hiddenSculpt": false,
+          "lodHidden": false,
+          "shell": false
+        },
+        {
+          "name": "(unnamed)",
+          "parent": "rig_neck",
+          "vis": true,
+          "skinned": false,
+          "mat": "MeshBasicMaterial#1234",
+          "groups": 0,
+          "noHull": false,
+          "hiddenSculpt": false,
+          "lodHidden": false,
+          "shell": false
+        },
+        {
+          "name": "(unnamed)",
+          "parent": "rig_neck",
+          "vis": true,
+          "skinned": false,
+          "mat": "MeshBasicMaterial#1236",
+          "groups": 0,
+          "noHull": false,
+          "hiddenSculpt": false,
+          "lodHidden": false,
+          "shell": false
+        },
+        {
+          "name": "(unnamed)",
+          "parent": "?",
+          "vis": true,
+          "skinned": false,
+          "mat": "MeshStandardMaterial#1237",
+          "groups": 3,
+          "noHull": false,
+          "hiddenSculpt": false,
+          "lodHidden": false,
+          "shell": false
+        },
+        {
+          "name": "(unnamed)",
+          "parent": "?",
+          "vis": true,
+          "skinned": false,
+          "mat": "MeshStandardMaterial#1238",
+          "groups": 0,
+          "noHull": false,
+          "hiddenSculpt": false,
+          "lodHidden": false,
+          "shell": false
+        }
+      ]
+    },
+    "scrapper": {
+      "dist": 13.9,
+      "H": 1.5,
+      "tier": 1,
+      "visible": 5,
+      "total": 10,
+      "parts": [
+        {
+          "n": "radar",
+          "tearHp": 25,
+          "weak": false,
+          "el": null,
+          "vis": true,
+          "att": true
+        },
+        {
+          "n": "power-cell",
+          "tearHp": 20,
+          "weak": false,
+          "el": "shock",
+          "vis": false,
+          "att": true
+        }
+      ],
+      "rows": [
+        {
+          "name": "shell-hard",
+          "parent": "scrapper-root",
+          "vis": true,
+          "skinned": true,
+          "mat": "MeshStandardMaterial#1358",
+          "groups": 0,
+          "noHull": false,
+          "hiddenSculpt": false,
+          "lodHidden": false,
+          "shell": true
+        },
+        {
+          "name": "shell-soft",
+          "parent": "scrapper-root",
+          "vis": true,
+          "skinned": true,
+          "mat": "MeshStandardMaterial#1359",
+          "groups": 0,
+          "noHull": false,
+          "hiddenSculpt": false,
+          "lodHidden": false,
+          "shell": true
+        },
+        {
+          "name": "shell-sensor",
+          "parent": "scrapper-root",
+          "vis": true,
+          "skinned": true,
+          "mat": "MeshStandardMaterial#1360",
+          "groups": 0,
+          "noHull": false,
+          "hiddenSculpt": false,
+          "lodHidden": false,
+          "shell": true
+        },
+        {
+          "name": "(unnamed)",
+          "parent": "?",
+          "vis": true,
+          "skinned": false,
+          "mat": "MeshStandardMaterial#1353",
+          "groups": 0,
+          "noHull": false,
+          "hiddenSculpt": false,
+          "lodHidden": false,
+          "shell": false
+        },
+        {
+          "name": "(unnamed)",
+          "parent": "?",
+          "vis": true,
+          "skinned": false,
+          "mat": "MeshStandardMaterial#1354",
+          "groups": 6,
+          "noHull": false,
+          "hiddenSculpt": false,
+          "lodHidden": false,
+          "shell": false
+        }
+      ]
+    },
+    "glinthawk": {
+      "dist": 20.2,
+      "H": 1.55,
+      "tier": 1,
+      "visible": 3,
+      "total": 13,
+      "parts": [
+        {
+          "n": "freeze-sac",
+          "tearHp": 14,
+          "weak": true,
+          "el": "freeze",
+          "vis": false,
+          "att": true
+        }
+      ],
+      "rows": [
+        {
+          "name": "shell-hard",
+          "parent": "Root",
+          "vis": true,
+          "skinned": false,
+          "mat": "MeshStandardMaterial#1408",
+          "groups": 0,
+          "noHull": false,
+          "hiddenSculpt": false,
+          "lodHidden": false,
+          "shell": true
+        },
+        {
+          "name": "shell-soft",
+          "parent": "Root",
+          "vis": true,
+          "skinned": false,
+          "mat": "MeshStandardMaterial#1409",
+          "groups": 0,
+          "noHull": false,
+          "hiddenSculpt": false,
+          "lodHidden": false,
+          "shell": true
+        },
+        {
+          "name": "shell-sensor",
+          "parent": "Root",
+          "vis": true,
+          "skinned": false,
+          "mat": "MeshStandardMaterial#1410",
+          "groups": 0,
+          "noHull": false,
+          "hiddenSculpt": false,
+          "lodHidden": false,
+          "shell": true
+        }
+      ]
+    },
+    "longleg": {
+      "dist": 20.6,
+      "H": 4,
+      "tier": 0,
+      "visible": 29,
+      "total": 32,
+      "parts": [
+        {
+          "n": "lens",
+          "tearHp": null,
+          "weak": false,
+          "el": null,
+          "vis": true,
+          "att": true
+        },
+        {
+          "n": "alarm-antenna",
+          "tearHp": 20,
+          "weak": false,
+          "el": null,
+          "vis": true,
+          "att": true
+        },
+        {
+          "n": "concussion-sac-r",
+          "tearHp": 30,
+          "weak": true,
+          "el": null,
+          "vis": true,
+          "att": true
+        },
+        {
+          "n": "concussion-sac-l",
+          "tearHp": 30,
+          "weak": true,
+          "el": null,
+          "vis": true,
+          "att": true
+        },
+        {
+          "n": "power-cell",
+          "tearHp": 26,
+          "weak": false,
+          "el": "shock",
+          "vis": true,
+          "att": true
+        }
+      ],
+      "rows": [
+        {
+          "name": "shell-soft",
+          "parent": "FootL",
+          "vis": true,
+          "skinned": false,
+          "mat": "MeshStandardMaterial#1469",
+          "groups": 6,
+          "noHull": false,
+          "hiddenSculpt": false,
+          "lodHidden": false,
+          "shell": true
+        },
+        {
+          "name": "shell-hard",
+          "parent": "FootL",
+          "vis": true,
+          "skinned": false,
+          "mat": "MeshStandardMaterial#1468",
+          "groups": 0,
+          "noHull": false,
+          "hiddenSculpt": false,
+          "lodHidden": false,
+          "shell": true
+        },
+        {
+          "name": "(unnamed)",
+          "parent": "?",
+          "vis": true,
+          "skinned": false,
+          "mat": "MeshStandardMaterial#1458",
+          "groups": 0,
+          "noHull": false,
+          "hiddenSculpt": false,
+          "lodHidden": false,
+          "shell": false
+        },
+        {
+          "name": "(unnamed)",
+          "parent": "?",
+          "vis": true,
+          "skinned": false,
+          "mat": "MeshStandardMaterial#1460",
+          "groups": 0,
+          "noHull": false,
+          "hiddenSculpt": false,
+          "lodHidden": false,
+          "shell": false
+        },
+        {
+          "name": "shell-hard",
+          "parent": "Head",
+          "vis": true,
+          "skinned": false,
+          "mat": "MeshStandardMaterial#1468",
+          "groups": 0,
+          "noHull": false,
+          "hiddenSculpt": false,
+          "lodHidden": false,
+          "shell": true
+        },
+        {
+          "name": "shell-soft",
+          "parent": "Head",
+          "vis": true,
+          "skinned": false,
+          "mat": "MeshStandardMaterial#1469",
+          "groups": 6,
+          "noHull": false,
+          "hiddenSculpt": false,
+          "lodHidden": false,
+          "shell": true
+        },
+        {
+          "name": "shell-sensor",
+          "parent": "Head",
+          "vis": true,
+          "skinned": false,
+          "mat": "MeshStandardMaterial#1470",
+          "groups": 0,
+          "noHull": false,
+          "hiddenSculpt": false,
+          "lodHidden": false,
+          "shell": true
+        },
+        {
+          "name": "(unnamed)",
+          "parent": "?",
+          "vis": true,
+          "skinned": false,
+          "mat": "MeshStandardMaterial#1462",
+          "groups": 3,
+          "noHull": false,
+          "hiddenSculpt": false,
+          "lodHidden": false,
+          "shell": false
+        },
+        {
+          "name": "(unnamed)",
+          "parent": "?",
+          "vis": true,
+          "skinned": false,
+          "mat": "MeshStandardMaterial#1463",
+          "groups": 0,
+          "noHull": false,
+          "hiddenSculpt": false,
+          "lodHidden": false,
+          "shell": false
+        },
+        {
+          "name": "(unnamed)",
+          "parent": "?",
+          "vis": true,
+          "skinned": false,
+          "mat": "MeshStandardMaterial#1464",
+          "groups": 3,
+          "noHull": false,
+          "hiddenSculpt": false,
+          "lodHidden": false,
+          "shell": false
+        },
+        {
+          "name": "(unnamed)",
+          "parent": "?",
+          "vis": true,
+          "skinned": false,
+          "mat": "MeshStandardMaterial#1465",
+          "groups": 0,
+          "noHull": false,
+          "hiddenSculpt": false,
+          "lodHidden": false,
+          "shell": false
+        },
+        {
+          "name": "(unnamed)",
+          "parent": "?",
+          "vis": true,
+          "skinned": false,
+          "mat": "MeshStandardMaterial#1466",
+          "groups": 6,
+          "noHull": false,
+          "hiddenSculpt": false,
+          "lodHidden": false,
+          "shell": false
+        },
+        {
+          "name": "(unnamed)",
+          "parent": "?",
+          "vis": true,
+          "skinned": false,
+          "mat": "MeshStandardMaterial#1467",
+          "groups": 0,
+          "noHull": false,
+          "hiddenSculpt": false,
+          "lodHidden": false,
+          "shell": false
+        },
+        {
+          "name": "shell-soft",
+          "parent": "Neck",
+          "vis": true,
+          "skinned": false,
+          "mat": "MeshStandardMaterial#1469",
+          "groups": 6,
+          "noHull": false,
+          "hiddenSculpt": false,
+          "lodHidden": false,
+          "shell": true
+        },
+        {
+          "name": "shell-hard",
+          "parent": "Neck",
+          "vis": true,
+          "skinned": false,
+          "mat": "MeshStandardMaterial#1468",
+          "groups": 6,
+          "noHull": false,
+          "hiddenSculpt": false,
+          "lodHidden": false,
+          "shell": true
+        },
+        {
+          "name": "shell-hard",
+          "parent": "Torso",
+          "vis": true,
+          "skinned": false,
+          "mat": "MeshStandardMaterial#1468",
+          "groups": 0,
+          "noHull": false,
+          "hiddenSculpt": false,
+          "lodHidden": false,
+          "shell": true
+        },
+        {
+          "name": "shell-soft",
+          "parent": "Abdomen",
+          "vis": true,
+          "skinned": false,
+          "mat": "MeshStandardMaterial#1469",
+          "groups": 0,
+          "noHull": false,
+          "hiddenSculpt": false,
+          "lodHidden": false,
+          "shell": true
+        },
+        {
+          "name": "shell-hard",
+          "parent": "Abdomen",
+          "vis": true,
+          "skinned": false,
+          "mat": "MeshStandardMaterial#1468",
+          "groups": 6,
+          "noHull": false,
+          "hiddenSculpt": false,
+          "lodHidden": false,
+          "shell": true
+        },
+        {
+          "name": "shell-hard",
+          "parent": "Hips",
+          "vis": true,
+          "skinned": false,
+          "mat": "MeshStandardMaterial#1468",
+          "groups": 3,
+          "noHull": false,
+          "hiddenSculpt": false,
+          "lodHidden": false,
+          "shell": true
+        },
+        {
+          "name": "shell-hard",
+          "parent": "LowerLegL",
+          "vis": true,
+          "skinned": false,
+          "mat": "MeshStandardMaterial#1468",
+          "groups": 0,
+          "noHull": false,
+          "hiddenSculpt": false,
+          "lodHidden": false,
+          "shell": true
+        },
+        {
+          "name": "shell-soft",
+          "parent": "LowerLegL",
+          "vis": true,
+          "skinned": false,
+          "mat": "MeshStandardMaterial#1469",
+          "groups": 6,
+          "noHull": false,
+          "hiddenSculpt": false,
+          "lodHidden": false,
+          "shell": true
+        },
+        {
+          "name": "shell-hard",
+          "parent": "UpperLegL",
+          "vis": true,
+          "skinned": false,
+          "mat": "MeshStandardMaterial#1468",
+          "groups": 0,
+          "noHull": false,
+          "hiddenSculpt": false,
+          "lodHidden": false,
+          "shell": true
+        },
+        {
+          "name": "shell-soft",
+          "parent": "UpperLegL",
+          "vis": true,
+          "skinned": false,
+          "mat": "MeshStandardMaterial#1469",
+          "groups": 6,
+          "noHull": false,
+          "hiddenSculpt": false,
+          "lodHidden": false,
+          "shell": true
+        },
+        {
+          "name": "shell-hard",
+          "parent": "LowerLegR",
+          "vis": true,
+          "skinned": false,
+          "mat": "MeshStandardMaterial#1468",
+          "groups": 0,
+          "noHull": false,
+          "hiddenSculpt": false,
+          "lodHidden": false,
+          "shell": true
+        },
+        {
+          "name": "shell-soft",
+          "parent": "LowerLegR",
+          "vis": true,
+          "skinned": false,
+          "mat": "MeshStandardMaterial#1469",
+          "groups": 6,
+          "noHull": false,
+          "hiddenSculpt": false,
+          "lodHidden": false,
+          "shell": true
+        },
+        {
+          "name": "shell-hard",
+          "parent": "UpperLegR",
+          "vis": true,
+          "skinned": false,
+          "mat": "MeshStandardMaterial#1468",
+          "groups": 0,
+          "noHull": false,
+          "hiddenSculpt": false,
+          "lodHidden": false,
+          "shell": true
+        },
+        {
+          "name": "shell-soft",
+          "parent": "UpperLegR",
+          "vis": true,
+          "skinned": false,
+          "mat": "MeshStandardMaterial#1469",
+          "groups": 6,
+          "noHull": false,
+          "hiddenSculpt": false,
+          "lodHidden": false,
+          "shell": true
+        },
+        {
+          "name": "shell-soft",
+          "parent": "FootR",
+          "vis": true,
+          "skinned": false,
+          "mat": "MeshStandardMaterial#1469",
+          "groups": 6,
+          "noHull": false,
+          "hiddenSculpt": false,
+          "lodHidden": false,
+          "shell": true
+        },
+        {
+          "name": "shell-hard",
+          "parent": "FootR",
+          "vis": true,
+          "skinned": false,
+          "mat": "MeshStandardMaterial#1468",
+          "groups": 0,
+          "noHull": false,
+          "hiddenSculpt": false,
+          "lodHidden": false,
+          "shell": true
+        }
+      ]
+    }
+  }
+}
+saved shots/rig-probe-draws.png

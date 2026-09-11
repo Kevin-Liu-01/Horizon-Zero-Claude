@@ -108,6 +108,22 @@ const CAM_DIST_AIM = 1.75;
 const CAM_DIST_CROUCH = 2.55;
 const PIVOT_H = 1.45;                     // camera-feel-07 (was 1.55)
 const PIVOT_H_CROUCH = 1.06;              // A31 wants <= 1.2 while crouch-aiming
+/**
+ * A31's contract, as one constant: while CROUCHING, `camPivot` may never sit
+ * more than this above her feet.  It is enforced in TWO places, because the
+ * look-up lift and the pivot damp can each break it on their own:
+ *   `_lookLift`   caps the TARGET the lift asks for, and
+ *   `_capCrouchPivot`  caps the value actually DELIVERED after the damp.
+ * The second one is not redundant.  The damp LEADS its target by `v/k` (see
+ * the pivot damp below), so while the player is sweeping the look-up the
+ * delivered pivot runs AHEAD of a target that is already sitting exactly on
+ * the bar: measured 1.2139 / 1.2162 / 1.2176 m on slow / normal / flick
+ * look-ups from a crouch-aim, i.e. the bar is broken on every real look-up
+ * even though the steady state is exactly 1.2.  Clamping the delivered value
+ * is what makes the published contract true at every instant rather than only
+ * at rest.
+ */
+const PIVOT_CROUCH_MAX = 1.2;
 const PITCH_UP = -1.15;                   // 66 deg of forward pitch (A32)
 const PITCH_DOWN = 1.02;
 /**
@@ -1543,7 +1559,26 @@ void main() {
     const k = (up - LOOKUP_LIFT_IN) / (1 - LOOKUP_LIFT_IN);
     const l = LOOKUP_LIFT * k;
     // A31: crouch-aiming, `camPivot` must stay within 1.2 m of her feet.
-    return this.crouching ? Math.min(l, 1.2 - PIVOT_H_CROUCH) : l;
+    return this.crouching ? Math.min(l, PIVOT_CROUCH_MAX - PIVOT_H_CROUCH) : l;
+  }
+
+  /**
+   * A31's bar, enforced on the value the camera actually USES.
+   *
+   * `_lookLift` caps what the look-up lift may ASK for, but the pivot damp
+   * leads its target by `v / k` to kill the steady-state lag (see the damp),
+   * and a lead on a target that is already pinned to the bar overshoots it:
+   * measured 1.2176 m above her feet on a flick look-up out of a crouch-aim,
+   * against a published `<= 1.2`.  So the ceiling is applied here too, after
+   * the damp and after the catch-up lerp, to `_pivotPos` itself rather than to
+   * a copy — storing an out-of-contract value would just re-emit it next frame.
+   * Standing is untouched: the 1.45 m pivot plus the full `LOOKUP_LIFT` is the
+   * intended look-up framing and nothing bars it.
+   */
+  _capCrouchPivot(feetY) {
+    if (!this.crouching) return;
+    const ceil = feetY + PIVOT_CROUCH_MAX;
+    if (this._pivotPos.y > ceil) this._pivotPos.y = ceil;
   }
 
   /**
@@ -1794,6 +1829,9 @@ void main() {
     if (this._pivotPos.distanceToSquared(pivot) > 1.44) {
       this._pivotPos.lerp(pivot, 0.5);
     }
+    // A31, on the DELIVERED pivot — the damp lead overshoots a target that is
+    // already on the bar.  Last thing before it is published.
+    this._capCrouchPivot(this.position.y);
     this.camPivot.copy(this._pivotPos);
 
     const yaw = this.camYaw + this.recoil.yaw;

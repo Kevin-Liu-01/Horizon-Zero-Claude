@@ -35,6 +35,20 @@ import { CastDirector, CAST_STATES } from './cast.js';
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
 const MAX_REAL_DT = 1 / 20;   // a stalled frame must not teleport the lens
 
+/**
+ * Keys the studio owns outright while it is open — the fly set, its modifiers,
+ * and the binds other lanes would otherwise answer underneath the shot (pause,
+ * inventory, map, quests, Focus, the weapon wheel, the tool strip). Everything
+ * NOT in here still reaches the page, so F12 and the browser's own shortcuts
+ * keep working.
+ */
+const STUDIO_KEYS = new Set([
+  'KeyW', 'KeyA', 'KeyS', 'KeyD', 'KeyQ', 'KeyE',
+  'ShiftLeft', 'ShiftRight', 'AltLeft', 'AltRight', 'Space',
+  'KeyF', 'KeyR', 'KeyI', 'KeyM', 'KeyJ', 'KeyK', 'KeyC', 'KeyV', 'KeyG', 'KeyH',
+  'Tab', 'KeyP', 'Digit1', 'Digit2', 'Digit3', 'Digit4', 'Digit5', 'Digit6',
+]);
+
 export class Studio {
   constructor(ctx) {
     this.ctx = ctx;
@@ -89,16 +103,34 @@ export class Studio {
 
     this._buildUi();
 
-    // Own listeners — independent of ctx.input so the game never sees fly keys.
+    /*
+     * Own listeners — independent of `ctx.input` so the game never sees the fly
+     * keys. CAPTURE PHASE, and swallowing what it handles.
+     *
+     * `onboarding-loop-studio-cast-buttons`: the studio is constructed LAST, so
+     * on a bubble-phase `window` listener every other lane's keydown handler had
+     * already run by the time this one saw the event. Esc therefore left photo
+     * mode AND opened the pause menu — the photographer pressed one key and
+     * landed in a frozen game with the menu painted over the shot they were
+     * lining up. Window capture runs before every bubble-phase listener in the
+     * document, so stopping the event here means nothing else ever sees the keys
+     * the studio owns.
+     */
     window.addEventListener('keydown', (e) => {
-      if (e.code === 'F10') { e.preventDefault(); this.toggle(); return; }
+      if (e.code === 'F10') { this._swallow(e); this.toggle(); return; }
       if (!this.active) return;
       const tag = document.activeElement?.tagName;
       if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA') return;
-      if (e.code === 'Escape') { this.exit(); return; }
+      if (e.code === 'Escape') { this._swallow(e); this.exit(); return; }
       this._keys.add(e.code);
-    });
-    window.addEventListener('keyup', (e) => this._keys.delete(e.code));
+      // Fly keys, modifiers and the pause/inventory/wheel/focus binds all belong
+      // to the studio while it is open; anything else (F-keys, devtools) passes.
+      if (STUDIO_KEYS.has(e.code)) this._swallow(e);
+    }, { capture: true });
+    window.addEventListener('keyup', (e) => {
+      this._keys.delete(e.code);
+      if (this.active && STUDIO_KEYS.has(e.code)) this._swallow(e);
+    }, { capture: true });
     window.addEventListener('blur', () => this._keys.clear());
     document.addEventListener('mousemove', (e) => {
       if (!this.active || document.pointerLockElement !== this._canvas()) return;
@@ -108,6 +140,13 @@ export class Studio {
   }
 
   _canvas() { return this.ctx.renderer.domElement; }
+
+  /** Consume an event outright: no other listener, in any phase, will see it. */
+  _swallow(e) {
+    e.preventDefault();
+    e.stopPropagation();
+    e.stopImmediatePropagation();
+  }
 
   toggle() { if (this.active) this.exit(); else this.enter(); }
 
@@ -314,15 +353,28 @@ export class Studio {
     }
   }
 
+  /**
+   * Where auto-focus actually lands. A portrait focuses on the EYES, not on
+   * the transform origin at the subject's feet — with a wide aperture the
+   * 40 cm between her sternum and her face is the difference between a sharp
+   * face and a soft one. Aloy resolves to her head bone through the animator's
+   * published `b.head`; a machine resolves to half its own height.
+   * @returns {boolean} whether `this._probe` now holds a world focus point
+   */
+  _focusPoint() {
+    const subject = this.pose.hideAloy ? this.cast.target : (this.ctx.player ?? this.cast.target);
+    if (!subject?.position) return false;
+    const head = subject === this.ctx.player ? this.pose.animator?.b?.head?.bone : null;
+    if (head) { head.getWorldPosition(this._probe); return true; }
+    this._probe.copy(subject.position);
+    this._probe.y += subject.height ? subject.height * 0.5 : 1.45;
+    return true;
+  }
+
   _syncLens(realDt) {
     const L = this.lens;
-    if (L.dof && L.autoFocus) {
-      const subject = this.pose.hideAloy ? this.cast.target : (this.ctx.player ?? this.cast.target);
-      if (subject?.position) {
-        this._probe.copy(subject.position);
-        this._probe.y += 1.1;
-        L.focus = clamp(this._probe.distanceTo(this.ctx.camera.position), 0.5, 400);
-      }
+    if (L.dof && L.autoFocus && this._focusPoint()) {
+      L.focus = clamp(this._probe.distanceTo(this.ctx.camera.position), 0.5, 400);
     }
     if (!this.pass) return;
     this.pass.sync(this.ctx.camera, {
@@ -369,6 +421,23 @@ export class Studio {
   }
 
   /* ------------------------------------------------------------------- API */
+
+  /**
+   * Fire one Aloy pose — the ONE entry point, so a scripted shot behaves
+   * exactly like the panel button. `player-anim-17`: a pose that hands the
+   * state on (a filmed death drops `ctx.state` to 'dead') latches `_deathFilm`
+   * so `update()` takes the world back when the respawn timer releases it and
+   * Esc still returns the photographer to where they came from.
+   * @returns {{ok:boolean, detail:string, handedState?:boolean}}
+   */
+  playPose(id) {
+    const r = this.pose.play(id);
+    if (r.handedState) this._deathFilm = true;
+    return r;
+  }
+
+  /** Force a state on the cast target and HOLD it. See `CastDirector`. */
+  setCastState(id, opts) { return this.cast.setState(id, opts); }
 
   /** Published for gates and for anyone scripting a shot. */
   debug() {
@@ -560,8 +629,7 @@ export class Studio {
       b.textContent = p.label;
       b.dataset.pose = p.id;
       b.addEventListener('click', () => {
-        const r = this.pose.play(p.id);
-        if (r.handedState) this._deathFilm = true;
+        const r = this.playPose(p.id);
         $('#st-aloy-note').textContent = r.ok ? r.detail + ' playing' : 'refused: ' + r.detail;
       });
       poses.appendChild(b);

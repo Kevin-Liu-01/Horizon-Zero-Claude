@@ -470,19 +470,76 @@ export const GATES = [
         pivotH: +p.pivotHeight.toFixed(3),
         pivotAboveFeet: +(p.camPivot.y - p.position.y).toFixed(3),
       };
-      C.input.mouse.buttons = 0;
+      C.input.mouse.buttons = 0;                       // releasing aim must not stand her up
       await new Promise((r) => setTimeout(r, 300));
       const afterAim = { crouching: p.crouching };
+      /* --- FIX ROUND 3 (judge: "A31's camera pivot <= 1.2 m bar is violated
+       * while crouch-aiming at ANY look-up; the guard that enforces it is dead
+       * code").
+       *
+       * The bar above is measured at whatever pitch the crouch-aim happened to
+       * be sitting at — which is ~0, and at "up" 0 the look-up lift is 0, so
+       * this gate could never see the defect it is named for.  That is how the
+       * dead guard shipped: _lookLift, which carries the clamp, was not being
+       * called, and the raw LOOKUP_LIFT * up * up curve put the pivot 1.51 m
+       * above her feet at the pitch clamp.
+       *
+       * So the look-up is now STAGED, and staged the way a player reaches it —
+       * by sweeping mouse.dy, the same field the pointer-lock listener writes
+       * (a teleported camPitch skips the pivot damp transient, and the
+       * transient is where the second half of this defect lived: the damp LEADS
+       * its target by v/k, so a target pinned exactly to the bar is delivered
+       * ABOVE it — measured 1.2139 / 1.2162 / 1.2176 m on slow / normal / flick
+       * sweeps of the shipped build).  Every frame of the sweep is sampled, and
+       * the bar is on the WORST frame, not on the settled one. */
+      const frame = () => new Promise((r) => requestAnimationFrame(r));
+      const sweepUp = async (dy) => {
+        p.camPitch = 0; p.position.set(spot.x, p.position.y, spot.z); p.velocity.set(0, 0, 0);
+        for (let i = 0; i < 20; i++) { p.position.set(spot.x, p.position.y, spot.z); p.velocity.set(0, 0, 0); await frame(); }
+        let worst = -9, atDeg = 0, peakDeg = 0;
+        for (let i = 0; i < 110; i++) {
+          C.input.mouse.dy = dy;                  // the REAL look path
+          await frame();
+          p.position.set(spot.x, p.position.y, spot.z); p.velocity.set(0, 0, 0);
+          const above = p.camPivot.y - p.position.y;
+          const deg = -p.camPitch * 180 / Math.PI;
+          if (deg > peakDeg) peakDeg = deg;
+          if (above > worst) { worst = above; atDeg = deg; }
+        }
+        return { dy, maxPivotAboveFeet: +worst.toFixed(4), atPitchDeg: +atDeg.toFixed(1),
+                 peakPitchDeg: +peakDeg.toFixed(1),
+                 settledAboveFeet: +(p.camPivot.y - p.position.y).toFixed(4),
+                 crouchAim: p.crouchAim, overBar: worst > 1.2 };
+      };
+      C.input.mouse.buttons |= 4;                 // still crouch-aiming
+      const lookUps = [];
+      for (const dy of [-40, -120, -400, -900]) lookUps.push(await sweepUp(dy));
+      /* …and the standing look-up must NOT be clamped: 1.06 is a crouch pivot,
+       * and capping a standing one at 1.2 would quietly break the look-up
+       * framing A32b measures.  This row proves the clamp is crouch-only. */
+      C.input.mouse.buttons = 0;
       key('KeyC');                                     // second press stands her up
-      await new Promise((r) => setTimeout(r, 350));
+      await new Promise((r) => setTimeout(r, 400));
       const toggledOff = !p.crouching;
       window.dispatchEvent(new KeyboardEvent('keyup', { code: 'KeyC' }));
+      C.input.mouse.buttons |= 4;
+      const standing = await sweepUp(-400);
+      C.input.mouse.buttons = 0;
+      p.camPitch = 0;
+
+      const maxLookUpPivot = Math.max(...lookUps.map((r) => r.maxPivotAboveFeet));
+      const reachedClamp = lookUps.every((r) => r.peakPitchDeg >= 60);
+      const heldCrouchAim = lookUps.every((r) => r.crouchAim === true);
+      const standingFree = standing.maxPivotAboveFeet > 1.25;   // NOT clamped
 
       const pass = afterC.crouching === true && afterRelease.crouching === true
         && aim.crouching === true && aim.aiming === true && aim.crouchAim === true
         && aim.stealth === true && aim.pivotH <= 1.2 && aim.pivotAboveFeet <= 1.2
-        && afterAim.crouching === true && toggledOff === true;
-      return { pass, detail: { spot, afterC, afterRelease, aim, afterAim, toggledOff } };
+        && afterAim.crouching === true && toggledOff === true
+        && maxLookUpPivot <= 1.2 && reachedClamp && heldCrouchAim && standingFree;
+      return { pass, detail: { spot, afterC, afterRelease, aim, afterAim, toggledOff,
+        lookUps, maxLookUpPivot: +maxLookUpPivot.toFixed(4), reachedClamp, heldCrouchAim,
+        standingLookUp: standing, standingNotClamped: standingFree } };
     })()`,
   },
 

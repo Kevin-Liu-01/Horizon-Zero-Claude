@@ -3,7 +3,7 @@ import { Machine, rollLoot } from './machine.js';
 import { canisterMesh, lensMesh, pulseGlow } from './parts.js';
 import { buildRig } from './autorig.js';
 import { GaitController } from './gait.js';
-import { attachRigRuntime, updateRigLOD } from './rig/lod.js';
+import { attachRigRuntime, updateRigLOD, foldMachineMeshes } from './rig/lod.js';
 import { snapSockets } from './rig/sockets.js';
 
 /**
@@ -137,6 +137,10 @@ export class Strider extends Machine {
       stanceFlex: 0.15, // legs bind near-straight: flex restores IK ground reach
     });
     this.gait.update(0.016, 0); // settle the sculpt's frozen stride
+    // --- RESIDUE ROUND (A21-real-draw-calls): the draw-call fold. One
+    // skeleton, one bind frame, every rigid bone attachment re-expressed as a
+    // one-bone skin, then the material merge. Lossless — see rig/lod.js.
+    foldMachineMeshes(this);
     snapSockets(this);          // bone-space sockets sit ON the hull (A44)
     this._deathRoll = 0.5;
     this._deathSink = 0.05;
