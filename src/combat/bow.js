@@ -13,19 +13,35 @@ import { makeArrow, setArrowType, makeBombVisual } from './arrows.js';
  * space every frame while wielded, so bone axes never matter.
  */
 
-const woodDark = new THREE.MeshStandardMaterial({ color: 0x37291c, roughness: 0.55, metalness: 0.2 });
-const woodPale = new THREE.MeshStandardMaterial({ color: 0x5a4630, roughness: 0.6, metalness: 0.12 });
-const woodBlack = new THREE.MeshStandardMaterial({ color: 0x241a12, roughness: 0.5, metalness: 0.25 });
-const bronzeMat = new THREE.MeshStandardMaterial({ color: 0x9c6a2e, metalness: 0.85, roughness: 0.32 });
-const ironMat = new THREE.MeshStandardMaterial({ color: 0x5c6670, metalness: 0.9, roughness: 0.38 });
+/**
+ * `combat-weapon-models-neon`. HZD's tribal bows are WOOD, LEATHER, BONE and
+ * a little salvaged metal — the only thing that glows on them is the sight
+ * bead of the Sharpshot and the salvaged Thunderjaw hardware. The Round 3
+ * models banded every limb in a 2.6-intensity emissive, which read as a neon
+ * toy at any distance. The accent slot is now a MATERIAL choice per bow (bone,
+ * leather wrap, bronze) and the three `*Glow` materials are kept only for the
+ * machine-salvage parts that earn them.
+ */
+const woodDark = new THREE.MeshStandardMaterial({ color: 0x37291c, roughness: 0.62, metalness: 0.08 });
+const woodPale = new THREE.MeshStandardMaterial({ color: 0x5a4630, roughness: 0.68, metalness: 0.05 });
+const woodBlack = new THREE.MeshStandardMaterial({ color: 0x241a12, roughness: 0.58, metalness: 0.1 });
+const bronzeMat = new THREE.MeshStandardMaterial({ color: 0x8f6a34, metalness: 0.72, roughness: 0.44 });
+const ironMat = new THREE.MeshStandardMaterial({ color: 0x5c6670, metalness: 0.85, roughness: 0.42 });
+/** Sun-bleached bone: limb tips, nock guards, inlays. */
+const boneMat = new THREE.MeshStandardMaterial({ color: 0xcfc2a4, roughness: 0.72, metalness: 0.02 });
+const boneDarkMat = new THREE.MeshStandardMaterial({ color: 0xa2947a, roughness: 0.78, metalness: 0.02 });
+/** Dyed leather binding — the Nora red-brown. */
+const wrapMat = new THREE.MeshStandardMaterial({ color: 0x7a3a24, roughness: 0.85, metalness: 0.02 });
+const wrapDarkMat = new THREE.MeshStandardMaterial({ color: 0x4a2a1c, roughness: 0.88, metalness: 0.02 });
+/** Salvaged machine hardware — the ONLY emissive left on a tribal weapon. */
 const tealGlow = new THREE.MeshStandardMaterial({
-  color: 0x06222e, emissive: 0x43d6ff, emissiveIntensity: 2.6, roughness: 0.4,
+  color: 0x06222e, emissive: 0x43d6ff, emissiveIntensity: 1.5, roughness: 0.4,
 });
 const amberGlow = new THREE.MeshStandardMaterial({
-  color: 0x2e1d06, emissive: 0xffb043, emissiveIntensity: 2.4, roughness: 0.4,
+  color: 0x2e1d06, emissive: 0xffb043, emissiveIntensity: 1.6, roughness: 0.4,
 });
 const iceGlow = new THREE.MeshStandardMaterial({
-  color: 0x0a2030, emissive: 0x9fd8ff, emissiveIntensity: 2.6, roughness: 0.4,
+  color: 0x0a2030, emissive: 0x9fd8ff, emissiveIntensity: 1.4, roughness: 0.4,
 });
 const redGlow = new THREE.MeshStandardMaterial({
   color: 0x2e0a06, emissive: 0xff4a22, emissiveIntensity: 2.6, roughness: 0.4,
@@ -43,6 +59,7 @@ const _mid = new THREE.Vector3();
 const _d = new THREE.Vector3();
 const _Y = new THREE.Vector3(0, 1, 0);
 const _nock = new THREE.Vector3();
+const _rideL = new THREE.Vector3();
 const _p2 = new THREE.Vector3();
 const _q2 = new THREE.Quaternion();
 const _s2 = new THREE.Vector3();
@@ -182,14 +199,23 @@ class RecurveBow extends WeaponModel {
     const accentParts = [];
     const ironParts = [];
 
-    // riser / grip + grip rings
-    bronzeParts.push(
-      new THREE.CapsuleGeometry(0.03, 0.2 * Math.min(size, 1.15), 3, 8)
+    // riser: a leather-wrapped grip, not a bronze bar
+    const wrapParts = [
+      new THREE.CapsuleGeometry(0.031, 0.19 * Math.min(size, 1.15), 3, 8)
         .translate(0, 0, 0.035),
-    );
+    ];
+    // ...bound top and bottom with bone nock guards
     for (const y of [-0.115, 0.115]) {
       accentParts.push(
-        new THREE.TorusGeometry(0.033, 0.007, 6, 14)
+        new THREE.TorusGeometry(0.033, 0.008, 6, 14)
+          .rotateX(Math.PI / 2)
+          .translate(0, y * Math.min(size, 1.15), 0.035),
+      );
+    }
+    // a couple of cross-lashings so the grip reads as bound leather up close
+    for (const y of [-0.06, 0, 0.06]) {
+      bronzeParts.push(
+        new THREE.TorusGeometry(0.032, 0.004, 5, 12)
           .rotateX(Math.PI / 2)
           .translate(0, y * Math.min(size, 1.15), 0.035),
       );
@@ -214,7 +240,8 @@ class RecurveBow extends WeaponModel {
     addBand(0.045, bronzeParts, limbR, 0.055);
     addBand(0.955, bronzeParts, limbR, 0.055);
 
-    // sharpshot scope: aperture ring + glowing sight bead above the grip
+    // sharpshot scope: salvaged machine aperture + the one glowing sight bead
+    const beadParts = [];
     if (opts.scope) {
       ironParts.push(
         new THREE.CylinderGeometry(1, 1, 1, 5, 1)
@@ -225,14 +252,16 @@ class RecurveBow extends WeaponModel {
         new THREE.TorusGeometry(0.036, 0.008, 8, 20)
           .translate(0, 0.19 * size, 0.085),
       );
-      accentParts.push(
-        new THREE.SphereGeometry(0.011, 8, 6).translate(0, 0.19 * size, 0.085),
+      beadParts.push(
+        new THREE.SphereGeometry(0.010, 8, 6).translate(0, 0.19 * size, 0.085),
       );
     }
 
-    this.model.add(bakeMesh(bronzeMat, bronzeParts));
+    this.model.add(bakeMesh(opts.lashMat ?? boneDarkMat, bronzeParts));
     this.model.add(bakeMesh(accentMat, accentParts));
+    this.model.add(bakeMesh(opts.wrapMat ?? wrapMat, wrapParts));
     if (ironParts.length) this.model.add(bakeMesh(ironMat, ironParts));
+    if (beadParts.length) this.model.add(bakeMesh(opts.beadMat ?? amberGlow, beadParts));
 
     // --- string: two segments from the tips to the (pullable) nock point
     this._tipTop = pts[pts.length - 1].clone();
@@ -241,12 +270,38 @@ class RecurveBow extends WeaponModel {
     this.strBot = new THREE.Mesh(unitCyl, stringMat);
     this.model.add(this.strTop, this.strBot);
 
-    // --- nocked arrow visual (cross-section fattened so it reads on screen)
-    this.nockArrow = makeArrow();
-    this.nockArrow.group.scale.set(1.6, 1.6, 1);
+    /**
+     * --- nocked arrow visual.
+     *
+     * `docs/ROUND4-CHARACTER.md` §9.8, both findings, applied here:
+     *   - the old `scale(1.6, 1.6, 1)` blew three 4.6 cm fletches into a 16 cm
+     *     opaque white vane cluster sitting exactly on her cheek anchor — the
+     *     largest object in every draw frame. Scale is now 1;
+     *   - `ARROW_LEN` 0.78 against `pull` 0.465 left 0.315 m of shaft hanging
+     *     in front of the riser at full draw. `makeArrow({ nock: true })`
+     *     builds the SHORT variant sized to the pull, which is the change this
+     *     lane can absorb without costing the animator any draw length.
+     */
+    this.nockArrow = makeArrow({ nock: true });
     this.model.add(this.nockArrow.group);
+    /** World point the arrow tail should ride (the animator's string hand). */
+    this._ride = null;
 
     this._finish();
+  }
+
+  /**
+   * `combat.nockLanded` handoff: while the string hand is still travelling
+   * from the hip quiver to the string, the ARROW rides the hand instead of
+   * floating on a string that has not been touched yet. `p` is a world-space
+   * point (or null to release). The geometric nock (`getNockWorld`) is NOT
+   * changed by this — the animator IK targets that, and feeding it back would
+   * close a loop (docs/ROUND4-CHARACTER.md §8.4).
+   */
+  setNockRide(p) {
+    if (!p) { this._ride = null; return; }
+    if (!this._ride) this._ride = new THREE.Vector3();
+    this._ride.copy(p);
   }
 
   setDraw(draw, showArrow) {
@@ -255,7 +310,19 @@ class RecurveBow extends WeaponModel {
     setSegment(this.strTop, this._tipTop, _nock, STRING_R);
     setSegment(this.strBot, _nock, this._tipBot, STRING_R);
     this.nockArrow.group.visible = showArrow;
-    if (showArrow) this.nockArrow.group.position.set(0, 0.018, nz);
+    if (!showArrow) return;
+    if (this._ride) {
+      // world -> model local; the shaft keeps pointing +Z down the arrow line
+      _rideL.copy(this._ride);
+      this.model.updateWorldMatrix(true, false);
+      this.model.worldToLocal(_rideL);
+      // never let a bad bone transform throw the arrow across the map
+      if (Number.isFinite(_rideL.x) && _rideL.lengthSq() < 4) {
+        this.nockArrow.group.position.copy(_rideL);
+        return;
+      }
+    }
+    this.nockArrow.group.position.set(0, 0.018, nz);
   }
 
   setArrowType(type) {
@@ -400,27 +467,208 @@ class DiscLauncher extends WeaponModel {
   }
 }
 
+/* ------------------------- ropecaster / tripcaster ------------------------ */
+
+/**
+ * Shared chassis for the two "caster" weapons (`combat-roster-missing`): a
+ * shouldered stock, a heavy horizontal bow-arm bolted across the front, and a
+ * spool/rack under the barrel. `spoolMat` and `railMat` are the difference
+ * between them; both draw in 4 baked meshes.
+ */
+class CasterWeapon extends WeaponModel {
+  constructor(opts = {}) {
+    super();
+    this.group.name = opts.name ?? 'caster';
+    this.model.rotation.z = 0;
+    this.model.position.set(0.01, -0.07, 0.02);
+    this.pull = opts.pull ?? 0.16;
+    this.restZ = opts.restZ ?? 0.28;
+
+    const wood = [
+      // stock / body
+      new THREE.BoxGeometry(0.075, 0.10, 0.52).translate(0, 0.02, 0.12),
+      // shoulder brace
+      new THREE.BoxGeometry(0.065, 0.15, 0.11).translate(0, -0.02, -0.19),
+    ];
+    const iron = [
+      // barrel channel
+      new THREE.CylinderGeometry(0.026, 0.03, 0.46, 8)
+        .rotateX(Math.PI / 2).translate(0, 0.075, 0.24),
+      // trigger guard
+      new THREE.TorusGeometry(0.036, 0.008, 6, 12)
+        .rotateY(Math.PI / 2).translate(0, -0.075, 0.02),
+    ];
+    const bone = [];
+    const accent = [];
+
+    // the cross bow-arm: two swept limbs, tips carry the cord
+    this._tips = [];
+    for (const s of [-1, 1]) {
+      const a = new THREE.Vector3(s * 0.035, 0.075, 0.34);
+      const b = new THREE.Vector3(s * 0.30, 0.055, 0.30);
+      iron.push(segGeo(a, b, 0.014, 6));
+      bone.push(new THREE.SphereGeometry(0.021, 8, 6).translate(b.x, b.y, b.z));
+      this._tips.push(b);
+    }
+
+    // spool / magazine under the barrel — the weapon's signature silhouette
+    if (opts.spool) {
+      accent.push(
+        new THREE.CylinderGeometry(0.072, 0.072, 0.075, 12)
+          .rotateZ(Math.PI / 2).translate(0, -0.045, 0.20),
+        new THREE.TorusGeometry(0.072, 0.009, 6, 14)
+          .rotateY(Math.PI / 2).translate(-0.038, -0.045, 0.20),
+        new THREE.TorusGeometry(0.072, 0.009, 6, 14)
+          .rotateY(Math.PI / 2).translate(0.038, -0.045, 0.20),
+      );
+    } else {
+      // tripcaster: a rack of wire canisters
+      for (let i = 0; i < 3; i++) {
+        accent.push(new THREE.CylinderGeometry(0.021, 0.021, 0.10, 7)
+          .rotateZ(Math.PI / 2).translate(0, -0.045, 0.10 + i * 0.075));
+      }
+    }
+
+    this.model.add(bakeMesh(woodPale, wood, true));
+    this.model.add(bakeMesh(ironMat, iron, true));
+    this.model.add(bakeMesh(boneMat, bone));
+    this.model.add(bakeMesh(opts.accentMat ?? wrapMat, accent));
+
+    // cord across the bow-arm tips, pulled by `setDraw`
+    this.cordL = new THREE.Mesh(unitCyl, stringMat);
+    this.cordR = new THREE.Mesh(unitCyl, stringMat);
+    this.model.add(this.cordL, this.cordR);
+
+    // what is loaded, riding the cord
+    this.load = new THREE.Mesh(
+      opts.spool
+        ? new THREE.CylinderGeometry(0.024, 0.024, 0.13, 8).rotateX(Math.PI / 2)
+        : new THREE.BoxGeometry(0.035, 0.035, 0.16),
+      opts.spool ? boneDarkMat : (opts.accentMat ?? wrapMat),
+    );
+    this.model.add(this.load);
+    this._finish();
+  }
+
+  _nockLocal(draw, out) {
+    out.set(0, 0.075, this.restZ - draw * this.pull);
+    return out;
+  }
+
+  setDraw(draw, showAmmo) {
+    _nock.set(0, 0.075, this.restZ - draw * this.pull);
+    setSegment(this.cordL, this._tips[0], _nock, STRING_R * 1.6);
+    setSegment(this.cordR, this._tips[1], _nock, STRING_R * 1.6);
+    this.load.visible = !!showAmmo;
+    if (showAmmo) this.load.position.set(_nock.x, _nock.y, _nock.z + 0.07);
+  }
+}
+
+class Ropecaster extends CasterWeapon {
+  constructor() {
+    super({ name: 'ropecaster', spool: true, accentMat: wrapMat, pull: 0.2, restZ: 0.30 });
+  }
+}
+class Tripcaster extends CasterWeapon {
+  constructor() {
+    super({ name: 'tripcaster', spool: false, accentMat: bronzeMat, pull: 0.12, restZ: 0.26 });
+  }
+}
+
+/* ---------------------------------- spear --------------------------------- */
+
+/**
+ * Aloy's spear (`combat-melee-missing`). Ash haft, leather grip wraps, bone
+ * ferrules and a salvaged machine blade with the override prongs at the base.
+ * Local space: butt at origin, blade along +Z, total ~1.85 m.
+ *
+ * Returned as `{ group, model, length, blade }` — `melee.js` parents `group`
+ * to the right-hand attach and animates `model`.
+ */
+export function buildSpear() {
+  const group = new THREE.Group();
+  const model = new THREE.Group();
+  group.add(model);
+  const L = 1.85;
+
+  const wood = [
+    new THREE.CylinderGeometry(0.014, 0.017, L * 0.76, 6, 1)
+      .rotateX(Math.PI / 2).translate(0, 0, L * 0.38),
+  ];
+  const wraps = [];
+  for (const z of [0.16, 0.30, 0.44]) {
+    wraps.push(new THREE.CylinderGeometry(0.021, 0.021, 0.075, 7, 1)
+      .rotateX(Math.PI / 2).translate(0, 0, z));
+  }
+  const bone = [
+    // butt cap
+    new THREE.SphereGeometry(0.021, 8, 6).translate(0, 0, 0.012),
+    // ferrule under the head
+    new THREE.CylinderGeometry(0.023, 0.019, 0.09, 8, 1)
+      .rotateX(Math.PI / 2).translate(0, 0, L * 0.755),
+  ];
+  const iron = [
+    // leaf blade: two tapered wedges back to back
+    new THREE.ConeGeometry(0.042, 0.30, 4)
+      .rotateX(Math.PI / 2).translate(0, 0, L * 0.925),
+    new THREE.ConeGeometry(0.042, 0.10, 4)
+      .rotateX(-Math.PI / 2).translate(0, 0, L * 0.80),
+  ];
+  // override prongs — the machine hardware lashed to the haft
+  const prong = [];
+  for (const s of [-1, 1]) {
+    prong.push(new THREE.BoxGeometry(0.012, 0.05, 0.16)
+      .translate(s * 0.036, 0, L * 0.735));
+  }
+  const glow = [
+    new THREE.TorusGeometry(0.026, 0.006, 6, 14).translate(0, 0, L * 0.70),
+  ];
+
+  model.add(bakeMesh(woodPale, wood, true));
+  model.add(bakeMesh(wrapDarkMat, wraps));
+  model.add(bakeMesh(boneMat, bone));
+  const blade = bakeMesh(ironMat, iron, true);
+  model.add(blade);
+  model.add(bakeMesh(bronzeMat, prong));
+  model.add(bakeMesh(tealGlow, glow));
+
+  model.traverse((o) => { o.raycast = NOOP; });
+  return { group, model, length: L, blade };
+}
+
 /* -------------------------------- factory -------------------------------- */
 
 export function buildWeaponModel(id) {
   switch (id) {
     case 'sharpshot-bow':
+      // long, black-ash, bone-tipped, one amber sight bead
       return new RecurveBow({
         name: id, size: 1.32, curveK: 1.05, limbR: 0.02,
-        bodyMat: woodBlack, accentMat: amberGlow, scope: true, pull: 0.6,
+        bodyMat: woodBlack, accentMat: boneMat, wrapMat: wrapDarkMat,
+        lashMat: bronzeMat, beadMat: amberGlow, scope: true, pull: 0.6,
       });
     case 'war-bow':
+      // short, thick, heavily bound — bone limb caps, no glow at all
       return new RecurveBow({
         name: id, size: 0.74, curveK: 1.45, limbR: 0.024,
-        bodyMat: woodPale, accentMat: iceGlow, pull: 0.44,
+        bodyMat: woodPale, accentMat: boneDarkMat, wrapMat: wrapMat,
+        lashMat: boneMat, pull: 0.44,
       });
     case 'blast-sling':
       return new BlastSling();
+    case 'ropecaster':
+      return new Ropecaster();
+    case 'tripcaster':
+      return new Tripcaster();
     case 'disc-launcher':
       return new DiscLauncher();
     case 'hunter-bow':
     default:
-      return new RecurveBow({ name: 'hunter-bow' });
+      // the Nora starter: dark ash, red leather grip, bone nock guards
+      return new RecurveBow({
+        name: 'hunter-bow', accentMat: boneMat,
+        wrapMat: wrapMat, lashMat: boneDarkMat,
+      });
   }
 }
 

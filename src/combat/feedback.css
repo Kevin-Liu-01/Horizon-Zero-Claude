@@ -1,0 +1,137 @@
+/* Combat feedback layer — the hit marker, the craft radial and the ammo toast.
+   Owned by `combat` (src/combat/*), deliberately separate from the HUD's own
+   crosshair so neither lane has to edit the other's file. Palette matches
+   src/ui/hud.css: off-white #efe6d5, yellow #ffd34d, tear cyan #6ad5e8. */
+
+#hzc-cfx {
+  position: fixed;
+  inset: 0;
+  z-index: 46;
+  pointer-events: none;
+  font-family: var(--font, 'Rajdhani', sans-serif);
+  user-select: none;
+}
+
+/* ------------------------------ hit marker -------------------------------- */
+/* `combat-hit-feedback-faint`: the reticle CONFIRMS. Four chevrons snap out
+   from the crosshair on every hit, sized and coloured by what landed. */
+
+#hzc-cfx .cfx-tick {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 74px;
+  height: 74px;
+  margin: -37px 0 0 -37px;
+  opacity: 0;
+  will-change: transform, opacity;
+}
+#hzc-cfx .cfx-tick svg { width: 100%; height: 100%; display: block; overflow: visible; }
+#hzc-cfx .cfx-tick path {
+  fill: none;
+  stroke: #efe6d5;
+  stroke-width: 2.4;
+  stroke-linecap: round;
+  filter: drop-shadow(0 0 3px rgba(0, 0, 0, 0.9));
+}
+#hzc-cfx .cfx-tick.weak path { stroke: #ffd34d; stroke-width: 3.2; }
+#hzc-cfx .cfx-tick.tear path { stroke: #6ad5e8; stroke-width: 3; }
+#hzc-cfx .cfx-tick.crit path { stroke: #ff8a3a; stroke-width: 3.6; }
+#hzc-cfx .cfx-tick.kill path { stroke: #b03a2e; stroke-width: 3.6; }
+
+/* ------------------------------ craft radial ------------------------------ */
+/* `combat-onboarding-crafting-feedback` + `combat-wheel-canon-gaps`:
+   R is a HOLD, and the hold has to be legible while you hold it. */
+
+#hzc-cfx .cfx-craft {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  margin: 96px 0 0 -46px;
+  width: 92px;
+  display: none;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+}
+#hzc-cfx .cfx-craft.on { display: flex; }
+#hzc-cfx .cfx-ring { width: 58px; height: 58px; }
+#hzc-cfx .cfx-ring circle { fill: none; stroke-width: 3.5; }
+#hzc-cfx .cfx-ring .bg { stroke: rgba(239, 230, 213, 0.22); }
+#hzc-cfx .cfx-ring .fg {
+  stroke: #ffd34d;
+  stroke-linecap: round;
+  transform: rotate(-90deg);
+  transform-origin: 50% 50%;
+  filter: drop-shadow(0 0 5px rgba(255, 211, 77, 0.6));
+}
+#hzc-cfx .cfx-craft.deny .cfx-ring .fg { stroke: var(--hzc-danger, #b03a2e); }
+#hzc-cfx .cfx-ring-ic {
+  position: absolute;
+  width: 22px;
+  height: 22px;
+  margin-top: 18px;
+  color: rgba(239, 230, 213, 0.9);
+}
+#hzc-cfx .cfx-craft-label {
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.22em;
+  text-indent: 0.22em;
+  color: rgba(239, 230, 213, 0.9);
+  text-shadow: 0 1px 5px rgba(0, 0, 0, 0.85);
+  white-space: nowrap;
+}
+#hzc-cfx .cfx-craft.deny .cfx-craft-label { color: var(--hzc-danger, #b03a2e); }
+
+/* -------------------------------- toasts ---------------------------------- */
+/* `ammo-crafted` confirmation, centred under the reticle so it lands in the
+   eye line that was just watching the radial fill. */
+
+#hzc-cfx .cfx-toast {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  margin: 78px 0 0 0;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 13px 6px;
+  background: rgba(8, 12, 15, 0.66);
+  border-left: 2px solid #ffd34d;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.2em;
+  text-indent: 0.2em;
+  color: #efe6d5;
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.9);
+  opacity: 0;
+  white-space: nowrap;
+}
+#hzc-cfx .cfx-toast i { display: inline-block; width: 18px; height: 18px; }
+#hzc-cfx .cfx-toast.deny { border-left-color: var(--hzc-danger, #b03a2e); }
+#hzc-cfx .cfx-toast.deny b { color: var(--hzc-danger, #b03a2e); font-weight: 700; }
+
+/* ------------------------------ trap prompt ------------------------------- */
+
+#hzc-cfx .cfx-trap {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  margin: -118px 0 0 0;
+  transform: translateX(-50%);
+  display: none;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 12px 5px;
+  background: rgba(8, 12, 15, 0.6);
+  font-size: 11.5px;
+  font-weight: 700;
+  letter-spacing: 0.24em;
+  text-indent: 0.24em;
+  color: #ffd34d;
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.9);
+  white-space: nowrap;
+}
+#hzc-cfx .cfx-trap.on { display: flex; }

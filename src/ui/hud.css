@@ -1,11 +1,20 @@
-/* HZD HUD skin, round 3. Lives under #hud (fixed, pointer-events:none,
-   z-index 40). Base fonts + palette vars come from :root in style.css
-   (FROZEN) — round-3 additions live on #hud below.
-   Language per docs/research/reference-v3.md PART 2: thin widely-tracked
-   all-caps headers (Julius Sans One for display, Rajdhani for HUD labels),
-   off-white #EFE6D5 on dark translucent panels, hairline rules + corner
-   brackets, muted gold #C8A24B sparingly, terracotta #DA7756 only as the
-   Claude hover/active accent, weak-point yellow #FFD34D, danger red. */
+/* HZD HUD skin, ROUND 4 (lane `shell-hud`). Lives under #hud (fixed,
+   pointer-events:none, z-index 40). Base fonts + palette vars come from :root
+   in style.css (FROZEN) — everything else lives on #hud below.
+
+   Language per docs/research/ui.md §2 + reference-v3.md PART 2: thin widely
+   tracked all-caps headers (Julius Sans One for display, Rajdhani for HUD
+   labels), off-white #EFE6D5 on dark translucent panels, hairline rules +
+   corner brackets, muted gold #C8A24B sparingly, terracotta #DA7756 only as
+   the Claude hover/active accent, weak-point yellow #FFD34D, danger red,
+   medicine green.
+
+   ── ui-15 HUD SCALE ────────────────────────────────────────────────────────
+   `--hud-scale` is a unitless multiplier written by hud.js from the viewport
+   (clamped 0.85–1.9 against the 1600×900 reference frame) times the player's
+   `ctx.settings.hudScale`. Every dimension below is `calc(Npx * var(--s))`,
+   and every TEXT size is `max(11px, …)` so the 11 px legibility floor is a CSS
+   guarantee, not a promise made in JS. Gate: `A71b-hud-scale-floor`. */
 
 @font-face {
   font-family: 'Julius Sans One';
@@ -17,12 +26,15 @@
   font-family: var(--font);
   color: var(--hzc-text);
   user-select: none;
+  --hud-scale: 1;
+  --s: var(--hud-scale);
   --hzc-display: 'Julius Sans One', var(--font-display), sans-serif;
   --hzc-gold: #c8a24b;                     /* muted gold — sparing accents */
   --hzc-yellow: #ffd34d;                   /* weak-point / gauge / scanning */
   --hzc-terra: #da7756;                    /* Claude accent: hover/active */
-  --hzc-parch-dim: rgba(239, 230, 213, 0.6);
+  --hzc-parch-dim: rgba(239, 230, 213, 0.62);
   --hzc-panel: rgba(10, 13, 16, 0.68);
+  --hzc-plate: rgba(8, 11, 14, 0.74);
   --hzc-border: rgba(239, 230, 213, 0.2);
   --hzc-hairline: rgba(239, 230, 213, 0.32);
   --hzc-fire: #f0a03c;
@@ -30,13 +42,24 @@
   --hzc-freeze: #59c1c6;
   --hzc-tear: #6ad5e8;                     /* blue-cyan '+TEAR' pops */
   --hzc-alert: #d64541;
+  --hzc-red: #cf3b32;                      /* ui-07: health is RED */
+  --hzc-red-dim: rgba(207, 59, 50, 0.42);
+  --hzc-med: #6fbf5f;                      /* medicine pouch green */
   --hzc-ring-cd: #f2ead8;                  /* triggered-status countdown ring */
 }
+
+/* `progression` renders a bridge XP strip / banner queue / toast stack into
+   its own #hzc-prog island and its doc (§3.7) asks shell-hud to take them
+   over. The NODES stay in the DOM because tools/gates.round4.progression.mjs
+   asserts on `.pg-banner` / `.pg-toast` text; only their pixels retire. */
+#hzc-prog .pg-strip,
+#hzc-prog .pg-banners,
+#hzc-prog .pg-toasts { display: none !important; }
 
 /* shared corner brackets (thin hairline L-marks on panel corners) */
 .hzc-bracket {
   position: absolute;
-  width: 14px; height: 14px;
+  width: calc(14px * var(--s)); height: calc(14px * var(--s));
   border: 0 solid var(--hzc-hairline);
   pointer-events: none;
 }
@@ -44,6 +67,23 @@
 .hzc-bracket.tr { top: 5px; right: 5px; border-top-width: 1px; border-right-width: 1px; }
 .hzc-bracket.bl { bottom: 5px; left: 5px; border-bottom-width: 1px; border-left-width: 1px; }
 .hzc-bracket.br { bottom: 5px; right: 5px; border-bottom-width: 1px; border-right-width: 1px; }
+
+kbd {
+  font-family: var(--font);
+  font-weight: 600;
+  font-size: max(11px, calc(10px * var(--s)));
+  letter-spacing: 0.06em;
+  color: rgba(239, 230, 213, 0.86);
+  background: rgba(239, 230, 213, 0.07);
+  border: 1px solid rgba(239, 230, 213, 0.34);
+  border-bottom-width: 2px;
+  padding: 0 calc(5px * var(--s));
+  min-width: calc(15px * var(--s));
+  display: inline-block;
+  text-align: center;
+  line-height: 1.42;
+  clip-path: polygon(3px 0, 100% 0, 100% calc(100% - 3px), calc(100% - 3px) 100%, 0 100%, 0 3px);
+}
 
 /* ------------------------------ damage vignette ------------------------------ */
 .hzc-vignette {
@@ -53,8 +93,33 @@
     transparent 36%, rgba(200, 30, 15, 0.55) 70%, rgba(130, 10, 5, 0.92) 100%);
 }
 
+/* --------------------- Concentration veil (body-level) ----------------------- */
+/* ui-19 / combat-concentration-presentation. Sits at z-index 38 — BELOW #hud
+   (40) and Focus's glass (39), above #app — because `mix-blend-mode` has to
+   see the canvas, and #hud is its own stacking context. */
+#hzc-veil {
+  position: fixed; inset: 0;
+  pointer-events: none;
+  z-index: 38;
+  visibility: hidden;
+}
+#hzc-veil.on { visibility: visible; }
+#hzc-veil .hzc-veil-sat {
+  position: absolute; inset: 0;
+  background: #808080;
+  mix-blend-mode: saturation;   /* desaturates the world behind it */
+  opacity: 0;
+}
+#hzc-veil .hzc-veil-tint {
+  position: absolute; inset: 0;
+  opacity: 0;
+  background:
+    radial-gradient(ellipse at 50% 50%,
+      rgba(90, 150, 190, 0.05) 0%, rgba(38, 74, 116, 0.20) 58%, rgba(10, 22, 44, 0.62) 100%),
+    linear-gradient(rgba(70, 120, 168, 0.13), rgba(70, 120, 168, 0.13));
+}
+
 /* ---------------------------- watcher blind-flash ---------------------------- */
-/* 1.5s white-hot flash when a nearby watcher fires its blinding strobe at you */
 .hzc-wflash {
   position: absolute; inset: 0;
   opacity: 0;
@@ -82,99 +147,178 @@
 }
 .hzc-focus-tint.on { opacity: 1; }
 
-/* --------------------- top-left: health + medicine pouch --------------------- */
+/* ============================================================================ */
+/* TOP-LEFT — vitals (ui-07) + quest tracker (ui-05)                            */
+/* ============================================================================ */
+
 .hzc-topleft {
-  position: absolute; top: 26px; left: 30px; width: 292px;
+  position: absolute;
+  top: calc(24px * var(--s)); left: calc(28px * var(--s));
+  width: calc(302px * var(--s));
   transition: opacity 0.7s ease;
 }
-/* dynamic HUD: the bar HIDES entirely at full health after 4 calm seconds */
+/* dynamic HUD: the cluster HIDES at full health after 4 calm seconds; hold H
+   (research §2 "show HUD" key) forces it back. */
 .hzc-topleft.idle { opacity: 0; }
+#hud.reveal .hzc-topleft.idle,
+#hud.reveal .hzc-track.idle { opacity: 1; }
 
-/* thin off-white bar on dark translucent backing, hairline border, 4 segments */
+.hzc-healthrow { display: flex; align-items: flex-end; gap: calc(9px * var(--s)); }
+
+/* RED bar, four segments split by three hairline ticks (canon) */
 .hzc-healthbar {
   position: relative;
-  height: 8px;
-  background: rgba(10, 13, 16, 0.62);
+  flex: 1 1 auto;
+  height: calc(11px * var(--s));
+  background: rgba(10, 13, 16, 0.66);
   border: 1px solid var(--hzc-hairline);
   padding: 1px;
-  clip-path: polygon(4px 0, 100% 0, 100% 100%, 0 100%, 0 4px);
-  box-shadow: 0 1px 8px rgba(0, 0, 0, 0.45);
+  clip-path: polygon(5px 0, 100% 0, 100% 100%, 0 100%, 0 5px);
+  box-shadow: 0 1px 8px rgba(0, 0, 0, 0.5);
 }
-/* red damage-delta ghost: holds at pre-hit health, drains after a beat */
+/* damage-delta ghost: pale red trail that holds at pre-hit width, then drains */
 .hzc-healthghost {
   position: absolute; left: 1px; top: 1px; bottom: 1px;
   width: 100%; max-width: calc(100% - 2px);
-  background: rgba(176, 58, 46, 0.85);
-  box-shadow: 0 0 6px rgba(176, 58, 46, 0.5);
+  background: var(--hzc-red-dim);
 }
 .hzc-healthfill {
   position: absolute; left: 1px; top: 1px; bottom: 1px;
   width: 100%; max-width: calc(100% - 2px);
-  background: linear-gradient(180deg, #f6efe0, #e8dcc4 60%, #d9cbae);
+  background: linear-gradient(180deg, #e8564a, #cf3b32 58%, #96261f);
+  box-shadow: 0 0 9px rgba(207, 59, 50, 0.45);
   transition: width 0.16s ease-out;
 }
-/* segmented red damage state: fill shifts red + pulses when low */
-.hzc-healthfill.low {
-  background: linear-gradient(180deg, #d4574a, #b03a2e 60%, #8e2c22);
-  animation: hzcHealthLow 1.1s ease-in-out infinite;
-}
+.hzc-healthfill.low { animation: hzcHealthLow 1.1s ease-in-out infinite; }
 @keyframes hzcHealthLow {
   0%, 100% { filter: brightness(1); }
-  50% { filter: brightness(1.55); }
+  50% { filter: brightness(1.6); }
 }
 .hzc-topleft.healing .hzc-healthfill { animation: hzcHealthHeal 0.55s ease-in-out infinite; }
 @keyframes hzcHealthHeal {
   0%, 100% { filter: brightness(1); }
-  50% { filter: brightness(1.35) drop-shadow(0 0 4px rgba(127, 176, 105, 0.8)); }
+  50% { filter: brightness(1.3) drop-shadow(0 0 5px rgba(111, 191, 95, 0.85)); }
 }
 .hzc-health-seg {
   position: absolute; top: 0; bottom: 0;
   width: 1px;
-  background: rgba(8, 10, 12, 0.85);
+  background: rgba(8, 10, 12, 0.9);
   z-index: 1;
 }
 
+/* HP numerals beside the bar */
+.hzc-health-num {
+  flex: 0 0 auto;
+  line-height: 1;
+  color: var(--hzc-text);
+  text-shadow: 0 1px 6px rgba(0, 0, 0, 0.9);
+  font-variant-numeric: tabular-nums;
+}
+.hzc-health-num b {
+  font-size: max(15px, calc(19px * var(--s)));
+  font-weight: 700; letter-spacing: 0.02em;
+}
+.hzc-health-num span {
+  font-size: max(11px, calc(11px * var(--s)));
+  font-weight: 600; letter-spacing: 0.06em;
+  color: rgba(239, 230, 213, 0.5);
+}
+.hzc-topleft.low .hzc-health-num b { color: #f0685c; }
+
 /* thin GREEN pouch meter directly under the health bar */
-.hzc-pouchrow { display: flex; align-items: center; gap: 7px; margin-top: 4px; }
+.hzc-pouchrow {
+  display: flex; align-items: center; gap: calc(7px * var(--s));
+  margin-top: calc(5px * var(--s));
+}
 .hzc-pouchbar {
   flex: 0 0 auto;
-  width: 224px; height: 5px;
-  background: rgba(10, 16, 12, 0.72);
+  width: calc(216px * var(--s)); height: calc(6px * var(--s));
+  background: rgba(10, 16, 12, 0.74);
   border: 1px solid rgba(239, 230, 213, 0.22);
   padding: 1px;
 }
 .hzc-pouchfill {
   height: 100%; width: 60%;
   background: var(--hzc-med);
-  box-shadow: 0 0 6px rgba(127, 176, 105, 0.4);
+  box-shadow: 0 0 6px rgba(111, 191, 95, 0.45);
   transition: width 0.14s ease-out;
 }
-.hzc-pouchrow.healing .hzc-pouchfill { animation: hzcPouchPulse 0.55s ease-in-out infinite; }
+.hzc-pouchrow.healing .hzc-pouchfill,
+.hzc-pouchrow.pulse .hzc-pouchfill { animation: hzcPouchPulse 0.55s ease-in-out 3; }
+.hzc-pouchrow.healing .hzc-pouchfill { animation-iteration-count: infinite; }
 @keyframes hzcPouchPulse {
-  0%, 100% { filter: brightness(1); box-shadow: 0 0 6px rgba(127, 176, 105, 0.4); }
-  50% { filter: brightness(1.8); box-shadow: 0 0 12px rgba(127, 176, 105, 0.9); }
+  0%, 100% { filter: brightness(1); box-shadow: 0 0 6px rgba(111, 191, 95, 0.4); }
+  50% { filter: brightness(1.9); box-shadow: 0 0 14px rgba(111, 191, 95, 0.95); }
+}
+/* canon: green "+" pips when stored medicine exceeds one full pouch */
+.hzc-pouchpips {
+  font-size: max(11px, calc(12px * var(--s)));
+  font-weight: 700; letter-spacing: 0.12em;
+  color: var(--hzc-med);
+  text-shadow: 0 0 7px rgba(111, 191, 95, 0.6);
+  line-height: 1;
 }
 .hzc-pouch-key {
-  font-family: var(--font);
-  font-weight: 600; font-size: 9px; letter-spacing: 0.08em;
-  color: var(--hzc-parch-dim);
-  border: 1px solid rgba(239, 230, 213, 0.35);
-  padding: 0 5px;
-  line-height: 13px;
-  clip-path: polygon(3px 0, 100% 0, 100% calc(100% - 3px), calc(100% - 3px) 100%, 0 100%, 0 3px);
   opacity: 0;
   transition: opacity 0.3s ease;
+  color: var(--hzc-med);
+  border-color: rgba(111, 191, 95, 0.55);
 }
-.hzc-pouch-key.show { opacity: 1; }
+.hzc-pouch-key.show { opacity: 1; animation: hzcKeyPulse 1.4s ease-in-out infinite; }
+@keyframes hzcKeyPulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.45; } }
 
-/* ------------------------------- compass ribbon ------------------------------ */
+/* --------------------- quest tracker, UNDER the vitals ----------------------- */
+.hzc-track {
+  margin-top: calc(14px * var(--s));
+  padding-left: calc(11px * var(--s));
+  border-left: 1px solid var(--hzc-gold);
+  transition: opacity 0.8s ease;
+}
+.hzc-track.off { display: none; }
+.hzc-track.idle { opacity: 0.34; }
+.hzc-track-kicker {
+  font-family: var(--hzc-display);
+  font-size: max(11px, calc(8px * var(--s)));
+  letter-spacing: 0.5em;
+  color: var(--hzc-gold);
+  margin-bottom: calc(5px * var(--s));
+}
+.hzc-track-title {
+  font-size: max(12px, calc(13px * var(--s)));
+  font-weight: 500; letter-spacing: 0.22em;
+  color: var(--hzc-text);
+  text-shadow: 0 1px 6px rgba(0, 0, 0, 0.85);
+}
+.hzc-track-obj {
+  font-size: max(11px, calc(11.5px * var(--s)));
+  letter-spacing: 0.08em;
+  color: var(--hzc-parch-dim);
+  margin-top: calc(3px * var(--s));
+  text-shadow: 0 1px 5px rgba(0, 0, 0, 0.85);
+}
+.hzc-track-meta {
+  font-size: max(11px, calc(10px * var(--s)));
+  font-weight: 600; letter-spacing: 0.28em;
+  color: var(--hzc-gold);
+  margin-top: calc(4px * var(--s));
+}
+.hzc-track.bump { animation: hzcTrackBump 0.6s ease; }
+@keyframes hzcTrackBump {
+  0% { transform: translateX(-12px); opacity: 0.1; }
+  100% { transform: none; opacity: 1; }
+}
+
+/* ============================================================================ */
+/* TOP-CENTRE — compass ribbon (ui-04) + stealth eye (ui-12)                    */
+/* ============================================================================ */
+
 .hzc-compass {
-  position: absolute; top: 20px; left: 50%;
+  position: absolute; top: calc(18px * var(--s)); left: 50%;
   transform: translateX(-50%);
-  width: 480px;
+  width: calc(480px * var(--s));
 }
 .hzc-compass-window {
-  position: relative; height: 40px; overflow: hidden;
+  position: relative; height: calc(40px * var(--s)); overflow: hidden;
   background: linear-gradient(180deg, rgba(10, 13, 16, 0.58), rgba(10, 13, 16, 0.22));
   -webkit-mask-image: linear-gradient(90deg, transparent 0, #000 14%, #000 86%, transparent 100%);
   mask-image: linear-gradient(90deg, transparent 0, #000 14%, #000 86%, transparent 100%);
@@ -185,41 +329,42 @@
   background: rgba(239, 230, 213, 0.3);
 }
 .hzc-compass-track, .hzc-compass-pips { position: absolute; inset: 0; }
-/* parchment ticks: warm off-white hairlines against the smoked strip */
 .hzc-tick {
-  position: absolute; top: 22px; left: 50%;
-  width: 1px; height: 5px;
+  position: absolute; top: calc(22px * var(--s)); left: 50%;
+  width: 1px; height: calc(5px * var(--s));
   background: rgba(239, 230, 213, 0.55);
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.7);
   visibility: hidden;
 }
 .hzc-cdir {
-  position: absolute; top: 8px; left: 50%;
-  font-size: 10px; font-weight: 500; letter-spacing: 0.14em;
+  position: absolute; top: calc(9px * var(--s)); left: 50%;
+  font-size: max(11px, calc(10px * var(--s)));
+  font-weight: 500; letter-spacing: 0.14em;
   color: var(--hzc-parch-dim);
   text-shadow: 0 1px 6px rgba(0, 0, 0, 0.9), 0 0 2px rgba(0, 0, 0, 0.75);
   visibility: hidden;
 }
 .hzc-cdir.main {
-  top: 5px;
-  font-size: 14px; font-weight: 500;
+  top: calc(5px * var(--s));
+  font-size: max(13px, calc(14px * var(--s)));
   color: var(--hzc-text);
 }
 .hzc-cdir.north { color: var(--hzc-gold); }
-/* diamond machine pips, awareness-colored, distance label beneath the tagged
-   or hunted ones ("125m") */
+
+/* ui-04 COMPASS TRUTH: a pip exists only for a machine the player has EARNED
+   — Focus-tagged, the tracked quest target, or actively fighting her. */
 .hzc-pip {
   position: absolute; top: 0; bottom: 0; left: 50%;
   width: 0;
   visibility: hidden;
 }
 .hzc-pip-d {
-  position: absolute; bottom: 12px; left: -3px;
-  width: 6px; height: 6px;
+  position: absolute; bottom: calc(13px * var(--s)); left: calc(-3.5px * var(--s));
+  width: calc(7px * var(--s)); height: calc(7px * var(--s));
   transform: rotate(45deg);
-  background: rgba(239, 230, 213, 0.85);
-  outline: 1px solid rgba(10, 12, 14, 0.55);
-  box-shadow: 0 0 5px rgba(239, 230, 213, 0.45);
+  background: rgba(239, 230, 213, 0.9);
+  outline: 1px solid rgba(10, 12, 14, 0.6);
+  box-shadow: 0 0 5px rgba(239, 230, 213, 0.5);
 }
 .hzc-pip[data-s='wary'] .hzc-pip-d {
   background: var(--hzc-yellow);
@@ -229,11 +374,19 @@
   background: var(--hzc-alert);
   box-shadow: 0 0 7px rgba(214, 69, 65, 0.9);
 }
+/* a TAGGED machine keeps the Focus ring around its diamond */
+.hzc-pip[data-k='tag'] .hzc-pip-d { outline: 1px solid rgba(160, 130, 240, 0.9); }
+.hzc-pip[data-k='quest'] .hzc-pip-d { background: var(--hzc-gold); }
+.hzc-pip.qm .hzc-pip-d {
+  background: var(--hzc-gold);
+  box-shadow: 0 0 8px rgba(200, 162, 75, 0.85);
+}
+.hzc-pip.qm[data-tracked='0'] .hzc-pip-d { opacity: 0.55; }
 .hzc-pip-dist {
-  position: absolute; bottom: 1px; left: 0;
+  position: absolute; bottom: 0; left: 0;
   transform: translateX(-50%);
-  display: none;
-  font-size: 8px; font-weight: 600; letter-spacing: 0.08em;
+  font-size: max(11px, calc(9px * var(--s)));
+  font-weight: 600; letter-spacing: 0.06em;
   color: var(--hzc-parch-dim);
   text-shadow: 0 1px 4px rgba(0, 0, 0, 0.95);
   white-space: nowrap;
@@ -242,42 +395,123 @@
   position: absolute; top: -1px; left: 50%;
   transform: translateX(-50%);
   width: 0; height: 0;
-  border-left: 4px solid transparent;
-  border-right: 4px solid transparent;
-  border-top: 5px solid var(--hzc-gold);
+  border-left: calc(4px * var(--s)) solid transparent;
+  border-right: calc(4px * var(--s)) solid transparent;
+  border-top: calc(5px * var(--s)) solid var(--hzc-gold);
 }
 .hzc-bearing {
   text-align: center;
-  font-size: 9px; font-weight: 600; letter-spacing: 0.34em; text-indent: 0.34em;
+  font-size: max(11px, calc(9.5px * var(--s)));
+  font-weight: 600; letter-spacing: 0.34em; text-indent: 0.34em;
   color: var(--hzc-parch-dim);
   text-shadow: 0 1px 6px rgba(0, 0, 0, 0.9), 0 0 2px rgba(0, 0, 0, 0.75);
   background: radial-gradient(ellipse 46px 11px at center,
     rgba(10, 13, 16, 0.62) 0%, rgba(10, 13, 16, 0.45) 55%, transparent 100%);
   margin-top: 2px;
   padding: 2px 0 3px;
+  font-variant-numeric: tabular-nums;
 }
 
-/* -------------------- machine status stack (top-center) ---------------------- */
-/* Reference-v3 PART 2: awareness cue ABOVE the bar, thin tracked name + level,
-   bar with damage-delta ghosting, elemental countdown rings beneath. */
-.hzc-mhb {
-  position: absolute; top: 92px; left: 50%;
+/* ------------------------------- stealth eye --------------------------------- */
+/* ui-12: an eye that OPENS with the strongest live detection and closes when
+   she is hidden. Sound lines rise with how loudly she is moving. */
+.hzc-eye {
+  position: absolute; top: calc(84px * var(--s)); left: 50%;
   transform: translateX(-50%);
-  width: 340px; text-align: center;
-  opacity: 0; transition: opacity 0.35s ease;
+  display: flex; flex-direction: column; align-items: center;
+  gap: calc(3px * var(--s));
+  --open: 0;
 }
-.hzc-mhb.show { opacity: 1; }
+.hzc-eye svg {
+  width: calc(46px * var(--s)); height: calc(28px * var(--s));
+  display: block;
+  filter: drop-shadow(0 1px 4px rgba(0, 0, 0, 0.85));
+}
+.hzc-eye svg .lid {
+  fill: rgba(8, 11, 14, 0.5);
+  stroke: rgba(239, 230, 213, 0.7);
+  stroke-width: 1.6;
+}
+.hzc-eye svg .iris { fill: rgba(239, 230, 213, 0.24); }
+.hzc-eye svg .pupil { fill: rgba(239, 230, 213, 0.9); }
+.hzc-eye svg .closed {
+  fill: none; stroke: rgba(239, 230, 213, 0.7); stroke-width: 1.8; stroke-linecap: round;
+  opacity: 0;
+}
+/* hidden — the eye shuts to a line */
+.hzc-eye[data-m='hidden'] svg .lid,
+.hzc-eye[data-m='hidden'] svg .iris,
+.hzc-eye[data-m='hidden'] svg .pupil { opacity: 0; }
+.hzc-eye[data-m='hidden'] svg .closed { opacity: 1; stroke: var(--hzc-med); }
+.hzc-eye[data-m='hidden'] .hzc-eye-label { color: var(--hzc-med); }
+/* clear — unseen but standing in the open: dim outline only */
+.hzc-eye[data-m='clear'] { opacity: 0.42; }
+.hzc-eye[data-m='clear'] svg .iris, .hzc-eye[data-m='clear'] svg .pupil { opacity: 0.35; }
+/* watching — filling yellow */
+.hzc-eye[data-m='watch'] svg .lid { stroke: var(--hzc-yellow); }
+.hzc-eye[data-m='watch'] svg .iris { fill: rgba(255, 211, 77, calc(0.18 + 0.6 * var(--open))); }
+.hzc-eye[data-m='watch'] svg .pupil { fill: var(--hzc-yellow); }
+.hzc-eye[data-m='watch'] .hzc-eye-label { color: var(--hzc-yellow); }
+/* spotted — red, wide open, pulsing */
+.hzc-eye[data-m='seen'] svg .lid { stroke: var(--hzc-alert); }
+.hzc-eye[data-m='seen'] svg .iris { fill: rgba(214, 69, 65, 0.75); }
+.hzc-eye[data-m='seen'] svg .pupil { fill: #ffe6e0; }
+.hzc-eye[data-m='seen'] .hzc-eye-label { color: var(--hzc-alert); }
+.hzc-eye[data-m='seen'] svg { animation: hzcEyePulse 0.7s ease-in-out infinite; }
+@keyframes hzcEyePulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.11); } }
+.hzc-eye-bars {
+  display: flex; align-items: flex-end; gap: calc(2px * var(--s));
+  height: calc(9px * var(--s));
+}
+.hzc-eye-bars i {
+  width: calc(2px * var(--s));
+  background: rgba(239, 230, 213, 0.24);
+  transition: background 0.15s ease;
+}
+.hzc-eye-bars i:nth-child(1) { height: 40%; }
+.hzc-eye-bars i:nth-child(2) { height: 70%; }
+.hzc-eye-bars i:nth-child(3) { height: 100%; }
+.hzc-eye-bars i.on { background: var(--hzc-yellow); box-shadow: 0 0 5px rgba(255, 211, 77, 0.7); }
+.hzc-eye-label {
+  font-size: max(11px, calc(8.5px * var(--s)));
+  font-weight: 600; letter-spacing: 0.32em; text-indent: 0.32em;
+  color: var(--hzc-parch-dim);
+  text-shadow: 0 1px 5px rgba(0, 0, 0, 0.95);
+}
 
-/* awareness cue: scanning circle -> red -> flashing jagged diamond */
-.hzc-mhb-aware {
-  position: relative;
-  height: 20px;
-  margin-bottom: 3px;
+/* ============================================================================ */
+/* WORLD-PROJECTED LAYER — machine bars, objective diamond, [E] prompt          */
+/* ============================================================================ */
+
+.hzc-world { position: absolute; inset: 0; overflow: hidden; }
+
+/* ---------------- ui-06: one plate per engaged machine, cap 3 ---------------- */
+.hzc-mhb {
+  position: absolute; left: 0; top: 0;
+  width: calc(224px * var(--s));
+  margin-left: calc(-112px * var(--s));
+  text-align: center;
+  visibility: hidden;
+  will-change: transform;
 }
+.hzc-mhb-plate {
+  background: linear-gradient(180deg, rgba(8, 11, 14, 0.82), rgba(8, 11, 14, 0.56));
+  border: 1px solid var(--hzc-border);
+  border-bottom: 1px solid var(--hzc-hairline);
+  padding: calc(5px * var(--s)) calc(10px * var(--s)) calc(6px * var(--s));
+  clip-path: polygon(8px 0, 100% 0, 100% 100%, 0 100%, 0 8px);
+  box-shadow: 0 3px 14px rgba(0, 0, 0, 0.5);
+}
+.hzc-mhb-head {
+  display: flex; align-items: center; justify-content: center;
+  gap: calc(7px * var(--s));
+  margin-bottom: calc(4px * var(--s));
+}
+.hzc-mhb-aware { position: relative; width: calc(18px * var(--s)); height: calc(18px * var(--s)); flex: 0 0 auto; }
 .hzc-mhb-aware-circle {
   position: absolute; left: 50%; top: 50%;
-  width: 14px; height: 14px;
-  margin: -7px 0 0 -7px;
+  width: calc(13px * var(--s)); height: calc(13px * var(--s));
+  margin: calc(-6.5px * var(--s)) 0 0 calc(-6.5px * var(--s));
   border-radius: 50%;
   border: 1.5px solid var(--hzc-yellow);
   background: conic-gradient(var(--hzc-yellow) 0%, rgba(8, 10, 12, 0.4) 0);
@@ -299,8 +533,8 @@
 }
 .hzc-mhb-aware-diamond {
   position: absolute; left: 50%; top: 50%;
-  width: 24px; height: 24px;
-  margin: -12px 0 0 -12px;
+  width: calc(22px * var(--s)); height: calc(22px * var(--s));
+  margin: calc(-11px * var(--s)) 0 0 calc(-11px * var(--s));
   display: none;
 }
 .hzc-mhb-aware[data-m='attack'] .hzc-mhb-aware-diamond {
@@ -313,28 +547,28 @@
   stroke: rgba(20, 4, 2, 0.85);
   stroke-width: 1;
 }
-
 /* name + level: thin widely-tracked caps, off-white — no mustard text */
 .hzc-mhb-name {
-  font-size: 12px; font-weight: 500; letter-spacing: 0.42em; text-indent: 0.42em;
+  font-size: max(11px, calc(11.5px * var(--s)));
+  font-weight: 500; letter-spacing: 0.3em; text-indent: 0.3em;
   color: var(--hzc-text);
   text-shadow: 0 1px 6px rgba(0, 0, 0, 0.9);
-  margin-bottom: 5px;
+  white-space: nowrap;
 }
 .hzc-mhb-name .lv {
-  font-size: 9px; font-weight: 600; letter-spacing: 0.3em;
+  font-size: max(11px, calc(9px * var(--s)));
+  font-weight: 600; letter-spacing: 0.22em;
   color: var(--hzc-parch-dim);
-  margin-left: 1px;
+  margin-left: calc(4px * var(--s));
   vertical-align: 1px;
 }
 .hzc-mhb-bar {
   position: relative;
-  height: 5px;
-  background: rgba(10, 13, 16, 0.65);
+  height: calc(6px * var(--s));
+  background: rgba(10, 13, 16, 0.7);
   border: 1px solid var(--hzc-border);
   padding: 1px;
 }
-/* pale ghost trail behind the live fill = damage just dealt */
 .hzc-mhb-ghost {
   position: absolute; left: 1px; top: 1px; bottom: 1px;
   width: 100%; max-width: calc(100% - 2px);
@@ -347,11 +581,11 @@
   box-shadow: 0 0 8px rgba(226, 206, 152, 0.4);
   transition: width 0.14s ease-out;
 }
-/* elemental countdown rings (fire / shock / freeze) */
+/* elemental countdown rings, BESIDE the plate (canon) */
 .hzc-mhb-elems {
-  display: flex; gap: 10px; justify-content: center;
-  margin-top: 6px;
-  height: 18px;
+  display: flex; gap: calc(7px * var(--s)); justify-content: center;
+  margin-top: calc(4px * var(--s));
+  height: calc(18px * var(--s));
 }
 .hzc-elem { display: none; }
 .hzc-elem.show { display: block; }
@@ -360,7 +594,7 @@
 .hzc-elem[data-e='freeze'] { --c: var(--hzc-freeze); color: var(--hzc-freeze); }
 .hzc-elem-ring {
   position: relative;
-  width: 17px; height: 17px;
+  width: calc(17px * var(--s)); height: calc(17px * var(--s));
   border-radius: 50%;
   background: conic-gradient(var(--c) 0%, rgba(10, 13, 16, 0.68) 0);
   outline: 1px solid rgba(239, 230, 213, 0.22);
@@ -368,7 +602,7 @@
 }
 .hzc-elem-ring::before {
   content: '';
-  position: absolute; inset: 2.5px;
+  position: absolute; inset: calc(2.5px * var(--s));
   border-radius: 50%;
   background: rgba(10, 13, 16, 0.82);
 }
@@ -376,7 +610,7 @@
   position: absolute; inset: 0;
   display: flex; align-items: center; justify-content: center;
 }
-.hzc-elem-ic svg { width: 9px; height: 9px; display: block; }
+.hzc-elem-ic svg { width: calc(9px * var(--s)); height: calc(9px * var(--s)); display: block; }
 .hzc-elem.triggered .hzc-elem-ring { animation: hzcElemTrig 0.45s ease-in-out infinite; }
 .hzc-elem.triggered { color: var(--hzc-ring-cd); }
 @keyframes hzcElemTrig {
@@ -384,10 +618,86 @@
   50% { filter: brightness(1.7) drop-shadow(0 1px 3px rgba(0, 0, 0, 0.6)); }
 }
 
+/* ------------------ in-world objective diamond with metres ------------------- */
+.hzc-objmark {
+  position: absolute; left: 0; top: 0;
+  display: none; flex-direction: column; align-items: center;
+  gap: calc(2px * var(--s));
+  will-change: transform;
+}
+.hzc-objmark.show { display: flex; }
+.hzc-objmark-d { width: calc(20px * var(--s)); height: calc(20px * var(--s)); }
+.hzc-objmark-d svg { width: 100%; height: 100%; display: block; }
+.hzc-objmark-d svg polygon {
+  fill: var(--hzc-gold);
+  stroke: rgba(12, 10, 4, 0.8);
+  stroke-width: 1.2;
+  filter: drop-shadow(0 0 6px rgba(200, 162, 75, 0.75));
+}
+.hzc-objmark.edge .hzc-objmark-d { animation: hzcObjPing 1.6s ease-in-out infinite; }
+@keyframes hzcObjPing { 0%, 100% { opacity: 1; } 50% { opacity: 0.42; } }
+.hzc-objmark-dist {
+  font-size: max(11px, calc(11px * var(--s)));
+  font-weight: 700; letter-spacing: 0.14em;
+  color: var(--hzc-gold);
+  text-shadow: 0 1px 5px rgba(0, 0, 0, 0.95);
+  font-variant-numeric: tabular-nums;
+}
+.hzc-objmark-label {
+  font-size: max(11px, calc(9px * var(--s)));
+  letter-spacing: 0.2em;
+  color: rgba(239, 230, 213, 0.72);
+  text-transform: uppercase;
+  text-shadow: 0 1px 5px rgba(0, 0, 0, 0.95);
+  max-width: calc(180px * var(--s));
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+
+/* --------------- ui-16: interaction prompt, projected AT the thing ---------- */
+.hzc-interact {
+  position: absolute; left: 0; top: 0;
+  display: none;
+  flex-direction: column; align-items: center; gap: calc(7px * var(--s));
+  will-change: transform;
+}
+.hzc-interact.show { display: flex; }
+.hzc-int-ring {
+  position: relative;
+  width: calc(42px * var(--s)); height: calc(42px * var(--s));
+  border-radius: 50%;
+  background: conic-gradient(var(--hzc-yellow) 0%, rgba(239, 230, 213, 0.18) 0);
+  display: flex; align-items: center; justify-content: center;
+}
+.hzc-int-ring::before {
+  content: '';
+  position: absolute; inset: calc(4px * var(--s));
+  border-radius: 50%;
+  background: rgba(10, 13, 16, 0.78);
+  border: 1px solid rgba(239, 230, 213, 0.25);
+}
+.hzc-int-key {
+  position: relative;
+  font-weight: 700;
+  font-size: max(13px, calc(15px * var(--s)));
+  color: var(--hzc-text);
+  background: none; border: 0;
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.8);
+  clip-path: none;
+}
+.hzc-int-label {
+  font-size: max(11px, calc(11px * var(--s)));
+  font-weight: 500; letter-spacing: 0.3em; text-indent: 0.3em;
+  color: var(--hzc-text);
+  text-transform: uppercase;
+  background: var(--hzc-panel);
+  border: 1px solid var(--hzc-border);
+  padding: calc(3px * var(--s)) calc(12px * var(--s)) calc(2px * var(--s));
+  white-space: nowrap;
+  clip-path: polygon(6px 0, 100% 0, 100% calc(100% - 6px), calc(100% - 6px) 100%, 0 100%, 0 6px);
+}
+
 /* ------------------------- awareness indicators (world) ---------------------- */
-/* Per-machine, projected above the machine; clamped to the screen edge when the
-   threat is off-screen. Yellow circle fills with detection -> full red when
-   hostile -> flashing jagged red diamond while that machine is attacking. */
+/* stealth-awareness-indicator-fidelity: 26 px, shown from suspicion > 0.04. */
 .hzc-awares { position: absolute; inset: 0; overflow: hidden; }
 .hzc-aware {
   position: absolute; left: 0; top: 0;
@@ -396,12 +706,12 @@
   will-change: transform;
 }
 .hzc-aware-circle {
-  position: absolute; left: -9px; top: -9px;
-  width: 18px; height: 18px;
+  position: absolute; left: -13px; top: -13px;
+  width: 26px; height: 26px;
   border-radius: 50%;
-  border: 1.5px solid var(--hzc-yellow);
+  border: 2px solid var(--hzc-yellow);
   background: conic-gradient(var(--hzc-yellow) 0%, rgba(8, 10, 12, 0.35) 0);
-  box-shadow: 0 0 7px rgba(0, 0, 0, 0.6), 0 0 9px rgba(255, 211, 77, 0.35);
+  box-shadow: 0 0 7px rgba(0, 0, 0, 0.6), 0 0 10px rgba(255, 211, 77, 0.35);
   display: none;
 }
 .hzc-aware[data-m='fill'] .hzc-aware-circle { display: block; }
@@ -409,11 +719,11 @@
   display: block;
   border-color: var(--hzc-alert);
   background: var(--hzc-alert);
-  box-shadow: 0 0 8px rgba(0, 0, 0, 0.6), 0 0 12px rgba(214, 69, 65, 0.75);
+  box-shadow: 0 0 8px rgba(0, 0, 0, 0.6), 0 0 13px rgba(214, 69, 65, 0.75);
 }
 .hzc-aware-diamond {
-  position: absolute; left: -15px; top: -15px;
-  width: 30px; height: 30px;
+  position: absolute; left: -16px; top: -16px;
+  width: 32px; height: 32px;
   display: none;
 }
 .hzc-aware[data-m='attack'] .hzc-aware-diamond {
@@ -430,66 +740,64 @@
   0%, 100% { opacity: 1; transform: scale(1); }
   50% { opacity: 0.3; transform: scale(0.86); }
 }
-.hzc-aware.edge { transform-origin: center; }
 .hzc-aware.edge .hzc-aware-circle,
 .hzc-aware.edge .hzc-aware-diamond { transform: scale(0.85); }
 
-/* ------------------------------ objective card ------------------------------- */
-.hzc-objective {
-  position: absolute; top: 26px; right: 30px;
-  width: 300px; text-align: right;
-  padding: 11px 16px 12px;
-  background: linear-gradient(270deg, rgba(10, 13, 16, 0.66), rgba(10, 13, 16, 0.06));
-  border-right: 1px solid var(--hzc-gold);
-}
-.hzc-objective::after {
-  /* triangle motif anchoring the card to its accent rule */
-  content: '';
-  position: absolute; right: -1px; top: 0;
-  width: 0; height: 0;
-  border-top: 7px solid var(--hzc-gold);
-  border-left: 7px solid transparent;
-}
-.hzc-obj-kicker {
-  font-family: var(--hzc-display);
-  font-size: 8px; letter-spacing: 0.5em;
-  color: var(--hzc-gold);
-  margin-bottom: 7px;
-}
-.hzc-obj-title {
-  font-size: 15px; font-weight: 500; letter-spacing: 0.24em;
-  color: var(--hzc-text);
-}
-.hzc-obj-detail {
-  font-size: 10px; letter-spacing: 0.14em;
-  color: var(--hzc-parch-dim);
-  margin-top: 5px;
-  text-transform: uppercase;
-}
-.hzc-obj-progress {
-  font-size: 10px; font-weight: 600; letter-spacing: 0.3em;
-  color: var(--hzc-gold);
-  margin-top: 7px;
-}
-.hzc-objective.bump { animation: hzcObjBump 0.55s ease; }
-@keyframes hzcObjBump {
-  0% { transform: translateX(14px); opacity: 0.15; }
-  100% { transform: none; opacity: 1; }
-}
+/* ============================================================================ */
+/* CENTRE — bracket reticle, draw ring, nock pip, Concentration gauge           */
+/* ============================================================================ */
 
-/* -------------------------------- crosshair ---------------------------------- */
 .hzc-cross { position: absolute; left: 50%; top: 50%; width: 0; height: 0; }
 .hzc-dot {
-  position: absolute; left: -2.5px; top: -2.5px;
-  width: 5px; height: 5px; border-radius: 50%;
+  position: absolute;
+  left: calc(-2.5px * var(--s)); top: calc(-2.5px * var(--s));
+  width: calc(5px * var(--s)); height: calc(5px * var(--s));
+  border-radius: 50%;
   background: rgba(242, 237, 226, 0.95);
   box-shadow: 0 0 0 1.5px rgba(8, 12, 14, 0.75), 0 1px 5px rgba(0, 0, 0, 0.6);
   transition: opacity 0.8s ease;
 }
-.hzc-dot.idle { opacity: 0.28; } /* dynamic HUD: recede when out of combat */
+.hzc-dot.idle { opacity: 0.28; }
+
+/* ui-08 bracket reticle: four corner brackets closing with the draw */
+.hzc-brk {
+  position: absolute; left: 0; top: 0;
+  width: 0; height: 0;
+  --spread: 16px;
+  opacity: 0; transition: opacity 0.12s ease;
+}
+.hzc-brk.show { opacity: 1; }
+.hzc-brk-a {
+  position: absolute;
+  width: calc(9px * var(--s)); height: calc(9px * var(--s));
+  border: 0 solid rgba(244, 238, 226, 0.92);
+  filter: drop-shadow(0 0 2px rgba(6, 9, 12, 0.95));
+  transition: transform 0.09s linear;
+}
+.hzc-brk-a.tl {
+  border-top-width: 2px; border-left-width: 2px;
+  transform: translate(calc(-1 * var(--spread) * var(--s) - 9px * var(--s)),
+                       calc(-1 * var(--spread) * var(--s) - 9px * var(--s)));
+}
+.hzc-brk-a.tr {
+  border-top-width: 2px; border-right-width: 2px;
+  transform: translate(calc(var(--spread) * var(--s)),
+                       calc(-1 * var(--spread) * var(--s) - 9px * var(--s)));
+}
+.hzc-brk-a.bl {
+  border-bottom-width: 2px; border-left-width: 2px;
+  transform: translate(calc(-1 * var(--spread) * var(--s) - 9px * var(--s)),
+                       calc(var(--spread) * var(--s)));
+}
+.hzc-brk-a.br {
+  border-bottom-width: 2px; border-right-width: 2px;
+  transform: translate(calc(var(--spread) * var(--s)), calc(var(--spread) * var(--s)));
+}
+
 .hzc-ring {
-  position: absolute; left: -36px; top: -36px;
-  width: 72px; height: 72px;
+  position: absolute;
+  left: calc(-36px * var(--s)); top: calc(-36px * var(--s));
+  width: calc(72px * var(--s)); height: calc(72px * var(--s));
   opacity: 0; transition: opacity 0.12s ease;
 }
 .hzc-ring.show { opacity: 1; }
@@ -508,10 +816,26 @@
   filter: drop-shadow(0 0 7px rgba(255, 244, 221, 0.95));
 }
 
+/* re-nock pip: the arrow is still travelling from the quiver (combat §1) */
+.hzc-nock {
+  position: absolute;
+  left: calc(-22px * var(--s)); top: calc(46px * var(--s));
+  width: calc(44px * var(--s)); height: calc(3px * var(--s));
+  background: rgba(10, 13, 16, 0.7);
+  border: 1px solid rgba(239, 230, 213, 0.24);
+  display: none;
+}
+.hzc-nock.show { display: block; }
+.hzc-nock-fill {
+  height: 100%; width: 0;
+  background: rgba(239, 230, 213, 0.8);
+}
+
 /* thin yellow Concentration gauge beside the reticle (drains while slow-mo) */
 .hzc-conc {
-  position: absolute; left: 47px; top: -30px;
-  width: 4px; height: 60px;
+  position: absolute;
+  left: calc(47px * var(--s)); top: calc(-30px * var(--s));
+  width: calc(4px * var(--s)); height: calc(60px * var(--s));
   background: rgba(10, 13, 16, 0.66);
   border: 1px solid rgba(239, 230, 213, 0.28);
   opacity: 0; transition: opacity 0.15s ease;
@@ -529,115 +853,293 @@
   50% { filter: brightness(1.6); }
 }
 
-/* ---------------------------- interaction prompt ----------------------------- */
-.hzc-interact {
-  position: absolute; left: 50%; top: 63%;
-  transform: translateX(-50%);
-  display: none;
-  flex-direction: column; align-items: center; gap: 7px;
+/* ============================================================================ */
+/* BOTTOM-LEFT — tools strip (ui-11)                                            */
+/* ============================================================================ */
+
+.hzc-tools {
+  position: absolute;
+  left: calc(28px * var(--s)); bottom: calc(28px * var(--s));
+  display: none; align-items: center; gap: calc(6px * var(--s));
 }
-.hzc-interact.show { display: flex; }
-.hzc-int-ring {
+.hzc-tools.show { display: flex; }
+.hzc-tool-row { display: flex; align-items: flex-end; gap: calc(6px * var(--s)); }
+.hzc-tool {
   position: relative;
-  width: 42px; height: 42px; border-radius: 50%;
-  background: conic-gradient(var(--hzc-yellow) 0%, rgba(239, 230, 213, 0.18) 0);
+  width: calc(42px * var(--s)); height: calc(42px * var(--s));
+  background: var(--hzc-plate);
+  border: 1px solid var(--hzc-border);
+  clip-path: polygon(7px 0, 100% 0, 100% calc(100% - 7px), calc(100% - 7px) 100%, 0 100%, 0 7px);
+  opacity: 0.62;
+  transition: opacity 0.2s ease, transform 0.2s ease;
+}
+.hzc-tool.active {
+  opacity: 1;
+  border-color: var(--hzc-gold);
+  box-shadow: 0 0 14px rgba(200, 162, 75, 0.28);
+  transform: translateY(calc(-4px * var(--s)));
+  width: calc(50px * var(--s)); height: calc(50px * var(--s));
+}
+.hzc-tool.empty { opacity: 0.3; }
+.hzc-tool.blocked { border-color: rgba(214, 69, 65, 0.6); }
+.hzc-tool-ic {
+  position: absolute; inset: calc(7px * var(--s));
   display: flex; align-items: center; justify-content: center;
 }
-.hzc-int-ring::before {
-  content: '';
-  position: absolute; inset: 4px;
-  border-radius: 50%;
-  background: rgba(10, 13, 16, 0.78);
-  border: 1px solid rgba(239, 230, 213, 0.25);
-}
-.hzc-int-key {
-  position: relative;
-  font-family: var(--font);
-  font-weight: 700; font-size: 15px;
+.hzc-tool-ic svg { width: 100%; height: 100%; display: block; }
+.hzc-tool-n {
+  position: absolute; right: calc(3px * var(--s)); bottom: calc(1px * var(--s));
+  font-size: max(11px, calc(11px * var(--s)));
+  font-weight: 700; letter-spacing: 0.02em;
   color: var(--hzc-text);
-  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.8);
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.95);
+  font-variant-numeric: tabular-nums;
 }
-.hzc-int-label {
-  font-size: 11px; font-weight: 500; letter-spacing: 0.32em; text-indent: 0.32em;
-  color: var(--hzc-text);
-  text-transform: uppercase;
-  background: var(--hzc-panel);
-  border: 1px solid var(--hzc-border);
-  padding: 3px 12px 2px;
-  clip-path: polygon(6px 0, 100% 0, 100% calc(100% - 6px), calc(100% - 6px) 100%, 0 100%, 0 6px);
+.hzc-tool-key {
+  position: absolute; left: 50%; top: calc(-11px * var(--s));
+  transform: translateX(-50%);
+  color: var(--hzc-gold);
+  border-color: rgba(200, 162, 75, 0.6);
+  background: rgba(10, 13, 16, 0.85);
+}
+.hzc-tool-cd { position: absolute; inset: 0; pointer-events: none; }
+.hzc-tool-chev {
+  display: flex; flex-direction: column; align-items: center;
+  gap: calc(2px * var(--s));
+  color: rgba(239, 230, 213, 0.5);
+}
+.hzc-tool-chev span {
+  font-size: max(12px, calc(16px * var(--s)));
+  line-height: 0.8;
+}
+.hzc-tool-chev kbd {
+  font-size: max(11px, calc(9px * var(--s)));
+  padding: 0 calc(4px * var(--s));
 }
 
-/* --------------------------- bottom-right: weapon HUD ------------------------- */
+/* ============================================================================ */
+/* BOTTOM-CENTRE — XP bar + level pip (progression-001/012)                     */
+/* ============================================================================ */
+
+.hzc-xp {
+  position: absolute; left: 50%; bottom: calc(24px * var(--s));
+  transform: translateX(-50%);
+  width: calc(330px * var(--s));
+  display: none; align-items: center; gap: calc(10px * var(--s));
+}
+.hzc-xp.show { display: flex; }
+.hzc-xp-pip {
+  flex: 0 0 auto;
+  width: calc(32px * var(--s)); height: calc(32px * var(--s));
+  display: flex; align-items: center; justify-content: center;
+  background: var(--hzc-gold);
+  clip-path: polygon(50% 0, 100% 50%, 50% 100%, 0 50%);
+  filter: drop-shadow(0 2px 6px rgba(0, 0, 0, 0.6));
+}
+.hzc-xp-pip span {
+  font-family: var(--hzc-display);
+  font-size: max(11px, calc(12px * var(--s)));
+  color: #0b0e11;
+  text-shadow: none;
+  line-height: 1;
+}
+.hzc-xp-pip.bump { animation: hzcPipBump 0.75s ease; }
+@keyframes hzcPipBump {
+  0% { transform: scale(1); filter: brightness(1) drop-shadow(0 2px 6px rgba(0, 0, 0, 0.6)); }
+  35% { transform: scale(1.45); filter: brightness(2.2) drop-shadow(0 0 18px rgba(255, 220, 130, 0.9)); }
+  100% { transform: scale(1); filter: brightness(1) drop-shadow(0 2px 6px rgba(0, 0, 0, 0.6)); }
+}
+.hzc-xp-wrap { flex: 1 1 auto; }
+.hzc-xp-label {
+  display: flex; justify-content: space-between;
+  font-size: max(11px, calc(9.5px * var(--s)));
+  font-weight: 600; letter-spacing: 0.22em;
+  color: rgba(239, 230, 213, 0.66);
+  text-shadow: 0 1px 5px rgba(0, 0, 0, 0.95);
+  margin-bottom: calc(3px * var(--s));
+  text-transform: uppercase;
+}
+.hzc-xp-bar {
+  height: calc(5px * var(--s));
+  background: rgba(10, 13, 16, 0.72);
+  border: 1px solid rgba(239, 230, 213, 0.22);
+  padding: 1px;
+}
+.hzc-xp-fill {
+  height: 100%; width: 0;
+  background: linear-gradient(90deg, #b98f38, var(--hzc-gold));
+  box-shadow: 0 0 8px rgba(200, 162, 75, 0.55);
+  transition: width 0.3s ease-out;
+}
+.hzc-xp-points {
+  position: absolute; left: calc(42px * var(--s)); bottom: calc(46px * var(--s));
+  font-size: max(11px, calc(10px * var(--s)));
+  font-weight: 600; letter-spacing: 0.2em;
+  color: var(--hzc-gold);
+  text-shadow: 0 1px 5px rgba(0, 0, 0, 0.95);
+  white-space: nowrap;
+}
+
+/* +XP pops replace the kill feed entirely (ui-19 / progression-012) */
+.hzc-xp-pops {
+  position: absolute; left: 50%; bottom: calc(78px * var(--s));
+  transform: translateX(-50%);
+  display: flex; flex-direction: column-reverse; align-items: center;
+  gap: calc(3px * var(--s));
+  pointer-events: none;
+}
+.hzc-xppop {
+  font-size: max(12px, calc(17px * var(--s)));
+  font-weight: 700; letter-spacing: 0.06em;
+  color: var(--hzc-gold);
+  text-shadow: 0 0 10px rgba(200, 162, 75, 0.5), 0 1px 4px rgba(0, 0, 0, 0.95);
+  animation: hzcXpPop 1.7s ease-out forwards;
+  white-space: nowrap;
+}
+.hzc-xppop span {
+  font-size: max(11px, calc(10px * var(--s)));
+  font-weight: 600; letter-spacing: 0.22em;
+  margin-left: calc(4px * var(--s));
+  color: rgba(239, 230, 213, 0.72);
+}
+.hzc-xppop i {
+  font-style: normal;
+  font-size: max(11px, calc(9px * var(--s)));
+  letter-spacing: 0.24em;
+  color: var(--hzc-terra);
+  margin-left: calc(6px * var(--s));
+}
+@keyframes hzcXpPop {
+  0% { opacity: 0; transform: translateY(10px) scale(0.86); }
+  12% { opacity: 1; transform: none; }
+  72% { opacity: 1; }
+  100% { opacity: 0; transform: translateY(-16px); }
+}
+.hzc-flash {
+  font-size: max(11px, calc(11px * var(--s)));
+  font-weight: 600; letter-spacing: 0.24em; text-indent: 0.24em;
+  color: var(--hzc-text);
+  text-shadow: 0 1px 5px rgba(0, 0, 0, 0.95);
+  animation: hzcXpPop 1.9s ease-out forwards;
+  white-space: nowrap;
+}
+.hzc-flash.k-good { color: var(--hzc-med); }
+.hzc-flash.k-warn { color: var(--hzc-alert); }
+
+/* ============================================================================ */
+/* BOTTOM-RIGHT — weapon (ui-08) + craft hold + item toasts                     */
+/* ============================================================================ */
+
 .hzc-weapon {
-  position: absolute; right: 30px; bottom: 28px;
-  min-width: 196px;
-  padding: 10px 16px 9px;
+  position: absolute;
+  right: calc(28px * var(--s)); bottom: calc(26px * var(--s));
+  min-width: calc(224px * var(--s));
+  padding: calc(9px * var(--s)) calc(14px * var(--s)) calc(9px * var(--s));
   text-align: right;
   background: var(--hzc-panel);
   border: 1px solid var(--hzc-border);
   clip-path: polygon(0 0, 100% 0, 100% 100%, 14px 100%, 0 calc(100% - 14px));
   transition: opacity 0.55s ease;
 }
-/* dynamic HUD: visible only with the weapon drawn / mid-combat */
 .hzc-weapon.idle { opacity: 0; }
+.hzc-wpn-top {
+  display: flex; align-items: center; justify-content: flex-end;
+  gap: calc(9px * var(--s));
+  margin-bottom: calc(6px * var(--s));
+}
 .hzc-wpn-name {
-  font-size: 10px; font-weight: 500; letter-spacing: 0.34em; text-indent: 0.34em;
+  font-size: max(11px, calc(10.5px * var(--s)));
+  font-weight: 500; letter-spacing: 0.3em; text-indent: 0.3em;
   color: var(--hzc-gold);
   text-transform: uppercase;
-  margin-bottom: 5px;
+}
+/* mod / ammo dots — real data, filled = the loaded type */
+.hzc-wpn-dots { display: flex; gap: calc(4px * var(--s)); }
+.hzc-wpn-dots i {
+  width: calc(7px * var(--s)); height: calc(7px * var(--s));
+  border-radius: 50%;
+  border: 1px solid var(--c, rgba(239, 230, 213, 0.6));
+  background: transparent;
+}
+.hzc-wpn-dots i.on {
+  background: var(--c, #efe6d5);
+  box-shadow: 0 0 7px var(--c, #efe6d5);
 }
 .hzc-wpn-row {
-  display: flex; align-items: center; justify-content: flex-end; gap: 10px;
+  display: flex; align-items: center; justify-content: flex-end;
+  gap: calc(12px * var(--s));
 }
-.hzc-wpn-glyph { width: 26px; height: 26px; }
+.hzc-wpn-art {
+  width: calc(34px * var(--s)); height: calc(54px * var(--s));
+  color: rgba(239, 230, 213, 0.9);
+  filter: drop-shadow(0 1px 4px rgba(0, 0, 0, 0.8));
+  order: -1;
+}
+.hzc-wpn-art svg { width: 100%; height: 100%; display: block; }
+.hzc-wpn-mid { text-align: right; }
+.hzc-wpn-countrow {
+  display: flex; align-items: center; justify-content: flex-end;
+  gap: calc(9px * var(--s));
+}
+.hzc-wpn-glyph { width: calc(24px * var(--s)); height: calc(24px * var(--s)); }
 .hzc-wpn-glyph svg { width: 100%; height: 100%; display: block; }
 .hzc-wpn-count {
-  font-size: 27px; font-weight: 700; letter-spacing: 0.04em;
+  font-size: max(18px, calc(28px * var(--s)));
+  font-weight: 700; letter-spacing: 0.02em;
   color: var(--hzc-text);
   line-height: 1;
-  min-width: 44px;
+  min-width: calc(44px * var(--s));
+  font-variant-numeric: tabular-nums;
 }
 .hzc-wpn-count.empty { color: var(--hzc-alert); }
 .hzc-wpn-ammoname {
-  font-size: 9px; letter-spacing: 0.26em;
+  font-size: max(11px, calc(9.5px * var(--s)));
+  letter-spacing: 0.24em;
   color: var(--hzc-parch-dim);
   text-transform: uppercase;
-  margin-top: 3px;
+  margin-bottom: calc(4px * var(--s));
 }
-.hzc-wpn-hint {
-  display: flex; justify-content: flex-end; align-items: center; gap: 5px;
-  font-size: 8px; letter-spacing: 0.2em;
-  color: rgba(239, 230, 213, 0.42);
-  margin-top: 7px;
+/* hold-R craft (onboarding-loop-crafting-feedback) */
+.hzc-craft {
+  display: flex; align-items: center; justify-content: flex-end;
+  gap: calc(6px * var(--s));
+  margin-top: calc(8px * var(--s));
+  opacity: 0.55;
 }
-.hzc-wpn-hint kbd {
-  font-family: var(--font);
-  font-weight: 600; font-size: 9px;
-  color: rgba(239, 230, 213, 0.7);
-  border: 1px solid rgba(239, 230, 213, 0.3);
-  padding: 0 4px;
-  line-height: 12px;
-  clip-path: polygon(3px 0, 100% 0, 100% calc(100% - 3px), calc(100% - 3px) 100%, 0 100%, 0 3px);
+.hzc-craft.on { opacity: 1; }
+.hzc-craft span {
+  font-size: max(11px, calc(8.5px * var(--s)));
+  letter-spacing: 0.2em;
+  color: rgba(239, 230, 213, 0.5);
 }
+.hzc-craft-bar {
+  width: calc(56px * var(--s)); height: calc(3px * var(--s));
+  background: rgba(10, 13, 16, 0.7);
+  border: 1px solid rgba(239, 230, 213, 0.22);
+}
+.hzc-craft-bar i { display: block; height: 100%; width: 0; background: var(--hzc-yellow); }
 
 /* ------------------------- bottom-right: item toasts -------------------------- */
 .hzc-items {
-  position: absolute; right: 30px; bottom: 128px;
-  display: flex; flex-direction: column; align-items: flex-end; gap: 4px;
+  position: absolute;
+  right: calc(28px * var(--s)); bottom: calc(152px * var(--s));
+  display: flex; flex-direction: column; align-items: flex-end;
+  gap: calc(4px * var(--s));
 }
 .hzc-item {
-  display: flex; align-items: center; gap: 8px;
-  font-size: 11px; font-weight: 500; letter-spacing: 0.16em;
+  display: flex; align-items: center; gap: calc(8px * var(--s));
+  font-size: max(11px, calc(11px * var(--s)));
+  font-weight: 500; letter-spacing: 0.14em;
   color: var(--hzc-text);
   text-transform: uppercase;
   background: var(--hzc-panel);
   border: 1px solid var(--hzc-border);
-  padding: 4px 11px 4px 9px;
+  padding: calc(4px * var(--s)) calc(11px * var(--s)) calc(4px * var(--s)) calc(9px * var(--s));
   white-space: nowrap;
   animation: hzcItemToast 3s ease forwards;
 }
-.hzc-item svg { width: 13px; height: 13px; display: block; }
-.hzc-item .hzc-item-tg { font-size: 12px; line-height: 13px; }
+.hzc-item svg { width: calc(14px * var(--s)); height: calc(14px * var(--s)); display: block; }
+.hzc-item .hzc-item-tg { font-size: max(11px, calc(12px * var(--s))); line-height: 1.1; }
 .hzc-item b { color: var(--hzc-gold); font-weight: 600; margin-left: 2px; }
 @keyframes hzcItemToast {
   0% { opacity: 0; transform: translateX(16px); }
@@ -647,54 +1149,120 @@
 }
 
 /* ------------------------------ damage numbers ------------------------------- */
-/* Small off-white armor plinks; larger yellow-tinted weak-point hits;
-   blue-cyan '+TEAR' pops. Rise+fade handled in JS (eased, no bounce). */
+/* combat-hit-feedback-faint: hud.js sets the px size per hit, scaled by the
+   fraction of the target's health removed; a WEAK hit never lands below 18 px.
+   These rules are the floor / colour language only. */
 .hzc-dmglayer { position: absolute; inset: 0; overflow: hidden; }
 .hzc-dmg {
   position: absolute; left: 0; top: 0;
-  font-size: 14px; font-weight: 600; letter-spacing: 0.05em;
-  color: #efe6d5;
-  text-shadow: 0 0 5px rgba(0, 0, 0, 0.85), 0 1px 2px rgba(0, 0, 0, 0.7);
+  font-size: max(14px, calc(17px * var(--s)));
+  font-weight: 700; letter-spacing: 0.03em;
+  color: #f4eee2;
+  text-shadow: 0 0 6px rgba(0, 0, 0, 0.9), 0 1px 2px rgba(0, 0, 0, 0.8);
   visibility: hidden;
   will-change: transform, opacity;
+  font-variant-numeric: tabular-nums;
 }
 .hzc-dmg.weak {
-  font-size: 21px;
-  font-weight: 700;
+  min-width: 0;
+  font-weight: 800;
   color: var(--hzc-yellow);
-  text-shadow: 0 0 10px rgba(255, 211, 77, 0.55), 0 0 3px rgba(0, 0, 0, 0.85);
+  text-shadow: 0 0 12px rgba(255, 211, 77, 0.6), 0 0 3px rgba(0, 0, 0, 0.9);
 }
 .hzc-dmg.tear {
-  font-size: 14px; font-weight: 700; letter-spacing: 0.16em;
+  font-weight: 800; letter-spacing: 0.14em;
   color: var(--hzc-tear);
-  text-shadow: 0 0 10px rgba(106, 213, 232, 0.65), 0 0 3px rgba(0, 0, 0, 0.85);
+  text-shadow: 0 0 12px rgba(106, 213, 232, 0.7), 0 0 3px rgba(0, 0, 0, 0.9);
 }
 
-/* ---------------------- kill feed / XP toasts (bottom-right) ----------------- */
-/* Research: XP popups live bottom-right, stacked ABOVE the item toasts. */
-.hzc-toasts {
-  position: absolute; right: 30px; bottom: 292px;
-  display: flex; flex-direction: column; align-items: flex-end; gap: 5px;
+/* ============================================================================ */
+/* CENTRE BANNERS (ui-05) + TUTORIAL CARDS (ui-17)                              */
+/* ============================================================================ */
+
+.hzc-banners {
+  position: absolute; left: 50%; top: 20%;
+  transform: translateX(-50%);
+  display: flex; flex-direction: column; align-items: center;
+  gap: calc(8px * var(--s));
+  width: calc(560px * var(--s));
+  text-align: center;
 }
-.hzc-toast {
-  font-size: 10px; letter-spacing: 0.24em; text-indent: 0.24em;
+.hzc-banner {
+  animation: hzcBanner 3.8s ease forwards;
+  padding: calc(9px * var(--s)) calc(26px * var(--s)) calc(10px * var(--s));
+  background: linear-gradient(90deg, transparent, rgba(8, 11, 14, 0.78) 18%,
+    rgba(8, 11, 14, 0.78) 82%, transparent);
+}
+.hzc-banner .b-title {
+  font-family: var(--hzc-display);
+  font-size: max(13px, calc(20px * var(--s)));
+  letter-spacing: 0.44em; text-indent: 0.44em;
   color: var(--hzc-text);
-  background: var(--hzc-panel);
-  border: 1px solid var(--hzc-border);
-  border-right: 2px solid var(--hzc-gold);
-  padding: 6px 11px 6px 14px;
-  white-space: nowrap;
-  animation: hzcToast 3.2s ease forwards;
+  text-shadow: 0 2px 18px rgba(0, 0, 0, 0.9);
 }
-.hzc-toast b { color: var(--hzc-gold); font-weight: 600; }
-@keyframes hzcToast {
-  0% { opacity: 0; transform: translateX(14px); }
-  8% { opacity: 1; transform: none; }
+.hzc-banner .b-detail {
+  font-size: max(11px, calc(10.5px * var(--s)));
+  letter-spacing: 0.26em; text-indent: 0.26em;
+  color: rgba(239, 230, 213, 0.66);
+  text-transform: uppercase;
+  margin-top: calc(6px * var(--s));
+}
+.hzc-banner .b-rule {
+  width: calc(240px * var(--s)); height: 1px;
+  margin: calc(9px * var(--s)) auto 0;
+  background: linear-gradient(90deg, transparent, var(--hzc-gold), transparent);
+}
+.hzc-banner.k-level .b-title { color: var(--hzc-gold); }
+.hzc-banner.k-skill .b-title { color: var(--hzc-gold); }
+.hzc-banner.k-quest-done .b-title,
+.hzc-banner.k-victory .b-title,
+.hzc-banner.k-discovery .b-title { color: var(--hzc-freeze); }
+.hzc-banner.k-death .b-title { color: #d9543f; }
+.hzc-banner.k-objective .b-title { font-size: max(12px, calc(15px * var(--s))); }
+@keyframes hzcBanner {
+  0% { opacity: 0; transform: translateY(-10px) scale(0.97); letter-spacing: 0.6em; }
+  10% { opacity: 1; transform: none; }
   78% { opacity: 1; }
-  100% { opacity: 0; transform: translateX(8px); }
+  100% { opacity: 0; transform: translateY(-6px); }
 }
 
-/* -------------------------------- death screen ------------------------------- */
+/* ui-17 tutorial card: bordered panel with the input glyphs (research §2) */
+.hzc-tip {
+  position: absolute;
+  right: calc(30px * var(--s)); top: 34%;
+  width: calc(272px * var(--s));
+  padding: calc(14px * var(--s)) calc(16px * var(--s)) calc(15px * var(--s));
+  background: linear-gradient(168deg, rgba(13, 18, 22, 0.93), rgba(8, 11, 14, 0.96));
+  border: 1px solid rgba(239, 230, 213, 0.2);
+  border-left: 2px solid var(--hzc-terra);
+  opacity: 0; visibility: hidden;
+  transform: translateX(18px);
+  transition: opacity 0.35s ease, transform 0.35s ease, visibility 0.35s;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5);
+}
+.hzc-tip.show { opacity: 1; visibility: visible; transform: none; }
+.hzc-tip-title {
+  font-family: var(--hzc-display);
+  font-size: max(11px, calc(10px * var(--s)));
+  letter-spacing: 0.44em; text-indent: 0.44em;
+  color: var(--hzc-terra);
+  margin-bottom: calc(9px * var(--s));
+}
+.hzc-tip-keys {
+  display: flex; flex-wrap: wrap; gap: calc(5px * var(--s));
+  margin-bottom: calc(9px * var(--s));
+}
+.hzc-tip-body {
+  font-size: max(11px, calc(11.5px * var(--s)));
+  line-height: 1.5;
+  letter-spacing: 0.05em;
+  color: rgba(239, 230, 213, 0.78);
+}
+
+/* ============================================================================ */
+/* END SCREENS + PAUSE (bridge until `shell-menus` lands its hub)               */
+/* ============================================================================ */
+
 .hzc-death {
   position: absolute; inset: 0;
   display: flex; flex-direction: column; align-items: center; justify-content: center;
@@ -705,15 +1273,16 @@
 .hzc-death.show { opacity: 1; visibility: visible; }
 .hzc-death-title {
   font-family: var(--hzc-display);
-  font-size: 42px; font-weight: 400;
+  font-size: max(20px, calc(42px * var(--s)));
+  font-weight: 400;
   letter-spacing: 0.6em; text-indent: 0.6em;
   color: #c0453a;
   text-shadow: 0 0 34px rgba(176, 58, 46, 0.5);
 }
 .hzc-death-rule {
-  width: 280px; height: 1px;
+  width: calc(280px * var(--s)); height: 1px;
   background: linear-gradient(90deg, transparent, rgba(176, 58, 46, 0.8), transparent);
-  margin: 28px 0 20px;
+  margin: calc(28px * var(--s)) 0 calc(20px * var(--s));
   position: relative;
 }
 .hzc-death-rule::after {
@@ -724,11 +1293,11 @@
   background: rgba(176, 58, 46, 0.9);
 }
 .hzc-death-sub {
-  font-size: 10px; letter-spacing: 0.4em; text-indent: 0.4em;
+  font-size: max(11px, calc(10px * var(--s)));
+  letter-spacing: 0.4em; text-indent: 0.4em;
   color: rgba(239, 230, 213, 0.5);
 }
 
-/* ------------------------------- victory screen ------------------------------ */
 #hud.endgame > :not(.hzc-victory):not(.hzc-pause) {
   visibility: hidden !important;
   opacity: 0 !important;
@@ -743,22 +1312,24 @@
 .hzc-victory.show { opacity: 1; visibility: visible; }
 .hzc-victory-kicker {
   font-family: var(--hzc-display);
-  font-size: 11px; letter-spacing: 0.55em; text-indent: 0.55em;
+  font-size: max(11px, calc(11px * var(--s)));
+  letter-spacing: 0.55em; text-indent: 0.55em;
   color: var(--hzc-gold);
-  margin-bottom: 22px;
+  margin-bottom: calc(22px * var(--s));
 }
 .hzc-victory-title {
   font-family: var(--hzc-display);
-  font-size: 44px; font-weight: 400;
+  font-size: max(20px, calc(44px * var(--s)));
+  font-weight: 400;
   letter-spacing: 0.45em; text-indent: 0.45em;
   color: var(--hzc-text);
   text-shadow: 0 0 30px rgba(200, 162, 75, 0.35);
 }
 .hzc-victory-line {
-  width: 320px; height: 1px;
+  width: calc(320px * var(--s)); height: 1px;
   background: linear-gradient(90deg, transparent, var(--hzc-gold), transparent);
   box-shadow: 0 0 12px rgba(200, 162, 75, 0.5);
-  margin: 30px 0 18px;
+  margin: calc(30px * var(--s)) 0 calc(18px * var(--s));
   position: relative;
 }
 .hzc-victory-line::after {
@@ -769,13 +1340,11 @@
   background: var(--hzc-gold);
 }
 .hzc-victory-sub {
-  font-size: 11px; letter-spacing: 0.32em; text-indent: 0.32em;
+  font-size: max(11px, calc(11px * var(--s)));
+  letter-spacing: 0.32em; text-indent: 0.32em;
   color: rgba(239, 230, 213, 0.65);
 }
 
-/* --------------------------------- pause menu -------------------------------- */
-/* Tribal-tech: smoked glass over the live world, hairline-ruled panel with
-   corner brackets, thin tracked-caps display header. */
 .hzc-pause {
   position: absolute; inset: 0;
   display: none;
@@ -788,26 +1357,28 @@
 .hzc-pause-inner {
   position: relative;
   text-align: center;
-  padding: 40px 60px 34px;
+  padding: calc(40px * var(--s)) calc(58px * var(--s)) calc(34px * var(--s));
   background: linear-gradient(170deg, rgba(13, 17, 21, 0.86), rgba(8, 11, 14, 0.92));
   border: 1px solid rgba(239, 230, 213, 0.16);
   box-shadow: 0 24px 70px rgba(0, 0, 0, 0.55);
 }
 .hzc-pause-kicker {
   font-family: var(--hzc-display);
-  font-size: 8px; letter-spacing: 0.6em; text-indent: 0.6em;
+  font-size: max(11px, calc(8px * var(--s)));
+  letter-spacing: 0.6em; text-indent: 0.6em;
   color: var(--hzc-terra);
-  margin-bottom: 12px;
+  margin-bottom: calc(12px * var(--s));
 }
 .hzc-pause-title {
   font-family: var(--hzc-display);
-  font-size: 30px; font-weight: 400;
+  font-size: max(18px, calc(30px * var(--s)));
+  font-weight: 400;
   letter-spacing: 0.55em; text-indent: 0.55em;
   color: var(--hzc-text);
 }
 .hzc-pause-rule {
-  width: 240px; height: 1px;
-  margin: 20px auto 26px;
+  width: calc(240px * var(--s)); height: 1px;
+  margin: calc(20px * var(--s)) auto calc(26px * var(--s));
   background: linear-gradient(90deg, transparent, var(--hzc-hairline), transparent);
   position: relative;
 }
@@ -821,8 +1392,9 @@
 .hzc-btn {
   font-family: var(--font);
   font-weight: 600;
-  font-size: 13px; letter-spacing: 0.34em; text-indent: 0.34em;
-  padding: 13px 42px;
+  font-size: max(12px, calc(13px * var(--s)));
+  letter-spacing: 0.34em; text-indent: 0.34em;
+  padding: calc(13px * var(--s)) calc(42px * var(--s));
   color: var(--hzc-text);
   background: rgba(10, 13, 16, 0.5);
   border: 1px solid rgba(218, 119, 86, 0.65);
@@ -836,13 +1408,14 @@
   box-shadow: 0 0 20px rgba(218, 119, 86, 0.3);
 }
 .hzc-pause-hints {
-  margin-top: 30px;
-  padding-top: 18px;
+  margin-top: calc(28px * var(--s));
+  padding-top: calc(18px * var(--s));
   border-top: 1px solid rgba(239, 230, 213, 0.12);
   display: grid;
   grid-template-columns: repeat(2, auto);
-  gap: 6px 32px;
-  font-size: 10px; letter-spacing: 0.16em;
+  gap: calc(6px * var(--s)) calc(32px * var(--s));
+  font-size: max(11px, calc(10px * var(--s)));
+  letter-spacing: 0.14em;
   color: rgba(239, 230, 213, 0.5);
   text-align: left;
   text-transform: uppercase;
@@ -850,5 +1423,5 @@
 .hzc-pause-hints b {
   color: rgba(239, 230, 213, 0.85);
   font-weight: 600;
-  margin-right: 7px;
+  margin-right: calc(7px * var(--s));
 }

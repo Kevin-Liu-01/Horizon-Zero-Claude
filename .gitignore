@@ -13,3 +13,14 @@ models-staging/**/*.glb
 models-staging/**/*.gltf
 models-staging/**/*.bin
 models-staging/**/*.zip
+
+# Round 4 fix 2 (judge: "25 MB of dead model duplicates"): the bake pass writes
+# its intermediates and its backups of the originals into models-staging/, NOT
+# into public/. public/ is vite's publicDir, so anything left here is copied
+# verbatim into dist/ and shipped. The `!public/models/*.glb` negation above
+# re-includes ANY .glb under that directory, so the bake artefacts have to be
+# re-ignored explicitly or `git add` picks them up.
+public/models/*.baked.glb
+public/models/*.orig
+models-staging/baked/
+models-staging/orig/

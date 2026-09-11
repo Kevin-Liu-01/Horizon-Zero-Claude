@@ -1,6 +1,12 @@
 /* HZD weapon wheel — dark smoked-glass radial, thin parchment hairline rings,
    off-white line icons, YELLOW selection highlight (reference-v3 PART 2),
-   Rajdhani tracked caps. No teal: palette is off-white / #FFD34D / muted gold. */
+   Rajdhani tracked caps. No teal: palette is off-white / #FFD34D / muted gold.
+
+   Round 4 (`combat-wheel-canon-gaps` / `ui-09`): six petals laid out by ANGLE
+   (the four hard-coded screen directions could not address the Ropecaster or
+   the Tripcaster at all), weapon silhouettes instead of text labels, ammo arcs
+   on the outer ring, a stat row in the centre, a hold-R craft radial, and the
+   whole wheel OFFSET RIGHT so the left third of the screen stays clear. */
 
 #hzc-wheel {
   position: fixed;
@@ -8,7 +14,9 @@
   z-index: 60;
   display: flex;
   align-items: center;
+  /* offset right (ui-09): HZD parks the wheel right of centre */
   justify-content: center;
+  padding-left: 16vw;
   opacity: 0;
   pointer-events: none;
   transition: opacity 0.14s ease-out;
@@ -22,9 +30,9 @@
   position: absolute;
   inset: 0;
   background: radial-gradient(
-    ellipse at center,
-    rgba(6, 10, 13, 0.3) 30%,
-    rgba(4, 8, 10, 0.68) 100%
+    ellipse at 62% center,
+    rgba(6, 10, 13, 0.3) 26%,
+    rgba(4, 8, 10, 0.7) 100%
   );
   backdrop-filter: blur(5px) saturate(0.82);
   -webkit-backdrop-filter: blur(5px) saturate(0.82);
@@ -32,8 +40,8 @@
 
 #hzc-wheel .ww-wrap {
   position: relative;
-  width: 620px;
-  height: 620px;
+  width: min(640px, 62vh);
+  height: min(640px, 62vh);
   transform: scale(0.94);
   transition: transform 0.16s ease-out;
 }
@@ -45,15 +53,16 @@
   inset: 0;
   width: 100%;
   height: 100%;
+  overflow: visible;
 }
 #hzc-wheel .ww-ring {
   fill: none;
-  stroke: rgba(239, 230, 213, 0.3);
+  stroke: rgba(239, 230, 213, 0.28);
   stroke-width: 1;
 }
-#hzc-wheel .ww-ring-in { stroke: rgba(239, 230, 213, 0.18); }
+#hzc-wheel .ww-ring-in { stroke: rgba(239, 230, 213, 0.16); }
 #hzc-wheel .ww-ring-out {
-  stroke: rgba(239, 230, 213, 0.12);
+  stroke: rgba(239, 230, 213, 0.11);
   stroke-dasharray: 2 7;
 }
 #hzc-wheel .ww-arc {
@@ -67,32 +76,67 @@
 }
 #hzc-wheel .ww-arc.on { opacity: 0.95; }
 
-/* slots */
+/* ---- ammo arcs: dim track + coloured fill = how full that quiver is ------- */
+#hzc-wheel .ww-aarc-bg {
+  fill: none;
+  stroke: rgba(239, 230, 213, 0.13);
+  stroke-width: 5;
+  stroke-linecap: butt;
+}
+#hzc-wheel .ww-aarc {
+  fill: none;
+  stroke: var(--ac, #e8d9b0);
+  stroke-width: 5;
+  stroke-linecap: butt;
+  opacity: 0.34;
+  transition: opacity 0.12s, stroke-width 0.12s;
+}
+#hzc-wheel .ww-aarcs.on .ww-aarc { opacity: 0.95; }
+#hzc-wheel .ww-aarcs.on .ww-aarc.sel {
+  stroke-width: 9;
+  filter: drop-shadow(0 0 6px currentColor);
+}
+
+/* ---- petals: positioned by angle, centred on their point ------------------ */
 #hzc-wheel .ww-slot {
   position: absolute;
-  width: 210px;
+  width: 164px;
+  margin: 0 0 0 -82px;
+  transform: translateY(-50%);
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 6px;
-  opacity: 0.78;
+  gap: 3px;
+  opacity: 0.66;
   transition: opacity 0.1s, transform 0.1s;
 }
-#hzc-wheel .ww-slot.hover { opacity: 1; transform: scale(1.06); }
-#hzc-wheel .ww-up    { top: -8px;  left: 50%; margin-left: -105px; }
-#hzc-wheel .ww-down  { bottom: -8px; left: 50%; margin-left: -105px; }
-#hzc-wheel .ww-right { right: -66px; top: 50%; margin-top: -46px; }
-#hzc-wheel .ww-left  { left: -66px;  top: 50%; margin-top: -46px; }
+#hzc-wheel .ww-slot.hover {
+  opacity: 1;
+  transform: translateY(-50%) scale(1.09);
+}
+
+/* weapon silhouette (ui-09: art, not a label to read mid-fight) */
+#hzc-wheel .ww-art {
+  width: 46px;
+  height: 46px;
+  color: rgba(239, 230, 213, 0.88);
+  filter: drop-shadow(0 1px 4px rgba(0, 0, 0, 0.85));
+  transition: color 0.1s, filter 0.1s;
+}
+#hzc-wheel .ww-slot.hover .ww-art {
+  color: #ffd34d;
+  filter: drop-shadow(0 0 8px rgba(255, 211, 77, 0.6));
+}
 
 #hzc-wheel .ww-slot-head {
   display: flex;
   align-items: center;
-  gap: 8px;
-  letter-spacing: 0.24em;
-  font-size: 15px;
+  gap: 7px;
+  letter-spacing: 0.14em;
+  font-size: 12px;
   font-weight: 600;
   text-transform: uppercase;
-  text-shadow: 0 1px 6px rgba(0, 0, 0, 0.8);
+  text-shadow: 0 1px 6px rgba(0, 0, 0, 0.9);
   white-space: nowrap;
 }
 #hzc-wheel .ww-slot.hover .ww-slot-name { color: #ffd34d; }
@@ -117,34 +161,34 @@
   background: rgba(8, 12, 15, 0.5);
 }
 
-/* ammo petals */
+/* ammo chips under each petal */
 #hzc-wheel .ww-ammos {
   display: flex;
-  gap: 10px;
+  gap: 6px;
   justify-content: center;
 }
 #hzc-wheel .ww-ammo {
-  width: 52px;
-  padding: 6px 4px 4px;
+  width: 42px;
+  padding: 4px 3px 3px;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 2px;
+  gap: 1px;
   background: rgba(8, 12, 15, 0.6);
-  border: 1px solid rgba(239, 230, 213, 0.16);
+  border: 1px solid rgba(239, 230, 213, 0.14);
   border-radius: 3px;
   transition: border-color 0.1s, background 0.1s;
 }
 #hzc-wheel .ww-ammo-ic {
-  width: 24px;
-  height: 24px;
+  width: 20px;
+  height: 20px;
   color: var(--ac, #e8d9b0);
   filter: drop-shadow(0 0 4px rgba(0, 0, 0, 0.7));
 }
 #hzc-wheel .ww-ammo-n {
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 600;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.06em;
   color: rgba(239, 230, 213, 0.85);
 }
 /* yellow selection highlight (canon) */
@@ -156,29 +200,29 @@
 #hzc-wheel .ww-ammo.empty .ww-ammo-ic { opacity: 0.35; }
 #hzc-wheel .ww-ammo.empty .ww-ammo-n { color: var(--hzc-danger, #b03a2e); }
 
-/* center card */
+/* ------------------------------ centre card -------------------------------- */
 #hzc-wheel .ww-center {
   position: absolute;
   left: 50%;
   top: 50%;
-  width: 252px;
-  height: 252px;
-  margin: -126px 0 0 -126px;
+  width: 246px;
+  height: 246px;
+  margin: -123px 0 0 -123px;
   border-radius: 50%;
-  background: radial-gradient(circle, rgba(8, 12, 15, 0.8) 58%, rgba(8, 12, 15, 0.25) 100%);
+  background: radial-gradient(circle, rgba(8, 12, 15, 0.84) 58%, rgba(8, 12, 15, 0.22) 100%);
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 5px;
+  gap: 4px;
   text-align: center;
-  padding: 18px;
+  padding: 20px;
 }
 #hzc-wheel .ww-weapon-name {
-  font-size: 20px;
+  font-size: 19px;
   font-weight: 600;
-  letter-spacing: 0.3em;
-  text-indent: 0.3em;
+  letter-spacing: 0.26em;
+  text-indent: 0.26em;
   text-transform: uppercase;
   color: var(--hzc-text, #efe6d5);
 }
@@ -186,55 +230,120 @@
   display: flex;
   align-items: center;
   gap: 7px;
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 600;
-  letter-spacing: 0.14em;
+  letter-spacing: 0.12em;
   text-transform: uppercase;
   color: rgba(239, 230, 213, 0.85);
 }
 #hzc-wheel .ww-ammo-name i {
   display: inline-block;
-  width: 18px;
-  height: 18px;
+  width: 17px;
+  height: 17px;
 }
+
+/* stat bars (ui-09: "which of these is the hard-hitting one") */
+#hzc-wheel .ww-stats {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 3px 8px;
+  align-items: center;
+  width: 150px;
+  margin: 5px 0 1px;
+}
+#hzc-wheel .ww-stat { display: contents; }
+#hzc-wheel .ww-stat-k {
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  color: rgba(239, 230, 213, 0.5);
+  text-align: right;
+}
+#hzc-wheel .ww-stat-bar {
+  position: relative;
+  height: 4px;
+  background: rgba(239, 230, 213, 0.12);
+  border-radius: 2px;
+  overflow: hidden;
+}
+#hzc-wheel .ww-stat-bar i {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 0;
+  background: linear-gradient(90deg, #c8a24b, #ffd34d);
+  box-shadow: 0 0 6px -1px rgba(255, 211, 77, 0.8);
+  transition: width 0.12s ease-out;
+}
+#hzc-wheel .ww-stat-bar i.none { background: rgba(239, 230, 213, 0.2); box-shadow: none; }
+
 #hzc-wheel .ww-divider {
   width: 120px;
   height: 1px;
   margin: 3px 0;
-  background: linear-gradient(90deg, transparent, rgba(239, 230, 213, 0.45), transparent);
+  background: linear-gradient(90deg, transparent, rgba(239, 230, 213, 0.42), transparent);
 }
 #hzc-wheel .ww-recipe {
   display: flex;
   flex-direction: column;
   gap: 2px;
-  min-height: 20px;
+  min-height: 18px;
 }
 #hzc-wheel .ww-ing {
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 5px;
-  font-size: 12.5px;
+  font-size: 12px;
   font-weight: 600;
-  letter-spacing: 0.1em;
+  letter-spacing: 0.08em;
   color: rgba(239, 230, 213, 0.75);
 }
-#hzc-wheel .ww-ing i { width: 15px; height: 15px; color: rgba(239, 230, 213, 0.65); }
+#hzc-wheel .ww-ing i { width: 14px; height: 14px; color: rgba(239, 230, 213, 0.65); }
 #hzc-wheel .ww-ing b { font-weight: 600; color: rgba(239, 230, 213, 0.5); }
 #hzc-wheel .ww-ing.no { color: var(--hzc-danger, #b03a2e); }
 #hzc-wheel .ww-ing.no i { color: var(--hzc-danger, #b03a2e); }
 
+/* ---- hold-R craft radial (one state machine with the hip-fire craft) ------ */
 #hzc-wheel .ww-craft {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 7px;
-  min-height: 22px;
-  font-size: 14px;
+  min-height: 24px;
+  padding-left: 0;
+  font-size: 12.5px;
   font-weight: 700;
-  letter-spacing: 0.2em;
+  letter-spacing: 0.16em;
   color: #ffd34d;
+  transition: padding-left 0.12s;
 }
-#hzc-wheel .ww-craft.disabled { opacity: 0.35; }
+#hzc-wheel .ww-craft.disabled { opacity: 0.4; color: rgba(239, 230, 213, 0.7); }
+#hzc-wheel .ww-craft-ring {
+  position: absolute;
+  left: -4px;
+  top: 50%;
+  width: 24px;
+  height: 24px;
+  margin-top: -12px;
+  opacity: 0;
+  transform: rotate(-90deg);
+  transition: opacity 0.1s;
+}
+#hzc-wheel .ww-craft.holding { padding-left: 28px; }
+#hzc-wheel .ww-craft.holding .ww-craft-ring { opacity: 1; }
+#hzc-wheel .ww-craft-ring .bg {
+  fill: none;
+  stroke: rgba(239, 230, 213, 0.2);
+  stroke-width: 3;
+}
+#hzc-wheel .ww-craft-ring .fg {
+  fill: none;
+  stroke: #ffd34d;
+  stroke-width: 3;
+  stroke-linecap: round;
+  filter: drop-shadow(0 0 4px rgba(255, 211, 77, 0.7));
+}
+#hzc-wheel .ww-craft.disabled .ww-craft-ring .fg { stroke: var(--hzc-danger, #b03a2e); }
 #hzc-wheel .ww-craft.flash { animation: ww-craft-flash 0.45s ease-out; }
 #hzc-wheel .ww-craft.deny { animation: ww-craft-deny 0.3s ease-out; }
 @keyframes ww-craft-flash {
@@ -247,13 +356,19 @@
   50% { transform: translateX(3px); }
 }
 
+/* the hint sits BELOW the wheel, never across the side petals */
 #hzc-wheel .ww-hint {
-  margin-top: 4px;
-  font-size: 10.5px;
-  letter-spacing: 0.18em;
-  color: rgba(239, 230, 213, 0.5);
+  position: absolute;
+  left: 50%;
+  top: 100%;
+  margin-top: 14px;
+  transform: translateX(-50%);
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  color: rgba(239, 230, 213, 0.55);
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 5px;
+  white-space: nowrap;
 }
 #hzc-wheel .ww-hint kbd { font-size: 9px; padding: 1px 4px 2px; }

@@ -3,6 +3,9 @@ import { Machine, rollLoot, glowTexture } from './machine.js';
 import { forceLoaderMesh, canisterMesh, cargoMesh, pulseGlow, rockMesh } from './parts.js';
 import { buildRig, RIGS } from './autorig.js';
 import { GaitController } from './gait.js';
+import { attachRigRuntime, updateRigLOD } from './rig/lod.js';
+import { snapSockets } from './rig/sockets.js';
+import { buildShell, BEHEMOTH_SHELL } from './rig/shells.js';
 
 /**
  * Behemoth: territorial transport-class heavyweight (static sculpt; HZD
@@ -113,6 +116,8 @@ export class Behemoth extends Machine {
     this._chargeDir = new THREE.Vector3();
 
     // --- auto-rig + heavy 4-beat ox gait with big mass-transfer sway
+    buildShell(this, BEHEMOTH_SHELL);
+    attachRigRuntime(this);
     buildRig(this, RIGS.behemoth);
     this.gait = new GaitController(this, this.rig, {
       walk: { stride: 2.7, duty: 0.68, lift: 0.34, offsets: { LF: 0, RH: 0.25, RF: 0.5, LH: 0.75 } },
@@ -125,16 +130,21 @@ export class Behemoth extends Machine {
       stepDustSpeed: 4,
       turnRadius: 1.9,
       lookClampYaw: 0.6,
+      fidgets: [
+        { name: 'graze-dip', head: -0.28, spine: 0.08, dur: 2.6 },
+        { name: 'load-shift', spine: 0.10, tail: 0.14, dur: 1.8 },
+      ],
       stanceFlex: 0.22,
     });
     this.gait.update(0.016, 0);
+    snapSockets(this);          // bone-space sockets sit ON the hull (A44)
     this._deathRoll = 0.34; // the skeleton buckles; the hulk shouldn't barrel-roll
     this._deathSink = 0.03;
   }
 
   /** Momentum crash (research 3.x): knees fold, chin ploughs, settle bounce. */
   onDeathPose(k, deathT) {
-    this.gait.deathPose(k, deathT);
+    this.gait.deathPose(k, deathT, 'heavy');
   }
 
   chooseAttack(dist) {
@@ -369,6 +379,9 @@ export class Behemoth extends Machine {
 
   animate(dt, t) {
     if (this.state === 'dead') return;
+    // perf-tech-04: LOD ring. Past ~40 body heights the rig runs phase-only
+    // (machine-rig-17) so a tall machine still strides on the far ridge.
+    if (updateRigLOD(this) >= 3) { this.gait.updateCheap(dt, t); return; }
     this.gait.update(dt, t);
   }
 }

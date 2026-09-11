@@ -1,0 +1,11 @@
+import puppeteer from 'puppeteer';
+const b = await puppeteer.launch({ headless:'new', args:['--use-angle=metal','--enable-gpu','--ignore-gpu-blocklist'] });
+const p = await b.newPage();
+await p.setViewport({width:1600,height:900});
+p.on('console', m => console.log('['+m.type()+']', m.text().slice(0,300)));
+p.on('pageerror', e => console.log('[pageerror]', String(e).slice(0,600)));
+await p.goto('http://localhost:5214/?shot=1', {waitUntil:'domcontentloaded'});
+await new Promise(r=>setTimeout(r,25000));
+const st = await p.evaluate(()=>({ready:window.__READY__, state:window.__CTX__?.state, loadLabel:document.getElementById('load-label')?.textContent}));
+console.log('STATE', JSON.stringify(st));
+await b.close();

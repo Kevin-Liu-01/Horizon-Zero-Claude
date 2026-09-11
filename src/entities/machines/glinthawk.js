@@ -1,6 +1,11 @@
 import * as THREE from 'three';
 import { Machine, rollLoot, glowTexture } from './machine.js';
 import { canisterMesh, pulseGlow } from './parts.js';
+import { ClipLayerSet } from '../anim/index.js';
+import { attachRigRuntime, updateRigLOD } from './rig/lod.js';
+import { snapSockets } from './rig/sockets.js';
+import { buildShell, hideSculpt, GLINTHAWK_SHELL } from './rig/shells.js';
+import { CorpseGrounder } from './rig/ground.js';
 
 /**
  * Glinthawk: T2 flying acquisition machine (roster-v2 §4). The flock soars
@@ -60,21 +65,24 @@ export class Glinthawk extends Machine {
     // seed altitude so the flock doesn't clip terrain on frame one
     this.position.y = ctx.terrain.getHeight(this.position.x, this.position.z) + this._alt;
 
-    // --- AnimationMixer over the cloned skeleton (clips bind by node name)
+    // --- anim-core ClipLayerSet over the cloned skeleton (docs/ROUND4-
+    // ANIM-CORE.md §4, gate A27b). Round 3 restored its one-shots on
+    // `setTimeout`, so at engine.timeScale 0.02 a 750 ms timer fired after
+    // 0.751 s of WALL clock with 3.1 % of the clip animated — 32.5x early,
+    // leaving the Attack layer holding weight it could not fade. Layers count
+    // down in the same dt the mixer is stepped with, so the restore now lands
+    // one clip duration of ANIMATION time later at any timeScale.
     const src = ctx.assets.models.glinthawk;
     this.mixer = new THREE.AnimationMixer(this.model);
+    this.layers = new ClipLayerSet(this.mixer, { name: 'glinthawk', owner: 'machine-rig' });
     this._act = {};
     for (const clip of src.animations ?? []) {
       const short = clip.name.split('|').pop();
-      const action = this.mixer.clipAction(clip);
-      if (short === 'Idle') {
-        action.play(); // wing-flap base layer
-      } else if (short === 'Attack' || short === 'Shoot' || short === 'Dead') {
-        action.setLoop(THREE.LoopOnce, 1);
-        action.clampWhenFinished = true;
-      }
-      this._act[short] = action;
+      const layer = this.layers.add(short, clip, { loop: short === 'Idle' });
+      if (short === 'Idle') layer.action.play();      // wing-flap base layer
+      this._act[short] = layer.action;
     }
+    this.layers.base('Idle');
 
     // sensor: the red mono-eye material is already state-wired (style pass);
     // add the soft halo + weak point on the eye
@@ -103,6 +111,17 @@ export class Glinthawk extends Machine {
       { id: 'wire', min: 1, max: 2 },
       { id: 'echo-shell', n: 1, chance: 0.35 },
     ]);
+
+    // --- silhouette pass (V26 / machine-rig-01): the sculpt is a
+    // see-through armature; a Glinthawk has WINGS. Three swept panels a
+    // side, a leading spar, primary blades, a keel and a tail fan.
+    buildShell(this, GLINTHAWK_SHELL, {});
+    attachRigRuntime(this);
+    // the SHELL is the machine now (machine-rig-01): retire the donor
+    // sculpt AFTER the rig binds and the merge pass runs, and BEFORE the
+    // socket proxy is built, so the hull every gate measures is the shell
+    hideSculpt(this);
+    snapSockets(this);
   }
 
   tickCooldowns(dt) {
@@ -351,34 +370,23 @@ export class Glinthawk extends Machine {
     });
   }
 
-  /** Fade a one-shot clip in over the base flap layer. */
+  /**
+   * Fade a one-shot clip in over the base flap layer, restoring on MIXER
+   * time (gate A27b). The Round-3 body scheduled the hand-back with
+   * `setTimeout(clipDuration * 1000)`; `src/main.js` scales the whole
+   * simulation, so Concentration (timeScale 0.02) fired that timer 32.5x
+   * early and left the Attack layer stuck at full weight.
+   */
   _oneShot(name, fade = 0.25) {
-    const a = this._act[name];
-    if (!a) return;
-    a.reset();
-    a.setEffectiveWeight(1);
-    a.fadeIn(fade);
-    a.play();
-    const idle = this._act.Idle;
-    if (idle) {
-      idle.crossFadeTo?.(a, fade, false);
-      // restore the flap after the one-shot ends
-      setTimeout(() => {
-        if (this.alive && this._act.Idle) {
-          a.fadeOut(0.3);
-          idle.reset();
-          idle.fadeIn(0.3);
-          idle.play();
-        }
-      }, (a.getClip().duration / (a.timeScale || 1)) * 1000);
-    }
+    this.layers.oneShot(name, { fade });
   }
 
   /* ---------------------- burn = drop (crit) ---------------------- */
 
   animate(dt, t) {
     if (this.state === 'dead') return;
-    this.mixer.update(dt);
+    updateRigLOD(this);
+    this.layers.update(dt);   // advances the layer clocks AND the mixer
 
     // canon fire weakness: burning wings can't hold altitude
     if (this.burnT > 0 && this._downT <= 0 && this.alive) {
@@ -426,14 +434,10 @@ export class Glinthawk extends Machine {
 
   onStateChange(name) {
     if (name === 'dead') {
-      const dead = this._act.Dead;
-      if (dead) {
-        this._act.Idle?.fadeOut(0.2);
-        this._act.Attack?.fadeOut(0.1);
-        this._act.Shoot?.fadeOut(0.1);
-        dead.reset();
-        dead.fadeIn(0.15);
-        dead.play();
+      // authored splayed downed pose held on the last frame, on mixer time
+      // (machine-rig-16): `hold` + `restore: null`, never a wall-clock timer
+      if (this.layers.has('Dead')) {
+        this.layers.oneShot('Dead', { fade: 0.15, hold: 60, restore: null, holdEnd: true });
       }
       this._fallV = 2;
       this._crashed = this.position.y
@@ -444,7 +448,7 @@ export class Glinthawk extends Machine {
   /** Bespoke death: tumble, crash, settle — then the loot beacon. */
   _updateDeath(dt) {
     this._deathT += dt;
-    this.mixer.update(dt);
+    this.layers.update(dt);
     const g = this.ctx.terrain.getHeight(this.position.x, this.position.z);
     if (!this._crashed) {
       this._fallV += 24 * dt;
@@ -469,9 +473,32 @@ export class Glinthawk extends Machine {
     } else {
       // settle into the wreck roll
       this.position.y = THREE.MathUtils.damp(this.position.y, g + 0.22, 6, dt);
+      // A 66-degree roll on a 5 m wingspan puts the corpse's axis-aligned box
+      // ~2.5 m below its lowest real vertex, and gate A47 measures that box:
+      // the ground solve then had to fight itself to satisfy both the box and
+      // the audit's posed-vertex test, and lost. A downed Glinthawk lies
+      // SPLAYED on its keel with both wings out — which is the roster's own
+      // description of the pose and, not coincidentally, the pose whose box
+      // and whose geometry agree.
       this.body.rotation.z = THREE.MathUtils.damp(
-        this.body.rotation.z, 1.15 * this._deathSide, 4, dt);
-      this.body.rotation.x = THREE.MathUtils.damp(this.body.rotation.x, 0.2, 4, dt);
+        this.body.rotation.z, 0.05 * this._deathSide, 4, dt);
+      // FLAT, on both axes. A 5.2 m wingspan tipped even 0.2 rad drops the
+      // corpse's axis-aligned box half a metre below its lowest real vertex,
+      // and gate A47 measures that box while the audit measures the vertex:
+      // the ground solve cannot satisfy both when they disagree by more than
+      // the acceptance band is wide. A downed Glinthawk lies splayed on its
+      // keel — which is the roster pose anyway.
+      this.body.rotation.x = THREE.MathUtils.damp(this.body.rotation.x, 0.05, 4, dt);
+      // ground-contact solve: the wreck settles ON the soil (A47). This one
+      // owns body.position.y across frames, so the grounder runs incremental.
+      if (!this._grounder) {
+        // The Glinthawk's whole visible hull is a kitbash shell parented to the
+        // ROOT BONE, so its bind box and its posed geometry ride the same
+        // transform: the corpse solve's spread handle has no leverage here and
+        // the wreck has to lie flat instead (see the rotation damping above).
+        this._grounder = new CorpseGrounder(this, { mode: 'incremental' });
+      }
+      this._grounder.update(this._deathT);
       if (!this._beaconSpawned && this._deathT > (this._crashT ?? 0) + 0.9) {
         this._beaconSpawned = true;
         this._spawnBeacon();

@@ -88,15 +88,28 @@ export function canisterMesh({ color = 0xff7a1e, r = 0.21, h = 0.6, shell = 0x9a
 /** Hex armor plate lying in the XZ plane (+Y = outward normal). */
 export function plateMesh({ w = 0.7, l = 0.9, t = 0.1, color = 0xd6dade, trim = 0x2e3339 } = {}) {
   const g = new THREE.Group();
-  const plate = new THREE.Mesh(new THREE.CylinderGeometry(0.5, 0.6, t, 6), metalMat(color, 0.46, 0.7));
-  plate.scale.set(w, 1, l);
-  g.add(plate);
-  // recessed under-frame hints at machine guts below the plate
-  const frame = new THREE.Mesh(new THREE.CylinderGeometry(0.44, 0.5, t * 0.6, 6), metalMat(trim, 0.6, 0.5));
-  frame.position.y = -t * 0.5;
-  frame.scale.set(w, 1, l);
-  g.add(frame);
+  // perf-tech-14: plate + recessed under-frame are ONE draw. The frame's
+  // darker tone rides in vertex colours instead of a second material — every
+  // machine carries two to four of these, and at eight machines on screen the
+  // second mesh was costing more than it was showing.
+  const top = new THREE.CylinderGeometry(0.5, 0.6, t, 6).scale(w, 1, l);
+  const under = new THREE.CylinderGeometry(0.44, 0.5, t * 0.6, 6)
+    .scale(w, 1, l).translate(0, -t * 0.5, 0);
+  tintGeo(top, 1);
+  tintGeo(under, 0.42);
+  const mat = metalMat(color, 0.46, 0.7);
+  mat.vertexColors = true;
+  g.add(new THREE.Mesh(mergeGeometries([top, under]), mat));
   return noShadows(g);
+}
+
+/** Bake a flat brightness multiplier into a geometry's vertex colours. */
+function tintGeo(geo, k) {
+  const n = geo.attributes.position.count;
+  const c = new Float32Array(n * 3);
+  c.fill(k);
+  geo.setAttribute('color', new THREE.BufferAttribute(c, 3));
+  return geo;
 }
 
 /** Thin sensor antenna with a state-colored tip light. Authored up along +Y. */
@@ -184,17 +197,16 @@ export function radarMesh({ accent = 0x9fd8ff } = {}) {
  *  The ONLY part that casts shadows (signature pickup must sit visually). */
 export function discLauncherMesh({ accent = 0x8fd8ff } = {}) {
   const g = new THREE.Group();
-  const body = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.62, 1.5), metalMat(0x7d8590, 0.42));
-  body.position.y = 0.34;
-  g.add(body);
-  // 3 barrels: one material, merged
-  const barrelGeos = [];
+  // turret body + all three barrels in ONE draw (perf-tech-14)
+  const geos = [tintGeo(new THREE.BoxGeometry(0.6, 0.62, 1.5).translate(0, 0.34, 0), 1.15)];
   for (let i = 0; i < 3; i++) {
-    barrelGeos.push(new THREE.CylinderGeometry(0.11, 0.13, 0.55, 10)
-      .rotateX(Math.PI / 2).translate(0, 0.16 + i * 0.24, 0.85));
+    geos.push(tintGeo(new THREE.CylinderGeometry(0.11, 0.13, 0.55, 10)
+      .rotateX(Math.PI / 2).translate(0, 0.16 + i * 0.24, 0.85), 0.55));
   }
-  const barrels = new THREE.Mesh(mergeGeometries(barrelGeos), metalMat(0x3d434b, 0.35));
-  g.add(barrels);
+  const hullMat = metalMat(0x7d8590, 0.4);
+  hullMat.vertexColors = true;
+  const body = new THREE.Mesh(mergeGeometries(geos), hullMat);
+  g.add(body);
   const vent = new THREE.Mesh(new THREE.BoxGeometry(0.64, 0.09, 0.9), emissiveMat(accent, 1.8));
   vent.position.set(0, 0.66, -0.15);
   g.add(vent);
@@ -206,7 +218,7 @@ export function discLauncherMesh({ accent = 0x8fd8ff } = {}) {
   g.userData.pulseSeed = Math.random() * 7;
   noShadows(g);
   body.castShadow = true;
-  barrels.castShadow = true;
+  body.userData.keepShadow = true;
   return g;
 }
 
@@ -263,14 +275,14 @@ export function coreMesh({ color = 0xff9a3d, r = 0.32 } = {}) {
 /** Behemoth belly Cargo Hold: banded ochre drum, slotted vertically. */
 export function cargoMesh() {
   const g = new THREE.Group();
-  const drum = new THREE.Mesh(new THREE.CylinderGeometry(0.58, 0.58, 1.5, 12), metalMat(0xb08a52, 0.55, 0.55));
-  g.add(drum);
-  // both retaining bands: one material, merged
-  const bandGeo = mergeGeometries([
-    new THREE.TorusGeometry(0.585, 0.05, 6, 16).rotateX(Math.PI / 2).translate(0, -0.5, 0),
-    new THREE.TorusGeometry(0.585, 0.05, 6, 16).rotateX(Math.PI / 2).translate(0, 0.5, 0),
-  ]);
-  g.add(new THREE.Mesh(bandGeo, metalMat(0x5c636b, 0.4)));
+  // drum + both retaining bands in ONE draw (perf-tech-14)
+  const cargoMat = metalMat(0xb08a52, 0.55, 0.55);
+  cargoMat.vertexColors = true;
+  g.add(new THREE.Mesh(mergeGeometries([
+    tintGeo(new THREE.CylinderGeometry(0.58, 0.58, 1.5, 12), 1),
+    tintGeo(new THREE.TorusGeometry(0.585, 0.05, 6, 16).rotateX(Math.PI / 2).translate(0, -0.5, 0), 0.5),
+    tintGeo(new THREE.TorusGeometry(0.585, 0.05, 6, 16).rotateX(Math.PI / 2).translate(0, 0.5, 0), 0.5),
+  ]), cargoMat));
   const seam = new THREE.Mesh(new THREE.BoxGeometry(0.12, 1.3, 0.04), emissiveMat(0xffc23d, 1.4));
   seam.position.z = 0.57;
   g.add(seam);
@@ -280,17 +292,16 @@ export function cargoMesh() {
 /** Thunderjaw tail-tip: bladed counterweight spike, tip pointing -Z (rearward). */
 export function tailTipMesh() {
   const g = new THREE.Group();
-  const spike = new THREE.Mesh(new THREE.ConeGeometry(0.34, 1.7, 8), metalMat(0x7d8590, 0.4));
-  spike.rotation.x = -Math.PI / 2; // +Y -> -Z
-  spike.position.z = -0.6;
-  g.add(spike);
-  // both fins: one material, merged
-  const finGeos = [];
+  // spike + both fins in ONE draw (perf-tech-14), fin tone in vertex colours
+  const geos = [tintGeo(new THREE.ConeGeometry(0.34, 1.7, 8)
+    .rotateX(-Math.PI / 2).translate(0, 0, -0.6), 0.86)];
   for (const side of [1, -1]) {
-    finGeos.push(new THREE.BoxGeometry(0.06, 0.62, 0.9)
-      .rotateZ(side * 0.35).translate(side * 0.22, 0.1, 0.15));
+    geos.push(tintGeo(new THREE.BoxGeometry(0.06, 0.62, 0.9)
+      .rotateZ(side * 0.35).translate(side * 0.22, 0.1, 0.15), 1.18));
   }
-  g.add(new THREE.Mesh(mergeGeometries(finGeos), metalMat(0xaab2bc, 0.36)));
+  const tailMat = metalMat(0x8f97a2, 0.38);
+  tailMat.vertexColors = true;
+  g.add(new THREE.Mesh(mergeGeometries(geos), tailMat));
   // tail light is a SENSOR: state-colored, dies out on death
   const light = new THREE.Mesh(new THREE.SphereGeometry(0.09, 8, 6), emissiveMat(0xff5a3c, 2));
   light.material.userData.sensor = true;

@@ -6,6 +6,9 @@ import {
 } from './parts.js';
 import { buildRig, RIGS } from './autorig.js';
 import { GaitController } from './gait.js';
+import { attachRigRuntime, updateRigLOD } from './rig/lod.js';
+import { snapSockets } from './rig/sockets.js';
+import { buildShell, hideSculpt, THUNDERJAW_SHELL } from './rig/shells.js';
 
 /**
  * Thunderjaw: apex boss (HZD level 27). Stomp shockwave, tail sweep,
@@ -118,10 +121,13 @@ export class Thunderjaw extends Machine {
     this.addPart({
       name: 'tail-tip', displayName: 'Tail',
       mesh: tailTipMesh(),
-      // the sculpt's tail curl defeats hull rays — placed visually on the
-      // upcurved crest, spike tilted to continue the curve
-      pos: [0.4, h * 0.74, -len * 0.28], snap: false,
-      rot: [0.6, 0, 0],
+      // ROUND-4 FIX ROUND 1: authored against the SHELL, which is the hull
+      // now that the donor sculpt is retired — the old position was on the
+      // sculpt's upcurved crest, 2 m above the level counterweight tail, and
+      // the socket snap had to drag it there every spawn (and lost 0.09 m of
+      // the budget to bone divergence once the corpse collapsed).
+      pos: [0, 4.86, -4.30], snap: true, snapTarget: [0, 4.86, -3.6],
+      rot: [0.2, 0, 0],
       tearHp: 90, linkedAttack: 'tail', settleY: 0.3,
       loot: [{ id: 'metal-shards', n: 15 }, { id: 'wire', n: 2 }],
     });
@@ -194,14 +200,15 @@ export class Thunderjaw extends Machine {
       [0, h * 0.26, len * 0.3], [1.25, 0, 0]);
     coverPlate('head-plate', this._wpHead, 0x9fd8ff,
       [0, h * 0.36, len * 0.34], [0.4, 0, 0]);
-    const plateSpots = [[1, -0.18, 0.42], [-1, -0.18, 0.42]];
+    // flank plates, authored on the shell's own rib line (see tail-tip)
+    const plateSpots = [[1, 0.9, 4.35], [-1, 0.9, 4.35]];
     for (let i = 0; i < plateSpots.length; i++) {
-      const [sx, sz, sy] = plateSpots[i];
+      const [sx, pz, py] = plateSpots[i];
       this.addPart({
         name: `armor-plate-${i + 1}`, displayName: 'Armor Plate',
         mesh: plateMesh({ w: 1.05, l: 1.4, t: 0.12, color: 0xc9ced4 }),
-        pos: [sx * w * 0.55, h * sy, len * sz], snap: true,
-        snapTarget: [sx * -w * 0.1, h * sy, len * sz],
+        pos: [sx * 1.45, py, pz], snap: true,
+        snapTarget: [sx * 0.2, py, pz],
         tearHp: 50, settleY: 0.14,
         loot: [{ id: 'metal-shards', n: 6 }],
         onTorn: (part, m) => {
@@ -231,6 +238,8 @@ export class Thunderjaw extends Machine {
 
     // --- auto-rig: bipedal T-rex stomp — hind legs drive, the tail chain
     // counterbalances laterally, footfalls dip the whole chassis
+    buildShell(this, THUNDERJAW_SHELL, { rig: RIGS.thunderjaw });
+    attachRigRuntime(this);
     buildRig(this, RIGS.thunderjaw);
     this.gait = new GaitController(this, this.rig, {
       walk: { stride: 3.7, duty: 0.62, lift: 0.8, offsets: { L: 0, R: 0.5 } },
@@ -244,21 +253,31 @@ export class Thunderjaw extends Machine {
       turnRadius: 2.6,
       pelvisFollow: 0.85,
       lookClampYaw: 0.6,
+      fidgets: [
+        { name: 'skull-sweep', head: 0.34, dur: 2.4 },
+        { name: 'tail-settle', tail: 0.22, spine: 0.05, dur: 2.0 },
+        { name: 'shoulder-set', spine: 0.09, dur: 1.4 },
+      ],
       stanceFlex: 0.5,     // dino knees stay flexed — reach headroom mid-stride
     });
     this.gait.update(0.016, 0);
+    // the SHELL is the machine now (machine-rig-01): retire the donor
+    // sculpt AFTER the rig binds and the merge pass runs, and BEFORE the
+    // socket proxy is built, so the hull every gate measures is the shell
+    hideSculpt(this);
+    snapSockets(this);          // bone-space sockets sit ON the hull (A44)
     this._deathRoll = 0.26; // a 9 m apex collapses onto buckled legs, no barrel roll
     this._deathSink = 0.02;
   }
 
   /** Apex collapse: legs buckle, neck slams, the great tail crashes last. */
   onDeathPose(k, deathT) {
-    this.gait.deathPose(k, deathT);
+    this.gait.deathPose(k, deathT, 'biped');
   }
 
   /** Heavy footstep events for audio/rumble — driven by ACTUAL footfalls now.
    *  Combat only, so calm patrol half a map away doesn't flood the mixer. */
-  onFootfall(leg, li, speed, runK) {
+  onFootfall(footId, li, speed, runK) {
     const engaged = this.state === 'attack' || this.state === 'alert';
     if (engaged && this.playerDist < 140) {
       this.ctx.events.emit('machine-attack', { machine: this, kind: 'step' });
@@ -458,6 +477,17 @@ export class Thunderjaw extends Machine {
           : this.heading;
       },
       onUpdate: (a, dt) => {
+        // AUTHORED LIMB KEYFRAMES (machine-rig-08, gate V27): the skull drops
+        // and thrusts forward onto the sweep line while the hips brace low.
+        {
+          const pose = this.gait.pose;
+          const k = a.phase === 'windup' ? a.phaseT
+            : a.phase === 'strike' ? 1 : (1 - a.phaseT);
+          pose.headPitch = 0.34 * k;
+          pose.spineRear = -0.16 * k;
+          pose.crouch = 0.30 * k;
+          pose.tailLift = -0.12 * k;
+        }
         if (a.phase === 'windup') {
           glow.scale.setScalar(0.4 + a.phaseT * 2.2);
           glowMat.opacity = a.phaseT * 0.9;
@@ -508,6 +538,8 @@ export class Thunderjaw extends Machine {
         this.ctx.scene.remove(core);
         this.ctx.scene.remove(outer);
         glowMat.dispose(); coreMat.dispose(); outerMat.dispose();
+        const pose = this.gait.pose;
+        pose.headPitch = 0; pose.spineRear = 0; pose.crouch = 0; pose.tailLift = 0;
       },
     };
   }
@@ -601,6 +633,16 @@ export class Thunderjaw extends Machine {
         from.y = this.ctx.terrain.getHeight(from.x, from.z);
       },
       onUpdate: (a, dt) => {
+        {
+          // machine-rig-08: the jaw cannons brace — head down, forelimb-free
+          // biped hips widen, tail counterweights the recoil
+          const pose = this.gait.pose;
+          const k = a.phase === 'windup' ? a.phaseT
+            : a.phase === 'strike' ? 1 : (1 - a.phaseT);
+          pose.headPitch = 0.26 * k;
+          pose.crouch = 0.20 * k;
+          pose.tailLift = 0.14 * k;
+        }
         if (a.phase === 'windup') {
           this.body.rotation.x = 0.05 * a.phaseT; // muzzle dips as jaw braces
           this._eyeFlare = 0.8 + a.phaseT;
@@ -626,7 +668,11 @@ export class Thunderjaw extends Machine {
           this.body.rotation.x = 0.05 * (1 - a.phaseT);
         }
       },
-      cleanup: () => { this.body.rotation.x = 0; },
+      cleanup: () => {
+        this.body.rotation.x = 0;
+        const pose = this.gait.pose;
+        pose.headPitch = 0; pose.crouch = 0; pose.tailLift = 0;
+      },
     };
   }
 
@@ -747,6 +793,16 @@ export class Thunderjaw extends Machine {
       kind: 'disc',
       windup: 0.6, strike: 1.1, recover: 0.7, cooldown: 1.8,
       onUpdate: (a) => {
+        // AUTHORED LIMB KEYFRAMES (machine-rig-08, gate V27): the LAUNCHERS
+        // elevate and the hips brace wide — a Thunderjaw firing discs is not
+        // the idle stance with a pitched body.
+        const pose = this.gait.pose;
+        const elev = a.phase === 'windup' ? a.phaseT
+          : a.phase === 'strike' ? 1 : (1 - a.phaseT);
+        this._elevateLaunchers(elev);
+        pose.crouch = 0.22 * elev;              // hips settle onto the recoil
+        pose.tailLift = 0.18 * elev;
+        pose.headPitch = -0.12 * elev;          // skull lifts clear of the arc
         if (a.phase === 'windup') {
           this.body.rotation.x = -0.08 * a.phaseT;
         } else if (a.phase === 'strike') {
@@ -762,8 +818,23 @@ export class Thunderjaw extends Machine {
           this.body.rotation.x = -0.08 * (1 - a.phaseT);
         }
       },
-      cleanup: () => { this.body.rotation.x = 0; },
+      cleanup: () => {
+        this.body.rotation.x = 0;
+        this._elevateLaunchers(0);
+        this.gait.pose.crouch = 0;
+        this.gait.pose.tailLift = 0;
+        this.gait.pose.headPitch = 0;
+      },
     };
+  }
+
+  /** Pitch both disc launchers up by `k` (0..1) — the firing pose. */
+  _elevateLaunchers(k) {
+    for (const p of this.parts) {
+      if (!p.attached || !p.name.startsWith('disc-launcher')) continue;
+      p.mesh.rotation.x = (p.mesh.userData.baseRotX ?? (p.mesh.userData.baseRotX = p.mesh.rotation.x))
+        - 0.42 * k;
+    }
   }
 
   /* --------------------------- locomotion --------------------------- */
@@ -779,6 +850,9 @@ export class Thunderjaw extends Machine {
 
   animate(dt, t) {
     if (this.state === 'dead') return;
+    // perf-tech-04: LOD ring. Past ~40 body heights the rig runs phase-only
+    // (machine-rig-17) so a tall machine still strides on the far ridge.
+    if (updateRigLOD(this) >= 3) { this.gait.updateCheap(dt, t); return; }
     this.gait.update(dt, t);
   }
 }

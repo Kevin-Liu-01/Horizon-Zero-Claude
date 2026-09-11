@@ -1,4 +1,7 @@
 import * as THREE from 'three';
+import { BoneSpace, RestPose } from '../anim/index.js';
+import { buildHullProxy } from './rig/sockets.js';
+import { skinnedBounds } from './rig/lod.js';
 
 /**
  * Runtime auto-rig: converts a static machine sculpt into a SkinnedMesh with
@@ -243,6 +246,34 @@ export function buildRig(machine, spec) {
     segs.push([L.knee, L.ankle, L.r, li, boneIndex.get(legs[li].shin)]);
     segs.push([L.ankle, L.toe, L.r * 1.1, li, boneIndex.get(legs[li].foot)]);
   }
+  /**
+   * THE INBOARD RULE (opt-in: `spec.legInboard`, in metres; absent = off).
+   *
+   * `legGateY` is a horizontal cut, and it is enough for a machine whose
+   * trunk rides clear above its hips. It is not enough for the soft
+   * underbelly, which by construction hangs BELOW the hips and yet is body,
+   * not leg: on the Scrapper the belly muscle dips to y 0.78 under a 0.80
+   * gate, lands 0.03 m from a thigh capsule axis, wins the capsule's 1.6x
+   * boost outright and is then torn off the machine the first time the gait
+   * swings that thigh.
+   *
+   * A leg's own geometry is always OUTBOARD: a plate drawn on a leg straddles
+   * the hip's x, so its innermost vertices are half a plate inboard of the
+   * joint and no more. Anything further toward the sagittal plane than that
+   * is trunk. `legInboard` is that half-plate, per species, and it costs one
+   * subtraction per vertex per leg segment.
+   *
+   * `min` per leg, so a leg whose ankle tucks under the body (a digitigrade
+   * hind leg) is judged on its widest joint rather than its narrowest.
+   */
+  const inboardLimit = [];
+  if (spec.legInboard > 0) {
+    for (const L of spec.legs) {
+      const widest = Math.max(Math.abs(L.hip[0]), Math.abs(L.knee[0]),
+                              Math.abs(L.ankle[0]), Math.abs(L.toe[0]));
+      inboardLimit.push(Math.max(0, widest - spec.legInboard));
+    }
+  }
 
   const toBody = _m1;
   const meshes = [];
@@ -266,6 +297,9 @@ export function buildRig(machine, spec) {
         let i0 = -1, w0 = 0, i1 = -1, w1 = 0;
         for (const [a, b, r, legIdx, bi] of segs) {
           if (legIdx >= 0 && py > spec.legGateY) continue; // legs never grab high verts
+          // ...nor anything further inboard than a leg plate reaches (above)
+          if (legIdx >= 0 && inboardLimit.length
+              && Math.abs(px) < inboardLimit[legIdx]) continue;
           const d = segDist(px, py, pz, a, b);
           if (d >= r) continue;
           let w = 1 - d / r;
@@ -307,7 +341,10 @@ export function buildRig(machine, spec) {
       geo.userData.rigKind = machine.kind;
       // posed legs can exceed the bind-pose bounds — keep culling honest
       if (!geo.boundingSphere) geo.computeBoundingSphere();
-      geo.boundingSphere.radius *= 1.6;
+      if (!geo.userData.boundsPadded) {
+        geo.boundingSphere.radius *= 1.6;
+        geo.userData.boundsPadded = 1.6;
+      }
     }
   }
 
@@ -322,10 +359,11 @@ export function buildRig(machine, spec) {
     sk.scale.copy(mesh.scale);
     sk.castShadow = mesh.castShadow;
     sk.receiveShadow = mesh.receiveShadow;
-    // posed skeletons (death crumple, stomps) push vertices far outside the
-    // bind-pose bounds; per-mesh culling would pop the hull out near the
-    // frustum edge. 3-4 machines x a few meshes — skip culling entirely.
-    sk.frustumCulled = false;
+    // ROUND 4 (perf-tech-04): culling stays ON. A posed skeleton pushes
+    // vertices outside the bind box, so the bind sphere is padded (x1.6 above,
+    // x2.2 in `skinnedBounds`) instead of the cull being switched off — a
+    // machine behind the camera used to cost its full mesh count every frame.
+    sk.frustumCulled = true;
     sk.userData = mesh.userData; // keeps userData.machine tagging (raycasts)
     const parent = mesh.parent;
     const idx = parent.children.indexOf(mesh);
@@ -365,11 +403,26 @@ export function buildRig(machine, spec) {
   };
 
   // rest-pose snapshot BEFORE stance correction (gait resets to rest, then
-  // the correction is re-applied as part of the per-frame IK ground targets)
-  rig.rest = new Map();
-  for (const b of boneList) rig.rest.set(b, b.quaternion.clone());
+  // the correction is re-applied as part of the per-frame IK ground targets).
+  //
+  // ROUND 4 (perf-tech-11): this is anim-core's `RestPose` over one
+  // `BoneSpace`, not a private `Map<Bone, Quaternion>`. The Map is kept as a
+  // VIEW (`toMap()`) so the anim registry's `machineLocal` probe and any
+  // Round-3 call site still read the same bind truth.
+  rig.space = new BoneSpace(rigRoot, { all: true });
+  rig.restPose = new RestPose({ space: rig.space });
+  rig.rest = rig.restPose.toMap();
   rig.restPelvisY = pelvis.position.y;
 
+  // registry probe surface: `_rot` is a literal forward to BoneSpace, so
+  // `__CTX__.anim.audit()` measures 0 divergence rather than guessing.
+  machine._rest = rig.rest;
+  machine._rot = (bone, axis, angle) => rig.space.rotLocal(bone, axis, angle);
+
   machine.rig = rig;
+  skinnedBounds(machine.model, 2.2);
+  // bone-space socket proxy (machine-rig-02): sampled AFTER the skeleton
+  // exists so every sample lands in its dominant bone's frame
+  buildHullProxy(machine);
   return rig;
 }

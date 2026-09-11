@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { clone as skeletonClone } from 'three/examples/jsm/utils/SkeletonUtils.js';
 import { Retargeter } from './retargeter.js';
 import { UAL_TO_ALOY, UAL_HIP, AIM_RULES, CONTACT_BONES } from './boneMap.js';
+import { register } from './registry.js';
 
 const { clamp } = THREE.MathUtils;
 
@@ -42,15 +43,83 @@ export const CLIPS = {
   walk: 'Walk_Loop',
   jog: 'Jog_Fwd_Loop',
   sprint: 'Sprint_Loop',
+  strafe: 'Walk_Loop',
   crouchIdle: 'Crouch_Idle_Loop',
   crouchFwd: 'Crouch_Fwd_Loop',
   roll: 'Roll_RM',
   death: 'Death01',
+  // Round 4 (player-anim): reactions, traversal and interaction. All six were
+  // baked-ready in the pack and none was wired — hits used a 0.14 rad spine
+  // nudge no film could see, there was no jump pose at all, and picking an
+  // item up did not move her.
   hitChest: 'Hit_Chest',
+  hitHead: 'Hit_Head',
+  jumpStart: 'Jump_Start',
+  jumpLoop: 'Jump_Loop',
+  jumpLand: 'Jump_Land',
+  interact: 'Interact',
+  pickup: 'PickUp_Table',
 };
 
+/**
+ * Per-slot bake options. `amp` is the retargeter's amplitude warp (see
+ * Retargeter._ampWarp) and it exists because the pack has exactly one forward
+ * run and no strafe at all:
+ *
+ *  - `jog` at amp 1 is a 6.05 m/s, 2.77 m-per-step bound with 71% of the loop
+ *    airborne. Phase-locked down to the 4.6 m/s the player actually runs it
+ *    plays at 0.76x and reads as a moon jump (2.09 steps/s, 0.55 flight). Warped
+ *    to ~3.4 m/s it plays near 1.25x at run speed: ~2.6 steps/s, ~1.7 m steps.
+ *  - `strafe` is Walk_Loop shortened to a quick shuffle. Lateral travel has to
+ *    be a YAWED forward loop (no strafe clips exist), and the yaw a forward
+ *    stride can absorb before the legs cross is bounded by the stride LENGTH:
+ *    a 0.65 m cycle can be yawed ~78 deg with the feet still on their own side
+ *    of the body, where the 1.44 m walk cycle crossed them at 60 deg.
+ */
+export const SLOT_OPTS = {
+  jog: { amp: 0.52 },
+  strafe: { name: 'Strafe_Loop', cadence: 2.9, speed: 'aim', ampRange: [0.35, 0.95] },
+  sprint: { cadence: 3.25, speed: 'sprint', ampRange: [0.70, 1.0] },
+};
+
+/**
+ * Canonical ground speeds. `player.speeds` is the source of truth and is read
+ * at bake time when it exists (`ClipLibrary.speeds`), but `ctx.player` is not
+ * assigned until `new Player(ctx)` RETURNS and the animator is constructed
+ * inside that constructor — so this is the value the bake uses on a cold boot.
+ * `PlayerAnimator` compares the two on its first update and says so loudly if
+ * `player-control` ever moves the canon out from under the bake.
+ */
+export const CANON_SPEEDS = { walk: 1.5, crouch: 1.4, crouchAim: 1.05, aim: 1.35, jog: 5.0, sprint: 6.8 };
+
+/**
+ * Cadence retime (player-anim, `A28-run-cadence`).
+ *
+ * A phase-locked loop's step rate is `speed / cycleDistance`, so the ONLY way
+ * to change the cadence at a given travel speed without skating the foot is to
+ * change how far the clip's own stride carries it — which is what the
+ * retargeter's amplitude warp does. `Sprint_Loop` bakes at a 5.06 m cycle,
+ * which at the 6.8 m/s canon is 2.69 steps/s before warp (measured 2.97): a
+ * long, floaty bound, not HZD's drive. `Strafe_Loop` had the opposite problem
+ * — amp 0.42 shrank the cycle to 0.62 m and the side-step became a 4.4
+ * steps/s shuffle.
+ *
+ * The amp is SOLVED, not guessed: bake once at amp 1, measure the real cycle
+ * distance the retarget produced, and re-bake at the ratio that puts the
+ * cadence on target at the published speed. One extra bake per retimed slot
+ * (~12 ms, once per boot).
+ */
+function solveAmp(entry, opts, speeds) {
+  const spd = speeds[opts.speed] ?? CANON_SPEEDS[opts.speed] ?? 0;
+  const cyc = entry?.gait?.cycleDist ?? 0;
+  if (!(spd > 0.05) || !(cyc > 0.05) || !(opts.cadence > 0)) return 1;
+  const wantCycle = spd / (opts.cadence / 2);      // 2 steps per gait cycle
+  const [lo, hi] = opts.ampRange || [0.4, 1.6];
+  return clamp(wantCycle / cyc, lo, hi);
+}
+
 /** Slots that are ground-locomotion loops (phase-driven at speed). */
-export const GAIT_SLOTS = ['walk', 'jog', 'sprint', 'crouchFwd'];
+export const GAIT_SLOTS = ['walk', 'jog', 'sprint', 'strafe', 'crouchFwd'];
 
 const FOOT_L = 'foot_l_0189', FOOT_R = 'foot_r_0215';
 const BALL_L = 'ball_l_0190', BALL_R = 'ball_r_0216';
@@ -228,7 +297,8 @@ export class ClipLibrary {
    * @param {{root: THREE.Object3D}} aloyModel  assets.models.aloy
    * @param {{scene: THREE.Object3D, animations: THREE.AnimationClip[]}} ualGltf  assets.anims.ual
    */
-  constructor(aloyModel, ualGltf) {
+  constructor(aloyModel, ualGltf, speeds) {
+    this.speeds = { ...CANON_SPEEDS, ...(speeds || {}) };
     this.rig = skeletonClone(aloyModel.root);
     this.rig.position.set(0, 0, 0);
     this.rig.rotation.set(0, 0, 0);
@@ -244,16 +314,44 @@ export class ClipLibrary {
     this.animatedNames = new Set(this.retargeter.animatedTargetNames());
     this.entries = new Map(); // slot -> { slot, name, clip, info, gait }
     this.bakeMs = 0;
+    register({
+      id: 'anim/clipLibrary', file: 'src/entities/anim/clipLibrary.js',
+      owner: 'anim-core', rig: 'aloy', convention: 'BoneSpace (via Retargeter)',
+      status: 'migrated', bones: this.animatedNames.size,
+    });
   }
 
   /** One library per boot: the bake is deterministic and the clips bind by name. */
-  static shared(assets) {
+  static shared(assets, speeds) {
     if (_shared) return _shared;
     const aloy = assets?.models?.aloy;
     const ual = assets?.anims?.ual;
     if (!aloy || !ual) return null;
-    _shared = new ClipLibrary(aloy, ual);
+    _shared = new ClipLibrary(aloy, ual, speeds);
     return _shared;
+  }
+
+  /**
+   * Does a retimed slot still sit on its cadence target for these speeds?
+   * `PlayerAnimator` calls this on the first update, when `ctx.player` finally
+   * exists, so a canon change in `player.js` shows up as a named warning
+   * instead of a gate that quietly drifts off its bar.
+   */
+  cadenceCheck(speeds) {
+    const rows = [];
+    for (const [slot, so] of Object.entries(SLOT_OPTS)) {
+      if (!so.cadence) continue;
+      const e = this.entries.get(slot);
+      if (!e || !(e.gait.cycleDist > 0.05)) continue;
+      const spd = speeds?.[so.speed] ?? this.speeds[so.speed];
+      const got = 2 * spd / e.gait.cycleDist;
+      rows.push({
+        slot, speed: +spd.toFixed(2), amp: e.amp,
+        cadence: +got.toFixed(2), target: so.cadence,
+        offBy: +(got / so.cadence - 1).toFixed(3),
+      });
+    }
+    return rows;
   }
 
   findSource(name) {
@@ -270,13 +368,39 @@ export class ClipLibrary {
     const src = this.findSource(name);
     if (!src) return null;
     const t0 = performance.now();
-    const { clip, info } = this.retargeter.bake(src, { groundFix: opts.groundFix !== false });
-    clip.name = name;
-    const gait = GAIT_SLOTS.includes(slot)
-      ? analyzeGait(info)
-      : { nominalSpeed: 0, cycleDist: 0, phaseOffset: 0, stanceJitter: 0, stanceL: null, stanceR: null };
-    const root = analyzeRoot(info);
-    const entry = { slot, name, clip, info, gait, root };
+    const so = SLOT_OPTS[slot] || {};
+    const isGait = GAIT_SLOTS.includes(slot);
+    const bake = (amp) => {
+      const r = this.retargeter.bake(src, {
+        groundFix: opts.groundFix !== false, amp, name: so.name ?? name,
+      });
+      r.clip.name = so.name ?? name;
+      r.gait = isGait ? analyzeGait(r.info)
+        : { nominalSpeed: 0, cycleDist: 0, phaseOffset: 0, stanceJitter: 0, stanceL: null, stanceR: null };
+      r.amp = amp;
+      return r;
+    };
+    let out = bake(opts.amp ?? so.amp ?? 1);
+    // cadence retime: solve the amplitude that puts this loop's step rate on
+    // target at the published travel speed, then bake once more (see solveAmp)
+    // The amplitude warp is not linear in stride length (0.83 amp bought 0.75
+    // of the cycle on Sprint_Loop), so one solve lands ~10 % hot. Iterate the
+    // same ratio on the measured result until it converges — two extra bakes
+    // at worst, ~24 ms, once per boot.
+    if (isGait && so.cadence && opts.amp == null) {
+      for (let i = 0; i < 3; i++) {
+        const amp = solveAmp(out, so, this.speeds) * out.amp;
+        const [lo, hi] = so.ampRange || [0.4, 1.6];
+        const next = clamp(amp, lo, hi);
+        if (Math.abs(next - out.amp) < 0.012) break;
+        out = bake(next);
+      }
+    }
+    const root = analyzeRoot(out.info);
+    const entry = {
+      slot, name: so.name ?? name, clip: out.clip, info: out.info,
+      gait: out.gait, root, amp: +out.amp.toFixed(3),
+    };
     this.entries.set(slot, entry);
     this.bakeMs += performance.now() - t0;
     return entry;
@@ -294,6 +418,8 @@ export class ClipLibrary {
     for (const [slot, e] of this.entries) {
       rows[slot] = {
         clip: e.name, duration: e.info.duration, fps: e.info.fps,
+        amp: e.amp ?? SLOT_OPTS[slot]?.amp ?? 1,
+        cadenceTarget: SLOT_OPTS[slot]?.cadence ?? 0,
         groundShift: e.info.groundShift,
         nominalSpeed: e.gait.nominalSpeed, cycleDist: e.gait.cycleDist,
         phaseOffset: e.gait.phaseOffset, stanceJitter: e.gait.stanceJitter,

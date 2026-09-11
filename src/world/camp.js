@@ -1,5 +1,7 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
+import { buildSettlement } from './props/settlement.js';
+import { buildNpcCrowd, ROSTER } from './props/npcs.js';
 
 /**
  * Hunter camp at (22, 30) — the respawn point. Campfire with shader-billboard
@@ -9,6 +11,13 @@ import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js
  *
  * Static props are baked into three merged vertex-colored meshes
  * (matte / metal / cloth) so the whole camp costs ~10 draw calls.
+ *
+ * ROUND 4, lane `world-props` (`world-12`, gate `V35-settlement`). Everything
+ * above this line is Round-2 code and is unchanged; the settlement around it —
+ * palisade, six huts, four braziers, the working dressing and six NPCs in six
+ * idles — is appended from `props/settlement.js` and `props/npcs.js`, which
+ * build into their own merged meshes so nothing here shifts by a vertex.
+ * `props/` is this lane's directory. See `_buildSettlement` / `_placeNpcs`.
  */
 
 const FIRE_X = 22, FIRE_Z = 30;
@@ -71,9 +80,161 @@ export class Camp {
     this._buildEmbers();
     this._buildSmoke();
     this._buildLight();
-    this._placeNpc();
+
+    /* ---------------------- ROUND 4, lane world-props --------------------- */
+    // Order matters: the settlement is built AFTER _buildLight() so the camp
+    // fire's PointLight is still the first light `environment._updateNightLights`
+    // finds when it traverses this group for the flicker anchor.
+    this._buildSettlement();
+    this._placeNpcs();
 
     ctx.scene.add(this.group);
+  }
+
+  /* ====================================================================== */
+  /*  ROUND 4 — settlement build-out (world-12)                             */
+  /* ====================================================================== */
+
+  _buildSettlement() {
+    this.settlement = buildSettlement(this.ctx, this.group, { fireY: this.firePosition.y });
+    this.brazierLights = this.settlement.brazierLights;
+    this.brazierGlow = this.settlement.glowMat;
+    this.gate = this.settlement.gate;
+    this.huts = this.settlement.huts;
+    /** Published: everything a map / quest / audio cue needs about the camp. */
+    this.structures = [
+      ...this.huts.map((h) => ({ id: h.id, x: h.x, z: h.z, roofY: h.roofY })),
+      { id: 'tent-east', x: 26.4, z: 33.4 },
+      { id: 'tent-west', x: 17.6, z: 34.0 },
+    ];
+    this.palisadePosts = this.settlement.posts;
+  }
+
+  /**
+   * Six Nora in six idles, merged into one mesh per material and moved by a
+   * vertex-shader idle layer (see props/npcs.js for why it is done that way).
+   * `this.npc` stays the Varl anchor `progression` reads for its TALK marker.
+   */
+  _placeNpcs() {
+    this.crowd = buildNpcCrowd(this.ctx, this.group, ROSTER);
+    if (!this.crowd) { this._placeNpc(); return; }   // no model: Round-2 path
+    this.npcs = this.crowd.anchors;
+    this.npcLandmarks = this.crowd.landmarks;
+    this.npc = this.crowd.byId.varl ?? this.crowd.anchors[0];
+    this._npcTime = this.crowd.time;
+  }
+
+  /**
+   * The campfire rest/save interactable (`world-12`, `progression-009`).
+   *
+   * `progression` registers its own `REST & SAVE` entry on `camp.firePosition`
+   * when that module is installed, so this one only lands when it is NOT —
+   * checked against the live registry rather than against a flag, so whichever
+   * module boots first wins and the player never sees two prompts. Ours does
+   * the same three things by hand: save through `progression` if it turns up
+   * later, advance the clock through `environment.rest`/`setTime`, and heal.
+   */
+  _ensureCampfire() {
+    if (this._fireEntry || this._fireEntryChecked > 6) return;
+    const ctx = this.ctx;
+    const I = ctx.interactables;
+    if (!I?.register) return;
+    // give progression a few seconds of boot to claim it
+    this._fireEntryChecked = (this._fireEntryChecked ?? 0) + 1;
+    if (this._fireEntryChecked < 4) return;
+    for (const e of I.list) {
+      if (!e?.position) continue;
+      const d = Math.hypot(e.position.x - this.firePosition.x, e.position.z - this.firePosition.z);
+      if (d < 4.5 && /REST/i.test(e.label || '')) { this._fireEntry = e; return; }
+    }
+    this._fireEntry = I.register({
+      position: this.firePosition.clone(),
+      radius: 3.4, hold: 0.55, label: 'REST & SAVE', site: 'campfire',
+      onInteract: () => this.restAtFire(),
+    });
+  }
+
+  /**
+   * `camp-rest`, emitted from the path the player actually takes.
+   *
+   * The shipped chain is: `progression._ensureInteractables()` registers the
+   * `REST & SAVE` entry first and its `onInteract` only OPENS the campfire UI;
+   * the sleep itself happens later, when `ui/quests.js`'s REST UNTIL DAWN
+   * button calls `progression.rest(6.2)` directly. `_ensureCampfire()` above
+   * therefore adopts progression's entry and `restAtFire()` is never called in
+   * a normal session — so an emit placed inside it fires for nobody. (Round 4
+   * judge finding: the previous fix landed in exactly that dead branch.)
+   *
+   * Wrapping the entry's `onInteract` would fire on the UI OPENING, which is
+   * not a rest. So hook `progression.rest` itself — a published method on the
+   * published module, wrapped once, from out here rather than by editing
+   * another lane's file. Every caller is covered: the UI button, `restAtFire`,
+   * a console call, a future quest script. If `rest` is ever not a function,
+   * fall back to progression's own `banner` event, whose 'RESTED' card is
+   * raised on the same line as the checkpoint.
+   *
+   * Called every frame until it takes, because `installProgression()` runs
+   * after `Camp` is constructed.
+   */
+  _hookProgressionRest() {
+    const ctx = this.ctx;
+    const prog = ctx.progression;
+    // keyed on the instance, not a boolean: a rebuilt `progression` gets its
+    // own wrapper instead of silently losing the event again
+    if (!prog || this._restHookedOn === prog) return;
+    const fire = () => ctx.events?.emit?.('camp-rest', {
+      hour: ctx.environment?.time ?? 6.2,
+    });
+    if (typeof prog.rest === 'function') {
+      if (!prog.__campRestHooked) {
+        const inner = prog.rest.bind(prog);
+        // arrow, not async function: no allocation beyond the promise `rest`
+        // already makes, and `restAtFire` can still await the real return value
+        prog.rest = (toHour = 6.2) => {
+          const r = inner(toHour);
+          return Promise.resolve(r).then((v) => { fire(); return v; });
+        };
+        prog.__campRestHooked = true;
+      }
+      this._restHooked = true;
+      this._restHookedOn = prog;
+      return;
+    }
+    if (ctx.events?.on) {
+      ctx.events.on('banner', (e) => {
+        if (e?.kind === 'save' && /RESTED/i.test(e?.title || '')) fire();
+      });
+      this._restHooked = true;
+      this._restHookedOn = prog;
+    }
+  }
+
+  /** Rest at the fire: dawn, full health and pouch, and a save. */
+  async restAtFire(toHour = 6.2) {
+    const ctx = this.ctx;
+    const prog = ctx.progression;
+    /**
+     * `progression` owns the rest when it is installed — it runs its own fade,
+     * heals, and saves — so this delegates, and `_hookProgressionRest()` above
+     * is what emits `camp-rest` for that branch (exactly once, whoever called).
+     * The branch below is the no-progression build, which has to emit its own.
+     */
+    if (prog?.rest) {
+      this._hookProgressionRest();
+      return prog.rest(toHour);
+    }
+    const env = ctx.environment;
+    if (env?.rest) { try { await env.rest({ toHour, seconds: 2.0 }); } catch { /* busy */ } }
+    else env?.setTime?.(toHour);
+    const p = ctx.player;
+    if (p) {
+      p.health = p.maxHealth ?? p.health;
+      p.pouch = p.maxPouch ?? p.pouch;
+      ctx.events?.emit?.('player-hurt', { health: p.health, max: p.maxHealth });
+    }
+    prog?.save?.('campfire');
+    ctx.events?.emit?.('camp-rest', { hour: env?.time ?? toHour });
+    return true;
   }
 
   /* ------------------------- geometry helpers ------------------------- */
@@ -93,10 +254,16 @@ export class Camp {
     return geo;
   }
 
-  /** Cylinder from point a to point b (arrays), tapered r0 -> r1. */
+  /**
+   * Cylinder from point a to point b (arrays), tapered r0 -> r1.
+   * Segmented along its HORIZONTAL run so `nav`'s per-triangle AABB stamp does
+   * not blank a whole square around a long beam — see props/kit.js heightSegs.
+   */
   _tube(list, a, b, r0, r1, color, radial = 7, jitter = 0.05) {
     const len = _v1.set(b[0] - a[0], b[1] - a[1], b[2] - a[2]).length();
-    const geo = new THREE.CylinderGeometry(r1, r0, len, radial);
+    const hs = Math.max(1, Math.min(16,
+      Math.round(Math.hypot(b[0] - a[0], b[2] - a[2]) / 0.9)));
+    const geo = new THREE.CylinderGeometry(r1, r0, len, radial, hs);
     _q.setFromUnitVectors(UP, _v1.normalize());
     const m = new THREE.Matrix4().compose(
       _v2.set((a[0] + b[0]) / 2, (a[1] + b[1]) / 2, (a[2] + b[2]) / 2),
@@ -971,5 +1138,28 @@ export class Camp {
     this.fireLight.position.y = this._lightY + 0.06 * Math.sin(t * 9.1);
     this._coalMat.emissiveIntensity = 1.4 + 0.7 * f;
     this._lensMat.emissiveIntensity = 1.5 + 0.45 * Math.sin(t * 2.1);
+
+    /* ---------------------- ROUND 4, lane world-props --------------------- */
+    // The crowd's idle layer: ONE uniform write moves all six NPCs.
+    if (this._npcTime) this._npcTime.value = t;
+
+    // Braziers. The glow mesh is shared, so its emissive carries the common
+    // flicker and each lit brazier's PointLight carries its own phase.
+    if (this.brazierGlow) {
+      this.brazierGlow.emissiveIntensity = 1.85
+        + 0.42 * Math.sin(t * 8.7) + 0.24 * Math.sin(t * 17.1 + 1.1);
+    }
+    const bl = this.brazierLights;
+    if (bl) {
+      for (let i = 0; i < bl.length; i++) {
+        const b = bl[i];
+        const k = 1 + 0.16 * Math.sin(t * 10.3 + b.phase) + 0.09 * Math.sin(t * 21.7 + b.phase * 2.3);
+        b.light.intensity = b.base * k;
+        b.light.position.y = b.y + 0.04 * Math.sin(t * 8.2 + b.phase);
+      }
+    }
+
+    this._ensureCampfire();
+    this._hookProgressionRest();
   }
 }

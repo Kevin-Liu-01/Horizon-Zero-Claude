@@ -256,12 +256,11 @@ the grouped rows carry the prefix.
 | studio-cast-buttons | m | S | studio | `forceState`, close pause on enter, real dt, panel z-order |
 | loot-feel | m | S | focus-items, player-anim | Rummage clip, source name, rarity frames |
 | healing-readability | m | S | shell-hud | Pouch prompt + green pulse + hand-to-hip layer |
+| *cross-refs* | | | | `victory-softlock`→`ui-13`; `detection-instant`→`machine-ai-05`; `no-melee-silent-strike`→`combat-melee-missing`; `pause-menu`→`ui-01`; `no-xp-progression`→`progression-001`; `props-no-collision`→`camera-feel-09`; `boot-fragility`→`combat-frame-loop-unguarded`. |
 
 ---
 
 ## 3. ROUND 4 IMPLEMENTATION PLAN — lanes, ownership, waves
-
-| *cross-refs* | | | | `victory-softlock`→`ui-13`; `detection-instant`→`machine-ai-05`; `no-melee-silent-strike`→`combat-melee-missing`; `pause-menu`→`ui-01`; `no-xp-progression`→`progression-001`; `props-no-collision`→`camera-feel-09`; `boot-fragility`→`combat-frame-loop-unguarded`. |
 
 ### 3.1 Lane table (extends SPEC.md §"File ownership")
 
@@ -274,7 +273,7 @@ paths. Cross-lane needs go through published `ctx` APIs and events, never edits.
 | `spatial` | 5202 | `src/core/collision.js`, `src/core/nav.js`, `src/core/hitHulls.js` (all new) | three-mesh-bvh, static collider/occluder registry, capsule + segment casts, 2 m navgrid + flow field, per-bone hit hulls, uniform-grid spatial hash |
 | `anim-core` | 5203 | `src/entities/anim/*` | `BoneSpace` (rotLocal/rotChar/rotWorld), `RestPose`, `ClipLayer` (timeScale-aware, dt-driven), `RigDebug`; retire the three conventions |
 | `player-control` | 5204 | `src/entities/player.js` ⚠️, `src/core/input.js` ⚠️ | Capsule+gravity+jump+slope+fall+wade, dodge windows/buffer/chain, crouch toggle surviving aim, camera collision/smoothing/pitch/framing, settings-driven input, Gamepad API |
-| `player-anim` | 5205 | `src/entities/playerAnimator.js` | All `dyn_` springs + foot-strike impulses, twist joints, cheek anchor + open bow arm, look-at + blink, head stabilisation, hit/jump/land/interact/loot clips, bow carry pose |
+| `player-anim` | 5205 | `src/entities/playerAnimator.js` **+ (Wave 2, orchestrator grant) the Aloy-specific anim modules `src/entities/anim/locomotion.js`, `clipLibrary.js`, `boneMap.js`** — anim-core keeps the shared `boneSpace/restPose/clipLayer/rigDebug/registry` | All `dyn_` springs + foot-strike impulses, twist joints, cheek anchor + open bow arm, look-at + blink, head stabilisation, hit/jump/land/interact/loot clips, bow carry pose |
 | `machine-ai` | 5206 | `src/entities/machines/machine.js`, `index.js`, `src/entities/machines/ai/*` (new) | Perception rewrite, stimulus bus, engage locomotion, scored attack tables, stagger/downed, search sweeps, alarm doctrine, override/mount state, MachineSite lifecycle, per-kind tuning tables |
 | `machine-rig` | 5207 | `gait.js`, `autorig.js`, `parts.js`, `variety-assets.js`, all 8 species files, `public/models/*`, `tools/optimize.mjs`, `tools/bake-rigs.mjs` (new) | Silhouette/material pass, bone-space sockets, skate + conform + corpse grounding, cadence tables, attack limb poses, idle library + spring chains, LOD chains, offline rig/socket bake |
 | `combat` | 5208 | `src/combat/*`, `src/ui/wheel.js/.css` | Spear + Silent Strike + Critical Hit, nock timing, honest ballistics, hit feedback + hitstop, wielded carry, Ropecaster/Tripcaster, tearblast fuse, burst VFX, craft-hold, wheel canon |
@@ -352,6 +351,14 @@ via a `setup`+`settle` recipe and are judged against written criteria.
 - **A21-real-draw-calls** — `info.autoReset=false; reset each frame; accumulate 20 frames at DPR 2 after machines.varietyReady` → pass: `calls ≤ 350 && p95Frame ≤ 20ms` at spawn vista, west herd and a staged 8-machine fight.
 - **A22-msaa** — `composer.renderTarget1.samples >= 4 && passes.some(p => /SMAA|TAA/.test(p.constructor.name))` → pass: both true.
 - **V20-aa-crop** — shot: spawn vista, 4× nearest crop of a pine ridge. Pass: edges show intermediate pixels; FAIL on pure stair-steps (compare `shots/verify-perf-tech-aa-crop.png`).
+
+
+> **Wave 0 outcome (orchestrator, Sep 9):** `A21-real-draw-calls` draw-call term is DEFERRED to
+> `machine-rig` (Wave 1): graded 296 / 489 / **508** vs 350 at spawn / west-herd / staged fight, and
+> **274 of 497** frozen draws in the fight are machine geometry (LOD chains + shared materials are the
+> fix). The frame-time terms of A21/A23/A9 report PENDING until the host is quiet — a bare scene
+> reads 32–104 ms p95 on this Mac with Adobe background services at 70–95 % CPU. `A22b-fov-recompile`
+> added by `core-platform-followup`.
 
 ### spatial
 - **A23-aim-cost** — `place player 25m from thunderjaw; hold RMB 3s; sample frame times` → pass: `p95 ≤ 20ms` (baseline 210 ms).

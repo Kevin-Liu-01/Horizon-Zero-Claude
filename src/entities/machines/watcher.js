@@ -1,6 +1,12 @@
 import * as THREE from 'three';
 import { Machine, rollLoot, glowTexture } from './machine.js';
 import { lensMesh, antennaMesh } from './parts.js';
+import { BoneSpace, RestPose } from '../anim/index.js';
+import { attachRigRuntime, updateRigLOD } from './rig/lod.js';
+import { snapSockets } from './rig/sockets.js';
+import { FootLock } from './rig/footlock.js';
+import { groundCorpse } from './rig/ground.js';
+import { cadenceBand, measureBodyLength, wallPerSim } from './gait.js';
 
 /**
  * Watcher: rigged raptor scout (HZD level 5, HP 90). Fully procedural bone
@@ -66,12 +72,13 @@ export class Watcher extends Machine {
     this.neck = this.neck.filter(Boolean);
     this.tail = this.tail.filter(Boolean);
 
-    // rest pose snapshot: all procedural rotation is layered on top of it
-    this._rest = new Map();
-    const snap = (b) => { if (b && !this._rest.has(b)) this._rest.set(b, b.quaternion.clone()); };
-    Object.values(this.bones).forEach(snap);
-    this.neck.forEach(snap);
-    this.tail.forEach(snap);
+    // rest pose snapshot: all procedural rotation is layered on top of it.
+    // ROUND 4 (perf-tech-11): anim-core BoneSpace + RestPose, with the legacy
+    // `_rest` Map kept as a VIEW so the anim registry probe still reads it.
+    this.space = new BoneSpace(this.model, { all: true });
+    const bones = [...Object.values(this.bones), ...this.neck, ...this.tail].filter(Boolean);
+    this.rest = new RestPose({ bones });
+    this._rest = this.rest.toMap();
 
     // sensor eye on the head camera bone — THE identifying feature
     // (research 0.4/1.2): big state-colored iris + halo, readable at 20 m+
@@ -104,7 +111,9 @@ export class Watcher extends Machine {
       { id: 'metal-shards', min: 10, max: 18 },
       { id: 'wire', min: 1, max: 2 },
       { id: 'sparker', min: 0, max: 2 },
-      { id: 'watcher-lens', n: 1, chance: 0.8 },
+      { id: 'watcher-lens', n: 1, chance: 0.25 },
+      { id: 'machine-core', n: 1, chance: 0.15 },
+      { id: 'machine-heart', n: 1, chance: 0.12 },
     ]);
 
     // effective leg pendulum length (hip→foot, world meters) — the walk cycle
@@ -134,6 +143,43 @@ export class Watcher extends Machine {
       if (n) this._soleOff = sum / n;
     }
 
+    // --- mesh budget + pooled FX + bone-space sockets
+    attachRigRuntime(this);
+    // snapSockets() builds the proxy itself, AFTER every shell/part is on
+    snapSockets(this);
+
+    // --- contact foot lock over the rotational stride (A45 / A46). The
+    // native gait sweeps the hip and shin without plant bookkeeping, so a
+    // "planted" toe drifted 0.37 m; the lock holds it on its latched point.
+    this.footLock = new FootLock(this, [
+      { id: 'L', hip: this.bones.lHip, knee: this.bones.lShin, toe: this.bones.lToe },
+      { id: 'R', hip: this.bones.rHip, knee: this.bones.rShin, toe: this.bones.rToe },
+    ].filter((l) => l.hip && l.knee && l.toe), {
+      contactH: 0.08, releaseH: 0.22, maxSpeed: 7.5,
+      /**
+       * STANCE AUTHORITY (fix round 2). The rotational stride already knows
+       * which foot is down — stance is phase [pi/2, 3pi/2] — and without
+       * telling the lock, a plant opened and closed on the sole's height
+       * alone: two plants per cycle on one foot, or one that never released.
+       * Leg 0 is 'L' and runs half a cycle behind 'R', matching `_animate`.
+       */
+      stancePhase: (i) => {
+        const HALF = Math.PI / 2, TAU = Math.PI * 2;
+        let ph = this._gait + (i === 0 ? Math.PI : 0);
+        ph = ((ph % TAU) + TAU) % TAU;
+        return ph >= HALF && ph <= 3 * HALF;
+      },
+    });
+    this.footLock.soleOff = this._soleOff;
+
+    // cadence law (machine-rig-06): stride frequency falls with the square
+    // root of body length, the same curve gate A48 grades against
+    {
+      const L = Math.max(1, Math.max(this.size.x, this.size.z));
+      const sizeK = Math.sqrt(Math.max(0.5, L / 2.5));
+      this._hzWalk = 1.90 / sizeK;
+      this._hzRun = 2.50 / sizeK;
+    }
     this._gait = Math.random() * Math.PI * 2;
     this._lookW = 0;       // 0 = scanning, 1 = snapped onto target
     this._lookYaw = 0;
@@ -155,29 +201,18 @@ export class Watcher extends Machine {
    * at ground height) or standing still (bind pose feet on the ground).
    */
   debugFeet() {
-    const out = [];
-    const TAU = Math.PI * 2;
-    const still = this._speed < 0.15;
-    for (const side of [1, -1]) {
-      const b = (side > 0 ? this.bones.rToe : this.bones.lToe)
-        ?? (side > 0 ? this.bones.rFoot : this.bones.lFoot);
-      if (!b) continue;
-      let ph = this._gait + (side > 0 ? 0 : Math.PI);
-      ph = ((ph % TAU) + TAU) % TAU;
-      // narrow mid-stance: the rotational gait arcs the sole slightly at the
-      // stance edges (no per-foot IK on this native rig), so only the truly
-      // grounded center of the sweep counts as planted
-      const midStance = ph > Math.PI * 0.85 && ph < Math.PI * 1.15;
-      const world = b.getWorldPosition(new THREE.Vector3());
-      world.y -= this._soleOff; // joint -> sole contact (bind-calibrated)
-      out.push({
-        name: side > 0 ? 'R' : 'L',
-        world,
-        planted: this.alive && !this.lowLOD && (still || midStance),
-      });
-    }
-    return out;
+    if (this.footLock?.legs.length) return this.footLock.debugFeet();
+    return [];
   }
+
+  contacts() { return this.footLock?.contacts() ?? []; }
+
+  /**
+   * Per-foot continuity payload for gate `A45c` (see `rig/footlock.js`
+   * `footContinuity()`): the toe's world position, whether it is planted, and
+   * how far the lock is displacing it from the pose the clip asked for.
+   */
+  footContinuity() { return this.footLock?.footContinuity() ?? []; }
 
   /** Ticked from Machine.update() — runs even under lowLOD/stun. */
   tickCooldowns(dt) {
@@ -186,16 +221,24 @@ export class Watcher extends Machine {
   }
 
   /** Death crumple: legs buckle, neck kinks slack — not a parked robot. */
-  onDeathPose(k) {
+  onDeathPose(k, deathT) {
     this._resetPose();
+    // The collapse lives in the SKELETON, not in a body-node roll: gate A47
+    // grades a corpse with the world AABB of each mesh's bind box, and rolling
+    // the whole body tips that box's corner well below any geometry (measured
+    // on this species: box -0.30 m against a posed hull at +0.62 m, which is
+    // what made the ground solve lift the wreck). See gait.js deathPose.
+    this.body.rotation.z = 0;
+    this.body.rotation.x = 0;
+    this.body.position.y = 0;
     const b = this.bones;
     for (const side of [1, -1]) {
       const hip = side > 0 ? b.rHip : b.lHip;
       const shin = side > 0 ? b.rShin : b.lShin;
       const foot = side > 0 ? b.rFoot : b.lFoot;
-      this._rot(hip, 'x', (0.7 + side * 0.15) * k);
-      this._rot(shin, 'x', 1.15 * k);
-      this._rot(foot, 'x', -0.7 * k);
+      this._rot(hip, 'x', (1.15 + side * 0.15) * k);
+      this._rot(shin, 'x', 1.85 * k);
+      this._rot(foot, 'x', -0.9 * k);
     }
     const n = this.neck.length || 1;
     for (let i = 0; i < this.neck.length; i++) {
@@ -207,6 +250,10 @@ export class Watcher extends Machine {
     for (let i = 0; i < this.tail.length; i++) {
       this._rot(this.tail[i], 'z', 0.5 * this._deathSide * k / tn);
     }
+    // the chassis comes down onto the buckled legs
+    this.body.position.y = -this.height * 0.30 * k;
+    // ground-contact solve: the wreck settles ON the soil (A47; -1.47 m before)
+    groundCorpse(this, deathT ?? 0);
   }
 
   chooseAttack(dist) {
@@ -389,30 +436,63 @@ export class Watcher extends Machine {
     });
   }
 
+  /** anim-core forward: identical algebra, one convention (A26). */
   _rot(bone, axis, angle) {
-    if (!bone) return;
-    _q.setFromAxisAngle(AXES[axis], angle);
-    bone.quaternion.multiply(_q);
+    if (!bone || !angle) return;
+    this.space.rotLocal(bone, axis, angle);
   }
 
   _resetPose() {
-    for (const [b, q] of this._rest) b.quaternion.copy(q);
+    this.rest.restore();
   }
 
   animate(dt, t) {
     if (this.state === 'dead') return;
+    updateRigLOD(this);
     this._resetPose();
     const b = this.bones;
 
-    /* ---- legs: distance-locked gait (no foot slide) ---- */
+    /* ---- legs: CADENCE-LOCKED gait (machine-rig-06, gate A48) ----
+     * Round 3 advanced the stride phase with travelled distance over a fixed
+     * stride, so cadence was whatever `speed / stride` happened to be — a
+     * 3 Hz scramble at a run and zero the instant the AI parked it. Cadence
+     * is the input now (the same sqrt-of-body-length law `gait.js` uses) and
+     * stride follows, with a combat shuffle floor while engaged. */
     const speed = this._speed;
     const runK = THREE.MathUtils.clamp(speed / this.runSpeed, 0, 1);
-    const stride = 1.05 + 0.5 * runK;
-    this._gait += dt * speed * (Math.PI / stride);
+    const hz = THREE.MathUtils.lerp(this._hzWalk, this._hzRun, runK);
+    const engaged = this.state === 'alert' || this.state === 'attack' || this.state === 'search';
+    const stride = THREE.MathUtils.clamp(speed / Math.max(hz, 0.05), 0.45, 2.2);
+    // ROUND-4 FIX ROUND 1: the floor is a fraction of the BAND, not of `hz`
+    // (gate A48 measured this bird at 0.80 Hz against a 0.96 Hz band edge —
+    // the same bug `gait.js` had, in the copy that lives here because the
+    // Watcher has no GaitController).
+    const band = this._cadBand || (this._cadBand = cadenceBand(measureBodyLength(this)));
+    // REAL-TIME cadence, same law as GaitController (gait.js `wallPerSim`):
+    // the band edges are footfalls per WALL second and the fixed-step sim can
+    // be running at half of that.
+    const wps = wallPerSim(this.ctx?.engine);
+    let rate = speed / stride;
+    if (speed > 0.008 || engaged) {
+      rate = THREE.MathUtils.clamp(rate,
+        Math.max(band.floor, engaged ? hz * 0.85 : 0) * wps,
+        Math.max(band.ceil, band.floor * 1.15) * wps);
+    } else {
+      rate = Math.max(rate, hz * 0.15 * wps);
+    }
+    this._cadence = rate;
+    this._gait += dt * Math.PI * 2 * rate;
     const moveK = THREE.MathUtils.clamp(speed / 2.2, 0, 1);
     // stride geometry: hip must sweep ~stride/legLen rad over the stance
     // half-cycle or the planted foot moonwalks under the body
-    const amp = moveK * THREE.MathUtils.clamp(stride / (2 * this._legLen), 0.3, 0.8);
+    // MINIMUM SWING, but a modest one. Cadence is the input and stride is
+    // derived, so a fast cadence gives a SHORT stride, and a short stride
+    // scales the hip sweep down until the foot barely leaves the ground — a
+    // step has to leave the ground to be a step. Pushed too far the other way
+    // (a 0.5 floor) it leaves the ground and does not come back: the measured
+    // airborne fraction went from 0.26 to 0.58 and the contact count FELL.
+    const amp = (speed > 0.008 || engaged ? Math.max(moveK, 0.34) : moveK)
+      * THREE.MathUtils.clamp(stride / (2 * this._legLen), 0.30, 0.8);
 
     const HALF = Math.PI / 2;
     const TAU = Math.PI * 2;
@@ -501,5 +581,8 @@ export class Watcher extends Machine {
     for (let i = 0; i < this.tail.length; i++) {
       this._rot(this.tail[i], 'z', Math.sin(t * tailFreq - i * 0.42) * (0.02 + moveK * 0.016));
     }
+
+    // contact foot lock LAST: it corrects the finished pose (A45 / A46)
+    this.footLock?.update(dt);
   }
 }

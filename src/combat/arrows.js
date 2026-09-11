@@ -110,51 +110,76 @@ const HEAD_SCALE = {
 
 /* ---------------------------- shared geometries --------------------------- */
 
-const shaftGeo = new THREE.CylinderGeometry(0.0048, 0.0048, ARROW_LEN - 0.05, 5, 1)
-  .rotateX(Math.PI / 2).translate(0, 0, (ARROW_LEN - 0.05) / 2);
+/**
+ * `docs/ROUND4-CHARACTER.md` §9.8 — the NOCKED arrow is a different length
+ * from the one in flight. A recurve's pull is 0.465 m, so a 0.78 m shaft hangs
+ * 0.315 m past the riser at full draw, and its fletching lands on Aloy's cheek
+ * anchor. The nock variant is sized to the pull and its fletches are cut to
+ * 0.03 x 0.075 m so they read as feathers rather than as a white paddle.
+ */
+export const NOCK_ARROW_LEN = 0.52;
+
+function buildShaft(len) {
+  return new THREE.CylinderGeometry(0.0048, 0.0048, len - 0.05, 5, 1)
+    .rotateX(Math.PI / 2).translate(0, 0, (len - 0.05) / 2);
+}
 // head + a small tail-tip nub merged into one mesh: the per-type (emissive)
 // head material lights BOTH ends of a stuck arrow at zero extra draw calls.
-const headGeo = mergeGeometries([
-  new THREE.ConeGeometry(0.012, 0.06, 6)
-    .rotateX(Math.PI / 2).translate(0, 0, ARROW_LEN - 0.03),
-  // tail nub is what the shooter sees of their own stuck arrow (dead-on),
-  // so it is deliberately chunky
-  new THREE.CylinderGeometry(0.016, 0.011, 0.05, 6)
-    .rotateX(Math.PI / 2).translate(0, 0, 0.025),
-]);
-
-const finsGeo = (() => {
+function buildHead(len) {
+  return mergeGeometries([
+    new THREE.ConeGeometry(0.012, 0.06, 6)
+      .rotateX(Math.PI / 2).translate(0, 0, len - 0.03),
+    // tail nub is what the shooter sees of their own stuck arrow (dead-on),
+    // so it is deliberately chunky
+    new THREE.CylinderGeometry(0.016, 0.011, 0.05, 6)
+      .rotateX(Math.PI / 2).translate(0, 0, 0.025),
+  ]);
+}
+function buildFins(w, h, l, z) {
   const parts = [];
   for (let i = 0; i < 3; i++) {
-    const fin = new THREE.BoxGeometry(0.0026, 0.046, 0.115)
-      .translate(0, 0.027, 0.078)
-      .rotateZ((i / 3) * Math.PI * 2);
-    parts.push(fin);
+    parts.push(new THREE.BoxGeometry(w, h, l)
+      .translate(0, h * 0.58, z)
+      .rotateZ((i / 3) * Math.PI * 2));
   }
   return mergeGeometries(parts);
-})();
+}
+
+const shaftGeo = buildShaft(ARROW_LEN);
+const headGeo = buildHead(ARROW_LEN);
+const finsGeo = buildFins(0.0026, 0.046, 0.115, 0.078);
+
+const nockShaftGeo = buildShaft(NOCK_ARROW_LEN);
+const nockHeadGeo = buildHead(NOCK_ARROW_LEN);
+const nockFinsGeo = buildFins(0.0024, 0.030, 0.075, 0.056);
 
 const NOOP_RAYCAST = () => {};
 
-/** Builds one arrow visual; origin at the tail, tip at +Z * ARROW_LEN. */
-export function makeArrow() {
+/**
+ * Builds one arrow visual; origin at the tail, tip at +Z * length.
+ * `{ nock: true }` returns the short, small-fletched variant that sits on the
+ * string (see NOCK_ARROW_LEN).
+ */
+export function makeArrow(opts = null) {
+  const nock = !!(opts && opts.nock);
+  const len = nock ? NOCK_ARROW_LEN : ARROW_LEN;
   const group = new THREE.Group();
-  const shaft = new THREE.Mesh(shaftGeo, shaftMat);
-  const head = new THREE.Mesh(headGeo, headMats.hunter);
-  const fins = new THREE.Mesh(finsGeo, fletchMats.hunter);
-  shaft.castShadow = true;
+  const shaft = new THREE.Mesh(nock ? nockShaftGeo : shaftGeo, shaftMat);
+  const head = new THREE.Mesh(nock ? nockHeadGeo : headGeo, headMats.hunter);
+  const fins = new THREE.Mesh(nock ? nockFinsGeo : finsGeo, fletchMats.hunter);
+  shaft.castShadow = !nock;
   const flame = new THREE.Sprite(flameMat);
-  flame.position.set(0, 0.015, ARROW_LEN - 0.1);
+  flame.position.set(0, 0.015, len - 0.1);
   flame.scale.setScalar(0.09);
   flame.visible = false;
   const glow = new THREE.Sprite(glowMats.shock);
-  glow.position.set(0, 0, ARROW_LEN - 0.08);
+  glow.position.set(0, 0, len - 0.08);
   glow.scale.setScalar(0.15);
   glow.visible = false;
   group.add(shaft, head, fins, flame, glow);
   // arrows must never intercept combat/aim raycasts
   group.traverse((o) => { o.raycast = NOOP_RAYCAST; });
-  return { group, head, fins, flame, glow };
+  return { group, head, fins, flame, glow, len };
 }
 
 export function setArrowType(arrow, type) {
@@ -257,16 +282,40 @@ function distPointSeg(p, a, b) {
   return _cl.distanceTo(p);
 }
 
+/** Reusable ray for the hull query — never allocated in the hot path. */
+const _hullRay = { origin: new THREE.Vector3(), direction: new THREE.Vector3() };
+const _hullNormal = new THREE.Vector3();
+
 /**
  * Sweep a segment [a -> a + dir*len] against machines + terrain.
- * Returns { dist, object, machine } with dist = Infinity when nothing hit.
- * Shared by arrows and bombs.
+ * Returns { dist, object, machine, normal } with dist = Infinity when nothing
+ * hit. Shared by arrows and bombs.
+ *
+ * `perf-tech-01`: the machine half is now ONE `ctx.hitHulls.raycast` over the
+ * whole roster (1.7-6.6 us) instead of a `Raycaster.intersectObject` per
+ * candidate against a 188k-triangle skinned mesh (124-370 ms per ray — the
+ * 4 fps in the audit). The impact resolve asks for `{ exact: true }`, which
+ * refines onto the true surface wherever the struck node is unskinned
+ * (docs/ROUND4-SPATIAL.md §3). The legacy path is kept as a fallback for the
+ * case where `spatial` has not been installed.
  */
 function sweepSegment(ctx, machines, a, dir, len, out) {
   out.dist = Infinity;
   out.object = null;
   out.machine = null;
-  if (machines) {
+  out.normal = null;
+  const hulls = ctx.hitHulls;
+  if (hulls && hulls.raycast) {
+    _hullRay.origin.copy(a);
+    _hullRay.direction.copy(dir);
+    const h = hulls.raycast(_hullRay, { far: len, exact: true });
+    if (h && h.hit) {
+      out.dist = h.distance;
+      out.object = h.object || null;
+      out.machine = h.machine || null;
+      out.normal = _hullNormal.set(h.nx, h.ny, h.nz);
+    }
+  } else if (machines) {
     for (const m of machines) {
       if (m.alive === false || !m.root) continue;
       const r = HIT_RADII[m.kind] ?? 2.5;
@@ -293,7 +342,7 @@ function sweepSegment(ctx, machines, a, dir, len, out) {
     let sPrev = 0;
     const above0 = a.y > terr.getHeight(a.x, a.z);
     if (!above0) {
-      if (out.dist > 0) { out.dist = 0; out.object = null; out.machine = null; }
+      if (out.dist > 0) { out.dist = 0; out.object = null; out.machine = null; out.normal = null; }
     } else {
       const limit = Math.min(len, out.dist);
       for (let s = step; sPrev < limit; s += step) {
@@ -307,7 +356,7 @@ function sweepSegment(ctx, machines, a, dir, len, out) {
             _s.copy(a).addScaledVector(dir, mid);
             if (_s.y > terr.getHeight(_s.x, _s.z)) lo = mid; else hi = mid;
           }
-          if (hi < out.dist) { out.dist = hi; out.object = null; out.machine = null; }
+          if (hi < out.dist) { out.dist = hi; out.object = null; out.machine = null; out.normal = null; }
           break;
         }
         sPrev = sc;
@@ -318,13 +367,22 @@ function sweepSegment(ctx, machines, a, dir, len, out) {
   return out;
 }
 
-const _sweep = { dist: Infinity, object: null, machine: null };
+const _sweep = { dist: Infinity, object: null, machine: null, normal: null };
 
 export class ArrowPool {
   constructor(ctx, trailFx, size = 28) {
     this.ctx = ctx;
     this.trailFx = trailFx;
     this.onImpact = null; // ({point, normal, object, machine, dir, type, draw}) => void
+    /**
+     * `combat-arrow-drop-autocompensated` — the ballistics are PUBLISHED, not
+     * buried in `_stepFly`. There is exactly one gravity and one drag on an
+     * arrow now (the launch-side loft term that used to cancel them is gone),
+     * and a gate or a HUD range-finder reads them from here instead of
+     * re-deriving a second, drifting copy.
+     */
+    this.gravity = 9.8;
+    this.drag = 0.05;
     this.list = [];
     for (let i = 0; i < size; i++) {
       const a = makeArrow();
@@ -337,6 +395,9 @@ export class ArrowPool {
       a.draw = 0;
       a.age = 0;
       a.seed = Math.random() * 20;
+      // tearblast latch fuse (combat-tearblast-canon)
+      a.fuse = 0; a.fuseT = 0; a.fuseM = null; a.fuseObj = null;
+      a.fuseN = new THREE.Vector3(); a.fuseD = new THREE.Vector3();
       ctx.scene.add(a.group);
       this.list.push(a);
     }
@@ -352,7 +413,7 @@ export class ArrowPool {
     return best;
   }
 
-  fire(origin, dir, speed, type, draw) {
+  fire(origin, dir, speed, type, draw, opts = null) {
     const a = this._alloc();
     if (a.group.parent !== this.ctx.scene) {
       a.group.parent?.remove(a.group);
@@ -365,6 +426,10 @@ export class ArrowPool {
     a.fresh = true; // first collision segment sweeps from the tail, not the tip
     a.type = type;
     a.draw = draw;
+    a.fuse = (opts && opts.fuse) || 0;
+    a.fuseT = 0;
+    a.fuseM = null;
+    a.fuseObj = null;
     setArrowType(a, type);
     a.pos.copy(origin);
     a.vel.copy(dir).multiplyScalar(speed);
@@ -402,6 +467,10 @@ export class ArrowPool {
 
   _recycle(a) {
     a.mode = 'idle';
+    a.fuseT = 0;
+    a.fuse = 0;
+    a.fuseM = null;
+    a.fuseObj = null;
     a.group.visible = false;
     if (a.group.parent !== this.ctx.scene) {
       a.group.parent?.remove(a.group);
@@ -416,6 +485,15 @@ export class ArrowPool {
       if (a.mode === 'fly') this._stepFly(a, dt, machines);
       else {
         a.age += dt;
+        if (a.fuseT > 0) {
+          a.fuseT -= dt;
+          // the latch pulses faster as the charge builds — the tell that lets
+          // a player back off a Thunderjaw before the burst
+          const k = 1 - Math.max(0, a.fuseT) / Math.max(1e-3, a.fuse);
+          const s = 0.13 + 0.24 * k * (0.6 + 0.4 * Math.sin(t * (26 + 40 * k)));
+          if (a.glow.visible) a.glow.scale.set(s, s, 1);
+          if (a.fuseT <= 0) { this._blowFuse(a); continue; }
+        }
         if (a.age > 10) {
           const k = 1 - (a.age - 10) / 0.35;
           if (k <= 0.02) { this._recycle(a); continue; }
@@ -445,8 +523,8 @@ export class ArrowPool {
     if (!a.fresh) _oldTip.addScaledVector(_dir, ARROW_LEN);
     a.fresh = false;
 
-    a.vel.y -= 9.8 * dt;
-    a.vel.multiplyScalar(Math.max(0, 1 - 0.05 * dt)); // slight drag
+    a.vel.y -= this.gravity * dt;
+    a.vel.multiplyScalar(Math.max(0, 1 - this.drag * dt)); // slight drag
     a.pos.addScaledVector(a.vel, dt);
     _dir.copy(a.vel).normalize();
     _newTip.copy(a.pos).addScaledVector(_dir, ARROW_LEN);
@@ -499,9 +577,32 @@ export class ArrowPool {
 
     if (hitMachine?.root) hitMachine.root.attach(a.group); // ride along with the machine
 
-    if (hitMachine) _n.copy(_segDir).negate();
+    // the hull query hands back a real surface normal; sparks that spray along
+    // it read as metal, sparks along -flightDir read as a decal
+    if (_sweep.normal) _n.copy(_sweep.normal);
+    else if (hitMachine) _n.copy(_segDir).negate();
     else if (this.ctx.terrain) this.ctx.terrain.getNormal(_hitP.x, _hitP.z, _n);
     else _n.set(0, 1, 0);
+    if (_n.dot(_segDir) > 0) _n.negate();
+
+    /**
+     * `combat-tearblast-canon` — a Tearblast does not detonate on contact. It
+     * LATCHES to the plate it hits and blows `fuse` seconds later, riding the
+     * machine in the meantime, which is what makes it a set-up shot rather
+     * than a hitscan part-deleter.
+     */
+    if (a.fuse > 0) {
+      a.fuseT = a.fuse;
+      a.fuseM = hitMachine;
+      a.fuseObj = hitObj;
+      a.fuseN.copy(_n);
+      a.fuseD.copy(_segDir);
+      this.onLatch?.({
+        point: _hitP, normal: _n, dir: _segDir,
+        object: hitObj, machine: hitMachine, type: a.type, draw: a.draw,
+      });
+      return;
+    }
 
     this.onImpact?.({
       point: _hitP,          // scratch — consumer must clone to retain
@@ -512,6 +613,28 @@ export class ArrowPool {
       type: a.type,
       draw: a.draw,
     });
+  }
+
+  /** The latch fuse expired: burst at the arrow's CURRENT world position. */
+  _blowFuse(a) {
+    a.fuseT = 0;
+    const m = a.fuseM;
+    // a machine that died (or was disposed) while the charge ticked
+    const alive = m && m.alive !== false && m.root && !m._disposed;
+    a.group.updateWorldMatrix(true, false);
+    _hitP.set(0, 0, (a.len ?? ARROW_LEN) - 0.12).applyMatrix4(a.group.matrixWorld);
+    _n.copy(a.fuseN);
+    _segDir.copy(a.fuseD);
+    this.onImpact?.({
+      point: _hitP, normal: _n, dir: _segDir,
+      object: alive ? a.fuseObj : null,
+      machine: alive ? m : null,
+      type: a.type, draw: a.draw, fused: true,
+    });
+    a.fuse = 0;
+    a.fuseM = null;
+    a.fuseObj = null;
+    this._recycle(a);
   }
 }
 
@@ -608,9 +731,11 @@ export class BombPool {
       if (!Number.isFinite(_sweep.dist)) continue;
 
       _hitP.copy(_oldTip).addScaledVector(_segDir, _sweep.dist);
-      if (_sweep.machine) _n.copy(_segDir).negate();
+      if (_sweep.normal) _n.copy(_sweep.normal);
+      else if (_sweep.machine) _n.copy(_segDir).negate();
       else if (this.ctx.terrain) this.ctx.terrain.getNormal(_hitP.x, _hitP.z, _n);
       else _n.set(0, 1, 0);
+      if (_n.dot(_segDir) > 0) _n.negate();
 
       b.mode = 'idle';
       b.group.visible = false;

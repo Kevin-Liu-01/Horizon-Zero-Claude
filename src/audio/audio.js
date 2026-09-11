@@ -1,21 +1,95 @@
 /**
- * GameAudio — fully procedural WebAudio soundscape. Zero audio assets:
- * every sound is synthesized (noise buffers, FM chirps, Karplus-Strong plucks,
- * metallic partial stacks). The AudioContext is created/resumed only on the
- * first user gesture or 'game-start'. One shared noise buffer + precomputed
- * pluck buffers are reused for all one-shots; simultaneous voices are capped.
+ * GameAudio — the hybrid WebAudio mix (Round 4, decision **D2**).
  *
- * v2 (HZD-accuracy round): sonifies weapon wheel, Concentration (breath +
- * heartbeat + music low-pass), part tear-off, item pickup, ammo crafting,
- * attack telegraph blips, elemental canister explosions, brittle-freeze
- * shatter, disc-launcher thump and the Focus hologram hum. All new envelopes
- * are scheduled in AudioContext time / performance.now() (REAL time), so
- * engine.timeScale changes (wheel slow-mo, Concentration) never warp them.
+ * v1/v2 were 100 % procedural. That ceiling (`audio-16`) made four blockers
+ * unfixable: eight species shared two synthesized roars, one footstep served
+ * every surface, three bows shared one release, and there was no Aloy foley at
+ * all. v3 keeps every procedural voice that is *idiomatic* — the Focus
+ * hologram, elemental zaps, UI blips, the wind bed, the adaptive plucks — and
+ * puts a licensed sample bank underneath everything that wanted a recording.
+ *
+ * What v3 adds
+ *  - `SampleBank` (src/audio/bank.js): 90 CC0 Ogg/Opus cues in 58 sets, each
+ *    with a licence row. See `public/audio/MANIFEST.md`.
+ *  - Real 3D (src/audio/spatial.js): PannerNode + inverse distance + air
+ *    absorption + reverb send + occlusion via `ctx.collision.occluded()`.
+ *  - A mix graph (src/audio/buses.js): world low-pass over the whole diegetic
+ *    world for Concentration, a UI bus that bypasses it, sidechain ducking and
+ *    persisted volume sliders on `ctx.settings.audio`.
+ *  - A priority voice pool: a Thunderjaw roar steals a footstep, never the
+ *    other way round.
+ *  - Headless verification (src/audio/probe.js): the gates render the real
+ *    graph through an OfflineAudioContext and measure the samples.
+ *
+ * The AudioContext is still created/resumed only on the first gesture or
+ * 'game-start', and all envelopes are still scheduled in AudioContext /
+ * performance.now() time, so `engine.timeScale` never warps them.
  */
+
+import { SampleBank } from './bank.js';
+import { buildBuses, Ducker, DEFAULT_VOLUMES, VOLUME_BUSES } from './buses.js';
+import { SpatialPool, SpatialChain, LoopEmitter, syncListener } from './spatial.js';
+import { probeSpatial, probeBuffer, bandDistance, beatGrid } from './probe.js';
+import { MusicDirector, BEAT } from './music.js';
+import { ZoneEmitters } from './zones.js';
 
 const PENTA = [220.0, 261.63, 293.66, 329.63, 392.0, 440.0]; // A min pentatonic
 const VOICE_CAP = 24;
 const clamp = (v, lo, hi) => (v < lo ? lo : v > hi ? hi : v);
+
+const SETTINGS_KEY = 'hzc.audio.v1';
+
+/** Machine kind -> footfall weight class (mstep/*) and voice loudness. */
+const WEIGHT = {
+  watcher: 'light', scrapper: 'light', glinthawk: 'light', longleg: 'medium',
+  strider: 'medium', sawtooth: 'medium', behemoth: 'heavy', thunderjaw: 'heavy',
+};
+const SPECIES = [
+  'watcher', 'strider', 'scrapper', 'longleg',
+  'glinthawk', 'sawtooth', 'behemoth', 'thunderjaw',
+];
+/** Biome beds, cross-faded one-at-a-time by `_pickBed()` (`audio-11`). */
+const BEDS = [
+  'amb/meadow', 'amb/river', 'amb/forest', 'amb/night', 'amb/ridge',
+];
+/** Per-bed level: a campfire is a presence, a night bed is a floor. */
+const BED_GAIN = {
+  'amb/campfire': 0.5, 'amb/river': 0.46, 'amb/ridge': 0.44,
+  'amb/forest': 0.42, 'amb/meadow': 0.42, 'amb/night': 0.34,
+};
+/**
+ * `terrain.surfaceAt()` vocabulary -> footstep set (`audio-04`).
+ *
+ * `Terrain.SURFACES` is ['water','cobble','silt','dirt','gravel','rock','snow',
+ * 'grass'] and every one of them now has its own recorded set. The previous
+ * map folded five of the eight onto rock or dirt, which meant wading the river
+ * and walking a gravel bench produced the same sound — the single most
+ * audible thing world-ground's new surface field could have fixed and didn't.
+ * The extra keys are aliases so a future vocabulary addition degrades to a
+ * near neighbour instead of falling all the way back to grass.
+ */
+const SURFACE_SET = {
+  grass: 'foot/grass', meadow: 'foot/grass', moss: 'foot/grass',
+  dirt: 'foot/dirt', path: 'foot/dirt', sand: 'foot/dirt',
+  silt: 'foot/silt', mud: 'foot/silt',
+  water: 'foot/water', shallow: 'foot/water',
+  cobble: 'foot/cobble', stone: 'foot/cobble',
+  gravel: 'foot/gravel', scree: 'foot/gravel', shale: 'foot/gravel',
+  rock: 'foot/rock', metal: 'foot/rock',
+  snow: 'foot/snow', ice: 'foot/snow',
+};
+/** weapon id fragment -> bow set. */
+function bowSetFor(id) {
+  const s = String(id || '').toLowerCase();
+  if (/sharp|precision|marks/.test(s)) return 'sharpshot';
+  if (/war|heavy|tear/.test(s)) return 'war';
+  return 'hunter';
+}
+/** Voice priorities — the pool steals upward only. */
+const PRI = {
+  ambience: 1, footstep: 2, gear: 2, ui: 9, item: 3, machineStep: 3,
+  hit: 5, bow: 5, breath: 4, voice: 7, big: 8, death: 8, hurt: 8,
+};
 
 export class GameAudio {
   constructor(ctx) {
@@ -61,7 +135,6 @@ export class GameAudio {
     this._prevHealing = false;
     this._healLevel = 0;
     this._concActive = false;     // Concentration slow-mo (Shift while aiming)
-    this._concNextHbMs = 0;       // next heartbeat thump, wall-clock ms
     this._concSetMs = -1e9;       // last event-driven flip (poll grace window)
     this._lpFreq = 16000;         // music low-pass current cutoff
     this._focusOn = false;        // Focus mode hum ('focus-on'/'focus-off')
@@ -72,6 +145,70 @@ export class GameAudio {
     this._focusBlipMs = -1e9;
     this._itemMs = -1e9;
     this._itemBurst = 0;
+
+    /* --------------------------- v3 (Round 4) --------------------------- */
+    this.bank = new SampleBank();
+    this.buses = null;
+    this.pool = null;
+    this.ducker = null;
+    /** @type {Record<string, LoopEmitter>} */
+    this.loops = {};
+    this._bed = null;             // current ambience bed set id
+    this._bedList = [];           // cached values of this.loops (no per-frame for-in)
+    this._bedT = 0;
+    this._worldLPFreq = 20000;
+    this._surface = 'grass';
+    this._servoT = 0;
+    this._pendingFlyby = null;
+    this._listener = { x: 0, y: 0, z: 0, fx: 0, fy: 0, fz: -1 };
+    this._occA = null;            // Vector3 scratch, built in _init
+    this._occB = null;
+    this._machineLoops = new Map();  // machine -> LoopEmitter (servo idle)
+    this._scanCd = new Map();
+    this._footfallCd = new Map();
+    this._staggerMs = -1e9;
+
+    /* ------------------- v4 (Round 4, audio content half) --------------- */
+    /** @type {MusicDirector|null} the adaptive stem score (audio-01) */
+    this.music = null;
+    /** @type {ZoneEmitters|null} positional fire / water / status / loot loops */
+    this.zones = null;
+    this._musicState = 'calm';
+    this._combatUntil = -1e9;      // wall-clock ms the combat mix holds until
+    this._suspectUntil = -1e9;
+    this._resolveUntil = -1e9;
+    this._musicT = 0;              // selector throttle
+    this._zoneT = 0;               // zone-emitter rescan throttle
+    this._statusT = 0;             // elemental status rescan throttle
+    this._callT = 22 + Math.random() * 20;   // distant machine call timer
+    this._breathT = 0;             // exertion breath timer (audio-03)
+    this._exertion = 0;            // 0..1 running average of effort
+    this._airborne = false;
+    this._wreckBeacons = new Map();  // machine -> ms the beacon started
+    this._warbleCd = new Map();
+    this._mids = new WeakMap();      // machine -> stable small int for zone ids
+    this._midN = 0;
+    this._wantSet = new Set();       // reused by _statusScan; never reallocated
+    this._legacyScore = true;        // false once MusicDirector takes over
+    this._surfaceKey = 'grass';    // last raw surfaceAt value (debug + gates)
+    this._sampleCounts = { played: 0, refused: 0, missing: 0 };
+    /** rolling window of played cue ids, for eyeballing (`recentCues()`). */
+    this._recent = [];
+    /**
+     * Monotonic per-set play counter. The rolling window is NOT a sound basis
+     * for an assertion: once machine-rig started emitting `machine-footfall`
+     * for real, a live roster pushed ~100 footfall cues through it and shifted
+     * the earliest entries of a gate's own measurement window off the front.
+     * These counters never lose an event.
+     */
+    this._cueCounts = new Map();
+    this._contract = {
+      'machine-footfall': 0, 'machine-stagger': 0, 'machine-state': 0,
+      'machine-scan': 0, 'machine-attack-phase': 0,
+    };
+    this.settings = this._loadSettings();
+    ctx.settings = ctx.settings || {};
+    ctx.settings.audio = this.settings;
 
     const arm = () => { this._init(); this.ac?.resume?.().catch(() => {}); };
     ctx.events.on('game-start', arm);
@@ -95,28 +232,48 @@ export class GameAudio {
     }
     this.ac = ac;
 
-    this.master = ac.createGain();
-    this.master.gain.value = 0.85;
-    this.comp = ac.createDynamicsCompressor();
-    this.comp.threshold.value = -16;
-    this.comp.knee.value = 10;
-    this.comp.ratio.value = 5;
-    this.comp.attack.value = 0.004;
-    this.comp.release.value = 0.24;
-    this.master.connect(this.comp).connect(ac.destination);
+    // --- v3 mix graph. The bus names below are the same ones every existing
+    //     procedural voice already writes to, so the whole synth stack keeps
+    //     working while the world gains a low-pass, a UI bus and a reverb.
+    const buses = buildBuses(ac, { volumes: this.settings, analyser: true });
+    this.buses = buses;
+    this.master = buses.master;
+    this.comp = buses.comp;
+    this.ambBus = buses.ambBus;
+    this.sfxBus = buses.sfxBus;
+    this.uiBus = buses.uiBus;
+    this.voiceBus = buses.voiceBus;
+    this.musicBus = buses.musicBus;
+    this.musicLP = buses.musicLP;
+    this.worldLP = buses.worldLP;
+    this.analyser = buses.analyser;
+    this.pool = new SpatialPool(buses, { size: 28 });
+    this.ducker = new Ducker(buses);
+    this._applyVolumes();
 
-    this.ambBus = ac.createGain(); this.ambBus.gain.value = 0.9;
-    this.sfxBus = ac.createGain(); this.sfxBus.gain.value = 1.0;
-    this.musicBus = ac.createGain(); this.musicBus.gain.value = 0.8;
-    this.ambBus.connect(this.master);
-    this.sfxBus.connect(this.master);
-    // Music routes through a sweepable low-pass: Concentration dips it to a
-    // muffled underwater bed (canon slow-mo feel), update() sweeps it back.
-    this.musicLP = ac.createBiquadFilter();
-    this.musicLP.type = 'lowpass';
-    this.musicLP.frequency.value = this._lpFreq;
-    this.musicLP.Q.value = 0.4;
-    this.musicBus.connect(this.musicLP).connect(this.master);
+    // Vector3 scratch for the occlusion queries (ctx.collision wants vectors).
+    const V = this.ctx.player?.position?.constructor
+      || this.ctx.camera?.position?.constructor;
+    if (V) { this._occA = new V(); this._occB = new V(); }
+
+    // The bank loads in the background; every cue falls back to synthesis
+    // until its buffer lands, so nothing is ever silent while it downloads.
+    this.bankReady = this.bank.load(ac).then((b) => {
+      this._startBeds();
+      this.zones = new ZoneEmitters(ac, buses, this.bank);
+      // audio-01 — the composed score replaces the procedural one the moment
+      // its stems are decoded. If any stem is missing the director reports
+      // `available: false` and the legacy drone/pluck/percussion layers keep
+      // playing, so a failed download degrades instead of going silent.
+      const music = new MusicDirector(ac, buses, this.bank);
+      if (music.available) {
+        this.music = music;
+        this._retireProceduralScore();
+      } else {
+        music.dispose();
+      }
+      return b;
+    }).catch(() => this.bank);
 
     this._noiseBuf = this._makeNoiseBuffer(2.0);
     this._pluckBufs = PENTA.map((f) => this._makePluckBuffer(f));
@@ -136,6 +293,10 @@ export class GameAudio {
       if (this._lpFreq < 15000 && this.musicLP) {
         this._lpFreq = 16000;
         this.musicLP.frequency.value = 16000;
+      }
+      if (this._worldLPFreq < 19000 && this.worldLP) {
+        this._worldLPFreq = 20000;
+        this.worldLP.frequency.value = 20000;
       }
       // hum/heal loops mute while not playing; _focusOn persists so the hum
       // resumes if the player unpauses with Focus still engaged
@@ -266,6 +427,27 @@ export class GameAudio {
     this.tensionBus = ac.createGain();
     this.tensionBus.gain.value = 0;
     this.tensionBus.connect(this.musicBus);
+  }
+
+  /**
+   * Hand the score over to `MusicDirector` (`audio-01`).
+   *
+   * The procedural layers are faded rather than disconnected: the drone's
+   * oscillators are `start()`ed once at boot and have no stop scheduled, and a
+   * hard disconnect mid-ring would click. They stay in the graph at zero gain,
+   * which costs three oscillators and nothing else, and `update()` stops
+   * driving them (see `_legacyScore`). If the bank ever fails to decode a stem
+   * this never runs and the old score simply keeps playing.
+   */
+  _retireProceduralScore() {
+    this._legacyScore = false;
+    const now = this.ac.currentTime;
+    for (const g of [this.droneGain, this.pluckBus, this.tensionBus]) {
+      if (!g) continue;
+      g.gain.cancelScheduledValues(now);
+      g.gain.setValueAtTime(g.gain.value, now);
+      g.gain.linearRampToValueAtTime(0.0001, now + 2.5);
+    }
   }
 
   _buildCreak() {
@@ -460,10 +642,780 @@ export class GameAudio {
     this._att = 1 / (1 + dist * 0.03);
   }
 
+  /* ========================== v3 — mix + samples ========================= */
+
+  /* ------------------------------ settings ------------------------------ */
+
+  /** Persisted sliders (`audio-14`). shell-menus writes these through setVolume(). */
+  _loadSettings() {
+    const out = { ...DEFAULT_VOLUMES };
+    try {
+      const raw = localStorage.getItem(SETTINGS_KEY);
+      if (raw) {
+        const saved = JSON.parse(raw);
+        for (const k of VOLUME_BUSES) {
+          if (typeof saved[k] === 'number' && Number.isFinite(saved[k])) {
+            out[k] = clamp(saved[k], 0, 1);
+          }
+        }
+        if (typeof saved.muted === 'boolean') out.muted = saved.muted;
+      }
+    } catch { /* private mode / disabled storage: defaults are fine */ }
+    return out;
+  }
+
+  _saveSettings() {
+    try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(this.settings)); } catch { /* ignore */ }
+  }
+
+  _applyVolumes() {
+    const b = this.buses;
+    if (!b) return;
+    const s = this.settings;
+    b.master.gain.value = s.muted ? 0 : s.master;
+    b.musicVol.gain.value = s.music;
+    b.sfxVol.gain.value = s.sfx;
+    b.ambVol.gain.value = s.ambience;
+    b.voiceVol.gain.value = s.voice;
+    b.uiVol.gain.value = s.ui;
+  }
+
+  /**
+   * Published for `shell-menus`. `bus` is one of
+   * master|music|sfx|ambience|voice|ui. Persists immediately.
+   */
+  setVolume(bus, value) {
+    if (!VOLUME_BUSES.includes(bus)) return false;
+    this.settings[bus] = clamp(+value || 0, 0, 1);
+    this._applyVolumes();
+    this._saveSettings();
+    this.ctx.events.emit('audio-settings-changed', { ...this.settings });
+    return true;
+  }
+
+  getVolume(bus) { return this.settings[bus]; }
+
+  /** Snapshot of every slider — what a settings screen renders from. */
+  volumes() { return { ...this.settings }; }
+
+  setMuted(on) {
+    this.settings.muted = !!on;
+    this._applyVolumes();
+    this._saveSettings();
+    this.ctx.events.emit('audio-settings-changed', { ...this.settings });
+    return this.settings.muted;
+  }
+
+  /* ------------------------- sample playback ---------------------------- */
+
+  /**
+   * Play a bank set through the 3D chain.
+   *
+   * @param {string} setId       e.g. 'voice/thunderjaw/strike'
+   * @param {{x:number,y:number,z:number}|null} pos  world position; null = 2D
+   * @param {object} [opts] { volume, category, priority, rate, track, duck, reverb }
+   * @returns {boolean} false when the bank has no such set (caller synthesizes)
+   */
+  playAt(setId, pos, opts = {}) {
+    if (!this.ac || !this.pool) return false;
+    const picked = this.bank.pick(setId);
+    if (!picked) { this._sampleCounts.missing++; return false; }
+    const now = this.ac.currentTime;
+    const priority = opts.priority ?? PRI.hit;
+    const chain = this.pool.acquire(priority, now);
+    if (!chain) { this._sampleCounts.refused++; return false; }
+
+    const category = opts.category || 'sfx';
+    chain.route(category);
+    chain.busy = true;
+    chain.priority = priority;
+    chain.startedAt = now;
+    chain.tag = setId;
+    chain.tracked = opts.track || null;
+
+    const p = pos || this._listener;
+    chain.setPosition(p.x, (p.y ?? 0) + (opts.height ?? 0), p.z);
+    const L = this._listener;
+    chain.applyDistance(L.x, L.y, L.z, L.fx, L.fy, L.fz);
+    if (opts.reverb != null) chain.send.gain.value = opts.reverb;
+
+    // one BufferSource + one gain per playback: sources are single-use, and the
+    // gain is what lets the pool fade this exact voice out if it gets stolen
+    const vg = this.ac.createGain();
+    vg.gain.value = (opts.volume ?? 1) * (picked.row.gain ?? 1);
+    vg.connect(chain.input);
+    const src = this.ac.createBufferSource();
+    src.buffer = picked.buffer;
+    if (opts.rate) src.playbackRate.value = opts.rate;
+    src.connect(vg);
+    src.start(now);
+    chain.voiceGain = vg;
+    chain.source = src;
+    const dur = picked.buffer.duration / (opts.rate || 1);
+    chain.endsAt = now + dur;
+    src.onended = () => {
+      if (chain.source === src) chain.reset();
+      try { src.disconnect(); vg.disconnect(); } catch { /* torn down */ }
+    };
+
+    if (opts.duck) this.ducker.trigger(opts.duck, opts.duckHold ?? 0.4);
+    this._note(setId);
+    return true;
+  }
+
+  /** Non-positional bank playback (UI, Aloy first-person foley). */
+  play2D(setId, opts = {}) {
+    if (!this.ac) return false;
+    const picked = this.bank.pick(setId);
+    if (!picked) { this._sampleCounts.missing++; return false; }
+    const bus = opts.category === 'ui' ? this.uiBus
+      : opts.category === 'ambience' ? this.ambBus
+        : opts.category === 'voice' ? this.voiceBus : this.sfxBus;
+    const g = this._voice(picked.buffer.duration + 0.1, (opts.volume ?? 1) * (picked.row.gain ?? 1), opts.pan || 0, bus);
+    if (!g) return false;
+    const src = this.ac.createBufferSource();
+    src.buffer = picked.buffer;
+    if (opts.rate) src.playbackRate.value = opts.rate;
+    src.connect(g);
+    src.start(this.ac.currentTime);
+    src.onended = () => { try { src.disconnect(); } catch { /* torn down */ } };
+    if (opts.duck) this.ducker.trigger(opts.duck, opts.duckHold ?? 0.4);
+    this._note(setId);
+    return true;
+  }
+
+  /** Record a played cue: a lossless counter plus a rolling window. */
+  _note(setId) {
+    this._sampleCounts.played++;
+    this._cueCounts.set(setId, (this._cueCounts.get(setId) || 0) + 1);
+    this._recent.push(setId);
+    if (this._recent.length > 256) this._recent.shift();
+  }
+
+  /** The last <=256 bank cue ids played, oldest first (debugging only). */
+  recentCues() { return this._recent.slice(); }
+
+  /**
+   * Total plays per set since boot — the number a gate should diff across an
+   * action, because it cannot be lost to a busy mix.
+   */
+  cueCounts() {
+    const out = {};
+    for (const [k, v] of this._cueCounts) out[k] = v;
+    return out;
+  }
+
+  /* --------------------------- ambience beds ---------------------------- */
+
+  /** Build the beds once the bank lands; update() picks which one plays. */
+  _startBeds() {
+    if (!this.ac || !this.buses) return;
+    for (const set of BEDS) {
+      if (this.loops[set]) continue;
+      const first = this.bank.first(set);
+      if (!first) continue;
+      const l = new LoopEmitter(this.ac, first.buffer, this.buses.ambBus, { gain: 0, xf: 1.2 });
+      l.start();
+      this.loops[set] = l;
+    }
+    this._bedList = Object.values(this.loops);
+    this._bed = null;
+  }
+
+  /**
+   * Which biome bed is under the mix (`audio-11`).
+   *
+   * Ordered most-specific first, and every branch reads a PUBLISHED query —
+   * `camp.firePosition`, `water.depthAt`, `terrain.surfaceAt`,
+   * `environment.phase` — rather than a hard-coded coordinate. The Round-3
+   * selector guessed the river was "roughly x ≈ 40", which was true of one
+   * build's terrain seed and nothing else.
+   */
+  _pickBed() {
+    const p = this.ctx.player;
+    if (!p) return 'amb/meadow';
+    const x = p.position.x; const z = p.position.z;
+
+    // NOTE: there is deliberately no campfire bed. A fire is a source you can
+    // walk around, not a place you are inside — `_zoneScan()` puts it in the
+    // world at `camp.firePosition` instead (`audio-11`).
+
+    // open water within ~18 m: close enough that you are inside the sound
+    // field rather than hearing it from over there (which is the zone emitter)
+    if (this._waterNear(x, z, 18)) return 'amb/river';
+
+    const s = this._surfaceKey;
+    if (s === 'water' || s === 'silt' || s === 'cobble') return 'amb/river';
+    // bare rock above the meadow: wind with an edge and nothing living in it
+    if (s === 'rock' || s === 'gravel' || s === 'snow') return 'amb/ridge';
+
+    // sheltered, tree-scattered low ground. `grassDensityAt` is the only local
+    // vegetation query world-ground publishes; the tree belts in this valley
+    // sit in the dense-scatter band, so it is a proxy — see the report's ASK
+    // for `vegetation.treeDensityAt(x, z)`.
+    const dens = this.ctx.vegetation?.grassDensityAt?.(x, z);
+    if (typeof dens === 'number' && dens > 1.5) return 'amb/forest';
+
+    const phase = this.ctx.environment?.phase;
+    if (phase === 'night') return 'amb/night';
+    return 'amb/meadow';
+  }
+
+  /**
+   * Is there open water within `r` metres? Eight probes on a ring plus the
+   * centre — cheap enough for the 0.5 s bed poll, and honest about the river
+   * wherever world-ground decides to put it.
+   */
+  _waterNear(x, z, r) {
+    const w = this.ctx.environment?.water;
+    if (!w || typeof w.depthAt !== 'function') return false;
+    if (w.depthAt(x, z) > 0.02) return true;
+    for (let i = 0; i < 8; i++) {
+      const a = (i / 8) * Math.PI * 2;
+      if (w.depthAt(x + Math.cos(a) * r, z + Math.sin(a) * r) > 0.02) return true;
+    }
+    return false;
+  }
+
+
+  /* ========================= the adaptive score ========================= */
+
+  /**
+   * Choose the music state (`audio-01`).
+   *
+   * Two inputs, deliberately: a **poll** of the machine roster's FSM states,
+   * and **event stamps** written by the combat/alert handlers. The poll alone
+   * lags — `machine-attack-phase` fires on the windup frame and the state flip
+   * can be a tick later, which would put the combat stinger behind the first
+   * strike. The events alone flicker — a single alarm would drop the score
+   * back to calm the moment its handler stopped writing. Together: events set
+   * the floor, the poll extends it, and a hold window (`*Until`) stops the mix
+   * chattering between states on the boundary.
+   *
+   * The director does the quantising; this only ever names a state.
+   */
+  _musicSelect(nowMs) {
+    const m = this.music;
+    if (!m || !m.available) return;
+    const ctx = this.ctx;
+    const p = ctx.player;
+    const list = ctx.machines?.list;
+    let hostile = false;
+    let wary = false;
+    if (list && p) {
+      const px = p.position.x; const pz = p.position.z;
+      for (let i = 0; i < list.length; i++) {
+        const mm = list[i];
+        if (!mm.alive) continue;
+        const dx = mm.position.x - px; const dz = mm.position.z - pz;
+        if (dx * dx + dz * dz > 14400) continue;         // 120 m
+        const st = String(mm.state || '');
+        if (st === 'attack' || st === 'combat' || st === 'engage'
+          || st === 'alert' || st === 'alarm' || st === 'charge') hostile = true;
+        else if (st === 'suspicious' || st === 'search' || st === 'investigate'
+          || st === 'alerted' || st === 'wary') wary = true;
+      }
+    }
+    if (hostile) this._combatUntil = Math.max(this._combatUntil, nowMs + 5000);
+    if (wary) this._suspectUntil = Math.max(this._suspectUntil, nowMs + 4000);
+
+    const prev = this._musicState;
+    let want = 'calm';
+    if (nowMs < this._combatUntil) want = 'combat';
+    else if (nowMs < this._resolveUntil) want = 'resolve';
+    else if (nowMs < this._suspectUntil) want = 'suspicious';
+
+    if (want === prev) return;
+    // leaving a fight is a moment; give it a phrase of its own before calm
+    if (prev === 'combat' && want !== 'combat') {
+      this._resolveUntil = nowMs + 12000;
+      want = 'resolve';
+      m.sting('resolve', { volume: 0.9, minGap: 10 });
+    } else if (want === 'combat') {
+      m.sting('combat', { volume: 1, minGap: 8 });
+    } else if (want === 'suspicious' && prev === 'calm') {
+      m.sting('alert', { volume: 0.75, minGap: 12 });
+    }
+    this._musicState = want;
+    m.setState(want);
+  }
+
+  /**
+   * Published so `shell-menus`, quests, the studio and the gates can name a
+   * state directly.
+   *
+   * It must CLEAR the holds it outranks, not just set its own. The first cut
+   * only set them, so asking for `resolve` while the 5 s combat hold was still
+   * running made the selector flip straight back to combat on its next tick and
+   * then out again — three transitions scheduled on one downbeat for what the
+   * caller asked to be one.
+   */
+  setMusicState(name, opts) {
+    if (!this.music || !this.music.available) return false;
+    this._musicState = name;
+    const nowMs = performance.now();
+    this._combatUntil = -1e9; this._suspectUntil = -1e9; this._resolveUntil = -1e9;
+    if (name === 'combat') this._combatUntil = nowMs + 5000;
+    else if (name === 'suspicious') this._suspectUntil = nowMs + 4000;
+    else if (name === 'resolve') this._resolveUntil = nowMs + 12000;
+    return this.music.setState(name, opts);
+  }
+
+  /** Published: fire a score stinger by name ('combat'|'resolve'|'alert'|'discover'). */
+  sting(name, opts) { return this.music ? this.music.sting(name, opts) : false; }
+
+  /* ====================== positional world emitters ==================== */
+
+  /** Stable small integer per machine, for zone-emitter ids. */
+  _idOf(machine) {
+    let id = this._mids.get(machine);
+    if (id === undefined) { id = ++this._midN; this._mids.set(machine, id); }
+    return id;
+  }
+
+  /**
+   * Zone ambience that lives in the world rather than on the bus (`audio-11`):
+   * the campfire you can circle, and open water heard from the bank.
+   *
+   * The water emitter deliberately does NOT run while the river bed is up.
+   * Inside ~18 m you are in the sound field (that is the bed); past it the
+   * river is a thing over there, which is a source. Running both would double
+   * the same recording at two pan positions and read as a phasey smear.
+   */
+  _zoneScan(playing) {
+    const z = this.zones;
+    if (!z) return;
+    if (!playing) { z.retireAll(0.5); return; }
+    const p = this.ctx.player;
+    if (!p) return;
+    const px = p.position.x; const pz = p.position.z;
+
+    // --- fire
+    const fire = this.ctx.camp?.firePosition;
+    if (fire && Math.hypot(px - fire.x, pz - fire.z) < 80) {
+      z.ensure('fire:camp', 'amb/campfire', fire.x, fire.y + 0.35, fire.z,
+        { volume: 0.62, reverb: 0.2 });
+    } else z.retire('fire:camp', 0.8);
+
+    // --- water, mid distance only
+    const w = this.ctx.environment?.water;
+    if (w && typeof w.depthAt === 'function' && this._bed !== 'amb/river') {
+      let best = null; let bestD = 1e9;
+      // coarse polar sweep: 3 radii x 12 bearings, 0.6 s apart. Cheaper than a
+      // grid and it finds a ribbon river from any angle.
+      for (let ri = 0; ri < 3; ri++) {
+        const r = 20 + ri * 22;
+        for (let i = 0; i < 12; i++) {
+          const a = (i / 12) * Math.PI * 2;
+          const x = px + Math.cos(a) * r; const zz = pz + Math.sin(a) * r;
+          if (w.depthAt(x, zz) <= 0.02) continue;
+          if (r < bestD) { bestD = r; best = [x, zz]; }
+        }
+        if (best) break;
+      }
+      if (best) {
+        const y = (this.ctx.terrain?.getHeight?.(best[0], best[1]) ?? p.position.y) + 0.2;
+        z.ensure('water:river', 'amb/river', best[0], y, best[1], { volume: 0.5, reverb: 0.18 });
+      } else z.retire('water:river', 1.0);
+    } else z.retire('water:river', 1.0);
+  }
+
+  /**
+   * Elemental status loops (`audio-10`).
+   *
+   * Polled, not evented: the machine lane owns `burnT` / `stunT` / `brittleT`
+   * as continuous timers and publishes no start/stop pair for them, so a
+   * listener would have to guess when a status ended. A 4 Hz sweep of the
+   * machines in earshot is exact, costs one pass over ~24 objects, and is the
+   * only place the status can actually be observed to STOP.
+   */
+  _statusScan(playing) {
+    const z = this.zones;
+    if (!z) return;
+    const want = this._wantSet;
+    want.clear();
+    const p = this.ctx.player;
+    const list = this.ctx.machines?.list;
+    if (playing && p && list) {
+      const px = p.position.x; const pz = p.position.z;
+      for (let i = 0; i < list.length; i++) {
+        const m = list[i];
+        if (!m.alive) continue;
+        const dx = m.position.x - px; const dz = m.position.z - pz;
+        if (dx * dx + dz * dz > 4900) continue;          // 70 m
+        const id = this._idOf(m);
+        const y = m.position.y + (m.height ?? 2) * 0.45;
+        if (m.burnT > 0.05) {
+          const k = `burn:${id}`; want.add(k);
+          z.ensure(k, 'status/burn', m.position.x, y, m.position.z, { volume: 0.55 });
+        }
+        if (m.stunT > 0.05) {
+          const k = `shock:${id}`; want.add(k);
+          z.ensure(k, 'status/shock', m.position.x, y, m.position.z, { volume: 0.5 });
+        }
+        if (m.brittleT > 0.05) {
+          const k = `frost:${id}`; want.add(k);
+          z.ensure(k, 'status/frost', m.position.x, y, m.position.z, { volume: 0.42 });
+        }
+      }
+    }
+    // anything that was burning and is not any more — including machines that
+    // died, were disposed, or walked out of earshot
+    for (const id of z.ids()) {
+      if (id.startsWith('burn:') || id.startsWith('shock:') || id.startsWith('frost:')) {
+        if (!want.has(id)) z.retire(id, 0.45);
+      }
+    }
+  }
+
+  /**
+   * The wreck beacon (`audio-06`): a dead machine's last cell still ticking, so
+   * a kill you made across the valley is findable by ear. Dies when the wreck
+   * is looted, when it despawns, or after 100 s — a beacon that outlives its
+   * loot is a lie.
+   */
+  _beaconScan(playing) {
+    const z = this.zones;
+    if (!z) return;
+    const p = this.ctx.player;
+    const nowMs = performance.now();
+    for (const [m, startedMs] of this._wreckBeacons) {
+      const gone = !m.position || m._disposed || m._looted === true
+        || nowMs - startedMs > 100000;
+      const id = `loot:${this._idOf(m)}`;
+      const d = (playing && p && !gone)
+        ? Math.hypot(m.position.x - p.position.x, m.position.z - p.position.z) : 1e9;
+      if (gone) { z.retire(id, 0.6); this._wreckBeacons.delete(m); continue; }
+      if (nowMs - startedMs < 1400) continue;            // let the collapse finish
+      if (d < 55) {
+        z.ensure(id, 'machine/loot-beacon', m.position.x,
+          m.position.y + 0.5, m.position.z, { volume: 0.3 });
+      } else z.retire(id, 0.6);
+    }
+  }
+
+  /**
+   * A machine call arriving from somewhere you cannot see (`audio-11`). Only
+   * while the score is calm — during a fight it would read as a second machine
+   * joining, which is a lie the player would act on.
+   */
+  _distantCall(rdt, playing) {
+    this._callT -= rdt;
+    if (this._callT > 0) return;
+    this._callT = 26 + Math.random() * 34;
+    if (!playing || this._musicState !== 'calm') return;
+    const p = this.ctx.player;
+    const list = this.ctx.machines?.list;
+    if (!p || !list) return;
+    let far = null;
+    for (let i = 0; i < list.length; i++) {
+      const m = list[i];
+      if (!m.alive) continue;
+      const dx = m.position.x - p.position.x; const dz = m.position.z - p.position.z;
+      const d2 = dx * dx + dz * dz;
+      if (d2 > 4900 && d2 < 90000) { far = m; break; }   // 70..300 m
+    }
+    if (!far) return;
+    // pull the source to a fixed 95 m on the machine's bearing: the cue is
+    // rendered with its own distance baked in, so playing it at 72 m would
+    // stack two attenuations and read as a machine right behind you
+    const a = Math.atan2(far.position.z - p.position.z, far.position.x - p.position.x);
+    this.playAt('amb/call-far', {
+      x: p.position.x + Math.cos(a) * 95,
+      y: p.position.y + 6,
+      z: p.position.z + Math.sin(a) * 95,
+    }, { category: 'ambience', volume: 1, priority: PRI.ambience, reverb: 0.9 });
+  }
+
+  /* ============================ Aloy foley ============================= */
+
+  /**
+   * Effort and breath (`audio-03`). D2 stands: no VO, ever — this is a throat
+   * and a diaphragm, not a line. `_exertion` is a slow running average of how
+   * hard she is working, so the breath layer arrives after a sprint instead of
+   * on its first frame, and recovers over several seconds rather than cutting.
+   */
+  _effort(hard = false, volume = 1) {
+    const set = hard ? 'aloy/effort-hard' : 'aloy/effort';
+    if (!this.play2D(set, { volume: 0.5 * volume, category: 'voice', rate: 0.96 + Math.random() * 0.1 })) {
+      this.play2D('aloy/effort', { volume: 0.45 * volume, category: 'voice' });
+    }
+    this._exertion = Math.min(1, this._exertion + (hard ? 0.28 : 0.16));
+  }
+
+  /** Breath layer driven by `_exertion`; called from update() on a real-time clock. */
+  _breathLayer(rdt, playing) {
+    const p = this.ctx.player;
+    if (!p || !playing) { this._exertion *= Math.max(0, 1 - rdt * 0.5); return; }
+    const sp = p.moveSpeed || 0;
+    // sprinting costs, standing still repays — the 8.2 m/s ceiling is the same
+    // number the footstep cadence uses
+    const load = clamp((sp - 3.4) / 4.8, 0, 1) * (p.crouching ? 0.4 : 1);
+    this._exertion = clamp(this._exertion + (load - 0.42) * rdt * 0.34, 0, 1);
+    this._breathT -= rdt;
+    if (this._breathT > 0) return;
+    if (this._exertion > 0.62) {
+      this._breathT = 2.1 + Math.random() * 0.9;
+      this.play2D('aloy/breath-hard', { volume: 0.34 + this._exertion * 0.2, category: 'voice' });
+    } else if (this._exertion > 0.3) {
+      this._breathT = 3.4 + Math.random() * 1.6;
+      this.play2D('aloy/breath-out', { volume: 0.22, category: 'voice' });
+    } else {
+      this._breathT = 2.5;
+    }
+  }
+
+  /* -------------------------- surface + species ------------------------- */
+
+  /** Footstep set for where the player is standing (`audio-04`). */
+  _footSet() {
+    const p = this.ctx.player;
+    const t = this.ctx.terrain;
+    if (p && t && typeof t.surfaceAt === 'function') {
+      try {
+        const s = t.surfaceAt(p.position.x, p.position.z);
+        if (s) { this._surface = String(s); this._surfaceKey = this._surface; }
+      } catch { /* terrain not ready */ }
+    }
+    return SURFACE_SET[this._surface] || 'foot/grass';
+  }
+
+  _speciesSet(machine, phase) {
+    const kind = String(machine?.kind || '').toLowerCase();
+    const k = SPECIES.includes(kind) ? kind : 'watcher';
+    return `voice/${k}/${phase}`;
+  }
+
+  _weightOf(machine) { return WEIGHT[String(machine?.kind || '')] || 'medium'; }
+
+  /**
+   * Play a species voice at a machine. Heavy machines get priority, a longer
+   * reverb send and a duck; a Watcher warble must never shove a Thunderjaw
+   * roar out of the pool.
+   * @returns {boolean} false when the bank has no such cue
+   */
+  _machineVoice(machine, phase, opts = {}) {
+    const pos = opts.position || machine?.position;
+    if (!pos) return false;
+    const heavy = this._weightOf(machine) === 'heavy';
+    return this.playAt(this._speciesSet(machine, phase), pos, {
+      category: 'voice',
+      volume: (opts.volume ?? 1) * (heavy ? 1 : 0.85),
+      priority: opts.priority ?? (heavy ? PRI.big : PRI.voice),
+      rate: opts.rate ?? (0.97 + Math.random() * 0.06),
+      height: machine?.eyeHeight ?? 1.2,
+      track: machine,
+      duck: opts.duck ?? (heavy ? 0.4 : 0.18),
+      duckHold: opts.duckHold ?? 0.45,
+    });
+  }
+
+  /**
+   * The suspicion voice (`audio-08`). `lost` plays the falling version — the
+   * machine giving up on whatever it heard — which is the cue a player needs
+   * to know the crouch-walk worked.
+   *
+   * Throttled per machine, because a search state can re-enter several times a
+   * second while the FSM settles on a lead.
+   */
+  _warble(machine, lost = false) {
+    if (!machine?.position) return false;
+    const nowMs = performance.now();
+    if (nowMs - (this._warbleCd.get(machine) ?? -1e9) < 1600) return false;
+    this._warbleCd.set(machine, nowMs);
+    const set = lost ? 'machine/unwarble' : 'machine/warble';
+    const played = this.playAt(set, machine.position, {
+      category: 'voice',
+      volume: lost ? 0.6 : 0.8,
+      priority: PRI.voice,
+      rate: this._weightOf(machine) === 'heavy' ? 0.82
+        : this._weightOf(machine) === 'light' ? 1.14 : 1,
+      height: machine.eyeHeight ?? 1.2,
+      track: machine,
+    });
+    // no dedicated cue in the bank: the species windup is the nearest thing
+    if (!played) this._machineVoice(machine, 'windup', { volume: 0.5, rate: lost ? 0.9 : 1.05 });
+    return true;
+  }
+
+  /**
+   * One servo idle loop per living machine within earshot (`audio-02`: the
+   * spatialized idle bed that tells you a Sawtooth is behind the ridge).
+   * Loops are created lazily and torn down on death or when the machine leaves
+   * the radius, so a 24-machine roster costs at most a handful of voices.
+   */
+  _syncServoLoop(machine) {
+    if (!machine || !this.buses) return;
+    const have = this._machineLoops.get(machine);
+    const alive = !!machine.alive;
+    const p = this.ctx.player;
+    const d = p ? Math.hypot(machine.position.x - p.position.x, machine.position.z - p.position.z) : 1e9;
+    const want = alive && d < 55;
+    if (want && !have) {
+      // audio-02 — the species owns its idle bed. One shared servo hum told
+      // you a machine was near; eight tell you WHICH, which is the information
+      // a stealth approach is actually played on. `machine/servo-loop` stays
+      // as the fallback for a kind the bank has no bed for.
+      const kind = String(machine.kind || '').toLowerCase();
+      const first = (SPECIES.includes(kind) && this.bank.first(`idle/${kind}`))
+        || this.bank.first('machine/servo-loop');
+      if (!first) return;
+      const chain = this._loopChain();
+      if (!chain) return;
+      chain.route('ambience');
+      chain.busy = true;
+      chain.priority = PRI.ambience;
+      chain.startedAt = this.ac.currentTime;
+      chain.endsAt = Infinity;
+      chain.tag = 'servo';
+      chain.tracked = machine;
+      chain.setPosition(machine.position.x, machine.position.y + 1, machine.position.z);
+      chain.voiceGain = null;
+      chain.source = null;
+      // the composed beds are already pitched per species, so the old
+      // rate hack (0.7 / 1.15) would now detune them off their own identity
+      const speciesBed = first.row.set.startsWith('idle/');
+      const loop = new LoopEmitter(this.ac, first.buffer, chain.input, {
+        gain: 0, xf: 0.8, rate: speciesBed ? 1 : (this._weightOf(machine) === 'heavy' ? 0.7 : 1.15),
+      });
+      loop.start();
+      loop.volume = (this._weightOf(machine) === 'heavy' ? 0.5 : 0.32) * (first.row.gain ?? 1);
+      chain.loop = loop;
+      this._machineLoops.set(machine, { loop, chain });
+    } else if (!want && have) {
+      this._retireLoop(machine, have, 0.5);
+    }
+  }
+
+  /**
+   * The ONE way a servo loop stops. Every caller used to hand-roll its own
+   * teardown and each got it subtly wrong: `machine-killed` armed `endsAt` but
+   * left `busy` set (nothing swept `_loopChains`, so the chain was orphaned
+   * forever — 8 kills in earshot and no machine ever hummed again); the
+   * out-of-radius branch cleared `busy` *immediately*, handing a still-fading
+   * emitter's chain to the next machine; the pause branch did neither.
+   *
+   * Retiring means: fade the emitter, keep the chain reserved for exactly that
+   * fade, and let `_reclaimLoopChains()` return it once the tail is silent.
+   */
+  _retireLoop(machine, entry, fade = 0.5) {
+    if (!entry) return;
+    entry.loop.stop(fade);
+    // hold the chain for the length of the tail, then the sweep takes it back
+    entry.chain.endsAt = this.ac.currentTime + fade + 0.1;
+    entry.chain.tracked = null;   // a dead machine may be recycled by the pool
+    this._machineLoops.delete(machine);
+  }
+
+  /**
+   * Reclaim sweep for `_loopChains` — the counterpart of the one the one-shot
+   * pool runs in `SpatialPool.take()`. Without it `_retireLoop`'s `endsAt` is
+   * written and never read, and the 8-chain pool is one-way.
+   * Fixed-size, no allocation: safe to call every frame.
+   */
+  _reclaimLoopChains() {
+    const chains = this._loopChains;
+    if (!chains) return;
+    const now = this.ac.currentTime;
+    for (let i = 0; i < chains.length; i++) {
+      const c = chains[i];
+      if (!c.busy || c.endsAt > now) continue;
+      if (c.loop) { c.loop.dispose(); c.loop = null; }
+      c.reset();
+    }
+  }
+
+  /**
+   * Dedicated chains for looping emitters. Loops are long-lived and quiet, so
+   * they must NOT compete in the one-shot pool: at PRI.ambience a single
+   * footstep would steal a Sawtooth's idle bed and it would never come back.
+   * Capped at 8 — the 55 m radius rarely holds more.
+   */
+  _loopChain() {
+    if (!this._loopChains) this._loopChains = [];
+    this._reclaimLoopChains();
+    for (const c of this._loopChains) if (!c.busy) return c;
+    if (this._loopChains.length >= 8) return null;
+    const c = new SpatialChain(this.buses, { panningModel: 'equalpower' });
+    c.loop = null;
+    this._loopChains.push(c);
+    return c;
+  }
+
+  /* --------------------------- gate-facing API -------------------------- */
+
+  /** Bank + licence summary. A73 reads this. */
+  bankAudit() {
+    return {
+      ...this.bank.audit(),
+      contextState: this.ac?.state || 'uninitialized',
+      samples: { ...this._sampleCounts },
+    };
+  }
+
+  /**
+   * Render `points` (world positions relative to a listener at the origin
+   * facing −Z) through the real bus + spatial graph offline and report the
+   * energy each ear receives. A74 reads this.
+   */
+  probe3D(points, opts) { return probeSpatial(points, opts); }
+
+  /** Offline render of one bank set — level + spectrum. A73/A75 read this. */
+  async probeSet(setId, opts) {
+    await this.bankReady;
+    const first = this.bank.first(setId);
+    if (!first) return null;
+    return probeBuffer(first.buffer, opts);
+  }
+
+  /** Cosine distance between two band vectors (0 identical). */
+  static bandDistance(a, b) { return bandDistance(a, b); }
+
+  /**
+   * Onset envelope of a bank set measured against the score's beat grid.
+   * A77 uses it to prove the stems are composed rather than crossfaded noise.
+   */
+  async probeBeats(setId, beat = BEAT) {
+    await this.bankReady;
+    const first = this.bank.first(setId);
+    if (!first) return null;
+    return beatGrid(first.buffer, beat);
+  }
+
+  /** Live master level, for a gate that wants to know the mix is moving. */
+  level() {
+    if (!this.analyser) return null;
+    const n = this.analyser.fftSize;
+    if (!this._levelBuf || this._levelBuf.length !== n) this._levelBuf = new Float32Array(n);
+    this.analyser.getFloatTimeDomainData(this._levelBuf);
+    let peak = 0; let sum = 0;
+    for (let i = 0; i < n; i++) { const v = this._levelBuf[i]; const m = v < 0 ? -v : v; if (m > peak) peak = m; sum += v * v; }
+    return { peak: +peak.toFixed(5), rms: +Math.sqrt(sum / n).toFixed(6) };
+  }
+
+  /** Which contract events have actually been received (Wave 3 handshake). */
+  contractCounts() { return { ...this._contract }; }
+
   /* ------------------------------ one-shots ------------------------------ */
 
   _footstep(speedN, crouched, inGrass) {
     const vol = crouched ? 0.045 : 0.09 + speedN * 0.1;
+    // audio-04 — per-surface sets from terrain.surfaceAt(); the synthesized
+    // step below stays as the fallback until the bank has decoded.
+    const set = this._footSet();
+    if (this.bank.has(set)) {
+      this._counts.steps++;
+      const played = this.play2D(set, {
+        volume: (crouched ? 0.24 : 0.42 + speedN * 0.42),
+        rate: 0.93 + Math.random() * 0.14,
+      });
+      // gear foley on the harder strides
+      if (played && !crouched && speedN > 0.45 && Math.random() < 0.55) {
+        this.play2D(speedN > 0.8 ? 'gear/heavy' : 'gear/light',
+          { volume: 0.2 + speedN * 0.2, rate: 0.95 + Math.random() * 0.1 });
+      }
+      if (played) return;
+    }
     const g = this._voice(0.4, 1, 0, this.sfxBus);
     if (!g) return;
     this._counts.steps++;
@@ -784,7 +1736,7 @@ export class GameAudio {
 
   /** Weapon-wheel time dilation: whoosh down (open) / back up + tick (close). */
   _wheelWhoosh(opening) {
-    const g = this._voice(0.7, 1, 0, this.sfxBus);
+    const g = this._voice(0.7, 1, 0, this.uiBus);
     if (!g) return;
     this._counts.wheel++;
     const t0 = this._now();
@@ -817,7 +1769,7 @@ export class GameAudio {
 
   /** Weapon switch: dry mechanical double-click + low thock. */
   _switchClick() {
-    const g = this._voice(0.3, 1, 0, this.sfxBus);
+    const g = this._voice(0.3, 1, 0, this.uiBus);
     if (!g) return;
     this._counts.switches++;
     const t0 = this._now();
@@ -871,7 +1823,14 @@ export class GameAudio {
 
   /** Concentration breath: inhale (start) / exhale (end). */
   _breath(inhale) {
-    const g = this._voice(0.6, 1, 0, this.sfxBus);
+    // sampled breath first (D2 — breath and effort are the whole of Aloy's
+    // voice), synthesized noise sweep as the fallback
+    if (this.play2D(inhale ? 'aloy/breath-in' : 'aloy/breath-out',
+      { volume: inhale ? 0.7 : 0.55, category: 'voice' })) {
+      this._counts.breaths++;
+      return;
+    }
+    const g = this._voice(0.6, 1, 0, this.voiceBus);
     if (!g) return;
     this._counts.breaths++;
     const t0 = this._now();
@@ -1203,7 +2162,7 @@ export class GameAudio {
 
   /** Focus tag placed on a machine: crisp two-note holo blip. */
   _tagBlip() {
-    const g = this._voice(0.4, 1, 0, this.sfxBus);
+    const g = this._voice(0.4, 1, 0, this.uiBus);
     if (!g) return;
     this._counts.tags++;
     const t0 = this._now();
@@ -1291,8 +2250,30 @@ export class GameAudio {
     beep(t0 + 0.11);
   }
 
+  /**
+   * The UI voice: one filtered sine blip, optionally sweeping to `f1`. Short,
+   * dry and on `uiBus`, so it never fights the world mix.
+   */
+  _uiBlip(f0, vol = 0.04, dur = 0.09, f1 = null) {
+    const g = this._voice(dur + 0.15, 1, 0, this.uiBus);
+    if (!g) return;
+    this._counts.switches++;
+    const t0 = this._now();
+    const bp = this._bp(f0, 3.5);
+    const eg = this.ac.createGain();
+    bp.connect(eg).connect(g);
+    this._env(eg.gain, t0, vol, 0.004, dur);
+    const o = this._osc('sine', f0, t0, dur + 0.05, bp);
+    if (f1) o.frequency.exponentialRampToValueAtTime(f1, t0 + dur);
+    const hp = this._hp(4200);
+    const eg2 = this.ac.createGain();
+    hp.connect(eg2).connect(g);
+    this._env(eg2.gain, t0, vol * 0.35, 0.002, 0.03);
+    this._noise(t0, 0.05, hp);
+  }
+
   _objectiveBlip() {
-    const g = this._voice(0.4, 1, 0, this.sfxBus);
+    const g = this._voice(0.4, 1, 0, this.uiBus);
     if (!g) return;
     const t0 = this._now();
     const note = (t, f) => {
@@ -1359,26 +2340,60 @@ export class GameAudio {
       else { this._pan = 0; this._att = fallbackAtt; }
     };
 
-    ev.on('arrow-fired', armed(({ type, drawStrength } = {}) => {
+    ev.on('arrow-fired', armed(({ type, drawStrength, weapon } = {}) => {
       const id = String(type || '');
       if (/disc/i.test(id)) this._discThump(true);                       // disc launcher: heavy
       else if (/blast|bomb|sling/i.test(id) && !/tear/i.test(id)) this._discThump(false); // blast sling lob
-      else this._bowRelease(drawStrength ?? 0.6);
+      else {
+        // audio-13 — one full set per bow. The synthesized twang stays as the
+        // fallback so a failed download never silences the weapon.
+        const bow = bowSetFor(weapon || this.ctx.combat?.weapon?.id || type);
+        const s = clamp(drawStrength ?? 0.6, 0.15, 1);
+        if (!this.play2D(`bow/${bow}/release`, { volume: 0.45 + s * 0.5, rate: 0.96 + s * 0.1 })) {
+          this._bowRelease(s);
+        } else {
+          this._pendingFlyby = { bow, at: performance.now() + 90 };
+        }
+      }
     }));
 
-    ev.on('arrow-hit', armed(({ point, machine, weak, type } = {}) => {
+    // Per-weapon nock / re-nock / dry-fire (audio-13). combat may not emit
+    // these yet; the listeners are the contract, harmless until it does.
+    ev.on('arrow-nocked', armed(({ weapon } = {}) => {
+      this.play2D(`bow/${bowSetFor(weapon)}/nock`, { volume: 0.5 });
+    }));
+    ev.on('arrow-draw', armed(({ weapon } = {}) => {
+      this.play2D(`bow/${bowSetFor(weapon)}/draw`, { volume: 0.4 });
+    }));
+    ev.on('weapon-empty', armed(({ weapon } = {}) => {
+      this.play2D(`bow/${bowSetFor(weapon)}/empty`, { volume: 0.55 });
+    }));
+
+    ev.on('arrow-hit', armed(({ point, machine, weak, type, damage } = {}) => {
       at(point, 0.8);
       const id = String(type || '');
       const att = Math.max(this._att, 0.35);
+      // audio-10 — a four-rung ladder instead of one clank. The rung is chosen
+      // from the same numbers the damage numbers use, so what you hear and what
+      // you read agree.
+      const rung = machine
+        ? (weak ? 'hit/crit' : (damage ?? 0) >= 25 ? 'hit/crunch' : (damage ?? 0) >= 8 ? 'hit/thunk' : 'hit/plink')
+        : point ? ((damage ?? 0) >= 15 ? 'hit/flesh-hard' : 'hit/flesh-soft') : null;
+      const ladder = rung && this.playAt(rung, point, {
+        volume: weak ? 1 : 0.85,
+        priority: weak ? PRI.big : PRI.hit,
+        rate: 0.95 + Math.random() * 0.1,
+        duck: weak ? 0.35 : 0,
+      });
       if (machine) {
-        this._clank(this._pan, att, !!weak);
+        if (!ladder) this._clank(this._pan, att, !!weak);
         if (/shock|spark/i.test(id)) this._zap(this._pan, att);
         else if (/fire|blaze/i.test(id)) this._ignite(this._pan, att);
         else if (/freeze|chill/i.test(id)) this._frostHiss(this._pan, att);
         else if (/blast|disc|bomb/i.test(id)) this._explosion(this._pan, att, 0.8);
       } else {
         if (/blast|disc|bomb/i.test(id)) this._explosion(this._pan, this._att, 0.75);
-        else this._thud(this._pan, this._att);
+        else if (!ladder) this._thud(this._pan, this._att);
         if (/fire|blaze/i.test(id)) this._ignite(this._pan, this._att);
         else if (/freeze|chill/i.test(id)) this._frostHiss(this._pan, this._att);
       }
@@ -1462,8 +2477,12 @@ export class GameAudio {
 
     ev.on('machine-alerted', armed(({ machine } = {}) => {
       at(machine?.position ?? null);
+      this.playAt('machine/alarm', machine?.position, {
+        volume: 0.85, priority: PRI.voice, duck: 0.3, height: 1.2,
+      });
       this._sting(this._pan, Math.max(this._att, 0.5));
       this._lastTenseT = this._t;
+      this._combatUntil = Math.max(this._combatUntil, performance.now() + 5000);
     }));
 
     ev.on('machine-attack', armed(({ machine, kind } = {}) => {
@@ -1482,8 +2501,124 @@ export class GameAudio {
       if (nowMs - (this._attackCd.get(key) ?? -1e9) >= 800) {
         this._attackCd.set(key, nowMs);
         const stompy = /stomp|slam|charge|quake|shock/i.test(kind || '');
-        if (stompy || (big && !kind)) this._boom(this._pan, Math.max(this._att, 0.4));
-        else this._roar(this._pan, Math.max(this._att, 0.4), big);
+        // audio-02 — the species owns the voice now. Eight banks, not two.
+        this._combatUntil = Math.max(this._combatUntil, nowMs + 5000);
+        const voiced = this._machineVoice(machine, 'strike');
+        if (!voiced) {
+          if (stompy || (big && !kind)) this._boom(this._pan, Math.max(this._att, 0.4));
+          else this._roar(this._pan, Math.max(this._att, 0.4), big);
+        } else if (stompy) {
+          this._boom(this._pan, Math.max(this._att, 0.4) * 0.6);
+        }
+      }
+      this._lastTenseT = this._t;
+    }));
+
+    /* ------------------- Round 4 event contract (Wave 3) -----------------
+     * These five are published by machine-rig / machine-ai. Every listener is
+     * live now and no-ops harmlessly until the emitter lands, so the content
+     * half is a data change and not a code change. Counts are reported by
+     * `contractCounts()` so a gate can prove the handshake.
+     * ------------------------------------------------------------------- */
+
+    // machine-rig: GaitController._footfall — { machine, foot, position, speed }
+    ev.on('machine-footfall', armed((e = {}) => {
+      this._contract['machine-footfall']++;
+      const m = e.machine;
+      const pos = e.position || m?.position;
+      if (!pos) return;
+      // per-machine throttle: a sprinting Scrapper must not out-shout a fight
+      const nowMs = performance.now();
+      const last = this._footfallCd.get(m) ?? -1e9;
+      if (nowMs - last < 90) return;
+      this._footfallCd.set(m, nowMs);
+      const cls = this._weightOf(m);
+      if (!this.playAt(`mstep/${cls}`, pos, {
+        volume: cls === 'heavy' ? 1 : 0.75,
+        priority: PRI.machineStep,
+        rate: 0.94 + Math.random() * 0.12,
+        duck: cls === 'heavy' ? 0.18 : 0,
+      })) {
+        at(pos);
+        this._machineStep(this._pan, this._att, cls === 'heavy');
+      }
+    }));
+
+    // machine-ai: a hit or a tear knocked the machine off its feet
+    ev.on('machine-stagger', armed((e = {}) => {
+      this._contract['machine-stagger']++;
+      const nowMs = performance.now();
+      if (nowMs - this._staggerMs < 140) return;
+      this._staggerMs = nowMs;
+      const pos = e.point || e.machine?.position;
+      this.playAt('machine/stagger', pos, {
+        volume: 0.95, priority: PRI.voice, duck: 0.4, duckHold: 0.5,
+      });
+      this._machineVoice(e.machine, 'strike', { volume: 0.5, rate: 0.82 });
+    }));
+
+    // machine-ai: FSM transition — { machine, from, to }
+    ev.on('machine-state', armed((e = {}) => {
+      this._contract['machine-state']++;
+      const m = e.machine;
+      const to = String(e.to || e.state || '');
+      const pos = m?.position;
+      const nowMs = performance.now();
+      if (to === 'suspicious' || to === 'search' || to === 'investigate'
+        || to === 'alerted' || to === 'wary') {
+        // audio-08 — its own voice, not the attack windup at +5 % pitch. A
+        // player who cannot tell "it heard something" from "it is committing"
+        // cannot play stealth.
+        this._warble(m, false);
+        this._suspectUntil = Math.max(this._suspectUntil, nowMs + 4000);
+      } else if (to === 'alert' || to === 'alarm') {
+        this.playAt('machine/alarm', pos, { volume: 0.9, priority: PRI.voice, duck: 0.3 });
+        this._lastTenseT = this._t;
+        this._combatUntil = Math.max(this._combatUntil, nowMs + 5000);
+      } else if (to === 'attack' || to === 'combat' || to === 'engage') {
+        this._machineVoice(m, 'windup', { volume: 0.9, duck: 0.3 });
+        this._lastTenseT = this._t;
+        this._combatUntil = Math.max(this._combatUntil, nowMs + 5000);
+      } else if ((to === 'idle' || to === 'patrol' || to === 'calm')
+        && (e.prev === 'suspicious' || e.prev === 'search' || e.from === 'suspicious')) {
+        // contact lost: the same voice falling instead of rising
+        this._warble(m, true);
+      }
+      // idle servo loop follows aliveness, not state
+      this._syncServoLoop(m);
+    }));
+
+    // machine-ai: the scan cone swept the world — { machine, position, hit }
+    ev.on('machine-scan', armed((e = {}) => {
+      this._contract['machine-scan']++;
+      const m = e.machine;
+      const nowMs = performance.now();
+      if (nowMs - (this._scanCd.get(m) ?? -1e9) < 700) return;
+      this._scanCd.set(m, nowMs);
+      const pos = e.position || m?.position;
+      if (!this.playAt('machine/scan-ping', pos, {
+        volume: 0.7, priority: PRI.machineStep, rate: e.hit ? 1.12 : 1,
+      })) {
+        at(pos);
+        this._radarChirp(0.06, this._pan);
+      }
+    }));
+
+    // machine-ai: multi-part attacks — { machine, attack, phase, index }
+    // phase: 'windup' | 'strike' | 'recover'
+    ev.on('machine-attack-phase', armed((e = {}) => {
+      this._contract['machine-attack-phase']++;
+      const phase = String(e.phase || '');
+      if (phase === 'windup' || phase === 'strike') {
+        this._combatUntil = Math.max(this._combatUntil, performance.now() + 5000);
+      }
+      if (phase === 'windup') {
+        this._machineVoice(e.machine, 'windup', { volume: 0.85, duck: 0.22 });
+      } else if (phase === 'strike') {
+        // per-projectile: index > 0 means a volley, so drop the roar and let
+        // the launcher thump carry it (audio-15)
+        if ((e.index | 0) > 0) this._discThump(this._weightOf(e.machine) === 'heavy');
+        else this._machineVoice(e.machine, 'strike', { volume: 1, duck: 0.36 });
       }
       this._lastTenseT = this._t;
     }));
@@ -1494,9 +2629,36 @@ export class GameAudio {
         : machine?.kind === 'behemoth' ? 1.3
           : machine?.kind === 'sawtooth' ? 1.15 : 1;
       this._explosion(this._pan, Math.max(this._att, 0.5), size);
+      // audio-06 — death is not one explosion: the reactor spins down after it
+      this.playAt('machine/powerdown', machine?.position, {
+        volume: 0.9, priority: PRI.death, height: 1.0,
+        rate: size > 1.2 ? 0.78 : 1, duck: 0.35, duckHold: 0.8,
+      });
+      // the servo bed must die with the machine — and its chain must come back
+      this._retireLoop(machine, this._machineLoops.get(machine), 0.35);
+      // one more machine may still be alive: do not let the resolve stinger
+      // fire on the kill frame of a three-machine fight
+      this._combatUntil = Math.max(this._combatUntil, performance.now() + 2600);
+      // machine-rig publishes 'machine-death-impact' from the corpse grounder,
+      // but a species that never poses a corpse would never arm the beacon.
+      if (machine && !this._wreckBeacons.has(machine)) {
+        this._wreckBeacons.set(machine, performance.now() + 900);
+      }
+      // and every status loop it was carrying stops with it
+      if (this.zones && machine) {
+        const id = this._idOf(machine);
+        this.zones.retire(`burn:${id}`, 0.4);
+        this.zones.retire(`shock:${id}`, 0.3);
+        this.zones.retire(`frost:${id}`, 0.4);
+      }
     }));
 
-    ev.on('player-hurt', armed(() => this._hurt()));
+    ev.on('player-hurt', armed(() => {
+      // D2: no VO. Breath and effort only.
+      this.play2D('aloy/hurt', { volume: 0.75, category: 'voice', duck: 0.25 });
+      this._hurt();
+    }));
+    ev.on('player-dodge', armed(() => this.play2D('aloy/effort', { volume: 0.55, category: 'voice' })));
     // Heal audio keys off player.healing edges observed in update() — the
     // pouch drains continuously, so count-based chimes would spam.
     ev.on('player-died', armed(() => {
@@ -1511,6 +2673,86 @@ export class GameAudio {
     ev.on('victory', armed(() => this._victory()));
     ev.on('focus-pulse', armed(() => this._focus()));
     ev.on('objective-changed', armed(() => this._objectiveBlip()));
+
+    /* ---------------- Round 4 content half: death, suspicion, effort ------
+     * Everything below consumes an event another lane already publishes. No
+     * lane was asked to add anything for these — `machine-death-impact` comes
+     * from the corpse grounder, the status timers are read off the machine,
+     * and the player verbs were already on the bus.
+     * ------------------------------------------------------------------- */
+
+    // machine-rig (rig/ground.js CorpseGrounder._impact): the body lands.
+    // audio-06 — death was one explosion; it is now explosion -> reactor
+    // power-down -> the mass actually hitting the ground -> a loot beacon.
+    ev.on('machine-death-impact', armed((e = {}) => {
+      const pos = e.position || e.machine?.position;
+      if (!pos) return;
+      const strength = clamp(e.strength ?? 0.5, 0.1, 1);
+      this.playAt('machine/collapse', pos, {
+        volume: 0.55 + strength * 0.5,
+        priority: PRI.death,
+        rate: 1.12 - strength * 0.34,      // a Thunderjaw lands slower than a Watcher
+        duck: 0.25 + strength * 0.2,
+        duckHold: 0.5,
+        reverb: 0.7,
+      });
+      if (e.machine) this._wreckBeacons.set(e.machine, performance.now());
+    }));
+
+    // audio-08 — a machine that is unsure has its own voice. The alarm is a
+    // decision it has already made; this is the sound before that.
+    ev.on('machine-suspicion', armed((e = {}) => this._warble(e.machine, e.lost)));
+
+    // Loot taken: the beacon has been answered, so it stops.
+    const quietBeacon = (m) => {
+      if (!m || !this.zones) return;
+      this.zones.retire(`loot:${this._idOf(m)}`, 0.5);
+      this._wreckBeacons.delete(m);
+    };
+    ev.on('machine-looted', armed((e = {}) => quietBeacon(e.machine)));
+    ev.on('loot-rummage', armed((e = {}) => quietBeacon(e.machine)));
+    ev.on('machine-disposed', armed((e = {}) => quietBeacon(e.machine)));
+
+    /* ----- Aloy: effort on the verbs that cost something (audio-03) ----- */
+    ev.on('player-jump', armed(() => { this._airborne = true; this._effort(false, 0.8); }));
+    ev.on('player-land', armed((e = {}) => {
+      const hard = this._airborne && ((e.fallHeight ?? e.height ?? 0) > 2.4 || (e.impact ?? 0) > 0.5);
+      this._airborne = false;
+      // the boots land whatever the drop was; the grunt is only for a real fall
+      this.play2D(this._footSet(), { volume: hard ? 0.65 : 0.42, rate: 0.9 });
+      this.play2D('gear/heavy', { volume: hard ? 0.4 : 0.22 });
+      if (hard) this._effort(true, 1);
+    }));
+    ev.on('player-mantle', armed(() => this._effort(true, 0.85)));
+    ev.on('player-splash', armed((e = {}) => {
+      const v = clamp(e.speed ? e.speed / 6 : 0.6, 0.25, 1);
+      this.play2D('foot/water', { volume: 0.4 + v * 0.4, rate: 0.92 + Math.random() * 0.14 });
+    }));
+    ev.on('player-crouch', armed((e = {}) => {
+      this.play2D('gear/light', { volume: e?.crouching === false ? 0.18 : 0.26 });
+    }));
+
+    /* ------- discovery stingers on the score (audio-01, audio-12) ------- */
+    const discover = armed(() => this.music?.sting('discover', { volume: 0.8, minGap: 8 }));
+    for (const name of ['level-up', 'skill-unlocked', 'quest-started', 'quest-complete',
+      'datapoint-found', 'discovery', 'supply-cache', 'override-node', 'hunting-ground']) {
+      ev.on(name, discover);
+    }
+
+    /* -------------------------- UI bus (audio-12) ------------------------
+     * Menus were silent. These are procedural on purpose — a UI blip is one of
+     * the few places synthesis beats a sample — but they route to `uiBus`, so
+     * they stay crisp under Concentration and answer to their own slider.
+     * `shell-menus` / `shell-hud` emit them; unemitted names cost nothing.
+     * ------------------------------------------------------------------- */
+    ev.on('ui-nav', armed(() => this._uiBlip(1520, 0.03, 0.05)));
+    ev.on('ui-confirm', armed(() => this._uiBlip(880, 0.05, 0.1, 1320)));
+    ev.on('ui-back', armed(() => this._uiBlip(660, 0.045, 0.09, 440)));
+    ev.on('ui-error', armed(() => this._uiBlip(220, 0.06, 0.16, 165)));
+    ev.on('ui-open', armed(() => this._wheelWhoosh(true)));
+    ev.on('ui-close', armed(() => this._wheelWhoosh(false)));
+    ev.on('inventory-open', armed(() => this._uiBlip(1180, 0.04, 0.08, 1560)));
+    ev.on('inventory-close', armed(() => this._uiBlip(1180, 0.035, 0.08, 780)));
   }
 
   /** Concentration slow-mo entered/left (idempotent; event + poll driven). */
@@ -1521,7 +2763,6 @@ export class GameAudio {
     if (on) {
       this._counts.concentrations++;
       this._breath(true);
-      this._concNextHbMs = performance.now() + 380;
     } else {
       this._breath(false);
     }
@@ -1577,6 +2818,99 @@ export class GameAudio {
     ];
   }
 
+  /* ---------------------- update: the spatial half ----------------------- */
+
+  /**
+   * Listener, per-voice distance/occlusion, ducking, loops and the ambience
+   * bed. Runs on REAL dt (slow-mo must not stretch a reverb tail) and never
+   * allocates: the occlusion query reuses two Vector3 scratches and the chain
+   * pool is fixed-size.
+   */
+  _updateSpatial(rdt, nowMs, playing) {
+    const ctx = this.ctx;
+    if (!this.buses) return;
+
+    syncListener(this.ac, ctx.camera, this._listener);
+    const collision = ctx.collision || null;   // spatial lane installs this late
+    const L = this._listener;
+    const lx = L.x; const ly = L.y; const lz = L.z;
+
+    const chains = this.pool.chains;
+    const nowCtx = this.ac.currentTime;
+    for (let i = 0; i < chains.length; i++) {
+      const c = chains[i];
+      if (!c.busy) continue;
+      if (c.endsAt <= nowCtx && c.tag !== 'servo') { c.reset(); continue; }
+      const tr = c.tracked;
+      if (tr && tr.position) {
+        c.setPosition(tr.position.x, tr.position.y + (tr.eyeHeight ?? 1), tr.position.z);
+      }
+      if (this._occA) c.updateOcclusion(collision, lx, ly, lz, nowMs, this._occA, this._occB);
+      c.smoothOcclusion(rdt);
+      c.applyDistance(lx, ly, lz, L.fx, L.fy, L.fz);
+    }
+
+    this.ducker.update(rdt);
+    // loop chains retire on a fade, not on a stop() — hand the finished ones
+    // back before anything this frame asks for one.
+    this._reclaimLoopChains();
+
+    // keep every crossfading loop scheduled a beat ahead. Both iterations are
+    // over cached arrays / guarded by size: this runs every frame and a Map
+    // iterator or a for-in key list here is a per-frame allocation.
+    const beds = this._bedList;
+    for (let i = 0; i < beds.length; i++) beds[i].pump();
+    if (this._machineLoops.size) for (const e of this._machineLoops.values()) {
+      e.loop.pump();
+      const c = e.chain;
+      if (this._occA) c.updateOcclusion(collision, lx, ly, lz, nowMs, this._occA, this._occB);
+      c.smoothOcclusion(rdt);
+      if (c.tracked && c.tracked.position) {
+        c.setPosition(c.tracked.position.x, c.tracked.position.y + 1, c.tracked.position.z);
+      }
+      c.applyDistance(lx, ly, lz, L.fx, L.fy, L.fz);
+    }
+
+    // --- ambience bed (audio-11): one zone bed up, the others down
+    this._bedT -= rdt;
+    if (this._bedT <= 0) {
+      this._bedT = 0.5;
+      const want = playing ? this._pickBed() : null;
+      if (want !== this._bed) this._bed = want;
+      for (const k in this.loops) {
+        this.loops[k].volume = k === this._bed ? (BED_GAIN[k] ?? 0.42) : 0;
+      }
+    }
+
+    // --- servo idle loops follow the roster (throttled; 24 machines)
+    this._servoT -= rdt;
+    if (this._servoT <= 0) {
+      this._servoT = 0.6;
+      const list = ctx.machines?.list;
+      if (list && playing) for (let i = 0; i < list.length; i++) this._syncServoLoop(list[i]);
+      else for (const [m, e] of this._machineLoops) this._retireLoop(m, e, 0.4);
+    }
+
+    // --- positional world emitters (fire / water / status / loot beacons)
+    if (this.zones) {
+      this.zones.update(rdt, L, collision, nowMs, this._occA, this._occB);
+      this._zoneT -= rdt;
+      if (this._zoneT <= 0) {
+        this._zoneT = 0.6;
+        this._zoneScan(playing);
+        this._beaconScan(playing);
+      }
+      this._statusT -= rdt;
+      if (this._statusT <= 0) { this._statusT = 0.25; this._statusScan(playing); }
+    }
+
+    // arrow flyby trails the release by ~90 ms (audio-13)
+    if (this._pendingFlyby && nowMs > this._pendingFlyby.at) {
+      this.play2D(`bow/${this._pendingFlyby.bow}/flyby`, { volume: 0.32, pan: 0.15 });
+      this._pendingFlyby = null;
+    }
+  }
+
   /* -------------------------------- update ------------------------------- */
 
   update(dt, t) {
@@ -1590,6 +2924,8 @@ export class GameAudio {
     const nowMs = performance.now();
     const rdt = clamp((nowMs - this._lastRealMs) / 1000, 0, 0.1);
     this._lastRealMs = nowMs;
+
+    this._updateSpatial(rdt, nowMs, playing);
 
     // --- wind gusts: layered slow sines drive bed + rustle + filter sweep
     const gust = clamp(
@@ -1672,16 +3008,17 @@ export class GameAudio {
         && nowMs - this._concSetMs > 300) this._concSet(false);
       else if (!this._concActive && conc.active && playing) this._concSet(true);
     }
-    if (this._concActive && playing) {
-      if (nowMs >= this._concNextHbMs) {
-        this._heartbeat();
-        this._concNextHbMs = nowMs + 850;
-      }
-    }
+    // audio-09 — Concentration muffles the WORLD, not just the score. The
+    // heartbeat that used to paper over the un-filtered world is gone: it was
+    // not in the canon cue and it fought the low-health heartbeat below.
     const lpTarget = this._concActive && playing ? 460 : 16000;
     this._lpFreq += (lpTarget - this._lpFreq)
       * Math.min(1, rdt * (this._concActive ? 10 : 5));
     this.musicLP.frequency.value = this._lpFreq;
+    const worldTarget = this._concActive && playing ? 900 : 20000;
+    this._worldLPFreq += (worldTarget - this._worldLPFreq)
+      * Math.min(1, rdt * (this._concActive ? 9 : 4.5));
+    if (this.worldLP) this.worldLP.frequency.value = this._worldLPFreq;
 
     // --- Focus hologram hum: fades with real time while Focus mode is on.
     //     Safety: if the focus system reports inactive for a sustained
@@ -1724,23 +3061,37 @@ export class GameAudio {
       this._watcher = watcher;
     }
 
-    // --- music crossfade: plucks out / percussion in, 6s calm to fade back
+    // --- tension float. Still computed when the stem score is live: the
+    //     bird/pluck suppression and the HUD read it.
     const tenseTarget = t - this._lastTenseT < 6 ? 1 : 0;
     this._tension += (tenseTarget - this._tension)
       * Math.min(1, dt * (tenseTarget ? 1.6 : 0.5));
-    this.tensionBus.gain.value = this._tension * 0.9;
-    this.pluckBus.gain.value = 0.9 * (1 - this._tension);
 
-    if (this._tension > 0.02 && this.ac.state === 'running') {
-      const now = this.ac.currentTime;
-      if (this._nextBeat < now) this._nextBeat = now + 0.05;
-      while (this._nextBeat < now + 0.3) {
-        const b = this._beatIdx % 4;
-        this._percHit(this._nextBeat, b === 0, b === 2);
-        this._beatIdx++;
-        this._nextBeat += 0.44;
+    if (this.music && this.music.available) {
+      // audio-01 — the composed score. `_musicSelect` names a state at 4 Hz;
+      // the director quantises the crossfade to the bar and owns every gain.
+      this._musicT -= rdt;
+      if (this._musicT <= 0) { this._musicT = 0.25; this._musicSelect(nowMs); }
+      this.music.update(rdt, playing);
+    } else if (this._legacyScore) {
+      // pre-Round-4 fallback: only reachable if a stem failed to decode
+      this.tensionBus.gain.value = this._tension * 0.9;
+      this.pluckBus.gain.value = 0.9 * (1 - this._tension);
+      if (this._tension > 0.02 && this.ac.state === 'running') {
+        const now = this.ac.currentTime;
+        if (this._nextBeat < now) this._nextBeat = now + 0.05;
+        while (this._nextBeat < now + 0.3) {
+          const b = this._beatIdx % 4;
+          this._percHit(this._nextBeat, b === 0, b === 2);
+          this._beatIdx++;
+          this._nextBeat += 0.44;
+        }
       }
     }
+
+    // --- Aloy's breath layer + the distant valley (audio-03 / audio-11)
+    this._breathLayer(rdt, playing);
+    this._distantCall(rdt, playing);
 
     // --- birdsong at random intervals, silenced during combat
     this._birdT -= dt;
@@ -1753,7 +3104,9 @@ export class GameAudio {
     this._pluckT -= dt;
     if (this._pluckT <= 0) {
       this._pluckT = 3.5 + Math.random() * 6;
-      if (this._tension < 0.25) this._pluck();
+      // the composed score has its own melodic layer; a random pentatonic
+      // pluck over it is a second, unrelated piece of music
+      if (this._tension < 0.25 && this._legacyScore) this._pluck();
     }
 
     // --- watcher idle radar chirps within 35m
@@ -1824,8 +3177,39 @@ export class GameAudio {
         concentration: this._concActive,
         focusHum: r(this._humLevel),
         healShimmer: r(this._healLevel),
+        // v3
+        worldLP: Math.round(this._worldLPFreq),
+        duck: r(this.ducker ? this.ducker.level : 1),
+        bed: this._bed,
+        surface: this._surface,
+        servoLoops: this._machineLoops.size,
+        // the loop-chain pool is one-way if the reclaim sweep ever regresses:
+        // busy must track servoLoops (plus whatever is mid-fade), never climb.
+        loopChains: this._loopChains ? this._loopChains.length : 0,
+        loopChainsBusy: this._loopChains
+          ? this._loopChains.reduce((n, c) => n + (c.busy ? 1 : 0), 0) : 0,
+        // v4
+        musicState: this.music?.available ? this.music.state : 'procedural',
+        exertion: r(this._exertion),
+        zoneEmitters: this.zones ? this.zones.size : 0,
+        beacons: this._wreckBeacons.size,
       },
+      music: this.music ? this.music.debug() : null,
+      zones: this.zones ? this.zones.debug() : null,
       counts: { ...this._counts },
+      // v3 — the numbers the gates read
+      bank: this.bank.audit(),
+      pool: this.pool ? {
+        size: this.pool.chains.length,
+        active: this.pool.activeCount(now),
+        peak: this.pool.peak,
+        stolen: this.pool.stolen,
+        refused: this.pool.refused,
+      } : null,
+      volumes: { ...this.settings },
+      contract: { ...this._contract },
+      samples: { ...this._sampleCounts },
+      occlusion: this.ctx.collision ? 'active' : 'no ctx.collision (spatial lane not installed)',
     };
   }
 }

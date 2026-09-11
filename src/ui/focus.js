@@ -1,8 +1,25 @@
 import * as THREE from 'three';
 import './focus.css';
+import { itemDef, rarityDef } from '../items/items.js';
 
 /**
- * Focus v2 (HZD-accurate): V TOGGLES Focus — no time limit.
+ * Focus v3 — lane `focus-items` (port 5212). Round 4 closes on this file:
+ *   ui-10                      component ROWS with part names + their loot,
+ *                              in-world yellow part labels, lighter tint
+ *   ui-16 (focus half)         reveals are projected onto the world thing
+ *   missing-systems-focus-…    datapoint reveals feeding the Notebook
+ *   stealth-focus-path-fidelity splined patrol ribbons, non-route movers
+ *                              skipped instead of drawn a loop they ignore
+ *   onboarding-loop-loot-feel  LOOT reveals carry the source name + rarity
+ *
+ * PUBLISHED — `ctx.focus`
+ *   on · toggle(force?) · tags (Map machine -> marker el)
+ *   scanTarget      -> the machine under the crosshair, or null
+ *   components(m)   -> [{ name, weak, tearable, torn, elemental, loot[] }]
+ *   audit()         -> one flat object every gate in this lane reads
+ * EVENTS  'focus-on' · 'focus-off' · 'focus-pulse' · 'machine-tagged'
+ *
+ * Focus v2 behaviour (kept): V TOGGLES Focus — no time limit.
  * While on: activation pulse (ground ring + wave), persistent violet
  * through-wall machine silhouettes, cool purple screen tint, YELLOW additive
  * shells on weak/tearable machine.parts (linger 6s after Focus off, canon),
@@ -32,13 +49,56 @@ const PART_RANGE = 150;    // only shell parts on machines within this range
 const PATH_RANGE = 220;    // patrol lines drawn for machines within this range
 const VIOLET_RANGE = 180;  // through-wall silhouettes only within Focus range (canon-ish)
 const PATH_STEP = 2.4;     // meters between terrain samples along the line
-const PATH_WIDTH = 0.85;   // ribbon width in meters
+const PATH_WIDTH = 1.15;   // ribbon width in meters (reads through grass cards)
 
 const GATHER_CAP = 40;     // pooled glow points over GATHER nodes
 const GATHER_TICK = 0.25;  // seconds between gather/parts registry polls
 
 const CARD_DWELL = 0.4;    // crosshair-on-machine seconds before the card shows
 const CARD_GRACE = 0.35;   // off-target seconds before the card fades
+
+// --- ui-10: in-world component labels -------------------------------------
+const LABEL_CAP = 10;      // pooled yellow part labels on screen at once
+const LABEL_RANGE = 70;    // only label parts on machines this close
+// --- ui-16 / A63: loot + datapoint reveals ---------------------------------
+const REVEAL_CAP = 12;     // pooled reveal labels ON SCREEN at once
+/**
+ * Candidates kept per poll. Round 1 cut this list to REVEAL_CAP by DISTANCE
+ * before anything knew what was visible, so a near pickup 80° off-axis burned
+ * a slot the player could never see while a farther one in front of them was
+ * never considered. Visibility now decides which twelve draw; distance only
+ * decides the order they are tried in.
+ */
+const REVEAL_SRC_CAP = 48;
+const REVEAL_RANGE = 85;   // metres Focus reads a lootable / record at
+const REVEAL_TICK = 0.2;   // seconds between interactable registry polls
+
+/* --- on-screen placement (round 2) ---------------------------------------
+ * A label is only "drawn" if the player can read it. `_updateTags()` clamps
+ * its markers to the frame edge because a marker is an arrow to something
+ * off screen; a component label or a reveal points AT a thing, so it cannot
+ * be clamped without lying — it is skipped instead, and the pool slot goes to
+ * the next candidate. These are the box extents the placement solve uses.  */
+const VIEW_MARGIN = 8;     // px a label box must reach inside the frame
+const VIEW_FRAC = 0.6;     // ...and this much of its width must be inside
+const PLABEL_GAP = 10;     // .hzcf-plabel translate(10px) off its anchor
+const PLABEL_W = 190;      // widest name + loot chip at 10px/0.14em
+const PLABEL_H = 11;       // half-height
+const PLABEL_MID = PLABEL_GAP + PLABEL_W * 0.5;  // anchor -> box centre
+const REVEAL_HW = 105;     // .hzcf-reveal is centred: half its widest box
+const REVEAL_H = 22;       // ...and it sits fully ABOVE its anchor
+// --- stealth-focus-path-fidelity ------------------------------------------
+const SPLINE_STEP = 1.1;   // metres between Catmull-Rom samples on the ribbon
+/**
+ * AI states in which a machine is actually walking its route. `machine-ai`
+ * publishes patrol · return · suspicious · search · alert · attack · stagger ·
+ * downed · overridden · dead; only the first two follow the route, so those
+ * are the two that get a ribbon. (`idle`/`graze` are accepted as forward
+ * compatibility for a herd state that lane may add.) Everything else is a
+ * non-route mover — `stealth-focus-path-fidelity`: drawing it a tidy loop it
+ * is not walking is a lie the player will act on.
+ */
+const ROUTE_STATES = new Set(['patrol', 'return', 'idle', 'graze']);
 
 // Canon HZD data (docs/research/machines.md)
 const LEVELS = { watcher: 5, redeye: 10, sawtooth: 15, behemoth: 25, thunderjaw: 27 };
@@ -66,6 +126,8 @@ const GLYPH_SVG = {
 const _v = new THREE.Vector3();
 const _v2 = new THREE.Vector3();
 const _dir = new THREE.Vector3();
+/** Reused projection result — the label loops must not allocate. */
+const _screen = { x: 0, y: 0 };
 
 let _dotTex = null;
 function dotTexture() {
@@ -83,6 +145,9 @@ function dotTexture() {
   _dotTex = new THREE.CanvasTexture(c);
   return _dotTex;
 }
+
+/** Nearest-first order for the component-shell budget (see `_refreshParts`). */
+const _byFocusD2 = (a, b) => a.__focusD2 - b.__focusD2;
 
 export class FocusSystem {
   constructor(ctx) {
@@ -106,6 +171,12 @@ export class FocusSystem {
 
     // patrol path ribbons: Map machine -> { mesh, mat }
     this._paths = new Map();
+    this._pathSamples = 0;   // samples on the most recently splined ribbon
+    this._pathWaypoints = 0; // waypoints that ribbon was built from
+    this._pathSkipped = 0;   // machines skipped because they left their route
+    this.hoverPart = null;   // component name nearest the crosshair (A62)
+    this._compCache = { machine: null, t: 0, rows: [] };
+    this._cardRect = null;
 
     // tagged machines: Map machine -> marker element
     this._tags = new Map();
@@ -262,6 +333,54 @@ export class FocusSystem {
     this._card = document.createElement('div');
     this._card.className = 'hzcf-card';
     this._layer.appendChild(this._card);
+
+    // ui-10 — pooled in-world component labels (yellow, named). Pooled and
+    // reused: no element churn while the scan sweeps across a herd.
+    this._labelPool = [];
+    for (let i = 0; i < LABEL_CAP; i++) {
+      const el = document.createElement('div');
+      el.className = 'hzcf-plabel';
+      el.innerHTML = '<i class="hzcf-pdot"></i><span class="hzcf-pname"></span>'
+        + '<span class="hzcf-ploot"></span>';
+      this._layer.appendChild(el);
+      this._labelPool.push({
+        el, name: el.querySelector('.hzcf-pname'), loot: el.querySelector('.hzcf-ploot'),
+      });
+    }
+    // live rows are REUSED records, never fresh objects: this runs every frame
+    this._labelsLive = [];
+    this._labelRec = [];
+    for (let i = 0; i < LABEL_CAP; i++) {
+      this._labelRec.push({ name: '', x: 0, y: 0, loot: 0, weak: false, tearable: false, machine: '', slot: null });
+    }
+    this._partOrder = [];   // scratch: machines sorted nearest-first per poll
+    this._labelSlots = [];
+    for (let i = 0; i < LABEL_CAP; i++) this._labelSlots.push({ x: 0, y: 0 });
+
+    // A63 — pooled LOOT / DATAPOINT / GATHER reveals, projected onto the
+    // interactable itself (ui-16), never pinned to a screen corner.
+    this._revealPool = [];
+    for (let i = 0; i < REVEAL_CAP; i++) {
+      const el = document.createElement('div');
+      el.className = 'hzcf-reveal';
+      el.innerHTML = '<i class="hzcf-rmark"></i>'
+        + '<span class="hzcf-rkind"></span><span class="hzcf-rname"></span>';
+      this._layer.appendChild(el);
+      this._revealPool.push({
+        el, kind: el.querySelector('.hzcf-rkind'), name: el.querySelector('.hzcf-rname'),
+      });
+    }
+    this._revealsLive = [];
+    this._revealRec = [];
+    for (let i = 0; i < REVEAL_CAP; i++) {
+      this._revealRec.push({ kind: '', name: '', rarity: '', x: 0, y: 0, dist: 0 });
+    }
+    // de-overlap seats: reveals must not stack on each other OR on a part
+    // label, so the seat list is seeded with the labels placed this frame.
+    this._revealSlots = [];
+    for (let i = 0; i < REVEAL_CAP + LABEL_CAP; i++) this._revealSlots.push({ x: 0, y: 0 });
+    this._revealSrc = [];   // polled candidate entries (rebuilt on REVEAL_TICK)
+    this._revealPoll = 0;
   }
 
   /* --------------------------- activation wave/ring ------------------------ */
@@ -287,7 +406,7 @@ export class FocusSystem {
         uniform float uFade;
         uniform vec3 uColor;
         void main() {
-          float band = pow(1.0 - vUv.y, 2.6);
+          float band = pow(max(0.0, 1.0 - vUv.y), 3.8);
           gl_FragColor = vec4(uColor * (0.6 + 1.1 * band), band * uFade);
         }`,
     });
@@ -335,7 +454,7 @@ export class FocusSystem {
         uniform vec3 uColor;
         void main() {
           // reference pulse gradient: #7B5CFF base -> #4AC8FF at the crest
-          float k = pow(vUv.y, 2.2);
+          float k = pow(max(0.0, vUv.y), 2.2);
           vec3 col = mix(uColor, vec3(0.29, 0.784, 1.0), k * 0.6);
           gl_FragColor = vec4(col * (0.3 + 1.1 * k), k * uFade);
         }`,
@@ -376,9 +495,15 @@ export class FocusSystem {
     // USE_SKINNING from the renderer so the shell follows bones.
     return new THREE.ShaderMaterial({
       transparent: true, depthWrite: false, depthTest: false,
-      blending: THREE.AdditiveBlending, side: THREE.FrontSide, fog: false,
+      // NORMAL, not additive. Up to 6 shells stack on one machine and the
+      // Wave-0 bloom pass smears whatever they sum to: additive drove the
+      // hull to flat white (38 % near-white pixels over the Sawtooth) and
+      // the silhouette read as a blob. Normal blending converges on the
+      // violet instead of on white however many shells overlap.
+      blending: THREE.NormalBlending, side: THREE.FrontSide, fog: false,
       uniforms: {
         uOpacity: { value: 0 },
+        uBoost: { value: 1 },   // distance punch — rim/alpha ONLY, never colour
         uColor: { value: new THREE.Color(colorHex) },
       },
       vertexShader: /* glsl */ `
@@ -401,15 +526,40 @@ export class FocusSystem {
         varying vec3 vN;
         varying vec3 vV;
         uniform float uOpacity;
+        uniform float uBoost;
         uniform vec3 uColor;
         void main() {
-          float f = pow(1.0 - abs(dot(normalize(vN), normalize(vV))), 1.4);
-          gl_FragColor = vec4(uColor * (0.7 + 1.0 * f), (0.55 + 0.45 * f) * uOpacity);
+          float f = pow(max(0.0, 1.0 - abs(dot(normalize(vN), normalize(vV)))), 1.6);
+          // fill stays UNDER 1.0 so the tone-mapped bloom cannot clip it to
+          // white; the rim is what the distance boost brightens.
+          vec3 col = uColor * (0.50 + 0.50 * min(1.0, f * uBoost));
+          // A machine wears up to SIX of these shells and they all draw with
+          // depthTest off, so a per-shell alpha of a is really 1-(1-a)^6 on
+          // screen: 0.4 each reads as 0.95 and the hull turns into a flat
+          // blob. Keep the FILL near-zero (6 x 0.02 ~= 0.12 tint, the hull
+          // stays legible) and put the light in the RIM, which is what draws
+          // the silhouette through terrain anyway.
+          float a = (0.02 + 0.46 * pow(f, 1.9) * uBoost) * uOpacity;
+          gl_FragColor = vec4(col, clamp(a, 0.0, 0.80));
         }`,
     });
   }
 
-  _overlayFor(src, mat, order) {
+  /**
+   * @param detach  Parent the shell to the SCENE and drive its world matrix
+   *   from the source instead of hanging it under the source.
+   *
+   *   Component shells have to detach. `machine.parts[].mesh` is a holder
+   *   Group that `entities/machines/rig/lod.js` hides by LOD tier (all parts
+   *   past ~H*14 m, decorative ones past ~H*6), and a hidden ancestor takes
+   *   the whole subtree out of the render — so a shell parented to the part
+   *   silently stopped drawing at exactly the 15 m the scan gate films from.
+   *   That is machine-rig's call to make about its own geometry; the Focus
+   *   highlight just must not depend on it. Reparenting keeps the shell alive
+   *   and, because the real part is hidden, it reads as the solid yellow
+   *   component HZD draws.
+   */
+  _overlayFor(src, mat, order, detach = false) {
     let overlay;
     if (src.isSkinnedMesh) {
       overlay = new THREE.SkinnedMesh(src.geometry, mat);
@@ -425,8 +575,34 @@ export class FocusSystem {
     overlay.receiveShadow = false;
     overlay.renderOrder = order;
     overlay.matrixAutoUpdate = false; // identity local: rides its source mesh
-    src.add(overlay);
+    if (detach) {
+      const host = this.ctx.scene ?? src.parent;
+      overlay.userData.__src = src;
+      src.updateWorldMatrix(true, false);
+      overlay.matrix.copy(src.matrixWorld);
+      overlay.matrixWorldNeedsUpdate = true;
+      host.add(overlay);
+    } else {
+      src.add(overlay);
+    }
     return overlay;
+  }
+
+  /**
+   * Detached component shells ride their source's world matrix. ~40 meshes
+   * at most (PART_CAP), only while Focus is up or lingering, and the copy is
+   * into a preallocated Matrix4 — no per-frame allocation.
+   */
+  _syncDetached() {
+    for (const e of this._parts.values()) {
+      for (const mesh of e.meshes) {
+        const src = mesh.userData.__src;
+        if (!src) continue;
+        src.updateWorldMatrix(true, false);
+        mesh.matrix.copy(src.matrixWorld);
+        mesh.matrixWorldNeedsUpdate = true;
+      }
+    }
   }
 
   _buildViolet() {
@@ -452,7 +628,9 @@ export class FocusSystem {
     const p = this.ctx.player;
     if (p?.position && m.position
       && m.position.distanceToSquared(p.position) > VIOLET_RANGE * VIOLET_RANGE) return;
-    const mat = this._fresnelMat('#5a7bff'); // reference machine-glow hex
+    // violet, not the pure blue of the machine-glow hex: docs/research/ui.md
+    // calls for a VIOLET holographic silhouette and #5a7bff read as blue.
+    const mat = this._fresnelMat('#8b7bff');
     const meshes = [];
     let sources = [];
     m.root.traverse((o) => {
@@ -480,9 +658,11 @@ export class FocusSystem {
     if (!meshes.length) { mat.dispose(); return; }
     const pos = m.position ?? m.root.position;
     const dist = _v.copy(pos).sub(this._origin).length();
-    // Distant machines need a hotter shell or additive glow washes out in fog.
-    const boost = 1 + Math.min(2.5, dist / 45);
-    mat.uniforms.uColor.value.multiplyScalar(1 + 0.45 * (boost - 1));
+    // Distant machines need a denser shell or the glow washes out in fog.
+    // This is a RIM/ALPHA punch only (uBoost, clamped in the shader): scaling
+    // the colour or the opacity by it is what blew the hull out to white.
+    const boost = 1 + Math.min(0.8, dist / 90);
+    mat.uniforms.uBoost.value = boost;
     this._violet.set(m, {
       mat, meshes,
       delay: Math.min(dist / WAVE_SPEED, 1.6),
@@ -512,7 +692,7 @@ export class FocusSystem {
       uniform float uOpacity;
       uniform vec3 uColor;
       void main() {
-        float f = pow(1.0 - abs(dot(normalize(vN), normalize(vV))), 1.2);
+        float f = pow(max(0.0, 1.0 - abs(dot(normalize(vN), normalize(vV)))), 1.2);
         gl_FragColor = vec4(uColor * (0.85 + 0.65 * f), (0.62 + 0.38 * f) * uOpacity);
       }`;
     return mat;
@@ -525,7 +705,14 @@ export class FocusSystem {
 
     // drop shells whose part detached / machine died
     for (const [part, e] of this._parts) {
-      if (part?.attached === false || e.machine?.alive === false) {
+      // `_disposed` matters now that the shells hang off the SCENE, not off
+      // the part: a machine that is torn out of the world no longer takes its
+      // overlays with it, so they have to be reaped explicitly or they stay
+      // floating in the meadow.
+      const gone = p?.position && e.machine?.position
+        && e.machine.position.distanceToSquared(p.position) > PART_RANGE * PART_RANGE;
+      if (part?.attached === false || e.machine?.alive === false || gone
+        || e.machine?._disposed || !e.meshes[0]?.userData.__src?.parent) {
         for (const mesh of e.meshes) mesh.parent?.remove(mesh);
         this._partCount -= e.meshes.length;
         this._parts.delete(part);
@@ -533,12 +720,24 @@ export class FocusSystem {
     }
     if (!this.on || !Array.isArray(list)) return;
 
+    // NEAREST FIRST. The shells are a fixed 40-mesh budget and the machine
+    // list is in spawn order, so a Watcher 140 m away used to eat the slots
+    // the Sawtooth under the crosshair needed. Sorted into a scratch array
+    // reused across polls — this runs on GATHER_TICK, never per frame.
+    const near = this._partOrder;
+    near.length = 0;
     for (const m of list) {
-      if (!m || m.alive === false) continue;
+      if (!m || m.alive === false || !Array.isArray(m.parts)) continue;
+      const d2 = p?.position && m.position
+        ? m.position.distanceToSquared(p.position) : 0;
+      if (d2 > PART_RANGE * PART_RANGE) continue;
+      near.push(m);
+      m.__focusD2 = d2;
+    }
+    near.sort(_byFocusD2);
+
+    for (const m of near) {
       const parts = m.parts;
-      if (!Array.isArray(parts)) continue;
-      if (p?.position && m.position
-        && m.position.distanceToSquared(p.position) > PART_RANGE * PART_RANGE) continue;
       for (const part of parts) {
         if (!part || part.attached === false || this._parts.has(part)) continue;
         const tearable = typeof part.tearable === 'boolean'
@@ -549,12 +748,12 @@ export class FocusSystem {
         if (this._partCount >= PART_CAP) return;
         const meshes = [];
         if (node.isMesh || node.isSkinnedMesh) {
-          meshes.push(this._overlayFor(node, this._partMat, 9992));
+          meshes.push(this._overlayFor(node, this._partMat, 9992, true));
         } else if (node.traverse) {
           let n = 0;
           node.traverse((o) => {
             if (n >= 3 || !(o.isMesh || o.isSkinnedMesh) || o.userData.__focusOverlay) return;
-            meshes.push(this._overlayFor(o, this._partMat, 9992));
+            meshes.push(this._overlayFor(o, this._partMat, 9992, true));
             n++;
           });
         }
@@ -578,12 +777,16 @@ export class FocusSystem {
   /* ----------------------------- patrol path lines ------------------------- */
 
   _pathMat() {
-    // Patrol lines are canon "drawn on the ground you can see": segments are
-    // DEPTH-TESTED so terrain occludes them (no x-ray streaks at vista
-    // angles), while the machine glow shells elsewhere stay depthTest:false.
-    // Opacity also dims with camera distance and fades out beyond ~120m.
+    // Round 3 depth-tested these so terrain could occlude them. That was right
+    // for terrain and wrong for everything else: once world-ground shipped
+    // real grass cards the ribbon vanished under them completely, which is the
+    // opposite of what `stealth-focus-path-fidelity` is for — the route is the
+    // information the player is turning Focus ON to get. It is a hologram now,
+    // like the machine shells: depthTest:false, with the distance dim and the
+    // hard cut past ~120 m carrying the "no x-ray streaks at vista angles"
+    // half of the original concern.
     return new THREE.ShaderMaterial({
-      transparent: true, depthWrite: false, depthTest: true,
+      transparent: true, depthWrite: false, depthTest: false,
       blending: THREE.AdditiveBlending, side: THREE.DoubleSide, fog: false,
       uniforms: {
         uTime: { value: 0 },
@@ -616,12 +819,63 @@ export class FocusSystem {
           float across = 1.0 - edge;
           float soft = across * across;
           float dCam = distance(vWorld, cameraPosition);
-          float dim = mix(1.0, 0.35, smoothstep(14.0, 90.0, dCam)); // legible near, quiet far
+          float dim = mix(1.0, 0.62, smoothstep(20.0, 110.0, dCam)); // legible near, quiet far
           float far = 1.0 - smoothstep(95.0, 125.0, dCam);          // gone past ~120m
+          // Grazing-angle fade. The ribbon lies flat on the ground; seen
+          // almost edge-on, several loops stack into a violet haze band across
+          // the horizon -- which is the full-screen wash ui-10 exists to kill.
+          // Fade it as the view direction flattens toward the ground plane.
+          float graze = abs(normalize(cameraPosition - vWorld).y);
+          float tilt = smoothstep(0.03, 0.16, graze);
           vec3 col = mix(uColorA, uColorB, dash) * (0.9 + 1.5 * dash);
-          gl_FragColor = vec4(col, (0.22 + 0.78 * dash) * soft * uFade * dim * far);
+          gl_FragColor = vec4(col * 1.35, (0.30 + 0.85 * dash) * soft * uFade * dim * far * tilt);
         }`,
     });
+  }
+
+  /**
+   * `stealth-focus-path-fidelity` — is this machine actually walking its
+   * route? A Sawtooth mid-fight is not, and drawing it a tidy patrol loop is
+   * a lie the player will act on. Anything alerted / attacking / searching /
+   * overridden / mounted is skipped, and the ribbon fades out from under it.
+   */
+  _walksRoute(m) {
+    if (!m || m.alive === false) return false;
+    if (m.mountedBy || m.overridden || m.downed) return false;
+    const st = m.ai?.state ?? m.state ?? null;
+    if (typeof st === 'string' && st) return ROUTE_STATES.has(st);
+    return true; // no published state: trust the route it carries
+  }
+
+  /**
+   * Centripetal Catmull-Rom through the waypoints — the finding was that a
+   * route drawn as raw segments reads as a polygon nothing could walk. The
+   * loop is closed, so every sample has real neighbours on both sides.
+   */
+  _splineRoute(route) {
+    const n = route.length;
+    const pts = [];
+    const P = (i) => route[((i % n) + n) % n];
+    for (let i = 0; i < n; i++) {
+      const p0 = P(i - 1), p1 = P(i), p2 = P(i + 1), p3 = P(i + 2);
+      const seg = Math.hypot((p2.x ?? 0) - (p1.x ?? 0), (p2.z ?? 0) - (p1.z ?? 0));
+      const steps = Math.max(2, Math.ceil(seg / SPLINE_STEP));
+      for (let s = 0; s < steps; s++) {
+        const t = s / steps;
+        const t2 = t * t, t3 = t2 * t;
+        // uniform Catmull-Rom basis (tension 0.5)
+        const b0 = -0.5 * t3 + t2 - 0.5 * t;
+        const b1 = 1.5 * t3 - 2.5 * t2 + 1;
+        const b2 = -1.5 * t3 + 2 * t2 + 0.5 * t;
+        const b3 = 0.5 * t3 - 0.5 * t2;
+        pts.push({
+          x: (p0.x ?? 0) * b0 + (p1.x ?? 0) * b1 + (p2.x ?? 0) * b2 + (p3.x ?? 0) * b3,
+          z: (p0.z ?? 0) * b0 + (p1.z ?? 0) * b1 + (p2.z ?? 0) * b2 + (p3.z ?? 0) * b3,
+          d: 0,
+        });
+      }
+    }
+    return pts;
   }
 
   _buildPaths() {
@@ -629,35 +883,31 @@ export class FocusSystem {
     if (!Array.isArray(list)) return;
     const terrain = this.ctx.terrain;
     const p = this.ctx.player;
+    this._pathSkipped = 0;
     for (const m of list) {
       if (!m || m.alive === false || this._paths.has(m)) continue;
       const route = m.route;
       if (!Array.isArray(route) || route.length < 2) continue;
       if (p?.position && m.position
         && m.position.distanceToSquared(p.position) > PATH_RANGE * PATH_RANGE) continue;
+      // skip non-route movers: a machine that has left its patrol gets no
+      // ribbon at all rather than a ribbon it is not following
+      if (!this._walksRoute(m)) { this._pathSkipped++; continue; }
 
-      // resample the closed waypoint loop at PATH_STEP intervals
-      const pts = [];
+      // spline the closed waypoint loop (stealth-focus-path-fidelity)
+      const pts = this._splineRoute(route);
       let total = 0;
-      for (let i = 0; i < route.length; i++) {
-        const a = route[i];
-        const b = route[(i + 1) % route.length];
-        const ax = a?.x ?? 0, az = a?.z ?? 0;
-        const bx = b?.x ?? 0, bz = b?.z ?? 0;
-        const len = Math.hypot(bx - ax, bz - az);
-        const steps = Math.max(1, Math.ceil(len / PATH_STEP));
-        for (let s = 0; s < steps; s++) {
-          const k = s / steps;
-          pts.push({ x: ax + (bx - ax) * k, z: az + (bz - az) * k, d: 0 });
-        }
-        total += len;
-      }
-      if (pts.length < 3 || total < 4) continue;
+      if (pts.length < 4) continue;
       // cumulative distance for the dash flow
       for (let i = 1; i < pts.length; i++) {
         pts[i].d = pts[i - 1].d
           + Math.hypot(pts[i].x - pts[i - 1].x, pts[i].z - pts[i - 1].z);
       }
+      total = pts[pts.length - 1].d
+        + Math.hypot(pts[0].x - pts[pts.length - 1].x, pts[0].z - pts[pts.length - 1].z);
+      if (total < 4) continue;
+      this._pathSamples = pts.length;
+      this._pathWaypoints = route.length;
 
       const n = pts.length + 1; // + closing segment back to pts[0]
       const pos = new Float32Array(n * 2 * 3);
@@ -674,7 +924,7 @@ export class FocusSystem {
         const px = -dz, pz = dx; // XZ perpendicular
         // 0.3m above ground: segments depth-test now, so keep them clear of
         // terrain curvature between samples without looking like they float
-        const y = (terrain?.getHeight?.(cur.x, cur.z) ?? 0) + 0.3;
+        const y = (terrain?.getHeight?.(cur.x, cur.z) ?? 0) + 0.14;
         const d = i < pts.length ? cur.d : cur.d + total; // wrap distance
         const j = i * 6;
         pos[j] = cur.x + px * hw;     pos[j + 1] = y; pos[j + 2] = cur.z + pz * hw;
@@ -818,9 +1068,27 @@ export class FocusSystem {
       `<span class="hzcf-glyph hzcf-g-${w}">${GLYPH_SVG[w] ?? ''}</span>`
     ).join('');
 
-    const nComp = Array.isArray(m.parts)
-      ? m.parts.filter((p) => p && p.attached !== false).length
-      : (m.weakPoints?.length ?? 0);
+    // ui-10 — the component LIST. This is the whole finding: a count told the
+    // player nothing, so every component now names itself, says what it is
+    // (weak point / tearable / elemental) and says what it drops.
+    const comps = this.componentRows(m);
+    const rows = comps.map((c) => {
+      const tags = [];
+      if (c.weak) tags.push('<i class="hzcf-tag-weak">WEAK</i>');
+      if (c.tearable) tags.push('<i class="hzcf-tag-tear">TEAR</i>');
+      if (c.elemental) tags.push(`<i class="hzcf-tag-el hzcf-g-${c.elemental === 'blaze' ? 'fire' : 'freeze'}">${c.elemental === 'blaze' ? 'BLAZE' : 'FREEZE'}</i>`);
+      const loot = c.loot.map((l) =>
+        `<span class="hzcf-loot-chip" style="--chip:${l.color}">`
+        + `<i>${l.glyph}</i>${l.name.toUpperCase()}${l.n > 1 ? ` ×${l.n}` : ''}</span>`
+      ).join('');
+      return `<div class="hzcf-comp-row${c.torn ? ' torn' : ''}">
+          <span class="hzcf-comp-name">${c.name}${c.count > 1 ? `<em>×${c.count}</em>` : ''}</span>
+          <span class="hzcf-comp-tags">${tags.join('')}</span>
+          ${loot ? `<span class="hzcf-comp-loot">${loot}</span>` : ''}
+        </div>`;
+    }).join('');
+    const intact = comps.reduce((n, c) => n + (c.count - c.tornCount), 0);
+    const total = comps.reduce((n, c) => n + c.count, 0);
 
     return `
       <div class="hzcf-card-accent"></div>
@@ -832,8 +1100,76 @@ export class FocusSystem {
       <div class="hzcf-div"></div>
       <div class="hzcf-row"><span class="hzcf-lbl">WEAK</span>${glyphs}</div>
       ${resist ? `<div class="hzcf-row"><span class="hzcf-lbl">RESIST</span>${resist}</div>` : ''}
-      ${nComp > 0 ? `<div class="hzcf-row hzcf-comp"><span class="hzcf-comp-n">${nComp}</span> COMPONENTS</div>` : ''}
+      ${comps.length ? `
+        <div class="hzcf-div"></div>
+        <div class="hzcf-comp-head">
+          <span class="hzcf-lbl">COMPONENTS</span>
+          <span class="hzcf-comp-n">${intact} / ${total}</span>
+        </div>
+        <div class="hzcf-comp-list">${rows}</div>` : ''}
     `;
+  }
+
+  /**
+   * Named component rows for one machine — the data behind the card AND the
+   * in-world labels. Reads only the published parts contract, so a species
+   * that ships new parts is described correctly with no change here.
+   */
+  components(m) {
+    const parts = Array.isArray(m?.parts) ? m.parts : null;
+    if (!parts) return [];
+    const out = [];
+    for (const p of parts) {
+      if (!p) continue;
+      const tearable = typeof p.tearable === 'boolean' ? p.tearable : (p.tearHp ?? 0) > 0;
+      if (!p.weak && !tearable && !p.elemental) continue;
+      const loot = [];
+      for (const l of (Array.isArray(p.loot) ? p.loot : [])) {
+        if (!l?.id) continue;
+        const def = itemDef(l.id);
+        loot.push({
+          id: l.id, n: l.n ?? l.count ?? 1, name: def.name,
+          glyph: def.glyph, color: def.color,
+          rarity: def.rarity ?? 'common',
+          rarityColor: rarityDef(def.rarity).color,
+        });
+      }
+      out.push({
+        part: p,
+        name: String(p.displayName ?? p.name ?? 'COMPONENT').replace(/[-_]/g, ' ').toUpperCase(),
+        weak: !!p.weak,
+        tearable,
+        torn: p.attached === false,
+        elemental: p.elemental ?? null,
+        loot,
+        // precomputed so the per-frame label pass never maps/joins
+        lootText: loot.map((l) => l.name.toUpperCase()).join(' · '),
+      });
+    }
+    return out;
+  }
+
+  /**
+   * The same components collapsed by name for the card. A Sawtooth carries
+   * three identical antennae; three identical rows is a list that scrolls off
+   * the panel instead of a list that reads, so they become "ANTENNA ×3".
+   */
+  componentRows(m) {
+    const rows = [];
+    const byKey = new Map();
+    for (const c of this.components(m)) {
+      const key = `${c.name}|${c.weak}|${c.tearable}|${c.elemental}`;
+      let row = byKey.get(key);
+      if (!row) {
+        row = { ...c, count: 0, tornCount: 0 };
+        byKey.set(key, row);
+        rows.push(row);
+      }
+      row.count++;
+      if (c.torn) row.tornCount++;
+      row.torn = row.tornCount === row.count;
+    }
+    return rows;
   }
 
   _showCard(m) {
@@ -879,8 +1215,12 @@ export class FocusSystem {
         const w = window.innerWidth, h = window.innerHeight;
         const sx = (_v.x * 0.5 + 0.5) * w;
         const sy = (-_v.y * 0.5 + 0.5) * h;
-        const left = Math.min(Math.max(sx + 46, 12), w - 266);
-        const top = Math.min(Math.max(sy - 70, 12), h - 200);
+        // clamp against the card's MEASURED height: the component list made it
+        // tall enough to run off the bottom of the frame on a Thunderjaw
+        const cw = this._card.offsetWidth || 252;
+        const ch = this._card.offsetHeight || 200;
+        const left = Math.min(Math.max(sx + 46, 12), w - cw - 14);
+        const top = Math.min(Math.max(sy - 70, 12), h - ch - 14);
         this._card.style.left = `${left}px`;
         this._card.style.top = `${top}px`;
       }
@@ -940,6 +1280,402 @@ export class FocusSystem {
     }
   }
 
+  /* --------------------- in-world component labels (ui-10) ----------------- */
+
+  /**
+   * Project a world point to an ANCHOR the placement solve may use. Returns
+   * false when the point is behind the camera OR when the anchor falls
+   * outside the viewport.
+   *
+   * Round 1 tested only "behind the camera", so a pickup ~75° off-axis
+   * projected to x = 2407 in a 1600 px frame, was styled, positioned, counted
+   * by `audit()` and ate one of the twelve reveal slots — invisible, but paid
+   * for three times over. A perspective projection is only meaningful inside
+   * the frustum; outside it the numbers are noise, and feeding noise into the
+   * de-overlap solve moves labels the player CAN see.
+   */
+  _project(v, out) {
+    const cam = this.ctx.camera;
+    _v2.copy(v).sub(cam.position);
+    cam.getWorldDirection(_dir);
+    if (_v2.dot(_dir) <= 0.25) return false;
+    _v2.copy(v).project(cam);
+    if (_v2.z >= 1) return false;
+    const x = (_v2.x * 0.5 + 0.5) * window.innerWidth;
+    const y = (-_v2.y * 0.5 + 0.5) * window.innerHeight;
+    if (x < VIEW_MARGIN || x > window.innerWidth - VIEW_MARGIN) return false;
+    if (y < VIEW_MARGIN || y > window.innerHeight - VIEW_MARGIN) return false;
+    out.x = x;
+    out.y = y;
+    return true;
+  }
+
+  /**
+   * Would a label box drawn at these screen bounds actually be readable?
+   * Mostly-inside, not merely touching: half a label hanging past the edge
+   * reads as a glitch. Vertically it has to fit almost entirely, because the
+   * de-overlap passes stack labels along Y and that is the axis they can walk
+   * off.
+   */
+  _boxOnScreen(left, top, right, bottom) {
+    const w = window.innerWidth, h = window.innerHeight;
+    const vx = Math.min(right, w - VIEW_MARGIN) - Math.max(left, VIEW_MARGIN);
+    const vy = Math.min(bottom, h - VIEW_MARGIN) - Math.max(top, VIEW_MARGIN);
+    return vx >= (right - left) * VIEW_FRAC && vy >= (bottom - top) * 0.9;
+  }
+
+  /** The machine whose components get labelled: the crosshair target, else
+   *  the nearest living machine inside label range. */
+  _labelSubject() {
+    if (this._target) return this._target;
+    const list = this.ctx.machines?.list;
+    const p = this.ctx.player;
+    if (!Array.isArray(list) || !p?.position) return null;
+    let best = null;
+    let bestD = LABEL_RANGE * LABEL_RANGE;
+    for (const m of list) {
+      if (!m || m.alive === false || !m.position) continue;
+      const d = m.position.distanceToSquared(p.position);
+      if (d < bestD) { bestD = d; best = m; }
+    }
+    return best;
+  }
+
+  /**
+   * `components()` builds fresh rows, and the label pass runs every frame —
+   * so it reads through a small cache instead (re-derived when the subject
+   * changes or 0.3 s has passed, which is also when a part can have been torn
+   * off). Keeps the 60 fps path allocation-free.
+   */
+  _cachedComponents(m, dt) {
+    const c = this._compCache;
+    c.t -= dt;
+    if (c.machine !== m || c.t <= 0) {
+      c.machine = m;
+      c.t = 0.3;
+      c.rows = this.components(m);
+    }
+    return c.rows;
+  }
+
+  _updatePartLabels(dt) {
+    const live = this._labelsLive;
+    live.length = 0;
+    const m = this.on ? this._labelSubject() : null;
+    const p = this.ctx.player;
+    if (m && p?.position && m.position
+      && m.position.distanceTo(p.position) <= LABEL_RANGE) {
+      const cx = window.innerWidth * 0.5;
+      const cy = window.innerHeight * 0.5;
+      let hoverBest = Infinity;
+      let hoverIdx = -1;
+      // ui-10: components cluster on a machine, so raw projection stacked
+      // three antenna labels on top of each other. Nudge each new label clear
+      // of the ones already placed (12 tries, then drop it) — HZD does the
+      // same: labels never overlap, and the ones that cannot fit do not draw.
+      const placed = this._labelSlots;   // preallocated seats, count below
+      let nPlaced = 0;
+      // ...and keep them out from under the scan card, which parks on the
+      // same machine: a label that would land inside the card flips to the
+      // machine's other side instead of being read through holo glass.
+      // `_cardRect` is sampled once per frame BEFORE any DOM writes, so this
+      // never forces a synchronous layout.
+      const cardRect = this._cardRect;
+      for (const c of this._cachedComponents(m, dt)) {
+        if (live.length >= LABEL_CAP) break;
+        if (c.torn) continue;
+        const node = c.part.mesh;
+        if (!node) continue;
+        node.getWorldPosition(_v);
+        if (!this._project(_v, _screen)) continue;
+        // The label hangs to ONE side of its anchor, so the side is chosen
+        // before the de-overlap solve: off the card, and off the right edge
+        // when there is room on the left. A candidate whose box cannot fit
+        // either way is skipped — `continue`, not `break`, so its pool slot
+        // goes to a component that IS on screen.
+        let flip = !!cardRect
+          && _screen.x > cardRect.left - 210 && _screen.x < cardRect.right
+          && _screen.y > cardRect.top - 16 && _screen.y < cardRect.bottom + 16;
+        if (!flip
+          && !this._boxOnScreen(_screen.x + PLABEL_GAP, _screen.y - PLABEL_H,
+            _screen.x + PLABEL_GAP + PLABEL_W, _screen.y + PLABEL_H)
+          && this._boxOnScreen(_screen.x - PLABEL_GAP - PLABEL_W, _screen.y - PLABEL_H,
+            _screen.x - PLABEL_GAP, _screen.y + PLABEL_H)) flip = true;
+        const bl = flip ? -PLABEL_GAP - PLABEL_W : PLABEL_GAP;
+        const br = flip ? -PLABEL_GAP : PLABEL_GAP + PLABEL_W;
+        // horizontal fit is fixed once the side is chosen; only Y moves below
+        if (!this._boxOnScreen(_screen.x + bl, _screen.y - PLABEL_H,
+          _screen.x + br, _screen.y + PLABEL_H)) continue;
+        let ok = true;
+        for (let t = 0; t < 12; t++) {
+          ok = true;
+          for (let i = 0; i < nPlaced; i++) {
+            const q = placed[i];
+            if (Math.abs(_screen.y - q.y) < 17 && Math.abs(_screen.x - q.x) < 150) {
+              ok = false;
+              break;
+            }
+          }
+          if (ok) break;
+          _screen.y += 18;   // stacking walks the label DOWN the frame...
+          // ...so re-test the edge it can walk off
+          if (_screen.y + PLABEL_H > window.innerHeight - VIEW_MARGIN) { ok = false; break; }
+        }
+        if (!ok) continue;
+        const seat = placed[nPlaced++];
+        seat.x = _screen.x; seat.y = _screen.y;
+        const slot = this._labelPool[live.length];
+        slot.el.classList.toggle('flip', flip);
+        if (slot.lastName !== c.name) { slot.name.textContent = c.name; slot.lastName = c.name; }
+        const n = c.loot.length;
+        if (slot.lastLoot !== c.lootText) {
+          slot.loot.textContent = c.lootText;
+          slot.lastLoot = c.lootText;
+        }
+        slot.el.classList.toggle('has-loot', n > 0);
+        slot.el.classList.toggle('is-weak', c.weak);
+        slot.el.style.left = `${Math.round(_screen.x)}px`;
+        slot.el.style.top = `${Math.round(_screen.y)}px`;
+        slot.el.style.display = '';
+        const d = Math.hypot(_screen.x - cx, _screen.y - cy);
+        if (d < hoverBest) { hoverBest = d; hoverIdx = live.length; }
+        const rec = this._labelRec[live.length];
+        rec.name = c.name; rec.x = _screen.x; rec.y = _screen.y;
+        rec.loot = c.loot.length; rec.weak = c.weak; rec.tearable = c.tearable;
+        rec.machine = m.kind ?? ''; rec.slot = slot;
+        live.push(rec);
+      }
+      this.hoverPart = null;
+      for (let i = 0; i < live.length; i++) {
+        const on = i === hoverIdx && hoverBest < 140;
+        live[i].slot.el.classList.toggle('hovered', on);
+        if (on) this.hoverPart = live[i].name;
+      }
+    } else {
+      this.hoverPart = null;
+    }
+    for (let i = live.length; i < this._labelPool.length; i++) {
+      this._labelPool[i].el.style.display = 'none';
+    }
+  }
+
+  /* --------------------- LOOT / DATAPOINT reveals (A63) -------------------- */
+
+  /** Rebuild the candidate list from the interactable registry (polled). */
+  _refreshReveals() {
+    const src = this._revealSrc;
+    src.length = 0;
+    const inter = this.ctx.interactables;
+    const list = inter?.list;
+    const p = this.ctx.player;
+    if (!Array.isArray(list) || !p?.position) return;
+    const px = p.position.x, pz = p.position.z;
+    for (const e of list) {
+      if (!e || e.removed || e.consumed || e.disabled) continue;
+      const pos = e.position;
+      if (!pos || typeof pos.x !== 'number') continue;
+      const dx = pos.x - px, dz = (pos.z ?? 0) - pz;
+      const d2 = dx * dx + dz * dz;
+      if (d2 > REVEAL_RANGE * REVEAL_RANGE) continue;
+      let kind = null;
+      if (e.datapoint) kind = 'DATAPOINT';
+      else if (e.pickupWeapon) kind = 'PICK UP';
+      else if (Array.isArray(e.loot) && e.loot.length) kind = 'LOOT';
+      else if (e.label === 'GATHER') kind = 'GATHER';
+      if (!kind) continue;
+      // rarity frame comes from the best thing inside (loot-feel)
+      let rarity = 'common';
+      let rank = -1;
+      for (const l of (Array.isArray(e.loot) ? e.loot : [])) {
+        const r = rarityDef(itemDef(l?.id).rarity);
+        if (r.rank > rank) { rank = r.rank; rarity = r.id; }
+      }
+      if (kind === 'GATHER' && e.gatherNode?.itemId) {
+        rarity = rarityDef(itemDef(e.gatherNode.itemId).rarity).id;
+      }
+      if (kind === 'PICK UP') rarity = 'legendary';
+      src.push({
+        entry: e, kind, d2, rarity,
+        name: inter.sourceName ? inter.sourceName(e) : (e.label ?? ''),
+        // derived once per poll, not once per frame
+        cls: `hzcf-reveal k-${kind.replace(/\s+/g, '-').toLowerCase()}`,
+        rarColor: rarityDef(rarity).color,
+      });
+    }
+    // Sorted by distance, but NOT cut to the twelve that draw: `_updateReveals`
+    // fills the pool from the nearest candidate that is actually on screen, so
+    // a near-but-off-frame pickup no longer costs a farther visible one its
+    // slot. The list is capped only to bound the per-frame walk.
+    src.sort((a, b) => a.d2 - b.d2);
+    if (src.length > REVEAL_SRC_CAP) src.length = REVEAL_SRC_CAP;
+  }
+
+  _updateReveals() {
+    const live = this._revealsLive;
+    live.length = 0;
+    if (this.on) {
+      // a reveal that lands on the scan card is unreadable through it and
+      // hides the component list underneath — drop it, the world is full of
+      // other things to reveal
+      const cardRect = this._cardRect;
+      // V36 fails on "labels stacked on top of each other". Two herbs a metre
+      // apart project a couple of pixels apart, so every reveal takes a SEAT
+      // and is nudged clear of the seats already taken — the part-label pass
+      // (which ran first) seeds the list, so a reveal never lands under a
+      // component label either. A reveal that cannot find a seat in 12 tries
+      // does not draw: HZD never renders one label through another.
+      const placed = this._revealSlots;
+      let nPlaced = 0;
+      for (const l of this._labelsLive) {
+        if (nPlaced >= placed.length) break;
+        const seat = placed[nPlaced++];
+        // a component label hangs to ONE side of its anchor (or the other
+        // when it flips clear of the card), so seat its rough CENTRE — the
+        // anchor itself is an edge. classList is a cheap read; offsetWidth
+        // would force a synchronous layout in the middle of the frame.
+        seat.x = l.x + (l.slot?.el.classList.contains('flip') ? -PLABEL_MID : PLABEL_MID);
+        seat.y = l.y;
+      }
+      // card bounds unrolled into plain numbers: this runs every frame, and a
+      // closure per frame is a closure per frame
+      const cL = cardRect ? cardRect.left - 90 : 1, cR = cardRect ? cardRect.right + 90 : -1;
+      const cT = cardRect ? cardRect.top - 14 : 1, cB = cardRect ? cardRect.bottom + 14 : -1;
+      for (const c of this._revealSrc) {
+        if (live.length >= REVEAL_CAP) break;
+        const e = c.entry;
+        if (!e || e.removed || e.consumed) continue;
+        const pos = e.position;
+        if (!pos) continue;
+        _v.set(pos.x ?? 0, (pos.y ?? 0) + (e.datapoint ? 1.7 : 0.75), pos.z ?? 0);
+        if (!this._project(_v, _screen)) continue;
+        // the box is centred on the anchor and sits above it: horizontal fit
+        // is decided once, and only Y moves in the solve below
+        if (!this._boxOnScreen(_screen.x - REVEAL_HW, _screen.y - REVEAL_H,
+          _screen.x + REVEAL_HW, _screen.y)) continue;
+        let ok = true;
+        for (let t = 0; t < 12; t++) {
+          ok = !(_screen.x > cL && _screen.x < cR && _screen.y > cT && _screen.y < cB);
+          if (ok) {
+            for (let i = 0; i < nPlaced; i++) {
+              const q = placed[i];
+              // a reveal box is kind + name: up to ~190 px wide, ~20 px tall,
+              // and both are centred on the anchor, so this is the real
+              // half-width sum, not a guess
+              if (Math.abs(_screen.y - q.y) < 22 && Math.abs(_screen.x - q.x) < 190) {
+                ok = false;
+                break;
+              }
+            }
+          }
+          if (ok) break;
+          _screen.y -= 22;             // stack upward, away from the pickup
+          // off the top of the frame: this one does not draw, and the slot
+          // stays free for the next candidate
+          if (_screen.y - REVEAL_H < VIEW_MARGIN) { ok = false; break; }
+        }
+        if (!ok) continue;
+        if (nPlaced < placed.length) {
+          const seat = placed[nPlaced++];
+          seat.x = _screen.x; seat.y = _screen.y;
+        }
+        const slot = this._revealPool[live.length];
+        // only touch the DOM when the value actually changed: position moves
+        // every frame, text and colour almost never do
+        if (slot.lastKind !== c.kind) { slot.kind.textContent = c.kind; slot.lastKind = c.kind; }
+        if (slot.lastName !== c.name) { slot.name.textContent = c.name; slot.lastName = c.name; }
+        if (slot.lastCls !== c.cls) { slot.el.className = c.cls; slot.lastCls = c.cls; }
+        if (slot.lastRar !== c.rarColor) {
+          slot.el.style.setProperty('--rar', c.rarColor);
+          slot.lastRar = c.rarColor;
+        }
+        slot.el.style.left = `${Math.round(_screen.x)}px`;
+        slot.el.style.top = `${Math.round(_screen.y)}px`;
+        slot.el.style.display = '';
+        const rec = this._revealRec[live.length];
+        rec.kind = c.kind; rec.name = c.name; rec.rarity = c.rarity;
+        rec.x = _screen.x; rec.y = _screen.y; rec.dist = Math.sqrt(c.d2);
+        live.push(rec);
+      }
+    }
+    for (let i = live.length; i < this._revealPool.length; i++) {
+      this._revealPool[i].el.style.display = 'none';
+    }
+  }
+
+  /* --------------------------------- audit --------------------------------- */
+
+  /** The machine currently under the crosshair (null when Focus is off). */
+  get scanTarget() { return this.on ? this._target : null; }
+
+  /** One flat object every gate in this lane reads. Never throws. */
+  audit() {
+    const m = this._cardM ?? this._target;
+    const comps = m ? this.componentRows(m) : [];
+    return {
+      on: this.on,
+      target: m ? (m.kind ?? '') : null,
+      cardVisible: this._card.classList.contains('show'),
+      card: m ? {
+        machine: m.kind ?? '',
+        name: String(m.displayName ?? m.kind ?? '').toUpperCase(),
+        components: comps.map((c) => ({
+          name: c.name, count: c.count, weak: c.weak, tearable: c.tearable,
+          torn: c.torn, elemental: c.elemental,
+          loot: c.loot.map((l) => ({ id: l.id, n: l.n, name: l.name })),
+        })),
+        parts: comps.reduce((n, c) => n + c.count, 0),
+        withLoot: comps.filter((c) => c.loot.length).length,
+      } : null,
+      partLabels: this._labelsLive.map((l) => ({
+        name: l.name, x: Math.round(l.x), y: Math.round(l.y),
+        loot: l.loot, weak: l.weak, machine: l.machine,
+      })),
+      hoverPart: this.hoverPart ?? null,
+      reveals: this._revealsLive.map((r) => ({
+        kind: r.kind, name: r.name, rarity: r.rarity,
+        x: Math.round(r.x), y: Math.round(r.y), dist: +r.dist.toFixed(1),
+      })),
+      // every entry above is placed on screen by construction (`_project` +
+      // `_boxOnScreen`); these two let a gate prove it rather than trust it
+      revealCandidates: this._revealSrc.length,
+      viewport: { w: window.innerWidth, h: window.innerHeight },
+      shells: { parts: this._parts.size, machines: this._violet.size },
+      paths: {
+        count: this._paths.size,
+        // derived, not asserted: a splined ribbon carries many more samples
+        // than the route has waypoints (a raw polyline would carry exactly as
+        // many corners as waypoints)
+        splined: this._pathSamples > this._pathWaypoints * 3,
+        samples: this._pathSamples,
+        waypoints: this._pathWaypoints,
+        skipped: this._pathSkipped,
+      },
+      vignette: this._vignette(),
+    };
+  }
+
+  /**
+   * Measured tint strength (V36 asks for ≤20 %). Reads the live computed
+   * style so the number can never drift from the CSS that ships.
+   */
+  _vignette() {
+    let center = 0;
+    let edge = 0;
+    try {
+      const cs = getComputedStyle(this._tint);
+      const nums = (cs.backgroundImage.match(/rgba?\([^)]*\)/g) || [])
+        .map((s) => {
+          const parts = s.replace(/rgba?\(|\)/g, '').split(',').map((x) => parseFloat(x));
+          return parts.length > 3 ? parts[3] : 1;
+        });
+      for (const a of nums) edge = Math.max(edge, a);
+      center = nums.length ? nums[0] : 0;
+      const op = parseFloat(cs.opacity);
+      if (Number.isFinite(op) && this.on) { center *= op; edge *= op; }
+    } catch { /* computed style unavailable in a headless snapshot */ }
+    return { centerAlpha: +center.toFixed(3), maxAlpha: +edge.toFixed(3) };
+  }
+
   /* ---------------------------------- frame -------------------------------- */
 
   update(dt, t) {
@@ -957,7 +1693,9 @@ export class FocusSystem {
         const r = 2 + WAVE_SPEED * tt;
         const fade = Math.max(0, 1 - tt / WAVE_LIFE);
         this._wave.scale.set(r, 1, r);
-        this._waveMat.uniforms.uFade.value = 0.5 * fade;
+        // ui-10: the wall was reading as a purple slab across the frame.
+        // Keep the sweep legible without draining the world's colour.
+        this._waveMat.uniforms.uFade.value = 0.26 * fade;
         this._updateRing(r);
         this._ringMat.uniforms.uFade.value = 0.85 * fade;
       } else {
@@ -982,8 +1720,9 @@ export class FocusSystem {
           const k = this._waveT - e.delay;
           const fadeIn = k > 0 ? Math.min(1, k / 0.25) : 0;
           const dim = m.alive === false ? 0.28 : 1;
+          // clamped: alpha is an alpha, not a brightness knob
           e.mat.uniforms.uOpacity.value =
-            fadeIn * this._violetK * dim * pulse * e.boost;
+            Math.min(1, fadeIn * this._violetK * dim * pulse);
         }
       }
     }
@@ -1002,6 +1741,7 @@ export class FocusSystem {
       this._partPoll = GATHER_TICK;
       this._refreshParts();
     }
+    if (this._parts.size) this._syncDetached();
     if (this.on) {
       this._partMat.uniforms.uOpacity.value = 0.92 + 0.08 * Math.sin(t * 5);
     } else if (this._parts.size) {
@@ -1013,13 +1753,23 @@ export class FocusSystem {
       }
     }
 
-    // --- patrol path flow ---
+    // --- patrol path flow (fades out from under a machine that leaves it) ---
     if (this._paths.size) {
       for (const [m, e] of this._paths) {
         e.mat.uniforms.uTime.value = t;
-        e.mat.uniforms.uFade.value = THREE.MathUtils.clamp(
-          e.mat.uniforms.uFade.value + (this.on ? dt / 0.4 : -dt / 0.25), 0, 1);
-        e.mesh.visible = e.mat.uniforms.uFade.value > 0.01 && m.alive !== false;
+        const want = this.on && this._walksRoute(m);
+        const f = THREE.MathUtils.clamp(
+          e.mat.uniforms.uFade.value + (want ? dt / 0.4 : -dt / 0.25), 0, 1);
+        e.mat.uniforms.uFade.value = f;
+        e.mesh.visible = f > 0.01 && m.alive !== false;
+        // fully faded and off-route: drop it so it rebuilds when the machine
+        // goes back to patrolling (and so a corpse never keeps a loop)
+        if (f <= 0 && !want) {
+          this.ctx.scene.remove(e.mesh);
+          e.mesh.geometry.dispose();
+          e.mat.dispose();
+          this._paths.delete(m);
+        }
       }
     }
 
@@ -1034,8 +1784,25 @@ export class FocusSystem {
       this._gatherMat.size = 1.35 + 0.25 * Math.sin(t * 3.2);
     }
 
-    // --- DOM: info card + tag markers ---
+    // --- reveals: poll the interactable registry, project every frame ---
+    if (this.on) {
+      this._revealPoll -= dt;
+      if (this._revealPoll <= 0) {
+        this._revealPoll = REVEAL_TICK;
+        this._refreshReveals();
+      }
+    } else if (this._revealSrc.length) {
+      this._revealSrc.length = 0;
+    }
+
+    // --- DOM: info card + component labels + reveals + tag markers ---
+    // one rect read per frame, taken BEFORE anything writes a style this
+    // frame, so the label/reveal passes never trigger a forced reflow
+    this._cardRect = this._card.classList.contains('show')
+      ? this._card.getBoundingClientRect() : null;
     this._updateCard(dt);
+    this._updatePartLabels(dt);
+    this._updateReveals();
     this._updateTags();
   }
 }

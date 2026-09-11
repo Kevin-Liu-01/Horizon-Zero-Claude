@@ -3,6 +3,8 @@ import { Machine, rollLoot } from './machine.js';
 import { canisterMesh, lensMesh, pulseGlow } from './parts.js';
 import { buildRig } from './autorig.js';
 import { GaitController } from './gait.js';
+import { attachRigRuntime, updateRigLOD } from './rig/lod.js';
+import { snapSockets } from './rig/sockets.js';
 
 /**
  * Strider: T1 acquisition herd machine (mechanical draft horse, roster-v2
@@ -103,10 +105,13 @@ export class Strider extends Machine {
       { id: 'metal-shards', min: 12, max: 20 },
       { id: 'blaze', min: 1, max: 2 },
       { id: 'wire', min: 1, max: 2 },
-      { id: 'watcher-lens', n: 1, chance: 0.3 },
+      { id: 'strider-lens', n: 1, chance: 0.25 },
+      { id: 'braided-wire', min: 1, max: 2, chance: 0.4 },
+      { id: 'machine-heart', n: 1, chance: 0.12 },
     ]);
 
     // --- auto-rig + horse gaits
+    attachRigRuntime(this);
     buildRig(this, STRIDER_RIG);
     // the lifted-leg bind ankle sits high; its STANDING pivot height matches
     // the planted legs (plant targets use ankleH — without this the RF hoof
@@ -124,15 +129,21 @@ export class Strider extends Machine {
       stepDustSpeed: 5,
       turnRadius: 1.1,
       lookClampYaw: 1.0,
+      fidgets: [
+        { name: 'graze', head: -0.34, spine: 0.10, dur: 2.8 },
+        { name: 'tail-swish', tail: 0.26, dur: 1.1 },
+        { name: 'look-round', head: 0.30, dur: 1.5 },
+      ],
       stanceFlex: 0.15, // legs bind near-straight: flex restores IK ground reach
     });
     this.gait.update(0.016, 0); // settle the sculpt's frozen stride
+    snapSockets(this);          // bone-space sockets sit ON the hull (A44)
     this._deathRoll = 0.5;
     this._deathSink = 0.05;
   }
 
   onDeathPose(k, deathT) {
-    this.gait.deathPose(k, deathT);
+    this.gait.deathPose(k, deathT, 'quad');
   }
 
   tickCooldowns(dt) {
@@ -380,6 +391,9 @@ export class Strider extends Machine {
 
   animate(dt, t) {
     if (this.state === 'dead') return;
+    // perf-tech-04: LOD ring. Past ~40 body heights the rig runs phase-only
+    // (machine-rig-17) so a tall machine still strides on the far ridge.
+    if (updateRigLOD(this) >= 3) { this.gait.updateCheap(dt, t); return; }
     // graze head-down at patrol stops (acquisition machines work heads-down)
     const grazing = this.state === 'patrol' && this._waitT > 0.15 && !this._fleeing;
     this._grazeK = THREE.MathUtils.damp(this._grazeK, grazing ? 1 : 0, 3.5, dt);

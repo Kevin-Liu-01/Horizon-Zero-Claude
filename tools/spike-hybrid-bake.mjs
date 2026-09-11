@@ -4,7 +4,7 @@
  *   node tools/spike-hybrid-bake.mjs [--src <gltf>] [--out public/anims-hybrid/aloy-ual.json] [--fps 24]
  *
  * Loads the Quaternius UAL clip pack and aloy.glb, maps UAL bones onto Aloy's
- * (src/spikes/hybrid/boneMap.js), samples each clip at `fps`, and bakes per
+ * (labs/hybrid/boneMap.js), samples each clip at `fps`, and bakes per
  * Aloy bone CHAR-SPACE rotation tracks in exactly the convention
  * playerAnimator.js uses (L(R) = W^-1 R W, applied on top of bind):
  *
@@ -29,7 +29,7 @@ import * as THREE from 'three';
 import { mkdirSync, writeFileSync } from 'fs';
 import { dirname, resolve } from 'path';
 import { fileURLToPath } from 'url';
-import { BONE_MAP, CLIPS, PELVIS, SRC_HIPS, SYNC_SRC, SYNC_TIP, SRC_FEET, CONTACT_EPS } from '../src/spikes/hybrid/boneMap.js';
+import { BONE_MAP, CLIPS, PELVIS, SRC_HIPS, SYNC_SRC, SYNC_TIP, SRC_FEET, CONTACT_EPS } from '../labs/hybrid/boneMap.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const repo = resolve(here, '..');

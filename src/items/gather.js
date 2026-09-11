@@ -1,13 +1,18 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
+import { HERBS, itemDef } from './items.js';
 
 /**
  * World gather nodes (docs/research/mechanics.md §5-6: "the rhythm is fight,
  * then wander picking glowing herbs to top the pouch back up"):
  *
- *  - ~120 medicinal herbs: clustered stem bundles with glow-tipped green-cyan
- *    bulbs (bloom-hot, toneMapped:false). Gather -> player.addPouch(25) +
- *    'item-gained' medicinal-herb. Respawn 120 s.
+ *  - ~120 medicinal herbs in THREE variants (`progression-011`): moss (+12,
+ *    pale green), herb (+25, green) and bloom (+45, gold), each with its own
+ *    bulb colour, bulb size and scatter weight. All three ride one instanced
+ *    stem mesh and one instanced bulb mesh — the variant colour is per
+ *    instance (`instanceColor`), so three plants still cost two draw calls.
+ *    Gather -> the item into the satchel AND its value into the pouch.
+ *    Respawn 120 s.
  *  - ~80 ridge-wood: fallen branch bundles biased toward the pine stands.
  *    Gather -> ridge-wood x2-4. Respawn 120 s.
  *  - 3 camp supply crates: one-shot loot (shards + blaze/sparker/chillwater
@@ -146,9 +151,11 @@ export class Gather {
       vertexColors: true, roughness: 0.9, metalness: 0, side: THREE.DoubleSide,
       emissive: '#1c2f14', emissiveIntensity: 0.5, // shaded side stays readable
     });
-    // Bloom-hot green bulbs (#4dff88-family, per docs/research/ui.md): blue
-    // kept low so the bloom halo stays leafy green instead of icy white.
-    this._bulbBase = new THREE.Color(0.16, 2.4, 0.32);
+    // Bloom-hot bulbs. The MATERIAL colour is the shared pulse (white at the
+    // crest); the per-instance colour carries the variant's HDR tint, so the
+    // three herbs read as three different plants from across the meadow
+    // without a second material or a second draw call.
+    this._bulbBase = new THREE.Color(1, 1, 1);
     this._bulbMat = new THREE.MeshBasicMaterial({ toneMapped: false });
     this._bulbMat.color.copy(this._bulbBase);
 
@@ -161,6 +168,7 @@ export class Gather {
       const cx = Math.cos(ang) * r, cz = Math.sin(ang) * r;
       if (!this._ok(cx, cz, 26, 0.30)) continue;
       const n = 2 + (rng() * 3) | 0;
+      const clusterBias = rng();
       for (let i = 0; i < n && spots.length < HERB_TARGET; i++) {
         const x = cx + (rng() - 0.5) * 4.5;
         const z = cz + (rng() - 0.5) * 4.5;
@@ -172,7 +180,17 @@ export class Gather {
           if (dx * dx + dz * dz < 1.2) { close = true; break; }
         }
         if (close) continue;
-        spots.push({ x, z, yaw: rng() * Math.PI * 2, s: 0.85 + rng() * 0.5 });
+        // pick the variant by weight (progression-011). Clusters lean toward
+        // one variant so a gold bloom patch reads as a find, not as noise.
+        const roll = rng() * 0.94 + (clusterBias - 0.5) * 0.34;
+        let acc = 0;
+        let variant = HERBS[0];
+        for (const h of HERBS) { acc += h.weight; if (roll <= acc) { variant = h; break; } }
+        spots.push({
+          x, z, yaw: rng() * Math.PI * 2,
+          s: (0.85 + rng() * 0.5) * variant.scale,
+          variant,
+        });
       }
     }
 
@@ -197,11 +215,18 @@ export class Gather {
       );
       this.herbStems.setMatrixAt(i, mat);
       this.herbBulbs.setMatrixAt(i, mat);
-      this._addNode('herb', i, new THREE.Vector3(sp.x, y, sp.z), mat,
+      this.herbBulbs.setColorAt(i, _c.setRGB(
+        sp.variant.bulb[0], sp.variant.bulb[1], sp.variant.bulb[2]));
+      const node = this._addNode('herb', i, new THREE.Vector3(sp.x, y, sp.z), mat,
         [this.herbStems, this.herbBulbs]);
+      node.variant = sp.variant;
+      node.itemId = sp.variant.id;
     }
+    if (this.herbBulbs.instanceColor) this.herbBulbs.instanceColor.needsUpdate = true;
     this.group.add(this.herbStems, this.herbBulbs);
     this.herbCount = spots.length;
+    this.herbVariantCounts = Object.fromEntries(
+      HERBS.map((h) => [h.id, spots.filter((s) => s.variant === h).length]));
   }
 
   /* ------------------------------ ridge-wood ---------------------------- */
@@ -414,22 +439,20 @@ export class Gather {
   _onGather(node) {
     const ctx = this.ctx;
     if (node.kind === 'herb') {
-      // pouch full: don't waste the herb (canon blocks the gather)
+      // progression-011: three variants, three pouch values. The leaf goes
+      // into the satchel (crafting reagent) AND tops the pouch by its own
+      // value — a full pouch no longer refuses the pick, it just wastes the
+      // top-up, which is the choice the player should be allowed to make.
+      const variant = node.variant ?? HERBS[1];
+      const def = itemDef(variant.id);
       const p = ctx.player;
-      if (p && p.pouch >= p.maxPouch - 0.5) {
-        ctx.events.emit('item-gained', {
-          id: 'pouch-full', count: 0, total: 0,
-          name: 'Medicine Pouch Full', glyph: '✚', color: '#7fb069',
-        });
-        this._makeEntry(node); // once:true dropped it — re-arm untouched
-        return;
-      }
-      // herbs fill the medicine pouch, not the satchel (mechanics.md §6)
-      ctx.player?.addPouch?.(25);
-      ctx.events.emit('item-gained', {
-        id: 'medicinal-herb', count: 1,
-        total: Math.round(ctx.player?.pouch ?? 0),
-        name: 'Medicinal Herb', glyph: '❧', color: '#7fb069',
+      const room = p ? Math.max(0, (p.maxPouch ?? 100) - p.pouch) : 0;
+      const filled = Math.min(room, variant.pouch);
+      if (filled > 0) p?.addPouch?.(filled);
+      ctx.inventory?.add?.(variant.id, 1);
+      ctx.events.emit('herb-gathered', {
+        id: variant.id, name: def.name, pouch: filled, value: variant.pouch,
+        total: Math.round(p?.pouch ?? 0),
       });
     } else if (node.kind === 'wood') {
       const n = 2 + ((node.index * 7919) % 3); // deterministic 2..4

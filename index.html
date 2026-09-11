@@ -251,5 +251,13 @@
   <div id="hud" class="hidden"></div>
 
   <script type="module" src="/src/main.js"></script>
+
+  <!-- shell-menus (Round 4, lane-owned bootstrap; index.html is unfrozen for
+       `shell-hud` AND `shell-menus` per ROUND4-AUDIT §3.3). This module
+       self-installs off `window.__CTX__` and is idempotent, so `core-platform`
+       can replace it with `installMenus(ctx)` in main.js beside
+       `installProgression(ctx)` and delete this tag — see
+       docs/ROUND4-SHELL-MENUS.md §Requests. -->
+  <script type="module" src="/src/ui/menu.js"></script>
 </body>
 </html>

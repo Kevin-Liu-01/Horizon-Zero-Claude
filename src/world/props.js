@@ -4,6 +4,12 @@ import {
   SimplexNoise, pathFactor, riverFactor,
   riverCenterX, riverHalfWidth,
 } from './terrain.js';
+import { bake, materials } from './props/kit.js';
+import { buildMegastructures, SITES as MEGA_SITES } from './props/megastructures.js';
+import { TallneckLandmark, buildLookout, TALLNECK, LOOKOUT } from './props/tallneck.js';
+import { Rockworks } from './props/rockworks.js';
+import { Activities } from './props/activities.js';
+import { Fauna } from './fauna.js';
 
 /**
  * Static world props, all baked at construction into a handful of merged
@@ -72,9 +78,95 @@ export class Props {
     this._buildMossBoulders();
     this._buildRuins();
     this._buildWatchtower();
-    this._bake();
 
+    /* ---------------------- ROUND 4, lane world-props --------------------- */
+    // The lookout gets its own buckets so it bakes into its own mesh: the
+    // scene seed then registers it as kind 'tower' and the frustum can cull a
+    // 14 m tower without dragging every log in the valley with it.
+    this._lookoutWood = [];
+    this._lookoutCloth = [];
+    this.lookout = buildLookout(ctx, this._lookoutWood, this._lookoutCloth);
+
+    this._bake();
     ctx.scene.add(this.group);
+
+    // Megastructures go INTO the `world-props` group (one merged mesh per site
+    // per material), so `installSpatial`'s scene seed BVHs each of them for
+    // free — geometrically exact blocking + occluding + camera colliders.
+    this.megaMeshes = buildMegastructures(ctx, this.group);
+    this.landmarks = MEGA_SITES.map((s) => ({ ...s }));
+    this.landmarks.push({ id: 'tallneck', name: 'Tallneck', x: TALLNECK.x, z: TALLNECK.z, height: TALLNECK.height, bearing: 'N' });
+    this.landmarks.push({ id: 'lookout', name: 'Nora Lookout', x: LOOKOUT.x, z: LOOKOUT.z, height: LOOKOUT.height, bearing: 'NE' });
+
+    // These two live in their own groups (the seed does not reach them) and
+    // publish explicit collider descriptors instead.
+    this.tallneck = new TallneckLandmark(ctx);
+    this.rockworks = new Rockworks(ctx);
+    this.ledges = this.rockworks.ledges;
+    this.activities = new Activities(ctx, this);
+
+    /**
+     * `world-15` — three instanced wildlife species. Built here rather than in
+     * `main.js` (core-platform's file) for the same reason `Props` registers
+     * itself as a system: this lane owns both files and `Props` is already on
+     * the system list, so ticking `Fauna` from here needs no cross-lane edit.
+     * Published as `ctx.fauna` by its own constructor.
+     */
+    this.fauna = new Fauna(ctx);
+
+    this.datapoints = this.activities.datapoints;
+    this.trials = this.activities.trials;
+    this.revealed = false;
+
+    this._colliderIds = [];
+    this._collidersDone = false;
+    ctx.props = this;
+
+    /**
+     * `Props` is constructed by `Vegetation` (world-ground's file), which does
+     * not tick it, and `main.js` belongs to `core-platform`. From Round 4 this
+     * lane has moving parts — the Tallneck disc, the datapoint motes, the
+     * one-shot collider and interactable registration — so it registers itself
+     * as a system the same way `installSpatial` does. Idempotent: a later
+     * `_add(props)` from main.js would find it already present.
+     */
+    const sys = ctx.game && ctx.game.systems;
+    if (Array.isArray(sys) && !sys.includes(this)) sys.push(this);
+  }
+
+  /* --------------------------- published API ----------------------------- */
+
+  /** Every activity site as `{ kind, id, x, z, name, done }` — map / notebook. */
+  sites() { return this.activities.sites(); }
+
+  /** Nearest climbable ledge record to a point, or null (`world-16`). */
+  ledgeNear(x, y, z, maxDist = 2.5) {
+    return this.rockworks.ledgeNear(x, y, z, maxDist);
+  }
+
+  /**
+   * Hand every collider this lane owns to `spatial`. `installSpatial` runs
+   * inside `new Player()`, which is constructed AFTER `Vegetation` (and so
+   * after `Props`), so this cannot happen in the constructor. It runs once,
+   * on the first frame that finds `ctx.collision`.
+   *
+   * The `world-props` group is seeded by `collision.seedWorld()` already, so
+   * only the Tallneck, the rockworks and the activity sites — each in its own
+   * group, none of them reached by the seed — are registered here. `register()` also stamps the navgrid, so machines path around a
+   * 46 m landmark without any further call (docs/ROUND4-SPATIAL.md §5).
+   */
+  registerColliders() {
+    const C = this.ctx.collision;
+    if (this._collidersDone || !C) return 0;
+    this._collidersDone = true;
+    const descs = [...this.tallneck.colliders(), ...this.rockworks.colliders(), ...this.activities.colliders()];
+    for (const d of descs) {
+      const id = C.register(d);
+      if (Array.isArray(id)) this._colliderIds.push(...id);
+      else if (id >= 0) this._colliderIds.push(id);
+    }
+    this.colliderCount = this._colliderIds.length;
+    return this.colliderCount;
   }
 
   _groundY(x, z) { return this.ctx.terrain.getHeight(x, z); }
@@ -705,7 +797,20 @@ export class Props {
       side: THREE.DoubleSide, // hull shell + ribs are open surfaces
     }), { name: 'props-ruin-metal' });
     this._wood = this._cobble = this._mossRock = this._concrete = this._metal = null;
+
+    // ROUND 4 — the lookout as its own pair of meshes (kind 'tower').
+    const mats = materials();
+    const lw = bake(this._lookoutWood, mats.matte, { name: 'props-lookout-timber' });
+    const lc = bake(this._lookoutCloth, mats.hide, { name: 'props-lookout-hide' });
+    for (const m of [lw, lc]) if (m) this.group.add(m);
+    this._lookoutWood = this._lookoutCloth = null;
   }
 
-  update() {}
+  update(dt, t) {
+    this.registerColliders();
+    this.tallneck.update(dt, t);
+    this.activities.update(dt, t);
+    this.fauna.update(dt, t);
+    this.revealed = this.activities.revealed;
+  }
 }

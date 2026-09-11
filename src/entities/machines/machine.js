@@ -1,5 +1,11 @@
 import * as THREE from 'three';
 import { clone as skeletonClone } from 'three/examples/jsm/utils/SkeletonUtils.js';
+import { MachineAI } from './ai/index.js';
+import { Squads } from './ai/squad.js';
+import { safeEmit, machineCtx } from './ai/emit.js';
+import {
+  perceptionCfg, engageCfg, elemThreshold, alarmRadius,
+} from './ai/tables.js';
 
 /**
  * Base Machine: state machine, perception, terrain-conforming steering,
@@ -16,6 +22,7 @@ export const EYE_COLORS = {
   hostile: new THREE.Color('#ff2413'),
   dead: new THREE.Color('#050505'),
   flash: new THREE.Color(3.0, 3.0, 2.55), // white-hot attack telegraph
+  override: new THREE.Color('#19ffd0'),   // Aloy's machine — canon teal
 };
 
 const FROST_COLOR = new THREE.Color(0xbfe9ff);
@@ -66,7 +73,18 @@ const _sphereGeo = new THREE.SphereGeometry(1, 10, 8);
 
 export class Machine {
   constructor(ctx, manager, opts) {
-    this.ctx = ctx;
+    /**
+     * NOT the root ctx: a read-only, prototype-chained view of it whose
+     * `events.emit` is `safeEmit` (see ai/emit.js). Species files write the
+     * raw idiom `this.ctx.events.emit(...)` in eleven places — six of them
+     * `player-damage` — and a subscriber that throws there used to take the
+     * whole `Machines.update` loop into the engine quarantine. Every other
+     * field, including ones other lanes install on ctx later, reads straight
+     * through. `machine.ctx` is for READING; nothing here writes to it.
+     */
+    this.ctx = machineCtx(ctx);
+    /** The un-facaded ctx, for anything that needs bus identity. */
+    this.rootCtx = ctx;
     this.manager = manager;
 
     this.kind = opts.kind;
@@ -161,7 +179,41 @@ export class Machine {
     this.playerDist = 999;
     this._visible = false;
     this._unseenT = 99;
-    this._perceptClock = Math.random() * 0.13;
+    this.detectFill = 0;        // current sight fill rate (HUD stealth meter)
+    this.scanOffset = 0;        // sensor sweep offset applied to the cone
+    this.hearScale = opts.hearScale ?? 1;
+    this._alarmCd = 0;
+    this.elemThreshold = elemThreshold(this.kind);
+    this.perceptCfg = perceptionCfg(this.kind);
+    this.engageCfg = engageCfg(this.kind);
+    this.alarmRadius = opts.alarmRadius ?? alarmRadius(this.kind);
+
+    // AI-published motion channels.
+    this.moveDir = new THREE.Vector3(0, 0, 1); // world XZ travel direction
+    this.strafeK = 0;                          // -1..1 sideways component
+    /**
+     * `aiPose` is a PUBLISHED, normalised description of what the current
+     * generic move is doing (0..1 / -1..1 per channel), offered to any lane
+     * that wants to react to a telegraph — VFX, audio, machine-rig's authored
+     * attack keyframes (machine-rig-08). Nothing reads it yet; it is a
+     * contract, not a dependency, so the moves do NOT rely on it to be
+     * visible: `ai/attacks.js` also writes the real `gait.pose` channels
+     * (crouch / spineRear / spineYaw / tailYaw / headPitch / legLift / tuck)
+     * directly, which gait.js consumes every frame.
+     */
+    this.aiPose = {                            // generic attack pose channels
+      coil: 0, lunge: 0, charge: 0, sweep: 0, rear: 0, forage: 0,
+    };
+    this._react = { x: 0, y: 0, z: 0, k: 0, t: 0 }; // hit impulse for the rig
+
+    // ecosystem / lifecycle
+    this.escort = opts.escort ?? null;
+    this.scavenge = null;
+    this.overridden = false;
+    this.mountedBy = null;
+    this._site = opts._site ?? null;
+    this._frozen = false;
+    this._disposed = false;
 
     // combat state
     this.stunT = 0;
@@ -194,6 +246,16 @@ export class Machine {
 
     this.weakPoints = [];
     this._fx = [];
+    /**
+     * Every scene object an FX closure owns, so a corpse can be torn down
+     * without leaking it (fix round 1: "disposing a wreck orphans its loot
+     * beacon"). FX meshes are parented to `ctx.scene`, NOT to `root`, because
+     * they must not inherit the machine's death crumple — which meant that
+     * dropping `_fx` (freeze) or removing `root` (dispose) left every mesh
+     * still in flight standing in the world forever, each one retaining the
+     * whole disposed machine through `userData.machine`.
+     */
+    this._fxObjects = new Set();
     this._flameClock = 0;
     this.lowLOD = false;
 
@@ -218,6 +280,9 @@ export class Machine {
 
     this.root.traverse((o) => { o.userData.machine = this; });
     ctx.scene.add(this.root);
+
+    // the brain: senses, footwork, search, move selection, hit reactions
+    this.ai = new MachineAI(this);
   }
 
   /* ------------------------- setup helpers ------------------------- */
@@ -513,6 +578,45 @@ export class Machine {
     });
   }
 
+  /* --------------------- bone-anchored hit volumes --------------------- */
+
+  /**
+   * `machine-ai-13` — the query side of this lives in `ctx.hitHulls` (spatial):
+   * per-bone capsules extracted from the skinned mesh, plus one per attached
+   * component holder. These two calls are the machine-side seam.
+   *
+   * `hitVolumes()` is the descriptor list (bone name, owning part, capsule) —
+   * `focus-items` wants it for `ui-10` part labels.
+   */
+  hitVolumes() {
+    return this.ctx.hitHulls?.hulls?.(this) || [];
+  }
+
+  /**
+   * Which bone volume does this world point land in? Used when a hit arrives
+   * with no `object` (splash damage, a Critical Hit, an override ally strike)
+   * so it still attributes to a component instead of the body centre.
+   * Not a hot path — one call per impact, never per frame.
+   */
+  resolveHitVolume(point) {
+    const hulls = this.hitVolumes();
+    if (!hulls.length) return null;
+    let best = null, bd = Infinity;
+    for (const h of hulls) {
+      const ax = h.a[0], ay = h.a[1], az = h.a[2];
+      const bx = h.b[0], by = h.b[1], bz = h.b[2];
+      const dx = bx - ax, dy = by - ay, dz = bz - az;
+      const len2 = dx * dx + dy * dy + dz * dz;
+      let t = len2 > 1e-9
+        ? ((point.x - ax) * dx + (point.y - ay) * dy + (point.z - az) * dz) / len2 : 0;
+      t = t < 0 ? 0 : t > 1 ? 1 : t;
+      const px = ax + dx * t, py = ay + dy * t, pz = az + dz * t;
+      const d = Math.hypot(point.x - px, point.y - py, point.z - pz) - h.r;
+      if (d < bd) { bd = d; best = h; }
+    }
+    return best ? { name: best.name, part: best.part, distance: +bd.toFixed(3) } : null;
+  }
+
   /* ------------------------- damage contract ------------------------- */
 
   /**
@@ -554,6 +658,22 @@ export class Machine {
       o = o.parent;
     }
     if (part && !part.attached) part = null; // stray debris
+
+    // machine-ai-13: no struck node (splash, crit, ally strike) — attribute the
+    // hit to the bone volume it landed in rather than to the body centre
+    let volume = null;
+    if (part) {
+      volume = { name: hit.object?.name || part.name, part: part.name };
+    } else if (hit.point) {
+      // only pay for the hull walk when the node lookup came up empty —
+      // one call per impact, never per frame
+      volume = this.resolveHitVolume(hit.point);
+      if (volume && volume.part) {
+        for (const q of this.parts) {
+          if (q.name === volume.part && q.attached) { part = q; break; }
+        }
+      }
+    }
 
     // --- impact channel (weak spots multiply IMPACT only)
     let mult = 1 - this.armor;
@@ -598,7 +718,12 @@ export class Machine {
         triggeredElement = element;
         this._detonateCanister(part);
       } else if (elementAmount > 0) {
-        let amt = elementAmount;
+        /**
+         * `combat-elemental-no-tier-scaling`: the meter stays 0..100 (the HUD
+         * reads it that way) and the per-kind THRESHOLD scales the gain
+         * instead — one Freeze arrow brittles a Watcher, nine a Thunderjaw.
+         */
+        let amt = elementAmount * (100 / this.elemThreshold);
         if (element === this.elemWeak) amt *= 1.6;
         if (element === this.elemResist) amt *= 0.5;
         this.elemental[element] = Math.min(100, (this.elemental[element] ?? 0) + amt);
@@ -611,21 +736,54 @@ export class Machine {
       }
     }
 
-    // getting shot always reveals the shooter's rough position
-    this.suspicion = 1;
-    this._unseenT = 0;
-    if (this.ctx.player) this.lastKnown.copy(this.ctx.player.position);
+    /**
+     * `machine-ai-03` / `stealth-omniscient-pursuit` — the single most
+     * important line in this file. Being shot used to hand the machine the
+     * player's EXACT live position and full alert, which is why stealth
+     * collapsed after one arrow. Now:
+     *   - a hit it SAW (or a melee hit, or one that lands while it already has
+     *     eyes on her) escalates normally;
+     *   - a hit it did NOT see plants partial suspicion at the reconstructed
+     *     SHOT ORIGIN, with a couple of metres of error, and sends it hunting
+     *     in that direction. It never learns where she is standing now.
+     */
+    const seen = hit.seen === true || this._visible
+      || this.state === 'attack' || this.state === 'alert';
+    if (seen) {
+      this.suspicion = 1;
+      this._unseenT = 0;
+      if (this._visible && this.ctx.player) this.lastKnown.copy(this.ctx.player.position);
+      else if (hit.point) { this.lastKnown.copy(hit.point); this.lastKnown.y = 0; }
+    } else {
+      const o = this.manager.shotOrigin ? this.manager.shotOrigin(hit) : null;
+      const ox = o ? o.x : (hit.point ? hit.point.x : this.position.x);
+      const oz = o ? o.z : (hit.point ? hit.point.z : this.position.z);
+      this.ai.perception.unseenHit(ox, oz, 1);
+      // a hit is loud: it also wakes the neighbours toward the same bearing
+      this.manager.noise?.({
+        x: this.position.x, z: this.position.z, kind: 'impact', source: this,
+      });
+    }
 
-    this.ctx.events.emit('machine-damaged', {
+    this.emit('machine-damaged', {
       machine: this, damage, weak, point: hit.point,
       tear, tornPart, triggeredElement,
+      volume: volume ? volume.name : null,   // bone/part label for focus-items
     });
 
     let killed = false;
     if (this.health <= 0) { killed = true; this._die(); }
-    else if (this.state === 'patrol' || this.state === 'suspicious'
-          || this.state === 'search' || this.state === 'return') {
-      this.setState('alert');
+    else {
+      // escalate FIRST so the reaction's `resumeState` remembers the fight,
+      // then react — a stagger must survive the escalation, not be undone by it
+      const st = this.state;
+      if (seen && (st === 'patrol' || st === 'suspicious' || st === 'search' || st === 'return')) {
+        this.setState('alert');
+      } else if (!seen && (st === 'patrol' || st === 'return')) {
+        this.setState('suspicious');
+      }
+      // combat-machine-no-flinch / machine-ai-10: flinch, stagger, or go down
+      this.ai.reactions.onDamage(damage, hit, tornPart);
     }
     return { damage, tear, weak, killed, tornPart, triggeredElement };
   }
@@ -674,14 +832,14 @@ export class Machine {
     if (p) {
       const d = pos.distanceTo(p.position);
       if (d < 5) {
-        this.ctx.events.emit('player-damage', {
+        this.emit('player-damage', {
           amount: Math.max(6, Math.round(30 * (1 - d / 6))), from: this,
         });
         this.knockbackPlayer(9);
       }
       p._shake = Math.min(1, (p._shake ?? 0) + 0.45);
     }
-    this.ctx.events.emit('machine-damaged', {
+    this.emit('machine-damaged', {
       machine: this, damage: dmg, weak: false, point: pos,
       tear: 0, tornPart: null, triggeredElement: el,
     });
@@ -732,6 +890,9 @@ export class Machine {
     };
     if (part.pickupWeapon) entry.pickupWeapon = part.pickupWeapon;
     const rec = { part, entry, done: false };
+    // remembered so a disposed wreck takes its debris (and the debris'
+    // interactable, which retains this Machine through `entry.machine`) with it
+    (this._tornRecs ||= []).push(rec);
     entry.onInteract = () => this._removeTornPart(rec);
     part.interactable = this.ctx.interactables?.register?.(entry) ?? entry;
 
@@ -780,7 +941,7 @@ export class Machine {
     this._fx.push(rec);
 
     part.onTorn?.(part, this);
-    this.ctx.events.emit('part-torn', { machine: this, part });
+    this.emit('part-torn', { machine: this, part });
   }
 
   _removeTornPart(rec) {
@@ -790,6 +951,9 @@ export class Machine {
     const mesh = rec.part.mesh;
     mesh.parent?.remove(mesh);
     this._disposeSubtree(mesh);
+    rec.entry.machine = null;              // break the retain chain
+    const i = this._tornRecs ? this._tornRecs.indexOf(rec) : -1;
+    if (i >= 0) this._tornRecs.splice(i, 1);
   }
 
   /** Elemental explosion FX: fireball/ice-burst + ring + sparks + smoke. */
@@ -814,7 +978,7 @@ export class Machine {
       );
       const s0 = i === 0 ? 1.6 : 0.7 + Math.random() * 0.7;
       s.scale.setScalar(s0);
-      this.ctx.scene.add(s);
+      this._fxAdd(s);
       let t = 0;
       const dur = i === 0 ? 0.5 : 0.34 + Math.random() * 0.25;
       const from = mat.color.clone();
@@ -826,7 +990,7 @@ export class Machine {
           s.position.y += dt * 1.4;
           mat.opacity = 0.95 * (1 - k * k);
           mat.color.lerpColors(from, late, k);
-          if (k >= 1) { this.ctx.scene.remove(s); mat.dispose(); return false; }
+          if (k >= 1) { this._fxDrop(s); mat.dispose(); return false; }
           return true;
         },
       });
@@ -837,6 +1001,12 @@ export class Machine {
     if (this.state === 'dead') return;
     this.alive = false;
     this._cancelAttack();
+    this.ai?.reactions.onDeath();
+    this.ai?.search.stop();
+    this.escort = null;
+    this.scavenge = null;
+    if (this.mountedBy) this.manager.dismount?.();
+    if (this._mountEntry) { this.ctx.interactables?.unregister?.(this._mountEntry); this._mountEntry = null; }
     this.burnT = 0;
     this.stunT = 0;
     this._deathT = 0;
@@ -844,7 +1014,7 @@ export class Machine {
     _v1.copy(this.position); _v1.y += this.height * 0.55;
     this._sparkBurst(_v1, 46);
     this._smokeBurst(_v1, 10);
-    this.ctx.events.emit('machine-killed', { machine: this });
+    this.emit('machine-killed', { machine: this });
   }
 
   /* ------------------------- state machine ------------------------- */
@@ -852,14 +1022,21 @@ export class Machine {
   setState(name) {
     if (this.state === name) return;
     const wasCalm = this.state === 'patrol' || this.state === 'return' || this.state === 'suspicious';
+    const prev = this.state;
     this.state = name;
     this._stateT = 0;
     if ((name === 'alert' || name === 'attack') && !this._alertEpisode) {
       this._alertEpisode = true;
-      this.ctx.events.emit('machine-alerted', { machine: this });
+      this.emit('machine-alerted', { machine: this });
       this.onAlerted?.(wasCalm);
     }
-    if (name === 'patrol' || name === 'return') this._alertEpisode = false;
+    if (name === 'patrol' || name === 'return') {
+      this._alertEpisode = false;
+      this.ai?.engage.reset();
+    }
+    if (name !== 'search') this.ai?.search.stop();
+    // SPEC event: audio/HUD read state transitions instead of polling
+    this.emit('machine-state', { machine: this, state: name, prev });
     this.onStateChange?.(name);
   }
 
@@ -867,22 +1044,33 @@ export class Machine {
   forceState(name) {
     const p = this.ctx.player;
     if (name === 'dead') { this.health = 0; this._die(); return; }
+    if (name === 'overridden') { this.manager.override?.(this); return; }
+    if (name === 'stagger') { this.ai.reactions._stagger(0.9); return; }
+    if (name === 'downed') { this.ai.reactions._down(); return; }
     if (name === 'alert' || name === 'attack' || name === 'search' || name === 'suspicious') {
       this.suspicion = name === 'suspicious' ? 0.6 : name === 'search' ? 0.5 : 1;
       this._unseenT = 0;
       if (p) this.lastKnown.copy(p.position);
+      if (name === 'search') this.ai.beginSearch();
     }
     this._attackCd = 0;
     this.setState(name);
   }
 
   update(dt, t) {
+    if (this._disposed) return;
     if (this.state === 'dead') {
+      // perf-tech-08: a frozen wreck costs nothing. The site manager flips
+      // `_frozen` 10 s after death and disposes it entirely at ~82 s.
+      if (this._frozen) return;
       this._updateDeath(dt);
       this._updateFx(dt);
       this._updateEyes(dt, t);
       return;
     }
+
+    this.ai.tick(dt);
+    this._alarmCd = Math.max(0, this._alarmCd - dt);
 
     // attack-timer cooldowns tick unconditionally (lowLOD coarse steps and
     // stun must not freeze them — subclasses implement tickCooldowns)
@@ -935,13 +1123,25 @@ export class Machine {
     this._stateT += dt;
     this._perceive(dt);
 
+    // hit reactions own the frame while a stagger / downed window runs
+    if (this.ai.reactions.update(dt)) {
+      this._conform(dt);
+      if (!this.lowLOD) { this.animate?.(dt, t); this._updateParts(dt, t); }
+      this._updateFx(dt);
+      this._updateEyes(dt, t);
+      return;
+    }
+
     switch (this.state) {
       case 'patrol': this._statePatrol(dt); break;
       case 'suspicious': this._stateSuspicious(dt); break;
       case 'alert': this._stateAlert(dt); break;
-      case 'attack': this._stateAttack(dt); break;
+      case 'attack': this._engageFrame(dt); break;
       case 'search': this._stateSearch(dt); break;
       case 'return': this._stateReturn(dt); break;
+      case 'stagger': this._stateStagger(dt); break;
+      case 'downed': this._stateDowned(dt); break;
+      case 'overridden': this._stateOverridden(dt); break;
     }
 
     this._conform(dt);
@@ -999,80 +1199,201 @@ export class Machine {
     }
   }
 
+  /* ------------------------- state machine ------------------------- */
+
   _statePatrol(dt) {
-    if (this.suspicion > 0.28) { this.setState('suspicious'); return; }
-    if (this._waitT > 0) { this._waitT -= dt; this._speed = THREE.MathUtils.damp(this._speed, 0, 6, dt); return; }
+    const c = this.perceptCfg;
+    if (this.suspicion > c.susEnter) { this.setState('suspicious'); return; }
+    // ecosystem overrides of the plain waypoint loop (machine-ai-14)
+    if (this.scavenge && Squads.stepScavenge(this, dt)) return;
+    if (this.escort && Squads.stepEscort(this, dt)) return;
+    if (this._waitT > 0) {
+      this._waitT -= dt;
+      this._speed = THREE.MathUtils.damp(this._speed, 0, 6, dt);
+      return;
+    }
     const wp = this.route[this._wpIndex];
-    const d = this._moveToward(wp.x, wp.z, this.walkSpeed, dt);
+    const d = this._navToward(wp.x, wp.z, this.walkSpeed, dt);
     if (d < this.bodyRadius + 0.6) {
       this._wpIndex = (this._wpIndex + 1) % this.route.length;
       this._waitT = 1.2 + Math.random() * 2.4;
     }
   }
 
+  /**
+   * Suspicious: face the stimulus, then creep toward `lastKnown` — which is
+   * where the NOISE was, never where the player is. A lure holds it there.
+   */
   _stateSuspicious(dt) {
-    if (this.suspicion >= 1) { this.setState('alert'); return; }
-    if (this.suspicion < 0.06) { this.setState('return'); return; }
-    // face the stimulus, then creep toward it
-    if (this._stateT < 1.1) {
-      this._face(this.lastKnown.x, this.lastKnown.z, dt);
+    const c = this.perceptCfg;
+    if (this.suspicion >= c.alertAt) { this.setState('alert'); return; }
+    if (this.suspicion < 0.06 && this.ai.lureT <= 0) { this.setState('return'); return; }
+    const lk = this.ai.lureT > 0 ? this.ai.lurePos : this.lastKnown;
+    if (this._stateT < 0.9) {
+      this._face(lk.x, lk.z, dt);
       this._speed = THREE.MathUtils.damp(this._speed, 0, 6, dt);
-    } else {
-      const d = this._moveToward(this.lastKnown.x, this.lastKnown.z, this.walkSpeed * 0.55, dt);
-      if (d < 2.5) this.suspicion = Math.max(0, this.suspicion - dt * 0.35);
+      return;
+    }
+    const d = this._navToward(lk.x, lk.z, this.walkSpeed * 0.7, dt);
+    if (d < 2.5) {
+      this._speed = THREE.MathUtils.damp(this._speed, 0, 6, dt);
+      this.heading += Math.sin(this._stateT * 1.6) * dt * 0.9;
+      if (this.ai.lureT <= 0) this.suspicion = Math.max(0, this.suspicion - dt * 0.3);
+    }
+    // nothing found where the noise was: sweep the area properly
+    if (this._stateT > 6 && this.ai.lureT <= 0) {
+      this.ai.beginSearch();
+      this.setState('search');
     }
   }
 
   _stateAlert(dt) {
     const p = this.ctx.player;
-    if (p) this._face(p.position.x, p.position.z, dt);
+    const face = this._visible && p ? p.position : this.lastKnown;
+    this._face(face.x, face.z, dt);
     this._speed = THREE.MathUtils.damp(this._speed, 0, 6, dt);
     if (this._stateT > 0.65) this.setState('attack');
   }
 
-  _stateAttack(dt) {
+  /**
+   * `machine-ai-02` / `machine-ai-15`: ONE combat frame, for every species.
+   *
+   * This logic used to live in `_stateAttack()` — which three species
+   * (scrapper, glinthawk, strider) override. Those three therefore never
+   * reached the engage layer OR the scored attack table: a Scrapper parked at
+   * exactly 7 m, where its own if-ladder had a dead zone between `claw`
+   * (< 3.4 m) and `laser` (> 7 m), and threw nothing at all for the whole
+   * fight. `update()` now routes the `attack` state here instead — a name no
+   * species overrides — so the band-work and the scored table always run.
+   *
+   * The two things those overrides owned that are NOT footwork are preserved
+   * below by CAPABILITY rather than by class, because the species files belong
+   * to `machine-rig`: a stampeding Strider (`_fleeing`/`_flee`, strider-07)
+   * and a burn-grounded Glinthawk (`_downT`, its crit window). A follow-up is
+   * filed to `machine-rig` to delete the now-dead `_stateAttack` overrides.
+   */
+  _engageFrame(dt) {
     if (this._attack) { this._updateAttack(dt); return; }
     this._attackCd -= dt;
     const p = this.ctx.player;
     if (!p) { this.setState('return'); return; }
-    if (this._unseenT > 4.5) { this.setState('search'); return; }
-    if (this.territory) {
-      const dx = p.position.x - this.territory.x, dz = p.position.z - this.territory.z;
-      if (dx * dx + dz * dz > (this.territory.r * 1.35) ** 2) { this.setState('return'); return; }
+
+    /**
+     * KNIFE-RANGE CONTACT (fix round 1, `A41b-attack-coverage`).
+     *
+     * Everything below keys off `_visible`, and `_visible` is an OPTICAL
+     * product — at 2 m it is the easiest thing in the world to lose (a rock
+     * lip crossing two capsule centres, one perception tick of lag, a charge
+     * that drove past her). When it broke mid-duel the frame fell through to
+     * `pursue(lastKnown)`, which picks no move and sets no footwork mode, so
+     * the machine walked INTO the player at 1.3 m and threw nothing for three
+     * seconds — "broken AI at exactly the range players test first".
+     *
+     * `contact` is the non-optical half of an ALREADY-ENGAGED machine's
+     * senses: inside `contactRange`, with its own `lastKnown` still accurate
+     * to `contactSlack`, it may fight what it can hear and feel. It is not a
+     * detection channel: only `attack` state reaches this function, it never
+     * writes `lastKnown` (so it cannot reveal a position the machine has not
+     * earned), and a machine that has genuinely lost her — stale belief —
+     * gets nothing and keeps searching. See PERCEPTION.contactRange notes.
+     */
+    _v1.set(p.position.x - this.position.x, 0, p.position.z - this.position.z);
+    const distNow = Math.hypot(_v1.x, _v1.z);
+    const cr = this.perceptCfg.contactRange ?? 0;
+    let contact = false;
+    if (!this._visible && cr > 0 && distNow <= cr + this.bodyRadius) {
+      const bx = this.lastKnown.x - p.position.x, bz = this.lastKnown.z - p.position.z;
+      const slack = this.perceptCfg.contactSlack ?? 2;
+      contact = bx * bx + bz * bz <= slack * slack;
     }
-    const dist = this.playerDist;
-    if (dist > this.attackRange * 0.85) {
-      this._moveToward(p.position.x, p.position.z, this.runSpeed, dt);
+    // in contact it has NOT lost her: the search countdown cannot mature
+    if (contact) this._unseenT = Math.min(this._unseenT, 1.5);
+    const engaged = this._visible || contact;
+
+    if (this._unseenT > 4.5) { this.ai.beginSearch(); this.setState('search'); return; }
+    // soft leash (machine-ai-18): dragged too far from home, it disengages —
+    // its senses keep working the whole way, only the pursuit gives up
+    if (this.ai.engage.leashed()) { this.setState('return'); return; }
+
+    // a stampede is flight, not engagement: the herd vector owns the frame
+    if (this._fleeing && typeof this._flee === 'function') { this._flee(dt); return; }
+    // a burn-grounded flier flops toward her: pure Critical Hit window
+    if (this._downT > 0) {
+      this._moveToward(p.position.x, p.position.z, 1.4, dt);
+      return;
+    }
+
+    if (engaged) {
+      this.ai.engage.update(dt, p.position.x, p.position.z);
     } else {
-      this._face(p.position.x, p.position.z, dt);
-      this._speed = THREE.MathUtils.damp(this._speed, 0, 8, dt);
+      // it knows roughly where she was; it does not know where she IS
+      this.ai.engage.pursue(dt, this.lastKnown.x, this.lastKnown.z, this.runSpeed * 0.9);
     }
-    if (this._attackCd <= 0) {
-      const a = this.chooseAttack?.(dist);
+    // a flier holds its cruise altitude while it works the band (the flight
+    // model owns y; `_steerAlong` only ever moves it in XZ)
+    if (this._airborne && typeof this._fly === 'function') {
+      this._fly(this.flyCruise ?? 11, dt);
+    }
+    if (engaged && this._attackCd <= 0) {
+      /**
+       * Selection distance is measured HERE, not read from `playerDist`.
+       *
+       * `playerDist` is a perception product and refreshes on the perception
+       * tick (`PERCEPTION.tick`, 0.1 s, deliberately staggered per machine so
+       * 24 machines do not all raycast on the same frame). Move selection is
+       * the one consumer that cannot tolerate that lag: a Strider closing at
+       * 13 m/s is 1.3 m from where the last tick says it is, so a table row
+       * chosen at the edge of its band could fire from outside it — the same
+       * "throws a move that cannot reach" symptom as the dead zone the A41b
+       * gate exists for, arriving by a different road. One hypot, and only on
+       * the frames the machine is actually off its global attack cooldown.
+       */
+      _v1.set(p.position.x - this.position.x, 0, p.position.z - this.position.z);
+      const a = this.ai.chooseAttack(Math.hypot(_v1.x, _v1.z));
       if (a) this._startAttack(a);
     }
   }
 
+  /** Legacy name — species `super._stateAttack(dt)` calls land on the frame. */
+  _stateAttack(dt) { this._engageFrame(dt); }
+
+  /** 12-20 s sweep of the cover around the last contact (machine-ai-11). */
   _stateSearch(dt) {
-    if (this.suspicion >= 1) { this.setState('alert'); return; }
-    const d = this._moveToward(this.lastKnown.x, this.lastKnown.z, this.walkSpeed * 1.35, dt);
-    if (d < 2.2) {
-      // look around
-      this._speed = THREE.MathUtils.damp(this._speed, 0, 6, dt);
-      this.heading += Math.sin(this._stateT * 1.4) * dt * 1.1;
+    const c = this.perceptCfg;
+    if (this.suspicion >= c.alertAt) { this.ai.search.stop(); this.setState('alert'); return; }
+    if (!this.ai.search.active) this.ai.beginSearch();
+    if (!this.ai.search.update(dt)) {
+      this.ai.search.stop();
+      this.setState('return');
     }
-    if (this._stateT > 7) this.setState('return');
   }
 
   _stateReturn(dt) {
-    if (this.suspicion >= 1) { this.setState('alert'); return; }
-    if (this.suspicion > 0.5) { this.setState('suspicious'); return; }
+    const c = this.perceptCfg;
+    if (this.suspicion >= c.alertAt) { this.setState('alert'); return; }
+    if (this.suspicion > c.susEnter) { this.setState('suspicious'); return; }
     const wp = this.route[this._wpIndex];
-    const d = this._moveToward(wp.x, wp.z, this.walkSpeed * 1.25, dt);
+    const d = this._navToward(wp.x, wp.z, this.walkSpeed * 1.25, dt);
     if (d < this.bodyRadius + 1) {
       this.suspicion = 0;
+      this.ai.engage.reset();
       this.setState('patrol');
     }
+  }
+
+  /** Planted while a hit lands home (`machine-ai-10`); the rig reads `_react`. */
+  _stateStagger(dt) {
+    this._speed = THREE.MathUtils.damp(this._speed, 0, 8, dt);
+  }
+
+  /** Down: the Critical Hit window. Reactions owns the timer. */
+  _stateDowned(dt) {
+    this._speed = THREE.MathUtils.damp(this._speed, 0, 8, dt);
+  }
+
+  /** Aloy's machine: heels, defends, or is being ridden. */
+  _stateOverridden(dt) {
+    this.manager.overrides?.step?.(this, dt);
   }
 
   /* ------------------------- attacks ------------------------- */
@@ -1081,11 +1402,13 @@ export class Machine {
     a.t = 0;
     a.struck = false;
     a.phase = 'windup';
+    a.hit = false;
     this._attack = a;
     // canon dodge cue: white-hot eye flash at every attack windup
     this._telegraphT = TELEGRAPH_T;
-    this.ctx.events.emit('machine-telegraph', { machine: this });
-    this.ctx.events.emit('machine-attack', { machine: this, kind: a.kind });
+    this.emit('machine-telegraph', { machine: this });
+    this.emit('machine-attack', { machine: this, kind: a.kind });
+    this.emit('machine-attack-phase', { machine: this, kind: a.kind, attack: a.kind, phase: 'windup' });
     a.onWindup?.(a);
   }
 
@@ -1093,11 +1416,14 @@ export class Machine {
     const a = this._attack;
     a.t += dt;
     const w = a.windup, s = a.strike, r = a.recover;
+    const was = a.phase;
     if (a.t < w) {
       a.phase = 'windup'; a.phaseT = a.t / w;
       if (a.track !== false) {
-        const p = this.ctx.player;
-        if (p) this._face(p.position.x, p.position.z, dt);
+        // track the target it can actually see; otherwise commit to lastKnown
+        const p = this._visible ? this.ctx.player : null;
+        const tgt = p ? p.position : this.lastKnown;
+        this._face(tgt.x, tgt.z, dt);
       }
     } else if (a.t < w + s) {
       if (!a.struck) { a.struck = true; a.onStrike?.(a); }
@@ -1105,19 +1431,45 @@ export class Machine {
     } else {
       a.phase = 'recover'; a.phaseT = (a.t - w - s) / r;
     }
+    /**
+     * `machine-ai-09` — planted windups. `_speed` is what the gait galloped on,
+     * so a stationary windup used to run the legs at full tilt in place. Damp
+     * it per phase unless the move declares its own root motion (`plant:false`
+     * or `plant:'windup'` for a charge, which must gallop through the strike).
+     */
+    const plant = a.plant;
+    if (plant !== false) {
+      const planted = plant === 'windup'
+        ? a.phase === 'windup' || a.phase === 'recover'
+        : true;
+      if (planted) this._speed = THREE.MathUtils.damp(this._speed, 0, 10, dt);
+    }
+    if (a.phase !== was) {
+      this.emit('machine-attack-phase', { machine: this, kind: a.kind, attack: a.kind, phase: a.phase });
+    }
     a.onUpdate?.(a, dt);
     if (a.t >= w + s + r) {
       a.cleanup?.(a);
       this._attackCd = a.cooldown ?? 2.5;
+      // miss recovery (machine-ai-08): a whiff backs it off and is remembered
+      this.ai.picker.finish(a);
+      // ...and the footwork re-chooses its standoff for the NEXT move, which
+      // is what makes a whole moveset show up instead of the two moves that
+      // happen to fit the radius it settled on (machine-ai-08)
+      this.ai.engage.repick();
+      if (a.needsHit && !a.hit) this.ai.engage.noteMiss();
+      this.emit('machine-attack-phase', { machine: this, kind: a.kind, attack: a.kind, phase: 'end', hit: !!a.hit });
       this._attack = null;
     }
   }
 
   _cancelAttack() {
     if (!this._attack) return;
-    this._attack.cleanup?.(this._attack);
+    const a = this._attack;
+    a.cleanup?.(a);
     this._attack = null;
     this._attackCd = Math.max(this._attackCd, 1.2);
+    this.emit('machine-attack-phase', { machine: this, kind: a.kind, attack: a.kind, phase: 'cancel' });
   }
 
   /** Deal damage to the player if within range (and optionally in front arc). */
@@ -1131,7 +1483,25 @@ export class Machine {
       const fx = Math.sin(this.heading), fz = Math.cos(this.heading);
       if ((_v1.x * fx + _v1.z * fz) / d < arcCos) return false;
     }
-    this.ctx.events.emit('player-damage', { amount, from: this });
+    this.emit('player-damage', { amount, from: this });
+    return true;
+  }
+
+  /**
+   * Arc-limited damage measured against an arbitrary world bearing —
+   * `machine-ai-13`'s rear 200-degree tail sweep uses this.
+   */
+  damagePlayerArc(amount, maxRange, bearing, arcCos) {
+    const p = this.ctx.player;
+    if (!p) return false;
+    _v1.subVectors(p.position, this.position);
+    const d = Math.hypot(_v1.x, _v1.z);
+    if (d > maxRange) return false;
+    if (d > 0.01) {
+      const fx = Math.sin(bearing), fz = Math.cos(bearing);
+      if ((_v1.x * fx + _v1.z * fz) / d < arcCos) return false;
+    }
+    this.emit('player-damage', { amount, from: this });
     return true;
   }
 
@@ -1148,76 +1518,23 @@ export class Machine {
 
   /* ------------------------- perception ------------------------- */
 
+  /**
+   * Senses live in `ai/perception.js` (machine-ai-03/04/05/06/12/19). This is
+   * the seam: nothing else in this file may read `player.position` to decide
+   * what a machine knows.
+   */
   _perceive(dt) {
-    const p = this.ctx.player;
-    if (!p) return;
-    _v1.subVectors(p.position, this.position);
-    const dist = Math.hypot(_v1.x, _v1.z);
-    this.playerDist = dist;
-
-    this._perceptClock -= dt;
-    if (this._perceptClock > 0) return;
-    const pd = 0.12;
-    this._perceptClock += pd;
-
-    let visible = false;
-    let heard = false;
-    const playerAlive = p.health > 0;
-
-    if (playerAlive) {
-      let allowed = true;
-      if (this.territory && this.state !== 'attack' && this.state !== 'alert') {
-        const dx = p.position.x - this.territory.x, dz = p.position.z - this.territory.z;
-        allowed = dx * dx + dz * dz < this.territory.r * this.territory.r;
-      }
-      if (allowed) {
-        const stealthed = p.crouching && p.inTallGrass;
-        const maxSee = stealthed ? this.stealthRange : this.sightRange;
-        if (dist < maxSee) {
-          const close = dist < this.bodyRadius + 4; // proximity sense, no cone
-          let inCone = close;
-          if (!inCone && dist > 0.01) {
-            const fx = Math.sin(this.heading), fz = Math.cos(this.heading);
-            inCone = (_v1.x * fx + _v1.z * fz) / dist > Math.cos(this.sightHalf);
-          }
-          if (inCone && this._hasLOS(p.position)) visible = true;
-        }
-        // hearing: movement noise radius
-        let noiseR = 0;
-        if (p.moveSpeed > 0.5) noiseR = p.crouching ? 5 : p.moveSpeed > 7 ? 30 : 15;
-        heard = noiseR > 0 && dist < Math.min(noiseR, this.hearRange);
-      }
-    }
-
-    if (visible) {
-      this.suspicion = Math.min(1.2, this.suspicion + pd * (0.55 + 2.4 * (1 - dist / this.sightRange)));
-      this.lastKnown.copy(p.position);
-      this._unseenT = 0;
-    } else {
-      if (heard) {
-        this.suspicion = Math.min(this.state === 'attack' ? 1.2 : 0.95, this.suspicion + pd * 0.55);
-        this.lastKnown.copy(p.position);
-        if (this.state === 'attack') this._unseenT = Math.min(this._unseenT, 1.5);
-      } else {
-        this.suspicion = Math.max(0, this.suspicion - pd * 0.1);
-      }
-      this._unseenT += pd;
-    }
-    this._visible = visible;
+    this.ai.perception.update(dt);
   }
 
+  /** Terrain + prop line of sight (machine-ai-04). */
   _hasLOS(target) {
-    // cheap terrain occlusion: sample the sightline against the heightfield
-    const t = this.ctx.terrain;
-    const y0 = this.position.y + this.eyeHeight;
-    const y1 = target.y + 1.2;
-    for (let i = 1; i <= 3; i++) {
-      const k = i / 4;
-      const x = this.position.x + (target.x - this.position.x) * k;
-      const z = this.position.z + (target.z - this.position.z) * k;
-      if (t.getHeight(x, z) > y0 + (y1 - y0) * k + 1.2) return false;
-    }
-    return true;
+    return this.ai.perception.hasLOS(target);
+  }
+
+  /** Squad alarm — recipients converge on THIS machine, not on the player. */
+  alertNearby(radius) {
+    return this.manager.alarm ? this.manager.alarm(this, radius) : 0;
   }
 
   /* ------------------------- steering ------------------------- */
@@ -1246,6 +1563,52 @@ export class Machine {
     const step = Math.min(this._speed * dt, dist);
     this._applyStep(Math.sin(this.heading) * step, Math.cos(this.heading) * step);
     return dist;
+  }
+
+  /**
+   * Combat footwork primitive (`machine-ai-02`): translate along `dx,dz`
+   * while the heading turns toward `faceX,faceZ`. Sideways travel costs speed,
+   * which is what keeps a circling predator readable rather than a hovercraft.
+   * Publishes `moveDir` / `strafeK` for `machine-rig`'s gait.
+   * @returns metres actually covered this frame.
+   */
+  _steerAlong(dx, dz, faceX, faceZ, speed, dt) {
+    const l = Math.hypot(dx, dz);
+    if (l < 1e-5) {
+      this._speed = THREE.MathUtils.damp(this._speed, 0, 6, dt);
+      return 0;
+    }
+    dx /= l; dz /= l;
+    this._turnToward(Math.atan2(faceX - this.position.x, faceZ - this.position.z), dt);
+    const fx = Math.sin(this.heading), fz = Math.cos(this.heading);
+    const align = dx * fx + dz * fz;                 // 1 forward, 0 sideways
+    const lateral = Math.min(1, Math.hypot(dx - fx * align, dz - fz * align));
+    const target = speed * (1 - 0.42 * lateral) * (align < -0.25 ? 0.55 : 1);
+    this._speed = THREE.MathUtils.damp(this._speed, target, 5, dt);
+    const step = this._speed * dt;
+    this._applyStep(dx * step, dz * step);
+    this.moveDir.set(dx, 0, dz);
+    this.strafeK = (dz * fx - dx * fz);
+    return step;
+  }
+
+  /**
+   * Waypoint travel with the navgrid's whiskers applied (`machine-ai-01`).
+   * Falls back to the plain heading chase when `ctx.nav` is not installed.
+   */
+  _navToward(x, z, speed, dt) {
+    const nav = this.ctx.nav;
+    const dx = x - this.position.x, dz = z - this.position.z;
+    const dist = Math.hypot(dx, dz);
+    if (dist < 0.01) return dist;
+    if (nav && nav.ready && nav.steer) {
+      _v3.set(dx / dist, 0, dz / dist);
+      nav.steer(this.position, _v3, _v3, { radius: this.bodyRadius, look: 5 });
+      this._steerAlong(_v3.x, _v3.z,
+        this.position.x + _v3.x * 4, this.position.z + _v3.z * 4, speed, dt);
+      return dist;
+    }
+    return this._moveToward(x, z, speed, dt);
   }
 
   /** Move the root directly (attack root-motion). Respects camp/world limits. */
@@ -1314,7 +1677,7 @@ export class Machine {
     // (items builder owns the take-all popup; optional-chain across builders)
     if (!this._lootRegistered) {
       this._lootRegistered = true;
-      this.ctx.interactables?.register?.({
+      this._lootEntry = this.ctx.interactables?.register?.({
         position: this.position,
         radius: Math.max(2.6, this.bodyRadius + 1.6),
         label: 'LOOT',
@@ -1335,20 +1698,18 @@ export class Machine {
     const beam = new THREE.Mesh(geo, mat);
     beam.position.set(this.position.x, this.position.y + h / 2, this.position.z);
     beam.userData.machine = this;
-    this.ctx.scene.add(beam);
+    // own geometry: this cylinder was built for this one beacon
+    this._beaconMesh = this._fxAdd(beam, true);
     let t = 0;
-    this._fx.push({
+    // kept on the machine so the site manager can preserve it when it drops
+    // every other FX entry at freeze time (perf-tech-08)
+    this._beacon = {
       update: (dt2) => {
         t += dt2;
         if (this._looted) {
           // corpse emptied: the beacon dies out
           mat.opacity -= dt2 * 0.8;
-          if (mat.opacity <= 0.01) {
-            this.ctx.scene.remove(beam);
-            geo.dispose();
-            mat.dispose();
-            return false;
-          }
+          if (mat.opacity <= 0.01) { this.dropBeacon(); return false; }
           return true;
         }
         // fade out as the camera walks up so it never becomes a screen-tall slab
@@ -1363,7 +1724,8 @@ export class Machine {
         mat.opacity = (0.22 + Math.sin(t * 2.4) * 0.1) * fade;
         return true; // persistent loot beacon
       },
-    });
+    };
+    this._fx.push(this._beacon);
   }
 
   _sparkBurst(worldPos, n, color = 0xffc061) {
@@ -1386,7 +1748,7 @@ export class Machine {
     });
     const pts = new THREE.Points(geo, mat);
     pts.position.copy(worldPos);
-    this.ctx.scene.add(pts);
+    this._fxAdd(pts, true);   // own geometry: per-burst point cloud
     let life = 0;
     this._fx.push({
       update: (dt) => {
@@ -1401,7 +1763,7 @@ export class Machine {
         geo.attributes.position.needsUpdate = true;
         mat.opacity = 1 - life / 1.1;
         if (life > 1.1) {
-          this.ctx.scene.remove(pts); geo.dispose(); mat.dispose();
+          this._fxDrop(pts); geo.dispose(); mat.dispose();
           return false;
         }
         return true;
@@ -1425,7 +1787,7 @@ export class Machine {
       );
       const scale0 = cap * (0.35 + Math.random() * 0.25);
       s.scale.setScalar(scale0);
-      this.ctx.scene.add(s);
+      this._fxAdd(s);
       const rise = 0.6 + Math.random() * 0.9;
       const dur = 1.3 + Math.random() * 1.1;
       const delay = Math.random() * 0.5;
@@ -1438,7 +1800,7 @@ export class Machine {
           s.position.y += rise * dt;
           s.scale.setScalar(scale0 + k * cap * 0.7);
           mat.opacity = 0.24 * Math.sin(Math.min(k, 1) * Math.PI);
-          if (k >= 1) { this.ctx.scene.remove(s); mat.dispose(); return false; }
+          if (k >= 1) { this._fxDrop(s); mat.dispose(); return false; }
           return true;
         },
       });
@@ -1453,7 +1815,7 @@ export class Machine {
     const s = new THREE.Sprite(mat);
     s.position.copy(worldPos);
     s.scale.setScalar(0.5 + Math.random() * 0.4);
-    this.ctx.scene.add(s);
+    this._fxAdd(s);
     let t = 0;
     this._fx.push({
       update: (dt) => {
@@ -1462,7 +1824,7 @@ export class Machine {
         s.scale.multiplyScalar(1 - dt * 0.8);
         mat.opacity = 0.85 * (1 - t / 0.55);
         mat.color.lerp(EYE_COLORS.hostile, dt * 2);
-        if (t > 0.55) { this.ctx.scene.remove(s); mat.dispose(); return false; }
+        if (t > 0.55) { this._fxDrop(s); mat.dispose(); return false; }
         return true;
       },
     });
@@ -1479,7 +1841,7 @@ export class Machine {
     s.position.y += 0.25;
     const scale0 = 0.35 + Math.random() * 0.25;
     s.scale.setScalar(scale0);
-    this.ctx.scene.add(s);
+    this._fxAdd(s);
     let t = 0;
     const dur = 0.9;
     this._fx.push({
@@ -1488,7 +1850,7 @@ export class Machine {
         s.position.y += dt * 1.1;
         s.scale.setScalar(scale0 + (t / dur) * 0.7);
         mat.opacity = 0.22 * (1 - t / dur);
-        if (t > dur) { this.ctx.scene.remove(s); mat.dispose(); return false; }
+        if (t > dur) { this._fxDrop(s); mat.dispose(); return false; }
         return true;
       },
     });
@@ -1510,14 +1872,14 @@ export class Machine {
     // elongated thin sprite reads as an arc streak
     const L = 0.5 + Math.random() * this.bodyRadius * 0.8;
     s.scale.set(L, 0.09 + Math.random() * 0.08, 1);
-    this.ctx.scene.add(s);
+    this._fxAdd(s);
     let t = 0;
     this._fx.push({
       update: (dt) => {
         t += dt;
         mat.rotation += dt * 20 * (Math.random() - 0.5);
         mat.opacity = Math.random() < 0.4 ? 0.2 : 0.95;
-        if (t > 0.12) { this.ctx.scene.remove(s); mat.dispose(); return false; }
+        if (t > 0.12) { this._fxDrop(s); mat.dispose(); return false; }
         return true;
       },
     });
@@ -1532,7 +1894,7 @@ export class Machine {
     const s = new THREE.Sprite(mat);
     s.position.set(x, y, z);
     s.scale.setScalar(scale0);
-    this.ctx.scene.add(s);
+    this._fxAdd(s);
     let t = 0;
     const dur = 0.9 + Math.random() * 0.4;
     this._fx.push({
@@ -1543,7 +1905,7 @@ export class Machine {
         s.scale.setScalar(scale0 * (1 + k * 1.3));
         // fast ramp-in, slow settle — stays readable most of its life
         mat.opacity = 0.62 * Math.min(1, k * 4) * (1 - k * k);
-        if (k >= 1) { this.ctx.scene.remove(s); mat.dispose(); return false; }
+        if (k >= 1) { this._fxDrop(s); mat.dispose(); return false; }
         return true;
       },
     });
@@ -1561,7 +1923,7 @@ export class Machine {
     const ring = new THREE.Mesh(_ringGeo, mat);
     ring.rotation.x = -Math.PI / 2;
     ring.position.set(cx, y, cz);
-    this.ctx.scene.add(ring);
+    this._fxAdd(ring);
     // trailing ground-dust ring just behind the wavefront
     const dringMat = new THREE.MeshBasicMaterial({
       color: 0x9a8262, transparent: true, opacity: 0.4,
@@ -1570,7 +1932,7 @@ export class Machine {
     const dring = new THREE.Mesh(_ringGeoSoft, dringMat);
     dring.rotation.x = -Math.PI / 2;
     dring.position.set(cx, y - 0.05, cz);
-    this.ctx.scene.add(dring);
+    this._fxAdd(dring);
     // central dust plume
     const dmat = new THREE.SpriteMaterial({
       map: glowTexture(), color: 0xc9a878, transparent: true, opacity: 0.5, depthWrite: false,
@@ -1578,7 +1940,7 @@ export class Machine {
     const dust = new THREE.Sprite(dmat);
     dust.position.set(cx, y + 0.6, cz);
     dust.scale.setScalar(2);
-    this.ctx.scene.add(dust);
+    this._fxAdd(dust);
     const _hot = new THREE.Color(0xfff3d8);
     const _cool = new THREE.Color(0xff7a24);
     let t = 0;
@@ -1602,15 +1964,15 @@ export class Machine {
             const d = Math.hypot(p.position.x - cx, p.position.z - cz);
             if (d <= r + 0.6 && d <= dmgRadius) {
               dealt = true;
-              this.ctx.events.emit('player-damage', { amount: damage, from: this });
+              this.emit('player-damage', { amount: damage, from: this });
             } else if (r > d + 1.2) {
               dealt = true; // wave passed the player without touching them
             }
           }
         }
         if (k >= 1) {
-          this.ctx.scene.remove(ring); this.ctx.scene.remove(dust);
-          this.ctx.scene.remove(dring);
+          this._fxDrop(ring); this._fxDrop(dust);
+          this._fxDrop(dring);
           mat.dispose(); dmat.dispose(); dringMat.dispose();
           return false;
         }
@@ -1626,6 +1988,115 @@ export class Machine {
     }
   }
 
+  /**
+   * Raise a world event WITHOUT letting a subscriber take the machine loop
+   * down with it. See `ai/emit.js` for the full reasoning: a synchronous
+   * dispatch means one broken listener (a `player-damage` handler that does
+   * not exist, say) otherwise quarantines `Machines.update` and freezes every
+   * machine in the valley for the rest of the session. Failures are counted,
+   * warned once and reported through `machines.aiAudit().listenerErrors`.
+   */
+  emit(name, payload) { return safeEmit(this.ctx, name, payload); }
+
+  /* --------------------- FX object ownership --------------------- */
+
+  /**
+   * Add an FX mesh to the scene AND to this machine's owned set.
+   *
+   * `ownGeo` says the geometry was built for this one effect and may be
+   * disposed with it. Sprites and the shared soft-ring geometry must NOT set
+   * it — every machine in the world points at those same buffers.
+   */
+  _fxAdd(obj, ownGeo = false) {
+    obj.userData.fxOwner = this;
+    if (ownGeo) obj.userData.fxOwnGeo = true;
+    this._fxObjects.add(obj);
+    this.ctx.scene.add(obj);
+    return obj;
+  }
+
+  /** The FX closure finished normally and is taking its mesh out. */
+  _fxDrop(obj) {
+    this._fxObjects.delete(obj);
+    obj.userData.fxOwner = null;
+    this.ctx.scene.remove(obj);
+    return obj;
+  }
+
+  /**
+   * Tear down FX-owned scene objects. Called by the site manager at FREEZE
+   * (which drops the `_fx` closures, so anything still in flight would be
+   * orphaned) and again at DISPOSE.
+   *
+   * `keepBeacon` preserves the loot beam, which is the one FX that is meant to
+   * outlive the crumple: it stands until the wreck is looted or disposed.
+   */
+  disposeFx(keepBeacon = false) {
+    const beam = keepBeacon ? this._beaconMesh : null;
+    for (const obj of [...this._fxObjects]) {
+      if (obj === beam) continue;
+      this._fxObjects.delete(obj);
+      this.ctx.scene.remove(obj);
+      // break the retain chain: `userData.machine` on the beacon kept the
+      // whole disposed Machine (its cloned materials, gait, AI, parts) alive
+      obj.userData.fxOwner = null;
+      obj.userData.machine = null;
+      if (obj.userData.fxOwnGeo) obj.geometry?.dispose?.();
+      const mats = Array.isArray(obj.material) ? obj.material
+        : (obj.material ? [obj.material] : []);
+      for (const mat of mats) mat.dispose?.();
+    }
+    this._fx.length = 0;
+    if (beam) {
+      if (this._beacon) this._fx.push(this._beacon);
+      return;
+    }
+    this._beacon = null;
+    this._beaconMesh = null;
+    /**
+     * Torn parts are `scene.attach`ed, so they are world objects with their
+     * own loot prompt — and each prompt holds `entry.machine`, i.e. this whole
+     * Machine. A wreck that has faded out and been disposed takes its own
+     * debris with it; otherwise the debris (and everything it retains) is
+     * immortal, since its 60 s despawn timer stopped the moment the corpse
+     * froze and its `_fx` closure was dropped.
+     */
+    if (this._tornRecs) {
+      for (const rec of [...this._tornRecs]) this._removeTornPart(rec);
+      this._tornRecs.length = 0;
+    }
+  }
+
+  /**
+   * Take the loot beacon out for good (looted, or the wreck is being
+   * disposed). Separate from the beam's own update closure because a FROZEN
+   * corpse never ticks its FX — before this, looting a frozen wreck left the
+   * beam standing over an empty pile until the site disposed it.
+   */
+  dropBeacon() {
+    const beam = this._beaconMesh;
+    if (this._beacon) {
+      const i = this._fx.indexOf(this._beacon);
+      if (i >= 0) this._fx.splice(i, 1);
+    }
+    this._beacon = null;
+    this._beaconMesh = null;
+    if (!beam) return;
+    this._fxObjects.delete(beam);
+    this.ctx.scene.remove(beam);
+    beam.userData.machine = null;
+    beam.userData.fxOwner = null;
+    beam.geometry?.dispose?.();
+    beam.material?.dispose?.();
+  }
+
+  /** Gate/debug hook: FX meshes this machine still owns in the scene. */
+  fxAudit() {
+    let inScene = 0;
+    for (const o of this._fxObjects) if (o.parent) inScene++;
+    return { owned: this._fxObjects.size, inScene, closures: this._fx.length };
+  }
+
   /* ------------------------- sensor glow ------------------------- */
 
   _updateEyes(dt, t) {
@@ -1636,7 +2107,12 @@ export class Machine {
       case 'suspicious':
       case 'search': target = EYE_COLORS.wary; pulse = 0.85 + 0.3 * Math.sin(t * 7); break;
       case 'alert':
+      case 'stagger':
       case 'attack': target = EYE_COLORS.hostile; pulse = 1.1 + 0.15 * Math.sin(t * 11); break;
+      // downed: the sensor guts out and stutters — the Critical Hit window
+      case 'downed': target = EYE_COLORS.hostile; pulse = Math.random() < 0.4 ? 1.5 : 0.25; break;
+      // Aloy's machine burns teal (canon override colour)
+      case 'overridden': target = EYE_COLORS.override; pulse = 1.0 + 0.25 * Math.sin(t * 3.3); break;
       default: target = EYE_COLORS.calm; pulse = 0.85 + 0.2 * Math.sin(t * 2.1);
     }
     if (this.stunT > 0) pulse = Math.random() < 0.5 ? 1.6 : 0.2;

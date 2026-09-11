@@ -55,6 +55,13 @@ export const AIM_RULES = {
   'DEF-hand.L': 'DEF-f_middle.01.L',
   'DEF-hand.R': 'DEF-f_middle.01.R',
   'DEF-head': null,
+  // ANKLES: identity, i.e. Aloy's bind foot angle IS the rest angle, so the
+  // source's per-frame delta from ITS rest is what drives the ankle. The
+  // default (aim the ankle at the first mapped descendant, the toe) instead
+  // bakes the Quaternius rest ankle pitch onto Aloy, which left her standing
+  // ~13 deg plantarflexed — heels floating ~4cm — in every idle/aim frame.
+  'DEF-foot.L': null,
+  'DEF-foot.R': null,
   'DEF-toe.L': 'inherit',
   'DEF-toe.R': 'inherit',
 };

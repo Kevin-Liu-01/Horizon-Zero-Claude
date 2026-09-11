@@ -1,15 +1,19 @@
 import * as THREE from 'three';
-import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
-import { MeshoptDecoder } from 'three/examples/jsm/libs/meshopt_decoder.module.js';
 
 /**
- * Machine-variety model loader (Round 3). assets.js is FROZEN, so the new
- * species load here with their own GLTFLoader and are injected into
- * ctx.assets.models[<kind>] using the exact same normalization contract:
- * root > inner wrapper, feet at y = 0, scaled to targetHeight meters, visual
- * forward on +Z (per-model yaw). Sources are preprocessed copies in
- * public/models/ (MechanicalHorse merged 480 meshes -> 7, Robocat's display
- * stand excised; see models-staging/MANIFEST.md for licenses).
+ * Machine-variety model STYLE pass (Round 4).
+ *
+ * Round 3 shipped a second GLTFLoader here plus a verbatim copy of
+ * `Assets._normalize` — the duplicated asset pipeline that decision **D8**
+ * names as the cost of the frozen-file contract (`perf-tech-12`). Both are
+ * gone: `assets.loadExtra()` (src/core/assets.js) owns loading and
+ * normalisation for every lane now, and this module is only what it should
+ * always have been — the per-species STYLE table plus the `onEntry` hook that
+ * applies it.
+ *
+ * Sources are preprocessed copies in public/models/ (MechanicalHorse merged
+ * 480 meshes -> 7, Robocat's display stand excised; see
+ * models-staging/MANIFEST.md for licenses).
  *
  * STYLE PASS: the four store-bought sculpts arrive in toy colors. To read as
  * the same machine family as the big four (roster-v2.md §1: white-grey armor
@@ -20,7 +24,7 @@ import { MeshoptDecoder } from 'three/examples/jsm/libs/meshopt_decoder.module.j
  */
 
 const SPECS = {
-  // Orientation contract: like assets.js, the inner wrapper keeps yaw 0 and
+  // Orientation contract: the inner wrapper keeps yaw 0 and
   // each SPECIES passes its facing correction as `yawFix` (holder rotation) —
   // baking yaw here too would double-rotate (that bug shipped tails-first
   // striders for about twenty minutes).
@@ -31,6 +35,15 @@ const SPECS = {
   glinthawk: { url: '/models/glinthawk.glb', targetHeight: 1.55, yaw: 0 },
   longleg:   { url: '/models/longleg.gltf',   targetHeight: 4.0,  yaw: 0 },
 };
+
+/**
+ * Machines cast their silhouette, not their bolt heads (`perf-tech-03`).
+ * With `world-light`'s three CSM cascades every caster is three shadow draws,
+ * so the roster ships one caster per model and `rig/lod.js` re-applies the
+ * same policy to the per-machine clone.
+ */
+const MACHINE_SHADOWS = { minFraction: 0.85, alwaysLargest: 1 };
+for (const k in SPECS) SPECS[k].shadowPolicy = MACHINE_SHADOWS;
 
 const CHASSIS = new THREE.Color(0xd0d5da); // lacquered plate white-grey
 const MID = new THREE.Color(0x878d95);     // secondary panels
@@ -116,56 +129,22 @@ function styleMachine(root, style) {
   });
 }
 
-/** Mirror of assets.js _normalize (frozen file — contract copied, not shared). */
-function normalize(name, gltf, spec) {
-  const src = gltf.scene;
-  src.updateMatrixWorld(true);
-
-  const box = new THREE.Box3().setFromObject(src);
-  const size = box.getSize(new THREE.Vector3());
-  const center = box.getCenter(new THREE.Vector3());
-  const scale = spec.targetHeight / (size.y || 1);
-
-  const inner = new THREE.Group();
-  inner.name = `${name}-inner`;
-  inner.add(src);
-  src.position.set(-center.x, -box.min.y + (spec.yOffset ?? 0) / scale, -center.z);
-  inner.scale.setScalar(scale);
-  inner.rotation.y = spec.yaw;
-
-  const root = new THREE.Group();
-  root.name = `${name}-root`;
-  root.add(inner);
-
-  root.traverse((o) => {
-    if (o.isMesh) {
-      o.castShadow = true;
-      o.receiveShadow = true;
-      o.frustumCulled = true;
-      if (o.material) o.material.side = THREE.FrontSide;
-    }
-  });
-
-  const worldSize = size.clone().multiplyScalar(scale);
-  return { root, gltf, size: worldSize, spec, animations: gltf.animations };
-}
-
 let _promise = null;
 
 /**
  * Load + normalize + style the variety models, injecting them into
  * ctx.assets.models under their species keys. Idempotent; resolves to the
- * models map. Machines/index.js defers the variety spawns on this.
+ * models map. `machines/index.js` defers the variety spawns on this.
+ *
+ * ONE loader, ONE normaliser: `assets.loadExtra` (D8 / perf-tech-12).
  */
-export function loadVarietyModels(ctx) {
+export function loadVarietyModels(ctx, onProgress) {
   if (_promise) return _promise;
-  const loader = new GLTFLoader();
-  loader.setMeshoptDecoder(MeshoptDecoder);
-  _promise = Promise.all(Object.entries(SPECS).map(async ([name, spec]) => {
-    const gltf = await loader.loadAsync(spec.url);
-    const entry = normalize(name, gltf, spec);
-    styleMachine(entry.root, STYLE[name] ?? {});
-    ctx.assets.models[name] = entry;
-  })).then(() => ctx.assets.models);
+  _promise = ctx.assets
+    .loadExtra(SPECS, {
+      onProgress: onProgress ?? (() => {}),
+      onEntry: (entry, name) => styleMachine(entry.root, STYLE[name] ?? {}),
+    })
+    .then(() => ctx.assets.models);
   return _promise;
 }

@@ -8,6 +8,8 @@ import { Scrapper } from './scrapper.js';
 import { Glinthawk } from './glinthawk.js';
 import { Longleg } from './longleg.js';
 import { loadVarietyModels } from './variety-assets.js';
+import { installMachineAI } from './ai/index.js';
+import { ECOSYSTEM } from './ai/tables.js';
 
 /**
  * Machine ecosystem manager: spawns the herd layout, runs the update loop
@@ -29,6 +31,12 @@ export class Machines {
   constructor(ctx) {
     this.ctx = ctx;
     this.list = [];
+
+    // AI services: stimulus bus, site lifecycle, squad doctrine, override
+    installMachineAI(this);
+    this._shots = [];      // recent shot origins (see shotOrigin())
+    this._shotSeq = 0;
+    ctx.events.on('arrow-fired', () => this._noteShot());
 
     this._registry = {
       watcher: Watcher,
@@ -65,11 +73,20 @@ export class Machines {
     // calm everything down when the player respawns at the campfire
     ctx.events.on('player-respawn', () => {
       for (const m of this.list) {
-        if (!m.alive) continue;
+        if (!m.alive || m._disposed) continue;
+        if (m.state === 'overridden') continue;
         m.suspicion = 0;
         m._unseenT = 99;
         m._cancelAttack();
+        m.ai?.search.stop();
+        m.ai?.engage.reset();
+        if (m.ai) m.ai.lureT = 0;
         if (m.state !== 'patrol') m.setState('return');
+      }
+      // machine-ai-07: a respawn also un-latches every herd alarm
+      for (const h of this.squads.herds) {
+        h.alarmed = false; h.rearguard = null; h._calmT = 0;
+        for (const mm of h.members) { mm._fleeing = false; mm._fleeT = 0; }
       }
     });
   }
@@ -100,7 +117,44 @@ export class Machines {
   _spawnCls(Cls, x, z, opts = {}) {
     const m = new Cls(this.ctx, this, { spawn: { x, z }, ...opts });
     this.list.push(m);
+    // MachineSite: remember how to repopulate this spot after the wreck goes
+    if (opts._site) { opts._site.machine = m; m._site = opts._site; }
+    else this.sites.note(m, m.kind, x, z, opts);
     return m;
+  }
+
+  /**
+   * `machine-ai-03` support — where did that arrow come from?
+   *
+   * The honest answer is "where the bow was when it was loosed", which is what
+   * this records on `arrow-fired`. It is NOT `player.position`: by the time an
+   * arrow lands she has moved, and the whole point of the finding is that a
+   * machine must investigate the SHOT, not track the shooter. `combat` may
+   * instead pass `hit.origin` and this is skipped entirely.
+   */
+  _noteShot() {
+    const p = this.ctx.player;
+    if (!p) return;
+    this._shots.push({ x: p.position.x, y: p.position.y, z: p.position.z, seq: ++this._shotSeq });
+    if (this._shots.length > 8) this._shots.shift();
+  }
+
+  /** Best-guess origin for a hit: explicit, else matched against recent shots. */
+  shotOrigin(hit) {
+    if (hit && hit.origin) return hit.origin;
+    if (!this._shots.length) return null;
+    if (!hit || !hit.point || !hit.dir) return this._shots[this._shots.length - 1];
+    let best = null, bestDot = 0.55;
+    for (let i = this._shots.length - 1; i >= 0; i--) {
+      const s = this._shots[i];
+      const dx = hit.point.x - s.x, dz = hit.point.z - s.z;
+      const l = Math.hypot(dx, dz);
+      if (l < 0.5) { best = s; break; }
+      const dl = Math.hypot(hit.dir.x, hit.dir.z) || 1;
+      const dot = (dx / l) * (hit.dir.x / dl) + (dz / l) * (hit.dir.z / dl);
+      if (dot > bestDot) { bestDot = dot; best = s; }
+    }
+    return best || this._shots[this._shots.length - 1];
   }
 
   /**
@@ -137,6 +191,7 @@ export class Machines {
       members: [],
     };
     this._striderHerd = herd;
+    this.squads.registerHerd(herd);   // machine-ai-07: the alarm flag RESETS
     const spots = [[-12, -8], [8, -14], [-3, 6], [14, 4], [-18, 12], [4, 18]];
     for (let i = 0; i < spots.length; i++) {
       this.spawn('strider', HC.x + spots[i][0], HC.z + spots[i][1], {
@@ -145,11 +200,16 @@ export class Machines {
         heading: Math.random() * Math.PI * 2,
       });
     }
+    // machine-ai-14: the two Watchers ESCORT the herd — they hold slots on a
+    // ring around it and re-space as members die, instead of walking an
+    // unrelated loop that happens to be nearby.
+    const guards = [];
     for (const seed of [0.9, 3.9]) {
-      this._spawnCls(Watcher,
+      guards.push(this._spawnCls(Watcher,
         HC.x + Math.sin(seed) * 30, HC.z + Math.cos(seed) * 30,
-        { route: this._route(HC.x, HC.z, 32, 6, seed), heading: seed });
+        { route: this._route(HC.x, HC.z, 32, 6, seed), heading: seed }));
     }
+    this.squads.assignEscorts(HC, guards, ECOSYSTEM.escort.watcher.radius);
 
     // --- Scrapper pack x3 at the rusted-hull ruin (~135,-35): loping
     //     circuits, flanking arcs assigned across the pack.
@@ -183,27 +243,30 @@ export class Machines {
     this.spawn('longleg', 174, 60, { route: this._route(174, 60, 22, 4, 2.9), heading: 2.8 });
   }
 
-  /** Watcher chirp: pull nearby machines into the fight. */
+  /**
+   * Watcher chirp / Longleg recon ping.
+   *
+   * `machine-ai-06` + `stealth-alarm-leaks-position`: this used to hand every
+   * recipient `player.position` and full red alert, so one chirp made an
+   * entire valley omniscient. It now routes through the alarm doctrine in
+   * `ai/stimulus.js` — recipients converge on the CALLER in `search`, eyes
+   * yellow, and only their own senses can turn that red.
+   */
   alertNearby(source, radius) {
-    const p = this.ctx.player;
-    for (const m of this.list) {
-      if (m === source || !m.alive) continue;
-      if (m.state === 'attack' || m.state === 'alert' || m.state === 'dead') continue;
-      if (m.position.distanceToSquared(source.position) > radius * radius) continue;
-      if (m.territory && p) {
-        const dx = p.position.x - m.territory.x, dz = p.position.z - m.territory.z;
-        if (dx * dx + dz * dz > m.territory.r * m.territory.r) continue;
-      }
-      m.suspicion = 1;
-      m._unseenT = 0;
-      if (p) m.lastKnown.copy(p.position);
-      m.setState('alert');
-    }
+    return this.stimulus.alarm(source, radius);
   }
 
   update(dt, t) {
     const p = this.ctx.player;
-    for (const m of this.list) {
+    // world stimuli (player footsteps), corpse lifecycle, squad doctrine
+    this.stimulus.update(dt);
+    this.sites.update(dt);
+    this.squads.update(dt);
+    this.overrides.update(dt);
+
+    for (let i = this.list.length - 1; i >= 0; i--) {
+      const m = this.list[i];
+      if (m._disposed) continue;
       if (p) {
         const far = m.position.distanceToSquared(p.position) > LOD_DIST * LOD_DIST;
         m.lowLOD = far;
@@ -233,7 +296,7 @@ export class Machines {
     // spaced by standoffHalfLen) so snouts and tails can't sweep through her.
     if (p) {
       for (const m of this.list) {
-        if (!m.alive) continue;
+        if (!m.alive || m._disposed || m.mountedBy) continue;
         const min = m.bodyRadius + 0.6;
         const L = m.standoffHalfLen ?? 0;
         const fx = Math.sin(m.heading), fz = Math.cos(m.heading);
