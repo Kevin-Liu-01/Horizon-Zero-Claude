@@ -29,9 +29,21 @@ import { LOOT_POPUP } from './inventory.js';
  *   /-stealth-feedback /-crafting-feedback /-healing-readability
  *   combat-concentration-presentation · combat-hit-feedback-faint (numbers)
  *
+ * What this lane PUBLISHES back, so no other lane has to edit this file:
+ *   ctx.hud.setHudScale(mult)   `shell-menus` binds its accessibility slider
+ *                               to this (camera-feel-13); 0.7–2, clamped.
+ *   ctx.hud.showTip(id | card)  raise a one-shot tutorial card — an id from
+ *                               TIPS below, or {id,title,body,keys} for a
+ *                               mechanic this file cannot observe. Returns
+ *                               false if that id was already shown.
+ *   event `tutorial-tip`        the same call for lanes without a ctx handle:
+ *                               emit({ id, title, body, keys }).
+ *   ctx.hud.setPaused(on)       pause state when `shell-menus` is absent.
+ *
  * Gates: `A71-compass-truth`, `A71b-hud-scale-floor`, `A71c-hud-surfaces`,
- * `V37-hud-language` (tools/gates.round4.shell-hud.mjs) plus the Round-3
- * `A1` / `A9` / `A10` / `V10-hud-language` which must keep passing.
+ * `A71d-conc-veil`, `A71e-tutorial-cards`, `V37-hud-language`
+ * (tools/gates.round4.shell-hud.mjs) plus the Round-3 `A1` / `A9` / `A10` /
+ * `V10-hud-language` which must keep passing.
  *
  * Debug probe: `window.__HUD_DEBUG__` (lootSurfaces / compass / surfaces /
  * scale / tips). Gates read it; nothing in the game does.
@@ -391,7 +403,9 @@ export class HUD {
         return this._scaleAudit();
       },
       tips: () => ({ seen: [...this._tipSeen], queued: this._tipQueue.map((t) => t.id) }),
-      showTip: (id) => this._queueTip(TIPS.find((t) => t.id === id)),
+      // same entry point the published `ctx.hud.showTip` uses, so the gate
+      // exercises the shipped path rather than a debug-only shortcut
+      showTip: (id) => this.showTip(id),
       resetTips: () => { this._tipSeen.clear(); this._saveTips(); },
     };
   }
@@ -714,6 +728,37 @@ export class HUD {
     return s.hudScale;
   }
 
+  /**
+   * PUBLISHED CROSS-LANE API (ui-17 / onboarding-loop-no-tutorial-hunt).
+   *
+   * `TIPS` covers the mechanics this lane can observe for itself, but the
+   * "Lessons of the Valley" chain lives in `progression` and knows things the
+   * HUD cannot infer — which objective just opened, which mechanic it is about
+   * to ask for. Rather than have that lane reach into this file, it calls
+   *
+   *     ctx.hud.showTip('focus')                       // one of the TIPS ids
+   *     ctx.hud.showTip({ id: 'ropecaster', title: 'TIE IT DOWN',
+   *                       body: '…', keys: ['3', 'LMB'] })   // its own card
+   *
+   * or emits `tutorial-tip` with the same argument, for lanes that do not hold
+   * a ctx reference. Cards stay ONE-SHOT per save either way: an id that has
+   * already been shown is refused and the call returns false.
+   */
+  showTip(tip) {
+    const id = typeof tip === 'string' ? tip : tip?.id;
+    if (!id) return false;
+    const built = TIPS.find((t) => t.id === id);
+    // a bare id — or an object carrying nothing but one — means the built-in
+    if (built && (typeof tip === 'string' || tip.title == null)) return this._queueTip(built);
+    if (typeof tip === 'string') return false;         // unknown id, no card to show
+    return this._queueTip({
+      id: String(id),
+      title: String(tip.title ?? '').toUpperCase(),
+      body: String(tip.body ?? ''),
+      keys: Array.isArray(tip.keys) ? tip.keys.map((k) => keyGlyph(k)) : [],
+    });
+  }
+
   _scaleAudit() {
     const probe = [
       // the <b> is the numeral that carries the font size; the row around it
@@ -864,6 +909,8 @@ export class HUD {
     for (const n of ['quest-started', 'quest-objective', 'quest-complete', 'quest-tracked', 'objective-changed']) {
       on(n, () => { this._trackIdleT = 0; this._renderTracker(true); });
     }
+    // the event form of `ctx.hud.showTip` — see that method for the contract
+    on('tutorial-tip', (e) => this.showTip(e?.tip ?? e));
 
     /* ------------------------------ tools strip --------------------------- */
     on('tool-selected', () => { this._lastToolSig = ''; this._emitUi('ui-nav'); });
@@ -1667,8 +1714,12 @@ export class HUD {
     this._lastEyeSig = sig;
     this._eyeEl.dataset.m = mode;
     this._eyeEl.style.setProperty('--open', fill.toFixed(2));
+    // The ladder has to read in one glance and in one direction:
+    // HIDDEN (concealed) → UNSEEN (in the open, nobody looking) →
+    // NOTICED (a meter is filling on her) → SPOTTED (locked on).
+    // `SEEN…` used to sit in the NOTICED slot and fought `UNSEEN` for meaning.
     this._eyeLabel.textContent = mode === 'seen' ? 'SPOTTED'
-      : mode === 'watch' ? 'SEEN…' : mode === 'hidden' ? 'HIDDEN' : 'UNSEEN';
+      : mode === 'watch' ? 'NOTICED' : mode === 'hidden' ? 'HIDDEN' : 'UNSEEN';
     const bars = this._eyeBars.children;
     const lit = Math.round(noise * 3);
     for (let i = 0; i < bars.length; i++) bars[i].classList.toggle('on', i < lit);
@@ -2029,6 +2080,9 @@ export class HUD {
 
     while (this._toolSlots.length < tools.slots.length) {
       const el = div('hzc-tool', this._toolRow);
+      // The angled corner lives on this plate, not on the tile: `clip-path`
+      // clips descendants, and the use-key glyph hangs ABOVE the tile.
+      div('hzc-tool-plate', el);
       const ic = div('hzc-tool-ic', el);
       const n = div('hzc-tool-n', el);
       const key = document.createElement('kbd');

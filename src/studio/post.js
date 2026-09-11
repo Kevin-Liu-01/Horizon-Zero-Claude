@@ -66,7 +66,7 @@ const StudioShader = {
     #include <common>
     #include <packing>
 
-    #define TAPS 28
+    #define TAPS 32
 
     uniform sampler2D tDiffuse;
     uniform sampler2D tDepth;
@@ -112,12 +112,21 @@ const StudioShader = {
           // radius so a sharp foreground cannot smear into a blurred
           // background (the classic bleed), while a blurred foreground is
           // still allowed to spill over a sharp subject.
+          //
+          // The spiral is ROTATED BY A PER-PIXEL HASH. Thirty-two taps is a
+          // coarse sample of a 20 px disc, and with the same fixed spiral on
+          // every pixel that coarseness is coherent: the first shipped frame
+          // showed the gather's own arms as blotchy banding across the
+          // defocused ground. Randomising the start angle spends the same taps
+          // and turns the identical error into per-pixel noise, which at these
+          // radii reads as film grain instead of as structure.
           vec3 sum = col;
           float wsum = 1.0;
           const float GA = 2.39996323;
+          float a0 = fract(sin(dot(vUv, vec2(12.9898, 78.233))) * 43758.5453) * 6.28318531;
           for (int i = 0; i < TAPS; i++) {
             float fi = float(i) + 0.5;
-            float a  = fi * GA;
+            float a  = a0 + fi * GA;
             float r  = sqrt(fi / float(TAPS));
             vec2 off = vec2(cos(a), sin(a)) * r * rC * uTexel;
             vec2 uv  = clamp(vUv + off, vec2(0.0), vec2(1.0));

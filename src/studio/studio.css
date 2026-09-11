@@ -157,7 +157,13 @@
 }
 #studio-hint.hidden { display: none; }
 
-#hud.studio-hidden { display: none !important; }
+/*
+ * Applied by `Studio.setChromeHidden()` to every chrome root the studio does
+ * not own. It is NOT scoped to `#hud`: core-platform's F3 stats overlay sits at
+ * z-index 99999 — above the studio's own 900 — so a hide that only knew about
+ * `#hud` left a frame-time readout painted across the photograph.
+ */
+.studio-hidden { display: none !important; }
 
 /* ---------------------------------------------------------------- guides
  * Composition guides live in the DOM, NOT in the photo pass, so the exported

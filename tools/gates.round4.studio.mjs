@@ -199,12 +199,24 @@ export const GATES = [
       const hitSlot = S.debug().pose.hitSlot;
       const stateKept = ctx.state;
 
-      /* ---- 4. ... and so is a DEATH, without stranding the session ---- */
+      /* ---- 4. ... and so is a DEATH, held past the respawn timer ------
+       * Player._die() schedules a 3.2 s WALL-CLOCK setTimeout that heals
+       * her, TELEPORTS her to CAMP_POS and sets 'playing'. So the death pose
+       * has to be measured on the far side of that timer or the gate is just
+       * asking whether it happened to have fired yet: the first cut of this
+       * gate slept 0.5 s, passed twice and failed once on identical code, and
+       * the bug it was missing was the subject being yanked across the valley
+       * three seconds into every death shot.
+       */
+      const deathPos = p.position.clone();
       poseBtns.find((b) => b.dataset.pose === 'death').click();
-      await simSleep(0.5);
-      const diedTo = ctx.state;                 // studio takes 'dead' back
+      await sleep(600);
+      const diedTo = ctx.state;                 // studio takes 'dead' back at once
       const died = p.health <= 0 || diedTo === 'studio' || diedTo === 'dead';
-      p.health = p.maxHealth;                   // clean up after the shoot
+      await sleep(3600);                        // WALL seconds, past the 3200 ms respawn
+      const heldState = ctx.state;
+      const teleportedM = p.position.distanceTo(deathPos);
+      const stillDown = p.health <= 0;
 
       /* ---- 5. jump / roll / crouch are not refused -------------------- */
       const refusals = [];
@@ -217,7 +229,9 @@ export const GATES = [
 
       const detail = 'states[' + stateLog.join(' ') + '] poses[' + poseLog.join(' ') + ']'
         + ' hitTookDamage=' + hitTook + ' hitSlot=' + hitSlot + ' stateDuringHit=' + stateKept
-        + ' deathFilmed=' + died + ' exitState=' + ctx.state
+        + ' deathFilmed=' + died + ' stateAfterRespawnWindow=' + heldState
+        + ' subjectMoved=' + teleportedM.toFixed(2) + 'm stillDown=' + stillDown
+        + ' exitState=' + ctx.state + ' healedOnExit=' + (p.health > 0)
         + (refusals.length ? ' REFUSED=' + refusals.join(',') : ' allPosesAccepted');
 
       if (stateBad.length) return { pass: false, detail: 'cast states did not stick: ' + stateBad.join(',') + ' — ' + detail };
@@ -225,7 +239,11 @@ export const GATES = [
       if (!hitTook) return { pass: false, detail: 'takeDamage still refused in studio state (player-anim-17) — ' + detail };
       if (hitSlot !== 'hitChest' && hitSlot !== 'hitHead') return { pass: false, detail: 'no hit-react layer started — ' + detail };
       if (!died) return { pass: false, detail: 'death pose did nothing — ' + detail };
+      if (heldState !== 'studio') return { pass: false, detail: 'the respawn timer took the world off the studio mid-shoot (state=' + heldState + ') — ' + detail };
+      if (teleportedM > 0.6) return { pass: false, detail: 'the subject was teleported ' + teleportedM.toFixed(1) + ' m out of frame by the respawn — ' + detail };
+      if (!stillDown) return { pass: false, detail: 'the death would not hold: she was healed out of the pose mid-shoot — ' + detail };
       if (ctx.state !== 'playing') return { pass: false, detail: 'exit did not restore playing — ' + detail };
+      if (p.health <= 0) return { pass: false, detail: 'exit handed back a live world with a dead Aloy in it — ' + detail };
       if (refusals.length) return { pass: false, detail: 'poses refused — ' + detail };
       return { pass: true, detail };
     })()`,
@@ -332,20 +350,33 @@ export const GATES = [
       const prevState = S.debug().prevState;
       const inputOff = ctx.input.enabled === false;
 
-      /* ---- 2. z-order: the studio bar is above every game layer ------- */
-      const zOf = (sel) => {
-        const el = document.querySelector(sel);
-        if (!el) return null;
-        const z = parseInt(getComputedStyle(el).zIndex, 10);
-        return Number.isFinite(z) ? z : null;
-      };
-      const zStudio = zOf('#studio-ui');
-      const others = {};
-      for (const sel of ['#hud', '#focus-overlay', '#inventory', '#pause', '#wheel', '#quests', '#skills', '#menu', '#map']) {
-        const z = zOf(sel);
-        if (z !== null) others[sel] = z;
+      /* ---- 2. z-order: nothing another lane owns can steal a click ----
+       * NOT a hard-coded selector list. Other lanes build their chrome at
+       * runtime (#hzc-wheel, #hzc-menus, #hzc-inv, #perf-stats are nowhere in
+       * index.html), so a fixed list quietly checked nothing but #hud — and an
+       * overlay landing at z 99999 shipped green under it. Scan the WHOLE
+       * document: anything outside the studio's OWN three roots that claims a
+       * stacking order at or above it AND can take a pointer is a layer that
+       * can eat the cast buttons.
+       */
+      const ownIds = ['studio-ui', 'studio-guides', 'studio-hint'];
+      const ownEls = ownIds.map((id) => document.getElementById(id)).filter(Boolean);
+      const isOwn = (el) => ownEls.some((r) => r === el || r.contains(el));
+      const studioEl = document.getElementById('studio-ui');
+      const zStudio = studioEl ? parseInt(getComputedStyle(studioEl).zIndex, 10) : NaN;
+      const stacked = [];
+      for (const el of document.querySelectorAll('body *')) {
+        if (isOwn(el)) continue;
+        const cs = getComputedStyle(el);
+        const z = parseInt(cs.zIndex, 10);
+        if (Number.isFinite(z)) {
+          stacked.push([(el.id || el.tagName.toLowerCase() + '.' + (el.className || '?')) + (cs.pointerEvents === 'none' ? '/pe-none' : ''), z, cs.pointerEvents]);
+        }
       }
-      const over = Object.entries(others).filter(([, z]) => zStudio !== null && z >= zStudio);
+      stacked.sort((a, b) => b[1] - a[1]);
+      const others = Object.fromEntries(stacked.slice(0, 6).map(([n, z]) => [n, z]));
+      const over = stacked.filter(([, z, pe]) => Number.isFinite(zStudio) && z >= zStudio && pe !== 'none');
+      if (stacked.length < 4) return { pass: false, detail: 'z-order scan found only ' + stacked.length + ' stacked elements — the scan is broken, not the build' };
 
       /* ---- 3. the lens flies on REAL seconds with the world at 0 ------ */
       S.setTimeScale(0);
@@ -359,18 +390,49 @@ export const GATES = [
       const flew = ctx.camera.position.distanceTo(p0);
       const realWall = (performance.now() - w0) / 1000;
       const simDrift = ctx.engine.simTime - sim0;
-      // 14 m/s nominal; a slow headless frame must still move the lens by wall
-      // seconds, so anything under a third of the nominal distance is the
-      // Round 3 hard-coded-1/60 bug coming back.
+      /*
+       * 14 m/s nominal. The lens flies on WALL seconds, so with the world
+       * frozen it must cover ~14 * realWall regardless of how slowly this box
+       * renders.
+       *
+       * The band was `> expect * 0.33`, which is not a real-dt assertion at
+       * all — it passes a lens flying at a THIRD of true speed. It duly went
+       * green at 4.90 m against 12.6 m due, hiding a lossy per-frame dt clamp
+       * that discarded every millisecond past 50 ms (so the fly cam slowed
+       * down in lockstep with the frame rate under 20 fps).
+       *
+       * Both ends are now checked, ±1 rendered frame of slack: the key is
+       * added and removed between frames, so the first frame's dt can reach
+       * back before the press and the last partial frame is never counted.
+       */
       const expect = 14 * realWall;
+      const frameSlack = 1.6 / Math.max(4, S.debug().fps || 8) / Math.max(0.2, realWall);
+      const loBand = Math.max(0.45, 0.9 - frameSlack);
+      const hiBand = 1.15 + frameSlack;
 
-      /* ---- 4. hide-Aloy hides her, and exit restores her -------------- */
+      /* ---- 4. hide-Aloy hides her; Hide HUD hides ALL foreign chrome --
+       * not just the id #hud: whatever is left rendered above the canvas is in the
+       * photograph. #perf-stats (z 99999, another lane's) is the one that made
+       * this literal.
+       */
       S._ui.querySelector('#st-hide-aloy').click();
       await sleep(120);
       const hidden = ctx.player.model.visible === false;
       S._ui.querySelector('#st-hud').click();
-      await sleep(60);
+      await sleep(90);
       const hudHidden = document.getElementById('hud')?.classList.contains('studio-hidden');
+      // every chrome root — every body child that is not studio chrome and does
+      // not hold the canvas — must now be gone from the frame.
+      const canvas = ctx.renderer.domElement;
+      const stillPainting = [];
+      for (const el of document.body.children) {
+        if (isOwn(el) || el.contains(canvas)) continue;
+        const tag = el.tagName;
+        if (tag === 'SCRIPT' || tag === 'STYLE' || tag === 'LINK' || tag === 'TEMPLATE') continue;
+        if (!el.classList.contains('studio-hidden')) {
+          stillPainting.push((el.id || tag.toLowerCase() + '.' + el.className) + ' z=' + getComputedStyle(el).zIndex);
+        }
+      }
 
       /* ---- 5. Esc leaves, and leaves nothing behind ------------------- */
       document.body.dispatchEvent(new KeyboardEvent('keydown', { code: 'Escape', bubbles: true }));
@@ -386,16 +448,19 @@ export const GATES = [
       };
 
       const detail = 'pauseOverlayLeftUp=' + pauseVisible + ' prevState=' + prevState + ' inputTaken=' + inputOff
-        + ' | zStudio=' + zStudio + ' vs ' + JSON.stringify(others)
+        + ' | zStudio=' + zStudio + ' vs top ' + stacked.length + ' stacked: ' + JSON.stringify(others)
         + ' | flew=' + flew.toFixed(2) + 'm in ' + realWall.toFixed(2) + 's wall (expect ~' + expect.toFixed(1) + 'm) simDrift=' + simDrift.toFixed(4)
         + ' | hidAloy=' + hidden + ' hidHud=' + !!hudHidden
+        + ' chromeRootsHidden=' + S.debug().chromeRoots
+        + (stillPainting.length ? ' STILL-PAINTING=' + stillPainting.join(',') : ' allChromeHidden')
         + ' | afterEsc=' + JSON.stringify(restored);
 
       if (pauseVisible) return { pass: false, detail: 'pause overlay still painted across the shot — ' + detail };
       if (prevState !== 'playing') return { pass: false, detail: 'entering from pause left prevState=' + prevState + ' (Esc would drop into a frozen game) — ' + detail };
       if (!inputOff) return { pass: false, detail: 'studio did not take input — Aloy answers the fly keys — ' + detail };
-      if (zStudio === null) return { pass: false, detail: 'studio panel has no stacking context — ' + detail };
-      if (over.length) return { pass: false, detail: 'these layers sit at or above the studio: ' + JSON.stringify(over) + ' — ' + detail };
+      if (!Number.isFinite(zStudio)) return { pass: false, detail: 'studio panel has no stacking context — ' + detail };
+      if (over.length) return { pass: false, detail: 'these clickable layers sit at or above the studio: ' + JSON.stringify(over) + ' — ' + detail };
+      if (stillPainting.length) return { pass: false, detail: 'Hide HUD left foreign chrome in the frame: ' + stillPainting.join(',') + ' — ' + detail };
       if (Math.abs(simDrift) > 1e-6) return { pass: false, detail: 'world simulated while frozen — ' + detail };
       if (flew < expect * 0.33) return { pass: false, detail: 'lens barely moved with the world frozen — the fly cam is not on real dt — ' + detail };
       if (!hidden) return { pass: false, detail: 'Hide Aloy did not hide her — ' + detail };
@@ -495,38 +560,102 @@ export const GATES = [
     })()`,
   },
 
-  /* ------------------------------------------------------------------ V79 */
+  /* ------------------------------------------------------------------ V79
+   * `setup` + `settle`, NOT `eval` + `wait`. The runner (tools/gates.mjs) reads
+   * exactly `setup` and `settle` on a visual gate and nothing else — a gate
+   * written with `eval`/`wait` is loaded, listed, screenshotted and reported as
+   * NEEDS-JUDGE having executed none of its own staging. That is how this gate
+   * shipped a plain third-person gameplay frame, HUD and all, under a title
+   * claiming a 2.39 portrait. A79d below now fails on the field name itself.
+   */
   {
     id: 'V79-photo-portrait', kind: 'visual', lane: 'studio',
     title: 'Photo mode portrait: Aloy meeting the lens, shallow depth of field, 2.39 bars, warm grade, no HUD and no panels',
-    wait: 2600,
-    eval: `(async () => {
+    settle: 1400,
+    setup: `(async () => {
       const ctx = __CTX__, S = ctx.studio;
-      S.enter();
+      if (!S.enter()) throw new Error('studio refused to open from state ' + ctx.state);
       await new Promise(r => setTimeout(r, 900));
       const p = ctx.player;
-      S._pos.set(p.position.x + Math.sin(p.heading) * 2.6, p.position.y + 1.45, p.position.z + Math.cos(p.heading) * 2.6);
-      S._yaw = p.heading;
-      S._pitch = -0.02;
+      // three-quarter front: the lens 2.6 m ahead of her and 25 deg off her
+      // shoulder line, so the portrait has a cheekbone in it and not a flat
+      // passport frame. Camera forward for yaw y is (-sin y, 0, -cos y), so the
+      // yaw that looks back at her from an offset of +dir is that dir's angle.
+      const off = p.heading + 0.44;
+      S._pos.set(p.position.x + Math.sin(off) * 2.6, p.position.y + 1.46, p.position.z + Math.cos(off) * 2.6);
+      S._yaw = off;
+      S._pitch = -0.03;
       S._fov = 34;
-      S.pose.gaze = 'camera';
+      S.pose.gaze = 'camera';          // she meets the lens (look-at via anim-core)
       S.pose.expression = 'narrow';
-      S.lens.dof = true; S.lens.autoFocus = true; S.lens.aperture = 0.72;
-      S.lens.nearRange = 1.1; S.lens.farRange = 4;
+      S.lens.dof = true; S.lens.autoFocus = true; S.lens.aperture = 0.95;
+      S.lens.nearRange = 0.8; S.lens.farRange = 2.2;   // background gone by ~5 m
       S.lens.filter = 'warm'; S.lens.filterAmt = 0.65;
       S.lens.grain = 0.16; S.lens.vignette = 0.48;
       S.lens.frameAspect = 2.39;
       S.setTimeScale(0);
-      document.getElementById('hud')?.classList.add('studio-hidden');
+      // the shot is the shot: no chrome, no panels, no hint line. Through the
+      // real button, so the photograph is exactly what the button produces.
+      S._ui.querySelector('#st-hud').click();
       S._ui.classList.add('hidden');
       S._hint.classList.add('hidden');
-      await new Promise(r => setTimeout(r, 1200));
+      // let the damped look-at and lids settle, and the pass compile
+      await new Promise(r => setTimeout(r, 1400));
+      if (!S.pass?.enabled) throw new Error('photo pass never armed');
+      if (ctx.state !== 'studio') throw new Error('studio lost the world to state ' + ctx.state);
     })()`,
     criteria: [
-      'Aloy fills the centre of the frame, sharp, with her face turned to camera',
+      'Aloy fills the centre of the frame, sharp, with her face turned toward the lens',
       'the background is clearly defocused while she is not',
       'black bars top and bottom (a 2.39 letterbox), warm grade, soft vignette',
       'NO HUD elements and NO studio panels anywhere in the image',
     ],
+  },
+
+  /* ----------------------------------------------------------------- A79d */
+  {
+    id: 'A79d-studio-gate-shape', kind: 'runner', lane: 'studio',
+    title: 'Every studio gate is built from fields the runner actually reads — a staging block the harness ignores cannot ship as a green gate',
+    timeout: 20000,
+    check({ GATES: ALL } = {}) {
+      /**
+       * V79 was written with `eval` + `wait`. tools/gates.mjs reads neither.
+       * The gate loaded, ran no staging at all, screenshotted a plain gameplay
+       * frame and reported NEEDS-JUDGE — indistinguishable, in the summary,
+       * from a gate that had done its job. The runner cannot warn about this
+       * (an unknown key is just a key), so the lane gates itself on it.
+       *
+       * The whitelist is derived from the runner's own source in the sibling
+       * file, not from memory, so it cannot drift: `grep -o 'gate\\.<field>'`.
+       */
+      const KNOWN = new Set([
+        'id', 'kind', 'lane', 'title', 'timeout',
+        'setup', 'settle', 'assert', 'criteria',
+        'plain', 'params', 'check', 'chaos', 'chaosAfter', 'allowSystemErrors',
+        'source',   // stamped onto every gate by the runner's own merge step
+      ]);
+      const KINDS = new Set(['action', 'visual', 'runner']);
+      const mine = (ALL || []).filter((g) => g.lane === 'studio');
+      if (mine.length < 6) {
+        return { pass: false, detail: `only ${mine.length} studio gates reached the runner — the lane file did not fully load` };
+      }
+      const problems = [];
+      for (const g of mine) {
+        for (const k of Object.keys(g)) {
+          if (!KNOWN.has(k)) problems.push(`${g.id}: field "${k}" is never read by tools/gates.mjs`);
+        }
+        if (!KINDS.has(g.kind)) problems.push(`${g.id}: kind "${g.kind}" is not a kind the runner dispatches`);
+        if (g.kind === 'action' && typeof g.assert !== 'string') problems.push(`${g.id}: action gate with no assert string`);
+        if (g.kind === 'visual' && !g.criteria) problems.push(`${g.id}: visual gate with no criteria to judge`);
+        // a visual gate that stages nothing is a screenshot of the default
+        // frame — legal, but never for THIS lane, whose whole subject is a
+        // mode you have to open first.
+        if (g.kind === 'visual' && typeof g.setup !== 'string') problems.push(`${g.id}: visual studio gate does not stage photo mode in \`setup\``);
+        if (g.kind === 'runner' && typeof g.check !== 'function') problems.push(`${g.id}: runner gate with no check()`);
+      }
+      const detail = `${mine.length} studio gates checked (${mine.map((g) => g.id).join(', ')})`;
+      if (problems.length) return { pass: false, detail: problems.join(' | ') + ' — ' + detail };
+      return { pass: true, detail };
+    },
   },
 ];

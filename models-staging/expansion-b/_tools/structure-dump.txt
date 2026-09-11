@@ -1,0 +1,171 @@
+
+===== models-staging/expansion-b/bellowback/Frog_PolyGoogle.glb =====
+node-0 [MESH] t=(0.00,0.00,0.00)
+
+===== models-staging/expansion-b/bellowback/Frog_Quaternius_easyenemies.glb =====
+RootNode t=(0.00,0.00,0.00)
+  FrogArmature t=(0.00,0.00,0.00)
+    root t=(0.00,0.00,0.00)
+      Body t=(0.00,0.02,-0.00)
+        FrontLeg.L t=(0.00,-0.01,0.01)
+          FrontUpLeg.L t=(-0.00,0.00,0.00)
+            FrontLowLeg.L t=(0.00,0.01,0.00)
+        Back t=(-0.00,-0.01,-0.01)
+          Back_end t=(0.00,0.00,-0.00)
+        Shoulders t=(-0.00,-0.01,0.00)
+          Neck t=(-0.00,0.00,0.00)
+            Head t=(0.00,0.00,0.00)
+        Hips t=(-0.00,-0.01,-0.01)
+          Torso t=(0.00,0.01,-0.00)
+            Torso_end t=(0.00,0.01,0.00)
+        BackHip.L t=(0.00,-0.01,-0.01)
+          BackLeg.L t=(-0.00,0.00,0.00)
+            BackUpLeg.L t=(-0.00,0.01,0.00)
+        FrontLeg.L.001 t=(-0.00,-0.01,0.01)
+          FrontUpLeg.R t=(0.00,0.00,-0.00)
+            FrontLowLeg.R t=(0.00,0.01,0.00)
+        BackHip.R t=(-0.00,-0.01,-0.01)
+          BackLeg.R t=(-0.00,0.00,0.00)
+            BackUpLeg.R t=(-0.00,0.01,0.00)
+        PoleTarget.L t=(0.01,-0.01,0.04)
+          PoleTarget.L_end t=(0.00,0.00,0.00)
+        PoleTarget.R t=(-0.01,-0.01,0.04)
+          PoleTarget.R_end t=(0.00,0.00,0.00)
+      FrontFoot.L t=(0.01,0.00,0.01)
+        FrontFoot.L_end t=(0.00,0.00,0.00)
+      BackFoot.L t=(0.01,0.00,-0.00)
+        BackFoot.L_end t=(0.00,0.00,-0.00)
+      FrontFoot.R t=(-0.01,0.00,0.01)
+        FrontFoot.R_end t=(0.00,0.00,0.00)
+      BackFoot.R t=(-0.01,0.00,-0.00)
+        BackFoot.R_end t=(-0.00,0.00,0.00)
+  Frog [MESH] [SKIN] t=(-0.01,0.05,0.00)
+
+SKIN "": 28 joints
+root, Body, FrontLeg.L, FrontUpLeg.L, FrontLowLeg.L, Back, Shoulders, Neck, Head, Hips, Torso, BackHip.L, BackLeg.L, BackUpLeg.L, BackLowLeg.L, FrontLeg.L.001, FrontUpLeg.R, FrontLowLeg.R, BackHip.R, BackLeg.R, BackUpLeg.R, BackLowLeg.R, PoleTarget.L, PoleTarget.R, FrontFoot.L, BackFoot.L, FrontFoot.R, BackFoot.R
+
+===== models-staging/expansion-b/bellowback/Parasaurolophus_Quaternius.glb =====
+RootNode t=(0.00,0.00,0.00)
+  Armature t=(0.00,0.00,0.00)
+    root t=(0.00,-0.00,0.00)
+      Body t=(0.00,0.04,0.01)
+        FrontLeg.R t=(-0.00,-0.01,0.01)
+          FrontUpLeg.R t=(0.00,0.00,-0.00)
+            FrontLowLeg.R t=(-0.00,0.01,0.00)
+        BackLeg.R t=(-0.00,-0.01,-0.01)
+          BackUpLeg.R t=(-0.00,0.01,0.00)
+            BackLowLeg.R t=(0.00,0.02,0.00)
+        FrontLeg.L t=(0.00,-0.01,0.01)
+          FrontUpLeg.L t=(-0.00,0.00,-0.00)
+            FrontLowLeg.L t=(0.00,0.01,-0.00)
+        BackLeg.L t=(0.00,-0.02,-0.01)
+          BackUpLeg.L t=(-0.00,0.01,-0.00)
+            BackLowLeg.L t=(0.00,0.02,0.00)
+        Back t=(0.00,-0.02,-0.01)
+          Tail1 t=(-0.00,0.01,0.00)
+            Tail2 t=(-0.00,0.01,-0.00)
+        Hips t=(-0.00,-0.01,-0.01)
+          Torso t=(-0.00,0.01,-0.00)
+            Shoulders t=(0.00,0.02,0.00)
+      BackFoot.R t=(-0.01,0.00,-0.01)
+        BackFoot.R_end t=(0.00,0.01,0.00)
+      BackFoot.L t=(0.01,0.00,-0.00)
+        BackFoot.L_end t=(0.00,0.01,0.00)
+  Parasaurolophus [MESH] [SKIN] t=(0.00,0.00,0.00)
+
+SKIN "": 29 joints
+root, Body, FrontLeg.R, FrontUpLeg.R, FrontLowLeg.R, FrontFoot.R, BackLeg.R, BackUpLeg.R, BackLowLeg.R, FrontLeg.L, FrontUpLeg.L, FrontLowLeg.L, FrontFoot.L, BackLeg.L, BackUpLeg.L, BackLowLeg.L, Back, Tail1, Tail2, Tail3, Tail4, Tail5, Hips, Torso, Shoulders, Neck, Head, BackFoot.R, BackFoot.L
+
+===== models-staging/expansion-b/bellowback/Turtle536_PolyGoogle.glb =====
+node-0 [MESH] t=(0.00,0.00,0.00)
+
+===== models-staging/expansion-b/lancehorn/Drill_PolyGoogle.glb =====
+node-0 [MESH] t=(0.00,0.00,0.00)
+
+===== models-staging/expansion-b/ravager/Lion_PolyGoogle.glb =====
+node-0 [MESH] t=(0.00,0.00,0.00)
+
+===== models-staging/expansion-b/ravager/Tiger_PolyGoogle.glb =====
+node-0 [MESH] t=(0.00,0.00,0.00)
+
+===== models-staging/expansion-b/rockbreaker/Anteater_PolyGoogle.glb =====
+node-0 [MESH] t=(0.00,0.00,0.00)
+
+===== models-staging/expansion-b/rockbreaker/Armadillo2149_PolyGoogle.glb =====
+node-0 [MESH] t=(0.00,0.00,0.00)
+
+===== models-staging/expansion-b/rockbreaker/Badger_PolyGoogle.glb =====
+node-0 [MESH] t=(0.00,0.00,0.00)
+
+===== models-staging/expansion-b/shell-walker/Crab1340_PolyGoogle.glb =====
+node-0 [MESH] t=(0.00,0.00,0.00)
+
+===== models-staging/expansion-b/shell-walker/Lobster_PolyGoogle.glb =====
+node-0 [MESH] t=(0.00,0.00,0.00)
+
+===== models-staging/expansion-b/snapmaw/Crocodile1328_PolyGoogle.glb =====
+node-0 [MESH] t=(0.00,0.00,0.00)
+
+===== models-staging/expansion-b/stalker/Cat_Quaternius_animated.glb =====
+RootNode t=(0.00,0.00,0.00)
+  AnimalArmature t=(0.00,0.00,0.00)
+    All t=(-0.00,0.00,0.00)
+      FrontLeg.L t=(0.00,0.00,0.00)
+        FrontLeg.L_end t=(-0.00,0.00,-0.00)
+          FrontLeg.L_end_end t=(-0.00,0.00,0.00)
+      BackLeg.L t=(0.00,0.00,-0.00)
+        BackLeg.L_end t=(0.00,0.00,0.00)
+          BackLeg.L_end_end t=(0.00,0.00,-0.00)
+      Body t=(-0.00,0.00,-0.01)
+        Head t=(0.00,0.01,0.00)
+          Head_end t=(-0.00,0.00,-0.00)
+            Head_end_end t=(-0.00,0.00,0.00)
+      Tail t=(-0.00,0.00,-0.01)
+        Tail_end t=(-0.00,0.01,0.00)
+          Tail_end_end t=(0.00,0.01,0.00)
+      FrontLeg.R t=(-0.00,0.00,0.00)
+        FrontLeg.R_end t=(0.00,0.00,-0.00)
+          FrontLeg.R_end_end t=(0.00,0.00,0.00)
+      BackLeg.R t=(-0.00,0.00,-0.00)
+        BackLeg.R_end t=(-0.00,0.00,0.00)
+          BackLeg.R_end_end t=(0.00,0.00,-0.00)
+    Root t=(0.00,0.00,0.00)
+      Root_end t=(0.00,0.00,0.00)
+        Root_end_end t=(0.00,0.00,0.00)
+  Cat [MESH] [SKIN] t=(0.00,0.00,0.00)
+
+SKIN "": 16 joints
+All, FrontLeg.L, FrontLeg.L_end, BackLeg.L, BackLeg.L_end, Body, Head, Head_end, Tail, Tail_end, FrontLeg.R, FrontLeg.R_end, BackLeg.R, BackLeg.R_end, Root, Root_end
+
+===== models-staging/expansion-b/stalker/Leopard_PolyGoogle.glb =====
+node-0 [MESH] t=(0.00,0.00,0.00)
+
+===== models-staging/expansion-b/stormbird/Armabee_Quaternius_animated.glb =====
+RootNode t=(0.00,0.00,0.00)
+  CharacterArmature t=(0.00,0.00,0.00)
+    Root t=(-0.00,0.00,-0.00)
+      Torso t=(0.00,0.01,-0.00)
+        Neck t=(-0.00,0.00,0.00)
+          Head t=(-0.00,0.00,0.00)
+            Head_end t=(0.00,0.00,0.00)
+        Wing1.L t=(0.00,0.01,-0.00)
+          Wing2.L t=(0.00,0.01,-0.00)
+            Wing3.L t=(0.00,0.00,-0.00)
+        Wing1.R t=(-0.00,0.01,-0.00)
+          Wing2.R t=(-0.00,0.01,0.00)
+            Wing3.R t=(-0.00,0.00,-0.00)
+      Body1 t=(0.00,0.01,-0.00)
+        Body1_end t=(0.00,0.00,0.00)
+  Armabee [MESH] [SKIN] t=(0.00,0.00,0.00)
+
+SKIN "": 13 joints
+Root, Torso, Neck, Head, Wing1.L, Wing2.L, Wing3.L, Wing4.L, Wing1.R, Wing2.R, Wing3.R, Wing4.R, Body1
+
+===== models-staging/expansion-b/stormbird/FerruginousHawk_PolyGoogle.glb =====
+node-0 [MESH] t=(0.00,0.00,0.00)
+
+===== models-staging/expansion-b/stormbird/HarpyEagle_PolyGoogle.glb =====
+node-0 [MESH] t=(0.00,0.00,0.00)
+
+===== models-staging/expansion-b/trampler/Bison_bovine_PolyGoogle.glb =====
+node-0 [MESH] t=(0.00,0.00,0.00)

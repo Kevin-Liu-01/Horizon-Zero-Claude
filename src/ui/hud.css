@@ -404,11 +404,11 @@ kbd {
   font-size: max(11px, calc(9.5px * var(--s)));
   font-weight: 600; letter-spacing: 0.34em; text-indent: 0.34em;
   color: var(--hzc-parch-dim);
-  text-shadow: 0 1px 6px rgba(0, 0, 0, 0.9), 0 0 2px rgba(0, 0, 0, 0.75);
-  background: radial-gradient(ellipse 46px 11px at center,
-    rgba(10, 13, 16, 0.62) 0%, rgba(10, 13, 16, 0.45) 55%, transparent 100%);
-  margin-top: 2px;
-  padding: 2px 0 3px;
+  /* No plate behind it: the soft dark ellipse that used to sit here read as a
+     smudge on film rather than as a backing, so the contrast is carried by a
+     tight shadow instead. */
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 1), 0 0 5px rgba(0, 0, 0, 0.85);
+  margin-top: calc(2px * var(--s));
   font-variant-numeric: tabular-nums;
 }
 
@@ -444,9 +444,11 @@ kbd {
 .hzc-eye[data-m='hidden'] svg .pupil { opacity: 0; }
 .hzc-eye[data-m='hidden'] svg .closed { opacity: 1; stroke: var(--hzc-med); }
 .hzc-eye[data-m='hidden'] .hzc-eye-label { color: var(--hzc-med); }
-/* clear — unseen but standing in the open: dim outline only */
-.hzc-eye[data-m='clear'] { opacity: 0.42; }
-.hzc-eye[data-m='clear'] svg .iris, .hzc-eye[data-m='clear'] svg .pupil { opacity: 0.35; }
+/* clear — unseen but standing in the open: quiet, but still READ as an eye.
+   At 0.42 it vanished into bright grass on V37's film; 0.66 still recedes
+   against the alert states without disappearing. */
+.hzc-eye[data-m='clear'] { opacity: 0.66; }
+.hzc-eye[data-m='clear'] svg .iris, .hzc-eye[data-m='clear'] svg .pupil { opacity: 0.45; }
 /* watching — filling yellow */
 .hzc-eye[data-m='watch'] svg .lid { stroke: var(--hzc-yellow); }
 .hzc-eye[data-m='watch'] svg .iris { fill: rgba(255, 211, 77, calc(0.18 + 0.6 * var(--open))); }
@@ -474,9 +476,11 @@ kbd {
 .hzc-eye-bars i.on { background: var(--hzc-yellow); box-shadow: 0 0 5px rgba(255, 211, 77, 0.7); }
 .hzc-eye-label {
   font-size: max(11px, calc(8.5px * var(--s)));
-  font-weight: 600; letter-spacing: 0.32em; text-indent: 0.32em;
-  color: var(--hzc-parch-dim);
-  text-shadow: 0 1px 5px rgba(0, 0, 0, 0.95);
+  font-weight: 700; letter-spacing: 0.32em; text-indent: 0.32em;
+  color: var(--hzc-text);
+  /* a tight dark core under the glyphs, not a soft halo — this label sits on
+     grass as often as on sky */
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 1), 0 0 6px rgba(0, 0, 0, 0.95);
 }
 
 /* ============================================================================ */
@@ -581,11 +585,16 @@ kbd {
   box-shadow: 0 0 8px rgba(226, 206, 152, 0.4);
   transition: width 0.14s ease-out;
 }
-/* elemental countdown rings, BESIDE the plate (canon) */
+/* Elemental countdown rings, BESIDE the plate (canon). They used to sit in
+   flow UNDER it, centred — with one element active that reads as a stray dot
+   floating below the machine rather than as part of its readout. Stacked off
+   the plate's right edge they belong to the plate and cost it no height. */
 .hzc-mhb-elems {
-  display: flex; gap: calc(7px * var(--s)); justify-content: center;
-  margin-top: calc(4px * var(--s));
-  height: calc(18px * var(--s));
+  position: absolute; left: 100%; top: 50%;
+  transform: translateY(-50%);
+  margin-left: calc(7px * var(--s));
+  display: flex; flex-direction: column; gap: calc(5px * var(--s));
+  align-items: flex-start;
 }
 .hzc-elem { display: none; }
 .hzc-elem.show { display: block; }
@@ -868,24 +877,34 @@ kbd {
 }
 .hzc-tools.show { display: flex; }
 .hzc-tool-row { display: flex; align-items: flex-end; gap: calc(6px * var(--s)); }
+/* The TILE is an unclipped positioning box and `.hzc-tool-plate` is the thing
+   that carries the angled HZD corner. They were one element until the use-key
+   glyph went missing from V37's film: `clip-path` clips descendants too, so the
+   `F` sitting at `top: -11px` was sliced off at the tile's edge and read as a
+   dark notch. Splitting them keeps the corner and lets the key hang above. */
 .hzc-tool {
   position: relative;
   width: calc(42px * var(--s)); height: calc(42px * var(--s));
-  background: var(--hzc-plate);
-  border: 1px solid var(--hzc-border);
-  clip-path: polygon(7px 0, 100% 0, 100% calc(100% - 7px), calc(100% - 7px) 100%, 0 100%, 0 7px);
   opacity: 0.62;
   transition: opacity 0.2s ease, transform 0.2s ease;
 }
+.hzc-tool-plate {
+  position: absolute; inset: 0;
+  background: var(--hzc-plate);
+  border: 1px solid var(--hzc-border);
+  clip-path: polygon(7px 0, 100% 0, 100% calc(100% - 7px), calc(100% - 7px) 100%, 0 100%, 0 7px);
+}
 .hzc-tool.active {
   opacity: 1;
-  border-color: var(--hzc-gold);
-  box-shadow: 0 0 14px rgba(200, 162, 75, 0.28);
   transform: translateY(calc(-4px * var(--s)));
   width: calc(50px * var(--s)); height: calc(50px * var(--s));
 }
+.hzc-tool.active .hzc-tool-plate {
+  border-color: var(--hzc-gold);
+  box-shadow: 0 0 14px rgba(200, 162, 75, 0.28);
+}
 .hzc-tool.empty { opacity: 0.3; }
-.hzc-tool.blocked { border-color: rgba(214, 69, 65, 0.6); }
+.hzc-tool.blocked .hzc-tool-plate { border-color: rgba(214, 69, 65, 0.6); }
 .hzc-tool-ic {
   position: absolute; inset: calc(7px * var(--s));
   display: flex; align-items: center; justify-content: center;
@@ -900,13 +919,18 @@ kbd {
   font-variant-numeric: tabular-nums;
 }
 .hzc-tool-key {
-  position: absolute; left: 50%; top: calc(-11px * var(--s));
+  position: absolute; left: 50%; top: calc(-13px * var(--s));
   transform: translateX(-50%);
   color: var(--hzc-gold);
-  border-color: rgba(200, 162, 75, 0.6);
-  background: rgba(10, 13, 16, 0.85);
+  border-color: rgba(200, 162, 75, 0.72);
+  background: rgba(10, 13, 16, 0.92);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.7);
+  white-space: nowrap;
 }
-.hzc-tool-cd { position: absolute; inset: 0; pointer-events: none; }
+.hzc-tool-cd {
+  position: absolute; inset: 0; pointer-events: none;
+  clip-path: polygon(7px 0, 100% 0, 100% calc(100% - 7px), calc(100% - 7px) 100%, 0 100%, 0 7px);
+}
 .hzc-tool-chev {
   display: flex; flex-direction: column; align-items: center;
   gap: calc(2px * var(--s));

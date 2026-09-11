@@ -383,6 +383,23 @@ export const GATES = [
 
       // one-shot: asking for the same card again must be refused
       const again = hud.showTip('focus');
+
+      /**
+       * The PUBLISHED cross-lane surface: ctx.hud.showTip() plus the
+       * tutorial-tip event. progression owns the "Lessons of the Valley"
+       * chain and has to be able to raise a card for a mechanic this file
+       * cannot observe — without editing this file. Both forms are one-shot on
+       * the same store as the built-in cards.
+       * (No backticks anywhere in here: this comment lives inside a template
+       * literal, and one would end the gate body mid-sentence.)
+       */
+      const api = __CTX__.hud;
+      const custom = typeof api?.showTip === 'function'
+        ? api.showTip({ id: 'gate-custom', title: 'Gate card', body: 'published API', keys: ['F', 'E'] })
+        : null;
+      const customAgain = custom === null ? null
+        : api.showTip({ id: 'gate-custom', title: 'Gate card', body: 'published API', keys: ['F', 'E'] });
+      __CTX__.events.emit('tutorial-tip', { id: 'gate-event', title: 'Event card', body: 'event form', keys: ['J'] });
       const seen = hud.tips().seen;
 
       const checks = {
@@ -393,6 +410,8 @@ export const GATES = [
         realGlyphs: kbdText.every(t => t && t.trim().length > 0 && t.length <= 5),
         readable: bodyPx >= 11,
         oneShot: again === false && seen.includes('focus'),
+        publishedApi: custom === true && customAgain === false,
+        eventForm: seen.includes('gate-event'),
       };
       const failed = Object.entries(checks).filter(([, v]) => !v).map(([k]) => k);
       return { pass: failed.length === 0,

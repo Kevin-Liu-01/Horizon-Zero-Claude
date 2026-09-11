@@ -19,7 +19,9 @@
  *     priority list, which is what makes a studio freeze survive live combat.
  *   - Panels sit at z-index 900: above the HUD (40), Focus (39), inventory
  *     (46), pause (50), wheel and quests (60), and above anything `shell-menus`
- *     lands at.
+ *     lands at. "Hide HUD" then hides every chrome root it DISCOVERS, not the
+ *     id `#hud` — core-platform's F3 stats overlay sits at 99999 and painted a
+ *     frame-time readout across the photograph.
  *
  * Contract: constructed LAST in main.js. `update()` runs after Player's and
  * `interpolate()` runs after every system's, so the studio camera write and the
@@ -33,7 +35,31 @@ import { PoseDirector, POSES, EXPRESSIONS, GAZES } from './pose.js';
 import { CastDirector, CAST_STATES } from './cast.js';
 
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
-const MAX_REAL_DT = 1 / 20;   // a stalled frame must not teleport the lens
+
+/*
+ * REAL-SECOND BUDGET FOR THE LENS. Two bands, because a SLOW FRAME and a STALL
+ * are not the same event and must not be treated the same way.
+ *
+ *   0 .. MAX_REAL_DT   a slow frame. Spend it WHOLE. The valley renders at
+ *                      7-20 fps on a headless box and on weak hardware, and a
+ *                      photographer holding W there must still cross ground at
+ *                      the true 14 m/s — not at frame-rate-dependent speed.
+ *   .. STALL_REAL_DT   a very slow frame. Clamped, so it cannot lurch.
+ *   > STALL_REAL_DT    not a frame at all: a backgrounded tab, a shader
+ *                      compile, a breakpoint. DROPPED ENTIRELY (return 0), so
+ *                      resuming does not fling the lens across the map.
+ *
+ * This was `clamp(real, 0, 1/20)` — a single lossy clamp that silently THREW
+ * AWAY every millisecond past 50 ms. Correct against a 30 s stall, wrong every
+ * frame under 20 fps: at ~8 fps the lens flew at 39% of true speed (gate A79b
+ * measured 4.90 m where 12.6 m was due) and pose blending and lens
+ * interpolation, which ride the same dt, crawled with it.
+ */
+const MAX_REAL_DT = 1 / 5;      // 0.2s — down to 5 fps, flown at true speed
+const STALL_REAL_DT = 0.5;      // beyond this it is a stall, not a frame
+
+/** Real seconds this frame may spend on the lens. See the bands above. */
+const flyDt = (raw) => (raw > 0 ? (raw > STALL_REAL_DT ? 0 : Math.min(raw, MAX_REAL_DT)) : 0);
 
 /**
  * Keys the studio owns outright while it is open — the fly set, its modifiers,
@@ -100,6 +126,10 @@ export class Studio {
     this._interpSeen = false;
     this._lastWall = 0;
     this._readoutT = 0;
+
+    /** Chrome roots THIS object hid, so exit restores exactly those. */
+    this._hiddenChrome = [];
+    this._chromeHidden = false;
 
     this._buildUi();
 
@@ -207,11 +237,35 @@ export class Studio {
     return true;
   }
 
+  /**
+   * Leave, ALWAYS into a living world, and always into the same one.
+   *
+   * The world a studio session hands back must not depend on a race. Round 4's
+   * first cut returned `'dead'` when a filmed death happened to still be
+   * unresolved and `'playing'` when `Player._die()`'s 3.2 s **wall-clock**
+   * `setTimeout` had already fired — so pressing Esc a second early dumped the
+   * photographer onto the death screen, and a second late did not. Gate A78b
+   * caught exactly that, twice green and once red on identical code.
+   *
+   * A death the studio staged is the studio's to undo, like the hidden chrome
+   * and the held cast state: heal her and return where the photographer came
+   * from. A death the studio only *held* (F10 pressed inside the 3.2 s window)
+   * is also resolved into life here, because `_die()`'s timer early-outs on
+   * `state !== 'dead'` — it fired during the shoot, found the studio holding
+   * the world, and returned. That respawn is already gone; exiting completes
+   * it instead of stranding her on a death screen with no timer left to run.
+   * We do NOT teleport to camp the way `_die()` would: the photographer keeps
+   * the frame they composed.
+   */
   exit() {
     const ctx = this.ctx;
     if (!this.active) return false;
     this.active = false;
-    ctx.state = this._deathFilm && ctx.state === 'dead' ? 'dead' : (this._prevState ?? 'playing');
+    const p = ctx.player;
+    if ((this._deathFilm || this._prevState === 'dead') && p && p.health <= 0) {
+      p.health = p.maxHealth;
+    }
+    ctx.state = this._prevState === 'dead' ? 'playing' : (this._prevState ?? 'playing');
     this._deathFilm = false;
     ctx.input.enabled = true;
     // release the time authority; combat/wheel own it again
@@ -226,11 +280,58 @@ export class Studio {
     this._ui.classList.add('hidden');
     this._hint.classList.add('hidden');
     this._guides.classList.add('hidden');
-    document.getElementById('hud')?.classList.remove('studio-hidden');
-    this._hudBtn.classList.remove('on');
-    this._hudBtn.textContent = 'Hide HUD';
+    this.setChromeHidden(false);
     document.exitPointerLock?.();
     return true;
+  }
+
+  /* ---------------------------------------------------------------- chrome */
+
+  /**
+   * Every chrome root that is not the studio's own — DISCOVERED, never listed.
+   *
+   * Sixteen lanes each append their overlay straight to `<body>`, and one of
+   * them (core-platform's F3 stats) sits at z-index 99999, far above the
+   * studio's 900. A "Hide HUD" that only knew the id `#hud` therefore left a
+   * frame-time readout, and anything a later lane adds, painted across the
+   * photograph. Anything that is neither studio chrome, nor the element that
+   * holds the renderer's canvas, nor a non-rendering tag, is game chrome —
+   * including whatever lands next round.
+   * @returns {Element[]}
+   */
+  _chromeRoots() {
+    const canvas = this._canvas();
+    const out = [];
+    for (const el of document.body.children) {
+      if (el === this._ui || el === this._guides || el === this._hint) continue;
+      if (el.contains(canvas)) continue;
+      const tag = el.tagName;
+      if (tag === 'SCRIPT' || tag === 'STYLE' || tag === 'LINK' || tag === 'TEMPLATE') continue;
+      out.push(el);
+    }
+    return out;
+  }
+
+  /**
+   * Hide (or restore) all non-studio chrome. Only elements THIS object hid are
+   * ever restored, so a panel another lane had already closed stays closed.
+   * @returns {boolean} the new state
+   */
+  setChromeHidden(on) {
+    if (on && !this._chromeHidden) {
+      for (const el of this._chromeRoots()) {
+        if (el.classList.contains('studio-hidden')) continue;
+        el.classList.add('studio-hidden');
+        this._hiddenChrome.push(el);
+      }
+    } else if (!on) {
+      for (const el of this._hiddenChrome) el.classList.remove('studio-hidden');
+      this._hiddenChrome.length = 0;
+    }
+    this._chromeHidden = !!on;
+    this._hudBtn.classList.toggle('on', this._chromeHidden);
+    this._hudBtn.textContent = this._chromeHidden ? 'Show HUD' : 'Hide HUD';
+    return this._chromeHidden;
   }
 
   /* ----------------------------------------------------------------- time */
@@ -267,16 +368,29 @@ export class Studio {
     if (!this.active) return;
     const ctx = this.ctx;
     this.cast.update(dt);
-    // `_die()` hands the state to 'dead' and its respawn timer hands it back to
-    // 'playing' 3.2 s later. Take it back so Esc still leaves the studio into
-    // the state the photographer came from.
+    /*
+     * Take the world back the instant anything else claims it.
+     *
+     * `Player._die()` sets `ctx.state = 'dead'` and schedules a 3.2 s
+     * WALL-CLOCK respawn that heals her, teleports her to CAMP_POS and sets
+     * 'playing'. Waiting for that timer — which is what this used to do — meant
+     * a filmed death yanked the subject across the valley three seconds into
+     * the shot, and left the exit state depending on whether the timer had
+     * fired yet. Reclaiming 'dead' immediately means the timer finds
+     * `state !== 'dead'`, returns, and Aloy lies where she fell for as long as
+     * the photographer wants her there. The death CLIP is unaffected: it runs
+     * on the animator's own layer, not on `ctx.state`.
+     *
+     * `_deathFilm` latches so `exit()` knows to heal what the studio staged.
+     */
     if (ctx.state === 'playing') { ctx.state = 'studio'; this._deathFilm = false; }
+    else if (ctx.state === 'dead') { ctx.state = 'studio'; this._deathFilm = true; }
     this._applyTimeScale();
     // fallback path only: main.js always calls interpolate(), but a host that
     // does not must still fly the lens on real seconds.
     if (!this._interpSeen) {
       const wall = ctx.engine.wallTime;
-      const real = clamp(wall - this._lastWall, 0, MAX_REAL_DT);
+      const real = flyDt(wall - this._lastWall);
       this._lastWall = wall;
       this._frame(real);
     }
@@ -291,7 +405,7 @@ export class Studio {
     this._interpSeen = true;
     if (!this.active) return;
     this._lastWall = this.ctx.engine.wallTime;
-    this._frame(clamp(realDt || 0, 0, MAX_REAL_DT));
+    this._frame(flyDt(realDt || 0));
   }
 
   _frame(realDt) {
@@ -454,6 +568,8 @@ export class Studio {
       pose: this.pose.debug(),
       cast: this.cast.debug(),
       fov: this._fov,
+      chromeHidden: this._chromeHidden,
+      chromeRoots: this._chromeRoots().length,
     };
   }
 
@@ -599,13 +715,7 @@ export class Studio {
     });
 
     this._hudBtn = $('#st-hud');
-    this._hudBtn.addEventListener('click', () => {
-      const hud = document.getElementById('hud');
-      if (!hud) return;
-      const on = hud.classList.toggle('studio-hidden');
-      this._hudBtn.classList.toggle('on', on);
-      this._hudBtn.textContent = on ? 'Show HUD' : 'Hide HUD';
-    });
+    this._hudBtn.addEventListener('click', () => this.setChromeHidden(!this._chromeHidden));
     $('#st-shot').addEventListener('click', () => this._exportFrame());
     $('#st-exit').addEventListener('click', () => this.exit());
 
@@ -795,6 +905,17 @@ export class Studio {
     this._readoutT++;
     if (this._readoutT < 15) return;
     this._readoutT = 0;
+    // Re-sweep at 4 Hz while the chrome is hidden: a toast, a tutorial card or
+    // a loot popup appended AFTER the button was pressed would otherwise pop
+    // into the middle of a shot. Eighteen tag/contains checks, no styles read,
+    // on one frame in fifteen — never in `_frame`'s hot path.
+    if (this._chromeHidden) {
+      for (const el of this._chromeRoots()) {
+        if (el.classList.contains('studio-hidden')) continue;
+        el.classList.add('studio-hidden');
+        this._hiddenChrome.push(el);
+      }
+    }
     const m = this.cast.target;
     const h = this.cast.hold;
     const el = this._ui.querySelector('#st-cast-target');

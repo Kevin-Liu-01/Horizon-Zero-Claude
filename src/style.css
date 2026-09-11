@@ -177,6 +177,15 @@ html, body {
 body.hzc-menus .hzc-pause,
 body.hzc-menus .hzc-death { display: none !important; }
 
+/* Under the death card the gameplay HUD is noise — the player is not reading
+   their ammo count, they are choosing how to come back. Keyed on a body class
+   only THIS lane sets, so `shell-hud` keeps every rule it wrote; drop the
+   install and the HUD never dims. */
+body.hzc-dead #hud {
+  opacity: 0.14;
+  transition: opacity 0.7s ease;
+}
+
 body.hzc-reduced-motion .hzc-menus-root *,
 body.hzc-reduced-motion #title * {
   animation: none !important;
@@ -210,11 +219,52 @@ body.hzc-reduced-motion #title * {
 .mn-btn.small { font-size: 10.5px; letter-spacing: 0.16em; padding: 7px 13px 6px; }
 .mn-btn.primary { border-color: var(--hzc-accent); color: #dff6f7; }
 .mn-btn.danger:hover { background: rgba(176, 58, 46, 0.22); border-color: var(--hzc-danger); }
+/* a control that exists but is not available yet — it PRINTS THE REASON, so it
+   must still be readable, not a ghost (missing-systems-accessibility). */
+.mn-btn.off {
+  color: var(--mn-faint);
+  border-color: rgba(239, 230, 213, 0.16);
+  border-style: dashed;
+  cursor: not-allowed;
+}
+.mn-btn.off:hover { background: rgba(12, 16, 20, 0.6); border-color: rgba(239, 230, 213, 0.16); }
 
 /* =========================================================== title screen */
 
 #title .title-inner { position: relative; }
 body.hzc-title-live #loading { display: none !important; }
+
+/**
+ * THE SCRIM IS PART OF THE SHOT (V38).
+ *
+ * index.html ships a flat radial wash (0.44 → 0.88) built for a title screen
+ * that had no moving vista behind it, and it turned the new aerial into brown
+ * soup: every value in the frame arrived within a few percent of every other
+ * one. This lane owns the title flow, so it owns the veil over it — and
+ * `body.hzc-title-live #title.overlay` outranks that rule without touching
+ * another lane's file or deleting anything (drop the install and the Round-3
+ * wash comes straight back).
+ *
+ * Two layers, each with a job. The linear one is dark at the top (the wordmark
+ * sits over the rim), opens across the middle band so the meadow keeps its
+ * colour, and closes again at the bottom for the tip and the save line. The
+ * radial one is a soft column down the centre, behind the menu column only, so
+ * the text never has to fight a tree while the edges of the frame stay bright.
+ */
+body.hzc-title-live #title.overlay {
+  background:
+    linear-gradient(180deg,
+      rgba(6, 9, 12, 0.70) 0%,
+      rgba(6, 9, 12, 0.40) 22%,
+      rgba(6, 9, 12, 0.16) 44%,
+      rgba(6, 9, 12, 0.30) 66%,
+      rgba(6, 9, 12, 0.62) 86%,
+      rgba(6, 9, 12, 0.88) 100%),
+    radial-gradient(ellipse 40% 54% at 50% 52%,
+      rgba(6, 9, 12, 0.52) 0%,
+      rgba(6, 9, 12, 0.26) 58%,
+      rgba(6, 9, 12, 0) 100%);
+}
 
 .mn-title { margin-top: 26px; }
 .mn-title-press {
@@ -391,6 +441,11 @@ body.hzc-title-live #loading { display: none !important; }
 .mn-map-wp-live b { font-weight: 600; }
 .mn-map-wp-live i { margin-left: auto; font-style: normal; color: var(--hzc-accent); }
 .mn-map-wp-dot { width: 8px; height: 8px; background: var(--hzc-accent); transform: rotate(45deg); }
+.mn-map-wp-site {
+  font-size: 10px; letter-spacing: 0.22em; color: var(--mn-faint);
+  border-top: 1px solid var(--mn-line); padding-top: 9px;
+}
+.mn-map-wp-site b { color: var(--mn-ink); font-weight: 600; }
 
 .mn-map-legend { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 12px; }
 .mn-map-leg-row { display: flex; align-items: center; gap: 8px; }
@@ -579,9 +634,27 @@ body.hzc-title-live #loading { display: none !important; }
 
 /* ======================================================== victory banner */
 
+/**
+ * VICTORY IS ONE CARD, NOT THREE (filmed at `shots/sm-victory.png`).
+ *
+ * `progression` raises its own `PROGRESS SAVED · VICTORY` and `VALLEY
+ * RECLAIMED · THE THUNDERJAW IS DOWN` banners through `shell-hud`'s banner
+ * queue, and both land in the top third — so the shipped endgame was the same
+ * two words printed three times, overlapping. Neither of those lanes can be
+ * edited from here, and neither is wrong on its own. So this card stops being
+ * a transparent overlay and becomes the cinematic: an opaque upper letterbox
+ * that covers the banner zone (#hud is z-index 40, this root is 70), fading
+ * out over the lower third so the valley she just won is still on screen.
+ */
 .mn-victory {
-  background: linear-gradient(180deg, rgba(6, 10, 14, 0.15) 0%, rgba(6, 10, 14, 0.72) 45%, rgba(6, 10, 14, 0.15) 100%);
+  background: linear-gradient(180deg,
+    rgba(6, 10, 14, 0.975) 0%,
+    rgba(6, 10, 14, 0.965) 40%,
+    rgba(6, 10, 14, 0.82) 54%,
+    rgba(6, 10, 14, 0.36) 74%,
+    rgba(6, 10, 14, 0.10) 100%);
   align-items: center;
+  animation: mn-fade 0.5s ease both;
 }
 .mn-victory-title {
   font-family: var(--font-display);

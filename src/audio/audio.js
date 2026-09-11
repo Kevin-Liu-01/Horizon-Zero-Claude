@@ -78,13 +78,22 @@ const SURFACE_SET = {
   rock: 'foot/rock', metal: 'foot/rock',
   snow: 'foot/snow', ice: 'foot/snow',
 };
-/** weapon id fragment -> bow set. */
+/**
+ * Weapon id fragment -> bow set (`audio-13`).
+ *
+ * `rope` is on the heavy rung deliberately: the Ropecaster is a crossbow-weight
+ * draw, and without it `bowSetFor('ropecaster')` fell through to `hunter` and a
+ * harpoon launcher twanged like a short bow.
+ */
 function bowSetFor(id) {
   const s = String(id || '').toLowerCase();
   if (/sharp|precision|marks/.test(s)) return 'sharpshot';
-  if (/war|heavy|tear/.test(s)) return 'war';
+  if (/war|heavy|tear|rope/.test(s)) return 'war';
   return 'hunter';
 }
+
+/** Weapons that put an arrow on a string — the only ones that nock. */
+const NOCKING = /bow|ropecaster/;
 /** Voice priorities — the pool steals upward only. */
 const PRI = {
   ambience: 1, footstep: 2, gear: 2, ui: 9, item: 3, machineStep: 3,
@@ -164,6 +173,13 @@ export class GameAudio {
     this._occA = null;            // Vector3 scratch, built in _init
     this._occB = null;
     this._machineLoops = new Map();  // machine -> LoopEmitter (servo idle)
+    /**
+     * Cached `_machineLoops.values()` — see `_rebuildLoopList()`. The spatial
+     * update walks this array, never the Map, because a Map iterator is a
+     * per-frame allocation and this loop runs every frame a machine is in
+     * earshot.
+     */
+    this._loopList = [];
     this._scanCd = new Map();
     this._footfallCd = new Map();
     this._staggerMs = -1e9;
@@ -182,6 +198,9 @@ export class GameAudio {
     this._statusT = 0;             // elemental status rescan throttle
     this._callT = 22 + Math.random() * 20;   // distant machine call timer
     this._breathT = 0;             // exertion breath timer (audio-03)
+    this._nockPrev = false;        // rising edge of combat.nockLanded (audio-13)
+    this._drawPrev = false;        // rising edge of combat.drawStrength
+    this._nockBow = null;          // which bow set those edges belong to
     this._exertion = 0;            // 0..1 running average of effort
     this._airborne = false;
     this._wreckBeacons = new Map();  // machine -> ms the beacon started
@@ -1143,6 +1162,50 @@ export class GameAudio {
     this._exertion = Math.min(1, this._exertion + (hard ? 0.28 : 0.16));
   }
 
+  /**
+   * Nock / re-nock / draw, polled off `combat`'s public state (`audio-13`).
+   *
+   * The audit asked for a nock and a re-nock per bow, and the listeners for
+   * `arrow-nocked` / `arrow-draw` are published in the contract — but `combat`
+   * emits neither, so those cues were wired to nothing and the bow made no
+   * sound at all until the string was released. Rather than leave a blocker
+   * waiting on another lane, this reads the two fields `combat` already
+   * publishes for the animator:
+   *
+   *   `nockLanded`   false while the arrow is travelling from quiver to
+   *                  string, true when it arrives. It is reset on every loose,
+   *                  so its RISING EDGE is exactly the re-nock — the sound the
+   *                  0.42 s nock delay exists to make audible.
+   *   `drawStrength` 0 until the string starts moving; its first frame above
+   *                  the deadzone is the draw creak.
+   *
+   * Same idiom as `_statusScan`: the other lane owns a continuous value, we
+   * watch its edges. Two booleans and no allocation per frame.
+   *
+   * A dry-fire click still needs `weapon-empty` from `combat` — "tried to
+   * shoot with an empty quiver" has no observable edge, because the draw
+   * simply never starts.
+   */
+  _nockPoll(playing) {
+    const cb = this.ctx.combat;
+    if (!playing || !cb) { this._nockPrev = false; this._drawPrev = false; return; }
+    const id = String(cb.activeWeapon?.id || '');
+    if (!NOCKING.test(id)) { this._nockPrev = false; this._drawPrev = false; return; }
+    const bow = bowSetFor(id);
+    // swapping bows mid-aim puts a new arrow on a new string: re-arm both
+    // edges so the swap is heard, rather than being swallowed because
+    // `nockLanded` happened to already be true on the weapon we left.
+    if (bow !== this._nockBow) { this._nockBow = bow; this._nockPrev = false; this._drawPrev = false; }
+
+    const nocked = !!cb.nockLanded;
+    if (nocked && !this._nockPrev) this.play2D(`bow/${bow}/nock`, { volume: 0.42 });
+    this._nockPrev = nocked;
+
+    const drawing = (cb.drawStrength ?? 0) > 0.02;
+    if (drawing && !this._drawPrev) this.play2D(`bow/${bow}/draw`, { volume: 0.36 });
+    this._drawPrev = drawing;
+  }
+
   /** Breath layer driven by `_exertion`; called from update() on a real-time clock. */
   _breathLayer(rdt, playing) {
     const p = this.ctx.player;
@@ -1282,9 +1345,28 @@ export class GameAudio {
       loop.volume = (this._weightOf(machine) === 'heavy' ? 0.5 : 0.32) * (first.row.gain ?? 1);
       chain.loop = loop;
       this._machineLoops.set(machine, { loop, chain });
+      this._rebuildLoopList();
     } else if (!want && have) {
       this._retireLoop(machine, have, 0.5);
     }
+  }
+
+  /**
+   * Re-cache the servo-loop entries as a plain array.
+   *
+   * `_updateSpatial` used to iterate `this._machineLoops.values()` directly,
+   * two lines under a comment insisting that a Map iterator here would be a
+   * per-frame allocation. It was: the guard on `.size` only skipped the
+   * allocation while nothing was humming, so the cost appeared exactly when
+   * machines were in earshot — i.e. during a fight. The Map stays as the
+   * identity index (`get`/`delete` by machine); the array is what the frame
+   * walks. Rebuilt only on insert/retire, which the 0.6 s roster sync bounds
+   * to a few times a second over at most 8 entries.
+   */
+  _rebuildLoopList() {
+    const list = this._loopList;
+    list.length = 0;
+    for (const e of this._machineLoops.values()) list.push(e);
   }
 
   /**
@@ -1305,6 +1387,7 @@ export class GameAudio {
     entry.chain.endsAt = this.ac.currentTime + fade + 0.1;
     entry.chain.tracked = null;   // a dead machine may be recycled by the pool
     this._machineLoops.delete(machine);
+    this._rebuildLoopList();
   }
 
   /**
@@ -2860,7 +2943,9 @@ export class GameAudio {
     // iterator or a for-in key list here is a per-frame allocation.
     const beds = this._bedList;
     for (let i = 0; i < beds.length; i++) beds[i].pump();
-    if (this._machineLoops.size) for (const e of this._machineLoops.values()) {
+    const loops = this._loopList;                 // cached array, NOT Map.values()
+    for (let i = 0; i < loops.length; i++) {
+      const e = loops[i];
       e.loop.pump();
       const c = e.chain;
       if (this._occA) c.updateOcclusion(collision, lx, ly, lz, nowMs, this._occA, this._occB);
@@ -3092,6 +3177,7 @@ export class GameAudio {
     // --- Aloy's breath layer + the distant valley (audio-03 / audio-11)
     this._breathLayer(rdt, playing);
     this._distantCall(rdt, playing);
+    this._nockPoll(playing);
 
     // --- birdsong at random intervals, silenced during combat
     this._birdT -= dt;

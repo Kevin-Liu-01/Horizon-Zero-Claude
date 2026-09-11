@@ -39,6 +39,11 @@ const BAKE_N = 288;                     // relief samples per axis (2.5 m/px)
 const MAP_PX = 720;                     // canvas pixels per axis
 const FOG_KEY = 'hzc.map.v1';
 
+/** Marker kinds you can travel TO (a quest arrow or a machine is not a place). */
+const TRAVELABLE = new Set(['camp', 'landmark', 'tallneck', 'lookout', 'cache', 'override', 'hunting-ground']);
+/** How close to the fire counts as "at the campfire". */
+const CAMPFIRE_R = 7;
+
 const el = (tag, cls, parent, html) => {
   const n = document.createElement(tag);
   if (cls) n.className = cls;
@@ -52,14 +57,14 @@ const lerp = (a, b, k) => a + (b - a) * k;
 
 /** Height ramp: riverbed silt → meadow → upland → scree → snow. */
 const RAMP = [
-  [-6, [52, 66, 74]],
-  [0, [86, 96, 82]],
-  [6, [104, 116, 84]],
-  [16, [116, 118, 82]],
-  [34, [122, 112, 88]],
-  [58, [126, 118, 104]],
-  [92, [150, 148, 146]],
-  [140, [206, 208, 212]],
+  [-6, [44, 62, 76]],
+  [0, [104, 112, 78]],
+  [6, [126, 130, 84]],
+  [16, [150, 141, 90]],
+  [34, [158, 134, 96]],
+  [58, [152, 138, 118]],
+  [92, [170, 168, 166]],
+  [140, [216, 218, 222]],
 ];
 
 function rampAt(h) {
@@ -112,10 +117,16 @@ export class MapBake {
           const y = h(x, z);
           let [r, g, b] = rampAt(y);
 
-          // hillshade from a NW sun: the difference between a map and a blob
+          /**
+           * Hillshade from a NW sun: the difference between a map and a blob.
+           * The term is centred on 1.0, not on 0.5 — the first cut halved every
+           * flat pixel in the valley and the explored region came out as a dark
+           * olive smear you could not read a ridge off (`shots/sm-hub-map.png`).
+           * Flat ground now keeps its ramp colour and only slope moves it.
+           */
           const hx = h(x + step, z) - h(x - step, z);
           const hz = h(x, z + step) - h(x, z - step);
-          const shade = clamp(0.5 + (-hx * 0.55 - hz * 0.42) / (step * 1.35), 0.08, 1.65);
+          const shade = clamp(1 + (-hx * 0.55 - hz * 0.42) / (step * 1.1), 0.42, 1.72);
           r *= shade; g *= shade; b *= shade;
 
           // water reads as water, at its own level
@@ -212,17 +223,47 @@ export class FogOfWar {
 
   get fraction() { return this.seen / this.cells.length; }
 
-  /** Paint the UNSEEN area onto a 2D context in map pixels. */
+  /** Has the player ever been near enough to this spot to have seen it? */
+  seenAt(x, z) {
+    const step = WORLD_SIZE / FOG_N;
+    const ix = Math.floor((x + WORLD_HALF) / step);
+    const iz = Math.floor((z + WORLD_HALF) / step);
+    if (ix < 0 || iz < 0 || ix >= FOG_N || iz >= FOG_N) return false;
+    return !!this.cells[iz * FOG_N + ix];
+  }
+
+  /**
+   * Paint the UNSEEN area onto a 2D context in map pixels.
+   *
+   * THE FRONTIER IS NOT A STAIRCASE. Filling one 10 × 10 m rect per unseen cell
+   * drew the explored region as a pixel-art blob with 10 m teeth — filmed at
+   * `shots/sm-hub-map.png`. The mask is instead rasterised once at cell
+   * resolution into a 72² offscreen canvas and then drawn up to map pixels with
+   * smoothing on, so the browser's own bilinear filter does the erosion for
+   * free: same cost, a soft edge, and the frontier reads as "we have not been
+   * out there" instead of as a rendering artefact.
+   */
   paint(g, size) {
-    const c = size / FOG_N;
-    g.save();
-    g.fillStyle = 'rgba(7, 11, 15, 0.90)';
-    for (let iz = 0; iz < FOG_N; iz++) {
-      for (let ix = 0; ix < FOG_N; ix++) {
-        if (this.cells[iz * FOG_N + ix]) continue;
-        g.fillRect(ix * c - 0.5, iz * c - 0.5, c + 1, c + 1);
-      }
+    if (!this._mask) {
+      this._mask = document.createElement('canvas');
+      this._mask.width = this._mask.height = FOG_N;
+      this._maskG = this._mask.getContext('2d');
     }
+    const mg = this._maskG;
+    const img = mg.createImageData(FOG_N, FOG_N);
+    const d = img.data;
+    for (let i = 0; i < this.cells.length; i++) {
+      const o = i * 4;
+      d[o] = 7; d[o + 1] = 11; d[o + 2] = 16;
+      d[o + 3] = this.cells[i] ? 0 : 222;      // 0.87 over the unknown
+    }
+    mg.putImageData(img, 0, 0);
+    g.save();
+    g.imageSmoothingEnabled = true;
+    g.imageSmoothingQuality = 'high';
+    // inset by half a cell so the smoothing samples cell CENTRES, not corners
+    const half = size / FOG_N / 2;
+    g.drawImage(this._mask, -half, -half, size + half * 2, size + half * 2);
     g.restore();
   }
 }
@@ -254,9 +295,11 @@ export class WorldMap {
     this.root = null;
     this.canvas = null;
     this._hover = null;
+    this._selected = null;      // the site the side panel is offering to travel to
     this._sinceReveal = 0;
     this._legendOn = true;
     this._pendingSave = false;
+    this._travels = 0;
   }
 
   /* ------------------------------------------------------------ lifecycle */
@@ -292,7 +335,8 @@ export class WorldMap {
       el('span', 'mn-map-leg-text', row, g.label.toUpperCase());
     }
     el('div', 'mn-set-note', side,
-      'CLICK THE MAP TO PLANT A WAYPOINT · RIGHT-CLICK TO CLEAR IT');
+      'CLICK THE MAP TO PLANT A WAYPOINT · RIGHT-CLICK TO CLEAR IT · '
+      + 'CLICK A SITE TO SELECT IT, THEN FAST TRAVEL FROM A CAMPFIRE');
 
     this.canvas.addEventListener('mousemove', (e) => this._onHover(e));
     this.canvas.addEventListener('mouseleave', () => { this._hover = null; this._tip.style.display = 'none'; this.draw(); });
@@ -371,6 +415,12 @@ export class WorldMap {
     return out;
   }
 
+  /** The markers a player has actually earned the right to see. */
+  visibleMarkers() {
+    return this.markers().filter((m) =>
+      m.kind === 'quest' || m.kind === 'machine' || this.fog.seenAt(m.x, m.z));
+  }
+
   /* ---------------------------------------------------------------- paint */
 
   draw() {
@@ -407,8 +457,16 @@ export class WorldMap {
     g.beginPath(); g.arc(c, c, rr, 0, Math.PI * 2); g.stroke();
     g.restore();
 
-    // 4-6 — sites, quests, tagged machines
-    const marks = this.markers();
+    /**
+     * 4-6 — sites, quests, tagged machines.
+     *
+     * A marker under the fog is NOT drawn (`ui-02`: fog of war that leaks every
+     * site on the first open is decoration, not exploration). Two exceptions,
+     * both deliberate: a tracked objective is the game telling you where to go,
+     * and a machine you personally tagged through the Focus is knowledge you
+     * already have — neither is the map giving away the valley.
+     */
+    const marks = this.visibleMarkers();
     for (const m of marks) this._drawMarker(g, m);
 
     // 7 — player
@@ -489,7 +547,7 @@ export class WorldMap {
     const disc = this.ctx.progression?.discoveries?.()?.length ?? 0;
     this._stats.innerHTML =
       `<div><b>${Math.round(this.fog.fraction * 100)}%</b><span>EXPLORED</span></div>` +
-      `<div><b>${marks.filter((m) => m.kind !== 'machine' && m.kind !== 'quest').length}</b><span>SITES</span></div>` +
+      `<div><b>${marks.filter((m) => m.kind !== 'machine' && m.kind !== 'quest').length}</b><span>SITES FOUND</span></div>` +
       `<div><b>${disc}</b><span>DISCOVERED</span></div>` +
       `<div><b>${pos}</b><span>POSITION</span></div>`;
     this._paintWaypointBox();
@@ -497,23 +555,34 @@ export class WorldMap {
 
   _paintWaypointBox() {
     if (!this._wpBox) return;
+    const sel = this._selected;
+    const gate = sel ? this.canFastTravel(sel) : null;
+    const travel = sel
+      ? `<div class="mn-map-wp-site"><b>${String(sel.name).toUpperCase()}</b></div>`
+        + `<button class="mn-btn small${gate.ok ? ' primary' : ' off'}" id="mn-wp-travel"`
+        + `${gate.ok ? '' : ' disabled'}>${gate.ok ? 'FAST TRAVEL' : gate.reason}</button>`
+      : '';
     if (!this.waypoint) {
-      this._wpBox.innerHTML = '<div class="mn-map-wp-empty">NO WAYPOINT</div>';
-      return;
+      this._wpBox.innerHTML = `<div class="mn-map-wp-empty">NO WAYPOINT</div>${travel}`;
+    } else {
+      const d = this.distanceToWaypoint();
+      this._wpBox.innerHTML =
+        `<div class="mn-map-wp-live"><span class="mn-map-wp-dot"></span>` +
+        `<b>WAYPOINT</b><i>${d == null ? '—' : `${Math.round(d)} m`}</i></div>` +
+        `${travel}` +
+        `<button class="mn-btn small" id="mn-wp-clear">CLEAR WAYPOINT</button>`;
+      this._wpBox.querySelector('#mn-wp-clear')?.addEventListener('click', () => this.clearWaypoint());
     }
-    const d = this.distanceToWaypoint();
-    this._wpBox.innerHTML =
-      `<div class="mn-map-wp-live"><span class="mn-map-wp-dot"></span>` +
-      `<b>WAYPOINT</b><i>${d == null ? '—' : `${Math.round(d)} m`}</i></div>` +
-      `<button class="mn-btn small" id="mn-wp-clear">CLEAR WAYPOINT</button>`;
-    this._wpBox.querySelector('#mn-wp-clear')?.addEventListener('click', () => this.clearWaypoint());
+    this._wpBox.querySelector('#mn-wp-travel')?.addEventListener('click', () => this.fastTravel());
   }
 
   /* ------------------------------------------------------------ interaction */
 
   _nearestMarker(world, tolerance = 16) {
     let best = null, bestD = Infinity;
-    for (const m of this.markers()) {
+    // only what is on screen can be picked: an invisible marker under the fog
+    // must not steal a click meant for the ground beneath it
+    for (const m of this.visibleMarkers()) {
       const d = Math.hypot(m.x - world.x, m.z - world.z);
       if (d < bestD) { bestD = d; best = m; }
     }
@@ -549,7 +618,54 @@ export class WorldMap {
     const world = this.mapToWorld(px, py);
     const near = this._nearestMarker(world);
     const target = near || world;
+    this._selected = near && TRAVELABLE.has(near.kind) ? near : null;
     this.setWaypoint(target.x, target.z, near ? String(near.name) : 'Waypoint');
+  }
+
+  /* ----------------------------------------------------------- fast travel */
+
+  /**
+   * `missing-systems-title-save-campfire-flow`, travel half. HZD's rule is the
+   * one worth copying: travel is FREE from a campfire and otherwise costs a
+   * pack. There is no pack item in this build and `items` owns the pockets, so
+   * this ships the free half honestly — from a campfire, to somewhere you have
+   * actually been, when nothing is hunting you — and says which of those three
+   * is missing rather than greying out a button with no reason.
+   */
+  canFastTravel(site = this._selected) {
+    if (!site) return { ok: false, reason: 'SELECT A DISCOVERED SITE' };
+    if (!TRAVELABLE.has(site.kind)) return { ok: false, reason: 'NOT A TRAVEL POINT' };
+    if (!this.fog.seenAt(site.x, site.z)) return { ok: false, reason: 'UNDISCOVERED — WALK THERE FIRST' };
+    const p = this.ctx.player;
+    if (!p) return { ok: false, reason: 'NO PLAYER' };
+    const fire = this.ctx.camp?.firePosition;
+    const dFire = fire ? Math.hypot(p.position.x - fire.x, p.position.z - fire.z) : Infinity;
+    if (dFire > CAMPFIRE_R) return { ok: false, reason: 'REST AT A CAMPFIRE TO TRAVEL' };
+    if (Math.hypot(site.x - p.position.x, site.z - p.position.z) < 25) {
+      return { ok: false, reason: 'ALREADY HERE' };
+    }
+    const hunted = (this.ctx.machines?.list || []).some((m) => m.alive !== false
+      && (m.state === 'alert' || m.state === 'attack')
+      && Math.hypot(m.position.x - p.position.x, m.position.z - p.position.z) < 60);
+    if (hunted) return { ok: false, reason: 'NOT WHILE THE MACHINES ARE AWAKE' };
+    return { ok: true, reason: 'TRAVEL' };
+  }
+
+  fastTravel(site = this._selected) {
+    const gate = this.canFastTravel(site);
+    if (!gate.ok) return gate;
+    const p = this.ctx.player;
+    const from = { x: p.position.x, z: p.position.z };
+    p.position.set(site.x, p.position.y, site.z);
+    p.velocity?.set?.(0, 0, 0);
+    p._snapToGround?.();
+    this.fog.reveal(site.x, site.z);
+    this._travels++;
+    this.menus?._emit?.('fast-travel', { from, to: { x: site.x, z: site.z }, site: site.name });
+    // an autosave on arrival, through the owning lane's published writer
+    try { this.ctx.progression?.checkpoint?.('fast-travel'); } catch { /* no save lane */ }
+    this.menus?.closeHub?.();
+    return { ok: true, to: site.name };
   }
 
   /* -------------------------------------------------------------- waypoint */
@@ -591,6 +707,9 @@ export class WorldMap {
       fogFraction: +this.fog.fraction.toFixed(3),
       markers: this.markers().length,
       waypoint: this.waypoint ? { ...this.waypoint, distance: this.distanceToWaypoint() } : null,
+      selected: this._selected ? { kind: this._selected.kind, name: this._selected.name } : null,
+      travel: this._selected ? this.canFastTravel(this._selected) : null,
+      travels: this._travels,
       canvas: this.canvas ? { w: this.canvas.width, h: this.canvas.height, onScreen: !!this.canvas.offsetParent } : null,
     };
   }
@@ -648,15 +767,19 @@ export class WaypointBeacon {
       const comp = document.querySelector('.hzc-compass');
       this._rect = comp ? comp.getBoundingClientRect() : null;
     }
-    if (this._rect && this._rect.width > 40) {
-      this.root.style.left = `${this._rect.left + this._rect.width / 2}px`;
-      this.root.style.top = `${this._rect.bottom + 6}px`;
-      this.root.style.width = `${this._rect.width}px`;
-    } else {
-      this.root.style.left = '50%';
-      this.root.style.top = '78px';
-      this.root.style.width = '480px';
-    }
+    /**
+     * Dock, but only WRITE when something moved. This runs on rAF for as long
+     * as a waypoint exists, and the three template strings below were being
+     * rebuilt 60×/s to set the same three pixel values — 180 throwaway strings
+     * a second, plus three style recalcs, for a box that moves when the window
+     * resizes. Same for the distance readout, which only changes once a metre.
+     */
+    const wantL = this._rect && this._rect.width > 40 ? `${this._rect.left + this._rect.width / 2}px` : '50%';
+    const wantT = this._rect && this._rect.width > 40 ? `${this._rect.bottom + 6}px` : '78px';
+    const wantW = this._rect && this._rect.width > 40 ? `${this._rect.width}px` : '480px';
+    if (wantL !== this._dockL) { this.root.style.left = wantL; this._dockL = wantL; }
+    if (wantT !== this._dockT) { this.root.style.top = wantT; this._dockT = wantT; }
+    if (wantW !== this._dockW) { this.root.style.width = wantW; this._dockW = wantW; }
 
     const p = this.ctx.player;
     const bearing = this.map.bearingToWaypoint();
@@ -668,10 +791,13 @@ export class WaypointBeacon {
     while (rel < -Math.PI) rel += Math.PI * 2;
     const halfWin = (70 * Math.PI) / 180;
     const k = clamp(rel / halfWin, -1, 1);
-    this.caret.style.transform = `translateX(${(k * 50).toFixed(2)}%)`;
+    const tx = `translateX(${(k * 50).toFixed(2)}%)`;
+    if (tx !== this._caretTx) { this.caret.style.transform = tx; this._caretTx = tx; }
     this.caret.classList.toggle('edge', Math.abs(rel) > halfWin);
-    this.distEl.textContent = `${Math.round(dist)} m`;
-    this.labelEl.textContent = String(this.map.waypoint.label || 'WAYPOINT').toUpperCase();
+    const metres = Math.round(dist);
+    if (metres !== this._metres) { this._metres = metres; this.distEl.textContent = `${metres} m`; }
+    const label = String(this.map.waypoint.label || 'WAYPOINT').toUpperCase();
+    if (label !== this._label) { this._label = label; this.labelEl.textContent = label; }
   }
 
   audit() {

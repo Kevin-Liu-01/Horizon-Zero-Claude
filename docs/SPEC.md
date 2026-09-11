@@ -845,7 +845,7 @@ Every file in `public/audio/` must have a row in `src/audio/manifest.js` whose `
 `ALLOWED_LICENSES` (`CC0-1.0`, `CC-PD`, `Unlicense`, `PD`). `SampleBank.load()` **refuses** any
 other row, and gate `A73-sample-bank` fails on a decoded buffer without a licence. CC-BY-**NC**
 can never enter the bank (D3). The human-readable manifest is `public/audio/MANIFEST.md`;
-budget 40 MB, currently 0.73 MB / 90 files / 58 sets.
+budget 40 MB, currently **2.31 MB / 149 files / 95 sets**.
 
 The loader is format-agnostic (`.ogg`, `.webm`, `.wav` all decode), so adding curated CC0
 downloads is a data change: drop files, add manifest rows, mirror them in `MANIFEST.md`.
@@ -919,9 +919,10 @@ level. On top of the panner:
 
 ### 13.5 Event contract
 
-`audio` **consumes** these; the named lane emits them. Every listener is live today and no-ops
-until its emitter lands, so shipping them is a data change, not a code change.
-`audio.contractCounts()` reports what has actually arrived.
+`audio` **consumes** these; the named lane emits them. Every listener is live and no-ops when its
+emitter has nothing to say, so shipping a cue is a data change, not a code change.
+`audio.contractCounts()` reports what has actually arrived. As of Wave 3 every row below has a
+live emitter and has been observed arriving in a gate.
 
 ```
 'machine-footfall'      { machine, kind, foot, index, position, speed, runK, strength, mass, surface }
@@ -933,32 +934,82 @@ until its emitter lands, so shipping them is a data change, not a code change.
                                                                ~0.55 s after death, when the wreck lands;
                                                                for camera shake and the collapse cue)
 'machine-stagger'       { machine, point, severity }           machine-ai / combat
-'machine-state'         { machine, from, to }                  machine-ai   (to: suspicious|alert|attack|calm)
+'machine-state'         { machine, state|to, prev|from }       machine-ai   (ai/index.js emits
+                                                               {machine,state,prev}; the listener also
+                                                               accepts {to,from}. to: suspicious|search|
+                                                               alert|alarm|attack|idle|patrol|calm)
 'machine-scan'          { machine, position, hit }             machine-ai
-'machine-attack-phase'  { machine, attack, phase, index }       machine-ai   (phase: windup|strike|recover)
-'arrow-nocked' / 'arrow-draw' / 'weapon-empty'  { weapon }     combat
+'machine-attack-phase'  { machine, kind, attack, phase, index? } machine-ai (phase: windup|strike|recover|
+                                                               end|cancel. `index > 0` marks the n-th
+                                                               projectile of a volley and swaps the roar
+                                                               for a launcher thump — nothing emits it
+                                                               yet, so a volley reads as one strike)
+'machine-killed'        { machine }                            machine-ai
+'arrow-hit'             { point, machine, weak, type, damage } combat   (damage picks the hit rung)
+'part-torn' / 'machine-damaged'                                combat / machine-ai
+'arrow-fired' / 'arrow-nocked' / 'arrow-draw' / 'weapon-empty' / 'weapon-switch'   combat
+'player-jump|land|mantle|dodge|splash|crouch|hurt|died|respawn'                    player-control
+'loot-rummage' / 'machine-disposed'                            focus-items / machine-ai (both silence
+                                                               the wreck's loot beacon)
+'level-up' 'skill-unlocked' 'quest-started' 'quest-complete'
+'datapoint-found' 'discovery' 'supply-cache' 'override-node'
+'hunting-ground'                                               progression (all fire the discover sting)
 'ui-nav' / 'ui-confirm' / 'ui-back' / 'ui-error' / 'ui-open' / 'ui-close'   shell-hud, shell-menus
+'inventory-open' / 'inventory-close'                           focus-items
 ```
+Two listeners are deliberate aliases with no emitter today and are kept as the cheaper contract
+should a lane want them: `'machine-suspicion' { machine, lost }` (the warble is otherwise driven
+off `machine-state`) and `'machine-looted' { machine }` (covered by `loot-rummage`).
+
 `audio` **emits** `'audio-settings-changed' { …volumes }`.
 
-`terrain.surfaceAt(x, z)` (owner `world-ground`) selects the player footstep set; the vocabulary
-`grass|meadow|moss|dirt|path|sand|silt|rock|stone|cobble|gravel|shale|metal` maps onto three sets
-and anything unknown falls back to `foot/grass`.
+`terrain.surfaceAt(x, z)` (owner `world-ground`) selects the player footstep set. **Every one of
+`Terrain.SURFACES` has its own recorded set** — `water cobble silt dirt gravel rock snow grass`
+— plus aliases (`meadow moss → grass`, `path sand → dirt`, `mud → silt`, `stone → cobble`,
+`scree shale → gravel`, `metal → rock`, `ice → snow`) so a vocabulary addition degrades to a near
+neighbour rather than all the way back to `foot/grass`. `A76-footfalls` sweeps the valley on a
+10 m × 6° polar grid and walks on every surface that sweep produces: a silent surface, or one
+that falls through to `foot/grass`, fails the gate.
 
-### 13.6 Seed bank (58 sets)
+### 13.6 Bank contents (95 sets / 149 files)
 
-`foot/{grass,dirt,rock}` ×4 · `bow/{hunter,sharpshot,war}/{nock,draw,release,flyby,empty}` ·
-`voice/<8 species>/{windup,strike}` · `mstep/{light,medium,heavy}` ×3 ·
-`hit/{plink,thunk,crunch,crit,flesh-soft,flesh-hard,ground}` ·
-`machine/{servo-loop,stagger,powerdown,scan-ping,alarm}` ·
-`aloy/{breath-in,breath-out,effort,hurt}` · `gear/{light,heavy}` ·
-`amb/{meadow,river,campfire}` (13 s stereo, crossfade-looped).
+| group | sets | what it carries |
+|---|---|---|
+| `foot/` | 8 | one per terrain surface, 4 variations each |
+| `gear/` | 2 | `light`/`heavy` strap-and-quiver foley over the harder strides |
+| `aloy/` | 6 | `effort`, `effort-hard`, `hurt`, `breath-in/out/hard` — **no VO** (D2) |
+| `bow/` | 15 | `{hunter,sharpshot,war} × {nock,draw,release,flyby,empty}` |
+| `hit/` | 7 | the ladder `plink→thunk→crunch→crit` + `flesh-soft/hard` + `ground` |
+| `status/` | 3 | `burn`/`shock`/`frost` positional loops |
+| `voice/` | 16 | `<8 species> × {windup,strike}`, spectrally distinct (A75) |
+| `idle/` | 8 | one servo idle bed **per species**, not one shared hum |
+| `mstep/` | 3 | footfall by weight class, 3 variations each |
+| `machine/` | 9 | `servo-loop stagger powerdown collapse loot-beacon scan-ping alarm warble unwarble` |
+| `amb/` | 7 | `meadow river forest ridge night` beds + `campfire` + `call-far` |
+| `music/` | 11 | 7 stems + 4 stingers (§13.7) |
 
-**No Aloy VO** (D2): breath and effort only.
+### 13.7 The adaptive score (`src/audio/music.js`)
 
-### 13.7 Still open (Wave 3, audio content half)
+Seven composed stems at **96 BPM** — bar 2.5 s, 4-bar phrase 10.0 s. All seven start at one
+`AudioContext` timestamp and **never stop**; only their gains move, so a transition can never
+land off the beat because the combat kit has been running silently in phase since the context was
+armed. Crossfades are scheduled on the bar grid derived from that origin; `quantised` is computed
+from the measured error of every transition the session actually scheduled, not asserted.
 
-The adaptive stem score (`audio-01`), per-species idle/servo variety beyond the shared loop, the
-status-effect loops (burn/shock/frost) and distant-call ambience. `A77-music-states` reports
-PENDING with that reason. The pipeline they need — bank, manifest, buses, ducker, pool, offline
-analyser — is live.
+States are *chords of stems*, not tracks: `suspicious` keeps a quarter of the exploration pad,
+`combat` keeps the tense drone under the kit. Escalation is fast (0.25 bar into combat),
+de-escalation slow (2 bars back to calm), and leaving a fight routes through a `resolve` phrase
+rather than snapping to calm. Stingers (`combat`, `resolve`, `alert`, `discover`) are one-shots
+and are deliberately **not** quantised — a stinger that waits for the bar arrives after the thing
+it reacts to.
+
+`_musicSelect()` names the state at 4 Hz from two inputs: a poll of the machine roster's FSM
+within 120 m, and hold windows stamped by the `machine-state` / attack handlers. Published:
+`audio.setMusicState(name, opts)` and `audio.sting(name, opts)`. Everything is scheduled against
+`ac.currentTime`, never gameplay `dt`, so `engine.timeScale` (Concentration, the wheel, the
+studio freeze) cannot slow the music down. If a stem fails to decode, `available` stays false and
+the pre-Round-4 procedural score runs instead of silence.
+
+`A77-music-states` drives calm → suspicious → combat → resolve through the real `machine-state`
+contract and requires every crossfade on the bar grid, real stem gains at each end of the fade,
+and exactly one combat and one resolve stinger.

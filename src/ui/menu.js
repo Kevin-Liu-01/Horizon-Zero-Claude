@@ -95,6 +95,7 @@ const DEATH_HOLD_S = 1.15;    // let the crumple play before the card takes over
 const VICTORY_S = 3.0;        // ui-13: banner, then the valley is yours again
 const GRAY_RAMP_S = 1.6;
 const CAMP = { x: 18, z: 26 };
+const START_ANG = 3.7;        // title dolly: the sector that frames best (see _dolly)
 
 /**
  * Credits rows. Provenance is copied from the manifests that are the source of
@@ -120,13 +121,18 @@ const CREDITS = [
   ] },
   { head: 'MACHINE MODELS  ·  CC0 1.0', rows: [
     ['“Robot Enemy Flying”, Animated Mech, Ultimate Monsters — Quaternius', 'quaternius.com  ·  Glinthawk, Longleg, Thunderjaw donors'],
-    ['Fox — PixelMannen, tomkranis, @AsoboStudio, @scurest', 'Khronos glTF-Sample-Assets  ·  CC0 model, CC-BY 4.0 rig / conversion'],
+    ['Fox — PixelMannen, tomkranis, @AsoboStudio, @scurest', 'Khronos glTF-Sample-Assets  ·  CC0 model, CC-BY 4.0 rig / conversion  ·  rig-pipeline reference'],
   ] },
   { head: 'ANIMATION', rows: [
     ['AnimationLibrary_Godot_Standard — 46 clips', 'CC0 1.0  ·  public/anims/LICENSE  ·  retargeted onto Aloy at boot'],
   ] },
   { head: 'AUDIO  ·  CC0 1.0', rows: [
-    ['90 files / 58 sets, synthesized by this repository', 'public/audio/MANIFEST.md  ·  tools/audio-bank.mjs + audio-recipes.js'],
+    // counted live: the bank grew from 58 sets to 95 between two waves and a
+    // hard-coded number in a credits screen is a licence claim that goes stale.
+    [() => {
+      const n = window.__CTX__?.audio?.bank?.size;
+      return n ? `${n} cues loaded, synthesized by this repository` : 'Synthesized by this repository';
+    }, 'public/audio/MANIFEST.md  ·  tools/audio-bank.mjs + audio-recipes.js'],
     ['No third-party audio is bundled', 'no attribution, share-alike or non-commercial obligation in the tree'],
   ] },
   { head: 'TYPEFACES  ·  SIL OPEN FONT LICENSE', rows: [
@@ -328,6 +334,17 @@ export class Menus {
    * appended to `game.systems` after `Player`), so the chase camera does not
    * fight it. Pure trigonometry on the existing camera — no allocation per
    * frame, nothing added to the scene.
+   *
+   * FRAMING IS THE WHOLE SHOT (V38, judged on film). The first cut put the
+   * camera 118 m up and aimed it at a point 12 m above the camp: a 27° stare
+   * straight down that pushed the horizon and the entire sky out of frame, so
+   * the title read as a muddy top-down diorama with a menu on it. A landscape
+   * needs a horizon, so the pitch is the authored quantity here, not the look
+   * target — hold it at 8.5–12° and the horizon lands a third of the way down
+   * the frame, with sky behind the wordmark and the valley under the menu. The
+   * look point is then derived from the pitch (`lookY = camY - reach·tan θ`)
+   * instead of the other way round, which is what keeps the composition steady
+   * while the height, the radius and the terrain under the camera all change.
    */
   _dolly(dt) {
     const cam = this.ctx.camera;
@@ -344,16 +361,36 @@ export class Menus {
     }
 
     // a slow arc over the valley that descends toward the camp once a key is hit
-    const closing = this.titleStage === 'press' ? 0 : clamp(t / 7.5, 0, 1);
-    const ang = -0.62 + t * 0.031 + closing * 0.10;
-    const radius = 232 - closing * 74;
-    const height = 118 - closing * 46;
+    const closing = this.titleStage === 'press' ? 0 : clamp(t / 9, 0, 1);
+    const ease = closing * closing * (3 - 2 * closing);
+    // START_ANG is a composition choice, not a default: filmed at eight points
+    // around the ring, this is the sector that puts the Tallneck's silhouette
+    // on the right third, sky in the rim's notches above the wordmark, and
+    // Mother's Watch under the menu column.
+    const ang = START_ANG + t * 0.026 + ease * 0.09;
+    const radius = 150 - ease * 34;
     const cx = CAMP.x + Math.sin(ang) * radius;
     const cz = CAMP.z + Math.cos(ang) * radius;
     const ground = terrain?.getHeight ? terrain.getHeight(cx, cz) : 0;
-    cam.position.set(cx, Math.max(ground + 26, height + ground * 0.15), cz);
-    const lookY = (terrain?.getHeight ? terrain.getHeight(CAMP.x, CAMP.z) : 0) + 12;
-    cam.lookAt(CAMP.x, lookY, CAMP.z);
+    /**
+     * ALTITUDE, measured from the ground the camera is actually over so the arc
+     * keeps its height as it crosses the hills — and kept LOW on purpose.
+     * Filmed at 118 m and at 105 m the valley reads as a beige contour map:
+     * everything the world lanes built (autumn meadow, tree silhouettes, the
+     * palisade, the campfire smoke) is below the resolution of the shot and the
+     * only things left are haze and the rim. At ~30 m the same frame has a
+     * foreground, Mother's Watch is a legible subject, and the rim ring becomes
+     * a backdrop instead of the subject. Sky is what the bowl cannot give from
+     * the inside — a 150–350 m rim at 400 m is 25–40° tall from anywhere in
+     * here — so the composition spends its top band on the rim's notches rather
+     * than pretending to a horizon it does not have.
+     */
+    const camY = ground + 32 - ease * 7;
+    cam.position.set(cx, camY, cz);
+    // 6° of tilt: meadow under the menu, camp on the third, rim behind the logo
+    const pitch = (6 + ease * 2.5) * (Math.PI / 180);
+    const reach = radius * 1.05;
+    cam.lookAt(CAMP.x, camY - reach * Math.tan(pitch), CAMP.z);
     cam.updateMatrixWorld();
   }
 
@@ -559,8 +596,8 @@ export class Menus {
         el('h4', null, s, sec.head);
         for (const [a, b] of sec.rows) {
           const r = el('div', 'mn-cred-row', s);
-          el('span', 'mn-cred-a', r, a);
-          el('span', 'mn-cred-b', r, b);
+          el('span', 'mn-cred-a', r, typeof a === 'function' ? a() : a);
+          el('span', 'mn-cred-b', r, typeof b === 'function' ? b() : b);
         }
       }
       el('div', 'mn-set-note', this.modalBody,
@@ -667,6 +704,17 @@ export class Menus {
    *                  checkpoint it wrote (position, health, pouch, inventory).
    *   'camp'       — the same, then move her to camp on the next microtask so
    *                  the restore does not put her back where she died.
+   *
+   * THE CORPSE THAT WALKED (found on film, `shots/sm-a69.png` probe). Health is
+   * set to full BEFORE the emit, and then `progression`'s `player-respawn`
+   * handler restores the checkpoint — including `health` — over the top of it.
+   * A checkpoint written while the player was already down (`machine-respawned`
+   * writes one on its own schedule) therefore restores 0 HP, and the death card
+   * hands back a player at zero who can never die again because nothing
+   * re-enters `_die()` until the next damage tick. The restore is correct to
+   * own health in general (respawning at the 40 HP you saved with is the
+   * point), so the guard is narrow: only a non-positive restore is overridden,
+   * and only on the frame after the restore has run.
    */
   respawn(mode = 'checkpoint') {
     const ctx = this.ctx;
@@ -679,8 +727,14 @@ export class Menus {
       if (mode === 'camp') { p.position.set(CAMP.x, 0, CAMP.z); p._snapToGround?.(); }
     }
     ctx.events?.emit?.('player-respawn', { source: 'menus', mode });
-    if (mode === 'camp' && p) {
-      queueMicrotask(() => { p.position.set(CAMP.x, 0, CAMP.z); p._snapToGround?.(); });
+    if (p) {
+      queueMicrotask(() => {
+        if (mode === 'camp') { p.position.set(CAMP.x, 0, CAMP.z); p._snapToGround?.(); }
+        if (!(p.health > 0)) {
+          p.health = p.maxHealth;
+          ctx.events?.emit?.('player-hurt', { health: p.health, max: p.maxHealth });
+        }
+      });
     }
     if (!ctx.params?.has?.('shot')) ctx.input?.requestPointerLock?.();
     this._log.push({ what: 'respawn', mode });
@@ -813,6 +867,31 @@ export class Menus {
     };
     window.addEventListener('keydown', this._onKey, true);
 
+    /**
+     * HOLD-VS-TOGGLE, the half of it this lane can honestly deliver.
+     *
+     * `player.js` binds `KeyC` down → `toggleCrouch()` and never looks at the
+     * key again, so crouch is a toggle and the accessibility finding's "hold"
+     * option would have been a dead radio button. This lane cannot edit
+     * player.js — but `setCrouch(v)` is published, so HOLD is one keyup away:
+     * the down edge still toggles her in through the owning lane's own path,
+     * and this releases her on the up edge. Nothing is intercepted and nothing
+     * is duplicated; in TOGGLE mode (the default) this listener does nothing at
+     * all. Aim and sprint cannot be done this way — both are read as raw
+     * `isDown` state inside player.js's update — and stay marked STORED in the
+     * panel until `player-control` reads `settings.holdAim` / `holdSprint`
+     * (docs/ROUND4-SHELL-MENUS.md §Requests).
+     */
+    this._onKeyUp = (e) => {
+      if (e.code !== 'KeyC') return;
+      const ctx = this.ctx;
+      if (this.settings.get('holdCrouch') !== 'hold') return;
+      if (ctx.state !== 'playing' && !ctx.params?.has?.('shot')) return;
+      const p = ctx.player;
+      if (p?.crouching) p.setCrouch?.(false);
+    };
+    window.addEventListener('keyup', this._onKeyUp, true);
+
     this._onClickAnywhere = () => {
       if (this.ctx.state === 'title' && this.titleStage === 'press') this._titleAdvance();
     };
@@ -859,7 +938,26 @@ export class Menus {
   /* frame                                                                 */
   /* ===================================================================== */
 
-  /** Simulation slice — only runs in the live states. */
+  /**
+   * Simulation slice — only runs in the live states, and only for things that
+   * belong to the world: the title camera and the fog the player's feet reveal.
+   *
+   * NO CARD TIMER LIVES HERE. They used to, and both were wrong for it:
+   *
+   *   · `dt` is SIMULATED time. `main.js` bounds a frame to 0.05 s across at
+   *     most 3 sub-steps, so on a frame slower than 50 ms the simulation
+   *     deliberately falls behind the wall clock — measured at 0.9× during a
+   *     gate run, which turned "a 3 second banner" into 4.2 real seconds and
+   *     failed `A68` on a build that was working. `engine.timeScale` (studio
+   *     freeze, Concentration slow-mo, hitstop) scales it further: a hitstop on
+   *     the killing blow would stretch the victory card.
+   *   · the death card's own hold was counted TWICE — once here and once in
+   *     `_present()`, which also runs while `state === 'dead'` — so the 1.15 s
+   *     crumple window was really ~0.6 s.
+   *
+   * A card the player is waiting on is measured in seconds they can feel. Both
+   * timers now run once, on the real clock, in `_present()`.
+   */
   update(dt) {
     const ctx = this.ctx;
     const state = ctx.state;
@@ -875,18 +973,6 @@ export class Menus {
       if (this._lastState !== 'playing') this._paintStatus();
     }
 
-    if (state === 'dead' && this.deathState === 'ramp') {
-      this._deathT += dt;
-      if (this._deathT >= DEATH_HOLD_S) this._showDeathChoice();
-    }
-
-    if (this._victoryT >= 0) {
-      this._victoryT += dt;
-      const k = clamp(this._victoryT / VICTORY_S, 0, 1);
-      if (this._victoryFill) this._victoryFill.style.width = `${(k * 100).toFixed(1)}%`;
-      if (this._victoryT >= VICTORY_S) this._resumeFromVictory();
-    }
-
     this._lastState = state;
   }
 
@@ -897,7 +983,6 @@ export class Menus {
   _present(now) {
     const dtReal = Math.min(0.1, (now - this._rafLast) / 1000);
     this._rafLast = now;
-    const ctx = this.ctx;
 
     // grayscale ramp: starts on death, holds under the card, released on respawn
     const wantGray = this.deathState ? 1 : 0;
@@ -909,14 +994,21 @@ export class Menus {
       this._applyGray(this.gray);
     }
 
-    // the death card's own timer keeps running with the simulation frozen
+    /**
+     * THE TWO CARD TIMERS, counted once each, on the wall clock (see
+     * `update()` for why they are not in the simulation slice). This loop runs
+     * whatever the world is doing — frozen under the hub, frozen under the
+     * death card, or in hitstop — so the promise "the banner lasts three
+     * seconds" is one the shell can actually keep.
+     */
     if (this.deathState === 'ramp') {
       this._deathT += dtReal;
       if (this._deathT >= DEATH_HOLD_S) this._showDeathChoice();
     }
-    // ... and so does victory's, if the world was frozen under it
-    if (this._victoryT >= 0 && ctx.state !== 'victory' && ctx.state !== 'playing') {
+    if (this._victoryT >= 0) {
       this._victoryT += dtReal;
+      const k = clamp(this._victoryT / VICTORY_S, 0, 1);
+      if (this._victoryFill) this._victoryFill.style.width = `${(k * 100).toFixed(1)}%`;
       if (this._victoryT >= VICTORY_S) this._resumeFromVictory();
     }
 
@@ -986,6 +1078,7 @@ export class Menus {
   dispose() {
     cancelAnimationFrame(this._rafId);
     window.removeEventListener('keydown', this._onKey, true);
+    window.removeEventListener('keyup', this._onKeyUp, true);
     window.removeEventListener('mousedown', this._onClickAnywhere, true);
     this.beacon.dispose();
     this.root?.remove();

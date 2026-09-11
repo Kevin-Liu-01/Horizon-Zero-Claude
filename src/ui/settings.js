@@ -81,9 +81,12 @@ export const SCHEMA = [
     { id: 'holdSprint', kind: 'choice', label: 'Sprint', dflt: 'hold', pending: true,
       options: [['hold', 'HOLD'], ['toggle', 'TOGGLE']],
       apply: (v, ctx) => { ctx.settings.holdSprint = v; } },
+    // LIVE, not stored: `menu.js` releases the crouch on the KeyC up-edge when
+    // this reads 'hold'. The down-edge still runs player.js's own
+    // `toggleCrouch()`, so TOGGLE is byte-for-byte the shipped behaviour.
     { id: 'holdCrouch', kind: 'choice', label: 'Crouch', dflt: 'toggle',
       options: [['hold', 'HOLD'], ['toggle', 'TOGGLE']],
-      note: 'Crouch ships as a toggle (camera-feel-04).',
+      note: 'Toggle is the default (camera-feel-04); HOLD releases her on key-up.',
       apply: (v, ctx) => { ctx.settings.holdCrouch = v; } },
   ] },
   { group: 'CAMERA', rows: [
