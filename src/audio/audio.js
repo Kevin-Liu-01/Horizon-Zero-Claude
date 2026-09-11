@@ -27,6 +27,7 @@
  */
 
 import { SampleBank } from './bank.js';
+import { clockFor } from './clock.js';
 import { buildBuses, Ducker, DEFAULT_VOLUMES, VOLUME_BUSES } from './buses.js';
 import { SpatialPool, SpatialChain, LoopEmitter, syncListener } from './spatial.js';
 import { probeSpatial, probeBuffer, bandDistance, beatGrid } from './probe.js';
@@ -281,6 +282,14 @@ export class GameAudio {
       return; // no WebAudio: stay silent, never crash the game
     }
     this.ac = ac;
+    /**
+     * Two clocks, one context (src/audio/clock.js). `_now()` is the render
+     * clock every schedule goes through; `_mono()` is the monotonic clock every
+     * `now + duration` bookkeeping compare goes through, so a context with no
+     * output device (headless, or a real machine that lost its audio device)
+     * cannot wedge the voice cap, the chain pool or the bar grid forever.
+     */
+    this.clock = clockFor(ac);
 
     // --- v3 mix graph. The bus names below are the same ones every existing
     //     procedural voice already writes to, so the whole synth stack keeps
@@ -598,7 +607,16 @@ export class GameAudio {
 
   /* ------------------------------- helpers ------------------------------- */
 
+  /** Scheduling time: what Web Audio accepts. See src/audio/clock.js. */
   _now() { return this.ac.currentTime; }
+
+  /**
+   * Bookkeeping time: monotonic, and identical to `_now()` in any context whose
+   * render thread is alive. Every `now + duration` that this file later
+   * compares against must be written AND read through this, never through
+   * `_now()` — mixing the two is the one way to misuse the split.
+   */
+  _mono() { return this.clock ? this.clock.now() : this.ac.currentTime; }
 
   /**
    * Allocate a one-shot output gain (voice). Returns null when the cap is hit
@@ -606,11 +624,15 @@ export class GameAudio {
    */
   _voice(dur, vol, pan, bus) {
     const ac = this.ac;
-    const now = ac.currentTime;
+    const now = this._mono();
     const ends = this._voiceEnds;
-    for (let i = ends.length - 1; i >= 0; i--) {
-      if (ends[i] <= now) { ends[i] = ends[ends.length - 1]; ends.pop(); }
-    }
+    // Compact in place, forwards. The previous sweep walked BACKWARDS while
+    // swapping the last element into the hole: the swapped-in value lands at an
+    // index the loop has already passed, so an expired entry could survive the
+    // sweep that was supposed to collect it. Allocation-free either way.
+    let w = 0;
+    for (let i = 0; i < ends.length; i++) if (ends[i] > now) ends[w++] = ends[i];
+    ends.length = w;
     // While suspended currentTime is frozen; skip bookkeeping so the cap
     // can't wedge permanently (nodes are inert anyway).
     if (ac.state === 'running') {
@@ -770,9 +792,10 @@ export class GameAudio {
     if (!this.ac || !this.pool) return false;
     const picked = this.bank.pick(setId);
     if (!picked) { this._sampleCounts.missing++; return false; }
-    const now = this.ac.currentTime;
+    const now = this._mono();        // pool reclaim + endsAt live on this clock
+    const t = this._now();           // everything handed to Web Audio on this one
     const priority = opts.priority ?? PRI.hit;
-    const chain = this.pool.acquire(priority, now);
+    const chain = this.pool.acquire(priority, now, t);
     if (!chain) { this._sampleCounts.refused++; return false; }
 
     const category = opts.category || 'sfx';
@@ -798,7 +821,7 @@ export class GameAudio {
     src.buffer = picked.buffer;
     if (opts.rate) src.playbackRate.value = opts.rate;
     src.connect(vg);
-    src.start(now);
+    src.start(t);
     chain.voiceGain = vg;
     chain.source = src;
     const dur = picked.buffer.duration / (opts.rate || 1);
@@ -827,7 +850,7 @@ export class GameAudio {
     src.buffer = picked.buffer;
     if (opts.rate) src.playbackRate.value = opts.rate;
     src.connect(g);
-    src.start(this.ac.currentTime);
+    src.start(this._now());
     src.onended = () => { try { src.disconnect(); } catch { /* torn down */ } };
     if (opts.duck) this.ducker.trigger(opts.duck, opts.duckHold ?? 0.4);
     this._note(setId);
@@ -894,7 +917,11 @@ export class GameAudio {
     // field rather than hearing it from over there (which is the zone emitter)
     if (this._waterNear(x, z, 18)) return 'amb/river';
 
-    const s = this._surfaceKey;
+    // ASK THE GROUND, don't remember the last footstep. This used to read the
+    // key cached by `_footSet()`, so the bed only ever changed on a step: fast
+    // travel, a respawn, a fall onto a ledge or a studio camera move all left
+    // the meadow playing on bare rock until she walked.
+    const s = this._surfaceAt(x, z);
     if (s === 'water' || s === 'silt' || s === 'cobble') return 'amb/river';
     // bare rock above the meadow: wind with an edge and nothing living in it
     if (s === 'rock' || s === 'gravel' || s === 'snow') return 'amb/ridge';
@@ -1261,16 +1288,30 @@ export class GameAudio {
 
   /* -------------------------- surface + species ------------------------- */
 
-  /** Footstep set for where the player is standing (`audio-04`). */
-  _footSet() {
-    const p = this.ctx.player;
+  /**
+   * The surface under a world point, cached for the debug overlay.
+   *
+   * Both consumers need the ground under a *point*, not "the ground where a
+   * foot last landed": the bed selector reads it at 2 Hz wherever the player
+   * is standing, and the footstep reads it at the moment of the step. Sharing
+   * one query is also what keeps the two honest with each other — the bed and
+   * the boots can never disagree about what she is standing on.
+   */
+  _surfaceAt(x, z) {
     const t = this.ctx.terrain;
-    if (p && t && typeof t.surfaceAt === 'function') {
+    if (t && typeof t.surfaceAt === 'function') {
       try {
-        const s = t.surfaceAt(p.position.x, p.position.z);
+        const s = t.surfaceAt(x, z);
         if (s) { this._surface = String(s); this._surfaceKey = this._surface; }
       } catch { /* terrain not ready */ }
     }
+    return this._surfaceKey;
+  }
+
+  /** Footstep set for where the player is standing (`audio-04`). */
+  _footSet() {
+    const p = this.ctx.player;
+    if (p) this._surfaceAt(p.position.x, p.position.z);
     return SURFACE_SET[this._surface] || 'foot/grass';
   }
 
@@ -1359,7 +1400,7 @@ export class GameAudio {
       chain.route('ambience');
       chain.busy = true;
       chain.priority = PRI.ambience;
-      chain.startedAt = this.ac.currentTime;
+      chain.startedAt = this._mono();
       chain.endsAt = Infinity;
       chain.tag = 'servo';
       chain.tracked = machine;
@@ -1415,7 +1456,7 @@ export class GameAudio {
     if (!entry) return;
     entry.loop.stop(fade);
     // hold the chain for the length of the tail, then the sweep takes it back
-    entry.chain.endsAt = this.ac.currentTime + fade + 0.1;
+    entry.chain.endsAt = this._mono() + fade + 0.1;
     entry.chain.tracked = null;   // a dead machine may be recycled by the pool
     this._machineLoops.delete(machine);
     this._rebuildLoopList();
@@ -1430,7 +1471,7 @@ export class GameAudio {
   _reclaimLoopChains() {
     const chains = this._loopChains;
     if (!chains) return;
-    const now = this.ac.currentTime;
+    const now = this._mono();
     for (let i = 0; i < chains.length; i++) {
       const c = chains[i];
       if (!c.busy || c.endsAt > now) continue;
@@ -2541,6 +2582,89 @@ export class GameAudio {
       }
     }));
 
+    /* --- the spear (audio, for `combat`'s melee.js) ----------------------
+     *
+     * The melee set was rendered into the bank but nothing ever played it, so
+     * the spear — the payoff the stealth grass and the shock-stun exist to set
+     * up — landed in total silence. Four rungs, chosen from the same fields
+     * the feedback layer uses so what you hear and what you see agree:
+     *
+     *   light   a fast tap;
+     *   heavy   the committed two-hand swing;
+     *   crit    the Critical Hit on a stunned machine — loudest, ducks the mix;
+     *   silent  Silent Strike, the from-behind kill. Deliberately NOT the
+     *           loudest thing in the game: it is the sound of not being heard,
+     *           and it plays under a duck so the valley stays quiet around it.
+     *
+     * `melee/whoosh` layers under every connected hit as the swing's air. A
+     * MISSED swing is still silent, because `combat` publishes no swing event
+     * — see the API request in the audio lane report (`melee-swing`).
+     */
+    ev.on('melee-hit', armed((e = {}) => {
+      const pos = e.point ?? e.machine?.position ?? null;
+      at(pos, 0.8);
+      const rung = e.crit ? 'melee/crit' : e.heavy ? 'melee/heavy' : 'melee/light';
+      // air first, contact over it — one swing, not two events
+      this.playAt('melee/whoosh', pos, {
+        volume: e.heavy ? 0.7 : 0.5, priority: PRI.hit,
+        rate: e.heavy ? 0.92 : 1.06 + Math.random() * 0.08,
+      });
+      const hit = this.playAt(rung, pos, {
+        volume: e.crit ? 1 : e.heavy ? 0.95 : 0.8,
+        priority: e.crit ? PRI.big : PRI.hit,
+        rate: 0.96 + Math.random() * 0.08,
+        duck: e.crit ? 0.4 : 0,
+      });
+      // the bank is the voice; the synth stays as the no-bank fallback
+      if (!hit) this._clank(this._pan, Math.max(this._att, 0.35), !!e.crit);
+    }));
+
+    ev.on('silent-strike', armed((e = {}) => {
+      const pos = e.machine?.position ?? null;
+      at(pos, 0.75);
+      if (!this.playAt('melee/silent', pos, {
+        volume: 0.85, priority: PRI.big, duck: 0.3,
+      })) this._clank(this._pan, 0.5, true);
+    }));
+
+    /* --- Tripcaster + Ropecaster ----------------------------------------
+     * Both weapons were fully silent for the same reason. `trap-placed` is
+     * the quiet confirmation that the wire took (it is placed at the player,
+     * so it reads close); `trap-triggered` is the blast, which keeps the
+     * existing elemental detonation on top of it.
+     */
+    ev.on('trap-placed', armed((e = {}) => {
+      const pos = e.b ?? e.a ?? this.ctx.player?.position ?? null;
+      at(pos, 0.85);
+      this.playAt('trap/place', pos, { volume: 0.8, priority: PRI.item });
+    }));
+
+    ev.on('trap-triggered', armed((e = {}) => {
+      const pos = e.point ?? e.machine?.position ?? null;
+      at(pos, 0.9);
+      if (!this.playAt('trap/trigger', pos, {
+        volume: 1, priority: PRI.big, duck: 0.4,
+      })) this._explosion(this._pan, Math.max(this._att, 0.5), 0.9);
+      this._lastTenseT = this._t;
+    }));
+
+    ev.on('rope-attached', armed((e = {}) => {
+      const pos = e.machine?.position ?? null;
+      at(pos, 0.8);
+      // pitch climbs with each rope so the player HEARS the tie-down filling
+      const need = Math.max(1, e.need || 1);
+      const k = Math.min(1, (e.ropes || 1) / need);
+      this.playAt('rope/attach', pos, {
+        volume: 0.85, priority: PRI.hit, rate: 0.94 + k * 0.18,
+      });
+    }));
+
+    ev.on('machine-tied', armed((e = {}) => {
+      const pos = e.machine?.position ?? null;
+      at(pos, 0.9);
+      this.playAt('rope/tie', pos, { volume: 1, priority: PRI.big, duck: 0.3 });
+    }));
+
     // v2: pickups — burst-staggered so a Take All reads as a fast tick roll
     ev.on('item-gained', armed((e = {}) => {
       const nowMs = performance.now();
@@ -2955,7 +3079,7 @@ export class GameAudio {
     const lx = L.x; const ly = L.y; const lz = L.z;
 
     const chains = this.pool.chains;
-    const nowCtx = this.ac.currentTime;
+    const nowCtx = this._mono();
     for (let i = 0; i < chains.length; i++) {
       const c = chains[i];
       if (!c.busy) continue;
@@ -3271,7 +3395,7 @@ export class GameAudio {
     if (!this.ac) {
       return { contextState: 'uninitialized', activeVoices: 0, layers: {} };
     }
-    const now = this.ac.currentTime;
+    const now = this._mono();
     let active = 0;
     for (let i = 0; i < this._voiceEnds.length; i++) {
       if (this._voiceEnds[i] > now) active++;
@@ -3318,6 +3442,10 @@ export class GameAudio {
       },
       music: this.music ? this.music.debug() : null,
       zones: this.zones ? this.zones.debug() : null,
+      // `clock.stalled === true` is the single most useful thing to know when
+      // the mix looks wired but sounds like nothing: this context has no output
+      // device (src/audio/clock.js).
+      clock: this.clock ? this.clock.debug() : null,
       counts: { ...this._counts },
       // v3 — the numbers the gates read
       bank: this.bank.audit(),

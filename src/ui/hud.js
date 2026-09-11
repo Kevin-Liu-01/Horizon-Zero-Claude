@@ -29,6 +29,31 @@ import { LOOT_POPUP } from './inventory.js';
  *   /-stealth-feedback /-crafting-feedback /-healing-readability
  *   combat-concentration-presentation · combat-hit-feedback-faint (numbers)
  *
+ * TWO INVARIANTS THIS FILE HAS ALREADY BROKEN ONCE — do not re-break them:
+ *   1. `interactables.current` is `{ entry, label, holdProgress }`. The world
+ *      position is on `.entry`, NOT on the record. Reading the record made
+ *      ui-16's projection branch dead code and parked the prompt on the
+ *      screen-fixed fallback it exists to delete. Gate `A71f-interact-anchor`.
+ *   2. The vitals' 4 s hide and the quest tracker's 26 s hide are independent
+ *      timers and must never share an opacity. The tracker is a SIBLING of
+ *      `.hzc-vitals` inside `.hzc-topleft`; fading `.hzc-topleft` zeroes the
+ *      tracker in every calm state, boot included. Gate `A71g-tracker-live`.
+ *   3. The world-projected layer (`.hzc-world`) is scaled ONCE, by the JS
+ *      transform. Its stylesheet resets `--s` to 1 so its rules are a base
+ *      size; a `calc(Npx * var(--s))` in there is scaled twice (s²) and paints
+ *      a 224 px plate at 809 px and 11 px type at 7.7 px. Its multiplier is
+ *      `_wscale` (= `_scale` floored at 1), not `_scale`, because that base
+ *      type IS the 11 px floor. Gates `A71b-hud-scale-floor` / `A71c`.
+ *   4. A world-projected element is anchored by its own transform and nothing
+ *      else. `.hzc-mhb` carried a -112 px margin AND a translate(-50%): two
+ *      centrings, so the plate painted half its width left of its machine at
+ *      every scale, and the melee clamp pushed it into the quest tracker it
+ *      was written to clear. Gates `A71c-hud-surfaces` (centre vs. re-projected
+ *      anchor, two scales) and `A71h-mhb-melee-clear`.
+ *   `__HUD_DEBUG__.surfaces()` grades EFFECTIVE opacity (the product up the
+ *   ancestor chain) and EFFECTIVE type size (px times the transform chain),
+ *   which is what makes (2), (3) and (4) observable at all.
+ *
  * What this lane PUBLISHES back, so no other lane has to edit this file:
  *   ctx.hud.setHudScale(mult)   `shell-menus` binds its accessibility slider
  *                               to this (camera-feel-13); 0.7–2, clamped.
@@ -41,7 +66,8 @@ import { LOOT_POPUP } from './inventory.js';
  *   ctx.hud.setPaused(on)       pause state when `shell-menus` is absent.
  *
  * Gates: `A71-compass-truth`, `A71b-hud-scale-floor`, `A71c-hud-surfaces`,
- * `A71d-conc-veil`, `A71e-tutorial-cards`, `V37-hud-language`
+ * `A71d-conc-veil`, `A71e-tutorial-cards`, `A71f-interact-anchor`,
+ * `A71g-tracker-live`, `A71h-mhb-melee-clear`, `V37-hud-language`
  * (tools/gates.round4.shell-hud.mjs) plus the Round-3 `A1` / `A9` / `A10` /
  * `V10-hud-language` which must keep passing.
  *
@@ -71,11 +97,51 @@ const GHOST_HOLD_S = 0.45;        // damage-delta ghost lingers before draining
 const GHOST_DRAIN = 55;           // ghost drain rate, % of bar per second
 // toast suppression window after the take-all popup claimed a loot event (ms)
 const LOOT_CLAIM_MS = 400;
+/** ui-16: metres above an interactable's own origin that the [E] ring rides.
+ *  Shared by the renderer and the audit so the two can never drift apart. */
+const PROMPT_H = 1.1;
 
 /** ui-06: never more than three projected machine bars on screen at once. */
 const MHB_CAP = 3;
 const MHB_HOLD_S = 5;             // seconds a bar survives after its last hit
 const MHB_RANGE = 120;            // metres past which a bar is not worth drawing
+/**
+ * ui-06, the melee case. A Sawtooth that closes to 3 m projects its head-anchor
+ * far ABOVE the top of the screen, and the plate either vanished or rode up
+ * into the compass ribbon — where a plate pinned to the top edge reads as
+ * exactly the boss bar this finding deleted. Filmed twice at
+ * shots/gates/V37-hud-language.png. The plate is clamped below the ribbon
+ * instead, still tracking the machine horizontally, never on the edge.
+ *
+ * THE CLAMP IS IN PAINTED PIXELS, and the two things it has to clear scale by
+ * DIFFERENT multipliers: the top-left HUD furniture scales with `_scale`, the
+ * plate itself with `_wscale`. So the pads are split into a base (measured on
+ * the furniture at --hud-scale 1) plus the plate's own painted height, instead
+ * of one pre-added number that was only true at scale 1:
+ *   MHB_TOP_BASE 80  = compass bottom (74) + gap        -> + plate height
+ *   MHB_EYE_BASE 147 = stealth-eye bottom (141) + gap   -> + plate height
+ * At scale 1 those resolve to the same 121 / 188 px they always did.
+ */
+const MHB_TOP_BASE = 80;
+const MHB_EYE_BASE = 147;
+/** fallback painted plate height; the real one is measured per slot. */
+const MHB_PLATE_H = 41;
+/**
+ * …and once it is clamped it must not print over the vitals + quest tracker,
+ * which own the first ~330 px of the top-left (measured tracker rect: x 28..330
+ * at scale 1). This is the COLUMN'S RIGHT EDGE plus a gap — the plate's own
+ * half-width is added to it, because a plate is centred on its x, not hung off
+ * it. Treating this number as the centre parked the box at [132, 356] — i.e.
+ * straight through the tracker it was supposed to clear.
+ */
+const MHB_SAFE_L = 344;
+/**
+ * The stealth eye lives directly under the compass (measured: y 84..141,
+ * x centre +/-29, plus its label). A clamped plate whose 224 px body overlaps
+ * that column drops below the eye instead of printing across it.
+ */
+const MHB_EYE_HALF = 48;
+const MHB_HALF_W = 112;
 
 /** stealth-awareness-indicator-fidelity: show from a whisper of suspicion. */
 const AWARE_MIN_SUSPICION = 0.04;
@@ -90,6 +156,15 @@ const AWARE_EDGE_MARGIN = 44;
  */
 const HUD_SCALE_MIN = 0.85;
 const HUD_SCALE_MAX = 1.9;
+/**
+ * ui-15, the world layer. `.hzc-world` resets `--s` to 1, so its type is laid
+ * out at its BASE size — and the smallest base size in there is exactly 11 px,
+ * the floor itself (`.hzc-int-label`, `.hzc-objmark-dist/-label`). A transform
+ * scale below 1 would therefore paint world-projected type UNDER the floor no
+ * matter what the stylesheet promises. The HUD slider may grow these markers;
+ * it may not shrink them past legibility. Gate: `A71b-hud-scale-floor`.
+ */
+const WORLD_SCALE_MIN = 1;
 const HUD_REF_W = 1600;
 const HUD_REF_H = 900;
 
@@ -284,6 +359,8 @@ export class HUD {
     this._forceVw = 0;             // debug-only viewport override (see __HUD_DEBUG__)
     this._forceVh = 0;
     this._scale = 1;
+    /** world-projected multiplier — `_scale` floored at WORLD_SCALE_MIN. */
+    this._wscale = 1;
     this._t = 0;
 
     this._v = new THREE.Vector3(); // scratch for projections
@@ -439,7 +516,21 @@ export class HUD {
     const tl = div('hzc-topleft', root);
     this._topleftEl = tl;
 
-    const hrow = div('hzc-healthrow', tl);
+    /**
+     * The vitals' dynamic hide (4 s, full health) and the tracker's (26 s, no
+     * objective change) are DELIBERATELY different timers, so they cannot
+     * share one opacity: `.hzc-topleft.idle` used to zero both, which meant
+     * the quest tracker — including the game's opening instruction at boot,
+     * where `_vitalsIdleT` starts already past threshold — was invisible in
+     * every calm full-health state. The vitals now fade inside their own
+     * wrapper and `.hzc-track` is its sibling, owning its own `.idle`.
+     * `.hzc-topleft` keeps only position + the `low`/`healing` state classes
+     * its descendant selectors read. Gate: `A71g-tracker-live`.
+     */
+    const vitals = div('hzc-vitals', tl);
+    this._vitalsEl = vitals;
+
+    const hrow = div('hzc-healthrow', vitals);
     const hb = div('hzc-healthbar', hrow);
     this._healthGhost = div('hzc-healthghost', hb);
     this._healthFill = div('hzc-healthfill', hb);
@@ -450,7 +541,7 @@ export class HUD {
     }
     this._healthNum = div('hzc-health-num', hrow, '<b>100</b><span>/100</span>');
 
-    const pr = div('hzc-pouchrow', tl);
+    const pr = div('hzc-pouchrow', vitals);
     this._pouchRow = pr;
     const pbar = div('hzc-pouchbar', pr);
     this._pouchFill = div('hzc-pouchfill', pbar);
@@ -696,8 +787,8 @@ export class HUD {
     }
     return {
       el, plate, aware, awareCircle: aware.firstChild, name, ghost, fill, elemEls,
-      m: null, vis: null, nameSig: '', w: -1, ghostW: -1, ghostHold: 0,
-      awareSig: '', elemSig: '',
+      m: null, vis: null, nameSig: '', w: -1, ghostW: -1, ghostHold: 0, clamped: null,
+      awareSig: '', elemSig: '', h: 0,
     };
   }
 
@@ -717,6 +808,7 @@ export class HUD {
     const v = Math.min(2.6, Math.max(0.7, auto * (Number(s.hudScale) || 1)));
     if (Math.abs(v - this._scale) < 0.001) return;
     this._scale = v;
+    this._wscale = Math.max(WORLD_SCALE_MIN, v);
     this.rootEl.style.setProperty('--hud-scale', v.toFixed(3));
   }
 
@@ -759,7 +851,37 @@ export class HUD {
     });
   }
 
+  /**
+   * The accumulated transform scale from an element up to <body> — i.e. how
+   * much bigger or smaller the browser PAINTED it than it laid it out.
+   * `seen` is false when nothing in the chain has been transformed yet, so a
+   * caller can tell "measured 1" from "never positioned".
+   */
+  _paintScale(el) {
+    let k = 1, seen = false;
+    for (let n = el; n && n !== document.body; n = n.parentElement) {
+      const t = getComputedStyle(n).transform;
+      if (!t || t === 'none') continue;
+      const nums = t.slice(t.indexOf('(') + 1, -1).split(',').map((v) => parseFloat(v));
+      const f = Math.hypot(nums[0], nums[1]);
+      if (Number.isFinite(f) && f > 0) { k *= f; if (Math.abs(f - 1) > 1e-3) seen = true; }
+    }
+    return { k, seen };
+  }
+
+  /**
+   * ui-15. Reports the EFFECTIVE type size — the stylesheet's px times every
+   * transform between the element and the screen. Reading `fontSize` alone is
+   * how `.hzc-mhb-name` shipped a round at a painted 9.35 px while this audit
+   * answered 11: the stylesheet said 11, and the transform that halved it was
+   * invisible from here. For the same reason the probe list now contains the
+   * world-projected layer, which it never did — the blind spot that also let
+   * the ui-16 prompt ride the wrong anchor for a round.
+   */
   _scaleAudit() {
+    const W = 'world';                    // scaled by `_wscale` in the transform
+    const mhb = this._mhbSlots.find((m) => m.vis) ?? this._mhbSlots[0];
+    const dmg = this._dmgPool.find((d) => d.active);
     const probe = [
       // the <b> is the numeral that carries the font size; the row around it
       // has none of its own and would report the document default (16 px) at
@@ -772,21 +894,39 @@ export class HUD {
       ['toolCount', this._toolRow.querySelector('.hzc-tool-n')],
       ['eye', this._eyeLabel],
       ['tip', this._tipBody],
+      ['mhbName', mhb?.name, W],
+      ['mhbLevel', mhb?.name?.querySelector('.lv'), W],
+      ['interact', this._intLabel, W],
+      ['objDist', this._objDiamondDist, W],
+      ['objLabel', this._objDiamondLabel, W],
+      // the damage layer sizes each number inline (already scaled once); the
+      // only transform on it is the pop-in curve, so measurement is the truth.
+      ['damage', dmg?.el, null],
     ];
     const fonts = {};
+    const cssFonts = {};
     let min = Infinity;
-    for (const [k, el] of probe) {
+    let minKey = null;
+    for (const [k, el, layer] of probe) {
       if (!el) continue;
-      const px = parseFloat(getComputedStyle(el).fontSize) || 0;
+      const css = parseFloat(getComputedStyle(el).fontSize) || 0;
+      const p = this._paintScale(el);
+      // measured when there IS a transform to measure; otherwise the layer's
+      // declared multiplier, never a silent 1.
+      const mult = p.seen ? p.k : (layer === W ? this._wscale : 1);
+      const px = css * mult;
+      cssFonts[k] = +css.toFixed(2);
       fonts[k] = +px.toFixed(2);
-      if (px > 0) min = Math.min(min, px);
+      if (px > 0 && px < min) { min = px; minKey = k; }
     }
     return {
       scale: +this._scale.toFixed(3),
+      worldScale: +this._wscale.toFixed(3),
       setting: this.ctx.settings?.hudScale ?? 1,
       vw: this._vw, vh: this._vh,
       minFontPx: Number.isFinite(min) ? +min.toFixed(2) : null,
-      fonts,
+      minFontEl: minKey,
+      fonts, cssFonts,
     };
   }
 
@@ -811,6 +951,14 @@ export class HUD {
       const m = e?.machine;
       if (!m) return;
       this._combatIdleT = 0;
+      /**
+       * ui-07's dynamic hide is about CALM, and a hit landing is not calm. The
+       * vitals used to key off her own health alone, so a full-health fight —
+       * the normal opening of every encounter — was fought with no health bar
+       * on screen at all, and the bar only appeared once she was already hurt.
+       * Dealing damage pokes the same 4 s window taking damage does.
+       */
+      this._vitalsIdleT = 0;
       const rec = this._engage(m);
       rec.hold = MHB_HOLD_S;
       rec.ghostHold = GHOST_HOLD_S;
@@ -1181,7 +1329,9 @@ export class HUD {
     const s = this._scale;
     if (dmg > 0) {
       const base = (15 + 30 * Math.pow(frac, 0.55)) * s;
-      const px = e.weak ? Math.max(18, base * 1.28) : Math.max(14, base);
+      // 15 px, not 14: the pop-in curve opens at 0.82x, so a 14 px floor
+      // painted 11.5 px — on the 11 px line rather than clear of it.
+      const px = e.weak ? Math.max(18, base * 1.28) : Math.max(15, base);
       this._popNumber(point, String(dmg), e.weak ? 'weak' : '', e.weak ? 1.15 : 0.92,
         Math.min(52, px));
     }
@@ -1449,13 +1599,16 @@ export class HUD {
     const held = !!this.ctx.input?.keys?.has?.('KeyH');
     this._reveal = held ? 1 : Math.max(0, this._reveal - dt * 3);
     const engaged = hp < 0.999 || healing || this._hurtFlash > 0.02
-      || this._anyHostile || gq > w + 0.25 || this._reveal > 0.01;
+      || this._anyHostile || this._engaged.size > 0
+      || gq > w + 0.25 || this._reveal > 0.01;
     if (engaged) this._vitalsIdleT = 0;
     else this._vitalsIdleT += dt;
     const idle = this._vitalsIdleT > VITALS_IDLE_S;
     if (idle !== this._lastIdle) {
       this._lastIdle = idle;
-      this._topleftEl.classList.toggle('idle', idle);
+      // the WRAPPER, not `.hzc-topleft` — the tracker is its sibling and runs
+      // its own 26 s timer (see `_build`).
+      this._vitalsEl.classList.toggle('idle', idle);
     }
     this.rootEl.classList.toggle('reveal', this._reveal > 0.01);
   }
@@ -1842,19 +1995,48 @@ export class HUD {
         if (slot.vis !== false) { slot.el.style.visibility = 'hidden'; slot.vis = false; }
         continue;
       }
-      const x = (this._v.x * 0.5 + 0.5) * this._vw;
-      const y = (-this._v.y * 0.5 + 0.5) * this._vh;
-      if (x < -160 || x > this._vw + 160 || y < -80 || y > this._vh + 80) {
+      let x = (this._v.x * 0.5 + 0.5) * this._vw;
+      let y = (-this._v.y * 0.5 + 0.5) * this._vh;
+      // Off the sides or off the BOTTOM is genuinely out of frame. Off the top
+      // is a machine standing on top of you — see MHB_TOP_PAD.
+      if (x < -160 || x > this._vw + 160 || y > this._vh + 80) {
         if (slot.vis !== false) { slot.el.style.visibility = 'hidden'; slot.vis = false; }
         continue;
       }
+      /**
+       * The plate is drawn bottom-centre on (x, y) — `transform-origin: 0 0`
+       * plus `translate(x,y) scale(ws) translate(-50%,-100%)` puts its painted
+       * box at [x - halfW, x + halfW] x [y - h*ws, y]. Every number below is
+       * therefore in PAINTED pixels, mixing the two multipliers honestly:
+       * `_scale` for the HUD furniture it has to clear, `_wscale` for itself.
+       */
+      const ws = this._wscale;
+      if (!slot.h) slot.h = slot.el.offsetHeight || MHB_PLATE_H;
+      const halfW = MHB_HALF_W * ws;
+      const plateH = slot.h * ws;
+      const topFloor = MHB_TOP_BASE * this._scale + plateH;
+      const clamped = y < topFloor;
+      if (clamped) {
+        const safeL = MHB_SAFE_L * this._scale + halfW;   // LEFT EDGE clears the column
+        if (x < safeL) x = safeL;
+        const overEye = Math.abs(x - this._vw * 0.5) < halfW + MHB_EYE_HALF * this._scale;
+        y = overEye ? MHB_EYE_BASE * this._scale + plateH : topFloor;
+      }
+      if (clamped !== slot.clamped) {
+        slot.clamped = clamped;
+        slot.el.classList.toggle('clamped', clamped);
+      }
       if (slot.vis !== true) { slot.el.style.visibility = 'visible'; slot.vis = true; }
+      // `scale()` BEFORE the -50%/-100% translate, with origin 0 0: the
+      // percentages resolve against the unscaled box and are then scaled with
+      // it, so the anchor stays bottom-centre at every scale. (Scaling last,
+      // with the default centre origin, drifts the plate down by h*(s-1)/2.)
       slot.el.style.transform =
-        `translate(${x.toFixed(1)}px, ${y.toFixed(1)}px) translate(-50%, -100%) scale(${this._scale.toFixed(2)})`;
+        `translate(${x.toFixed(1)}px, ${y.toFixed(1)}px) scale(${ws.toFixed(3)}) translate(-50%, -100%)`;
 
       if (slot.m !== m) {
         slot.m = m;
-        slot.w = -1; slot.ghostW = -1; slot.elemSig = ''; slot.awareSig = '';
+        slot.w = -1; slot.ghostW = -1; slot.elemSig = ''; slot.awareSig = ''; slot.h = 0;
         const name = String(m.displayName ?? m.kind ?? 'MACHINE').toUpperCase();
         const lv = m.level ?? LEVELS[m.kind];
         slot.name.innerHTML = lv != null
@@ -2188,18 +2370,23 @@ export class HUD {
     const label = String(cur.label ?? 'INTERACT').toUpperCase();
     const prog = clamp01(cur.holdProgress ?? cur.progress ?? 0);
 
-    // project onto the entry when it carries a world position; else park it
-    // where it always was (screen centre-bottom) so nothing regresses
-    const pos = cur.position ?? cur.point ?? cur.object?.position ?? cur.mesh?.position;
+    // `interactables.current` is the PUBLISHED record `{ entry, label,
+    // holdProgress }` (src/items/interactables.js §contract) — the world
+    // position lives on `.entry`, never on the record itself. Reading the
+    // record made `placed` permanently false and parked the prompt on the
+    // screen-fixed fallback ui-16 exists to delete. `?? cur` keeps a
+    // bare-entry caller working. Gate: `A71f-interact-anchor`.
+    const ent = cur.entry ?? cur;
+    const pos = ent.position ?? ent.point ?? ent.object?.position ?? ent.mesh?.position;
     let placed = false;
     if (pos && Number.isFinite(pos.x)) {
-      this._v.set(pos.x, (pos.y ?? 0) + (cur.promptHeight ?? 1.1), pos.z).project(this.ctx.camera);
+      this._v.set(pos.x, (pos.y ?? 0) + (ent.promptHeight ?? PROMPT_H), pos.z).project(this.ctx.camera);
       if (this._v.z <= 1) {
         const x = (this._v.x * 0.5 + 0.5) * this._vw;
         const y = (-this._v.y * 0.5 + 0.5) * this._vh;
         if (x > -60 && x < this._vw + 60 && y > -40 && y < this._vh + 40) {
           this._intEl.style.transform =
-            `translate(${x.toFixed(1)}px, ${y.toFixed(1)}px) translate(-50%,-50%) scale(${this._scale.toFixed(2)})`;
+            `translate(${x.toFixed(1)}px, ${y.toFixed(1)}px) translate(-50%,-50%) scale(${this._wscale.toFixed(3)})`;
           placed = true;
         }
       }
@@ -2207,7 +2394,7 @@ export class HUD {
     if (!placed) {
       this._intEl.style.transform =
         `translate(${(this._vw * 0.5).toFixed(1)}px, ${(this._vh * 0.66).toFixed(1)}px) `
-        + `translate(-50%,-50%) scale(${this._scale.toFixed(2)})`;
+        + `translate(-50%,-50%) scale(${this._wscale.toFixed(3)})`;
     }
 
     const sig = `${label}|${(prog * 50) | 0}|${placed ? 1 : 0}`;
@@ -2282,7 +2469,7 @@ export class HUD {
     this._objDiamond.classList.add('show');
     this._objDiamond.classList.toggle('edge', off);
     this._objDiamond.style.transform =
-      `translate(${x.toFixed(1)}px, ${y.toFixed(1)}px) translate(-50%,-50%) scale(${this._scale.toFixed(2)})`;
+      `translate(${x.toFixed(1)}px, ${y.toFixed(1)}px) translate(-50%,-50%) scale(${this._wscale.toFixed(3)})`;
     const di = Math.round(dist);
     const sig = `${di}|${label}|${off ? 1 : 0}`;
     if (sig === this._lastObjDiamond) return;
@@ -2383,19 +2570,39 @@ export class HUD {
 
   /** Everything `V37-hud-language` / `A71c-hud-surfaces` grade, as numbers. */
   _surfaceAudit() {
+    /**
+     * EFFECTIVE opacity — the product up the ancestor chain to <body>.
+     * Reading only the element's own `opacity` is how a parent at 0 hid the
+     * quest tracker for a whole round while this audit reported it visible:
+     * the tracker's own class said 1, its dead parent said 0. Every `visible`
+     * below is now the composited truth.
+     */
+    const eff = (el) => {
+      let a = 1;
+      for (let n = el; n && n !== document.body; n = n.parentElement) {
+        const cs = getComputedStyle(n);
+        if (cs.display === 'none' || cs.visibility === 'hidden') return 0;
+        a *= parseFloat(cs.opacity) || 0;
+        if (a <= 0) return 0;
+      }
+      return a;
+    };
     const vis = (el) => {
-      if (!el) return false;
-      const cs = getComputedStyle(el);
-      if (cs.display === 'none' || cs.visibility === 'hidden' || parseFloat(cs.opacity) < 0.04) return false;
+      if (!el || eff(el) < 0.04) return false;
       const r = el.getBoundingClientRect();
       return r.width > 1 && r.height > 1 && r.right > 0 && r.bottom > 0
         && r.left < this._vw && r.top < this._vh;
+    };
+    /** painted box as [l, t, r, b] — integers, viewport pixels. */
+    const rect = (el) => {
+      const r = el.getBoundingClientRect();
+      return [Math.round(r.left), Math.round(r.top), Math.round(r.right), Math.round(r.bottom)];
     };
     const bars = this._mhbSlots.filter((s) => s.vis && vis(s.el));
     const dmgLive = this._dmgPool.filter((d) => d.active);
     return {
       health: {
-        visible: vis(this._topleftEl),
+        visible: vis(this._vitalsEl),
         pct: this._lastHp,
         numerals: this._healthNum.textContent.trim(),
         segments: this._topleftEl.querySelectorAll('.hzc-health-seg').length + 1,
@@ -2408,12 +2615,94 @@ export class HUD {
       },
       pouch: { visible: vis(this._pouchRow), pct: this._lastPouch, pips: this._lastPouchPips,
         color: getComputedStyle(this._pouchFill).backgroundColor },
-      tracker: { visible: vis(this._trackEl), text: this._trackObj.textContent },
+      tracker: {
+        visible: vis(this._trackEl),
+        // composited opacity — the number `A71g-tracker-live` grades, so a
+        // parent fading the tracker out again cannot pass unnoticed
+        opacity: +eff(this._trackEl).toFixed(3),
+        idle: !!this._trackIdle,
+        rect: rect(this._trackEl),
+        title: this._trackTitle.textContent,
+        text: this._trackObj.textContent,
+      },
+      /**
+       * ui-16 — is the prompt actually ON the interactable? Projected here
+       * from the published record's `.entry` position, independently of what
+       * `_updateInteract` believed, and compared against the painted rect.
+       * `anchored` false means the screen-fixed fallback is showing.
+       */
+      interact: (() => {
+        const cur = this.ctx.interactables?.current;
+        const el = this._intEl;
+        const shown = !!el && el.classList.contains('show') && vis(el);
+        const out = { current: !!cur, visible: shown, label: this._intLabel.textContent,
+          anchored: null, offsetPx: null, world: null, painted: null };
+        const ent = cur ? (cur.entry ?? cur) : null;
+        const pos = ent
+          ? (ent.position ?? ent.point ?? ent.object?.position ?? ent.mesh?.position) : null;
+        if (!pos || !Number.isFinite(pos.x)) return out;
+        this._v.set(pos.x, (pos.y ?? 0) + (ent.promptHeight ?? PROMPT_H), pos.z)
+          .project(this.ctx.camera);
+        if (this._v.z > 1) return out;
+        const sx = (this._v.x * 0.5 + 0.5) * this._vw;
+        const sy = (-this._v.y * 0.5 + 0.5) * this._vh;
+        const r = el.getBoundingClientRect();
+        const cx = r.left + r.width * 0.5, cy = r.top + r.height * 0.5;
+        out.world = [Math.round(sx), Math.round(sy)];
+        out.painted = [Math.round(cx), Math.round(cy)];
+        out.offsetPx = +Math.hypot(cx - sx, cy - sy).toFixed(1);
+        out.anchored = shown && out.offsetPx < 24;
+        return out;
+      })(),
       compass: this._compassAudit(),
       eye: { visible: vis(this._eyeEl), mode: this._eyeEl.dataset.m ?? null,
-        label: this._eyeLabel.textContent },
-      machineBars: { visible: bars.length, cap: MHB_CAP, engaged: this._engaged.size,
-        names: bars.map((s) => s.name.textContent) },
+        rect: rect(this._eyeEl), label: this._eyeLabel.textContent },
+      /**
+       * ui-06. `topPx` alone had no horizontal eye at all, which is how a plate
+       * centred TWICE — shifted left by half its own width — passed a whole
+       * round while floating beside its machine over empty forest. `anchorX` is
+       * re-projected here from the machine itself, independently of whatever
+       * `_updateMachineBars` believed, and compared with the painted centre.
+       * A clamped plate is slid clear of the vitals column on purpose, so the
+       * off-axis grade covers the unclamped ones.
+       */
+      machineBars: (() => {
+        const cam = this.ctx.camera;
+        const rows = bars.map((b) => {
+          const r = b.el.getBoundingClientRect();
+          const row = {
+            name: b.name.textContent, clamped: !!b.clamped,
+            rect: [Math.round(r.left), Math.round(r.top), Math.round(r.right), Math.round(r.bottom)],
+            topPx: Math.round(r.top), bottomPx: Math.round(r.bottom),
+            widthPx: Math.round(r.width),
+            centerX: Math.round(r.left + r.width * 0.5),
+            anchorX: null, dx: null,
+          };
+          const mm = b.m;
+          const pp = mm ? (mm.position ?? mm.root?.position) : null;
+          if (pp && cam) {
+            this._v2.set(pp.x, pp.y + (mm.height ?? 2.2) + 1.05, pp.z).project(cam);
+            if (this._v2.z <= 1) {
+              row.anchorX = Math.round((this._v2.x * 0.5 + 0.5) * this._vw);
+              row.dx = row.centerX - row.anchorX;
+            }
+          }
+          return row;
+        });
+        const free = rows.filter((r) => !r.clamped && r.dx != null);
+        return {
+          visible: bars.length, cap: MHB_CAP, engaged: this._engaged.size,
+          // the top-left column a CLAMPED plate has to slide clear of
+          column: rect(this._topleftEl),
+          rects: rows.map((r) => r.rect),
+          names: rows.map((r) => r.name),
+          clamped: rows.filter((r) => r.clamped).length,
+          topPx: rows.map((r) => r.topPx),
+          widthPx: rows.map((r) => r.widthPx),
+          maxOffAxisPx: free.length ? Math.max(...free.map((r) => Math.abs(r.dx))) : null,
+          bars: rows,
+        };
+      })(),
       tools: { visible: vis(this._toolsEl), slots: this._toolSlots.filter((t) => t.el.style.display !== 'none').length,
         index: this.ctx.items?.tools?.index ?? -1, useKey: keyGlyph(this.ctx.items?.tools?.useKey) },
       xp: { visible: vis(this._xpEl), level: this.ctx.progression?.level ?? null,

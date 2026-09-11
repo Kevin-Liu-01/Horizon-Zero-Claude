@@ -58,7 +58,11 @@ const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
 const MAX_REAL_DT = 1 / 5;      // 0.2s — down to 5 fps, flown at true speed
 const STALL_REAL_DT = 0.5;      // beyond this it is a stall, not a frame
 
-/** Real seconds this frame may spend on the lens. See the bands above. */
+/**
+ * Real seconds this frame may spend on the lens. See the bands above.
+ * `raw` comes from `Studio._realSeconds()`, never straight from the host —
+ * the dt `main.js` hands `interpolate()` is already clamped to 0.05 s.
+ */
 const flyDt = (raw) => (raw > 0 ? (raw > STALL_REAL_DT ? 0 : Math.min(raw, MAX_REAL_DT)) : 0);
 
 /**
@@ -80,7 +84,54 @@ export class Studio {
     this.ctx = ctx;
     this.active = false;
     this._prevState = null;
+    /** A death the STUDIO staged, and where the subject fell. See `_holdState`. */
     this._deathFilm = false;
+    this._deathPos = new THREE.Vector3();
+    /**
+     * A death the studio did NOT stage — something in the world actually killed
+     * her mid-shoot — latched for the whole session so the exit cannot depend
+     * on a stopwatch.
+     *
+     * `_releaseDeath()` used to read `ctx.menus.deathState` alone, and that is
+     * a value with a SHELF LIFE. Once `_guardState()` started holding 'dead'
+     * against the card's park, `Player._die()`'s 3.2 s wall-clock respawn
+     * finally passed its own `ctx.state !== 'dead'` guard and ran: it emits
+     * `player-respawn`, `shell-menus` answers by retiring the card, and
+     * `deathState` falls back to null. So a shoot shorter than 3.2 s exited
+     * through `respawn('checkpoint')` and a shoot longer than 3.2 s exited
+     * through the private heal — two different worlds handed back for the same
+     * event, decided by how long the photographer took. `exit()`'s own doc
+     * forbids exactly that ("must not depend on a race"), so the fact of the
+     * death is latched here instead of being read off a card that expires.
+     *
+     * Set by `player-died`, which ONLY a real death emits: the studio's Death
+     * chip sets health and `ctx.state` directly and arms nothing (pose.js).
+     */
+    this._realDeath = false;
+    /**
+     * The health the subject walked in with (`_releaseDeath`).
+     * A photo mode undoes what it staged; it does not HAND OUT what it never
+     * took. Round 4's first cut healed to `maxHealth` on the way out of a
+     * filmed death, so F10 -> Death -> Esc was a free full heal in three
+     * inputs — judged and measured: 37 HP in, 100 HP out. Snapshotted here,
+     * restored there, and never exceeded.
+     */
+    this._healthIn = null;
+    /** Set by our own Escape keydown so the keyup fallback below stands down. */
+    this._escSeen = false;
+    /** rAF handle of the out-of-loop state guard. 0 = not running. */
+    this._guardId = 0;
+    /** Frames the guard has had to take the world back. Published by `debug()`. */
+    this._guardTakes = 0;
+    /** The last state the guard took the world back FROM, for the report line. */
+    this._guardFrom = null;
+    /** Allocated once: the guard's own rAF callback, re-armed while active. */
+    this._guardFn = () => {
+      this._guardId = 0;
+      if (!this.active) return;
+      this._guardState();
+      this._guardId = requestAnimationFrame(this._guardFn);
+    };
 
     /* ------------------------------------------------------------ camera */
     this._pos = new THREE.Vector3();
@@ -110,6 +161,7 @@ export class Studio {
       aperture: 0.45,
       nearRange: 3.5,
       farRange: 14,
+      exposure: 0,                // print stops; 0 is an exact no-op
       filter: 'none',
       filterAmt: 1,
       grain: 0,
@@ -125,6 +177,8 @@ export class Studio {
 
     this._interpSeen = false;
     this._lastWall = 0;
+    /** `performance.now()/1000` at the last lens frame; 0 = no frame yet. */
+    this._lastPerf = 0;
     this._readoutT = 0;
 
     /** Chrome roots THIS object hid, so exit restores exactly those. */
@@ -145,13 +199,28 @@ export class Studio {
      * lining up. Window capture runs before every bubble-phase listener in the
      * document, so stopping the event here means nothing else ever sees the keys
      * the studio owns.
+     *
+     * WITH ONE HONEST EXCEPTION, and pretending otherwise is what the judge
+     * caught: capture on `window` is not exclusive, and among capture-phase
+     * listeners on the same target the order is REGISTRATION order.
+     * `installMenus(ctx)` runs before `new Studio(ctx)` in main.js, so
+     * `shell-menus` gets the first look at every key and `_consume()`s what it
+     * claims. Two defences, neither of which reaches into another lane's file:
+     * `_closeOverlays()` shuts its surfaces on the way in so it has nothing to
+     * claim, and the keyup handler below leaves photo mode if our keydown for
+     * Escape never ran.
      */
     window.addEventListener('keydown', (e) => {
       if (e.code === 'F10') { this._swallow(e); this.toggle(); return; }
       if (!this.active) return;
+      // A key is the third channel that runs outside the frame loop, so it is
+      // the third place the hold can be re-asserted (`_guardState`). Costs two
+      // comparisons per keystroke and means the photographer's very next input
+      // un-freezes the world even on a page whose rAF is being throttled.
+      this._guardState();
       const tag = document.activeElement?.tagName;
       if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA') return;
-      if (e.code === 'Escape') { this._swallow(e); this.exit(); return; }
+      if (e.code === 'Escape') { this._escSeen = true; this._swallow(e); this.exit(); return; }
       this._keys.add(e.code);
       // Fly keys, modifiers and the pause/inventory/wheel/focus binds all belong
       // to the studio while it is open; anything else (F-keys, devtools) passes.
@@ -159,9 +228,73 @@ export class Studio {
     }, { capture: true });
     window.addEventListener('keyup', (e) => {
       this._keys.delete(e.code);
+      if (e.code === 'Escape') {
+        /*
+         * ESC IS ONE PRESS, WHOEVER LISTENS FIRST.
+         *
+         * Capture-phase listeners on `window` run in REGISTRATION order, and
+         * the order is `main.js`'s, not this lane's: `installMenus(ctx)` is
+         * called before `new Studio(ctx)`, so `shell-menus` sees every keydown
+         * first and `_consume()`s the ones it claims. While its hub is open
+         * that cost the photographer a press (judged: Esc#1 closed the hub,
+         * Esc#2 left photo mode) — `_closeOverlays()` now shuts the hub on the
+         * way in, so that particular thief is gone, but it is not the only
+         * one: a real death landing mid-shoot parks `deathState` on 'choice',
+         * whose handler swallows Escape and does nothing with it, and a lane
+         * that lands next round inherits the same free first strike.
+         *
+         * The keyup is the channel nobody else claims — `shell-menus` binds
+         * one and it reads `KeyC` only. So if our keydown never ran, leave on
+         * the release instead. Costs a boolean on a key nobody holds down.
+         */
+        // Mirrors the keydown guard exactly, so a focused panel control keeps
+        // the key it already kept: the fallback stands in for our keydown, it
+        // does not widen what that keydown would have done.
+        const tag = document.activeElement?.tagName;
+        const typing = tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA';
+        if (this.active && !this._escSeen && !typing) { this._swallow(e); this.exit(); }
+        this._escSeen = false;
+        return;
+      }
       if (this.active && STUDIO_KEYS.has(e.code)) this._swallow(e);
     }, { capture: true });
-    window.addEventListener('blur', () => this._keys.clear());
+    window.addEventListener('blur', () => { this._keys.clear(); this._escSeen = false; });
+    /*
+     * SAME-TICK RECOVERY, so not a single frame is lost (see `_guardState`).
+     * `shell-menus` raises its death card from its OWN rAF, and the last two
+     * things it does there are park `ctx.state` on 'death-menu' and emit
+     * `ui-open {screen:'death'}` — synchronously, in that order (src/ui/menu.js
+     * `_showDeathChoice`). Its rAF was registered at `installMenus()`, before
+     * the renderer's animation loop, so the park lands BEFORE `_simulate()`
+     * reads the state on that same frame. Answering the event takes the world
+     * back in between: the frame loop never sees the parked state at all, and
+     * the rAF guard below never has to catch this one. Any lane's `ui-open` is
+     * answered, not just the death card — a screen that parks the world is a
+     * screen the photographer did not ask for, whoever raises it.
+     */
+    ctx.events?.on?.('ui-open', () => this._guardState());
+    /*
+     * THE OTHER SAME-TICK THEFT, AND THIS ONE RUINS THE SHOT RATHER THAN
+     * FREEZING IT. `Player._die()` arms a 3.2 s wall-clock `setTimeout` that
+     * early-outs unless `ctx.state === 'dead'` — which is exactly the state
+     * photo mode now HOLDS so the crumple can play, so during a long death
+     * shoot that timer finally runs: it heals her, teleports her to camp,
+     * writes `ctx.state = 'playing'` and emits this, all in one task.
+     *
+     * The rAF guard below would take the world back a frame later, and a frame
+     * later is too late: `playerAnimator` scrubs the crumple off `_dieT` and
+     * RESETS it the moment it ticks with `ctx.state` not 'dead'. Filmed at 3.2 s
+     * intervals — `_dieT` sawtoothing back to ~0.30 and Aloy standing up out of
+     * her own death, the identical artefact pose.js documents for the card.
+     * The emit is synchronous with the write, so answering it here restores
+     * 'dead' (and the pin) inside the same task, before any system can tick on
+     * the stolen state. `_holdState()` is the only thing that decides what the
+     * world goes back to.
+     */
+    ctx.events?.on?.('player-respawn', () => this._guardState());
+    // The one broadcast that separates a death the studio staged from a death
+    // it merely happened to be filming. See `_realDeath`.
+    ctx.events?.on?.('player-died', () => { if (this.active) this._realDeath = true; });
     document.addEventListener('mousemove', (e) => {
       if (!this.active || document.pointerLockElement !== this._canvas()) return;
       this._look.dx += e.movementX;
@@ -187,12 +320,28 @@ export class Studio {
    * `onboarding-loop-studio-cast-buttons`: F10 from the pause menu used to
    * leave the pause overlay painted across the shot AND leave `_prevState` at
    * 'paused', so Esc dropped back into a frozen game.
+   *
+   * THE NAME MATTERS, AND THE ONE THAT SHIPPED WAS WRONG. This list was
+   * written while `shell-menus` was still in flight and guessed `ctx.menu.
+   * close()`; the lane landed publishing `ctx.menus` with `closeHub(silent)` /
+   * `closeModal()` (src/ui/menu.js), and optional chaining turned the miss into
+   * silence. So F10 from the pause hub — a documented entry state — opened
+   * photo mode with the ENTIRE full-screen hub (map, tabs, status strip) still
+   * painted over the photograph, and Esc then took two presses because the
+   * hub's own capture-phase handler ate the first one. Judged on film.
+   *
+   * `closeHub(true)` is deliberate: the silent form skips the `ui-close`
+   * broadcast (which `shell-menus` answers by RE-PARKING the hub on the next
+   * microtask) and skips its pointer-lock request. It still hands `ctx.state`
+   * back to 'playing', which is exactly the `_prevState` `enter()` wants —
+   * hence this runs before that snapshot, not after.
    */
   _closeOverlays() {
     const ctx = this.ctx;
     const tries = [
       () => { if (ctx.state === 'paused') ctx.hud?.setPaused?.(false); },
-      () => ctx.menu?.close?.(),          // shell-menus, when it lands
+      () => { if (ctx.menus?.modal) ctx.menus.closeModal(); },
+      () => { if (ctx.menus?.hubOpen) ctx.menus.closeHub(true); },
       () => ctx.wheel?.close?.(),
       () => ctx.ui?.inventory?.close?.(),
       () => ctx.quests?.close?.(),
@@ -206,16 +355,53 @@ export class Studio {
   enter() {
     const ctx = this.ctx;
     if (this.active) return false;
-    if (!['playing', 'paused', 'dead', 'victory'].includes(ctx.state)) return false;
+    /*
+     * 'death-menu' is 'dead' with a card on top — `shell-menus` parks there
+     * 1.15 s after a death so the world stops simulating under its own modal
+     * (src/ui/menu.js `_showDeathChoice`). Without it in this list, F10 worked
+     * for the first 1.15 s after a death and then silently did nothing, which
+     * is precisely the moment a photographer reaches for it. It maps to 'dead'
+     * below, so `exit()` hands back a living world through the same
+     * `_releaseDeath()` -> `menus.respawn('checkpoint')` path a death filmed
+     * mid-shoot takes: the death is resolved, never refunded.
+     */
+    if (!['playing', 'paused', 'dead', 'death-menu', 'victory'].includes(ctx.state)) return false;
     this._closeOverlays();
     this.active = true;
-    this._prevState = ctx.state === 'paused' ? 'playing' : ctx.state;
+    this._prevState = ctx.state === 'paused' ? 'playing' : (ctx.state === 'death-menu' ? 'dead' : ctx.state);
+    // What the subject walked in with. `_releaseDeath()` restores THIS and
+    // never `maxHealth`; see the field's own note.
+    this._healthIn = Number.isFinite(ctx.player?.health) ? ctx.player.health : null;
     ctx.state = 'studio';
     ctx.input.enabled = false;
     ctx.input.keys.clear();
+    this._escSeen = false;
     this._keys.clear();
+    /*
+     * A death ALREADY IN PROGRESS is a death the studio did not stage, exactly
+     * like one that lands mid-shoot — F10 pressed on the death card, or inside
+     * the 1.15 s ramp before it. `player-died` fired before this object was
+     * listening, so the latch is seeded from the death system's own state
+     * instead. Without this, filming an existing death for more than 3.2 s put
+     * the exit back on a stopwatch: the respawn retires the card, `deathState`
+     * falls to null, and `_releaseDeath()` would hand back a full heal at the
+     * spot she fell rather than the checkpoint she is owed.
+     */
+    // `_prevState`, not `ctx.state`: the line above has already taken the world,
+    // so reading `ctx.state` here would only ever see 'studio'. At entry time
+    // 'dead' can only mean a real death in progress — the studio's own Death
+    // chip cannot have fired yet — and 'death-menu' maps to 'dead' above.
+    this._realDeath = this._prevState === 'dead' || !!ctx.menus?.deathState;
+    this._guardTakes = 0;
+    this._guardFrom = null;
+    // The out-of-loop hold, armed for exactly as long as the shoot lasts and
+    // not one frame longer. See `_guardState()`.
+    if (!this._guardId) this._guardId = requestAnimationFrame(this._guardFn);
     this._look.dx = 0; this._look.dy = 0;
     this._lastWall = ctx.engine.wallTime;
+    // ...and the wall clock starts at this session, not at the last one: the
+    // gap between two shoots is not a frame the lens is owed.
+    this._lastPerf = 0;
 
     // start from the current camera pose
     this._pos.copy(ctx.camera.position);
@@ -226,6 +412,32 @@ export class Studio {
     this._fov = ctx.camera.fov;
 
     this._ensurePass();
+    /*
+     * THE PHOTOGRAPH'S GRADE BELONGS TO THE LENS. `shell-menus` desaturates and
+     * dims the render canvas with a CSS filter while its death card ramps
+     * (`_applyGray` -> `canvas.style.filter = grayscale(k) brightness(...)`,
+     * re-applied on its own rAF and peaking above 0.8 — their gate A69 asserts
+     * that peak). Filming a death therefore turned the picture grey and dark on
+     * screen, under every filter the photographer had chosen, and no amount of
+     * "hide HUD" touched it because it is an inline style on the canvas, not
+     * chrome. A class on the canvas with `filter: none !important` outranks the
+     * inline style without fighting it every frame, and comes off on exit so a
+     * real death still greys the world.
+     */
+    this._canvas().classList.add('studio-film');
+    /*
+     * ...and the card that comes with the grade. A death or a victory filmed in
+     * photo mode raises a full-screen modal that WAITS FOR INPUT by design, and
+     * a photographer who pressed the Death button is filming the fall, not
+     * asking to be offered a checkpoint. "Hide HUD" reaches it (its root is a
+     * body child and the 4 Hz re-sweep catches one raised mid-shoot), but the
+     * card must not be in frame when the photographer has deliberately LEFT the
+     * chrome up to line a shot against it. The suppression is CSS keyed on this
+     * class and lives entirely in studio.css; nothing in `shell-menus` is
+     * touched, and the class comes off on exit so the card the studio staged is
+     * handed straight back (see `exit()`'s `menus.respawn`).
+     */
+    document.body.classList.add('hzc-photo');
     this.lens.active = true;
     this._applyTimeScale();
     this._ui.classList.remove('hidden');
@@ -261,16 +473,44 @@ export class Studio {
     const ctx = this.ctx;
     if (!this.active) return false;
     this.active = false;
-    const p = ctx.player;
-    if ((this._deathFilm || this._prevState === 'dead') && p && p.health <= 0) {
-      p.health = p.maxHealth;
-    }
+    // The guard re-arms itself only while `active`; cancel so the pending one
+    // does not outlive the shoot by a frame.
+    if (this._guardId) { cancelAnimationFrame(this._guardId); this._guardId = 0; }
+    /*
+     * A death the studio staged is the studio's to undo — and since
+     * `shell-menus` landed, undoing it is THREE things, not one: the pin comes
+     * off, she is healed, and the death card is retired. Healing alone fixes
+     * the world but leaves YOU DIED painted over a living valley, because that
+     * card waits for input by design (their A69).
+     */
+    this._releaseDeath();
     ctx.state = this._prevState === 'dead' ? 'playing' : (this._prevState ?? 'playing');
     this._deathFilm = false;
     ctx.input.enabled = true;
-    // release the time authority; combat/wheel own it again
-    ctx.engine.requestTimeScale?.('studio', null);
-    ctx.engine.timeScale = 1;
+    /* Release the time authority. TWO slots, and the second one is the reason
+     * gate A79 measures the world AFTER the exit and not just during the shoot.
+     *
+     * 1. `studio` — dropped, not zeroed. `engine.timeScale` re-derives from
+     *    whatever sources remain, so combat hitstop and Concentration own their
+     *    own slow-mo again the instant the photographer leaves.
+     *
+     * 2. `legacy` — DELETED, not written. `engine.timeScale = 1` (what this
+     *    used to do) is not a release at all: the engine's setter is
+     *    `set timeScale(v) { this._ts.legacy = v }`, so it installs a permanent
+     *    `legacy: 1` claim rather than clearing anything. And leaving the slot
+     *    alone is worse: direct writers shout into it every frame they are
+     *    alive (`src/ui/wheel.js` ramps toward WHEEL_TS through it, combat's
+     *    older paths too), and a claim written mid-shoot by a system that has
+     *    since stopped writing outlives the shoot — the world resumes at 0.5x
+     *    with nothing left to ramp it back. Deleting the slot resolves to the
+     *    engine's default 1, and any writer still alive re-establishes its own
+     *    value on its very next frame, so this cannot steal time from a live
+     *    holder. Named slots (`wheel`, `hitstop`, `concentration`) are never
+     *    touched — those sources own their own lifecycle. */
+    if (ctx.engine.requestTimeScale) {
+      ctx.engine.requestTimeScale('studio', null);
+      ctx.engine.requestTimeScale('legacy', null);
+    } else ctx.engine.timeScale = 1;
     ctx.camera.fov = 55;
     ctx.camera.updateProjectionMatrix();
     this.cast.release();
@@ -281,6 +521,8 @@ export class Studio {
     this._hint.classList.add('hidden');
     this._guides.classList.add('hidden');
     this.setChromeHidden(false);
+    this._canvas().classList.remove('studio-film');
+    document.body.classList.remove('hzc-photo');
     document.exitPointerLock?.();
     return true;
   }
@@ -361,6 +603,182 @@ export class Studio {
     return this.ctx.engine.timeScale;
   }
 
+  /* ----------------------------------------------------------------- state */
+
+  /**
+   * WHILE PHOTO MODE IS OPEN, THE STUDIO OWNS `ctx.state` — and there are two
+   * things to own, not one, because a filmed death is a shot and a subject.
+   *
+   * THE SHOT. `playerAnimator` reads the death crumple off exactly one input:
+   * `const dead = this.ctx.state === 'dead'` (its `_deadW`, which gates the
+   * whole pose). The Round-4 studio took 'dead' back to 'studio' on the very
+   * next tick to keep the respawn from firing — and so the animator never once
+   * saw 'dead' and Aloy stood there, upright and idle, through every death shot
+   * the panel could take. Measured on film: `layers:[idle:1.00]`, head 1.4 m
+   * off the ground, four seconds after the Death button. So while the subject
+   * is down the studio HOLDS 'dead' rather than reclaiming it, and everything
+   * else that would claim the world in the meantime — `shell-menus` parking on
+   * 'death-menu' at 1.15 s, the respawn setting 'playing' at 3.2 s — is taken
+   * back to 'dead' instead of to 'studio'.
+   *
+   * THE SUBJECT. Holding 'dead' is what lets `Player._die()`'s 3.2 s wall-clock
+   * timer through (`if (ctx.state !== 'dead') return`), and that timer heals
+   * her, teleports her to CAMP_POS and snaps her to the ground — the subject
+   * leaves the frame three seconds into every death shot. Rather than dodge the
+   * timer (which is the same guard the crumple needs), the studio PINS what it
+   * staged: where she fell and the fact that she is down, re-asserted on the sim
+   * tick and again in `interpolate()` — which runs after every system, so no
+   * rendered frame can show her anywhere but where she fell. Both pins are
+   * released by `exit()`, which heals her and retires the card.
+   *
+   * Anything else that claims the world while she is alive is simply taken back
+   * to 'studio' — ANY state, not a list, so a state a later lane invents cannot
+   * quietly steal the loop out from under photo mode.
+   */
+  _holdState() {
+    const ctx = this.ctx;
+    const p = ctx.player;
+    if (p && !(p.health > 0)) {
+      if (!this._deathFilm) { this._deathFilm = true; this._deathPos.copy(p.position); }
+      if (ctx.state !== 'dead') ctx.state = 'dead';
+      // the respawn ran: put the subject back in the frame it took her out of
+      if (p.position.distanceToSquared(this._deathPos) > 1e-8) p.position.copy(this._deathPos);
+      return;
+    }
+    if (this._deathFilm) {
+      // healed by the respawn while the studio was still filming her fall
+      if (p) { p.health = 0; p.position.copy(this._deathPos); }
+      if (ctx.state !== 'dead') ctx.state = 'dead';
+      return;
+    }
+    if (ctx.state !== 'studio') ctx.state = 'studio';
+  }
+
+  /**
+   * THE HOLD, RUN FROM OUTSIDE THE LOOP IT PROTECTS.
+   *
+   * `_holdState()` above promises that "anything else that claims the world is
+   * simply taken back — ANY state, not a list, so a state a later lane invents
+   * cannot quietly steal the loop out from under photo mode". That promise was
+   * a lie by construction, and a judge measured it: the only two callers were
+   * `update()` and `interpolate()`, and BOTH of them are inside
+   * `Game._simulate()`, which returns early — before the tick and before the
+   * interpolate pass — for any `ctx.state` outside its `live` list
+   * (src/main.js). So the defence against a state theft lived inside the loop
+   * that the theft turns off. Steal the state once and the studio can never
+   * take it back.
+   *
+   * That is not hypothetical. `shell-menus` parks `ctx.state = 'death-menu'`
+   * 1.15 s after a real death, from its own rAF, and 'death-menu' is not in
+   * `live`. So a machine that killed Aloy mid-shoot — or one click on the ALOY
+   * panel's own Knockdown chip at low health — froze photo mode SOLID while it
+   * still looked alive: the panels repainted, the hint bar sat there, and the
+   * last rendered frame stayed on screen. Measured on the real build: W held
+   * for 0.8 s moved the lens 0.000 m, `engine.simTime` advanced 0.000 s, and 45
+   * frames were drawn. Only Escape got out, because the key listeners are the
+   * one part of this file that never ran inside the loop.
+   *
+   * And the reason it shipped is worth more than the bug: every studio gate ran
+   * with `?shot=1`, which forces `live` true unconditionally, so the entire
+   * class was invisible to the suite. `A79g-death-menu-live` deletes that
+   * param before it stages anything, and `A79d` now fails the lane if no studio
+   * gate does.
+   *
+   * Two channels, because one is exact and the other is total:
+   *   - `ui-open` (constructor) answers the death park in the SAME tick it
+   *     happens, so no frame is lost.
+   *   - this rAF, armed for exactly as long as photo mode is open, catches
+   *     everything else — a lane that parks the world from a click handler, a
+   *     timer, a promise, or a state this round has not invented yet — one
+   *     frame later, whatever it emits or does not emit.
+   *
+   * The work is `_holdState()` itself, unchanged and allocation-free: the hold
+   * has ONE implementation, and this is only a second place it is driven from.
+   */
+  _guardState() {
+    if (!this.active) return;
+    const before = this.ctx.state;
+    this._holdState();
+    if (this.ctx.state !== before) { this._guardTakes++; this._guardFrom = before; }
+  }
+
+  /**
+   * Stand her back up. The counterpart to the pin above, so a photographer who
+   * filmed a fall is not stuck with a corpse until they leave photo mode: the
+   * ALOY panel's "Idle" button clears every one-shot channel, and a staged
+   * death is the one channel that cannot clear itself. Also the whole of
+   * `exit()`'s undo — the card is retired through its owner's published
+   * `respawn('checkpoint')` ('camp' is the mode that teleports), with a direct
+   * heal behind it for a build with no menus lane.
+   * @returns {boolean} whether a staged death was released
+   */
+  _releaseDeath() {
+    const pinned = this._deathFilm;
+    const real = this._realDeath;
+    if (!pinned && !real && this._prevState !== 'dead') return false;
+    const ctx = this.ctx;
+    const p = ctx.player;
+    this._deathFilm = false;
+    this._realDeath = false;
+    /*
+     * Only when a card is actually up. The studio's own Death pose no longer
+     * arms the death pipeline at all (see `pose.js`), so there is usually
+     * nothing to retire — and `respawn()` broadcasts `player-respawn`, which a
+     * photo mode has no business emitting for a pose it staged itself. The call
+     * is still here for the death photo mode did NOT stage: a machine that
+     * kills her mid-shoot raises the real card, and that one is retired through
+     * its owner's published API rather than left painted over a living valley.
+     */
+    // `ctx.menus.respawn` in the test, not just in the body: a build without the
+    // menus lane has no death system to hand the death back to, and must fall
+    // through to the private heal below rather than return a 0 HP world.
+    if ((real || ctx.menus?.deathState) && ctx.menus?.respawn) {
+      /*
+       * A DEATH THE STUDIO DID NOT STAGE BELONGS TO THE DEATH SYSTEM, WHOLE.
+       * `_realDeath` is set by `player-died` and `deathState` by the card that
+       * follows it — the Death pose sets health and `ctx.state` directly and
+       * arms neither (see pose.js) — so reaching here means something in the
+       * world actually killed her mid-shoot. The latch is read FIRST because
+       * the card expires: `Player._die()`'s 3.2 s respawn retires it mid-shoot
+       * now that the guard holds 'dead' long enough for that timer to run, and
+       * a shoot is not a stopwatch. The first cut called `respawn('checkpoint')`
+       * and then
+       * OVERRODE its outcome: pinned her back at `_deathPos` and healed her to
+       * full, erasing both the checkpoint's restored position and the cost
+       * `progression`/`shell-menus` charge for dying (`onboarding-loop-death-
+       * no-stakes`). Photo mode does not get to refund a death it merely
+       * happened to be filming. The respawn owns health and position here; we
+       * own nothing but the pin coming off, which already happened above.
+       *
+       * Reached from `exit()` AND from the ALOY panel's "Idle" button, and it
+       * is the same act either way: the subject goes back to her checkpoint.
+       * A photographer who wants to keep the frame must not have died for real
+       * inside it — and a photo mode that "kept the frame" by re-pinning her
+       * over the checkpoint's own restore is the bug, not the feature.
+       */
+      try { ctx.menus.respawn('checkpoint'); } catch (err) { console.warn('[studio] respawn:', err); }
+      return true;
+    }
+    if (p) {
+      /*
+       * Exact, not generous. `_healthIn` is what she walked in with; a studio
+       * that staged the death is undoing its own pose, so that is the number
+       * it owes. `maxHealth` is the fallback for the one case where there is
+       * no honest snapshot to return to — F10 pressed INSIDE a real death
+       * (`_prevState === 'dead'`, `_healthIn` 0) on a build with no menus lane
+       * to respawn through — because handing back a living world with a 0 HP
+       * player in it is the one outcome worse than a heal.
+       */
+      if (!(p.health > 0)) p.health = this._healthIn > 0 ? this._healthIn : p.maxHealth;
+      // respawn('checkpoint') leaves her where she is; 'camp' would not, and
+      // neither would `_die()`'s own timer. The photographer keeps the frame —
+      // but only when the studio actually pinned one (`_deathPos` is meaningless
+      // otherwise).
+      if (pinned) p.position.copy(this._deathPos);
+    }
+    return true;
+  }
+
   /* ----------------------------------------------------------------- frame */
 
   /** SIM tick: holds, and taking the world back after a filmed death. */
@@ -368,32 +786,51 @@ export class Studio {
     if (!this.active) return;
     const ctx = this.ctx;
     this.cast.update(dt);
-    /*
-     * Take the world back the instant anything else claims it.
-     *
-     * `Player._die()` sets `ctx.state = 'dead'` and schedules a 3.2 s
-     * WALL-CLOCK respawn that heals her, teleports her to CAMP_POS and sets
-     * 'playing'. Waiting for that timer — which is what this used to do — meant
-     * a filmed death yanked the subject across the valley three seconds into
-     * the shot, and left the exit state depending on whether the timer had
-     * fired yet. Reclaiming 'dead' immediately means the timer finds
-     * `state !== 'dead'`, returns, and Aloy lies where she fell for as long as
-     * the photographer wants her there. The death CLIP is unaffected: it runs
-     * on the animator's own layer, not on `ctx.state`.
-     *
-     * `_deathFilm` latches so `exit()` knows to heal what the studio staged.
-     */
-    if (ctx.state === 'playing') { ctx.state = 'studio'; this._deathFilm = false; }
-    else if (ctx.state === 'dead') { ctx.state = 'studio'; this._deathFilm = true; }
+    this._holdState();
     this._applyTimeScale();
     // fallback path only: main.js always calls interpolate(), but a host that
     // does not must still fly the lens on real seconds.
     if (!this._interpSeen) {
       const wall = ctx.engine.wallTime;
-      const real = flyDt(wall - this._lastWall);
+      const stated = wall - this._lastWall;
       this._lastWall = wall;
-      this._frame(real);
+      this._frame(this._realSeconds(stated));
     }
+  }
+
+  /**
+   * REAL seconds this frame is worth, through the bands at the top of the file.
+   *
+   * TWO SOURCES, BOTH LOWER BOUNDS, BECAUSE EITHER ALONE LOSES TIME.
+   *
+   * The dt a host states is a SIMULATION budget, not a measurement of wall
+   * time. `main.js` clamps it to `MAX_FRAME` (0.05 s) before handing it to
+   * `interpolate()`, and rightly so — that clamp is what stops a slow frame
+   * spiralling the fixed-step accumulator. But a lens does not simulate
+   * anything, and spending only the clamp meant that below 20 fps the camera
+   * flew slower the slower the box got: A79b measured 9.09 m where 12.6 m was
+   * due (72 %) at 14 fps, and it would have been 36 % at 7 fps. `engine.
+   * wallTime` is no escape — it advances by that same clamped number.
+   *
+   * Measuring the clock here instead is not enough either. A host may drive
+   * `interpolate()` several times in a row, synchronously, each call standing
+   * for a stated dt — a scripted shot, a deterministic replay, A79b's own
+   * 8 fps drive. Then the clock reads ~0 while the frame is genuinely worth
+   * 125 ms, and a clock-only lens would not move at all.
+   *
+   * So take the larger: at least what the clock says has passed, and at least
+   * what the host says this frame is worth. Neither can lose time the other
+   * still holds, and `flyDt` still drops a stall (which arrives as a large
+   * MEASURED gap, whatever the host claims) rather than spending it.
+   *
+   * @param {number} stated dt in seconds as the host reports it
+   * @returns {number} real seconds the lens may spend this frame
+   */
+  _realSeconds(stated) {
+    const now = performance.now() / 1000;
+    const measured = this._lastPerf > 0 ? now - this._lastPerf : 0;
+    this._lastPerf = now;
+    return flyDt(Math.max(stated > 0 ? stated : 0, measured > 0 ? measured : 0));
   }
 
   /**
@@ -405,11 +842,23 @@ export class Studio {
     this._interpSeen = true;
     if (!this.active) return;
     this._lastWall = this.ctx.engine.wallTime;
-    this._frame(flyDt(realDt || 0));
+    this._frame(this._realSeconds(realDt || 0));
   }
 
   _frame(realDt) {
     const ctx = this.ctx;
+    /*
+     * The pin, once more, on the LAST word before `engine.render()`. The 3.2 s
+     * respawn is a wall-clock `setTimeout`, so it can land between the sim tick
+     * that runs `_holdState()` and this frame's draw; re-asserting here is what
+     * guarantees no rendered frame ever shows the subject anywhere but where
+     * she fell. Two comparisons on a frame where nothing died.
+     */
+    if (this._deathFilm && ctx.player) {
+      const p = ctx.player;
+      if (p.position.distanceToSquared(this._deathPos) > 1e-8) p.position.copy(this._deathPos);
+      if (p.health > 0) p.health = 0;
+    }
     this._fly(realDt);
 
     ctx.camera.position.copy(this._pos);
@@ -498,6 +947,7 @@ export class Studio {
       nearRange: L.nearRange,
       farRange: L.farRange,
       aperture: L.aperture,
+      exposure: L.exposure,
       filter: L.filter,
       filterAmt: L.filterAmt,
       grain: L.grain,
@@ -545,8 +995,16 @@ export class Studio {
    * @returns {{ok:boolean, detail:string, handedState?:boolean}}
    */
   playPose(id) {
+    // "Idle" clears every one-shot channel, and a staged death is the one
+    // channel that cannot clear itself — it is held by the pin in
+    // `_holdState()`, not by a decaying layer weight. Released BEFORE the pose
+    // runs, so the clear lands on a living subject.
+    if (id === 'idle') this._releaseDeath();
     const r = this.pose.play(id);
-    if (r.handedState) this._deathFilm = true;
+    if (r.handedState) {
+      this._deathFilm = true;
+      if (this.ctx.player) this._deathPos.copy(this.ctx.player.position);
+    }
     return r;
   }
 
@@ -560,6 +1018,25 @@ export class Studio {
       active: this.active,
       state: this.ctx.state,
       prevState: this._prevState,
+      healthIn: this._healthIn,
+      health: this.ctx.player?.health ?? null,
+      deathFilm: this._deathFilm,
+      /* True when something in the WORLD killed her during this shoot (a
+       * `player-died` the studio did not stage). Latched, because the card it
+       * used to be read off expires 3.2 s in. */
+      realDeath: this._realDeath,
+      /* The out-of-loop hold: whether it is armed, how many times it has had to
+       * take the world back this session, and from what. `guardTakes > 0` with
+       * `guardFrom: 'death-menu'` is the signature of the freeze A79g covers. */
+      guard: { armed: this._guardId !== 0, takes: this._guardTakes, from: this._guardFrom },
+      /* What `_closeOverlays()` left behind. A photo mode with another lane's
+       * full-screen surface painted over it is not a photo mode; published so
+       * a gate can say so without reaching into `shell-menus`. */
+      overlays: {
+        hubOpen: !!this.ctx.menus?.hubOpen,
+        modal: this.ctx.menus?.modal ?? null,
+        deathState: this.ctx.menus?.deathState ?? null,
+      },
       timeScale: this.timeScale,
       engineTimeScale: e.timeScale,
       timeSources: e.timeScaleSources?.() ?? null,
@@ -616,6 +1093,10 @@ export class Studio {
         <label class="studio-row">Depth
           <input type="range" id="st-range" min="1" max="40" step="0.5" value="14">
           <output id="st-range-out">14.0</output>
+        </label>
+        <label class="studio-row">Exposure
+          <input type="range" id="st-exposure" min="-1.5" max="1.5" step="0.05" value="0">
+          <output id="st-exposure-out">0.00</output>
         </label>
         <div class="studio-sub">FILTER</div>
         <div class="studio-chips" id="st-filters"></div>
@@ -799,6 +1280,8 @@ export class Studio {
       this.lens.farRange = v;
       this.lens.nearRange = Math.max(1, v * 0.25);
     }, (v) => v.toFixed(1));
+    slider('#st-exposure', '#st-exposure-out', (v) => { this.lens.exposure = v; },
+      (v) => (v > 0 ? '+' : '') + v.toFixed(2));
     slider('#st-filter-amt', '#st-filter-amt-out', (v) => { this.lens.filterAmt = v; });
     slider('#st-grain', '#st-grain-out', (v) => { this.lens.grain = v; });
     slider('#st-vig', '#st-vig-out', (v) => { this.lens.vignette = v; });

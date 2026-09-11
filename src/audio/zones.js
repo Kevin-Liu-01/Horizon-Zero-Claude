@@ -31,6 +31,7 @@
  */
 
 import { SpatialChain, LoopEmitter } from './spatial.js';
+import { clockFor } from './clock.js';
 
 const MAX_CHAINS = 14;
 
@@ -44,6 +45,10 @@ export class ZoneEmitters {
     this.ac = ac;
     this.buses = buses;
     this.bank = bank;
+    // Chain reserve/reclaim is `now + fade` bookkeeping, so it runs on the
+    // monotonic clock: a context with no output device keeps its render clock
+    // pinned, and every retired emitter would hold its chain forever.
+    this.clock = clockFor(ac);
     /** @type {Map<string, {loop:LoopEmitter, chain:SpatialChain, set:string, x:number,y:number,z:number}>} */
     this._live = new Map();
     /** @type {SpatialChain[]} */
@@ -61,7 +66,7 @@ export class ZoneEmitters {
   /* ------------------------------- pool --------------------------------- */
 
   _sweep() {
-    const now = this.ac.currentTime;
+    const now = this.clock.now();
     for (let i = 0; i < this._chains.length; i++) {
       const c = this._chains[i];
       if (!c.busy || c.endsAt > now) continue;
@@ -105,7 +110,7 @@ export class ZoneEmitters {
     chain.route(opts.category || 'ambience');
     chain.busy = true;
     chain.priority = 1;
-    chain.startedAt = this.ac.currentTime;
+    chain.startedAt = this.clock.now();
     chain.endsAt = Infinity;
     chain.tag = id;
     chain.tracked = null;
@@ -130,7 +135,7 @@ export class ZoneEmitters {
     const e = this._live.get(id);
     if (!e) return false;
     e.loop.stop(fade);
-    e.chain.endsAt = this.ac.currentTime + fade + 0.1;
+    e.chain.endsAt = this.clock.now() + fade + 0.1;
     this._live.delete(id);
     return true;
   }

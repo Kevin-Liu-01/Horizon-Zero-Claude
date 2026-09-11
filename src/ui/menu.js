@@ -170,6 +170,17 @@ export class Menus {
     this._victoryT = -1;
     this._titleT = 0;
     this._dollyT = 0;
+    /**
+     * What `_dolly()` last authored, published through `audit().title.dolly`.
+     *
+     * Camera TRAVEL is a bad proxy for whether the closing move ran: the slow
+     * orbit alone covers ~9 m in the 2.6 s a gate watches, so a displacement
+     * threshold can be cleared by a camera that never closed in — and a jump
+     * cut clears it twice over. The ease and the radius are the quantities the
+     * shot is actually authored in, so they are the ones exposed. Preallocated
+     * and mutated in place; `_dolly` runs every frame of the title.
+     */
+    this._dollyInfo = { since: 0, ease: 0, radius: 0, camY: 0, pitchDeg: 0 };
     this._lastState = ctx.state;
     this._log = [];             // audit trail for gates
 
@@ -340,11 +351,25 @@ export class Menus {
    * straight down that pushed the horizon and the entire sky out of frame, so
    * the title read as a muddy top-down diorama with a menu on it. A landscape
    * needs a horizon, so the pitch is the authored quantity here, not the look
-   * target — hold it at 8.5–12° and the horizon lands a third of the way down
-   * the frame, with sky behind the wordmark and the valley under the menu. The
-   * look point is then derived from the pitch (`lookY = camY - reach·tan θ`)
+   * target. The look point is derived from it (`lookY = camY - reach·tan θ`)
    * instead of the other way round, which is what keeps the composition steady
    * while the height, the radius and the terrain under the camera all change.
+   *
+   * THE SECOND CUT AIMED THE TILT THE WRONG WAY, and it took a measurement to
+   * see it. A probe marched the look ray at 16 points around the ring and read
+   * the rim crest's ELEVATION from the camera: 16.6–32.1°, and 18° in this
+   * sector. The camera's vertical half-FOV is 27.5° (`camera.fov` is vertical
+   * in three.js), so a 6° DOWNWARD tilt puts the top of frame at 21.5° — three
+   * and a half degrees above an eighteen-degree crest. That is the whole reason
+   * the shot read as a flat beige wall with the wordmark painted on it: the sky
+   * was there, but only a notch of it cleared the ridge.
+   *
+   * Tilting UP ~1.5–4.5° instead lifts the top of frame to 29–32° and gives the
+   * ridgeline a real band of sky above it, which is what turns the rim from the
+   * subject into a silhouette. Raising the camera would do it too, but that is
+   * the 118 m contour map again — at 590–640 m out, dropping the crest to 12°
+   * needs 113 m of altitude, and everything the world lanes built disappears
+   * below the resolution of the shot. So: stay low, tilt up, keep the meadow.
    */
   _dolly(dt) {
     const cam = this.ctx.camera;
@@ -352,16 +377,36 @@ export class Menus {
     if (!cam) return;
     this._dollyT += dt;
     const t = this._dollyT;
+    /**
+     * TWO CLOCKS, AND THEY ARE NOT INTERCHANGEABLE — this was a real jump cut.
+     *
+     *   `_dollyT` counts from the moment the title appears. It drives the
+     *     CONTINUOUS orbit below, which is already running while the player
+     *     reads the press-any-key line.
+     *   `_titleT` is zeroed by `_titleAdvance()` on the keypress, so it counts
+     *     from the PRESS. It drives everything that is supposed to be triggered
+     *     BY the press: the closing ease and the menu beat.
+     *
+     * Keying the ease to `_dollyT` meant `closing` was already spent before the
+     * player touched anything: `closing` is clamped to 0 during 'press', so the
+     * frame the stage flipped it snapped from 0 to titleTime/9 in one step —
+     * measured at 35 m of camera translation in a single frame after an 8 s
+     * title, with the rim, the Tallneck and the camp all sliding at once. Past
+     * 9 s of title there was no move left at all, only the orbit. It also ate
+     * the 1.1 s beat: `t > 1.1` was already true, so the menu appeared on the
+     * first frame instead of after the vista had started travelling.
+     */
+    const since = this._titleT;
 
-    // the menu fades in 1.1 s into the move, so the vista is already travelling
-    // when the buttons arrive
-    if (this.titleStage === 'dolly' && t > 1.1) {
+    // the menu fades in 1.1 s AFTER THE PRESS, so the vista is already
+    // travelling when the buttons arrive
+    if (this.titleStage === 'dolly' && since > 1.1) {
       this.titleStage = 'menu';
       this.titleEl?.classList.add('menu-in');
     }
 
     // a slow arc over the valley that descends toward the camp once a key is hit
-    const closing = this.titleStage === 'press' ? 0 : clamp(t / 9, 0, 1);
+    const closing = this.titleStage === 'press' ? 0 : clamp(since / 9, 0, 1);
     const ease = closing * closing * (3 - 2 * closing);
     // START_ANG is a composition choice, not a default: filmed at eight points
     // around the ring, this is the sector that puts the Tallneck's silhouette
@@ -380,18 +425,30 @@ export class Menus {
      * palisade, the campfire smoke) is below the resolution of the shot and the
      * only things left are haze and the rim. At ~30 m the same frame has a
      * foreground, Mother's Watch is a legible subject, and the rim ring becomes
-     * a backdrop instead of the subject. Sky is what the bowl cannot give from
-     * the inside — a 150–350 m rim at 400 m is 25–40° tall from anywhere in
-     * here — so the composition spends its top band on the rim's notches rather
-     * than pretending to a horizon it does not have.
+     * a backdrop instead of the subject.
      */
     const camY = ground + 32 - ease * 7;
     cam.position.set(cx, camY, cz);
-    // 6° of tilt: meadow under the menu, camp on the third, rim behind the logo
-    const pitch = (6 + ease * 2.5) * (Math.PI / 180);
+    /**
+     * NEGATIVE = TILT UP, and it has to grow across the move. Closing in costs
+     * sky twice over: the camera drops 7 m and the crest gets 34 m nearer, so
+     * the same ridge subtends a larger angle at the end of the arc than at the
+     * start. Opening the tilt from 1.5° to 4.5° holds the ridgeline in the same
+     * band of the frame from the first beat to the last — filmed at ease 0,
+     * 0.25, 0.5, 0.75 and 1 to check that no frame in between collapses.
+     */
+    const pitch = (-1.5 - ease * 3) * (Math.PI / 180);
     const reach = radius * 1.05;
     cam.lookAt(CAMP.x, camY - reach * Math.tan(pitch), CAMP.z);
     cam.updateMatrixWorld();
+
+    // mutate in place — no allocation inside the frame loop
+    const di = this._dollyInfo;
+    di.since = since;
+    di.ease = ease;
+    di.radius = radius;
+    di.camY = camY;
+    di.pitchDeg = -(1.5 + ease * 3);
   }
 
   continueGame() {
@@ -1050,6 +1107,15 @@ export class Menus {
         pressVisible: vis(this._pressEl),
         logos: logos.length,
         keybindWallInTitle: !!document.querySelector('#title .keybinds-panel'),
+        dolly: {
+          since: +this._dollyInfo.since.toFixed(3),
+          ease: +this._dollyInfo.ease.toFixed(4),
+          radius: +this._dollyInfo.radius.toFixed(2),
+          camY: +this._dollyInfo.camY.toFixed(2),
+          pitchDeg: +this._dollyInfo.pitchDeg.toFixed(2),
+          titleT: +this._titleT.toFixed(3),
+          dollyT: +this._dollyT.toFixed(3),
+        },
         camera: ctx.camera ? {
           x: +ctx.camera.position.x.toFixed(2),
           y: +ctx.camera.position.y.toFixed(2),

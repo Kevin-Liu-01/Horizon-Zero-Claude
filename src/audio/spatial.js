@@ -229,8 +229,16 @@ export class SpatialPool {
     this.peak = 0;
   }
 
-  /** @returns {SpatialChain|null} */
-  acquire(priority, nowCtx) {
+  /**
+   * @param {number} priority
+   * @param {number} nowCtx  bookkeeping time — what `endsAt` was written in
+   *        (see src/audio/clock.js: monotonic, so a dead render clock cannot
+   *        freeze the pool into "every chain is busy forever")
+   * @param {number} [schedCtx] scheduling time for the steal fade; defaults to
+   *        `nowCtx`, which is the same number in any healthy context
+   * @returns {SpatialChain|null}
+   */
+  acquire(priority, nowCtx, schedCtx = nowCtx) {
     let free = null;
     let victim = null;
     let active = 0;
@@ -252,12 +260,12 @@ export class SpatialPool {
       const g = victim.voiceGain && victim.voiceGain.gain;
       if (g) {
         try {
-          g.cancelScheduledValues(nowCtx);
-          g.setValueAtTime(g.value, nowCtx);
-          g.linearRampToValueAtTime(0, nowCtx + 0.025);
+          g.cancelScheduledValues(schedCtx);
+          g.setValueAtTime(g.value, schedCtx);
+          g.linearRampToValueAtTime(0, schedCtx + 0.025);
         } catch { /* offline contexts can refuse a past time */ }
       }
-      try { victim.source?.stop(nowCtx + 0.04); } catch { /* already stopped */ }
+      try { victim.source?.stop(schedCtx + 0.04); } catch { /* already stopped */ }
       victim.busy = false;
       victim.tracked = null;
       victim.voiceGain = null;

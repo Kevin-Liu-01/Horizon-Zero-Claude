@@ -47,6 +47,7 @@ const StudioShader = {
     uNearRange: { value: 4 },
     uFarRange: { value: 14 },
     uMaxRadius: { value: 0 },      // px; 0 disables the gather entirely
+    uExposure: { value: 0 },       // print stops; 0 is an exact no-op
     uFilter: { value: 0 },
     uFilterAmt: { value: 1 },
     uGrain: { value: 0 },
@@ -76,6 +77,7 @@ const StudioShader = {
     uniform float uNearRange;
     uniform float uFarRange;
     uniform float uMaxRadius;
+    uniform float uExposure;
     uniform float uFilter;
     uniform float uFilterAmt;
     uniform float uGrain;
@@ -142,6 +144,20 @@ const StudioShader = {
           }
           col = sum / max(1e-4, wsum);
         }
+      }
+
+      /* ------------------------------- print exposure ------------------- */
+      // A DARKROOM exposure, not a scene one. The composer has already tone
+      // mapped by the time this pass runs, so a plain multiply would burn the
+      // sky to paper white while the shadow it was opened for barely moved.
+      // pow(x, 2^-EV) pins pure black and pure white exactly where they are
+      // and walks the MIDTONES by whole stops, which is what a backlit subject
+      // actually needs. Values the grade left above 1 (bloom cores) are not
+      // clamped into that curve — they ride the same stop linearly — so opening
+      // up cannot quietly flatten a highlight into white.
+      if (abs(uExposure) > 0.001) {
+        vec3 lo = pow(clamp(col, 0.0, 1.0), vec3(exp2(-uExposure)));
+        col = lo + max(vec3(0.0), col - 1.0) * exp2(uExposure);
       }
 
       /* -------------------------------- film filters -------------------- */
@@ -232,6 +248,7 @@ export class StudioPass extends ShaderPass {
     // aperture 0..1 -> 0..22 px of gather at 1080p-ish, scaled by height so the
     // look is resolution independent
     u.uMaxRadius.value = opts.dof ? opts.aperture * 22 * (this._h / 900) : 0;
+    u.uExposure.value = opts.exposure || 0;
     u.uFilter.value = Math.max(0, FILTERS.indexOf(opts.filter));
     u.uFilterAmt.value = opts.filterAmt;
     u.uGrain.value = opts.grain;
@@ -241,6 +258,7 @@ export class StudioPass extends ShaderPass {
     u.uTime.value = (u.uTime.value + realDt) % 1000;
     this.enabled = !!(opts.active
       && (u.uMaxRadius.value > 0.25 || u.uFilter.value > 0 || u.uFrameAspect.value > 0.01
-        || u.uGrain.value > 0.001 || u.uVignette.value > 0.001));
+        || u.uGrain.value > 0.001 || u.uVignette.value > 0.001
+        || Math.abs(u.uExposure.value) > 0.001));
   }
 }

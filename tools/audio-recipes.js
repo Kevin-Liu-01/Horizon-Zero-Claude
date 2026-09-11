@@ -1014,8 +1014,26 @@
     watcher: { f: 640, type: 'square', band: 1900, Q: 4.2, am: 5.6, depth: 0.45, hi: 3400, tick: 0.62, amp: 0.10 },
     strider: { f: 196, type: 'sawtooth', band: 720, Q: 2.0, am: 2.4, depth: 0.3, hi: 2100, tick: 0.9, amp: 0.13 },
     scrapper: { f: 262, type: 'square', band: 1250, Q: 2.6, am: 8.4, depth: 0.55, hi: 2900, tick: 0.34, amp: 0.11 },
-    longleg: { f: 330, type: 'triangle', band: 2500, Q: 3.4, am: 3.6, depth: 0.4, hi: 4400, tick: 0.72, amp: 0.10 },
-    glinthawk: { f: 420, type: 'sawtooth', band: 3100, Q: 1.8, am: 12.0, depth: 0.6, hi: 5600, tick: 1.4, amp: 0.09 },
+    // Longleg and Glinthawk started life one table row apart and measured as
+    // the SAME BED (12-band cosine distance 0.006, centroids 7124 vs 7186 Hz):
+    // both were carried by their coolant hiss and relay ticks, which sat in the
+    // same octave, so the one thing these beds exist to tell a stalking player
+    // — WHICH machine is behind that rock — was exactly the thing they could
+    // not say. They are now built from different mechanisms, not different
+    // numbers: a pneumatic ground bird versus a rotor.
+    longleg: {
+      f: 250, type: 'triangle', band: 1150, Q: 2.4, am: 2.2, depth: 0.4,
+      hi: 2600, tick: 0.95, amp: 0.11,
+      // the pneumatic sigh its legs make between steps
+      pneumatic: { f0: 300, f1: 150, every: 1.45, dur: 0.55, amp: 0.5 },
+    },
+    glinthawk: {
+      f: 420, type: 'sawtooth', band: 3100, Q: 1.8, am: 12.0, depth: 0.6,
+      hi: 5600, tick: 0, amp: 0.09,
+      // airborne: no relay ticks on the ground, and the bed IS the rotor —
+      // band-limited air chopped at blade rate, under a turbine whine
+      rotor: { rate: 13.5, depth: 0.85, band: 900, Q: 0.8, amp: 0.5, whine: 5200 },
+    },
     sawtooth: { f: 132, type: 'sawtooth', band: 560, Q: 1.6, am: 1.8, depth: 0.35, hi: 1700, tick: 0.86, amp: 0.15 },
     behemoth: { f: 58, type: 'sawtooth', band: 240, Q: 1.2, am: 1.1, depth: 0.4, hi: 900, tick: 1.1, amp: 0.19 },
     thunderjaw: { f: 82, type: 'sawtooth', band: 340, Q: 1.4, am: 1.6, depth: 0.45, hi: 1400, tick: 0.78, amp: 0.18 },
@@ -1040,9 +1058,37 @@
       const o2 = A.ac.createOscillator();
       o2.type = 'sine'; o2.frequency.value = S.f * 2.01;
       o2.connect(h); o2.start(0); o2.stop(dur);
-      // relay ticks — the give-away a stalking player listens for
-      for (let t = 0.1; t < dur - 0.12; t += S.tick * (0.75 + A.R() * 0.5)) {
-        A.metal(t, S.hi * A.rnd(0.7, 1.3), 0.035, S.amp * 0.35, [1, 2.5]);
+      // relay ticks — the give-away a stalking player listens for. A flier has
+      // none: there is no chassis resting on the ground to tick.
+      if (S.tick > 0) {
+        for (let t = 0.1; t < dur - 0.12; t += S.tick * (0.75 + A.R() * 0.5)) {
+          A.metal(t, S.hi * A.rnd(0.7, 1.3), 0.035, S.amp * 0.35, [1, 2.5]);
+        }
+      }
+      // --- per-species mechanism, not a per-species number ---------------
+      if (S.rotor) {
+        // blade chop: air through a low band, gated hard at blade rate
+        const chop = A.am(0, dur, S.rotor.rate, S.rotor.depth,
+          A.flt('bandpass', S.rotor.band, S.rotor.Q));
+        const cg = A.ac.createGain(); cg.gain.value = S.amp * S.rotor.amp;
+        cg.connect(chop);
+        A.ns(0, dur, cg, 0.85);
+        // turbine whine riding over it, chopped by the same blade rate
+        const wg = A.ac.createGain(); wg.gain.value = S.amp * 0.16;
+        wg.connect(A.am(0, dur, S.rotor.rate, 0.5, A.flt('bandpass', S.rotor.whine, 6)));
+        const wo = A.ac.createOscillator();
+        wo.type = 'sawtooth'; wo.frequency.value = S.rotor.whine * 0.5;
+        wo.connect(wg); wo.start(0); wo.stop(dur);
+      }
+      if (S.pneumatic) {
+        const P = S.pneumatic;
+        for (let t = 0.22; t < dur - P.dur; t += P.every * (0.85 + A.R() * 0.3)) {
+          // a falling hiss: the leg venting, low and throaty
+          A.burst(t, P.dur, {
+            f: P.f0, Q: 1.1, gain: S.amp * P.amp, atk: 0.03, sweepTo: P.f1,
+          });
+          A.thump(t + 0.02, 84, 0.18, S.amp * 0.5);
+        }
       }
     };
   }

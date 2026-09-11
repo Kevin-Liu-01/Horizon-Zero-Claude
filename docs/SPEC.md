@@ -866,6 +866,34 @@ destination ← comp ← master ← worldLP┤── voiceVol ←── voiceBus
 reverb tail together, and **the heartbeat is gone** (`audio-09`). `uiBus` bypasses `worldLP` and
 every ducker (`audio-12`). The reverb return re-enters *under* `worldLP`.
 
+`buildBuses()` makes every one of those edges through a `wire()` helper that records it, so
+`buses.graph.edges` and `buses.graph.pathFrom(name)` are a description that cannot drift from the
+wiring — the same call produces both. `A73d-ui-bus` walks it, because WebAudio exposes no way to
+read a connection and a box with no output device renders no samples to analyse.
+
+### 13.2a The two clocks (`src/audio/clock.js`)
+
+A context can report `state === 'running'` while `currentTime` **never advances**, because there
+is no output device behind it. That is the normal state of headless Chrome (every audio gate) and
+of any machine that has lost its audio device. Everything written as `now + duration` then wedges
+permanently: the voice cap stops expiring (so `play2D` returns false for the rest of the session —
+no footsteps, no bow, no breath), `SpatialPool` stops reclaiming chains, and the score's pending
+transition never retires. `src.onended` never fires either: it is the render thread's callback.
+
+So the mix keeps two clocks, and **they must never be compared with each other**:
+
+| clock | what it is | used for |
+|---|---|---|
+| `audio._now()` / `clock.sched()` | raw `ac.currentTime` | anything handed to WebAudio: `src.start`, ramps, `cancelScheduledValues` |
+| `audio._mono()` / `clock.now()` | monotonic; follows `currentTime` while it advances, falls forward on the wall clock when it stalls under a running context | every `now + duration` this code later compares: voice cap, `chain.endsAt`, zone reclaim, the bar grid, stinger throttles |
+
+In any healthy browser the two return the same number and behaviour is identical to having no
+clock at all. `clock.stalled` reports the no-device case; `MusicDirector` uses it to drive the
+stem crossfade from the frame loop (`_driveGains()`) along the exact curve the scheduled ramp
+would have produced. Without it a stalled context leaves every stem's `gain.value` at its
+pre-transition level for the whole stall — which is what the debug overlay, `A77-music-states`
+and a returning device all read.
+
 ### 13.3 Published `ctx.audio` API
 
 ```js
@@ -971,7 +999,13 @@ neighbour rather than all the way back to `foot/grass`. `A76-footfalls` sweeps t
 10 m × 6° polar grid and walks on every surface that sweep produces: a silent surface, or one
 that falls through to `foot/grass`, fails the gate.
 
-### 13.6 Bank contents (95 sets / 149 files)
+The **ambience bed asks the ground directly** (`_surfaceAt(x, z)` at the 2 Hz bed poll) rather than
+reading the surface a footstep happened to cache. Reading the cache meant the bed only ever changed
+on a step, so fast travel, a respawn, a fall onto a ledge or a studio camera move left the meadow
+playing on bare rock until she walked. `A74b-ambience-zones` walks the real valley and requires the
+ridge and the river bank to name their own beds, one bed audible at a time.
+
+### 13.6 Bank contents (104 sets / 167 files)
 
 | group | sets | what it carries |
 |---|---|---|
@@ -982,11 +1016,21 @@ that falls through to `foot/grass`, fails the gate.
 | `hit/` | 7 | the ladder `plink→thunk→crunch→crit` + `flesh-soft/hard` + `ground` |
 | `status/` | 3 | `burn`/`shock`/`frost` positional loops |
 | `voice/` | 16 | `<8 species> × {windup,strike}`, spectrally distinct (A75) |
-| `idle/` | 8 | one servo idle bed **per species**, not one shared hum |
+| `idle/` | 8 | one servo idle bed **per species**, not one shared hum — spectrally distinct (A75) |
 | `mstep/` | 3 | footfall by weight class, 3 variations each |
 | `machine/` | 9 | `servo-loop stagger powerdown collapse loot-beacon scan-ping alarm warble unwarble` |
 | `amb/` | 7 | `meadow river forest ridge night` beds + `campfire` + `call-far` |
+| `melee/` | 5 | the spear: `whoosh` + `light`/`heavy`/`crit` rungs + `silent` (Silent Strike) |
+| `trap/` | 2 | Tripcaster `place` (wire took) + `trigger` (blast) |
+| `rope/` | 2 | Ropecaster `attach` (pitch climbs per rope) + `tie` (the pin) |
 | `music/` | 11 | 7 stems + 4 stingers (§13.7) |
+
+The `melee/`, `trap/` and `rope/` sets are driven by `combat`'s published events — `melee-hit`
+(`heavy`/`crit` pick the rung), `silent-strike`, `trap-placed`, `trap-triggered`, `rope-attached`
+(`ropes`/`need` raise the pitch) and `machine-tied`. `A73e-melee-traps` drives all six and
+attributes each cue by object identity. **Open cross-lane request:** a *missed* spear swing is
+still silent, because `combat` publishes no swing event — a `melee-swing { heavy, point }` emit in
+`src/combat/melee.js` would let `melee/whoosh` play on a whiff.
 
 ### 13.7 The adaptive score (`src/audio/music.js`)
 

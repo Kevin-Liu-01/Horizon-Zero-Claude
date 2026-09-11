@@ -250,14 +250,13 @@
 
   <div id="hud" class="hidden"></div>
 
+  <!-- shell-menus used to need a second module tag here to bootstrap itself off
+       `window.__CTX__`. It is retired: `main.js` now calls `installMenus(ctx)`
+       deterministically after the HUD, and `__CTX__` is published AFTER that
+       call, so the fallback's poll could only ever find a context that already
+       had `ctx.menus` — a guaranteed no-op and a second, ambiguous install path
+       for one lane's module. `autoInstall()` stays in menu.js (still idempotent,
+       still guarded) so the module is safe to load on its own in a lab page. -->
   <script type="module" src="/src/main.js"></script>
-
-  <!-- shell-menus (Round 4, lane-owned bootstrap; index.html is unfrozen for
-       `shell-hud` AND `shell-menus` per ROUND4-AUDIT §3.3). This module
-       self-installs off `window.__CTX__` and is idempotent, so `core-platform`
-       can replace it with `installMenus(ctx)` in main.js beside
-       `installProgression(ctx)` and delete this tag — see
-       docs/ROUND4-SHELL-MENUS.md §Requests. -->
-  <script type="module" src="/src/ui/menu.js"></script>
 </body>
 </html>

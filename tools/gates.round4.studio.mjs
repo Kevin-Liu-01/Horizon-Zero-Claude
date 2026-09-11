@@ -148,12 +148,34 @@ export const GATES = [
     id: 'A78b-cast-pose-set', kind: 'action', lane: 'studio',
     title: 'Every cast state and every Aloy pose the panels offer is accepted: sustained states hold, one-shots resolve, a hit/death is filmable from `studio`',
     setup: `(async () => { __CTX__.input.enabled = true; })()`,
-    settle: 600, timeout: 120000,
+    /*
+     * 300 s, and it is headroom, not slack. Every wait in here is capped in
+     * WALL milliseconds already (`simSleep`'s `capX`), so a hung page still
+     * ends the gate in well under a minute of its own accounting — the budget
+     * only decides whether a CONTENDED box is allowed to finish. Measured: 23 s
+     * with the lane alone on the machine, and a 120 s timeout on the same
+     * commit when a second lane's full suite shared the CPU, which reported
+     * `ERR: gate assert timeout` — a red that says nothing about the build. The
+     * assertions below are untouched; only the patience is.
+     */
+    settle: 600, timeout: 300000,
     assert: `(async () => {
       ${SIMCLOCK} ${FREEZE} ${PARK} ${ENTER}
       const ctx = __CTX__, S = ctx.studio;
       if (!S) return { pass: false, detail: 'no ctx.studio' };
       if (!(await enterStudio())) return { pass: false, detail: 'F10 did not open photo mode' };
+
+      /*
+       * THE HEALTH THE SUBJECT WALKED IN WITH. A photo mode undoes what it
+       * staged; it must not HAND OUT what it never took. The first Round 4 cut
+       * healed to maxHealth on the way out of a filmed death, so
+       * F10 -> Death -> Esc was a free full heal in three inputs (judged:
+       * 37 HP in, 100 HP out) — and since the Death button is one bind away
+       * during live combat, that is a gameplay exploit shipped by a camera.
+       * Read here rather than after the hit below, because the hit is staged
+       * too and the same rule covers it: exit must return EXACTLY this number.
+       */
+      const healthIn = ctx.player.health;
 
       /* ---- 1. every sustained cast state actually sticks -------------- */
       const stateBtns = [...S._ui.querySelectorAll('#st-cast-states button')];
@@ -209,14 +231,60 @@ export const GATES = [
        * three seconds into every death shot.
        */
       const deathPos = p.position.clone();
+      const headY = () => {
+        const b = p.animator?.b?.head?.bone;
+        return b ? +b.matrixWorld.elements[13].toFixed(2) : null;
+      };
+      const headUp = headY();
       poseBtns.find((b) => b.dataset.pose === 'death').click();
       await sleep(600);
-      const diedTo = ctx.state;                 // studio takes 'dead' back at once
+      const diedTo = ctx.state;
       const died = p.health <= 0 || diedTo === 'studio' || diedTo === 'dead';
-      await sleep(3600);                        // WALL seconds, past the 3200 ms respawn
+
+      /* The pose has to be ON THE CHARACTER, not merely in her health. The
+       * studio shipped a death that zeroed health, latched every flag the
+       * panel reports and left Aloy STANDING through the whole shot, because
+       * the crumple is gated on ctx.state === 'dead' and the studio was
+       * taking that state back on the next tick. Measured on the skeleton:
+       * _deadW (the animator's own gate) and the head's world height, which
+       * drops ~1.3 m when she actually goes down.
+       *
+       * TIMED IN SIM SECONDS, NOT WALL MILLISECONDS. The crumple is scrubbed
+       * off the animator's _dieT, which advances on SIM dt, and the clip's
+       * own 2.375 s tail parks on a bad STANDING frame (the player-anim defect
+       * documented in src/studio/pose.js, which this gate deliberately does not
+       * assert around). A wall-clock sleep therefore samples a different
+       * point of the clip on every box: it read 1.21 m of fall on a contended
+       * one and 0.25 m on a free one — same build, same code, and the second
+       * reading was nothing but the sample landing past the tail. Waiting
+       * ~1.2 s of SIM puts it where the comment always claimed it was, inside
+       * the crumple; the minimum across the window comes along so a future red
+       * says whether she never went down or merely stood back up.
+       */
+      let headMin = headUp;
+      await simSleep(1.2, () => {
+        const y = headY();
+        if (y !== null && (headMin === null || y < headMin)) headMin = y;
+      });
+      const deadW = S.debug().pose.deadW;
+      const headDown = headY();
+      const fell = headUp !== null && headDown !== null ? +(headUp - headDown).toFixed(2) : null;
+      const fellMax = headUp !== null && headMin !== null ? +(headUp - headMin).toFixed(2) : null;
+
+      await sleep(2600);                        // WALL seconds, past the 3200 ms respawn
       const heldState = ctx.state;
       const teleportedM = p.position.distanceTo(deathPos);
       const stillDown = p.health <= 0;
+
+      /* ---- 4b. the death PRESENTATION must not land on the photograph ----
+       * shell-menus answers 'player-died' with a card and, worse for a photo
+       * mode, with a CSS grade on the render canvas
+       * (grayscale/brightness/contrast, their A69 asserts the peak > 0.8).
+       * Both are right for gameplay and both are wrong here: the frame is the
+       * lens's. Measured on the live canvas, not on our own intent.
+       */
+      const canvasFilter = getComputedStyle(ctx.renderer.domElement).filter || 'none';
+      const greyed = canvasFilter !== 'none' && canvasFilter !== '';
 
       /* ---- 5. jump / roll / crouch are not refused -------------------- */
       const refusals = [];
@@ -226,12 +294,23 @@ export const GATES = [
         await sleep(60);
       }
       S.exit();
+      await sleep(250);
+      // A death the studio staged is the studio's to retire on the way out:
+      // leaving the card up hands the photographer a living valley with YOU
+      // DIED painted across it.
+      const cardLeftUp = !!document.body.classList.contains('hzc-dead')
+        || !!ctx.menus?.deathState
+        || !!document.querySelector('.mn-death.show');
+      const filterLeftOn = (getComputedStyle(ctx.renderer.domElement).filter || 'none') !== 'none';
 
       const detail = 'states[' + stateLog.join(' ') + '] poses[' + poseLog.join(' ') + ']'
         + ' hitTookDamage=' + hitTook + ' hitSlot=' + hitSlot + ' stateDuringHit=' + stateKept
-        + ' deathFilmed=' + died + ' stateAfterRespawnWindow=' + heldState
+        + ' deathFilmed=' + died + ' deadW=' + deadW + ' headFell=' + fell + 'm(max ' + fellMax + 'm)'
+        + ' stateAfterRespawnWindow=' + heldState
         + ' subjectMoved=' + teleportedM.toFixed(2) + 'm stillDown=' + stillDown
-        + ' exitState=' + ctx.state + ' healedOnExit=' + (p.health > 0)
+        + ' canvasFilterDuringDeath=' + canvasFilter
+        + ' cardLeftUpAfterExit=' + cardLeftUp + ' filterLeftOn=' + filterLeftOn
+        + ' exitState=' + ctx.state + ' health=' + healthIn + '->' + p.health
         + (refusals.length ? ' REFUSED=' + refusals.join(',') : ' allPosesAccepted');
 
       if (stateBad.length) return { pass: false, detail: 'cast states did not stick: ' + stateBad.join(',') + ' — ' + detail };
@@ -239,11 +318,32 @@ export const GATES = [
       if (!hitTook) return { pass: false, detail: 'takeDamage still refused in studio state (player-anim-17) — ' + detail };
       if (hitSlot !== 'hitChest' && hitSlot !== 'hitHead') return { pass: false, detail: 'no hit-react layer started — ' + detail };
       if (!died) return { pass: false, detail: 'death pose did nothing — ' + detail };
-      if (heldState !== 'studio') return { pass: false, detail: 'the respawn timer took the world off the studio mid-shoot (state=' + heldState + ') — ' + detail };
+      if (!(deadW > 0.85)) return { pass: false, detail: 'the death never reached the animator (deadW=' + deadW + ') — ' + detail };
+      if (!(fell > 0.8)) {
+        return {
+          pass: false,
+          detail: (fellMax > 0.8
+            ? 'she went down (' + fellMax + ' m) and then STOOD BACK UP by the sample (' + fell + ' m) — the crumple is not holding'
+            : 'she died standing up: head dropped only ' + fell + ' m, never more than ' + fellMax + ' m')
+            + ' — ' + detail,
+        };
+      }
+      if (heldState !== 'studio' && heldState !== 'dead') return { pass: false, detail: 'something took the world off the studio mid-shoot (state=' + heldState + ') — ' + detail };
       if (teleportedM > 0.6) return { pass: false, detail: 'the subject was teleported ' + teleportedM.toFixed(1) + ' m out of frame by the respawn — ' + detail };
       if (!stillDown) return { pass: false, detail: 'the death would not hold: she was healed out of the pose mid-shoot — ' + detail };
+      if (greyed) return { pass: false, detail: 'the death card graded the photograph (canvas filter "' + canvasFilter + '") — ' + detail };
       if (ctx.state !== 'playing') return { pass: false, detail: 'exit did not restore playing — ' + detail };
+      if (cardLeftUp) return { pass: false, detail: 'exit left the death card up over a living world — ' + detail };
+      if (filterLeftOn) return { pass: false, detail: 'exit left a grade on the canvas — ' + detail };
       if (p.health <= 0) return { pass: false, detail: 'exit handed back a live world with a dead Aloy in it — ' + detail };
+      if (p.health > healthIn) {
+        return { pass: false, detail: 'photo mode HEALED her out of a staged death: ' + healthIn + ' HP in, '
+          + p.health + ' HP out — a free heal is not a camera undo — ' + detail };
+      }
+      if (p.health < healthIn) {
+        return { pass: false, detail: 'photo mode left her DOWN health it staged itself: ' + healthIn + ' HP in, '
+          + p.health + ' HP out — ' + detail };
+      }
       if (refusals.length) return { pass: false, detail: 'poses refused — ' + detail };
       return { pass: true, detail };
     })()`,
@@ -565,6 +665,14 @@ export const GATES = [
         const v = S._ui.querySelector('#st-vig'); v.value = '0.6';
         v.dispatchEvent(new Event('input', { bubbles: true }));
       }, () => 'v=' + u.uVignette.value.toFixed(2));
+      // Each trip has to be the ONLY thing armed or it proves nothing about
+      // its own control, so the exposure trip puts the vignette back first.
+      const expOn = await trip('exposure', () => {
+        const v = S._ui.querySelector('#st-vig'); v.value = '0';
+        v.dispatchEvent(new Event('input', { bubbles: true }));
+        const e = S._ui.querySelector('#st-exposure'); e.value = '0.6';
+        e.dispatchEvent(new Event('input', { bubbles: true }));
+      }, () => 'ev=' + u.uExposure.value.toFixed(2));
 
       const filters = [...S._ui.querySelectorAll('#st-filters button')].length;
       const frames = [...S._ui.querySelectorAll('#st-frames button')].length;
@@ -585,11 +693,103 @@ export const GATES = [
       if (!frameOn) return { pass: false, detail: 'a 2.39 frame did not arm the pass — ' + detail };
       if (!grainOn) return { pass: false, detail: 'grain did not arm the pass — ' + detail };
       if (!vigOn) return { pass: false, detail: 'vignette did not arm the pass — ' + detail };
+      if (!expOn) return { pass: false, detail: 'exposure did not arm the pass — ' + detail };
       if (filters < 6) return { pass: false, detail: 'only ' + filters + ' filters — ' + detail };
       if (frames < 6) return { pass: false, detail: 'only ' + frames + ' frames — ' + detail };
       if (!(focus > 1.4 && focus < 4.5)) return { pass: false, detail: 'auto-focus did not land on the subject 2.6 m away — ' + detail };
       if (headY !== null && Math.abs(headY - camY) > 0.8) return { pass: false, detail: 'auto-focus subject is not head height — ' + detail };
       if (!offAfter) return { pass: false, detail: 'pass still enabled after exit — gameplay pays for it — ' + detail };
+      return { pass: true, detail };
+    })()`,
+  },
+
+  /* ----------------------------------------------------------------- A79e */
+  {
+    id: 'A79e-pose-overlay-frozen', kind: 'action', lane: 'studio',
+    title: 'The gaze + expression overlay is IDEMPOTENT with the world frozen: holding a pose at timeScale 0 does not walk the bones it writes',
+    setup: `(async () => { __CTX__.input.enabled = true; })()`,
+    settle: 600, timeout: 90000,
+    assert: `(async () => {
+      ${SIMCLOCK} ${ENTER}
+      const ctx = __CTX__, S = ctx.studio;
+      if (!S) return { pass: false, detail: 'no ctx.studio' };
+      if (!(await enterStudio())) return { pass: false, detail: 'F10 did not open photo mode (state=' + ctx.state + ')' };
+
+      const a = ctx.player.animator;
+      if (!a || !a.b) return { pass: null, detail: 'SKIP: no animator bone table' };
+      /*
+       * WHY THIS GATE EXISTS. \`BoneSpace.rotChar\` MULTIPLIES into the bone. In
+       * gameplay the animator rewrites every bone from its clips each frame, so
+       * last frame's delta is gone before this frame's is added. The animator
+       * runs on SIM dt; this overlay runs on REAL dt (it must, or the face
+       * freezes with the world). At timeScale 0, therefore, NOTHING resets the
+       * bone and every rendered frame compounds — measured at ~1.4 rad/s, which
+       * shut Aloy's lids over her eyes as flat plates inside two seconds of
+       * composing a shot. Invisible in motion; ruins every frozen portrait,
+       * which is the only kind photo mode takes.
+       *
+       * The claim is the general one, not the symptom: hold a pose, freeze,
+       * and every bone the overlay writes must read the same at the end as at
+       * the start. Time is frozen for REAL seconds of rendered frames, so a
+       * per-frame delta has somewhere to accumulate if one is still there.
+       */
+      const names = ['eyeL', 'eyeR', 'lidUL', 'lidUR', 'lidLL', 'lidLR', 'head', 'neck1'];
+      const bones = [];
+      for (const n of names) {
+        const e = a.b[n];
+        const bone = e && (e.bone || e);
+        if (bone && bone.quaternion) bones.push([n, bone]);
+      }
+      if (bones.length < 4) return { pass: null, detail: 'SKIP: only ' + bones.length + ' of the overlaid bones exist on this rig' };
+
+      // hold a pose that drives BOTH channels: gaze (absolute solve) and lids
+      // (fixed angles — the half that ran away).
+      S.pose.gaze = 'camera';
+      S.pose.expression = 'narrow';
+      S.pose.expressionAmt = 1;
+      S.setTimeScale(1);
+      await sleep(900);                       // let gaze + lids damp to target
+      S.setTimeScale(0);
+      await sleep(500);                       // settle ON the frozen frame
+      if (ctx.engine.timeScale !== 0) return { pass: false, detail: 'could not freeze the world (ts=' + ctx.engine.timeScale + ')' };
+
+      const snap = () => bones.map(([, b]) => b.quaternion.clone());
+      const q0 = snap();
+      const s0 = ctx.engine.simTime;
+      // count rendered frames: a drift claim is only worth anything if frames
+      // actually went by while the world did not.
+      let frames = 0, raf = 0;
+      const tick = () => { frames++; raf = requestAnimationFrame(tick); };
+      raf = requestAnimationFrame(tick);
+      await sleep(2000);
+      cancelAnimationFrame(raf);
+      const q1 = snap();
+      const simDrift = ctx.engine.simTime - s0;
+
+      let worst = 0, worstName = '';
+      for (let i = 0; i < bones.length; i++) {
+        // angle between the two orientations, in radians
+        const d = Math.min(1, Math.abs(q0[i].dot(q1[i])));
+        const ang = 2 * Math.acos(d);
+        if (ang > worst) { worst = ang; worstName = bones[i][0]; }
+      }
+
+      // ...and the face must come back untouched when photo mode closes.
+      S.exit();
+      await sleep(300);
+      const afterExit = S.debug().pose.lidUp;
+
+      const detail = 'held narrow+camera frozen for 2.0s over ' + frames + ' rendered frames'
+        + ' (simDrift=' + simDrift.toFixed(4) + 's) | worst bone drift=' + worst.toFixed(4)
+        + ' rad on ' + worstName + ' across ' + bones.length + ' bones [' + bones.map(([n]) => n).join(',') + ']'
+        + ' | lidUp after exit=' + afterExit;
+
+      if (frames < 8) return { pass: false, detail: 'only ' + frames + ' frames rendered while frozen — the measurement is broken, not the build — ' + detail };
+      if (Math.abs(simDrift) > 1e-6) return { pass: false, detail: 'the world simulated while frozen, so the animator was resetting the bones and this proves nothing — ' + detail };
+      // 0.01 rad = 0.57 deg. The runaway was 1.4 rad/s, i.e. ~2.8 rad over this
+      // window — 280x this bar — so the threshold is nowhere near the failure.
+      if (worst > 0.01) return { pass: false, detail: 'the overlay walked ' + worstName + ' by ' + worst.toFixed(3) + ' rad with the world frozen — a per-frame delta is compounding because nothing resets the bone at timeScale 0 — ' + detail };
+      if (afterExit !== 0) return { pass: false, detail: 'exit left lid state armed — ' + detail };
       return { pass: true, detail };
     })()`,
   },
@@ -615,16 +815,23 @@ export const GATES = [
       // shoulder line, so the portrait has a cheekbone in it and not a flat
       // passport frame. Camera forward for yaw y is (-sin y, 0, -cos y), so the
       // yaw that looks back at her from an offset of +dir is that dir's angle.
-      const off = p.heading + 0.44;
-      S._pos.set(p.position.x + Math.sin(off) * 2.6, p.position.y + 1.46, p.position.z + Math.cos(off) * 2.6);
+      const off = p.heading + 0.46;
+      // 1.8 m: a head-and-shoulders portrait, not a full-length record shot.
+      // At fov 36 that is 1.17 m of subject over the full window, and the 2.39
+      // letterbox keeps 74 % of it — so her head and shoulders own the frame
+      // instead of sharing it with four metres of grass.
+      S._pos.set(p.position.x + Math.sin(off) * 1.8, p.position.y + 1.52, p.position.z + Math.cos(off) * 1.8);
       S._yaw = off;
-      S._pitch = -0.03;
-      S._fov = 34;
+      S._pitch = -0.06;                // head onto the upper third
+      S._fov = 36;
       S.pose.gaze = 'camera';          // she meets the lens (look-at via anim-core)
       S.pose.expression = 'narrow';
-      S.lens.dof = true; S.lens.autoFocus = true; S.lens.aperture = 0.95;
-      S.lens.nearRange = 0.8; S.lens.farRange = 2.2;   // background gone by ~5 m
+      S.lens.dof = true; S.lens.autoFocus = true; S.lens.aperture = 1.0;
+      S.lens.nearRange = 0.7; S.lens.farRange = 1.6;   // background gone by ~4 m
       S.lens.filter = 'warm'; S.lens.filterAmt = 0.65;
+      // She is lit by a low sun somewhere behind her: without the print open
+      // the face the portrait is about goes to silhouette. Measured on film.
+      S.lens.exposure = 0.55;
       S.lens.grain = 0.16; S.lens.vignette = 0.48;
       S.lens.frameAspect = 2.39;
       S.setTimeScale(0);
@@ -639,11 +846,377 @@ export const GATES = [
       if (ctx.state !== 'studio') throw new Error('studio lost the world to state ' + ctx.state);
     })()`,
     criteria: [
-      'Aloy fills the centre of the frame, sharp, with her face turned toward the lens',
+      'a head-and-shoulders portrait: Aloy fills the centre of the frame, sharp, with her face turned toward the lens and readable (not a silhouette)',
       'the background is clearly defocused while she is not',
       'black bars top and bottom (a 2.39 letterbox), warm grade, soft vignette',
       'NO HUD elements and NO studio panels anywhere in the image',
     ],
+  },
+
+  /* ----------------------------------------------------------------- A79f */
+  {
+    id: 'A79f-photo-entry', lane: 'studio', kind: 'action',
+    title: 'F10 from the pause hub opens a CLEAN photograph, Esc leaves in ONE press even when another lane eats the keydown, and a filmed death is undone exactly — never healed',
+    setup: `(async () => { __CTX__.input.enabled = true; })()`,
+    settle: 400, timeout: 120000,
+    assert: `(async () => {
+      ${SIMCLOCK} ${ENTER}
+      const ctx = __CTX__, S = ctx.studio;
+      if (!S) return { pass: false, detail: 'no ctx.studio' };
+      const bad = [];
+      // dispatch the way a keyboard does: body target, so window-capture
+      // listeners really get the first look and registration order matters.
+      const key = async (code, ms) => {
+        document.body.dispatchEvent(new KeyboardEvent('keydown', { code, key: code, bubbles: true, cancelable: true }));
+        await sleep(40);
+        document.body.dispatchEvent(new KeyboardEvent('keyup', { code, key: code, bubbles: true, cancelable: true }));
+        await sleep(ms || 260);
+      };
+      if (ctx.state !== 'playing') ctx.state = 'playing';
+      ctx.player.health = 37;
+
+      /* ---- 1. F10 FROM THE PAUSE HUB -------------------------------------
+       * The documented entry states are playing / paused / dead / victory,
+       * and 'paused' is the one a photographer actually uses: you see a shot,
+       * you hit Esc, you hit F10. The lane shipped guessing the menus API
+       * (\`ctx.menu.close()\`; the published name is \`ctx.menus\` with
+       * closeHub/closeModal) and optional chaining swallowed the miss, so
+       * photo mode opened with the full-screen hub — map, tabs, status strip —
+       * painted over 100% of the photograph. Staged through the real keys.
+       */
+      await key('Escape');
+      const pausedOk = !!ctx.menus ? (ctx.menus.hubOpen === true) : (ctx.state === 'paused');
+      if (!ctx.menus && ctx.state !== 'paused') bad.push('could not reach a paused/hub state to enter from');
+      if (!(await enterStudio())) return { pass: false, detail: 'F10 from paused did not open photo mode (state=' + ctx.state + ')' };
+
+      const hubOpen = !!ctx.menus?.hubOpen;
+      const hubShown = !!document.querySelector('.mn-hub.show, #hub.show');
+      const bodyHub = document.body.classList.contains('hzc-hub-open');
+      /* The decisive read is not a class name, it is WHAT IS IN FRONT OF THE
+       * LENS. Hit-test the middle of the viewport: it must be the renderer's
+       * canvas (or the studio's own chrome), never another lane's surface. */
+      const cx = Math.round(window.innerWidth / 2), cy = Math.round(window.innerHeight / 2);
+      const hit = document.elementFromPoint(cx, cy);
+      const canvas = ctx.renderer.domElement;
+      const studioRoots = ['#studio-ui', '#studio-guides', '#studio-hint'];
+      const hitOk = !!hit && (hit === canvas || hit.contains(canvas)
+        || studioRoots.some((sel) => hit.closest?.(sel)));
+      // NB: no regex literal here. A backslash escape inside this template
+      // literal is eaten before the page ever sees it (/\s+/ would arrive as
+      // /s+/ and split on the letter s), so the class list is joined by hand.
+      const hitName = hit
+        ? hit.tagName + (hit.id ? '#' + hit.id : '')
+          + (typeof hit.className === 'string' && hit.className.trim()
+            ? '.' + hit.className.trim().split(' ').filter(Boolean).join('.') : '')
+        : 'null';
+      if (hubOpen) bad.push('the pause hub is still open over the photograph');
+      if (hubShown) bad.push('the hub element still carries .show');
+      if (bodyHub) bad.push('body still carries hzc-hub-open');
+      if (!hitOk) bad.push('the centre of frame is ' + hitName + ', not the render canvas');
+
+      /* ---- 2. ESC IS ONE PRESS ------------------------------------------
+       * Judged at two presses: the hub's own capture-phase handler (registered
+       * before the studio's, because main.js installs menus first) ate the
+       * first Escape to close the hub, and only the second reached photo mode.
+       */
+      await key('Escape');
+      const escOnce = { state: ctx.state, active: S.active };
+      if (S.active || ctx.state === 'studio') bad.push('one Esc did not leave photo mode (state=' + ctx.state + ')');
+      if (!S.active && ctx.state !== 'playing') bad.push('Esc left the world in ' + ctx.state + ', not playing');
+      if (S.active) S.exit();
+      await sleep(200);
+
+      /* ---- 3. ...EVEN WHEN ANOTHER LANE CONSUMES THE KEYDOWN -------------
+       * Ordering is main.js's, not this lane's, so the studio can never be
+       * guaranteed the first look. Staged with the real thief: shell-menus'
+       * death card parks on 'choice' and swallows Escape outright. A probe
+       * listener on \`document\` capture proves the keydown really was
+       * consumed upstream (window capture runs before document capture).
+       */
+      let sawKeydown = false;
+      const probe = (e) => { if (e.code === 'Escape') sawKeydown = true; };
+      document.addEventListener('keydown', probe, true);
+      if (!(await enterStudio())) { document.removeEventListener('keydown', probe, true); return { pass: false, detail: 'photo mode would not reopen' }; }
+      const hadDeath = ctx.menus ? ctx.menus.deathState : undefined;
+      let consumedByOther = false;
+      if (ctx.menus) {
+        ctx.menus.deathState = 'choice';
+        sawKeydown = false;
+        await key('Escape');
+        consumedByOther = !sawKeydown;
+        ctx.menus.deathState = hadDeath ?? null;
+      }
+      document.removeEventListener('keydown', probe, true);
+      const escUnderThief = { state: ctx.state, active: S.active, consumedByOther };
+      if (ctx.menus) {
+        if (!consumedByOther) bad.push('staging failed: nothing consumed the Escape keydown, so the fallback was never exercised');
+        else if (S.active) bad.push('Esc was eaten by another lane and photo mode never closed — the keyup fallback is not working');
+      }
+      if (S.active) S.exit();
+      await sleep(250);
+
+      /* ---- 4. A FILMED DEATH IS UNDONE, NOT REWARDED ---------------------
+       * F10 -> Death -> Esc used to hand back FULL health (judged: 37 in,
+       * 100 out) — three inputs, no checkpoint spent, and the Death button is
+       * one bind away from live combat.
+       */
+      if (ctx.state !== 'playing') ctx.state = 'playing';
+      ctx.player.health = 37;
+      const hpIn = ctx.player.health;
+      if (!(await enterStudio())) return { pass: false, detail: 'photo mode would not open for the death shot' };
+      const snap = S.debug().healthIn;
+      S.playPose('death');
+      await simSleep(0.8);
+      const hpDown = ctx.player.health;
+      await key('Escape');
+      await sleep(300);
+      const hpOut = ctx.player.health;
+      if (S.active) S.exit();
+      if (!(hpDown <= 0)) bad.push('the Death pose never dropped her health (' + hpDown + ')');
+      if (hpOut > hpIn) bad.push('exit HEALED her: ' + hpIn + ' -> ' + hpOut + ' HP');
+      if (!(hpOut > 0)) bad.push('exit handed back a living world with a 0 HP Aloy');
+      if (hpOut !== hpIn) bad.push('exit did not restore the health she walked in with: ' + hpIn + ' -> ' + hpOut);
+      if (snap !== hpIn) bad.push('studio.debug().healthIn read ' + snap + ', not ' + hpIn);
+
+      if (ctx.state !== 'playing') ctx.state = 'playing';
+      const detail = 'enteredFromPausedHub=' + pausedOk
+        + ' | overlaysAfterEnter: hubOpen=' + hubOpen + ' hubShown=' + hubShown + ' bodyHubClass=' + bodyHub
+        + ' centreOfFrame=' + hitName
+        + ' | esc#1 -> ' + JSON.stringify(escOnce)
+        + ' | escWithThief -> ' + JSON.stringify(escUnderThief)
+        + ' | death ' + hpIn + ' -> ' + hpDown + ' -> ' + hpOut + ' HP (snapshot ' + snap + ')';
+      if (bad.length) return { pass: false, detail: bad.join(' | ') + ' — ' + detail };
+      return { pass: true, detail };
+    })()`,
+  },
+
+  /* ----------------------------------------------------------------- A79g */
+  {
+    id: 'A79g-death-menu-live', lane: 'studio', kind: 'action',
+    title: 'A REAL death mid-shoot on a build with no ?shot=1: the world keeps living, the lens keeps flying, the crumple never restarts, and the exit resolves the death identically however long the shoot ran',
+    setup: `(async () => { __CTX__.input.enabled = true; })()`,
+    settle: 400, timeout: 180000,
+    /*
+     * THE GATE THAT COULD NOT SEE. Every other studio gate loads `?shot=1`,
+     * and `Game._simulate()`'s liveness test ends in `|| params.has('shot')`
+     * (src/main.js) — so under the suite the frame loop runs no matter WHAT
+     * `ctx.state` says, and an entire class of bug (a lane parking the world on
+     * a state `live` does not list) was structurally invisible. `shell-menus`
+     * parks 'death-menu' 1.15 s after a real death; photo mode froze solid,
+     * still repainting its panels over the last rendered frame, and eight green
+     * studio gates said nothing. Measured before the fix: W held 0.8 s moved
+     * the lens 0.000 m and `engine.simTime` advanced 0.000 s across 45 drawn
+     * frames.
+     *
+     * So this gate deletes the flag FIRST, on the live URLSearchParams object
+     * `main.js` reads (`ctx.params` is that same object), and everything below
+     * is measured against the predicate a player actually runs.
+     */
+    assert: `(async () => {
+      ${SIMCLOCK} ${ENTER}
+      const ctx = __CTX__, S = ctx.studio, e = ctx.engine;
+      if (!S) return { pass: false, detail: 'no ctx.studio' };
+      const bad = [];
+      /* ---- 0. BE A REAL BUILD ------------------------------------------- */
+      ctx.params.delete('shot');
+      if (ctx.params.has('shot')) return { pass: false, detail: 'could not clear ?shot=1 — this gate would be blind' };
+      const key = async (code, ms) => {
+        document.body.dispatchEvent(new KeyboardEvent('keydown', { code, key: code, bubbles: true, cancelable: true }));
+        await sleep(40);
+        document.body.dispatchEvent(new KeyboardEvent('keyup', { code, key: code, bubbles: true, cancelable: true }));
+        await sleep(ms || 200);
+      };
+      const hold = async (code, ms) => {
+        document.body.dispatchEvent(new KeyboardEvent('keydown', { code, key: code, bubbles: true, cancelable: true }));
+        await sleep(ms);
+        document.body.dispatchEvent(new KeyboardEvent('keyup', { code, key: code, bubbles: true, cancelable: true }));
+      };
+
+      /* ---- 1. A REAL DEATH, THROUGH THE REAL PANEL BUTTON ----------------
+       * Not \`playPose('death')\`: that one is STAGED and deliberately arms no
+       * pipeline, which is exactly why it never caught this. The Knockdown
+       * chip at low health emits \`player-damage\` -> \`takeDamage\` -> \`_die()\`
+       * -> \`player-died\` -> the card, the grade and the park. */
+      ctx.state = 'playing';
+      ctx.player.health = 25;
+      await sleep(150);
+      if (!(await enterStudio())) return { pass: false, detail: 'photo mode would not open (state=' + ctx.state + ')' };
+      const chip = document.querySelector('#st-poses button[data-pose="knockdown"]');
+      if (!chip) return { pass: false, detail: 'the ALOY panel has no Knockdown chip to press' };
+      chip.click();
+
+      /* ---- 2. SURVIVE THE PARK ------------------------------------------
+       * shell-menus raises its card at DEATH_HOLD_S (1.15 s) from its own rAF.
+       * Waited in WALL time: if the bug is present the sim clock is stopped,
+       * so a sim-timed wait here would never return. */
+      await sleep(2200);
+      const parked = { state: ctx.state, deathState: ctx.menus ? ctx.menus.deathState : undefined, active: S.active };
+      const dbg = S.debug();
+      if (!S.active) bad.push('photo mode closed itself during the death');
+      if (ctx.state === 'death-menu') bad.push('the world is parked on death-menu — the frame loop is off and the studio cannot take it back');
+      if (ctx.state !== 'dead') bad.push('the studio is not holding dead (state=' + ctx.state + '), so the crumple will not play');
+      if (dbg.guard && dbg.guard.armed !== true) bad.push('the out-of-loop guard is not armed during a shoot');
+
+      /* ---- 3. THE LENS STILL FLIES, THE WORLD STILL TICKS ---------------- */
+      const p0x = ctx.camera.position.x, p0y = ctx.camera.position.y, p0z = ctx.camera.position.z;
+      const t0 = e.simTime, f0 = e.frames;
+      await hold('KeyW', 800);
+      await sleep(60);
+      const moved = Math.hypot(ctx.camera.position.x - p0x, ctx.camera.position.y - p0y, ctx.camera.position.z - p0z);
+      const simRan = e.simTime - t0, drew = e.frames - f0;
+      if (!(moved > 1.5)) bad.push('the lens is frozen: W for 0.8 s moved it ' + moved.toFixed(3) + ' m');
+      if (!(simRan > 0.2)) bad.push('the world is frozen: engine.simTime advanced ' + simRan.toFixed(3) + ' s');
+      if (!(drew > 5)) bad.push('the page stopped drawing entirely (' + drew + ' frames)');
+
+      /* ---- 4. THE CRUMPLE RUNS ONCE ------------------------------------
+       * \`playerAnimator\` resets \`_dieT\` the moment it ticks with ctx.state
+       * not 'dead'. Two things reach for the world from outside the loop — the
+       * card's park and \`_die()\`'s 3.2 s respawn — and each one costs a
+       * restart if it is answered a frame late instead of in its own task. */
+      const a = ctx.player.animator;
+      let restarts = 0, prev = a ? a._dieT : -1, offDead = 0;
+      const w0 = performance.now();
+      while (performance.now() - w0 < 4200) {     // straddles the 3.2 s respawn
+        await sleep(70);
+        if (ctx.state !== 'dead') offDead++;
+        const d = a ? a._dieT : -1;
+        if (prev >= 0 && d < prev - 0.02) restarts++;
+        prev = d;
+      }
+      const deadW = a ? a._deadW : null;
+      if (restarts > 0) bad.push('the death crumple restarted ' + restarts + 'x mid-shoot (a state theft was answered a frame late)');
+      if (offDead > 0) bad.push('the world left "dead" on ' + offDead + ' polls during the shoot');
+      if (!(deadW > 0.9)) bad.push('the death pose is not held (deadW=' + deadW + ')');
+
+      /* ---- 5. THE EXIT IS NOT A STOPWATCH -------------------------------
+       * Holding 'dead' is what finally lets \`_die()\`'s 3.2 s respawn run, and
+       * that respawn retires the death card — so an exit that read the card
+       * handed back TWO different worlds for the same death depending on how
+       * long the photographer shot for. Both lengths are run and compared. */
+      /* Hand the first death back before staging two more. While photo mode is
+       * open and pinning a corpse, _holdState() re-zeroes any health written
+       * underneath it — as it must — so a probe that just assigns health and
+       * carries on is staging its next scenario on top of the last one's
+       * subject. Leave first, then set up. */
+      if (S.active) { S.playPose('idle'); await sleep(250); S.exit(); }
+      await sleep(700);
+      ctx.state = 'playing';
+      if (!(ctx.player.health > 0)) ctx.player.health = 100;
+      await sleep(200);
+
+      const runDeath = async (shootMs) => {
+        if (S.active) S.exit();
+        ctx.state = 'playing';
+        ctx.player.health = 64;
+        ctx.player.position.x += 3;
+        ctx.player._snapToGround && ctx.player._snapToGround();
+        ctx.progression && ctx.progression.checkpoint && ctx.progression.checkpoint('gate');
+        await sleep(250);
+        const cp = ctx.player.position.clone();
+        ctx.player.position.x -= 60;              // die well away from it
+        ctx.player._snapToGround && ctx.player._snapToGround();
+        ctx.player.health = 25;
+        const d0 = (ctx.progression && ctx.progression.stats ? ctx.progression.stats.deaths : 0) || 0;
+        if (!(await enterStudio())) return { failed: 'photo mode would not reopen' };
+        document.querySelector('#st-poses button[data-pose="knockdown"]').click();
+        await sleep(shootMs);
+        await key('Escape', 500);
+        if (S.active) S.exit();
+        await sleep(500);
+        return {
+          state: ctx.state,
+          health: Math.round(ctx.player.health),
+          fromCheckpoint: +ctx.player.position.distanceTo(cp).toFixed(1),
+          deaths: ((ctx.progression && ctx.progression.stats ? ctx.progression.stats.deaths : 0) || 0) - d0,
+        };
+      };
+      const shortRun = await runDeath(1700);      // exit BEFORE the 3.2 s respawn
+      const longRun = await runDeath(4600);       // exit AFTER it: the card is gone
+      if (shortRun.failed || longRun.failed) return { pass: false, detail: shortRun.failed || longRun.failed };
+      /*
+       * TOLERANCES ARE IN METRES SHE DIED AWAY FROM, NOT IN CENTIMETRES. She
+       * is restored ONTO SLOPED GROUND and then settles under gravity for the
+       * rest of the frame budget, so the resting spot is a physics outcome, not
+       * a stored number — on a loaded box the longer shoot settled 2.1 m from
+       * the checkpoint where the shorter one settled 0.4 m, and a 1.5 m
+       * equality test failed a run in which both worlds were identical in every
+       * way that means anything. The claim is "resolved THROUGH the checkpoint
+       * rather than left where she fell", and she falls 60 m away: 8 m is well
+       * inside that and still fails the real bug loudly (measured with the latch
+       * removed: 0 m vs 60.5 m, and 64 HP vs 25 HP).
+       */
+      const NEAR = 8;
+      const same = shortRun.state === longRun.state
+        && shortRun.health === longRun.health
+        && Math.abs(shortRun.fromCheckpoint - longRun.fromCheckpoint) < NEAR
+        && shortRun.deaths === longRun.deaths;
+      if (!same) bad.push('the exit depends on how long the shoot ran: ' + JSON.stringify(shortRun) + ' vs ' + JSON.stringify(longRun));
+      for (const r of [shortRun, longRun]) {
+        if (r.state !== 'playing') bad.push('exit left the world in ' + r.state);
+        if (!(r.health > 0)) bad.push('exit handed back a 0 HP world');
+        if (r.deaths !== 1) bad.push('a real death mid-shoot was not charged (stats.deaths +' + r.deaths + ')');
+        if (r.fromCheckpoint > NEAR) bad.push('a real death was not resolved through the checkpoint (' + r.fromCheckpoint + ' m away, having died 60 m from it)');
+      }
+
+      /* ---- 6. F10 *FROM* THE DEATH CARD ---------------------------------
+       * The same class from the other side. 'death-menu' was not an accepted
+       * entry state, so F10 worked for the 1.15 s a death takes to raise its
+       * card and then silently did nothing — at precisely the moment a
+       * photographer reaches for it. And the death is already in progress when
+       * the studio opens, so player-died fired before this object was
+       * listening: the latch has to be SEEDED from the death system's state or
+       * the exit is back on a stopwatch for this path alone. */
+      const fromCard = async (shootMs) => {
+        if (S.active) S.exit();
+        ctx.state = 'playing';
+        ctx.player.health = 70;
+        ctx.player.position.x += 3;
+        ctx.player._snapToGround && ctx.player._snapToGround();
+        ctx.progression && ctx.progression.checkpoint && ctx.progression.checkpoint('gate');
+        await sleep(250);
+        const cp = ctx.player.position.clone();
+        ctx.player.position.x -= 55;
+        ctx.player._snapToGround && ctx.player._snapToGround();
+        ctx.player.health = 20;
+        const d0 = (ctx.progression && ctx.progression.stats ? ctx.progression.stats.deaths : 0) || 0;
+        // killed in ordinary gameplay, with photo mode CLOSED
+        ctx.events.emit('player-damage', { amount: 40, from: { displayName: 'a watcher' } });
+        await sleep(1600);
+        const atCard = { state: ctx.state, deathState: ctx.menus ? ctx.menus.deathState : undefined };
+        await key('F10', 1000);
+        const opened = { state: ctx.state, active: S.active, realDeath: S.debug().realDeath };
+        await sleep(shootMs);
+        await key('Escape', 500);
+        if (S.active) S.exit();
+        await sleep(500);
+        return { atCard, opened, state: ctx.state, health: Math.round(ctx.player.health),
+          fromCheckpoint: +ctx.player.position.distanceTo(cp).toFixed(1),
+          deaths: ((ctx.progression && ctx.progression.stats ? ctx.progression.stats.deaths : 0) || 0) - d0 };
+      };
+      const cardShort = await fromCard(900);
+      const cardLong = await fromCard(4200);
+      for (const r of [cardShort, cardLong]) {
+        if (ctx.menus && r.atCard.state !== 'death-menu') bad.push('staging failed: the death card never parked the world (' + r.atCard.state + ')');
+        if (!r.opened.active) bad.push('F10 was refused from the death card');
+        if (r.opened.active && r.opened.state !== 'dead') bad.push('entering from the card did not take the world back (' + r.opened.state + ')');
+        if (!r.opened.realDeath) bad.push('entering from the card did not seed the real-death latch');
+        if (r.state !== 'playing') bad.push('exit from a card-entered shoot left the world in ' + r.state);
+        if (r.deaths !== 1) bad.push('the card-entered death was not charged (stats.deaths +' + r.deaths + ')');
+        if (r.fromCheckpoint > NEAR) bad.push('the card-entered death was not resolved through the checkpoint (' + r.fromCheckpoint + ' m, having died 55 m from it)');
+      }
+      if (cardShort.health !== cardLong.health || Math.abs(cardShort.fromCheckpoint - cardLong.fromCheckpoint) > NEAR) {
+        bad.push('entering from the card also depends on shoot length: ' + JSON.stringify(cardShort) + ' vs ' + JSON.stringify(cardLong));
+      }
+
+      if (ctx.state !== 'playing') ctx.state = 'playing';
+      const detail = 'shot param cleared | parked=' + JSON.stringify(parked)
+        + ' | W 0.8s -> lens ' + moved.toFixed(2) + ' m, sim +' + simRan.toFixed(2) + ' s, ' + drew + ' frames'
+        + ' | 4.2 s hold: crumple restarts=' + restarts + ' offDead=' + offDead + ' deadW=' + (deadW === null ? 'n/a' : deadW.toFixed(3))
+        + ' | exit short=' + JSON.stringify(shortRun) + ' long=' + JSON.stringify(longRun)
+        + ' | fromCard short=' + JSON.stringify(cardShort) + ' long=' + JSON.stringify(cardLong);
+      if (bad.length) return { pass: false, detail: bad.join(' | ') + ' — ' + detail };
+      return { pass: true, detail };
+    })()`,
   },
 
   /* ----------------------------------------------------------------- A79d */
@@ -687,7 +1260,33 @@ export const GATES = [
         if (g.kind === 'visual' && typeof g.setup !== 'string') problems.push(`${g.id}: visual studio gate does not stage photo mode in \`setup\``);
         if (g.kind === 'runner' && typeof g.check !== 'function') problems.push(`${g.id}: runner gate with no check()`);
       }
-      const detail = `${mine.length} studio gates checked (${mine.map((g) => g.id).join(', ')})`;
+      /**
+       * ...AND AT LEAST ONE OF THEM MUST RUN ON THE PREDICATE A PLAYER RUNS.
+       *
+       * The shape check above cannot see the failure that actually shipped. The
+       * runner appends `?shot=1` to every gate URL unless `plain` is set, and
+       * `Game._simulate()`'s liveness test ends in `|| params.has('shot')`
+       * (src/main.js) — so under the suite the frame loop runs whatever
+       * `ctx.state` holds. An entire class of bug (another lane parking the
+       * world on a state `live` does not list, which is how `shell-menus`
+       * 'death-menu' froze photo mode solid) was therefore UNOBSERVABLE to
+       * eight green studio gates. A judge found it by hand, on the first probe
+       * that thought to delete the flag.
+       *
+       * One gate clearing it is enough to see the class; zero is blindness. So
+       * the lane fails itself when a future round quietly drops the one gate
+       * that does — which is a cheaper way to find out than another judge.
+       */
+      const eyesOpen = mine.filter((g) => g.plain === true
+        || (typeof g.assert === 'string' && g.assert.includes("params.delete('shot')"))
+        || (typeof g.setup === 'string' && g.setup.includes("params.delete('shot')")));
+      if (!eyesOpen.length) {
+        problems.push('every studio gate runs with ?shot=1, which forces main.js\'s `live` test true — '
+          + 'no studio gate can observe a state that parks the frame loop. At least one must set `plain: true` '
+          + "or call `ctx.params.delete('shot')` before it stages anything");
+      }
+      const detail = `${mine.length} studio gates checked (${mine.map((g) => g.id).join(', ')})`
+        + ` | on the real \`live\` predicate: ${eyesOpen.map((g) => g.id).join(', ') || 'NONE'}`;
       if (problems.length) return { pass: false, detail: problems.join(' | ') + ' — ' + detail };
       return { pass: true, detail };
     },

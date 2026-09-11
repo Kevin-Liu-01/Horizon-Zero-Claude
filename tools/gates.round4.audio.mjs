@@ -290,6 +290,23 @@ export const GATES = [
         }
       }
 
+      // 2b. the IDLE beds are the other half of "eight voices": a servo hum is
+      //     what a stealth approach is actually played on, and eight copies of
+      //     one loop would tell the player a machine is near but never WHICH.
+      const idleMissing = species.filter(s => !a.bank.has('idle/' + s));
+      const idles = {};
+      for (const s of species) idles[s] = await a.probeSet('idle/' + s);
+      const idleSilent = species.filter(s => !idles[s] || idles[s].peak < 0.02);
+      let idleMin = 1; let idleClosest = null;
+      for (let i = 0; i < species.length; i++) {
+        for (let j = i + 1; j < species.length; j++) {
+          const A = idles[species[i]]; const B = idles[species[j]];
+          if (!A || !B) continue;
+          const d = __CTX__.audio.constructor.bandDistance(A.bands, B.bands);
+          if (d < idleMin) { idleMin = d; idleClosest = species[i] + '/' + species[j]; }
+        }
+      }
+
       // 3. dispatch: the audio contract must select the right cue per kind.
       //    machine-ai owns the emitter; this drives the published events so the
       //    routing is gated now instead of after Wave 3.
@@ -309,11 +326,17 @@ export const GATES = [
       const pass = missing.length === 0
         && audible.length === 0
         && minDist >= 0.05
+        && idleMissing.length === 0
+        && idleSilent.length === 0
+        && idleMin >= 0.02
         && dispatched.length === 8;
       return { pass, detail: {
         missing, inaudible: audible,
         minSpectralDistance: minDist, closestPair: closest,
         centroids: species.map(s => [s, specs[s] && specs[s].centroid]),
+        idle: { missing: idleMissing, silent: idleSilent,
+          minSpectralDistance: +idleMin.toFixed(4), closestPair: idleClosest,
+          centroids: species.map(s => [s, idles[s] && idles[s].centroid]) },
         dispatchedWindups: dispatched.length, fired,
         note: 'emitter side (machine-ai machine-attack-phase in live combat) is verified by the machine-ai lane',
       } };
@@ -1042,13 +1065,45 @@ export const GATES = [
           for (const k in C.combat.ammo) if (C.combat.ammo[k] < 20) C.combat.ammo[k] = 40;
           const before = a.cueCounts();
 
+          /**
+           * DRIVE THE BOW BY ITS OWN STATE, NEVER BY A FIXED SLEEP.
+           *
+           * This used to hold RMB for 950 ms and LMB for 950 ms for all three
+           * bows — numbers sized for the hunter (nockTime 0.42 s, drawTime
+           * 0.7 s). The sharpshot needs 0.62 s + 1.2 s = 1.82 s, so its arrow
+           * was loosed at ~79 % draw and the gate passed only because a
+           * partial draw still happened to fire on an unloaded box. Under the
+           * full suite it did not, and the gate reported "no draw cue / no
+           * release cue / no flyby" for a mix that was working perfectly —
+           * i.e. it was grading the gate's own timing, not the audio.
+           *
+           * nockLanded and drawStrength are combat's published state, so
+           * waiting on them is correct for every bow at any frame rate. The
+           * assertions below are unchanged. (No backticks in this comment:
+           * the whole assert is a template literal, and one would end it.)
+           */
+          const waitFor = async (fn, budget = 6000) => {
+            const t = performance.now();
+            while (performance.now() - t < budget) { if (fn()) return true; await sleep(40); }
+            return false;
+          };
+          const waits = {};
+
           C.player.aiming = true;
           C.input.mouse.buttons |= 4;                 // RMB: raise the bow, nock starts
-          await sleep(950);                           // nockTime is 0.42 s
+          waits.nock = await waitFor(() => C.combat.nockLanded === true);
           C.input.mouse.buttons |= 1;                 // LMB: draw
-          await sleep(950);
+          // loose only at (near) full draw — a partial draw is a different shot
+          waits.draw = await waitFor(() => C.combat.drawStrength >= 0.99);
+          // Wait for the SHOT to be observed before waiting on the re-nock:
+          // nockLanded is still true for the frames between releasing LMB
+          // and combat processing the loose, so polling it straight away
+          // would match the arrow we just fired and never see the re-nock.
+          const relId = 'bow/' + set + '/release';
+          const relBefore = a.cueCounts()[relId] || 0;
           C.input.mouse.buttons &= ~1;                // loose
-          await sleep(1500);                          // the re-nock lands
+          waits.loose = await waitFor(() => (a.cueCounts()[relId] || 0) > relBefore);
+          waits.renock = await waitFor(() => C.combat.nockLanded === true);
           C.input.mouse.buttons &= ~4;
           C.player.aiming = false;
           await sleep(300);
@@ -1066,8 +1121,14 @@ export const GATES = [
               if (n > 0) leaked.push('bow/' + other[1] + '/' + k + ' x' + n);
             }
           }
-          out[set] = { weapon: C.combat.activeWeapon && C.combat.activeWeapon.id, ammoId, cues: mine, leaked };
+          out[set] = { weapon: C.combat.activeWeapon && C.combat.activeWeapon.id, ammoId, cues: mine, leaked, waits };
           if (weaponId !== (C.combat.activeWeapon && C.combat.activeWeapon.id)) problems.push(set + ': wrong weapon selected');
+          // report a timed-out wait as itself: otherwise a bow that never
+          // reached full draw is indistinguishable from a missing cue, and
+          // the next reader debugs the mix instead of the state machine
+          for (const k of ['nock', 'draw', 'loose', 'renock']) {
+            if (waits[k] === false) problems.push(set + ': timed out waiting for ' + k);
+          }
           if (mine.nock < 2) problems.push(set + ': nock fired ' + mine.nock + 'x (want the raise AND the re-nock)');
           if (mine.draw < 1) problems.push(set + ': no draw cue');
           if (mine.release < 1) problems.push(set + ': no release cue');
@@ -1328,6 +1389,389 @@ export const GATES = [
         perRound: sizes,
         scannedBoxes: boxes().length,
       } };
+    })()`,
+  },
+
+  /* ===================================================================== */
+  {
+    /**
+     * A73d — the menus have a voice, and it is not in the room (audio-12,
+     * with the routing halves of audio-09 and audio-14).
+     *
+     * Two claims that need two different kinds of evidence.
+     *
+     * **The UI verbs make a sound.** Every one of them is procedural (D2 keeps
+     * synthesis where it is idiomatic, and a menu blip is the definition of
+     * idiomatic), so there is no bank cue to count. What is countable is the
+     * voice allocation: `_voice()` is the single gate every procedural cue
+     * passes through, and its `bus` argument is the node the cue is wired to.
+     * Spying there proves both that the verb sounded and *where* it sounded.
+     *
+     * **The UI bypasses the world low-pass.** This is the rule that makes
+     * Concentration usable: the world drops to ~900 Hz and the menu must stay
+     * crisp. It is also completely invisible to measurement — WebAudio exposes
+     * no way to read a connection, and the gate box has no output device, so
+     * there are no samples to analyse either. `buildBuses()` therefore records
+     * each edge *as it makes it* (`buses.graph.edges`), and this walks the
+     * recorded graph: a description that cannot drift from the wiring because
+     * the same call produces both.
+     *
+     * The same walk pins three neighbours worth just as much: the diegetic
+     * buses really are behind `worldLP` (otherwise Concentration muffles
+     * nothing), the reverb return re-enters *under* it (a muffled world with a
+     * bright tail sounds like the reverb escaped the room), and ambience runs
+     * through the sidechain ducker.
+     */
+    id: 'A73d-ui-bus', kind: 'action', lane: 'audio',
+    title: 'Menus are audible on their own bus, and that bus bypasses the world low-pass',
+    settle: 300, timeout: 60000,
+    assert: `(async () => {
+      ${ARM}
+      const a = await _arm();
+      if (!a.ac) return { pass: null, detail: 'SKIP: no AudioContext' };
+      const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+      const B = a.buses;
+      const G = B && B.graph;
+      if (!G || typeof G.pathFrom !== 'function') {
+        return { pass: false, detail: { reason: 'buses.graph is not published — routing cannot be verified' } };
+      }
+
+      /* -- 1. routing, walked on the recorded graph --------------------- */
+      const path = (n) => G.pathFrom(n) || [];
+      const on = (p, n) => p.indexOf(n) >= 0;
+      const routes = {
+        ui: path('uiBus'), sfx: path('sfxBus'), amb: path('ambBus'),
+        voice: path('voiceBus'), music: path('musicBus'), reverb: path('reverbSend'),
+      };
+      const routing = {
+        uiReachesOutput: on(routes.ui, 'destination'),
+        uiBypassesWorldLP: routes.ui.length > 0 && !on(routes.ui, 'worldLP'),
+        sfxUnderWorldLP: on(routes.sfx, 'worldLP'),
+        ambUnderWorldLP: on(routes.amb, 'worldLP'),
+        voiceUnderWorldLP: on(routes.voice, 'worldLP'),
+        ambThroughDucker: on(routes.amb, 'ambDuck'),
+        musicOwnLPNotWorldLP: on(routes.music, 'musicLP') && !on(routes.music, 'worldLP'),
+        reverbUnderWorldLP: on(routes.reverb, 'worldLP'),
+        everythingReachesOutput: ['ui', 'sfx', 'amb', 'voice', 'music', 'reverb']
+          .every(k => on(routes[k], 'destination')),
+      };
+
+      /* -- 2. every menu verb allocates a voice, on the UI bus ---------- */
+      const NAME = new Map([[B.uiBus, 'uiBus'], [B.sfxBus, 'sfxBus'], [B.ambBus, 'ambBus'],
+        [B.voiceBus, 'voiceBus'], [B.musicBus, 'musicBus']]);
+      const rec = [];
+      const orig = a._voice.bind(a);
+      a._voice = (dur, vol, pan, bus) => {
+        const g = orig(dur, vol, pan, bus);
+        rec.push({ bus: NAME.get(bus || B.sfxBus) || 'other', ok: !!g });
+        return g;
+      };
+      const VERBS = ['ui-nav', 'ui-confirm', 'ui-back', 'ui-error', 'ui-open', 'ui-close',
+        'inventory-open', 'inventory-close', 'wheel-open', 'wheel-close',
+        'weapon-switch', 'machine-tagged', 'objective-changed'];
+      const heard = {}; const silent = []; const offBus = [];
+      let volumes;
+      try {
+        for (const v of VERBS) {
+          const mark = rec.length;
+          __CTX__.events.emit(v, {});
+          await sleep(70);
+          // the ambient mix is running underneath us; attribute by bus, and
+          // require that THIS verb put at least one live voice on the UI bus
+          const mine = rec.slice(mark).filter(e => e.ok);
+          const ui = mine.filter(e => e.bus === 'uiBus').length;
+          heard[v] = { uiVoices: ui, otherBuses: mine.filter(e => e.bus !== 'uiBus').map(e => e.bus) };
+          if (!ui) silent.push(v);
+        }
+
+        /* -- 3. the sliders are real and they persist (audio-14) -------- */
+        const before = a.volumes();
+        a.setVolume('ui', 0.31);
+        const applied = Math.abs(B.uiVol.gain.value - 0.31) < 1e-3;
+        let persisted = false;
+        try { persisted = JSON.parse(localStorage.getItem('hzc.audio.v1')).ui === 0.31; } catch (e) { persisted = false; }
+        const readBack = a.getVolume('ui') === 0.31;
+        a.setVolume('ui', before.ui);
+        const restored = Math.abs(B.uiVol.gain.value - before.ui) < 1e-3;
+        volumes = { applied, persisted, readBack, restored, restoredTo: before.ui };
+      } finally {
+        delete a._voice;
+      }
+
+      const checks = Object.assign({}, routing, {
+        everyVerbAudibleOnUiBus: silent.length === 0,
+        sliderApplies: volumes.applied,
+        sliderPersists: volumes.persisted,
+        sliderReadsBack: volumes.readBack,
+        sliderRestored: volumes.restored,
+      });
+      const failed = Object.keys(checks).filter(k => !checks[k]);
+      return { pass: failed.length === 0, detail: {
+        failed, checks, silentVerbs: silent, offBus,
+        heard, volumes,
+        routes: { ui: routes.ui.join('>'), sfx: routes.sfx.join('>'), amb: routes.amb.join('>'),
+          voice: routes.voice.join('>'), music: routes.music.join('>'), reverb: routes.reverb.join('>') },
+        edges: G.edges.length,
+      } };
+    })()`,
+  },
+
+  /* ===================================================================== */
+  {
+    /**
+     * A74b — the valley is a place, not a bed (audio-11).
+     *
+     * Round 3 played one looped wind layer at a fixed gain for the whole map.
+     * The three things that replace it are each observable without a render
+     * thread, which is why they are worth gating rather than eyeballing:
+     *
+     *   BEDS    `_pickBed()` names ONE bed for where the player is standing,
+     *           and every other emitter's target level is driven to zero —
+     *           cross-faded, not stacked. (Target level, i.e. what the selector
+     *           asked the `LoopEmitter` for: with no output device the gain
+     *           node's own ramp is never rendered, so the target is the honest
+     *           measurement of what the selector did.)
+     *           Walked across the real valley surfaces (ridge rock, the river
+     *           bank, the meadow) through `terrain.surfaceAt`, so a bed table
+     *           that had collapsed to one entry fails here.
+     *   ZONES   the campfire and the river are POSITIONAL emitters that live
+     *           at a place in the world — they appear in range, they track
+     *           their distance to the listener, and they retire when you walk
+     *           away. A 2D bed cannot do the first or the third.
+     *   CALLS   a distant machine cry lands on the ambience bus at a fixed
+     *           95 m bearing, only while the score is calm.
+     */
+    id: 'A74b-ambience-zones', kind: 'action', lane: 'audio',
+    title: 'Ambience is a place: one bed per biome, positional fire/river emitters, distant calls',
+    settle: 400, timeout: 120000,
+    assert: `(async () => {
+      ${ARM}
+      const a = await _arm();
+      if (!a.ac) return { pass: null, detail: 'SKIP: no AudioContext' };
+      const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+      const P = __CTX__.player;
+      const T = __CTX__.terrain;
+      const home = { x: P.position.x, y: P.position.y, z: P.position.z };
+      if (!T || typeof T.surfaceAt !== 'function') {
+        return { pass: false, detail: { reason: 'terrain.surfaceAt() is not published by world-ground' } };
+      }
+
+      const go = async (x, z, budget = 4000) => {
+        P.position.x = x; P.position.z = z;
+        if (P._snapToGround) P._snapToGround();
+        await sleep(budget);                      // the bed poll runs at 2 Hz
+        return a.debugState().layers.bed;
+      };
+      /** every bed loop and its live gain — one up, the rest at zero */
+      const bedGains = () => {
+        const out = {};
+        for (const k in a.loops) out[k] = +a.loops[k].volume.toFixed(3);
+        return out;
+      };
+
+      let out;
+      try {
+        /* -- 0. find a representative of each surface we care about ------ */
+        const reps = {};
+        for (let r = 0; r <= 320; r += 10) {
+          for (let ang = 0; ang < 360; ang += 6) {
+            const rad = ang * Math.PI / 180;
+            const x = r * Math.cos(rad); const z = r * Math.sin(rad);
+            let s; try { s = String(T.surfaceAt(x, z)); } catch (e) { continue; }
+            if (!reps[s]) reps[s] = [x, z];
+          }
+        }
+        const ridgeAt = reps.rock || reps.gravel || null;
+        const waterAt = reps.water || reps.silt || null;
+        const grassAt = reps.grass || [home.x, home.z];
+
+        /* -- 1. beds follow the ground ---------------------------------- */
+        const beds = {};
+        const gains = {};
+        beds.meadow = await go(grassAt[0], grassAt[1]);
+        gains.meadow = bedGains();
+        if (ridgeAt) { beds.ridge = await go(ridgeAt[0], ridgeAt[1]); gains.ridge = bedGains(); }
+        if (waterAt) { beds.river = await go(waterAt[0], waterAt[1]); gains.river = bedGains(); }
+
+        const distinctBeds = [...new Set(Object.keys(beds).map(k => beds[k]).filter(Boolean))];
+        // exactly one bed is up at any moment, and it is the one named
+        const oneAtATime = Object.keys(gains).every((k) => {
+          const named = beds[k];
+          const g = gains[k];
+          return Object.keys(g).every(set => (set === named ? g[set] > 0 : g[set] === 0));
+        });
+
+        /* -- 2. the campfire is a place you can walk away from ---------- */
+        const fire = __CTX__.camp && __CTX__.camp.firePosition;
+        const zone = { hasFire: !!fire };
+        if (fire) {
+          P.position.x = fire.x + 6; P.position.z = fire.z + 6;
+          if (P._snapToGround) P._snapToGround();
+          const t0 = performance.now();
+          while (performance.now() - t0 < 6000 && !a.zones.has('fire:camp')) await sleep(120);
+          zone.nearIds = a.zones.ids();
+          zone.lit = a.zones.has('fire:camp');
+          // a positional emitter tracks its distance; a 2D bed has none
+          const near = a.zones._live.get('fire:camp');
+          zone.nearDist = near ? +near.chain.dist.toFixed(2) : null;
+          P.position.x = fire.x + 120; P.position.z = fire.z + 120;
+          if (P._snapToGround) P._snapToGround();
+          await sleep(2500);
+          zone.farDist = near ? +near.chain.dist.toFixed(2) : null;
+          const t1 = performance.now();
+          while (performance.now() - t1 < 6000 && a.zones.has('fire:camp')) await sleep(120);
+          zone.retired = !a.zones.has('fire:camp');
+        }
+
+        /* -- 3. the distant call, on the real path ----------------------- */
+        const cues = [];
+        const origAt = a.playAt.bind(a);
+        a.playAt = (id, pos, opts) => { const r = origAt(id, pos, opts); cues.push({ id, r }); return r; };
+        let called = false; let callTries = 0;
+        try {
+          const list = (__CTX__.machines && __CTX__.machines.list || []).filter(m => m.alive);
+          if (list.length) {
+            // stand 95 m from a living machine so one is inside the 70..300 m band
+            const m0 = list[0];
+            const ang = Math.random() * Math.PI * 2;
+            P.position.x = m0.position.x + Math.cos(ang) * 95;
+            P.position.z = m0.position.z + Math.sin(ang) * 95;
+            if (P._snapToGround) P._snapToGround();
+            a.setMusicState('calm', { force: true });
+            await sleep(600);
+            for (; callTries < 8 && !called; callTries++) {
+              const mark = cues.length;
+              a._callT = 0;
+              a._distantCall(0.016, true);          // the real per-frame path
+              await sleep(80);
+              called = cues.slice(mark).some(c => c.id === 'amb/call-far' && c.r);
+            }
+          }
+        } finally { delete a.playAt; }
+
+        const checks = {
+          bedNamed: !!beds.meadow,
+          bedsVary: distinctBeds.length >= 2,
+          // and the bed is the one the GROUND asks for, not the one the last
+          // footstep happened to leave cached
+          bedOnRidge: !ridgeAt || beds.ridge === 'amb/ridge',
+          bedOnRiver: !waterAt || beds.river === 'amb/river',
+          oneBedAtATime: oneAtATime,
+          fireIsPositional: !fire || (zone.lit && zone.nearDist !== null && zone.farDist > zone.nearDist),
+          fireRetires: !fire || zone.retired === true,
+          distantCall: called,
+        };
+        const failed = Object.keys(checks).filter(k => !checks[k]);
+        out = { pass: failed.length === 0, detail: {
+          failed, checks, beds, distinctBeds, gains, zone,
+          surfacesFound: Object.keys(reps).sort(), callTries,
+        } };
+      } finally {
+        P.position.x = home.x; P.position.y = home.y; P.position.z = home.z;
+        if (P._snapToGround) P._snapToGround();
+      }
+      return out;
+    })()`,
+  },
+
+  /* ===================================================================== */
+  {
+    /**
+     * A73e — the spear, the Tripcaster and the Ropecaster have a voice.
+     *
+     * These nine sets were rendered into the bank by `tools/audio-bank.mjs`
+     * and then never played: `src/audio/audio.js` subscribed to none of the
+     * four events that carry them. The spear is the audit's #4 change and the
+     * payoff the whole stealth pillar sets up, and it landed in silence; so
+     * did every trap and every rope.
+     *
+     * It is a failure mode a bank-size gate cannot see — A73 counts buffers
+     * and licences, and all nine were present and correct. Only playing the
+     * published events and watching what reaches `playAt` catches it.
+     *
+     * Attribution is by object identity (the position object we pass in), not
+     * by a count, because the live roster plays cues concurrently.
+     */
+    id: 'A73e-melee-traps', kind: 'action', lane: 'audio',
+    title: 'Spear/trap/rope have a voice: melee light|heavy|crit|silent + whoosh, trap place/trigger, rope attach/tie',
+    settle: 400, timeout: 90000,
+    assert: `(async () => {
+      ${ARM}
+      const a = await _arm();
+      if (!a.ac) return { pass: null, detail: 'SKIP: no AudioContext' };
+      const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+      const C = __CTX__;
+      const P = C.player.position;
+
+      const SETS = ['melee/whoosh', 'melee/light', 'melee/heavy', 'melee/crit', 'melee/silent',
+        'trap/place', 'trap/trigger', 'rope/attach', 'rope/tie'];
+      const missing = SETS.filter(s => !a.bank.has(s));
+
+      // every set must actually make a sound, not merely exist as a row
+      const silent = [];
+      for (const s of SETS) {
+        const pr = await a.probeSet(s);
+        if (!pr || pr.peak < 0.05) silent.push(s);
+      }
+
+      const rec = [];
+      const origAt = a.playAt.bind(a);
+      a.playAt = (id, pos, opts) => { const r = origAt(id, pos, opts); rec.push({ id, pos, r }); return r; };
+
+      let out;
+      try {
+        /** Emit one event, return only the cues attributed to OUR position object. */
+        const fire = async (name, mk) => {
+          const pos = { x: P.x + 2, y: P.y + 0.9, z: P.z - 2 };
+          const mark = rec.length;
+          C.events.emit(name, mk(pos));
+          await sleep(120);
+          return rec.slice(mark).filter(e => e.pos === pos && e.r).map(e => e.id);
+        };
+        // a synthetic machine complete enough that the OTHER lanes listening to
+        // these events handle it without throwing (a console error fails a gate)
+        const mach = (pos) => ({
+          kind: 'watcher', displayName: 'watcher', alive: true, eyeHeight: 1.2,
+          health: 80, maxHealth: 100, position: pos, _wreck: true, __gateSynthetic: true,
+        });
+
+        const heard = {};
+        heard.light = await fire('melee-hit', (p) => ({ machine: mach(p), point: p, damage: 12, heavy: false, crit: false, combo: 0 }));
+        heard.heavy = await fire('melee-hit', (p) => ({ machine: mach(p), point: p, damage: 30, heavy: true, crit: false, combo: 1 }));
+        heard.crit = await fire('melee-hit', (p) => ({ machine: mach(p), point: p, damage: 90, heavy: true, crit: true, combo: 2 }));
+        heard.silent = await fire('silent-strike', (p) => ({ machine: mach(p), killed: true, damage: 120 }));
+        heard.trapPlace = await fire('trap-placed', (p) => ({ kind: 'blast-wire', a: p, b: p }));
+        heard.trapTrigger = await fire('trap-triggered', (p) => ({ kind: 'blast-wire', machine: mach(p), point: p }));
+        heard.ropeAttach = await fire('rope-attached', (p) => ({ machine: mach(p), ropes: 1, need: 3 }));
+        heard.ropeTie = await fire('machine-tied', (p) => ({ machine: mach(p), ropes: 3 }));
+
+        const has = (k, id) => heard[k].indexOf(id) >= 0;
+        const checks = {
+          // the right rung for the right swing...
+          lightRung: has('light', 'melee/light'),
+          heavyRung: has('heavy', 'melee/heavy'),
+          critRung: has('crit', 'melee/crit'),
+          silentStrike: has('silent', 'melee/silent'),
+          // ...and NOT one of the others: a single rung reused for all three
+          // would make a committed swing and a tap sound identical
+          lightNotHeavy: !has('light', 'melee/heavy') && !has('light', 'melee/crit'),
+          heavyNotCrit: !has('heavy', 'melee/crit'),
+          // air under every connected swing
+          whooshOnLight: has('light', 'melee/whoosh'),
+          whooshOnHeavy: has('heavy', 'melee/whoosh'),
+          // the other two weapons
+          trapPlace: has('trapPlace', 'trap/place'),
+          trapTrigger: has('trapTrigger', 'trap/trigger'),
+          ropeAttach: has('ropeAttach', 'rope/attach'),
+          ropeTie: has('ropeTie', 'rope/tie'),
+        };
+        const failed = Object.keys(checks).filter(k => !checks[k]);
+        out = { pass: failed.length === 0 && missing.length === 0 && silent.length === 0,
+          detail: { failed, checks, heard, missingSets: missing, silentSets: silent } };
+      } finally {
+        delete a.playAt;
+      }
+      return out;
     })()`,
   },
 ];

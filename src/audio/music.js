@@ -31,15 +31,24 @@
  *
  * `engine.timeScale` stretches gameplay dt (Concentration slow-mo, the weapon
  * wheel, the studio freeze). Music must not slow down with it, so every value
- * here is scheduled against `ac.currentTime` and the only thing `update()`
- * does per frame is move a master fade. This is the same rule the rest of the
- * audio lane follows.
+ * here is scheduled against the AudioContext clock and the only thing
+ * `update()` does per frame is move a master fade. This is the same rule the
+ * rest of the audio lane follows.
+ *
+ * The bar grid reads that clock through `src/audio/clock.js` rather than
+ * touching `ac.currentTime` directly, because a context with no output device
+ * reports `running` while its render clock never moves — and a bar grid that
+ * never advances schedules every transition onto bar 0 and retires none of
+ * them. Playback (`src.start`) still goes to the raw clock: it is the only
+ * thing WebAudio's timeline understands.
  *
  * Stems live in the bank as CC0 Ogg/Opus rendered by `tools/audio-recipes.js`
  * (see `public/audio/MANIFEST.md`). When they are missing — a failed download,
  * a stripped build — `available` is false and `GameAudio` keeps its legacy
  * procedural score rather than going silent.
  */
+
+import { clockFor } from './clock.js';
 
 export const BPM = 96;
 export const BEAT = 60 / BPM;   // 0.625 s
@@ -107,9 +116,22 @@ export class MusicDirector {
     this.ac = ac;
     this.buses = buses;
     this.bank = bank;
+    /**
+     * The bar grid is `now - origin` arithmetic, so it runs on the monotonic
+     * clock (src/audio/clock.js), not on `ac.currentTime` directly. A context
+     * with no output device reports `running` with a frozen render clock: the
+     * grid would never advance past bar 0, every transition would be scheduled
+     * on the same downbeat, and `_pending` would never retire — the score
+     * would sit on the state it was born in for the whole session.
+     *
+     * Named `_clock` because `clock` is this class's bar-position getter.
+     */
+    this._clock = clockFor(ac);
 
     /** @type {Record<string, {set:string, node:AudioBufferSourceNode, gain:GainNode, target:number}>} */
     this._stems = {};
+    /** The same entries as an array: `update()` walks it every frame. */
+    this._stemList = [];
     /**
      * Starts OUTSIDE the state set on purpose. `setState` refuses a no-op, so
      * initialising to 'calm' made the opening `setState('calm')` a no-op and
@@ -157,7 +179,7 @@ export class MusicDirector {
 
     // One origin, slightly in the future so every start() is scheduled rather
     // than "as soon as possible" (which is per-node and would smear the mix).
-    this.origin = ac.currentTime + 0.12;
+    this.origin = this._clock.now() + 0.12;
 
     for (const [key, set] of Object.entries(STEM_SETS)) {
       const first = this.bank.first(set);
@@ -171,7 +193,13 @@ export class MusicDirector {
       node.loopEnd = this.loopEnd;
       node.connect(gain);
       node.start(this.origin);
-      this._stems[key] = { set, node, gain, target: 0, rowGain: first.row.gain ?? 1 };
+      // `from`/`at`/`xfade` describe the crossfade in flight. They are pure
+      // bookkeeping in a healthy context (the AudioParam ramp is what is
+      // heard) and become the curve itself when the render clock is dead —
+      // see `_driveGains()`.
+      const entry = { set, node, gain, target: 0, rowGain: first.row.gain ?? 1, from: 0, at: 0, xfade: 0 };
+      this._stems[key] = entry;
+      this._stemList.push(entry);
     }
     this.available = true;
     // arrive at the calm mix on the first bar rather than snapping at t=0
@@ -181,7 +209,7 @@ export class MusicDirector {
   /* ------------------------------- clock -------------------------------- */
 
   /** Bars elapsed since the origin (fractional). */
-  get clock() { return (this.ac.currentTime - this.origin) / BAR; }
+  get clock() { return (this._clock.now() - this.origin) / BAR; }
   /** Integer bar index since the origin. */
   get bar() { return Math.floor(this.clock); }
   /** Position inside the current bar, 0..4 beats. */
@@ -194,7 +222,7 @@ export class MusicDirector {
    * audibly early.
    */
   _nextBar(lead = 0.05) {
-    const t = this.ac.currentTime + lead;
+    const t = this._clock.now() + lead;
     const n = Math.ceil((t - this.origin) / BAR);
     return this.origin + n * BAR;
   }
@@ -215,7 +243,7 @@ export class MusicDirector {
     const xfade = BAR * (opts.xfadeBars ?? XFADE_BARS[`${from}>${to}`] ?? 1);
     const at = this._nextBar();
     const mix = MIX[to];
-    const now = this.ac.currentTime;
+    const now = this._clock.now();
 
     for (const [key, s] of Object.entries(this._stems)) {
       const g = s.gain.gain;
@@ -224,6 +252,9 @@ export class MusicDirector {
       if (g.cancelAndHoldAtTime) g.cancelAndHoldAtTime(now);
       else { g.cancelScheduledValues(now); g.setValueAtTime(g.value, now); }
       const target = (mix[key] ?? 0) * s.rowGain;
+      s.from = g.value;
+      s.at = at;
+      s.xfade = xfade;
       s.target = target;
       g.setValueAtTime(g.value, at);         // hold flat until the downbeat
       g.linearRampToValueAtTime(target, at + xfade);
@@ -262,7 +293,8 @@ export class MusicDirector {
   sting(name, { volume = 1, minGap = 6, duck = 0.35 } = {}) {
     const set = STINGERS[name];
     if (!set || !this.ac) return false;
-    const now = this.ac.currentTime;
+    const now = this._clock.now();          // throttle: bookkeeping
+    const t = this.ac.currentTime;          // playback: scheduling
     if (now - this._stingerAt[name] < minGap) return false;
     const picked = this.bank.pick(set);
     if (!picked) return false;
@@ -274,10 +306,10 @@ export class MusicDirector {
     const src = this.ac.createBufferSource();
     src.buffer = picked.buffer;
     src.connect(g);
-    src.start(now);
+    src.start(t);
     src.onended = () => { try { src.disconnect(); g.disconnect(); } catch { /* torn down */ } };
     // stingers sit above the world, not inside it
-    if (duck) this.buses.ambDuck.gain.setTargetAtTime(0.45, now, 0.05);
+    if (duck) this.buses.ambDuck.gain.setTargetAtTime(0.45, t, 0.05);
     return true;
   }
 
@@ -291,14 +323,47 @@ export class MusicDirector {
   update(rdt, playing) {
     if (!this.available) return;
     // retire a pending transition once its downbeat has passed
-    if (this._pending && this.ac.currentTime >= this._pending.at) {
+    if (this._pending && this._clock.now() >= this._pending.at) {
       this._state = this._pending.to;
       this._pending = null;
     }
+    // and when there is no render thread to execute the scheduled ramps, walk
+    // the same curve by hand so the mix is still correct (see _driveGains)
+    if (this._clock.stalled) this._driveGains();
     this._levelTarget = playing ? 1 : 0.22;
     const k = Math.min(1, rdt * (this._levelTarget < this._level ? 2.4 : 1.4));
     this._level += (this._levelTarget - this._level) * k;
     this.out.gain.value = clamp(this._level, 0, 1);
+  }
+
+  /**
+   * Drive the stem gains from the frame loop.
+   *
+   * Only called while the render clock is stalled — a running context with no
+   * output device, which is both the headless gate box and any real machine
+   * that has just lost its audio device. There, the AudioParam timeline is
+   * never evaluated: the immaculate bar-quantised ramp `setState()` scheduled
+   * is queued and never runs, so every stem's `gain.value` holds its
+   * PRE-transition level for the whole stall. Since `gain.value` is also the
+   * only way anything can observe the mix without a render thread — the debug
+   * overlay, `A77-music-states`, any later analysis — the score would read as
+   * (and, for the instant before a returning device caught up on the queued
+   * ramp, be) a mix that never moved.
+   *
+   * This walks the exact same curve (`from` -> `target`, starting on the
+   * quantised downbeat `at`, over `xfade` seconds) and writes it straight to
+   * the gain, which is the one kind of parameter change that does not need the
+   * render thread to have run. Allocation-free; the stem list is cached.
+   */
+  _driveGains() {
+    const now = this._clock.now();
+    const list = this._stemList;
+    for (let i = 0; i < list.length; i++) {
+      const s = list[i];
+      const u = s.xfade > 0 ? clamp((now - s.at) / s.xfade, 0, 1) : 1;
+      const v = s.from + (s.target - s.from) * u;
+      if (Math.abs(v - s.gain.gain.value) > 1e-4) s.gain.gain.value = v;
+    }
   }
 
   /* -------------------------------- debug ------------------------------- */
@@ -341,6 +406,7 @@ export class MusicDirector {
       try { s.node.stop(); s.node.disconnect(); s.gain.disconnect(); } catch { /* torn down */ }
     }
     this._stems = {};
+    this._stemList.length = 0;
     this.available = false;
   }
 }

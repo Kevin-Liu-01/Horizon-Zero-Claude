@@ -187,3 +187,32 @@
     linear-gradient(to bottom, transparent calc(33.333% - 1px), rgba(239, 230, 213, 0.16) calc(33.333% - 1px), rgba(239, 230, 213, 0.16) 33.333%, transparent 33.333%),
     linear-gradient(to bottom, transparent calc(66.666% - 1px), rgba(239, 230, 213, 0.16) calc(66.666% - 1px), rgba(239, 230, 213, 0.16) 66.666%, transparent 66.666%);
 }
+
+/* ---------------------------------------------------------------- canvas */
+
+/**
+ * THE FRAME IS THE LENS'S. Added to the renderer's canvas for exactly as long
+ * as photo mode is open. Other lanes grade the canvas with CSS filters for
+ * their own presentation — `shell-menus` ramps
+ * `grayscale()/brightness()/contrast()` across the death card, peaking above
+ * 0.8 — and that is correct for gameplay and wrong for a photograph: a filmed
+ * death came out grey and dim underneath whatever filter the photographer had
+ * picked, and "Hide HUD" could not reach it because it is an inline style on
+ * the canvas, not chrome. `!important` outranks the inline style, so the grade
+ * is suppressed without this lane writing to another lane's element every
+ * frame; the class is removed on exit, so a real death still greys the world.
+ */
+canvas.studio-film { filter: none !important; }
+
+/**
+ * THE DEATH AND VICTORY CARDS ARE NOT IN THE PHOTOGRAPH. `body.hzc-photo` is
+ * set for exactly as long as photo mode is open. Filming a death raises
+ * shell-menus' full-screen card, which waits for input by design (their A69) —
+ * correct for a player who just died, wrong for a photographer who pressed the
+ * Death button to film the fall. Suppressed here rather than in that lane's
+ * file: the studio owns what is in its own frame, the menus lane owns the card,
+ * and this rule is the seam between them. It comes off on exit, where the
+ * staged death is handed back through ctx.menus.respawn('checkpoint').
+ */
+body.hzc-photo .mn-death,
+body.hzc-photo .mn-victory { display: none !important; }

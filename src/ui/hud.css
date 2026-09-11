@@ -155,12 +155,15 @@ kbd {
   position: absolute;
   top: calc(24px * var(--s)); left: calc(28px * var(--s));
   width: calc(302px * var(--s));
-  transition: opacity 0.7s ease;
 }
-/* dynamic HUD: the cluster HIDES at full health after 4 calm seconds; hold H
-   (research §2 "show HUD" key) forces it back. */
-.hzc-topleft.idle { opacity: 0; }
-#hud.reveal .hzc-topleft.idle,
+/* dynamic HUD: the VITALS hide at full health after 4 calm seconds; hold H
+   (research §2 "show HUD" key) forces them back. The fade lives on this
+   wrapper and NOT on `.hzc-topleft`, because the quest tracker is a sibling
+   inside the same block and runs a much longer, independent timer — one
+   opacity on the shared parent silently zeroed the tracker too. */
+.hzc-vitals { transition: opacity 0.7s ease; }
+.hzc-vitals.idle { opacity: 0; }
+#hud.reveal .hzc-vitals.idle,
 #hud.reveal .hzc-track.idle { opacity: 1; }
 
 .hzc-healthrow { display: flex; align-items: flex-end; gap: calc(9px * var(--s)); }
@@ -282,6 +285,9 @@ kbd {
   letter-spacing: 0.5em;
   color: var(--hzc-gold);
   margin-bottom: calc(5px * var(--s));
+  /* gold-on-gold: the valley's autumn grass is the same value as this text, so
+     the shadow is what keeps the kicker readable over a sunlit hillside. */
+  text-shadow: 0 1px 5px rgba(0, 0, 0, 0.95), 0 0 2px rgba(0, 0, 0, 0.8);
 }
 .hzc-track-title {
   font-size: max(12px, calc(13px * var(--s)));
@@ -301,6 +307,7 @@ kbd {
   font-weight: 600; letter-spacing: 0.28em;
   color: var(--hzc-gold);
   margin-top: calc(4px * var(--s));
+  text-shadow: 0 1px 5px rgba(0, 0, 0, 0.95), 0 0 2px rgba(0, 0, 0, 0.8);
 }
 .hzc-track.bump { animation: hzcTrackBump 0.6s ease; }
 @keyframes hzcTrackBump {
@@ -487,14 +494,39 @@ kbd {
 /* WORLD-PROJECTED LAYER — machine bars, objective diamond, [E] prompt          */
 /* ============================================================================ */
 
-.hzc-world { position: absolute; inset: 0; overflow: hidden; }
+/**
+ * ONE SCALING AUTHORITY for everything projected into the world.
+ *
+ * `--s` is `var(--hud-scale)` on `#hud`, so every `calc(Npx * var(--s))` rule
+ * inside this layer was ALREADY scaled — and then hud.js multiplied it a
+ * SECOND time with `scale()` in the element's transform. s squared: a 224 px
+ * plate painted 809 px at the 4K auto-scale (a screen-spanning boss bar, the
+ * exact thing ui-06 exists to delete) and 11 px type painted 7.7 px at the
+ * slider minimum, under the ui-15 floor, while the audit happily reported 11.
+ * Resetting `--s` to 1 here makes these rules a BASE SIZE and the JS transform
+ * the only multiplier. Gates: `A71b-hud-scale-floor`, `A71c-hud-surfaces`.
+ *
+ * The JS multiplier for this layer is `_wscale` (>= 1), not `_scale`: base type
+ * in here is already AT the 11 px floor, so a sub-1 transform would paint it
+ * under the floor no matter what the stylesheet says. See hud.js WORLD_SCALE_MIN.
+ */
+.hzc-world { position: absolute; inset: 0; overflow: hidden; --s: 1; }
 
 /* ---------------- ui-06: one plate per engaged machine, cap 3 ---------------- */
+/* The plate is anchored by its BOTTOM CENTRE on the machine's head point:
+   `transform-origin: 0 0` here plus `translate(x,y) scale(s) translate(-50%,
+   -100%)` in hud.js paints the box at [x - 112s, x + 112s] x [y - h*s, y] at
+   EVERY scale. There is deliberately no margin: a negative half-width margin
+   ON TOP OF the -50% translate shifted the plate left by half its own width,
+   so it floated beside the machine over empty forest, and the melee clamp's
+   safe-left slid it INTO the quest tracker instead of clear of it. It was the
+   only rule in this file with such a margin. `A71c-hud-surfaces` now measures
+   painted-centre minus projected-anchor at two different HUD scales. */
 .hzc-mhb {
   position: absolute; left: 0; top: 0;
   width: calc(224px * var(--s));
-  margin-left: calc(-112px * var(--s));
   text-align: center;
+  transform-origin: 0 0;
   visibility: hidden;
   will-change: transform;
 }
@@ -711,7 +743,9 @@ kbd {
 
 /* ------------------------- awareness indicators (world) ---------------------- */
 /* stealth-awareness-indicator-fidelity: 26 px, shown from suspicion > 0.04. */
-.hzc-awares { position: absolute; inset: 0; overflow: hidden; }
+/* Same contract as `.hzc-world`: hud.js scales these marks with a transform,
+   so their rules below are a BASE SIZE (they are already written in raw px). */
+.hzc-awares { position: absolute; inset: 0; overflow: hidden; --s: 1; }
 .hzc-aware {
   position: absolute; left: 0; top: 0;
   width: 0; height: 0;
@@ -885,7 +919,9 @@ kbd {
 .hzc-tool {
   position: relative;
   width: calc(42px * var(--s)); height: calc(42px * var(--s));
-  opacity: 0.62;
+  /* 0.62 vanished against sunlit grass on V37's film — an unselected slot still
+     has to read as a slot, it just must not compete with the active one. */
+  opacity: 0.8;
   transition: opacity 0.2s ease, transform 0.2s ease;
 }
 .hzc-tool-plate {
@@ -934,7 +970,8 @@ kbd {
 .hzc-tool-chev {
   display: flex; flex-direction: column; align-items: center;
   gap: calc(2px * var(--s));
-  color: rgba(239, 230, 213, 0.5);
+  color: rgba(239, 230, 213, 0.72);
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.95);
 }
 .hzc-tool-chev span {
   font-size: max(12px, calc(16px * var(--s)));
@@ -1180,10 +1217,12 @@ kbd {
 /* combat-hit-feedback-faint: hud.js sets the px size per hit, scaled by the
    fraction of the target's health removed; a WEAK hit never lands below 18 px.
    These rules are the floor / colour language only. */
-.hzc-dmglayer { position: absolute; inset: 0; overflow: hidden; }
+/* Base size again: hud.js writes each number's px size inline (scaled once,
+   floored at 15 / 18 px) and the transform carries only the pop-in curve. */
+.hzc-dmglayer { position: absolute; inset: 0; overflow: hidden; --s: 1; }
 .hzc-dmg {
   position: absolute; left: 0; top: 0;
-  font-size: max(14px, calc(17px * var(--s)));
+  font-size: max(15px, calc(17px * var(--s)));
   font-weight: 700; letter-spacing: 0.03em;
   color: #f4eee2;
   text-shadow: 0 0 6px rgba(0, 0, 0, 0.9), 0 1px 2px rgba(0, 0, 0, 0.8);

@@ -31,10 +31,56 @@ Owns `src/ui/menu.js`, `src/ui/map.js`, `src/ui/settings.js`, `src/ui/tips.js`, 
   `progression`'s handler then restored the checkpoint's health over it — a checkpoint written
   while the player was already down handed back a 0 HP player who could never die again. Now
   re-checked on the microtask after the restore, and only a non-positive value is overridden.
-* **The title was a contour map.** The dolly flew at 118 m and stared 27° down: no horizon, no
-  sky, and every detail the world lanes built below the resolution of the shot. Re-authored
-  around the *pitch* (6–8.5°) at ~30 m altitude on the valley's best sector, with a scrim that
-  opens across the middle band instead of washing the frame flat.
+* **The title was a contour map, and then it was a beige wall.** The first dolly flew at 118 m
+  and stared 27° down: no horizon, no sky, every detail the world lanes built below the
+  resolution of the shot. The second dropped to ~30 m but still tilted *down* 6–8.5°, and that
+  is the cut that shipped as a flat wall with the wordmark painted on it. A probe settled it:
+  marching the look ray at 16 points around the ring puts the rim crest at **16.6–32.1° of
+  elevation** (18° in this sector), while the camera's vertical half-FOV is 27.5° — so a 6°
+  downward tilt leaves the top of frame at 21.5°, three degrees of sky above an eighteen-degree
+  ridge. The pitch is now **negative** and opens across the move (−1.5° → −4.5°, filmed at ease
+  0 / 0.25 / 0.5 / 0.75 / 1), which lifts the top of frame to 29–32° and turns the rim from the
+  subject into a silhouette against sky. Altitude stays low on purpose: dropping the crest to
+  12° by climbing instead would need 113 m, which is the contour map again.
+* **The dolly was a jump cut, and the gate was measuring the jump.** (Judge finding, fix round 1.)
+  `_dolly()` keyed the closing ease to `_dollyT`, which counts from the moment the title
+  *appears*, not from the keypress — while `closing` was pinned to 0 during the press stage. So
+  the ease sat there accumulating unspent, and the frame the player pressed a key it discharged
+  in one step: **35.45 m of camera translation in a single frame** after an 8 s title, with the
+  rim, the Tallneck and the camp all sliding at once. Past 9 s of title there was no closing move
+  left at all, only the orbit. The same mistake ate the 1.1 s beat (`t > 1.1` was already true,
+  so the menu appeared on the first frame instead of after the vista had started travelling).
+  The intent was already in the code and unread: `_titleAdvance()` zeroes `_titleT` precisely so
+  something can measure time-since-press, and nothing did. The ease and the beat now read
+  `_titleT`; `_dollyT` keeps driving only the continuous orbit, which is supposed to be running
+  while the player reads the press-any-key line. Measured after the fix: the press frame moves
+  **0.198 m**, and it is identical at 0 s, 8 s and 20 s of hold — the hold-independence that was
+  the actual broken property.
+* **`A70c` was complicit, and raising its threshold would not have fixed it.** The gate asserted
+  `dollyMetres > 8` across the press, so the teleport *was* the measurement — hence three judge
+  runs spreading 7.65 / 8.96 / 11.56 m where the builder had reported 16.26. Worse, the slow
+  orbit alone covers ~9 m in that window, so `> 8` never proved the camera closed in at all.
+  Displacement is simply the wrong instrument here, and it is not even stable: the sim clock runs
+  at ~87% of wall clock on a loaded box (a 20 s hold advances the title timer 17.3 s), so travel
+  measures 10.0–12.3 m run to run. The gate now reads the quantities the shot is *authored* in,
+  published by `audit().title.dolly` — `easeAtPress` (0.0003 measured, 0.60 under the bug),
+  `beat.stage` still `dolly` 500 ms in, `endEase`/`radiusDrop` to prove the move ran, and
+  `maxStep`/`firstStep` in **metres** for the teleport check. Metres, not m/s, because `main.js`
+  clamps `realDt` to `MAX_FRAME` = 0.05 s: one frame can move the camera at most ~0.34 m however
+  long it took, while a fast 5 ms frame after a slow one reads as 68 m/s and would flake. That
+  clamp is also what makes a jump cut structurally impossible now, not merely absent.
+* **`A68` was passing by sixteen milliseconds.** Chasing the judge finding turned up a second
+  bad gate next to the first. `A68` read the victory card's visibility at a fixed +400 ms and
+  again at +4.4 s. The card actually appears at **416 ms** — so the first sample was landing on
+  the right side of a coin flip, and inside the full 176-gate suite (loaded box, 45 min in) it
+  lost, reporting "never shown" *and* "still up at 4.4 s" *and* a stuck `hud._victoryShown`
+  latch, none of which were true; it passed 3/3 standalone on the same commit. A phantom failure
+  in a soft-lock gate is worse than no gate, because it teaches you to ignore the one alarm that
+  means the session cannot recover. The gate now **watches** the card instead of sampling it —
+  polls for it to appear, polls for it to clear, and measures its lifetime **from the event**
+  (3054 ms measured), which is load-independent because the card's own timer starts there. That
+  is strictly more than before: appearance, a real on-screen duration (>= 1.5 s rules out a
+  one-frame flash), clearance (<= 9 s rules out the soft-lock), and only then the latch.
 * **Victory printed itself three times.** `progression` raises `PROGRESS SAVED` and
   `VALLEY RECLAIMED` banners through `shell-hud`'s queue, both landing on top of this lane's
   card. The card is now an opaque upper letterbox that covers the banner zone and fades out over
@@ -63,6 +109,15 @@ ctx.menus.tips.pick(context) / peek(context) / forDeath(killer)
 ctx.menus.audit()             // everything a gate needs, in one object
 ```
 
+`audit().title.dolly` publishes what the title camera last authored — `{ since, ease, radius,
+camY, pitchDeg, titleT, dollyT }`. **`ease` is press-relative**: exactly 0 until a key is hit,
+then smoothstep over 9 s. `since` (= `titleT`) is the clock that drives it, reset by the press —
+so while the title is still waiting it reads as time since the title appeared, not 0. `dollyT` is
+the separate title-entry clock, and it drives only the continuous orbit. Read `ease`/`radius`
+rather than differencing camera positions: the orbit alone covers ~9 m in a 2.6 s window, so
+displacement cannot tell a closing move from a camera that merely turned — and `radius` shrinks
+only under the ease.
+
 **Events emitted** (all through `ctx.events`):
 
 | event | payload | when |
@@ -85,10 +140,13 @@ a choice), `'victory'` for at most 3 s.
 
 ## 3. Requests to other lanes
 
-1. **`core-platform`** — call `installMenus(ctx)` in `main.js` beside `installProgression(ctx)`
-   and delete the `<script type="module" src="/src/ui/menu.js">` tag from `index.html`. The
-   module is idempotent and self-installs off `window.__CTX__` until then; a later
-   `installMenus(ctx)` returns the same instance.
+1. ~~**`core-platform`** — call `installMenus(ctx)` in `main.js` and delete the module tag.~~
+   **DONE.** `main.js` calls `installMenus(ctx)` after the HUD, and the
+   `<script type="module" src="/src/ui/menu.js">` tag is gone from `index.html`. The tag was
+   provably dead before it was removed: `main.js` publishes `window.__CTX__` at line 134,
+   *after* the `installMenus(ctx)` on line 122, so `autoInstall()`'s poll could only ever find a
+   context that already had `ctx.menus`. `autoInstall()` stays in `menu.js` — still idempotent,
+   still guarded — so the module remains safe to load on its own in a lab page.
 2. **`player-control`** — read `ctx.settings.holdAim` and `ctx.settings.holdSprint`
    (`'hold' | 'toggle'`). Both are persisted and published today and the panel marks them
    `STORED`, because aim and sprint are read as raw `isDown` state inside `player.js` and cannot

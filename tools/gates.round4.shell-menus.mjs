@@ -88,11 +88,38 @@ export const GATES = [
         const c = __CTX__, m = c.menus;
         if (!m) return { pass: null, detail: 'SKIP: menus not installed' };
         const out = {};
+        /**
+         * WATCH THE CARD, DO NOT SAMPLE IT. This used to read visibility at a
+         * fixed +400 ms and again at +4.4 s. Both are guesses about when the
+         * card starts, and inside the full 176-gate suite the box is loaded
+         * enough that the start slips past 400 ms — the gate then reported
+         * "never shown" AND "still up at 4.4 s" AND a stuck hud latch, none of
+         * which were true (it passed 3/3 standalone on the same commit). A
+         * phantom failure in a soft-lock gate is worse than no gate: it trains
+         * you to ignore the one alarm that means the session cannot recover.
+         *
+         * So: poll for the card to appear, then poll for it to clear, and
+         * measure its LIFETIME FROM THE EVENT rather than from whenever this
+         * loop first caught it — the card's own timer starts at the event, so
+         * that number is load-independent. Strictly more than the old version
+         * checked: appearance, a real on-screen duration (not a one-frame
+         * flash), clearance, and only then the latch.
+         */
+        const t0 = performance.now();
         c.events.emit('victory', { source: 'gate' });
-        await wait(400);
-        out.duringBanner = { state: c.state, visible: m.audit().victory.visible };
-        await wait(4000);
-        out.after4s = { state: c.state, visible: m.audit().victory.visible };
+        let shownAt = -1;
+        while (performance.now() - t0 < 4000) {
+          if (m.audit().victory.visible) { shownAt = performance.now() - t0; break; }
+          await frames(2);
+        }
+        out.duringBanner = { state: c.state, visible: shownAt >= 0, shownAfterMs: Math.round(shownAt) };
+        let clearedAt = -1;
+        while (performance.now() - t0 < 13000) {
+          if (!m.audit().victory.visible) { clearedAt = performance.now() - t0; break; }
+          await frames(2);
+        }
+        out.banner = { state: c.state, visible: m.audit().victory.visible,
+                       clearedAfterMs: Math.round(clearedAt) };
         out.hudLatch = c.hud?._victoryShown ?? null;
         key('Escape'); await frames(4);
         out.escOpensHub = { hub: m.hubOpen, state: c.state, tabs: m.audit().tabsVisible };
@@ -109,7 +136,10 @@ export const GATES = [
         out.respawned = { state: c.state, hp: Math.round(p.health) };
 
         const pass = out.duringBanner.visible === true
-          && out.after4s.state === 'playing' && out.after4s.visible === false
+          && out.banner.state === 'playing' && out.banner.visible === false
+          // a real banner, and one the session actually leaves: >= 1.5 s on
+          // screen rules out a one-frame flash, <= 9 s rules out the soft-lock
+          && out.banner.clearedAfterMs >= 1500 && out.banner.clearedAfterMs <= 9000
           && out.hudLatch !== true
           && out.escOpensHub.hub === true && out.escOpensHub.state === 'paused'
           && out.escCloses.hub === false && out.escCloses.state === 'playing'
@@ -330,6 +360,48 @@ export const GATES = [
      * the RENDERED ones: every `.hzc-logo` with a non-zero box and a non-zero
      * opacity. The dolly is measured as metres of camera travel, because a
      * still vista with a menu over it looks identical in a screenshot.
+     *
+     * TOTAL TRAVEL WAS NOT ENOUGH, AND THE OLD `> 8` PROVED IT TWICE OVER.
+     * When the closing ease was keyed to title time instead of time-since-
+     * press, the camera TELEPORTED on the press — 35 m in one frame after an
+     * 8 s title — and the displacement check happily counted the teleport as
+     * the move. Worse, the slow orbit alone covers ~9 m in this window, so
+     * `> 8` could be cleared by a camera that never closed in at all. Raising
+     * the number would not have fixed either hole, and it is not even stable:
+     * the sim clock runs at ~87% of wall clock on a loaded box (a 20 s hold
+     * advances the title timer 17.3 s), so measured travel here ranges 10.0 to
+     * 12.3 m run to run. Displacement is the wrong instrument.
+     *
+     * So the gate measures the quantities the shot is AUTHORED in, published
+     * by `audit().title.dolly`, and holds the title 5 s first so that a
+     * title-time-keyed ease has something to have wrongly spent:
+     *
+     *   heldEase     0 while nobody has pressed — the move has not started.
+     *   easeAtPress  read 3 frames after the key. This is the direct inverse
+     *                of the regression: press-relative it is ~0, title-time it
+     *                would already be smoothstep(5/9) = 0.60.
+     *   beat.stage   still 'dolly' 500 ms after the press — the menu waits out
+     *                its 1.1 s beat instead of appearing on the first frame
+     *                (the other half of the same bug).
+     *   endEase      > 0.2 and radiusDrop > 6 m — the move actually RAN, and
+     *                the radius only shrinks under the ease, never under the
+     *                orbit, so this cannot be satisfied by orbiting.
+     *   firstStep    the press-frame step in metres: < 2 against a 35 m
+     *                regression and a 0.197 m measured truth.
+     *   maxStep      the largest step of ANY frame in the window, same units.
+     *                This is the teleport check, and it is asserted in METRES
+     *                rather than m/s on purpose. Speed sounds like the better
+     *                instrument, but it divides a sim-time-driven step by WALL
+     *                time, and those diverge: main.js clamps realDt to
+     *                MAX_FRAME = 0.05 s, so one frame can move the camera at
+     *                most ~0.34 m no matter how long it took, while a fast 5 ms
+     *                frame right after a slow one reads as 68 m/s — a flake, not
+     *                a jump. The clamp is exactly what makes the metre bound
+     *                sound: 0.33-0.34 m measured, ceiling 3, regression 35.
+     *                `peakSpeed` is still reported, just not asserted.
+     *
+     * `dollyMetres > 8` stays as a floor so the gate keeps failing if the
+     * camera stops moving altogether, but it is no longer load-bearing.
      */
     assert: `(async () => {${FRAMES}${KEY}${WAIT_MENUS}${STORAGE_GUARD}
       const snap = snapStorage();
@@ -343,16 +415,66 @@ export const GATES = [
                       menuVisible: a0.title.menuVisible, logos: a0.title.logos,
                       wall: a0.title.keybindWallInTitle };
         const cam = c.camera;
+
+        // sit on the title the way a player does — reading the line, looking at
+        // the valley. A press-relative ease does not care; a title-time ease has
+        // now spent 6 s of its 9 s budget and must discharge it in one frame.
+        await wait(5000);
+        out.heldTitleMs = 5000;
+        out.stillPressed = m.audit().title.stage === 'press';
+
+        out.heldEase = m.audit().title.dolly.ease;   // 0 while nobody has pressed
+        out.startRadius = m.audit().title.dolly.radius;
+
         const p0 = { x: cam.position.x, y: cam.position.y, z: cam.position.z };
+        // sample every rendered frame across the press, not just the endpoints
+        let peak = 0, maxStep = 0, samples = 0, firstStep = -1;
+        let lx = p0.x, ly = p0.y, lz = p0.z, lt = performance.now();
+        let sampling = true;
+        const tick = () => {
+          if (!sampling) return;
+          const now = performance.now();
+          const el = (now - lt) / 1000;
+          if (el > 0.0005) {
+            const step = Math.hypot(cam.position.x - lx, cam.position.y - ly, cam.position.z - lz);
+            const speed = step / el;
+            if (speed > peak) peak = speed;
+            if (step > maxStep) maxStep = step;
+            if (firstStep < 0) firstStep = step;
+            samples++;
+            lx = cam.position.x; ly = cam.position.y; lz = cam.position.z; lt = now;
+          }
+          requestAnimationFrame(tick);
+        };
+        requestAnimationFrame(tick);
 
         key('Space');
-        await wait(2600);
+        // the ease must START at the press, not resume mid-flight: read it on
+        // the first frames after the key. A title-time ease held for 5 s would
+        // already be at smoothstep(5/9) = 0.60 here.
+        await frames(3);
+        out.easeAtPress = m.audit().title.dolly.ease;
+        // and the menu must still be waiting out its 1.1 s beat
+        await wait(500);
+        out.beat = { stage: m.audit().title.stage, ease: m.audit().title.dolly.ease };
+
+        // ride the move out well past the beat: at ~87% sim-to-wall this is
+        // ~3.9 s of ease, far enough in that the thresholds below are not
+        // measuring the box's frame rate
+        await wait(4000);
+        sampling = false;
         const a1 = m.audit();
         const p1 = cam.position;
         out.menu = { stage: a1.title.stage, menuVisible: a1.title.menuVisible,
                      items: a1.title.menuItems, logos: a1.title.logos,
                      pressVisible: a1.title.pressVisible };
         out.dollyMetres = +Math.hypot(p1.x - p0.x, p1.y - p0.y, p1.z - p0.z).toFixed(2);
+        out.endEase = a1.title.dolly.ease;
+        out.radiusDrop = +(out.startRadius - a1.title.dolly.radius).toFixed(2);
+        out.peakSpeed = +peak.toFixed(1);   // reported for diagnosis, not asserted
+        out.maxStep = +maxStep.toFixed(3);
+        out.firstStep = +firstStep.toFixed(3);
+        out.speedSamples = samples;
 
         // the manual moved behind a button; the wall is gone from the title
         out.manual = { inTitle: !!document.querySelector('#title .keybinds-panel'), held: !!m._manualNode };
@@ -371,7 +493,11 @@ export const GATES = [
           && out.press.logos === 1
           && out.menu.stage === 'menu' && out.menu.menuVisible === true
           && out.menu.items >= 4 && out.menu.logos === 1 && out.menu.pressVisible === false
+          && out.stillPressed === true && out.heldEase === 0
+          && out.easeAtPress < 0.05 && out.beat.stage === 'dolly'
+          && out.endEase > 0.2 && out.radiusDrop > 6
           && out.dollyMetres > 8
+          && out.speedSamples > 20 && out.firstStep < 2 && out.maxStep < 3
           && out.manual.inTitle === false && out.manualModal.rows >= 10
           && out.credits.sections >= 5 && out.credits.rows >= 10;
         return { pass, detail: out };

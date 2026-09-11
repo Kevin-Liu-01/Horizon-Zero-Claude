@@ -20,7 +20,7 @@
 import puppeteer from 'puppeteer';
 import { mkdirSync, writeFileSync, readFileSync, rmSync, existsSync } from 'fs';
 import path from 'path';
-import { fileURLToPath } from 'url';
+import { fileURLToPath, pathToFileURL } from 'url';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(HERE, '..');
@@ -169,10 +169,24 @@ const BUILD = [
 ];
 
 const JOBS = [];
+/**
+ * The seed counter walks the WHOLE build list, `--only` or not.
+ *
+ * It used to be advanced only for sets that survived the filter, which made
+ * every cue's seed a function of *which other sets happened to be selected* —
+ * so `--only idle/longleg` rendered a longleg bed that a full re-run would
+ * never reproduce, and the bank stopped being the deterministic artefact the
+ * manifest claims it is. Two idle beds on disk were built that way. Counting
+ * past the skipped sets costs nothing and makes a subset render bit-identical
+ * to the same cue inside a full render, which is what lets `--only` merge into
+ * the existing manifests below instead of forcing a 149-cue rebuild to fix one
+ * file.
+ */
 let seedCounter = 1;
 for (const b of BUILD) {
-  if (only && !only.some((o) => b.set.startsWith(o))) continue;
+  const selected = !only || only.some((o) => b.set.startsWith(o));
   for (let v = 0; v < b.variants; v++) {
+    if (!selected) { seedCounter++; continue; }
     JOBS.push({
       set: b.set,
       recipe: b.set,
@@ -314,7 +328,30 @@ function muxOggOpus(codecPrivate, packets, serial) {
 /* ------------------------------- render ---------------------------------- */
 
 const PAGE_HELPERS = `
-window.__renderCue = async function (job) {
+/**
+ * Is there a real-time audio render thread behind this browser?
+ *
+ * The Opus path below is MediaRecorder on a LIVE AudioContext, so it needs the
+ * render thread to actually pull samples. A context with no output device
+ * reports 'running' and renders exactly one quantum forever (measured here:
+ * 0.0053 s at 48 kHz, under every combination of --mute-audio,
+ * --autoplay-policy and headless/headful). MediaRecorder then produces zero
+ * Opus packets and every cue fails remux three times before giving up — which
+ * is what a machine with no sound card looks like to this tool.
+ */
+window.__realtimeAlive = async function () {
+  const ac = new AudioContext({ sampleRate: 48000 });
+  try { if (ac.state !== 'running') await ac.resume(); } catch (e) {}
+  const t0 = ac.currentTime;
+  await new Promise((r) => setTimeout(r, 400));
+  const moved = ac.currentTime - t0;
+  const state = ac.state;
+  await ac.close();
+  return { alive: moved > 0.05, moved: moved, state: state };
+};
+
+/** Render + peak-normalise one cue offline. Never needs a device. */
+window.__renderBuffer = async function (job) {
   const { RECIPES, kit } = window.HZC_AUDIO_RECIPES;
   const fn = RECIPES[job.recipe];
   if (!fn) throw new Error('no recipe ' + job.recipe);
@@ -334,6 +371,46 @@ window.__renderCue = async function (job) {
       for (let i = 0; i < d.length; i++) d[i] *= k;
     }
   }
+  return { rendered: rendered, peak: peak };
+};
+
+/**
+ * 16-bit PCM WAV of the offline render — the fallback encoder for a box with
+ * no audio device. Bigger than Opus (~14x) and used for single cues only, but
+ * it is the difference between "this cue cannot be regenerated here" and a
+ * file the loader decodes exactly like any other (\`decodeAudioData\` takes
+ * .ogg/.webm/.wav alike, which is why the manifest carries the filename).
+ */
+window.__renderCueWav = async function (job) {
+  const r = await window.__renderBuffer(job);
+  const buf = r.rendered;
+  const ch = buf.numberOfChannels; const sr = buf.sampleRate; const n = buf.length;
+  const total = 44 + n * ch * 2;
+  const ab = new ArrayBuffer(total);
+  const dv = new DataView(ab);
+  const wr = (o, str) => { for (let i = 0; i < str.length; i++) dv.setUint8(o + i, str.charCodeAt(i)); };
+  wr(0, 'RIFF'); dv.setUint32(4, total - 8, true); wr(8, 'WAVE');
+  wr(12, 'fmt '); dv.setUint32(16, 16, true); dv.setUint16(20, 1, true);
+  dv.setUint16(22, ch, true); dv.setUint32(24, sr, true);
+  dv.setUint32(28, sr * ch * 2, true); dv.setUint16(32, ch * 2, true); dv.setUint16(34, 16, true);
+  wr(36, 'data'); dv.setUint32(40, n * ch * 2, true);
+  const chans = []; for (let c = 0; c < ch; c++) chans.push(buf.getChannelData(c));
+  let o = 44;
+  for (let i = 0; i < n; i++) {
+    for (let c = 0; c < ch; c++) {
+      let v = chans[c][i]; v = v < -1 ? -1 : v > 1 ? 1 : v;
+      dv.setInt16(o, v < 0 ? v * 0x8000 : v * 0x7fff, true); o += 2;
+    }
+  }
+  const u8 = new Uint8Array(ab);
+  let s = '';
+  for (let i = 0; i < u8.length; i += 0x8000) s += String.fromCharCode.apply(null, u8.subarray(i, i + 0x8000));
+  return { b64: btoa(s), peak: r.peak };
+};
+
+window.__renderCue = async function (job) {
+  const r = await window.__renderBuffer(job);
+  const rendered = r.rendered; const peak = r.peak;
   const ac = new AudioContext({ sampleRate: 48000 });
   if (ac.state !== 'running') await ac.resume();
   const dest = ac.createMediaStreamDestination();
@@ -359,6 +436,7 @@ window.__renderCue = async function (job) {
   return { b64: btoa(s), peak: peak };
 };
 
+/** Decode a finished file back (Ogg or WAV) and measure it. */
 window.__verifyOgg = async function (b64) {
   const bin = atob(b64);
   const u8 = new Uint8Array(bin.length);
@@ -391,6 +469,22 @@ async function makePage() {
 const pages = [];
 for (let i = 0; i < Math.max(1, CONC); i++) pages.push(await makePage());
 
+/**
+ * One probe decides the encoder for the whole run. Without it, a box with no
+ * audio device spends three MediaRecorder attempts per cue producing nothing
+ * and reports 149 files "GAVE UP" with no hint that the cause is the machine
+ * rather than the recipes.
+ */
+const rt = await pages[0].evaluate(() => window.__realtimeAlive());
+const WAV_FALLBACK = !rt.alive;
+if (WAV_FALLBACK) {
+  console.log('[audio-bank] no real-time audio on this browser '
+    + `(context '${rt.state}', clock moved ${rt.moved.toFixed(4)}s in 0.4s) — `
+    + 'MediaRecorder cannot encode Opus here. Falling back to 16-bit WAV, which '
+    + 'renders entirely offline. Re-run on a machine with an audio device to get '
+    + 'the smaller Ogg/Opus bank.');
+}
+
 const results = [];
 let done = 0;
 const t0 = Date.now();
@@ -400,24 +494,37 @@ async function worker(page, slot) {
     const job = JOBS[i];
     let record = null;
     for (let attempt = 0; attempt < 3; attempt++) {
-      const { b64 } = await page.evaluate((j) => window.__renderCue(j), job);
-      const webm = Buffer.from(b64, 'base64');
-      let ogg;
-      try {
-        const { codecPrivate, packets } = demuxWebmOpus(webm);
-        if (!codecPrivate || !packets.length) throw new Error('no opus packets');
-        ogg = muxOggOpus(Buffer.from(codecPrivate), packets, 0x484f5243 + i);
-      } catch (err) {
-        console.error(`  ! ${job.file} remux failed (${err.message}), retry ${attempt + 1}`);
-        continue;
+      let out; let file = job.file;
+      if (WAV_FALLBACK) {
+        const { b64 } = await page.evaluate((j) => window.__renderCueWav(j), job);
+        out = Buffer.from(b64, 'base64');
+        file = job.file.replace(/\.ogg$/, '.wav');
+      } else {
+        const { b64 } = await page.evaluate((j) => window.__renderCue(j), job);
+        const webm = Buffer.from(b64, 'base64');
+        try {
+          const { codecPrivate, packets } = demuxWebmOpus(webm);
+          if (!codecPrivate || !packets.length) throw new Error('no opus packets');
+          // The Ogg stream serial is derived from the cue's own seed, not from
+          // its index in THIS run's job list. Keyed on the index, `--only`
+          // wrote a different serial than a full render did, so the two
+          // produced byte-different files with identical audio — enough to
+          // show up as a diff in every review and to break any "is the bank
+          // still reproducible?" check. `seed` is already a pure function of
+          // the cue's position in BUILD, so this is stable under any filter.
+          out = muxOggOpus(Buffer.from(codecPrivate), packets, (0x484f5243 + job.seed) >>> 0);
+        } catch (err) {
+          console.error(`  ! ${job.file} remux failed (${err.message}), retry ${attempt + 1}`);
+          continue;
+        }
       }
-      const v = await page.evaluate((b) => window.__verifyOgg(b), ogg.toString('base64'));
+      const v = await page.evaluate((b) => window.__verifyOgg(b), out.toString('base64'));
       const wantDur = job.dur;
       if (!v.ok || v.peak < 0.02 || v.dur < wantDur * 0.55) {
-        console.error(`  ! ${job.file} verify failed (${JSON.stringify(v)}), retry ${attempt + 1}`);
+        console.error(`  ! ${file} verify failed (${JSON.stringify(v)}), retry ${attempt + 1}`);
         continue;
       }
-      record = { ...job, bytes: ogg.length, decodedDur: +v.dur.toFixed(3), decodedCh: v.ch, peak: +v.peak.toFixed(3), rms: +v.rms.toFixed(4), buf: ogg };
+      record = { ...job, file, bytes: out.length, decodedDur: +v.dur.toFixed(3), decodedCh: v.ch, peak: +v.peak.toFixed(3), rms: +v.rms.toFixed(4), buf: out };
       break;
     }
     if (!record) { console.error(`  X ${job.file} GAVE UP`); continue; }
@@ -440,21 +547,68 @@ if (!only && existsSync(OUT_DIR)) {
     rmSync(path.join(OUT_DIR, d), { recursive: true, force: true });
   }
 }
-let total = 0;
 for (const r of results) {
   const p = path.join(OUT_DIR, r.file);
   mkdirSync(path.dirname(p), { recursive: true });
   writeFileSync(p, r.buf);
-  total += r.bytes;
 }
 
-// --only renders a subset; writing the manifests from a subset would silently
-// delete every other row, so that mode writes files only and says so.
+/**
+ * `--only` MERGES into the manifests; it no longer leaves them stale.
+ *
+ * Writing the manifests from a subset would have deleted every other row, so
+ * this mode used to write files and refuse to touch the index — which meant a
+ * one-cue fix left `public/audio/` and `src/audio/manifest.js` disagreeing, and
+ * the loader kept serving the OLD file because the old row still named it.
+ * That is exactly how two redesigned idle beds sat on disk, inaudible to the
+ * game, while gate A75 went on failing against the beds they replaced.
+ *
+ * Re-rendering everything is not an acceptable alternative on a box with no
+ * audio device: MediaRecorder cannot encode Opus there, so a full rebuild
+ * silently downgrades 149 good Ogg files to WAV to fix one of them.
+ *
+ * So: keep every row whose set was not rendered, drop the rendered sets'
+ * old rows, delete the files those rows named (the extension can change when
+ * the encoder falls back), and let the normal writer below emit the union.
+ */
 if (only) {
-  console.log(`[audio-bank] --only: wrote ${results.length} file(s); manifests NOT updated. `
-    + 'Re-run without --only to regenerate src/audio/manifest.js and public/audio/MANIFEST.md.');
-  process.exit(results.length === JOBS.length ? 0 : 1);
+  const manifestPath = path.join(ROOT, 'src', 'audio', 'manifest.js');
+  const prev = existsSync(manifestPath)
+    ? (await import(pathToFileURL(manifestPath).href)).MANIFEST
+    : [];
+  const renderedSets = new Set(results.map((r) => r.set));
+  const kept = [];
+  for (const row of prev) {
+    if (renderedSets.has(row.set)) {
+      // the row is superseded — remove the file it named, which is NOT
+      // necessarily the file we just wrote (idle/longleg.ogg -> .wav)
+      const old = path.join(OUT_DIR, row.file);
+      if (existsSync(old) && !results.some((r) => r.file === row.file)) rmSync(old, { force: true });
+      continue;
+    }
+    // normalise a manifest row back into the record shape the writer expects
+    const hash = row.id.lastIndexOf('#');
+    kept.push({
+      ...row,
+      index: hash >= 0 ? parseInt(row.id.slice(hash + 1), 10) - 1 : 0,
+      decodedDur: row.dur,
+      decodedCh: row.ch,
+    });
+  }
+  const missed = JOBS.length - results.length;
+  console.log(`[audio-bank] --only: rendered ${results.length} file(s) across `
+    + `${renderedSets.size} set(s); merged with ${kept.length} untouched row(s).`);
+  if (missed > 0) {
+    console.error(`[audio-bank] ${missed} selected cue(s) failed to render — `
+      + 'refusing to rewrite the manifests from an incomplete subset.');
+    process.exit(1);
+  }
+  results.push(...kept);
+  results.sort((a, b) => (a.set === b.set ? a.index - b.index : a.set < b.set ? -1 : 1));
 }
+
+let total = 0;
+for (const r of results) total += r.bytes;
 
 const LICENSE = 'CC0-1.0';
 const SOURCE = 'https://github.com/Kevin-Liu-01/Horizon-Zero-Claude — synthesized by tools/audio-recipes.js';
@@ -547,5 +701,9 @@ ${results.map((r) => `| \`${r.file}\` | \`${r.set}\` | ${r.decodedDur.toFixed(2)
 `;
 writeFileSync(path.join(OUT_DIR, 'MANIFEST.md'), md);
 
-console.log(`[audio-bank] ${results.length}/${JOBS.length} files, ${sets.size} sets, ${kb(total)} total in ${((Date.now() - t0) / 1000).toFixed(0)}s`);
-if (results.length !== JOBS.length) process.exitCode = 1;
+// After a `--only` merge `results` is the whole bank, not this run's render —
+// comparing it to JOBS.length would report "149/2" and exit 1 on a clean merge.
+// The incomplete-subset case already exited above, so reaching here is success.
+console.log(`[audio-bank] ${results.length} files${only ? '' : `/${JOBS.length}`}, `
+  + `${sets.size} sets, ${kb(total)} total in ${((Date.now() - t0) / 1000).toFixed(0)}s`);
+if (!only && results.length !== JOBS.length) process.exitCode = 1;

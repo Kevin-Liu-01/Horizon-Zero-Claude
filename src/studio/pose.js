@@ -22,10 +22,25 @@
  *    the shape of `playerAnimator._lookAt`), so it composes with, rather than
  *    fights, the animator's own damped look-at.
  *
- * `filmDamage()` is the answer to `player-anim-17`: `Player.takeDamage`,
+ * `asPlaying()` is the answer to `player-anim-17`: `Player.takeDamage`,
  * `jump()` and `dodge()` all early-out unless `ctx.state === 'playing'`, so the
  * studio hands them a one-call window of that state and takes it back. Those
  * three guards live in `src/entities/player.js`, which this lane does not own.
+ *
+ * The DEATH pose is the exception and deliberately so: it stages `ctx.state`
+ * and health directly instead of running the game's death pipeline, because
+ * that pipeline (respawn timer, death card, canvas grade, 'death-menu' park)
+ * destroys the very shot it is asked for. See `case 'death'` for the trace.
+ *
+ * KNOWN CROSS-LANE GAP (`player-anim`, measured not guessed): the death clip is
+ * 2.375 s long and its FINAL frame snaps back to a standing pose — scrubbing
+ * through it takes the head from world-Y -1.13 (down) to +0.20 (upright) inside
+ * the last 0.04 s. `ClipLayer.scrub()` clamps to `duration - 1e-4`, so a death
+ * held past the clip parks on that bad frame and Aloy stands up. It is visible
+ * in gameplay too, merely hidden there by the death card arriving at 1.15 s.
+ * The studio does not paper over it: the fix is the clip's tail or a hold frame
+ * in `LocomotionBlend`, both of which live in `player-anim`. Until then a held
+ * death shot is composed with TIME at 0, which stops `_dieT` with the world.
  */
 import * as THREE from 'three';
 
@@ -89,6 +104,17 @@ export class PoseDirector {
     this._yaw = 0;
     this._pitch = 0;
     this._hidden = false;
+    /**
+     * UNDO BUFFER for the FIXED-ANGLE writes (eyes + lids). Keyed by bone;
+     * at most six entries, all allocated once. See `_undoFixed`.
+     */
+    this._fixed = new Map();
+    /**
+     * The staged hit's source, allocated once. `position` aliases the scratch
+     * vector `_inFront()` fills; `displayName` is what `progression` and
+     * `shell-menus` print when a staged hit turns out to be fatal.
+     */
+    this._src = { position: _v1, displayName: 'the studio', kind: 'studio' };
   }
 
   get animator() { return this.ctx.player?.animator ?? null; }
@@ -163,7 +189,35 @@ export class PoseDirector {
         p.setCrouch?.(!p.crouching);
         break;
       case 'death':
-        handed = this.asPlaying(() => p.takeDamage?.((p.maxHealth ?? 100) + 50, this._inFront()));
+        /*
+         * A DEATH POSE IS STAGED, NOT SUFFERED. This used to route through
+         * `takeDamage` inside an `asPlaying` window, which reached `_die()` and
+         * with it the entire death PIPELINE: a `player-died` broadcast, a 3.2 s
+         * wall-clock respawn that heals and teleports her to camp, and (since
+         * `shell-menus` landed) a card, a grayscale grade on the render canvas
+         * and a park onto `ctx.state = 'death-menu'`.
+         *
+         * That pipeline does not just clutter the shot, it DESTROYS it. The
+         * animator scrubs the crumple off `_dieT`, which it resets whenever
+         * `ctx.state === 'dead'` goes false for a single tick — and both the
+         * card's park and the respawn do exactly that, each from outside the
+         * frame loop where the studio could pre-empt them. Traced live: two
+         * restarts per shot, `_dieT` sawtoothing 0.54 -> 0.08 -> 0.53 -> 0.08,
+         * so the clip never got past its first half second and every death shot
+         * came out with Aloy standing upright four seconds after the button.
+         *
+         * The animator needs ONE thing for the crumple: `ctx.state === 'dead'`.
+         * So the pose sets exactly that and the health it reads from, and the
+         * pipeline is never armed — no timer to fight, no card to suppress, no
+         * checkpoint spent, nothing emitted (this lane is a pure consumer).
+         * `Studio._holdState()` holds the state and pins the subject; "Idle"
+         * and `exit()` release both. The HIT poses above still go through
+         * `takeDamage` inside the window, which is the half of `player-anim-17`
+         * that is genuinely about a guard refusing the studio.
+         */
+        p.health = 0;
+        this.ctx.state = 'dead';
+        handed = true;
         break;
       default:
         return { ok: false, detail: 'unhandled pose kind' };
@@ -182,14 +236,30 @@ export class PoseDirector {
     if (a._airT !== undefined) a._airT = 1;
   }
 
-  /** A source position 3 m in front of her, so hit reacts fold the right way. */
+  /**
+   * A source position 3 m in front of her, so hit reacts fold the right way.
+   *
+   * IT NEEDS A NAME, NOT JUST A POSITION. `progression` reads the source of a
+   * fatal hit as `from.displayName ?? from.kind ?? String(from)`
+   * (src/core/progression.js) and paints it on the death banner and the death
+   * card. Every real emitter passes a Machine, which has both; this passed a
+   * bare `{ position }`, so a knockdown chip at low health stamped
+   * `KILLED BY [OBJECT OBJECT]` across the photograph — caught on film, not in
+   * a gate, because the studio's own Death pose deliberately arms no pipeline
+   * and the three HIT chips are the only path in this lane that can reach one.
+   * Naming the source is the whole fix, and it is honest: the photographer
+   * staged that hit.
+   *
+   * The object is allocated once (`_src`) alongside the scratch vector it
+   * carries, so a held chip cannot litter.
+   */
   _inFront() {
     const p = this.ctx.player;
     const h = p?.heading ?? 0;
     _v1.copy(p.position);
     _v1.x += Math.sin(h) * 3;
     _v1.z += Math.cos(h) * 3;
-    return { position: _v1 };
+    return this._src;
   }
 
   /* ---------------------------------------------------------- appearance */
@@ -205,6 +275,15 @@ export class PoseDirector {
   /** Always called on exit: nothing the studio hid stays hidden. */
   restore() {
     if (this._hidden) this.setHidden(false);
+    /*
+     * Hand the face back exactly as it was found. A photographer who leaves
+     * while the world is STILL FROZEN would otherwise leave the last frame's
+     * eye and lid deltas baked into a rig whose animator is about to resume
+     * from them — nothing would ever wipe them, because nothing wrote those
+     * bones while time was stopped. See `_undoFixed`.
+     */
+    this._undoFixed();
+    this._fixed.clear();
     this._gw = 0;
     this._up = 0;
     this._lo = 0;
@@ -222,6 +301,7 @@ export class PoseDirector {
     if (!a?.space || !a.b) return;
     const b = a.b;
     const space = a.space;
+    this._undoFixed();
     const wantW = this.gaze === 'auto' ? 0 : clamp(this.gazeWeight, 0, 1);
     this._gw = damp(this._gw, wantW, 7, realDt);
 
@@ -244,19 +324,103 @@ export class PoseDirector {
         // eyes lead by a few degrees, same convention as the animator
         const ey = clamp(this._yaw * 0.55, -0.42, 0.42) * this._gw;
         const ep = clamp(this._pitch * 0.5, -0.28, 0.28) * this._gw;
-        if (b.eyeL) { space.rotChar(b.eyeL, 'y', ey, true); space.rotChar(b.eyeL, 'x', -ep, true); }
-        if (b.eyeR) { space.rotChar(b.eyeR, 'y', ey, true); space.rotChar(b.eyeR, 'x', -ep, true); }
+        if (b.eyeL) { space.rotChar(this._mark(b.eyeL), 'y', ey, true); space.rotChar(b.eyeL, 'x', -ep, true); }
+        if (b.eyeR) { space.rotChar(this._mark(b.eyeR), 'y', ey, true); space.rotChar(b.eyeR, 'x', -ep, true); }
       }
     }
 
     if (Math.abs(this._up) > 0.002 || Math.abs(this._lo) > 0.002) {
       // same axis + sign convention as playerAnimator's blink
-      if (b.lidUL) space.rotChar(b.lidUL, 'x', 0.42 * this._up, true);
-      if (b.lidUR) space.rotChar(b.lidUR, 'x', 0.42 * this._up, true);
-      if (b.lidLL) space.rotChar(b.lidLL, 'x', -0.16 * this._lo, true);
-      if (b.lidLR) space.rotChar(b.lidLR, 'x', -0.16 * this._lo, true);
+      if (b.lidUL) space.rotChar(this._mark(b.lidUL), 'x', 0.42 * this._up, true);
+      if (b.lidUR) space.rotChar(this._mark(b.lidUR), 'x', 0.42 * this._up, true);
+      if (b.lidLL) space.rotChar(this._mark(b.lidLL), 'x', -0.16 * this._lo, true);
+      if (b.lidLR) space.rotChar(this._mark(b.lidLR), 'x', -0.16 * this._lo, true);
+    }
+    this._sealFixed();
+  }
+
+  /*
+   * ------------------------------------------------------------------------
+   * THE OVERLAY MUST SURVIVE A FROZEN WORLD, AND ONE HALF OF IT DID NOT.
+   *
+   * `BoneSpace.rotChar` MULTIPLIES into `bone.quaternion`. In gameplay that is
+   * safe only because the animator re-evaluates every bone from its clips each
+   * frame, wiping the previous frame's delta before this overlay adds the next
+   * one. The animator runs on SIM dt. This overlay runs on REAL dt — it has to,
+   * or gaze and lids would freeze solid with the world — so at `timeScale 0`
+   * nothing resets the bone and each frame's delta lands on the last one.
+   *
+   * Measured, lid `rotation.x` with `narrow` held and time at 0:
+   *   running -0.038 | +0.4s -0.609 | +0.8s -1.180 | +1.2s -1.752 | +2.0s -2.895
+   * ~1.4 rad/s of runaway. Two seconds of composing a shot — which is the whole
+   * job — swung the lids a third of a turn and shut them over the eyes as flat
+   * plates. It is invisible in motion and ruins every frozen portrait, i.e. it
+   * only appears in exactly the mode this lane exists to ship.
+   *
+   * The GAZE half was already immune and it is worth saying why, because it is
+   * the reason this took a measurement to find rather than a read: `_lookAt`
+   * solves the RESIDUAL error between where the head points and where it should
+   * (`setFromUnitVectors(current, want)`), so re-running it on its own output
+   * asks for a rotation of zero. An absolute solve is idempotent by
+   * construction. The eye and lid writes are fixed angles and are not.
+   *
+   * Rather than convert those to absolute solves (they have no rest reference
+   * of their own to solve against — the animator's blink writes the same bones
+   * the same way), the overlay keeps an undo buffer: what the bone held before
+   * we wrote, and what we left it as. Next frame, if the bone is STILL what we
+   * left, nobody else has written it (the world is frozen) and we put the old
+   * value back before adding the new delta. If it has changed, the animator ran
+   * and its pose is the new base — we take it and leave it alone. So the same
+   * code is correct frozen, running, and on the frame time resumes.
+   * ------------------------------------------------------------------------
+   */
+
+  /**
+   * Undo the previous frame's fixed-angle writes, but ONLY on bones nothing
+   * else has touched since. Runs before any write, so the deltas below always
+   * land on a clean base.
+   */
+  _undoFixed() {
+    for (const r of this._fixed.values()) {
+      // |dot| because q and -q are the same rotation
+      if (r.armed && Math.abs(r.bone.quaternion.dot(r.post)) > 1 - 1e-9) {
+        r.bone.quaternion.copy(r.pre);
+      }
+      r.armed = false;
+      r.touched = false;
     }
   }
+
+  /**
+   * Snapshot a bone's pre-overlay orientation, once per frame, and hand the
+   * entry straight back so it can wrap the first `rotChar` argument at the
+   * call site.
+   * @param {object} e anim-core bone entry (or a bare bone)
+   */
+  _mark(e) {
+    const bone = e.bone || e;
+    let r = this._fixed.get(bone);
+    if (!r) {
+      r = {
+        bone,
+        pre: new THREE.Quaternion(),
+        post: new THREE.Quaternion(),
+        armed: false,
+        touched: false,
+      };
+      this._fixed.set(bone, r);
+    }
+    if (!r.touched) { r.pre.copy(bone.quaternion); r.touched = true; }
+    return e;
+  }
+
+  /** Record what this frame left behind, so the next one can recognise it. */
+  _sealFixed() {
+    for (const r of this._fixed.values()) {
+      if (r.touched) { r.post.copy(r.bone.quaternion); r.armed = true; }
+    }
+  }
+
 
   /** Char-space unit direction the head should meet. False = nothing to do. */
   _resolveDir(out) {
@@ -312,6 +476,16 @@ export class PoseDirector {
       lidUp: +this._up.toFixed(3),
       lidLo: +this._lo.toFixed(3),
       hidden: this._hidden,
+      /*
+       * The death crumple's own weight. `playerAnimator` damps `_deadW` toward
+       * `ctx.state === 'dead'` and every death pose — clip layer or procedural
+       * fallback — is gated on it, so it is the one number that says whether a
+       * filmed death is actually ON THE CHARACTER rather than merely recorded
+       * in her health. Published because a gate asking "did the Death button do
+       * anything" has to read the pose, not the bookkeeping: the studio shipped
+       * a death that dropped her health to 0 and left her standing in `idle`.
+       */
+      deadW: a?._deadW ?? null,
       hitSlot: a?._hitSlot ?? null,
       airSlot: a?._airSlot ?? null,
       actSlot: a?._actSlot ?? null,
