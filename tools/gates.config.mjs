@@ -129,7 +129,7 @@ const PROVOKE = `
 export const GATES = [
   // ---------------- ACTION GATES ----------------
   {
-    id: 'A90-memory-stability', kind: 'action', lane: 'core',
+    id: 'A90-memory-stability', kind: 'action', lane: 'core', timeout: 260000,
     title: 'Memory stays bounded: JS heap, geometries and textures do not grow across a 3-minute kill/loot/respawn loop',
     setup: INPUT_ON,
     settle: 2000,
