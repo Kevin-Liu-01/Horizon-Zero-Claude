@@ -129,6 +129,37 @@ const PROVOKE = `
 export const GATES = [
   // ---------------- ACTION GATES ----------------
   {
+    id: 'A90-memory-stability', kind: 'action', lane: 'core',
+    title: 'Memory stays bounded: JS heap, geometries and textures do not grow across a 3-minute kill/loot/respawn loop',
+    setup: INPUT_ON,
+    settle: 2000,
+    assert: `(async () => {
+      const r = __CTX__.renderer || __CTX__.engine?.renderer;
+      const mem = () => ({ heap: performance.memory?.usedJSHeapSize ?? null, geo: r.info.memory.geometries, tex: r.info.memory.textures, progs: r.info.programs?.length ?? null, objs: (() => { let n = 0; __CTX__.scene.traverse(() => n++); return n; })() });
+      const kill = (m) => { let mesh = null; m.root.traverse(o => { if (!mesh && o.isMesh) mesh = o; }); m.takeDamage({ point: m.position.clone(), object: mesh, impact: 99999, tear: 0, element: 'none', elementAmount: 0, dir: { x: 0, y: 0, z: 1 }, type: 'hunter', baseDamage: 99999 }); };
+      if (window.gc) window.gc();
+      await new Promise(res => setTimeout(res, 1500));
+      const a = mem();
+      const t0 = performance.now(); let kills = 0;
+      while (performance.now() - t0 < 150000) {
+        const m = (__CTX__.machines?.list || []).find(x => x.alive);
+        if (m) { kill(m); kills++; }
+        __CTX__.input.keys.add('KeyW'); await new Promise(res => setTimeout(res, 2500)); __CTX__.input.keys.delete('KeyW');
+        try { __CTX__.machines?.spawn?.('watcher', __CTX__.player.position.x + 30, __CTX__.player.position.z + 30); } catch {}
+        await new Promise(res => setTimeout(res, 2500));
+      }
+      // let corpse lifecycle / disposal run
+      await new Promise(res => setTimeout(res, 20000));
+      if (window.gc) window.gc();
+      await new Promise(res => setTimeout(res, 1500));
+      const b = mem();
+      const heapGrowth = (a.heap && b.heap) ? (b.heap - a.heap) / a.heap : null;
+      const geoGrowth = b.geo - a.geo, texGrowth = b.tex - a.tex, objGrowth = b.objs - a.objs;
+      const pass = (heapGrowth === null || heapGrowth < 0.25) && geoGrowth <= 40 && texGrowth <= 8 && objGrowth <= 60;
+      return { pass, detail: { kills, before: a, after: b, heapGrowthPct: heapGrowth === null ? 'n/a (enable --enable-precise-memory-info)' : +(heapGrowth * 100).toFixed(1), geoGrowth, texGrowth, objGrowth } };
+    })()`,
+  },
+  {
     id: 'A1-boot-clean', kind: 'action', lane: 'core',
     title: 'Game boots to playing state with zero console errors',
     settle: 1500,
