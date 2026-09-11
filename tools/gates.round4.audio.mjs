@@ -1201,4 +1201,133 @@ export const GATES = [
       return out;
     })()`,
   },
+
+  /* ===================================================================== */
+  {
+    id: 'A78c-machine-retention-audio', kind: 'action', lane: 'audio',
+    title: 'Machine churn leaks nothing: no audio container strongly holds a disposed machine, and machine-less cues do not throw',
+    settle: 300, timeout: 60000,
+    assert: `(async () => {
+      ${ARM}
+      const a = await _arm();
+      if (!a.ac) return { pass: null, detail: 'SKIP: no AudioContext' };
+      const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+      const ev = __CTX__.events;
+      const P = __CTX__.player.position;
+
+      /*
+       * Walk every own Map/Set on the mixer and its two sub-objects and ask
+       * which of them still hold one of OUR machines as a key. Deliberately
+       * structural rather than a list of field names: the bug this pins was
+       * three throttles that were added as plain Maps next to a WeakMap that
+       * existed for exactly this reason, so a gate naming those three fields
+       * would not catch the fourth one someone adds next month.
+       */
+      const boxes = () => {
+        const out = [];
+        const visit = (obj, path) => {
+          if (!obj || typeof obj !== 'object') return;
+          for (const k of Object.keys(obj)) {
+            let v; try { v = obj[k]; } catch (err) { continue; }
+            if (v instanceof Map || v instanceof Set) out.push({ field: path + k, box: v });
+          }
+        };
+        visit(a, 'audio.'); visit(a.music, 'music.'); visit(a.zones, 'zones.');
+        return out;
+      };
+      const holding = (made) => {
+        const hits = [];
+        for (const { field, box } of boxes()) {
+          let n = 0;
+          for (const key of (box instanceof Map ? box.keys() : box.values())) {
+            if (made.indexOf(key) >= 0) n++;
+          }
+          if (n) hits.push({ field, retained: n });
+        }
+        return hits;
+      };
+
+      let n = 0;
+      const mk = () => ({
+        kind: 'watcher', displayName: 'watcher', alive: true, eyeHeight: 1.2,
+        _wreck: true,                                  // sites.onKilled() early-returns
+        position: { x: P.x + 2 + (n % 4), y: P.y, z: P.z + 2 },
+        _gateId: ++n,
+      });
+
+      // --- churn: three rounds of six machines that walk, scan, are heard
+      //     suspicious, die, and are then disposed the way sites.dispose() does
+      const made = [];
+      const sizes = [];
+      const errors = [];
+      for (let r = 0; r < 3; r++) {
+        const batch = [];
+        for (let i = 0; i < 6; i++) {
+          const m = mk(); batch.push(m); made.push(m);
+          a._syncServoLoop(m);                         // a real servo bed, as in play
+        }
+        // make every per-machine throttle actually take an entry for them
+        for (let t = 0; t < 3; t++) {
+          for (const m of batch) {
+            try {
+              ev.emit('machine-footfall', { machine: m, foot: 'L', position: m.position, speed: 3 });
+              ev.emit('machine-scan', { machine: m, position: m.position, hit: t === 1 });
+              ev.emit('machine-suspicion', { machine: m, lost: t === 2 });
+            } catch (err) { errors.push('churn:' + (err && err.message)); }
+          }
+          await sleep(120);                            // clear the 90 ms footfall throttle
+        }
+        for (const m of batch) {
+          m.alive = false;
+          try { ev.emit('machine-killed', { machine: m }); }
+          catch (err) { errors.push('kill:' + (err && err.message)); }
+        }
+        await sleep(60);
+        // sites.dispose(): out of the roster, flagged, geometry gone
+        for (const m of batch) { m._disposed = true; m.position.x = 9000; m.position.z = 9000; }
+        sizes.push({ round: r, wreckBeacons: a._wreckBeacons.size, servoLoops: a._machineLoops.size });
+      }
+
+      // let the beacon prune + roster sync tick over the disposed set
+      const t0 = performance.now();
+      while (performance.now() - t0 < 4000) {
+        if (holding(made).length === 0) break;
+        await sleep(80);
+      }
+
+      const retained = holding(made);
+
+      /*
+       * The other half of the same fix: a WeakMap THROWS on a non-object key
+       * where the old Map silently stored one, and both of these handlers can
+       * be reached by an event that carries a position but no machine.
+       */
+      let anonThrew = null;
+      try {
+        ev.emit('machine-footfall', { position: { x: P.x + 3, y: P.y, z: P.z } });
+        ev.emit('machine-scan', { position: { x: P.x + 3, y: P.y, z: P.z } });
+        ev.emit('machine-suspicion', {});
+        anonThrew = false;
+      } catch (err) { anonThrew = (err && err.message) || String(err); }
+
+      // and the throttles are weak by construction, not by a sweep that can be
+      // skipped on the frame a machine dies
+      const weak = {
+        scanCd: a._scanCd instanceof WeakMap,
+        footfallCd: a._footfallCd instanceof WeakMap,
+        warbleCd: a._warbleCd instanceof WeakMap,
+        mids: a._mids instanceof WeakMap,
+      };
+      const allWeak = Object.keys(weak).every(k => weak[k]);
+
+      const pass = retained.length === 0 && errors.length === 0
+        && anonThrew === false && allWeak;
+      return { pass, detail: {
+        churned: made.length, retained,
+        weak, anonThrew, errors,
+        perRound: sizes,
+        scannedBoxes: boxes().length,
+      } };
+    })()`,
+  },
 ];

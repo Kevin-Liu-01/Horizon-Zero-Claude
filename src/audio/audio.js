@@ -39,6 +39,16 @@ const clamp = (v, lo, hi) => (v < lo ? lo : v > hi ? hi : v);
 
 const SETTINGS_KEY = 'hzc.audio.v1';
 
+/**
+ * Is `v` usable as a WeakMap key? The per-machine cue throttles are WeakMaps so
+ * a disposed machine is not pinned for the life of the page, and a WeakMap
+ * THROWS on a non-object key where a Map would happily store one. Some machine
+ * events legitimately arrive with a position but no `machine` (a detached FX
+ * emitter, a replayed cue), so every weak-keyed write is guarded by this and
+ * falls back to a scalar throttle.
+ */
+const weakKey = (v) => v !== null && typeof v === 'object';
+
 /** Machine kind -> footfall weight class (mstep/*) and voice loudness. */
 const WEIGHT = {
   watcher: 'light', scrapper: 'light', glinthawk: 'light', longleg: 'medium',
@@ -180,8 +190,29 @@ export class GameAudio {
      * earshot.
      */
     this._loopList = [];
-    this._scanCd = new Map();
-    this._footfallCd = new Map();
+    /**
+     * Per-machine cue throttles, keyed by the Machine object.
+     *
+     * These MUST be WeakMaps. Nothing ever deletes from them — there is no
+     * natural moment to: a throttle has no lifecycle of its own, it is just the
+     * last time this machine was allowed to make a noise. A strong Map would
+     * therefore pin every machine it ever throttled for the life of the page,
+     * and with it the whole object graph hanging off that machine (root
+     * Object3D, skeleton, bones, `ai`, `rig`, route arrays). Machine churn is
+     * constant — sites respawn rosters on a timer (gate A67) and
+     * `src/core/save.js` disposes the live set on every Continue — so the leak
+     * grows without bound during ordinary play even though `sites.dispose()`
+     * correctly frees the GPU side.
+     *
+     * WeakMap gets this for free: the entry dies with the machine. See
+     * `_mids` below, which was already a WeakMap for exactly this reason.
+     * Nothing iterates these or reads `.size` — keep it that way.
+     */
+    this._scanCd = new WeakMap();
+    this._footfallCd = new WeakMap();
+    // shared throttle for machine-less scan/footfall events (see `weakKey`)
+    this._scanCdAnon = -1e9;
+    this._footfallCdAnon = -1e9;
     this._staggerMs = -1e9;
 
     /* ------------------- v4 (Round 4, audio content half) --------------- */
@@ -203,8 +234,8 @@ export class GameAudio {
     this._nockBow = null;          // which bow set those edges belong to
     this._exertion = 0;            // 0..1 running average of effort
     this._airborne = false;
-    this._wreckBeacons = new Map();  // machine -> ms the beacon started
-    this._warbleCd = new Map();
+    this._wreckBeacons = new Map();  // machine -> ms the beacon started (pruned on _disposed)
+    this._warbleCd = new WeakMap();  // machine -> ms; weak for the reason above
     this._mids = new WeakMap();      // machine -> stable small int for zone ids
     this._midN = 0;
     this._wantSet = new Set();       // reused by _statusScan; never reallocated
@@ -2610,11 +2641,14 @@ export class GameAudio {
       const m = e.machine;
       const pos = e.position || m?.position;
       if (!pos) return;
-      // per-machine throttle: a sprinting Scrapper must not out-shout a fight
+      // per-machine throttle: a sprinting Scrapper must not out-shout a fight.
+      // `m` may be absent (position-only footfall) and a WeakMap refuses a
+      // non-object key, so those share one scalar throttle instead.
       const nowMs = performance.now();
-      const last = this._footfallCd.get(m) ?? -1e9;
+      const keyed = weakKey(m);
+      const last = (keyed ? this._footfallCd.get(m) : this._footfallCdAnon) ?? -1e9;
       if (nowMs - last < 90) return;
-      this._footfallCd.set(m, nowMs);
+      if (keyed) this._footfallCd.set(m, nowMs); else this._footfallCdAnon = nowMs;
       const cls = this._weightOf(m);
       if (!this.playAt(`mstep/${cls}`, pos, {
         volume: cls === 'heavy' ? 1 : 0.75,
@@ -2676,8 +2710,10 @@ export class GameAudio {
       this._contract['machine-scan']++;
       const m = e.machine;
       const nowMs = performance.now();
-      if (nowMs - (this._scanCd.get(m) ?? -1e9) < 700) return;
-      this._scanCd.set(m, nowMs);
+      // as with footfalls: weak key when we have a machine, scalar when not
+      const keyed = weakKey(m);
+      if (nowMs - ((keyed ? this._scanCd.get(m) : this._scanCdAnon) ?? -1e9) < 700) return;
+      if (keyed) this._scanCd.set(m, nowMs); else this._scanCdAnon = nowMs;
       const pos = e.position || m?.position;
       if (!this.playAt('machine/scan-ping', pos, {
         volume: 0.7, priority: PRI.machineStep, rate: e.hit ? 1.12 : 1,

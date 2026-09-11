@@ -383,10 +383,16 @@ export const GATES = [
       await sleep(200);
       const sim0 = ctx.engine.simTime;
       const p0 = ctx.camera.position.clone();
+      // Count RENDERED frames across the flight so the +-1-frame slack the
+      // bands below allow is MEASURED on this box rather than assumed.
+      let frames = 0, raf = 0;
+      const tick = () => { frames++; raf = requestAnimationFrame(tick); };
       S._keys.add('KeyW');
       const w0 = performance.now();
+      raf = requestAnimationFrame(tick);
       await sleep(900);
       S._keys.delete('KeyW');
+      cancelAnimationFrame(raf);
       const flew = ctx.camera.position.distanceTo(p0);
       const realWall = (performance.now() - w0) / 1000;
       const simDrift = ctx.engine.simTime - sim0;
@@ -395,7 +401,7 @@ export const GATES = [
        * frozen it must cover ~14 * realWall regardless of how slowly this box
        * renders.
        *
-       * The band was `> expect * 0.33`, which is not a real-dt assertion at
+       * The band was "> expect * 0.33", which is not a real-dt assertion at
        * all — it passes a lens flying at a THIRD of true speed. It duly went
        * green at 4.90 m against 12.6 m due, hiding a lossy per-frame dt clamp
        * that discarded every millisecond past 50 ms (so the fly cam slowed
@@ -406,9 +412,30 @@ export const GATES = [
        * back before the press and the last partial frame is never counted.
        */
       const expect = 14 * realWall;
-      const frameSlack = 1.6 / Math.max(4, S.debug().fps || 8) / Math.max(0.2, realWall);
-      const loBand = Math.max(0.45, 0.9 - frameSlack);
-      const hiBand = 1.15 + frameSlack;
+      const ratio = expect > 0 ? flew / expect : 0;
+      const frameS = realWall / Math.max(1, frames);          // seconds/frame here
+      const slack = 1.6 * frameS / Math.max(0.2, realWall);   // +-1.6 frames of it
+      const loBand = Math.max(0.45, 0.9 - slack);
+      const hiBand = 1.15 + slack;
+
+      /* ---- 3b. the same claim, DETERMINISTICALLY ---------------------
+       * The wall flight above only catches a lossy dt clamp when THIS box
+       * renders slower than the clamp: at 50 fps a lens capped at 1/20 s per
+       * frame is indistinguishable from a correct one, so the gate went green
+       * on a fast box and red on a slow one for the same code. Drive KNOWN
+       * frame times by hand instead — synchronously, so no engine frame
+       * interleaves — and the claim holds on every box.
+       */
+      const drive = (dtF, n) => {
+        S._keys.add('KeyW');
+        const q0 = ctx.camera.position.clone();
+        for (let i = 0; i < n; i++) S.interpolate(0, dtF);
+        const d = ctx.camera.position.distanceTo(q0);
+        S._keys.delete('KeyW');
+        return d / (14 * dtF * n);
+      };
+      const at8fps = drive(0.125, 8);   // a slow frame: every second spent
+      const atStall = drive(4.0, 1);    // a 4 s hitch: nothing spent
 
       /* ---- 4. hide-Aloy hides her; Hide HUD hides ALL foreign chrome --
        * not just the id #hud: whatever is left rendered above the canvas is in the
@@ -449,7 +476,10 @@ export const GATES = [
 
       const detail = 'pauseOverlayLeftUp=' + pauseVisible + ' prevState=' + prevState + ' inputTaken=' + inputOff
         + ' | zStudio=' + zStudio + ' vs top ' + stacked.length + ' stacked: ' + JSON.stringify(others)
-        + ' | flew=' + flew.toFixed(2) + 'm in ' + realWall.toFixed(2) + 's wall (expect ~' + expect.toFixed(1) + 'm) simDrift=' + simDrift.toFixed(4)
+        + ' | flew=' + flew.toFixed(2) + 'm in ' + realWall.toFixed(2) + 's wall (expect ~' + expect.toFixed(1) + 'm)'
+        + ' ratio=' + ratio.toFixed(2) + ' band=[' + loBand.toFixed(2) + ',' + hiBand.toFixed(2) + ']'
+        + ' over ' + frames + ' frames @' + (1 / Math.max(1e-3, frameS)).toFixed(1) + 'fps simDrift=' + simDrift.toFixed(4)
+        + ' | driven 8fps=' + (at8fps * 100).toFixed(0) + '% stall=' + (atStall * 100).toFixed(0) + '%'
         + ' | hidAloy=' + hidden + ' hidHud=' + !!hudHidden
         + ' chromeRootsHidden=' + S.debug().chromeRoots
         + (stillPainting.length ? ' STILL-PAINTING=' + stillPainting.join(',') : ' allChromeHidden')
@@ -462,7 +492,11 @@ export const GATES = [
       if (over.length) return { pass: false, detail: 'these clickable layers sit at or above the studio: ' + JSON.stringify(over) + ' — ' + detail };
       if (stillPainting.length) return { pass: false, detail: 'Hide HUD left foreign chrome in the frame: ' + stillPainting.join(',') + ' — ' + detail };
       if (Math.abs(simDrift) > 1e-6) return { pass: false, detail: 'world simulated while frozen — ' + detail };
-      if (flew < expect * 0.33) return { pass: false, detail: 'lens barely moved with the world frozen — the fly cam is not on real dt — ' + detail };
+      if (frames < 3) return { pass: false, detail: 'only ' + frames + ' frames rendered during the flight — the measurement is broken, not the build — ' + detail };
+      if (ratio < loBand) return { pass: false, detail: 'lens flew at ' + (ratio * 100).toFixed(0) + '% of wall speed — real dt is being lost, not spent (a per-frame clamp under the frame time, or a fixed 1/60) — ' + detail };
+      if (ratio > hiBand) return { pass: false, detail: 'lens flew at ' + (ratio * 100).toFixed(0) + '% of wall speed — real dt is being spent more than once per frame — ' + detail };
+      if (at8fps < 0.97) return { pass: false, detail: 'driven at 8 fps the lens spent only ' + (at8fps * 100).toFixed(0) + '% of its real seconds — the per-frame dt clamp is lossy, so the fly cam slows down with the frame rate — ' + detail };
+      if (atStall > 0.02) return { pass: false, detail: 'a 4 s stall moved the lens ' + (atStall * 100).toFixed(0) + '% of 56 m — a hitch must be dropped, not clamped-and-spent — ' + detail };
       if (!hidden) return { pass: false, detail: 'Hide Aloy did not hide her — ' + detail };
       if (!hudHidden) return { pass: false, detail: 'Hide HUD did not hide the HUD — ' + detail };
       if (restored.state !== 'playing') return { pass: false, detail: 'Esc did not restore playing — ' + detail };
