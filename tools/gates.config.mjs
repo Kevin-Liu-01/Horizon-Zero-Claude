@@ -129,7 +129,7 @@ const PROVOKE = `
 export const GATES = [
   // ---------------- ACTION GATES ----------------
   {
-    id: 'A90-memory-stability', kind: 'action', lane: 'core', timeout: 260000,
+    id: 'A90-memory-stability', kind: 'action', lane: 'core', timeout: 420000,
     title: 'Memory stays bounded: JS heap, geometries and textures do not grow across a 3-minute kill/loot/respawn loop',
     setup: INPUT_ON,
     settle: 2000,
@@ -148,15 +148,19 @@ export const GATES = [
         try { __CTX__.machines?.spawn?.('watcher', __CTX__.player.position.x + 30, __CTX__.player.position.z + 30); } catch {}
         await new Promise(res => setTimeout(res, 2500));
       }
-      // let corpse lifecycle / disposal run
-      await new Promise(res => setTimeout(res, 20000));
+      // let the corpse lifecycle run: MachineSite disposal needs the player far away (~90 m)
+      // and ~130 s; a leak is what REMAINS after that, not what is merely pending
+      const p0 = __CTX__.player.position.clone();
+      __CTX__.player.position.set(p0.x + 130, 0, p0.z + 130); __CTX__.player._snapToGround?.();
+      await new Promise(res => setTimeout(res, 150000));
+      const mid = mem();
       if (window.gc) window.gc();
       await new Promise(res => setTimeout(res, 1500));
       const b = mem();
       const heapGrowth = (a.heap && b.heap) ? (b.heap - a.heap) / a.heap : null;
       const geoGrowth = b.geo - a.geo, texGrowth = b.tex - a.tex, objGrowth = b.objs - a.objs;
       const pass = (heapGrowth === null || heapGrowth < 0.25) && geoGrowth <= 40 && texGrowth <= 8 && objGrowth <= 60;
-      return { pass, detail: { kills, before: a, after: b, heapGrowthPct: heapGrowth === null ? 'n/a (enable --enable-precise-memory-info)' : +(heapGrowth * 100).toFixed(1), geoGrowth, texGrowth, objGrowth } };
+      return { pass, detail: { kills, before: a, afterLifecycle: b, atLoopEnd: mid, heapGrowthPct: heapGrowth === null ? 'n/a (enable --enable-precise-memory-info)' : +(heapGrowth * 100).toFixed(1), geoGrowth, texGrowth, objGrowth } };
     })()`,
   },
   {
