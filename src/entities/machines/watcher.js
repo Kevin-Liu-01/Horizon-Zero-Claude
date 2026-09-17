@@ -492,7 +492,8 @@ export class Watcher extends Machine {
     // absorbs `wallPerSim`'s estimation error, the contact ledger's deferred
     // re-plants and this species' height-gated plant, none of which the
     // feed-forward correction above can see. See gait.js `CadenceLoop`.
-    const loop = this._cadLoop || (this._cadLoop = new CadenceLoop());
+    const loop = this._cadLoop
+      || (this._cadLoop = new CadenceLoop({ trimHi: 2.2, ceilK: 1.6 }));
     const lls = this.footLock?.legs || [];
     // the PUBLISHED plant count (rig/contact.js `latch`) — the same number a
     // consumer counts, not the rig's private touchdown tally

@@ -637,7 +637,19 @@ export class Longleg extends Machine {
       // and the fixed-step sim runs at a fraction of that on a loaded host,
       // which is what read this species at 0.2 Hz against a 0.63 Hz floor.
       const band = this._cadBand || (this._cadBand = cadenceBand(measureBodyLength(this)));
-      let hz = cadenceTarget(band, runK, this.ctx?.engine);
+      /**
+       * +18 % ON THE BAND PLACEMENT (machines-expansion).
+       *
+       * This species is the one that DELIVERS below what it commands — its
+       * stance windows are short enough that a consumer sampling once per
+       * drawn frame misses some of them, which is the whole reason the closed
+       * loop below exists. Measured across the expansion's runs it sat at
+       * 1.00-1.20 Hz against a 0.96 Hz floor: passing, and one slow frame from
+       * not. The placement is lifted so the margin is the band's, not the
+       * host's; the clamp two blocks down still refuses to take it out of band
+       * in either direction, so this can only move it AWAY from the edge.
+       */
+      let hz = cadenceTarget(band, runK, this.ctx?.engine) * 1.18;
       // CLOSED-LOOP TRIM (gate A48, fix round 4). `cadenceTarget` is a
       // feed-forward correction from an estimate of how far behind wall time
       // the sim is running; the gate measures footfalls per WALL second
@@ -647,7 +659,8 @@ export class Longleg extends Machine {
       // right below. The loop counts the foot lock's own touchdowns against
       // the band placement and trims the clip rate by the difference. See
       // gait.js `CadenceLoop`.
-      const loop = this._cadLoop || (this._cadLoop = new CadenceLoop());
+      const loop = this._cadLoop
+        || (this._cadLoop = new CadenceLoop({ trimHi: 2.2, ceilK: 1.6 }));
       const lls = this.footLock?.legs || [];
       // the PUBLISHED plant count (rig/contact.js `latch`) — the same number
       // a consumer counts, not the rig's private touchdown tally

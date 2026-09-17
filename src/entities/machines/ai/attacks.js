@@ -352,7 +352,81 @@ function slam(m, p) {
   };
 }
 
-const GENERIC = { lunge, charge, sweep, slam, flurry };
+/**
+ * RANGED VOLLEY — the generic the expansion needs and the library did not have
+ * (casting-v4.md §2.3/§2.4/§2.5/§2.6/§2.7: freeze-mortar, cannon-burst,
+ * shock-volley, homing-blast, corruption-spike, inferno-blast, thunder-clash,
+ * shock-blast, bomb-run are all this one shape).
+ *
+ * Every existing generic is a melee shape — `lunge`/`charge` close the gap,
+ * `sweep`/`slam`/`flurry` swing on the spot — so a species whose long rows
+ * could only be built by a species file that has not shipped yet would have had
+ * its whole standoff band answered by `authored` rows that build nothing, i.e.
+ * phantom rows and a dead band. This is the honest alternative: a PLANTED
+ * windup with the machine squared up on the target, then `shots` pulses down a
+ * narrow arc across the strike phase, each rolling its own range+arc damage
+ * check and flashing the machine's own arc FX.
+ *
+ * It is a hitscan beam, not a projectile: `Machine.damagePlayer(amount, range,
+ * arcCos)` is the only ranged damage seam this lane owns, and a fabricated
+ * projectile with no art would read worse than a beam that at least flashes.
+ * `machines-expansion` replaces any of these rows with an `authored:` builder
+ * the moment its species file ships a real one — the row id, range, cooldown
+ * and score stay put, so nothing else in the table moves.
+ */
+function volley(m, p) {
+  const arcCos = Math.cos(THREE.MathUtils.degToRad((p.arcDeg ?? 14) * 0.5));
+  const shots = Math.max(1, p.shots ?? 3);
+  const per = (p.damage ?? 24) / shots;
+  let done = 0;
+  return {
+    kind: p.id, windup: p.windup, strike: p.strike, recover: p.recover,
+    cooldown: p.gap ?? 1.6, track: true, needsHit: true, plant: true,
+    onStrike: (a) => { done = 0; a.hit = false; },
+    onUpdate: (a, dt) => {
+      const pose = poseOf(m);
+      if (a.phase === 'windup') {
+        // plant and aim: the body stops, the head comes up onto the line
+        m._speed = THREE.MathUtils.damp(m._speed, 0, 9, dt);
+        m.aiPose.coil = a.phaseT;
+        if (pose) {
+          pose.crouch = 0.18 * a.phaseT;
+          pose.spineRear = 0.24 * a.phaseT;
+          pose.headPitch = -0.26 * a.phaseT;
+        }
+      } else if (a.phase === 'strike') {
+        m._speed = THREE.MathUtils.damp(m._speed, 0, 12, dt);
+        m.aiPose.coil = 0;
+        const want = Math.min(shots, Math.floor(a.phaseT * shots) + 1);
+        while (done < want) {
+          done++;
+          if (m.damagePlayer(per, p.range ?? 30, arcCos)) {
+            a.hit = true;
+            if (p.knock) m.knockbackPlayer(p.knock);
+          }
+          m._arcFlash?.(p.color ?? 0xbfe8ff);
+        }
+        if (pose) {
+          // recoil: one kick per pulse, decaying across the burst
+          const k = 1 - (a.phaseT * shots - (done - 1));
+          pose.spineRear = 0.24 - 0.3 * Math.max(0, k);
+          pose.headPitch = -0.26 + 0.2 * Math.max(0, k);
+        }
+      } else {
+        m.aiPose.coil = 0;
+        if (pose) {
+          const f = Math.max(0, 1 - a.phaseT * 1.6);
+          pose.crouch = 0.18 * f;
+          pose.spineRear = 0.24 * f;
+          pose.headPitch = -0.26 * f;
+        }
+      }
+    },
+    cleanup: () => { m.aiPose.coil = 0; clearPose(poseOf(m)); },
+  };
+}
+
+const GENERIC = { lunge, charge, sweep, slam, flurry, volley };
 
 /* --------------------------------------------------------------------- */
 /* picker                                                                 */
@@ -396,8 +470,55 @@ export class AttackPicker {
      * thing left, and `pick()`, which clears the entry the moment it fires.
      */
     this.blind = new Map();
+    /**
+     * Moves whose RING THE FOOTWORK COULD NOT REACH, and the seconds of hold
+     * left (`SCORING.unreachHold`). Written only by `Engage._giveUpRing`
+     * through `noteUnreachableRing`.
+     *
+     * `blind` above is "I got there and could not see her". This is the other
+     * half the judge asked for: "I never got there at all" — a ring on the far
+     * side of a slope the machine cannot climb, behind a rock the navgrid
+     * steers it around for ever, or outside the soft leash. Measured on the
+     * Behemoth's shelf and the Scrapper's ruin: the orbit walks at the ring at
+     * `closeSpeed` and its radial error simply does not fall, so the move that
+     * ring is set up for keeps winning the arrangement and the fight collapses
+     * to whatever is legal where the machine is actually standing.
+     *
+     * Exactly as soft as `blind`: selection never consults it, `coveredAt()` /
+     * `bandBlocked()` never see it, `_bestArrangeable` falls back to it when
+     * nothing else is arrangeable, and firing the move clears it.
+     */
+    this.unreach = new Map();
+    /** Diagnostics: the radius each give-up happened at. */
+    this._unreachAt = new Map();
     this._arrangedId = null;    // what the ring is currently set up for
-    this._arrangedT = 0;        // ...and for how many seconds
+    this._arrangedT = 0;        // ...and for how many seconds IN TOTAL
+    /**
+     * TWO CLOCKS, NOT ONE (FIX ROUND 5, A41c/A41d Scrapper + Shell-Walker).
+     *
+     * `_arrangedT` is the TOTAL time this move has owned the ring and it
+     * drives `SCORING.arrangeGiveUp` — the bound on a move holding the fight
+     * hostage. `_setupT` is the time since the machine last DID something and
+     * it drives `SCORING.setupPatience` — the window in which it may decline a
+     * move it has already shown while it walks to the range of one it has not.
+     *
+     * They were the same field, which quietly disabled the patience after the
+     * first two seconds of any fight: `noteArranged` only restarts the clock
+     * when the ANSWER changes, so a machine that keeps arranging for the same
+     * move (the hostage case the total is watching for) had `_arrangedT` past
+     * `setupPatience` for ever and never declined another window again.
+     * Measured: a Scrapper threw `dart-bite` six times in 30 s, each throw a
+     * 4.2 m dash that put it back inside its own laser floor, with the laser
+     * fresh, arrangeable and unblocked the whole time — the exact treadmill
+     * `setupPatience` was written for, with the patience spent in the first
+     * two seconds. Same shape on a Shell-Walker and its homing blast.
+     *
+     * `_setupT` resets whenever a move actually fires, so the patience is
+     * renewed per attempt; `_arrangedT` keeps counting, so the 8 s give-up is
+     * unchanged and a move that genuinely cannot be set up still loses the
+     * ring.
+     */
+    this._setupT = 0;
     this.rowById = new Map();   // id -> row, so lookups allocate nothing
     for (const row of this.rows) this.rowById.set(row.id, row);
     // scratch for `pick()`'s score-then-descend; never reallocated
@@ -422,12 +543,19 @@ export class AttackPicker {
       const n = v - dt;
       if (n <= 0) this.blind.delete(k); else this.blind.set(k, n);
     }
+    for (const [k, v] of this.unreach) {
+      const n = v - dt;
+      if (n <= 0) { this.unreach.delete(k); this._unreachAt.delete(k); }
+      else this.unreach.set(k, n);
+    }
     if (this._arrangedId) {
       this._arrangedT += dt;
+      this._setupT += dt;
       if (this._arrangedT >= SCORING.arrangeGiveUp) {
         this.stalled.set(this._arrangedId, SCORING.stallHold);
         this._arrangedId = null;
         this._arrangedT = 0;
+        this._setupT = 0;
       }
     }
   }
@@ -441,6 +569,7 @@ export class AttackPicker {
     if (id === this._arrangedId) return;
     this._arrangedId = id || null;
     this._arrangedT = 0;
+    this._setupT = 0;
   }
 
   /** PUBLISHED: the move the standoff ring is currently set up for, or null. */
@@ -456,11 +585,30 @@ export class AttackPicker {
     if (!id) return;
     this.blind.set(id, SCORING.blindHold);
     this._blindRingAt = ring;
-    if (this._arrangedId === id) { this._arrangedId = null; this._arrangedT = 0; }
+    if (this._arrangedId === id) { this._arrangedId = null; this._arrangedT = 0; this._setupT = 0; }
   }
 
   /** PUBLISHED (gates + HUD): `[[id, secondsLeft], ...]`. ALLOCATES. */
   blindRings() { return [...this.blind.entries()].map(([k, v]) => [k, +v.toFixed(2)]); }
+
+  /**
+   * `Engage` reporting that it spent a whole `ENGAGE.ringPatience` walking at
+   * the ring it was holding for `id` WITHOUT its radial error falling — the
+   * ring is not a radius this ground lets it reach (slope, obstacle, leash).
+   * See `Engage._giveUpRing` and `SCORING.unreachHold`.
+   */
+  noteUnreachableRing(id, ring = null) {
+    if (!id) return;
+    this.unreach.set(id, SCORING.unreachHold);
+    if (ring != null) this._unreachAt.set(id, +ring.toFixed(2));
+    if (this._arrangedId === id) { this._arrangedId = null; this._arrangedT = 0; this._setupT = 0; }
+  }
+
+  /** PUBLISHED (gates + HUD): `[[id, secondsLeft, ringM], ...]`. ALLOCATES. */
+  unreachableRings() {
+    return [...this.unreach.entries()]
+      .map(([k, v]) => [k, +v.toFixed(2), this._unreachAt.get(k) ?? null]);
+  }
 
   _playerBehind() {
     const p = this.m.ctx.player;
@@ -476,11 +624,38 @@ export class AttackPicker {
     return true;
   }
 
+  /**
+   * NEGATED `needPart` (casting-v4.md §5.2 — the Stormbird's grounded rows).
+   *
+   * `needPart: 'lightning-gun'` means "this move needs that component". A
+   * flier's GROUNDED moves are the mirror: `tail-lash` and `thunder-rush` are
+   * legal only once every one of the six feather-jet engines is gone, and
+   * declaring them unconditionally is precisely the `authored: 'species'` lie
+   * this table already documents — a row legal at ranges where it can never
+   * build. `needPart: '!engine'` reads "no ATTACHED part named engine", which
+   * makes air-to-ground a data fact instead of an if-ladder in a species file
+   * this lane does not own.
+   *
+   * Every legality, coverage, arrangement and profile query below goes through
+   * this one predicate, so a negated row is honest in `coveredAt()`,
+   * `bandProfile()` and `bandBlocked()` too — a Stormbird with its engines
+   * intact must not be counted as owing a move it structurally cannot throw.
+   */
+  _needPartOk(need) {
+    if (!need) return true;
+    if (need.charCodeAt(0) === 33) {          // '!name'
+      const name = need.slice(1);
+      for (const p of this.m.parts) if (p.name === name && p.attached) return false;
+      return true;
+    }
+    return this._partAttached(need);
+  }
+
   _legal(row, dist) {
     const m = this.m;
     if (dist < row.min || dist > row.max) return false;
     if (this.cd.has(row.id)) return false;
-    if (row.needPart && !this._partAttached(row.needPart)) return false;
+    if (!this._needPartOk(row.needPart)) return false;
     if (m.attackDisabled(row.id)) return false;
     if (row.arc === 'rear' && !this._playerBehind()) return false;
     return true;
@@ -543,11 +718,26 @@ export class AttackPicker {
     const id = this._arrangedId;
     if (!id || this.used.has(id)) return false;
     if (!this.used.size) return false;                 // never delay the opener
-    if (this._arrangedT >= SCORING.setupPatience) return false;
     if (this.cd.has(id) || this.stalled.has(id)) return false;
     const row = this.rowById.get(id);
     if (!row) return false;
     if (dist >= row.min && dist <= row.max) return false;   // already there: throw it
+    /**
+     * PATIENCE THAT KNOWS HOW FAR THE WALK IS (FIX ROUND 5,
+     * `A41d-must-fire`). A flat 2 s is a Scrapper's trip; it is not a
+     * Snapmaw's. The wait is the time the machine still needs to COVER THE
+     * GAP at its own orbit speed, floored at `SCORING.setupPatience` and
+     * capped at `SCORING.setupPatienceMax` (comfortably under
+     * `arrangeGiveUp`, so a move that truly cannot be set up still loses the
+     * ring). It can only ever be extended for a machine that is measurably
+     * still travelling toward a range it has not reached.
+     */
+    const gap = dist < row.min ? row.min - dist : dist - row.max;
+    const eng = this.m.ai?.engage;
+    const speed = Math.max(1.5, (this.m.runSpeed || 6) * (eng?.cfg?.orbitSpeed ?? 0.6));
+    const want = Math.min(SCORING.setupPatienceMax ?? 4.5,
+      Math.max(SCORING.setupPatience, gap / speed + 0.5));
+    if (this._setupT >= want) return false;
     return true;
   }
 
@@ -607,7 +797,10 @@ export class AttackPicker {
     // whatever the ground did to its sightline a moment ago, it just worked
     this.stalled.delete(id);
     this.blind.delete(id);
+    this.unreach.delete(id); this._unreachAt.delete(id);
     if (this._arrangedId === id) { this._arrangedId = null; this._arrangedT = 0; }
+    // the machine just DID something: the walk to the next range starts now
+    this._setupT = 0;
     return best;
   }
 
@@ -636,13 +829,32 @@ export class AttackPicker {
    */
   _reachable(row, lo = null, hi = null) {
     const band = this.m.ai?.engage?.cfg?.band;
-    const mid = (row.min + row.max) * 0.5;
     let rlo = row.min, rhi = row.max;
     if (band) { rlo = Math.max(rlo, band[0]); rhi = Math.min(rhi, band[1]); }
     if (lo != null) rlo = Math.max(rlo, lo);
     if (hi != null) rhi = Math.min(rhi, hi);
     if (rlo > rhi) return null;
-    return THREE.MathUtils.clamp(mid, rlo, rhi);
+    /**
+     * THE MIDDLE OF THE OVERLAP, NOT THE ROW'S OWN MIDDLE CLAMPED INTO IT
+     * (FIX ROUND 5, A41d-held-radius-coverage).
+     *
+     * Every long ranged row has a midpoint far outside the engage band — a
+     * Shell-Walker `homing-blast` is [13, 48] against a band that stops at 24,
+     * a Behemoth `gravity-boulder` is [11, 42] against 13.5 — so clamping that
+     * midpoint always returned the band's OUTER LIP, which is the single
+     * hardest radius on any ground to hold and the one the footwork's own
+     * radial slop pushes it straight back out of. Measured: the Shell-Walker
+     * ringed at 23.7 m, reached 11.25 m, banked 0.37 s inside its 13-23.7 m
+     * shell and never fired the blast; the Behemoth boulder had the same shape
+     * at 13.2 m and was worked around once already by widening the band.
+     *
+     * The overlap's own centre is the radius that is furthest from BOTH edges
+     * of what the row and the footwork can both do, so it is the easiest one
+     * to hold and it is still legal by construction (it lies inside
+     * [row.min, row.max] because the overlap does). Short rows are unaffected:
+     * when the row sits wholly inside the window, its overlap IS the row.
+     */
+    return (rlo + rhi) * 0.5;
   }
 
   /** Rows the footwork is allowed to arrange for (cooldown + reach + parts). */
@@ -651,7 +863,7 @@ export class AttackPicker {
     if (row.arc === 'rear') return false;               // not ours to arrange
     if (this.phantom.has(row.id)) return false;         // in the table, not in the world
     if (this.stalled.has(row.id)) return false;         // held the ring and never fired
-    if (row.needPart && !this._partAttached(row.needPart)) return false;
+    if (!this._needPartOk(row.needPart)) return false;
     if (this.m.attackDisabled(row.id)) return false;
     return this._reachable(row, lo, hi) != null;
   }
@@ -669,7 +881,7 @@ export class AttackPicker {
     if (dist < row.min || dist > row.max) return false;
     if (row.arc === 'rear') return false;
     if (this.phantom.has(row.id)) return false;
-    if (row.needPart && !this._partAttached(row.needPart)) return false;
+    if (!this._needPartOk(row.needPart)) return false;
     if (this.m.attackDisabled(row.id)) return false;
     return true;
   }
@@ -689,7 +901,7 @@ export class AttackPicker {
     let best = null, bestGap = Infinity;
     for (const row of this.rows) {
       if (row.arc === 'rear' || this.phantom.has(row.id)) continue;
-      if (row.needPart && !this._partAttached(row.needPart)) continue;
+      if (!this._needPartOk(row.needPart)) continue;
       if (this.m.attackDisabled(row.id)) continue;
       // pull just INSIDE the row so a float edge is not a coin flip
       const pad = Math.min(0.35, (row.max - row.min) * 0.25);
@@ -750,7 +962,7 @@ export class AttackPicker {
     const rows = this.rows.filter((r) => {
       if (r.arc === 'rear') return false;
       if (live && this.phantom.has(r.id)) return false;
-      if (r.needPart && !this._partAttached(r.needPart)) return false;
+      if (!this._needPartOk(r.needPart)) return false;
       if (this.m.attackDisabled(r.id)) return false;
       return true;
     });
@@ -796,7 +1008,7 @@ export class AttackPicker {
    */
   _bandEligible(row) {
     if (row.arc === 'rear') return false;                 // never arranged for
-    if (row.needPart && !this._partAttached(row.needPart)) return false;
+    if (!this._needPartOk(row.needPart)) return false;
     if (this.m.attackDisabled(row.id)) return false;
     const band = this.m.ai?.engage?.cfg?.band;
     if (!band) return false;
@@ -866,7 +1078,7 @@ export class AttackPicker {
     let n = 0;
     for (const row of this.rows) {
       if (row.arc === 'rear') continue;
-      if (row.needPart && !this._partAttached(row.needPart)) continue;
+      if (!this._needPartOk(row.needPart)) continue;
       if (this.m.attackDisabled(row.id)) continue;
       n++;
     }
@@ -878,7 +1090,7 @@ export class AttackPicker {
     const out = [];
     for (const row of this.rows) {
       if (row.arc === 'rear') continue;
-      if (row.needPart && !this._partAttached(row.needPart)) continue;
+      if (!this._needPartOk(row.needPart)) continue;
       if (this.m.attackDisabled(row.id)) continue;
       out.push(row.id);
     }
@@ -900,11 +1112,13 @@ export class AttackPicker {
     return best || this._bestArrangeablePass(lo, hi, false);
   }
 
-  /** One pass of `_bestArrangeable`; `skipBlind` honours the blind hint. */
+  /** One pass of `_bestArrangeable`; `skipBlind` honours the blind AND
+   *  unreachable-ring hints (both are hints, never vetoes — see the fallback
+   *  pass in `_bestArrangeable`). */
   _bestArrangeablePass(lo, hi, skipBlind) {
     let best = null, bs = -1;
     for (const row of this.rows) {
-      if (skipBlind && this.blind.has(row.id)) continue;
+      if (skipBlind && (this.blind.has(row.id) || this.unreach.has(row.id))) continue;
       if (!this._arrangeable(row, lo, hi)) continue;
       let s = row.score;
       if (this.lastId === row.id) s *= SCORING.repeatPenalty;

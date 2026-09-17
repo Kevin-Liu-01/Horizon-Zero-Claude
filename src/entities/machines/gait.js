@@ -306,7 +306,22 @@ export function wallSeconds(engine) {
 const DEBT_CYCLES = 0.75;    // max cadence debt carried, in stride cycles
 const DEBT_GAIN = 0.9;       // trim per cycle of debt
 const TRIM_LO = 0.55;
-const TRIM_HI = 2.2;
+/**
+ * INTEGRATOR CEILING (machines-expansion, residue item 2).
+ *
+ * 2.2 was sized for a loop that was being starved of footfall reports by the
+ * pre-solve latch (see `GaitController.update`): with `got` stuck at 0 the
+ * debt pinned every frame and the only way to look correctable was to let the
+ * trim double the commanded cadence. With the ledger latched after the solve
+ * the loop sees the footfalls it actually publishes, and a healthy correction
+ * is a few per cent — so the authority is cut to a third of a stride either
+ * way. A loop that cannot reach its set point inside ±35 % is not being
+ * under-commanded, it is being under-delivered, and winding the command up
+ * only pushes the DELIVERED rate out of the top of the band, which is exactly
+ * the failure mode two judges filmed (thunderjaw 1.48 Hz against a 1.19 Hz
+ * ceiling; sawtooth 2.23 against 2.23).
+ */
+const TRIM_HI = 1.35;
 
 /**
  * THE LOOP MAY MOVE THE CADENCE; IT MAY NOT MOVE THE DELIVERED RATE OUT OF
@@ -348,11 +363,31 @@ export function cadCeilK(loop) {
    * failing through it.
    */
   if (loop.rateHz !== undefined && loop.lastWant > 0 && loop.rateHz >= loop.lastWant) return 1;
-  return 1 + THREE.MathUtils.clamp(loop.debt, 0, DEBT_CYCLES) * 1.6;
+  /**
+   * The credit is per-loop now (`ceilK`, default 0.4 cycles⁻¹ = a 1.30
+   * ceiling) for the same reason `TRIM_HI` is per-loop: the starved ledger
+   * that made a doubling look necessary on the GAIT path is fixed. The
+   * clip-driven species keep the old 1.6 because their loss is real — their
+   * stance windows genuinely fall between drawn frames. Still strictly
+   * conditional on rate evidence either way, so it can only ever open while
+   * the machine is measurably under-delivering.
+   */
+  return 1 + THREE.MathUtils.clamp(loop.debt, 0, DEBT_CYCLES) * (loop.ceilK ?? 0.4);
 }
 
 export class CadenceLoop {
-  constructor() {
+  /**
+   * @param {object} [opts]
+   * @param {number} [opts.trimHi]  max multiplier the debt may command
+   * @param {number} [opts.ceilK]   band-ceiling credit per cycle of debt
+   *
+   * The defaults are the tight, post-fix authority the GAIT path needs. A
+   * clip-driven species whose stance windows genuinely fall between drawn
+   * frames (watcher, longleg) passes the wider pair it was tuned with.
+   */
+  constructor(opts = {}) {
+    this.trimHi = opts.trimHi ?? TRIM_HI;
+    this.ceilK = opts.ceilK ?? 0.4;
     this.debt = 0;        // cycles of footfall owed to wall time
     this.rateHz = undefined; // delivered footfalls/wall-second/foot (EMA)
     this.trim = 1;        // multiplier the debt becomes
@@ -394,7 +429,7 @@ export class CadenceLoop {
       // minute does not sprint its first three steps when it sets off again
       this.debt *= Math.exp(-2 * Math.max(0, dtSim));
     }
-    this.trim = THREE.MathUtils.clamp(1 + this.debt * DEBT_GAIN, TRIM_LO, TRIM_HI);
+    this.trim = THREE.MathUtils.clamp(1 + this.debt * DEBT_GAIN, TRIM_LO, this.trimHi);
     // DELIVERED RATE, smoothed over ~1.5 s of wall time. The debt is the
     // integral and this is the rate; `cadCeilK` needs the rate to decide
     // whether the band ceiling may be lifted at all (see the note there).
@@ -632,16 +667,31 @@ export class GaitController {
     const rig = this.rig;
     if (dt <= 0) return;
 
-    // ---- PUBLISH the contact report, once per drawn frame, from the pose
-    // the PREVIOUS frame finished in — which is exactly what a consumer
-    // polling once per frame would have read.
-    //
-    // The honest test used to live in `debugFeet()`, which meant the stance
-    // windows a consumer saw were a property of ITS sample rate, and the rig
-    // had no idea what it had reported. Latched here it is a property of the
-    // rig: every consumer sees the same windows, and the cadence loop can
-    // close over the footfalls actually published (see `CadenceLoop`).
-    this.ledger.latch(this.legs, this._honestContact);
+    /**
+     * THE LATCH MOVED TO THE END OF THIS METHOD (machines-expansion, residue
+     * item 2: "`A48-cadence`: the integrator saturates and commands 2x the
+     * band ceiling").
+     *
+     * `_honestContact` is a WORLD-POSITION test: it asks whether the SOLVED
+     * foot bone is still standing on `leg.plant`. `machine.update()` moves
+     * the root BEFORE it calls `animate()`, and `BoneSpace.worldPos` refreshes
+     * the bone's world matrix from its parents — so at the top of this method
+     * every planted foot has already been dragged by one frame of root motion
+     * and reads `false`. At 5 m/s that is 0.08 m against a 0.05 m tolerance:
+     * the report never rises, `ledger.observedPlants` never increments, and
+     * `CadenceLoop` therefore integrates `want - 0` every frame. The debt
+     * pins at `DEBT_CYCLES`, `trim` pins at `TRIM_HI` and `cadCeilK` opens the
+     * band ceiling to its maximum — which is precisely the "2x the band
+     * ceiling" the judge measured, produced entirely by the ORDER of two
+     * lines rather than by anything about the gait.
+     *
+     * Latched at the END, the sample is the pose this frame actually finished
+     * in, with the feet pinned by the IK solve below, which is what a consumer
+     * reading `debugFeet()` after the frame is drawn sees. `ContactLedger`
+     * still fires once per DRAWN frame (it keys on `engine.frames`), so a
+     * frame carrying three sim substeps latches on the first one and the
+     * "one report per drawn frame" invariant is unchanged.
+     */
 
     // actual world velocity (includes attack root-motion, standoff pushes)
     _v1.subVectors(m.position, this._lastPos);
@@ -901,6 +951,11 @@ export class GaitController {
       this._solveLeg(leg, u01(p, duty));
     }
 
+    // ---- PUBLISH the contact report, once per DRAWN frame, from the pose
+    // this frame just finished in — the pose a consumer reading `debugFeet()`
+    // between frames sees. See the note at the top of `update()` for why this
+    // may not run before the solve.
+    this.ledger.latch(this.legs, this._honestContact);
   }
 
   /**

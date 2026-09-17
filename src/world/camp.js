@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { buildSettlement } from './props/settlement.js';
 import { buildNpcCrowd, ROSTER } from './props/npcs.js';
+import { installNpcs } from './npc/npc.js';
 
 /**
  * Hunter camp at (22, 30) — the respawn point. Campfire with shader-billboard
@@ -111,11 +112,38 @@ export class Camp {
   }
 
   /**
-   * Six Nora in six idles, merged into one mesh per material and moved by a
-   * vertex-shader idle layer (see props/npcs.js for why it is done that way).
-   * `this.npc` stays the Varl anchor `progression` reads for its TALK marker.
+   * ROUND 4, lane `npc` (port 5218) — THE ONLY SECTION OF THIS FILE THAT LANE
+   * OWNS. Everything else in camp.js stays with `world-props`.
+   *
+   * The six baked mannequins in six frozen poses are replaced by a real
+   * settlement: 13 named Nora on the CC0 Quaternius rig, each with its own
+   * `AnimationMixer`, walking authored routes, sitting on the fire logs,
+   * working the racks, looking at the player and sleeping in the huts at night.
+   * See `src/world/npc/**`.
+   *
+   * The three fields this file published stay published, with the same shapes:
+   *   `npc`            the Varl transform `progression` reads for its TALK marker
+   *   `npcs`           live per-NPC transforms (`V35` picks one to probe)
+   *   `npcLandmarks`   hand/head landmarks per NPC — now LIVE (a getter), because
+   *                    the poses are animated instead of baked at build time
+   *   `_npcTime`       the crowd clock; writing `.value` scrubs every mixer
+   *
+   * If the animation pack is missing the Round-4 baked crowd is still the
+   * fallback, and the Round-2 single mannequin behind that.
    */
   _placeNpcs() {
+    const sys = installNpcs(this.ctx, { camp: this });
+    if (sys) {
+      this.crowd = sys;
+      this.npcs = sys.groups;
+      this.npc = (sys.byId.get('varl') || sys.list[0])?.group ?? null;
+      this._npcTime = sys.npcClock;
+      Object.defineProperty(this, 'npcLandmarks', {
+        configurable: true,
+        get: () => sys.landmarks(),
+      });
+      return;
+    }
     this.crowd = buildNpcCrowd(this.ctx, this.group, ROSTER);
     if (!this.crowd) { this._placeNpc(); return; }   // no model: Round-2 path
     this.npcs = this.crowd.anchors;
@@ -1141,7 +1169,11 @@ export class Camp {
 
     /* ---------------------- ROUND 4, lane world-props --------------------- */
     // The crowd's idle layer: ONE uniform write moves all six NPCs.
-    if (this._npcTime) this._npcTime.value = t;
+    // Lane `npc` (NPC placement only): the clip-driven crowd advances its own
+    // mixers inside its own system, so its clock is a PROBE, not a per-frame
+    // driver — writing wall time into it every frame would reset 13 mixers a
+    // frame. `driven` marks a clock that owns its own advance.
+    if (this._npcTime && !this._npcTime.driven) this._npcTime.value = t;
 
     // Braziers. The glow mesh is shared, so its emissive carries the common
     // flicker and each lit brazier's PointLight carries its own phase.

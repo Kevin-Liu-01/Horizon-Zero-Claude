@@ -508,6 +508,19 @@ via a `setup`+`settle` recipe and are judged against written criteria.
 - **A99-dialogue** — `talkTo(npc)` opens the panel with that NPC's lines; a choice advances quest state and closes cleanly.
 - **V45-dialogue-panel** — shot: dialogue open. Pass: HZD-style panel (name, line, 2–3 choices), readable, does not cover the speaker.
 
+### player-melee (added Sep 17 by the orchestrator — Kevin: "melee and how spear is held needs to be fixed too")
+Ownership grant (orchestrator): `player-melee` owns `src/combat/melee.js` (spear pose/attach/swing timing/phase publication), `src/entities/playerAnimator.js`, `src/entities/anim/*` (not anim-core's shared boneSpace/restPose/clipLayer/rigDebug/registry), a new `src/entities/anim/meleeLayer.js` if wanted, `tools/gates.round4.player-melee.mjs`, `docs/ROUND4-PLAYER-MELEE.md`, `docs/research/spear-canon.md`, `reference/spear-*` + `reference/MANIFEST.md` lines. A hook of ≤ 10 lines in `src/combat/combat.js` is allowed only to expose melee phase timing.
+- **A100-spear-holster** — `not in melee (idle, run, bow drawn)` → pass: the spear is parented to a spine/chest socket (not a hand), its midpoint within `0.30 m` of the upper-back centre, shaft `30–60°` from vertical, blade above the right shoulder; it stays there while sprinting and while the bow is drawn.
+- **A101-spear-grip** — `melee ready stance + 6 sample frames of each light and the heavy` → pass: right-hand palm centre to shaft axis `≤ 0.03 m`, shaft axis within `25°` of the hand's grip axis, blade forward of the hand; in two-handed beats the left hand is `≤ 0.05 m` from the shaft.
+- **A102-melee-body-motion** — `light chain ×3 then heavy, standing` → pass: right hand travels `≥ 1.2 m` per light swing; spine/pelvis yaw excursion `≥ 15°`; root steps in `0.25–0.8 m` per swing; the four swings use `≥ 3` distinct arcs (light R→L sweep, return, thrust or overhead; heavy is a distinct overhead/two-handed strike); the spear moves with the hand every frame (tip velocity continuous, no teleport > 0.5 m/frame).
+- **A103-melee-contact-sync** — `swing at a machine 1.5 m ahead` → pass: `melee-hit` fires inside the strike phase while the spear tip is within `1.2 m` of the impact point; sparks/decal at the tip, not down the lens.
+- **A104-melee-self-clear** — `every frame of every swing` → pass: shaft segment to head/neck/spine bone positions `≥ 0.12 m`; the swinging forearm never crosses the body midline by more than `0.10 m` inward; elbow never above the head by more than `0.25 m` on a light.
+- **A105-melee-while-moving** — `swing while jogging` → pass: lower body keeps its stride (feet planted/lifted per locomotion, foot drift `≤ 0.08 m`), horizontal speed `≥ 60 %` of the un-swinging speed, upper body performs the swing (upper-body mask blend).
+- **A90-memory-stability / A49-melee-exists / A50-silent-strike / A2 / A3 / A11 / A12 / A13 / A31b** — must stay green.
+- **V46-spear-ready** — shot: side + front, melee ready stance at 6 m. Pass: two-handed low guard as in `reference/spear-*` (right hand mid-shaft near the hip, left hand forward, blade forward-down), elbows near the body, no T-rex, hands outside the torso.
+- **V47-melee-swing** — shots: light 1 at windup / contact / follow-through and heavy at windup / contact, side view. Pass: limbs do the work (hip rotation, step-in, follow-through), spear stays in the hands, arm never behind the head or through the body; reads against the reference stills.
+- **V48-spear-holster** — shot: back view, running. Pass: spear diagonal across the back as in the reference, does not intersect the quiver/bow or hair.
+
 ## 5. ARCHITECTURE DECISIONS NEEDED FROM THE OWNER
 
 Each blocks a lane. Recommendation given; answer yes/no or pick a letter.

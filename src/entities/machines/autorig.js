@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { BoneSpace, RestPose } from '../anim/index.js';
 import { buildHullProxy } from './rig/sockets.js';
 import { skinnedBounds } from './rig/lod.js';
+import { EXPANSION_RIGS } from './rig/rigs-expansion.js';
 
 /**
  * Runtime auto-rig: converts a static machine sculpt into a SkinnedMesh with
@@ -107,6 +108,13 @@ export const RIGS = {
       { id: 'R', parent: 'pelvis', hinge: 1, hip: [1.1, 4.0, 0.1], knee: [2.4, 2.3, 0.5], ankle: [2.55, 0.85, 0.8], toe: [2.6, 0.1, 1.15], r: 1.12, restFoot: [1.2, -0.55] },
     ],
   },
+
+  /**
+   * ROUND 4 — the expansion species (`rig/rigs-expansion.js`). Merged in here
+   * rather than declared here so the big three above stay readable, and so a
+   * caller only ever needs `RIGS[kind]`.
+   */
+  ...EXPANSION_RIGS,
 };
 
 /* ------------------------------------------------------------------ */

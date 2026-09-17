@@ -38,6 +38,14 @@ export class OverrideSystem {
   canOverride(m) {
     if (!m || !m.alive || m._disposed) return false;
     if (m.state === 'overridden') return false;
+    /**
+     * A CORRUPTED MACHINE CANNOT BE TAKEN BACK (casting-v4.md §2.6). The
+     * Corruptor's whole threat is that its victims are not merely hostile,
+     * they are OUT OF THE PLAYER'S REACH — "overrideCfg returns null for it,
+     * so the Spear cannot take it back", in the card's own words. And a docile
+     * machine is not a combatant at all: a 25 m comms tower is scenery.
+     */
+    if (m.corrupted || m.docile) return false;
     return !!overrideCfg(m.kind);
   }
 

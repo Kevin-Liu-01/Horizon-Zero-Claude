@@ -11,6 +11,10 @@ import { loadVarietyModels } from './variety-assets.js';
 import { installMachineAI } from './ai/index.js';
 import { ECOSYSTEM } from './ai/tables.js';
 import { setAiRng, seededRng, aiRngSeeded } from './ai/rng.js';
+import {
+  BODY as EXPANSION_BODY, CHASSIS, installDoctrine, installExpansionDoctrine,
+  spawnExpansion, doctrineAudit,
+} from './ai/doctrine.js';
 
 /**
  * Machine ecosystem manager: spawns the herd layout, runs the update loop
@@ -27,6 +31,10 @@ const LOD_DIST = 250;
 const LOD_TICK = 0.25;
 
 const _v = new THREE.Vector3();
+/** Scratch for the population budget's off-camera test. Never reallocated. */
+const _frustum = new THREE.Frustum();
+const _projScreen = new THREE.Matrix4();
+const _sph = new THREE.Sphere(new THREE.Vector3(), 1);
 
 export class Machines {
   constructor(ctx) {
@@ -35,6 +43,8 @@ export class Machines {
 
     // AI services: stimulus bus, site lifecycle, squad doctrine, override
     installMachineAI(this);
+    // ...and the Round-4 expansion doctrine (one manager-side listener)
+    installExpansionDoctrine(this);
     this._shots = [];      // recent shot origins (see shotOrigin())
     this._shotSeq = 0;
     ctx.events.on('arrow-fired', () => this._noteShot());
@@ -49,6 +59,16 @@ export class Machines {
       glinthawk: Glinthawk,
       longleg: Longleg,
     };
+    /**
+     * EXPANSION KINDS ON A CHASSIS (see `ai/doctrine.js` §CHASSIS).
+     *
+     * Nine Round-4 kinds whose BEHAVIOUR ships here and whose SCULPT belongs
+     * to `machines-expansion`. Until their species classes land, each is
+     * constructed from an existing class with its own `kind` and the donor's
+     * `modelKind`, so every table, gate and line of doctrine is already the
+     * new species'. `registerKind()` retires a chassis in one call.
+     */
+    this._chassis = { ...CHASSIS };
 
     // --- SPEC layout: 4 watchers on patrol routes, 2 sawtooths,
     //     1 territorial behemoth, thunderjaw alone in the far south.
@@ -62,12 +82,32 @@ export class Machines {
     this._spawnCls(Thunderjaw, 30, -220, { route: this._route(30, -220, 42, 5, 0.2), heading: 0.2 });
 
     // --- Round 3 cast contract (animation studio): all constructible kinds
-    this.kinds = Object.keys(this._registry);
+    this.kinds = [...Object.keys(this._registry), ...Object.keys(CHASSIS)];
     this.varietyReady = false;
+    this.expansionReady = false;
+    /**
+     * The boot watermark for the population budget: the node count and the
+     * highest site id of the AUTHORED roster. Both are taken after the
+     * expansion spawn below, so the world the game ships can never be evicted
+     * by its own ceiling — only spawns past it are bounded.
+     */
+    this._bootNodes = null;
+    this._bootSiteId = 0;
+    this._recycled = 0;
+    this.expansionAudit = null;
     loadVarietyModels(ctx)
       .then(() => {
         this.varietyReady = true;
         this._spawnVariety();
+        // ...and the nine Round-4 kinds (ai/doctrine.js SPAWN_PLAN)
+        try {
+          this.expansionAudit = spawnExpansion(this);
+        } catch (err) {
+          console.error('[machines] expansion spawn failed:', err);
+        }
+        this._bootSiteId = this.sites._nextId;
+        this._bootNodes = this._machineNodes();
+        this.expansionReady = true;
       })
       .catch((err) => console.error('[machines] variety model load failed:', err));
 
@@ -118,6 +158,9 @@ export class Machines {
   _spawnCls(Cls, x, z, opts = {}) {
     const m = new Cls(this.ctx, this, { spawn: { x, z }, ...opts });
     this.list.push(m);
+    // expansion kinds get their components + doctrine here, so a SITE RESPAWN
+    // gets them back too (the site replays the same opts through `spawn`)
+    if (EXPANSION_BODY[m.kind]) installDoctrine(m, opts);
     // MachineSite: remember how to repopulate this spot after the wreck goes
     if (opts._site) { opts._site.machine = m; m._site = opts._site; }
     else this.sites.note(m, m.kind, x, z, opts);
@@ -186,20 +229,184 @@ export class Machines {
    * unknown kinds or while a variety model is still loading.
    */
   spawn(kind, x, z, opts = {}) {
-    const Cls = this._registry[kind];
-    if (!Cls) {
-      console.warn(`[machines] spawn: unknown kind '${kind}'`);
-      return null;
-    }
-    if (!this.ctx.assets.models[kind]) {
-      console.warn(`[machines] spawn: '${kind}' model not loaded yet`);
-      return null;
-    }
-    return this._spawnCls(Cls, x, z, {
+    const res = this._resolveKind(kind);
+    if (!res) return null;
+    /**
+     * THE POPULATION BUDGET (`A90-memory-stability`, the crash this round
+     * opened on). See `ECOSYSTEM.population` for why it is counted in scene
+     * NODES rather than in machines, and `_recycleForBudget` for what it does
+     * when the ceiling is hit. The authored roster is never evicted by it.
+     */
+    this._recycleForBudget(res.modelKind);
+    const m = this._spawnCls(res.Cls, x, z, {
       route: opts.route ?? this._route(x, z, 22, 4, Math.random() * 6),
+      ...res.opts,
       ...opts,
     });
+    return m;
   }
+
+  /**
+   * PUBLISHED (`machines-expansion`): retire a chassis.
+   *
+   * `machines.registerKind('broadhead', Broadhead)` makes the real species
+   * class the one every future spawn (including every site respawn) uses.
+   * Nothing else changes: the tables, the doctrine, the spawn plan and every
+   * gate already key off `kind`. Returns whether a chassis was replaced.
+   */
+  registerKind(kind, Cls) {
+    if (!kind || typeof Cls !== 'function') return false;
+    const had = !!this._chassis[kind];
+    this._registry[kind] = Cls;
+    delete this._chassis[kind];
+    if (!this.kinds.includes(kind)) this.kinds.push(kind);
+    return had;
+  }
+
+  /** Can this kind be constructed right now (class + loaded sculpt)? */
+  canSpawn(kind) { return !!this._resolveKind(kind, true); }
+
+  /** PUBLISHED: which kinds are still riding a donor body, and whose. */
+  chassisAudit() {
+    return Object.keys(this._chassis)
+      .filter((k) => this.list.some((m) => m.kind === k))
+      .map((k) => `${k}<-${this._chassis[k]}`);
+  }
+
+  /**
+   * kind -> { Cls, modelKind, opts }. A kind with its own class resolves to
+   * itself; a chassis kind resolves to the donor class plus the stat block
+   * from `ai/doctrine.js` BODY, with `kind` overriding the donor's own (every
+   * species passes `...opts` last in its `super()` call, which is what makes
+   * this a read of those files rather than an edit).
+   */
+  _resolveKind(kind, quiet = false) {
+    const own = this._registry[kind];
+    if (own) {
+      if (!this.ctx.assets.models[kind]) {
+        if (!quiet) console.warn(`[machines] spawn: '${kind}' model not loaded yet`);
+        return null;
+      }
+      return { Cls: own, modelKind: kind, opts: {} };
+    }
+    const donor = this._chassis[kind];
+    const Cls = donor ? this._registry[donor] : null;
+    if (!Cls) {
+      if (!quiet) console.warn(`[machines] spawn: unknown kind '${kind}'`);
+      return null;
+    }
+    if (!this.ctx.assets.models[donor]) {
+      if (!quiet) console.warn(`[machines] spawn: chassis '${donor}' for '${kind}' not loaded yet`);
+      return null;
+    }
+    return {
+      Cls, modelKind: donor,
+      opts: { ...(EXPANSION_BODY[kind] || {}), kind, modelKind: donor },
+    };
+  }
+
+  /** Scene nodes the whole live machine population currently occupies. */
+  _machineNodes() {
+    let n = 0;
+    for (const m of this.list) {
+      if (m._disposed) continue;
+      m.root.traverse(() => n++);
+    }
+    return n;
+  }
+
+  /**
+   * MAKE ROOM BEFORE SPAWNING (`A90-memory-stability`).
+   *
+   * MEASURED FIRST, then fixed. The A90 loop kills a machine and spawns a
+   * Watcher thirty times over; scene objects grew +1170 across it and a
+   * census of every node in the scene attributed **+1170 of +1170 to LIVE
+   * machines and 0 to anything orphaned** (per-kind node counts: watcher 110,
+   * thunderjaw 72, longleg 69, sawtooth 52, behemoth 49, scrapper 39, strider
+   * 38, glinthawk 34 — so replacing 18 procedural machines with 18 Sketchfab
+   * Watchers IS +1170 nodes, honestly). Corpse reclaim was already complete:
+   * `SiteManager.dispose` frees geometry, materials, FX, hit hulls, the loot
+   * interactable, the collider and now every squad-side reference too. What
+   * did not exist was a CEILING, and a ceiling is what a crash-on-memory
+   * round actually needs.
+   *
+   * So: the population may occupy at most `max(nodeBudget, bootRoster +
+   * headroom)` scene nodes. Past that, spawning first RECYCLES — disposes,
+   * through the ordinary lifecycle, so nothing is special-cased — the
+   * cheapest-to-lose machine: alive, outside `keepRadius` of the player, not
+   * mounted/overridden/corrupted, and never one of the authored roster (a
+   * site whose id predates the boot watermark). Newest surplus goes first, so
+   * a flood eats itself rather than the world. If nothing qualifies the spawn
+   * proceeds anyway — refusing it would be a worse failure than a temporary
+   * overshoot, and the next spawn tries again.
+   */
+  _recycleForBudget(modelKind) {
+    const cfg = ECOSYSTEM.population;
+    if (!cfg) return 0;
+    if (this._bootNodes == null) return 0;          // still populating the world
+    const budget = Math.max(cfg.nodeBudget, this._bootNodes + cfg.headroom);
+    let nodes = this._machineNodes();
+    if (nodes <= budget) return 0;
+    const p = this.ctx.player;
+    const keep2 = cfg.keepRadius * cfg.keepRadius;
+    const off2 = (cfg.offscreenRadius ?? 45) ** 2;
+    const cam = this.ctx.camera;
+    if (cam) {
+      cam.updateMatrixWorld();
+      _projScreen.multiplyMatrices(cam.projectionMatrix, cam.matrixWorldInverse);
+      _frustum.setFromProjectionMatrix(_projScreen);
+    }
+    let freed = 0;
+    for (let guard = 0; guard < 8 && nodes > budget; guard++) {
+      let victim = null;
+      for (const m of this.list) {
+        if (!m.alive || m._disposed || m.mountedBy) continue;
+        if (m.state === 'overridden' || m.corrupted || m.docile) continue;
+        if (!m._site || m._site.id <= this._bootSiteId) continue;   // authored roster
+        if (p) {
+          const d2 = m.position.distanceToSquared(p.position);
+          if (d2 < off2) continue;                     // too close to hide it
+          if (d2 < keep2) {
+            // inside the keep ring: calm, and with nobody looking at it
+            const calm = (m.state === 'patrol' || m.state === 'return') && m.suspicion < 0.25;
+            if (!calm || !cam) continue;
+            _sph.center.copy(m.position);
+            _sph.radius = Math.max(2, m.bodyRadius + (m.height ?? 2));
+            if (_frustum.intersectsSphere(_sph)) continue;
+          }
+        }
+        if (!victim || m._site.id > victim._site.id) victim = m;    // newest surplus
+      }
+      if (!victim) break;
+      let n = 0; victim.root.traverse(() => n++);
+      // the ordinary lifecycle, run to completion in one step: the site is
+      // dropped too, or a recycled spawn would schedule its own replacement
+      const site = victim._site;
+      this.sites.dispose(victim);
+      if (site) {
+        const i = this.sites.sites.indexOf(site);
+        if (i >= 0) this.sites.sites.splice(i, 1);
+      }
+      nodes -= n; freed += n; this._recycled = (this._recycled || 0) + 1;
+    }
+    return freed;
+  }
+
+  /** PUBLISHED (gates + debug HUD): the population budget's current reading. */
+  populationAudit() {
+    const cfg = ECOSYSTEM.population;
+    const nodes = this._machineNodes();
+    const budget = this._bootNodes == null ? null
+      : Math.max(cfg.nodeBudget, this._bootNodes + cfg.headroom);
+    return {
+      roster: this.list.length, nodes, budget,
+      bootNodes: this._bootNodes ?? null, recycled: this._recycled || 0,
+      overBudget: budget != null && nodes > budget,
+    };
+  }
+
+  /** PUBLISHED: what `ai/doctrine.js` has actually built in this world. */
+  doctrineAudit() { return doctrineAudit(this); }
 
   /** Deferred Round-3 population (casting-v3.md spawn plan). */
   _spawnVariety() {

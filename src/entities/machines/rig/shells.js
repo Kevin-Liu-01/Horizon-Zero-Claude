@@ -96,6 +96,9 @@ const SHELL_TINT = {
   sensor: 0x0a0d10,
 };
 
+const _c2 = new THREE.Color();
+const _c3 = new THREE.Color();
+
 let _shellTex = null;
 /**
  * The two shared 4x1 lookups: `orm` (G = roughness, B = metalness, non-colour
@@ -248,6 +251,20 @@ export function buildShell(machine, builder, opts = {}) {
   if (!pieces || !pieces.length) return { meshes: 0, pieces: 0, tris: 0 };
   const mats = shellMaterials(opts.sensorColor);
   machine._shellMats = mats;
+  /**
+   * PER-MACHINE PLATE TINT (`casting-v4.md` §5.3 — "the Corruptor can be
+   * matte black without forking shells.js").
+   *
+   * The family palette is baked into the VERTEX COLOURS by `bakeWear`, not
+   * into the material, so a per-species tint is a multiply on the table this
+   * shell reads — five numbers, no second material, no second code path, and
+   * a species that passes nothing is bit-for-bit unchanged. `roster-v2 §4`
+   * names exactly one machine that opts out of white-grey plate, and this is
+   * how it does it.
+   */
+  const tintOf = opts.tint
+    ? (tone) => _c2.set(SHELL_TINT[tone] ?? 0xffffff).multiply(_c3.set(opts.tint)).getHex()
+    : (tone) => SHELL_TINT[tone] ?? 0xffffff;
 
   // group by (material, bone) — one merged mesh per bucket
   const buckets = new Map();
@@ -286,7 +303,7 @@ export function buildShell(machine, builder, opts = {}) {
       if (piece.o) pv.x += mirrorX ? -piece.o[0] : piece.o[0], pv.y += piece.o[1], pv.z += piece.o[2];
       m4.compose(pv, q, sc);
       g.applyMatrix4(m4);
-      bakeWear(g, piece.wear ?? 0.35, SHELL_TINT[tone] ?? 0xffffff);
+      bakeWear(g, piece.wear ?? 0.35, tintOf(tone));
       stampShellUV(g, SHELL_SLOT[tone] ?? 0);
       b.geos.push(g);
       count++;
@@ -299,7 +316,7 @@ export function buildShell(machine, builder, opts = {}) {
     pv.set(mirrorX ? -piece.p[0] : piece.p[0], piece.p[1], piece.p[2]);
     m4.compose(pv, q, sc);
     g.applyMatrix4(m4);
-    bakeWear(g, piece.wear ?? 0.35, SHELL_TINT[tone] ?? 0xffffff);
+    bakeWear(g, piece.wear ?? 0.35, tintOf(tone));
     stampShellUV(g, SHELL_SLOT[tone] ?? 0);
     b.geos.push(g);
     count++;

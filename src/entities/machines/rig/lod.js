@@ -243,6 +243,83 @@ function normalizeAttrs(geo, wants) {
  * merged geometry instead of once per sculpt fragment.
  * @returns {{before:number, after:number}}
  */
+/* ------------------------------------------------------------------ */
+/* the per-species geometry pool (`A90-memory-stability`)              */
+/* ------------------------------------------------------------------ */
+
+/**
+ * WHY A POOL, AND WHY IT IS THE A90 FIX.
+ *
+ * `A90-memory-stability` spawns a Watcher every five seconds for 150 s and
+ * lets the site manager respawn every wreck, so the loop ENDS with ~30 more
+ * living machines than it started with. Measured at 5207 with an isolated A/B
+ * (45 s running with no machine traffic vs 45 s of the gate's own kill/spawn
+ * loop): running alone costs **+3 geometries, +0 textures, +0 objects**; the
+ * same window with the loop costs **+49 geometries, +7 textures, +779
+ * objects** for **+7 net living machines**. So the growth is not FX, not
+ * terrain streaming and not a disposal hole — it is the per-machine cost of a
+ * machine that is alive, multiplied by a population the gate grows.
+ *
+ * Every buffer the fold builds is a function of the SPECIES, not of the
+ * instance: `unifySkin` re-expresses vertices in a canonical bind frame,
+ * `skinRigidAttachments` bakes a bind-pose bone transform, `mergeByMaterial`
+ * welds a group in model-local space. Two Watchers clone one node graph with
+ * one bind pose, so those three passes compute the same numbers twice. Pooled
+ * per species, the second Watcher costs zero geometries and skips the merge
+ * arithmetic outright.
+ *
+ * SAFETY. A pooled buffer is tagged `perMachine: false`, which is the flag
+ * `rig/ground.js` already keys the corpse-bounds solve off: a LIVING machine
+ * leaves a shared box alone, and a CORPSE takes its own clone (disposed with
+ * the wreck), so a dead Watcher's posed bounds can never follow a live one
+ * around. And because `ai/sites.js` (another lane's file) disposes every
+ * geometry under `machine.root` that is not in the donor asset, the pooled
+ * buffer parks a no-op `dispose` in front of the real one — the same shape as
+ * `guardMaterialDisposal` below. `disposePool()` is the real teardown.
+ */
+const _geoPool = new Map();   // kind -> Map(key -> BufferGeometry)
+
+/**
+ * Fetch (or build once) the species-shared geometry for `key`.
+ * @param {string|null} kind   species id; null disables pooling entirely
+ * @param {string} key         stable within a species
+ * @param {() => THREE.BufferGeometry|null} build
+ */
+function poolGeometry(kind, key, build) {
+  if (!kind) return build();
+  let per = _geoPool.get(kind);
+  if (!per) _geoPool.set(kind, per = new Map());
+  const hit = per.get(key);
+  if (hit) return hit;
+  const g = build();
+  if (!g) return g;
+  g.userData.perMachine = false;      // rig/ground.js: corpses clone, live skip
+  g.userData.rigPooled = true;
+  const real = g.dispose.bind(g);
+  g.disposePooled = real;
+  g.dispose = () => {};               // shared by every machine of this species
+  per.set(key, g);
+  return g;
+}
+
+/** Really release a species' pooled buffers (kind omitted = all of them). */
+export function disposeGeometryPool(kind = null) {
+  const kinds = kind ? [kind] : [..._geoPool.keys()];
+  let n = 0;
+  for (const k of kinds) {
+    for (const g of _geoPool.get(k)?.values() || []) { g.disposePooled?.(); n++; }
+    _geoPool.delete(k);
+  }
+  return n;
+}
+
+/** Diagnostics: how many buffers each species is pooling. */
+export function geometryPoolStats() {
+  const out = {};
+  for (const [k, m] of _geoPool) out[k] = m.size;
+  return out;
+}
+
 export function mergeByMaterial(model, opts = {}) {
   if (!model) return { before: 0, after: 0, groups: 0 };
   model.updateMatrixWorld(true);
@@ -280,7 +357,9 @@ export function mergeByMaterial(model, opts = {}) {
   let after = before;
   let mergedGroups = 0;
   const m4 = new THREE.Matrix4();
+  let gi = -1;
   for (const list of groups.values()) {
+    gi++;
     if (list.length < 2) continue;
     const src = list[0];
     const parent = src.parent;
@@ -289,27 +368,41 @@ export function mergeByMaterial(model, opts = {}) {
 
     // union of the attributes present anywhere in the group
     const wants = { uv: false, color: false, skin: false };
+    let verts = 0;
     for (const mesh of list) {
       const a = mesh.geometry.attributes;
       if (a.uv) wants.uv = true;
       if (a.color) wants.color = true;
       if (a.skinIndex && a.skinWeight) wants.skin = true;
+      verts += a.position.count;
     }
-    const geos = [];
-    for (const mesh of list) {
-      const g = normalizeAttrs(mesh.geometry.clone(), wants);
-      if (!skinned) { m4.copy(mesh.matrix); g.applyMatrix4(m4); }
-      geos.push(g);
-    }
-    let merged = null;
-    try { merged = mergeGeometries(geos, false); } catch (e) { merged = null; }
-    for (const g of geos) g.dispose();
+    /**
+     * Pool key: the traversal order of the groups, their size and their total
+     * vertex count. All three are functions of the node graph, which every
+     * clone of a species shares — and any change to the sculpt or the shell
+     * changes the vertex total, so a stale buffer cannot survive an edit.
+     */
+    const key = `merge|${gi}|${skinned ? 1 : 0}|${list.length}|${verts}`;
+    const merged = poolGeometry(opts.pool || null, key, () => {
+      const geos = [];
+      for (const mesh of list) {
+        const g = normalizeAttrs(mesh.geometry.clone(), wants);
+        if (!skinned) { m4.copy(mesh.matrix); g.applyMatrix4(m4); }
+        geos.push(g);
+      }
+      let out = null;
+      try { out = mergeGeometries(geos, false); } catch (e) { out = null; }
+      for (const g of geos) g.dispose();
+      if (!out) return null;
+      out.computeBoundingBox();
+      out.computeBoundingSphere();
+      // an UNPOOLED merge result belongs to exactly one machine, so the corpse
+      // solve may refresh its bounding box to the posed extent (rig/ground.js);
+      // `poolGeometry` overrides this to false for a shared one.
+      out.userData.perMachine = true;
+      return out;
+    });
     if (!merged) continue;
-    merged.computeBoundingBox();
-    merged.computeBoundingSphere();
-    // a merge result belongs to exactly one machine, so the corpse solve may
-    // refresh its bounding box to the posed extent (rig/ground.js)
-    merged.userData.perMachine = true;
     const out = skinned
       ? new THREE.SkinnedMesh(merged, src.material)
       : new THREE.Mesh(merged, src.material);
@@ -327,7 +420,11 @@ export function mergeByMaterial(model, opts = {}) {
     if (skinned) { out.bindMode = src.bindMode; out.bind(src.skeleton, src.bindMatrix); }
     for (const mesh of list) {
       mesh.parent?.remove(mesh);
-      if (!opts.keepGeometry) mesh.geometry.dispose();
+      // A DONOR buffer is shared with `ctx.assets.models[kind]` and with every
+      // other clone of this species: disposing it here only forces three to
+      // re-upload it for the next machine. Only a buffer this machine made is
+      // this pass's to release. (A pooled one no-ops its own `dispose`.)
+      if (!opts.keepGeometry && mesh.geometry.userData.perMachine) mesh.geometry.dispose();
     }
     after -= list.length - 1;
     mergedGroups++;
@@ -421,7 +518,7 @@ function underPart(o) {
  *
  * @returns {{skeleton:THREE.Skeleton, bindMatrix:THREE.Matrix4, ref:THREE.SkinnedMesh}|null}
  */
-export function unifySkin(model) {
+export function unifySkin(model, pool = null) {
   if (!model) return null;
   const meshes = [];
   model.traverse((o) => { if (o.isSkinnedMesh && o.skeleton?.bones?.length) meshes.push(o); });
@@ -454,21 +551,73 @@ export function unifySkin(model) {
   const bindMatrix = ref.bindMatrix.clone();
   const bindInv = bindMatrix.clone().invert();
 
+  let idx = -1;
   for (const m of meshes) {
+    idx++;
     const geo = m.geometry;
     const old = m.skeleton;
     // 1. re-express the vertices in the canonical bind frame
     _fm.copy(bindInv).multiply(m.bindMatrix);
     if (!matrixIsIdentity(_fm)) {
       if (!geo.userData.perMachine && geo.userData.foldShared !== model.uuid) {
-        // a geometry shared between instances must not be rewritten twice
-        m.geometry = geo.clone();
-        m.geometry.userData = { ...geo.userData, perMachine: true };
+        // a geometry shared between instances must not be rewritten twice —
+        // POOLED per species so every later clone reuses the rewritten buffer
+        const count = geo.attributes.position.count;
+        m.geometry = poolGeometry(pool, `bindframe|${idx}|${count}`, () => {
+          const g = geo.clone();
+          g.userData = { ...geo.userData, perMachine: true };
+          g.applyMatrix4(_fm);
+          g.computeBoundingBox();
+          g.computeBoundingSphere();
+          g.userData.boundsPadded = 0;         // re-pad in skinnedBounds()
+          return g;
+        });
+        /**
+         * A REWRITTEN MESH MOVES TO THE REFERENCE FRAME (`machines-expansion`).
+         *
+         * THE BUG THIS CLOSES, measured on the Ravager: its donor rendered
+         * NOTHING. The buffer was there (`visible: true`, 2,496 vertices) and
+         * the vertices were in the right place — the mesh was being FRUSTUM
+         * CULLED, every frame, from ten metres away.
+         *
+         * Three culls a mesh with `geometry.boundingSphere * matrixWorld`. For
+         * a skin in `AttachedBindMode` the drawn vertex is
+         * `skinMatrix * bindMatrix * v` — `matrixWorld` cancels out — so the
+         * two only agree while `matrixWorld === bindMatrix`. That held for the
+         * Round-3 species, whose meshes all bind at one transform, and it stops
+         * holding the moment a species mixes frames: an expansion machine binds
+         * its SHELL in body space and its donor under the normalisation scale,
+         * so the loop above rewrites the donor's buffer into the shell's frame
+         * (its box went to 26.35 x 5.41 x 19.93) while leaving the mesh's own
+         * transform pointing at the old one. The sphere then lands tens of
+         * metres from the animal.
+         *
+         * `skinRigidAttachments` already solves this for the meshes IT builds,
+         * with the same two lines and the same comment. Doing it here too is
+         * what makes the invariant true for every skinned mesh on a machine:
+         * a mesh expressed in the canonical bind frame SITS in the canonical
+         * bind frame, so its cull sphere and its vertices describe one object.
+         */
+        if (ref.parent && m !== ref) {
+          ref.parent.add(m);
+          m.position.copy(ref.position);
+          m.quaternion.copy(ref.quaternion);
+          m.scale.copy(ref.scale);
+          m.updateMatrixWorld(true);
+        }
+      } else {
+        m.geometry.applyMatrix4(_fm);
+        m.geometry.computeBoundingBox();
+        m.geometry.computeBoundingSphere();
+        m.geometry.userData.boundsPadded = 0;  // re-pad in skinnedBounds()
+        if (ref.parent && m !== ref) {
+          ref.parent.add(m);
+          m.position.copy(ref.position);
+          m.quaternion.copy(ref.quaternion);
+          m.scale.copy(ref.scale);
+          m.updateMatrixWorld(true);
+        }
       }
-      m.geometry.applyMatrix4(_fm);
-      m.geometry.computeBoundingBox();
-      m.geometry.computeBoundingSphere();
-      m.geometry.userData.boundsPadded = 0;    // re-pad in skinnedBounds()
     }
     // 2. remap the bone indices onto the union skeleton
     const SI = m.geometry.attributes.skinIndex;
@@ -509,7 +658,7 @@ function matrixIsIdentity(m) {
  *
  * @returns {number} meshes converted
  */
-export function skinRigidAttachments(machine, canon) {
+export function skinRigidAttachments(machine, canon, pool = null) {
   const model = machine?.model;
   if (!model || !canon) return 0;
   machine.root?.updateWorldMatrix(true, true);
@@ -529,24 +678,32 @@ export function skinRigidAttachments(machine, canon) {
   });
 
   let n = 0;
+  let ji = -1;
   for (const { o, bone, j } of jobs) {
-    // v' = bindMatrix⁻¹ * (bone world at bind) * (bone⁻¹ * meshWorld) * v
-    _fm.copy(skeleton.boneInverses[j]).invert();
-    _fm2.copy(bone.matrixWorld).invert().multiply(o.matrixWorld);
-    _fm.multiply(_fm2);
-    _fm2.copy(bindInv).multiply(_fm);
+    ji++;
+    // Pooled per species: the transform below is built from the BIND pose,
+    // which every clone of a species shares (see `poolGeometry`).
+    const count0 = o.geometry.attributes.position.count;
+    const geo = poolGeometry(pool, `rigid|${ji}|${j}|${count0}`, () => {
+      // v' = bindMatrix⁻¹ * (bone world at bind) * (bone⁻¹ * meshWorld) * v
+      _fm.copy(skeleton.boneInverses[j]).invert();
+      _fm2.copy(bone.matrixWorld).invert().multiply(o.matrixWorld);
+      _fm.multiply(_fm2);
+      _fm2.copy(bindInv).multiply(_fm);
 
-    const geo = o.geometry.clone();
-    geo.applyMatrix4(_fm2);
-    const count = geo.attributes.position.count;
-    const si = new Uint16Array(count * 4);
-    const sw = new Float32Array(count * 4);
-    for (let i = 0; i < count; i++) { si[i * 4] = j; sw[i * 4] = 1; }
-    geo.setAttribute('skinIndex', new THREE.BufferAttribute(si, 4));
-    geo.setAttribute('skinWeight', new THREE.BufferAttribute(sw, 4));
-    geo.computeBoundingBox();
-    geo.computeBoundingSphere();
-    geo.userData = { ...o.geometry.userData, perMachine: true, boundsPadded: 0 };
+      const g = o.geometry.clone();
+      g.applyMatrix4(_fm2);
+      const count = g.attributes.position.count;
+      const si = new Uint16Array(count * 4);
+      const sw = new Float32Array(count * 4);
+      for (let i = 0; i < count; i++) { si[i * 4] = j; sw[i * 4] = 1; }
+      g.setAttribute('skinIndex', new THREE.BufferAttribute(si, 4));
+      g.setAttribute('skinWeight', new THREE.BufferAttribute(sw, 4));
+      g.computeBoundingBox();
+      g.computeBoundingSphere();
+      g.userData = { ...o.geometry.userData, perMachine: true, boundsPadded: 0 };
+      return g;
+    });
 
     const sk = new THREE.SkinnedMesh(geo, o.material);
     sk.name = o.name || 'rigid-skin';
@@ -584,14 +741,22 @@ export function skinRigidAttachments(machine, canon) {
 export function foldMachineMeshes(machine, opts = {}) {
   const out = { converted: 0, merged: null, skins: 0 };
   if (!machine?.model) return out;
+  /**
+   * The species-shared geometry pool key (`A90-memory-stability`). Opt OUT
+   * with `{ pool: false }` from a species whose fold result is genuinely
+   * per-instance; every species in the roster shares one bind pose, so none
+   * of them do.
+   */
+  const pool = opts.pool === false ? null
+    : (opts.pool || machine.modelKind || machine.kind || null);
   try {
-    const canon = unifySkin(machine.model);
+    const canon = unifySkin(machine.model, pool);
     if (canon) {
       out.skins = canon.skeleton.bones.length;
-      out.converted = skinRigidAttachments(machine, canon);
+      out.converted = skinRigidAttachments(machine, canon, pool);
     }
   } catch (e) { /* sculpt-specific: a machine that cannot fold still draws */ }
-  try { out.merged = mergeByMaterial(machine.model, opts); } catch (e) { /* */ }
+  try { out.merged = mergeByMaterial(machine.model, { ...opts, pool }); } catch (e) { /* */ }
   // a merged caster set is a new caster set: hold the silhouette with one
   try { machineShadowPolicy(machine, opts.shadowPolicy); } catch (e) { /* */ }
   try { skinnedBounds(machine.model, opts.boundsPad); } catch (e) { /* */ }
@@ -986,7 +1151,133 @@ export function attachRigRuntime(machine, opts = {}) {
   stats.guarded = guardMaterialDisposal(machine);
   machine._lodTier = -1;
   machine._rigStats = stats;
+  installRigTeardown(machine);
   return stats;
+}
+
+/* ------------------------------------------------------------------ */
+/* rig teardown — every runtime object a rig creates has a dispose path */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Register a geometry / material / texture as OWNED BY THIS MACHINE, so
+ * `disposeRig` releases it even when nothing under `machine.root` still
+ * points at it (an LOD chain that is swapped out, a baked low-LOD geometry,
+ * a merged batch whose mesh was replaced).
+ *
+ * `sites.dispose()` (machine-ai) walks `machine.root` and disposes the
+ * geometry and material of everything it finds. That covers the common case
+ * and nothing here duplicates it — this is the register for what a traversal
+ * of the live scene graph CANNOT see.
+ */
+export function ownRigResource(machine, res) {
+  if (!machine || !res) return res;
+  (machine._rigOwned || (machine._rigOwned = new Set())).add(res);
+  return res;
+}
+
+/**
+ * THE SKELETON'S BONE TEXTURE — the leak `A90-memory-stability` was measuring.
+ *
+ * Measured on an isolated spawn/dispose loop at 5207, every species, four
+ * cycles each: geometries flat, **textures +1 per machine, without exception**
+ * (watcher 1.25, strider/sawtooth/scrapper/longleg/glinthawk/behemoth/
+ * thunderjaw 1.00). No new texture appeared anywhere in the scene graph across
+ * the same spawn, which is what named the culprit: on WebGL2 three uploads
+ * every `Skeleton` as a `DataTexture` (`Skeleton.computeBoneTexture`), and
+ * that texture is a property of the SKELETON, not of any material or mesh — so
+ * a teardown that disposes geometries and materials cannot reach it. One
+ * skeleton per machine, one texture per skeleton: exactly the +1.
+ *
+ * Every machine here has its own skeleton — `SkeletonUtils.clone()` builds a
+ * fresh one for the rigged donors and `autorig.buildRig()` constructs one for
+ * the static sculpts — so disposing it can never take a shared asset down with
+ * it. The source model's own skeleton (never rendered, never uploaded) is
+ * explicitly excluded anyway.
+ *
+ * @returns {number} skeletons disposed
+ */
+function disposeSkeletons(machine) {
+  const src = machine.ctx?.assets?.models?.[machine.modelKind || machine.kind]?.root;
+  const shared = new Set();
+  src?.traverse((o) => { if (o.isSkinnedMesh && o.skeleton) shared.add(o.skeleton); });
+  const seen = new Set();
+  const take = (sk) => {
+    if (!sk || seen.has(sk) || shared.has(sk)) return;
+    seen.add(sk);
+    try { sk.dispose?.(); } catch (e) { /* three internals moved */ }
+  };
+  machine.root?.traverse((o) => { if (o.isSkinnedMesh) take(o.skeleton); });
+  take(machine.rig?.skeleton);
+  for (const lod of machine._lodChain || []) {
+    lod.root?.traverse?.((o) => { if (o.isSkinnedMesh) take(o.skeleton); });
+  }
+  return seen.size;
+}
+
+/**
+ * Release everything this machine's RIG created. Idempotent, and safe to call
+ * on a machine that never finished building.
+ *
+ * Published on every machine as `machine.disposeRig()` by
+ * `installRigTeardown`, and called automatically from the machine's own
+ * teardown (see there) so no other lane's file has to change.
+ *
+ * @returns {{skeletons:number, owned:number, glows:boolean}}
+ */
+export function disposeRig(machine) {
+  if (!machine || machine._rigDisposed) {
+    return { skeletons: 0, owned: 0, glows: false };
+  }
+  machine._rigDisposed = true;
+  const skeletons = disposeSkeletons(machine);
+  let owned = 0;
+  for (const res of machine._rigOwned || []) {
+    try { res.dispose?.(); owned++; } catch (e) { /* already gone */ }
+  }
+  machine._rigOwned?.clear();
+  // pooled eye/accent halos hold `machine` and `machine.root`
+  let glows = false;
+  try {
+    if (machine._fxPool?.detachGlowsOf && machine.root) {
+      machine._fxPool.detachGlowsOf(machine.root);
+      glows = true;
+    }
+  } catch (e) { /* pool gone */ }
+  // drop the rig's own retained buffers (hull proxy vertex cache, fade list,
+  // bounds cache, LOD chain) — each holds typed arrays sized by the sculpt
+  machine._hullProxy = null;
+  machine._fadeMats = null;
+  machine._posedBounds = null;
+  machine._drawnBounds = null;
+  machine._lodChain = null;
+  machine._shadowCasters = null;
+  return { skeletons, owned, glows };
+}
+
+/**
+ * Wire `disposeRig` into the machine's existing teardown WITHOUT editing
+ * `machine.js` or `ai/sites.js` (both owned by `machine-ai`).
+ *
+ * `sites.dispose()` sets `m._disposed = true`, walks the root disposing
+ * geometry and material, removes the root from the scene and then calls
+ * `m.disposeFx(false)` — which is the last thing that happens to a machine and
+ * the one hook a rig can take. The shadow is an instance property (the same
+ * idiom `attachFxPool` uses for the five FX spawners), so the prototype is
+ * untouched and the FREEZE call (`disposeFx(true)`, which happens to a wreck
+ * that is still standing) is ignored: it checks `_disposed`.
+ */
+function installRigTeardown(machine) {
+  if (machine._rigTeardownInstalled) return;
+  machine._rigTeardownInstalled = true;
+  machine.disposeRig = () => disposeRig(machine);
+  const proto = Object.getPrototypeOf(machine);
+  const inner = machine.disposeFx || proto.disposeFx;
+  machine.disposeFx = function rigAwareDisposeFx(keepBeacon = false) {
+    const r = inner.call(this, keepBeacon);
+    if (this._disposed) disposeRig(this);
+    return r;
+  };
 }
 
 /**

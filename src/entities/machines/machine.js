@@ -109,8 +109,27 @@ export class Machine {
     this.territory = opts.territory ?? null; // { x, z, r }
     this.alignToTerrain = opts.alignToTerrain ?? true;
 
+    /**
+     * THE SCULPT MAY NOT BE THIS KIND'S YET (`machine-ai-expansion`).
+     *
+     * `kind` is the BEHAVIOUR identity — every table in `ai/tables.js`, the
+     * doctrine in `ai/doctrine.js`, the site lifecycle and every gate key off
+     * it. `modelKind` is which loaded sculpt the body is built from, and it is
+     * normally the same string. It differs only while a Round-4 expansion
+     * species has its behaviour shipped (this lane) and its mesh still in
+     * flight (`machines-expansion` owns every species file and every donor
+     * model): a Broadhead then thinks, fights, herds and dies as a Broadhead
+     * on a Strider chassis. The moment `machines-expansion` registers a real
+     * `Broadhead` class through `machines.registerKind()` the chassis is gone
+     * and nothing else in this file changes — see `ai/doctrine.js` §CHASSIS.
+     *
+     * Everything that frees GPU memory must key off `modelKind`, not `kind`,
+     * or a disposed proxy would free the donor species' shared buffers
+     * (`ai/sites.js:protectedGeos`).
+     */
+    this.modelKind = opts.modelKind ?? this.kind;
     // model
-    const src = ctx.assets.models[this.kind];
+    const src = ctx.assets.models[this.modelKind];
     this.size = src.size;
     this.height = src.size.y;
     // capsule half-length for player standoff: long bodies (snout/tail) must
@@ -208,6 +227,14 @@ export class Machine {
 
     // ecosystem / lifecycle
     this.escort = opts.escort ?? null;
+    /** Shell-Walker column this machine belongs to (`Squads.registerConvoy`). */
+    this.convoy = null;
+    /** Snapmaw pool site this machine basks at (`Squads.registerBasking`). */
+    this.basking = null;
+    /** Never leaves `patrol` — see `setState` (casting-v4 §2.8, Tallneck). */
+    this.docile = !!opts.docile;
+    /** Corrupted by a Corruptor: hostile to everything, cannot be overridden. */
+    this.corrupted = false;
     this.scavenge = null;
     this.overridden = false;
     this.mountedBy = null;
@@ -239,7 +266,18 @@ export class Machine {
     this._beaconSpawned = false;
 
     // sensors / glow
-    this._eyeColor = EYE_COLORS.calm.clone();
+    /**
+     * PER-SPECIES CALM SENSOR COLOUR (casting-v4.md §5.1 — the Redeye).
+     *
+     * `EYE_COLORS.calm` is global, so a Redeye Watcher whose whole point is
+     * that its IDLE sensor is already red could only ever be a recoloured
+     * Watcher. `_eyeCalm` is the colour the `default` branch of
+     * `_updateEyes` lerps to; every other state is unchanged, so a Redeye
+     * still goes yellow when it is wary and white-hot on a telegraph.
+     * Set from `ai/doctrine.js` at spawn; species files may set it too.
+     */
+    this._eyeCalm = opts.eyeCalm ? new THREE.Color(opts.eyeCalm) : EYE_COLORS.calm;
+    this._eyeColor = this._eyeCalm.clone();
     this._eyeMats = [];   // sprite/basic materials fully colored by state
     this._emisMats = [];  // model emissive materials tinted by state
     this._collectEmissive();
@@ -1020,6 +1058,19 @@ export class Machine {
   /* ------------------------- state machine ------------------------- */
 
   setState(name) {
+    /**
+     * DOCILE MACHINES NEVER LEAVE THE LOOP (casting-v4.md §2.8, the Tallneck).
+     *
+     * `PERCEPTION.tallneck` zeroes every sense and `REACT.tallneck` puts every
+     * reaction threshold above 1.0 of maxHP, so nothing SHOULD flip it — but
+     * "nothing should" is not a guarantee, and one stray `forceState`, alarm
+     * recipient or scavenger claim would have a 25 m comms tower charging the
+     * player. `docile` is the hard guard the card asks for: the only state a
+     * docile machine may enter is its own patrol loop (and `dead`, which the
+     * Tallneck's armour makes unreachable but which must not be blocked in
+     * case another lane kills one deliberately).
+     */
+    if (this.docile && name !== 'patrol' && name !== 'dead') return;
     if (this.state === name) return;
     const wasCalm = this.state === 'patrol' || this.state === 'return' || this.state === 'suspicious';
     const prev = this.state;
@@ -1207,6 +1258,26 @@ export class Machine {
     // ecosystem overrides of the plain waypoint loop (machine-ai-14)
     if (this.scavenge && Squads.stepScavenge(this, dt)) return;
     if (this.escort && Squads.stepEscort(this, dt)) return;
+    // a calm convoy walks its shared route IN FILE behind the crate carrier
+    // (casting-v4 §2.5); an alarmed one closes ranks and becomes an `escort`
+    // anchored on the carrier, which the branch above already understands
+    if (this.convoy && Squads.stepConvoy(this, dt)) return;
+    /**
+     * BASKING (casting-v4 §2.3). A Snapmaw on its bank does not walk a
+     * waypoint loop — it lies there. The fidget is the whole idle: a slow
+     * flank roll and a jaw twitch, no translation at all, which is why the
+     * ambush works. It ends the moment suspicion crosses `susEnter` above.
+     */
+    if (this.basking) {
+      const b = this._basking;
+      if (b) {
+        b.t += dt;
+        this._speed = THREE.MathUtils.damp(this._speed, 0, 8, dt);
+        this.heading += Math.sin(b.t * 0.35 + b.phase) * dt * 0.12;
+        this.aiPose.forage = 0.15 + 0.15 * Math.sin(b.t * 0.9 + b.phase);
+        return;
+      }
+    }
     if (this._waitT > 0) {
       this._waitT -= dt;
       this._speed = THREE.MathUtils.damp(this._speed, 0, 6, dt);
@@ -2148,7 +2219,7 @@ export class Machine {
       case 'downed': target = EYE_COLORS.hostile; pulse = Math.random() < 0.4 ? 1.5 : 0.25; break;
       // Aloy's machine burns teal (canon override colour)
       case 'overridden': target = EYE_COLORS.override; pulse = 1.0 + 0.25 * Math.sin(t * 3.3); break;
-      default: target = EYE_COLORS.calm; pulse = 0.85 + 0.2 * Math.sin(t * 2.1);
+      default: target = this._eyeCalm || EYE_COLORS.calm; pulse = 0.85 + 0.2 * Math.sin(t * 2.1);
     }
     if (this.stunT > 0) pulse = Math.random() < 0.5 ? 1.6 : 0.2;
     if (this._eyeFlare > 0) { pulse *= 1 + this._eyeFlare; this._eyeFlare = 0; }

@@ -34,14 +34,14 @@
  */
 
 /** Page-context helper: block until the variety machines have spawned. */
-const WAIT_VARIETY = `
+export const WAIT_VARIETY = `
   const _t0 = performance.now();
   while (!__CTX__.machines?.varietyReady && performance.now() - _t0 < 25000) {
     await new Promise(r => setTimeout(r, 150));
   }`;
 
 /** One living machine per species, nearest first. */
-const SPECIES = `
+export const SPECIES = `
   const species = new Map();
   for (const _m of (__CTX__.machines?.list || [])) {
     if (!_m.alive) continue;
@@ -49,7 +49,7 @@ const SPECIES = `
   }`;
 
 /** Get a species moving: drop the player 14 m away and let it be noticed. */
-const PROVOKE = `
+export const PROVOKE = `
   {
     const _p = __CTX__.player;
     _p.position.set(m.position.x + 14, 0, m.position.z + 14);
@@ -61,7 +61,7 @@ const PROVOKE = `
 /**
  * Silhouette / pose staging (see the block comment inside).
  */
-const LINEUP = `
+export const LINEUP = `
   /**
    * Scale-normalised silhouette line-up.
    *

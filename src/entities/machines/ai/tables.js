@@ -274,6 +274,35 @@ export const ENGAGE = {
      * table says are legal. `A41d-held-radius-coverage` asserts against it.
      */
     heldHalfLife: 9,
+    /**
+     * THE RING IT CANNOT REACH (FIX ROUND 5, judge residue §3 — "Engage must
+     * detect an unreachable ring (slope/obstacle/leash) and re-pick, or the
+     * picker must notice").
+     *
+     * `blindHold` covers "I got to the radius and could not see her".
+     * These three cover the other half: I never got there. The orbit's radial
+     * nudge closes a ring at `closeSpeed` when the ground allows it, so a
+     * radial error that does NOT fall is terrain refusing the radius — a slope
+     * steeper than the machine can climb, a rock the navgrid whiskers it
+     * around for ever, or the far side of the soft leash. Left alone, the move
+     * that ring was arranged for keeps winning the arrangement (it is legal,
+     * reachable and unblocked — every structural query says yes) and the fight
+     * collapses to whatever is legal where the machine is really standing.
+     * That is the same livelock class as the stuck ring and the blind ring,
+     * arriving by a third road.
+     *
+     *   ringArrive    metres of radial error that count as "arrived", so a
+     *                 machine orbiting inside its own slop is never stuck
+     *   ringProgress  metres of error it must shave off inside ringPatience
+     *                 for the walk to count as progress (the clock restarts on
+     *                 every new best, so a slow approach is never punished)
+     *   ringPatience  seconds of no progress before `Engage._giveUpRing`
+     *
+     * `Engage.ringGiveUps` and `AttackPicker.unreachableRings()` publish it.
+     */
+    ringArrive: 1.5,
+    ringProgress: 0.5,
+    ringPatience: 4.5,
   },
   /**
    * BAND FLOORS AND THE RING (FIX ROUND 2, judge-machine-ai-followup-r1).
@@ -489,7 +518,22 @@ export const ATTACKS = {
   ],
   scrapper: [
     { id: 'claw', min: 0, max: 3.4, cd: 2.4, score: 1.0, authored: 'species' },
-    { id: 'laser', min: 7, max: 29, cd: 6, score: 0.85, authored: '_laserBurst', cdField: '_cdLaser' },
+    /**
+     * min 7 -> 6.4 (FIX ROUND 5, A41c/A41d Scrapper). The laser's floor sat
+     * exactly on `dart-bite`'s 7.2 m ceiling, and `dart-bite` is a 4.2 m dash:
+     * so the only radii where the laser was legal were ones the bite could
+     * reach and immediately close. Traced on the Scrapper's hardest arc — the
+     * footwork got to 7.03 m and held it for 0.10 decayed seconds across a
+     * 30 s duel, threw `dart-bite` six times from 4-6.8 m, and the laser was
+     * fresh, arrangeable and unblocked the whole way. 6.4 gives the laser
+     * 0.8 m of overlap INSIDE the bite's reach — the same clearance rule the
+     * band floors above already follow, applied to the other end of the
+     * ladder — so the ranged move becomes legal before the closing move can
+     * take the range away, and the fresh-first tier can actually pick it.
+     * It is still a ranged burst: the claw is 3.4 m and the bite strikes at
+     * 3.2 m.
+     */
+    { id: 'laser', min: 6.4, max: 29, cd: 6, score: 0.85, authored: '_laserBurst', cdField: '_cdLaser' },
     // max 7.2, not 6.5: the old table left half a metre of nothing at exactly
     // the 7 m the Round-3 audit already caught this species parking at
     { id: 'dart-bite', min: 0, max: 7.2, cd: 3.2, score: 0.8, generic: 'lunge',
@@ -585,6 +629,17 @@ export const SCORING = {
    */
   blindHold: 3.5,
   /**
+   * ...and the same shape for a ring the footwork never REACHED
+   * (`ENGAGE.ringPatience`, `Engage._giveUpRing`). Slightly longer than
+   * `blindHold` because the evidence behind it is stronger — a whole
+   * `ringPatience` of walking with no radial progress, rather than one
+   * sweep with no sightline — but still a hint and never a veto: selection
+   * never consults it, the structural queries never see it,
+   * `_bestArrangeable` falls back to it when nothing else is arrangeable,
+   * and firing the move clears it.
+   */
+  unreachHold: 5,
+  /**
    * SETUP PATIENCE — seconds a machine will decline a move it has ALREADY
    * shown this fight while it is still walking to the range of one it has not.
    *
@@ -601,6 +656,26 @@ export const SCORING = {
    * five ranges and gives each 3 s), and only for this many seconds.
    */
   setupPatience: 2,
+  /**
+   * ...AND AS LONG AS THE WALK ACTUALLY TAKES, CAPPED (FIX ROUND 5).
+   *
+   * A flat 2 s is right for a Scrapper (orbitSpeed 0.75 x runSpeed 9) and
+   * far too short for the slowest machines in the expansion: a Snapmaw orbits
+   * at 0.4 x 7.5 = 3 m/s, so the 7 m out to its freeze-mortar shell is a
+   * 2.3 s trip and the patience expired before it arrived — its cheap
+   * `lunge-bite` (a 6.5 m dash) then came off cooldown and dragged it back
+   * in, every single time. Measured: the Snapmaw held 0.13 decayed seconds
+   * inside 13-19.7 m across a 22 s duel and never fired the mortar; the
+   * Ravager held 0.05 s inside its cannon shell.
+   *
+   * So the patience is now `gap / orbitSpeed + 0.5`, floored at
+   * `setupPatience` and capped here. It can only ever be extended for a
+   * machine that is demonstrably still TRAVELLING to a range it has not
+   * reached, which is the one case the flat value got wrong, and the cap
+   * keeps it well under `arrangeGiveUp` so a move that genuinely cannot be
+   * set up still gives the ring up.
+   */
+  setupPatienceMax: 4.5,
 };
 
 /* ------------------------------------------------------------------ */
@@ -712,6 +787,45 @@ export const ECOSYSTEM = {
     window: 45,      // s a wreck stays attractive
     dwell: [8, 16],  // s spent picking at it
     arrive: 3.5,
+  },
+  /**
+   * CORRUPTION (casting-v4.md §2.6). A Corruptor flips nearby machines to a
+   * hyper-aggressive `corrupted` flavour of the override machinery. HARD
+   * CAPPED — the card says so in as many words, because an uncapped radius
+   * turns one machine into a valley-wide cascade.
+   */
+  corruption: { radius: 25, max: 2, period: 4 },
+  /**
+   * POPULATION BUDGET — the bound that replaces "the app crashed on memory".
+   *
+   * Counted in SCENE NODES, not in machines, because the species differ 3x in
+   * node cost and a count-based cap therefore bounds nothing: a Watcher's
+   * donor hierarchy is 110 Object3Ds, a Glinthawk's 34. Measured over 30 kills
+   * with the A90 loop's own workload (`docs` / the lane report): scene objects
+   * grew +1170 with ZERO of it orphaned — every one of those nodes belonged to
+   * a LIVE machine the loop had spawned and nothing despawned. Disposal was
+   * already complete; what was missing was a ceiling.
+   *
+   *   nodeBudget  scene nodes the live machine population may occupy. The
+   *               authored roster (Round 3 + the Round 4 expansion) is
+   *               measured at boot and the budget is max(nodeBudget, boot +
+   *               headroom), so the world the game ships can never be evicted
+   *               by its own ceiling — only spawns PAST it are bounded.
+   *   headroom    nodes of slack above the boot roster.
+   *   keepRadius  metres inside which a machine is never recycled on distance
+   *               alone: recycling something under the player's nose is worse
+   *               than the overshoot.
+   *   offscreenRadius  ...but a CALM surplus machine that is outside the
+   *               camera frustum and further than this may go even inside
+   *               `keepRadius`. All three conditions matter: calm (never one
+   *               that has noticed her, and never one in a fight), off-camera
+   *               (nobody can see it leave) and past this radius. A flood that
+   *               happens behind the player is exactly the case the distance
+   *               rule alone cannot bound, and it is also the only case where
+   *               removing a machine is invisible.
+   */
+  population: {
+    nodeBudget: 1600, headroom: 140, keepRadius: 120, offscreenRadius: 35,
   },
 };
 

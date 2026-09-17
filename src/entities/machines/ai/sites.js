@@ -26,6 +26,12 @@ import { safeEmit } from './emit.js';
 
 const _protected = new Map();   // kind -> Set<BufferGeometry>
 
+/**
+ * Keyed on `machine.modelKind`, NOT on `machine.kind`: an expansion species
+ * riding a donor chassis (see `Machine.modelKind`) shares the DONOR's buffers,
+ * so a Broadhead disposed under its own name would free every Strider's
+ * geometry. Measured the hard way once already with the shared-asset rule.
+ */
 function protectedGeos(ctx, kind) {
   let s = _protected.get(kind);
   if (s) return s;
@@ -115,13 +121,16 @@ export class SiteManager {
     // loot + crit prompts
     if (m._lootEntry) ctx.interactables?.unregister?.(m._lootEntry);
     m.ai?.reactions?._closeCrit?.();
-    const keep = protectedGeos(ctx, m.kind);
+    const keep = protectedGeos(ctx, m.modelKind || m.kind);
     m.root.traverse((o) => {
       if (o.geometry && !keep.has(o.geometry)) o.geometry.dispose?.();
       const mats = Array.isArray(o.material) ? o.material : (o.material ? [o.material] : []);
       for (const mat of mats) mat.dispose?.();
     });
     m.root.parent?.remove(m.root);
+    // ...and every squad-side reference to it (herd member list, convoy roster,
+    // basking site, corruption victims) — see `Squads.forget`
+    this.machines.squads?.forget?.(m);
     /**
      * ...and the FX meshes, which are children of the SCENE, not of `root`.
      * The loot beacon is the one that always survived: a cyan pillar left
