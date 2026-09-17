@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
-import { makeArrow, setArrowType, makeBombVisual } from './arrows.js';
+import { makeArrow, setArrowType, makeBombVisual, disposeOwnedUnder } from './arrows.js';
 
 /**
  * Procedural weapon models (spec v2 roster). Local space contract, shared by
@@ -55,6 +55,42 @@ const leatherMat = new THREE.MeshStandardMaterial({ color: 0x6b4a2c, roughness: 
 const unitCyl = new THREE.CylinderGeometry(1, 1, 1, 5, 1);
 const STRING_R = 0.007;
 
+/**
+ * THIS MODULE'S SHARED SINGLETONS — published for teardown (fix round 1,
+ * judge finding 2).
+ *
+ * `WeaponModel.dispose()` used to claim that "`disposeArrowAssets()`
+ * (arrows.js) owns the rest". It never did: not one of the fifteen materials
+ * or `unitCyl` above appears in `arrowAssets()`, so nothing anywhere freed
+ * them. Measured on port 5208 by attributing each survivor of
+ * `Combat.dispose()` to the root that reached it: the seven weapon models
+ * accounted for 15 of the 57 leaked geometries and 17 of the 31 leaked
+ * materials (the rest were the bomb/disc projectile visuals). Both ends of
+ * the promise now exist: this list, freed once by `disposeWeaponAssets()`
+ * from `Combat.dispose()`, and a per-model teardown that no longer depends on
+ * a `userData` tag being remembered.
+ */
+const SHARED_MATS = [woodDark, woodPale, woodBlack, bronzeMat, ironMat, boneMat,
+  boneDarkMat, wrapMat, wrapDarkMat, tealGlow, amberGlow, iceGlow, redGlow,
+  stringMat, leatherMat];
+const SHARED_GEOS = [unitCyl];
+const SHARED_SET = new Set([...SHARED_MATS, ...SHARED_GEOS]);
+
+/** Read-only manifest of the module singletons every weapon model shares. */
+export function weaponAssets() {
+  return { geometries: [...SHARED_GEOS], materials: [...SHARED_MATS], textures: [] };
+}
+
+/**
+ * Release them. TEARDOWN ONLY and single-shot, exactly like
+ * `disposeArrowAssets()`: call once, from `Combat.dispose()`, after every
+ * `WeaponModel` and the spear are gone.
+ */
+export function disposeWeaponAssets() {
+  for (const g of SHARED_GEOS) g.dispose();
+  for (const m of SHARED_MATS) m.dispose();
+}
+
 const _mid = new THREE.Vector3();
 const _d = new THREE.Vector3();
 const _Y = new THREE.Vector3(0, 1, 0);
@@ -107,8 +143,11 @@ function segGeo(a, b, r, radial = 5) {
  * were finished. They are never uploaded, so this is pure JS heap — but it is
  * heap held by nothing, which is the definition this lane is cleaning up.
  *
- * `userData.ownGeo` marks the result as this model's own buffer (as opposed to
- * `unitCyl` or the shared arrow geometries) so teardown knows what it may free.
+ * `userData.ownGeo` marks the result as this model's own buffer. It is a
+ * REPORTING tag only (`WeaponModel.audit()`): teardown used to key off it and
+ * leaked every geometry the five non-baked models build inline, so
+ * `dispose()` now asks whether a buffer is SHARED instead of whether it was
+ * tagged. Leave the tag; do not make anything depend on it again.
  */
 function bakeMesh(mat, parts, shadow = false) {
   // length 0 still goes through mergeGeometries (an empty geometry), exactly
@@ -140,16 +179,24 @@ class WeaponModel {
   }
 
   /**
-   * Teardown. Materials and the `unitCyl` / arrow geometries are shared module
-   * singletons across all seven models, so only the buffers this model baked
-   * for itself are freed here; `disposeArrowAssets()` (arrows.js) owns the
-   * rest, and `Combat.dispose()` calls both in the right order.
+   * Teardown. Materials, `unitCyl` and the arrow geometries are shared module
+   * singletons across all seven models, so only the buffers this model built
+   * for itself are freed here; `disposeWeaponAssets()` (this file) and
+   * `disposeArrowAssets()` (arrows.js) own the rest, and `Combat.dispose()`
+   * calls all three in the right order.
+   *
+   * WHY NOT `userData.ownGeo` ANY MORE. That tag is set by `bakeMesh()` only,
+   * and five of the seven models build meshes directly — the Recurve's
+   * `TubeGeometry` limbs, the Sling's `CapsuleGeometry` grip and
+   * `SphereGeometry` pouch, the Launcher's load disc. Those geometries carried
+   * no tag, so this method walked straight past them: 15 per-model buffers
+   * leaked out of a method whose whole job was to free them. Asking
+   * "is it shared?" instead of "was it tagged?" cannot be forgotten by the
+   * next part somebody adds.
    */
   dispose() {
     this.group.parent?.remove(this.group);
-    this.model.traverse((o) => {
-      if (o.isMesh && o.userData.ownGeo && o.geometry) o.geometry.dispose();
-    });
+    disposeOwnedUnder(this.model, SHARED_SET);
   }
 
   /** Scene footprint of this model — constant for the life of the session. */

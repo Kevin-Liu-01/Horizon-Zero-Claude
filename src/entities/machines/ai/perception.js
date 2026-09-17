@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { perceptionCfg, NOISE } from './tables.js';
 import { safeEmit } from './emit.js';
+import { aiRandom } from './rng.js';
 
 /**
  * Perception — the honest senses of a machine.
@@ -33,8 +34,11 @@ export class Perception {
   constructor(machine) {
     this.m = machine;
     this.cfg = perceptionCfg(machine.kind);
-    this.acc = Math.random() * this.cfg.tick;   // stagger the ticks
-    this.scanT = Math.random() * this.cfg.scanPeriod;
+    // through the lane seam (`ai/rng.js`) rather than `Math.random`: the tick
+    // PHASE decides which sim step a duel's sightline is sampled on, which is
+    // enough to change a fight over broken ground (judge-machine-ai-r2-r1 §2).
+    this.acc = aiRandom() * this.cfg.tick;      // stagger the ticks
+    this.scanT = aiRandom() * this.cfg.scanPeriod;
     this.scanOffset = 0;
     this.visible = false;
     this.visibleT = 0;          // seconds of continuous sight
@@ -126,8 +130,8 @@ export class Perception {
     const m = this.m;
     const j = c.unseenJitter;
     m.lastKnown.set(
-      ox + (Math.random() - 0.5) * 2 * j, 0,
-      oz + (Math.random() - 0.5) * 2 * j,
+      ox + (aiRandom() - 0.5) * 2 * j, 0,
+      oz + (aiRandom() - 0.5) * 2 * j,
     );
     m.lastKnown.y = m.ctx.terrain.getHeight(m.lastKnown.x, m.lastKnown.z);
     m.suspicion = Math.max(m.suspicion, c.unseenHit * strengthScale);

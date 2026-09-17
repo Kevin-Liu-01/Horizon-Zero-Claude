@@ -119,6 +119,10 @@ const TICKPROBE = `function tickProbe(m, opts) {
     get idleFrac() { return st.between ? st.idleBetween / st.between : 1; },
   };
   m.update = (dt, t) => {
+    // a probe with a limit: stops the machine EXACTLY on its step budget, so
+    // the measurement is a fixed number of simulated steps rather than
+    // "however many fitted before the poll noticed" (see soloDuel)
+    if (o.limit != null && st.sim >= o.limit) return;
     if (o.pre) o.pre(dt, st);
     base(dt, t);
     if (!(dt > 0)) return;
@@ -146,6 +150,248 @@ async function probeFor(st, s, wallMs) {
   }
   return st.sim;
 }`;
+
+/**
+ * THE HARDEST GROUND THIS MACHINE OWNS (FIX ROUND 4, judge-machine-ai-r2-r1
+ * §3: "neither A41c nor A41d samples the terrain-occlusion variable they were
+ * written for").
+ *
+ * Round 3 staged one bearing per species — `0.7 + i * 0.37` for A41c and
+ * `1.1 + i * 0.41` for A41d — picked for nothing but spreading the eight
+ * machines out. The judge measured what those arcs actually contain: a
+ * blocked-sightline fraction of 0.00-0.13 across all eight species, while
+ * OTHER arcs around the SAME machine homes read 0.47-0.81. So the ground that
+ * produces the defect the round is about was never visited by either gate.
+ *
+ * `hardBearing` measures the whole ring instead of assuming one arc. For each
+ * of `BEARINGS` candidate player spots at the band's centre radius it asks the
+ * MACHINE'S OWN sightline (`perception.hasLOS`, the same call the fight makes,
+ * terrain ridges and `ctx.collision.occluded` included) from `RING` positions
+ * spread around that spot at three standoff radii — i.e. "if the duel happened
+ * here, how much of the standoff ring is blind?" Then it takes the WORST
+ * bearing, which is the judge's own suggested form of "sweep several bearings
+ * and fail on the worst" at a wall cost the runner can afford.
+ *
+ * GRAIN, stated because it is a proxy and not the fight: the probe stands the
+ * machine on the terrain height at each sample, so a flier (Glinthawk cruises
+ * at ~11 m) is measured from the ground and reads harder than its duel will
+ * be. That errs toward staging worse ground, which is the direction this gate
+ * wants to err in.
+ *
+ * FAIRNESS FLOOR. A spot where the player is inside a rock is not hard ground,
+ * it is an unwinnable one: measured on the Scrapper's home, bearing 1.05 has
+ * 6 of 7 radii blocked AND no clear arc at all, and a machine duelling there
+ * fought the whole 22 s by CONTACT alone (`_visible` false on every step, so
+ * no ranged move can ever be selected) — that is terrain refusing the fight,
+ * not AI failing it. So the worst bearing is taken among those where at least
+ * `MIN_CLEAR` of the standoff ring CAN see her; if no bearing clears that bar,
+ * the clearest one is used and the report says so.
+ */
+const HARDGROUND = `function hardBearing(m, opts) {
+  const ctx = __CTX__, T = ctx.terrain;
+  const o = opts || {};
+  const BEARINGS = o.bearings || 12, RING = o.ring || 8, MIN_CLEAR = o.minClear ?? 0.25;
+  const band = m.ai.engage.cfg.band;
+  const R = Math.max(4, (band[0] + band[1]) * 0.5);
+  const home = (m._gateHome || m.spawnPos).clone ? (m._gateHome || m.spawnPos).clone() : m.position.clone();
+  const V = ctx.player.position.constructor;
+  const save = m.position.clone();
+  const radii = [Math.max(band[0], R * 0.7), R, Math.min(band[1], R * 1.4)];
+  const tgt = new V(0, 0, 0);
+  const out = [];
+  for (let i = 0; i < BEARINGS; i++) {
+    const th = (i / BEARINGS) * Math.PI * 2;
+    const px = home.x + Math.sin(th) * R, pz = home.z + Math.cos(th) * R;
+    tgt.set(px, T.getHeight(px, pz), pz);
+    let blocked = 0, n = 0;
+    for (let k = 0; k < RING; k++) {
+      const a = (k / RING) * Math.PI * 2;
+      for (const r of radii) {
+        const mx = px + Math.sin(a) * r, mz = pz + Math.cos(a) * r;
+        m.position.set(mx, T.getHeight(mx, mz), mz);
+        n++;
+        if (!m.ai.perception.hasLOS(tgt)) blocked++;
+      }
+    }
+    out.push({ th: +th.toFixed(2), occ: +(blocked / n).toFixed(2) });
+  }
+  m.position.copy(save);
+  const fair = out.filter((b) => 1 - b.occ >= MIN_CLEAR);
+  const pool = fair.length ? fair : out.slice();
+  let best = pool[0];
+  for (const b of pool) if (b.occ > best.occ) best = b;
+  return {
+    bearing: best.th, occ: best.occ, fairPool: fair.length, sampled: out.length,
+    profile: out.map((b) => b.th + ':' + b.occ).join(' '),
+    minClear: MIN_CLEAR, homeAt: [+home.x.toFixed(1), +home.z.toFixed(1)],
+  };
+}`;
+
+/**
+ * ONE SPECIES, ON ITS OWN GROUND (FIX ROUND 3, judge-machine-ai-r2 §1).
+ *
+ * The r2 arena pinned the player at `picks[0].position` and teleported all
+ * eight species onto bearings around it — so seven of them fought on the
+ * BEHEMOTH's ground. That is the exact variable the judge's second finding
+ * isolated: the same Scrapper that never fires its laser at home fires it
+ * twice in the open meadow, because the outer third of its band is where the
+ * rock is. Measuring eight species on one species' terrain cannot see that,
+ * and it is half of why the gate's verdict moved on an unchanged tree
+ * (FAIL, FAIL, PASS, FAIL, PASS over five clean runs).
+ *
+ * `soloDuel` stages ONE machine where it already stands, walks the player to
+ * its own band centre on its own ground, freezes everything else, and runs a
+ * fixed number of SIM seconds through `tickProbe` (one sample per simulated
+ * step, so the reading is frame-rate independent). Callers run it species by
+ * species; the wall cost is bounded per species and the whole sweep is asked
+ * for at `engine.requestTimeScale` 3x.
+ *
+ * The player is a target dummy: pinned, healthy, never moving, and the
+ * machine's belief is refreshed every step (`suspicion` 1, `_unseenT` 0,
+ * `lastKnown` on her). `_unseenT` being pinned means `ENGAGE.beliefHold` — the
+ * 2.5 s bound on blind footwork — is NOT what this measures; what it measures
+ * is where the footwork stands and what it throws while it can still hear her.
+ * `_fleeing` is cleared every step too: a stampeding Strider is flight, not a
+ * duel, and it walked one measurement out to 95 m.
+ */
+const SOLO = `async function soloDuel(m, opts) {
+  const ctx = __CTX__, T = ctx.terrain, p = ctx.player;
+  const o = opts || {};
+  const DUR = o.dur || 30, WALL = o.wall || 26000;
+  const band = m.ai.engage.cfg.band;
+  /**
+   * THE SAME GROUND AND THE SAME POSE EVERY TIME (FIX ROUND 4,
+   * judge-machine-ai-r2-r1 §2). r3 duelled "wherever the machine happens to
+   * stand", which after one duel is wherever the LAST one left it — so two
+   * runs of the same gate at the same seed fought on different terrain, which
+   * is most of why the verdict moved. The anchor is now the machine's own
+   * spawn, snapshotted before this helper overwrites spawnPos, and the
+   * machine is teleported back to it before every duel.
+   */
+  if (!m._gateHome) m._gateHome = m.spawnPos.clone();
+  const home = m._gateHome.clone();
+  m.position.set(home.x, T.getHeight(home.x, home.z), home.z);
+  m.velocity?.set?.(0, 0, 0);
+  const r = Math.max(4, (band[0] + band[1]) * 0.5);
+  const th = o.bearing != null ? o.bearing : 0.7;
+  const px = home.x + Math.sin(th) * r, pz = home.z + Math.cos(th) * r;
+  place(px, pz, { crouch: false });
+  const py = p.position.y;
+  // spawnPos moves with the duel (the soft leash is measured from it) and the
+  // territory is lifted, so a site-owned machine does not walk home mid-fight
+  m.spawnPos.set(home.x, 0, home.z);
+  m._gateTerritory = m.territory; m.territory = null;
+  m.heading = Math.atan2(px - home.x, pz - home.z);
+  const pk = m.ai.picker;
+  pk.cd.clear(); pk.missed.clear(); pk.used.clear(); pk.phantom.clear();
+  pk.stalled.clear(); pk.blind?.clear?.(); pk.noteArranged(null);
+  pk.lastId = null; pk.streak = 0;
+  m._attack = null; m._attackCd = 0; m._downT = 0;
+  m.ai.engage.reset(); m.ai.engage.missT = 0;
+  // the perception TICK PHASE decides which sim step the sightline is sampled
+  // on, which is enough to change a fight over broken ground: pin it too
+  m.ai.perception.acc = 0; m.ai.perception.scanT = 0;
+  m.suspicion = 1; m._unseenT = 0; m.lastKnown.copy(p.position); m.playerDist = r;
+  m.forceState('attack');
+  const win = m.ai.engage._ringWindow();
+  const s = {
+    kind: m.kind, ids: [], fired: [], illegal: 0, plans: 0,
+    blocked: 0, blockedIds: null, steps: 0, modes: {}, unseen: 0, blindS: 0,
+    window: [+win[0].toFixed(2), +win[1].toFixed(2)],
+    bandRows: pk.bandProfile().ids, moveset: pk.movesetRows(),
+    bar: Math.max(2, Math.min(3, pk.movesetSize())),
+    playerAt: [+px.toFixed(1), +pz.toFixed(1)],
+  };
+  s.arrange = pk.rows.filter((row) => row.arc !== 'rear'
+    && pk._reachable(row, win[0], win[1]) != null).map((row) => row.id);
+  const onAtk = (e) => {
+    if (e.machine !== m || s.probe.sim >= DUR) return;
+    if (!pk.rows.some((row) => row.id === e.kind)) return;   // flourish, not a move
+    s.ids.push(e.kind);
+    if (s.fired.length < 16) {
+      s.fired.push(e.kind + '@' + Math.hypot(m.position.x - px, m.position.z - pz).toFixed(1) + 'm');
+    }
+  };
+  s.probe = tickProbe(m, {
+    // END ON A STEP COUNT, not on the wall-clock poll that reads it: the poll
+    // runs every 40 ms and a duel therefore used to run a random handful of
+    // extra steps past DUR (judge-machine-ai-r2-r1 §2)
+    limit: DUR,
+    pre: () => {
+      p.position.set(px, py, pz);
+      p.velocity.set(0, 0, 0);
+      p.health = p.maxHealth;
+      m.suspicion = 1; m._unseenT = 0; m.lastKnown.copy(p.position);
+      m._fleeing = false;
+      if (m.state !== 'attack' && !m._attack) m.setState('attack');
+    },
+    each: (dt) => {
+      const w = m.ai.engage._ringWindow();
+      const plan = pk.ringPlan(w[0], w[1]);
+      // sampled, not asserted: true by construction (see the A41c header)
+      if (plan) { s.plans++; if (!plan.legal) s.illegal++; }
+      s.steps++;
+      if (!m._visible) s.unseen += dt;
+      if (m.ai.engage.blindT > 0) s.blindS += dt;
+      // ASSERTED: a row inside the band the ring window cannot set up
+      if (pk.bandBlocked(w[0], w[1]) > 0) {
+        s.blocked++;
+        if (!s.blockedIds) s.blockedIds = pk.bandUnreachable(w[0], w[1]);
+      }
+      s.modes[m.ai.engage.mode] = (s.modes[m.ai.engage.mode] || 0) + 1;
+    },
+  });
+  ctx.events.on('machine-attack', onAtk);
+  try {
+    const w0 = performance.now();
+    while (s.probe.sim < DUR && performance.now() - w0 < WALL) {
+      await new Promise(r2 => setTimeout(r2, 40));
+    }
+  } finally {
+    ctx.events.off?.('machine-attack', onAtk);
+    s.probe.stop();
+    m.territory = m._gateTerritory;
+  }
+  s.held = m.ai.engage.heldProfile();
+  s.distinct = [...new Set(s.ids)];
+  s.gaveUpOnAtEnd = [...pk.stalled.keys()];
+  s.blindGiveUps = m.ai.engage.blindGiveUps;
+  s.blindAtEnd = pk.blindRings ? pk.blindRings().map((b) => b[0]) : [];
+  // the replay fingerprint: the move sequence and the pose it ended in
+  s.seq = s.ids.join(',');
+  s.endPose = [+m.position.x.toFixed(3), +m.position.z.toFixed(3), +m.heading.toFixed(3)];
+  return s;
+}
+
+/**
+ * The rows this species OWES a standoff: non-rear, part attached, not
+ * disabled, and with a non-empty shell of radii inside both the engage band
+ * and the ring window. A Watcher peck (0-3.1 m) against a band that starts at
+ * 4.6 m is not owed and is not counted.
+ */
+function owedRows(m) {
+  const pk = m.ai.picker, band = m.ai.engage.cfg.band;
+  const win = m.ai.engage._ringWindow();
+  const out = [];
+  for (const row of pk.rows) {
+    if (row.arc === 'rear') continue;
+    if (row.needPart && !pk._partAttached(row.needPart)) continue;
+    if (m.attackDisabled(row.id)) continue;
+    const lo = Math.max(row.min, band[0], win[0]);
+    const hi = Math.min(row.max, band[1], win[1]);
+    if (lo > hi) continue;
+    out.push({ id: row.id, lo: +lo.toFixed(2), hi: +hi.toFixed(2) });
+  }
+  return out;
+}
+
+/** Every living species, one per kind, sorted so the report reads the same. */
+function speciesPicks() {
+  const list = __CTX__.machines.list;
+  const kinds = [...new Set(list.filter(m => m.alive).map(m => m.kind))].sort();
+  return kinds.map(k => list.find(m => m.kind === k && m.alive)).filter(Boolean);
+}
+`;
 
 export const GATES = [
   /* ------------------------------------------------------------------ A37 */
@@ -1060,170 +1306,328 @@ export const GATES = [
    * MAX_STEPS caps a frame at 0.05 s either way — there are simply more of
    * them per rendered frame, so a starved page degrades to 1x instead of
    * failing. Measurement is still per SIM STEP, via `tickProbe`.
+   *
+   * FIX ROUND 3 (judge-machine-ai-r2 §1 + §2). The bar above is unchanged and
+   * the injection evidence still stands. What changed is that the gate could
+   * not keep a verdict still: five runs of this id on an unmodified tree
+   * measured FAIL, FAIL, PASS, FAIL, PASS, none of them starved, with the
+   * failing species moving run to run (behemoth 2 of 3, scrapper 2 of 3 with
+   * `laser` in `gaveUpOnAtEnd`). Two causes, both fixed here rather than by
+   * lowering anything:
+   *
+   *   1. THE ARENA WAS ONE SPECIES' GROUND. The player was pinned at
+   *      `picks[0].position` and all eight machines teleported onto bearings
+   *      around it, so seven of them duelled on the Behemoth's terrain. The
+   *      judge's second finding is precisely that the outer third of a band is
+   *      terrain-dependent — the same Scrapper fires its laser in the open
+   *      meadow and never at home. The gate now runs the species one at a
+   *      time, each ON ITS OWN GROUND (`soloDuel`), which is both the honest
+   *      measurement and the one whose result does not depend on which
+   *      machine happened to be first in the list.
+   *   2. THE DICE WERE FREE. `Engage._pickRing`'s 0.8 roll, the orbit-flip
+   *      timers and `AttackPicker._score`'s jitter all came from
+   *      `Math.random`. They now come from `ai/rng.js`, and this gate seeds
+   *      that stream for the length of the measurement through the published
+   *      `machines.setAiRng`, restoring the real dice in its `finally`. The
+   *      shipping game is exactly as random as it was.
+   *
+   * FIX ROUND 4 (judge-machine-ai-r2-r1 §2 + §3). Two corrections to the
+   * round-3 claims above, neither of them a change to the bar:
+   *
+   *   A. THE ARC WAS STILL ARBITRARY. `0.7 + i * 0.37` spread the species out
+   *      and did nothing else: the judge measured this gate's own staged arcs
+   *      at a blocked-sightline fraction of 0.00-0.13 across all eight
+   *      species, while other arcs around the SAME homes read 0.47-0.81. The
+   *      gate was never on the ground its own findings are about. Staging now
+   *      goes through `hardBearing(m)`, which measures the machine's OWN
+   *      sightline over the whole ring (12 player spots x 8 standoff
+   *      positions x 3 radii) and duels the WORST arc it can still fight on —
+   *      the judge's own suggested form of "fail on the worst", at a wall cost
+   *      the runner can afford. The whole sweep ships in `occlusionByBearing`.
+   *   B. THE SEED WAS OVERSOLD. "Seeded dice" was published as the reason a
+   *      green repeats and the judge disproved it: same seed, same species,
+   *      same arc — PASS, FAIL, FAIL, PASS, PASS, FAIL. Dice are one input of
+   *      four. The gate now also pins the step size (`engine.stepMode =
+   *      'fixed'`, whole 1/60 s steps), ends each duel on a STEP COUNT rather
+   *      than on the 40 ms poll that reads it, and restores the machine's pose
+   *      (its own spawn) and fight state before every duel. What that buys is
+   *      MEASURED and printed in `replay:` — the first species is duelled
+   *      twice from the same seed and both move sequences are published —
+   *      rather than asserted in a header.
+   *
+   * The footwork defect behind the flake — a machine that loses the sightline
+   * behind a rock and cannot get it back — is bounded in `Engage` by its own
+   * clock (`_blindT`, `_giveUpBlind`; the round-3 bound lived on the
+   * perception field this gate pins, which is why it never expired here) and
+   * measured by `A41d-held-radius-coverage`.
    */
   {
     id: 'A41c-sustained-variety', kind: 'action', lane: 'machine-ai',
-    title: 'Sustained duel, EVERY species: >= 2 distinct table moves in 30 SIM s (3 where the TABLE holds 3+ non-rear rows), and never a band row the ring window cannot set up',
+    title: 'Sustained duel, EVERY species on the HARDEST ARC of its own ground: >= 2 distinct table moves in 30 SIM s (3 where the TABLE holds 3+ non-rear rows), and never a band row the ring window cannot set up',
     setup: `(async () => { ${INPUT_ON} ${WAIT_VARIETY} })()`,
-    settle: 600, timeout: 300000,
+    settle: 600, timeout: 480000,
     assert: `(async () => {
-      ${FREEZE} ${PLACE} ${TICKPROBE}
-      const ctx = __CTX__, T = ctx.terrain, p = ctx.player;
-      const DUR = 30, WALL = 130000, ACCEL = 3;
-      const kinds = [...new Set(ctx.machines.list.filter(m => m.alive).map(m => m.kind))].sort();
-      const picks = kinds.map(k => ctx.machines.list.find(m => m.kind === k && m.alive)).filter(Boolean);
+      ${FREEZE} ${PLACE} ${TICKPROBE} ${HARDGROUND} ${SOLO}
+      const ctx = __CTX__;
+      /**
+       * WALL BUDGET. 30 SIM seconds at the 3x the engine will give is 10 wall
+       * seconds on a quiet box and ~22 on this one; with another lane's
+       * puppeteer on the same GPU it has been seen at 26+. The cap is per
+       * species and generous on purpose — a starved species returns PENDING,
+       * never FAIL, and PENDING is not evidence either way, so the only thing
+       * a tight budget buys is a gate that cannot answer.
+       */
+      const DUR = 30, EACH_WALL = 45000, ACCEL = 3, SEED = 0x51D4;
+      const picks = speciesPicks();
       if (picks.length < 2) return { pass: null, detail: 'SKIP: fewer than two species alive' };
-      freezeAll(picks);
 
-      // ARENA: the player pinned at the first pick's home, everyone else
-      // teleported onto their own bearing at their own band centre. spawnPos
-      // moves with them (the soft leash is measured from it) and territory is
-      // lifted for the duel so a site-owned machine does not walk home.
-      const A = picks[0].position.clone();
-      const px = A.x, pz = A.z, py = T.getHeight(px, pz);
-      place(px, pz, { crouch: false });
-      const st = new Map();
-      picks.forEach((m, i) => {
-        const band = m.ai.engage.cfg.band;
-        const r = Math.max(4, (band[0] + band[1]) * 0.5);
-        const th = i * (Math.PI * 2 / picks.length);
-        const x = px + Math.sin(th) * r, z = pz + Math.cos(th) * r;
-        m.position.set(x, T.getHeight(x, z), z);
-        m.spawnPos.set(x, 0, z);
-        m._gateTerritory = m.territory; m.territory = null;
-        m.heading = Math.atan2(px - x, pz - z);
-        const pk = m.ai.picker;
-        pk.cd.clear(); pk.missed.clear(); pk.used.clear(); pk.phantom.clear();
-        pk.stalled.clear(); pk.noteArranged(null);
-        pk.lastId = null; pk.streak = 0;
-        m._attack = null; m._attackCd = 0; m._downT = 0;
-        m.ai.engage.reset(); m.ai.engage.missT = 0;
-        m.suspicion = 1; m._unseenT = 0; m.lastKnown.copy(p.position); m.playerDist = r;
-        m.forceState('attack');
-        const win = m.ai.engage._ringWindow();
-        /*
-         * THE BAR COMES FROM THE TABLE, AND FROM NOTHING THE FOOTWORK CAN
-         * MOVE. movesetSize() counts the species' non-rear, part-attached,
-         * not-disabled rows — it consults neither the ring window (revision 1)
-         * nor the engage band (revision 2), both of which fall by one at the
-         * exact instant a regression pushes a row out of the fight. See form D
-         * in the header for the injection that proved the band reading blind.
-         * bandProfile() is kept as diagnosis so a failure says which rows the
-         * table meant to put at this standoff.
-         * NOTE: no backticks in here — this comment lives inside the assert
-         * template literal, and one would end the string.
-         */
-        const prof = pk.bandProfile();
-        const arrange = pk.rows.filter((row) => row.arc !== 'rear'
-          && pk._reachable(row, win[0], win[1]) != null).map((row) => row.id);
-        const moveset = pk.movesetRows();
-        const s = {
-          kind: m.kind, ids: [], fired: [], illegal: 0, plans: 0,
-          blocked: 0, blockedIds: null, steps: 0, modes: {},
-          window: [+win[0].toFixed(2), +win[1].toFixed(2)], arrange,
-          bandRows: prof.ids, moveset,
-          bar: Math.max(2, Math.min(3, pk.movesetSize())),
-        };
-        st.set(m, s);
-        s.probe = tickProbe(m, {
-          pre: () => {
-            // target dummy: she holds the ground, stays alive, stays seen
-            p.position.set(px, py, pz);
-            p.velocity.set(0, 0, 0);
-            p.health = p.maxHealth;
-            m.suspicion = 1; m._unseenT = 0; m.lastKnown.copy(p.position);
-            if (m.state !== 'attack' && !m._attack) m.setState('attack');
-          },
-          each: () => {
-            const w = m.ai.engage._ringWindow();
-            const pk2 = m.ai.picker;
-            const plan = pk2.ringPlan(w[0], w[1]);
-            // sampled, not asserted: true by construction (see the header)
-            if (plan) { s.plans++; if (!plan.legal) s.illegal++; }
-            // ASSERTED: a row inside the band the ring window cannot set up.
-            // Read straight off the picker so a step where everything is on
-            // cooldown (ringPlan === null) is still measured.
-            s.steps++;
-            if (pk2.bandBlocked(w[0], w[1]) > 0) {
-              s.blocked++;
-              if (!s.blockedIds) s.blockedIds = pk2.bandUnreachable(w[0], w[1]);
-            }
-            s.modes[m.ai.engage.mode] = (s.modes[m.ai.engage.mode] || 0) + 1;
-          },
-        });
-      });
-
-      const onAtk = (e) => {
-        const s = st.get(e.machine);
-        if (!s || s.probe.sim >= DUR) return;
-        if (!e.machine.ai.picker.rows.some((row) => row.id === e.kind)) return;  // flourish, not a move
-        s.ids.push(e.kind);
-        if (s.fired.length < 16) {
-          s.fired.push(e.kind + '@' + Math.hypot(e.machine.position.x - px, e.machine.position.z - pz).toFixed(1) + 'm');
-        }
-      };
-      ctx.events.on('machine-attack', onAtk);
-      let ran = 0;
+      const report = {}, fails = [], starved = [];
+      let prevRng = null, prevStep = ctx.engine.stepMode, replay = null;
       try {
+        // SEEDED for the length of the measurement (see the header). The real
+        // dice go back in the finally, whatever happens in between.
+        prevRng = ctx.machines.setAiRng(ctx.machines.seededRng(SEED));
+        // ...and WHOLE 1/60 s steps, so the same seed steps the same fight.
+        // The dice alone do not buy that (judge-machine-ai-r2-r1 §2).
+        ctx.engine.stepMode = 'fixed';
         ctx.engine.requestTimeScale?.('gate-a41c', ACCEL);
-        const w0 = performance.now();
-        const minSim = () => { let n = Infinity; for (const s of st.values()) if (s.probe.sim < n) n = s.probe.sim; return n; };
-        while (minSim() < DUR && performance.now() - w0 < WALL) {
-          await new Promise(r => setTimeout(r, 40));
+        for (let i = 0; i < picks.length; i++) {
+          const m = picks[i];
+          freezeAll([m]);
+          if (m._frozenByGate) { m.update = m._frozenByGate; m._frozenByGate = null; }
+          // the HARDEST fair arc of this machine's own ground, measured with
+          // its own sightline over the whole ring (judge §3), not arc 0.7+i
+          const ground = hardBearing(m);
+          const s = await soloDuel(m, { dur: DUR, wall: EACH_WALL, bearing: ground.bearing });
+          report[s.kind] = {
+            stagedBearing: ground.bearing, ringOccludedFrac: ground.occ,
+            occlusionByBearing: ground.profile, fairBearings: ground.fairPool,
+            blindGiveUps: s.blindGiveUps, blindRingsAtEnd: s.blindAtEnd,
+            blindFootworkFrac: +(s.blindS / Math.max(0.01, s.probe.sim)).toFixed(2),
+            simSeconds: +s.probe.sim.toFixed(1), simSteps: s.probe.steps,
+            attacks: s.ids.length, distinct: s.distinct,
+            distinctCount: s.distinct.length, bar: s.bar,
+            movesetInTable: s.moveset, bandRowsInTable: s.bandRows,
+            arrangeableFromRing: s.arrange, ringWindowM: s.window,
+            blockedSteps: s.blocked, blockedRows: s.blockedIds, stepsSampled: s.steps,
+            illegalRingPlans: s.illegal, ringPlansSampled: s.plans,
+            gaveUpOnAtEnd: s.gaveUpOnAtEnd,
+            noSightlineFrac: +(s.unseen / Math.max(0.01, s.probe.sim)).toFixed(2),
+            heldReachM: s.held.reach, heldBins: s.held.bins,
+            travelM: +s.probe.travel.toFixed(1), firedAt: s.fired, modes: s.modes,
+            playerAt: s.playerAt, moveSequence: s.seq, endPose: s.endPose,
+          };
+          if (s.probe.sim < DUR * 0.8) { starved.push(s.kind); continue; }
+          if (s.blocked > 0) {
+            fails.push(s.kind + ': ' + JSON.stringify(s.blockedIds) + ' reach into band '
+              + JSON.stringify(m.ai.engage.cfg.band) + ' but not into ring window '
+              + JSON.stringify(s.window) + ' — unarrangeable on ' + s.blocked + ' of '
+              + s.steps + ' sim steps, so it can want that move for ever and never fire it (livelock)');
+          }
+          if (s.illegal > 0) {
+            fails.push(s.kind + ': ' + s.illegal + ' of ' + s.plans
+              + ' ring plans set up a move the ring cannot fire from — ringPlan().legal is'
+              + ' true by construction, so this means the construction itself broke');
+          }
+          if (s.distinct.length < s.bar) {
+            fails.push(s.kind + ': only ' + s.distinct.length + ' distinct move('
+              + s.distinct.join(', ') + ') in ' + s.probe.sim.toFixed(1) + ' sim s — the TABLE holds '
+              + s.moveset.length + ' non-rear row(s) ' + JSON.stringify(s.moveset)
+              + ', so the bar is ' + s.bar + '. Of those, ' + JSON.stringify(s.bandRows)
+              + ' reach into band ' + JSON.stringify(m.ai.engage.cfg.band) + ' and '
+              + JSON.stringify(s.arrange) + ' are arrangeable from ring window '
+              + JSON.stringify(s.window) + '. It actually HELD ' + JSON.stringify(s.held.bins)
+              + ' (reach ' + s.held.reach + ' m) — a row missing from those lists, or a row whose '
+              + 'radii the footwork never stood at, is a move the standoff can no longer show, '
+              + 'which is the defect, not a reason to ask for less');
+          }
         }
-        ran = minSim();
+        /**
+         * WHAT THE SEED ACTUALLY BUYS, MEASURED (judge-machine-ai-r2-r1 §2).
+         * The first species is duelled a second time from the same seed, the
+         * same pose and the same bearing. REPORTED, not asserted: the claim
+         * this gate makes about repeatability should be a reading, not a
+         * promise, and a single machine's replay cannot speak for the suite.
+         */
+        const m0 = picks[0];
+        freezeAll([m0]);
+        if (m0._frozenByGate) { m0.update = m0._frozenByGate; m0._frozenByGate = null; }
+        ctx.machines.setAiRng(ctx.machines.seededRng(SEED));
+        const g0 = hardBearing(m0);
+        const again = await soloDuel(m0, { dur: DUR, wall: EACH_WALL, bearing: g0.bearing });
+        const first = report[m0.kind] || {};
+        replay = {
+          kind: m0.kind, seed: SEED, stepMode: 'fixed',
+          sameMoveSequence: again.seq === (first.moveSequence || ''),
+          samePose: JSON.stringify(again.endPose) === JSON.stringify(first.endPose || null),
+          run1: first.moveSequence, run2: again.seq,
+          pose1: first.endPose, pose2: again.endPose,
+          simSteps: [first.simSteps, again.probe.steps],
+        };
       } finally {
         ctx.engine.requestTimeScale?.('gate-a41c', null);
-        ctx.events.off?.('machine-attack', onAtk);
-        for (const [m, s] of st) { s.probe.stop(); m.territory = m._gateTerritory; }
+        ctx.machines.setAiRng(prevRng || null);
+        ctx.engine.stepMode = prevStep;
+        for (const m of picks) { m.territory = m._gateTerritory ?? m.territory; }
       }
 
-      const report = {}, fails = [];
-      for (const [m, s] of st) {
-        const distinct = [...new Set(s.ids)];
-        const pk = m.ai.picker;
-        report[s.kind] = {
-          simSeconds: +s.probe.sim.toFixed(1), simSteps: s.probe.steps,
-          attacks: s.ids.length, distinct, distinctCount: distinct.length, bar: s.bar,
-          movesetInTable: s.moveset,
-          bandRowsInTable: s.bandRows, arrangeableFromRing: s.arrange,
-          ringWindowM: s.window,
-          blockedSteps: s.blocked, blockedRows: s.blockedIds, stepsSampled: s.steps,
-          illegalRingPlans: s.illegal, ringPlansSampled: s.plans,
-          gaveUpOnAtEnd: [...pk.stalled.keys()],
-          travelM: +s.probe.travel.toFixed(1), firedAt: s.fired, modes: s.modes,
-        };
-        if (s.probe.sim < DUR * 0.8) continue;      // starved: not evidence either way
-        if (s.blocked > 0) {
-          fails.push(s.kind + ': ' + JSON.stringify(s.blockedIds) + ' reach into band '
-            + JSON.stringify(m.ai.engage.cfg.band) + ' but not into ring window '
-            + JSON.stringify(s.window) + ' — unarrangeable on ' + s.blocked + ' of '
-            + s.steps + ' sim steps, so it can want that move for ever and never fire it (livelock)');
-        }
-        if (s.illegal > 0) {
-          fails.push(s.kind + ': ' + s.illegal + ' of ' + s.plans
-            + ' ring plans set up a move the ring cannot fire from — ringPlan().legal is'
-            + ' true by construction, so this means the construction itself broke');
-        }
-        if (distinct.length < s.bar) {
-          fails.push(s.kind + ': only ' + distinct.length + ' distinct move('
-            + distinct.join(', ') + ') in ' + s.probe.sim.toFixed(1) + ' sim s — the TABLE holds '
-            + s.moveset.length + ' non-rear row(s) ' + JSON.stringify(s.moveset)
-            + ', so the bar is ' + s.bar + '. Of those, ' + JSON.stringify(s.bandRows)
-            + ' reach into band ' + JSON.stringify(m.ai.engage.cfg.band) + ' and '
-            + JSON.stringify(s.arrange) + ' are arrangeable from ring window '
-            + JSON.stringify(s.window) + ' — a row missing from those two lists is a move '
-            + 'the standoff can no longer show, which is the defect, not a reason to ask for less');
-        }
-      }
       const detail = {
-        species: picks.length, simSecondsEach: +ran.toFixed(1), timeScaleAsked: ACCEL,
-        failures: fails, report,
-        note: 'all species duel a pinned player at once for 30 SIM seconds, each on its own bearing at its own band centre; sampled once per sim step inside each machine.update(). Only ids that are rows in that machine own table count as moves (machine-attack also carries footfall/screech flourishes). Bar = 2 distinct, or 3 once the species TABLE holds 3+ non-rear rows at all (picker.movesetSize()) — read from the table and from nothing the footwork can move, since BOTH the ring window (revision 1) and the engage band (revision 2) fall by one at the instant a regression pushes a row out of the fight, letting the gate lower its own bar. Verified by injection: a Strider band floor raised to 4.95 m drops front-kick out of the standoff with blocked 0 and the band-derived bar falling 3->2; the moveset bar holds at 3 and fails it. ASSERTED per step: picker.bandBlocked(ringWindow) === 0, i.e. every row that reaches into the band is arrangeable from a radius the footwork can hold; a row inside the band but outside the window is the livelock (a kick capped at 4.4 m against a 4.5 m ring floor). ringPlan().legal is sampled but NOT the bar: it is true by construction.',
+        species: picks.length, simSecondsEach: DUR, timeScaleAsked: ACCEL, rngSeed: SEED,
+        starved, failures: fails, replay, report,
+        note: 'one species at a time, each staged ON ITS OWN GROUND (the player walks to that machine own band centre; everything else is frozen) for 30 SIM seconds, sampled once per sim step inside machine.update(). r2 staged all eight around picks[0], i.e. on the Behemoth ground, which is exactly the variable the judge second finding isolated — a Scrapper that never fires its laser at home fires it twice in the open meadow. The lane dice (Engage, AttackPicker._score, tables.span, Perception tick phase) are SEEDED through machines.setAiRng for the measurement and restored afterwards. A seed alone does NOT make the verdict repeatable and this gate no longer claims it does (judge-machine-ai-r2-r1 measured PASS/FAIL/FAIL/PASS/PASS/FAIL at one fixed seed): it also runs on whole 1/60 s steps (engine.stepMode fixed), ends each duel on a step count rather than on the 40 ms poll, and restores the machine spawn pose and fight state first. What those four together buy is measured and printed in replay:, where the first species is duelled twice. Only ids that are rows in that machine own table count as moves (machine-attack also carries footfall/screech flourishes). Bar = 2 distinct, or 3 once the species TABLE holds 3+ non-rear rows at all (picker.movesetSize()) — read from the table and from nothing the footwork can move, since BOTH the ring window (revision 1) and the engage band (revision 2) fall by one at the instant a regression pushes a row out of the fight, letting the gate lower its own bar. Verified by injection: a Strider band floor raised to 4.95 m drops front-kick out of the standoff with blocked 0 and the band-derived bar falling 3->2; the moveset bar holds at 3 and fails it. ASSERTED per step: picker.bandBlocked(ringWindow) === 0. ringPlan().legal is sampled but NOT the bar: it is true by construction. heldBins / heldReachM are the MEASURED radii (Engage.heldProfile) — A41d-held-radius-coverage asserts against them. _unseenT is pinned to 0 every step, but the blind-footwork bound is no longer that field: Engage owns _blindT, cleared only by a frame on which the machine can genuinely fight her, so ENGAGE.beliefHold is bounded here exactly as it is in play. Staging is hardBearing(m) — the worst arc of this machine own ground that it can still fight on, measured with the machine own hasLOS over the whole standoff ring; occlusionByBearing prints the whole sweep and ringOccludedFrac the arc that was chosen.',
       };
-      if (ran < DUR * 0.8) {
-        return { pass: null, detail: { ...detail, why: 'PENDING: the page banked only '
-          + ran.toFixed(1) + ' of ' + DUR + ' sim seconds inside the ' + (WALL / 1000) + ' s wall cap' } };
+      if (starved.length) {
+        return { pass: null, detail: { ...detail, why: 'PENDING: ' + JSON.stringify(starved)
+          + ' banked under ' + (DUR * 0.8) + ' of ' + DUR + ' sim seconds inside the '
+          + (EACH_WALL / 1000) + ' s per-species wall cap' } };
+      }
+      return { pass: fails.length === 0, detail };
+    })()`,
+  },
+
+  /* ----------------------------------------------------------------- A41d */
+  /**
+   * THE BAND COVERED BY MEASURED RADII, NOT BY TABLE STRUCTURE
+   * (judge-machine-ai-r2 §2, "publish the held-radius histogram so a gate can
+   * assert coverage of the band by MEASURED radii").
+   *
+   * Everything this lane could previously assert about range was structural.
+   * `coverage()` asks whether a row EXISTS at a radius, `bandProfile()` asks
+   * how much of the band each row owns, `bandBlocked()` asks whether the ring
+   * window can ARRANGE a row. All three were green for a Scrapper whose
+   * `laser` (7-29 m, band [2.5, 10]) never fired once in a 40-second duel on
+   * its own ground: 7-10 m is legal, arrangeable and unblocked, and the
+   * footwork simply never stood there — a rock broke the sightline at 4 m,
+   * every blind frame went to `Engage.pursue`, and the pursuit sprinted the
+   * machine back to 1.3 m before it could reach laser range. Structure cannot
+   * see terrain. So this gate reads `Engage.heldProfile()`, the decayed
+   * dt-weighted histogram of the radii the machine ACTUALLY held.
+   *
+   * THE BAR, per species, over the rows it OWES a standoff (non-rear, part
+   * attached, not disabled, and with a non-empty shell inside both the engage
+   * band and the ring window — a Watcher 3.1 m peck against a 4.6 m band floor
+   * is not owed): each such row either FIRED during the duel, or the footwork
+   * banked at least `MIN_HELD` decayed seconds inside that row's own shell.
+   * A row that did neither is a move the species carries and can never take on
+   * this ground, which is the defect the judge reproduced by hand.
+   *
+   * It is deliberately UNCAPPED, which is what makes it more than a second
+   * A41c: A41c's variety bar stops at 3, so a Thunderjaw or a Sawtooth could
+   * silently retire its fourth and fifth moves. Here every owed row answers.
+   *
+   * AND THE OTHER HALF (FIX ROUND 4, judge-machine-ai-r2-r1 §3). "FIRES or was
+   * stood in" passes the exact residual defect: the judge's failing Scrapper
+   * duels banked 4.16-4.70 s inside the laser shell and never fired, and this
+   * predicate returned true on 5 of those 6 samples. So a row that is
+   * measurably HELD for `MUST_FIRE` seconds and still never fires is now its
+   * own FAIL — excused only when a move that DID fire shares those radii,
+   * since choosing between two moves that live at the same distance is a
+   * choice and not a livelock. Both halves are staged on the hardest arc
+   * `hardBearing(m)` can find: the round-3 arcs measured 0.00-0.02 blocked,
+   * so neither half could see terrain at all.
+   */
+  {
+    id: 'A41d-held-radius-coverage', kind: 'action', lane: 'machine-ai',
+    title: 'Every species, hardest arc of its own ground: every owed move either FIRES or is a radius the footwork never stood at — and nothing is held 3 s and never thrown',
+    setup: `(async () => { ${INPUT_ON} ${WAIT_VARIETY} })()`,
+    settle: 600, timeout: 420000,
+    assert: `(async () => {
+      ${FREEZE} ${PLACE} ${TICKPROBE} ${HARDGROUND} ${SOLO}
+      const ctx = __CTX__;
+      /**
+       * MIN_HELD is the floor of the first half of the bar ("it never even
+       * goes there"). MUST_FIRE is the second half, added in FIX ROUND 4
+       * (judge-machine-ai-r2-r1 §3): the judge's failing Scrapper duels held
+       * 4.16-4.70 s inside the laser shell and never fired, and the old
+       * predicate returned PASS on 5 of those 6 samples — "FIRES or was stood
+       * in" is satisfied by exactly the defect the round is about. A row the
+       * footwork stands in for MUST_FIRE seconds and never throws is now a
+       * FAIL in its own right, unless a move that DID fire shares those radii
+       * (a Thunderjaw that stands at 20 m and picks its cannon over its disc
+       * launcher is choosing, not livelocked).
+       */
+      const DUR = 22, EACH_WALL = 40000, ACCEL = 3, SEED = 0x41D0;
+      const MIN_HELD = 0.75, MUST_FIRE = 3.0;
+      const picks = speciesPicks();
+      if (picks.length < 2) return { pass: null, detail: 'SKIP: fewer than two species alive' };
+
+      const report = {}, fails = [], starved = [];
+      let prevRng = null, prevStep = ctx.engine.stepMode;
+      try {
+        prevRng = ctx.machines.setAiRng(ctx.machines.seededRng(SEED));
+        ctx.engine.stepMode = 'fixed';
+        ctx.engine.requestTimeScale?.('gate-a41d', ACCEL);
+        for (let i = 0; i < picks.length; i++) {
+          const m = picks[i];
+          freezeAll([m]);
+          if (m._frozenByGate) { m.update = m._frozenByGate; m._frozenByGate = null; }
+          const owed = owedRows(m);
+          const ground = hardBearing(m);
+          const s = await soloDuel(m, { dur: DUR, wall: EACH_WALL, bearing: ground.bearing });
+          const rows = owed.map((row) => {
+            const held = +m.ai.engage.heldAt(row.lo, row.hi).toFixed(2);
+            return { id: row.id, shell: [row.lo, row.hi], fired: s.distinct.includes(row.id), heldS: held };
+          });
+          // a row that DID fire excuses the radii it shares (see MUST_FIRE)
+          const firedShells = s.distinct
+            .map((id) => m.ai.picker.rowById.get(id)).filter(Boolean)
+            .map((row) => [row.min, row.max]);
+          const sharedWithFired = (lo, hi) => firedShells.some((f) => f[1] > lo && f[0] < hi);
+          const mute = rows.filter((row) => !row.fired && row.heldS >= MUST_FIRE
+            && !sharedWithFired(row.shell[0], row.shell[1]));
+          report[s.kind] = {
+            stagedBearing: ground.bearing, ringOccludedFrac: ground.occ,
+            occlusionByBearing: ground.profile, fairBearings: ground.fairPool,
+            blindGiveUps: s.blindGiveUps, blindRingsAtEnd: s.blindAtEnd,
+            blindFootworkFrac: +(s.blindS / Math.max(0.01, s.probe.sim)).toFixed(2),
+            simSeconds: +s.probe.sim.toFixed(1), band: m.ai.engage.cfg.band,
+            ringWindowM: s.window, heldReachM: s.held.reach, heldStepM: s.held.step,
+            heldBins: s.held.bins, owed: rows, distinct: s.distinct, firedAt: s.fired,
+            heldButSilent: mute.map((d) => d.id),
+            noSightlineFrac: +(s.unseen / Math.max(0.01, s.probe.sim)).toFixed(2),
+            gaveUpOnAtEnd: s.gaveUpOnAtEnd,
+          };
+          if (s.probe.sim < DUR * 0.8) { starved.push(s.kind); continue; }
+          if (mute.length) {
+            fails.push(s.kind + ': ' + JSON.stringify(mute.map((d) => d.id))
+              + ' STOOD IN RANGE AND NEVER FIRED — '
+              + mute.map((d) => d.id + ' held ' + d.heldS + ' s inside '
+                + d.shell[0] + '-' + d.shell[1] + ' m').join('; ')
+              + ' (bar ' + MUST_FIRE + ' s), and no move that did fire '
+              + JSON.stringify(s.distinct) + ' shares those radii. Standing inside a '
+              + 'move range for seconds on end without throwing it is the residual '
+              + 'half of the terrain livelock: the footwork reached the radius and the '
+              + 'machine still could not take the shot from there');
+          }
+          const dead = rows.filter((row) => !row.fired && row.heldS < MIN_HELD);
+          if (dead.length) {
+            fails.push(s.kind + ': ' + JSON.stringify(dead.map((d) => d.id))
+              + ' never fired AND the footwork never stood in their range — '
+              + dead.map((d) => d.id + ' needs ' + d.shell[0] + '-' + d.shell[1] + ' m, held '
+                + d.heldS + ' s').join('; ')
+              + '. Reach was ' + s.held.reach + ' m over band '
+              + JSON.stringify(m.ai.engage.cfg.band) + '; measured occupancy '
+              + JSON.stringify(s.held.bins) + '. A move that is legal, arrangeable and '
+              + 'unblocked but stands at a radius this ground will not give is the '
+              + 'terrain-shaped half of the livelock, and only a MEASURED reading can see it');
+          }
+        }
+      } finally {
+        ctx.engine.requestTimeScale?.('gate-a41d', null);
+        ctx.machines.setAiRng(prevRng || null);
+        ctx.engine.stepMode = prevStep;
+        for (const m of picks) { m.territory = m._gateTerritory ?? m.territory; }
+      }
+
+      const detail = {
+        species: picks.length, simSecondsEach: DUR, minHeldSeconds: MIN_HELD,
+        mustFireSeconds: MUST_FIRE, rngSeed: SEED, starved, failures: fails, report,
+        note: 'one species at a time, staged on its own ground exactly as A41c stages it, with the lane dice seeded and restored. heldS is Engage.heldAt(lo, hi): decayed, dt-weighted SECONDS the machine actually stood inside that row own shell (band AND ring window clipped), sampled once per sim step inside Engage.update. The histogram half-life is ENGAGE.heldHalfLife, so continuous occupancy saturates near 13 s and the reading is recent occupancy, not a total. heldStepM is the bucket grain (band outer edge x 1.5 over 32 buckets); heldAt counts every bucket that OVERLAPS a shell, so a shell narrower than one bucket reads generously by up to a bucket either side — this is a floor bar about whether the machine ever goes near a radius, not a metre-accurate one. A row passes by FIRING or by being stood for; failing both is a move the species owns and this ground will not let it take. The mirror bar, mustFireSeconds: a row HELD that long which never fires, with no move that did fire sharing its radii, fails too — that is the shape the judge reproduced by hand and the round-3 predicate passed on 5 of 6 samples. Staging is hardBearing(m): the worst arc of this machine own ground that it can still fight on, on whole 1/60 s steps from the machine own spawn pose.',
+      };
+      if (starved.length) {
+        return { pass: null, detail: { ...detail, why: 'PENDING: ' + JSON.stringify(starved)
+          + ' banked under ' + (DUR * 0.8) + ' of ' + DUR + ' sim seconds inside the '
+          + (EACH_WALL / 1000) + ' s per-species wall cap' } };
       }
       return { pass: fails.length === 0, detail };
     })()`,

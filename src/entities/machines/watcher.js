@@ -6,7 +6,7 @@ import { attachRigRuntime, updateRigLOD, foldMachineMeshes } from './rig/lod.js'
 import { snapSockets } from './rig/sockets.js';
 import { FootLock } from './rig/footlock.js';
 import { groundCorpse } from './rig/ground.js';
-import { cadenceBand, measureBodyLength, wallPerSim } from './gait.js';
+import { cadenceBand, measureBodyLength, wallPerSim, CadenceLoop, cadCeilK } from './gait.js';
 
 /**
  * Watcher: rigged raptor scout (HZD level 5, HP 90). Fully procedural bone
@@ -477,12 +477,33 @@ export class Watcher extends Machine {
     // be running at half of that.
     const wps = wallPerSim(this.ctx?.engine);
     let rate = speed / stride;
+    let wantWallHz = 0;
     if (speed > 0.008 || engaged) {
       rate = THREE.MathUtils.clamp(rate,
         Math.max(band.floor, engaged ? hz * 0.85 : 0) * wps,
         Math.max(band.ceil, band.floor * 1.15) * wps);
+      wantWallHz = rate / Math.max(wps, 1e-3);
     } else {
       rate = Math.max(rate, hz * 0.15 * wps);
+    }
+    // CLOSED-LOOP TRIM (gate A48, fix round 4) — the same controller
+    // `GaitController` runs, over the same quantity the gate measures:
+    // footfalls per WALL second, counted off the foot lock's own plants. It
+    // absorbs `wallPerSim`'s estimation error, the contact ledger's deferred
+    // re-plants and this species' height-gated plant, none of which the
+    // feed-forward correction above can see. See gait.js `CadenceLoop`.
+    const loop = this._cadLoop || (this._cadLoop = new CadenceLoop());
+    const lls = this.footLock?.legs || [];
+    // the PUBLISHED plant count (rig/contact.js `latch`) — the same number a
+    // consumer counts, not the rig's private touchdown tally
+    const plants = this.footLock?.ledger?.observedPlants || 0;
+    const trim = loop.step(this.ctx?.engine, wantWallHz, plants, lls.length || 2, dt);
+    // the loop may move the cadence, not move it OUT of the band — see the
+    // note on the same clamp in gait.js (an integrator on a published rate
+    // has a runaway branch above the frame rate)
+    if (wantWallHz > 0) {
+      rate = THREE.MathUtils.clamp(rate * trim,
+        band.lo * 1.12 * wps, band.hi * 0.88 * wps * cadCeilK(loop));
     }
     this._cadence = rate;
     this._gait += dt * Math.PI * 2 * rate;

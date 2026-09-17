@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { attackTable, SCORING } from './tables.js';
+import { aiRandom } from './rng.js';
 
 /**
  * Scored attack selection — `machine-ai-08` ("fixed attack ladder"),
@@ -386,6 +387,15 @@ export class AttackPicker {
      * wins the descent, which is exactly how it un-stalls itself.
      */
     this.stalled = new Map();
+    /**
+     * Moves whose RING the machine could not see from, and the seconds of
+     * hold left (`SCORING.blindHold`). Written only by
+     * `Engage._giveUpBlind` through `noteBlindRing`. A soft, short
+     * de-prioritisation of the ARRANGEMENT — never of the move: see
+     * `_bestArrangeable`, which falls back to this set when it is the only
+     * thing left, and `pick()`, which clears the entry the moment it fires.
+     */
+    this.blind = new Map();
     this._arrangedId = null;    // what the ring is currently set up for
     this._arrangedT = 0;        // ...and for how many seconds
     this.rowById = new Map();   // id -> row, so lookups allocate nothing
@@ -408,6 +418,10 @@ export class AttackPicker {
       const n = v - dt;
       if (n <= 0) this.stalled.delete(k); else this.stalled.set(k, n);
     }
+    for (const [k, v] of this.blind) {
+      const n = v - dt;
+      if (n <= 0) this.blind.delete(k); else this.blind.set(k, n);
+    }
     if (this._arrangedId) {
       this._arrangedT += dt;
       if (this._arrangedT >= SCORING.arrangeGiveUp) {
@@ -428,6 +442,25 @@ export class AttackPicker {
     this._arrangedId = id || null;
     this._arrangedT = 0;
   }
+
+  /** PUBLISHED: the move the standoff ring is currently set up for, or null. */
+  get arrangedId() { return this._arrangedId; }
+
+  /**
+   * `Engage` reporting that it swept a whole blind hold at the ring it was
+   * holding for `id` and never recovered the sightline — see
+   * `SCORING.blindHold` and `Engage._giveUpBlind`. `ring` is the radius it
+   * failed at, kept for the HUD and the gate report.
+   */
+  noteBlindRing(id, ring = null) {
+    if (!id) return;
+    this.blind.set(id, SCORING.blindHold);
+    this._blindRingAt = ring;
+    if (this._arrangedId === id) { this._arrangedId = null; this._arrangedT = 0; }
+  }
+
+  /** PUBLISHED (gates + HUD): `[[id, secondsLeft], ...]`. ALLOCATES. */
+  blindRings() { return [...this.blind.entries()].map(([k, v]) => [k, +v.toFixed(2)]); }
 
   _playerBehind() {
     const p = this.m.ctx.player;
@@ -461,7 +494,7 @@ export class AttackPicker {
     const mid = (row.min + row.max) * 0.5;
     const spread = Math.max(1, (row.max - row.min) * 0.5);
     s *= 1 + SCORING.bandBonus * (1 - Math.min(1, Math.abs(dist - mid) / spread));
-    s *= 1 + (Math.random() - 0.5) * 2 * SCORING.randomness;
+    s *= 1 + (aiRandom() - 0.5) * 2 * SCORING.randomness;
     // ...and the hard tier LAST, past the jitter: an unused legal move always
     // outranks a used one, so a fight shows the whole moveset deterministically
     if (!this.used.has(row.id)) s += SCORING.freshTier;
@@ -570,8 +603,10 @@ export class AttackPicker {
     this.streak = this.lastId === id ? this.streak + 1 : 0;
     this.lastId = id;
     this.used.add(id);
-    // a move that fires has kept its promise: it is not holding the ring
+    // a move that fires has kept its promise: it is not holding the ring, and
+    // whatever the ground did to its sightline a moment ago, it just worked
     this.stalled.delete(id);
+    this.blind.delete(id);
     if (this._arrangedId === id) { this._arrangedId = null; this._arrangedT = 0; }
     return best;
   }
@@ -857,8 +892,19 @@ export class AttackPicker {
    * move it walked there for can never disagree.
    */
   _bestArrangeable(lo = null, hi = null) {
+    const best = this._bestArrangeablePass(lo, hi, true);
+    // FALLBACK (judge-machine-ai-r2-r1 §1). `blind` is a hint, not a veto: if
+    // the only rows this window can set up are ones the machine just failed to
+    // see from, it still arranges for the best of them rather than standing
+    // there with no plan at all. The hint expires in `SCORING.blindHold`.
+    return best || this._bestArrangeablePass(lo, hi, false);
+  }
+
+  /** One pass of `_bestArrangeable`; `skipBlind` honours the blind hint. */
+  _bestArrangeablePass(lo, hi, skipBlind) {
     let best = null, bs = -1;
     for (const row of this.rows) {
+      if (skipBlind && this.blind.has(row.id)) continue;
       if (!this._arrangeable(row, lo, hi)) continue;
       let s = row.score;
       if (this.lastId === row.id) s *= SCORING.repeatPenalty;

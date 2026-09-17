@@ -1324,7 +1324,42 @@ export class Machine {
     }
 
     if (engaged) {
+      this.ai.engage.noteSeen();
       this.ai.engage.update(dt, p.position.x, p.position.z);
+    } else if (this.ai.engage.noteBlind(dt)) {
+      /**
+       * A LOST SIGHTLINE IS NOT A LOST FIGHT (FIX ROUND 3,
+       * judge-machine-ai-r2 §2).
+       *
+       * `pursue` is LONG-HAUL travel — straight at the remembered point at
+       * 0.9 x runSpeed, no band, no ring, no orbit — and every frame with no
+       * line of sight used to go to it, however close she was. On open ground
+       * that is invisible. On a Scrapper's own ground it is the whole fight:
+       * 59 of 215 perception ticks in a solo duel had `collision.occluded`
+       * true (31 of the 41 ticks at the 4 m mark — one rock), so each time the
+       * machine backed out toward the 7-29 m `laser` it lost her behind that
+       * rock, sprinted back to 1.3 m, re-acquired, and started the standoff
+       * over. Its laser never fired on that ground and fired freely in the
+       * open meadow, which is what pinned the cause to the ground rather than
+       * to the table.
+       *
+       * So while the belief is fresh AND still at standoff range, keep working
+       * the BAND against it: the machine strafes for a clear line instead of
+       * charging the boulder. It still aims at `lastKnown` and never at the
+       * live player, and it still cannot attack (selection below needs
+       * `engaged`).
+       *
+       * BOUNDED BY ENGAGE'S OWN CLOCK (FIX ROUND 4, judge-machine-ai-r2-r1
+       * §1). Round 3 bounded this with `_unseenT`, which every duel gate in
+       * the lane pins to 0 — so under the lane's own staging the blind orbit
+       * never expired and the machine could sweep for ever. `noteBlind(dt)`
+       * advances `Engage._blindT`, which only `noteSeen()` (above, and only on
+       * a frame the machine can genuinely fight her) clears, runs the
+       * "I cannot see from here" give-up when it matures, and answers whether
+       * the band still owns the frame. Past `beliefHold` it says no and the
+       * pursuit below takes over; past `_unseenT > 4.5` the fight is a search.
+       */
+      this.ai.engage.update(dt, this.lastKnown.x, this.lastKnown.z);
     } else {
       // it knows roughly where she was; it does not know where she IS
       this.ai.engage.pursue(dt, this.lastKnown.x, this.lastKnown.z, this.runSpeed * 0.9);

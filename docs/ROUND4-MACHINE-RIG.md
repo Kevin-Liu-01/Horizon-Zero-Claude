@@ -254,10 +254,105 @@ at 10 fps the simulation advances at half wall speed. So the band is converted
 into sim time before it clamps anything:
 
 ```js
-import { wallPerSim, cadenceTarget } from './gait.js';
+import { wallPerSim, cadenceTarget, CadenceLoop } from './gait.js';
 wallPerSim(ctx.engine)              // wall seconds per UNSCALED sim second, 1 .. 25
 cadenceTarget(band, runK, ctx.engine) // cycles per SIM second for that band
 ```
+
+### 5.0.1 `CadenceLoop` — the correction is CLOSED now (fix round 4)
+
+Judge finding, fix round 3: *"`A48-cadence` still FAILS — behemoth 1.61 Hz vs
+band `[0.5, 1.5]` in one run; strider 0.65 vs `[0.83, 2.49]` and longleg 0.40
+vs `[1.16, 3.48]` in another."* Both directions, different species each run,
+and green on an idle box — a load-sensitive gate.
+
+`wallPerSim` corrects ONE known loss, open-loop, from an estimate. The gate
+measures something else: footfalls per wall second actually delivered.
+Everything in between is unmodelled, and under load it is large — measured on
+5207:
+
+* the EMA lags a host whose load changes inside the gate's own 5 s window, in
+  both directions (a behemoth at 1.61 Hz is the correction reading ~1.8x on a
+  host that was keeping up);
+* `ContactLedger` defers a re-plant until the release has been drawn, which is
+  a fixed penalty in WALL time — at 10 fps up to 0.2 s of extra swing per step;
+* the gait's reach guard ends a stance early, spending a cycle faster than the
+  phase rate asked for;
+* a reported stance shorter than a drawn frame is never observed at all
+  (strider: 13 plants on one foot in 6 s, 7 of them visible to a consumer
+  sampling every frame).
+
+So the controller counts the footfalls it PUBLISHES against the ones its band
+placement asked for and carries the difference as debt, in cycles:
+
+```js
+debt += targetWallHz * dtWall * timeScale - publishedPlants / legs   // clamped +/-0.75
+phaseRate = clamp(bandPlacement * wallPerSim * (1 + debt * 0.9),
+                  bandLo * 1.12 * wps, bandHi * 0.88 * wps);
+```
+
+An integral controller on footfall RATE, closed over exactly the quantity the
+gate reads. `GaitController`, `watcher.js` and `longleg.js` all run the same
+`CadenceLoop`; the published count comes from `ContactLedger.observedPlants`
+(`rig/contact.js`), which samples the rig's own honest contact once per drawn
+frame — the rate a consumer samples at — rather than the rig's private
+touchdown tally, which over-counts stances nobody can see.
+
+Two guards, both load-bearing:
+
+* **the band clamp.** Above a certain cadence a faster stride publishes FEWER
+  footfalls, so an unguarded integrator has a runaway branch. The band the
+  body length dictates bounds the output at both ends with 12 % of margin
+  inside each edge; saturating there is the loop saying "the rest of this loss
+  is not cadence", and it shows up as `CadenceLoop.debt` pinned at its clamp.
+* **bullet time is not a loss.** `engine.timeScale` scales the reference clock,
+  so a machine in Concentration is expected to step at a quarter rate in wall
+  time and accrues no debt for it.
+
+**What was tried and REVERTED** (the measurement is the useful part): making
+every plant observable by holding it open for one drawn frame — a `canRelease`
+mirror of `ContactLedger.canPlant`. It works, and it drags the foot to do it:
+`A45` went from 0.032 m of stance drift to **0.193 m** and `A46`'s ground error
+from 0.059 m to **0.198 m**, because a frame of extra stance at 10 m/s is half
+a metre of ground travelling under a locked foot. A held stance is a skate,
+which is a worse lie than a missed step. The loop slowing the cadence until the
+footfalls are visible is the version that costs nothing.
+
+**Two more losses, both in the REPORT rather than the command** (`FootLock`,
+the clip-driven Watcher and Longleg). `planted` is deliberately conservative on
+that rig — a plant counts only once the lock has actually taken the foot — and
+two of its terms were tuned for a slow stance:
+
+* the lock walked the latched point down onto live terrain at one rate (8, a
+  0.125 s time constant). A plant that opens 0.4 m up — `plantReach` lets it,
+  and has to, or a digitigrade chain near full extension never plants at all —
+  then needs about 0.3 s to come inside `groundTol`, and any stance shorter
+  than that is reported as nothing. It is 20 while the foot is still
+  travelling and 8 once it is standing, so `A45c`'s planted-toe budget and
+  `A46`'s ground error live entirely in the unchanged rate.
+* `holdRate` 5.5 → 7.5 m/s. `planted` is false until the handle ramp reaches
+  0.9, and `_rampStep` bounds that by `holdRate / corrM`, so a fast clip spends
+  most of a short stance ramping. Measured on a longleg: in contact on 39 % of
+  samples, reported `planted` on 28 %. `A45c` grades this exact number
+  (`lockRampMps`) against 9 m/s and read 5.5 — 1.6x of unused budget; 7.5 keeps
+  1.2x of it (measured after: `lockRampMps` 7.5, `worstPlantedFrameM` 0.014).
+
+**Measured after, and honestly.** On a quiet box: `A48` 0 offenders.
+`A45-no-skate-per-species` worst **0.005-0.011 m**, from 0.032 at baseline;
+`A46-ground-truth` worst 0.057-0.060 m; `A45b` 0 merged reports, worst 0.000 m;
+`A45c` 0 offenders. Under the full 185-gate suite running on the same box,
+`A48` is **1 pass / 2 fail of three runs, always the LONGLEG alone** (0.89 Hz
+against a 0.94 Hz floor on the worst), against the judge's fix-round-3
+measurement of three different species failing in both directions. Under
+*double* load — the full suite AND a second runner — it is 3 of 3 on the
+longleg, with the strider joining once.
+
+**So: improved and not fixed, and the residue is one species.** The longleg is
+the one machine whose footfalls ARE its clip rate with a conservative
+`planted` gate on top, and what is left is the ~20 % of its stance that is
+still not reported. §5.0's own "KNOWN REGRESSION" note has the history; the
+next pass belongs on that species' stance-window calibration, not on the
+cadence law, which is now closed-loop for all eight.
 
 **`wallPerSim` and slow motion — corrected, fix round 2 second pass.** The
 ratio used to be averaged over SCALED sim time and multiplied by a live
@@ -304,6 +399,49 @@ a stance in 0.16 s, and every consumer of `debugFeet()` samples once per
 rendered frame — at 10 fps a whole swing fell between two samples, two plants
 read as one, and gate `A45` measured a whole stride of "drift" (0.422 m against
 a 0.06 m budget). See §5.1.
+
+### 5.0.2 `cadCeilK` needs RATE evidence, not just debt (fix round 2)
+
+**Judge finding, blocker:** *"A48-cadence FAILS under realistic multi-suite
+load — a second species (thunderjaw) crosses out of band"*, measured at
+1.48 Hz against a `[0.40, 1.19]` band, and the same shape turned up on the
+sawtooth (2.23 against a 2.23 ceiling). Both are OVER the band, which is the
+one direction §5.0.1's conditional ceiling can cause: `debt` is an
+instantaneous quantity, it goes positive for a frame whenever a touchdown
+lands late, the ceiling opens — and on a host that then speeds up, the machine
+spends the credit delivering too FAST.
+
+Over-delivery is a RATE, so the credit now needs rate evidence too.
+`CadenceLoop` keeps `rateHz`, the delivered footfalls per wall second per
+foot, smoothed over ~1.5 s, and `cadCeilK()` grants the lift only while that
+rate is still below the set-point the band placed. A machine already meeting
+its own target gets the plain band ceiling however its debt happens to sit this
+frame. **Strictly tighter than the previous form in every state** — it can only
+ever return a smaller number — so nothing that passed can start failing
+through it.
+
+`A48` remains the lane's flakiest gate and the judge's request to characterise
+it is answered honestly: across six lane runs on identical code the offender
+was `sawtooth` (2.23 of 2.23), then none, then `longleg` (0.70 of a 0.97
+floor), then `strider` (2.84 and 3.03 of a 2.49 ceiling, both on runs where
+the gate's own `PROVOKE` had it sprinting 42-51 m in the 5 s window), then
+`scrapper` + `longleg` (0.90 against a 0.92 / 0.99 floor, the scrapper having
+moved 0.45 m). It is not one species: it is whichever machine the run happens
+to catch at the far end of its speed range, at both edges of the band, and the
+two edges want opposite corrections. The consistent one by the end of the
+round is the **strider at full flight speed** — 2.84 / 3.03 / 3.04 Hz against a
+2.49-2.55 ceiling, on runs where the gate's own `PROVOKE` had it covering
+42-52 m in the 5 s window. That is 36 % ABOVE the command's own ceiling
+(`bandHi x 0.88 x wallPerSim` = 2.24 wall-Hz), which no trim can cause: the
+extra transitions are the foot lock re-latching inside one stance at 10 m/s,
+i.e. the mirror image of the longleg's under-count and the same reporting
+problem in the other direction. Adding hysteresis to the published plant flag
+is the obvious fix and is the same lever §5.0.1 measured at `A45`
+0.032 -> 0.193 m; it is not being spent late in a round on three green gates
+(`A45`/`A45b`/`A45c`) to chase this one. The under-band half is a REPORTING loss
+(a stance that does not span a drawn frame is a touchdown the gate cannot
+count) and §5.0.1 records that the obvious fix for it — holding each plant one
+drawn frame — costs `A45` 0.032 → 0.193 m and is measured out.
 
 ### 5.0 A clip-driven species needs a STANCE AUTHORITY (`stancePhase`)
 
@@ -820,6 +958,186 @@ vertex colours. That is a `parts.js` rework, not an LOD tweak; it is out of
 scope for a residue round, and it is the lane's next `A21` lever and the only
 one left that costs no silhouette.
 
+### 6.2.3 The ACCENT FOLD — one draw per component (fix round 4)
+
+Judge finding, fix round 3: *"`A21-real-draw-calls` still FAILS after this
+round's fix — 382 draws vs 350."* And the next lever, which the round's own
+report named: *"fold each part factory's accent-emissive mesh into its base
+mesh (`parts.js`) — the only remaining lever that doesn't cost silhouette."*
+Taken.
+
+Every factory in `parts.js` returned at least TWO meshes: a metal body and a
+small emissive accent (a canister core, an antenna tip, a radar sweep strip, a
+cannon muzzle, a cargo seam). Same geometry budget, double the draw calls — and
+components are the one thing on a machine there are dozens of. They could not
+be merged because the two materials differ in exactly one respect a merge
+cannot express: one glows and one does not.
+
+`MeshStandardMaterial` has no per-vertex emissive. It has an `emissiveMap`, and
+`totalEmissiveRadiance *= texelEmissive.rgb`. So the mask is a **2x1 texture**
+(texel 0 black, texel 1 white) shared by every part on every machine, and each
+source geometry's UVs are stamped to the texel that decides whether it lights:
+
+```
+metal geometry  -> u 0.25 -> black texel -> no emission, ever
+accent geometry -> u 0.75 -> white texel -> the material's own emissive
+```
+
+None of these materials carried a map of any kind, so the UVs were free. Albedo
+still separates the two through vertex colours — the same channel `tintGeo`
+already used for plate under-frames — and `material.emissive` /
+`emissiveIntensity` keep doing exactly what they did, which means the
+eye-state system (`userData.sensor`) and `pulseGlow` drive the merged material
+unchanged and only the accent texels respond. Ten factories folded: canister,
+antenna, lens, force loader, radar fin, disc launcher, cannon, power cell,
+cargo, tail tip.
+
+Two glow SPRITES went with them — the force loader's (six per behemoth) and the
+disc launcher's (two per thunderjaw) — on the precedent this file already set
+for the canister and the power cell: *"no glow sprite: the pulsing emissive
+core + bloom carry the aim-marker read (draw-call budget)"*. The exposed-core
+sprite stays; it is the aim marker a tear reveals and there is one at a time.
+The cannon's `userData.muzzle` was a MESH that only ever had
+`getWorldPosition()` called on it, so it is an empty marker now and costs
+nothing.
+
+Measured on 5207 after: every component is **one mesh per part** and
+`partSprites` is **0** across the live world (behemoth 5 parts/5 meshes,
+sawtooth 14/14, thunderjaw 12 parts/13 meshes — the radar's mast cannot merge
+with its rotating fin).
+
+### 6.2.5 THE ACCENT FOLD WAS HIDING WHOLE COMPONENTS — fix round 2 (residue)
+
+**Judge finding, blocker:** *"Accent fold makes whole machine components
+invisible — Behemoth cargo drum, Thunderjaw cannons/launchers/tail/radar,
+every antenna and lens — and A21's draw-call pass is bought with the missing
+geometry."* It is correct, in full, and this section records the measurement
+because the conclusion it forces is uncomfortable.
+
+`rig/fx.js attachFxPool()` has always replaced a component's tiny **glow-only
+accent** with one pooled additive billboard — that is what an antenna tip or a
+radar sweep strip is, a coloured light rather than geometry — and its filter
+for "that is an accent" was *this part mesh's material has a bright
+`emissive`*. §6.2.3's fold then merged each component's metal body INTO the
+material that carries the accent colour, so from that filter's point of view a
+Thunderjaw cannon and a Behemoth cargo drum became accents too. Measured in
+the running world: **34 component meshes hidden** across the live cast
+(thunderjaw `cannon-r/l`, `disc-launcher-r/l`, `tail-tip`, `radar`; behemoth
+`cargo-hold`, `force-loader-r/l`; sawtooth `antenna-1/2/3`; watcher `antenna`;
+strider/longleg `lens`; scrapper `radar`), and the pooled halo sized from the
+MERGED bounding sphere, so a 0.18 m antenna tip read as a 0.90 m ball of light.
+
+**Fix.** `parts.js foldedPart()` stamps `material.userData.foldedAccent` and
+records the accent's own box on `mesh.userData.accentGlow`; `fx.js` keeps a
+folded component DRAWN and anchors a correctly sized halo (`keepVisible`, a
+component-local offset) on the accent instead of standing in for the whole
+part. The emissive-mask texels do the surface, as they always did. Verified on
+film at the judge's own angles — `shots/r2fix-tj-after-crop.png` against
+`shots/r2fix-tj-shipped-crop.png` (identical camera, folded parts force-hidden
+in the second): the disc launcher with its cyan vent and the tail-tip cluster
+are present in the first and absent in the second.
+
+**And the draw calls, honestly.** The judge's arithmetic is right and worse
+than stated: before the fold, a component's accent was *already* pooled away,
+so its visible cost was one draw (the metal body); after the fold it was one
+draw as well, or zero while the bug hid it. **The parts fold saved no real
+draws at all.** Measured on the A21 staged fight, applied ratio 1.5, 24 frames,
+`info.autoReset = false`:
+
+```
+shipped (34 components hidden)        351 max / 351 median
+components restored (this fix)        366 max / 366 median      (+15)
+```
+
+and the per-owner ledger of that 366-call frame (wrapped `renderBufferDirect`,
+6 frames):
+
+```
+main   machines 75 · vegetation 43 · props 38 · other 20 · terrainSky 13
+       player 10 · unnamedRoots 5
+shadow props 60 · vegetation 33 · other 23 · player 15 · terrainSky 9 · machines 0
+post   22
+```
+
+So `A21`'s `drawCalls` term is **RED at 366 of 350 with the geometry restored**,
+and this lane owns 75 of those 366. There is no honest lever left inside them:
+the 37 machine model meshes within 120 m of that camera all project **larger
+than 260 px** (smallest measured 240 px), so no pixel-threshold LOD can retire
+any of them, the shells are already one draw per machine (§6.2.4), machine
+shadow casters are already 0 in that frame, and the remaining 38 draws are
+components at 9-17 m that the player is aiming at. Closing a 16-draw gap from
+a 75-draw budget would mean deleting geometry the player can see, which is the
+defect this section exists to undo. The deficit is disclosed rather than
+bought; the shells fold (§6.2.4) is the real saving and it stays.
+
+### 6.2.4 …and the SHELL is one draw (fix round 4)
+
+The accent fold left the shells: `perf-tech-14` had already cut five shell
+materials to two by baking each piece's tone into vertex colours, and what
+remained was plate (0.58 metal / 0.34 rough), muscle (0.30 / 0.72) and the
+state sensors (which glow). Three genuinely different surfaces, and no scalar
+material field can hold three values — **but a MAP can, and a map lookup is a
+UV, which is per-vertex.** `roughnessMap` samples GREEN, `metalnessMap` samples
+BLUE, `totalEmissiveRadiance *= emissiveMap`. So two 4x1 textures shared by
+every shell in the game carry the whole table:
+
+| texel | surface | rough | metal | lit |
+|-------|---------|-------|-------|-----|
+| 0 | hard (plate / lacquer / trim) | 0.34 | 0.58 | no |
+| 1 | soft (muscle / cable)         | 0.72 | 0.30 | no |
+| 2 | sensor                        | 0.35 | 0.30 | **yes** |
+
+and each piece's vertices are stamped at its own texel. The shading is the same
+numbers the three materials produced, read from a texel instead of a uniform;
+`bakeWear`'s vertex colours still carry the albedo, including the sensor's
+0x0a0d10 base; `userData.sensor` moves to the merged material so the eye-state
+system drives it unchanged and the mask confines it to the sensor texels.
+
+A/B'd on film at the `V26-silhouette` angle — the five-species line-up at 12 m
+on plain sky, `shots/r2r-V26-BEFORE.png` (three materials) against
+`shots/gates/V26-silhouette.png` (one) — the plate/muscle contrast, the edge
+wear and the sensor glow are indistinguishable. The mesh keeps the name
+`shell-hard` because `rig/lod.js`'s "a `shell-hard` / `shell-soft` body mesh is
+never retired" rule, `hideSculpt` and several gates read that string.
+
+**Cost, disclosed: `A23b-hull-fidelity` (spatial lane) moves BOTH ways.** One
+mesh means one hull where there were two or three, and a single hull over a
+concave body leaves more hull-vs-mesh gaps. A/B'd on 5207 against a control
+with only this file reverted, run back to back:
+
+| term | control (3 materials) | with the fold |
+|---|---|---|
+| `worstGap` / rate | 32 / 26.4 % | **36 / 29.8 %** worse |
+| `worstMedianProudM` | 2.42 | **1.27** better |
+| `worstMedianVsBar` | 4.03 | **2.54** better |
+| `pooledProudP90M` (bar 1.15) | 0.55 | **1.09** worse, still inside |
+| `worstMaxOutsideM` (bar 1.15) | 0.06 | 0.11 |
+
+The gate FAILS in both arms — it is a pre-existing spatial-lane red, not a
+regression introduced here — and the trade is a coarser hull silhouette
+against 20 machine draw calls. `A50-hulls-visible` and
+`A50b-aim-on-drawn-geometry` both stay green (100 % of arrows on drawn
+geometry, 0 on ghost geometry), so nothing is aiming at a surface that is not
+there; what moved is how tightly the hull hugs a concave flank.
+
+**`A21-real-draw-calls`, measured end to end this round**
+
+| | staged-fight | machines in worst frame | `machineDrawsNow` (world) |
+|---|---|---|---|
+| fix round 3 (atlas + LOD) | 382 | 73 | 259 |
+| + accent fold (§6.2.3) | 355 | 55 | 193 |
+| + sensor into the shell | 357 | 51 | 185 |
+| + one shell material | **348** | **45** | **173** |
+
+Budget 350. The `drawCalls` term **PASSES**; the gate's own verdict is PENDING
+because its three TIMING terms (`medianGpuMs`, `p95FrameMs`, `p95JsMs`) cannot
+be judged on a box running six browsers — they were PENDING on every run of
+this gate today, before and after the change. The measurement has about ±10 of
+run-to-run spread (355 / 357 / 348 on three runs of the same build as machines
+walk in and out of the worst frame), so 348 is two under a budget it can still
+cross; the next lane-side lever is named in §6.2.2 and the gate's own
+`blockedBy` still reports a 26-call engine-side ceiling.
+
 ## 7. Corpse grounding
 
 `CorpseGrounder` (`rig/ground.js`) settles a wreck on **one** handle,
@@ -943,7 +1261,103 @@ AABB inflation on a 14 m thunderjaw shell, which made the two gates mutually
 infeasible (span 0.53 m against a 0.50 m window) exactly as the scrapper's tilt
 did in §7.1.
 
-Measured after, on 5207 — **both gates now pass with zero offenders**:
+#### 7.15.1 CORRECTION (fix round 4) — what this section used to claim
+
+The text below this line used to say "**both gates now pass with zero
+offenders**" and print a per-species table with `glinthawk | A47 +0.18 |
+A47b +0.300`, disclaiming only `A47b`. A judge re-ran it and that was not what
+the gate returned. Measured at HEAD `2cca537`, thirteen standalone runs of
+`A47` on 5207:
+
+```
+glinthawk lowestMinusGroundM: -1.90 -1.08 -0.93 -0.88 -0.13 -0.12
+                              +0.05 +0.06 +0.09 +0.10 +0.11 +0.12 +0.29
+```
+
+Six failures of thirteen against a **-0.10 m penetration** budget, four of them
+burials deeper than 0.85 m — 9-19x over — and every one of them on a contended
+box. `A47b` read 0.46 / 1.258 / 0.54 / 0.309 against a 0.40 m float budget over
+four runs. So: not a single number, a distribution straddling the budget; and
+the glinthawk's failure mode is **PENETRATION** (`machine-rig-05`, burial), not
+float, which the `A47b`-only disclaimer did not cover. The same judge confirmed
+this was NOT a regression from the round's diff — A/B'd against a sparse
+worktree of the same commit, interleaved run-for-run on 5207/5217 — it was
+pre-existing and load-sensitive, and what was wrong was the published claim.
+
+**Two causes, both fixed in `rig/ground.js` this round.**
+
+1. **The solve was driven on per-tick deltas, not on death time.** `dt` was
+   clamped to 0.1 s per call, so a wreck getting a handful of update calls in
+   the 5 s the gate waits advanced its solve by 0.1 s for every 0.5 s that
+   really passed, and converged short. The glinthawk is the species this hits
+   because it is the one whose grounder runs `mode: 'incremental'` and owns
+   `body.position.y` across frames. `THREE.MathUtils.damp` is stable for any
+   positive dt, so the tight clamp bought nothing; it is 1.0 s now and the
+   solve is driven by accumulated death time.
+2. **The re-arm watch measured the wrong pose.** In `'absolute'` mode the
+   caller rewrites `body.position.y` every frame and the grounder adds
+   `applied` at the END of `update()` — so at the top of the call the body sits
+   `applied` metres from where it renders. The watch read that pose and
+   re-armed settled solves on a phantom error. It now applies and restores the
+   offset around its measurement, the same way the solve block does.
+
+And one more, found while fixing `A47c`: **the solve no longer trades burial
+for float.** When the box surface and the posed surface disagree by more than
+the band is wide it used to centre the pair on `BAND_MID`; centring a 0.4 m
+disagreement puts the low surface at -0.12 m, and penetration (-0.10) is the
+tight budget while float (+0.40) is loose. The rule is ordered now — lift until
+nothing is under the soil, and only then lower toward the ceiling, never far
+enough to bury anything.
+
+Measured after, on 5207 (fix round 4), alongside the `A47c` pose work:
+
+| species    | `A47` box (m) | `A47b` posed (m) |
+|------------|---------------|------------------|
+| watcher    | +0.02 | +0.078 |
+| sawtooth   | +0.08 | +0.078 |
+| behemoth   | +0.04 | +0.023 |
+| thunderjaw | +0.20 | +0.063 |
+| strider    | +0.14 | +0.122 |
+| scrapper   | +0.10 | +0.108 |
+| glinthawk  | +0.02 | +0.020 |
+| longleg    | +0.03 | +0.104 |
+
+Every wreck is now PROUD of the soil rather than straddling it, which is the
+side of the budget with 0.40 m of room.
+
+**Ten runs UNDER LOAD, published the way the judge asked** (`node tools/gates.mjs
+--port 5207 --only A47-corpse-grounded,A47b-corpse-posed`, run while the full
+185-gate suite was running beside it on the same box — the condition that
+produced the -1.9 m burial):
+
+| | run 1 | 2 | 3 | 4 | 5 |
+|---|---|---|---|---|---|
+| `A47` offenders   | none | none | none | none | none |
+| `A47b` offenders  | none | glinthawk | none | none | none |
+| `A47` glinthawk (m)  | +0.02 | +0.02 | +0.02 | +0.02 | +0.02 |
+| `A47b` glinthawk (m) | +0.575 | +0.329 | +0.327 | +0.190 | +0.272 |
+
+(the first five rows and the last five are two separate sets of five runs; the
+glinthawk numbers are the second set.)
+
+**`A47` is fixed, not improved: 10 of 10, and the glinthawk reads +0.02 every
+time** — against six failures in thirteen and a -1.9 m worst case before. The
+burial is gone.
+
+**`A47b` is still marginal on the glinthawk, and it is now a FLOAT, not a
+burial**: 0.19-0.575 against a +0.40 budget, one failure in five. Its two
+surfaces disagree by about 0.3 m (box +0.02, posed +0.33) and the solve
+correctly refuses to bury the box to float the posed down — the wreck's own
+geometry is what is 0.3 m thick there. That disagreement, on the one species
+whose shell is parented to the root bone, is the remaining work; it is NOT the
+penetration failure `machine-rig-05` names, and it is disclosed here rather
+than averaged away.
+
+The old table and claim follow, kept for the record of what was measured when.
+
+---
+
+Measured after, on 5207 — **both gates now pass with zero offenders**:Measured after, on 5207 — **both gates now pass with zero offenders**:
 
 | gate                   | before (judge's run)                     | after                    |
 |------------------------|------------------------------------------|--------------------------|
@@ -971,7 +1385,251 @@ sampling, not on the solve.
 | glinthawk  | +0.18 | +0.300 |
 | longleg    | +0.02 | (0.055-0.15)   |
 
-### 7.2 Known gap — `A47c-corpse-mass`
+### 7.2b `A47c-corpse-mass` — the wreck LIES DOWN (fix round 4)
+
+§7.2 below records four levers that were built, measured and reverted, and it
+names the governing arithmetic correctly: `CorpseGrounder` lands the wreck's
+LOWEST vertex on the soil, so the height of the mass above ground is
+`median − lowest`, a property of the pose's vertical DISTRIBUTION alone, and
+**no rigid translation can change it**.
+
+A **rotation** is not a translation, and that is the lever this round took.
+Rolling the machine onto its flank turns its tallest axis into its shortest:
+the back and shoulder become the lowest surface, the folded legs come to lie
+out to the side ON the ground instead of curled in the air above the belly, and
+the distribution collapses with them.
+
+Three things had to be right for it to hold, each of them a lesson §7.2 already
+paid for once:
+
+* **the roll goes on the PELVIS BONE**, not on `body.rotation.z`. A posed box
+  is tight in the mesh's own space, and the world AABB of a rotated NODE is not
+  the AABB of rotated geometry — the node roll parked a thunderjaw 1.53 m in
+  the air. Inside the skeleton, `refreshPosedBounds` re-measures the real
+  surface and `A47`'s box and `A47b`'s hull stay the same surface.
+* **on the pelvis, not spread down the spine.** The legs hang off the pelvis; a
+  roll divided across the spine chain lays the torso over and leaves the legs
+  standing under a vertical hip, which is the "splayed star with limbs in the
+  air" the previous attempt shipped and reverted.
+* **both legs fold to the SAME side of the rolled body** (`rollBias`). A pure
+  ± splay about the roll axis sends one leg up and the other DOWN, and the down
+  one is what a tall wreck then stands on — measured on the thunderjaw, foot_L
+  at 6.09 m and foot_R at 0.81 m with the pelvis at 3.89 m: a straight leg
+  propping a 9 m machine at standing height.
+
+Per class, because the failure modes differ: `quad` rolls furthest onto its
+flank (1.60 rad), `biped` pitches over its hips and lands on chest and shoulder
+(1.55), `heavy` drops onto locking knees and slumps (1.48, with the tightest
+knee fold so the belly reaches the soil).
+
+Two supporting changes in `rig/ground.js`, both measured:
+
+* **the settle band's ceiling was halved**, 0.30 → 0.15 m. The solve approaches
+  the band FROM ABOVE — the collapse descends until `hi <= BAND_HI` and stops —
+  so every wreck in the game came to rest at the very top of the window,
+  floating a third of a metre that `A47c`'s median paid for on every species.
+  The FLOOR is untouched at +0.02: penetration is the tight budget and it is
+  where the glinthawk's burial lives.
+* **`maxLift` scales with the machine** instead of being a flat 3 m. A 9 m
+  thunderjaw's pelvis sits 4.6 m up; the solve wanted 3.1 m of descent and got
+  3.0, and the gate read its dead median at 3.22 m against a 3.08 m budget. It
+  is `max(3, height * 0.9)` now, which clamps the same THING the original
+  comment meant — "more than a body-height of lift is a broken measurement" —
+  for every species rather than for a 3 m one.
+
+**Result, measured on 5207: 6 offenders → 2.**
+
+| species    | before | after | budget |
+|------------|--------|-------|--------|
+| watcher    | 0.36 | **0.38-0.46** | ≤ 0.75 |
+| sawtooth   | 1.02 | **0.70-0.76** — crosses on a loaded run | |
+| behemoth   | 1.42 | **0.67-0.80** — crosses on a loaded run | |
+| thunderjaw | 1.24 | **0.74-0.92** — still red on most runs | |
+| strider    | 0.91 | **0.57-0.64** | |
+| scrapper   | 1.26 | **0.56-0.64** | |
+| glinthawk  | 0.10 | **0.08** | |
+| longleg    | 1.28 | **0.46-1.23** — still red on some runs | |
+
+The shipped per-class table, after the sweep:
+
+| class  | roll | rollBias | thigh | shin | splay |
+|--------|------|----------|-------|------|-------|
+| quad   | 1.60 | +0.50 | 1.75 | 2.40 | 0.58 |
+| biped  | 1.55 | −1.30 | 1.30 | 2.35 | 0.42 |
+| heavy  | 1.48 | −0.55 | 2.15 | 2.55 | 0.52 |
+
+Pushing the heavy further (roll 1.62, bias −0.80) was measured and reverted: it
+floats the wreck instead of laying it down — behemoth 0.76 → 0.80, sawtooth
+0.70 → 0.76, and every species' lowest vertex rose (longleg to +0.43, past
+`A47b`'s float budget). Above about 1.5 rad the roll stops turning the tall
+axis into the short one and starts standing the wreck on a shoulder.
+
+…and `A47`/`A47b` improved with it rather than being traded against: every
+species is now proud of the soil (§7.15.1).
+
+**The two that remain, and why they are not a tuning problem.**
+
+* **thunderjaw.** Its shell is one rigid skinned mesh ~6.7 m across. Rolled
+  onto its flank the wreck is a 6.7 m-tall pile whose mass sits mid-way, so the
+  dead median floors out at ~3.05 m against an alive median of 3.3-4.1 — the
+  ratio is bounded below by the shell's own width and the roll cannot go
+  further. Six pose variants were measured (roll 0.55-1.55, pitch, spine fold,
+  splay 0.06-0.58, four leg-fold pairs); the dead median moved 3.26 → 3.05 and
+  stopped. A world-lateral SPINE fold was the most promising and is the clearest
+  failure: it drove the nose under the soil and the grounder lifted the whole
+  wreck, taking the behemoth to 1.32 and the thunderjaw to 1.54.
+* **longleg.** Clip-driven: its collapse is the Death clip and it has no
+  `GaitController`, so none of the above applies to it. Rolling its skeleton
+  `Root` — the obvious equivalent — was measured and reverted: its sockets and
+  its kitbash shell are snapped onto that root's BIND pose, so rotating it took
+  `A44-socket-integrity` from a perfect 0 to a **0.987 m** worst gap and made
+  the longleg an offender on `A47` and `A47b` as well. Its `A47c` number also
+  swings 0.46-1.23 run to run because its ALIVE median does (1.16-2.66,
+  depending on whether the machine is reared when the gate samples it).
+
+For both, §7.2's own conclusion stands and is now the only remaining work: an
+authored per-species death CLIP that ends with the chassis on the soil, not
+more FK in `deathPose`.
+
+### 7.2c `A47c-corpse-mass` — CLOSED, and it was the roll ANGLE (fix round 2, residue)
+
+**Judge finding, blocker + major:** *"A47c-corpse-mass FAILS … the disclosed
+next lever is an authored per-species death clip that ends with the chassis
+already on the soil, not more FK."* The conclusion was right that `deathPose`
+as shipped had run out; it was wrong about which knob, and the measurement
+that found the real one is worth keeping.
+
+**What the wreck actually looked like.** Bucketing every posed vertex of a dead
+Thunderjaw by its DOMINANT BONE (and by owning part, for the components
+§6.2.5 had just given back) — heights above the terrain:
+
+```
+rig_pelvis    359 samples   1.03 .. 6.39   median 3.37   the torso, on its flank
+disc-launcher 480 samples   3.58 .. 4.64   median 4.0    on the back
+rig_head      149 samples   0.21 .. 3.97   median 1.5    the skull, hanging BELOW
+tail (4 bkts) 292 samples   2.12 .. 6.83   median 3.9    still in the air
+legs (6 bkts) 222 samples   2.44 .. 6.11                 folded to the sky side
+```
+
+The roll was working — the pelvis's own up axis read `(0.87, -0.06, -0.48)`,
+i.e. a machine on its side. The chassis simply stayed 5.2 m TALL when it got
+there, because a Thunderjaw's torso is deeper than it is wide, so rolling it
+exactly onto the flank swaps its short axis for its long one.
+
+**The lever is the angle, and it is past the flank.** One species per run, no
+other change, gate `A47c`'s own dead/alive median (budget 0.75):
+
+| `rollK` (biped) | thunderjaw |
+|---|---|
+| 0.40 (onto the chest) | 1.75 |
+| 1.55 (onto the flank — shipped) | 0.99 |
+| 2.35 | 0.78 |
+| 2.75 | 0.73 |
+| **3.00 (on its back, legs up)** | **0.71** |
+
+3.00 rad is 172 degrees: an apex predator that goes over backwards and stays
+there. The other two classes were swept the same way and both were already at
+their optimum (heavy 1.00 → 0.98, 1.48 → 0.86, 1.70 → 1.05, 2.10 → 1.20; quad
+2.20 → 0.77 against 1.60's 0.66), so they keep their angles.
+
+**The Behemoth is held up by its LEGS, not its torso** — which is why no roll
+moved it. It is a wide, low cargo chassis on four short columns, and a splay
+that keeps the knees near the body leaves the belly standing on them. Splayed
+FLAT, like a collapsed table, the chassis comes down: heavy `splayK`
+0.05 → 0.89, 0.52 → 0.89, **1.30 → 0.63**, 1.90 → 0.89 (past flat it hangs the
+chassis off its hips again). Heavy only.
+
+**The Longleg is clip-driven, and `Body` is the bone.** §7.2b ruled out its
+skeleton `Root` (rolling it took `A44` from 0 to a 0.987 m socket gap: `Root`
+is the frame `snapSockets` measured the hull in). That is an argument about
+`Root`, not about FK. This rig is `Root > Body > Hips > Abdomen > Torso > Neck
+> Head` with `UpperLegL/R` under `Body`, and `Body` is inside the skin and
+inside every socket's bone frame, so hull and sockets travel together —
+`A44`/`A44b` did not move (0 and 0.049 m). `Hips` alone is useless (it is
+already at the middle of the mass): `Hips` 3.00 → 0.99, `Body` 2.60 → 0.85,
+`Body` 1.75 → 0.49, **`Body` 1.40 → 0.31**.
+
+Two bugs found on the way, both recorded in the source:
+
+* **`_deathRoll` is a `Machine` PROPERTY**, a number every species sets in its
+  constructor. Naming the longleg's method the same thing made the call throw
+  inside `Machines.update`, which aborts the loop for every machine after it —
+  silently, because the loop swallows it. Five species simply stopped
+  collapsing (dead percentiles byte-identical to alive). It is
+  `_deathRollPose` now.
+* **The Death clip does not animate `Body`**, so a per-frame pre-multiply
+  compounded instead of posing: the carcass span-wheeled and the ground solve
+  chased a target that never stopped (+0.57, +1.00, -0.08, -0.51, +1.04 m of
+  penetration at two-second intervals). The pose now remembers what it wrote
+  and what it wrote over, and restores the clip-space value when the mixer has
+  not touched the bone.
+
+**Reverted, with numbers: the gravity DRAPE.** The obvious reading of the
+bucket table above is that the free chains should be laid onto the ground, and
+that is what was built first — each chain solved root-to-tip about the
+world-horizontal axis perpendicular to the bone, onto a resting plane, with the
+clearance taken from a measured per-bone casting radius (`boneInverse ·
+bindMatrix · v`, 90th percentile perpendicular to the bone axis,
+pose-independent and cached). **It loses to doing nothing in every form**,
+because a solved chain wins the race to the ground and becomes a STRUT: it
+touches down before the chassis does, `CorpseGrounder` sees a wreck already
+resting and stops. Thunderjaw dead median against a 3.99 baseline —
+
+```
+two-sided, plane = corpse 2nd percentile     6.16   (hung from its own tail)
+two-sided, plane = terrain                   5.24
+two-sided, plane = chassis floor             4.45
+LIFT ONLY (a chain may never be lowered)     3.91   and sawtooth 0.68 -> 0.89
+```
+
+The code is gone; the argument is kept above `deathPose` in `gait.js` so the
+next round does not rebuild it.
+
+### 7.16 The corpse BOX and the corpse SURFACE agree now
+
+`refreshPosedBounds()` writes the posed extent as a tight box in the mesh's
+own LOCAL space (that is what `applyBoneTransform` returns), but `hullBounds()`
+— and gate `A47`, which it deliberately mirrors — takes the WORLD AABB of its
+eight corners, and **the world AABB of a ROTATED box is bigger than the world
+AABB of the geometry inside it.** All of that inflation is floor error, and it
+is the residual disagreement §7.15 could not close. Measured on a rolled
+longleg wreck, per visible mesh:
+
+```
+shell-hard-x11   box floor +0.45 m   posed floor +0.80 m
+```
+
+`CorpseGrounder`'s ordered rule (lift until nothing is buried, only then lower)
+then parks the phantom box surface on the soil and leaves the real one floating
+a third of a metre up: a settled longleg at **+0.365 m against `A47b`'s +0.40 m
+budget**, i.e. red on any run that caught it mid-settle.
+
+The true world floor is already sampled in that same loop, so on the CORPSE
+path the box is now shrunk about its own centre by exactly the factor that
+lands its world floor on the real one — uniform, so it holds for any rotation;
+never growing, so it can only ever settle a wreck LOWER, which is the
+conservative direction for the penetration budget. The live box's job is to
+cover everything drawn and it is untouched. Measured after, two consecutive
+runs, `A47b` lowest-posed minus ground:
+
+```
+before  glinthawk 0.575 / 0.287   longleg 0.442 / 0.502 / 0.556   (A47b RED)
+after   glinthawk 0.092 / 0.247   longleg 0.020 / 0.065           (A47b PASS)
+```
+
+### 7.17 The corpse solve may not latch while the pose is still moving
+
+Same round, same symptom class: the collapse eases in over the death clip, so
+for the first second the wreck is passing THROUGH the solve's band on its way
+down, and four consecutive in-band ticks at 0.08 s is 0.32 s — easily satisfied
+mid-flight. The solve latched, stopped measuring, and only the coarse
+hysteresis watch could re-open it. Measured across consecutive lane runs on
+identical code: behemoth `A47c` 0.63 / 0.87 / 0.89 / 0.71, longleg `A47b`
++0.047 / +0.441 / +0.502 m. `SETTLE_MIN_T` (2.0 s of death time) now gates the
+latch; before that the solve simply keeps solving every tick, which is strictly
+more correction than the previous form did.
+
+### 7.2 Known gap — `A47c-corpse-mass` (fix round 1 attempt; superseded by 7.2b)
 
 Gate `A47c` grades the wreck's **median** posed vertex height (`deadMedian <=
 0.75 × aliveMedian`), because `A47`/`A47b` grade a single lowest point and one
@@ -1066,6 +1724,77 @@ on the headline line — it is the only place model bytes are reported, since no
 gate measures them.
 
 Re-run `node tools/gates.mjs --lane machine-rig` after any bake.
+
+## 8.9 Corrected ledger — what is actually red in this lane
+
+Final runs, **fix round 2 (residue)**, port 5207:
+
+```
+node tools/gates.mjs --port 5207 --lane machine-rig     (isolated)
+  18 gates: 14 pass, 2 fail, 2 need judging
+    fails: A48-cadence (strider) · A47c-corpse-mass (behemoth)
+node tools/gates.mjs --port 5207                        (full suite)
+  187 gates: 148 pass, 8 fail, 31 need judging
+    this lane:  A48-cadence (sawtooth+behemoth+strider under load)
+                A47c-corpse-mass (behemoth)
+                A21-real-draw-calls (drawCalls 361/350 — see below)
+    other lanes: A90-memory-stability (core) · A13-no-skate (animator)
+                 A41d-held-radius-coverage (machine-ai)
+                 A23-aim-cost + A23b-hull-fidelity (spatial)
+    was, before this round: 148 pass, 6 fail, 2 pending — A47b-corpse-posed
+    has gone green (§7.16) and A21 has moved from PENDING to an honest FAIL
+```
+
+`A21-real-draw-calls` is a `core-platform` gate this lane owes a term to, and
+its `drawCalls` term is **RED at 361 of 350 on the staged fight** now that
+§6.2.5's missing components are drawn again. The gate's own ledger attributes
+**58** of those 361 to machines; the other 303 are props, vegetation, the
+shadow pass, post and terrain. See §6.2.5 for the measurement showing that the
+accent fold never saved a real draw — every draw it appeared to save was a
+component that had stopped rendering — and for why there is no honest
+pixel-threshold lever left inside the lane's 58.
+
+The rule from the previous round still stands and was followed again:
+**re-run the lane suite before finalizing, and read the run rather than the
+last report.**
+
+The lane's gates after this round, measured:
+
+| gate | state | notes |
+|---|---|---|
+| `A44-socket-integrity` | PASS | `worstGapM 0`, 24 points, alive and dead |
+| `A44b-socket-vertex-integrity` | PASS | worst 0.035-0.049 m of 0.10 |
+| `A45` / `A45b` / `A45c` / `A46` | PASS | `A45` worst 0.014-0.025 m of 0.06 |
+| `A47-corpse-grounded` | **PASS** | worst 0.02-0.34 m, every species, every run since §7.16 |
+| `A47b-corpse-posed` | **PASS** | glinthawk 0.575 → 0.09-0.25; longleg 0.02-0.07 (§7.16) |
+| `A47c-corpse-mass` | **CLOSED for 7 of 8** | thunderjaw 1.04 → 0.67-0.73, longleg 0.84 → 0.27-0.47, sawtooth 0.65-0.72; **behemoth 0.63-0.89** is the residue (§7.2c) |
+| `A48-cadence` | **red under load, species varies** | 0 offenders on a quiet box; 1-3 under full-suite load, a different set each run (§5.0.2) |
+| `A21-real-draw-calls` | `drawCalls` **RED 361/350** | disclosed, not bought (§6.2.5); machines are 58 of 361 |
+| `A49` / `A50` / `A50b` / `A76b` / `A27b` / `A44c` | PASS | |
+
+## 8.95 New exports this round
+
+```js
+// src/entities/machines/gait.js
+import { CadenceLoop, cadCeilK, wallSeconds } from './gait.js';
+new CadenceLoop()                    // .step(engine, wantWallHz, plants, legs, dtSim) -> trim
+                                     // .debt (cycles owed), .trim, .lastWant/.lastGot/.lastDtWall
+cadCeilK(loop)                       // the conditional band-ceiling multiplier (§5.0.1)
+wallSeconds(engine)                  // the wall clock, one reading per drawn frame
+
+// src/entities/machines/rig/contact.js
+ledger.latch(legs, honestFn)         // sample + count the published contact, once per drawn frame
+ledger.observedPlants                // cumulative PUBLISHED touchdowns across all legs
+```
+
+Fix round 2 (residue) adds no new exports. Changed behaviour on existing ones:
+
+```js
+cadCeilK(loop)        // now also requires loop.rateHz < loop.lastWant (§5.0.2)
+new CadenceLoop()     // .rateHz — delivered footfalls/wall-second/foot, EMA ~1.5 s
+```
+
+No gate ids were added, renamed or weakened this round.
 
 ## 9. Cross-lane requests (open)
 

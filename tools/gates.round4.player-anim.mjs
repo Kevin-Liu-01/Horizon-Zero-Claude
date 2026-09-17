@@ -578,34 +578,97 @@ export const GATES = [
   /* ------------------------------------ A31b-aim-strafe-skate-player-anim */
   {
     id: 'A31b-aim-strafe-skate-player-anim', kind: 'action', lane: 'player-anim',
-    timeout: 90000,
-    title: 'Aim-strafe: planted-foot drift <= 0.06 m BOTH ways, the legs never cross, and the cadence is a side-step not a shuffle',
+    // FIX ROUND 7: four passes instead of two (the two transition ENTRIES the
+    // blocker below lived in), each closing on banked footfalls rather than
+    // wall clock, so the whole gate's duration scales with how slow the box is.
+    // Sized off A18b's 150 s: four passes x (2 s staging + 30 s hang guard).
+    timeout: 185000,
+    title: 'Aim-strafe from a standing start, a backpedal AND a run: planted-foot drift <= 0.06 m BOTH ways, the legs never cross, and the cadence is a side-step not a shuffle',
     setup: `__CTX__.input.enabled = true;`,
     settle: 500,
     assert: `(async () => {
       const C = __CTX__, p = C.player, an = p.animator, T = C.terrain;
       ${FREEZE}
       if (!an?.debugFeet) return { pass: null, detail: 'SKIP: animator exposes no debugFeet()' };
-      const run = async (key) => {
+      // fix round 8: the mirror clause below reads loco.phase / loco._revSign,
+      // so ABSENT telemetry must SKIP here rather than read as a mirrored gait
+      // further down. (The footfall window already depended on loco.phase.)
+      if (!an.loco || typeof an.loco.phase !== 'number') {
+        return { pass: null, detail: 'SKIP: animator exposes no loco.phase/_revSign' };
+      }
+      /* FIX ROUND 7 (judge-player-anim-r2, blocker) — THE ENTRY PATH IS PART
+       * OF THE TEST.
+       *
+       * Both run() calls used to clear the keys, re-stage and press a single
+       * key, so every pass entered the sidestep from a STANDING START. The
+       * locomotion mirror is latched (locomotion.js, REV_HYST), and from a
+       * standing start the latch is always +1 — so the gate could not see the
+       * case where it is -1. Entering the same sidestep straight out of a
+       * backpedal, with aim held throughout, ran the entire strafe with the
+       * gait phase backward and slid the trailing ball 0.0176-0.0670 m per
+       * stance against this gate's own 0.06 m bar, five times across four
+       * runs at 15.6-44 fps, and A31b read 0.0002-0.0021 m the whole time.
+       *
+       * \`entry\` now stages the pass the way a player reaches it: 'stand'
+       * (unchanged), 'back' (backpedal, then release KeyS and press the strafe
+       * key the same frame) and 'fwd' (forward run into the sidestep). Aim is
+       * pressed BEFORE the entry move and never released, which is what makes
+       * the whole thing one continuous aim-strafe rather than three states.
+       * Both strafe directions get both a standing start and a transition. */
+      const run = async (key, entry) => {
         C.input.keys.clear(); C.input.mouse.buttons = 0;
         ${STAGE}
         await new Promise((r) => setTimeout(r, 400));
         C.input.mouse.buttons |= 4;
+        if (entry === 'back') {
+          C.input.keys.add('KeyS');
+          await new Promise((r) => setTimeout(r, 1500));
+          C.input.keys.delete('KeyS');
+        } else if (entry === 'fwd') {
+          C.input.keys.add('KeyW');
+          await new Promise((r) => setTimeout(r, 1500));
+          C.input.keys.delete('KeyW');
+        }
         C.input.keys.add(key);
         await new Promise((r) => setTimeout(r, 1600));
         const S = [];
         const t0 = performance.now();
         let prev = performance.now();
-        while (performance.now() - t0 < 3000) {
+        /* THE WINDOW IS CLOSED BY FOOTFALLS, NOT BY THE WALL CLOCK.
+         *
+         * FIX ROUND 7 (judge-player-anim-r2, major) — the same treatment A33
+         * already got in fix round 4, applied to this gate. A FIXED 3000 ms
+         * window buys a number of stances that depends on how busy the box is,
+         * and the audit's working condition is sixteen lanes at once: measured
+         * here the suite runs at 12-20 fps, and at those rates 3 s is barely
+         * three stances per foot before the n >= 3 sample floor starts eating
+         * them. The loop now runs until the GAIT has banked FOOT_TARGET
+         * footfalls (loco.phase, unwrapped — the same reference A33 uses),
+         * which is frame-rate invariant: 8 footfalls is ~4 stances per foot at
+         * ANY frame rate, twice the 2-window floor below.
+         *
+         * The two other bounds are pure HANG guards, not measurement bounds:
+         * 30 s of wall clock and 900 frames. Banked footfalls per wall second
+         * are fps x MAX_FRAME(0.05) x footHz(~2.4), so 30 s banks the full 8
+         * at 2.2 fps; the frame cap cannot bind first (8 footfalls is ~200
+         * frames at 60 fps and ~45 on a sim-clamped host). */
+        const FOOT_TARGET = 8;
+        let phPrev = an.loco?.phase ?? 0, cycAcc = 0, frames = 0;
+        while (frames < 900 && performance.now() - t0 < 30000
+               && Math.abs(cycAcc) * 2 < FOOT_TARGET) {
           const now = performance.now();
           const f = an.debugFeet();
+          const ph = an.loco?.phase ?? 0;
+          let dph = ph - phPrev;
+          if (dph < -0.5) dph += 1; else if (dph > 0.5) dph -= 1;
+          cycAcc += dph; phPrev = ph; frames++;
           // legs crossed = the RIGHT ball is on her LEFT of the left ball, in
           // HER frame. This is the measurement A31 never had, and it is what
           // the audit filmed on 41 % of aim-strafe frames.
           const h = p.heading, s = Math.sin(h), c = Math.cos(h);
           const lx = (f[0].world.x - p.position.x) * c - (f[0].world.z - p.position.z) * s;
           const rx = (f[1].world.x - p.position.x) * c - (f[1].world.z - p.position.z) * s;
-          S.push({ dt: now - prev, feet: f, crossed: rx > lx, sep: lx - rx,
+          S.push({ dt: now - prev, feet: f, crossed: rx > lx, sep: lx - rx, dph,
                    hz: 2 * (an.loco?.freq ?? 0), sp: p.moveSpeed });
           prev = now;
           await new Promise((r) => requestAnimationFrame(r));
@@ -617,10 +680,42 @@ export const GATES = [
          * her 0.06 m — and this box runs the suite at ~20 fps, so EVERY window
          * spanned one and A31 discarded all of them and reported SKIP. The
          * honest bar is the frame time in which she travels the drift bar
-         * itself, floored at 100 ms so a normal loaded frame is not a hitch. */
+         * itself, floored at 100 ms so a normal loaded frame is not a hitch.
+         *
+         * FIX ROUND 7 (judge-player-anim-r2, major) — THAT FILTER WAS STILL
+         * ALL-OR-NOTHING, AND IT TOOK THE WHOLE GATE DOWN UNDER LOAD.
+         *
+         * \`hitchMs\` floors at 100 ms, so every window containing one frame
+         * slower than 10 fps was thrown away whole — which on a loaded box is
+         * every window. Measured on a quiet box: PASS, 9 windows, 0 hitched.
+         * On the same box running the lane's own 8-gate suite (~17.7 fps):
+         * R 0 windows / 5 hitched, L 0 / 6, "SKIP: fewer than 2 clean stance
+         * windows" — and a SKIP does not fail a run, so with the blocker above
+         * live the gate was silent on exactly the runs the audit cares about.
+         * The judge's no-filter probe at 10.0-10.3 fps scored 9 and 10 windows
+         * and read 0.0047 / 0.0015 m worst drift on windows whose longest
+         * frames were 146 and 138 ms: the windows this gate was discarding
+         * measure fine.
+         *
+         * A long frame can only ever INFLATE a drift reading (the body
+         * translates, the lock updates once), never deflate one, and the
+         * inflation is bounded by how far she travels in that frame. So the
+         * filter is now applied where it can change a verdict and nowhere
+         * else: every stance with >= 3 samples is scored and reported, and a
+         * window is set aside as UNRESOLVABLE only when it both fails the
+         * 0.06 m bar AND its longest frame could account for the whole reading
+         * (dt * speed >= drift). A window under the bar passes whatever its
+         * frame times were; a window over the bar that its own worst frame
+         * cannot explain is a real slide and still fails the gate — the
+         * blocker's 0.067 m at 38 ms (0.051 m of travel) is exactly that case.
+         * The gate falls back to SKIP only if fewer than 2 windows survive
+         * THAT test, or if the unresolvable ones outnumber the resolved ones
+         * (at which point the pass genuinely did not measure anything). */
         const hitchMs = Math.max(100, (0.06 / Math.max(0.4, spd)) * 1000);
+        const DRIFT_BAR = 0.06;
         const drifts = [];
         let hitched = 0;
+        const unresolved = [];
         /* WHAT THE WORST WINDOW IS MADE OF (fix round 5, additive — no bar,
          * filter or clause here moved). worstWindow carries the shape of the
          * worst window: sample count, the longest frame inside it, how far the
@@ -652,12 +747,57 @@ export const GATES = [
          * is scored like any other. isLast is kept (a useful diagnostic) but it
          * is no longer the difference between measured and invisible. */
         for (let side = 0; side < 2; side++) {
-          let win = null, bad = false;
+          let win = null;
           const closeWin = () => {
             if (win && win.n >= 3) {
               const d = Math.hypot(win.x1 - win.x0, win.z1 - win.z0);
-              if (bad) hitched++;
-              else { drifts.push(d); wins.push({ d, w: win }); }
+              /* HOW MUCH OF \`d\` THE LONGEST FRAME COULD HAVE MANUFACTURED.
+               *
+               * FIX ROUND 8 (judge-player-anim-r2, major) — this used to be
+               * body travel alone, \`(maxDt/1000) * spd\`. At 1.35 m/s that is
+               * 0.06 m at 44 ms, so below ~22 fps the excuse covered the whole
+               * drift bar and kept covering it: measured 0.0885 / 0.0952 /
+               * 0.0545 / 0.1040 m of "explainable" on a PASSING standalone run
+               * at 41-78 ms worst frames. The 6f blocker's own slides were
+               * 0.0176-0.0670 m, so on a box one notch busier than that run
+               * the gate would have filed the blocker \`unresolved\` instead of
+               * failing it. An excuse that grows with the frame rate is not a
+               * bar, and the suite runs this gate at 12-25 fps.
+               *
+               * The honest bound is not how far SHE moved, it is how far a
+               * long frame can move a PLANTED BALL, and the animator publishes
+               * exactly that. The ball rides \`anchor + IK residual\`; the
+               * anchor is captured on the plant frame and does not move again
+               * until the correction saturates MAX_LOCK (playerAnimator
+               * _footLock). So while the lock is unsaturated the ball cannot
+               * travel further than the correction the lock was holding, which
+               * is \`lock.errM\` — a slow frame inflates both together, and the
+               * residual is a FRACTION of errM, never a multiple of it. Only
+               * once errM pins at capM does the anchor itself slide, and only
+               * then is body travel the relevant bound.
+               *
+               *   unsaturated: explainM = min(body travel, maxLockErr)
+               *   saturated  : explainM = body travel   (the anchor is moving)
+               *
+               * This is frame-rate-independent in form: it is measured lock
+               * state, not fps. Against the 6f blocker (errM peaked at 0.037
+               * of the 0.300 cap while the left ball slid 0.0670 m) it yields
+               * explainM 0.037 < 0.067 at ANY frame rate -> a real FAIL, not
+               * an unresolved window. Against the round-6 saturated blocker
+               * (errM pinned at capM, 0.34-0.45 m of slide) body travel is
+               * still an order of magnitude short -> also a FAIL. */
+              const travelM = (win.maxDt / 1000) * spd;
+              const sat = win.lockCap != null && win.lockErr >= win.lockCap - 1e-3;
+              const explainM = (win.lockCap == null || sat)
+                ? travelM : Math.min(travelM, win.lockErr);
+              if (d > DRIFT_BAR && explainM >= d) {
+                hitched++;
+                unresolved.push({ foot: side === 0 ? 'L' : 'R', driftM: +d.toFixed(4),
+                                  samples: win.n, longestFrameMs: Math.round(win.maxDt),
+                                  couldExplainM: +explainM.toFixed(4),
+                                  bodyTravelM: +travelM.toFixed(4),
+                                  maxLockErrM: +win.lockErr.toFixed(4), saturated: sat });
+              } else { drifts.push(d); wins.push({ d, w: win, explainM }); }
             }
             win = null;
           };
@@ -670,9 +810,7 @@ export const GATES = [
                 win = { x0: f.world.x, x1: f.world.x, z0: f.world.z, z1: f.world.z, n: 0,
                         side, y0: f.world.y, y1: f.world.y, a0: above, a1: above, maxDt: 0,
                         lockErr: 0, lockCap: f.lock?.capM ?? null };
-                bad = false;
               }
-              if (s.dt > hitchMs) bad = true;
               if (s.dt > win.maxDt) win.maxDt = s.dt;
               // how much of the foot lock's budget this stance is using: past
               // the cap the anchor slides and the ball travels the excess, so
@@ -692,11 +830,22 @@ export const GATES = [
         const crossedFrac = S.filter((x) => x.crossed).length / S.length;
         const cad = S.map((x) => x.hz).sort((a, b) => a - b)[S.length >> 1];
         C.input.keys.clear(); C.input.mouse.buttons = 0;
-        return { drifts: drifts.map((d) => +d.toFixed(4)), windows: drifts.length, hitched,
+        const footfalls = Math.abs(cycAcc) * 2;
+        const wallS = (performance.now() - t0) / 1000;
+        return { key, entry, drifts: drifts.map((d) => +d.toFixed(4)), windows: drifts.length, hitched,
+                 unresolved,
                  maxDrift: drifts.length ? +Math.max(...drifts).toFixed(4) : null,
                  crossedFrac: +crossedFrac.toFixed(3),
                  minSepM: +Math.min(...S.map((x) => x.sep)).toFixed(4),
                  stepsPerSec: +cad.toFixed(2), speed: +spd.toFixed(2), hitchMs: Math.round(hitchMs),
+                 footfalls: +footfalls.toFixed(2), frames: S.length, windowS: +wallS.toFixed(1),
+                 fps: +(S.length / Math.max(0.1, wallS)).toFixed(1),
+                 // the mirror latch the entry paths exist to exercise: a
+                 // sustained sidestep must settle to the FORWARD loop (+1)
+                 // whatever preceded it (locomotion.js, REV_HYST / REV_DWELL)
+                 revSign: an.loco?._revSign ?? null,
+                 reverse: +(an.loco?.reverse ?? 0).toFixed(3),
+                 phaseBackFrames: S.filter((x) => x.dph < -1e-6).length,
                  worstWindow: worst ? {
                    foot: worst.w.side === 0 ? 'L' : 'R',
                    samples: worst.w.n, longestFrameMs: Math.round(worst.w.maxDt),
@@ -704,17 +853,78 @@ export const GATES = [
                    yRangeM: +(worst.w.y1 - worst.w.y0).toFixed(4),
                    aboveGroundM: [+worst.w.a0.toFixed(3), +worst.w.a1.toFixed(3)],
                    maxLockErrM: +worst.w.lockErr.toFixed(4), lockCapM: worst.w.lockCap,
+                   couldExplainM: +worst.explainM.toFixed(4),
+                   // what the OLD (fix round 7) rule would have excused: body
+                   // travel in the longest frame, unbounded by the lock. Kept
+                   // beside couldExplainM so the gap between the two — the
+                   // whole of fix round 8's tightening — is readable in any
+                   // verdict without re-deriving it from fps.
+                   bodyTravelM: +((worst.w.maxDt / 1000) * spd).toFixed(4),
                    ofWindows: drifts.length, isLast: wins[wins.length - 1] === worst,
                  } : null };
       };
-      const R = await run('KeyD');
-      const L = await run('KeyA');
-      if (R.windows < 2 || L.windows < 2) {
-        return { pass: null, detail: { R, L, note: 'SKIP: fewer than 2 clean stance windows' } };
+      /* FOUR PASSES: both directions from a standing start (the two this gate
+       * has always run), plus the two TRANSITION entries the blocker lived in
+       * — a sidestep out of a backpedal and a sidestep out of a forward run,
+       * aim never released. The mirror latch keys on |moveAngle|, so one
+       * direction per transition covers it and neither key gets only one
+       * entry path. */
+      const passes = [];
+      passes.push(await run('KeyD', 'stand'));
+      passes.push(await run('KeyA', 'stand'));
+      passes.push(await run('KeyA', 'back'));
+      passes.push(await run('KeyD', 'fwd'));
+      const detail = {};
+      for (const x of passes) detail[(x.key === 'KeyD' ? 'R' : 'L') + '-' + x.entry] = x;
+      const nameOf = (x) => (x.key === 'KeyD' ? 'R' : 'L') + '-' + x.entry;
+      /* (1) THE MIRROR CLAUSE — CHECKED FIRST, AND IT CANNOT BE SKIPPED PAST.
+       *
+       * FIX ROUND 8 (judge-player-anim-r2, major). Every clause this gate had
+       * was a DRIFT measurement, and a drift measurement can always be argued
+       * with (a long frame, a short window, a sample floor). The failure mode
+       * it exists to catch has a second signature that no frame time can fake:
+       * a sustained sidestep played on the MIRRORED clip runs the master gait
+       * phase BACKWARD. All four passes here are sustained sidesteps and all
+       * four settle to the forward loop by design (locomotion.js REV_HYST /
+       * REV_BIAS: 1.5708 is below both switching bounds, so a sidestep
+       * resolves to +1 from either latch state); the backpedal mirror is a
+       * different input and is not one of A31b's passes. Measured on the 6f
+       * blocker: revSign -1 with 101/102 and 82/83 frames of backward phase.
+       * Measured on the fixed build, 8+ runs, every pass: +1 and 0 backward
+       * frames. So this is a binary, and it is checked BEFORE the SKIP branch
+       * — a mirrored run is RED whatever its windows did, and can never hide
+       * behind an unresolvable window or a short sample. */
+      const mirrored = passes.filter((x) => x.revSign !== 1 || x.phaseBackFrames !== 0);
+      if (mirrored.length) {
+        return { pass: false, detail: { ...detail,
+          failing: mirrored.map(nameOf),
+          note: 'MIRRORED: ' + mirrored.map((x) => nameOf(x) + ' rev ' + x.revSign
+            + ', ' + x.phaseBackFrames + '/' + x.frames + ' frames of backward gait phase').join('; ') } };
+      }
+      /* (2) SKIP is the LAST resort, not the first (fix round 7) — but an
+       * unresolvable window is now VISIBLE (fix round 8, judge-player-anim-r2).
+       * It used to take unresolvable > resolved to stop a PASS, so a run could
+       * carry a >6 cm window it could not account for and still read green
+       * with nothing in the verdict saying so. Every unresolvable window is by
+       * construction over the drift bar, so ANY of them means this pass did
+       * not settle the question: the run is yellow, not green. That costs
+       * nothing on a healthy build (a sub-bar window is never set aside, at
+       * any frame rate — measured 0 unresolvable across 4 passes down to
+       * 22.6 fps under the lane's own suite) and it stops the one shape the
+       * judge found: a bar-grazing slide filed as an excuse and reported as a
+       * pass. */
+      const blind = passes.filter((x) => x.windows < 2 || x.hitched > 0);
+      if (blind.length) {
+        return { pass: null, detail: { ...detail,
+          note: 'SKIP: ' + blind.map((x) => nameOf(x)
+            + ' resolved ' + x.windows + ' / unresolvable ' + x.hitched
+            + (x.unresolved[0] ? ' (worst ' + Math.max(...x.unresolved.map((u) => u.driftM))
+               + ' m, lock ' + x.unresolved[0].maxLockErrM + ' m)' : '')).join(', ') } };
       }
       const ok = (x) => x.maxDrift <= 0.06 && x.crossedFrac <= 0.02
         && x.stepsPerSec >= 1.8 && x.stepsPerSec <= 3.6;
-      return { pass: ok(R) && ok(L), detail: { R, L } };
+      const failing = passes.filter((x) => !ok(x)).map(nameOf);
+      return { pass: failing.length === 0, detail: failing.length ? { ...detail, failing } : detail };
     })()`,
   },
 

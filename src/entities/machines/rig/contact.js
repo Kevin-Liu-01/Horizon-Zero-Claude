@@ -72,12 +72,54 @@
  */
 export const OBSERVER_TTL = 2;
 
+/**
+ * ## The other half of the picture: a plant that is never REPORTED
+ *
+ * FIX ROUND 4, judge finding "`A48-cadence` still FAILS". The rule above
+ * guarantees that two stances are never reported as one. It says nothing
+ * about a stance reported as NOTHING — and that is the other half of what
+ * the cadence gate was reading:
+ *
+ *   > measured on a strider at 10.5 m/s on a 21 fps page: one foot opened 13
+ *   > plants in 6 s and a consumer sampling every drawn frame saw 7 of them,
+ *   > and was told "planted" on 15 frames in total — barely one frame per
+ *   > stance. The longleg opened 18 plants across two feet and 12 were
+ *   > observable.
+ *
+ * A stance whose REPORTED window is shorter than a drawn frame can fall
+ * between two samples and never appear: not merged, not drifting — invisible.
+ * Every footfall consumer then undercounts.
+ *
+ * **The obvious fix was measured and rejected.** Holding each plant open for
+ * one drawn frame (a `canRelease` mirror of `canPlant`) makes every touchdown
+ * observable and DRAGS THE FOOT to do it: gate `A45` went from 0.032 m of
+ * stance drift to 0.193 m and `A46`'s ground error from 0.059 m to 0.198 m,
+ * because a frame of extra stance at 10 m/s is half a metre of ground the
+ * body covers under a locked foot. A held stance is a skate, which is a worse
+ * lie than a missed step.
+ *
+ * What is kept is the measurement, not the hold: `latch()` samples the rig's
+ * own contact ONCE PER DRAWN FRAME — the same rate every consumer samples at
+ * — and counts the rising edges. That number is what the cadence controller
+ * closes over (`gait.js` `CadenceLoop`), so a rig that is publishing fewer
+ * footfalls than its band asks for slows down until it is publishing them,
+ * instead of stepping faster into frames nobody can see.
+ */
 export class ContactLedger {
   /** @param {object} machine  the machine this controller belongs to */
   constructor(machine) {
     this.m = machine;
     this._seenFrame = -1e9;   // last frame a consumer read contact
     this.deferred = 0;        // re-plants delayed by the rule (diagnostics)
+    /**
+     * Rising edges of the REPORTED contact flag, latched once per drawn
+     * frame by the controller (`latch()`), across every leg. This is the
+     * number a consumer counts, published by the rig itself rather than
+     * inferred from whoever happened to be polling — it is what
+     * `CadenceLoop` closes over (gait.js) and what gate `A48` measures.
+     */
+    this.observedPlants = 0;
+    this._latchFrame = -1;
   }
 
   /** The rendered-frame counter, or 0 before the engine exists. */
@@ -87,7 +129,37 @@ export class ContactLedger {
   init(leg) {
     leg.relFrame = -1;
     leg.relSeen = true;       // no release to observe yet
+    leg.rptPlanted = false;   // last per-frame contact sample (see `latch`)
     return leg;
+  }
+
+  /**
+   * Sample the honest contact flag ONCE per drawn frame and count its rising
+   * edges. Call at the TOP of a controller's update, so the sample is the
+   * pose the previous frame finished in — which is what a consumer polling
+   * once per frame reads.
+   *
+   * This does not change what `debugFeet()` returns (that stays a live read,
+   * so the foot POSITION and the flag beside it always describe the same
+   * instant — `A45`/`A46` grade exactly that pairing). It gives the rig its
+   * own honest count of the footfalls it published, at the rate they are
+   * published, which nothing else could tell it.
+   *
+   * @param {Array} legs
+   * @param {(leg:object,i:number)=>boolean} honest  live contact test
+   * @returns {boolean} true if this call latched (a new drawn frame)
+   */
+  latch(legs, honest) {
+    const f = this.frame;
+    if (f === this._latchFrame) return false;
+    this._latchFrame = f;
+    for (let i = 0; i < legs.length; i++) {
+      const leg = legs[i];
+      const rpt = honest(leg, i);
+      if (rpt && !leg.rptPlanted) this.observedPlants++;
+      leg.rptPlanted = rpt;
+    }
+    return true;
   }
 
   /**

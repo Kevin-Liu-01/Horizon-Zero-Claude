@@ -51,37 +51,112 @@ const _c = new THREE.Color();
  * a whole shell is 2 draw calls per machine instead of 5, which is 24 draws
  * back across a staged eight-machine fight.
  */
-const SHELL_BUCKET = {
-  plate: 'hard', lacquer: 'hard', trim: 'hard',
-  muscle: 'soft', cable: 'soft', sensor: 'sensor',
+/**
+ * FIX ROUND 4 — ONE SHELL MATERIAL, THREE SURFACES (gate `A21`).
+ *
+ * `perf-tech-14` already cut five shell materials to two by baking each
+ * piece's tone into its vertex colours; what was left was plate (0.58 metal /
+ * 0.34 rough), muscle (0.30 / 0.72) and the state sensors (which glow). Those
+ * are three genuinely different surfaces and a merge cannot express them in
+ * scalar material fields — but it can express all three in MAPS, and a map
+ * lookup is a UV, which is per-vertex:
+ *
+ *   `roughnessMap` samples GREEN, `metalnessMap` samples BLUE, and
+ *   `totalEmissiveRadiance *= emissiveMap`.
+ *
+ * So two 4x1 textures, shared by every shell in the game, carry the whole
+ * table, and each piece's vertices are stamped at the texel for its own
+ * surface:
+ *
+ *   texel 0  hard    rough 0.34  metal 0.58   dark
+ *   texel 1  soft    rough 0.72  metal 0.30   dark
+ *   texel 2  sensor  rough 0.35  metal 0.30   LIT
+ *
+ * The shading is bit-for-bit what the three materials produced — the same
+ * numbers, read from a texel instead of a uniform — and the vertex colours
+ * keep doing the albedo, including the sensor's 0x0a0d10 base.
+ * `userData.sensor` moves to the merged material, so the eye-state system
+ * drives it exactly as before and the mask confines it to the sensor texels.
+ * Same technique as `parts.js`'s accent fold (§6.2.3).
+ *
+ * Saving: a whole shell is ONE draw call per machine instead of two or three
+ * — measured, 193 -> 176 machine draws across the live world.
+ */
+const SHELL_SLOT = {
+  plate: 0, lacquer: 0, trim: 0,
+  muscle: 1, cable: 1,
+  sensor: 2,
 };
-/** Per-piece tint multiplied into the vertex colours of that bucket. */
+/** Per-piece tint multiplied into the vertex colours. */
 const SHELL_TINT = {
   plate: 0xd2d7dc, lacquer: 0xc6cdd4, trim: 0x767d86,
   muscle: 0x22272d, cable: 0x40454c,
+  // the old `sensorMaterial`'s own base colour, now carried as albedo because
+  // the merged material's `color` is white
+  sensor: 0x0a0d10,
 };
 
-export function shellMaterials() {
-  const std = (color, metalness, roughness) => new THREE.MeshStandardMaterial({
-    color, metalness, roughness, vertexColors: true, flatShading: false,
-  });
-  const out = {
-    hard: std(0xffffff, 0.58, 0.34),   // lacquered armour, crowns and frame
-    soft: std(0xffffff, 0.30, 0.72),   // synthetic muscle and cabling
+let _shellTex = null;
+/**
+ * The two shared 4x1 lookups: `orm` (G = roughness, B = metalness, non-colour
+ * data) and `mask` (the emissive gate, sRGB).
+ */
+function shellTextures() {
+  if (_shellTex) return _shellTex;
+  const mk = (data, srgb) => {
+    const t = new THREE.DataTexture(new Uint8Array(data), 4, 1, THREE.RGBAFormat);
+    t.colorSpace = srgb ? THREE.SRGBColorSpace : THREE.LinearSRGBColorSpace;
+    t.magFilter = THREE.NearestFilter;
+    t.minFilter = THREE.NearestFilter;
+    t.wrapS = THREE.ClampToEdgeWrapping;
+    t.wrapT = THREE.ClampToEdgeWrapping;
+    t.generateMipmaps = false;
+    t.needsUpdate = true;
+    return t;
   };
-  // already ON the family palette: the mesh-budget pass must not re-tint them
-  for (const k in out) out[k].userData.shell = true;
-  return out;
+  //            R(ao)  G(rough) B(metal) A          surface
+  const orm = [ 255,   87,      148,     255,    // 0 hard   0.34 / 0.58
+                255,   184,     77,      255,    // 1 soft   0.72 / 0.30
+                255,   89,      77,      255,    // 2 sensor 0.35 / 0.30
+                255,   87,      148,     255 ];  // 3 unused, = hard
+  const mask = [ 0, 0, 0, 255,
+                 0, 0, 0, 255,
+                 255, 255, 255, 255,            // 2 sensor: lit
+                 0, 0, 0, 255 ];
+  _shellTex = { orm: mk(orm, false), mask: mk(mask, true) };
+  return _shellTex;
 }
 
-/** State-coloured sensor material (wired into the machine's eye system). */
-export function sensorMaterial(color = 0x38c6ff, intensity = 2.0) {
+/** Point every vertex of `geo` at one texel of the shell lookups. */
+function stampShellUV(geo, slot) {
+  const n = geo.attributes.position.count;
+  const uv = new Float32Array(n * 2);
+  const u = (slot + 0.5) / 4;
+  for (let i = 0; i < n; i++) { uv[i * 2] = u; uv[i * 2 + 1] = 0.5; }
+  geo.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
+  return geo;
+}
+
+/**
+ * The machine's one shell material. `roughness`/`metalness` are 1 so the map
+ * IS the value; albedo is vertex colours over white.
+ * Cloned per machine (never shared) so the frost tint, eye state and death
+ * fade systems in `machine.js` keep writing to a material only this machine
+ * owns; the two lookup textures are shared by everything.
+ */
+export function shellMaterials(sensorColor = 0x38c6ff) {
+  const tex = shellTextures();
   const m = new THREE.MeshStandardMaterial({
-    color: 0x0a0d10, emissive: new THREE.Color(color), emissiveIntensity: intensity,
-    metalness: 0.3, roughness: 0.35,
+    color: 0xffffff, metalness: 1, roughness: 1,
+    vertexColors: true, flatShading: false,
+    metalnessMap: tex.orm, roughnessMap: tex.orm,
+    emissive: new THREE.Color(sensorColor), emissiveIntensity: 2.0,
+    emissiveMap: tex.mask,
   });
-  m.userData.sensor = true;
-  return m;
+  // already ON the family palette: the mesh-budget pass must not re-tint it
+  m.userData.shell = true;
+  m.userData.sensor = true;   // the state sensors live in this material now
+  return { shell: m };
 }
 
 /* ------------------------------ primitives ------------------------------ */
@@ -171,7 +246,7 @@ function bakeWear(geo, wear = 0.35, tint = 0xffffff) {
 export function buildShell(machine, builder, opts = {}) {
   const pieces = typeof builder === 'function' ? builder(machine, opts.rig) : builder;
   if (!pieces || !pieces.length) return { meshes: 0, pieces: 0, tris: 0 };
-  const mats = shellMaterials();
+  const mats = shellMaterials(opts.sensorColor);
   machine._shellMats = mats;
 
   // group by (material, bone) — one merged mesh per bucket
@@ -185,7 +260,7 @@ export function buildShell(machine, builder, opts = {}) {
 
   const push = (piece, mirrorX) => {
     const tone = piece.m || 'plate';
-    const bucket = SHELL_BUCKET[tone] || 'hard';
+    const bucket = 'shell';
     // A MIRRORED piece on a named bone belongs to the mirrored bone. Without
     // this the right wing hangs off `ShoulderL` and flaps with the left
     // shoulder — correct at bind, wrong the moment the clip moves an arm.
@@ -212,6 +287,7 @@ export function buildShell(machine, builder, opts = {}) {
       m4.compose(pv, q, sc);
       g.applyMatrix4(m4);
       bakeWear(g, piece.wear ?? 0.35, SHELL_TINT[tone] ?? 0xffffff);
+      stampShellUV(g, SHELL_SLOT[tone] ?? 0);
       b.geos.push(g);
       count++;
       return;
@@ -224,6 +300,7 @@ export function buildShell(machine, builder, opts = {}) {
     m4.compose(pv, q, sc);
     g.applyMatrix4(m4);
     bakeWear(g, piece.wear ?? 0.35, SHELL_TINT[tone] ?? 0xffffff);
+    stampShellUV(g, SHELL_SLOT[tone] ?? 0);
     b.geos.push(g);
     count++;
   };
@@ -244,18 +321,16 @@ export function buildShell(machine, builder, opts = {}) {
     // built fresh for THIS machine: safe for the corpse solve to refresh its
     // bounding box to the posed extent (see rig/ground.js refreshPosedBounds)
     geo.userData.perMachine = true;
-    const material = b.mat === 'sensor'
-      ? sensorMaterial(opts.sensorColor)
-      : (mats[b.mat] || mats.hard);
+    const material = mats.shell;
     const mesh = new THREE.Mesh(geo, material);
-    mesh.name = `shell-${b.mat}`;
-    mesh.castShadow = b.mat === 'hard';
+    // KEEP THE NAME `shell-hard`. Three buckets are one mesh now, but
+    // `rig/lod.js` ("a shell-hard / shell-soft body mesh is never retired"),
+    // `hideSculpt` and every gate that names a mesh read this string.
+    mesh.name = 'shell-hard';
+    mesh.castShadow = true;
     mesh.receiveShadow = true;
     mesh.userData.machine = machine;
     mesh.userData.shell = true;
-    if (b.mat === 'sensor') {
-      machine._eyeMats?.push({ mat: material, base: material.emissiveIntensity, kind: 'emissive' });
-    }
     // Pieces are authored in BODY space; the mesh lands under `machine.model`
     // (so `autorig` skins it with the sculpt) or under a named bone. Both are
     // a different frame — `holder` carries the per-model yawFix and `inner`
@@ -272,6 +347,12 @@ export function buildShell(machine, builder, opts = {}) {
     geo.computeBoundingBox();
     geo.computeBoundingSphere();
     parent.add(mesh);
+    // the shell material carries the state sensors now: register it with the
+    // eye-state system once, exactly where the sensor mesh used to
+    if (!material.userData._eyeWired) {
+      material.userData._eyeWired = true;
+      machine._eyeMats?.push({ mat: material, base: material.emissiveIntensity, kind: 'emissive' });
+    }
     meshes++;
     tris += (geo.index ? geo.index.count : geo.attributes.position.count) / 3;
   }

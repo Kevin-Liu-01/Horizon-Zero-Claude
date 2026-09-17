@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { ParticlePool, DecalPool } from './particles.js';
 import { ArrowPool, BombPool, disposeArrowAssets, arrowAssets } from './arrows.js';
-import { buildWeaponModel } from './bow.js';
+import { buildWeaponModel, weaponAssets, disposeWeaponAssets } from './bow.js';
 import { AMMO, WEAPON_DEFS, DISC_LAUNCHER_DEF } from './weapons.js';
 import { Melee } from './melee.js';
 import { Traps } from './traps.js';
@@ -2097,7 +2097,57 @@ export class Combat {
    * them. `arrows.js` `_ride()` keeps the pool out of foreign subtrees; this
    * is how the gate proves it rather than assuming it.
    */
-  sharedAssets() { return arrowAssets(); }
+  sharedAssets() {
+    const a = arrowAssets(), w = weaponAssets();
+    return {
+      geometries: [...a.geometries, ...w.geometries],
+      materials: [...a.materials, ...w.materials],
+      textures: [...a.textures, ...w.textures],
+    };
+  }
+
+  /**
+   * Every geometry / material / texture combat is answerable for, as OBJECTS.
+   *
+   * Published for the teardown gate (A95): `dispose()` promises to release
+   * "every GPU resource combat owns", and the only honest way to check a
+   * promise like that is to put a `dispose` listener on each resource
+   * BEFOREHAND and see which ones never fire. A count cannot do it —
+   * `renderer.info.memory.geometries` moved by only -11 while 57 geometries
+   * were being abandoned, because a resource that is never freed also never
+   * decrements anything.
+   *
+   * `THREE.Sprite`'s quad is excluded (`o.isSprite`): three shares ONE quad
+   * process-wide, so it is not combat's to free and a dispose on it would be
+   * felt by every other lane's sprite. See docs/ROUND4-COMBAT-MEMORY.md §7.
+   */
+  ownedResources() {
+    const geos = new Set(), mats = new Set(), texs = new Set();
+    const addMat = (m) => {
+      if (!m) return;
+      mats.add(m);
+      for (const k in m) { const v = m[k]; if (v && v.isTexture) texs.add(v); }
+      if (m.uniforms) {
+        for (const u in m.uniforms) {
+          const v = m.uniforms[u] && m.uniforms[u].value;
+          if (v && v.isTexture) texs.add(v);
+        }
+      }
+    };
+    for (const root of this._ownedRoots()) {
+      if (!root) continue;
+      root.traverse((o) => {
+        if (o.geometry && !o.isSprite) geos.add(o.geometry);
+        const ms = Array.isArray(o.material) ? o.material : (o.material ? [o.material] : []);
+        for (const m of ms) addMat(m);
+      });
+    }
+    const shared = this.sharedAssets();
+    for (const g of shared.geometries) geos.add(g);
+    for (const m of shared.materials) addMat(m);
+    for (const t of shared.textures) texs.add(t);
+    return { geometries: [...geos], materials: [...mats], textures: [...texs] };
+  }
 
   memoryAudit() {
     const pools = {
@@ -2194,6 +2244,10 @@ export class Combat {
   dispose() {
     if (this._disposed) return;
     this._disposed = true;
+    this._guardMaterialDisposal();
+    // park every live effect first, so a disposed Combat reports no live FX
+    // rather than a frozen snapshot of whatever was on screen when it died.
+    this.clearFx();
     this.sparks.dispose(); this.trail.dispose(); this.dirt.dispose();
     this.smoke.dispose(); this.chips.dispose();
     this.decals.dispose(); this.blastFx.dispose();
@@ -2213,6 +2267,56 @@ export class Combat {
     this.feedback?.dispose?.();
     this._resSeen = null;
     disposeArrowAssets();
+    disposeWeaponAssets();
+  }
+
+  /**
+   * CROSS-LANE SHIM — `core-platform`, `src/core/engine.js` `warmUp()`.
+   *
+   * `warmUp()` races `renderer.compileAsync(scene, camera)` against a 20 s
+   * timeout. When the timeout wins, the promise is abandoned but three's own
+   * `checkMaterialsReady` loop is NOT cancelled: it keeps re-arming a
+   * `setTimeout` forever, reading `properties.get(material).currentProgram`
+   * for every material it was handed. The first dispose of one of those
+   * materials removes that property, so the next poll does `undefined
+   * .isReady()` and throws `TypeError: Cannot read properties of undefined
+   * (reading 'isReady')` from inside a timer — where no try/catch of ours can
+   * see it, and where a gate records it as a console error and FAILS.
+   * Measured: `Combat.dispose()` threw it; the identical probe with the
+   * dispose call removed logged nothing (judge finding 2).
+   *
+   * `machine-rig` hit the same wall on machine despawn and solved it the same
+   * way (`rig/lod.js` `guardMaterialDisposal`); the real fix is a cancellable
+   * compile in `engine.js` and is filed as a cross-lane request. Until it
+   * lands: as a combat material disposes, park a satisfied stub program on its
+   * renderer properties. The abandoned poll reads "ready", drops the material
+   * from its set and — once every straggler has gone the same way — RESOLVES
+   * and stops polling. Safe because the material is disposed: nothing will
+   * ever render with it again.
+   *
+   * This is deliberately NOT an import from `rig/lod.js`: that helper takes a
+   * machine and traverses `machine.root`, and a lane should not reach into
+   * another lane's module for a nine-line shim.
+   */
+  _guardMaterialDisposal() {
+    const renderer = this.ctx.renderer || this.ctx.engine?.renderer || null;
+    if (!renderer?.properties?.get) return 0;
+    const READY_STUB = { isReady: () => true, getUniforms: () => ({}) };
+    let n = 0;
+    for (const mat of this.ownedResources().materials) {
+      if (!mat || mat.userData?.disposeGuarded) continue;
+      mat.userData.disposeGuarded = true;
+      const real = mat.dispose;
+      mat.dispose = function guardedDispose(...args) {
+        real.apply(this, args);
+        try {
+          const props = renderer.properties.get(this);
+          if (props && !props.currentProgram) props.currentProgram = READY_STUB;
+        } catch { /* renderer internals moved: nothing to guard */ }
+      };
+      n++;
+    }
+    return n;
   }
 
   /* ----------------------- heavy pickup coordination ---------------------- */

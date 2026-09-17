@@ -171,7 +171,7 @@ class Pass {
     let w = 0;
     for (let i = 0; i < glows.length; i++) {
       const g = glows[i];
-      if (this._glowDead(g)) { if (g.obj) g.obj.visible = true; continue; }
+      if (this._glowDead(g)) { if (g.obj && !g.keep) g.obj.visible = true; continue; }
       glows[w++] = g;
     }
     glows.length = w;
@@ -181,7 +181,13 @@ class Pass {
       const g = glows[i];
       const obj = g.obj;
       if (!g.enabled) continue;
-      obj.getWorldPosition(_p);
+      // A component the LOD chain has retired, or a halo whose own mesh has
+      // been hidden, must not keep lighting the world (`rig/lod.js` stamps
+      // `lodHidden` on every mesh in a retired part's subtree).
+      if (obj.userData.lodHidden) continue;
+      if (g.keep && !obj.visible) continue;
+      if (g.off) { _p.copy(g.off).applyMatrix4(obj.matrixWorld); }
+      else obj.getWorldPosition(_p);
       const o3 = n * 3;
       this.pos[o3] = _p.x; this.pos[o3 + 1] = _p.y; this.pos[o3 + 2] = _p.z;
       const m = g.mat;
@@ -309,18 +315,24 @@ export class MachineFx {
       obj, mat: obj.material || null, color: new THREE.Color(opts.color ?? 0xffffff),
       size: opts.size ?? (obj.scale?.x ?? 0.4), scale0: obj.scale?.x ?? 1,
       gain: opts.gain ?? 1, enabled: true, emissive: !!opts.emissive,
+      // A HALO ON TOP OF A DRAWN MESH (fix round 2). `keepVisible` records
+      // never hide their object: the component stays rendered and the pooled
+      // quad is only the soft light around its accent, anchored at `off`
+      // (component-local metres) instead of at the mesh origin.
+      keep: !!opts.keepVisible,
+      off: opts.offset ? new THREE.Vector3(opts.offset.x, opts.offset.y, opts.offset.z) : null,
       // backpointers the self-prune reads (see `_glowDead`)
       machine: opts.machine || null, root: opts.machine?.root || null,
     };
     this.hot.glows.push(rec);
-    obj.visible = false;
+    if (!rec.keep) obj.visible = false;
     return rec;
   }
 
   detachGlowsOf(root) {
     this.hot.glows = this.hot.glows.filter((g) => {
       let n = g.obj;
-      while (n) { if (n === root) { g.obj.visible = true; return false; } n = n.parent; }
+      while (n) { if (n === root) { if (!g.keep) g.obj.visible = true; return false; } n = n.parent; }
       return true;
     });
   }
@@ -425,6 +437,29 @@ export function attachFxPool(machine) {
       const m = o.material;
       if (!m || !m.emissive) return;
       if (m.emissive.r + m.emissive.g + m.emissive.b < 0.05) return;
+      /**
+       * FIX ROUND 2, judge finding — A FOLDED COMPONENT IS NOT AN ACCENT.
+       *
+       * `parts.js`'s accent fold merged each component's metal body INTO the
+       * material that carries its accent colour, so from this filter's point
+       * of view a Thunderjaw cannon, a Behemoth cargo drum and a Watcher
+       * antenna all became "a pure-glow accent" and were hidden — 34 whole
+       * component meshes missing from the live world, and the pooled halo
+       * sized from the merged bounding sphere grew 4-5x with them (a 0.18 m
+       * antenna tip read as a 0.90 m ball). The component stays DRAWN; the
+       * pooled quad becomes what it should always have been for a folded
+       * part — the soft light around the accent, at the accent's own place
+       * and the accent's own size. The emissive-mask texels do the surface.
+       */
+      if (m.userData.foldedAccent) {
+        const a = o.userData.accentGlow;
+        if (!a) return;
+        o.userData.pooledGlow = pool.attachGlow(o, {
+          size: Math.max(0.12, Math.min(0.55, a.r * 2.4)), emissive: true,
+          gain: 0.55, machine, keepVisible: true, offset: a,
+        });
+        return;
+      }
       if (!o.geometry.boundingSphere) o.geometry.computeBoundingSphere();
       const r = o.geometry.boundingSphere?.radius ?? 0.1;
       o.userData.pooledGlow = pool.attachGlow(o, {

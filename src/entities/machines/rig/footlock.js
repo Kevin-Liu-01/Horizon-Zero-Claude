@@ -54,6 +54,9 @@ const _q4 = new THREE.Quaternion();
 const _q5 = new THREE.Quaternion();
 const _qI = /* @__PURE__ */ new THREE.Quaternion();
 
+/** Latch predicate: this rig's `planted` is already the honest flag. */
+const _legPlanted = (leg) => !!leg.planted;
+
 export class FootLock {
   /**
    * @param {object} machine
@@ -158,7 +161,18 @@ export class FootLock {
      */
     this.holdIn = opts.holdIn ?? 0.07;
     this.holdOut = opts.holdOut ?? 0.12;
-    this.holdRate = opts.holdRate ?? 5.5;
+    /**
+     * FIX ROUND 4. 5.5 -> 7.5 m/s. The handle ramp is the second half of "a
+     * plant that is never REPORTED" (`rig/contact.js`): `planted` is false
+     * until `hold >= 0.9`, and `_rampStep` bounds the ramp by
+     * `holdRate / corrM` — so a fast clip, whose lock correction is large,
+     * spends most of a short stance ramping and the stance is reported for a
+     * fraction of its length. Measured on a longleg: contact 39 % of samples,
+     * `planted` 28 %. Gate `A45c-foot-continuity` grades this exact number
+     * (`lockRampMps`) against 9 m/s and read 5.5, so there was 1.6x of unused
+     * budget; 7.5 keeps 1.2x of it.
+     */
+    this.holdRate = opts.holdRate ?? 7.5;
     /**
      * Stance ends when the lock and the clip disagree by more than this
      * fraction of the leg's measured reach. A foot lock is a correction, not a
@@ -213,6 +227,7 @@ export class FootLock {
       stanceT: 0,
       relFrame: -1,   // rendered frame the last plant closed on
       relSeen: true,  // has a consumer seen that release? (rig/contact.js)
+      rptPlanted: false, // last per-frame contact sample (rig/contact.js)
       plants: 0,
     }));
     this._feet = this.legs.map((l) => ({ name: l.id, world: { x: 0, y: 0, z: 0 }, planted: false }));
@@ -238,6 +253,10 @@ export class FootLock {
   update(dt) {
     const m = this.m;
     const T = m.ctx.terrain;
+    // ---- COUNT the footfalls this rig publishes, once per drawn frame
+    // (rig/contact.js `latch`): the rate a consumer sampling every frame
+    // sees, which is what the cadence loop closes over.
+    this.ledger.latch(this.legs, _legPlanted);
     /**
      * OBSERVED RE-PLANT — the ledger owns the rule (`rig/contact.js`).
      *
@@ -404,7 +423,28 @@ export class FootLock {
       // moves (A45), and the sole settles onto the ground it is standing on
       // (A46). If the chain cannot follow, the plant is released, not dragged.
       const wantY = T.getHeight(leg.lock.x, leg.lock.z) + this.soleOff;
-      leg.lock.y = THREE.MathUtils.damp(leg.lock.y, wantY, 8, dt);
+      /**
+       * TWO RATES: WALKING THE FOOT DOWN IS NOT THE SAME AS HOLDING IT THERE
+       * (fix round 4, `A48-cadence` on the longleg).
+       *
+       * `plantReach` lets a plant open with the sole a long way up — it has
+       * to, or a digitigrade chain near full extension never plants at all —
+       * and the lock then eases it down. At one fixed rate (8, a 0.125 s time
+       * constant) a plant that opens 0.4 m high needs about 0.3 s to come
+       * inside `groundTol`, and `planted` is false for every one of them. A
+       * stance shorter than that is a footfall NOBODY EVER SEES: not the
+       * gate, not the footstep bank, not the camera. Measured: longleg
+       * 0.89 Hz against a 0.97 Hz band floor with the cadence loop already
+       * saturated, because the extra rate it commanded bought no extra
+       * REPORTED plants.
+       *
+       * So the descent is quick while the foot is still travelling to the
+       * soil and slow once it is standing on it. `A45c-foot-continuity`
+       * grades the per-frame movement of a PLANTED toe and `A46` its ground
+       * error — both of those live entirely in the second rate, which is
+       * unchanged.
+       */
+      leg.lock.y = THREE.MathUtils.damp(leg.lock.y, wantY, leg.planted ? 8 : 20, dt);
       _lockT.copy(leg.lock);
       const ok = this._solve(leg, _lockT);
       // honest contact flag: the solve landed AND the sole is on the soil

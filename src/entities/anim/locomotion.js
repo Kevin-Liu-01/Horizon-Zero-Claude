@@ -280,13 +280,52 @@ export class LocomotionBlend {
      * than flipping on it. A 0.15 rad (8.6 deg) deadband on each side is far
      * wider than the jitter and far narrower than any real forward/backpedal
      * transition, which crosses the boundary by a radian or more.
+     *
+     * FIX ROUND 7 (judge-player-anim-r2, blocker) — THE LATCH MUST NOT OUTLIVE
+     * THE TRANSITION THAT SET IT.
+     *
+     * Round 6 shifted the boundary by the latch and then re-latched every
+     * frame, so a sign could survive indefinitely inside the deadband. A pure
+     * sidestep's |a| IS 1.5708, and with the latch at -1 the boundary sits at
+     * PI/2 - 0.15 = 1.4208 — permanently on the mirrored side. So a strafe
+     * entered straight out of a backpedal (aim held, KeyS released and KeyA
+     * pressed the same frame) ran the WHOLE sidestep with rev = -1 and the
+     * gait phase running backward: measured here, 101 of 102 frames backward,
+     * and the trailing (left) ball sliding 0.0176 / 0.0477 / 0.0551 / 0.0560 /
+     * 0.0670 m per stance against this lane's own 0.06 m bar, while the right
+     * ball stayed at 0.0006-0.0019 m — the asymmetry a mirrored clip predicts.
+     * Unlike the round-6 bug this is not lock saturation: errM peaked at 0.037
+     * of the 0.300 cap, so the lock never even engaged; the anchor is simply
+     * being walked backwards under a planted foot.
+     *
+     * Hysteresis is still the right idea — it is what stops float jitter at the
+     * boundary from flipping the mirror — but the deadband must not CONTAIN
+     * the sidestep angle. Both switching boundaries now sit ABOVE PI/2:
+     *
+     *   +1 -> -1  when |a| > PI/2 + REV_HYST   (1.7208 rad, 98.6 deg)
+     *   -1 -> +1  when |a| < PI/2 + REV_BIAS   (1.6208 rad, 92.9 deg)
+     *
+     * so there is still a 0.1 rad hysteresis band between them — far wider
+     * than any jitter — but a pure sidestep at 1.5708 is BELOW both of them
+     * and therefore resolves to the forward loop from either latch state, in
+     * one frame, with no timer and no memory of how it was entered. Inside
+     * [PI/2, PI/2 + 0.15] the two mirrors are equally good (the stride is
+     * perpendicular either way), which is the whole reason the bias is free to
+     * spend; a real backpedal is |a| ~ PI and is nowhere near it.
+     *
+     * A time-based entry latch was tried first and measured worse: holding the
+     * entry sign for 0.3 s after |a| reached the band kept the gait mirrored
+     * ~0.94 s into the sidestep (60 of 109 frames backward) and left a 0.0356 m
+     * stance in the transition. The biased boundary flips during the redirect
+     * itself, which is where a forward/backpedal flip belongs.
      */
-    const REV_HYST = 0.15;
-    const bound = Math.PI / 2 + (this._revSign < 0 ? -REV_HYST : REV_HYST);
-    let rev = Math.abs(a) > bound ? -1 : 1;
+    const REV_HYST = 0.15;    // rad past PI/2 that flips FORWARD -> mirrored
+    const REV_BIAS = 0.05;    // rad past PI/2 that flips mirrored -> FORWARD
+    const moving = s.speed > 0.25;
+    const bound = Math.PI / 2 + (this._revSign < 0 ? REV_BIAS : REV_HYST);
+    const rev = Math.abs(a) > bound ? -1 : 1;
     this._revSign = rev;
     if (rev < 0) a = a > 0 ? a - Math.PI : a + Math.PI;
-    const moving = s.speed > 0.25;
     this.reverse = damp(this.reverse, moving ? rev : this.reverse, 9, dt);
     // lateral authority: how much of the travel is a sidestep rather than a
     // forward stride. Fades in the short-stride `strafe` loop, opens the yaw

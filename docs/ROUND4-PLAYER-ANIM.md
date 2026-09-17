@@ -49,6 +49,9 @@ Gates: `tools/gates.round4.player-anim.mjs` —
 | `judge-player-anim-r2` residue — `A33-hair-bounce` "still fails a clean re-run" | Gate-side only (nothing in the rig moved). The sample window is closed by 20 banked **footfalls** instead of by the wall clock, the resolvability floor is the judge's **≥ 8 gait cycles**, the hang guard is 45 s so the floor is cleared down to ~2 fps, and the one unexplained FAIL is now named at its source. Eleven consecutive clean runs, 3.7 → 60 fps, ratio 0.995–1.000. See §6d. |
 | `judge-player-anim-r2` fix round 2 — `A31b` green over a 0.34–0.57 m planted-foot slide (**blocker**) | `A31b` scored a stance only when the foot LIFTED inside the sampling window, so the long saturated strafe-left stance was dropped; it now closes every window. That turned the gate red at **0.3694 m**, and the rig-side cause is fixed at its source: the clip-mirror test flipped on a float at |moveAngle| = π/2 and ran the gait phase BACKWARD through a stance (`REV_HYST`), and `HIP_MAX` 0.95 → 1.24 closes the 0.28 rad of move angle the leg yaw never covered. Worst drift now **0.0072 m** across 16–60 fps, worst lock use 0.144 of 0.300. See §6e. |
 | `judge-player-anim-r2` fix round 2 — §6e/§9 understate the skate ~4× (**major**) | §6e rewritten against the corrected measurement (0.13–0.57 m, deterministic, standalone, lock saturated every run), the "does not reproduce standalone" / "never attributable" claims dropped, the §7 `A31b` line re-read, and the §9 entry re-ranked from deferred to **closed**. |
+| `judge-player-anim-r2` fix round 3 — the mirror latch survives inside the deadband, so a strafe entered from a **backpedal** runs the whole sidestep mirrored (**blocker**) | The hysteresis is now **biased**, not centred: both switching boundaries sit above π/2 (`REV_HYST` 0.15 out, `REV_BIAS` 0.05 back), so the 0.1 rad band still absorbs jitter but a pure sidestep at 1.5708 is below both and resolves to the forward loop from either latch state, in one frame, with no timer. Reproduced first (0.0176–0.0670 m of left-ball slide per stance, 101/102 frames of backward gait phase), then 0.0002–0.0005 m after. See §6f. |
+| `judge-player-anim-r2` fix round 3 — `A31b` PENDINGs on a loaded box (**major**) | The window now closes on **8 banked footfalls** (`loco.phase`) instead of 3000 ms of wall clock, and the all-or-nothing >100 ms hitch discard is replaced by the judge's rule: a stance is set aside only if it both fails the 0.06 m bar **and** its own longest frame could account for the reading (`dt × speed ≥ drift`). SKIP is now last resort. The gate also runs **four** passes — both directions from a standing start plus the two transition entries (from a backpedal, from a run) — so the blocker above has a gate. See §6g. |
+| `judge-player-anim-r2` fix round 4 — that set-aside rule raises the effective bar to 0.09–0.10 m at the frame rates the gate actually runs at (**major**) | Three tightenings, no bar moved. (1) The **mirror clause** `revSign === 1 && phaseBackFrames === 0` is checked **before** the SKIP branch, so a mirrored sidestep is red at any frame rate. (2) The excuse is bounded by the **foot lock** (`min(body travel, maxLockErrM)`) instead of by body travel alone — 0.037 m on the §6f blocker's own windows, where the old rule allowed 0.089–0.104 m. (3) **Any** unresolvable window now makes the pass SKIP instead of needing to outnumber the resolved ones. §6g's "the verdict no longer depends on how busy the box is" and §9's "below roughly 8 fps" are corrected in place. See §6h. |
 
 ---
 
@@ -196,6 +199,11 @@ New override channels, all driven by the animator: `hitW` / `airW` / `actW` and
 `hitSlot` / `airSlot` / `actSlot`, plus `widen` (0..1 stance widen the animator
 applies) and the existing `legYaw` / `hipYaw` / `lateral` / `stanceL` /
 `stanceR` / `freq` / `phase`.
+
+`reverse` (damped ±1 clip mirror) and `_revSign` (the un-damped latched decision
+behind it) are readable for diagnostics — `A31b` asserts on them, and a
+`_revSign` of −1 during a sustained sidestep is the §6f blocker's signature.
+Nothing outside this lane writes either.
 
 ### Consumed from other lanes (nothing new was asked for)
 
@@ -510,6 +518,261 @@ on the planted right boot, three frames spanning one stance: the boot's contact
 patch does not move (**0.0005 m** of world travel) while she travels 0.33 m
 left. The boot rolls onto its toe, which is toe-off, not slide.
 
+## 6f. FIXED — the mirror latch outlived the transition that set it
+
+`judge-player-anim-r2` (**blocker**). §6e put a 0.15 rad deadband on the clip
+mirror so a float at |moveAngle| = π/2 could not flip it. That fixed the jitter
+and introduced a worse thing: the latch was re-applied **every frame**, so a
+sign could live inside the deadband forever.
+
+```js
+const bound = Math.PI / 2 + (this._revSign < 0 ? -REV_HYST : REV_HYST);
+let rev = Math.abs(a) > bound ? -1 : 1;
+this._revSign = rev;
+```
+
+With the latch at −1 the boundary sits at π/2 − 0.15 = **1.4208**, and a pure
+sidestep's |moveAngle| is **1.5708** — permanently on the mirrored side. So a
+strafe entered straight out of a **backpedal** (aim held, `KeyS` released and
+`KeyA` pressed the same frame) ran the *entire* sidestep with `rev = −1` and the
+gait phase running backward, and the trailing (left) ball skated.
+
+**Reproduced before anything was changed** (probe on port 5205, same staging and
+the same planted + |above| < 0.05 m stance rule `A31b` uses):
+
+```
+control      (standing start -> KeyA)   revSign +1   phase backward   0/86 frames
+                                        L drift 0.0001-0.0003 m · R 0.0006-0.0017
+fromBackpedal (KeyS -> KeyA)            revSign -1   phase backward 101/102 frames
+                                        L drift 0.0176 / 0.0477 / 0.0551 / 0.0560 / 0.0670 m
+                                        R drift 0.0007-0.0019 m
+```
+
+Left-ball drift over the 0.06 m bar on the last window, the right foot clean —
+the asymmetry a mirrored clip predicts. Unlike §6e this is **not** lock
+saturation: `lock.errM` peaked at 0.037 of the 0.300 m cap, so the lock never
+engaged; the anchor was simply being walked backwards under a planted foot.
+
+### The fix: move BOTH boundaries above π/2
+
+Hysteresis is still what stops jitter from flipping the mirror; the deadband
+simply must not *contain* the sidestep angle. Both switching boundaries now sit
+above π/2 — the hysteresis is biased, not centred:
+
+```js
+const REV_HYST = 0.15;   // +1 -> -1 when |a| > PI/2 + 0.15   (98.6 deg)
+const REV_BIAS = 0.05;   // -1 -> +1 when |a| < PI/2 + 0.05   (92.9 deg)
+const bound = Math.PI / 2 + (this._revSign < 0 ? REV_BIAS : REV_HYST);
+const rev = Math.abs(a) > bound ? -1 : 1;
+this._revSign = rev;
+```
+
+The band between them is 0.1 rad — far wider than any jitter — but a pure
+sidestep at 1.5708 is **below both boundaries**, so it resolves to the forward
+loop from either latch state, in one frame, with no timer and no memory of how
+it was entered. Between π/2 and π/2 + 0.15 the two mirrors are equally good (the
+stride is perpendicular either way), which is exactly what makes the bias free
+to spend; a real backpedal is |a| ≈ π and nowhere near it.
+
+**A time-based entry latch was tried first and measured worse.** Holding the
+entry sign for 0.3 s after |a| reached a centred deadband still ran the gait
+mirrored **0.94 s** into the sidestep (60 of 109 frames backward) and left a
+0.0356 m stance in the transition; the biased boundary flips at 0.85 s, during
+the redirect itself, which is where a forward/backpedal flip belongs. The
+timer, and the `_revBandT` state it needed, are gone.
+
+### After: every entry path, measured
+
+```
+sustained sidestep from a backpedal  revSign +1  phase backward 0/165
+                                     L 0.0002-0.0005 m · R 0.0011-0.0021 m
+sustained sidestep, standing start   revSign +1  phase backward 0/179
+                                     L 0.0000-0.0004 m · R 0.0009-0.0018 m
+backpedal (KeyS held)                revSign -1  phase backward 97/97   (the mirror still works)
+strafe from a forward run            revSign +1  phase backward  0/92   L 0.0038 · R 0.0008 m
+forward -> backpedal                 revSign -1  phase backward 90/90   (transition still crosses)
+strafe -> backpedal                  revSign -1  phase backward 63/63   (the band EXIT still reaches -1)
+```
+
+**On film, at the judge's angle.** Camera nailed to world space, one stance,
+the left ball's world path projected onto the frame as a trail (green = first
+planted sample, yellow = last) against a 0.10 m world-space ruler:
+
+* `shots/pa-r3-strafe-from-backpedal-before.png` — sticky latch: `revSign −1`,
+  the trail walks **0.0557 m** off the touchdown point while she travels
+  0.5167 m, over 22 planted frames.
+* `shots/pa-r3-strafe-from-backpedal-fixed.png` — same entry, same angle:
+  `revSign +1`, start and end dots on top of each other, **0.0002 m** of ball
+  travel against 0.5163 m of body travel over 22 planted frames.
+
+## 6g. FIXED — `A31b` could not resolve on a loaded box
+
+`judge-player-anim-r2` (**major**). Two defects, both of them ones this lane had
+already fixed elsewhere and not applied to its own gate.
+
+**Wall clock.** The sampling window was a fixed 3000 ms, so the number of
+stances it bought depended on how busy the box was — the same defect §6d fixed
+for `A33` by banking footfalls. It now runs until the gait has banked
+`FOOT_TARGET` = **8 footfalls** off `loco.phase` (≈ 4 stances per foot at any
+frame rate, twice the 2-window floor). The 30 s wall clock and 900-frame bounds
+that remain are hang guards, not measurement bounds: 8 footfalls is banked down
+to ~2.2 fps.
+
+**An all-or-nothing hitch discard.** `hitchMs` floored at 100 ms and any window
+containing one slower frame was thrown away whole, which on a loaded box is
+every window. Measured: quiet box PASS with 9 windows; the same box running this
+lane's own 8-gate suite gave `R 0 windows / 5 hitched, L 0 / 6` and *SKIP*. A
+SKIP does not fail a run, so with §6f live the gate was silent on exactly the
+runs the audit's sixteen-lane working condition produces.
+
+A long frame can only ever **inflate** a drift reading, never deflate one, and
+the inflation is bounded by how far she travels in that frame. So the filter is
+now applied only where it can change a verdict: every stance with ≥ 3 samples is
+scored and reported, and a window is set aside as *unresolvable* only when it
+**both** fails the 0.06 m bar **and** its own longest frame could account for the
+whole reading (`dt × speed ≥ drift`). SKIP is the last resort — fewer than 2
+resolved windows, or more unresolvable than resolved.
+
+That rule is not a loophole: the §6f slide is 0.0703 m in a window whose longest
+frame is 39 ms (0.0525 m of travel), so it is **not** explainable and it fails
+the gate.
+
+**The gate now runs four passes, not two.** Both `run()` calls used to clear the
+keys, re-stage and press one key, so every pass entered from a standing start —
+where the latch is always +1. `entry` now stages `stand` (unchanged), `back`
+(backpedal → strafe) and `fwd` (run → strafe), aim pressed before the entry move
+and never released. Both directions get a standing start and a transition.
+`revSign`, `reverse`, `phaseBackFrames`, `footfalls`, `fps` and per-pass
+`unresolved[]` are reported so a future failure carries its own cause.
+
+**Regression-checked against the bug it exists to catch.** With the latch made
+sticky again (`REV_DWELL` raised, nothing else touched), the gate goes red and
+names the pass:
+
+```
+R-stand  rev  1  back  0/69  win 9  unres 0  maxDrift 0.0044
+L-stand  rev  1  back  0/81  win 9  unres 0  maxDrift 0.0022
+L-back   rev -1  back 82/83  win 9  unres 0  maxDrift 0.0703   <- worst frame 39 ms
+R-fwd    rev  1  back  0/61  win 9  unres 0  maxDrift 0.0036      could explain 0.0525
+failing: [ 'L-back' ]
+```
+
+**And it resolves under load.** Inside the lane's own 8-gate suite — the run the
+judge saw report `R 0 windows / 5 hitched, L 0 / 6, SKIP` — with two of the four
+passes at 22–24 fps:
+
+```
+R-stand  fps 23.8  8.02 footfalls  8 windows  0 unresolvable  maxDrift 0.0027
+L-stand  fps 30.6  8.04 footfalls  9 windows  0 unresolvable  maxDrift 0.0025
+L-back   fps 22.6  8.00 footfalls  9 windows  0 unresolvable  maxDrift 0.0018
+R-fwd    fps 51.7  8.05 footfalls  8 windows  0 unresolvable  maxDrift 0.0063
+```
+
+Every pass banks its 8 footfalls whatever the frame rate buys, and no window is
+discarded.
+
+> **CORRECTION (fix round 8).** This paragraph used to end "…so the verdict no
+> longer depends on how busy the box is." That was true of the *sampling* — the
+> footfall window is genuinely frame-rate-invariant — and **false of the
+> verdict**, for exactly the runs that matter: the set-aside rule below scaled
+> its excuse with the frame time, so a slide *grazing* the 0.06 m bar was
+> excused on any loaded box. §6h is the fix; read it before trusting the
+> sentence this one replaced.
+
+The gate's timeout is 185 s for the four passes (was 90 s for two); no bar,
+clause or filter was weakened.
+
+## 6h. FIXED — the set-aside rule's excuse grew with the frame time
+
+`judge-player-anim-r2` (**major**), against §6g's own rule: a window that fails
+the drift bar is set aside as unresolvable when its longest frame could account
+for the reading, `(maxDt/1000) × speed ≥ drift`. `speed` is the aim-strafe's
+1.32–1.36 m/s, so the excuse covers the whole 0.06 m bar at **44 ms — about
+22 fps** — and keeps growing below that. Measured on this box, a **passing**
+lane run at 14.5–15.4 fps:
+
+| pass | fps | longest frame | old excuse (body travel) | new excuse (lock-bounded) |
+| --- | --- | --- | --- | --- |
+| R-stand | 15.2 | 89 ms | **0.1162 m** | 0.0686 m |
+| L-stand | 15.4 | 66 ms | **0.0895 m** | 0.0361 m |
+| L-back | 14.5 | 77 ms | **0.1022 m** | 0.0392 m |
+| R-fwd | 15.3 | 107 ms | **0.1423 m** | 0.1262 m |
+
+The §6f blocker's own slides were 0.0176–0.0670 m. Every one of them is below
+three of those four old excuses, so the gate written to catch it would have
+filed it `unresolved` and — since unresolvable windows only stopped a pass when
+they *outnumbered* the resolved ones, and nothing in the verdict printed them —
+**read PASS**. Three changes, all tightening:
+
+1. **The mirror clause, checked first and unskippable.** Every clause this gate
+   had was a drift measurement, and a drift measurement can always be argued
+   with. The failure mode has a second signature no frame time can fake: a
+   sidestep on the mirrored clip runs the master gait phase **backward**. All
+   four passes are sustained sidesteps and all four settle to `+1` by design
+   (§6f), so `revSign === 1 && phaseBackFrames === 0` is a binary. It is
+   evaluated **before** the SKIP branch, so a mirrored run is red whatever its
+   windows did.
+2. **The excuse is bounded by the foot lock, not by body travel.** The ball
+   rides `anchor + IK residual`; the anchor does not move until the correction
+   saturates `MAX_LOCK` (`_footLock`). While the lock is unsaturated the ball
+   cannot travel further than the correction it was holding — `lock.errM`,
+   which `debugFeet()` already publishes — so `explainM = min(body travel,
+   maxLockErrM)`, and body travel alone only once `errM` pins at `capM` and the
+   anchor really is sliding. Against §6f's blocker (`errM` peaked at 0.037 of
+   the 0.300 cap while the left ball slid 0.067 m) that is 0.037 < 0.067 **at
+   any frame rate**.
+3. **An unresolvable window is visible.** Every set-aside window is by
+   construction over the bar, so any of them means the pass did not settle the
+   question: the run is yellow (SKIP), not green. It used to take
+   `unresolvable > resolved`.
+
+**Regression, measured.** With the §6f latch made sticky again (`REV_BIAS`
+back to −0.15) the gate goes **red** and names it, on both signals at once:
+
+```
+[FAIL] A31b-aim-strafe-skate-player-anim
+  L-back  rev -1  back 95/96  drifts 0.002 0.0154 0.0664 0.0855 0.0612 …
+          maxDrift 0.0855  windows 9  unresolvable 0
+          worst: lockErr 0.0409  body travel 0.0581  -> could explain 0.0409
+  failing: ['L-back']
+  note: MIRRORED: L-back rev -1, 95/96 frames of backward gait phase
+```
+
+**The pair, on film, at one camera.** With the sticky latch back in
+(`shots/pa-r4-strafe-from-backpedal-blocker.png`, 48 fps, quiet box): `revSign
+-1`, **143 / 144 backward gait-phase frames**, and the left ball walking
+0.0560 / 0.0479 / 0.0519 / **0.0645** m per stance — the inset shows the six
+samples strung out across two thirds of the 0.10 m ruler. The lock held only
+0.037 m of its 0.300 m cap on that stance, so the new excuse is 0.0366 m and
+every one of those slides is a real FAIL; the old excuse was 0.0487 m *at
+48 fps* and would already have swallowed two of the four, and at the 15 fps the
+suite actually runs it would have been ~0.12 m and swallowed all four.
+
+**On film**, the same entry the clauses are about, taken while the rest of the
+suite was running (13–32 fps, longest frame 96–109 ms — the judge's regime):
+`shots/pa-r4-strafe-from-backpedal-verify.png`. Overlaid on the frame: the
+sidestep entered from a backpedal with aim never released, `revSign +1`,
+**0 / 97 backward gait-phase frames**, the five left-ball stances at 0.0013 /
+0.0003 / 0.0003 / 0.0002 / 0.0001 m against the 0.06 m bar, and an inset that
+redraws one stance's six samples in world XZ at 0.10 m = 200 px — 0.0001 m is a
+fifth of a pixel, so all six dots land on one another. The same overlay prints
+both excuses for that stance side by side: **0.0987 m** of body travel in its
+longest frame (what the old rule would have allowed) against **0.0678 m** of
+lock budget actually held (what the new one allows).
+
+Three windows over the bar, **none of them excused** (the old rule's 0.0581 m
+of body travel covered the 0.0664 and 0.0612 m ones outright, and at the
+judge's cited 67–78 ms frames it would have covered all three). R-stand,
+L-stand and R-fwd stayed green in the same run, so the gate still separates the
+mirrored entry from the three that are fine.
+
+**The SKIP path was exercised too**, with a throwaway copy of the gate whose
+bar is dropped to 1 mm (`--extra`, id `ZZ-probe-unresolvable`) so ordinary
+2 mm stances go over a bar the 0.04–0.10 m lock budget dwarfs — the exact shape
+of an unresolvable window. Verdict: **PENDING**, `R-stand resolved 5 /
+unresolvable 4 (worst 0.0029 m, lock 0.0899 m)`. Under the old rule 4 > 5 is
+false and that run read PASS.
+
 ## 7. Gate output (`node tools/gates.mjs --port 5205 --lane player-anim`)
 
 Every action gate in the §4 block passes, with the margin the fix round was
@@ -530,13 +793,24 @@ unchanged by it:
                             behindFace +0.058..+0.065 [>0], bowElbow 167.93-167.94 deg [165-172]
 [PASS] A36-hit-react-visible  peak lean 18.18 deg [12], decay 0.603 s [>0.45],
                             dominant = hitChest, 100 -> 86 hp
-[PASS] A31b-aim-strafe-skate-player-anim  maxDrift 0.0047 / 0.0019 m [0.06],
-                            crossedFrac 0 both ways [<=0.02], minSep +0.193 / +0.255 m,
-                            3.02 / 3.10 steps/s, 10 + 10 stance windows
-                            worstWindow: 15 samples, longest frame 34 ms, yRange 0.0071 m,
-                            ball 1-9 mm below the ground sample,
-                            maxLockErr 0.120 / 0.039 of a 0.3 m lock budget
-                            (EVERY window is scored now, trailing one included — 6e)
+[PASS] A31b-aim-strafe-skate-player-anim  FOUR passes (fix round 4, 6h) —
+                            the whole lane suite was running, so 14.5-15.4 fps:
+                            R-stand  15.2 fps  8.09 ff  9 win  0 unresolvable
+                                     maxDrift 0.0022 m [0.06]  rev +1  back 0/…
+                            L-stand  15.4 fps  8.08 ff  9 win  0 unresolvable
+                                     maxDrift 0.0016 m         rev +1  back 0
+                            L-back   14.5 fps  8.13 ff  9 win  0 unresolvable
+                                     maxDrift 0.0015 m         rev +1  back 0
+                            R-fwd    15.3 fps  8.08 ff  9 win  0 unresolvable
+                                     maxDrift 0.0043 m         rev +1  back 0
+                            crossedFrac 0 on all four [<=0.02]; 3.0-3.1 steps/s
+                            worst window's excuse, lock-bounded [6h.2]:
+                                     0.0686 / 0.0361 / 0.0392 / 0.1262 m
+                                     (body travel alone: 0.1162 / 0.0895 /
+                                      0.1022 / 0.1423 — what the old rule allowed)
+                            (every window scored — 6e; window closed by footfalls
+                             — 6g; mirror clause first, excuse bounded by the
+                             foot lock, unresolvable windows visible — 6h)
 [PASS] A18b-slope-conform-moving  downhill p90 clear 0.0060 m [0.05] / worst 0.0067 [0.12],
                             uphill p90 0.0036 · p90 sole tilt 6.0 / 1.9 deg [22]
 [NEEDS-JUDGE] V23-secondary-motion
@@ -544,6 +818,51 @@ unchanged by it:
 
 8 gates: 6 pass, 2 need judging
 ```
+
+**FIX ROUND 4, full suite on port 5205** (the suite is 187 gates now; six lanes
+added gates since fix round 3's 181). The runner was killed by the harness one
+gate from the end, so the tally below is counted from its own per-gate lines
+and the last gate (`A61c-datapoints-unified`, another lane's) was re-run on its
+own — it passes:
+
+```
+186 of 187 gates ran: 140 pass, 12 fail, 3 pending, 31 need judging
++ A61c-datapoints-unified   PASS (re-run alone)
+```
+
+**Five of those twelve FAILs are contention artefacts, not regressions**, and
+all five pass when re-run on a quiet box — `A20b-no-system-errors` was failing
+while reporting `systemErrors: []` and `hookErrors: 0` (92 frames advanced
+under load, 232 on the re-run), and `A19-secondary-motion` was reading
+`afterStopRangeDeg` 0 on every chain:
+
+```
+node tools/gates.mjs --port 5205 --only A10-loot-single-render,A19-secondary-motion,\
+  A20b-no-system-errors,A47b-corpse-posed,A60-stealth-lanes,A61c-datapoints-unified
+6 gates: 6 pass
+```
+
+That leaves the standing seven: `A90-memory-stability`, `A17-draw-beats`,
+`A48-cadence`, `A47c-corpse-mass`, `A31b-no-ghost-without-occluder`,
+`A23-aim-cost`, `A23b-hull-fidelity`, with `A9-perf-budget`,
+`A21-real-draw-calls` and `A31-aim-strafe-skate` pending — **the same count as
+fix round 3, and every one of them another lane's**. `A21` and `A23` swapped
+FAIL↔PENDING between the two runs; both are load-sensitive and neither is
+this lane's. Nothing in fix round 4 can have moved any of them: the round
+changed `tools/gates.round4.player-anim.mjs` and this document and **no runtime
+file at all** (`src/entities/anim/locomotion.js` is byte-identical to the fix
+round 3 tree — `git diff` against it is empty).
+
+All seven FAILs and all three PENDINGs belong to other lanes and to the standing
+set — `A90-memory-stability`, `A17-draw-beats`, `A21-real-draw-calls`,
+`A48-cadence`, `A47c-corpse-mass`, `A31b-no-ghost-without-occluder`,
+`A23b-hull-fidelity`; PENDING `A9-perf-budget`, `A13-no-skate`, `A23-aim-cost`.
+**No new FAIL, and this lane's six action gates all PASS inside that run** —
+`A31b` among them with 9 scored windows and 0 unresolvable on every one of its
+four passes. So do every cross-lane consumer of the foot lock and the gait
+phase: `A12-clip-driven`, `A18-slope-conform`, `A28-run-cadence` (2.94 steps/s
+at run), and the animator lane's own `A31-aim-strafe-skate` at **0.0044 m**,
+7 windows, 0 hitched.
 
 **FIX ROUND 2, full suite on port 5205** (two other lanes running their own
 suites on the same box throughout):
@@ -675,12 +994,49 @@ is the only gate in the repo that actually measures Aloy's strafe-left plant.
   `src/entities/anim/locomotion.js` (`REV_HYST`, `HIP_MAX`); the gate now scores
   every window. Worst drift across 16–60 fps and both directions is now
   **0.0072 m** against a 0.06 m bar, worst lock use 0.144 of 0.300.
+  **Fix round 3 closed the other half of it** (§6f): the `REV_HYST` deadband was
+  a persistent latch, so a strafe entered out of a **backpedal** ran the whole
+  sidestep mirrored (0.0176–0.0670 m of left-ball slide per stance) and `A31b`
+  could not see it, because both of its passes started from a stand. The
+  hysteresis is now biased above π/2 and the gate runs the transition entries
+  too.
+- **The FIRST stance after any change of travel direction can still skate**, and
+  it always could — this is the redirect, not the mirror. Sampling from the
+  frame the key is pressed (no settle), the stance that is planted while the
+  velocity swings reads 0.05–0.45 m with the foot lock pinned at its 0.3 m cap,
+  on a standing start and a run→strafe as well as a backpedal→strafe, and it
+  varies run to run with which foot happens to be down. No clip can cancel a
+  travel direction that rotates under a planted foot; closing it needs either a
+  plant-and-turn beat for lateral entries (the animator has one for >120°
+  reversals only) or a shorter velocity-redirect time from `player-control`.
+  Every gate in this lane, `A31b` included, measures the settled gait, so this
+  is unmeasured by them — recorded here rather than left to be rediscovered.
+- **`A31b`'s unresolvable-window rule still has a floor — but it is a LOCK
+  budget now, not a frame rate** (§6h). ~~Below roughly 8 fps a genuine slide up
+  to the bar would be filed unresolvable rather than failed.~~ **That figure was
+  wrong by about 3× and the judge was right to say so**: the old excuse was
+  body travel in the longest frame, which reaches the 0.06 m bar at 44 ms
+  (~22 fps) and measured 0.0895–0.1423 m on a passing 15 fps run. The excuse is
+  now `min(body travel, maxLockErrM)`, so it is bounded by what the foot lock
+  was actually holding rather than by how busy the box is, and it collapses to
+  0.037–0.04 m on the §6f blocker's own windows. What remains: on a stance
+  where the lock legitimately holds a large correction (measured up to 0.126 m
+  mid-stance on a healthy build) a slide of that size could still be set aside
+  — but a set-aside window now makes the pass **SKIP rather than pass** (§6h.3)
+  and `unresolved[]` prints its drift, longest frame, body travel, lock error
+  and saturation, so no such window can read green. The one clause that is
+  bounded by neither is the mirror check (`revSign`/`phaseBackFrames`), which
+  no frame rate can excuse.
 - **`A31-aim-strafe-skate` has the same window hole `A31b` just closed, and a
   hitch filter that cannot work at strafe speed** — `tools/gates.config.mjs`
   (`animator` lane, not editable from here). It scores a stance only when the
   foot lifts inside its 2600 ms loop, so the trailing stance is dropped, and its
   45 ms hitch bar is 0.06 m of travel at 1.35 m/s, so a loaded box discards
-  every window and it SKIPs. Published here for that lane; see §8.
+  every window and it SKIPs. It also enters the strafe only from a standing
+  start, so the §6f mirror latch is invisible to it. Published here for that
+  lane; see §8. **`A31b` no longer shares any of the three** — §6g banks
+  footfalls, narrows the hitch discard to windows the hitch could actually
+  explain, and runs the transition entries.
 - **A real aim-strafe clip set is still missing** (this is the pack, not a bug).
   The sidestep remains a yawed, retimed `Walk_Loop`; it now tracks the travel
   line because the yaw covers the full π/2 and the phase runs monotonically, but
