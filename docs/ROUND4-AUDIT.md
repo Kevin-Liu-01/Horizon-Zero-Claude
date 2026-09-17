@@ -467,6 +467,47 @@ via a `setup`+`settle` recipe and are judged against written criteria.
 
 ---
 
+### Wave 4 expansion lanes (added Sep 17 by the orchestrator; briefs in hzc-round4-wave4.js carry the same ids)
+
+### npc
+- **A95-npc-roster** — `count NPCs registered by ctx.npcs` → pass: `≥ 10` NPCs, `≥ 4` distinct body variants (material/mesh signature).
+- **A96-npc-animated** — `run 60 sim s` → pass: every NPC's mixer advances; `≥ 3` distinct clips play per NPC; `≥ 4` NPCs traverse `≥ 8 m` along waypoints.
+- **A97-npc-no-skate** — `A13's stance-window probe on a walking NPC` → pass: planted-foot drift `≤ 0.08 m`.
+- **A90-memory-stability** — must be no worse than before the lane (NPC spawns/despawns dispose).
+- **V40-settlement-life** — shot: the camp at dusk. Pass: `≥ 6` NPCs in frame doing `≥ 4` visibly different things (sit, tend fire, walk, talk, work).
+- **V41-npc-closeup** — shot: two different NPC bodies side by side, walking. Pass: different faces/outfits/builds, natural gait, no T-pose, no foot skate.
+
+### machines-expansion
+- **A44-socket-integrity / A45-no-skate-per-species / A46-ground-truth / A47-corpse-grounded / A48-cadence / A44c-lineup** — run per species, including every NEW kind → pass: the machine-rig bars above hold for every kind.
+- **A41c-sustained-variety** — must include the new kinds.
+- **A90-memory-stability** — `30 kills, full corpse lifecycle at 130 m` → pass: geometries `≤ +40`, textures `≤ +30` (rig-side disposal owned here).
+- **A21-real-draw-calls** — staged fight `≤ 350` draw calls (per-species LOD chains).
+- **V26-silhouette / V27-attack-pose** — shot per species, including every NEW kind. Pass: reads as its HZD machine against `docs/research/roster-v2.md` and `docs/research/casting-v4.md`.
+
+### machine-ai-expansion
+- **A37–A43, A41b, A41c** — run for the new kinds → pass: the machine-ai bars above hold for every kind; A41c passes `5 of 5` clean runs.
+- **A90-memory-stability** — `30 kills, full corpse lifecycle at 130 m` → pass: scene object growth `≤ +600`, heap `≤ +25%` (site/corpse reclaim owned here).
+- **A41d-must-fire** — every owed attack row of every species fires in a sustained duel on its own ground (Scrapper laser, Behemoth shoulder-check included).
+
+### world-props-expansion
+- **A61-colliders-registered** — `≥ 1200` colliders in `ctx.collision`.
+- **A98-sites** — `≥ 6` new sites registered, each with `≥ 2` interactables that respond to `interact`.
+- **V34-midground** — shot: four-yaw vista. Pass: every bearing has a readable landmark in the midground.
+- **V42-interior** — shot: inside the cauldron ruin. Pass: enclosed, lit, readable.
+- **V43-outpost** — shot: the outpost. Pass: reads as a lived-in HZD settlement (structures, props, paths, fire).
+
+### world-ground-expansion
+- **A58-surface-api** — `surfaceAt` reports `≥ 7` distinct surface types across the 330 m radius.
+- **A59-grass-coverage / A60-stealth-lanes** — machine-ai/world-ground bars above hold after the biome pass.
+- **V32-ground-detail** — shot at 2 m: ground reads as HZD detail (rocks, litter, grass clumps), no tiling.
+- **V44-biomes** — shot: four-yaw vista. Pass: `≥ 3` visibly different biomes in frame.
+
+### progression-expansion
+- **A66-quest-objectives** — every new quest completable via its real events.
+- **A65-save-restore** — save/continue restores quest, dialogue and skill state.
+- **A99-dialogue** — `talkTo(npc)` opens the panel with that NPC's lines; a choice advances quest state and closes cleanly.
+- **V45-dialogue-panel** — shot: dialogue open. Pass: HZD-style panel (name, line, 2–3 choices), readable, does not cover the speaker.
+
 ## 5. ARCHITECTURE DECISIONS NEEDED FROM THE OWNER
 
 Each blocks a lane. Recommendation given; answer yes/no or pick a letter.
