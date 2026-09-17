@@ -1024,6 +1024,35 @@ export const GATES = [
    *     livelock itself (a Strider kick capped at 4.4 m against a 4.5 m ring
    *     floor), asserted directly rather than through its symptom.
    *
+   * VERIFIED, NOT ASSERTED IN PROSE (residue round, port 5206). The table
+   * above was re-measured against the shipped code on a live Strider
+   * (`band [3.8, 14]`, `hyst 0.6`, `front-kick [0, 4.6]`, healthy window
+   * `[4.1, 14]`), reading `bandBlocked`, `bandProfile().distinct` (the bar the
+   * r2 judge proposed) and `movesetSize()` (the bar that shipped):
+   *
+   *   shape                 window     blocked  bandDistinct  movesetSize
+   *   HEALTHY               4.10-14      0           3             3
+   *   A  row max 4.0        4.10-14      1           3             3
+   *   B  band floor 4.5     4.80-14      1           3             3
+   *   C  hyst 1.8           4.70-14      1           3             3
+   *   D  band floor 4.95    5.25-14      0           2             3
+   *
+   * So A/B/C trip the asserted per-step invariant and D is caught by the bar
+   * alone — which is exactly the shape a `bandProfile().distinct` bar cannot
+   * see, since it falls 3 -> 2 with the row it is meant to be counting.
+   *
+   * And end to end, not just in the arithmetic: this gate's own body was re-run
+   * twice with the regression injected into every Strider before staging
+   * (a throwaway module through the runner's `--extra`, never in `tools/`).
+   * Both runs FAIL, with the Strider collapsed to the two moves the r1 finding
+   * described:
+   *
+   *   band floor 4.95 -> FAIL "strider: only 2 distinct move(charge,
+   *     dash-kick) in 30.0 sim s ... the TABLE holds 3 non-rear row(s)"
+   *     (window 5.25-14, blockedSteps 0 of 1823, bandRowsInTable dash-kick +
+   *     charge, i.e. the band bar would have been 2 and silently green)
+   *   band floor 4.80 -> FAIL, same collapse (window 5.10-14)
+   *
    * TIME SCALE. The window is 25 sim seconds and the runner's ceiling is wall
    * seconds, so the gate asks the engine for 3x through the published
    * `requestTimeScale` authority and releases it in every exit path. Nothing

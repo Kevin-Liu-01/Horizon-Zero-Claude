@@ -207,6 +207,40 @@ export class ParticlePool {
     }
   }
 
+  /**
+   * How many instances are still inside their lifetime — the number a memory
+   * gate needs to prove a burst DRAINS. `max` is the hard cap: `emit` writes
+   * through a ring buffer, so the pool can never allocate past it no matter
+   * how many bursts land in one frame.
+   */
+  audit() {
+    let live = 0;
+    const b = this.aBirth.array, l = this.aLife.array;
+    for (let i = 0; i < this.max; i++) {
+      if (this._time - b[i] < l[i]) live++;
+    }
+    return { max: this.max, live, objects: this.mesh.parent ? 1 : 0 };
+  }
+
+  /** Park every live instance (used by a full combat reset / teardown). */
+  clear() {
+    this.aBirth.array.fill(-1e4);
+    this.aBirth.needsUpdate = true;
+    this.cursor = 0;
+  }
+
+  /**
+   * Release the GPU buffers and leave the scene. One pool is one geometry and
+   * one material for the life of the session, so this is teardown-only — but
+   * a pool with no `dispose` is a pool that can only ever be leaked, and this
+   * lane exists because that was true of every FX object in combat.
+   */
+  dispose() {
+    this.mesh.parent?.remove(this.mesh);
+    this.mesh.geometry.dispose();
+    this.material.dispose();
+  }
+
   update(t) {
     this._time = t;
     this.material.uniforms.uTime.value = t;
@@ -226,7 +260,31 @@ export class ParticlePool {
 
 /* --------------------------------- decals --------------------------------- */
 
-const DECAL_TEX = (() => {
+/**
+ * The scorch texture is built ONCE, lazily, and reference-counted.
+ *
+ * It used to be a module-initialiser: a 128x128 canvas uploaded on first
+ * render whether or not a blast ever went off, and — more to the point — a
+ * texture no `dispose()` could ever reach, because nothing held a count of
+ * who was still using it. Two DecalPools (a reset, a second Combat) would
+ * have had one of them dispose the other's map out from under it.
+ */
+let _decalTex = null;
+let _decalRefs = 0;
+
+function acquireDecalTexture() {
+  _decalRefs++;
+  if (_decalTex) return _decalTex;
+  _decalTex = buildDecalTexture();
+  return _decalTex;
+}
+
+function releaseDecalTexture() {
+  _decalRefs = Math.max(0, _decalRefs - 1);
+  if (_decalRefs === 0 && _decalTex) { _decalTex.dispose(); _decalTex = null; }
+}
+
+function buildDecalTexture() {
   const c = document.createElement('canvas');
   c.width = c.height = 128;
   const g = c.getContext('2d');
@@ -250,7 +308,7 @@ const DECAL_TEX = (() => {
   const tex = new THREE.CanvasTexture(c);
   tex.colorSpace = THREE.SRGBColorSpace;
   return tex;
-})();
+}
 
 /**
  * `combat-burst-vfx-blob` — a blast that leaves nothing behind reads as a
@@ -263,10 +321,12 @@ export class DecalPool {
     this.life = life;
     this.items = [];
     this.cursor = 0;
+    this.tex = acquireDecalTexture();
     const geo = new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2);
+    this.geo = geo;
     for (let i = 0; i < max; i++) {
       const mat = new THREE.MeshBasicMaterial({
-        map: DECAL_TEX, transparent: true, opacity: 0, depthWrite: false,
+        map: this.tex, transparent: true, opacity: 0, depthWrite: false,
         polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -4,
         toneMapped: false, color: 0xffffff,
       });
@@ -306,6 +366,37 @@ export class DecalPool {
       const k = it.t / this.life;
       it.mat.opacity = it.peak * (k < 0.06 ? k / 0.06 : 1 - (k - 0.06) / 0.94);
     }
+  }
+
+  /** Live scorches vs the hard cap, and the scene objects this pool owns. */
+  audit() {
+    let live = 0;
+    for (const it of this.items) if (it.mesh.visible) live++;
+    let objects = 0;
+    for (const it of this.items) if (it.mesh.parent) objects++;
+    return { max: this.items.length, live, objects };
+  }
+
+  clear() {
+    for (const it of this.items) { it.mesh.visible = false; it.t = 1e9; it.mat.opacity = 0; }
+  }
+
+  /**
+   * One geometry, N materials, one shared (ref-counted) texture. Without this
+   * the scorch ring was unreleasable: the texture lived in a module const and
+   * the quads were `scene.add`ed with nothing holding the other end.
+   */
+  dispose() {
+    for (const it of this.items) {
+      it.mesh.parent?.remove(it.mesh);
+      it.mat.map = null;
+      it.mat.dispose();
+    }
+    this.items.length = 0;
+    this.geo?.dispose();
+    this.geo = null;
+    this.tex = null;
+    releaseDecalTexture();
   }
 }
 

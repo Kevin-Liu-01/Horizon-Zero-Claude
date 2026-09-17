@@ -148,11 +148,77 @@ machine.size          // GROWN to cover drawnBounds; a machine-owned Vector3,
                       // never the shared asset descriptor
 ```
 
-Refreshed on the first LOD tick and every 120 frames from
-`updateRigLOD()`, off each geometry's own bounding box (a bind box is a
-conservative envelope of every pose the skeleton can reach, which is the right
-side to be wrong on for a broadphase). `height` is deliberately NOT touched: it
+Refreshed on the first LOD tick and every 120 frames from `updateRigLOD()`,
+off each geometry's own bounding box. `height` is deliberately NOT touched: it
 is a gameplay quantity (LOD rings, shadow rings, corpse mass, eye heights).
+
+#### 3.5.1 The bind box was NOT a conservative envelope — FIX ROUND 1
+
+This section used to justify reading `geometry.boundingBox` with "a bind box is
+a conservative envelope of every pose the skeleton can reach, which is the
+right side to be wrong on for a broadphase". Measured on the live thunderjaw,
+that is false and wrong-side:
+
+| | X | Y | Z |
+|---|---|---|---|
+| `shell-hard` **bind** box | 1.11 | 2.34 | 1.40 m |
+| socket span head-sensor → tail-tip | | | **9.1 m** |
+
+A `SkinnedMesh`'s `geometry.boundingBox` is the BIND box; it belongs to the
+mesh node and does not follow the skeleton, and this rig's bind pose is a
+compact blob that the bones then spread into the machine. So the "conservative
+envelope" was a 1.4 m box standing in for a 9 m body, and three separate
+consumers were reading it:
+
+* **`machine.size`**, published from here → the `ctx.hitHulls` broadphase
+  sphere, i.e. arrows at a thunderjaw's tail rejected before any hull was
+  tested;
+* **`skinnedBounds()`**'s frustum sphere — its 2.2x pad on a 1.4 m bind sphere
+  is nowhere near a 9 m machine, so a thunderjaw could be culled with its body
+  on screen;
+* **gate `A44-socket-integrity`**, whose hull is exactly this box. That is the
+  whole of the judge's *"A44 still FAIL: head-sensor gap 2.95 m, heart 2.25 m,
+  tail-tip 1.95 m vs a 0.10 m budget"* — and why the same gate read **0 m when
+  DEAD**: `refreshPosedBounds()` already existed, and ran only from the corpse
+  settle solver.
+
+The fix is one line of scheduling: `refreshPosedBounds(machine, 256,
+{ live: true })` at the top of `publishDrawnBounds()`, on this function's own
+120-frame throttle. The live path differs from the corpse path in three ways,
+each for a measured reason:
+
+* it **skips** shared geometry instead of cloning it — a sculpt buffer is
+  shared across every machine of its species and 24 clones is the memory the
+  variety pool exists to avoid. The big skinned meshes a live machine draws are
+  per-machine already (the kitbash shells, plus whatever `mergeByMaterial`
+  merged) and bone-bolted components are unskinned, so their boxes are exact
+  without help. A few shared skinned donor meshes do get skipped — the
+  watcher's `Object_13` among them — and measurably cost nothing, because the
+  per-machine meshes beside them already span the body;
+* it **unions with the bind box**. The glinthawk's shells carry no usable skin
+  weights and pose to a 0.02 x 0.03 x 0.01 m point; writing that would shrink
+  its cull sphere to 2 cm and make the shell vanish. A live box's job is to
+  cover what is drawn, so the conservative side is the correct side. The union
+  is always against the ORIGINAL bind box, stashed once, or it would ratchet;
+* it refreshes the bounding **sphere** too, since that is what the renderer
+  culls against.
+
+Result, all eight species, worst socket gap **2.95 m → 0.002 m**, and
+`machine.size` on the thunderjaw 11.06 x 9.4 x 17.8 m where it had been
+describing a 1.4 m blob.
+
+#### 3.5.2 …and that is what `A48-cadence` was failing on too
+
+The judge logged a second finding, *"A48 still FAIL for thunderjaw: cadenceHz
+0.7 against a band of [1.27, 3.82] Hz"*, and proposed "a thunderjaw-specific
+gait cadence table fix". No table was needed — it is the same bug. `A48` builds
+its acceptance band with `cadenceBand(bodyLengthM)` from `measureBodyLength()`,
+which measures the machine off the bounds above. With the bind blob standing in
+for the body, the thunderjaw measured ~7 m and was graded against a band for a
+machine half its size. Posed, it measures **15.8 m**, the band becomes
+**[0.39, 1.18] Hz**, and the 0.7 Hz the rig was actually stepping at — which
+was never wrong — sits inside it. `A48` passes for all seven walkers with an
+empty offender list.
 
 Gate `A50b-aim-on-drawn-geometry` grades the result the way a player meets it:
 50 arrows per species at the silhouette, each ray confirmed against real
@@ -534,53 +600,225 @@ Nothing else is ever hidden by distance at any tier, and `KEEP_BY_TIER` is
 which is where a fight happens. `userData.lodHidden` is still stamped so
 `A50-hulls-visible` can tell a distance-retired mesh from a RETIRED donor.
 
+### 6.2.1 Components retire on the same rule — FIX ROUND 3
+
+Judge finding, fix round 3: *"components are still distance-retired at LOD
+tier 1 (>= 6 body heights) with their hit hulls left behind — and §6.2 asserts
+the opposite"*. Both halves were true. The paragraph above described the MESH
+trim only; the COMPONENT loop three lines below it in `updateRigLOD` was still
+on the round-1 rule, `tearHp <= 20 || /antenna|plate|wire|cable/i`, at tier 1.
+What that name regex deleted, per species:
+
+| machine | component | tearHp | what it is | gone from |
+|---------|-----------|--------|------------|-----------|
+| thunderjaw | `heart-plate` | 55 | CANON weak point | 56 m |
+| thunderjaw | `head-plate` | 55 | CANON weak point | 56 m |
+| thunderjaw | `armor-plate-1..2` | 50 | armour | 56 m |
+| sawtooth | `hip-plate-r/l` | 30 | armour | **16.5 m** |
+| watcher | `antenna` | 18 | cosmetic | **12.6 m** |
+
+and in every case the hit hull stayed behind: `A50-hulls-visible` counted 22
+sawtooth, 81 behemoth and 83 thunderjaw hulls on components nobody could see.
+
+The rule is now the same structural test, in the two quantities a component
+actually has, and **no name is read**:
+
+* **`tearHp` says what it IS.** A `weak` point, an `elemental` payload and a
+  `linkedAttack` component are never eligible at any size; above
+  `PART_TRIM_TEARHP` (20) a component is armour, and armour is silhouette.
+  Measured across the roster that one term does the whole discrimination the
+  regex was reaching for: the only components that fall through it are the four
+  cosmetic masts — `antenna` (18), `antenna-1..3` (14), `alarm-antenna` (20).
+* **Measured screen size, in PIXELS, at the tier's own near edge.** A
+  body-height FRACTION was the obvious second term and it is the wrong one: it
+  is a constant, so it means the same thing at 14 body heights and at 400, and
+  no value of it is both "invisible at the far tier" and "not deleting
+  something you can see at the near one". `partPixels` projects the measured
+  world size through the LIVE camera at `TIER_MIN_H[tier] * H`; a component may
+  go only below `PART_TRIM_PX` (8 px).
+
+`PART_TRIM_TIER` is 2, so the loop cannot fire inside 14 body heights at all.
+Measured with the camera parked at 3 / 8 / 20 / 60 body heights on every
+species (`updateRigLOD` re-tiered at each stop):
+
+| tier | distance | components retired |
+|------|----------|--------------------|
+| 0 | < 6 H | none |
+| 1 | < 14 H | none |
+| 2 | < 40 H | **none** — a sawtooth antenna is 0.31 H, i.e. 19 px at 14 H |
+| 3 | >= 40 H | sawtooth `antenna-1/2/3`, longleg `alarm-antenna` |
+
+`heart-plate`, `head-plate`, `armor-plate-1..2` and `hip-plate-r/l` are drawn
+at every distance on every species. `A50-hulls-visible` now reports
+`ofWhichLodHiddenParts` 9 / 0 / 0 for sawtooth / behemoth / thunderjaw, against
+22 / 81 / 83 before, and the 9 are the three sawtooth masts at tier 3.
+
+**What it costs.** A Sawtooth at 16.5 m keeps hip armour and three antennae it
+used to delete, so `A21`'s machine draws in the staged fight went **73 -> 75**
+before the atlas below gave 5 back. That is the trade the finding asked for.
+
 `pinFullLOD(machine, pin = true)` (exported from `rig/lod.js`) lifts every
 distance retirement and holds the machine at tier 0 through `machine._lodPin`.
 A staged still composes its cast at 60 m and has to grade the silhouette the
 player sees at 12 m; setting `_lodTier = -1` only means "recompute next tick",
 and a frozen machine has no next tick.
 
-**Known gap — `A21-real-draw-calls`, staged fight.** The draw-call win the
-size-ranked version claimed was five draws against a 55-draw shortfall — the
-visual cost bought no gate, which is why correctness was taken instead.
-Measured on 5207 with the structural chain in place:
+### 6.2.2 `A21-real-draw-calls` — the atlas lever, taken and measured
 
-| scenario     | size-ranked | structural | budget |
-|--------------|-------------|------------|--------|
-| spawn-vista  |  296        |  298-302   |  350   |
-| west-herd    |  227        |  244       |  350   |
-| staged fight |  405        |  412-418   |  350   |
+**The table this section used to carry was stale and is deleted.** It claimed
+"watcher 19 meshes / 8 materials / 126 draws" and a staged fight at 412-418
+draws; re-measured on 5207 by wrapping `renderer.renderBufferDirect` in the
+gate's own staged-fight composition, the watcher draws **2 body meshes** (the
+runtime's `skinRigidAttachments` + `mergeByMaterial` already fold its nine
+`Main_Body_Texture` primitives into `Object_11-x9`) and the fight is **363-382
+against a 350 budget, i.e. 32 over, of which machines are 73**. The honest
+ledger, one draw per row per instance in frame:
 
-Seventeen draws in west-herd and seven to thirteen in the staged fight is what
-the holes were worth, against a shortfall of 55-68. See the per-species table and the two measured dead ends below. See the
-per-species table and the two measured dead ends below.
+| machine | draws | what they are |
+|---------|-------|---------------|
+| behemoth | 17 | **10 donor meshes, one per material** + 2 shell + 5 component |
+| thunderjaw | 12 | 2 shell + 10 component |
+| longleg | 11 | 2 shell + 8 component + 1 |
+| sawtooth | 8 | 2 shell + 6 component |
+| glinthawk | 7 | 3 instances x 2 shell + 1 |
+| strider | 6 | 6 instances x 1 mesh |
+| watcher | 5 | 2 body + 3 component |
+| scrapper | 5 | 3 shell + 2 |
+| machine-fx | 2 | the pooled glow system |
 
-| species    | draws | instances | visible meshes / instance | materials |
-|------------|-------|-----------|---------------------------|-----------|
-| watcher    |  126  |     6     | 19                        | 8         |
-| longleg    |   60  |           | 13                        | 3         |
-| strider    |   42  |           | 1                         | 1         |
-| glinthawk  |   39  |           | 2                         | 2         |
-| sawtooth   |   34  |           | 2                         | 2         |
-| scrapper   |   30  |           | 3                         | 3         |
-| thunderjaw |   26  |           | 2                         | 2         |
-| behemoth   |   24  |           | 12                        | 12        |
+Judge fix round 3: *"take one of the two levers §6.2 already names — a
+texture-atlas bake for the watcher and behemoth donors, or the plate-shell
+kitbash for the watcher"*. **The atlas lever was taken**, because it is the one
+that changes no geometry and no silhouette: `atlasMaterials()` in
+`tools/bake-rigs.mjs`, run as
+`node tools/bake-rigs.mjs --only behemoth,watcher --atlas --write --apply`.
 
-The material levers are **spent**: `unifyMaterials` + `mergeByMaterial` already
-take five of the eight species to one or two draws each. The two that are not
-cannot be merged at tier 0 without breaking something:
+What it does and what it refuses to do:
 
-* the **watcher** is a rigid-plate robot — 19 meshes over 8 materials, each
-  plate parented to its OWN animated helper bone, so merging by material would
-  weld plates that rotate independently. An anchored merge (group by material
-  AND nearest animated ancestor) was measured: 19 → **16**, three draws.
-* the **behemoth** is 12 meshes over 12 genuinely different textures. Nothing
-  dedupes them without repainting the sculpt onto one atlas.
+* packs each eligible material's maps into one grid atlas per SLOT (base /
+  metallic-roughness / normal / emissive, the same cell layout in each so one
+  UV addresses all of them), rewrites `TEXCOORD_0` into the cell and repoints
+  every primitive at one merged material. The runtime's own `mergeByMaterial`
+  then collapses the meshes with no new runtime code;
+* a material is eligible only if **every** primitive using it fits ONE unit UV
+  tile after a single INTEGER shift. These sculpts are authored `REPEAT` and
+  some of them tile — the watcher's Main Body spans `u ∈ [-1.00, 0.75]` — and
+  wrapping per-vertex would smear any triangle that straddles a tile boundary
+  across the whole atlas. All-or-nothing per material: splitting one material's
+  primitives between atlased and not would ADD a draw;
+* `baseColorFactor` / `metallic` / `roughness` / `emissiveFactor` are baked
+  into the cell as a pixel multiply, so one merged material renders what ten
+  donor materials rendered;
+* **everything a material carries that has no pixel to hide in goes into the
+  group KEY**, not into the merge: alphaMode, doubleSided, alphaCutoff,
+  normalScale, occlusionStrength and every material EXTENSION. Materials that
+  disagree are never merged, and the merged material copies member 0's
+  extensions. This is not academic — the first pass folded three watcher
+  materials and would have repainted them, because `Headplate_Frill` is
+  `KHR_materials_specular specularColorFactor [1,1,1]` and `Headlights` is
+  `[0,0,0]`, and three.js reads that extension. The ONE extension the atlas
+  does fold is `KHR_materials_emissive_strength`, a scalar on a channel the
+  atlas already owns: the merged material carries the group MAXIMUM and each
+  cell is scaled to its own share;
+* cells are inset by a gutter filled with edge-copy, so no mip level fetches a
+  neighbour's texels across a seam. `mr` is packed at half the base cell (a
+  low-frequency mask), base and normal at the donor's own density.
 
-So closing A21's last draws needs one of: a texture-atlas bake for those two
-donors (an offline `tools/bake-rigs.mjs` pass, not a runtime one), or a complete
-kitbash shell for the watcher so its donor can be retired the way the other
-five were. It does not need, and must not be bought with, holes in a machine.
+Measured result:
+
+| donor | prims | materials | textures | atlas | draws / instance | file bytes |
+|-------|-------|-----------|----------|-------|------------------|------------|
+| behemoth | 10 → **1** | 10 → **1** | 26 → 4 | 2x5, 23.6 Mpx (was ~26 Mpx in 25 maps) | 12 → **3** | 2.57 → **2.36 MB** |
+| watcher | 17 | 6 → 6 | 18 → 18 | **none** | 2 body, unchanged | 1.83 MB, byte-identical |
+
+**VRAM and PAYLOAD are two numbers, and this row used to report only one.**
+Fix round 1, judge finding *"Atlas bake grows behemoth.glb 45 % on disk
+(2.57 → 3.73 MB), undisclosed, and §6.2.2 claims the fold is free"* — which was
+correct, and the surrounding prose's "so the fold costs no VRAM at all" was
+true of VRAM and silent about bytes. Stated separately now:
+
+* **VRAM** 23.86 → **23.63 Mpx** (25 donor maps → 4 atlases)
+* **payload** 2,572,620 → **2,358,528 bytes** (2.57 → 2.36 MB, −8 %)
+
+(Sizes in this section are decimal MB, matching `wc -c` / `stat`, which is how
+the finding was reported. The tool's own ledger prints MiB, so it shows the
+same file as `2.45 -> 2.25 MB`.)
+
+The 45 % regression was one flag — `lossless: slot === 'normal'` in
+`atlasMaterials()`. It took the normal slot from 0.13 MB to 1.64 MB, 12.6x, and
+bought nothing: the donor's own normal maps are already LOSSY webp, so the
+lossless re-encode was spending 1.5 MB perfectly preserving the donor codec's
+artefacts. Measured sweep on the whole file, against HEAD's 2.57 MB:
+
+| normal-slot encode | file | normal slot |
+|--------------------|------|-------------|
+| `lossless` | 3.73 MB (+45 %) | 1.64 MB |
+| `nearLossless` | 3.49 MB (+36 %) | 1.41 MB |
+| **`quality: 95`** | **2.36 MB (−8 %)** | **0.28 MB** |
+| `quality: 92` | 2.25 MB (−13 %) | 0.23 MB |
+| `quality: 88` | 2.18 MB (−15 %) | — |
+
+95 ships: one lossy generation on already-lossy maps, with enough headroom over
+the colour slots' 92 that the gradient banding a normal map is sensitive to
+does not appear, and still under HEAD's payload. `NORMAL_Q` in
+`tools/bake-rigs.mjs` carries the table.
+
+**No gate measures model bytes**, which is why a 45 % regression shipped
+silently while `perf-tech-14 assets over budget` sits in audit §2 as a MAJOR on
+this lane. The tool now prints the whole-file `before -> after MB (±%)` on the
+per-machine headline line, next to the triangle and material counts, instead of
+only inside the atlas sub-ledger where it read as a texture statistic.
+
+The behemoth is the win: **10 draws to 1**, and the film is strictly better —
+with ten separate meshes the engine's screen-space size cull was dropping the
+leg and interior meshes at staging distance, so the machine read as a stack of
+bare plates; as one mesh it draws all of itself (`shots/r2-beh-BEFORE2.png` vs
+`shots/r2-beh-FINAL.png`, same frame, same hour, same camera).
+
+**The watcher is NOT atlasable, and the tool says so rather than guessing.**
+Its six materials are refused for two independent reasons, both printed by the
+bake: `Main_Body_Texture` and `Eye_texture` tile outside one UV square
+(`u ∈ [-1.00, 0.75]` on the Main Body), and each of the remaining four sits
+ALONE in its `KHR_materials_specular` compatibility group. `public/models/
+watcher.glb` is therefore left exactly as it was — the bake is a no-op on it
+and re-writing it would have been a model change for nothing. The watcher's
+donor is also no longer the 19-mesh problem §6.2 described: the runtime already
+draws it in **2** meshes. Its remaining lever is the other one the judge named,
+the plate-shell kitbash, and that is now worth at most 2 draws an instance.
+
+**What is still open.** `A21` re-run on 5207 after both fix-round-3 changes,
+against the same gate before them:
+
+| scenario | before | after | budget |
+|----------|--------|-------|--------|
+| spawn-vista | 302 | 302 | 350 |
+| west-herd | 180 | **209** | 350 |
+| staged fight | 382 (over 32) | **382 (over 32)** | 350 |
+
+and world-wide `batchCeiling.machineDrawsNow` **268 -> 259**, behemoth
+`perInstanceNow` **24 -> 15**. The two fix-round-3 changes pull against each
+other in the fight and net out flat: the atlas gives 9 draws back on the
+behemoth and §6.2.1 spends them keeping components a Sawtooth at 16.5 m used to
+delete. west-herd's +29 is the same trade at 34 m — six Striders and two
+Watchers at 16-17 body heights now draw the blaze canisters and lenses the old
+tier-1 rule deleted at 28 m — and it sits 141 draws inside budget.
+
+The atlas also improved the spatial lane's `A23b-hull-fidelity`, which fails
+for its own reasons on both sides of the change: A/B'd on 5207, `worstGap`
+37 -> 28, `worstGapRatePct` 30.6 -> 23.1, and `pooledProudP90M` 1.21 -> **0.47**
+against a 1.15 bar, because the behemoth's 1653 hulls over ten meshes became
+1072 over one.
+
+The shortfall is now exactly located, and it is **not** the donors: it is
+**68 component meshes across one of each species**, because every part factory
+emits one mesh per material (`canisterMesh` = emissive core + metal cage,
+`radarMesh` = 3) and §6.2.1 forbids retiring any of them inside 14 body
+heights, which is the whole of the staged fight (9-17 m). Closing `A21` from
+here means ONE draw per component — folding each part group's accent emissive
+into its base mesh, the way `plateMesh` already folds its under-frame into
+vertex colours. That is a `parts.js` rework, not an LOD tweak; it is out of
+scope for a residue round, and it is the lane's next `A21` lever and the only
+one left that costs no silhouette.
 
 ## 7. Corpse grounding
 
@@ -737,13 +975,49 @@ sampling, not on the solve.
 
 Gate `A47c` grades the wreck's **median** posed vertex height (`deadMedian <=
 0.75 × aliveMedian`), because `A47`/`A47b` grade a single lowest point and one
-splayed limb satisfies that while the body floats. Only the watcher (0.70),
-strider (0.84) and glinthawk (0.09) currently pass it. The diagnosis is in the
-bullet above: the fold in `deathPose` does not yet make the wreck **compact**
-— its (median − lowest) is within ~15 % of the standing value — so there is
-nothing for the ground solve to descend through. The fix is a fold that ends
-with the machine's lowest geometry near its belly line rather than a limb
-hanging a body-height below it, per species; it is not a tuning constant.
+splayed limb satisfies that while the body floats. In the shipping pose only
+the watcher (0.45), longleg (0.71) and glinthawk (0.10) pass; sawtooth (1.02),
+behemoth (1.41), thunderjaw (1.22), strider (0.87) and scrapper (1.23) do not.
+
+**FIX ROUND 1 attempted this and REVERTED. The measurements are the useful
+output; recording them so the next pass does not re-buy them.**
+
+The governing arithmetic is this, and it rules out most of the obvious fixes:
+`CorpseGrounder` lands the wreck's LOWEST vertex on the soil, so the height of
+the mass above ground is `median − lowest` — a property of the pose's vertical
+DISTRIBUTION alone. **No rigid translation can change it.** Measured: 2.69 m of
+solved chassis descent on the thunderjaw moved its dead median 5.72 → 5.60 m,
+because once the belly is the lowest point, lowering the pelvis lowers the legs
+with it and the grounder hands the whole thing straight back.
+
+What is actually wrong is visible in one number: the wrecks die STANDING, and
+the leg fold is what holds them up. `deathPose` tucks the legs (thigh +1.3 rad,
+knee −2.0 rad), which lifts the feet clear of the ground **on purpose** so the
+chassis has somewhere to descend to — but per the paragraph above that descent
+buys nothing, and alive those same leg vertices span ground-to-hip and pull the
+median DOWN, while curled into the air at 2.7-3.4 m they push it UP. Thunderjaw
+median 4.34 m alive against 5.60 m dead, feet above its own back.
+
+Four levers were built and measured against that:
+
+| lever | result |
+|-------|--------|
+| solved chassis DESCENT (signed `_chassisLift`, tip-clearance budgeted) | median −0.12 m. The loop had a real bug — it measured before `CorpseGrounder` re-applied its offset, so three species read a 0.41 m penetration that was really 0.41 m of float and refused to move — but fixing that only let it run to its cap for no gain |
+| body-node roll (`_deathRoll` 1.15 rad through `body.rotation.z`) | **worse.** A posed box is tight in the mesh's OWN space; the roll is on a node above it, and the world AABB of a rotated box is not the AABB of rotated geometry. The grounder chased the phantom corner and parked the thunderjaw **1.53 m in the air**. This vindicates the original "the collapse lives in the SKELETON" decision, which fix round 1 had assumed the posed-box work made obsolete |
+| spine roll at `_deathRoll` magnitude, about the machine's WORLD forward axis | real: sawtooth 1.02 → 0.69. The old roll was `rotZ` (local), and after `rest.restore()`'s neutral-stance correction a spine bone's local z is not the body's roll axis — the same lesson the leg splay records. 1.15 rad down the chain had left the thunderjaw's torso essentially upright |
+| FK leg SPLAY instead of the tuck (thigh out to near-horizontal) | numbers flat, and **a visual regression** — the wreck reads as a splayed star with limbs in the air (`shots/r2f-wreck-saw.png` vs the tuck, `shots/r2f-wreck-saw2.png`) |
+
+Best combined state reached **3 offenders, worst ratio 1.24** (from 5 / 1.44),
+but the same diff cost `A47-corpse-grounded` (thunderjaw float) and
+`A47b-corpse-posed` (glinthawk) — both of which pass today — so it was reverted
+whole rather than trading two green gates for a still-red one.
+
+**What the next pass needs.** Not a tuning constant and not a splay: an
+authored per-species lie-down, where the chain ends with the torso's long axis
+horizontal and the limbs folded beside the body rather than under or above it,
+validated against `A47`/`A47b` on every frame of the settle. Given D1(b) keeps
+the 424-joint rig and extends clips, the cheapest honest version is a real
+death CLIP per species rather than more FK in `deathPose`.
 
 ## 8. Offline bake
 
@@ -758,6 +1032,38 @@ in `models-staging/{baked,orig}/`, **never in `public/`**: `public/` is vite's
 The triangle pass took the 24 spawned machines from **2.01 M triangles to
 0.53 M** (the whole scene from 2.69 M to 1.21 M), which is 75 % of everything
 drawn and the reason the gate box renders at ~15 fps instead of ~10.
+
+### 8.1 `--atlas` — the texture-atlas pass (fix round 3)
+
+`node tools/bake-rigs.mjs --only behemoth,watcher --atlas --write --apply`
+
+`palette()` folds materials that carry NO texture; `--atlas` is the pass for
+the ones that do, and it is the lever `A21` was waiting on (§6.2.2 has the
+measured result and the eligibility rules). Two things to know before running
+it anywhere else:
+
+* it is **skin-safe** — it writes `TEXCOORD_0` and material pointers only, and
+  touches no position, joint or weight — so unlike `join`/`palette` it is NOT
+  gated behind `--skinned`;
+* it **refuses** a material whose primitives tile outside one UV square, and
+  prints why (`not atlased  Main_Body_Texture: UVs tile outside one unit
+  square`). A refusal is the pass working: wrapping per-vertex would smear a
+  boundary triangle across the whole atlas.
+
+`--atlas-cell` (default 1024) sets the base cell; metallic-roughness is packed
+at half of it, and the normal slot is encoded at `NORMAL_Q` (95) rather than
+losslessly — see §6.2.2 for the measured sweep and the 45 %-payload regression
+that constant exists to prevent. Re-run `A44b/A47b/A50/A50b/V26/V27` after an
+atlas bake — it changes what a machine's meshes ARE, which is what those five
+measure.
+
+**The bake is idempotent and re-reads the LIVE model**, not the donor: a second
+`--atlas` run on an already-atlased file reports `only 1 material in its
+compatibility group` and does nothing. To re-bake with different settings,
+restore the pre-atlas model first (`git checkout HEAD -- public/models/<name>.glb`)
+or a second atlas would be layered on the first. **Watch the payload column**
+on the headline line — it is the only place model bytes are reported, since no
+gate measures them.
 
 Re-run `node tools/gates.mjs --lane machine-rig` after any bake.
 

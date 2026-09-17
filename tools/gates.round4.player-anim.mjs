@@ -136,6 +136,21 @@ export const GATES = [
       // and a rigid rod welded to a bobbing head would pass on that number
       const chain = an._chains.find((c) => c.links.some((l) => l.bone === bone));
       const idx = chain ? chain.links.findIndex((l) => l.bone === bone) : -1;
+      /* SOLVER STATE, NAMED (fix round 5). The one unexplained A33 FAIL in the
+       * judge's four re-runs carried nothing but "Cannot read properties of
+       * undefined (reading '9')". 9 is idx * 3 for this bone (it sits 4th
+       * in its chain), i.e. chain.pos was undefined at the deviation read —
+       * a chain that exists but whose Verlet arrays were never allocated
+       * (_initChainSolver runs once at construction; anything that leaves it
+       * half-done leaves exactly this). It is still a FAIL — an unmeasurable
+       * deviation clause has not passed — but it now says WHICH of the two
+       * things went wrong instead of a stack. */
+      if (chain && !(chain.pos && chain.anim)) {
+        return { pass: false, detail: {
+          bone: name, chainLinks: chain.links.length, chainIndex: idx,
+          note: 'chain solver state missing: _initChainSolver never allocated pos/anim for this chain',
+        } };
+      }
       C.input.keys.clear(); C.input.keys.add('KeyW'); C.input.keys.add('ShiftLeft');
       await new Promise((r) => setTimeout(r, 1700));
       const w = V();
@@ -166,15 +181,24 @@ export const GATES = [
        *     on it. Frame rate cannot push her past it: distance per footfall is
        *     a sim-space constant (1.79 m measured), so 20 footfalls is 41.5 m
        *     off the 5.5 m run-up at ANY frame rate.
-       *   · 25 s of wall clock / 1200 frames — a host so slow it cannot bank 20
-       *     footfalls in 25 s (that is under 5 fps) gets a PENDING, not a
-       *     hang. The assert's own budget is 95 s.
+       *   · 45 s of wall clock / 1200 frames — the deadline is a HANG guard,
+       *     not a measurement bound, so it is set from the assert's own 95 s
+       *     budget rather than from any frame rate. Banked footfalls per wall
+       *     second are fps x MAX_FRAME x footHz = 0.19 x fps here, so 45 s
+       *     banks the full 20 at 2.4 fps and still clears the 16-footfall
+       *     resolvability floor at 1.9 fps; below that the lock SKIPs (never
+       *     fails) and the physical clauses are still asserted. The frame cap
+       *     cannot bind before the footfall target at any rate: 20 footfalls
+       *     is ~107 frames on a sim-clamped host and 318 at 60 fps.
        *
        * Measured on this box at 20.5 fps: 20 footfalls at t = 6.1 s, 41 m
-       * downrange, her speed 6.69 m/s and the ground still falling smoothly. */
+       * downrange, her speed 6.69 m/s and the ground still falling smoothly.
+       * Under a synthetic frame hog (fix round 5): 20 footfalls / ratio 1.000
+       * at 17.1, 16.9, 18.8 and 6.3 fps, and 17.6 footfalls / ratio 0.995 at
+       * 3.7 fps, where the OLD 25 s deadline was what cut the window short. */
       const FOOT_TARGET = 20, DIST_MAX = 46;
       let phPrev = an.loco?.phase ?? 0, cycAcc = 0, dist = 0;
-      while (ys.length < 1200 && performance.now() - t0 < 25000
+      while (ys.length < 1200 && performance.now() - t0 < 45000
              && Math.abs(cycAcc) * 2 < FOOT_TARGET && dist < DIST_MAX) {
         bone.getWorldPosition(w);
         ys.push(w.y);
@@ -597,23 +621,74 @@ export const GATES = [
         const hitchMs = Math.max(100, (0.06 / Math.max(0.4, spd)) * 1000);
         const drifts = [];
         let hitched = 0;
+        /* WHAT THE WORST WINDOW IS MADE OF (fix round 5, additive — no bar,
+         * filter or clause here moved). worstWindow carries the shape of the
+         * worst window: sample count, the longest frame inside it, how far the
+         * ball rose within it, how far above the ground it got, how much of
+         * the foot lock's budget it spent, and where in the run it fell. That
+         * is the discriminator between a real slide (flat, yRange ~ 0, lock
+         * error at the cap) and a stance window split by the foot's own
+         * toe-off across the 5 cm ground test.
+         *
+         * FIX ROUND 6 — this comment used to argue from those same numbers
+         * that the gate's two suite failures (0.1154 / 0.1177 m) "do not
+         * reproduce standalone" over sixteen runs and were "never
+         * attributable". That was wrong, and wrong because of the bug fixed
+         * just below: the gate never scored the stance that was still open at
+         * loop exit, which on aim-strafe-left is the long saturated one. It
+         * reproduces standalone every time, at 0.13-0.57 m, with no load.
+         * Cause and fix: docs/ROUND4-PLAYER-ANIM.md 6e. */
+        const wins = [];
+        /* FIX ROUND 6 (judge-player-anim-r2, blocker). A window used to be
+         * scored ONLY in the lift branch below — only when the foot came UP
+         * inside the sampling window. The stance still OPEN when the 3000 ms
+         * loop expired was silently dropped, and on aim-strafe-LEFT that
+         * dropped stance is deterministically the long, saturated one: the
+         * judge measured it at 0.3433 m (this exact 3 s logic) and 0.4469 m
+         * (the same stance allowed to close), with lock.errM pinned at capM
+         * 0.3000, while every window this gate did score read 1-6 mm. The gate
+         * was green over a third of a metre of planted-foot slide. closeWin is
+         * now called BOTH on lift and once after the loop, so the last stance
+         * is scored like any other. isLast is kept (a useful diagnostic) but it
+         * is no longer the difference between measured and invisible. */
         for (let side = 0; side < 2; side++) {
           let win = null, bad = false;
+          const closeWin = () => {
+            if (win && win.n >= 3) {
+              const d = Math.hypot(win.x1 - win.x0, win.z1 - win.z0);
+              if (bad) hitched++;
+              else { drifts.push(d); wins.push({ d, w: win }); }
+            }
+            win = null;
+          };
           for (const s of S) {
             const f = s.feet[side];
-            const planted = f.planted && Math.abs(f.world.y - T.getHeight(f.world.x, f.world.z)) < 0.05;
+            const above = f.world.y - T.getHeight(f.world.x, f.world.z);
+            const planted = f.planted && Math.abs(above) < 0.05;
             if (planted) {
-              if (!win) { win = { x0: f.world.x, x1: f.world.x, z0: f.world.z, z1: f.world.z, n: 0 }; bad = false; }
+              if (!win) {
+                win = { x0: f.world.x, x1: f.world.x, z0: f.world.z, z1: f.world.z, n: 0,
+                        side, y0: f.world.y, y1: f.world.y, a0: above, a1: above, maxDt: 0,
+                        lockErr: 0, lockCap: f.lock?.capM ?? null };
+                bad = false;
+              }
               if (s.dt > hitchMs) bad = true;
+              if (s.dt > win.maxDt) win.maxDt = s.dt;
+              // how much of the foot lock's budget this stance is using: past
+              // the cap the anchor slides and the ball travels the excess, so
+              // this is the one number that tells a real slide from a
+              // measurement artefact (see docs/ROUND4-PLAYER-ANIM.md 6e)
+              if ((f.lock?.errM ?? 0) > win.lockErr) win.lockErr = f.lock.errM;
               win.x0 = Math.min(win.x0, f.world.x); win.x1 = Math.max(win.x1, f.world.x);
               win.z0 = Math.min(win.z0, f.world.z); win.z1 = Math.max(win.z1, f.world.z);
+              win.y0 = Math.min(win.y0, f.world.y); win.y1 = Math.max(win.y1, f.world.y);
+              win.a0 = Math.min(win.a0, above); win.a1 = Math.max(win.a1, above);
               win.n++;
-            } else if (win) {
-              if (win.n >= 3) { if (bad) hitched++; else drifts.push(Math.hypot(win.x1 - win.x0, win.z1 - win.z0)); }
-              win = null;
-            }
+            } else closeWin();
           }
+          closeWin();   // the trailing stance is a stance
         }
+        const worst = wins.reduce((a, w) => (a && a.d >= w.d ? a : w), null);
         const crossedFrac = S.filter((x) => x.crossed).length / S.length;
         const cad = S.map((x) => x.hz).sort((a, b) => a - b)[S.length >> 1];
         C.input.keys.clear(); C.input.mouse.buttons = 0;
@@ -621,7 +696,16 @@ export const GATES = [
                  maxDrift: drifts.length ? +Math.max(...drifts).toFixed(4) : null,
                  crossedFrac: +crossedFrac.toFixed(3),
                  minSepM: +Math.min(...S.map((x) => x.sep)).toFixed(4),
-                 stepsPerSec: +cad.toFixed(2), speed: +spd.toFixed(2), hitchMs: Math.round(hitchMs) };
+                 stepsPerSec: +cad.toFixed(2), speed: +spd.toFixed(2), hitchMs: Math.round(hitchMs),
+                 worstWindow: worst ? {
+                   foot: worst.w.side === 0 ? 'L' : 'R',
+                   samples: worst.w.n, longestFrameMs: Math.round(worst.w.maxDt),
+                   driftM: +worst.d.toFixed(4),
+                   yRangeM: +(worst.w.y1 - worst.w.y0).toFixed(4),
+                   aboveGroundM: [+worst.w.a0.toFixed(3), +worst.w.a1.toFixed(3)],
+                   maxLockErrM: +worst.w.lockErr.toFixed(4), lockCapM: worst.w.lockCap,
+                   ofWindows: drifts.length, isLast: wins[wins.length - 1] === worst,
+                 } : null };
       };
       const R = await run('KeyD');
       const L = await run('KeyA');

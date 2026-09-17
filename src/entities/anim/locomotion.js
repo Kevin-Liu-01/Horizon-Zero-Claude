@@ -87,8 +87,31 @@ const LAT_A0 = 0.5, LAT_A1 = 1.15;   // move-angle band (rad) that fades the str
  * hips, and a stance WIDEN (published as `widen`, applied by the animator)
  * buys the lateral separation the shortened stride cannot.
  */
+/*
+ * FIX ROUND 6 (judge-player-anim-r2, blocker). The split above moved the cap
+ * off the pelvis and onto the hips, but it also LOWERED the total: 0.78 + 0.62
+ * = 1.40 rad became 0.34 + 0.95 = 1.29 rad, against a pure sidestep's move
+ * angle of PI/2 = 1.5708. The 0.28 rad the yaw could not cover is a standing
+ * DRIFT SOURCE, not a cosmetic one: the stance foot's clip travel points 16 deg
+ * off the direction the character actually moves, so a planted ball accumulates
+ * speed * sin(0.28) = 0.37 m/s of error. Over the 0.5-0.7 s stances this gait
+ * produces that is 0.19-0.26 m, and playerAnimator's foot lock (MAX_LOCK 0.3 m)
+ * saturated on EVERY aim-strafe-left run — past the cap the anchor slides and
+ * the planted ball skates with it (measured 0.3694 m in one window of nine,
+ * with lock.errM pinned at exactly 0.3000).
+ *
+ * HIP_MAX is raised so PELV_MAX + HIP_MAX >= PI/2: the yaw now covers a pure
+ * sidestep exactly and the residual collapses to whatever the phase warp leaves
+ * (millimetres). This is the cap the note above already argues is the safe one
+ * to spend — a thigh yaw turns each leg's stride about its OWN hip joint and
+ * moves no joint, so it cannot put the trailing foot on the far side of the
+ * lead one however far it goes; only the PELVIS half crosses the legs, and that
+ * half is untouched at 0.34. Nothing below a 1.29 rad move angle changes at all
+ * (the clamp is inactive there), so forward, diagonal and backpedal gaits are
+ * bit-identical.
+ */
 const PELV_MAX = 0.34;               // pelvis yaw cap (rad) — torso read only
-const HIP_MAX = 0.95;                // extra per-thigh yaw cap (rad)
+const HIP_MAX = 1.24;                // extra per-thigh yaw cap (rad): 0.34 + 1.24 >= PI/2
 
 export class LocomotionBlend {
   /**
@@ -159,6 +182,7 @@ export class LocomotionBlend {
     this.freq = 0;          // gait cycles per second (secondary motion drives off it)
     this.warp = 1;          // blended per-frame phase-rate correction (no-skate)
     this.reverse = 1;        // +1 forward, -1 backpedal (damped)
+    this._revSign = 1;       // latched mirror decision (hysteresis — see update())
     this.legYaw = 0;         // radians, PELVIS yaw toward the move direction
     this.hipYaw = 0;         // radians, extra hip rotation on both thighs
     this.dominant = 'idle';
@@ -232,8 +256,36 @@ export class LocomotionBlend {
     // |angle| <= 90deg: legs turn toward the travel direction, clip forward.
     // beyond: legs turn toward the mirrored direction, clip runs backward.
     let a = s.moveAngle || 0;
-    let rev = 1;
-    if (Math.abs(a) > Math.PI / 2) { rev = -1; a = a > 0 ? a - Math.PI : a + Math.PI; }
+    /*
+     * FIX ROUND 6 (judge-player-anim-r2, blocker) — HYSTERESIS ON THE MIRROR.
+     *
+     * The mirror used to be a bare `Math.abs(a) > PI/2`, and a pure sidestep
+     * sits EXACTLY on that boundary: strafe-left measured moveAngle at
+     * +1.5708 and strafe-right at -1.5708, so which side of the test a frame
+     * lands on is decided by the last bit of a float. Each flip sends `rev`
+     * from +1 to -1, `reverse` is DAMPED toward it, and while it crosses zero
+     * the master phase stalls and then runs BACKWARD — filmed here as
+     * phase 0.729 -> 0.724 -> 0.716 -> 0.706 -> 0.693 -> 0.664 -> 0.600 over
+     * eight frames of an aim-strafe-left. A planted foot's clip travel is what
+     * cancels the character's translation, so a backward phase does not just
+     * stop cancelling it, it ADDS to it: the foot lock's error ran
+     * 0.059 -> 0.104 -> 0.150 -> 0.199 -> 0.256 m in those same frames, pinned
+     * at MAX_LOCK 0.3, and past the cap the anchor slides and the planted ball
+     * skates with it (0.37 m in one stance, gate A31b).
+     *
+     * The mirror only exists so the loop plays forward when she travels
+     * forward and backward when she backpedals. At |a| ~ PI/2 the two are
+     * equally good — the stride is perpendicular either way — so the choice
+     * there is pure noise, and holding the previous one is strictly better
+     * than flipping on it. A 0.15 rad (8.6 deg) deadband on each side is far
+     * wider than the jitter and far narrower than any real forward/backpedal
+     * transition, which crosses the boundary by a radian or more.
+     */
+    const REV_HYST = 0.15;
+    const bound = Math.PI / 2 + (this._revSign < 0 ? -REV_HYST : REV_HYST);
+    let rev = Math.abs(a) > bound ? -1 : 1;
+    this._revSign = rev;
+    if (rev < 0) a = a > 0 ? a - Math.PI : a + Math.PI;
     const moving = s.speed > 0.25;
     this.reverse = damp(this.reverse, moving ? rev : this.reverse, 9, dt);
     // lateral authority: how much of the travel is a sidestep rather than a

@@ -97,11 +97,27 @@ function segGeo(a, b, r, radial = 5) {
   return g;
 }
 
-/** Merge pre-transformed geometries into a single mesh. */
+/**
+ * Merge pre-transformed geometries into a single mesh.
+ *
+ * The SOURCE geometries are disposed the moment they have been merged. Seven
+ * weapon models bake ~250 throwaway primitives between them, and every one of
+ * them kept its position/normal/uv typed arrays alive for the whole session
+ * because `mergeGeometries` copies out of them and nothing ever told them they
+ * were finished. They are never uploaded, so this is pure JS heap — but it is
+ * heap held by nothing, which is the definition this lane is cleaning up.
+ *
+ * `userData.ownGeo` marks the result as this model's own buffer (as opposed to
+ * `unitCyl` or the shared arrow geometries) so teardown knows what it may free.
+ */
 function bakeMesh(mat, parts, shadow = false) {
+  // length 0 still goes through mergeGeometries (an empty geometry), exactly
+  // as before — a couple of the weapon builds hand it an empty accent list.
   const geo = parts.length === 1 ? parts[0] : mergeGeometries(parts);
+  if (parts.length > 1) for (const p of parts) p.dispose();
   const mesh = new THREE.Mesh(geo, mat);
   mesh.castShadow = shadow;
+  mesh.userData.ownGeo = true;
   return mesh;
 }
 
@@ -121,6 +137,27 @@ class WeaponModel {
   _finish() {
     this.model.traverse((o) => { o.raycast = NOOP; });
     this.setDraw(0, true);
+  }
+
+  /**
+   * Teardown. Materials and the `unitCyl` / arrow geometries are shared module
+   * singletons across all seven models, so only the buffers this model baked
+   * for itself are freed here; `disposeArrowAssets()` (arrows.js) owns the
+   * rest, and `Combat.dispose()` calls both in the right order.
+   */
+  dispose() {
+    this.group.parent?.remove(this.group);
+    this.model.traverse((o) => {
+      if (o.isMesh && o.userData.ownGeo && o.geometry) o.geometry.dispose();
+    });
+  }
+
+  /** Scene footprint of this model — constant for the life of the session. */
+  audit() {
+    let meshes = 0, own = 0;
+    this.model.traverse((o) => { if (o.isMesh || o.isSprite) meshes++;
+      if (o.userData.ownGeo) own++; });
+    return { meshes, ownGeo: own, inScene: this.group.parent ? 1 : 0 };
   }
 
   setDraw(_draw, _showAmmo) {}

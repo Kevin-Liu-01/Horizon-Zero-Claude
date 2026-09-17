@@ -791,12 +791,34 @@ export class PlayerAnimator {
   /** Feet world positions + planted flags (gates: A13-no-skate). */
   debugFeet() {
     const out = [];
-    for (const [short, planted] of [['ballL', this._stL > 0.5], ['ballR', this._stR > 0.5]]) {
+    for (const [short, planted, side] of [['ballL', this._stL > 0.5, 0], ['ballR', this._stR > 0.5, 1]]) {
       const e = this.b[short];
       if (!e) continue;
       e.bone.updateWorldMatrix(true, false);
       _v1.setFromMatrixPosition(e.bone.matrixWorld);
-      out.push({ name: e.name, world: { x: _v1.x, y: _v1.y, z: _v1.z }, planted });
+      /* Round 4 (player-anim), fix round 5 — THE LOCK'S OWN BUDGET, PUBLISHED.
+       * A skate gate can measure where the ball went but not why: the only
+       * thing that decides whether a planted ball can slide is how much of
+       * MAX_LOCK the correction is already using, and past it the anchor
+       * slides by the excess (see _footLock). `errM` is that number, so a
+       * window that skated carries its own cause: saturated reads
+       * `errM === capM`.
+       *
+       * FIX ROUND 6 — this comment used to cite "~0.117 m on one window" and
+       * "0.258 of its 0.3 m cap" as the worst ever seen. Both were artefacts
+       * of A31b dropping the stance that was still open when its sampling loop
+       * expired, which on aim-strafe-left is deterministically the long,
+       * saturated one. The real figures were 0.13-0.57 m of ball travel with
+       * `errM` pinned at exactly `capM` on every run; cause and fix are in
+       * docs/ROUND4-PLAYER-ANIM.md 6e (a float-boundary flip of the clip
+       * mirror at |moveAngle| = PI/2 ran the gait phase BACKWARD through a
+       * stance). This field is what let that be diagnosed — keep it.
+       *
+       * ADDITIVE: every existing field is unchanged and every consumer reads
+       * `world` / `planted` / `name`. */
+      const L = this._locks[side];
+      out.push({ name: e.name, world: { x: _v1.x, y: _v1.y, z: _v1.z }, planted,
+                 lock: { on: L.on, w: L.w, errM: Math.hypot(L.cx, L.cz), capM: MAX_LOCK } });
     }
     return out;
   }

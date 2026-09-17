@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { ParticlePool, DecalPool } from './particles.js';
-import { ArrowPool, BombPool } from './arrows.js';
+import { ArrowPool, BombPool, disposeArrowAssets, arrowAssets } from './arrows.js';
 import { buildWeaponModel } from './bow.js';
 import { AMMO, WEAPON_DEFS, DISC_LAUNCHER_DEF } from './weapons.js';
 import { Melee } from './melee.js';
@@ -112,6 +112,40 @@ const _hand = new THREE.Vector3();
 const _carry = new THREE.Euler();
 const _hullRay = { origin: new THREE.Vector3(), direction: new THREE.Vector3() };
 
+/**
+ * Detach a list of scene roots and release every GPU resource under them.
+ *
+ * TEARDOWN PATH ONLY — never called from a frame. Geometries, materials and
+ * their textures are gathered into sets first so a resource shared by many
+ * meshes (the traps' one unit cylinder and one stake geometry are shared 56
+ * ways) is disposed exactly once, and so the traversal cannot be corrupted by
+ * the removal it is about to perform.
+ */
+function disposeSceneRoots(roots) {
+  const geos = new Set(), mats = new Set(), texs = new Set();
+  for (const root of roots) {
+    if (!root) continue;
+    root.traverse((o) => {
+      if (o.geometry) geos.add(o.geometry);
+      const ms = Array.isArray(o.material) ? o.material : (o.material ? [o.material] : []);
+      for (const m of ms) mats.add(m);
+    });
+    root.parent?.remove(root);
+  }
+  for (const m of mats) {
+    for (const k in m) { const v = m[k]; if (v && v.isTexture) texs.add(v); }
+    if (m.uniforms) {
+      for (const u in m.uniforms) {
+        const v = m.uniforms[u] && m.uniforms[u].value;
+        if (v && v.isTexture) texs.add(v);
+      }
+    }
+    m.dispose();
+  }
+  for (const g of geos) g.dispose();
+  for (const t of texs) t.dispose();
+}
+
 /** Broadphase radii/centres, used by the AoE resolve only. */
 const AIM_RADII = { watcher: 2.6, sawtooth: 3.6, behemoth: 5.2, thunderjaw: 10 };
 const AIM_CY = { watcher: 1.0, sawtooth: 1.2, behemoth: 2.2, thunderjaw: 3.6 };
@@ -199,6 +233,31 @@ class BlastFxPool {
     it.flash.position.copy(point);
     it.ring.visible = true;
     it.flash.visible = true;
+  }
+
+  /** Live rings vs the hard cap, and the scene objects this pool owns. */
+  audit() {
+    let live = 0, objects = 0;
+    for (const it of this.items) {
+      if (it.ring.visible) live++;
+      if (it.ring.parent) objects++;
+      if (it.flash.parent) objects++;
+    }
+    return { max: this.items.length, live, objects };
+  }
+
+  clear() {
+    for (const it of this.items) { it.t = 1e9; it.ring.visible = false; it.flash.visible = false; }
+  }
+
+  dispose() {
+    for (const it of this.items) {
+      it.ring.parent?.remove(it.ring);
+      it.flash.parent?.remove(it.flash);
+      it.ring.geometry.dispose(); it.ringMat.dispose();
+      it.flash.geometry.dispose(); it.flashMat.dispose();
+    }
+    this.items.length = 0;
   }
 
   update(dt) {
@@ -693,6 +752,9 @@ export class Combat {
   /* --------------------------------- update ------------------------------- */
 
   update(dt, t) {
+    // a disposed Combat has released its buffers; ticking one would throw on
+    // the first pool write. Teardown is single-shot and terminal (see dispose).
+    if (this._disposed) return;
     const ctx = this.ctx;
     /**
      * REAL dt, from a monotonic clock of our own.
@@ -1875,6 +1937,282 @@ export class Combat {
     this._landRing.position.set(_simP.x, (_simP.y) + 0.12, _simP.z);
     this._landRing.scale.set(r, r, 1);
     this._landRing.material.opacity = landed ? 0.75 : 0.2;
+  }
+
+  /* ---------------------------- memory readout ---------------------------- */
+
+  /**
+   * Every root object combat owns in the scene. One list, so the audit, the
+   * fingerprint and `dispose()` can never drift apart.
+   */
+  _ownedRoots() {
+    const roots = [
+      this.sparks.mesh, this.trail.mesh, this.dirt.mesh,
+      this.smoke.mesh, this.chips.mesh,
+      this._trajPts, this._landRing,
+    ];
+    for (const it of this.decals.items) roots.push(it.mesh);
+    for (const it of this.blastFx.items) { roots.push(it.ring); roots.push(it.flash); }
+    for (const a of this.arrows.list) roots.push(a.group);
+    for (const b of this.bombs.list) roots.push(b.group);
+    for (const d of this.discs.list) roots.push(d.group);
+    for (const id in this._models) roots.push(this._models[id].group);
+    this._trapRoots(roots);
+    this._meleeRoots(roots);
+    return roots;
+  }
+
+  /**
+   * THE SUB-SYSTEMS COUNT TOO.
+   *
+   * `traps.js` and `melee.js` are combat files the memory pass does not own
+   * (no gameplay edit belongs there), but the meshes they allocate are
+   * combat's memory all the same, and while they sat outside `_ownedRoots()`
+   * a `new THREE.Mesh` per tripwire or per swing would have moved neither
+   * `sceneObjects` nor `gpuFingerprint()` — 74 scene objects that every gate
+   * in this lane was blind to. They are enumerated from here, read-only,
+   * defensively (a field rename in either file costs a count, never a throw).
+   *
+   * `Traps`: ROPE_MAX 24 x {line, stake} + WIRE_MAX 8 x {line, s0, s1} +
+   * `_preview` + `_previewStake` = 74. `Melee`: the swing `_trail` plus the
+   * spear group (6 baked meshes under a model node), parented into the
+   * player's right-hand attach rather than the scene root.
+   */
+  _trapRoots(out = []) {
+    const t = this.traps;
+    if (!t) return out;
+    if (Array.isArray(t._ropes)) {
+      for (const r of t._ropes) { if (r?.line) out.push(r.line); if (r?.stake) out.push(r.stake); }
+    }
+    if (Array.isArray(t._wires)) {
+      for (const w of t._wires) {
+        if (w?.line) out.push(w.line);
+        if (w?.s0) out.push(w.s0);
+        if (w?.s1) out.push(w.s1);
+      }
+    }
+    if (t._preview) out.push(t._preview);
+    if (t._previewStake) out.push(t._previewStake);
+    return out;
+  }
+
+  _meleeRoots(out = []) {
+    const m = this.melee;
+    if (!m) return out;
+    if (m._trail) out.push(m._trail);
+    if (m.spear?.group) out.push(m.spear.group);
+    return out;
+  }
+
+  /**
+   * IDENTITY, not just count.
+   *
+   * `renderer.info.memory` is a whole-process number — it moves when the
+   * terrain streams or the sky shafts resize a target, which is noise this
+   * lane cannot be graded on. This is the falsifiable combat-scoped claim
+   * instead: after any amount of shooting, the weapon systems must reference
+   * exactly the SAME geometries, materials and textures they referenced at
+   * boot. A single `new THREE.Mesh` on an impact path changes the hash.
+   */
+  gpuFingerprint() {
+    /**
+     * CUMULATIVE, on purpose. An arrow swaps its head/fletch/glow material as
+     * the ammo type changes (setArrowType, arrows.js), so a snapshot of what
+     * combat references RIGHT NOW moves between a hunter arrow and a freeze
+     * arrow without anything having been allocated — the first cut of this
+     * gate failed on exactly that. Unioning into a set that only ever grows
+     * makes the claim the honest one: after the warm-up has touched every
+     * weapon and every ammo type, combat must never reference a geometry,
+     * material or texture it has not already referenced. One `new THREE.Mesh`
+     * on an impact path moves the count; a type swap cannot.
+     */
+    if (!this._resSeen) this._resSeen = { geo: new Set(), mat: new Set(), tex: new Set() };
+    const geo = this._resSeen.geo, mat = this._resSeen.mat, tex = this._resSeen.tex;
+    for (const root of this._ownedRoots()) {
+      root.traverse((o) => {
+        if (o.geometry) geo.add(o.geometry.uuid);
+        const ms = Array.isArray(o.material) ? o.material : (o.material ? [o.material] : []);
+        for (const m of ms) {
+          mat.add(m.uuid);
+          for (const k in m) { const v = m[k]; if (v && v.isTexture) tex.add(v.uuid); }
+          if (m.uniforms) {
+            for (const u in m.uniforms) {
+              const v = m.uniforms[u] && m.uniforms[u].value;
+              if (v && v.isTexture) tex.add(v.uuid);
+            }
+          }
+        }
+      });
+    }
+    // order-independent 32-bit digest: any added or swapped resource moves it
+    let h = 0;
+    for (const set of [geo, mat, tex]) {
+      for (const u of [...set].sort()) {
+        for (let i = 0; i < u.length; i++) h = (Math.imul(h, 31) + u.charCodeAt(i)) | 0;
+      }
+      h = (Math.imul(h, 16777619)) | 0;
+    }
+    return { geometries: geo.size, materials: mat.size, textures: tex.size, hash: h };
+  }
+
+  /**
+   * EVERYTHING COMBAT OWNS, COUNTED.
+   *
+   * `A90-memory-stability` proved the session grows per machine death; this is
+   * the half of that number combat is answerable for, and it is designed to be
+   * a CONSTANT. Every FX object combat puts in the scene is pre-allocated in
+   * the constructor behind a hard cap — five particle pools (ring buffers),
+   * ten scorch quads, three blast rings, 28 arrows, 8 bombs, 6 discs, seven
+   * weapon models, plus the 74 rope/wire/preview meshes of `traps.js` and the
+   * swing trail + spear of `melee.js` — so `sceneObjects` must read the same
+   * number after sixty shots and ten kills as it did at boot, and
+   * `arrows.orphaned` (pooled arrows still riding a machine that has been
+   * disposed) must be zero.
+   *
+   * SCOPE, stated exactly so the number cannot be read as more than it is:
+   * `sceneObjects` and `fingerprint` cover EVERY file under `src/combat/`
+   * (particles, arrows, bow, weapons, traps, melee, combat itself). `live`
+   * deliberately means TRANSIENT FX IN FLIGHT ONLY — particles, scorches,
+   * blast rings, arrows, bombs, discs. A placed rope or an armed tripwire is
+   * durable gameplay state with its own timer, so it is reported under
+   * `traps` and bounded by `sceneObjects`, never folded into `live` (a gate
+   * that demanded `live === 0` would otherwise fail on a legally armed trap).
+   * The one thing outside the count is the HUD: `feedback.js` nodes are
+   * counted under `dom`, not here.
+   *
+   * Gates: `A91-combat-fx-bounded`, `A92-arrow-corpse-release`,
+   * `A93-combat-dom-bounded`, `A94-combat-memory-return`.
+   * Contract (return shape, scope, the arrow/corpse handshake, what the gates
+   * do and do not claim): `docs/ROUND4-COMBAT-MEMORY.md`.
+   */
+  /**
+   * The shared module-level GPU singletons the projectile pools ride on.
+   *
+   * Published for `A92-arrow-corpse-release`, which puts a `dispose` listener
+   * on each one and requires ZERO events across a full corpse reclaim. Before
+   * fix round 2 a stuck arrow was a child of `machine.root`, so `ai/sites.js`
+   * `dispose()`'s "traverse and free everything" pass destroyed combat's
+   * shared shaft/head/fins geometries and shaft/head/fletch materials — eight
+   * times each, per wreck — while 28 pooled arrows were still drawing with
+   * them. `arrows.js` `_ride()` keeps the pool out of foreign subtrees; this
+   * is how the gate proves it rather than assuming it.
+   */
+  sharedAssets() { return arrowAssets(); }
+
+  memoryAudit() {
+    const pools = {
+      sparks: this.sparks.audit(),
+      trail: this.trail.audit(),
+      dirt: this.dirt.audit(),
+      smoke: this.smoke.audit(),
+      chips: this.chips.audit(),
+      decals: this.decals.audit(),
+      blastFx: this.blastFx.audit(),
+    };
+    const arrows = this.arrows.audit();
+    const bombs = this.bombs.audit();
+    const discs = this.discs.audit();
+    let models = 0, modelMeshes = 0;
+    for (const id in this._models) {
+      const a = this._models[id].audit?.();
+      if (!a) continue;
+      models += a.inScene;
+      modelMeshes += a.meshes;
+    }
+    /* sub-system objects: counted by TRAVERSAL, because the spear group is a
+     * node with six meshes under it and a leak inside it must show up here. */
+    let subObjects = 0;
+    const countNode = () => { subObjects++; };
+    const trapRoots = this._trapRoots([]);
+    for (const o of trapRoots) if (o.parent) o.traverse(countNode);
+    const trapObjects = subObjects;
+    const meleeRoots = this._meleeRoots([]);
+    for (const o of meleeRoots) if (o.parent) o.traverse(countNode);
+    const meleeObjects = subObjects - trapObjects;
+    const traps = { ...(this.traps?.audit?.() || {}), roots: trapRoots.length, objects: trapObjects };
+    const melee = {
+      ...(this.melee?.audit?.() || {}),
+      roots: meleeRoots.length, objects: meleeObjects,
+      trailLive: !!(this.melee?._trail?.visible),
+    };
+    let sceneObjects = 0;
+    for (const k in pools) sceneObjects += pools[k].objects;
+    sceneObjects += arrows.inScene + bombs.inScene + discs.inScene;
+    sceneObjects += (this._trajPts.parent ? 1 : 0) + (this._landRing.parent ? 1 : 0);
+    sceneObjects += subObjects;
+    let live = 0;
+    for (const k in pools) live += pools[k].live;
+    live += arrows.fly + arrows.stuck + bombs.fly + discs.fly;
+    const r = this.ctx.renderer || this.ctx.engine?.renderer || null;
+    return {
+      sceneObjects, live, models, modelMeshes,
+      fingerprint: this.gpuFingerprint(),
+      pools, arrows, bombs, discs, traps, melee,
+      dom: {
+        combat: this.feedback?.root ? this.feedback.root.querySelectorAll('*').length : 0,
+        document: document.querySelectorAll('*').length,
+      },
+      gpu: r ? { geometries: r.info.memory.geometries, textures: r.info.memory.textures } : null,
+    };
+  }
+
+  /**
+   * Park every live effect without touching the pools' allocation. Used by the
+   * reset path so a death/respawn does not leave a burst mid-flight, and by
+   * the gates to prove a burst DRAINS rather than being counted as steady
+   * state.
+   */
+  clearFx() {
+    this.sparks.clear(); this.trail.clear(); this.dirt.clear();
+    this.smoke.clear(); this.chips.clear();
+    this.decals.clear(); this.blastFx.clear();
+    this.arrows.recycleAll();
+    this.bombs.recycleAll();
+    this.discs.recycleAll();
+    // the swing arc is FX like any other; placed ropes/wires are NOT — they
+    // are gameplay state and clearFx() is called on respawn, not on cleanup.
+    if (this.melee?._trail) this.melee._trail.visible = false;
+  }
+
+  /**
+   * Full teardown of every GPU resource combat owns — TEARDOWN ONLY, and
+   * single-shot: it disposes module-level geometries and materials shared by
+   * the weapon models and the spear, so a Combat that has been disposed is
+   * dead and a second call is meaningless. Nothing in the game calls it (there
+   * is one Combat per session), but a system whose objects can only ever be
+   * added to the scene is a system that can only ever be leaked — and the gate
+   * that proves the pools are bounded needs the other end of the contract to
+   * exist.
+   *
+   * `Traps` and `Melee` have no `dispose()` of their own (their files belong to
+   * the gameplay lane). Rather than let this method's promise be false for the
+   * 76 meshes they own, it tears their roots down here, through the same root
+   * list the audit and the fingerprint use — so the three can never disagree
+   * about what "everything combat owns" means. If either class later grows a
+   * real `dispose()`, it is called first and this is a harmless second pass.
+   */
+  dispose() {
+    if (this._disposed) return;
+    this._disposed = true;
+    this.sparks.dispose(); this.trail.dispose(); this.dirt.dispose();
+    this.smoke.dispose(); this.chips.dispose();
+    this.decals.dispose(); this.blastFx.dispose();
+    this.arrows.dispose(); this.bombs.dispose(); this.discs.dispose();
+    for (const id in this._models) this._models[id].dispose?.();
+    this._trajPts.parent?.remove(this._trajPts);
+    this._trajPts.geometry.dispose();
+    this._trajPts.material.map?.dispose();
+    this._trajPts.material.dispose();
+    this._landRing.parent?.remove(this._landRing);
+    this._landRing.geometry.dispose();
+    this._landRing.material.dispose();
+    this.melee?.dispose?.();
+    this.traps?.dispose?.();
+    disposeSceneRoots(this._trapRoots([]));
+    disposeSceneRoots(this._meleeRoots([]));
+    this.feedback?.dispose?.();
+    this._resSeen = null;
+    disposeArrowAssets();
   }
 
   /* ----------------------- heavy pickup coordination ---------------------- */

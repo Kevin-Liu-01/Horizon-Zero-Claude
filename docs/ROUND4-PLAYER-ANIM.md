@@ -46,6 +46,9 @@ Gates: `tools/gates.round4.player-anim.mjs` —
 | character-lane handoff (2) moving slope conform | See §4. |
 | character-lane handoff (3) dead idle | The weight shift + idle breaks above. |
 | character-lane handoff (4) run bounds | Cadence retime, §5. |
+| `judge-player-anim-r2` residue — `A33-hair-bounce` "still fails a clean re-run" | Gate-side only (nothing in the rig moved). The sample window is closed by 20 banked **footfalls** instead of by the wall clock, the resolvability floor is the judge's **≥ 8 gait cycles**, the hang guard is 45 s so the floor is cleared down to ~2 fps, and the one unexplained FAIL is now named at its source. Eleven consecutive clean runs, 3.7 → 60 fps, ratio 0.995–1.000. See §6d. |
+| `judge-player-anim-r2` fix round 2 — `A31b` green over a 0.34–0.57 m planted-foot slide (**blocker**) | `A31b` scored a stance only when the foot LIFTED inside the sampling window, so the long saturated strafe-left stance was dropped; it now closes every window. That turned the gate red at **0.3694 m**, and the rig-side cause is fixed at its source: the clip-mirror test flipped on a float at |moveAngle| = π/2 and ran the gait phase BACKWARD through a stance (`REV_HYST`), and `HIP_MAX` 0.95 → 1.24 closes the 0.28 rad of move angle the leg yaw never covered. Worst drift now **0.0072 m** across 16–60 fps, worst lock use 0.144 of 0.300. See §6e. |
+| `judge-player-anim-r2` fix round 2 — §6e/§9 understate the skate ~4× (**major**) | §6e rewritten against the corrected measurement (0.13–0.57 m, deterministic, standalone, lock saturated every run), the "does not reproduce standalone" / "never attributable" claims dropped, the §7 `A31b` line re-read, and the §9 entry re-ranked from deferred to **closed**. |
 
 ---
 
@@ -169,6 +172,16 @@ if `player-control` has moved the canon out from under the bake;
 
 Unchanged and still contract: `getBoneWorld`, `handAttach`, `debugFeet`,
 `debugStance`, `debugAim`, `dominantAction`, `rollProgress`.
+
+**Residue-round addition (additive, no existing field moved):** each entry of
+`debugFeet()` now also carries `lock: { on, w, errM, capM }` — the horizontal
+foot lock's state for that foot, where `errM` is the correction it is currently
+holding and `capM` is `MAX_LOCK` (0.3 m), past which the anchor slides and the
+planted ball travels by the excess. Any skate gate can now say whether a drift
+it measured was the lock running out of budget. Consumers of the old fields
+(`world`, `planted`, `name`) are untouched: `A13-no-skate`, `A18-slope-conform`,
+`A28-run-cadence`, `A31-aim-strafe-skate` and `V12-sprint-vs-reference` were
+re-run against it and all pass (0.0011 / 0.0046 m drift).
 
 **Fix-round addition (internal, no cross-lane contract):** `_rollElbow(side,
 wantY, w)` places a solved arm's elbow at a character-space height by rolling
@@ -305,29 +318,273 @@ that one is the read). Re-measured: `rollWeight` **0** at `rollIntentHeldFor`
 5.13 m, `A14-dodge-zero-dt`, `A12-clip-driven` (`Sprint_Loop` at weight 1.00)
 and `A19-secondary-motion` all still PASS on the same tree.
 
+## 6d. RESIDUE ROUND — `A33-hair-bounce` re-run reproducibility
+
+`judge-player-anim-r2`'s last verdict left one serious finding: *"A33-hair-bounce
+still fails a clean re-run (1 FAIL + 1 PENDING in 4 runs); §6b/§7 claim it is now
+reproducible."* Its proposed fix was to raise the resolvability floor to ≥ 8 gait
+cycles and ~6× `footHz` sampling **or** hold her on flat ground long enough.
+Both halves are done, and the gate is the only file that moved — nothing in the
+rig was touched, exactly as §6c says nothing needed to be.
+
+**What made a re-run unreadable: a wall-clock window.** A fixed 5.5 s window buys
+a number of gait cycles that depends on how busy the box is (13.7 footfalls at
+14 fps here against 19.9 at 24 fps), so the judge's sixteen-lane box got windows
+the estimator could not read and reported PENDING. The window is now closed by
+the **gait**, not by the clock: it runs until `loco.phase` has banked
+`FOOT_TARGET` = 20 footfalls, which is frame-rate invariant. Distance (46 m of a
+50 m runway) and a 45 s hang guard are the only other bounds, and the floor the
+judge asked for is asserted on top: **≥ 16 footfalls (8 gait cycles)**,
+≥ 4 samples per footfall, peak ≥ 4× the scan's median power, significance ≥ 0.15.
+
+`MAX_FRAME` is what makes the sampling half free: the sim advances at most
+0.05 s per frame, so samples-per-footfall has a **floor of ~5.3 at any frame
+rate below 20 fps** (measured 5.33 at 17 fps, 5.35 at 6.3 fps, 5.16 at 3.7 fps,
+8.06 at 30 fps, 15.9 at 60 fps) — the bar is 4, and it is the wall clock, never
+the sampler, that used to run out.
+
+**Reproducibility, measured — eleven consecutive clean runs of the shipped
+assert** under a synthetic `engine.onAfterRender` frame hog (the §6c probe
+technique), spanning a 16× range of frame rate:
+
+| fps | footfalls banked | samples/footfall | ratio [0.85–1.15] | contrast | verdict |
+|---|---|---|---|---|---|
+| 60.3 / 30.1 | 20.05 / 20.10 | 15.9 / 8.1 | 1.000 / 1.000 | 258 / 171 | PASS |
+| 19.2 / 18.8 / 18.3 / 18.1 / 17.1 / 16.9 | 20.0–20.1 | 5.33–5.34 | 0.995–1.000 | 217–321 | PASS |
+| 6.3 / 6.3 | 20.01 / 20.01 | 5.35 | 1.000 / 1.000 | 151 / 153 | PASS |
+| 3.7 | 20.15 | 5.16 | 0.995 | 71 | PASS |
+
+Zero FAIL, zero PENDING, no console errors. Two changes bought the bottom row:
+
+- **The hang guard went 25 s → 45 s.** It is a guard, not a measurement bound,
+  so it is sized off the assert's own 95 s budget. Footfalls banked per wall
+  second are `fps × MAX_FRAME × footHz` = 0.19 × fps, so 45 s banks the full 20
+  at 2.4 fps and still clears the 16-footfall floor at 1.9 fps. At 3.7 fps the
+  old 25 s deadline cut the window at 17.6 footfalls (still a PASS, ratio
+  0.995); the same run now banks 20.15 in 28.2 s, 35 m downrange.
+- **The unexplained FAIL is named.** That run carried nothing but *"Cannot read
+  properties of undefined (reading '9')"*. `9` is `idx × 3` for
+  `dyn_hairBackMain_04`, which sits 4th in its chain — i.e. `chain.pos` was
+  undefined at the deviation read: a chain that exists with no Verlet state
+  allocated. It is still a **FAIL** (an unmeasurable deviation clause has not
+  passed), but it now returns `{chainLinks, chainIndex, note}` instead of a
+  bare message, and the whole assert stays inside the fix-round-4 try/catch that
+  reports `threw` + `stack`. It has not recurred in any run since.
+
+No clause was weakened for any of this: `p2p ≥ 0.04`, `oscP2P ≥ 0.03`,
+`restDev ≥ 0.012`, `restDevMax ≤ 0.35`, median sprint > 6.1 m/s and the ±15 %
+footfall lock are all still asserted, and the lock SKIPs — never passes — when
+the window genuinely cannot be read.
+
+## 6e. FIXED — the aim-strafe skate, and why the old measurement of it was wrong
+
+**This section replaces an earlier one that got this wrong in both directions.**
+It recorded the defect as 0.1154 / 0.1177 m, load-only, "does not reproduce
+standalone", and "never attributable", and it reasoned from a peak
+`maxLockErr` of 0.2583 against a 0.3 m cap that the anchor had *not* yet slid.
+All four claims were artefacts of a hole in the gate, and
+`judge-player-anim-r2` found the hole. Corrected below, then fixed.
+
+### The hole in the gate (blocker)
+
+`A31b` sampled for 3000 ms and scored a stance window only in the branch that
+runs when the foot **lifts**. A window still open when the loop expired was
+dropped on the floor. On aim-strafe-left the dropped stance is deterministically
+the long, saturated one, so the gate's own numbers were a survey of the
+*healthy* stances: the judge ran the gate's exact 3 s logic and measured eight
+closed windows at ≤ 0.0014 m — a clean PASS — beside an open stance that had
+already travelled **0.3433 m** with `lock.errM` pinned at `capM` 0.3000, and
+**0.4469 m** when a 6 s window let that same stance close. Four further probes:
+**0.3676 / 0.5706 / 0.4790 / 0.1277 m**, every one of them strafe-LEFT, every
+one with the lock at exactly 0.3000, longest frame 41–49 ms (not a hitch).
+
+`closeWin()` is now called both on lift and once after the sampling loop, so
+the trailing stance is scored like any other. `isLast` survives as a
+diagnostic; it is no longer the difference between measured and invisible.
+With that one change and nothing else, the gate went red on this tree at
+**0.3694 m** — and, importantly, on a window with `isLast: false`: once the long
+stance is reachable at all it also shows up mid-run, so this was never only a
+trailing-window artefact.
+
+The real range is therefore **0.13–0.57 m, deterministic, standalone, no load
+required, strafe-left, with the lock saturated at its cap on every run** — 3–5×
+what the old section recorded, and not the "unattributable" number it called it.
+
+### The cause: the master phase runs BACKWARD through a stance
+
+`maxLockErr 0.2583` was never evidence the anchor had held; it was one sample
+on the way to 0.3000. What drives it there is not the lock at all:
+
+```
+locomotion.js  let rev = 1;
+               if (Math.abs(a) > Math.PI / 2) { rev = -1; a = ... }
+```
+
+A pure sidestep sits **exactly** on that boundary — measured moveAngle +1.5708
+strafing left, −1.5708 strafing right — so which side of the test a frame lands
+on is decided by the last bit of a float. Every flip sends `rev` from +1 to −1,
+`this.reverse` is *damped* toward it, and while it crosses zero the master gait
+phase stalls and then reverses. Filmed per frame on an aim-strafe-left, phase
+and the right foot's lock error over eight consecutive frames:
+
+```
+phase   0.729  0.724  0.716  0.706  0.693  0.680  0.664  0.648  0.618  0.600
+lockErr 0.059  0.104  0.150  0.168  0.184  0.199  0.211  0.222  0.232  0.248 -> 0.300
+```
+
+A planted foot stays planted because its clip travel cancels the character's
+translation. A backward phase does not merely stop cancelling it, it **adds**
+to it — which is why the error rate through that stance (~0.96 m/s) is most of
+her 1.36 m/s travel, far more than any steady drift could produce, and why the
+budget ran out in half a second.
+
+### The second source: 0.28 rad of move angle the leg yaw never covered
+
+An earlier round moved the strafe yaw cap off the pelvis (which reorders the hip
+joints and crosses the legs) and onto the thighs (which do not). It also
+lowered the total: `PELV_MAX + HIP_MAX` went 0.78 + 0.62 = 1.40 rad to
+0.34 + 0.95 = **1.29** rad, against a sidestep's π/2 = 1.5708. The uncovered
+0.28 rad aims the stance foot's clip travel 16° off the direction she actually
+moves, a standing `speed · sin(0.28)` = **0.37 m/s** drift that the lock ate
+silently — 0.176–0.190 m of a 0.3 m budget on a healthy stance, i.e. ~60 % of
+the cap already spent before anything went wrong.
+
+### What shipped
+
+| file | change |
+| --- | --- |
+| `tools/gates.round4.player-anim.mjs` | `A31b`: `closeWin()` on lift **and** after the loop |
+| `src/entities/anim/locomotion.js` | `REV_HYST = 0.15` rad deadband on the clip-mirror decision, latched in `this._revSign` |
+| `src/entities/anim/locomotion.js` | `HIP_MAX` 0.95 → **1.24**, so `PELV_MAX + HIP_MAX ≥ π/2` |
+
+The mirror exists only so the loop plays forward when she travels forward and
+backward when she backpedals; at |a| ≈ π/2 the two are equally correct and the
+choice is pure noise, so holding the previous one is strictly better. 0.15 rad
+(8.6°) is orders of magnitude wider than the jitter and far narrower than any
+real forward↔backpedal transition, which crosses by a radian or more. The
+`HIP_MAX` raise spends the cap the module's own note already argues is the safe
+one: a thigh yaw turns each leg's stride about its **own** hip joint and moves
+no joint, so it cannot put the trailing foot on the far side of the lead one.
+Below a 1.29 rad move angle neither clamp is active, so forward, diagonal and
+backpedal gaits are untouched.
+
+`MAX_LOCK` is deliberately **not** raised and no reach-aware cap was added. The
+judge offered that as the remedy; it treats the symptom. Removing the demand
+instead leaves the cap doing the job it was written for (stopping a hard pivot
+from dragging the leg into a split) with the budget no longer near it.
+
+### After: measured across 16–60 fps, both directions
+
+A synthetic frame hog (a per-frame busy-wait) driving 4 s of aim-strafe each way
+at four load levels, closing **every** window including the trailing one:
+
+```
+KeyA  60.3 fps  14 stances  maxDrift 0.0021  maxLockErr 0.117
+KeyD  58.8 fps  13 stances  maxDrift 0.0060  maxLockErr 0.135
+KeyA  34.5 fps  13 stances  maxDrift 0.0009  maxLockErr 0.111
+KeyD  39.8 fps  13 stances  maxDrift 0.0072  maxLockErr 0.144
+KeyA  24.5 fps  13 stances  maxDrift 0.0020  maxLockErr 0.111
+KeyD  24.5 fps  13 stances  maxDrift 0.0034  maxLockErr 0.109
+KeyA  16.3 fps  10 stances  maxDrift 0.0016  maxLockErr 0.105
+KeyD  16.3 fps  10 stances  maxDrift 0.0052  maxLockErr 0.118
+```
+
+Worst drift **0.0072 m** against the 0.06 m bar (was 0.37–0.57 m); worst lock
+use **0.144 of 0.300**, 48 % of budget where the failing runs were pinned at
+100 %. The stance-width side improved with it: `minSepM` on strafe-left went
+**0.094 → 0.255 m**.
+
+**The `HIP_MAX` raise was A/B'd on film before it shipped.**
+`shots/pa-r2f1-film-hip095.png` (0.95) and `shots/pa-r2f1-film-hip124.png`
+(1.24), same staging, same 2.2 s into the same aim-strafe-left: the track is
+the same width and the stance reads the same; the 1.24 pose simply points both
+feet further along the travel line, which is what a sidestep does. The measured
+half of the trade is the lock budget — worst use 0.190 of 0.300 at 0.95 versus
+0.144 at 1.24 over the same eight-run load sweep, with drift 0.0079 → 0.0072 m.
+Both pass; 1.24 ships because the budget it leaves is what the failing runs ran
+out of.
+
+**On film, at the judge's angle.** `shots/pa-r2f1-skate-film-fixed.png` — camera
+nailed to world space so the ground is pixel-identical across the strip, cropped
+on the planted right boot, three frames spanning one stance: the boot's contact
+patch does not move (**0.0005 m** of world travel) while she travels 0.33 m
+left. The boot rolls onto its toe, which is toe-off, not slide.
+
 ## 7. Gate output (`node tools/gates.mjs --port 5205 --lane player-anim`)
 
 Every action gate in the §4 block passes, with the margin the fix round was
-about (bars in brackets):
+about (bars in brackets). The numbers below are from the FIX ROUND 2 tree — the
+one where `A31b` scores the trailing stance and the strafe no longer reverses
+its own gait phase (§6e); the `A33` block is the residue round's and is
+unchanged by it:
 
 ```
-[PASS] A33-hair-bounce      sampleHz 47.2 · worldYp2p 0.473 · detrendedYp2p 0.141
-                            hairHz 3.70 vs MEASURED footfall 3.67 -> ratio 1.008 [0.85-1.15]
-                            median sprint 6.68 m/s [>6.1] · significance 0.516
+[PASS] A33-hair-bounce      sampleHz 45.2 · worldYp2p 1.400 · detrendedYp2p 0.127
+                            hairHz 3.75 vs MEASURED footfall 3.75 -> ratio 1.000 [0.85-1.15]
+                            20.05 footfalls [>=16] · 12.1 samples/footfall [>=4]
+                            peak contrast 202.5 [>=4] · significance 0.619 [>=0.15]
+                            median sprint 6.82 m/s [>6.1] · 43.4 m of runway [<46]
+                            restDeviationP2P 0.169 [>=0.012] / max 0.173 [<=0.35]
 [PASS] A34-chains-driven    205/271 dyn_ bones > 0.5 deg [180] · 66 chains · nonFinite 0
-[PASS] A35-cheek-anchor     up/level/down at full draw: handToHead 0.140-0.159 m [0.10-0.16],
-                            behindFace +0.061..+0.063 [>0], bowElbow 167.87-167.94 deg [165-172]
-[PASS] A36-hit-react-visible  peak lean 18.15 deg [12], decay 0.769 s [>0.45],
+[PASS] A35-cheek-anchor     up/level/down at full draw: handToHead 0.145-0.156 m [0.10-0.16],
+                            behindFace +0.058..+0.065 [>0], bowElbow 167.93-167.94 deg [165-172]
+[PASS] A36-hit-react-visible  peak lean 18.18 deg [12], decay 0.603 s [>0.45],
                             dominant = hitChest, 100 -> 86 hp
-[PASS] A31b-aim-strafe-skate-player-anim  maxDrift 0.0050 / 0.0007 m [0.06],
-                            crossedFrac 0 both ways [<=0.02], minSep +0.20 m, 2.99 steps/s
-[PASS] A18b-slope-conform-moving  downhill p90 clear 0.0060 m [0.05] / worst 0.0096 [0.12],
-                            uphill p90 0.0029 · p90 sole tilt 1.6 / 2.0 deg [22]
+[PASS] A31b-aim-strafe-skate-player-anim  maxDrift 0.0047 / 0.0019 m [0.06],
+                            crossedFrac 0 both ways [<=0.02], minSep +0.193 / +0.255 m,
+                            3.02 / 3.10 steps/s, 10 + 10 stance windows
+                            worstWindow: 15 samples, longest frame 34 ms, yRange 0.0071 m,
+                            ball 1-9 mm below the ground sample,
+                            maxLockErr 0.120 / 0.039 of a 0.3 m lock budget
+                            (EVERY window is scored now, trailing one included — 6e)
+[PASS] A18b-slope-conform-moving  downhill p90 clear 0.0060 m [0.05] / worst 0.0067 [0.12],
+                            uphill p90 0.0036 · p90 sole tilt 6.0 / 1.9 deg [22]
 [NEEDS-JUDGE] V23-secondary-motion
 [NEEDS-JUDGE] V24-draw-vs-reference
 
 8 gates: 6 pass, 2 need judging
 ```
+
+**FIX ROUND 2, full suite on port 5205** (two other lanes running their own
+suites on the same box throughout):
+
+```
+185 gates: 146 pass, 8 fail, 0 pending, 31 need judging
+```
+
+All eight FAILs belong to other lanes and to the standing set —
+`A90-memory-stability`, `A9-perf-budget`, `A17-draw-beats`,
+`A21-real-draw-calls`, `A47c-corpse-mass`, `A31b-no-ghost-without-occluder`,
+`A23-aim-cost`, `A23b-hull-fidelity` (the perf/draw-call three are budget gates
+measured with three suites sharing one GPU). **This lane's six action gates all
+PASS inside that run**, `A31b` among them at maxDrift **0.0065 / 0.0019 m** with
+`maxLockErr` 0.132 / 0.037 of the 0.3 m cap and 10 + 10 scored windows. So do
+every cross-lane consumer of the foot lock and the gait phase: `A12-clip-driven`
+(`Sprint_Loop` dominant at 1.00), **`A13-no-skate` 0.0009 m** (it was in the
+standing FAIL set for the previous three runs), `A18-slope-conform`,
+`A28-run-cadence` (2.94 / 3.59 steps/s), `A31-aim-strafe-skate` 0.0049 m.
+
+**Residue round, full suite on port 5205, three times back to back** (the runs
+the old §6e reasoned from — kept for comparison):
+
+```
+run 1: 181 gates: 139 pass, 9 fail, 2 pending, 31 need judging
+run 2: 185 gates: 142 pass, 9 fail, 3 pending, 31 need judging
+run 3: 185 gates: 142 pass, 11 fail, 1 pending, 31 need judging
+```
+
+In those three, every FAIL belongs to another lane and to the standing set
+(`A90-memory-stability`, `A17-draw-beats`, `A21-real-draw-calls`,
+`A44-socket-integrity`, `A48-cadence`, `A47c-corpse-mass`, `A23b-hull-fidelity`,
+plus `A13-no-skate`, `A20b-no-system-errors`, `A47b-corpse-posed`,
+`A23-aim-cost` and `A31b-no-ghost-without-occluder` — several of them lanes
+mid-edit while these ran) except this lane's
+`A31b-aim-strafe-skate-player-anim`, which failed in runs 1 and 2 and **passed
+in run 3** (0.0057 / 0.0017 m); it is §6e. This lane's other five action gates
+passed in all three. `A33-hair-bounce` in particular passed every full run —
+ratio **0.995** at 21.8 fps (20.1 footfalls), **1.000** at 44.1 fps, **1.000**
+at 42.6 fps — which is the residue finding's actual subject: the gate is now
+readable under exactly the load that used to make it report PENDING.
 
 **A cross-lane note on the full suite.** In the fix-round-2 full run
 (`140 gates: 87 pass, 20 fail`), `A34` / `A35` / `A36` / `A31b` / `A18b` all
@@ -393,8 +650,42 @@ can still SKIP on hitches, or hit its own 30 s assert timeout — its body is
 ~9 s of staged walking and this box was relaunching the browser 24 times in one
 suite. Both are the host, not the measurement: run alone it passes.)
 
+**Read that `A31` PASS as weaker than `A31b`'s, and not as a second
+witness.** `tools/gates.config.mjs:992-995` scores a stance window only in its
+`} else if (w) {` branch — the same hole `judge-player-anim-r2` found in `A31b`
+(§6e) — so the stance still open when its 2600 ms loop expires is discarded, and
+on aim-strafe-left that is the long one. Its hitch filter is also a flat 45 ms,
+written for an 8 m/s sprint; at the 1.35 m/s aim-strafe a 45 ms frame moves her
+0.06 m, i.e. the whole bar, so on a loaded box it discards nearly every window
+and reports SKIP (the judge measured `L: windows 0, hitched 7 -> SKIP`). It is
+the `animator` lane's gate and **nothing here touched it**; it is recorded so
+that lane can close both, and until it does `A31b-aim-strafe-skate-player-anim`
+is the only gate in the repo that actually measures Aloy's strafe-left plant.
+
 ## 9. Known gaps
 
+- **CLOSED — the aim-strafe skate** (§6e). This used to be the top entry here,
+  recorded as a deferrable 0.1154 / 0.1177 m that "does not reproduce
+  standalone". It was neither: `A31b` was dropping the one stance that skated,
+  and the real figure was **0.13–0.57 m, deterministic, standalone,
+  strafe-left, with the foot lock pinned at its 0.3 m cap on every run**. Cause
+  was a float-boundary flip of the clip-mirror test at |moveAngle| = π/2 that
+  ran the master gait phase BACKWARD through a stance, plus 0.28 rad of move
+  angle the leg-yaw caps never covered. Both fixed in
+  `src/entities/anim/locomotion.js` (`REV_HYST`, `HIP_MAX`); the gate now scores
+  every window. Worst drift across 16–60 fps and both directions is now
+  **0.0072 m** against a 0.06 m bar, worst lock use 0.144 of 0.300.
+- **`A31-aim-strafe-skate` has the same window hole `A31b` just closed, and a
+  hitch filter that cannot work at strafe speed** — `tools/gates.config.mjs`
+  (`animator` lane, not editable from here). It scores a stance only when the
+  foot lifts inside its 2600 ms loop, so the trailing stance is dropped, and its
+  45 ms hitch bar is 0.06 m of travel at 1.35 m/s, so a loaded box discards
+  every window and it SKIPs. Published here for that lane; see §8.
+- **A real aim-strafe clip set is still missing** (this is the pack, not a bug).
+  The sidestep remains a yawed, retimed `Walk_Loop`; it now tracks the travel
+  line because the yaw covers the full π/2 and the phase runs monotonically, but
+  a genuine side-step clip would carry a real weight shift and a lead/trail foot
+  relationship that no amount of yaw can synthesise. Asset work, not code.
 - **`A17-draw-beats` is frame-rate fragile, not broken.** Its `frames >= 8`
   clause counts rAF samples inside a **wall-clock** 700 ms window. Two changes
   on this side: `QUIVER_T` 0.28 → 0.34 s (HZD's reach beat is 0.25–0.35 s,
