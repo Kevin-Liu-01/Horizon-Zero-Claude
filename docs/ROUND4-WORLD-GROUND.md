@@ -474,3 +474,146 @@ below ~0.01 would FAIL on today's build, and this lane may not ship a failing
 gate for another lane's defect. `A63-bedding-planar-world-ground` already blends
 GTAO out for its own measurement and says so in its comment; when the fix lands,
 that bypass can be deleted and the number above becomes the natural bar.
+
+---
+
+## WAVE 4 — `world-ground-expansion`: biomes inside the 330 m disc
+
+Five authored regions on top of the meadow, plus the surfaces and the landform
+that make them real. Everything below is **additive**; the Round-3/Round-4
+surface (`getHeight` / `getNormal` / `isInTallGrass` / `tallGrassDensity` /
+`WORLD_SIZE` / `PLAY_RADIUS` / `surfaceAt`) is unchanged.
+
+### new terrain API
+
+```js
+Terrain.BIOMES                 // ['meadow','forest','snow','marsh','ash','scree']
+terrain.biomeAt(x, z)          // the dominant biome id at a point
+terrain.biomeWeights(x, z, out?)  // { meadow, forest, snow, marsh, ash, scree }
+terrain.snowAt(x, z)           // 0..1 snow dusting on the north bench
+
+// module-level, for consumers that do not hold the instance
+import {
+  forestFactor, snowFactor, marshFactor, ashFactor, screeFactor,
+  northBenchFactor, biomeWeights, biomeAt, biomeSuppress, trailSuppress,
+  stampStealthDisc, MARSH_LEVEL,
+} from './terrain.js';
+```
+
+`biomeWeights` reuses one shared object unless you pass `out` — the grass
+scatter calls it ~470 k times per stream and must not allocate. Every factor
+early-outs on a bounding test, so a meadow point costs five comparisons.
+
+| biome | where | ground | what grows |
+|---|---|---|---|
+| `forest` | NE, ellipse at (150,-120) r≈100×98 | needle duff, `surfaceAt → dirt` under closed canopy | closed conifer stand (3–6.5 m spacing), fern understory, 25 ground-mist pockets in the hollows |
+| `snow` | N bench, (-26,-256) r≈138×50, lifted 13–22 m | `surfaceAt → snow`, dusting thickest on the lee half | bleached bent grass, silvered dead snags, erratic boulders |
+| `marsh` | around the largest pool, (-107,54) r≈52 | `surfaceAt → mud`, wet/low-roughness | reeds (own scale + blue-green tint), reed clumps standing in the water |
+| `ash` | the cauldron burn scar, (175,-195) r≈46 | `surfaceAt → ash`, charcoal under a pale bloom | standing charcoal snags only, leaning where they fell |
+| `scree` | the SE shelf benches | `surfaceAt → gravel` / `rock` | clustered talus blocks, wiry tussock |
+
+### two rules every consumer of these fields obeys
+
+1. **Biomes never touch `tallGrassDensity`.** The concealment field is the
+   machine-route contract (A60); a biome that could thin it could silently take
+   a patrol lane's cover away. The biome pass is material + scatter only.
+2. **Surface weights are cover- and trail-suppressed** (`biomeSuppress`): snow,
+   ash and scree lie BETWEEN the grass lanes and beside the paths. The marsh is
+   the exception and uses `trailSuppress` (trails only) — what you stand in at
+   the water's edge is mud whether or not a stealth patch grows out of it.
+
+### landform changes inside `getHeight`
+
+* **north bench** — a terraced shelf 13–22 m above the meadow at r≈206…306, N.
+  Its approach ramp is deliberately ~30°, not 45°: steeper than that is above
+  the grass scatter's slope cutoff and above a character controller's step
+  limit, and it filmed as a bare dark wall.
+* **marsh pan** — an annulus around the largest pool planed to
+  `MARSH_LEVEL - 0.33`, with the slack pool at the heart left deep. Shin-deep
+  wading (`water.depthAt ≈ 0.27–0.35`) over ~30 m.
+* **burn dish** — a 1.35 m blast bowl under the ash scar.
+
+### water
+
+`water.levelAt / depthAt / flowAt / pools` are unchanged in contract. Two
+internal changes serve the marsh: the waterline march limit is
+`hw * 1.18 + 34 * marshFactor` (the pan is four times the cut's half-width, and
+the march is still the authority on where the waterline is), and the surface is
+pinned to `MARSH_LEVEL` across the flat — a marsh has a water table, not a
+thalweg, and the thalweg solve tilted it by 0.11 m across dead-flat ground.
+
+### `terrain._ensureRouteCover()` — A60 after the Wave-4 roster
+
+The authored stealth discs come from this file's mirror of the Round-3 spawn
+table. `machines-expansion` added nine kinds whose sites live in `machine-ai`'s
+`SPAWN_PLAN`, and `world-props` can then move them onto a published POI — so a
+second static mirror here would be wrong the moment either lane edits a number.
+That is exactly what A60 caught: **seven live routes with 0–7 % of their length
+in cover.**
+
+Terrain now walks the LIVE routes (`ctx.machines.list[].route`) once, on the
+first update after the roster is up, measures each one, and stamps cover arcs
+over ~60 % of the perimeter of any route under the bar (`stampStealthDisc`,
+additive — it can only raise the field). It then calls
+`vegetation.invalidate()` so the pooled tiers re-scatter under their normal
+per-frame budget instead of a 120 ms `forceStream` hitch.
+
+One field change came with it: the riparian damping on the stealth term used to
+remove 88 % of the cover inside the channel, which is right for the bare silt
+bed and wrong at a pool — the two Snapmaw routes bask IN the water and measured
+0 % and 4 % however many discs were stamped. The damping now scales with the
+strength of the authored disc, so a pool collar grows reeds and a bare bed stays
+bare (V32 films exactly that ground, unchanged). `vegetation.grassDensityAt`
+relaxes its own river damping on the same term by the same amount, so the field
+never claims cover the scatter did not plant.
+
+**After: 0 routes below the bar, worst 0.47, median 0.81.**
+
+### vegetation
+
+```js
+vegetation.invalidate()        // mark every pooled chunk stale (budgeted refill)
+vegetation.dispose()           // full teardown (memory rule)
+vegetation.biomeTreeCount      // trees planted by the biome pass
+vegetation.fogPocketCount      // forest mist pockets
+vegetation.screeRockCount      // talus blocks
+terrain.dispose() / water.dispose()
+```
+
+**The tree scatter is two passes, and pass 1 is byte-identical to Round 3** —
+same seed, same dart sampling, same branch order, same number of `rng()` rolls
+per candidate, same 1520 budget. The scatter is a stochastic dart throw, so
+consuming one extra random number at the top re-rolls the whole valley: the
+first cut of this lane did exactly that and two pines landed 12 m in front of
+V33's camera, turning an alpine wall into a hedge. Candidates that fall inside a
+biome are still rolled and still reserved in the spacing grid, but are planted
+by pass 2 (own stream, 680 trees) with the right species for that ground.
+
+Spacing is now a 12 m uniform grid rather than a linear scan of everything
+placed so far — that is what pays for the denser stand.
+
+### cost
+
+Boot ~+120 ms (one extra 512² RGBA mask, the biome scatter passes, the mist
+bake). One extra draw call (`forest-mist`); the biome trees, talus and reeds all
+feed meshes that already existed. No per-frame allocation was added: the mist
+drifts on the shared `uTime` uniform and the biome weights object is reused.
+
+### one cross-lane need this pass creates: `audio` owes `ash` a footstep set
+
+`Terrain.SURFACES` gained `mud` and `ash`. `audio`'s `SURFACE_SET` already
+aliases `mud → foot/silt` (and `scree`, `stone`, `shale`, `ice`, `sand`…), but
+it has no entry for `ash`, so `A76-footfalls` now reports
+`surfacesFallingBackToGrass: ["ash"]` and fails on its own no-fallback bar.
+Walking a burn scar should not sound like a meadow.
+
+**One line, in `audio`'s file, not this one** (`src/audio/audio.js`,
+`SURFACE_SET`):
+
+```js
+  ash: 'foot/dirt', cinder: 'foot/dirt',   // soft, dusty, no grit — nearest set
+```
+
+or a recorded `foot/ash` set if the bank has room for one. This lane cannot
+make that edit (§3.1 ownership) and will not rename the surface to dodge it:
+`ash` is a named deliverable of the expansion brief and of `A58-surface-api`.

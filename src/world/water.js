@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
-import { riverCenterX, riverHalfWidth } from './terrain.js';
+import { riverCenterX, riverHalfWidth, marshFactor, MARSH_LEVEL } from './terrain.js';
 
 /**
  * ROUND 4 — lane `world-ground`, finding `world-10` ("static reflection-less
@@ -36,6 +36,12 @@ import { riverCenterX, riverHalfWidth } from './terrain.js';
 const SUN_DIR = new THREE.Vector3(-0.55, 0.38, -0.72).normalize();
 const Z0 = -238, Z1 = 238, ZSTEP = 2;
 const SURFACE_LIFT = 0.32;   // metres of water over the smoothed bed
+
+/** clamp01 with a smooth shoulder — the marsh level blend uses it. */
+function SS01(t) {
+  const x = t < 0 ? 0 : t > 1 ? 1 : t;
+  return x * x * (3 - 2 * x);
+}
 
 function mulberry32(seed) {
   let a = seed >>> 0;
@@ -106,10 +112,29 @@ export class RiverWater {
       st.push({ z: r.z, cx: r.cx, hw: r.hw, bed: r.bed, level, wl: 0, wr: 0, extra: 0 });
     }
 
+    /* Pin the marsh's surface to its water table before the waterline is
+     * solved (see MARSH_LEVEL in terrain.js): on a flat, the level is a
+     * plane, and the thalweg solve above would otherwise tilt it by the noise
+     * in the pan floor. Blended by the marsh weight, so the flat joins the
+     * running channel with no step. */
+    for (const s of st) {
+      const m = SS01((marshFactor(s.cx, s.z) - 0.15) / 0.45);
+      if (m > 0) s.level = s.level * (1 - m) + MARSH_LEVEL * m;
+    }
+
     // waterline: march out from the centre until the ground breaks the surface
     for (const s of st) {
+      /* THE MARSH IS WHY THIS LIMIT IS NOT JUST THE CHANNEL WIDTH.
+       * `terrain` planes a wading pan around the largest pool, 30 m of it,
+       * which is four times the cut's own half-width. Capping the march at
+       * 1.18 x hw would have drawn a 15 m ribbon down the middle of a 60 m
+       * flat and left the rest of the pan as dry ground sitting BELOW the
+       * water table. The march itself is still the authority — it stops at
+       * the first ground that breaks the surface — so the waterline is the
+       * real one and `depthAt` stays honest on both sides of it. */
+      s.marsh = marshFactor(s.cx, s.z);
       const solve = (dir) => {
-        const lim = s.hw * 1.18;
+        const lim = s.hw * 1.18 + 34 * s.marsh;
         let d = 0;
         for (let t = 0.25; t <= lim; t += 0.25) {
           if (gy(s.cx + dir * t, s.z) > s.level) break;
@@ -487,6 +512,51 @@ export class RiverWater {
         });
       }
     }
+
+    /* --------------------------- the marsh bed ---------------------------
+     * The waterline pass above lines a CHANNEL: it walks stations and puts
+     * reeds on the two banks. A marsh is not a channel — it is a flat, and
+     * its reeds stand IN the water in clumps with open lanes between them,
+     * which is also what makes it readable from the ridge as a different
+     * biome rather than as a wide pond. So the pan gets its own scatter:
+     * clump centres on a Poisson-ish dart throw, stems around each centre,
+     * from shin-deep water out onto the mud fringe.
+     */
+    const marshSt = this._stations.filter((s) => s.marsh > 0.25);
+    if (marshSt.length) {
+      let cx = 0, cz = 0;
+      for (const s of marshSt) { cx += s.cx; cz += s.z; }
+      cx /= marshSt.length; cz /= marshSt.length;
+      const level = marshSt[Math.floor(marshSt.length / 2)].level;
+      const clumps = [];
+      for (let a = 0; a < 2600 && clumps.length < 210; a++) {
+        const rr = Math.sqrt(rng()) * 46;
+        const ang = rng() * Math.PI * 2;
+        const x = cx + Math.cos(ang) * rr, z = cz + Math.sin(ang) * rr;
+        if (marshFactor(x, z) < 0.22) continue;
+        const h = gy(x, z);
+        if (h > level + 0.55 || h < level - 1.5) continue;   // not a bank, not the deep
+        let near = false;
+        for (let i = 0; i < clumps.length; i++) {
+          const dx = clumps[i][0] - x, dz = clumps[i][1] - z;
+          if (dx * dx + dz * dz < 12) { near = true; break; }
+        }
+        if (near) continue;
+        clumps.push([x, z]);
+        const n = 3 + ((rng() * 5) | 0);
+        for (let k = 0; k < n; k++) {
+          const px = x + (rng() - 0.5) * 3.2, pz = z + (rng() - 0.5) * 3.2;
+          const ph = gy(px, pz);
+          if (ph > level + 0.6) continue;
+          items.push({
+            x: px, z: pz, y: Math.min(ph, level) - 0.04,
+            s: 0.85 + rng() * 0.75, yaw: rng() * Math.PI * 2,
+          });
+        }
+      }
+      this.marshReedClumps = clumps.length;
+    }
+
     if (!items.length) { geo.dispose(); return; }
 
     this._uTime = { value: 0 };
@@ -545,6 +615,32 @@ export class RiverWater {
     mesh.frustumCulled = false; // instances span the channel
     this.group.add(mesh);
     this.reedCount = items.length;
+  }
+
+
+  /**
+   * Full teardown (round-4 memory rule): the waterway mesh, the reed
+   * instances and the two shader materials. Nothing calls it today; the rule
+   * is that the path exists and is correct if a level reload ever does.
+   */
+  dispose() {
+    const seen = new Set();
+    this.group.traverse((o) => {
+      if (!o.isMesh && !o.isInstancedMesh) return;
+      if (o.geometry && !seen.has(o.geometry)) { seen.add(o.geometry); o.geometry.dispose(); }
+      const mats = Array.isArray(o.material) ? o.material : [o.material];
+      for (const m of mats) {
+        if (!m || seen.has(m)) continue;
+        seen.add(m);
+        if (m.map && !seen.has(m.map)) { seen.add(m.map); m.map.dispose(); }
+        m.dispose();
+      }
+    });
+    this.group.parent?.remove(this.group);
+    this.group.clear();
+    this._stations = [];
+    this.pools = [];
+    this._waterMat = null;
   }
 
   update(dt, t) {

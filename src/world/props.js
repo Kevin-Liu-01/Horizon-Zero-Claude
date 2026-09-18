@@ -4,11 +4,12 @@ import {
   SimplexNoise, pathFactor, riverFactor,
   riverCenterX, riverHalfWidth,
 } from './terrain.js';
-import { bake, materials } from './props/kit.js';
+import { bake, materials, disposeMaterials } from './props/kit.js';
 import { buildMegastructures, SITES as MEGA_SITES } from './props/megastructures.js';
 import { TallneckLandmark, buildLookout, TALLNECK, LOOKOUT } from './props/tallneck.js';
 import { Rockworks } from './props/rockworks.js';
 import { Activities } from './props/activities.js';
+import { Places } from './props/places.js';
 import { Fauna } from './fauna.js';
 
 /**
@@ -118,6 +119,20 @@ export class Props {
     this.trials = this.activities.trials;
     this.revealed = false;
 
+    /**
+     * ROUND 4 EXPANSION — the six new places (`src/world/props/places.js`).
+     * Built LAST because it reads `activities` (the datapoint store widener),
+     * `trials` (the arena's trial board) and `this.group` (its meshes go inside
+     * `world-props` so `collision.seedWorld()` BVHs every one of them).
+     */
+    this.placeSystem = new Places(ctx, this);
+    /** @type {object[]} `{ id, name, kind, position, radius, interactables }` */
+    this.places = this.placeSystem.places;
+    /** @type {object[]} anchors the `npc` lane fills at the new outpost */
+    this.npcSlots = this.placeSystem.npcSlots;
+    /** @type {object[]} rope bridges / plank walks over the dried channel */
+    this.crossings = this.placeSystem.crossings ?? [];
+
     this._colliderIds = [];
     this._collidersDone = false;
     ctx.props = this;
@@ -136,12 +151,48 @@ export class Props {
 
   /* --------------------------- published API ----------------------------- */
 
-  /** Every activity site as `{ kind, id, x, z, name, done }` — map / notebook. */
-  sites() { return this.activities.sites(); }
+  /**
+   * Every site in the valley as `{ kind, id, x, z, name, done }` — map,
+   * notebook, `machine-ai` patrol weighting, `progression` discovery.
+   *
+   * From the Round 4 expansion this is activity sites PLUS the six new places,
+   * and a place record carries two extra fields the activity records do not:
+   * `position` (a live `THREE.Vector3`) and `radius` (the metres at which
+   * entering it fires `place-discovered`). `place: true` marks them, so a
+   * consumer that only wants the old set can filter on it.
+   */
+  sites() { return [...this.activities.sites(), ...this.placeSystem.sites()]; }
 
-  /** Nearest climbable ledge record to a point, or null (`world-16`). */
+  /** The new place whose radius contains (x, z), or null. Allocation-free. */
+  placeAt(x, z) { return this.placeSystem.placeAt(x, z); }
+
+  /**
+   * Nearest climbable ledge record to a point, or null (`world-16`).
+   *
+   * The expansion adds two more edges (the Glowfall shelf and the Fallen
+   * Watcher's brow plate) in `places.js`, so this searches both tables rather
+   * than only the rockworks one — same record shape, same contract.
+   */
   ledgeNear(x, y, z, maxDist = 2.5) {
-    return this.rockworks.ledgeNear(x, y, z, maxDist);
+    const a = this.rockworks.ledgeNear(x, y, z, maxDist);
+    let best = a, bestD = a
+      ? (a.x - x) * (a.x - x) + (a.z - z) * (a.z - z) + (a.y - y) * (a.y - y)
+      : maxDist * maxDist;
+    const extra = this.placeSystem ? this.placeSystem.ledges : null;
+    if (extra) {
+      for (let i = 0; i < extra.length; i++) {
+        const L = extra[i];
+        const ax = L.from.x, az = L.from.z, bx = L.to.x, bz = L.to.z;
+        const dx = bx - ax, dz = bz - az;
+        const len2 = dx * dx + dz * dz || 1;
+        let t = ((x - ax) * dx + (z - az) * dz) / len2;
+        t = t < 0 ? 0 : t > 1 ? 1 : t;
+        const px = ax + dx * t, pz = az + dz * t;
+        const d = (px - x) * (px - x) + (pz - z) * (pz - z) + (L.y - y) * (L.y - y);
+        if (d < bestD) { bestD = d; best = L; }
+      }
+    }
+    return best;
   }
 
   /**
@@ -810,7 +861,50 @@ export class Props {
     this.registerColliders();
     this.tallneck.update(dt, t);
     this.activities.update(dt, t);
+    this.placeSystem.update(dt, t);
     this.fauna.update(dt, t);
     this.revealed = this.activities.revealed;
+  }
+
+  /**
+   * MEMORY RULE (the app crashed on memory this round). Nothing in the shipped
+   * build tears the world down today, but every runtime object this lane
+   * creates must HAVE a path back — a leak you cannot release is a leak whether
+   * or not anything currently calls this.
+   *
+   * Geometry and materials are disposed, the groups are detached, the collider
+   * ids this lane handed to `spatial` are handed back, and the shared kit
+   * materials are released last (they are module singletons: releasing them
+   * before a group that still draws with them would paint black).
+   */
+  dispose() {
+    const C = this.ctx.collision;
+    if (C && this._colliderIds.length) C.unregister(this._colliderIds);
+    this._colliderIds.length = 0;
+    this._collidersDone = false;
+
+    this.placeSystem?.dispose?.();
+    this.fauna?.dispose?.();
+
+    const seen = new Set();
+    for (const g of [this.group, this.tallneck?.group, this.rockworks?.group, this.activities?.group]) {
+      if (!g) continue;
+      g.traverse((o) => {
+        if (o.geometry && !seen.has(o.geometry)) { seen.add(o.geometry); o.geometry.dispose(); }
+        const mats = Array.isArray(o.material) ? o.material : (o.material ? [o.material] : []);
+        for (const m of mats) if (!seen.has(m)) { seen.add(m); m.dispose(); }
+        if (o.isInstancedMesh) o.dispose();
+      });
+      if (g.parent) g.parent.remove(g);
+      g.clear();
+    }
+    disposeMaterials();
+
+    const sys = this.ctx.game && this.ctx.game.systems;
+    if (Array.isArray(sys)) {
+      const i = sys.indexOf(this);
+      if (i >= 0) sys.splice(i, 1);
+    }
+    if (this.ctx.props === this) this.ctx.props = null;
   }
 }

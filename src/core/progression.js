@@ -75,12 +75,64 @@
  *   'checkpoint-loaded' { reason, killer }
  *   'discovery'      { id, label, total }           (once per id, ever)
  *   'victory-resume' {}                             (shell-menus takes over)
+ *
+ * ---------------------------------------------------------------------------
+ * EXPANSION ROUND (lane `progression-expansion`) — what this file gained
+ * ---------------------------------------------------------------------------
+ * 1. THE ROSTER. All thirteen of `npc`'s named Nora are registered in `NPCS`
+ *    (`NPC_IDS`), each with its own greetings and "ask about…" topics, so
+ *    `ctx.npcs.talkTo(id)` opens a conversation for every person in camp
+ *    instead of for Varl alone (docs/ROUND4-NPC.md §3).
+ *
+ *    `dialogueState(npcId)` -> { id, name, title, line, topic, talked,
+ *       choices:[{ id, kind:'quest-turnin'|'quest-accept'|'topic'|'trade'|
+ *       'journal'|'leave', label, hint, questId?, topicId? }] }   — 2-3 choices,
+ *       exit last, HZD's priority order.
+ *    `choose(choiceId)` -> { state, closed, action:'trade'|'journal'|null }
+ *       — the ONLY place a choice has consequences; `src/ui/dialogue.js` just
+ *       draws `state` and calls this back. `timesTalked(id)`.
+ *    Events: `dialogue-open {npc,name,times}` · `dialogue-topic {npc,topic}` ·
+ *       `dialogue-close {npc}` (unchanged).
+ *
+ * 2. SITE-ANCHORED SIDE QUESTS. Six new quests (`side-hunting-trial`,
+ *    `side-cauldron-override`, `side-outpost-supply`, `side-lakeshore-fisher`,
+ *    `side-cave-datapoints`, `side-wreck-salvage`) anchored at
+ *    `ctx.props.sites()` BY KIND through `at:{ site, alt? }`, with the authored
+ *    `x/z` as the fallback for a build where that site kind does not exist yet.
+ *    `objectiveAnchor(questId, objectiveId?)` -> { x, z, site, kind, radius }
+ *    publishes where an objective actually points, after resolution.
+ *
+ * 3. FOUR NEW OBJECTIVE TYPES, each on an event that already existed:
+ *       datapoint  'datapoint-collected'   (src/items/datapoints.js)
+ *       cache      'supply-cache'          (src/world/props/activities.js)
+ *       override   'override-node'         (idem)
+ *       hunt       'fauna-killed'          (src/world/fauna.js)
+ *    plus `within: seconds` on a kill objective — a TIMED trial. The window
+ *    opens when the objective becomes current, restarts when the player
+ *    re-enters the ring ('hunting-ground'), and resets its own count when it
+ *    lapses. `trialState(questId, objectiveId?)` · `restartTrial(groundId?)`.
+ *
+ * 4. PER-SITE RESPAWN. `respawnPolicy(site)` / `SITE_RESPAWN` re-time a
+ *    MachineSite the frame `machine-ai` disposes it — a trial ring repopulates
+ *    in 90-150 s so the trial can be run again, a Thunderjaw in 420-540 s.
+ *    Written onto the published `site.respawnAt`, never slower than the stock
+ *    window, and never an edit to that lane's file or its tuning table.
+ *
+ * 5. SAVE covers all of it: the four new tallies, per-quest credit ledgers,
+ *    trial windows (as seconds LEFT, so they survive a clock that restarts at
+ *    zero), and conversation state (`dialogue.seen` / `dialogue.talked`).
+ *
+ * Gates: `tools/gates.round4.progression-expansion.mjs` —
+ * `A66-quest-objectives-expansion`, `A65-save-restore-expansion`,
+ * `A99-dialogue`, `V45-dialogue-panel` (the two suffixed ids are the audit's
+ * A66/A65 renamed because lane `progression` already owns those ids).
  */
 
 import * as THREE from 'three';
 import { SaveSystem, SLOT } from './save.js';
 import { QuestLogUI } from '../ui/quests.js';
 import { SkillTreeUI } from '../ui/skills.js';
+import { DialogueUI } from '../ui/dialogue.js';
 
 /* ========================================================================== */
 /* 1. XP + LEVELS                                                             */
@@ -319,20 +371,177 @@ export const SELL_VALUES = {
 /* 6. NPC + DIALOGUE (missing-systems-npc-dialogue-quests-merchants)          */
 /* ========================================================================== */
 
+/**
+ * THE ROSTER (expansion round).
+ *
+ * `npc` (port 5218) ships thirteen named Nora and routes every `TALK · NAME`
+ * interactable through `ctx.npcs.talkTo(id)`, which hands off to
+ * `progression.talkTo(id)` **only when `progression.NPCS[id]` exists**
+ * (docs/ROUND4-NPC.md §3). Until this round exactly one id existed, so twelve
+ * of the thirteen people in camp emitted an event nobody rendered and the
+ * player got a hold prompt that did nothing.
+ *
+ * Every row is now registered, and each carries its own voice:
+ *   greeting  2-3 lines, picked by what the run has actually done
+ *   topics    the "ask about…" choices — a choice ADVANCES state (the topic is
+ *             logged in `dialogue.seen`, pays its 10 XP once through the same
+ *             `award()` ledger a datapoint uses, and raises `dialogue-topic`)
+ *   trade     whether this person opens the merchant panel
+ *
+ * `lines` authored on the npc lane's own roster row (`ctx.npcs.roster`) are
+ * merged in at read time by `_dialogueFor`, so that lane can rewrite a line
+ * without touching this file and neither lane owns the other's copy.
+ */
 export const NPCS = {
   varl: {
-    id: 'varl',
-    name: 'Varl',
-    title: 'Hunter of the Valley',
-    /** Placed on the camp NPC if `ctx.camp.npc` exists, else beside the fire. */
+    id: 'varl', name: 'Varl', title: 'Hunter of the Valley', trade: true,
     fallback: { x: 24.6, z: 32.2 },
     greeting: [
       'You slept through dawn again. The machines did not.',
       'Still breathing. The valley has not taken you yet.',
       'Back from the grass? Good. Sit, or trade, or go be useful.',
     ],
+    topics: [
+      { id: 'machines', q: 'What should I know about the machines?', a: 'They are herd animals with metal hearts. Watch one long enough and it tells you where it will be.' },
+      { id: 'valley', q: 'Who holds the valley now?', a: 'We do, from the palisade out to the ridge. Past that it belongs to whatever walks it.' },
+    ],
+  },
+  sona: {
+    id: 'sona', name: 'Sona', title: 'War-Chief', fallback: { x: 16, z: 44 },
+    greeting: [
+      'Eyes on the ridge. The Watchers walk it at dusk.',
+      'You shoot well enough. Now learn to leave before the herd answers.',
+    ],
+    topics: [
+      { id: 'watch', q: 'What is the war-party watching for?', a: 'Corrupted ones out of the south. They do not graze and they do not leave.' },
+      { id: 'orders', q: 'Any orders for me?', a: 'Stay useful and stay alive. In that order, if you can manage both.' },
+    ],
+  },
+  teb: {
+    id: 'teb', name: 'Teb', title: 'Stitcher', fallback: { x: 30, z: 20 },
+    greeting: [
+      'Hide takes a week to soften. Patience is the craft.',
+      'Careful of the frame — that skin is half a moon of work.',
+    ],
+    topics: [
+      { id: 'craft', q: 'What are you working on?', a: 'A winter coat for Karst. He will complain about the collar. He always does.' },
+      { id: 'hides', q: 'Do you need anything brought in?', a: 'Boar hide, always. Bring it clean and I will not ask how you got it.' },
+    ],
+  },
+  bast: {
+    id: 'bast', name: 'Bast', title: 'Hunter', fallback: { x: 38, z: 34 },
+    greeting: [
+      'The gate stays watched. That is the whole of it.',
+      'You want the trial? The ground south-east. Bring arrows, not opinions.',
+    ],
+    topics: [
+      { id: 'trial', q: 'Tell me about the hunting ground.', a: 'A ring of wrecks the scrappers claim every season. Clear it inside the light and the Braves will hear of it.' },
+      { id: 'boast', q: 'How many have you taken?', a: 'Enough that I have stopped counting out loud. Ask me again when you pass me.' },
+    ],
+  },
+  vala: {
+    id: 'vala', name: 'Vala', title: 'Storyteller', fallback: { x: 20, z: 28 },
+    greeting: [
+      'Sit. The fire is better with a story on it.',
+      'You came back. That is already half a story.',
+    ],
+    topics: [
+      { id: 'hollow', q: 'What is in the Hollow?', a: 'Voices in the old metal. The Elders call it wind. I have been inside, and wind does not repeat itself.' },
+      { id: 'story', q: 'Tell me a story.', a: 'A hunter once outran a Thunderjaw. She did it by being three valleys away when it woke.' },
+    ],
+  },
+  karst: {
+    id: 'karst', name: 'Karst', title: 'Elder', fallback: { x: 14, z: 30 },
+    greeting: [
+      'I have seen the metal beasts change. They learn. So must we.',
+      'Sit with an old man a moment. My knees have opinions about the cold.',
+    ],
+    topics: [
+      { id: 'cauldron', q: 'What is the door under the hill?', a: 'A Cauldron. The metal beasts are born there. The Matriarchs forbid it, which is how I know it can be opened.' },
+      { id: 'law', q: 'What does the law say about the ruins?', a: 'That they are forbidden. And that a Seeker may walk where the law does not. Read the law carefully.' },
+    ],
+  },
+  maris: {
+    id: 'maris', name: 'Maris', title: 'Trader', trade: true, fallback: { x: 28, z: 40 },
+    greeting: [
+      'Shards for arrows, arrows for shards. Everyone eats.',
+      'You look like a woman with a full pouch and an empty pack.',
+    ],
+    topics: [
+      { id: 'road', q: 'How is the trade road?', a: 'Walked by Scrappers and nobody else. The outpost has not had a delivery in a moon.' },
+      { id: 'prices', q: 'Why are your prices what they are?', a: 'Because I am the only one carrying. Bring me competition and I will bring you a discount.' },
+    ],
+  },
+  olin: {
+    id: 'olin', name: 'Olin', title: 'Gatherer', fallback: { x: 12, z: 22 },
+    greeting: [
+      'Berries by the west wall, if the birds leave any.',
+      'Do not step on the beds. I will know it was you.',
+    ],
+    topics: [
+      { id: 'herbs', q: 'Where does the medicine grow?', a: 'Low ground, near water, in the shade. The bloom is worth three of the moss — do not trample it to get to it.' },
+      { id: 'birds', q: 'The birds?', a: 'Grouse. Fat ones. Hunt them away from the beds and we will both be happy.' },
+    ],
+  },
+  thok: {
+    id: 'thok', name: 'Thok', title: 'Smith', fallback: { x: 34, z: 24 },
+    greeting: [
+      'Bring me metal shards and I will bring you arrowheads.',
+      'The forge is hot and the crates are empty. You see my problem.',
+    ],
+    topics: [
+      { id: 'salvage', q: 'What do you need from the wrecks?', a: 'Anything sealed. The caches out there hold better steel than anything we can draw from ore.' },
+      { id: 'spear', q: 'Can you work on my spear?', a: 'I could. I would rather you brought me something to work WITH.' },
+    ],
+  },
+  renn: {
+    id: 'renn', name: 'Renn', title: 'Lookout', fallback: { x: 10, z: 38 },
+    greeting: [
+      'Nothing on the south line. Yet.',
+      'Quiet is not the same as safe. Quiet is what it sounds like before.',
+    ],
+    topics: [
+      { id: 'south', q: 'What is moving in the south?', a: 'Something tall enough to see over the tanks. It has not come closer. I would rather it stayed that way.' },
+      { id: 'night', q: 'How is the night watch?', a: 'Cold. Long. Better than the alternative, which is not watching.' },
+    ],
+  },
+  delve: {
+    id: 'delve', name: 'Delve', title: 'Hunter', fallback: { x: 42, z: 30 },
+    greeting: [
+      'Two Striders on the west meadow. Easy shards, hard shots.',
+      'You hunt loud. That is not a compliment, it is an observation.',
+    ],
+    topics: [
+      { id: 'herd', q: 'Where is the herd grazing?', a: 'West meadow, past the stones. Take the lead one first or you will be chasing all six.' },
+      { id: 'bow', q: 'Any advice on the bow?', a: 'Draw before you need it. A full draw late is worse than a half draw early.' },
+    ],
+  },
+  aura: {
+    id: 'aura', name: 'Aura', title: 'Gatherer', fallback: { x: 18, z: 18 },
+    greeting: [
+      'The racks will be full before the light goes.',
+      'If you are heading to the water, I have a favour to ask.',
+    ],
+    topics: [
+      { id: 'lake', q: 'What is down at the water?', a: 'Snapmaws, most days. And the best fishing in the valley, on the days they are elsewhere.' },
+      { id: 'racks', q: 'Do you need a hand?', a: 'Hands I have. Meat I do not. Bring me something from the shore and we are square.' },
+    ],
+  },
+  nil: {
+    id: 'nil', name: 'Nil', title: 'Hunter', fallback: { x: 26, z: 16 },
+    greeting: [
+      'A spear you have not sharpened is a stick.',
+      'Strike first, strike close, and do not tell Sona I said so.',
+    ],
+    topics: [
+      { id: 'spear', q: 'Teach me something about the spear.', a: 'Get under the guard. A machine cannot bite what is already inside its reach.' },
+      { id: 'stealth', q: 'How do you get that close?', a: 'Tall grass and patience. Mostly patience. The grass is easy to find.' },
+    ],
   },
 };
+
+/** Every id the dialogue panel can open, in camp order. */
+export const NPC_IDS = Object.keys(NPCS);
 
 /* ========================================================================== */
 /* 7. QUEST REGISTRY (progression-002 / onboarding-loop-no-tutorial-hunt)     */
@@ -449,11 +658,179 @@ export const QUESTS = [
     ],
     rewards: { xp: 280, shards: 150, skillPoints: 1 },
   },
+
+  /* ------------------- SIDE quests anchored at the world's SITES ----------- */
+  /**
+   * EXPANSION ROUND. `world-props` publishes `ctx.props.sites()` — datapoints,
+   * caches, the override node, the hunting ground, and (as that lane's own
+   * expansion lands) the outpost, the cauldron mouth, the lakeshore and the
+   * wrecks. These six quests are anchored to those sites BY KIND, not by
+   * coordinate: `_anchor()` resolves `at:{site}` against the live registry at
+   * read time and falls back to the authored `x/z` when that kind does not
+   * exist yet. So the same quest points at the real outpost the day it ships
+   * and at the container yard until then — no cross-lane edit either way.
+   *
+   * Objective types added this round, every one on a REAL published event:
+   *   datapoint  'datapoint-collected'  (src/items/datapoints.js)
+   *   cache      'supply-cache'         (src/world/props/activities.js)
+   *   override   'override-node'        (idem)
+   *   hunt       'fauna-killed'         (src/world/fauna.js)
+   *   kill + `within`  a TIMED trial: the window starts when the objective
+   *                    becomes current, restarts when the player re-enters the
+   *                    hunting ground, and resets its own count when it lapses.
+   */
+  {
+    id: 'side-hunting-trial',
+    title: 'The Valley Trial',
+    type: 'side',
+    giver: 'bast',
+    offerAtLevel: 2,
+    site: 'hunting-ground',
+    summary: 'Bast says the Braves only count a hunt that was finished before the light went. The trial ring is south-east.',
+    objectives: [
+      { id: 'ground', type: 'goto', at: { site: 'hunting-ground' }, x: 128, z: -78, radius: 12, label: 'Reach the hunting ground' },
+      {
+        id: 'trial', type: 'kill', kind: 'scrapper', count: 3, within: 300,
+        trial: 'hunting-ground', at: { site: 'hunting-ground' }, x: 128, z: -78,
+        label: 'Take three Scrappers inside the trial window',
+      },
+    ],
+    rewards: { xp: 260, shards: 120, items: [{ id: 'wire', n: 6 }], skillPoints: 1 },
+  },
+  {
+    id: 'side-cauldron-override',
+    title: 'The Cauldron Door',
+    type: 'side',
+    giver: 'karst',
+    offerAtLevel: 2,
+    site: 'cauldron',
+    summary: 'Karst will not say the word out loud. The door under the hill is a Cauldron, and it answers to an override.',
+    objectives: [
+      { id: 'terminal', type: 'goto', at: { site: 'cauldron', alt: 'override' }, x: -36, z: 213, radius: 14, label: 'Reach the Cauldron terminal' },
+      { id: 'records', type: 'datapoint', count: 3, at: { site: 'datapoint' }, label: 'Scan three datapoints inside' },
+      { id: 'node', type: 'override', count: 1, at: { site: 'override' }, label: 'Override the node' },
+    ],
+    rewards: { xp: 340, shards: 160, items: [{ id: 'echo-shell', n: 3 }], skillPoints: 1 },
+  },
+  {
+    id: 'side-outpost-supply',
+    title: 'Supply Run',
+    type: 'side',
+    giver: 'maris',
+    offerAtLevel: 2,
+    site: 'outpost',
+    summary: 'The outpost has not had a delivery in a moon. Maris has the shards; she does not have the legs.',
+    objectives: [
+      { id: 'wood', type: 'gather', item: 'ridge-wood', count: 6, label: 'Gather six Ridge-Wood for the run' },
+      { id: 'crate', type: 'cache', count: 1, at: { site: 'cache' }, label: 'Empty a supply cache on the road' },
+      { id: 'drop', type: 'goto', at: { site: 'outpost' }, x: 185, z: 5, radius: 14, label: 'Carry it out to the outpost' },
+      { id: 'report', type: 'talk', npc: 'maris', label: 'Report back to Maris' },
+    ],
+    rewards: { xp: 240, shards: 150, items: [{ id: 'wire', n: 6 }, { id: 'blaze', n: 4 }] },
+  },
+  {
+    id: 'side-lakeshore-fisher',
+    title: "The Fisher's Request",
+    type: 'side',
+    giver: 'aura',
+    offerAtLevel: 2,
+    site: 'lakeshore',
+    summary: 'Aura wants meat off the shore and would rather not meet whatever is basking on it.',
+    objectives: [
+      { id: 'shore', type: 'goto', at: { site: 'lakeshore', alt: 'lake' }, x: -146, z: -100, radius: 16, label: 'Walk down to the lakeshore' },
+      { id: 'game', type: 'hunt', count: 2, label: 'Hunt two animals by the water' },
+      { id: 'back', type: 'talk', npc: 'aura', label: 'Bring the catch back to Aura' },
+    ],
+    rewards: { xp: 200, shards: 110, items: [{ id: 'medicinal-herb', n: 3 }] },
+  },
+  {
+    id: 'side-cave-datapoints',
+    title: 'Echoes in the Hollow',
+    type: 'side',
+    giver: 'vala',
+    offerAtLevel: 3,
+    site: 'cave',
+    summary: 'Vala has heard the old metal repeat itself inside the Hollow. She wants to know what it is saying.',
+    objectives: [
+      { id: 'mouth', type: 'goto', at: { site: 'cave', alt: 'hollow' }, x: -166, z: 118, radius: 16, label: 'Find the mouth of the Hollow' },
+      { id: 'records', type: 'datapoint', count: 2, at: { site: 'datapoint' }, label: 'Recover two datapoints from the dark' },
+      { id: 'tell', type: 'talk', npc: 'vala', label: 'Tell Vala what the voices said' },
+    ],
+    rewards: { xp: 220, shards: 100, items: [{ id: 'echo-shell', n: 2 }] },
+  },
+  {
+    id: 'side-wreck-salvage',
+    title: 'Salvage for the Forge',
+    type: 'side',
+    giver: 'thok',
+    offerAtLevel: 2,
+    site: 'wreck',
+    summary: 'Thok has a hot forge and empty crates. The sealed caches out in the wrecks hold better steel than the ore does.',
+    objectives: [
+      { id: 'caches', type: 'cache', count: 2, at: { site: 'cache' }, label: 'Empty two sealed caches in the wrecks' },
+      { id: 'metal', type: 'gather', item: 'metal-shards', count: 40, fromStock: true, label: 'Carry forty Metal Shards to the forge' },
+      { id: 'hand', type: 'talk', npc: 'thok', label: 'Hand the salvage to Thok' },
+    ],
+    rewards: { xp: 260, items: [{ id: 'blaze', n: 8 }, { id: 'metal-vessel', n: 2 }], skillPoints: 1 },
+  },
 ];
+
+/* ========================================================================== */
+/* 7b. SITE RESPAWN POLICY (progression-003, expansion round)                 */
+/* ========================================================================== */
+
+/**
+ * `machine-ai` owns the MachineSite scheduler and draws EVERY site from one
+ * window (`SITE.respawn = [300, 420]`), so the trial ring a side quest asks you
+ * to clear three times repopulates on the same clock as the Thunderjaw that is
+ * meant to be a landmark. This lane owns what the schedule means to the run, so
+ * it re-times the site the frame it is disposed — a published field on a
+ * published record, never an edit to that lane's file or its tuning table.
+ *
+ * Windows are in seconds and are all INSIDE machine-ai's own upper bound, so
+ * nothing here can make a site slower than the stock scheduler would have.
+ */
+export const SITE_RESPAWN = {
+  trial: [90, 150],     // inside a hunting ground: the trial has to be re-runnable
+  quest: [120, 180],    // an active quest is asking for this kind right now
+  small: [240, 330],    // watcher · strider · grazer · broadhead · scrapper
+  medium: [330, 450],   // sawtooth · longleg · snapmaw · shellwalker · ravager · redeye · glinthawk
+  large: [420, 540],    // thunderjaw · behemoth · stormbird · corruptor
+};
+
+const RESPAWN_CLASS = {
+  watcher: 'small', strider: 'small', grazer: 'small', broadhead: 'small', scrapper: 'small',
+  sawtooth: 'medium', longleg: 'medium', snapmaw: 'medium', shellwalker: 'medium',
+  ravager: 'medium', redeye: 'medium', glinthawk: 'medium',
+  thunderjaw: 'large', behemoth: 'large', stormbird: 'large', corruptor: 'large',
+};
+
+/** Deterministic 0..1 from a site id — a save and a gate must agree on it. */
+function siteJitter(id) {
+  let h = (id | 0) * 2654435761;
+  h ^= h >>> 15;
+  return ((h >>> 0) % 1000) / 1000;
+}
 
 /* ========================================================================== */
 
 const _v = new THREE.Vector3();
+/** Reused by `_anchor` so a 5 Hz proximity sweep allocates nothing. */
+const _anchorOut = { x: 0, z: 0, ok: false, site: null };
+
+/**
+ * Run tallies — one bucket per objective type that COUNTS something, so credit
+ * earned before an objective became current is never thrown away (see the
+ * `this.tally` comment in the constructor). The expansion round adds the four
+ * world-content types; `freshTally` is the single place the shape is defined,
+ * used by the constructor, `newGame()` and `deserialize()` alike.
+ */
+export const TALLY_TYPES = ['kill', 'scan', 'talk', 'datapoint', 'cache', 'override', 'hunt'];
+function freshTally(src = null) {
+  const out = Object.create(null);
+  for (const t of TALLY_TYPES) out[t] = { ...(src && src[t] ? src[t] : {}) };
+  return out;
+}
 
 /** Loot paid in shards per machine level when a wreck is destroyed. */
 const SHARDS_PER_LEVEL = 6;
@@ -492,6 +869,8 @@ export class Progression {
     this.questState = new Map();
     this.tracked = null;
     this.markers = [];
+    /** how many rows in `markers` are `talk` anchors — see `_refreshTalkMarkers` */
+    this._talkRows = 0;
     this._markersDirty = true;
 
     /* ---- stats ---- */
@@ -521,13 +900,23 @@ export class Progression {
      * `startQuest`, so a quest accepted after a long hunt is not instantly
      * completed by kills that predate it.
      */
-    this.tally = {
-      kill: Object.create(null),
-      scan: Object.create(null),
-      talk: Object.create(null),
-    };
+    this.tally = freshTally();
+    /**
+     * Simulated seconds since the lane came up — the clock a TIMED trial
+     * objective (`within`) is judged on. Accumulated from the fixed-step `dt`
+     * in `update()`, never from the wall clock, so a loaded frame cannot fail
+     * a hunt the player was winning.
+     */
+    this.clock = 0;
+    /** `questId:objectiveId` -> { endsAt, startedAt } for `within` objectives. */
+    this.trials = new Map();
     /** Sites whose machine is gone and whose respawn is pending. */
     this.clearedSites = new Set();
+    /** siteId -> the window this lane re-timed it to (diagnostic, see audit). */
+    this.siteTuning = new Map();
+    /** one-second cache of `ctx.props.sites()` — see `_sites()`. */
+    this._sitesCache = [];
+    this._sitesAt = null;
     this.lastKiller = null;
 
     /**
@@ -563,12 +952,23 @@ export class Progression {
     /* ---- UI (this lane owns both files) ---- */
     this.ui = new QuestLogUI(ctx, this);
     this.skillsUI = new SkillTreeUI(ctx, this);
+    /** The conversation card (expansion round). Owns its own DOM island. */
+    this.dialogueUI = new DialogueUI(ctx, this);
 
     /* ---- merchant ---- */
     this.merchant = this._makeMerchant();
 
     /* ---- dialogue ---- */
-    this.dialogue = { open: false, npc: null };
+    /**
+     * `topic` is the line currently on the card, `seen` the topics this run has
+     * already heard (one 10 XP award each, through the same ledger a datapoint
+     * uses), `talked` how many conversations each person has had. All three are
+     * serialized: a choice is state, and A65 restores it.
+     */
+    this.dialogue = {
+      open: false, npc: null, topic: null,
+      seen: new Set(), talked: Object.create(null),
+    };
 
     this._bind();
     this._installHooks();
@@ -966,7 +1366,18 @@ export class Progression {
   /* ------------------------- credit bookkeeping ------------------------- */
 
   /** Ledger key for an objective: type + the thing it is counting. */
-  _objKey(o) { return `${o.type}:${o.kind ?? o.npc ?? o.item ?? '*'}`; }
+  _objKey(o) {
+    /**
+     * Tallied types share a key on purpose: two "kill 2 Striders" steps in one
+     * quest must draw from the same run tally, four kills between them.
+     * `goto` is NOT tallied — it is a per-objective boolean in `st.reached` —
+     * so it keys on the objective id. Sharing `goto:*` across two places in one
+     * quest made the first arrival spend the credit for the second, which then
+     * could never complete.
+     */
+    if (o.type === 'goto') return `goto:${o.id}`;
+    return `${o.type}:${o.kind ?? o.npc ?? o.item ?? o.species ?? o.node ?? o.dp ?? '*'}`;
+  }
 
   /**
    * Shallow copy of the run tallies, taken when a quest starts, plus the stock
@@ -981,12 +1392,8 @@ export class Progression {
    * pick something up.
    */
   _tallySnapshot(def = null) {
-    const snap = {
-      kill: { ...this.tally.kill },
-      scan: { ...this.tally.scan },
-      talk: { ...this.tally.talk },
-      items: Object.create(null),
-    };
+    const snap = freshTally(this.tally);
+    snap.items = Object.create(null);
     const inv = this.ctx.inventory;
     for (const o of (def?.objectives || [])) {
       if (o.type === 'gather' && o.item) snap.items[o.item] = inv?.count?.(o.item) ?? 0;
@@ -1018,6 +1425,12 @@ export class Progression {
    * Never negative.
    */
   _earned(st, o) {
+    /**
+     * A TIMED objective only ever takes credit from inside its own window. The
+     * window re-baselines the tally when it opens, so this is belt and braces —
+     * but a trial that could be settled by yesterday's kills is not a trial.
+     */
+    if (o.within && !this.trials.has(this._trialKey(st.id, o.id))) return 0;
     const used = st.used?.[this._objKey(o)] ?? 0;
     let n = 0;
     switch (o.type) {
@@ -1032,6 +1445,18 @@ export class Progression {
         // A tag standing on screen right now is proof you scanned that machine,
         // even if the emit predates this quest or was toggled off and on.
         if (o.type === 'scan') n = Math.max(n, this._liveTags(o.kind));
+        break;
+      }
+      /**
+       * World-content types (expansion round). Identical bookkeeping to
+       * kill/scan: the run tallies every pickup the moment it happens, the
+       * quest's baseline was snapshotted when it started, and `used` is what
+       * this quest already spent — so a cache emptied on the walk out counts
+       * when the objective comes up, and a reload cannot double-credit it.
+       */
+      case 'datapoint': case 'cache': case 'override': case 'hunt': {
+        const k = o.id2 ?? o.dp ?? o.node ?? o.species ?? '*';
+        n = (this.tally[o.type][k] ?? 0) - (st.base?.[o.type]?.[k] ?? 0);
         break;
       }
       case 'talk':
@@ -1087,18 +1512,35 @@ export class Progression {
    * into `this.tally`, and `_settle` hands it over when that step comes up.
    */
   _advance(type, match, amount = 1) {
-    let changed = false;
-    for (const def of QUESTS) {
-      const st = this.questState.get(def.id);
-      if (!st || st.state !== 'active') continue;
-      const o = this._current(def, st);
-      if (o && o.type === type && match(o)) {
-        changed = this._credit(def, st, o, amount) || changed;
-      }
-    }
+    /**
+     * DOUBLE-CREDIT FIX (expansion round, found on film by the trial gate).
+     *
+     * This used to credit the current objective DIRECTLY and then call
+     * `_settleAll()` — two paths that both pay out of the same run tally, with
+     * nothing to stop them paying for the same event twice. The race is not
+     * hypothetical and it is not rare: `machine-killed` bumps the tally, then
+     * pays shards through `_grant`, which emits `item-gained`, which re-enters
+     * `_advance('gather')`, which settles — and the settle credits the kill
+     * from the tally *before* the kill's own `_credit` line has run. One
+     * Scrapper then counted as two.
+     *
+     * It was invisible for a year because every kill objective in the shipped
+     * chain asks for a number the FIRST credit already reaches (1), so the
+     * second was clamped by `_credit`'s `have >= need` guard. `A66-…-expansion`
+     * measured a 3-kill trial and read 2 after one kill.
+     *
+     * So there is now exactly ONE way a counter moves: `_earned` (tally minus
+     * this quest's baseline minus what it has already spent) through `_settle`.
+     * Live events bump the tally and then ask for a settle — same events, same
+     * banners, same tick, arithmetic that cannot pay twice. `type`/`match`/
+     * `amount` stay in the signature because the callers read as documentation
+     * of which event feeds which objective type, and because `_earned` is
+     * keyed off exactly the fields `match` tests.
+     */
+    void type; void match; void amount;
     const settled = this._settleAll();
-    if (changed || settled) { this.ui.refresh(); this._emitObjectiveChanged(); }
-    return changed || settled;
+    if (settled) { this.ui.refresh(); this._emitObjectiveChanged(); }
+    return settled;
   }
 
   /**
@@ -1196,6 +1638,7 @@ export class Progression {
     this._markersDirty = false;
     const out = this.markers;
     out.length = 0;
+    this._talkRows = 0;
     const terrain = this.ctx.terrain;
     for (const def of QUESTS) {
       const st = this.questState.get(def.id);
@@ -1203,11 +1646,17 @@ export class Progression {
       const s = this.state(def.id);
       const o = s.current;
       if (!o) continue;
-      let x = null, z = null, kind = o.type;
-      if (o.type === 'goto') { x = o.x; z = o.z; }
-      else if (o.type === 'talk') {
+      let x = null, z = null; const kind = o.type;
+      let npcId = null;
+      if (o.type === 'talk') {
+        npcId = o.npc;
         const npc = this._npcPos(o.npc);
         if (npc) { x = npc.x; z = npc.z; }
+      } else {
+        // goto / datapoint / cache / override / timed kill — all of them resolve
+        // through the site registry, so the pip lands on the real thing
+        const a = this._anchor(o);
+        if (a.ok) { x = a.x; z = a.z; }
       }
       if (x == null) continue;
       out.push({
@@ -1215,24 +1664,454 @@ export class Progression {
         label: o.label, questId: def.id, objectiveId: o.id,
         kind, tracked: this.tracked === def.id,
         radius: o.radius ?? 2.5,
+        /** set only on `talk` rows — the id `_refreshTalkMarkers` re-reads */
+        npc: npcId,
       });
+      if (npcId) this._talkRows++;
     }
     return out;
   }
 
+  /**
+   * FIX ROUND 1 — the gold pip on a PERSON has to follow the person.
+   *
+   * `_rebuildMarkers` bakes the anchor into scalars and only re-runs when
+   * `_markersDirty` is set, which nothing does on a timer. Every other anchor
+   * kind (`goto`/`datapoint`/`cache`/`override`) resolves through the static
+   * `ctx.props.sites()` registry and is genuinely static, so caching is right
+   * for them — but `npc` (port 5218) walks thirteen Nora around camp, and this
+   * lane put four `talk` objectives on the roving ones. Measured: the marker
+   * for "Bring the catch back to Aura" sat frozen while Aura walked 7.8 m away,
+   * three times its own 2.5 m ring, so the player stood inside the marker with
+   * no TALK prompt. Max roam over 70 s reaches 21.7 m (sona).
+   *
+   * So `talk` rows resolve LIVE, on read. Cost is bounded by `_talkRows` (0 in
+   * almost every frame — at most one per active quest), the early-out is a
+   * counter test, and the body allocates nothing: it writes into the row
+   * objects `_rebuildMarkers` already created. `_npcPos` returns either the
+   * npc lane's live `group.position` or a module-scope scratch vector; both are
+   * read immediately and never retained.
+   */
+  _refreshTalkMarkers() {
+    const rows = this.markers;
+    for (let i = 0; i < rows.length; i++) {
+      const r = rows[i];
+      if (!r.npc) continue;
+      const p = this._npcPos(r.npc);
+      if (!p) continue;
+      if (p.x === r.x && p.z === r.z) continue;
+      r.x = p.x; r.z = p.z;
+      r.y = (this.ctx.terrain?.getHeight?.(p.x, p.z) ?? 0) + 1.6;
+    }
+  }
+
   getMarkers() {
     if (this._markersDirty) this._rebuildMarkers();
+    if (this._talkRows > 0) this._refreshTalkMarkers();
     return this.markers;
   }
 
   _npcPos(npcId) {
     const def = NPCS[npcId];
     if (!def) return null;
-    const npc = this.ctx.camp?.npc;
-    if (npc?.position) return npc.position;
-    _v.set(def.fallback.x, 0, def.fallback.z);
+    /**
+     * `npc` (port 5218) walks thirteen people around camp, so a marker on a
+     * person has to follow them. `ctx.npcs.byId(id).group.position` is that
+     * lane's published transform; `ctx.camp.npc` (Varl's anchor) and the
+     * authored fallback are the two older answers, kept for a build without it.
+     */
+    try {
+      const rec = this.ctx.npcs?.byId?.get ? this.ctx.npcs.byId.get(npcId) : this.ctx.npcs?.byId?.(npcId);
+      if (rec?.group?.position) return rec.group.position;
+    } catch { /* npc lane mid-build */ }
+    if (npcId === 'varl') {
+      const npc = this.ctx.camp?.npc;
+      if (npc?.position) return npc.position;
+    }
+    const fb = def.fallback;
+    if (!fb) return null;
+    _v.set(fb.x, 0, fb.z);
     _v.y = this.ctx.terrain?.getHeight?.(_v.x, _v.z) ?? 0;
     return _v;
+  }
+
+  /* ====================================================================== */
+  /* site anchors — quests point at the WORLD, not at coordinates           */
+  /* ====================================================================== */
+
+  /**
+   * Resolve an objective's world anchor.
+   *
+   * `at:{ site:'outpost', alt:'cache' }` asks `world-props` for a site of that
+   * kind through the published `ctx.props.sites()` registry, preferring one
+   * that is not finished yet and, among those, the nearest to the player. The
+   * authored `x/z` on the objective is the fallback for a build where that kind
+   * does not exist yet, so the quest is playable today and snaps onto the real
+   * outpost/cauldron/lakeshore/wreck the day that lane registers them.
+   *
+   * Allocation-free: the answer is written into one shared record, read
+   * immediately by the caller, and never retained.
+   */
+  _anchor(o) {
+    const out = _anchorOut;
+    out.ok = false; out.site = null;
+    out.x = o.x ?? 0; out.z = o.z ?? 0;
+    if (o.x != null && o.z != null) out.ok = true;
+    const want = o.at;
+    if (!want) return out;
+    const rows = this._sites();
+    if (!rows.length) return out;
+    const p = this.ctx.player?.position;
+    let best = null, bestScore = Infinity;
+    for (let i = 0; i < rows.length; i++) {
+      const r = rows[i];
+      if (!r) continue;
+      /**
+       * A site matches on its KIND (either the wanted one or the named
+       * alternative that stands in for it today), or on its id containing the
+       * wanted kind — so a future `cauldron-rho` site registered under some
+       * other kind still answers `at:{site:'cauldron'}`. The alternative is
+       * deliberately NOT matched by id substring: `alt` is a stand-in, and a
+       * loose stand-in silently drags a quest marker onto the wrong thing.
+       */
+      const primary = r.kind === want.site
+        || (typeof r.id === 'string' && r.id.includes(want.site));
+      const stand = !primary && !!want.alt && r.kind === want.alt;
+      if (!primary && !stand) continue;
+      if (want.id && r.id !== want.id) continue;
+      /**
+       * Order: the real thing before the stand-in, an unfinished site before a
+       * finished one, and only then the nearest. Distance alone is not enough —
+       * `world-props` now registers BOTH a `cauldron` site and the older
+       * `override` node this quest used to point at, and a marker that moves
+       * between them depending on where the player happens to be standing is a
+       * quest objective that cannot be followed.
+       */
+      const dx = p ? p.x - r.x : 0, dz = p ? p.z - r.z : 0;
+      const score = (stand ? 1e9 : 0) + (r.done ? 1e6 : 0) + Math.sqrt(dx * dx + dz * dz);
+      if (score < bestScore) { bestScore = score; best = r; }
+    }
+    if (best) { out.x = best.x; out.z = best.z; out.ok = true; out.site = best.id; }
+    return out;
+  }
+
+  /**
+   * `ctx.props.sites()` BUILDS its array every call (20+ records, one object
+   * each). The 5 Hz proximity sweep asks per unfinished `goto`, and the marker
+   * rebuild asks per active objective, so an uncached read is ~15 throwaway
+   * arrays a second for a list that changes when a datapoint is picked up.
+   * Cached for a second of simulated time; `_markersDirty` is unaffected.
+   */
+  _sites() {
+    if (this._sitesAt != null && this.clock - this._sitesAt < 1) return this._sitesCache;
+    let rows = null;
+    try { rows = this.ctx.props?.sites?.(); } catch { rows = null; }
+    this._sitesCache = Array.isArray(rows) ? rows : [];
+    this._sitesAt = this.clock;
+    return this._sitesCache;
+  }
+
+  /**
+   * Published: where an objective actually points, after site resolution.
+   * The compass, the world map and the gates all need the same answer, and
+   * none of them should have to know that `at:{site:'outpost'}` resolves
+   * through `world-props`. Returns a COPY (the internal record is reused).
+   */
+  objectiveAnchor(questId, objectiveId = null) {
+    const def = QUESTS.find((q) => q.id === questId);
+    if (!def) return null;
+    const st = this.questState.get(questId);
+    const o = objectiveId
+      ? def.objectives.find((x) => x.id === objectiveId)
+      : (st ? this._current(def, st) : def.objectives[0]);
+    if (!o) return null;
+    if (o.type === 'talk') {
+      const npc = this._npcPos(o.npc);
+      return npc ? { x: npc.x, z: npc.z, site: o.npc, kind: 'talk', objectiveId: o.id } : null;
+    }
+    const a = this._anchor(o);
+    return a.ok ? { x: a.x, z: a.z, site: a.site, kind: o.type, objectiveId: o.id, radius: o.radius ?? 2.5 } : null;
+  }
+
+  /* ====================================================================== */
+  /* timed trials (`within`) — the hunting-ground contract                  */
+  /* ====================================================================== */
+
+  _trialKey(questId, objId) { return `${questId}:${objId}`; }
+
+  /**
+   * Start (or restart) the window on a timed objective and re-baseline it, so
+   * only work done INSIDE the window counts. Kills banked before the trial
+   * began are not stolen from the player — they simply do not pay for a trial
+   * that is about doing it now, quickly.
+   */
+  _startTrial(def, st, o, reason = 'start') {
+    const key = this._trialKey(def.id, o.id);
+    // A quest restored from a pre-expansion save has no bucket for this type;
+    // creating it is the difference between "kills since the window opened" and
+    // "every kill this run", which would settle the trial the moment it starts.
+    if (!st.base) st.base = this._tallySnapshot(def);
+    if (!st.base[o.type]) st.base[o.type] = Object.create(null);
+    st.base[o.type][o.kind ?? '*'] = this.tally[o.type]?.[o.kind ?? '*'] ?? 0;
+    if (st.used) st.used[this._objKey(o)] = 0;
+    const had = st.counts[o.id] ?? 0;
+    st.counts[o.id] = 0;
+    this.trials.set(key, { endsAt: this.clock + o.within, startedAt: this.clock });
+    this._markersDirty = true;
+    if (had > 0 || reason !== 'start') {
+      this._emit('quest-objective', {
+        questId: def.id, objectiveId: o.id, label: o.label,
+        have: 0, need: o.count ?? 1, done: false, trial: reason,
+      });
+      if (reason === 'lapsed') this.banner('TRIAL LAPSED', o.label.toUpperCase(), 'objective');
+      if (reason === 'restart') this.banner('TRIAL RESTARTED', o.label.toUpperCase(), 'objective');
+    }
+    return this.trials.get(key);
+  }
+
+  /** Seconds left on a timed objective, or null when it is not running. */
+  trialState(questId, objectiveId = null) {
+    const def = QUESTS.find((q) => q.id === questId);
+    const st = this.questState.get(questId);
+    if (!def || !st) return null;
+    const o = objectiveId
+      ? def.objectives.find((x) => x.id === objectiveId)
+      : def.objectives.find((x) => x.within && (st.counts[x.id] ?? 0) < (x.count ?? 1));
+    if (!o || !o.within) return null;
+    const t = this.trials.get(this._trialKey(def.id, o.id));
+    return {
+      questId, objectiveId: o.id, within: o.within,
+      running: !!t, left: t ? Math.max(0, +(t.endsAt - this.clock).toFixed(2)) : null,
+      have: st.counts[o.id] ?? 0, need: o.count ?? 1,
+    };
+  }
+
+  /**
+   * One pass per sampler tick: open a window on any timed objective that has
+   * become current, and reset one that lapsed. A lapsed trial restarts itself
+   * rather than dead-ending the quest — HZD's Hunting Grounds let you run the
+   * trial again, and a side quest that can be permanently failed by a slow walk
+   * is a bug report, not a challenge.
+   */
+  _tickTrials() {
+    for (const def of QUESTS) {
+      const st = this.questState.get(def.id);
+      if (!st || st.state !== 'active') continue;
+      const o = this._current(def, st);
+      if (!o || !o.within) continue;
+      const key = this._trialKey(def.id, o.id);
+      const t = this.trials.get(key);
+      if (!t) { this._startTrial(def, st, o, 'start'); continue; }
+      if (this.clock >= t.endsAt) this._startTrial(def, st, o, 'lapsed');
+    }
+    // a finished (or abandoned) trial keeps no timer. Guarded on `size` so the
+    // sampler allocates nothing at all on the 99 % of ticks with no trial open.
+    if (!this.trials.size) return;
+    for (const key of [...this.trials.keys()]) {
+      const [qid, oid] = key.split(':');
+      const def = QUESTS.find((q) => q.id === qid);
+      const st = this.questState.get(qid);
+      const o = def?.objectives.find((x) => x.id === oid);
+      if (!def || !st || !o || st.state !== 'active' || (st.counts[oid] ?? 0) >= (o.count ?? 1)) {
+        this.trials.delete(key);
+      }
+    }
+  }
+
+  /** The player walked back into a trial ring: run it again, from zero. */
+  restartTrial(groundId = null) {
+    let n = 0;
+    for (const def of QUESTS) {
+      const st = this.questState.get(def.id);
+      if (!st || st.state !== 'active') continue;
+      const o = this._current(def, st);
+      if (!o || !o.within) continue;
+      if (groundId && o.trial && !String(groundId).includes(o.trial) && o.trial !== groundId) continue;
+      this._startTrial(def, st, o, 'restart');
+      n++;
+    }
+    if (n) { this.ui.refresh(); this._emitObjectiveChanged(); }
+    return n;
+  }
+
+  /* ====================================================================== */
+  /* machine-site respawn policy (progression-003, expansion round)         */
+  /* ====================================================================== */
+
+  /** Which window this site should repopulate on, and why. */
+  respawnPolicy(site) {
+    if (!site) return null;
+    let cls = RESPAWN_CLASS[site.kind] ?? 'medium';
+    let why = cls;
+    // a trial ring has to be re-runnable: the quest asks for three of them
+    const ground = this._anchor({ at: { site: 'hunting-ground' }, x: 128, z: -78 });
+    if (ground.ok) {
+      const dx = site.x - ground.x, dz = site.z - ground.z;
+      if (dx * dx + dz * dz <= 70 * 70) { cls = 'trial'; why = 'trial'; }
+    }
+    if (why !== 'trial') {
+      // an active quest is asking for this kind right now
+      for (const def of QUESTS) {
+        const st = this.questState.get(def.id);
+        if (!st || st.state !== 'active') continue;
+        const o = this._current(def, st);
+        if (o && o.type === 'kill' && (o.kind === site.kind || !o.kind)) { cls = 'quest'; why = 'quest'; break; }
+      }
+    }
+    const [lo, hi] = SITE_RESPAWN[cls] ?? SITE_RESPAWN.medium;
+    const delay = lo + (hi - lo) * siteJitter(site.id);
+    return { cls, why, delay: +delay.toFixed(1), lo, hi };
+  }
+
+  /**
+   * Re-time one site the frame `machine-ai` disposed its wreck. Writes only the
+   * published `respawnAt` field on the published site record — no edit to that
+   * lane's file, and never SLOWER than the stock window it replaces.
+   */
+  _tuneSiteRespawn(siteId) {
+    const mgr = this.ctx.machines?.sites;
+    if (!mgr || siteId == null) return null;
+    const site = mgr.sites?.find?.((s) => s.id === siteId);
+    if (!site || !site.pending) return null;
+    const pol = this.respawnPolicy(site);
+    if (!pol) return null;
+    const next = (mgr.clock ?? 0) + pol.delay;
+    // never push a site out past what machine-ai already scheduled
+    site.respawnAt = Math.min(site.respawnAt ?? Infinity, next);
+    this.siteTuning.set(siteId, { ...pol, at: +site.respawnAt.toFixed(1), kind: site.kind });
+    return pol;
+  }
+
+  /* ====================================================================== */
+  /* dialogue (expansion round) — data lives here, the card just draws it    */
+  /* ====================================================================== */
+
+  /** Merge this lane's authored rows with the npc lane's own `lines`. */
+  _dialogueFor(npcId) {
+    const def = NPCS[npcId];
+    if (!def) return null;
+    let row = null;
+    try { row = this.ctx.npcs?.roster?.find?.((r) => r.id === npcId) ?? null; } catch { row = null; }
+    const greeting = [...(def.greeting || [])];
+    for (const l of (row?.lines || [])) if (l && !greeting.includes(l)) greeting.push(l);
+    return {
+      id: npcId,
+      name: def.name ?? row?.name ?? npcId,
+      title: def.title ?? row?.title ?? '',
+      greeting,
+      topics: def.topics || [],
+      trade: !!def.trade,
+    };
+  }
+
+  /** How many times this run has spoken to `npcId`. */
+  timesTalked(npcId) { return this.dialogue.talked[npcId] ?? 0; }
+
+  /**
+   * Everything the conversation card draws, computed from run state: which
+   * greeting this person is on, the line currently showing (a topic answer
+   * replaces the greeting), and 2-3 choices in HZD's priority order —
+   * report-in first, then the offer, then an unheard topic, then trade, and
+   * LEAVE always last.
+   */
+  dialogueState(npcId = this.dialogue.npc) {
+    const d = this._dialogueFor(npcId);
+    if (!d) return null;
+    const talked = this.timesTalked(npcId);
+    const idx = Math.min(d.greeting.length - 1, Math.max(0, talked - 1 + Math.floor(this.stats.kills / 6)));
+    let line = d.greeting[Math.max(0, idx)] ?? 'Speak, then.';
+    let topicId = null;
+    if (this.dialogue.topic && this.dialogue.npc === npcId) {
+      const t = d.topics.find((x) => x.id === this.dialogue.topic);
+      if (t) { line = t.a; topicId = t.id; }
+    }
+
+    const primary = [];
+    const active = this.quests.active().filter((q) => q.giver === npcId);
+    const offered = this.quests.offered().filter((q) => q.giver === npcId);
+    const turnIn = active.find((q) => q.current && q.current.type === 'talk' && q.current.npc === npcId);
+    if (turnIn) {
+      primary.push({ id: `turnin:${turnIn.id}`, kind: 'quest-turnin', questId: turnIn.id,
+        label: `“About ${turnIn.title}…”`, hint: 'REPORT IN' });
+    }
+    for (const q of offered) {
+      primary.push({ id: `accept:${q.id}`, kind: 'quest-accept', questId: q.id,
+        label: `“Tell me about ${q.title}.”`, hint: 'ACCEPT QUEST' });
+    }
+    for (const t of d.topics) {
+      if (t.id === topicId) continue;
+      primary.push({ id: `topic:${t.id}`, kind: 'topic', topicId: t.id,
+        label: `“${t.q}”`, hint: this.dialogue.seen.has(`${npcId}:${t.id}`) ? 'ASK AGAIN' : 'ASK' });
+    }
+    if (active.length) {
+      primary.push({ id: 'journal', kind: 'journal', label: '“What am I supposed to be doing?”', hint: 'JOURNAL' });
+    }
+
+    /**
+     * HZD's wheel shows a handful, never a wall: two lines plus the exit. A
+     * MERCHANT always keeps one of those two, because "buy arrows" is the whole
+     * reason that person is stood there — with a turn-in and an offer both
+     * pending, a flat top-two cut hid the only shop in the valley behind quest
+     * state.
+     */
+    const choices = primary.slice(0, d.trade ? 1 : 2);
+    if (d.trade) {
+      choices.push({ id: 'trade', kind: 'trade', label: '“Show me what you have to trade.”', hint: 'TRADE' });
+    }
+    choices.push({ id: 'leave', kind: 'leave', label: `“Later, ${d.name}.”`, hint: 'LEAVE' });
+    return {
+      id: npcId, name: d.name, title: d.title, line, topic: topicId,
+      talked, choices, open: this.dialogue.open && this.dialogue.npc === npcId,
+    };
+  }
+
+  /**
+   * Take a choice. Returns `{ state, closed, action }` — the card re-renders
+   * from `state` and performs `action` ('trade' | 'journal') on the way out, so
+   * the panel holds no rules of its own.
+   */
+  choose(choiceId) {
+    const npcId = this.dialogue.npc;
+    const before = this.dialogueState(npcId);
+    if (!before) return { state: null, closed: true, action: null };
+    const c = before.choices.find((x) => x.id === choiceId) || null;
+    if (!c) return { state: before, closed: false, action: null };
+
+    switch (c.kind) {
+      case 'topic': {
+        this.dialogue.topic = c.topicId;
+        const key = `${npcId}:${c.topicId}`;
+        if (!this.dialogue.seen.has(key)) {
+          this.dialogue.seen.add(key);
+          // one-shot, through the same ledger a datapoint uses
+          this.award({ xp: 10, reason: 'talk', id: key, once: true });
+        }
+        this._emit('dialogue-topic', { npc: npcId, topic: c.topicId });
+        break;
+      }
+      case 'quest-accept':
+        this.dialogue.topic = null;
+        this.startQuest(c.questId);
+        break;
+      case 'quest-turnin':
+        // leaving the conversation is what closes a `talk` objective
+        return { state: null, closed: true, action: null, turnIn: c.questId };
+      case 'trade':
+        return { state: before, closed: true, action: 'trade' };
+      case 'journal':
+        return { state: before, closed: true, action: 'journal' };
+      case 'leave':
+      default:
+        return { state: before, closed: true, action: null };
+    }
+    /**
+     * Keep the card in sync when a choice arrives through the API rather than
+     * through the panel's own click handler (a gate, a controller binding, a
+     * later voice/wheel front-end). The panel re-renders from state either way.
+     */
+    const state = this.dialogueState(npcId);
+    if (this.dialogueUI?.isOpen) { try { this.dialogueUI.refresh(); } catch { /* card gone */ } }
+    return { state, closed: false, action: null };
   }
 
   /* ====================================================================== */
@@ -1399,10 +2278,21 @@ export class Progression {
   talkTo(npcId = 'varl') {
     const def = NPCS[npcId];
     if (!def) return false;
+    // switching speakers mid-conversation starts a fresh card
+    if (this.dialogue.open && this.dialogue.npc !== npcId) this.closeDialogue();
     this.dialogue.npc = npcId;
+    this.dialogue.topic = null;
     this.dialogue.open = true;
-    this._emit('dialogue-open', { npc: npcId });
-    this.ui.openDialogue(npcId);
+    this.dialogue.talked[npcId] = (this.dialogue.talked[npcId] ?? 0) + 1;
+    this._emit('dialogue-open', { npc: npcId, name: def.name, times: this.dialogue.talked[npcId] });
+    /**
+     * The conversation card is its own panel now (`src/ui/dialogue.js`,
+     * expansion round). `QuestLogUI.openDialogue` — the two-line card bolted
+     * into the journal overlay — is the fallback for a build where the card
+     * failed to construct, and nothing else calls it.
+     */
+    const ok = this.dialogueUI?.open?.(npcId);
+    if (!ok) this.ui.openDialogue(npcId);
     return true;
   }
 
@@ -1420,6 +2310,8 @@ export class Progression {
      * already false one line up, so the recursion stops immediately.
      */
     if (this.ui?.state === 'dialogue') { try { this.ui.close(); } catch { /* panel gone */ } }
+    if (this.dialogueUI?.isOpen) { try { this.dialogueUI.close({ silent: true }); } catch { /* card gone */ } }
+    this.dialogue.topic = null;
     this._emit('dialogue-close', { npc });
     this._bump('talk', npc);
     this._advance('talk', (o) => o.npc === npc);
@@ -1437,16 +2329,30 @@ export class Progression {
         base: st.base ?? null, used: { ...(st.used || {}) }, reached: { ...(st.reached || {}) },
       });
     }
+    /**
+     * Timed trials are stored as SECONDS LEFT, not as an absolute clock: the
+     * sim clock restarts at zero on a fresh page, so an endsAt written before a
+     * reload would either expire instantly or never. A trial with no time left
+     * is simply not written.
+     */
+    const trials = [];
+    for (const [key, t] of this.trials) {
+      const left = t.endsAt - this.clock;
+      if (left > 0.05) trials.push({ key, left: +left.toFixed(2) });
+    }
     return {
       level: this.level, xpIntoLevel: this.xpIntoLevel, totalXp: this.totalXp,
       skillPoints: this.skillPoints, unlocked: [...this.unlocked],
       difficulty: this._difficulty,
       baseMaxHealth: this.baseMaxHealth, baseMaxPouch: this.baseMaxPouch,
       stats: { ...this.stats }, killsByKind: { ...this.killsByKind },
-      tally: {
-        kill: { ...this.tally.kill }, scan: { ...this.tally.scan }, talk: { ...this.tally.talk },
+      tally: freshTally(this.tally),
+      quests: { list: quests, tracked: this.tracked, trials },
+      /** conversation state: topics heard (one award each) + who has been met */
+      dialogue: {
+        seen: [...this.dialogue.seen],
+        talked: { ...this.dialogue.talked },
       },
-      quests: { list: quests, tracked: this.tracked },
       merchant: this.merchant.stock().map((s) => ({ id: s.id, qty: s.qty })),
       // one-shot world-content ledgers (award/discover)
       awarded: [...this.awarded],
@@ -1467,11 +2373,9 @@ export class Progression {
     this.stats = { ...this.stats, ...(data.stats || {}) };
     this.killsByKind = { ...(data.killsByKind || {}) };
     // run tallies + per-quest ledger, so out-of-order credit survives a reload
-    this.tally = {
-      kill: { ...(data.tally?.kill || data.killsByKind || {}) },
-      scan: { ...(data.tally?.scan || {}) },
-      talk: { ...(data.tally?.talk || {}) },
-    };
+    this.tally = freshTally(data.tally);
+    // a save written before the run tallies existed carries only killsByKind
+    if (!data.tally?.kill) this.tally.kill = { ...(data.killsByKind || {}) };
     this.questState.clear();
     for (const q of (data.quests?.list || [])) {
       const qdef = QUESTS.find((x) => x.id === q.id);
@@ -1505,6 +2409,16 @@ export class Progression {
     // worst once, and `activities` keeps its own `found` flag anyway).
     this.awarded = new Set(Array.isArray(data.awarded) ? data.awarded : []);
     this.discovered = new Set(Array.isArray(data.discovered) ? data.discovered : []);
+    // conversation state (expansion round): heard topics + who has been met
+    this.dialogue.seen = new Set(Array.isArray(data.dialogue?.seen) ? data.dialogue.seen : []);
+    this.dialogue.talked = { ...(data.dialogue?.talked || {}) };
+    this.dialogue.topic = null;
+    // timed trials resume with the time they had left, on the NEW clock
+    this.trials.clear();
+    for (const row of (data.quests?.trials || [])) {
+      if (!row?.key || !(row.left > 0)) continue;
+      this.trials.set(row.key, { endsAt: this.clock + row.left, startedAt: this.clock });
+    }
     this.tracked = data.quests?.tracked ?? this._firstActive();
     for (const row of (data.merchant || [])) {
       const s = this.merchant.stock().find((x) => x.id === row.id);
@@ -1556,7 +2470,12 @@ export class Progression {
     this.skillPoints = 0; this.unlocked.clear();
     this.questState.clear(); this.tracked = null;
     this.killsByKind = Object.create(null);
-    this.tally = { kill: Object.create(null), scan: Object.create(null), talk: Object.create(null) };
+    this.tally = freshTally();
+    this.trials.clear();
+    this.siteTuning.clear();
+    this.dialogue.open = false; this.dialogue.npc = null; this.dialogue.topic = null;
+    this.dialogue.seen.clear();
+    this.dialogue.talked = Object.create(null);
     this.clearedSites.clear();
     this.awarded.clear();
     this.discovered.clear();
@@ -1704,6 +2623,35 @@ export class Progression {
       this._onGained(e.id, e.count);
     });
 
+    /**
+     * WORLD-CONTENT OBJECTIVES (expansion round). Four types, four events that
+     * already existed and that nothing was listening to for quest credit:
+     *   'datapoint-collected'  src/items/datapoints.js   (all 24 records)
+     *   'supply-cache'         src/world/props/activities.js
+     *   'override-node'        idem
+     *   'fauna-killed'         src/world/fauna.js
+     * Each is tallied by id/species AND under '*', so an objective can ask for
+     * "three datapoints" or for one named record with the same machinery.
+     */
+    on('datapoint-collected', ({ id } = {}) => {
+      this._bump('datapoint', id);
+      this._advance('datapoint', (o) => !o.dp || o.dp === id);
+    });
+    on('supply-cache', ({ id } = {}) => {
+      this._bump('cache', id);
+      this._advance('cache', (o) => !o.node || o.node === id);
+    });
+    on('override-node', ({ id } = {}) => {
+      this._bump('override', id);
+      this._advance('override', (o) => !o.node || o.node === id);
+    });
+    on('fauna-killed', ({ species } = {}) => {
+      this._bump('hunt', species);
+      this._advance('hunt', (o) => !o.species || o.species === species);
+    });
+    /** Walking back into the trial ring runs the trial again, from zero. */
+    on('hunting-ground', ({ id } = {}) => { this.restartTrial(id); });
+
     on('player-damage', ({ from } = {}) => {
       if (from) this.lastKiller = from?.displayName ?? from?.kind ?? String(from);
     });
@@ -1740,7 +2688,11 @@ export class Progression {
      */
     on('machine-disposed', ({ site } = {}) => {
       this.stats.sitesCleared++;
-      if (site != null) this.clearedSites.add(site);
+      if (site != null) {
+        this.clearedSites.add(site);
+        // progression-003 (expansion): per-site respawn timing, see respawnPolicy
+        this._tuneSiteRespawn(site);
+      }
     });
     on('machine-respawned', ({ site } = {}) => {
       this.stats.respawns++;
@@ -1980,6 +2932,8 @@ export class Progression {
 
   update(dt, t) {
     this._bootT += dt;
+    // the trial clock is SIMULATED seconds, never wall time (see `this.clock`)
+    this.clock += dt;
     if (!this._campEntry || !this._npcEntry) this._ensureInteractables();
 
     // Cross-lane hooks that could not resolve at construction (see
@@ -2002,6 +2956,7 @@ export class Progression {
     if (this._gotoT >= 0.2) {
       this._gotoT = 0;
       this._pollInventory();
+      this._tickTrials();
       const p = this.ctx.player;
       if (p) {
         const px = p.position.x, pz = p.position.z;
@@ -2016,7 +2971,9 @@ export class Progression {
             if (o.type !== 'goto') continue;
             if (st.reached?.[o.id]) continue;
             if ((st.counts[o.id] ?? 0) >= (o.count ?? 1)) continue;
-            const dx = px - o.x, dz = pz - o.z;
+            const a = this._anchor(o);
+            if (!a.ok) continue;
+            const dx = px - a.x, dz = pz - a.z;
             const r = o.radius ?? 8;
             if (dx * dx + dz * dz <= r * r) {
               if (st.reached) st.reached[o.id] = 1;
@@ -2123,6 +3080,20 @@ export class Progression {
       }),
       tracked: this.tracked,
       markers: this.getMarkers().length,
+      /** expansion round: timed trials, conversation state, respawn tuning */
+      clock: +this.clock.toFixed(2),
+      trials: [...this.trials.keys()].map((k) => {
+        const [qid, oid] = k.split(':');
+        return this.trialState(qid, oid);
+      }).filter(Boolean),
+      dialogue: {
+        open: this.dialogue.open, npc: this.dialogue.npc, topic: this.dialogue.topic,
+        npcs: NPC_IDS.length,
+        seen: [...this.dialogue.seen],
+        talked: { ...this.dialogue.talked },
+        panel: this.dialogueUI ? this.dialogueUI.audit() : null,
+      },
+      siteTuning: [...this.siteTuning.entries()].map(([id, v]) => ({ id, ...v })),
       stats: { ...this.stats },
       killsByKind: { ...this.killsByKind },
       clearedSites: [...this.clearedSites],
@@ -2161,8 +3132,11 @@ export class Progression {
     if (machines?.noise?.__hzcOriginal) machines.noise = machines.noise.__hzcOriginal;
     if (this._campEntry) this.ctx.interactables?.unregister?.(this._campEntry);
     if (this._npcEntry) this.ctx.interactables?.unregister?.(this._npcEntry);
+    this.trials.clear();
+    this.siteTuning.clear();
     this.ui.dispose();
     this.skillsUI.dispose();
+    this.dialogueUI?.dispose?.();
   }
 }
 

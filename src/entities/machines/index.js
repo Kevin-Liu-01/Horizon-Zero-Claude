@@ -414,7 +414,7 @@ export class Machines {
    * proceeds anyway — refusing it would be a worse failure than a temporary
    * overshoot, and the next spawn tries again.
    */
-  _recycleForBudget(modelKind) {
+  _recycleForBudget(modelKind, farOnly = false) {
     const cfg = ECOSYSTEM.population;
     if (!cfg) return 0;
     if (this._bootNodes == null) return 0;          // still populating the world
@@ -441,6 +441,18 @@ export class Machines {
           const d2 = m.position.distanceToSquared(p.position);
           if (d2 < off2) continue;                     // too close to hide it
           if (d2 < keep2) {
+            /**
+             * `farOnly` — the STRICTLY WEAKER rule the periodic sweep uses
+             * (`memory-attribution`). The spawn-time check may take a machine
+             * inside the keep ring when it is calm and off camera; the sweep
+             * that now runs from `update()` may not, so it can never evict
+             * anything the existing spawn-time path would have left alone.
+             * `A90-rig-reclaim` holds eight machines alive 56 m from the
+             * player to measure their per-live cost, and a sweep that could
+             * quietly take one of them would break another lane's gate while
+             * "fixing" memory.
+             */
+            if (farOnly) continue;
             // inside the keep ring: calm, and with nobody looking at it
             const calm = (m.state === 'patrol' || m.state === 'return') && m.suspicion < 0.25;
             if (!calm || !cam) continue;
@@ -567,6 +579,42 @@ export class Machines {
     this.sites.update(dt);
     this.squads.update(dt);
     this.overrides.update(dt);
+
+    /**
+     * THE CEILING IS A CEILING, NOT A DOOR POLICY (`memory-attribution`).
+     *
+     * `_recycleForBudget` ran in exactly one place: the top of `spawn()`. That
+     * makes it a check on the way IN, and there are two ways the population
+     * gets over its node budget without a `spawn()` call to catch it:
+     *
+     *   1. `sites.update()` respawns a site on its own clock — nodes arrive
+     *      with no `spawn()` on the stack (it calls `_spawnCls` directly).
+     *   2. A spawn that WAS checked could not find a victim. The eviction rule
+     *      is deliberately conservative — never the authored roster, never
+     *      inside 35 m, and inside 120 m only if the machine is calm and off
+     *      camera — so during a fight, when the player is standing in the
+     *      middle of everything he has just alerted, nothing qualifies and the
+     *      overshoot is simply kept. Nothing ever looked again.
+     *
+     * MEASURED (`A90-memory-stability-expansion`, port 5207): after 30 kills
+     * and 30 spawns the roster had SHRUNK 39 -> 29 while its node count had
+     * GROWN 2428 -> 2708 against a 2568 budget, `recycled: 10`, and the gate
+     * failed on `overBudget` alone. Both terms are honest: the loop replaces
+     * mixed 62-node machines with 110-node Watchers, so a smaller roster really
+     * can cost more nodes — which is exactly why the ceiling has to be counted
+     * in NODES and re-checked over time rather than at the door.
+     *
+     * Throttled to 2 s. `_recycleForBudget` returns 0 immediately when the
+     * population is under budget, which is every frame of a normal session, so
+     * the steady-state cost is one `_machineNodes()` traversal every two
+     * seconds and no behaviour change at all: at boot `nodes === bootNodes` and
+     * the budget is `bootNodes + headroom`.
+     */
+    this._budgetT = (this._budgetT ?? 0) - dt;
+    if (this._budgetT <= 0) {
+      this._budgetT = 2;
+      this._recycleForBudget(null, true);
+    }
 
     for (let i = this.list.length - 1; i >= 0; i--) {
       const m = this.list[i];

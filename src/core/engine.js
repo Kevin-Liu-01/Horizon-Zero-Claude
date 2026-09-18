@@ -594,12 +594,55 @@ export class Engine {
     this.csm = null;
   }
 
-  /** Register a material with the cascades (no-op when CSM is off). */
+  /**
+   * Register a material with the cascades (no-op when CSM is off).
+   *
+   * A CASCADE REGISTRATION IS A STRONG REFERENCE, AND IT HAD NO END
+   * (`memory-attribution`). `three/examples/jsm/csm/CSM.js` keeps
+   * `this.shaders = new Map()` keyed by MATERIAL (CSM.js:46, :278, :282) and
+   * this class kept `_csmMaterials = new Set()` of the same materials — two
+   * strong containers, neither with a removal path. `environment.js`
+   * `_registerScene()` re-traverses the scene on a timer and registers every
+   * material it has not seen, so every machine that spawns puts its ~9
+   * materials in both, and a machine that dies takes none of them out:
+   * `sites.dispose()` disposes the material and the Map goes on holding it,
+   * with its maps, its uniforms and its cached shader object.
+   *
+   * MEASURED, `A90b-memory-attribution` container census, 30 kills and 30
+   * spawns on port 5208: `engine._csmMaterials` **+267**, `engine.csm.shaders`
+   * **+267**, monotonic, against a live scene whose material count was flat.
+   * That is the largest single retainer the attribution pass found, and it is
+   * unbounded in a normal session, not just under a gate's workload.
+   *
+   * The fix is the one line the upstream class is missing: a material that
+   * disposes drops out of both containers. `Material.dispose()` dispatches a
+   * `dispose` event (three.module.js `Material.prototype.dispose`), so the
+   * listener costs nothing per frame and cannot be forgotten by a caller. The
+   * closure captures the material, and the material owns the listener — that
+   * cycle is collectable once these two containers let go, which is the point.
+   */
   csmSetupMaterial(material) {
     if (!this.csm || !material || this._csmMaterials.has(material)) return material;
     this.csm.setupMaterial(material);
     this._csmMaterials.add(material);
+    if (!material.userData?.csmForgetBound) {
+      if (material.userData) material.userData.csmForgetBound = true;
+      material.addEventListener('dispose', () => this.csmForgetMaterial(material));
+    }
     return material;
+  }
+
+  /**
+   * Drop a material from the cascade bookkeeping. Called automatically when the
+   * material disposes; safe to call by hand and safe to call twice.
+   *
+   * @returns {boolean} whether this engine was still holding it
+   */
+  csmForgetMaterial(material) {
+    if (!material) return false;
+    const had = this._csmMaterials.delete(material);
+    try { this.csm?.shaders?.delete?.(material); } catch (err) { /* CSM internals moved */ }
+    return had;
   }
 
   // -------------------------------------------------------------- warm-up
@@ -618,9 +661,70 @@ export class Engine {
     } catch (err) {
       console.warn('[HZC] shader warm-up skipped:', err?.message || err);
     }
+    const textures = this.warmUpTextures(scene);
     this.warmUpMs = Math.round(performance.now() - t0);
     this.warmUpPrograms = this.renderer.info.programs?.length ?? 0;
-    return { ms: this.warmUpMs, programs: this.warmUpPrograms };
+    this.warmUpTexturesUploaded = textures;
+    return { ms: this.warmUpMs, programs: this.warmUpPrograms, textures };
+  }
+
+  /**
+   * ...AND EVERY GPU RESOURCE, NOT JUST EVERY PROGRAM (`memory-attribution`).
+   *
+   * `compileAsync` builds programs. It does NOT upload textures: three uploads
+   * a texture the first time a draw call binds it (`WebGLTextures.setTexture2D`
+   * -> `initTexture`, three.module.js:24788), and `info.memory.textures++`
+   * happens there (:24825). Two consequences, one visible and one measured:
+   *
+   *   - the first frame that shows a surface nobody has drawn yet pays for its
+   *     upload on the frame, which is the same class of hitch `warmUp()` was
+   *     written to remove for shaders;
+   *   - `renderer.info.memory.textures` climbs for MINUTES after boot as the
+   *     player walks into parts of the world that have not been drawn. Measured
+   *     by `A90b-memory-attribution` on port 5208: of a +22 texture delta across
+   *     30 kills, **18 were first-time uploads of textures that already existed
+   *     at boot** and 0 were leaked — `A90-memory-stability` was failing its
+   *     "textures <= +8" bar mostly on the world being SEEN for the first time.
+   *
+   * Uploading them behind the loading bar fixes both: the counter is honest
+   * from the first frame, and nothing stalls. A skeleton's bone texture is
+   * built here too (`Skeleton.computeBoneTexture`, which the renderer would
+   * otherwise do lazily at first draw) so a machine that walks into view does
+   * not allocate on the frame either. Idempotent — `initTexture` on an already
+   * uploaded texture is a no-op — so the deferred re-run after the variety
+   * models land costs only the traversal.
+   *
+   * @returns {number} textures pushed to the GPU
+   */
+  warmUpTextures(scene = this.scene) {
+    const r = this.renderer;
+    if (!r?.initTexture || !scene) return 0;
+    const seen = new Set();
+    let n = 0;
+    const put = (t) => {
+      if (!t || !t.isTexture || seen.has(t)) return;
+      seen.add(t);
+      // a render target's texture is owned and sized by the target itself
+      if (t.isRenderTargetTexture) return;
+      try { r.initTexture(t); n++; } catch (err) { /* exotic/compressed format */ }
+    };
+    scene.traverse((o) => {
+      const mats = Array.isArray(o.material) ? o.material : (o.material ? [o.material] : []);
+      for (const m of mats) {
+        if (!m) continue;
+        for (const k in m) {
+          const v = m[k];
+          if (v && v.isTexture) put(v);
+        }
+      }
+      if (o.isSkinnedMesh && o.skeleton) {
+        try {
+          if (!o.skeleton.boneTexture) o.skeleton.computeBoneTexture();
+          put(o.skeleton.boneTexture);
+        } catch (err) { /* a skin with no bones */ }
+      }
+    });
+    return n;
   }
 
   // ----------------------------------------------------------------- size

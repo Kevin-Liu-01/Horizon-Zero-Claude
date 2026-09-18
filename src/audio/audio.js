@@ -3134,6 +3134,41 @@ export class GameAudio {
       const list = ctx.machines?.list;
       if (list && playing) for (let i = 0; i < list.length; i++) this._syncServoLoop(list[i]);
       else for (const [m, e] of this._machineLoops) this._retireLoop(m, e, 0.4);
+      /**
+       * ...AND THE MACHINES THAT ARE NO LONGER ON THE ROSTER
+       * (`memory-attribution`).
+       *
+       * `_machineLoops` is a `Map` keyed by the MACHINE OBJECT, and the only
+       * thing that ever removed an entry was `_syncServoLoop` — which is
+       * driven by `machines.list`. A machine that leaves that list (the corpse
+       * lifecycle's `sites.dispose()`, or an eviction by the population
+       * budget) is therefore never visited again, so its entry, its
+       * `LoopEmitter` and its reserved chain stay put, and the Map holds the
+       * whole dead `Machine` — root, materials, skeleton, AI — for the rest of
+       * the session. `machine-killed` covered the ordinary kill; nothing
+       * covered a disposal, which is every kill once the wreck is reclaimed
+       * and every budget eviction.
+       *
+       * MEASURED (`A90b-memory-attribution`, 30 kills / 30 spawns, port 5208):
+       * `audio._machineLoops` **+7**, i.e. seven disposed machines retained,
+       * and seven of the eight loop chains permanently reserved — so a
+       * long session also goes silent, which is the same bug heard rather
+       * than measured.
+       *
+       * Swept off the CACHED array with a reused scratch list: no iterator, no
+       * closure, no allocation, at 1.6 Hz.
+       */
+      const loops = this._loopList;
+      const dead = this._servoDead || (this._servoDead = []);
+      dead.length = 0;
+      for (let i = 0; i < loops.length; i++) {
+        const m = loops[i].chain.tracked;
+        if (m && m._disposed) dead.push(m);
+      }
+      for (let i = 0; i < dead.length; i++) {
+        this._retireLoop(dead[i], this._machineLoops.get(dead[i]), 0.3);
+      }
+      dead.length = 0;
     }
 
     // --- positional world emitters (fire / water / status / loot beacons)

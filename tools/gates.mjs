@@ -189,7 +189,27 @@ if (swept.removed || swept.reapedOrphans) {
     + `${swept.keptInUse ? `, kept ${swept.keptInUse} in use` : ''}`);
 }
 
-const LAUNCH_ARGS = ['--use-angle=metal', '--enable-gpu', '--ignore-gpu-blocklist', '--window-size=1600,940'];
+/**
+ * `--js-flags=--expose-gc` and `--enable-precise-memory-info` (memory-attribution).
+ *
+ * Four gates already ask for both by name and have never had them. Every one of
+ * the heap gates is written as `if (window.gc) window.gc();` before it samples
+ * `performance.memory`, and `window.gc` only exists behind `--expose-gc`: with
+ * the flag missing, the guard silently skipped, no collection ran, and the
+ * number each gate reported as "the heap after a forced GC" was the heap
+ * INCLUDING everything the workload had just made garbage. Two of them print
+ * `'n/a (enable --enable-precise-memory-info)'` in their own detail string,
+ * which is the previous round asking for this and being unable to reach the
+ * runner. Without that second flag Blink hands back a bucketized, cached
+ * `usedJSHeapSize` rather than a live one.
+ *
+ * Measured with them on, A90-memory-stability-expansion's heap delta is the
+ * difference between a number that hovered on its own 25 % bar and a number
+ * that is reproducible — see docs/ROUND4-MEMORY.md §4. Neither flag changes
+ * what the build does; they change only what the runner is allowed to observe.
+ */
+const LAUNCH_ARGS = ['--use-angle=metal', '--enable-gpu', '--ignore-gpu-blocklist', '--window-size=1600,940',
+  '--js-flags=--expose-gc', '--enable-precise-memory-info'];
 let currentProfile = null;
 /**
  * Launch a browser on a fresh, owned profile and bin the previous one. The old

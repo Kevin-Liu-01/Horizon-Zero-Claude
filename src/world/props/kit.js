@@ -286,13 +286,35 @@ export function materials() {
     metal: new THREE.MeshStandardMaterial({
       vertexColors: true, roughness: 0.66, metalness: 0.5, side: THREE.DoubleSide,
     }),
-    /** Concrete, stone, rock: decks, pylons, cliffs, talus. */
+    /**
+     * Concrete, stone, timber: decks, pylons, palisades, talus.
+     *
+     * `side: DoubleSide`, and that is a RENDERING FIX, not a modelling choice.
+     * Measured on port 5211 against the shipped hunter camp: a merged,
+     * vertex-coloured, SINGLE-sided `MeshStandardMaterial` in this scene draws
+     * its vertex colours as WHITE. Same geometry, same `USE_COLOR` in the
+     * program cache key (mask bit 11 set on both), same colour attribute — the
+     * only variable that changes the result is `side`. `hide` and `metal` below
+     * were already `DoubleSide` and were the only two kit families whose
+     * colours survived; `matte` and `rock` were `FrontSide` and bleached every
+     * palisade, viaduct deck and cliff in the valley to bone. Setting every
+     * vertex colour of a merged palisade to pure RED changed nothing until the
+     * side flag flipped. Costs no draw calls (same mesh, same material) and
+     * only the back faces that fail the depth test.
+     *
+     * The underlying cause is below this lane's line — the fog/CSM chunk
+     * surgery in `world-light`'s `patchShaderChunks()` is the only thing in the
+     * build that rewrites the lighting path globally — and it is written up for
+     * that lane in docs/ROUND4-WORLD-PROPS.md. This is the fix that puts the
+     * colour back today without touching another lane's file.
+     */
     matte: new THREE.MeshStandardMaterial({
-      vertexColors: true, roughness: 0.96, metalness: 0,
+      vertexColors: true, roughness: 0.96, metalness: 0, side: THREE.DoubleSide,
     }),
     /** Flat-shaded stone for arches, cliff faces and boulders. */
     rock: new THREE.MeshStandardMaterial({
       vertexColors: true, roughness: 1, metalness: 0, flatShading: true,
+      side: THREE.DoubleSide,
     }),
     /** Hide, cloth, thatch, timber — the settlement's warm family. */
     hide: new THREE.MeshStandardMaterial({
@@ -300,6 +322,18 @@ export function materials() {
     }),
   };
   return _mats;
+}
+
+/**
+ * Release the shared material singletons (MEMORY RULE). Call this only after
+ * every mesh that draws with them is gone — `Props.dispose()` does exactly
+ * that. The next `materials()` rebuilds them, so a teardown/rebuild cycle is
+ * safe rather than merely survivable.
+ */
+export function disposeMaterials() {
+  if (!_mats) return;
+  for (const m of Object.values(_mats)) m.dispose();
+  _mats = null;
 }
 
 /**

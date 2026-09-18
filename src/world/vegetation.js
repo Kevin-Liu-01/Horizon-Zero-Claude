@@ -3,6 +3,8 @@ import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js
 import {
   SimplexNoise, pathFactor, riverFactor, shelfFactor,
   riverCenterX, riverHalfWidth,
+  biomeWeights, forestFactor, snowFactor, marshFactor, ashFactor, screeFactor,
+  northBenchFactor,
 } from './terrain.js';
 import { Props } from './props.js';
 
@@ -611,6 +613,12 @@ export class Vegetation {
 
     this._noise = new SimplexNoise(9042);
     this._lastTall = 0;
+    // one reusable weights object: the scatter calls grassDensityAt ~470k
+    // times per full stream and must not allocate
+    this._bioW = {
+      meadow: 1, forest: 0, snow: 0, marsh: 0, ash: 0, scree: 0,
+    };
+    this._lastBio = null;
     this._pools = [];
     this._primed = false;
     this._catchUp = 0;
@@ -624,6 +632,7 @@ export class Vegetation {
     this._buildFlowers();
     this._buildButterflies();
     this._buildLitter();
+    this._buildFogPockets();
     // static world props (riverbed litter, deadfall, ruins, watchtower)
     this.props = new Props(ctx);
     // fill the pooled tiers around the spawn camp before the first frame
@@ -655,14 +664,43 @@ export class Vegetation {
   grassDensityAt(x, z) {
     const terrain = this.ctx.terrain;
     const r2 = x * x + z * z;
-    if (r2 > GRASS_MAX_R * GRASS_MAX_R) { this._lastTall = 0; return 0; }
+    if (r2 > GRASS_MAX_R * GRASS_MAX_R) { this._lastTall = 0; this._lastBio = null; return 0; }
     const tall = terrain.tallGrassDensity(x, z);
     this._lastTall = tall;
     let d = D_MEADOW + D_STEALTH * SS(tall, 0.26, 0.60);
+
+    /* BIOME MODULATION — and the numbers here are load-bearing for A59.
+     *
+     * The gate's six meadow points include (44,-74), which is inside the NE
+     * forest, and its stealth-patch half samples whatever patch it finds near
+     * each of them. So the forest floor is thinned by 18 % and no more: a
+     * closed conifer stand in HZD is duff and fern, not bare dirt, and 0.82 x
+     * 5.4 = 4.4 tufts/m^2 still clears the >= 4 bar with the stealth tier on
+     * top of it. Snow, ash and scree are allowed to take the grass away
+     * because none of the gate's points — and, by construction, none of the
+     * machine routes (`biomeSuppress`) — are inside them.
+     */
+    const bw = biomeWeights(x, z, this._bioW);
+    this._lastBio = bw;
+    if (bw.meadow < 0.995) {
+      d *= 1 - 0.18 * bw.forest;
+      d *= 1 - 0.90 * bw.snow;
+      d *= 1 - 0.96 * bw.ash;
+      d *= 1 - 0.62 * bw.scree;
+      d *= 1 - 0.45 * bw.marsh;
+    }
     const cdx = x - CAMP.x, cdz = z - CAMP.z;
     d *= SS(Math.sqrt(cdx * cdx + cdz * cdz), 15, 33);         // trampled camp
     d *= 1 - SS(pathFactor(x, z), 0.14, 0.60);                 // worn trails
-    d *= 1 - SS(riverFactor(x, z), 0.06, 0.40);                // silt bed
+    /* The silt bed stays bare — EXCEPT under an authored cover disc, where
+     * reeds hold the waterline. Same split, same reasoning and the same
+     * numbers as `terrain.tallGrassDensity`: the two must agree or the
+     * concealment field is claiming cover that was never planted. */
+    const rfv = riverFactor(x, z);
+    if (rfv > 0.02) {
+      const bed = SS(rfv, 0.06, 0.40);
+      d *= 1 - bed * (1 - 0.74 * SS(tall, 0.40, 0.85));
+    }
     d *= 1 - 0.74 * SS(shelfFactor(x, z), 0.15, 0.75);         // SE stone shelf
     d *= 1 - SS(Math.sqrt(r2), 292, 332);                      // rim
     return d;
@@ -882,8 +920,43 @@ export class Vegetation {
       if (yy > maxY) maxY = yy;
 
       const swathe = this._noise.fbm(x * 0.02, z * 0.02, 2) * 0.5 + 0.5;
+      const bio = this._lastBio;
       let sxz, sy, flex;
-      if (tall > 0.40) {
+      if (bio && bio.marsh > 0.30) {
+        /* REEDS. Marsh cover is a different plant: tall, narrow, blue-green,
+         * and stiffer than meadow grass (a reed bends at the base, not along
+         * its length), so it gets its own scale and flex rather than a tint
+         * on the meadow tuft. */
+        sy = (1.45 + rng() * 0.85) * cfg.hMul;
+        sxz = (0.55 + rng() * 0.30) * cfg.sMul;
+        flex = 0.30 + rng() * 0.18;
+        _col.setHSL(0.205 + swathe * 0.045 + rng() * 0.02,
+          0.25 + rng() * 0.16, 0.26 + swathe * 0.12 + rng() * 0.09,
+          THREE.SRGBColorSpace);
+      } else if (bio && bio.snow > 0.18) {
+        // bleached bent grass poking through the dusting: short, pale, dry
+        sy = (0.42 + rng() * 0.30) * cfg.hMul;
+        sxz = (0.80 + rng() * 0.40) * cfg.sMul;
+        flex = 0.30 + rng() * 0.16;
+        _col.setHSL(0.105 + rng() * 0.02, 0.10 + rng() * 0.09,
+          0.52 + swathe * 0.14 + rng() * 0.12, THREE.SRGBColorSpace);
+      } else if (bio && bio.forest > 0.35) {
+        // forest floor: cool deep-green fern and wood grass in the shade
+        sy = (0.72 + rng() * 0.50) * cfg.hMul;
+        sxz = (1.00 + rng() * 0.55) * cfg.sMul;
+        flex = 0.34 + rng() * 0.20;
+        _col.setHSL(0.245 - swathe * 0.035 + rng() * 0.02,
+          0.30 + rng() * 0.16, 0.16 + swathe * 0.09 + rng() * 0.07,
+          THREE.SRGBColorSpace);
+      } else if (bio && bio.scree > 0.30) {
+        // stone bench: sparse wiry tussock, sun-bleached olive
+        sy = (0.50 + rng() * 0.34) * cfg.hMul;
+        sxz = (0.72 + rng() * 0.36) * cfg.sMul;
+        flex = 0.34 + rng() * 0.18;
+        _col.setHSL(0.135 + swathe * 0.03 + rng() * 0.02,
+          0.22 + rng() * 0.12, 0.34 + swathe * 0.10 + rng() * 0.09,
+          THREE.SRGBColorSpace);
+      } else if (tall > 0.40) {
         sy = (1.12 + rng() * 0.52) * cfg.hMul;
         sxz = (1.06 + rng() * 0.52) * cfg.sMul;
         flex = 0.80 + rng() * 0.35;
@@ -951,6 +1024,22 @@ export class Vegetation {
     pool.done = all;
     if (all) pool.instances = live;
     return left;
+  }
+
+  /**
+   * Mark every pooled chunk stale so the streamer re-scatters it under its
+   * normal per-frame budget. `terrain` calls this once when it stamps cover
+   * onto the live machine routes (A60): the density field has changed under
+   * chunks that are already filled, and re-scattering them progressively is
+   * the difference between new grass appearing over a second or two and a
+   * 120 ms hitch from a synchronous `forceStream`.
+   */
+  invalidate() {
+    this._catchUp = 60;   // raised budget until the rings are whole again
+    for (const pool of this._pools) {
+      pool.done = false;
+      for (const ch of pool.chunks) { ch.filled = false; ch.cursor = 0; ch.n = 0; }
+    }
   }
 
   /**
@@ -1417,9 +1506,70 @@ export class Vegetation {
     ];
     this._treeGroups = groups;
 
-    /* ---------------------------- scatter ---------------------------- */
+    /* ---------------------------- scatter ----------------------------
+     * TWO CHANGES IN ROUND 4's BIOME PASS.
+     *
+     * 1. The spacing test is a UNIFORM GRID, not a linear scan of everything
+     *    placed so far. The old scan was O(n) per candidate — at 1520 trees
+     *    and 140k candidates that is already ~10^8 distance tests, and the
+     *    forest sector needs half again as many trees. A 12 m bucket grid
+     *    makes it a 3x3 neighbourhood lookup, which is what pays for the
+     *    denser stand.
+     * 2. Candidates are DRAWN toward the NE forest sector. Sampling the disc
+     *    uniformly puts only ~9 % of the darts inside it, so "dense conifer
+     *    forest" would have been the same stand as everywhere else with a
+     *    tighter spacing number. 45 % of the darts land in the sector's
+     *    bounding box instead, and it decides its own species mix.
+     */
     const rng = mulberry32(50421);
-    const all = [];
+    const CELL = 12, GN = 64, GH = GN * CELL * 0.5;   // 768 m of grid
+    const grid = new Array(GN * GN);
+    const gput = (x, z) => {
+      const i = ((x + GH) / CELL) | 0, j = ((z + GH) / CELL) | 0;
+      if (i < 0 || j < 0 || i >= GN || j >= GN) return;
+      const c = grid[j * GN + i];
+      if (c) c.push(x, z); else grid[j * GN + i] = [x, z];
+    };
+    const gclear = (x, z, sp2) => {
+      const i = ((x + GH) / CELL) | 0, j = ((z + GH) / CELL) | 0;
+      for (let jj = j - 1; jj <= j + 1; jj++) {
+        if (jj < 0 || jj >= GN) continue;
+        for (let ii = i - 1; ii <= i + 1; ii++) {
+          if (ii < 0 || ii >= GN) continue;
+          const c = grid[jj * GN + ii];
+          if (!c) continue;
+          for (let k = 0; k < c.length; k += 2) {
+            const dx = c[k] - x, dz = c[k + 1] - z;
+            if (dx * dx + dz * dz < sp2) return false;
+          }
+        }
+      }
+      return true;
+    };
+
+    /* TWO BUDGETS, AND THE SECOND ONE IS NOT OPTIONAL. The open valley keeps
+     * exactly the tree count it had (1520); the NE stand, the burn scar and
+     * the shelf snags are added ON TOP. A single raised target instead let
+     * the generic grove branches keep accepting until the total was reached,
+     * which thickened the whole valley — and the first thing that filmed was
+     * V33, whose camera looks north from the camp through what had become a
+     * screen of pines instead of at the massif. */
+    /* ======================= PASS 1: the open valley =====================
+     * BYTE-IDENTICAL to the Round-3 scatter: same seed, same dart sampling,
+     * same branch order, same number of rng() rolls per candidate, same 1520
+     * budget. That is deliberate and it is not superstition — the scatter is
+     * a stochastic dart throw, so consuming one extra random number at the
+     * top re-rolls the WHOLE valley, and the first thing that films is V33,
+     * whose camera looks north from the camp: two pines landing 12 m in front
+     * of that lens turn "an alpine wall with strata and talus" into a hedge.
+     * A biome pass is supposed to ADD a forest in the north-east, not move
+     * every tree in the valley.
+     *
+     * Candidates that fall inside a biome region are still rolled and still
+     * reserved in the spacing grid (so the sequence and the crowding state
+     * are unchanged); they are simply not PLANTED, because pass 2 owns that
+     * ground and plants the right species there.
+     */
     const TARGET = 1520;                      // world-09 asks for 1200-1800
     let count = 0;
     for (let a = 0; a < 140000 && count < TARGET; a++) {
@@ -1460,13 +1610,8 @@ export class Vegetation {
       }
       if (moist > 0.4 && rng() < 0.5) gi = 1;   // birches crowd damp banks
 
-      let crowded = false;
-      for (let i = 0; i < all.length; i++) {
-        const dx = all[i][0] - x, dz = all[i][1] - z;
-        if (dx * dx + dz * dz < spacing2) { crowded = true; break; }
-      }
-      if (crowded) continue;
-      all.push([x, z]);
+      if (!gclear(x, z, spacing2)) continue;
+      gput(x, z);
 
       const height = gi === 1 ? 7.5 + rng() * 5.5
         : gi === 2 ? 5.0 + rng() * 3.4
@@ -1475,6 +1620,10 @@ export class Vegetation {
       const sx = sy * (fir ? 1.22 + rng() * 0.2 : 0.82 + rng() * 0.42);
       const tint = 0.82 + rng() * 0.34;
       const warm = rng() * 0.20;
+      count++;
+      // pass 2's ground: rolled, reserved, not planted
+      if (forestFactor(x, z) > 0.34 || ashFactor(x, z) > 0.16
+        || snowFactor(x, z) > 0.14 || marshFactor(x, z) > 0.35) continue;
       groups[gi].trees.push({
         x, z, y: h - 0.16,
         yaw: rng() * Math.PI * 2,
@@ -1482,8 +1631,96 @@ export class Vegetation {
         sx, sy,
         r: tint + warm * 0.5, g: tint * (fir ? 0.90 : 1), b: tint - warm * 0.3,
       });
-      count++;
     }
+
+    /* ======================= PASS 2: the biome stands ====================
+     * Its own stream, so nothing here can move a tree in the open valley.
+     * Darts land only inside the three wooded biomes, and each one states
+     * its own species mix, spacing and colour:
+     *
+     *   forest  closed conifer stand, spacing 6.5 m at the fringe down to
+     *           3.0 m in the core — "you cannot see through it"
+     *   ash     standing charcoal, thinning toward the centre of the burn,
+     *           leaning where it fell
+     *   snow    a handful of silvered dead trees on the shelf, nothing alive
+     */
+    const brng = mulberry32(90213);
+    const BIOME_TARGET = 680;
+    let bcount = 0;
+    for (let a = 0; a < 120000 && bcount < BIOME_TARGET; a++) {
+      let x, z;
+      if (brng() < 0.80) {
+        x = 150 + (brng() - 0.5) * 268;         // NE stand's bounding box
+        z = -120 + (brng() - 0.5) * 262;
+      } else {
+        x = -26 + (brng() - 0.5) * 300;         // the N shelf
+        z = -256 + (brng() - 0.5) * 120;
+      }
+      if (x * x + z * z > 326 * 326) continue;
+      if (riverFactor(x, z) > 0.08) continue;
+      if (pathFactor(x, z) > 0.28) continue;
+      const h = terrain.heightFast(x, z);
+      if (h > 36) continue;
+      if (terrain.slopeFast(x, z) > 0.66) continue;
+      if (inKeepout(x, z)) continue;
+      if (marshFactor(x, z) > 0.35) continue;
+
+      const bAsh = ashFactor(x, z);
+      const bSnow = snowFactor(x, z);
+      const bFor = forestFactor(x, z);
+      let gi, spacing2, fir = false, burnt = 0, frost = 0;
+      if (bAsh > 0.18) {
+        if (brng() > 0.34) continue;
+        gi = 2;
+        spacing2 = 26 + 70 * bAsh;
+        burnt = bAsh;
+      } else if (bSnow > 0.16) {
+        if (brng() > 0.13) continue;
+        gi = 2;
+        spacing2 = 240;
+        frost = bSnow;
+      } else if (bFor > 0.20) {
+        const w = brng();
+        if (w < 0.86) { gi = 0; fir = brng() < 0.45; }
+        else if (w < 0.965) gi = 1;
+        else gi = 2;
+        spacing2 = 42 - 33 * SS(bFor, 0.20, 0.92);
+      } else {
+        continue;
+      }
+
+      if (!gclear(x, z, spacing2)) continue;
+      gput(x, z);
+
+      const height = gi === 1 ? 7.5 + brng() * 5.5
+        : gi === 2 ? 5.0 + brng() * 3.4
+          : (fir ? 8.0 + brng() * 4.0 : 8.5 + brng() * 6.5);
+      const sy = height / 10 * (burnt ? 0.85 + brng() * 0.45 : 1);
+      const sx = sy * (fir ? 1.22 + brng() * 0.2 : 0.82 + brng() * 0.42);
+      const tint = 0.82 + brng() * 0.34;
+      const warm = brng() * 0.20;
+      let cr = tint + warm * 0.5, cg = tint * (fir ? 0.90 : 1), cb = tint - warm * 0.3;
+      if (burnt) {
+        // charred to near-black, with a little grey ash on the windward side
+        const k = 0.10 + brng() * 0.16;
+        cr = k * 1.06; cg = k; cb = k * 0.95;
+      } else if (frost) {
+        // silvered driftwood-grey
+        const k = 0.72 + brng() * 0.28;
+        cr = k; cg = k * 1.01; cb = k * 1.06;
+      }
+      groups[gi].trees.push({
+        x, z, y: h - 0.16,
+        yaw: brng() * Math.PI * 2,
+        tx: (brng() - 0.5) * (burnt ? 0.42 : 0.06),
+        tz: (brng() - 0.5) * (burnt ? 0.42 : 0.06),
+        sx, sy,
+        r: cr, g: cg, b: cb,
+      });
+      bcount++;
+    }
+    count += bcount;
+    this.biomeTreeCount = bcount;
     this.treeCount = count;
 
     /* --------------------- LOD meshes + collision proxy --------------- */
@@ -1636,18 +1873,35 @@ export class Vegetation {
 
     const rng = mulberry32(66103);
     const placed = [[], []];
-    const TARGET = 380;
+    const TARGET = 660;
     let count = 0;
-    for (let a = 0; a < 24000 && count < TARGET; a++) {
-      const r = Math.sqrt(rng()) * 330;
-      const ang = rng() * Math.PI * 2;
-      const x = Math.cos(ang) * r, z = Math.sin(ang) * r;
+    for (let a = 0; a < 46000 && count < TARGET; a++) {
+      // 40 % of the darts into the NE stand: sampling the disc uniformly would
+      // put 9 % of them there and the understory would be a rumour
+      let x, z;
+      if (rng() < 0.40) {
+        x = 150 + (rng() - 0.5) * 240;
+        z = -120 + (rng() - 0.5) * 232;
+        if (x * x + z * z > 320 * 320) continue;
+      } else {
+        const r = Math.sqrt(rng()) * 330;
+        const ang = rng() * Math.PI * 2;
+        x = Math.cos(ang) * r; z = Math.sin(ang) * r;
+      }
 
       const grove = forest.fbm(x * 0.006, z * 0.006, 3);
       const moist = this._moisture(x, z);
+      /* UNDERGROWTH. The NE stand gets its own shrub pass: a closed conifer
+       * forest with a bare floor reads as a plantation, and the fern layer is
+       * half of what makes the sector feel thick when you walk into it. The
+       * burn scar and the snow shelf reject shrubs outright — nothing has
+       * grown back in the one and nothing holds in the other. */
+      const bFor = forestFactor(x, z);
+      if (ashFactor(x, z) > 0.25 || snowFactor(x, z) > 0.20) continue;
+      const understory = bFor > 0.30 && rng() < 0.55 + 0.35 * bFor;
       // shrubs skirt the grove edges + riverbanks; only a few stray into the open
       const edge = grove > 0.0 && grove < 0.14;
-      if (!edge && moist < 0.3 && rng() < 0.8) continue;
+      if (!understory && !edge && moist < 0.3 && rng() < 0.8) continue;
       if (riverFactor(x, z) > 0.12) continue;
       if (pathFactor(x, z) > 0.3) continue;
       if (shelfFactor(x, z) > 0.6 && rng() < 0.7) continue;
@@ -2134,7 +2388,62 @@ vec3 transformed = ( instanceMatrix * vec4( wing, 1.0 ) ).xyz;`)
       });
       count++;
     }
-    this.rockCount = count;
+
+    /* ------------------------- scree + erratics -------------------------
+     * The SE shelf's "rocky benches" were pale ground with nothing standing
+     * on them: the splat said stone and the silhouette said meadow. This
+     * pass throws BLOCKS — a talus field is boulders shed off the bench
+     * risers, densest right under them — plus a scatter of glacial erratics
+     * on the north snow shelf so that bench has something to break its
+     * skyline. Both feed the SAME three instanced meshes as the meadow
+     * rocks, so the whole biome costs zero extra draw calls.
+     */
+    const screeRng = mulberry32(31771);
+    const TARGET_SCREE = 760;
+    let screeCount = 0;
+    for (let a = 0; a < 40000 && screeCount < TARGET_SCREE; a++) {
+      let cx, cz, onSnow = false;
+      if (screeRng() < 0.76) {
+        cx = 40 + screeRng() * 250;
+        cz = 40 + screeRng() * 250;
+      } else {
+        cx = -26 + (screeRng() - 0.5) * 290;
+        cz = -256 + (screeRng() - 0.5) * 112;
+        onSnow = true;
+      }
+      if (cx * cx + cz * cz > 328 * 328) continue;
+      const w = onSnow ? northBenchFactor(cx, cz) : screeFactor(cx, cz);
+      if (w < 0.24) continue;
+      if (screeRng() > (onSnow ? 0.30 : 0.75) * w) continue;
+
+      /* Rocks come in CLUSTERS, not as a uniform sprinkle. Talus is what a
+       * bench riser has shed: a spill of blocks with bare ground between the
+       * spills. A uniform scatter at the same count reads as gravel texture
+       * and disappears into the tussock, which is exactly what the first cut
+       * of this pass did. */
+      const n = onSnow ? 1 + ((screeRng() * 3) | 0) : 3 + ((screeRng() * 7) | 0);
+      const spread = onSnow ? 5 : 3.2 + screeRng() * 4.5;
+      for (let k = 0; k < n && screeCount < TARGET_SCREE; k++) {
+        const x = cx + (screeRng() - 0.5) * spread * 2;
+        const z = cz + (screeRng() - 0.5) * spread * 2;
+        const h = terrain.heightFast(x, z);
+        const slope = terrain.slopeFast(x, z);
+        if (slope > 1.35) continue;
+        const big = screeRng();
+        const sc = (onSnow ? 0.95 : 0.60) + big * big * (onSnow ? 2.9 : 2.7);
+        const v = Math.min(2, (screeRng() * 3) | 0);
+        placed[v][sc < 1.05 ? 0 : 1].push({
+          x, z, y: h - sc * 0.30,
+          yaw: screeRng() * Math.PI * 2,
+          sc, s: sc, sy: sc * (0.55 + screeRng() * 0.55),
+          tx: (screeRng() - 0.5) * 0.6, tz: (screeRng() - 0.5) * 0.6,
+          tint: onSnow ? 0.80 + screeRng() * 0.28 : 0.66 + screeRng() * 0.32,
+        });
+        screeCount++;
+      }
+    }
+    this.rockCount = count + screeCount;
+    this.screeRockCount = screeCount;
 
     const m = new THREE.Matrix4();
     const q = new THREE.Quaternion();
@@ -2167,6 +2476,175 @@ vec3 transformed = ( instanceMatrix * vec4( wing, 1.0 ) ).xyz;`)
       }
     }
   }
+  /* ------------------------------ fog pockets -----------------------------
+   * Ground mist lying in the forest hollows. `world-light` owns the ATMOSPHERE
+   * (aerial perspective, height fog, weather) and this lane must not touch it,
+   * so these are not fog at all: they are three stacked soft-edged discs per
+   * pocket, drawn as ONE instanced mesh, parked in the local low points of the
+   * NE stand. That is what makes the forest read as its own place from the
+   * ridge — a stand of trees with nothing between the trunks looks like a park.
+   *
+   * Cost: one draw call, no shadow pass, no depth write, and the discs are
+   * sized so a pocket is a 20-30 m patch rather than a wall of alpha.
+   */
+  _bakeMistTexture(N = 128) {
+    const data = new Uint8Array(N * N * 4);
+    const c = (N - 1) * 0.5;
+    const nz = new SimplexNoise(881);
+    for (let j = 0; j < N; j++) {
+      for (let i = 0; i < N; i++) {
+        const dx = (i - c) / c, dy = (j - c) / c;
+        const r = Math.sqrt(dx * dx + dy * dy);
+        // soft core, ragged edge: the noise breaks the circle so a pocket does
+        // not read as a saucer
+        const nn = nz.fbm(i * 0.035, j * 0.035, 3) * 0.5 + 0.5;
+        let a = (1 - SS(r, 0.12, 1.0)) * (0.45 + 0.75 * nn);
+        a = a < 0 ? 0 : a > 1 ? 1 : a;
+        const o = (j * N + i) * 4;
+        data[o] = 255; data[o + 1] = 255; data[o + 2] = 255;
+        data[o + 3] = (a * 255) | 0;
+      }
+    }
+    const t = new THREE.DataTexture(data, N, N, THREE.RGBAFormat);
+    t.minFilter = THREE.LinearMipmapLinearFilter;
+    t.magFilter = THREE.LinearFilter;
+    t.generateMipmaps = true;
+    t.needsUpdate = true;
+    return t;
+  }
+
+  _buildFogPockets() {
+    const terrain = this.ctx.terrain;
+    const rng = mulberry32(7731);
+    const spots = [];
+    for (let a = 0; a < 7000 && spots.length < 30; a++) {
+      const x = 150 + (rng() - 0.5) * 250;
+      const z = -120 + (rng() - 0.5) * 240;
+      if (x * x + z * z > 320 * 320) continue;
+      if (forestFactor(x, z) < 0.45) continue;
+      const h = terrain.heightFast(x, z);
+      /* A HOLLOW, measured as "below the ground around it" rather than "below
+       * it on all four bearings": the strict four-way test found 8 pockets in
+       * the whole sector, because a 14 m stencil on this heightfield almost
+       * always has one neighbour lower. The mean of the ring is the basin
+       * test that actually describes where cold air pools. */
+      const ring = (terrain.heightFast(x + 15, z) + terrain.heightFast(x - 15, z)
+        + terrain.heightFast(x, z + 15) + terrain.heightFast(x, z - 15)
+        + terrain.heightFast(x + 11, z + 11) + terrain.heightFast(x - 11, z - 11)) / 6;
+      if (h > ring - 0.22) continue;
+      if (terrain.slopeFast(x, z) > 0.34) continue;
+      let near = false;
+      for (let i = 0; i < spots.length; i++) {
+        const dx = spots[i][0] - x, dz = spots[i][1] - z;
+        if (dx * dx + dz * dz < 680) { near = true; break; }
+      }
+      if (near) continue;
+      spots.push([x, z, h]);
+    }
+    this.fogPocketCount = spots.length;
+    if (!spots.length) return;
+
+    this._mistTex = this._bakeMistTexture(128);
+    const geo = new THREE.PlaneGeometry(1, 1, 1, 1);
+    geo.rotateX(-Math.PI / 2);
+    const mat = new THREE.MeshBasicMaterial({
+      map: this._mistTex,
+      color: 0xcdd6dc,
+      transparent: true,
+      depthWrite: false,
+      opacity: 0.34,
+      side: THREE.DoubleSide,
+      fog: true,
+    });
+    const uT = this._uTime;
+    mat.onBeforeCompile = (shader) => {
+      shader.uniforms.uTime = uT;
+      shader.vertexShader = shader.vertexShader
+        .replace('#include <common>', '#include <common>\nuniform float uTime;')
+        .replace('#include <begin_vertex>', `
+          vec3 transformed = ( instanceMatrix * vec4( position, 1.0 ) ).xyz;
+          {
+            vec3 iOrigin = instanceMatrix[3].xyz;
+            float ph = iOrigin.x * 0.21 + iOrigin.z * 0.17;
+            transformed.x += sin(uTime * 0.08 + ph) * 1.6;
+            transformed.z += cos(uTime * 0.063 + ph * 1.3) * 1.4;
+            transformed.y += sin(uTime * 0.11 + ph * 0.7) * 0.18;
+          }
+        `)
+        .replace('#include <project_vertex>', `
+          vec4 mvPosition = modelViewMatrix * vec4( transformed, 1.0 );
+          gl_Position = projectionMatrix * mvPosition;
+        `)
+        .replace('#include <worldpos_vertex>', `
+          vec4 worldPosition = modelMatrix * vec4( transformed, 1.0 );
+        `);
+    };
+    this.ctx.environment?.registerMaterial?.(mat);
+
+    const LAYERS = 3;
+    const mesh = new THREE.InstancedMesh(geo, mat, spots.length * LAYERS);
+    let n = 0;
+    for (const sp of spots) {
+      for (let l = 0; l < LAYERS; l++) {
+        const w = (17 + rng() * 15) * (1 - l * 0.16);
+        _v3.set(sp[0] + (rng() - 0.5) * 6, sp[2] + 0.55 + l * 0.85, sp[1] + (rng() - 0.5) * 6);
+        _eul.set(0, rng() * Math.PI * 2, 0);
+        _q.setFromEuler(_eul);
+        _scl.set(w, 1, w * (0.72 + rng() * 0.5));
+        _m4.compose(_v3, _q, _scl);
+        mesh.setMatrixAt(n++, _m4);
+      }
+    }
+    mesh.count = n;
+    mesh.name = 'forest-mist';
+    mesh.castShadow = false;
+    mesh.receiveShadow = false;
+    mesh.renderOrder = 3;
+    /* The one new draw call this lane adds, and it is frustum-culled: the
+     * pockets all sit inside the NE stand, so `computeBoundingSphere()` gives
+     * three's culler a real sphere and the call disappears on every bearing
+     * that is not looking into the forest. A21 is 8 over its budget on
+     * `machine-rig`'s account; this lane does not get to add to that bill. */
+    mesh.computeBoundingSphere();
+    mesh.frustumCulled = true;
+    this.group.add(mesh);
+  }
+
+
+  /**
+   * Full teardown (round-4 memory rule). Nothing calls this today — the
+   * vegetation lives for the session — but every runtime object this lane
+   * creates has to have a disposal path, and this one owns the largest GPU
+   * allocation in the world: ~18 pooled chunk meshes with dynamic instance
+   * buffers, four baked card atlases, the impostor textures and the mist map.
+   */
+  dispose() {
+    const seen = new Set();
+    this.group.traverse((o) => {
+      if (!o.isMesh && !o.isInstancedMesh && !o.isPoints) return;
+      if (o.geometry && !seen.has(o.geometry)) { seen.add(o.geometry); o.geometry.dispose(); }
+      const mats = Array.isArray(o.material) ? o.material : [o.material];
+      for (const m of mats) {
+        if (!m || seen.has(m)) continue;
+        seen.add(m);
+        for (const k of ['map', 'alphaMap', 'normalMap', 'emissiveMap']) {
+          const t = m[k];
+          if (t && !seen.has(t)) { seen.add(t); t.dispose(); }
+        }
+        m.dispose();
+      }
+    });
+    for (const t of [this._tuftTex, this._mistTex]) {
+      if (t && !seen.has(t)) { seen.add(t); t.dispose(); }
+    }
+    this.props?.dispose?.();
+    this.group.parent?.remove(this.group);
+    this.group.clear();
+    this._pools = [];
+    this._treeGroups = null;
+    this._tuftTex = this._mistTex = null;
+  }
+
   /* ------------------------------- runtime ------------------------------- */
 
   /** Coherent gust strength 0..1 at world (x,z), matches the shader field. */

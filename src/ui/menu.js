@@ -182,7 +182,15 @@ export class Menus {
      */
     this._dollyInfo = { since: 0, ease: 0, radius: 0, camY: 0, pitchDeg: 0 };
     this._lastState = ctx.state;
-    this._log = [];             // audit trail for gates
+    /**
+     * Audit trail for gates — CAPPED (`memory-attribution`). `audit()` only
+     * ever publishes `slice(-16)`, but the array itself was unbounded: every
+     * death, save, respawn and quit appended forever. Measured at +3 over 30
+     * kills, which is nothing per kill and unbounded per session. 64 is four
+     * times what anything reads.
+     */
+    this._log = [];
+    this._logCap = 64;
 
     this._build();
     this._bindKeys();
@@ -456,6 +464,7 @@ export class Menus {
     this._startGame();
     const res = prog?.continueGame?.();
     this._log.push({ what: 'continue', ok: !!res?.ok });
+    this._trimLog();
     return res;
   }
 
@@ -465,6 +474,7 @@ export class Menus {
     this.map.clearWaypoint();
     this._startGame();
     this._log.push({ what: 'new-game', difficulty: difficulty || null });
+    this._trimLog();
   }
 
   /** Hand off to main.js's own start path so nothing about it is duplicated. */
@@ -493,6 +503,7 @@ export class Menus {
     this._enterTitle();
     this._emit('ui-back', { screen: 'title' });
     this._log.push({ what: 'quit-to-title' });
+    this._trimLog();
   }
 
   /* ===================================================================== */
@@ -634,6 +645,7 @@ export class Menus {
     const res = this.ctx.progression?.save?.('menu');
     this._emit('ui-confirm', { label: 'SAVE' });
     this._log.push({ what: 'save', ok: !!res });
+    this._trimLog();
     this._refreshTitle();
     return res;
   }
@@ -715,6 +727,7 @@ export class Menus {
     if (this.hubOpen) this.closeHub(true);
     document.body.classList.add('hzc-dead');
     this._log.push({ what: 'death', killer: this.deathKiller });
+    this._trimLog();
   }
 
   _showDeathChoice() {
@@ -795,6 +808,7 @@ export class Menus {
     }
     if (!ctx.params?.has?.('shot')) ctx.input?.requestPointerLock?.();
     this._log.push({ what: 'respawn', mode });
+    this._trimLog();
     return true;
   }
 
@@ -828,6 +842,7 @@ export class Menus {
     this.ctx.input?.exitPointerLock?.();
     this._emit('ui-open', { screen: 'victory' });
     this._log.push({ what: 'victory' });
+    this._trimLog();
   }
 
   _resumeFromVictory() {
@@ -855,6 +870,7 @@ export class Menus {
     if (!ctx.progression) this._emit('victory-resume', {});
     this._emit('ui-close', { screen: 'victory' });
     this._log.push({ what: 'victory-resume' });
+    this._trimLog();
   }
 
   /* ===================================================================== */
@@ -1081,6 +1097,12 @@ export class Menus {
   /* ===================================================================== */
   /* diagnostics                                                           */
   /* ===================================================================== */
+
+  /** Keep the shell audit trail bounded (see `_logCap`). */
+  _trimLog() {
+    const over = this._log.length - this._logCap;
+    if (over > 0) this._log.splice(0, over);
+  }
 
   audit() {
     const ctx = this.ctx;

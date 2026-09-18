@@ -191,7 +191,7 @@ export const GATES = [
       }
 
       const detail = {
-        total, census, candidates, byGroup,
+        total, bar: '>= 1200', census, candidates, byGroup,
         missingCount: missing.length, missing: missing.slice(0, 12),
         treeInstances: trees, treeColliders: census.tree ?? 0,
         rockInstances: rocks, rockColliders: census.rock ?? 0,
@@ -199,7 +199,16 @@ export const GATES = [
         palisadeSealed: walled + '/' + wallProbes, leakBearings: leaks.slice(0, 8),
         palisadePosts: camp.palisadePosts ?? 0, gates,
       };
-      const pass = total >= 800
+      /*
+       * BAR RAISED 800 -> 1200 for the Round 4 expansion wave
+       * (docs/ROUND4-AUDIT.md section 4, world-props-expansion). Raising is
+       * strengthening: every assertion below is unchanged and nothing else in
+       * the suite was touched. The six new places live inside the world-props
+       * group, so collision.seedWorld() BVHs each of their meshes and the
+       * identity walk above already covers them.
+       * NOTE: no backticks in here - this whole assert is a template literal.
+       */
+      const pass = total >= 1200
         && missing.length === 0
         && trees > 0 && (census.tree ?? 0) >= trees
         && rocks > 0 && (census.rock ?? 0) >= rocks

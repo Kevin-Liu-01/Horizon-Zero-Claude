@@ -600,6 +600,41 @@ function _buildStealthGrid() {
   return _stealthGrid;
 }
 
+/**
+ * Stamp one cover disc into the baked field at runtime.
+ *
+ * WHY THIS EXISTS (A60, Wave 4). The stealth grid is authored from a MIRROR of
+ * the Round-3 spawn table, and `machines-expansion` added nine kinds whose
+ * sites live in `machine-ai`'s `SPAWN_PLAN` — and which `world-props` may then
+ * MOVE onto a published POI. A second static mirror in this file would be
+ * wrong the moment either of those lanes edits a number, which is the exact
+ * failure A60 caught: seven live routes with 0-7 % of their length in cover.
+ *
+ * So the cover is stamped from the LIVE routes instead (see
+ * `Terrain._ensureRouteCover`), once, on the first update after the roster is
+ * up. Additive and idempotent: a disc can only raise the field.
+ */
+export function stampStealthDisc(x, z, r) {
+  if (!_stealthGrid) _buildStealthGrid();
+  const cell = (SG_HALF * 2) / SG_N;
+  const i0 = Math.max(0, Math.floor((x - r + SG_HALF) / cell));
+  const i1 = Math.min(SG_N - 1, Math.ceil((x + r + SG_HALF) / cell));
+  const j0 = Math.max(0, Math.floor((z - r + SG_HALF) / cell));
+  const j1 = Math.min(SG_N - 1, Math.ceil((z + r + SG_HALF) / cell));
+  const inner = r * 0.52;
+  for (let j = j0; j <= j1; j++) {
+    const gz = -SG_HALF + (j + 0.5) * cell;
+    for (let i = i0; i <= i1; i++) {
+      const gx = -SG_HALF + (i + 0.5) * cell;
+      const dd = Math.hypot(gx - x, gz - z);
+      if (dd >= r) continue;
+      const v = 1 - SS(dd, inner, r);
+      const o = j * SG_N + i;
+      if (v > _stealthGrid[o]) _stealthGrid[o] = v;
+    }
+  }
+}
+
 /** Authored stealth-cover field 0..1 (routes + riparian + meadow patches). */
 export function stealthField(x, z) {
   if (!_stealthGrid) _buildStealthGrid();
@@ -613,6 +648,211 @@ export function stealthField(x, z) {
   const a = g[i0] + (g[i0 + 1] - g[i0]) * tx;
   const b = g[i0 + SG_N] + (g[i0 + SG_N + 1] - g[i0 + SG_N]) * tx;
   return a + (b - a) * tz;
+}
+
+/* =========================================================================
+ * BIOMES (Round 4, world-ground-expansion)
+ * =========================================================================
+ *
+ * Five authored regions inside the 330 m disc, on top of the meadow default.
+ * Every one of them is a pure function of (x, z) so the mesh pass, the mask
+ * bake, the scatter passes, `surfaceAt()` and the gates all agree without a
+ * shared buffer to keep in sync.
+ *
+ *   forest   NE conifer stand — dense trees, needle duff, fog pockets
+ *   snow     N bench at the foot of the massif — snow dusting, dead snags
+ *   marsh    the reed flat around the largest pool — mud, wading water
+ *   ash      the burn scar at the cauldron ruin — charcoal, standing snags
+ *   scree    the rocky benches of the SE shelf — gravel and boulder fields
+ *
+ * TWO RULES THE WHOLE FILE OBEYS, AND THEY ARE THE REASON THE STEALTH AND
+ * GRASS GATES SURVIVE A BIOME PASS (A59 / A60):
+ *
+ *  1. BIOMES NEVER TOUCH `tallGrassDensity`. The concealment field is the
+ *     machine-route contract; a biome that could thin it could silently take
+ *     a patrol lane's cover away. So the field is unchanged and this pass is
+ *     purely material + scatter.
+ *  2. EVERY *SURFACE* WEIGHT IS SUPPRESSED BY COVER AND BY TRAILS
+ *     (`biomeSuppress`). Snow, ash and mud lie BETWEEN the grass lanes and
+ *     beside the paths, never over them — which is both what the gates need
+ *     and what real ground does: a trodden trail and a grass swathe are the
+ *     two places snow and ash do not survive.
+ *
+ * The LANDFORM terms (the north bench, the marsh pan, the burn dish) are NOT
+ * suppressed — geometry cannot be punched full of holes by a grass disc — so
+ * they read from the raw masks below.
+ */
+const _bioNoise = new SimplexNoise(31337);
+
+/** NE conifer sector. */
+const B_FOREST = { x: 150, z: -120, rx: 100, rz: 98 };
+/** N snow bench, an E–W shelf at the foot of the north massif. */
+const B_SNOW = { x: -26, z: -256, rx: 138, rz: 50 };
+/** Marsh flat: centred on the largest river pool (water.pools). */
+const B_MARSH = { x: -107, z: 54, r: 52 };
+/** Burn scar at the cauldron ruin (machine-ai's `poi: 'cauldron'`). */
+const B_ASH = { x: 175, z: -195, r: 46 };
+/**
+ * The marsh water table and the pan floor under it, metres.
+ *
+ * A MARSH HAS A WATER TABLE, NOT A THALWEG. `water._solveChannel` derives the
+ * surface from the lowest bed within +-12 m, which is right for a braided
+ * stream and wrong for a flat: the first cut of this pan drifted 0.11 m of
+ * level across 30 m of dead-flat ground, so half the pan sat above its own
+ * water and read as bare mud. water.js pins the level to MARSH_LEVEL across
+ * the flat (blended out at the edges by the same weight), and the floor below
+ * is planed 0.33 m under it — shin-deep wading, which is the depth the brief
+ * asks for and the depth `player-control` wades against.
+ */
+export const MARSH_LEVEL = -0.22;
+const MARSH_PAN_Y = MARSH_LEVEL - 0.33;
+
+function _ellipseD(x, z, c) {
+  const u = (x - c.x) / c.rx, v = (z - c.z) / c.rz;
+  return Math.sqrt(u * u + v * v);
+}
+
+/** Dense NE conifer forest, 0..1. Suppressed inside the burn scar. */
+export function forestFactor(x, z) {
+  if (x < 20 || x > 285 || z < -260 || z > 20) return 0;
+  const d = _ellipseD(x, z, B_FOREST);
+  if (d > 1.34) return 0;
+  const e = _bioNoise.noise2D(x * 0.0125 + 4.2, z * 0.0125 - 1.9) * 0.16
+    + _bioNoise.noise2D(x * 0.041 - 9.3, z * 0.041 + 6.1) * 0.06;
+  const f = SS(1.04 - d + e, 0, 0.30) * (1 - SS(Math.sqrt(x * x + z * z), 288, 326));
+  return f > 0 ? f * (1 - ashFactor(x, z)) : 0;
+}
+
+/** Raw N bench mask — the LANDFORM term. Not cover-suppressed. */
+export function northBenchFactor(x, z) {
+  if (z > -184 || z < -332 || x < -186 || x > 136) return 0;
+  const d = _ellipseD(x, z, B_SNOW);
+  if (d > 1.28) return 0;
+  const e = _bioNoise.noise2D(x * 0.0082 + 3.1, z * 0.0082 + 11.4) * 0.17;
+  /* The ramp is 0.50 of the ellipse radius, not 0.34. At 0.34 the shelf's
+   * south riser climbed 17 m in 17 m of ground — a 45 degree face, above the
+   * grass scatter's slope cutoff and above a character controller's step
+   * limit, so it filmed as a bare dark wall you could not walk up. At 0.50 it
+   * is a ~30 degree approach that the terrace blend still breaks into steps. */
+  const m = SS(1.00 - d + e, 0, 0.50);
+  return m > 0 ? m * (1 - SS(Math.hypot(x, z), 296, 328)) : 0;
+}
+
+/**
+ * Snow DUSTING 0..1 — heavier on the bench top and in its hollows, gone on
+ * the sunward southern ramp so the shelf reads as a windward/lee pair rather
+ * than a painted white ellipse.
+ */
+export function snowFactor(x, z) {
+  const b = northBenchFactor(x, z);
+  if (b < 0.06) return 0;
+  const n = _bioNoise.fbm(x * 0.017 - 22, z * 0.017 + 8, 2);
+  // lee side: the north half of the bench keeps its cover
+  const lee = SS((B_SNOW.z - z) / B_SNOW.rz, -0.55, 0.35);
+  return SS(b * (0.50 + 0.72 * lee) + n * 0.22, 0.18, 0.62);
+}
+
+/** Marsh flat around the largest pool, 0..1. */
+export function marshFactor(x, z) {
+  const dx = x - B_MARSH.x, dz = z - B_MARSH.z;
+  const d2 = dx * dx + dz * dz;
+  const R = B_MARSH.r + 10;
+  if (d2 > R * R) return 0;
+  const d = Math.sqrt(d2) / B_MARSH.r;
+  const e = _bioNoise.noise2D(x * 0.035 + 15, z * 0.035 - 4) * 0.19;
+  /* Hard southern limit: the A58 river probes sample the channel at z = 0 and
+   * the marsh must not reach them — a backwater that swallowed the whole cut
+   * would be a different finding, not this one. The flat spreads NORTH of the
+   * pool, which is also where the ground is flattest. */
+  return SS(1.0 - d + e, 0, 0.36) * SS(z, 6, 22);
+}
+
+/** Burnt clearing at the cauldron ruin, 0..1. */
+export function ashFactor(x, z) {
+  const dx = x - B_ASH.x, dz = z - B_ASH.z;
+  const d2 = dx * dx + dz * dz;
+  const R = B_ASH.r + 12;
+  if (d2 > R * R) return 0;
+  const d = Math.sqrt(d2) / B_ASH.r;
+  const e = _bioNoise.noise2D(x * 0.028 - 7, z * 0.028 + 19) * 0.21;
+  return SS(1.0 - d + e, 0, 0.34);
+}
+
+/** Boulder / gravel fields on the SE shelf benches, 0..1. */
+export function screeFactor(x, z) {
+  const sf = shelfFactor(x, z);
+  if (sf < 0.16) return 0;
+  const n = _bioNoise.fbm(x * 0.0092 + 17, z * 0.0092 - 23, 2);
+  return SS(sf, 0.16, 0.54) * SS(n, -0.04, 0.30);
+}
+
+/**
+ * How much of a biome's SURFACE treatment survives at (x, z): grass cover and
+ * worn trails win everywhere. See rule 2 in the block comment above.
+ */
+export function biomeSuppress(x, z) {
+  const s = stealthField(x, z) * 1.15;
+  const p = pathFactor(x, z) * 1.3;
+  const k = s > p ? s : p;
+  return k > 1 ? 1 : k;
+}
+
+/**
+ * Trails only — the MARSH's suppression. Reed cover is not a reason to call
+ * the ground underneath it dry: what you are standing in at the water's edge
+ * is mud whether or not a stealth patch grows out of it, and `audio` needs to
+ * hear that. A worn crossing still reads as a crossing.
+ */
+export function trailSuppress(x, z) {
+  const p = pathFactor(x, z) * 1.3;
+  return p > 1 ? 1 : p;
+}
+
+const _bw = {
+  meadow: 1, forest: 0, snow: 0, marsh: 0, ash: 0, scree: 0,
+};
+
+/**
+ * All six weights at a point, cover-suppressed. Reuses one object by default
+ * (no per-call allocation in the scatter loops); pass `out` for a keeper.
+ */
+export function biomeWeights(x, z, out = _bw) {
+  /* RAW FACTORS FIRST, SUPPRESSION ONLY IF ONE OF THEM FIRED. The grass
+   * scatter calls this ~470 k times per stream and 87 % of the play disc is
+   * meadow, so the common path has to be five bounding-box rejections and
+   * nothing else — `biomeSuppress` is two grid lookups, and paying for them
+   * on every candidate in the valley cost ~90 ms of every `forceStream`. */
+  const f = forestFactor(x, z);
+  const sn = snowFactor(x, z);
+  const mr = marshFactor(x, z);
+  const as = ashFactor(x, z);
+  const sc = screeFactor(x, z);
+  if (f === 0 && sn === 0 && mr === 0 && as === 0 && sc === 0) {
+    out.forest = 0; out.snow = 0; out.marsh = 0; out.ash = 0; out.scree = 0;
+    out.meadow = 1;
+    return out;
+  }
+  const keep = 1 - biomeSuppress(x, z);
+  out.forest = f * keep;
+  out.snow = sn * keep;
+  out.marsh = mr === 0 ? 0 : mr * (1 - trailSuppress(x, z));
+  out.ash = as * keep;
+  out.scree = sc * keep;
+  const sum = out.forest + out.snow + out.marsh + out.ash + out.scree;
+  out.meadow = sum >= 1 ? 0 : 1 - sum;
+  return out;
+}
+
+/** The dominant biome id at a point — one of `Terrain.BIOMES`. */
+export function biomeAt(x, z) {
+  const w = biomeWeights(x, z);
+  let best = 'meadow', bv = w.meadow;
+  if (w.forest > bv) { best = 'forest'; bv = w.forest; }
+  if (w.snow > bv) { best = 'snow'; bv = w.snow; }
+  if (w.marsh > bv) { best = 'marsh'; bv = w.marsh; }
+  if (w.ash > bv) { best = 'ash'; bv = w.ash; }
+  if (w.scree > bv) { best = 'scree'; bv = w.scree; }
+  return best;
 }
 
 /* ------------------------ procedural detail textures -----------------------
@@ -808,6 +1048,7 @@ varying vec3 vWPos;
 varying vec3 vWNorm;
 uniform sampler2D uMask;
 uniform sampler2D uMask2;
+uniform sampler2D uMask3;
 uniform sampler2D uDetail;
 uniform sampler2D uGravel;
 uniform sampler2D uMacro;
@@ -1002,6 +1243,7 @@ const TERRAIN_COLOR = /* glsl */ `
 
   vec4 mask = texture2D(uMask, clamp(vWPos.xz * ${(1 / WORLD_SIZE).toFixed(8)} + 0.5, 0.001, 0.999));
   vec4 mask2 = texture2D(uMask2, clamp(vWPos.xz * ${(1 / WORLD_SIZE).toFixed(8)} + 0.5, 0.001, 0.999));
+  vec4 bio = texture2D(uMask3, clamp(vWPos.xz * ${(1 / WORLD_SIZE).toFixed(8)} + 0.5, 0.001, 0.999));
 
   // --- macro albedo breakup ------------------------------------------------
   /* WHERE STONE IS ALLOWED TO SHOW.
@@ -1012,7 +1254,8 @@ const TERRAIN_COLOR = /* glsl */ `
    * worn trail — and it scales BOTH the grain contrast and the relief, so the
    * channel reads as coarse stone on the bar and as soil mottling under grass.
    */
-  float stony = clamp(mask.b * 1.15 + mask2.g * 1.4 + mask.a + mask.r, 0.0, 1.0);
+  float stony = clamp(mask.b * 1.15 + mask2.g * 1.4 + mask.a + mask.r
+                    + mask2.a * 1.3, 0.0, 1.0);
   float grainK = 0.34 + 0.52 * stony;
   hzcDetN *= 0.42 + 1.05 * stony;
 
@@ -1080,6 +1323,61 @@ const TERRAIN_COLOR = /* glsl */ `
   }
   // duff under the stealth grass: the ground reads darker where cover grows
   diffuseColor.rgb *= 1.0 - 0.16 * mask2.r;
+
+  /* --- BIOME GROUND (world-ground-expansion) -------------------------------
+   * Five materials, each keyed on one baked mask channel, each stating its
+   * case in ALBEDO, RELIEF and ROUGHNESS rather than tint alone — a biome you
+   * can only see as a colour wash is a colour wash. Ordered weakest claim to
+   * strongest so the burn scar wins over the forest it sits inside, and the
+   * snow dusting lies over everything because that is what a dusting does.
+   */
+  {
+    float bFor = bio.r, bSnow = bio.g, bMud = bio.b, bAsh = bio.a;
+    float bScr = mask2.a;
+
+    if (bFor > 0.004) {
+      // needle litter: dark red-brown, matt, fine-grained, no stone showing
+      vec3 duff = vec3(0.118, 0.092, 0.058) * (0.70 + 0.66 * peb);
+      diffuseColor.rgb = mix(diffuseColor.rgb, duff, bFor * 0.60);
+      hzcDetRough *= 1.0 + 0.06 * bFor;
+      hzcDetN *= 1.0 - 0.22 * bFor;
+    }
+    if (bScr > 0.004) {
+      // scree field: broken plate stone with the grain turned all the way up
+      vec3 gr = mix(vec3(0.255, 0.245, 0.222), vec3(0.63, 0.60, 0.53), peb);
+      diffuseColor.rgb = mix(diffuseColor.rgb, gr, bScr * 0.76);
+      hzcDetN *= 1.0 + bScr * 2.8;
+      hzcDetRough *= 1.0 + 0.05 * bScr;
+    }
+    if (bMud > 0.004) {
+      // marsh mud: dark wet silt, smooth, with a sheen that survives the sun
+      float wetM = bMud * (1.0 - smoothstep(0.20, 0.52, steepF));
+      vec3 md = vec3(0.104, 0.090, 0.066) * (0.76 + 0.54 * peb);
+      diffuseColor.rgb = mix(diffuseColor.rgb, md, bMud * 0.82);
+      hzcDetRough *= 1.0 - 0.54 * wetM;
+      hzcDetN *= 1.0 - 0.34 * bMud;
+    }
+    if (bAsh > 0.004) {
+      // burn scar: charcoal under a pale ash bloom, and nothing reflective
+      vec3 ch = mix(vec3(0.044, 0.040, 0.038), vec3(0.345, 0.330, 0.318),
+                    smoothstep(0.34, 0.82, peb));
+      diffuseColor.rgb = mix(diffuseColor.rgb, ch, bAsh * 0.88);
+      hzcDetRough *= 1.0 + 0.10 * bAsh;
+      hzcDetN *= 1.0 - 0.48 * bAsh;
+    }
+    if (bSnow > 0.004) {
+      /* Windblown dusting, not a snowfield: it lies in the hollows the macro
+       * tier already describes, thins on anything steep, and leaves the grass
+       * and stone under it showing through at the edges. */
+      float lie = bSnow * (1.0 - smoothstep(0.16, 0.52, steepF));
+      float drift = smoothstep(0.28, 0.80, mac.b * 0.62 + 0.38 * peb);
+      vec3 sw = mix(vec3(0.72, 0.755, 0.815), vec3(0.94, 0.955, 0.985), drift);
+      diffuseColor.rgb = mix(diffuseColor.rgb, sw,
+        clamp(lie * (0.34 + 0.54 * drift), 0.0, 0.86));
+      hzcDetN *= 1.0 - 0.74 * lie;
+      hzcDetRough *= 1.0 - 0.20 * lie;
+    }
+  }
 
   // --- world-space strata banding on steep faces ---------------------------
   /* THE GATE IS ANTI-ALIASED. Its midpoint and its width are the same numbers
@@ -1274,7 +1572,13 @@ export class Terrain {
 
   /** The surface vocabulary `audio`, `machine-rig` and the gates read. */
   static get SURFACES() {
-    return ['water', 'cobble', 'silt', 'dirt', 'gravel', 'rock', 'snow', 'grass'];
+    return ['water', 'cobble', 'silt', 'mud', 'dirt', 'gravel', 'ash', 'rock',
+      'snow', 'grass'];
+  }
+
+  /** The biome vocabulary `biomeAt()` reports. */
+  static get BIOMES() {
+    return ['meadow', 'forest', 'snow', 'marsh', 'ash', 'scree'];
   }
 
   /** Ridged fbm (0..~0.94): sharp crests, good for mountains. */
@@ -1370,6 +1674,54 @@ export class Terrain {
     // shoulders bermed. Narrow enough that you feel it underfoot, not a trench.
     const pw = pathFactor(x, z);
     if (pw > 0.01) h -= 0.12 * pw * pw;
+
+    /* --------------------------- biome landforms --------------------------
+     * Three shapes, all inside the play disc, all cheap: each one early-outs
+     * on a bounding test before it touches a noise call.
+     *
+     * NORTH BENCH — the snow shelf. A meadow at -2 m does not hold snow; a
+     * terraced shelf standing 14-20 m above it at the foot of the massif
+     * does, and it is the only mid-ground relief the northern vista had. The
+     * terrace blend is partial (0.55) so the benches read as steps without
+     * quantising the whole shelf into a wedding cake.
+     */
+    const nb = northBenchFactor(x, z);
+    if (nb > 0.002) {
+      const lift = 13.5 + 8.5 * this._ridged(x * 0.0115 - 5, z * 0.0115 + 19, 2, 0.02);
+      const raw = h + nb * lift;
+      const tk = nb * 0.55;
+      h = raw * (1 - tk) + terrace(raw, 4.6, 2.3) * tk;
+    }
+
+    /* MARSH PAN — a wading shelf around the deepest pool, NOT over it. The
+     * pool itself (r < ~6 m) keeps its depth, so `water.pools` — the
+     * glinthawk flock's contract and gate V8's anchor — still finds the same
+     * deep station; the annulus around it is planed to 0.3 m below the
+     * solved surface, which is the ankle-to-shin water the brief asks for.
+     */
+    if (x > -168 && x < -46 && z > -8 && z < 116) {
+      const md = Math.hypot(x - B_MARSH.x, z - B_MARSH.z);
+      if (md < 47) {
+        const mf = marshFactor(x, z);
+        const pan = SS(md, 5, 13) * (1 - SS(md, 30, 44)) * mf;
+        if (pan > 0.002) {
+          /* Hummocks are deliberately SMALL (+-0.11 m against 0.33 m of
+           * water): a tussock that broke the surface would stop the
+           * waterline march dead and cut the sheet off at the first one. The
+           * things that stand out of this water are reeds, not islands. */
+          const hummock = n.noise2D(x * 0.085 + 3, z * 0.085 - 7) * 0.045
+            + n.noise2D(x * 0.031 - 12, z * 0.031 + 5) * 0.065;
+          h = h * (1 - pan) + (MARSH_PAN_Y + hummock) * pan;
+        }
+        // the slack pool at the heart of the flat keeps its depth
+        const hole = (1 - SS(md, 4, 13)) * mf;
+        if (hole > 0.002) h -= 1.55 * hole;
+      }
+    }
+
+    // BURN DISH — the cauldron scar sits in a shallow blast bowl.
+    const af = ashFactor(x, z);
+    if (af > 0.002) h -= 1.35 * af * af;
 
     /* ------------------------------- the rim ------------------------------
      * world-06. Massif-driven: 150–350 m of relief on the authored bearings,
@@ -1564,7 +1916,19 @@ export class Terrain {
     if (s > 0) {
       s *= 0.94;
       if (p > 0.03) s *= 1 - p * 0.72;
-      if (rf > 0.02) s *= 1 - rf * 0.88;
+      /* REED BEDS AT THE WATERLINE (A60, Wave 4).
+       *
+       * The riparian damping takes 88 % of the cover out of the channel,
+       * which is right for the bare silt bed and wrong at a pool: the two
+       * Snapmaw routes bask IN the water, and with a flat 0.88 they measured
+       * 0 % and 4 % of their length in cover however many discs were stamped
+       * on them. Reeds are what grows there, so the damping is relaxed in
+       * proportion to how strong the AUTHORED disc is — a bed with no disc on
+       * it stays bare (V32 films exactly that ground), a pool collar does
+       * not. `vegetation.grassDensityAt` relaxes its own river damping on the
+       * same term by the same reasoning, so the instances are really there:
+       * this field never claims cover the scatter does not plant. */
+      if (rf > 0.02) s *= 1 - rf * 0.88 * (1 - 0.74 * SS(s, 0.40, 0.85));
     }
     return s > d ? s : d;
   }
@@ -1586,6 +1950,26 @@ export class Terrain {
 
     const p = pathFactor(x, z);
     if (p > 0.40) return 'dirt';
+
+    /* Biome surfaces come BEFORE the river/shelf tests — the marsh sits in
+     * the channel and would otherwise read as cobble — and every one of them
+     * is cover-suppressed, so a stealth lane or a trodden trail crossing a
+     * biome still reports the surface the player is actually standing on. */
+    if (marshFactor(x, z) * (1 - trailSuppress(x, z)) > 0.30) return 'mud';
+    const keep = 1 - biomeSuppress(x, z);
+    if (keep > 0.25) {
+      if (ashFactor(x, z) * keep > 0.40) return 'ash';
+      if (snowFactor(x, z) * keep > 0.38) return 'snow';
+      const sc = screeFactor(x, z) * keep;
+      if (sc > 0.42) {
+        const slp = this._hg ? this.slopeFast(x, z) : 0;
+        return slp > 0.62 ? 'rock' : 'gravel';
+      }
+      // needle duff under a closed conifer canopy reads as soft ground
+      if (forestFactor(x, z) * keep > 0.55 && this.tallGrassDensity(x, z) < 0.18) {
+        return 'dirt';
+      }
+    }
 
     const rf = riverFactor(x, z);
     if (rf > 0.5) return 'cobble';
@@ -1625,6 +2009,21 @@ export class Terrain {
   /** The bedding coordinate the strata shader draws from; see beddingField(). */
   beddingAt(x, y, z) { return beddingField(x, y, z); }
 
+  /* ------------------------------- biomes --------------------------------
+   * Published for `audio` (ambience beds), `machine-ai` (habitat picks),
+   * `world-props` (what belongs where) and the V44/A58 gates. Pure functions
+   * of (x, z): no state, no allocation unless you pass `out`.
+   */
+
+  /** Dominant biome id at a point — one of `Terrain.BIOMES`. */
+  biomeAt(x, z) { return biomeAt(x, z); }
+
+  /** All six biome weights at a point (shared object unless `out` is given). */
+  biomeWeights(x, z, out) { return biomeWeights(x, z, out); }
+
+  /** Snow dusting 0..1 on the north bench (0 everywhere else). */
+  snowAt(x, z) { return snowFactor(x, z); }
+
   /** Irregular snowline, metres. Windblown, not a painted contour. */
   _snowline(x, z) {
     const gn = this.grassNoise;
@@ -1650,6 +2049,11 @@ export class Terrain {
     const N = 512;
     const d1 = new Uint8Array(N * N * 4);
     const d2 = new Uint8Array(N * N * 4);
+    /* uMask3: R forest duff, G snow dusting, B marsh mud, A burn ash.
+     * One more 1 MB RGBA over the same 1.4 m texel grid — the biome fields
+     * are smooth at that scale, and baking them here keeps five extra noise
+     * evaluations out of every terrain fragment. */
+    const d3 = new Uint8Array(N * N * 4);
     const scale = WORLD_SIZE / N;
     const gn = this.grassNoise;
     for (let iz = 0; iz < N; iz++) {
@@ -1681,7 +2085,14 @@ export class Terrain {
         d2[o + 1] = (bar * 255) | 0;
         // machine track scars: heavy species wear the ground along their routes
         d2[o + 2] = (Math.min(1, this._trackAt(wx, wz)) * 255) | 0;
-        d2[o + 3] = 0;
+
+        // --- biome masks -------------------------------------------------
+        const keep = 1 - biomeSuppress(wx, wz);
+        d2[o + 3] = (screeFactor(wx, wz) * keep * 255) | 0;
+        d3[o] = (forestFactor(wx, wz) * keep * 255) | 0;
+        d3[o + 1] = (snowFactor(wx, wz) * keep * 255) | 0;
+        d3[o + 2] = (marshFactor(wx, wz) * (1 - trailSuppress(wx, wz)) * 255) | 0;
+        d3[o + 3] = (ashFactor(wx, wz) * keep * 255) | 0;
       }
     }
     const mk = (data) => {
@@ -1692,7 +2103,7 @@ export class Terrain {
       t.needsUpdate = true;
       return t;
     };
-    return [mk(d1), mk(d2)];
+    return [mk(d1), mk(d2), mk(d3)];
   }
 
   /**
@@ -1782,6 +2193,13 @@ export class Terrain {
     const cSnow = new THREE.Color('#dcdfe2');
     const cSunlit = new THREE.Color('#a87f53'); // golden-hour lit rock faces
     const cShade = new THREE.Color('#565b69');  // cool blue shade faces
+    // biome base tints (the fragment masks sharpen these; these are what the
+    // mid ground and the far tier actually read at 150 m+)
+    const cDuff = new THREE.Color('#33301c');   // conifer needle litter
+    const cMud = new THREE.Color('#2f2a1c');    // marsh silt
+    const cAsh = new THREE.Color('#2b2826');    // burn scar
+    const cScree = new THREE.Color('#77736a');  // broken plate stone
+    const cDust = new THREE.Color('#e4e8ee');   // wind-packed snow
     const tmp = new THREE.Color();
     const tmp2 = new THREE.Color();
     const gn = this.grassNoise;
@@ -1919,6 +2337,27 @@ export class Terrain {
          * The slope mask keeps snow off the risers, and it too now reads the
          * filtered slope (and over a wider gate, so a single steep vertex can
          * no longer punch a hole in a snowfield). */
+        /* BIOME TINTS. These sit AFTER the rim block on purpose: the north
+         * bench climbs into the bottom of the rim's fade (rim ~0.06 at
+         * r=300), and a shelf the player walks onto should read as its own
+         * ground rather than as the mountain's apron. Weakest claim first;
+         * the snow dusting last because it lies over whatever is beneath it.
+         * Same suppression as every other biome consumer — grass lanes and
+         * worn trails keep their own colour straight through a biome. */
+        const bMud = marshFactor(x, z) * (1 - trailSuppress(x, z));
+        if (bMud > 0.01) tmp.lerp(cMud, bMud * 0.72 * (1 - SS(mS, 0.35, 0.9)));
+        const bKeep = 1 - biomeSuppress(x, z);
+        if (bKeep > 0.02) {
+          const bFor = forestFactor(x, z) * bKeep;
+          if (bFor > 0.01) tmp.lerp(cDuff, bFor * 0.56);
+          const bScr = screeFactor(x, z) * bKeep;
+          if (bScr > 0.01) tmp.lerp(cScree, bScr * 0.70);
+          const bAsh = ashFactor(x, z) * bKeep;
+          if (bAsh > 0.01) tmp.lerp(cAsh, bAsh * 0.86);
+          const bSnow = snowFactor(x, z) * bKeep;
+          if (bSnow > 0.01) tmp.lerp(cDust, bSnow * 0.74 * (1 - SS(mS, 0.30, 1.1)));
+        }
+
         if (hS > 40) tmp.lerp(cRock, SS(hS, 40, 90) * 0.6);
         // irregular snowline, now sitting near the top third of the massifs
         const snowT = this._snowline(x, z);
@@ -2006,7 +2445,8 @@ export class Terrain {
     }
     geo.setAttribute('normal', new THREE.BufferAttribute(normals, 3));
 
-    const [maskTex, mask2Tex] = this._buildMasks();
+    const [maskTex, mask2Tex, mask3Tex] = this._buildMasks();
+    this._maskTextures = [maskTex, mask2Tex, mask3Tex];
     /* Detail amplitudes were measured off the baked buffers, not guessed. At
      * `slope: 5.2` the encoded normal deviated by +-0.03 on the grain and
      * +-0.2 on a pebble edge: a 2-11 degree tilt, which under a 50 degree sun
@@ -2042,6 +2482,7 @@ export class Terrain {
     mat.onBeforeCompile = (shader) => {
       shader.uniforms.uMask = { value: maskTex };
       shader.uniforms.uMask2 = { value: mask2Tex };
+      shader.uniforms.uMask3 = { value: mask3Tex };
       shader.uniforms.uDetail = { value: this._detailTex };
       shader.uniforms.uGravel = { value: this._gravelTex };
       shader.uniforms.uMacro = { value: this._macroTex };
@@ -2538,10 +2979,107 @@ export class Terrain {
     return ids;
   }
 
+  /**
+   * Give every LIVE patrol route real cover (A60).
+   *
+   * The authored discs come from this file's mirror of the Round-3 spawn
+   * table; the Wave-4 roster's sites come from `machine-ai`, and
+   * `world-props` can move them again. Rather than mirror either (a copy is
+   * wrong the moment they edit a number), this walks the routes the machines
+   * are actually carrying, measures each one, and stamps arcs over ~60 % of
+   * the perimeter of any route that is under the bar. Runs ONCE, costs a few
+   * ms, and only raises the field — no lane's existing cover can be reduced.
+   */
+  _ensureRouteCover() {
+    const list = this.ctx.machines?.list;
+    if (!Array.isArray(list) || !list.length) return false;
+    let stamped = 0;
+    const seen = this._coveredRoutes || (this._coveredRoutes = new Set());
+    for (const m of list) {
+      const r = m && m.route;
+      if (!Array.isArray(r) || r.length < 3) continue;
+      // one key per route polyline, so a herd sharing a ring is done once
+      const key = `${r[0].x.toFixed(1)},${r[0].z.toFixed(1)},${r.length}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+
+      // resample the closed polyline every ~3 m and measure what is covered
+      const line = [];
+      for (let i = 0; i < r.length; i++) {
+        const a = r[i], b = r[(i + 1) % r.length];
+        const len = Math.hypot(b.x - a.x, b.z - a.z);
+        const steps = Math.max(1, Math.round(len / 3));
+        for (let s = 0; s < steps; s++) {
+          const t = s / steps;
+          line.push([a.x + (b.x - a.x) * t, a.z + (b.z - a.z) * t]);
+        }
+      }
+      if (line.length < 4) continue;
+      let cov = 0;
+      for (const p of line) if (this.tallGrassDensity(p[0], p[1]) > 0.45) cov++;
+      if (cov / line.length >= 0.40) continue;
+
+      // three arcs spanning 60 % of the ring, phase-varied off the route's
+      // own geometry so two nearby rings do not stamp the same bearing
+      const L = line.length;
+      const arcs = 3;
+      const phase = Math.abs(Math.round(r[0].x * 7 + r[0].z * 3)) % L;
+      for (let k = 0; k < arcs; k++) {
+        const start = (phase + Math.floor((k / arcs) * L)) % L;
+        const span = Math.floor((0.62 / arcs) * L);
+        for (let s = 0; s < span; s += 2) {
+          const p = line[(start + s) % L];
+          if (Math.hypot(p[0], p[1]) > 322) continue;
+          stampStealthDisc(p[0], p[1], 9.5);
+          stamped++;
+        }
+      }
+    }
+    if (stamped) this.ctx.vegetation?.invalidate?.();
+    return true;
+  }
+
   update() {
     if (!this._colliderIds && this._colliderTries < 600) {
       this._colliderTries++;
       if (this.ctx.collision) this._registerColliders();
     }
+    if (!this._routeCoverDone) {
+      this._routeCoverTries = (this._routeCoverTries || 0) + 1;
+      // wait for the full roster (variety spawns land a few seconds in), but
+      // never wait forever: at ~10 s the field is stamped from whatever is up
+      const ready = this.ctx.machines?.varietyReady || this._routeCoverTries > 600;
+      if (ready && this._ensureRouteCover()) this._routeCoverDone = true;
+    }
+  }
+
+  /**
+   * Full teardown. Nothing in the game calls this today — the terrain lives
+   * for the session — but the round-4 memory rule is that every runtime
+   * object has a disposal path, and without one a future level reload would
+   * strand ~9 MB of mask/detail textures and the 500x500 mesh on the GPU.
+   */
+  dispose() {
+    const seen = new Set();
+    this.group.traverse((o) => {
+      if (!o.isMesh && !o.isInstancedMesh) return;
+      if (o.geometry && !seen.has(o.geometry)) { seen.add(o.geometry); o.geometry.dispose(); }
+      const mats = Array.isArray(o.material) ? o.material : [o.material];
+      for (const m of mats) {
+        if (!m || seen.has(m)) continue;
+        seen.add(m);
+        m.dispose();
+      }
+    });
+    for (const t of [...(this._maskTextures || []), this._detailTex,
+      this._gravelTex, this._macroTex]) {
+      if (t && !seen.has(t)) { seen.add(t); t.dispose(); }
+    }
+    this._maskTextures = null;
+    this._detailTex = this._gravelTex = this._macroTex = null;
+    this.group.parent?.remove(this.group);
+    this.group.clear();
+    this.cliffMeshes = null;
+    this._hg = null;
   }
 }

@@ -60,8 +60,9 @@ export const GATES = [
   /* --------------------------------------------------------------------- */
   {
     id: 'A58-surface-api', kind: 'action', lane: 'world-ground',
-    title: 'terrain.surfaceAt() names at least 4 materially present surfaces, '
-      + 'and the river / trail / shelf / meadow do not all read the same',
+    title: 'terrain.surfaceAt() names at least 7 materially present surfaces '
+      + '(snow, mud and ash among them), >= 5 biomes cover real ground, and '
+      + 'the river / trail / shelf / meadow do not all read the same',
     timeout: 45000,
     settle: 1200,
     assert: `(async () => {
@@ -115,13 +116,40 @@ export const GATES = [
       zone.meadow = T.surfaceAt(-60, -90);
       const zoneSet = new Set(Object.values(zone).filter((v) => v !== 'none'));
 
-      const pass = material.length >= 4 && unknown.length === 0 && zoneSet.size >= 3
-        && zone.meadow === 'grass' && trail !== null;
+      /* ROUND 4 EXPANSION BAR (world-ground-expansion §4): >= 7 materially
+       * present surfaces, and specifically the three the biome pass owes —
+       * snow on the north bench, mud in the marsh, ash in the burn scar.
+       * Naming them is the point: a bare count of 7 alone could be met
+       * by slicing the existing meadow finer, which is not a biome pass. The
+       * ORIGINAL terms (no unknown values, three distinct zones, the meadow
+       * reads as grass, a trail exists) are all still required. */
+      const OWED = ['snow', 'mud', 'ash'];
+      const missing = OWED.filter((k) => !material.includes(k));
+
+      // ...and the biome vocabulary itself has to be present on the ground
+      const biomes = {};
+      if (typeof T.biomeAt === 'function') {
+        for (let z = -320; z <= 320; z += 6) {
+          for (let x = -320; x <= 320; x += 6) {
+            if (x * x + z * z > 320 * 320) continue;
+            const b = T.biomeAt(x, z);
+            biomes[b] = (biomes[b] || 0) + 1;
+          }
+        }
+      }
+      const bList = Object.keys(biomes).filter((k) => biomes[k] >= 40);
+
+      const pass = material.length >= 7 && missing.length === 0
+        && unknown.length === 0 && zoneSet.size >= 3
+        && zone.meadow === 'grass' && trail !== null
+        && bList.length >= 5;
       return {
         pass,
         detail: {
           distinctMaterial: material.length, material, minSamples: MIN,
+          missingOwed: missing,
           histogram: hist, unknown, zones: zone, zoneDistinct: zoneSet.size,
+          biomes, biomesMaterial: bList,
           samplePoints: where, trailAt: trail,
         },
       };
@@ -380,6 +408,93 @@ export const GATES = [
       + 'rock detail at its base.',
   },
 
+  /* --------------------------------------------------------------------- */
+  {
+    id: 'V44-biomes', kind: 'visual', lane: 'world-ground',
+    title: 'Four-bearing vista from the valley floor: the 330 m disc carries '
+      + 'visibly different biomes, not one meadow',
+    params: 'px=55&pz=-40&pitch=0.12',
+    settle: 2600,
+    timeout: 90000,
+    setup: `(() => {
+      const ctx = __CTX__, engine = ctx.engine, renderer = ctx.renderer, cam = ctx.camera;
+      ctx.environment?.setWeather?.('clear', 0);
+      ctx.environment?.setTime?.(11.0);
+      const p = ctx.player;
+      p._updateCamera = () => {};
+      if (ctx.studio) ctx.studio.update = () => {};
+      const T = ctx.terrain;
+
+      /* ONE STATION, FOUR BEARINGS 90 DEGREES APART — not four hand-picked
+       * postcards. A biome pass that only reads from a camera parked inside
+       * each region has not changed the WORLD, it has changed five places you
+       * can stand; the point of this framing is that a player turning on the
+       * spot in the middle of the valley sees different ground every quarter
+       * turn. ONE station at (30,-60), ONE camera height, and four bearings
+       * exactly 90 degrees apart: 35 / 125 / 215 / 305. The only thing chosen
+       * is the base angle, and it is chosen once — those four bearings happen
+       * to run out to the SE scree benches, the NE conifer stand, the N snow
+       * shelf and the W marsh, which is the claim being made. The lens is
+       * 76 m up because at head height the near meadow fills two thirds of
+       * every frame and no vista gate can see past it. */
+      const CX = 30, CZ = -60;
+      p.position.set(CX + 8, 0, CZ + 8);
+      p._snapToGround?.();
+      ctx.vegetation?.forceStream?.(CX, CZ);
+      const gy = T.getHeight(CX, CZ);
+      const W = renderer.domElement.width, H = renderer.domElement.height;
+
+      const shot = (yaw) => {
+        cam.fov = 46; cam.updateProjectionMatrix();
+        cam.position.set(CX, gy + 76, CZ);
+        cam.lookAt(CX + Math.sin(yaw) * 235, gy + 10, CZ + Math.cos(yaw) * 235);
+        cam.updateMatrixWorld(true);
+        for (let i = 0; i < 4; i++) { engine._shadowCullClock = 0; engine.render(0.05); }
+        const buf = new Uint8ClampedArray(W * H * 4);
+        renderer.getContext().readPixels(0, 0, W, H, 0x1908, 0x1401, buf);
+        return buf;
+      };
+      const D = Math.PI / 180;
+      const yaws = [35 * D, 125 * D, 215 * D, 305 * D];
+      const names = ['bearing 35', 'bearing 125', 'bearing 215', 'bearing 305'];
+      const frames = yaws.map(shot);
+
+      const sheet = document.createElement('canvas');
+      sheet.width = W; sheet.height = H;
+      const g = sheet.getContext('2d');
+      const tmp = document.createElement('canvas');
+      tmp.width = W; tmp.height = H;
+      const tg = tmp.getContext('2d');
+      for (let i = 0; i < 4; i++) {
+        tg.putImageData(new ImageData(frames[i], W, H), 0, 0);
+        g.save();
+        g.translate((i % 2) * W / 2, Math.floor(i / 2) * H / 2);
+        g.scale(0.5, -0.5);
+        g.drawImage(tmp, 0, -H);
+        g.restore();
+        g.fillStyle = '#000'; g.globalAlpha = 0.55;
+        g.fillRect((i % 2) * W / 2, Math.floor(i / 2) * H / 2, 210, 22);
+        g.globalAlpha = 1; g.fillStyle = '#ffe3b0';
+        g.font = '13px ui-monospace, monospace';
+        g.fillText(names[i] + '   station (30,-60) +76m   t=11:00',
+          (i % 2) * W / 2 + 8, Math.floor(i / 2) * H / 2 + 16);
+      }
+      const img = new Image();
+      img.src = sheet.toDataURL('image/png');
+      img.style.cssText = 'position:fixed;inset:0;width:100vw;height:100vh;z-index:2147483647';
+      document.body.appendChild(img);
+    })();`,
+    criteria: 'A 2x2 contact sheet of four bearings from one station in the '
+      + 'valley. PASS: at least THREE of the four tiles show ground that is '
+      + 'visibly a different biome from the others — e.g. a dense dark '
+      + 'conifer stand, a pale snow shelf with bare snags, a green reed marsh '
+      + 'with standing water, a stony scree bench with boulders, an open '
+      + 'gold/olive meadow — each distinguishable by GROUND COLOUR AND COVER '
+      + 'TYPE, not merely by distance haze or by what props happen to be in '
+      + 'frame. FAIL if three or more tiles read as the same meadow with the '
+      + 'same grass, if the differences are only in lighting, or if a "biome" '
+      + 'is just a flat recoloured patch with no matching vegetation.',
+  },
   /* --------------------------------------------------------------------- */
   {
     /* Ids A61/A62 are already taken by other lanes (progression, focus-items),

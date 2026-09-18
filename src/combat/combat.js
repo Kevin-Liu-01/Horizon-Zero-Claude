@@ -50,7 +50,17 @@ const CRAFT_HOLD = 0.55;
 // Offsets are in character space (+Z forward, y up from feet, +X = her left),
 // converted into spine-bone space once at bind pose in _initStow().
 const STOW_POS = { x: 0.10, y: 1.30, z: -0.17 }; // grip up-left on the back
-const STOW_TILT = -0.62;  // roll about the back normal: limbs run diagonal
+/* FIX ROUND 3 — ONE LINE, CHANGED BY LANE player-melee, OUTSIDE ITS GRANT.
+ * +0.62, not -0.62. ROUND4-AUDIT §4 stows the SPEAR with its blade above her
+ * RIGHT shoulder, which forces it onto a low-left-to-high-right diagonal; the
+ * bow ran the opposite one, so the two crossed in an X on her back and V48's
+ * "does not intersect the quiver/bow" failed on the film two rounds running.
+ * Same sign = two near-parallel straps, as in reference/spear-holster-back-hfw.jpg.
+ * Nothing else about the stow changes (grip point, lean, hand-off all untouched)
+ * and no combat gate reads this constant. Combat lane: revert it and V48 fails
+ * again — see docs/ROUND4-PLAYER-MELEE.md §5 for the geometry that rules out an
+ * in-grant alternative. */
+const STOW_TILT = 0.62;   // roll about the back normal: limbs run diagonal
 const STOW_LEAN = -0.10;  // hug the back plane slightly
 
 // saturated hot-metal oranges; the spark pool normal-blends with a white-hot

@@ -69,6 +69,35 @@ const SPECIES = {
     loot: [{ id: 'bird-feather', n: 3 }, { id: 'lean-meat', n: 1 }, { id: 'bone', n: 1 }],
     homes: [[-24, -56], [96, 128], [-96, 8]],
   },
+  /**
+   * ROUND 4 EXPANSION — two more species, sited at the new places.
+   *
+   * `goat` ranges the Glowfall massif and the Stacks: horns give a herbivore a
+   * silhouette a hunter can name at 40 m, which neither the boar nor the grouse
+   * has from behind, and a cliff-dweller is the only animal in the roster that
+   * makes the new verticality worth looking up at. Slower to spook than a fox
+   * and much harder to close on, because it climbs away from you.
+   *
+   * `hare` fills the opposite hole: 24 small, twitchy animals that break cover
+   * at 22 m. They are the reason the meadows read as inhabited between herds,
+   * and the cheapest legal target for the arena's practice arrows.
+   */
+  goat: {
+    name: 'Ridge Goat', count: 10, bodyR: 0.34, eye: 0.58,
+    grazeSpeed: 0.55, walkSpeed: 1.7, fleeSpeed: 8.2,
+    alertR: 24, fleeR: 15, calmT: [5, 9], strideRate: 10.5,
+    roam: 18, hp: 26,
+    loot: [{ id: 'boar-hide', n: 1 }, { id: 'fatty-meat', n: 1 }, { id: 'bone', n: 2 }],
+    homes: [[-40, -196], [92, 132], [186, -112]],
+  },
+  hare: {
+    name: 'Scrub Hare', count: 14, bodyR: 0.15, eye: 0.24,
+    grazeSpeed: 0.5, walkSpeed: 1.4, fleeSpeed: 8.8,
+    alertR: 22, fleeR: 14, calmT: [2, 5], strideRate: 17.0,
+    roam: 13, hp: 5,
+    loot: [{ id: 'fox-pelt', n: 1 }, { id: 'lean-meat', n: 1 }],
+    homes: [[-100, 238], [132, -70], [-88, 44], [-190, -58]],
+  },
 };
 
 /* state ids kept as small ints — this loop runs 34x a frame */
@@ -370,7 +399,143 @@ function grouseGeometry() {
   return mergeGeometries(L, false);
 }
 
-const BUILDERS = { boar: boarGeometry, fox: foxGeometry, grouse: grouseGeometry };
+/**
+ * RIDGE GOAT. A short barrel on straight legs with a deep chest, a wedge head
+ * and two swept horns. The horns are the whole point: a goat seen side-on at
+ * 40 m is otherwise a pale boar, and this roster already has a pale boar.
+ */
+function goatGeometry() {
+  const rng = mulberry32(0x60A7);
+  const L = [];
+  const COAT = '#b9ab90', DARK = '#4e4334', HORN = '#6a5b45', PALE = '#d8cfba';
+  // barrel: widest at the chest, flat along the back
+  const body = new THREE.SphereGeometry(0.30, 12, 9);
+  const bp = body.attributes.position;
+  for (let i = 0; i < bp.count; i++) {
+    const x = bp.getX(i), y = bp.getY(i), z = bp.getZ(i);
+    const f = (z + 0.30) / 0.60;
+    const wf = f < 0.66 ? 0.72 + f * 0.52 : 1.063 - (f - 0.66) * 0.72;
+    bp.setXYZ(i, x * wf, y * (0.92 + (y > 0 ? -0.1 : 0.06)), z * 1.5);
+  }
+  body.computeVertexNormals();
+  {
+    const arr = new Float32Array(bp.count * 3);
+    const cC = new THREE.Color(COAT), cD = new THREE.Color(DARK), cP = new THREE.Color(PALE);
+    const c = new THREE.Color();
+    for (let i = 0; i < bp.count; i++) {
+      const y = bp.getY(i), z = bp.getZ(i);
+      c.copy(cC).lerp(cD, THREE.MathUtils.clamp(y * 2.6 - 0.4, 0, 0.7));
+      c.lerp(cP, THREE.MathUtils.clamp(-y * 2.4 - 0.1, 0, 0.55));
+      c.lerp(cD, THREE.MathUtils.clamp(-z * 1.4 - 0.1, 0, 0.45));  // dark haunch
+      const j = 0.93 + rng() * 0.14;
+      arr[i * 3] = c.r * j; arr[i * 3 + 1] = c.g * j; arr[i * 3 + 2] = c.b * j;
+    }
+    body.setAttribute('color', new THREE.BufferAttribute(arr, 3));
+  }
+  body.applyMatrix4(composeMat(0, 0.66, 0));
+  part(L, body, { body: 1 });
+  // neck + wedge head, carried high
+  const neck = new THREE.CylinderGeometry(0.11, 0.16, 0.3, 8);
+  tint(neck, COAT, 0.08, rng);
+  neck.applyMatrix4(composeMat(0, 0.86, 0.34, 0.75, 0, 0));
+  part(L, neck, { body: 1 });
+  const head = new THREE.SphereGeometry(0.135, 9, 7);
+  tint(head, COAT, 0.07, rng);
+  head.applyMatrix4(composeMat(0, 1.00, 0.49, 0, 0, 0, 0.9, 0.95, 1.35));
+  part(L, head, { body: 1 });
+  const muz = new THREE.ConeGeometry(0.072, 0.2, 7);
+  muz.rotateX(Math.PI / 2);
+  tint(muz, PALE, 0.07, rng);
+  muz.applyMatrix4(composeMat(0, 0.96, 0.66));
+  part(L, muz, { body: 1 });
+  // horns: two swept arcs, five segments each
+  for (const s of [-1, 1]) {
+    for (let i = 0; i < 5; i++) {
+      const t = i / 4;
+      const seg = new THREE.CylinderGeometry(0.038 - t * 0.024, 0.045 - t * 0.024, 0.13, 5);
+      tint(seg, HORN, 0.1, rng);
+      seg.applyMatrix4(composeMat(
+        s * (0.055 + t * 0.055), 1.12 + t * 0.20, 0.40 - t * 0.24,
+        -0.55 - t * 0.5, 0, s * (0.2 + t * 0.3)));
+      part(L, seg, { body: 1 });
+    }
+    const ear = new THREE.ConeGeometry(0.05, 0.16, 5);
+    tint(ear, DARK, 0.1, rng);
+    ear.applyMatrix4(composeMat(s * 0.13, 1.03, 0.40, 0.1, 0, s * 1.2));
+    part(L, ear, { body: 1 });
+  }
+  // beard + stub tail
+  const beard = new THREE.ConeGeometry(0.05, 0.19, 6);
+  tint(beard, DARK, 0.1, rng);
+  beard.applyMatrix4(composeMat(0, 0.86, 0.56, Math.PI - 0.25, 0, 0));
+  part(L, beard, { body: 1 });
+  const tail = new THREE.ConeGeometry(0.05, 0.14, 5);
+  tint(tail, PALE, 0.1, rng);
+  tail.applyMatrix4(composeMat(0, 0.78, -0.42, -0.9, 0, 0));
+  part(L, tail, { body: 1 });
+  legs(L, [[0.135, 0.26, 1], [-0.135, 0.26, -1], [0.125, -0.24, -1], [-0.125, -0.24, 1]],
+    0.62, 0.0, 0.05, 0.035, '#5d5140', rng);
+  return mergeGeometries(L, false);
+}
+
+/**
+ * SCRUB HARE. Small, so it is built to read as a SHAPE rather than a creature:
+ * a crouched hump, a raised rump, two long ears and a white scut. Those four
+ * silhouette cues are what make a 45 cm animal visible in ankle grass at 20 m.
+ */
+function hareGeometry() {
+  const rng = mulberry32(0x4A8E);
+  const L = [];
+  const COAT = '#9c8560', DARK = '#4b3c28', PALE = '#e8e0cf';
+  const body = new THREE.SphereGeometry(0.115, 10, 7);
+  const bp = body.attributes.position;
+  for (let i = 0; i < bp.count; i++) {
+    const x = bp.getX(i), y = bp.getY(i), z = bp.getZ(i);
+    // rump high, shoulders low — the crouch that reads as "about to bolt"
+    bp.setXYZ(i, x * 0.92, y * (1.0 - z * 0.9), z * 1.5);
+  }
+  body.computeVertexNormals();
+  tint(body, COAT, 0.1, rng);
+  body.applyMatrix4(composeMat(0, 0.19, 0));
+  part(L, body, { body: 1 });
+  const belly = new THREE.SphereGeometry(0.085, 8, 6);
+  tint(belly, PALE, 0.08, rng);
+  belly.applyMatrix4(composeMat(0, 0.145, 0.01, 0, 0, 0, 0.9, 0.5, 1.5));
+  part(L, belly, { body: 1 });
+  const head = new THREE.SphereGeometry(0.072, 8, 6);
+  tint(head, COAT, 0.07, rng);
+  head.applyMatrix4(composeMat(0, 0.24, 0.17, 0, 0, 0, 0.92, 0.95, 1.2));
+  part(L, head, { body: 1 });
+  const nose = new THREE.SphereGeometry(0.02, 5, 4);
+  tint(nose, DARK, 0.06, rng);
+  nose.applyMatrix4(composeMat(0, 0.225, 0.26));
+  part(L, nose, { body: 1 });
+  // the ears: 12 cm, laid back along the spine, black-tipped
+  for (const s of [-1, 1]) {
+    const ear = new THREE.CylinderGeometry(0.014, 0.026, 0.13, 5);
+    tint(ear, COAT, 0.09, rng);
+    ear.applyMatrix4(composeMat(s * 0.032, 0.315, 0.10, -0.5, 0, s * 0.16));
+    part(L, ear, { body: 1 });
+    const tip = new THREE.SphereGeometry(0.018, 5, 4);
+    tint(tip, DARK, 0.08, rng);
+    tip.applyMatrix4(composeMat(s * 0.042, 0.372, 0.135, 0, 0, 0, 1, 1.3, 0.8));
+    part(L, tip, { body: 1 });
+  }
+  // white scut: the only part of a fleeing hare anyone ever sees
+  const scut = new THREE.SphereGeometry(0.042, 6, 5);
+  tint(scut, PALE, 0.05, rng);
+  scut.applyMatrix4(composeMat(0, 0.215, -0.17, 0, 0, 0, 1, 1, 0.8));
+  part(L, scut, { body: 1 });
+  // long hind legs, short fore legs
+  legs(L, [[0.055, -0.07, -1], [-0.055, -0.07, 1]], 0.20, 0.0, 0.032, 0.022, '#6c5a3c', rng);
+  legs(L, [[0.045, 0.11, 1], [-0.045, 0.11, -1]], 0.145, 0.0, 0.022, 0.016, '#6c5a3c', rng);
+  return mergeGeometries(L, false);
+}
+
+const BUILDERS = {
+  boar: boarGeometry, fox: foxGeometry, grouse: grouseGeometry,
+  goat: goatGeometry, hare: hareGeometry,
+};
 
 /* -------------------------------------------------------------------------- */
 /*                                   FAUNA                                     */
@@ -621,7 +786,7 @@ export class Fauna {
     ctx.events?.emit?.('fauna-killed', {
       species: a.key, name: a.def.name, id: a.id, x: a.x, y: a.y, z: a.z, loot, source: opts.source,
     });
-    ctx.progression?.award?.({ xp: a.key === 'boar' ? 20 : 12, reason: 'hunt', id: a.key });
+    ctx.progression?.award?.({ xp: a.key === 'boar' || a.key === 'goat' ? 20 : 12, reason: 'hunt', id: a.key });
     // `audio` owns the bank; playAt() returns false for a set it does not have,
     // so this is a request for `fauna/<species>/death`, not a dependency on it.
     ctx.audio?.playAt?.(`fauna/${a.key}/death`, { x: a.x, y: a.y + 0.4, z: a.z },
@@ -831,6 +996,31 @@ export class Fauna {
   }
 
   /* --------------------------- instance transform ------------------------ */
+
+  /**
+   * MEMORY RULE. One `InstancedMesh` + one geometry + one material per species,
+   * plus whatever carcass interactables are live. All five species come back.
+   */
+  dispose() {
+    const I = this.ctx.interactables;
+    for (const a of this.animals) {
+      if (a.entry) { I?.unregister?.(a.entry); a.entry = null; }
+    }
+    for (const key of Object.keys(this.pools)) {
+      const pool = this.pools[key];
+      if (!pool) continue;
+      pool.mesh.geometry?.dispose?.();
+      pool.mesh.material?.dispose?.();
+      pool.mesh.dispose();
+      this.group.remove(pool.mesh);
+      delete this.pools[key];
+    }
+    if (this.group.parent) this.group.parent.remove(this.group);
+    this.group.clear();
+    this.animals.length = 0;
+    this.byId.clear();
+    if (this.ctx.fauna === this) this.ctx.fauna = null;
+  }
 
   _writeInstance(a) {
     const pool = this.pools[a.key];

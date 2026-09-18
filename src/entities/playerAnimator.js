@@ -161,6 +161,11 @@ const STEP_LEAD = 0.22;      // seconds of her own velocity the step leads by
 const STEP_LEAD_MAX = 0.34;  // ...and the most it may lead (m)
 const STEP_WINDOW = 1.15;    // how long a step-in keeps the system armed (s)
 const STEP_COOL = 0.06;      // a landed foot stays down at least this long (s)
+/* World travel of a PLANTED ball that forces a step regardless of every other
+ * rule (see _tryStep). This is the quantity A13/A31/A105 measure, so it is a
+ * bound on the gate's own reading and not a proxy for one; 0.040 m sits at half
+ * of A105's 0.08 m bar, which leaves the frame that detects it room to settle. */
+const STEP_SLIP = 0.040;     // measured ball skate that forces a step (m)
 // nock-reach flourish window (s). HZD's reach-to-quiver beat is ~0.25-0.35s;
 // at the Round-4 value of 0.13s it was 8 frames and never read on film.
 // FIX ROUND (player-anim): 0.34, not 0.28. HZD's reach-to-quiver beat is
@@ -506,8 +511,14 @@ export class PlayerAnimator {
     this._grndWant = null;          // last frame's raw conform target (m)
     this._grndRate = 0;             // d(target)/dt, damped (m/s) — see _groundConform
     this._flatW = 1;                // flat-foot authority (1 at rest, 0 at speed)
-    this._locks = [{ on: false, x: 0, z: 0, w: 0, cx: 0, cz: 0 },
-                   { on: false, x: 0, z: 0, w: 0, cx: 0, cz: 0 }];
+    /* `sx`/`sz` is where the ball ACTUALLY was on the frame this lock captured
+     * and never slides; `wx`/`wz` is where the ball ACTUALLY ended up on the
+     * last frame the conform ran. Their distance is the planted ball's real
+     * world travel — the exact quantity A13/A31/A105 measure — and the melee
+     * step-in triggers on it (see STEP_SLIP). `x`/`z` is the lock's own
+     * anchor, which is allowed to slide past MAX_LOCK, so it is NOT this. */
+    this._locks = [{ on: false, x: 0, z: 0, w: 0, cx: 0, cz: 0, sx: 0, sz: 0, wx: 0, wz: 0 },
+                   { on: false, x: 0, z: 0, w: 0, cx: 0, cz: 0, sx: 0, sz: 0, wx: 0, wz: 0 }];
     this._stL = 1; this._stR = 1;   // stance flags used by the last conform
     /* melee step-in (see STEP_TRIGGER): armed window, the stance she is
      * standing in (char-space XZ per ball) and the foot currently in flight. */
@@ -517,7 +528,9 @@ export class PlayerAnimator {
     this._flightPool = [{ t: 0, dur: 0, fx: 0, fz: 0, hx: 0, hz: 0 },
                         { t: 0, dur: 0, fx: 0, fz: 0, hx: 0, hz: 0 }];
     this._stepCd = [0, 0];
-    this._stepDbg = { armed: 0, steps: 0, side: -1, lift: 0, len: 0, err: 0 };
+    this._stepDbg = { armed: 0, steps: 0, side: -1, lift: 0, len: 0, err: 0, slip: 0 };
+    this._stepErrs = [0, 0];        // _stanceStep scratch — never reallocated
+    this._stepLoads = [0, 0];
     this._strideT = 0;              // seconds since either foot last lifted
     this._lvx = 0; this._lvz = 0;   // local (char-space) velocity, damped
     this._mx = 0; this._mz = 1;     // local move direction, damped
@@ -866,7 +879,11 @@ export class PlayerAnimator {
       const F = this._flight[side];
       out.push({ name: e.name, world: { x: _v1.x, y: _v1.y, z: _v1.z }, planted,
                  flight: F ? +F.t.toFixed(3) : null,
-                 lock: { on: L.on, w: L.w, errM: Math.hypot(L.cx, L.cz), capM: MAX_LOCK } });
+                 lock: { on: L.on, w: L.w, errM: Math.hypot(L.cx, L.cz), capM: MAX_LOCK,
+                   // the planted ball's REAL world travel since it was set down
+                   // (see STEP_SLIP) — errM is the lock's correction, which is
+                   // a different number and stays small while this one grows
+                   slipM: L.on ? Math.hypot(L.wx - L.sx, L.wz - L.sz) : 0 } });
     }
     return out;
   }
@@ -2133,6 +2150,16 @@ export class PlayerAnimator {
         ball.bone.updateWorldMatrix(true, false);
         _v1.setFromMatrixPosition(ball.bone.matrixWorld);
       }
+      /* WHERE THE BALL ACTUALLY ENDED UP, for the melee step-in's slip loop.
+       * Recorded after the lock has had its say, because the lock is exactly
+       * the thing that is supposed to have stopped it moving; when it has not
+       * (its authority is a rigid hip rotation and a 2-pass solve, so a large
+       * correction is only partly achieved) this is where that shows up. Only
+       * the horizontal terms matter — the clamps below move the pelvis in Y. */
+      if (!fl) {
+        const LK = this._locks[side];
+        if (LK.on) { LK.wx = _v1.x; LK.wz = _v1.z; }
+      }
       // ground clearance of the foot = its LOWEST contact point. Measuring the
       // ball alone reads 8cm of float at heel strike, and the pelvis clamp then
       // drops the hips 8cm on every step to "plant" a foot that is already down
@@ -2283,7 +2310,12 @@ export class PlayerAnimator {
     if (st >= 0.45) {
       // capture on the plant frame: the error starts at zero, so full authority
       // from the first frame cannot pop the leg
-      if (!L.on) { L.on = true; L.x = ballW.x; L.z = ballW.z; }
+      if (!L.on) {
+        L.on = true; L.x = ballW.x; L.z = ballW.z;
+        // the plant point, kept un-slid so the melee step-in can read the
+        // ball's REAL world travel rather than the anchor's (see STEP_SLIP)
+        L.sx = ballW.x; L.sz = ballW.z; L.wx = ballW.x; L.wz = ballW.z;
+      }
       L.w = 1;
       ex = L.x - ballW.x; ez = L.z - ballW.z;
       // Past MAX_LOCK, SLIDE the anchor up to the limit instead of dropping the
@@ -2551,17 +2583,41 @@ export class PlayerAnimator {
      * frames and slid 0.125 m while the lead foot was being placed. Two feet
      * off the ground for 0.155 s is a lunge; a foot dragged across the floor
      * is the bug. */
-    const errs = [0, 0];
-    let worst = -1;
+    /* THE FOOT WHOSE LOCK IS ABOUT TO GIVE GOES FIRST — fix round 3.
+     *
+     * `err` is home-to-ANCHOR: it says how far the body has walked away from
+     * the stance, and it is BLIND to the clip moving the foot, because when a
+     * lock is on `ballC` returns the anchor rather than the clip's ball. The
+     * lock's own correction (`cx/cz`) is anchor-to-CLIP-BALL and sees both.
+     * They are the same number while she is only being walked away from — and
+     * they come apart hard inside a strike, where the pose itself carries the
+     * leg: filmed on a standing light, `err` read 0.076 m (under the 0.105 m
+     * trigger, under the 0.12 m urgency) on the same frame the right foot's
+     * lock read 0.248 m of its 0.30 m cap. Ranked on `err`, the LEFT foot was
+     * placed first and the right one — the one actually about to give — was
+     * turned away by the overlap rule below; the next frame its anchor hit the
+     * cap, slid, and dragged the planted ball 0.033 m. That is the 0.0867 m
+     * standing tail the judge measured over 11 runs, and it is why this ranks
+     * on the worse of the two readings and why a lock near its cap now
+     * outranks the overlap rule (see `critical` in `_tryStep`). */
+    // scratch, allocated once in the constructor: a chained combo runs this
+    // block ~50x a second and Kevin crashed twice on memory
+    const errs = this._stepErrs, loads = this._stepLoads;
+    let worst = -1, worstLoad = 0;
     for (let s = 0; s < 2; s++) {
       const home = this._stepHome[s];
       const c = ballC(s);
       errs[s] = Math.hypot(home[0] - c.x, home[1] - c.z);
+      const L = this._locks[s];
+      loads[s] = L.on && !this._flight[s] ? Math.hypot(L.cx, L.cz) : 0;
       if (errs[s] > worst) worst = errs[s];
+      if (loads[s] > worstLoad) worstLoad = loads[s];
     }
     this._stepDbg.err = +worst.toFixed(3);
-    const order = errs[0] >= errs[1] ? [0, 1] : [1, 0];
-    for (const side of order) this._tryStep(side, errs[side], vx, vz);
+    this._stepDbg.lockErr = +worstLoad.toFixed(3);
+    const lead = Math.max(errs[0], loads[0]) >= Math.max(errs[1], loads[1]) ? 0 : 1;
+    this._tryStep(lead, errs[lead], vx, vz);
+    this._tryStep(1 - lead, errs[1 - lead], vx, vz);
   }
 
   /** One foot's step decision (see `_stanceStep`). */
@@ -2585,11 +2641,45 @@ export class PlayerAnimator {
     const URGENT = MAX_LOCK * 0.40;
     const L = this._locks[side];
     const myLock = L.on ? Math.hypot(L.cx, L.cz) : 0;
-    const urgent = err > URGENT || myLock > MAX_LOCK * 0.5;
+    /* THE CLOSED LOOP ON THE DEFECT ITSELF — fix round 3.
+     *
+     * `err` and `myLock` are both proxies: they say how far the body has
+     * walked away from the stance and how hard the lock is pulling, not
+     * whether the ball on screen has moved. Both can be inside their bars
+     * while the ball still travels, because the lock's authority is a rigid
+     * rotation about the hip solved in two Newton passes — a correction it
+     * cannot fully achieve leaves the ball following the body with `cx/cz`
+     * reading small. That is the residue the judge measured: over 11 runs of
+     * A105 the standing row's worst window was 0.0035-0.0867 m against an
+     * 0.08 m bar, i.e. one run in ten over the top, on a build whose `err`
+     * never came near URGENT.
+     *
+     * `STEP_SLIP` closes the loop on the measured quantity: the distance the
+     * planted ball has ACTUALLY travelled in world space since the frame its
+     * lock captured. Past it the leg goes at once — it outranks the cooldown,
+     * the one-at-a-time rule and the overlap rule alike, because every one of
+     * those is a reason to keep standing on a foot that is already skating.
+     * The bound this buys is arithmetic rather than empirical: the trigger
+     * reads the ball's position at the END of the previous conform, which is
+     * the same value the gate samples, and the step it fires lifts the ball
+     * clear of the 0.012 m contact test inside that same frame — so no sample
+     * inside a stance window can exceed STEP_SLIP plus the settle of the frame
+     * that detects it. */
+    const slip = L.on ? Math.hypot(L.wx - L.sx, L.wz - L.sz) : 0;
+    if (slip > this._stepDbg.slip) this._stepDbg.slip = +slip.toFixed(4);
+    const slipping = slip > STEP_SLIP;
+    const urgent = err > URGENT || myLock > MAX_LOCK * 0.5 || slipping;
+    /* ...AND PAST THIS, NOT EVEN THE OVERLAP RULE HOLDS IT (fix round 3).
+     * A lock at half its cap is one frame of a strike away from sliding its
+     * anchor — the pose moves the leg faster than the body does, 0.082 ->
+     * 0.248 -> 0.300 m across three frames on the filmed case — and a foot
+     * that is measurably skating already IS the defect. Both feet briefly off
+     * the ground is a lunge and reads as one; a dragged foot does not. */
+    const critical = myLock > MAX_LOCK * 0.5 || slipping;
     if (this._flight[side]) return;
     // never two feet leaving the ground in the same beat: the second may go
     // once the first is most of the way down, and no sooner
-    if (busy && busy.t < 0.30) return;
+    if (busy && busy.t < 0.30 && !critical) return;
     if (!urgent) {
       if (this._stepCd[side] > 0) return;
       if (busy) { if (busy.t <= 0.45 || err < STEP_TRIGGER * 2.2) return; }

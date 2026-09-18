@@ -90,7 +90,8 @@ start(id) / complete(id) / abandon(id) / track(id) / tracked / progress(id)`
 
 `state(id)` returns `{ id, title, type, giver, summary, rewards, status,
 objectives[{id,type,label,have,need,done}], current, progress, tracked }`.
-Objective types: `talk | goto | scan | kill | gather`, completed **in order** —
+Objective types: `talk | goto | scan | kill | gather | datapoint | cache |
+override | hunt`, completed **in order** —
 but credit is **never thrown away**. Every scan/kill/talk is counted into a run
 tally the moment it happens whatever objective is current, every unfinished
 `goto` is proximity-tested (not just the current one), and an objective settles
@@ -108,15 +109,75 @@ you are already carrying opts in with `fromStock: true` (the two hand-it-over
 bounties, `side-herbalists-debt` and `side-lens-trade`, do).
 
 `getMarkers()` → `[{ x, y, z, label, questId, objectiveId, kind, tracked,
-radius }]` — rebuilt only when dirty. This is what the compass and the world map
-should draw.
+radius, npc }]` — one row per active quest's CURRENT objective. This is what the
+compass and the world map should draw. Consumers may hold the array (it is
+reused in place) but must not cache the coordinates.
+
+> **EXPANSION FIX ROUND 1 — `talk` rows resolve LIVE, on read.** The list is
+> rebuilt only when `_markersDirty`, and nothing sets that flag on a timer. That
+> is correct for `goto`/`datapoint`/`cache`/`override`, which resolve through
+> the static `ctx.props.sites()` registry — but this lane put four `talk`
+> objectives on the roving Nora (`maris` `aura` `vala` `thok`) and `npc` walks
+> them around camp (max roam measured over 70 s: `sona` 21.7 m, `renn` 18.0 m,
+> `olin` 17.7 m, `aura` 9.4 m). A baked anchor left the gold pip on the dirt the
+> person had left — 7.8 m of error against the row's own `radius: 2.5`, so the
+> player stood inside the marker ring with no TALK prompt. `getMarkers()` now
+> re-reads `_npcPos(row.npc)` for `talk` rows on every call; the loop is skipped
+> entirely by a counter when no `talk` objective is current, and it allocates
+> nothing (it writes into the rows that already exist). `npc` is set only on
+> `talk` rows — a consumer that wants the live anchor for any other objective
+> should call `objectiveAnchor()` rather than re-deriving one.
+
+`objectiveAnchor(questId, objectiveId?)` → `{ x, z, site, kind, objectiveId,
+radius }` — where an objective actually points AFTER site resolution, always
+computed fresh. The compass, the world map and the gates all need the same
+answer and none of them should have to know that `at:{ site:'outpost' }`
+resolves through `world-props`. Omit `objectiveId` for the quest's current
+objective. Returns `null` when the anchor cannot be resolved.
 
 ### economy / NPC / difficulty / tiers
 - `merchant.stock() price(id) sellPrice(id) sellable() buy(id,n) sell(id,n) shards()` — currency is the real `metal-shards` item.
-- `talkTo(npcId) closeDialogue() dialogue` · `NPCS.varl` — `closeDialogue()`
+- `talkTo(npcId) closeDialogue() dialogue` — `closeDialogue()`
   now takes the conversation panel down as well as clearing the flag; calling it
   directly used to leave `ctx.state === 'dialogue'`, which `main.js`'s `live`
   test excludes, i.e. it froze the simulation.
+- **`NPCS` / `NPC_IDS` — the whole roster, not just Varl.** All thirteen of the
+  `npc` lane's named Nora are registered (`docs/ROUND4-NPC.md` §3), each with
+  its own greeting ladder and two "ask about…" topics. `ctx.npcs.talkTo(id)`
+  opens a conversation for every one of them.
+
+### dialogue (expansion round)
+| member | meaning |
+|---|---|
+| `dialogueState(npcId = dialogue.npc)` | everything the card draws: `{ id, name, title, line, topic, talked, choices[] }`. `line` is the current greeting, replaced by a topic answer while one is open. Returns `null` for an unknown id. |
+| `choices[]` | `{ id, kind, label, hint, questId?, topicId? }`, 2–3 of them, HZD's priority order: report-in → offer → unheard topic → journal, `leave` **always last**. `kind` ∈ `quest-turnin \| quest-accept \| topic \| journal \| trade \| leave`. A **merchant** always keeps the `trade` row. |
+| `choose(choiceId)` → `{ state, closed, action, turnIn? }` | the ONLY place a choice has consequences. `action` ∈ `'trade' \| 'journal' \| null` is what the caller should open on the way out; `turnIn` names the quest a `quest-turnin` choice closed. |
+| `timesTalked(npcId)` → int | conversations this run; drives which greeting shows |
+
+`src/ui/dialogue.js` holds **no rules** — it renders `dialogueState()` and calls
+`choose()` back. Any other front-end (a wheel, a controller binding, a gate) can
+drive the same two calls; `choose()` re-renders the live card itself.
+
+### site anchors, timed trials, per-site respawn (expansion round)
+Six side quests (`side-hunting-trial` `side-cauldron-override`
+`side-outpost-supply` `side-lakeshore-fisher` `side-cave-datapoints`
+`side-wreck-salvage`) are anchored at `ctx.props.sites()` **by kind** through
+`at:{ site, alt? }`, with the authored `x/z` kept as the fallback for a build
+where that site kind does not exist. Neither lane edits the other.
+
+| member | meaning |
+|---|---|
+| `trialState(questId, objectiveId?)` → `{ questId, objectiveId, within, running, left, have, need }` | a `within:` (timed) objective. `left` is **seconds remaining**, `null` when the window is not open. Omit `objectiveId` for the quest's first unfinished timed objective; `null` when the quest has none. |
+| `restartTrial(groundId?)` → int | run the trial again from zero; returns how many windows it reopened. Already wired to the `hunting-ground` event, so the player walking back into the ring restarts it. |
+| `respawnPolicy(site)` → `{ cls, why, delay, lo, hi }` | which window a `machines.sites` record should repopulate on. `cls` ∈ `trial \| quest \| small \| medium \| large`. |
+| `SITE_RESPAWN` | the table: `trial [90,150]` · `quest [120,180]` · `small [240,330]` · `medium [330,450]` · `large [420,540]` seconds. |
+| `TALLY_TYPES` | `['kill','scan','talk','datapoint','cache','override','hunt']` — the run-tally buckets, and what a save carries. |
+
+A trial ring inside 70 m of the hunting ground repopulates in 90–150 s so the
+trial is re-runnable; a site whose kind an active quest is asking for gets
+120–180 s. The policy is applied by re-timing the **published** `site.respawnAt`
+field on `machine-disposed`, never slower than the stock window — no edit to
+`machine-ai`'s files or to `ai/tables.js`.
 - `difficulty` `difficultyDef` `setDifficulty(id)` `DIFFICULTIES` (6 presets)
 - `ammoUnlocked(id)` `tier(id)` `unlockedAmmo()` — `combat`/`wheel` gate ammo on these.
 
@@ -140,7 +201,10 @@ object with everything a gate reads (including `emitFaults`, see §3).
 `level-up {level,skillPoints,maxHealth,gainedHealth}` ·
 `skill-unlocked {id,name,tree}` ·
 `quest-started {id,title,type}` ·
-`quest-objective {questId,objectiveId,label,have,need,done}` ·
+`quest-objective {questId,objectiveId,label,have,need,done,trial?}` — `trial` is
+present only on a TIMED objective and is `'start' | 'restart' | 'lapsed'`, i.e.
+the window opened/reopened/ran out and `have` was reset; a consumer that only
+reads `have/need/done` is unaffected ·
 `quest-complete {id,title,rewards}` · `quest-tracked {id,title}` ·
 `objective-changed {title,detail}` (legacy SPEC event, still emitted) ·
 `banner {title,detail,kind}` — `kind` ∈ `info|level|skill|quest|quest-done|objective|save|death|victory`.
@@ -148,11 +212,35 @@ object with everything a gate reads (including `emitFaults`, see §3).
 `discovery {id,label,place,total}` — raised once per id by `discover()`; this is
 the feed a Notebook or world-map "places found" list should read (`place:true`
 rows are the ones that also bannered) ·
-`difficulty-changed` · `trade-buy` / `trade-sell` · `dialogue-open` /
-`dialogue-close` · `checkpoint-loaded {reason,killer}` ·
+`difficulty-changed` · `trade-buy` / `trade-sell` ·
+`dialogue-open {npc,name,times}` — `name` is the person's display name and
+`times` the conversation count, both added this round so a caption or an audio
+cue does not have to look the roster up ·
+`dialogue-topic {npc,topic}` — **new**: an "ask about…" answer is now showing;
+raised once per choice (the first time per `npc:topic` also pays 10 XP through
+`award()`, so it cannot be farmed) ·
+`dialogue-close {npc}` · `checkpoint-loaded {reason,killer}` ·
 `victory-resume {}` — **`shell-menus` takes the endgame card here**; this lane
 clears `ctx.state === 'victory'` itself only while `ctx.menus` does not exist ·
 `save-written` / `save-loaded` / `save-error`.
+
+### Objective types → the events that credit them (expansion round)
+
+Four new types, none of them a new event: each rides a channel another lane was
+already emitting, so no lane had to change a line to make the side quests
+completable.
+
+| type | credited by | emitter |
+|---|---|---|
+| `datapoint` | `datapoint-collected {id}` | `src/items/datapoints.js` |
+| `cache` | `supply-cache {id,site}` | `src/world/props/activities.js` |
+| `override` | `override-node {id,site}` | `src/world/props/activities.js` |
+| `hunt` | `fauna-killed {species}` | `src/world/fauna.js` |
+
+(The pre-existing four are unchanged: `kill` ← `machine-killed`, `scan` ←
+`focus-tag`, `talk` ← `dialogue-close`, `gather` ← `item-gained` + the 5 Hz
+inventory sampler; `goto` is proximity-sampled.) A `kill` objective may also
+carry `within: seconds`, which makes it a timed trial — see `trialState()`.
 
 ---
 
@@ -240,6 +328,22 @@ clears `ctx.state === 'victory'` itself only while `ctx.menus` does not exist ·
 7. **`shell-hud`** — the XP strip, banners and quest tracker this lane renders
    into `#hzc-prog` are a bridge, not a claim on the HUD. Render the events in
    §2 and call `progression.ui.dispose()`.
+8. **`shell-hud` (expansion round) — draw the trial clock.** A `within:`
+   objective is on a countdown the tracker does not show, so the hunting-ground
+   trial currently reads like an ordinary "Kill 3 Scrappers" until it silently
+   resets. In the objective row, when
+   `progression.trialState(questId)?.running` is true, render
+   `trialState().left` as `M:SS` beside the `have/need` counter (HZD puts it
+   right there on the Hunting Ground banner) and flash it on the
+   `quest-objective` events whose `trial` field is `'restart'` or `'lapsed'`.
+   `left` is already rounded to 0.01 s and is `null` when no window is open, so
+   the row costs one optional-chained call per frame. **No source change is
+   needed in this lane** — this is a render the data is already published for.
+9. **`shell-hud` / `shell-menus` — do not cache marker coordinates.**
+   `getMarkers()` returns the same array object every call and resolves `talk`
+   rows live on read (§1). `hud.js:1793` and `map.js:400` already re-read it per
+   frame, which is correct; a future optimisation that snapshots `m.x/m.z` would
+   re-introduce the stale-pip defect.
 
 ---
 
@@ -251,6 +355,24 @@ clears `ctx.state === 'victory'` itself only while `ctx.menus` does not exist ·
 residue-round regression gate `A64b-damage-channels` (the legacy `baseDamage`
 channel under a non-1 `damageOut`).
 Run: `node tools/gates.mjs --port 5213 --lane progression`.
+
+### Expansion round — `tools/gates.round4.progression-expansion.mjs`
+
+Lane `progression-expansion`, same port. **Gate ids**: the audit block names
+`A66-quest-objectives` / `A65-save-restore`, but lane `progression` already owns
+both with a different meaning, so they are registered here as
+`A66-quest-objectives-expansion` and `A65-save-restore-expansion`. Neither
+original is edited, weakened or re-run from this file. `A99-dialogue` and
+`V45-dialogue-panel` were unclaimed and are kept verbatim.
+
+| gate | what it measures |
+|---|---|
+| `A66-quest-objectives-expansion` | all six side quests completed through their REAL events (the datapoint's own `collect()`, the cache's registered `onInteract`, `fauna._kill`, a real `takeDamage` kill, `npcs.talkTo`), each anchored at a live `ctx.props` site, trial window semantics (opens, one kill credits one, re-entering the ring restarts it), per-quest XP + skill-point rewards, and — **fix round 1** — that the `talk` marker tracks Aura while she walks (passive over 6 simulated seconds and under a forced 7.2 m displacement, both within 0.05 m) |
+| `A65-save-restore-expansion` | a literal `location.reload()` between save and Continue: quest counters, trial window (stored as seconds LEFT, so it survives a clock restarting at zero), conversation state and skills all come back |
+| `A99-dialogue` | `talkTo` opens the card for every one of the thirteen NPCs, choices advance state, a topic answer replaces the line, merchants keep the TRADE row, ESC closes |
+| `V45-dialogue-panel` | the card on film: tracked-caps name, title, quoted line, numbered choices, speaker still on screen |
+
+Run: `node tools/gates.mjs --port 5213 --lane progression-expansion`.
 
 All four now (a) fail unless `main.js` built the lane before the gate ran, and
 (b) wait on **observables** (`until(...)`) or on **simulated** time

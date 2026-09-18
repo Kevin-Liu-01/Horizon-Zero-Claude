@@ -344,3 +344,216 @@ sixteen lanes. Inside a SINGLE page, same scene and same camera, five consecutiv
 samples read 11.6, 0.1, 29.6, 49.8 and 36.8 fps. The gate's own PENDING guard (null frame
 ≥ vsync ⇒ blame the scene) sampled a quiet moment and so returned FAIL. The triangle and
 draw-call counts above are counters, not clocks, and are the numbers to act on.
+
+---
+
+## 8. ROUND 4 EXPANSION — six new places (`world-props-expansion`, port 5211)
+
+Kevin's directive for this wave: *more environments and interactable areas in
+the playable radius*. Wave 2 gave the valley landmarks you could SEE; it did not
+give it places you could BE. `src/world/props/places.js` adds six, plus three
+crossings of the dried channel, twelve ruin-clutter spots and two more wildlife
+species in `fauna.js`.
+
+### 8.1 `ctx.props.places` — the new contract
+
+```js
+ctx.props.places          // [{ id, name, kind, x, z, y, position:Vector3,
+                          //    radius, blurb, discovered, interactables[],
+                          //    landmark:{ name, height, x, z } }]  6 entries
+ctx.props.placeAt(x, z)   // the place whose radius contains (x,z) | null
+ctx.props.sites()         // UNCHANGED SHAPE, now activity sites + the six
+                          //   places; a place record carries `place: true`,
+                          //   plus `position` and `radius` the old records
+                          //   never had, so a consumer can filter either way
+ctx.props.npcSlots        // [{ id, site, pose, x, y, z, yaw }]  3 at the outpost
+ctx.props.crossings       // [{ id, x, z, deckY, kind }]  4 channel crossings
+ctx.props.ledgeNear(...)  // now searches the rockworks table AND the two new
+                          //   edges (Glowfall shelf, the Fallen Watcher's brow)
+ctx.props.placeSystem     // the Places instance: interiors, emitters, dispose()
+ctx.props.placeSystem.refreshVisibility()
+                          // recompute which place meshes are close enough to
+                          //   the CAMERA to be submitted. `update()` calls it
+                          //   every frame; ANY path that moves the lens without
+                          //   running a sim frame (photo mode, a cutscene, a
+                          //   gate that teleports and calls engine.render())
+                          //   must call it too — see §8.10.
+```
+
+`sites()` stayed a METHOD because `machine-ai`, `progression` and the map already
+call it as one. The directive's "publish `ctx.props.sites` (name, position,
+radius, kind)" is satisfied by those four fields on every place record it now
+returns, and by `ctx.props.places` for the raw array.
+
+| id | name | x, z | kind | landmark | interactables |
+|---|---|---|---|---|---|
+| `outpost-ridgeback` | Ridgeback Outpost | -112, 245 | `settlement` | 15.1 m watch-post | TEND BRAZIER · HIDE RACK · SURVEY FROM THE POST |
+| `cauldron-kappa` | Cauldron KAPPA | 150, 168 | `cauldron` | 19.4 m vent stack | MACHINE PARTS ×3 · OVERRIDE TERMINAL |
+| `hunting-arena` | Ridge Trial Ground | 132, -82 | `hunting` | 17.5 m banner mast | TRIAL BOARD · PRACTICE ARROWS · RESET DUMMY ×5 |
+| `caves-glowfall` | Glowfall Caves | -60, -245 | `cave` | 21 m rock spire | SHELTER CACHE · BANK THE COALS · GLOW-FUNGUS |
+| `lakeshore-camp` | Slackwater Camp | -93, 50 | `camp` | 10.4 m drying mast | FISHING RACK · COOK FIRE · HAUL THE NETS |
+| `tallneck-wreck` | The Fallen Watcher | -172, -78 | `wreck` | 17.6 m disc on edge | SALVAGE ×2 · RELAY NODE |
+
+### 8.2 Events
+
+```
+place-discovered  { id, name, kind, x, z, radius }   first entry into the radius
+outpost-brazier / outpost-supply / outpost-survey    { id, ... }
+cauldron-parts { id, site } · cauldron-override { id, x, z, reveals[] }
+trial-board { id, trials, dummies } · arena-rack { id } · arena-dummy { id, reset }
+cave-cache / cave-fire / cave-fungus { id }
+lakeshore-rack / lakeshore-fire / lakeshore-nets { id }
+wreck-salvage { id } · wreck-relay { id, x, z, reveals[] }
+```
+
+`progression.discover(id, { label, xp: 50 })` fires once per place on entry;
+`award({xp, reason, id})` on the scored interactions. Both optional.
+
+### 8.3 For the `npc` lane
+
+Three anchors are published and nothing is drawn at them:
+
+```js
+ctx.props.npcSlots
+// [{ id:'ridgeback-watch', site:'outpost-ridgeback', pose:'guard', x, y, z, yaw },
+//  { id:'ridgeback-smith', pose:'work',  ... },
+//  { id:'ridgeback-cook',  pose:'sit',   ... }]
+```
+
+`yaw` faces the outpost fire. Fill them the way `camp.js` fills the hunter camp's
+six and nothing here needs to change.
+
+### 8.4 Two findings that were not in the brief
+
+**1. Single-sided vertex-coloured materials render WHITE in this scene, and it
+was hiding the whole prop layer.** Measured on port 5211 against the shipped
+hunter camp: the palisade, the viaduct decks, the Nora lookout, the cliffs and
+every new place drew their vertex colours as bone-white. The colour attribute
+was present, the values were correct (0.02–0.67), `USE_COLOR` was set in both
+program cache keys — and setting every vertex of a merged palisade to pure RED
+changed nothing on screen. The only variable that changed the result was
+`side`: `kit.materials().hide` and `.metal` were already `DoubleSide` and were
+the only two families whose colour survived. `matte` and `rock` are now
+`DoubleSide` too (`src/world/props/kit.js`), which costs no draw calls and only
+the back faces that fail the depth test, and the entire prop layer went from
+bone to timber and stone in one line. **The cause is below this lane's line**:
+the only thing in the build that rewrites the lighting path globally is
+`world-light`'s `patchShaderChunks()` / `registerMaterial()` chain in
+`src/world/environment.js`, and that is where the real fix belongs.
+
+**2. `world-ground`'s pine scatter grows inside the new interiors.** A few pine
+and bush cards stand inside the Cauldron KAPPA chamber and on the outpost's
+parade ground. This lane cannot fix it (`vegetation.js` belongs to
+`world-ground`) — the ask is a scatter exclusion around
+`ctx.props.places[].position` at `radius * 0.55`, which the new contract above
+already publishes.
+
+### 8.5 How the interiors are built (and the two ways to get them wrong)
+
+1. **ONE DECK HEIGHT PER ROOM.** The first pass laid every floor plate at the
+   heightfield under it; the hill falls 7.7 m across the cauldron chamber, a
+   plate is flat, and the terrain erupted through the middle of the foundry.
+   `deckY` is now the highest ground anywhere under the chamber or the corridor
+   plus 15 cm, with a skirt down to the hillside. `player-control`'s
+   `_sampleGround` already stands the player on a collider above the terrain, so
+   a flat deck is walkable the moment `collision.seedWorld()` BVHs it.
+2. **A ROOF IS ONE SURFACE.** Sixteen box wedges laid round a ring leave a slot
+   between every pair — `V42` asks for ENCLOSED and an enclosure with sixteen
+   slits is a colander. One squashed hemisphere on the DoubleSide metal material
+   closes it with no seam to get wrong (sealed fraction measured: 0.993).
+
+Lighting is baked, not lit: `bakeVertexLight()` burns each emitter's falloff
+into the vertex colours at build time and the scene carries exactly **one** extra
+shadow-free `PointLight`, which follows the player and snaps to whichever of the
+twelve emitters she is nearest. `NUM_POINT_LIGHTS` therefore never changes and
+no material ever recompiles mid-frame.
+
+### 8.6 Collision, and why this module registers nothing
+
+`world-places` is a CHILD of the `world-props` group, so `collision.seedWorld()`
+walks every mesh in it and builds a triangle-exact `MeshBVH` per mesh — blocking,
+occluding, camera, and stamped into the navgrid — with the geometry the player
+can actually see. Registering a second time from `Props.registerColliders()`
+would double-count and make `A61`'s identity check ambiguous, so `places.js`
+never calls `ctx.collision.register`. The only meshes the seeder skips are the
+emissive glow shells, which own a `raycast` — a fungus bloom is not a wall.
+
+### 8.7 Memory
+
+`Places.dispose()` unregisters every `ctx.interactables` entry, disposes every
+geometry, removes the shared light, detaches the group and releases the three
+module-owned emissive materials. `Props.dispose()` now exists too and tears down
+the whole lane (groups, kit material singletons, the collider ids handed to
+`spatial`, the system registration), and `Fauna.dispose()` releases the five
+species meshes and any live carcass entries. Nothing here allocates after
+construction: `Places.update()` walks fixed arrays with no `new`.
+
+### 8.8 Gates
+
+`tools/gates.round4.world-props-expansion.mjs` — `A98-sites`, `V42-interior`,
+`V43-outpost`, all three new ids (checked against every registered id in
+`tools/gates.config.mjs` and `tools/gates.round4.*.mjs`; none collide, so none
+needed a `-world-props-expansion` suffix). `A61-colliders-registered`'s bar was
+RAISED from 800 to 1200 in this lane's own file to match the audit's expansion
+block; `V34-midground` was left exactly as it was.
+
+```
+[PASS] A98-sites       6 places, 23 place interactables, 12/12 fired entries raised an event
+[PASS] V42-interior    140/141 rays blocked (99.3%), sky 0.11% of frame, luma 54.1,
+                       pit 86.3 vs walls 38.1 (gradient +48.2), 3/3 features unoccluded
+[PASS] V43-outpost     387 posts, 57/57 bearings sealed, gate OPEN, 3 huts,
+                       15.1 m watch-post, brazier lit, 3 NPC slots, 3 interactables,
+                       99/1037 silhouette rays (bar 75; 479 land on the pine grove)
+[PASS] A61-colliders-registered  total 5375 (bar 1200), 0 unregistered candidate meshes
+[PASS] V34-midground   yaw 0: 78 rays (span) · 90: 57 (stacks) · 180: 82 (tanks) · 270: 72 (dish)
+[PASS] V35-settlement  8 structures, 6 roofed huts, 473 posts, 13 NPCs
+[PASS] A61b-camp-rest-event      1 REST entry, hour 21.5 -> 6.2, exactly one camp-rest
+[PASS] A61c-datapoints-unified   28 pickups = 28 store records, 0 strays
+```
+
+### 8.9 What this lane costs, measured
+
+`A9-perf-budget` grades draw calls at the spawn vista against a 350 budget. With
+every mesh always submitted this lane put it at **351 — one over**, so the six
+places, four crossings and twelve clutter spots now carry a DRAW DISTANCE:
+
+* the mesh carrying each place's LANDMARK is never gated (`V34-midground` needs
+  those silhouettes at 150-300 m);
+* every other solid mesh stops being submitted past **145 m**, crossings past
+  130 m, clutter past 95 m, glow shells past 95 m;
+* timber and hide now share one `matte` mesh per place (the two kit materials
+  differ by 0.04 of roughness and a `side` flag `matte` now also carries), which
+  removed one main draw and up to three shadow draws per place on its own.
+
+Measured at the spawn vista, DPR 2, dynamic resolution off, max over 24 frames,
+by hiding and showing the `world-places` group:
+
+| | draw calls |
+|---|---|
+| with this lane's six places, crossings and clutter | **299** |
+| with the whole `world-places` group hidden | **291** |
+| this lane's cost | **8 calls** (11 of 45 meshes drawn; 34 past their draw distance) |
+
+`A9` now reads `drawCalls 331, callsOk true`. It reports PENDING rather than
+PASS, on its own fps term and by its own guard — this box gives the gate 11 ms
+of GPU with *nothing drawn*, so it refuses to attribute 13 fps to the scene.
+**The gate's own baseline moved for reasons outside this lane**: between the
+pre-lane run (324 calls) and now, `world-ground`'s scatter went from 1520 trees
++ 300 rocks to 1946 + 1060 in the same working tree. Eight of the difference is
+this lane's, measured above.
+
+`A21-real-draw-calls` was already FAIL before this lane on its `drawCalls` term
+(386 in the staged fight against 350, owner `machine-rig`) and still is.
+`A90-memory-stability` was FAIL before this lane (geometry +34, textures +25
+across a 30-kill loop) and now **PASSES**: heap -5.9 %, geometry +13,
+textures -18.
+
+### 8.10 Wildlife
+
+`fauna.js` gains `goat` (Ridge Goat, 10, ranges the Glowfall massif and the
+Stacks — horns give a herbivore a silhouette a hunter can name at 40 m, and a
+cliff-dweller is the only animal that makes the new verticality worth looking up
+at) and `hare` (Scrub Hare, 14, breaks cover at 22 m, the reason the meadows read
+as inhabited between herds). Five species, 60 animals, 5 draws + 5 shadow draws.
+Both use the existing instanced gait layer unchanged; `ctx.fauna.census()` now
+reports `{ boar:12, fox:8, grouse:16, goat:10, hare:14, total:60 }`.
