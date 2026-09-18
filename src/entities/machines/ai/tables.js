@@ -532,8 +532,17 @@ export const ATTACKS = {
      * take the range away, and the fresh-first tier can actually pick it.
      * It is still a ranged burst: the claw is 3.4 m and the bite strikes at
      * 3.2 m.
+     *
+     * 6.4 -> 5.8 after one more pass. On the hardest FAIR arc `hardBearing`
+     * can find around the Scrapper's ruin, the footwork's MEASURED reach over
+     * four duels was 5.63 / 6.09 / 6.56 / 8.44 m: a floor at 6.4 sat above
+     * where this species can stand on its own worst ground half the time, so
+     * the laser was a move it carried and could not take — which is the
+     * defect `A41d-held-radius-coverage` exists to name, not a reason to
+     * stage an easier arc. 5.8 is inside the measured occupancy of every one
+     * of those duels and still 2.4 m beyond the claw.
      */
-    { id: 'laser', min: 6.4, max: 29, cd: 6, score: 0.85, authored: '_laserBurst', cdField: '_cdLaser' },
+    { id: 'laser', min: 5.8, max: 29, cd: 6, score: 0.85, authored: '_laserBurst', cdField: '_cdLaser' },
     // max 7.2, not 6.5: the old table left half a metre of nothing at exactly
     // the 7 m the Round-3 audit already caught this species parking at
     { id: 'dart-bite', min: 0, max: 7.2, cd: 3.2, score: 0.8, generic: 'lunge',

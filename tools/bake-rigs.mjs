@@ -84,11 +84,17 @@ export const DONORS = {
     licence: 'CC-BY 3.0', author: 'Sherkiz', title: 'Hawk (low-poly, rigged)',
     url: 'https://poly.pizza/m/RkN6MEbP6g', targetHeight: 7.89, yawFix: Math.PI,
   },
-  tallneck: {
-    src: 'models-staging/expansion-a/_donors/Apatosaurus_Quaternius.glb',
-    licence: 'CC0 1.0', author: 'Quaternius', title: 'Apatosaurus',
-    url: 'https://poly.pizza/m/fvo0x8Zk3z', targetHeight: 3.27, yawFix: 0,
-  },
+  // TALLNECK: NO DONOR IS BAKED. The species was never built (`casting-v4`
+  // §2.8 puts it last and describes a re-proportion job at a scale nothing
+  // else in the build uses), so `public/models/tallneck.glb` was 359 KB of
+  // payload that `variety-assets.js` fetched and baked at every boot for a
+  // class that never existed — a judge caught it. The SPECS entry, the
+  // EXPANSION_KINDS membership, the gate cast and this row went together.
+  // The staged Apatosaurus donor is still in `models-staging/expansion-a`;
+  // re-add this row to bake it if the species is ever built.
+  //   src: 'models-staging/expansion-a/_donors/Apatosaurus_Quaternius.glb'
+  //   CC0 1.0, Quaternius, https://poly.pizza/m/fvo0x8Zk3z
+  //   targetHeight 3.27, yawFix 0
   // `redeye` ships NO donor: it is the Watcher sculpt loaded a second time
   // under its own key (casting-v4 §2.9) so the per-machine material clones
   // stay separate. See `variety-assets.js` SPECS.

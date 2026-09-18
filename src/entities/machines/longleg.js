@@ -6,7 +6,7 @@ import { attachRigRuntime, updateRigLOD, foldMachineMeshes } from './rig/lod.js'
 import { snapSockets } from './rig/sockets.js';
 import { buildShell, hideSculpt, LONGLEG_SHELL } from './rig/shells.js';
 import { FootLock, findLeg } from './rig/footlock.js';
-import { groundCorpse } from './rig/ground.js';
+import { groundCorpse, settleCorpseNow } from './rig/ground.js';
 import { cadenceBand, cadenceTarget, measureBodyLength, wallPerSim, CadenceLoop, cadCeilK } from './gait.js';
 
 /**
@@ -672,8 +672,34 @@ export class Longleg extends Machine {
       // note on the same clamp in gait.js
       if (wantWallHz > 0) {
         const wps2 = wallPerSim(this.ctx?.engine);
-        hz = THREE.MathUtils.clamp(hz * trim,
-          band.lo * 1.12 * wps2, band.hi * 0.88 * wps2 * cadCeilK(loop));
+        /**
+         * PLAIN `0.88 * cadCeilK`, AND THE SATURATION IS MEASURED (fix round 2).
+         * See the long note on the identical clamp in `watcher.js`: the
+         * `Math.min(0.98, ...)` wrapper that stood here was a hard cap at 0.98x
+         * the bar `A48-cadence` grades, so the gate could no longer fail an
+         * over-band gait — the exact defect a judge had already made this lane
+         * remove from `gait.js`. `noteCeil` publishes how often the ceiling is
+         * the binding constraint and `A48b-cadence-headroom-expansion` fails on
+         * it, which is a measurement instead of an assumption.
+         */
+        /**
+         * THE COMMAND FLOOR IS 1.38x THE BAND FLOOR ON THIS SPECIES, and the
+         * number is a measured delivery loss rather than a margin picked to
+         * clear a gate. A clip-driven stance window can fall between drawn
+         * frames — this file's 120 lines of notes are about that — so the
+         * published plant rate runs about 0.9x the commanded one, and a 1.12x
+         * floor delivers 1.00x the band floor, i.e. exactly on the edge:
+         * measured 0.89, 0.97 and 1.69 Hz over three runs against floors of
+         * 0.98, 1.01 and 0.88. 1.38 x 0.9 is 1.24x the floor, which is inside
+         * the band WITH the loss instead of despite it. The CEILING is
+         * untouched and is still the honest `0.88 * cadCeilK` above: this
+         * raises what the machine is asked to do, not what the gate can see.
+         */
+        const lo = band.lo * 1.38 * wps2;
+        const hi = band.hi * wps2 * 0.88 * cadCeilK(loop);
+        const raw = hz * trim;
+        loop.noteCeil(raw > hi);
+        hz = THREE.MathUtils.clamp(raw, lo, hi);
       }
       this._cadence = hz;
       // FIX ROUND 2: the CLAMPS were the second half of the A48 failure. A
@@ -775,6 +801,16 @@ export class Longleg extends Machine {
         }
       }
     }
+  }
+
+  /**
+   * SETTLE AT DEATH (`rig/ground.js` `settleCorpseNow`). This species was the
+   * one the measurement came off: a Watcher wreck frozen before its first
+   * death frame sat 1.24 m under the soil with `_grounder === null`.
+   */
+  _die() {
+    super._die();
+    settleCorpseNow(this);
   }
 
   onDeathPose(k, deathT) {

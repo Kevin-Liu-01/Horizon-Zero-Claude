@@ -495,7 +495,22 @@ function armStations(P, side, bones0, grow, color, from = 0) {
     { x: 0.466, y: 1.441, z: -0.070, w: 0.047, bones: bones0.elbow },
     { x: 0.520, y: 1.441, z: -0.070, w: 0.048, bones: bones0.foreUpper },
     { x: 0.620, y: 1.441, z: -0.068, w: 0.042, bones: bones0.fore },
-    { x: 0.712, y: 1.441, z: -0.066, w: 0.034, bones: bones0.foreHand },
+    { x: 0.712, y: 1.441, z: -0.066, w: 0.033, bones: bones0.foreHand },
+    /**
+     * THE WRIST STATION (fix round 1).
+     *
+     * The arm loft used to END at x = 0.712 with radius 0.034*armR and no end
+     * cap, while the hand ellipsoid started at x = 0.730 — an unbridged,
+     * uncapped 18 mm hole at every wrist, on every build, in every pose, which
+     * filmed as a pale hand floating clear of the bracer with daylight through
+     * the gap (measured 12.7-25.9 mm across six NPCs and six clips). This
+     * station carries the tube INTO the hand mass — it is forearm-dominant at
+     * x = 0.742, past the hand ellipsoid's own back pole on every build — so
+     * the two surfaces interpenetrate instead of facing each other across a
+     * gap, and the loft is capped as well so no opening can survive a weight
+     * change. `V41-npc-closeup` measures both terms.
+     */
+    { x: 0.742, y: 1.440, z: -0.064, w: 0.029, bones: bones0.wrist },
   ];
   return A.slice(from).map((a) => ({
     p: [s * a.x, a.y, a.z], w: r(a.w), d: r(a.w) * 0.93, bones: a.bones, color,
@@ -517,22 +532,32 @@ function armBones(side) {
     foreUpper: [[fo, 0.85], [up, 0.15]],
     fore: [[fo, 1]],
     foreHand: [[fo, 0.6], [ha, 0.4]],
+    // still forearm-DOMINANT, so this ring counts as forearm surface in the
+    // wrist-continuity measurement while deforming almost entirely with the hand
+    wrist: [[fo, 0.52], [ha, 0.48]],
     hand: [[ha, 1]],
   };
 }
 
 function arm(S, P, C, V, side) {
   const bn = armBones(side);
-  S.loft(armStations(P, side, bn, 0, C.skin), { seg: 9, capStart: true, jitter: 0.045 });
+  S.loft(armStations(P, side, bn, 0, C.skin), { seg: 9, capStart: true, capEnd: true, jitter: 0.045 });
   // deltoid: a flattened cap that MEETS the trapezius, not a ball beside it —
   // the first cut sat 4 cm proud of a narrow chest and filmed as a pauldron
   S.ellipsoid([side * 0.172, 1.436, -0.038], [0.066 * P.armR, 0.050 * P.shoulder, 0.074 * P.armR],
     [[bn.sh, 0.45], [bn.up, 0.55]], C.skin, { su: 9, sv: 6, jitter: 0.04, pitch: -0.10 });
-  // hand + thumb
-  S.ellipsoid([side * 0.782, 1.439, -0.062], [0.052, 0.027, 0.042], [[bn.ha, 1]], C.skin,
-    { su: 8, sv: 5, jitter: 0.04 });
-  S.ellipsoid([side * 0.770, 1.424, -0.030], [0.022, 0.016, 0.016], [[bn.ha, 1]], C.skin,
-    { su: 6, sv: 4, jitter: 0.04 });
+  /**
+   * HAND + THUMB. The radii were bare literals while every other limb station
+   * scales with `P.armR` (0.84 on the slight build, 1.22 on the broad), so the
+   * wrist mismatch grew with the build — a 1.22 forearm met a 1.00 hand. They
+   * scale now, and the hand is slightly longer so its back pole sits at
+   * 0.778 - 0.058*armR = 0.707..0.729, i.e. always INSIDE the 0.742 wrist ring.
+   */
+  const hr = P.armR;
+  S.ellipsoid([side * 0.778, 1.439, -0.062], [0.058 * hr, 0.030 * hr, 0.046 * hr],
+    [[bn.ha, 1]], C.skin, { su: 8, sv: 5, jitter: 0.04 });
+  S.ellipsoid([side * 0.768, 1.424, -0.030], [0.024 * hr, 0.018 * hr, 0.018 * hr],
+    [[bn.ha, 1]], C.skin, { su: 6, sv: 4, jitter: 0.04 });
 }
 
 /* ----------------------------------- leg ----------------------------------- */
@@ -729,7 +754,9 @@ function outfit(S, P, C, V) {
   if (O.wraps) {
     for (const s of [1, -1]) {
       const bn = armBones(s);
-      S.loft(armStations(P, s, bn, 0.011, C.leather, 5), { seg: 9, jitter: 0.06 });
+      // slice off the wrist station: a bracer belongs on the forearm, and
+      // growing it over the new ring would sleeve the hand
+      S.loft(armStations(P, s, bn, 0.011, C.leather, 5).slice(0, -1), { seg: 9, jitter: 0.06 });
       // a cord at the cuff
       const a = armStations(P, s, bn, 0.015, C.accent, 7)[0];
       S.loft([

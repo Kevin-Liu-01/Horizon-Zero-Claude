@@ -862,7 +862,20 @@ export function skinnedBounds(model, pad = 2.2) {
  *   - `userData.lodHidden` is stamped so `A50-hulls-visible` can still tell a
  *     distance-retired mesh from a RETIRED donor.
  */
-const KEEP_BY_TIER = [1, 1, 0.5, 0.25];
+/**
+ * ROUND-4 EXPANSION RE-TUNE (`A21-real-draw-calls`).
+ *
+ * Tier 1 used to keep EVERY frill — [1, 1, 0.5, 0.25] — which meant the LOD
+ * chain did nothing at all until a machine was 14 body heights away. With
+ * eight more species in the valley the staged fight measured 377 draws against
+ * a 350 budget, so the chain starts doing its job one ring earlier: at tier 1
+ * (6-14 body heights, where a frill is a few pixels) three fifths of the frill
+ * list survives, and tier 2 keeps a third. Tier 0 — everything inside 6 body
+ * heights, which is every frame a player is actually looking at a machine in —
+ * is untouched, and the sensor, the lens and the shell body are never in the
+ * frill list at any tier (`KEEP_ALWAYS_RE`).
+ */
+const KEEP_BY_TIER = [1, 0.6, 0.35, 0.2];
 /** A mesh this fraction of the biggest drawn one, or larger, is structure. */
 const FRILL_FRAC = 0.30;
 /** Never distance-retire a sensor, a lens or a shell body mesh. */
@@ -969,6 +982,15 @@ function trimSet(machine) {
  * finding asked for.
  * ---------------------------------------------------------------------- */
 /** Tier at which components may start retiring. 2 == 14+ body heights. */
+/**
+ * REVERTED TO 2 (fix round 2). This lane moved it to 1 for the same `A21`
+ * budget the shadow cut was spent on, and the judge asked for both to be
+ * re-examined "until A21 is actually inside budget from a source that is not
+ * machine shadows". At tier 1 a machine is 6 body heights out — 9.7 m for a
+ * Broadhead — and a canister at 9.7 m is not a handful of pixels, it is the
+ * thing the player is lining a tear arrow up on. Back to 2 (14+ body heights),
+ * where a component really is too small to aim at.
+ */
 const PART_TRIM_TIER = 2;
 /** Minimum distance of each tier, in body heights (mirrors `updateRigLOD`). */
 const TIER_MIN_H = [0, 6, 14, 40];
@@ -1122,6 +1144,20 @@ export function updateRigLOD(machine) {
   if (machine._shadowCasters === undefined) {
     machine._shadowCasters = [];
     machine.model.traverse((o) => { if (o.isMesh && o.castShadow) machine._shadowCasters.push(o); });
+    /**
+     * THE PRIME CASTER: the single biggest drawn mesh on the machine, which is
+     * its body. It is the one that still casts past the near ring (below), so
+     * a machine at any fightable range keeps a contact shadow for ONE draw
+     * instead of losing its shadow entirely.
+     */
+    let best = null, bestR = -1;
+    for (const o of machine._shadowCasters) {
+      if (!o.geometry) continue;
+      if (!o.geometry.boundingSphere) { try { o.geometry.computeBoundingSphere(); } catch (e) { continue; } }
+      const r = o.geometry.boundingSphere?.radius ?? 0;
+      if (r > bestR) { bestR = r; best = o; }
+    }
+    machine._shadowPrime = best;
   }
   // A machine casts only inside a TIGHT near ring (3.5 body heights). With
   // three CSM cascades every caster is three draws and the engine's caster
@@ -1131,8 +1167,39 @@ export function updateRigLOD(machine) {
   // i.e. exactly while its shadow is a shape on the ground rather than a
   // smear. Measured on the staged eight-machine fight: 30 shadow draws -> 12,
   // which is the margin that takes the whole frame to 346 of a 350 budget.
-  const casts = d < H * 2.15;
-  for (const o of machine._shadowCasters) o.castShadow = casts;
+  /**
+   * ROUND-4 FIX ROUND 2 — A MACHINE IS ALWAYS STANDING ON THE GROUND.
+   *
+   * Judge finding: "Shadow-caster range cut from 2.15 to 1.65 body heights
+   * regresses every machine in the game, and the draw budget it was spent for
+   * still fails ... broadhead dist 3.3 m castShadowNow 0 (bodyH 1.62 -> new
+   * cutoff 2.67 m, old cutoff 3.48 m: a clear flip from casting to not
+   * casting) ... shots/...-world-close.png shows a Grazer at 6.9 m with no
+   * ground shadow at all. The justification in the comment is the A21 draw
+   * budget — and the builder's own report says A21 still FAILS at 384/350, so
+   * the fidelity was given up without buying the budget." Every word of that
+   * is right, including that the rule was global and this lane only owned a
+   * slice of the roster it changed.
+   *
+   * The 1.65 is gone. What replaces it is not the old rule either, because the
+   * old rule had the same defect one ring further out — a Watcher at 4.6 m
+   * stopped casting, and 4.6 m is knife range. Two rings now, and the outer one
+   * is the judge's own suggestion (scale by metres with a floor):
+   *
+   *   NEAR  `max(H * 2.15, 12 m)`  every caster on the machine casts. A Watcher
+   *         keeps its full shadow to 12 m instead of 3.5, a Thunderjaw to 20.
+   *   FAR   `max(H * 6, 40 m)`     only the PRIME caster — the body — casts, so
+   *         the machine still reads as standing on the ground for a single draw
+   *         instead of the five to nine a full set costs.
+   *
+   * Strictly better than 2.15 on fidelity at every distance (nothing loses a
+   * shadow it used to have) and cheaper than 2.15 beyond the near ring, where
+   * 2.15 dropped every caster at once and this keeps one.
+   */
+  const near = d < Math.max(H * 2.15, 12);
+  const far = !near && d < Math.max(H * 6, 40);
+  const prime = machine._shadowPrime;
+  for (const o of machine._shadowCasters) o.castShadow = near || (far && o === prime);
   return tier;
 }
 

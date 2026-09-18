@@ -59,6 +59,16 @@ export const CLIPS = {
   jumpLand: 'Jump_Land',
   interact: 'Interact',
   pickup: 'PickUp_Table',
+  // Round 4 (player-melee): the spear. `Sword_Attack` is the only committed
+  // one-handed overhand swing in the pack and `Sword_Idle` the only weapon
+  // guard; both are baked whole here and MASKED to the upper body by
+  // `anim/meleeLayer.js` before they reach the mixer, so the legs never see
+  // them. Bake-on-demand (`lib.get`) — a build that never swings never pays.
+  swordAttack: 'Sword_Attack',
+  swordAttackRM: 'Sword_Attack_RM',
+  swordIdle: 'Sword_Idle',
+  punchJab: 'Punch_Jab',
+  punchCross: 'Punch_Cross',
 };
 
 /**

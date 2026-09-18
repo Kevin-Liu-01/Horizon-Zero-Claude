@@ -1,5 +1,6 @@
 import { Machine } from '../machine.js';
 import { snapSockets } from './sockets.js';
+import { settleCorpseNow } from './ground.js';
 
 /**
  * ExpansionMachine — the two things every Round-4 expansion species needs that
@@ -55,6 +56,16 @@ export class ExpansionMachine extends Machine {
     if (a && this.attackPose && !this.lowLOD) {
       try { this.attackPose(a); } catch (e) { /* pose layers never break a move */ }
     }
+  }
+
+  /**
+   * SETTLE AT DEATH. See `rig/ground.js` `settleCorpseNow` — a wreck that the
+   * site lifecycle freezes before its first death frame never poses and never
+   * grounds, and `A47`/`A47b`/`A47c` all grade the result.
+   */
+  _die() {
+    super._die();
+    settleCorpseNow(this);
   }
 
   /** Clear the species pose channels with the move. */

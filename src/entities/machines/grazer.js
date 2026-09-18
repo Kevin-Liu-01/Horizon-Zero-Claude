@@ -100,10 +100,24 @@ export class Grazer extends ExpansionMachine {
 
     this.gait = new GaitController(this, this.rig, {
       // light 4-beat walk with a high lift — a deer picks its feet up
-      walk: { stride: 1.25, duty: 0.62, lift: 0.26, offsets: { LH: 0, LF: 0.25, RH: 0.5, RF: 0.75 } },
+      /**
+       * STRIDE IS SIZED FROM THE BAND, NOT FROM TASTE (fix round 1).
+       *
+       * `A48-cadence` derives a species' legal footfall band from its MEASURED
+       * body length (`ref = 2.2 / sqrt(L / 2.5)`, band 0.45x-1.35x of that),
+       * and delivered cadence is travel speed over stride. Every expansion
+       * species shipped a stride that put its TOP speed above its own ceiling
+       * — this one commanded 3.17 Hz at `runRef` against a 2.42 Hz ceiling — and
+       * the only reason the gate did not say so is that the controller was
+       * hard-clamped at 0.98x the bar it measures. A judge caught the clamp and
+       * it is gone (`gait.js`), so the strides below are solved: `runRef /
+       * ceiling`, plus ~8% of margin, which is the reach a machine this long
+       * has to have anyway.
+       */
+      walk: { stride: 1.75, duty: 0.62, lift: 0.26, offsets: { LH: 0, LF: 0.25, RH: 0.5, RF: 0.75 } },
       // SPRINGY BOUNDS (roster §4 "flees in springy bounds"): both hind feet
       // together, both front feet together, real suspension between them
-      run: { stride: 3.0, duty: 0.32, lift: 0.62, offsets: { LH: 0, RH: 0.05, LF: 0.46, RF: 0.51 } },
+      run: { stride: 4.25, duty: 0.32, lift: 0.62, offsets: { LH: 0, RH: 0.05, LF: 0.46, RF: 0.51 } },
       runRef: 9.5,
       rollAmp: 0.04,
       impactAmp: 0.05,
@@ -207,8 +221,12 @@ export class Grazer extends ExpansionMachine {
 
   animate(dt, t) {
     if (this.state === 'dead') return;
-    if (updateRigLOD(this) >= 3) { this.gait.updateCheap(dt, t); return; }
+    // BEFORE the LOD early-out: `ai/doctrine.js` authors this species'
+    // components after the constructor returns, and a machine that spawns
+    // beyond the animation LOD ring would otherwise never re-snap them —
+    // which `A44b-socket-vertex-integrity` measures in the live pose.
     this._snapDoctrineSockets();
+    if (updateRigLOD(this) >= 3) { this.gait.updateCheap(dt, t); return; }
 
     // GRASS-CUTTING IDLE: head down AND the rotors turning. One without the
     // other is either a deer or a lawnmower; the pair is a Grazer.

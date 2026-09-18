@@ -172,14 +172,20 @@ const NEW_ENGAGE = {
   grazer: { archetype: 'skittish', band: [3.4, 13], orbitSpeed: 0.85, backSpeed: 0.95 },
   /**
    * band[1] 20 -> 16 and backSpeed 0.4 -> 0.6, MEASURED (A41d-must-fire).
-   * A croc orbits at 0.4 x 7.5 = 3 m/s and its cheap `lunge-bite` dashes
+   * A croc orbited at 0.4 x 7.5 = 3 m/s and its cheap `lunge-bite` dashes
    * 6.5 m forward, so the card's 20 m outer edge was a radius this species
    * structurally could not hold: 0.13 decayed seconds inside the mortar shell
    * across a 22 s duel, and the mortar never fired. A band whose outer third
    * the footwork never reaches is the same lie as a row whose builder cannot
    * reach its range — it just fails on terrain instead of arithmetic.
+   *
+   * orbitSpeed 0.4 -> 0.5 and backSpeed 0.6 -> 0.7 after the 5-seed sweep:
+   * at 3 m/s it needed most of a 20 s duel just to travel between the bite
+   * shell (5.8-7 m) and the mortar shell (11-15.7 m), and one run in five
+   * showed only two of its four moves. 3.75 m/s is still the second-slowest
+   * orbit in the roster and slower than everything but a Shell-Walker.
    */
-  snapmaw: { archetype: 'bruiser', band: [5.5, 16], orbitSpeed: 0.4, backSpeed: 0.6, orbitFlip: [3.5, 7] },
+  snapmaw: { archetype: 'bruiser', band: [5.5, 16], orbitSpeed: 0.5, backSpeed: 0.7, orbitFlip: [3.5, 7] },
   /**
    * band[1] 22 -> 18 and backSpeed 0.75 (default 0.55), same reading: the
    * Ravager banked 0.05 s inside its 12-21.7 m cannon shell and reached
@@ -190,15 +196,29 @@ const NEW_ENGAGE = {
    */
   ravager: { archetype: 'stalker', band: [3.0, 18], orbitSpeed: 0.7, backSpeed: 0.75, orbitFlip: [2, 4] },
   /**
-   * band[1] 24 -> 18, MEASURED (A41d-held-radius-coverage). A hexapod
-   * transport orbits at 0.4 x 6 = 2.4 m/s; it banked 0.37 decayed seconds
-   * inside its 13-23.7 m homing-blast shell and reached 11.25 m, so the card's
-   * 24 m outer edge was a radius this species could not hold. 18 m keeps both
-   * ranged rows genuinely inside the standoff and leaves every metre of the
-   * band answered by two rows.
+   * band 5-24 -> 4.4-16, MEASURED across three passes of
+   * `A41d-held-radius-coverage`. A hexapod transport orbits at 0.4 x 6 =
+   * 2.4 m/s and backs off at 3.3; on its own ground it settles at 5.9-9.3 m
+   * and its measured `heldReach` never passed 11.25 / 11.81 / 10.13 m in
+   * three 22 s duels. The card's 24 m outer edge, and then 18, were radii this
+   * species structurally does not reach, so its two ranged rows were moves it
+   * carried and could never take — which is exactly the defect A41d exists to
+   * catch, arriving from the table side. The band now ends just past what the
+   * footwork holds, the ranged floors come down to meet it (see
+   * `homing-blast` below), and band[0] 5 -> 4.4 widens the 0.5 m sliver the
+   * `claw-combo` shell had at the ring floor to 1.1 m.
    */
-  shellwalker: { archetype: 'bruiser', band: [4.4, 18], orbitSpeed: 0.4, closeSpeed: 0.85, orbitFlip: [3.5, 7] },
-  corruptor: { archetype: 'stalker', band: [4, 24], orbitSpeed: 0.85, orbitFlip: [1.6, 3.2], jitter: 0.5 },
+  shellwalker: { archetype: 'bruiser', band: [4.4, 16], orbitSpeed: 0.4, closeSpeed: 0.85, orbitFlip: [3.5, 7] },
+  /**
+   * band[1] 24 -> 20, MEASURED (A41d-must-fire). The Faro scuttle is fast
+   * (0.85 x 12 = 10.2 m/s) but its home is the cauldron ruin and its measured
+   * `heldReach` swung 7.9-20.3 m run to run on that broken ground — so the
+   * outer 4 m of a 20 m-wide band was a coin flip, and `inferno-blast`
+   * (shell 16-23.7 m) came up unfired-and-unstood-in once in five. 20 m keeps
+   * both ranged rows inside the radii this ground reliably gives, and the
+   * sole-answer share stays under 20 %.
+   */
+  corruptor: { archetype: 'stalker', band: [4, 20], orbitSpeed: 0.85, orbitFlip: [1.6, 3.2], jitter: 0.5 },
   stormbird: { archetype: 'flyer', band: [18, 40], orbitSpeed: 0.85 },
   tallneck: { band: [0, 0], leash: 0 },
   redeye: { band: [5.8, 20], orbitSpeed: 0.7, orbitFlip: [1.8, 3.6] },
@@ -274,8 +294,8 @@ const NEW_ATTACKS = {
       params: { damage: 44, windup: 1.1, strike: 0.35, recover: 1.2, range: 11, arcDeg: 360, knock: 14 } },
     { id: 'shock-volley', min: 9, max: 34, cd: 5.0, score: 0.8, generic: 'volley', needPart: 'lightning-gun',
       params: { damage: 28, windup: 0.6, strike: 0.5, recover: 0.8, range: 34, shots: 3, arcDeg: 12, color: 0xbfe8ff } },
-    // min 13 -> 11.5: measured, the hexapod holds 11.8-12.7 m and no further
-    { id: 'homing-blast', min: 11.5, max: 48, cd: 8, score: 0.9, generic: 'volley', needPart: 'lightning-gun',
+    // min 13 -> 9.5: measured, this chassis holds 5.9-10.1 m on its own ground
+    { id: 'homing-blast', min: 9.5, max: 48, cd: 8, score: 0.9, generic: 'volley', needPart: 'lightning-gun',
       params: { damage: 38, windup: 0.8, strike: 0.5, recover: 1.0, range: 48, shots: 1, arcDeg: 22, color: 0x9fd8ff } },
   ],
   // --- 2.6 Corruptor: band [4,24], ring floor 4.3 < talon-strike 5.0 ------
@@ -288,7 +308,8 @@ const NEW_ATTACKS = {
       params: { damage: 26, windup: 0.5, strike: 0.85, recover: 0.8, speed: 16, knock: 10, range: 3.4 } },
     { id: 'corruption-spike', min: 12, max: 46, cd: 6.0, score: 0.85, generic: 'volley', needPart: 'spike-launcher',
       params: { damage: 30, windup: 0.6, strike: 0.5, recover: 0.85, range: 46, shots: 3, arcDeg: 12, color: 0xff4a2a } },
-    { id: 'inferno-blast', min: 16, max: 60, cd: 11, score: 0.8, generic: 'volley', needPart: 'grenade-launcher',
+    // min 16 -> 13.5: the shell has to sit inside the band this ground gives
+    { id: 'inferno-blast', min: 13.5, max: 60, cd: 11, score: 0.8, generic: 'volley', needPart: 'grenade-launcher',
       params: { damage: 42, windup: 0.9, strike: 0.5, recover: 1.1, range: 60, shots: 1, arcDeg: 26, color: 0xff7a1e } },
   ],
   /**
@@ -608,9 +629,26 @@ export function installDoctrine(m, opts = {}) {
   COMPONENTS[kind]?.(m);
 
   // ---- herds: one shared stampede, one rearguard ------------------------
-  if (HERD_KINDS.has(kind) && m.herd) {
-    m.onAlerted = () => { Squads.alarmHerd(m); };
-    m._flee = (dt) => Squads.stepFlee(m, dt);
+  if (HERD_KINDS.has(kind)) {
+    // the base Machine holds `herd` for every species now, but a class that
+    // builds its own is still honoured, and membership is idempotent
+    if (!m.herd && opts.herd) m.herd = opts.herd;
+    if (m.herd) {
+      if (m.herd.members && !m.herd.members.includes(m)) m.herd.members.push(m);
+      m.onAlerted = () => { Squads.alarmHerd(m); };
+      m._flee = (dt) => Squads.stepFlee(m, dt);
+      /**
+       * ...and the stampede has to OWN the frame. `Machine._engageFrame`
+       * already hands it `_flee`, but `alert` is a separate state and only
+       * `strider.js` overrode `_stateAlert` to check `_fleeing`. A Broadhead
+       * class that does not would stand in `alert` while its herd ran.
+       */
+      const baseAlert = m._stateAlert.bind(m);
+      m._stateAlert = (dt) => {
+        if (m._fleeing && Squads.stepFlee(m, dt)) return;
+        baseAlert(dt);
+      };
+    }
   }
 
   // ---- Snapmaw: basking pair + water ambush ------------------------------
@@ -814,8 +852,15 @@ export function spawnExpansion(machines) {
        * runs" count come out as 2 of 3. When `machines-expansion` lands a
        * Broadhead class that does not self-register, this still adds it.
        */
-      if (herd && !herd.members.includes(m)) herd.members.push(m);
-      if (basking) { basking.members.push(m); m.basking = basking; }
+      if (herd) machines.squads.join(m, herd, 'herd');
+      /**
+       * ...AND THE POOL GOES THROUGH THE SAME DOOR (fix round 2). This was
+       * `basking.members.push(m); m.basking = basking;` — a raw attachment
+       * that no MachineSite ever saw, so the pair's membership died on the
+       * first respawn and the ambush never re-formed. `Squads.join` pushes,
+       * elects, and writes the handle back into the site record.
+       */
+      if (basking) machines.squads.join(m, basking, 'basking');
       if (plan.convoy) convoyMembers.push(m);
     }
 

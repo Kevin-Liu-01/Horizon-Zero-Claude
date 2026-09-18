@@ -139,7 +139,13 @@ export const GATES = [
         mixer: n.anim.mixer.time,
         layers: n.anim.layers.time,
         walked: n.walked,
+        pushed: n.pushed,
+        sepM: n.sepM,
+        ground: 0,
+        gx: n.group.position.x, gz: n.group.position.z,
       }));
+      const unstick0 = S.unstickCount();
+      const byId = new Map(start.map((r) => [r.id, r]));
       const startClips = new Map(S.list.map((n) => [n.id, new Set(n.anim.clipsPlayed)]));
 
       /**
@@ -150,12 +156,43 @@ export const GATES = [
       let minStep = Infinity;
       const prev = new Map(S.list.map((n) => [n.id, n.anim.mixer.time]));
       const stalled = new Set();
+      /**
+       * FIX ROUND 2 — NPC-vs-NPC SEPARATION, THE HALF NOTHING MEASURED.
+       *
+       * 'crowdDepenetrationM' below is the WORLD shoving a body out of a crate.
+       * It says nothing about two bodies occupying one space, and so a judge
+       * found OLIN standing inside a seated VALA at 0.031 m centre-to-centre —
+       * her face through his abdomen on film — while this gate passed 5/5.
+       *
+       * Bodies touch at 0.64 m (the 0.32 m collider, twice) and '_separate'
+       * holds the crowd at 0.80 m. The bar here is 0.55 m: close enough to
+       * allow a shoulder brush and a backstop caught mid-correction, far too
+       * far to allow a body inside another. Sampled EVERY FRAME over the whole
+       * 60 s — the failure was transient (0.8 % of frames), which is exactly
+       * the kind a settle-then-measure gate misses.
+       */
+      let minSep = Infinity;
+      let sepPair = '';
+      let framesUnderBar = 0;
+      let sepFrames = 0;
+      const SEP_BAR = 0.55;
       const simmed = await runSim(60, () => {
+        const s = S.crowdSpacing();
+        sepFrames++;
+        if (s.min < SEP_BAR) framesUnderBar++;
+        if (s.min < minSep) { minSep = s.min; sepPair = s.a + '/' + s.b + ' (' + s.states + ')'; }
         for (const n of S.list) {
           const t = n.anim.mixer.time;
           const was = prev.get(n.id);
           if (t < was - 1e-6) stalled.add(n.id + ':rewound');
           prev.set(n.id, t);
+          // GROUND covered, not animation consumed. A person held against a
+          // prop still consumes its walk clip at full rate, which is exactly
+          // how two pinned lookouts passed this gate last round while standing
+          // still: 43.4 m of animation against 13.7 m of ground.
+          const r = byId.get(n.id);
+          r.ground += Math.hypot(n.group.position.x - r.gx, n.group.position.z - r.gz);
+          r.gx = n.group.position.x; r.gz = n.group.position.z;
         }
       });
 
@@ -164,28 +201,64 @@ export const GATES = [
         const clips = new Set(n.anim.clipsPlayed);
         const fresh = [...clips].filter((c) => !startClips.get(n.id).has(c));
         return {
-          id: n.id, role: n.role, state: n.state,
+          id: n.id, role: n.role, state: n.state, route: n.routeName || null,
           mixerAdvance: +(n.anim.mixer.time - s.mixer).toFixed(2),
           layerAdvance: +(n.anim.layers.time - s.layers).toFixed(2),
           clips: [...clips], clipCount: clips.size, newClips: fresh.length,
           walked: +(n.walked - s.walked).toFixed(2),
+          groundM: +s.ground.toFixed(2),
+          pushedM: +(n.pushed - s.pushed).toFixed(2),
+          // metres this body was pushed by ANOTHER BODY, not by the world
+          sepM: +(n.sepM - s.sepM).toFixed(2),
+          unstuck: n.unstuck,
           stuck: n.anim.stuck(),
         };
       });
 
       const mixersOk = rows.every((r) => r.mixerAdvance > simmed * 0.35);
       const clipsOk = rows.every((r) => r.clipCount >= 3);
-      const travellers = rows.filter((r) => r.walked >= 8).length;
+      const travellers = rows.filter((r) => r.groundM >= 8).length;
       const anyStuck = rows.filter((r) => r.stuck.length);
       const minMixer = Math.min(...rows.map((r) => r.mixerAdvance));
 
+      /**
+       * FIX ROUND 1 — THREE TERMS THE AUDIT'S BLOCKER SLIPPED THROUGH.
+       *
+       *  - travel is counted on the GROUND, not on the animation clock;
+       *  - EVERY route-owner has to cover its 8 m, not just four of the crowd,
+       *    because the failure was two specific people pinned in a wall while
+       *    four others walked fine;
+       *  - nobody may be shoved by the world for more than 1.5 m in the whole
+       *    minute (the crowd totalled 26.11 m in 30 s when the audit filmed it,
+       *    23.8 m of it on those two), and _unstick() must never have to fire.
+       */
+      const routers = rows.filter((r) => r.route);
+      const lazyRouters = routers.filter((r) => r.groundM < 8);
+      const shoved = rows.filter((r) => r.pushedM > 1.5);
+      const unstuck = S.unstickCount() - unstick0;
+      const totalPush = +rows.reduce((a, r) => a + r.pushedM, 0).toFixed(2);
+
       return {
-        pass: mixersOk && clipsOk && travellers >= 4 && anyStuck.length === 0 && stalled.size === 0,
+        pass: mixersOk && clipsOk && travellers >= 4 && anyStuck.length === 0
+          && stalled.size === 0 && lazyRouters.length === 0
+          && shoved.length === 0 && unstuck === 0
+          && minSep >= SEP_BAR && framesUnderBar === 0,
         detail: {
           simSeconds: +simmed.toFixed(1), npcs: rows.length,
+          minPairwiseSeparationM: +minSep.toFixed(3),
+          minPairwiseSeparationBar: SEP_BAR,
+          closestPair: sepPair,
+          framesUnderSeparationBar: framesUnderBar,
+          separationSamples: sepFrames,
+          crowdPushM: +rows.reduce((a, r) => a + r.sepM, 0).toFixed(2),
           minMixerAdvance: +minMixer.toFixed(2),
           npcsWithThreeClips: rows.filter((r) => r.clipCount >= 3).length,
           travellersOver8m: travellers,
+          routeOwners: routers.length, routeOwnersUnder8m: lazyRouters.map((r) => r.id),
+          crowdDepenetrationM: totalPush,
+          worstPushedM: Math.max(0, ...rows.map((r) => r.pushedM)),
+          npcsShovedOver1p5m: shoved.map((r) => r.id + ':' + r.pushedM),
+          unstickEvents: unstuck,
           stuckLayers: anyStuck, rewound: [...stalled],
           rows,
         },
@@ -196,62 +269,96 @@ export const GATES = [
   /* ------------------------------------------------------------------ A97 */
   {
     id: 'A97-npc-no-skate', kind: 'action', lane: 'npc',
-    title: 'Planted-foot drift on walking NPCs ≤ 0.08 m (A13 stance-window probe)',
-    settle: 2000, timeout: 180000,
+    title: 'Planted-foot drift on walking NPCs ≤ 0.08 m, shoved windows INCLUDED',
+    settle: 2000, timeout: 200000,
     assert: `(async () => {
       ${CROWD}
       ${IN_CAMP}
       await sleep(6000);          // let the routes resolve and the walkers start
 
       /**
-       * A13's probe, per NPC. A stance window is the run of frames a foot is
-       * the support foot; its drift is the XZ bounding box of that foot's
-       * world position over the window. The NPC's translation is DERIVED from
-       * the support foot (src/world/npc/npcAnim.js), so a correct lock reports
-       * zero and any number here is real sliding.
+       * FIX ROUND 1 — THIS GATE USED TO EXCLUDE EXACTLY THE FRAMES THE AUDIT IS
+       * ABOUT, AND MEASURE A TAUTOLOGY THE REST OF THE TIME.
        *
-       * THE SAME THREE EXCLUSIONS A13 MAKES, plus one this lane needs:
-       *   - a window spanning a dropped frame is discarded (measurement noise);
-       *   - a window spanning a clip change is discarded (the pose is
-       *     crossfading, not walking);
-       *   - a window in which the LOCK RE-ANCHORED is discarded — the animator
-       *     bumps lockEpoch when the world shoves the body out of a prop, or
-       *     when a base loop changes. A body being pushed by geometry is not a
-       *     measurement of the animation, which is exactly why A13 stages its
-       *     own sprint on open ground instead of into the camp.
-       * The count of each is REPORTED, and the gate fails if the exclusions
-       * eat the sample (a lane cannot pass by discarding everything).
+       * Two things were wrong and a judge caught both.
+       *
+       * 1. It read 'walkingFeet().world' — the foot lock's CARRIED pivot, which
+       *    is 'g.position_k + R*v_k*s' by construction and therefore identical
+       *    every frame a window is undisturbed. "0.0000 m over 93 windows" was
+       *    not a measurement. It now reads 'raw': the toe bone's own
+       *    'matrixWorld' translation, re-read from a fresh matrix update, which
+       *    carries every shove the world applied that frame.
+       *
+       * 2. It discarded every window in which 'lockEpoch' moved. That epoch is
+       *    bumped for FOUR different reasons, and two of them — a depenetration
+       *    shove and a teleport — are the artefact, not noise. Judged against
+       *    the real bone, the excluded set held drifts up to 0.7594 m while the
+       *    kept set held zeros. 'NpcAnimator.lockReason' now says WHY, and only
+       *    'base' (a crossfade: the pose is changing, not walking) and 'clamp'
+       *    (the delta sanity limit) are excluded — the same class of exclusion
+       *    A13 makes. A shove is JUDGED.
+       *
+       * And a teleport is worse than a shove: 'NpcSystem._unstick' only fires
+       * when someone has been pinned inside geometry, which is the blocker this
+       * round fixed. Any teleport during the probe FAILS the gate outright.
        */
+      const unstick0 = S.unstickCount();
       const open = Object.create(null);
       const done = [];
-      let hitched = 0, clipChanged = 0, reanchored = 0;
+      const shoved = [];
+      let hitched = 0, excludedClip = 0, excludedClamp = 0;
       let prev = performance.now();
       const probe0 = prev;
+      /**
+       * A DROPPED FRAME IS RELATIVE TO THIS RUN'S OWN CADENCE. A13 calls a 45 ms
+       * gap a hitch because it assumes 60 fps; sixteen lanes deep on one GPU
+       * every gap is over 45 ms. The bar is 45 ms or 2.5x this run's median,
+       * whichever is larger — it still catches the frame that was DROPPED.
+       */
+      const gaps = [];
+      let hitchMs = 45;
       while (performance.now() - probe0 < 22000) {
         const now = performance.now();
-        const hitch = now - prev > 45;
+        if (gaps.length < 120) {
+          gaps.push(now - prev);
+          if (gaps.length === 120) {
+            const g = gaps.slice().sort((a, b) => a - b);
+            hitchMs = Math.max(45, g[60] * 2.5);
+          }
+        }
+        const hitch = now - prev > hitchMs;
         prev = now;
         for (const f of S.walkingFeet()) {
           const key = f.id + ':' + f.name;
           const w = open[key];
+          const rx = f.raw.x, rz = f.raw.z;
           if (f.planted) {
             if (!w) {
-              open[key] = { id: f.id, x0: f.world.x, x1: f.world.x, z0: f.world.z, z1: f.world.z,
-                n: 1, bad: hitch, clip: f.clip, clipBad: false, epoch: f.epoch, epochBad: false };
+              open[key] = { id: f.id, x0: rx, x1: rx, z0: rz, z1: rz, n: 1,
+                bad: hitch, clip: f.clip, clipBad: false, clampBad: false,
+                epoch: f.epoch, shoved: false };
             } else {
-              w.x0 = Math.min(w.x0, f.world.x); w.x1 = Math.max(w.x1, f.world.x);
-              w.z0 = Math.min(w.z0, f.world.z); w.z1 = Math.max(w.z1, f.world.z);
+              w.x0 = Math.min(w.x0, rx); w.x1 = Math.max(w.x1, rx);
+              w.z0 = Math.min(w.z0, rz); w.z1 = Math.max(w.z1, rz);
               w.n++;
               if (hitch) w.bad = true;
               if (f.clip !== w.clip) w.clipBad = true;
-              if (f.epoch !== w.epoch) w.epochBad = true;
+              if (f.epoch !== w.epoch) {
+                w.epoch = f.epoch;
+                if (f.reason === 'base') w.clipBad = true;
+                else if (f.reason === 'clamp') w.clampBad = true;
+                else w.shoved = true;          // 'shift' / 'teleport' — JUDGED
+              }
             }
           } else if (w) {
             if (w.n >= 3) {
+              const rec = { id: w.id, n: w.n,
+                d: +Math.hypot(w.x1 - w.x0, w.z1 - w.z0).toFixed(4) };
               if (w.bad) hitched++;
-              else if (w.clipBad) clipChanged++;
-              else if (w.epochBad) reanchored++;
-              else done.push({ id: w.id, n: w.n, d: +Math.hypot(w.x1 - w.x0, w.z1 - w.z0).toFixed(4) });
+              else if (w.clipBad) excludedClip++;
+              else if (w.clampBad) excludedClamp++;
+              else if (w.shoved) shoved.push(rec);
+              else done.push(rec);
             }
             open[key] = null;
           }
@@ -259,23 +366,36 @@ export const GATES = [
         await new Promise((r) => requestAnimationFrame(r));
       }
 
-      const ids = [...new Set(done.map((w) => w.id))];
-      if (done.length < 10 || ids.length < 3) {
-        return { pass: false, detail: { reason: 'too few clean stance windows to judge',
-          clean: done.length, npcs: ids.length, hitched, clipChanged, reanchored } };
+      const judged = done.concat(shoved);
+      const ids = [...new Set(judged.map((w) => w.id))];
+      if (judged.length < 10 || ids.length < 3) {
+        return { pass: false, detail: { reason: 'too few stance windows to judge',
+          judged: judged.length, npcs: ids.length, hitched,
+          excludedClip, excludedClamp, hitchThresholdMs: +hitchMs.toFixed(1) } };
       }
-      done.sort((a, b) => b.d - a.d);
-      const worst = done[0].d;
-      const median = done[Math.floor(done.length / 2)].d;
-      const excluded = hitched + clipChanged + reanchored;
+      judged.sort((a, b) => b.d - a.d);
+      const worst = judged[0].d;
+      const median = judged[Math.floor(judged.length / 2)].d;
+      const worstShoved = shoved.length
+        ? Math.max(...shoved.map((w) => w.d)) : 0;
+      const worstClean = done.length ? Math.max(...done.map((w) => w.d)) : 0;
+      const unstuck = S.unstickCount() - unstick0;
 
       return {
-        pass: worst <= 0.08 && excluded < done.length,
+        pass: worst <= 0.08 && unstuck === 0
+          && (excludedClip + excludedClamp) < judged.length,
         detail: {
           maxStanceDriftM: worst, medianDriftM: median,
-          cleanWindows: done.length, npcsSampled: ids.length, npcs: ids,
-          excludedHitched: hitched, excludedClipChange: clipChanged, excludedReanchor: reanchored,
-          worstFive: done.slice(0, 5),
+          maxDriftCleanM: +worstClean.toFixed(4),
+          maxDriftShovedM: +worstShoved.toFixed(4),
+          judgedWindows: judged.length,
+          cleanWindows: done.length, shovedWindows: shoved.length,
+          npcsSampled: ids.length, npcs: ids,
+          unstickEventsDuringProbe: unstuck,
+          excludedHitched: hitched, excludedClipChange: excludedClip,
+          excludedClampedDelta: excludedClamp,
+          hitchThresholdMs: +hitchMs.toFixed(1),
+          worstFive: judged.slice(0, 5),
           gaits: S.gaits,
         },
       };
@@ -403,10 +523,30 @@ export const GATES = [
        * films a walk has to be sure it is filming a walk.
        */
       const soloWalk = (n) => {
-        for (const l of n.anim.slots.values()) { l.cancel(0); l.setWeight(0); }
-        n.anim.current = null;
-        n.anim.play('walk', { fade: 0, rate: n.speed });
-        n.anim.slots.get('walk')?.setWeight(1);
+        /**
+         * IDEMPOTENT, OR IT SUPPRESSES THE THING IT MEASURES (fix round 2).
+         *
+         * The first cut tore the stage down and re-issued play('walk') on EVERY
+         * sample frame. play() clears the foot lock's anchor by design (a base
+         * loop change must re-anchor), so the lock skipped its root-motion step
+         * on nearly every frame and the bodies barely moved: the same take
+         * measured 5.3 m of travel on a loaded box and 2.4 m on a fast one,
+         * because the answer depended on how often this callback landed between
+         * engine updates rather than on the gait. The guarantee is unchanged —
+         * the walk is still the only thing on stage, every frame — it is just
+         * no longer rebuilt when it is already true.
+         */
+        let dirty = n.anim.current !== 'walk';
+        for (const [slot, l] of n.anim.slots) {
+          if (slot === 'walk') continue;
+          if (l.oneShot || l.weight > 0.002) { l.cancel(0); l.setWeight(0); dirty = true; }
+        }
+        const w = n.anim.slots.get('walk');
+        if (dirty) {
+          n.anim.current = null;
+          n.anim.play('walk', { fade: 0, rate: n.speed });
+        }
+        if (w && w.weight < 0.999) w.setWeight(1);
       };
       pair.forEach((n, i) => {
         n.group.position.set(X0 + (i - 0.5) * 1.15, ctx.terrain.getHeight(X0 + (i - 0.5) * 1.15, Z0), Z0);
@@ -421,8 +561,75 @@ export const GATES = [
       ctx.player.position.set(X0, 0, Z0 - 8);
       ctx.player._snapToGround?.();
       if (ctx.player.model) ctx.player.model.visible = false;
+      // the camp crowd is 180 m from here, so its head look-at is off and the
+      // lean measured below is the posture bias and nothing else
 
       const V = ctx.player.position.constructor;
+
+      /**
+       * WRIST CONTINUITY (fix round 1). A judge skinned the body mesh and found
+       * a 12.7-25.9 mm hole at every wrist on every build in every pose: the arm
+       * loft ended at bind x = 0.712 with no end cap while the hand ellipsoid
+       * started at 0.730, so each hand rendered as a pale blob floating clear of
+       * the bracer with daylight through the gap. V41's terms — signature,
+       * height, knee swing, arm drop, travel, mixer seconds — could not see it.
+       *
+       * Two numbers close that hole for good, both taken on the SKINNED mesh
+       * (SkinnedMesh.applyBoneTransform + localToWorld), per NPC, per side:
+       *   overlapM  the forearm-dominant vertices must reach PAST the nearest
+       *             hand-dominant vertex along the arm axis — the surfaces
+       *             interpenetrate rather than face each other across a gap;
+       *   gapM      and the two sets must also touch radially.
+       * Measured after the fix: overlap 0.0135-0.40 m, gap at most 0.0087 m.
+       */
+      const wristTerms = (n) => {
+        n.group.updateMatrixWorld(true);
+        const mesh = n.mesh, geo = mesh.geometry;
+        const pos = geo.attributes.position;
+        const si = geo.attributes.skinIndex, sw = geo.attributes.skinWeight;
+        const bones = n.skeleton.bones;
+        const out = [];
+        const v = new V(), a = new V(), b = new V();
+        for (const side of ['L', 'R']) {
+          const foreRe = new RegExp('forearm.?' + side + '$', 'i');
+          const handRe = new RegExp('hand.?' + side + '$', 'i');
+          const fore = [], hand = [];
+          for (let i = 0; i < pos.count; i++) {
+            let bi = -1, bw = -1;
+            for (let k = 0; k < 4; k++) {
+              const w = sw.getComponent(i, k);
+              if (w > bw) { bw = w; bi = si.getComponent(i, k); }
+            }
+            const nm = bones[bi] ? bones[bi].name : '';
+            if (foreRe.test(nm)) fore.push(i);
+            else if (handRe.test(nm)) hand.push(i);
+          }
+          const fb = bones.find((x) => foreRe.test(x.name));
+          const hb = bones.find((x) => handRe.test(x.name));
+          if (!fore.length || !hand.length || !fb || !hb) {
+            out.push({ side, err: 'no skinned wrist vertices' });
+            continue;
+          }
+          a.setFromMatrixPosition(fb.matrixWorld);
+          b.setFromMatrixPosition(hb.matrixWorld);
+          const ax = b.clone().sub(a).normalize();
+          const fw = [], hw = [];
+          let foreMax = -1e9, handMin = 1e9;
+          for (const i of fore) {
+            v.fromBufferAttribute(pos, i); mesh.applyBoneTransform(i, v); mesh.localToWorld(v);
+            fw.push(v.clone()); foreMax = Math.max(foreMax, v.clone().sub(a).dot(ax));
+          }
+          for (const i of hand) {
+            v.fromBufferAttribute(pos, i); mesh.applyBoneTransform(i, v); mesh.localToWorld(v);
+            hw.push(v.clone()); handMin = Math.min(handMin, v.clone().sub(a).dot(ax));
+          }
+          let gap = 1e9;
+          for (const f of fw) for (const h of hw) { const d = f.distanceTo(h); if (d < gap) gap = d; }
+          out.push({ side, overlapM: +(foreMax - handMin).toFixed(4), gapM: +gap.toFixed(4) });
+        }
+        return out;
+      };
+
       const kneeRange = [0, 0];
       const dropSum = [0, 0], dropN = [0, 0];
       const start = pair.map((n) => ({ x: n.group.position.x, z: n.group.position.z, m: n.anim.mixer.time }));
@@ -444,6 +651,13 @@ export const GATES = [
           n.detourT = 0;
           n.blockedFor = 0;
           n.stateT = 60;
+          n.yOffset = 0;
+          // stand them ON the ground every sample. Anything that leaves the
+          // body origin off the terrain — a stale sit offset, an update skipped
+          // by distance LOD — makes every height and arm measurement below a
+          // measurement of that instead (filmed: a 2.57 m "height" on a 1.93 m
+          // NPC because its origin was 0.65 m under the meadow).
+          n.group.position.y = ctx.terrain.getHeight(n.group.position.x, n.group.position.z);
           if (n.state !== 'goto') { n.state = 'goto'; n.gotoThen = 'idle'; n.leg = null; }
           // aim 30 m straight ahead of where it is NOW: the heading error stays
           // at zero, so the take measures the gait and not the pathfinder
@@ -452,9 +666,11 @@ export const GATES = [
             0,
             n.group.position.z + Math.cos(n.group.rotation.y) * 30,
           );
-          if (n.anim.current !== 'walk' || (n.anim.slots.get('walk')?.weight ?? 0) < 0.92) soloWalk(n);
+          // unconditionally, every sample: the take must be a walk and nothing
+          // else, whatever the behaviour loop wanted to put on stage
+          soloWalk(n);
 
-          if (t < total * 0.25) return;      // let the first steps settle
+          if (t < total * 0.45) return;      // let the first steps settle
           const th = bone(n, /thigh.?L$/i);
           const sn = bone(n, /shin.?L$/i);
           const ft = bone(n, /foot.?L$/i);
@@ -488,17 +704,64 @@ export const GATES = [
         });
       });
 
+      /**
+       * POSTURE. The judge measured hips->head lean of 10-34 degrees held
+       * permanently on every NPC, bought to clear V35-settlement's pairwise
+       * landmark bar on the cheapest available lever. NpcAnimator clamps the
+       * combined tilt to LEAN_CAP now, and this measures it on the whole crowd,
+       * from the bones, with the player 180 m away so no look-at contributes.
+       */
+      const spineAxis = (n) => {
+        n.group.updateMatrixWorld(true);
+        const hips = n.byName.get([...n.byName.keys()].find((k) => /hips$/i.test(k)));
+        const head = n.byName.get([...n.byName.keys()].find((k) => /DEF-head$/.test(k)));
+        if (!hips || !head) return null;
+        const h = new V().setFromMatrixPosition(hips.matrixWorld);
+        const d = new V().setFromMatrixPosition(head.matrixWorld).sub(h);
+        return d.length() > 1e-4 ? d.normalize() : null;
+      };
+      /**
+       * Measured as the DIFFERENCE the bias makes, not as absolute tilt: half
+       * these clips (Fixing_Kneeling, Push_Loop, the sits) lean the spine 50
+       * degrees on purpose and always did. Every bone the animator writes
+       * procedurally keeps its pure-clip quaternion in its write-back cache, so
+       * restoring that cache for one frame gives the clip pose, and the angle
+       * between the two hips->head axes is exactly what this lane added.
+       */
+      const leans = S.list.map((n) => {
+        const bias = n.anim._bias;
+        const posed = spineAxis(n);
+        if (!posed || !bias) return { id: n.id, deg: 0 };
+        const armed = bias.map((b) => b.bone.quaternion.clone());
+        for (const b of bias) b.bone.quaternion.copy(b.q);
+        const clip = spineAxis(n);
+        for (let i = 0; i < bias.length; i++) bias[i].bone.quaternion.copy(armed[i]);
+        n.group.updateMatrixWorld(true);
+        if (!clip) return { id: n.id, deg: 0 };
+        const deg = Math.acos(Math.max(-1, Math.min(1, posed.dot(clip)))) * 57.2958;
+        return { id: n.id, deg: +deg.toFixed(1), reported: +(n.anim.leanRad * 57.2958).toFixed(1) };
+      });
+      const maxLean = Math.max(...leans.map((l) => l.deg));
+
+      const wrists = S.list.map((n) => ({ id: n.id, build: n.body, terms: wristTerms(n) }));
+      const wristRows = wrists.flatMap((w) => w.terms.map((t) => ({ id: w.id, ...t })));
+      const badWrists = wristRows.filter((r) => r.err || !(r.overlapM > 0) || !(r.gapM <= 0.02));
+
       const armDrop = dropSum.map((v, i) => +(dropN[i] ? v / dropN[i] : 0).toFixed(3));
       pair.forEach((n, i) => { kneeRange[i] = +(kneeMax[i] - kneeMin[i]).toFixed(3); });
       const travelled = pair.map((n, i) => +Math.hypot(
         n.group.position.x - start[i].x, n.group.position.z - start[i].z).toFixed(2));
       const mixerRan = pair.map((n, i) => +(n.anim.mixer.time - start[i].m).toFixed(2));
 
-      // heights, measured from the live skinned bounds
+      // Height measured HEAD-TO-FOOT, not head-to-origin: the only definition
+      // that cannot be wrong about where the body actually is.
       const heights = pair.map((n) => {
         n.group.updateMatrixWorld(true);
-        const head = [...n.byName.values()].find((o) => /DEF-head$/.test(o.name));
-        return head ? +(head.matrixWorld.elements[13] - n.group.position.y + 0.19).toFixed(3) : 0;
+        const head = bone(n, /DEF-head$/);
+        const fl = bone(n, /foot.?L$/i), fr = bone(n, /foot.?R$/i);
+        if (!head || !fl || !fr) return 0;
+        const sole = Math.min(fl.matrixWorld.elements[13], fr.matrixWorld.elements[13]) - 0.10;
+        return +(head.matrixWorld.elements[13] - sole + 0.19).toFixed(3);
       });
 
       // frame them for the film
@@ -520,6 +783,12 @@ export const GATES = [
           travelledM: travelled[i], mixerSeconds: mixerRan[i], clip: n.anim.current,
         })),
         heightDeltaM: +Math.abs(heights[0] - heights[1]).toFixed(3),
+        maxProceduralLeanDeg: maxLean,
+        leanPerNpc: leans,
+        wristWorstOverlapM: Math.min(...wristRows.map((r) => (r.overlapM ?? -9))),
+        wristWorstGapM: Math.max(...wristRows.map((r) => (r.gapM ?? 9))),
+        wristFailures: badWrists,
+        wristRows,
       };
       const pass = pair[0].body !== pair[1].body
         && S.signature(pair[0]) !== S.signature(pair[1])
@@ -527,7 +796,9 @@ export const GATES = [
         && kneeRange.every((k) => k >= 0.5)
         && armDrop.every((m) => m >= 0.25)
         && travelled.every((t) => t >= 2.5)
-        && mixerRan.every((m) => m >= 5);
+        && mixerRan.every((m) => m >= 5)
+        && badWrists.length === 0
+        && maxLean <= 12;
       return { pass, detail };
     })()`,
   },

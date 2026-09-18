@@ -421,6 +421,34 @@ export function buildRig(machine, spec) {
   rig.restPose = new RestPose({ space: rig.space });
   rig.rest = rig.restPose.toMap();
   rig.restPelvisY = pelvis.position.y;
+  /**
+   * HEAD REACH, measured once at build (`machines-expansion`, fix round 1).
+   *
+   * `GaitController.deathPose` lays a wreck's neck down, and how far it MAY be
+   * laid down is a property of the species, not a constant: the same 0.55 rad
+   * that brings a Grazer's antler rotors to belly height drives a Snapmaw's
+   * snout 1.10 m and a Corruptor's head capsule 3.07 m THROUGH the terrain,
+   * and `CorpseGrounder` then lifts the whole wreck by exactly that much to
+   * put its lowest vertex back on the soil — measured as dead-median ratios of
+   * 2.7x and 4.4x on gate `A47c`. So the reach is published here (neck -> head
+   * -> the spec's own head TIP, in body metres) and the death pose derives an
+   * angle whose vertical drop cannot exceed the height the head starts at.
+   */
+  const _headSpec = spec.spine[spec.spine.length - 1];
+  const _neckSpec = spec.spine.length > 1 ? spec.spine[spec.spine.length - 2] : _headSpec;
+  const _d = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
+  rig.headReach = _d(_neckSpec.pos, _headSpec.pos)
+    + (_headSpec.tip ? _d(_headSpec.pos, _headSpec.tip) : 0.3);
+  rig.headRestY = _headSpec.pos[1];
+  /**
+   * TAIL REST HEIGHT — the same clamp, for the other free chain (fix round 2).
+   * A Corruptor's tail is authored ARCHED to y 2.90 over a hull whose deck is
+   * at 1.32, so it carries a real share of the corpse metric's mass and the
+   * death pose has to be able to bring it down without putting the tip through
+   * the soil. `GaitController._chainBudget` reads this as the chain root's rest
+   * height and measures the radius itself.
+   */
+  rig.tailRestY = spec.tail?.[0]?.pos?.[1] ?? rig.headRestY;
 
   // registry probe surface: `_rot` is a literal forward to BoneSpace, so
   // `__CTX__.anim.audit()` measures 0 divergence rather than guessing.

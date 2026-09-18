@@ -54,11 +54,27 @@ export class SiteManager {
     this._nextId = 1;
   }
 
-  /** Remember how to rebuild this spawn later. */
+  /**
+   * Remember how to rebuild this spawn later — PLACEMENT ONLY.
+   *
+   * `kind` and `modelKind` are stripped before they are stored (fix round 1).
+   * A site already carries its `kind` in its own field, and WHICH SCULPT that
+   * kind wears is a question only `Machines._resolveKind` may answer, at the
+   * moment of the respawn. Storing the answer froze it: a machine spawned on a
+   * donor chassis wrote `modelKind: <donor>` into its site, and after
+   * `machines.registerKind()` retired that chassis the replay still handed the
+   * donor string back to `spawn()`, which used to spread caller options last.
+   * The respawned "Broadhead" was a Strider with a Broadhead's brain, and no
+   * audit could see it. `spawn()` also overrides identity from the resolver
+   * now; this is the same rule enforced at the other end, so a site record
+   * written by any future path is inert rather than merely outvoted.
+   */
   note(machine, kind, x, z, opts) {
+    const placement = { ...(opts || {}) };
+    for (const key of ['kind', 'modelKind', '_site', '_placement']) delete placement[key];
     const site = {
       id: this._nextId++, kind, x, z,
-      opts: opts || {},
+      opts: placement,
       machine, respawnAt: 0, pending: false,
     };
     machine._site = site;

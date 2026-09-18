@@ -94,9 +94,104 @@ Scene: young-adult Aloy at the Proving grounds, Rost behind her; in-engine cutsc
 
 ---
 
+## SPEAR — carry, grip and melee (added 2026-09-17, lane `player-melee`)
+
+Sources are the same class as the rest of this file: official Guerrilla / PlayStation video and
+store assets. Frames were extracted at native 1920x1080 from the publisher's own MP4s (Steam CDN
+`movie_max.mp4`, and the official PlayStation YouTube upload of the E3 2015 demo). All
+**reference-only, not shipped** — comparison stills for animation review, no asset is derived
+from them.
+
+**READ THIS BEFORE USING THE HOLSTER STILL.** In *Horizon Zero Dawn* the spear is **not visible on
+Aloy's body when she is not attacking** — it is hidden and materialises in her right hand on the
+attack, then disappears again. Verified across every back/profile view found: `ce4.jpg` crouch-walk
+(Steam CE screenshot #4), Story-Trailer 46 s / 48 s, Remastered-trailer 36 s / 93 s / 97 s / 110 s,
+and the E3 2015 demo at 147 s. It is also what players complain about
+(https://steamcommunity.com/app/1151640/discussions/0/2943620809086713056/ — "a spear sized
+pocket"). The two `-hfw` stills below are *Horizon Forbidden West* (same studio, same character,
+spear genuinely worn on the back) and are the only honest reference for gate A100's back socket.
+
+### spear-ready-side.jpg — melee guard / recover, spear low in the right hand (1920x1080)
+Source: frame @ 69.90s of the official "Horizon Zero Dawn Remastered Launch trailer",
+https://cdn.akamai.steamstatic.com/steam/apps/257069627/movie_max.mp4
+Scene: Frozen-Wilds snow, Aloy 3/4-front facing a Scrounger at ~3 m, burning ground between them.
+- Spear held ONE-handed in the RIGHT hand, hand at hip height, shaft angled DOWN-FORWARD
+  ~25-30 deg below horizontal, blade forward-and-down, red feather hanging off the head.
+- Hand sits in the rear quarter of the shaft; only a short butt stub projects behind the wrist.
+- LEFT hand is empty and swung back/out for balance — this is not a two-handed guard.
+- Elbow stays beside the ribs, forearm outside the torso line; knees soft, weight forward.
+
+### spear-light-windup.jpg — light attack, windup / cocked (1920x1080)
+Source: frame @ 70.35s, same trailer.
+- Right hand has drawn UP to sternum height, shaft now angled UP-FORWARD ~35-40 deg above
+  horizontal, blade high and forward of the head — the shaft never goes behind the head or
+  across the face.
+- Left arm reaches forward-down, open palm at hip height, as the counterweight.
+- Torso rotated right-shoulder-back; the cock is an arm+spine load, not a wrist flick.
+
+### spear-light-strike.jpg — light attack, contact (1920x1080)
+Source: frame @ 70.50s, same trailer (0.15 s after the windup frame).
+- Right arm extended forward, hand at chest height; shaft has swung down to roughly HORIZONTAL
+  (0 to -5 deg) and the blade is driving into the machine's head/shoulder.
+- Torso has squared to the target; left arm has swung back behind the hip.
+- So the beat is a down-and-forward diagonal chop that flattens into a thrust at contact,
+  about 40-45 deg of shaft rotation in ~0.15 s.
+
+### spear-light-follow.jpg — light attack, follow-through (1920x1080)
+Source: frame @ 70.70s, same trailer (0.20 s after contact).
+- Right hand has dropped back to waist height, shaft ~10-15 deg BELOW horizontal, tip past the
+  machine's near shoulder; spine pitched forward over the lead foot.
+- Left arm trails low and behind. Nothing crosses the body midline at any point of the beat.
+
+### spear-grip-closeup.jpg — close-up of the hand on the shaft (1920x1080)
+Source: frame @ 41.05s, same trailer.
+Caveat: this is the OVERRIDE animation (spear driven into a machine's port), not a swing — but it
+is the only frame in the official material where the camera is right on the grip.
+- Right hand wraps the shaft in the rear ~20% of its length, thumb over, knuckles up.
+- Shaft rises forward at ~30 deg; blade (teal-and-bone head) forward of the hand; the red feather
+  binding sits just above the grip, i.e. the grip is BELOW the feather.
+- Forearm is roughly in line with the shaft — the wrist is not cocked.
+
+### spear-thrust-front.jpg — spear driven into a downed Watcher, 3/4 front, HUD on (1920x1080)
+Source: frame @ 177.00s of "Horizon Zero Dawn - E3 2015 Trailer | PS4" (official PlayStation
+channel), https://www.youtube.com/watch?v=Fkg5UVTsKCE
+Caveat: E3 2015 pre-release build; HUD and ammo counter visible; this is the kill/finisher beat.
+- Aloy down on one knee, right hand low at waist, shaft running up-forward ~20 deg into the
+  machine's head — the finisher commits the whole body, not just the arm.
+- Shows the front/three-quarter read of the same one-handed rear-of-shaft grip.
+
+### spear-holster-back-hfw.jpg — spear STOWED on the back (HORIZON FORBIDDEN WEST) (1920x1080)
+Source: official Steam store screenshot #0 for Horizon Forbidden West Complete Edition (app
+2420110), https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/2420110/ss_7c1ead4b3d952fd0fb92735397945bd8732bba53.1920x1080.jpg
+NOT Horizon Zero Dawn — used because HZD hides the spear entirely (see the note above).
+- Aloy in left profile; the spear rides diagonally across her back, butt cap low at the RIGHT
+  hip/lower back, shaft climbing toward the RIGHT shoulder at roughly 20-30 deg from vertical.
+- The head end is occluded by her hair/shoulder in this still — the shoulder it clears is inferred
+  from the shaft line, not directly seen. Treat "blade above the right shoulder" as probable, not
+  proven, from this image.
+- The bow is the orange-wrapped CURVED limb sweeping down-back; do not mistake it for the spear.
+
+### spear-sweep-back-hfw.jpg — horizontal sweep at shoulder height, back view (HORIZON FORBIDDEN WEST) (1920x1080)
+Source: frame @ 60.00s of the official "Horizon Forbidden West Complete Edition full launch
+trailer EN_US", https://cdn.akamai.steamstatic.com/steam/apps/257007287/movie_max.mp4
+NOT Horizon Zero Dawn — included because HZD's official material has no clean back-view swing.
+- Chase-camera back view mid-swing: the shaft is horizontal at shoulder height across the frame,
+  RIGHT hand on the shaft with the blade forward-left, left arm thrown forward for counter-rotation.
+- Confirms the arc is driven by shoulder+spine rotation with the hand OUTSIDE the torso silhouette.
+
+---
+
 ## Rejected during search (for the record)
 Steam/GOG official sets share the same 5 stills (2 lack Aloy, 1 is a crouch-walk). Fandom wiki
 galleries are cutscene stills (no run/draw cycles). Steam Community top-rated shots are photo-mode
 poses. Most 4K walkthrough YouTube thumbnails are title cards. No clean HUD-on chase-camera RUN
 still was found; run-back.jpg (trailer, back view run) + run-back-2-walking.jpg (chase-cam framing)
 together cover that slot.
+
+### Rejected during the SPEAR search (2026-09-17)
+No official HZD still or frame shows the spear on Aloy's back (see the SPEAR note). No official HZD
+material found shows an unambiguous HEAVY attack (the two-vertical-slash sequence the Fextralife and
+Fandom wikis describe) — the Remastered-trailer beat above is a single downward chop and could be
+either a standing light or the first slash of the heavy. No official still shows a two-handed low
+guard; every HZD melee frame found is one-handed, right hand, left hand free. The E3 2016 gameplay
+video (PlayStation, T5Xx3MdqdgM) 403'd on every downloadable format and was not searched.

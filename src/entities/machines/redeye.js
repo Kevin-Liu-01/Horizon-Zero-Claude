@@ -1,5 +1,5 @@
 import { Watcher } from './watcher.js';
-import { buildShell } from './rig/shells.js';
+import { buildShell, retireMesh } from './rig/shells.js';
 import { REDEYE_SHELL } from './rig/shells-expansion.js';
 import { snapSockets } from './rig/sockets.js';
 
@@ -50,6 +50,19 @@ export class Redeye extends Watcher {
       ...opts,
     });
     buildShell(this, REDEYE_SHELL, { sensorColor: 0xff2a1e });
+    /**
+     * THE DONOR'S SCAN PLANE IS RETIRED (fix round 1). `Object_13` in the
+     * Watcher GLB is a FOUR-TRIANGLE quad spanning body space
+     * x[-2.51, 2.26] — 4.8 m across a 2.1 m machine — and it inherits the
+     * state emissive, so on a Redeye it renders as two floating red slabs to
+     * either side of the body. Measured in `V26a` twice. The Watcher's own
+     * entry is core-platform's asset and is not touched here; this is the
+     * Redeye's per-machine clone, so retiring it is a one-species call made in
+     * the one species file that owns it.
+     */
+    this.model?.traverse((o) => {
+      if (o.isMesh && o.name === 'Object_13') retireMesh(o);
+    });
     snapSockets(this);
   }
 

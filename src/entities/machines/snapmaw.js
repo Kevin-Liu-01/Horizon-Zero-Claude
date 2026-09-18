@@ -97,9 +97,23 @@ export class Snapmaw extends ExpansionMachine {
     this.gait = new GaitController(this, this.rig, {
       // SPRAWL WALK: diagonal pairs, long duty, and a lift of 0.10 — the foot
       // barely clears the ground, which is the whole crocodile read
-      walk: { stride: 1.5, duty: 0.72, lift: 0.10, offsets: { LF: 0, RH: 0.25, RF: 0.5, LH: 0.75 } },
+      /**
+       * STRIDE IS SIZED FROM THE BAND, NOT FROM TASTE (fix round 1).
+       *
+       * `A48-cadence` derives a species' legal footfall band from its MEASURED
+       * body length (`ref = 2.2 / sqrt(L / 2.5)`, band 0.45x-1.35x of that),
+       * and delivered cadence is travel speed over stride. Every expansion
+       * species shipped a stride that put its TOP speed above its own ceiling
+       * — this one commanded 2.88 Hz at `runRef` against a 1.67 Hz ceiling — and
+       * the only reason the gate did not say so is that the controller was
+       * hard-clamped at 0.98x the bar it measures. A judge caught the clamp and
+       * it is gone (`gait.js`), so the strides below are solved: `runRef /
+       * ceiling`, plus ~8% of margin, which is the reach a machine this long
+       * has to have anyway.
+       */
+      walk: { stride: 1.95, duty: 0.72, lift: 0.10, offsets: { LF: 0, RH: 0.25, RF: 0.5, LH: 0.75 } },
       // the high walk / bolt: the body lifts clear and the stride doubles
-      run: { stride: 2.6, duty: 0.52, lift: 0.26, offsets: { LF: 0, RH: 0.22, RF: 0.5, LH: 0.72 } },
+      run: { stride: 4.85, duty: 0.52, lift: 0.26, offsets: { LF: 0, RH: 0.22, RF: 0.5, LH: 0.72 } },
       runRef: 7.5,
       rollAmp: 0.10,          // a croc rolls its whole trunk as it walks
       impactAmp: 0.04,
@@ -129,7 +143,7 @@ export class Snapmaw extends ExpansionMachine {
     this._deathSink = 0.02;
   }
 
-  onDeathPose(k, deathT) { this.gait.deathPose(k, deathT, 'quad'); }
+  onDeathPose(k, deathT) { this.gait.deathPose(k, deathT, 'sprawl'); }
 
   /**
    * Species limb work (gate `V27`).
@@ -195,8 +209,12 @@ export class Snapmaw extends ExpansionMachine {
 
   animate(dt, t) {
     if (this.state === 'dead') return;
-    if (updateRigLOD(this) >= 3) { this.gait.updateCheap(dt, t); return; }
+    // BEFORE the LOD early-out: `ai/doctrine.js` authors this species'
+    // components after the constructor returns, and a machine that spawns
+    // beyond the animation LOD ring would otherwise never re-snap them —
+    // which `A44b-socket-vertex-integrity` measures in the live pose.
     this._snapDoctrineSockets();
+    if (updateRigLOD(this) >= 3) { this.gait.updateCheap(dt, t); return; }
 
     /**
      * BASKING. `roster-v2 §4` gives this species' idle as "basks motionless

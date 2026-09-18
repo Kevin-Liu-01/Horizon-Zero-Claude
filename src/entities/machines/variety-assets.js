@@ -83,7 +83,17 @@ const SPECS = {
   shellwalker: { url: '/models/shellwalker.glb', targetHeight: 2.1,  yaw: 0 },
   corruptor:   { url: '/models/corruptor.glb',   targetHeight: 2.95, yaw: 0 },
   stormbird:   { url: '/models/stormbird.glb',   targetHeight: 7.89, yaw: 0 },
-  tallneck:    { url: '/models/tallneck.glb',    targetHeight: 3.27, yaw: 0 },
+  /**
+   * TALLNECK IS NOT LOADED. Judge finding, fix round 1: "Tallneck is not
+   * shipped but is still cast in both batch-B gates, and its unused 359 KB
+   * donor is loaded at every boot ... EXPANSION_SPECIES has no tallneck entry,
+   * so registerExpansionSpecies never calls registerKind for it and nothing
+   * ever draws it. Dead payload in the one lane whose §4 bar is geometry and
+   * texture growth." The SPECS entry, the EXPANSION_KINDS membership and the
+   * gate cast are gone together, so the GLB is never fetched, never baked and
+   * never held. The `tallneck` KIND still exists on `ai/doctrine.js`'s behemoth
+   * chassis; that is machine-ai's file and machine-ai's call.
+   */
   /**
    * REDEYE: zero new asset. The Watcher sculpt is loaded a SECOND time under
    * its own key rather than aliased (casting-v4 §2.9) so the per-machine
@@ -135,11 +145,11 @@ const STYLE = {
    * what lets the socket pass put the sensor exactly where `casting-v4` §2
    * measured it.
    */
-  broadhead: { rank: true },
-  grazer: { rank: true },
-  snapmaw: { rank: true, texSat: 0.1, texBright: 1.35 },   // 1024² caiman scale atlas
-  ravager: { rank: true },
-  shellwalker: { rank: true },
+  broadhead: { rank: true, underbody: true },
+  grazer: { rank: true, underbody: true },
+  snapmaw: { rank: true, underbody: true, texSat: 0.06, texBright: 0.55 }, // 1024² caiman atlas
+  ravager: { rank: true },        // donor retired under the shell: nothing to tone
+  shellwalker: { rank: true },    // donor retired under the shell
   corruptor: {
     /**
      * THE ONE SPECIES THAT OPTS OUT OF THE FAMILY PALETTE (`roster-v2 §4`:
@@ -149,9 +159,13 @@ const STYLE = {
      */
     rank: true,
     tint: { chassis: 0x2a2b2e, mid: 0x1b1c1f, muscle: 0x0d0e10 },
+    underbody: true,
+    // ...and the same for any MAPPED surface: the ramp only reaches materials
+    // with a flat colour, and a Faro machine that is matte black everywhere
+    // except where it happens to carry a texture is not matte black.
+    texSat: 0.04, texBright: 0.42,
   },
-  stormbird: { rank: true },
-  tallneck: { rank: true },
+  stormbird: { rank: true },      // donor retired under the shell (see stormbird.js)
   redeye: {},
 };
 
@@ -350,12 +364,74 @@ function rankedRamp(root, chassis, mid, muscle) {
   return pick;
 }
 
+/**
+ * THE UNDERBODY PALETTE, and the judge finding that produced it.
+ *
+ * Fix round 1: "the Broadhead is a uniform tan low-poly cow ... the incumbents
+ * show struts, cabling, white-grey plate over a dark underbody and a lit eye;
+ * the three new species show none of it and read as livestock ... the shell
+ * definitions already tag pieces plate/muscle/lacquer/trim, so the tint table
+ * is the lever, not the geometry."
+ *
+ * It is the lever, and it was pointing the wrong way. `rankedRamp` pins the
+ * DOMINANT material — the donor's biggest surface — to CHASSIS, which is right
+ * for a Round-3 species whose shell IS the machine and catastrophic for an
+ * expansion species whose shell is PLATE LAID ON AN ANIMAL: the hide came out
+ * at 0xd0d5da and the shell's plate at 0xd2d7dc, so the two were the same tone
+ * and the plate had nothing to read against. `roster-v2 §1` says white-grey
+ * armour over DARK SYNTHETIC MUSCLE, and on these species the donor IS the
+ * muscle. So a species that keeps its donor ramps onto this darker table
+ * instead: its brightest surface reaches panel grey and nothing reaches plate,
+ * which is left entirely to the authored shell.
+ */
+/**
+ * FIX ROUND 2 — THE SEPARATION IS GRADED IN THE FRAME, NOT IN THE TABLE.
+ *
+ * Judge finding: "Donor-animal read is not closed on the Broadhead: authored
+ * plate and donor hide measure 3% apart in the graded frame ... The
+ * material-level fix DID land (an in-page probe shows the Bull donor's `Main`
+ * material ramped to #6b727a by the new `underbody` table) ... but it does not
+ * survive the warm key light of the graded frame."
+ *
+ * Reproduced, with a method that leaves no room to argue: the Broadhead is
+ * staged alone through `V26a`'s own `stageCast`/`repairCast` and filmed three
+ * times — machine hidden (the background plate), SHELL hidden (the hide alone)
+ * and DONOR hidden (the plate alone) — and each machine frame is differenced
+ * against the background so only drawn machine pixels are averaged. Measured
+ * before this change: hide luminance 101.3 (119, 99, 76), plate 155.4
+ * (171, 153, 131) — **1.53x**, and on the single lit flank the judge sampled,
+ * 1.03x. Both surfaces come out WARM, which is the tell: they are both
+ * reflecting the same key.
+ *
+ * Because the miss is not the albedo. `shellMaterials` builds the plate at
+ * `metalness: 1` and `styleMachine` was forcing every donor material to
+ * `metalness >= 0.55`, so hide and plate were both mirrors of the same warm sun
+ * and the 0.44-against-0.84 albedo gap was swamped by a specular term they
+ * shared. `roster-v2 §1` says white-grey ARMOUR over dark synthetic MUSCLE, and
+ * muscle is not a mirror: an `underbody` donor is now matte (metalness 0.10,
+ * roughness 0.90) as well as dark, so it carries almost no specular and the
+ * plate's does all the talking. The tones below drop with it.
+ */
+const UNDER_CHASSIS = new THREE.Color(0x4a5158); // the donor's LIGHTEST surface
+const UNDER_MID = new THREE.Color(0x2a2f35);
+const UNDER_MUSCLE = new THREE.Color(0x121519);
+/** Matte synthetic muscle: it absorbs the key the plate reflects. */
+const UNDER_METAL = 0.10;
+const UNDER_ROUGH = 0.90;
+
 function styleMachine(root, style) {
   const seen = new Set();
   // per-species palette override (the Corruptor's matte-black chassis)
-  const chassis = style.tint ? new THREE.Color(style.tint.chassis) : CHASSIS;
-  const mid = style.tint ? new THREE.Color(style.tint.mid) : MID;
-  const muscle = style.tint ? new THREE.Color(style.tint.muscle) : MUSCLE;
+  let chassis = style.tint ? new THREE.Color(style.tint.chassis) : CHASSIS;
+  let mid = style.tint ? new THREE.Color(style.tint.mid) : MID;
+  let muscle = style.tint ? new THREE.Color(style.tint.muscle) : MUSCLE;
+  if (style.underbody && !style.tint) {
+    chassis = UNDER_CHASSIS; mid = UNDER_MID; muscle = UNDER_MUSCLE;
+  } else if (style.underbody) {
+    // the Corruptor is already near-black; underbody only takes its
+    // brightest surface off the chassis tone so its own trim still reads
+    chassis = new THREE.Color(style.tint.mid);
+  }
   const rank = style.rank ? rankedRamp(root, chassis, mid, muscle) : null;
   root.traverse((o) => {
     if (!o.isMesh || !o.material) return;
@@ -376,7 +452,16 @@ function styleMachine(root, style) {
       }
       if (m.map) {
         m.map = desatTexture(m.map, style.texSat ?? 0.15, style.texBright ?? 1.1);
-        m.color?.set(0xffffff);
+        /**
+         * A MAPPED DONOR IS TINTED, NOT WHITENED (fix round 2). The judge's
+         * remedy named this branch: "since `styleMachine`'s `if (m.map)` branch
+         * bypasses the colour ramp entirely for mapped donors". Setting the
+         * colour to white hands the surface entirely to its texture, so an
+         * `underbody` species with a mapped donor kept the animal's own tone
+         * however dark the table said it should be. The map now multiplies the
+         * same chassis tone the unmapped branch ramps to.
+         */
+        m.color?.set(style.underbody ? chassis : 0xffffff);
       } else if (m.color) {
         // luminance ramp: bright toy colors -> chassis plate, mids -> panel
         // grey, dark -> muscle. Keep ~12% of the original hue so plates don't
@@ -388,7 +473,19 @@ function styleMachine(root, style) {
           : (m.color.getHSL(_hsl), _hsl.l < 0.16 ? muscle : _hsl.l < 0.42 ? mid : chassis);
         m.color.lerp(target, style.tint ? 0.94 : 0.88);
       }
-      // machine family metal response (Machine ctor clamps again, harmless)
+      /**
+       * MACHINE FAMILY METAL RESPONSE — except on an `underbody` donor, which
+       * is MUSCLE and must not share the plate's specular (see UNDER_METAL).
+       * This is the half of the contrast fix that survives the key light: a
+       * matte 0.10/0.90 surface reflects almost none of the sun the 1.0-metal
+       * shell plate mirrors, so the two separate in the frame and not only in
+       * the table.
+       */
+      if (style.underbody) {
+        if (m.metalness !== undefined) m.metalness = UNDER_METAL;
+        if (m.roughness !== undefined) m.roughness = UNDER_ROUGH;
+        continue;
+      }
       if (m.metalness !== undefined) {
         m.metalness = THREE.MathUtils.clamp(m.metalness < 0.45 ? 0.55 : m.metalness, 0.45, 0.7);
       }
@@ -430,7 +527,7 @@ export function loadVarietyModels(ctx, onProgress) {
 /** Species whose donor is baked out of its bind pose (see `freezeSkins`). */
 const EXPANSION_KINDS = new Set([
   'broadhead', 'grazer', 'snapmaw', 'ravager',
-  'shellwalker', 'corruptor', 'stormbird', 'tallneck',
+  'shellwalker', 'corruptor', 'stormbird',
 ]);
 
 /**

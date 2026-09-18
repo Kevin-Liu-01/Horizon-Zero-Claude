@@ -161,9 +161,32 @@ export class Machines {
     // expansion kinds get their components + doctrine here, so a SITE RESPAWN
     // gets them back too (the site replays the same opts through `spawn`)
     if (EXPANSION_BODY[m.kind]) installDoctrine(m, opts);
-    // MachineSite: remember how to repopulate this spot after the wreck goes
+    /**
+     * MachineSite: remember how to repopulate this spot after the wreck goes.
+     *
+     * What a site remembers is PLACEMENT (route, heading, territory, herd and
+     * convoy membership), never IDENTITY or the stat block (fix round 1). See
+     * `spawn()` for why: `opts._placement` is the caller's own request, before
+     * the resolver merged the chassis body in, so a site written while a kind
+     * was still on a donor chassis replays nothing of that donor once
+     * `registerKind()` has landed. Direct `_spawnCls` callers (the authored
+     * roster) pass no `_placement` and are stored as-is — `note()` strips the
+     * identity keys from whatever it is handed either way.
+     */
     if (opts._site) { opts._site.machine = m; m._site = opts._site; }
-    else this.sites.note(m, m.kind, x, z, opts);
+    else this.sites.note(m, m.kind, x, z, opts._placement || opts);
+    /**
+     * SQUAD MEMBERSHIP, RE-ATTACHED AND WRITTEN BACK (fix round 2).
+     *
+     * After the site is wired, never before: `Squads.adopt` both pushes this
+     * machine into the herd/convoy/basking it arrived carrying (a RESPAWN, via
+     * the handles the site record replayed) and writes those handles back into
+     * the record (a BOOT spawn, once `registerConvoy`/`registerBasking`/
+     * `assignEscorts` attach them a moment later — those call `_remember`
+     * themselves for exactly that case). Convoy and basking membership used to
+     * die permanently on the first respawn; see `ai/squad.js:_remember`.
+     */
+    this.squads?.adopt?.(m);
     return m;
   }
 
@@ -238,10 +261,32 @@ export class Machines {
      * when the ceiling is hit. The authored roster is never evicted by it.
      */
     this._recycleForBudget(res.modelKind);
+    const route = opts.route ?? this._route(x, z, 22, 4, Math.random() * 6);
     const m = this._spawnCls(res.Cls, x, z, {
-      route: opts.route ?? this._route(x, z, 22, 4, Math.random() * 6),
+      route,
       ...res.opts,
       ...opts,
+      /**
+       * IDENTITY IS THE RESOLVER'S, NEVER THE CALLER'S (fix round 1).
+       *
+       * `kind`/`modelKind` are applied AFTER `...opts` because the caller can
+       * be a REPLAY: `sites.js` respawns a wreck with the options its first
+       * spawn was built from, and a spawn made while the kind was still on a
+       * donor chassis carried `modelKind: <donor>` in them. Spread last, that
+       * stale string used to beat a `registerKind()` that had since landed, so
+       * the respawned machine came back wearing the donor's body while
+       * `_resolveKind` said otherwise — silently, because `chassisAudit()` read
+       * the (now empty) chassis map rather than the world. Both halves are
+       * fixed: the resolver wins here, `note()` never stores identity, and the
+       * audit reads live machines and remembered sites (see `chassisAudit`).
+       *
+       * A different sculpt for a kind is therefore a REGISTRY change
+       * (`registerKind`, or `CHASSIS` in `ai/doctrine.js`), not a spawn option.
+       */
+      kind: res.opts.kind ?? kind,
+      modelKind: res.modelKind,
+      /** What the SITE remembers — the caller's placement, nothing derived. */
+      _placement: { ...opts, route },
     });
     return m;
   }
@@ -253,6 +298,14 @@ export class Machines {
    * class the one every future spawn (including every site respawn) uses.
    * Nothing else changes: the tables, the doctrine, the spawn plan and every
    * gate already key off `kind`. Returns whether a chassis was replaced.
+   *
+   * REGISTERING LATE IS SAFE (fix round 1). Machines of that kind already
+   * standing keep the donor body they were built with — swapping a live rig
+   * mid-session is a rebuild, not a registration — but they are REPORTED by
+   * `chassisAudit()` until they die, and the site that remembers each of them
+   * repopulates with the registered class, because a site stores placement
+   * only and `spawn()` takes identity from the resolver. Nothing has to call
+   * this before the first spawn of a kind for the handover to complete.
    */
   registerKind(kind, Cls) {
     if (!kind || typeof Cls !== 'function') return false;
@@ -266,11 +319,32 @@ export class Machines {
   /** Can this kind be constructed right now (class + loaded sculpt)? */
   canSpawn(kind) { return !!this._resolveKind(kind, true); }
 
-  /** PUBLISHED: which kinds are still riding a donor body, and whose. */
+  /**
+   * PUBLISHED: which kinds are still riding a donor body, and whose.
+   *
+   * Reads the WORLD, not the chassis map (fix round 1). The map is what
+   * `registerKind()` deletes from, so an audit written on it answered "clean"
+   * the instant the handover call was made — while every machine spawned a
+   * moment earlier was still standing there in the donor's body. Three sources
+   * now, unioned: kinds that still resolve to a donor AND have a live machine,
+   * any live machine whose `modelKind` is not its own `kind`, and any
+   * remembered site that would respawn one. An empty array therefore means
+   * nothing in the valley is on a chassis, which is what the string promised.
+   */
   chassisAudit() {
-    return Object.keys(this._chassis)
-      .filter((k) => this.list.some((m) => m.kind === k))
-      .map((k) => `${k}<-${this._chassis[k]}`);
+    const out = new Map();
+    for (const k of Object.keys(this._chassis)) {
+      if (this.list.some((m) => m.kind === k && !m._disposed)) out.set(k, this._chassis[k]);
+    }
+    for (const m of this.list) {
+      if (m._disposed || !m.modelKind || m.modelKind === m.kind) continue;
+      out.set(m.kind, m.modelKind);
+    }
+    for (const s of this.sites?.sites || []) {
+      const mk = s.opts?.modelKind;
+      if (mk && mk !== s.kind) out.set(s.kind, mk);
+    }
+    return [...out].map(([k, donor]) => `${k}<-${donor}`);
   }
 
   /**

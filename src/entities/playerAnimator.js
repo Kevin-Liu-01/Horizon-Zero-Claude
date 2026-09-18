@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { ClipLibrary } from './anim/clipLibrary.js';
 import { LocomotionBlend } from './anim/locomotion.js';
+import { MeleeLayer } from './anim/meleeLayer.js';
 import { BoneSpace, RestPose, RigDebug, register } from './anim/index.js';
 
 /**
@@ -131,6 +132,35 @@ const _twA = new THREE.Vector3();
 // tassels do not float her, which leaves ball_l at y = -0.007, not at 0)
 // max horizontal correction the foot lock will hold before it re-anchors (m)
 const MAX_LOCK = 0.3;
+
+/* -------------------------- the melee step-in ----------------------------- */
+/**
+ * THE STEP-IN NEEDS A LEG (lane `player-melee`, fix round 2).
+ *
+ * `melee.js::_stepIn` pushes a forward velocity impulse into the controller so
+ * the weight arrives with the blade — §4's A102 asks for 0.25-0.8 m of root
+ * travel per swing. Until this block existed nothing moved a FOOT: the melee
+ * clip is upper-body-masked by design (A105 keeps the stride), so at a
+ * standstill the root translated out from under two locked feet and the lock
+ * saturated at `MAX_LOCK` and slid. Measured by the judge: 0.404 m of planted
+ * ball travel on a standing heavy, with the ball never leaving the ground.
+ *
+ * So a standing character now TAKES the step. While the window below is armed
+ * (only ever by `beginMeleeStep`, so nothing outside melee changes behaviour),
+ * each ball's char-space XZ is compared with the stance she was standing in;
+ * when one has been dragged more than `STEP_TRIGGER` out of place, that foot
+ * is flagged UNPLANTED — which releases its lock and is what `debugFeet`
+ * reports — lifted along an arc and replanted at the place her body now needs
+ * it, leading the body by its own velocity so the step lands ahead rather than
+ * chasing. One foot at a time: she is never off the ground.
+ */
+const STEP_TRIGGER = 0.105;  // char-space error that earns a corrective step (m)
+const STEP_DUR = 0.155;      // flight time (s)
+const STEP_LIFT = 0.075;     // peak ball lift over the arc (m)
+const STEP_LEAD = 0.22;      // seconds of her own velocity the step leads by
+const STEP_LEAD_MAX = 0.34;  // ...and the most it may lead (m)
+const STEP_WINDOW = 1.15;    // how long a step-in keeps the system armed (s)
+const STEP_COOL = 0.06;      // a landed foot stays down at least this long (s)
 // nock-reach flourish window (s). HZD's reach-to-quiver beat is ~0.25-0.35s;
 // at the Round-4 value of 0.13s it was 8 frames and never read on film.
 // FIX ROUND (player-anim): 0.34, not 0.28. HZD's reach-to-quiver beat is
@@ -479,6 +509,16 @@ export class PlayerAnimator {
     this._locks = [{ on: false, x: 0, z: 0, w: 0, cx: 0, cz: 0 },
                    { on: false, x: 0, z: 0, w: 0, cx: 0, cz: 0 }];
     this._stL = 1; this._stR = 1;   // stance flags used by the last conform
+    /* melee step-in (see STEP_TRIGGER): armed window, the stance she is
+     * standing in (char-space XZ per ball) and the foot currently in flight. */
+    this._mStepT = 0;
+    this._stepHome = [null, null];
+    this._flight = [null, null];
+    this._flightPool = [{ t: 0, dur: 0, fx: 0, fz: 0, hx: 0, hz: 0 },
+                        { t: 0, dur: 0, fx: 0, fz: 0, hx: 0, hz: 0 }];
+    this._stepCd = [0, 0];
+    this._stepDbg = { armed: 0, steps: 0, side: -1, lift: 0, len: 0, err: 0 };
+    this._strideT = 0;              // seconds since either foot last lifted
     this._lvx = 0; this._lvz = 0;   // local (char-space) velocity, damped
     this._mx = 0; this._mz = 1;     // local move direction, damped
     this._boneWorldCache = {};
@@ -565,6 +605,12 @@ export class PlayerAnimator {
         this._reNock = true;   // reach for the next arrow after the follow-through
       }
     });
+
+    /* ------------------ Round 4 · lane player-melee (spear) --------------- */
+    // How Aloy HOLDS and SWINGS the spear. Built last: it reads the rest pose
+    // through `this.b` / `this.space` and adds its own masked additive layers
+    // to the mixer above. `melee.js` publishes the state; this owns the pose.
+    this.melee = new MeleeLayer(this);
 
     // anim-core §2 step 6 — declare the convention (gate A26-one-convention)
     register({
@@ -817,10 +863,43 @@ export class PlayerAnimator {
        * ADDITIVE: every existing field is unchanged and every consumer reads
        * `world` / `planted` / `name`. */
       const L = this._locks[side];
+      const F = this._flight[side];
       out.push({ name: e.name, world: { x: _v1.x, y: _v1.y, z: _v1.z }, planted,
+                 flight: F ? +F.t.toFixed(3) : null,
                  lock: { on: L.on, w: L.w, errM: Math.hypot(L.cx, L.cz), capM: MAX_LOCK } });
     }
     return out;
+  }
+
+  /**
+   * How much of the foot lock's budget the worst planted foot is using, 0-1.
+   *
+   * Published for `melee.js`: past 1 the lock's anchor slides and the ball
+   * skates, so the step-in throttles its own drive on this rather than walking
+   * the body out from under a leg that cannot follow (see `_stepDrive`). It is
+   * the only closed loop in the pair — everything else is timing guesses, and
+   * the timing guesses are what kept leaving one window in ten at 0.15-0.22 m
+   * against an 0.08 m bar.
+   */
+  get footLockLoad() {
+    let w = 0;
+    for (let s = 0; s < 2; s++) {
+      const L = this._locks[s];
+      if (L.on && !this._flight[s]) w = Math.max(w, Math.hypot(L.cx, L.cz) / MAX_LOCK);
+    }
+    return w;
+  }
+
+  /**
+   * The melee step-in's own state (gate A105's standing row). `armed` counts
+   * step-ins requested by `melee.js`, `steps` counts feet actually lifted:
+   * a build whose step-in has no leg reads `steps: 0` with `armed > 0`.
+   */
+  debugStep() {
+    return { ...this._stepDbg, window: +this._mStepT.toFixed(3),
+      flight: [this._flight[0] ? +this._flight[0].t.toFixed(2) : null,
+        this._flight[1] ? +this._flight[1].t.toFixed(2) : null],
+      trigger: STEP_TRIGGER, dur: STEP_DUR, liftMax: STEP_LIFT };
   }
 
   /**
@@ -944,6 +1023,15 @@ export class PlayerAnimator {
   }
 
   /**
+   * Spear/melee measurements for the `player-melee` gates (A100-A105). Cold
+   * path — it walks the rig and re-reads world matrices; never call per frame.
+   */
+  debugMelee() { return this.melee?.ok ? this.melee.debug() : null; }
+
+  /** Release the melee layer's mixer actions (memory rule). */
+  disposeMelee() { this.melee?.dispose?.(); this.melee = null; }
+
+  /**
    * Live char-space unit axis pelvis -> spine_03. Gate A36-hit-react-visible
    * compares this against the axis it sampled just BEFORE the hit: measuring
    * the angle from BIND instead is wrong, because the idle clip already sits
@@ -1049,8 +1137,52 @@ export class PlayerAnimator {
     const draw = this.ctx.combat?.drawStrength ?? p.drawStrength ?? 0;
     const dead = this.ctx.state === 'dead';
 
-    this._moveW = damp(this._moveW, smoothstep(speed, 0.18, 1.1), 12, dt);
-    this._runW = damp(this._runW, smoothstep(speed, 4.9, 7.9), 9, dt);
+    /* THE STEP-IN IS NOT LOCOMOTION (fix round 2).
+     * `melee.js` carries her forward during a swing with a velocity floor, and
+     * at 1.4 m/s that crosses the walk threshold — so the walk cycle took the
+     * legs on every standing swing and the stance step below stood down. The
+     * walk clip does not know a lunge is happening, and the result was the
+     * planted drift the judge measured. The drive's own contribution is
+     * subtracted from the speed the LOCOMOTION blend sees; everything else
+     * (speed readouts, the phase lock, A105's speed clause) still uses the
+     * real one. */
+    /* ...AND ONLY WHEN THE DRIVE IS WHAT IS MOVING HER.
+     * Subtracting it unconditionally is wrong the moment she is genuinely
+     * running: at 4.9 m/s it took the speed the CLIP BLEND sees down to
+     * 4.05 m/s, which picks a different mix of the jog and sprint loops than
+     * the phase lock (which uses the real speed) is pacing — and a stride
+     * whose clip and whose pacing disagree skates. Measured on A105's jogging
+     * row: 0.001 m of drift before, 0.20 m after. The subtraction applies only
+     * when her whole speed is about what the drive is supplying, which is the
+     * standing case it was written for. */
+    const dv = this._mStepT > 0 ? (this.ctx.combat?.melee?.driveSpeed || 0) : 0;
+    const drive = (dv > 0 && speed <= dv + 0.75) ? Math.min(dv, speed) : 0;
+    const locoSpeed = Math.max(0, speed - drive);
+    /* ...AND DURING A MELEE STEP THE LOCOMOTION BLEND MAY ONLY FALL.
+     *
+     * Subtracting the drive is not enough on its own: her real speed wobbles
+     * around the floor by tenths, `moveW` is a damped weight, and every wobble
+     * blends the WALK clip's foot placement in and out — which moves the ball
+     * the foot lock is holding by up to 0.14 m in a single frame and eats the
+     * lock's whole 0.30 m budget in two. Filmed on the standing row: the
+     * lock's correction jumped 0.081 -> 0.272 m between two frames in which
+     * the drawn ball did not move at all, because it was the CLIP that moved
+     * under it. Clamping the target to what it already is freezes the blend
+     * for the length of the step — the stance step owns the legs, which is the
+     * point — and a swing taken at a jog is untouched, because there moveW is
+     * already 1 and min(1, 1) is 1. */
+    const wantMove = smoothstep(locoSpeed, 0.18, 1.1);
+    /* ...and ONLY while the locomotion is already standing. A "may only fall"
+     * clamp is a ratchet: applied to a JOGGING character it latches on the
+     * first dip and never recovers, the stride blends out under a body that is
+     * still travelling, and A105's jogging row went from 0.001 m of drift to
+     * 0.18-0.21 m. Below 0.45 the stance step owns the legs and the clamp is
+     * what keeps the walk cycle from stealing them; above it, the stride is
+     * the thing doing the work and must be left alone. */
+    const holdMove = this._mStepT > 0 && this._moveW < 0.45;
+    this._moveW = damp(this._moveW,
+      holdMove ? Math.min(wantMove, this._moveW) : wantMove, 12, dt);
+    this._runW = damp(this._runW, smoothstep(locoSpeed, 4.9, 7.9), 9, dt);
     this._crouchW = damp(this._crouchW, p.crouching ? 1 : 0, 10, dt);
     this._aimW = damp(this._aimW, p.aiming && !dead ? 1 : 0, 13, dt);
     this._deadW = damp(this._deadW, dead ? 1 : 0, dead ? 12 : 10, dt);
@@ -1400,6 +1532,15 @@ export class PlayerAnimator {
       this._bowCarryLayer(this._carryBowW * (1 - aimW) * (1 - dodgeW) * (1 - this._deadW), p, t);
     }
 
+    /* ============ OVERLAY 4b: the spear — carry, draw, swing ============= */
+    // `melee.js` owns the state machine and publishes it; this layer owns the
+    // pose. It runs AFTER aim (aim wins: a drawn bow holsters the spear) and
+    // BEFORE the react layer, so a hit still folds the torso over the swing.
+    if (this.melee?.ok) {
+      this.melee.step(dt);
+      this.melee.update(dt, this.ctx.combat?.melee?.poseState?.() ?? null);
+    }
+
     /* ================ OVERLAY 5: hit react / death / weary ================ */
     pdy += this._reactLayer(dt, p, dodgeW, aimW, carryW);
     if (this._deadW > 0.01 && !this.loco?.actions.death) pdy += this._deathFallback();
@@ -1429,6 +1570,16 @@ export class PlayerAnimator {
 
     /* ------------------ secondary motion: dyn_ spring chains --------------- */
     this._springs(dt, t, ph, speed, moveW, runW);
+
+    /* --- player-melee: the haft's last clearance check, after the hair sim -- */
+    // The guard inside the melee arm solve runs several layers earlier and is
+    // avoiding LAST frame's ponytail; this is the same check on the pose the
+    // renderer will actually draw, in both directions — the hand gives way to
+    // the skull and the spine, and the BRAID gives way to the haft (a stowed
+    // spear during a dodge roll is the case no placement can dodge). Costs one
+    // scan of 32 hair bones and does nothing unless a strand is inside 0.078 m
+    // of the haft, which at idle/walk/run/sprint it never is.
+    this.melee?.postFix?.();
   }
 
   /* ------------- Round 4 overlays: react / idle life / poses -------------- */
@@ -1884,11 +2035,18 @@ export class PlayerAnimator {
       this._grndWant = null; this._grndRate = 0;
       this._stL = 0; this._stR = 0;
       this._locks[0].on = false; this._locks[1].on = false;
+      this._flight[0] = null; this._flight[1] = null;
+      this._stepHome[0] = null; this._stepHome[1] = null;
       return;
     }
 
-    const sL = this.loco ? this.loco.stanceL : 1;
-    const sR = this.loco ? this.loco.stanceR : 1;
+    /* THE MELEE STEP-IN, BEFORE ANYTHING READS A STANCE FLAG (fix round 2).
+     * A foot in flight is NOT planted — which is what releases its lock, what
+     * takes it out of the pelvis clamp, and what `debugFeet` (and therefore
+     * A13/A105) report. See `_stanceStep`. */
+    this._stanceStep(dt, moveW, offW);
+    const sL = this._flight[0] ? 0 : (this.loco ? this.loco.stanceL : 1);
+    const sR = this._flight[1] ? 0 : (this.loco ? this.loco.stanceR : 1);
     this._stL = sL; this._stR = sR;
     const h = this.ctx.player?.heading ?? 0;
     const shh = Math.sin(h), chh = Math.cos(h);
@@ -1964,7 +2122,14 @@ export class PlayerAnimator {
       // Only once the BALL itself is down — at heel strike the foot is still
       // rolling over the heel and the ball is meant to travel forward.
       const ballC = _v1.y - terr.getHeight(_v1.x, _v1.z) - this._ballRest;
-      if (this._footLock(side, ballC < 0.05 ? st : 0, _v1, dt)) {
+      const fl = this._flight[side];
+      if (fl) {
+        // in flight: the step owns this leg outright (the lock is off and the
+        // stance flag is 0, so nothing below will pull it back to the ground)
+        this._stepFoot(side, fl, _v1, terr);
+        ball.bone.updateWorldMatrix(true, false);
+        _v1.setFromMatrixPosition(ball.bone.matrixWorld);
+      } else if (this._footLock(side, ballC < 0.05 ? st : 0, _v1, dt)) {
         ball.bone.updateWorldMatrix(true, false);
         _v1.setFromMatrixPosition(ball.bone.matrixWorld);
       }
@@ -2141,7 +2306,26 @@ export class PlayerAnimator {
     const w = L.w;
     if (ex * ex + ez * ez < 1e-8 || w < 0.02) return false;
     ex *= w; ez *= w;
+    return this._legToPoint(side, ballW.x + ex, ballW.y, ballW.z + ez, ballW, false);
+  }
 
+  /**
+   * Put one leg's BALL on a world point, without changing any bone length.
+   *
+   * Extracted verbatim from `_footLock` (fix round 2) so the melee step-in can
+   * reuse it: the lock asks for a horizontal correction (`withY` false, the
+   * ball's own height is passed straight back in), a step asks for a full 3-D
+   * arc. Two Newton passes, re-read off the BALL bone — see the long note in
+   * `_footLock` for why one pass is not enough at 17 fps.
+   *
+   * @param {number} side 0=left 1=right
+   * @param {number} tbx  wanted ball world X
+   * @param {number} tby  wanted ball world Y (ignored unless `withY`)
+   * @param {number} tbz  wanted ball world Z
+   * @param {THREE.Vector3} ballW the ball's CURRENT world position
+   * @param {boolean} withY whether the vertical term participates
+   */
+  _legToPoint(side, tbx, tby, tbz, ballW, withY) {
     const b = this.b;
     const hip = side === 0 ? b.thighL : b.thighR;
     const knee = side === 0 ? b.calfL : b.calfR;
@@ -2151,9 +2335,7 @@ export class PlayerAnimator {
     // pass so the ball's offset from the ankle is the same rigid vector each
     // time the residual is measured
     this._liveW(foot.bone, _lkQ0);
-    // where the BALL has to end up, in world XZ
-    const tbx = ballW.x + ex, tbz = ballW.z + ez;
-    let cbx = ballW.x, cbz = ballW.z;
+    let cbx = ballW.x, cby = ballW.y, cbz = ballW.z;
     let moved = false;
 
     /*
@@ -2174,7 +2356,7 @@ export class PlayerAnimator {
       // char-space: hip joint H, ankle A, wanted ankle T = A + (ball residual)
       this._charOf(hip.bone, _lkH);
       this._charOf(foot.bone, _lkA);
-      _lkD.set(tbx - cbx, 0, tbz - cbz).applyQuaternion(this._invModelQ);
+      _lkD.set(tbx - cbx, withY ? tby - cby : 0, tbz - cbz).applyQuaternion(this._invModelQ);
       _lkT.copy(_lkA).add(_lkD);
       let d = _lkA.distanceTo(_lkH);
       const dWant = _lkT.distanceTo(_lkH);
@@ -2221,10 +2403,238 @@ export class PlayerAnimator {
       if (!ball) break;
       ball.bone.updateWorldMatrix(true, false);
       _v8.setFromMatrixPosition(ball.bone.matrixWorld);
-      cbx = _v8.x; cbz = _v8.z;
-      if ((tbx - cbx) * (tbx - cbx) + (tbz - cbz) * (tbz - cbz) < 4e-6) break;
+      cbx = _v8.x; cby = _v8.y; cbz = _v8.z;
+      const dy = withY ? (tby - cby) : 0;
+      if ((tbx - cbx) * (tbx - cbx) + dy * dy + (tbz - cbz) * (tbz - cbz) < 4e-6) break;
     }
     return moved;
+  }
+
+  /**
+   * Arm the melee step-in (called by `melee.js::_stepIn`, which owns the
+   * velocity impulse). Nothing else in the file starts a stance step, so a
+   * build that never swings behaves exactly as it did before this existed.
+   */
+  beginMeleeStep() {
+    this._mStepT = STEP_WINDOW;
+    this._stepDbg.armed++;
+  }
+
+  /**
+   * THE STANDING STEP (see STEP_TRIGGER). Runs before the per-foot conform so
+   * the stance flags it overrides are the ones the lock, the pelvis clamp and
+   * `debugFeet` all read.
+   *
+   * @returns {void} state lands in `this._flight[side]`
+   */
+  _stanceStep(dt, moveW, offW) {
+    const b = this.b;
+    this._mStepT = Math.max(0, this._mStepT - dt);
+    /* WHAT DECIDES WHETHER SHE NEEDS A STEP IS WHETHER SHE IS STRIDING, NOT
+     * HOW FAST SHE IS GOING (fix round 2, second pass).
+     *
+     * The first version gated on `moveW < 0.42`, and the step-in's own impulse
+     * (3.1 m/s on the heavy) pushes `moveW` straight through that — so the
+     * system disarmed exactly when the body started moving, and the judge's
+     * 0.25 m of planted drift came back on the heavy. The honest test is
+     * whether the locomotion clip is lifting a foot at all: if neither stance
+     * weight has dropped in the last tenth of a second, both feet are welded
+     * to the floor and any root motion is a drag, whatever the speed says.
+     * When the stride IS running, this stands down and the stride does the
+     * work (which is what keeps A105's jogging row and A13 untouched). */
+    const sL0 = this.loco ? this.loco.stanceL : 1;
+    const sR0 = this.loco ? this.loco.stanceR : 1;
+    if (sL0 < 0.40 || sR0 < 0.40) this._strideT = 0;
+    else this._strideT = (this._strideT || 0) + dt;
+    /* `moveW` IS the discriminator, now that it excludes the step drive (see
+     * `locoSpeed` in update()): low means the locomotion tree is in its
+     * standing pose and any root motion is the step-in's, high means she is
+     * actually walking or running and the stride owns the legs. A "has a foot
+     * lifted recently" test was tried first and is wrong — the idle clip
+     * shifts weight, so the stance weights dip on their own and the system
+     * stood down for 50 % of the frames it was needed (measured: 91 dead
+     * frames out of 186, every one of them for that reason). */
+    /* A LOCK THAT IS ABOUT TO SLIDE DOES **NOT** OVERRIDE THE MOVE TEST, and
+     * this was tried and reverted rather than guessed. Letting a hot lock
+     * force the system live put it to work while she was JOGGING, where the
+     * "home" stance it steps back to is meaningless because the stride is
+     * meant to be moving the feet: A105's jogging row went from 0.001 m of
+     * drift to 0.132-0.161 m. `moveW` (which now excludes the step drive) is
+     * the only discriminator; the lock's own budget is spent inside the
+     * standing case, in `_tryStep`. */
+    const live = this._mStepT > 0 && offW < 0.1 && moveW < 0.45
+      && (this.ctx.player?.grounded !== false);
+    if (this._mStepT > 0) {
+      const D = this._stepDbg;
+      D.frames = (D.frames || 0) + 1;
+      if (!live) {
+        D.dead = (D.dead || 0) + 1;
+        if (!(moveW < 0.45)) D.deadMove = (D.deadMove || 0) + 1;
+        if (!(offW < 0.1)) D.deadOff = (D.deadOff || 0) + 1;
+      }
+    }
+    if (!live) {
+      // let anything in flight land rather than snapping the leg straight
+      if (this._flight[0] || this._flight[1]) {
+        for (let s = 0; s < 2; s++) if (this._flight[s]) this._flight[s].t = 1;
+      } else { this._stepHome[0] = null; this._stepHome[1] = null; return; }
+    }
+
+    /* MEASURE THE BALL WHERE THE LOCK IS HOLDING IT, NOT WHERE THE CLIP PUT IT.
+     *
+     * This runs at the top of the ground conform, before `_footLock` has been
+     * applied — so the ball bone is still at the locomotion clip's pose, which
+     * for a standing character is exactly the stance she is supposed to be in.
+     * Reading it there measured an error of 0.02 m while the LOCK was pinned
+     * at its 0.30 m cap and sliding its anchor: the foot the player sees was
+     * a third of a metre out of place and the step system could not see it.
+     * (Filmed: one foot planted for 2.0 s with `lock.errM === capM` on every
+     * frame and its world z creeping 0.29 m.) The locked anchor IS the ball's
+     * world position; when the lock is off, the bone is. */
+    this.model.updateWorldMatrix(true, false);
+    _m4.copy(this.model.matrixWorld).invert();
+    const ballC = (side) => {
+      const L = this._locks[side];
+      if (L.on && L.w > 0.5) return _v5.set(L.x, 0, L.z).applyMatrix4(_m4);
+      return this._charOf(side === 0 ? b.ballL.bone : b.ballR.bone, _v5);
+    };
+    // the stance she is standing in, captured once per armed window
+    for (let s = 0; s < 2; s++) {
+      if (this._stepHome[s]) continue;
+      // capture off the CLIP, which is the stance she is standing in; the lock
+      // has not moved yet on the frame the window arms
+      const c = this._charOf(s === 0 ? b.ballL.bone : b.ballR.bone, _v5);
+      this._stepHome[s] = [c.x, c.z];
+    }
+
+    // advance whatever is in flight
+    for (let s = 0; s < 2; s++) {
+      this._stepCd[s] = Math.max(0, (this._stepCd[s] || 0) - dt);
+      const f = this._flight[s];
+      if (!f) continue;
+      f.t = Math.min(1, f.t + dt / f.dur);
+      if (f.t >= 1) {
+        this._flight[s] = null;
+        this._locks[s].on = false;
+        // a landed foot gets a beat on the floor before it may step again.
+        // Without it the overlap rule below turns into chatter on a fast box:
+        // filmed at 40 ms frames, 59 steps across 12 swings (five per swing)
+        // and a 0.25 m drift window where a foot landed and was immediately
+        // picked up again before its lock had authority.
+        this._stepCd[s] = STEP_COOL;
+      }
+    }
+    /* ONE FOOT AT A TIME — UNLESS THE OTHER ONE IS ALREADY BEING DRAGGED.
+     *
+     * A 0.155 s step inside a 0.3 s drive leaves room for two, but only if the
+     * second may start before the first has quite landed. Filmed with a strict
+     * one-at-a-time rule: the lead foot stepped, the trailing foot's lock ran
+     * past its 0.30 m cap while it waited its turn, and its anchor slid — the
+     * drift windows came out as an exact alternation of 0.000 m and 0.3-0.5 m,
+     * one stepping foot and one dragged one. The overlap is bounded (the first
+     * step must be past its midpoint, and the second foot must be over a
+     * clearly larger error than the ordinary trigger) so she is never simply
+     * thrown into the air. */
+    const busy = this._flight[0] || this._flight[1];
+    if (!live) return;
+
+    // char-space velocity, for the lead
+    const p = this.ctx.player;
+    const h = p?.heading ?? 0, sh = Math.sin(h), ch = Math.cos(h);
+    const vx = p ? (p.velocity.x * ch - p.velocity.z * sh) : 0;
+    const vz = p ? (p.velocity.x * sh + p.velocity.z * ch) : 0;
+
+    /* BOTH FEET MAY GO IN THE SAME FRAME, when both are out of budget.
+     * Picking only the worse foot per frame costs the other one a frame of
+     * waiting, and at the step-in's 1.4 m/s that frame is 0.07-0.19 m of lock
+     * budget — filmed, the trailing foot sat pinned at MAX_LOCK for three
+     * frames and slid 0.125 m while the lead foot was being placed. Two feet
+     * off the ground for 0.155 s is a lunge; a foot dragged across the floor
+     * is the bug. */
+    const errs = [0, 0];
+    let worst = -1;
+    for (let s = 0; s < 2; s++) {
+      const home = this._stepHome[s];
+      const c = ballC(s);
+      errs[s] = Math.hypot(home[0] - c.x, home[1] - c.z);
+      if (errs[s] > worst) worst = errs[s];
+    }
+    this._stepDbg.err = +worst.toFixed(3);
+    const order = errs[0] >= errs[1] ? [0, 1] : [1, 0];
+    for (const side of order) this._tryStep(side, errs[side], vx, vz);
+  }
+
+  /** One foot's step decision (see `_stanceStep`). */
+  _tryStep(side, err, vx, vz) {
+    const b = this.b;
+    const busy = this._flight[0] || this._flight[1];
+    /* THE OVERRIDE THAT MAKES THE DRIFT BAR A GUARANTEE.
+     *
+     * The cooldown and the one-at-a-time rule exist to stop chatter, but they
+     * are also two ways for a foot to be told to wait — and a foot that waits
+     * while the body keeps going runs its lock past MAX_LOCK (0.30 m), at
+     * which point the ANCHOR slides and the ball really does skate. Past
+     * URGENT there is no waiting: the leg goes, whatever else is happening,
+     * because the alternative is the defect this whole block exists to remove.
+     *
+     * The bound it respects is the LOCK's, not the gate's: past
+     * MAX_LOCK the anchor slides and the ball really does skate, and the error
+     * grows by a whole frame of travel between the read at the top of the
+     * conform and the frame the flight actually starts (0.08 m at 1.4 m/s and
+     * 55 ms). 0.40 of the cap leaves room for two of those. */
+    const URGENT = MAX_LOCK * 0.40;
+    const L = this._locks[side];
+    const myLock = L.on ? Math.hypot(L.cx, L.cz) : 0;
+    const urgent = err > URGENT || myLock > MAX_LOCK * 0.5;
+    if (this._flight[side]) return;
+    // never two feet leaving the ground in the same beat: the second may go
+    // once the first is most of the way down, and no sooner
+    if (busy && busy.t < 0.30) return;
+    if (!urgent) {
+      if (this._stepCd[side] > 0) return;
+      if (busy) { if (busy.t <= 0.45 || err < STEP_TRIGGER * 2.2) return; }
+      else if (err < STEP_TRIGGER) return;
+    }
+
+    const home = this._stepHome[side];
+    const bE = side === 0 ? b.ballL : b.ballR;
+    bE.bone.updateWorldMatrix(true, false);
+    const w0 = _v4.setFromMatrixPosition(bE.bone.matrixWorld);
+    // lead the body: land where she will need the foot, not where she needed
+    // it when the step began — otherwise a 0.7 m step-in becomes six shuffles
+    const lead = Math.min(STEP_LEAD_MAX, Math.hypot(vx, vz) * STEP_LEAD);
+    const lv = Math.hypot(vx, vz);
+    // reused, never allocated: a chained combo starts ~50 of these a second
+    const F = this._flightPool[side];
+    F.t = 0; F.dur = STEP_DUR;
+    F.fx = w0.x; F.fz = w0.z;
+    F.hx = home[0] + (lv > 1e-3 ? vx / lv * lead : 0);
+    F.hz = home[1] + (lv > 1e-3 ? vz / lv * lead : 0);
+    this._flight[side] = F;
+    this._stepDbg.steps++;
+    this._stepDbg.side = side;
+    this._stepDbg.len = +err.toFixed(3);
+  }
+
+  /**
+   * Drive one foot along its step arc. The target is re-projected into world
+   * space every frame from the char-space landing point, so the step tracks
+   * the body it is carrying instead of aiming at stale ground.
+   */
+  _stepFoot(side, f, ballW, terr) {
+    const t = f.t;
+    const e = t * t * (3 - 2 * t);                    // smoothstep
+    _v5.set(f.hx, 0, f.hz).applyMatrix4(this.model.matrixWorld);
+    const tx = f.fx + (_v5.x - f.fx) * e;
+    const tz = f.fz + (_v5.z - f.fz) * e;
+    const lift = STEP_LIFT * Math.sin(Math.PI * t);
+    const ty = (terr?.getHeight ? terr.getHeight(tx, tz) : 0) + this._ballRest + lift;
+    this._stepDbg.lift = +lift.toFixed(3);
+    // toe down through the lift, heel first on the way in — a flat slab of a
+    // foot translating through the air is the thing that reads as a cheat
+    const e2 = side === 0 ? this.b.footL : this.b.footR;
+    if (e2) this._rot(e2, X_AXIS, -0.34 * Math.sin(2 * Math.PI * t));
+    this._legToPoint(side, tx, ty, tz, ballW, true);
   }
 
   /* ----------------------------- aim overlay ------------------------------ */

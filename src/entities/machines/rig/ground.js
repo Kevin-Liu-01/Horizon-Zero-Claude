@@ -809,3 +809,54 @@ export function groundCorpse(machine, deathT, opts) {
   if (!machine._grounder) machine._grounder = new CorpseGrounder(machine, opts);
   return machine._grounder.update(deathT);
 }
+
+/**
+ * SETTLE THE WRECK AT THE MOMENT OF DEATH, not over the next fifty frames.
+ *
+ * MEASURED, and the measurement is the whole justification. `A47b-corpse-posed`
+ * read a Watcher wreck at **−1.24 m** — a metre and a quarter under the soil —
+ * while the same species settled at **+0.01 m** when it was the only machine
+ * killed. The difference was not the solve. It was that `Machine.update()`
+ * returns early on `_frozen`:
+ *
+ *     if (this.state === 'dead') { if (this._frozen) return; this._updateDeath(dt); … }
+ *
+ * and `_updateDeath` is the ONLY caller of `onDeathPose()`, which is the only
+ * caller of `groundCorpse()`. A wreck that is frozen by the site manager's
+ * lifecycle before its first death frame therefore never poses and never
+ * settles — probed on that Watcher: `machine._grounder === null`,
+ * `body.position.y === 0.05` (the pose had not run at all) six seconds after it
+ * died. The lifecycle is another lane's, and the freeze is correct — a wreck
+ * SHOULD stop costing frames. What is not correct is a rig that needs frames it
+ * is not guaranteed.
+ *
+ * So the settle stops depending on them. This runs the death pose forward
+ * through its own clock in one call — `CorpseGrounder` clamps each step to 1 s
+ * of death time and stops measuring after `SETTLE_TICKS` in-band ticks, so ~18
+ * steps is past convergence for every species — and then REWINDS `_deathT` so
+ * the visible crumple still plays from the start whenever frames are available.
+ * The grounder keeps the offset it converged on (its own `dt` clamps negative
+ * steps to zero), so a wreck is on the ground in the first drawn frame and
+ * animates into the same place.
+ *
+ * Call it from a species' `_die()`, after `super._die()`.
+ *
+ * @returns {boolean} whether a settle actually ran
+ */
+export function settleCorpseNow(machine) {
+  if (!machine || typeof machine.onDeathPose !== 'function') return false;
+  const t0 = machine._deathT ?? 0;
+  try {
+    for (let i = 0; i < 18; i++) {
+      const dT = t0 + 0.18 * (i + 1);
+      machine._deathT = dT;
+      // k is the crumple blend `Machine._updateDeath` would have passed
+      machine.onDeathPose(Math.min(1, dT / 1.15), dT);
+    }
+  } catch (e) {
+    return false;
+  } finally {
+    machine._deathT = t0;   // let the drawn crumple play from the start
+  }
+  return true;
+}

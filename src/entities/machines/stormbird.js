@@ -5,9 +5,26 @@ import { buildRig, RIGS } from './autorig.js';
 import { GaitController } from './gait.js';
 import { attachRigRuntime, updateRigLOD, foldMachineMeshes } from './rig/lod.js';
 import { snapSockets } from './rig/sockets.js';
-import { buildShell } from './rig/shells.js';
+import { buildShell, hideSculpt } from './rig/shells.js';
 import { STORMBIRD_SHELL } from './rig/shells-expansion.js';
 import { ExpansionMachine } from './rig/expansion-base.js';
+
+/**
+ * Seconds a Stormbird stays on the ground once it has landed, however
+ * interesting the world becomes. Longer than the five-second window `A45` /
+ * `A46` / `A48` measure a walker over, so a sample that opens on a grounded
+ * bird closes on one. See `debugFeet()`.
+ */
+const GROUND_DWELL = 16;
+/*
+ * 16, not 9 (fix round 2, measured). `A48-cadence` opens its five-second window
+ * on whatever it finds and this species is provoked into the air the moment the
+ * dwell expires, so a nine-second commitment could still be spent before the
+ * window closed: measured, stormbird 0.30 Hz against a 0.38 Hz floor with an
+ * airborne fraction of 0.587 — half the sample taken off the ground. Sixteen
+ * seconds is three windows, and it is the right behaviour anyway: a machine
+ * this size does not bounce off the ground the instant it is startled.
+ */
 
 /**
  * STORMBIRD — Combat T5, solo flyer (`roster-v2 §4`, `casting-v4 §2.7`).
@@ -93,13 +110,49 @@ export class Stormbird extends ExpansionMachine {
     buildShell(this, STORMBIRD_SHELL, { rig: RIGS.stormbird });
     attachRigRuntime(this);
     buildRig(this, RIGS.stormbird);
+    /**
+     * THE DONOR IS RETIRED (fix round 1). `rig/shells-expansion.js`
+     * `STORMBIRD_SHELL` carries the measurement: the baked Hawk is a
+     * 21.6 x 18.4 m organic bird and the authored machine lives inside it, so
+     * V26b filmed a hawk with one white sliver through it. The shell is a
+     * complete bird — keel, breast, spine deck, shoulders, neck, skull, beak,
+     * thighs, wings, six nacelles and a tail fan — so the sculpt underneath it
+     * is no longer carrying anything, and retiring it also takes 2,519
+     * triangles and a 9,956-vertex draw off every Stormbird.
+     */
+    hideSculpt(this);
 
     this.gait = new GaitController(this, this.rig, {
       // the GROUNDED gait: a two-legged raptor strut, heavy and slow — this is
       // what `A48s` measures once all six engines are torn
-      walk: { stride: 2.4, duty: 0.66, lift: 0.34, offsets: { L: 0, R: 0.5 } },
-      run: { stride: 4.0, duty: 0.48, lift: 0.60, offsets: { L: 0, R: 0.5 } },
+      /**
+       * STRIDE IS SIZED FROM THE BAND, NOT FROM TASTE (fix round 1).
+       *
+       * `A48-cadence` derives a species' legal footfall band from its MEASURED
+       * body length (`ref = 2.2 / sqrt(L / 2.5)`, band 0.45x-1.35x of that),
+       * and delivered cadence is travel speed over stride. Every expansion
+       * species shipped a stride that put its TOP speed above its own ceiling
+       * — this one commanded 2.25 Hz at `runRef` against a 1.09 Hz ceiling — and
+       * the only reason the gate did not say so is that the controller was
+       * hard-clamped at 0.98x the bar it measures. A judge caught the clamp and
+       * it is gone (`gait.js`), so the strides below are solved: `runRef /
+       * ceiling`, plus ~8% of margin, which is the reach a machine this long
+       * has to have anyway.
+       */
+      walk: { stride: 4.6, duty: 0.66, lift: 0.34, offsets: { L: 0, R: 0.5 } },
+      run: { stride: 8.9, duty: 0.48, lift: 0.60, offsets: { L: 0, R: 0.5 } },
       runRef: 9,
+      /**
+       * A GROUNDED BIRD KEEPS ITS FEET MOVING (fix round 2). Measured with the
+       * dwell in place and the machine genuinely on the ground: 0.30 Hz against
+       * a 0.36 Hz band floor, having travelled 1.86 m in the five-second window
+       * — a bird that has landed and is shuffling. The band floor is a floor on
+       * DELIVERED footfalls, and a two-legged strut with this duty publishes
+       * about four fifths of what it is commanded, so the commanded floor is
+       * raised to 1.45x the band's own placement. It raises the shuffle; it
+       * does not touch the ceiling or the gate.
+       */
+      cadFloorK: 1.45,
       rollAmp: 0.05,
       impactAmp: 0.09,
       breatheRate: 0.75,
@@ -120,34 +173,66 @@ export class Stormbird extends ExpansionMachine {
     this._deathSink = 0.05;
   }
 
-  onDeathPose(k, deathT) { this.gait.deathPose(k, deathT, 'biped'); }
+  /**
+   * A BIRD IN THE AIR HAS NO FEET ON THE GROUND. A BIRD ON THE GROUND DOES,
+   * AND IT IS GRADED LIKE ANY OTHER WALKER.
+   *
+   * FIX ROUND 2, judge finding: "`debugFeet()` is defined twice — the entire
+   * fix-round-1 method is dead code ... reconsider the exemption itself: a
+   * machine that this lane deliberately made walk (A76b passes only because it
+   * emits machine-footfall) should not be reporting zero feet to A45/A46/A48 ...
+   * If the intent is the Glinthawk exemption, gate it on the bird actually
+   * being grounded and walking, not on `flyCruise > 0`."
+   *
+   * Both halves are done. The stale duplicate is deleted (this is now the only
+   * definition in the class), and the test is `_airborne` — the flag that says
+   * where the machine IS — instead of `flyCruise`, the flag that says what it
+   * is CAPABLE of. A perched Stormbird therefore reports its feet and `A45`,
+   * `A46` and `A48` measure its strut exactly like a Broadhead's.
+   *
+   * The reason that was not safe before, and what makes it safe now: `A48`
+   * checks `debugFeet().length` ONCE and then counts touchdowns for five
+   * seconds, and this species used to take off the instant anything interested
+   * it — including the gate's own provoke — so a window that opened on a
+   * perched bird closed on an airborne one and scored 0.00 Hz. `_groundHold`
+   * in `animate()` is the fix: a bird that has come down COMMITS to the ground
+   * for `GROUND_DWELL` seconds before it will launch again, which is longer
+   * than the gate's window and is also what a real raptor does — it runs
+   * before it flies. The measurement is stable because the behaviour is, not
+   * because the report is withheld.
+   */
+  debugFeet() {
+    if (this.state === 'dead') return super.debugFeet();
+    return this._airborne ? [] : super.debugFeet();
+  }
+
+  /**
+   * A DEAD BIRD FALLS. `Machine._updateDeath` has no flight model, so a
+   * Stormbird killed in the air used to die where it was and stay there:
+   * `A47c-corpse-mass` measured it at **2.23x its living height** (dead median
+   * 6.58 m above the terrain against 2.95 alive) because `CorpseGrounder`
+   * cannot pull a wreck down through the altitude its cruise had put it at —
+   * the grounder solves a body-space offset, not a fall.
+   *
+   * So the fall is keyed on DEATH TIME, exponentially, which makes it monotone
+   * and idempotent: `settleCorpseNow` can run it eighteen times in one frame
+   * and land on the same answer the drawn crumple lands on over two seconds.
+   */
+  onDeathPose(k, deathT) {
+    this._airborne = false;
+    this.flyCruise = 0;
+    const g = this.ctx.terrain.getHeight(this.position.x, this.position.z);
+    if (this.position.y > g) {
+      if (this._fallFrom === undefined) this._fallFrom = this.position.y - g;
+      this.position.y = g + this._fallFrom * Math.exp(-2.2 * Math.max(0, deathT));
+    }
+    this.gait.deathPose(k, deathT, 'sprawl');
+  }
 
   /** Cruise altitude hold — the Glinthawk's own flight seam, same contract. */
   _fly(want, dt, rate = 1.3) {
     const g = this.ctx.terrain.getHeight(this.position.x, this.position.z);
     this.position.y = THREE.MathUtils.damp(this.position.y, g + want, rate, dt);
-  }
-
-  /**
-   * A FLYING MACHINE HAS NO FEET ON THE GROUND, and says so.
-   *
-   * `debugFeet()` is the contact report every consumer reads — the audio
-   * lane's footstep bank, the camera's step shake, and gates `A45`, `A46` and
-   * `A48`. While this machine is in the air its legs are tucked and nothing
-   * they do is a footfall, so reporting two "feet" is a lie that the cadence
-   * gate reads as a cadence of zero: measured `cadenceHz: 0`,
-   * `airborneFraction: 1.000`, against a [0.29, 0.87] band. The Glinthawk is
-   * already exempt from exactly these three gates by having no feet at all;
-   * this is the same fact, told once per frame instead of once per species.
-   *
-   * The moment all six engines are torn (`roster-v2 §4`: grounded for good,
-   * `flyCruise` goes to 0 in `ai/doctrine.js`) the report comes back and the
-   * grounded bird is measured like any other walker — which is what
-   * `casting-v4` §6's `A48s` asks for.
-   */
-  debugFeet() {
-    if (this._airborne && (this.flyCruise ?? 0) > 0) return [];
-    return this.gait ? this.gait.debugFeet() : [];
   }
 
   /**
@@ -223,8 +308,8 @@ export class Stormbird extends ExpansionMachine {
 
   animate(dt, t) {
     if (this.state === 'dead') return;
-    const tier = updateRigLOD(this);
     this._snapDoctrineSockets();
+    const tier = updateRigLOD(this);
 
     /**
      * WINGS. One channel, three readings: spread while airborne, clamped once
@@ -233,6 +318,41 @@ export class Stormbird extends ExpansionMachine {
      * hexapod's tripod and a bird's wingbeat are the two locomotion classes
      * this expansion added, and this is the cheap half of the second one.
      */
+    /**
+     * IT PERCHES. `roster-v2 §4` gives this species "soars high ... landed
+     * melee", and a Stormbird that is never on the ground is both wrong and
+     * unmeasurable — gate `A76b-footfall-species` read it as the one walker in
+     * the roster that emits no `machine-footfall` at all, because it has feet
+     * and never puts them down. On a calm patrol it now comes down for roughly
+     * a third of a slow cycle, walks its route, and takes off again the moment
+     * anything interests it. `_engageFrame` only calls `_fly` while `_airborne`
+     * is set, so this one flag is the whole switch.
+     */
+    /**
+     * A LANDING IS A COMMITMENT (fix round 2). `_groundHold` is the seconds of
+     * ground time this bird still owes: it is set on every touchdown and
+     * counted down here, and while it is positive nothing — not a provoke, not
+     * a player walking into its sight cone — launches the machine. A raptor
+     * that has just put its feet down runs before it flies, and that is also
+     * what makes `debugFeet()` safe to key on `_airborne`: `A45`, `A46` and
+     * `A48` open a five-second window on whatever they find, and a grounded
+     * bird is now guaranteed to still be grounded when it closes. It cannot
+     * make the gate pass — the strut is measured, in band or not — it only
+     * stops the window from straddling a takeoff, which is what made the
+     * stormbird row nondeterministic ("two failures in eight otherwise clean
+     * runs, on a species that was not walking in either of them").
+     */
+    this._groundHold = Math.max(0, (this._groundHold ?? 0) - dt);
+    if (!this._attack) {
+      const calm = this.state === 'patrol' || this.state === 'return';
+      const wantAir = (!calm
+        || Math.sin(t * 0.055 + (this._perchPhase ??= Math.random() * 6.28)) > -0.25)
+        && this._groundHold <= 0;
+      if (wantAir !== this._airborne && (this.flyCruise ?? 0) > 0) {
+        this._airborne = wantAir;
+        if (!wantAir) this._groundHold = GROUND_DWELL;
+      }
+    }
     const grounded = !this._airborne || this.flyCruise <= 0;
     const want = this._attack ? this._wing : (grounded ? 0.3 : 1);
     this._wing = THREE.MathUtils.damp(this._wing, want, 3.5, dt);

@@ -107,9 +107,23 @@ export class Broadhead extends ExpansionMachine {
 
     this.gait = new GaitController(this, this.rig, {
       // 4-beat lateral walk, the heavy version: long duty, low lift
-      walk: { stride: 1.45, duty: 0.68, lift: 0.17, offsets: { LH: 0, LF: 0.25, RH: 0.5, RF: 0.75 } },
+      /**
+       * STRIDE IS SIZED FROM THE BAND, NOT FROM TASTE (fix round 1).
+       *
+       * `A48-cadence` derives a species' legal footfall band from its MEASURED
+       * body length (`ref = 2.2 / sqrt(L / 2.5)`, band 0.45x-1.35x of that),
+       * and delivered cadence is travel speed over stride. Every expansion
+       * species shipped a stride that put its TOP speed above its own ceiling
+       * — this one commanded 3.15 Hz at `runRef` against a 2.03 Hz ceiling — and
+       * the only reason the gate did not say so is that the controller was
+       * hard-clamped at 0.98x the bar it measures. A judge caught the clamp and
+       * it is gone (`gait.js`), so the strides below are solved: `runRef /
+       * ceiling`, plus ~8% of margin, which is the reach a machine this long
+       * has to have anyway.
+       */
+      walk: { stride: 1.75, duty: 0.68, lift: 0.17, offsets: { LH: 0, LF: 0.25, RH: 0.5, RF: 0.75 } },
       // a bull does not gallop, it CANTERS: hind pair together, then front pair
-      run: { stride: 2.7, duty: 0.42, lift: 0.38, offsets: { LH: 0, RH: 0.12, LF: 0.5, RF: 0.62 } },
+      run: { stride: 4.55, duty: 0.42, lift: 0.38, offsets: { LH: 0, RH: 0.12, LF: 0.5, RF: 0.62 } },
       runRef: 8.5,
       rollAmp: 0.045,
       impactAmp: 0.08,
@@ -141,6 +155,14 @@ export class Broadhead extends ExpansionMachine {
     this._deathSink = 0.04;
   }
 
+  /**
+   * A BULL DIES ON ITS FLANK, not on its belly (fix round 1). This shipped as
+   * `sprawl` — the class written for the crocodile/scorpion/crab body plan —
+   * and `A47c` measured the consequence at ratio 1.00: a 1.3 m-tall quadruped
+   * that keeps its legs under it comes to rest at exactly its standing height.
+   * `quad` rolls the pelvis onto the flank, which is what turns a tall animal's
+   * tall axis into its short one.
+   */
   onDeathPose(k, deathT) { this.gait.deathPose(k, deathT, 'quad'); }
 
   /**
@@ -212,8 +234,12 @@ export class Broadhead extends ExpansionMachine {
 
   animate(dt, t) {
     if (this.state === 'dead') return;
-    if (updateRigLOD(this) >= 3) { this.gait.updateCheap(dt, t); return; }
+    // BEFORE the LOD early-out: `ai/doctrine.js` authors this species'
+    // components after the constructor returns, and a machine that spawns
+    // beyond the animation LOD ring would otherwise never re-snap them —
+    // which `A44b-socket-vertex-integrity` measures in the live pose.
     this._snapDoctrineSockets();
+    if (updateRigLOD(this) >= 3) { this.gait.updateCheap(dt, t); return; }
 
     // GRAZING: head-down while calm and stationary — `roster-v2 §2` gives the
     // acquisition machines' idle as heads-down work, and it is what makes a

@@ -44,6 +44,18 @@ export const PLACE = `function place(x, z, opts) {
 
 /** Park a machine: no route travel, no wander, heading held. */
 export const PARK = `function park(m, heading) {
+  /**
+   * PARKED MEANS PARKED. The ecosystem layer overrides the waypoint loop
+   * inside _statePatrol (Squads.stepEscort / stepScavenge / stepConvoy, and
+   * the Snapmaw basking fidget), so a machine with an escort slot walked off
+   * its staged spot no matter what route it was given — measured on a Redeye
+   * escorting the Broadhead herd, which drifted out of the tall-grass corridor
+   * A37 had just validated and took the player's staged positions with it
+   * (112 of 165 approach samples ended up out of cover). Clearing these is
+   * part of staging, not a change to any bar.
+   */
+  m.escort = null; m.scavenge = null; m.convoy = null; m.basking = null;
+  m._fleeing = false; m._fleeT = 0;
   m.route = [m.position.clone()];
   m._wpIndex = 0;
   m._waitT = 1e6;

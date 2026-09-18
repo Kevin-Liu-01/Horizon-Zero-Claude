@@ -227,10 +227,38 @@ export class Machine {
 
     // ecosystem / lifecycle
     this.escort = opts.escort ?? null;
-    /** Shell-Walker column this machine belongs to (`Squads.registerConvoy`). */
-    this.convoy = null;
-    /** Snapmaw pool site this machine basks at (`Squads.registerBasking`). */
-    this.basking = null;
+    /**
+     * THE HERD, HELD BY THE BASE (FIX ROUND 5).
+     *
+     * `opts.herd` used to be remembered only by the species files that happen
+     * to implement herd doctrine — `strider.js` does `this.herd = opts.herd`.
+     * The moment `machines-expansion` landed real `Broadhead` and `Grazer`
+     * classes that do not, every herd behaviour keyed off `machine.herd` went
+     * silently dead: `ai/doctrine.js` skipped its wiring, no stampede vector
+     * was ever computed and no rearguard was ever posted, with nothing
+     * throwing. A shared field belongs to the shared class, so nothing
+     * downstream depends on a species file remembering to copy it.
+     */
+    this.herd = opts.herd ?? null;
+    /**
+     * ...AND ITS TWO SIBLINGS, FOR THE SAME REASON (FIX ROUND 2).
+     *
+     * `herd` above was made a spawn OPTION so a site respawn could replay it.
+     * `convoy` and `basking` were left hard-initialised to `null`, and a squad
+     * is only ever attached AFTER `spawn()` returns (`Squads.registerConvoy`
+     * walks the members it was handed), so neither ever reached `opts`, neither
+     * was stored in the MachineSite record, and `Squads.forget` dropped the
+     * dead member with nothing putting the new one back. One dispose/respawn
+     * cycle emptied the Shell-Walker column and the Snapmaw pool permanently:
+     * `convoyMembers 2 -> 0`, `baskingMembers 2 -> 0`, both machines alive and
+     * standing on the spot with no column and no pair. Measured, not argued.
+     *
+     * The handle is now placement like any other, written back into the site
+     * record by `Squads._remember` and re-attached by `Squads.adopt` from
+     * `Machines._spawnCls` — the one path every spawn and every respawn takes.
+     */
+    this.convoy = opts.convoy ?? null;
+    this.basking = opts.basking ?? null;
     /** Never leaves `patrol` — see `setState` (casting-v4 §2.8, Tallneck). */
     this.docile = !!opts.docile;
     /** Corrupted by a Corruptor: hostile to everything, cannot be overridden. */

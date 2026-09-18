@@ -97,6 +97,24 @@ Round 3 machine-variety models (see models-staging/MANIFEST.md for full manifest
 - "Robot Enemy Flying" and Ultimate Monsters pack by [Quaternius](https://quaternius.com) — CC0
   (Glinthawk, Longleg)
 - Fox rig reference — Khronos glTF-Sample-Assets, CC0/CC-BY 4.0
+
+Round 4 machine-expansion donors (see `models-staging/MANIFEST.md` and
+`docs/research/casting-v4.md` §0; rebuild with `node tools/bake-rigs.mjs`).
+**CC-BY 3.0 — attribution required:**
+
+- "Black Caiman" by Poly by Google — [Poly Pizza](https://poly.pizza/m/5etIv4omd7Z), CC-BY 3.0 (Snapmaw)
+- "Lion" by Poly by Google — [polygone.art](https://polygone.art/model/cC_IFclYA4c), CC-BY 3.0 (Ravager)
+- "Scorpion" by Poly by Google — [Poly Pizza](https://poly.pizza/m/6Bu7d_Pkm5o), CC-BY 3.0 (Corruptor)
+- "Hawk (low-poly, rigged)" by Sherkiz — [Poly Pizza](https://poly.pizza/m/RkN6MEbP6g), CC-BY 3.0 (Stormbird)
+
+CC0 1.0 (courtesy credit): "Bull" and "Deer" from the Ultimate Animated Animals
+pack and "Spider" by [Quaternius](https://quaternius.com) (Broadhead, Grazer,
+Shell-Walker). The pack's "Apatosaurus" was staged as a Tallneck donor and is
+not shipped — no Tallneck species was built, so the model is not loaded.
+
+The Lion, Spider and Hawk donors are retired under authored shells
+(`hideSculpt`); their attribution stands because the files are still in the
+repository and were used to derive the rigs.
 - Julius Sans One typeface — LatinoType, SIL Open Font License (wordmark/display)
 
 🤖 Built with [Claude Code](https://claude.com/claude-code)

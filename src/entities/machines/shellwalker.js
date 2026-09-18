@@ -5,7 +5,7 @@ import { buildRig, RIGS } from './autorig.js';
 import { GaitController } from './gait.js';
 import { attachRigRuntime, updateRigLOD, foldMachineMeshes } from './rig/lod.js';
 import { snapSockets } from './rig/sockets.js';
-import { buildShell } from './rig/shells.js';
+import { buildShell, hideSculpt } from './rig/shells.js';
 import { SHELLWALKER_SHELL } from './rig/shells-expansion.js';
 import { ExpansionMachine } from './rig/expansion-base.js';
 
@@ -99,8 +99,22 @@ export class ShellWalker extends ExpansionMachine {
      * also why `A48`'s airborne fraction is expected to read ~0 here.
      */
     this.gait = new GaitController(this, this.rig, {
-      walk: { stride: 1.7, duty: 0.62, lift: 0.30, offsets: { MFL: 0, BL: 0, MBR: 0, MFR: 0.5, BR: 0.5, MBL: 0.5 } },
-      run: { stride: 2.6, duty: 0.55, lift: 0.42, offsets: { MFL: 0, BL: 0, MBR: 0, MFR: 0.5, BR: 0.5, MBL: 0.5 } },
+      /**
+       * STRIDE IS SIZED FROM THE BAND, NOT FROM TASTE (fix round 1).
+       *
+       * `A48-cadence` derives a species' legal footfall band from its MEASURED
+       * body length (`ref = 2.2 / sqrt(L / 2.5)`, band 0.45x-1.35x of that),
+       * and delivered cadence is travel speed over stride. Every expansion
+       * species shipped a stride that put its TOP speed above its own ceiling
+       * — this one commanded 2.31 Hz at `runRef` against a 1.68 Hz ceiling — and
+       * the only reason the gate did not say so is that the controller was
+       * hard-clamped at 0.98x the bar it measures. A judge caught the clamp and
+       * it is gone (`gait.js`), so the strides below are solved: `runRef /
+       * ceiling`, plus ~8% of margin, which is the reach a machine this long
+       * has to have anyway.
+       */
+      walk: { stride: 2.05, duty: 0.62, lift: 0.30, offsets: { MFL: 0, BL: 0, MBR: 0, MFR: 0.5, BR: 0.5, MBL: 0.5 } },
+      run: { stride: 3.85, duty: 0.55, lift: 0.42, offsets: { MFL: 0, BL: 0, MBR: 0, MFR: 0.5, BR: 0.5, MBL: 0.5 } },
       runRef: 6.0,
       rollAmp: 0.03,
       impactAmp: 0.05,
@@ -116,13 +130,27 @@ export class ShellWalker extends ExpansionMachine {
       ],
     });
     this.gait.update(0.016, 0);
+    /**
+     * THE SHELL IS THE MACHINE (the Ravager's precedent, and the same reason).
+     * `casting-v4` §2.5 promotes the donor's FRONT leg pair to arm-claws, which
+     * means two of the Spider's eight limbs have no leg capsule in
+     * `RIGS.shellwalker` at all — so `autorig` binds their geometry to whatever
+     * spine segment happens to be nearest and they fan out of the machine like
+     * scrap. Filmed at 10 m it read as "a jumble of struts", which is exactly
+     * the `machine-rig-01` failure the shells exist to fix. The shell already
+     * authors the whole crab — six plated legs on the rig's own joints, a
+     * carapace, the cargo platform, the sensor mast and both arm-claws — so the
+     * donor is retired under it and the silhouette in the shot is the one this
+     * file authored.
+     */
+    hideSculpt(this);
     foldMachineMeshes(this);
     snapSockets(this);
     this._deathRoll = 0.30;   // a crab collapses onto its own legs
     this._deathSink = 0.05;
   }
 
-  onDeathPose(k, deathT) { this.gait.deathPose(k, deathT, 'quad'); }
+  onDeathPose(k, deathT) { this.gait.deathPose(k, deathT, 'sprawl'); }
 
   /**
    * Species limb work (gate `V27b`).
@@ -178,8 +206,12 @@ export class ShellWalker extends ExpansionMachine {
 
   animate(dt, t) {
     if (this.state === 'dead') return;
-    if (updateRigLOD(this) >= 3) { this.gait.updateCheap(dt, t); return; }
+    // BEFORE the LOD early-out: `ai/doctrine.js` authors this species'
+    // components after the constructor returns, and a machine that spawns
+    // beyond the animation LOD ring would otherwise never re-snap them —
+    // which `A44b-socket-vertex-integrity` measures in the live pose.
     this._snapDoctrineSockets();
+    if (updateRigLOD(this) >= 3) { this.gait.updateCheap(dt, t); return; }
 
     // the platform scan bar turns whatever the machine is doing (roster §4:
     // "rotates to face threat"); it is a non-state sensor, so it is pure motion

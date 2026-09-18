@@ -50,6 +50,90 @@ export { Perception, Engage, Search, AttackPicker, Reactions, StimulusBus, SiteM
  *   machines.aiRngSeeded              is the lane on seeded dice right now?
  *   machines.clearListenerErrors()   reset the isolated-listener ledger
  *
+ * --- ROUND 4 EXPANSION (lane `machine-ai-expansion`) --------------------
+ *   machines.registerKind(kind, Cls) -> bool
+ *       `machines-expansion` retires a CHASSIS. Every Round-4 kind
+ *       (broadhead, grazer, snapmaw, ravager, shellwalker, corruptor,
+ *       stormbird, tallneck, redeye) ships its BEHAVIOUR here and borrows an
+ *       existing species class for its body until its own lands; this call
+ *       makes the real class the one every future spawn — site respawns
+ *       included — uses. Nothing else changes: the tables, the doctrine, the
+ *       spawn plan and every gate key off `kind`. See ai/doctrine.js §CHASSIS.
+ *
+ *       "SITE RESPAWNS INCLUDED" IS ENFORCED, not merely intended (fix round
+ *       1). A MachineSite remembers PLACEMENT only — `sites.note()` strips
+ *       `kind`/`modelKind` before storing, and `Machines.spawn()` applies the
+ *       resolver's identity AFTER the caller's options — so a site recorded
+ *       while the kind was on a donor chassis cannot hand that donor back
+ *       after the handover. Registering LATE (after machines of that kind are
+ *       already standing) is therefore safe, and so is `save.js`, which
+ *       replays site options through the same call. WHICH SCULPT A KIND WEARS
+ *       IS A REGISTRY QUESTION: `spawn()` ignores a `modelKind` option.
+ *       Covered end-to-end by A100-expansion-doctrine §7.
+ *   machines.canSpawn(kind)          class + sculpt both present?
+ *   machines.chassisAudit()          ['redeye<-watcher', ...] still on a body
+ *                                    — read off the WORLD (live machines and
+ *                                    remembered sites), not off the chassis
+ *                                    map `registerKind` empties, so a kind
+ *                                    registered while its machines are still
+ *                                    wearing the donor keeps being reported
+ *   machines.doctrineAudit()         live count per expansion kind + squads
+ *   machines.populationAudit()       { roster, nodes, budget, recycled,
+ *                                      overBudget } — the scene-node ceiling
+ *                                      on the live machine population
+ *                                      (ECOSYSTEM.population). Spawning past
+ *                                      it recycles the newest SURPLUS machine
+ *                                      that is calm, off-camera and outside
+ *                                      `keepRadius`; the authored roster is
+ *                                      never evicted.
+ *   machines.expansionAudit          what the expansion spawn plan built
+ *   machines.expansionReady          the expansion roster exists
+ *   machines.squads.registerConvoy({ members, route, defend })
+ *   machines.squads.registerBasking({ x, z, members })
+ *   machines.squads.corrupt(v, source) / uncorrupt(v)
+ *   machines.squads.forget(machine)  drop every squad-side reference (called
+ *                                    by the site lifecycle on disposal)
+ *   Squads.alarmHerd(m) / Squads.stepFlee(m, dt) / Squads.stepConvoy(m, dt)
+ *       the ONE shared herd stampede + rearguard doctrine and the convoy
+ *       column, so Broadhead/Grazer/Shell-Walker never copy it again
+ *
+ * --- machine fields the expansion adds ---------------------------------
+ *   machine.modelKind   which loaded sculpt the body was built from; equals
+ *                       `kind` except while a kind rides a chassis. EVERYTHING
+ *                       that frees GPU memory must key off this, not `kind`.
+ *   machine.docile      never leaves `patrol` (Tallneck) — hard guard in
+ *                       `setState`, and `canOverride` refuses it
+ *   machine.corrupted   hostile to everything, cannot be overridden
+ *   machine._eyeCalm    per-species CALM sensor colour (Redeye is red idle)
+ *   machine.herd / .convoy / .basking   squad membership, held by the BASE
+ *                       class so no species file has to remember to copy it,
+ *                       accepted as a spawn OPTION, and written back into the
+ *                       machine's MachineSite record by `Squads._remember` so
+ *                       a site respawn rejoins the same column/pool/herd
+ *                       (`Squads.adopt`, called from `Machines._spawnCls`).
+ *                       Attach a squad only through `registerConvoy` /
+ *                       `registerBasking` / `assignEscorts` / `adopt`: a raw
+ *                       `m.convoy = c` is invisible to the site and dies with
+ *                       the machine (fix round 2).
+ *   Squads.adopt(m)     re-attach + remember; idempotent, safe to call twice
+ *   Squads._remember(m, key, value)   write one placement key into m's site
+ *   machine.ai.engage.ringGiveUps / .ringStuckT
+ *                       the ring-reach watchdog: seconds at a ring with no
+ *                       radial progress, and how many rings this fight has
+ *                       been given up as unreachable (ENGAGE.ringPatience)
+ *   machine.ai.picker.unreachableRings()  [[id, secondsLeft, ringM], ...]
+ *                       moves whose ring the ground would not give. A HINT on
+ *                       the arrangement only, exactly like `blindRings()`:
+ *                       selection never consults it and firing clears it.
+ *   machine.ai.picker._needPartOk(need)   `needPart: '!engine'` = legal only
+ *                       once every part of that name is torn (Stormbird
+ *                       air->ground, casting-v4 §5.2)
+ *
+ * --- events the expansion adds -----------------------------------------
+ *   'machine-corrupted'   { machine, source }
+ *   'machine-uncorrupted' { machine }
+ *   'machine-grounded'    { machine }    a flier that lost every engine
+ *
  * --- machine fields other lanes read ------------------------------------
  *   machine.state       + 'stagger' | 'downed' | 'overridden'
  *   machine.suspicion   0..1        (HUD stealth meter, ui-12)

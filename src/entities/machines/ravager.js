@@ -112,9 +112,23 @@ export class Ravager extends ExpansionMachine {
     this.gait = new GaitController(this, this.rig, {
       // lateral-sequence prowl — the same footfall order as the Sawtooth's,
       // because it is the same body plan; everything above the legs differs
-      walk: { stride: 1.85, duty: 0.63, lift: 0.28, offsets: { LF: 0, RH: 0.25, RF: 0.5, LH: 0.75 } },
+      /**
+       * STRIDE IS SIZED FROM THE BAND, NOT FROM TASTE (fix round 1).
+       *
+       * `A48-cadence` derives a species' legal footfall band from its MEASURED
+       * body length (`ref = 2.2 / sqrt(L / 2.5)`, band 0.45x-1.35x of that),
+       * and delivered cadence is travel speed over stride. Every expansion
+       * species shipped a stride that put its TOP speed above its own ceiling
+       * — this one commanded 2.78 Hz at `runRef` against a 1.90 Hz ceiling — and
+       * the only reason the gate did not say so is that the controller was
+       * hard-clamped at 0.98x the bar it measures. A judge caught the clamp and
+       * it is gone (`gait.js`), so the strides below are solved: `runRef /
+       * ceiling`, plus ~8% of margin, which is the reach a machine this long
+       * has to have anyway.
+       */
+      walk: { stride: 2.35, duty: 0.63, lift: 0.28, offsets: { LF: 0, RH: 0.25, RF: 0.5, LH: 0.75 } },
       // bounding charge with real suspension
-      run: { stride: 3.6, duty: 0.40, lift: 0.56, offsets: { LF: 0.08, RF: 0, LH: 0.58, RH: 0.5 } },
+      run: { stride: 5.3, duty: 0.40, lift: 0.56, offsets: { LF: 0.08, RF: 0, LH: 0.58, RH: 0.5 } },
       runRef: 10,
       rollAmp: 0.05,
       impactAmp: 0.08,
@@ -256,8 +270,12 @@ export class Ravager extends ExpansionMachine {
 
   animate(dt, t) {
     if (this.state === 'dead') return;
-    if (updateRigLOD(this) >= 3) { this.gait.updateCheap(dt, t); return; }
+    // BEFORE the LOD early-out: `ai/doctrine.js` authors this species'
+    // components after the constructor returns, and a machine that spawns
+    // beyond the animation LOD ring would otherwise never re-snap them —
+    // which `A44b-socket-vertex-integrity` measures in the live pose.
     this._snapDoctrineSockets();
+    if (updateRigLOD(this) >= 3) { this.gait.updateCheap(dt, t); return; }
 
     // STALK: a cat lowers itself when it is working out how to reach you, but
     // never as far as the Sawtooth — the head stays up, which is the species.
@@ -266,6 +284,16 @@ export class Ravager extends ExpansionMachine {
       this._crouch = THREE.MathUtils.damp(this._crouch, stalking ? 0.45 : 0, 3.5, dt);
       this.gait.pose.crouch = this._crouch;
       this.gait.walk.duty = stalking ? 0.69 : 0.63;
+      /**
+       * THE HEAD IS CARRIED UP, ALWAYS (fix round 1, judge finding: "reads as
+       * a low-prowling cat, exactly the pose its own gate criteria forbid").
+       * The rig now puts the skull 0.6 m clear of the back line, but the idle
+       * solve still let the head settle onto the neutral pitch; a negative
+       * `headPitch` is head-UP (the Broadhead's grazing blend is the positive
+       * direction), and it is held even through the stalk, which is the
+       * species' whole separation from the Sawtooth.
+       */
+      this.gait.pose.headPitch = -0.16 - this._crouch * 0.10;
     }
     this.gait.update(dt, t);
     this._aimCannon(dt);

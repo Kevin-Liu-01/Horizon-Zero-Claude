@@ -41,6 +41,99 @@ export class Squads {
   }
 
   /**
+   * SQUAD MEMBERSHIP IS PLACEMENT, AND PLACEMENT IS WHAT A SITE REMEMBERS
+   * (fix round 2).
+   *
+   * `ai/sites.js` repopulates a spot by replaying the OPTIONS the first spawn
+   * was built from. `herd` survived that round trip only because
+   * `ai/doctrine.js` happens to pass it as a spawn option; `convoy`, `basking`
+   * and the escort ring are all attached AFTER `spawn()` returns, by the
+   * register/assign calls below, so none of them ever reached `opts` and none
+   * was ever stored. `Squads.forget` then spliced the dead member out and
+   * nothing put the respawn back: measured, ONE dispose/respawn cycle per
+   * machine took `convoyMembers 2 -> 0`, `baskingMembers 2 -> 0` and the
+   * escort ring from 4 slots to 2, permanently, with both machines alive and
+   * no gate signal (`A100` only ever ran at boot).
+   *
+   * So whatever attaches a squad also writes the handle back into the member's
+   * site record, here, in one line. The site is the only thing that outlives
+   * the machine.
+   */
+  _remember(machine, key, value) {
+    const site = machine && machine._site;
+    if (!site || !site.opts) return value;
+    site.opts[key] = value;
+    return value;
+  }
+
+  /**
+   * ...AND THE OTHER HALF: RE-ATTACH ON THE WAY BACK IN.
+   *
+   * Called from `Machines._spawnCls` for every machine, boot and respawn
+   * alike, once the site is wired. A boot spawn carries no squad yet and this
+   * is a no-op; a respawn arrives with the handles `_remember` stored, so the
+   * membership push, the carrier re-election and the basking calm-reset all
+   * happen in the one place instead of in each species' constructor.
+   *
+   * Idempotent by construction (`includes` before every push), because
+   * `installDoctrine` already re-adds a herd member and must not double-list
+   * it — a herd listed twice is how the rearguard count came out as 2 of 3.
+   */
+  adopt(machine) {
+    if (!machine) return machine;
+    const h = machine.herd;
+    if (h) {
+      this.registerHerd(h);
+      if (h.members && !h.members.includes(machine)) h.members.push(machine);
+      this._remember(machine, 'herd', h);
+    }
+    const c = machine.convoy;
+    if (c) {
+      this.registerConvoy(c);                    // no-op when already known
+      if (!c.members.includes(machine)) c.members.push(machine);
+      const car = c.carrier;
+      if (!car || !car.alive || car._disposed) this._electCarrier(c);
+      this._remember(machine, 'convoy', c);
+    }
+    const b = machine.basking;
+    if (b) {
+      this.registerBasking(b);
+      if (!b.members.includes(machine)) b.members.push(machine);
+      /**
+       * A pool whose whole pair was killed keeps `alarmed = true` for ever,
+       * and `installDoctrine`'s Snapmaw `onStateChange` returns early on an
+       * alarmed site — so the replacement pair could never wake together
+       * again even once its membership was restored. The flag belongs to the
+       * EPISODE, not to the site: a pool with nothing hot in it is calm.
+       */
+      if (!b.members.some((o) => o !== machine && o.alive && !o._disposed && o.suspicion > 0.3)) {
+        b.alarmed = false;
+        b._calmT = 0;
+      }
+      this._remember(machine, 'basking', b);
+    }
+    if (machine.escort) this._remember(machine, 'escort', machine.escort);
+    return machine;
+  }
+
+  /**
+   * THE ONE WAY TO PUT A MACHINE IN A SQUAD AFTER IT HAS SPAWNED.
+   *
+   * `field` is 'herd' | 'convoy' | 'basking'. `spawnExpansion` used to do
+   * `basking.members.push(m); m.basking = basking;` by hand — which is how the
+   * Snapmaw pool stayed invisible to the site record even after `_remember`
+   * existed: the raw push never touched it, so the pool still emptied on the
+   * first respawn while the convoy (registered through `registerConvoy`) came
+   * back. Anything that hands a machine a squad goes through here now, and
+   * `adopt` does the membership push, the carrier election and the write-back.
+   */
+  join(machine, squad, field) {
+    if (!machine || !squad) return machine;
+    machine[field] = squad;
+    return this.adopt(machine);
+  }
+
+  /**
    * CONVOY DOCTRINE (casting-v4.md §2.5 — the Shell-Walker, engine ask 4).
    *
    * A herd FLEES and posts one rearguard. A convoy does the opposite and it is
@@ -65,7 +158,7 @@ export class Squads {
     convoy.radius = convoy.radius ?? 9;
     this.convoys.push(convoy);
     this._electCarrier(convoy);
-    for (const m of convoy.members) m.convoy = convoy;
+    for (const m of convoy.members) { m.convoy = convoy; this._remember(m, 'convoy', convoy); }
     return convoy;
   }
 
@@ -82,8 +175,9 @@ export class Squads {
     if (!site || this.baskings.includes(site)) return site;
     site.members = site.members || [];
     site.alarmed = false;
+    site._calmT = 0;
     this.baskings.push(site);
-    for (const m of site.members) m.basking = site;
+    for (const m of site.members) { m.basking = site; this._remember(m, 'basking', site); }
     return site;
   }
 
@@ -304,6 +398,16 @@ export class Squads {
         slot: (i / guards.length) * Math.PI * 2,
         phase: Math.random() * Math.PI * 2,
       };
+      /**
+       * The ring slot is placement too, and the third casualty of the same
+       * defect: a respawned escort came back with `escort: null` and wandered
+       * its patrol route instead of holding its arc of the ring. The SAME
+       * object goes into the site, so the replacement inherits the slot rather
+       * than being handed a fresh random phase. (Only the DELIBERATE ring is
+       * remembered — the transient anchor `_updateConvoys` writes onto a
+       * non-carrier during an alarm is combat state and dies with the fight.)
+       */
+      this._remember(g, 'escort', g.escort);
     }
   }
 
@@ -445,9 +549,29 @@ export class Squads {
     return true;
   }
 
+  /**
+   * The basking pool's alarm is an EPISODE flag, exactly like the herd's
+   * (`machine-ai-07`) and the convoy's: it latches on the first wake and has
+   * to release again, or a pool that was spooked once is spooked for the rest
+   * of the session and `installDoctrine`'s Snapmaw `onStateChange` — which
+   * returns early on an alarmed site — can never wake the pair together again.
+   */
+  _updateBaskings(dt) {
+    for (const b of this.baskings) {
+      const living = b.members.filter((m) => m.alive && !m._disposed);
+      if (!living.length) { b.alarmed = false; b._calmT = 0; continue; }
+      let hot = false;
+      for (const m of living) if (m.suspicion > 0.3) { hot = true; break; }
+      if (hot) b._calmT = 0;
+      else b._calmT = (b._calmT || 0) + dt;
+      if (b.alarmed && b._calmT > this.calmTime) b.alarmed = false;
+    }
+  }
+
   update(dt) {
     this._updateHerds(dt);
     this._updateConvoys(dt);
+    this._updateBaskings(dt);
     this._updateCorruption(dt);
     this._t += dt;
     if (this._t < 0.5) return;
