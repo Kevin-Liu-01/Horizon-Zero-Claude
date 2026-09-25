@@ -18,6 +18,13 @@ import { installProgression } from './core/progression.js';
 installProgression(ctx);        // idempotent; publishes ctx.progression
 ```
 
+**Lifecycle contract.** `installProgression(ctx)` is idempotent **while the lane
+is alive** and REBUILDS after a teardown: if the held `ctx.progression` has been
+`dispose()`d it constructs a fresh lane, re-publishes it and re-registers it as
+a system (see §5.4). So a title-screen -> NEW GAME cycle can tear down and come
+back with one call, and a caller that cached the old object must re-read
+`ctx.progression`.
+
 Verified on a plain `?shot=1` boot (`shots/prog-fix1-boot.png`):
 `ctx.progression` is defined, `progression` is in the ctx key list, and
 `game.systems` reads `… Interactables, Progression, GameAudio, HUD, Studio`.
@@ -414,6 +421,8 @@ original is edited, weakened or re-run from this file. `A99-dialogue` and
 | `A99-dialogue` | `talkTo` opens the card for every one of the thirteen NPCs, choices advance state, a topic answer replaces the line, merchants keep the TRADE row, ESC closes |
 | `V45-dialogue-panel` | the card on film: tracked-caps name, title, quoted line, numbered choices, speaker still on screen |
 
+| `A67b-site-ledgers-expansion` | **continuation round** — `siteTuning` / `clearedSites` hold only live pending sites across a real disposal, a real respawn, and a respawn whose event never fired (memory handoff §5.1, see §5.4) |
+
 Run: `node tools/gates.mjs --port 5213 --lane progression-expansion`.
 
 All four now (a) fail unless `main.js` built the lane before the gate ran, and
@@ -513,3 +522,104 @@ No new gate ids. `A66-quest-objectives-expansion` gained two checks:
 12/12. (First measured attempt also caught its own defect: the assert body is a
 **template literal**, so `\d` in the clock regex was eaten down to `d` and the
 check read `secs: null`. Gate regexes in these files need `\\d`.)
+
+### 5.4 Both site ledgers now hold only live pending sites (memory handoff §5.1)
+
+`docs/ROUND4-MEMORY.md` §5.1 filed a measured leak against this file:
+`siteTuning` was written once per `machine-disposed` (`_tuneSiteRespawn`) and
+removed only by the wholesale `clear()` on reset/load — **+50 entries over 30
+kills** on the attribution census, monotonic in a metric that tracks kills, with
+no `delete` anywhere in the file. `clearedSites` had a `delete`, but only on the
+`machine-respawned` event.
+
+Taken, and taken one step further:
+
+* the handoff's one-line fix is in — `siteTuning.delete(site)` next to the
+  existing `clearedSites.delete(site)` in the `machine-respawned` handler;
+* `_pruneSiteLedgers()` (called on a disposal and on a respawn, a few times a
+  minute, never per frame) makes both containers **self-healing**: an id
+  survives only while its site is still `pending`, which is exactly what both
+  ledgers mean. That matters because `sites.js:244` re-schedules **silently**
+  when the model is not ready — a respawn that never emits used to leak an
+  entry for the session in `clearedSites` too. The live-id `Set` is reused, so
+  the sweep allocates nothing;
+* `dispose()` now clears `clearedSites` and the scratch set as well — and it
+  really is `dispose()`. The fix round caught an earlier edit that had landed in
+  `newGame()`, where `clearedSites.clear()` was already there (so the added line
+  was dead) and the scratch-set clear was on the wrong method, while this bullet
+  claimed the teardown did it. Both calls now sit beside `trials.clear()` /
+  `siteTuning.clear()` in `dispose()`, and **gate A67b calls the real method on
+  the live instance** and reads the real ledgers, so the claim is measured.
+  Nothing in the shipped graph calls `dispose()` yet (`installProgression`
+  pushes the lane into `ctx.game.systems` for the session), which is exactly why
+  it needed a gate rather than a sentence;
+* while it was open, `dispose()` was made **safe to call on a running game**:
+  it unregisters itself from `ctx.game.systems` (the mirror of what
+  `installProgression` did), `update()` early-returns on a `_disposed` flag (one
+  branch, no allocation) so a corpse someone still holds can never throw at
+  60 Hz, and a second call is a silent no-op. `ctx.progression` is deliberately
+  LEFT in place — hud/camp/menus/npc all read it, and a quiesced instance is
+  safer for them than a dangling `undefined`;
+* **the disposed instance is TERMINAL, and `installProgression()` REBUILDS over
+  it** (fix round 2). Leaving the corpse on `ctx.progression` only works if
+  install stops treating "there is a `ctx.progression`" as "the lane is up" — it
+  did not. `installProgression` short-circuited on `if (ctx.progression)` and
+  handed the corpse straight back, so a teardown-then-rebuild (shell-menus owns
+  the obvious first caller: title screen -> NEW GAME) produced a **silently
+  dead** lane: out of `ctx.game.systems`, `update()` early-returning forever,
+  the `#hzc-prog` island down from 42 nodes to 1, no XP, no quests, no banners,
+  nothing thrown and nothing in `__GAME__.systemErrors` — and `talkTo()` on it
+  throws `Cannot read properties of null (reading 'classList')` into whoever
+  called it, because the dialogue root was removed and nulled. The guard is now
+  `if (held && !held._disposed) return held;`, a dead instance is replaced by a
+  fresh `Progression` that is re-published on `ctx` and re-pushed onto the
+  system list, and any stale corpse still in `ctx.game.systems` is spliced out
+  on the way. **Callers that cached the old object must re-read
+  `ctx.progression`** — `installProgression(ctx)` returns the live one either
+  way. `src/world/camp.js` already keys its `rest` wrapper on the instance, so
+  it composes with a rebuild unchanged. Measured by the `reinstall*` checks in
+  A67b, not asserted here;
+* `audit().siteLedgers` publishes `{ tuning, cleared, pending, stale }` so the
+  census (and the gate) can read the invariant directly.
+
+**Gate `A67b-site-ledgers-expansion`** (new id, checked against all 254
+registered ids; `A67-machine-respawn` is this lane's own, so the sibling id is
+unambiguous). Three REAL disposals through `sites.dispose(m)`, then a REAL
+respawn — player moved outside the manager's 120 m refusal radius and
+`respawnAt` pulled back — then a site flipped back to occupied **without** the
+event to prove the sweep does not depend on it. Checks: tuning written and
+shaped (`delay/lo/hi/cls`), never slower than the stock 300–420 s window, the
+respawned site leaves BOTH ledgers, the quiet site is swept, a still-pending
+site is KEPT, `stale === 0`, and both ledgers are bounded by the pending count.
+Then TEARDOWN, on the live instance, last: the ledgers are provably non-empty
+first (`hadLedgers`/`liveScratch`/`wasRegistered`), `dispose()` empties
+`siteTuning`/`clearedSites`/`trials`/scratch (`disposedEmpty`), the system is
+out of `ctx.game.systems` (`leftLoop`), driving `update()` afterwards plus half
+a second of real simulated frames throws nothing (`inert`, `noQuarantine` reads
+`__GAME__.systemErrors`), and a second `dispose()` is a no-op (`idempotent`).
+Then REBUILD, through the real published API on the same page: the returned
+instance is a different object (`reinstallIsNew`), alive (`reinstallLive`),
+published on `ctx` (`reinstallPublished`), back in the frame loop
+(`reinstallRegistered`), its DOM island is really back rather than an empty
+shell (`reinstallDom` requires at least half the pre-teardown node count — a
+bare `> 0` would have passed on the broken build, whose `#hzc-prog` keeps 1
+node), it earns real XP through `addXp` over real simulated frames
+(`reinstallEarns`), it DRAWS a real conversation card through `talkTo('varl')`
+with the name/title/line in the document (`reinstallDialogue` — the corpse can
+only throw there), the corpse stays dead and stays out of the loop
+(`corpseStaysDead`), a further install is idempotent again
+(`reinstallIdempotent`), and nothing landed in `systemErrors` across all of it
+(`noQuarantineAfterReinstall`). 30/30.
+
+**Negative control, actually run.** With `siteTuning.delete(site)` removed and
+`_pruneSiteLedgers` short-circuited to `return 0`, A67b FAILs on exactly
+`["leftTuning","sweptQuiet","noStaleEntries","boundedByPending"]` — the leak,
+reproduced — while `tunedAll/clearedAll/pendingAll/respawned/keptPending` stay
+green. Restored, 12/12. Re-run for the teardown block: with the two `clear()`
+calls and the `systems.splice` taken back out of `dispose()`, A67b FAILs on
+exactly `["disposedEmpty","leftLoop"]` and nothing else. Restored, 20/20.
+Re-run for the rebuild block (fix round 2): with the guard put back to
+`if (held) return held;`, A67b FAILs on exactly
+`["reinstallIsNew","reinstallLive","reinstallRegistered"]`, and a page probe of
+the same corpse path measures `reinstallDom:false`, `reinstallDialogue:false`
+and the `classList` throw quoted above. Restored, 30/30.

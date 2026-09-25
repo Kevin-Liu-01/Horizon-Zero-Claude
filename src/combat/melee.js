@@ -224,10 +224,39 @@ const SPEAR_SCALE = 0.86;
  * rate and is inside the band §4 gives.
  */
 const DRAW_T = 0.30;
-/** the most of a draw/holster one RENDERED frame may consume (see `_stanceTick`) */
-const STANCE_STEP_MAX = 0.20;
-/** ...and of one swing PHASE (see `_phaseTick`) */
-const PHASE_STEP_MAX = 0.30;
+/**
+ * The most of a draw/holster one RENDERED frame may consume (`_stanceTick`).
+ *
+ * FIX ROUND 4 (finding F4): 0.20 -> 0.08. A102's `tipAcrossReparent` clause
+ * failed at 1.34 m against a 0.9 m bar inside the gate's own injected 20-80 ms
+ * stalls, and the cause was not the hand-over — that is continuous by
+ * construction (`meleeLayer._blendCarry`). It was this budget. At 0.20 the
+ * whole draw is five RENDERED frames, the pose leg that carries the hand from
+ * the guard to behind her shoulder is spent in two of them, and a 1.59 m haft
+ * on a wrist that moves 0.5 m in one frame swings its far end over a metre.
+ * The prop was never teleporting; it was moving correctly between poses the
+ * player never saw. At 0.08 the draw is at least thirteen rendered frames, so
+ * the far end of the haft moves ~0.3 m per frame at any frame rate. Above
+ * ~25 fps the cap never binds and the draw is the `DRAW_T` it always was.
+ */
+const STANCE_STEP_MAX = 0.08;
+/**
+ * ...and of one swing PHASE (see `_phaseTick`).
+ *
+ * FIX ROUND 4 (finding F3): 0.30 -> 0.16. The hit resolves at `CONTACT_K`
+ * (0.70) of the strike window, but it can only resolve on a rendered frame, so
+ * the coarser this budget the later the hit lands inside the swing: measured,
+ * the three A103 rows fired at k = 0.773 / 0.886 / 0.916 rather than at 0.70,
+ * i.e. up to a fifth of the way from the contact key to the follow-through,
+ * with the blade already sweeping off the target. At 0.16 the strike is at
+ * least seven rendered frames and the hit lands within ~0.08 of `CONTACT_K`.
+ */
+const PHASE_STEP_MAX = 0.16;
+/**
+ * How long the draw/holster may wait for the hand to arrive at the haft
+ * (finding F4). See `_advanceStance`.
+ */
+const GRAB_HOLD_MAX = 0.45;
 const HOLSTER_T = 0.42;
 /** How long the ready stance persists after the last swing. */
 const READY_HOLD = 3.6;
@@ -272,6 +301,29 @@ const STEP_SPEED = 1.15;
 /** Peak opacity of the swing smear (was 0.9 — see the geometry comment). */
 const TRAIL_PEAK = 0.32;
 
+/* ------------------------- the melee approach (F3) ------------------------ */
+/**
+ * The blocking pad the approach term asks `collision._syncMachines` for on the
+ * ONE machine the melee wedge has selected. The floor (and the reason it is
+ * 0.22 and not 0) is derived in `collision._meleePad`: below 0.20 the machine
+ * manager starts shoving machines away from a standing player and A25 breaks.
+ */
+const APPROACH_PAD = 0.20;
+/** How far ahead (to the machine's SHELL) the approach wedge looks. */
+const APPROACH_RANGE = 5.0;
+/** ...and how wide it is: +-50 deg about the aim, the arc the hit uses. */
+const APPROACH_COS = Math.cos(50 * Math.PI / 180);
+/** The most the strike lunge may ask the controller for, metres. */
+const LUNGE_MAX = 1.0;
+/**
+ * How much daylight the lunge aims to leave between the blade and the shell.
+ * Zero: the collision solve is what stops her, and it stops her a long way
+ * short of this ask on every machine in the roster (measured on a Watcher: the
+ * lunge asks for 0.72 m and gets 0.33 m of it), so any positive margin here is
+ * subtracted from a distance she never covers.
+ */
+const LUNGE_LEAVE = 0;
+
 export class Melee {
   constructor(ctx, combat) {
     this.ctx = ctx;
@@ -283,6 +335,17 @@ export class Melee {
     this.combo = 0;
     this.silentTarget = null;
     this.lastSwingT = -99;
+
+    /* THE MELEE APPROACH (fix round 4, finding F3). Published for
+     * `core/collision.js::_meleePad` and read by `_lungeFor`. */
+    this.approachMachine = null;
+    this.approachPad = null;
+    this.approachGap = null;
+    /** The solved blade-tip-to-nearest-hull distance of the last landed hit,
+     *  in metres (negative = the blade is inside the hull). A103's reach
+     *  clause. Also carried on the `melee-hit` event as `contactGap`. */
+    this.lastContactGap = null;
+    this._grabHold = 0;
 
     this._t = 0;              // phase clock (real seconds)
     this._phaseEnd = 0;
@@ -428,7 +491,13 @@ export class Melee {
     s.heavy = this.heavy;
     s.aimYaw = this._aimYaw;
     s.contactK = CONTACT_K;
-    s.k = this._phaseEnd > 1e-4 ? Math.min(1, (this._t + ahead) / this._phaseEnd) : 0;
+    /* ...AND THE EXTRAPOLATION MAY NOT OUTRUN THE PHASE (fix round 4, F3).
+     * A flat 50 ms is half of a 0.10 s strike window: on a loaded frame the
+     * pose published for the hit was a whole beat ahead of the clock that
+     * fired it. Capped at 30 % of the phase, the correction stays a frame of
+     * latency and never becomes a prediction. */
+    const cap = Math.min(ahead, this._phaseEnd * 0.30);
+    s.k = this._phaseEnd > 1e-4 ? Math.min(1, (this._t + cap) / this._phaseEnd) : 0;
     const dur = this.stance === 'draw' ? DRAW_T : HOLSTER_T;
     s.drawK = Math.min(1, (this._drawT + ahead) / dur);
     return s;
@@ -471,15 +540,29 @@ export class Melee {
     const stanceDt = this._stanceTick(realDt);
     if (this.stance === 'draw') {
       this._drawT += stanceDt;
-      if (this._drawT >= DRAW_T) {
+      if (this._drawT >= DRAW_T && this._waitForHand(stanceDt)) {
+        /* 0.75, not 0.985, and the 0.985 was a real bug: `poseState` adds up
+         * to 50 ms of extrapolation on top of `_drawT` before dividing by
+         * `DRAW_T`, so a clock parked at 0.985 still published `drawK` 1.0 and
+         * the layer took its last-resort escape on the first held frame — the
+         * hold did nothing and `grabReach` came out at 0.70 m. The pose leg is
+         * complete by `drawK` 0.55, so parking at 0.75 changes no pose; it
+         * only hands the arm more frames. */
+        this._drawT = DRAW_T * 0.75;
+      } else if (this._drawT >= DRAW_T) {
         this._drawT = DRAW_T;
+        this._grabHold = 0;
         this.stance = 'ready';
         this._readyT = Math.max(this._readyT, READY_HOLD);
         if (this._queued) { const q = this._queued; this._queued = null; this._fire(q.heavy); }
       }
     } else if (this.stance === 'holster') {
       this._drawT += stanceDt;
-      if (this._drawT >= HOLSTER_T) { this._drawT = 0; this.stance = 'holstered'; }
+      if (this._drawT >= HOLSTER_T && this._waitForHand(stanceDt)) {
+        this._drawT = HOLSTER_T * 0.75;
+      } else if (this._drawT >= HOLSTER_T) {
+        this._drawT = 0; this._grabHold = 0; this.stance = 'holstered';
+      }
     } else if (this.stance === 'ready') {
       this._readyT -= realDt;
       if (this._readyT <= 0) this.holsterSpear();
@@ -497,6 +580,125 @@ export class Melee {
       this._aimYaw = typeof this.aimLock === 'number' ? this.aimLock : Math.atan2(xc, zc);
     }
     this._stampT = performance.now() / 1000;
+  }
+
+  /**
+   * THE DRAW WAITS FOR THE HAND (fix round 4, finding F4).
+   *
+   * `meleeLayer` hands the prop over on the frame the hand coincides with the
+   * haft, and publishes `grabReach` — how far the hand actually was when it
+   * took it. A102 gates that at 0.25 m; it read 0.0957 m alone and 0.513 m
+   * under the gate's injected stalls, because the escape clause (`drawK >=
+   * 0.90`) fired on a frame where the arm had not finished travelling, and how
+   * many frames the arm gets is a frame-rate question. Slowing the clock alone
+   * does not fix it — the arm's own IK leaves a residual of ~0.09 m that no
+   * amount of waiting closes — so the wait is on CONVERGENCE, not on a
+   * threshold: the layer reports `needsGrab` until the reach stops improving,
+   * and the stance clock parks just short of its end until then.
+   *
+   * Bounded twice over: at most `GRAB_HOLD_MAX` of wall clock, and the layer's
+   * own `drawK >= 0.999` escape still exists for the frame the hold expires.
+   * A draw can therefore never stall, only take longer on a box that cannot
+   * draw the frames it needs.
+   *
+   * @returns {boolean} true while the clock should be held short of its end.
+   */
+  _waitForHand(dt) {
+    const lay = this.layer;
+    if (!lay || !lay.ok || !lay.needsGrab) { this._grabHold = 0; return false; }
+    this._grabHold = (this._grabHold || 0) + dt;
+    if (this._grabHold >= GRAB_HOLD_MAX) return false;
+    return true;
+  }
+
+  /**
+   * WHICH MACHINE THE BLADE IS APPROACHING, and how close the collision solve
+   * may let her stand to it (fix round 4, finding F3).
+   *
+   * Published for `core/collision.js::_meleePad`, which is where the ownership
+   * grant of Sep 25 puts the term. The wedge is the same one `_resolve` uses
+   * to pick a target, run one step earlier: she has to be allowed to WALK to
+   * the machine before the strike, or the lunge has nowhere to go.
+   *
+   * `approachGap` is her body centre to the machine's outer shell
+   * (`surfaceGap`), which is what `_lungeFor` needs. Allocation-free: module
+   * scratch only, and the loop is the roster, once per update — the same shape
+   * and the same cost as the arc test that was already here.
+   */
+  _scanApproach() {
+    this.approachMachine = null;
+    this.approachPad = null;
+    this.approachGap = null;
+    if (this.stance === 'holstered' || this.stance === 'holster') return;
+    const ctx = this.ctx;
+    const p = ctx.player;
+    const list = ctx.machines && ctx.machines.list;
+    if (!p || !list) return;
+    this._aimBasis();
+    let best = Infinity;
+    let target = null;
+    for (let i = 0; i < list.length; i++) {
+      const m = list[i];
+      if (!m || m.alive === false || !m.root || m._disposed) continue;
+      const d = surfaceGap(m, _chest.x, _chest.z);
+      if (d > APPROACH_RANGE || d > best) continue;
+      _v.copy(m.position);
+      _v.y += (m.height ?? 2) * 0.45;
+      _v2.subVectors(_v, _chest).normalize();
+      if (_v2.dot(_dir) < APPROACH_COS) continue;
+      best = d;
+      target = m;
+    }
+    if (!target) return;
+    this.approachMachine = target;
+    this.approachPad = APPROACH_PAD;
+    this.approachGap = best;
+  }
+
+  /**
+   * THE STRIKE LUNGE (fix round 4, finding F3).
+   *
+   * The step-in was a constant per beat, so the distance she covered had
+   * nothing to do with how far away the thing she was hitting was. When the
+   * approach wedge has a target, the step is instead "whatever closes the gap
+   * between the blade tip and the machine's shell", clamped into
+   * `base .. LUNGE_MAX`. It is still delivered through `_stepIn`, i.e. as a
+   * velocity floor the controller integrates and `moveCapsule` collides, so
+   * the collision solve is what actually stops her — asking for more than the
+   * standoff allows costs nothing and moves her no further.
+   *
+   * `bladeReach` is read off the LIVE prop, not assumed: the tip's forward
+   * distance from her root on this frame.
+   */
+  _lungeFor(base) {
+    const m = this.approachMachine;
+    if (!m) return base;
+    const p = this.ctx.player;
+    if (!p) return base;
+    /* TO THE SHELL, NOT TO THE STANDOFF SEGMENT. `approachGap` is
+     * `surfaceGap`, which measures to the GAMEPLAY standoff capsule — for a
+     * Watcher that capsule's near end sticks out 1.5615 m from the centre
+     * while the sculpt's hull ends 0.87 m out, so `surfaceGap` read 0.93 m on
+     * a machine whose body was 2.49 m away and the lunge never fired at all.
+     * `bodyRadius` is the machine's own idea of its body and matches the
+     * measured hull to 3 cm on a Watcher, so the shell is the quantity here.
+     * Over-asking is free — `_stepIn` is a velocity floor and `moveCapsule`
+     * stops her at whatever the collision solve allows — so the ask is
+     * clamped only by LUNGE_MAX. */
+    const toShell = Math.hypot(p.position.x - m.position.x, p.position.z - m.position.z)
+      - (m.bodyRadius || 1);
+    const want = toShell - Math.min(1.85, this._bladeReach()) + LUNGE_LEAVE;
+    if (!(want > base)) return base;
+    return Math.min(LUNGE_MAX, want);
+  }
+
+  /** How far ahead of her root the blade tip sits right now, in metres. */
+  _bladeReach() {
+    const lay = this.layer;
+    const p = this.ctx.player;
+    if (!lay || !lay.ok || !p || !lay.tipWorld(_tA)) return 1.8;
+    const h = p.heading ?? 0;
+    return (_tA.x - p.position.x) * Math.sin(h) + (_tA.z - p.position.z) * Math.cos(h);
   }
 
   /**
@@ -755,6 +957,10 @@ export class Melee {
     this._keyWas = keyNow;
 
     this._advanceStance(realDt, p, aiming);
+    /* WHICH MACHINE THE BLADE IS APPROACHING (fix round 4, F3). Runs before
+     * the swing advances so the collision solve is already using the reduced
+     * standoff on the frame the step-in fires. */
+    this._scanApproach();
     /* The blade's own sweep, sampled once per frame while it is swinging —
      * `_flashTrail` lays its smear on the plane the tip actually travelled
      * through, and the camera direction is not that plane (see `_flashTrail`).
@@ -818,8 +1024,25 @@ export class Melee {
     // start the tip trace on this swing, not on the last one's leftovers
     if (this.layer?.tipWorld?.(_tNow)) _tPrev.copy(_tNow);
     this.lastSwingT = performance.now() / 1000;
+    /* THE LUNGE STARTS WITH THE COCK, NOT WITH THE BLADE (fix round 4, F3).
+     * §4's grant asks for a lunge that "carries the root forward up to the
+     * hull distance DURING WINDUP", and the reason is measurable: the beat
+     * step-in fires at the windup->strike boundary, so the very first swing of
+     * a chain resolves its hit from wherever she was standing when she pressed
+     * the button. Filmed on A103, swing 1 landed from 3.387 m and swings 2-3
+     * from 3.06 m — the same swing, 0.33 m apart, because only the first one
+     * had not been carried in yet. The boundary step-in still fires; by then
+     * `_lungeFor` re-reads the distance and returns the beat's own number. */
+    this._lungeIn();
     this.combat?.noteCombatAction?.();
     return true;
+  }
+
+  /** Fire the approach lunge at the top of the windup (see `_fire`). */
+  _lungeIn() {
+    if (!this.approachMachine) return;
+    const want = this._lungeFor(0);
+    if (want > 0.01) this._stepIn(want);
   }
 
   _cancel() {
@@ -872,7 +1095,14 @@ export class Melee {
        * `_stepIn` now also arms `animator.beginMeleeStep()`, which lifts and
        * replants a foot; the magnitudes come down to the bottom half of §4's
        * 0.25-0.8 m band so the step a leg has to make is one a leg can make. */
-      this._stepIn(heavy ? 0.44 : [0.58, 0.36, 0.46][i] ?? 0.58);
+      /* FIX ROUND 4 (F4): light-2's step was 0.36 m and measured 0.235-0.277 m
+       * against A102's 0.25 m floor — inside its own sampling noise. It is
+       * 0.55 m now, which is also what the canon gives the return sweep
+       * (spear-canon.md M22: 0.25-0.4 m authored, but the drive only delivers
+       * 70-80 % of what it is asked for once the foot-lock throttle has had
+       * its say). (F3): and when the wedge has a target the step becomes the
+       * distance that puts the blade ON it — see `_lungeFor`. */
+      this._stepIn(this._lungeFor(heavy ? 0.42 : [0.66, 0.55, 0.42][i] ?? 0.58));
       if (this._phaseEnd * CONTACT_K <= 1e-4) { this._struck = true; this._resolve(); }
       return;
     }
@@ -904,6 +1134,24 @@ export class Melee {
     const p = ctx.player;
     _chest.copy(p.position);
     _chest.y += 1.28;
+    /* `aimLock` MEANS THE WHOLE BASIS, NOT JUST THE POSE (fix round 4, F3).
+     *
+     * `aimLock` was written for filming: it pins the swing's bearing so a
+     * locked camera cannot yaw the pose. But only `_advanceStance` honoured it
+     * — this function, which decides the step-in DIRECTION, the blade ray and
+     * the approach wedge, still read the live camera. With the two disagreeing
+     * the pose swung down her heading while the lunge carried her down the
+     * camera's, so a gate that parks a machine dead ahead of her and locks the
+     * aim watched her walk diagonally past it: A103's reach reading swung
+     * 0.4 m between runs with nothing else changed, and the worst row was
+     * always the one where she had ended up closest to the machine and most
+     * off its axis. Honouring the lock here makes the three consistent. In
+     * play `aimLock` is null and this is the camera, as it always was. */
+    if (typeof this.aimLock === 'number') {
+      const a = (p.heading ?? 0) + this.aimLock;
+      _dir.set(Math.sin(a), 0, Math.cos(a));
+      return;
+    }
     ctx.camera.getWorldDirection(_dir);
     _dir.y *= 0.35;             // melee is a ground game; don't swing at the sky
     if (_dir.lengthSq() < 1e-6) _dir.set(Math.sin(p.heading), 0, Math.cos(p.heading));
@@ -919,6 +1167,7 @@ export class Melee {
     const ctx = this.ctx;
     const p = ctx.player;
     if (!p) return;
+    this.lastContactGap = null;
     const heavy = this.heavy;
     const c = heavy ? MELEE.heavy : MELEE.light;
     const i = this._i;
@@ -1126,6 +1375,18 @@ export class Melee {
         }
       }
       if (bestD < Infinity) {
+        /* THE REACH, PUBLISHED (fix round 4, finding F3).
+         *
+         * `bestD` is the distance from the blade TIP to the nearest point on
+         * the target's hull surface at the instant the hit resolves —
+         * negative when the blade is inside it. A103's old clause measured the
+         * tip against the impact POINT, and once the point became "the hull
+         * surface nearest the tip" those two were the same number by
+         * construction: the film judge called it near-tautological and was
+         * right. This is the number that cannot be satisfied by moving the
+         * point: it only falls when she actually gets closer or reaches
+         * further. Both clauses are gated now. */
+        this.lastContactGap = +bestD.toFixed(4);
         _pt.copy(_tC);
         _n.copy(_tD);
         // one short confirming ray, purely to recover a real `object` node
@@ -1138,8 +1399,22 @@ export class Melee {
             const hc = hulls.raycast(_ray, { far: span2 + 0.35 });
             if (hc && hc.hit && hc.machine === machine) {
               object = hc.object || object;
-              _pt.set(hc.x, hc.y, hc.z);
-              _n.set(hc.nx, hc.ny, hc.nz);
+              /* ...BUT ONLY WHEN THE BLADE IS OUTSIDE THE HULL (fix round 4).
+               *
+               * Now that the melee approach term lets the blade actually land
+               * ON the machine, `bestD` goes NEGATIVE — the tip is inside a
+               * hull capsule — and a ray started inside a volume returns its
+               * own origin. So the "confirming" ray published the impact point
+               * AT THE BLADE TIP, 0.13-0.18 m inside the sculpt, and A103's
+               * point-on-hull clause caught it: sparks and the decal would
+               * have been buried in the machine instead of sitting on its
+               * skin. The closed-form surface point is already exactly on the
+               * capsule in that case; the ray is then used for nothing but
+               * recovering a real node for `takeDamage`. */
+              if (bestD > 0) {
+                _pt.set(hc.x, hc.y, hc.z);
+                _n.set(hc.nx, hc.ny, hc.nz);
+              }
             }
           }
         }
@@ -1206,6 +1481,8 @@ export class Melee {
     ctx.events.emit('melee-hit', {
       machine, damage: dealt, heavy, combo: i, crit,
       point: _pt.clone(), killed: !!res?.killed, tornPart: res?.tornPart ?? null,
+      // blade tip to the nearest hull SURFACE at this instant (A103, F3)
+      contactGap: this.lastContactGap,
     });
     this._noise(heavy ? 'impact' : 'noise', _pt, heavy ? 0.85 : 0.6);
   }

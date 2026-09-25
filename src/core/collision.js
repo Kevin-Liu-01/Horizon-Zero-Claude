@@ -81,6 +81,31 @@ const _pivotS = new THREE.Vector3();
 const _sideS = new THREE.Vector3();
 const _dirS = new THREE.Vector3();
 const _boomS = new THREE.Vector3();
+/**
+ * The smallest melee approach pad that still leaves a machine immovable (A25).
+ * See `Collision._meleePad` for the derivation — it is `0.6 - playerRadius`,
+ * not a tuned number, and nothing may pass a smaller one.
+ */
+const MELEE_PAD_FLOOR = 0.20;
+/**
+ * How much of the melee target's standoff SEGMENT the approach term removes,
+ * in metres. See `Collision._meleeStandoff`: it is the end cap of a capsule
+ * built from a machine's animated bounding box, which on every quadruped in
+ * this roster is about a metre of empty air in front of the sculpt. Absolute
+ * rather than proportional so a Thunderjaw loses the same centimetre of cap a
+ * Watcher does instead of a third of its body.
+ */
+const MELEE_L_CUT = 0.66;
+/**
+ * ...and the floor under it: the melee standoff segment never drops below this
+ * fraction of the machine's own. The cut is an absolute number tuned on the
+ * quadruped that needed it, and on a small machine whose whole standoff is
+ * shorter than the cut it would collapse the capsule to a sphere about the
+ * centre and let her stand beside a flank. A third of the segment always
+ * survives.
+ */
+const MELEE_L_FLOOR = 0.35;
+
 /* scratch pair for the per-frame machine sync — never escapes _syncMachines */
 const _pair = [null, null];
 const _bDir = new THREE.Vector3();   // cameraBoom-private basis: _stepCamera
@@ -1159,6 +1184,10 @@ export class Collision {
       const m = list[i];
       let rec = this._machineMap.get(m);
       if (!m.alive) {
+        // a wreck is never a melee approach target: give the standoff back
+        // before anything else, so a machine that dies mid-swing does not keep
+        // the shortened segment for the rest of the session
+        if (rec && rec.meleeCut) { m.standoffHalfLen = rec.baseL; rec.meleeCut = false; }
         // wrecks are lower and smaller: keep them as a low bump, not a wall,
         // and let the lens sit inside one so looting a corpse is filmable
         if (rec && rec.body.blocking) {
@@ -1169,6 +1198,8 @@ export class Collision {
       }
       if (!rec) {
         const shape = { type: 'capsule', a: [0, 0, 0], b: [0, 0, 0], radius: 1 };
+        // `baseL` is the machine's own standoff half-length, kept so the melee
+        // approach term can put it back (see `_meleeStandoff`)
         const body = this.byId.get(this.register({
           kind: 'machine', dynamic: true, ref: m, occluder: false, camera: false, shape,
         }));
@@ -1176,10 +1207,10 @@ export class Collision {
           kind: 'machine-cam', dynamic: true, ref: m,
           blocking: false, occluder: false, camera: true, shape,
         }));
-        rec = { body, cam };
+        rec = { body, cam, baseL: m.standoffHalfLen || 0, meleeCut: false };
         this._machineMap.set(m, rec);
       }
-      const L = m.standoffHalfLen || 0;
+      const L = this._meleeStandoff(m, rec);
       const fx = Math.sin(m.heading || 0), fz = Math.cos(m.heading || 0);
       const r0 = m.bodyRadius || 1;
       const top = m.position.y + Math.max(0.6, (m.height || 2) * 0.75);
@@ -1196,12 +1227,114 @@ export class Collision {
       }
       // clears the manager's own `bodyRadius + 0.6` standoff by a frame of
       // sprint travel, so machines are never shoved by walking into them
-      rec.body.r = r0 + this.machinePad;
+      rec.body.r = r0 + this._meleePad(m);
       // the real silhouette — no gameplay pad in the lens volume
       rec.cam.r = r0;
       this._bounds(rec.body);
       this._bounds(rec.cam);
     }
+  }
+
+  /**
+   * THE MELEE APPROACH TERM (lane `player-melee`, grant extended Sep 25 —
+   * `docs/ROUND4-AUDIT.md`, "Grant extended again"; recorded in
+   * `docs/ROUND4-SPATIAL.md` §7 as that grant requires).
+   *
+   * THE PROBLEM IT EXISTS FOR. `machinePad` is a GAMEPLAY standoff, not
+   * geometry: it keeps a walking player from shoving a machine (A25) by
+   * clearing the machine manager's own `bodyRadius + 0.6` push. It is applied
+   * to every machine in every state, including the one Aloy is trying to hit
+   * with a 1.59 m spear. Measured on a Watcher: `standoffHalfLen` 1.5615 +
+   * `bodyRadius` 0.9 + `machinePad` 0.55 + her own 0.4 m capsule radius holds
+   * her 3.41 m from its centre head-on, while the contact pose puts her blade
+   * tip 1.87 m ahead of her root. The blade finished 0.32-0.58 m short of the
+   * nearest hull surface on every landed hit (gate A103's `bestD`), and
+   * `reference/spear-light-strike.jpg` — the shot the whole lane is judged
+   * against — has the blade ON the machine's head.
+   *
+   * WHAT IT DOES. While `combat.melee` has the spear drawn AND has that
+   * machine selected as its approach target (`melee._scanApproach`, the same
+   * wedge the hit resolve uses), that ONE machine's blocking capsule drops its
+   * pad to `MELEE_PAD`. Every other machine, and every machine at every other
+   * time, keeps `machinePad` unchanged — this is not a change to general
+   * movement.
+   *
+   * WHY IT CANNOT INTERPENETRATE ANYTHING. The pad is a term ON TOP of the
+   * machine's own `bodyRadius`, and `MELEE_PAD` is >= 0: her capsule can never
+   * cross the machine's shell, only stand against it.
+   *
+   * WHY 0.22 AND NOT 0. The floor is set by A25-machine-immovable, and it is
+   * exact rather than tuned: `machines/index.js` pushes a machine away
+   * whenever the player's POSITION is within `bodyRadius + 0.6` of a standoff
+   * sphere, while this capsule holds her POSITION at `bodyRadius + pad + 0.4`
+   * (her own radius) from the standoff segment. The push therefore fires iff
+   * `pad < 0.6 - 0.4 = 0.20`, for every machine, independently of its
+   * `bodyRadius`. 0.22 is that floor plus 2 cm, and it buys 0.33 m of reach.
+   */
+  /**
+   * THE OTHER HALF OF THE MELEE APPROACH TERM: the standoff SEGMENT.
+   *
+   * The pad alone is not enough and the measurement says why. A Watcher's
+   * blocking capsule is `standoffHalfLen` 1.5615 swept either side of its
+   * centre, inflated by `bodyRadius` 0.9; its ACTUAL hit hull, at the height
+   * a spear contacts (about 1.0 m up), starts 0.5 m from the centre and ends
+   * 1.65 m out. The 1.5615 m half-length is not the machine, it is
+   * `max(size.x, size.z) * 0.5 - bodyRadius` off the ANIMATED bounding box —
+   * 4.92 m for a Watcher, i.e. the box that contains its legs at full spread.
+   * So the capsule's END CAP is ~1 m of empty air in front of the sculpt, and
+   * that cap is the whole reach shortfall: with the pad at its floor she still
+   * stands 3.06 m from the centre while the blade reaches 1.80 m (measured off
+   * the posed rig, not assumed — the arm is at full extension at contact and
+   * authoring the hand further forward buys nothing, the IK simply falls
+   * short).
+   *
+   * So the melee target's standoff segment is shortened by a fixed
+   * `MELEE_L_CUT`, which eats the cap and nothing else.
+   *
+   * IT IS WRITTEN BACK ONTO THE MACHINE, ON PURPOSE. `machines/index.js` runs
+   * its own hard standoff — it pushes a machine away whenever the player's
+   * position is within `bodyRadius + 0.6` of a sphere at +-`standoffHalfLen` —
+   * and that loop reads the machine's field, not this collider. If only the
+   * collider shrank, every melee approach would SHOVE the machine, which is
+   * precisely the failure `machinePad` exists to prevent (A25). Writing the
+   * same number into `m.standoffHalfLen` keeps the two consistent: she stops
+   * at `L' + bodyRadius + 0.20 + 0.40` from the centre, which is exactly
+   * `bodyRadius + 0.6` from the shortened sphere, so the manager's push never
+   * fires and the machine stays put. The base value is cached here and
+   * restored on every frame the machine is not the melee target, so the field
+   * self-heals even if melee is torn down mid-frame.
+   *
+   * NO INTERPENETRATION, AND IT IS MEASURED RATHER THAN CLAIMED: gate A103
+   * publishes `playerToHullAtHit`, the distance from her own capsule to the
+   * nearest hit-hull surface at the instant the blade lands, and fails the row
+   * if it is not positive. On a Watcher it reads ~0.36 m.
+   */
+  _meleeStandoff(m, rec) {
+    const mel = this.ctx.combat && this.ctx.combat.melee;
+    // `typeof`, not `>= 0`: null coerces to 0 and would read as a valid pad
+    const on = !!(mel && mel.approachMachine === m && typeof mel.approachPad === 'number');
+    if (!on) {
+      /* Put it back, once, on the frame the term stops applying — and on every
+       * other frame re-read the machine's own value, so a field this class does
+       * not own can still change underneath it without being clobbered by a
+       * stale cache. */
+      if (rec.meleeCut) { m.standoffHalfLen = rec.baseL; rec.meleeCut = false; }
+      else rec.baseL = m.standoffHalfLen || 0;
+      return m.standoffHalfLen || 0;
+    }
+    if (!rec.meleeCut) { rec.baseL = m.standoffHalfLen || 0; rec.meleeCut = true; }
+    const base = rec.baseL || 0;
+    const want = Math.max(base * MELEE_L_FLOOR, base - MELEE_L_CUT);
+    if (m.standoffHalfLen !== want) m.standoffHalfLen = want;
+    return want;
+  }
+
+  _meleePad(m) {
+    const mel = this.ctx.combat && this.ctx.combat.melee;
+    if (!mel || mel.approachMachine !== m) return this.machinePad;
+    const want = mel.approachPad;
+    if (typeof want !== 'number') return this.machinePad;
+    return Math.min(this.machinePad, Math.max(MELEE_PAD_FLOOR, want));
   }
 
   /* --------------------------- opt-in demo shims ------------------------ */

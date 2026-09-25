@@ -130,7 +130,13 @@
  *    and raises `quest-delivered`. Four bounties used to pay on top of goods
  *    the player kept, and one of them asked for forty of the CURRENCY itself.
  *
- * 7. THE TRIAL HAS A CLOCK. `activeTrial()` answers "is a window running, and
+ * 7. SITE LEDGERS ARE BOUNDED. `siteTuning` grew once per disposal and was
+ *    never pruned (memory lane handoff, docs/ROUND4-MEMORY.md §5.1: +50 over
+ *    30 kills). `machine-respawned` now deletes from it, and
+ *    `_pruneSiteLedgers()` keeps BOTH ledgers to live PENDING sites, so a
+ *    respawn that never emits cannot leak either.
+ *
+ * 8. THE TRIAL HAS A CLOCK. `activeTrial()` answers "is a window running, and
  *    on what" (pre-formatted `mmss`), and `_tickTrials` pushes it into the
  *    lane's own `.pg-trial` chip at 5 Hz. `shell-hud` never took the render in
  *    §3.8 and a `within:` objective was counting down invisibly; the chip
@@ -139,8 +145,9 @@
  * Gates: `tools/gates.round4.progression-expansion.mjs` —
  * `A66-quest-objectives-expansion` (now also `goodsDelivered` +
  * `trialClockDrawn`), `A65-save-restore-expansion`, `A99-dialogue`,
- * `V45-dialogue-panel` (the two suffixed ids are the audit's A66/A65 renamed
- * because lane `progression` already owns those ids).
+ * `V45-dialogue-panel`, `A67b-site-ledgers-expansion` (the two suffixed ids are
+ * the audit's A66/A65 renamed because lane `progression` already owns those
+ * ids).
  */
 
 import * as THREE from 'three';
@@ -938,6 +945,8 @@ export class Progression {
     this._hadTrial = false;
     /** Sites whose machine is gone and whose respawn is pending. */
     this.clearedSites = new Set();
+    /** Set once by `dispose()`; makes `update()` inert. Never unset. */
+    this._disposed = false;
     /** siteId -> the window this lane re-timed it to (diagnostic, see audit). */
     this.siteTuning = new Map();
     /** one-second cache of `ctx.props.sites()` — see `_sites()`. */
@@ -1625,7 +1634,7 @@ export class Progression {
 
     // HAND THE GOODS OVER BEFORE THE PAYOUT: a bounty that leaves the herbs in
     // your pouch is a gift, not a trade (see `_deliverGoods`).
-    const handed = this._deliverGoods(def, st);
+    const handed = this._deliverGoods(def);
 
     const r = def.rewards || {};
     if (r.xp) this.addXp(r.xp, 'quest');
@@ -2059,6 +2068,43 @@ export class Progression {
     return pol;
   }
 
+  /**
+   * BOTH SITE LEDGERS HOLD ONLY PENDING SITES (memory lane handoff,
+   * `docs/ROUND4-MEMORY.md` §5.1).
+   *
+   * `siteTuning` was written once per `machine-disposed` and removed only by a
+   * wholesale `clear()` on reset/load: measured **+50 entries over 30 kills**
+   * on the attribution census, monotonic in a metric that tracks kills, with no
+   * `delete` anywhere in the file. `clearedSites` had the delete but only on
+   * the `machine-respawned` event, which the site manager does not emit when
+   * the model is not ready (it silently re-schedules, `sites.js:244`) — so a
+   * missed event leaked an entry for the session there too.
+   *
+   * The handoff's one-line fix is taken (`siteTuning.delete(site)` beside the
+   * existing `clearedSites.delete(site)`), and this sweep makes both ledgers
+   * SELF-HEALING rather than event-dependent: an id survives only while its
+   * site is still `pending`, which is exactly what both containers mean. The
+   * live-id Set is reused, so the sweep allocates nothing, and it runs only on
+   * a disposal or a respawn — a few times a minute, never per frame.
+   *
+   * @returns {number} entries dropped (diagnostic; `audit().siteLedgers`)
+   */
+  _pruneSiteLedgers() {
+    const list = this.ctx.machines?.sites?.sites;
+    if (!Array.isArray(list) || (!this.siteTuning.size && !this.clearedSites.size)) return 0;
+    const live = (this._liveSiteIds ??= new Set());
+    live.clear();
+    for (const s of list) if (s && s.pending && s.id != null) live.add(s.id);
+    let dropped = 0;
+    for (const id of this.siteTuning.keys()) {
+      if (!live.has(id)) { this.siteTuning.delete(id); dropped++; }
+    }
+    for (const id of this.clearedSites) {
+      if (!live.has(id)) { this.clearedSites.delete(id); dropped++; }
+    }
+    return dropped;
+  }
+
   /* ====================================================================== */
   /* dialogue (expansion round) — data lives here, the card just draws it    */
   /* ====================================================================== */
@@ -2288,7 +2334,7 @@ export class Progression {
    * `take` is guarded the way `_grant` is: `inventory.take` does not emit, but
    * a foreign subclass could, and a throw here must not cost the payout.
    */
-  _deliverGoods(def, st) {
+  _deliverGoods(def) {
     const inv = this.ctx.inventory;
     if (!inv?.take || !def?.objectives) return null;
     let out = null;
@@ -2306,6 +2352,17 @@ export class Progression {
     }
     if (out) {
       this._emit('quest-delivered', { id: def.id, title: def.title, items: out });
+      /**
+       * SAY IT ON SCREEN. The pouch just got lighter and the only other thing
+       * about to appear is a QUEST COMPLETE card — a player who watched forty
+       * shards leave with no line about it reads it as a bug. Banners are the
+       * one channel `shell-hud` already renders for this lane (§2), and the
+       * two cards stack the way HZD's turn-in feed does.
+       */
+      const said = out.filter((r) => r.n > 0)
+        .map((r) => `${r.n} ${String(this.ui._name(r.id)).toUpperCase()}`)
+        .join('  ·  ');
+      if (said) this.banner('HANDED OVER', said, 'quest');
       this.ui.refresh();
     }
     return out;
@@ -2814,10 +2871,17 @@ export class Progression {
         // progression-003 (expansion): per-site respawn timing, see respawnPolicy
         this._tuneSiteRespawn(site);
       }
+      this._pruneSiteLedgers();
     });
     on('machine-respawned', ({ site } = {}) => {
       this.stats.respawns++;
-      if (site != null) this.clearedSites.delete(site);
+      if (site != null) {
+        this.clearedSites.delete(site);
+        // ...and the tuning ledger, which used to keep the entry for the whole
+        // session (memory lane handoff, docs/ROUND4-MEMORY.md §5.1)
+        this.siteTuning.delete(site);
+      }
+      this._pruneSiteLedgers();
       this.checkpoint('respawn');
     });
 
@@ -3052,6 +3116,9 @@ export class Progression {
   /* ====================================================================== */
 
   update(dt, t) {
+    // A disposed lane is inert even if something still holds a reference to it
+    // (see `dispose()`): one branch, no allocation, never throws at 60 Hz.
+    if (this._disposed) return;
     this._bootT += dt;
     // the trial clock is SIMULATED seconds, never wall time (see `this.clock`)
     this.clock += dt;
@@ -3215,6 +3282,19 @@ export class Progression {
         panel: this.dialogueUI ? this.dialogueUI.audit() : null,
       },
       siteTuning: [...this.siteTuning.entries()].map(([id, v]) => ({ id, ...v })),
+      /**
+       * Both site ledgers, and whether they hold anything that is NOT a live
+       * pending site — the invariant `_pruneSiteLedgers` keeps, and the number
+       * `A67b-site-ledgers-expansion` reads (memory handoff §5.1).
+       */
+      siteLedgers: (() => {
+        const list = this.ctx.machines?.sites?.sites;
+        const pending = new Set(Array.isArray(list)
+          ? list.filter((s) => s && s.pending).map((s) => s.id) : []);
+        const stale = [...this.siteTuning.keys()].filter((id) => !pending.has(id)).length
+          + [...this.clearedSites].filter((id) => !pending.has(id)).length;
+        return { tuning: this.siteTuning.size, cleared: this.clearedSites.size, pending: pending.size, stale };
+      })(),
       stats: { ...this.stats },
       killsByKind: { ...this.killsByKind },
       clearedSites: [...this.clearedSites],
@@ -3240,7 +3320,49 @@ export class Progression {
     };
   }
 
+  /**
+   * TEARDOWN (memory lane handoff, `docs/ROUND4-MEMORY.md` §5.1).
+   *
+   * Nothing in the shipped graph called this before — `installProgression`
+   * pushes the instance into `ctx.game.systems` and it lives for the session —
+   * which is exactly how an earlier round could *claim* the site ledgers were
+   * released here while the two `clear()` calls actually sat in `newGame()`,
+   * where one was a duplicate and the other was on the wrong container.
+   * `A67b-site-ledgers-expansion` now calls the real method and reads the real
+   * ledgers, so the claim is measured rather than asserted.
+   *
+   * Three properties the gate holds this to:
+   *   1. every container this lane owns is EMPTY afterwards;
+   *   2. the corpse LEAVES the frame loop (it unregisters itself from
+   *      `ctx.game.systems`, the mirror of what `installProgression` did) and
+   *      `update()` is a one-branch no-op if it is called anyway — this lane
+   *      has no `interpolate`, and a disposed system must never throw at 60 Hz;
+   *   3. a second call is a silent no-op.
+   *
+   * `ctx.progression` is deliberately LEFT in place: the HUD, camp, menus and
+   * npc lanes all read it, and a quiesced instance is safer for them than a
+   * dangling `undefined` on the frame after teardown.
+   *
+   * THIS INSTANCE IS TERMINAL. It never comes back — nothing un-disposes it,
+   * and every reader that cached the object rather than re-reading
+   * `ctx.progression` keeps talking to a corpse. That is why the REBUILD path
+   * lives in `installProgression`: calling it again after a teardown detects
+   * the dead instance, constructs a fresh lane and re-publishes
+   * `ctx.progression`, so a title-screen → new-game cycle (shell-menus owns the
+   * obvious first caller) gets a LIVE lane instead of a silent one. Fix round 2
+   * closed exactly that hole: install used to short-circuit on
+   * `if (ctx.progression)` and hand the corpse straight back, with no throw, no
+   * `systemErrors` entry and no XP — checked now by `reinstall*` in
+   * `A67b-site-ledgers-expansion`.
+   */
   dispose() {
+    if (this._disposed) return;
+    this._disposed = true;
+    const systems = this.ctx.game?.systems;
+    if (Array.isArray(systems)) {
+      const i = systems.indexOf(this);
+      if (i >= 0) systems.splice(i, 1);
+    }
     for (const off of this._off) { try { off?.(); } catch { /* already gone */ } }
     this._off.length = 0;
     const p = this.ctx.player;
@@ -3255,6 +3377,10 @@ export class Progression {
     if (this._npcEntry) this.ctx.interactables?.unregister?.(this._npcEntry);
     this.trials.clear();
     this.siteTuning.clear();
+    this.clearedSites.clear();
+    this._liveSiteIds?.clear();
+    this.awarded.clear();
+    this.dialogue.seen.clear();
     this.ui.dispose();
     this.skillsUI.dispose();
     this.dialogueUI?.dispose?.();
@@ -3267,18 +3393,48 @@ export class Progression {
 
 /**
  * Bring the progression lane up on an existing ctx and register it as a game
- * system. Idempotent: calling it twice returns the same instance.
+ * system.
  *
- * `core-platform` should call this from `main.js` after `ctx.interactables`;
- * until then any page-context probe (and every gate in this lane) calls it
- * directly. See the INTEGRATION NOTE at the top of this file.
+ * Idempotent while the lane is ALIVE: calling it twice in a session returns the
+ * same instance, so `main.js`, a probe and every gate here can all call it.
+ *
+ * REBUILDS after a teardown. `Progression#dispose()` leaves `ctx.progression`
+ * pointing at a deliberately quiesced corpse (see its doc — dependents prefer a
+ * quiet object to a dangling `undefined`), so this function cannot treat "there
+ * is a `ctx.progression`" as "the lane is up". It used to, and the composition
+ * failed silently: a teardown-then-rebuild handed back the disposed instance —
+ * out of `ctx.game.systems`, `update()` early-returning forever, its DOM island
+ * gone — with nothing thrown and nothing in `__GAME__.systemErrors`. So a dead
+ * instance is now replaced: fresh `Progression`, re-published on `ctx`,
+ * re-pushed onto the system list. The corpse stays dead and stays out of the
+ * loop; the hook wrappers it restored on teardown are re-applied by the new
+ * instance (they are `__hzcWrapped`-guarded), and the `#hzc-prog` /`#hzc-dlg`
+ * islands are re-created by `progRoot()` and the dialogue panel.
+ *
+ * Callers that cached the old reference must re-read `ctx.progression` — this
+ * returns the live one either way. Gate: `reinstallIsNew`/`reinstallLive`/
+ * `reinstallPublished`/`reinstallRegistered`/`reinstallDom`/`reinstallEarns`/
+ * `reinstallDialogue`/`reinstallIdempotent`/`corpseStaysDead` in
+ * `A67b-site-ledgers-expansion`.
+ *
+ * `core-platform` calls this from `main.js` after `ctx.interactables`; any
+ * page-context probe (and every gate in this lane) may call it directly. See
+ * the INTEGRATION NOTE at the top of this file.
  */
 export function installProgression(ctx, opts = {}) {
   if (!ctx) return null;
-  if (ctx.progression) return ctx.progression;
+  const held = ctx.progression;
+  if (held && !held._disposed) return held;
   const prog = new Progression(ctx, opts);
   ctx.progression = prog;
-  if (ctx.game && Array.isArray(ctx.game.systems)) ctx.game.systems.push(prog);
+  if (ctx.game && Array.isArray(ctx.game.systems)) {
+    // never leave a corpse behind in the loop, however it got there
+    if (held && held !== prog) {
+      const i = ctx.game.systems.indexOf(held);
+      if (i >= 0) ctx.game.systems.splice(i, 1);
+    }
+    ctx.game.systems.push(prog);
+  }
   return prog;
 }
 

@@ -495,14 +495,22 @@ terrain.snowAt(x, z)           // 0..1 snow dusting on the north bench
 // module-level, for consumers that do not hold the instance
 import {
   forestFactor, snowFactor, marshFactor, ashFactor, screeFactor,
-  northBenchFactor, biomeWeights, biomeAt, biomeSuppress, trailSuppress,
-  stampStealthDisc, MARSH_LEVEL,
+  northBenchFactor, biomeWeights, biomeGrassDamp, biomeAt, biomeSuppress,
+  trailSuppress, stampStealthDisc, MARSH_LEVEL,
 } from './terrain.js';
 ```
 
 `biomeWeights` reuses one shared object unless you pass `out` — the grass
 scatter calls it ~470 k times per stream and must not allocate. Every factor
-early-outs on a bounding test, so a meadow point costs five comparisons.
+early-outs on a bounding test, so a meadow point costs five comparisons, and a
+one-entry memo (fix round 1) makes the second call at the same point free, which
+is what lets the concealment field and the scatter both read it.
+
+`biomeGrassDamp(weights)` is **the** multiplier a biome mix applies to grass —
+0.82 in the forest, 0.10 on snow, 0.04 on ash, 0.38 on scree, 0.55 in the marsh.
+It has exactly one definition and exactly two callers (`tallGrassDensity` and
+`vegetation.grassDensityAt`), because two copies of five coefficients is how the
+concealment field and the scatter drifted apart in the first place.
 
 | biome | where | ground | what grows |
 |---|---|---|---|
@@ -514,9 +522,26 @@ early-outs on a bounding test, so a meadow point costs five comparisons.
 
 ### two rules every consumer of these fields obeys
 
-1. **Biomes never touch `tallGrassDensity`.** The concealment field is the
-   machine-route contract (A60); a biome that could thin it could silently take
-   a patrol lane's cover away. The biome pass is material + scatter only.
+1. **Biomes thin the ORGANIC half of `tallGrassDensity` and never the AUTHORED
+   half** (fix round 1). The first cut of this pass left the whole concealment
+   field alone, to protect the machine-route contract (A60). That was the wrong
+   invariant, and a judge proved it: the scatter WAS damped by the biome
+   multipliers and the field was not, so `isInTallGrass()` returned true on 432
+   sampled points (198 snow, 124 ash, 73 scree, 8 marsh, 29 partial-weight
+   meadow) where fewer than 2 tufts/m² had actually been planted — Aloy filmed
+   standing "hidden" on open snow at (-72,-244) and on the burn scar at
+   (172,-208). `player.js:1318` and `machines/ai/search.js:33` both consume that
+   field.
+   The route contract is protected by the SPLIT instead: `biomeGrassDamp` is
+   applied to the noise term only, exactly as `pathFactor` / `riverFactor` /
+   `shelfFactor` already were, and never to the authored term, and every machine
+   route's cover lands in the authored term via `_ensureRouteCover`. It is also
+   self-correcting — the route audit measures cover through this same function,
+   so a route crossing a biome now measures low and gets its arcs stamped.
+   **Measured after:** biome-caused desync 432 → 0 (snow 0, ash 0, scree 0,
+   forest 1, marsh 19 in the wet channel, where the reed relaxation is keyed on
+   the field it just damped). A59 worst meadow 7.18 / worst stealth 8.21, A60
+   worst route 0.485 with 0 routes under the bar — both unmoved.
 2. **Surface weights are cover- and trail-suppressed** (`biomeSuppress`): snow,
    ash and scree lie BETWEEN the grass lanes and beside the paths. The marsh is
    the exception and uses `trailSuppress` (trails only) — what you stand in at
@@ -582,22 +607,81 @@ terrain.dispose() / water.dispose()
 
 **The tree scatter is two passes, and pass 1 is byte-identical to Round 3** —
 same seed, same dart sampling, same branch order, same number of `rng()` rolls
-per candidate, same 1520 budget. The scatter is a stochastic dart throw, so
-consuming one extra random number at the top re-rolls the whole valley: the
-first cut of this lane did exactly that and two pines landed 12 m in front of
-V33's camera, turning an alpine wall into a hedge. Candidates that fall inside a
-biome are still rolled and still reserved in the spacing grid, but are planted
-by pass 2 (own stream, 680 trees) with the right species for that ground.
+per candidate, same 1520-candidate budget. The scatter is a stochastic dart
+throw, so consuming one extra random number at the top re-rolls the whole
+valley: the first cut of this lane did exactly that and two pines landed 12 m in
+front of V33's camera, turning an alpine wall into a hedge. Candidates that fall
+inside a biome are still rolled and still reserved in the spacing grid, but are
+planted by pass 2 (own stream, 680 trees) with the right species for that
+ground.
+
+**Fix round 1 — the first cut did not keep its own promise.** `yaw`, `tx` and
+`tz` were rolled inline in the object literal BELOW the biome `continue`, so a
+skipped candidate consumed three fewer numbers and the stream diverged from the
+first skip onward. Cost: pass 1 burned its whole 140 000-attempt budget at 1332
+accepted instead of reaching 1520, and every tree after the first biome
+candidate sat somewhere Round 3 did not put it. The three rolls are now taken
+into locals ABOVE the skip. V33 re-filmed: the alpine wall is clear.
+
+**Counts, honestly** (the first cut reported `treeCount` 2012 against 1758 really
+standing, and `props/clearings.js` subtracts felled trees from that number):
+
+```js
+vegetation.valleyTreeCount   // 1263 — pass 1, PLANTED (1520 accepted, 257 are
+                             //        pass 2's ground and are not planted here)
+vegetation.biomeTreeCount    // 680  — pass 2
+vegetation.treeCount         // live instance total; clearings decrements it
+                             //        (1943 planted - 187 felled = 1756)
+vegetation.treeStats().total // agrees with treeCount by construction
+```
 
 Spacing is now a 12 m uniform grid rather than a linear scan of everything
 placed so far — that is what pays for the denser stand.
+
+### new gate: `A59b-cover-honesty-world-ground`
+
+The desync above was invisible to every gate that existed. `A59` measures grass
+density where the discs are; `A60` measures machine routes, which are authored;
+neither compares the two functions. `A59b` measures the AGREEMENT — over a 4 m
+grid inside r ≤ 288, every point `isInTallGrass()` calls hidden must carry ≥ 2
+tufts/m², with the four dry biomes asserted at exactly **0** and the marsh and
+the total bounded (1 % / 4 %; measured 0.47 % / 2.99 %). See the gate's own
+comment for why each bar is where it is.
+
+### talus spacing is per-landform, and it is a navgrid contract (fix round 1)
+
+`collision.js` makes any rock whose effective radius reaches 0.60 m a BLOCKING
+collider (scale ≥ 0.732 on this geometry) and `nav` stamps those into the cost
+grid. The first cut spaced blocking talus 4.6 m apart everywhere, which left 328
+blocking colliders and dragged the world to `openFrac` 0.5484 against `spatial`'s
+0.55 bar in `A25b-nav-and-occlusion` — a red this lane caused and did not
+disclose. The spacing a block must win to STAY blocking is now read off the
+ground it landed on:
+
+| where | gap | why |
+|---|---|---|
+| on a riser face (`slopeFast > 1.02`) | 4.6 m | free: `nav.js` marks any cell steeper than 1.0 BLOCKED before a collider is consulted, and a riser sheds its blocks down its own face |
+| anywhere else on the benches | 9.5 m | blocks that came to rest out on a bench top are the ones that fill the navgrid; a spill that thins as it runs out from the riser is what the real landform does |
+| N bench erratics | 14.0 m | an erratic IS an isolated block dropped by ice on an open shelf, and the bench is the flattest, most-walked ground in the world |
+
+Keying the exemption on `slope > 0.30` instead — the first cut of this fix —
+re-admitted 33 blockers on ground the navgrid walks happily and gave back 141
+cells; the 1.02 form is the only one that is actually free.
+
+Every one of the 760 blocks is still placed: a block that loses the spacing test
+is **demoted** to just under the blocking threshold (~1.4 m across, steppable),
+never rejected. Same instances, same draw calls, and the rule consumes no random
+numbers so the stream stays byte-identical. **Measured:** blocking rock colliders
+523 → 427, `A25b` `openFrac` 0.5484 → 0.5520 (PASS, 231 cells of margin over the
+bar), and this is with 185 more valley trees standing after the `rng` fix above.
 
 ### cost
 
 Boot ~+120 ms (one extra 512² RGBA mask, the biome scatter passes, the mist
 bake). One extra draw call (`forest-mist`); the biome trees, talus and reeds all
 feed meshes that already existed. No per-frame allocation was added: the mist
-drifts on the shared `uTime` uniform and the biome weights object is reused.
+drifts on the shared `uTime` uniform and the biome weights object is reused, and
+the biome memo added in fix round 1 is two float compares on the common path.
 
 ### one cross-lane need this pass creates: `audio` owes `ash` a footstep set
 
@@ -642,8 +726,13 @@ may override any of them.
 const SURFACE_SET = { …, ...(Terrain.SURFACE_AUDIO || {}) };
 ```
 
-**`A76-footfalls` stays RED until `audio` makes that edit**, and this lane
-reports it as an outstanding cross-lane debt rather than as a pass.
+**`A76-footfalls` stays RED until `audio` makes that edit, and it is RED BECAUSE
+OF THIS LANE.** It was green before the `ash` surface existed. Fix round 1
+corrects how the previous report framed it: this is not "an outstanding request"
+or a debt someone else incurred — it is a regression `world-ground-expansion`
+caused, whose only legal fix lives in a file §3.1 gives to `audio`. The
+orchestrator must assign that one line before ship; until it lands the gate is
+counted as this lane's red, not as someone else's backlog.
 `A58b` deliberately does **not** re-assert `A76`'s bar: duplicating another
 lane's failing bar in my own file would either weaken it or double-count it.
 

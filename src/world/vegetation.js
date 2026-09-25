@@ -3,7 +3,8 @@ import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js
 import {
   SimplexNoise, pathFactor, riverFactor, shelfFactor,
   riverCenterX, riverHalfWidth,
-  biomeWeights, forestFactor, snowFactor, marshFactor, ashFactor, screeFactor,
+  biomeWeights, biomeGrassDamp,
+  forestFactor, snowFactor, marshFactor, ashFactor, screeFactor,
   northBenchFactor,
 } from './terrain.js';
 import { Props } from './props.js';
@@ -682,13 +683,13 @@ export class Vegetation {
      */
     const bw = biomeWeights(x, z, this._bioW);
     this._lastBio = bw;
-    if (bw.meadow < 0.995) {
-      d *= 1 - 0.18 * bw.forest;
-      d *= 1 - 0.90 * bw.snow;
-      d *= 1 - 0.96 * bw.ash;
-      d *= 1 - 0.62 * bw.scree;
-      d *= 1 - 0.45 * bw.marsh;
-    }
+    /* THE FIVE COEFFICIENTS LIVE IN `terrain.biomeGrassDamp`, NOT HERE (fix
+     * round 1). They used to be written out inline, and `tallGrassDensity` did
+     * not apply them at all — so the concealment field promised cover this
+     * scatter had already taken away, on 432 measured points. Two copies of a
+     * number is how two fields drift apart; there is now one copy, and the
+     * concealment field reads it from the same function. */
+    d *= biomeGrassDamp(bw);
     const cdx = x - CAMP.x, cdz = z - CAMP.z;
     d *= SS(Math.sqrt(cdx * cdx + cdz * cdz), 15, 33);         // trampled camp
     d *= 1 - SS(pathFactor(x, z), 0.14, 0.60);                 // worn trails
@@ -1571,7 +1572,8 @@ export class Vegetation {
      * ground and plants the right species there.
      */
     const TARGET = 1520;                      // world-09 asks for 1200-1800
-    let count = 0;
+    let count = 0;                            // ACCEPTED candidates (the budget)
+    let planted = 0;                          // trees actually pushed
     for (let a = 0; a < 140000 && count < TARGET; a++) {
       const r = Math.sqrt(THREE.MathUtils.lerp(48 * 48, 326 * 326, rng()));
       const ang = rng() * Math.PI * 2;
@@ -1620,14 +1622,33 @@ export class Vegetation {
       const sx = sy * (fir ? 1.22 + rng() * 0.2 : 0.82 + rng() * 0.42);
       const tint = 0.82 + rng() * 0.34;
       const warm = rng() * 0.20;
+      /* FIX ROUND 1 — THE THREE PLACEMENT ROLLS ARE TAKEN *BEFORE* THE BIOME
+       * SKIP, NOT INSIDE THE PUSH.
+       *
+       * The block comment above promises "the same number of rng() rolls per
+       * candidate", and the first cut broke its own promise: `yaw`, `tx` and
+       * `tz` were rolled inline in the object literal BELOW the `continue`, so
+       * every candidate that landed in a biome consumed three FEWER numbers
+       * and the stream diverged from the first skip onward — exactly the
+       * failure the comment warns about. The measured cost was the whole point
+       * of the invariant: pass 1 burned its 140 000-attempt budget at 1332
+       * accepted instead of reaching 1520, and every tree after the first
+       * biome candidate sat somewhere Round 3 did not put it.
+       *
+       * Hoisting them into locals costs nothing and restores the invariant: a
+       * skipped candidate now consumes exactly the same rolls as a planted one.
+       */
+      const yaw = rng() * Math.PI * 2;
+      const tx = (rng() - 0.5) * 0.06;
+      const tz = (rng() - 0.5) * 0.06;
       count++;
       // pass 2's ground: rolled, reserved, not planted
       if (forestFactor(x, z) > 0.34 || ashFactor(x, z) > 0.16
         || snowFactor(x, z) > 0.14 || marshFactor(x, z) > 0.35) continue;
+      planted++;
       groups[gi].trees.push({
         x, z, y: h - 0.16,
-        yaw: rng() * Math.PI * 2,
-        tx: (rng() - 0.5) * 0.06, tz: (rng() - 0.5) * 0.06,
+        yaw, tx, tz,
         sx, sy,
         r: tint + warm * 0.5, g: tint * (fir ? 0.90 : 1), b: tint - warm * 0.3,
       });
@@ -1719,9 +1740,18 @@ export class Vegetation {
       });
       bcount++;
     }
-    count += bcount;
+    /* FIX ROUND 1 — `treeCount` COUNTS TREES, NOT DART THROWS.
+     *
+     * It used to be `acceptedCandidates + bcount`, and pass 1 accepts
+     * candidates it deliberately does NOT plant (pass 2 owns that ground). A
+     * judge measured 2012 reported against 1758 really standing — 14 % high —
+     * and `props/clearings.js` subtracts felled trees from this number, so the
+     * error propagated into another lane's bookkeeping. It is now the real
+     * instance total, and `treeStats().total` agrees with it by construction.
+     */
+    this.valleyTreeCount = planted;
     this.biomeTreeCount = bcount;
-    this.treeCount = count;
+    this.treeCount = planted + bcount;
 
     /* --------------------- LOD meshes + collision proxy --------------- */
     for (const g of groups) {
@@ -2424,24 +2454,64 @@ vec3 transformed = ( instanceMatrix * vec4( wing, 1.0 ) ).xyz;`)
      * matters here for the same reason it matters for the trees: this is a dart
      * throw, and one extra roll at the top re-rolls every block in the world.
      */
-    const BIG_GAP = 4.6;                 // metres between BLOCKING talus
+    /* FIX ROUND 1 — THE SPACING IS PER-LANDFORM, AND IT IS WIDER.
+     *
+     * 4.6 m was not enough. A judge measured the world at `openFrac` 0.5484
+     * against spatial's 0.55 bar and proved this pass was the cause: it left
+     * 328 blocking talus colliders, and unregistering exactly those returned
+     * 1057 nav cells (0.5580). A blocker this lane plants is this lane's cell
+     * to pay for, so the two fields now space their BLOCKING blocks on their
+     * own terms instead of sharing one number:
+     *
+     * The spacing a block must win to STAY blocking is now read off the ground
+     * it landed on, which is both cheaper in nav cells and a better picture:
+     *
+     *   on a riser face (slope > 1.02)  4.6 m — unchanged, and free: `nav.js`
+     *                       marks any cell steeper than 1.0 BLOCKED before a
+     *                       collider is consulted, so a dense spill on the face
+     *                       itself costs the navgrid literally nothing. It is
+     *                       also where talus belongs — a riser sheds its blocks
+     *                       down its own face. (Measured: keying this exemption
+     *                       on 0.30 instead, as the first cut of this fix did,
+     *                       re-admitted 33 blockers on ground the navgrid walks
+     *                       happily and gave back 141 cells.)
+     *   everywhere else     9.5 m — blocks that came to rest out on a bench top
+     *                       are the ones that fill the navgrid, and a spill that
+     *                       thins as it runs out from the riser is what the real
+     *                       landform does
+     *   erratics (N bench)  14.0 m — an erratic IS an isolated block dropped
+     *                       by ice on an open shelf; 1-3 of them inside a 10 m
+     *                       cluster was never the right picture, and the snow
+     *                       bench is the flattest, most walked ground in the
+     *                       world so every fused pair there cost the most
+     *
+     * Same count, same instances, same draw calls: a block that loses the
+     * spacing test is DEMOTED to steppable size, never rejected. And the rule
+     * still consumes no random numbers, so the stream stays byte-identical —
+     * see the determinism note below.
+     */
+    const GAP_RISER = 4.6;               // BLOCKING talus on a riser face
+    const GAP_FLAT = 9.5;                // BLOCKING talus out on a bench top
+    const GAP_SNOW = 14.0;               // metres between BLOCKING erratics
+    const GAP_CELL = 14.0;               // >= max(gap): a +-1 scan is exhaustive
     const bigGrid = new Map();           // build-time only; dropped after
-    const bigTooClose = (x, z) => {
-      const gx = Math.floor(x / BIG_GAP), gz = Math.floor(z / BIG_GAP);
+    const bigTooClose = (x, z, gap) => {
+      const gx = Math.floor(x / GAP_CELL), gz = Math.floor(z / GAP_CELL);
+      const g2 = gap * gap;
       for (let dz = -1; dz <= 1; dz++) {
         for (let dx = -1; dx <= 1; dx++) {
           const arr = bigGrid.get((gx + dx) * 100003 + (gz + dz));
           if (!arr) continue;
           for (let i = 0; i < arr.length; i += 2) {
             const ex = arr[i] - x, ez = arr[i + 1] - z;
-            if (ex * ex + ez * ez < BIG_GAP * BIG_GAP) return true;
+            if (ex * ex + ez * ez < g2) return true;
           }
         }
       }
       return false;
     };
     const bigAdd = (x, z) => {
-      const k = Math.floor(x / BIG_GAP) * 100003 + Math.floor(z / BIG_GAP);
+      const k = Math.floor(x / GAP_CELL) * 100003 + Math.floor(z / GAP_CELL);
       let arr = bigGrid.get(k);
       if (!arr) bigGrid.set(k, (arr = []));
       arr.push(x, z);
@@ -2489,8 +2559,10 @@ vec3 transformed = ( instanceMatrix * vec4( wing, 1.0 ) ).xyz;`)
         const BLOCK_SC = 0.732;
         let sc = (onSnow ? 0.95 : 0.60) + big * big * (onSnow ? 2.9 : 2.7);
         if (sc >= BLOCK_SC) {
-          if (bigTooClose(x, z)) sc = 0.66 + big * 0.06;   // 0.66..0.72: steppable
-          else bigAdd(x, z);
+          const gap = onSnow ? GAP_SNOW : (slope > 1.02 ? GAP_RISER : GAP_FLAT);
+          if (bigTooClose(x, z, gap)) {
+            sc = 0.66 + big * 0.06;                        // 0.66..0.72: steppable
+          } else bigAdd(x, z);
         }
         const v = Math.min(2, (screeRng() * 3) | 0);
         placed[v][sc < 1.05 ? 0 : 1].push({

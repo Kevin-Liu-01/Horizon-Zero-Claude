@@ -690,10 +690,16 @@ export function stealthField(x, z) {
  * TWO RULES THE WHOLE FILE OBEYS, AND THEY ARE THE REASON THE STEALTH AND
  * GRASS GATES SURVIVE A BIOME PASS (A59 / A60):
  *
- *  1. BIOMES NEVER TOUCH `tallGrassDensity`. The concealment field is the
- *     machine-route contract; a biome that could thin it could silently take
- *     a patrol lane's cover away. So the field is unchanged and this pass is
- *     purely material + scatter.
+ *  1. BIOMES THIN THE *ORGANIC* HALF OF `tallGrassDensity` AND NEVER THE
+ *     *AUTHORED* HALF (fix round 1). The first cut of this pass left the whole
+ *     concealment field alone, on the theory that the field is the machine-route
+ *     contract and a biome that could thin it could take a patrol lane's cover
+ *     away. Wrong invariant: the scatter WAS damped, so the field claimed cover
+ *     on 432 points of snow, ash and scree where fewer than 2 tufts/m^2 had been
+ *     planted, and `isInTallGrass()` hid Aloy in the open. The route contract is
+ *     protected by the SPLIT instead — `_ensureRouteCover` stamps every route's
+ *     cover into the authored term, and `biomeGrassDamp` is applied only to the
+ *     noise term, exactly as `pathFactor`/`riverFactor`/`shelfFactor` are.
  *  2. EVERY *SURFACE* WEIGHT IS SUPPRESSED BY COVER AND BY TRAILS
  *     (`biomeSuppress`). Snow, ash and mud lie BETWEEN the grass lanes and
  *     beside the paths, never over them — which is both what the gates need
@@ -834,11 +840,36 @@ const _bw = {
   meadow: 1, forest: 0, snow: 0, marsh: 0, ash: 0, scree: 0,
 };
 
+/* ONE-ENTRY MEMO (fix round 1).
+ *
+ * `vegetation.grassDensityAt` evaluates the weights at a candidate, and
+ * `tallGrassDensity` — which it calls FIRST, at the same point — now needs them
+ * too. Five noise fields per candidate across ~470 k candidates per stream is
+ * ~90 ms; paying for them twice is not affordable. The two callers are always
+ * the same point in the same order, so one slot is a 100 % hit rate: the cost
+ * on the common path is two float compares, and the cost of a miss is six
+ * field writes. It cannot go stale — every biome factor is a pure function of
+ * (x, z) with no build-time state — and it allocates nothing.
+ */
+let _bwMx = NaN, _bwMz = NaN;
+const _bwM = { meadow: 1, forest: 0, snow: 0, marsh: 0, ash: 0, scree: 0 };
+/* `tallGrassDensity` reads the memo's OWN slot: `biomeWeights` hands that back
+ * without copying, and the value is consumed on the very next line, so the
+ * hottest caller in the file pays nothing at all for the biome damp. */
+const _bwTall = _bwM;
+function _bwOut(out) {
+  if (out === _bwM) return out;
+  out.meadow = _bwM.meadow; out.forest = _bwM.forest; out.snow = _bwM.snow;
+  out.marsh = _bwM.marsh; out.ash = _bwM.ash; out.scree = _bwM.scree;
+  return out;
+}
+
 /**
  * All six weights at a point, cover-suppressed. Reuses one object by default
  * (no per-call allocation in the scatter loops); pass `out` for a keeper.
  */
 export function biomeWeights(x, z, out = _bw) {
+  if (x === _bwMx && z === _bwMz) return _bwOut(out);
   /* RAW FACTORS FIRST, SUPPRESSION ONLY IF ONE OF THEM FIRED. The grass
    * scatter calls this ~470 k times per stream and 87 % of the play disc is
    * meadow, so the common path has to be five bounding-box rejections and
@@ -849,20 +880,43 @@ export function biomeWeights(x, z, out = _bw) {
   const mr = marshFactor(x, z);
   const as = ashFactor(x, z);
   const sc = screeFactor(x, z);
+  _bwMx = x; _bwMz = z;
   if (f === 0 && sn === 0 && mr === 0 && as === 0 && sc === 0) {
-    out.forest = 0; out.snow = 0; out.marsh = 0; out.ash = 0; out.scree = 0;
-    out.meadow = 1;
-    return out;
+    _bwM.forest = 0; _bwM.snow = 0; _bwM.marsh = 0; _bwM.ash = 0; _bwM.scree = 0;
+    _bwM.meadow = 1;
+    return _bwOut(out);
   }
   const keep = 1 - biomeSuppress(x, z);
-  out.forest = f * keep;
-  out.snow = sn * keep;
-  out.marsh = mr === 0 ? 0 : mr * (1 - trailSuppress(x, z));
-  out.ash = as * keep;
-  out.scree = sc * keep;
-  const sum = out.forest + out.snow + out.marsh + out.ash + out.scree;
-  out.meadow = sum >= 1 ? 0 : 1 - sum;
-  return out;
+  _bwM.forest = f * keep;
+  _bwM.snow = sn * keep;
+  _bwM.marsh = mr === 0 ? 0 : mr * (1 - trailSuppress(x, z));
+  _bwM.ash = as * keep;
+  _bwM.scree = sc * keep;
+  const sum = _bwM.forest + _bwM.snow + _bwM.marsh + _bwM.ash + _bwM.scree;
+  _bwM.meadow = sum >= 1 ? 0 : 1 - sum;
+  return _bwOut(out);
+}
+
+/**
+ * THE GRASS MULTIPLIER A BIOME MIX IMPLIES — ONE DEFINITION, TWO CONSUMERS.
+ *
+ * `vegetation.grassDensityAt` (how many tufts get planted) and
+ * `terrain.tallGrassDensity` (how much concealment the ground claims) MUST
+ * agree, and in fix round 1 they did not: the scatter was damped by these five
+ * factors and the concealment field was not, so `isInTallGrass()` returned true
+ * on 432 sampled points where the biome pass had planted fewer than 2
+ * tufts/m^2 — 198 of them on bare snow, 124 on the ash scar. `player.js` and
+ * the machine search bias both read that field, so Aloy was "hidden" standing
+ * on open snow. Two copies of five coefficients is how that happens, so there
+ * is now one copy and both callers take it from here.
+ *
+ * `forest` is the gentle one on purpose: a closed conifer stand in HZD is duff
+ * and fern, not bare dirt, and A59's meadow point (44, -74) is inside it.
+ */
+export function biomeGrassDamp(w) {
+  if (w.meadow >= 0.995) return 1;
+  return (1 - 0.18 * w.forest) * (1 - 0.90 * w.snow) * (1 - 0.96 * w.ash)
+    * (1 - 0.62 * w.scree) * (1 - 0.45 * w.marsh);
 }
 
 /** The dominant biome id at a point — one of `Terrain.BIOMES`. */
@@ -1946,6 +2000,21 @@ export class Terrain {
    * on its own terms: the shelf thins the noise field (rocky benches should be
    * bare) but NOT the authored patches, which are the reason a Longleg route on
    * the shelf is stalkable at all.
+   *
+   * FIX ROUND 1 — THE BIOMES THIN THE NOISE TERM TOO.
+   *
+   * Rule 1 of the biome block comment used to read "biomes never touch
+   * `tallGrassDensity`". That was the wrong invariant: it protected the route
+   * contract by letting the field lie about 432 points of snow, ash and scree
+   * where the biome multipliers had taken the tufts away. The right invariant
+   * is narrower and it is the one the riparian fix above already states — THIS
+   * FIELD NEVER CLAIMS COVER THE SCATTER DOES NOT PLANT — so the biome damp
+   * now applies to the ORGANIC term `d`, exactly as path/river/shelf already
+   * do, and never to the AUTHORED term `s`. That split is what keeps A60 safe:
+   * every machine route's cover is stamped into `s` by `_ensureRouteCover`,
+   * and `s` is untouchable. It is also self-correcting — the route audit
+   * measures cover through this same function, so a route crossing a biome now
+   * measures low and gets its arcs stamped.
    */
   tallGrassDensity(x, z) {
     const v = this.grassNoise.fbm(x * 0.016, z * 0.016, 2);
@@ -1957,6 +2026,8 @@ export class Terrain {
       if (rf > 0.02) d *= 1 - rf * 0.96;
       const sf = shelfFactor(x, z);
       if (sf > 0.02) d *= 1 - sf * 0.5;
+      const bd = biomeGrassDamp(biomeWeights(x, z, _bwTall));
+      if (bd < 1) d *= bd;
     }
     let s = stealthField(x, z);
     if (s > 0) {

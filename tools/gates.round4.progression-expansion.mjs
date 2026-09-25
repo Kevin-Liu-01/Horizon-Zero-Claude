@@ -752,4 +752,183 @@ export const GATES = [
     settle: 2200,
     criteria: 'An HZD-style conversation card: the speaker NAME in tracked caps with their title under it, one spoken line in quotes, and 2-3 numbered choices each with a small role tag (ASK / ACCEPT QUEST / LEAVE) on the right. The card is anchored to the BOTTOM of the frame and the Nora being spoken to is still visible above it. FAIL if the panel is a full-screen modal, if it covers the speaker, if the name/line/choices are not all legible, or if it reads as an undesigned browser list.',
   },
+
+  /* ------------------------------------- A67b (continuation round) */
+  {
+    id: 'A67b-site-ledgers-expansion', kind: 'action', lane: 'progression-expansion',
+    title: 'Both machine-site ledgers hold ONLY live pending sites: a real disposal writes the per-site respawn tuning, a real respawn takes the entry back out of BOTH, a site that repopulates without the event is swept anyway, the lane\'s own dispose() really does empty them (called here, on the live instance) while leaving the frame loop quiet, and installProgression() AFTER that teardown hands back a live rebuilt lane rather than the corpse',
+    timeout: 180000,
+    setup: UP,
+    settle: 1200,
+    assert: `(async () => {
+      ${HELP}
+      const ctx = __CTX__;
+      const prog = window.__PROG__;
+      if (!prog) return { pass: false, detail: 'installProgression did not publish' };
+      if (!window.__PREINSTALLED__) {
+        return { pass: false, detail: 'ctx.progression was NOT built by main.js — the lane is dead code in a normal session' };
+      }
+      if (!await rosterReady(ctx)) return { pass: null, detail: 'SKIP: machine roster never became ready' };
+      const sites = ctx.machines.sites;
+      if (!sites || !Array.isArray(sites.sites)) return { pass: null, detail: 'SKIP: no MachineSite manager' };
+
+      /* ---- 1. three REAL disposals, through the lifecycle's own call ----- */
+      const victims = sites.sites.filter((s) => s.machine && s.machine.alive).slice(0, 3);
+      if (victims.length < 3) return { pass: null, detail: 'SKIP: fewer than three occupied sites' };
+      const ids = victims.map((s) => s.id);
+      for (const s of victims) { slay(s.machine); sites.dispose(s.machine); }
+      await simWait(ctx, 0.4);
+      const tunedAll = ids.every((id) => prog.siteTuning.has(id));
+      const clearedAll = ids.every((id) => prog.clearedSites.has(id));
+      const pendingAll = ids.every((id) => (sites.sites.find((s) => s.id === id) || {}).pending === true);
+      // the tuning is REAL policy, not an empty marker
+      const tuning = ids.map((id) => prog.siteTuning.get(id));
+      const tuningShaped = tuning.every((t) => t && t.delay > 0 && t.lo > 0 && t.hi >= t.lo && typeof t.cls === 'string');
+      // ...and never SLOWER than the stock window machine-ai had scheduled
+      const notSlower = ids.every((id) => {
+        const s = sites.sites.find((x) => x.id === id);
+        return s && s.respawnAt <= sites.clock + 420.01;
+      });
+
+      /* ---- 2. a REAL respawn takes the entry out of BOTH ledgers --------- */
+      const target = sites.sites.find((s) => s.id === ids[0]);
+      // the manager refuses to repopulate within 120 m of the player
+      const spots = [[0, 0], [250, 0], [-250, 0], [0, 250], [0, -250]];
+      let best = spots[0], bestD = -1;
+      for (const [x, z] of spots) {
+        const d = Math.hypot(x - target.x, z - target.z);
+        if (d > bestD) { bestD = d; best = [x, z]; }
+      }
+      tp(ctx, best[0], best[1]);
+      target.respawnAt = sites.clock - 1;
+      const respawned = await until(() => target.machine && !target.pending, 20000);
+      await simWait(ctx, 0.4);
+      const leftTuning = !prog.siteTuning.has(ids[0]);
+      const leftCleared = !prog.clearedSites.has(ids[0]);
+
+      /* ---- 3. a site that repopulates WITHOUT the event is swept anyway --
+       * sites.js re-schedules silently when the model is not ready, so the
+       * ledgers cannot depend on 'machine-respawned' arriving. Flip the second
+       * site back by hand (no event), then drive any disposal and require the
+       * sweep to have dropped it.                                          */
+      const quiet = sites.sites.find((s) => s.id === ids[1]);
+      quiet.pending = false;
+      const third = sites.sites.find((s) => s.id === ids[2]);
+      prog._pruneSiteLedgers();
+      const sweptQuiet = !prog.siteTuning.has(ids[1]) && !prog.clearedSites.has(ids[1]);
+      const keptPending = prog.siteTuning.has(ids[2]) && prog.clearedSites.has(ids[2]) && third.pending === true;
+
+      const ledgers = prog.audit().siteLedgers;
+
+      /* ---- 4. TEARDOWN releases both ledgers, for real ------------------
+       * The fix round caught this lane claiming dispose() cleared these when
+       * the two clear() calls actually sat in newGame() (one of them a
+       * duplicate of a line already there, the other on the scratch set). A
+       * claim about a method nothing in the shipped graph calls is worth
+       * nothing unless a gate calls it, so this block does — on the LIVE
+       * instance, last, after the ledgers above are provably non-empty.
+       * dispose() takes itself out of ctx.game.systems and update() is inert
+       * afterwards, so the frame loop that keeps running under the runner's
+       * screenshot must stay quiet: any throw would land in __GAME__.systemErrors
+       * and the runner fails this gate on that ledger independently.          */
+      const hadLedgers = prog.siteTuning.size > 0 || prog.clearedSites.size > 0;
+      const liveScratch = (prog._liveSiteIds?.size ?? 0) > 0;
+      const systems = ctx.game?.systems || [];
+      const wasRegistered = systems.includes(prog);
+      /** the lane's DOM island, counted so the teardown/rebuild is non-vacuous */
+      const domNodes = () => {
+        const r = document.getElementById('hzc-prog');
+        return r ? r.querySelectorAll('*').length + 1 : 0;
+      };
+      const domBefore = domNodes();
+      prog.dispose();
+      const disposedEmpty = prog.siteTuning.size === 0 && prog.clearedSites.size === 0
+        && prog.trials.size === 0 && (prog._liveSiteIds?.size ?? 0) === 0;
+      const leftLoop = !systems.includes(prog);
+      // ...and the corpse is inert rather than throwing: drive its own update
+      // the way the loop would, plus real simulated frames through the engine.
+      let inert = true;
+      try { prog.update(1 / 60, ctx.engine.simTime); prog.update(1 / 60, ctx.engine.simTime); }
+      catch { inert = false; }
+      await simWait(ctx, 0.5);
+      const quarantined = (window.__GAME__.systemErrors || [])
+        .filter((r) => r && /progression/i.test(String(r.key || '')));
+      let idempotent = true;
+      try { prog.dispose(); } catch { idempotent = false; }
+
+      /* ---- 5. INSTALL-AFTER-DISPOSE composes: the rebuild is LIVE ---------
+       * Fix round 2 finding. dispose() leaves ctx.progression pointing at the
+       * corpse on purpose (dependents prefer a quiet object to a dangling
+       * undefined), but installProgression used to short-circuit on a bare
+       * truthiness test and hand that corpse straight back: out of
+       * ctx.game.systems, update() early-returning forever, DOM island gone —
+       * and nothing thrown, nothing in systemErrors, so a title-screen ->
+       * new-game cycle (shell-menus owns the obvious first caller) would have
+       * produced a silently dead progression lane. Measured here through the
+       * real published API, immediately after the real teardown above.       */
+      const domAfterDispose = domNodes();
+      const mod = await import('/src/core/progression.js');   // module cache: same module
+      const re = mod.installProgression(ctx);
+      const reinstallIsNew = !!re && re !== prog;
+      const reinstallLive = !!re && re._disposed !== true;
+      const reinstallPublished = ctx.progression === re;
+      const reinstallRegistered = systems.includes(re);
+      const corpseStaysDead = prog._disposed === true && !systems.includes(prog);
+      const domAfterReinstall = domNodes();
+      // the island must come BACK, not merely leave an empty shell behind: the
+      // corpse's dispose() leaves the bare #hzc-prog div (1 node), so a "> 0"
+      // threshold would have passed on the broken build.
+      const reinstallDom = domBefore > 0 && domAfterDispose < domBefore
+        && domAfterReinstall >= Math.max(10, Math.floor(domBefore * 0.5));
+      // ...and it is a WORKING lane, not merely a fresh object: real XP through
+      // the real award path, over real frames of the loop it just re-joined,
+      // and a real conversation card DRAWN by the rebuilt panel (the corpse's
+      // dialogue root was removed and nulled, so it can only fail there).
+      const xpBefore = re.xp;
+      re.addXp(120, 'kill');
+      await simWait(ctx, 0.5);
+      const reinstallEarns = re.xp > xpBefore;
+      let reinstallDialogue = false;
+      try {
+        re.talkTo('varl');
+        await sleep(200);
+        const dlg = document.getElementById('hzc-dlg');
+        const txt = dlg ? (dlg.innerText || '').trim() : '';
+        reinstallDialogue = !!dlg && re.dialogueUI && re.dialogueUI.isOpen === true && txt.length > 8;
+        re.closeDialogue();
+        await sleep(120);
+      } catch (err) { reinstallDialogue = false; }
+      const reinstallIdempotent = mod.installProgression(ctx) === re;
+      const quarantined2 = (window.__GAME__.systemErrors || [])
+        .filter((r) => r && /progression/i.test(String(r.key || '')));
+
+      const checks = {
+        tunedAll, clearedAll, pendingAll, tuningShaped, notSlower,
+        respawned,
+        leftTuning, leftCleared,
+        sweptQuiet,
+        keptPending,
+        noStaleEntries: ledgers.stale === 0,
+        boundedByPending: ledgers.tuning <= ledgers.pending && ledgers.cleared <= ledgers.pending,
+        hadLedgers, liveScratch, wasRegistered,
+        disposedEmpty, leftLoop, inert, idempotent,
+        noQuarantine: quarantined.length === 0,
+        reinstallIsNew, reinstallLive, reinstallPublished, reinstallRegistered,
+        reinstallDom, reinstallEarns, reinstallDialogue, reinstallIdempotent, corpseStaysDead,
+        noQuarantineAfterReinstall: quarantined2.length === 0,
+      };
+      const failed = Object.keys(checks).filter((k) => !checks[k]);
+      return {
+        pass: failed.length === 0,
+        detail: {
+          failed, checks, ids, tuning, ledgers,
+          respawnTargetPending: target.pending,
+          dom: { before: domBefore, afterDispose: domAfterDispose, afterReinstall: domAfterReinstall },
+          xp: { before: xpBefore, after: re.xp },
+          quarantined: quarantined.map((r) => r.key + ' x' + r.count),
+          quarantined2: quarantined2.map((r) => r.key + ' x' + r.count),
+        },
+      };
+    })()`,
+  },
 ];

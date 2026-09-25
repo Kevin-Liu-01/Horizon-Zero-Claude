@@ -18,6 +18,22 @@ So this lane's deliverable is not another number. It is an **attribution**, and 
 fixes the attribution names. Everything below is measured on port 5208 and reproducible
 with the gate.
 
+### Where it ended up
+
+| | result |
+| --- | --- |
+| `A90-memory-stability` | **PASS 6/6** at its coded bars on the shipped tree — five targeted runs plus the full-suite run (§6.3). No bar moved, no tolerance added. |
+| `A90-memory-stability-expansion` | **PASS 5/5** at its coded bars, `nonMachineGrowth` and `orphanRoots` **0 in every run**, never over its node budget (§6.3). |
+| `A90b-memory-attribution` | new gate, **PASS 5/5**: zero unreachable GPU textures, zero offending owners, self-test alive in every run (§1, §6.3). |
+| the heap | **negative in 9 of 10** readings across the workload. The old "+24.9 %" was never a measurement — `window.gc` did not exist because the runner never passed `--expose-gc` (§4). |
+| leaks actually found and fixed | **three**, none of them on the brief's suspect list: a cascade-shadow registry holding 267 disposed materials (§3.1), an audio `Map` keyed by dead machines that also silenced 7 of 8 loop chains (§3.2), and a population ceiling only enforced at the door (§3.5). Plus an unbounded audit log (§3.4) and GPU warm-up that never warmed textures (§3.3). |
+| the corpse reclaim | **was never the leak.** §2.1 and §2.5 show it complete before this lane touched it — which is why the attribution was built first. |
+| the full suite | **all 234 gates run and accounted for: 174 PASS, 18 FAIL, 42 pending-judge, 0 uncovered** (§9). 11 of the 18 were already failing at 5207; **none of the 7 that changed state is in a file this lane edited**, and the brief's named gates (`A43`, `A49`/`A50`, `A9`, `A21`) are all unchanged (§9.4). |
+| handed off, not fixed here | `progression.siteTuning` / `clearedSites`, one entry per kill, in a live lane's file (§5.1 — that lane has since started on it, §6.3). |
+| reported, not mine | `A90-rig-reclaim` fails **2 of 6** runs, on a bar of 8 against a quantity that ranges 1–9 — and both failures read the identical `1.13 / 4`, so it is a discrete state, not jitter (§6.5). |
+| the one finding to carry forward | **`renderer.info.memory.geometries` and `.textures` count what has been DRAWN, not what exists** (three r169, `WebGLGeometries.get`). Every gate here that diffs one across a workload is diffing a visibility-dependent counter — which is what `A90`'s texture term was failing on before §3.3, and what its geometry term still swings on (§6.4). |
+| honest gaps | §7 — twelve of them, including a limitation of this lane's own gate (§6.4), a defect three.js gives no way to fix (§6.4), and one hypothesis this lane formed, tested and **refuted** (§6.5). |
+
 ---
 
 ## 1. `A90b-memory-attribution` — the instrument
@@ -55,7 +71,20 @@ from `document.createElement` to the four THREE constructors.
 
 **(b) UPLOAD — because the failing counter does not count constructions.**
 `info.memory.textures` is incremented when three first uploads a texture to the GPU
-(`three.module.js:24825`) and decremented on dispose (`:24500`). Measured here: ten kills
+(`three.module.js:24825`) and decremented on dispose (`:24500`). There are two further paths
+on the same counter — `setupRenderTarget` (`:25847`) and its attachment teardown (`:24571`) —
+which is why the reachability sweep deliberately skips `isRenderTargetTexture` and why
+`warmUpTextures()` skips it too (`engine.js:775`): a render target's texture is sized and
+owned by the target, so counting or warming it would be double-counting something no module
+allocates per kill.
+
+**The same is true of `info.memory.geometries`, which was not understood until §6.4:** three
+increments it in `WebGLGeometries.get()` (`:17538–17547`) the first time a geometry is
+*drawn*, not when it is built. **Neither field counts what exists; both count what the GPU
+has been shown.** Every gate in this repo that diffs one across a workload inherits that, and
+it is the single most load-bearing fact in this document.
+
+Measured here: ten kills
 CONSTRUCTED 11 textures and moved that counter by **+25**. Two thirds of what
 `A90-memory-stability` fails on was never allocated inside its window at all. So the gate
 replaces `info.memory.textures` and `.geometries` with accessors for its duration and
@@ -201,6 +230,34 @@ a registered gate rather than a probe:
 The two containers this lane could reach now SHRINK across a kill loop, which is the
 right shape: machines die, their materials dispose, and the cascade bookkeeping lets go.
 
+### 2.5 The brief's suspect list, answered by the instrument rather than by assertion
+
+The lane brief named the places a per-kill leak was expected to be hiding. Each one is
+answered below by what `A90b` actually measured across its 30 kills, because "I checked it"
+is worth nothing next to a number — and three of these turned out to be **already pooled
+before this lane touched anything**, which is worth recording so the next round does not
+re-fix them:
+
+| suspect from the brief | what the instrument found | verdict |
+| --- | --- | --- |
+| materials' maps on corpse reclaim | 0 unreachable textures, every run. Only **one** texture owner allocates at all in the window (`engine.js:195`, skeleton bone textures), created 30 / disposed 20, the 10 held belonging to machines alive at the end | clean |
+| LOD clones | `rig/lod.js` adds 420 + 60 objects, all under live machine roots (`underLiveMachine`), none `attached` outside one. `A90-rig-reclaim`'s 30-cycle term reads **+1…+9 against its bar of 40** across the five runs of §6.3 — its intermittent failure is the *per-live* term, not this one (§6.5) | clean |
+| atlas / per-instance textures | no texture owner outside `engine.js:195` — **there is no per-instance texture allocation to leak** | clean by construction |
+| decal / scorch textures | same: nothing allocated a texture in the window | clean |
+| ping rings | `_ringGeo` is one module-level `TorusGeometry` (machine.js:70) shared by every machine | already pooled |
+| focus markers / eye glow | `glowTexture()` is memoized in a module-level `_glowTex` (machine.js:53) — one 64×64 `CanvasTexture` for the session, not one per machine. The per-machine `SpriteMaterial` (machine.js:396) reads created 38 / disposed 20, the 18 held under live machines | already pooled |
+| damage-number / status canvases, per-machine DOM | `domNodes` **1249 → 1183** and `domCanvases` **1 → 1** across the whole workload — the DOM *shrinks*. This is `combat-memory`'s `DOM_WATCH` question asked with its counters | clean |
+| audio buffers / analysers | `audio._machineLoops` Δ **0** after §3.2 (was +7 dead machines retained); `_voiceEnds`, `_recent`, `_loopChains` all read to their caps in §5.3 | fixed + bounded |
+| event listeners | every `addEventListener` in this lane's files is a singleton set up once (`resize`, `keydown`, `pointerlockchange`, audio's `arm`); the only per-object one is §3.1's `dispose` listener, which the material owns and which dies with it | clean |
+| timers | none in the machine or combat paths — every periodic job this lane added is a `dt`-accumulator throttle inside the existing frame loop (§3.2, §3.5), which allocates nothing and needs no teardown. **One exception, found while writing this row and reported rather than swept:** `audio.js:348` `this._stateWatch = setInterval(...)` is never cleared anywhere in the file. It is created once from the `if (this.ac) return`-guarded `_init()`, so there is exactly ONE of them per session holding one closure over a session-lifetime singleton — a missing teardown path, **not** growth, and it does not move any counter here | 1 singleton, no growth |
+| pooling for anything created per kill/per swing | the per-species geometry pool already exists (`rig/lod.js:280`): `poolGeometry()` shares one merged buffer per species per merge-group shape, so the second Watcher of a species costs no geometry. Measured per additional live machine across the five runs: **0.13, 1.13, 0.50, 0.25, 0.75** — i.e. 1–9 geometries for 8 machines, which is the pool working and also §6.5's problem | already pooled |
+
+**The honest shape of this table is that the corpse reclaim was NOT where the leak was.**
+The reclaim was already complete — §2.1 and `A90-rig-reclaim` both say so — and the three
+real retainers were a cascade-shadow registry, an audio Map keyed by a dead object, and a
+population ceiling that was only checked at the door. None of them is on the suspect list,
+which is the argument for building the attribution before writing a fix.
+
 ---
 
 ## 3. The fixes
@@ -311,6 +368,19 @@ Wrecks are never evicted (`if (!m.alive …) continue`) and the authored roster 
 evicted (`site.id <= _bootSiteId`), so `A43-corpse-lifecycle` and the doctrine gates are
 untouched by it.
 
+The periodic sweep also runs with `farOnly = true`, a **strictly weaker** rule than the
+spawn-time check: it may never take a machine inside `keepRadius`, even one that is calm and
+off camera, which the door check may. That is not caution for its own sake —
+`A90-rig-reclaim` holds eight machines alive 56 m from the player to measure their per-live
+cost, and a sweep that could quietly take one would break another lane's gate while "fixing"
+memory (`machines/index.js:445` carries that reasoning at the line). It is also what lets
+§6.5 rule this change out as the cause of that gate's intermittent failure: an
+eviction-only path cannot make geometries *appear*.
+
+**Closed at the shipped tree:** `populationAudit().overBudget` is **false in all five runs**
+of §6.3, with `nodes` 1337–2547 against a budget of 2568 and `recycled` 13–24. The ceiling
+holds, and it holds by reclaiming — not by refusing to spawn.
+
 ---
 
 ## 4. Heap — was the +24.9 % real?
@@ -408,14 +478,15 @@ cap rather than assumed:
 
 | container | Δ over 30 kills | why it is bounded |
 | --- | --- | --- |
-| `audio._recent` | +132 | `audio.js:865` — `if (this._recent.length > 256) this._recent.shift()` |
+| `audio._recent` | +88 … +145 over the five runs | `audio.js:865` — `if (this._recent.length > 256) this._recent.shift()` |
 | `audio._voiceEnds` | +1 | `audio.js:633` — compacted in place on every `_voice()` call, under `VOICE_CAP` |
-| `audio.bank._cursor`, `audio._cueCounts` | +11, +8 | keyed by cue NAME, bounded by the cue set |
+| `audio.bank._cursor`, `audio._cueCounts` | +10…+13, +8 | keyed by cue NAME, bounded by the cue set |
 | `audio._loopChains` | +8 | `audio.js:1493` — hard `>= 8` return null; the pool filling to its cap, and `_machineLoops` Δ 0 confirms none is stuck busy (§3.2) |
 | `machines.squads.wrecks` | +12 | capped at 12 |
 | `machines.sites.sites` | +10 | one site per EXPLICIT spawn, never per respawn |
 | `menus._log` | +3 | capped at 64 (§3.4) |
-| `npcs._grid.scratch`, `npcs._routes`, `nav._raw` | +7, +5, +5 | reused out-buffer whose length is max occupancy; route caches keyed by name |
+| `npcs._grid.scratch`, `npcs._routes` | +7, +5 | reused out-buffer whose length is max occupancy; route cache keyed by route NAME |
+| `nav._raw` | +5, +5, +5, **+23**, +5 | four runs identical and one outlier, which is the scratch-buffer signature — see the `_out` entry in §7 |
 | `engine._casterPool/_casterDist/_casterOrder/_casterKeep` | −38 … −87 | shrink across the workload |
 
 ---
@@ -496,53 +567,294 @@ tracks how many machines the population ceiling happened to recycle during the l
 (roster 17–29 across the five expansion runs), which is also why `objGrowth` swings
 −1311…+9 without any of it being retention.
 
-§6.4 now says where that term comes from, which the paragraph above could not, and §6.3
-re-runs both distributions on the tree that actually ships.
+**The paragraph above is wrong about WHY it swings, and §6.4 corrects it with five runs and
+the three.js source.** The variance is not the population ceiling's recycling. It is that
+`renderer.info.memory.geometries` counts geometries that have been **drawn**, not geometries
+that exist, so `A90`'s baseline lands on one side or the other of a 26-buffer step depending
+on what the boot camera happened to have rendered. Left standing rather than edited away,
+because the correction is the more useful half. §6.3 re-runs both distributions on the tree
+that actually ships.
 
-### 6.4 Where `A90`'s geometry term actually comes from
+### 6.3 Re-verified on the tree that actually ships — five more consecutive runs
 
-The paragraph above left the tightest bar in this lane unexplained: "not a leak, but watch
-it". It is now attributed, and the attribution is not an argument — it is a cross-check
-between three gates measured **in the same run, on the same build, one page load each**:
+§6.1 and §6.2 were measured before Wave 4's other lanes landed. The tree moved after that
+(`a3fafd3`: melee round 3, the world-props *places* build, terrain and vegetation work),
+and world content is exactly what `A90`'s geometry and texture terms count — so the
+distribution was taken again, from scratch, at the shipped tree. Same box, still carrying
+the other fifteen lanes' suites.
 
-| gate | waits for the deferred world? | `before.geo` | `after.geo` | its own Δ |
-| --- | --- | --- | --- | --- |
-| `A90-memory-stability` | **no** — settles 2 s, forces GC, samples | **174** | 208 | **+34** |
-| `A90-memory-stability-expansion` | yes (`machines.expansionReady`) | **200** | 212 | +12 |
-| `A90b-memory-attribution` | yes (`expansionReady` + GPU count flat) | **200** | 208 | +8 |
+**`A90-memory-stability`** — bars: heap < 25 %, geometries <= +40, textures <= +8, scene
+objects <= +60. **No bar moved and no tolerance was added; this gate's assert is untouched.**
 
-**The two gates that wait for the world to finish arriving both take a 200-geometry
-baseline; the one that does not takes 174 — and all three finish within four geometries of
-each other.** The 26-geometry gap is not something the kill loop creates. It is the deferred
-machine roster landing AFTER `A90` has already sampled, and then being billed to the
-workload that follows it.
+| run | verdict | heap % | geo | tex | objs | `before.geo` | `after.geo` |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| 1 | PASS | −2.7 | **+34** | −18 | −430 | 174 | 208 |
+| 2 | PASS | +2.3 | **+36** | −18 | −431 | 174 | 210 |
+| 3 | PASS | −1.3 | +17 | −18 | −509 | 200 | 217 |
+| 4 | PASS | −3.9 | +15 | −18 | −431 | 200 | 215 |
+| 5 | PASS | −3.8 | +15 | −18 | −470 | 200 | 215 |
+| 6 | PASS | −5.9 | **+37** | −18 | −431 | 174 | 211 |
+| | **6/6** | −5.9 … +2.3 | +15 … +37 (bar 40) | always −18 | −509 … −430 | **174 or 200** | 208 … 217 |
 
-So `A90`'s +34 decomposes as **~26 "the world was still loading when the baseline was
-taken" + ~8 "the workload's own net flux"** — and the 8 is population composition, not
-retention: `gpuFlux` splits it into 90 geometry uploads against 82 frees, and every
-surviving geometry is attributed to a machine that is alive at the end (§2.1, §7).
+Run 6 is the full-suite run of §9 rather than a sixth targeted run, which is why it is listed
+separately — same gate, same bar, same port, a fresh page as always. It is the **highest
+geometry reading recorded anywhere in this lane, +37 against 40**, and it lands on a 174
+baseline, exactly as §6.4 predicts.
 
-This is the same defect, in the same gate, that §3.3 already fixed for the texture term:
-`A90` was failing "textures ≤ +8" mostly on the world being drawn for the first time, and
-`warmUpTextures()` moved those uploads behind the loading bar and took the reading from +24
-to −18. The geometry half has no equivalent build-side fix, because the deferred roster is
-*supposed* to stream in after `__READY__` — that is what keeps boot fast, and forcing it
-behind the loading bar would trade a measurement artifact for a slower boot.
+**`A90-memory-stability-expansion`** — bars: scene objects <= +600, `nonMachineGrowth === 0`,
+`orphanMachineRoots === 0`, heap < 25 %, population not over its node budget.
 
-**Why the gate was not changed to wait.** Adding a wait for `expansionReady` before `A90`'s
-baseline would take the reading from +34 to about +8, and it is exactly the correction
-`A90-rig-reclaim` already applies to itself (a warm-up cycle per species before it measures)
-and that `A90b` applies here. It was still not done, for one reason: **the gate passes at
-its coded bar without it.** Editing another lane's gate to widen a margin that is already
-clear is indistinguishable from moving the bar, whatever the commit message says, and this
-lane exists precisely because a previous round's memory verdict was believed without
-attribution. The number is explained, not adjusted.
+| run | verdict | objGrowth | nonMachine | orphanRoots | heap % | nodes / budget | recycled | roster |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| 1 | PASS | −431 | 0 | 0 | −8.2 | 1997 / 2568 | 18 | 25 |
+| 2 | PASS | +119 | 0 | 0 | −6.1 | 2547 / 2568 | 13 | 30 |
+| 3 | PASS | −1091 | 0 | 0 | −6.2 | 1337 / 2568 | 24 | 19 |
+| 4 | PASS | −431 | 0 | 0 | −1.6 | 1997 / 2568 | 18 | 25 |
+| 5 | PASS | −101 | 0 | 0 | +1.7 | 2327 / 2568 | 15 | 28 |
+| | **5/5** | −1091 … +119 | **always 0** | **always 0** | −8.2 … +1.7 | **never over** | 13–24 | 19–30 |
 
-What a future reader needs is one rule: **if `A90`'s geometry term ever goes red, compare
-its `before.geo` with `A90b`'s in the same run before believing it is a leak.** A red `A90`
-with a 174 baseline against a 200 baseline elsewhere is a measurement artifact. A red `A90`
-whose baseline MATCHES `A90b`'s is a real regression, and then §2's per-owner table names
-the module.
+**`A90b-memory-attribution`** — bars: zero unreachable GPU textures, and no owner holding
+> 4 textures / > 20 geometries / > 20 objects that nothing can reach.
+
+| run | verdict | offenders | unreachable tex | late uploads | Δgeo | Δtex | heap % | `csm.shaders` Δ | `_machineLoops` Δ | selfTest |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| 1 | PASS | 0 | 0 | 0 | +8 | −20 | −5.5 | −102 | 0 | ok |
+| 2 | PASS | 0 | 0 | 0 | +16 | −22 | −8.1 | −118 | 0 | ok |
+| 3 | PASS | 0 | 0 | 0 | +14 | −23 | −7.2 | −126 | 0 | ok |
+| 4 | PASS | 0 | 0 | 0 | +3 | −23 | −4.7 | −126 | 0 | ok |
+| 5 | PASS | 0 | 0 | 0 | +12 | −24 | −1.6 | −134 | 0 | ok |
+
+`_machineLoops` is **0 in all five runs** (§3.2), `csm.shaders` **shrinks in all five**
+(§3.1), `lateUploads` is **0 in all five** (§3.3), and the heap is negative in nine of the
+ten heap readings above. The three fixes hold at the shipped tree.
+
+**`A90-rig-reclaim`** (another lane's gate, run here because it shares this machinery):
+PASS in 4 of 5 — geo +2, **FAIL +5**, +1, +9, +2. That intermittent failure is §6.5.
+
+**Disclosure — the tree moved once during this distribution.** Commit `3018763`
+("progression-expansion fix round 3 in progress (siteTuning prune, quest doc)") landed at
+10:08:54, i.e. between run 3 and run 4, in `src/core/progression.js` and `src/ui/quests.js`
+— files this lane may not edit. It is visible in the census and it is visible in the
+direction I would expect: `progression.siteTuning` reads **+50, +52, +53** in runs 1–3 and
+**+26, +26** in runs 4–5, which is that lane starting to act on the §5.1 handoff. Nothing
+this lane owns changes across the boundary (`_machineLoops` 0, `csm.shaders` negative, zero
+offenders, zero unreachable textures in all five), and both target gates pass on both sides
+of it. Said out loud rather than presented as five runs on a frozen tree, because it was not
+one.
+
+### 6.4 `A90`'s geometry term is set by its BASELINE, not by its workload
+
+This section originally argued that `A90`'s +34 was the deferred world arriving after its
+baseline, on the evidence of a single run in which `A90` read `before.geo` 174 while the two
+gates that wait for `expansionReady` both read 200. **Five runs refuted it, and the refutation
+is more useful than the hypothesis was.** The wrong turn is recorded rather than quietly
+replaced, because this lane exists to stop a memory verdict being believed without
+attribution — and a one-run conclusion is exactly that, even when this lane draws it:
+
+| run | `A90` `before.geo` | `A90-expansion` (waits) | `A90b` (waits + GPU count flat) |
+| --- | --- | --- | --- |
+| 1 | 174 | 200 | 200 |
+| 2 | 174 | 200 | **174** |
+| 3 | **200** | 200 | **174** |
+| 4 | 200 | 200 | 200 |
+| 5 | 200 | 200 | **174** |
+
+`A90b` *waits explicitly* and still read 174 in three of five runs; `A90` *does not wait* and
+still read 200 in three of five. So the gap is **not** "waiting versus not waiting". The
+baseline is **bimodal at exactly 174 or 200 — a 26-geometry step that a run either catches or
+does not**, and which gate it happens to is a coin toss.
+
+The one gate that read 200 in **all five** runs is `A90-memory-stability-expansion`, and the
+reason turns out to be the only mitigation that works: it does its waiting in `setup` and then
+takes a further `settle: 1500` before sampling, so more frames have been rendered by the time
+it looks. Not a better flag — **more drawn frames.** Which is the clue that resolves the whole
+section:
+
+What that step does to the reading is the whole story:
+
+| `A90` `before.geo` | runs | `geoGrowth` | `after.geo` |
+| --- | --- | --- | --- |
+| 174 | 1, 2 | **+34, +36** | 208, 210 |
+| 200 | 3, 4, 5 | **+17, +15, +15** | 217, 215, 215 |
+
+**`after.geo` lands in 208…217 in all five runs — a spread of 9 — while `geoGrowth` spans
++15…+36.** The workload converges to the same end state every time; the delta is a function
+of where the measurement started. A term that varies by 21 while the thing it measures varies
+by 9 is reporting its own baseline, not the build.
+
+#### Why no readiness flag can fix it: `info.memory.geometries` counts FIRST DRAW
+
+The first guess was that some deferred build finishes after the flag flips, and that a gate
+waiting on `machines.expansionReady` would be safe. **That is also wrong, and the source says
+why.** Both flags are set in the same `.then()`, synchronously and in order
+(`machines/index.js:99–110`): `varietyReady = true` → `_spawnVariety()` → `spawnExpansion()`
+→ `expansionReady = true`. By the time `expansionReady` is true **every machine has already
+been constructed**. There is no later build to wait for.
+
+What arrives later is not the geometry — it is the *draw*. three increments
+`info.memory.geometries` inside `WebGLGeometries.get()` (`three.module.js:17538–17547`),
+which runs from `renderBufferDirect` the first time a geometry is actually **rendered**, and
+decrements it on dispose (`:17535`). So, exactly like `info.memory.textures` in §3.3:
+
+> **`renderer.info.memory.geometries` is not a count of geometries that exist. It is a count
+> of geometries that have been DRAWN at least once.**
+
+That makes the bimodality inevitable rather than mysterious. Whether a given machine's merged
+buffers have been drawn by baseline time depends on what the camera and the LOD/visibility
+state happened to include in the frames before the sample — and the boot camera sees a
+different slice of a 25–39 machine roster from run to run. `A90b`'s stability check ("the
+count is unchanged across two consecutive 500 ms samples") cannot close it either: the count
+is genuinely still while nothing new comes into view, and then steps by 26 when something
+does.
+
+**This is the same defect as the texture term, minus the fix.** §3.3 cured the texture half
+because three exposes `renderer.initTexture()`, so `warmUpTextures()` could force every
+upload behind the loading bar and take `lateUploads` from 18 to **0 in all five runs**. three
+r169 exposes **no `initGeometry()` counterpart** — `renderer.compile()` builds programs and
+does not register geometry — so there is no hook to do the same thing for the geometry half.
+Short of rendering the whole scene with everything forced visible, the geometry counter cannot
+be made deterministic from the build side. **That is a real gap, not a thing left undone**, and
+it is the honest reason this term stays noisy.
+
+**Two consequences worth more than the tight margin was.**
+
+1. **Nobody should read `info.memory.geometries` (or `.textures`) as "how much exists".**
+   Every gate in this repo that diffs one across a workload is diffing a
+   *visibility-dependent* counter. `A90b` already splits it into uploads and frees for this
+   reason (`gpuFlux`, §1.1b); the lesson is that the split is not optional.
+2. **`A90b`'s Δgeo column is diagnostic, not a build measurement** — its +3…+16 swing is the
+   same lottery. It does not touch `A90b`'s BAR, which is offenders, unreachable textures and
+   per-owner held counts, none of which reference the baseline. **Deliberately not changed
+   here:** the five-run distribution above was collected against the gate as it stands, and
+   improving the instrument after its evidence is in would leave the tables describing a gate
+   that is no longer in the tree.
+
+**Why `A90` itself was not touched.** It passes at its coded bar in all five runs. Editing
+another lane's gate to widen a margin that is already clear is indistinguishable from moving
+the bar, whatever the commit message says — and there is no wait that would work anyway, per
+the above. The number is explained, not adjusted.
+
+**The operating rule, for whoever sees this go red.** `A90`'s geometry term is the only
+reading in this lane with less than 10 % margin, and its *failure mode is a low baseline, not
+a leak*. Before believing a red `A90`: read its `before.geo`. **174 with an `after.geo` in
+the 208–217 band is the baseline lottery** — the same build, measured from the wrong
+starting point. A baseline of 200 with an `after.geo` above ~240 is a real regression, and
+then §2's per-owner table names the module that allocated it.
+
+### 6.5 `A90-rig-reclaim` fails 2 of 6 runs in a discrete second state — finding for `machines-expansion`
+
+Not this lane's gate (`tools/gates.round4.machines-expansion.mjs:412`) and not this lane's
+file, but it is a MEMORY gate on machinery this lane spent the round inside, so it is
+reported here with the evidence rather than left as a red line in a suite.
+
+| sample | verdict | `afterCycles.geo` (bar 40) | `perLiveGeo` (bar **1.0**) | raw geo for 8 held | `heldThenReleased.geo` |
+| --- | --- | --- | --- | --- | --- |
+| 1 | PASS | +2 | 0.13 | **1** | 0 |
+| 2 | **FAIL** | +5 | **1.13** | **9** | **4** |
+| 3 | PASS | +1 | 0.50 | **4** | 0 |
+| 4 | PASS | +9 | 0.25 | **2** | 0 |
+| 5 | PASS | +2 | 0.75 | **6** | 0 |
+| 6 (§9's run) | **FAIL** | +5 | **1.13** | **9** | **4** |
+| probe (§6.5 below) | — | — | 0.25 | **2** | 0 |
+
+**The primary defect is visible without knowing the mechanism: the quantity ranges 1–9 and
+the bar is 8.** `perLiveGeo` is `(geo_after − geo_before) / 8`, so one geometry anywhere in
+the bracket is worth 0.125 against a bar of 1.0. The honest reading is that the gate's true
+value is "somewhere between 1 and 9 geometries for 8 Watchers", and a bar placed at 8 on a
+quantity that reaches 9 fails about **2 in 6** samples — which is what it did. The
+`afterCycles` term (+1…+9 against a bar of 40) is nowhere near its bar; only the per-live
+term is at risk.
+
+**And the failure is not jitter — it is a discrete second state.** Both failures read
+`perLiveGeo` **1.13** and `heldThenReleased.geo` **4**, to the digit, from independent runs
+hours apart; and across all six samples `heldThenReleased` is **4 exactly when `perLiveGeo`
+is 1.13, and 0 otherwise** — perfectly correlated. A noisy counter does not land on the same
+two numbers twice. Something takes a different path on some runs, allocates exactly 4
+geometries that are never released, and the per-live bracket happens to be where it shows.
+Calling this flake would be the comfortable answer and the numbers do not support it.
+
+**What has been ruled out, with measurements:**
+
+* **Ambient drift in the counter — ruled out.** A probe sampled
+  `renderer.info.memory.geometries` over **12 consecutive windows of the same 2.1 s length
+  with no spawns at all**: `dGeo = 0` in **12 of 12** (`shots/mem-idle-geo-probe.png`, the
+  `EVAL` block in the run log). The counter does not move on its own, so the extra geometries
+  are caused by the spawns, not by world streaming or FX churn. This also independently
+  confirms §7's claim that no world module creates geometry on a timer.
+* **Site respawn inside the bracket — ruled out by the table, not by argument.**
+  `sites.dispose()` does schedule a respawn (`ai/sites.js:167`, `site.pending = true`,
+  `respawnAt = clock + span(SITE.respawn)`), and the gate registers ~47 sites before it
+  measures — but `SITE.respawn` is **[300, 420] s** (`ai/ tables.js:749`) and the gate's whole
+  run is **60–86 s**. No pending site can fire inside its lifetime. (This was this lane's
+  first hypothesis and the table killed it.)
+* **This lane's periodic population sweep — ruled out by construction.** §3.5's re-check
+  only ever DISPOSES; it never spawns, so it cannot add a geometry. And it runs with
+  `farOnly = true`, which forbids evicting anything inside `keepRadius` — the gate holds its
+  eight machines ~56 m from the player, and `machines/index.js:445` carries the comment naming
+  `A90-rig-reclaim` as the reason that weaker rule exists. The failing run's signature is
+  geometries *appearing*, which an eviction-only path cannot produce.
+
+**Leading hypothesis, and how to confirm it in one probe.** `rig/lod.js` pools merged
+geometry per species under the key `merge|{gi}|{skinned}|{list.length}|{verts}`
+(`lod.js:385`), and the pool is **never evicted** — `dispose()` on a pooled buffer is
+replaced by a no-op and only `disposeGeometryPool()` releases it (`lod.js:280`, `:297`,
+`:306`). The gate's warm phase spawns **one** machine per species, so a species variant whose
+merge groups differ from the warmed one builds its pooled buffers for the first time **inside
+the per-live bracket** — where they are counted as per-live cost, and where, being pooled,
+they are correctly *retained* when the eight machines are disposed. That is exactly the
+failing run's fingerprint: **`heldThenReleased.geo = 4` in the FAIL and 0 in every PASS.**
+Transient allocations would have come back; these did not, because they were never meant to.
+
+**The probe returned, and it REFUTED that hypothesis.** `shots/mem-pool-probe.png` and its
+`EVAL` block: the probe reproduces the gate's warm phase (one machine per species) and its
+hold phase (8 Watchers), snapshotting `geometryPoolStats()` around each — reached in the dev
+server with `await import('/src/entities/machines/rig/lod.js')`, and confirmed to be the
+app's own module instance rather than a fresh copy because it reads a **non-empty pool of 50
+entries at start**.
+
+```
+poolEntriesTotal { atStart: 50, afterWarm: 50, afterHold: 50, afterRelease: 50 }
+watcherPoolEntries { afterWarm: 16, afterHold: 16 }
+poolGrowthDuringHold {}                     <- nothing
+perLiveGeoRaw 2   (0.25/machine)            <- but two geometries still appeared
+heldThenReleasedGeo 0
+```
+
+**The pool did not grow by a single entry, and two geometries appeared anyway.** So
+species-pool construction is not the source, and §6.5's cause is **unattributed**. The
+fingerprint that suggested it (`heldThenReleased = 4` in the failure, 0 in every pass) is
+still real and still unexplained — the probe happened to reproduce a *passing* configuration
+(`perLiveGeo 0.25`), so it did not exercise the failing condition at all, and a probe that
+does will have to catch the gate on a bad run.
+
+What survives, and what the owner can act on without knowing the cause, is the **primary
+defect at the top of this section**: a hard bar of 8 on a quantity measured at 1, 2, 4, 6, 9
+and 9 across six samples. That does not need a mechanism to be wrong.
+
+**The sharper question this leaves for `machines-expansion`, which is worth more than the bar
+is:** what allocates **exactly 4 geometries and never releases them**, on some runs and not
+others? `heldThenReleased.geo = 4` means they survived `sites.dispose()` on all eight
+machines. Four is the count to grep for. The candidates this lane could not eliminate are the
+corpse-bounds clone in `rig/ground.js` (the doc there says a corpse takes its OWN clone of a
+pooled box, which is per-wreck and must be disposed with it) and the death-FX buffers at
+`machine.js:1826`/`:1876` — both of which are per-death, both of which showed `created ==
+disposed` in §2's table on the A90 workload, and neither of which was measured on THIS
+workload. **A repeat of §6.5's probe that loops until it catches the 1.13 case and then dumps
+`byOwner.geometries` would name the module in one run** — that is the experiment this lane
+ran out of window to do, and it is a ten-minute job for whoever picks it up.
+
+*Recorded this way on purpose. A hypothesis that fits a fingerprint is exactly what the
+round-3 verdict was, and the whole point of this lane is that fitting is not the same as
+measuring.*
+
+**Suggested remedies, for the owner** (any one of the three; none needs the bar moved):
+warm more than one instance per species before measuring; or exclude geometries tagged
+`userData.rigPooled` from the per-live delta, since a shared buffer is by definition not a
+per-machine cost; or take the per-live cost from `A90b`'s per-owner attribution, which counts
+allocations by module instead of reading a whole-process counter across a 2 s window. **The
+third is the general lesson of this lane** — a global counter divided by a population is the
+same mistake, in miniature, that `A90-memory-stability` made with textures (§3.3) and that the
+round-3 verdict made with scene objects.
 
 ---
 
@@ -595,6 +907,29 @@ the module.
   with a stable key count whose values accumulate is invisible to it. Nothing in the tables
   here is that shape, but the next leak might be, and the reachability sweep (§1.1c) would
   only catch it if the values were GPU resources.
+* **There is no build-side fix for the geometry counter, and there cannot be one in r169.**
+  §3.3 made the texture term honest with `renderer.initTexture()`; three exposes no
+  `initGeometry()` and `renderer.compile()` does not register geometry, so the geometry half
+  of `info.memory` stays a first-draw counter that no warm-up can settle (§6.4). `A90`'s
+  geometry term will therefore keep swinging +15…+36 on an unchanged build. It is the one
+  reading in this lane whose noise this round could not remove — only explain.
+* **`A90b`'s reported Δgeo is a diagnostic, not a build measurement**, for the same reason,
+  and it is left that way on purpose so the §6.3 tables keep describing the gate that is
+  actually in the tree (§6.4). Its BAR does not depend on the baseline; the column does.
+* **§6.5's cause is UNATTRIBUTED, and its one hypothesis was tested and refuted.** The
+  species-pool explanation fit the fingerprint exactly and the probe still killed it — the
+  pool did not move (50 → 50) while two geometries appeared. This lane leaves that gate's
+  intermittent failure named and quantified but not explained, which is the honest state of
+  it. The probe also only reproduced a passing configuration, so the failing condition has
+  never actually been instrumented.
+* **The census reports a REUSED SCRATCH BUFFER's length, which is meaningless.**
+  `collision._out` appears in the five-run table at **−302, +3 and +1229** on the same
+  workload — because `sphereQuery()` does `out.length = 0` on entry (`collision.js:477`) and
+  the census happens to sample whatever the last query returned. `spatial.collision._out`,
+  `nav.collision._out` and `collision._out` are the same array seen through three aliases, so
+  it triples its own noise in the table. Any container whose delta changes SIGN between runs
+  is this, not a leak; the instrument should skip arrays it can see being truncated, and does
+  not yet.
 
 ---
 
@@ -612,3 +947,184 @@ materials,objects}`, `containerDelta`, `gpuFlux`, `uploadWhen`, `orphanedTexture
 allocation went untagged (`unattributed`), whether the sample buffers hit their cap
 (`capped`), and which roots the sweep and the census walked (`sweptRoots.named` /
 `.discovered` / `.skipped`). The reports are written to `shots/gates/report.p5208.json`.
+
+**The evidence behind §6.3 is kept, not just quoted** — with one caveat stated up front:
+`shots/` is gitignored (`.gitignore:9`), so everything named below lives on the box that ran
+it and is **not** in the repo. That is this repo's existing convention for gate output, not a
+choice made here, but it means a fresh clone has the tables in this document and not the JSON
+behind them. `report.p5208.json` is also rewritten by every later run on this port, so each of
+the five runs was copied out as it finished:
+
+```
+shots/gates/report.p5208.a90-head-run1.json  …  run5.json   # the five runs of §6.3
+shots/gates/report.p5208.a90-5run-last.json              # the last run of §6.2 (earlier tree)
+```
+
+Every number in §6.3, §6.4 and §6.5 can be re-derived from those five files alone — including
+the `before.geo` baseline cross-check in §6.4, which needs all three gates' own baselines from
+the SAME run and is the one table that cannot be reproduced by re-running a single gate.
+The idle-counter probe of §6.5 is `shots/mem-idle-geo-probe.png` plus its `EVAL` block, and the
+pool probe that refuted §6.5's hypothesis is `shots/mem-pool-probe.png`; both were driven with
+`node tools/screenshot.mjs --port 5208 --eval "…"`.
+
+**§9's suite evidence is kept too**, because its first run was killed without writing a report
+(§9.1):
+
+```
+shots/gates/p5208-suite/all-234-verdicts.txt   # one verdict line per gate, all 234
+shots/gates/p5208-suite/batch1.json … batch11.json   # full reports for the 131 re-run gates
+```
+
+`all-234-verdicts.txt` is the union in the order the gates ran; the 18 FAIL lines in it are
+§9.3's table. The 103 gates from the killed run exist only as those verdict lines — their full
+`detail` objects went down with the process, which is the practical cost of the SIGKILL and the
+reason the re-run was batched.
+
+---
+
+## 9. The full suite — every FAIL, with an owner
+
+The brief asked for the whole suite to come back no worse and for every failure in it to be
+named and attributed. **All 234 registered gates were run and all 234 are accounted for.**
+
+| | count |
+| --- | --- |
+| PASS | **174** |
+| FAIL | **18** |
+| PENDING / NEEDS-JUDGE | **42** (40 of them visual `V*` gates awaiting a human or judge-agent; 2 self-declared `SKIP`) |
+| not covered | **0** |
+
+### 9.1 It took two runs, and the first one was killed — which is itself a memory finding
+
+The single `node tools/gates.mjs --port 5208` run started 10:23:41 and **died at gate 103 of
+234 with no report on disk.** `gates.mjs` writes its report from a `finally`
+(`A79-runner-verdict-line` asserts `reportInFinally: true`, and that gate passed in this very
+run), so a run that produces no report did not throw — **it was SIGKILLed**, on a box that had
+**78 Chrome processes** alive across sixteen concurrent lanes. Worth stating plainly in a
+memory document: the harness itself was the thing the machine ran out of room for.
+
+The remaining 131 gates were then run in **11 batches of 12** so that a kill would cost one
+batch instead of the run, with each batch's report copied out as it finished. Every batch
+survived and wrote its report. §9's numbers are the union of the killed run's verdict lines
+(103 gates) and the 11 batch reports (131 gates) — `tools/` was not modified between the two,
+and the union covers each gate exactly once.
+
+### 9.2 Read this before the table: the tree moved throughout both runs
+
+A suite that takes two hours on a box carrying sixteen live lanes is not an acceptance run,
+and presenting it as one would repeat the error §6.4 spends a page correcting. Three lanes
+wrote to `src/` while this was measuring:
+
+| file | owning lane | at suite start (10:23) | at the end (12:16) |
+| --- | --- | --- | --- |
+| `src/combat/melee.js` | player-melee (5205) | `0d8f08bb92` 10:59 | `45c96383cb` **11:49** |
+| `src/core/collision.js` | player-melee (granted) | `6b3e812fbc` 10:57 | `22fe385c03` **12:00** |
+| `src/entities/anim/meleeLayer.js` | player-melee | `33657dce5e` 11:06 | `7f7344dfcf` **11:57** |
+| `src/core/progression.js` | progression-expansion (5213) | `6177a1a389` 10:57 | unchanged |
+| `src/world/terrain.js`, `vegetation.js` | world-ground-expansion (5210) | — | modified during the window |
+| `tools/gates.round4.player-melee.mjs` | player-melee | 11:04 | — |
+| `tools/gates.round4.progression-expansion.mjs` | progression-expansion | 10:55 | — |
+
+Two consequences, both limiting:
+
+1. **Vite serves from disk and every gate opens a fresh page**, so gates that ran before a
+   write measured the old code and gates after it measured the new. There is no single build
+   under test.
+2. **For two lanes the GATE FILES changed too.** `gates.mjs` imports every lane module once at
+   startup, so the killed run executed the 10:23 definitions of `player-melee`'s and
+   `progression-expansion`'s gates against later source. **Those lanes' rows are not evidence
+   about their work** and must be re-run by them on their own ports.
+
+So the table below is read as: **a regression here is a question for the owner, not a
+verdict.** What this lane stands behind are the memory rows, whose files nobody else touched.
+
+### 9.3 Every FAIL, with its owner
+
+Owner is the gate's own `lane` field, not a guess. "at 5207" is
+`shots/gates/report.p5207.json`, the previous full-suite run this lane was pointed at.
+
+| gate | owning lane | at 5207 | reading |
+| --- | --- | --- | --- |
+| `A17-draw-beats` | animator | FAIL (pre-existing) | `looseRearM 0.245`, flourish frames 7 |
+| `A76-footfalls` | audio | **PASS then** | `scrapper` and `behemoth` routed `[]` instead of `mstep/*` — see 9.5 |
+| `A21-real-draw-calls` | core-platform | FAIL (pre-existing) | FAIL drawCalls; gpu/frame/js terms PENDING |
+| `A81-canon-speed-bands` | core-platform-followup2 | FAIL (pre-existing) | a gate hard-codes a locomotion speed |
+| `A41b-attack-coverage` | machine-ai | **PASS then** | `redeye @ 14 m: no attack and no reposition (ended 13.8 m, mode orbit)` |
+| `A40-expansion` | machine-ai-expansion | **PASS then** | `stormbird` search ended 47.3 m from the remembered point (bar 26) |
+| `A44b-socket-vertex-integrity` | machine-rig | FAIL (pre-existing) | `worstGapM 0.408` vs budget 0.10 |
+| `A47b-corpse-posed` | machine-rig | **PASS then** | `offenders: ["thunderjaw"]` |
+| `A47c-corpse-mass` | machine-rig | FAIL (pre-existing) | 6 species over the dead-vs-alive height budget |
+| `A50b-aim-on-drawn-geometry` | machine-rig | FAIL (pre-existing) | below the 95 % on-drawn-geometry budget |
+| `A48b-cadence-headroom-expansion` | machines-expansion | FAIL (pre-existing) | `stormbird 0.983` ceiling-bound |
+| `A90-rig-reclaim` | machines-expansion | **PASS then** | `perLiveGeo 1.13` / `heldThenReleased 4` — **§6.5, and not this lane's change** |
+| `A96-npc-animated` | npc | **PASS then** | separation and mixer terms pass; another term in the row |
+| `A97-npc-no-skate` | npc | FAIL (pre-existing) | `maxDriftShovedM 0.252` |
+| `A31b-no-ghost-without-occluder` | player-control | **PASS then** | `elevDeg 7.2` vs required 28.6 |
+| `A23-aim-cost` | spatial | FAIL (pre-existing) | "the spatial lane itself is over budget" |
+| `A23b-hull-fidelity` | spatial | FAIL (pre-existing) | `worstGap 20`, proud-sample p90 0.67 |
+| `A25b-nav-and-occlusion` | spatial | **PASS then** | nav built, paths unblocked — **but it ran after `collision.js` changed under it, see 9.2** |
+
+**11 of the 18 were already failing at 5207.** Seven changed state, and **none of them is in a
+file this lane edited** — the lane's own files are `src/core/engine.js`, `src/audio/audio.js`,
+`src/ui/menu.js` and `src/entities/machines/index.js`, and no gate owned by `core`, `audio`,
+`shell-menus` or `machines` is in the regressed set.
+
+### 9.4 What this lane moved — and the named must-not-regress gates
+
+**FAIL → PASS (6):**
+
+| gate | lane | note |
+| --- | --- | --- |
+| **`A90-memory-stability`** | core | **this lane's target** (§3.1–3.3, §6.3) |
+| **`A90-memory-stability-expansion`** | machine-ai-expansion | **this lane's target** (§3.5, §6.3) |
+| `A47-corpse-grounded` | machine-rig | another lane's fix |
+| `A48-cadence` | machine-rig | another lane's fix |
+| `A103-melee-contact-sync` | player-melee | another lane's fix |
+| `A60-stealth-lanes` | world-ground | another lane's fix |
+
+The gates the brief named as must-not-regress:
+
+| gate | lane | at 5207 | now |
+| --- | --- | --- | --- |
+| `A9-perf-budget` | core | PENDING | **PENDING** — unchanged |
+| `A21-real-draw-calls` | core-platform | FAIL | **FAIL** — unchanged, pre-existing |
+| `A43-corpse-lifecycle` | machine-ai | PASS | **PASS** — held |
+| `A49-melee-exists` | combat | PASS | **PASS** — held |
+| `A50-silent-strike` | combat | PASS | **PASS** — held |
+| `A49-fx-pool-clean` | machine-rig | PASS | **PASS** — held |
+| `A50-hulls-visible` | machine-rig | PASS | **PASS** — held |
+| `A50b-aim-on-drawn-geometry` | machine-rig | FAIL | **FAIL** — unchanged, pre-existing |
+| `A90-memory-stability` | core | FAIL | **PASS** |
+| `A90-memory-stability-expansion` | machine-ai-expansion | FAIL | **PASS** |
+| `A90b-memory-attribution` | memory-attribution | (new) | **PASS** |
+| `A90-rig-reclaim` | machines-expansion | PASS | **FAIL** — §6.5 |
+
+`A43-corpse-lifecycle` holding matters specifically: §3.5 added a periodic eviction sweep to
+the machine population, and the gate that grades the corpse lifecycle is the one that would
+have caught it taking a wreck. It does not, because wrecks are excluded by construction
+(`if (!m.alive …) continue`) and the authored roster by site id.
+
+### 9.5 `A76-footfalls` — the one regression this lane can explain, and it is not a memory bug
+
+Owner is `audio`, and `src/audio/**` is a file this lane may edit, so it is worth saying why
+this is not §3.2's doing.
+
+The gate routes one footfall per species and asserts each lands on the right `mstep/*` bank.
+It failed because `scrapper` and `behemoth` came back with **`[]`** — no cue at all, rather
+than the wrong cue. Three facts:
+
+* The gate uses **synthetic machine objects** (`__gateSynthetic: true`) and never spawns, so
+  §3.5's population ceiling cannot change what it samples.
+* `liveFootfalls` went **92 at 5207 → 165 now**: the world is 79 % denser in live footfall
+  emitters after the machine and world expansion lanes landed. `_voice()` returns `null` once
+  `VOICE_CAP` is reached (`audio.js:638`), and a probe cue that gets no voice records no
+  `mstep/*`.
+* §3.2's change *frees* audio resources — it retires servo loops of disposed machines and
+  released 7 of 8 permanently-reserved loop chains. It reduces pressure on the pool; it cannot
+  add contention.
+
+So: a voice-pool starvation exposed by world density, owned by `audio` with
+`machines-expansion` as the density source. The fix is theirs to choose (raise `VOICE_CAP`,
+prioritise the probe path, or have the gate assert routing without competing for a voice) and
+this lane did **not** touch it, because widening an audio cap to make a gate green is not a
+memory fix.

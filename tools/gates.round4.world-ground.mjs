@@ -816,10 +816,97 @@ export const GATES = [
         surfaces: SURFACES.length, routed: Object.keys(MAP).length,
         unrouted, stray, unknownSets: unknown,
         bankIntrospected: canAsk,
-        note: 'A76-footfalls (audio lane) still owes SURFACE_SET the ash entry '
-          + '— exact one-line patch in docs/ROUND4-WORLD-GROUND.md',
+        note: 'A76-footfalls is RED BECAUSE THIS LANE ADDED THE ash SURFACE, '
+          + 'and its only legal fix is one line in src/audio/audio.js (audio '
+          + 'owns that file — exact patch in docs/ROUND4-WORLD-GROUND.md). '
+          + 'Counted as this lane REGRESSION, not another lane backlog.',
       };
       return { pass: unrouted.length === 0 && stray.length === 0 && unknown.length === 0, detail };
+    })()`,
+  },
+
+  /* --------------------------------------------------------------- A59-b */
+  {
+    id: 'A59b-cover-honesty-world-ground', kind: 'action', lane: 'world-ground',
+    title: 'The concealment field never claims cover the scatter did not plant: '
+      + 'no point that isInTallGrass() calls hidden sits on forest, snow, ash '
+      + 'or scree ground carrying under 2 tufts/m^2',
+    timeout: 60000,
+    settle: 1200,
+    /**
+     * THE GATE THE LANE WAS MISSING, AND THE REASON IT COST A JUDGE A ROUND.
+     *
+     * `terrain.tallGrassDensity` (what the game calls cover) and
+     * `vegetation.grassDensityAt` (what the game actually plants) are two
+     * functions in two files that must describe one piece of ground. Nothing
+     * held them together: the biome pass damped the scatter and left the field
+     * alone, and 432 sampled points — 198 on bare snow, 124 on the burn scar —
+     * reported Aloy hidden while she stood in the open. A59 could not see it
+     * (it measures density where the discs are) and A60 could not see it (it
+     * measures routes, which are authored). So this measures the AGREEMENT.
+     *
+     * Bars, and why they are where they are:
+     *  - the four DRY biomes must be exactly 0. Those are the ones the damp
+     *    drives below the 0.45 concealment threshold outright, so any hit is a
+     *    real regression, not a rounding edge.
+     *  - the MARSH is allowed a small count. A reed bed is damped only 0.55,
+     *    and inside the wet channel the scatter's reed relaxation is keyed on
+     *    the very field the damp just lowered, so a thin band of pool collar
+     *    survives above 0.45 at ~1.3 tufts/m^2. Measured 25 of 5824 (0.43 %);
+     *    the bar is 1 %. Shin-deep water with reeds in it is not the lie the
+     *    finding was about, but it is not nothing either, so it is bounded.
+     *  - the TOTAL bar (4 %, measured 2.78 %) catches the pre-existing kind
+     *    this lane did not introduce: the rim taper and the path/shelf damping
+     *    thin the scatter harder than they thin the field. Bounded, not
+     *    asserted to zero, so a future lane cannot quietly make it worse.
+     *
+     * Sampled inside r <= 288 on purpose: beyond that the rim taper zeroes the
+     * scatter by design and nothing is expected to grow.
+     */
+    assert: `(async () => {
+      const ctx = __CTX__;
+      const T = ctx.terrain, V = ctx.vegetation;
+      if (!T || !V || typeof V.grassDensityAt !== 'function') {
+        return { pass: null, detail: 'SKIP: vegetation.grassDensityAt not published' };
+      }
+      const DRY = ['forest', 'snow', 'ash', 'scree'];
+      const by = { meadow: 0, forest: 0, snow: 0, marsh: 0, ash: 0, scree: 0 };
+      const worst = [];
+      let tall = 0, bad = 0;
+      for (let x = -288; x <= 288; x += 4) {
+        for (let z = -288; z <= 288; z += 4) {
+          if (x * x + z * z > 288 * 288) continue;
+          if (!T.isInTallGrass(x, z)) continue;
+          tall++;
+          const d = V.grassDensityAt(x, z);
+          if (d >= 2) continue;
+          bad++;
+          const b = T.biomeAt(x, z);
+          by[b] = (by[b] || 0) + 1;
+          if (DRY.indexOf(b) >= 0 && worst.length < 10) {
+            worst.push({ at: [x, z], tall: +T.tallGrassDensity(x, z).toFixed(3),
+              tuftsPerM2: +d.toFixed(2), biome: b, surface: T.surfaceAt(x, z) });
+          }
+        }
+      }
+      if (tall < 500) return { pass: null, detail: { tall, why: 'SKIP: too few tall-grass samples' } };
+      let dry = 0;
+      for (const k of DRY) dry += by[k] || 0;
+      const marshFrac = by.marsh / tall;
+      const totalFrac = bad / tall;
+      return {
+        pass: dry === 0 && marshFrac <= 0.01 && totalFrac <= 0.04,
+        detail: {
+          tallSamples: tall, claimedWithoutCover: bad, byBiome: by,
+          dryBiomeViolations: dry,
+          marshFraction: +marshFrac.toFixed(4), marshBar: 0.01,
+          totalFraction: +totalFrac.toFixed(4), totalBar: 0.04,
+          dryWitnesses: worst,
+          note: 'dry biomes (forest/snow/ash/scree) must be exactly 0 — those '
+            + 'are the ones biomeGrassDamp drives below the 0.45 threshold, so '
+            + 'a hit there is the exact defect the fix round closed',
+        },
+      };
     })()`,
   },
 ];
