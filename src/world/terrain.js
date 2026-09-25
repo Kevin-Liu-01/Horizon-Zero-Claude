@@ -121,6 +121,28 @@ export const WORLD_HALF = WORLD_SIZE / 2;
 /** The gameplay boundary (`player.js` steers here; the rim face is built for it). */
 export const PLAY_RADIUS = 330;
 
+/**
+ * SURFACE -> NEAREST FOLEY SET, published as `Terrain.SURFACE_AUDIO`.
+ * See the doc comment on that getter for why this lane publishes it at all.
+ *
+ * FROZEN SINGLETON, not an object literal inside the getter: the getter is the
+ * kind of thing a consumer reasonably reads inside a footstep path, and a
+ * getter that builds a fresh 10-key object per access is a per-frame allocation
+ * waiting to happen in someone else's hot loop. One object, shared, immutable.
+ */
+const SURFACE_AUDIO = Object.freeze({
+  water: 'foot/water',
+  cobble: 'foot/cobble',
+  silt: 'foot/silt',
+  mud: 'foot/silt',
+  dirt: 'foot/dirt',
+  gravel: 'foot/gravel',
+  ash: 'foot/dirt',      // a burn scar is soft and dusty — no grit, not grass
+  rock: 'foot/rock',
+  snow: 'foot/snow',
+  grass: 'foot/grass',
+});
+
 const SS = THREE.MathUtils.smoothstep; // (x, min, max)
 
 /* ------------------------------- the rim --------------------------------- */
@@ -1580,6 +1602,30 @@ export class Terrain {
   static get BIOMES() {
     return ['meadow', 'forest', 'snow', 'marsh', 'ash', 'scree'];
   }
+
+  /**
+   * SURFACE -> NEAREST FOLEY SET. Published for `audio`, whose file this lane
+   * may not edit (§3.1), so that adding a surface here can never again make a
+   * footstep silently play the wrong material.
+   *
+   * WHY IT EXISTS. `surfaceAt()` is this lane's contract and `Terrain.SURFACES`
+   * is its vocabulary, but the sound of a surface is `audio`'s call, and
+   * `audio`'s `SURFACE_SET` is a module const with no registration hook. When
+   * the biome pass added `mud` and `ash`, `mud` happened to already be aliased
+   * and `ash` was not, so `A76-footfalls` correctly reports
+   * `surfacesFallingBackToGrass: ['ash']` — a burn scar that sounds like a
+   * meadow. That is a real defect and this lane will not dodge it by renaming
+   * `ash` (it is a named deliverable of `A58-surface-api`).
+   *
+   * This map is the fix expressed from the side that owns the vocabulary: every
+   * name in `SURFACES` has an entry, so `audio` can merge it once
+   * (`{ ...SURFACE_SET, ...(Terrain.SURFACE_AUDIO || {}) }`) and every future
+   * surface this lane invents arrives already routed. The values are only the
+   * NEAREST EXISTING set in today's bank — `ash` is `foot/dirt` because a burn
+   * scar is soft and dusty with no grit — and `audio` remains free to override
+   * any of them, or to record a real `foot/ash`.
+   */
+  static get SURFACE_AUDIO() { return SURFACE_AUDIO; }
 
   /** Ridged fbm (0..~0.94): sharp crests, good for mountains. */
   /**

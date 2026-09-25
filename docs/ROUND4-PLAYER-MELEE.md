@@ -19,7 +19,10 @@ crossing it was written to excuse).
 | # | finding | severity | what changed | evidence |
 |---|---------|----------|--------------|----------|
 | 1 | **V48 still fails its literal "does not intersect" criterion** — the stowed bow and the stowed spear form an X on her back, and round 2 wrote that into V48's own criterion as something the judge should not fail. | major | **The X is gone, by the judge's own one-line fix.** `src/combat/combat.js STOW_TILT` is now **+0.62, not −0.62**, so the bow runs the SAME diagonal as the spear and the two read as parallel straps. This is **one line in a file this lane does not own**, made deliberately and reported as such (see §0.2); the geometry proving no in-grant alternative exists is in §5.1. V48's criterion is rewritten to judge the literal clause again, with the round-2 excuse struck out and replaced by a note telling the judge to FAIL the shot if the combat lane reverts the line. | `shots/melee-r3-holster-before.png` (the X) vs `shots/gates/V48-spear-holster.png` and `shots/melee-r3-holster-flip.png` (parallel). A100 `bowClear` **0.156–0.193 m** on every row, up from 0.135–0.181 |
-| 2 | **A105 fails 2 of 11 runs on an idle box, and its jogging row measures the runway rather than the swing.** | major | Both halves. (a) **The control and the treatment now run over the same ground**: `toStart()` resets position, velocity and ground snap before EACH segment, so both cover x −60…−85 with the same 1.0 s ramp and the same 4.2 s of sampling; round 2's control covered −60…−85 and its swinging half −85…−110. (b) **The outlier discard is deleted** and the jogging row is gated on its RAW worst clean window at §4's 0.08 m, exactly as the standing row already was; the control is still run and published as `controlWorst` but does **not** enter the pass condition in either direction. (c) **The standing tail is root-caused and closed** — see §0.1. | **11 runs, 11 PASS**: jogging **0.0012–0.0216 m**, control over the same ground **0.0011–0.0201 m**, standing **0.0015–0.0305 m**, all against 0.08. The same instrument on the round-2 build failed 2 of 11 |
+| 2 | **A105 fails 2 of 11 runs on an idle box, and its jogging row measures the runway rather than the swing.** | major | Both halves. (a) **The control and the treatment now run over the same ground**: `toStart()` resets position, velocity and ground snap before EACH segment, so both cover x −60…−85 with the same 1.0 s ramp and the same 4.2 s of sampling; round 2's control covered −60…−85 and its swinging half −85…−110. (b) **The outlier discard is deleted** and the jogging row is gated on its RAW worst clean window at §4's 0.08 m, exactly as the standing row already was; the control is still run and published as `controlWorst` but does **not** enter the pass condition in either direction. (c) **The standing tail is root-caused and closed** — see §0.1. | **11 runs, 11 PASS**: jogging **0.0012–0.0216 m**, control over the same ground **0.0011–0.0201 m**, standing **0.0015–0.0305 m**, all against 0.08. The same instrument on the round-2 build failed 2 of 11. **CORRECTION — re-measured independently in the verification session, this build fails 1 run in 13 (0.1226 m jogging). See §3.6: the failure rate moved 2-in-11 → 1-in-13, it did not go to zero, and the row is not claimed green.** |
+
+| 3 | **Not a judge finding — found by re-running the lane on the fixed build in the verification session. `A103-melee-contact-sync` FAILED at 1.232 m** against its 1.2 m bar. | major | The impact point was being SAMPLED with three rays and is now SOLVED: closed-form point-to-capsule over all 295 hull capsules of the target, then one confirming ray to keep `object` real. A103 also grew a clause that the published point must be **on** the machine (≤ 0.05 m off the hull), so defining the point as the nearest surface cannot become a way to pass. | §0.3. Three runs after the fix: `tipToImpactAtHit` **0.683/0.534/0.576**, **0.463/0.433/0.309**, **0.650/0.296/0.359** m. The sampler it replaced published **1.349/1.440/1.468** where the true nearest surface was **0.375/0.438/0.989** |
+| — | **CROSS-LANE, and the biggest thing this round found: melee never touches a machine.** The blocking capsule holds her **3.412 m** from a Watcher's centre while the blade reaches **1.80 m**. | major | Nothing in this lane. Reported with the measurement and the per-species table. | §0.3 bottom, §6.8 |
 
 ### 0.1 The standing tail: why `err` could not see it
 
@@ -90,6 +93,61 @@ timing are untouched) and no combat-lane gate reads the constant — `V29-wielde
 the bow being in her LEFT HAND, not about the diagonal. **Combat lane: if you want it back, revert
 that line and fail V48.**
 
+### 0.3 A103 failed on the verification re-run, and the sampler was the reason
+
+Neither judge finding was about A103, but re-running the lane batch on the fixed build turned it
+red: **`swing 1: the tip was 1.23 m from the impact point`**, against a 1.2 m bar. §5 gap 3 had
+called this margin thin for two rounds (0.84–1.15 m) without saying why it was thin. Measured this
+round, the reason is not the margin, it is the instrument in `melee.js`:
+
+| | swing 1 | swing 2 | swing 3 |
+|---|---|---|---|
+| what fix round 2 published as the impact point (3 rays from the tip) | 1.349 m | 1.440 m | 1.468 m |
+| the **exact** nearest hull surface to the tip, same frames | **0.375 m** | **0.438 m** | **0.989 m** |
+
+Fix round 2 picked the impact point by casting three rays from the blade tip at three heights on
+the machine's body-centre line and keeping the nearest hit. This rig carries **295 hull capsules
+per machine**; the capsule nearest the blade is usually a LEG beside it, not anything on the line
+to the body centre, and a ray aimed at the centre sails straight past it. So the sparks, the decal,
+the damage direction and positional audio were being put about a metre from the blade — and A103,
+which measures exactly that, was reading the sampler's error rather than the swing.
+
+Point-to-capsule is a closed form. `melee.js` now clamps the tip onto every capsule's segment,
+subtracts the radius, keeps the nearest surface point and its outward normal, then fires **one**
+short confirming ray at it purely to recover a real `object` node so `takeDamage` still walks up
+to the right component. Cost: 295 clamps and one raycast **per landed hit** — a discrete,
+input-driven event, never in a frame loop. `hitHulls.hulls()` is the only public route to the
+refreshed world capsules and it builds its array per call; that one allocation per hit is the
+honest cost of the fix, nothing is retained, and A90/A9 were re-measured after it (§3.0).
+
+Measured after the fix, three consecutive runs of A103, `tipToImpactAtHit` per swing:
+**0.683 / 0.534 / 0.576**, **0.463 / 0.433 / 0.309**, **0.650 / 0.296 / 0.359** m against the
+1.2 m bar. Worst of nine: **0.683 m**. Before the fix, the same three swings read
+**1.251 / 0.861 / 0.562**.
+
+**What this did NOT fix, and it is the bigger finding:** she cannot reach a machine at all. The
+blocking capsule in `collision._syncMachines` (`standoffHalfLen` + `bodyRadius` + `machinePad` +
+her own radius) holds her **3.412 m** from a Watcher's centre head-on — measured, and immovable:
+2.6 s of `KeyW` driven into the machine reads 3.412 m on every single frame. The contact pose puts
+the blade tip **1.80 m** ahead of her root and the Watcher's hull is **3.228 m** from her chest, so
+**the blade stops ~1.4 m short of every machine it damages.** Nothing in this lane can close that.
+
+| species | standoffHalfLen | bodyRadius | holds her at (centre, head-on) | model bbox |
+|---|---|---|---|---|
+| sawtooth | 0.714 | 1.5 | 3.16 m | 5.00 × 2.75 × 6.69 |
+| watcher | 1.562 | 0.9 | **3.41 m** | 4.43 × 3.38 × 4.92 |
+| behemoth | 2.300 | 2.6 | 5.85 m | 16.69 × 4.77 × 14.37 |
+| thunderjaw | 2.465 | 4.0 | 7.41 m | 11.07 × 9.40 × 18.08 |
+
+Against a 1.80 m reach, **no machine in the roster is reachable head-on**. `standoffHalfLen`
+defaults to `max(size.x, size.z) * 0.5 − bodyRadius` off the MODEL BOUNDING BOX, and a Watcher
+whose hull capsules are a few tens of centimetres across at chest height measures 4.43 × 4.92 m as
+a box. **CROSS-LANE (collision / machine-rig): melee cannot connect with the blade on any machine
+in the game, and the standoff that prevents it is derived from a bbox roughly 3× the creature.**
+This lane's gate is staged head-on exactly as §4 words it and is left that way; A103 gates the
+impact point, which is the part of §4's clause this lane owns, and publishes the reach shortfall
+in its note so the next reader does not have to re-derive it.
+
 ---
 
 ## 0. FIX ROUND 2 — the judges' six findings
@@ -137,7 +195,9 @@ code, and neither was where the tuning was going:
   carry the camera's pitch, which on a Watcher shows the ray a *leg*. It now casts along the
   **haft** first, and then refines the point with three short queries from the tip (body centre,
   low, and the blade's own height), keeping the nearest hit. `tipToImpactOnScreen` went
-  1.23–1.94 m → **0.84–1.15 m**.
+  1.23–1.94 m → **0.84–1.15 m**. *(Fix round 3 replaced those three queries with an exact
+  point-to-capsule solve over all 295 hulls — see §0.3. The round-2 sampler was wrong by about a
+  metre and A103 failed on it at 1.232 m; nine swings on the solve read 0.296–0.683 m.)*
 * **A105's jogging row was re-measured, and it found a host artefact rather than a defect.** It
   used to anchor on the first frame a foot was *flagged* planted, which at a jog includes the
   foot rolling over its own heel; every other skate gate here (A13, A31) requires the ball to be
@@ -617,6 +677,43 @@ still resolves it.
 see §2.11 for what fix round 1 changed about its shape, its plane and its opacity, and for the
 impact-normal bug it was hiding.
 
+**Where the impact point goes (rewritten in fix round 3 — §0.3).** The machine, the arc and the
+damage are decided by the blade ray, then the camera ray, then the wedge, exactly as before.
+What changed is the last step, which decides WHERE on that machine the sparks, the decal, the
+knockback direction and `melee-hit.point` land. Round 2 sampled it with three rays from the tip
+aimed at three heights on the body centre line; that is wrong by about a metre on a rig with 295
+hull capsules per machine, because the capsule nearest the blade is usually a leg beside it. It
+is now solved instead:
+
+```
+for each hull capsule (a, b, r) of the target machine:
+    t    = clamp(((tip - a) · (b - a)) / |b - a|², 0, 1)     // nearest point on the axis
+    c    = a + (b - a) t
+    surf = |tip - c| - r                                     // distance to the SURFACE
+keep the smallest surf; its point is c + (tip - c) · r/|tip - c|, its normal (tip - c) normalised
+```
+
+then one short confirming ray from the tip at that point, solely to recover a real `object` node
+so `takeDamage` still walks up to the struck component; if the ray skims past, the solved surface
+point and normal are used as they are. It runs **once per landed hit**, never in a frame loop.
+
+**And A103 grew the clause that keeps this honest.** Defining the impact point as the nearest
+surface makes `tipToImpact` the smallest number the geometry admits, so on its own that row could
+now be satisfied by a build which published the point at the blade tip and called it a hit. A103
+therefore also measures `pointOffHull` — the published point's distance to the machine's own
+capsules, solved the same way — and FAILS above 0.05 m. The two clauses together are §4's
+sentence: the sparks are ON the machine, and the blade is within 1.2 m of them.
+
+The first version of that clause failed on its own first run, at 0.226 m and 0.897 m off the hull,
+and the cause was the clause and not the build: it measured after `rec()` returned, and a machine
+whose `update()` is stubbed still MOVES when `takeDamage` lands on it, so the hull the point was
+placed on had walked away by the time it was read. It is now sampled inside the `melee-hit` event,
+which is where the tip readings were already taken. Worth recording because it is the same class
+of error as the one §0.3 is about: measuring the right quantity at the wrong moment. Sampled at
+the hit, `pointOffHull` reads **0.0001 / 0.0004 / 0.0007 m** — the published point is on the
+machine to within a tenth of a millimetre, which is what the solve promises.
+
+
 ### 2.9 What is NOT in the box
 
 - `melee.js` still has a `_poseSpearFallback()` — the no-rig path, for a boot where the animator
@@ -681,17 +778,37 @@ assumed.
 Lane gates, one clean batch after the fix, plus A105 eleven more times on its own because the
 judge asked for a sample that can see a one-in-ten tail.
 
+**Read §3.6 with this table.** The numbers below were taken in the session that made the fix. A
+separate verification session re-ran the lane from scratch on a loaded box and found two things
+this table did not say: A103 **fails** on the round-2 impact-point sampler (fixed — §0.3, and the
+row's entry here is updated), and A105 is **12 of 13, not 13 of 13**.
+
 | gate | bar | measured (fix round 3) | verdict |
 |---|---|---|---|
-| **A100-spear-holster** | spine socket, mid ≤ 0.30 m, tilt 30–60°, blade above the right shoulder (floor 0.20 / ceiling 0.70) and right of the spine, hair ≥ 0.06, **bow ≥ 0.12 (0.10 on the roll)**, on idle / sprint / crouch / bow-draw / worst frame of a 40-frame roll | tilt **33.3 / 54.0 / 39.7 / 37.9 / 32.6°**; midToBack **0.265 / 0.265 / 0.272 / 0.265 / 0.286**; tip **0.551 / 0.511 / 0.593 / 0.528 / 0.290 m** above the shoulder, **0.459 / 0.511 / 0.323 / 0.227 / 0.423 m** right of the spine; hair **0.190 / 0.299 / 0.381 / 0.153 / 0.086**; **bow 0.193 / 0.186 / 0.160 / (bow in hand) / 0.156** — every row up on round 2's 0.135–0.181 / 0.117–0.126 | **PASS** |
+| **A100-spear-holster** *(verification re-run: tilt 34.2 / 52.5 / 39.0 / 38.5 / 30.5°, bowClear 0.205 / 0.187 / 0.160 / (bow in hand) / 0.160, hair 0.191 / 0.332 / 0.363 / 0.184 / 0.080 — PASS)* | spine socket, mid ≤ 0.30 m, tilt 30–60°, blade above the right shoulder (floor 0.20 / ceiling 0.70) and right of the spine, hair ≥ 0.06, **bow ≥ 0.12 (0.10 on the roll)**, on idle / sprint / crouch / bow-draw / worst frame of a 40-frame roll | tilt **33.3 / 54.0 / 39.7 / 37.9 / 32.6°**; midToBack **0.265 / 0.265 / 0.272 / 0.265 / 0.286**; tip **0.551 / 0.511 / 0.593 / 0.528 / 0.290 m** above the shoulder, **0.459 / 0.511 / 0.323 / 0.227 / 0.423 m** right of the spine; hair **0.190 / 0.299 / 0.381 / 0.153 / 0.086**; **bow 0.193 / 0.186 / 0.160 / (bow in hand) / 0.156** — every row up on round 2's 0.135–0.181 / 0.117–0.126 | **PASS** |
 | **A101-spear-grip** | palm ≤ 0.03 m from the haft axis, haft within 25° of the grip axis, haft ≤ 0.03 m from the live knuckle line, blade ahead of the hand, butt-to-wrist in the canon band, left hand ≤ 0.05 m on two-handed beats, **hand sweep ≥ 45°** | `bladeAheadOfHand` **1.09 m**; `gripFrac` **0.20** of a **1.591 m** haft (canon 0.15–0.28); left hand **0.000 m** off the haft on the two-handed beat | **PASS** |
 | **A102-melee-body-motion** | hand ≥ 1.2 m/swing, torso yaw ≥ 15°, step-in 0.25–0.8 m, ≥ 3 arcs, re-parent gap ≤ 0.10 m, tip pop ≤ 0.9 m, grab reach ≤ 0.25 m | **4 distinct arcs**; `reparentGap` **0.0000**; `tipAcrossReparent` **0.357 m** on a **113 ms** frame, over **8** sampled re-parents; `grabReach` **0.0822 m** (round 2's escape clause did not fire); hand-over slide **0.06×** budget | **PASS** |
-| **A103-melee-contact-sync** | `melee-hit` inside the strike with the tip ≤ 1.2 m from the impact point | fires at k **0.70** of the strike against a Watcher held at **2.81 m** | **PASS** |
+| **A103-melee-contact-sync** | `melee-hit` inside the strike with the tip ≤ 1.2 m from the impact point, **and the point ≤ 0.05 m off the machine hull (new)** | **FAILED first at 1.232 m**, then fixed (§0.3): the impact point is now solved against all 295 hull capsules instead of sampled with 3 rays. Three runs after the fix, `tipToImpactAtHit` per swing **0.683 / 0.534 / 0.576**, **0.463 / 0.433 / 0.309**, **0.650 / 0.296 / 0.359**; worst of nine **0.683**. Fires at k **0.66–0.80** of the strike against a Watcher held at **2.83–2.85 m**. Reach shortfall (1.4 m, cross-lane) published in the note | **PASS ×3** |
 | **A104-melee-self-clear** | haft ≥ 0.12 m from head/neck/spine, hair clear, forearm never into the body, elbow never over the head | no clause raised, all five beats | **PASS** |
-| **A105-melee-while-moving** | **jogging** raw worst clean window ≤ 0.08 m (no discard), speed ≥ 60 %, stride kept, torso yaw ≥ 12°, hand ≥ 1.2 m; **standing** raw worst ≤ 0.08 m, steps ≥ 3, peak lift ≥ 0.03 m | **11 runs, 11 PASS.** jogging **0.0012–0.0216 m**, control over the same ground **0.0011–0.0201 m**, standing **0.0015–0.0305 m**, all against 0.08. Speed ratio **0.98–1.00**; stance duty 0.43; torso yaw **84–90°**; steps **73–92** per standing row; peak lift **0.107–0.118 m**. Median frame **33–89 ms**. Round 2's build on the same instrument: **2 of 11 FAILED** (standing 0.0867 m; jogging 0.170 m) | **PASS ×11** |
+| **A105-melee-while-moving** | **jogging** raw worst clean window ≤ 0.08 m (no discard), speed ≥ 60 %, stride kept, torso yaw ≥ 12°, hand ≥ 1.2 m; **standing** raw worst ≤ 0.08 m, steps ≥ 3, peak lift ≥ 0.03 m | **11 runs, 11 PASS.** jogging **0.0012–0.0216 m**, control over the same ground **0.0011–0.0201 m**, standing **0.0015–0.0305 m**, all against 0.08. Speed ratio **0.98–1.00**; stance duty 0.43; torso yaw **84–90°**; steps **73–92** per standing row; peak lift **0.107–0.118 m**. Median frame **33–89 ms**. Round 2's build on the same instrument: **2 of 11 FAILED** (standing 0.0867 m; jogging 0.170 m). **Re-measured independently: 12 PASS of 13, one FAIL at 0.1226 m — §3.6** | **12 of 13** |
 | **V46-spear-ready** | side + front of the guard, against `spear-ready-side.jpg` | `shots/gates/V46-spear-ready.png`, re-read: right hand at hip height, haft down-forward with the tip at shin height, left arm swept back and empty, elbow beside the ribs, nothing across the chest | NEEDS-JUDGE |
 | **V47-melee-swing** | six panels, against `spear-light-{windup,strike,follow}.jpg` | `shots/gates/V47-melee-swing.png`, re-read: on both WINDUP strips the blade is high and **forward of the head plane**; both CONTACT strips have the arm extended with the haft through horizontal; FOLLOW has the hand at the waist and the spine pitched over the lead foot; the live panel's trail is a thin arc behind the blade. Body pose differs between every strip | NEEDS-JUDGE |
 | **V48-spear-holster** | back view at a sprint, against `spear-holster-back-hfw.jpg`; **the literal "does not intersect" clause, with round 2's excuse withdrawn** | `shots/gates/V48-spear-holster.png`: the bow and the spear now run the **same** diagonal, parallel, with a hand's width of daylight — **the X is gone.** Also re-filmed at three angles: `shots/melee-holster-{back,side,front}.png` (`bowClear` **0.239 / 0.172 / 0.192 m**). Before/after pair for the judge: `shots/melee-r3-holster-before.png` → `shots/melee-r3-holster-flip.png` | NEEDS-JUDGE |
+
+### 3.0a One number in A105's own diagnostics that does not agree with A102, declared
+
+A105's standing row publishes `rootPerSwing`, the root distance between the frame a swing goes
+active and the frame it goes inactive. Across the fix-round-3 runs it reads **0.17–1.03 m**, and
+the top of that range is over §4's `0.25–0.8 m` step-in band, while A102 — which is the row that
+GATES the band — measures **0.35 / 0.35 / 0.60 / 0.71 m** on the same build.
+
+They are not the same quantity. A102 stages one swing at a time from the guard. A105's standing
+row fires swings back to back for 13 s, so a `_buffered` swing can begin while the previous one is
+still in its recover, and the window `rootPerSwing` measures then spans part of two steps. The
+large values are all on the 4th-of-4 beat, which is the heavy, immediately after a light. It is
+reported rather than trimmed because it is the kind of number a reader should be able to see; if
+the orchestrator wants the chained case gated at 0.8 m as well, that is a real question for the
+combo timing and not something this row should answer silently.
 
 ## 3. Gate table
 
@@ -710,6 +827,29 @@ in play, which is meaningless under a headless gate that parks the camera on her
 | **V46-spear-ready** | side + front of the guard, against `spear-ready-side.jpg` | captioned two-panel composite, `shots/gates/V46-spear-ready.png`. Read against the reference: right hand at hip height, shaft down-forward, left arm swept back and empty, elbow beside the ribs, nothing across the chest | NEEDS-JUDGE |
 | **V47-melee-swing** | L1 windup/contact/follow + heavy windup/contact, side — **plus a live contact frame with the smear (new)** | captioned six-panel composite, `shots/gates/V47-melee-swing.png` | NEEDS-JUDGE |
 | **V48-spear-holster** | back view at a sprint, against `spear-holster-back-hfw.jpg`; the bow clause is now **measured** by A100 (`bowClear ≥ 0.12 m`) | `shots/gates/V48-spear-holster.png`, re-filmed and read. The two straps still cross in screen space — §4.9 says why that cannot be fixed from this lane — but with 0.135 m of measured daylight where round 1 had 0.099 m | NEEDS-JUDGE |
+
+## 3.2a Regression set, re-run on port 5205 after the fix-round-3 edits
+
+One batch, `node tools/gates.mjs --port 5205 --only …`, on the build this document describes
+(the `melee.js` impact-point solve of §0.3 included). §4's regression list uses the audit's short
+names; the registered ids are given here so the next reader does not have to guess them.
+
+| gate (§4 name → registered id) | result | number |
+|---|---|---|
+| A2 → `A2-dodge-displacement` | **PASS** | displacement 4.84 m, `animOk` |
+| A3 → `A3-sprint-speed` | **PASS** | 6.60 m/s in a 6.12–7.82 band |
+| A11 → `A11-idle-alive` | **PASS** | maxPath 63.3 mm |
+| A12 → `A12-clip-driven` | **PASS** | dominant `Sprint_Loop` w 1.0 |
+| A13 → `A13-no-skate` | **PASS** | **0.0021 m** over 10 windows, 0 hitched |
+| A15 → `A15-foot-flat` | **PASS** | idle pitch err 1.95°, aim 1.98° |
+| A16 → `A16-draw-anchor` | **PASS** | nock-to-hand 0.058 m, elbow below shoulder |
+| A17 → `A17-draw-beats` | **PASS** | `flourishFrames` **8** (the clause §3.5 saw fail under the concurrent suite — it is a frame-rate bar, and it passes in a small batch on the same build) |
+| A20b → `A20b-no-system-errors` | **PASS** | 0 system errors, 0 hook errors, 312 frames |
+| A31b → `A31b-aim-strafe-skate-player-anim` | **PASS** | maxDrift **0.0055 m** over 8 windows, 0 hitched |
+| A33 → `A33-hair-bounce` | **PASS** | hair 3.22 Hz vs footfall, detrended p2p 0.349 |
+| A35 → `A35-cheek-anchor` | **PASS** | hand-to-head 0.156 m, bow elbow 167.9° |
+| A49 → `A49-melee-exists` | **PASS** | 1 swing, 1 hit, 24.7 hp — and its own `centreDist` **3.71 m** is the combat lane's independent measurement of the standoff in §0.3 |
+| A50 → `A50-silent-strike` | **PASS** | Watcher killed, prompt fired, `centreDist` 3.31 m |
 
 ## 3.2 Non-lane gates, re-run on port 5205 (fix round 1)
 
@@ -755,7 +895,8 @@ before this was written up.
 | `shots/gates/V48-spear-holster.png`, `shots/melee-r3-holster-flip.png` | the same shot after the one-line change | two straps on the same diagonal, roughly parallel, a hand's width apart, blade clear above the right shoulder, butt low on the left. Reads as `reference/spear-holster-back-hfw.jpg` |
 | `shots/melee-holster-{back,side,front}.png` | the carry at three angles | back: parallel straps, no crossing, nothing through the ponytail. Side: both props lie along the back plane, the blade clears the shoulder, no intersection with the quiver. Front: blade over her RIGHT shoulder and the bow limb beside it, both clear of her head and hair |
 | `shots/gates/V47-melee-swing.png` | the six swing panels | both WINDUP strips have the blade high and **forward of the head plane** (`spear-light-windup.jpg`); both CONTACT strips have the arm extended with the haft through horizontal (`spear-light-strike.jpg`); FOLLOW has the hand at the waist, haft below horizontal, spine pitched over the lead foot (`spear-light-follow.jpg`); the live panel's trail is a thin arc behind the blade, not a fan across her chest. The body pose is different in every strip — shoulders, hips and feet all move |
-| `shots/gates/V46-spear-ready.png` | the guard, side + front | right hand at hip height on the rear fifth of the haft, haft down-forward ~25–30°, tip at shin height, left arm swept back and empty, elbow beside the ribs, nothing across the chest (`spear-ready-side.jpg`) |
+| `shots/gates/V46-spear-ready.png` | the guard, side + front | right hand at hip height on the rear fifth of the haft, haft down-forward ~25–30°, tip at shin height, left arm swept back and empty, elbow beside the ribs, nothing across the chest (`spear-ready-side.jpg`). On the FRONT panel the 25–30° reads as near-vertical: that is foreshortening on a head-on camera, and the side panel is the one the canon angle is judged from |
+| *(the §0.3 impact-point fix is NOT filmed)* | — | Attempted twice and abandoned: the one-off film harness would not stage a landed hit (the machine has to be placed on the heading she has **after** the guard comes up, and even then the swing did not connect within the shot's budget), so there is no frame showing the sparks. Rather than ship a shot whose name promises evidence it does not contain, the evidence for §0.3 is the gate's own measurement, which is stronger: `pointOffHull` **0.0001–0.0007 m** on nine consecutive swings says the published point is on the machine to within a tenth of a millimetre, and `tipToImpactAtHit` **0.296–0.792 m** says the blade is near it. A judge who wants the picture should run `A103-melee-contact-sync` and read `rows[].point` |
 
 ## 3.4 Films read against the reference
 
@@ -778,6 +919,34 @@ against `reference/spear-*.jpg` before this was declared done:
 
 In no panel is the arm behind her head, the forearm across her face or chest, or the haft
 through her head, neck, torso or hair.
+
+### 3.5a What the verification session ran instead of a second full-suite crawl
+
+The full suite below was run by the session that made the fix. The verification session did **not**
+repeat it, and says so rather than implying it did: a complete pass takes hours on this box, and
+while it was running, three other lanes had their own suites live on ports 5208 / 5210 / 5213, so
+an alphabetical crawl would have spent that time re-measuring their frame-rate-sensitive rows. It
+ran, on port 5205, with every result in this document:
+
+* the six lane gates as a batch (twice), **A103 three more times** after its fix, and
+  **A105 thirteen times**;
+* the §4 regression set, 14 gates, resolved to their registered ids — §3.2a, all PASS;
+* `A90-memory-stability` and `A9-perf-budget` after the `melee.js` change.
+
+`A90-memory-stability` **PASS** on the changed build, 30 machine kills over 320 s: heap
+**−2.7 %**, objects **−509**, textures **−18**, geometries **+36** (the pre-existing core leak of
+§6.3, unchanged in kind by this round — the impact-point solve creates no `THREE` object at all,
+and its one allocation is a plain array from `hitHulls.hulls()` that is released on the same
+tick). A103's three post-fix runs on that build: `tipToImpactAtHit` **0.434 / 0.296 / 0.792**,
+**0.388 / 0.452 / 0.624**, **0.559 / 0.624 / 0.728** m, with `pointOffHull` **0.0001–0.0007 m**
+on all nine.
+
+`A9-perf-budget` **PENDING** on the same build, by the gate's own verdict and not by this lane's
+reading of it: draw calls **331, inside budget**, `callsOk: true`, and `fpsAttributable: false` —
+*"this box gives us 7.84 ms of GPU with NOTHING drawn, so the deficit is contention, not the
+scene."* Three other lanes' suites were live on ports 5208 / 5210 / 5213 while it ran.
+
+Anything below that this session re-ran is annotated where it differs.
 
 ## 3.5 Full suite on port 5205 — every FAIL, with an owner
 
@@ -823,6 +992,58 @@ reported BOTH ways so a judge can hold the original bar:
   the ponytail root and the stowed bow already sit. `midToSpine` is in the detail.
 
 ---
+
+## 3.6 A105 re-measured independently this round, and it is NOT clean
+
+The fix-round-3 build's A105 claim in §0 ("11 runs, 11 PASS") was measured in the session that
+made the fix. It was re-measured from scratch in the verification session, on a box with three
+other lanes' suites running, and **it failed 1 run in 13**:
+
+| | runs | PASS | worst jogging | worst standing |
+|---|---|---|---|---|
+| verification session, this build | **13** | **12** | **0.1226 m (FAIL)**; the other twelve 0.0009–0.0215 | 0.0013–0.0456 |
+| the session that made the fix | 11 | 11 | 0.0012–0.0216 | 0.0015–0.0305 |
+| round-2 build, judge's instrument | 11 | 9 | 0.170 m (FAIL) | 0.0867 m (FAIL) |
+
+Every jogging worst-window, sorted, across the twelve runs that share one instrument: 0.0009,
+0.0017, 0.0037, 0.0040, 0.0063, 0.0065, 0.0072, 0.0095, 0.0125, 0.0171, 0.0215, **0.1226**. The
+distribution is two orders of magnitude tighter than the bar with one outlier five times
+everything else — which is exactly the shape round 2's deleted `dropOutlier` was hiding, and the
+reason deleting it was right. The other clauses never came close to their bars: speed ratio
+**0.998–1.001**, torso yaw **79.4–94.4°**, stance duty **0.419–0.491**, standing steps **68–120**,
+peak lift **0.090–0.237 m**.
+
+So the fix moved the failure rate from 2-in-11 to 1-in-13 and did not remove it. Saying it is
+green would be the same mistake round 2 made, so it is written down as it measured.
+
+**What is now instrumented, and what it has ruled out.** Every stance window carries its own
+evidence: whether a swing was running inside it (`swinging`), the longest frame it spanned
+(`maxDt`), its sample count, where on the runway it happened (`at`) and how much the terrain rose
+or fell across it (`groundRise`). Across the diagnostic runs every worst window reads
+`groundRise: 0` — the runway at x −60…−85 is flat, so the round-2 terrain artefact the judge found
+at x ≈ −94 is genuinely out of the measurement.
+
+**What the code rules out structurally, and this is the part worth checking rather than trusting:**
+
+* `melee.js::_stepIn` returns immediately when `speed > STEP_SPEED` (1.15 m/s). She jogs at
+  **5.05 m/s**. So while jogging, melee creates **no step drive**, writes **no velocity**, and
+  never calls `beginMeleeStep()` — the stance-step system is not armed at all.
+* `playerAnimator::_stanceStep` additionally requires `moveW < 0.45`, which a jog is never under.
+* The melee layer rotates exactly `spine_01..03`, `neck_01`, `head`, both clavicles, both arms and
+  the fingers, plus the prop (grep-able: those are all of its `_rot`/`_rotL` targets). It **reads**
+  the thigh bones for the torso-yaw measurement and **writes nothing at or below the pelvis.**
+
+That leaves frame time and the locomotion's own foot lock. The frame-time asymmetry is real but
+not systematic: across four diagnostic runs the swinging half's median frame was 47.2 / 53.9 /
+56.7 / 53.5 ms against the control's 33.7 / 51.0 / **65.5** / 47.9 ms — the control was the slower
+half in one of the four, so "the melee layer makes the treatment slower" does not survive its own
+data either. The one captured failure (0.1226 m) was in the run with the slowest frames of its
+batch (median 60 ms) and pre-dates the per-window instrument, so its `maxDt` was not recorded.
+
+**Disposition.** The bar is unchanged and no discard was reintroduced. The row is honestly
+1-in-13 flaky on a loaded box, the mechanism is not yet caught in the act, and the instrument that
+will catch it is now in place and published on every run. If the next reader wants one thing done
+here, it is to run A105 with the new diagnostics until a failure lands and read its `maxDt`.
 
 ## 4. Honest gaps
 
@@ -935,14 +1156,16 @@ These supersede gaps 9, 10 and 12 above, which fix round 2 either closed or re-s
    so the wraps, the ferrule and the blade are uniformly shrunk rather than re-proportioned. The
    geometry should be authored at the right length so the detail scales as art. Everything this
    lane measures is derived from `length`, so no gate bar depends on the current mechanism.
-3. **A103's margin is thin and frame-rate sensitive.** `tipToImpactOnScreen` measures **0.84–1.15 m**
-   against §4's 1.2 m bar. The floor is geometric: a Watcher's blocking collider holds her 3.19 m
-   from its centre while its hull starts ~2.8 m out, and a 1.59 m haft gripped in its rear fifth
-   puts the blade tip about 1.8 m ahead of her — she physically cannot touch it, so every melee
-   hit on a Watcher is a reach hit. The impact point is now placed on the part of the hull the
-   blade is nearest (three short queries from the tip, nearest wins) rather than on the first
-   surface down the camera ray, which is what bought the margin. The real fix is the collision
-   lane's standoff, not this one's.
+3. **SUPERSEDED by fix round 3 (§0.3) — the thin margin was the instrument, and it is gone.**
+   Round 2 placed the impact point with three rays from the tip and read 0.84–1.15 m against §4's
+   1.2 m bar; on the verification re-run it read **1.232 m and FAILED**. Measured against the
+   exact answer, those three rays were wrong by about a metre (1.349/1.440/1.468 published where
+   the true nearest hull surface was 0.375/0.438/0.989). The point is now **solved** in closed
+   form over all 295 hull capsules, and nine swings across three runs read **0.296–0.683 m**.
+   What remains true, and is now the headline cross-lane item rather than a footnote: the
+   blocking capsule holds her **3.412 m** from a Watcher's centre against a **1.80 m** blade
+   reach, so the blade stops ~1.4 m short of every machine it damages, on every species in the
+   roster. That is the collision / machine-rig lanes', not this one's.
 4. **A102's `grabReach` escape clause fires occasionally under stalls** (1 run in ~3 on a loaded
    box, measured 0.858 m against a 0.25 m bar). The draw's hand-over waits for the hand to reach
    the haft and falls through to an escape at `drawK ≥ 0.90`; when the arm's IK weight ramp has
@@ -996,12 +1219,33 @@ These supersede gaps 9, 10 and 12 above, which fix round 2 either closed or re-s
    exact build when run in a small batch on the same port, which is the evidence that it is the
    box and not the build; `A31b-aim-strafe-skate-player-anim`, which measures the same thing with
    a load-tolerant instrument, PASSES.
-5. **The standing row's tail is smaller, not zero.** Over 11 runs the worst standing window is
+5. **A105 still fails about 1 run in 13, and the jogging row is where it lands now.** The
+   verification session re-measured it from scratch: 13 runs, 12 PASS, one FAIL at **0.1226 m**
+   jogging. §3.6 has the full distribution, the per-window instrument that is now published on
+   every run, and the two structural facts that rule the swing itself out (melee arms no step
+   drive and no stance step above 1.15 m/s; the melee layer writes nothing at or below the
+   pelvis). The mechanism has not been caught in the act — the one failure pre-dates the
+   instrument. **No discard was reintroduced and the bar was not moved.**
+
+6. **The standing row's tail is smaller, not zero.** Over 11 runs the worst standing window is
    **0.0305 m** against an 0.08 m bar (round 2: 0.0867 m over the same sample size, with two
    runs over). The mechanism that produced the old tail is understood and closed (§0.1) and
    `STEP_SLIP` is a hard backstop on the measured quantity, but a stance window is a measurement
    of a damped system on a box whose frame time varies four-fold, and it will never read zero.
-6. Gaps 2, 3, 4 and 6 of §5 are unchanged and still open: `buildSpear()` should be authored at
-   1.59 m rather than scaled; A103's margin is bounded by the collision lane's standoff; A102's
-   `grabReach` escape can still fire under heavy stalls (it did not in this round's runs,
-   0.0822 m against 0.25 m); A101's construction identities are reported as identities.
+7. Gaps 2, 4 and 6 of §5 are unchanged and still open: `buildSpear()` should be authored at
+   1.59 m rather than scaled; A102's `grabReach` escape can still fire under heavy stalls (it did
+   not in this round's runs, 0.0822 m against 0.25 m); A101's construction identities are
+   reported as identities. Gap 3 is **closed** — see §0.3 and the rewritten §5.3.
+
+8. **THE ONE TO ACT ON, AND IT IS NOT THIS LANE'S: melee never touches a machine.** The player's
+   blocking capsule holds her 3.41 m from a Watcher's centre (3.23 m from its hull at chest
+   height) while the fully-extended contact pose reaches 1.80 m, so the blade stops about 1.4 m
+   short of everything it damages — on every species alive in the roster (3.16 m sawtooth,
+   3.41 watcher, 5.85 behemoth, 7.41 thunderjaw). She cannot walk it off either: 2.6 s of forward
+   input into the machine does not move her a millimetre closer. The standoff comes from
+   `machine.js`'s default `standoffHalfLen = max(size.x, size.z) * 0.5 − bodyRadius`, measured off
+   a MODEL BOUNDING BOX that reads 4.43 × 4.92 m for a Watcher whose hull capsules are tens of
+   centimetres across. **Owner: collision / machine-rig.** Until it moves, every melee hit in the
+   game is a reach hit, and no amount of animation work in this lane can make the blade land on
+   the machine it is damaging. A103 is green because the point the sparks are put on is now the
+   part of the machine the blade is nearest; it is not green because she can reach.

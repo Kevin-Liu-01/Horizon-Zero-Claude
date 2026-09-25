@@ -749,4 +749,77 @@ export const GATES = [
       return { pass, detail };
     })()`,
   },
+
+  /* --------------------------------------------------------------------- */
+  /**
+   * THIS LANE'S HALF OF THE FOOTSTEP CONTRACT.
+   *
+   * `A76-footfalls` (audio's gate) is the one that judges what a surface SOUNDS
+   * like, and it currently FAILS on `surfacesFallingBackToGrass: ['ash']`
+   * because `audio`'s `SURFACE_SET` has no entry for the surface this lane's
+   * burn scar introduced. `src/audio/audio.js` is not this lane's file, so this
+   * gate deliberately does NOT re-assert A76's bar — that would either weaken
+   * it or duplicate a failure someone else must fix.
+   *
+   * What it asserts is the half this lane CAN be held to: the vocabulary and
+   * the routing hint published beside it never disagree. If a future biome adds
+   * a surface name and forgets to route it, this goes red in `world-ground`'s
+   * own lane run, at the moment the surface is invented, instead of surfacing
+   * as a mystery footstep in audio's gate three lanes later.
+   */
+  {
+    id: 'A58b-surface-audio-world-ground', kind: 'action', lane: 'world-ground',
+    title: 'every name in Terrain.SURFACES has a published Terrain.SURFACE_AUDIO '
+      + 'foley route, and every route names a set audio actually has',
+    timeout: 30000,
+    settle: 400,
+    assert: `(() => {
+      const ctx = __CTX__;
+      const T = ctx.terrain;
+      if (!T) return { pass: null, detail: 'SKIP: terrain not published' };
+      const SURFACES = T.constructor.SURFACES;
+      const MAP = T.constructor.SURFACE_AUDIO;
+      if (!MAP || typeof MAP !== 'object') {
+        return { pass: false, detail: 'Terrain.SURFACE_AUDIO is not published' };
+      }
+      const unrouted = SURFACES.filter((s) => !MAP[s]);
+      const stray = Object.keys(MAP).filter((s) => !SURFACES.includes(s));
+
+      /* Every route must name a set the bank can actually PLAY. Ask the live
+       * sample bank (bank.has), not a hard-coded list, so a route to a set that
+       * audio later renames or drops fails here rather than going silent in the
+       * field. The bank loads asynchronously; if it is not up yet the check
+       * degrades to the naming shape and says so, rather than inventing a red
+       * or a green from an unloaded bank. */
+      /* ONLY a LOADED bank is an authority on what exists. Under the gate
+       * harness the sample bank reports {loaded:false, size:0} — the footstep
+       * path is procedural there, which is exactly why A76 can watch
+       * "foot/grass" play with nothing on disk. Asking an empty bank whether it
+       * "has" foot/grass answers false for every set and would turn this gate
+       * into a permanent red that says nothing about this lane. So introspect
+       * only when the bank is actually up, and otherwise check the half that is
+       * always checkable: that every route is a well-formed set name. */
+      const A = ctx.audio;
+      const bank = A && A.bank;
+      const audit = bank && typeof bank.audit === 'function' ? bank.audit() : null;
+      const canAsk = !!(bank && typeof bank.has === 'function'
+        && audit && audit.loaded && audit.sets > 0);
+      const unknown = [];
+      for (const s of SURFACES) {
+        const set = MAP[s];
+        if (!set) continue;
+        const ok = canAsk ? !!bank.has(set) : /^foot\\/[a-z]+$/.test(set);
+        if (!ok) unknown.push(s + ' -> ' + set);
+      }
+
+      const detail = {
+        surfaces: SURFACES.length, routed: Object.keys(MAP).length,
+        unrouted, stray, unknownSets: unknown,
+        bankIntrospected: canAsk,
+        note: 'A76-footfalls (audio lane) still owes SURFACE_SET the ash entry '
+          + '— exact one-line patch in docs/ROUND4-WORLD-GROUND.md',
+      };
+      return { pass: unrouted.length === 0 && stray.length === 0 && unknown.length === 0, detail };
+    })()`,
+  },
 ];

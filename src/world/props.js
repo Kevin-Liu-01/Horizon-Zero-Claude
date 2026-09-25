@@ -133,6 +133,26 @@ export class Props {
     /** @type {object[]} rope bridges / plank walks over the dried channel */
     this.crossings = this.placeSystem.crossings ?? [];
 
+    /**
+     * PUBLISHED FOR `world-ground` — the ground these places stand on.
+     *
+     * `[{ id, x, z, hard, soft, grass }]`: fell everything inside `hard`, thin
+     * the fringe out to `soft`, trample grass inside `grass`. This is the same
+     * contract `vegetation.js` already implements for the spawn camp and its
+     * four-entry `KEEPOUT` literal ("ruin clusters + watchtower (see props.js)"
+     * — its own comment); it is published here so the list stops being a
+     * hard-coded mirror of another lane's coordinates.
+     *
+     * `world-ground` consumes it with one line per scatter pass, beside the
+     * existing `inKeepout(x, z)` test — `ctx.props.keepouts` is populated
+     * before `forceStream()` and long before the first frame. The day that
+     * lands, `src/world/props/clearings.js` is deleted; until then this lane
+     * applies the same cull from its own side. See that file's header.
+     */
+    this.keepouts = this.placeSystem.clearings ?? [];
+    /** What the clearing shim actually culled (gate evidence, see A98b). */
+    this.clearingReport = this.placeSystem.clearingReport ?? null;
+
     this._colliderIds = [];
     this._collidersDone = false;
     ctx.props = this;

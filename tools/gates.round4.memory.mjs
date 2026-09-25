@@ -330,9 +330,46 @@ function installMemInstrument() {
     }
     return (top && (top.name || top.type)) || '(detached)';
   }
-  var SUBSYS = ['machines', 'combat', 'hud', 'focus', 'audio', 'interactables', 'items',
+  /**
+   * THE ROOTS BOTH CENSUSES WALK.
+   *
+   * The named list is the one this lane wrote by hand, and a hand-written list
+   * of subsystems is exactly the gap docs/ROUND4-MEMORY.md §7 admits: a module
+   * that invents a cache the sweep does not know about gets its LIVE contents
+   * counted as unreachable (a false accusation), and a container it grows
+   * forever never appears in the census at all (a missed leak). Sixteen lanes
+   * add subsystems to \`__CTX__\` while this gate is not looking, so the list is
+   * now a FLOOR, not the definition: every other own key of \`__CTX__\` that
+   * holds an object is swept too.
+   *
+   * Only four keys are skipped, and each for a reason that is not "we did not
+   * think of it": \`scene\` is walked first and with per-object holder keys, so
+   * re-walking it here would relabel every texture in the world with a worse
+   * name; \`renderer\` keeps its GPU objects in WeakMaps a key walk cannot see;
+   * \`camera\` is in the scene; \`THREE\` is the library namespace and walking it
+   * would spend the whole visit budget on class prototypes.
+   *
+   * The roots actually used are reported (\`sampling.sweptRoots\`), so the table
+   * can never quietly narrow.
+   */
+  var SUBSYS_NAMED = ['machines', 'combat', 'hud', 'focus', 'audio', 'interactables', 'items',
     'progression', 'spatial', 'collision', 'nav', 'hitHulls', 'props', 'fauna', 'npcs',
     'studio', 'environment', 'vegetation', 'terrain', 'camp', 'player', 'engine', 'anim', 'menus'];
+  var SUBSYS_SKIP = { scene: 1, renderer: 1, camera: 1, THREE: 1 };
+  var SUBSYS = SUBSYS_NAMED.slice();
+  var SUBSYS_DISCOVERED = [];
+  try {
+    var ctxKeys = Object.keys(C);
+    for (var cki = 0; cki < ctxKeys.length; cki++) {
+      var ck = ctxKeys[cki];
+      if (SUBSYS_SKIP[ck] || SUBSYS.indexOf(ck) >= 0) continue;
+      var cv;
+      try { cv = C[ck]; } catch (e) { continue; }
+      if (!cv || typeof cv !== 'object') continue;
+      SUBSYS.push(ck);
+      SUBSYS_DISCOVERED.push(ck);
+    }
+  } catch (e) { /* exotic ctx — the named floor still holds */ }
 
   /**
    * Everything the app can still reach a texture through. The scene is the
@@ -663,6 +700,9 @@ function installMemInstrument() {
     out.sceneGraphCalls = addRows;
     out.cappedSamples = Object.assign({}, capped);
     out.unattributed = { adds: addsUnattributed, removes: removesUnattributed, addBudget: ADD_BUDGET };
+    // which roots the reachability sweep and the container census actually
+    // walked this run — a table that silently narrows is a table that lies
+    out.sweptRoots = { named: SUBSYS_NAMED.length, discovered: SUBSYS_DISCOVERED.slice(), skipped: Object.keys(SUBSYS_SKIP) };
     out.gpuFlux = {
       textureUploads: to._flux.texUp - from._flux.texUp,
       textureFrees: to._flux.texDown - from._flux.texDown,
@@ -954,7 +994,7 @@ export const GATES = [
               objects: top(whole.objects, 'attached'),
             },
             sceneGraphCalls: whole.sceneGraphCalls,
-            sampling: { capped: whole.cappedSamples, unattributed: whole.unattributed },
+            sampling: { capped: whole.cappedSamples, unattributed: whole.unattributed, sweptRoots: whole.sweptRoots },
             populationAudit: ctx.machines.populationAudit ? ctx.machines.populationAudit() : null,
             sitesAudit: ctx.machines.sites ? ctx.machines.sites.audit() : null,
             note: 'uploadedHeld = allocated in the window, uploaded to the GPU by three, never disposed. gpuFlux splits info.memory movement into uploads and frees, because a single delta cannot tell a new draw from a leak. orphanedTextures are uploads nothing can reach any more: they can never be disposed and are a permanent GPU leak.',

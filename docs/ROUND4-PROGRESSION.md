@@ -126,7 +126,9 @@ reused in place) but must not cache the coordinates.
 > entirely by a counter when no `talk` objective is current, and it allocates
 > nothing (it writes into the rows that already exist). `npc` is set only on
 > `talk` rows — a consumer that wants the live anchor for any other objective
-> should call `objectiveAnchor()` rather than re-deriving one.
+> should call `objectiveAnchor(questId, objectiveId)` rather than re-deriving
+> one. (Both of this API's arguments are named wherever the doc tells a lane to
+> *call* it; a bare `name()` in prose is the function's name, not a call site.)
 
 `objectiveAnchor(questId, objectiveId?)` → `{ x, z, site, kind, objectiveId,
 radius }` — where an objective actually points AFTER site resolution, always
@@ -164,6 +166,18 @@ Six side quests (`side-hunting-trial` `side-cauldron-override`
 `side-wreck-salvage`) are anchored at `ctx.props.sites()` **by kind** through
 `at:{ site, alt? }`, with the authored `x/z` kept as the fallback for a build
 where that site kind does not exist. Neither lane edits the other.
+
+> **Scope of `side-wreck-salvage`'s cache count, measured.** Its first objective
+> counts **any two** `supply-cache` loots rather than two inside the
+> `tallneck-wreck` site, and that is deliberate: `world-props` places all six
+> caches in old-world wreckage (`cache-mast` `cache-hollow` `cache-span`
+> `cache-hangar` `cache-arch` `cache-core`) and **none of them is inside the
+> wreck's 26 m ring** — the nearest, `cache-mast`, is 122.8 m away. Scoping the
+> objective to that one site would make the quest uncompletable, and
+> `supply-cache {id,loot}` carries no site anyway. The marker still points at the
+> nearest unlooted cache through `at:{ site:'cache' }`. If `world-props` ever
+> registers a cache inside a wreck ring, the objective can tighten to
+> `at:{ site:'wreck', alt:'cache' }` with no event change.
 
 | member | meaning |
 |---|---|
@@ -331,14 +345,36 @@ carry `within: seconds`, which makes it a timed trial — see `trialState()`.
 8. **`shell-hud` (expansion round) — draw the trial clock.** A `within:`
    objective is on a countdown the tracker does not show, so the hunting-ground
    trial currently reads like an ordinary "Kill 3 Scrappers" until it silently
-   resets. In the objective row, when
-   `progression.trialState(questId)?.running` is true, render
-   `trialState().left` as `M:SS` beside the `have/need` counter (HZD puts it
-   right there on the Hunting Ground banner) and flash it on the
-   `quest-objective` events whose `trial` field is `'restart'` or `'lapsed'`.
-   `left` is already rounded to 0.01 s and is `null` when no window is open, so
-   the row costs one optional-chained call per frame. **No source change is
-   needed in this lane** — this is a render the data is already published for.
+   resets. In the objective row, take the state **once** and render `left` as
+   `M:SS` beside the `have/need` counter (HZD puts it right there on the
+   Hunting Ground banner):
+
+   ```js
+   const t = progression.trialState(questId);   // questId is REQUIRED
+   if (t?.running) row.clock = mmss(t.left);    // e.g. 297.88 -> "4:58"
+   else row.clock = '';
+   ```
+
+   Then flash that clock on the `quest-objective` events whose `trial` field is
+   `'restart'` or `'lapsed'`. `left` is already rounded to 0.01 s and is `null`
+   when no window is open, so the row costs **one** call per frame. **No source
+   change is needed in this lane** — this is a render the data is already
+   published for.
+
+   > **FIX ROUND 2 — this snippet used to be wrong, and it threw.** The earlier
+   > wording said "when `trialState(questId)?.running` is true, render
+   > `trialState().left`" — a *second* call with the argument dropped.
+   > `trialState(questId, objectiveId?)` (§1, `src/core/progression.js:1873`)
+   > opens with `QUESTS.find((q) => q.id === questId)` and returns `null` at
+   > `:1876` when that misses, so the no-arg call is **always** `null` and
+   > `.left` on it throws. Reproduced in-session against the live build with a
+   > genuinely open window (`trialState('side-hunting-trial')` =
+   > `{running:true, left:297.88, have:0, need:3}`): the old line raised
+   > `TypeError: Cannot read properties of null (reading 'left')`, while the
+   > snippet above returned `"4:58"` from the same frame. Because the row is
+   > per-frame, a lane that implemented the old text threw every frame. Holding
+   > the result in `t` also makes good on the "one call per frame" the
+   > paragraph promises — the old text made two.
 9. **`shell-hud` / `shell-menus` — do not cache marker coordinates.**
    `getMarkers()` returns the same array object every call and resolves `talk`
    rows live on read (§1). `hud.js:1793` and `map.js:400` already re-read it per

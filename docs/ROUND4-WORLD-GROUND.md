@@ -617,3 +617,39 @@ Walking a burn scar should not sound like a meadow.
 or a recorded `foot/ash` set if the bank has room for one. This lane cannot
 make that edit (§3.1 ownership) and will not rename the surface to dodge it:
 `ash` is a named deliverable of the expansion brief and of `A58-surface-api`.
+
+#### the contract is now published from this side: `Terrain.SURFACE_AUDIO`
+
+Leaving the fix as a sentence in a report means the next surface this lane
+invents breaks `A76` again, silently, and is found by whoever next reads a
+footstep. So the routing is published as data beside the vocabulary that needs
+it:
+
+```js
+Terrain.SURFACE_AUDIO   // { grass:'foot/grass', … ash:'foot/dirt', … }
+```
+
+Every name in `Terrain.SURFACES` has an entry — that is what
+`A58b-surface-audio-world-ground` asserts, in this lane's own gate file, so a
+new surface with no foley route goes red **in `world-ground`'s run, at the
+moment the surface is invented**, rather than three lanes later in `audio`'s.
+The values are only the nearest set in today's bank; `audio` owns the sound and
+may override any of them.
+
+`audio`'s one-line adoption then covers every future surface too:
+
+```js
+const SURFACE_SET = { …, ...(Terrain.SURFACE_AUDIO || {}) };
+```
+
+**`A76-footfalls` stays RED until `audio` makes that edit**, and this lane
+reports it as an outstanding cross-lane debt rather than as a pass.
+`A58b` deliberately does **not** re-assert `A76`'s bar: duplicating another
+lane's failing bar in my own file would either weaken it or double-count it.
+
+One harness note worth keeping: under the gate harness the sample bank reports
+`{loaded:false, size:0}` and footsteps run procedurally, which is why `A76` can
+watch `foot/grass` play with nothing on disk. `A58b` therefore only asks
+`bank.has()` when the bank is genuinely up, and otherwise checks that every
+route is a well-formed set name — an empty bank answers "no" to every set and
+would have made the gate a permanent red that said nothing about this lane.

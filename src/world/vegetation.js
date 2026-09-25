@@ -2401,6 +2401,51 @@ vec3 transformed = ( instanceMatrix * vec4( wing, 1.0 ) ).xyz;`)
     const screeRng = mulberry32(31771);
     const TARGET_SCREE = 760;
     let screeCount = 0;
+
+    /* TALUS MUST NOT WALL THE BENCH OFF (A25b-nav-and-occlusion).
+     *
+     * `collision.js` makes any rock whose effective radius reaches 0.6 m a
+     * BLOCKING collider, and `nav` stamps those into the cost grid. The first
+     * cut of this pass threw 3-9 blocks inside a ~10 m box, so the big ones
+     * fused: the scree benches measured 1704 blocked nav cells against 1373
+     * open — 55 % of the biome impassable — and that dragged the world's
+     * navigable fraction to 0.544 against spatial's 0.55 bar. A talus field you
+     * cannot pick your way across is also worse than the real thing: scree has
+     * lines through it, and that is what makes it read as loose rock rather
+     * than as a wall.
+     *
+     * The fix keeps EVERY block. A block large enough to block, landing within
+     * `BIG_GAP` of one already placed large, is demoted to steppable size
+     * rather than rejected — same count, same silhouette variety, same draw
+     * calls, but the spills keep lanes between them.
+     *
+     * DETERMINISM: the demotion reads `sc` AFTER it is rolled and consumes NO
+     * random numbers, so the rng stream is byte-identical to before. That
+     * matters here for the same reason it matters for the trees: this is a dart
+     * throw, and one extra roll at the top re-rolls every block in the world.
+     */
+    const BIG_GAP = 4.6;                 // metres between BLOCKING talus
+    const bigGrid = new Map();           // build-time only; dropped after
+    const bigTooClose = (x, z) => {
+      const gx = Math.floor(x / BIG_GAP), gz = Math.floor(z / BIG_GAP);
+      for (let dz = -1; dz <= 1; dz++) {
+        for (let dx = -1; dx <= 1; dx++) {
+          const arr = bigGrid.get((gx + dx) * 100003 + (gz + dz));
+          if (!arr) continue;
+          for (let i = 0; i < arr.length; i += 2) {
+            const ex = arr[i] - x, ez = arr[i + 1] - z;
+            if (ex * ex + ez * ez < BIG_GAP * BIG_GAP) return true;
+          }
+        }
+      }
+      return false;
+    };
+    const bigAdd = (x, z) => {
+      const k = Math.floor(x / BIG_GAP) * 100003 + Math.floor(z / BIG_GAP);
+      let arr = bigGrid.get(k);
+      if (!arr) bigGrid.set(k, (arr = []));
+      arr.push(x, z);
+    };
     for (let a = 0; a < 40000 && screeCount < TARGET_SCREE; a++) {
       let cx, cz, onSnow = false;
       if (screeRng() < 0.76) {
@@ -2430,7 +2475,23 @@ vec3 transformed = ( instanceMatrix * vec4( wing, 1.0 ) ).xyz;`)
         const slope = terrain.slopeFast(x, z);
         if (slope > 1.35) continue;
         const big = screeRng();
-        const sc = (onSnow ? 0.95 : 0.60) + big * big * (onSnow ? 2.9 : 2.7);
+        /* `sc` is rolled exactly as before; only its CLASS is reconsidered.
+         *
+         * BLOCK_SC is derived, not guessed: the rock geometry is a unit
+         * icosahedron, collision.js takes radius = boundingSphere * scale *
+         * 0.82 and calls anything from 0.60 m up a blocking sphere, so a block
+         * starts blocking at scale 0.60/0.82 = 0.732. Keying the spacing rule
+         * on the bucket split (1.05) instead — as the first cut did — left
+         * every block between 0.73 and 1.05 free to fuse, and demoted the rest
+         * to a size that still blocked; it returned 141 cells of the 681
+         * needed. The demoted size sits just UNDER the threshold so the rubble
+         * still reads as chunky rock (~1.4 m across) you can step over. */
+        const BLOCK_SC = 0.732;
+        let sc = (onSnow ? 0.95 : 0.60) + big * big * (onSnow ? 2.9 : 2.7);
+        if (sc >= BLOCK_SC) {
+          if (bigTooClose(x, z)) sc = 0.66 + big * 0.06;   // 0.66..0.72: steppable
+          else bigAdd(x, z);
+        }
         const v = Math.min(2, (screeRng() * 3) | 0);
         placed[v][sc < 1.05 ? 0 : 1].push({
           x, z, y: h - sc * 0.30,

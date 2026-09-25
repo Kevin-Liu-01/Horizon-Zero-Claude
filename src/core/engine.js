@@ -653,11 +653,13 @@ export class Engine {
    */
   async warmUp(scene = this.scene, camera = this.camera, timeoutMs = 20000) {
     const t0 = performance.now();
+    this.cancelWarmUp();
     try {
-      await Promise.race([
-        this.renderer.compileAsync(scene, camera),
-        new Promise((r) => setTimeout(r, timeoutMs)),
-      ]);
+      // The compile is the same synchronous call `compileAsync` makes first;
+      // only the readiness WAIT is ours now. `_awaitProgramsReady` says why
+      // the raced `compileAsync` had to go.
+      this.renderer.compile(scene, camera);
+      await this._awaitProgramsReady(timeoutMs);
     } catch (err) {
       console.warn('[HZC] shader warm-up skipped:', err?.message || err);
     }
@@ -666,6 +668,71 @@ export class Engine {
     this.warmUpPrograms = this.renderer.info.programs?.length ?? 0;
     this.warmUpTexturesUploaded = textures;
     return { ms: this.warmUpMs, programs: this.warmUpPrograms, textures };
+  }
+
+  /**
+   * AN ABANDONED COMPILE POLL IS A TIMER NOBODY OWNS (`memory-attribution`).
+   *
+   * `compileAsync` (three.module.js:29751) calls `compile()` synchronously,
+   * keeps the `Set` of EVERY material in the scene, and then polls
+   * `checkMaterialsReady` on a `setTimeout(..., 10)` chain until each
+   * material's `currentProgram.isReady()`. This method used to race that
+   * promise against a timeout — and when the timeout won, nothing could stop
+   * the poll, because three exposes no handle for it. Two consequences:
+   *
+   *   - the chain holds that material Set strongly for as long as it keeps
+   *     rescheduling: every material in the scene, with its maps, retained
+   *     behind a timer no code owns. That is exactly the shape of retention
+   *     `A90b-memory-attribution` exists to find, in the one place the
+   *     instrument cannot see it — a closure inside the library;
+   *   - `properties.get(material)` auto-creates an empty record for a material
+   *     that has since been DISPOSED, so the next tick reads `undefined` and
+   *     throws `TypeError: ... reading 'isReady'` from inside a `setTimeout`,
+   *     where this method's own try/catch cannot see it. That is a console
+   *     error on machine despawn — an automatic FAIL for the console-error
+   *     gates — and it is `machine-rig`'s open cross-lane request against this
+   *     function (docs/ROUND4-MACHINE-RIG.md §9), which `rig/lod.js
+   *     guardMaterialDisposal()` works around from the outside today.
+   *
+   * So the wait is ours. `renderer.compile()` does the same program building
+   * `compileAsync` does. Readiness is then read off `renderer.info.programs`
+   * (public: `info.programs = programCache.programs`, three.module.js:29038)
+   * through `WebGLProgram.isReady()` (:20371) — the program cache removes an
+   * entry before the program is deleted, so this can never touch a dead
+   * object, it holds nothing the renderer does not already hold, and it
+   * touches no material at all. The timer handle is kept so the poll can be
+   * cancelled, and the next `warmUp()` cancels the previous one (main.js warms
+   * up twice: at boot, and again after the variety models land).
+   *
+   * @param {number} timeoutMs give up waiting after this long — the same
+   *   budget the race used to enforce
+   * @returns {Promise<{pending:number, ms:number}>} programs still not ready
+   */
+  _awaitProgramsReady(timeoutMs = 20000) {
+    return new Promise((resolve) => {
+      const t0 = performance.now();
+      const tick = () => {
+        this._warmUpPoll = 0;
+        const programs = this.renderer.info.programs || [];
+        let pending = 0;
+        for (let i = 0; i < programs.length; i++) {
+          const p = programs[i];
+          if (!p || typeof p.isReady !== 'function') continue;
+          // a program released under us is not pending — and must not throw
+          try { if (!p.isReady()) pending++; } catch (err) { /* already gone */ }
+        }
+        const ms = Math.round(performance.now() - t0);
+        if (pending === 0 || ms >= timeoutMs) { resolve({ pending, ms }); return; }
+        this._warmUpPoll = setTimeout(tick, 16);
+      };
+      tick();
+    });
+  }
+
+  /** Stop a readiness poll that is still running. Safe to call at any time. */
+  cancelWarmUp() {
+    if (this._warmUpPoll) clearTimeout(this._warmUpPoll);
+    this._warmUpPoll = 0;
   }
 
   /**

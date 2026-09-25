@@ -557,3 +557,104 @@ at) and `hare` (Scrub Hare, 14, breaks cover at 22 m, the reason the meadows rea
 as inhabited between herds). Five species, 60 animals, 5 draws + 5 shadow draws.
 Both use the existing instanced gait layer unchanged; `ctx.fauna.census()` now
 reports `{ boar:12, fox:8, grouse:16, goat:10, hare:14, total:60 }`.
+
+---
+
+## 9. `ctx.props.keepouts` — the ground the six places stand on
+
+**New in the expansion wave, and it is a REQUEST as much as a publication.**
+
+```js
+ctx.props.keepouts        // [{ id, x, z, hard, soft, grass }]  6 entries
+ctx.props.clearingReport  // { trees, bushes, flowers, litter, rocks, mist,
+                          //   colliders, grassDecorated, skipped[] }
+```
+
+`hard` — fell everything inside this radius.
+`soft` — thin the fringe out to here on a squared ramp, so the edge reads as a
+forest opening rather than a circle cut with a compass.
+`grass` — trample radius, deliberately much tighter (tall grass inside a
+palisade is a look; a pine inside a hut is a bug).
+
+| id | x, z | hard | soft | grass |
+|---|---|---|---|---|
+| `outpost-ridgeback` | -112, 245 | 31 | 45 | 17 |
+| `cauldron-kappa` | 150, 168 | 27 | 39 | 15 |
+| `hunting-arena` | 132, -82 | 33 | 47 | 21 |
+| `caves-glowfall` | -60, -245 | 21 | 31 | 10 |
+| `lakeshore-camp` | -93, 50 | 21 | 31 | 11 |
+| `tallneck-wreck` | -172, -78 | 29 | 41 | 14 |
+
+### Why it exists
+
+The expansion wave built six places and every gate went green, and four of the
+six could not be SEEN. `V43-outpost` filmed Ridgeback Outpost from 30 m on its
+own gate bearing and returned **PASS** over a frame that was 46 % pine canopy
+and 9 % outpost — 477 of 1037 rays on the grove, 99 on the settlement. The
+trial ground was worse: 69 trees inside its 28 m radius, 24 of them inside 15 m.
+Every number in the assert was true; the criterion ("reads as a lived-in HZD
+settlement") was false.
+
+Re-siting is not available. A valley-wide scan for buildable ground — no tree
+within 28 m, under 7 m of relief across a 22 m footprint, 45 m clear of an
+existing site — returns 90 candidates, **all of them inside the spawn camp's own
+exclusion**, and **zero anywhere north of z = 150**, which is where the brief
+puts the outpost. The valley is a forest with one clearing in it, and that
+clearing is the one `vegetation.js` was already told to leave.
+
+### The hand-over `world-ground` should take
+
+`vegetation.js` already implements this contract, hard-coded: `CAMP` (r 17) and
+`KEEPOUT`, a four-entry literal whose own comment reads *"ruin clusters +
+watchtower (see props.js) — keep trees/bushes from spawning through the
+structures"*. It is the right mechanism on the wrong side of a lane boundary,
+and it predates these six places. Consuming the published list is one line per
+scatter pass, beside the existing test:
+
+```js
+// vegetation.js, module scope
+const PROP_KEEP = () => ctx.props?.keepouts ?? [];
+// in _buildTrees / _buildBushes / _buildRocks, beside `if (inKeepout(x, z)) continue;`
+if (inPropKeepout(x, z)) continue;
+```
+
+Until then `src/world/props/clearings.js` applies the same cull from this side.
+It is a **shim** and is written like one: every field it touches on the
+vegetation instance is feature-detected and an unrecognised shape makes it a
+no-op rather than a crash. **Delete that file the day `vegetation.js` reads
+`ctx.props.keepouts`** — `A98b-clearings` asserts the ground, not the mechanism,
+so it keeps passing across the hand-over and fails the moment the clearing stops
+being real.
+
+### What it does, and what it costs
+
+One-shot, on the first update that can see both `ctx.vegetation` and
+`ctx.collision` (it cannot run in the constructor: `Places` is built from inside
+`Vegetation`'s own constructor, so `ctx.vegetation` does not exist yet — the
+first cut ran there and reported `skipped: ['no-vegetation']`, culling nothing
+while every gate stayed green).
+
+Measured on port 5211: **188 trees, 84 bushes, 244 blooms, 88 litter, 78 rocks,
+11 mist pockets**, and **454 colliders handed back** through the published
+`collision.unregister()` (188 trunks + 188 canopies + 78 rocks) so a cleared ring
+has no invisible walls in it. Grass is a decoration on the published
+`vegetation.grassDensityAt`, followed by `vegetation.invalidate()` — the same
+budgeted refill world-ground's own route-cover pass uses.
+
+Cost, same-run A/B with the cull disabled:
+
+| scene | draw calls before → after | triangles |
+|---|---|---|
+| spawn vista | 299 → 299 | 4,466,592 → 4,334,992 |
+| outpost approach | 163 → 164 | 2,783,412 → 2,751,718 |
+| trial ground | 170 → 170 | 2,914,728 → 2,847,888 |
+
+Scene mesh count is identical (818 meshes, 81 instanced) — compaction lowers
+`count`, never the number of meshes, so calls are flat to within one LOD bucket
+and triangles fall. Nothing is allocated and nothing is disposed: the buffers
+belong to `Vegetation`, which disposes them itself. `dispose()` hands
+`grassDensityAt` back and is idempotent.
+
+`A59-grass-coverage` and `A60-stealth-lanes` were re-run after the trample
+decoration and both still PASS (A60: 0 routes below bar, worst 0.485,
+median 0.853).

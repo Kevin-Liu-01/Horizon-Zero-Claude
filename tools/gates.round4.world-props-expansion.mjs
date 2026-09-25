@@ -15,11 +15,20 @@
  *                               bar's job is to catch a regression on the
  *                               thinnest bearing, not to record today's best.
  *
- * The two new ids are here. Both are ACTION gates: they paint a labelled frame
- * for the eye (the runner screenshots every gate) but the verdict is a
+ * The new ids are here. All are ACTION gates: they paint a labelled frame for
+ * the eye (the runner screenshots every gate) but the verdict is a
  * measurement, because "enclosed, lit, readable" and "reads as a lived-in
  * settlement" are exactly the kind of criteria a build can drift out of while
  * a human still nods at the picture.
+ *
+ * ...which is exactly what happened, and it is why `V43` grew a HEDGE CLAUSE
+ * and why `A98b` exists at all. The first pass of this lane built six places
+ * inside world-ground's pine scatter, and `V43` filmed the outpost from its own
+ * gate bearing and returned PASS over a frame that was 46 % canopy and 9 %
+ * outpost. Every number in the assert was true. The criterion was false. A
+ * census of what a place CONTAINS can never catch that on its own, so both
+ * gates now also measure what the frame is made OF and whether the ground was
+ * really cleared — see the clauses in place.
  *
  *   A98-sites     every new place is registered with a position, a radius and
  *                 at least two interactables, and each of those interactables
@@ -32,8 +41,16 @@
  *   V43-outpost   the north-shelf outpost: counted (posts, huts, tower, fire,
  *                 NPC slots, interactables), its palisade proved to stop a
  *                 swept capsule on every non-gate bearing while the gate
- *                 opening passes one, and its frame proved to contain built
- *                 structure above the horizon rather than an empty meadow.
+ *                 opening passes one, its frame proved to contain built
+ *                 structure above the horizon rather than an empty meadow —
+ *                 and, since the hedge, proved to contain MORE outpost than
+ *                 foliage, down an approach a ray can travel without meeting a
+ *                 trunk, into a keepout with no tree left standing in it.
+ *   A98b-clearings  all six keepouts, proved cleared on both sides at once:
+ *                 nothing drawn inside one, nothing still colliding inside one,
+ *                 a capsule walks every ring on six bearings, and the cull is
+ *                 not a silent no-op (it reports what it felled, and a skip is
+ *                 a FAIL).
  */
 
 /** Shared page-context kit: deterministic render, pixel probes, overlay. */
@@ -420,7 +437,7 @@ export const GATES = [
       const mine = new Set();
       const grp = ctx.scene.getObjectByName('world-places');
       if (grp) grp.traverse((o) => { if (o.isMesh && /places-outpost-/.test(o.name || '')) mine.add(o); });
-      let hits = 0, shots = 0, other = 0;
+      let hits = 0, shots = 0, other = 0, foliage = 0;
       const dir = new V();
       for (let cxi = 0; cxi < 61; cxi++) {
         for (let cyi = 0; cyi < 17; cyi++) {
@@ -431,24 +448,63 @@ export const GATES = [
           const h = C.raycast(cam.position.x, cam.position.y, cam.position.z, dir.x, dir.y, dir.z, 120);
           if (!h || !h.hit) continue;
           const node = h.collider && (h.collider.node || h.collider.ref);
-          if (node && mine.has(node)) hits++; else other++;
+          const k = h.collider && h.collider.kind;
+          if (node && mine.has(node)) hits++;
+          else if (k === 'tree' || k === 'canopy') { foliage++; other++; } else other++;
         }
       }
+
+      /**
+       * ---- THE HEDGE CLAUSE -------------------------------------------------
+       *
+       * Everything above this line passed while the frame was a WALL OF PINE.
+       * The first cut of this gate scored 99 outpost rays and called it green;
+       * the PNG beside it was 46 % canopy and you could not see a single post.
+       * The census was true, the criterion ("reads as a lived-in settlement")
+       * was false, and nothing in the assert could tell the difference — which
+       * is the whole reason this lane re-opened.
+       *
+       * Three additions, none of which a hedge can satisfy:
+       *
+       *   1. THE OUTPOST OUT-READS THE FOREST. Relative, not a magic number, so
+       *      it cannot be tuned green: more of the frame must be outpost than
+       *      is foliage. At the failing build that was 99 against 477.
+       *   2. THE APPROACH IS OPEN. The ray from the lens to the middle of the
+       *      post must arrive without hitting a trunk or a canopy on the way —
+       *      a player walking in must be able to SEE where she is walking.
+       *   3. THE CLEARING IS REAL. Not one tree collider inside the published
+       *      ctx.props.keepouts hard radius. This is the assertion that
+       *      survives a re-scatter: the day world-ground consumes the keepout
+       *      list and clearings.js is deleted, this clause is what proves the
+       *      hand-over actually happened.
+       */
+      const site = (ctx.props.keepouts || []).find((k) => k.id === 'outpost-ridgeback');
+      let insideHard = 0;
+      if (site && C.colliders) {
+        for (const c of C.colliders) {
+          if (c.kind !== 'tree') continue;
+          const tx = c.type === 'capsule' ? c.ax : c.cx, tz = c.type === 'capsule' ? c.az : c.cz;
+          if (Math.hypot(tx - site.x, tz - site.z) < site.hard) insideHard++;
+        }
+      }
+      dir.set(X - cam.position.x, (rec.y + 4.5) - cam.position.y, Z - cam.position.z).normalize();
+      const approach = C.raycast(cam.position.x, cam.position.y, cam.position.z,
+        dir.x, dir.y, dir.z, camD + 10);
+      const approachKind = approach && approach.hit && approach.collider ? approach.collider.kind : 'none';
+      const approachClear = approachKind !== 'tree' && approachKind !== 'canopy';
 
       const towerH = tower ? (tower.y - ctx.terrain.getHeight(tower.x, tower.z)) + 3.9 : 0;
       const pass = posts >= 300 && huts >= 3 && towerH >= 14 && !!fire
         && slots.length >= 3 && entries.length >= 3
         && probes > 0 && walled === probes && gateOpen
         /**
-         * BAR 75 of 1037 rays, measured rather than wished for. The shelf sits
-         * in world-ground's pine scatter — 477 of the same 1037 rays land on
-         * trunks and canopy from this stand — so the outpost can never own the
-         * frame the way a building on bare ground would. Measured across six
-         * bearings at two ranges: 52 to 140 rays, 99 from this one. 75 keeps a
-         * quarter of margin under today's number and still reads zero if the
-         * palisade, the huts or the watch-post ever stop being built.
+         * BAR 75 of 1037 rays, measured rather than wished for. Kept exactly
+         * where it was when it was written — a bar's job is to catch the day
+         * the palisade, the huts or the watch-post stop being built, and the
+         * clearing raising today's number is not a reason to raise it.
          */
-        && hits >= 75;
+        && hits >= 75
+        && foliage < hits && approachClear && !!site && insideHard === 0;
 
       shot(buf, [
         'V43 Ridgeback Outpost  ' + (pass ? 'PASS' : 'FAIL'),
@@ -457,8 +513,10 @@ export const GATES = [
         huts + ' huts  watch-post ' + towerH.toFixed(1) + ' m  brazier '
           + (fire ? 'lit' : 'NONE') + '  NPC slots ' + slots.length
           + '  interactables ' + entries.length,
-        'silhouette: ' + hits + '/' + shots + ' rays land on outpost geometry (bar 75; '
-          + other + ' land on the pine grove)',
+        'silhouette: ' + hits + '/' + shots + ' rays on outpost (bar 75), '
+          + foliage + ' on foliage (must be < ' + hits + ')',
+        'clearing: ' + insideHard + ' trees inside the ' + (site ? site.hard : '?')
+          + ' m keepout (bar 0)   approach: ' + approachKind,
       ]);
 
       return {
@@ -469,7 +527,156 @@ export const GATES = [
           interactables: entries.map((e) => e.label),
           palisadeSealed: walled + '/' + probes, leakBearings: leaks.slice(0, 8),
           gateOpen, outpostRays: hits, rayGrid: shots, otherHits: other,
-          bar: 'posts >= 300, huts >= 3, tower >= 14 m, fire, 3 NPC slots, 3 interactables, sealed, gate open, >= 75 silhouette rays',
+          foliageRays: foliage, treesInsideKeepout: insideHard,
+          keepout: site ? site.hard : null, approachKind,
+          bar: 'posts >= 300, huts >= 3, tower >= 14 m, fire, 3 NPC slots, 3 interactables, sealed, gate open, >= 75 silhouette rays, foliage < outpost, approach clear, 0 trees in the keepout',
+        },
+      };
+    })()`,
+  },
+
+  /* ----------------------------------------------------------------- A98b */
+  /**
+   * The clearings, gated once for all six places.
+   *
+   * `V43` proves the outpost's ground; this proves the other five and, more
+   * importantly, proves the three ways a clearing can be a LIE:
+   *
+   *   - drawn but not walkable — the instance is gone and the collider is not,
+   *     so you bounce off an invisible pine in an empty ring;
+   *   - walkable but not drawn — the collider is gone and the instance is not,
+   *     so a machine shoots you through a tree it cannot see;
+   *   - neither, silently — the shim feature-detects `world-ground`'s internals
+   *     and is written to no-op rather than crash if they move, so "it did
+   *     nothing" has to be a FAIL here or the no-op is invisible. The first cut
+   *     of `clearings.js` ran a frame too early, reported
+   *     `skipped: ['no-vegetation']`, culled nothing at all, and every gate in
+   *     this file stayed green.
+   *
+   * The frame is the trial ground, which was the worst of the six: 69 trees
+   * inside its 28 m radius, 24 of them inside 15 m.
+   */
+  {
+    id: 'A98b-clearings', kind: 'action', lane: 'world-props-expansion',
+    title: 'Every published keepout is really cleared — nothing drawn inside it, nothing left colliding in it, and the cull is not a silent no-op',
+    settle: 2600, timeout: 90000,
+    assert: `(() => {
+      ${KIT}
+      hideHud();
+      ctx.environment.setWeather('clear', 0);
+      ctx.environment.setTime(10.0);
+
+      const keep = ctx.props && ctx.props.keepouts;
+      const rep = ctx.props && ctx.props.clearingReport;
+      if (!Array.isArray(keep) || !keep.length) {
+        return { pass: false, detail: { reason: 'ctx.props.keepouts not published' } };
+      }
+      const C = ctx.collision;
+      const inHard = (x, z) => {
+        for (let i = 0; i < keep.length; i++) {
+          const k = keep[i];
+          const dx = x - k.x, dz = z - k.z;
+          if (dx * dx + dz * dz < k.hard * k.hard) return k.id;
+        }
+        return null;
+      };
+
+      /* ---- 1. nothing DRAWN inside a clearing --------------------------- *
+       * Read the render truth, not the source list: every live instance of
+       * every tree LOD and of the hidden collision proxy, straight out of the
+       * instance matrices up to their live count. */
+      const drawn = {};
+      const M = new (cam.matrixWorld.constructor)();   // THREE.Matrix4, no import
+      let scanned = 0;
+      ctx.scene.traverse((o) => {
+        if (!o.isInstancedMesh || !o.count) return;
+        if (!/^(tree-|pines-)/.test(o.name || '')) return;
+        for (let i = 0; i < o.count; i++) {
+          o.getMatrixAt(i, M);
+          scanned++;
+          const id = inHard(M.elements[12], M.elements[14]);
+          if (id) drawn[id] = (drawn[id] ?? 0) + 1;
+        }
+      });
+
+      /* ---- 2. nothing COLLIDING inside a clearing ----------------------- *
+       * Every scatter kind the cull touches, not just the trees. The first cut
+       * of this clause checked tree/canopy only and passed while 78 boulders
+       * kept their colliders after their instances were compacted away —
+       * A61's own instance-vs-collider census is what caught it. An invisible
+       * rock you bounce off in a cleared ring is the same bug as an invisible
+       * pine; the gate now has to see both. */
+      const ghosts = {}, ghostKinds = {};
+      for (const c of C.colliders) {
+        if (c.kind !== 'tree' && c.kind !== 'canopy' && c.kind !== 'rock') continue;
+        const x = c.type === 'capsule' ? c.ax
+          : c.type === 'mesh' ? (c.mat ? c.mat.elements[12] : (c.minx + c.maxx) / 2) : c.cx;
+        const z = c.type === 'capsule' ? c.az
+          : c.type === 'mesh' ? (c.mat ? c.mat.elements[14] : (c.minz + c.maxz) / 2) : c.cz;
+        const id = inHard(x, z);
+        if (id) {
+          ghosts[id] = (ghosts[id] ?? 0) + 1;
+          ghostKinds[c.kind] = (ghostKinds[c.kind] ?? 0) + 1;
+        }
+      }
+
+      /* ---- 3. and a capsule can actually walk the middle of each ring --- */
+      const blocked = [];
+      for (const k of keep) {
+        for (let a = 0; a < 6; a++) {
+          const ang = (a / 6) * Math.PI * 2;
+          const r = k.hard * 0.62;
+          const fx = k.x + Math.cos(ang) * r, fz = k.z + Math.sin(ang) * r;
+          const tx = k.x - Math.cos(ang) * r, tz = k.z - Math.sin(ang) * r;
+          const gy = ctx.terrain.getHeight(fx, fz);
+          const hit = C.capsuleCast(new V(fx, gy + 0.1, fz), new V(tx, ctx.terrain.getHeight(tx, tz) + 0.1, tz),
+            0.4, 1.7, { filter: (c) => c.kind === 'tree' });
+          if (hit && hit.hit) blocked.push(k.id + '@' + Math.round(ang * 180 / Math.PI));
+        }
+      }
+
+      /* ---- 4. the cull is not a silent no-op ---------------------------- */
+      const culled = rep ? (rep.trees | 0) : 0;
+      const handedBack = rep ? (rep.colliders | 0) : 0;
+      const skipped = rep && rep.skipped ? rep.skipped : ['no-report'];
+
+      /* ---- the frame: the trial ground, the worst of the six ------------ */
+      const arena = keep.find((k) => k.id === 'hunting-arena') || keep[0];
+      const eye = ctx.terrain.getHeight(arena.x, arena.z) + 26;
+      cam.position.set(arena.x + 4, eye, arena.z + 44);
+      cam.lookAt(new V(arena.x, ctx.terrain.getHeight(arena.x, arena.z) + 4, arena.z));
+      cam.updateMatrixWorld(true);
+      const P = ctx.props.placeSystem; if (P) P.refreshVisibility();
+      draw(6);
+      const buf = grab();
+
+      const drawnTotal = Object.values(drawn).reduce((a, b) => a + b, 0);
+      const ghostTotal = Object.values(ghosts).reduce((a, b) => a + b, 0);
+      const pass = keep.length >= 6
+        && keep.every((k) => k.hard > 0 && k.soft >= k.hard && k.grass > 0)
+        && drawnTotal === 0 && ghostTotal === 0 && blocked.length === 0
+        && culled > 0 && handedBack >= culled && skipped.length === 0;
+
+      shot(buf, [
+        'A98b clearings  ' + (pass ? 'PASS' : 'FAIL'),
+        keep.length + ' keepouts published; cull felled ' + culled
+          + ' trees and handed back ' + handedBack + ' colliders'
+          + (skipped.length ? '  SKIPPED: ' + skipped.join(',') : ''),
+        'drawn inside a clearing: ' + drawnTotal + ' of ' + scanned
+          + ' instances (bar 0)   still colliding: ' + ghostTotal + ' (bar 0)',
+        'capsule walks all 6 rings on 6 bearings: '
+          + (blocked.length ? 'BLOCKED ' + blocked.slice(0, 4).join(' ') : 'clear'),
+      ]);
+
+      return {
+        pass,
+        detail: {
+          keepouts: keep.map((k) => k.id + ':' + k.hard + '/' + k.soft + '/' + k.grass),
+          instancesScanned: scanned, drawnInside: drawn, collidingInside: ghosts, ghostKinds,
+          blockedSweeps: blocked, culledTrees: culled, collidersHandedBack: handedBack,
+          bushes: rep && rep.bushes, flowers: rep && rep.flowers, rocks: rep && rep.rocks,
+          grassDecorated: rep && rep.grassDecorated, skipped,
+          bar: '>= 6 keepouts, 0 drawn inside, 0 colliding inside, 0 blocked sweeps, culled > 0, colliders >= trees, nothing skipped',
         },
       };
     })()`,

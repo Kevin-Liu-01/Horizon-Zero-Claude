@@ -1061,45 +1061,88 @@ export class Melee {
      * surface on a 2.8 m line — a Watcher's far leg — while the blade is a
      * metre short of it. §4 asks for the sparks "at the tip, not down the
      * lens", and the gate measures exactly that: it read 1.23-1.94 m against
-     * a 1.2 m bar. One more short query, from the TIP toward the body centre,
-     * moves the point onto the surface the blade is actually approaching. The
-     * machine, the damage and the arc are already decided; only the point and
-     * its normal move, and only when the query confirms the same machine. */
-    if (machine && hulls && hulls.raycast && this.layer?.ok && this.layer.tipWorld(_tNow)) {
-      /* THREE AIMS, AND THE ONE THAT LANDS NEAREST THE BLADE WINS.
+     * a 1.2 m bar. So the point is moved onto the surface the blade is
+     * actually approaching. The machine, the damage and the arc are already
+     * decided; only the point and its normal move.
+     *
+     * Fix round 3 replaced the three sample rays this used to do with an exact
+     * solve — see the block below for the measurement that forced it. */
+    if (machine && hulls && this.layer?.ok && this.layer.tipWorld(_tNow)) {
+      /* THE NEAREST POINT ON THE MACHINE, SOLVED — NOT SAMPLED (fix round 3).
        *
-       * A Watcher's blocking collider holds her 3.19 m from its centre while
-       * its actual hull starts about 2.8 m out, and a 1.52 m haft gripped in
-       * its rear fifth puts the blade tip 1.79 m ahead of her — so the blade
-       * physically cannot touch it and the impact point is always somewhere
-       * out at arm-plus-spear's length. What A103 is asking is that the point
-       * published to the sparks, the decal and positional audio be the part of
-       * the machine the blade is NEAREST, and a single aim cannot promise
-       * that: aiming at the body centre lands half a metre low, aiming at the
-       * blade's own height sails over the near hull and hits the far side
-       * (measured 2.34 m). So all three heights are tried and the nearest hit
-       * is kept. Nothing else moves: the machine, the arc and the damage were
-       * already decided. */
-      const mh = machine.height ?? 2;
+       * A Watcher's blocking collider holds her 3.41 m from its centre (its
+       * standoff capsule is 1.56 m of half-length plus 0.9 m of body radius
+       * plus the pads) while a 1.59 m haft gripped in its rear fifth puts the
+       * blade tip 1.80 m ahead of her root. The blade therefore never touches
+       * a machine head-on, and the whole question A103 asks is WHICH PART of
+       * it the sparks, the decal and positional audio are put on.
+       *
+       * Fix round 2 answered that with three rays from the tip, aimed at three
+       * heights on the body centre line, nearest hit wins. Measured this round
+       * against the exact answer, that sampler is wrong by about a metre: on
+       * three consecutive lights it published 1.349 / 1.440 / 1.468 m from the
+       * tip while the true nearest hull surface was 0.375 / 0.438 / 0.989 m
+       * away. It cannot do better: this rig carries 295 hull capsules per
+       * machine, the nearest one is usually a LEG beside the blade rather than
+       * anything on the line to the body centre, and a ray aimed at the centre
+       * sails straight past it. A103 failed at 1.232 m on that sampler.
+       *
+       * So solve it. Point-to-capsule is a closed form — clamp the tip onto
+       * each capsule's segment, take the distance, subtract the radius — and
+       * 295 of them is a few microseconds ON A HIT, not per frame. The one
+       * confirming ray afterwards is what keeps `object` a real node in the
+       * machine's subtree, so `takeDamage` still walks up to the right
+       * component; if it does not land (a capsule the ray skims), the solved
+       * surface point and its outward normal are used directly.
+       *
+       * ALLOCATION: `hitHulls.hulls()` is the only public way to the refreshed
+       * world capsules and it builds its array per call. It is called ONCE per
+       * landed hit — a discrete, input-driven event, at most a few per second,
+       * never in a frame loop — and nothing here is retained. */
+      const caps = hulls.hulls ? hulls.hulls(machine) : null;
       let bestD = Infinity;
-      for (const frac of [0.45, 0.28, null]) {
-        _v.copy(machine.position);
-        _v.y += frac == null
-          ? Math.min(mh * 0.92, Math.max(mh * 0.12, _tNow.y - machine.position.y))
-          : mh * frac;
-        _tB.subVectors(_v, _tNow);
-        const span2 = _tB.length() || 1;
-        _tB.multiplyScalar(1 / span2);
-        _ray.origin.copy(_tNow);
-        _ray.direction.copy(_tB);
-        const hc = hulls.raycast(_ray, { far: span2 + 0.6 });
-        if (!(hc && hc.hit && hc.machine === machine)) continue;
-        const d = Math.hypot(hc.x - _tNow.x, hc.y - _tNow.y, hc.z - _tNow.z);
-        if (d >= bestD) continue;
-        bestD = d;
-        object = hc.object || object;
-        _pt.set(hc.x, hc.y, hc.z);
-        _n.set(hc.nx, hc.ny, hc.nz);
+      if (caps && caps.length) {
+        for (let ci = 0; ci < caps.length; ci++) {
+          const c = caps[ci];
+          const r = c.r || 0;
+          if (r <= 1e-4) continue;
+          const ax = c.a[0], ay = c.a[1], az = c.a[2];
+          const ex = c.b[0] - ax, ey = c.b[1] - ay, ez = c.b[2] - az;
+          const ll = ex * ex + ey * ey + ez * ez;
+          let t = ll > 1e-9
+            ? ((_tNow.x - ax) * ex + (_tNow.y - ay) * ey + (_tNow.z - az) * ez) / ll
+            : 0;
+          t = t < 0 ? 0 : (t > 1 ? 1 : t);
+          const cx = ax + ex * t, cy = ay + ey * t, cz = az + ez * t;
+          const d = Math.hypot(_tNow.x - cx, _tNow.y - cy, _tNow.z - cz);
+          const surf = d - r;
+          if (surf >= bestD) continue;
+          bestD = surf;
+          // the point on the capsule's SURFACE nearest the tip, and its normal
+          const k = d > 1e-6 ? r / d : 0;
+          _tC.set(cx + (_tNow.x - cx) * k, cy + (_tNow.y - cy) * k, cz + (_tNow.z - cz) * k);
+          _tD.set(_tNow.x - cx, _tNow.y - cy, _tNow.z - cz);
+          if (_tD.lengthSq() < 1e-8) _tD.copy(_dir).negate(); else _tD.normalize();
+        }
+      }
+      if (bestD < Infinity) {
+        _pt.copy(_tC);
+        _n.copy(_tD);
+        // one short confirming ray, purely to recover a real `object` node
+        if (hulls.raycast) {
+          _tB.subVectors(_tC, _tNow);
+          const span2 = _tB.length();
+          if (span2 > 1e-4) {
+            _ray.origin.copy(_tNow);
+            _ray.direction.copy(_tB).multiplyScalar(1 / span2);
+            const hc = hulls.raycast(_ray, { far: span2 + 0.35 });
+            if (hc && hc.hit && hc.machine === machine) {
+              object = hc.object || object;
+              _pt.set(hc.x, hc.y, hc.z);
+              _n.set(hc.nx, hc.ny, hc.nz);
+            }
+          }
+        }
       }
     }
 

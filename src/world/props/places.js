@@ -3,6 +3,7 @@ import {
   SimplexNoise, mulberry32, composeMat, tint, paintRust, paintConcrete, paintRock,
   rustTube, tube, bake, materials, roughen,
 } from './kit.js';
+import { CLEARINGS, applyClearings, releaseClearings } from './clearings.js';
 
 /**
  * ROUND 4 — lane `world-props`, EXPANSION wave.
@@ -365,6 +366,21 @@ export class Places {
     this._recordsPlaced = false;
     this._lightT = 0;
     this._lightOn = null;
+
+    /**
+     * THE GROUND THESE PLACES STAND ON.
+     *
+     * Six places went up inside a forest and four of them could not be seen —
+     * `V43` filmed a frame that was 46 % pine canopy and 9 % outpost. The list
+     * is published here (`ctx.props.keepouts`) for `world-ground` to consume in
+     * its scatter; until it does, `clearings.js` fells the same ground from
+     * this side on the first update. It cannot run here in the constructor:
+     * `Places` is built from inside `Vegetation`'s own constructor, so
+     * `ctx.vegetation` does not exist yet. See that file's TIMING note.
+     */
+    this.clearings = CLEARINGS;
+    this.clearingReport = null;
+    this._cleared = false;
 
     this._buildOutpost();
     this._buildCauldron();
@@ -2188,6 +2204,41 @@ export class Places {
     return true;
   }
 
+  /**
+   * Fell the clearings — once, on the first update that can see `vegetation`.
+   *
+   * Waits for `ctx.collision` as well as `ctx.vegetation`, because the cull has
+   * to hand back the colliders of the trees it removes and a clearing full of
+   * invisible trunks is worse than a clearing full of visible ones. Both are up
+   * by the first frame (`installSpatial` runs from `Player`'s constructor), so
+   * this is a one-frame wait, not a wait for the player to do something.
+   */
+  ensureCleared() {
+    if (this._cleared) return false;
+    const ctx = this.ctx;
+    if (!ctx.vegetation || !ctx.collision) return false;
+    this._cleared = true;
+    /**
+     * The one call in this lane that reads another lane's internals, so it is
+     * the one call that must not be able to take the frame loop down with it.
+     * `applyClearings` already feature-detects every field it touches, but a
+     * shape it recognises and MIS-reads would throw from inside a system
+     * update — and the engine guard's answer to a throwing system is to stop
+     * ticking it, which would silently cost this lane its discovery hook, its
+     * shared light and its draw-distance pass. Catch, record, carry on: a
+     * forest that did not get felled is a bad frame; a dead `Places` is a dead
+     * half of the world. `A98b` reads this report and FAILS on it either way.
+     */
+    try {
+      this.clearingReport = applyClearings(ctx, this.clearings);
+    } catch (err) {
+      console.warn('[places] ground clearing failed', err);
+      this.clearingReport = { zones: this.clearings.length, trees: 0, colliders: 0, skipped: ['threw: ' + (err && err.message)] };
+    }
+    if (this.props) this.props.clearingReport = this.clearingReport;
+    return true;
+  }
+
   /** Register one entry and file it under its place. */
   _reg(placeId, spec) {
     const I = this.ctx.interactables;
@@ -2452,6 +2503,7 @@ export class Places {
    */
   update(dt, t) {
     this.ensureRegistered();
+    this.ensureCleared();
     const p = this.ctx.player?.position;
     if (!p) return;
 
@@ -2533,6 +2585,9 @@ export class Places {
     this.group.clear();
 
     disposePlaceMaterials();
+    // hand `grassDensityAt` back to world-ground; the culled instances stay
+    // culled on purpose — `Vegetation` owns and disposes those buffers itself
+    releaseClearings(this.ctx);
     this.emitters.length = 0;
     this.ledges.length = 0;
     this.npcSlots.length = 0;

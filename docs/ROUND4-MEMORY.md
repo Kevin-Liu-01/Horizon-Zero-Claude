@@ -70,6 +70,19 @@ scene, every donor model in `assets.models`, every machine's `_rigOwned` set and
 subsystem three levels deep; it remembers where each texture was LAST SEEN and reports
 the ones that have fallen out of all of them. `lastHolder` is the actionable half.
 
+**The subsystem list is a floor, not the definition.** A hand-written list of subsystems
+is the gap §7 admits — a module that invents an off-graph cache the sweep never heard of
+has its LIVE contents counted as unreachable (a false accusation) and its unbounded
+container missed entirely. Sixteen lanes add subsystems to `__CTX__` while this gate is
+not looking, so the 24 named roots are now joined by **every other own key of `__CTX__`
+that holds an object**, discovered at install time. Four keys are skipped, each for a
+stated reason rather than an oversight: `scene` (walked first, with per-object holder
+keys, so a second walk would relabel the whole world), `renderer` (its GPU objects live
+in WeakMaps a key walk cannot see), `camera` (already in the scene) and `THREE` (the
+library namespace — walking it spends the whole visit budget on prototypes). The roots
+actually used are reported in `sampling.sweptRoots`, so the table can never quietly
+narrow.
+
 ### 1.2 Teeth
 
 The gate FAILS with `verdict: 'instrument-dead'` and reports nothing else unless, before
@@ -331,20 +344,28 @@ being read as growth.
 
 ### 5.1 `progression-expansion` (port 5213) — `src/core/progression.js`
 
-**`this.siteTuning` (progression.js:863) grows once per `machine-disposed` and is never
-pruned per site.** `_tuneSiteRespawn(siteId)` (progression.js:1856) does
+**`this.siteTuning` (progression.js:916) grows once per `machine-disposed` and is never
+pruned per site.** `_tuneSiteRespawn(siteId)` (progression.js:1981) does
 `this.siteTuning.set(siteId, {...pol, at, kind})` on every disposal; the only removals are
-the wholesale `this.siteTuning.clear()` at :2337 and :2998 (reset / load). The
-`machine-respawned` handler at :2559 deletes from `clearedSites` but **not** from
+the wholesale `this.siteTuning.clear()` at :2475 and :3136 (reset / load). The
+`machine-respawned` handler at :2697 deletes from `clearedSites` (:2699) but **not** from
 `siteTuning`, so the entry for a site that has already repopulated stays for the session.
 
+*Line numbers re-checked against `main` at commit `3907325` (the checkpoint that carries
+progression-expansion's dialogue/quest work); they had drifted ~55–140 lines from the
+first write-up and the defect itself is unchanged — there is still no
+`siteTuning.delete` anywhere in the file.*
+
 * measured: **+49 entries over 30 kills** (`A90b-memory-attribution` container census,
-  port 5208), against `clearedSites` +45 on the same run.
+  port 5208), against `clearedSites` +45 on the same run; **+54 / +50** on the most recent
+  run at `3907325`, i.e. still growing one-per-kill and untouched by anything this lane did.
 * per-entry cost is small (one plain object of 4–5 fields), so this is a slow leak, not a
   crash cause — but it is monotonic in a metric that tracks kills, and nothing bounds it.
+  It is bounded in principle by the number of distinct sites, but the site list itself
+  grows (`machines.sites.sites` +6…+11 per run), so the ceiling moves with the session.
 * proposed dispose path: in the existing `on('machine-respawned', ({ site }) => …)`
-  handler at progression.js:2558, add `this.siteTuning.delete(site)` next to the
-  `clearedSites.delete(site)` that is already there. The tuning is only read while a site
+  handler at progression.js:2697, add `this.siteTuning.delete(site)` next to the
+  `clearedSites.delete(site)` that is already there (:2699). The tuning is only read while a site
   is pending, so nothing else needs to change. (If the ledger is wanted for the world map
   after a respawn, cap it instead — but it is currently written and never read back after
   the respawn lands.)
@@ -363,7 +384,9 @@ by the named routes.
 
 ### 6.1 The two red gates, at their CODED bars — no bar moved, no tolerance added
 
-First clean run after the fixes, port 5208 (`shots/gates/report.p5208.json`):
+First clean run after the fixes, port 5208 (`shots/gates/report.p5208.json` at the time;
+the last of the five runs below is kept as `shots/gates/report.p5208.a90-5run-last.json`,
+because `report.p5208.json` is rewritten by every later run on this port):
 
 ```
 [PASS] A90-memory-stability            heap +1.4 %  geo +33  tex -18  objs -431
@@ -451,12 +474,12 @@ tracks how many machines the population ceiling happened to recycle during the l
   uploaded, so they cost no GPU memory and disposing them would be meaningless. A90b
   therefore blames an owner only on `heldUnreachable` (allocated in the window, never
   disposed, and no longer findable by the reachability sweep). That is the right SHAPE,
-  but the sweep is a whitelist of the places this repo keeps resources, so a module that
-  invents a new off-graph cache the sweep does not know about would have its live
-  contents counted as unreachable — a false accusation in the other direction. The exact
-  term would be per-owner attribution of `renderer.info.memory.geometries`, and three
-  exposes no per-geometry upload flag to hang that on the way `__webglInit` does for
-  textures.
+  and the sweep's root list is no longer a pure whitelist — it now walks every object key
+  of `__CTX__`, named or not (§1.1c) — but it is still a REACHABILITY argument, so a cache
+  that hangs off a module-scope closure rather than off `__CTX__` is invisible to it and
+  its live contents would still be counted as unreachable. The exact term would be
+  per-owner attribution of `renderer.info.memory.geometries`, and three exposes no
+  per-geometry upload flag to hang that on the way `__webglInit` does for textures.
 * **`heldUnreachable` is why the raw per-owner numbers in §2 look alarming and are not.**
   The same run ends with 8 undisposed bone textures and 27 undisposed merged part
   geometries — every one of them belonging to a machine that is ALIVE at the end. A bar
@@ -487,5 +510,7 @@ node tools/gates.mjs --port 5208 --only A90-memory-stability-expansion
 
 `A90b`'s `detail` carries every table quoted above: `byOwner.{textures,geometries,
 materials,objects}`, `containerDelta`, `gpuFlux`, `uploadWhen`, `orphanedTextures`,
-`textureHolderDelta`, `sceneGraphCalls` and `sampling` (which declares whether any
-allocation went untagged). The reports are written to `shots/gates/report.p5208.json`.
+`textureHolderDelta`, `sceneGraphCalls` and `sampling` — which declares whether any
+allocation went untagged (`unattributed`), whether the sample buffers hit their cap
+(`capped`), and which roots the sweep and the census walked (`sweptRoots.named` /
+`.discovered` / `.skipped`). The reports are written to `shots/gates/report.p5208.json`.
