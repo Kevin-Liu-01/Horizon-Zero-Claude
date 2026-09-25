@@ -125,6 +125,8 @@ export const GATES = [
       const offA = ctx.events.on('quest-objective', (e) => objEvents.push(e.questId + ':' + e.objectiveId + '=' + e.have));
       const offB = ctx.events.on('quest-complete', (e) => doneEvents.push(e.id));
       const offC = ctx.events.on('xp-gained', (e) => { if (e.reason === 'quest') questXp.push(e.amount); });
+      const delivered = [];
+      const offD = ctx.events.on('quest-delivered', (e) => delivered.push(e));
 
       // level up so the level-gated offers are reachable at all
       prog.addXp(1400, 'gate');
@@ -152,6 +154,41 @@ export const GATES = [
       anchors.trial = await walkTo(ctx, prog, 'side-hunting-trial', 'ground');
       const afterGoto = prog.quests.byId('side-hunting-trial').objectives[0].done;
       const trialOpen = prog.trialState('side-hunting-trial');
+      /**
+       * CONTINUATION ROUND — THE CLOCK IS ON SCREEN.
+       * shell-hud never took the render in docs §3.8, so a "within:" objective
+       * ran on a countdown nothing showed: the trial read like an ordinary
+       * "Kill 3 Scrappers" until it silently reset. The lane now draws its own
+       * .pg-trial chip (hud.css hides .pg-strip, so it is its OWN node), and
+       * stands it down when ctx.hud.trialClock appears. Measured on the
+       * DOM, against activeTrial(), with a 2 s tolerance because the chip is
+       * written by the 5 Hz sampler and read here a tick later.
+       */
+      await simWait(ctx, 0.4);
+      const chipEl = document.querySelector('#hzc-prog .pg-trial');
+      const at = prog.activeTrial();
+      const chipSecs = (() => {
+        const txt = chipEl && chipEl.querySelector('.pg-trial-time')
+          ? chipEl.querySelector('.pg-trial-time').textContent : '';
+        // \\d, not \d: this body is a TEMPLATE LITERAL, and an untagged
+        // template eats an unknown escape ('\d' -> 'd'), which silently turned
+        // the clock regex into /^(d+):(dd)$/ and made the check unmeasurable.
+        const p = /^(\\d+):(\\d\\d)$/.exec(txt.trim());
+        return p ? (+p[1] * 60 + +p[2]) : null;
+      })();
+      const clock = {
+        shown: !!(chipEl && chipEl.classList.contains('show')),
+        secs: chipSecs,
+        want: at ? Math.ceil(at.left) : null,
+        count: chipEl && chipEl.querySelector('.pg-trial-count')
+          ? chipEl.querySelector('.pg-trial-count').textContent : null,
+        label: !!(chipEl && (chipEl.querySelector('.pg-trial-label').textContent || '').length > 8),
+        questId: at ? at.questId : null,
+      };
+      const clockDrawn = clock.shown && clock.secs != null && clock.want != null
+        && Math.abs(clock.secs - clock.want) <= 2
+        && clock.count === (at.have + '/' + at.need)
+        && clock.label && clock.questId === 'side-hunting-trial';
       const ring = anchors.trial || { x: 128, z: -78 };
       const scr = ensureKind(ctx, 'scrapper', 4, ring.x - 8, ring.z + 6);
       // one kill inside the window...
@@ -165,6 +202,9 @@ export const GATES = [
       const afterRestart = prog.quests.byId('side-hunting-trial').objectives[1].have;
       for (let i = 1; i <= 3; i++) if (scr[i]) slay(scr[i]);
       await until(() => prog.quests.byId('side-hunting-trial').status === 'done', 9000);
+      // ...and the chip clears itself the moment the window is gone
+      await simWait(ctx, 0.5);
+      clock.clearedAfter = !(chipEl && chipEl.classList.contains('show'));
       rows.push({ id: 'side-hunting-trial', status: prog.quests.byId('side-hunting-trial').status,
         objs: objState(prog, 'side-hunting-trial'), afterGoto, afterOneKill, afterRestart,
         windowOpen: !!(trialOpen && trialOpen.running && trialOpen.left > 0) });
@@ -188,9 +228,20 @@ export const GATES = [
       if (c1 && c1.onInteract) c1.onInteract();
       await simWait(ctx, 0.5);
       anchors.outpost = await walkTo(ctx, prog, 'side-outpost-supply', 'drop');
+      /**
+       * CONTINUATION ROUND — THE TURN-IN TAKES THE GOODS.
+       * Every "bring me X" objective used to leave X in the pouch and pay on
+       * top, which with metal-shards (the CURRENCY) made "carry forty to the
+       * forge" free money. Measured across the hand-over itself: the six
+       * Ridge-Wood and the forty shards LEAVE the inventory, the objective
+       * counters still read full (they are stored counts, not a live read), and
+       * the payout still lands.
+       */
+      const woodBefore = ctx.inventory.count('ridge-wood');
       ctx.npcs.talkTo('maris');
       prog.closeDialogue();
       await until(() => prog.quests.byId('side-outpost-supply').status === 'done', 9000);
+      const woodAfter = ctx.inventory.count('ridge-wood');
       rows.push({ id: 'side-outpost-supply', status: prog.quests.byId('side-outpost-supply').status,
         objs: objState(prog, 'side-outpost-supply') });
 
@@ -262,12 +313,14 @@ export const GATES = [
       await simWait(ctx, 0.5);
       ctx.inventory.add('metal-shards', 60);
       await simWait(ctx, 0.6);
+      const shardsBefore = ctx.inventory.count('metal-shards');
       ctx.npcs.talkTo('thok');
       prog.closeDialogue();
       await until(() => prog.quests.byId('side-wreck-salvage').status === 'done', 9000);
+      const shardsAfter = ctx.inventory.count('metal-shards');
       rows.push({ id: 'side-wreck-salvage', status: prog.quests.byId('side-wreck-salvage').status,
         objs: objState(prog, 'side-wreck-salvage') });
-      offA(); offB(); offC();
+      offA(); offB(); offC(); offD();
 
       /* ------------------------------ verdict ---------------------------- */
       const allDone = rows.every((r) => r.status === 'done');
@@ -299,6 +352,18 @@ export const GATES = [
       const paid = missingXp.length === 0 && (prog.skillPoints - pointsBefore) >= wantPoints;
       const faults = prog.audit().emitFaults;
 
+      /* the hand-over: goods out of the pouch, on the real completion path */
+      const delivery = {
+        wood: { before: woodBefore, after: woodAfter, took: woodBefore - woodAfter, want: 6 },
+        shards: { before: shardsBefore, after: shardsAfter, took: shardsBefore - shardsAfter, want: 40 },
+        events: delivered,
+      };
+      const goodsDelivered = delivery.wood.took === 6 && delivery.shards.took === 40
+        && delivered.some((e) => e.id === 'side-outpost-supply'
+          && e.items.some((i) => i.id === 'ridge-wood' && i.n === 6 && i.short === 0))
+        && delivered.some((e) => e.id === 'side-wreck-salvage'
+          && e.items.some((i) => i.id === 'metal-shards' && i.n === 40 && i.short === 0));
+
       const checks = {
         offeredAll,
         allDone,
@@ -309,13 +374,16 @@ export const GATES = [
         anchoredAtSites: anchored >= 4,
         talkMarkerLive,
         rewardsPaid: paid,
+        goodsDelivered,
+        trialClockDrawn: clockDrawn && clock.clearedAfter === true,
         noForeignFaults: Object.keys(faults).length === 0,
       };
       const failed = Object.keys(checks).filter((k) => !checks[k]);
       return {
         pass: failed.length === 0,
         detail: { failed, checks, rows, anchors, talkMarker, doneEvents, objectiveEvents: objEvents.length,
-          rewards: { wantXp, gotXp: questXp, missingXp, wantPoints, gotPoints: prog.skillPoints - pointsBefore }, faults },
+          rewards: { wantXp, gotXp: questXp, missingXp, wantPoints, gotPoints: prog.skillPoints - pointsBefore },
+          delivery, clock, faults },
       };
     })()`,
   },

@@ -370,6 +370,29 @@ first write-up and the defect itself is unchanged — there is still no
   after a respawn, cap it instead — but it is currently written and never read back after
   the respawn lands.)
 
+*Re-measured once more on the shipped tree (`a3fafd3`, the five runs of §6.3): `siteTuning`
+**+50**, `clearedSites` **+46**, still one per kill, still no `siteTuning.delete` anywhere in
+the file. Unchanged by anything this lane did, as expected — this lane cannot edit it.*
+
+### 5.2 Checked and NOT a handoff — `progression._sitesCache`
+
+The census at the shipped tree reports **`progression._sitesCache` +26**, which looks like a
+third `progression` grower and is not one. Written out because the next reader will see it in
+the table and should not spend the afternoon this lane spent on it:
+
+* `_sites()` (progression.js:1820) does `this._sitesCache = rows` — it **replaces** the array,
+  it never appends. Its length is whatever `ctx.props.sites()` returns.
+* `props.sites()` (props.js:184) is `[...activities.sites(), ...placeSystem.sites()]`, and both
+  halves map over fixed authored collections (`datapoints`, `caches`, and `this.places`, which
+  is `PLACES.map(...)` built once in the constructor at places.js:343). Neither can grow with
+  kills.
+* So the +26 is **the cache being COLD at the baseline and warm at the end** — a one-time fill
+  of a 26-entry list, bounded by the authored site table.
+
+**The discriminator, for the next one of these:** a cold-cache first fill reports the SAME
+delta in every run regardless of how long the workload ran; a leak reports a delta that scales
+with the workload. `_sitesCache` is +26 in every run of §6.3. `siteTuning` is not.
+
 No other live-lane file (`src/combat/melee.js`, `src/entities/playerAnimator.js`,
 `src/entities/anim/*`, `src/world/props.js`, `props/**`, `camp.js`, `fauna.js`,
 `terrain.js`, `vegetation.js`, `water.js`, `save.js`, `ui/quests.js`, `skills.js`,
@@ -377,6 +400,23 @@ No other live-lane file (`src/combat/melee.js`, `src/entities/playerAnimator.js`
 `camp.crowd._routes` in the table are aliases of `progression` and `npcs` respectively,
 not camp's own state; `npcs._routes` is a route cache keyed by route NAME and is bounded
 by the named routes.
+
+### 5.3 Every other container this lane owns, re-checked and bounded
+
+The census's remaining growers are all in files this lane may edit, and each was read to its
+cap rather than assumed:
+
+| container | Δ over 30 kills | why it is bounded |
+| --- | --- | --- |
+| `audio._recent` | +132 | `audio.js:865` — `if (this._recent.length > 256) this._recent.shift()` |
+| `audio._voiceEnds` | +1 | `audio.js:633` — compacted in place on every `_voice()` call, under `VOICE_CAP` |
+| `audio.bank._cursor`, `audio._cueCounts` | +11, +8 | keyed by cue NAME, bounded by the cue set |
+| `audio._loopChains` | +8 | `audio.js:1493` — hard `>= 8` return null; the pool filling to its cap, and `_machineLoops` Δ 0 confirms none is stuck busy (§3.2) |
+| `machines.squads.wrecks` | +12 | capped at 12 |
+| `machines.sites.sites` | +10 | one site per EXPLICIT spawn, never per respawn |
+| `menus._log` | +3 | capped at 64 (§3.4) |
+| `npcs._grid.scratch`, `npcs._routes`, `nav._raw` | +7, +5, +5 | reused out-buffer whose length is max occupancy; route caches keyed by name |
+| `engine._casterPool/_casterDist/_casterOrder/_casterKeep` | −38 … −87 | shrink across the workload |
 
 ---
 
@@ -456,6 +496,54 @@ tracks how many machines the population ceiling happened to recycle during the l
 (roster 17–29 across the five expansion runs), which is also why `objGrowth` swings
 −1311…+9 without any of it being retention.
 
+§6.4 now says where that term comes from, which the paragraph above could not, and §6.3
+re-runs both distributions on the tree that actually ships.
+
+### 6.4 Where `A90`'s geometry term actually comes from
+
+The paragraph above left the tightest bar in this lane unexplained: "not a leak, but watch
+it". It is now attributed, and the attribution is not an argument — it is a cross-check
+between three gates measured **in the same run, on the same build, one page load each**:
+
+| gate | waits for the deferred world? | `before.geo` | `after.geo` | its own Δ |
+| --- | --- | --- | --- | --- |
+| `A90-memory-stability` | **no** — settles 2 s, forces GC, samples | **174** | 208 | **+34** |
+| `A90-memory-stability-expansion` | yes (`machines.expansionReady`) | **200** | 212 | +12 |
+| `A90b-memory-attribution` | yes (`expansionReady` + GPU count flat) | **200** | 208 | +8 |
+
+**The two gates that wait for the world to finish arriving both take a 200-geometry
+baseline; the one that does not takes 174 — and all three finish within four geometries of
+each other.** The 26-geometry gap is not something the kill loop creates. It is the deferred
+machine roster landing AFTER `A90` has already sampled, and then being billed to the
+workload that follows it.
+
+So `A90`'s +34 decomposes as **~26 "the world was still loading when the baseline was
+taken" + ~8 "the workload's own net flux"** — and the 8 is population composition, not
+retention: `gpuFlux` splits it into 90 geometry uploads against 82 frees, and every
+surviving geometry is attributed to a machine that is alive at the end (§2.1, §7).
+
+This is the same defect, in the same gate, that §3.3 already fixed for the texture term:
+`A90` was failing "textures ≤ +8" mostly on the world being drawn for the first time, and
+`warmUpTextures()` moved those uploads behind the loading bar and took the reading from +24
+to −18. The geometry half has no equivalent build-side fix, because the deferred roster is
+*supposed* to stream in after `__READY__` — that is what keeps boot fast, and forcing it
+behind the loading bar would trade a measurement artifact for a slower boot.
+
+**Why the gate was not changed to wait.** Adding a wait for `expansionReady` before `A90`'s
+baseline would take the reading from +34 to about +8, and it is exactly the correction
+`A90-rig-reclaim` already applies to itself (a warm-up cycle per species before it measures)
+and that `A90b` applies here. It was still not done, for one reason: **the gate passes at
+its coded bar without it.** Editing another lane's gate to widen a margin that is already
+clear is indistinguishable from moving the bar, whatever the commit message says, and this
+lane exists precisely because a previous round's memory verdict was believed without
+attribution. The number is explained, not adjusted.
+
+What a future reader needs is one rule: **if `A90`'s geometry term ever goes red, compare
+its `before.geo` with `A90b`'s in the same run before believing it is a leak.** A red `A90`
+with a 174 baseline against a 200 baseline elsewhere is a measurement artifact. A red `A90`
+whose baseline MATCHES `A90b`'s is a real regression, and then §2's per-owner table names
+the module.
+
 ---
 
 ## 7. Honest gaps
@@ -497,6 +585,16 @@ tracks how many machines the population ceiling happened to recycle during the l
 * **The `via` column depends on Vite's dev build.** Against a minified production bundle
   the first `/src/` frame does not exist and every owner would read `(no-src-frame)`. This
   is a dev-server instrument by construction, like `DOM_WATCH` before it.
+* **The container census reports a COLD CACHE'S FIRST FILL as growth.** `_sitesCache +26`
+  (§5.2) is a 26-entry authored list being read for the first time inside the window, not a
+  leak, and the instrument cannot tell the two apart from one run. The discriminator is
+  across runs: a first fill is the same delta every time, a leak scales with the workload.
+  Anything in the census under about +30 that does not move between §6.3's five runs deserves
+  that check before it is chased.
+* **The census measures LENGTH, so it cannot see a container whose entries grow.** A `Map`
+  with a stable key count whose values accumulate is invisible to it. Nothing in the tables
+  here is that shape, but the next leak might be, and the reachability sweep (§1.1c) would
+  only catch it if the values were GPU resources.
 
 ---
 

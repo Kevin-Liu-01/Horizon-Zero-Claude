@@ -122,10 +122,25 @@
  *    trial windows (as seconds LEFT, so they survive a clock that restarts at
  *    zero), and conversation state (`dialogue.seen` / `dialogue.talked`).
  *
+ * CONTINUATION ROUND (Sep 25), both inside this lane, see
+ * `docs/ROUND4-PROGRESSION.md` §5:
+ *
+ * 6. THE TURN-IN TAKES THE GOODS. A `gather` objective with `deliver: true` is
+ *    handed over at completion — `_deliverGoods` removes it before the payout
+ *    and raises `quest-delivered`. Four bounties used to pay on top of goods
+ *    the player kept, and one of them asked for forty of the CURRENCY itself.
+ *
+ * 7. THE TRIAL HAS A CLOCK. `activeTrial()` answers "is a window running, and
+ *    on what" (pre-formatted `mmss`), and `_tickTrials` pushes it into the
+ *    lane's own `.pg-trial` chip at 5 Hz. `shell-hud` never took the render in
+ *    §3.8 and a `within:` objective was counting down invisibly; the chip
+ *    stands down the moment `ctx.hud.trialClock` appears.
+ *
  * Gates: `tools/gates.round4.progression-expansion.mjs` —
- * `A66-quest-objectives-expansion`, `A65-save-restore-expansion`,
- * `A99-dialogue`, `V45-dialogue-panel` (the two suffixed ids are the audit's
- * A66/A65 renamed because lane `progression` already owns those ids).
+ * `A66-quest-objectives-expansion` (now also `goodsDelivered` +
+ * `trialClockDrawn`), `A65-save-restore-expansion`, `A99-dialogue`,
+ * `V45-dialogue-panel` (the two suffixed ids are the audit's A66/A65 renamed
+ * because lane `progression` already owns those ids).
  */
 
 import * as THREE from 'three';
@@ -628,7 +643,7 @@ export const QUESTS = [
     summary: 'Camp is out of medicine and Varl is too proud to gather it himself.',
     objectives: [
       // a bounty you ACCEPT: what you are already carrying counts (see `_tallySnapshot`)
-      { id: 'herb', type: 'gather', item: 'medicinal-herb', count: 5, fromStock: true, label: 'Gather five medicinal herbs' },
+      { id: 'herb', type: 'gather', item: 'medicinal-herb', count: 5, fromStock: true, deliver: true, label: 'Gather five medicinal herbs' },
       { id: 'back', type: 'talk', npc: 'varl', label: 'Bring them back to Varl' },
     ],
     rewards: { xp: 160, shards: 140 },
@@ -641,7 +656,7 @@ export const QUESTS = [
     offerAtLevel: 3,
     summary: 'Watcher lenses fetch a good price on the trade road. Varl wants two.',
     objectives: [
-      { id: 'lens', type: 'gather', item: 'watcher-lens', count: 2, fromStock: true, label: 'Recover two Watcher Lenses' },
+      { id: 'lens', type: 'gather', item: 'watcher-lens', count: 2, fromStock: true, deliver: true, label: 'Recover two Watcher Lenses' },
     ],
     rewards: { xp: 200, shards: 180, items: [{ id: 'echo-shell', n: 3 }] },
   },
@@ -721,7 +736,7 @@ export const QUESTS = [
     site: 'outpost',
     summary: 'The outpost has not had a delivery in a moon. Maris has the shards; she does not have the legs.',
     objectives: [
-      { id: 'wood', type: 'gather', item: 'ridge-wood', count: 6, label: 'Gather six Ridge-Wood for the run' },
+      { id: 'wood', type: 'gather', item: 'ridge-wood', count: 6, deliver: true, label: 'Gather six Ridge-Wood for the run' },
       { id: 'crate', type: 'cache', count: 1, at: { site: 'cache' }, label: 'Empty a supply cache on the road' },
       { id: 'drop', type: 'goto', at: { site: 'outpost' }, x: 185, z: 5, radius: 14, label: 'Carry it out to the outpost' },
       { id: 'report', type: 'talk', npc: 'maris', label: 'Report back to Maris' },
@@ -768,7 +783,7 @@ export const QUESTS = [
     summary: 'Thok has a hot forge and empty crates. The sealed caches out in the wrecks hold better steel than the ore does.',
     objectives: [
       { id: 'caches', type: 'cache', count: 2, at: { site: 'cache' }, label: 'Empty two sealed caches in the wrecks' },
-      { id: 'metal', type: 'gather', item: 'metal-shards', count: 40, fromStock: true, label: 'Carry forty Metal Shards to the forge' },
+      { id: 'metal', type: 'gather', item: 'metal-shards', count: 40, fromStock: true, deliver: true, label: 'Carry forty Metal Shards to the forge' },
       { id: 'hand', type: 'talk', npc: 'thok', label: 'Hand the salvage to Thok' },
     ],
     rewards: { xp: 260, items: [{ id: 'blaze', n: 8 }, { id: 'metal-vessel', n: 2 }], skillPoints: 1 },
@@ -804,6 +819,15 @@ const RESPAWN_CLASS = {
   ravager: 'medium', redeye: 'medium', glinthawk: 'medium',
   thunderjaw: 'large', behemoth: 'large', stormbird: 'large', corruptor: 'large',
 };
+
+/**
+ * Seconds -> `M:SS`, the way HZD writes a Hunting Ground clock. Rounds UP so a
+ * clock reading `0:01` still has time on it and `0:00` is genuinely spent.
+ */
+export function mmss(seconds) {
+  const s = Math.max(0, Math.ceil(Number(seconds) || 0));
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+}
 
 /** Deterministic 0..1 from a site id — a save and a gate must agree on it. */
 function siteJitter(id) {
@@ -910,6 +934,8 @@ export class Progression {
     this.clock = 0;
     /** `questId:objectiveId` -> { endsAt, startedAt } for `within` objectives. */
     this.trials = new Map();
+    /** Was a window open on the previous sampler tick? (see `_tickTrials`) */
+    this._hadTrial = false;
     /** Sites whose machine is gone and whose respawn is pending. */
     this.clearedSites = new Set();
     /** siteId -> the window this lane re-timed it to (diagnostic, see audit). */
@@ -1597,13 +1623,17 @@ export class Progression {
     this.stats.questsDone++;
     this._markersDirty = true;
 
+    // HAND THE GOODS OVER BEFORE THE PAYOUT: a bounty that leaves the herbs in
+    // your pouch is a gift, not a trade (see `_deliverGoods`).
+    const handed = this._deliverGoods(def, st);
+
     const r = def.rewards || {};
     if (r.xp) this.addXp(r.xp, 'quest');
     if (r.shards) this._grant(CURRENCY, r.shards);
     for (const it of (r.items || [])) this._grant(it.id, it.n ?? 1);
     if (r.skillPoints) this.skillPoints += r.skillPoints;
 
-    this._emit('quest-complete', { id, title: def.title, rewards: r });
+    this._emit('quest-complete', { id, title: def.title, rewards: r, delivered: handed });
     this.banner('QUEST COMPLETE', def.title.toUpperCase(), 'quest-done');
 
     if (this.tracked === id) this.track(this._firstActive());
@@ -1887,6 +1917,41 @@ export class Progression {
   }
 
   /**
+   * THE ONE TRIAL WORTH DRAWING, or null.
+   *
+   * `trialState(questId)` answers about a quest you already name; a HUD has to
+   * ask the opposite question — "is a clock running right now, and on what?".
+   * The tracked quest wins, then the first running window in registry order, so
+   * the answer is stable frame to frame. `label` is the objective's own text
+   * and `mmss` is pre-formatted, so a consumer allocates nothing per frame.
+   *
+   * `shell-hud` should render this beside the tracked objective (docs
+   * §3.8) and set `ctx.hud.trialClock = true`; the lane's own chip
+   * (`.pg-trial`) stands down the moment that flag appears.
+   */
+  activeTrial() {
+    if (!this.trials.size) return null;
+    let best = null;
+    for (const def of QUESTS) {
+      const st = this.questState.get(def.id);
+      if (!st || st.state !== 'active') continue;
+      const o = def.objectives.find((x) => x.within && (st.counts[x.id] ?? 0) < (x.count ?? 1));
+      if (!o) continue;
+      const t = this.trials.get(this._trialKey(def.id, o.id));
+      if (!t) continue;
+      const left = Math.max(0, t.endsAt - this.clock);
+      const row = {
+        questId: def.id, title: def.title, objectiveId: o.id, label: o.label,
+        within: o.within, left: +left.toFixed(2), mmss: mmss(left),
+        have: st.counts[o.id] ?? 0, need: o.count ?? 1,
+      };
+      if (this.tracked === def.id) return row;
+      if (!best) best = row;
+    }
+    return best;
+  }
+
+  /**
    * One pass per sampler tick: open a window on any timed objective that has
    * become current, and reset one that lapsed. A lapsed trial restarts itself
    * rather than dead-ending the quest — HZD's Hunting Grounds let you run the
@@ -1906,15 +1971,27 @@ export class Progression {
     }
     // a finished (or abandoned) trial keeps no timer. Guarded on `size` so the
     // sampler allocates nothing at all on the 99 % of ticks with no trial open.
-    if (!this.trials.size) return;
-    for (const key of [...this.trials.keys()]) {
-      const [qid, oid] = key.split(':');
-      const def = QUESTS.find((q) => q.id === qid);
-      const st = this.questState.get(qid);
-      const o = def?.objectives.find((x) => x.id === oid);
-      if (!def || !st || !o || st.state !== 'active' || (st.counts[oid] ?? 0) >= (o.count ?? 1)) {
-        this.trials.delete(key);
+    if (this.trials.size) {
+      for (const key of [...this.trials.keys()]) {
+        const [qid, oid] = key.split(':');
+        const def = QUESTS.find((q) => q.id === qid);
+        const st = this.questState.get(qid);
+        const o = def?.objectives.find((x) => x.id === oid);
+        if (!def || !st || !o || st.state !== 'active' || (st.counts[oid] ?? 0) >= (o.count ?? 1)) {
+          this.trials.delete(key);
+        }
       }
+    }
+    /**
+     * Draw the clock. `_hadTrial` keeps this to ONE call on the tick a trial
+     * opens or closes: with no window open `activeTrial()` returns on the empty
+     * `trials` map and `setTrial` is not called at all, so the 99 % case is two
+     * property reads at 5 Hz.
+     */
+    const open = this.trials.size > 0;
+    if (open || this._hadTrial) {
+      this._hadTrial = open;
+      this.ui?.setTrial?.(open ? this.activeTrial() : null);
     }
   }
 
@@ -2188,6 +2265,50 @@ export class Progression {
         return { ok: true, paid };
       },
     };
+  }
+
+  /**
+   * TURN-IN TAKES THE GOODS (`quest-delivered`).
+   *
+   * Every "bring me X" objective carries `deliver: true`, and until this round
+   * none of them cost anything: Varl's five medicinal herbs, the two Watcher
+   * lenses, the outpost's six Ridge-Wood and Thok's forty Metal Shards all
+   * stayed in the pouch while the quest paid out on top. In HZD the hand-over
+   * is the trade — the items leave your pockets and the reward replaces them —
+   * and with `metal-shards` being the CURRENCY itself, "Carry forty Metal
+   * Shards to the forge" for a 260 XP payout was simply free money.
+   *
+   * Runs once, from `_completeQuest`, after `state` is already `'done'` so the
+   * settle pass cannot re-open the objective on the smaller stock (`state()`
+   * reads the stored `counts`, never live inventory — see `state`).
+   *
+   * NEVER STRANDS A RUN. `metal-shards` is spendable at the merchant between
+   * the objective ticking and the turn-in, so a short pouch hands over what is
+   * there and reports the shortfall rather than refusing the quest. Every
+   * `take` is guarded the way `_grant` is: `inventory.take` does not emit, but
+   * a foreign subclass could, and a throw here must not cost the payout.
+   */
+  _deliverGoods(def, st) {
+    const inv = this.ctx.inventory;
+    if (!inv?.take || !def?.objectives) return null;
+    let out = null;
+    for (const o of def.objectives) {
+      if (!o.deliver || o.type !== 'gather' || !o.item) continue;
+      const want = o.count ?? 1;
+      let took = 0;
+      try {
+        const have = inv.count?.(o.item) ?? 0;
+        took = Math.min(want, have);
+        if (took > 0) inv.take(o.item, took);
+      } catch (err) { this._fault(`deliver:${o.item}`, err); took = 0; }
+      this._syncSeen(o.item);
+      (out ??= []).push({ id: o.item, n: took, short: want - took });
+    }
+    if (out) {
+      this._emit('quest-delivered', { id: def.id, title: def.title, items: out });
+      this.ui.refresh();
+    }
+    return out;
   }
 
   /**

@@ -88,6 +88,56 @@ const CSS = `
 }
 #hzc-prog .pg-track-count { color: var(--pg-teal); }
 
+/* ----------------------------- trial clock -------------------------------
+ * HZD puts the Hunting Ground clock right under the objective, in the frame's
+ * top-left, and it is the ONE piece of this island shell-hud has not taken
+ * (docs/ROUND4-PROGRESSION.md §3.8): a "within:" objective was on a countdown
+ * nothing on screen showed. So this chip is NOT part of .pg-strip (hud.css
+ * hides that whole block) — it is its own node, and it stands down on its own
+ * the moment ctx.hud.trialClock appears.
+ */
+#hzc-prog .pg-trial {
+  position: absolute; left: 28px; top: 158px; width: 236px;
+  pointer-events: none;
+  padding: 9px 12px 10px;
+  background: linear-gradient(168deg, rgba(13,18,22,0.9), rgba(8,11,14,0.94));
+  border: 1px solid rgba(200,162,75,0.5);
+  border-left: 3px solid var(--pg-gold);
+  clip-path: polygon(0 0, 100% 0, 100% calc(100% - 11px), calc(100% - 11px) 100%, 0 100%);
+  box-shadow: 0 10px 26px rgba(0,0,0,0.5);
+  opacity: 0; transform: translateY(-6px);
+  transition: opacity 0.2s ease, transform 0.2s ease;
+}
+#hzc-prog .pg-trial.show { opacity: 1; transform: none; }
+#hzc-prog .pg-trial-kicker {
+  font-size: 9px; letter-spacing: 0.3em; text-transform: uppercase;
+  color: var(--pg-gold);
+}
+#hzc-prog .pg-trial-row {
+  display: flex; align-items: baseline; justify-content: space-between; gap: 10px;
+  margin-top: 3px;
+}
+#hzc-prog .pg-trial-time {
+  font-family: var(--font-display, 'Michroma', sans-serif);
+  font-size: 23px; line-height: 1.1; color: #FAF9F5;
+  font-variant-numeric: tabular-nums;
+  text-shadow: 0 2px 14px rgba(0,0,0,0.8);
+}
+#hzc-prog .pg-trial-count {
+  font-size: 13px; letter-spacing: 0.1em; color: var(--pg-teal);
+  font-variant-numeric: tabular-nums;
+}
+#hzc-prog .pg-trial-label {
+  font-size: 10.5px; letter-spacing: 0.05em; margin-top: 3px;
+  color: rgba(239,230,213,0.76);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+/* the last thirty seconds read as a warning, the way the HZD clock does */
+#hzc-prog .pg-trial.urgent { border-color: rgba(217,84,63,0.75); border-left-color: #d9543f; }
+#hzc-prog .pg-trial.urgent .pg-trial-kicker { color: #d9543f; }
+#hzc-prog .pg-trial.urgent .pg-trial-time { color: #f0a08c; animation: pgTrialPulse 1s ease-in-out infinite; }
+@keyframes pgTrialPulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.55; } }
+
 /* -------------------------------- banners --------------------------------- */
 #hzc-prog .pg-banners {
   position: absolute; left: 50%; top: 21%; transform: translateX(-50%);
@@ -335,6 +385,49 @@ export class QuestLogUI {
     this._track = el('div', 'pg-track pg-hidden', strip);
     this._trackTitle = el('div', 'pg-track-title', this._track, '');
     this._trackObj = el('div', 'pg-track-obj', this._track, '');
+    this._buildTrial();
+  }
+
+  /**
+   * The trial clock (`.pg-trial`). Built ONCE, hidden, and outside `.pg-strip`
+   * on purpose — see the CSS note. `setTrial` is called from
+   * `Progression._tickTrials` at 5 Hz and writes text only when the whole
+   * second actually changed, so an open window costs one string compare a tick
+   * and a closed one costs nothing at all.
+   */
+  _buildTrial() {
+    this._trial = el('div', 'pg-trial', this.root);
+    el('div', 'pg-trial-kicker', this._trial, 'TRIAL');
+    const row = el('div', 'pg-trial-row', this._trial);
+    this._trialTime = el('div', 'pg-trial-time', row, '0:00');
+    this._trialCount = el('div', 'pg-trial-count', row, '0/0');
+    this._trialLabel = el('div', 'pg-trial-label', this._trial, '');
+    this._trialShown = null;
+  }
+
+  /**
+   * `state` is `progression.activeTrial()` or null. Stands down entirely when
+   * `shell-hud` renders the clock itself (`ctx.hud.trialClock`), so adopting
+   * the request in docs §3.8 never doubles the chip.
+   */
+  setTrial(state) {
+    const node = this._trial;
+    if (!node) return;
+    if (this.ctx.hud?.trialClock) { node.classList.remove('show'); return; }
+    if (!state) {
+      if (this._trialShown === null) return;
+      this._trialShown = null;
+      node.classList.remove('show', 'urgent');
+      return;
+    }
+    const key = `${state.mmss}|${state.have}/${state.need}|${state.questId}`;
+    if (key === this._trialShown) return;
+    this._trialShown = key;
+    this._trialTime.textContent = state.mmss;
+    this._trialCount.textContent = `${state.have}/${state.need}`;
+    this._trialLabel.textContent = state.label ?? '';
+    node.classList.add('show');
+    node.classList.toggle('urgent', state.left <= 30);
   }
 
   _buildBanners() {
@@ -709,6 +802,8 @@ export class QuestLogUI {
     this._overlay?.remove();
     this._bannerEl?.remove();
     this._toastEl?.remove();
+    this._trial?.remove();
+    this._trial = this._trialTime = this._trialCount = this._trialLabel = null;
     this._track?.parentElement?.remove();
   }
 }

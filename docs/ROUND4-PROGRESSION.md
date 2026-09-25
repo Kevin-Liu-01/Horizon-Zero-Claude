@@ -219,7 +219,13 @@ object with everything a gate reads (including `emitFaults`, see §3).
 present only on a TIMED objective and is `'start' | 'restart' | 'lapsed'`, i.e.
 the window opened/reopened/ran out and `have` was reset; a consumer that only
 reads `have/need/done` is unaffected ·
-`quest-complete {id,title,rewards}` · `quest-tracked {id,title}` ·
+`quest-complete {id,title,rewards,delivered}` — `delivered` is the hand-over
+(`[{id,n,short}]`) or `null`; see `quest-delivered` ·
+`quest-delivered {id,title,items:[{id,n,short}]}` — **new (continuation
+round)**: the goods a turn-in just took out of the pouch. `n` is what was
+actually removed and `short` what the pouch could not cover. A HUD can read
+it as a `-6 RIDGE-WOOD` counterpart to `item-gained` ·
+`quest-tracked {id,title}` ·
 `objective-changed {title,detail}` (legacy SPEC event, still emitted) ·
 `banner {title,detail,kind}` — `kind` ∈ `info|level|skill|quest|quest-done|objective|save|death|victory`.
 **`shell-hud` should render these and this lane's own strip can then be retired.** ·
@@ -426,3 +432,84 @@ the literal `location.reload()`, so a save/load cycle is not an XP farm. A66
 additionally drives the **scan out of order** (tag the Watcher while `talk` is
 current, then toggle the marker off so nothing on screen can credit it) and
 requires it to land anyway, plus asserts no duplicate `LEVEL` banner.
+
+---
+
+## 5. Continuation round (Sep 25) — the turn-in takes the goods, and the trial has a clock
+
+Two gaps the expansion round left, both closed inside this lane's own files
+(`src/core/progression.js`, `src/ui/quests.js`) with no other lane touched.
+
+### 5.1 `deliver: true` — a bounty is a trade, not a gift
+
+Four "bring me X" objectives used to leave X in the pouch and pay a reward on
+top: Varl's five medicinal herbs (`side-herbalists-debt`), the two Watcher
+lenses (`side-lens-trade`), the outpost's six Ridge-Wood (`side-outpost-supply`)
+and Thok's forty Metal Shards (`side-wreck-salvage`). Because `metal-shards`
+**is** `CURRENCY` (`progression.js:346`), "Carry forty Metal Shards to the
+forge" was 260 XP, a skill point and eight Blaze for literally nothing.
+
+A `gather` objective now opts into the hand-over with `deliver: true`, and
+`_completeQuest` calls `_deliverGoods(def, st)` **before** the payout:
+
+* removal goes through `inventory.take`, guarded the way `_grant` is, and
+  `_syncSeen` re-baselines the 5 Hz gather sampler so the drop is not read as
+  "the player lost items";
+* it runs after `st.state === 'done'`, and `state()` reports the **stored**
+  counts, so the objective still reads `40/40` and the settle pass cannot
+  re-open it on the smaller stock;
+* a short pouch (shards are spendable at the merchant between the objective
+  ticking and the turn-in) hands over what is there and reports `short` — a
+  quest is never made uncompletable;
+* one `quest-delivered` event per quest, and `quest-complete.delivered` carries
+  the same rows.
+
+Measured on the real completion path (A66): Ridge-Wood `26 → 20`, Metal Shards
+`500 → 460`, both objective counters still full, both payouts still paid.
+
+### 5.2 The trial clock is on screen (`activeTrial()` + `.pg-trial`)
+
+Request §3.8 asked `shell-hud` for the countdown; it was not taken, so a
+`within:` objective ran on a timer **nothing on screen showed** — the Valley
+Trial read like an ordinary "Kill 3 Scrappers" until it silently reset. The
+lane now draws it itself:
+
+```js
+progression.activeTrial()
+// -> { questId, title, objectiveId, label, within, left, mmss, have, need } | null
+```
+
+The tracked quest wins, else the first running window in registry order, so the
+answer is stable frame to frame; `mmss` is pre-formatted (`mmss(seconds)` is
+exported) so a consumer allocates nothing per frame. `_tickTrials` pushes it
+into `QuestLogUI.setTrial()` at 5 Hz and **only** on a tick where a window is
+open or has just closed; the chip rewrites text only when the whole second
+changes.
+
+`.pg-trial` is its own node inside `#hzc-prog`, deliberately **not** part of
+`.pg-strip` — `hud.css:55-57` hides the strip, the banners and the toasts, and
+would have hidden the clock with them. It sits at `left:28px top:158px`, right
+under shell-hud's tracked-objective block, kicker + `M:SS` + `have/need` +
+label, and turns red and pulses inside the last 30 s.
+
+**Handover, unchanged request:** set `ctx.hud.trialClock = true` when
+`shell-hud` renders the clock and this chip stands down on its next tick — the
+render in §3.8 is still the better home for it, this is the version that ships
+until then. `QuestLogUI.dispose()` removes the node and drops its refs (lane
+memory rule).
+
+### 5.3 Gates
+
+No new gate ids. `A66-quest-objectives-expansion` gained two checks:
+
+| check | what it measures |
+|---|---|
+| `goodsDelivered` | the six Ridge-Wood and forty Metal Shards LEAVE the inventory across the real hand-over, with matching `quest-delivered` rows (`n` exact, `short: 0`) |
+| `trialClockDrawn` | while the window is open, `#hzc-prog .pg-trial` is shown, its `M:SS` is within 2 s of `activeTrial().left`, its counter matches `have/need`, it carries the objective label — and it clears itself once the trial is done |
+
+**Negative control, actually run.** With `_deliverGoods` short-circuited to
+`null` and the `setTrial` call replaced by a `void`, A66 FAILs on exactly
+`["goodsDelivered","trialClockDrawn"]` and nothing else; restored, it passes
+12/12. (First measured attempt also caught its own defect: the assert body is a
+**template literal**, so `\d` in the clock regex was eaten down to `d` and the
+check read `secs: null`. Gate regexes in these files need `\\d`.)
