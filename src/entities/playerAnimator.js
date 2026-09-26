@@ -1556,6 +1556,15 @@ export class PlayerAnimator {
     if (this.melee?.ok) {
       this.melee.step(dt);
       this.melee.update(dt, this.ctx.combat?.melee?.poseState?.() ?? null);
+      /* THE SPEAR'S OWN STANCE ASKS FOR A PELVIS OFFSET (fix pass 2, melee
+       * `STANCE`). The melee layer bends the knees for the beat it is playing;
+       * a bent knee with the hips held up lifts the foot off the floor, so the
+       * hips have to come down with it. Adding it to `pdx`/`pdy` here rather
+       * than writing the pelvis directly means the SAME numbers reach the
+       * ground conform below, which is what plants the feet against it — the
+       * route every other procedural leg pose in this file takes. */
+      pdx += this.melee.pelvisDx || 0;
+      pdy += this.melee.pelvisDy || 0;
     }
 
     /* ================ OVERLAY 5: hit react / death / weary ================ */

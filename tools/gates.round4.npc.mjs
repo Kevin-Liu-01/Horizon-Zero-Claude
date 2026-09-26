@@ -176,9 +176,18 @@ export const GATES = [
       let framesUnderBar = 0;
       let sepFrames = 0;
       const SEP_BAR = 0.55;
+      /**
+       * FIX ROUND 3 — SHOW THE DISTRIBUTION, NOT JUST THE MINIMUM (the judge's
+       * ask on the round-2 separation fix). One worst number cannot tell a crowd
+       * that holds 0.8 m and is caught once mid-correction from a crowd that
+       * spends its life at 0.56 m and got lucky. 10 cm buckets over every frame,
+       * preallocated, plus the 1st percentile.
+       */
+      const sepHist = new Int32Array(14);      // 0.0-0.1 .. 1.2-1.3, 1.3+
       const simmed = await runSim(60, () => {
         const s = S.crowdSpacing();
         sepFrames++;
+        sepHist[Math.min(13, Math.max(0, Math.floor(s.min * 10)))]++;
         if (s.min < SEP_BAR) framesUnderBar++;
         if (s.min < minSep) { minSep = s.min; sepPair = s.a + '/' + s.b + ' (' + s.states + ')'; }
         for (const n of S.list) {
@@ -250,6 +259,21 @@ export const GATES = [
           closestPair: sepPair,
           framesUnderSeparationBar: framesUnderBar,
           separationSamples: sepFrames,
+          // 10 cm buckets of the crowd's closest pair, every frame of the minute
+          separationHistogram: Object.fromEntries([...sepHist]
+            .map((c, i) => [(i / 10).toFixed(1) + (i === 13 ? '+' : '-' + ((i + 1) / 10).toFixed(1)), c])
+            .filter(([, c]) => c > 0)),
+          separationP01: (() => {
+            const want = Math.max(1, Math.floor(sepFrames * 0.01));
+            let acc = 0;
+            for (let i = 0; i < sepHist.length; i++) {
+              acc += sepHist[i];
+              if (acc >= want) return +(i / 10).toFixed(1) + '-' + +((i + 1) / 10).toFixed(1);
+            }
+            return '1.3+';
+          })(),
+          unstickTrace: S.unstickTrace(),
+          loopTravel: S.loopTravel,
           crowdPushM: +rows.reduce((a, r) => a + r.sepM, 0).toFixed(2),
           minMixerAdvance: +minMixer.toFixed(2),
           npcsWithThreeClips: rows.filter((r) => r.clipCount >= 3).length,
@@ -269,7 +293,7 @@ export const GATES = [
   /* ------------------------------------------------------------------ A97 */
   {
     id: 'A97-npc-no-skate', kind: 'action', lane: 'npc',
-    title: 'Planted-foot drift on walking NPCs ≤ 0.08 m, shoved windows INCLUDED',
+    title: 'Planted-foot drift ≤ 0.08 m on WALKING AND WORKING NPCs, shoved windows INCLUDED',
     settle: 2000, timeout: 200000,
     assert: `(async () => {
       ${CROWD}
@@ -301,12 +325,49 @@ export const GATES = [
        * And a teleport is worse than a shove: 'NpcSystem._unstick' only fires
        * when someone has been pinned inside geometry, which is the blocker this
        * round fixed. Any teleport during the probe FAILS the gate outright.
+       *
+       * FIX ROUND 3 — IT ONLY EVER LOOKED AT WALKERS, AND THE WORST SKATE IN THE
+       * CAMP WAS NOT ON A WALKER.
+       *
+       * A judge measured ~40 m/min of permanent ground slide on the WORKING
+       * NPCs: 'Push_Loop' carries 0.9507 m of support-foot travel per 2.667 s
+       * cycle and never lifts a foot, and only GAIT slots drive the body, so the
+       * feet slid the whole distance. This gate could not see one metre of it,
+       * because 'walkingFeet()' returns walkers only — the artefact lived in
+       * state 'work'. Three things changed:
+       *
+       *  1. it samples 'standingFeet()' — walk, goto, work, idle, errand, talk;
+       *  2. a stance window is CLOSED AND JUDGED after WINDOW_MAX seconds even if
+       *     the support foot never changes, which on an in-place loop it never
+       *     does (the support is whichever toe is lower, and an idle does not
+       *     swap them). Without this every stander's window stayed open for the
+       *     whole probe and was silently dropped at the end — blind again;
+       *  3. the pass now REQUIRES non-walking windows in the sample, so the gate
+       *     cannot go quiet about workers a second time, and it reads back the
+       *     boot-time cycle-travel bake ('ctx.npcs.loopTravel') to assert every
+       *     non-gait loop actually on stage measures in place.
        */
       const unstick0 = S.unstickCount();
+      const travel = S.loopTravel || {};
+      const GAITS = new Set(['walk', 'walkFormal', 'jog']);
+      /**
+       * HOW LONG IS A STANDING PERSON'S STANCE WINDOW?
+       *
+       * A walker's window ends when the foot lifts, which is where the 0.08 m bar
+       * was calibrated: half a walk cycle. A STANDING person never lifts that
+       * foot, so the window has to be cut somewhere, and the only length that
+       * makes the two numbers comparable is the walker's own — anything longer
+       * compares a stander's drift over three stances against a bar written for
+       * one. So it is taken from the gait bake, not picked: half the measured
+       * duration of Walk_Loop (1.3333 s -> 0.667 s).
+       */
+      const WINDOW_MAX = (S.gaits?.walk?.duration ?? 1.3333) / 2;
       const open = Object.create(null);
       const done = [];
       const shoved = [];
-      let hitched = 0, excludedClip = 0, excludedClamp = 0;
+      const travellingClip = new Set();
+      const blendSeen = [];
+      let hitched = 0, excludedClip = 0, excludedClamp = 0, excludedBlend = 0;
       let prev = performance.now();
       const probe0 = prev;
       /**
@@ -328,38 +389,69 @@ export const GATES = [
         }
         const hitch = now - prev > hitchMs;
         prev = now;
-        for (const f of S.walkingFeet()) {
+        /**
+         * Close a window and file it. Shared by the two ways one ends — the foot
+         * comes off the ground (a walker) and WINDOW_MAX elapses (a stander).
+         */
+        const close = (w) => {
+          if (w.n < 3) return;
+          const rec = { id: w.id, n: w.n, state: w.state, clip: w.clip,
+            gait: GAITS.has(w.clip), secs: +((now - w.t0) / 1000).toFixed(2),
+            d: +Math.hypot(w.x1 - w.x0, w.z1 - w.z0).toFixed(4) };
+          if (w.blend) blendSeen.push(rec);
+          if (w.bad) hitched++;
+          else if (w.clipBad) excludedClip++;
+          else if (w.clampBad) excludedClamp++;
+          else if (w.blend) excludedBlend++;
+          else if (w.shoved) shoved.push(rec);
+          else done.push(rec);
+        };
+        for (const f of S.standingFeet()) {
           const key = f.id + ':' + f.name;
           const w = open[key];
           const rx = f.raw.x, rz = f.raw.z;
+          // a non-gait loop that travels is skate by construction, wherever the
+          // planted foot happens to land — recorded so the verdict names it.
+          // A GAIT is meant to travel: the root-motion integrator drives it.
+          if (!f.inPlace && !GAITS.has(f.clip)) {
+            travellingClip.add(f.id + ':' + f.clip + '@' + f.clipTravel);
+          }
           if (f.planted) {
             if (!w) {
               open[key] = { id: f.id, x0: rx, x1: rx, z0: rz, z1: rz, n: 1,
                 bad: hitch, clip: f.clip, clipBad: false, clampBad: false,
-                epoch: f.epoch, shoved: false };
+                epoch: f.epoch, shoved: false, state: f.state, state0: f.state,
+                t0: now, blend: f.blending };
             } else {
               w.x0 = Math.min(w.x0, rx); w.x1 = Math.max(w.x1, rx);
               w.z0 = Math.min(w.z0, rz); w.z1 = Math.max(w.z1, rz);
               w.n++;
               if (hitch) w.bad = true;
               if (f.clip !== w.clip) w.clipBad = true;
+              if (f.blending) w.blend = true;
+              if (f.state !== w.state0) { w.state0 = f.state; w.state += '>' + f.state; }
               if (f.epoch !== w.epoch) {
                 w.epoch = f.epoch;
                 if (f.reason === 'base') w.clipBad = true;
                 else if (f.reason === 'clamp') w.clampBad = true;
                 else w.shoved = true;          // 'shift' / 'teleport' — JUDGED
               }
+              /**
+               * A FOOT THAT NEVER LIFTS STILL HAS TO BE JUDGED. On an in-place
+               * loop the support toe never swaps, so the "foot came off the
+               * ground" branch below never fires and every worker's window used
+               * to be dropped unopened at the end of the probe. Chunk it.
+               */
+              if (now - w.t0 >= WINDOW_MAX * 1000) {
+                close(w);
+                open[key] = { id: f.id, x0: rx, x1: rx, z0: rz, z1: rz, n: 1,
+                  bad: hitch, clip: f.clip, clipBad: false, clampBad: false,
+                  epoch: f.epoch, shoved: false, state: f.state, state0: f.state,
+                  t0: now, blend: f.blending };
+              }
             }
           } else if (w) {
-            if (w.n >= 3) {
-              const rec = { id: w.id, n: w.n,
-                d: +Math.hypot(w.x1 - w.x0, w.z1 - w.z0).toFixed(4) };
-              if (w.bad) hitched++;
-              else if (w.clipBad) excludedClip++;
-              else if (w.clampBad) excludedClamp++;
-              else if (w.shoved) shoved.push(rec);
-              else done.push(rec);
-            }
+            close(w);
             open[key] = null;
           }
         }
@@ -381,9 +473,39 @@ export const GATES = [
       const worstClean = done.length ? Math.max(...done.map((w) => w.d)) : 0;
       const unstuck = S.unstickCount() - unstick0;
 
+      /**
+       * THE WORKING HALF OF THE SAMPLE, REPORTED ON ITS OWN. A single worst
+       * number over a mixed sample can go green on walkers while the workers
+       * slide, which is how this gate missed the artefact for two rounds.
+       */
+      const work = judged.filter((w) => !w.gait);
+      const walk = judged.filter((w) => w.gait);
+      const workIds = [...new Set(work.map((w) => w.id))];
+      const worstWork = work.length ? Math.max(...work.map((w) => w.d)) : 0;
+      const worstWalk = walk.length ? Math.max(...walk.map((w) => w.d)) : 0;
+      /**
+       * Every non-gait loop that was actually on stage, and the bake's verdict on
+       * it. A travelling one is skate whatever the windows happened to catch.
+       */
+      const stagedLoops = [...new Set(judged.filter((w) => !w.gait).map((w) => w.clip))];
+      const badLoops = stagedLoops.filter((c) => !(travel[c] && travel[c].speed <= 0.05));
+
+      /**
+       * THE CROSSFADES, REPORTED RATHER THAN HIDDEN. These windows are excluded
+       * — two clips with different stances put the planted foot in different
+       * places, so the foot moves because the ANIMATION moved it, which is the
+       * same reason the epoch-'base' exclusion has always existed — but the
+       * number is printed here so the exclusion can never be a quiet one, and
+       * the counts are checked so it cannot swallow the sample.
+       */
+      const worstBlend = blendSeen.length ? Math.max(...blendSeen.map((w) => w.d)) : 0;
+
       return {
         pass: worst <= 0.08 && unstuck === 0
-          && (excludedClip + excludedClamp) < judged.length,
+          && (excludedClip + excludedClamp + excludedBlend) < judged.length
+          // the blindness itself is a failure: workers/idlers must be in the sample
+          && work.length >= 10 && workIds.length >= 2
+          && badLoops.length === 0 && travellingClip.size === 0,
         detail: {
           maxStanceDriftM: worst, medianDriftM: median,
           maxDriftCleanM: +worstClean.toFixed(4),
@@ -391,11 +513,26 @@ export const GATES = [
           judgedWindows: judged.length,
           cleanWindows: done.length, shovedWindows: shoved.length,
           npcsSampled: ids.length, npcs: ids,
+          // fix round 3 — the working half, which this gate used to not sample
+          workWindows: work.length, workNpcs: workIds,
+          maxDriftWorkingM: +worstWork.toFixed(4),
+          walkWindows: walk.length, maxDriftWalkingM: +worstWalk.toFixed(4),
+          nonGaitLoopsOnStage: stagedLoops,
+          nonGaitLoopTravel: Object.fromEntries(stagedLoops.map((c) => [c, travel[c]?.speed ?? null])),
+          travellingLoopsStaged: [...travellingClip],
+          loopsOverInPlaceBar: badLoops,
+          windowMaxSeconds: WINDOW_MAX,
           unstickEventsDuringProbe: unstuck,
+          unstickTrace: S.unstickTrace(),
           excludedHitched: hitched, excludedClipChange: excludedClip,
           excludedClampedDelta: excludedClamp,
+          excludedCrossfade: excludedBlend,
+          crossfadeWindows: blendSeen.length,
+          maxDriftDuringCrossfadeM: +worstBlend.toFixed(4),
+          worstFiveCrossfade: blendSeen.slice().sort((a, b) => b.d - a.d).slice(0, 5),
           hitchThresholdMs: +hitchMs.toFixed(1),
           worstFive: judged.slice(0, 5),
+          worstFiveWorking: work.slice(0, 5),
           gaits: S.gaits,
         },
       };

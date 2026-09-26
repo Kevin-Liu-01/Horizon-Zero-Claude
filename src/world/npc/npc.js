@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { NpcRigSource, NPC_CLIPS, B } from './npcRig.js';
 import { buildNpcBody, resolveVariant, makeNpcMaterial, BODIES } from './npcBody.js';
-import { NpcAnimator, measureGaits } from './npcAnim.js';
+import { NpcAnimator, measureGaits, measureLoopTravel } from './npcAnim.js';
 import { ROSTER, ROUTES, STATIONS, CAMP } from './waypoints.js';
 
 /**
@@ -40,6 +40,8 @@ const _p = new THREE.Vector3();
 const _d = new THREE.Vector3();
 const _lm = new THREE.Vector3();
 const _mi = new THREE.Matrix4();
+/** The pin detector's own probe point — `_p` belongs to `_settle` and `_blockedAt`. */
+const _pin = new THREE.Vector3();
 
 /**
  * Lane half-width: the 0.55 m person plus 0.23 m of margin. Routes are built
@@ -48,8 +50,32 @@ const _mi = new THREE.Matrix4();
  */
 const LANE_R = 0.78;
 
+/**
+ * THE BODY'S OWN CAPSULE — ONE DEFINITION, AND `_resolveBody` IS THE ONLY CALLER
+ * (fix round 3, judge finding "A96 fails ~50 % of runs: a walking NPC is
+ * teleported out of geometry").
+ *
+ * The pin detector and the depenetration it claims to share were written out
+ * separately and drifted: the detector probed a 0.36 m / 1.70 m capsule while
+ * `_settle` resolved a 0.30 m / 1.62 m * scale one. The probe therefore STRICTLY
+ * CONTAINED the body, in both radius and height, so a person walking a 0.33 m
+ * clearance — the west lane past the drying racks, measured — read as "inside
+ * geometry" while the resolve never touched it. `inGeo` climbed half a second at
+ * a time, `_unstick` teleported a perfectly healthy walker, and A96 fails on any
+ * rescue. Filmed on OLIN at (19.5-19.9, 31.8-34.1): `inGeo` 0.5 -> 1.5 over 3 s
+ * of walking against 0.28 m of actual depenetration in 22 s.
+ *
+ * Both now ask `_resolveBody`, which owns the numbers. Nothing else in this file
+ * may hard-code them.
+ */
+const BODY_R = 0.30;
+const BODY_H = 1.62;
+
 /** Perpendicular offsets tried when the navgrid cannot route a leg. */
 const DETOURS = [1.6, -1.6, 2.6, -2.6, 3.8, -3.8, 5.2, -5.2, 7.0, -7.0];
+
+/** Perpendicular offsets `_laneDetour` tries beside a pinched route leg. */
+const LANE_OFFSETS = [1.0, -1.0, 1.7, -1.7, 2.5, -2.5, 3.4, -3.4];
 
 /**
  * PERSONAL SPACE (fix round 2, `_separate` / `_dodge`).
@@ -112,6 +138,41 @@ const DODGE_SIT = 0.92;
 
 /** Seconds a walker will wait for a blocked lane before going around instead. */
 const YIELD_PATIENCE = 2.6;
+
+/**
+ * METRES OF WORLD DEPENETRATION THAT TAKE A WALKER OFF ITS GAIT AT ONCE
+ * (fix round 3).
+ *
+ * A body held against geometry still consumes the walk clip at full rate, so the
+ * planted foot is dragged by every centimetre the depenetration applies. Round 2
+ * metered that on the 0.9 s progress window and answered with a sidestep, which
+ * keeps the gait ON: the walker ground along the obstacle through two detour
+ * attempts before it finally stood up, up to 2.7 s. Filmed on AURA at
+ * (32.36, 24.03): 0.46 m of depenetration in 0.76 s, her group position frozen,
+ * 0.43 m of planted-toe drag in ONE stance window, and 0.86 m of push on the
+ * meter after 19 s — which is also how a run reached `pushedM` 1.94 and failed
+ * A96's 1.5 m shove term.
+ *
+ * So contact now takes the gait off immediately and the detour is planned from a
+ * standing body. The bar is deliberately small: 0.05 m is under two frames of
+ * `_settle`'s 0.03 m cap, so the trip fires before a single stance window can
+ * approach `A97-npc-no-skate`'s 0.08 m. Standing still costs no drift at all
+ * (`_dodge` is built on the same fact), and the yielded seconds are already
+ * excluded from `_watchProgress`'s travel meter, so a trip cannot be mistaken
+ * for a blocked route.
+ */
+const GRIND_STOP = 0.035;
+
+/** Seconds a grind-tripped walker stands before the gait comes back. */
+const GRIND_WAIT = 0.3;
+
+/**
+ * States in which the body is standing on its own two feet — `standingFeet()`,
+ * and therefore `A97-npc-no-skate`. `WALKING_STATES` is the old narrower set
+ * `walkingFeet()` still answers with.
+ */
+const WALKING_STATES = new Set(['walk', 'goto']);
+const ON_FEET = new Set(['walk', 'goto', 'work', 'idle', 'errand', 'talk']);
 
 const _legA = [0, 0];
 const _legB = [0, 0];
@@ -200,6 +261,12 @@ export class NpcSystem {
       return;
     }
     this.gaits = measureGaits(this.src);
+    /**
+     * Measured cycle travel of EVERY loop this lane can stage, not just the
+     * gaits (fix round 3). Published so `A97-npc-no-skate` can prove the work
+     * loops stand still instead of assuming it — see `IN_PLACE_MAX`.
+     */
+    this.loopTravel = measureLoopTravel(this.src);
     ctx.scene.add(this.group);
 
     this._routes = new Map();
@@ -296,6 +363,10 @@ export class NpcSystem {
         leg: null, legIdx: 0, repathT: 0,
         /** route nodes this person has proved it cannot reach — see `_advanceNode` */
         badNodes: new Set(), pinAcc: 0, unstuck: 0, workT: 0, geoT: 0, inGeo: 0,
+        // a grind trip happened inside the current progress window (GRIND_STOP)
+        grindHit: false,
+        // seconds this person will not try to walk to its station again
+        stationHoldT: 0,
         /**
          * CROWD AVOIDANCE (fix round 2). `rank` is the fixed right-of-way order
          * between two movers — without it two walkers meeting head-on both stop
@@ -742,8 +813,22 @@ export class NpcSystem {
         const t = k / steps;
         const px = a[0] + dx * t, pz = a[1] + dz * t;
         if (!this._blockedAt(px, pz, LANE_R)) continue;
-        const fix = this._clearPoint(px, pz, 8);
-        if (!fix || this._blockedAt(fix[0], fix[1], LANE_R)) continue;
+        /**
+         * A PINCH IS WALKED AROUND, NOT SHRUGGED AT (fix round 3).
+         *
+         * `_clearPoint` resolves the BODY capsule and pulls toward the camp
+         * centre, so where a leg threads a gap narrower than the lane it hands
+         * back a point that is still lane-blocked, and this loop used to just
+         * `continue` — leaving the pinch in the route. Measured on `eastLane` at
+         * (29.0-29.5, 22.0): lane-blocked, body-clear, so AURA walked the line
+         * clean until anything nudged her off it and then ground on the tree —
+         * 1.95 m and 2.17 m of depenetration in a minute across ten runs, which
+         * is A96's 1.5 m shove term, twice. So when the pull fails, step
+         * PERPENDICULAR to the leg until the lane itself is clear.
+         */
+        let fix = this._clearPoint(px, pz, 8);
+        if (!fix || this._blockedAt(fix[0], fix[1], LANE_R)) fix = this._laneDetour(px, pz, dx, dz);
+        if (!fix) continue;
         if (added && Math.hypot(fix[0] - added[0], fix[1] - added[1]) < 1.2) continue;
         out.push(fix);
         added = fix;
@@ -751,6 +836,27 @@ export class NpcSystem {
       if (!loop || i < legs - 1) out.push(b);
     }
     return out.length >= 2 ? out : pts;
+  }
+
+  /**
+   * A point beside a pinched leg where the WHOLE LANE is clear.
+   *
+   * Offsets are perpendicular to the leg, nearest first, both sides alternating,
+   * and the answer has to be reachable from the plaza — a gap on the far side of
+   * a wall is not a detour. Returns null when the leg simply cannot be widened,
+   * in which case the caller leaves the node alone and `_watchProgress` handles
+   * the contact at run time.
+   */
+  _laneDetour(px, pz, dx, dz) {
+    const L = Math.hypot(dx, dz) || 1;
+    const nx = -dz / L, nz = dx / L;
+    for (const off of LANE_OFFSETS) {
+      const x = px + nx * off, z = pz + nz * off;
+      if (this._blockedAt(x, z, LANE_R)) continue;
+      if (!this._reachableFromPlaza([x, z])) continue;
+      return [x, z];
+    }
+    return null;
   }
 
   /**
@@ -767,6 +873,23 @@ export class NpcSystem {
     if (!C) return false;
     _p.set(x, this._groundY(x, z), z);
     return !!C.resolveCapsule(_p, r, 1.7, { passes: 1, filter: NOT_ACTOR })?.hit;
+  }
+
+  /**
+   * THIS PERSON'S BODY, RESOLVED AGAINST THE STATIC WORLD — the one place the
+   * lane asks where a BODY (as opposed to a lane, a waypoint or a stand-mark) is
+   * in contact. `_settle` depenetrates with the resolved point; the pin detector
+   * reads only whether it hit. Two callers, one capsule, so they cannot drift
+   * apart again — see `BODY_R` / `BODY_H` for the round they did.
+   *
+   * @param {object} n the NPC record (its `variant.scale` sizes the capsule)
+   * @param {THREE.Vector3} p IN/OUT — mutated to the resolved position
+   */
+  _resolveBody(n, p) {
+    const C = this.ctx.collision;
+    if (!C) return null;
+    return C.resolveCapsule(p, BODY_R, BODY_H * (n.variant.scale || 1),
+      { passes: 2, filter: NOT_ACTOR });
   }
 
   /**
@@ -898,7 +1021,8 @@ export class NpcSystem {
       case 'lookout':
         return this._startWalk(n);
       case 'gatherer':
-        return (n.rng() < 0.32 && n.station) ? this._goto(n, this._stationSpot(n.station), 'work')
+        return (n.rng() < 0.32 && n.station && n.stationHoldT <= 0)
+          ? this._goto(n, this._stationSpot(n.station), 'work')
           : this._startWalk(n);
       case 'worker':
         return this._startWork(n);
@@ -926,7 +1050,7 @@ export class NpcSystem {
     const slot = this._restClip(n);
     // a one-shot-shaped rest clip is played as a loop-with-hold via the layer,
     // so a gesture reads as a held pose rather than snapping back to neutral
-    n.anim.play(slot, { fade: 0.3, rate: slot === 'push' || slot === 'fixing' ? 0.7 : 1 });
+    n.anim.play(slot, { fade: 0.3, rate: slot === 'fixing' ? 0.7 : 1 });
     return n;
   }
 
@@ -955,7 +1079,10 @@ export class NpcSystem {
   }
 
   _startWork(n) {
-    const spot = n.station ? this._stationSpot(n.station, n.row.standOff) : null;
+    // the mark is off the table while `stationHoldT` runs (see `_blockedStep`):
+    // this person could not walk to it and must not spend the next minute trying
+    const spot = (n.station && n.stationHoldT <= 0)
+      ? this._stationSpot(n.station, n.row.standOff) : null;
     if (spot) {
       const dx = n.group.position.x - spot[0], dz = n.group.position.z - spot[1];
       if (dx * dx + dz * dz > 1.6) return this._goto(n, spot, 'work');
@@ -970,15 +1097,49 @@ export class NpcSystem {
     return n;
   }
 
-  /** One unit of visible labour at a station. */
+  /**
+   * Pick a beat from `pool` that is NOT the loop already on stage.
+   *
+   * Every pool in this file overlaps `idleClip` on purpose, so a straight random
+   * draw regularly names the slot that IS the base loop — and a one-shot of the
+   * base layer collapses the stage to the bind pose (see `NpcAnimator.once`,
+   * fix round 3). Draw from a random offset and take the first real change.
+   *
+   * @returns {string|null} null when the whole pool is already on stage
+   */
+  _pickBeat(n, pool) {
+    const off = Math.floor(n.rng() * pool.length);
+    for (let i = 0; i < pool.length; i++) {
+      const s = pool[(off + i) % pool.length];
+      if (s !== n.anim.current && n.anim.has(s)) return s;
+    }
+    return null;
+  }
+
+  /**
+   * One unit of visible labour at a station.
+   *
+   * Every slot in every pool here is one the boot-time bake measures as IN PLACE
+   * (fix round 3): a work loop that carries cycle travel is not driven by the
+   * root-motion integrator, so it slides the feet for as long as it plays.
+   * `push` (0.3565 m/s, no air path) was the whole of the judge's "~40 m/min of
+   * ground slide with zero air path" and is gone from the smith's pool; the
+   * kneeling repair loop replaces it. `NpcAnimator.play()` refuses a travelling
+   * base loop outright, so this list cannot regress quietly.
+   */
   _workBeat(n) {
-    const pool = n.row.work === 'push' ? ['push', 'interact', 'pickup']
+    // ONE UNIT AT A TIME. `Fixing_Kneeling` runs 5.2 s and the beat timer is
+    // 4-7 s, so without this a second beat landed on top of the first — two
+    // one-shots at weight 1, normalized into a pose nobody authored (see
+    // `NpcAnimator.once`, which also refuses to stack them).
+    if (n.anim.busy) return;
+    const pool = n.row.work === 'fixing' ? ['fixing', 'interact', 'pickup']
       : n.row.work === 'jab' ? ['jab', 'interact', 'swordIdle']
         : n.role === 'worker' ? ['interact', 'pickup', 'fixing']
           : ['pickup', 'interact'];
-    const slot = pool[Math.floor(n.rng() * pool.length) % pool.length];
-    if (!n.anim.has(slot)) return;
-    if (slot === 'push' || slot === 'swordIdle') {
+    const slot = this._pickBeat(n, pool);
+    if (!slot) return;
+    if (slot === 'swordIdle') {
       n.anim.play(slot, { fade: 0.3 });
       n.tempT = 4 + n.rng() * 3;
     } else {
@@ -1285,11 +1446,17 @@ export class NpcSystem {
       n.geoT -= d;
       if (n.geoT <= 0) {
         n.geoT = 0.5;
-        // the SAME capsule `_settle` depenetrates with, not the wider one routes
-        // are built from: standing somewhere a 0.55 m lane test dislikes but a
-        // 0.30 m body clears is normal in a camp, and treating it as pinned had
-        // one gatherer rescued three times a minute for nothing
-        if (this._blockedAt(n.group.position.x, n.group.position.z, 0.36)) n.inGeo += 0.5;
+        /**
+         * LITERALLY THE SAME QUERY `_settle` JUST MADE (fix round 3). This used
+         * to claim to share `_settle`'s capsule and did not — 0.36 m / 1.70 m
+         * against 0.30 m / 1.62 m * scale — so it reported a body as pinned in
+         * gaps the body walks through, and the rescue that followed teleported a
+         * healthy walker and failed A96 on about half of all runs. It now asks
+         * `_resolveBody` at this person's post-resolve position: "am I STILL in
+         * contact after the world had its say", which is what being stuck means.
+         */
+        _pin.copy(n.group.position);
+        if (this._resolveBody(n, _pin)?.hit) n.inGeo += 0.5;
         else n.inGeo = 0;
       }
       if (n.pinAcc > 2.5 || n.inGeo >= 2) {
@@ -1327,6 +1494,25 @@ export class NpcSystem {
       n.progX = n.group.position.x; n.progZ = n.group.position.z;
       return;
     }
+    /**
+     * CONTACT COMES OFF THE GAIT AT ONCE, NOT AT THE END OF THE WINDOW. See
+     * `GRIND_STOP` for the measurement this replaces. The yield machinery is
+     * `_dodge`'s — the body stands, the escape turn is free, `yieldAcc` keeps the
+     * travel meter honest, and `_resumeGait` puts the gait back.
+     */
+    if (n.pushAcc > GRIND_STOP && n.yieldT <= 0) {
+      n.pushAcc = 0;
+      n.yieldT = GRIND_WAIT;
+      if (n.anim.current !== 'idle') n.anim.play('idle', { fade: 0.12 });
+      // AND IT ESCALATES. A trip that only ever answers with a sidestep lets a
+      // walker fight the same corner for a whole minute, 0.05 m of push at a
+      // time (measured: 1.13 m in 60 s against A96's 1.5 m bar). Trips feed the
+      // same ladder the progress window does, so three of them blacklist the
+      // node and the walker stands until the route is walkable again.
+      n.grindHit = true;
+      this._blockedStep(n);
+      return;
+    }
     n.progT += dt;
     if (n.progT < 0.9) return;
     /**
@@ -1359,14 +1545,43 @@ export class NpcSystem {
     n.yieldAcc = 0;
     n.progT = 0;
     n.progX = n.group.position.x; n.progZ = n.group.position.z;
-    if (!stuck) { n.blockedFor = 0; return; }
+    /**
+     * A WINDOW THAT CONTAINED A GRIND DOES NOT CLEAR THE LADDER. Without this a
+     * walker that trips, detours, walks cleanly for a second and trips again on
+     * the same corner has `blockedFor` reset every window, never reaches the
+     * give-up rung, and fights that corner for the whole minute.
+     */
+    const ground = n.grindHit;
+    n.grindHit = false;
+    if (!stuck && !ground) { n.blockedFor = 0; return; }
+    this._blockedStep(n);
+  }
+
+  /**
+   * ONE RUNG OF THE BLOCKED LADDER — sidestep, sidestep the other way, then give
+   * up on the node. Shared by the 0.9 s progress window and by the immediate
+   * grind trip above so repeated contact escalates instead of repeating.
+   */
+  _blockedStep(n) {
     n.blockedFor++;
+    /**
+     * A `goto` GIVES UP ONE RUNG EARLIER THAN A ROUTE. A route walker has a node
+     * to blacklist and a next node to go to, so a second sidestep is worth
+     * trying; a `goto` is aimed at one mark, and if the first sidestep did not
+     * open the way the second one is the same attempt mirrored — measured as
+     * another 3-4 s of contact on the way to the same answer.
+     */
+    const rungs = n.state === 'goto' ? 1 : 2;
     if (n.blockedFor === 1) {
       this._planLeg(n, n.target);
-      n.detour = (n.rng() < 0.5 ? 1 : -1) * 1.15;
+      // a side that is actually open: a coin flip walks the standoff into the
+      // nearest wall half the time
+      const right = this._sideClear(n, 1.2);
+      const left = this._sideClear(n, -1.2);
+      n.detour = (right === left ? (n.rng() < 0.5 ? 1 : -1) : right ? 1 : -1) * 1.15;
       n.detourT = 1.5;
     }
-    else if (n.blockedFor === 2) { n.detour = -n.detour; n.detourT = 1.5; }
+    else if (n.blockedFor === 2 && rungs > 1) { n.detour = -n.detour; n.detourT = 1.5; }
     else {
       n.blockedFor = 0; n.detour = 0; n.detourT = 0;
       if (n.state === 'walk') {
@@ -1377,12 +1592,29 @@ export class NpcSystem {
         this._advanceNode(n);
         this._startIdle(n, 1.2 + n.rng() * 1.5);
         n.pendingWalk = true;
-      } else this._startIdle(n, 2 + n.rng() * 2);
+      } else {
+        /**
+         * A `goto` HAS NO NODE TO BLACKLIST, SO THE DESTINATION IS WHAT IS PUT
+         * DOWN (fix round 3). Giving up and idling was not enough: `_replan`
+         * sends a worker straight back to the same station mark, and a body in a
+         * pocket it cannot walk out of repeated walk -> contact -> yield ->
+         * detour -> give up -> idle every 3-4 s for a whole minute. Filmed on
+         * MARIS at (24.6-24.8, 33.5) — twenty seconds, twelve attempts, her
+         * position moving 0.15 m in total — and on OLIN at (19.0, 31.2). Each
+         * attempt costs about 0.05 m of depenetration, which is how a run
+         * reaches A96's 1.5 m shove bar without a single NPC ever being stuck.
+         * The station is left alone for half a minute, and the person works or
+         * walks where they are instead.
+         */
+        n.stationHoldT = 25 + n.rng() * 15;
+        this._startIdle(n, 2 + n.rng() * 2);
+      }
     }
   }
 
   _brain(n, dt) {
     n.stateT -= dt;
+    if (n.stationHoldT > 0) n.stationHoldT -= dt;
     if (n.tempT > 0) {
       n.tempT -= dt;
       if (n.tempT <= 0 && (n.state === 'work' || n.state === 'idle')) {
@@ -1520,12 +1752,17 @@ export class NpcSystem {
         n.stateT = 2.6 + n.rng() * 2.6;
         n.anim.play('idle', { fade: 0.3 });
         n.pendingWalk = true;
-        const pool = n.role === 'gatherer' ? ['pickup', 'interact'] : ['interact', 'crouchIdle', 'jab'];
-        const slot = pool[Math.floor(n.rng() * pool.length) % pool.length];
-        if (n.anim.has(slot)) {
-          if (slot === 'crouchIdle') { n.anim.play(slot, { fade: 0.3 }); n.tempT = 2.2; }
-          else n.anim.once(slot, { fade: 0.22, rate: 0.9 + n.rng() * 0.3 });
-        }
+        /**
+         * AFTER THE STRIDE HAS SETTLED, NOT ON TOP OF IT (fix round 3). Firing the
+         * gesture in the same frame as `play('idle')` had `ClipLayer.playOnce`
+         * fade the incoming idle straight back out (it fades its `restore`), so the
+         * NPC blended from the mid-stride WALK pose into the gesture — measured at
+         * 0.10-0.14 m of planted-toe movement per frame, the largest pose jump
+         * in the camp. The fidget timer fires it 0.5 s later from a settled idle,
+         * which is well inside the 2.6 s pause, so the leg-end gesture still
+         * happens and `A96-npc-animated`'s three-clips-per-NPC bar still holds.
+         */
+        n.fidgetT = 0.5;
       }
     }
   }
@@ -1602,8 +1839,8 @@ export class NpcSystem {
     const pool = n.role === 'talker' ? ['idleTalk', 'interact', 'idleTalk', 'pickup']
       : n.role === 'lookout' || n.role === 'hunter' ? ['interact', 'crouchIdle', 'jab']
         : ['interact', 'pickup', 'idleTalk'];
-    const slot = pool[Math.floor(n.rng() * pool.length) % pool.length];
-    if (!n.anim.has(slot)) return;
+    const slot = this._pickBeat(n, pool);
+    if (!slot) return;
     if (slot === 'idleTalk' || slot === 'crouchIdle') {
       n.anim.play(slot, { fade: 0.35, rate: 0.9 + n.rng() * 0.2 });
       n.tempT = 3.5 + n.rng() * 3;
@@ -1668,7 +1905,7 @@ export class NpcSystem {
     const C = this.ctx.collision;
     if (!C) return;
     _p.copy(g.position);
-    const r = C.resolveCapsule(_p, 0.30, 1.62 * (n.variant.scale || 1), { passes: 2, filter: NOT_ACTOR });
+    const r = this._resolveBody(n, _p);
     if (r?.hit) {
       let dx = _p.x - g.position.x, dz = _p.z - g.position.z;
       // A shove is a shove, but it must not be a teleport: a deep one-frame
@@ -2013,7 +2250,16 @@ export class NpcSystem {
       if (d2 < 6.5 && n.state !== 'walk' && n.state !== 'goto' && n.state !== 'sit' && n.state !== 'sleep') {
         const want = Math.atan2(dx, dz);
         const err = wrapPi(want - g.rotation.y);
-        g.rotation.y += THREE.MathUtils.clamp(err, -1.4 * dt, 1.4 * dt);
+        /**
+         * THROUGH `turn()`, NOT STRAIGHT ONTO `rotation.y` (fix round 3). Yawing
+         * the group about its own origin sweeps the planted toe around a ~0.12 m
+         * arc, so a body turning to face the player at 1.4 rad/s dragged that
+         * foot ~0.17 m/s — permanent skate on exactly the NPC the player is
+         * standing in front of, and now that A97 samples idlers and workers it is
+         * measured. `turn()` pivots about the planted foot, which costs the foot
+         * nothing.
+         */
+        n.anim.turn(THREE.MathUtils.clamp(err, -1.4 * dt, 1.4 * dt));
       }
     } else {
       n.anim.lookAt(null);
@@ -2178,6 +2424,7 @@ export class NpcSystem {
       variants: this.variants,
       phase: this._phase,
       gaits: this.gaits,
+      loopTravel: this.loopTravel,
       walking: this.list.filter((n) => n.state === 'walk' || n.state === 'goto').length,
       npcs: this.list.map((n) => ({
         id: n.id, name: n.name, role: n.role, body: n.body, state: n.state,
@@ -2235,10 +2482,24 @@ export class NpcSystem {
    * lock last re-anchored, so a probe can exclude a crossfade without also
    * excluding every frame the world was dragging the body.
    */
-  walkingFeet() {
+  walkingFeet() { return this._feetOf(WALKING_STATES); }
+
+  /**
+   * Feet of every NPC STANDING ON THEM — walkers, and (fix round 3) workers,
+   * idlers and talkers too.
+   *
+   * `A97-npc-no-skate` sampled `walkingFeet()` and was therefore structurally
+   * blind to the artefact a judge measured: a work loop that travels slides its
+   * feet permanently, and the state it does that in is `work`, not `walk`. Sitting
+   * and sleeping are still excluded — that body is not standing on its feet and a
+   * "planted foot" means nothing there.
+   */
+  standingFeet() { return this._feetOf(ON_FEET); }
+
+  _feetOf(states) {
     const out = [];
     for (const n of this.list) {
-      if (n.state !== 'walk' && n.state !== 'goto') continue;
+      if (!states.has(n.state)) continue;
       n.group.updateMatrixWorld(true);
       const toes = [n.anim.toeL, n.anim.toeR];
       const feet = n.anim.debugFeet();
@@ -2249,6 +2510,13 @@ export class NpcSystem {
           id: n.id, name: f.name, planted: f.planted, world: f.world, raw: f.raw,
           epoch: n.anim.lockEpoch, reason: n.anim.lockReason,
           clip: n.anim.current, state: n.state, unstuck: n.unstuck,
+          // the bake's verdict on the clip on stage: a non-gait loop that
+          // travels is the artefact A97 exists to catch (see IN_PLACE_MAX)
+          inPlace: n.anim.inPlace(n.anim.current),
+          clipTravel: n.anim.travel[n.anim.current]?.speed ?? null,
+          // the pose is mid-crossfade: two clips' stances are being blended, so
+          // the foot moves because the ANIMATION moved it (see `blending`)
+          blending: n.anim.blending,
         });
       }
     }

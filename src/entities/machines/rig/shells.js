@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
+import { invalidateShadowCasters } from './lod.js';
 
 /**
  * Procedural plate / muscle KITBASH SHELLS — decision **D3(a)** and finding
@@ -375,6 +376,11 @@ export function buildShell(machine, builder, opts = {}) {
   }
   if (opts.hideSculpt) hideSculpt(machine);
   machine._shell = { meshes, pieces: count, tris: Math.round(tris), hidSculpt: !!opts.hideSculpt };
+  // A SHELL IS THE MACHINE'S SILHOUETTE, so the shadow-caster ranking that was
+  // taken before it existed is wrong (fix round 3). The Redeye builds its shell
+  // AFTER `super()` has already folded the Watcher, so this is the only hook
+  // that catches it.
+  invalidateShadowCasters(machine);
   return machine._shell;
 }
 
@@ -414,6 +420,8 @@ export function hideSculpt(machine) {
   // retire that lands after a set was built would not invalidate it.
   try { machine.ctx?.hitHulls?.dispose?.(machine); } catch (e) { /* not built yet */ }
   machine._sculptHidden = hidden;
+  // a retired donor must never be ranked as a caster again (fix round 3)
+  invalidateShadowCasters(machine);
   return { hidden, kept };
 }
 

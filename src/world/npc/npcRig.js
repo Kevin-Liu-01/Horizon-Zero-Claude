@@ -86,6 +86,13 @@ export const NPC_CLIPS = {
   interact: 'Interact',
   pickup: 'PickUp_Table',
   fixing: 'Fixing_Kneeling',
+  /**
+   * KEPT AS A SLOT, NEVER PLAYED. `Push_Loop` travels 0.3565 m/s with no air
+   * path, and only GAIT slots drive the body, so as a work loop it was pure
+   * foot slide (see `IN_PLACE_MAX` in npcAnim.js). It stays in the table so the
+   * boot-time bake measures it and `play()` can refuse it by name rather than by
+   * its absence — put it back in a pool and the console says why it will not run.
+   */
   push: 'Push_Loop',
   dance: 'Dance_Loop',
   swordIdle: 'Sword_Idle',

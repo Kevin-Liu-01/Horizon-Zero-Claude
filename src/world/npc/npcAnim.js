@@ -43,6 +43,32 @@ const _q = new THREE.Quaternion();
 const GAIT = new Set(['walk', 'walkFormal', 'jog']);
 
 /**
+ * A NON-GAIT BASE LOOP HAS TO STAND STILL, AND "STILL" IS MEASURED
+ * (fix round 3, judge finding "permanent visible foot skate on working NPCs").
+ *
+ * Root motion is integrated for `GAIT` slots only. Put any OTHER clip on stage
+ * as the base loop and the body is held while the clip's feet keep travelling —
+ * which is not a subtle artefact, it is a person moonwalking on the spot for as
+ * long as the loop plays. `Push_Loop` is exactly that clip: measured on this rig,
+ * **0.9507 m of support-foot travel per 2.667 s cycle = 0.3565 m/s = 21.4 m of
+ * ground a minute**, with its lowest foot never more than 0.0141 m off the floor
+ * — i.e. a shuffle with NO AIR PATH AT ALL, so every centimetre of it is slide.
+ * Two roster rows carried it, which is the ~40 m/min a judge measured while
+ * `A97-npc-no-skate` sampled walkers only and could not see any of it.
+ *
+ * So every slot this lane can stage now gets the SAME cycle-distance bake the
+ * gaits get (`measureLoopTravel`), and `play()` refuses a non-gait base loop that
+ * does not measure in place. The bar is metres of ground per second of clip, and
+ * the library splits cleanly around it: after `Push_Loop` (0.3565) the worst
+ * non-gait loop in the pack is `Dance_Loop` at 0.0055, sixty-five times under it, and
+ * every loop this lane actually plays measures 0.0018 or less.
+ */
+export const IN_PLACE_MAX = 0.05;
+
+/** Slots warned about once (a refused base loop must not spam the console). */
+const _refused = new Set();
+
+/**
  * Hard ceiling on the procedural hips->head tilt, in radians (6.9 degrees).
  * Real standing posture varies inside about this much; anything more is a
  * person with a back injury, and no gate number is worth that on film.
@@ -53,16 +79,25 @@ export const LEAN_CAP = 0.12;
 const CORE_SLOTS = ['idle', 'walk'];
 
 let _gaitCache = null;
+let _travelCache = null;
 
 /**
- * Measure a locomotion clip's nominal speed the same way the runtime lock
- * works: integrate the support foot's backward travel over one loop. Done once
- * per boot on a throwaway skeleton — never on a live NPC.
+ * Measure a clip's nominal ground travel the same way the runtime lock works:
+ * integrate the support foot's backward travel over one loop, and record how far
+ * off the floor the LOWER foot ever gets — a locomotion clip lifts a foot, a
+ * shuffle does not, and the difference is what tells a gait from pure slide.
+ *
+ * ONE bake for the whole library (fix round 3). The gaits used to be measured on
+ * their own and every other loop was simply assumed to be in place, which is how
+ * `Push_Loop` shipped as a work loop. Now every slot this lane can stage is
+ * measured, once per boot, on ONE throwaway skeleton — never on a live NPC, and
+ * with the skeleton and the mixer released at the end (no second instantiate,
+ * nothing retained).
  */
-export function measureGaits(rigSource, slots = ['walk', 'walkFormal', 'jog']) {
-  if (_gaitCache) return _gaitCache;
+export function measureLoopTravel(rigSource, slots = Object.keys(NPC_CLIPS)) {
+  if (_travelCache) return _travelCache;
   const out = {};
-  const { root, byName } = rigSource.instantiate();
+  const { root, skeleton, byName } = rigSource.instantiate();
   const holder = new THREE.Group();
   holder.add(root);
   const mixer = new THREE.AnimationMixer(holder);
@@ -75,7 +110,7 @@ export function measureGaits(rigSource, slots = ['walk', 'walkFormal', 'jog']) {
     action.reset(); action.play(); action.weight = 1;
     const N = 60;
     const step = clip.duration / N;
-    let travel = 0, support = null, prev = 0;
+    let travel = 0, support = null, prev = 0, air = 0;
     for (let i = 0; i <= N; i++) {
       mixer.setTime(i * step);
       holder.updateMatrixWorld(true);
@@ -85,6 +120,7 @@ export function measureGaits(rigSource, slots = ['walk', 'walkFormal', 'jog']) {
       const z = low === 'L' ? lz : rz;
       if (low === support) travel += Math.max(0, prev - z);
       support = low; prev = z;
+      air = Math.max(air, Math.min(ly, ry));
     }
     action.stop();
     mixer.uncacheAction(clip);
@@ -92,15 +128,34 @@ export function measureGaits(rigSource, slots = ['walk', 'walkFormal', 'jog']) {
       duration: clip.duration,
       cycleDist: +travel.toFixed(4),
       speed: +(travel / Math.max(1e-4, clip.duration)).toFixed(4),
+      // highest the LOWER foot ever gets: a gait's air path, ~0.0146 m (the
+      // rig's floor offset) for anything that never takes a foot off the ground
+      lowFootMaxY: +air.toFixed(4),
     };
   }
   mixer.uncacheRoot(holder);
   holder.clear();
+  // the throwaway rig never reached a renderer, but releasing it is free and
+  // keeps the boot-time bake off this lane's memory ledger for good
+  skeleton?.dispose?.();
+  _travelCache = out;
+  return out;
+}
+
+/**
+ * The locomotion subset of the same bake — `gaitSpeed()` and the root-motion
+ * integrator read this, and only slots in `GAIT` may appear in it.
+ */
+export function measureGaits(rigSource, slots = [...GAIT]) {
+  if (_gaitCache) return _gaitCache;
+  const all = measureLoopTravel(rigSource);
+  const out = {};
+  for (const slot of slots) if (all[slot]) out[slot] = all[slot];
   _gaitCache = out;
   return out;
 }
 
-export function resetGaitCache() { _gaitCache = null; }
+export function resetGaitCache() { _gaitCache = null; _travelCache = null; _refused.clear(); }
 
 export class NpcAnimator {
   /**
@@ -120,6 +175,12 @@ export class NpcAnimator {
     this.current = null;             // the base loop slot on stage
     this.clipsPlayed = new Set();
     this.gaits = measureGaits(rigSource);
+    /**
+     * Measured ground travel of EVERY slot this lane can stage, not just the
+     * gaits — `inPlace()` and `play()`'s refusal read it. Shared, cached, baked
+     * once per boot (see `measureLoopTravel` and `IN_PLACE_MAX`).
+     */
+    this.travel = measureLoopTravel(rigSource);
 
     for (const s of CORE_SLOTS) this._slot(s);
     this.layers.base('idle');
@@ -132,6 +193,8 @@ export class NpcAnimator {
     this.toeR = byName.get(B.toeR);
     this.footL = byName.get(B.footL);
     this.footR = byName.get(B.footR);
+    /** frames the pose is still being crossfaded — see `blending` */
+    this._blendHold = 0;
     this.support = null;             // 'L' | 'R'
     this._prevLocal = new THREE.Vector3();
     this._supportWorld = new THREE.Vector3();
@@ -355,13 +418,75 @@ export class NpcAnimator {
   has(slot) { return !!(this.slots.get(slot) || this.src.clip(NPC_CLIPS[slot] || slot)); }
 
   /**
+   * Does this slot's clip stand still? MEASURED, not asserted — see
+   * `IN_PLACE_MAX`. A slot with no measurement is treated as travelling: the
+   * safe direction, and unreachable in practice because `_slot()` only ever
+   * builds a layer for a clip the bake also saw.
+   */
+  inPlace(slot) {
+    const t = this.travel[slot];
+    return !!t && t.speed <= IN_PLACE_MAX;
+  }
+
+  /**
    * Crossfade the base loop to `slot`. `rate` scales playback (and, for a
    * locomotion loop, the travel speed — the foot lock keeps step).
    */
   play(slot, { fade = 0.28, rate = 1 } = {}) {
+    /**
+     * A TRAVELLING CLIP CANNOT BE A STATIONARY BASE LOOP (fix round 3).
+     *
+     * Only `GAIT` slots drive the body, so any other base loop with real cycle
+     * travel skates its feet for as long as it is on stage. That is refused
+     * here rather than only in the pools that pick the slot, so a future edit
+     * dropping `Push_Loop` (0.3565 m/s, no air path) back into a work pool
+     * cannot re-introduce the artefact silently. See `IN_PLACE_MAX`.
+     */
+    if (!GAIT.has(slot) && !this.inPlace(slot)) {
+      if (!_refused.has(slot)) {
+        _refused.add(slot);
+        console.warn(`[npc] "${NPC_CLIPS[slot] || slot}" travels `
+          + `${this.travel[slot]?.speed ?? '?'} m/s and is not a gait — refused as a `
+          + 'base loop (it would slide the feet); playing idle instead');
+      }
+      slot = 'idle';
+    }
     if (this.current === slot && Math.abs((this.slots.get(slot)?.action.timeScale ?? 1) - rate) < 1e-3) return this;
     const next = this._slot(slot);
     if (!next) return this;
+    /**
+     * A BASE LOOP REPEATS, EVEN WHEN THE CLIP IS ONE-SHOT-SHAPED (fix round 3).
+     *
+     * Half this lane's rest and work loops are gestures — `Interact`,
+     * `PickUp_Table`, `Fixing_Kneeling` — and they used to be staged as a
+     * play-once that clamped on its last frame, so a worker "working" was a
+     * person frozen mid-reach for five seconds. Two reasons that is wrong:
+     *
+     *  - it is a still pose where Kevin asked for idle movement, and a repeat of
+     *    a 0.8 s pick-up or a 5.2 s repair reads as continuous labour;
+     *  - `ClipLayer.stuck()` reports a NON-LOOPING layer that still carries weight
+     *    with a target of 0 as "weight held after restore", which is the exact
+     *    shape of crossfading OUT of one of these — the layer is not stuck, it is
+     *    leaving the stage. A96 fails the build on a `stuck()` report and sampled
+     *    one on OLIN's `interact` mid-fade; with two non-looping rest clips in a
+     *    pool that flake is worth several percent of runs.
+     *
+     * A one-shot is unaffected: `ClipLayer.playOnce` sets `LoopOnce` itself and
+     * owns the layer until it hands the stage back, and this only ever runs when
+     * a slot is taking the stage as the BASE loop.
+     */
+    if (!next.loop) {
+      next.loop = true;
+      next.oneShot = false;
+      next.restore = null;
+      next.action.setLoop(THREE.LoopRepeat, Infinity);
+      next.action.clampWhenFinished = false;
+      // a clip that clamped at its last frame is PAUSED by three, and switching
+      // the loop mode does not wake it: a paused action is a frozen person
+      next.action.enabled = true;
+      next.action.paused = false;
+      if (next.action.time >= next.duration - 1e-3) next.action.time = 0;
+    }
     const prev = this.current ? this.slots.get(this.current) : null;
     next.action.timeScale = rate;
     /**
@@ -387,10 +512,15 @@ export class NpcAnimator {
     }
     if (prev && prev !== next) prev.fadeTo(0, fade);
     next.fadeTo(1, fade);
-    // a loop coming on from off-stage starts at THIS person's phase (see
-    // `phaseFrac`); one-shot-shaped clips always read from the top
-    if (!next.loop) { next.action.reset(); next.action.play(); }
-    else if (wasOff && this.phaseFrac !== undefined && !this._phased.has(slot)) {
+    /**
+     * A loop coming on from off-stage starts at THIS person's phase (see
+     * `phaseFrac`). There used to be a branch above this one that reset a
+     * one-shot-shaped clip to the top instead; it is gone because a base loop is
+     * now always a repeat (see the `!next.loop` block at the head of this
+     * method), which means the gesture clips get the phase seed too — thirteen
+     * people picking things up are no longer doing it in unison.
+     */
+    if (wasOff && this.phaseFrac !== undefined && !this._phased.has(slot)) {
       /**
        * ONCE PER LAYER, not once per play(). A loop keeps its clock, so seeding
        * it the first time it takes the stage separates this person from the
@@ -414,14 +544,91 @@ export class NpcAnimator {
 
   /** Fire a one-shot over the current base loop; it restores on mixer time. */
   once(slot, { fade = 0.22, rate = 1, hold = 0, onDone = null } = {}) {
+    // same rule as `play()`: a one-shot poses the body over the base loop, so a
+    // one-shot that travels slides the feet too. Refused, not substituted — a
+    // fidget that cannot be played is simply not played.
+    if (!GAIT.has(slot) && !this.inPlace(slot)) return null;
+    /**
+     * A LAYER CANNOT BE ITS OWN BASE AND ITS OWN ONE-SHOT (fix round 3).
+     *
+     * `ClipLayer.playOnce` sets the layer's weight to 0, fades it to 1, and then
+     * fades its `restore` layer to 0. When `restore` IS this layer — which is
+     * what happens whenever a work beat draws the slot already on stage, and the
+     * pools overlap `idleClip` by design — that second fade overwrites the first
+     * and the layer sits at zero. `ClipLayerSet` only normalizes when the override
+     * weights sum above 1e-6, so with the only weighted layer at zero the mixer
+     * blends every bone toward its BIND value: the NPC snaps to the T-pose for the
+     * length of the beat.
+     *
+     * Measured on 5218 before this guard: OLIN, THOK and TEB each jumping 0.19-0.33 m
+     * of planted toe in a SINGLE frame at `work`, with `_slot` weights reading
+     * `pickup:0.08(1s)` and, on the collapse frame, nothing at all on stage.
+     * A97 could not see it before this round because it sampled walkers only.
+     *
+     * A one-shot of the loop already playing is a no-op by definition, so it is
+     * simply refused, and `_workBeat` picks another beat.
+     */
+    if (slot === this.current) return null;
     const l = this._slot(slot);
     if (!l) return null;
     this.clipsPlayed.add(NPC_CLIPS[slot] || slot);
+    /**
+     * A ONE-SHOT IS A POSE CHANGE, SO THE FOOT LOCK RE-ANCHORS (fix round 3).
+     * `play()` has always done this and `once()` never did, yet both replace what
+     * is on stage: carrying the lock's character-space reference across the blend
+     * charges the pose difference between the two clips to root motion and lurches
+     * the body. Same bump, same epoch, so a probe can tell a blend from a shove.
+     */
+    this._have = false;
+    this.lockEpoch++;
+    this.lockReason = 'blend';
+    /**
+     * ONE ONE-SHOT ON STAGE AT A TIME (fix round 3).
+     *
+     * `playOnce` does not clear other one-shots the way `play()` clears other base
+     * loops, so two overlapping beats both sat at weight 1 and `ClipLayerSet`'s
+     * normalization served a 50/50 MUSH of two clips nobody authored. Filmed on
+     * TEB at the tanning frame: `Fixing_Kneeling` and `Interact` both at 1.00 for
+     * 4 s, a half-kneel whose rear foot lifted 0.134 m while the support choice
+     * still called it planted, and 0.224 m of "planted" toe travel in 0.35 s —
+     * the worst single number left in A97 after the push clip went.
+     *
+     * The incoming beat owns the stage: anything still one-shotting is cancelled
+     * over the same fade (which hands its own restore back cleanly).
+     */
+    for (const other of this.slots.values()) {
+      if (other === l || !other.oneShot || other.handedBack) continue;
+      /**
+       * FADED OUT, NOT `cancel()`ed. `ClipLayer.cancel` clears the one-shot flag
+       * and schedules the fade, and a NON-LOOPING layer with weight still up and
+       * target 0 is precisely what `ClipLayer.stuck()` calls "weight held after
+       * restore" — every one of this lane's beat clips is non-looping, so a cancel
+       * left a false `stuck()` report standing for the length of the fade, and
+       * `A96-npc-animated` fails the build on one (it cost a run out of ten).
+       * Leaving the flag set keeps the layer's own timeline responsible for the
+       * clean exit, which is exactly what `play()` does with a live one-shot.
+       */
+      other.restore = null;
+      other.fadeTo(0, fade);
+    }
     return l.playOnce({
       restore: this.current ? this.slots.get(this.current) : null,
       fade, timeScale: rate, hold, onDone,
     });
   }
+
+  /**
+   * IS THE POSE BEING CROSSFADED RIGHT NOW?
+   *
+   * True while any layer's fade is still running — a base-loop change resolving,
+   * a one-shot blending in, or a one-shot handing the stage back. Two clips with
+   * different stances put the planted foot in different places, so the foot moves
+   * during the blend however honestly the body is driven; `A97-npc-no-skate`
+   * excludes those windows (it already excluded the base-change case and had no
+   * way to see the other two) and reports them separately so the exclusion is
+   * visible rather than silent.
+   */
+  get blending() { return this._blendHold > 0; }
 
   /** Is a one-shot currently holding the stage? */
   get busy() {
@@ -442,6 +649,24 @@ export class NpcAnimator {
   turn(dYaw) {
     if (!dYaw) return;
     const g = this.group;
+    /**
+     * ONLY A GAIT PIVOTS ABOUT THE FOOT — AND THAT IS DELIBERATE (fix round 3).
+     *
+     * Extending the pivot to stationary loops was tried, because a yaw about the
+     * body origin does sweep the planted toe around a ~0.12 m arc. It was
+     * measured and rejected: pivoting about the foot MOVES THE BODY ORIGIN, and
+     * for a body that the crowd logic believes is standing still that is a
+     * translation nothing accounts for — `_dodge` predicts closest approach from
+     * each body's NOMINAL GAIT SPEED, and a yielding body turning at 2.4 rad/s
+     * about a foot 0.12 m away travels 0.29 m/s while reading as stationary.
+     * A96's pairwise separation went from 0.656 m (0 frames under the 0.55 m bar)
+     * to 0.093 m with 226 frames under it, two walkers merged.
+     *
+     * The arc it was meant to remove is small enough to measure: with the pivot
+     * off, A97's worst CLEAN drift on working and idling NPCs is 0.017-0.019 m
+     * against the 0.08 m bar. So the body origin stays put for a stationary loop,
+     * and the crowd keeps the guarantee it is built on.
+     */
     const pivot = this._have && this.rootMotion;
     if (pivot) {
       const f = this._supportWorld;
@@ -476,6 +701,22 @@ export class NpcAnimator {
    * @returns {{x:number,z:number}} the world XZ the foot lock moved the body by
    */
   update(dt) {
+    /**
+     * LATCH THE CROSSFADE FLAG, AND HOLD IT ONE FRAME PAST THE END.
+     *
+     * A fade still changes the pose on the frame it reaches zero, and a probe
+     * that reads the flag AFTER this update would see `fadeT === 0` on exactly
+     * that frame and call it clean — measured at 0.063 m of planted-toe movement
+     * with the stage reading `idle:1.00` and the body untouched. Checked before
+     * the layers step, held for one frame after, no allocation.
+     */
+    // indexed over the layer set's own array, not `slots.values()`: this runs
+    // thirteen times a frame and a Map iterator is an allocation
+    let fading = false;
+    const O = this.layers.order;
+    for (let i = 0; i < O.length; i++) if (O[i].fadeT > 0) { fading = true; break; }
+    this._blendHold = fading ? 2 : Math.max(0, this._blendHold - 1);
+
     // hand the mixer back the pose it last authored (see `_bias`)
     const bias = this._bias;
     for (let i = 0; i < bias.length; i++) bias[i].bone.quaternion.copy(bias[i].q);

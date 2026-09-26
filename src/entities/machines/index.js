@@ -646,11 +646,21 @@ export class Machines {
     // through an idle Aloy) and along the whole BODY, not just the center:
     // long machines are treated as a capsule (rear / center / snout spheres,
     // spaced by standoffHalfLen) so snouts and tails can't sweep through her.
+    /* `meleeStandoffHalfLen` is the melee approach term, published by
+     * `Collision._meleeStandoff` on the ONE machine Aloy currently has selected
+     * with her spear drawn (null on every other machine and at every other
+     * time). THIS LOOP IS ITS ONLY CONSUMER, and it has to be: the loop and the
+     * player's blocking capsule are two halves of the same standoff, so if the
+     * capsule lets her closer and this does not, every melee approach shoves
+     * the machine instead of stopping her (gate A25, and A106 measures the
+     * drawn-spear case A25 cannot see). Everything that reads the machine's
+     * GEOMETRY — strider/behemoth charge reach, the Silent Strike prompt —
+     * keeps `standoffHalfLen` itself, which this term never writes. */
     if (p) {
       for (const m of this.list) {
         if (!m.alive || m._disposed || m.mountedBy) continue;
         const min = m.bodyRadius + 0.6;
-        const L = m.standoffHalfLen ?? 0;
+        const L = m.meleeStandoffHalfLen ?? m.standoffHalfLen ?? 0;
         const fx = Math.sin(m.heading), fz = Math.cos(m.heading);
         for (let s = -1; s <= 1; s++) {
           const off = s * L;

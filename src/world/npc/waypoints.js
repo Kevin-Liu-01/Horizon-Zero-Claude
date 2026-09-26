@@ -116,10 +116,18 @@ export const ROUTES = {
  */
 /**
  * `idleClip` is the loop this person falls back to when it has nothing to do —
- * the smith leans on his push, the lookout drops into a crouch, the trader
+ * the smith kneels over his repairs, the lookout drops into a crouch, the trader
  * talks with her hands. Thirteen people all playing `Idle_Loop` is what makes
  * a crowd read as one actor thirteen times, and it is what `V35-settlement`
  * measures pairwise.
+ *
+ * EVERY SLOT NAMED HERE MUST MEASURE IN PLACE (fix round 3). Only `GAIT` slots
+ * drive the body, so a rest or work loop that carries real cycle travel plays
+ * with the feet sliding. `Push_Loop` did: 0.3565 m/s of support-foot travel and
+ * no air path at all, which is where the ~40 m/min of permanent skate a judge
+ * measured on THOK and OLIN came from. Both rows now name loops the boot-time
+ * bake measures at 0.0010 m/s or less, and `NpcAnimator.play()` refuses anything
+ * that does not — see `IN_PLACE_MAX` in npcAnim.js.
  *
  * `scale` is a per-person multiplier ON TOP of the build's own. Two hunters of
  * the same build are not the same height, and the crowd reads flatter when they
@@ -186,14 +194,14 @@ export const ROSTER = [
     id: 'olin', name: 'OLIN', title: 'Gatherer', body: 'slight', role: 'gatherer',
     hairStyle: 'braid', hair: '#8b7048', skin: '#dcb595', cloth1: '#5b7a4a', cloth2: '#a8763c', leather: '#463020', accent: '#7d2f2f', fur: '#cdbda2',
     outfit: { wraps: true },
-    scale: 1.055, idleClip: ['push', 'interact'], gear: ['basket'], route: 'westLane', station: 'rackA', speed: 0.92,
+    scale: 1.055, idleClip: ['pickup', 'interact'], gear: ['basket'], route: 'westLane', station: 'rackA', speed: 0.92,
     lines: ['Berries by the west wall, if the birds leave any.'],
   },
   {
     id: 'thok', name: 'THOK', title: 'Smith', body: 'broad', role: 'worker',
     hairStyle: 'bald', hair: '#1d1310', beard: true, skin: '#8e6244', cloth1: '#3a2c1e', cloth2: '#96502f', leather: '#2e2218', accent: '#b58a3a', fur: '#7e7260',
     outfit: { apron: true, skirt: false, pauldron: 'left' },
-    scale: 0.98, idleClip: ['push', 'fixing'], gear: ['hammer'], station: 'woodPile', standOff: 1.4, work: 'push',
+    scale: 0.98, idleClip: ['fixing', 'interact'], gear: ['hammer'], station: 'woodPile', standOff: 1.4, work: 'fixing',
     lines: ['Bring me metal shards and I will bring you arrowheads.'],
   },
   {

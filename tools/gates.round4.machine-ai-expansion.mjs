@@ -980,14 +980,73 @@ export const GATES = [
         if (others.length && slotted.length !== others.length) {
           fails.push('convoy: ' + slotted.length + ' of ' + others.length + ' escorts closed ranks on the carrier');
         }
-        for (const m of living) m.suspicion = 0;
         /**
-         * ...and put back the TRANSIENT escort anchor _updateConvoys just
-         * wrote onto every non-carrier. It is combat state, not a ring slot,
-         * and leaving it standing would make section 8's escort count read a
-         * machine that has no remembered ring to come back to.
+         * ...AND THE COLUMN COMES BACK, FIVE FIGHTS RUNNING (residue round,
+         * finding 1).
+         *
+         * This block used to end by scrubbing the transient anchor off every
+         * non-carrier by hand — 'put back the escort anchor _updateConvoys
+         * just wrote' — and section 8 then read a world the GATE had cleaned.
+         * The scrub was the only thing clearing it: in play the anchor stood
+         * for ever, and because Machine._statePatrol tries 'escort' before
+         * 'convoy', one fight permanently replaced the in-file column with an
+         * orbit of the spot the carrier happened to be standing on. Measured
+         * on the pre-fix tree, fight -> calm -> 60 s x5: escort owned the
+         * patrol frame in 5 of 5 cycles, anchored at (232.0, 23.8) every time.
+         *
+         * So the scrub is gone and the release is asserted instead, through
+         * the real Squads.update path, five whole episodes in a row: after the
+         * calm window the transient anchor must be off (a DELIBERATE ring, if
+         * the member has one, must be back), and Squads.stepConvoy must be the
+         * branch that owns the frame again. stepConvoy is probed with the pose
+         * saved and restored, so the observation leaves no residue of its own.
          */
-        for (const m of others) if (!(m._site && m._site.opts.escort)) m.escort = null;
+        const Sq = S.constructor;
+        const patrolOwner = (m) => (m.scavenge ? 'scavenge' : m.escort ? 'escort'
+          : m.convoy ? 'convoy' : 'waypoint');
+        const cycles = [];
+        for (let cyc = 0; cyc < 5; cyc++) {
+          const alive = convoy.members.filter(m => m.alive && !m._disposed);
+          const esc = alive.filter(m => m !== convoy.carrier);
+          for (const m of alive) m.suspicion = 0.9;
+          for (let i = 0; i < 20; i++) S._updateConvoys(0.1);          // 2 s of fight
+          const heldRing = esc.filter(m => patrolOwner(m) === 'escort').length;
+          const anchorAt = esc.map(m => (m.escort ? [+m.escort.x.toFixed(1), +m.escort.z.toFixed(1)] : null));
+          for (const m of alive) m.suspicion = 0;
+          for (let i = 0; i < 600; i++) S._updateConvoys(0.1);         // 60 s of calm
+          const owners = esc.map(patrolOwner);
+          const inFile = esc.map((m) => {
+            if (m === convoy.carrier) return true;                     // walks its own route
+            const pos = m.position.clone(), h = m.heading, sp = m._speed;
+            const owned = Sq.stepConvoy(m, 1 / 60);
+            m.position.copy(pos); m.heading = h; m._speed = sp;
+            return owned;
+          });
+          const ringBack = esc.map(m => !(m._site && m._site.opts.escort) || m.escort === m._site.opts.escort);
+          cycles.push({ cyc, escorts: esc.length, heldRingInFight: heldRing, anchorAt,
+            alarmedAfterCalm: convoy.alarmed, ownerAfterCalm: owners,
+            inFileColumnForms: inFile, deliberateRingRestored: ringBack });
+          if (esc.length && heldRing !== esc.length) {
+            fails.push('convoy: cycle ' + cyc + ' — ' + heldRing + ' of ' + esc.length
+              + ' escorts took the ring on alarm');
+          }
+          if (convoy.alarmed) fails.push('convoy: cycle ' + cyc + ' — still alarmed 60 s after the fight');
+          const stuck = owners.filter(o => o === 'escort').length;
+          if (stuck) {
+            fails.push('convoy: cycle ' + cyc + ' — ' + stuck + ' of ' + esc.length
+              + ' escorts are STILL holding the fight ring 60 s after the convoy calmed, at '
+              + JSON.stringify(anchorAt) + '. Machine._statePatrol tries escort before convoy, '
+              + 'so the transient anchor permanently replaces the in-file column');
+          }
+          if (inFile.some(v => !v)) {
+            fails.push('convoy: cycle ' + cyc + ' — the in-file column did not re-form ('
+              + JSON.stringify(inFile) + ')');
+          }
+          if (ringBack.some(v => !v)) {
+            fails.push('convoy: cycle ' + cyc + ' — a deliberate escort ring was not restored');
+          }
+        }
+        report.convoy.calmCycles = cycles;
         convoy.alarmed = false; convoy._calmT = 0;
       }
 

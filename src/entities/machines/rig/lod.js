@@ -1,6 +1,5 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
-import { applyShadowPolicy } from '../../../core/assets.js';
 import { attachFxPool } from './fx.js';
 import { tickDrawnBounds } from './bounds.js';
 
@@ -54,6 +53,8 @@ const PALETTE = [
 
 const _hsl = { h: 0, s: 0, l: 0 };
 const _v = new THREE.Vector3();
+/** Scratch for the shadow-caster ranking (never allocates per frame). */
+const _cv = new THREE.Vector3();
 
 const PALETTE_L = PALETTE.map((c) => { c.getHSL(_hsl); return _hsl.l; });
 
@@ -764,21 +765,176 @@ export function foldMachineMeshes(machine, opts = {}) {
   machine._trimStamp = null;
   machine._shadowCasters = undefined;
   machine._foldStats = out;
+  /**
+   * ROUND-4 FIX ROUND 3 — RESOLVE THE LOD BEFORE THE MACHINE IS EVER DRAWN.
+   * This is the fix for `A90-rig-reclaim`'s intermittent per-live failure, and
+   * the mechanism was measured rather than guessed.
+   *
+   * `renderer.info.memory.geometries` is a FIRST-DRAW counter (docs/
+   * ROUND4-MEMORY.md §6.4): it increments inside `WebGLGeometries.get()`, i.e.
+   * the first time a geometry is actually submitted. `attachRigRuntime` leaves
+   * `_lodTier = -1` and nothing applies a tier until the machine's first
+   * `animate()` — but a machine spawned mid-frame can be RENDERED before that
+   * update ever runs, and on that one frame every component mesh is still
+   * visible. So a Watcher spawned at 49 m (tier 2, where `partIsTrimmable`
+   * retires its eye and antenna components) registered two geometries it then
+   * immediately hid and never drew again.
+   *
+   * Measured with a registration census — a geometry is registered with the
+   * backend exactly while it carries WebGLGeometries' own `dispose` listener,
+   * which is readable without hooking anything (`shots/mx-r3-probe9.png`).
+   * Six consecutive 8-Watcher hold/release brackets on one page:
+   *
+   * | iter | raw geo for 8 | newly registered, every one of them |
+   * | --- | --- | --- |
+   * | 0 | 0 | — |
+   * | 1 | 2 | `part`/Mesh v328, `part`/Mesh v155 |
+   * | 2 | 4 | the same two, x2 machines |
+   * | 3 | **8** | the same two, x4 machines |
+   * | 4 | 4 | the same two, x2 machines |
+   * | 5 | 2 | the same two, x1 machine |
+   *
+   * Always the same two meshes — the accent-folded `part-eye` and
+   * `part-antenna` components (`parts.js`) — and `survivors` was 0 in all six,
+   * so nothing leaks: the gate's quantity is "how many of the eight machines
+   * got one drawn frame before their first LOD update", which is a race, and
+   * it is what made the same bar read 1, 2, 4, 6, 9, 9 for the memory lane.
+   *
+   * Priming the tier here — the one call every species already makes after its
+   * shell, rig and parts are on — retires those components BEFORE the first
+   * submit, so they are never registered at all. It is a real saving (two GL
+   * geometry registrations per machine the player at 49 m cannot see), not a
+   * measurement change: no bar moves and the gate keeps reading the same
+   * counter the same way.
+   */
+  try { updateRigLOD(machine); } catch (e) { /* no camera yet: the first animate() will */ }
   return out;
 }
 
 /**
- * Machines cast their SILHOUETTE, not their bolt heads. Two casters per
+ * THE ENGINE OWNS `castShadow` FRAME BY FRAME; THIS IS HOW A LANE WRITES IT.
+ *
+ * `engine.js` runs a global caster budget (`activeShadowCasters`): when a mesh
+ * loses the ranking it stashes the mesh's intent in `userData.__shadowBase`,
+ * sets `castShadow = false` and marks `userData.__shadowCulled`; when the mesh
+ * is re-admitted it restores `castShadow = __shadowBase !== false`. So a lane
+ * that writes `o.castShadow` directly while the engine has the mesh culled is
+ * writing into a field the engine is about to overwrite from a stale stash —
+ * the write is either lost on re-admission or, worse, leaves a culled mesh
+ * casting a shadow the engine has already budgeted away. Routing every
+ * rig-side shadow decision through this one function means the two systems
+ * compose instead of fighting, and it needs no change in `engine.js`.
+ */
+function setCaster(o, on) {
+  if (o.userData.__shadowCulled === true) o.userData.__shadowBase = on;
+  else o.castShadow = on;
+}
+
+/** Is `o` a mesh that this machine could legitimately cast its shape with? */
+function casterEligible(machine, o) {
+  if (!o.isMesh || !o.geometry) return false;
+  // A RETIRED donor is not drawn, so it cannot cast anything. It was still
+  // being PICKED as the prime caster, because the size ranking never looked.
+  if (o.userData.hiddenSculpt) return false;
+  if (o.userData.noShadow) return false;
+  // FX (dust, sparks, glows) and sprites are not silhouette.
+  if (o.isSprite || o.userData.fx) return false;
+  // Components own their own shadow rule (`parts.js` turns them off).
+  let p = o;
+  while (p && p !== machine.root) { if (p.userData?.part) return false; p = p.parent; }
+  return true;
+}
+
+/**
+ * Machines cast their SILHOUETTE, not their bolt heads. One or two casters per
  * machine hold the shape; everything else stops costing a shadow draw.
+ *
+ * ROUND-4 FIX ROUND 3 — IT HAS TO RANK THE MESHES THAT ARE ACTUALLY DRAWN.
+ *
+ * Judge finding, r2: "the two-ring shadow rule is inert for 5 of 8 new species:
+ * stale one-time caster capture plus the tier early-return". Both halves were
+ * real and both are measured (`shots/mx-r3-probe2.png`, every species staged
+ * 3.3-5.5 m from the lens, i.e. deep inside the 12 m near ring):
+ *
+ * | species | `_shadowCasters` | prime | any DRAWN mesh casting |
+ * | --- | --- | --- | --- |
+ * | snapmaw, ravager, corruptor, strider | **0 entries** | null | yes, by accident |
+ * | shellwalker, sawtooth | 1, and it is **`visible: false`** | hidden donor | **NO** |
+ * | broadhead, grazer, stormbird, redeye, watcher | 1-2, visible | ok | yes |
+ *
+ * The cause is one line in each of two places: both the policy below and the
+ * capture in `updateRigLOD` walked **`machine.model`** and ignored visibility.
+ * `buildShell` parents a shell piece under `machine.model` *or under the bone
+ * that owns it* (`rig/shells.js`, the `b.bone` branch) — so on every species
+ * whose shell is bone-parented the whole drawn machine is INVISIBLE to a
+ * `model` traversal, the policy ranked nothing, and the capture came back
+ * empty. And on a `hideSculpt` species the largest thing under `model` is the
+ * retired donor, so `alwaysLargest` handed the machine's entire shadow to a
+ * mesh that is not drawn: a Shell-Walker and a Sawtooth stood at 4 m with no
+ * ground shadow at all, which is the exact regression the 1.65-ring revert was
+ * meant to end.
+ *
+ * So the ranking runs over `machine.root` — the drawn machine, wherever its
+ * pieces are parented — skips retired sculpt, FX and component meshes, and
+ * publishes the result as `machine._shadowCasters` / `_shadowPrime` so the
+ * two-ring rule and this policy can never disagree about the caster set.
+ *
+ * @returns {number} casters kept
  */
 export function machineShadowPolicy(machine, policy = { minFraction: 0.85, alwaysLargest: 1 }) {
-  const n = applyShadowPolicy(machine.model, policy);
+  const root = machine.root || machine.model;
+  // an empty set is still an ANSWER: leaving `_shadowCasters` undefined would
+  // make `applyShadowRings` retry the rebuild on every frame forever
+  if (!root) { machine._shadowCasters = []; machine._shadowPrime = null; return 0; }
+  // remembered so a REBUILD (a fold, a shell added late, a retire) re-ranks
+  // with the same policy the species asked for rather than the default
+  machine._shadowPolicy = policy;
+  root.updateMatrixWorld(true);
+  const entries = machine._casterScratch || (machine._casterScratch = []);
+  entries.length = 0;
+  root.traverse((o) => {
+    if (!casterEligible(machine, o)) return;
+    if (!o.geometry.boundingSphere) { try { o.geometry.computeBoundingSphere(); } catch (e) { return; } }
+    const scale = _cv.setFromMatrixColumn(o.matrixWorld, 0).length();
+    entries.push({ o, r: (o.geometry.boundingSphere?.radius ?? 0) * scale });
+  });
+  const list = machine._shadowCasters && Array.isArray(machine._shadowCasters)
+    ? machine._shadowCasters : (machine._shadowCasters = []);
+  list.length = 0;
+  machine._shadowPrime = null;
+  if (!entries.length) return 0;
+  entries.sort((a, b) => b.r - a.r);
+  const modelR = entries[0].r || 1;
+  let casters = 0;
+  for (let i = 0; i < entries.length; i++) {
+    const e = entries[i];
+    const keep = i < policy.alwaysLargest || e.r >= policy.minFraction * modelR;
+    e.o.userData.shadowRadius = e.r;
+    if (keep) {
+      list.push(e.o);
+      if (!machine._shadowPrime) machine._shadowPrime = e.o;
+      casters++;
+    } else {
+      setCaster(e.o, false);
+    }
+  }
+  entries.length = 0;
   // part meshes never cast (parts.js already sets this, but a tear/respawn
   // path or a kitbash shell could re-enable it)
   for (const p of machine.parts || []) {
-    p.mesh.traverse((o) => { if (o.isMesh && !o.userData.keepShadow) o.castShadow = false; });
+    p.mesh.traverse((o) => { if (o.isMesh && !o.userData.keepShadow) setCaster(o, false); });
   }
-  return n;
+  // the ring below decides whether the kept set casts RIGHT NOW
+  machine._lodShadow = null;
+  return casters;
+}
+
+/**
+ * Drop the cached caster set so the next `updateRigLOD` re-ranks it. Call it
+ * from anything that adds, retires or replaces a DRAWN mesh on a machine.
+ */
+export function invalidateShadowCasters(machine) {
+  if (machine) { machine._shadowCasters = undefined; machine._lodShadow = null; }
 }
 
 /**
@@ -904,7 +1060,38 @@ function trimSet(machine) {
     // A RETIRED donor is not drawn: it must never rank, and must never be
     // counted in the denominator a keep fraction is taken over.
     if (o.userData.hiddenSculpt) return;
-    if (!o.visible && !o.userData.lodHidden) return;
+    /**
+     * ROUND-4 FIX ROUND 3 — THE FRILL RANKING IS A PROPERTY OF THE SPECIES,
+     * NOT OF WHAT THE SIZE CULL HAPPENED TO BE HIDING WHEN IT WAS BUILT.
+     *
+     * This test used to be `if (!o.visible && !o.userData.lodHidden) return;`,
+     * which is right about a RETIRED mesh and wrong about a TRANSIENTLY hidden
+     * one: `engine.js`'s screen-space cull sets `visible = false` (and
+     * `userData.__sizeCulled`) without ever touching `lodHidden`, and it runs
+     * at about 10 Hz. So whether a given mesh was in the list depended on when
+     * this list was first built relative to that pass — and `applyTrimLOD`
+     * keeps `round(list.length * KEEP_BY_TIER[tier])` of it, so a list that is
+     * one row shorter keeps a DIFFERENT third of the frills.
+     *
+     * That non-determinism is the mechanism behind `A90-rig-reclaim`'s
+     * intermittent failure (docs/ROUND4-MEMORY.md §6.5, "what allocates exactly
+     * 4 geometries and never releases them?"). The four, named by a
+     * registration census (`shots/mx-r3-probe9.png`), are the Watcher's
+     * `Eye001_Eye_texture_0` (344 v), `Eye_Lense_1001_Glass_Lense_0` (20 v),
+     * `Eye_Camera001_Lense_-_Blue_Cameras_0` (20 v) and
+     * `Headplate_Frill_001_Headplate_Frill__0-x4` (2136 v) — all four SPECIES-
+     * POOLED, so their `dispose()` is a deliberate no-op and they are correctly
+     * retained, which is why the gate reads them as "held". They appear inside
+     * the bracket only because a later Watcher kept a third of its frills that
+     * an earlier one had dropped, and `renderer.info.memory.geometries` counts
+     * FIRST DRAW. With the list built from the species' own structure, every
+     * instance keeps the same third and the first Watcher of the session pays
+     * for the pool.
+     *
+     * A mesh a LANE has hidden on purpose (`o.visible === false` with no
+     * transient flag) is still excluded, which is what this test was for.
+     */
+    if (!o.visible && !o.userData.lodHidden && o.userData.__sizeCulled !== true) return;
     if (!o.geometry.boundingBox) o.geometry.computeBoundingBox();
     if (!o.geometry.boundingBox) return;
     box.copy(o.geometry.boundingBox).applyMatrix4(o.matrixWorld);
@@ -1123,6 +1310,23 @@ export function updateRigLOD(machine) {
   // player sees at 12 m. `pinFullLOD()` sets it; nothing else reads it.
   const tier = machine._lodPin === 0 ? 0
     : d < H * 6 ? 0 : d < H * 14 ? 1 : d < H * 40 ? 2 : 3;
+  /**
+   * THE SHADOW RINGS ARE RESOLVED BEFORE THE TIER EARLY-OUT (fix round 3).
+   *
+   * Judge finding, r2: "the two-ring shadow rule is inert ... plus the tier
+   * early-return". The rings are metres (`max(H * 2.15, 12)` and
+   * `max(H * 6, 40)`); the tiers are body heights (6 H, 14 H, 40 H). For every
+   * machine shorter than 5.6 m the near ring falls INSIDE tier 1 and the far
+   * ring inside tier 2 — a Watcher's rings are 12 m and 40 m while its tier 1
+   * spans 12.6-29.4 m — so the player can walk a machine's whole shadow range
+   * without the tier ever changing, and under the old order the rule ran only
+   * on a tier CHANGE. Measured: a Watcher that entered tier 1 at 13 m kept
+   * casting every caster out to 29 m, and one that entered tier 1 from the far
+   * side cast nothing at 13 m. It is two comparisons and at most three property
+   * writes per machine per frame, allocates nothing, and is now evaluated on
+   * the frame the ring is actually crossed.
+   */
+  applyShadowRings(machine, d, H);
   if (tier === machine._lodTier) return tier;
   machine._lodTier = tier;
   applyTrimLOD(machine, tier);
@@ -1137,70 +1341,62 @@ export function updateRigLOD(machine) {
     // handful of pixels and nobody is aiming at it by eye.
     p.mesh.traverse((o) => { if (o.isMesh) o.userData.lodHidden = !show; });
   }
-  // shadow: only the body casts, and only in the NEAR ring. With three CSM
-  // cascades a caster is three draws, so this is the cheapest 3x lever there
-  // is — and a machine at mid range reads its own contact shadow from the
-  // ambient occlusion term, not from a 2 px shadow-map silhouette.
-  if (machine._shadowCasters === undefined) {
-    machine._shadowCasters = [];
-    machine.model.traverse((o) => { if (o.isMesh && o.castShadow) machine._shadowCasters.push(o); });
-    /**
-     * THE PRIME CASTER: the single biggest drawn mesh on the machine, which is
-     * its body. It is the one that still casts past the near ring (below), so
-     * a machine at any fightable range keeps a contact shadow for ONE draw
-     * instead of losing its shadow entirely.
-     */
-    let best = null, bestR = -1;
-    for (const o of machine._shadowCasters) {
-      if (!o.geometry) continue;
-      if (!o.geometry.boundingSphere) { try { o.geometry.computeBoundingSphere(); } catch (e) { continue; } }
-      const r = o.geometry.boundingSphere?.radius ?? 0;
-      if (r > bestR) { bestR = r; best = o; }
-    }
-    machine._shadowPrime = best;
+  return tier;
+}
+
+/**
+ * THE TWO-RING SHADOW RULE, RESOLVED EVERY FRAME AGAINST THE DRAWN MESHES.
+ *
+ * ROUND-4 FIX ROUND 2 — A MACHINE IS ALWAYS STANDING ON THE GROUND.
+ *
+ * Judge finding: "Shadow-caster range cut from 2.15 to 1.65 body heights
+ * regresses every machine in the game, and the draw budget it was spent for
+ * still fails ... broadhead dist 3.3 m castShadowNow 0 (bodyH 1.62 -> new
+ * cutoff 2.67 m, old cutoff 3.48 m: a clear flip from casting to not casting)
+ * ... shots/...-world-close.png shows a Grazer at 6.9 m with no ground shadow
+ * at all."
+ *
+ * The 1.65 is gone and STAYS gone. Two rings, and the outer one scales by
+ * metres with a floor:
+ *
+ *   NEAR  `max(H * 2.15, 12 m)`  every caster on the machine casts. A Watcher
+ *         keeps its full shadow to 12 m instead of 3.5, a Thunderjaw to 20.
+ *   FAR   `max(H * 6, 40 m)`     only the PRIME caster — the body — casts, so
+ *         the machine still reads as standing on the ground for a single draw
+ *         instead of the five to nine a full set costs.
+ *
+ * ROUND-4 FIX ROUND 3 — and it now actually RUNS. Two things made it inert
+ * (see `machineShadowPolicy` for the measurement): the caster set was captured
+ * once from `machine.model`, which on a bone-parented shell or a retired donor
+ * is the wrong set or no set at all; and the whole block sat behind
+ * `updateRigLOD`'s tier early-out, so it was evaluated on tier changes rather
+ * than on ring crossings. The set is rebuilt from the DRAWN machine whenever
+ * anything invalidates it, the rings are evaluated on every frame, and the
+ * writes go through `setCaster` so the engine's own caster budget is not
+ * fighting this one.
+ *
+ * Cost: one `Math.max`, two compares and — only when the ring state CHANGES —
+ * one property write per caster (one or two per machine). No allocation.
+ */
+function applyShadowRings(machine, d, H) {
+  // a disposed rig has released its meshes; never re-rank them
+  if (machine._rigDisposed) return;
+  if (!Array.isArray(machine._shadowCasters)) {
+    try { machineShadowPolicy(machine, machine._shadowPolicy); } catch (e) { machine._shadowCasters = []; }
   }
-  // A machine casts only inside a TIGHT near ring (3.5 body heights). With
-  // three CSM cascades every caster is three draws and the engine's caster
-  // budget is a fixed pool — a Watcher's shadow at 12 m is a handful of
-  // pixels that costs the same three draws a Thunderjaw's does at 30.
-  // 2.15 body heights: a Thunderjaw casts out to 20 m, a Watcher to 4.5 m —
-  // i.e. exactly while its shadow is a shape on the ground rather than a
-  // smear. Measured on the staged eight-machine fight: 30 shadow draws -> 12,
-  // which is the margin that takes the whole frame to 346 of a 350 budget.
-  /**
-   * ROUND-4 FIX ROUND 2 — A MACHINE IS ALWAYS STANDING ON THE GROUND.
-   *
-   * Judge finding: "Shadow-caster range cut from 2.15 to 1.65 body heights
-   * regresses every machine in the game, and the draw budget it was spent for
-   * still fails ... broadhead dist 3.3 m castShadowNow 0 (bodyH 1.62 -> new
-   * cutoff 2.67 m, old cutoff 3.48 m: a clear flip from casting to not
-   * casting) ... shots/...-world-close.png shows a Grazer at 6.9 m with no
-   * ground shadow at all. The justification in the comment is the A21 draw
-   * budget — and the builder's own report says A21 still FAILS at 384/350, so
-   * the fidelity was given up without buying the budget." Every word of that
-   * is right, including that the rule was global and this lane only owned a
-   * slice of the roster it changed.
-   *
-   * The 1.65 is gone. What replaces it is not the old rule either, because the
-   * old rule had the same defect one ring further out — a Watcher at 4.6 m
-   * stopped casting, and 4.6 m is knife range. Two rings now, and the outer one
-   * is the judge's own suggestion (scale by metres with a floor):
-   *
-   *   NEAR  `max(H * 2.15, 12 m)`  every caster on the machine casts. A Watcher
-   *         keeps its full shadow to 12 m instead of 3.5, a Thunderjaw to 20.
-   *   FAR   `max(H * 6, 40 m)`     only the PRIME caster — the body — casts, so
-   *         the machine still reads as standing on the ground for a single draw
-   *         instead of the five to nine a full set costs.
-   *
-   * Strictly better than 2.15 on fidelity at every distance (nothing loses a
-   * shadow it used to have) and cheaper than 2.15 beyond the near ring, where
-   * 2.15 dropped every caster at once and this keeps one.
-   */
+  const list = machine._shadowCasters;
+  if (!list || !list.length) return;
   const near = d < Math.max(H * 2.15, 12);
   const far = !near && d < Math.max(H * 6, 40);
+  // 0 = nothing casts, 1 = the prime only, 2 = every caster
+  const state = near ? 2 : far ? 1 : 0;
+  if (state === machine._lodShadow) return;
+  machine._lodShadow = state;
   const prime = machine._shadowPrime;
-  for (const o of machine._shadowCasters) o.castShadow = near || (far && o === prime);
-  return tier;
+  for (let i = 0; i < list.length; i++) {
+    const o = list[i];
+    setCaster(o, state === 2 || (state === 1 && o === prime));
+  }
 }
 
 /**
@@ -1319,6 +1515,9 @@ export function disposeRig(machine) {
   machine._drawnBounds = null;
   machine._lodChain = null;
   machine._shadowCasters = null;
+  // the caster ranking's own scratch and its cached pick (fix round 3)
+  machine._shadowPrime = null;
+  machine._casterScratch = null;
   return { skeletons, owned, glows };
 }
 

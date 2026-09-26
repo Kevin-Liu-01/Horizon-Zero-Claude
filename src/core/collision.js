@@ -1223,10 +1223,10 @@ export class Collision {
       const m = list[i];
       let rec = this._machineMap.get(m);
       if (!m.alive) {
-        // a wreck is never a melee approach target: give the standoff back
-        // before anything else, so a machine that dies mid-swing does not keep
-        // the shortened segment for the rest of the session
-        if (rec && rec.meleeCut) { m.standoffHalfLen = rec.baseL; rec.meleeCut = false; }
+        // a wreck is never a melee approach target: withdraw the published
+        // term before anything else, so a machine that dies mid-swing does not
+        // keep the shortened segment for the rest of the session
+        if (rec && rec.meleeCut) { m.meleeStandoffHalfLen = null; rec.meleeCut = false; }
         // wrecks are lower and smaller: keep them as a low bump, not a wall,
         // and let the lens sit inside one so looting a corpse is filmable
         if (rec && rec.body.blocking) {
@@ -1237,8 +1237,9 @@ export class Collision {
       }
       if (!rec) {
         const shape = { type: 'capsule', a: [0, 0, 0], b: [0, 0, 0], radius: 1 };
-        // `baseL` is the machine's own standoff half-length, kept so the melee
-        // approach term can put it back (see `_meleeStandoff`)
+        // `meleeCut` records whether this machine currently carries a published
+        // melee approach term, so it is withdrawn exactly once (see
+        // `_meleeStandoff`). The machine's own half-length is never written.
         const body = this.byId.get(this.register({
           kind: 'machine', dynamic: true, ref: m, occluder: false, camera: false, shape,
         }));
@@ -1246,7 +1247,7 @@ export class Collision {
           kind: 'machine-cam', dynamic: true, ref: m,
           blocking: false, occluder: false, camera: true, shape,
         }));
-        rec = { body, cam, baseL: m.standoffHalfLen || 0, meleeCut: false };
+        rec = { body, cam, meleeCut: false };
         this._machineMap.set(m, rec);
       }
       const L = this._meleeStandoff(m, rec);
@@ -1340,21 +1341,40 @@ export class Collision {
    * So the melee target's standoff segment is shortened by a fixed
    * `MELEE_L_CUT`, which eats the cap and nothing else.
    *
-   * IT IS WRITTEN BACK ONTO THE MACHINE, ON PURPOSE. `machines/index.js` runs
-   * its own hard standoff — it pushes a machine away whenever the player's
-   * position is within `bodyRadius + 0.6` of a sphere at +-`standoffHalfLen` —
-   * and that loop reads the machine's field, not this collider. If only the
-   * collider shrank, every melee approach would SHOVE the machine, which is
-   * precisely the failure `machinePad` exists to prevent (A25). Writing the
-   * same number into `m.standoffHalfLen` keeps the two consistent: she stops
-   * at `L' + bodyRadius + 0.32 + 0.40` from the centre, i.e. 0.12 m OUTSIDE
-   * the `bodyRadius + 0.6` sphere the manager pushes from, so the push does
-   * not fire even on the frame a moving player is deepest into the capsule
-   * (fix pass 1 — at the 0.20 m pad round 4 shipped, those two radii were the
-   * same number and every forward frame shoved the machine). The base value is
-   * cached here and
-   * restored on every frame the machine is not the melee target, so the field
-   * self-heals even if melee is torn down mid-frame.
+   * THE MANAGER HAS TO AGREE WITH THE COLLIDER, AND THAT IS NOT OPTIONAL.
+   * `machines/index.js` runs its own hard standoff — it pushes a machine away
+   * whenever the player's POSITION is within `bodyRadius + 0.6` of a sphere at
+   * +-(half-length) — and that loop reads a field on the machine, not this
+   * collider. If only the collider shrank, every melee approach would SHOVE
+   * the machine, which is precisely the failure `machinePad` exists to prevent
+   * (A25). The arithmetic says there is no pad that avoids it: she stands at
+   * `L' + bodyRadius + pad + 0.40` from the centre, so her distance from the
+   * manager's FRONT sphere (at the uncut `L`) is `bodyRadius + pad + 0.40 −
+   * MELEE_L_CUT`, and keeping that outside `bodyRadius + 0.6` would need
+   * `pad >= 0.20 + MELEE_L_CUT` = 1.22 m, more than twice `machinePad`. The
+   * manager must see the shortened length.
+   *
+   * IT IS PUBLISHED AS ITS OWN FIELD, NOT WRITTEN OVER THE MACHINE'S OWN
+   * GEOMETRY (fix pass 2). Round 4 and fix pass 1 wrote `want` straight into
+   * `m.standoffHalfLen` and the doc claimed "every machine at every other time
+   * is untouched", which was true of the TIME and false of the FIELD: three
+   * other consumers read that same number as geometry, and none of them wants
+   * a melee approach term in it —
+   *
+   *   `strider.js`  `reach = bodyRadius + standoffHalfLen + 0.8` (charge hit
+   *                 test and `damagePlayer` radius): measured 2.287 -> 2.003 m
+   *                 the moment she drew the spear;
+   *   `behemoth.js` `reach = bodyRadius + standoffHalfLen + 0.9`: 5.80 -> 4.78 m;
+   *   `melee.js`    the Silent Strike prompt radius.
+   *
+   * i.e. drawing the spear shrank the charge that was about to hit her. So the
+   * shortened segment is published as `m.meleeStandoffHalfLen` and exactly ONE
+   * consumer reads it — the manager's push loop, which has to agree with this
+   * collider or A25 breaks (`machines/index.js`: `m.meleeStandoffHalfLen ??
+   * m.standoffHalfLen`). Everything else keeps the machine's real half-length.
+   * `A106-melee-approach-immovable` measures both halves: the machine still
+   * moves 0.000 m under a drawn-spear walk-in, AND a Strider's and a Behemoth's
+   * charge reach are identical drawn and holstered.
    *
    * NO INTERPENETRATION, AND IT IS MEASURED RATHER THAN CLAIMED: gate A103
    * publishes `playerToHullAtHit`, the distance from her own capsule to the
@@ -1365,19 +1385,18 @@ export class Collision {
     const mel = this.ctx.combat && this.ctx.combat.melee;
     // `typeof`, not `>= 0`: null coerces to 0 and would read as a valid pad
     const on = !!(mel && mel.approachMachine === m && typeof mel.approachPad === 'number');
+    /* The machine's own half-length is read fresh every frame and never
+     * written, so there is no cached base to go stale and nothing to restore
+     * if melee is torn down mid-frame — the published term simply stops being
+     * published. `rec` is still passed for the wreck path's `meleeCut` flag. */
+    const base = m.standoffHalfLen || 0;
     if (!on) {
-      /* Put it back, once, on the frame the term stops applying — and on every
-       * other frame re-read the machine's own value, so a field this class does
-       * not own can still change underneath it without being clobbered by a
-       * stale cache. */
-      if (rec.meleeCut) { m.standoffHalfLen = rec.baseL; rec.meleeCut = false; }
-      else rec.baseL = m.standoffHalfLen || 0;
-      return m.standoffHalfLen || 0;
+      if (rec.meleeCut) { m.meleeStandoffHalfLen = null; rec.meleeCut = false; }
+      return base;
     }
-    if (!rec.meleeCut) { rec.baseL = m.standoffHalfLen || 0; rec.meleeCut = true; }
-    const base = rec.baseL || 0;
+    rec.meleeCut = true;
     const want = Math.max(base * MELEE_L_FLOOR, base - MELEE_L_CUT);
-    if (m.standoffHalfLen !== want) m.standoffHalfLen = want;
+    m.meleeStandoffHalfLen = want;
     return want;
   }
 

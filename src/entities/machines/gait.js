@@ -597,8 +597,44 @@ export class GaitController {
      * what any gate is allowed to measure. Default 1, i.e. every existing
      * species is bit-for-bit unchanged.
      */
-    this.cadFloor = band.floor * (opts.cadFloorK ?? 1);
     this.cadCeil = Math.max(band.ceil, band.floor * 1.15);
+    /**
+     * ROUND-4 FIX ROUND 3 — `cadFloorK` MAY NOT INVERT THE WINDOW IT SITS IN.
+     *
+     * Judge finding, r2: "Stormbird is ceiling-bound on 98 % of moving frames
+     * because cadFloorK inverts its own cadence window". Measured in the
+     * running game before this line existed (`shots/mx-r3-probe1.png`): the
+     * Stormbird's body length is 15.58 m, so its band top is 1.190 Hz,
+     * `band.floor` is 0.559 and `cadCeil` is 0.714 — and `cadFloorK: 1.45`
+     * (raised in fix round 2 when the first honest measurement of a perched
+     * bird came in at 0.30 Hz) put `cadFloor` at **0.811 Hz, above its own
+     * ceiling**. It is the only species in the roster where that happens; the
+     * other fourteen gaited species measured `cadFloor < cadCeil` by 1.24-1.28x.
+     *
+     * `THREE.MathUtils.clamp(v, min, max)` is `max(min, min(max, v))`, so an
+     * inverted pair does not throw — it silently returns the MINIMUM, i.e. the
+     * commanded cadence was pinned at 0.811 Hz, a set point the band forbids
+     * the machine to deliver. The loop can then never retire its debt: `trim`
+     * winds to `TRIM_HI`, `raw` clears `0.88 * bandHi` on essentially every
+     * frame and the band ceiling — not the dynamics — decides the number. That
+     * is precisely what `A48b-cadence-headroom-expansion` grades, and it is why
+     * it read 0.98.
+     *
+     * The invariant is asserted here, at the one place the window is built:
+     * a floor above the ceiling is not a tuning choice, it is a contradiction,
+     * so the floor is clamped to the ceiling and the species' request is kept
+     * on the object (`cadFloorWanted`) so the clamp is visible rather than
+     * silent. This can only ever LOWER a commanded cadence, so no species that
+     * was inside its band can be pushed out of it by this line.
+     */
+    this.cadFloorWanted = band.floor * (opts.cadFloorK ?? 1);
+    this.cadFloor = Math.min(this.cadFloorWanted, this.cadCeil);
+    this.cadFloorClamped = this.cadFloorWanted > this.cadCeil;
+    if (this.cadFloorClamped && machine?.ctx?.debug) {
+      console.warn(`[gait] ${machine.kind}: cadFloorK ${opts.cadFloorK} puts the cadence floor `
+        + `(${this.cadFloorWanted.toFixed(3)} Hz) above its own ceiling `
+        + `(${this.cadCeil.toFixed(3)} Hz); clamped to the ceiling.`);
+    }
     // stride is derived from cadence but must stay inside what the legs can do
     this.strideMin = opts.strideMin ?? this.walk.stride * 0.42;
     this.strideMax = opts.strideMax ?? this.run.stride * 1.7;
@@ -821,7 +857,38 @@ export class GaitController {
     // second — the quantity gate A48 measures, and the loop's set-point.
     let wantWallHz;
     if (moving) {
-      const floor = Math.max(this.cadFloor, engaged ? hz * ENGAGED_CADENCE_FLOOR : 0);
+      /**
+       * THE WINDOW MUST BE NON-EMPTY — WHICHEVER FLOOR IS ASKING (fix round 3).
+       *
+       * `cadFloorK`'s half of this is asserted where the window is built (see
+       * `this.cadFloor` above), and fixing only that half took the Stormbird's
+       * `A48b-cadence-headroom-expansion` fraction from **0.90 to 0.276** —
+       * better, still red, and the remaining 0.276 is the SECOND floor on this
+       * line. Measured per species from the constants:
+       *
+       * | species | engaged run floor `hzRun * 0.85` | `cadCeil` |
+       * | --- | --- | --- |
+       * | stormbird | 0.851 | **0.714** |
+       * | sawtooth | 1.591 | **1.334** |
+       * | thunderjaw | 0.884 | **0.742** |
+       * | broadhead | 1.647 | **1.381** |
+       *
+       * `hzRun` is `CADENCE_RUN / sizeK` and `cadCeil` is `0.60 * bandHi`: two
+       * different laws, and the first is above the second for every species on
+       * the roster. `THREE.MathUtils.clamp` with `min > max` returns the MIN, so
+       * an engaged machine was commanded ABOVE its own band ceiling, the loop
+       * could never retire the resulting debt, `trim` wound up, and
+       * `raw > 0.88 * bandHi` — the ceiling, not the dynamics, decided the
+       * cadence. That is exactly what `A48b` grades.
+       *
+       * So the floor that is actually applied is capped by the ceiling that is
+       * actually applied. This can only ever LOWER a commanded cadence, so no
+       * species can be pushed OUT of the band by it — and it pulls the two that
+       * were sitting on the band's upper edge (ravager 1.79 of a 1.88 top) back
+       * toward the middle.
+       */
+      const floor = Math.min(this.cadCeil,
+        Math.max(this.cadFloor, engaged ? hz * ENGAGED_CADENCE_FLOOR : 0));
       phaseRate = THREE.MathUtils.clamp(phaseRate, floor * wps, this.cadCeil * wps);
       wantWallHz = phaseRate / Math.max(wps, 1e-3);
     } else {
@@ -1548,36 +1615,6 @@ export class GaitController {
     if (!Number.isFinite(this._chassisLift)) { this._chassisLift = 0; this._chassisWant = 0; }
   }
 
-  /**
-   * REVERTED EXPERIMENT, recorded because it is the obvious next idea and it
-   * does not work: a GRAVITY DRAPE on the free chains.
-   *
-   * The measurement that motivated it is real — bucketed by dominant bone, a
-   * Thunderjaw rolled onto its flank read `rig_head` [0.21, 3.97] under a
-   * chassis (`rig_pelvis`) whose own floor was 1.03, i.e. the carcass was
-   * hanging from its jaw, and `rig_tail1` [2.12, 6.83], i.e. the tail never
-   * came down. So each free chain (tail, neck+head) was solved root-to-tip
-   * about the WORLD-horizontal axis perpendicular to the bone, to put the next
-   * joint on a resting plane, with the plane's clearance taken from a measured
-   * per-bone casting radius (`boneInverse · bindMatrix · v`, 90th percentile
-   * perpendicular to the bone axis — pose-independent, cached on the bone).
-   *
-   * It loses to doing nothing, in every form, because a solved chain wins the
-   * race to the ground and becomes a STRUT: it touches down before the chassis
-   * does, `CorpseGrounder` sees a wreck already resting and stops, and the body
-   * stays in the air. Dead median on the thunderjaw against a 3.99 baseline —
-   *
-   *   two-sided, plane = corpse 2nd percentile     6.16   (hung from its tail)
-   *   two-sided, plane = terrain                   5.24
-   *   two-sided, plane = chassis floor             4.45
-   *   LIFT ONLY (never lower a chain)              3.91   and sawtooth 0.68 -> 0.89
-   *
-   * — and the lift-only form, which cannot prop anything, still loses on the
-   * quadrupeds because raising a skull raises its samples without buying a
-   * drop. The lever that DID move the thunderjaw was the roll angle itself;
-   * see the table over `rollK` below.
-   */
-
   deathPose(k, deathT, cls = 'quad') {
     const m = this.m;
     const rig = this.rig;
@@ -2042,6 +2079,49 @@ export class GaitController {
      * So the envelope clamps the class it was diagnosed on — `sprawl`, whose
      * forward chain is a pair of claws or a metre of crocodile snout — and the
      * others keep the spec-derived angle their own sweep settled on.
+     */
+    /**
+     * WHY `A47c-corpse-mass` IS STILL RED HERE, MEASURED (fix round 3).
+     *
+     * The mechanism is identical on all six failing expansion species, and it
+     * is now attributed per BONE rather than per species. Each wreck's posed
+     * vertices bucketed by dominant bone (`shots/mx-r3-probeB.png`): the
+     * DEEPEST bucket is always a forward-chain bucket whose lowest vertex is on
+     * the soil while its own median is 1.2-2.6 m up —
+     *
+     * | species | deepest bucket | its min | its median | wreck median |
+     * | --- | --- | --- | --- | --- |
+     * | broadhead | `shell-hard::rig_head` | 0.07 | 1.22 | 1.50 |
+     * | grazer | `shell-hard::rig_neck` | 0.04 | 1.26 | 1.60 |
+     * | shellwalker | `shell-hard::rig_head` | 0.11 | 1.42 | 1.50 |
+     * | corruptor | `Geo_Scorpion::rig_head` | 0.13 | 1.46 | 1.80 |
+     * | snapmaw | `BlackCaiman::rig_chest` | 0.02 | 0.43 | 0.84 |
+     * | redeye | `Object_11::R_HeadPlate` | 0.04 | 0.41 | 1.49 |
+     *
+     * — the wreck is standing on its own snout, and `CorpseGrounder`'s lift is
+     * the penetration this pose authored (broadhead 0.787 m, grazer 0.857,
+     * corruptor 1.275, shellwalker 0.691, snapmaw 0.641) applied to the WHOLE
+     * machine.
+     *
+     * AND THE OBVIOUS LEVER IS MEASURED AND DOES NOT WORK. A closed loop that
+     * took the droop back until the snout cleared the soil was built and run:
+     * it closed the redeye (0.90 -> 0.71), the tallneck (0.84 -> 0.65) and the
+     * longleg (0.53 -> 0.26) and pushed the BEHEMOTH from 0.68 to 0.91 while
+     * floating the THUNDERJAW 1.27-1.50 m off the soil, turning a green `A47b`
+     * red. Re-cast as a hill-climb on the gate's own quantity — posed median
+     * plus the lift the pose is about to earn — it correctly declined every
+     * step on all six target species and returned the shipped numbers
+     * (broadhead 1.20, corruptor 2.47, shellwalker 1.08, grazer 1.08), so it
+     * was removed rather than shipped inert.
+     *
+     * The reason is geometric and it is the same reason §9.5's clamp failed:
+     * raising the head does not lower the body, it only changes WHICH vertex is
+     * lowest. The grounder parks the wreck on whatever that turns out to be, so
+     * a metre of snout droop is replaced by a knee at the same height. What
+     * closes this gate is making the BULK the lowest surface — per-species
+     * geometry work on the shells (a chassis that flattens, a plate that folds,
+     * a limb that separates), which is what §8 said and what this round's
+     * evidence now says with the bone named.
      */
     const budget = sprawl
       // `sprawl` spends what the FORWARD envelope has left after the spine

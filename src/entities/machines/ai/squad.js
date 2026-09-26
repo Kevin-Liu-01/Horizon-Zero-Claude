@@ -289,11 +289,45 @@ export class Squads {
     return true;
   }
 
+  /**
+   * THE FIGHT'S RING IS COMBAT STATE AND IT HAS TO DIE WITH THE FIGHT
+   * (residue round, finding 1).
+   *
+   * `_updateConvoys` hands every non-carrier an `escort` anchor on alarm, and
+   * `Machine._statePatrol` tries `escort` BEFORE `convoy` — so the anchor does
+   * not merely outlive the fight, it permanently replaces the in-file column
+   * that is the whole read of a Shell-Walker convoy. Measured on the shipped
+   * tree: fight -> calm -> 60 s, five cycles, the escort still owned the patrol
+   * frame in 5 of 5 and orbited the position the carrier stood at when the
+   * alarm dropped (232.0, 23.8) while the carrier walked its route away from
+   * it. Nothing cleared it, because nothing ever cleared it: the release was
+   * living in `A100`'s §2 as a gate-side scrub, so the gate put the world back
+   * by hand and then asserted that the world was fine.
+   *
+   * Released here instead, at the one instant the convoy leaves alarm. A
+   * member that holds a DELIBERATE ring (`assignEscorts`, remembered by the
+   * site) gets that ring back rather than a null: the transient anchor is its
+   * own object, so the deliberate one is never clobbered and never needs
+   * rebuilding. The anchor object itself is kept on the machine and re-used by
+   * the next alarm, so an episode costs no allocation after the first.
+   */
+  _releaseConvoyRing(c) {
+    for (const m of c.members) {
+      const a = m._convoyAnchor;
+      if (!a) continue;
+      if (m.escort === a) m.escort = m._escortBeforeConvoy || null;
+      m._escortBeforeConvoy = null;
+    }
+  }
+
   /** Convoy escorts hold a tight ring on the carrier and fight outward. */
   _updateConvoys(dt) {
     for (const c of this.convoys) {
       const living = c.members.filter((m) => m.alive && !m._disposed);
-      if (!living.length) { c.alarmed = false; c.carrier = null; continue; }
+      if (!living.length) {
+        if (c.alarmed) this._releaseConvoyRing(c);
+        c.alarmed = false; c.carrier = null; continue;
+      }
       const carrier = c.carrier;
       if (!carrier || !carrier.alive || carrier._disposed
         || !carrier.parts.some((pp) => pp.name === c.defend && pp.attached)) {
@@ -303,17 +337,35 @@ export class Squads {
       for (const m of living) if (m.suspicion > 0.3) { hot = true; break; }
       c.alarmed = hot ? true : c.alarmed;
       if (hot) c._calmT = 0; else c._calmT = (c._calmT || 0) + dt;
-      if (c.alarmed && c._calmT > this.calmTime) { c.alarmed = false; continue; }
+      if (c.alarmed && c._calmT > this.calmTime) {
+        c.alarmed = false;
+        this._releaseConvoyRing(c);
+        continue;
+      }
       if (!c.alarmed || !c.carrier) continue;
       // close ranks: every non-carrier takes a slot on a tight ring around it,
       // as an `escort` anchor the existing footwork already understands
       const others = living.filter((m) => m !== c.carrier);
+      // ...and a machine PROMOTED to carrier mid-fight drops the ring it was
+      // holding, or it orbits itself at radius `c.radius` for the rest of the
+      // fight and the column has no lead to close on
+      if (c.carrier._convoyAnchor && c.carrier.escort === c.carrier._convoyAnchor) {
+        c.carrier.escort = c.carrier._escortBeforeConvoy || null;
+        c.carrier._escortBeforeConvoy = null;
+      }
       for (let i = 0; i < others.length; i++) {
         const g = others[i];
-        g.escort = g.escort || { slot: (i / Math.max(1, others.length)) * Math.PI * 2, phase: 0, radius: c.radius };
-        g.escort.x = c.carrier.position.x;
-        g.escort.z = c.carrier.position.z;
-        g.escort.radius = c.radius;
+        const a = g._convoyAnchor
+          || (g._convoyAnchor = { slot: 0, phase: 0, radius: c.radius, x: 0, z: 0 });
+        if (g.escort !== a) {
+          g._escortBeforeConvoy = g.escort || null;   // the deliberate ring, if any
+          a.slot = (i / Math.max(1, others.length)) * Math.PI * 2;
+          a.phase = 0;
+          g.escort = a;
+        }
+        a.x = c.carrier.position.x;
+        a.z = c.carrier.position.z;
+        a.radius = c.radius;
       }
     }
   }
@@ -461,6 +513,10 @@ export class Squads {
     machine.herd = null;
     machine.escort = null;
     machine.scavenge = null;
+    // the re-used transient ring anchor goes with it (memory rule: everything
+    // this class attaches to a machine has a release here)
+    machine._convoyAnchor = null;
+    machine._escortBeforeConvoy = null;
   }
 
   _updateHerds(dt) {

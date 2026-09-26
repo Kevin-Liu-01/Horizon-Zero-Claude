@@ -261,6 +261,41 @@ as its approach target (`melee._scanApproach`, the same ±50° wedge the hit res
 Every other machine, and every machine at every other time, is untouched — `machinePad`
 for general movement is **unchanged**, which is the condition the grant sets.
 
+> **FIX PASS 2 (Sep 25) — and "untouched" was true of the TIME and false of the FIELD.**
+> Round 4 and fix pass 1 wrote the shortened half-length straight into
+> `m.standoffHalfLen`, and this section said "every machine at every other time is
+> untouched", which is exactly the claim a judge checked. **Three consumers read that
+> same field as the machine's real geometry, and none of them wants a melee approach term
+> in it:**
+>
+> | reader | expression | with the spear holstered | with it drawn (before the fix) |
+> |---|---|---|---|
+> | `strider.js:298` | `bodyRadius + standoffHalfLen + 0.8` — charge hit test, and `damagePlayer(24, reach + 0.8)` | 2.287 m | **2.003 m** |
+> | `behemoth.js:251` | `bodyRadius + standoffHalfLen + 0.9` — the same, snout half-length | 5.800 m | **4.780 m** |
+> | `melee.js:1576` | `MELEE.silent.range + standoffHalfLen + 1.0` — the Silent Strike prompt radius | 3.437 m | 3.153 m |
+>
+> i.e. **drawing the spear shrank the charge that was about to hit her.** The term is now
+> published as its own field, `m.meleeStandoffHalfLen`, and read by exactly ONE consumer —
+> `machines/index.js`'s push loop, which *has* to agree with the player capsule or A25
+> breaks (`const L = m.meleeStandoffHalfLen ?? m.standoffHalfLen ?? 0`). The machine's own
+> `standoffHalfLen` is never written. The one-line read in `machines/index.js` is the only
+> edit this term makes outside `collision.js`, and it is flagged as a cross-lane touch in
+> `docs/ROUND4-PLAYER-MELEE.md` §0fp2.
+>
+> **There is no pad that avoids needing the manager to agree**, and the arithmetic says
+> so rather than the author: she stands at `L' + bodyRadius + pad + 0.40` from the centre,
+> so her distance from the manager's FRONT sphere (still at the uncut `L`) is
+> `bodyRadius + pad + 0.40 − MELEE_L_CUT`, and keeping that outside `bodyRadius + 0.6`
+> would need `pad ≥ 0.20 + 1.02 = 1.22 m`, more than twice `machinePad`.
+>
+> **Gated**, so it cannot regress silently: `A106-melee-approach-immovable` grew a second
+> clause (`reachRows`) that reads a Strider's and a Behemoth's charge reach holstered, then
+> again with the term demonstrably live, and fails unless they are bit-identical. On this
+> build: Strider `chargeReachDeltaM` **0.000000** (2.287111 → 2.287111) with the term
+> cutting 0.2841 m; Behemoth **0.000000** (5.800000 → 5.800000) with the term cutting
+> 1.02 m; `standoffDeltaM` 0.000000 on both. The row is void unless `termLive` and
+> `termCutM > 0.01`, so it cannot pass by the term never firing.
+
 **Why it exists.** Measured on port 5205: a Watcher's blocking capsule is
 `standoffHalfLen` 1.5615 swept either side of the centre and inflated by `bodyRadius`
 0.9, so with `machinePad` 0.55 and the player's own 0.4 m radius she is held **3.41 m**
@@ -296,12 +331,17 @@ shortfall. The term eats the cap.
   with it holstered and asserts 0.000 m of machine displacement on both, with
   `approachFrames > 0` so the drawn row cannot pass by the term never engaging. Measured
   on this build: Watcher 0.0000 m / 0.0000 m, Strider 0.0000 m / 0.0000 m.
-* **The segment is written back onto `m.standoffHalfLen`, on purpose.** `Machines.update`
-  reads the machine's own field, not this collider. If only the collider shrank, every
-  melee approach would shove the machine — precisely the failure `machinePad` exists to
-  prevent. Writing the same number into the field keeps the two consistent; the base
-  value is cached on the collision record and restored on every frame the machine is not
-  the melee target, so the field self-heals.
+* **The segment is published as `m.meleeStandoffHalfLen`, and the manager's push loop is
+  its only reader (fix pass 2).** `Machines.update` reads a field on the machine, not this
+  collider. If only the collider shrank, every melee approach would shove the machine —
+  precisely the failure `machinePad` exists to prevent, and no pad avoids it (see the
+  arithmetic above). So the manager reads
+  `m.meleeStandoffHalfLen ?? m.standoffHalfLen ?? 0` and everything that reads the
+  machine's GEOMETRY — strider/behemoth charge reach, the Silent Strike prompt radius —
+  keeps `standoffHalfLen`, which this term never writes. Nothing is cached and nothing has
+  to be restored: the machine's own value is read fresh every frame and the published term
+  is simply withdrawn (`null`) on the frame the machine stops being the melee target, or
+  on the frame it dies.
 * **`max(0.35 · L, …)`.** The cut is absolute, tuned on the quadruped that needed it; on
   a machine whose whole standoff is shorter than the cut it would collapse the capsule to
   a sphere about the centre and let the player stand beside a flank. A third of the

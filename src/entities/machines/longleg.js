@@ -687,13 +687,44 @@ export class Longleg extends Machine {
          * number is a measured delivery loss rather than a margin picked to
          * clear a gate. A clip-driven stance window can fall between drawn
          * frames — this file's 120 lines of notes are about that — so the
-         * published plant rate runs about 0.9x the commanded one, and a 1.12x
-         * floor delivers 1.00x the band floor, i.e. exactly on the edge:
-         * measured 0.89, 0.97 and 1.69 Hz over three runs against floors of
-         * 0.98, 1.01 and 0.88. 1.38 x 0.9 is 1.24x the floor, which is inside
-         * the band WITH the loss instead of despite it. The CEILING is
+         * published plant rate runs below the commanded one. The CEILING is
          * untouched and is still the honest `0.88 * cadCeilK` above: this
          * raises what the machine is asked to do, not what the gate can see.
+         *
+         * ROUND-4 FIX ROUND 3 — "A48-cadence flaky on Longleg (~1/3 fail)".
+         * MEASURED, AND LEFT AT 1.38 BECAUSE EVERY VALUE THAT FIXES `A48`
+         * BREAKS `A48b`. Six consecutive `A48-cadence` runs measure the
+         * delivery ratio directly — delivered Hz over the floor this line
+         * commands:
+         *
+         * | run | band floor | commanded floor | delivered | ratio |
+         * | --- | --- | --- | --- | --- |
+         * | 1 | 0.98 | 1.35 | 1.60 | 1.18 |
+         * | 2 | 0.86 | 1.19 | 1.79 | 1.50 |
+         * | 3 | 0.92 | 1.27 | **0.80** | **0.63** |
+         * | 4 | 0.98 | 1.35 | 1.69 | 1.25 |
+         * | 5 | 0.96 | 1.32 | **0.79** | **0.60** |
+         * | 6 | 0.98 | 1.35 | 1.99 | 1.47 |
+         *
+         * The loss is not a constant 0.9 — it is 0.60 to 1.50 on one build, on
+         * one box, with nothing changed between runs. Raising the coefficient
+         * to 1.95 (which covers the worst sample with margin) was built and
+         * measured: it put this species' `A48b-cadence-headroom-expansion`
+         * fraction at **0.582**, because the floor and the ceiling are both
+         * multiples of `band.lo` (`0.88 * band.hi` IS `2.64 * band.lo`) so the
+         * ceiling binds whenever `floorCoef * trim > 2.64` — 1.91 of trim at
+         * 1.38, only 1.35 at 1.95. Capping the trim at 1.35 to close that by
+         * arithmetic (1.95 x 1.35 = 2.633 < 2.64) then removed the integrator
+         * authority the floor raise had not replaced, and the delivered rate
+         * came back at **0.59 and 0.70 Hz**, i.e. worse than before.
+         *
+         * So the two gates are in direct tension on this species and the flake
+         * is not closable by a coefficient. What the numbers actually say is
+         * that the delivery loss is not a constant at all: it is a function of
+         * host load through `wallPerSim`, and a feed-forward floor cannot track
+         * it. The fix is a real measurement of the stance window the consumer
+         * can SEE (rig/contact.js `latch`) rather than a compensation factor —
+         * which is a change to the clip-driven contact path, not to this line.
          */
         const lo = band.lo * 1.38 * wps2;
         const hi = band.hi * wps2 * 0.88 * cadCeilK(loop);
