@@ -458,12 +458,168 @@ export const GATES = [
         await new Promise((r) => requestAnimationFrame(r));
       }
 
+      /**
+       * FIX ROUND 4 — THE TURN PHASE. THE SAMPLE ABOVE CANNOT CONTAIN A TURN.
+       *
+       * A judge filmed THOK turning 3.142 rad to face a player standing behind
+       * him with 0.30 m of planted-toe drift per stance window (3.8x this bar),
+       * the body origin motionless — the turn itself swept the feet. The probe
+       * above could not see it: the player is dropped at (22, 30) and the gate
+       * sleeps 6 s before sampling, so every NPC near that point has finished
+       * turning before the first window opens.
+       *
+       * So the player is now walked round BEHIND standing people, one at a time,
+       * and each one's stance windows are judged WHILE THEY TURN — same windows,
+       * same exclusions, same 0.08 m bar. Two of them turn because the player is
+       * standing there ('_look'); a third is spoken to ('talkTo') from behind,
+       * which used to snap the yaw in one frame, and the call itself must leave
+       * the heading untouched. And one term is new, because the judge measured it
+       * and the stance window cannot: a toe that is ON THE GROUND — support or
+       * not — may not slide either ('contact' windows: toe within 3 cm of the
+       * body's floor, XZ extent, chunked at WINDOW_MAX exactly like a stander's
+       * stance window). A turn that pivots about one toe passes the stance
+       * window and fails this.
+       */
+      const wrapA = (a) => { a %= Math.PI * 2; if (a > Math.PI) a -= Math.PI * 2; if (a < -Math.PI) a += Math.PI * 2; return a; };
+      const CONTACT_H = 0.03;
+      const turnSubjects = [];
+      const turnWindows = [];
+      const contactWindows = [];
+      let turnExcluded = 0;
+      const used = new Set();
+      const pickSubject = () => {
+        const c = S.list.filter((n) => !used.has(n.id)
+          && (n.state === 'work' || n.state === 'idle' || n.state === 'errand')
+          && n.anim.canStep && !n.anim.busy && !n.anim.stepping
+          // a beat or a replan due inside the turn would put the body on its
+          // knees or on the move half way round — pick someone with time left
+          && n.stateT > 4.5 && (n.state !== 'idle' || n.fidgetT > 4.5));
+        c.sort((a, b) => b.stateT - a.stateT);
+        return c[0] || null;
+      };
+      const runTurn = async (how) => {
+        let n = null;
+        for (let k = 0; k < 40 && !n; k++) { n = pickSubject(); if (!n) await sleep(250); }
+        if (!n) return null;
+        used.add(n.id);
+        const g = n.group;
+        const behind = { x: g.position.x - Math.sin(g.rotation.y) * 1.6, z: g.position.z - Math.cos(g.rotation.y) * 1.6 };
+        p.position.set(behind.x, p.position.y, behind.z);
+        p.velocity?.set?.(0, 0, 0);
+        p._snapToGround?.();
+        const rec = { id: n.id, how, state0: n.state, clip0: n.anim.current, turnedRad: 0,
+          maxYawStepRad: 0, syncYawChangeRad: null, steps0: n.anim.stepStats().steps, steps: 0,
+          windows: 0, worstM: 0, contactWindows: 0, worstContactM: 0, originMovedM: 0 };
+        const o0 = { x: g.position.x, z: g.position.z };
+        if (how === 'talk') {
+          const y0 = g.rotation.y;
+          S.talkTo(n.id);
+          rec.syncYawChangeRad = +Math.abs(wrapA(g.rotation.y - y0)).toFixed(4);
+        }
+        let prevYaw = g.rotation.y;
+        const ow = Object.create(null);    // stance windows, keyed by toe
+        const cw = Object.create(null);    // contact windows, keyed by toe
+        const t0 = performance.now();
+        let quiet = 0;
+        const closeW = (w, list, key) => {
+          if (!w || w.n < 3) return;
+          const d = +Math.hypot(w.x1 - w.x0, w.z1 - w.z0).toFixed(4);
+          if (w.bad) { turnExcluded++; return; }
+          list.push({ id: n.id, how, toe: key, n: w.n, d, clip: w.clip });
+        };
+        const openW = (f, now) => ({ x0: f.raw.x, x1: f.raw.x, z0: f.raw.z, z1: f.raw.z, n: 1,
+          t0: now, epoch: f.epoch, clip: f.clip, bad: f.blending });
+        const grow = (w, f, now) => {
+          w.x0 = Math.min(w.x0, f.raw.x); w.x1 = Math.max(w.x1, f.raw.x);
+          w.z0 = Math.min(w.z0, f.raw.z); w.z1 = Math.max(w.z1, f.raw.z);
+          w.n++;
+          if (f.blending || f.clip !== w.clip) w.bad = true;
+          if (f.epoch !== w.epoch) {
+            w.epoch = f.epoch;
+            if (f.reason === 'base' || f.reason === 'clamp' || f.reason === 'blend') w.bad = true;
+          }
+        };
+        let prevT = performance.now();
+        while (performance.now() - t0 < 6500) {
+          await new Promise((r) => requestAnimationFrame(r));
+          const now = performance.now();
+          const hitch = now - prevT > hitchMs;
+          prevT = now;
+          const dy = wrapA(g.rotation.y - prevYaw);
+          prevYaw = g.rotation.y;
+          rec.turnedRad += dy;
+          rec.maxYawStepRad = Math.max(rec.maxYawStepRad, Math.abs(dy));
+          const gy = g.position.y, sc = g.scale.x || 1;
+          for (const f of S.standingFeet()) {
+            if (f.id !== n.id) continue;
+            // stance window: the planted toe
+            let w = ow[f.name];
+            if (f.planted) {
+              if (!w) ow[f.name] = openW(f, now);
+              else {
+                grow(w, f, now);
+                if (hitch) w.bad = true;
+                if (now - w.t0 >= WINDOW_MAX * 1000) { closeW(w, turnWindows, f.name); ow[f.name] = openW(f, now); }
+              }
+            } else if (w) { closeW(w, turnWindows, f.name); ow[f.name] = null; }
+            // contact window: ANY toe on the ground
+            let c = cw[f.name];
+            const down = f.raw.y - gy < CONTACT_H * sc;
+            if (down) {
+              if (!c) cw[f.name] = openW(f, now);
+              else {
+                grow(c, f, now);
+                if (hitch) c.bad = true;
+                if (now - c.t0 >= WINDOW_MAX * 1000) { closeW(c, contactWindows, f.name); cw[f.name] = openW(f, now); }
+              }
+            } else if (c) { closeW(c, contactWindows, f.name); cw[f.name] = null; }
+          }
+          // done once the body has come round and the feet have been put down
+          if (Math.abs(rec.turnedRad) > 2.5 && !n.anim.stepping) { if (++quiet > 8) break; } else quiet = 0;
+          if (n.state !== 'work' && n.state !== 'idle' && n.state !== 'errand' && n.state !== 'talk' && n.state !== 'face') break;
+        }
+        for (const k of Object.keys(ow)) closeW(ow[k], turnWindows, k);
+        for (const k of Object.keys(cw)) closeW(cw[k], contactWindows, k);
+        const mine = turnWindows.filter((w) => w.id === n.id);
+        const mineC = contactWindows.filter((w) => w.id === n.id);
+        rec.turnedRad = +Math.abs(rec.turnedRad).toFixed(3);
+        rec.maxYawStepRad = +rec.maxYawStepRad.toFixed(3);
+        rec.steps = n.anim.stepStats().steps - rec.steps0;
+        rec.windows = mine.length;
+        rec.worstM = mine.length ? Math.max(...mine.map((w) => w.d)) : 0;
+        rec.contactWindows = mineC.length;
+        rec.worstContactM = mineC.length ? Math.max(...mineC.map((w) => w.d)) : 0;
+        rec.originMovedM = +Math.hypot(g.position.x - o0.x, g.position.z - o0.z).toFixed(3);
+        rec.state1 = n.state; rec.clip1 = n.anim.current;
+        if (how === 'talk') { try { ctx.progression?.closeDialogue?.(); } catch { /* no panel */ } }
+        turnSubjects.push(rec);
+        return rec;
+      };
+      for (let attempt = 0; attempt < 6; attempt++) {
+        const got = turnSubjects.filter((r) => r.how === 'approach' && r.turnedRad >= 2.5).length;
+        if (got >= 2) break;
+        await runTurn('approach');
+      }
+      for (let attempt = 0; attempt < 3; attempt++) {
+        if (turnSubjects.some((r) => r.how === 'talk' && r.turnedRad >= 2.5)) break;
+        await runTurn('talk');
+      }
+      const turnedApproach = turnSubjects.filter((r) => r.how === 'approach' && r.turnedRad >= 2.5);
+      const turnedTalk = turnSubjects.filter((r) => r.how === 'talk' && r.turnedRad >= 2.5);
+      const worstTurn = turnWindows.length ? Math.max(...turnWindows.map((w) => w.d)) : 0;
+      const worstContact = contactWindows.length ? Math.max(...contactWindows.map((w) => w.d)) : 0;
+      const talkSnap = turnSubjects.filter((r) => r.how === 'talk')
+        .reduce((m, r) => Math.max(m, r.syncYawChangeRad ?? 0), 0);
+      const turnPass = turnedApproach.length >= 2 && turnedTalk.length >= 1
+        && turnWindows.length >= 8 && worstTurn <= 0.08 && worstContact <= 0.08
+        && talkSnap === 0;
+
       const judged = done.concat(shoved);
       const ids = [...new Set(judged.map((w) => w.id))];
       if (judged.length < 10 || ids.length < 3) {
         return { pass: false, detail: { reason: 'too few stance windows to judge',
           judged: judged.length, npcs: ids.length, hitched,
-          excludedClip, excludedClamp, hitchThresholdMs: +hitchMs.toFixed(1) } };
+          excludedClip, excludedClamp, hitchThresholdMs: +hitchMs.toFixed(1), turnSubjects } };
       }
       judged.sort((a, b) => b.d - a.d);
       const worst = judged[0].d;
@@ -505,8 +661,23 @@ export const GATES = [
           && (excludedClip + excludedClamp + excludedBlend) < judged.length
           // the blindness itself is a failure: workers/idlers must be in the sample
           && work.length >= 10 && workIds.length >= 2
-          && badLoops.length === 0 && travellingClip.size === 0,
+          && badLoops.length === 0 && travellingClip.size === 0
+          // fix round 4: standing people judged WHILE THEY TURN
+          && turnPass,
         detail: {
+          // fix round 4 — the turn phase (see above): two people turned by the
+          // player standing behind them, one by talkTo from behind
+          turnPhase: {
+            pass: turnPass,
+            maxStanceDriftWhileTurningM: +worstTurn.toFixed(4),
+            maxGroundContactSlideM: +worstContact.toFixed(4),
+            turnWindows: turnWindows.length, contactWindows: contactWindows.length,
+            excludedCrossfadeOrHitch: turnExcluded,
+            talkToSyncYawChangeRad: talkSnap,
+            subjects: turnSubjects,
+            worstFive: turnWindows.slice().sort((a, b) => b.d - a.d).slice(0, 5),
+            worstFiveContact: contactWindows.slice().sort((a, b) => b.d - a.d).slice(0, 5),
+          },
           maxStanceDriftM: worst, medianDriftM: median,
           maxDriftCleanM: +worstClean.toFixed(4),
           maxDriftShovedM: +worstShoved.toFixed(4),

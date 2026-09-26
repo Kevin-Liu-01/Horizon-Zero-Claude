@@ -75,6 +75,81 @@ const _refused = new Set();
  */
 export const LEAN_CAP = 0.12;
 
+/**
+ * A STANDING BODY TURNS BY STEPPING (fix round 4, judge finding "turn-to-face
+ * and yield-escape turns still skate the planted feet on standing NPCs").
+ *
+ * Only a gait carries its feet through the air, so only a gait can pivot about
+ * its support foot for free. Over a stationary loop there is no swing foot to
+ * hide a turn in: yawing the body about its origin swept both toes around a
+ * ~0.12 m circle (a judge filmed THOK turning 3.142 rad to face the player with
+ * 0.30 m of planted-toe drift per stance window and 0.99 m of toe path, the body
+ * origin motionless), and pivoting about ONE toe instead only moves the sweep to
+ * the other foot and the origin with it. The pack has no turn-in-place clip.
+ *
+ * So a standing turn is STEPPED, procedurally, over whatever loop is on stage:
+ *
+ *   - the body yaws about its OWN ORIGIN, so the crowd logic (`_dodge`,
+ *     `_separate`) still sees a body that is not moving — the reason the
+ *     pivot-about-the-foot fix was rejected in round 3 does not arise;
+ *   - each foot is PINNED where it stands — position and heading — by a
+ *     two-bone leg solve over the clip pose, so a planted foot cannot move;
+ *   - when a planted foot is twisted `STEP_YAW` out of line with the body (or
+ *     the clip wants it `STEP_POS` away), it is LIFTED `STEP_LIFT`, carried
+ *     through the air to where the clip wants it under the heading the body will
+ *     have when it lands, and put down; the feet alternate like a gait;
+ *   - horizontal travel only happens while the foot is off the ground (the
+ *     first and last `STEP_AIR` of the swing are pure lift and pure descent);
+ *   - when the turn stops, any foot still out of line takes one settling step,
+ *     and the solve fades out with the pins already on the clip's own feet.
+ *
+ * A planted foot that is being twisted further than `TWIST_MAX` holds the body
+ * turn back until the other foot lands — the body waits for its feet.
+ */
+const STEP_TIME = 0.36;     // seconds a foot is in the air
+const STEP_LIFT = 0.065;    // metres the ankle rises at mid-swing (x body scale)
+const STEP_AIR = 0.15;      // fraction of the swing at each end that is vertical only
+const STEP_YAW = 0.45;      // radians of planted-foot twist that call for a step
+const STEP_POS = 0.07;      // metres of planted-ankle offset that call for a step
+const STEP_LEAD = 0.3;      // radians a landing foot may lead the body toward its goal
+const TWIST_MAX = 0.8;      // radians a planted foot may be twisted before the body waits
+const SETTLE_YAW = 0.035;   // a stopped body steps a foot out of line by more than this…
+const SETTLE_POS = 0.012;   // …or this, and releases the solve once both are inside it
+const STEP_FADE = 0.15;     // seconds to hand the legs back to the clip
+
+/**
+ * Loops in which a body is NOT standing on two feet — kneeling at a repair,
+ * seated on a log. There is no honest step for those, so they do not turn: the
+ * head still tracks (`_look`), the body waits until it is on its feet.
+ */
+const NO_STEP = new Set(['fixing', 'sitEnter', 'sitIdle', 'sitTalk', 'sitExit']);
+
+const _Y = new THREE.Vector3(0, 1, 0);
+const _H = new THREE.Vector3();
+const _K = new THREE.Vector3();
+const _A = new THREE.Vector3();
+const _A1 = new THREE.Vector3();
+const _T = new THREE.Vector3();
+const _ax = new THREE.Vector3();
+const _s1 = new THREE.Vector3();
+const _s2 = new THREE.Vector3();
+const _sc = new THREE.Vector3();
+const _qh = new THREE.Quaternion();
+const _qt = new THREE.Quaternion();
+const _qs = new THREE.Quaternion();
+const _qf = new THREE.Quaternion();
+const _q1 = new THREE.Quaternion();
+const _q2 = new THREE.Quaternion();
+const _qy = new THREE.Quaternion();
+const _qi = new THREE.Quaternion();
+
+const wrapPi = (a) => {
+  a %= Math.PI * 2;
+  if (a > Math.PI) a -= Math.PI * 2;
+  else if (a < -Math.PI) a += Math.PI * 2;
+  return a;
+};
+
 /** Slots that must exist for the behaviour loop to have anything to say. */
 const CORE_SLOTS = ['idle', 'walk'];
 
@@ -226,6 +301,40 @@ export class NpcAnimator {
       { name: 'toe.R', planted: false, world: new THREE.Vector3(), raw: new THREE.Vector3() },
     ];
 
+    /* --- the stepped standing turn (see `STEP_TIME`) --- */
+    const leg = (th, sh, fo) => {
+      const thigh = byName.get(th), shin = byName.get(sh), foot = byName.get(fo);
+      if (!thigh || !shin || !foot || !thigh.parent) return null;
+      return {
+        thigh, shin, foot,
+        axis: new THREE.Vector3(),   // last good knee hinge (a straight leg has none)
+        hasAxis: false,
+        pin: new THREE.Vector3(),    // world XZ the ankle is held at
+        yaw: 0,                      // world heading the foot is held at
+        swing: false, s: 0,
+        from: new THREE.Vector3(), fromYaw: 0, landYaw: 0,
+        clip: new THREE.Vector3(),   // the clip's own ankle, this frame
+      };
+    };
+    this._legs = [
+      leg(B.thighL, B.shinL, B.footL),
+      leg(B.thighR, B.shinR, B.footR),
+    ];
+    if (!this._legs[0] || !this._legs[1]) this._legs = null;
+    this._step = {
+      on: false,        // the leg solve owns the legs
+      fresh: false,     // pins are taken from the clip on the next update
+      w: 0,             // solve weight (1 engaged; fades to 0 on release)
+      releasing: false,
+      heat: 0,          // seconds since the last standing turn() call, counted down
+      acc: 0,           // yaw applied by turn() since the last update
+      rate: 0,          // smoothed body yaw rate, rad/s
+      goal: null,       // world heading the caller is turning toward, if it said
+      land: 0,          // seconds since a foot last landed
+      steps: 0,         // feet put down (probe)
+      held: 0,          // radians of turn() the planted feet refused (probe)
+    };
+
     /* --- look-at --- */
     this.space = new BoneSpace(group, { worldFrame: true });
     this.eNeck = this.space.entry(B.neck);
@@ -274,6 +383,14 @@ export class NpcAnimator {
     for (const e of [this.eSpine1, this.eSpine3, this.eClavL, this.eClavR,
       this.eArmL, this.eArmR, this.eForeL, this.eForeR, this.eNeck, this.eHead]) {
       if (e && e.bone) this._bias.push({ bone: e.bone, q: e.bone.quaternion.clone() });
+    }
+    // the stepped turn writes the LEGS procedurally too, and an idle holds its
+    // legs on near-constant tracks — exactly the case above: without the
+    // write-back a solved leg would stay solved after the solve let go
+    if (this._legs) {
+      for (const l of this._legs) {
+        for (const b of [l.thigh, l.shin, l.foot]) this._bias.push({ bone: b, q: b.quaternion.clone() });
+      }
     }
   }
 
@@ -643,31 +760,32 @@ export class NpcAnimator {
   }
 
   /**
-   * Yaw the body about the PLANTED FOOT so a turn never drags it.
-   * @param {number} dYaw radians
+   * Turn the body by `dYaw` without dragging a foot.
+   *
+   * WHILE A GAIT IS ON STAGE the body yaws about the planted foot: the other foot
+   * is in the air, so the corner costs nothing.
+   *
+   * OVER A STATIONARY LOOP (fix round 4) there is no swing foot, and neither
+   * pivot is free — yawing about the body origin sweeps both toes round a
+   * ~0.12 m circle (a judge measured 0.30 m of planted-toe drift per stance
+   * window on THOK turning to face the player), and yawing about one toe sweeps
+   * the other one instead and moves the origin, which the crowd logic cannot see
+   * (round 3 measured that: two walkers merged). So the body yaws about its own
+   * origin and the FEET STEP: see `STEP_TIME` and `_stepFeet`. A body in a pose
+   * that has no honest step (`NO_STEP`: kneeling, seated) does not turn at all.
+   *
+   * @param {number} dYaw radians this frame
+   * @param {number|null} goal the world heading the caller is ultimately turning
+   *   toward, if it knows — a landing foot leads the body toward it but never
+   *   past it, so the last step of a turn puts the feet down where they finish
+   * @returns {number} the yaw actually applied (a standing body may wait for
+   *   its feet, and a kneeling one does not turn)
    */
-  turn(dYaw) {
-    if (!dYaw) return;
+  turn(dYaw, goal = null) {
+    if (!dYaw) return 0;
     const g = this.group;
-    /**
-     * ONLY A GAIT PIVOTS ABOUT THE FOOT — AND THAT IS DELIBERATE (fix round 3).
-     *
-     * Extending the pivot to stationary loops was tried, because a yaw about the
-     * body origin does sweep the planted toe around a ~0.12 m arc. It was
-     * measured and rejected: pivoting about the foot MOVES THE BODY ORIGIN, and
-     * for a body that the crowd logic believes is standing still that is a
-     * translation nothing accounts for — `_dodge` predicts closest approach from
-     * each body's NOMINAL GAIT SPEED, and a yielding body turning at 2.4 rad/s
-     * about a foot 0.12 m away travels 0.29 m/s while reading as stationary.
-     * A96's pairwise separation went from 0.656 m (0 frames under the 0.55 m bar)
-     * to 0.093 m with 226 frames under it, two walkers merged.
-     *
-     * The arc it was meant to remove is small enough to measure: with the pivot
-     * off, A97's worst CLEAN drift on working and idling NPCs is 0.017-0.019 m
-     * against the 0.08 m bar. So the body origin stays put for a stationary loop,
-     * and the crowd keeps the guarantee it is built on.
-     */
     const pivot = this._have && this.rootMotion;
+    if (!pivot && !this.rootMotion) return this._turnStanding(dYaw, goal);
     if (pivot) {
       const f = this._supportWorld;
       const dx = g.position.x - f.x, dz = g.position.z - f.z;
@@ -691,6 +809,246 @@ export class NpcAnimator {
       this._prevLocal.x = dx * cy - dz * sy;
       this._prevLocal.z = dx * sy + dz * cy;
     }
+    return dYaw;
+  }
+
+  /** Can this body take a step right now? (standing on two feet — see `NO_STEP`) */
+  get canStep() {
+    if (!this._legs) return false;
+    if (NO_STEP.has(this.current)) return false;
+    const O = this.layers.order;
+    for (let i = 0; i < O.length; i++) {
+      const l = O[i];
+      if ((l.weight > 0.05 || l.target > 0.05) && NO_STEP.has(l.name)) return false;
+    }
+    return true;
+  }
+
+  /** Is the stepped turn holding the legs? (probe) */
+  get stepping() { return this._step.on; }
+
+  /** Feet put down by stepped turns since boot, and turn refused by planted feet (probe). */
+  stepStats() { return { steps: this._step.steps, heldRad: +this._step.held.toFixed(3), on: this._step.on }; }
+
+  _turnStanding(dYaw, goal) {
+    if (!this.canStep) return 0;
+    const g = this.group;
+    const st = this._step;
+    const yaw = g.rotation.y;
+    if (!st.on || st.releasing) {
+      if (!st.on) {
+        // pins are read from the clip on the next update, un-rotated by the yaw
+        // applied between now and then (see `_stepFeet`)
+        st.on = true; st.fresh = true; st.acc = 0; st.rate = 0; st.land = 1;
+        for (const l of this._legs) { l.yaw = yaw; l.swing = false; l.s = 0; }
+      }
+      st.releasing = false;
+      st.w = 1;
+    }
+    /**
+     * THE BODY WAITS FOR ITS FEET. A planted foot is held at the heading it was
+     * put down with, so every radian the body turns is a radian of twist in that
+     * leg; past `TWIST_MAX` the rest of this frame's turn is refused until the
+     * other foot lands. The callers re-read `rotation.y` every frame, so a
+     * refused radian is simply turned a moment later.
+     */
+    let d = dYaw;
+    for (const l of this._legs) {
+      if (l.swing) continue;
+      const tw = wrapPi(yaw + d - l.yaw);
+      if (tw > TWIST_MAX) d = Math.max(0, d - (tw - TWIST_MAX));
+      else if (tw < -TWIST_MAX) d = Math.min(0, d - (tw + TWIST_MAX));
+    }
+    st.held += Math.abs(dYaw - d);
+    st.heat = 0.2;
+    st.goal = goal;
+    if (!d) return 0;
+    g.rotation.y = yaw + d;
+    st.acc += d;
+    return d;
+  }
+
+  /**
+   * THE STEPPED TURN — run inside `update()`, after the mixer has posed the
+   * clip and before the foot lock reads the toes (so the probe sees the solved
+   * legs, not the clip's). See `STEP_TIME` for the whole contract.
+   */
+  _stepFeet(dt) {
+    const st = this._step;
+    if (!st.on) return;
+    const g = this.group;
+    const yaw = g.rotation.y;
+    const sc = g.scale.x || 1;
+    const ox = g.position.x, oz = g.position.z;
+    const L = this._legs;
+
+    // the clip's own ankles this frame
+    for (let k = 0; k < 2; k++) L[k].clip.setFromMatrixPosition(L[k].foot.matrixWorld);
+
+    if (st.fresh) {
+      // where each ankle WAS: this frame's clip ankle, un-rotated by the yaw
+      // turn() applied since the last update (the body origin is the pivot)
+      const c = Math.cos(-st.acc), s = Math.sin(-st.acc);
+      for (let k = 0; k < 2; k++) {
+        const dx = L[k].clip.x - ox, dz = L[k].clip.z - oz;
+        L[k].pin.set(ox + dx * c + dz * s, 0, oz - dx * s + dz * c);
+      }
+      st.fresh = false;
+    }
+
+    // body yaw rate, for the landing lead
+    if (dt > 0) st.rate += (st.acc / dt - st.rate) * Math.min(1, dt * 10);
+    st.acc = 0;
+    st.heat -= dt;
+    st.land += dt;
+    const turning = st.heat > 0;
+
+    // a gait took the stage, or a pose with no honest step: hand the legs back
+    if (this.rootMotion || !this.canStep) st.releasing = true;
+
+    /**
+     * Where a foot should come down: the clip's ankle, re-expressed under the
+     * heading the body will have when the foot lands — the current heading plus
+     * the yaw still to come during the rest of the swing and a short lead,
+     * clamped toward (never past) the caller's goal.
+     */
+    const landYaw = (rem) => {
+      let lead = st.rate * (rem + 0.12);
+      if (st.goal !== null) {
+        const toGoal = wrapPi(st.goal - yaw);
+        lead = toGoal >= 0 ? THREE.MathUtils.clamp(lead, 0, toGoal) : THREE.MathUtils.clamp(lead, toGoal, 0);
+      }
+      return yaw + THREE.MathUtils.clamp(lead, -STEP_LEAD, STEP_LEAD);
+    };
+
+    // advance the swings
+    let swinging = -1;
+    for (let k = 0; k < 2; k++) {
+      const l = L[k];
+      if (!l.swing) continue;
+      l.s += dt / STEP_TIME;
+      l.landYaw = landYaw(Math.max(0, 1 - l.s) * STEP_TIME);
+      if (l.s >= 1) {
+        const a = l.landYaw - yaw, c = Math.cos(a), s = Math.sin(a);
+        const dx = l.clip.x - ox, dz = l.clip.z - oz;
+        l.pin.set(ox + dx * c + dz * s, 0, oz - dx * s + dz * c);
+        l.yaw = l.landYaw;
+        l.swing = false; l.s = 0;
+        st.land = 0;
+        st.steps++;
+      } else swinging = k;
+    }
+
+    // start a step: the foot most out of line, one foot in the air at a time
+    if (swinging < 0 && !st.releasing) {
+      let best = -1, bestNeed = 0, settled = true;
+      for (let k = 0; k < 2; k++) {
+        const l = L[k];
+        const tw = Math.abs(wrapPi(yaw - l.yaw));
+        const off = Math.hypot(l.pin.x - l.clip.x, l.pin.z - l.clip.z);
+        if (tw > SETTLE_YAW || off > SETTLE_POS) settled = false;
+        let need;
+        if (turning) {
+          need = Math.max(tw / STEP_YAW, off / STEP_POS);
+          // a turn in progress keeps the feet alternating like a gait: the foot
+          // that did not just land goes as soon as it is half out of line
+          if (st.land < 0.05 && need >= 0.5) need = Math.max(need, 1);
+        } else {
+          need = (tw > SETTLE_YAW || off > SETTLE_POS) ? 1 + tw + off : 0;
+        }
+        if (need >= 1 && need > bestNeed) { best = k; bestNeed = need; }
+      }
+      if (best >= 0 && st.land >= 0.04) {
+        const l = L[best];
+        l.swing = true; l.s = 0;
+        l.from.copy(l.pin); l.fromYaw = l.yaw;
+        l.landYaw = landYaw(STEP_TIME);
+        swinging = best;
+      } else if (best < 0 && settled && !turning) {
+        st.releasing = true;
+      }
+    }
+
+    if (st.releasing) {
+      st.w -= dt / STEP_FADE;
+      if (st.w <= 0) {
+        st.on = false; st.w = 0; st.releasing = false;
+        for (const l of L) { l.swing = false; l.s = 0; }
+        return;
+      }
+    }
+
+    // solve both legs to their targets
+    for (let k = 0; k < 2; k++) {
+      const l = L[k];
+      let tx, tz, lift = 0, dYawFoot;
+      if (l.swing) {
+        const a = l.landYaw - yaw, c = Math.cos(a), s = Math.sin(a);
+        const dx = l.clip.x - ox, dz = l.clip.z - oz;
+        const ex = ox + dx * c + dz * s, ez = oz - dx * s + dz * c;
+        const u = THREE.MathUtils.clamp((l.s - STEP_AIR) / (1 - 2 * STEP_AIR), 0, 1);
+        const e = u * u * (3 - 2 * u);
+        tx = l.from.x + (ex - l.from.x) * e;
+        tz = l.from.z + (ez - l.from.z) * e;
+        lift = Math.sin(Math.PI * Math.min(1, l.s)) * STEP_LIFT * sc;
+        dYawFoot = wrapPi(l.fromYaw - yaw) * (1 - e) + wrapPi(l.landYaw - yaw) * e;
+      } else {
+        tx = l.pin.x; tz = l.pin.z;
+        dYawFoot = wrapPi(l.yaw - yaw);
+      }
+      _T.set(tx, l.clip.y + lift, tz);
+      this._solveLeg(l, _T, dYawFoot, st.w);
+    }
+  }
+
+  /**
+   * Two-bone leg solve: put the ankle on `target` and the foot on the clip's own
+   * foot orientation turned by `dYawFoot` about world up, blended over the clip
+   * pose by `w`. Everything is read from the bones' current world matrices (the
+   * clip pose after the mixer), written back as LOCAL quaternions, and the leg's
+   * subtree matrices are refreshed so the foot lock and the probe read the
+   * solved toes. No allocation: module scratch only.
+   */
+  _solveLeg(l, target, dYawFoot, w) {
+    const { thigh, shin, foot } = l;
+    thigh.parent.matrixWorld.decompose(_s1, _qh, _sc);
+    thigh.matrixWorld.decompose(_H, _qt, _sc);
+    shin.matrixWorld.decompose(_K, _qs, _sc);
+    foot.matrixWorld.decompose(_A, _qf, _sc);
+    const L1 = _H.distanceTo(_K), L2 = _K.distanceTo(_A);
+    if (L1 < 1e-4 || L2 < 1e-4) return;
+
+    // 1. bend the knee so hip->ankle is as long as hip->target
+    _s1.subVectors(_H, _K);
+    _s2.subVectors(_A, _K);
+    const th0 = Math.acos(THREE.MathUtils.clamp(_s1.dot(_s2) / (L1 * L2), -1, 1));
+    const reach = THREE.MathUtils.clamp(target.distanceTo(_H), Math.abs(L1 - L2) + 1e-4, (L1 + L2) * 0.9995);
+    const th1 = Math.acos(THREE.MathUtils.clamp((L1 * L1 + L2 * L2 - reach * reach) / (2 * L1 * L2), -1, 1));
+    _ax.crossVectors(_s1, _s2);
+    if (_ax.lengthSq() > 1e-10) { _ax.normalize(); l.axis.copy(_ax); l.hasAxis = true; }
+    else if (l.hasAxis) _ax.copy(l.axis);
+    if (l.hasAxis) _q1.setFromAxisAngle(_ax, th1 - th0);
+    else _q1.identity();
+    _A1.copy(_s2).applyQuaternion(_q1).add(_K);
+
+    // 2. swing the whole leg about the hip so the ankle lands on the target
+    _s1.subVectors(_A1, _H).normalize();
+    _s2.subVectors(target, _H).normalize();
+    _q2.setFromUnitVectors(_s1, _s2);
+
+    // 3. new world orientations
+    _qt.premultiply(_q2);                                   // thigh
+    _qs.premultiply(_q1).premultiply(_q2);                  // shin
+    _qf.premultiply(_qy.setFromAxisAngle(_Y, dYawFoot));    // foot
+
+    // 4. back to local, blended over the clip's local by w
+    _qi.copy(_qh).invert().multiply(_qt);
+    if (w >= 1) thigh.quaternion.copy(_qi); else thigh.quaternion.slerp(_qi, w);
+    _qi.copy(_qt).invert().multiply(_qs);
+    if (w >= 1) shin.quaternion.copy(_qi); else shin.quaternion.slerp(_qi, w);
+    _qi.copy(_qs).invert().multiply(_qf);
+    if (w >= 1) foot.quaternion.copy(_qi); else foot.quaternion.slerp(_qi, w);
+    thigh.updateMatrixWorld(true);
   }
 
   /** Point the head (and half as much, the neck) at a world position. */
@@ -724,6 +1082,9 @@ export class NpcAnimator {
     for (let i = 0; i < bias.length; i++) bias[i].q.copy(bias[i].bone.quaternion);
     const g = this.group;
     g.updateMatrixWorld(true);
+    // a standing turn's feet are solved BEFORE the lock reads the toes, so the
+    // support choice and the probe's `raw` toes are the solved legs
+    if (this._step.on) this._stepFeet(dt);
     const moved = this._lockFeet(dt);
     this._stance(dt);
     this._look(dt);
@@ -798,6 +1159,10 @@ export class NpcAnimator {
     this._have = false;
     this.lockEpoch++;
     this.lockReason = 'teleport';
+    // a teleported body has no footing to keep: the legs go back to the clip
+    const st = this._step;
+    st.on = false; st.w = 0; st.releasing = false; st.fresh = false;
+    if (this._legs) for (const l of this._legs) { l.swing = false; l.s = 0; }
   }
 
   /**
@@ -813,6 +1178,14 @@ export class NpcAnimator {
     this._supportWorld.x += dx; this._supportWorld.z += dz;
     this._feet[0].world.x += dx; this._feet[0].world.z += dz;
     this._feet[1].world.x += dx; this._feet[1].world.z += dz;
+    // a stepping body's pinned feet go with it: the shove is the artefact, and
+    // the probe judges it exactly as it judges a shove on an unsolved foot
+    if (this._step.on && this._legs) {
+      for (const l of this._legs) {
+        l.pin.x += dx; l.pin.z += dz;
+        l.from.x += dx; l.from.z += dz;
+      }
+    }
   }
 
   _stance(dt) {

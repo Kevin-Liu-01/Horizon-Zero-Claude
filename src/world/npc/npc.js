@@ -167,12 +167,19 @@ const GRIND_STOP = 0.035;
 const GRIND_WAIT = 0.3;
 
 /**
+ * Heading error an arrival may simply keep (`_faceFirst`): 0.05 rad carries a toe
+ * 0.12 m from the body origin 6 mm, and a seated body is placed inside its own
+ * sit-down blend. Anything larger is stepped round.
+ */
+const FACE_OK = 0.05;
+
+/**
  * States in which the body is standing on its own two feet — `standingFeet()`,
  * and therefore `A97-npc-no-skate`. `WALKING_STATES` is the old narrower set
  * `walkingFeet()` still answers with.
  */
 const WALKING_STATES = new Set(['walk', 'goto']);
-const ON_FEET = new Set(['walk', 'goto', 'work', 'idle', 'errand', 'talk']);
+const ON_FEET = new Set(['walk', 'goto', 'work', 'idle', 'errand', 'talk', 'face']);
 
 const _legA = [0, 0];
 const _legB = [0, 0];
@@ -380,6 +387,8 @@ export class NpcSystem {
         yieldAcc: 0, sepM: 0, sepAcc: 0, nearest: 99,
         /** bearing out of a crowd too tight to walk out of, and its lifetime */
         escape: 0, escapeT: 0,
+        /** the stepped arrival turn (`_faceFirst`), and whether `_look` owns the heading */
+        faceGoal: 0, faceThen: null, faceT: 0, faceSkip: false, facingPlayer: false,
       };
       anim.setStance(rng, SCALE_RANK.get(row.id) ?? this.list.length);
       anim.randomizePhase(rng);
@@ -1070,6 +1079,7 @@ export class NpcSystem {
   _goto(n, xz, then) {
     if (!xz) return this._startIdle(n, 4);
     n.state = 'goto';
+    n.faceSkip = false;
     n.gotoThen = then;
     n.target.set(xz[0], 0, xz[1]);
     this._planLeg(n, n.target);
@@ -1087,8 +1097,11 @@ export class NpcSystem {
       const dx = n.group.position.x - spot[0], dz = n.group.position.z - spot[1];
       if (dx * dx + dz * dz > 1.6) return this._goto(n, spot, 'work');
       const s = STATIONS[n.station];
-      if (s) n.group.rotation.y = Math.atan2(s.x - n.group.position.x, s.z - n.group.position.z);
+      // face the station by STEPPING round to it, not by assigning the yaw
+      // (fix round 4 — see `_faceFirst`)
+      if (s && this._faceFirst(n, Math.atan2(s.x - n.group.position.x, s.z - n.group.position.z), 'work')) return n;
     }
+    n.faceSkip = false;
     n.state = 'work';
     n.stateT = 4 + n.rng() * 3;
     n.workT = 16 + n.rng() * 14;        // a route-owner's shift, then back to it
@@ -1147,18 +1160,70 @@ export class NpcSystem {
     }
   }
 
+  /**
+   * TURN FIRST, THEN SETTLE (fix round 4).
+   *
+   * Arriving at a work mark or a seat used to ASSIGN the heading — a one-frame
+   * yaw snap on a standing body, which carries both planted feet round the body
+   * origin in a single frame. Measured on 5218 before this: three arrivals at a
+   * work mark in 90 s of camp time, snapping 0.341, 0.506 and 0.649 rad. That is
+   * the same artefact as `talkTo`'s snap (a judge's finding), so it gets the same
+   * cure: the arriving body stands (`face` state, `idle` loop) and STEPS round to
+   * the heading through `NpcAnimator.turn`, and only then kneels, works or sits.
+   *
+   * A body that has never been drawn (the boot-time plan) is simply placed, and a
+   * body that cannot step (see `NO_STEP`) is left facing the way it came.
+   *
+   * @returns {boolean} true when the body is turning first and the caller stops
+   */
+  _faceFirst(n, want, then) {
+    if (n.faceSkip) return false;
+    const err = wrapPi(want - n.group.rotation.y);
+    if (Math.abs(err) <= FACE_OK) return false;
+    if (n.anim.layers.time <= 0) { n.group.rotation.y = want; return false; }
+    if (!n.anim.canStep) return false;
+    n.state = 'face';
+    n.faceGoal = want;
+    n.faceThen = then;
+    n.faceT = 5;
+    n.anim.play('idle', { fade: 0.25 });
+    return true;
+  }
+
+  _tickFace(n, dt) {
+    n.faceT -= dt;
+    const err = wrapPi(n.faceGoal - n.group.rotation.y);
+    // the player standing in front of this person owns the body's heading
+    // (`_look`); the arrival turn waits for them to leave
+    if (!n.facingPlayer && Math.abs(err) > 0.02) {
+      n.anim.turn(THREE.MathUtils.clamp(err, -1.6 * dt, 1.6 * dt), n.faceGoal);
+    }
+    if ((Math.abs(err) <= 0.02 && !n.anim.stepping) || n.faceT <= 0) {
+      const then = n.faceThen;
+      n.faceThen = null;
+      n.faceSkip = true;           // the continuation does not face again
+      return then === 'sit' ? this._goSit(n) : this._startWork(n);
+    }
+    return undefined;
+  }
+
   _goSit(n) {
     const s = STATIONS[n.station];
     if (!s) return this._startIdle(n, 6);
     const here = Math.hypot(n.group.position.x - s.x, n.group.position.z - s.z);
     if (here > 0.7) return this._goto(n, [s.x, s.z], 'sit');
+    const face = s.face || [CAMP.x, CAMP.z];
+    const want = Math.atan2(face[0] - n.group.position.x, face[1] - n.group.position.z);
+    // turn to the fire ON FOOT, then sit (fix round 4 — see `_faceFirst`); what
+    // is left to assign below is at most `FACE_OK`, inside the sit's own blend
+    if (this._faceFirst(n, want, 'sit')) return n;
+    n.faceSkip = false;
     n.state = 'sit';
     n.stateT = 999;
     n.sitMode = 0;
     n.sitSwapT = 6 + n.rng() * 7;
     n.sitLeaveT = 40 + n.rng() * 40;
-    const face = s.face || [CAMP.x, CAMP.z];
-    n.group.rotation.y = Math.atan2(face[0] - n.group.position.x, face[1] - n.group.position.z);
+    n.group.rotation.y = want;
     // the seated loop takes the stage NOW, with the enter clip as a one-shot
     // over it: two sitters mid-`Sitting_Enter` read as the same pose, and
     // `V35-settlement` compares every pair
@@ -1643,15 +1708,22 @@ export class NpcSystem {
         n.yieldAcc += dt;
         if (n.yieldT > 0) {
           /**
-           * FACE THE WAY OUT WHILE WAITING. `turn()` pivots the body about its
-           * planted foot, so this is the one correction that can be applied to a
-           * body at any strength without a millimetre of drift — and when the
-           * yield lifts the walker is already pointed out of the crowd.
+           * FACE THE WAY OUT WHILE WAITING, so when the yield lifts the walker is
+           * already pointed out of the crowd.
+           *
+           * The body is standing (the yield put it on `idle`), so this turn is
+           * STEPPED (fix round 4): the feet are lifted and put down round the
+           * body's own origin, which stays put for `_dodge`. Round 3's comment here
+           * said the turn pivoted about the planted foot and cost no drift; over a
+           * stationary loop it did neither. A planted foot twisted past
+           * `TWIST_MAX` makes the body wait for the other one to land, so the
+           * effective rate can fall below 2.4 rad/s — `_steer` finishes the turn
+           * as a gait once the yield lifts.
            */
           if (n.escapeT > 0) {
             n.escapeT -= dt;
             const err = wrapPi(n.escape - n.group.rotation.y);
-            n.anim.turn(THREE.MathUtils.clamp(err, -2.4 * dt, 2.4 * dt));
+            if (Math.abs(err) > 0.02) n.anim.turn(THREE.MathUtils.clamp(err, -2.4 * dt, 2.4 * dt), n.escape);
           }
           if (n.holdT > YIELD_PATIENCE) {
             n.holdT = 0; n.yieldT = 0;
@@ -1719,6 +1791,7 @@ export class NpcSystem {
         return undefined;
       }
       case 'sit': return this._tickSit(n, dt);
+      case 'face': return this._tickFace(n, dt);
       case 'sleep': {
         if (n.stateT <= 0) { n.stateT = 40 + n.rng() * 40; n.anim.play('crouchIdle', { fade: 0.8, rate: 0.5 }); }
         return undefined;
@@ -2004,15 +2077,19 @@ export class NpcSystem {
       sx += dx * step;
       sz += dz * step;
       // too close to walk out of at a skate-safe rate: remember the way OUT so
-      // the body can stop and turn to it, which costs no foot drift at all
+      // the body can stop and turn to it. A STOPPED body's turn is stepped
+      // (fix round 4 — see `NpcAnimator.turn`); it is the shove that could
+      // not be made skate-free, not the turn
       if (walking && d < SEP_HARD) { hardX += dx / d; hardZ += dz / d; }
     }
     n.nearest = near;
     /**
      * THE EMERGENCY IS A STOP AND A TURN, NOT A HARDER SHOVE. Shoving is the one
      * thing that cannot be done to a walking body without dragging its planted
-     * foot; turning about that foot is free. So a walker inside `SEP_HARD` drops
-     * its gait and faces the way out, and walks itself clear the moment the
+     * foot. A turn can be: the walker inside `SEP_HARD` drops its gait, and the
+     * standing body STEPS round to face the way out (fix round 4: before that
+     * the turn yawed the body about its origin and swept both toes, which the
+     * old comment here called free), then walks itself clear the moment the
      * yield lifts.
      */
     if (hardX || hardZ) {
@@ -2239,29 +2316,37 @@ export class NpcSystem {
   }
 
   _look(n, player, dt) {
-    if (!player) { n.anim.lookAt(null); return; }
+    if (!player) { n.facingPlayer = false; n.anim.lookAt(null); return; }
     const g = n.group;
     const dx = player.position.x - g.position.x, dz = player.position.z - g.position.z;
     const d2 = dx * dx + dz * dz;
     if (d2 < 36) {
       n.lookVec.set(player.position.x, player.position.y + 1.42, player.position.z);
       n.anim.lookAt(n.lookVec);
-      // close enough to be spoken to: turn the body and gesture
-      if (d2 < 6.5 && n.state !== 'walk' && n.state !== 'goto' && n.state !== 'sit' && n.state !== 'sleep') {
+      /**
+       * Close enough to be spoken to — or already being spoken to (`talkTo`):
+       * turn the body to face the player.
+       *
+       * THE TURN IS STEPPED (fix round 4). Round 3 routed this through `turn()`
+       * and claimed that cost the foot nothing; it did not, because `turn()` only
+       * pivoted about the foot for a GAIT, and over a stationary loop it yawed
+       * the body about its origin — a judge filmed THOK turning 3.142 rad with
+       * 0.30 m of planted-toe drift per stance window. `turn()` now steps a
+       * standing body round (`NpcAnimator._stepFeet`): the origin stays put, each
+       * foot is held where it stands until it is lifted and put down again. A
+       * body kneeling or seated has no honest step and turns its head only
+       * (`canStep`); sitters and sleepers were already excluded here.
+       */
+      const facing = n.state === 'talk' || d2 < 6.5;
+      n.facingPlayer = facing && n.state !== 'walk' && n.state !== 'goto' && n.state !== 'sit'
+        && n.state !== 'sleep' && n.anim.canStep;
+      if (n.facingPlayer) {
         const want = Math.atan2(dx, dz);
         const err = wrapPi(want - g.rotation.y);
-        /**
-         * THROUGH `turn()`, NOT STRAIGHT ONTO `rotation.y` (fix round 3). Yawing
-         * the group about its own origin sweeps the planted toe around a ~0.12 m
-         * arc, so a body turning to face the player at 1.4 rad/s dragged that
-         * foot ~0.17 m/s — permanent skate on exactly the NPC the player is
-         * standing in front of, and now that A97 samples idlers and workers it is
-         * measured. `turn()` pivots about the planted foot, which costs the foot
-         * nothing.
-         */
-        n.anim.turn(THREE.MathUtils.clamp(err, -1.4 * dt, 1.4 * dt));
+        if (Math.abs(err) > 0.02) n.anim.turn(THREE.MathUtils.clamp(err, -1.4 * dt, 1.4 * dt), want);
       }
     } else {
+      n.facingPlayer = false;
       n.anim.lookAt(null);
     }
   }
@@ -2358,7 +2443,14 @@ export class NpcSystem {
     if (!n) return false;
     const p = this.ctx.player;
     if (p) {
-      n.group.rotation.y = Math.atan2(p.position.x - n.group.position.x, p.position.z - n.group.position.z);
+      /**
+       * NO YAW IS ASSIGNED HERE (fix round 4). This used to set `rotation.y`
+       * straight onto the player's bearing — a one-frame snap of up to pi that
+       * popped both planted feet round the body in a single frame. The head
+       * turns at once; the BODY is turned by `_look`, which faces anyone in
+       * state `talk` through the same stepped turn as every other standing turn
+       * (`NpcAnimator.turn`). A seated person turns their head and stays seated.
+       */
       n.lookVec.set(p.position.x, p.position.y + 1.42, p.position.z);
       n.anim.lookAt(n.lookVec);
     }
