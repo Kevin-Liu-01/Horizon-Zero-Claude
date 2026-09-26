@@ -17,9 +17,16 @@ import * as THREE from 'three';
  *   terrain.getNormal(x, z, out)        unit normal
  *   terrain.tallGrassDensity(x, z)      0..1 stealth-grass density
  *   terrain.isInTallGrass(x, z)         density > 0.45
- *   terrain.surfaceAt(x, z)             NEW — one of Terrain.SURFACES:
- *                                       'water' | 'cobble' | 'silt' | 'dirt'
- *                                       | 'gravel' | 'rock' | 'snow' | 'grass'
+ *   terrain.surfaceAt(x, z)             one of Terrain.SURFACES — the audible
+ *                                       vocabulary: 'water' | 'cobble' |
+ *                                       'silt' | 'mud' | 'dirt' | 'gravel' |
+ *                                       'rock' | 'snow' | 'grass'
+ *   terrain.materialAt(x, z)            NEW (round 4) — the GROUND, one of
+ *                                       Terrain.MATERIALS (SURFACES + 'ash').
+ *                                       `surfaceAt` is this mapped through
+ *                                       Terrain.SURFACE_EMIT; see the block
+ *                                       comment on SURFACE_EMIT for why the
+ *                                       two vocabularies are not the same one.
  *   terrain.heightFast(x, z)            NEW — bilinear off the render mesh's
  *                                       own height grid. ~40x cheaper than
  *                                       getHeight and it agrees with the DRAWN
@@ -143,6 +150,60 @@ const SURFACE_AUDIO = Object.freeze({
   grass: 'foot/grass',
 });
 
+/**
+ * THE GROUND MATERIALS THIS LANE MODELS — the fine vocabulary, reported by
+ * `materialAt()`. Every one has a `SURFACE_AUDIO` route above.
+ */
+const MATERIALS = Object.freeze(['water', 'cobble', 'silt', 'mud', 'dirt',
+  'gravel', 'ash', 'rock', 'snow', 'grass']);
+
+/**
+ * WHAT THE CONSUMER CAN ACTUALLY SAY, AND WHY THIS EXISTS (fix round 2).
+ *
+ * `audio`'s footstep table (`SURFACE_SET`, src/audio/audio.js) is a module
+ * const with no registration hook, and `src/audio/audio.js` is not this lane's
+ * file (§3.1). Its lookup ends in `|| 'foot/grass'`, so ANY name this lane
+ * emits that is not in the list below is not "degraded" — it is a meadow
+ * footstep on a burn scar, which is what `A76-footfalls` red-flagged as
+ * `surfacesFallingBackToGrass: ['ash']`. That red was this lane's doing: the
+ * biome pass invented `ash` and shipped it into a closed vocabulary.
+ *
+ * Fix round 1 published `SURFACE_AUDIO` so `audio` could merge it in one line,
+ * and then waited for that line. It has not come, and a lane does not get to
+ * ship a red it caused because the repair is in someone else's file. So the
+ * invariant is enforced on THIS side instead: the vocabulary `surfaceAt()`
+ * emits is closed to what the consumer can voice, and the fine material is
+ * published separately for lanes that want it.
+ *
+ * Nothing about the burn scar is lost or renamed. `materialAt()` still says
+ * `ash`, `biomeAt()` still says `ash`, the mask, the tint and the scatter are
+ * untouched, and the footstep it now produces is `foot/dirt` — which is
+ * exactly, to the letter, what this lane's own `SURFACE_AUDIO` asks for `ash`.
+ * The day `audio` merges the map, `AUDIO_VOCAB` gains `ash`, the derivation
+ * below emits it unchanged and the burn scar gets its own set for free.
+ */
+const AUDIO_VOCAB = Object.freeze(['grass', 'meadow', 'moss', 'dirt', 'path',
+  'sand', 'silt', 'mud', 'water', 'shallow', 'cobble', 'stone', 'gravel',
+  'scree', 'shale', 'rock', 'metal', 'snow', 'ice']);
+
+/**
+ * material -> the name `surfaceAt()` emits. DERIVED, not authored: a material
+ * the consumer knows emits itself; one it does not emits the nearest material
+ * that shares its foley set and IS known. A future biome that invents a
+ * material therefore arrives already audible, and the mapping is a statement
+ * about the consumer rather than a hand-maintained fudge table.
+ */
+const SURFACE_EMIT = Object.freeze(MATERIALS.reduce((out, m) => {
+  if (AUDIO_VOCAB.includes(m)) { out[m] = m; return out; }
+  const set = SURFACE_AUDIO[m];
+  out[m] = MATERIALS.find((k) => k !== m && SURFACE_AUDIO[k] === set
+    && AUDIO_VOCAB.includes(k)) || 'dirt';
+  return out;
+}, {}));
+
+/** The vocabulary `surfaceAt()` can actually return. */
+const SURFACES = Object.freeze([...new Set(MATERIALS.map((m) => SURFACE_EMIT[m]))]);
+
 const SS = THREE.MathUtils.smoothstep; // (x, min, max)
 
 /* ------------------------------- the rim --------------------------------- */
@@ -159,6 +220,68 @@ const EDGE_IN = 324;   // the play-boundary escarpment
 const EDGE_OUT = 352;
 const MESH_SPAN = WORLD_SIZE * 1.35;   // 972 m of terrain mesh
 const MESH_SEGS = 500;
+
+/* ===================== RUNTIME RE-BAKE (fix round 2) ======================
+ *
+ * The mesh vertex colours and the three splat masks are baked in the
+ * constructor from fields that are pure functions of (x, z) — with ONE
+ * exception. `_ensureRouteCover()` raises `stealthField` at runtime, once the
+ * live machine roster is up, so that every patrol route has cover (A60); and
+ * `biomeSuppress()` — which decides how much snow / ash / scree / duff
+ * survives at a point — is defined off that same field. Stamping cover
+ * without re-baking left 8200 mask cells (4.45 % of the play disc) claiming
+ * ground the live functions no longer agreed with: the grass grew, the splat
+ * underneath stayed snow, and `surfaceAt()` said `grass` on a white pixel.
+ *
+ * So a stamp marks the ground it touched in this coarse tile map, and the two
+ * bake loops are re-run over exactly those tiles. 16 m tiles over the mesh
+ * span: big enough that the map is 3.7 kB and the marking is free, small
+ * enough that a 9.5 m disc dirties ~4 tiles instead of the valley.
+ */
+const REBAKE_TILE = 16;                       // m
+const REBAKE_HALF = (WORLD_SIZE * 1.35) / 2;  // the mesh is the widest bake
+const REBAKE_N = Math.ceil((REBAKE_HALF * 2) / REBAKE_TILE);
+/* A stamp's influence reaches one stealth-grid cell (1.22 m) past its radius
+ * through the bilinear read, plus one mask texel (1.41 m) / mesh node
+ * (1.94 m) of sampling offset. 6 m of pad covers all of it with room over. */
+const REBAKE_PAD = 6;
+
+function _rebakeDirtyAt(d, x, z) {
+  const i = ((x + REBAKE_HALF) / REBAKE_TILE) | 0;
+  const j = ((z + REBAKE_HALF) / REBAKE_TILE) | 0;
+  if (i < 0 || j < 0 || i >= REBAKE_N || j >= REBAKE_N) return false;
+  return d[j * REBAKE_N + i] === 1;
+}
+
+/* The vertex-colour palette. MODULE SCOPE because `_vertexColor()` runs
+ * 251 k times per bake and sixteen `new THREE.Color` per call is not a thing
+ * a bake loop may do. Read-only: the body only ever lerps TOWARDS them. */
+const VC_LUSH = new THREE.Color('#3f5d1c');      // moist rich green (riparian)
+const VC_GRASS = new THREE.Color('#6f8038');     // meadow base
+const VC_DRY = new THREE.Color('#a08c50');       // sun-dried gold
+const VC_OCHRE = new THREE.Color('#9d6f3c');     // umber/ochre dry patches
+const VC_DIRT = new THREE.Color('#655135');
+const VC_ROCK = new THREE.Color('#6f6d66');
+const VC_ROCKWARM = new THREE.Color('#7f6a4e');  // warm umber rock variant
+const VC_SILT = new THREE.Color('#8c7c61');      // pale dried riverbed
+const VC_SNOW = new THREE.Color('#dcdfe2');
+const VC_SUNLIT = new THREE.Color('#a87f53');    // golden-hour lit rock faces
+const VC_SHADE = new THREE.Color('#565b69');     // cool blue shade faces
+// biome base tints (the fragment masks sharpen these; these are what the
+// mid ground and the far tier actually read at 150 m+)
+const VC_DUFF = new THREE.Color('#33301c');      // conifer needle litter
+const VC_MUD = new THREE.Color('#2f2a1c');       // marsh silt
+const VC_ASH = new THREE.Color('#2b2826');       // burn scar
+const VC_SCREE = new THREE.Color('#77736a');     // broken plate stone
+const VC_DUST = new THREE.Color('#e4e8ee');      // wind-packed snow
+const _vcTmp = new THREE.Color();
+const _vcTmp2 = new THREE.Color();
+const _vcAudit = new THREE.Color();
+
+/** Splat-mask resolution: 512^2 over 720 m = 1.41 m texels. */
+const MASK_N = 512;
+/** Scratch for one texel's 12 baked bytes (uMask / uMask2 / uMask3). */
+const _maskScratch = new Uint8Array(12);
 
 /**
  * Authored massifs. Without them the rim is one ridged-noise band at a single
@@ -636,8 +759,24 @@ function _buildStealthGrid() {
  * `Terrain._ensureRouteCover`), once, on the first update after the roster is
  * up. Additive and idempotent: a disc can only raise the field.
  */
+/* EVERY STAMP DIRTIES THE BAKE, BY CONSTRUCTION (fix round 2).
+ *
+ * The desync this round fixed was not really "someone forgot to re-bake" — it
+ * was that raising the field and re-baking what the field paints were two
+ * separate things a caller had to remember to do together. A rule you have to
+ * remember is a rule that gets forgotten, so the stamp itself now records what
+ * it touched here, and `Terrain.update()` drains the list on the same tick.
+ * Nothing outside this file can raise the cover field without the pixels
+ * following — including whatever calls this next round.
+ *
+ * Flat [x, z, r, ...] triples, appended to and truncated in place: no garbage,
+ * and empty is one `.length` test per frame.
+ */
+const _stampPending = [];
+
 export function stampStealthDisc(x, z, r) {
   if (!_stealthGrid) _buildStealthGrid();
+  _stampPending.push(x, z, r);
   const cell = (SG_HALF * 2) / SG_N;
   const i0 = Math.max(0, Math.floor((x - r + SG_HALF) / cell));
   const i1 = Math.min(SG_N - 1, Math.ceil((x + r + SG_HALF) / cell));
@@ -1647,10 +1786,13 @@ export class Terrain {
   }
 
   /** The surface vocabulary `audio`, `machine-rig` and the gates read. */
-  static get SURFACES() {
-    return ['water', 'cobble', 'silt', 'mud', 'dirt', 'gravel', 'ash', 'rock',
-      'snow', 'grass'];
-  }
+  static get SURFACES() { return SURFACES; }
+
+  /** The FINE ground vocabulary `materialAt()` reports (`SURFACES` + `ash`). */
+  static get MATERIALS() { return MATERIALS; }
+
+  /** material -> emitted surface. See the block comment on `SURFACE_EMIT`. */
+  static get SURFACE_EMIT() { return SURFACE_EMIT; }
 
   /** The biome vocabulary `biomeAt()` reports. */
   static get BIOMES() {
@@ -1658,26 +1800,25 @@ export class Terrain {
   }
 
   /**
-   * SURFACE -> NEAREST FOLEY SET. Published for `audio`, whose file this lane
-   * may not edit (§3.1), so that adding a surface here can never again make a
-   * footstep silently play the wrong material.
+   * MATERIAL -> NEAREST FOLEY SET. Published for `audio`, whose file this lane
+   * may not edit (§3.1).
    *
-   * WHY IT EXISTS. `surfaceAt()` is this lane's contract and `Terrain.SURFACES`
-   * is its vocabulary, but the sound of a surface is `audio`'s call, and
-   * `audio`'s `SURFACE_SET` is a module const with no registration hook. When
-   * the biome pass added `mud` and `ash`, `mud` happened to already be aliased
-   * and `ash` was not, so `A76-footfalls` correctly reports
-   * `surfacesFallingBackToGrass: ['ash']` — a burn scar that sounds like a
-   * meadow. That is a real defect and this lane will not dodge it by renaming
-   * `ash` (it is a named deliverable of `A58-surface-api`).
+   * It has two jobs. The first is the offer: every name in `MATERIALS` has an
+   * entry, so `audio` can merge the whole vocabulary in one line
+   * (`{ ...SURFACE_SET, ...(Terrain.SURFACE_AUDIO || {}) }`) and get a real
+   * `ash` route — and a real route for whatever the next biome pass invents —
+   * without this lane ever touching that file.
    *
-   * This map is the fix expressed from the side that owns the vocabulary: every
-   * name in `SURFACES` has an entry, so `audio` can merge it once
-   * (`{ ...SURFACE_SET, ...(Terrain.SURFACE_AUDIO || {}) }`) and every future
-   * surface this lane invents arrives already routed. The values are only the
-   * NEAREST EXISTING set in today's bank — `ash` is `foot/dirt` because a burn
-   * scar is soft and dusty with no grit — and `audio` remains free to override
-   * any of them, or to record a real `foot/ash`.
+   * The second is that it DEFINES the degradation this lane applies on its own
+   * side while that merge has not happened: `SURFACE_EMIT` is derived from this
+   * table, so `ash` emits as the other material that shares its set (`dirt`,
+   * `foot/dirt`) instead of falling off the end of `audio`'s lookup into
+   * `foot/grass`. Fix round 1 published this map and waited; fix round 2 also
+   * OBEYS it, which is what closes `A76-footfalls`.
+   *
+   * Values are the nearest EXISTING set in today's bank — `ash` is `foot/dirt`
+   * because a burn scar is soft and dusty with no grit — and `audio` remains
+   * free to override any of them, or to record a real `foot/ash`.
    */
   static get SURFACE_AUDIO() { return SURFACE_AUDIO; }
 
@@ -2057,10 +2198,21 @@ export class Terrain {
   /* ------------------------------ surfaceAt ------------------------------- */
 
   /**
-   * `audio-04` / `machine-rig` footfalls: which material is underfoot.
-   * One of `Terrain.SURFACES`. Cheap enough for a per-footstep call.
+   * `audio-04` / `machine-rig` footfalls: which surface is underfoot, in the
+   * vocabulary every consumer can voice. One of `Terrain.SURFACES`. Cheap
+   * enough for a per-footstep call (one object lookup over `materialAt`).
+   *
+   * Use `materialAt()` instead if you want the ground itself rather than the
+   * sound of it — that is the one that still distinguishes a burn scar.
    */
-  surfaceAt(x, z) {
+  surfaceAt(x, z) { return SURFACE_EMIT[this.materialAt(x, z)]; }
+
+  /**
+   * The GROUND at a point, in the fine vocabulary: one of
+   * `Terrain.MATERIALS`, which is `SURFACES` plus `ash`. Pure, allocation
+   * free, same cost as `surfaceAt`.
+   */
+  materialAt(x, z) {
     // standing water (the river ribbon owns its own level)
     const w = this.ctx?.environment?.water;
     if (w && typeof w.depthAt === 'function' && w.depthAt(x, z) > 0.03) return 'water';
@@ -2163,7 +2315,7 @@ export class Terrain {
    * uMask2: R stealth-grass duff, G cobble bar, B machine track scar, A spare
    */
   _buildMasks() {
-    const N = 512;
+    const N = MASK_N;
     const d1 = new Uint8Array(N * N * 4);
     const d2 = new Uint8Array(N * N * 4);
     /* uMask3: R forest duff, G snow dusting, B marsh mud, A burn ash.
@@ -2171,47 +2323,12 @@ export class Terrain {
      * are smooth at that scale, and baking them here keeps five extra noise
      * evaluations out of every terrain fragment. */
     const d3 = new Uint8Array(N * N * 4);
-    const scale = WORLD_SIZE / N;
-    const gn = this.grassNoise;
-    for (let iz = 0; iz < N; iz++) {
-      const wz = (iz + 0.5) * scale - WORLD_HALF;
-      for (let ix = 0; ix < N; ix++) {
-        const wx = (ix + 0.5) * scale - WORLD_HALF;
-        const o = (iz * N + ix) * 4;
-        if (Math.abs(wx) > 348 || Math.abs(wz) > 348) continue; // clean border
-        const r = Math.sqrt(wx * wx + wz * wz);
-
-        const path = pathFactor(wx, wz);
-
-        const rd = Math.abs(wx - riverCenterX(wz));
-        const hw = riverHalfWidth(wz);
-        const gate = 1 - SS(r, 250, 302);
-        const moist = (1 - SS(rd, hw * 0.5, hw * 2.0)) * gate;
-        const bed = (1 - SS(rd, hw * 0.25, hw * 0.8)) * gate;
-
-        d1[o] = (path * 255) | 0;
-        d1[o + 1] = (moist * 255) | 0;
-        d1[o + 2] = (bed * 255) | 0;
-        d1[o + 3] = (shelfFactor(wx, wz) * 255) | 0;
-
-        // duff under the cover grass
-        d2[o] = (Math.min(1, stealthField(wx, wz) * 1.1) * 255) | 0;
-        // cobble bar: the coarse braid down the middle of the dried channel
-        const barN = gn.fbm(wx * 0.05 + 12, wz * 0.05 - 5, 2) * 0.5 + 0.5;
-        const bar = bed * SS(barN, 0.34, 0.66);
-        d2[o + 1] = (bar * 255) | 0;
-        // machine track scars: heavy species wear the ground along their routes
-        d2[o + 2] = (Math.min(1, this._trackAt(wx, wz)) * 255) | 0;
-
-        // --- biome masks -------------------------------------------------
-        const keep = 1 - biomeSuppress(wx, wz);
-        d2[o + 3] = (screeFactor(wx, wz) * keep * 255) | 0;
-        d3[o] = (forestFactor(wx, wz) * keep * 255) | 0;
-        d3[o + 1] = (snowFactor(wx, wz) * keep * 255) | 0;
-        d3[o + 2] = (marshFactor(wx, wz) * (1 - trailSuppress(wx, wz)) * 255) | 0;
-        d3[o + 3] = (ashFactor(wx, wz) * keep * 255) | 0;
-      }
-    }
+    /* RETAINED, and it costs nothing: a `DataTexture` already holds this exact
+     * buffer as `image.data`, so keeping a handle adds a pointer, not 3 MB.
+     * What it buys is the ability to PATCH the pixels when the cover field
+     * they were baked from moves (see `_rebakeStamped`). */
+    this._maskData = { N, d1, d2, d3, scale: WORLD_SIZE / N, tex: null };
+    this._bakeMaskTexels(null);
     const mk = (data) => {
       const t = new THREE.DataTexture(data, N, N, THREE.RGBAFormat);
       t.minFilter = THREE.LinearFilter;
@@ -2220,7 +2337,83 @@ export class Terrain {
       t.needsUpdate = true;
       return t;
     };
-    return [mk(d1), mk(d2), mk(d3)];
+    const tex = [mk(d1), mk(d2), mk(d3)];
+    this._maskData.tex = tex;
+    return tex;
+  }
+
+  /**
+   * Bake the splat masks. `dirty === null` bakes all 262 k texels (build);
+   * a dirty-tile map re-bakes only the texels a runtime cover stamp touched
+   * and re-uploads the three textures.
+   * @returns {number} texels written
+   */
+  _bakeMaskTexels(dirty) {
+    const md = this._maskData;
+    if (!md) return 0;
+    const N = md.N, d1 = md.d1, d2 = md.d2, d3 = md.d3, scale = md.scale;
+    const v = _maskScratch;
+    let written = 0;
+    for (let iz = 0; iz < N; iz++) {
+      const wz = (iz + 0.5) * scale - WORLD_HALF;
+      if (Math.abs(wz) > 348) continue;                      // clean border
+      for (let ix = 0; ix < N; ix++) {
+        const wx = (ix + 0.5) * scale - WORLD_HALF;
+        if (Math.abs(wx) > 348) continue;
+        if (dirty && !_rebakeDirtyAt(dirty, wx, wz)) continue;
+        this._maskTexel(wx, wz, v);
+        const o = (iz * N + ix) * 4;
+        d1[o] = v[0]; d1[o + 1] = v[1]; d1[o + 2] = v[2]; d1[o + 3] = v[3];
+        d2[o] = v[4]; d2[o + 1] = v[5]; d2[o + 2] = v[6]; d2[o + 3] = v[7];
+        d3[o] = v[8]; d3[o + 1] = v[9]; d3[o + 2] = v[10]; d3[o + 3] = v[11];
+        written++;
+      }
+    }
+    if (written && md.tex) for (const t of md.tex) t.needsUpdate = true;
+    return written;
+  }
+
+  /**
+   * THE twelve baked mask bytes at a world point, in uMask / uMask2 / uMask3
+   * order. Pure. `_bakeMaskTexels()` stores them and `maskAudit()` re-derives
+   * them to prove that what the GPU is sampling is still what the live fields
+   * say — the check that would have caught the stamped-cover desync on the
+   * frame it appeared.
+   */
+  _maskTexel(wx, wz, out) {
+    const gn = this.grassNoise;
+    const r = Math.sqrt(wx * wx + wz * wz);
+
+    const path = pathFactor(wx, wz);
+
+    const rd = Math.abs(wx - riverCenterX(wz));
+    const hw = riverHalfWidth(wz);
+    const gate = 1 - SS(r, 250, 302);
+    const moist = (1 - SS(rd, hw * 0.5, hw * 2.0)) * gate;
+    const bed = (1 - SS(rd, hw * 0.25, hw * 0.8)) * gate;
+
+    out[0] = (path * 255) | 0;
+    out[1] = (moist * 255) | 0;
+    out[2] = (bed * 255) | 0;
+    out[3] = (shelfFactor(wx, wz) * 255) | 0;
+
+    // duff under the cover grass
+    out[4] = (Math.min(1, stealthField(wx, wz) * 1.1) * 255) | 0;
+    // cobble bar: the coarse braid down the middle of the dried channel
+    const barN = gn.fbm(wx * 0.05 + 12, wz * 0.05 - 5, 2) * 0.5 + 0.5;
+    const bar = bed * SS(barN, 0.34, 0.66);
+    out[5] = (bar * 255) | 0;
+    // machine track scars: heavy species wear the ground along their routes
+    out[6] = (Math.min(1, this._trackAt(wx, wz)) * 255) | 0;
+
+    // --- biome masks -------------------------------------------------
+    const keep = 1 - biomeSuppress(wx, wz);
+    out[7] = (screeFactor(wx, wz) * keep * 255) | 0;
+    out[8] = (forestFactor(wx, wz) * keep * 255) | 0;
+    out[9] = (snowFactor(wx, wz) * keep * 255) | 0;
+    out[10] = (marshFactor(wx, wz) * (1 - trailSuppress(wx, wz)) * 255) | 0;
+    out[11] = (ashFactor(wx, wz) * keep * 255) | 0;
+    return out;
   }
 
   /**
@@ -2269,6 +2462,210 @@ export class Terrain {
 
   /* ------------------------------- the mesh ------------------------------- */
 
+  /**
+   * Re-bake the mesh vertex colours. `dirty === null` bakes the whole mesh
+   * (construction); a dirty-tile map bakes only the vertices a runtime cover
+   * stamp can have changed.
+   * @returns {number} vertices written
+   */
+  _bakeVertexColors(dirty) {
+    const mb = this._meshBake;
+    if (!mb) return 0;
+    const pos = mb.pos, segs = mb.segs, side = mb.side, colors = mb.colors;
+    const out = _vcTmp;
+    let written = 0;
+    for (let iz = 0; iz <= segs; iz++) {
+      for (let ix = 0; ix <= segs; ix++) {
+        const i = iz * side + ix;
+        if (dirty && !_rebakeDirtyAt(dirty, pos.getX(i), pos.getZ(i))) continue;
+        this._vertexColor(i, ix, iz, out);
+        colors[i * 3] = out.r;
+        colors[i * 3 + 1] = out.g;
+        colors[i * 3 + 2] = out.b;
+        written++;
+      }
+    }
+    if (written && mb.attr) mb.attr.needsUpdate = true;
+    return written;
+  }
+
+  /**
+   * THE colour of terrain vertex `i`. Pure: same (i, fields) in, same colour
+   * out, no state written. `_bakeVertexColors()` stores it and
+   * `vertexColorAudit()` re-derives it to prove what is stored is still true.
+   */
+  _vertexColor(i, ix, iz, out) {
+    const mb = this._meshBake;
+    const pos = mb.pos, H = mb.H, HS = mb.HS;
+    const segs = mb.segs, side = mb.side, step = mb.step;
+    const gn = this.grassNoise;
+    const x = pos.getX(i), z = pos.getZ(i);
+    const h = H[i];
+
+    // slope (tan) from cached neighbors
+    const iL = ix > 0 ? i - 1 : i, iR = ix < segs ? i + 1 : i;
+    const iD = iz > 0 ? i - side : i, iU = iz < segs ? i + side : i;
+    const gx = (H[iR] - H[iL]) / (((iR - iL) || 1) * step);
+    const gz = (H[iU] - H[iD]) / ((((iU - iD) / side) || 1) * step);
+    const m = Math.sqrt(gx * gx + gz * gz);
+
+    const r = Math.hypot(x, z);
+    const rim = SS(r, RIM_IN, RIM_OUT * 0.94);
+
+    /* FILTERED-FIELD GRADIENT, AND IT IS THE FIX FOR THE RIM'S CONTOUR MAP.
+     *
+     * Fix round 1 widened the finite-difference STENCIL from 1.94 m to
+     * 15.5 m here and it did not work, because the problem is not the
+     * stencil width: the rim's height function terraces the wall into
+     * 13-23 m benches, so a wide difference still lands on whichever bench
+     * its two taps happen to sit on and still flips with the risers. The
+     * field has to be FILTERED, not sampled further apart. HS is H run
+     * through a ~39 m triangle kernel (see _smoothField): the flutes and
+     * the buttress spurs survive it, the bench ripple does not.
+     *
+     * Everything below that flips sign or crosses a ramp on the rim — the
+     * dirt/rock slope splat, the sun-face tint, the `h > 40` rock ramp and
+     * the snowline — now reads HS/mW on the rim and the raw 1.94 m field
+     * on the meadow, crossfaded by `rim`. That is the whole of the
+     * "wood-veneer fingerprint" fix; the numbers are in A63 below.
+     */
+    const W = 4;   // HS is already smooth, so the stencil is only 7.8 m
+    const iLw = i - Math.min(ix, W), iRw = i + Math.min(segs - ix, W);
+    const iDw = i - Math.min(iz, W) * side, iUw = i + Math.min(segs - iz, W) * side;
+    const gxW = (HS[iRw] - HS[iLw]) / (Math.max(1, iRw - iLw) * step);
+    const gzW = (HS[iUw] - HS[iDw]) / (Math.max(1, (iUw - iDw) / side) * step);
+    const mW = Math.sqrt(gxW * gxW + gzW * gzW);
+    // meadow keeps the sharp kernel; the rim crosses over to the filtered one
+    const mS = m + (mW - m) * rim;
+    // ...and so does the height every albedo RAMP is keyed on
+    const hS = h + (HS[i] - h) * rim;
+
+    // moisture / dryness fields
+    const dryness = gn.fbm(x * 0.01 + 9, z * 0.01 - 4, 2) * 0.5 + 0.5;
+    const umber = SS(gn.fbm(x * 0.023 - 40, z * 0.023 + 31, 2), 0.18, 0.52);
+    const rd = Math.abs(x - riverCenterX(z));
+    const hw = riverHalfWidth(z);
+    const gate = 1 - SS(r, 250, 302);
+    const moist = (1 - SS(rd, hw * 0.5, hw * 2.0)) * gate;
+    const bed = (1 - SS(rd, hw * 0.3, hw * 0.95)) * gate;
+
+    out.copy(VC_GRASS).lerp(VC_DRY, dryness * 0.85);
+    out.lerp(VC_OCHRE, umber * (1 - moist) * 0.5);
+    out.lerp(VC_LUSH, moist * 0.9);
+    out.lerp(VC_SILT, bed * 0.55); // fragment mask sharpens this
+
+    /* Slope splat: dirt then bare rock. FADED OUT ON THE RIM. Two step
+     * lerps on a slope magnitude are the single highest-contrast
+     * gradient-keyed pair in this pass (bare grass -> #655135 -> #6f6d66
+     * across a swing of 0.5), and on the rim they buy nothing: the block
+     * below already lerps 86 % of the way to rock, and the fragment
+     * shader's `steep` term carries the rest with a fwidth-widened gate
+     * that cannot alias. Off the rim they are what makes a stream bank
+     * read as dirt, so they stay.
+     */
+    const splatK = 1 - 0.88 * rim;
+    if (splatK > 0.01) {
+      if (mS > 0.5) out.lerp(VC_DIRT, SS(mS, 0.5, 0.85) * splatK);
+      if (mS > 0.75) out.lerp(VC_ROCK, SS(mS, 0.75, 1.25) * splatK);
+    }
+
+    // SE highland shelf
+    const sf = shelfFactor(x, z);
+    if (sf > 0.02) {
+      // mS, not m: identical off the rim, filtered where the shelf climbs
+      // into it, so the shelf cannot re-introduce the bench banding
+      out.lerp(VC_OCHRE, sf * 0.25 * (1 - SS(mS, 0.3, 0.7)));
+      out.lerp(VC_ROCK, sf * (0.45 + 0.4 * SS(mS, 0.16, 0.55)));
+    }
+
+    // rim reads as rock — vary cool gray -> warm umber by low-freq noise
+    if (rim > 0.01) {
+      const rv = gn.fbm(x * 0.0065 - 21, z * 0.0065 + 44, 2) * 0.5 + 0.5;
+      _vcTmp2.copy(VC_ROCK).lerp(VC_ROCKWARM, rv * 0.85);
+      out.lerp(_vcTmp2, rim * 0.86);
+      out.multiplyScalar(1 + (rv - 0.5) * 0.17 * rim);
+      /* SUN-FACE TINT: FILTERED FIELD, AND A LINEAR BLEND.
+       *
+       * Two one-sided smoothsteps on a signed quantity both saturate, so
+       * the tint was effectively a SIGN test: a flank was fully warm or
+       * fully cool with almost nothing in between, and every zero crossing
+       * of the field drew a hard edge. On terraced ground that is one hard
+       * edge per bench — the printed-pattern read V33 filmed. One linear
+       * ramp through zero has the same job (a flank facing the sun is
+       * warmer than one facing away) and no edges at all, and the swing
+       * that used to be 0.38 + a 16 % brightness multiply is now 0.24 with
+       * no multiply: enough to separate two faces of one buttress, not
+       * enough to read as paint.
+       */
+      const sunFace = 0.55 * gxW + 0.72 * gzW;
+      const fl = Math.max(-1, Math.min(1, sunFace * 1.05));
+      const warm = fl > 0 ? fl : 0;
+      const shade = fl < 0 ? -fl : 0;
+      if (warm > 0.001) {
+        out.lerp(VC_SUNLIT, warm * rim * 0.24);
+      }
+      if (shade > 0.001) {
+        // The shade tint used to also DARKEN by 13 %. Measured: the whole
+        // south face of the north rim has N.L < 0 at every hour of
+        // world-light's solar arc, so it is already lit by a 0.3
+        // hemisphere and nothing else — it rendered at RGB 25/23/21.
+        // Multiplying a face that is already ambient-only by 0.87 is how a
+        // mountain becomes a black hole. The tint stays (it is what makes a
+        // shade face read cool against a warm one); the darkening is gone,
+        // and rim rock is lifted to a real stone albedo instead.
+        out.lerp(VC_SHADE, shade * rim * 0.22);
+      }
+      // stone albedo: dry granite/limestone sits near 0.42-0.55, not 0.28.
+      // This is the term that decides whether a shaded face reads as rock
+      // or as a hole once the aerial fog has taken half its contrast.
+      out.multiplyScalar(1 + 0.52 * rim);
+    }
+    /* Both of these are height RAMPS, and both are keyed on hS on the rim.
+     * A monotonic ramp cannot band on its own — but h is not monotonic up
+     * a terraced wall, it is a staircase, so `SS(h, snowT, snowT+26)`
+     * crossed its ramp once per 13-23 m bench and drew one bright ring per
+     * bench: the brightest contour lines on the whole massif, VC_SNOW being
+     * the highest-luminance colour in the palette. hS climbs smoothly.
+     * The slope mask keeps snow off the risers, and it too now reads the
+     * filtered slope (and over a wider gate, so a single steep vertex can
+     * no longer punch a hole in a snowfield). */
+    /* BIOME TINTS. These sit AFTER the rim block on purpose: the north
+     * bench climbs into the bottom of the rim's fade (rim ~0.06 at
+     * r=300), and a shelf the player walks onto should read as its own
+     * ground rather than as the mountain's apron. Weakest claim first;
+     * the snow dusting last because it lies over whatever is beneath it.
+     * Same suppression as every other biome consumer — grass lanes and
+     * worn trails keep their own colour straight through a biome. */
+    const bMud = marshFactor(x, z) * (1 - trailSuppress(x, z));
+    if (bMud > 0.01) out.lerp(VC_MUD, bMud * 0.72 * (1 - SS(mS, 0.35, 0.9)));
+    const bKeep = 1 - biomeSuppress(x, z);
+    if (bKeep > 0.02) {
+      const bFor = forestFactor(x, z) * bKeep;
+      if (bFor > 0.01) out.lerp(VC_DUFF, bFor * 0.56);
+      const bScr = screeFactor(x, z) * bKeep;
+      if (bScr > 0.01) out.lerp(VC_SCREE, bScr * 0.70);
+      const bAsh = ashFactor(x, z) * bKeep;
+      if (bAsh > 0.01) out.lerp(VC_ASH, bAsh * 0.86);
+      const bSnow = snowFactor(x, z) * bKeep;
+      if (bSnow > 0.01) out.lerp(VC_DUST, bSnow * 0.74 * (1 - SS(mS, 0.30, 1.1)));
+    }
+
+    if (hS > 40) out.lerp(VC_ROCK, SS(hS, 40, 90) * 0.6);
+    // irregular snowline, now sitting near the top third of the massifs
+    const snowT = this._snowline(x, z);
+    /* A FIXED 26 m RAMP IS A SOFT EDGE ON A MEADOW AND A HARD LINE ON A
+     * WALL: on a 60 degree face 26 m of height is 15 m of ground, so the
+     * whole transition happens inside one bench. The ramp widens with the
+     * filtered slope, which keeps the snow edge covering a comparable
+     * distance ACROSS THE SURFACE wherever it lands. */
+    const snowRamp = 26 + 66 * SS(mS, 0.5, 2.6);
+    const snow = SS(hS, snowT, snowT + snowRamp);
+    if (snow > 0) {
+      out.lerp(VC_SNOW, snow * (0.25 + 0.75 * rim) * (1 - 0.72 * SS(mS, 1.3, 3.0)));
+    }
+    return out;
+  }
+
   _buildMesh() {
     const segs = MESH_SEGS;
     const size = MESH_SPAN;
@@ -2297,204 +2694,26 @@ export class Terrain {
     const HS = _smoothField(H, side, 10, 2);
     this._hg.HS = HS;   // published for the A63 banding gate and its probes
 
-    // pass 2: colors from cached heights + finite-difference slope
+    /* pass 2: colours from the cached heights + finite-difference slope.
+     *
+     * THE BODY IS `_vertexColor()`, AND THAT IS THE WHOLE POINT (fix round 2).
+     * Everything this pass paints below the rim is a pure function of (x, z)
+     * EXCEPT the four biome tints, which are gated on `biomeSuppress()` — and
+     * `biomeSuppress` reads `stealthField`, which `_ensureRouteCover()` raises
+     * at RUNTIME once the live machine roster is up. Baking this loop once in
+     * the constructor therefore left the pixels describing a cover field that
+     * no longer existed: waist-high stealth grass standing in unbroken white
+     * snow on the north bench. One function, two callers — the constructor
+     * bakes every vertex, `_rebakeStamped()` re-bakes the ones a stamp moved.
+     */
     const colors = new Float32Array(count * 3);
-    const cLush = new THREE.Color('#3f5d1c');   // moist rich green (riparian)
-    const cGrass = new THREE.Color('#6f8038');  // meadow base
-    const cDry = new THREE.Color('#a08c50');    // sun-dried gold
-    const cOchre = new THREE.Color('#9d6f3c');  // umber/ochre dry patches
-    const cDirt = new THREE.Color('#655135');
-    const cRock = new THREE.Color('#6f6d66');
-    const cRockWarm = new THREE.Color('#7f6a4e'); // warm umber rock variant
-    const cSilt = new THREE.Color('#8c7c61');   // pale dried riverbed
-    const cSnow = new THREE.Color('#dcdfe2');
-    const cSunlit = new THREE.Color('#a87f53'); // golden-hour lit rock faces
-    const cShade = new THREE.Color('#565b69');  // cool blue shade faces
-    // biome base tints (the fragment masks sharpen these; these are what the
-    // mid ground and the far tier actually read at 150 m+)
-    const cDuff = new THREE.Color('#33301c');   // conifer needle litter
-    const cMud = new THREE.Color('#2f2a1c');    // marsh silt
-    const cAsh = new THREE.Color('#2b2826');    // burn scar
-    const cScree = new THREE.Color('#77736a');  // broken plate stone
-    const cDust = new THREE.Color('#e4e8ee');   // wind-packed snow
-    const tmp = new THREE.Color();
-    const tmp2 = new THREE.Color();
-    const gn = this.grassNoise;
-
-    for (let iz = 0; iz <= segs; iz++) {
-      for (let ix = 0; ix <= segs; ix++) {
-        const i = iz * side + ix;
-        const x = pos.getX(i), z = pos.getZ(i);
-        const h = H[i];
-
-        // slope (tan) from cached neighbors
-        const iL = ix > 0 ? i - 1 : i, iR = ix < segs ? i + 1 : i;
-        const iD = iz > 0 ? i - side : i, iU = iz < segs ? i + side : i;
-        const gx = (H[iR] - H[iL]) / (((iR - iL) || 1) * step);
-        const gz = (H[iU] - H[iD]) / ((((iU - iD) / side) || 1) * step);
-        const m = Math.sqrt(gx * gx + gz * gz);
-
-        const r = Math.hypot(x, z);
-        const rim = SS(r, RIM_IN, RIM_OUT * 0.94);
-
-        /* FILTERED-FIELD GRADIENT, AND IT IS THE FIX FOR THE RIM'S CONTOUR MAP.
-         *
-         * Fix round 1 widened the finite-difference STENCIL from 1.94 m to
-         * 15.5 m here and it did not work, because the problem is not the
-         * stencil width: the rim's height function terraces the wall into
-         * 13-23 m benches, so a wide difference still lands on whichever bench
-         * its two taps happen to sit on and still flips with the risers. The
-         * field has to be FILTERED, not sampled further apart. HS is H run
-         * through a ~39 m triangle kernel (see _smoothField): the flutes and
-         * the buttress spurs survive it, the bench ripple does not.
-         *
-         * Everything below that flips sign or crosses a ramp on the rim — the
-         * dirt/rock slope splat, the sun-face tint, the `h > 40` rock ramp and
-         * the snowline — now reads HS/mW on the rim and the raw 1.94 m field
-         * on the meadow, crossfaded by `rim`. That is the whole of the
-         * "wood-veneer fingerprint" fix; the numbers are in A63 below.
-         */
-        const W = 4;   // HS is already smooth, so the stencil is only 7.8 m
-        const iLw = i - Math.min(ix, W), iRw = i + Math.min(segs - ix, W);
-        const iDw = i - Math.min(iz, W) * side, iUw = i + Math.min(segs - iz, W) * side;
-        const gxW = (HS[iRw] - HS[iLw]) / (Math.max(1, iRw - iLw) * step);
-        const gzW = (HS[iUw] - HS[iDw]) / (Math.max(1, (iUw - iDw) / side) * step);
-        const mW = Math.sqrt(gxW * gxW + gzW * gzW);
-        // meadow keeps the sharp kernel; the rim crosses over to the filtered one
-        const mS = m + (mW - m) * rim;
-        // ...and so does the height every albedo RAMP is keyed on
-        const hS = h + (HS[i] - h) * rim;
-
-        // moisture / dryness fields
-        const dryness = gn.fbm(x * 0.01 + 9, z * 0.01 - 4, 2) * 0.5 + 0.5;
-        const umber = SS(gn.fbm(x * 0.023 - 40, z * 0.023 + 31, 2), 0.18, 0.52);
-        const rd = Math.abs(x - riverCenterX(z));
-        const hw = riverHalfWidth(z);
-        const gate = 1 - SS(r, 250, 302);
-        const moist = (1 - SS(rd, hw * 0.5, hw * 2.0)) * gate;
-        const bed = (1 - SS(rd, hw * 0.3, hw * 0.95)) * gate;
-
-        tmp.copy(cGrass).lerp(cDry, dryness * 0.85);
-        tmp.lerp(cOchre, umber * (1 - moist) * 0.5);
-        tmp.lerp(cLush, moist * 0.9);
-        tmp.lerp(cSilt, bed * 0.55); // fragment mask sharpens this
-
-        /* Slope splat: dirt then bare rock. FADED OUT ON THE RIM. Two step
-         * lerps on a slope magnitude are the single highest-contrast
-         * gradient-keyed pair in this pass (bare grass -> #655135 -> #6f6d66
-         * across a swing of 0.5), and on the rim they buy nothing: the block
-         * below already lerps 86 % of the way to rock, and the fragment
-         * shader's `steep` term carries the rest with a fwidth-widened gate
-         * that cannot alias. Off the rim they are what makes a stream bank
-         * read as dirt, so they stay.
-         */
-        const splatK = 1 - 0.88 * rim;
-        if (splatK > 0.01) {
-          if (mS > 0.5) tmp.lerp(cDirt, SS(mS, 0.5, 0.85) * splatK);
-          if (mS > 0.75) tmp.lerp(cRock, SS(mS, 0.75, 1.25) * splatK);
-        }
-
-        // SE highland shelf
-        const sf = shelfFactor(x, z);
-        if (sf > 0.02) {
-          // mS, not m: identical off the rim, filtered where the shelf climbs
-          // into it, so the shelf cannot re-introduce the bench banding
-          tmp.lerp(cOchre, sf * 0.25 * (1 - SS(mS, 0.3, 0.7)));
-          tmp.lerp(cRock, sf * (0.45 + 0.4 * SS(mS, 0.16, 0.55)));
-        }
-
-        // rim reads as rock — vary cool gray -> warm umber by low-freq noise
-        if (rim > 0.01) {
-          const rv = gn.fbm(x * 0.0065 - 21, z * 0.0065 + 44, 2) * 0.5 + 0.5;
-          tmp2.copy(cRock).lerp(cRockWarm, rv * 0.85);
-          tmp.lerp(tmp2, rim * 0.86);
-          tmp.multiplyScalar(1 + (rv - 0.5) * 0.17 * rim);
-          /* SUN-FACE TINT: FILTERED FIELD, AND A LINEAR BLEND.
-           *
-           * Two one-sided smoothsteps on a signed quantity both saturate, so
-           * the tint was effectively a SIGN test: a flank was fully warm or
-           * fully cool with almost nothing in between, and every zero crossing
-           * of the field drew a hard edge. On terraced ground that is one hard
-           * edge per bench — the printed-pattern read V33 filmed. One linear
-           * ramp through zero has the same job (a flank facing the sun is
-           * warmer than one facing away) and no edges at all, and the swing
-           * that used to be 0.38 + a 16 % brightness multiply is now 0.24 with
-           * no multiply: enough to separate two faces of one buttress, not
-           * enough to read as paint.
-           */
-          const sunFace = 0.55 * gxW + 0.72 * gzW;
-          const fl = Math.max(-1, Math.min(1, sunFace * 1.05));
-          const warm = fl > 0 ? fl : 0;
-          const shade = fl < 0 ? -fl : 0;
-          if (warm > 0.001) {
-            tmp.lerp(cSunlit, warm * rim * 0.24);
-          }
-          if (shade > 0.001) {
-            // The shade tint used to also DARKEN by 13 %. Measured: the whole
-            // south face of the north rim has N.L < 0 at every hour of
-            // world-light's solar arc, so it is already lit by a 0.3
-            // hemisphere and nothing else — it rendered at RGB 25/23/21.
-            // Multiplying a face that is already ambient-only by 0.87 is how a
-            // mountain becomes a black hole. The tint stays (it is what makes a
-            // shade face read cool against a warm one); the darkening is gone,
-            // and rim rock is lifted to a real stone albedo instead.
-            tmp.lerp(cShade, shade * rim * 0.22);
-          }
-          // stone albedo: dry granite/limestone sits near 0.42-0.55, not 0.28.
-          // This is the term that decides whether a shaded face reads as rock
-          // or as a hole once the aerial fog has taken half its contrast.
-          tmp.multiplyScalar(1 + 0.52 * rim);
-        }
-        /* Both of these are height RAMPS, and both are keyed on hS on the rim.
-         * A monotonic ramp cannot band on its own — but h is not monotonic up
-         * a terraced wall, it is a staircase, so `SS(h, snowT, snowT+26)`
-         * crossed its ramp once per 13-23 m bench and drew one bright ring per
-         * bench: the brightest contour lines on the whole massif, cSnow being
-         * the highest-luminance colour in the palette. hS climbs smoothly.
-         * The slope mask keeps snow off the risers, and it too now reads the
-         * filtered slope (and over a wider gate, so a single steep vertex can
-         * no longer punch a hole in a snowfield). */
-        /* BIOME TINTS. These sit AFTER the rim block on purpose: the north
-         * bench climbs into the bottom of the rim's fade (rim ~0.06 at
-         * r=300), and a shelf the player walks onto should read as its own
-         * ground rather than as the mountain's apron. Weakest claim first;
-         * the snow dusting last because it lies over whatever is beneath it.
-         * Same suppression as every other biome consumer — grass lanes and
-         * worn trails keep their own colour straight through a biome. */
-        const bMud = marshFactor(x, z) * (1 - trailSuppress(x, z));
-        if (bMud > 0.01) tmp.lerp(cMud, bMud * 0.72 * (1 - SS(mS, 0.35, 0.9)));
-        const bKeep = 1 - biomeSuppress(x, z);
-        if (bKeep > 0.02) {
-          const bFor = forestFactor(x, z) * bKeep;
-          if (bFor > 0.01) tmp.lerp(cDuff, bFor * 0.56);
-          const bScr = screeFactor(x, z) * bKeep;
-          if (bScr > 0.01) tmp.lerp(cScree, bScr * 0.70);
-          const bAsh = ashFactor(x, z) * bKeep;
-          if (bAsh > 0.01) tmp.lerp(cAsh, bAsh * 0.86);
-          const bSnow = snowFactor(x, z) * bKeep;
-          if (bSnow > 0.01) tmp.lerp(cDust, bSnow * 0.74 * (1 - SS(mS, 0.30, 1.1)));
-        }
-
-        if (hS > 40) tmp.lerp(cRock, SS(hS, 40, 90) * 0.6);
-        // irregular snowline, now sitting near the top third of the massifs
-        const snowT = this._snowline(x, z);
-        /* A FIXED 26 m RAMP IS A SOFT EDGE ON A MEADOW AND A HARD LINE ON A
-         * WALL: on a 60 degree face 26 m of height is 15 m of ground, so the
-         * whole transition happens inside one bench. The ramp widens with the
-         * filtered slope, which keeps the snow edge covering a comparable
-         * distance ACROSS THE SURFACE wherever it lands. */
-        const snowRamp = 26 + 66 * SS(mS, 0.5, 2.6);
-        const snow = SS(hS, snowT, snowT + snowRamp);
-        if (snow > 0) {
-          tmp.lerp(cSnow, snow * (0.25 + 0.75 * rim) * (1 - 0.72 * SS(mS, 1.3, 3.0)));
-        }
-
-        colors[i * 3] = tmp.r;
-        colors[i * 3 + 1] = tmp.g;
-        colors[i * 3 + 2] = tmp.b;
-      }
-    }
-    geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+    this._meshBake = {
+      pos, H, HS, segs, side, step, colors, attr: null,
+    };
+    this._bakeVertexColors(null);
+    const colorAttr = new THREE.BufferAttribute(colors, 3);
+    geo.setAttribute('color', colorAttr);
+    this._meshBake.attr = colorAttr;
 
     /* ------- pass 3: SHADING NORMALS ON A RIM-WIDENED STENCIL -------------
      *
@@ -3152,8 +3371,132 @@ export class Terrain {
         }
       }
     }
-    if (stamped) this.ctx.vegetation?.invalidate?.();
+    // the re-bake is NOT called from here: `update()` drains every pending
+    // stamp on the same tick, so this path cannot be the one that forgets
     return true;
+  }
+
+  /** Mark every re-bake tile a cover disc of radius `r` at (x, z) can move. */
+  _markRebake(x, z, r) {
+    const d = this._dirtyTiles
+      || (this._dirtyTiles = new Uint8Array(REBAKE_N * REBAKE_N));
+    const pad = r + REBAKE_PAD;
+    const i0 = Math.max(0, Math.floor((x - pad + REBAKE_HALF) / REBAKE_TILE));
+    const i1 = Math.min(REBAKE_N - 1, Math.floor((x + pad + REBAKE_HALF) / REBAKE_TILE));
+    const j0 = Math.max(0, Math.floor((z - pad + REBAKE_HALF) / REBAKE_TILE));
+    const j1 = Math.min(REBAKE_N - 1, Math.floor((z + pad + REBAKE_HALF) / REBAKE_TILE));
+    for (let j = j0; j <= j1; j++) {
+      const row = j * REBAKE_N;
+      for (let i = i0; i <= i1; i++) d[row + i] = 1;
+    }
+  }
+
+  /**
+   * THE STAMP AND THE PIXELS ARE ONE OPERATION (fix round 2).
+   *
+   * `_ensureRouteCover()` used to raise `stealthField` and then tell only the
+   * grass to re-scatter. Everything else baked off that field — the duff
+   * channel of uMask2, the four biome channels of uMask3, the scree channel,
+   * and the biome half of the mesh vertex colours — kept describing the field
+   * as it was in the constructor. Measured on the shipped build: 8200 of
+   * 184412 mask cells inside r <= 330 (4.45 %) carried live cover the duff
+   * channel did not have, 1555 of them on ground whose biome mask was still
+   * at FULL strength. Filmed, that is waist-high golden stealth grass growing
+   * out of unbroken white snow, with `surfaceAt()` calling the pixel `grass`.
+   *
+   * Both bakes are pure functions of the live fields, so the repair is to run
+   * them again over the tiles the stamps touched — 2-4 % of the valley, a few
+   * milliseconds, once per session, at the same instant the field moves.
+   */
+  _rebakeStamped(discs) {
+    const now = () => (typeof performance !== 'undefined' ? performance.now() : Date.now());
+    const t0 = now();
+    const dirty = this._dirtyTiles;
+    let tiles = 0;
+    if (dirty) for (let i = 0; i < dirty.length; i++) if (dirty[i]) tiles++;
+    const texels = dirty ? this._bakeMaskTexels(dirty) : 0;
+    const vertices = dirty ? this._bakeVertexColors(dirty) : 0;
+    this.ctx.vegetation?.invalidate?.();
+    const prev = this._routeCoverStats;
+    this._routeCoverStats = {
+      discs, tiles, texels, vertices, ms: +(now() - t0).toFixed(1),
+      rebakes: (prev ? prev.rebakes : 0) + 1,
+      totalDiscs: (prev ? prev.totalDiscs : 0) + discs,
+    };
+    // one-shot: the map has done its job and 3.7 kB is 3.7 kB
+    this._dirtyTiles = null;
+    return this._routeCoverStats;
+  }
+
+  /**
+   * What the runtime cover stamp actually repaired. Published for A59c so the
+   * gate can prove the patch RAN (and covered real ground) rather than
+   * inferring it from a coherence measure that an unstamped build would also
+   * pass. `null` until `_ensureRouteCover()` has run.
+   */
+  routeCoverStats() { return this._routeCoverStats || null; }
+
+  /**
+   * MASK COHERENCE AUDIT (A59c). Walks the baked texture bytes on a `step`
+   * texel stride inside the play disc and compares each with a fresh
+   * `_maskTexel()`. Any non-zero delta is a pixel describing a field that has
+   * since moved — the exact defect the runtime stamp used to introduce.
+   */
+  maskAudit(step = 2) {
+    const md = this._maskData;
+    if (!md) return null;
+    const N = md.N, scale = md.scale, v = _maskScratch;
+    const arr = [md.d1, md.d2, md.d3];
+    let cells = 0, mismatched = 0, worst = 0;
+    let worstAt = null, worstCh = -1;
+    for (let iz = 0; iz < N; iz += step) {
+      const wz = (iz + 0.5) * scale - WORLD_HALF;
+      for (let ix = 0; ix < N; ix += step) {
+        const wx = (ix + 0.5) * scale - WORLD_HALF;
+        if (wx * wx + wz * wz > PLAY_RADIUS * PLAY_RADIUS) continue;
+        cells++;
+        this._maskTexel(wx, wz, v);
+        const o = (iz * N + ix) * 4;
+        let bad = 0;
+        for (let c = 0; c < 12; c++) {
+          const d = Math.abs(arr[(c / 4) | 0][o + (c % 4)] - v[c]);
+          if (d > bad) bad = d;
+          if (d > worst) { worst = d; worstAt = [+wx.toFixed(1), +wz.toFixed(1)]; worstCh = c; }
+        }
+        if (bad > 1) mismatched++;
+      }
+    }
+    return { cells, mismatched, worstDelta255: worst, worstAt, worstChannel: worstCh };
+  }
+
+  /**
+   * VERTEX-COLOUR COHERENCE AUDIT (A59c). Same contract as `maskAudit()` for
+   * the other half of the bake: what the mesh is painted with, against what
+   * `_vertexColor()` says it should be painted with, right now.
+   */
+  vertexColorAudit(stride = 3) {
+    const mb = this._meshBake;
+    if (!mb) return null;
+    const pos = mb.pos, segs = mb.segs, side = mb.side, colors = mb.colors;
+    const out = _vcAudit;
+    let vertices = 0, mismatched = 0, worst = 0, worstAt = null;
+    for (let iz = 0; iz <= segs; iz += stride) {
+      for (let ix = 0; ix <= segs; ix += stride) {
+        const i = iz * side + ix;
+        const x = pos.getX(i), z = pos.getZ(i);
+        if (x * x + z * z > PLAY_RADIUS * PLAY_RADIUS) continue;
+        vertices++;
+        this._vertexColor(i, ix, iz, out);
+        const d = Math.max(
+          Math.abs(colors[i * 3] - out.r),
+          Math.abs(colors[i * 3 + 1] - out.g),
+          Math.abs(colors[i * 3 + 2] - out.b),
+        );
+        if (d > worst) { worst = d; worstAt = [+x.toFixed(1), +z.toFixed(1)]; }
+        if (d > 0.004) mismatched++;      // ~1/255
+      }
+    }
+    return { vertices, mismatched, worstDelta: +worst.toFixed(4), worstAt };
   }
 
   update() {
@@ -3167,6 +3510,17 @@ export class Terrain {
       // never wait forever: at ~10 s the field is stamped from whatever is up
       const ready = this.ctx.machines?.varietyReady || this._routeCoverTries > 600;
       if (ready && this._ensureRouteCover()) this._routeCoverDone = true;
+    }
+    /* ANY cover stamp — this lane's route pass above, or anything a later
+     * round adds — re-bakes the ground it moved on the tick it moves it. */
+    if (_stampPending.length) {
+      let discs = 0;
+      for (let i = 0; i < _stampPending.length; i += 3) {
+        this._markRebake(_stampPending[i], _stampPending[i + 1], _stampPending[i + 2]);
+        discs++;
+      }
+      _stampPending.length = 0;
+      this._rebakeStamped(discs);
     }
   }
 
@@ -3194,6 +3548,14 @@ export class Terrain {
     }
     this._maskTextures = null;
     this._detailTex = this._gravelTex = this._macroTex = null;
+    /* the retained bake buffers: the mask bytes are the DataTextures' own
+     * `image.data` (disposed above) and `colors` is the geometry's colour
+     * attribute (disposed with the geometry), so this drops references, not
+     * an extra copy — but a dangling `_meshBake.pos` would keep the whole
+     * disposed geometry alive, which is exactly the leak shape A90 hunts. */
+    this._maskData = null;
+    this._meshBake = null;
+    this._dirtyTiles = null;
     this.group.parent?.remove(this.group);
     this.group.clear();
     this.cliffMeshes = null;

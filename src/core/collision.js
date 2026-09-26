@@ -83,10 +83,29 @@ const _dirS = new THREE.Vector3();
 const _boomS = new THREE.Vector3();
 /**
  * The smallest melee approach pad that still leaves a machine immovable (A25).
- * See `Collision._meleePad` for the derivation — it is `0.6 - playerRadius`,
- * not a tuned number, and nothing may pass a smaller one.
+ *
+ * FIX PASS 1 (round 4): 0.20 -> 0.32, because 0.20 was the EQUALITY and not a
+ * floor. `machines/index.js` pushes a machine whenever the player's POSITION
+ * is within `bodyRadius + 0.6` of a standoff sphere, while this collider holds
+ * her POSITION at `bodyRadius + pad + 0.4` from the standoff SEGMENT: the push
+ * therefore fires iff `pad < 0.20`, and at `pad === 0.20` the two are the same
+ * number. That is a STATIC equilibrium, not a bound. The manager runs against
+ * her position AFTER she has moved, and a walking player penetrates by up to a
+ * frame of travel before the swept solve pushes her back out — so on a loaded
+ * box every forward frame fired a push and they integrated. Measured by the
+ * round-4 film judge: spear drawn, 4 s of KeyW into a frozen Watcher parked
+ * 5 m ahead moved the MACHINE 2.38 m (0.057 m on the worst single frame),
+ * against 0.000 m with the spear holstered. `machinePad`'s own comment says
+ * what the margin is for — "clears the manager's bodyRadius + 0.6 standoff by
+ * a frame of sprint travel" — and 0.12 m is that frame (5.5 m/s at 45 fps,
+ * the box's loaded frame time). The 0.12 m of reach it costs is handed
+ * straight back through `MELEE_L_CUT`, which is the SAME distance on the same
+ * axis, so nothing about how close she gets to the machine changes.
+ *
+ * Gated by `A106-melee-approach-immovable` (spear drawn, machine frozen, 3 s
+ * of KeyW: machine displacement 0.000 m while the term is live).
  */
-const MELEE_PAD_FLOOR = 0.20;
+const MELEE_PAD_FLOOR = 0.32;
 /**
  * How much of the melee target's standoff SEGMENT the approach term removes,
  * in metres. See `Collision._meleeStandoff`: it is the end cap of a capsule
@@ -94,8 +113,28 @@ const MELEE_PAD_FLOOR = 0.20;
  * this roster is about a metre of empty air in front of the sculpt. Absolute
  * rather than proportional so a Thunderjaw loses the same centimetre of cap a
  * Watcher does instead of a third of its body.
+ *
+ * FIX PASS 1 (round 4), TWICE OVER: 0.66 -> 1.02. 0.12 m of it pays back the
+ * pad (below); the other 0.24 m is the rest of the end cap, and it is what
+ * makes the blade land on a beat whose tip is not aimed dead down the centre
+ * line. Measured with the pad at 0.32 and the cut at 0.78: light-1's contact
+ * tip (char 0.15, 1.05, 1.86) read +0.23 m short of the nearest hull surface
+ * while light-2's (-0.43, 1.13, 1.72) read -0.02 m INSIDE it — a Watcher's idle
+ * hull is not symmetric about her aim, so a reach budget that only works for a
+ * thrust down the midline is not a reach budget. On a Watcher the cut now lands
+ * on `MELEE_L_FLOOR` (0.5465 m of 1.5615), she stands 2.17 m from the centre
+ * instead of 2.40, and `playerToShell` — the exact bound A103 gates — is still
+ * 0.87 m of daylight.
+ *
+ * Earlier note (0.66 -> 0.78): `MELEE_PAD_FLOOR` went up by 0.12 m to
+ * restore the anti-shove margin A25 depends on, and her standing distance from
+ * a machine centre head-on is `standoffHalfLen' + bodyRadius + pad + 0.4` —
+ * the pad and the segment cut are the same axis, so moving 0.12 m from one to
+ * the other leaves the distance, and therefore the blade's reach, exactly
+ * where it was. Proven rather than argued: A103 publishes `playerToMachine`
+ * (2.402 m on a Watcher before and after) and `tipToHullAtHit`.
  */
-const MELEE_L_CUT = 0.66;
+const MELEE_L_CUT = 1.02;
 /**
  * ...and the floor under it: the melee standoff segment never drops below this
  * fraction of the machine's own. The cut is an absolute number tuned on the
@@ -1263,13 +1302,23 @@ export class Collision {
    * machine's own `bodyRadius`, and `MELEE_PAD` is >= 0: her capsule can never
    * cross the machine's shell, only stand against it.
    *
-   * WHY 0.22 AND NOT 0. The floor is set by A25-machine-immovable, and it is
-   * exact rather than tuned: `machines/index.js` pushes a machine away
-   * whenever the player's POSITION is within `bodyRadius + 0.6` of a standoff
-   * sphere, while this capsule holds her POSITION at `bodyRadius + pad + 0.4`
-   * (her own radius) from the standoff segment. The push therefore fires iff
-   * `pad < 0.6 - 0.4 = 0.20`, for every machine, independently of its
-   * `bodyRadius`. 0.22 is that floor plus 2 cm, and it buys 0.33 m of reach.
+   * WHY 0.32 AND NOT 0, AND WHY NOT 0.20 EITHER (fix pass 1). The floor is set
+   * by A25-machine-immovable, and its EQUALITY point is exact rather than
+   * tuned: `machines/index.js` pushes a machine away whenever the player's
+   * POSITION is within `bodyRadius + 0.6` of a standoff sphere, while this
+   * capsule holds her POSITION at `bodyRadius + pad + 0.4` (her own radius)
+   * from the standoff segment. The push therefore fires iff `pad < 0.20`, for
+   * every machine, independently of its `bodyRadius`.
+   *
+   * Round 4 shipped the pad AT 0.20 and called that a floor. It is not: the
+   * manager runs against her position after the move, a walking player
+   * penetrates the capsule by up to one frame of travel before the swept solve
+   * pushes her out, and the push then fires on every forward frame and
+   * integrates — the film judge measured 2.38 m of MACHINE displacement under
+   * 4 s of KeyW with the spear drawn (0.000 m holstered). `MELEE_PAD_FLOOR` is
+   * 0.32 now: the equality plus a 0.12 m frame of loaded-box travel, which is
+   * the same margin `machinePad`'s own comment claims for the general case.
+   * The reach it costs is returned on the same axis by `MELEE_L_CUT`.
    */
   /**
    * THE OTHER HALF OF THE MELEE APPROACH TERM: the standoff SEGMENT.
@@ -1298,9 +1347,12 @@ export class Collision {
    * collider shrank, every melee approach would SHOVE the machine, which is
    * precisely the failure `machinePad` exists to prevent (A25). Writing the
    * same number into `m.standoffHalfLen` keeps the two consistent: she stops
-   * at `L' + bodyRadius + 0.20 + 0.40` from the centre, which is exactly
-   * `bodyRadius + 0.6` from the shortened sphere, so the manager's push never
-   * fires and the machine stays put. The base value is cached here and
+   * at `L' + bodyRadius + 0.32 + 0.40` from the centre, i.e. 0.12 m OUTSIDE
+   * the `bodyRadius + 0.6` sphere the manager pushes from, so the push does
+   * not fire even on the frame a moving player is deepest into the capsule
+   * (fix pass 1 — at the 0.20 m pad round 4 shipped, those two radii were the
+   * same number and every forward frame shoved the machine). The base value is
+   * cached here and
    * restored on every frame the machine is not the melee target, so the field
    * self-heals even if melee is torn down mid-frame.
    *

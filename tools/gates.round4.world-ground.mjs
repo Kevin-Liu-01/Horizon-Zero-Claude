@@ -60,9 +60,10 @@ export const GATES = [
   /* --------------------------------------------------------------------- */
   {
     id: 'A58-surface-api', kind: 'action', lane: 'world-ground',
-    title: 'terrain.surfaceAt() names at least 7 materially present surfaces '
-      + '(snow, mud and ash among them), >= 5 biomes cover real ground, and '
-      + 'the river / trail / shelf / meadow do not all read the same',
+    title: 'terrain.surfaceAt() and materialAt() each name at least 7 materially '
+      + 'present grounds (snow, mud and ash among them), the two agree through '
+      + 'SURFACE_EMIT, >= 5 biomes cover real ground, and the river / trail / '
+      + 'shelf / meadow do not all read the same',
     timeout: 45000,
     settle: 1200,
     assert: `(async () => {
@@ -75,21 +76,60 @@ export const GATES = [
       if (!Array.isArray(KINDS) || KINDS.length < 4) {
         return { pass: false, detail: 'Terrain.SURFACES is not a list of surface names' };
       }
+      /* FIX ROUND 2: WAIT FOR THE ONE-SHOT ROUTE-COVER STAMP BEFORE SWEEPING.
+       * _ensureRouteCover() raises the cover field ~1.5 s in, and cover
+       * suppresses every biome surface, so a sweep that races it measures a
+       * world that is still moving: a judge caught this gate reporting ash 412
+       * in one run and 541 in the next off the same build. Waiting makes the
+       * histogram a property of the build rather than of the scheduler. */
+      if (typeof T.routeCoverStats === 'function') {
+        const tw = performance.now();
+        while (!T.routeCoverStats() && performance.now() - tw < 30000) {
+          await new Promise((r) => setTimeout(r, 200));
+        }
+      }
+      /* FIX ROUND 2 - TWO VOCABULARIES, BOTH MEASURED.
+       *
+       * surfaceAt() now emits only names audio's shipped footstep table can
+       * voice, and materialAt() reports the ground itself (SURFACES + the
+       * burn scar's ash). That split is what closes A76-footfalls, which this
+       * lane turned red by inventing a surface name a closed consumer
+       * vocabulary did not have. It is NOT a licence to report fewer surfaces:
+       * this gate now requires the >= 7 bar and the no-unknown-names bar on
+       * BOTH vocabularies, the three owed biome grounds on the fine one, and
+       * that the two agree through the published SURFACE_EMIT at every
+       * sampled point. Strictly more than the bar it replaces.
+       */
+      const MATS = T.constructor.MATERIALS;
+      const EMIT = T.constructor.SURFACE_EMIT;
+      if (!Array.isArray(MATS) || !EMIT) {
+        return { pass: false, detail: 'Terrain.MATERIALS / SURFACE_EMIT are not published' };
+      }
+      if (typeof T.materialAt !== 'function') {
+        return { pass: false, detail: 'terrain.materialAt() is not published' };
+      }
+      const unroutable = MATS.filter((m) => !KINDS.includes(EMIT[m]));
       // 3 m grid over the play disc
-      const hist = {}, where = {};
-      let total = 0;
+      const hist = {}, mHist = {}, where = {}, mWhere = {};
+      let total = 0; const disagree = [];
       for (let z = -320; z <= 320; z += 3) {
         for (let x = -320; x <= 320; x += 3) {
           if (x * x + z * z > 320 * 320) continue;
           const s = T.surfaceAt(x, z);
+          const m = T.materialAt(x, z);
           total++;
           hist[s] = (hist[s] || 0) + 1;
+          mHist[m] = (mHist[m] || 0) + 1;
           if (!where[s]) where[s] = [x, z];
+          if (!mWhere[m]) mWhere[m] = [x, z];
+          if (EMIT[m] !== s && disagree.length < 8) disagree.push({ at: [x, z], material: m, emitted: s, expected: EMIT[m] });
         }
       }
       const MIN = Math.max(200, Math.round(total * 0.0008));
       const material = Object.keys(hist).filter((k) => hist[k] >= MIN);
+      const materials = Object.keys(mHist).filter((k) => mHist[k] >= MIN);
       const unknown = Object.keys(hist).filter((k) => !KINDS.includes(k));
+      const unknownMaterial = Object.keys(mHist).filter((k) => !MATS.includes(k));
 
       // the four zones the finding names, located from the field itself
       const zone = {};
@@ -124,7 +164,7 @@ export const GATES = [
        * ORIGINAL terms (no unknown values, three distinct zones, the meadow
        * reads as grass, a trail exists) are all still required. */
       const OWED = ['snow', 'mud', 'ash'];
-      const missing = OWED.filter((k) => !material.includes(k));
+      const missing = OWED.filter((k) => !materials.includes(k));
 
       // ...and the biome vocabulary itself has to be present on the ground
       const biomes = {};
@@ -139,18 +179,24 @@ export const GATES = [
       }
       const bList = Object.keys(biomes).filter((k) => biomes[k] >= 40);
 
-      const pass = material.length >= 7 && missing.length === 0
-        && unknown.length === 0 && zoneSet.size >= 3
+      const pass = material.length >= 7 && materials.length >= 7
+        && missing.length === 0
+        && unknown.length === 0 && unknownMaterial.length === 0
+        && unroutable.length === 0 && disagree.length === 0
+        && zoneSet.size >= 3
         && zone.meadow === 'grass' && trail !== null
         && bList.length >= 5;
       return {
         pass,
         detail: {
-          distinctMaterial: material.length, material, minSamples: MIN,
+          distinctSurfaces: material.length, surfaces: material,
+          distinctMaterials: materials.length, materials, minSamples: MIN,
           missingOwed: missing,
-          histogram: hist, unknown, zones: zone, zoneDistinct: zoneSet.size,
+          histogram: hist, materialHistogram: mHist,
+          unknown, unknownMaterial, unroutable, emitDisagreement: disagree,
+          zones: zone, zoneDistinct: zoneSet.size,
           biomes, biomesMaterial: bList,
-          samplePoints: where, trailAt: trail,
+          samplePoints: where, materialPoints: mWhere, trailAt: trail,
         },
       };
     })()`,
@@ -761,29 +807,44 @@ export const GATES = [
    * gate deliberately does NOT re-assert A76's bar — that would either weaken
    * it or duplicate a failure someone else must fix.
    *
-   * What it asserts is the half this lane CAN be held to: the vocabulary and
-   * the routing hint published beside it never disagree. If a future biome adds
-   * a surface name and forgets to route it, this goes red in `world-ground`'s
-   * own lane run, at the moment the surface is invented, instead of surfacing
-   * as a mystery footstep in audio's gate three lanes later.
+   * What it asserts is the half this lane CAN be held to, and fix round 2 made
+   * that half load-bearing: every MATERIAL this lane models has a foley route,
+   * and the vocabulary `surfaceAt()` actually EMITS is a subset of the modelled
+   * one in which every name carries the same route it would have had. A future
+   * biome that invents a ground therefore cannot reach a consumer as a name
+   * that consumer has never heard of — the emit map degrades it to a name
+   * with an identical foley set — and if it invents one with no route at all,
+   * this goes red in `world-ground`'s own lane run at the moment of invention,
+   * rather than as a mystery footstep in audio's gate three lanes later.
    */
   {
     id: 'A58b-surface-audio-world-ground', kind: 'action', lane: 'world-ground',
-    title: 'every name in Terrain.SURFACES has a published Terrain.SURFACE_AUDIO '
-      + 'foley route, and every route names a set audio actually has',
+    title: 'every name in Terrain.MATERIALS has a published Terrain.SURFACE_AUDIO '
+      + 'foley route, every route names a set audio actually has, and the '
+      + 'vocabulary surfaceAt() emits never changes a foley set',
     timeout: 30000,
     settle: 400,
     assert: `(() => {
       const ctx = __CTX__;
       const T = ctx.terrain;
       if (!T) return { pass: null, detail: 'SKIP: terrain not published' };
-      const SURFACES = T.constructor.SURFACES;
+      const SURFACES = T.constructor.MATERIALS || T.constructor.SURFACES;
+      const EMITTED = T.constructor.SURFACES;
+      const EMIT = T.constructor.SURFACE_EMIT || {};
       const MAP = T.constructor.SURFACE_AUDIO;
       if (!MAP || typeof MAP !== 'object') {
         return { pass: false, detail: 'Terrain.SURFACE_AUDIO is not published' };
       }
       const unrouted = SURFACES.filter((s) => !MAP[s]);
       const stray = Object.keys(MAP).filter((s) => !SURFACES.includes(s));
+      /* FIX ROUND 2: the emitted vocabulary must be a SUBSET of the modelled
+       * one, every material must have an emit target that is itself emitted,
+       * and a material that emits something else must land on a name carrying
+       * the SAME foley set — i.e. the degradation may lose a distinction, and
+       * may never change the sound. (audio's own A76 is the live half.) */
+      const badEmit = SURFACES.filter((s) => !EMIT[s] || !EMITTED.includes(EMIT[s])
+        || MAP[EMIT[s]] !== MAP[s]);
+      const strayEmitted = EMITTED.filter((s) => !SURFACES.includes(s));
 
       /* Every route must name a set the bank can actually PLAY. Ask the live
        * sample bank (bank.has), not a hard-coded list, so a route to a set that
@@ -813,15 +874,23 @@ export const GATES = [
       }
 
       const detail = {
-        surfaces: SURFACES.length, routed: Object.keys(MAP).length,
-        unrouted, stray, unknownSets: unknown,
+        materials: SURFACES.length, emitted: EMITTED.length,
+        routed: Object.keys(MAP).length,
+        unrouted, stray, strayEmitted, badEmit, unknownSets: unknown,
+        emitMap: EMIT,
         bankIntrospected: canAsk,
-        note: 'A76-footfalls is RED BECAUSE THIS LANE ADDED THE ash SURFACE, '
-          + 'and its only legal fix is one line in src/audio/audio.js (audio '
-          + 'owns that file — exact patch in docs/ROUND4-WORLD-GROUND.md). '
-          + 'Counted as this lane REGRESSION, not another lane backlog.',
+        note: 'FIX ROUND 2: the ash regression this lane caused is CLOSED from '
+          + 'this side. surfaceAt() emits only names audio can voice; '
+          + 'materialAt() keeps ash; ash emits dirt, which carries the very '
+          + 'foley set (foot/dirt) SURFACE_AUDIO asks for. The offer to audio '
+          + 'stands: merging Terrain.SURFACE_AUDIO gives the burn scar its own '
+          + 'set and this lane emits ash again with no code change.',
       };
-      return { pass: unrouted.length === 0 && stray.length === 0 && unknown.length === 0, detail };
+      return {
+        pass: unrouted.length === 0 && stray.length === 0 && unknown.length === 0
+          && badEmit.length === 0 && strayEmitted.length === 0,
+        detail,
+      };
     })()`,
   },
 
@@ -907,6 +976,122 @@ export const GATES = [
             + 'a hit there is the exact defect the fix round closed',
         },
       };
+    })()`,
+  },
+
+  /* --------------------------------------------------------------- A59-c */
+  {
+    id: 'A59c-mask-coherence-world-ground', kind: 'action', lane: 'world-ground',
+    title: 'The baked ground (splat masks + mesh vertex colours) still describes '
+      + 'the live fields after the runtime route-cover stamp: zero stale cells, '
+      + 'and the audit is proven sensitive',
+    timeout: 90000,
+    settle: 800,
+    /**
+     * THE GATE FOR THE DEFECT FIX ROUND 2 CLOSED, AND THE ONE THE LANE WAS
+     * MISSING WHEN IT SHIPPED THE DEFECT.
+     *
+     * `_ensureRouteCover()` raises `stealthField` at runtime so every live
+     * patrol route has cover (A60). Four baked things are functions of that
+     * field — uMask2.r (duff), uMask2.a (scree), all four uMask3 channels and
+     * the biome half of the mesh vertex colours — and the shipped build baked
+     * all of them in the constructor and never touched them again. 8200 of
+     * 184412 mask cells inside r <= 330 (4.45 %) then carried live cover the
+     * pixels did not have, 1555 of them on ground the biome mask still painted
+     * at full strength: waist-high stealth grass growing out of unbroken white
+     * snow, with `surfaceAt()` reporting `grass` on a white pixel.
+     *
+     * A58, A59, A59b and A60 could not see it. Every one of them reads the
+     * live functions; not one reads the texture. So this reads the texture.
+     *
+     * Three parts, in the order that makes a failure diagnosable:
+     *   1. THE STAMP RAN AND MOVED GROUND. Without this the coherence measures
+     *      below are vacuous — a build that never stamps is trivially coherent.
+     *   2. COHERENCE. Every sampled mask texel and mesh vertex inside the play
+     *      disc, recomputed through the same `_maskTexel()` / `_vertexColor()`
+     *      the bake uses, must equal what is stored. Plus the judge's own
+     *      measure at FULL mask resolution: live cover the duff channel does
+     *      not have, and how much of it sits on unsuppressed biome.
+     *   3. SENSITIVITY. One stored byte is flipped and the audit must go red,
+     *      then restored and the audit must go green again. An audit that
+     *      cannot fail is not a measurement.
+     */
+    assert: `(async () => {
+      const ctx = __CTX__;
+      const T = ctx.terrain;
+      const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+      if (!T || typeof T.maskAudit !== 'function' || typeof T.vertexColorAudit !== 'function') {
+        return { pass: false, detail: 'terrain.maskAudit()/vertexColorAudit() are not published' };
+      }
+      /* -- 1. the stamp must have run, and moved real ground -------------- */
+      const t0 = performance.now();
+      while (!T.routeCoverStats() && performance.now() - t0 < 45000) await sleep(200);
+      const stats = T.routeCoverStats();
+      if (!stats) {
+        return { pass: false, detail: { reason: 'route cover never stamped in 45 s', waitedMs: Math.round(performance.now() - t0) } };
+      }
+      const stampMoved = stats.discs > 0 && stats.texels > 0 && stats.vertices > 0;
+
+      /* -- 2. coherence --------------------------------------------------- */
+      const mask = T.maskAudit(2);
+      const vc = T.vertexColorAudit(3);
+
+      // the judge's measure, at full mask resolution
+      const md = T._maskData;
+      const v = new Uint8Array(12);
+      let cells = 0, coverGap = 0, onFullBiome = 0, worstGap = 0, worstAt = null;
+      if (md) {
+        const N = md.N, sc = md.scale;
+        for (let iz = 0; iz < N; iz++) {
+          const wz = (iz + 0.5) * sc - 360;
+          for (let ix = 0; ix < N; ix++) {
+            const wx = (ix + 0.5) * sc - 360;
+            if (wx * wx + wz * wz > 330 * 330) continue;
+            cells++;
+            T._maskTexel(wx, wz, v);
+            const o = (iz * N + ix) * 4;
+            const gap = (v[4] - md.d2[o]) / 255;
+            if (gap > 0.02) {
+              coverGap++;
+              const bb = Math.max(md.d2[o + 3], md.d3[o], md.d3[o + 1], md.d3[o + 2], md.d3[o + 3]) / 255;
+              if (bb > 0.9) onFullBiome++;
+              if (gap > worstGap) { worstGap = gap; worstAt = [Math.round(wx), Math.round(wz)]; }
+            }
+          }
+        }
+      }
+
+      /* -- 3. sensitivity: the audit must be able to go red --------------- */
+      let sensitive = null;
+      if (md) {
+        const o = (200 * md.N + 256) * 4;      // an even texel, inside the disc
+        const keep = md.d2[o];
+        md.d2[o] = keep ^ 0xFF;
+        const dirtied = T.maskAudit(2);
+        md.d2[o] = keep;
+        const healed = T.maskAudit(2);
+        sensitive = {
+          flippedCellsSeen: dirtied.mismatched,
+          restoredMismatched: healed.mismatched,
+          ok: dirtied.mismatched >= 1 && healed.mismatched === 0,
+        };
+      }
+
+      const pass = stampMoved
+        && mask && mask.mismatched === 0 && mask.worstDelta255 <= 1
+        && vc && vc.mismatched === 0
+        && coverGap === 0 && onFullBiome === 0
+        && !!(sensitive && sensitive.ok);
+      return { pass, detail: {
+        routeCoverStats: stats, stampMovedGround: stampMoved,
+        maskAudit: mask, vertexColorAudit: vc,
+        fullMask: { cells, liveCoverThePixelsLack: coverGap,
+          pctOfPlayDisc: +(100 * coverGap / Math.max(1, cells)).toFixed(3),
+          onUnsuppressedBiome: onFullBiome, worstGap: +worstGap.toFixed(2), worstAt },
+        sensitivity: sensitive,
+        note: 'shipped build measured 8200/184412 cells (4.45 %) of live cover '
+          + 'the duff channel lacked, 1555 of them on full-strength biome mask',
+      } };
     })()`,
   },
 ];

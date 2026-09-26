@@ -10,6 +10,46 @@ Reference canon: [`docs/research/spear-canon.md`](research/spear-canon.md) and t
 
 ---
 
+## 0. FIX PASS 1 — the seven findings the round-4 judges brought back
+
+Two judges re-ran the round-4 build: a gate judge (isolated re-runs of every action gate) and an
+engineering/film judge (its own probes, its own films, read against `reference/spear-*.jpg`). Seven
+findings, three of them blockers. **All seven are closed in the BUILD and in the GATE; no bar was
+moved down, two gate clauses were ADDED and one new gate exists** (`A106-melee-approach-immovable`,
+the row that would have caught the worst of the seven).
+
+Every number below is measured on port 5205 on the build in this commit; the campaigns are §3.6d–g.
+
+| # | finding (severity) | what it was | what changed | evidence |
+|---|---|---|---|---|
+| **J1** | **A102 fails 1 isolated run in 8** (blocker) | `light-1: the HAND moved 0.51 m in one frame — 1.02x the §4 budget`. Not a teleport and not the hand-over: the cock→contact leg was `CONTACT_K − HIT_LEAD` = **0.54 of a 0.10 s strike — 54 ms for 0.567 m of wrist travel (10.5 m/s)**, front-loaded to ~17 m/s by `Math.pow(u, 0.62)`, while `poseState` clamps `k` at 1 inside each phase and so parks the pose ON the cock for up to 45 ms before the flip. A box rendering 40–60 ms frames draws the whole leg between two frames. No easing inside 54 ms can fix that. | **The leg got more clock, and every ease in the swing got a finite peak.** The cock is reached at `WINDUP_COCK` 0.58 of the windup and the release begins there (`STRIKE_PRE` 0.51 of the leg is spent in the windup tail, which is that tail's share of the leg's TIME, so the wrist rate is continuous across the phase flip). `STRIKE_EASE`/`WINDUP_EASE`/`FOLLOW_EASE` replace the power curves (peak 1.30/1.30/1.25× uniform instead of infinite at u=0). The return to guard — the second-worst step in the swing, 0.404 m in a 38 ms frame — now finishes IN the guard: `RETURN_IN_SWING` 0.72 in-swing, the rest over `SETTLE_T` 0.12 s from a snapshot of the last swing frame (`_snapPose`). Two chords were trimmed where they were the longest legs in the shortest phases: light-1's cock hand −0.42→−0.34 x, light-2's cock hand +0.30→+0.06 x (0.617 m of READY→cock in 87 ms was the worst remaining clause). | **`worstGripStepVsBudget` 0.17–0.58** across 12 isolated runs x 4 beats against a bar of 1.0 (the judge reproduced 1.02 on the round-4 build). Swept deliberately against injected stalls of 0/12/20/28/36/44/52 ms, worst of two reps per load per beat: **0.42–0.53** where the round-4 build read **0.71–0.81**. §3.6d: the 12-run table |
+| **J2** | **V46 asks for a two-handed guard the reference does not show** (blocker) | The judge was right that this cannot be closed by the builder OR the judge: §4's V46 wording says "two-handed… left hand forward", `spear-canon.md` finding 2 says every official HZD guard frame has the left hand EMPTY, and the build is one-handed by construction (`READY.lhOn 0`). | **The orchestrator has since decided it.** The fix-pass brief, finding F2, specifies the pose: *"build it to match reference/spear-ready-side.jpg (one-handed, shaft angled forward-down across the front of the thigh, blade ahead of the knee, left arm free and slightly forward, weight on the balls of the feet)"*. That is what the build has. V46's criteria text now carries the decision verbatim, so the next judge reads a resolved criterion instead of re-raising the contradiction. **No pose change** — the guard was already the pose the orchestrator described. | `tools/gates.round4.player-melee.mjs` V46 `criteria` ("FIX PASS 1 — THIS IS NO LONGER THE LANE'S OWN CALL"); `shots/gates/V46-spear-ready.png` |
+| **J3** | **The melee approach term lets a walking player shove a machine metres across the field** (blocker) | Controlled A/B by the film judge: spear DRAWN, 4 s of KeyW into a frozen Watcher 5 m ahead → the **machine** moved **2.382 m / 2.355 m** (worst single frame 0.0568 m); HOLSTERED → 0.000 m. `APPROACH_PAD` was 0.20 and `MELEE_PAD_FLOOR` 0.20, and 0.20 is exactly the machine manager's own push radius minus her own: the collider and `machines/index.js` were the same number, which is an equilibrium, not a margin — a moving player penetrates by a frame of travel first, so every forward frame fired a push and they integrated. The code's own comment claimed "0.22 is that floor plus 2 cm" while the shipped constant was 0.20. A25 never draws the spear, so nothing gated it. | **Pad 0.20 → 0.32** (the equality plus a 0.12 m loaded-box frame of travel — the same margin `machinePad`'s own comment claims) and **`MELEE_L_CUT` 0.66 → 1.02**: 0.12 m of that is the reach handed straight back on the same axis, so her standing distance does not change, and the other 0.24 m is the rest of the same end cap (see J6/J7). The stale "0.22" rationale in `collision.js` and the "so the manager's push never fires" claim are rewritten to what the code does. | **NEW GATE `A106-melee-approach-immovable`**: Watcher and Strider, holstered and drawn, 3 s of KeyW each — `machineDisplacementM` **0.0000 m on all four rows**, `worstFramePushM` 0.0000, `approachFrames` 181/179 (the term was live), `playerToShellM` 0.848 / 0.454 m. `docs/ROUND4-SPATIAL.md` §2 rewritten as the grant requires |
+| **J4** | **A104's left-forearm clause runs 3 mm from its own bar** (major) | `forearmToSpineLMin` on light-3 across the judge's eight runs: 0.099 / 0.139 / 0.144 / 0.112 / 0.105 / 0.106 / 0.103 / 0.108 m against a 0.10 m bar — one FAIL and a median margin inside the sampling noise. | The two-handed elbow pole goes **out and forward** (`[1.00, −0.16, 0.04]` → `[1.00, −0.08, 0.30]`) and the free hand takes the haft 0.10 m further down it (`lhOn` −0.22 → −0.12 on contact, −0.24 → −0.14 on follow). Measured live over four swing cycles with 30 ms of injected stall per frame: 0.124–0.129 m; over eight isolated A104 runs on the final build, **0.123–0.131 m**. That is the rig's limit, stated as one: pushed further (pole z 0.46, `lhOn` −0.08) the number stops at 0.130 and `leftHandToShaft` rises to 0.034–0.045 against A101's 0.05 m two-handed test, which trades a measured clause for a worse one. | §3.6f: 8 isolated runs, 8 PASS, `forearmToSpineLMin` **0.123–0.131 m** |
+| **J5** | **A104 fails 3 runs in 8; the holster reach lays the right forearm across her own spine (0.054 m)** (major) | The judge froze the worst holster frame and filmed it: the right forearm horizontal across the back of her neck, hand between the shoulder blades — Kevin's "arm literally behind head" verbatim. 0.054–0.069 m against a 0.10 m bar, *worse* than the 0.083 m the round-4 fix was written against, because `SPEAR_SCALE` 0.86→0.80 shortened the stowed haft and the holster's pose leg grew 0.45→0.62 of `HOLSTER_T`. | `_reachPose`'s `along` clamp **0.55 → 0.68** (upper bound 0.82 → 0.86): 0.68 of a 1.48 m haft is 0.20 m outboard of the spinal axis and level with the shoulder blade. It costs nothing elsewhere — `grabReach` has been a CONVERGENCE test since round 4, and a shorter reach converges sooner. | A fine scan of the whole holster leg (41 pinned `drawK` steps): worst `forearmToSpine` **0.232 m**, i.e. 2.3× the bar, where the judge measured 0.054. Live over eight isolated A104 runs: **0.206–0.250 m**. `grabReach` 0.139–0.200 (bar 0.25) across the 12 A102 runs |
+| **J6** | **The heavy's reach is ungated and the heavy blade does not land** (major) | A103 ran three LIGHT swings only. The judge ran a byte-identical copy with `heavy: true`: `tipToHullAtHit` **+0.117 / +0.079 / +0.080 m** (short on every row) and **0.2301 m** on a live heavy against a parked Watcher — a FAIL if the clause had been applied. Cause: the heavy's wrist is 0.24 m higher on the same 1.48 m lever, so its tip reached 0.055–0.062 m LESS far forward. The doc and the shot caption also claimed the heavy's contact tip was at "knee height"; measured it was 1.02–1.03 m, which is hip height. | **A103 runs a fourth row, `heavy: true`, same staging, same clause.** The heavy's contact hand goes 0.60 → **0.72 → 0.78** z and the shaft 4° shallower (−0.38 → −0.32 y), with the spine pitch 0.34 → 0.38 rad buying the shoulder the rest; that is +0.12 m of forward tip. The "knee height" claim is corrected everywhere it appears: **hip height at contact (tip char y 1.09), knee height on the follow**. | A103 row 4 `tipToHullAtHit` **−0.073 m** (bar ≤ 0.15) beside the three lights at −0.062 / +0.024 / −0.041, `damage` 74.1, `playerToShell` 0.849 m. Probed on three species with the same staging: Watcher +0.028, Strider −0.071 |
+| **J7** | **light-1, light-2 and light-3 share one contact pose — the frames V47 row 1 exists to compare** (major) | Measured live at `CONTACT_K`: hands within 0.08 m, shafts within 3.5° of yaw and 2.3° of pitch. That is the standard this lane used to condemn round 3's heavy ("1 cm of hand, 8° of shaft"), applied to three of the four panels. A102's `distinctArcs 4` could not see it: its four axes are whole-swing quantities, and L1/L2 differ only in the SIGN of the sweep. | **Route (a): the light contacts get their own geometry back**, because the reason they were collapsed was reach and the approach term has since bought 0.9 m of standoff (A103 reads the blade INSIDE the hull on every row). L1 lands at chest height with the blade crossing the midline to her left (wrist 1.14, yaw +8°, pitch −2°); L2 lands 0.12 m LOWER and RISING, tip leaving to her right (wrist 1.02, yaw −9°, pitch +6°); L3 lands with the wrist HIGH and the blade descending 15° (wrist 1.32), two-handed; the heavy overhead at 1.46 with the shaft 18–22° down. **And A102 now gates the frame the sheet shows**: two contacts are the same pose only if the wrist is within 0.12 m AND the shaft bearing within 15° AND the grip has the same number of hands. | A102 `contactSeparation`, all six pairs `ok` on all 12 runs: L1/L2 wrist 0.089–0.117 m and bearing **23.8–24.4°**, L1/L3 0.20–0.30 m, L1/HV 0.33–0.40 m, L2/L3 0.18–0.34 m, L2/HV 0.30–0.43 m, L3/HV 0.09–0.15 m but `gripDiffers` (L3 is the chain's two-handed thrust — one hand versus two is the most visible difference in the sheet, and A101 gates that grip at 0.05 m). Read on film: `shots/gates/V47-melee-swing.png` row 1 |
+
+**One thing the judges did not find, fixed anyway, because it fails the suite:** A100's dodge row.
+`bowClear` read **0.0206–0.0939 m** against its 0.10 m bar on HEAD and the row failed about one full
+suite in two — the round-4 claim of 0.104–0.138 does not reproduce (the world-ground lane is editing
+`src/world/terrain.js` live on this branch, and the dodge's ground conform is downstream of it).
+**FIVE mechanisms**, each of which hid the next: both carry constraints saturated so every push was
+thrown away by the clamps (the escape slides tangentially now, and along `radial × haft` when
+nothing else survives); `MID_CEIL` had 4 mm of headroom for an 8 mm residual (0.296 → 0.288); the
+**hand-over blend was bounded by nothing**, so a roll started during a draw or holster measured a
+prop in flight (`carryBowBound` 0.185 against a measured 0.0745, with the midpoint 0.601 m off her
+back — the blended pose gets the same hard bound now); the bow prediction REPLACED the live bow
+with a point estimate two frames out and smoothed, which is load-dependent by construction (it is
+the worse of the live and the predicted segment now, raw and generous, `BOW_KEEP` 0.185 → 0.22);
+and the haft was boxed into 0.34 m of vertical corridor inside A100's own 0.50 m of bar, with the
+braid and the bow failing the same rolls together (corridor `[0.23, 0.66]`, and the tangential
+escape is braid-aware). One candidate fix was **tried and rejected with numbers** — a third sweep
+sample failed 2 of 6 runs, one of them on the braid. Result: **four consecutive full lane suites,
+every action gate PASS.** §3.6g has all of it.
+
+---
+
 ## 0. FIX ROUND 4 — the film judge's seven findings
 
 Three judge rounds closed with the film judge calling the pose work the best-engineered lane in
@@ -23,7 +63,7 @@ exists; §3.7 lists them with their timestamps.
 
 | # | finding | what it was | what changed | evidence |
 |---|---------|-------------|--------------|----------|
-| **F1** | Heavy contact is visually identical to light-1 contact | `HEAVY.contact` was `hand [-0.05, 1.12, 0.66] / shaft [0.30, -0.06, 0.95]` against light-1's `hand [-0.04, 1.15, 0.64] / shaft [0.17, -0.07, 0.98]` — **1 cm of hand and 8° of shaft**. A102's distinct-arc clause compared yaw sweep and contact pitch, and a thrust has neither, so the heavy and light-1 grouped as ONE arc and the "≥ 3 distinct" bar passed on a heavy that was a light. | The heavy is a **committed overhead-to-low chop**: cock with the blade 2.65 m up and 0.76 m FORWARD of her (ahead of the head plane, never behind), contact with the wrist at 1.42 m and the shaft at −22° driving the tip to knee height, follow-through continuing to shin height, torso pitched 0.34 rad, step 0.62 m. A102 now needs **4** distinct arcs and compares **four** axes, two of them the WRIST PATH (`handSpanY`, `contactHandY`) — a chop and a thrust can share a bearing, they cannot share a hand path. | `shots/gates/V47-melee-swing.png` row 1 (the four contacts side by side from one camera); A102 `distinctArcs 4` on **12/12** runs; heavy `handSpanY 0.55` vs lights `0.17–0.34`, heavy `contactHandY 1.43` vs lights `1.05–1.17` |
+| **F1** | Heavy contact is visually identical to light-1 contact | `HEAVY.contact` was `hand [-0.05, 1.12, 0.66] / shaft [0.30, -0.06, 0.95]` against light-1's `hand [-0.04, 1.15, 0.64] / shaft [0.17, -0.07, 0.98]` — **1 cm of hand and 8° of shaft**. A102's distinct-arc clause compared yaw sweep and contact pitch, and a thrust has neither, so the heavy and light-1 grouped as ONE arc and the "≥ 3 distinct" bar passed on a heavy that was a light. | The heavy is a **committed overhead-to-low chop**: cock with the blade 2.65 m up and 0.76 m FORWARD of her (ahead of the head plane, never behind), contact with the wrist at 1.42 m and the shaft at −22° driving the tip to **hip height** (char y 1.02–1.03 — this row said "knee height" and the film judge corrected it in fix pass 1; knee height is the FOLLOW key), follow-through continuing past the knee, torso pitched 0.34 rad, step 0.62 m. A102 now needs **4** distinct arcs and compares **four** axes, two of them the WRIST PATH (`handSpanY`, `contactHandY`) — a chop and a thrust can share a bearing, they cannot share a hand path. | `shots/gates/V47-melee-swing.png` row 1 (the four contacts side by side from one camera); A102 `distinctArcs 4` on **12/12** runs; heavy `handSpanY 0.55` vs lights `0.17–0.34`, heavy `contactHandY 1.43` vs lights `1.05–1.17` |
 | **F2** | Ready stance inconsistent between V46's two tiles | Both tiles were the same pose; only one said so. `READY.shaft` was `[0.22, -0.47, 0.86]` — dead-on, the forward component foreshortens to nothing and the haft projects **25° off vertical**, which reads as a stick hanging by her right leg with the tip in the dirt. The two tiles were also grabbed 0.7 s apart with the sim running. | The guard carries a real lateral component (`shaft [0.40, -0.50, 0.77]`): 30° below horizontal in profile — inside the canon's −20…−35° band — and **39° off vertical head-on**, so the haft crosses the front of the thigh and reads as a diagonal from any bearing. Butt (−0.49, 1.18, 0.02), tip (0.15, 0.38, 1.24): a fist-length stub at the belt line, blade at knee height ahead of the leading knee. V46 now **freezes the sim** (`engine.timeScale = 0`) before either grab, so the two tiles are one frame of animation seen twice, and the second camera sits at the reference still's own 3/4-front bearing. | `shots/gates/V46-spear-ready.png`; `shots/melee-cmp-ready.png` (reference beside the build) |
 | **F3** | The blade never reaches the machine | Tip 1.80 m ahead of her root; a Watcher's blocking capsule held her **3.41 m** from its centre; the film judge measured the tip **0.32–0.98 m short of the nearest hull surface on every hit**, and `reference/spear-light-strike.jpg` has the blade ON the machine. A103's old clause (tip within 1.2 m of the impact point) was near-tautological once the point became "the hull surface nearest the tip". | Four things, three of them new mechanism and one of them a bug. (1) **The melee approach term** in `collision._syncMachines` (the Sep 25 grant): the targeted machine's pad drops 0.55 → 0.20 and its standoff segment loses 0.66 m of end cap, written back onto `m.standoffHalfLen` so the machine manager's own push stays consistent and A25 still reads 0.000 m. (2) **A strike lunge** fired at the top of the windup, sized to the machine's shell and clamped by the collision solve. (3) **The follow-through moved out of the strike into `recover`**, where the canon's 0.20 s actually lives — the strike now reaches the contact key and HOLDS it. (4) `poseState`'s 50 ms extrapolation is capped at 30 % of the phase; 50 ms is half a strike window, and on a slow frame the pose the hit was measured against was already the follow-through (filmed: tip at (1.29, 0.64, 0.99) — the follow key — on a swing whose contact key is (0.0, 1.0, 1.95)). **A103 now asserts `contactGap ≤ 0.15 m` at the hit frame**, and keeps the old clause. | A103 reach **−0.02 … −0.21 m** (the blade lands INSIDE the hull) on 5/5 consecutive runs; `playerToShell` 1.10–1.42 m and `playerToHullAtHit` 0.07–0.24 m prove the term is bounded; `docs/ROUND4-SPATIAL.md` §2 carries the term as the grant requires |
 | **F4** | A102 flaky (~44 % in 9 isolated runs) | Four different clauses, all inside their own sampling noise under the gate's injected 20–80 ms stalls: `tipAcrossReparent` 1.34 m (bar 0.9), light-2 `torsoYaw` 14.3° (bar 15), light-2 `handTravel` 1.02 m + `step` 0.235 m, `grabReach` 0.513 m (bar 0.25). | Root-caused one at a time, none of them by moving a bar. **tipAcrossReparent**: not the hand-over (that is continuous by construction) but `STANCE_STEP_MAX`, which let the whole draw render in five frames — 0.20 → **0.08**, and the holster's pose leg stretched 0.45 → 0.62 of its clock. **grabReach**: the hand-over now waits for CONVERGENCE, not a threshold (`meleeLayer._grabSettle` + `melee._waitForHand`), because the arm's own IK residual is ~0.09 m and a strict threshold never fires; the first attempt parked the clock at 0.985 of `DRAW_T` and did nothing, because `poseState` adds 50 ms before dividing — it parks at 0.75 now. **light-2**: authored bigger rather than re-tuned — hand path 1.50 → 2.09 m, torso 40 → 60°, step 0.36 → 0.55 m. | **12/12 PASS with the stall injection**, full distribution in §3.6a: `tipAcrossReparent` 0.277–0.437 (bar 0.9), `grabReach` 0.165–0.198 (bar 0.25), `distinctArcs` 4 every run, light-2 `handTravel` 1.71–2.02 / `yaw` 38.1–47.2° / `step` 0.543–0.658 m |
@@ -836,9 +876,9 @@ row's entry here is updated), and A105 is **12 of 13, not 13 of 13**.
 | **A103-melee-contact-sync** | `melee-hit` inside the strike with the tip ≤ 1.2 m from the impact point, **and the point ≤ 0.05 m off the machine hull (new)** | **FAILED first at 1.232 m**, then fixed (§0.3): the impact point is now solved against all 295 hull capsules instead of sampled with 3 rays. Three runs after the fix, `tipToImpactAtHit` per swing **0.683 / 0.534 / 0.576**, **0.463 / 0.433 / 0.309**, **0.650 / 0.296 / 0.359**; worst of nine **0.683**. Fires at k **0.66–0.80** of the strike against a Watcher held at **2.83–2.85 m**. Reach shortfall (1.4 m, cross-lane) published in the note | **PASS ×3** |
 | **A104-melee-self-clear** | haft ≥ 0.12 m from head/neck/spine, hair clear, forearm never into the body, elbow never over the head | no clause raised, all five beats | **PASS** |
 | **A105-melee-while-moving** | **jogging** raw worst clean window ≤ 0.08 m (no discard), speed ≥ 60 %, stride kept, torso yaw ≥ 12°, hand ≥ 1.2 m; **standing** raw worst ≤ 0.08 m, steps ≥ 3, peak lift ≥ 0.03 m | **11 runs, 11 PASS.** jogging **0.0012–0.0216 m**, control over the same ground **0.0011–0.0201 m**, standing **0.0015–0.0305 m**, all against 0.08. Speed ratio **0.98–1.00**; stance duty 0.43; torso yaw **84–90°**; steps **73–92** per standing row; peak lift **0.107–0.118 m**. Median frame **33–89 ms**. Round 2's build on the same instrument: **2 of 11 FAILED** (standing 0.0867 m; jogging 0.170 m). **Re-measured independently: 12 PASS of 13, one FAIL at 0.1226 m — §3.6** | **12 of 13** |
-| **V46-spear-ready** | side + front of the guard, against `spear-ready-side.jpg` | `shots/gates/V46-spear-ready.png`, re-read: right hand at hip height, haft down-forward with the tip at shin height, left arm swept back and empty, elbow beside the ribs, nothing across the chest | NEEDS-JUDGE |
-| **V47-melee-swing** | six panels, against `spear-light-{windup,strike,follow}.jpg` | `shots/gates/V47-melee-swing.png`, re-read: on both WINDUP strips the blade is high and **forward of the head plane**; both CONTACT strips have the arm extended with the haft through horizontal; FOLLOW has the hand at the waist and the spine pitched over the lead foot; the live panel's trail is a thin arc behind the blade. Body pose differs between every strip | NEEDS-JUDGE |
-| **V48-spear-holster** | back view at a sprint, against `spear-holster-back-hfw.jpg`; **the literal "does not intersect" clause, with round 2's excuse withdrawn** | `shots/gates/V48-spear-holster.png`: the bow and the spear now run the **same** diagonal, parallel, with a hand's width of daylight — **the X is gone.** `bowClear` was **0.239 / 0.172 / 0.192 m** at three angles in round 3. Re-shot on the round-4 build: `shots/melee-holster-back.png`, `shots/melee-holster-side.png` | NEEDS-JUDGE |
+| **V46-spear-ready** | side + front of the guard, against `spear-ready-side.jpg` | `shots/gates/V46-spear-ready.png`, re-read: right hand at hip height, haft down-forward with the tip at shin height, left arm swept back and empty, elbow beside the ribs, nothing across the chest | NEEDS-JUDGE || 
+| **V47-melee-swing** | six panels, against `spear-light-{windup,strike,follow}.jpg` | `shots/gates/V47-melee-swing.png`, re-read: on both WINDUP strips the blade is high and **forward of the head plane**; both CONTACT strips have the arm extended with the haft through horizontal; FOLLOW has the hand at the waist and the spine pitched over the lead foot; the live panel's trail is a thin arc behind the blade. Body pose differs between every strip | NEEDS-JUDGE || 
+| **V48-spear-holster** | back view at a sprint, against `spear-holster-back-hfw.jpg`; **the literal "does not intersect" clause, with round 2's excuse withdrawn** | `shots/gates/V48-spear-holster.png`: the bow and the spear now run the **same** diagonal, parallel, with a hand's width of daylight — **the X is gone.** `bowClear` was **0.239 / 0.172 / 0.192 m** at three angles in round 3. Re-shot on the round-4 build: `shots/melee-holster-back.png`, `shots/melee-holster-side.png` | NEEDS-JUDGE || 
 
 ### 3.0a One number in A105's own diagnostics that does not agree with A102, declared
 
@@ -869,9 +909,9 @@ in play, which is meaningless under a headless gate that parks the camera on her
 | **A103-melee-contact-sync** | `melee-hit` inside the strike phase with the tip ≤ 1.2 m from the impact point | fires at k **0.54 / 0.61 / 0.71** of the strike; tip to impact **0.77 / 1.06 / 0.74 m** (Watcher, held at 3.41 m centre / ~2.4 m shell by its own collider) | **PASS** |
 | **A104-melee-self-clear** | haft ≥ 0.12 m from head/neck/spine, ponytail ≥ 0.05 m on a swing (0.02 on the draw), forearm never into the body, elbow never over the head | haft **0.206 / 0.200 / 0.151 / 0.205 / 0.242 m** (L1 / L2 / L3 / heavy / holster); ponytail **0.172 / 0.212 / 0.077 / 0.172 / 0.077 m**, argmin strand named in the detail; forearm-to-spine ≥ **0.146 m**; elbow **0.16–0.28 m BELOW** the head. Round 1 failed 2 runs in 3 at 0.028–0.046 m of ponytail | **PASS** ×3 |
 | **A105-melee-while-moving** | stride kept (foot drift ≤ 0.08 m), speed ≥ 60 % of un-swinging, upper body still swings | 7 swings while jogging; base **4.93 m/s** → swinging **5.23 m/s** (**106 %**); planted-foot drift **0.002 / 0.024 m**; stance duty 0.41; torso yaw excursion **89.7°** | **PASS** |
-| **V46-spear-ready** | side + front of the guard, against `spear-ready-side.jpg` | captioned two-panel composite, `shots/gates/V46-spear-ready.png`. Read against the reference: right hand at hip height, shaft down-forward, left arm swept back and empty, elbow beside the ribs, nothing across the chest | NEEDS-JUDGE |
-| **V47-melee-swing** | L1 windup/contact/follow + heavy windup/contact, side — **plus a live contact frame with the smear (new)** | captioned six-panel composite, `shots/gates/V47-melee-swing.png` | NEEDS-JUDGE |
-| **V48-spear-holster** | back view at a sprint, against `spear-holster-back-hfw.jpg`; the bow clause is now **measured** by A100 (`bowClear ≥ 0.12 m`) | `shots/gates/V48-spear-holster.png`, re-filmed and read. The two straps still cross in screen space — §4.9 says why that cannot be fixed from this lane — but with 0.135 m of measured daylight where round 1 had 0.099 m | NEEDS-JUDGE |
+| **V46-spear-ready** | side + front of the guard, against `spear-ready-side.jpg` | captioned two-panel composite, `shots/gates/V46-spear-ready.png`. Read against the reference: right hand at hip height, shaft down-forward, left arm swept back and empty, elbow beside the ribs, nothing across the chest | NEEDS-JUDGE || 
+| **V47-melee-swing** | L1 windup/contact/follow + heavy windup/contact, side — **plus a live contact frame with the smear (new)** | captioned six-panel composite, `shots/gates/V47-melee-swing.png` | NEEDS-JUDGE || 
+| **V48-spear-holster** | back view at a sprint, against `spear-holster-back-hfw.jpg`; the bow clause is now **measured** by A100 (`bowClear ≥ 0.12 m`) | `shots/gates/V48-spear-holster.png`, re-filmed and read. The two straps still cross in screen space — §4.9 says why that cannot be fixed from this lane — but with 0.135 m of measured daylight where round 1 had 0.099 m | NEEDS-JUDGE || 
 
 ## 3.2a Regression set, re-run on port 5205 after the fix-round-3 edits
 
@@ -1090,6 +1130,282 @@ batch (median 60 ms) and pre-dates the per-window instrument, so its `maxDt` was
 will catch it is now in place and published on every run. If the next reader wants one thing done
 here, it is to run A105 with the new diagnostics until a failure lands and read its `maxDt`.
 
+## 3.0r4 Gate table — FIX ROUND 4 (port 5205)
+
+`node tools/gates.mjs --port 5205 --lane player-melee`, three consecutive full-lane runs on the
+build in this commit. Every action gate green on all three; the three visual gates are
+NEEDS-JUDGE by definition (a visual gate captures a shot and a human reads it).
+
+| gate | run 1 | run 2 | run 3 | the number that moved this round |
+|---|---|---|---|---|
+| **A100-spear-holster** | PASS | PASS | PASS | dodge `bowClear` **0.119 / 0.133 / 0.127** (bar 0.10); it was bimodal at 0.054–0.156 before §3.6c |
+| **A101-spear-grip** | PASS | PASS | PASS | `buttToWrist` **0.302 m** (canon M2 band 0.28–0.50) on the 1.48 m haft; `twoHandFrames` on light-3 back after the left-hand pole fix |
+| **A102-melee-body-motion** | PASS | PASS | PASS | `distinctArcs` **4** (bar raised from ≥ 3), `tipAcrossReparent` **0.41 / 0.35 / 0.30** (bar 0.9), `grabReach` **0.173 / 0.178 / 0.197** (bar 0.25) |
+| **A103-melee-contact-sync** | PASS | PASS | PASS | NEW reach clause: tip-to-hull **−0.114 / −0.141 / −0.036**, **−0.102 / −0.093 / −0.043**, **−0.139 / −0.119 / −0.080** m (bar ≤ 0.15) — negative means the blade is inside the hull |
+| **A104-melee-self-clear** | PASS | PASS | PASS | NEW left-forearm clause `forearmToSpineL` 0.111 m (bar 0.10) on light-3's two-handed frames; `CLEAR_BONES` gained `spine2/spine1/pelvis` |
+| **A105-melee-while-moving** | PASS | PASS | PASS | `joggingWorst` 0.0058–0.0133 m over 15 isolated runs (bar 0.08) — §3.6b |
+| **V46-spear-ready** | NEEDS-JUDGE | | | one frozen frame, two cameras; the guard reads as a diagonal from both | |
+| **V47-melee-swing** | NEEDS-JUDGE | | | eight panels; row 1 is the four contacts side by side | |
+| **V48-spear-holster** | NEEDS-JUDGE | | | unchanged from round 3 apart from the shorter haft | |
+
+Regression set on the same build: **A25-machine-immovable PASS** (`machineDisplacementM` 0.000 —
+the melee approach term writes the shortened standoff back onto the machine so the manager's own
+push stays consistent), **A49-melee-exists PASS**, **A50-silent-strike PASS**,
+**A2 / A3 / A11 / A12 / A31b PASS**, **A13-no-skate PENDING** (its own "fewer than 2 clean stance
+windows" skip at this frame rate — player-anim's gate, unchanged by this lane).
+**A90-memory-stability PASS on three consecutive runs** (30 kills each: heap −1.7 / −3.5 /
+−2.9 %, geometries +36 / +38 / +36, textures −18, objects −430 / −431 / −431 — the geometry
+figure is the machine-kill lifecycle and is stable run to run; this lane creates no geometry,
+no material and no runtime object, and everything it added this round is arithmetic on structs
+that already existed). **A9-perf-budget PENDING** with its own guard saying so: draw calls **331**, the same
+329–331 as before this round because the lane adds no runtime object, no material and no draw
+call; `fpsAttributable: false` at 26.3 fps on a box giving 5.86 ms of GPU with nothing drawn.
+
+---
+
+## 3.0fp Gate table — FIX PASS 1 (port 5205)
+
+`node tools/gates.mjs --port 5205 --lane player-melee`, **five consecutive full-lane runs** on the
+build in this commit — four in a row, then a fifth after the films were shot and nothing but docs
+had changed — taken with another lane running its own full suite on port 5210 (load average
+3.5–7.0, frames 25–31 ms median). Every action gate green on all five. The three visual gates are
+NEEDS-JUDGE by definition — a visual gate captures a shot and a human reads it — and §3.7fp lists
+the frames.
+
+| gate | r1 | r2 | r3 | r4 | r5 | the number that moved in fix pass 1 |
+|---|---|---|---|---|---|---|
+| **A100-spear-holster** | PASS | PASS | PASS | PASS | PASS | dodge `bowClear` **0.2199 / 0.2200 / 0.1446 / 0.2200 / 0.2200** (bar 0.10) where HEAD read 0.0206–0.0939 and failed about one suite in two — five mechanisms, §3.6g |
+| **A101-spear-grip** | PASS | PASS | PASS | PASS | PASS | unchanged by this pass; `twoHandFrames` on light-3 still 29–32 with the free hand 0.012–0.027 m off the haft after the two-handed grip moved (J4) |
+| **A102-melee-body-motion** | PASS | PASS | PASS | PASS | PASS | `worstGripStepVsBudget` **0.17–0.58** across 48 beat-runs (bar 1.0; the judge reproduced 1.02) and a NEW contact-pose clause: all six pairs separated, every run — §3.6d |
+| **A103-melee-contact-sync** | PASS | PASS | PASS | PASS | PASS | a **fourth row, the heavy**: `tipToHullAtHit` −0.073 m where the judge measured +0.117/+0.079/+0.080 on the same clause — §3.6e |
+| **A104-melee-self-clear** | PASS | PASS | PASS | PASS | PASS | holster `forearmToSpineMin` **0.206–0.250 m** where the judge measured 0.054–0.069 and filmed it; light-3 `forearmToSpineLMin` **0.123–0.131** where the judge measured 0.099–0.108 — §3.6f |
+| **A105-melee-while-moving** | PASS | PASS | PASS | PASS | PASS | untouched by this pass and re-run: `joggingWorst` 0.0061–0.0119 m (bar 0.08) over four isolated runs plus the four suites |
+| **A106-melee-approach-immovable** | PASS | PASS | PASS | PASS | PASS | **NEW GATE.** `machineDisplacementM` 0.0000 on all four rows (Watcher and Strider, holstered and drawn) where the film judge measured 2.38 m with the spear drawn — §3.6h |
+| **V46-spear-ready** | NEEDS-JUDGE | | | | | unchanged pose; the criteria now carries the orchestrator's F2 decision on the one-handed guard |
+| **V47-melee-swing** | NEEDS-JUDGE | | | | | row 1's four contacts are four poses now (J7); the windup tiles pin `windup 0.58`, which is where the cock key is reached since J1 |
+| **V48-spear-holster** | NEEDS-JUDGE | | | | | the carry moved: `TIP_ABOVE_MAX` 0.60 → 0.66 and `BOW_KEEP` 0.185 → 0.22 |
+
+Regression set on the same build: **A25-machine-immovable PASS** (`machineDisplacementM` 0.000,
+`contactDistM` 1.78 — and A106 is the row that covers the case A25 cannot see),
+**A24-player-blocked PASS**, **A49-melee-exists PASS** (24.7 damage), **A50-silent-strike PASS**.
+**A90-memory-stability PASS twice**, once mid-pass and once as the last thing run: 30 machine kills,
+heap **−3.0 %** and **−1.4 %**, geometries +37/+36, textures −18/−18, objects −431/−431 — the same
+shape as the round-4 run (−1.7/−3.5/−2.9 %, +36/+38/+36, −18, −430/−431), so no worse.
+**A9-perf-budget: draw calls 330**, against 329–331 before this pass — this pass adds no runtime
+object, no material and no draw call — and **fps 29.2 → 29.7 on the same build family**, i.e. no
+worse either. Its VERDICT flipped from PENDING to FAIL between those two runs and nothing in the
+scene changed: the gate only blames the scene when the box is quiet (`nullFrameGpuMs` 6.26 → 1.31),
+and at 63 ms of scene GPU with 330 calls the deficit is the whole scene, not a lane that draws
+nothing. Reported as a FAIL that is not this lane's, with both readings, rather than as a PENDING.
+
+Per-frame cost of what was added: `_snapPose` writes into one object allocated on the first swing
+frame; `_hairGapFor` is one pass over the 32 strand positions `_cacheHair` already fills, run only
+on the frames the bow escape is choosing a tangential sign; the bow sweep test is one extra
+`segSegDir` on frames where the bow is inside `BOW_KEEP`; the hand-over bow bound runs only while
+`carryBlend < 1`. No allocation in any of them, and `dispose()` releases the one new object.
+
+---
+
+## 3.6d A102 under stall injection, fix pass 1 — 12 isolated runs, 12 PASS
+
+Finding **J1**. Twelve isolated runs of `node tools/gates.mjs --port 5205 --only
+A102-melee-body-motion`, on this build, each one containing the gate's own 20-80 ms per-frame
+stall injection across six of its eight draw/holster cycles, and all of them taken while another
+lane was running a full suite on port 5210 (load average 3.5-7.0). The gate judge reproduced
+**7 of 8** on the round-4 build with `worstGripStepVsBudget` 1.02 on the failing run.
+
+Worst per-frame hand step across all 4 beats x 12 runs: **0.17-0.59** of the budget (bar 1.0; the judge reproduced 1.02 on the round-4 build). `tipAcrossReparent` **0.129-0.276** (bar 0.9), `grabReach` **0.152-0.200** (bar 0.25), light-2 `handTravel` **1.378-1.477** (bar 1.2), `distinctArcs` 4 and all six contact pairs separated on every run.
+
+Worst per-frame hand step across all 4 beats x 12 runs: **0.17-0.58** of the budget (bar 1.0; the judge reproduced 1.02 on the round-4 build). `tipAcrossReparent` **0.124-0.317** (bar 0.9), `grabReach` **0.139-0.200** (bar 0.25), light-2 `handTravel` **1.381-1.517** (bar 1.2), `distinctArcs` 4 and all six contact pairs separated on every run.
+
+| run | verdict | `distinctArcs` | `worstGripStepVsBudget` L1/L2/L3/HV | `tipAcrossReparent` | `grabReach` | L2 `handTravel` / `yaw` / `step` | min contact-pair wrist gap |
+|---|---|---|---|---|---|---|---|
+| 1 | **PASS** | 4 | 0.3 / 0.44 / 0.41 / 0.42 | 0.244 | 0.1997 | 1.403 / 53.2 / 0.58 | 0.096 |
+| 2 | **PASS** | 4 | 0.27 / 0.44 / 0.52 / 0.36 | 0.124 | 0.1497 | 1.413 / 52.1 / 0.558 | 0.092 |
+| 3 | **PASS** | 4 | 0.23 / 0.4 / 0.39 / 0.41 | 0.195 | 0.1925 | 1.388 / 54 / 0.522 | 0.104 |
+| 4 | **PASS** | 4 | 0.35 / 0.39 / 0.37 / 0.37 | 0.254 | 0.1989 | 1.403 / 51.6 / 0.521 | 0.102 |
+| 5 | **PASS** | 4 | 0.28 / 0.43 / 0.41 / 0.34 | 0.231 | 0.1567 | 1.412 / 52.1 / 0.549 | 0.108 |
+| 6 | **PASS** | 4 | 0.33 / 0.44 / 0.48 / 0.4 | 0.271 | 0.1685 | 1.411 / 53.2 / 0.588 | 0.091 |
+| 7 | **PASS** | 4 | 0.36 / 0.45 / 0.5 / 0.55 | 0.27 | 0.1675 | 1.406 / 50.9 / 0.585 | 0.096 |
+| 8 | **PASS** | 4 | 0.26 / 0.34 / 0.31 / 0.27 | 0.263 | 0.1652 | 1.517 / 45.9 / 0.52 | 0.100 |
+| 9 | **PASS** | 4 | 0.21 / 0.35 / 0.42 / 0.43 | 0.243 | 0.1644 | 1.47 / 49.7 / 0.519 | 0.117 |
+| 10 | **PASS** | 4 | 0.17 / 0.29 / 0.3 / 0.56 | 0.317 | 0.194 | 1.477 / 45.7 / 0.505 | 0.089 |
+| 11 | **PASS** | 4 | 0.3 / 0.44 / 0.4 / 0.46 | 0.243 | 0.1391 | 1.381 / 51.2 / 0.566 | 0.096 |
+| 12 | **PASS** | 4 | 0.39 / 0.44 / 0.58 / 0.27 | 0.231 | 0.1942 | 1.405 / 47.5 / 0.613 | 0.102 |
+
+Two clauses deserve their honest reading rather than a range:
+
+* **`worstGripStepVsBudget`** is the clause that failed. Its worst value across 48 beat-runs is
+  **0.58**, i.e. the per-frame hand step never got within 40 % of section 4's budget. Swept
+  deliberately against injected stalls of 0/12/20/28/36/44/52 ms (the dangerous zone is 30-60 ms
+  frames, where the budget is pinned at a flat 0.5 m), the worst per beat is **0.42-0.53** where
+  the round-4 build read **0.71-0.81**.
+* **the contact separation** is a three-part clause and the pairs do not all pass on the same
+  part. Light-1 and light-2 are 0.089-0.117 m apart at the wrist — under the 0.12 m part — and
+  separate on the BEARING, 23.8-24.4 deg against 15, which is the difference the sheet shows
+  (the blade leaving across her left against across her right). Light-3 and the heavy are
+  0.093-0.255 m apart at the wrist and 4.3 deg apart in bearing, and separate on the GRIP:
+  light-3 is the chain's two-handed thrust. Every pair's three numbers are published every run
+  (`contactSeparation`).
+
+---
+
+## 3.6f A104 — eight isolated runs, 8 PASS, and where the margin actually is
+
+Findings **J4** and **J5**.
+
+light-3 `forearmToSpineLMin` **0.120-0.132 m** (the judge measured 0.099-0.108 over eight runs on the round-4 build, one of them a FAIL); the holster leg **0.120-0.248 m** where the judge measured 0.054-0.069 m and filmed the forearm across the back of her neck.
+
+light-3 `forearmToSpineLMin` **0.123-0.131 m** (the judge measured 0.099-0.108 over eight runs on the round-4 build, one of them a FAIL); the holster leg **0.206-0.250 m** where the judge measured 0.054-0.069 m and filmed the forearm across the back of her neck.
+
+| run | verdict | light-3 `forearmToSpineLMin` (bar 0.10) | holster `forearmToSpineMin` (bar 0.10) | holster `hairClearMin` (bar 0.02) | light-3 / heavy `hairClearMin` (bar 0.05) |
+|---|---|---|---|---|---|
+| 1 | **PASS** | 0.13 | 0.248 | 0.169 | 0.249 / 0.095 |
+| 2 | **PASS** | 0.124 | 0.206 | 0.126 | 0.209 / 0.095 |
+| 3 | **PASS** | 0.129 | 0.244 | 0.149 | 0.245 / 0.095 |
+| 4 | **PASS** | 0.131 | 0.232 | 0.152 | 0.264 / 0.095 |
+| 5 | **PASS** | 0.123 | 0.25 | 0.147 | 0.254 / 0.093 |
+| 6 | **PASS** | 0.128 | 0.227 | 0.095 | 0.248 / 0.095 |
+| 7 | **PASS** | 0.127 | 0.217 | 0.135 | 0.262 / 0.094 |
+| 8 | **PASS** | 0.129 | 0.227 | 0.159 | 0.249 / 0.094 |
+
+The holster leg is **0.206-0.250 m** across the eight runs against a 0.10 m bar, where the film
+judge measured 0.054-0.069 m on the round-4 build and filmed the forearm lying across the back of
+her neck. Two changes bought it: `_reachPose`'s `along` clamp (0.55 -> 0.68, J5) and, later in the
+pass, the wider carry corridor that A100's dodge row needed (`TIP_ABOVE` 0.26 -> 0.23,
+`TIP_ABOVE_MAX` 0.60 -> 0.66) — the stowed haft the hand is reaching for sits a little higher and
+further off her back, so the reach is shallower. The pinned scan of the whole leg (41 `drawK`
+steps, `probeG`) puts its true worst at **0.232 m**, which is the same number the live runs see.
+
+---
+
+## 3.6g A100's dodge row, again — five mechanisms, and one that was tried and rejected
+
+Not one of the judges' findings; found by running the suite. On HEAD the dodge row read
+`bowClear` **0.0206–0.0939 m** against its 0.10 m bar — the round-4 claim of 0.104–0.138 over 6
+runs does not reproduce, and the row failed roughly one full suite in two. (No change of this
+lane's explains the regression; the world-ground lane is editing `src/world/terrain.js` live on
+this branch and the dodge's ground conform is downstream of the terrain normal.)
+
+Five things were wrong, and they only show up in that order because each one hid the next.
+
+**1. Both constraints were saturated, so every push was thrown away.** On a failing frame
+`midToBack` read 0.298–0.304 against the `MID_CEIL` 0.296 ceiling and `tipAboveShoulderMax` 0.600
+against its own 0.600 ceiling. `_bowSolve` measured the deficit, pushed along it, and had the
+clamps take the whole push back on the same pass — eight passes doing nothing eight times. A
+saturated constraint does not mean there is nowhere to go; it means the only directions left are
+TANGENTIAL. The escape now loses its radial component when the midpoint is on the ball and its
+rising component when the blade is on its ceiling, and when nothing measurable survives that it
+slides along `radial × haft`, the one axis that costs neither radius nor tip height.
+
+**2. `MID_CEIL` had no room for its own residual.** What A100 measures is the bound plus whatever
+the ground conform, the twist layer and the spring chains add after the socket is written —
+observed up to 8 mm against 4 mm of headroom, which is where the 0.304 came from. 0.296 → **0.288**.
+
+**3. The hand-over blend was bounded by nothing.** `_liveSocket` spends four A100 clauses and the
+bow solve on the socket, and then `_blendCarry` lerps the result TOWARD THE CAPTURED HAND
+TRANSFORM for the 0.16–0.55 s the hand-over lasts. Filmed on a dodge started inside that window:
+`carryBowBound` 0.185 — the solve believing it had cleared the bow — against a MEASURED `bowClear`
+of **0.0745**, with the haft's midpoint 0.601 m off her back and its blade 1.196 m over her
+shoulder. Those are the numbers of a prop in flight, not of a carry. The blended pose now gets the
+same hard bow bound the socket does, three passes, translated into the socket bone's own frame; it
+only runs while the blend is live and only when the bow is inside `BOW_KEEP`. Same probe after:
+**0.185 on the worst frame of all three rolls.**
+
+**4. The bow prediction was a point estimate, two frames out, and smoothed.** `_bowClearDir`
+REPLACED the live bow with a predicted one. A point estimate one lead-length ahead is right only
+when the lead is right, and the lead is a number of frames while the error it corrects is a number
+of sub-steps: on a quiet box the bow moves 0.02 m per frame and a 2-frame lead costs nothing; under
+the concurrent suite it moves 0.2–0.35 m per frame and the lead aims the whole solve a third of a
+metre past the bow. That is load-dependent by construction, which is exactly the signature
+(0.107–0.141 m isolated, 0.0206 m inside a suite). A sweeping segment is not a position but a
+VOLUME, so the bound now takes the **worse of the live and the predicted** segment: over-predicting
+can no longer hurt, so the lead is deliberately generous (1.8 frames) and the estimate is the RAW
+per-frame delta rather than a `lerp(0.5)` that halved it on exactly the frames that need it.
+`BOW_KEEP` 0.185 → **0.22**, which is the residual budget the measurement needs (0.12 m over the
+bar instead of 0.085).
+
+**5. The haft was boxed in, and the braid and the bow failed the same rolls together.** With all of
+the above in, one suite run still failed with `bowClear` 0.0863 **and** `hairClear` 0.0596 — not two
+tuning problems but one carry with no room. The vertical corridor was `[TIP_ABOVE 0.26,
+TIP_ABOVE_MAX 0.60]` inside A100's own bars of 0.20 and 0.70, i.e. 0.34 m of freedom with 0.10 m of
+the bar unused. It is **[0.23, 0.66]** now — 0.43 m — and the tangential escape is **braid-aware**:
+both signs slide along the ball and neither is preferred by the bow's own measured direction (the
+ball projected it away), so both candidates are evaluated against the bow AND against the braid,
+with the braid as the tie-breaker (`_hairGapFor`, one pass over the 32 cached strand positions).
+
+**Tried and REJECTED, with the numbers, because it sounds strictly safer and is not:** a THIRD
+sweep sample at half the lead. A roll's bow path is an arc, so its midpoint can be nearer the haft
+than either end — but the carry has one actuator and two things to avoid, and a third bow
+constraint spends budget the braid servo needs and cannot buy back. Six isolated runs: **2 FAIL**
+(bow 0.0607 on one, braid **0.0387** against its 0.06 bar on another). Reverted to two samples.
+
+**Evidence on the result: four consecutive full lane suites, every action gate PASS in all four.**
+
+| suite | A100 dodge `bowClear` (bar 0.10) | dodge `hairClear` (bar 0.06) | `tipAboveShoulderMax` (bar 0.70) | other six gates |
+|---|---|---|---|---|
+| 1 | 0.2199 | 0.0780 | 0.66 | all PASS |
+| 2 | 0.2200 | 0.0779 | 0.66 | all PASS |
+| 3 | 0.1446 | 0.0836 | 0.66 | all PASS |
+| 4 | 0.2200 | 0.0776 | 0.66 | all PASS |
+
+Isolated runs on the way there: 7/7 PASS after mechanisms 1–2 (0.1075–0.1409), 11/11 after 3–4
+(0.108–0.220).
+
+---
+
+## 3.6e A103 with a HEAVY row, and the staging fix that made the reach readable
+
+Finding **J6**, and the reason row 1 used to disagree with rows 2 and 3.
+
+Round 4 parked the machine 2.8 m out and let the strike LUNGE close the rest. Filmed per frame
+(`probeE`), the lunge is a velocity floor at `STEP_SPEED` 1.15 m/s and the hit resolves ~0.25 s
+into the swing, so it closed about 0.3 m of the 0.63 m on offer — and how much of it landed
+depended on whether the PREVIOUS row's drive was still running during the 36-frame settle. Row 1
+therefore struck from **2.75 m** and rows 2–3 from **2.16 m**, and the reach reading followed:
+row 1 read **+0.23 / +0.31 m** (short) while rows 2–4 read **−0.02 … −0.05 m** on the same build.
+A reading that moves 0.6 m with the row index is measuring the staging.
+
+Each row now holds KeyW until the collision solve stops her (the loop watches the distance go
+still), releases, settles 14 frames, then swings — which is what a player does, and it puts her at
+exactly what the melee approach term allows. The lunge is still in the build and still gated
+(A102's `step` clause, 0.25–0.8 m per swing). A **fourth row** runs the heavy.
+
+| row | beat | `tipToHullAtHit` (bar ≤ 0.15) | `playerToShell` (> 0) | `playerToHullAtHit` (> −0.10) | `playerToMachine` | damage |
+|---|---|---|---|---|---|---|
+| 1 | light-1 | **−0.062** | 0.897 | 0.148 | 2.197 | 24.7 |
+| 2 | light-2 | **+0.024** | 0.858 | 0.138 | 2.158 | 28.5 |
+| 3 | light-3 | **−0.041** | 0.854 | 0.149 | 2.154 | 39.9 |
+| 4 | **heavy** | **−0.073** | 0.849 | 0.146 | 2.149 | 74.1 |
+
+Negative means the blade is INSIDE the hull, which is what `reference/spear-light-strike.jpg`
+shows. The heavy was **+0.117 / +0.079 / +0.080 m** (short on every row) when the film judge ran
+this clause against it, and **0.2301 m** on a live heavy — over the bar it was not being held to.
+
+Probed independently on three species with the same walk-in staging (`probeD`): Watcher
+−0.019 / −0.042 / −0.051 / +0.028, Strider −0.033 / −0.071 / −0.065 / −0.071, Scrapper
+−0.124 / +0.026 (rows 3–4 lost the machine — a Scrapper dies to two lights plus a heavy).
+
+---
+
+## 3.6h A106 — the invariant the approach term broke, now gated
+
+Finding **J3**. The control and the treatment are the same walk into the same frozen machine over
+the same ground, 3 s of KeyW each; `approachFrames > 0` on the drawn rows is what stops the row
+passing because the term never engaged.
+
+| machine | spear | `machineDisplacementM` | worst single frame | `approachFrames` | `standM` | `playerToShellM` | `standoffHalfLen` |
+|---|---|---|---|---|---|---|---|
+| Watcher | holstered | **0.0000** | 0.0000 | 0 | 3.397 | 2.097 | 1.5615 |
+| Watcher | **drawn** | **0.0000** | 0.0000 | 181 / 181 | 2.148 | 0.848 | 0.5465 |
+| Strider | holstered | **0.0000** | 0.0000 | 0 | 2.430 | 0.980 | 0.4371 |
+| Strider | **drawn** | **0.0000** | 0.0000 | 179 / 179 | 1.904 | 0.454 | 0.1530 |
+
+The film judge's numbers on the round-4 build, same probe shape: **2.382 m and 2.355 m** of machine
+displacement with the spear drawn, worst single-frame push 0.0568 m, 0.000 m holstered.
+
+---
+
 ## 3.6a A102 under stall injection — 12 isolated runs, 12 PASS
 
 Finding **F4**. The gate injects 20–80 ms of main-thread block per frame for six of its eight
@@ -1119,6 +1435,106 @@ and the far end of a 1.59 m haft moves ~0.3 m per frame at any frame rate.
 
 ---
 
+## 3.6b A105 while jogging — 15 isolated runs, 15 PASS
+
+Finding **F5**. Fifteen isolated runs of `node tools/gates.mjs --port 5205
+--only A105-melee-while-moving` on the build in this commit. The bar is §4's absolute
+**0.08 m** on the RAW worst clean window of the SWINGING segment; there is no discard and no
+comparison against the control (round 3 removed both, and neither came back).
+
+| | 15-run range | bar |
+|---|---|---|
+| `joggingWorst` (raw worst clean window, swinging) | **0.0058 – 0.0133 m** | ≤ 0.08 |
+| `controlWorst` (same instrument, no swing, same ground) | 0.0042 – 0.0162 m | reported, not gated |
+| `speedRatio` (swinging speed ÷ baseline) | 0.998 – 1.002 | ≥ 0.60 |
+| `standing.drift` | 0.0015 – 0.0240 m | ≤ 0.08 |
+| `joggingWindows` | 10 – 13 | ≥ 2 clean |
+| `medianFrameMs` | **17.2 – 59.5** | — |
+
+The last row is the point: the sample spans a quiet box and a heavily loaded one — a 3.5×
+spread in frame time — and the worst window moved by 8 mm across all of it. Every run's
+`worstJoggingWindow` is published with its evidence (`swinging: true` on all fifteen, 4–9
+samples, `maxDt` inside that run's own hitch bar, `groundRise ≤ 0.001 m`), so a future failure
+can be attributed rather than argued about.
+
+Nothing was changed *for* this row. The round-3 analysis stands — melee arms no step drive and
+no stance step above `STEP_SPEED` 1.15 m/s and she jogs at 5.05, and the melee layer writes
+nothing at or below the pelvis — and the round-4 changes that landed all reduce per-frame motion
+rather than adding any: `STANCE_STEP_MAX` 0.20 → 0.08, `PHASE_STEP_MAX` 0.30 → 0.16, and the
+contact plateau, which removes the fastest pose transition in the lane from the strike window.
+The 1-in-13 tail of round 3 did not reproduce in 15.
+
+---
+
+## 3.6c A100's dodge row — what was actually wrong, and the lever that fixed it
+
+Not a finding, but the row that stood between this lane and a clean full-suite run, and the one
+place a bar was *nearly* argued with instead of met. The `bowClear` clause on the dodge row was
+**bimodal**: 0.0698–0.16 m against a 0.10 m bar on six runs of the round-3 build, and the same
+spread on the round-4 build until the last change. Three mechanism defects and one lever:
+
+1. **The bow bound never used the prediction it had.** `_bowClearDir` has taken a `predict`
+   argument since round 2 and `_bowSample` has maintained the velocity it needs — and no caller
+   ever passed it. The bound therefore steered off a bow one update stale, which is invisible
+   upright and is the whole story during a roll, where `spine_03` (the bow's parent) turns
+   through most of a right angle inside one update. `_bowSolve` now predicts two sub-steps.
+2. **The midpoint ceiling was undoing the blade clause.** Inside `_bowSolve` each pass applied
+   the blade clauses and *then* projected the midpoint onto its ball — and that projection moves
+   `mid.y`, so the blade clause was overwritten every pass. With the tilt search doing real work
+   it showed: `tipAboveShoulderMax` read **0.716–0.725 m** against A100's 0.70 m bar. The order
+   is inverted (ball first, blade last) and the measured maximum now tracks
+   `CARRY.TIP_ABOVE_MAX` to 0.001 m.
+3. **The blade ceiling clamped against a stale tip.** `over3` was computed from the tip height
+   from *before* the floor clause had moved it, so a frame where both fired clamped against a
+   number that was no longer true.
+4. **And the lever: the haft is 1.48 m, not 1.59 m** (`SPEAR_SCALE` 0.86 → 0.80). Round 2 chose
+   0.86 and said so honestly — *"this length is the largest of the two constraints, not a free
+   choice"* — because A103 measured the blade against the impact point and every centimetre off
+   the haft was a centimetre added to that reading. **That constraint no longer exists**: the
+   melee approach term closed 0.9 m of standoff and A103's reach clause reads −0.02 to −0.21 m
+   with the blade inside the hull, so 0.089 m of haft can go back to the carry, which is where
+   A100's three competing clauses all wanted it. 1.48 m is also the ~1.5 m the film judge asked
+   for in round 2 and the length HZD reads at.
+
+Measured on the dodge row after all four, six consecutive runs: `bowClear` **0.104 / 0.116 /
+0.119 / 0.128 / 0.138 / 0.104 m** (bar 0.10), `tipAboveShoulderMax` 0.600 on every run (bar
+0.70), `midToBack` 0.285–0.296 (bar 0.30). Before: 0.054 / 0.068 / 0.070 / 0.071 / 0.115 / 0.129
+/ 0.141 / 0.116, four of eight under the bar.
+
+---
+
+## 3.7fp Evidence trail — fix pass 1, every frame shot on THIS build and READ
+
+Every file below exists with a Sep 25 timestamp from this session, and every one of them was
+opened and read by the person writing this section — the composites exist so that reading them is
+one act rather than two.
+
+| file | shot at | what it shows, as read |
+|---|---|---|
+| `shots/gates/V46-spear-ready.png` | 17:54 | The two tiles are the same pose from two cameras: one hand on the haft, shaft forward-down across the front of the thigh, blade ahead of and below the leading knee, a fist-length stub behind the fist, left arm free and slightly forward. The front-quarter tile reads as a diagonal, not a walking stick — which is what finding F2 was about. |
+| `shots/gates/V47-melee-swing.png` | 17:54 | Row 1's four contacts are four poses: L1 level and crossing to her left; L2 lower with the blade leaving to her right; L3 with the wrist high, the blade angled down and BOTH hands on the haft; the heavy with the hand at head height and the shaft driving steeply down. Row 2: both light windups and the heavy's have the blade HIGH and FORWARD of her head, the heavy's nearly vertical above it. |
+| `shots/gates/V48-spear-holster.png` | 17:54 | Sprint, from behind: bow and spear on the SAME diagonal, parallel and clearly separated, blade above the right shoulder, nothing through the braid. |
+| `shots/melee-cmp-ready.png` | 18:19 | Guard beside `reference/spear-ready-side.jpg`. Same shape: one-handed, shaft forward-down, blade low and ahead, left arm free. The build's shaft sits a few degrees steeper than the still's. |
+| `shots/melee-cmp-windup.png` | 18:19 | The cock (`windup 0.58`, where the cock key is reached since J1) beside `spear-light-windup.jpg`: blade high and FORWARD of the head in both, hand at chest height, body coiled. The build's blade is carried a little higher. |
+| `shots/melee-cmp-follow.png` | 18:21 | The follow-through beside `spear-light-follow.jpg`: blade swept across and down past her own midline, arm extended, torso turned over the lead foot. |
+| `shots/melee-cmp-strike.png` | 18:21 | **The finding F3/J6 shot.** Light-1 at CONTACT_K against a Watcher she walked up to, beside `spear-light-strike.jpg`. The blade is ON the machine — A103 measures −0.062 m on this row, i.e. inside the hull. Honest difference from the still: this roster's Watcher is much taller relative to her than HZD's, so the blade lands on its lower body rather than its head. |
+| `shots/melee-cmp-holster.png` | 18:20 | The stowed carry at a sprint beside `spear-holster-back-hfw.jpg`: both props on the same diagonal, blade over the right shoulder, butt at the left hip. |
+| `shots/melee-ready-front.png` | 18:15 | The guard, 3/4 front, full frame. |
+| `shots/melee-ready-side.png` | 18:16 | The guard in profile, full frame. |
+| `shots/melee-l1-contact-side.png` | 18:16 | Light-1 at CONTACT_K, profile. |
+| `shots/melee-l3-contact-side.png` | 18:17 | Light-3 at CONTACT_K, profile — the two-handed thrust, wrist high, blade descending. |
+| `shots/melee-heavy-contact-side.png` | 18:17 | The heavy at CONTACT_K, profile — wrist at 1.46 m, shaft 18-22 deg below horizontal, tip at HIP height (the round-4 caption said knee; the film judge corrected it and so does this one), spine folded 0.38 rad over the lead foot. |
+| `shots/melee-holster-side.png` | 18:18 | The stowed carry in profile. |
+| `shots/melee-holster-back.png` | 18:18 | The stowed carry from behind at a sprint. |
+
+Two shots were re-framed rather than kept: the first `melee-cmp-strike` put the camera 0.5 m from
+the Watcher's hull (the machine filled the frame) and the first `melee-cmp-follow` looked down the
+spear's own axis from her right, which foreshortens a left-sweeping follow-through to a stub. Both
+were re-shot from an angle that shows the thing they are evidence for; no pose changed between
+them.
+
+---
+
 ## 3.7 Evidence trail — every file this doc cites, shot on this build
 
 Finding **F6**. Round 3 cited six `shots/melee-*.png` that were not in the tree. Every cited path
@@ -1135,7 +1551,7 @@ frame, so a judge is not asked to hold two images in their head.
 | `shots/melee-holster-side.png` | Sep 25 12:21 | F6's holster-side: the stowed carry in profile — both props on the back plane, blade clearing the shoulder. |
 | `shots/melee-holster-back.png` | Sep 25 12:21 | F6's holster-back: the stowed carry from behind at a sprint, full frame. |
 | `shots/melee-l1-contact-side.png` | Sep 25 12:22 | F6's l1-contact-side: light-1 at CONTACT_K, profile, full frame. |
-| `shots/melee-heavy-contact-side.png` | Sep 25 12:22 | F6's heavy-contact-side: the heavy at CONTACT_K, profile — wrist at 1.42 m, shaft at -22 deg, blade at knee height, spine folded over the lead foot. |
+| `shots/melee-heavy-contact-side.png` | Sep 25 12:22 | F6's heavy-contact-side: the heavy at CONTACT_K, profile — wrist at 1.46 m, shaft 18-22 deg below horizontal, blade at HIP height (knee height is the follow key — corrected in fix pass 1), spine folded 0.38 rad over the lead foot. |
 | `shots/melee-cmp-ready.png` | Sep 25 12:23 | Side-by-side against reference/spear-ready-side.jpg. |
 | `shots/melee-cmp-windup.png` | Sep 25 12:23 | Side-by-side against reference/spear-light-windup.jpg. |
 | `shots/melee-cmp-follow.png` | Sep 25 12:24 | Side-by-side against reference/spear-light-follow.jpg. |
@@ -1156,19 +1572,26 @@ rests on the after-shots and on A100's `bowClear`, which is a number.
    (an invisible spear is what Kevin is complaining about) but the reference still is HFW and
    its blade end is occluded by hair and shoulder pad, so "blade above the right shoulder" is
    extrapolated from the visible shaft line, not seen.
-2. **V46's "two-handed low guard" is not what the reference shows.** Every official HZD
-   guard / windup / contact / follow frame has the LEFT HAND EMPTY, used as a counterweight
-   (canon doc finding 2). This build is one-handed on the guard, light 1, light 2 and the
-   heavy, and two-handed on the light-3 thrust. That is also the only version of the pose
-   that keeps her left arm off her chest. The gate criteria says so in full and gives the
-   judge the evidence to disagree.
+2. ~~**V46's "two-handed low guard" is not what the reference shows.**~~ **CLOSED in fix
+   pass 1, by the orchestrator.** The round-4 gate judge was right that the lane could not
+   close this on its own: §4's V46 wording asks for a two-handed guard, `spear-canon.md`
+   finding 2 verified that every official HZD guard / windup / contact / follow frame has
+   the LEFT HAND EMPTY, and the build is one-handed by construction. The fix-pass brief,
+   finding **F2**, decides it: *"build it to match reference/spear-ready-side.jpg
+   (one-handed, shaft angled forward-down across the front of the thigh, blade ahead of the
+   knee, left arm free and slightly forward, weight on the balls of the feet)"*. That is the
+   pose in the build, V46's criteria now carries the decision verbatim, and the two-handed
+   beat is still light-3's thrust (which is what keeps A101's two-handed clause honest — and,
+   since fix pass 1, is also the axis A102's contact-separation clause uses to tell light-3
+   and the heavy apart).
 3. **A104's midline clause is measured as a distance to the spine**, not as a bare
    x-coordinate: a canon follow-through puts her hand over her own midline half a metre out
    in FRONT of her chest. The literal x read is reported alongside it.
-4. **The haft is long for this rig.** 1.85 m on a ~1.7 m character means the stowed spear
-   extends about 0.5 m past her right shoulder and its butt hangs behind her left knee.
-   `buildSpear()` is in `src/combat/bow.js`, which this lane does not own; a 1.55–1.65 m haft
-   would sit better and is a one-line change for whoever owns that file.
+4. **The haft is long for this rig.** 1.85 m authored on a ~1.7 m character; this lane
+   scales it to 1.48 m (`melee.js SPEAR_SCALE` 0.80) and that is as far as a scale can honestly
+   go — a scaled mesh scales its blade and its grip wrap with it. `buildSpear()` is in
+   `src/combat/bow.js`, which this lane does not own; §5.2 carries the exact cross-lane
+   request (author at **L = 1.48 m** and drop the scale to 1.0).
 5. **The heavy is the canon's filmed chop, not a literal guillotine.** §4 asks for
    "a real windup over the shoulder"; the canon is explicit that the shaft never goes behind
    the head and the forearm never crosses the face, so the cock is a shoulder-and-spine load
@@ -1254,8 +1677,8 @@ These supersede gaps 9, 10 and 12 above, which fix round 2 either closed or re-s
    asks about, and the judge's finding was explicitly about the crossing.
 
 2. **CROSS-LANE REQUEST (combat), restated exactly, fix round 4: rebuild `buildSpear()` at
-   L = 1.55 m.** `src/combat/bow.js:672` hard-codes `L = 1.85`, and this lane carries it at
-   `1.85 × SPEAR_SCALE 0.86 = 1.591 m` by writing a uniform scale in the one place it already
+   L = 1.48 m.** `src/combat/bow.js:672` hard-codes `L = 1.85`, and this lane carries it at
+   `1.85 × SPEAR_SCALE 0.80 = 1.480 m` by writing a uniform scale in the one place it already
    writes the prop's scale — so the wraps, the ferrule and the blade are uniformly shrunk rather
    than re-proportioned.
 
@@ -1268,7 +1691,7 @@ These supersede gaps 9, 10 and 12 above, which fix round 2 either closed or re-s
    length. A 1.85 m haft at the band's 30° minimum spans 0.93 m laterally and 1.60 m vertically
    against a back that is about 0.55 m tall.
 
-   **The exact request.** Author the mesh at **L = 1.55 m** (blade ≈ 0.28 m of it, grip wrap
+   **The exact request.** Author the mesh at **L = 1.48 m** (blade ≈ 0.27 m of it, grip wrap
    centred at 0.20 of the haft from the butt, ferrule and red feather binding scaled as art, not
    uniformly). This lane will then drop `SPEAR_SCALE` to 1.0 and delete the comment block that
    explains it. Nothing this lane measures is hard-coded — grip fraction, blade-ahead,

@@ -17,15 +17,46 @@ terrain.heightFast(x, z)           // bilinear off the RENDER mesh grid (1.94 m
 terrain.slopeFast(x, z)            // |grad h| off the same grid (1.0 = 45 deg)
 terrain.tallGrassDensity(x, z)     // 0..1 concealment field
 terrain.isInTallGrass(x, z)        // tallGrassDensity > 0.45
-terrain.surfaceAt(x, z)            // NEW — see below
-Terrain.SURFACES                   // NEW — the closed list of surface names
+terrain.surfaceAt(x, z)            // the AUDIBLE vocabulary — see below
+terrain.materialAt(x, z)           // NEW (fix round 2) — the GROUND itself
+Terrain.SURFACES                   // the closed list surfaceAt() can return
+Terrain.MATERIALS                  // NEW — SURFACES + 'ash'
+Terrain.SURFACE_EMIT               // NEW — material -> emitted surface
+Terrain.SURFACE_AUDIO              // material -> nearest foley set
 ```
 
-### `terrain.surfaceAt(x, z)` — new, additive (audit `audio-04`, gate A58)
+### `surfaceAt(x, z)` / `materialAt(x, z)` (audit `audio-04`, gates A58/A58b)
 
-Returns one of `Terrain.SURFACES` for any point in the world. Consumers must
-treat the list as closed and fall back on an unknown value rather than
-switch-defaulting to silence.
+Two vocabularies, and fix round 2 is the reason there are two.
+
+* **`materialAt(x, z)`** is the ground: one of `Terrain.MATERIALS` (ten names,
+  `SURFACES` plus `ash`). Use it for anything that cares WHAT the ground is —
+  VFX, props, ambience, debug, a map legend.
+* **`surfaceAt(x, z)`** is what the footstep consumer is told: one of
+  `Terrain.SURFACES` (nine names), computed as
+  `SURFACE_EMIT[materialAt(x, z)]`. Every name in it is one `audio`'s shipped
+  `SURFACE_SET` can voice.
+
+`SURFACE_EMIT` is **derived, not authored**: a material the consumer's
+vocabulary contains emits itself, and one it does not emits the nearest
+material that carries the same `SURFACE_AUDIO` foley set. Today that is one
+entry — `ash → dirt`, both `foot/dirt` — and it exists because `audio`'s
+`SURFACE_SET` is a module const with no registration hook, in a file §3.1 gives
+to `audio`, whose lookup ends in `|| 'foot/grass'`. A name that table has never
+heard of is not degraded, it is a meadow footstep on a burn scar
+(`A76-footfalls`: `surfacesFallingBackToGrass: ["ash"]`, red, caused by this
+lane). The derivation makes that structurally impossible from this side while
+losing nothing: the burn scar keeps its name in `materialAt`, its `ash` biome,
+its mask, its tint and its scatter, and it now plays exactly the set
+`SURFACE_AUDIO` always asked for it. **`A76-footfalls` is green.**
+
+The offer to `audio` stands and is still one line
+(`const SURFACE_SET = { …, ...(Terrain.SURFACE_AUDIO || {}) };`): merging it
+puts `ash` in the consumer vocabulary, the derivation then emits `ash`
+unchanged, and the burn scar gets a set of its own with no code change here.
+
+Consumers must treat both lists as closed and fall back on an unknown value
+rather than switch-defaulting to silence.
 
 | value | where it is |
 |---|---|
@@ -37,9 +68,13 @@ switch-defaulting to silence.
 | `water` | inside the river ribbon's waterline |
 | `rock` | bare faces above the treeline and on the rim |
 
-Measured on a 3 m grid over the play disc: all seven appear, each above the
-gate's 200-sample floor. `audio` selects a footstep set from this; nothing else
-should assume a value is present at a given coordinate.
+(plus `snow` on the north bench, `mud` in the marsh, and `ash` — `materialAt`
+only — on the burn scar.)
+
+Measured on a 3 m grid over the play disc: nine surfaces and ten materials
+appear, each above the gate's 200-sample floor. `audio` selects a footstep set
+from `surfaceAt`; nothing else should assume a value is present at a given
+coordinate.
 
 ### rim / boundary geometry
 
@@ -517,7 +552,7 @@ concealment field and the scatter drifted apart in the first place.
 | `forest` | NE, ellipse at (150,-120) r≈100×98 | needle duff, `surfaceAt → dirt` under closed canopy | closed conifer stand (3–6.5 m spacing), fern understory, 25 ground-mist pockets in the hollows |
 | `snow` | N bench, (-26,-256) r≈138×50, lifted 13–22 m | `surfaceAt → snow`, dusting thickest on the lee half | bleached bent grass, silvered dead snags, erratic boulders |
 | `marsh` | around the largest pool, (-107,54) r≈52 | `surfaceAt → mud`, wet/low-roughness | reeds (own scale + blue-green tint), reed clumps standing in the water |
-| `ash` | the cauldron burn scar, (175,-195) r≈46 | `surfaceAt → ash`, charcoal under a pale bloom | standing charcoal snags only, leaning where they fell |
+| `ash` | the cauldron burn scar, (175,-195) r≈46 | `materialAt → ash` (`surfaceAt → dirt`), charcoal under a pale bloom | standing charcoal snags only, leaning where they fell |
 | `scree` | the SE shelf benches | `surfaceAt → gravel` / `rock` | clustered talus blocks, wiry tussock |
 
 ### two rules every consumer of these fields obeys
@@ -726,6 +761,16 @@ may override any of them.
 const SURFACE_SET = { …, ...(Terrain.SURFACE_AUDIO || {}) };
 ```
 
+> **SUPERSEDED BY JUDGE ROUND 2 — `A76-footfalls` is GREEN.** What follows was
+> true of the fix-round-1 build and is kept because it is the honest history of
+> a red this lane caused. Fix round 1 was right that the regression was ours and
+> wrong that waiting for another lane was the only move: this lane also gets to
+> stop emitting a name the consumer cannot say. `surfaceAt()` now emits only
+> `audio`-voiceable names and `materialAt()` keeps `ash` — see
+> `SURFACE_EMIT` at the top of this document and FIX ROUND 2 §F6 at the bottom.
+> The one-line offer below still stands and still upgrades the burn scar to its
+> own set the day `audio` takes it.
+
 **`A76-footfalls` stays RED until `audio` makes that edit, and it is RED BECAUSE
 OF THIS LANE.** It was green before the `ash` surface existed. Fix round 1
 corrects how the previous report framed it: this is not "an outstanding request"
@@ -742,3 +787,140 @@ watch `foot/grass` play with nothing on disk. `A58b` therefore only asks
 `bank.has()` when the bank is genuinely up, and otherwise checks that every
 route is a well-formed set name — an empty bank answers "no" to every set and
 would have made the gate a permanent red that said nothing about this lane.
+
+---
+
+## JUDGE ROUND 2 — the two findings, and what each one cost
+
+> Numbering note: the rim sections above are labelled FIX ROUND 1 / FIX ROUND 2
+> and belong to the *build* of this lane. This section is the round that answers
+> the two findings `judge-world-ground-expansion-r1` raised against the shipped
+> build; the code comments call it "fix round 2", which is the orchestrator's
+> name for it.
+
+### F5 — the stamped cover never reached the pixels (judge: *major*)
+
+**Accepted in full, and it was the worse of the two.** `_ensureRouteCover()`
+raises `stealthField` at runtime once the live machine roster is up, so that
+every patrol route has cover (A60). Four *baked* things are functions of that
+field and none of them were re-baked:
+
+| baked thing | reads | was |
+|---|---|---|
+| `uMask2.r` duff | `stealthField` | constructor only |
+| `uMask2.a` scree, `uMask3.rgba` forest/snow/marsh/ash | `1 - biomeSuppress` (= `stealthField`) | constructor only |
+| mesh vertex colours, biome tint block | `1 - biomeSuppress` | constructor only |
+| grass scatter | `tallGrassDensity` | `invalidate()` — the only one that was told |
+
+Measured on the shipped build, exactly as the judge measured it: **8200 of
+184412 mask cells inside r ≤ 330 (4.45 %)** carried live cover the duff channel
+did not have, **1555** of them on ground whose biome mask was still at full
+strength. Filmed: waist-high golden stealth grass growing out of unbroken white
+snow, `surfaceAt` reporting `grass` on a white pixel.
+
+Fixed the way the judge's first option describes — the stamp and the pixels are
+one operation — with the loops refactored so there is one definition of each,
+not two:
+
+* `_maskTexel(wx, wz, out)` — THE twelve baked mask bytes at a point. Pure.
+* `_vertexColor(i, ix, iz, out)` — THE colour of a terrain vertex. Pure.
+* `_bakeMaskTexels(dirty)` / `_bakeVertexColors(dirty)` — `null` bakes
+  everything (construction), a dirty-tile map bakes only what moved.
+* `stampStealthDisc()` itself appends to a module-level pending list, and
+  `Terrain.update()` drains it on the same tick into `_markRebake()` +
+  `_rebakeStamped()`, which runs both loops and re-uploads the three
+  `DataTexture`s before `vegetation.invalidate()`.
+
+That last point is deliberate and is the answer to "so the next lane that
+stamps cover cannot reopen it silently". Raising the field and re-baking what
+the field paints were two separate things a caller had to remember to do
+together, and a rule you have to remember is a rule that gets forgotten — this
+one was, for a whole round. **The stamp is now the dirty mark.** Nothing in
+this file can raise cover without the pixels following, including whatever
+calls it next round; the pending list is flat `[x, z, r, …]` truncated in
+place, so the cost when nobody stamps is one `.length` test per frame.
+
+The dirty map is 16 m tiles over the mesh span (61×61 = 3.7 kB, freed after the
+one-shot), with 6 m of pad for the bilinear reach of the stealth grid.
+
+Measured after: **102 discs → 196 tiles → 25474 texels + 13267 vertices
+re-baked in 27 ms**, once, at ~1.5 s. Desync **8200 → 0** cells of 173008;
+`onUnsuppressedBiome` **1555 → 0**; mask audit 0 mismatched at worst delta 0/255;
+vertex audit 0 mismatched. No new retention (the mask bytes ARE the
+`DataTexture`s' `image.data` and `colors` IS the colour attribute; `dispose()`
+drops both handles), and A90 measures heap **−4.5 %**.
+
+**New gate `A59c-mask-coherence-world-ground`**, which is the guard the judge
+asked for. It (1) requires the stamp to have run and moved ground — otherwise
+coherence is vacuous — (2) re-derives every sampled texel and vertex through the
+bake's own functions and requires zero stale cells, plus the judge's own measure
+at full mask resolution, and (3) **proves itself sensitive**: it flips one
+stored byte, requires the audit to go red, restores it and requires green
+again. An audit that cannot fail is not a measurement.
+
+### F6 — A76 is green, and this lane closed it (judge: *major*)
+
+The judge is right that the previous round relabelled this instead of closing it, and
+right that `src/audio/audio.js` is not this lane's file. It is wrong that there
+was therefore nothing to do here: the defect is not only "audio lacks an `ash`
+row", it is **this lane emitting a name into a closed vocabulary it does not
+own**. That half is fixable here, and is now fixed — see the `SURFACE_EMIT`
+section at the top of this document.
+
+```
+A76-footfalls PASS  surfacesFallingBackToGrass: []  silentSurfaces: []
+  walked: cobble→foot/cobble  dirt→foot/dirt  grass→foot/grass
+          gravel→foot/gravel  mud→foot/silt   rock→foot/rock
+          silt→foot/silt      snow→foot/snow  water→foot/water
+```
+
+`A58-surface-api` was **strengthened**, not weakened, to cover the split: the
+≥ 7 bar and the no-unknown-names bar now apply to BOTH vocabularies, the three
+owed biome grounds (`snow`, `mud`, `ash`) are still required and are checked on
+the fine one, and the two must agree through the published `SURFACE_EMIT` at
+every one of the ~35 k sampled points. Measured: 9 surfaces / 10 materials, all
+above the 200-sample floor, zero disagreements. `A58b` likewise now asserts that
+the emitted vocabulary is a subset of the modelled one **in which every name
+carries the same foley set** — the degradation may lose a distinction and may
+never change a sound.
+
+### gate output (port 5210)
+
+```
+--lane world-ground (12): 9 pass, 3 need judging (V32/V33/V44 read — all PASS)
+  A58  9 surfaces / 10 materials, 0 unknown, 0 emit disagreements
+  A58b 10 routed, 0 unrouted, 0 badEmit      A59  meadow 7.18 stealth 8.21 bare .109
+  A59b dry 0, marsh .0043, total .0277       A60  39 routes, below25 0, worst .478
+  A59c 0 stale of 43252 texels + 10060 verts; full mask 0/173008; sensitivity ok
+  A61/A62/A63 PASS
+--only A76-footfalls: PASS x3 (was FAIL — the red this lane caused)
+--only A90,A9,A21,A25b: A90 PASS heap −4.5 % | A9 PASS 331 calls 50.9 fps
+                        A25b PASS openFrac .552 | A21 FAIL (pre-existing, machines)
+
+FULL SUITE (port 5210, one run): 237 gates — 181 pass, 16 fail, 40 judge
+  (previous round: 235 gates — 173 pass, 21 fail, 1 pending, 40 judge)
+  Every world-ground gate passes. Of the 16 fails, ZERO are this lane's:
+  A21 · A23 · A23b · A31b · A40-expansion · A40-lost-contact · A41d · A44b ·
+  A47 · A47b · A47c · A48 · A48b · A81 · A97 — and A76.
+```
+
+**About A76 in that run.** It failed the full-suite pass on
+`misrouted: [{species:'scrapper', want:'mstep/light', got:[]}]` — a machine
+SPECIES cue that did not play while 141 live footfalls were in flight on a box
+also running another lane's suite. The half this lane owns was green in that
+same failing run (`surfacesFallingBackToGrass: []`, `silentSurfaces: []`, 8
+distinct footstep sets), and the gate passes end to end when run on its own:
+three consecutive PASSes on this build. The species flake belongs to
+`audio`/`machine-rig`, not here.
+
+### still open, and not this lane's to close
+
+* **`A21-real-draw-calls`** — `staged-fight` 394 vs 350. The gate's own
+  attribution: 80 machine draws in the worst frame, engine-side ceiling spent,
+  owner `machine-rig` LOD chains. Unchanged by this lane (vegetation is 43
+  draws, terrain+sky 13).
+* **The GTAO lattice on every distant vista** (still visible in `V33-rim` and
+  `V44-biomes`) — `src/core/engine.js`, `core-platform`, one line
+  (`screenSpaceRadius: true` or a distance fade). Diagnosis and the
+  one-line repro are in FIX ROUND 1 §1 above.
+

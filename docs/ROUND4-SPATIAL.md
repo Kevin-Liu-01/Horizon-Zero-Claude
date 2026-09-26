@@ -244,8 +244,19 @@ as its approach target (`melee._scanApproach`, the same ±50° wedge the hit res
 
 | term | normally | melee target |
 |---|---|---|
-| pad on the radius | `machinePad` 0.55 | `APPROACH_PAD` 0.20 |
-| standoff half-length | `m.standoffHalfLen` | `max(0.35 · L, L − 0.66)` |
+| pad on the radius | `machinePad` 0.55 | `APPROACH_PAD` 0.32 |
+| standoff half-length | `m.standoffHalfLen` | `max(0.35 · L, L − 1.02)` |
+
+> **FIX PASS 1 (Sep 25) — the pad was 0.20 and that was a bug, not a floor.** See
+> "Why the floors are what they are" below and gate `A106-melee-approach-immovable`:
+> at 0.20 the collider's own radius and the machine manager's push radius were the
+> *same number*, so a walking player with the spear drawn shoved a frozen Watcher
+> **2.38 m** across the field (0.000 m holstered). The pad is 0.32 now — the equality
+> plus a 0.12 m loaded-box frame of travel — and the 0.12 m of reach is handed back on
+> the same axis by the segment cut (0.66 → 0.78), plus a further 0.24 m of the same end
+> cap (→ 1.02) so the blade lands on beats whose tip is not aimed straight down the
+> midline. On a Watcher the cut now floors at `0.35 · L` = 0.5465 m and she stands
+> **2.15 m** from the centre with **0.85 m** of daylight to the `bodyRadius` shell.
 
 Every other machine, and every machine at every other time, is untouched — `machinePad`
 for general movement is **unchanged**, which is the condition the grant sets.
@@ -253,7 +264,7 @@ for general movement is **unchanged**, which is the condition the grant sets.
 **Why it exists.** Measured on port 5205: a Watcher's blocking capsule is
 `standoffHalfLen` 1.5615 swept either side of the centre and inflated by `bodyRadius`
 0.9, so with `machinePad` 0.55 and the player's own 0.4 m radius she is held **3.41 m**
-from its centre head-on. Her spear's blade tip at the contact key is **1.80 m** ahead of
+from its centre head-on. Her spear's blade tip at the contact key was **1.80 m** ahead of
 her root (measured off the posed rig — the arm is at full extension at contact, and
 authoring the wrist goal further forward buys nothing, the IK simply falls short). The
 blade therefore finished **0.32–0.98 m short of the nearest hull surface on every landed
@@ -268,11 +279,23 @@ shortfall. The term eats the cap.
 
 **Why the floors are what they are.**
 
-* **`APPROACH_PAD` 0.20 m.** `Machines.update()` shoves a machine whenever the player's
+* **`APPROACH_PAD` 0.32 m.** `Machines.update()` shoves a machine whenever the player's
   *position* is within `bodyRadius + 0.6` of a standoff sphere, while this capsule holds
   her position at `bodyRadius + pad + 0.4` from the segment. The shove therefore fires
   iff `pad < 0.6 − 0.4 = 0.20`, for every machine, independently of its `bodyRadius`.
-  0.20 is that threshold exactly, so A25 still reads 0.000 m of machine displacement.
+  **Round 4 shipped the pad AT 0.20 and described that as the floor. It is the equality,
+  which is not a margin:** the manager runs against her position *after* the move, a
+  walking player penetrates the swept capsule by up to one frame of travel before the
+  solve pushes her back out, and the push then fires on every forward frame and
+  integrates. Measured by the round-4 film judge — spear drawn, 4 s of KeyW into a frozen
+  Watcher 5 m ahead — the **machine** moved 2.382 m and 2.355 m, worst single-frame push
+  0.0568 m, against 0.000 m with the spear holstered. 0.32 is the equality plus 0.12 m,
+  one frame of loaded-box travel (5.5 m/s at 45 fps), which is the same margin
+  `machinePad`'s own comment claims for the general case. Gated: the melee lane's
+  `A106-melee-approach-immovable` walks her into a frozen machine with the spear drawn and
+  with it holstered and asserts 0.000 m of machine displacement on both, with
+  `approachFrames > 0` so the drawn row cannot pass by the term never engaging. Measured
+  on this build: Watcher 0.0000 m / 0.0000 m, Strider 0.0000 m / 0.0000 m.
 * **The segment is written back onto `m.standoffHalfLen`, on purpose.** `Machines.update`
   reads the machine's own field, not this collider. If only the collider shrank, every
   melee approach would shove the machine — precisely the failure `machinePad` exists to
@@ -282,23 +305,35 @@ shortfall. The term eats the cap.
 * **`max(0.35 · L, …)`.** The cut is absolute, tuned on the quadruped that needed it; on
   a machine whose whole standoff is shorter than the cut it would collapse the capsule to
   a sphere about the centre and let the player stand beside a flank. A third of the
-  segment always survives.
+  segment always survives. **Fix pass 1: the cut is 1.02 m**, which on a Watcher means the
+  floor is what binds (0.5465 m of 1.5615). 0.12 m of the increase pays the pad back; the
+  other 0.24 m is the rest of the same end cap, and the measurement that asked for it is
+  that with the cut at 0.78 m light-1's contact tip (char 0.15, 1.05, 1.86) read **+0.23 m
+  short** of the nearest hull surface while light-2's (−0.43, 1.13, 1.72) read **−0.02 m
+  inside** it: a Watcher's idle hull is not symmetric about her aim, so a reach budget that
+  only works for a thrust down the midline is not a reach budget.
 
 **The bound, measured rather than claimed.** Gate `A103-melee-contact-sync` publishes two
 numbers at the instant the blade lands:
 
 * `playerToShell` — her capsule against the machine's own `bodyRadius` shell, the surface
-  `machinePad` stands off from. **1.10–1.42 m** across five consecutive runs. This is the
-  clause the gate fails on; it is exact, not sampled.
+  `machinePad` stands off from. **0.85–0.99 m** across every run on the fix-pass-1 build
+  (1.09–1.42 m before the segment cut grew). This is the clause the gate fails on; it is
+  exact, not sampled.
 * `playerToHullAtHit` — her capsule against the live 295-capsule hit hull, sampled along
-  her own axis. **0.07–0.24 m**. A hit hull is not the sculpt: it is a set of generously
+  her own axis. **0.05–0.24 m**. A hit hull is not the sculpt: it is a set of generously
   inflated damage volumes whose *limb* capsules sweep, and on a quadruped those are what
   is nearest a player standing at spear range. It is gated at −0.10 m and reported every
   run so the range is visible.
 
 With the term in, `A103`'s reach clause (blade tip to nearest hull surface at the hit
-frame ≤ 0.15 m) reads **−0.02 to −0.21 m** — the blade lands inside the hull, which is
-what the reference still shows — on 5/5 consecutive runs.
+frame ≤ 0.15 m) reads **−0.040 to −0.123 m** on all FOUR beats — light 1, 2, 3 and the
+heavy, which fix pass 1 added as a fourth row after the film judge showed the heavy alone
+was stopping 0.08–0.23 m short and was ungated. The blade lands *inside* the hull, which is
+what the reference still shows. (The lane
+then gave 0.089 m of blade back: `melee.js SPEAR_SCALE` 0.86 → 0.80, a 1.48 m haft, because
+the reach the term bought was what had been forcing the spear to stay longer than the stowed
+carry wanted it to be. The readings above are with the shorter haft.)
 
 ---
 

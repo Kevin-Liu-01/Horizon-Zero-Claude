@@ -209,7 +209,23 @@ const WINDUP_K = 1.5;
  * The honest statement is that this length is the largest of the two
  * constraints, not a free choice.
  */
-const SPEAR_SCALE = 0.86;
+const SPEAR_SCALE = 0.80;
+/* FIX ROUND 4: 0.86 -> 0.80, i.e. a 1.48 m haft, which is the ~1.5 m the film
+ * judge asked for in round 2 and the length HZD reads at.
+ *
+ * Round 2 wrote, honestly, that 0.86 was "the largest of two constraints, not
+ * a free choice": A103 measured the blade against the impact point and every
+ * centimetre off the haft was a centimetre added to that reading, so the carry
+ * had to stay longer than it wanted to be. **That constraint is gone.** The
+ * melee approach term (collision._meleePad / _meleeStandoff) closed 0.9 m of
+ * standoff, and A103's reach clause now reads -0.02 to -0.21 m with the blade
+ * INSIDE the hull; giving 0.089 m of it back still leaves the row green.
+ *
+ * What the 0.089 m buys is the carry. A100's midpoint ball, its blade-above
+ * ceiling and its bow clearance all compete for the same geometry, and the
+ * haft's half-length is the term in all three: at 0.86 the dodge row's bow
+ * clearance was bimodal at 0.054-0.156 m against a 0.10 m bar with the
+ * midpoint pinned on its ceiling in every failure. */
 
 /**
  * Draw from the back / return to it, in seconds (§4: 0.2-0.3 s draw).
@@ -304,11 +320,18 @@ const TRAIL_PEAK = 0.32;
 /* ------------------------- the melee approach (F3) ------------------------ */
 /**
  * The blocking pad the approach term asks `collision._syncMachines` for on the
- * ONE machine the melee wedge has selected. The floor (and the reason it is
- * 0.22 and not 0) is derived in `collision._meleePad`: below 0.20 the machine
- * manager starts shoving machines away from a standing player and A25 breaks.
+ * ONE machine the melee wedge has selected. The floor is derived in
+ * `collision._meleePad`, and fix pass 1 corrected it: at 0.20 the collider and
+ * `machines/index.js`'s own push were the SAME radius, which is an equilibrium
+ * and not a margin — a moving player penetrates by a frame of travel first, so
+ * every forward frame fired the manager's push and a drawn spear bulldozed a
+ * frozen Watcher 2.38 m across the field (measured by the round-4 film judge;
+ * gated now by `A106-melee-approach-immovable`). 0.32 is that equality plus a
+ * 0.12 m loaded-box frame of travel, and the 0.12 m of reach is handed back on
+ * the same axis by `MELEE_L_CUT` (0.66 -> 0.78), so her standing distance from
+ * the machine does not change.
  */
-const APPROACH_PAD = 0.20;
+const APPROACH_PAD = 0.32;
 /** How far ahead (to the machine's SHELL) the approach wedge looks. */
 const APPROACH_RANGE = 5.0;
 /** ...and how wide it is: +-50 deg about the aim, the arc the hit uses. */

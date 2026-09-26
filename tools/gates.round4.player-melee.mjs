@@ -194,6 +194,28 @@ const SWING = `
    * live wrist BONE in character space, not the authored key), and they join
    * the signature.
    */
+  /**
+   * THE CONTACT POSE ITSELF — new in fix pass 1 (the film judge's "light-1,
+   * light-2 and light-3 now share one contact pose, which is the sheet V47 row
+   * 1 is built to judge").
+   *
+   * 'arcSig' and 'handSig' are WHOLE-SWING quantities: a yaw sweep, a vertical
+   * span. V47's first row shows four single FRAMES, and round 4 shipped three
+   * of them identical (hands within 0.08 m, shafts within 3.5 deg) while
+   * 'distinctArcs' read 4 — the gate was measuring something the sheet does not
+   * show. This returns the frame the sheet shows: the wrist, the shaft's
+   * bearing and whether the free hand is ON the haft, at the sample nearest
+   * 'contactK'.
+   */
+  const contactSig = (s) => {
+    const strike = s.filter((x) => x.phase === 'strike' && x.hand && x.shaft);
+    if (!strike.length) return null;
+    const c = strike.reduce((best, x) => (Math.abs(x.k - 0.70) < Math.abs(best.k - 0.70) ? x : best), strike[0]);
+    return { hand: c.hand.map((v) => +v.toFixed(3)), shaft: c.shaft.map((v) => +v.toFixed(3)),
+      two: typeof c.lh === 'number' && c.lh <= 0.05,
+      yaw: +(Math.atan2(c.shaft[0], c.shaft[2]) * 180 / Math.PI).toFixed(1),
+      pitch: +(Math.asin(Math.max(-1, Math.min(1, c.shaft[1]))) * 180 / Math.PI).toFixed(1) };
+  };
   const handSig = (s) => {
     const h = s.filter((x) => x.hand);
     if (!h.length) return { spanY: 0, contactY: 0 };
@@ -787,7 +809,10 @@ export const GATES = [
         const yawExc = yaws.length ? Math.max(...yaws) - Math.min(...yaws) : 0;
         const sig = arcSig(bearings(s));
         const hs = handSig(s);
+        const cs = contactSig(s);
         rows.push({ label, frames: s.length, handTravel: hand, step: b.step,
+          contactHand: cs ? cs.hand : null, contactShaft: cs ? cs.shaft : null,
+          contactYawDeg: cs ? cs.yaw : null, contactTwoHanded: cs ? cs.two : null,
           torsoYawExcursionDeg: +yawExc.toFixed(1),
           tipYawSweepDeg: sig.sweep, contactPitchDeg: sig.contactPitch,
           shaftPitchSpanDeg: sig.pitchSpan,
@@ -929,7 +954,41 @@ export const GATES = [
             + r.contactHandY + ']').join('; '));
       }
 
+      /* ...AND THE FOUR CONTACT FRAMES ARE FOUR POSES — new in fix pass 1.
+       *
+       * The clause above is about the whole swing; this one is about the single
+       * frame V47's first row puts side by side, because that is what a judge
+       * is asked to tell apart. Two contacts count as the SAME pose only when
+       * all three of these agree: the wrist within 0.12 m, the shaft's bearing
+       * within 15 deg, and the same number of hands on the haft. The third is
+       * not a loophole — light-3 is the chain's two-handed thrust (A101 gates
+       * that grip at 0.05 m) and one hand versus two on the shaft is the most
+       * visible difference in the sheet; it is also the only axis on which
+       * light-3 and the heavy separate reliably, and the numbers for the pair
+       * are published either way. */
+      const csep = [];
+      for (let a = 0; a < rows.length; a++) {
+        for (let b2 = a + 1; b2 < rows.length; b2++) {
+          const A = rows[a], B = rows[b2];
+          if (!A.contactHand || !B.contactHand) continue;
+          const dh = Math.hypot(A.contactHand[0] - B.contactHand[0],
+            A.contactHand[1] - B.contactHand[1], A.contactHand[2] - B.contactHand[2]);
+          const dot = A.contactShaft[0] * B.contactShaft[0] + A.contactShaft[1] * B.contactShaft[1]
+            + A.contactShaft[2] * B.contactShaft[2];
+          const ang = Math.acos(Math.max(-1, Math.min(1, dot))) * 180 / Math.PI;
+          const grip = A.contactTwoHanded !== B.contactTwoHanded;
+          const ok = dh > 0.12 || ang > 15 || grip;
+          csep.push({ pair: A.label + '/' + B.label, handM: +dh.toFixed(3),
+            bearingDeg: +ang.toFixed(1), gripDiffers: grip, ok });
+          if (!ok) {
+            bad.push(A.label + ' and ' + B.label + ' land in the SAME contact pose — wrists '
+              + dh.toFixed(3) + ' m apart, shafts ' + ang.toFixed(1) + ' deg apart, same grip');
+          }
+        }
+      }
+
       return { pass: bad.length === 0, detail: { bad, rows, distinctArcs: groups.length,
+        contactSeparation: csep,
         reparentGap: +gap.toFixed(4), tipAcrossReparent: +tipPop.toFixed(3),
         reparentsSampled: flips, worstReparentFrameMs: +(worstDt * 1000).toFixed(0),
         tipPopFrameMs: +(popDt * 1000).toFixed(0),
@@ -1044,7 +1103,37 @@ export const GATES = [
       const offAtHit = (e) => {
         if (liveOff == null && e && e.point) { liveOff = offHull(e.point); liveBody = bodyToHull(); }
       };
-      for (let i = 0; i < 3; i++) {
+      /* SHE WALKS IN, THEN SWINGS — new in fix pass 1, and it is a staging fix
+       * with a measurement behind it.
+       *
+       * Round 4 parked the machine 2.8 m out and let the strike LUNGE close the
+       * rest. The lunge is a velocity floor at 'STEP_SPEED' 1.15 m/s and the hit
+       * resolves ~0.25 s into the swing, so it only ever closed ~0.3 m of the
+       * 0.63 m on offer — and how much of it landed depended on whether the
+       * PREVIOUS row's drive was still running, which is why row 1 struck from
+       * 2.75 m and rows 2-3 from 2.16 m (filmed per frame: probeE). A reach
+       * reading that moves 0.6 m with the row index is measuring the staging.
+       *
+       * So each row now does what a player does: hold KeyW until the collision
+       * solve stops her (she is then standing at exactly what the melee approach
+       * term allows, and the loop detects that by the distance going still),
+       * release, settle, swing. The lunge is still in the build and still
+       * measured — A102's 'step' clause is 0.25-0.8 m per swing — but the reach
+       * clause is no longer a race between two clocks. */
+      const walkIn = async () => {
+        C.input.keys.add('KeyW');
+        let last = 99, still = 0;
+        for (let f = 0; f < 150; f++) {
+          await frame();
+          C.combat.melee.drawSpear(30);
+          const d2 = Math.hypot(p.position.x - m.position.x, p.position.z - m.position.z);
+          if (Math.abs(d2 - last) < 0.002) { if (++still > 8) break; } else still = 0;
+          last = d2;
+        }
+        C.input.keys.delete('KeyW');
+        for (let f = 0; f < 14; f++) await frame();
+      };
+      for (let i = 0; i < 4; i++) {
         liveOff = null; liveBody = null;
         /* EACH SWING IS STAGED THE SAME WAY — fix round 4. The three rows are
          * meant to be three measurements of "swing at a machine 1.5 m ahead",
@@ -1063,13 +1152,23 @@ export const GATES = [
          * OUTSIDE her standoff, the lunge is what closes the distance - which
          * is the thing the row is here to exercise. */
         await place(m.kind, 2.8);
-        for (let f = 0; f < 36; f++) await frame();
+        for (let f = 0; f < 8; f++) await frame();
+        await walkIn();
         /* ...and each row is a DIFFERENT beat. Re-staging costs more than the
          * 0.62 s combo window, so without this every row would be light-1 and
-         * light-2's and light-3's reach would go unmeasured. */
-        C.combat.melee.combo = i;
+         * light-2's and light-3's reach would go unmeasured.
+         *
+         * THE FOURTH ROW IS THE HEAVY — new in fix pass 1. The heavy is the
+         * pose this round re-authored and the one whose contact key moved most,
+         * and it had NO reach measurement anywhere in the suite: the film judge
+         * ran a byte-identical copy of this gate with 'heavy: true' and got
+         * +0.117 / +0.079 / +0.080 m, i.e. a blade that stopped short on every
+         * row, and 0.2301 m on a live heavy against a parked Watcher. Same
+         * staging, same clause. */
+        const heavy = i === 3;
+        if (!heavy) C.combat.melee.combo = i;
         C.events.on('melee-hit', offAtHit);
-        const b = await rec({ budget: 4000 });
+        const b = await rec({ budget: 4000, heavy });
         C.events.off?.('melee-hit', offAtHit);
         if (!b.hit) { rows.push({ swing: i + 1, hit: null }); continue; }
         const pt = b.hit.point;
@@ -1104,7 +1203,7 @@ export const GATES = [
          * The old clause is KEPT, not replaced: it still catches a point
          * published somewhere the blade never went. */
         const gap = b.hit.contactGap;
-        const row = { swing: i + 1, beat: 'light-' + (i + 1), phase: b.hit.phase, k: +(b.hit.k ?? 0).toFixed(3),
+        const row = { swing: i + 1, beat: heavy ? 'heavy' : 'light-' + (i + 1), phase: b.hit.phase, k: +(b.hit.k ?? 0).toFixed(3),
           tipToHullAtHit: gap == null ? null : +gap.toFixed(3),
           tipToImpactAtHit: at == null ? null : +at.toFixed(3),
           tipToImpactOnScreen: near == null ? null : +near.toFixed(3),
@@ -1682,6 +1781,116 @@ export const GATES = [
     })()`,
   },
 
+  /* --------------------------------- A106-melee-approach-immovable */
+  {
+    id: 'A106-melee-approach-immovable', kind: 'action', lane: 'player-melee',
+    timeout: 120000, settle: 500,
+    title: 'Walking into a machine with the spear DRAWN moves the machine 0.000 m — the melee '
+      + 'approach term may bring her closer, never shove the thing she is closing on',
+    setup: `__CTX__.input.enabled = true;`,
+    assert: `(async () => {
+      const C = __CTX__, p = C.player;
+      const M = C.combat?.melee;
+      if (!M || typeof M.drawSpear !== 'function') return { pass: null, detail: 'SKIP: no melee' };
+      if (!C.machines?.list?.length) return { pass: null, detail: 'SKIP: no machines' };
+      ${FREEZE} ${AIMLOCK} ${FRAME}
+      /* WHY THIS GATE EXISTS, AND WHY IT IS THE MELEE LANE'S AND NOT A25'S.
+       *
+       * A25-machine-immovable is the invariant "a walking player cannot shove a
+       * machine". The round-4 melee approach term (collision._meleePad /
+       * _meleeStandoff) is the only thing in the build that changes the radius
+       * that invariant rests on, and A25 never draws the spear — so it
+       * structurally cannot see a regression in the one case the term applies
+       * to. The film judge found exactly that: with the spear DRAWN, 4 s of
+       * KeyW into a frozen Watcher parked 5 m ahead moved the MACHINE 2.38 m
+       * (worst single frame 0.057 m), against 0.000 m holstered, because the
+       * pad the term asked for (0.20 m) was the machine manager's own push
+       * radius to the centimetre. Both halves of the term changed (pad 0.32,
+       * segment cut 1.02) and this is the row that holds them: the control is
+       * the same walk with the spear on her back, the treatment is the walk
+       * that fires the term, and the term has to be LIVE (approachFrames > 0)
+       * or the row proves nothing. */
+      const list = C.machines.list;
+      const rows = [], bad = [];
+      const kinds = ['watcher', 'strider'];
+      const run = async (kind, drawn) => {
+        p.position.set(-60, 0, -45); p.velocity.set(0, 0, 0); p._snapToGround(); p.camYaw = Math.PI;
+        const m = list.find((x) => x.alive && x.kind === kind) || list.find((x) => x.alive);
+        if (!m) return null;
+        // every OTHER machine out of the way: one machine, one measurement
+        for (const o of list) {
+          if (o === m || !o.alive) continue;
+          o.position.x += 120;
+          if (o.root) o.root.position.x = o.position.x;
+        }
+        const h = p.heading ?? 0;
+        const mx = p.position.x + Math.sin(h) * 5.0, mz = p.position.z + Math.cos(h) * 5.0;
+        const gy = C.terrain ? C.terrain.getHeight(mx, mz) : m.position.y;
+        m.position.set(mx, gy, mz); m.heading = h + Math.PI; m.state = 'idle';
+        if (m.root) m.root.position.set(mx, gy, mz);
+        if (drawn) {
+          M.drawSpear(300);
+          const t0 = performance.now();
+          while (M.stance !== 'ready' && performance.now() - t0 < 3000) await frame();
+        } else {
+          M.holsterSpear();
+          for (let i = 0; i < 40; i++) await frame();
+        }
+        for (let i = 0; i < 20; i++) await frame();
+        const x0 = m.position.x, z0 = m.position.z;
+        let px = x0, pz = z0, worst = 0, appr = 0, frames = 0;
+        C.input.keys.add('KeyW');
+        const t1 = performance.now();
+        while (performance.now() - t1 < 3000) {
+          await frame();
+          frames++;
+          if (drawn) M.drawSpear(300);
+          if (M.approachMachine === m) appr++;
+          const st = Math.hypot(m.position.x - px, m.position.z - pz);
+          if (st > worst) worst = st;
+          px = m.position.x; pz = m.position.z;
+        }
+        C.input.keys.delete('KeyW');
+        for (let i = 0; i < 10; i++) await frame();
+        const stand = Math.hypot(p.position.x - m.position.x, p.position.z - m.position.z);
+        return { kind, drawn, frames, approachFrames: appr,
+          machineDisplacementM: +Math.hypot(m.position.x - x0, m.position.z - z0).toFixed(4),
+          worstFramePushM: +worst.toFixed(4),
+          standM: +stand.toFixed(3),
+          playerToShellM: +(stand - ((m.bodyRadius || 1) + 0.4)).toFixed(3),
+          standoffHalfLen: +(m.standoffHalfLen ?? 0).toFixed(4), stance: M.stance };
+      };
+      for (const kind of kinds) {
+        for (const drawn of [false, true]) {
+          const r = await run(kind, drawn);
+          if (!r) continue;
+          rows.push(r);
+          if (!(r.machineDisplacementM <= 0.005)) {
+            bad.push(kind + (drawn ? ' (spear drawn)' : ' (holstered)') + ': the machine moved '
+              + r.machineDisplacementM.toFixed(3) + ' m — a walking player shoved it');
+          }
+          if (drawn && !(r.approachFrames > 0)) {
+            bad.push(kind + ': the melee approach term never engaged, so this row proves nothing');
+          }
+          if (drawn && !(r.playerToShellM > 0)) {
+            bad.push(kind + ': her capsule ended ' + r.playerToShellM.toFixed(3)
+              + ' m inside the machine shell');
+          }
+        }
+      }
+      if (!rows.some((r) => r.drawn)) bad.push('no drawn row ran at all');
+      return { pass: bad.length === 0, detail: { bad, rows,
+        note: 'The control (holstered) and the treatment (drawn) are the same walk into the '
+          + 'same frozen machine over the same ground. machineDisplacementM is the machine '
+          + 'ROOT, which is what machines/index.js pushes; worstFramePushM is the largest '
+          + 'single-frame move, because an integrating push shows up there first. '
+          + 'playerToShellM is the exact no-interpenetration bound the ownership grant asks '
+          + 'for (her capsule radius 0.4 against the machine bodyRadius shell), and '
+          + 'standoffHalfLen is published so the segment half of the term is visible: on a '
+          + 'Watcher 1.5615 -> 0.5465 (MELEE_L_FLOOR), pad 0.55 -> 0.32.' } };
+    })()`,
+  },
+
   /* ---------------------------------------------------- V46-spear-ready */
   {
     id: 'V46-spear-ready', kind: 'visual', lane: 'player-melee',
@@ -1717,7 +1926,14 @@ export const GATES = [
       + 'that every official HZD guard/windup/contact/follow frame has the LEFT HAND EMPTY, '
       + 'used as a counterweight, and that is also the only version of the pose that keeps '
       + 'her left arm off her chest (Kevin\'s standing complaint). This build is one-handed '
-      + 'on the guard and two-handed on the light-3 thrust. Judge the one-handed guard.',
+      + 'on the guard and two-handed on the light-3 thrust. Judge the one-handed guard. '
+      + 'FIX PASS 1 — THIS IS NO LONGER THE LANE\'S OWN CALL. The round-4 gate judge raised '
+      + 'the contradiction as a blocker and asked for an orchestrator decision; the '
+      + 'orchestrator\'s own fix-pass brief made it, finding F2: "build it to match '
+      + 'reference/spear-ready-side.jpg (one-handed, shaft angled forward-down across the '
+      + 'front of the thigh, blade ahead of the knee, left arm free and slightly forward, '
+      + 'weight on the balls of the feet)". That is the pose this shot frames, and it is what '
+      + 'the judge should hold it to; \u00a74\'s older "two-handed" wording is superseded.',
     setup: `(async () => {
       const C = __CTX__, p = C.player, e = C.engine;
       C.input.enabled = true; C.state = 'playing';
@@ -1806,9 +2022,16 @@ export const GATES = [
       // HIGH and FORWARD of her head and never behind it, and where the three
       // beats load in three different places — and a live contact with the
       // smear.
-      await strip(() => { SIDE(); beat('windup', 1.0, false, 0); });
-      await strip(() => { SIDE(); beat('windup', 1.0, false, 1); });
-      await strip(() => { SIDE(); beat('windup', 1.0, true, 0); });
+      /* WINDUP IS PINNED AT 0.58, NOT AT 1.0 — fix pass 1. meleeLayer reaches
+       * the cock key at WINDUP_COCK (0.58) of the windup and then RELEASES
+       * toward the contact for the rest of it, so 'windup k = 1.0' is no longer
+       * the cocked pose but a frame already half way into the strike (the
+       * change is why A102's per-frame hand budget has margin now — see
+       * STRIKE_PRE). 0.58 is the cock itself, which is what these tiles are
+       * for. */
+      await strip(() => { SIDE(); beat('windup', 0.58, false, 0); });
+      await strip(() => { SIDE(); beat('windup', 0.58, false, 1); });
+      await strip(() => { SIDE(); beat('windup', 0.58, true, 0); });
 
       /* THE LAST PANEL IS A LIVE CONTACT, WITH THE SMEAR (fix round 1).
        *
