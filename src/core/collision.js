@@ -1831,6 +1831,27 @@ export class Collision {
    * per step — so the term reads the set itself. A hit-hull provider without
    * that set (a stub) falls back to `hulls()` for the full bound only
    * (`live` false: no per-step reads).
+   *
+   * ROUND 5 FIX PASS 2 — A LIVE READ IS ALWAYS THIS STEP'S POSE. "At most once
+   * per sim step" was wrong at the seam: `HitHulls` advances its counter in
+   * its own `update`, which runs AFTER this collision sync in the spatial
+   * system (last in the tick), so the counter's window runs from one step's
+   * end into the NEXT step's collision sync — across that step's machine
+   * animation. Anything that refreshed the set in between (a gate's
+   * `hulls(m)` read after a frame, a raycast from a system that runs before
+   * the machines) left the live check reading the pose from BEFORE the
+   * machine moved. A106 clause 5 caught it on the Strider, frozen-then-
+   * animated, in the two of five campaign runs that rendered at ~60 fps (one
+   * step a frame, so the stale read was the only read): its front foot,
+   * snapping to the idle clip 0.13 s / 0.23 s after it was let go, put her
+   * capsule 0.061 m INSIDE the hull on one frame and 0.018 m from it on two
+   * (bar 0.05), and the push came a step late (0.151 m). Reproduced
+   * deterministically (a 0.12 m one-step root snap toward her, with the gate
+   * reading the hulls between frames): the stale read renders her at -0.064
+   * m for a frame; this read keeps her at the 0.055 m she stood at, the push
+   * taken in the same step. So the live path voids the stamp and takes one
+   * ordinary refresh (bone matrices + BVH refit): at most one extra refresh
+   * per step for the one machine the term is on, nothing allocated.
    */
   _meleeHulls(m, live) {
     const hh = this.ctx.hitHulls;
@@ -1839,7 +1860,10 @@ export class Collision {
       let set = null;
       try {
         set = hh.sets.get(m) || hh.build(m);
-        if (set) hh._refresh(set);
+        if (set) {
+          if (live) set.frame = -1;
+          hh._refresh(set);
+        }
       } catch { set = null; }
       return set ? set.hulls : null;
     }

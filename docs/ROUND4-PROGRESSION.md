@@ -348,6 +348,22 @@ carry `within: seconds`, which makes it a timed trial — see `trialState()`.
    > projected `WATCHER LV 5` bar down to ~62 %, damage numerals on screen,
    > 90 → 56.1 HP. Pre-fix build — same three hits, bar FULL, no numerals,
    > 90 → 90 HP.
+   >
+   > **progression-r2 re-verification (Sep 26, port 5213, no source change).**
+   > The Wave 2 judge's finding (`judge-progression-r2`, "wrapper zeroes the
+   > legacy `baseDamage` channel") is closed by the wrapper above; this round
+   > re-measured it instead of re-editing it. `A64b` PASS: normal/easy/hard
+   > legacy = modern = 38 / 47.5 / 32.3, tear 14 flat, fire 66.7. The case
+   > A64b does not reach — spent skill points — was probed with Precision +
+   > Tinker + Silent Strike + Strike from Above on Hard (`damageOut` 0.9775,
+   > `tearOut` 1.495, `silentStrikeDamage` 3.5): legacy and modern hits agree
+   > to the third decimal, arrow 37.145 dmg / 20.93 tear, silent strike
+   > 26.001 / 4.814, so tear rides `tearOut` (14 × 1.495) and never
+   > `damageOut`. Film (`shots/prog-r2-legacy-hard-fixed.png` vs
+   > `shots/prog-r2-legacy-hard-prefix.png`, the pre-fix copy re-installed
+   > in-page as the negative control): three `{ baseDamage: 14 }` hits on a
+   > watcher at 8–10 m on Hard. Fixed: bar at ~62 %, three "11" numerals,
+   > 90 → 56.1 HP. Control: bar full, no numerals, 90 → 90 HP.
 5. **`focus-items`** — publish `items.serializeCapacities()` /
    `restoreCapacities(obj)` so purchased pocket capacities survive a save.
    `SaveSystem.apply` already clamps restored counts to `inventory.capacity(id)`.

@@ -440,11 +440,17 @@ const gridOf = (cols, rows, cropFrac, labels) => `
     g2.drawImage(dom, sx, 0, sw, H, cx + (cw - dw) / 2, cy + (ch - dh) / 2, dw, dh);
     g2.strokeStyle = '#ffffff'; g2.lineWidth = 3;
     g2.strokeRect(cx + 1.5, cy + 1.5, cw - 3, ch - 3);
-    g2.font = 'bold 24px monospace';
+    /* The caption fits its tile (round 5 fix pass 2: at six columns the
+     * 24 px captions ran into the next tile — "SIDE JOG HV CONTAC|SIDE LIVE",
+     * read off the sheet). Same 24 px wherever it already fitted. */
+    const lab = LABELS[got] || '';
+    let fs = 24;
+    g2.font = 'bold ' + fs + 'px monospace';
+    while (fs > 12 && g2.measureText(lab).width + 36 > cw) { fs -= 1; g2.font = 'bold ' + fs + 'px monospace'; }
     g2.fillStyle = 'rgba(0,0,0,0.65)';
-    g2.fillRect(cx + 8, cy + 8, 26 + 13 * (LABELS[got] || '').length, 32);
+    g2.fillRect(cx + 8, cy + 8, Math.ceil(g2.measureText(lab).width) + 24, fs + 8);
     g2.fillStyle = '#ffe9b0';
-    g2.fillText(LABELS[got] || '', cx + 20, cy + 32);
+    g2.fillText(lab, cx + 20, cy + 8 + fs);
     got++;
   };
   e.onAfterRender.push(grabFrame);
@@ -491,9 +497,24 @@ const STRIPS = gridOf(2, 1, 0.56, [
  * smear; ROW 2 is the profile row, where shaft angle against the horizon is
  * what the reference stills are read on.
  */
-const STRIPS10 = gridOf(5, 2, 0.46, [
-  '3/4 L1 CONTACT', '3/4 L2 CONTACT', '3/4 L3 CONTACT', '3/4 HV CONTACT', '3/4 HV FOLLOW',
-  'SIDE L1 WINDUP', 'SIDE L2 WINDUP', 'SIDE HV WINDUP', 'SIDE L1 FOLLOW', 'SIDE LIVE+TRAIL',
+/**
+ * ROUND 5 FIX PASS 2 — TEN PANELS BECOME TWELVE (`STRIPS10`, the 5 x 2 sheet
+ * described above, is replaced by `STRIPS12`; its ten panels keep their
+ * captions, cameras and order): one JOGGING contact per row.
+ *
+ * The film judge found the heavy and light-3 swung at a JOG stacking the
+ * beat's spine pitch on the stride's own lean (56 deg of torso, her face
+ * under her raised arm) and nothing filmed it: every panel of the sheet was a
+ * standing pose. Row 1 gains "3/4 JOG L3 CONTACT" beside the standing L3 and
+ * heavy contacts on the same camera; row 2 gains "SIDE JOG HV CONTACT", the
+ * judge's own side angle, where the torso fold reads against the horizon.
+ * Both are the pinned CONTACT_K pose of that beat with the locomotion
+ * actually striding under it (A105's runway, held W, >= 4 m/s), which is the
+ * pose a live jogging swing draws at that instant.
+ */
+const STRIPS12 = gridOf(6, 2, 0.46, [
+  '3/4 L1 CONTACT', '3/4 L2 CONTACT', '3/4 L3 CONTACT', '3/4 HV CONTACT', '3/4 HV FOLLOW', '3/4 JOG L3 CONTACT',
+  'SIDE L1 WINDUP', 'SIDE L2 WINDUP', 'SIDE HV WINDUP', 'SIDE L1 FOLLOW', 'SIDE JOG HV CONTACT', 'SIDE LIVE+TRAIL',
 ]);
 
 export const GATES = [
@@ -1947,7 +1968,8 @@ export const GATES = [
     id: 'A105-melee-while-moving', kind: 'action', lane: 'player-melee',
     timeout: 120000, settle: 500,
     title: 'Swinging while jogging: the legs keep the stride, she keeps >= 60 % of her speed, '
-      + 'and the upper body still does the swing',
+      + 'the upper body still does the swing, and (round 5 fix pass 2) a jogging L1/L2/L3/HEAVY '
+      + 'never folds her torso past 45 deg or lifts the drive hand over her head',
     setup: `__CTX__.input.enabled = true;`,
     assert: `(async () => {
       const C = __CTX__, p = C.player, an = p.animator;
@@ -2098,8 +2120,31 @@ export const GATES = [
       };
       const median = (a) => { const s = a.slice().sort((x, y) => x - y); return s[Math.floor(s.length / 2)] || 0; };
 
-      // baseline: jog with no swing, over the SAME stretch of ground
-      const base = median(await jog(ctrl, null));
+      /* THE TORSO, PELVIS -> HEAD, OFF VERTICAL (round 5 fix pass 2). The film
+       * judge's measure, exactly: the angle of the pelvis-bone -> head-bone
+       * line in character space from straight up (forward and sideways both
+       * count). Read off debugMelee() — the posed bones, not the beat keys. */
+      const torsoPitch = (d) => {
+        const pc = d?.pelvisChar, hc = d?.headChar;
+        if (!pc || !hc) return null;
+        const dx = hc[0] - pc[0], dy = hc[1] - pc[1], dz = hc[2] - pc[2];
+        const l = Math.hypot(dx, dy, dz);
+        return l > 1e-6 ? Math.acos(Math.max(-1, Math.min(1, dy / l))) * 180 / Math.PI : null;
+      };
+      /** What the jogging-swing clauses read off one frame (see the clauses). */
+      const jogPose = (d) => ({ stance: d.stance, phase: d.phase, beat: d.beat,
+        yaw: d.torsoYawDeg, grip: d.grip, w: d.w, pitch: torsoPitch(d),
+        hmh: d.handChar && d.headChar ? +(d.handChar[1] - d.headChar[1]).toFixed(4) : null,
+        head: d.headChar ? d.headChar[1] : null, hand: d.handChar ? d.handChar[1] : null,
+        hcF: d.headCylForearm, hcH: d.headCylHaft, strideW: d.strideW,
+        cut: d.stridePitchCut, handCut: d.strideHandCut });
+
+      // baseline: jog with no swing, over the SAME stretch of ground. The
+      // stride's own lean is read on the same frames (arithmetic on the
+      // debugMelee() read the loop already makes — the control's cost is
+      // unchanged) and published as the reference the 45 deg bar sits over.
+      const ctrlPitch = [];
+      const base = median(await jog(ctrl, (f, d) => { const t = torsoPitch(d); if (t != null) ctrlPitch.push(t); }));
 
       // stance windows + the swing, sampled together
       const feet = [];
@@ -2123,9 +2168,34 @@ export const GATES = [
       let swings = 0;
       const sp = await jog(swg, (f, d) => {
         if (f) feet.push({ l: f[0].planted, r: f[1].planted });
-        if (d) poses.push({ stance: d.stance, yaw: d.torsoYawDeg, grip: d.grip, w: d.w });
+        if (d) poses.push(jogPose(d));
         if (!M.active && M.stance !== 'draw') { M.swing({}); swings++; }
       });
+
+      /* THE HEAVY AND LIGHT-3 AT A JOG — round 5 fix pass 2, the film judge's
+       * major. The segment above fires M.swing({}) back to back, i.e. the
+       * light chain L1 -> L2 -> L3, and never a heavy; the judge's probe found
+       * the heavy (56 deg of torso, head down to 1.02 m, the fist 0.20 m OVER
+       * the head on 11 of 24 frames) and light-3 (51 deg, fist 0.14 m over
+       * the head) stacking the beat's spine pitch on the stride's own lean.
+       * A third segment, identical to the two above in every respect the
+       * measurement is sensitive to (same runner, same start, same ramp),
+       * alternates a HEAVY and a LIGHT-3 (the combo counter set to 2 before
+       * the light — the chain's own third beat, fired directly). Its stance
+       * windows and its speed are held to the same bars as the light
+       * segment's. */
+      const hvWin = mkWin();
+      const hvPoses = [];
+      let hvSwings = 0, hvHeavy = 0, hvL3 = 0;
+      const hvSp = await jog(hvWin, (f, d) => {
+        if (d) hvPoses.push(jogPose(d));
+        if (!M.active && M.stance !== 'draw') {
+          const heavy = hvSwings % 2 === 0;
+          if (!heavy) { M.combo = 2; M._comboT = Math.max(M._comboT || 0, 1); hvL3++; } else hvHeavy++;
+          M.swing({ heavy }); hvSwings++;
+        }
+      });
+      const hvSwung = median(hvSp);
 
       const swung = median(sp);
       const swingPoses = poses.filter((x) => x.stance === 'swing');
@@ -2199,6 +2269,71 @@ export const GATES = [
       if (!(stride > 0.15 && stride < 0.98)) bad.push('stance duty ' + stride.toFixed(2) + ' — the legs are not striding');
       if (!(yawExc >= 12)) bad.push('the upper body only twisted ' + yawExc.toFixed(1) + ' deg while swinging');
       if (!(handPath >= 1.2)) bad.push('the hand only travelled ' + handPath + ' m across ' + swings + ' swings');
+
+      /* THE JOGGING-SWING POSE CLAUSES (round 5 fix pass 2). Over EVERY
+       * rendered swing frame of both jogging segments (the light chain and the
+       * heavy/L3 segment):
+       *   (a) torso pitch, pelvis -> head off vertical, <= 45 deg — the
+       *       judge's bar. The stride alone reads ~35-41 deg (controlPitch), so
+       *       this is "the swing may not fold her further than a few degrees
+       *       past the run", which is what the standing sheet's 32 deg heavy
+       *       looks like when she is moving;
+       *   (b) on every STRIKE and RECOVER frame the drive wrist is BELOW the
+       *       head bone (hand y < head y, char space) — "her face under her
+       *       own raised arm" was the defect;
+       *   (c) on the heavy's strike and recover frames, ruling R3's head
+       *       cylinder (r 0.16 m from head y - 0.05 up) holds at a jog too:
+       *       forearm and haft outside it;
+       *   (d) all four beats were actually swung at a jog: >= 1 swing each of
+       *       light-1, light-2, light-3 and the heavy, each with >= 3 strike or
+       *       recover frames, so none of (a)-(c) can pass on a beat that never
+       *       ran;
+       *   (e) the heavy/L3 segment keeps the stride on the light segment's
+       *       bars: >= 60 % of the baseline speed, >= 3 clean stance windows,
+       *       raw worst planted drift <= 0.08 m. */
+      const allJog = poses.concat(hvPoses).filter((x) => x.stance === 'swing');
+      const srJog = allJog.filter((x) => x.phase === 'strike' || x.phase === 'recover');
+      const pitchBad = allJog.filter((x) => typeof x.pitch === 'number' && x.pitch > 45);
+      const pitchN = allJog.filter((x) => typeof x.pitch === 'number').length;
+      const maxPitch = pitchN ? Math.max(...allJog.filter((x) => typeof x.pitch === 'number').map((x) => x.pitch)) : null;
+      const handBad = srJog.filter((x) => typeof x.hmh === 'number' && !(x.hmh < 0));
+      const hmhN = srJog.filter((x) => typeof x.hmh === 'number').length;
+      const worstHmh = hmhN ? Math.max(...srJog.filter((x) => typeof x.hmh === 'number').map((x) => x.hmh)) : null;
+      const hvSR = srJog.filter((x) => x.beat === 'heavy');
+      const cylVals = hvSR.flatMap((x) => [x.hcF, x.hcH]).filter((v) => typeof v === 'number');
+      const cylMin = cylVals.length ? Math.min(...cylVals) : null;
+      const perBeat = {};
+      for (const b of ['light-1', 'light-2', 'light-3', 'heavy']) {
+        const fr = allJog.filter((x) => x.beat === b);
+        const sr = fr.filter((x) => x.phase === 'strike' || x.phase === 'recover');
+        const pv = fr.map((x) => x.pitch).filter((v) => typeof v === 'number');
+        const hv = sr.map((x) => x.hmh).filter((v) => typeof v === 'number');
+        perBeat[b] = { frames: fr.length, strikeRecoverFrames: sr.length,
+          maxPitchDeg: pv.length ? +Math.max(...pv).toFixed(1) : null,
+          minHeadY: fr.length ? +Math.min(...fr.map((x) => x.head ?? 9)).toFixed(3) : null,
+          worstHandMinusHead: hv.length ? +Math.max(...hv).toFixed(3) : null,
+          maxPitchCut: fr.length ? +Math.max(...fr.map((x) => x.cut || 0)).toFixed(3) : null,
+          maxHandCut: fr.length ? +Math.max(...fr.map((x) => x.handCut || 0)).toFixed(3) : null };
+        if (!(sr.length >= 3)) bad.push('jogging ' + b + ': only ' + sr.length + ' strike/recover frames — the beat was not exercised at a jog');
+      }
+      if (!(pitchN >= 20)) bad.push('jogging swings: only ' + pitchN + ' frames with a torso reading');
+      else if (pitchBad.length) {
+        bad.push('jogging swings: torso folded past 45 deg on ' + pitchBad.length + '/' + pitchN
+          + ' frames (worst ' + maxPitch.toFixed(1) + ' deg, ' + pitchBad.map((x) => x.beat + ' ' + x.phase).slice(0, 4).join(', ') + ')');
+      }
+      if (!(hmhN >= 10)) bad.push('jogging swings: only ' + hmhN + ' strike/recover frames with a hand/head reading');
+      else if (handBad.length) {
+        bad.push('jogging swings: the drive hand at or over the head on ' + handBad.length + '/' + hmhN
+          + ' strike/recover frames (worst +' + worstHmh.toFixed(3) + ' m, ' + handBad.map((x) => x.beat + ' ' + x.phase).slice(0, 4).join(', ') + ')');
+      }
+      if (!(cylVals.length >= 4)) bad.push('jogging heavy: only ' + cylVals.length + ' head-cylinder readings');
+      else if (!(cylMin >= 0.16)) bad.push('jogging heavy: forearm/haft ' + cylMin.toFixed(3) + ' m from the head axis at face height (R3 bar 0.16)');
+      const hvJDone = closeWin(hvWin).done.map((x) => x.d);
+      const hvJWorst = hvJDone.length ? Math.max(...hvJDone) : null;
+      if (!(hvHeavy >= 1 && hvL3 >= 1)) bad.push('heavy/L3 segment: ' + hvHeavy + ' heavies and ' + hvL3 + ' light-3s fired');
+      if (!(hvSwung >= base * 0.6)) bad.push('heavy/L3 segment: speed fell to ' + hvSwung.toFixed(2) + ' of ' + base.toFixed(2) + ' m/s');
+      if (!(hvJDone.length >= 3)) bad.push('heavy/L3 segment: only ' + hvJDone.length + ' clean stance windows (' + hvWin.hitch + ' hitched)');
+      else if (!(hvJWorst <= 0.08)) bad.push('heavy/L3 segment: a planted foot drifted ' + hvJWorst.toFixed(3) + ' m (bar 0.08)');
 
       /* ------------------------------------------------------------------
        * THE STANDING ROW — new in fix round 2, and the reason this gate
@@ -2306,6 +2441,16 @@ export const GATES = [
         controlWindows: cDone.length, controlDrifts: cDone.slice(0, 10),
         stanceDuty: +stride.toFixed(3),
         torsoYawExcursionDeg: +yawExc.toFixed(1), handPath, frames: poses.length,
+        /* round 5 fix pass 2: the jogging-swing pose, per beat and overall */
+        jogSwingPose: { bars: { torsoPitchDeg: 45, handUnderHead: '< 0 m', heavyHeadCyl: 0.16 },
+          frames: pitchN, strikeRecoverFrames: hmhN, maxTorsoPitchDeg: maxPitch != null ? +maxPitch.toFixed(1) : null,
+          framesOver45: pitchBad.length, worstHandMinusHead: worstHmh != null ? +worstHmh.toFixed(3) : null,
+          framesHandOverHead: handBad.length, heavyHeadCylMin: cylMin != null ? +cylMin.toFixed(4) : null,
+          perBeat,
+          controlJogPitchDeg: ctrlPitch.length ? [+Math.min(...ctrlPitch).toFixed(1), +median(ctrlPitch).toFixed(1), +Math.max(...ctrlPitch).toFixed(1)] : null,
+          heavySegment: { swings: hvSwings, heavy: hvHeavy, light3: hvL3, speed: +hvSwung.toFixed(2),
+            speedRatio: +(hvSwung / Math.max(1e-3, base)).toFixed(3), windows: hvJDone.length,
+            hitched: hvWin.hitch, worstDrift: hvJWorst != null ? +hvJWorst.toFixed(4) : null } },
         standing: { swings: stSwings, drift: standDrift, windows: stDone.length,
           hitchedWindows: stHitch, drifts: stDone.slice(0, 12), stepsTaken: stepN,
           avgFrameMs: +stEma.toFixed(1),
@@ -3195,21 +3340,24 @@ export const GATES = [
   {
     id: 'V47-melee-swing', kind: 'visual', lane: 'player-melee',
     settle: 400,
-    title: 'Ten captioned panels: top row (one 3/4 near-front camera) L1 / L2 / L3 / HEAVY at '
-      + 'CONTACT + HEAVY FOLLOW; bottom row (one side camera) L1 / L2 / HEAVY WINDUP + L1 FOLLOW '
-      + '+ a LIVE contact with the swing trail',
-    criteria: 'TEN panels, 5 x 2, every one captioned on screen, in this order. TOP ROW — one '
+    title: 'Twelve captioned panels: top row (one 3/4 near-front camera) L1 / L2 / L3 / HEAVY at '
+      + 'CONTACT + HEAVY FOLLOW + L3 CONTACT AT A JOG; bottom row (one side camera) L1 / L2 / '
+      + 'HEAVY WINDUP + L1 FOLLOW + HEAVY CONTACT AT A JOG + a LIVE contact with the swing trail',
+    criteria: 'TWELVE panels, 6 x 2, every one captioned on screen, in this order. TOP ROW — one '
       + 'locked NEAR-FRONT 3/4 camera (about 15 deg off her facing, 21 deg above the horizon, '
-      + '2.9 m out, aimed 0.75 m ahead of her so the blade is in frame), all five PINNED poses: '
+      + '2.9 m out, aimed 0.75 m ahead of her so the blade is in frame), all six PINNED poses: '
       + '"3/4 L1 CONTACT", "3/4 L2 CONTACT", "3/4 L3 CONTACT", "3/4 HV CONTACT" — the same '
-      + 'instant (CONTACT_K, 0.70 of the strike) of the four different beats — then "3/4 HV '
-      + 'FOLLOW" (the heavy at its follow-through key, 0.62 of the recover). BOTTOM ROW — one '
-      + 'locked SIDE camera from her right: "SIDE L1 WINDUP", "SIDE L2 WINDUP", "SIDE HV WINDUP" '
-      + '(pinned at the cock, 0.58 of the windup), "SIDE L1 FOLLOW" (pinned, 0.62 of the '
-      + 'recover), then "SIDE LIVE+TRAIL": the real state machine run through a light swing and '
-      + 'frozen the frame the smear appears. Judge against reference/spear-light-windup.jpg, '
+      + 'instant (CONTACT_K, 0.70 of the strike) of the four different beats, standing — then "3/4 HV '
+      + 'FOLLOW" (the heavy at its follow-through key, 0.62 of the recover), then "3/4 JOG L3 '
+      + 'CONTACT" (light-3 pinned at CONTACT_K while she JOGS, W held, >= 4 m/s, the legs '
+      + 'mid-stride). BOTTOM ROW — one locked SIDE camera from her right: "SIDE L1 WINDUP", '
+      + '"SIDE L2 WINDUP", "SIDE HV WINDUP" (pinned at the cock, 0.58 of the windup), "SIDE L1 '
+      + 'FOLLOW" (pinned, 0.62 of the recover), "SIDE JOG HV CONTACT" (the heavy pinned at '
+      + 'CONTACT_K while she jogs, as in the top row\'s jog panel), then "SIDE LIVE+TRAIL": the '
+      + 'real state machine run through a light swing and frozen the frame the smear appears. '
+      + 'Judge against reference/spear-light-windup.jpg, '
       + 'spear-light-strike.jpg and spear-light-follow.jpg. PASS requires ALL of: (1) THE FOUR '
-      + 'TOP-ROW CONTACTS ARE FOUR DIFFERENT SWINGS at a glance: L1 a horizontal sweep whose '
+      + 'STANDING TOP-ROW CONTACTS (panels 1-4) ARE FOUR DIFFERENT SWINGS at a glance: L1 a horizontal sweep whose '
       + 'blade crosses to HER LEFT roughly level; L2 the return, blade leaving to HER RIGHT and '
       + 'rising slightly; L3 a ONE-HANDED diagonal chop coming DOWN into the target — fist at '
       + 'or just above her shoulder, the haft angled DOWN (about 15 deg below horizontal), the '
@@ -3219,13 +3367,13 @@ export const GATES = [
       + 'the LOWEST of the four — the deepest stance on the sheet (both knees folded, widest '
       + 'track). FAIL if the heavy contact reads as the same pose as any light — in particular '
       + 'if L3 and HEAVY read as the same level lunge (fix pass 1: they did, from the side). '
-      + '(2) THE WHOLE BODY DOES THE WORK: between the four contacts her shoulders and hips '
+      + '(2) THE WHOLE BODY DOES THE WORK: between the four standing contacts her shoulders and hips '
       + 'rotate, her spine pitches, and her LOWER BODY changes — hip height, which leg is '
       + 'loaded, knee bend — so the four cast shadows are not one shadow. (3) The spear is in '
       + 'her RIGHT hand in every panel, gripped near the butt, and ONLY the right hand: no panel '
       + 'has the left hand on the haft (orchestrator ruling R1, Sep 26). (4) On all three '
       + 'WINDUP panels the blade is HIGH and FORWARD of her head, never behind it; the heavy\'s '
-      + 'is above her head. (5) On the three LIGHT contacts the arm is extended; on L1 and L2 '
+      + 'is above her head. (5) On the three standing LIGHT contacts the arm is extended; on L1 and L2 '
       + 'the haft has come down to roughly horizontal, on L3 it is still coming DOWN into the '
       + 'target (the chop). (6) Both FOLLOW panels — different cameras on '
       + 'purpose, judge each against its own row — have the haft below horizontal with her '
@@ -3241,6 +3389,19 @@ export const GATES = [
       + 'lane exists to fix). (8) THE BOW IS ON HER BACK in every panel — including "SIDE '
       + 'LIVE+TRAIL", which is a real swing through the live state machine — and her LEFT HAND '
       + 'IS EMPTY. FAIL if the bow is in her hand or held vertically at her thigh. '
+      + '(9) THE TWO JOG PANELS ("3/4 JOG L3 CONTACT", "SIDE JOG HV CONTACT"): she is visibly '
+      + 'mid-stride (one foot off the ground or the legs split in a running stride), her torso '
+      + 'leans no further than a run does — her HEAD UP and forward of her chest, her FACE '
+      + 'visible and NOT under her own raised arm — and the drive fist is BELOW her head: '
+      + 'at or under shoulder height, outboard to her right. The heavy still reads as the '
+      + 'heavy (arm driving the haft forward, level) and light-3 as the chop (haft angled '
+      + 'down). FAIL if the torso is folded near horizontal, if the head is pitched down under '
+      + 'the extended arm, or if the fist or forearm is above or across her face (the round 5 '
+      + 'fix pass 1 film judge: a jogging heavy measured 56 deg of torso with the fist 0.20 m '
+      + 'over the head; a jogging light-3 51 deg with the fist 0.14 m over it). A105 gates the '
+      + 'same thing on every live jogging swing frame of all four beats: torso pitch (pelvis -> '
+      + 'head off vertical) <= 45 deg, the drive wrist below the head bone on every strike and '
+      + 'recover frame, and on the jogging heavy ruling R3\'s 0.16 m head cylinder. '
       + 'ROUND 5 FIX PASS 1 (judge findings): (a) every live swing used to put the bow in her '
       + 'left fist (combat.js counted a spear swing as a bow action); the pinned panels never '
       + 'showed it and the live panel did — clause (8) and A101\'s live-swing bow clause. (b) '
@@ -3251,7 +3412,8 @@ export const GATES = [
       + '>= 0.04 m below every light; L3 contact shaft >= 10 deg steeper down than the heavy\'s). '
       + 'ROUND 5 (B3): rounds 4 and fix pass 2 left this text describing a sheet the setup did '
       + 'not shoot (a live contact in the top row, a heavy follow in the bottom row); it now '
-      + 'names the ten panels in the order the code captures them. R1: light-3 was the '
+      + 'names the panels in the order the code captures them (twelve since round 5 fix pass 2, '
+      + 'which added the two JOG panels as the 6th of row 1 and the 5th of row 2). R1: light-3 was the '
       + 'two-handed beat through fix pass 2 and A101 gated a two-handed clause on it — the '
       + 'ruling makes it one-handed, the clause is void (A101 gates the free hand instead). '
       + 'R3: the heavy\'s contact fist was on her centre line at face height; it is at '
@@ -3295,7 +3457,39 @@ export const GATES = [
       // is the frame the hit actually resolves on rather than a nearby one
       const beat = (phase, k, heavy, combo) => { M.poseState = () => ({
         stance: 'swing', drawK: 1, phase, k, combo: combo || 0, heavy, aimYaw: 0, contactK: 0.70 }); };
-      ${STRIPS10}
+      ${STRIPS12}
+      /* THE TWO JOGGING PANELS (round 5 fix pass 2). A105's runway (the stage
+       * point, camera yaw pi/2, every machine within 45 m moved off it), W
+       * held — a jog, not a sprint — until she is striding (>= 4 m/s and the
+       * animator's locomotion weight at 1), with the beat already pinned so
+       * the pose is settled on the stride by the time the strip grabs. Then
+       * back to the stage, standing, facing where she faced, for the next
+       * standing panel. */
+      const h0 = p.heading;
+      const jogTo = async (setupFn) => {
+        p.position.set(-60, 0, -45); p.velocity.set(0, 0, 0); p._snapToGround();
+        p.camYaw = Math.PI * 0.5;
+        for (const m of (C.machines?.list || [])) {
+          if (m.alive && Math.hypot(m.position.x - p.position.x, m.position.z - p.position.z) < 45) {
+            m.position.x += 100;
+            if (m.root) m.root.position.x = m.position.x;
+          }
+        }
+        setupFn();
+        C.input.keys.clear(); C.input.keys.add('KeyW');
+        const t0 = performance.now();
+        while (performance.now() - t0 < 3000) {
+          await new Promise((r) => requestAnimationFrame(r));
+          if (performance.now() - t0 > 700 && Math.hypot(p.velocity.x, p.velocity.z) >= 4
+            && (p.animator._moveW || 0) > 0.98) break;
+        }
+      };
+      const jogStop = async () => {
+        C.input.keys.clear(); p.velocity.set(0, 0, 0);
+        ${STAGE}
+        p.heading = h0;
+        await new Promise((r) => setTimeout(r, 900));
+      };
       // ROW 1 is the four-way comparison the finding is about: one camera,
       // one instant of the swing (CONTACT_K), all four beats side by side.
       await strip(() => { Q34(); beat('strike', 0.70, false, 0); });
@@ -3312,6 +3506,10 @@ export const GATES = [
        * beside it; light-1's goes on the profile camera below, where its haft
        * against the horizon is the read. */
       await strip(() => { Q34(); beat('recover', 0.62, true, 0); });
+      // row 1's last panel: light-3's contact, pinned, with the stride under it
+      await jogTo(() => { Q34(); beat('strike', 0.70, false, 2); });
+      await strip(() => { Q34(); beat('strike', 0.70, false, 2); });
+      await jogStop();
 
       // ROW 2, from the profile camera: the windups — where the blade must be
       // HIGH and FORWARD of her head and never behind it, and where the three
@@ -3328,6 +3526,10 @@ export const GATES = [
       await strip(() => { SIDE(); beat('windup', 0.58, false, 1); });
       await strip(() => { SIDE(); beat('windup', 0.58, true, 0); });
       await strip(() => { SIDE(); beat('recover', 0.62, false, 0); });
+      // the judge's angle on the judge's case: the heavy's contact at a jog
+      await jogTo(() => { SIDE(); beat('strike', 0.70, true, 0); });
+      await strip(() => { SIDE(); beat('strike', 0.70, true, 0); });
+      await jogStop();
 
       /* THE LAST PANEL IS A LIVE CONTACT, WITH THE SMEAR (fix round 1).
        *
@@ -3371,7 +3573,7 @@ export const GATES = [
         want = true;
         const t1 = performance.now();
         while (want && performance.now() - t1 < 2000) await new Promise((r) => requestAnimationFrame(r));
-        if (!seen) got = Math.max(got, 10);
+        if (!seen) got = Math.max(got, 12);
       }
 
       show();

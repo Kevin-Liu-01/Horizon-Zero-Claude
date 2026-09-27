@@ -79,6 +79,22 @@ const SILHOUETTE = `function silhouette() {
     visible: Math.max(0, (Math.min(maxY, 1) - Math.max(minY, -1)) / 2) };
 }`;
 
+/**
+ * RESIDUE FIX ROUND 1 — her silhouette as RENDERED.  The rig carries 69
+ * meshes and 53 of them are hidden: the five unequipped weapons (sharpshot /
+ * war bow, blast sling, ropecaster, tripcaster, disc launcher) are all
+ * parented to `hand_l_014` and toggled invisible, and `SILHOUETTE` above
+ * samples them anyway — about half of every sample set, all of it sitting in
+ * her left fist.  A hidden weapon near the lens is not on screen and a hidden
+ * weapon off the frame edge is not "her out of frame", so A31b / A31c count
+ * only meshes whose whole ancestor chain is visible.  (V22 and A29b keep the
+ * original helper: their bars are silhouette EXTENTS, which the hidden weapons
+ * in her hand never widen.)
+ */
+const VISIBLE = `function onRig(o) { for (let q = o; q; q = q.parent) if (!q.visible) return false; return true; }`;
+const SILHOUETTE_VIS = SILHOUETTE.replace('function silhouette() {', 'function silhouette() {\n  /* visible meshes only (see VISIBLE) */')
+  .replace("if (!o.isSkinnedMesh && !o.isMesh) return;", "if (!o.isSkinnedMesh && !o.isMesh) return;\n    if (!onRig(o)) return;");
+
 export const GATES = [
   /* ------------------------------------------------------------------ A28 */
   {
@@ -514,6 +530,26 @@ export const GATES = [
       C.input.mouse.buttons |= 4;                 // still crouch-aiming
       const lookUps = [];
       for (const dy of [-40, -120, -400, -900]) lookUps.push(await sweepUp(dy));
+      /* …and the STAGED pitch axis the judge asked for, verbatim ("stage
+       * crouch+aim at camPitch -0.5 / -0.8 / -1.15 and assert pivotAboveFeet
+       * <= 1.2 on every one"): each pitch is held for 40 frames from a settled
+       * pitch-0 crouch-aim, so the step itself (the damp's worst transient)
+       * and the settled value are both inside the sampled window. */
+      const staged = [];
+      for (const pitch of [-0.5, -0.8, -1.15]) {
+        p.camPitch = 0; p.position.set(spot.x, p.position.y, spot.z); p.velocity.set(0, 0, 0);
+        for (let i = 0; i < 20; i++) { p.camPitch = 0; p.position.set(spot.x, p.position.y, spot.z); p.velocity.set(0, 0, 0); await frame(); }
+        let worst = -9;
+        for (let i = 0; i < 40; i++) {
+          p.camPitch = pitch;
+          await frame();
+          p.position.set(spot.x, p.position.y, spot.z); p.velocity.set(0, 0, 0);
+          const above = p.camPivot.y - p.position.y;
+          if (above > worst) worst = above;
+        }
+        staged.push({ camPitch: pitch, maxPivotAboveFeet: +worst.toFixed(4),
+          settledAboveFeet: +(p.camPivot.y - p.position.y).toFixed(4), crouchAim: p.crouchAim });
+      }
       /* …and the standing look-up must NOT be clamped: 1.06 is a crouch pivot,
        * and capping a standing one at 1.2 would quietly break the look-up
        * framing A32b measures.  This row proves the clamp is crouch-only. */
@@ -531,13 +567,15 @@ export const GATES = [
       const reachedClamp = lookUps.every((r) => r.peakPitchDeg >= 60);
       const heldCrouchAim = lookUps.every((r) => r.crouchAim === true);
       const standingFree = standing.maxPivotAboveFeet > 1.25;   // NOT clamped
+      const stagedOK = staged.every((r) => r.maxPivotAboveFeet <= 1.2 && r.crouchAim === true);
 
       const pass = afterC.crouching === true && afterRelease.crouching === true
         && aim.crouching === true && aim.aiming === true && aim.crouchAim === true
         && aim.stealth === true && aim.pivotH <= 1.2 && aim.pivotAboveFeet <= 1.2
         && afterAim.crouching === true && toggledOff === true
-        && maxLookUpPivot <= 1.2 && reachedClamp && heldCrouchAim && standingFree;
+        && maxLookUpPivot <= 1.2 && reachedClamp && heldCrouchAim && standingFree && stagedOK;
       return { pass, detail: { spot, afterC, afterRelease, aim, afterAim, toggledOff,
+        stagedPitches: staged, stagedOK,
         lookUps, maxLookUpPivot: +maxLookUpPivot.toFixed(4), reachedClamp, heldCrouchAim,
         standingLookUp: standing, standingNotClamped: standingFree } };
     })()`,
@@ -546,7 +584,7 @@ export const GATES = [
   /* ------------------------------------------------------------------ A32 */
   {
     id: 'A32-look-up', kind: 'action', lane: 'player-control',
-    title: 'Forward pitch reaches >= 60 deg while aiming; a Glinthawk at 10 m / 16 m altitude is on the reticle',
+    title: 'Forward pitch reaches >= 60 deg while aiming, standing AND crouched; a Glinthawk at 10 m / 16 m altitude is on the reticle in both',
     setup: `__CTX__.input.enabled = true;`,
     settle: 700, timeout: 90000,
     assert: `(async () => {
@@ -594,8 +632,51 @@ export const GATES = [
                        onReticle: Math.abs(ndc.x) < 0.12 && Math.abs(ndc.y) < 0.12 && ndc.z < 1 });
       }
       C.input.mouse.buttons = 0;
-      const pass = forwardPitch >= 60 && targets.every((t) => t.onReticle);
-      return { pass, detail: { forwardPitchDeg: +forwardPitch.toFixed(1), atClamp, targets } };
+
+      /* RESIDUE FIX ROUND 1 (judge: "the Finding-1 crouch pivot cap cuts
+       * crouch-aim look-up to 51.6 deg; A32's 16 m Glinthawk is no longer
+       * reticle-reachable while crouched").  A32 never crouched, so A31's
+       * 1.2 m pivot cap could take the look-up away unseen: from a 1.2 m pivot
+       * the 0.9 m minimum boom meets the ground, the ground rotation lifts it
+       * 14 deg, and the view hijack used to hand all 14 back out of the aim.
+       * Crouch-aiming from tall grass at a flier is core stealth play, so the
+       * same procedure now runs crouched: C, aim, the same sweep, the same
+       * servo, the same bars. */
+      p.camPitch = 0; p.setCrouch(true);
+      await new Promise((r) => setTimeout(r, 350));
+      C.input.mouse.buttons |= 4;
+      await new Promise((r) => setTimeout(r, 500));
+      for (let i = 0; i < 90; i++) {
+        C.input.mouse.dy = -400;
+        await new Promise((r) => requestAnimationFrame(r));
+      }
+      await new Promise((r) => setTimeout(r, 200));
+      const cfwd = new V(0, 0, -1).applyQuaternion(C.camera.quaternion).normalize();
+      const crouchPitch = Math.asin(Math.max(-1, Math.min(1, cfwd.y))) * 180 / Math.PI;
+      const crouchAt = { camPitch: +p.camPitch.toFixed(3), boomM: +p.boomLength.toFixed(2),
+        crouchAim: p.crouchAim, pivotAboveFeet: +(p.camPivot.y - p.position.y).toFixed(3),
+        reliefDeg: +((p.camRelief || 0) * 180 / Math.PI).toFixed(1), hijackDeg: +((p.camHijack || 0) * 180 / Math.PI).toFixed(1) };
+      const cbx = Math.sin(p.heading), cbz = Math.cos(p.heading);
+      const crouchTargets = [];
+      for (const alt of [10, 16]) {
+        const t = new V(p.position.x + cbx * 10, p.position.y + alt, p.position.z + cbz * 10);
+        let ndc = t.clone().project(C.camera);
+        for (let i = 0; i < 150 && Math.abs(ndc.y) > 0.03; i++) {
+          C.input.mouse.dy = -Math.max(-60, Math.min(60, ndc.y * 90));
+          await new Promise((r) => requestAnimationFrame(r));
+          ndc = t.clone().project(C.camera);
+        }
+        crouchTargets.push({ alt, ndcX: +ndc.x.toFixed(3), ndcY: +ndc.y.toFixed(3),
+          camPitchDeg: +(p.camPitch * 180 / Math.PI).toFixed(1),
+          onReticle: Math.abs(ndc.x) < 0.12 && Math.abs(ndc.y) < 0.12 && ndc.z < 1 });
+      }
+      const crouchHeld = p.crouching && p.aiming && p.crouchAim;
+      C.input.mouse.buttons = 0;
+      p.setCrouch(false);
+      const pass = forwardPitch >= 60 && targets.every((t) => t.onReticle)
+        && crouchHeld && crouchPitch >= 60 && crouchTargets.every((t) => t.onReticle);
+      return { pass, detail: { forwardPitchDeg: +forwardPitch.toFixed(1), atClamp, targets,
+        crouchAim: { held: crouchHeld, forwardPitchDeg: +crouchPitch.toFixed(1), atClamp: crouchAt, targets: crouchTargets } } };
     })()`,
   },
 
@@ -827,6 +908,7 @@ export const GATES = [
           rows.push({
             deg,
             boom: +p.boomLength.toFixed(2),
+            camDist: +p.camDist.toFixed(3),
             fade: +p.fade.toFixed(3),
             lensAboveFeet: +(e.y - p.position.y).toFixed(3),
             occ: C.collision.sphereQuery(e.x, e.y, e.z, 1.0, [], blocking).length,
@@ -842,6 +924,16 @@ export const GATES = [
       // the boom must not wander up and down as she tracks a flyer
       let mono = true;
       for (let i = 1; i < aimRows.length; i++) if (aimRows[i].boom > aimRows[i - 1].boom + 0.02) mono = false;
+      /* FIX ROUND 3 (judge: "re-measure camDist at 48 -> 66 deg directly ... the
+       * linear curve needs its own check rather than the doc's assumption").
+       * The boom check above tolerates +0.02 m per 6 deg step, which is enough
+       * slack to hide a lift curve that grows faster than sin(pitch).  So the
+       * boom the CAMERA asks for (camDist, before any collider) is read
+       * directly over the steep end of the aim sweep, where _lookLift is
+       * binding, and it may not grow at all (1 mm of float slack). */
+      const steepAim = aimRows.filter((r) => r.deg >= 48);
+      let camDistMono = steepAim.length >= 3;
+      for (let i = 1; i < steepAim.length; i++) if (steepAim[i].camDist > steepAim[i - 1].camDist + 0.001) camDistMono = false;
 
       /* --- 2. a REAL occluder must still fade her, and the fade must be a
        * dithered discard in the opaque pass (depth written), not blending. */
@@ -875,13 +967,14 @@ export const GATES = [
       const parked = { fade: +p.fade.toFixed(3), boom: +p.boomLength.toFixed(2) };
       C.input.mouse.buttons = 0;
 
-      const pass = ghosted.length === 0 && sunk.length === 0 && mono
+      const pass = ghosted.length === 0 && sunk.length === 0 && mono && camDistMono
         && parked.fade > 0.999
         && !!occluded && occluded.fade < 0.9 && occluded.matsLeftSolid === 0
         && occluded.depthOff === 0 && occluded.blended === 0;
       return { pass, detail: {
         clearSamples: clear.length, ghostedOnClearGround: ghosted.length, lensSunkBelow0m5: sunk.length,
-        boomMonotonicInPitch: mono, minFadeOnClearGround: +Math.min(...clear.map((r) => r.fade)).toFixed(3),
+        boomMonotonicInPitch: mono, camDistMonotonic48to66: camDistMono,
+        aimCamDist48to66: steepAim.map((r) => [r.deg, r.camDist]), minFadeOnClearGround: +Math.min(...clear.map((r) => r.fade)).toFixed(3),
         minLensAboveFeet: +Math.min(...clear.map((r) => r.lensAboveFeet)).toFixed(3),
         parkedAt66deg: parked, occluded, worstClear: ghosted.slice(0, 4),
       } };
@@ -921,16 +1014,17 @@ export const GATES = [
    */
   {
     id: 'A31b-no-ghost-without-occluder', kind: 'action', lane: 'player-control',
-    title: 'Hillside/valley/sprint look-ups across the WHOLE pitch range (-0.5, -0.8, -1.15 clamp): opacity >= 0.98, lens never inside her, aim within budget, framing within FRAME_KEEP of a FLAT-GROUND control at the same pitch and gait; a trunk still fades her < 0.8',
+    title: 'Hillside/valley/sprint look-ups across the WHOLE pitch range (-0.5, -0.8, -1.15 clamp): opacity >= 0.98, lens never inside her, aim within budget, framing within FRAME_KEEP of a flat-ground control staged at the SAME pitch and gait (one control per pitch/gait); a 360 deg yaw pan on the hillside at -0.8/-1.15, aiming and not, slow and moderate, never lurches the view more than 3 deg past the input, never dithers her, never puts the lens inside her; a trunk still fades her < 0.8',
     criteria: 'Film shows Aloy SOLID on the hillside look-up staging — no screen-door dither on body, hair, '
       + 'bow or quiver — she is IN FRAME at a normal chase distance, and the camera is LOOKING UP (sky and '
       + 'horizon in shot, not a frame of dirt). FAIL if she is translucent anywhere, if the lens is inside '
       + 'her, if she is off the edge of the frame, or if the shot points down when a look-up was asked for.',
     setup: `__CTX__.input.enabled = true; document.getElementById('hud').style.display = 'none';`,
-    settle: 700, timeout: 150000,
+    settle: 700, timeout: 600000,
     assert: `(async () => {
       ${FREEZE}
-      ${SILHOUETTE}
+      ${VISIBLE}
+      ${SILHOUETTE_VIS}
       const C = __CTX__, p = C.player, T = C.terrain, K = C.collision;
       freeze();
       const V = p.position.constructor, n = new V();
@@ -1080,13 +1174,33 @@ export const GATES = [
         }
       }
       if (!flat) return { pass: null, detail: 'SKIP: no flat clear control ground found' };
-      const flatPin = await run({ tag: 'flat-clamp-pinned', x: flat.x, z: flat.z,
-        heading: 0, yaw: Math.PI, pitch: -1.15, pin: true, bar: ONFRAC_FLOOR });
-      const flatRun = await run({ tag: 'flat-clamp-sprint', x: flat.x, z: flat.z,
-        heading: 0, yaw: Math.PI, pitch: -1.15, keys: ['KeyW', 'ShiftLeft'], bar: ONFRAC_FLOOR });
-      if (!flatPin || !flatRun) return { pass: null, detail: 'SKIP: the control staging produced no judged frames' };
-      const PIN = { ctrl: flatPin.onFrac, bar: Math.max(ONFRAC_FLOOR, FRAME_KEEP * flatPin.onFrac) };
-      const RUN = { ctrl: flatRun.onFrac, bar: Math.max(ONFRAC_FLOOR, FRAME_KEEP * flatRun.onFrac) };
+      /* RESIDUE FIX ROUND 1 (judge: "A31b judges its -0.5 hillside row against
+       * the clamp control").  It did: every pinned row — at -0.5, -0.8 and the
+       * clamp — was held to the flat PINNED control at the CLAMP (0.382), and
+       * every sprint row to the flat sprint at the clamp.  The flat control at
+       * -0.5 frames her at 0.85, so the -0.5 hillside passed at 0.30 of its
+       * own control.  There is now one control per pitch and gait the gate
+       * uses, and every row is judged against the control at ITS pitch and
+       * gait — the title says "the same pitch and gait", and now it is. */
+      const PINNED = [-0.5, -0.8, -1.15], SPRINT = [0.06, -0.25, -0.8, -1.15];
+      const CTRL = { pin: {}, run: {} };
+      const controls = [];
+      for (const pitch of PINNED) {
+        const r = await run({ tag: 'flat-pinned@' + pitch, x: flat.x, z: flat.z,
+          heading: 0, yaw: Math.PI, pitch, pin: true, bar: ONFRAC_FLOOR });
+        if (!r) return { pass: null, detail: 'SKIP: control flat-pinned@' + pitch + ' produced no judged frames' };
+        CTRL.pin[pitch] = { ctrl: r.onFrac, bar: Math.max(ONFRAC_FLOOR, FRAME_KEEP * r.onFrac) };
+        controls.push(r);
+      }
+      for (const pitch of SPRINT) {
+        const r = await run({ tag: 'flat-sprint@' + pitch, x: flat.x, z: flat.z,
+          heading: 0, yaw: Math.PI, pitch, keys: ['KeyW', 'ShiftLeft'], bar: ONFRAC_FLOOR });
+        if (!r) return { pass: null, detail: 'SKIP: control flat-sprint@' + pitch + ' produced no judged frames' };
+        CTRL.run[pitch] = { ctrl: r.onFrac, bar: Math.max(ONFRAC_FLOOR, FRAME_KEEP * r.onFrac) };
+        controls.push(r);
+      }
+      const PIN = (pitch) => CTRL.pin[pitch];
+      const RUN = (pitch) => CTRL.run[pitch];
 
       /* --- 1. hillside look-up on an ORDINARY hillside — the finding's own
        * words.  The steepest face in 26-40 deg: comfortably inside the 50 deg
@@ -1121,11 +1235,11 @@ export const GATES = [
        * axis is what let two builds ship with the finding open, so the
        * hillside and both sprints now run the whole look-up range. */
       const hillside = await run({ tag: 'hillside-lookup', x: hill.x, z: hill.z,
-        heading: hill.down, yaw: hill.down + Math.PI, pitch: -0.5, pin: true, ...PIN });
+        heading: hill.down, yaw: hill.down + Math.PI, pitch: -0.5, pin: true, ...PIN(-0.5) });
       const hillside80 = await run({ tag: 'hillside-lookup-0.8', x: hill.x, z: hill.z,
-        heading: hill.down, yaw: hill.down + Math.PI, pitch: -0.8, pin: true, ...PIN });
+        heading: hill.down, yaw: hill.down + Math.PI, pitch: -0.8, pin: true, ...PIN(-0.8) });
       const hillsideClamp = await run({ tag: 'hillside-lookup-clamp', x: hill.x, z: hill.z,
-        heading: hill.down, yaw: hill.down + Math.PI, pitch: -1.15, pin: true, ...PIN });
+        heading: hill.down, yaw: hill.down + Math.PI, pitch: -1.15, pin: true, ...PIN(-1.15) });
 
       /* --- 1b. the A29 FACE (56.5 deg) at the same look-up: past the slide
        * limit, and past what any camera can do.  There is no lens 1.2 m from
@@ -1140,7 +1254,7 @@ export const GATES = [
       const faceDeg = Math.acos(Math.max(-1, Math.min(1, n.y))) * DEG;
       const down = Math.atan2(n.x, n.z);
       const face = faceDeg >= 40 ? await run({ tag: 'a29-face-lookup', x: 118, z: 220,
-        heading: down, yaw: down + Math.PI, pitch: -0.5, pin: true, ...PIN }) : null;
+        heading: down, yaw: down + Math.PI, pitch: -0.5, pin: true, ...PIN(-0.5) }) : null;
 
       /* --- 2. valley floor look-up: the LOWEST clear near-flat spot */
       let low = null;
@@ -1155,7 +1269,7 @@ export const GATES = [
       }
       if (!low) return { pass: null, detail: 'SKIP: no clear valley floor found' };
       const valley = await run({ tag: 'valley-lookup', x: low.x, z: low.z,
-        heading: 0, yaw: Math.PI, pitch: -0.5, pin: true, ...PIN });
+        heading: 0, yaw: Math.PI, pitch: -0.5, pin: true, ...PIN(-0.5) });
 
       /* --- 3/4. real sprints on a real face, unpinned, DOWNhill and UPhill.
        * The uphill one is the staging the judge round asked for: the boom then
@@ -1179,20 +1293,20 @@ export const GATES = [
       }
       if (!dh) return { pass: null, detail: 'SKIP: no clear 20-42 deg slope found' };
       const sprint = await run({ tag: 'sprint-downhill', x: dh.x, z: dh.z,
-        heading: dh.down, yaw: dh.down + Math.PI, pitch: 0.06, keys: ['KeyW', 'ShiftLeft'], ...RUN });
+        heading: dh.down, yaw: dh.down + Math.PI, pitch: 0.06, keys: ['KeyW', 'ShiftLeft'], ...RUN(0.06) });
       /* Same face, run the other way: INTO the rising ground, with a look-up on
        * top of it — pitch and slope fighting each other while she moves. */
       const uphill = await run({ tag: 'sprint-uphill', x: dh.x, z: dh.z,
-        heading: dh.down + Math.PI, yaw: dh.down, pitch: -0.25, keys: ['KeyW', 'ShiftLeft'], ...RUN });
+        heading: dh.down + Math.PI, yaw: dh.down, pitch: -0.25, keys: ['KeyW', 'ShiftLeft'], ...RUN(-0.25) });
       /* …and both sprints at the deep look-ups the judge round reproduced in
        * ordinary play: 50 of 56 frames dithered at the clamp uphill, 19 of 56
        * downhill, every one of them with maxSolidCut 0. */
       const sprintClamp = await run({ tag: 'sprint-downhill-clamp', x: dh.x, z: dh.z,
-        heading: dh.down, yaw: dh.down + Math.PI, pitch: -1.15, keys: ['KeyW', 'ShiftLeft'], ...RUN });
+        heading: dh.down, yaw: dh.down + Math.PI, pitch: -1.15, keys: ['KeyW', 'ShiftLeft'], ...RUN(-1.15) });
       const uphillClamp = await run({ tag: 'sprint-uphill-clamp', x: dh.x, z: dh.z,
-        heading: dh.down + Math.PI, yaw: dh.down, pitch: -1.15, keys: ['KeyW', 'ShiftLeft'], ...RUN });
+        heading: dh.down + Math.PI, yaw: dh.down, pitch: -1.15, keys: ['KeyW', 'ShiftLeft'], ...RUN(-1.15) });
       const uphill80 = await run({ tag: 'sprint-uphill-0.8', x: dh.x, z: dh.z,
-        heading: dh.down + Math.PI, yaw: dh.down, pitch: -0.8, keys: ['KeyW', 'ShiftLeft'], ...RUN });
+        heading: dh.down + Math.PI, yaw: dh.down, pitch: -0.8, keys: ['KeyW', 'ShiftLeft'], ...RUN(-0.8) });
 
       /* --- 5. a real occluder: a TRUNK between the lens and Aloy.  The fade
        * must engage here, or the clear rows prove nothing: a fade that is
@@ -1212,7 +1326,87 @@ export const GATES = [
       const occluded = await run({ tag: 'trunk-occluder', x: ox, z: oz,
         heading: oyaw + Math.PI, yaw: oyaw, pitch: 0.05, pin: true });
 
-      const clearRows = [flatPin, flatRun, hillside, hillside80, hillsideClamp, valley,
+      /* --- 6. YAW PANS on the hillside (residue fix round 1, judge: "ground
+       * yaw swing breaks yaw pans at a deep look-up: 15-22 deg one-frame view
+       * lurches and ghosting with no occluder").  Every staging above pins
+       * camYaw, so the swing was only ever seen settled; a player tracking a
+       * flier pans.  Each row pans a full 360 deg at a slow (0.005 rad/frame)
+       * and a moderate (0.02) rate, pinned on the hillside, at -0.8 and the
+       * clamp, aiming and not, and on EVERY frame:
+       *   STEP     the delivered view may move at most 3 deg more than the
+       *            requested view did (the angle between consecutive REQUESTED
+       *            directions, computed from camYaw/camPitch — not the raw
+       *            yaw rate, which overstates it at a look-up);
+       *   SOLID    applied opacity >= 0.98;
+       *   GAP      lens >= 1.20 m from her pivot — or, aiming, >= 0.95 of the
+       *            gap the camera itself chooses on flat open ground at that
+       *            pitch (the aim boom at the clamp is 1.02 m by design, A32b:
+       *            a bar above the flat-ground aim boom would fail the flat
+       *            ground itself). */
+      const flatAimGap = {};
+      for (const pitch of [-0.8, -1.15]) {
+        p.position.set(flat.x, 0, flat.z); p.velocity.set(0, 0, 0); p._snapToGround();
+        p.heading = 0; p.camYaw = Math.PI; p.camPitch = pitch;
+        p._relief = 0; p._lift = 0; p._pivotSeeded = false;
+        C.input.keys.clear(); C.input.mouse.buttons = 4;
+        for (let i = 0; i < 40; i++) {
+          await frame();
+          p.position.x = flat.x; p.position.z = flat.z; p.velocity.x = 0; p.velocity.z = 0;
+          p.camYaw = Math.PI; p.camPitch = pitch; C.input.mouse.buttons |= 4;
+        }
+        flatAimGap[pitch] = C.camera.position.distanceTo(p.camPivot);
+        C.input.mouse.buttons = 0;
+      }
+      const reqDir = (yaw, pitch, out) => out.set(-Math.sin(yaw) * Math.cos(pitch), -Math.sin(pitch), -Math.cos(yaw) * Math.cos(pitch));
+      const pan = async (pitch, rate, aim) => {
+        const tag = 'pan' + (aim ? '-aim' : '') + '@' + pitch + '/' + rate;
+        p.position.set(hill.x, 0, hill.z); p.velocity.set(0, 0, 0); p._snapToGround();
+        p.heading = hill.down; p.camYaw = hill.down + Math.PI; p.camPitch = pitch;
+        p._relief = 0; p._lift = 0; p._pivotSeeded = false;
+        C.input.keys.clear(); C.input.mouse.buttons = aim ? 4 : 0;
+        const hold = () => {
+          p.position.x = hill.x; p.position.z = hill.z; p.velocity.x = 0; p.velocity.z = 0;
+          p.camPitch = pitch; if (aim) C.input.mouse.buttons |= 4;
+        };
+        for (let i = 0; i < 30; i++) { await frame(); hold(); }
+        const N = Math.ceil(2 * Math.PI / rate);
+        const dPrev = new V(), dNow = new V(), rPrev = new V(), rNow = new V();
+        C.camera.getWorldDirection(dPrev);
+        reqDir(p.camYaw + (p.recoil ? p.recoil.yaw : 0), p.camPitch, rPrev);
+        let maxEx = 0, exAt = -1, minU = 1, minGap = 9, occFrames = 0, over = 0;
+        for (let i = 0; i < N; i++) {
+          p.camYaw += rate;
+          await frame();
+          hold();
+          C.camera.getWorldDirection(dNow);
+          reqDir(p.camYaw, p.camPitch, rNow);
+          const step = Math.acos(Math.max(-1, Math.min(1, dNow.dot(dPrev)))) * DEG;
+          const req = Math.acos(Math.max(-1, Math.min(1, rNow.dot(rPrev)))) * DEG;
+          dPrev.copy(dNow); rPrev.copy(rNow);
+          const e = C.camera.position;
+          if (K.sphereQuery(e.x, e.y, e.z, 1.1, [], hider).length) { occFrames++; continue; }
+          const ex = step - req;
+          if (ex > maxEx) { maxEx = ex; exAt = i; }
+          if (ex > 3) over++;
+          for (const m of p._mats) if (m.u.value < minU) minU = m.u.value;
+          const g = e.distanceTo(p.camPivot);
+          if (g < minGap) minGap = g;
+        }
+        C.input.mouse.buttons = 0;
+        const gapBar = aim ? Math.min(1.2, 0.95 * flatAimGap[pitch]) : 1.2;
+        return { tag, frames: N, occFrames, maxViewExcessDeg: +maxEx.toFixed(2), at: exAt, framesOver3Deg: over,
+          minOpacity: +minU.toFixed(3), minLensGap: +minGap.toFixed(2), gapBar: +gapBar.toFixed(2),
+          ok: maxEx <= 3 && minU >= 0.98 && minGap >= gapBar && occFrames < N * 0.1 };
+      };
+      const pans = [];
+      for (const pitch of [-0.8, -1.15]) {
+        for (const aim of [false, true]) {
+          for (const rate of [0.005, 0.02]) pans.push(await pan(pitch, rate, aim));
+        }
+      }
+      const panFails = pans.filter((r) => !r.ok);
+
+      const clearRows = [...controls, hillside, hillside80, hillsideClamp, valley,
         sprint, uphill, sprintClamp, uphillClamp, uphill80];
       /* The A29-face contract: aim delivered, hill not booked, no blending,
        * and a dissolve only ever explained by the lens being inside her. */
@@ -1277,12 +1471,15 @@ export const GATES = [
       const pass = filmSolid && judged.length === clearRows.length
         && ghosted.length === 0 && misbooked.length === 0
         && jammed.length === 0 && hijacked.length === 0 && offScreen.length === 0
-        && blended.length === 0 && fades && faceOK;
+        && blended.length === 0 && fades && faceOK && panFails.length === 0;
+      const ctrlTable = {};
+      for (const k of Object.keys(CTRL.pin)) ctrlTable['pinned@' + k] = { ctrl: +CTRL.pin[k].ctrl.toFixed(3), bar: +CTRL.pin[k].bar.toFixed(3) };
+      for (const k of Object.keys(CTRL.run)) ctrlTable['sprint@' + k] = { ctrl: +CTRL.run[k].ctrl.toFixed(3), bar: +CTRL.run[k].bar.toFixed(3) };
       return { pass, detail: {
         hillAt: hill, faceDeg: +faceDeg.toFixed(1), valleyAt: [low.x, low.z, +low.h.toFixed(1)], slopeAt: dh,
-        filmed, filmSolid, flatAt: flat, flatPin, flatRun,
-        frameCtrlPinned: +PIN.ctrl.toFixed(3), frameBarPinned: +PIN.bar.toFixed(3),
-        frameCtrlSprint: +RUN.ctrl.toFixed(3), frameBarSprint: +RUN.bar.toFixed(3),
+        filmed, filmSolid, flatAt: flat, controls: ctrlTable,
+        flatAimGap: { '-0.8': +flatAimGap[-0.8].toFixed(2), '-1.15': +flatAimGap[-1.15].toFixed(2) },
+        pans, panFails: panFails.length,
         frameKeep: FRAME_KEEP, onFracFloor: ONFRAC_FLOOR,
         hillside, hillside80, hillsideClamp, valley, sprint, uphill,
         sprintClamp, uphillClamp, uphill80, face, faceOK, occluded,
@@ -1297,6 +1494,196 @@ export const GATES = [
         minLensGapM: judged.length ? +Math.min(...judged.map((r) => r.minLensGap)).toFixed(2) : null,
         maxAimLossDeg: judged.length ? +Math.max(...judged.map((r) => r.aimLossDeg)).toFixed(1) : null,
         occluderOpacity: occluded ? occluded.opacity : null,
+      } };
+    })()`,
+  },
+
+  /* ---------------------------------------------------------------- A31c */
+  /**
+   * FIX ROUND 3 — the pitch-clamp framing, booked as its OWN finding.
+   *
+   * The judge round, verbatim: "if the control itself films as this one does,
+   * book the clamp framing as an open finding (its own gate id) instead of
+   * folding it into 'known gaps'."  It did: the flat-ground sprint at the
+   * clamp — zero slope, camLift 0, camRelief 0 — filmed her bow in the lower
+   * left and nothing else.  This gate judges the control itself, in absolute
+   * terms, at the pitch where it failed.
+   *
+   * RESIDUE FIX ROUND 1 (judge: "lean follow and arm clearance only work for
+   * the one run direction A31c stages, and A31c's head-in-frame check ignores
+   * the horizontal edge").  It staged heading 0 only, and its head test was
+   * |x| <= 1 on the head CENTRE, so a head cut in half at x -0.98 passed.  Now
+   * FOUR run directions — away / left / right / toward the camera — at jog and
+   * sprint, each staged with her already FACING that way (heading and facing
+   * latch preset, so the row measures the run, not the turn into it), and on
+   * EVERY row:
+   *   HEAD IN FRAME   head_0104 inside the frame, in front of the lens, on
+   *                   >= 90 % of samples;
+   *   COMPOSITION     |head NDC x| <= 0.8 on >= 90 % of samples (the new bar);
+   *   KEEPS FRAMING   moving rows keep >= 0.75 of the PINNED median onFrac;
+   *   PINNED FLOOR    pinned median onFrac >= 0.25;
+   *   NOT INSIDE HER  no vertex of her VISIBLE mesh within 0.15 m of the lens
+   *                   (the near plane is 0.10) on any sampled frame;
+   *   SOLID           applied opacity >= 0.98 throughout.
+   * Measured on her VISIBLE meshes only (see VISIBLE above): 53 of the rig's
+   * 69 meshes are the hidden spare weapons in her left fist.
+   * The four diagonals and three turns out of a run away are measured too and
+   * reported under `diagnostics` — not judged (see the lane doc's known gaps).
+   */
+  {
+    id: 'A31c-clamp-framing', kind: 'action', lane: 'player-control',
+    title: 'Pitch-clamp framing on FLAT ground, in FOUR run directions (away / left / right / toward the lens) at jog and sprint: head_0104 in frame and |NDC x| <= 0.8 on >= 90% of samples, moving keeps >= 0.75 of the pinned onFrac, pinned >= 0.25, lens >= 0.15 m from her visible mesh, opacity >= 0.98',
+    criteria: 'Film: flat open ground, SPRINTING at the pitch clamp (camPitch -1.15, looking steeply up). Aloy\'s head, braid, '
+      + 'shoulders and upper back are IN THE PICTURE in the lower part of the frame, solid, with sky above, and not pushed to a frame edge. '
+      + 'FAIL if only the bow or spear is visible, if she is off the bottom or side edge, or if the lens is visibly inside her body.',
+    setup: `__CTX__.input.enabled = true; document.getElementById('hud').style.display = 'none';`,
+    settle: 700, timeout: 180000,
+    assert: `(async () => {
+      ${FREEZE}
+      ${VISIBLE}
+      const C = __CTX__, p = C.player, T = C.terrain, K = C.collision;
+      freeze();
+      const V = p.position.constructor, n = new V();
+      const frame = () => new Promise((r) => requestAnimationFrame(r));
+      const DEG = 180 / Math.PI;
+      const hider = (c) => c.camera || c.kind === 'canopy';
+      let head = null;
+      p.model.traverse((o) => { if (o.isBone && o.name === 'head_0104') head = o; });
+      if (!head) return { pass: null, detail: 'SKIP: head_0104 not found on the rig' };
+      /** In-frame fraction of her VISIBLE vertices, and the nearest one to the lens. */
+      const measure = () => {
+        const v = new V(), vw = new V(), e = C.camera.position;
+        let nIn = 0, inBox = 0, nearest = 9;
+        p.model.updateWorldMatrix(true, true);
+        p.model.traverse((o) => {
+          if (!o.isSkinnedMesh && !o.isMesh) return;
+          if (!onRig(o)) return;
+          const pos = o.geometry && o.geometry.attributes && o.geometry.attributes.position;
+          if (!pos) return;
+          const stride = Math.max(1, Math.floor(pos.count / 2500));
+          for (let i = 0; i < pos.count; i += stride) {
+            v.fromBufferAttribute(pos, i);
+            if (o.isSkinnedMesh && o.applyBoneTransform) o.applyBoneTransform(i, v);
+            v.applyMatrix4(o.matrixWorld);
+            const d = v.distanceTo(e);
+            if (d < nearest) nearest = d;
+            vw.copy(v).applyMatrix4(C.camera.matrixWorldInverse);
+            if (vw.z > -C.camera.near) continue;
+            v.project(C.camera);
+            if (v.x >= -1 && v.x <= 1 && v.y >= -1 && v.y <= 1) inBox++;
+            nIn++;
+          }
+        });
+        const h = new V(); head.getWorldPosition(h);
+        const hv = h.clone().applyMatrix4(C.camera.matrixWorldInverse);
+        const hp = h.clone().project(C.camera);
+        const front = hv.z < -C.camera.near;
+        const headIn = front && Math.abs(hp.x) <= 1 && Math.abs(hp.y) <= 1;
+        const headX = front && Math.abs(hp.x) <= 0.8 && Math.abs(hp.y) <= 1;
+        return { frac: nIn ? inBox / nIn : 0, nearest, headIn, headX, hx: hp.x, hy: hp.y };
+      };
+      // the same flat, clear control ground A31b stages its controls on
+      let flat = null;
+      for (let x = -220; x <= 220 && !flat; x += 7) {
+        for (let z = -220; z <= 220; z += 7) {
+          T.getNormal(x, z, n);
+          if (Math.acos(Math.max(-1, Math.min(1, n.y))) * DEG > 3) continue;
+          if (K.sphereQuery(x, T.getHeight(x, z) + 1, z, 14, [], hider).length) continue;
+          flat = { x, z }; break;
+        }
+      }
+      if (!flat) return { pass: null, detail: 'SKIP: no flat clear control ground found' };
+      const FRAMES = 56, SETTLE = 16;
+      /* camYaw PI: the camera looks along +z, so her heading 0 runs AWAY from
+       * the lens, +PI/2 to the frame's LEFT (A), -PI/2 to its RIGHT (D), and
+       * PI TOWARD the lens (S). */
+      const face = (h) => { p.heading = h; p._faceX = p._candX = Math.sin(h); p._faceZ = p._candZ = Math.cos(h); };
+      const run = async (tag, keys, pin, heading) => {
+        p.position.set(flat.x, 0, flat.z); p.velocity.set(0, 0, 0); p._snapToGround();
+        face(heading); p.camYaw = Math.PI; p.camPitch = -1.15;
+        p._relief = 0; p._lift = 0; p._pivotSeeded = false;
+        C.input.keys.clear(); C.input.mouse.buttons = 0;
+        for (const k of keys) C.input.keys.add(k);
+        const fracs = [], xs = [];
+        let heads = 0, headXs = 0, samples = 0, nearest = 9, minU = 1, speed = 0, lean = 0, worstHeadY = 9;
+        for (let i = 0; i < FRAMES; i++) {
+          await frame();
+          if (pin) { p.position.x = flat.x; p.position.z = flat.z; p.velocity.x = 0; p.velocity.z = 0; }
+          p.camYaw = Math.PI; p.camPitch = -1.15;
+          if (i < SETTLE) continue;
+          for (const m of p._mats) if (m.u.value < minU) minU = m.u.value;
+          if (i % 2) continue;
+          const m = measure();
+          fracs.push(m.frac); samples++; if (m.headIn) heads++; if (m.headX) headXs++;
+          xs.push(m.hx);
+          if (m.nearest < nearest) nearest = m.nearest;
+          if (m.hy < worstHeadY) worstHeadY = m.hy;
+          speed += Math.hypot(p.velocity.x, p.velocity.z); lean += p.camLean || 0;
+        }
+        C.input.keys.clear();
+        fracs.sort((a, b) => a - b); xs.sort((a, b) => a - b);
+        return { tag, onFrac: +fracs[fracs.length >> 1].toFixed(3), onFracMin: +fracs[0].toFixed(3),
+          headInFrame: +(heads / samples).toFixed(3), headXInside08: +(headXs / samples).toFixed(3),
+          headNdcX: [+xs[0].toFixed(2), +xs[xs.length >> 1].toFixed(2), +xs[xs.length - 1].toFixed(2)],
+          worstHeadNdcY: +worstHeadY.toFixed(2),
+          nearestVertexM: +nearest.toFixed(3), minOpacity: +minU.toFixed(3),
+          speedMs: +(speed / samples).toFixed(2), camLeanM: +(lean / samples).toFixed(3), samples };
+      };
+      const DIRS = [['away', 'KeyW', 0], ['left', 'KeyA', Math.PI / 2], ['right', 'KeyD', -Math.PI / 2], ['toward', 'KeyS', Math.PI]];
+      const pinned = await run('flat-clamp-pinned', [], true, 0);
+      const moving = [];
+      for (const [name, key, h] of DIRS) {
+        moving.push(await run('jog-' + name, [key], false, h));
+        moving.push(await run('sprint-' + name, [key, 'ShiftLeft'], false, h));
+      }
+      const rows = [pinned, ...moving];
+      const HEAD_IN = 0.9, HEAD_X = 0.9, KEEP = 0.75, PIN_FLOOR = 0.25, NEAR = 0.15;
+      const failing = [];
+      for (const r of rows) {
+        r.bar = r === pinned ? PIN_FLOOR : +(KEEP * pinned.onFrac).toFixed(3);
+        if (r.headInFrame < HEAD_IN) failing.push(r.tag + ': head in frame ' + r.headInFrame);
+        if (r.headXInside08 < HEAD_X) failing.push(r.tag + ': head |x| <= 0.8 on ' + r.headXInside08);
+        if (r.onFrac < r.bar) failing.push(r.tag + ': onFrac ' + r.onFrac + ' < ' + r.bar);
+        if (r.nearestVertexM < NEAR) failing.push(r.tag + ': lens ' + r.nearestVertexM + ' m from her mesh');
+        if (r.minOpacity < 0.98) failing.push(r.tag + ': opacity ' + r.minOpacity);
+      }
+      for (const r of moving) {
+        const want = r.tag.startsWith('sprint') ? 5.5 : 3.5;
+        if (r.speedMs < want) failing.push(r.tag + ': staging did not reach speed (' + r.speedMs + ' m/s)');
+      }
+
+      /* Diagnostics (reported, NOT judged): the four diagonals at a sprint,
+       * already facing the diagonal, and three turns OUT of a sprint away
+       * from the lens — where the lens has to get round her trailing legs. */
+      const diagnostics = [];
+      for (const [name, keys, h] of [['away-left', ['KeyW', 'KeyA'], Math.PI / 4], ['away-right', ['KeyW', 'KeyD'], -Math.PI / 4],
+        ['toward-left', ['KeyS', 'KeyA'], 3 * Math.PI / 4], ['toward-right', ['KeyS', 'KeyD'], -3 * Math.PI / 4]]) {
+        diagnostics.push(await run('sprint-' + name, [...keys, 'ShiftLeft'], false, h));
+      }
+      for (const [name, keys] of [['left', ['KeyA']], ['away-left', ['KeyW', 'KeyA']], ['toward', ['KeyS']]]) {
+        diagnostics.push(await run('turn-from-away-to-' + name, [...keys, 'ShiftLeft'], false, 0));
+      }
+
+      /* The FILM is the sprint away — the staging the judge first filmed as a
+       * bow and nothing else.  Keys stay held so the runner's frame is
+       * mid-stride; they are released after 3 s so nothing leaks. */
+      p.position.set(flat.x, 0, flat.z); p.velocity.set(0, 0, 0); p._snapToGround();
+      face(0); p.camYaw = Math.PI; p.camPitch = -1.15; p._pivotSeeded = false;
+      C.input.keys.clear(); C.input.keys.add('KeyW'); C.input.keys.add('ShiftLeft');
+      const until = performance.now() + 3000;
+      const hold = () => {
+        if (performance.now() > until) { C.input.keys.clear(); return; }
+        p.camPitch = -1.15; requestAnimationFrame(hold);
+      };
+      hold();
+      for (let i = 0; i < 30; i++) await frame();
+      const film = measure();
+
+      return { pass: failing.length === 0, detail: {
+        flatAt: flat, bars: { headIn: HEAD_IN, headXInside08: HEAD_X, keep: KEEP, pinnedFloor: PIN_FLOOR, nearestVertexM: NEAR },
+        pinned, moving, failing, diagnostics,
+        film: { onFrac: +film.frac.toFixed(3), headIn: film.headIn, headNdcX: +film.hx.toFixed(2), headNdcY: +film.hy.toFixed(2),
+          nearestVertexM: +film.nearest.toFixed(3), camLeanM: +(p.camLean || 0).toFixed(3) },
       } };
     })()`,
   },

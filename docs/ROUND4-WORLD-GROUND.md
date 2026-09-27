@@ -510,6 +510,49 @@ gate for another lane's defect. `A63-bedding-planar-world-ground` already blends
 GTAO out for its own measurement and says so in its comment; when the fix lands,
 that bypass can be deleted and the number above becomes the natural bar.
 
+**Residue round `world-ground-r2` (Sep 26): still open, still not this lane's
+code, and no longer faint.** `src/core/engine.js:397–400` still ships
+`radius: 0.55, screenSpaceRadius: false`. The judge's own instruction was "do
+not reassign this finding to world-ground again; once core-platform lands the
+change, re-run V33-rim", so this round again changed no code in
+`terrain.js` / `vegetation.js` / `water.js`. It re-filmed the gate camera, three
+states, with separate page loads on port 5210: `shots/wgr2-v33-asis.png` (a
+heavy lattice, about 26 px column period, across the whole wall and haze band),
+`shots/wgr2-v33-nogtao.png` (control, clean) and `shots/wgr2-v33-ssr.png` (the
+fix applied at runtime as a probe only, clean). Luma rms against the control,
+over the massif band (rows 230–520, cols 250–1340):
+
+| state | rms | p99 |
+|---|---|---|
+| shipped | **0.0655** | 0.190 |
+| `screenSpaceRadius: true`, `radius: 0.25` | **0.0191** | 0.078 |
+| run-to-run floor (two GTAO-off loads) | 0.0185 | 0.076 |
+
+With the fix, GTAO's contribution on the far massif is down at the noise floor
+between two page loads. All nine world-ground action gates pass on HEAD. V33-rim
+now waits only on that one engine.js edit.
+
+**Fix round 1 of `world-ground-r2` (Sep 26): both judges concur that this is
+ORCHESTRATOR ACTION and not a world-ground fix.** `engine.js:397–400` is unchanged,
+still `radius: 0.55, screenSpaceRadius: false`. The judges measured same-page A/B/C
+over the massif band: shipped rms 0.0614, fix probe 0.0002, off-vs-off 0.0000. The
+fix keeps 94–97 % of near-ground AO. A fresh `--lane world-ground` run on 5210
+gives 9 PASS and 3 NEEDS-JUDGE, and `shots/gates/V33-rim.png` still shows the
+lattice. Once core-platform lands the call above, re-run V33-rim and V44-biomes, and
+delete A63's GTAO bypass.
+
+**Fix round 2 of `world-ground-r2` (Sep 26): no change, for the third time.** The
+round re-dispatched the same single finding. Both judges again wrote "ORCHESTRATOR
+ACTION, do not re-dispatch world-ground". `engine.js:397–400` still reads
+`radius: 0.55 … screenSpaceRadius: false` at HEAD 5e0a9b3, and §3.3 still gives
+`engine.js` to `core-platform` only. So `terrain.js`, `vegetation.js` and
+`water.js` are unchanged again. A fresh `--lane world-ground` run on 5210 gives
+9 PASS and 3 NEEDS-JUDGE (worstMeadow 7.18, stealth worst 0.485, over06 0, rim
+worst 0.679, bedRms 0.02247), and `shots/gates/V33-rim.png` still shows the
+lattice. The one action that closes V33-rim and the V44 rim tiles is the
+`updateGtaoMaterial` call quoted above, landed by core-platform or by orchestrator
+grant.
+
 ---
 
 ## WAVE 4 — `world-ground-expansion`: biomes inside the 330 m disc

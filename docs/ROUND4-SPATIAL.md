@@ -379,6 +379,30 @@ by this lane. Round 4's `Collision._meleePad` no longer exists.*
 > after a holster; her capsule against every hull capsule on every rendered frame, bar 0.05 m.
 > **5/5 runs, 30 rows, 0 frames below 0.05 m**: worst Watcher 0.0605, Redeye 0.0604, Strider 0.0550 m; the term engaged on every drawn frame and let go after every holster; the machine moved 0.000 m. The round-5 build under the judge's staging, before this pass: Watcher −0.047, Redeye −0.018, Strider +0.009 m (the judge measured −0.156 and −0.176). Clause 3 (release) now also counts the live check's pushes: ≤ 0.100 m per drawn frame on 150/150 sequences (bar 0.15; the relax's own cap).
 > Cost: the rolling refresh 0.08–0.12 ms mean per drawn frame, the live check 0.02–0.06 ms mean per sim step (A106 clause 5's timers, `performance.now()` quantised to 0.1 ms here); the full bound 0.6–4.4 ms per engagement across the 17-species roster (round 5: 1.5–19.5 ms, before the zone loop lost its per-bin trig); one more `Float32Array(180)` and the cap array per machine record, allocated on the first engagement, nothing per frame.
+>
+> **ROUND 5 FIX PASS 2 (Sep 26) — THE LIVE READ WAS ONE STEP STALE, AT ~60 FPS.** The block
+> above says the live hulls are "refreshed at most once per step". They are refreshed at most
+> once per `HitHulls` counter tick, and that tick is not a step: `hitHulls.update` advances it
+> AFTER `collision.update` in the spatial system (last in the tick), so its window runs from the
+> end of one step into the next step's collision sync — across that step's machine animation.
+> Anything that refreshed the set in between (a gate's `hulls(m)` read after a rendered frame; a
+> raycast from a system that runs before the machines) left `_meleeLive` reading the pose from
+> BEFORE the machine moved, so a hull that jumped into her was pushed out one step late. With
+> one step a frame that step is a rendered frame: A106 clause 5 failed 2 of 5 campaign runs on
+> the Strider, frozen-then-animated (its front foot snapping to the idle clip: her capsule
+> −0.061 m inside it on one frame, 0.018 m from it on two; the push, 0.151 m, landed a step
+> later), both on runs that rendered at ~60 fps; the three that passed rendered at 25–44 fps
+> (several steps a frame, so the second step's read was fresh). Reproduced deterministically: a
+> 0.12 m one-step root snap toward her, the hulls read between frames as the gate does —
+> the stale read renders her at −0.064 m for one frame; the fixed read holds her at 0.055 m
+> with the 0.12 m push taken in the same step (`scratchpad/r5fp2/snap-ab.out`, three A/B pairs,
+> identical). **Fix:** `_meleeHulls(m, live)` voids the set's stamp on the live path and takes
+> one ordinary refresh (bone matrices + BVH refit) — at most one extra refresh per step, for the
+> one machine the term is on; nothing allocated. The full bound and the rolling refresh read as
+> before. Gated by the clause that caught it: **A106 5/5 on the final build, every run at ~60 fps**
+> (the failing condition) + the full suite + the final lane run — clause 5 worst Watcher
+> 0.0617–0.0662, Redeye 0.0581–0.0650, Strider 0.0549–0.0570 m, 0 frames under 0.05; release
+> ≤ 0.082 m a frame; 0 penetrations. (`docs/ROUND4-PLAYER-MELEE.md` §0r5fp2.3.)
 
 **What it is.** While `ctx.combat.melee` has the spear drawn AND has selected a machine
 as its approach target (`melee._scanApproach`, the same ±50° wedge the hit resolve uses),

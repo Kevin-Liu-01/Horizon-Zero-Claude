@@ -96,6 +96,14 @@ const _tD = new THREE.Vector3();
 /** Last frame's world tip, so the trail can be laid on the real swept plane. */
 const _tPrev = new THREE.Vector3();
 const _tNow = new THREE.Vector3();
+/** ...and where SHE was on those two frames, so the sweep is the blade's own
+ *  motion and not her run (round 5 fix pass 2 — see `_flashTrail`). */
+const _pPrev = new THREE.Vector3();
+const _pNow = new THREE.Vector3();
+/** The blade line `_resolve` casts along (grip, tip). Its own scratch: it used
+ *  to be written into `_tPrev` / `_tNow` and wiped the sweep (see `_flashTrail`). */
+const _bGrip = new THREE.Vector3();
+const _bTip = new THREE.Vector3();
 
 /** Aware = it already knows something is wrong and is looking for you. */
 const AWARE_STATES = new Set(['alert', 'attack']);
@@ -993,6 +1001,8 @@ export class Melee {
     if (this.stance === 'swing' && this.layer) {
       _tPrev.copy(_tNow);
       this.layer.tipWorld(_tNow);
+      _pPrev.copy(_pNow);
+      if (p) _pNow.copy(p.position);
     }
     if (this.active) this._advance(realDt);
     this._updateTrail(realDt);
@@ -1047,7 +1057,10 @@ export class Melee {
     this._i = i;
     this._stats.swings++;
     // start the tip trace on this swing, not on the last one's leftovers
-    if (this.layer?.tipWorld?.(_tNow)) _tPrev.copy(_tNow);
+    if (this.layer?.tipWorld?.(_tNow)) {
+      _tPrev.copy(_tNow);
+      if (this.ctx.player) { _pNow.copy(this.ctx.player.position); _pPrev.copy(_pNow); }
+    }
     this.lastSwingT = performance.now() / 1000;
     /* THE LUNGE STARTS WITH THE COCK, NOT WITH THE BLADE (fix round 4, F3).
      * §4's grant asks for a lunge that "carries the root forward up to the
@@ -1232,11 +1245,11 @@ export class Melee {
        * way it always did, through it or through the arc. */
       let h = null;
       const lay = this.layer;
-      if (lay && lay.ok && lay.gripWorld(_tPrev) && lay.tipWorld(_tNow)) {
-        _tA.subVectors(_tNow, _tPrev);
+      if (lay && lay.ok && lay.gripWorld(_bGrip) && lay.tipWorld(_bTip)) {
+        _tA.subVectors(_bTip, _bGrip);
         const bladeLen = _tA.length();
         if (bladeLen > 0.2) {
-          _ray.origin.copy(_tPrev);
+          _ray.origin.copy(_bGrip);
           _ray.direction.copy(_tA).multiplyScalar(1 / bladeLen);
           h = hulls.raycast(_ray, { far: bladeLen + 0.45 });
         }
@@ -1694,7 +1707,17 @@ export class Melee {
          * degenerate and the plane fell back to whatever `(0,1,0)` gave. The
          * sweep the tip actually travelled is the honest basis, and `update()`
          * samples it every frame for exactly this. */
-        _tD.subVectors(_tNow, _tPrev);
+        /* THE SWEEP IS HER BLADE'S, NOT HER RUN'S, AND IT IS STILL THERE
+         * (round 5 fix pass 2). Two defects, found filming the jogging heavy
+         * from dead front (the first cut of this pass's composite showed a
+         * flat white plate across her hips): `_resolve` cast its blade line into `_tPrev` /
+         * `_tNow` just before calling this, so the "sweep" read here was the
+         * haft itself, its across-blade part was zero, and EVERY smear fell
+         * through to the horizontal fallback below — a plate for any beat
+         * that is not a horizontal sweep; and the world tip's frame-to-frame
+         * motion carries her own travel (5 m/s at a jog is 0.1-0.3 m a
+         * frame), so her displacement is taken out. */
+        _tD.subVectors(_tNow, _tPrev).sub(_pNow).add(_pPrev);
         if (_tD.lengthSq() < 1e-8) _tD.copy(dir);
         _tD.addScaledVector(_tC, -_tD.dot(_tC));   // the part across the blade
         if (_tD.lengthSq() < 1e-8) {

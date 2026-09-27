@@ -991,6 +991,52 @@ const WRIST_SWING = 1.10;
 /** Elbow roll about the shoulder->wrist axis: free, the wrist never moves. */
 const ELBOW_ROLL = 1.9;
 
+/**
+ * A SWING TAKEN AT A JOG (round 5 fix pass 2, the engineering/film judge's
+ * major). Every beat's torso pitch (`u.pitch`, up to 0.52 rad on the heavy)
+ * was authored on a STANDING body, where the pelvis -> head line starts at
+ * ~11 deg off vertical, and it was added on top of whatever the stride had
+ * already done. The stride leans her 35-41 deg by itself (measured, spear
+ * ready, `_moveW` 1), so a jogging heavy reached 56-59 deg with the head
+ * down at 1.10 m, and because the drive-hand keys are in CHARACTER space
+ * (they do not travel with the spine) the fist ended 0.09 m ABOVE the head
+ * on the heavy and 0.15 m above it on light-3 — her face under her own
+ * raised arm, on film.
+ *
+ * So while she is striding (her measured travel speed ramped 1.6 -> 3.0 m/s;
+ * a standing swing's step-in never exceeds the drive's 1.15 m/s, so every
+ * standing gate and sheet is untouched — see `_stridePitch` for why this is
+ * not the animator's `_moveW`):
+ *  - `JOG_TORSO_CAP`: the beat's additive pitch is budgeted against the lean
+ *    the stride already has, measured on the frame (pelvis -> head bone, char
+ *    space), so the total stays at or under 40 deg. A spine rotation above
+ *    the pelvis moves the head along an arc about that joint, so a budget in
+ *    rotation is conservative in angle. The judge proposed a fixed
+ *    (1 - 0.6 moveW) scale; measured, it would leave the heavy at ~52 deg
+ *    over a 41 deg stride, so the budget is the one that meets the bar.
+ *  - `JOG_COUNTER_MAX`: when the stride alone is over the cap, the layer may
+ *    straighten her by at most this much rather than fighting the
+ *    locomotion.
+ *  - `JOG_HAND_UNDER_HEAD`: from the release of the cock (`WINDUP_COCK`)
+ *    through strike and recover, the drive-wrist goal is held this far under
+ *    the lowest the head bone can end the frame (`HEAD_STAB_MAX` below where
+ *    it is when this layer runs). The cock itself keeps its height (a windup above the
+ *    head is the canon); the clamp ramps in over the release so the hand
+ *    path has no step.
+ * The STANCE legs/pelvis drop is already 0 at a jog (`_stanceW`), so nothing
+ * there stacks.
+ */
+const JOG_TORSO_CAP = 40 * Math.PI / 180;
+/** The stride weight's speed ramp (m/s): above a standing swing's step-in
+ *  drive (1.15), full by a slow jog. See `_stridePitch`. */
+const STRIDE_V0 = 1.6;
+const STRIDE_V1 = 3.0;
+const JOG_COUNTER_MAX = 0.10;
+const JOG_HAND_UNDER_HEAD = 0.05;
+/** `playerAnimator._headStabilise`'s clamp on the head bone's translation
+ *  (+-0.055 m), which it applies AFTER this layer — see `_strideHand`. */
+const HEAD_STAB_MAX = 0.055;
+
 /** Normalise a literal direction triple in place. */
 function unit(v) {
   const l = Math.hypot(v[0], v[1], v[2]) || 1;
@@ -1640,7 +1686,9 @@ export class MeleeLayer {
     // NOT the pelvis: yawing the pelvis swings the planted feet and A105 only
     // allows 0.08 m of drift. spine_01..03 carry the whole excursion, which is
     // also the axis A102 measures (pelvis -> spine_03).
-    const yaw = u.yaw * w, pitch = u.pitch * w, roll = u.roll * w;
+    const yaw = u.yaw * w, roll = u.roll * w;
+    // budgeted against the stride's own lean while she is moving (JOG_TORSO_CAP)
+    const pitch = this._stridePitch(u.pitch * w, dt);
     an._rotL(b.spine1, Y_AXIS, yaw * 0.30);
     an._rotL(b.spine2, Y_AXIS, yaw * 0.36);
     an._rotL(b.spine3, Y_AXIS, yaw * 0.34);
@@ -1672,6 +1720,7 @@ export class MeleeLayer {
      * with the guard off there. So it runs for the carry legs too. */
     this._guardOn = stance === 'ready' || stance === 'swing'
       || (this._held && (stance === 'draw' || stance === 'holster'));
+    this._strideHand(st, stance);
     this._solveRight(w, u);
     this._solveLeft(w, u);
 
@@ -1821,6 +1870,76 @@ export class MeleeLayer {
     an._rotL(b.thighR, Z_AXIS, -key.abd * a);
     this.pelvisDx = key.dx * a;
     this.pelvisDy = key.dy * a;
+  }
+
+  /**
+   * The beat's additive torso pitch, budgeted against the stride's own lean
+   * (see `JOG_TORSO_CAP`). Runs BEFORE this layer rotates the spine, so the
+   * lean it reads is the locomotion's (clip + the animator's lean overlay +
+   * last frame's masked swing clip) on this frame. Two bone reads; nothing
+   * allocates. Returns the pitch to apply, in radians of spine rotation.
+   */
+  _stridePitch(pitch, dt) {
+    const an = this.an, b = an.b, D = this._dbg;
+    /* "IS SHE STRIDING" IS HER SPEED, NOT THE ANIMATOR'S BLEND WEIGHT. The
+     * first version read `an._moveW`, and A105's new heavy segment caught it:
+     * that weight is deliberately frozen ("may only fall") while a melee step
+     * is armed below 0.45, so a swing thrown as she sets off from a standstill
+     * held it at 0.14-0.44 through the whole swing at 4.9-5.0 m/s — the budget
+     * a sixth applied, 47.4 deg of torso and the fist 0.06 m over the head
+     * (measured). The measured travel speed (`player.moveSpeed`) cannot be
+     * frozen: a standing swing's step-in tops out at the drive's 1.15 m/s,
+     * under this ramp's 1.6 m/s floor, so every standing swing still reads 0;
+     * a jog (5 m/s) reads 1. Damped, so a stop or a start does not pop, and
+     * 0 through a dodge roll, whose curl is the dodge's business. */
+    const p = this.ctx.player;
+    const want = p && !p.dodging ? smoothstep(p.moveSpeed ?? 0, STRIDE_V0, STRIDE_V1) : 0;
+    const mv = this._strideW = damp(this._strideW || 0, want, 10, dt);
+    D.strideW = +mv.toFixed(3);
+    if (mv < 0.01 || !b.pelvis || !b.head) {
+      D.strideLeanDeg = null; D.stridePitchCut = 0;
+      return pitch;
+    }
+    an._charOf(b.pelvis.bone, _a);
+    an._charOf(b.head.bone, _b);
+    // char space: +Z is her facing, so this is the forward lean off vertical
+    const lean = Math.atan2(_b.z - _a.z, Math.max(1e-3, _b.y - _a.y));
+    const over = lean + pitch - JOG_TORSO_CAP;
+    const cut = over > 0 ? clamp(over, 0, Math.max(0, pitch + JOG_COUNTER_MAX)) * mv : 0;
+    D.strideLeanDeg = +(lean * 180 / Math.PI).toFixed(1);
+    D.stridePitchCut = +cut.toFixed(3);
+    return pitch - cut;
+  }
+
+  /**
+   * Hold the drive-wrist goal under the head while she is striding, from the
+   * release of the cock through strike and recover (see `JOG_TORSO_CAP`).
+   * Scaled by the stride weight and ramped over the release, so a standing
+   * swing is untouched and the hand path has no step. Writes `_hand` in place.
+   */
+  _strideHand(st, stance) {
+    const D = this._dbg;
+    const mv = this._strideW || 0;
+    D.strideHandCut = 0;
+    if (mv < 0.01 || stance !== 'swing' || !st) return;
+    const ph = st.phase;
+    const pw = ph === 'strike' || ph === 'recover' ? 1
+      : ph === 'windup' ? smoothstep(clamp(st.k ?? 0, 0, 1), WINDUP_COCK, 1) : 0;
+    if (pw <= 0) return;
+    const an = this.an;
+    an._charOf(an.b.head.bone, _a);
+    /* THE HEAD MOVES AGAIN AFTER THIS LAYER. `playerAnimator._headStabilise`
+     * runs after the melee layer and translates the head bone by up to
+     * `HEAD_STAB_MAX` against the stride's pelvis bob, which at a jog is on.
+     * The first build clamped against the unstabilised head and A105 read the
+     * wrist only 0.020 m under the FINAL head on the heavy (the stabiliser
+     * had taken 0.03 of the 0.05 margin). So the clamp is taken against the
+     * lowest the head can end up on this frame. */
+    const over = _hand.y - (_a.y - JOG_HAND_UNDER_HEAD - HEAD_STAB_MAX * mv);
+    if (over <= 0) return;
+    const cut = over * mv * pw;
+    _hand.y -= cut;
+    D.strideHandCut = +cut.toFixed(3);
   }
 
   _settleSpear(stance, st) {

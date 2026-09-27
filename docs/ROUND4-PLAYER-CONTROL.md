@@ -15,9 +15,11 @@ These cannot be done inside `player-control` without breaking file ownership.
 
 ### core-platform — `src/main.js`
 `main.js` never calls `installSpatial(ctx)`. Until it does, `player.js` installs it itself
-(`_installSpatialShim`, `src/entities/player.js`) and reorders `game.systems` so collision
-seeds before the first player tick. **Add `installSpatial(ctx)` to `main.js` and delete
-that block from `player.js`.**
+— the `if (!ctx.collision) installSpatial(ctx)` block at the top of the `Player`
+constructor (`src/entities/player.js`, ~lines 475-497, with the `queueMicrotask(() =>
+this._orderSystems())` that follows it) — and reorders `game.systems` so collision seeds
+before the first player tick. **Add `installSpatial(ctx)` to `main.js` and delete that
+constructor block and `_orderSystems` from `player.js`.**
 
 ### core-platform — `tools/gates.config.mjs` (5 gates, none owned by this lane)
 The sprint canon moved from the retired 8.2 m/s to **6.8 m/s** (`player-anim-15`, §5), and
@@ -153,11 +155,16 @@ lens only, so it can never accumulate into the player's aim.
 | `camLift` | m | how far the ground is raising the **orbit centre** right now, 0 on the flat, ≤ 1.6. It translates — the boom keeps both its length and its axis (§9) |
 | `camOrbit` | vec3 | the lifted orbit centre the boom is swept from = `camPivot + (0, camLift, 0)` (§9) |
 | `camDistFlat` | m | the boom the camera wanted before local terrain shortened it — the fade's "was this shortening intentional?" reference (§9) |
-| `lensGap` | m | lens-to-chest distance this frame. Below `LENS_NEAR` (1.05) **and** below `camDistFlat`, she dissolves whatever cut the boom (§9) |
+| `lensGap` | m | lens-to-pivot distance this frame. Below `LENS_NEAR` (1.05) **and** below `camDist − LENS_SLACK` (the boom the camera chose, less 0.18 m of placement slop) she dissolves whatever cut the boom; below `LENS_JAM` (0.80) she dissolves regardless (§9) |
 | `camElev` / `camElevWant` | rad | delivered / requested forward elevation, + = looking up (§9) |
-| `camAimBudget` | rad | the most look-down the ground may take from the requested shot this frame: `AIM_MAX` (0.80) level or down, `clamp(elevReq/2, 0.12, 0.45)` on a look-up (§9) |
-| `camHijack` / `camHijackMax` | rad | how far the framing actually rotated the view toward her, and its ceiling (§9) |
-| `camPivot` | Vector3 | smoothed orbit centre (includes the shoulder offset and the look-up lift) |
+| `camAimBudget` | rad | the most look-down the ground may take from the requested shot this frame: `AIM_MAX` (0.80) level or down, `clamp(elevReq × (1 − AIM_KEEP), AIM_FLOOR, AIM_UP_MAX)` = `clamp(elevReq × 0.75, 0.12, 0.45)` on a look-up (§9) |
+| `camHijack` / `camHijackMax` | rad | how far the framing actually rotated the view toward her, and its ceiling (§9). Toward the pivot on an un-swung rig; toward her upper body as `camSwing` grows (§11). **Slew-limited** (§12): changes by at most `HIJACK_RATE` (57°/s) and 2.5° per update; while **aiming** it pays back only the part of the offset past `AIM_FRAME` (0.8) of the half-frame |
+| `camSwing` | rad | how far the ground has swung the boom about the vertical through the pivot, + = shoulder side. 0 on open ground and below `SWING_UP_MIN` of the look-up (§11) |
+| `camRunK` | 0..1 | how much of the **run framing** is applied (§12): `smoothstep(up, LEAN_UP_IN, LEAN_UP_FULL) × runK`, 0 standing, aiming or below `LEAN_UP_IN` |
+| `camLean` | m | horizontal distance the run framing has moved the rig (head orbit + clearance), 0 when `camRunK` is 0 (§12; was the forward lean of §11) |
+| `camOrbitPsi` | rad | the run framing's orbit angle about her head, 0 = straight behind her head in the view, + = shoulder side (§12) |
+| `camArmOut` | m | how far along the orbit the clearance solve has moved the lens off the base angle (§12; was the fixed `ARM_OUT` step of §11) |
+| `camPivot` | Vector3 | smoothed orbit centre (includes the shoulder offset, the look-up lift and the run framing's translation) |
 | `pivotHeight` | m | base pivot height: 1.45 standing, 1.06 crouched |
 | `fade` | 0..1 | her dither coverage; 1 = solid |
 | `fovBase` / `fovBias` | deg | settings FOV, and the sprint widening on top of it. **Combat: read these** |
@@ -239,6 +246,18 @@ sliders straight to these; nothing needs to be told about a change.
 | `PIVOT_H` / `PIVOT_H_CROUCH` | 1.45 / 1.06 m | camera-feel-07, A31 |
 | `PITCH_UP` / `PITCH_DOWN` | −1.15 / +1.02 rad | camera-feel-06, A32 |
 | `LENS_FLOOR` / `LOOKUP_LIFT` / `LOOKUP_LIFT_IN` / `BOOM_MIN` | 0.70 m / 0.45 m / 0.15 / 0.9 m | camera-feel-06 — see §6, §10 |
+| `PIVOT_CROUCH_MAX` | 1.2 m | A31 — the crouch pivot ceiling, enforced on the target (`_lookLift`) and on the delivered pivot (`_capCrouchPivot`) — see §11 |
+| `LEAN_UP_IN` / `LEAN_UP_FULL` / `LEAN_REST` / `LEAN_K` / `RUN_IN` / `RUN_FULL` | 0.45 / 0.85 of the look-up / 0.10 m / 25 / 1.8 / 3.2 m/s | the **run framing** weight and head follow — see §12 (`LEAN_DROP_K`, `LEAN_MAX`, `ARM_OUT`, `ARM_K` of §11 are gone) |
+| `RUN_FLOOR_DROP` | 0.10 m | lens floor while running at a deep look-up (0.70 → 0.60) — see §12 |
+| `ORBIT_N` / `ORBIT_DA` / `ORBIT_A0` / `ORBIT_PMAX` / `ORBIT_NR` / `ORBIT_DR` / `ORBIT_RMIN` | 29 / 5° / −70° / 46° / 4 rings / 0.08 m / 0.5 m | the run framing's **orbit candidates** — see §12 |
+| `ORBIT_CLR` / `ORBIT_PASS` / `ORBIT_WIN` / `ORBIT_TAIL` / `ORBIT_BAND` | 0.22 m / 0.18 m / 42 frames / 20° / 0.6 m | its **clearance** envelope and rules — see §12 |
+| `ORBIT_XMAX` / `ORBIT_YMAX` / `ORBIT_CLRK` / `ORBIT_EDGEK` / `ORBIT_RCOST` / `ORBIT_HIDK` / `ORBIT_HYST` | 0.62 / 0.65 NDC / 8 / 4 / 0.06 / 0.5 / 0.20 | its **framing score** — see §12 |
+| `ORBIT_RATE` / `ORBIT_RATE_R` | 5 rad/s / 1 m/s | how fast the orbit may move — see §12 |
+| `ORBIT_CAPS` / `ORBIT_CLOTH` / `ORBIT_CLOTH_R` / `ORBIT_RIGID_PTS` | 22 bone capsules / `dyn_(skirt\|legFlap\|hipFlap\|hipSash)` / 0.10 m / 16 | its **proxy of her body** — see §12 |
+| `SWING_UP_MIN` / `SWING_MAX` / `SWING_STEPS` / `SWING_HYST` / `SWING_FRAME` / `SWING_FRAME_OK` / `SWING_COST` / `SWING_HOLD_SLACK` / `SWING_BODY` / `FRAME_TGT_BELOW` / `SWING_TGT_FULL` | 0.55 of the look-up / 1.75 rad / 20 / 0.08 m / 0.90 / 0.55 / 0.20 per rad / 0.10 / 0.52 m / 0.15 m / 0.35 rad | the **ground yaw swing** — see §11 |
+| `SWING_RATE` / `SWING_LEAD` / `SWING_MARGIN` | 3 rad/s / 0.12 s / 0.15 m | the swing's turn rate, the look-ahead its rotation/lift are solved for, and the clearance a swing candidate must keep — see §12 |
+| `HIJACK_STEP` / `HIJACK_RATE` / `AIM_FRAME` | 2.5° per update / 1.0 rad/s / 0.8 of the half-frame | the hijack **slew limit** and the **aim comfort** zone — see §12 |
+| `FRAME_LOW_UP` | 0.35 of the half-frame | the lift's framing allowance while **looking up** (`FRAME_LOW` stays 0.70 level/down) — see §12 |
 | `BOOM_CLEAR` / `RELIEF_MAX` | 0.45 m / 0.80 rad | camera-feel-03 — see §7 |
 | `ROT_MAX` / `ROT_FRAME` / `ROT_MARGIN` / `ROT_STEPS` / `PITCH_B_MAX` | 0.95 rad / 0.95 of the half-frame / 0.04 m / 10 / 1.40 rad | the **ground boom rotation** — see §10 |
 | `LIFT_MAX` / `FRAME_LOW` / `LIFT_MARGIN` / `LIFT_MICRO` / `PREDICT` | 1.6 m / 0.70 of the half-frame / 0.40 m / 0.12 m / 0.14 s | the orbit lift and its caps — see §9, §10 |
@@ -261,16 +280,18 @@ then fired on the *result* (`boomLength < 1.45`), so tracking a flyer pulsed her
 1.00 / 0.44 / 0.72 / 0.52 — and `depthWrite` went off with it, showing hair, skirt, quiver
 and arrow through one another.
 
-Fixed at the source, in three parts:
+Fixed at the source, in three parts (the live VALUES of both constants are §5's — §10
+raised them; this section keeps only the mechanism, so each constant has one value in this
+document):
 
-1. **`LOOKUP_LIFT`** raises the orbit centre by up to 0.28 m as she looks up, so the boom
-   swings around her crown rather than her sternum.
-2. **`LENS_FLOOR`** clamps the boom length so the lens can never sink below
-   `groundY + 0.62` — a 17 cm margin over `cameraBoom`'s own 0.45 m terrain clearance, so
-   the terrain march never fires on flat ground and the boom is only ever cut by a real
-   collider. Measured by `A32b-lookup-no-ghost`: `fade == 1.000` at **every** pitch from 0°
-   to 66°, aiming and free (24 clear samples, 0 ghosted), boom monotonic in pitch, lens
-   height 0.62 m at steady state and never under 0.586 m through a pitch transient.
+1. **`LOOKUP_LIFT`** raises the orbit centre as she looks up, so the boom swings around her
+   crown rather than her sternum.
+2. **`LENS_FLOOR`** clamps the boom length so the lens can never sink below her feet +
+   `LENS_FLOOR` — a margin over `cameraBoom`'s own 0.45 m terrain clearance, so the terrain
+   march never fires on flat ground and the boom is only ever cut by a real collider.
+   Measured by `A32b-lookup-no-ghost`: `fade == 1.000` at **every** pitch from 0° to 66°,
+   aiming and free (24 clear samples, 0 ghosted), boom monotonic in pitch, and the lens
+   never under the 0.5 m `lensAboveFeet` bar through a pitch transient.
 3. **Subtracting the intentional shortening** replaced the absolute-length fade test, so a
    boom that was shortened on purpose never ghosts her. Fade also *ramps in* over the first
    0.25 m of cut, so a 2 cm graze cannot step the opacity. (That subtraction was originally
@@ -693,11 +714,17 @@ A first-order damp of rate `k` chasing a target moving at `v` settles a constant
 the boom is 1.31 m and 0.34 m is **15° of framing**. Measured on a 22.3° face at
 `camPitch -1.15`, as the fraction of her vertices inside the frame:
 
-| staging | before | after |
+> **Retracted in fix round 3 (§11).** The judge round re-measured this table and the two
+> sprint rows — the whole claimed recovery — did not reproduce; §11 publishes what A31b's own
+> estimator returns on the fix-round-2 build (sprinting uphill **0.129**, sprinting downhill
+> **0.199**, the flat control sprinting **0.155**), and why. The damp-lead fix below is real
+> (0.043 m residual lag, judge-measured); the framing loss was her lean, not the damp.
+
+| staging | before | after (as claimed in fix round 2 — does not reproduce, see §11) |
 |---|---|---|
 | pinned, uphill | 0.404 | 0.388 |
-| sprinting uphill | **0.100** | **0.387** |
-| sprinting downhill | **0.019** | **0.35** |
+| sprinting uphill | **0.100** | ~~0.387~~ |
+| sprinting downhill | **0.019** | ~~0.35~~ |
 | flat-ground control, same pitch | 0.392 | 0.392 |
 
 …with `camLift` 0, `camRelief` 0 and the same 1.31 m boom on every row, i.e. nothing the
@@ -732,7 +759,8 @@ scoring frames wrong:
 * `onScreen` tested `|minX| < 9` — an artifact detector, not a visibility test; one vertex a
   few centimetres past the near plane projects to `|x| ≈ 20` while she fills half the frame.
   It now measures **directly**: `onFrac`, the fraction of her vertices inside the NDC box,
-  must be ≥ 0.12, alongside the unchanged crown bar.
+  must be ≥ 0.12, alongside the unchanged crown bar. (Superseded by §11: the bar is now
+  relative to a flat-ground control, with 0.12 kept as its floor.)
 
 ### Two more defects the new stagings exposed
 
@@ -750,7 +778,8 @@ scoring frames wrong:
 
 ### Known gaps
 
-* At the **pitch clamp** (65.9°) the boom is 1.31–1.46 m by design (`LENS_FLOOR` plus the
+* *(Superseded by §11 — booked as its own gate, `A31c-clamp-framing`, and fixed.)* At the
+  **pitch clamp** (65.9°) the boom is 1.31–1.46 m by design (`LENS_FLOOR` plus the
   look-up shortening), which is shorter than she is tall, so she fills the bottom of the frame
   and her legs leave it. That is not the ground: the **flat-ground control at the same pitch**
   measures the same 1.31 m boom, the same 1.31 m gap and `onFrac` 0.392, and A32b films it.
@@ -768,3 +797,297 @@ scoring frames wrong:
   (aim delivered, hill not booked as an occluder, no blending, and a dissolve only ever
   explained by the lens genuinely being inside her).
 * Her shadow still does not dither (pre-existing: three's depth material is not cloned).
+
+---
+
+## §11 Fix round 3 (residue, `player-control-r2`): the clamp framing is its own finding
+
+The fix-round-2 verdict (docs/ROUND4-WAVE2.md, `player-control-followup`) left two majors
+and one minor. Each is answered below with what was measured, not what was intended.
+
+### Finding 1 — the crouch-pivot guard is live, and A31 has the pitch axis
+
+*Judge: "A31's `camera pivot ≤ 1.2 m` bar is violated while crouch-aiming at any look-up;
+the guard that enforces it is dead code."*
+
+* `_updateCamera` calls `this._lookLift(up)`; the raw `LOOKUP_LIFT * up * up` line is gone,
+  so the `LOOKUP_LIFT_IN` dead zone and the crouch clamp are both on the live path.
+* **`_capCrouchPivot`** caps the *delivered* pivot as well as the target. The damp leads its
+  target by `v/k` (§10), so a target pinned exactly on the bar was delivered above it while
+  the look-up was moving: 1.2139 / 1.2162 / 1.2176 m on slow / normal / flick look-ups.
+  `PIVOT_CROUCH_MAX` (1.2) is the one constant both places read. Standing is untouched.
+* **A31** now stages the pitch axis two ways, both through the real look path: four
+  `mouse.dy` sweeps (−40 / −120 / −400 / −900 per frame, every frame sampled, all reaching
+  the 65.9° clamp), and the judge's literal stagings — `camPitch` −0.5 / −0.8 / −1.15 held 40
+  frames from a settled pitch 0. **Max pivot above her feet: 1.2000 m on every row.** A
+  standing sweep is the control that proves the clamp is crouch-only (1.95 m standing).
+* **A32b** re-measures `camDist` over 48° → 66° **directly** while aiming, as asked — the
+  linear lift is not assumed monotonic: **1.391 → 1.314 → 1.203 → 1.065 m**, asserted
+  non-increasing with 1 mm of float slack (`camDistMonotonic48to66`), separately from the old
+  +0.02-per-step boom check.
+
+### Finding 2(a) — §10's framing table, re-measured with the gate's own estimator
+
+*Judge: "§10's framing recovery table does not reproduce."* It does not. A31b's estimator
+(median of 20 samples over a 56-frame window after a 16-frame settle, fraction of her
+vertices inside the NDC box, in front of the lens) on the **fix-round-2 build**, 22.3° face
+at (−148, 61), `camPitch −1.15`:
+
+| staging | §10 claimed | fix-round-2 build, measured | judge's probes | fix round 3 |
+|---|---|---|---|---|
+| sprinting uphill (`sprint-uphill-clamp`) | 0.387 | **0.129** | 0.136, 0.14 | **0.305** |
+| sprinting downhill (`sprint-downhill-clamp`) | 0.35 | **0.199** | 0.19, 0.286 | **0.444** |
+| flat control, pinned (`flat-clamp-pinned`) | 0.392 | 0.386 | — | 0.388 |
+| flat control, sprinting (`flat-clamp-sprint`) | not staged | **0.155** | 0.098, 0.118 | **0.410** |
+
+The pinned rows reproduced; both sprint "recoveries" did not. §10's damp-lead fix is real
+(0.043 m of residual lag, judge-measured) — the frame was being lost to something else, and
+the flat control losing her just as badly is what located it.
+
+### Finding 2(b) — the control itself lost her: root cause, fix, and its own gate
+
+*Judge: "add a flat-ground sprint-at-clamp control row to A31b and require every slope row
+to be within a stated margin of that control … if the control itself films as this one
+does, book the clamp framing as an open finding (its own gate id)."*
+
+**The control row and the relative bar.** A31b stages `flat-clamp-pinned` and
+`flat-clamp-sprint` in the same run, at the same pitch and gait as the slope rows, and every
+slope row must keep **`FRAME_KEEP` = 0.45** of its control's median (`max(0.12, 0.45 × ctrl)`
+— the old absolute 0.12 is kept as a floor, so no row is judged more leniently than before).
+
+**The control filmed as the judge's did** — her bow and nothing else, `onFrac` 0.155,
+`camLift` 0, `camRelief` 0. Measured cause: her **lean**. At the clamp the lens hangs
+0.53 m behind her feet, 0.70 m up, so what decides whether she is in the picture is the
+elevation of her head from the lens. Pinned, `head_0104` is 0.10 m ahead of her root at
+1.45 m (52° up); sprinting it is **0.43 m ahead at 1.25 m (31° up)** — under the bottom edge
+of a 60° frame centred on 66° (36°). The ground did nothing.
+
+**Fix — the lean follow.** At a deep look-up (`LEAN_UP_IN`..`LEAN_UP_FULL` of it), while
+she runs (`RUN_IN` → jog speed), the orbit centre follows her head forward along her facing
+by the head's lead beyond her standing lead (`LEAN_REST`) plus `LEAN_DROP_K` = cot 50° per
+metre it has dropped — i.e. it holds her head at its standing elevation from the lens. It is
+a translation of the whole rig: lens gap, boom length and the delivered aim are untouched.
+Standing still, or below `LEAN_UP_IN`, it is exactly zero, so the pinned control and every
+level-pitch gate (V22, A29b, A35's −0.4/0/0.75 stagings) are unchanged to the bit.
+
+**Fix — the arm clearance.** The same staging put the lens in her right arm's swing: her fist
+came within **0.05 m** of the lens every stride (a frame of knuckles, near-plane clipped —
+`shots/pc2-nearfreeze.png`), 0.014 m once the rig moved forward. While she runs at a deep
+look-up the shoulder offset steps out by `ARM_OUT` (0.26 m); aiming, walking or standing it
+is untouched.
+
+**Booked as its own gate: `A31c-clamp-framing`** — flat ground, pitch clamp, pinned / jog /
+sprint; head in frame on ≥ 90 % of samples, jog and sprint keep ≥ 0.75 of the pinned median,
+pinned ≥ 0.25, no vertex of her within 0.15 m of the lens, opacity ≥ 0.98. On the
+fix-round-2 build it **fails** on exactly the defect: head in frame **0 %** jogging and
+sprinting, `onFrac` 0.137 / 0.154, fist 0.05 m from the lens. Now: head in frame **100 %**
+on all three rows over three consecutive runs, `onFrac` 0.38 / 0.36–0.37 / 0.40–0.41,
+nearest vertex ≥ 0.21 m.
+
+### The world moved under A31b — the 38.4° hillside, and the ground yaw swing
+
+The world-ground expansion re-shaped the massif, and A31b's search ("the steepest clear
+face in 26–40°") now lands on a **38.4°** face at (−30, −273) (it was 34.3°). On the
+fix-round-2 build the hillside look-ups there filmed a mountain with her bow tips in the
+bottom row: **`onFrac` 0.008 at −0.8 and 0.004 at the clamp** — A31b has been red in every
+suite since. Both of the solver's levers were doing their job and both *raise* the lens (the
+pitch rotation swings it up, the lift translates it up): at −0.8 it cleared the hill with
+10.4° of rotation and a 1.02 m lift, lens at her head height, and a raised lens looking up
+puts her under the bottom edge.
+
+**Fix — the ground yaw swing (`_groundSwingFor`).** The third rigid move: rotate the boom
+about the vertical through the pivot. Along the contour the ground is level with her feet,
+so the lens can stay LOW — where it frames her — and still clear; like the pitch rotation it
+moves the lens on a sphere about the pivot, so it costs no lens gap. Its contract:
+
+* asked only at ≥ `SWING_UP_MIN` of the look-up, and only when the un-swung, un-rotated,
+  un-lifted boom does **not** clear — on open ground it returns 0 after three height samples;
+* candidates must clear **on their own** (no rotation, no lift). Pricing swing + rotation +
+  lift combinations was built and measured first: the best rig jumped between her two sides
+  from one solve to the next, through the un-swung boom in the hill (opacity 0.79, gap
+  0.94 m). Swing-only candidates vary smoothly and never did;
+* the lens keeps `SWING_BODY` (0.52 m) off the vertical through her head — a swing across
+  her back otherwise parks it at her hip (0.26 m, a frame of her armpit that the lens-gap bar,
+  measured to a pivot 1.9 m up, could not see);
+* her upper body must sit within `SWING_FRAME` of the frame once the view is hijacked; on a
+  swung rig the hijack aims at **her upper body** rather than the pivot (`_hijackTgt`,
+  blended in over `SWING_TGT_FULL`), and it is still capped at `camAimBudget`;
+* the side it is on is held while that side has an answer (`SWING_HOLD_SLACK`), so a
+  stride across a crease cannot toggle the camera between her shoulders.
+
+Cost: 20 candidates × 3 height samples, **0.07 ms** per `_updateCamera` on the swung
+hillside (0.02 ms flat), no allocation. At −0.5 the boom's horizontal reach (1.6 m) takes
+her off the side of the frame on any clearing swing, so the framing test rejects them all
+and −0.5 runs the pitch-rotation/lift path exactly as before.
+
+| 38.4° hillside, pinned | fix-round-2 build | fix round 3 |
+|---|---|---|
+| `camPitch −0.5` | 0.224 (lift 1.19) | 0.22–0.29 (unchanged path) |
+| `camPitch −0.8` | **0.008** (rot 10.4°, lift 1.02) | **0.52** (swing −75°, opacity 1, gap 1.45 m) |
+| `camPitch −1.15` | **0.004** (rot 21°, lift 0.54) | **0.35–0.37** (swing +55..70°, opacity 1, gap 1.31 m) |
+
+Moving: sprinting down the same face at −0.8 / −1.15, and backing up it, stay at opacity
+1.000 with a lens gap ≥ 1.27 m on every frame.
+
+### Gate
+
+Lane run on port 5204 (`node tools/gates.mjs --port 5204 --lane player-control`):
+**12 / 12 PASS** — A28, A28b, A29, A30, A30b, A31, A32, V22, A29b, A32b, A31b,
+`A31c-clamp-framing` (new id; nothing else registers it). A31b: 11 judged clear stagings,
+0 ghosted, 0 lens-in-her, 0 aim hijacks, 0 off-screen, worst frame ratio 0.74 against
+`FRAME_KEEP` 0.45.
+
+Full suite on 5204 (`node tools/gates.mjs --port 5204`): **239 gates: 187 pass, 8 fail,
+4 pending, 40 need judging**; all 12 player-control gates PASS. The 8 FAILs are other
+lanes' and none touches the camera: A17-draw-beats, A48-cadence (broadhead), A81 (npc
+literal), A47c (snapmaw/corruptor), A50b (shellwalker hulls), A23 / A23b (spatial), A76
+(glinthawk footfall routing) — each also red in the player-melee lane's full suite on the
+same tree or flaky under load (A76b / A90 / A96 / A97b failed once and passed on an
+isolated re-run).
+
+### Known gaps
+
+* **Aiming at the clamp** (the A32 staging: aim zoom fov 44, 1.02 m aim boom, 0.52 m
+  shoulder) films the bow and arrow at the left edge with `onFrac` 0.074 pinned / 0.165
+  walking — her head sits just off the bottom-left corner. A32's contract there is reticle
+  reach (met, 65.7°), and aim framing was not in this finding, so it is recorded here with
+  its number rather than tuned under a finding that did not ask for it.
+* The **hillside −0.5** row (the unchanged lift path) has A31b's thinnest margin:
+  0.22–0.29 against a bar of 0.17–0.20, because the pinned flat control itself reads
+  0.38–0.44 run to run (her idle pose).
+* At every deep look-up her **stowed bow and spear** sit 0.15–0.25 m from the lens and
+  dominate the upper half of the frame; that is the gear's mount, not the camera.
+* The far-terrain "grid" visible in these films is core-platform's GTAO (already routed,
+  docs/ROUND4-WAVE2.md `world-ground`).
+
+---
+
+## §12 Residue fix round 1 (`player-control-r2`, judge round r0): four majors
+
+The r0 verdict on §11 left four majors. Each is answered below with what was measured on this
+tree, port 5204, and the gate that now holds it.
+
+### Finding 1 — a yaw pan across the hillside lurched the view and ghosted her
+
+*Judge: "15-22 deg one-frame view lurches and ghosting with no occluder (opacity 0.75)."*
+Reproduced first (38.4° face, pinned, `camPitch -0.8`, 0.005 rad/frame): 23.2° view step, opacity
+0.746, lens gap 0.89 m. Three causes, three fixes:
+
+* **The swing turned too fast.** It damped at 14/s toward a target that flips sides when a pan
+  carries the held side past `SWING_MAX`, so the lens crossed 100+° of her in a handful of
+  frames. It now turns at most `SWING_RATE` (3 rad/s, the judge's number).
+* **The ground was solved where the boom was going, not where it was.** The pitch rotation was
+  solved at the swing's *target*; a crossing through the un-swung boom (which is in the hill) was
+  handed no rotation, so `cameraBoom` cut the boom. The rotation and the lift are now solved at the
+  swing the boom actually has **and** `SWING_LEAD` (0.12 s) ahead along its path; during a
+  transit the rotation is priced without counting on the (damped, gap-capped) lift; a releasing
+  rotation may only come down to the rotation that clears on its own. Separately, a *settled*
+  swing at −30° was cut from 1.56 m to 1.16 m by `cameraBoom`'s whisker ring, which a swung boom
+  running along the slope exposes up-slope — swing candidates now need `SWING_MARGIN` (0.15 m).
+* **Nothing bounded the view.** The hijack is now an offset in the requested axis' own tangent
+  plane and may change by at most `HIJACK_RATE` (57°/s; 2.5° per update). The rate is what binds a
+  *rendered* frame: the loop sub-steps a slow frame, and a per-update cap alone let a 40 ms frame
+  move the view 4.3° past the input (measured). The delivered view therefore moves by the player's
+  input plus at most one step, whatever the ground solve does underneath.
+
+| hillside pan (A31b rows) | judge (r0 build) | now |
+|---|---|---|
+| −0.8, 0.005 rad/frame | 22.49°/frame, opacity 0.746, gap 0.89 | 1.13°, 1.000, 1.45 m |
+| −0.8, 0.02 | 17.35°, 0.772, 0.90 | 1.44°, 1.000, 1.45 m |
+| −0.8 aiming, 0.005 | —, 0.768 | 1.08°, 1.000, 1.39 m |
+| clamp, 0.005 / 0.02 | —, 0.876 (from +1.0) | 1.22° / 1.44°, 1.000, 1.31 m |
+| clamp aiming, 0.005 / 0.02 | — | 0 / 1.08°, 1.000, 1.01 m (bar 0.96: the flat aim boom) |
+
+Film: `shots/pcf1-final-hill-yawpan-0.8.png` (mid-crossing, swing +49°, solid).
+
+### Finding 2 — the run framing only worked running away from the lens
+
+*Judge: "lean follow and arm clearance only work for the run direction A31c stages, and A31c's
+head-in-frame check ignores the horizontal edge."* Confirmed, and one measurement error found on
+the way: **53 of the rig's 69 meshes are hidden** — the five spare weapons are all parented to
+`hand_l_014` and toggled invisible — and both A31c's nearest-vertex bar and A31b's `onFrac` counted
+them (about half of every sample set, all of it in her left fist). The 0.011 m sprint-left reading
+was partly a hidden ropecaster. A31b / A31c now count only meshes whose whole ancestor chain is
+visible (`VISIBLE` in the gate file; V22 and A29b keep the old helper — their bars are extents).
+
+The lean follow (along her heading) and the fixed `ARM_OUT` are **gone**. In their place
+(`_runFraming`, `_orbitStep`):
+
+* **Head orbit.** The lens sits on a horizontal circle about her head, following its lead in
+  both axes; radius and base angle are the pinned rig's, so a standing look-up is unchanged.
+* **Clearance, measured on her.** Bone capsules for her body and limbs (fingertips included), one
+  capsule per segment of every cloth chain that hangs where the lens goes (`dyn_skirt*`,
+  `dyn_legFlap*`, `dyn_hipFlap*`, `dyn_hipSash*` — a sprint flares the right skirt panel 0.3 m out
+  behind her hip), and vertex samples of every *visible* rigid mesh (stowed bow, quiver). 29 angles
+  × 4 radii, each keeping its worst clearance over the last stride (42 frames). The lens takes the
+  candidate whose projected head sits nearest the pinned framing, penalised for clearance under
+  0.22 m, for a head past NDC 0.62 / 0.65, and for a sight line to her crown through her own
+  shoulders; it never parks in or sweeps across her trailing legs.
+* **Lower lens while running** (0.70 → 0.60 m). 0.52 was measured too and buys more clearance,
+  but leaves `cameraBoom` 5 cm over its terrain clearance: the ground solvers engaged on 2 cm
+  bumps of "flat" ground.
+* **Ramp to full at 3.2 m/s** (`RUN_FULL`), not jog speed: a run up a 22° face accelerates for a
+  second with a run's lean already in it (A31b's `sprint-uphill-clamp` fell to 0.46 of its control).
+
+Cost while active: 0.09 ms for the run framing, 0.11 ms for the whole `_updateCamera` (2000-call
+loops); nothing when she is not running at a deep look-up.
+
+| flat, clamp (A31c) | judge (r0 build) | now (3 runs) |
+|---|---|---|
+| jog away | head x median −0.81, min −0.98 | −0.62..−0.64, min −0.72; nearest 0.26–0.28 m |
+| sprint away | x −0.77..−0.85, min −1.07; nearest 0.115 m | −0.65..−0.72, min −0.80; nearest 0.18–0.31 m |
+| sprint right | x −0.89, min −1.09 | −0.42..−0.43; nearest 0.43 m |
+| sprint toward | y median −0.86, min −1.00 | y −0.5..−0.6; nearest 0.44 m |
+| sprint left | nearest 0.011 m | x +0.13..+0.15; nearest 0.30–0.40 m |
+
+Films: `shots/pcf1-final-clamp-{away,right,left,toward,jogright}.png`.
+
+### Finding 3 — A31b judged its −0.5 rows against the clamp control
+
+*Judge: "against a flat control at -0.5 it fails, and its film misses its own criteria."* Both
+true. A31b now stages **one flat control per pitch and gait it uses** (pinned −0.5 / −0.8 /
+−1.15, sprint 0.06 / −0.25 / −0.8 / −1.15) and judges every row against the control at its own
+pitch and gait; the title says so. Measured this run: pinned controls 0.872 / 0.753 / 0.614,
+sprint 0.999 / 0.994 / 0.855 / 0.689.
+
+The −0.5 hillside itself is fixed, not booked: the lift was priced against her *chest* with
+`FRAME_LOW` 0.70 of the half-frame, which on a look-up leaves her body under the bottom edge.
+Looking up, the allowance is now `FRAME_LOW_UP` 0.35, so the boom march takes less lift (1.19 →
+0.97 m). Her crown moves from NDC −0.63 to −0.04..−0.18; `onFrac` 0.62–0.72 against its own
+control 0.872 (ratio 0.72–0.81, bar 0.45); the film passes its own solid/in-frame test. The
+delivered elevation is still 7.2° of 28.6° — the aim budget spent, by design — and from that spot
+the bowl's far wall fills everything above her: there is no sky at 7° there
+(`shots/pcf1-final-hill-0.5.png`).
+
+### Finding 4 — the crouch pivot cap took the crouch-aim look-up
+
+*Judge: "cuts crouch-aim look-up to 51.6 deg; A32's 16 m Glinthawk is no longer
+reticle-reachable while crouched."* Reproduced (51.6°, 16 m target at NDC y 0.179). A31's 1.2 m and
+A32's 60° do not conflict: the 14° the ground rotation lifts the 0.9 m boom by is *placement*, and
+the hijack was paying it back out of the aim. **While aiming**, the hijack now pays back only the
+part of the offset past `AIM_FRAME` (0.8) of the half-frame — 14° is inside the frame, so it costs
+framing, not aim. Crouch-aim at the clamp: **65.7°** delivered, pivot 1.200 m, hijack 0°, both
+targets on the reticle. A32 now runs the same sweep and servo crouched (`crouchAim` in its detail).
+
+### Gate
+
+Lane run on 5204 (`node tools/gates.mjs --port 5204 --lane player-control`): **12 / 12 PASS** on
+the final build, plus A31c alone twice more (both PASS); the run before the last tuning change
+(`RUN_FULL`) was also 12 / 12. No gate id added; A31b and A31c gained
+rows and bars, A32 a crouch row. Nothing was loosened: the visible-mesh estimator is the only
+change to an existing measurement, and it is stated above.
+
+### Known gaps
+
+* **Sprinting straight away at the clamp** is the tight direction: her forward-leaning torso,
+  right skirt panel and right arm fill every lens position low enough to keep her in a 66° look-up
+  frame, so the orbit settles 40–45° to her right. The bars hold (head x −0.65..−0.72, nearest
+  0.18–0.31 m), and the film shows her upper back and the back of her head with the stowed bow and
+  spear dominant — better than the r0 film (crown in a corner) but not a hero shot.
+* **Turns out of a sprint away** (A31c `diagnostics`, not judged): the lens has to get round her
+  trailing legs, and the head swings across the frame while it does (x up to 0.64–0.75); nearest
+  vertex 0.32–0.61 m in the two final runs, but earlier cuts of this solver read as low as 0.02 m
+  on the away→away-left turn, so it is the case to re-film first. The steady diagonals are clean
+  (0.31–0.51 m; head in frame 0.80–1.00 on toward-left).
+* **Aiming at the clamp** (standing or crouched) still frames the bow and sky, not her —
+  unchanged from §11; the contract there is reticle reach.
