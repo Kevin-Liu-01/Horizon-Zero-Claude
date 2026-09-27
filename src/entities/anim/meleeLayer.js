@@ -113,6 +113,18 @@ const _bwD = new THREE.Vector3();
 /** `_bowSeg`'s own scratch: the limb centre while it is scaled back up. */
 const _bwMid = new THREE.Vector3();
 const _sv4 = new THREE.Vector3();
+/** `_elbowGuard`'s own (round 6): shoulder, elbow, wrist, head, the elbow
+ *  circle's axis / centre / basis, and a candidate. */
+const _eS = new THREE.Vector3();
+const _eE = new THREE.Vector3();
+const _eH = new THREE.Vector3();
+const _eD = new THREE.Vector3();
+const _eAx = new THREE.Vector3();
+const _eC = new THREE.Vector3();
+const _eU = new THREE.Vector3();
+const _eV = new THREE.Vector3();
+const _eT = new THREE.Vector3();
+const _eQ = new THREE.Quaternion();
 const _ident = new THREE.Quaternion();
 /** The identity, as a value (never mutated). */
 function _qi() { return _ident; }
@@ -1037,6 +1049,98 @@ const JOG_HAND_UNDER_HEAD = 0.05;
  *  (+-0.055 m), which it applies AFTER this layer — see `_strideHand`. */
 const HEAD_STAB_MAX = 0.055;
 
+/* ------------- THE DRAW AND HOLSTER ARM PATH (round 6, ruling R8) ---------- */
+/**
+ * Kevin's two complaints, verbatim — "arm literally behind head" and "arms
+ * crossing into her body" — came back from the r5 skeptic on the one path no
+ * gate staged: the DRAW from a jog put her right elbow 0.14-0.19 m above her
+ * head and 0.26-0.34 m behind it for ~0.25 s, and from the rear-3/4 the forearm
+ * lay across the back of her skull. Two things put it there: the reach pose
+ * turned her chest to the RIGHT (yaw -0.16, the drive shoulder back, away from
+ * the hand), and `_alignHaft`'s elbow roll (up to 1.9 rad, "free: only the
+ * elbow moves") spent the whole wrist correction on swinging the elbow up
+ * behind her head.
+ *
+ * Now the draw and the holster are an ARM PATH with a hard bound, checked on
+ * the solved arm every frame the layer drives it (`_elbowGuard`): the elbow
+ * never above the head bone, and — wherever it is above the shoulder joint,
+ * which is where an arm can be "behind the head" at all — never more than
+ * `ELB_BEHIND` behind the head's frontal plane. Violations are removed by
+ * rolling the upper arm about shoulder->wrist (the wrist does not move), the
+ * roll searched round the whole elbow circle for the nearest compliant angle;
+ * if the circle has none, the hand target itself comes forward and down and
+ * the arm is re-solved. The margins are the lag, measured: A107 gates 0.05 /
+ * 0.10 m, `_headStabilise` translates the head up to 0.055 m after this layer.
+ *
+ * WHY THE HEIGHT BAND. The READY guard the draw ends in (and the holster
+ * starts from) has the elbow beside her ribs, 0.26-0.36 m behind the head's
+ * plane — and her SHOULDER JOINT itself sits 0.14-0.20 m behind it (idle, jog
+ * and sprint, measured round 6). "Behind the head" is a statement about an arm
+ * up at head level; below the shoulder the same plane test fails the canon
+ * guard and the bare shoulder. A107 publishes the band-free reading as well.
+ */
+const ELB_OVER_HEAD = -0.01;
+const ELB_BEHIND = 0.07;
+/** "Above the shoulder" for the plane clause: elbow.y > shoulder.y + this. */
+const ELB_BAND = -0.03;
+/** Elbow-circle samples the guard searches (every 10 deg). */
+const ELB_SAMPLES = 36;
+/** How much of the upper body the draw turns TOWARD the drawing hand: + is
+ *  her chest to the LEFT, i.e. the right shoulder forward, which brings the
+ *  stowed haft (it rides on `spine_02`, below most of the turn) toward a hand
+ *  whose elbow stays in front of her head. Round 5's reach turned it -0.16. */
+const DRAW_YAW = 0.42;
+/**
+ * The draw's PULL: the hand takes the haft behind her shoulder at ~0.7 of its
+ * length and has to finish at `GRIP_FRAC` with the prop rigid in the fist.
+ * Round 5 let the capture-and-blend (`_blendCarry`) run on its own clock
+ * (CARRY_RATE, up to 0.55 s) AFTER the draw had ended, and melee.js fired the
+ * first swing into it: grip 0.38-0.45 of the haft at contact (ruling R5). Now
+ * the blend is driven by the pull leg itself — it is at 1 exactly when the
+ * draw clock is — so "the draw has completed" and "the grip is rigid at the
+ * authored fraction" are the same frame (`handoverDone`).
+ */
+const PULL_EASE = (u) => u * u * (3 - 2 * u);
+
+/** The holster's last leg: the hand leaves the socket DOWN HER SIDE to here
+ *  (char), and only then hands the arm back to the locomotion. */
+const SIDE_KEY = {
+  hand: [-0.25, 0.86, 0.10], shaft: [0.0, -0.2, 1.0], lh: [0.30, 0.90, 0.04], lhOn: 0,
+  yaw: 0, pitch: 0, roll: 0,
+};
+
+/* ------------- THE STRIKE AIMS AT THE HULL (round 6, ruling R7) ----------- */
+/**
+ * The contact keys were authored against a Watcher's chest: the blade lands
+ * 1.8 m ahead of her root at 1.0-1.2 m. Every species was staged by the round-6
+ * A103 and the ones that are not built like a Watcher could not be hit —
+ * nothing of a Thunderjaw is at blade height in front of its centre (the jaw
+ * is 2.6 m up, over her head, at the closest the machine manager lets her
+ * stand), a Behemoth's and a Tallneck's heads sit above the sweep, a grounded
+ * Stormbird's chest above it. `melee.js::_aimAt` solves the hull point nearest
+ * the beat's contact tip; here the release and the contact are bent toward it
+ * by rotating the drive hand and the haft about her SHOULDER — pitch first,
+ * then yaw, each bounded — so the blade arrives where the machine is. The
+ * weight is 0 through the cock (the windup reads as authored), rises through
+ * the release, is 1 at contact and gives way through the follow-through.
+ */
+/* generous: melee.js `_aimAt` bounds the TARGET (absolute cone about her
+ * bearing); these only stop a stale aim point from folding the arm */
+const AIM_PITCH_UP = 110 * Math.PI / 180;
+const AIM_PITCH_DOWN = 60 * Math.PI / 180;
+const AIM_YAW = 90 * Math.PI / 180;
+/** ...and on ANY swing the blade tip stays this far above the terrain under
+ *  it (the S5 slope row: on a 25 deg rise the authored low sweeps buried it). */
+const TIP_GROUND_CLEAR = 0.10;
+/** The lean into an out-of-reach target: rad of spine pitch per metre short,
+ *  and its ceiling (0.38 rad moves the shoulder ~0.18 m toward the target). */
+const AIM_LEAN_GAIN = 1.6;
+const AIM_LEAN_MAX = 0.38;
+/** The most the residual pass turns the goal in one frame. */
+const AIM_RESID_MAX = 25 * Math.PI / 180;
+/** The most of an overshoot the arm gives back to stop a thrust on the skin. */
+const AIM_PULL_MAX = 0.35;
+
 /** Normalise a literal direction triple in place. */
 function unit(v) {
   const l = Math.hypot(v[0], v[1], v[2]) || 1;
@@ -1079,6 +1183,26 @@ export class MeleeLayer {
      * settles until a swing has actually drawn a frame to settle out of */
     this._settleT = SETTLE_T;
     this._swingOut = null;
+    /* THE DRAW / HOLSTER ARM PATH (round 6, R5 + R8). `_drawFrom` is the arm
+     * as the locomotion left it on the draw's first frame (so the reach starts
+     * where the hand IS, not at the guard); `_relK` is the holster fraction at
+     * which the prop went back on her back (the return leg starts there);
+     * `_fracNow` the grip fraction written this frame; `_pathOn` true while
+     * the draw/holster drives the arm (the elbow bound is on). */
+    this._drawFrom = {
+      hand: [-0.25, 0.9, 0.1], shaft: [0, -0.2, 1], lh: [0.30, 0.90, 0.04], lhOn: 0,
+      yaw: 0, pitch: 0, roll: 0,
+    };
+    this._prevStance = 'holstered';
+    this._relK = 1;
+    this._fracNow = GRIP_FRAC;
+    this._pathOn = false;
+    this._rollOff = false;
+    this._handLast = new THREE.Vector3();
+    this._handLastOk = false;
+    /** per beat (L1, L2, L3, heavy): the reach the contact really achieved */
+    this._reachSeen = new Float32Array(4);
+    this._pullNow = 0;
     this._dbg = {
       stance: 'holstered', phase: 'idle', k: 0, beat: null, w: 0,
       palmToAxis: 0, gripAngleDeg: 0, bladeAhead: 0,
@@ -1087,6 +1211,7 @@ export class MeleeLayer {
       handSpeed: 0, tipStep: 0, grabGap: 0, grabReach: 0, carryBlend: 1, carryPush: 0,
       hairClearGuard: 9, hairArgmin: null, hairPreFix: 9, hairFixed: 0,
       carrySlide: 0, carrySpan: 0, carryDur: 0,
+      elbowGuard: 0, elbowGuardFail: 0, gripFracNow: GRIP_FRAC, handoverDone: true,
     };
 
     const b = an.b;
@@ -1631,9 +1756,29 @@ export class MeleeLayer {
       const step = Math.min(dt / (this._carryDur || CARRY_T), Math.max(0, this._cbBudget));
       this._cbBudget -= step;
       this._carryB = Math.min(1, this._carryB + step);
+      /* ...AND ON THE DRAW IT IS THE PULL ITSELF (round 6, ruling R5). The
+       * blend is at least as far along as the pull leg, and exactly 1 when the
+       * draw clock ends — so the frame the draw completes is the frame the
+       * grip is rigid at `GRIP_FRAC` (`handoverDone`), and melee.js starts a
+       * queued swing on it, never into the slide. The draw clock is itself
+       * capped per rendered frame (melee.js STANCE_STEP_MAX), so this cannot
+       * spend the blend faster than the draw is drawn. */
+      if (stance === 'draw' && this._held) {
+        const g0 = clamp(this._grabK ?? 0.55, 0, 0.95);
+        const pk = clamp(((st?.drawK ?? 0) - g0) / Math.max(0.05, 1 - g0), 0, 1);
+        const pb = PULL_EASE(pk);
+        if (pb > this._carryB) this._carryB = pb;
+      }
     }
     this._cacheHair();
     this._lastDt = dt;
+
+    /* THE DRAW STARTS WHERE THE ARM IS (round 6): capture it on the first
+     * frame of a draw, before this layer has touched the arm. */
+    if (stance === 'draw' && this._prevStance !== 'draw') this._captureFrom();
+    this._prevStance = stance;
+    /* the arm path — the draw and the holster — carries the R8 elbow bound */
+    this._pathOn = stance === 'draw' || stance === 'holster';
 
     /* THE POST-SWING SETTLE CLOCK (fix pass 1 — see `SETTLE_T`). It runs only
      * from a swing into the guard; a draw, a holster or the holstered carry
@@ -1643,11 +1788,14 @@ export class MeleeLayer {
     else this._settleT = SETTLE_T;
 
     /* --- how much of the upper body does melee own this frame? --- */
+    /* ROUND 6: the draw takes the arm faster (it starts from the arm's own
+     * pose now, so there is nothing to blend away from), and the holster
+     * hands it back only after the hand has come down her side (see `_blend`). */
     const want = stance === 'holstered' ? 0
-      : stance === 'draw' ? smoothstep(st.drawK ?? 0, 0.0, 0.35)
-        : stance === 'holster' ? 1 - smoothstep(st.drawK ?? 0, 0.62, 1.0)
+      : stance === 'draw' ? smoothstep(st.drawK ?? 0, 0.0, 0.20)
+        : stance === 'holster' ? 1 - smoothstep(st.drawK ?? 0, 0.86, 1.0)
           : 1;
-    this.w = damp(this.w, want, stance === 'holstered' ? 9 : 16, dt);
+    this.w = damp(this.w, want, stance === 'holstered' ? 9 : (stance === 'draw' ? 30 : 16), dt);
     if (want === 0 && this.w < 0.01) this.w = 0;
     const w = this.w;
     D.w = +w.toFixed(3);
@@ -1667,6 +1815,15 @@ export class MeleeLayer {
     const beat = st.heavy ? HEAVY : BEATS[clamp(st.combo | 0, 0, BEATS.length - 1)];
     D.beat = stance === 'swing' ? beat.id : 'ready';
     const u = this._blend(stance, st, beat);   // fills _hand/_shaft/_lh + torso
+    /* the swing aimed at the machine and kept out of the ground (round 6):
+     * BEFORE the torso turns, so the shoulder girdle below follows the hand
+     * the aim actually asks for (the residual pass after the arm solve takes
+     * out the difference the torso's own turn makes to the pivot) */
+    if (stance === 'swing') {
+      this._strikeAim(st, beat, w);
+      this._groundClear(st);
+      u.armLift = (_hand.y - 1.0) * 2;
+    }
 
     /* ------------------------- the clip layer ------------------------- */
     if (stance === 'swing') {
@@ -1688,7 +1845,11 @@ export class MeleeLayer {
     // also the axis A102 measures (pelvis -> spine_03).
     const yaw = u.yaw * w, roll = u.roll * w;
     // budgeted against the stride's own lean while she is moving (JOG_TORSO_CAP)
-    const pitch = this._stridePitch(u.pitch * w, dt);
+    /* ...plus the LEAN INTO a target the blade cannot otherwise reach (round
+     * 6, R7): reach comes from the spine and the step (canon, R3), so when
+     * the aimed hull point is beyond this beat's reach the spine pitches in by
+     * up to `AIM_LEAN_MAX` over the release and the contact. */
+    const pitch = this._stridePitch(u.pitch * w + (stance === 'swing' ? this._aimLean(st, beat, w) : 0), dt);
     an._rotL(b.spine1, Y_AXIS, yaw * 0.30);
     an._rotL(b.spine2, Y_AXIS, yaw * 0.36);
     an._rotL(b.spine3, Y_AXIS, yaw * 0.34);
@@ -1702,7 +1863,9 @@ export class MeleeLayer {
     an._rotL(b.head, Y_AXIS, yaw * 0.22);
     an._rot(b.head, X_AXIS, pitch * 0.18);
     // shoulder girdle follows the drive arm
-    an._rot(b.clavR, Z_AXIS, -0.10 * w * clamp(u.armLift, -1, 1));
+    // (and further when the swing is aimed up at a tall machine: the girdle
+    // rises into a reach over the head — round 6, R7)
+    an._rot(b.clavR, Z_AXIS, -(0.10 + 0.10 * (this._dbg.aimW || 0)) * w * clamp(u.armLift, -1, 1.5));
     an._rotL(b.clavR, Y_AXIS, -0.16 * yaw);
     an._rotL(b.clavL, Y_AXIS, -0.10 * yaw);
 
@@ -1722,6 +1885,13 @@ export class MeleeLayer {
       || (this._held && (stance === 'draw' || stance === 'holster'));
     this._strideHand(st, stance);
     this._solveRight(w, u);
+    /* THE CONTACT LANDS WHERE IT WAS AIMED (round 6, R7): the aim above bent
+     * the beat's KEY toward the target, but the arm does not reach every key
+     * and the wrist does not turn every haft, so the posed tip can sit 0.2-0.3
+     * m off it. From the end of the strike leg through the contact hold the
+     * posed tip is measured and the goal is turned by the residual about the
+     * shoulder and solved once more — the strike homing onto the hull. */
+    if (stance === 'swing' && this._aimResidual(st, w)) this._solveRight(w, u);
     this._solveLeft(w, u);
 
     // fists: the drive hand is closed on the haft, the free hand open (canon:
@@ -1731,6 +1901,32 @@ export class MeleeLayer {
 
     this._measure();
     this._settleSpear(stance, st);
+    /* THE REACH THIS BEAT ACTUALLY GETS (round 6, R7). The contact keys ask
+     * for more hand than the arm has on some beats (the IK clamps at full
+     * extension), so the tip lands 0.1-0.3 m short of the key's own reach —
+     * and `melee._aimAt` picking a target at the KEY's reach put the blade
+     * that far short of the machine. Measured on the contact hold of every
+     * swing (shoulder to posed tip), per beat, and handed to `_aimAt`. */
+    if (stance === 'swing' && st.phase === 'strike'
+        && (st.k ?? 0) >= Math.max(0.10, (st.contactK ?? 0.7) - HIT_LEAD) && this.spear) {
+      const i = st.heavy ? 3 : clamp(st.combo | 0, 0, 2);
+      this.tipWorld(_eT);
+      this.an.b.upArmR.bone.getWorldPosition(_eS);
+      // the arm's OWN reach: learned only off contacts the aim did not have
+      // to lengthen or shorten (`_pullNow`), or one short stab would teach
+      // it the arm is shorter than it is
+      const r = _eT.distanceTo(_eS);
+      if ((this._pullNow || 0) < 0.02) {
+        this._reachSeen[i] = this._reachSeen[i] > 0 ? this._reachSeen[i] * 0.5 + r * 0.5 : r;
+      }
+      D.reachSeen = +r.toFixed(3);
+    }
+  }
+
+  /** The shoulder-to-tip reach this beat's contact actually achieved on the
+   *  last swings, metres, or 0 before it has been seen (round 6). */
+  contactReach(heavy, combo) {
+    return this._reachSeen ? this._reachSeen[heavy ? 3 : clamp(combo | 0, 0, 2)] : 0;
   }
 
   /**
@@ -1809,7 +2005,14 @@ export class MeleeLayer {
     const welded = (an._strideT || 0) > 0.10 ? 1 : 0;
     this._stanceW = damp(this._stanceW || 0, welded, 7, dt);
     const live = stance === 'swing' ? STANCE[beat.id] : null;
-    const want = live ? w * this._stanceW * STANCE_ENV(u.clipU) : 0;
+    /* ...and she stands TALL to stab up at a tall machine (round 6, R7): a
+     * swing the aim has bent up past ~12 deg (a Thunderjaw's jaw, a Longleg's
+     * body) gives up most of the crouch — nobody sinks into a lunge to thrust
+     * over their own head, and on a Thunderjaw the heavy's 0.1 m of crouch was
+     * 0.1 m of reach it did not have. Standing swings with no target, and
+     * every gate staging them, are untouched (`aimPitchDeg` is 0). */
+    const tall = clamp(((D.aimPitchDeg || 0) - 12) / 25, 0, 1);
+    const want = live ? w * this._stanceW * STANCE_ENV(u.clipU) * (1 - 0.8 * tall) : 0;
     /* THE KEY OUTLIVES THE SWING BY AS LONG AS THE UNWIND TAKES. `STANCE_ENV`
      * is already 0 at the end of `recover`, so on a normal frame `a` is spent
      * before `stance` leaves 'swing' — but the rate limit below is in RENDERED
@@ -1942,6 +2145,242 @@ export class MeleeLayer {
     D.strideHandCut = +cut.toFixed(3);
   }
 
+  /**
+   * The arm a draw starts from (round 6): the locomotion's wrist and grip axis
+   * — or, when the layer already owns the arm (a holster reversed into a
+   * draw), last frame's solved wrist — and the free hand, in char space.
+   */
+  _captureFrom() {
+    const an = this.an, b = an.b, f = this._drawFrom;
+    if (this.w > 0.02 && this._handLastOk) {
+      _a.copy(this._handLast);
+      _b.copy(this.gripDirL).applyQuaternion(this._handQ);
+    } else {
+      an._charOf(b.handR.bone, _a);
+      an._liveW(b.handR.bone, _q1);
+      _b.copy(this.gripDirL).applyQuaternion(_q1);
+    }
+    _b.normalize();
+    f.hand[0] = _a.x; f.hand[1] = _a.y; f.hand[2] = _a.z;
+    f.shaft[0] = _b.x; f.shaft[1] = _b.y; f.shaft[2] = _b.z;
+    an._charOf(b.handL.bone, _c);
+    f.lh[0] = _c.x; f.lh[1] = _c.y; f.lh[2] = _c.z;
+  }
+
+  /**
+   * Where this beat's CONTACT key would put the blade tip, in WORLD space, if
+   * she swung from where she stands now (melee.js `_aimAt` / `_lungeFor`).
+   * The key's hand plus the haft ahead of the grip, turned by the swing
+   * bearing the layer is currently carrying. No allocation.
+   */
+  contactTipWorld(heavy, combo, out) {
+    if (!this.ok) return false;
+    const beat = heavy ? HEAVY : BEATS[clamp(combo | 0, 0, BEATS.length - 1)];
+    const c = beat.contact;
+    const L = (1 - this.gripFrac) * this.length;
+    out.set(c.hand[0] + c.shaft[0] * L, c.hand[1] + c.shaft[1] * L, c.hand[2] + c.shaft[2] * L);
+    if (Math.abs(this._aimYaw) > 1e-3) out.applyAxisAngle(Y_AXIS, this._aimYaw);
+    this.an.model.updateWorldMatrix(true, false);
+    out.applyMatrix4(this.an.model.matrixWorld);
+    return true;
+  }
+
+  /** The phase weight of the aim (0 through the cock, 1 at contact). */
+  _aimPhaseW(st) {
+    if (!st || !st.aimOk) return 0;
+    const k = clamp(st.k ?? 0, 0, 1);
+    if (st.phase === 'windup') return k <= WINDUP_COCK ? 0 : smoothstep(k, WINDUP_COCK, 1);
+    if (st.phase === 'strike') return 1;
+    if (st.phase === 'recover') return 1 - smoothstep(k, 0.10, RECOVER_FOLLOW + 0.20);
+    return 0;
+  }
+
+  /** Extra spine pitch toward an aimed target beyond this beat's reach. */
+  _aimLean(st, beat, w) {
+    const aw = this._aimPhaseW(st) * w;
+    if (aw < 1e-3) { this._dbg.aimLean = 0; return 0; }
+    const an = this.an;
+    an.b.upArmR.bone.getWorldPosition(_eS);
+    _eT.set(st.aimX, st.aimY, st.aimZ);
+    const i = st.heavy ? 3 : clamp(st.combo | 0, 0, 2);
+    const reach = this._reachSeen[i] > 0.3 ? this._reachSeen[i] : 1.6;
+    const short = _eT.distanceTo(_eS) - reach;
+    const lean = clamp(short * AIM_LEAN_GAIN, 0, AIM_LEAN_MAX) * aw;
+    this._dbg.aimLean = +lean.toFixed(3);
+    return lean;
+  }
+
+  /**
+   * The residual pass (see the call site): the posed tip, from the hand bone
+   * and the held grip, against the aim point; the goal turned by the angle
+   * between them about the shoulder (<= `AIM_RESID_MAX`), weighted over the
+   * end of the strike leg. True when a second solve is wanted.
+   */
+  _aimResidual(st, w) {
+    if (!st.aimOk || !this._held) return false;
+    const k = clamp(st.k ?? 0, 0, 1);
+    let cw = 0;
+    if (st.phase === 'strike') cw = smoothstep(k, 0.25, Math.max(0.3, (st.contactK ?? 0.7) - HIT_LEAD));
+    else if (st.phase === 'recover') cw = 1 - smoothstep(k, 0.0, 0.35);
+    cw *= w;
+    if (cw < 1e-3) return false;
+    const an = this.an, b = an.b;
+    // the posed tip, char space
+    an._charOf(b.handR.bone, _eH);
+    an._liveW(b.handR.bone, _q1);
+    _eC.copy(this.gripDirL).multiplyScalar((1 - this._fracNow) * this.length).add(this.palmOffL)
+      .applyQuaternion(_q1).add(_eH);
+    an._charOf(b.upArmR.bone, _eS);
+    an.model.updateWorldMatrix(true, false);
+    _m4.copy(an.model.matrixWorld).invert();
+    _eT.set(st.aimX, st.aimY, st.aimZ).applyMatrix4(_m4);
+    _eT.x -= this.pelvisDx || 0; _eT.y -= this.pelvisDy || 0;   // see `_strikeAim`
+    _eU.subVectors(_eC, _eS);
+    _eV.subVectors(_eT, _eS);
+    const over = _eU.length() - _eV.length();     // > 0: the tip would pass through
+    _eU.normalize(); _eV.normalize();
+    const ang = Math.acos(clamp(_eU.dot(_eV), -1, 1));
+    this._dbg.aimResidDeg = +(ang * 180 / Math.PI).toFixed(1);
+    if (ang < 0.01 && !(Math.abs(over) > 0.02)) return false;
+    _eQ.setFromUnitVectors(_eU, _eV);
+    const k2 = cw * Math.min(1, AIM_RESID_MAX / Math.max(ang, 1e-3));
+    if (k2 < 0.999) _eQ.slerp(_qi(), 1 - k2);
+    _hand.sub(_eS).applyQuaternion(_eQ).add(_eS);
+    _shaft.applyQuaternion(_eQ);
+    /* ...and the DISTANCE, both ways: a tip that would pass through the
+     * skin is drawn back (<= `AIM_PULL_MAX`), one that would stop short
+     * reaches on (the arm IK clamps at full extension, so this can only use
+     * the arm there is). */
+    if (Math.abs(over) > 0.02) {
+      const pull = clamp(over, -AIM_PULL_MAX, AIM_PULL_MAX) * cw;
+      _hand.addScaledVector(_eV, -pull);
+      this._pullNow += Math.abs(pull);
+    }
+    return true;
+  }
+
+  /** Her head bone, world space (melee.js `_aimAt` keeps the haft off it). */
+  headWorld(out) {
+    if (!this.ok || !this.an.b.head) return false;
+    this.an.b.head.bone.getWorldPosition(out);
+    return true;
+  }
+
+  /** Her right shoulder joint, world space (melee.js `_aimAt`'s pivot). */
+  shoulderWorld(out) {
+    if (!this.ok || !this.an.b.upArmR) return false;
+    this.an.b.upArmR.bone.getWorldPosition(out);
+    return true;
+  }
+
+  /**
+   * Bend the swing toward `melee.aimPoint` (round 6, R7 — see `AIM_PITCH_UP`).
+   * Runs after `_blend` has filled `_hand`/`_shaft` and after the torso is
+   * rotated (so the shoulder is final), before the stride clamp and the arm
+   * solve. The rotation is computed ONCE per frame from the beat's contact
+   * key — the tip the aim point was solved against — and applied, weighted by
+   * phase, to whatever pose this frame interpolated, about the live shoulder.
+   */
+  _strikeAim(st, beat, w) {
+    const D = this._dbg;
+    const want = this._aimPhaseW(st) * w;
+    D.aimW = +want.toFixed(3);
+    this._pullNow = 0;
+    if (want < 1e-3) { D.aimPitchDeg = 0; D.aimYawDeg = 0; return; }
+    const an = this.an, b = an.b;
+    // the aim point, char space
+    an.model.updateWorldMatrix(true, false);
+    _m4.copy(an.model.matrixWorld).invert();
+    _eT.set(st.aimX, st.aimY, st.aimZ).applyMatrix4(_m4);
+    // the stance's pelvis offset is added by the animator AFTER this layer and
+    // carries the whole arm with it (the heavy drops ~0.1 m): aim ahead of it
+    _eT.x -= this.pelvisDx || 0; _eT.y -= this.pelvisDy || 0;
+    // the shoulder (the pivot) and the contact key's tip, char space
+    an._charOf(b.upArmR.bone, _eS);
+    const c = beat.contact;
+    const L = (1 - this.gripFrac) * this.length;
+    _eC.set(c.hand[0] + c.shaft[0] * L, c.hand[1] + c.shaft[1] * L, c.hand[2] + c.shaft[2] * L);
+    if (Math.abs(this._aimYaw) > 1e-3) _eC.applyAxisAngle(Y_AXIS, this._aimYaw);
+    _eU.subVectors(_eC, _eS);
+    _eV.subVectors(_eT, _eS);
+    const lu = _eU.length(), lv = _eV.length();
+    if (lu < 0.1 || lv < 0.1) return;
+    const pa = Math.asin(clamp(_eU.y / lu, -1, 1)), pb = Math.asin(clamp(_eV.y / lv, -1, 1));
+    const ya = Math.atan2(_eU.x, _eU.z), yb = Math.atan2(_eV.x, _eV.z);
+    let dy = yb - ya;
+    dy = Math.atan2(Math.sin(dy), Math.cos(dy));
+    const dp = clamp(pb - pa, -AIM_PITCH_DOWN, AIM_PITCH_UP) * want;
+    dy = clamp(dy, -AIM_YAW, AIM_YAW) * want;
+    // pitch about the horizontal axis across the contact direction, then yaw
+    _eH.set(_eU.x, 0, _eU.z);
+    if (_eH.lengthSq() < 1e-6) _eH.set(0, 0, 1);
+    _eH.normalize();
+    _eAx.crossVectors(_eH, Y_AXIS).normalize();
+    _eQ.setFromAxisAngle(_eAx, dp);   // (h x Y) by + raises h
+    _q3.setFromAxisAngle(Y_AXIS, dy);
+    _eQ.premultiply(_q3);
+    _hand.sub(_eS).applyQuaternion(_eQ).add(_eS);
+    _shaft.applyQuaternion(_eQ);
+    /* ...and a target NEARER than the reach stops the thrust ON it: the arm
+     * gives back the overshoot (<= `AIM_PULL_MAX`), so the tip lands on the
+     * skin instead of passing through a Stormbird's chest into the air behind
+     * it. The reach is the one this beat has actually been seen to land at. */
+    const iB = st.heavy ? 3 : clamp(st.combo | 0, 0, 2);
+    const reachNow = this._reachSeen[iB] > 0.3 ? this._reachSeen[iB] : lu - 0.15;
+    const over = reachNow - lv;
+    if (over > 0) {
+      const pull = Math.min(over, AIM_PULL_MAX) * want;
+      _hand.addScaledVector(_eV, -pull / lv);
+      this._pullNow += pull;
+    }
+    D.aimPitchDeg = +(dp * 180 / Math.PI).toFixed(1);
+    D.aimYawDeg = +(dy * 180 / Math.PI).toFixed(1);
+  }
+
+  /**
+   * THE BLADE STAYS OUT OF THE GROUND (round 6, S5 — the skeptic's 25 deg
+   * slope). The contact keys are authored on flat ground; uphill, a low sweep
+   * put the tip into the terrain at contact. The tip this frame's goal would
+   * produce is checked against the terrain under it and, if it is lower than
+   * `TIP_GROUND_CLEAR`, the swing is pitched up about her shoulder by the
+   * angle that clears it — i.e. the strike follows the slope. Flat ground and
+   * every authored beat leave it untouched (their tips are >= 0.35 m up).
+   */
+  _groundClear(st) {
+    const terr = this.ctx.terrain;
+    if (!terr || typeof terr.getHeight !== 'function') return;
+    const an = this.an, b = an.b, D = this._dbg;
+    const L = (1 - this.gripFrac) * this.length;
+    _eC.copy(_hand).addScaledVector(_shaft, L);
+    an.model.updateWorldMatrix(true, false);
+    _eT.copy(_eC).applyMatrix4(an.model.matrixWorld);
+    const gy = terr.getHeight(_eT.x, _eT.z);
+    const lack = gy + TIP_GROUND_CLEAR - _eT.y;
+    D.tipGroundLack = +lack.toFixed(3);
+    if (!(lack > 0)) return;
+    an._charOf(b.upArmR.bone, _eS);
+    _eU.subVectors(_eC, _eS);
+    const lu = _eU.length();
+    if (lu < 0.2) return;
+    // the pitch that lifts the tip by `lack` (a little over, for the slope
+    // rising further along the new, higher tip)
+    const ang = Math.min(0.9, Math.asin(clamp((lack * 1.25) / lu, 0, 1)));
+    _eH.set(_eU.x, 0, _eU.z);
+    if (_eH.lengthSq() < 1e-6) _eH.set(0, 0, 1);
+    _eH.normalize();
+    _eAx.crossVectors(_eH, Y_AXIS).normalize();
+    _eQ.setFromAxisAngle(_eAx, ang);
+    _hand.sub(_eS).applyQuaternion(_eQ).add(_eS);
+    _shaft.applyQuaternion(_eQ);
+    D.tipGroundLift = +(ang * 180 / Math.PI).toFixed(1);
+  }
+
+  /** True once a draw has finished: the prop is in the fist, the hand-over
+   *  blend is spent and the grip is AT `gripFrac` (round 6, ruling R5). */
+  get handoverDone() {
+    return this._held && this._carryB >= 1 && Math.abs(this._fracNow - this.gripFrac) < 1e-4;
+  }
+
   _settleSpear(stance, st) {
     if (!this.spear) return;
     const D = this._dbg;
@@ -1971,7 +2410,7 @@ export class MeleeLayer {
         const reach = k >= 0.30 ? this._reparentGap(frac) : 9;
         const give = this._grabSettle(reach, k);
         holstered = !!give;
-        if (give) D.grabReach = reach > 8 ? this._reparentGap(frac) : reach;
+        if (give) { D.grabReach = reach > 8 ? this._reparentGap(frac) : reach; this._relK = k; }
       }
     } else if (stance !== 'holstered') {
       holstered = false;
@@ -1993,6 +2432,9 @@ export class MeleeLayer {
       D.grabGap = +_a.distanceTo(_hoPos).toFixed(4);
     }
     D.carryBlend = +this._carryB.toFixed(3);
+    this._fracNow = holstered ? gf : frac;
+    D.gripFracNow = +this._fracNow.toFixed(4);
+    D.handoverDone = this.handoverDone;
 
     /* HOW FAST THE PROP MOVES INSIDE THE HAND (A102's hand-over clause).
      *
@@ -2079,20 +2521,32 @@ export class MeleeLayer {
     const cK = clamp(st.contactK ?? 0.55, 0.05, 0.95);
 
     let A = READY, B = READY, t = 0, clipU = 0;
+    /* how much of the swing bearing (`_aimYaw`) the keys carry: the guard and
+     * the beats point where the hit goes; the reach to the socket and the
+     * return down her side are BODY-relative (round 6 — rotating the reach
+     * target by the camera bearing put the hand beside the haft in play,
+     * where `aimLock` is null) */
+    let yawK = 1;
     if (stance === 'draw') {
       const dk = clamp(st.drawK ?? 0, 0, 1);
       // keyed on whether she HAS it, not on the clock: the hand-over waits for
       // the hand (see update()), so the return leg has to start from the same
       // event rather than from a scheduled fraction
       if (!this._held) {
-        // reach the haft where it already is, with the wrist already aligned to
-        // the stowed axis, so the hand-over is continuous in both
-        A = READY; B = this._reachPose();
+        /* ROUND 6: FROM WHERE THE ARM IS, not from the guard. The draw is
+         * pressed from the locomotion (a jog's back-swing, a sprint's pump),
+         * and round 5 started the reach at READY — a guard the arm was not in
+         * — while the layer's weight ramped, so the path the eye saw was a
+         * blend of two arms. `_drawFrom` is that arm, captured on the draw's
+         * first frame; the elbow bound (`_elbowGuard`) holds from frame one. */
+        A = this._drawFrom; B = this._reachPose();
         t = CARRY_EASE(clamp(dk / 0.55, 0, 1));
+        yawK = 0;
       } else {
         const g = clamp(this._grabK ?? 0.55, 0, 0.95);
         A = this._reachPose(); B = READY;
         t = CARRY_EASE(clamp((dk - g) / Math.max(0.08, 1 - g), 0, 1));
+        yawK = t;
       }
     } else if (stance === 'holster') {
       const dk = clamp(st.drawK ?? 0, 0, 1);
@@ -2103,8 +2557,20 @@ export class MeleeLayer {
        * clock at 0.08 per rendered frame that is six frames; at 0.62 it is
        * nine, and the tip's worst per-frame travel across the re-parent drops
        * by a third. */
-      if (this._held) { A = READY; B = this._reachPose(); t = CARRY_EASE(clamp(dk / 0.62, 0, 1)); }
-      else { A = this._reachPose(); B = this._reachPose(); t = 0; }
+      if (this._held) {
+        A = READY; B = this._reachPose(); t = CARRY_EASE(clamp(dk / 0.62, 0, 1));
+        yawK = 1 - t;
+      } else {
+        /* ROUND 6: AND THE HAND COMES BACK DOWN HER SIDE before the arm is
+         * handed back to the locomotion. Round 5 parked it on the socket and
+         * faded the layer out from there, so the last third of every holster
+         * was a blend between a hand behind her shoulder and whatever the
+         * stride's arm was doing — at a sprint, an elbow pumped up behind her. */
+        const r0 = clamp(this._relK ?? 0.62, 0, 0.9);
+        A = this._reachPose(); B = SIDE_KEY;
+        t = CARRY_EASE(clamp((dk - r0) / Math.max(0.08, 0.92 - r0), 0, 1));
+        yawK = 0;
+      }
     } else if (stance === 'swing') {
       if (phase === 'windup') {
         /* THE COCK IS REACHED AT `WINDUP_COCK` AND THE RELEASE STARTS THERE
@@ -2170,7 +2636,7 @@ export class MeleeLayer {
     }
 
     if (stance === 'swing') this._snapPose(A, B, t);
-    this._lerpPose(A, B, t);
+    this._lerpPose(A, B, t, yawK);
     out.yaw = A.yaw + (B.yaw - A.yaw) * t;
     out.pitch = A.pitch + (B.pitch - A.pitch) * t;
     out.roll = A.roll + (B.roll - A.roll) * t;
@@ -2226,9 +2692,12 @@ export class MeleeLayer {
    * literal: she grabs the haft where the haft is, this frame.
    */
   _reachPose() {
+    /* ROUND 6: the chest turns TOWARD the drawing hand (`DRAW_YAW`, right
+     * shoulder forward) — round 5 turned it -0.16 rad, away, which is half of
+     * why the elbow had to go up behind her head to reach the haft. */
     const p = this._reach || (this._reach = {
       hand: [0, 0, 0], shaft: [0, 0, 1], lh: [0.30, 0.98, 0.04], lhOn: 0,
-      yaw: -0.16, pitch: -0.10, roll: 0.06,
+      yaw: DRAW_YAW, pitch: -0.04, roll: 0.06,
     });
     this._liveSocket(_grip, _c);           // butt, dir (char)
     /* WHERE ON THE HAFT SHE TAKES IT — the point the hand can actually reach.
@@ -2891,15 +3360,15 @@ export class MeleeLayer {
     return out.set(a[0] * ka + b[0] * kb, a[1] * ka + b[1] * kb, a[2] * ka + b[2] * kb).normalize();
   }
 
-  _lerpPose(A, B, t) {
+  _lerpPose(A, B, t, yawK = 1) {
     const s = 1 - t;
     _hand.set(A.hand[0] * s + B.hand[0] * t, A.hand[1] * s + B.hand[1] * t, A.hand[2] * s + B.hand[2] * t);
     this._slerpDir(A.shaft, B.shaft, t, _shaft);
     if (_shaft.lengthSq() < 1e-6) _shaft.set(0, 0, 1);
     const la = A.lh || B.lh || READY.lh, lb = B.lh || A.lh || READY.lh;
     _lh.set(la[0] * s + lb[0] * t, la[1] * s + lb[1] * t, la[2] * s + lb[2] * t);
-    // the swing points where the hit goes
-    const y = this._aimYaw;
+    // the swing points where the hit goes (the draw's reach does not: `yawK`)
+    const y = this._aimYaw * yawK;
     if (Math.abs(y) > 1e-3) {
       _hand.applyAxisAngle(Y_AXIS, y);
       _shaft.applyAxisAngle(Y_AXIS, y);
@@ -2926,9 +3395,20 @@ export class MeleeLayer {
     // elbow pole: down-and-back, opened outward as the hand rises, so the
     // elbow stays BESIDE the ribs (canon) instead of lifting over the shoulder
     const lift = clamp((_hand.y - 1.02) * 2.2, -0.4, 1);
-    _pole.set(-0.55 - 0.35 * Math.max(0, lift), -0.80 + 0.28 * Math.max(0, lift), -0.34).normalize();
+    const path = this._pathOn;
+    if (path) {
+      /* THE DRAW / HOLSTER (round 6, R8): the elbow goes FORWARD and out, in
+       * front of her face-plane, and the hand comes back over the shoulder to
+       * the haft — never the round-5 elbow up behind her head. The pole only
+       * chooses the side of the elbow circle; `_elbowGuard` holds the bound. */
+      _pole.set(-0.50, -0.30, 0.81).normalize();
+    } else {
+      _pole.set(-0.55 - 0.35 * Math.max(0, lift), -0.80 + 0.28 * Math.max(0, lift), -0.34).normalize();
+    }
     an._ikArm('r', _hand, _pole, w, null);
     an._clearArmOfHead(b.upArmR, b.loArmR, b.handR, _hand, _pole, w);
+    // on the arm path the wrist correction may not spend the elbow roll
+    this._rollOff = path;
     this._alignHaft(w);
 
     /* HAFT GUARD (gate A104). The wrist can clear her skull and the 1.85 m
@@ -2963,6 +3443,73 @@ export class MeleeLayer {
       an._clearArmOfHead(b.upArmR, b.loArmR, b.handR, _hand, _pole, w);
       this._alignHaft(w);
     }
+    if (path) this._pathGuard(w);
+    this._rollOff = false;
+  }
+
+  /**
+   * THE DRAW/HOLSTER ELBOW BOUND, enforced on the solved arm (round 6, R8 —
+   * see `ELB_BEHIND`). First the elbow circle about shoulder->wrist (the wrist
+   * does not move); only if no point on that circle is legal does the WRIST
+   * give way, forward and down, and the arm is re-solved. The grip is then
+   * re-seated by pronation and wrist alone (`_rollOff`).
+   */
+  _pathGuard(w) {
+    const an = this.an, D = this._dbg;
+    let ok = this._elbowGuard();
+    for (let i = 0; i < 5 && !ok; i++) {
+      _hand.z += 0.05; _hand.y -= 0.035;
+      an._ikArm('r', _hand, _pole, w, null);
+      ok = this._elbowGuard();
+    }
+    if (!ok) D.elbowGuardFail = (D.elbowGuardFail || 0) + 1;
+    this._alignHaft(w);
+  }
+
+  /** Is char-space elbow `E` inside the R8 bound (shoulder `_eS`, head `_eD`)? */
+  _elbowOk(E) {
+    if (E.y > _eD.y + ELB_OVER_HEAD) return false;
+    if (E.y > _eS.y + ELB_BAND && E.z < _eD.z - ELB_BEHIND) return false;
+    return true;
+  }
+
+  /**
+   * Roll the right upper arm about shoulder->wrist to the NEAREST legal elbow
+   * on its circle (every 10 deg, both ways), never through the head. Returns
+   * false when the circle has no legal point. No allocation.
+   */
+  _elbowGuard() {
+    const an = this.an, b = an.b, D = this._dbg;
+    an._charOf(b.upArmR.bone, _eS);
+    an._charOf(b.loArmR.bone, _eE);
+    an._charOf(b.handR.bone, _eH);
+    an._charOf(b.head.bone, _eD);
+    if (this._elbowOk(_eE)) return true;
+    _eAx.subVectors(_eH, _eS);
+    const d = _eAx.length();
+    if (d < 1e-4) return false;
+    _eAx.multiplyScalar(1 / d);
+    const along = _eT.subVectors(_eE, _eS).dot(_eAx);
+    _eC.copy(_eS).addScaledVector(_eAx, along);
+    _eU.subVectors(_eE, _eC);
+    const r = _eU.length();
+    if (r < 1e-3) return false;
+    _eU.multiplyScalar(1 / r);
+    _eV.crossVectors(_eAx, _eU);
+    const step = (2 * Math.PI) / ELB_SAMPLES;
+    for (let i = 1; i <= ELB_SAMPLES / 2; i++) {
+      for (let sg = -1; sg <= 1; sg += 2) {
+        const phi = sg * i * step;
+        _eT.copy(_eC).addScaledVector(_eU, Math.cos(phi) * r).addScaledVector(_eV, Math.sin(phi) * r);
+        if (!this._elbowOk(_eT)) continue;
+        if (an._segInHead(_eS, _eT) || an._segInHead(_eT, _eH)) continue;
+        _eQ.setFromAxisAngle(_eAx, phi);
+        an._rotQL(b.upArmR, _eQ);
+        D.elbowGuard = (D.elbowGuard || 0) + 1;
+        return true;
+      }
+    }
+    return false;
   }
 
   /**
@@ -3005,11 +3552,12 @@ export class MeleeLayer {
       _q2.setFromUnitVectors(_a, _shaft);
       if (Math.abs(_q2.w) > 0.99995) break;            // already there
 
-      // --- 1. elbow roll about shoulder -> wrist
+      // --- 1. elbow roll about shoulder -> wrist (not on the draw/holster
+      // arm path, round 6: that roll is what put the elbow behind her head)
       an._charOf(up.bone, _b);
       an._charOf(ha.bone, _c);
       _d.subVectors(_c, _b);
-      if (_d.lengthSq() > 1e-6) {
+      if (!this._rollOff && _d.lengthSq() > 1e-6) {
         _d.normalize();
         if (this._twistAbout(_q2, _d, _q3)) {
           const ang = 2 * Math.acos(clamp(Math.abs(_q3.w), -1, 1));
@@ -3359,6 +3907,9 @@ export class MeleeLayer {
     D.torsoYawDeg = +this._twistDeg().toFixed(2);
     // the SOLVED hand orientation, for next frame's reach target (see _reachPose)
     an._liveW(an.b.handR.bone, this._handQ);
+    // ...and the solved wrist, for a draw that reverses a holster (`_captureFrom`)
+    an._charOf(an.b.handR.bone, this._handLast);
+    this._handLastOk = true;
   }
 
   /**

@@ -167,6 +167,78 @@ class OutputGradePass extends ShaderPass {
 const BLOOM_MAX_WIDTH = 1280;
 
 /**
+ * GTAO view-distance fade, metres (core-platform-gtao, gate A109). Ambient
+ * occlusion here is a contact-scale term (0.55 m world radius). Past ~120 m that
+ * radius is one or two AO texels and a 24-bit depth step on this 0.1 / 2400 m
+ * camera is 7 cm at 350 m and 0.6 m at 1 km, so the horizon search is reading
+ * depth quantisation, not rock: measured on the eye-height camp view, shipped
+ * occlusion ROSE with distance (0.07 at 30-100 m, 0.118 at 150-250 m) where a
+ * real contact term can only fall. It is faded out, 60 -> 120 m, and the pass
+ * skips its kernel entirely past the far edge.
+ */
+const GTAO_FADE_START = 60;
+const GTAO_FADE_END = 120;
+
+/**
+ * THE LATTICE (core-platform-gtao, gates V33b / A108). three r169's GTAOShader
+ * reads the centre depth with `getDepth(vUv)` — NEAREST on the full-res depth
+ * texture — and rebuilds the centre position at `vUv`. The AO pass runs at HALF
+ * resolution (`tier.gtaoScale`), so every AO texel centre maps to
+ * `uv * depthSize = 2i + 1`: exactly on the boundary between depth texels 2i and
+ * 2i+1. Which one it gets is decided by float rounding in the interpolated uv,
+ * which flips in irregular RUNS of whole columns and rows (measured parity map
+ * at the V33 camera: runs of 1-45 AO texels, e.g. "E8 O5 E8 O5 E8 O4 E2 O11").
+ * On one side of each flip the depth belongs to the texel half a texel away from
+ * the position it is assigned to, so on a receding wall the centre sits "in" the
+ * surface and the whole kernel reads it as occluded: mean AO in the V33 massif
+ * band 0.765 in odd-parity rows against 0.983 in even ones. Runs of columns x
+ * runs of rows = the screen-locked plaid on every distant vista.
+ *
+ * Fix: fetch ONE deterministic texel (the one under the first quarter of the AO
+ * texel's footprint, robust at any AO:depth ratio incl. 1:1 on ultra and DRS
+ * sizes) and rebuild the centre position and normal at THAT texel's centre, so
+ * depth and position always describe the same point. Measured at tier high,
+ * DPR 1 / 1.5, V33 camera: the far-massif autocorrelation peak 0.19-0.38 drops
+ * to the GTAO-off control's 0.05-0.10. Replacing the noise texture (candidate a)
+ * or only the normal (candidate d) left the lattice untouched.
+ *
+ * Returns false (and leaves the stock shader) if three's source moved under an
+ * anchor; `engine.gtaoPatched` carries the answer and A108 asserts it.
+ */
+function patchGtaoShader(material) {
+  let fs = material.fragmentShader;
+  const edits = [
+    [/uniform float scale;/,
+      'uniform float scale;\n\t\tuniform float aoFadeStart;\n\t\tuniform float aoFadeEnd;'],
+    [/float depth = getDepth\(vUv\.xy\);/,
+      'vec2 depthSize = vec2(textureSize(tDepth, 0));\n'
+      + '\t\t\tivec2 centerTexel = ivec2(floor(vUv * depthSize - 0.25 * depthSize / resolution));\n'
+      + '\t\t\tvec2 centerUv = (vec2(centerTexel) + 0.5) / depthSize;\n'
+      + '\t\t\tfloat depth = texelFetch(tDepth, centerTexel, 0).DEPTH_SWIZZLING;'],
+    [/vec3 viewPos = getViewPosition\(vUv, depth\);\s*vec3 viewNormal = getViewNormal\(vUv\);/,
+      'vec3 viewPos = getViewPosition(centerUv, depth);\n'
+      + '\t\t\tfloat viewDist = -viewPos.z;\n'
+      + '\t\t\tif (viewDist >= aoFadeEnd) {\n'
+      + '\t\t\t\tfloat ao = 1.0;\n'
+      + '\t\t\t\tgl_FragColor = FRAGMENT_OUTPUT;\n'
+      + '\t\t\t\treturn;\n'
+      + '\t\t\t}\n'
+      + '\t\t\tvec3 viewNormal = getViewNormal(centerUv);'],
+    [/ao = pow\(ao, scale\);/,
+      'ao = mix(ao, 1.0, smoothstep(aoFadeStart, aoFadeEnd, viewDist));\n\t\t\tao = pow(ao, scale);'],
+  ];
+  for (const [re, to] of edits) {
+    if (!re.test(fs)) return false;
+    fs = fs.replace(re, to);
+  }
+  material.fragmentShader = fs;
+  material.uniforms.aoFadeStart = { value: GTAO_FADE_START };
+  material.uniforms.aoFadeEnd = { value: GTAO_FADE_END };
+  material.needsUpdate = true;
+  return true;
+}
+
+/**
  * Renders the world into the multisampled scene target (which owns the depth
  * texture GTAO reads) and hands the resolved colour to the composer's plain
  * ping-pong pair. Replaces RenderPass so that MSAA is paid for exactly once.
@@ -393,6 +465,9 @@ export class Engine {
     // blended multiplicatively in HDR before bloom.
     this.gtao = new GTAOPass(this.scene, this.camera, w, h);
     this._attachGtaoDepth();
+    // depth-consistent centre sample + view-distance fade (see patchGtaoShader)
+    this.gtaoPatched = patchGtaoShader(this.gtao.gtaoMaterial);
+    if (!this.gtaoPatched) console.warn('[HZC] GTAO shader patch anchors missing — stock GTAO (screen-locked lattice on distant terrain)');
     this.gtao.blendIntensity = 0.9;
     this.gtao.updateGtaoMaterial({
       radius: 0.55, distanceExponent: 1.6, thickness: 0.7,
@@ -449,8 +524,10 @@ export class Engine {
     const g = this.gtao;
     g.setGBuffer(this.depthTexture, undefined);
     g.normalRenderTarget?.setSize(1, 1);
-    const scale = this.tier.gtaoScale;
+    // tier read at call time, not captured: setQuality('high' -> 'ultra') must
+    // move the AO buffer from half to full res (it used to stay at the boot tier).
     g.setSize = (w, h) => {
+      const scale = this.tier.gtaoScale;
       GTAOPass.prototype.setSize.call(g, Math.max(2, Math.round(w * scale)), Math.max(2, Math.round(h * scale)));
       g.normalRenderTarget?.setSize(1, 1);
     };

@@ -1393,7 +1393,7 @@ export class Collision {
           // per-rendered-frame growth budget and the published half-length
           prof: null, tb: null, cap: null, gup: null, zN: null,
           mR: 0, mLatched: false, mFrame: -1, mBudget: 0, mRelax: 0, mT: 0,
-          mPx: 0, mPz: 0, mL: 0,
+          mPx: 0, mPz: 0, mL: 0, mOwn: 0, bFloorOld: 0,
           bValid: false, bT: -1e9, bBase: -1, bPts: 0, bHulls: 0, bMs: 0,
           bFront: 0, bBack: 0,
           // fix pass 1: the rolling refresh (next hull / next cap bin, the
@@ -1660,7 +1660,8 @@ export class Collision {
     const id = typeof fid === 'number' ? fid : Math.floor(now / 8);
     if (id !== rec.mFrame) {
       rec.mFrame = id;
-      rec.mBudget = MELEE_GROW_STEP + Math.hypot(p.position.x - rec.mPx, p.position.z - rec.mPz);
+      rec.mOwn = Math.hypot(p.position.x - rec.mPx, p.position.z - rec.mPz);
+      rec.mBudget = MELEE_GROW_STEP + rec.mOwn;
       const dtF = Math.min(0.1, Math.max(0, (now - (rec.mT || now)) / 1000));
       rec.mRelax = Math.min(MELEE_GROW_STEP, MELEE_RELAX_SPEED * dtF);
       rec.mT = now;
@@ -1677,21 +1678,34 @@ export class Collision {
         rec.mR += d;
       }
     } else {
-      /* RELEASING (fix pass 1, ruling R4's "relax back toward base at a bounded
-       * rate"): round 5 held a released term for as long as she stood inside
-       * the full standoff — 400 frames, ~30 s, measured by the judge after a
-       * holster. It now walks the outline at her bearing back out to the
-       * machine's OWN standoff at `MELEE_RELAX_SPEED`, never more than
-       * `MELEE_GROW_STEP` in a drawn frame, and lets go the frame it gets
-       * there (the full standoff then holds her exactly where the term left
-       * her). */
-      const target = this._meleeBaseOutline(rec, ang);
-      if (target <= rec.mR) rec.mR = target;
-      else {
-        const d = Math.min(target - rec.mR, Math.max(0, rec.mRelax));
-        rec.mRelax -= d;
+      /* RELEASING — ROUND 6, ORCHESTRATOR RULING R6 (Sep 27, from the r5
+       * skeptic). Fix pass 1 walked the released outline back out to the
+       * machine's own standoff at `MELEE_RELAX_SPEED`, which is the collider
+       * moving her: the skeptic holstered in front of a frozen Watcher, a
+       * Strider and a Redeye and watched her GLIDE 0.37-0.67 m backwards over
+       * ~0.3-0.4 s with a planted foot dragged up to 0.34 m. R6: releasing the
+       * term must not move her at all unless she moves herself. So a released
+       * term is a RATCHET that follows her out and never pushes:
+       *   - the radius grows to where she now stands (never past it, never
+       *     past the machine's own standoff) — standing still, it does not
+       *     move; stepping back, it follows her; outside the full standoff
+       *     capsule it lets go (`_meleeLatched`, above);
+       *   - where the hulls need more room on her bearing (she walked round
+       *     the machine into a leg), it grows only by her OWN step this frame
+       *     — her walking into the body, as holstered, not the term relaxing;
+       *   - the live hull push below is unchanged: a machine limb moving INTO
+       *     her pushes her, drawn, released or holstered alike. */
+      const base = this._meleeBaseOutline(rec, ang);
+      const dl = Math.hypot(dx, dz);
+      const follow = Math.min(base, dl - 0.002);
+      if (follow > rec.mR) rec.mR = follow;
+      const hullR = this._meleeOutline(rec, ang);
+      if (hullR > rec.mR) {
+        const d = Math.min(hullR - rec.mR, Math.max(0, rec.mOwn || 0));
+        rec.mOwn = (rec.mOwn || 0) - d;
         rec.mR += d;
       }
+      if (rec.mR > base) rec.mR = base;
     }
     /* THE LIVE HULLS, EVERY SIM STEP (fix pass 1). The outline above is at
      * most one refresh cycle old; a machine moving a limb toward her inside
@@ -2218,8 +2232,25 @@ export class Collision {
   _mbFinish(m, rec, base, zone) {
     const prof = rec.prof;
     const r0 = m.bodyRadius || 1;
-    const lMin = Math.min(base, Math.max(base * MELEE_L_FLOOR, base - MELEE_L_CUT));
+    /* ROUND 6 (ruling R7): THE FLOOR IS THE MANAGER'S CIRCLE, NOT A CUT
+     * CAPSULE. The floor used to be the round-4 term capsule (the machine's
+     * segment shortened by `MELEE_L_CUT`, a third of it at least), and on the
+     * machines whose standoff SEGMENT is long it was the whole bound: a
+     * Thunderjaw's floor end cap sat 6.17 m from its centre and the blade
+     * landed 1.13-1.19 m short of the hull; a grounded Stormbird's (segment
+     * 9.28 m) 11.2 m out, nowhere near it (the r5 skeptic and this round's
+     * per-species A103). The hull outline is the bound R4 asks for; the ONLY
+     * thing the floor still has to guarantee is the manager agreement — her
+     * position outside every `bodyRadius + 0.6` push sphere by a frame of
+     * travel — and that needs no segment at all: `meleeStandoffHalfLen` is
+     * published as 0, the manager keeps its single centre sphere, and the floor
+     * is the circle `bodyRadius + MELEE_PAD_FLOOR + her radius` round the
+     * centre (0.12 m outside the sphere, as before). The pre-round-6 capsule is
+     * kept only as the diagnostic `bFloorOld`. */
+    const lMin = 0;
+    const lOld = Math.min(base, Math.max(base * MELEE_L_FLOOR, base - MELEE_L_CUT));
     const dMin = r0 + MELEE_PAD_FLOOR + MELEE_BODY_R;
+    rec.bFloorOld = lOld + dMin;
     const step = (2 * Math.PI) / MELEE_BINS;
     for (let b = 0; b < MELEE_BINS; b++) {
       const cb = -Math.PI + (b + 0.5) * step;

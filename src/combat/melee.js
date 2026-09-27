@@ -104,6 +104,11 @@ const _pNow = new THREE.Vector3();
  *  to be written into `_tPrev` / `_tNow` and wiped the sweep (see `_flashTrail`). */
 const _bGrip = new THREE.Vector3();
 const _bTip = new THREE.Vector3();
+/** `_aimAt`'s predicted contact tip (round 6). */
+const _aTip = new THREE.Vector3();
+const _aSh = new THREE.Vector3();
+const _aHd = new THREE.Vector3();
+const _aDir = new THREE.Vector3();
 
 /** Aware = it already knows something is wrong and is looking for you. */
 const AWARE_STATES = new Set(['alert', 'attack']);
@@ -280,7 +285,17 @@ const PHASE_STEP_MAX = 0.16;
  * How long the draw/holster may wait for the hand to arrive at the haft
  * (finding F4). See `_advanceStance`.
  */
-const GRAB_HOLD_MAX = 0.45;
+const GRAB_HOLD_MAX = 0.10;
+/* ROUND 6: 0.45 -> 0.10. The wait exists for an arm whose IK leaves a
+ * residual (see `_waitForHand`); at 0.45 it could stretch a draw to 0.75 s,
+ * and the draw is now held to 0.25-0.35 s from the click to the first swing
+ * frame (ruling R5, "quick enough to feel responsive"). The reach is solved
+ * to a point the arm can reach (the elbow bound, meleeLayer `_elbowGuard`),
+ * and a residual left at the grab is spent by the pull's blend, not waited
+ * out. */
+/** The most a finished draw clock waits for the layer's hand-over (a frame is
+ *  what it normally costs — see `_advanceStance`). */
+const DRAW_WAIT_MAX = 0.12;
 const HOLSTER_T = 0.42;
 /** How long the ready stance persists after the last swing. */
 const READY_HOLD = 3.6;
@@ -354,6 +369,24 @@ const LUNGE_MAX = 1.0;
  * subtracted from a distance she never covers.
  */
 const LUNGE_LEAVE = 0;
+/**
+ * The aim (round 6, R7 — see `aimPoint`): only a hull surface within this of
+ * the predicted contact tip is aimed at, and the aim point sits `AIM_SINK`
+ * inside the surface so the blade lands on the machine rather than beside it.
+ */
+const AIM_RANGE = 1.2;
+const AIM_SINK = 0.06;
+/** The cone a spear can be pointed through (radians): at most `AIM_SIDE` off
+ *  the swing's bearing, between `AIM_DOWN` below and `AIM_ABS_UP` above the
+ *  horizontal, from her shoulder; and what a radian off the beat's own contact
+ *  line (and a metre the blade cannot reach) cost when picking the target. */
+const AIM_DOWN = 40 * Math.PI / 180;
+const AIM_SIDE = 60 * Math.PI / 180;
+const AIM_ABS_UP = 75 * Math.PI / 180;
+const AIM_ANGLE_COST = 0.25;
+const AIM_SHORT_COST = 6.0;
+/** How far the haft (fist -> target) must pass from her head bone. */
+const AIM_HEAD_CLEAR = 0.25;
 
 export class Melee {
   constructor(ctx, combat) {
@@ -379,6 +412,23 @@ export class Melee {
      *  clause. Also carried on the `melee-hit` event as `contactGap`. */
     this.lastContactGap = null;
     this._grabHold = 0;
+    /**
+     * WHERE THE BLADE IS AIMED (round 6, ruling R7). The nearest point on the
+     * target's hit-hull SURFACE to where this beat's contact key would put the
+     * blade tip, solved at the top of the swing and again when the strike
+     * starts (`_aimAt`). `meleeLayer` bends the release and the contact toward
+     * it (pitch and yaw about her shoulder, bounded), and `_lungeFor` closes
+     * the horizontal gap to it. It is the difference between "the blade lands
+     * on the machine" and "the blade lands where a Watcher's body would be":
+     * a Thunderjaw has NOTHING at blade height in front of its centre (its
+     * jaw is 2.6 m up, over her head, at the closest she may stand), a
+     * Behemoth's head sits above the chest-high sweep — the r5 skeptic read
+     * 1.13-1.19 m and 0.19-0.32 m short. A world point (no allocation);
+     * `aimOk` false = nothing within reach, swing as authored.
+     */
+    this.aimOk = false;
+    this.aimPoint = new THREE.Vector3();
+    this.aimGap = null;
 
     this._t = 0;              // phase clock (real seconds)
     this._phaseEnd = 0;
@@ -417,6 +467,7 @@ export class Melee {
     this._pose = {
       stance: 'holstered', drawK: 0, phase: 'idle', k: 0,
       combo: 0, heavy: false, aimYaw: 0, contactK: CONTACT_K,
+      aimOk: false, aimX: 0, aimY: 0, aimZ: 0,
     };
 
     /* ------------------------------ the model ---------------------------- */
@@ -524,6 +575,8 @@ export class Melee {
     s.heavy = this.heavy;
     s.aimYaw = this._aimYaw;
     s.contactK = CONTACT_K;
+    s.aimOk = this.aimOk && this.stance === 'swing';
+    s.aimX = this.aimPoint.x; s.aimY = this.aimPoint.y; s.aimZ = this.aimPoint.z;
     /* ...AND THE EXTRAPOLATION MAY NOT OUTRUN THE PHASE (fix round 4, F3).
      * A flat 50 ms is half of a 0.10 s strike window: on a loaded frame the
      * pose published for the hit was a whole beat ahead of the clock that
@@ -585,9 +638,26 @@ export class Melee {
       } else if (this._drawT >= DRAW_T) {
         this._drawT = DRAW_T;
         this._grabHold = 0;
-        this.stance = 'ready';
-        this._readyT = Math.max(this._readyT, READY_HOLD);
-        if (this._queued) { const q = this._queued; this._queued = null; this._fire(q.heavy); }
+        /* THE DRAW IS NOT OVER UNTIL THE GRIP IS (round 6, ruling R5). The
+         * r5 skeptic's first LMB from holstered swung while the haft was
+         * still sliding through her fist — grip 0.38-0.45 of the haft at
+         * contact against canon 0.15-0.28, 22-29 of ~31 swing frames inside
+         * the hand-over — because this branch declared the guard up on the
+         * CLOCK, and the hand-over blend ran on for up to 0.55 s after it.
+         * The layer now finishes the blend with the pull (`handoverDone`),
+         * and the queued strike starts on the first frame it reports done.
+         * The layer poses one frame behind this clock (the animator runs
+         * before combat), so this normally costs exactly one frame; the wait
+         * is bounded so a missing rig can never hold the spear hostage. */
+        const lay = this.layer;
+        const done = !lay || !lay.ok || lay.handoverDone;
+        this._drawWait = done ? 0 : (this._drawWait || 0) + realDt;
+        if (done || this._drawWait >= DRAW_WAIT_MAX) {
+          this._drawWait = 0;
+          this.stance = 'ready';
+          this._readyT = Math.max(this._readyT, READY_HOLD);
+          if (this._queued) { const q = this._queued; this._queued = null; this._fire(q.heavy); }
+        }
       }
     } else if (this.stance === 'holster') {
       this._drawT += stanceDt;
@@ -708,6 +778,22 @@ export class Melee {
     if (!m) return base;
     const p = this.ctx.player;
     if (!p) return base;
+    /* ROUND 6 (R7): TO THE HULL THE BLADE IS AIMED AT, NOT TO `bodyRadius`.
+     * `bodyRadius` is the machine's bounding radius — 4.0 m on a Thunderjaw,
+     * whose legs and belly are nowhere near that at blade height — so the
+     * shell the lunge used to close on was the bbox. When `_aimAt` found the
+     * surface this beat is going to, the ask is the horizontal gap between
+     * that point and the predicted contact tip, along the swing. Over-asking
+     * is still free: the collision solve (the hull outline) is what stops
+     * her. */
+    if (this.aimOk && this.layer?.ok && this.layer.contactTipWorld(this.heavy, this._i ?? 0, _aTip)) {
+      this._aimBasis();
+      const tipAhead = (_aTip.x - p.position.x) * _dir.x + (_aTip.z - p.position.z) * _dir.z;
+      const aimAhead = (this.aimPoint.x - p.position.x) * _dir.x + (this.aimPoint.z - p.position.z) * _dir.z;
+      const want = aimAhead - tipAhead + LUNGE_LEAVE;
+      if (!(want > base)) return base;
+      return Math.min(LUNGE_MAX, want);
+    }
     /* TO THE SHELL, NOT TO THE STANDOFF SEGMENT. `approachGap` is
      * `surfaceGap`, which measures to the GAMEPLAY standoff capsule — for a
      * Watcher that capsule's near end sticks out 1.5615 m from the centre
@@ -723,6 +809,125 @@ export class Melee {
     const want = toShell - Math.min(1.85, this._bladeReach()) + LUNGE_LEAVE;
     if (!(want > base)) return base;
     return Math.min(LUNGE_MAX, want);
+  }
+
+  /**
+   * THE AIM POINT (round 6, ruling R7): the nearest point on the target's hit
+   * hull SURFACE to where this beat's contact key would put the blade tip.
+   * Read off `HitHulls`' own per-machine set (the same private seam
+   * `collision._meleeHulls` uses), so nothing allocates; called twice a swing.
+   * Beyond `AIM_RANGE` of the predicted tip there is nothing to aim at and the
+   * swing plays as authored.
+   */
+  _aimAt() {
+    this.aimOk = false;
+    this.aimGap = null;
+    const m = this.approachMachine;
+    const lay = this.layer;
+    if (!m || !lay || !lay.ok || m.alive === false) return;
+    if (!lay.contactTipWorld(this.heavy, this._i ?? 0, _aTip)) return;
+    if (!lay.shoulderWorld(_aSh)) return;
+    if (!lay.headWorld(_aHd)) return;
+    const hulls = this._hullSet(m);
+    if (!hulls || !hulls.length) return;
+    /* THE NEAREST PART OF THE MACHINE THE BLADE CAN GET TO, not the nearest
+     * to where a Watcher-sized contact would have put it: the blade turns
+     * about her SHOULDER (meleeLayer `_strikeAim`), so the target is the hull
+     * surface point closest to the shoulder inside the cone the swing may be
+     * bent through, with the angle off the authored contact as a tie-break
+     * (a point 1 m nearer but 50 deg away is not a better target than one
+     * straight ahead). Capsules sampled every ~0.12 m, surface point toward
+     * the shoulder; two calls a swing, nothing allocated. */
+    _aDir.subVectors(_aTip, _aSh);
+    const keyReach = _aDir.length();
+    if (keyReach < 0.3) return;
+    _aDir.multiplyScalar(1 / keyReach);
+    /* the reach this beat has ACTUALLY landed at (the arm clamps short of
+     * some keys), once one has been seen; the key's own until then, less the
+     * typical clamp */
+    const seen = typeof lay.contactReach === 'function' ? lay.contactReach(this.heavy, this._i ?? 0) : 0;
+    const reach = seen > 0.3 ? seen : keyReach - 0.15;
+    const pa = Math.asin(Math.max(-1, Math.min(1, _aDir.y)));
+    const ya = Math.atan2(_aDir.x, _aDir.z);
+    this._aimBasis();
+    const fwdYaw = Math.atan2(_dir.x, _dir.z);
+    let best = Infinity, bestD = Infinity;  // bestD: shoulder to the chosen skin point
+    for (let i = 0; i < hulls.length; i++) {
+      const h = hulls[i];
+      const r = h.wr || 0;
+      if (r <= 1e-4 || h.off) continue;
+      const ex = h.wbx - h.wax, ey = h.wby - h.way, ez = h.wbz - h.waz;
+      const len = Math.sqrt(ex * ex + ey * ey + ez * ez);
+      const n = Math.min(12, Math.max(1, Math.ceil(len / 0.12)));
+      for (let j = 0; j <= n; j++) {
+        const t = j / n;
+        const cx = h.wax + ex * t, cy = h.way + ey * t, cz = h.waz + ez * t;
+        const vx = _aSh.x - cx, vy = _aSh.y - cy, vz = _aSh.z - cz;
+        const dc = Math.hypot(vx, vy, vz);
+        if (dc < 1e-4) continue;
+        const d = dc - r;                        // shoulder to this surface point
+        if (d > reach + AIM_RANGE) continue;
+        // the surface point toward her shoulder, sunk AIM_SINK into the hull
+        const k = Math.max(0, r - AIM_SINK) / dc;
+        const px = cx + vx * k, py = cy + vy * k, pz = cz + vz * k;
+        const dx = px - _aSh.x, dy = py - _aSh.y, dz = pz - _aSh.z;
+        const dl = Math.hypot(dx, dy, dz) || 1;
+        const pb = Math.asin(Math.max(-1, Math.min(1, dy / dl)));
+        let dyaw = Math.atan2(dx, dz) - ya;
+        dyaw = Math.atan2(Math.sin(dyaw), Math.cos(dyaw));
+        const dp = pb - pa;
+        /* the cone is ABSOLUTE — where on her a spear can be pointed — not
+         * relative to each beat's own contact line, so a return sweep can
+         * still be turned up onto a jaw that a first sweep reaches */
+        let off = Math.atan2(dx, dz) - fwdYaw;
+        off = Math.atan2(Math.sin(off), Math.cos(off));
+        if (Math.abs(off) > AIM_SIDE || pb < -AIM_DOWN) continue;
+        /* ...and never a line that runs the haft across her own head: the
+         * haft guard (A104) would push it off again after the aim, and the
+         * blade would land wherever the guard left it (a Thunderjaw jaw 50 deg
+         * to her left, stabbed at from the right shoulder) */
+        {
+          // the haft runs from about the fist (0.4 m out along the line) to
+          // the target; the head must clear THAT segment
+          const hx = _aHd.x - _aSh.x, hy = _aHd.y - _aSh.y, hz = _aHd.z - _aSh.z;
+          const t0 = Math.min(1, 0.40 / dl);
+          let tt = (hx * dx + hy * dy + hz * dz) / (dl * dl);
+          tt = tt < t0 ? t0 : (tt > 1 ? 1 : tt);
+          if (Math.hypot(hx - dx * tt, hy - dy * tt, hz - dz * tt) < AIM_HEAD_CLEAR) continue;
+        }
+        /* the TIP is what lands: a surface point at the blade's own reach, so
+         * the tip ends on the skin — not a nearer one the blade would pass
+         * through and come out of the far side into air (a Behemoth's head
+         * overhangs her: its underside is 1.1 m out, the tip 1.8 m) */
+        /* ...and a point the blade cannot get to at all costs more than one
+         * that is a little off the authored line: on a Thunderjaw the side of
+         * the jaw nearer her drive shoulder is 0.15 m closer than the side the
+         * light-1 sweep points at, and that is the difference between on and
+         * short. The absolute pitch is bounded too — never straight up. */
+        if (pb > AIM_ABS_UP) continue;
+        const cost = Math.abs(dl - reach) + AIM_SHORT_COST * Math.max(0, dl - reach)
+          + AIM_ANGLE_COST * Math.hypot(dp, dyaw * (this.heavy ? 2 : 1));
+        if (cost >= best) continue;
+        best = cost; bestD = dl;
+        this.aimPoint.set(px, py, pz);
+      }
+    }
+    if (best === Infinity) return;
+    this.aimOk = true;
+    // how far the blade will still be short of it once it is bent there (<= 0: it lands)
+    this.aimGap = +(bestD - reach).toFixed(3);
+  }
+
+  /** The machine's live hull capsules (world), without allocating. */
+  _hullSet(m) {
+    const hh = this.ctx.hitHulls;
+    if (!hh || !(hh.sets instanceof Map) || typeof hh._refresh !== 'function') return null;
+    let set = null;
+    try {
+      set = hh.sets.get(m) || (typeof hh.build === 'function' ? hh.build(m) : null);
+      if (set) hh._refresh(set);
+    } catch { set = null; }
+    return set ? set.hulls : null;
   }
 
   /** How far ahead of her root the blade tip sits right now, in metres. */
@@ -1062,6 +1267,8 @@ export class Melee {
       if (this.ctx.player) { _pNow.copy(this.ctx.player.position); _pPrev.copy(_pNow); }
     }
     this.lastSwingT = performance.now() / 1000;
+    // where on the target this beat's blade is going (round 6, R7)
+    this._aimAt();
     /* THE LUNGE STARTS WITH THE COCK, NOT WITH THE BLADE (fix round 4, F3).
      * §4's grant asks for a lunge that "carries the root forward up to the
      * hull distance DURING WINDUP", and the reason is measurable: the beat
@@ -1140,6 +1347,8 @@ export class Melee {
        * 70-80 % of what it is asked for once the foot-lock throttle has had
        * its say). (F3): and when the wedge has a target the step becomes the
        * distance that puts the blade ON it — see `_lungeFor`. */
+      // re-aim on the frame the blade is released: she has lunged since the cock
+      this._aimAt();
       this._stepIn(this._lungeFor(heavy ? 0.42 : [0.66, 0.55, 0.42][i] ?? 0.58));
       if (this._phaseEnd * CONTACT_K <= 1e-4) { this._struck = true; this._resolve(); }
       return;
