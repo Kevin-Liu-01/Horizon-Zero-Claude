@@ -531,6 +531,13 @@ Ownership grant (orchestrator): `player-melee` owns `src/combat/melee.js` (spear
 - **V47-melee-swing** — shots: light 1 at windup / contact / follow-through and heavy at windup / contact, side view. Pass: limbs do the work (hip rotation, step-in, follow-through), spear stays in the hands, arm never behind the head or through the body; reads against the reference stills.
 - **V48-spear-holster** — shot: back view, running. Pass: spear diagonal across the back as in the reference, does not intersect the quiver/bow or hair.
 
+### core-platform-gtao (added Sep 27 by the orchestrator — V33-rim / V44-biomes fail on a GTAO artifact, not on world-ground)
+Ownership: `src/core/engine.js` GTAO/post section only (the GTAOPass setup, `updateGtaoMaterial`/`updatePdMaterial`, depth/normal binding, tier table), `tools/gates.round4.core-platform-gtao.mjs`, `docs/ROUND4-CORE-GTAO.md`.
+- **V33b-no-ao-lattice** — shot: the four-yaw rim vista at tier high and ultra (GTAO on), plus a 2 m ground close-up. Pass: no screen-locked lattice/grid/dither pattern is visible on the distant massif, sky edge or ground; AO reads as soft contact darkening only.
+- **A108-ao-periodicity** — `luminance autocorrelation of a 256×256 crop of the far massif and of the mid-ground` → pass: no periodic peak above `0.15` at any lag `2–32 px` with GTAO on (with GTAO off as the control), at every tier where GTAO is enabled, at DPR 1 and 2.
+- **A109-ao-distance-fade** — `AO term sampled at 5 m, 50 m, 200 m` → pass: AO contribution at `≥ 150 m` is `≤ 10 %` of its 5 m value (distance fall-off works), and the far rim's mean luminance with GTAO on is within `3 %` of GTAO off.
+- **A9-perf-budget / A22b-fov-recompile / A1-boot-clean** — no worse; V33-rim and V44-biomes (world-ground) must pass after this lane on port 5210's staging.
+
 ## 5. ARCHITECTURE DECISIONS NEEDED FROM THE OWNER
 
 Each blocks a lane. Recommendation given; answer yes/no or pick a letter.
