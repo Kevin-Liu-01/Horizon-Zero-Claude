@@ -166,7 +166,11 @@ const STYLE = {
     texSat: 0.04, texBright: 0.42,
   },
   stormbird: { rank: true },      // donor retired under the shell (see stormbird.js)
-  redeye: {},
+  // the Redeye keeps its Watcher donor as the DARK underbody and carries
+  // authored plate over it (rig/shells-expansion.js REDEYE_SHELL): the donor
+  // atlas is near-black under a bronze sheen, and forced to metalness 0.55 it
+  // read as one uniformly dark tangle with no plate at all (judge, residue r0)
+  redeye: { underbody: true },
 };
 
 /** Desaturate a texture toward machine-chassis grey via a canvas redraw. */

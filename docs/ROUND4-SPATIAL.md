@@ -235,8 +235,150 @@ still pushed out of a machine, and it is pushed out *at* the metal), and reports
 
 *Recorded here because the ownership grant that allows it requires it:
 `docs/ROUND4-AUDIT.md` §4, "Grant extended again Sep 25 (round 4)". The code is
-`Collision._meleePad` and `Collision._meleeStandoff` in `src/core/collision.js`; the
-term is owned by `player-melee`, not by this lane.*
+`Collision._meleeStandoff` (and, since round 5, `_meleeBound`, `_meleeOutline` and
+`_meleeLatched`; since round 5 fix pass 1, `_meleeLive`, `_meleeRoll`, `_mbZone`,
+`_mbCap`, `_mbFinish`, `_meleeHulls`, `_meleeBaseOutline`, `_meleeCapAt`,
+`_meleeAsideAt`) in `src/core/collision.js`; the term is owned by `player-melee`, not
+by this lane. Round 4's `Collision._meleePad` no longer exists.*
+
+> **ROUND 5 (Sep 26) — THE TERM WAS REBUILT, from orchestrator ruling R4.** Everything
+> from "What it is" down to the end of this section describes the round-4 / fix-pass
+> mechanism (a pad and a symmetric segment cut on the machine's own capsule) and is kept
+> as the history of the floor constants. What runs now:
+>
+> **1. It is latched, and it lets go without a jump.** Round 4 withdrew the term on the
+> frame `melee._scanApproach` lost the target — a holster, or the ±50° wedge swinging off
+> the machine — so the next swept solve pushed her out of the restored full standoff in
+> ONE frame: measured with A106's release clause on the round-4 build, **1.247 m** on a
+> Watcher, **1.234 m** on a Redeye, **0.525 m** on a Strider. Now a machine that carries
+> a term keeps it while her capsule is still inside that machine's FULL-standoff capsule
+> (`_meleeLatched`, measured with the swept solve's own closest-point iteration), and lets
+> go only once she is outside it — where the full standoff cannot push her. (**Fix pass 1:
+> superseded** — a held term never let go while she stood still, 400 frames measured by the
+> judge; a released term now RELAXES to the machine's own standoff at 1.5 m/s, ≤ 0.10 m per
+> drawn frame, and lets go when it gets there. See the FIX PASS 1 block below.) Any GROWTH of
+> the outline she stands against is budgeted to `MELEE_GROW_STEP` = 0.10 m per RENDERED
+> frame (plus her own step that frame, so sliding round a curved outline is never
+> throttled); shrinking is free. `melee.dispose()` clearing the target is a release like
+> any other. Gated: A106 clause 3 — per rendered frame, what the collision solve added to
+> the position her own integrator produced (moveCapsule wrapped), bar 0.15 m, 5 runs × 2
+> sequences (holster, target lost) × Watcher / Strider / Redeye, each void unless the term
+> was live at the stand, she was latched inside the full standoff, and it had released by
+> the end. **0.000 m on all 30 on the round-5 build.**
+>
+> **2. It is the machine's real hit hulls, not a constant.** The cut was `MELEE_L_CUT` off
+> both ends of the standoff capsule, tuned on a Watcher's empty end cap; drawn, it stood
+> her 2.16 m from a Redeye's centre with her torso 0.12 m inside the sculpt. Bounding that
+> CAPSULE by the hulls was built and measured first and cannot work: a capsule's end is a
+> semicircle as wide as its flank, so keeping her off the front LEGS at the corners drags
+> the whole end out — on a Watcher facing her the bounded front came out 1.08–1.76 m
+> against its own 1.56, i.e. at most 0.3 m closer head-on and in half the poses none, with
+> 0.7 m of daylight between her and the head she was trying to hit (A103 read the blade
+> 0.16–0.24 m short). So while the term is in force the BLOCKING collider is a vertical
+> capsule on the machine's centre whose radius is the **hull outline at her bearing**:
+>
+> * `_meleeBound` runs IN FULL when the term engages. (**Corrected in fix pass 1**: this
+>   line used to say "reused for 2 s, never per frame", and that was not what the code
+>   did — the outline was built once per engagement and never refreshed while the term
+>   stayed engaged, however long that was; `MELEE_BOUND_TTL` only decided whether a
+>   RE-engagement within 2 s reused it. Since fix pass 1 the outline is refreshed
+>   continuously while the term is in force (`_meleeRoll`) and checked against the live
+>   hulls every sim step (`_meleeLive`), and the TTL is measured from the last refresh.)
+>   It reads the target's hull capsules off `HitHulls`' own per-machine set (world
+>   `wax..wbz`, `wr`, `off`; refreshed at most once per sim step by `_refresh`), not
+>   through `hulls()`, which builds a rounded report array per call. The FORBIDDEN ZONE is every foot
+>   position at which her body capsule (segment y+0.4..y+1.4, radius 0.4) would be within
+>   `MELEE_HULL_CLEAR` = 0.05 m of a hull capsule: for each point on a hull segment
+>   (sampled every 0.10 m, her feet on the terrain under that point, her body band
+>   widened 5 cm each way for slope) a disc of radius √(R² − g²), R = hull r + 0.45,
+>   g the vertical gap to her body segment.
+> * For each of 180 bearing bins round the machine (machine frame) the outline is the
+>   FARTHEST zone point along any ray in that bin or either neighbour (so interpolating
+>   between bin centres cannot come out inside it); floored at the old minimal term capsule
+>   (`MELEE_L_FLOOR`/`MELEE_L_CUT`, pad `MELEE_PAD_FLOOR` — the most the term may ever let
+>   her in); dilated to a 45° slope (`MELEE_SLOPE`, outward only, so walking past a leg's
+>   edge is a ramp, not a cliff); capped at the machine's OWN outline on bearings that
+>   meet its flank (found by bisection with the solver's distance against the real slanted
+>   capsule, her feet on the terrain there — re-read three times, because on a Thunderjaw,
+>   whose standoff runs from 0.15 m up at the tail to 7 m up at the head, one read put
+>   this outline up to 0.049 m inside the real one) and at `MELEE_L_EXT` = 2.5 m past its ends on
+>   bearings that meet an end. Where the hulls poke out past even that cap (a Glinthawk's
+>   wing reaches 4.2 m sideways; the Corruptor's head past its flank) the term stays out:
+>   on that bearing, and interpolating next to it, the outline IS the machine's own
+>   standoff, exactly as holstered.
+> * `_meleeStandoff` then sets the collider radius each sync to the outline at her
+>   bearing (`_meleeOutline`), within the growth budget above. Cost: 1.5–20 ms once per
+>   engagement across the 17-species roster on the final code (A106's `boundCostMs`, five
+>   isolated runs and the full suite; 53.6 ms once, on a Tallneck, in a lane run beside two
+>   other lanes' suites — it is per engagement, never per frame), a
+>   `Float32Array(180)` × 2 + `Uint8Array(180)` per machine record, allocated once.
+> * **The manager still agrees.** The floor is the old minimal term capsule, so her
+>   position is never nearer than `bodyRadius + 0.72` to that segment, and the manager's
+>   push loop is handed `meleeStandoffHalfLen = lMin`: its three spheres lie on that
+>   segment and never reach her. A106 clauses 1 and 2 (machine displacement 0.000 m on a
+>   drawn walk-in; Strider/Behemoth charge reach bit-identical) still hold. The machine's
+>   own `standoffHalfLen` is never written, and the LENS capsule (`machine-cam`) keeps the
+>   machine's own segment either way (round 4 let it inherit the cut).
+>
+> Gated: A106 clause 4 — every species in the roster (17), staged facing her with the
+> spear drawn, is sampled on 17 bearings by setting her down 0.3 m off its body and
+> letting the solve push her out to where the term holds her (the machine manager's
+> update paused meanwhile, so setting her down that deep cannot shove the machine); her
+> capsule is measured, exact segment-to-segment, against every hull capsule read at that
+> moment.
+> **0 penetrations on every point the term decided** (inside the full standoff, or an end
+> it lengthened). Points ON the machine's own standoff outline are reported per species
+> and not gated — that is the base standoff, identical holstered: the Glinthawk's wings
+> (−1.05 m), the Corruptor's head (−0.40 m) and the Shellwalker's mid feet (−0.20 m) poke
+> through its OWN standoff, and the Watcher family's `Neck_Bone_7_026` hull capsule spans
+> 4.4 m straight across the body (a hull-fitting artefact in `hitHulls` — a spatial-lane
+> finding, not something the melee term can or should paper over).
+>
+> **Where she stands now**, head-on, drawn (A106 `headOn.standM`; holstered in brackets):
+> Watcher 2.71–2.87 m (3.40), Redeye 2.71–2.84 (3.40), Strider 2.07–2.09 (2.43), Sawtooth 3.17,
+> Snapmaw 4.52, Behemoth 6.07–6.12 — the Behemoth and Sawtooth outlines are LONGER than
+> their own standoff because their heads poke out of it (seven A106 runs on the final
+> `collision.js`). The blade still lands: A103, with the machine now staged facing her (it
+> used to be staged at a random yaw — see `docs/ROUND4-PLAYER-MELEE.md` §0r5) and the reach
+> solved by the gate itself, reads the blade −0.074…+0.097 m from the hull over six
+> isolated runs × four beats on the final build (bar ≤ 0.15).
+>
+> **ROUND 5 FIX PASS 1 (Sep 26) — THE BOUND IS KEPT LIVE, AND A RELEASE RELAXES.** The
+> judge animated the target's rig in place (`_conform` + idle clip, no AI, speed 0) with the
+> term engaged: the outline above was the ENGAGEMENT's pose for as long as the term lasted,
+> so within 3.5 s a Redeye's neck put her body capsule 0.156 m inside a hull and a Strider's
+> front foot 0.176 m; and after a holster the held term kept that stale outline for as long
+> as she stood still (400 frames). Three changes, all inside the term:
+>
+> * **`_meleeLive`, every sim step while the term is in force** (engaged or releasing): the
+>   live hull capsules, read off `HitHulls`' own set (no allocation; refreshed at most once per
+>   step), on HER bearing only — hulls whose end points are nowhere near her ray are
+>   rejected before any sample — give the farthest point along that ray at which her capsule
+>   (her own feet, band ±3 cm) clears every hull by `MELEE_HULL_CLEAR` + a lead (5 mm plus
+>   twice the hull's closing speed per step on an unchanged ray, capped at 0.03 m). If that
+>   is beyond her, she is moved out along the ray THAT step, position and the solver's `prev`
+>   together — the machine's body moving into her, not budgeted (not a release), totalled in
+>   `collision.meleePushM` — and the collider radius takes it. Where a hull pokes out past the
+>   machine's own flank standoff the term stands aside (`rec.aside`), as before.
+> * **`_meleeRoll`, every rendered frame while the term is in force**: a slice of a fresh
+>   outline — 120 zone samples, plus 12 cap bins only when the machine has moved > 5 cm or
+>   turned > 0.02 rad since its cap was taken — accumulated into a second `Float32Array(180)`
+>   on the record; when a cycle is through it becomes the outline (floor / dilate / cap
+>   exactly as the full bound), so a limb that moved AWAY lets her back in too. The zone's
+>   inner loop now evaluates cos(x − cb) by angle addition off precomputed bin tables.
+>   `MELEE_BOUND_TTL` (2 s) is measured from the last completed refresh and only decides
+>   whether a re-engagement reuses the outline.
+> * **The release relaxes** (ruling R4's "relax back toward base at a bounded rate"): a
+>   released term no longer holds while she stands inside the full standoff — the collider
+>   radius at her bearing walks out to the machine's OWN standoff there at
+>   `MELEE_RELAX_SPEED` 1.5 m/s, never more than `MELEE_GROW_STEP` 0.10 m in a drawn frame,
+>   and the term lets go the step it arrives (or when she is outside the full standoff).
+>
+> Gated: **A106 clause 5** — Watcher / Redeye / Strider, the judge's own staging (roster
+> frozen, walk-in, then the rig let go) and the rig animated throughout; 6 s engaged + 3 s
+> after a holster; her capsule against every hull capsule on every rendered frame, bar 0.05 m.
+> **5/5 runs, 30 rows, 0 frames below 0.05 m**: worst Watcher 0.0605, Redeye 0.0604, Strider 0.0550 m; the term engaged on every drawn frame and let go after every holster; the machine moved 0.000 m. The round-5 build under the judge's staging, before this pass: Watcher −0.047, Redeye −0.018, Strider +0.009 m (the judge measured −0.156 and −0.176). Clause 3 (release) now also counts the live check's pushes: ≤ 0.100 m per drawn frame on 150/150 sequences (bar 0.15; the relax's own cap).
+> Cost: the rolling refresh 0.08–0.12 ms mean per drawn frame, the live check 0.02–0.06 ms mean per sim step (A106 clause 5's timers, `performance.now()` quantised to 0.1 ms here); the full bound 0.6–4.4 ms per engagement across the 17-species roster (round 5: 1.5–19.5 ms, before the zone loop lost its per-bin trig); one more `Float32Array(180)` and the cap array per machine record, allocated on the first engagement, nothing per frame.
 
 **What it is.** While `ctx.combat.melee` has the spear drawn AND has selected a machine
 as its approach target (`melee._scanApproach`, the same ±50° wedge the hit resolve uses),

@@ -50,6 +50,7 @@ ctx.npcs.signature(n)    // mesh + vertex-colour fingerprint of one NPC
 ctx.npcs.crowdSpacing()  // { min, a, b, states } — the closest two people NOW
 ctx.npcs.unstickCount()  // total rescues; A96/A97 fail the build on any
 ctx.npcs.unstickTrace()  // last 16 rescues: { id, why, state, x, z, t }
+ctx.npcs.talkHoldStats() // { frames, secs, id } the speaker animated while the card froze the world (§4g)
 ctx.npcs.debug()         // the gate-facing snapshot
 ctx.npcs.dispose()       // full teardown; see §7
 ```
@@ -67,12 +68,18 @@ anim, mesh, skeleton, byName, walked, hut, … }`. `state` is one of
 
 ## 3. For `progression` / `progression-expansion` — dialogue
 
-`ctx.npcs.talkTo(id)` turns the NPC to face the player, plays a talk gesture,
-emits `npc-talk`, and then hands off:
+`ctx.npcs.talkTo(id)` stops the NPC, turns the head at once and the body by
+STEPPING round to face the player (§4f), plays a talk gesture, emits `npc-talk`,
+and then hands off:
 
-- if `progression.NPCS[id]` exists (today: `varl`), it calls
-  `progression.talkTo(id)` and the existing dialogue panel opens unchanged;
+- if `progression.NPCS[id]` exists (all thirteen today), it calls
+  `progression.talkTo(id)` and the conversation card opens synchronously;
 - otherwise it only emits, carrying that NPC's authored `lines`.
+
+A conversation `progression` opens WITHOUT going through `talkTo` (VARL's own
+`TALK · VARL` prompt) is picked up from `dialogue-open` and engages the speaker
+the same way. While the card is open the speaker keeps turning and gesturing
+even though the card has frozen the rest of the world (§4g).
 
 So registering the other twelve is a data change on your side and needs no edit
 here. Every non-Varl NPC already has a live `TALK · NAME` interactable following
@@ -444,10 +451,302 @@ pivoting about the foot MOVES THE BODY ORIGIN, and `_dodge` predicts closest
 approach from each body's NOMINAL GAIT SPEED, so a yielding body turning at
 2.4 rad/s about a foot 0.12 m away travels 0.29 m/s while reading as stationary.
 Measured: A96's pairwise separation went from 0.656 m with **0** frames under the
-bar to **0.093 m with 226 frames under it**, two walkers merged. The arc it was
-meant to remove is worth 0.017–0.019 m of drift on a 0.08 m bar, so the body
-origin stays put for a stationary loop. `NpcSystem._look` still routes its facing
-turn through `turn()` — behaviour unchanged, but there is now one door.
+bar to **0.093 m with 226 frames under it**, two walkers merged.
+
+~~The arc it was meant to remove is worth 0.017–0.019 m of drift on a 0.08 m bar~~
+— **WRONG, and corrected in fix round 4 (§4f).** That figure was A97's worst
+window, and A97's sample could not contain a turn: it drops the player at
+(22, 30) and sleeps 6 s before the first window opens, so every NPC near the
+player had finished turning. A judge stood the player 1.6 m behind THOK and
+measured the real cost: **0.30 m of planted-toe drift per 0.667 s stance window**
+(3.8x the bar), 0.99 m of toe path, the body origin motionless. The rejection of
+the foot pivot stands; the conclusion that the origin pivot was good enough does
+not. §4f is what replaced it.
+
+## 4f. FIX ROUND 4 (residue r1) — a standing body turns by STEPPING
+
+Judge finding (major): *turn-to-face and yield-escape turns still skate the
+planted feet on standing NPCs; the round-3 comment claims `turn()` fixed it, and
+A97 cannot see it.* All of it was true. Filmed by the judge with the player
+standing 1.6 m behind THOK (`work` / `interact`): `_look` turned him 3.142 rad in
+about 2.2 s, body origin moved 0.000 m, planted left toe **0.295 / 0.304 /
+0.304 m per 0.667 s stance window**, 0.99 m of toe path. `turn()` only pivoted
+about the foot for a GAIT (`this._have && this.rootMotion`); over a stationary
+loop it yawed about the origin. Reproduced on 5218 before touching anything, on a
+kneeling THOK: **1.917 m of left-toe ground slide** in one 3.1 rad turn.
+
+### What changed
+
+**`NpcAnimator.turn(dYaw, goal)` steps a standing body round.** The pack has no
+turn-in-place clip, and neither pivot is free over a stationary loop (the origin
+pivot sweeps both toes; the toe pivot sweeps the other toe AND moves the origin,
+which round 3 measured merging two walkers). So:
+
+- the **body** yaws about its own origin — `_dodge` / `_separate` still see a body
+  that is not moving, which is what the round-3 rejection was protecting;
+- each **foot** is pinned — ankle position and heading — by a two-bone leg solve
+  (`_solveLeg`: knee bend by the law of cosines about the leg's own hinge, then a
+  minimal swing about the hip, foot heading re-applied about world up), written as
+  local quaternions over the clip pose and refreshed before the foot lock reads
+  the toes;
+- a planted foot twisted `STEP_YAW` (0.45 rad) out of line with the body, or
+  `STEP_POS` (0.07 m) from where the clip wants it, is **lifted** `STEP_LIFT`
+  (0.065 m x body scale), carried to where the clip wants it under the heading the
+  body will have when it lands (lead clamped toward — never past — the caller's
+  goal), and put down, over `STEP_TIME` (0.36 s). The first and last 15 % of the
+  swing are pure lift and pure descent, so **horizontal travel only happens with
+  the foot off the ground**. While the turn runs the feet alternate like a gait;
+- a planted foot twisted past `TWIST_MAX` (0.8 rad) holds the body turn back
+  until the other foot lands (`heldRad` in the probe: 0.002–0.053 rad per π turn —
+  the feet keep up);
+- when the turn stops, a foot still out of line by more than 0.035 rad / 0.012 m
+  takes one settling step, and the solve fades out over 0.15 s with the pins
+  already on the clip's own feet;
+- a pose with no honest step — kneeling (`Fixing_Kneeling`), seated — **does not
+  turn at all** (`canStep`); the head still tracks.
+
+The legs joined the write-back cache of §6: `Idle_Loop` holds its legs on
+near-constant tracks, so without it a solved leg would have stayed solved after
+the solve let go.
+
+**Every yaw write on a standing body goes through that door.**
+
+- `_look` (turn to face a player within 2.55 m, or anyone the player is TALKING
+  to, within 6 m) — `turn(…, want)`.
+- The `SEP_HARD` escape turn during a yield — `turn(…, n.escape)`.
+- `talkTo` **assigns no yaw** (it snapped `rotation.y` in one frame). The body is
+  put in state `talk` and `_look` steps it round. ~~*Trade-off, stated plainly:*
+  the conversation card (`src/ui/dialogue.js`) sets `ctx.state = 'dialogue'`,
+  which freezes the simulation outside `?shot` mode, and progression's gates
+  require `talkTo()` to open the card synchronously — so a person spoken to from
+  directly behind, before `_look` has brought them round (it starts at 2.55 m,
+  the TALK prompt appears at 2.6 m), finishes the turn when the card closes.~~
+  **Withdrawn in fix round 5 (§4g):** a judge measured what that "trade-off"
+  really cost — the speaker held the WHOLE conversation with their back to the
+  player — and the speaker is now animated while the card has the world frozen.
+  In shot mode (every gate and every judge film) they always stepped round while
+  the card was up, which is why no gate saw it; `A97b-npc-talk-freeze` runs the
+  same turn with the freeze in force.
+- **Arrival snaps, same artefact, same cure.** `_startWork` assigned the heading
+  to the station on arrival and `_goSit` to the fire: measured on 5218 before the
+  change, three work arrivals in 90 s snapping **0.341, 0.506 and 0.649 rad** in
+  one frame. `_faceFirst` now puts the arriving body in state `face` (standing,
+  `idle`) and steps it round, then kneels / works / sits; a residual under
+  `FACE_OK` (0.05 rad = 6 mm of toe) is kept. After the change: **0 standing-body
+  yaw changes over the turn-rate bar in 2973 frames (90 s)**, one `face` event
+  (OLIN, 0.131 rad, 1.09 s, 2 steps).
+
+The false comments are corrected: `npc.js` `_look`, the escape turn, `_separate`'s
+`SEP_HARD` note, `SEP_WALK`'s header, `GRIND_STOP`'s note, and the `turn()` doc
+itself; §4e's "0.017–0.019 m on a 0.08 m bar" is struck through with the reason.
+
+### A standing body that is SHOVED steps too
+
+The new A97 turn phase is not what failed first — the OLD phase did, on the first
+run of the new gate: BAST idle, a judged shove window of **0.2984 m**. Traced
+frame by frame, and then on a copy of the round-3 build (commit 5f30beb) served
+from a scratch directory on another port: a walker passing a stander inside
+`SEP_R` (0.80 m) moves the stander at up to ~0.45 m/s, planted feet and all.
+Same events on both builds at the same camp times: **NIL shoved 0.39–0.51 m by
+OLIN, VARL 0.15–0.25 m by MARIS, DELVE 0.08–0.11 m by BAST, TEB 0.084 m by OLIN.**
+It predates this round and it is the same artefact the finding is about — a
+standing person's planted foot sliding — so it got the same cure:
+
+- `NpcAnimator.shift()` on a body that can step **keeps the feet where they are**
+  and lets the step machinery walk them after the body (faster swing,
+  `STEP_TIME_SHOVED` = 0.26 s, landing lead from the shove's own velocity capped
+  at 0.15 m, the foot on the side the body is going leads); `afterMove()`
+  re-solves the legs after `_settle`, so the drawn frame and the probe have the
+  planted feet on their pins rather than carried one frame's shove. The BODY
+  still moves exactly as before, so the crowd's separation guarantee is
+  untouched (A96 below).
+- a body that cannot step (kneeling) is **rooted like a sitter** in the crowd
+  backstop (`sepWeight`): it pushes, it is not pushed; the walker takes the whole
+  correction at the skate-safe `SEP_WALK` and `_dodge` / `SEP_HARD` do the rest,
+  exactly as they always have for sitters.
+
+Measured over 60 s of camp time, player at (22, 30), same probe on both builds:
+planted-toe windows over 0.05 m — **0 and 0** in two runs on this build, **1**
+(VARL, 0.194 m) on the round-3 build, and 1, 2 and 4 on an intermediate build that
+had the stepped turn but still carried a shoved body's feet; and a ground-contact
+trace over every
+standing toe, support or not — **0 windows over 0.04 m in 709 judged** on the
+final code against **5 over 0.04 m in 654 (worst 0.169 m, VARL shoved by MARIS)**
+on the round-3 build (commit 5f30beb, served from a scratch copy).
+
+### Measured
+
+- The judge's own staging, repeated on the final code (player 1.6 m behind a
+  standing worker): THOK `work`/`interact` turned **2.969 rad in 6 steps**,
+  planted windows **0.000–0.004 m**, toe path while on the ground **0.002 /
+  0.019 m** (L/R) against the judge's 0.99 m of toe path, body origin moved
+  **0.000 m**, max yaw step 0.054 rad/frame, toes lifted 0.083 m at mid-swing. The
+  chords are unchanged (0.681 / 0.640 m) — the feet DO end up on the other side of
+  the body; they get there through the air.
+- **`A97-npc-no-skate` 10/10 PASS in isolation on the final code**, with the new
+  turn phase in every run. Turn phase: two approach turns and one talk turn per
+  run, each **2.80–3.41 rad in 6–14 steps** (the 14 is VARL being spoken to from
+  behind while MARIS walked past and the crowd backstop moved him 0.456 m — he
+  turned AND stepped after the shove, worst stance window 0.0022 m); stance drift
+  WHILE TURNING worst **0.0031–0.0183 m** per run, ground-contact slide (both
+  toes) worst **0.0055–0.0177 m**, 13–24 judged turn windows and 19–29 contact
+  windows per run, `talkToSyncYawChangeRad` **0** in all ten. The crowd probe
+  alongside it: worst stance drift **0.0047–0.0287 m**, 99–150 working and 62–110
+  walking windows per run, **zero `_unstick`**, crossfades excluded and printed
+  (41–60 per run). Bar 0.08 m, unchanged. (An earlier block of eight on the same
+  code before the per-subject hitch calibration below: 6 PASS, 2 blind FAIL with
+  0 and 2 turn windows judged — every subject had turned π.)
+- **`A96-npc-animated` 10/10 PASS in isolation on the final code** — the stepping
+  moves no body, and rooting kneelers did not cost the crowd its spacing:
+  minimum pairwise separation **0.616–0.660 m** (bar 0.55), `framesUnderSeparationBar`
+  **0** in all ten, 1st percentile in the 0.6–0.7 m bucket in all ten; over 13,339
+  sampled frames: 0.6–0.7 ×652, 0.7–0.8 ×919, 0.8–0.9 ×647, 0.9–1.0 ×1321,
+  1.0–1.1 ×1588, 1.1–1.2 ×1097, 1.2–1.3 ×584, 1.3 m+ ×6531, nothing under 0.6.
+  `unstickEvents` 0, `worstPushedM` 0.04–0.60 (bar 1.5), travellers 6–7, 13/13
+  with three clips, no stuck layers. (A previous block of ten, before the last
+  engage-on-shove fix: 10/10, 0.599–0.662 m.)
+- Found while verifying and fixed before the final blocks: the first time the
+  crowd shoved a body that had never turned, `afterMove` re-solved its ankles to
+  a never-written target height — one frame with the feet pulled to the floor.
+  `_engageHere` now seeds the targets and the body height from that frame's own
+  matrices; first-frame toe heights read 0.013–0.015 m (the rig's floor offset).
+- Arrival snaps after the change, 90 s of camp time: **0** standing-body yaw
+  changes over the turn-rate bar in 3251 frames; one `face` arrival (OLIN,
+  0.120 rad, 1.09 s).
+- Film: `shots/npc-r4-stepturn-trail.png` (top-down, the judge's framing; red =
+  left toe on the ground, blue = right toe on the ground): discrete footprints —
+  four per foot round the circle — where the judge's frame had a continuous red
+  and blue ring. `shots/npc-r4-stepturn-mid.png`: THOK frozen mid-step, near boot
+  clear of the ground with its shadow under it, far foot planted.
+  `shots/npc-r4-shove-step.png`: BAST (idle) frozen mid-step while DELVE walks
+  past at 0.84 m.
+
+## 4g. FIX ROUND 5 (residue r2) — the speaker is not frozen with the world
+
+Judge finding (major): *live (non-shot) play — an NPC spoken to from behind or
+the side holds the whole conversation with their back to Aloy.* True, and caused
+by §4f. `talkTo` stopped snapping the heading in fix round 4 and left the turn to
+`_look`; but the conversation card (`src/ui/dialogue.js`) parks `ctx.state` on
+`'dialogue'`, and main.js's `live` test excludes that state unless the page is
+under `?shot` — so in a real session no system ticks while the card is up, and
+the turn (and the `idleTalk` / `interact` crossfade) stood still. The judge's
+probe (`--noshotmode`, arrive from behind, stop at 2.5 m, hold 0.35 s, talk):
+NIL at **2.862 rad** of heading error when the card opened and at every 0.5 s
+sample for 3 s, simulation time during the card **0**, crouched mid-crossfade
+with his back to the camera. Round 3 (the snap) read 0 for the whole card. Every
+gate and every judge film runs under `?shot`, where the world keeps simulating
+behind the card, which is why A97, V45 and A99 were all green.
+
+Reproduced on 5218 before changing anything, with the freeze in force: THOK
+**2.641 rad** at the card and at every sample for 4 s, sim time 0, 0 steps.
+
+### What changed (`src/world/npc/npc.js`)
+
+**`_holdSpeaker` — the person the card belongs to keeps living while the card
+has the world frozen.** Registered on `engine.onAfterRender` (the engine's
+published per-frame hook, which runs whether or not the simulation did); main.js
+was not edited. `update()` stamps the frame it ran on (`_simFrame`), so on any
+frame main.js DID tick this system — normal play, every `?shot` page — the hook
+is one comparison and returns. Only when `ctx.state === 'dialogue'` AND the
+system was not ticked does it run, and then for exactly one body,
+`progression.dialogue.npc`, on the engine's real clock (`engine.wallTime`, which
+main.js advances — clamped to its 50 ms frame ceiling — even while frozen):
+
+- `_look` — the stepped turn to face the player (§4f, unchanged: 1.4 rad/s,
+  feet held and stepped) and the head;
+- `anim.update` — the mixer (`idleTalk`, the `interact` gesture over it, their
+  crossfades), the step machinery and the foot lock;
+- `_settle(n, dt, false)` — ground and world collision only. The crowd push is
+  NOT run: everyone else is frozen, and a push from a body that is not moving
+  would only shove the speaker;
+- `afterMove`, the collider and the TALK prompt, exactly as `update` does.
+
+It does not run `_brain`: nobody else moves, and the speaker's talk timer does not
+run down while they are being spoken to (it resumes when the card closes). The
+update lands after the frame is drawn, so the next frame shows it — one frame of
+latency on a two-second turn.
+
+**Every conversation, not only the ones `talkTo` opens.** VARL's `TALK · VARL`
+prompt belongs to `progression` and calls `progression.talkTo('varl')` directly,
+so VARL never went through `talkTo` at all. `talkTo`'s body is now
+`_engageTalk(n)`, and a `dialogue-open` that did not come through `talkTo`
+(`_inTalkTo` guards the re-entrant case) engages the speaker the same way.
+
+**Memory.** One closure and one event subscription, made once at construction;
+`dispose()` splices the hook out of `engine.onAfterRender` and unsubscribes. The
+hold allocates nothing per frame (`_hold` is preallocated; the stepping and the
+leg solve were already allocation-free). `ctx.npcs.talkHoldStats()` publishes
+`{ frames, secs, id }` so a probe can see the hold did the work.
+
+### The gate: `A97b-npc-talk-freeze`
+
+The judge asked for a variant of the talk turn with the freeze in force. A97's
+turn probe was lifted verbatim into one shared page-context helper
+(`TURN_PROBE` in `tools/gates.round4.npc.mjs`) so A97's turn phase and A97b run
+the same windows and cannot drift apart; it gained a `'talk-live'` mode. A97b
+puts the player 1.6 m directly behind a standing person, removes `shot` from
+main.js's own `URLSearchParams` (`ctx.params` IS that object) for exactly the
+life of the card — main.js then freezes the world as it does in a real session —
+calls `talkTo`, and holds the card at least 3 s and until the talk gesture has
+handed the stage back. `shot` is restored in a `finally`, before the card
+closes. It asserts:
+
+- the freeze was really in force: simulation time during the card **0**, every
+  other person unmoved, `ctx.state === 'dialogue'` and the card open every frame;
+- `talkTo` itself changed the heading by 0 (no snap);
+- the heading error came down to **≤ 0.35 rad while the card was open**, within
+  3.0 s of the speaker's own clock, and STAYED ≤ 0.35 until the card closed;
+- the talk gesture ran: the `idleTalk` layer, taken off the stage by `interact`,
+  came back to full weight while the card was open (a frozen mixer does neither);
+- A97's bar on the feet while they turn: stance windows ≥ 3 judged, worst
+  ≤ 0.08 m, ground-contact slide ≤ 0.08 m.
+
+Proved to catch the finding: the same gate run with the hold taken off the render
+hook (the pre-fix behaviour, emulated in-page) **FAILS** — heading error 3.142 rad
+at every sample, `facedWhileCardOpen`, `stayedFacing` and `talkGestureRan` false,
+sim time 0.
+
+### Measured
+
+- **`A97b-npc-talk-freeze` 10/10 PASS in isolation** (port 5218). Speaker THOK
+  (`work` / `interact`) every run, heading error **3.142 rad** at the card →
+  **0.000** at close; faced (≤ 0.35) after **2.04–2.11 s** of the speaker's clock
+  (2.07–3.20 s of wall on a box running 14–22 fps); worst error after facing
+  0.305–0.347 rad (the first sample under the bar); talk gesture handed back at
+  1.95–3.00 s; **6 steps**, body origin moved **0.000 m**; stance drift while
+  turning **0.0000–0.0027 m** (4 windows each), ground-contact slide
+  **0.0122–0.0207 m** (5–7 windows) against 0.08; simulation time during the card
+  **0**, others moved **0.0000 m** in all ten.
+- The judge's own probe, true non-shot page (`__GAME__.start(false)`, no `shot`
+  param at all): THOK 2.647 rad at the card → **0.006 rad** after 1.67 s, held for
+  the rest of the 4 s sample; 6 steps, heldRad 0.005, sim time 0, 143 hold frames.
+- VARL through `progression`'s own prompt path (`progression.talkTo('varl')`,
+  freeze in force, from directly behind): 3.142 → 0.234 → **0.000 rad** in about
+  2 s, 6 steps, state `talk`.
+- A seated speaker (KARST on the fire logs): body yaw unchanged (seated — no
+  honest step, as before), `sitIdle` → `sitTalk` crossfade completed and the
+  pose animating through the card, sim time 0.
+- **`A97-npc-no-skate` 5/5 PASS in isolation** on this code (its turn phase now
+  runs from the shared `TURN_PROBE`): crowd worst stance drift 0.0066–0.0642 m
+  (the 0.0642 is one clean 0.74 s idle window on BAST in run 2 — the crowd probe
+  opens no conversation, so no line of this round runs in it), 76–116 working
+  and 68–94 walking windows, 0 rescues; turn phase stance drift 0.0044–0.0064 m,
+  ground contact 0.0051–0.0535 m, 12–18 turn windows, 6–7 steps per π,
+  `talkToSyncYawChangeRad` 0 in all five. Bar 0.08 m, unchanged.
+- Film, true non-shot page, the judge's staging (player arrives from behind,
+  stops at 2.5 m, holds 0.35 s, talks), camera on a clear 3/4 line chosen by
+  raycast: `shots/npc-r5-talk-live-front-mid.png` (card open 0.9 s, THOK side-on
+  mid-turn, 2 steps, error 1.395 rad), `shots/npc-r5-talk-live-front.png` (card
+  open 3.2 s, THOK facing Aloy, error 0.000, 6 steps) and
+  `shots/npc-r5-talk-live-compare.png` (those two beside the same frame with the
+  hold taken off the render hook: his back to Aloy at 2.722 rad). The judge's own
+  over-the-shoulder framing, `shots/npc-r5-talk-live.png`, reads 0.057 → 0 rad
+  by 2 s but Aloy's quiver and bow cover THOK from that camera.
+- Teardown with the card up and the speaker mid-step: `ctx.npcs.dispose()` takes
+  the hook out of `engine.onAfterRender` (3 → 2) and the `dialogue-open`
+  subscription (1 → 0), `ctx.npcs` null; frames kept rendering with the card
+  still open, then a VARL conversation opened with no crowd listening — no system
+  errors, no console errors.
 
 ## 5. The no-skate contract
 
@@ -459,8 +758,11 @@ An NPC's translation is **derived from its animation**, not corrected after it:
 
 The planted foot is the fixed point of the update, so it cannot drift. Turning
 rotates the body **around** the planted foot rather than around its own origin —
-while a GAIT is on stage. Over a stationary loop the body origin is the pivot
-instead, deliberately: see §4e for the measurement that says why.
+while a GAIT is on stage, because the other foot is in the air. A STANDING body
+has no foot in the air, so (fix round 4, §4f) its body yaws about its own origin
+— the crowd logic sees nothing move — and its FEET STEP: held where they stand
+by a two-bone leg solve, lifted and put down again round it. A standing body the
+world or the crowd shoves steps after the shove the same way.
 Speed is the clip's own (`Walk_Loop` measures 0.927 m/s, `Walk_Formal_Loop`
 1.015, `Jog_Fwd_Loop` 3.032) times `action.timeScale` times the NPC's scale —
 and because the rate scales the foot's velocity too, slowing an NPC down cannot
@@ -559,11 +861,107 @@ readback of `loopTravel` against `IN_PLACE_MAX`, and `excludedCrossfade` /
 `maxDriftDuringCrossfadeM` so the one class of window it excludes is printed with
 its worst number.
 
+Round 4 (residue r1) added a TURN PHASE to `A97-npc-no-skate`, as the judge
+asked, at the unchanged 0.08 m bar. After the 22 s crowd probe the player is
+walked round BEHIND standing people one at a time (state `work`/`idle`/`errand`,
+able to step, no beat or replan due inside the turn): two are turned by the
+player standing there (`_look`), a third is spoken to (`talkTo`) from behind. Each
+one's stance windows are judged while they turn, with the same windows and
+exclusions as the crowd probe, and one new term is judged with them:
+**ground contact** — ANY toe within 3 cm of the body's floor, support or not, may
+not slide more than the same 0.08 m per window (a turn that pivots about one toe
+passes the stance window and fails this). The phase requires two approach turns
+and one talk turn of at least 2.5 rad each, at least 8 judged turn windows, and
+that the `talkTo()` call itself leaves the heading untouched
+(`talkToSyncYawChangeRad` = 0). A dropped frame is the crowd probe's rule (45 ms
+or 2.5x the median gap) taken on the 40 frames just before each subject: in two
+runs out of eighteen the box slowed after the crowd probe calibrated at the
+45 ms floor, every later frame read as a hitch and the phase judged 0 and 2
+windows — a blind FAIL with every subject having turned π in 6–7 steps. The
+0.08 m bar and the 8-window floor are unchanged.
+
 All five together in one run on the final code (port 5218): `A95-npc-roster`
 PASS 14.3 s, `A96-npc-animated` PASS 89.9 s, `A97-npc-no-skate` PASS 38.9 s,
 `V40-settlement-life` PASS 29.9 s, `V41-npc-closeup` PASS 21.2 s.
 
-Latest full-lane state (port 5218): `A95-npc-roster` PASS (13 NPCs, 13 distinct
+Fix round 4 final state (port 5218): `A95-npc-roster` PASS (13 NPCs, 13 distinct
+signatures, 6 builds); `A96-npc-animated` **10/10**; `A97-npc-no-skate` **10/10**
+with the turn phase; `V40-settlement-life` PASS (13 in frame, 7 distinct
+activities at 19:24 — three walkers in stride, a seated talker at the fire, a
+kneeling repair, a raised weapon, an idle talker; read at 2x); `V41-npc-closeup`
+PASS (SONA 1.845 m vs BAST 1.781 m, knee swing 1.282 / 1.278 rad, 8.23 / 8.29 m
+in 8 s, max lean 3.1°). Neighbours that read this lane: `V35-settlement` PASS
+(min pose delta 0.181 m), `A99-dialogue` PASS, `A66-quest-objectives-expansion`
+PASS and `A65-save-restore-expansion` PASS (both call `talkTo()` and close the
+card synchronously), `V45-dialogue-panel` NEEDS-JUDGE — read: AURA stands above
+the card facing the camera. Memory: `A90-memory-stability-expansion` PASS (nonMachineGrowth 0, orphan roots
+0), `A90-rig-reclaim` PASS (geo +1, tex 0). `A90-memory-stability` PASSED in
+isolation on this code (heap −4.4 %, geometries +27, textures −18, objects −445)
+and then FAILED its geometry term later the same morning — +45 inside the full
+suite, +44 / +44 / +41 in isolation — every time from the LOW baseline mode
+(`before.geo` 173; ROUND4-MEMORY.md §6.4: the counter counts first DRAWS and the
+baseline is bimodal at 173/174 vs 200). Attributed side by side, at the same time
+on the same box: the identical tree with only `src/world/npc/**` put back to the
+round-3 commit read **+41 / +42 / +40** (`after.geo` 214 / 215 / 213 against this
+code's 217 / 217 / 214) — FAIL, FAIL, PASS-at-the-bar. The stepped turn creates no
+geometry and the NPCs' draw-distance rule is unchanged; the term moved with the
+rest of the working tree (other lanes' uncommitted `rig/lod.js` merge and
+`rig/components.js` work was on disk throughout), not with this lane.
+`ctx.npcs.dispose()` with two people mid-step: objects −716, textures −13,
+colliders 13 → 0, interactables −12, `ctx.npcs` null, no console errors. The
+stepped turn allocates nothing per frame (module scratch vectors, the landing
+maths are methods rather than closures), and `NpcAnimator.dispose()` now drops the
+leg records and the write-back cache.
+
+Full suite on port 5218 on the final code, run to completion: **237 gates — 180
+PASS, 13 FAIL, 4 PENDING, 40 NEEDS-JUDGE**; all five of this lane's gates PASS
+inside it (A96 0.656 m min separation, A97 turn phase 0.0025 m stance / 0.0046 m
+contact, V40 8 activities) and no FAIL is this lane's.
+
+Round 5 (residue r2) added `A97b-npc-talk-freeze` (§4g): the talk turn with the
+dialogue freeze in force, through the same turn probe A97 uses (`TURN_PROBE`, one
+page-context helper for both, so the two cannot drift). No existing bar moved;
+A97's turn phase is textually the same code, run from the shared constant.
+
+Fix round 5 final state (port 5218): `A97b-npc-talk-freeze` **10/10** in isolation
+(and FAIL on the pre-fix behaviour, emulated in-page); `A97-npc-no-skate` **5/5**;
+`A95-npc-roster` PASS (13 NPCs, 13 signatures, 6 builds); `V40-settlement-life`
+PASS (13 in frame, 8 activities at 19:24 — walkers in stride, two seated talkers
+at the fire, two kneeling repairs, a pick-up, a raised weapon, idle talkers; read
+at 2x); `V41-npc-closeup` PASS (SONA 1.840 m vs BAST 1.764 m, knee swing 1.263 /
+1.243 rad, 8.21 / 8.25 m in 8 s, max lean 3.2°). Memory, on this code:
+`A90-memory-stability` PASS (30 kills, heap −5.5 %, geometries +33 from the low
+173 baseline, textures −20, objects −722), `A90-memory-stability-expansion` PASS
+(nonMachineGrowth 0, orphan roots 0, heap −10.7 %), `A90-rig-reclaim` PASS (geo 0,
+tex 0); `A9-perf-budget` PENDING (319 draw calls, under 350; fps 16.6 not
+attributable — null-frame GPU 7.21 ms on this box); `A21-real-draw-calls` PENDING
+(draw calls 319 / 217 / 346 and triangles PASS; GPU / frame-time terms not
+attributable under contention).
+
+Full suite on port 5218 on the final code, run to completion under heavy
+contention (load average up to 113): **238 gates — 178 PASS, 17 FAIL, 3 PENDING,
+40 NEEDS-JUDGE**. Every gate of this lane PASSES inside it — `A95-npc-roster`,
+`A96-npc-animated` (min separation 0.629 m, 0 frames under the bar, 0 rescues),
+`A97-npc-no-skate` (crowd 0.0098 m, turn 0.0023 m, contact 0.0041 m),
+`A97b-npc-talk-freeze` (THOK 3.142 → 0 rad, faced after 2.1 s, sim 0, feet 0 /
+0.009 m), `V40`, `V41` — and so do the neighbours that call `talkTo`:
+`A99-dialogue`, `A65-save-restore(-expansion)`, `A66-quest-objectives(-expansion)`,
+`V35-settlement`; `V45-dialogue-panel` NEEDS-JUDGE, read: AURA stands above the
+card facing the camera. `A90-memory-stability` PASS inside the suite too (geo
++16 from the 194 baseline, heap −5.8 %). None of the 17 FAILs is this lane's.
+Five of them passed when re-run alone right after (A4-draw-strength,
+A27-timescale-safe, A32-draw-ramp, A69-death-choice, A75c-suspicion-scan); the
+rest, by owner: animator A17-draw-beats; core-platform A20b-no-system-errors
+(systemErrors and hook errors both empty — it fails on `framesAdvanced` 91 / 103
+< 120 frames on this box, alone as well); core-platform-followup2
+A81-canon-speed-bands; machine-rig A44-socket-integrity, A47-corpse-grounded,
+A47c-corpse-mass, A48-cadence, A50b-aim-on-drawn-geometry; machine-ai-expansion
+A41c-expansion (protocol timeout after 909 s at the load peak); player-control
+A31b-no-ghost-without-occluder; spatial A23-aim-cost, A23b-hull-fidelity.
+PENDING: A9-perf-budget (core), A21-real-draw-calls (core-platform),
+A31-aim-strafe-skate (animator).
+
+Round-3 full-lane state (port 5218): `A95-npc-roster` PASS (13 NPCs, 13 distinct
 signatures, 6 builds, 13 unique skeletons); `A96-npc-animated` **17/17 PASS in
 isolation** and once inside the full suite; `A97-npc-no-skate` **6/6 PASS in
 isolation** and once inside the full suite;

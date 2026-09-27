@@ -155,6 +155,15 @@ const MAX_LOCK = 0.3;
  * chasing. One foot at a time: she is never off the ground.
  */
 const STEP_TRIGGER = 0.105;  // char-space error that earns a corrective step (m)
+/* ...and while a NEW melee stance key is being settled into (round 5 fix pass
+ * 1, lane player-melee — `meleeLayer._stance` swaps a stance key under a loaded
+ * stance and calls `beginMeleeStep(true)`): the home is re-captured off the new
+ * key and a foot re-places once it is this far out of it. The deep heavy is
+ * sensitive to it — its knees are folded near their limit, so feet left 8 cm
+ * further apart by the previous beat held the pinned heavy's hips 0.11 m up
+ * (0.799 against 0.686 m, 2 of 20 A102 runs) with every foot inside the
+ * 0.105 m trigger. Only the melee key swap arms it; nothing else changes. */
+const STEP_TRIGGER_REKEY = 0.03;
 const STEP_DUR = 0.155;      // flight time (s)
 const STEP_LIFT = 0.075;     // peak ball lift over the arc (m)
 const STEP_LEAD = 0.22;      // seconds of her own velocity the step leads by
@@ -2456,9 +2465,15 @@ export class PlayerAnimator {
    * velocity impulse). Nothing else in the file starts a stance step, so a
    * build that never swings behaves exactly as it did before this existed.
    */
-  beginMeleeStep() {
+  beginMeleeStep(rekey = false) {
     this._mStepT = STEP_WINDOW;
     this._stepDbg.armed++;
+    if (rekey) {
+      // a new stance: re-home off it, and re-place at STEP_TRIGGER_REKEY
+      this._stepHome[0] = null; this._stepHome[1] = null;
+      this._mStepRekey = STEP_WINDOW;
+      this._stepDbg.rekeys = (this._stepDbg.rekeys || 0) + 1;
+    }
   }
 
   /**
@@ -2471,6 +2486,7 @@ export class PlayerAnimator {
   _stanceStep(dt, moveW, offW) {
     const b = this.b;
     this._mStepT = Math.max(0, this._mStepT - dt);
+    this._mStepRekey = Math.max(0, (this._mStepRekey || 0) - dt);
     /* WHAT DECIDES WHETHER SHE NEEDS A STEP IS WHETHER SHE IS STRIDING, NOT
      * HOW FAST SHE IS GOING (fix round 2, second pass).
      *
@@ -2692,7 +2708,7 @@ export class PlayerAnimator {
     if (!urgent) {
       if (this._stepCd[side] > 0) return;
       if (busy) { if (busy.t <= 0.45 || err < STEP_TRIGGER * 2.2) return; }
-      else if (err < STEP_TRIGGER) return;
+      else if (err < (this._mStepRekey > 0 ? STEP_TRIGGER_REKEY : STEP_TRIGGER)) return;
     }
 
     const home = this._stepHome[side];

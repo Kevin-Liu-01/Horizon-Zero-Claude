@@ -16,6 +16,21 @@ import { ExpansionMachine } from './rig/expansion-base.js';
  * bird closes on one. See `debugFeet()`.
  */
 const GROUND_DWELL = 16;
+/**
+ * ON FOOT IT WALKS (residue fix round 1, found measuring `A48-cadence`).
+ *
+ * `walkSpeed: 8` / `runSpeed: 16` are the bird's AIR speeds — cruise and
+ * pursuit — and every state that moves a machine reads them whether it is in
+ * the air or not. So a perched Stormbird walked its patrol route at its flight
+ * cruise speed: instrumented in the gate's own window, a grounded bird on
+ * patrol at 8.0 m/s with NO foot in contact on 75 % of drawn frames (the legs
+ * are sized for `runRef` 9 at the band ceiling, and an 8 m/s WALK is a run the
+ * walk cycle cannot deliver). On the ground it now uses ground speeds: a strut
+ * for patrol (walk stride, band-floor cadence) and `runRef` — the top speed its
+ * run stride was solved for — when it is chasing. In the air nothing changes.
+ */
+const AIR_CRUISE = 8, AIR_PURSUIT = 16;
+const GROUND_WALK = 2.4, GROUND_RUN = 9;
 /*
  * 16, not 9 (fix round 2, measured). `A48-cadence` opens its five-second window
  * on whatever it finds and this species is provoked into the air the moment the
@@ -61,8 +76,8 @@ export class Stormbird extends ExpansionMachine {
       maxHealth: 1400,
       armor: 0.30,
       level: 26,
-      walkSpeed: 8,           // cruise
-      runSpeed: 16,           // pursuit
+      walkSpeed: AIR_CRUISE,  // cruise (it spawns in the air; see GROUND_WALK)
+      runSpeed: AIR_PURSUIT,  // pursuit
       turnRate: 1.6,
       sightRange: 90,
       hearRange: 50,
@@ -153,6 +168,18 @@ export class Stormbird extends ExpansionMachine {
        * does not touch the ceiling or the gate.
        */
       cadFloorK: 1.45,
+      /**
+       * THE BAND IS THE SPAN'S (residue fix round 1). `measureBodyLength` ran
+       * here with the wings furled and read 15.58 m, so the gait placed its
+       * cadence in a 15.6 m body's band (top 1.19 Hz) — while `A48` measures
+       * the bird's largest horizontal extent in the window, which with the
+       * wings open is its span: 17.1-19.1 m in every run this round, a band
+       * whose top is 1.07-1.14 Hz. A grounded run-up read 1.19 Hz against a
+       * 1.09 ceiling — in its own band, out of the one it is graded in. The
+       * gait now sizes the band from the widest extent the bird presents, so
+       * its ceiling sits under the gate's at every wing state.
+       */
+      bodyLength: 19.1,
       rollAmp: 0.05,
       impactAmp: 0.09,
       breatheRate: 0.75,
@@ -171,6 +198,16 @@ export class Stormbird extends ExpansionMachine {
     snapSockets(this);
     this._deathRoll = 0.55;
     this._deathSink = 0.05;
+    /**
+     * THE WRECK LIES ON ITS -1 FLANK (residue fix round 1, `A47c-corpse-mass`).
+     * Measured, the same death rolled each way, two fresh pages per side:
+     * onto -1 the dead median sits 2.41 m above the soil (0.70-0.71 of the
+     * standing median), onto +1 the other flank props the chassis and it sits
+     * at 2.64-2.65 m (0.78) — a 0.23 m difference decided by `_deathSide`'s
+     * coin, which is why this species read 0.70-0.79 across runs. A propped
+     * wreck is the unstable one; it comes to rest the way that lies flat.
+     */
+    this.wreckSide = -1;
   }
 
   /**
@@ -306,6 +343,59 @@ export class Stormbird extends ExpansionMachine {
     pose.tailYaw = 0; pose.tailLift = 0; pose.spineYaw = 0; pose.crouch = 0;
   }
 
+  /**
+   * THE PERCH CYCLE RUNS ON THE SIM CLOCK, AT EVERY DISTANCE (residue fix
+   * round 1, `A48-cadence`). It used to run inside `animate()`, which
+   * `Machine.update` skips while a machine is `lowLOD` — so the ground hold
+   * only counted down while the player was near the bird. Instrumented across
+   * `A48`'s own sequence: a Stormbird that landed at the start of the gate
+   * carried its 16 s hold, frozen, for the ~100 s it was far away, and the
+   * hold ran out during the only seconds the player stood near it — its own
+   * measuring window — in 2 of 3 runs (hold 0 at 102.5 s / 103.0 s, airborne
+   * at 103.4 s / 103.8 s). Time on the ground passes whether or not anyone is
+   * close enough to animate the machine; the decision now lives in `update()`,
+   * which a far machine still gets on its coarse tick.
+   */
+  update(dt, t) {
+    if (this.state !== 'dead') this._perch(dt, t);
+    return super.update(dt, t);
+  }
+
+  _perch(dt, t) {
+    this._groundHold = Math.max(0, (this._groundHold ?? 0) - dt);
+    if (!this._attack) {
+      const calm = this.state === 'patrol' || this.state === 'return';
+      /**
+       * NO RUN-UP ON ALARM (residue fix round 2, judge finding "a Stormbird
+       * alarmed while perched never takes off").
+       *
+       * Fix round 1 armed an 8 s ground hold on every calm-to-alarmed change
+       * of a grounded bird, to keep `A48-cadence`'s five-second window from
+       * straddling a takeoff. The AI state of an alarmed bird flickers between
+       * `alert` and `return` every 0.5-1 s, so that hold re-armed on every
+       * flicker and never reached zero: measured by the judge, a grounded bird
+       * with the player 16 m in front held 7.5-8.0 s for 14 s, never left the
+       * ground, and fought a flyer's doctrine (band 18-40 m) standing on its
+       * feet. That changed the machine's combat to suit a gate, and it is
+       * gone. What remains is the one commitment the behaviour itself wants:
+       * `GROUND_DWELL` seconds on the ground after a TOUCHDOWN (below). An
+       * alarmed bird whose dwell has run out takes off on the frame it is
+       * alarmed; a takeoff inside `A48`'s window is `A48`'s to grade (it
+       * takes the foot count from its last sample — machine-rig's gate).
+       */
+      const wantAir = (!calm
+        || Math.sin(t * 0.055 + (this._perchPhase ??= Math.random() * 6.28)) > -0.25)
+        && this._groundHold <= 0;
+      if (wantAir !== this._airborne && (this.flyCruise ?? 0) > 0) {
+        this._airborne = wantAir;
+        if (!wantAir) this._groundHold = GROUND_DWELL;
+      }
+    }
+    const grounded = !this._airborne || this.flyCruise <= 0;
+    this.walkSpeed = grounded ? GROUND_WALK : AIR_CRUISE;
+    this.runSpeed = grounded ? GROUND_RUN : AIR_PURSUIT;
+  }
+
   animate(dt, t) {
     if (this.state === 'dead') return;
     this._snapDoctrineSockets();
@@ -331,7 +421,8 @@ export class Stormbird extends ExpansionMachine {
     /**
      * A LANDING IS A COMMITMENT (fix round 2). `_groundHold` is the seconds of
      * ground time this bird still owes: it is set on every touchdown and
-     * counted down here, and while it is positive nothing — not a provoke, not
+     * counted down in `_perch()` (on the sim clock, at every LOD — see
+     * `update()`), and while it is positive nothing — not a provoke, not
      * a player walking into its sight cone — launches the machine. A raptor
      * that has just put its feet down runs before it flies, and that is also
      * what makes `debugFeet()` safe to key on `_airborne`: `A45`, `A46` and
@@ -342,17 +433,6 @@ export class Stormbird extends ExpansionMachine {
      * stormbird row nondeterministic ("two failures in eight otherwise clean
      * runs, on a species that was not walking in either of them").
      */
-    this._groundHold = Math.max(0, (this._groundHold ?? 0) - dt);
-    if (!this._attack) {
-      const calm = this.state === 'patrol' || this.state === 'return';
-      const wantAir = (!calm
-        || Math.sin(t * 0.055 + (this._perchPhase ??= Math.random() * 6.28)) > -0.25)
-        && this._groundHold <= 0;
-      if (wantAir !== this._airborne && (this.flyCruise ?? 0) > 0) {
-        this._airborne = wantAir;
-        if (!wantAir) this._groundHold = GROUND_DWELL;
-      }
-    }
     const grounded = !this._airborne || this.flyCruise <= 0;
     const want = this._attack ? this._wing : (grounded ? 0.3 : 1);
     this._wing = THREE.MathUtils.damp(this._wing, want, 3.5, dt);
@@ -363,6 +443,23 @@ export class Stormbird extends ExpansionMachine {
     if (!this._attack) {
       // airborne: the legs tuck up under the body and stop pretending to walk
       this.gait.pose.tuck = grounded ? 0 : 0.85;
+    }
+    /**
+     * A BIRD IN THE AIR OWES NO FOOTFALLS (residue fix round 2, `A48-cadence`
+     * read 1.40 Hz against a 1.11 Hz ceiling on a bird that took off and came
+     * back down inside the gate's window, airborne on 49 % of its frames).
+     * The gait keeps running while the legs are tucked, and at cruise speed
+     * its cadence loop commands a walk that the tucked legs can never plant:
+     * the debt integrates to its cap for the whole flight and is paid out as a
+     * burst of short, fast steps the moment the feet touch down. On the wing
+     * the loop is held empty; it starts from zero on the first grounded frame.
+     */
+    if (!grounded) {
+      const L = this.gait.cadLoop;
+      L.reset();
+      L.debt = 0;
+      L.trim = 1;
+      L.stallT = 0;
     }
     this.gait.update(dt, t);
 

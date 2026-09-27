@@ -43,6 +43,9 @@ export class Search {
   /** Build the sweep around `lastKnown` and start it. */
   begin(fromAlarm = false) {
     const m = this.m;
+    // the sweep is a NEW plan: the fight's reposition spot and the nav path to
+    // it are not where the first leg goes (see `Engage.dropTravel`)
+    m.ai?.engage?.dropTravel?.();
     this.points.length = 0;
     const cx = m.lastKnown.x, cz = m.lastKnown.z;
     const n = SEARCH.points;

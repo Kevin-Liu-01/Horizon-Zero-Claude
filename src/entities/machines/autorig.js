@@ -449,6 +449,12 @@ export function buildRig(machine, spec) {
    * height and measures the radius itself.
    */
   rig.tailRestY = spec.tail?.[0]?.pos?.[1] ?? rig.headRestY;
+  /**
+   * TAIL RADII, per joint (residue fix round 2): the capsule radius the spec
+   * authored for each tail segment, which is how far above the soil a laid
+   * tail's joint rests (`GaitController._layToward`, `sprawl` wrecks).
+   */
+  rig.tailR = (spec.tail || []).map((t) => t.r ?? 0.25);
 
   // registry probe surface: `_rot` is a literal forward to BoneSpace, so
   // `__CTX__.anim.audit()` measures 0 divergence rather than guessing.

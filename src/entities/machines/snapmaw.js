@@ -122,6 +122,20 @@ export class Snapmaw extends ExpansionMachine {
       turnRadius: 2.2,
       lookClampYaw: 0.55,     // the neck barely turns; the body does
       stanceFlex: 0.06,
+      /**
+       * THE HIGH WALK, AND A BELLY ON THE SOIL — NOT IN IT (residue fix round
+       * 2, judge finding on `A47c`). The Caiman donor is sculpted lying on its
+       * belly (body y 0.00 at the rest pelvis), so the bask crouch and the
+       * stance flex pressed a basking Snapmaw's belly 0.06 m under flat
+       * ground. `bellyMin: 0` lets a bask bring the belly down TO the soil and
+       * no further; `highWalk` is the crocodile high walk `casting-v4` §2.3
+       * describes — the body lifts clear of the ground to travel — 0.16 m at
+       * full walking speed.
+       */
+      highWalk: 0.16,
+      bellyMin: 0,
+      // the wreck lies down: legs and tail laid along the ground (`gait.js` `layWreck`)
+      layWreck: true,
       fidgets: [
         { name: 'bask', head: 0.04, dur: 4.0 },
         { name: 'gape', head: 0.10, spine: 0.02, dur: 2.2 },

@@ -2,6 +2,7 @@ import { Watcher } from './watcher.js';
 import { buildShell, retireMesh } from './rig/shells.js';
 import { REDEYE_SHELL } from './rig/shells-expansion.js';
 import { snapSockets } from './rig/sockets.js';
+import { foldMachineMeshes } from './rig/lod.js';
 
 /**
  * REDEYE WATCHER — Recon T2, escort (`roster-v2 §4`, `casting-v4 §2.9`).
@@ -63,15 +64,57 @@ export class Redeye extends Watcher {
     this.model?.traverse((o) => {
       if (o.isMesh && o.name === 'Object_13') retireMesh(o);
     });
+    /**
+     * THE DONOR'S OWN EYE MESHES ARE RETIRED TOO (residue fix round 1). The
+     * Redeye's eye is its red lens PART; the Watcher GLB's three eye meshes
+     * (`Eye001_Eye_texture_0`, `Eye_Lense_1001_Glass_Lense_0`,
+     * `Eye_Camera001_Lense_-_Blue_Cameras_0`) sit inside it, are sub-pixel at
+     * any range the engine's size cull leaves them drawn, and still carried hit
+     * hulls — so once the authored cheek plates put aim points round the eye
+     * pod, `A50b` measured 3 of 50 arrows registering on a mesh nobody can see.
+     */
+    this.model?.traverse((o) => {
+      if (o.isMesh && /^Eye(001_Eye|_Lense_1001|_Camera001)/.test(o.name || '')) retireMesh(o);
+    });
+    /**
+     * ONE DRAW FOR THE WHOLE SHELL (residue fix round 1). The shell is now a
+     * real armour set on four bone groups (`REDEYE_SHELL`), and `buildShell`
+     * makes one mesh per bone — five draws per Redeye, on a scene that is
+     * already over `A21-real-draw-calls`' budget. `super()` folded the Watcher
+     * before the shell existed, so the fold runs once more here:
+     * `skinRigidAttachments` re-expresses each bone bucket as a rigid skin on
+     * the machine's own skeleton and `mergeByMaterial` welds them into one
+     * SkinnedMesh. Its own pool key, so its buffers can never collide with the
+     * donor fold's `rigid|...` entries under 'redeye'; every later Redeye
+     * borrows the first one's merged buffer.
+     */
+    foldMachineMeshes(this, { pool: 'redeye-shell' });
     snapSockets(this);
+    // the doctrine's blaster exists once the spawn call returns (see the base)
+    queueMicrotask(() => {
+      if (!this._disposed && this.root && this.alive) this._snapDoctrineSockets();
+    });
   }
 
-  /** Re-snap once the doctrine's blaster has been authored (see the base). */
+  /**
+   * Re-snap once the doctrine's blaster has been authored (see
+   * `rig/expansion-base.js`) — from `update()`, because a far (`lowLOD`)
+   * machine never animates, and keyed on the part count.
+   */
+  _snapDoctrineSockets() {
+    const n = this.parts ? this.parts.length : 0;
+    if (this._doctrineSnapped === n) return;
+    this._doctrineSnapped = n;
+    try { snapSockets(this); } catch (e) { /* proxy not buildable */ }
+  }
+
+  update(dt, t) {
+    this._snapDoctrineSockets();
+    return super.update(dt, t);
+  }
+
   animate(dt, t) {
-    if (!this._doctrineSnapped) {
-      this._doctrineSnapped = true;
-      try { snapSockets(this); } catch (e) { /* proxy not buildable */ }
-    }
+    this._snapDoctrineSockets();
     super.animate(dt, t);
   }
 }

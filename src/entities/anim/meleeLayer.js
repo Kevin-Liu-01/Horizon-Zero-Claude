@@ -89,6 +89,15 @@ const _bsRaw = new THREE.Vector3();
 /** `_bowClearDir`'s second escape: the predicted bow's, kept beside the live one. */
 const _bwDir2 = new THREE.Vector3();
 /** `_hairGapFor`'s own three: a candidate carry segment and one strand. */
+/** `_clearLeftArmOfBow`'s scratch (round 5 fix pass 1). */
+const _lbA = new THREE.Vector3();
+const _lbB = new THREE.Vector3();
+const _lbS = new THREE.Vector3();
+const _lbE = new THREE.Vector3();
+const _lbH = new THREE.Vector3();
+const _lbF = new THREE.Vector3();
+const _lbU = new THREE.Vector3();
+const _lbV = new THREE.Vector3();
 const _hgA = new THREE.Vector3();
 const _hgB = new THREE.Vector3();
 const _hgP = new THREE.Vector3();
@@ -101,6 +110,8 @@ const _bwA = new THREE.Vector3();
 const _bwB = new THREE.Vector3();
 const _bwC = new THREE.Vector3();
 const _bwD = new THREE.Vector3();
+/** `_bowSeg`'s own scratch: the limb centre while it is scaled back up. */
+const _bwMid = new THREE.Vector3();
 const _sv4 = new THREE.Vector3();
 const _ident = new THREE.Quaternion();
 /** The identity, as a value (never mutated). */
@@ -113,6 +124,32 @@ function _qi() { return _ident; }
  * most of why the carry read wrong. Canon band 0.15-0.28, best 0.22; 0.20 keeps
  * the stub behind the wrist short on a haft that is long for this rig.
  */
+/**
+ * Round 5 (ruling R3): how far under the head bone the head cylinder starts
+ * that A104 holds the heavy's forearm and haft out of (radius 0.16 m, gated).
+ */
+const HEAD_CYL_DROP = 0.05;
+/**
+ * Horizontal distance from the head bone's vertical axis to the part of
+ * segment a-b at or above `head.y - HEAD_CYL_DROP` (char space); 9 when no
+ * part of it is that high. Cold path (debug()).
+ */
+function headCylDist(a, b, h) {
+  const yc = h.y - HEAD_CYL_DROP;
+  if (a.y < yc && b.y < yc) return 9;
+  let t0 = 0, t1 = 1;
+  const dy = b.y - a.y;
+  if (a.y < yc || b.y < yc) {
+    const ts = (yc - a.y) / dy;
+    if (a.y >= yc) t1 = ts; else t0 = ts;
+  }
+  const dx = b.x - a.x, dz = b.z - a.z;
+  const ll = dx * dx + dz * dz;
+  let t = ll > 1e-12 ? ((h.x - a.x) * dx + (h.z - a.z) * dz) / ll : t0;
+  t = t < t0 ? t0 : (t > t1 ? t1 : t);
+  return Math.hypot(a.x + dx * t - h.x, a.z + dz * t - h.z);
+}
+
 export const GRIP_FRAC = 0.20;
 /** Where the hand meets the shaft when it reaches behind the shoulder. */
 export const GRAB_FRAC = 0.60;
@@ -328,13 +365,20 @@ const AXIAL_PREFIX = ['spine_', 'neck_', 'head_'];
  *
  * ONE-HANDED, BY THE REFERENCE. Finding 2 of the canon doc: guard, windup,
  * contact and follow-through all show the LEFT HAND EMPTY, used as a
- * counterweight. The only two-handed beat here is the L3 thrust, where both
- * hands sit on the rear of the shaft ahead of her chest — which is also the
- * only way to put the left hand on the shaft without dragging the left forearm
- * across her torso, i.e. without re-introducing Kevin's "arms crossing into
- * her body".
+ * counterweight. Through round 4 the L3 thrust was kept two-handed; since
+ * round 5 (orchestrator ruling R1) every beat is one-handed and the left hand
+ * never rides the shaft (A101 gates that).
  */
 /**
+ * ROUND 5 (orchestrator ruling R2, Sep 26): THE TIP COMES UP TO THE SHIN.
+ * Round 4's shaft [0.40, -0.50, 0.77] put the tip at 0.38 m — inside canon M7's
+ * 0.35-0.55 m, but on its floor. [0.40, -0.37, 0.84] puts it at 0.43 m
+ * (measured by A101 on the settled guard, off the prop's own matrix). And the
+ * angles quoted below are ORTHOGRAPHIC — the shaft vector projected onto a
+ * plane, not read off any camera: 47 deg off vertical in the front plane
+ * (atan 0.40/0.37; the "39 deg" further down is the round-4 vector's),
+ * 24 deg below horizontal in the side plane, 22 deg below horizontal in 3-D.
+ *
  * THE GUARD — ONE POSE, READ FROM EVERY CAMERA (fix round 4, finding F2).
  *
  * Round 3's guard was canon in profile and wrong from the front: `shaft` was
@@ -357,7 +401,7 @@ const AXIAL_PREFIX = ['spine_', 'neck_', 'head_'];
  * her and just across the midline, i.e. blade ahead of the leading knee.
  */
 const READY = {
-  hand: [-0.36, 1.02, 0.26], shaft: [0.40, -0.50, 0.77],
+  hand: [-0.36, 1.02, 0.26], shaft: [0.40, -0.37, 0.84],
   lh: [0.35, 0.93, 0.08], lhOn: 0, yaw: -0.10, pitch: 0.10, roll: 0,
 };
 
@@ -421,8 +465,8 @@ const READY = {
 const STANCE = {
   'light-1': { thighL: -0.22, thighR: -0.04, calfL: 0.30, calfR: 0.10, footL: -0.12, footR: -0.03, abd: 0.03, dx: 0.05, dy: -0.055 },
   'light-2': { thighL: -0.10, thighR: -0.50, calfL: 0.18, calfR: 0.66, footL: -0.06, footR: -0.26, abd: 0.12, dx: -0.11, dy: -0.140 },
-  'light-3': { thighL: -0.60, thighR: 0.24, calfL: 0.72, calfR: 0.08, footL: -0.26, footR: 0.30, abd: 0.05, dx: 0.11, dy: -0.205 },
-  heavy: { thighL: -0.26, thighR: -0.24, calfL: 0.58, calfR: 0.56, footL: -0.22, footR: -0.20, abd: 0.22, dx: -0.06, dy: -0.230 },
+  'light-3': { thighL: -0.44, thighR: 0.14, calfL: 0.50, calfR: 0.06, footL: -0.18, footR: 0.18, abd: 0.05, dx: 0.09, dy: -0.140 },
+  heavy: { thighL: -0.54, thighR: -0.32, calfL: 0.98, calfR: 0.86, footL: -0.38, footR: -0.32, abd: 0.26, dx: -0.06, dy: -0.370 },
 };
 
 /**
@@ -514,7 +558,14 @@ const BEATS = [
      * overhead). Reach cost, measured against the round-4 key: the shaft's
      * forward component drops 1.00 -> 0.978 of unit length, i.e. 0.03 m of the
      * 1.27 m lever, and the hand is 0.02 m further forward to pay it back. */
-    contact: { hand: [-0.06, 1.14, 0.80], shaft: [0.27, -0.052, 0.9615], lh: [0.34, 0.95, -0.20], lhOn: 0, yaw: 0.26, pitch: 0.28, roll: -0.05 },
+    /* ROUND 5: THE SWEEP COMES UP TO THE BODY. With the machine staged facing
+     * her (A103 used to stage it at a random yaw) and the approach term bounded
+     * by its hulls, a Watcher's body is at chest height in front of her and its
+     * legs below: light-1's level-to-falling blade at char y 1.03 was reading
+     * 0.12-0.15 m short on the poses where the head-on outline is longest. The
+     * shaft now rises 3 deg instead of falling 3 (tip ~1.15 m), which is also
+     * nearer canon M20 (a horizontal sweep at chest-to-shoulder height). */
+    contact: { hand: [-0.06, 1.14, 0.80], shaft: [0.27, 0.052, 0.9615], lh: [0.34, 0.95, -0.20], lhOn: 0, yaw: 0.26, pitch: 0.28, roll: -0.05 },
     follow: { hand: [0.16, 1.00, 0.46], shaft: [0.88, -0.24, 0.41], lh: [0.30, 0.94, -0.18], lhOn: 0, yaw: 0.40, pitch: 0.18, roll: -0.10 },
   },
   { /* L2 — the return, left-to-right, a little lower.
@@ -576,7 +627,13 @@ const BEATS = [
      * The rise costs no reach either — 0.025 m of the lever's forward
      * component, and it carries the tip to 1.30 m, which on a Watcher is the
      * NECK, the capsule nearest the blade. */
-    contact: { hand: [-0.16, 1.02, 0.78], shaft: [-0.2225, 0.160, 0.9617], lh: [0.32, 0.98, 0.16], lhOn: 0, yaw: -0.28, pitch: 0.30, roll: 0.06 },
+    /* ROUND 5 (judge finding M1): 0.05-0.08 m MORE FORWARD TIP. A103 now
+     * solves the blade against the hull in the gate itself, and light-2 was
+     * the beat that came up short on it (the rising shaft spends lever on
+     * height). The rise comes down from +9 to +4 deg and the wrist goal goes
+     * 0.05 m forward; the tip still leaves to her RIGHT and still rises, so the
+     * mirrored pair keeps its bearing split (A102). */
+    contact: { hand: [-0.16, 1.02, 0.83], shaft: [-0.2225, 0.069, 0.9617], lh: [0.32, 0.98, 0.16], lhOn: 0, yaw: -0.28, pitch: 0.30, roll: 0.06 },
     /* FIX PASS 1: THE FINISH GOES WIDER, and the reason is a measurement.
      * Trimming the cocked hand back to her centre line (above) cost the whole
      * beat 0.14 m of authored hand path, and A102's `handTravel` clause is
@@ -591,8 +648,12 @@ const BEATS = [
     follow: { hand: [-0.70, 0.90, 0.36], shaft: [-0.90, -0.28, 0.34], lh: [0.34, 0.96, 0.02], lhOn: 0, yaw: -0.52, pitch: 0.18, roll: 0.10 },
   },
   { /* L3 — the wide finisher: a down-and-forward diagonal chop that ends as a
-       two-handed thrust (canon: tip from above the shoulder line to below the
-       hip, fully committed body, the longest step of the chain).
+       thrust (canon: tip from above the shoulder line to below the hip, fully
+       committed body, the longest step of the chain). ONE-HANDED since round 5
+       (orchestrator ruling R1, canon M3): rounds 1-4 put the left hand on the
+       rear of the haft here so A101's two-handed clause had a beat to
+       measure; the ruling voids that clause, and the free arm now TRAILS
+       behind the hip through the contact and the follow-through.
        The cock is loaded 0.10 m further off her centre line than it reads
        naturally: the 34 deg of torso rotation that sells this chop also throws
        the braid forward, and at the original hand position the butt sat 0.19 m
@@ -600,7 +661,13 @@ const BEATS = [
        0.011 m (gate A104). Clearance the guard cannot buy back after the fact,
        because the hair is simulated after it. */
     id: 'light-3', clip: [0.05, 0.80], mirror: false, clipW: 0.30,
-    cock: { hand: [-0.30, 1.30, 0.34], shaft: [-0.42, 0.78, 0.46], lh: [0.26, 0.98, 0.24], lhOn: 0, yaw: -0.22, pitch: -0.16, roll: 0.04 },
+    /* ROUND 5: the chop is loaded further to her right (cock shaft x -0.42 ->
+     * -0.60) and finishes further to her left (follow x 0.16 -> 0.30), i.e. a
+     * WIDER diagonal. Measured reason: with the heavy's fist brought down to
+     * her shoulder (R3) the two beats' whole-swing signatures had come within
+     * A102's tolerance on every axis but the tip's yaw sweep, and that one by
+     * 3-4 deg; the sweep is now ~15 deg wider. */
+    cock: { hand: [-0.30, 1.30, 0.34], shaft: [-0.60, 0.70, 0.40], lh: [0.26, 0.98, 0.24], lhOn: 0, yaw: -0.22, pitch: -0.16, roll: 0.04 },
     /* THE LEFT HAND STAYS ON THE REAR OF THE SHAFT, AND THE ELBOW MOVES
      * INSTEAD (fix round 4, F7). The obvious answer to A104's new left-forearm
      * clause (0.106 m to the spine against a 0.10 m bar) was to slide the free
@@ -627,7 +694,9 @@ const BEATS = [
      * level and light-2 rises. The tip still lands at 0.97 m (hull height on
      * every quadruped in the roster) because the wrist carries it, and the
      * descent continues through the follow to 0.47 m. */
-    contact: { hand: [0.00, 1.32, 0.78], shaft: [-0.10, -0.1045, 0.9895], lh: null, lhOn: -0.12, yaw: 0.06, pitch: 0.34, roll: 0 },
+    /* ROUND 5: 0.06 m more wrist and 0.06 rad more spine for reach (A103 read
+     * light-3 0.08-0.12 m short on the longest head-on outlines). */
+    contact: { hand: [-0.30, 1.42, 0.82], shaft: [0.20, -0.26, 0.944], lh: [0.32, 0.92, -0.28], lhOn: 0, yaw: 0.02, pitch: 0.38, roll: 0.02 },
     /* THE CHOP FLATTENS INTO A THRUST AT CONTACT AND DROPS AFTERWARDS, NOT
      * BEFORE IT (fix round 4, F3). Filmed per strike frame against a Watcher:
      * the blade crossed the hull at k = 0.48 (tip 1.24 m) and was 0.56 m clear
@@ -638,7 +707,7 @@ const BEATS = [
      * says light-3 is, "a down-and-forward diagonal chop ENDING AS A THRUST" —
      * and the descent belongs to the follow-through and the recover, where the
      * canon's "tip below the hip" still happens (follow tip 0.47 m). */
-    follow: { hand: [0.02, 0.98, 0.70], shaft: [0.16, -0.42, 0.89], lh: null, lhOn: -0.14, yaw: 0.10, pitch: 0.30, roll: -0.04 },
+    follow: { hand: [0.02, 0.98, 0.70], shaft: [0.30, -0.42, 0.85], lh: [0.36, 0.88, -0.34], lhOn: 0, yaw: 0.10, pitch: 0.30, roll: -0.04 },
   },
 ];
 
@@ -660,7 +729,8 @@ const BEATS = [
  *   cock     blade 2.65 m up and 0.76 m FORWARD of her — above the head and
  *            ahead of the head plane, never behind it (canon M11 is a hard
  *            fail if it goes behind); the hand at 1.52 m, spine arched back;
- *   contact  the hand drives DOWN and forward to 1.46 m with the shaft 18-22
+ *   contact  (fix pass 1 — superseded by ruling R3 in round 5, see the key)
+ *            the hand drives DOWN and forward to 1.46 m with the shaft 18-22
  *            deg below horizontal, tip at HIP height (char y 1.09, measured on
  *            the live rig at CONTACT_K) and 1.76 m ahead of her, the torso
  *            pitched 0.38 rad over the lead foot;
@@ -683,7 +753,12 @@ const BEATS = [
  */
 const HEAVY = {
   id: 'heavy', clip: [0.0, 0.92], mirror: false, clipW: 0.34,
-  cock: { hand: [-0.30, 1.52, 0.22], shaft: [-0.10, 0.90, 0.42], lh: [0.26, 0.96, 0.30], lhOn: 0, yaw: -0.40, pitch: -0.30, roll: 0.10 },
+  /* ROUND 5: the cock wrist 0.10 m higher. With the contact fist brought down
+   * to her shoulder (R3) and light-3's chop given more spine for reach, the
+   * two beats' hand paths had converged to within A102's tolerance on three of
+   * its four axes (hand span 0.39 vs 0.48 m); the heavy's committed load is
+   * what separates them, so it is where the span comes from. */
+  cock: { hand: [-0.30, 1.62, 0.22], shaft: [-0.10, 0.90, 0.42], lh: [0.26, 0.96, 0.30], lhOn: 0, yaw: -0.40, pitch: -0.30, roll: 0.10 },
   /* FIX PASS 1 — THE HEAVY HAS TO LAND (the film judge ran a byte-identical
    * copy of A103 with `heavy: true` and measured the blade stopping 0.08-0.23 m
    * SHORT of the hull on every row, where the three lights read -0.001 to
@@ -692,8 +767,24 @@ const HEAVY = {
    * light-1's. The hand goes 0.12 m further forward (0.60 -> 0.72) and the
    * shaft 4 deg shallower, which is +0.12 m of forward tip. It is now gated:
    * A103 runs a fourth row with `heavy: true` against the same staging. */
-  contact: { hand: [-0.04, 1.46, 0.78], shaft: [0.081, -0.3746, 0.9236], lh: [0.34, 0.94, -0.18], lhOn: 0, yaw: 0.10, pitch: 0.38, roll: -0.06 },
-  follow: { hand: [0.04, 1.10, 0.52], shaft: [0.18, -0.70, 0.69], lh: [0.30, 0.92, -0.22], lhOn: 0, yaw: 0.22, pitch: 0.46, roll: -0.10 },
+  /* ROUND 5 (orchestrator ruling R3): THE FIST COMES OUT OF HER FACE. Fix
+   * pass 1's contact wrist [-0.04, 1.46, 0.78] sat on her centre line at face
+   * height, so from a dead-front camera and from V47's row-1 camera the
+   * forearm and the haft crossed her face. The fist is at shoulder height and
+   * OUTBOARD of the head line now (x -0.22 = her right; live, pinned at
+   * CONTACT_K: about [-0.27, 1.15, 0.65] against a head bone at x -0.03 to
+   * -0.09, and 0.13-0.15 m below it), and the
+   * reach it gave up is taken back through the spine (pitch 0.38 -> 0.50) and
+   * the lunge — not by raising the hand. A104 gates the forearm and the haft
+   * outside a 0.16 m head cylinder on this key and the follow. The haft comes
+   * in nearly level (-7 deg) because that is where a Watcher facing her has a
+   * body: at -16 to -22 deg the tip went in UNDER its chest, between the front
+   * legs, and A103 read the blade 0.22-0.73 m short. What still makes it the
+   * heavy is the path: the overhead cock above her head, the deepest stance,
+   * and the follow-through driving on down past the knee (hand 1.10 -> 0.94,
+   * A102's handSpanY 0.44 against the lights' 0.15-0.27). */
+  contact: { hand: [-0.22, 1.24, 0.80], shaft: [0.10, -0.02, 0.995], lh: [0.34, 0.94, -0.18], lhOn: 0, yaw: 0.10, pitch: 0.50, roll: -0.06 },
+  follow: { hand: [0.04, 0.94, 0.54], shaft: [0.22, -0.48, 0.85], lh: [0.30, 0.92, -0.22], lhOn: 0, yaw: 0.22, pitch: 0.52, roll: -0.10 },
 };
 
 /**
@@ -875,6 +966,13 @@ const SHAFT_CLEAR = 0.200;
  * and below the axial target, so the skull and the spine win ties again.
  */
 const HAIR_CLEAR = 0.095;
+/**
+ * How far the free LEFT arm's axis (upper arm, forearm + hand) is kept from
+ * the stowed bow's limb axis, metres (round 5 fix pass 1, `_clearLeftArmOfBow`).
+ * A forearm is ~0.09 m thick and a limb ~0.03 m, so 0.06 is touching; 0.11
+ * leaves ~0.05 m of daylight. A104 gates >= 0.08 (no contact) on every frame.
+ */
+const BOW_ARM_CLEAR = 0.11;
 /**
  * The radius the braid is pushed OUT of, after the spring sim (`_hairOffHaft`).
  * Above A100's 0.06 m and A104's 0.05 m bars so both have margin; well under
@@ -1324,7 +1422,19 @@ export class MeleeLayer {
      * blend is live and only when the bow is inside `BOW_KEEP`, so idle, walk,
      * sprint and crouch never pay for it, and the push is at most `BOW_KEEP`
      * itself — well inside the per-frame budget A102 holds the hand-over to. */
+    /* ...EASED IN, NOT APPLIED ON THE HAND-OVER FRAME (round 5 fix pass 1).
+     * Until this pass the bow was usually in her LEFT fist while the spear was
+     * out (combat.js counted a swing as a bow action); now it stays on her
+     * back, so every holster hands the spear over NEXT TO it — and the push
+     * below, applied in full on the re-parent frame, IS a teleport: measured,
+     * A102's `grabGap` on every holster equalled this frame's push to the
+     * millimetre (0.011-0.037 m over 24 cycles, 0.129 m once in 23 A102 runs
+     * against its 0.10 m bar). The push now comes in with the blend (0 on the
+     * re-parent frame, full by a third of the way through it), i.e. the
+     * clearance is part of the hand-over's slide, which A102 budgets per frame. */
+    const bowEase = smoothstep(this._carryB, 0, 0.35);
     if (this._carryB < 1 && this._bowNode()) {
+      let pushed = 0;
       for (let i = 0; i < 3; i++) {
         g.updateWorldMatrix(true, false);
         _m4.copy(an.model.matrixWorld).invert().multiply(g.matrixWorld);
@@ -1334,10 +1444,13 @@ export class MeleeLayer {
         if (gap == null || gap >= CARRY.BOW_KEEP) break;
         if (_sv4.z > 0) _sv4.z = 0;                    // never into her back
         if (_sv4.lengthSq() < 1e-4) _sv4.set(0, 0, -1);
-        _sv4.normalize().multiplyScalar(CARRY.BOW_KEEP - gap);
+        if (bowEase <= 1e-4) break;
+        _sv4.normalize().multiplyScalar((CARRY.BOW_KEEP - gap) * bowEase);
+        pushed += (CARRY.BOW_KEEP - gap) * bowEase;
         _sv4.applyQuaternion(_q2).multiplyScalar(1 / bs);
         g.position.add(_sv4);
       }
+      if (this._carryB <= 1e-6) this._dbg.hoBowPush = +pushed.toFixed(4);
     }
   }
 
@@ -1656,6 +1769,19 @@ export class MeleeLayer {
      * legs to neutral in one frame, which is the same class of defect the rate
      * limit exists to prevent. The last beat's key is held until `a` is gone. */
     const key = live || (this._stanceA > 0.002 ? this._stanceKey : null);
+    /* A NEW KEY UNDER A LOADED STANCE IS A STEP TOO (round 5 fix pass 1). The
+     * arming below fires on AMPLITUDE change only, so a key swapped while the
+     * amplitude is already up (V47 pins light-3 then the heavy at full
+     * amplitude; a fast combo can hand one beat to the next before the first
+     * has unwound) kept the feet locked where the OLD stance put them, and the
+     * ground conform's pelvis clamp then held the hips up to reach them:
+     * A102 read the pinned heavy's pelvis at 0.686-0.723 m on most runs and
+     * 0.799 m on the runs where the feet were left too far apart (two in
+     * twenty). The swap arms the animator's stance step with `rekey`: the
+     * home is re-captured off the NEW key and a foot re-places once it is
+     * `STEP_TRIGGER_REKEY` (3 cm) out of it, so the feet go where the new
+     * stance puts them. */
+    if (live && this._stanceKey && live !== this._stanceKey && this._stanceA > 0.02) an.beginMeleeStep?.(true);
     if (live) this._stanceKey = live;
     /* RATE-LIMITED PER RENDERED FRAME (see `STANCE_STEP_MAX` for the measured
      * failure this exists for). One budget per drawn frame, not per sim
@@ -2332,14 +2458,10 @@ export class MeleeLayer {
    * the honest fix available: extrapolate, and keep measuring the truth.
    */
   _bowClearDir(butt, tip, out, predict = 0) {
-    const an = this.an;
     const bow = this._bowNode();
     out.set(0, 0, -1);
     if (!bow) return null;
-    bow.updateWorldMatrix(true, false);
-    _m4.copy(an.model.matrixWorld).invert().multiply(bow.matrixWorld);
-    _bwA.set(0, -0.75, 0).applyMatrix4(_m4);
-    _bwB.set(0, 0.75, 0).applyMatrix4(_m4);
+    this._bowSeg(bow, _bwA, _bwB);
     const gNow = +segSegDir(butt, tip, _bwA, _bwB, out).toFixed(4);
     if (!(predict > 0) || !this._bowHas) return gNow;
     /* CLEAR OF WHERE THE BOW IS **AND** WHERE IT IS GOING — fix pass 1.
@@ -2378,13 +2500,43 @@ export class MeleeLayer {
    * `_bowClearDir`). Runs at the end of the frame, where the endpoints are the
    * ones the renderer will use.
    */
+  /**
+   * The stowed bow's limb axis in char space, AT FULL SIZE (round 5).
+   *
+   * `combat.js` does not snap the bow onto her back, it SCALES it in: on the
+   * frame it leaves her hand its world scale is ~0.5 (`_placeOnBack`'s
+   * `stowVis`, damped at 14/s) and a loaded 100 ms frame takes it to ~0.9 —
+   * both limb tips jump ~0.2 m outward in one frame, a motion the per-frame
+   * velocity lead cannot see coming, and on the first stowed frame there is no
+   * velocity at all. That is the A100 dodge row's one failure this round
+   * (0.0678 m against 0.10, the first gate of a fresh lane run; four isolated
+   * runs and eight back-to-back rolls read 0.22), because that row rolls on
+   * the very frame the bow re-stows.
+   * The carry therefore clears the bow it is GOING to be: the same placement,
+   * scaled back up about its own centre by 1 / scale. The clearance the gates
+   * measure (`debug().bowClear`, `_bowClear`) is still the bow as drawn, and a
+   * sub-segment about the same centre can only be further away.
+   */
+  _bowSeg(bow, a, b) {
+    bow.updateWorldMatrix(true, false);
+    _m4.copy(this.an.model.matrixWorld).invert().multiply(bow.matrixWorld);
+    a.set(0, -0.75, 0).applyMatrix4(_m4);
+    b.set(0, 0.75, 0).applyMatrix4(_m4);
+    const e = bow.matrixWorld.elements;
+    const sc = Math.hypot(e[4], e[5], e[6]);      // world scale of the limb axis
+    if (sc > 1e-3 && sc < 0.995) {
+      const k = Math.min(20, 1 / sc);
+      _bwMid.addVectors(a, b).multiplyScalar(0.5);
+      a.sub(_bwMid).multiplyScalar(k).add(_bwMid);
+      b.sub(_bwMid).multiplyScalar(k).add(_bwMid);
+    }
+    return a;
+  }
+
   _bowSample() {
     const bow = this._bowNode();
     if (!bow) { this._bowHas = false; return; }
-    bow.updateWorldMatrix(true, false);
-    _m4.copy(this.an.model.matrixWorld).invert().multiply(bow.matrixWorld);
-    _bwA.set(0, -0.75, 0).applyMatrix4(_m4);
-    _bwB.set(0, 0.75, 0).applyMatrix4(_m4);
+    this._bowSeg(bow, _bwA, _bwB);
     if (this._bowHas) {
       /* Clamped, but less tightly than round 4's 0.35 m: the clamp was there
        * because the estimate REPLACED the live bow in the bound, so a hitched
@@ -2845,6 +2997,7 @@ export class MeleeLayer {
     else _pole.set(0.72, -0.62, -0.18).normalize();
     an._ikArm('l', _lh, _pole, w, null);
     an._clearArmOfHead(b.upArmL, b.loArmL, b.handL, _lh, _pole, w);
+    if (!u.lhOnShaft) this._clearLeftArmOfBow(w);
     if (u.lhOnShaft) {
       // align the free hand's own grip axis to the haft so it READS as a grip
       an._liveW(b.handL.bone, _q1);
@@ -2856,6 +3009,62 @@ export class MeleeLayer {
       if (s < 0.999) _q2.slerp(_qi(), 1 - s);
       an._rotQL(b.handL, _q2);
     }
+  }
+
+  /**
+   * THE FREE ARM STAYS OFF THE STOWED BOW (round 5 fix pass 1).
+   *
+   * Until this pass every live swing put the BOW in her left fist
+   * (combat.js counted a spear swing as a bow action — judge finding), so the
+   * free arm never met the bow on her back. With the bow now kept on its
+   * spine socket while the spear is out, its stow — a diagonal from above her
+   * right shoulder down to her LEFT hip, the lower limb standing ~0.56 m out
+   * from her centre line at hip height — lies across exactly where the free
+   * arm hangs and trails: measured on the pinned beats before this solve, the
+   * left forearm 0.022 m from the limb axis at light-1's contact, the wrist
+   * 0.018 m, the upper arm 0.006 m on light-2's follow (the arm through the
+   * bow). So after the IK, the upper arm and the forearm-plus-hand are
+   * measured against the limb axis (`_bowSeg`: the bow as it will be at full
+   * size) and, where either is inside `BOW_ARM_CLEAR`, the wrist goal and the
+   * elbow pole are pushed along the separating direction and the arm is
+   * re-solved — at most three passes, the same shape as `_clearArmOfHead`.
+   * `debug().leftArmToBow` publishes the result; A104 gates it.
+   */
+  _clearLeftArmOfBow(w) {
+    const D = this._dbg;
+    if (w < 0.01) { D.leftArmToBow = null; return; }
+    const bow = this._bowNode();
+    if (!bow) { D.leftArmToBow = null; return; }
+    const an = this.an, b = an.b;
+    if (!b.upArmL || !b.loArmL || !b.handL) return;
+    this._bowSeg(bow, _lbA, _lbB);
+    let g = 9;
+    for (let it = 0; it < 4; it++) {
+      an._charOf(b.upArmL.bone, _lbS);
+      an._charOf(b.loArmL.bone, _lbE);
+      an._charOf(b.handL.bone, _lbH);
+      // the hand itself: 9 cm on from the wrist, along the forearm
+      _lbF.subVectors(_lbH, _lbE);
+      const fl = _lbF.length();
+      if (fl > 1e-6) _lbF.multiplyScalar(0.09 / fl);
+      _lbF.add(_lbH);
+      const gU = segSegDir(_lbS, _lbE, _lbA, _lbB, _lbU);
+      const gF = segSegDir(_lbE, _lbF, _lbA, _lbB, _lbV);
+      g = Math.min(gU, gF);
+      if (g >= BOW_ARM_CLEAR || it === 3) break;
+      const push = BOW_ARM_CLEAR - g + 0.01;
+      if (gF <= gU) {
+        _lh.addScaledVector(_lbV, push);
+        _pole.addScaledVector(_lbV, 0.6).normalize();
+      } else {
+        // the UPPER arm: the elbow moves, and the hand with it
+        _pole.addScaledVector(_lbU, 1.2).normalize();
+        _lh.addScaledVector(_lbU, push);
+      }
+      an._ikArm('l', _lh, _pole, w, null);
+      an._clearArmOfHead(b.upArmL, b.loArmL, b.handL, _lh, _pole, w);
+    }
+    D.leftArmToBow = +g.toFixed(4);
   }
 
   /* ---------------------------- measurement ----------------------------- */
@@ -3068,6 +3277,12 @@ export class MeleeLayer {
     out.leftHandToShaft = +Math.min(
       segPoint(_butt, _tip, _b), pointToLine(_b, _grip, _c),
     ).toFixed(4);
+    /* ...and to the HAFT itself, butt to tip (round 5). The number above takes
+     * the nearer of the segment and the INFINITE line through it, which is
+     * right for "is the hand gripping the pole" and wrong for "is the free hand
+     * clear of it": the line runs on past the butt, through the air behind her
+     * fist. A101's one-handed clause (ruling R1) reads this one. */
+    out.leftHandToHaft = +segPoint(_butt, _tip, _b).toFixed(4);
 
     // A100: how the carry sits against the upper back
     // THE UPPER-BACK CENTRE IS A SURFACE, NOT A BONE. `spine_04`/`spine_05`
@@ -3190,6 +3405,20 @@ export class MeleeLayer {
     if (an.b.calfR) { an._charOf(an.b.calfR.bone, _a); out.kneeRChar = f3(_a); }
     if (an.b.footL) { an._charOf(an.b.footL.bone, _a); out.footLChar = f3(_a); }
     if (an.b.footR) { an._charOf(an.b.footR.bone, _a); out.footRChar = f3(_a); }
+    /* THE FACE, KEPT CLEAR (round 5, orchestrator ruling R3). A vertical
+     * cylinder of radius 0.16 m on the head bone, from `HEAD_CYL_DROP`
+     * under it upward: how close the drive FOREARM (elbow -> wrist) and the
+     * HAFT (butt -> tip) come to its axis, horizontally, over the part of each
+     * that is up at face height. 9 = nothing up there. A104 gates it on the
+     * heavy's contact and follow-through, where round 4 put the fist in front
+     * of her face. */
+    an._charOf(an.b.head.bone, _d);
+    an._charOf(an.b.loArmR.bone, _a);
+    an._charOf(an.b.handR.bone, _b);
+    out.headChar = f3(_d);
+    out.elbowRChar = f3(_a);
+    out.headCylForearm = +headCylDist(_a, _b, _d).toFixed(4);
+    out.headCylHaft = +headCylDist(_butt, _tip, _d).toFixed(4);
     return out;
   }
 

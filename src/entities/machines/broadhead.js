@@ -153,6 +153,13 @@ export class Broadhead extends ExpansionMachine {
     snapSockets(this);
     this._deathRoll = 0.55;
     this._deathSink = 0.04;
+    /**
+     * THE WRECK LIES ON ITS -1 FLANK (residue fix round 1, `A47c-corpse-mass`),
+     * measured the same way as the Stormbird's: onto -1 the dead median is
+     * 0.80-0.83 m (0.66-0.68 of standing), onto +1 it is 0.87-0.93 m
+     * (0.71-0.76) — the side coin was the whole of this species' spread.
+     */
+    this.wreckSide = -1;
   }
 
   /**

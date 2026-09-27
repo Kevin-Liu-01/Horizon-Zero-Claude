@@ -360,7 +360,9 @@ export class Melee {
     this.lastSwingT = -99;
 
     /* THE MELEE APPROACH (fix round 4, finding F3). Published for
-     * `core/collision.js::_meleePad` and read by `_lungeFor`. */
+     * `core/collision.js::_meleeStandoff` (round 5: the target's hull outline
+     * is built when it first sees `approachMachine`, and a non-number
+     * `approachPad` means "no term") and read by `_lungeFor`. */
     this.approachMachine = null;
     this.approachPad = null;
     this.approachGap = null;
@@ -638,7 +640,7 @@ export class Melee {
    * WHICH MACHINE THE BLADE IS APPROACHING, and how close the collision solve
    * may let her stand to it (fix round 4, finding F3).
    *
-   * Published for `core/collision.js::_meleePad`, which is where the ownership
+   * Published for `core/collision.js::_meleeStandoff`, which is where the ownership
    * grant of Sep 25 puts the term. The wedge is the same one `_resolve` uses
    * to pick a target, run one step earlier: she has to be allowed to WALK to
    * the machine before the strike, or the lunge has nowhere to go.
@@ -1738,6 +1740,17 @@ export class Melee {
     this._sneak.disabled = true;
     this._sneak.machine = null;
     this.stance = 'holstered';
+    /* THE APPROACH TERM GOES WITH IT (round 5, ruling R4 / M2). These three
+     * are what `core/collision.js::_meleeStandoff` keys the term on; left
+     * set, a disposed melee would keep one machine's standoff reduced for the
+     * rest of the session. Clearing them is a RELEASE, not a snap: collision
+     * relaxes the term back to that machine's own standoff at
+     * `MELEE_RELAX_SPEED` (never more than `MELEE_GROW_STEP` in a drawn frame)
+     * and lets go when it gets there or when she is outside it. */
+    this.approachMachine = null;
+    this.approachPad = null;
+    this.approachGap = null;
+    this.lastContactGap = null;
   }
 
   _updateTrail(realDt) {

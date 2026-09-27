@@ -477,12 +477,22 @@ via a `setup`+`settle` recipe and are judged against written criteria.
 - **V40-settlement-life** — shot: the camp at dusk. Pass: `≥ 6` NPCs in frame doing `≥ 4` visibly different things (sit, tend fire, walk, talk, work).
 - **V41-npc-closeup** — shot: two different NPC bodies side by side, walking. Pass: different faces/outfits/builds, natural gait, no T-pose, no foot skate.
 
+### npc — ORCHESTRATOR RULING Sep 26
+- **Seated speakers stand to talk:** when a seated NPC's bearing error to Aloy exceeds ~1.2 rad at `talkTo`, they sit-exit, turn (stepped turn + head tracking) and talk standing; when the conversation ends they return to the seat. A97b covers the frozen-world case; add the seated case to it.
+
 ### machines-expansion
 - **A44-socket-integrity / A45-no-skate-per-species / A46-ground-truth / A47-corpse-grounded / A48-cadence / A44c-lineup** — run per species, including every NEW kind → pass: the machine-rig bars above hold for every kind.
 - **A41c-sustained-variety** — must include the new kinds.
 - **A90-memory-stability** — `30 kills, full corpse lifecycle at 130 m` → pass: geometries `≤ +40`, textures `≤ +30` (rig-side disposal owned here).
 - **A21-real-draw-calls** — staged fight `≤ 350` draw calls (per-species LOD chains).
 - **V26-silhouette / V27-attack-pose** — shot per species, including every NEW kind. Pass: reads as its HZD machine against `docs/research/roster-v2.md` and `docs/research/casting-v4.md`.
+
+### machines-expansion — ORCHESTRATOR RULINGS Sep 26 (from the Wave 4 residue judges)
+- **A47c-corpse-mass for sprawlers (Snapmaw, Corruptor, any species whose living rest pose is lying down):** the reference height is the species' LOCOMOTION pose (median chassis height while walking/high-walking over 2 s), not its idle rest; the corpse must read `≤ 0.75×` of THAT. If a species has no locomotion pose that lifts the chassis, the gate SKIPs that species with a note naming it. Samples are area-weighted per mesh, not per vertex (machine-rig owns the gate change).
+- **A48-cadence grades MOVING frames only:** frames where the machine's horizontal speed is below 0.5× its walk speed (patrol waits, turns-in-place, takeoff/landing windows for fliers) are excluded from the cadence window; the stance ledger publishes a window that survives a slow frame (`rig/contact.js latch` counts a plant per dominant-clip stance wrap). Owner: machine-rig / machines-expansion for the gate and the ledger; machine-ai keeps patrol-wait timing on the sim clock.
+- **A21-real-draw-calls:** the approved lever is per-machine component-mesh folding (one mesh per machine for tearable components with a per-vertex partId + torn mask uniform), not shadow-caster range cuts. Budget stays 350.
+- **Wrecks keep one shadow caster** (set explicitly at death); the engine distance cull handles far wrecks.
+- **V26a/V27a staging:** long, low bodies are fitted on the frame-height axis (projected silhouette height ≥ 12 % of the frame); Redeye gets an authored shell/plates over the donor with the underbody palette.
 
 ### machine-ai-expansion
 - **A37–A43, A41b, A41c** — run for the new kinds → pass: the machine-ai bars above hold for every kind; A41c passes `5 of 5` clean runs.

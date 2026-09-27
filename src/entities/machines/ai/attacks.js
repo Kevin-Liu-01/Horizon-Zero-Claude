@@ -550,7 +550,21 @@ export class AttackPicker {
     }
     if (this._arrangedId) {
       this._arrangedT += dt;
-      this._setupT += dt;
+      /**
+       * THE PATIENCE IS FOR WALKING (fix round 1, judge machine-ai-expansion
+       * finding 2). `_setupT` restarts when a move fires, and it used to keep
+       * counting through that move's own windup, strike and recovery — time
+       * in which the machine is committed to the attack and cannot take one
+       * step toward the next range. Traced on the Scrapper's hardest arc at
+       * A41c's own seed: `dart-bite` (0.89 s of attack) left ~1.1 s of the
+       * 2 s patience for a 1.3 -> 5.8 m walk to the `laser` floor, the
+       * patience ran out at 4.9-5.4 m, `dart-bite` was the only legal move
+       * there and dashed it back to 1.3 m — three times in 30 s, the laser
+       * never fired, and the footwork "never stood in the laser shell". The
+       * clock now runs only while the machine is free to walk. `_arrangedT`
+       * (the 8 s hostage bound) still counts everything.
+       */
+      if (!this.m._attack) this._setupT += dt;
       if (this._arrangedT >= SCORING.arrangeGiveUp) {
         this.stalled.set(this._arrangedId, SCORING.stallHold);
         this._arrangedId = null;

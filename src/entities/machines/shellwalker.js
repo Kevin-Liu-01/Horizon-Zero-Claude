@@ -123,6 +123,9 @@ export class ShellWalker extends ExpansionMachine {
       turnRadius: 1.8,
       lookClampYaw: 0.5,
       stanceFlex: 0.08,
+      // the wreck lies down: legs laid along the ground (`gait.js` `layWreck`;
+      // residue fix round 2, measured A47c 0.52-0.55 -> 0.42-0.48)
+      layWreck: true,
       fidgets: [
         { name: 'scan-sweep', head: 0.22, dur: 2.4 },
         { name: 'cargo-check', head: -0.18, spine: 0.06, dur: 1.8 },

@@ -10,6 +10,368 @@ numbers, not claims.
 
 ---
 
+## Fix round 1 (judge findings on the residue build)
+
+Three findings came back: `A40-expansion` red on HEAD (blocker), `A41c` still not 5 of 5 with
+a non-reproducible first species (major), and this document's A40 diagnosis falsified by
+measurement (major). All three were real. What changed, by finding, with the numbers:
+
+### Fix round 1 — A40-expansion: the staging AND the flier were both defective
+
+**Reproduced first.** A probe with the gate's own staging (Stormbird at its spawn, Aloy at the
+band centre 29 m due east, forced `attack`, 0.6 s, then Aloy moved out and hidden), traced per
+sim step on five bearings with Aloy 200 m out:
+
+| bearing | bird | search began at | from the belief then | peak during `search` | at the A40 window's end (6.5 s) |
+|---|---|---|---|---|---|
+| 0 | airborne | 4.56 s | 40.9 m | **51.2 m** | 46.7 m |
+| 1.57 | airborne | 3.87 s | 32.0 m | **41.3 m** | 40.8 m |
+| 3.14 | airborne | 3.91 s | 29.3 m | **51.1 m** | 47.2 m |
+| 4.71 | airborne | 3.91 s | 29.0 m | 30.3 m | 11.9 m |
+| 3.93 | *grounded* (it had perched on the previous bearing's return; a walker here) | 3.97 s | 29.6 m | 51.1 m | 47.5 m |
+
+The per-step trace named the cause: at the start of `search` the bird was following an
+11-node `ctx.nav.path` — the WALKER's A* route round the rock garden at the north spire's foot —
+and distance to the belief rose 33 -> 48 m over two seconds before it fell. Three defects, all
+in this lane's code, and one staging defect in this lane's gate:
+
+1. **`Engage.pursue` routed an airborne machine along the ground path.**
+   `src/entities/machines/ai/engage.js`: while `m._airborne` it now flies the straight line;
+   landed (perched, or grounded for good once the jets are gone) it walks the route as before.
+2. **`Search.begin` inherited the fight's travel intent.** The `seek` reposition spot
+   (`_giveUpBlind`, held 3 s) and the nav path to it survived into the sweep, so the first leg
+   finished a fight manoeuvre before heading for the belief. New `Engage.dropTravel()`, called
+   from `Search.begin` (`src/entities/machines/ai/search.js`). Measured alone it did not move
+   the numbers (peaks 41.1-51.2 m) — the ground route was the dominant cause — but it is the
+   same class of defect and it is what makes the first leg head for the belief from frame one.
+3. **A full A* every frame while seeking (found in the trace, memory rule).** `pursue`'s seek
+   branch set `this.path = null` on every frame it was active, so `!this.path` was always true
+   and a fresh route (a new array of `Vector3` waypoints, up to 24 000 expansions) was planned
+   on **every 1/60 s step** of the 3 s seek hold — the trace shows a new 3-12 node route object
+   on consecutive steps. A route now remembers whether it was planned to the seek spot or to
+   the belief and is dropped ONCE when that changes (and once when `_seekClearSpot` picks a new
+   spot); otherwise it is re-planned on the normal `repath` clock (1.4 s), as it always was for
+   a moving destination. The
+   `{ radius, look }` literal handed to `nav.steer` on every footwork frame is now one record
+   per machine (`Engage._steerOpts`), and the `nav.path` goal is a module scratch vector.
+4. **Staging, `tools/gates.round4.machine-ai-expansion.mjs`:** 120 m -> **240 m** along the
+   radial toward the valley centre, as the header always said (|L - 240| <= 240, so she stays
+   inside the rim for every home). And the flier is **staged in the air**
+   (`_groundHold = 0; _airborne = true` after `forceState('attack')`), because whether the gate
+   met a flier or a walker depended on the perch cycle at boot: grounded at the start in
+   **3 of 7** fresh pages. Grounded, the Stormbird is a walker and the walker route from its
+   fight into this staging's remembered point — a pocket in that rock garden, open only from
+   the south-east (nav map printed with the path overlaid) — is a 60-100 m detour; the first
+   post-fix run of the real gate met a grounded bird and read `50.2 m, bar 26` for a machine
+   walking correctly to the point it remembered. The report now prints `stagedAirborne` and
+   `airborneAtVanish`. **No bar moved:** `ringBar` is still 34 for a flier and 26 for a walker,
+   `beliefAtOld <= 12` is untouched.
+
+**After, same probe, bird in the air, Aloy 200 m out, 20 s window:**
+
+| bearing | peak over the whole window | from the belief when search began | peak during the sweep proper (after the first leg) | at 6.5 s |
+|---|---|---|---|---|
+| 0 | 27.1 m | 0.3 m | 11.3 m | 2.3 m |
+| 1.57 | 36.5 m | 35.8 m | 14.0 m | 9.7 m |
+| 3.14 | 36.3 m | 35.4 m | 14.8 m | 8.6 m |
+| 4.71 | 24.1 m | 15.4 m | 11.5 m | 2.4 m |
+| 3.93 | 24.1 m | 14.5 m | 14.3 m | 2.3 m |
+
+The sweep now stays **inside the 6-18 m ring on every bearing (11.3-14.8 m)** and the first
+leg only ever closes on the belief. Stated so nobody has to find it: the whole-window peak is
+36.3 / 36.5 m on two bearings, and that peak is in the **fight**, not the search — the bird is
+still in `attack`, working its own 18-40 m flier band blind around the belief for the
+`beliefHold` before `_unseenT` matures into a search. It is 35.4-35.8 m out when the search
+begins and closes from there. `beliefMoved` is **0.0 m** in every run, `visSteps` 0-1.
+
+The same probe with the bird forced GROUNDED (the case the staging now excludes, kept on
+record): at 6.5 s 51.0 / 32.2 / 21.1 / 22.7 / 46.7 m — the walker route, two bearings over
+the 26 m walker bar.
+
+**`A40-expansion`, real gate:** first post-fix run **FAIL** (the grounded bird above,
+`airborne: false`, 50.2 m), which is what led to the staging point 4; then **PASS 8 of 8**
+isolated — see the gate table below — Stormbird `airborne: true`, `beliefStillAtOldSpotM` 0.0.
+
+### Fix round 1 — finding 2: A41c, the un-seeded coin and the patience that ran out at 5.4 m
+
+**Step 1 — the un-seeded binary, found.** `Engage` rolled the orbit direction, the first
+flip, the opening ring and the lateral jitter ONCE, in its constructor — at boot, on
+`Math.random`, before any gate could seed the lane dice — and `Engage.reset()` never rolled
+them again. Proof: the Behemoth duel at A41c's seed, bearing and pose with the orbit direction
+FORCED:
+
+| forced `orbitDir` | end pose | the judge's two mirror poses |
+|---|---|---|
+| +1 | [-151.48, 92.55, -0.90] | [-151.49, 92.54, -0.903] |
+| -1 | [-168.96, 92.96, 0.96] | [-168.47, 92.48, +0.896] |
+
+`Engage.reset()` now re-rolls all four through `aiRandom`, so a fight that begins from a
+seeded stream is seeded from its first step (in play every fight still opens on a fresh coin).
+After: the Behemoth's first duel in A41c ends at **[-167.116, 98.262, 1.43], [-167.114, 98.248,
+1.428], [-167.114, 98.251, 1.428], [-167.114, 98.252, 1.428], [-167.116, 98.267, 1.43]** across
+the five runs — the same pose to 2 cm and the **same move sequence 5 of 5**. Every species'
+move sequence is identical across all five runs for 12 of 16 species, and 2 variants for the
+other four.
+
+What `replay:` still reports, and why: `samePose: false`, because the replay is the Behemoth's
+SECOND fight in the page, not a copy of its first. Diffing the machine before each: the species'
+own cooldown clocks (`_boulderCd` 4.35 -> -9.77, `_slamCd` 2.35 -> -0.30), `_stateT`,
+`_alertEpisode`, `_speed` and the gait phase carry over from fight one, and the gate's
+`soloDuel` does not (and was not changed to) reset species fields. The replay run itself is now
+reproducible: a third fight from the same state ends at [-151.813, 96.895, -1.292] against
+the second's [-151.815, 96.891, -1.292], and the `pose2` field reads [-151.815, 96.89, -1.292]
+in all five A41c runs.
+
+**Step 2 — the Scrapper, traced.** A seed x orbit-direction sweep of Scrapper duels on its
+hardest fair arc (24 duels, A41c's staging) on the pre-fix tree: laser in 23 of 24, and the one
+miss was **A41c's own seed (0x51d4) with the orbit clockwise**. Its trace: the ring was set for
+the laser (7.8 m) most of the fight, the machine walked out from 1.3 m, and `dart-bite` fired
+at **4.9, 5.3 and 5.4 m** — up to 0.9 m short of the laser's 5.8 m floor — each time dashing it
+back to 1.3 m. The picker's setup patience (`_holdingSetup`, 2 s floor) was counted from the
+moment the PREVIOUS move fired, so `dart-bite`'s own 0.89 s of windup/strike/recovery spent
+almost half of it before the machine could take a step, and it ran out just short of the floor
+on each walk out. That is
+also the judge's failing signature ("held reach topped out at 5.63 m").
+
+Two changes:
+
+* **`AttackPicker.tick` — the patience is for walking** (`src/entities/machines/ai/attacks.js`):
+  `_setupT` accumulates only while no attack is running. `_arrangedT`, the 8 s hostage bound,
+  still counts everything.
+* **`Engage._pickRing` — owed shells are an obligation** (`engage.js`, as the judge asked):
+  per step, for every owed row the machine has not thrown yet this fight (non-rear, shell =
+  row ∩ band ∩ ring window, the same shell A41d judges), the seconds since the footwork last
+  stood in that shell. Past `ENGAGE.owedPatience` (3 s, A41d's MUST_FIRE) the ring goes to the
+  most overdue shell whatever the picker's SOFT hints (`blind`, `unreach`) say, and without a
+  dice roll. The HARD bound is kept — a row stalled by `arrangeGiveUp` (8 s) no longer
+  qualifies — so an obligation cannot pin the footwork to a radius the ground refuses.
+  Allocation-free: one `Float32Array` per machine, sized to its table once.
+
+Same 24-duel sweep after both: **laser 24 of 24** — and 24 of 24 with the obligation switched
+off (`owedPatience` = 1e9), i.e. on this ground the patience clock is the change that closes
+it. The obligation is the net under the other road (a fresh row dropped from the arrangement by
+a blind/unreachable hint): it fired 4 times in the Behemoth's first A41c duel and brought
+`gravity-boulder` into it. Both are kept; the numbers say which one carried the Scrapper.
+
+**Step 3 — A41c, five isolated runs on port 5206, nothing else of mine running:**
+
+| run | started | verdict | wall | starved | failures |
+|---|---|---|---|---|---|
+| 1 | 03:30 | **PASS** | 358 s | [] | [] |
+| 2 | 03:36 | **PASS** | 246 s | [] | [] |
+| 3 | 03:40 | **PASS** | 266 s | [] | [] |
+| 4 | 03:45 | **PASS** | 319 s | [] | [] |
+| 5 | 03:51 | **PASS** | 318 s | [] | [] |
+
+**5 of 5, all 16 combatant species, `blockedSteps` 0 in every run.** Distribution:
+
+| species | bar | staged bearing | distinct per run | moves seen | no-sightline frac per run | distinct move sequences / end poses across 5 runs |
+|---|---|---|---|---|---|---|
+| `behemoth` | 3 | 0 | [4, 4, 4, 4, 4] | `charge`, `gravity-boulder`, `shoulder-check`, `slam` | [0, 0, 0, 0, 0] | 1/5 |
+| `broadhead` | 3 | 2.62 | [3, 3, 3, 3, 3] | `dash-horn`, `horn-charge`, `horn-strike` | [0.18 x5] | 1/4 |
+| `corruptor` | 3 | 2.09 | [5, 5, 5, 5, 5] | `corruption-spike`, `inferno-blast`, `leap`, `tail-sweep`, `talon-strike` | [0.02 x5] | 1/3 |
+| `glinthawk` | 2 | 2.62 | [2, 2, 2, 2, 2] | `dive`, `freeze-spit` | [0 x5] | 1/5 |
+| `grazer` | 3 | 3.67 | [3, 3, 3, 3, 3] | `antler-charge`, `leap-kick`, `rotor-stab` | [0 x5] | 1/4 |
+| `longleg` | 3 | 0 | [3, 3, 3, 3, 3] | `hop-strike`, `jet-blast`, `scream` | [0 x5] | 1/1 |
+| `ravager` | 3 | 4.71 | [5, 5, 5, 5, 5] | `bite`, `cannon-burst`, `jaw-smash`, `pounce`, `shock-cocoon` | [0.42 x5] | 1/4 |
+| `redeye` | 3 | 2.09 | [3, 3, 3, 3, 3] | `energy-blast`, `flash`, `skitter-bite` | [0.12, 0.12, 0.15, 0.15, 0.15] | 1/4 |
+| `sawtooth` | 3 | 0.52 | [5, 5, 5, 5, 5] | `berserker`, `bite`, `charge`, `pounce`, `swipe` | [0 x5] | 1/5 |
+| `scrapper` | 3 | 1.05 | [3, 3, 3, 3, 3] | `claw`, `dart-bite`, `laser` | [0.66, 0.64, 0.66, 0.66, 0.66] | 2/5 |
+| `shellwalker` | 3 | 1.05 | [4, 4, 4, 4, 4] | `claw-combo`, `homing-blast`, `shock-nova`, `shock-volley` | [0, 0.04, 0, 0, 0] | 1/4 |
+| `snapmaw` | 3 | 2.09 | [4, 4, 4, 4, 4] | `freeze-mortar`, `lunge-bite`, `snap-bite`, `tail-spin` | [0.13 x5] | 1/1 |
+| `stormbird` | 3 | 1.05 | [3, 3, 3, 3, 3] | `bomb-run`, `shock-blast`, `thunder-clash` | [0.18, 0.21, 0.09, 0.09, 0.09] | 2/4 |
+| `strider` | 3 | 5.76 | [3, 3, 3, 3, 3] | `charge`, `dash-kick`, `front-kick` | [0.12, 0.14, 0.12, 0.12, 0.12] | 2/4 |
+| `thunderjaw` | 3 | 0.52 | [3, 3, 3, 3, 3] | `cannon`, `disc`, `laser` | [0.05, 0.01, 0.05, 0.05, 0.05] | 2/5 |
+| `watcher` | 3 | 0 | [3, 3, 3, 3, 3] | `energy-blast`, `flash`, `skitter-bite` | [0 x5] | 1/5 |
+
+(End poses differ by centimetres between runs for most species — the continuous state named
+above — while the decisions do not.)
+
+**On the final tree.** The five runs above were measured before one last edit to `pursue`
+(the path-invalidation rule in the A40 section: a route dropped when the destination moves
+more than 2 m -> dropped when it switches between the seek spot and the belief). In a duel the
+two rules drop the route at exactly the same instants — the belief is pinned on a standing
+dummy, and a seek spot sits at ring radius, never within 2 m of it — so the change cannot move
+a duel. Measured rather than argued: two further isolated `A41c` runs on the final tree hit
+the gate's **480 s wall cap** (489.9 s and 492.4 s — `ERR: gate assert timeout`, not
+verdicts; load average 8-13 with 56 Chrome processes from other lanes; the timeout was not
+raised). The same assert body, byte for byte, run as a probe (`P-A41c-longwall`, only the wall
+cap lifted to 1200 s) **PASSED in 483 s** with every species' move sequence and firing radius
+identical to runs 1, 3 and 5 above (Scrapper `laser@5.9m`, Behemoth `shoulder-check@6.9m`,
+Behemoth pose [-167.116, 98.266, 1.43]).
+
+**Scrapper `laser` and Behemoth `shoulder-check` on their own ground, all five runs:**
+
+| run | Scrapper (bearing 1.05, ring occluded 0.5), moves with radius | Behemoth (bearing 0), moves with radius |
+|---|---|---|
+| 1 | `dart-bite@3.8m`, `claw@3.1m`, **`laser@5.9m`**, `dart-bite@3.5m`, `claw@3.1m`, `dart-bite@4.0m`, `claw@3.1m`, `dart-bite@5.6m` | `charge@9.2m`, `slam@10.8m`, `gravity-boulder@11.3m`, `slam@7.6m`, **`shoulder-check@6.9m`**, `slam@6.6m`, `charge@9.6m` |
+| 2 | `dart-bite@3.9m`, `claw@3.1m`, `dart-bite@3.9m`, `dart-bite@3.9m`, `claw@3.1m`, **`laser@5.8m`**, `claw@3.4m` | identical to run 1 |
+| 3 | identical to run 1 (`laser@5.9m`) | identical to run 1 |
+| 4 | as run 1, `laser@6.0m` | identical to run 1 |
+| 5 | identical to run 1 (`laser@5.9m`) | identical to run 1 |
+
+### Fix round 1 — the rest of the lane, re-measured
+
+Every gate this lane owns or that the four changes touch, isolated, on port 5206, on the
+final tree unless marked. Numbers are parsed from this lane's own stdout logs.
+
+| gate | runs | verdict | the reading |
+|---|---|---|---|
+| `A40-expansion` | 5 + 3 on the final tree | **PASS 8 of 8** | Stormbird `airborne: true`, 24.5-32.9 m from the belief at the vanish -> **0.0-2.0 m** at 6.5 s (flier bar 34); Aloy 238-245 m out; walkers' worst 2.4-4.4 m (bar 26); `beliefStillAtOldSpotM` <= 0.1 m for every kind in every run |
+| `A100-expansion-doctrine` | 2 | **PASS 2 of 2** | finding 1 holds: `ownerAfterCalm: ["convoy"]`, `deliberateRingRestored: [true]` on all five fight -> calm cycles of both runs |
+| `A90-memory-stability-expansion` | 5 | **PASS 5 of 5** | `populationAudit.overBudget` **false 5 of 5** (nodes 2243 / 1688 / 1133 / 2465 / 1133 of 2597, recycled 16 / 21 / 26 / 14 / 26), `nonMachineGrowth` **0** 5 of 5, `orphanRoots` **0** 5 of 5, objGrowth -214 / -769 / -1324 / +8 / -1324 (bar +600), heap +3.5 / -0.2 / -4.0 / +0.9 / +2.5 % (bar 25) |
+| `A41d-held-radius-coverage` | 2 | **PASS 2 of 2** | every owed row fires, except Snapmaw `freeze-mortar` in run 1 (held 1.95 s: stood for, under MUST_FIRE 3.0); Scrapper `laser@6.1m` / `@7.2m` and `laser@6.1m`; Behemoth `shoulder-check@7.1m` both runs |
+| `A41d-must-fire` | 2 | **PASS 2 of 2** | new kinds; Snapmaw `freeze-mortar` held 1.44 s (stood for) |
+| `A41c-expansion` | 1 | **PASS** | 5 clean seeds x 8 kinds, distinct per kind 3-5 |
+| `A41-combat-motion`, `A41-expansion`, `A41b-expansion` | 1 each | **PASS** | |
+| `A41b-attack-coverage` | 1 | **PASS** | was a pre-existing FAIL at the end of the residue round (`redeye @ 14m: no attack and no reposition`); not targeted, recorded because it moved |
+| `A37`-`A43`, `V25n` (Round-3 roster) | 1 each | **PASS 7 of 7** | `A40-lost-contact` -> search, `reAttackWhileUnseen: false`; `V25n` recipients `search`, eyes `#ffb31f`, closed 9.7-9.9 m on the caller |
+| `A37`-`A39`, `A42`, `A43` `-expansion` | 1 each | **PASS 5 of 5** | |
+| `A90-rig-reclaim` | 1 + 2 + the suite + a 5x5 A/B | PASS 04:51 (perLive 0.88), then **intermittent on the working tree** (PASS 0.38 / FAIL 1.13 isolated, FAIL 1.38 in the suite, each FAIL with `heldThenReleased.geo = 4`) | the ROUND4-MEMORY §6.5 fingerprint; A/B below: HEAD + this lane **PASS 5 of 5** |
+| `A9-perf-budget` | 1 | PENDING | its own verdict: `fps 23.6 is NOT attributable` (5.24 ms of GPU with nothing drawn) |
+| `A21-real-draw-calls` | 1 | PENDING | `drawCalls` now **PASS** (staged-fight 340 vs 350, was 402) and `triangles` PASS; the timing terms PENDING on contention |
+| `A90-memory-stability` | 3 on the working tree + 5 A/B | **FAIL on the shared working tree — attributed below, not this lane** | geo +50 / +43 / +42 (bar 40) |
+
+#### `A90-memory-stability` went red during this round — and it is not this lane's change
+
+It read `geoGrowth` +50, then +43 and +42 on repeat (bar 40; heap -3.7 to -7 %, textures -18
+to -20, objects -422 to -722 — every other term green). Its history in this box's logs is
++19..+37. Because `info.memory.geometries` counts geometries DRAWN (ROUND4-MEMORY §6.4), a
+build-vs-build A/B is the only honest attribution, so the gate was run on isolated copies of
+the tree, each on its own port and its own Vite cache (`public/` and `node_modules` linked):
+
+| tree | `before.geo` -> `after.geo` | `geoGrowth` | verdict |
+|---|---|---|---|
+| committed HEAD, nothing else | 174 -> 208 | +34 | **PASS** |
+| HEAD + **this lane's four files** | 199 -> 217 | +18 | **PASS** |
+| HEAD + this lane + the working tree's non-machine edits (melee, collision, npc) | 199 -> 214 | +15 | **PASS** |
+| HEAD + this lane + the working tree's `src/entities/machines/**` edits outside `ai/` (rig/*, gait, longleg, redeye, stormbird, watcher, variety-assets, new `rig/components.js`) | 173 -> 218 | **+45** | FAIL |
+| working tree with **this lane's four files reverted to HEAD** | 173 -> 217 | **+44** | FAIL |
+| working tree as is (x3) | 173 -> 223 / 216 / 215 | +50 / +43 / +42 | FAIL |
+
+The FAIL follows the uncommitted machine-rig edits and nothing else: every tree carrying them
+starts on the low `before.geo` mode (173, **6 of 6**) and ends +42..+50 over it; every tree
+without them passes, including the one that is HEAD plus exactly this lane's changes. The
+owner is the lane editing `src/entities/machines/rig/*` (machine-rig / machines-expansion);
+the gate's own `lane` field is `core`. This lane did not touch the gate or those files.
+(The full suite's own run read 173 -> 219, +46: the same mode.)
+
+`A90-rig-reclaim` got the same treatment when it began failing on the working tree with the
+known `1.13 / heldThenReleased.geo = 4` signature (ROUND4-MEMORY §6.5), five runs per tree,
+the two trees in parallel:
+
+| tree | verdicts | perLive geo |
+|---|---|---|
+| committed HEAD | PASS 4 of 4 (+1 `Navigation timeout` — the page never loaded, not a verdict) | 0.25-0.63 |
+| HEAD + this lane's four files | **PASS 5 of 5** | 0.25-0.63 (one run `heldThenReleased.geo = 4` at 0.63, still under the bar) |
+| working tree | PASS 0.38, FAIL 1.13, FAIL 1.38 (suite) | — |
+
+
+### Fix round 1 — full suite on port 5206
+
+`node tools/gates.mjs --port 5206`, 05:37-07:46, load average 5-17 with 50-64 Chrome
+processes from other lanes. Result line:
+
+```
+237 gates: 182 pass, 12 fail, 3 pending, 40 need judging
+```
+
+(residue round: 177 pass, 18 fail, 2 pending.) Every FAIL and PENDING, owner from the gate's
+own `lane` field:
+
+| gate | owning lane | first failure |
+|---|---|---|
+| `A41c-sustained-variety` | machine-ai (**this lane**) | `ERR: gate assert timeout (480000ms)` at 487 s — a wall-clock cap under box load, not a verdict. Two isolated runs on the final tree also capped (490 s, 492 s) and one after the suite (502 s, load 11-25). 5 of 5 PASS earlier on the decision-identical tree (220-358 s); the same assert with the wall cap lifted PASSED in 483 s on the final tree. Timeout not raised. |
+| `A90-memory-stability` | core | geo +46 (bar 40). Attributed by A/B to the uncommitted machine-rig edits (above); HEAD + this lane PASS |
+| `A90-rig-reclaim` | machines-expansion | perLive geo 1.38 (bar 1), `heldThenReleased.geo 4` — the §6.5 intermittent; HEAD + this lane PASS 5 of 5 |
+| `A13-no-skate` | animator | maxStanceDriftM 0.0756 |
+| `A17-draw-beats` | animator | minHandToQuiverM 0.219, flourishFrames 0 |
+| `A47-corpse-grounded` | machine-rig | offenders thunderjaw, longleg |
+| `A47c-corpse-mass` | machine-rig | offenders snapmaw, corruptor |
+| `A50b-aim-on-drawn-geometry` | machine-rig | hitsOnGhostGeometry 1 |
+| `A81-canon-speed-bands` | core-platform-followup2 | canon-derivation audit |
+| `A31b-no-ghost-without-occluder` | player-control | (hill / valley / slope staging) |
+| `A69-death-choice` | shell-menus | `ERR: Cannot read properties of null (reading 'click')` — kills the player directly, no machine involved |
+| `A23b-hull-fidelity` | spatial | worstGap 22, rate 18.2 % |
+| PENDING `A9-perf-budget` | core | `fps 25.1 is NOT attributable` |
+| PENDING `A21-real-draw-calls` | core-platform | timing terms on contention; `drawCalls` PASS 340 / 350 |
+| PENDING `A23-aim-cost` | spatial | idle scene 57.1 ms p95 on this box |
+
+This lane's other gates, all **PASS** inside the suite: `A40-expansion`, `A100-expansion-doctrine`,
+`A90-memory-stability-expansion`, `A41d-held-radius-coverage`, `A41d-must-fire`, `A41c-expansion`
+(906 s, 5 clean seeds), `A41-expansion`, `A41b-expansion`, `A41-combat-motion`,
+`A41b-attack-coverage`, `A37`-`A43` and their `-expansion` twins, `V25n-alarm-converge-numbers`.
+Against the residue round's FAIL list: gone are `A40-expansion`, `A41b-attack-coverage`,
+`A41d-held-radius-coverage` (this lane) and `A44`, `A44b`, `A47b`, `A48`, `A97` (other
+lanes' work); `A21` and `A23` went FAIL -> PENDING; new are `A90-memory-stability` and
+`A90-rig-reclaim` (both attributed above, not this lane), `A13-no-skate` (was PENDING) and
+`A69-death-choice`.
+
+### Fix round 1 — film (read, not captioned)
+
+* **`shots/V25-alarm-converge-film-r1.png`** — `V25-alarm-converge`'s own setup body.
+  `recipientStates` search x3, closed **2.59 / 2.76 / 2.64 m** on the caller, 14.8-22.2 m from
+  the lens, suspicion 0.62, `playerSeenByAny: false`, caller in `attack`. In the frame: three
+  Watchers in the mid-ground in tall orange grass, each under a **yellow** half-filled awareness
+  ring (search), the caller's **red** ring just visible behind the left one further out, Aloy
+  crouched in the foreground grass. The HUD's red `SPOTTED` is the force-alerted caller, as in
+  the residue round. Stated plainly: at this resolution the Watchers are dark silhouettes and I
+  cannot certify their facing or sensor colour from the pixels; the yellow read is the HUD
+  ring, and the facing claim rests on the measured closing distances and on `V25n` (eyes
+  `#ffb31f`, closed 9.7-9.9 m over its longer window).
+* **`shots/convoy-fight-r1b.png`** — the convoy fight. Two `SHELL-WALKER LV 17` tags with red
+  markers; the crate carrier's white shell and yellow crate clearly readable at ~11 m;
+  `escortHoldsRing [true]`, escort **4.3 m** from the carrier (ring 9 m), anchor
+  (222.7, 23.9) on the carrier (222.7, 23.8) — the ring tracks the carrier live, both in
+  `attack`. Aloy's health is **pinned** for this film: the first take (`convoy-fight-r1.png`)
+  filmed the death screen, "killed by Shell-Walker", 10.5 s into the fight, and the second
+  (24 m lens) had both machines behind grass with the escort 13.2 m out on its own attack
+  footwork (the ring anchors the PATROL frame; in `attack` the band owns the machine).
+* **`shots/stormbird-search-sweep.png`** — the finding itself. The Stormbird banking in the
+  air, wings spread, six jet nacelles lit, over the rock garden at the north spire's foot,
+  9 s after Aloy vanished **246 m** away; HUD grey `UNSEEN`. `search`, airborne at 18.8 m,
+  **12.4 m from the belief** (sweep points 6.5 / 13.2 / 13.3 / 15.9 m; peak so far 12.4 m;
+  1.2 m at 6.5 s). The sim is frozen and only the lens was moved (28 m from the belief, 40 m
+  from the bird, both projected in frame). The belief has no marker; it is the ground at the
+  lower centre of the frame.
+* **`shots/scrapper-laser-hard-arc.png`** — the Scrapper on its hardest fair arc (bearing
+  1.05, ring 50 % occluded) at A41c's seed, frozen **0.85 s into its `laser`, in the strike
+  phase, 5.8 m from Aloy** — on the floor of the [5.8, 9.7] shell it used never to reach.
+  Readable: the quadruped in the grass with its red muzzle glow, the red attack marker and the
+  `SCRAPPER LV 6` tag; the dark slab filling the right is the rock that makes this the hard
+  arc; the full-frame red tint is the hit vignette. Aloy herself is hidden behind that rock
+  edge, and the individual bolts are not distinguishable at this size.
+
+### Fix round 1 — memory discipline of the changes
+
+Nothing added here allocates per frame, and three per-frame allocations were removed:
+
+* **removed:** a full `nav.path` A* (new array + `Vector3` waypoints) on every frame of a seek
+  hold; the `{ radius, look }` literal on every `nav.steer` call from `update` and `pursue`
+  (now one record per machine); the `{ x, y, z }` goal literal on every repath (module scratch).
+* **added:** `Engage._owedUnheld`, one `Float32Array` per machine sized to its table once (the
+  same ownership and lifetime as `Engage._held`: it lives and dies with the machine's `ai`,
+  nothing outside `Engage` references it); `_steer`, one plain record per machine; three
+  scalar fields. `reset()` rolls three dice and zeroes the array in place.
+* **measured:** `A90-memory-stability-expansion` 5 of 5 PASS (above), `A90-rig-reclaim` PASS,
+  `A90-memory-stability` PASS on HEAD + this lane's changes (+18) and on HEAD alone (+34).
+
+### What fix round 1 changed
+
+| file | change | finding |
+|---|---|---|
+| `src/entities/machines/ai/engage.js` | `reset()` re-rolls orbit direction / first flip / opening ring / jitter through `aiRandom`; owed-shell obligation (`_noteOwed`, `_obligedRow`, `owedRings`); `pursue` flies the straight line while `_airborne`, drops a route once per seek/belief switch instead of every frame; `dropTravel()`; `_steerOpts` and the `_goal` scratch | 2, A40 |
+| `src/entities/machines/ai/attacks.js` | `_setupT` runs only while no attack is running | 2 |
+| `src/entities/machines/ai/search.js` | `begin()` calls `engage.dropTravel()` | A40 |
+| `src/entities/machines/ai/tables.js` | `ENGAGE.default.owedPatience: 3` | 2 |
+| `tools/gates.round4.machine-ai-expansion.mjs` | `A40-expansion`: 240 m (as its header says); flier staged in the air; report prints `stagedAirborne`, `airborneAtVanish`. No bar or tolerance changed. | A40 |
+| `docs/ROUND4-MACHINE-AI-EXPANSION.md` | this section; the A40 diagnosis and §2.1b corrected in place | A40, 2 |
+
+No bar moved, no tolerance added, no timeout raised; `tools/gates.round4.machine-ai.mjs`
+(A41c / A41d) was not edited this round.
+
+---
+
 ## Finding 1 — convoy escort residue permanently replaces the in-file column
 
 *(major, judge r2, score 72)*
@@ -198,6 +560,13 @@ six Behemoth duels overrun puppeteer's 180 s `protocolTimeout` on this box):
 is A41c's **sweep-wide** 5-of-5: with one seed shared across sixteen sequential duels, the
 Scrapper's slice of the stream is a function of everything that ran before it, and a duel
 whose end pose is not reproducible at a fixed seed cannot make that slice reproducible either.
+
+> **Corrected in fix round 1.** The shared-seed explanation below does not explain the data,
+> and the fix-round-1 judge showed why: the Behemoth runs FIRST from a fresh seed and still
+> ended in one of two mirror poses across runs. The real causes were an un-seeded coin flip
+> (the orbit direction, rolled once at boot and never again) and a patience clock that counted
+> the machine's own attack time; see
+> [Fix round 1 — finding 2](#fix-round-1--finding-2-a41c-the-un-seeded-coin-and-the-patience-that-ran-out-at-54-m).
 
 **Nothing was changed to make this read better.** Re-seeding A41c per species would almost
 certainly restore 5-of-5 — the probe above is that experiment — but it is a change to a gate's
@@ -489,25 +858,32 @@ PENDING: `A13-no-skate` (animator — `"SKIP: fewer than 2 clean stance windows 
 | `A41c-sustained-variety` | `scrapper: only 2 distinct move(dart-bite, claw)` | §2.1b: the Scrapper fires its laser 6 of 6 when measured directly on this tree; what fails is A41c's sweep-wide single seed. Not touched. |
 | `A41d-held-radius-coverage` | `shellwalker: ["homing-blast"] never fired AND the footwork never stood in their range — needs 9.5-15.7 m, held 0.51 s, reach 9 m` | the same sweep-wide seed sharing; `A41d-must-fire` (the same bar, new kinds) PASSED in the suite, and `A41d-held-radius-coverage` PASSED isolated at 19:16 (182 s, no failures). Not touched. |
 | `A41b-attack-coverage` | `redeye @ 14m: no attack and no reposition (ended 13.1 m, mode orbit)` | pre-existing; the same line the memory-attribution lane recorded at 5207. Not on this round's finding list, not touched. |
-| `A40-expansion` | `stormbird: belief moved 138.0 m from where she was last seen, and it ended 91.8 m from that remembered point` | **a staging defect in my own gate**, diagnosed below. Not on this round's finding list, so not touched. |
+| `A40-expansion` | `stormbird: belief moved 138.0 m from where she was last seen, and it ended 91.8 m from that remembered point` | a staging defect in my own gate **and** a defect in the flier's search (the first diagnosis missed the second — corrected below, fixed in fix round 1). |
 
-#### `A40-expansion` / stormbird — the diagnosis, for whoever takes it next
+#### `A40-expansion` / stormbird — the diagnosis (CORRECTED in fix round 1)
 
-Seven of eight new kinds keep `beliefStillAtOldSpotM` at **0.0-0.1 m** — belief does not
-follow the player, which is the whole point of the gate. Only the Stormbird moves it, by
-138 m, and the cause is the gate, not the AI:
+> **The diagnosis originally written here was half right and its fix did not work.** The
+> fix-round-1 judge ran exactly the change it proposed (120 -> 240 m, nothing else) and the
+> gate still failed: the belief stayed put (0.0 m — that half held), but the Stormbird ended
+> **46.9 m** from it against the flier bar of 34. Both the STAGING and the FLIER'S SEARCH were
+> defective. What follows is the corrected record; the measurements and the code are in
+> [Fix round 1 — A40-expansion](#fix-round-1--a40-expansion-the-staging-and-the-flier-were-both-defective).
 
-* the section's header says *"She vanishes, completely: 240 m out, past every sightRange in
-  the roster"*, but the code moves her to `home - 120 m` along the radial —
-  `distToPlayerStartM` measures **118.7-120.8 m** for every species;
-* `PERCEPTION`/stats give the Stormbird `sightRange` **90 m** and `runSpeed` **16 m/s**, and
-  the window is 6.5 sim s. It closed from 118.7 m to **91.8 m** during the sweep, i.e. it
-  legitimately flew back inside its own sight range and re-acquired her. Updating `lastKnown`
-  at that point is correct behaviour.
-
-The fix is to make the code match its own header (put her past the widest `sightRange` plus
-`runSpeed x window`, ~240 m as written), not to widen `ringBar`. That is a staging change on
-a gate, in a residue round, so it is recorded here rather than made.
+1. **Staging (correct as first written).** The header said 240 m, the code moved her 120 m,
+   and a Stormbird (`sightRange` 90, `runSpeed` 16, 6.5 s window) closed 118.7 -> 91.8 m and
+   re-acquired her honestly — so `beliefStillAtOldSpotM` 138 m was earned, not cheated.
+2. **The flier's search (missed).** With her 240 m out and the belief untouched, the sweep's
+   first leg still flew AWAY from the remembered point for ~2 s — 33 -> 48-51 m — on every
+   bearing where the fight ended north-west of the belief. Two causes, both in this lane's
+   code: `Engage.pursue` routed the AIRBORNE bird along `ctx.nav.path`, a walker's A* route
+   round the rock garden at the north spire's foot; and `Search.begin` kept the fight's
+   travel intent (the `seek` reposition spot and the nav path to it), so the first leg
+   finished the fight's reposition before it headed for the belief.
+3. **And a third thing the first diagnosis could not see:** whether the gate met a FLIER or a
+   WALKER depended on the bird's perch cycle at boot (grounded at the start in 3 of 7 fresh
+   pages). A grounded Stormbird is a walker, and the walker route from its fight into this
+   staging's remembered point — a pocket inside that rock garden, open only from the
+   south-east — is a 60-100 m A* detour.
 
 
 ---

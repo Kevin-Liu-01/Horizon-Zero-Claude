@@ -112,6 +112,8 @@ class Pass {
     this.grow = new Float32Array(MAX);
     this.peak = new Float32Array(MAX);
     this.flick = new Uint8Array(MAX);
+    // per-particle gravity (m/s^2): sparks arc and fall, dust and smoke drift
+    this.grav = new Float32Array(MAX);
   }
 
   spawn(x, y, z, opts) {
@@ -138,6 +140,7 @@ class Pass {
     this.dur[i] = Math.max(0.05, opts.dur ?? 1);
     this.life[i] = 0;
     this.flick[i] = opts.flicker ? 1 : 0;
+    this.grav[i] = opts.gravity || 0;
     this.size[i] = this.size0[i];
     this.opacity[i] = 0;
     return i;
@@ -224,11 +227,13 @@ class Pass {
           this.life[i] = this.life[n]; this.dur[i] = this.dur[n];
           this.size0[i] = this.size0[n]; this.grow[i] = this.grow[n];
           this.peak[i] = this.peak[n]; this.flick[i] = this.flick[n];
+          this.grav[i] = this.grav[n];
         }
         i--;
         continue;
       }
       const o3 = i * 3;
+      if (this.grav[i]) this.vel[o3 + 1] -= this.grav[i] * dt;
       this.pos[o3] += this.vel[o3] * dt;
       this.pos[o3 + 1] += this.vel[o3 + 1] * dt;
       this.pos[o3 + 2] += this.vel[o3 + 2] * dt;
@@ -411,6 +416,27 @@ export function attachFxPool(machine) {
   machine._smokeBurst = function (p, n) {
     const cap = Math.max(0.9, this.bodyRadius);
     for (let i = 0; i < n; i++) pool.smoke(p.x, p.y, p.z, cap * 1.3);
+  };
+  /**
+   * SPARK BURSTS JOIN THE POOL (residue fix round 1, `A21-real-draw-calls`).
+   * `Machine._sparkBurst` built a `THREE.Points` + geometry + material for
+   * every hit, tear and canister blast — one draw and three allocations per
+   * burst, and the staged fight drew 0-5 of them per frame (measured,
+   * `shots/mx-r4-var`). The same burst is now the hot pass's own particles:
+   * the same count (capped at 24 — the pool is shared), the same colour, the
+   * same launch velocities and the same gravity, so they still arc and fall;
+   * no draw call and no allocation.
+   */
+  machine._sparkBurst = function (worldPos, n, color = 0xffc061) {
+    const m = Math.min(24, n | 0);
+    for (let i = 0; i < m; i++) {
+      const a = Math.random() * Math.PI * 2;
+      const sp = Math.random() * 6 + 1.5;
+      pool.hot.spawn(worldPos.x, worldPos.y, worldPos.z, {
+        color, size: 0.2, grow: -0.4, peak: 1, dur: 0.7 + Math.random() * 0.4, flicker: true,
+        vx: Math.cos(a) * sp, vy: Math.random() * 7 + 2, vz: Math.sin(a) * sp, gravity: 16,
+      });
+    }
   };
   machine._arcFlash = function (color = 0xbfe8ff) {
     pool.spark(

@@ -303,6 +303,16 @@ export const ENGAGE = {
     ringArrive: 1.5,
     ringProgress: 0.5,
     ringPatience: 4.5,
+    /**
+     * OWED SHELLS (fix round 1, judge machine-ai-expansion finding 2). Seconds
+     * the footwork may stay out of the shell of an owed row it has not thrown
+     * yet this fight before `Engage._pickRing` sends the ring there whatever
+     * the picker's soft hints say (`Engage._obligedRow`). 3 s is the same
+     * number `A41d` calls MUST_FIRE: the lane's own measure of "long enough
+     * that it is a pattern, not a moment". The picker's `arrangeGiveUp` (8 s)
+     * still bounds it, so a shell this ground refuses is given up, not chased.
+     */
+    owedPatience: 3,
   },
   /**
    * BAND FLOORS AND THE RING (FIX ROUND 2, judge-machine-ai-followup-r1).

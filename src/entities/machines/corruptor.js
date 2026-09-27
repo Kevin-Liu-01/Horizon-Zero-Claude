@@ -136,6 +136,30 @@ export class Corruptor extends ExpansionMachine {
       turnRadius: 1.0,
       lookClampYaw: 0.7,
       stanceFlex: 0.12,
+      /**
+       * IT STANDS ON ITS LEGS (residue fix round 2, judge finding on `A47c`).
+       * The Scorpion donor is sculpted lying down — its belly is the lowest
+       * thing in the bind pose, at body y 0.00 — so with the stance flex and
+       * the foot-follow offset lowering the pelvis, a standing Corruptor's
+       * belly sat 0.14-0.17 m under flat ground (measured per vertex against
+       * the terrain under it, `shots/mx6-sprawl-alive-cur.png`). A scorpion
+       * carries its body on its legs; 0.26 m of lift puts the belly ~0.1 m
+       * clear standing, and `bellyMin` keeps a crouch (leap windup, inferno
+       * blast) from ever putting it back under the soil.
+       */
+      standLift: 0.26,
+      bellyMin: 0.08,
+      /**
+       * THE TAIL ROOT DOES NOT DROOP WHEN THE WRECK LIES DOWN. `RIGS.corruptor`
+       * starts the tail at z -1.45, inside the abdomen, so `rig_tail1` is
+       * skinned to the rear of the body (body y 0.00-1.10) as well as to the
+       * tail base; any droop there swings that belly through the soil
+       * (measured: 0.1-0.2 m under, and the corpse bend then lifted the whole
+       * tail 0.65 rad back up). The tail is laid from `rig_tail2` on.
+       */
+      layTailRoot: 0,
+      // the wreck lies down: legs and tail laid along the ground (`gait.js` `layWreck`)
+      layWreck: true,
       fidgets: [
         { name: 'tail-flex', tail: 0.42, dur: 1.4 },
         { name: 'claw-clack', spine: 0.06, dur: 0.8 },

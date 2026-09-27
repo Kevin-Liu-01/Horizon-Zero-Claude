@@ -1,6 +1,7 @@
 import { Machine } from '../machine.js';
 import { snapSockets } from './sockets.js';
 import { settleCorpseNow } from './ground.js';
+import { deathDt } from '../gait.js';
 
 /**
  * ExpansionMachine — the two things every Round-4 expansion species needs that
@@ -40,13 +41,49 @@ import { settleCorpseNow } from './ground.js';
  */
 export class ExpansionMachine extends Machine {
   /**
-   * Re-snap once, after `installDoctrine` has added its components. Call from
-   * the top of `animate()`, past the LOD early-out.
+   * The doctrine installs its components synchronously, right after the
+   * species constructor returns (`index.js` / `installDoctrine`), so a
+   * microtask queued here runs after both — the earliest moment every
+   * component exists. See `update()` below for why the first animated frame
+   * was not early enough.
+   */
+  constructor(ctx, manager, opts) {
+    super(ctx, manager, opts);
+    queueMicrotask(() => {
+      if (!this._disposed && this.root && this.alive) this._snapDoctrineSockets();
+    });
+  }
+
+  /**
+   * Re-snap after `installDoctrine` has added its components — keyed on the
+   * part COUNT, so a component authored later than the first call is snapped
+   * too.
    */
   _snapDoctrineSockets() {
-    if (this._doctrineSnapped) return;
-    this._doctrineSnapped = true;
+    const n = this.parts ? this.parts.length : 0;
+    if (this._doctrineSnapped === n) return;
+    this._doctrineSnapped = n;
     try { snapSockets(this); } catch (e) { /* proxy not buildable on this sculpt */ }
+  }
+
+  /**
+   * ...AND FROM `update()`, NOT ONLY FROM `animate()` (residue fix round 1,
+   * `A44b-socket-vertex-integrity`).
+   *
+   * `Machine.update` skips `animate()` altogether while a machine is `lowLOD`,
+   * so a machine that spawned beyond the animation ring never ran the re-snap:
+   * probed in the running game, the Ravager, Corruptor and Snapmaw on the far
+   * side of the map had `_doctrineSnapped` unset and read exactly the gaps the
+   * gate has failed on for two rounds — `part:cannon` 0.26, `spike-launcher` /
+   * `grenade-launcher` 0.247, `freeze-sac` 0.125 — while every species near the
+   * player read 0.003. The doctrine's components sat where `installDoctrine`
+   * put them until the player walked close enough to animate the machine.
+   * The constructor's microtask now snaps them the moment they exist; this
+   * catches a component authored later still. One integer compare per update.
+   */
+  update(dt, t) {
+    this._snapDoctrineSockets();
+    return super.update(dt, t);
   }
 
   /** Species pose layer over whatever move the AI table built. */
@@ -67,6 +104,9 @@ export class ExpansionMachine extends Machine {
     super._die();
     settleCorpseNow(this);
   }
+
+  /** The collapse runs on the wall clock (`gait.js` `deathDt`). */
+  _updateDeath(dt) { super._updateDeath(deathDt(this, dt)); }
 
   /** Clear the species pose channels with the move. */
   _cancelAttack() {

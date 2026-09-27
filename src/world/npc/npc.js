@@ -107,9 +107,12 @@ const SEP_FAST = 2.2;
  * the push and the stance to overlap.
  *
  * So a walking body is corrected at a rate that cannot skate, and everything
- * else comes from `_dodge`: stopping and TURNING. A turn is free — `turn()`
- * pivots about the planted foot by construction — which is why the emergency
- * inside `SEP_HARD` is "stop and face away", not "shove harder".
+ * else comes from `_dodge`: stopping and TURNING. The emergency inside
+ * `SEP_HARD` is "stop and face away", not "shove harder", because a stopped body
+ * can turn without dragging a foot — not because a turn is free (round 3 said it
+ * was; over a stationary loop it swept both toes). Since fix round 4 the stopped
+ * body's turn is STEPPED (`NpcAnimator.turn`): feet held where they stand,
+ * lifted and put down round the body's own origin.
  */
 const SEP_WALK = 0.06;
 const SEP_HARD = 0.66;
@@ -117,6 +120,17 @@ const SEP_HARD = 0.66;
 /** How much of a pair's correction a body in this state is willing to take. */
 const SEP_W = (state) => (state === 'sit' || state === 'sleep' ? 0
   : state === 'work' || state === 'talk' ? 0.45 : 1);
+
+/**
+ * …and this PERSON (fix round 4). A body in a pose with no honest step — kneeling
+ * at a repair (`NO_STEP` in npcAnim.js) — is rooted exactly like a sitter: it
+ * pushes, it is not pushed. A standing body that IS pushed now steps after the
+ * shove (`NpcAnimator.shift`); a kneeling one could only slide on its knees,
+ * which is the foot skate `A97-npc-no-skate` fails. The walker takes the whole
+ * correction at `SEP_WALK` and `_dodge` / `SEP_HARD` do the rest, as they always
+ * have for sitters.
+ */
+const sepWeight = (n) => (n.anim && !n.anim.canStep ? 0 : SEP_W(n.state));
 
 /**
  * Look-ahead, steering lane and the clearance a pass must leave, for `_dodge`.
@@ -318,6 +332,37 @@ export class NpcSystem {
     this._assignHuts();
     this.ok = this.list.length > 0;
 
+    /**
+     * THE PERSON YOU ARE TALKING TO IS NOT FROZEN WITH THE WORLD (fix round 5,
+     * residue r2). An open conversation card parks `ctx.state` on `'dialogue'`,
+     * which main.js's `live` test excludes outside `?shot`: no system ticks, so
+     * a speaker addressed from behind — `talkTo` assigns no yaw since fix round
+     * 4, the body is STEPPED round by `_look` — held the whole conversation
+     * with their back to Aloy (a judge measured NIL at 2.862 rad of heading
+     * error for the whole card, sim time 0). See `_holdSpeaker`.
+     *
+     * `engine.onAfterRender` is the engine's published per-frame hook and it
+     * runs whether or not the simulation did; `_simFrame` (written by
+     * `update`) tells the two cases apart, so under `?shot` — or any frame
+     * main.js DID tick — this is one comparison and returns. Both registrations
+     * are taken back by `dispose()`.
+     */
+    this._simFrame = -1;
+    this._holdWall = -1;
+    this._hold = { frames: 0, secs: 0, id: null };
+    this._inTalkTo = false;
+    this._holdHook = null;
+    this._offDialogue = null;
+    if (this.ok) {
+      const engine = ctx.engine;
+      if (engine && Array.isArray(engine.onAfterRender)) {
+        this._holdHook = (e) => this._holdSpeaker(e);
+        engine.onAfterRender.push(this._holdHook);
+      }
+      const off = ctx.events?.on?.('dialogue-open', (e) => this._onDialogueOpen(e));
+      this._offDialogue = typeof off === 'function' ? off : null;
+    }
+
     this.variants = new Set(this.list.map((n) => n.body)).size;
     ctx.events?.emit?.('npc-crowd-ready', { count: this.list.length, variants: this.variants });
   }
@@ -389,6 +434,8 @@ export class NpcSystem {
         escape: 0, escapeT: 0,
         /** the stepped arrival turn (`_faceFirst`), and whether `_look` owns the heading */
         faceGoal: 0, faceThen: null, faceT: 0, faceSkip: false, facingPlayer: false,
+        /** this body's share weight in the crowd backstop, as of its last pass */
+        sepW: undefined,
       };
       anim.setStance(rng, SCALE_RANK.get(row.id) ?? this.list.length);
       anim.randomizePhase(rng);
@@ -1422,6 +1469,8 @@ export class NpcSystem {
   update(dt, t) {
     if (!this.ok || this.disposed) return;
     const ctx = this.ctx;
+    // the frame main.js simulated — `_holdSpeaker` stands down on it
+    this._simFrame = ctx.engine ? ctx.engine.frames : 0;
     /**
      * ROUTES RESOLVED BEFORE THE NAVGRID EXISTED ARE NOT PROVEN.
      *
@@ -1491,6 +1540,9 @@ export class NpcSystem {
       const moved = n.anim.update(d);
       if (moved.x || moved.z) n.walked += Math.hypot(moved.x, moved.z);
       this._settle(n, d);
+      // a standing body shoved after its legs were solved: solve them again so
+      // the drawn frame has its planted feet where they stand (fix round 4)
+      n.anim.afterMove();
       /**
        * NOBODY STAYS PINNED. `pinAcc` integrates depenetration against a 1 m/s
        * bleed, so a person brushing a crate (a few centimetres, once) is
@@ -1562,8 +1614,9 @@ export class NpcSystem {
     /**
      * CONTACT COMES OFF THE GAIT AT ONCE, NOT AT THE END OF THE WINDOW. See
      * `GRIND_STOP` for the measurement this replaces. The yield machinery is
-     * `_dodge`'s — the body stands, the escape turn is free, `yieldAcc` keeps the
-     * travel meter honest, and `_resumeGait` puts the gait back.
+     * `_dodge`'s — the body stands, the escape turn is stepped (fix round 4),
+     * `yieldAcc` keeps the travel meter honest, and `_resumeGait` puts the gait
+     * back.
      */
     if (n.pushAcc > GRIND_STOP && n.yieldT <= 0) {
       n.pushAcc = 0;
@@ -1962,7 +2015,7 @@ export class NpcSystem {
   }
 
   /** Ground conform + depenetration, with the foot lock's pivot kept honest. */
-  _settle(n, dt) {
+  _settle(n, dt, crowd = true) {
     const g = n.group;
     /**
      * BODIES FIRST, THEN THE WORLD (fix round 2). The crowd push used to run
@@ -1972,7 +2025,7 @@ export class NpcSystem {
      * cost is that a push into a wall is simply refused — which is correct, and
      * is why `_dodge` waits rather than relying on this.
      */
-    this._separate(n, dt);
+    if (crowd) this._separate(n, dt);
     const gy = this._groundY(g.position.x, g.position.z) + n.yOffset;
     g.position.y += (gy - g.position.y) * 0.45;
     const C = this.ctx.collision;
@@ -2037,10 +2090,20 @@ export class NpcSystem {
    * windows (it excludes only crossfades and clamped deltas), which is the
    * honest arrangement — a crowd shove that skates a foot should fail a gate,
    * not hide behind one.
+   *
+   * And a crowd shove DID skate a foot, on every build before fix round 4: a
+   * walker passing a STANDER inside `SEP_R` moves the stander at up to ~0.45 m/s
+   * (NIL 0.39-0.51 m by OLIN, VARL 0.15-0.25 m by MARIS, DELVE 0.08-0.11 m by
+   * BAST, measured on the round-3 build as well as this one), planted foot and
+   * all. The stander still moves — the separation guarantee is unchanged — but
+   * `shift()` now keeps a standing body's feet where they are and STEPS them
+   * after it; a kneeling body, which cannot step, is rooted instead
+   * (`sepWeight`).
    */
   _separate(n, dt) {
     const g = n.group;
-    const mine = SEP_W(n.state);
+    const mine = sepWeight(n);
+    n.sepW = mine;               // read by everyone else's pass this frame
     const walking = n.state === 'walk' || n.state === 'goto';
     let sx = 0, sz = 0;
     let near = 99;
@@ -2067,7 +2130,7 @@ export class NpcSystem {
       const d = Math.sqrt(d2);
       if (d < near) near = d;
       if (mine <= 0) continue;                 // seated: pushes, is not pushed
-      const share = mine / (mine + SEP_W(o.state));
+      const share = mine / (mine + (o.sepW ?? SEP_W(o.state)));
       const overlap = SEP_R - d;
       // 0 at the target radius, full rate once a shoulder's worth inside it
       const urgency = Math.min(1, overlap / 0.26);
@@ -2435,12 +2498,33 @@ export class NpcSystem {
   /**
    * Face the player, play a talk gesture and hand off to whoever owns
    * conversation. `progression.talkTo` is called when that lane knows the id
-   * (today: Varl); everyone else emits `npc-talk` with their authored lines, so
-   * the progression-expansion lane can register them without touching this file.
+   * (all thirteen today); everyone else emits `npc-talk` with their authored
+   * lines, so the progression-expansion lane can register them without
+   * touching this file.
    */
   talkTo(id) {
     const n = this.byId.get(id);
     if (!n) return false;
+    this._engageTalk(n);
+    this.ctx.events?.emit?.('npc-talk', {
+      id: n.id, name: n.name, title: n.title, role: n.role, lines: n.row.lines || [],
+    });
+    const prog = this.ctx.progression;
+    if (prog?.talkTo && prog.NPCS && prog.NPCS[id]) {
+      // `dialogue-open` fires inside this call; `_onDialogueOpen` must not
+      // engage the same person a second time
+      this._inTalkTo = true;
+      try { prog.talkTo(id); } finally { this._inTalkTo = false; }
+    }
+    return true;
+  }
+
+  /**
+   * Stop, look at the player and start talking. Shared by `talkTo` and by a
+   * conversation `progression` opened on its own (`_onDialogueOpen` — VARL's
+   * TALK prompt belongs to that lane and calls `progression.talkTo` directly).
+   */
+  _engageTalk(n) {
     const p = this.ctx.player;
     if (p) {
       /**
@@ -2449,7 +2533,9 @@ export class NpcSystem {
        * popped both planted feet round the body in a single frame. The head
        * turns at once; the BODY is turned by `_look`, which faces anyone in
        * state `talk` through the same stepped turn as every other standing turn
-       * (`NpcAnimator.turn`). A seated person turns their head and stays seated.
+       * (`NpcAnimator.turn`) — and keeps doing so while the conversation card
+       * has the rest of the world frozen (`_holdSpeaker`, fix round 5). A seated
+       * person turns their head and stays seated.
        */
       n.lookVec.set(p.position.x, p.position.y + 1.42, p.position.z);
       n.anim.lookAt(n.lookVec);
@@ -2462,12 +2548,70 @@ export class NpcSystem {
       n.anim.play('idleTalk', { fade: 0.25 });
       n.anim.once('interact', { fade: 0.2, rate: 1.05 });
     }
-    this.ctx.events?.emit?.('npc-talk', {
-      id: n.id, name: n.name, title: n.title, role: n.role, lines: n.row.lines || [],
-    });
-    const prog = this.ctx.progression;
-    if (prog?.talkTo && prog.NPCS && prog.NPCS[id]) prog.talkTo(id);
-    return true;
+  }
+
+  /** A conversation `progression` opened without going through `talkTo`. */
+  _onDialogueOpen(e) {
+    if (this._inTalkTo || this.disposed) return;
+    const n = e ? this.byId.get(e.npc) : null;
+    if (n) this._engageTalk(n);
+  }
+
+  /**
+   * KEEP THE SPEAKER ALIVE WHILE THE CARD HAS THE WORLD FROZEN (fix round 5).
+   *
+   * Runs from `engine.onAfterRender`, every frame, and does nothing unless a
+   * conversation is open AND main.js did not tick this system this frame —
+   * i.e. live play with the card up, where `ctx.state === 'dialogue'` stops
+   * every system. Then, for the ONE person the card belongs to
+   * (`progression.dialogue.npc`), it runs the presentation half of `update` on
+   * the engine's real clock (`engine.wallTime`, which main.js advances — and
+   * clamps to its frame ceiling — even while the simulation is frozen):
+   *
+   *   `_look`        the stepped turn to face the player, head tracking;
+   *   `anim.update`  the mixer — the `idleTalk` / `interact` crossfades — the
+   *                  step machinery and the foot lock;
+   *   `_settle`      ground and world collision only: the rest of the crowd
+   *                  is frozen, so the crowd push (`_separate`) is not run and
+   *                  cannot shove the speaker off a body that is not moving;
+   *   `afterMove`, the collider and the TALK prompt, as `update` does.
+   *
+   * It does NOT run `_brain`: the talk timer does not run down while the
+   * speaker is being spoken to, and nobody else moves. The update runs after
+   * the frame was drawn, so the next frame shows it — one frame of latency on
+   * a turn that takes two seconds.
+   *
+   * No allocation: `_hold` is a preallocated record, `n.lookVec` is the
+   * record's own vector.
+   */
+  _holdSpeaker(engine) {
+    if (!this.ok || this.disposed) return;
+    const ctx = this.ctx;
+    if (ctx.state !== 'dialogue' || this._simFrame === engine.frames) { this._holdWall = -1; return; }
+    const wall = engine.wallTime;
+    const prev = this._holdWall;
+    this._holdWall = wall;
+    if (prev < 0) return;                       // first frozen frame starts the clock
+    const dt = Math.min(0.05, wall - prev);
+    if (!(dt > 0)) return;
+    const conv = ctx.progression?.dialogue;
+    const n = conv?.open ? this.byId.get(conv.npc) : null;
+    if (!n || !n.anim) return;
+    this._look(n, ctx.player, dt);
+    const moved = n.anim.update(dt);
+    if (moved.x || moved.z) n.walked += Math.hypot(moved.x, moved.z);
+    this._settle(n, dt, false);
+    n.anim.afterMove();
+    this._syncCollider(n);
+    if (n.entry) n.entry.position.copy(n.group.position).setY(n.group.position.y + 1.0);
+    const h = this._hold;
+    h.frames++; h.secs += dt; h.id = n.id;
+  }
+
+  /** Probe: frames and seconds `_holdSpeaker` has animated, and for whom. */
+  talkHoldStats() {
+    const h = this._hold;
+    return { frames: h.frames, secs: +h.secs.toFixed(3), id: h.id };
   }
 
   /**
@@ -2663,6 +2807,14 @@ export class NpcSystem {
     if (this.disposed) return;
     this.disposed = true;
     const ctx = this.ctx;
+    // the conversation hold (fix round 5): the render hook and the event
+    if (this._holdHook) {
+      const hooks = ctx.engine?.onAfterRender;
+      const i = hooks ? hooks.indexOf(this._holdHook) : -1;
+      if (i >= 0) hooks.splice(i, 1);
+      this._holdHook = null;
+    }
+    if (this._offDialogue) { try { this._offDialogue(); } catch { /* bus gone */ } this._offDialogue = null; }
     for (const n of this.list) {
       try { n.anim.dispose(); } catch { /* already gone */ }
       if (n.entry && ctx.interactables) { try { ctx.interactables.unregister(n.entry); } catch { /* gone */ } }

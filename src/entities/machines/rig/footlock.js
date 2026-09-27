@@ -192,6 +192,14 @@ export class FootLock {
      * `ledger.canPlant()` first.
      */
     this.ledger = new ContactLedger(machine);
+    /**
+     * Report a stance that fell entirely BETWEEN two drawn frames, for one
+     * frame, at the position it was planted at (rig/contact.js `latch`). Opt
+     * in per species: the Longleg needs it (its stance windows run shorter
+     * than a drawn frame on a loaded host); the Watcher's are long enough and
+     * it is left exactly as it was.
+     */
+    this.reportPending = !!opts.reportPending;
     this.legs = legs.filter((l) => l.hip && l.toe).map((l) => ({
       ...l,
       chain: chainOf(l.hip, l.toe) || [l.hip, l.knee].filter(Boolean),
@@ -229,6 +237,13 @@ export class FootLock {
       relSeen: true,  // has a consumer seen that release? (rig/contact.js)
       rptPlanted: false, // last per-frame contact sample (rig/contact.js)
       plants: 0,
+      phaseIn: null,  // stance-phase authority on the last substep (wraps)
+      wraps: 0,
+      // a plant nobody has seen yet (rig/contact.js `latch`), and where it was
+      rptPending: false,
+      rptId: -1,
+      rptSeenId: -1,
+      rptPos: new THREE.Vector3(),
     }));
     this._feet = this.legs.map((l) => ({ name: l.id, world: { x: 0, y: 0, z: 0 }, planted: false }));
   }
@@ -279,6 +294,8 @@ export class FootLock {
       for (const leg of this.legs) {
         if (leg.contact || leg.planted) this.ledger.release(leg);
         leg.contact = false; leg.planted = false;
+        leg.phaseIn = null;   // no wrap is counted across the gap
+        leg.rptPending = false; // ...and no stale stance is reported after it
         // RAMP the handle out here too. Cutting `hold` to zero moves the toe
         // by the whole outstanding correction in one frame, which is the same
         // teleport this class exists to prevent — just triggered by an LOD
@@ -331,6 +348,10 @@ export class FootLock {
       leg.lastY = soleY;
 
       const inStance = this.stancePhase ? this.stancePhase(i) : true;
+      // one wrap per stance window the phase authority opens (rig/contact.js
+      // `stanceWraps`): what the clip-driven cadence loop closes over
+      if (this.stancePhase && inStance && leg.phaseIn === false) this.ledger.countWrap(leg);
+      leg.phaseIn = inStance;
       // ONE PLANT PER STANCE WINDOW. The clip's stance opening is an EDGE, not
       // a level: without this, any release inside an open window (overreach,
       // a failed solve, a lost ledger slot) is followed by an immediate
@@ -459,6 +480,13 @@ export class FootLock {
       // toe is still mostly the clip's, and saying it is planted is a lie the
       // consumers (A45 stance drift, A48 cadence, the footfall bank) act on.
       leg.planted = ok && err <= this.groundTol && (!leg.handle || leg.hold >= 0.9);
+      // remember a genuinely planted substep of a stance no drawn frame has
+      // shown yet, and WHERE, so it can be reported if it ends before one does
+      if (this.reportPending && leg.planted && leg.plants !== leg.rptSeenId) {
+        leg.rptPending = true;
+        leg.rptId = leg.plants;
+        leg.rptPos.set(_toe.x, _toe.y - this.soleOff, _toe.z);
+      }
       // THE HOLE THAT FAILED A45 UNDER LOAD. A solve that fell short drops the
       // plant — correct, and the whole point of the honest contact flag — but
       // it used to do it without telling the ledger, so the very next SUBSTEP
@@ -613,8 +641,18 @@ export class FootLock {
     const live = !this.m.lowLOD && this.m.alive;
     for (let i = 0; i < this.legs.length; i++) {
       const leg = this.legs[i];
-      leg.toe.getWorldPosition(_toe);
       const f = this._feet[i];
+      if (this.reportPending && !leg.planted && leg.rptPending) {
+        // a stance that opened and closed since the last drawn frame: report
+        // it once, where it stood, under its own identity (rig/contact.js)
+        f.world.x = leg.rptPos.x;
+        f.world.y = leg.rptPos.y;
+        f.world.z = leg.rptPos.z;
+        f.planted = live;
+        f.plantId = leg.rptId;
+        continue;
+      }
+      leg.toe.getWorldPosition(_toe);
       f.world.x = _toe.x;
       f.world.y = _toe.y - this.soleOff;
       f.world.z = _toe.z;

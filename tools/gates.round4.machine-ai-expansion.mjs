@@ -308,7 +308,28 @@ export const GATES = [
         const p = place(px, pz, { crouch: false });
         m.forceState('attack');
         m.lastKnown.set(px, p.position.y, pz);
+        /**
+         * A FLIER IS STAGED IN THE AIR (fix round 1). A Stormbird perches on a
+         * calm patrol, and a landing is a 16 s commitment (GROUND_DWELL in
+         * stormbird.js) that only counts down while it is animated — so
+         * whether this gate met a flier or a walker depended on where boot
+         * happened to leave its perch cycle: grounded at the start in 3 of 7
+         * fresh pages measured this round. Grounded, it is a walker,
+         * and the walker route from its fight to THIS staging's remembered
+         * point (29 m due east of the north spire, a pocket inside the rock
+         * garden at the spire's foot, open only from the south-east) is a
+         * 60-100 m A* detour: 24.5 m out at the vanish, 50.2 m out 6.5 s later,
+         * walking correctly to the point it remembers. That is pathing around
+         * rock, not belief tracking. The same stage is set for every other
+         * kind (position, fight state, cooldowns); the flight state is set
+         * here as well, so the gate measures the flier its header and its
+         * ringBar are written for. The bar does not change: an airborne
+         * machine is judged on the 34 m flier ring exactly as before.
+         */
+        const flier = (m.flyCruise ?? 0) > 0;
+        if (flier) { m._groundHold = 0; m._airborne = true; }
         await simSleep(0.6);
+        const airborneAtVanish = !!m._airborne;
         /**
          * She vanishes, completely: 240 m out, past every sightRange in the
          * roster. The bar is then unambiguous — the machine must walk to the
@@ -324,8 +345,19 @@ export const GATES = [
          * whether the machine tracks the BELIEF or the PLAYER, and that is
          * what is asserted here.
          */
+        /**
+         * 240 m, AS THE HEADER SAYS (fix round 1, judge machine-ai-expansion
+         * blocker). The code moved her 120 m while this comment promised 240,
+         * and 120 m is inside a Stormbird's reach: sightRange 90 + runSpeed 16
+         * x the 6.5 s window. Measured: it closed 118.7 -> 91.8 m on her and
+         * re-acquired her honestly, so the gate read a machine that had EARNED
+         * a new belief as one that had cheated. Along the radial TOWARD the
+         * valley centre (not a fixed +x offset), so she always lands inside the
+         * rim: |L - 240| <= 240 for every home in the world.
+         */
         const L = Math.hypot(home.x, home.z) || 1;
-        const gx = home.x - (home.x / L) * 120, gz = home.z - (home.z / L) * 120;
+        const OUT = 240;
+        const gx = home.x - (home.x / L) * OUT, gz = home.z - (home.z / L) * OUT;
         p.position.set(gx, T.getHeight(gx, gz), gz);
         p.setCrouch(true);
         const toLast0 = Math.hypot(m.position.x - m.lastKnown.x, m.position.z - m.lastKnown.z);
@@ -356,6 +388,7 @@ export const GATES = [
           beliefStillAtOldSpotM: +beliefAtOld.toFixed(1),
           distToLastKnownStartM: +toLast0.toFixed(1), distToLastKnownM: +toLast.toFixed(1),
           sweepRingBarM: ringBar, airborne: !!m._airborne, simRan: +ran.toFixed(1),
+          stagedAirborne: flier, airborneAtVanish,
         };
         if (ran < 5) { starved.push(m.kind); m._frozenByGate = m.update; m.update = () => {}; continue; }
         if (!ok) {

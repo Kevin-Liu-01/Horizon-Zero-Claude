@@ -6,7 +6,8 @@ import { attachRigRuntime, updateRigLOD, foldMachineMeshes } from './rig/lod.js'
 import { snapSockets } from './rig/sockets.js';
 import { FootLock } from './rig/footlock.js';
 import { groundCorpse, settleCorpseNow } from './rig/ground.js';
-import { cadenceBand, measureBodyLength, wallPerSim, CadenceLoop, cadCeilK } from './gait.js';
+import { retireMesh } from './rig/shells.js';
+import { cadenceBand, measureBodyLength, wallPerSim, deathDt, CadenceLoop, cadCeilK } from './gait.js';
 
 /**
  * Watcher: rigged raptor scout (HZD level 5, HP 90). Fully procedural bone
@@ -22,6 +23,14 @@ const _AX = new THREE.Vector3(1, 0, 0);
 const _AY = new THREE.Vector3(0, 1, 0);
 const _AZ = new THREE.Vector3(0, 0, 1);
 const AXES = { x: _AX, y: _AY, z: _AZ };
+
+/**
+ * The Watcher's CHASSIS for the corpse solve (`rig/ground.js` `CorpseShape`,
+ * residue fix round 1): the hips and the carapace plate helpers that carry the
+ * body mass. The neck/eye pod, the tail and both legs are chains the solve
+ * bends onto the soil instead of lifting the wreck by them.
+ */
+const WATCHER_CORPSE = { chassis: (b) => /^hipsBone|BodyPlate_helper/.test(b.name) };
 
 export class Watcher extends Machine {
   constructor(ctx, manager, opts) {
@@ -143,6 +152,20 @@ export class Watcher extends Machine {
       if (n) this._soleOff = sum / n;
     }
 
+    /**
+     * THE HEADLIGHT QUAD IS RETIRED ON EVERY WATCHER (residue fix round 1,
+     * `A21-real-draw-calls`). `Object_13` in `watcher.glb` is a four-triangle
+     * emissive quad spanning body x[-2.51, 2.26] — 4.8 m across a 2.1 m
+     * machine — which the Redeye already retires because it renders as two
+     * floating slabs beside the body (measured in `V26a` twice). The Watcher
+     * draws the same two slabs in blue, as its own draw call on every Watcher
+     * in view; the lens part and its pooled halo are the eye. Per-machine
+     * clone only — the asset entry is untouched.
+     */
+    this.model?.traverse((o) => {
+      if (o.isMesh && o.name === 'Object_13') retireMesh(o);
+    });
+
     // --- mesh budget + pooled FX + bone-space sockets
     attachRigRuntime(this);
     // snapSockets() builds the proxy itself, AFTER every shell/part is on
@@ -160,6 +183,10 @@ export class Watcher extends Machine {
       { id: 'R', hip: this.bones.rHip, knee: this.bones.rShin, toe: this.bones.rToe },
     ].filter((l) => l.hip && l.knee && l.toe), {
       contactH: 0.08, releaseH: 0.22, maxSpeed: 7.5,
+      // a stance shorter than a drawn frame is REPORTED for one frame rather
+      // than lost (rig/footlock.js, rig/contact.js `latch`): measured, a Redeye
+      // under suite load at 0.79 Hz with 80 % of its frames reading airborne
+      reportPending: true,
       /**
        * STANCE AUTHORITY (fix round 2). The rotational stride already knows
        * which foot is down — stance is phase [pi/2, 3pi/2] — and without
@@ -225,6 +252,9 @@ export class Watcher extends Machine {
   }
 
   /** Death crumple: legs buckle, neck kinks slack — not a parked robot. */
+  /** The collapse runs on the wall clock (`gait.js` `deathDt`). */
+  _updateDeath(dt) { super._updateDeath(deathDt(this, dt)); }
+
   /**
    * SETTLE AT DEATH (`rig/ground.js` `settleCorpseNow`). This species was the
    * one the measurement came off: a Watcher wreck frozen before its first
@@ -267,7 +297,7 @@ export class Watcher extends Machine {
     // the chassis comes down onto the buckled legs
     this.body.position.y = -this.height * 0.30 * k;
     // ground-contact solve: the wreck settles ON the soil (A47; -1.47 m before)
-    groundCorpse(this, deathT ?? 0);
+    groundCorpse(this, deathT ?? 0, WATCHER_CORPSE);
   }
 
   chooseAttack(dist) {
@@ -505,9 +535,9 @@ export class Watcher extends Machine {
     const loop = this._cadLoop
       || (this._cadLoop = new CadenceLoop({ trimHi: 2.2, ceilK: 1.6 }));
     const lls = this.footLock?.legs || [];
-    // the PUBLISHED plant count (rig/contact.js `latch`) — the same number a
-    // consumer counts, not the rig's private touchdown tally
-    const plants = this.footLock?.ledger?.observedPlants || 0;
+    // STANCE WINDOWS, not visible flags (rig/contact.js `stanceWraps`; the
+    // same fix, for the same reason, as the Longleg's — residue fix round 1)
+    const plants = this.footLock?.ledger?.stanceWraps || 0;
     const trim = loop.step(this.ctx?.engine, wantWallHz, plants, lls.length || 2, dt);
     // the loop may move the cadence, not move it OUT of the band — see the
     // note on the same clamp in gait.js (an integrator on a published rate
