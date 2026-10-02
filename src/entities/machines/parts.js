@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { glowTexture } from './machine.js';
+import { poolGeometry } from './rig/lod.js';
 
 /**
  * Procedural machine component meshes (spec v2 parts contract).
@@ -17,6 +18,52 @@ import { glowTexture } from './machine.js';
  *   and driven by the eye-state system (blue/yellow/red + telegraph flash,
  *   dark on death); other emissives stay identity-colored but die on death.
  */
+
+/**
+ * ONE BUFFER PER COMPONENT SHAPE, NOT PER MACHINE (residue round 2,
+ * `A90-rig-reclaim` — "perLiveGeo 1.13 / heldThenReleased 4").
+ *
+ * Every factory below is deterministic in its arguments, yet each call built
+ * its own geometry, so every live machine carried its own copy of every
+ * component buffer. Since the component fold (`rig/components.js`) those
+ * meshes are PROXIES — `material.visible = false`, never drawn — but three
+ * registers and uploads a mesh's geometry in `projectObject` BEFORE it looks
+ * at `material.visible`, so each proxy that enters the frustum still costs one
+ * GPU geometry: measured on the gate's own hold bracket with a registration
+ * census, the eight held Watchers registered 3-8 of their `lens` (328 v) and
+ * `antenna` (155 v) proxies, i.e. 0.38-1.0 geometries per live Watcher from
+ * buffers nobody draws, against a 1.0 bar.
+ *
+ * Shared through the species geometry pool (`rig/lod.js` `poolGeometry`, pool
+ * `parts`), keyed on the buffer's full CONTENT, so two calls that would bake
+ * different numbers can never share one: the first machine pays for a shape,
+ * every later one borrows it. A pooled buffer's `dispose()` is a no-op (torn
+ * debris, `sites.dispose` and `disposeRig` all call it); `disposeGeometryPool`
+ * releases the pool for a teardown between worlds. The temporary a call built
+ * and did not keep is disposed here. Nothing reads a part geometry as
+ * per-machine: parts are skipped by the skin/merge passes and the corpse solve
+ * (rigid, `perMachine: false`), and a hull or a socket snap only READS it.
+ */
+function shareGeo(geo) {
+  const P = geo.attributes.position;
+  let h1 = 0x811c9dc5 | 0, h2 = 0;
+  const mix = (v) => {
+    const q = Math.round(v * 1e4) | 0;
+    h1 = Math.imul(h1 ^ q, 0x01000193);
+    h2 = (h2 + q * 31 + (h2 << 5)) | 0;
+  };
+  for (const name of Object.keys(geo.attributes).sort()) {
+    const a = geo.attributes[name];
+    mix(a.itemSize * 7919 + a.count);
+    const arr = a.array;
+    for (let i = 0; i < arr.length; i++) mix(arr[i]);
+  }
+  if (geo.index) { const I = geo.index.array; mix(I.length); for (let i = 0; i < I.length; i++) mix(I[i]); }
+  const key = `part|${P.count}|${geo.index ? geo.index.count : 0}|${h1 >>> 0}|${h2 >>> 0}`;
+  const g = poolGeometry('parts', key, () => geo);
+  if (g !== geo) geo.dispose();
+  return g;
+}
 
 /** Explicit no-shadow pass for part meshes (perf: shadow pass draw calls). */
 function noShadows(g) {
@@ -147,7 +194,9 @@ function foldedPart({
    * mesh drawn, and anchors a correctly-sized halo on `accentGlow` instead.
    */
   mat.userData.foldedAccent = true;
-  const mesh = new THREE.Mesh(mergeGeometries(geos), mat);
+  const merged = mergeGeometries(geos);
+  for (const g of geos) g.dispose();
+  const mesh = new THREE.Mesh(shareGeo(merged), mat);
   if (accBox && !accBox.isEmpty()) {
     accBox.getCenter(_accC);
     accBox.getSize(_accS);
@@ -236,7 +285,8 @@ export function plateMesh({ w = 0.7, l = 0.9, t = 0.1, color = 0xd6dade, trim = 
   tintGeo(under, 0.42);
   const mat = metalMat(color, 0.46, 0.7);
   mat.vertexColors = true;
-  g.add(new THREE.Mesh(mergeGeometries([top, under]), mat));
+  g.add(new THREE.Mesh(shareGeo(mergeGeometries([top, under])), mat));
+  top.dispose(); under.dispose();
   return noShadows(g);
 }
 
@@ -307,10 +357,12 @@ export function forceLoaderMesh({ r = 0.4, color = 0x8f7bff } = {}) {
 export function radarMesh({ accent = 0x9fd8ff } = {}) {
   const g = new THREE.Group();
   // base + pole: one metal material, merged
-  const mastGeo = mergeGeometries([
+  const mastSrc = [
     new THREE.CylinderGeometry(0.3, 0.44, 0.3, 10).translate(0, 0.15, 0),
     new THREE.CylinderGeometry(0.08, 0.11, 0.85, 8).translate(0, 0.7, 0),
-  ]);
+  ];
+  const mastGeo = shareGeo(mergeGeometries(mastSrc));
+  for (const m of mastSrc) m.dispose();
   g.add(new THREE.Mesh(mastGeo, metalMat(0x5a616b, 0.42)));
   const fin = new THREE.Group();
   fin.position.y = 1.15;
@@ -401,7 +453,7 @@ export function powerCellMesh({ color = 0xffd23d } = {}) {
 /** Exposed inner core (heart/nexus) revealed when its armor plate is torn. */
 export function coreMesh({ color = 0xff9a3d, r = 0.32 } = {}) {
   const g = new THREE.Group();
-  const core = new THREE.Mesh(new THREE.IcosahedronGeometry(r, 0), emissiveMat(color, 2.6, 0x1a120a));
+  const core = new THREE.Mesh(shareGeo(new THREE.IcosahedronGeometry(r, 0)), emissiveMat(color, 2.6, 0x1a120a));
   g.add(core);
   const glow = glowSprite(color, r * 4.5, 0.4);
   g.add(glow);

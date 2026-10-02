@@ -1911,53 +1911,116 @@ export const GATES = [
   },
   {
     id: 'A48-cadence', kind: 'action', lane: 'machine-rig',
-    title: 'PER SPECIES: stride cadence scales with body length (audit A48; airborne fraction reported)',
-    settle: 500, timeout: 180000,
+    title: 'PER SPECIES: stride cadence scales with body length, graded on MOVING frames (audit A48; airborne fraction reported)',
+    /**
+     * ORCHESTRATOR RULING Sep 26 (docs/ROUND4-AUDIT.md §4, machines-expansion
+     * block), applied here by machines-expansion as the ruling names it the
+     * owner of the gate and the ledger. What changed, and nothing else did —
+     * the band, its reference (2.2 Hz at 2.5 m, sqrt of body length) and its
+     * width (0.45x-1.35x) are exactly what they were:
+     *
+     *   1. "A48-cadence grades MOVING frames only: frames where the machine's
+     *      horizontal speed is below 0.5x its walk speed (patrol waits,
+     *      turns-in-place, takeoff/landing windows for fliers) are excluded
+     *      from the cadence window." Speed is measured per drawn frame over
+     *      SIM time (a patrol wait is sim time, machine-ai's clock) against
+     *      the machine's own current \`walkSpeed\` (a grounded Stormbird
+     *      publishes its ground walk there, stormbird.js). A flier
+     *      (\`flyCruise\` defined) has every frame within 1.0 sim-s of an
+     *      \`_airborne\` change excluded, and every frame reporting fewer than
+     *      two feet is excluded outright. The window is 5 s of MOVING wall
+     *      time (it was 5 s of any wall time), collected for at most 15 s of
+     *      wall time; a species with under 2 s of moving time is reported
+     *      'idle' and not graded, which is what "moved < 0.4 m" meant before.
+     *   2. "the stance ledger publishes a window that survives a slow frame
+     *      (rig/contact.js latch counts a plant per dominant-clip stance
+     *      wrap)." Every debugFeet() row now carries \`stances\`, the per-foot
+     *      count of stance windows the rig's phase authority opened; a plant
+     *      is an increment of that counter, attributed to the frame it is
+     *      first seen on. A row without the field falls back to the rising
+     *      edge of \`planted\`, as before.
+     *
+     * Cadence is still footfalls per foot per WALL second, over the moving
+     * frames' wall time.
+     */
+    settle: 500, timeout: 360000,
     assert: `(async () => {
       ${WAIT_VARIETY}
       ${SPECIES}
       ${HULL}
+      const E = __CTX__.engine;
       const out = {}; let measured = 0; const offenders = [];
+      const WINDOW_S = 5, CAP_S = 15, MIN_S = 2, FLIGHT_WIN = 1.0;
       for (const [kind, m] of species) {
         if (!m.debugFeet || m.debugFeet().length < 2) { out[kind] = 'no feet'; continue; }
         const boxes = hullBoxes(m);
         let L = 1;
         for (const b of boxes) L = Math.max(L, Math.max(b.mx.x - b.mn.x, b.mx.z - b.mn.z));
         ${PROVOKE}
-        const state = {}; let plants = 0, feet = 0, samples = 0, airborne = 0;
+        const flier = typeof m.flyCruise === 'number';
+        const rows = [];
+        const lastCount = {}, lastPlanted = {};
+        let px = m.position.x, pz = m.position.z, ps = E.simTime, pw = performance.now();
+        let air = !!m._airborne, flips = [];
+        let movingS = 0;
         const t0 = performance.now();
-        let moved = 0, sx = m.position.x, sz = m.position.z;
-        while (performance.now() - t0 < 5000) {
-          moved += Math.hypot(m.position.x - sx, m.position.z - sz);
-          sx = m.position.x; sz = m.position.z;
-          const fs = m.debugFeet();
-          feet = fs.length;
-          let planted = 0;
-          for (const f of fs) {
-            if (f.planted && state[f.name] === false) plants++;
-            if (f.planted) planted++;
-            state[f.name] = !!f.planted;
-          }
-          samples++;
-          if (planted === 0) airborne++;
+        while (movingS < WINDOW_S && performance.now() - t0 < CAP_S * 1000) {
           await new Promise(r => requestAnimationFrame(r));
+          if (!m.alive) break;
+          const now = performance.now(), st = E.simTime;
+          const dW = (now - pw) / 1000, dS = st - ps;
+          const dx = m.position.x - px, dz = m.position.z - pz;
+          px = m.position.x; pz = m.position.z; ps = st; pw = now;
+          if (!!m._airborne !== air) { air = !!m._airborne; flips.push(st); }
+          const fs = m.debugFeet();
+          let got = 0, planted = 0;
+          for (const f of fs) {
+            if (typeof f.stances === 'number') {
+              const prev = lastCount[f.name];
+              if (prev !== undefined && f.stances > prev) got += f.stances - prev;
+              lastCount[f.name] = f.stances;
+            } else {
+              if (f.planted && lastPlanted[f.name] === false) got++;
+            }
+            lastPlanted[f.name] = !!f.planted;
+            if (f.planted) planted++;
+          }
+          const speed = dS > 1e-5 ? Math.hypot(dx, dz) / dS : 0;
+          const walk = Math.max(0.1, m.walkSpeed || 1);
+          const row = { st, dW, dist: Math.hypot(dx, dz), got, feet: fs.length, planted,
+                        moving: speed >= 0.5 * walk && fs.length >= 2 && !(flier && m._airborne) };
+          rows.push(row);
+          // online estimate (the flight windows are applied again below, both sides)
+          if (row.moving && !(flier && flips.length && st - flips[flips.length - 1] < FLIGHT_WIN)) movingS += dW;
         }
-        const secs = (performance.now() - t0) / 1000;
-        const hz = feet ? plants / feet / secs : 0;
+        // a flier's takeoff / landing window is excluded on BOTH sides of the change
+        let plants = 0, secs = 0, frames = 0, airborne = 0, moved = 0, feetN = 0, slow = 0, flight = 0;
+        for (const r of rows) {
+          if (!r.moving) { slow++; continue; }
+          if (flier && flips.some((f) => Math.abs(r.st - f) < FLIGHT_WIN)) { flight++; continue; }
+          plants += r.got; secs += r.dW; frames++; moved += r.dist;
+          feetN = Math.max(feetN, r.feet);
+          if (r.planted === 0) airborne++;
+        }
+        const hz = feetN && secs > 0 ? plants / feetN / secs : 0;
         // biomechanical scaling: stride frequency falls as sqrt of body length.
         // reference = a 2.5 m strider at 2.2 Hz; band is 0.45x - 1.35x of it.
         const ref = 2.2 / Math.sqrt(Math.max(0.5, L / 2.5));
         const lo = ref * 0.45, hi = ref * 1.35;
-        const ok = moved < 0.4 ? null : hz >= lo && hz <= hi;
+        const ok = (secs < MIN_S || moved < 0.4) ? null : hz >= lo && hz <= hi;
         out[kind] = { bodyLengthM: +L.toFixed(1), cadenceHz: +hz.toFixed(2),
-                      bandHz: [+lo.toFixed(2), +hi.toFixed(2)], movedM: +moved.toFixed(2),
-                      airborneFraction: samples ? +(airborne / samples).toFixed(3) : null,
+                      bandHz: [+lo.toFixed(2), +hi.toFixed(2)], movingS: +secs.toFixed(2),
+                      movedM: +moved.toFixed(2), plants, feet: feetN,
+                      framesMoving: frames, framesExcluded: { slow, flight },
+                      wallS: +((performance.now() - t0) / 1000).toFixed(1),
+                      airborneFraction: frames ? +(airborne / frames).toFixed(3) : null,
                       status: ok === null ? 'idle' : ok ? 'ok' : 'OUT OF BAND' };
         if (ok === false) offenders.push(kind);
         if (ok !== null) measured++;
       }
       if (measured < 2) return { pass: null, detail: { note: 'SKIP: fewer than 2 species walked far enough to sample', out } };
-      return { pass: offenders.length === 0, detail: { speciesMeasured: measured, offenders, out } };
+      return { pass: offenders.length === 0, detail: { speciesMeasured: measured, offenders,
+        rule: 'moving frames only (speed >= 0.5x walkSpeed over sim time; flier takeoff/landing +-1 s excluded); plants = per-foot stance-window counter increments', out } };
     })()`,
   },
 

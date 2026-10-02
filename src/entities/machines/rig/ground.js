@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { applyWreckShadow } from './lod.js';
+import { applyWreckShadow, markWreckShadow } from './lod.js';
 
 /**
  * Ground contact for machines — the shared half of `machine-rig-04`
@@ -1606,6 +1606,8 @@ export function groundCorpse(machine, deathT, opts) {
  */
 export function settleCorpseNow(machine) {
   if (!machine || typeof machine.onDeathPose !== 'function') return false;
+  // the wreck's one shadow caster is set here, at death (rig/lod.js, ruling Sep 26)
+  try { markWreckShadow(machine); } catch (e) { /* shadow is advisory */ }
   const t0 = machine._deathT ?? 0;
   try {
     for (let i = 0; i < 18; i++) {

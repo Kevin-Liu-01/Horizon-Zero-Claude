@@ -650,6 +650,7 @@ export class FootLock {
         f.world.z = leg.rptPos.z;
         f.planted = live;
         f.plantId = leg.rptId;
+        f.stances = leg.wraps || 0;
         continue;
       }
       leg.toe.getWorldPosition(_toe);
@@ -659,6 +660,9 @@ export class FootLock {
       f.planted = live && leg.planted;
       // plant identity — see the note in `GaitController.debugFeet()`
       f.plantId = leg.plants;
+      // stance windows the clip's phase authority opened on this foot
+      // (rig/contact.js `countWrap`; ruling Sep 26) — `A48-cadence` counts it
+      f.stances = leg.wraps || 0;
     }
     this.ledger.observe(this.legs, this._feet);
     return this._feet;

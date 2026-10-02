@@ -232,6 +232,113 @@ varying vec4 vCmpEmi;`)
   return uniforms;
 }
 
+/**
+ * DONOR HOST (residue round 2, `A21-real-draw-calls` — the ruling's lever,
+ * finished). A machine with no authored shell had its components folded into
+ * ONE separate mesh: two draws per machine (donor + components), and the
+ * Strider is a herd animal — six of them in the west-herd scenario is twelve
+ * draws. Riding the DONOR's draw is the same idea as riding the shell's, with
+ * one difference the shell never had: a donor is TEXTURED (the Strider's
+ * albedo atlas; the Watcher's full PBR set), so a component vertex must not
+ * read the donor's maps. The patch below keeps every map for `cmpSlot == 0`
+ * and, for a component vertex, replaces what the maps produced — albedo after
+ * `color_fragment`, roughness / metalness after their map chunks, the normal
+ * after `normal_fragment_maps`, the ambient occlusion after `aomap_fragment`,
+ * the emission after `emissivemap_fragment` — with the proxy material's live
+ * values, which `syncComponents` writes exactly as for a shell. Nothing is
+ * branched on (a `mix` on a flat per-triangle flag), so no texture is sampled
+ * in divergent control flow.
+ *
+ * The emissive MASK cannot come from the donor's atlas either, so the combined
+ * buffer carries it per vertex (`cmpLit`, 0/1 — the texel `parts.js` stamped),
+ * and the component's baked tint (`cmpTint`, the accent albedo) with it.
+ *
+ * MEMORY. The combined buffer copies the donor's vertices, so it is POOLED
+ * per species (`poolGeometry`, keyed on the donor buffer and the slots'
+ * content): the first Strider pays for one buffer, every later one draws the
+ * same bytes — nothing in it is per machine (the shader places each slot from
+ * its proxy's live transform). And a donor above `DONOR_HOST_MAX_VERTS` stays
+ * on the separate component mesh: the Watcher's donor is 73,818 vertices, and
+ * a second copy of it (~6.5 MB) is not worth one draw per Watcher in view.
+ */
+const DONOR_TAG = 'donor+components-v1';
+const DONOR_HOST_MAX_VERTS = 20000;
+
+function patchDonorHostMaterial(mat) {
+  if (mat.userData.cmpUniforms) return mat.userData.cmpUniforms;
+  const uniforms = {
+    cmpMat: { value: new Float32Array(MAX_SLOTS * 16) },
+    cmpCol: { value: new Float32Array(MAX_SLOTS * 4) },
+    cmpEmi: { value: new Float32Array(MAX_SLOTS * 4) },
+  };
+  mat.userData.cmpUniforms = uniforms;
+  const prev = typeof mat.onBeforeCompile === 'function' ? mat.onBeforeCompile : null;
+  mat.onBeforeCompile = function (shader, renderer) {
+    if (prev) prev.call(this, shader, renderer);
+    shader.uniforms.cmpMat = uniforms.cmpMat;
+    shader.uniforms.cmpCol = uniforms.cmpCol;
+    shader.uniforms.cmpEmi = uniforms.cmpEmi;
+    shader.vertexShader = shader.vertexShader
+      .replace('#include <common>', `#include <common>
+attribute float cmpSlot;
+attribute float cmpLit;
+attribute vec3 cmpTint;
+uniform mat4 cmpMat[ ${MAX_SLOTS} ];
+uniform vec4 cmpCol[ ${MAX_SLOTS} ];
+uniform vec4 cmpEmi[ ${MAX_SLOTS} ];
+varying float vIsCmp;
+varying float vCmpLit;
+varying vec3 vCmpTint;
+varying vec4 vCmpCol;
+varying vec4 vCmpEmi;`)
+      .replace('#include <beginnormal_vertex>', `#include <beginnormal_vertex>
+int cmpI = int( cmpSlot + 0.5 ) - 1;
+bool isCmp = cmpI >= 0;
+int cmpJ = max( cmpI, 0 );
+mat4 cmpM = cmpMat[ cmpJ ];
+vIsCmp = isCmp ? 1.0 : 0.0;
+vCmpLit = cmpLit;
+vCmpTint = cmpTint;
+vCmpCol = cmpCol[ cmpJ ];
+vCmpEmi = cmpEmi[ cmpJ ];`)
+      .replace('#include <skinnormal_vertex>', `if ( !isCmp ) {
+${THREE.ShaderChunk.skinnormal_vertex}
+} else {
+	objectNormal = normalize( mat3( cmpM ) * objectNormal + vec3( 0.0, 1e-6, 0.0 ) );
+}`)
+      .replace('#include <skinning_vertex>', `if ( !isCmp ) {
+${THREE.ShaderChunk.skinning_vertex}
+} else {
+	transformed = ( cmpM * vec4( transformed, 1.0 ) ).xyz;
+}`);
+    shader.fragmentShader = shader.fragmentShader
+      .replace('#include <common>', `#include <common>
+varying float vIsCmp;
+varying float vCmpLit;
+varying vec3 vCmpTint;
+varying vec4 vCmpCol;
+varying vec4 vCmpEmi;`)
+      .replace('#include <color_fragment>',
+        '#include <color_fragment>\ndiffuseColor.rgb = mix( diffuseColor.rgb, vCmpCol.rgb * vCmpTint, vIsCmp );')
+      .replace('#include <metalnessmap_fragment>',
+        '#include <metalnessmap_fragment>\nmetalnessFactor = mix( metalnessFactor, vCmpCol.a, vIsCmp );')
+      .replace('#include <roughnessmap_fragment>',
+        '#include <roughnessmap_fragment>\nroughnessFactor = mix( roughnessFactor, vCmpEmi.a, vIsCmp );')
+      .replace('#include <normal_fragment_maps>',
+        'vec3 cmpN0 = normal;\n#include <normal_fragment_maps>\nnormal = normalize( mix( normal, cmpN0, vIsCmp ) );')
+      .replace('#include <emissivemap_fragment>',
+        '#include <emissivemap_fragment>\ntotalEmissiveRadiance = mix( totalEmissiveRadiance, vCmpEmi.rgb * vCmpLit, vIsCmp );')
+      .replace('#include <aomap_fragment>',
+        'vec3 cmpAoD = reflectedLight.indirectDiffuse;\nvec3 cmpAoS = reflectedLight.indirectSpecular;\n#include <aomap_fragment>\n'
+        + 'reflectedLight.indirectDiffuse = mix( reflectedLight.indirectDiffuse, cmpAoD, vIsCmp );\n'
+        + 'reflectedLight.indirectSpecular = mix( reflectedLight.indirectSpecular, cmpAoS, vIsCmp );');
+  };
+  const prevKey = typeof mat.customProgramCacheKey === 'function' ? mat.customProgramCacheKey.bind(mat) : null;
+  mat.customProgramCacheKey = () => (prevKey ? prevKey() : '') + '|' + DONOR_TAG;
+  mat.needsUpdate = true;
+  return uniforms;
+}
+
 /** One depth material for every host: skinned shell, components collapsed. */
 let _hostDepth = null;
 function hostDepthMaterial() {
@@ -310,6 +417,22 @@ function findHost(machine) {
     const c = o.geometry?.attributes?.position?.count || 0;
     if (c > n) { n = c; best = o; }
   });
+  return best;
+}
+
+/**
+ * The machine's DONOR body as a host (no shell): its largest drawn, skinned,
+ * opaque body mesh with one lit material, under `DONOR_HOST_MAX_VERTS`.
+ */
+function findDonorHost(machine) {
+  const best = bodyCarrier(machine);
+  if (!best || !best.isSkinnedMesh || Array.isArray(best.material)) return null;
+  const m = best.material;
+  if (!m || !m.isMeshStandardMaterial || m.transparent || m.alphaMap || m.alphaTest > 0) return null;
+  const g = best.geometry;
+  if (!g?.attributes?.skinIndex || !g.attributes.skinWeight || !g.attributes.normal) return null;
+  if (g.attributes.position.count > DONOR_HOST_MAX_VERTS) return null;
+  if (g.morphAttributes && Object.keys(g.morphAttributes).length) return null;
   return best;
 }
 
@@ -488,9 +611,12 @@ export function foldComponents(machine) {
     st.maxSizeM = Math.max(st.maxSizeM, 2 * (g.boundingSphere?.radius ?? 0) * Math.abs(sc));
   }
 
-  // HOST MODE when the machine has an authored shell (see above)
+  // HOST MODE when the machine has an authored shell (see above) ...
   const host = findHost(machine);
   if (host) return foldIntoHost(machine, st, host, slots);
+  // ... or a donor body small enough to share (see `patchDonorHostMaterial`)
+  const donor = findDonorHost(machine);
+  if (donor) return foldIntoDonor(machine, st, donor, slots);
 
   /**
    * ONE BUFFER PER SPECIES, NOT PER MACHINE (residue fix round 1, measured on
@@ -686,6 +812,115 @@ function foldIntoHost(machine, st, host, slots) {
   hookScene(machine.ctx?.scene);
   st.entry = entry;
   st.host = host;
+  st.built++;
+  for (const sl of slots) { sl.mat.visible = false; sl.hidden = true; }
+  syncComponents(machine);
+  return host;
+}
+
+/** The combined donor+components buffer (pooled per species; see above). */
+function buildDonorCombined(hg, slots) {
+  const n0 = hg.attributes.position.count;
+  let nv = n0, ni = hg.index ? hg.index.count : n0;
+  for (const sl of slots) {
+    const g = sl.o.geometry;
+    nv += g.attributes.position.count;
+    ni += g.index ? g.index.count : g.attributes.position.count;
+  }
+  const geo = new THREE.BufferGeometry();
+  // every donor attribute, component rows neutral (skin: bone 0, weight 1).
+  // DE-QUANTISED: a donor can ship KHR_mesh_quantization buffers (the
+  // Strider's positions are normalised Int16, its normals Int8), and a
+  // component's float vertices cannot be written into those. `getComponent`
+  // returns the denormalised value; everything but the bone indices is
+  // stored as plain float.
+  for (const name of Object.keys(hg.attributes)) {
+    const A = hg.attributes[name];
+    const k = A.itemSize;
+    const ints = name === 'skinIndex';
+    const arr = ints ? new Uint16Array(nv * k) : new Float32Array(nv * k);
+    for (let i = 0; i < n0; i++) for (let c = 0; c < k; c++) arr[i * k + c] = A.getComponent(i, c);
+    if (name === 'skinWeight') for (let i = n0; i < nv; i++) arr[i * k] = 1;
+    if (name === 'color') for (let i = n0 * k; i < nv * k; i++) arr[i] = 1;
+    geo.setAttribute(name, new THREE.BufferAttribute(arr, k, false));
+  }
+  const pos = geo.attributes.position.array, nor = geo.attributes.normal.array;
+  const slotA = new Float32Array(nv);
+  const litA = new Float32Array(nv);
+  const tintA = new Float32Array(nv * 3);
+  for (let i = 0; i < n0 * 3; i++) tintA[i] = 1;
+  const idx = nv > 65535 ? new Uint32Array(ni) : new Uint16Array(ni);
+  let io = 0;
+  if (hg.index) { const I = hg.index.array; for (let q = 0; q < hg.index.count; q++) idx[q] = I[q]; io = hg.index.count; }
+  else { for (let q = 0; q < n0; q++) idx[q] = q; io = n0; }
+  let vo = n0;
+  for (let k = 0; k < slots.length; k++) {
+    const sl = slots[k];
+    const g = sl.o.geometry;
+    const P = g.attributes.position, N = g.attributes.normal, U = g.attributes.uv, C = g.attributes.color;
+    const m = sl.mat;
+    const glows = sl.unlit || (m.emissive && (m.emissive.r + m.emissive.g + m.emissive.b) > 0.01);
+    for (let i = 0; i < P.count; i++) {
+      const j = vo + i;
+      pos[j * 3] = P.getX(i); pos[j * 3 + 1] = P.getY(i); pos[j * 3 + 2] = P.getZ(i);
+      nor[j * 3] = N.getX(i); nor[j * 3 + 1] = N.getY(i); nor[j * 3 + 2] = N.getZ(i);
+      litA[j] = (!sl.unlit && m.emissiveMap && U) ? (U.getX(i) < 0.5 ? 0 : 1) : glows ? 1 : 0;
+      if (sl.unlit) { tintA[j * 3] = 0; tintA[j * 3 + 1] = 0; tintA[j * 3 + 2] = 0; }
+      else if (m.vertexColors && C) { tintA[j * 3] = C.getX(i); tintA[j * 3 + 1] = C.getY(i); tintA[j * 3 + 2] = C.getZ(i); }
+      else { tintA[j * 3] = 1; tintA[j * 3 + 1] = 1; tintA[j * 3 + 2] = 1; }
+      slotA[j] = k + 1;
+    }
+    if (g.index) { const I = g.index.array; for (let q = 0; q < g.index.count; q++) idx[io + q] = I[q] + vo; io += g.index.count; }
+    else { for (let q = 0; q < P.count; q++) idx[io + q] = vo + q; io += P.count; }
+    vo += P.count;
+  }
+  geo.setAttribute('cmpSlot', new THREE.BufferAttribute(slotA, 1));
+  geo.setAttribute('cmpLit', new THREE.BufferAttribute(litA, 1));
+  geo.setAttribute('cmpTint', new THREE.BufferAttribute(tintA, 3));
+  geo.setIndex(new THREE.BufferAttribute(idx, 1));
+  if (!hg.boundingSphere) hg.computeBoundingSphere();
+  geo.boundingSphere = hg.boundingSphere.clone();
+  geo.boundingBox = hg.boundingBox ? hg.boundingBox.clone() : null;
+  geo.userData.componentFold = true;
+  return geo;
+}
+
+function foldIntoDonor(machine, st, host, slots) {
+  const hg = host.geometry;
+  const key = componentPoolKey(slots);
+  const build = () => buildDonorCombined(hg, slots);
+  const geo = key && machine.kind
+    ? poolGeometry(machine.kind, `donorhost|${hg.uuid}|${key}`, build)
+    : build();
+  // cull-sphere pad: how far a component reaches past the donor's own sphere
+  host.updateWorldMatrix(true, false);
+  if (!hg.boundingSphere) hg.computeBoundingSphere();
+  const hostInv = new THREE.Matrix4().copy(host.matrixWorld).invert();
+  let pad = 0.3;
+  for (const sl of slots) {
+    const g = sl.o.geometry;
+    if (!g.boundingSphere) g.computeBoundingSphere();
+    _v.setFromMatrixPosition(sl.o.matrixWorld).applyMatrix4(hostInv);
+    const reach = _v.distanceTo(hg.boundingSphere.center) + (g.boundingSphere?.radius ?? 0) * 1.5
+      - hg.boundingSphere.radius;
+    if (reach + 0.3 > pad) pad = reach + 0.3;
+  }
+  patchDonorHostMaterial(host.material);
+  host.customDepthMaterial = hostDepthMaterial();
+  if (!host.userData.cmpHooked) {
+    host.userData.cmpHooked = true;
+    const prevOBR = host.onBeforeRender;
+    host.onBeforeRender = function (...a) {
+      if (typeof prevOBR === 'function') prevOBR.apply(this, a);
+      syncComponents(machine);
+    };
+  }
+  const entry = { machine, host, combined: geo, orig: hg, pad };
+  _hosts.add(entry);
+  hookScene(machine.ctx?.scene);
+  st.entry = entry;
+  st.host = host;
+  st.donorHost = true;
   st.built++;
   for (const sl of slots) { sl.mat.visible = false; sl.hidden = true; }
   syncComponents(machine);

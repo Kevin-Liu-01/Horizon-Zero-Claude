@@ -202,10 +202,11 @@ const MELEE_BOUND_TTL = 2.0;
  *                 cap bins when the machine has moved), so the outline she
  *                 is held against is at most one cycle old — both ways: a
  *                 limb that moved away lets her back in;
- *   the RELEASE   relaxes toward the machine's own standoff at
- *                 `MELEE_RELAX_SPEED`, never more than `MELEE_GROW_STEP` per
- *                 drawn frame, instead of being held while she stands inside
- *                 it (ruling R4's "relax back toward base at a bounded rate").
+ *   the RELEASE   (round 6, ruling R6 — supersedes fix pass 1's relax at
+ *                 `MELEE_RELAX_SPEED`, which glided her 0.37-0.67 m backwards)
+ *                 is a ratchet: held where she stands while she is inside the
+ *                 machine's own standoff, following her out as she steps back,
+ *                 never pushing her. `MELEE_RELAX_SPEED` is no longer read.
  */
 const MELEE_LIVE_LEAD = 0.005;
 const MELEE_LIVE_LEAD_MAX = 0.03;
@@ -1697,7 +1698,7 @@ export class Collision {
        *     her pushes her, drawn, released or holstered alike. */
       const base = this._meleeBaseOutline(rec, ang);
       const dl = Math.hypot(dx, dz);
-      const follow = Math.min(base, dl - 0.002);
+      const follow = Math.min(base, dl - 0.01);   // 1 cm inside her: never a touch, never a push
       if (follow > rec.mR) rec.mR = follow;
       const hullR = this._meleeOutline(rec, ang);
       if (hullR > rec.mR) {

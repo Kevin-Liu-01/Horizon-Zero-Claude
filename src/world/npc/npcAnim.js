@@ -130,6 +130,32 @@ const STEP_FADE = 0.15;     // seconds to hand the legs back to the clip
  */
 const NO_STEP = new Set(['fixing', 'sitEnter', 'sitIdle', 'sitTalk', 'sitExit']);
 
+/**
+ * How far round a SPEAKER's look reaches (`lookWide`), in radians off the
+ * body's heading. The neck and head keep their old share (1.25 rad); the rest
+ * is an upper-body twist split over the two spine bones this class already
+ * poses. A speaker spoken to from behind looks at Aloy over the shoulder while
+ * the body steps round, instead of the head giving up past 83 deg.
+ */
+const LOOK_NECK = 1.25;
+const LOOK_WIDE = 1.9;
+/** Within this of pi a target is "dead behind": the look keeps its side (`lookSide`). */
+export const LOOK_FLIP = 3.0;
+
+/**
+ * THE SIT'S FIRST STEP LIFTS BEFORE IT TRAVELS (`NpcAnimator._liftFirst`).
+ * `Sitting_Enter` starts its right-foot step with the toe still on the ground:
+ * 0.054 m of forward toe travel before the toe is 3 cm up (the bake, measured),
+ * which the gates read as 0.03-0.077 m of planted-toe drag depending on where the
+ * frames fall. While a toe is under `LIFT_LO` above the clip floor it is held
+ * where it stood when the sit began; between `LIFT_LO` and `LIFT_HI` the hold
+ * lets go (the foot catches up with the clip in the air); only for the first
+ * `LIFT_T` seconds of the sit, which covers the step's lift (0.05-0.16 s).
+ */
+const LIFT_LO = 0.02;
+const LIFT_HI = 0.045;
+const LIFT_T = 0.4;
+
 const _Y = new THREE.Vector3(0, 1, 0);
 const _H = new THREE.Vector3();
 const _K = new THREE.Vector3();
@@ -183,6 +209,7 @@ export function measureLoopTravel(rigSource, slots = Object.keys(NPC_CLIPS)) {
   holder.add(root);
   const mixer = new THREE.AnimationMixer(holder);
   const toeL = byName.get(B.toeL), toeR = byName.get(B.toeR);
+  const hips = byName.get(B.hips);
 
   for (const slot of slots) {
     const clip = rigSource.clip(NPC_CLIPS[slot]);
@@ -191,7 +218,7 @@ export function measureLoopTravel(rigSource, slots = Object.keys(NPC_CLIPS)) {
     action.reset(); action.play(); action.weight = 1;
     const N = 60;
     const step = clip.duration / N;
-    let travel = 0, support = null, prev = 0, air = 0;
+    let travel = 0, support = null, prev = 0, air = 0, hips0 = 0, hips1 = 0;
     for (let i = 0; i <= N; i++) {
       mixer.setTime(i * step);
       holder.updateMatrixWorld(true);
@@ -202,6 +229,15 @@ export function measureLoopTravel(rigSource, slots = Object.keys(NPC_CLIPS)) {
       if (low === support) travel += Math.max(0, prev - z);
       support = low; prev = z;
       air = Math.max(air, Math.min(ly, ry));
+      if (hips && i === 0) hips0 = hips.matrixWorld.elements[13];
+    }
+    // the LAST frame, read on its own: at t = duration a repeating action has
+    // already wrapped to its first frame (the travel loop above wants exactly
+    // that; a one-shot's end pose does not)
+    if (hips) {
+      mixer.setTime(Math.max(0, clip.duration - 1e-3));
+      holder.updateMatrixWorld(true);
+      hips1 = hips.matrixWorld.elements[13];
     }
     action.stop();
     mixer.uncacheAction(clip);
@@ -212,6 +248,11 @@ export function measureLoopTravel(rigSource, slots = Object.keys(NPC_CLIPS)) {
       // highest the LOWER foot ever gets: a gait's air path, ~0.0146 m (the
       // rig's floor offset) for anything that never takes a foot off the ground
       lowFootMaxY: +air.toFixed(4),
+      // pelvis height (character metres, unscaled) on the clip's first and
+      // last frame — what a sit-to-stand measures its progress against (see
+      // `NpcAnimator.hipsK`)
+      hipsStart: +hips0.toFixed(4),
+      hipsEnd: +hips1.toFixed(4),
     };
   }
   mixer.uncacheRoot(holder);
@@ -358,6 +399,43 @@ export class NpcAnimator {
     this.idleYaw = 0;                // slow "looking around" when nobody is near
     this.idleYawTarget = 0;
     this.idleYawT = 0;
+    /**
+     * A SPEAKER'S HEAD FOLLOWS THE PERSON THEY ARE TALKING TO ALL THE WAY ROUND
+     * (npc polish, seated speakers). Set by `NpcSystem._look` for anyone in a
+     * conversation: the head no longer gives up on a target more than 83 deg
+     * off the nose (it drifted idly instead — a judge measured VALA's gaze at
+     * -0.49 rad with Aloy at her side), and the look can reach `LOOK_WIDE`
+     * with the upper spine taking the part the neck cannot.
+     */
+    this.lookWide = false;
+    this._lookSide = 1;
+    this._lookBodyYaw = null;
+
+    /**
+     * SIT-TO-STAND AND STAND-TO-SIT (npc polish, seated speakers — see
+     * `standUp` / `sitDown`). `transit` is 'rise' | 'sit' | null while the
+     * exit or enter clip is on stage; `hipsK` measures it.
+     */
+    this.transit = null;
+    this._transitLayer = null;
+    this._transitT = 0;
+    this._seatHips = 0;
+    this._standHips = 0;
+    this._hipsBone = null;           // looked up once, on the first `hipsK` read
+    /** per leg: the toe held where it stood as a sit began (`_liftFirst`) */
+    this._liftHold = [{ on: false, x: 0, z: 0 }, { on: false, x: 0, z: 0 }];
+    /**
+     * Metres the body is drawn BELOW its clip pose — the seat drop that puts a
+     * seated pelvis on a seat lower than the clip's chair (`NpcSystem._seat`),
+     * written each frame by `NpcSystem._settle`. The ankles are raised back by
+     * it (`_seatFeet`, and the stepped solve's targets), so a low seat bends the
+     * knees instead of burying the feet: measured before this, both sitters'
+     * toes sat 0.29 m under the ground for as long as they were seated, and a
+     * body sitting down or getting up sank into it or rose out of it.
+     */
+    this.seatDrop = 0;
+    /** `_lockFeet`'s result — one record, reused every frame */
+    this._moved = { x: 0, z: 0 };
 
     /* --- stance: the per-person bias + weight shift written over the clip --- */
     this.eSpine1 = this.space.entry(B.spine1);
@@ -884,6 +962,141 @@ export class NpcAnimator {
   }
 
   /**
+   * STAND UP FROM A SEAT onto the standing loop `base` (npc polish, seated
+   * speakers — and the sitter's own leave-the-seat beat).
+   *
+   * `Sitting_Exit` is staged as a one-shot over `base`, exactly as `_goSit`
+   * stages `Sitting_Enter` over the seated loop, with its last frame HELD for
+   * one fade length. The hold is the whole fix for the stand-up's foot slide:
+   * the clip ends in the standing loops' own stance (measured on this rig: the
+   * right foot is STEPPED back 0.39 m — ankle lifted 0.07 m — between 0.67 s and
+   * 1.0 s of the clip), but a one-shot starts handing the stage back one fade
+   * length BEFORE its clip ends (`ClipLayer.update`), and the old stand-up
+   * (onDone at 0.7 s of a 1.0 s clip) crossfaded out of the frame just before
+   * that step — the right foot, still forward, slid 0.43 m back along the
+   * ground in 0.3 s. Held, the hand-back starts from the finished standing pose
+   * and the two stances are the same.
+   *
+   * @returns {object|null} the exit layer, or null when the clip is missing
+   */
+  standUp(base = 'idle', { fade = 0.3 } = {}) {
+    const seat = this.current;
+    this.play(base, { fade });
+    const l = this.once('sitExit', { fade, hold: fade });
+    if (!l) { this._endTransit(); return null; }
+    this.transit = 'rise';
+    this._transitLayer = l;
+    this._transitT = 0;
+    const t = this.travel;
+    this._seatHips = t[seat]?.hipsStart ?? t.sitIdle?.hipsStart ?? 0;
+    this._standHips = t.sitExit?.hipsEnd ?? t.idle?.hipsStart ?? 0;
+    return l;
+  }
+
+  /**
+   * SIT DOWN from standing onto the seated loop `seatLoop` — `_goSit`'s own
+   * staging (the seated loop on the base, `Sitting_Enter` as a one-shot over it),
+   * tracked as a transit so the seat drop can follow the pelvis down (`hipsK`).
+   * `Sitting_Enter` STARTS in the standing loops' stance and steps the right foot
+   * forward itself (ankle lifted 0.07 m, 0.05-0.48 s). Its fade-in is short
+   * (0.05 s) for exactly that reason: the step begins 0.05 s into the clip, and a
+   * 0.25 s crossfade held the lifting toe down under the idle's weight while it
+   * moved — measured 0.066 m of toe drag inside 3 cm of the ground (0.1 s still
+   * left up to 0.075 m on the support toe). The clip's first frame IS
+   * `Idle_Loop`'s (feet, pelvis and head within 3 mm; hands within the idle's
+   * own 3 cm sway), so a near-cut costs the pose nothing. What was left was the
+   * clip's own: its toe travels 0.054 m forward before it is 3 cm up — held by
+   * `_liftFirst` until it has left the ground.
+   */
+  sitDown(seatLoop = 'sitIdle', { fade = 0.25, enterFade = 0.05 } = {}) {
+    // the toes as they are drawn now: held until each has left the ground
+    // (`_liftFirst`); a body never drawn (the boot-time sit) has nothing to hold
+    const hold = !!this._legs && this.layers.time > 0;
+    if (hold) this.group.updateMatrixWorld(true);
+    const toes = [this.toeL, this.toeR];
+    for (let k = 0; k < 2; k++) {
+      const h = this._liftHold[k];
+      h.on = hold && !!toes[k];
+      if (h.on) { _v.setFromMatrixPosition(toes[k].matrixWorld); h.x = _v.x; h.z = _v.z; }
+    }
+    this.play(seatLoop, { fade });
+    const l = this.once('sitEnter', { fade: enterFade });
+    this.transit = l ? 'sit' : null;
+    this._transitLayer = l;
+    this._transitT = 0;
+    const t = this.travel;
+    this._seatHips = t[seatLoop]?.hipsStart ?? t.sitIdle?.hipsStart ?? 0;
+    this._standHips = t.sitEnter?.hipsStart ?? t.idle?.hipsStart ?? 0;
+    return l;
+  }
+
+  /**
+   * How far UP the body is between seated (0) and standing (1), read off the
+   * pelvis this frame against the clips' own seated and standing pelvis
+   * heights (the boot-time bake). `NpcSystem` blends the seat drop — the offset
+   * that puts a seated pelvis on its seat — by this, so a sitter neither pops
+   * 0.3 m out of the ground as the exit starts nor sinks 0.3 m into it,
+   * standing, as the enter starts. Outside a transit it reports the pose it was
+   * last measured against.
+   */
+  get hipsK() {
+    const span = this._standHips - this._seatHips;
+    if (!(span > 0.05)) return this.transit === 'sit' ? 0 : 1;
+    const hips = this._hipsBone || (this._hipsBone = this.byName.get(B.hips));
+    if (!hips) return this.transit === 'sit' ? 0 : 1;
+    const g = this.group;
+    const y = (hips.matrixWorld.elements[13] - g.position.y) / (g.scale.y || 1);
+    return THREE.MathUtils.clamp((y - this._seatHips) / span, 0, 1);
+  }
+
+  _endTransit() {
+    this.transit = null;
+    this._transitLayer = null;
+    this._liftHold[0].on = false;
+    this._liftHold[1].on = false;
+  }
+
+  /**
+   * Hold each toe where it stood as the sit began until the clip lifts it — see
+   * `LIFT_LO`. The whole foot is translated so its toe stays put (the heel is
+   * free to rise, which is what the clip does first), and the offset fades out
+   * as the toe clears the ground. Both legs are solved here while it runs, with
+   * the seat drop added exactly as `_seatFeet` would.
+   */
+  _liftFirst() {
+    const g = this.group;
+    const sc = g.scale.y || 1;
+    const drop = this.seatDrop;
+    const toes = [this.toeL, this.toeR];
+    const late = this._transitT > LIFT_T;
+    for (let k = 0; k < 2; k++) {
+      const l = this._legs[k], h = this._liftHold[k];
+      _T.setFromMatrixPosition(l.foot.matrixWorld);          // the clip's ankle
+      if (h.on && toes[k]) {
+        _w.setFromMatrixPosition(toes[k].matrixWorld);       // the clip's toe
+        const up = (_w.y - g.position.y) / sc;
+        const free = THREE.MathUtils.clamp((up - LIFT_LO) / (LIFT_HI - LIFT_LO), 0, 1);
+        _T.x += (h.x - _w.x) * (1 - free);
+        _T.z += (h.z - _w.z) * (1 - free);
+        if (free >= 1 || late) h.on = false;
+      }
+      _T.y += drop;
+      this._solveLeg(l, _T, 0, 1);
+    }
+  }
+
+  /** A sit or a stand is over once its clip has left the stage. */
+  _tickTransit(dt) {
+    const l = this._transitLayer;
+    this._transitT += dt;
+    // a gait took the stage, or the transit clip never started
+    if (!l || this.rootMotion) { this._endTransit(); return; }
+    if (!l.oneShot && l.weight <= 1e-3) { this._endTransit(); return; }
+    // a transit that outlives its clip by seconds is a bug, not a pose
+    if (this._transitT > (l.duration || 1) + 3) this._endTransit();
+  }
+
+  /**
    * THE STEPPED TURN — run inside `update()`, after the mixer has posed the
    * clip and before the foot lock reads the toes (so the probe sees the solved
    * legs, not the clip's). See `STEP_TIME` for the whole contract; a shove
@@ -986,7 +1199,10 @@ export class NpcAnimator {
 
     if (st.releasing) {
       st.w -= dt / STEP_FADE;
-      if (st.w <= 0) {
+      // a body drawn below its clip hands its legs straight to `_seatFeet`
+      // (same targets, raised by the drop): fading toward the un-raised clip
+      // would dip the feet into the ground for the length of the fade
+      if (st.w <= 0 || this.seatDrop > 0.005) {
         st.on = false; st.w = 0; st.releasing = false; st.dirty = false;
         st.vx = 0; st.vz = 0;
         for (const l of L) { l.swing = false; l.s = 0; }
@@ -1011,9 +1227,27 @@ export class NpcAnimator {
         l.tgt.x = l.pin.x; l.tgt.z = l.pin.z;
         dYawFoot = wrapPi(l.yaw - yaw);
       }
-      l.tgt.y = l.clip.y + lift;
+      // (+ the seat drop: a foot held through a sit stays on the ground while
+      // the body goes down to the seat — see `seatDrop`)
+      l.tgt.y = l.clip.y + lift + this.seatDrop;
       _T.copy(l.tgt);
       this._solveLeg(l, _T, dYawFoot, st.w);
+    }
+  }
+
+  /**
+   * A body drawn below its clip (a low seat — see `seatDrop`) keeps its ankles
+   * where the clip puts them relative to the GROUND: each ankle is raised back
+   * by the drop and the leg solve folds the knee to reach it. Only while no
+   * stepped solve owns the legs (that one adds the drop to its own targets).
+   */
+  _seatFeet() {
+    const drop = this.seatDrop;
+    for (let k = 0; k < 2; k++) {
+      const l = this._legs[k];
+      _T.setFromMatrixPosition(l.foot.matrixWorld);
+      _T.y += drop;
+      this._solveLeg(l, _T, 0, 1);
     }
   }
 
@@ -1109,8 +1343,18 @@ export class NpcAnimator {
   lookAt(target) { this.lookTarget = target; }
 
   /**
+   * The side a speaker's look is on (+1 / -1). Someone dead behind is at +pi
+   * and -pi at once; the body's turn and the head must pick the SAME side, or
+   * the head swings 3.8 rad across the chest as the body starts round (measured
+   * on VALA before this: +1.9 to -1.9 rad in 0.3 s). `NpcSystem._look` turns
+   * the body toward this side whenever the choice is that close.
+   */
+  get lookSide() { return this._lookSide; }
+
+  /**
    * @param {number} dt already multiplied by `engine.timeScale`
    * @returns {{x:number,z:number}} the world XZ the foot lock moved the body by
+   *   — this animator's own reused record, valid until its next `update`
    */
   update(dt) {
     /**
@@ -1136,9 +1380,13 @@ export class NpcAnimator {
     for (let i = 0; i < bias.length; i++) bias[i].q.copy(bias[i].bone.quaternion);
     const g = this.group;
     g.updateMatrixWorld(true);
+    // a sit or a stand ends when its clip has left the stage
+    if (this.transit) this._tickTransit(dt);
     // a standing turn's feet are solved BEFORE the lock reads the toes, so the
     // support choice and the probe's `raw` toes are the solved legs
     if (this._step.on) this._stepFeet(dt);
+    if (!this._step.on && this._legs && (this._liftHold[0].on || this._liftHold[1].on)) this._liftFirst();
+    else if (!this._step.on && this.seatDrop > 0.005 && this._legs) this._seatFeet();
     const moved = this._lockFeet(dt);
     this._stance(dt);
     this._look(dt);
@@ -1149,7 +1397,12 @@ export class NpcAnimator {
     const g = this.group;
     const tl = this.toeL, tr = this.toeR;
     let mx = 0, mz = 0;
-    if (!tl || !tr) return { x: 0, z: 0 };
+    // one preallocated record, not a fresh object per NPC per frame (a judge
+    // counted 26 of these a frame across the crowd, and one per frame in the
+    // conversation hold)
+    const out = this._moved;
+    out.x = 0; out.z = 0;
+    if (!tl || !tr) return out;
 
     // support = the lower toe, with 1.5 cm of hysteresis so the choice cannot
     // chatter across the crossover frame (a chattering support is itself skate)
@@ -1198,7 +1451,8 @@ export class NpcAnimator {
     F[1].raw.copy(F[1].world);
     if (next === 'L') { F[0].world.x = _w.x; F[0].world.z = _w.z; }
     else { F[1].world.x = _w.x; F[1].world.z = _w.z; }
-    return { x: mx, z: mz };
+    out.x = mx; out.z = mz;
+    return out;
   }
 
   /** The A13-shaped probe `A97-npc-no-skate` reads. */
@@ -1217,6 +1471,8 @@ export class NpcAnimator {
     const st = this._step;
     st.on = false; st.w = 0; st.releasing = false; st.fresh = false;
     if (this._legs) for (const l of this._legs) { l.swing = false; l.s = 0; }
+    this._liftHold[0].on = false;
+    this._liftHold[1].on = false;
   }
 
   /**
@@ -1383,8 +1639,17 @@ export class NpcAnimator {
           _d.applyQuaternion(_q);      // direction in character space
           wantYaw = Math.atan2(_d.x, _d.z);
           wantPitch = -Math.asin(THREE.MathUtils.clamp(_d.y, -1, 1));
-          // only turn the head for something in front and within reach
-          wantK = Math.abs(wantYaw) < 1.45 ? 1 : 0;
+          // only turn the head for something in front and within reach — but
+          // a SPEAKER looks at the person they are talking to wherever they
+          // stand, as far round as `LOOK_WIDE` takes the look, and keeps
+          // looking over the SAME shoulder while that person is dead behind
+          // (atan2 flips sign at pi; the head must not swing across the chest
+          // because the target wobbled a centimetre across the line behind)
+          if (this.lookWide) {
+            wantK = 1;
+            if (Math.abs(wantYaw) > LOOK_FLIP && wantYaw * this._lookSide < 0) wantYaw = -wantYaw;
+            this._lookSide = wantYaw >= 0 ? 1 : -1;
+          } else wantK = Math.abs(wantYaw) < 1.45 ? 1 : 0;
         }
       }
     }
@@ -1402,15 +1667,39 @@ export class NpcAnimator {
     }
 
     const k = 1 - Math.exp(-dt * 4.5);
-    this.lookYaw += (THREE.MathUtils.clamp(wantYaw, -1.25, 1.25) - this.lookYaw) * k;
+    const lim = this.lookWide ? LOOK_WIDE : LOOK_NECK;
+    /**
+     * A SPEAKER'S EYES STAY ON THE PERSON WHILE THE BODY TURNS UNDER THEM. The
+     * look eases in body-relative yaw, so a body stepping round at 1.4 rad/s
+     * dragged the head with it and the ease trailed by ~0.3 rad the whole turn.
+     * The body's own yaw since last frame is taken back out of the look first:
+     * the head holds its world bearing and the ease only has to close what the
+     * target itself did.
+     */
+    const by = g.rotation.y;
+    // (only for a target the look can reach: one beyond it holds the look at
+    // its limit, and the body's turn is what brings the target in)
+    if (this.lookWide && wantK === 1 && this._lookBodyYaw !== null && Math.abs(wantYaw) <= lim) {
+      this.lookYaw = THREE.MathUtils.clamp(this.lookYaw - wrapPi(by - this._lookBodyYaw), -lim, lim);
+    }
+    this._lookBodyYaw = by;
+    this.lookYaw += (THREE.MathUtils.clamp(wantYaw, -lim, lim) - this.lookYaw) * k;
     this.lookPitch += (THREE.MathUtils.clamp(wantPitch, -0.45, 0.42) - this.lookPitch) * k;
     this.lookK += (wantK - this.lookK) * k;
 
     const yaw = this.lookYaw * this.lookK;
     const pitch = this.lookPitch * this.lookK;
     if (Math.abs(yaw) < 1e-4 && Math.abs(pitch) < 1e-4) return;
-    if (en) { this.space.rotChar(en, 'y', yaw * 0.38); this.space.rotChar(en, 'x', pitch * 0.4); }
-    if (eh) { this.space.rotChar(eh, 'y', yaw * 0.62); this.space.rotChar(eh, 'x', pitch * 0.6); }
+    // past what a neck turns, the chest turns with it (a speaker's wide look):
+    // the spine goes first so the neck and head add to the twist, not undo it
+    const neck = THREE.MathUtils.clamp(yaw, -LOOK_NECK, LOOK_NECK);
+    const twist = yaw - neck;
+    if (twist) {
+      if (this.eSpine1) this.space.rotChar(this.eSpine1, 'y', twist * 0.45);
+      if (this.eSpine3) this.space.rotChar(this.eSpine3, 'y', twist * 0.55);
+    }
+    if (en) { this.space.rotChar(en, 'y', neck * 0.38); this.space.rotChar(en, 'x', pitch * 0.4); }
+    if (eh) { this.space.rotChar(eh, 'y', neck * 0.62); this.space.rotChar(eh, 'x', pitch * 0.6); }
   }
 
   /** Health line for the gates: layers in an impossible state. */
@@ -1433,5 +1722,7 @@ export class NpcAnimator {
     this._legs = null;
     this._step.on = false;
     this._bias.length = 0;
+    this._endTransit();
+    this._hipsBone = null;
   }
 }

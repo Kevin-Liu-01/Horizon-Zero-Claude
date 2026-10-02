@@ -125,6 +125,20 @@ const _eU = new THREE.Vector3();
 const _eV = new THREE.Vector3();
 const _eT = new THREE.Vector3();
 const _eQ = new THREE.Quaternion();
+/** `_armHullGuard`'s own (round 6, S5): elbow / wrist / fist (world), the
+ *  post-layer shift, hull ends, the escape direction, and the model rotation. */
+const _ahE = new THREE.Vector3();
+const _ahH = new THREE.Vector3();
+const _ahF = new THREE.Vector3();
+const _ahSh = new THREE.Vector3();
+const _ahU = new THREE.Vector3();
+const _ahV = new THREE.Vector3();
+const _ahD = new THREE.Vector3();
+const _ahDir = new THREE.Vector3();
+const _ahX = new THREE.Vector3();
+const _ahA = new THREE.Vector3();
+const _ahB = new THREE.Vector3();
+const _ahQi = new THREE.Quaternion();
 const _ident = new THREE.Quaternion();
 /** The identity, as a value (never mutated). */
 function _qi() { return _ident; }
@@ -1132,6 +1146,23 @@ const AIM_YAW = 90 * Math.PI / 180;
 /** ...and on ANY swing the blade tip stays this far above the terrain under
  *  it (the S5 slope row: on a 25 deg rise the authored low sweeps buried it). */
 const TIP_GROUND_CLEAR = 0.10;
+/** R9: the drive forearm's axis kept this far off her pelvis->neck axis on
+ *  every swing frame (contact with the belly mesh starts at about 0.19). */
+const FORE_CLEAR = 0.24;
+/** S5: the forearm/fist capsule radius, and the daylight kept to a hull. */
+const ARM_R = 0.05;
+const ARM_CLEAR = 0.06;
+/** ...and the most the guard may move the wrist goal in one frame (sideways
+ *  out of a hull / back toward the shoulder): the blade is rigid in the fist,
+ *  and a guard that shoves the hand half a metre takes the blade off the
+ *  machine it was aimed at — the aim (melee `_aimAt`) is what picks a line the
+ *  arm fits on; this only takes out what that proxy misses. */
+const ARM_PUSH_MAX = 0.40;
+const ARM_RETRACT_MAX = 0.25;
+/** ...and through the release and the strike, where the blade is on its way
+ *  to the aimed skin: a trim, never a shove, and the elbow may roll <= 45 deg. */
+const ARM_PUSH_STRIKE = 0.15;
+const ARM_ROLL_STRIKE = Math.PI / 4;
 /** The lean into an out-of-reach target: rad of spine pitch per metre short,
  *  and its ceiling (0.38 rad moves the shoulder ~0.18 m toward the target). */
 const AIM_LEAN_GAIN = 1.6;
@@ -1139,7 +1170,7 @@ const AIM_LEAN_MAX = 0.38;
 /** The most the residual pass turns the goal in one frame. */
 const AIM_RESID_MAX = 25 * Math.PI / 180;
 /** The most of an overshoot the arm gives back to stop a thrust on the skin. */
-const AIM_PULL_MAX = 0.35;
+const AIM_PULL_MAX = 0.60;
 
 /** Normalise a literal direction triple in place. */
 function unit(v) {
@@ -1193,6 +1224,10 @@ export class MeleeLayer {
       hand: [-0.25, 0.9, 0.1], shaft: [0, -0.2, 1], lh: [0.30, 0.90, 0.04], lhOn: 0,
       yaw: 0, pitch: 0, roll: 0,
     };
+    this._holsterFrom = {
+      hand: READY.hand.slice(), shaft: READY.shaft.slice(), lh: READY.lh.slice(), lhOn: 0,
+      yaw: READY.yaw, pitch: READY.pitch, roll: READY.roll,
+    };
     this._prevStance = 'holstered';
     this._relK = 1;
     this._fracNow = GRIP_FRAC;
@@ -1203,6 +1238,16 @@ export class MeleeLayer {
     /** per beat (L1, L2, L3, heavy): the reach the contact really achieved */
     this._reachSeen = new Float32Array(4);
     this._pullNow = 0;
+    /* how far the animator moved her drive SHOULDER after this layer last
+     * frame — the stance's pelvis offset through the ground conform's clamp
+     * and tilt (measured, since the requested offset is not what lands: the
+     * heavy asks -0.32 m of pelvis and ~-0.14 arrives, and the clamp's tilt
+     * moves the shoulder more than the pelvis): the arm-, aim- and ground-
+     * checks test the arm where it will be DRAWN (round 6) */
+    this._pelvisPre = new THREE.Vector3();
+    this._pelvisShift = new THREE.Vector3();
+    this._pelvisShiftPrev = new THREE.Vector3();
+    this._pelvisShiftOk = false;
     this._dbg = {
       stance: 'holstered', phase: 'idle', k: 0, beat: null, w: 0,
       palmToAxis: 0, gripAngleDeg: 0, bladeAhead: 0,
@@ -1776,6 +1821,9 @@ export class MeleeLayer {
     /* THE DRAW STARTS WHERE THE ARM IS (round 6): capture it on the first
      * frame of a draw, before this layer has touched the arm. */
     if (stance === 'draw' && this._prevStance !== 'draw') this._captureFrom();
+    /* ...and a holster starts where the arm WAS: from the guard, or (round 6)
+     * from a follow-through an aim cut short — not from the READY key */
+    if (stance === 'holster' && this._prevStance !== 'holster') this._captureHolsterFrom();
     this._prevStance = stance;
     /* the arm path — the draw and the holster — carries the R8 elbow bound */
     this._pathOn = stance === 'draw' || stance === 'holster';
@@ -1815,6 +1863,8 @@ export class MeleeLayer {
     const beat = st.heavy ? HEAVY : BEATS[clamp(st.combo | 0, 0, BEATS.length - 1)];
     D.beat = stance === 'swing' ? beat.id : 'ready';
     const u = this._blend(stance, st, beat);   // fills _hand/_shaft/_lh + torso
+    // where her drive SHOULDER is before the animator moves the body under
+    // it (see `_pelvisShift`) — read after the torso turns, just below
     /* the swing aimed at the machine and kept out of the ground (round 6):
      * BEFORE the torso turns, so the shoulder girdle below follows the hand
      * the aim actually asks for (the residual pass after the arm solve takes
@@ -1871,6 +1921,7 @@ export class MeleeLayer {
 
     /* ---------------------------- the arms ---------------------------- */
     an._headFrame();
+    an._charOf(b.upArmR.bone, this._pelvisPre);
     /* THE GUARD IS FOR A HAFT THAT IS IN HER HAND.
      *
      * It stays off while she is REACHING for the socket — the stowed haft lies
@@ -1892,6 +1943,13 @@ export class MeleeLayer {
      * posed tip is measured and the goal is turned by the residual about the
      * shoulder and solved once more — the strike homing onto the hull. */
     if (stance === 'swing' && this._aimResidual(st, w)) this._solveRight(w, u);
+    /* ...and the blade stays out of the ground as POSED (the goal-side check
+     * in `_groundClear` is a prediction; the arm clamps, the wrist limits and
+     * the stance's pelvis drop, added after this layer, all move the tip) */
+    if (stance === 'swing' && this._groundResidual()) this._solveRight(w, u);
+    /* ...and her ARM stays out of the machine (round 6, S5): the blade may
+     * go into the hull it hits, the hand and forearm holding it may not. */
+    this._armHullGuard(w, st);
     this._solveLeft(w, u);
 
     // fists: the drive hand is closed on the haft, the free hand open (canon:
@@ -2185,6 +2243,188 @@ export class MeleeLayer {
     return true;
   }
 
+  /**
+   * THE HAND AND FOREARM STAY OUT OF THE MACHINE (round 6, S5). The approach
+   * term bounds her BODY capsule against the target's hulls (collision.js);
+   * her right arm reaches ~0.5 m in front of that capsule, and where a hull
+   * overhangs at arm height — a Behemoth's head, a Glinthawk's body, a
+   * Tallneck's jaw — the r5 skeptic found the fist 0.03 m and the forearm
+   * 0.06-0.10 m inside it, on a heavy's contact, a follow-through and a
+   * holster. The live hull set of the machine the spear is on
+   * (`melee.armHulls()`) is read once a frame; the wrist and the forearm
+   * segment are tested against every capsule near them (world space, radius
+   * `ARM_R` + `ARM_CLEAR`), and a penetration moves the wrist goal straight out
+   * of that capsule by the deficit and re-solves (six passes at most: an
+   * overhang the elbow is under takes a few, the wrist moving the elbow only
+   * part of the way each time).
+   * Nothing is read when no machine is in play; nothing allocates.
+   */
+  _armHullGuard(w, st) {
+    const mel = this.ctx.combat?.melee;
+    const hulls = mel && typeof mel.armHulls === 'function' ? mel.armHulls() : null;
+    const D = this._dbg;
+    D.armHullPush = 0; D.armHullRoll = 0; D.armHullRetract = 0;
+    if (!hulls || !hulls.length || !this.an.b.handR) return;
+    const an = this.an;
+    an.model.updateWorldMatrix(true, false);
+    const M = an.model.matrixWorld;
+    M.decompose(_ahA, _ahQi, _ahB);           // model rotation (the arm checks' world <-> char)
+    _ahQi.invert();
+    /* the body moves under the arm after this layer (the stance's pelvis
+     * offset through the conform — the heavy drops ~0.15 m, the clamp tilts):
+     * test the arm where it will be DRAWN (`_postShift`, measured last frame) */
+    this._postShift(_ahSh);
+    /* how much the guard may do depends on what the swing is doing: through
+     * the release and the strike the blade is on its way to what it was
+     * aimed at (melee `_aimAt` already picked a line the arm fits on), so the
+     * guard only trims; after the hit, and in the guard / draw / holster, it
+     * may move the arm as far as it has to */
+    // 0 -> 1 over the strike leg into contact (smooth: a cap that steps at a
+    // phase boundary would step the arm), 0 everywhere else
+    const sw = st && st.phase === 'strike'
+      ? smoothstep(st.k ?? 0, 0, Math.max(0.1, (st.contactK ?? 0.7) - HIT_LEAD)) : 0;
+    const pushMax = ARM_PUSH_MAX + (ARM_PUSH_STRIKE - ARM_PUSH_MAX) * sw;
+    const retractMax = ARM_RETRACT_MAX * (1 - sw);
+    const rollMax = sw > 0.5 ? ARM_ROLL_STRIKE : Math.PI;
+    let retract = false;
+    for (let pass = 0; pass < 6; pass++) {
+      if (pass > 0) _ahX.copy(_ahDir);          // last pass's escape, to spot a flip
+      const worst = this._armDeficit(hulls, M);
+      if (pass === 0) D.armHullDeficit = +worst.toFixed(3);
+      D.armHullLeft = +worst.toFixed(3);
+      if (worst <= 1e-4) return;
+      D.armHullT = +(this._ahT || 0).toFixed(2);
+      /* an ELBOW-end contact (a head that overhangs the arm) is not taken out
+       * by moving the wrist — the IK keeps the elbow on its plane — so the
+       * elbow is rolled round its circle about shoulder -> wrist instead (the
+       * wrist does not move), to the nearest angle the hulls leave clear */
+      if (this._ahT < 0.55 && this._armRollOut(hulls, M, worst, rollMax)) {
+        this._rollOff = true; this._alignHaft(w); this._rollOff = false;
+        continue;
+      }
+      /* SANDWICHED (a head cluster above AND below the forearm — the escape
+       * flips from pass to pass): the way out is back toward her, so the
+       * fist is drawn in toward the shoulder instead */
+      if (pass > 0 && _ahX.dot(_ahDir) < 0) retract = true;
+      let push;
+      if (retract) {
+        if (D.armHullRetract >= retractMax) return;
+        an._charOf(an.b.upArmR.bone, _ahA);
+        _ahX.subVectors(_ahA, _hand);
+        const lx = _ahX.length();
+        if (lx < 0.25) return;                          // the arm is folded as far as it goes
+        _ahX.multiplyScalar(1 / lx);
+        push = Math.min(retractMax - D.armHullRetract, worst + 0.01);
+        D.armHullRetract = +((D.armHullRetract || 0) + push).toFixed(3);
+      } else {
+        _ahX.copy(_ahDir).applyQuaternion(_ahQi);      // world -> char
+        push = Math.min(pushMax - D.armHullPush, (worst + 0.01) / Math.max(0.35, this._ahT));
+        if (!(push > 0.002)) return;
+      }
+      _hand.addScaledVector(_ahX, push);
+      an._ikArm('r', _hand, _pole, w, null);
+      this._alignHaft(w);
+      D.armHullPush = +(D.armHullPush + push).toFixed(3);
+    }
+  }
+
+  /**
+   * The drive forearm (elbow -> fist, radius `ARM_R`) against the hulls,
+   * where the arm will be drawn: the deficit under `ARM_CLEAR` of the worst
+   * capsule (0 = clear), with `_ahDir` (world, out of that hull toward the
+   * arm) and `_ahT` (how far along elbow -> fist the contact is).
+   */
+  _armDeficit(hulls, M) {
+    const an = this.an, b = an.b;
+    an._charOf(b.loArmR.bone, _ahE).add(_ahSh).applyMatrix4(M);
+    an._charOf(b.handR.bone, _ahH);
+    an._liveW(b.handR.bone, _q1);
+    _ahF.copy(this.palmOffL).applyQuaternion(_q1).add(_ahH).add(_ahSh).applyMatrix4(M);
+    return this._segHullDeficit(hulls, _ahE, _ahF, true);
+  }
+
+  /** Worst deficit of segment e-f (world) against the hulls; `keep` records
+   *  the direction and the contact fraction of the worst. */
+  _segHullDeficit(hulls, e, f, keep) {
+    const mx = (e.x + f.x) * 0.5, my = (e.y + f.y) * 0.5, mz = (e.z + f.z) * 0.5;
+    const L = e.distanceTo(f);
+    let worst = 0;
+    for (let i = 0; i < hulls.length; i++) {
+      const h = hulls[i];
+      const r = h.wr || 0;
+      if (r <= 1e-4 || h.off) continue;
+      const hx = (h.wax + h.wbx) * 0.5, hy = (h.way + h.wby) * 0.5, hz = (h.waz + h.wbz) * 0.5;
+      const half = 0.5 * Math.hypot(h.wbx - h.wax, h.wby - h.way, h.wbz - h.waz);
+      if (Math.hypot(hx - mx, hy - my, hz - mz) > half + r + 0.45) continue;
+      _ahU.set(h.wax, h.way, h.waz); _ahV.set(h.wbx, h.wby, h.wbz);
+      const d = segSegDir(e, f, _ahU, _ahV, _ahD) - r - ARM_R;
+      if (d < ARM_CLEAR && ARM_CLEAR - d > worst) {
+        worst = ARM_CLEAR - d;
+        if (keep) {
+          _ahDir.copy(_ahD);
+          this._ahT = L > 1e-4 ? _ss.distanceTo(e) / L : 1;
+        }
+      }
+    }
+    return worst;
+  }
+
+  /**
+   * Roll the right upper arm about shoulder -> wrist (char space; the wrist
+   * and fist stay put) to the smallest angle, every 15 deg both ways, that
+   * leaves the forearm `ARM_CLEAR` off every hull — or, failing that, to the
+   * angle that clears it most, if that beats where it is. Never through her
+   * head (the arm-in-head test the swing's own roll uses). True if it rolled.
+   */
+  _armRollOut(hulls, M, now, rollMax = Math.PI) {
+    const an = this.an, b = an.b;
+    an._charOf(b.upArmR.bone, _eS);
+    an._charOf(b.loArmR.bone, _eE);
+    an._charOf(b.handR.bone, _eH);
+    _eAx.subVectors(_eH, _eS);
+    const d = _eAx.length();
+    if (d < 1e-4) return false;
+    _eAx.multiplyScalar(1 / d);
+    const along = _eT.subVectors(_eE, _eS).dot(_eAx);
+    _eC.copy(_eS).addScaledVector(_eAx, along);
+    _eU.subVectors(_eE, _eC);
+    const r = _eU.length();
+    if (r < 1e-3) return false;
+    _eU.multiplyScalar(1 / r);
+    _eV.crossVectors(_eAx, _eU);
+    // the fist, world, where it will be drawn (it does not move with the roll)
+    an._liveW(b.handR.bone, _q1);
+    _ahF.copy(this.palmOffL).applyQuaternion(_q1).add(_eH).add(_ahSh).applyMatrix4(M);
+    const step = Math.PI / 12;
+    let best = now, bestPhi = 0;
+    for (let i = 1; i <= 12; i++) {
+      if (i * step > rollMax + 1e-6) break;
+      for (let sg = -1; sg <= 1; sg += 2) {
+        const phi = sg * i * step;
+        _eT.copy(_eC).addScaledVector(_eU, Math.cos(phi) * r).addScaledVector(_eV, Math.sin(phi) * r);
+        if (an._segInHead(_eS, _eT) || an._segInHead(_eT, _eH)) continue;
+        _ahE.copy(_eT).add(_ahSh).applyMatrix4(M);
+        const def = this._segHullDeficit(hulls, _ahE, _ahF, false);
+        if (def <= 1e-4) { best = 0; bestPhi = phi; i = 99; break; }
+        if (def < best - 0.01) { best = def; bestPhi = phi; }
+      }
+    }
+    if (bestPhi === 0) return false;
+    _eQ.setFromAxisAngle(_eAx, bestPhi);
+    an._rotQL(b.upArmR, _eQ);
+    this._dbg.armHullRoll = +(bestPhi * 180 / Math.PI).toFixed(0);
+    return true;
+  }
+
+
+  /** The pelvis shift the animator will add after this layer (x, y into `out`). */
+  _postShift(out) {
+    if (!this._pelvisShiftOk) return out.set(this.pelvisDx || 0, this.pelvisDy || 0, 0);
+    // last frame's, carried one frame on at its own rate (the stance loads and
+    // unwinds over a few frames; a lag of one would test the arm a frame late)
+    return out.copy(this._pelvisShift).multiplyScalar(2).sub(this._pelvisShiftPrev);
+  }
+
   /** The phase weight of the aim (0 through the cock, 1 at contact). */
   _aimPhaseW(st) {
     if (!st || !st.aimOk) return 0;
@@ -2234,7 +2474,7 @@ export class MeleeLayer {
     an.model.updateWorldMatrix(true, false);
     _m4.copy(an.model.matrixWorld).invert();
     _eT.set(st.aimX, st.aimY, st.aimZ).applyMatrix4(_m4);
-    _eT.x -= this.pelvisDx || 0; _eT.y -= this.pelvisDy || 0;   // see `_strikeAim`
+    this._postShift(_eD); _eT.sub(_eD);   // see `_strikeAim`
     _eU.subVectors(_eC, _eS);
     _eV.subVectors(_eT, _eS);
     const over = _eU.length() - _eV.length();     // > 0: the tip would pass through
@@ -2259,7 +2499,27 @@ export class MeleeLayer {
     return true;
   }
 
-  /** Her head bone, world space (melee.js `_aimAt` keeps the haft off it). */
+  /**
+   * The least distance from the WORLD segment a-b to her axial bones (the A104
+   * set, `CLEAR_BONES`), metres — melee.js `_aimAt` uses it to reject aim
+   * lines that would lay the haft across her. Cold path (a handful of calls a
+   * swing); no allocation.
+   */
+  axialGap(ax, ay, az, bx, by, bz) {
+    if (!this.ok) return 9;
+    _eC.set(ax, ay, az); _eV.set(bx, by, bz);
+    let best = 9;
+    for (let i = 0; i < CLEAR_BONES.length; i++) {
+      const e = this.an.b[CLEAR_BONES[i]];
+      if (!e) continue;
+      e.bone.getWorldPosition(_eU);
+      const d = segPoint(_eC, _eV, _eU);
+      if (d < best) best = d;
+    }
+    return best;
+  }
+
+  /** Her head bone, world space. */
   headWorld(out) {
     if (!this.ok || !this.an.b.head) return false;
     this.an.b.head.bone.getWorldPosition(out);
@@ -2270,6 +2530,19 @@ export class MeleeLayer {
   shoulderWorld(out) {
     if (!this.ok || !this.an.b.upArmR) return false;
     this.an.b.upArmR.bone.getWorldPosition(out);
+    return true;
+  }
+
+  /** This beat's CONTACT key wrist, world (melee.js `_aimAt` predicts where
+   *  the fist lands when the swing is bent onto a target). No allocation. */
+  contactHandWorld(heavy, combo, out) {
+    if (!this.ok) return false;
+    const beat = heavy ? HEAVY : BEATS[clamp(combo | 0, 0, BEATS.length - 1)];
+    const c = beat.contact;
+    out.set(c.hand[0], c.hand[1], c.hand[2]);
+    if (Math.abs(this._aimYaw) > 1e-3) out.applyAxisAngle(Y_AXIS, this._aimYaw);
+    this.an.model.updateWorldMatrix(true, false);
+    out.applyMatrix4(this.an.model.matrixWorld);
     return true;
   }
 
@@ -2294,7 +2567,7 @@ export class MeleeLayer {
     _eT.set(st.aimX, st.aimY, st.aimZ).applyMatrix4(_m4);
     // the stance's pelvis offset is added by the animator AFTER this layer and
     // carries the whole arm with it (the heavy drops ~0.1 m): aim ahead of it
-    _eT.x -= this.pelvisDx || 0; _eT.y -= this.pelvisDy || 0;
+    this._postShift(_eD); _eT.sub(_eD);
     // the shoulder (the pivot) and the contact key's tip, char space
     an._charOf(b.upArmR.bone, _eS);
     const c = beat.contact;
@@ -2352,8 +2625,11 @@ export class MeleeLayer {
     const an = this.an, b = an.b, D = this._dbg;
     const L = (1 - this.gripFrac) * this.length;
     _eC.copy(_hand).addScaledVector(_shaft, L);
+    // the stance's pelvis drop is added after this layer and lowers the blade
+    this._postShift(_eD); _eC.add(_eD);
     an.model.updateWorldMatrix(true, false);
     _eT.copy(_eC).applyMatrix4(an.model.matrixWorld);
+    _eC.sub(_eD);
     const gy = terr.getHeight(_eT.x, _eT.z);
     const lack = gy + TIP_GROUND_CLEAR - _eT.y;
     D.tipGroundLack = +lack.toFixed(3);
@@ -2373,6 +2649,71 @@ export class MeleeLayer {
     _hand.sub(_eS).applyQuaternion(_eQ).add(_eS);
     _shaft.applyQuaternion(_eQ);
     D.tipGroundLift = +(ang * 180 / Math.PI).toFixed(1);
+  }
+
+  /** The pose a holster starts from: last frame's solved wrist and grip axis
+   *  and the torso scalars it was drawn with (round 6). */
+  _captureHolsterFrom() {
+    const f = this._holsterFrom;
+    const u = this._u;
+    if (!this._handLastOk || this.w < 0.5) {
+      // not the layer's arm last frame: the guard key is as good as anything
+      for (let i = 0; i < 3; i++) { f.hand[i] = READY.hand[i]; f.shaft[i] = READY.shaft[i]; f.lh[i] = READY.lh[i]; }
+      f.yaw = READY.yaw; f.pitch = READY.pitch; f.roll = READY.roll;
+      return;
+    }
+    _b.copy(this.gripDirL).applyQuaternion(this._handQ).normalize();
+    f.hand[0] = this._handLast.x; f.hand[1] = this._handLast.y; f.hand[2] = this._handLast.z;
+    f.shaft[0] = _b.x; f.shaft[1] = _b.y; f.shaft[2] = _b.z;
+    this.an._charOf(this.an.b.handL.bone, _c);
+    f.lh[0] = _c.x; f.lh[1] = _c.y; f.lh[2] = _c.z;
+    f.yaw = u ? u.yaw : READY.yaw; f.pitch = u ? u.pitch : READY.pitch; f.roll = u ? u.roll : READY.roll;
+    // the capture is already in the swing bearing: undo `_lerpPose`'s turn
+    const y = this._aimYaw;
+    if (Math.abs(y) > 1e-3) {
+      _a.set(f.hand[0], f.hand[1], f.hand[2]).applyAxisAngle(Y_AXIS, -y);
+      f.hand[0] = _a.x; f.hand[1] = _a.y; f.hand[2] = _a.z;
+      _b.applyAxisAngle(Y_AXIS, -y);
+      f.shaft[0] = _b.x; f.shaft[1] = _b.y; f.shaft[2] = _b.z;
+      _c.applyAxisAngle(Y_AXIS, -y);
+      f.lh[0] = _c.x; f.lh[1] = _c.y; f.lh[2] = _c.z;
+    }
+  }
+
+  /**
+   * The posed tip against the terrain (round 6, S5 — see `_groundClear`): the
+   * tip as the solved hand holds it, lowered by the pelvis offset the animator
+   * adds after this layer, against the height under it; when it is short of
+   * `TIP_GROUND_CLEAR` the goal is pitched up about the shoulder by the angle
+   * that clears it and the caller solves again. True when it moved the goal.
+   */
+  _groundResidual() {
+    const terr = this.ctx.terrain;
+    if (!terr || typeof terr.getHeight !== 'function' || !this._held) return false;
+    const an = this.an, b = an.b, D = this._dbg;
+    an._charOf(b.handR.bone, _eH);
+    an._liveW(b.handR.bone, _q1);
+    _eC.copy(this.gripDirL).multiplyScalar((1 - this._fracNow) * this.length).add(this.palmOffL)
+      .applyQuaternion(_q1).add(_eH);
+    this._postShift(_eD); _eC.add(_eD);
+    an.model.updateWorldMatrix(true, false);
+    _eT.copy(_eC).applyMatrix4(an.model.matrixWorld);
+    const lack = terr.getHeight(_eT.x, _eT.z) + TIP_GROUND_CLEAR - _eT.y;
+    if (!(lack > 0.005)) return false;
+    an._charOf(b.upArmR.bone, _eS);
+    _eU.subVectors(_eC, _eS);
+    const lu = _eU.length();
+    if (lu < 0.2) return false;
+    const ang = Math.min(0.9, Math.asin(clamp((lack * 1.3) / lu, 0, 1)));
+    _eV.set(_eU.x, 0, _eU.z);
+    if (_eV.lengthSq() < 1e-6) _eV.set(0, 0, 1);
+    _eV.normalize();
+    _eAx.crossVectors(_eV, Y_AXIS).normalize();
+    _eQ.setFromAxisAngle(_eAx, ang);
+    _hand.sub(_eS).applyQuaternion(_eQ).add(_eS);
+    _shaft.applyQuaternion(_eQ);
+    D.tipGroundResid = +(ang * 180 / Math.PI).toFixed(1);
+    return true;
   }
 
   /** True once a draw has finished: the prop is in the fist, the hand-over
@@ -2558,7 +2899,7 @@ export class MeleeLayer {
        * nine, and the tip's worst per-frame travel across the re-parent drops
        * by a third. */
       if (this._held) {
-        A = READY; B = this._reachPose(); t = CARRY_EASE(clamp(dk / 0.62, 0, 1));
+        A = this._holsterFrom; B = this._reachPose(); t = CARRY_EASE(clamp(dk / 0.62, 0, 1));
         yawK = 1 - t;
       } else {
         /* ROUND 6: AND THE HAND COMES BACK DOWN HER SIDE before the arm is
@@ -3444,7 +3785,38 @@ export class MeleeLayer {
       this._alignHaft(w);
     }
     if (path) this._pathGuard(w);
+    else if (this._guardOn) this._foreGuard(w);
     this._rollOff = false;
+  }
+
+  /**
+   * THE FOREARM STAYS OFF HER BELLY (round 6, ruling R9 — the r5 skeptic's
+   * heavy follow-through at a jog and from a sprint-stop: the right forearm's
+   * mesh 1.8-2.6 cm into her torso). The bone reading A104 gates was 0.19 m
+   * off the pelvis->neck axis there — clear of the 0.10 m bar and still in
+   * contact, because her belly is 0.12-0.15 m in front of that axis and a
+   * forearm is ~0.05 m thick. So the swing keeps the forearm segment
+   * `FORE_CLEAR` off the axis: when it is closer, the wrist goal moves straight
+   * out from the axis by the deficit and the arm is solved again (twice at
+   * most). Standing beats that already clear it are untouched.
+   */
+  _foreGuard(w) {
+    const an = this.an, b = an.b, D = this._dbg;
+    for (let i = 0; i < 2; i++) {
+      an._charOf(b.loArmR.bone, _eE);
+      an._charOf(b.handR.bone, _eH);
+      an._charOf(b.pelvis.bone, _eS);
+      an._charOf(b.neck1.bone, _eD);
+      const g = segSegDir(_eE, _eH, _eS, _eD, _eU);   // _eU: from the axis to the forearm
+      if (!(g < FORE_CLEAR)) { if (i === 0) D.foreGuard = 0; return; }
+      _eU.y = 0;
+      if (_eU.lengthSq() < 1e-8) _eU.set(-1, 0, 0);
+      _eU.normalize();
+      _hand.addScaledVector(_eU, FORE_CLEAR - g + 0.01);
+      an._ikArm('r', _hand, _pole, w, null);
+      this._alignHaft(w);
+      D.foreGuard = +(FORE_CLEAR - g).toFixed(3);
+    }
   }
 
   /**
@@ -4227,6 +4599,15 @@ export class MeleeLayer {
      * the measurement the same statement. It is an absolute local write, so
      * doing it twice costs one `_liveSocket` and changes nothing else. */
     if (this.spear && !this._held) this._poseHolstered();
+    /* the pelvis shift the animator really applied after this layer this
+     * frame (stance offset + conform clamp), for next frame's arm checks */
+    if (this.w > 0.001 && this.an.b.upArmR) {
+      if (this._pelvisShiftOk) this._pelvisShiftPrev.copy(this._pelvisShift);
+      this.an._charOf(this.an.b.upArmR.bone, this._pelvisShift);
+      this._pelvisShift.sub(this._pelvisPre);
+      if (!this._pelvisShiftOk) this._pelvisShiftPrev.copy(this._pelvisShift);
+      this._pelvisShiftOk = true;
+    } else this._pelvisShiftOk = false;
     // the braid AFTER the spring sim — the strands the renderer will draw
     this._cacheHair();
     const an = this.an, e = an.b.handR;

@@ -1474,12 +1474,60 @@ function applyShadowRings(machine, d, H, floor = 0) {
  */
 export function applyWreckShadow(machine) {
   if (!machine || machine._rigDisposed) return;
+  if (!machine._wreckShadow) markWreckShadow(machine);
   const cam = machine.ctx?.camera;
   if (!cam) return;
   const d = Math.hypot(cam.position.x - machine.position.x, cam.position.z - machine.position.z);
   applyShadowRings(machine, d, Math.max(1, machine.height || 1), 1);
   // a component shot off in the killing blow still falls as debris
   tickComponents(machine);
+}
+
+/**
+ * A WRECK KEEPS ONE SHADOW CASTER, SET EXPLICITLY AT DEATH (ORCHESTRATOR
+ * RULING Sep 26: "Wrecks keep one shadow caster (set explicitly at death);
+ * the engine distance cull handles far wrecks").
+ *
+ * The residue-round-1 fix only ever ASKED for the prime through the ring rule
+ * (`applyWreckShadow` above, floor 1), from the corpse tick — and the corpse
+ * tick stops at THE FREEZE: `ai/sites.js` `_freeze()` (machine-ai's file)
+ * writes `castShadow = false` on EVERY mesh of a wreck 10 s after death, and
+ * the wreck's `update()` never runs again, so the prime the rings had kept on
+ * was switched off for good and a player who walked up to loot a wreck found
+ * it on lit ground. Measured (16 species killed 90-140 m from the player,
+ * walked up to at 9 m after the freeze): on the previous build the Broadhead,
+ * Shell-Walker and Longleg — the wrecks inside the engine's 120 m caster cull
+ * when the freeze ran — drew ZERO shadow draws, and the Thunderjaw kept only
+ * its two disc launchers; the other twelve cast only because the engine had
+ * distance-culled them before the freeze and so still held their wish in
+ * `__shadowBase`. After: all 16 draw their prime in every cascade (3).
+ *
+ * So the prime is set here, directly, the moment the wreck exists — from
+ * `settleCorpseNow()` in every `_die()` and from the first corpse tick of a
+ * species that has none — and it is set AGAIN by the freeze hook in
+ * `installRigTeardown` (the freeze's last call is `disposeFx(true)`, which
+ * the rig already wraps), after the freeze's blanket write. It goes through
+ * `setCaster`, so a prime the engine has distance-culled records the wish in
+ * `__shadowBase` and casts the moment the player is back inside the cull
+ * range; beyond it the engine's own cull retires it, which is the ruling's
+ * split. Only the PRIME: a wreck casts its silhouette, one draw per cascade.
+ * Cost: a handful of property writes per death, nothing per frame.
+ */
+export function markWreckShadow(machine) {
+  if (!machine || machine._rigDisposed || machine._disposed) return false;
+  if (!Array.isArray(machine._shadowCasters) || !machine._shadowPrime) {
+    try { machineShadowPolicy(machine, machine._shadowPolicy); } catch (e) { return false; }
+  }
+  const prime = machine._shadowPrime;
+  machine._wreckShadow = true;
+  if (!prime) return false;
+  if (machine._lodShadow !== 2) {
+    const list = machine._shadowCasters || [];
+    for (let i = 0; i < list.length; i++) setCaster(list[i], list[i] === prime);
+    machine._lodShadow = 1;
+  }
+  setCaster(prime, true);
+  return true;
 }
 
 /**
@@ -1498,7 +1546,116 @@ export function attachRigRuntime(machine, opts = {}) {
   machine._lodTier = -1;
   machine._rigStats = stats;
   installRigTeardown(machine);
+  queueSpawnSizeCull(machine);
   return stats;
+}
+
+/* ------------------------------------------------------------------ */
+/* the FIRST drawn frame obeys the engine's small-mesh cull            */
+/* ------------------------------------------------------------------ */
+
+/**
+ * WHAT `A90-rig-reclaim` WAS HOLDING (residue round 2 — "perLiveGeo 1.13 /
+ * heldThenReleased 4", the fingerprint carried since round 3).
+ *
+ * The four held geometries are the Watcher's species-POOLED donor pieces
+ * (`Eye001_Eye_texture_0`, `Eye_Lense_1001_Glass_Lense_0`,
+ * `Eye_Camera001_Lense_-_Blue_Cameras_0`, `Headplate_Frill...-x4`) — pooled,
+ * so retained by design once they have been uploaded. What was NOT by design
+ * is WHEN they got uploaded. Traced frame by frame on the gate's own hold
+ * bracket (8 Watchers spawned 49-56 m out): each new Watcher drew those
+ * meshes on its first 2-3 frames and then `engine.js`'s screen-size cull
+ * hid them (`__sizeCulled`, sub-pixel at that range). That cull runs at
+ * 10 Hz, so a machine is born with every mesh visible and keeps them until
+ * the next pass — and three uploads a geometry the first frame its mesh is
+ * in the frustum. Whether the pool was first uploaded by a boot Watcher, a
+ * warm-phase one or a HELD one was therefore a race between the spawn and
+ * the cull clock: in the losing case four pooled buffers appeared inside the
+ * per-live bracket and stayed there — the fingerprint's "held 4", named by
+ * §10.6's registration census; the rest of its 9 raw geometries (1.13 per
+ * live Watcher) were the per-machine component PROXIES, which `parts.js` now
+ * shares per shape.
+ *
+ * So a machine's first drawn frame applies the SAME test the engine would
+ * apply 0-100 ms later: the same projected-diameter formula against the
+ * BASE resolution, the same glow allowance, the same `__sizeCulled` flag, so
+ * the engine owns the mesh from then on and un-hides it the moment it grows
+ * past the limit. Nothing is hidden that the engine would not hide; nothing
+ * sub-pixel is uploaded because it happened to be born between two passes.
+ * It runs from the scene's `onBeforeRender` (after the renderer's matrix
+ * update, before projection — the one point at which a spawn is positioned
+ * and not yet drawn), once per machine, and allocates nothing.
+ */
+const _spawnCull = new Map();     // machine -> renders waited for it to enter the scene
+const _spawnCullHooked = new WeakSet();
+const _scWp = new THREE.Vector3();
+
+function queueSpawnSizeCull(machine) {
+  const scene = machine?.ctx?.scene;
+  if (!scene) return;
+  _spawnCull.set(machine, 0);
+  if (_spawnCullHooked.has(scene)) return;
+  _spawnCullHooked.add(scene);
+  const prev = scene.onBeforeRender;
+  scene.onBeforeRender = function (r, sc, camera, target) {
+    if (typeof prev === 'function') prev.call(this, r, sc, camera, target);
+    if (_spawnCull.size) flushSpawnSizeCull(camera);
+  };
+}
+
+function flushSpawnSizeCull(camera) {
+  for (const [m, waited] of _spawnCull) {
+    if (m._rigDisposed || m._disposed || !m.root) { _spawnCull.delete(m); continue; }
+    if (!m.root.parent) {                      // not in the world yet
+      // a machine built and never added (a probe, a preview) is not held forever
+      if (waited > 600) _spawnCull.delete(m); else _spawnCull.set(m, waited + 1);
+      continue;
+    }
+    _spawnCull.delete(m);
+    try { spawnSizeCull(m, camera); } catch (e) { /* the engine's own pass follows */ }
+  }
+}
+
+/** `engine.js` `_glowsOne`, verbatim: glowing meshes get the lower limit. */
+function glowsForCull(mat) {
+  if (Array.isArray(mat)) return mat.some(glowsForCull);
+  if (!mat) return false;
+  if (mat.toneMapped === false) return true;
+  if (mat.blending !== undefined && mat.blending !== THREE.NormalBlending) return true;
+  const e = mat.emissive;
+  return !!(e && (e.r + e.g + e.b) * (mat.emissiveIntensity ?? 1) > 0.02);
+}
+
+function spawnSizeCull(machine, camera) {
+  const e = machine.ctx?.engine;
+  const cam = e?.camera || camera;
+  if (!e || !cam || !cam.isPerspectiveCamera) return;
+  const cullPx = e.sizeCullPx;
+  if (!(cullPx > 0)) return;
+  const baseH = Math.max(1, Math.round(window.innerHeight * (e.basePixelRatio || 1)));
+  const fovK = baseH / (2 * Math.tan((cam.fov * Math.PI / 180) / 2));
+  const glowK = e.sizeCullGlowFactor ?? 0.5;
+  const cp = cam.position;
+  machine.root.traverse((o) => {
+    if (!o.isMesh || !o.visible || o.isInstancedMesh) return;
+    if (o.userData.noSizeCull || o.userData.__sizeCulled === true) return;
+    const me = o.matrixWorld.elements;
+    const scl = Math.sqrt(Math.max(
+      me[0] * me[0] + me[1] * me[1] + me[2] * me[2],
+      me[4] * me[4] + me[5] * me[5] + me[6] * me[6],
+      me[8] * me[8] + me[9] * me[9] + me[10] * me[10]));
+    const g = o.geometry;
+    if (!g) return;
+    if (!g.boundingSphere) g.computeBoundingSphere?.();
+    const r = (g.boundingSphere?.radius ?? 0) * scl;
+    if (!(r > 0)) return;
+    _scWp.set(me[12], me[13], me[14]);
+    const dist = _scWp.distanceTo(cp);
+    const limit = glowsForCull(o.material) ? cullPx * glowK : cullPx;
+    if (limit <= 0) return;
+    const px = 2 * r * fovK / Math.max(0.05, dist);
+    if (px < limit) { o.visible = false; o.userData.__sizeCulled = true; }
+  });
 }
 
 /* ------------------------------------------------------------------ */
@@ -1576,6 +1733,7 @@ export function disposeRig(machine) {
     return { skeletons: 0, owned: 0, glows: false };
   }
   machine._rigDisposed = true;
+  _spawnCull.delete(machine);
   const skeletons = disposeSkeletons(machine);
   // the merged component mesh and its material (rig/components.js)
   try { disposeComponents(machine); } catch (e) { /* already gone */ }
@@ -1627,6 +1785,13 @@ function installRigTeardown(machine) {
   machine.disposeFx = function rigAwareDisposeFx(keepBeacon = false) {
     const r = inner.call(this, keepBeacon);
     if (this._disposed) disposeRig(this);
+    // THE FREEZE (`ai/sites.js` `_freeze`, a wreck still standing): it has
+    // just switched every caster off; the wreck keeps its prime (see
+    // `markWreckShadow` — ruling Sep 26)
+    else if (keepBeacon && this._frozen && this.state === 'dead') {
+      this._lodShadow = null;
+      markWreckShadow(this);
+    }
     return r;
   };
 }

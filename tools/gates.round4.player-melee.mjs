@@ -736,23 +736,126 @@ export const GATES = [
   /* ---------------------------------------------------- A101-spear-grip */
   {
     id: 'A101-spear-grip', kind: 'action', lane: 'player-melee',
-    timeout: 120000, settle: 500,
+    timeout: 240000, settle: 500,
     title: 'Ready + every frame of all three lights and the heavy: palm on the haft axis, '
-      + 'haft on the hand\'s grip axis, blade forward of the hand',
+      + 'haft on the hand\'s grip axis, blade forward of the hand — and the FIRST swing from '
+      + 'holstered (real LMB, idle/jog/sprint) lands with the grip at 0.15-0.28, never inside '
+      + 'the hand-over; bow and spear never both in hand',
     setup: `__CTX__.input.enabled = true;`,
     assert: `(async () => {
       const C = __CTX__, p = C.player, an = p.animator;
       if (!an?.debugMelee) return { pass: null, detail: 'SKIP: no animator.debugMelee' };
       ${FREEZE} ${STAGE} ${AIMLOCK} ${SWING} ${READY}
       const M = C.combat.melee;
+      const rows = [];
+      const bad = [];
+
+      /* ---- ROUND 6, RULING R5: THE FIRST SWING FROM HOLSTERED ----
+       * The r5 skeptic's finding: after READY_HOLD the spear is on her back,
+       * and the first LMB swung while the haft was still sliding through her
+       * fist — grip 0.38-0.45 of the haft at contact (canon 0.15-0.28; 0.197
+       * from the guard), 22-29 of ~31 swing frames inside the hand-over, all
+       * of them the frames this gate used to filter out. Staged through the
+       * REAL input path (C.input.mouse.buttons, the bit combat reads), from
+       * holstered, at idle, at a jog and at a sprint, a CLICK (the queued
+       * light) and a HOLD through the draw (the heavy — a held LMB during the
+       * draw becomes the heavy). Every rendered frame is read. Per row:
+       *   - the grip fraction at CONTACT (the strike frame nearest k 0.70):
+       *     where her wrist sits along the haft, butt = 0, off the prop's own
+       *     matrix and the hand bone — canon M3, 0.15-0.28;
+       *   - ZERO swing frames inside the hand-over (blend < 1, or the grip
+       *     not yet at its fraction — meleeLayer handoverDone);
+       *   - the click -> first swing frame time, published (0.25-0.35 s is
+       *     the design; gated at <= 0.35 s when the box renders >= 40 fps,
+       *     where the per-frame clock caps cannot stretch it);
+       *   - the beat that fired is the one the input asked for. */
+      const holsterRows = [];
+      {
+        const prevState = C.state;
+        C.state = 'playing';
+        const heading0 = p.heading;
+        const fromHolster = async (label, keys, holdMs) => {
+          M.holsterSpear();
+          { const tq = performance.now();
+            while (M.stance !== 'holstered' && performance.now() - tq < 3000) await frame(); }
+          for (let i = 0; i < 12; i++) await frame();
+          ${STAGE}
+          p.heading = heading0;
+          C.input.keys.clear();
+          for (const k of keys) C.input.keys.add(k);
+          { const tq = performance.now(); while (performance.now() - tq < (keys.length ? 1400 : 300)) await frame(); }
+          const out = [];
+          const t0 = performance.now();
+          C.input.mouse.buttons |= 1;
+          let released = false, seen = false, firstSwingT = null, heavy = null;
+          while (performance.now() - t0 < 4000) {
+            await frame();
+            const t = (performance.now() - t0) / 1000;
+            if (!released && t * 1000 >= holdMs) { C.input.mouse.buttons &= ~1; released = true; }
+            const d = an.debugMelee();
+            if (!d) break;
+            let gf = null;
+            if (d.butt && d.tipChar && d.handChar) {
+              const bx = d.tipChar[0] - d.butt[0], by = d.tipChar[1] - d.butt[1], bz = d.tipChar[2] - d.butt[2];
+              const ll = bx * bx + by * by + bz * bz;
+              gf = ll > 1e-6 ? ((d.handChar[0] - d.butt[0]) * bx + (d.handChar[1] - d.butt[1]) * by
+                + (d.handChar[2] - d.butt[2]) * bz) / ll : null;
+            }
+            out.push({ t, stance: d.stance, phase: d.phase, k: M._phaseEnd > 1e-4 ? M._t / M._phaseEnd : 0,
+              carryB: d.carryBlend, done: d.handoverDone, gfn: d.gripFracNow, gf, held: d.held });
+            if (d.stance === 'swing') { if (firstSwingT == null) { firstSwingT = t; heavy = !!M.heavy; } seen = true; }
+            if (seen && !M.active && M.stance !== 'swing') break;
+          }
+          C.input.mouse.buttons &= ~1;
+          C.input.keys.clear(); p.velocity.set(0, 0, 0);
+          const swing = out.filter((x) => x.stance === 'swing');
+          const inHand = swing.filter((x) => !(x.carryB >= 1) || x.done === false);
+          const strike = swing.filter((x) => x.phase === 'strike' && typeof x.gf === 'number');
+          const c = strike.length ? strike.reduce((b, x) => (Math.abs(x.k - 0.70) < Math.abs(b.k - 0.70) ? x : b), strike[0]) : null;
+          const drawFrames = out.filter((x) => x.stance === 'draw');
+          const fdt = drawFrames.length > 1 ? (drawFrames[drawFrames.length - 1].t - drawFrames[0].t) / (drawFrames.length - 1) : null;
+          return { label, swingFrames: swing.length, swingFramesInHandover: inHand.length,
+            gripFracAtContact: c ? +c.gf.toFixed(3) : null, contactK: c ? +c.k.toFixed(2) : null,
+            clickToFirstSwingS: firstSwingT == null ? null : +firstSwingT.toFixed(3),
+            drawFrameMs: fdt == null ? null : +(fdt * 1000).toFixed(1), heavy,
+            gripFracPath: out.filter((x, i) => i % 3 === 0 && (x.stance === 'draw' || x.stance === 'swing'))
+              .slice(0, 14).map((x) => (x.stance[0] + (x.gf == null ? '?' : x.gf.toFixed(2)))) };
+        };
+        const modes = [['idle', []], ['jog', ['KeyW']], ['sprint', ['KeyW', 'ShiftLeft']]];
+        for (const [mode, keys] of modes) {
+          for (const [kind, hold] of [['click', 60], ['hold', 420]]) {
+            const r = await fromHolster(mode + ' ' + kind, keys, hold);
+            holsterRows.push(r);
+            const tag = 'from holstered, ' + r.label;
+            if (!(r.swingFrames >= 6)) { bad.push(tag + ': only ' + r.swingFrames + ' swing frames — the queued swing never played'); continue; }
+            if (r.swingFramesInHandover > 0) {
+              bad.push(tag + ': ' + r.swingFramesInHandover + ' of ' + r.swingFrames
+                + ' swing frames were inside the hand-over (the haft still sliding through her fist) — ruling R5');
+            }
+            if (r.gripFracAtContact == null) bad.push(tag + ': no contact frame was sampled');
+            else if (!(r.gripFracAtContact >= 0.15 && r.gripFracAtContact <= 0.28)) {
+              bad.push(tag + ': the grip was at ' + r.gripFracAtContact + ' of the haft at contact — canon M3 is 0.15-0.28');
+            }
+            if (r.heavy !== (kind === 'hold')) {
+              bad.push(tag + ': the input asked for a ' + (kind === 'hold' ? 'heavy' : 'light') + ' and a '
+                + (r.heavy ? 'heavy' : 'light') + ' played');
+            }
+            if (kind === 'click' && r.drawFrameMs != null && r.drawFrameMs <= 25
+              && !(r.clickToFirstSwingS <= 0.35)) {
+              bad.push(tag + ': the click took ' + r.clickToFirstSwingS + ' s to reach the first swing frame at '
+                + r.drawFrameMs + ' ms frames (design 0.25-0.35 s)');
+            }
+          }
+        }
+        C.state = prevState;
+      }
+
       if (await toReady(C) !== 'ready') return { pass: null, detail: 'SKIP: the guard never came up' };
       const d0 = an.debugMelee();
       const beats = [];
       for (let i = 0; i < 3; i++) beats.push(await rec({}));
       beats.push(await rec({ heavy: true }));
 
-      const rows = [];
-      const bad = [];
       /** Widest angle between any two sampled directions, in degrees. */
       const sweepOf = (arr) => {
         let w = 0;
@@ -768,16 +871,14 @@ export const GATES = [
         return +w.toFixed(1);
       };
       const check = (label, s) => {
-        /* Frames inside the HAND-OVER BLEND are not grip frames and are not
-         * judged here: carryBlend < 1 means the prop is being slid out of
-         * the transform it was in when the hand took it (meleeLayer
-         * _blendCarry), which is deliberate, short, and measured by A102's
-         * own handoverSlide and tipAcrossReparent clauses. Including them
-         * made the grip read up to 3.4 deg off the knuckle line on the first
-         * 'ready' frames after a draw — a true reading of a frame that is not
-         * about the grip. */
-        const held = s.filter((x) => (x.stance === 'swing' || x.stance === 'ready')
-          && (x.carryB == null || x.carryB >= 1));
+        /* ROUND 6 (ruling R5): NO FRAME IS FILTERED. Rounds 1-5 dropped every
+         * frame with carryBlend < 1 here as "the hand-over slide, not a grip"
+         * — and the r5 skeptic showed that was exactly where the first swing
+         * from holstered lived (22-29 of ~31 swing frames). The draw now ends
+         * only when the hand-over has (meleeLayer handoverDone), so every
+         * swing and guard frame is a grip frame and is judged; the
+         * from-holstered rows below gate that directly. */
+        const held = s.filter((x) => x.stance === 'swing' || x.stance === 'ready');
         if (held.length < 6) { bad.push(label + ': only ' + held.length + ' held frames'); return; }
         const palm = Math.max(...held.map((x) => x.palm ?? 9));
         const axis = Math.max(...held.map((x) => x.gripAxis ?? 99));
@@ -950,7 +1051,48 @@ export const GATES = [
       }
       for (const x of bowBad) bad.push(x);
 
-      return { pass: bad.length === 0, detail: { bad, rows,
+      /* ---- ROUND 6, RULING R8: NEVER BOTH IN HAND ----
+       * The r5 skeptic aimed (RMB) during a swing's follow-through: the bow
+       * came into her LEFT fist while the spear was still in her RIGHT for
+       * ~0.5 s (the swing ran out, then the holster). Staged the same way on
+       * the live state machine, idle and at a jog: every rendered frame for
+       * 1.2 s after the aim, the spear's parent and the bow's parent — never
+       * hand_r_045 and hand_l_014 together — and the bow must be in her hand
+       * by the end (aim still wins). */
+      const bothRows = [];
+      {
+        const prevState = C.state;
+        C.state = 'playing';
+        for (const [label, keys] of [['idle', []], ['jog', ['KeyW']]]) {
+          await toReady(C);
+          C.input.keys.clear(); for (const k of keys) C.input.keys.add(k);
+          for (let i = 0; i < (keys.length ? 40 : 5); i++) await frame();
+          M.swing({});
+          { const tq = performance.now();
+            while (!(M.phase === 'recover' && M._t / M._phaseEnd > 0.15) && performance.now() - tq < 3000) await frame(); }
+          C.input.mouse.buttons |= 4;
+          let both = 0, n = 0, bowInHandAt = null;
+          const t0 = performance.now();
+          while (performance.now() - t0 < 1200) {
+            await frame(); n++;
+            const sp = M.spear?.group?.parent?.name || '';
+            const bw = C.combat?.bow?.group?.parent?.name || '';
+            if (/hand_r/.test(sp) && /hand_l/.test(bw)) both++;
+            if (bowInHandAt == null && /hand_l/.test(bw)) bowInHandAt = +((performance.now() - t0) / 1000).toFixed(3);
+          }
+          C.input.mouse.buttons &= ~4;
+          C.input.keys.clear(); p.velocity.set(0, 0, 0);
+          const r = { label, frames: n, framesBothInHand: both, bowInHandAfterAimS: bowInHandAt,
+            spearAtEnd: M.spear?.group?.parent?.name || null };
+          bothRows.push(r);
+          if (both > 0) bad.push('aim after a swing (' + label + '): the bow and the spear were BOTH in her hands on ' + both + ' of ' + n + ' frames — ruling R8');
+          if (bowInHandAt == null) bad.push('aim after a swing (' + label + '): the bow never came into her hand within 1.2 s — aim must still win');
+          for (let i = 0; i < 30; i++) await frame();
+        }
+        C.state = prevState;
+      }
+
+      return { pass: bad.length === 0, detail: { bad, rows, fromHolstered: holsterRows, neverBothInHand: bothRows,
         bladeAheadOfHand: d0.bladeAhead, gripFrac: d0.gripFrac, length: d0.length,
         readyTipHeightM: readyTipY, readyTip: d0.tipChar, readyShaft: d0.shaft,
         light3LeftHandToHaftMin: lhMin, light3LeftHandToShaftLineMin: lhLineMin,
@@ -989,8 +1131,11 @@ export const GATES = [
           + 'spear-canon.md finding 2 and orchestrator ruling R1 (Sep 26): the old two-handed '
           + 'clause is void and its opposite is gated (light3LeftHandToShaftMin >= 0.08 m). '
           + 'readyTipHeightM is ruling R2 / canon M7 (0.35-0.55 m). '
-          + 'Frames with carryBlend < 1 are excluded: those are the hand-over slide, which is '
-          + 'A102\\'s clause, not a grip.' } };
+          + 'ROUND 6: no frame is filtered any more (rounds 1-5 excluded carryBlend < 1); '
+          + 'fromHolstered is ruling R5 (the first LMB from holstered, real input, idle/jog/'
+          + 'sprint x click/hold: grip fraction at contact 0.15-0.28, zero swing frames inside '
+          + 'the hand-over, the beat asked for); neverBothInHand is ruling R8 (RMB during a '
+          + 'follow-through: never the spear in her right fist and the bow in her left).' } };
     })()`,
   },
 
@@ -1036,6 +1181,13 @@ export const GATES = [
         const gripJump = maxStep(b.samples, 'grip');
         const tipJump = maxStep(b.samples, 'tip');
         const offHand = b.samples.filter((x) => x.stance === 'swing' && x.held === false).length;
+        /* ROUND 6 (ruling R5): the continuity proof below leans on the prop
+         * being RIGID in the hand on every swing frame (A101's grip clauses),
+         * and until this round A101 excluded the hand-over frames — which
+         * is where the first swing from holstered was. Now nothing is
+         * excluded anywhere, and this says so on the swing itself: no swing
+         * frame is inside the hand-over blend. */
+        const inHandover = b.samples.filter((x) => x.stance === 'swing' && typeof x.carryB === 'number' && x.carryB < 1).length;
         const badParent = b.samples.filter((x) => x.stance === 'swing' && x.parent !== 'hand_r_045').length;
         /* SPEEDS, NOT STEPS. A per-frame DISTANCE is a speed multiplied by
          * whatever that frame happened to cost, and on a box running sixteen
@@ -1083,7 +1235,8 @@ export const GATES = [
           handSpanY: hs.spanY, contactHandY: hs.contactY,
           maxGripStepPerFrame: gripJump, maxTipStepPerFrame: tipJump,
           worstGripStepVsBudget: +worst.toFixed(2), worstGripStep: +worstStep.toFixed(3),
-          framesOffHand: offHand + badParent });
+          framesOffHand: offHand + badParent, swingFramesInHandover: inHandover });
+        if (inHandover > 0) bad.push(label + ': ' + inHandover + ' swing frames inside the hand-over blend — the grip is not rigid on them (ruling R5)');
         if (!(hand >= 1.2)) bad.push(label + ': the hand travelled ' + hand + ' m');
         if (!(yawExc >= 15)) bad.push(label + ': torso yaw excursion ' + yawExc.toFixed(1) + ' deg');
         if (!(b.step >= 0.25 && b.step <= 0.8)) bad.push(label + ': step-in ' + b.step + ' m');
@@ -1453,9 +1606,11 @@ export const GATES = [
   /* -------------------------------------------- A103-melee-contact-sync */
   {
     id: 'A103-melee-contact-sync', kind: 'action', lane: 'player-melee',
-    timeout: 90000, settle: 600,
+    timeout: 480000, settle: 600,
     title: 'Swinging at a machine: melee-hit fires INSIDE the strike phase, the blade actually '
-      + 'REACHES the hull (tip <= 0.15 m from the nearest surface) and the sparks are on it',
+      + 'REACHES the hull (tip <= 0.15 m from the nearest surface) and the sparks are on it — on '
+      + 'EVERY species in the roster (grounded fliers included), and on a 25 deg slope the blade '
+      + 'stays out of the ground',
     setup: `__CTX__.input.enabled = true;`,
     assert: `(async () => {
       const C = __CTX__, p = C.player, an = p.animator;
@@ -1763,9 +1918,202 @@ export const GATES = [
       }
       if (!rows.some((r) => r.hit !== null && r.phase)) bad.push('no melee-hit fired at all');
 
+      /* ---- ROUND 6, RULING R7: EVERY SPECIES ----
+       * The rows above are a Watcher, and a Watcher is what the contact keys
+       * were authored against. The r5 skeptic staged the tall ones: a
+       * Thunderjaw's hits landed with the blade 1.13-1.19 m short of its
+       * hull, a Behemoth's 0.19-0.32 m. So EVERY kind in ctx.machines.kinds
+       * is staged here the way the Watcher is — parked facing her, frozen,
+       * on the ground (a Stormbird and a Glinthawk GROUNDED: _airborne off,
+       * a ground hold, the rig posed on its feet), she walks in with the
+       * spear drawn until the collision solve stops her, and swings a
+       * light-1, a light-2 and a heavy (3 rows a species). Per row, the gate's
+       * OWN closed-form tip-to-hull at the hit (bar 0.15 m, the same clause
+       * as the Watcher rows), the hit inside the strike phase, and her body
+       * capsule not inside the hull (-0.10, the same). A species whose hull
+       * cannot be reached from where the term lets her stand fails BY NAME. */
+      const speciesRows = [], speciesSum = {};
+      {
+        const list = C.machines?.list || [];
+        const kinds = (C.machines?.kinds || []).slice();
+        const getKind = (kind) => {
+          let mm = list.find((x) => x.alive && x.kind === kind);
+          if (!mm && C.machines.spawn) { try { mm = C.machines.spawn(kind, p.position.x + 60, p.position.z + 40); } catch { mm = null; } }
+          return mm && mm.kind === kind ? mm : null;
+        };
+        const walkTo = async (mm) => {
+          C.input.keys.add('KeyW');
+          let last = 99, still = 0;
+          for (let f = 0; f < 240; f++) {
+            await frame();
+            C.combat.melee.drawSpear(30);
+            const d2 = Math.hypot(p.position.x - mm.position.x, p.position.z - mm.position.z);
+            if (Math.abs(d2 - last) < 0.002) { if (++still > 8) break; } else still = 0;
+            last = d2;
+          }
+          C.input.keys.delete('KeyW');
+          for (let f = 0; f < 12; f++) await frame();
+        };
+        const capsOf = (mm) => (C.hitHulls && C.hitHulls.hulls) ? C.hitHulls.hulls(mm) : null;
+        const bodyGap = (mm) => {
+          const caps = capsOf(mm);
+          if (!caps || !caps.length) return null;
+          const px = p.position.x, py = p.position.y, pz = p.position.z;
+          let best = Infinity;
+          for (const c of caps) {
+            const r = c.r || 0;
+            if (r <= 1e-4) continue;
+            const ax = c.a[0], ay = c.a[1], az = c.a[2];
+            const ex = c.b[0] - ax, ey = c.b[1] - ay, ez = c.b[2] - az;
+            const ll = ex * ex + ey * ey + ez * ez;
+            for (let s2 = 0; s2 <= 10; s2++) {
+              const qy = py + 0.4 + s2 * 0.1;
+              let t = ll > 1e-9 ? ((px - ax) * ex + (qy - ay) * ey + (pz - az) * ez) / ll : 0;
+              t = t < 0 ? 0 : (t > 1 ? 1 : t);
+              const d = Math.hypot(px - (ax + ex * t), qy - (ay + ey * t), pz - (az + ez * t));
+              if (d - r - 0.4 < best) best = d - r - 0.4;
+            }
+          }
+          return best === Infinity ? null : +best.toFixed(3);
+        };
+        for (const other of list) {
+          if (other.alive && Math.hypot(other.position.x - p.position.x, other.position.z - p.position.z) < 60) {
+            other.position.x += 250; if (other.root) other.root.position.x = other.position.x;
+          }
+        }
+        for (const kind of kinds) {
+          const mm = getKind(kind);
+          if (!mm) { bad.push(kind + ': could not be staged — its reach is unmeasured'); continue; }
+          const sum = { rows: 0, pass: 0, worst: null };
+          for (let i = 0; i < 3; i++) {
+            const heavy = i === 2;
+            C.combat.melee.holsterSpear();
+            for (let f = 0; f < 8; f++) await frame();
+            ${STAGE}
+            p.heading = 0; p._faceX = 0; p._faceZ = 1; p._candX = 0; p._candZ = 1; p._latchT = 0;
+            p.camYaw = Math.PI;
+            if (p.model) p.model.rotation.y = 0;
+            const d0 = (mm.standoffHalfLen || 0) + (mm.bodyRadius || 1) + 0.95 + 1.2;
+            const mx = p.position.x, mz = p.position.z + d0;
+            const gy = C.terrain ? C.terrain.getHeight(mx, mz) : mm.position.y;
+            mm.update = () => {};
+            mm.position.set(mx, gy, mz); mm.heading = Math.PI; mm.state = 'idle';
+            if (mm.root) { mm.root.position.set(mx, gy, mz); mm.root.rotation.set(0, Math.PI, 0); }
+            if (mm.ai && mm.ai.reactions) { mm.ai.reactions.t = 0; if (typeof mm.ai.reactions.clear === 'function') mm.ai.reactions.clear(); }
+            if (mm.maxHealth) mm.health = mm.maxHealth;
+            /* a flier is staged GROUNDED (ruling R7: "Stormbird grounded"):
+             * its perch flag off, a ground hold, and its own animate() run a
+             * few frames so the rig stands on its feet with the legs untucked
+             * (m.update is stubbed, so nothing else would pose it) */
+            if (typeof mm._airborne === 'boolean' && typeof mm.animate === 'function') {
+              mm._airborne = false; mm._groundHold = 1e9;
+              for (let f = 0; f < 30; f++) { try { mm.animate(1 / 60, performance.now() / 1000); } catch { /* pose best-effort */ } }
+              mm.position.y = gy; if (mm.root) mm.root.position.y = gy;
+            }
+            for (let f = 0; f < 4; f++) await frame();
+            await toReady(C);
+            C.combat.melee.drawSpear(30);
+            await walkTo(mm);
+            if (!heavy) C.combat.melee.combo = i;
+            let hitRow = null;
+            const onHit = (e) => {
+              if (hitRow) return;
+              const dd = an.debugMelee();
+              const caps = capsOf(mm);
+              hitRow = { phase: C.combat.melee.phase, tip: dd ? dd.tipWorld : null,
+                gap: dd && caps ? tipToHull(dd.tipWorld, caps) : null, body: bodyGap(mm),
+                aimed: !!C.combat.melee.aimOk, aimPitchDeg: dd ? dd.aimPitchDeg : null, aimYawDeg: dd ? dd.aimYawDeg : null };
+            };
+            C.events.on('melee-hit', onHit);
+            const b = await rec({ budget: 4000, heavy });
+            C.events.off?.('melee-hit', onHit);
+            const row = { kind, beat: heavy ? 'heavy' : 'light-' + (i + 1),
+              stand: +Math.hypot(p.position.x - mm.position.x, p.position.z - mm.position.z).toFixed(3),
+              hit: !!hitRow, phase: hitRow ? hitRow.phase : null,
+              tipToHullAtHit: hitRow && hitRow.gap != null ? +hitRow.gap.toFixed(3) : null,
+              playerToHullAtHit: hitRow ? hitRow.body : null,
+              aimed: hitRow ? hitRow.aimed : null, aimPitchDeg: hitRow ? hitRow.aimPitchDeg : null,
+              aimYawDeg: hitRow ? hitRow.aimYawDeg : null };
+            speciesRows.push(row);
+            sum.rows++;
+            let ok = true;
+            const tag = kind + ' ' + row.beat;
+            if (!hitRow) { bad.push(tag + ': no melee-hit fired'); ok = false; }
+            else {
+              if (row.phase !== 'strike') { bad.push(tag + ': the hit fired in phase "' + row.phase + '"'); ok = false; }
+              if (row.tipToHullAtHit == null) { bad.push(tag + ': the gate could not solve the tip against the hull'); ok = false; }
+              else if (!(row.tipToHullAtHit <= 0.15)) {
+                bad.push(tag + ': the blade stopped ' + row.tipToHullAtHit.toFixed(3) + ' m SHORT of the hull (bar 0.15 m) — '
+                  + 'unreachable from where the melee term lets her stand (' + row.stand + ' m from its centre)');
+                ok = false;
+              }
+              if (row.playerToHullAtHit != null && !(row.playerToHullAtHit > -0.10)) {
+                bad.push(tag + ': her own capsule was ' + row.playerToHullAtHit + ' m inside the hull'); ok = false;
+              }
+            }
+            if (ok) sum.pass++;
+            if (row.tipToHullAtHit != null && (sum.worst == null || row.tipToHullAtHit > sum.worst)) sum.worst = row.tipToHullAtHit;
+            await new Promise((r) => setTimeout(r, 150));
+          }
+          speciesSum[kind] = sum.pass + '/' + sum.rows + ' (worst ' + sum.worst + ' m)';
+          mm.position.x += 250; if (mm.root) mm.root.position.x = mm.position.x;
+        }
+      }
+
+      /* ---- ROUND 6, RULING R9 (S5): THE BLADE STAYS OUT OF THE GROUND ----
+       * The r5 skeptic's 25 deg slope (x -264, z -176, uphill heading -1.99):
+       * swung uphill, the light-1's tip went 0.16 m and the heavy's 0.57 m
+       * into the terrain. Uphill, across and downhill, a light-1 and a heavy
+       * each, no machine: the blade tip above the terrain under it at contact
+       * (the strike frame nearest k 0.70) AND on every swing frame. */
+      const slopeRows = [];
+      {
+        const T = C.terrain;
+        const SX = -264, SZ = -176, UP = -1.99;
+        const list = C.machines?.list || [];
+        for (const o of list) {
+          if (o.alive && Math.hypot(o.position.x - SX, o.position.z - SZ) < 70) { o.position.x += 250; if (o.root) o.root.position.x = o.position.x; }
+        }
+        const slope = (() => { const e = 1.0, gx = (T.getHeight(SX + e, SZ) - T.getHeight(SX - e, SZ)) / (2 * e),
+          gz = (T.getHeight(SX, SZ + e) - T.getHeight(SX, SZ - e)) / (2 * e); return +(Math.atan(Math.hypot(gx, gz)) * 180 / Math.PI).toFixed(1); })();
+        for (const [dir, H] of [['uphill', UP], ['across', UP + Math.PI / 2], ['downhill', UP + Math.PI]]) {
+          for (const heavy of [false, true]) {
+            C.combat.melee.holsterSpear();
+            for (let f = 0; f < 8; f++) await frame();
+            p.position.set(SX, 0, SZ); p.velocity.set(0, 0, 0); p._snapToGround();
+            p.heading = H; p._faceX = Math.sin(H); p._faceZ = Math.cos(H); p._candX = p._faceX; p._candZ = p._faceZ; p._latchT = 0;
+            if (p.model) p.model.rotation.y = H;
+            p.camYaw = H + Math.PI;
+            for (let f = 0; f < 10; f++) await frame();
+            await toReady(C);
+            C.combat.melee.combo = 0;
+            const tr = [];
+            const b = await rec({ heavy, budget: 3000 });
+            let minAll = 9, cK = null;
+            for (const x of b.samples) {
+              if (x.stance !== 'swing' || !x.tip) continue;
+              const under = x.tip[1] - T.getHeight(x.tip[0], x.tip[2]);
+              if (under < minAll) minAll = under;
+              if (x.phase === 'strike' && (cK == null || Math.abs(x.k - 0.70) < Math.abs(cK.k - 0.70))) cK = { k: x.k, under };
+            }
+            const row = { dir, beat: heavy ? 'heavy' : 'light-1', slopeDeg: slope,
+              tipAboveGroundAtContact: cK ? +cK.under.toFixed(3) : null,
+              tipAboveGroundMinAllFrames: +minAll.toFixed(3) };
+            slopeRows.push(row);
+            const tag = 'slope ' + dir + ' ' + row.beat;
+            if (row.tipAboveGroundAtContact == null) bad.push(tag + ': no contact frame sampled');
+            else if (!(row.tipAboveGroundAtContact > 0)) bad.push(tag + ': the blade was ' + row.tipAboveGroundAtContact + ' m into the ground at contact — ruling R9');
+            if (!(row.tipAboveGroundMinAllFrames > 0)) bad.push(tag + ': the blade went ' + row.tipAboveGroundMinAllFrames + ' m into the ground during the swing');
+          }
+        }
+      }
+
       const reaches = rows.map((r) => r.tipToHullAtHit).filter((v) => typeof v === 'number');
-      return { pass: bad.length === 0, detail: { bad, rows, contactK: 0.70,
+      const spReach = speciesRows.map((r) => r.tipToHullAtHit).filter((v) => typeof v === 'number');
+      return { pass: bad.length === 0, detail: { bad, speciesSummary: speciesSum, slopeRows, rows, contactK: 0.70,
         reachRangeM: reaches.length ? [Math.min(...reaches), Math.max(...reaches)] : null,
+        speciesReachRangeM: spReach.length ? [Math.min(...spReach), Math.max(...spReach)] : null,
+        speciesRows,
         reachSource: 'gate-side closed-form solve on b.hit.tip against hitHulls.hulls(m) captured '
           + 'inside the melee-hit event (round 5, M1); publishedContactGap is melee.js\\'s own '
           + 'number, kept as a cross-check only (crossCheckDeltaM)',
@@ -1922,6 +2270,51 @@ export const GATES = [
       }
       const heavyFace = { liveFrames: hv.length, liveForearmMinM: hvF, liveHaftMinM: hvH, pinned };
 
+      /* ---- ROUND 6, RULING R9: THE HEAVY'S RECOVER, MOVING ----
+       * The r5 skeptic swung the heavy at a jog and out of a sprint (keys
+       * released on the press) and found the right forearm's mesh 1.8-2.6 cm
+       * into her belly at the follow-through: the recover frames of a MOVING
+       * heavy, which no row here staged (the scan above is four standing
+       * swings). Staged now: a heavy at a jog and a heavy from a sprint-stop,
+       * every RECOVER frame (and the settle after it, into the guard): the
+       * drive forearm (elbow -> wrist) at least 0.10 m off the pelvis->neck
+       * axis (R9's bar; debug().forearmToSpine, the same read as the scan's
+       * spine clause) — published with the build's own target, 0.22 m, which
+       * is where the belly mesh stops touching. */
+      const recoverRows = [];
+      {
+        const Mm = C.combat.melee;
+        const prevState = C.state;
+        C.state = 'playing';
+        for (const [label, keys, stop] of [['jog heavy', ['KeyW'], false], ['sprint-stop heavy', ['KeyW', 'ShiftLeft'], true]]) {
+          await toReady(C);
+          ${STAGE}
+          C.input.keys.clear(); for (const k of keys) C.input.keys.add(k);
+          { const tq = performance.now(); while (performance.now() - tq < 1500) { await frame(); Mm.drawSpear(30); } }
+          if (stop) C.input.keys.clear();
+          const b = await rec({ heavy: true, budget: 4000 });
+          const settle = [];
+          for (let i = 0; i < 12; i++) { await frame(); const d = an.debugMelee(); if (d) settle.push({ phase: 'settle', toSpine: d.forearmToSpine }); }
+          C.input.keys.clear(); p.velocity.set(0, 0, 0);
+          const recF = b.samples.filter((x) => x.phase === 'recover' && typeof x.toSpine === 'number').concat(settle);
+          const allF = b.samples.filter((x) => (x.w ?? 0) > 0.3 && typeof x.toSpine === 'number');
+          const r = { label, recoverFrames: recF.length,
+            forearmToSpineRecoverMinM: recF.length ? +Math.min(...recF.map((x) => x.toSpine)).toFixed(3) : null,
+            forearmToSpineSwingMinM: allF.length ? +Math.min(...allF.map((x) => x.toSpine)).toFixed(3) : null };
+          recoverRows.push(r);
+          if (!(r.recoverFrames >= 5)) bad.push(label + ': only ' + r.recoverFrames + ' recover frames sampled');
+          else if (!(r.forearmToSpineRecoverMinM >= 0.10)) {
+            bad.push(label + ': on the recover the forearm came within ' + r.forearmToSpineRecoverMinM
+              + ' m of her belly/spine axis — ruling R9 bar 0.10 m');
+          }
+          if (r.forearmToSpineSwingMinM != null && !(r.forearmToSpineSwingMinM >= 0.10)) {
+            bad.push(label + ': the forearm came within ' + r.forearmToSpineSwingMinM + ' m of the spine axis during the swing');
+          }
+        }
+        C.state = prevState;
+        await toReady(C);
+      }
+
       /* THE FREE ARM NEVER GOES THROUGH THE STOWED BOW (round 5 fix pass 1).
        * With the bow kept on her back while the spear is out (the judge found
        * combat.js putting it in her left fist on every live swing — fixed, and
@@ -1947,7 +2340,7 @@ export const GATES = [
         }
       }
 
-      return { pass: bad.length === 0, detail: { bad, rows, heavyFace, leftArmToBow: labRows,
+      return { pass: bad.length === 0, detail: { bad, rows, heavyFace, movingHeavyRecover: recoverRows, leftArmToBow: labRows,
         note: 'hairArgmin names the STRAND that produced hairClearMin. Fix round 1: the '
           + 'per-frame guard was built from four dyn_hairBackMain bones while this clause '
           + 'measured all 32 dyn_hairBack* — so it failed on strands the guard could not '
@@ -2479,11 +2872,12 @@ export const GATES = [
     id: 'A106-melee-approach-immovable', kind: 'action', lane: 'player-melee',
     timeout: 900000, settle: 500,
     title: 'The melee approach term: walking in with the spear DRAWN moves the machine 0.000 m, '
-      + 'letting go never moves HER more than 0.15 m in a frame, and nowhere it lets her stand '
-      + 'puts her body inside a hit hull — frozen, and with the rig animating',
+      + 'letting go never moves HER more than 0.15 m in a frame nor 0.10 m in total (a planted '
+      + 'foot <= 0.08 m), and nowhere it lets her stand — nor any swing there — puts her body or '
+      + 'either forearm inside a hit hull — frozen, and with the rig animating',
     setup: `__CTX__.input.enabled = true;`,
     assert: `(async () => {
-      const C = __CTX__, p = C.player;
+      const C = __CTX__, p = C.player, an = p.animator;
       const M = C.combat?.melee;
       if (!M || typeof M.drawSpear !== 'function') return { pass: null, detail: 'SKIP: no melee' };
       if (!C.machines?.list?.length) return { pass: null, detail: 'SKIP: no machines' };
@@ -2757,12 +3151,51 @@ export const GATES = [
           last = d2;
         }
         C.input.keys.delete('KeyW');
-        for (let f = 0; f < 8; f++) { await frame(); M.drawSpear(300); }
+        // the walk-in's own stop-settle finishes before the release begins
+        for (let f = 0; f < 30; f++) { await frame(); M.drawSpear(300); }
         const stand = Math.hypot(p.position.x - m.position.x, p.position.z - m.position.z);
         const termAtStand = typeof m.meleeStandoffHalfLen === 'number';
         let worstCorr = 0, worstStep = 0, worstStandStep = 0, latched = 0, frames = 0, worstAt = null;
+        let totalCorr = 0, standCorr = 0;
         let px = p.position.x, pz = p.position.z;
         corr = 0;
+        /* ROUND 6 (ruling R6): the TOTAL the release moves her, and the
+         * planted feet. A per-frame bar let fix pass 1's relax glide her
+         * 0.37-0.67 m backwards over ~0.4 s in 0.02-0.06 m steps, dragging a
+         * planted foot up to 0.34 m (the r5 skeptic): every step under the bar,
+         * the sum not. So the collision's own contribution is SUMMED over the
+         * whole release (the stand and the walk-away), and each foot's world
+         * position is tracked through every planted window (debugFeet). */
+        /* WHAT THE RELEASE DRAGGED A PLANTED FOOT BY. While she stands,
+         * nothing but the release can move her, so every planted window of the
+         * stand counts whole (plantedFootDragStandM). Once she walks away her
+         * own backpedal moves the feet — its stance weight stays over 0.5
+         * across whole strides, so a raw planted-window drift there is the
+         * locomotion's (published: plantedFootDriftWalkRawM, not gated); what
+         * the release can add on top is only the frames in which the collision
+         * solve moved her root (> 1 mm), and the planted feet's motion on
+         * exactly those frames is summed per window (plantedFootDragWalkM).
+         * plantedFootDragM is the larger of the two and is the R6 clause. */
+        const footWin = [null, null], footPrev = [null, null], footAcc = [0, 0];
+        let footDragStand = 0, footWalkRaw = 0, footDragWalk = 0;
+        const feetStep = (phase, corrNow) => {
+          const fs = an.debugFeet ? an.debugFeet() : null;
+          if (!fs) return;
+          for (let i = 0; i < 2 && i < fs.length; i++) {
+            const f = fs[i];
+            if (f.planted) {
+              if (!footWin[i]) { footWin[i] = { x: f.world.x, z: f.world.z }; footAcc[i] = 0; footPrev[i] = null; }
+              const dd = Math.hypot(f.world.x - footWin[i].x, f.world.z - footWin[i].z);
+              if (phase === 'stand' && dd > footDragStand) footDragStand = dd;
+              if (phase !== 'stand' && dd > footWalkRaw) footWalkRaw = dd;
+              if (phase !== 'stand' && corrNow > 0.001 && footPrev[i]) {
+                footAcc[i] += Math.hypot(f.world.x - footPrev[i].x, f.world.z - footPrev[i].z);
+                if (footAcc[i] > footDragWalk) footDragWalk = footAcc[i];
+              }
+              footPrev[i] = { x: f.world.x, z: f.world.z };
+            } else { footWin[i] = null; footPrev[i] = null; }
+          }
+        };
         /* ...plus what the term's LIVE hull check pushed her by outside the
          * solver (fix pass 1: collision._meleeStandoff moves her out the step a
          * hull moves into her, and totals it in meleePushM) — so this clause
@@ -2770,6 +3203,9 @@ export const GATES = [
         let push0 = Cc.meleePushM || 0;
         const sample = (phase) => {
           corr += (Cc.meleePushM || 0) - push0; push0 = Cc.meleePushM || 0;
+          totalCorr += corr;
+          if (phase === 'stand') standCorr += corr;
+          feetStep(phase, corr);
           const st = Math.hypot(p.position.x - px, p.position.z - pz);
           if (corr > worstCorr) { worstCorr = corr; worstAt = phase + '@' + frames; }
           if (st > worstStep) worstStep = st;
@@ -2779,7 +3215,8 @@ export const GATES = [
           px = p.position.x; pz = p.position.z; corr = 0; frames++;
         };
         if (how === 'holster') M.holsterSpear(); else M.aimLock = 1.66;
-        for (let f = 0; f < 16; f++) { await frame(); sample('stand'); }
+        // 0.8 s of standing: fix pass 1's glide ran 0.23-0.44 s — all of it in here
+        { const ts = performance.now(); while (performance.now() - ts < 800) { await frame(); sample('stand'); } }
         C.input.keys.add('KeyS');
         const t1 = performance.now();
         while (performance.now() - t1 < 1000) { await frame(); sample('walk'); }
@@ -2789,10 +3226,13 @@ export const GATES = [
         return { kind: m.kind, how, yaw: +yaw.toFixed(2), stand: +stand.toFixed(3), approachFrames: appr, termAtStand,
           released: m.meleeStandoffHalfLen == null, latchedFrames: latched, frames,
           worstFrameCorrectionM: +worstCorr.toFixed(4), worstAt,
+          totalCorrectionM: +totalCorr.toFixed(4), standCorrectionM: +standCorr.toFixed(4),
+          plantedFootDragM: +Math.max(footDragStand, footDragWalk).toFixed(4), plantedFootDragStandM: +footDragStand.toFixed(4),
+          plantedFootDragWalkM: +footDragWalk.toFixed(4), plantedFootDriftWalkRawM: +footWalkRaw.toFixed(4),
           worstFrameStepM: +worstStep.toFixed(4), worstStandStepM: +worstStandStep.toFixed(4) };
       };
       try {
-        for (const kind of ['watcher', 'strider', 'redeye']) {
+        for (const kind of ['watcher', 'strider', 'redeye', 'thunderjaw']) {
           const m = getKind(kind);
           if (!m) { bad.push('release clause: no ' + kind + ' could be staged'); continue; }
           for (let i = 0; i < 20; i++) await frame();
@@ -2845,6 +3285,16 @@ export const GATES = [
               if (!(r.worstStandStepM <= 0.15)) {
                 bad.push(tag + ': standing still, her root moved ' + r.worstStandStepM.toFixed(3)
                   + ' m in one frame after the release');
+              }
+              /* ROUND 6, ruling R6: the TOTAL the release moved her, and the
+               * foot it dragged — across the whole release (stand + walk away) */
+              if (!(r.totalCorrectionM <= 0.10)) {
+                bad.push(tag + ': the release moved her root ' + r.totalCorrectionM.toFixed(3)
+                  + ' m IN TOTAL (' + r.standCorrectionM.toFixed(3) + ' m of it while she stood still) — ruling R6 bar 0.10 m');
+              }
+              if (!(r.plantedFootDragM <= 0.08)) {
+                bad.push(tag + ': a planted foot was dragged ' + r.plantedFootDragM.toFixed(3)
+                  + ' m during the release — ruling R6 bar 0.08 m');
               }
             }
           }
@@ -2914,6 +3364,42 @@ export const GATES = [
           if (g < best) { best = g; arg = c.name; }
         }
         return { gap: best, hull: arg };
+      };
+      /* ROUND 6 (S5): HER ARMS, NOT ONLY HER BODY CAPSULE. The r5 skeptic
+       * found the fist 0.03 m inside a Behemoth's head on a heavy's contact,
+       * the forearm 0.06 m inside it on a holster and 0.10 m inside a
+       * Glinthawk on a follow-through — places the 0.4 m body capsule above
+       * never reaches. Each forearm is measured as the capsule elbow -> fist
+       * (the middle of the live knuckle line, radius 0.05 m), right and left,
+       * against every hull capsule; < 0 = inside. */
+      const armV = new (p.position.constructor)(), armV2 = new (p.position.constructor)();
+      const armV3 = new (p.position.constructor)();
+      const knuckle = (side) => {
+        const bi = an.bones[an._findName('index_01_' + side + '_')];
+        const bp = an.bones[an._findName('pinky_01_' + side + '_')];
+        return bi && bp ? [bi, bp] : null;
+      };
+      const KN = { right: knuckle('r'), left: knuckle('l') };
+      const armGap = (caps) => {
+        const b = an.b;
+        let best = Infinity, arg = null, side = null;
+        for (const [sd, lo, ha] of [['right', b.loArmR, b.handR], ['left', b.loArmL, b.handL]]) {
+          if (!lo || !ha) continue;
+          lo.bone.getWorldPosition(armV);
+          /* the FIST: the middle of the knuckle line (index_01 .. pinky_01),
+           * where the hand actually is — not the wrist bone */
+          const kn = KN[sd];
+          if (kn) { kn[0].getWorldPosition(armV2); kn[1].getWorldPosition(armV3); armV2.add(armV3).multiplyScalar(0.5); }
+          else ha.bone.getWorldPosition(armV2);
+          const e = [armV.x, armV.y, armV.z];
+          const f = [armV2.x, armV2.y, armV2.z];
+          for (const c of caps) {
+            if (!(c.r > 1e-4)) continue;
+            const g = segSeg(e, f, c.a, c.b) - c.r - 0.05;
+            if (g < best) { best = g; arg = c.name; side = sd; }
+          }
+        }
+        return { gap: best, hull: arg, side };
       };
       // the solver's own capsule distance (collision._pushOut's iteration)
       const cl = (px, py, pz, ax, ay, az, bx, by, bz) => {
@@ -2986,6 +3472,7 @@ export const GATES = [
         for (let k = 0; k < 16; k++) bearings.push(-Math.PI + (k + 0.5) * (2 * Math.PI / 16));
         let termWorst = { gap: Infinity }, sharedWorst = { gap: Infinity }, headOn = null;
         let nTerm = 0, nShared = 0, pen = 0, lost = 0, capsN = 0;
+        let armPen = 0, armWorst = { gap: Infinity }, swingPen = 0, swingFrames = 0, swingWorst = { gap: Infinity };
         const putDown = async (wx, wz, r) => {
           const x0 = m.position.x + wx * r, z0 = m.position.z + wz * r;
           p.position.set(x0, C.terrain.getHeight(x0, z0), z0);
@@ -2998,6 +3485,7 @@ export const GATES = [
         };
         const mgrUpdate = C.machines.update;
         C.machines.update = () => {};
+        let machineMovedM = 0;
         try {
         for (let bi = 0; bi < bearings.length; bi++) {
           const b = bearings[bi];
@@ -3024,6 +3512,7 @@ export const GATES = [
           const bA = [m.position.x - hfx * base, m.position.y + 0.15, m.position.z - hfz * base];
           const bB = [m.position.x + hfx * base, top, m.position.z + hfz * base];
           const g = bodyGap(caps, p.position.x, p.position.y, p.position.z);
+          const ag = armGap(caps);
           const db = axisDist(p.position.x, p.position.y, p.position.z, bA, bB) - dBase;
           const cls = Math.abs(db) < 0.03 ? 'shared' : (db < 0 ? 'opened' : 'extended');
           const where = bi === 0 ? 'head-on' : ('bearing ' + Math.round(b * 180 / Math.PI));
@@ -3038,10 +3527,46 @@ export const GATES = [
             nTerm++;
             if (g.gap <= 0) pen++;
             if (g.gap < termWorst.gap) termWorst = { gap: g.gap, hull: g.hull, where, cls };
+            if (ag.gap < 0) armPen++;
+            if (ag.gap < armWorst.gap) armWorst = { gap: ag.gap, hull: ag.hull, side: ag.side, where };
           }
         }
+        /* the bearing sweep's own staging check, BEFORE the swings below
+         * (a landed hit knocks the machine back — that is the hit, not the
+         * term) */
+        machineMovedM = +Math.hypot(m.position.x - mStart[0], m.position.z - mStart[1]).toFixed(4);
+        /* ...AND THROUGH A SWING (round 6, S5): back to the dead-ahead point,
+         * a light-1 and a heavy swung at the machine; both forearms against the
+         * hulls on every rendered frame of each (the blade may go into the hull
+         * it hits; the arm holding it may not). The machine is kept alive for
+         * it (health parked high, restored after): a wreck is not a collider
+         * and its hulls are not what the clause is about. */
+        {
+          const hp0 = m.health;
+          m.health = 1e6;
+          const hfx = Math.sin(m.heading), hfz = Math.cos(m.heading);
+          await putDown(hfx, hfz, (m.bodyRadius || 1) + 0.3);
+          await putDown(hfx, hfz, (m.bodyRadius || 1) + 0.3);
+          for (let f = 0; f < 10; f++) { await frame(); M.drawSpear(300); }
+          for (const heavy of [false, true]) {
+            M.combo = 0;
+            M.swing({ heavy });
+            let seen = false;
+            const tq = performance.now();
+            while (performance.now() - tq < 3000) {
+              await frame();
+              if (M.stance === 'swing') seen = true;
+              const ag = armGap(C.hitHulls.hulls(m));
+              swingFrames++;
+              if (ag.gap < 0) swingPen++;
+              if (ag.gap < swingWorst.gap) swingWorst = { gap: ag.gap, hull: ag.hull, side: ag.side, beat: heavy ? 'heavy' : 'light-1', phase: M.phase };
+              if (seen && !M.active) break;
+            }
+            for (let f = 0; f < 12; f++) await frame();
+          }
+          m.health = hp0;
+        }
         } finally { C.machines.update = mgrUpdate; }
-        const machineMovedM = +Math.hypot(m.position.x - mStart[0], m.position.z - mStart[1]).toFixed(4);
         if (machineMovedM > 0.005) {
           bad.push(kind + ': the machine moved ' + machineMovedM + ' m while she was set against it — '
             + 'the hull clause was measured on a machine that did not stay put');
@@ -3055,8 +3580,21 @@ export const GATES = [
           termWorstWhere: termWorst.where ? termWorst.where + '/' + termWorst.cls : null,
           headOn, sharedPoints: nShared,
           sharedWorstGapM: nShared ? +sharedWorst.gap.toFixed(3) : null,
-          sharedWorstHull: sharedWorst.hull || null, sharedWorstWhere: sharedWorst.where || null };
+          sharedWorstHull: sharedWorst.hull || null, sharedWorstWhere: sharedWorst.where || null,
+          armPenetrations: armPen, armWorstGapM: Number.isFinite(armWorst.gap) ? +armWorst.gap.toFixed(3) : null,
+          armWorstHull: armWorst.hull || null, armWorstWhere: armWorst.where ? armWorst.where + '/' + armWorst.side : null,
+          swingFrames, swingArmPenetrations: swingPen,
+          swingArmWorstGapM: Number.isFinite(swingWorst.gap) ? +swingWorst.gap.toFixed(3) : null,
+          swingArmWorst: swingWorst.hull ? swingWorst.beat + ' ' + swingWorst.phase + ' ' + swingWorst.side + ' in ' + swingWorst.hull : null };
         hullRows.push(row);
+        if (armPen > 0) {
+          bad.push(kind + ': at ' + armPen + ' place(s) the melee term lets her stand, her ' + armWorst.side
+            + ' forearm/fist is INSIDE a hull (worst ' + armWorst.gap.toFixed(3) + ' m, ' + armWorst.hull + ', ' + armWorst.where + ') — S5');
+        }
+        if (swingPen > 0) {
+          bad.push(kind + ': swinging at it head-on, a forearm/fist went INSIDE its hull on ' + swingPen + ' of '
+            + swingFrames + ' frames (worst ' + row.swingArmWorstGapM + ' m, ' + row.swingArmWorst + ') — S5');
+        }
         if (pen > 0) {
           bad.push(kind + ': ' + pen + ' place(s) the melee term lets her stand put her body capsule '
             + 'INSIDE a hull (worst ' + termWorst.gap.toFixed(3) + ' m, ' + termWorst.hull + ', '
@@ -3135,6 +3673,7 @@ export const GATES = [
           const mx0 = m.position.x, mz0 = m.position.z;
           animateRig(m);
           let frames = 0, termFrames = 0, aside = 0, worst = { gap: Infinity }, below = 0;
+          let armW = { gap: Infinity }, armIn = 0;
           let sMin = 9, sMax = 0, stepMax = 0, lpx = p.position.x, lpz = p.position.z;
           let tw = performance.now();
           const measure = (phase) => {
@@ -3149,9 +3688,13 @@ export const GATES = [
             if (!on) return on;
             termFrames++;
             if (rc.aside) { aside++; return on; }
-            const g = bodyGap(C.hitHulls.hulls(m), p.position.x, p.position.y, p.position.z);
+            const caps5 = C.hitHulls.hulls(m);
+            const g = bodyGap(caps5, p.position.x, p.position.y, p.position.z);
             if (g.gap < worst.gap) worst = { gap: g.gap, hull: g.hull, phase, t: +((performance.now() - tw) / 1000).toFixed(2) };
             if (g.gap < 0.05) below++;
+            const ag = armGap(caps5);
+            if (ag.gap < armW.gap) armW = { gap: ag.gap, hull: ag.hull, side: ag.side, phase };
+            if (ag.gap < 0) armIn++;
             return on;
           };
           let drawnFrames = 0, drawnTerm = 0;
@@ -3161,12 +3704,22 @@ export const GATES = [
             if (measure('drawn')) drawnTerm++;
           }
           M.holsterSpear();
-          let holFrames = 0, released = false;
+          let holFrames = 0, released = false, heldWhileStanding = 0, standFrames = 0;
+          /* ROUND 6 (ruling R6): holstered, she STANDS for 1.2 s — the term
+           * stays latched (it must not move her) and the hulls are measured —
+           * then walks away (KeyS) for 1.8 s, which is what lets it go. */
           const th = performance.now();
-          while (performance.now() - th < 3000) {
-            await frame(); frames++; holFrames++;
-            if (!measure('holstered')) released = true;
+          while (performance.now() - th < 1200) {
+            await frame(); frames++; holFrames++; standFrames++;
+            if (measure('holstered-stand')) heldWhileStanding++;
           }
+          C.input.keys.add('KeyS');
+          const tw2 = performance.now();
+          while (performance.now() - tw2 < 1800) {
+            await frame(); frames++; holFrames++;
+            if (!measure('holstered-walk')) released = true;
+          }
+          C.input.keys.delete('KeyS');
           const rc = Cc._machineMap && Cc._machineMap.get(m);
           m.update = () => {};
           const row = { kind, variant, standAtEngageM: +standAt.toFixed(3),
@@ -3175,6 +3728,9 @@ export const GATES = [
             worstGapM: Number.isFinite(worst.gap) ? +worst.gap.toFixed(4) : null,
             worstHull: worst.hull || null, worstPhase: worst.phase || null, worstAtS: worst.t ?? null,
             releasedAfterHolster: released && !(rc && rc.meleeCut),
+            latchedWhileStanding: heldWhileStanding + '/' + standFrames,
+            armWorstGapM: Number.isFinite(armW.gap) ? +armW.gap.toFixed(4) : null,
+            armWorst: armW.hull ? armW.phase + ' ' + armW.side + ' in ' + armW.hull : null, armFramesInside: armIn,
             largestLivePushM: rc ? +(rc.pushMax || 0).toFixed(4) : null,
             worstFrameStepM: +stepMax.toFixed(4),
             machineMovedM: +Math.hypot(m.position.x - mx0, m.position.z - mz0).toFixed(4),
@@ -3194,7 +3750,11 @@ export const GATES = [
               + ' m of ' + worst.hull + ' (' + worst.phase + ', t ' + worst.t + ' s) on ' + below
               + ' frame(s) — bar 0.05 m (ruling R4)');
           }
-          if (!row.releasedAfterHolster) bad.push(tag + ': the term had not let go 3 s after the holster');
+          if (!row.releasedAfterHolster) bad.push(tag + ': the term had not let go after she walked away from the holster');
+          if (armIn > 0) {
+            bad.push(tag + ': a forearm/fist was INSIDE a hull on ' + armIn + ' frame(s) (worst ' + row.armWorstGapM
+              + ' m, ' + row.armWorst + ') — S5');
+          }
           if (row.machineMovedM > 0.005) bad.push(tag + ': the machine moved ' + row.machineMovedM + ' m');
         }
         M.holsterSpear();
@@ -3237,7 +3797,159 @@ export const GATES = [
           + '(the judge\\'s staging) and animated-throughout; her capsule against every hull '
           + 'capsule on every rendered frame, bar 0.05 m, and the term must let go after the '
           + 'holster (it relaxes to the machine\\'s own standoff at 1.5 m/s, <= 0.10 m a frame). '
-          + 'Clause 3 now also counts the live check\\'s own pushes (collision.meleePushM).' } };
+          + 'Clause 3 now also counts the live check\\'s own pushes (collision.meleePushM). '
+          + 'ROUND 6 (ruling R6): clause 3 adds the Thunderjaw and gates the TOTAL the release moved '
+          + 'her (<= 0.10 m over the stand and the walk-away, totalCorrectionM) and every planted '
+          + 'foot (<= 0.08 m, plantedFootDragM); clause 5 stands 1.2 s after the holster (the term '
+          + 'stays latched and must not move her) and then walks away, which is what releases it. '
+          + 'S5: clauses 4 and 5 measure BOTH forearms (elbow -> fist capsule, radius 0.05) against '
+          + 'every hull capsule as well as her body capsule, and clause 4 swings a light-1 and a '
+          + 'heavy at every species head-on: no forearm/fist inside a hull (< 0).' } };
+    })()`,
+  },
+
+  /* ------------------------------------------------ A107-draw-arm-path */
+  {
+    id: 'A107-draw-arm-path', kind: 'action', lane: 'player-melee',
+    timeout: 300000, settle: 500,
+    title: 'Draw and holster from idle, a jog and a sprint (real key, 5 cycles each, plus the '
+      + 'aim stow): the right elbow never above her head (+0.05 m) and, wherever it is up at '
+      + 'shoulder height, never more than 0.10 m behind her head',
+    setup: `__CTX__.input.enabled = true;`,
+    assert: `(async () => {
+      const C = __CTX__, p = C.player, an = p.animator;
+      if (!an?.debugMelee || !an.b?.upArmR || !an.b?.loArmR || !an.b?.head) {
+        return { pass: null, detail: 'SKIP: no animator.debugMelee / arm bones' };
+      }
+      ${FREEZE} ${FRAME}
+      /* ROUND 6, ORCHESTRATOR RULING R8 (Sep 27, from the r5 skeptic).
+       * The finding: drawing from a JOG put her right elbow 0.14-0.19 m above
+       * her head and 0.26-0.34 m behind it for ~0.25 s; from the rear-3/4
+       * the forearm lay across the back of her head — Kevin's "arm literally
+       * behind head", on the one path no gate staged. The draw and the
+       * re-holster are now an arm path with a hard bound (meleeLayer
+       * _elbowGuard); this is that bound, on the rendered frames.
+       *
+       * STAGING: the melee key (KeyB — the real toggle, polled on its edge
+       * by melee.update), from idle, from a jog and from a sprint, FIVE
+       * draw -> holster cycles each, plus one AIM stow per stance (RMB from
+       * the guard — the quick holster an aim asks for). Every rendered frame
+       * the LAYER poses as 'draw' or 'holster' is read.
+       *
+       * WHAT IS MEASURED, in her character frame (+Y up, +Z her facing): the
+       * elbow (loArmR bone), the head bone, the shoulder joint (upArmR).
+       *   (a) elbow.y <= head.y + 0.05 m, every path frame;
+       *   (b) elbow.z >= head.z - 0.10 m ("behind the head plane by no more
+       *       than 0.10"), on every path frame where the elbow is ABOVE the
+       *       shoulder joint.
+       * WHY (b) HAS A HEIGHT BAND — stated so a judge can hold the literal
+       * reading if they disagree: the READY guard the draw ends in and the
+       * holster starts from has the elbow beside her ribs 0.26-0.36 m
+       * behind the head's plane, and her SHOULDER JOINT itself sits
+       * 0.14-0.20 m behind it at idle, jog and sprint (measured round 6), so
+       * the band-free reading fails the canon guard and the bare shoulder.
+       * "Behind the head" needs the arm up at head level. The band-free
+       * maximum is published (elbowBehindAnyMaxM) beside the gated one. */
+      const C0 = C.state;
+      C.state = 'playing';
+      const M = C.combat.melee;
+      M.aimLock = 0;
+      const V3 = p.position.constructor;
+      const wE = new V3(), wH = new V3(), wS = new V3();
+      const inv = p.model.matrixWorld.clone();
+      const read = () => {
+        p.model.updateWorldMatrix(true, false);
+        inv.copy(p.model.matrixWorld).invert();
+        an.b.loArmR.bone.getWorldPosition(wE).applyMatrix4(inv);
+        an.b.head.bone.getWorldPosition(wH).applyMatrix4(inv);
+        an.b.upArmR.bone.getWorldPosition(wS).applyMatrix4(inv);
+        return { over: wE.y - wH.y, behind: wH.z - wE.z, aboveSh: wE.y - wS.y };
+      };
+      const tapB = async () => { C.input.keys.add('KeyB'); await frame(); await frame(); C.input.keys.delete('KeyB'); };
+      const stats = () => ({ frames: 0, overMax: -9, behindBandMax: -9, behindAnyMax: -9, bandFrames: 0,
+        overAt: null, behindAt: null });
+      const take = (st, tag, phase) => {
+        const r = read();
+        st.frames++;
+        if (r.over > st.overMax) { st.overMax = r.over; st.overAt = tag + ' ' + phase; }
+        if (r.behind > st.behindAnyMax) st.behindAnyMax = r.behind;
+        if (r.aboveSh > 0) {
+          st.bandFrames++;
+          if (r.behind > st.behindBandMax) { st.behindBandMax = r.behind; st.behindAt = tag + ' ' + phase; }
+        }
+      };
+      const rows = [], bad = [];
+      const modes = [['idle', []], ['jog', ['KeyW']], ['sprint', ['KeyW', 'ShiftLeft']]];
+      for (const [mode, keys] of modes) {
+        M.holsterSpear();
+        { const tq = performance.now(); while (M.stance !== 'holstered' && performance.now() - tq < 3000) await frame(); }
+        ${STAGE}
+        C.input.keys.clear(); for (const k of keys) C.input.keys.add(k);
+        { const tq = performance.now(); while (performance.now() - tq < (keys.length ? 1400 : 300)) await frame(); }
+        for (let cyc = 0; cyc < 6; cyc++) {
+          const aimStow = cyc === 5;
+          const st = stats();
+          const tag = mode + (aimStow ? ' aim-stow' : ' cycle ' + (cyc + 1));
+          // DRAW (the key)
+          await tapB();
+          { const tq = performance.now();
+            while (performance.now() - tq < 2000) {
+              await frame();
+              const d = an.debugMelee();
+              if (d && d.stance === 'draw') take(st, tag, 'draw');
+              if (M.stance === 'ready') break;
+            } }
+          for (let i = 0; i < 8; i++) await frame();
+          const drew = M.stance === 'ready';
+          // HOLSTER (the key, or an aim)
+          if (aimStow) C.input.mouse.buttons |= 4; else await tapB();
+          { const tq = performance.now();
+            while (performance.now() - tq < 2500) {
+              await frame();
+              const d = an.debugMelee();
+              if (d && d.stance === 'holster') take(st, tag, 'holster');
+              if (M.stance === 'holstered' && !(d && d.stance === 'holster')) break;
+            } }
+          C.input.mouse.buttons &= ~4;
+          for (let i = 0; i < 10; i++) await frame();
+          const row = { mode, cycle: aimStow ? 'aim-stow' : cyc + 1, drew, holstered: M.stance === 'holstered',
+            pathFrames: st.frames, bandFrames: st.bandFrames,
+            elbowOverHeadMaxM: +st.overMax.toFixed(3), elbowOverAt: st.overAt,
+            elbowBehindHeadBandMaxM: st.bandFrames ? +st.behindBandMax.toFixed(3) : null, elbowBehindAt: st.behindAt,
+            elbowBehindAnyMaxM: +st.behindAnyMax.toFixed(3) };
+          rows.push(row);
+          if (!drew || !(st.frames >= 6)) { bad.push(tag + ': the draw/holster did not play (' + st.frames + ' path frames)'); continue; }
+          if (!(row.elbowOverHeadMaxM <= 0.05)) {
+            bad.push(tag + ': the right elbow went ' + row.elbowOverHeadMaxM + ' m ABOVE her head (' + row.elbowOverAt + ') — bar +0.05 m');
+          }
+          if (row.elbowBehindHeadBandMaxM != null && !(row.elbowBehindHeadBandMaxM <= 0.10)) {
+            bad.push(tag + ': with the elbow up at shoulder height it was ' + row.elbowBehindHeadBandMaxM
+              + ' m BEHIND her head (' + row.elbowBehindAt + ') — bar 0.10 m, Kevin\\'s "arm literally behind head"');
+          }
+          if (keys.length) {
+            // keep her moving: re-press what the aim or the keys may have left
+            C.input.keys.clear(); for (const k of keys) C.input.keys.add(k);
+          }
+        }
+        C.input.keys.clear(); p.velocity.set(0, 0, 0);
+      }
+      C.state = C0;
+      const per = {};
+      for (const r of rows) {
+        const k = r.mode;
+        per[k] = per[k] || { cycles: 0, overMax: -9, behindBandMax: -9, behindAnyMax: -9 };
+        per[k].cycles++;
+        per[k].overMax = Math.max(per[k].overMax, r.elbowOverHeadMaxM);
+        if (r.elbowBehindHeadBandMaxM != null) per[k].behindBandMax = Math.max(per[k].behindBandMax, r.elbowBehindHeadBandMaxM);
+        per[k].behindAnyMax = Math.max(per[k].behindAnyMax, r.elbowBehindAnyMaxM);
+      }
+      return { pass: bad.length === 0, detail: { bad, perMode: per, rows,
+        note: 'R8 as gated: (a) elbow <= head + 0.05 m on every draw/holster frame; (b) elbow no '
+          + 'more than 0.10 m behind the head\\'s frontal plane on every such frame where the elbow '
+          + 'is above the shoulder joint. elbowBehindAnyMaxM is the band-free reading, published: '
+          + 'it is dominated by the guard/idle arm at the ends of the path, whose elbow sits beside '
+          + 'the ribs 0.26-0.36 m behind the head plane (the shoulder joint itself 0.14-0.20 m '
+          + 'behind it). Five KeyB cycles per stance plus one aim stow (RMB -> the quick holster).' } };
     })()`,
   },
 
@@ -3621,6 +4333,71 @@ export const GATES = [
       lockCam(0, 2.6, 1.35, 1.15, 42);
       await new Promise((r) => setTimeout(r, 700));
       C.engine.timeScale = 0;
+    })()`,
+  },
+
+  /* ------------------------------------------------- V49-draw-from-jog */
+  {
+    id: 'V49-draw-from-jog', kind: 'visual', lane: 'player-melee',
+    settle: 400,
+    title: 'Drawing the spear at a jog, frame by frame — rear-3/4 and side — the right arm reaches '
+      + 'up the SIDE and over the shoulder, never up behind her head',
+    criteria: 'Twelve captioned tiles, two rows of six, of ONE real draw each (the melee key, '
+      + 'pressed mid-jog; ruling R8): ROW 1 from her rear-3/4 right, ROW 2 from her right side, '
+      + 'each at draw 0.10 / 0.25 / 0.40 / 0.55 / 0.75 and the first guard frame. Judge against '
+      + 'Kevin\'s standing complaints ("arm literally behind head", "arms crossing into her body") '
+      + 'and reference/spear-holster-back-hfw.jpg. PASS requires ALL of: (1) in every tile the '
+      + 'right ELBOW is at or below the top of her head and, whenever it is up at shoulder '
+      + 'height, beside or IN FRONT of her head — never up behind it; (2) from the rear-3/4 row no '
+      + 'forearm lies across the back of her head or neck; the hand goes up her right side to the '
+      + 'haft over her right shoulder; (3) the left arm is not folded across her chest; (4) the '
+      + 'spear comes off her back continuously — it never appears in a new place between two '
+      + 'tiles — and ends in her right hand in the low guard (blade forward-down) in the last tile '
+      + 'of each row; (5) she is still jogging (stride visible, torso leaning with the run). FAIL on '
+      + 'any elbow up behind the head, a forearm across the back of the head, the spear popping '
+      + 'between tiles, or the bow in either hand. A107 measures the same frames numerically '
+      + '(elbow <= head + 0.05 m; above the shoulder, <= 0.10 m behind the head plane).',
+    setup: `(async () => {
+      const C = __CTX__, p = C.player, e = C.engine;
+      ${NOHUD} ${FILM} ${FREEZE} ${STAGE} ${AIMLOCK} ${LOCKCAM}
+      ${gridOf(6, 2, 0.46, [
+        'REAR3/4 DRAW .10', 'REAR3/4 DRAW .25', 'REAR3/4 DRAW .40', 'REAR3/4 DRAW .55', 'REAR3/4 DRAW .75', 'REAR3/4 GUARD',
+        'SIDE DRAW .10', 'SIDE DRAW .25', 'SIDE DRAW .40', 'SIDE DRAW .55', 'SIDE DRAW .75', 'SIDE GUARD',
+      ])}
+      const frame = () => new Promise((r) => requestAnimationFrame(r));
+      const M = C.combat.melee;
+      C.state = 'playing';
+      C.input.enabled = true;
+      const grabNow = async () => {
+        const g0 = got; want = true;
+        const tq = performance.now();
+        while (got === g0 && performance.now() - tq < 1500) await frame();
+      };
+      const drawRow = async (cam) => {
+        M.holsterSpear();
+        { const tq = performance.now(); while (M.stance !== 'holstered' && performance.now() - tq < 3000) await frame(); }
+        for (let i = 0; i < 20; i++) await frame();
+        C.input.keys.clear(); C.input.keys.add('KeyW');
+        { const tq = performance.now(); while (performance.now() - tq < 1500) await frame(); }
+        cam();
+        for (let i = 0; i < 6; i++) await frame();
+        C.input.keys.add('KeyB'); await frame(); await frame(); C.input.keys.delete('KeyB');
+        const targets = [0.10, 0.25, 0.40, 0.55, 0.75];
+        const tq = performance.now();
+        while (targets.length && performance.now() - tq < 3000) {
+          await frame();
+          if (M.stance === 'draw' && M.poseState().drawK >= targets[0]) { targets.shift(); await grabNow(); }
+          else if (M.stance === 'ready') { while (targets.length) { targets.shift(); await grabNow(); } }
+        }
+        { const tr = performance.now(); while (M.stance !== 'ready' && performance.now() - tr < 2000) await frame(); }
+        await frame();
+        await grabNow();
+      };
+      await drawRow(() => lockCam(-1.1, 1.7, 1.7, 1.35, 42));
+      await drawRow(() => lockCam(-2.0, 0.1, 1.5, 1.25, 42));
+      C.input.keys.clear();
+      show();
+      e.timeScale = 0;
     })()`,
   },
 ];

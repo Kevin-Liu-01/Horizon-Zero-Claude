@@ -627,6 +627,18 @@ export const GATES = [
      * The bar is 25 % rather than "a few per cent" because a machine that
      * spends a stretch of the run at its top speed legitimately sits near the
      * ceiling; what the bar excludes is a gait pinned there.
+     *
+     * ORCHESTRATOR RULING Sep 26 (docs/ROUND4-AUDIT.md §4): "A48-cadence
+     * [and A48b] grade MOVING frames only: frames where the machine's
+     * horizontal speed is below 0.5x its walk speed (patrol waits,
+     * turns-in-place, takeoff/landing windows for fliers) are excluded". The
+     * loop still counts its own \`moveFrames\` / \`ceilFrames\` per update;
+     * this gate now samples them once per drawn frame and keeps a frame's
+     * increments ONLY when that frame was a moving one — horizontal speed over
+     * SIM time >= 0.5x the machine's current \`walkSpeed\`, and, for a flier
+     * (\`flyCruise\` defined), not airborne and not within 1.0 sim-s of an
+     * \`_airborne\` change. The bar (25 %) and the minimum sample (60 moving
+     * updates) are unchanged.
      */
     assert: `(async () => {
       ${WAIT_VARIETY}
@@ -650,14 +662,48 @@ export const GATES = [
         L0.moveFrames = 0;
         try { m.lastKnown?.copy?.(p); m.suspicion = 1; m.state = 'alert'; } catch (e) { /* */ }
       }
-      await wait(14000);
-      const rows = {}; const bad = [];
+      // per drawn frame: keep each loop's increments only on a MOVING frame
+      const E = __CTX__.engine, FLIGHT_WIN = 1.0;
+      const acc = new Map();
       for (const m of M.list) {
-        const L = m.alive ? loopOf(m) : null;
-        if (!L || L.moveFrames < 60) continue;
+        const L0 = m.alive ? loopOf(m) : null;
+        if (!L0) continue;
+        acc.set(m, { L: L0, c: L0.ceilFrames, mv: L0.moveFrames, x: m.position.x, z: m.position.z,
+                     air: !!m._airborne, flips: [], frames: [] });
+      }
+      let ps = E.simTime;
+      const tEnd = performance.now() + 14000;
+      while (performance.now() < tEnd) {
+        await new Promise(r => requestAnimationFrame(r));
+        const st = E.simTime, dS = st - ps; ps = st;
+        for (const [m, a] of acc) {
+          const L = a.L;
+          const dC = L.ceilFrames - a.c, dM = L.moveFrames - a.mv;
+          a.c = L.ceilFrames; a.mv = L.moveFrames;
+          const sp = dS > 1e-5 ? Math.hypot(m.position.x - a.x, m.position.z - a.z) / dS : 0;
+          a.x = m.position.x; a.z = m.position.z;
+          if (!!m._airborne !== a.air) { a.air = !!m._airborne; a.flips.push(st); }
+          if (!m.alive || dC < 0 || dM < 0) continue;          // halved window / dead: skip the frame
+          const flier = typeof m.flyCruise === 'number';
+          a.frames.push(st, dM, dC,
+            (sp >= 0.5 * Math.max(0.1, m.walkSpeed || 1) && !(flier && m._airborne)) ? 1 : 0);
+        }
+      }
+      const rows = {}; const bad = [];
+      for (const [m, a] of acc) {
+        // a flier's takeoff / landing window is excluded on BOTH sides of the change
+        const flier = typeof m.flyCruise === 'number';
+        a.move = 0; a.ceil = 0; a.dropped = 0;
+        for (let i = 0; i < a.frames.length; i += 4) {
+          const st = a.frames[i], dM = a.frames[i + 1], dC = a.frames[i + 2];
+          const inFlight = flier && a.flips.some((f) => Math.abs(st - f) < FLIGHT_WIN);
+          const moving = a.frames[i + 3] === 1 && !inFlight;
+          if (moving) { a.move += dM; a.ceil += dC; } else a.dropped += dM;
+        }
+        if (a.move < 60) continue;
         if (rows[m.kind]) continue;
-        const f = +(L.ceilFrames / L.moveFrames).toFixed(3);
-        rows[m.kind] = { movingFrames: L.moveFrames, ceilingBound: L.ceilFrames, frac: f };
+        const f = +(a.ceil / a.move).toFixed(3);
+        rows[m.kind] = { movingFrames: a.move, ceilingBound: a.ceil, frac: f, excludedUpdates: a.dropped };
         if (f > 0.25) bad.push(m.kind + ' ' + f);
       }
       const n = Object.keys(rows).length;

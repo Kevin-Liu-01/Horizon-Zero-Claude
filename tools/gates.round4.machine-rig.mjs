@@ -722,64 +722,266 @@ export const GATES = [
 
   {
     id: 'A47c-corpse-mass', kind: 'action', lane: 'machine-rig',
-    title: 'A wreck LANDS: its median posed vertex drops to <= 0.75x its standing height above the terrain',
-    settle: 600, timeout: 150000,
+    title: 'A wreck LANDS: its median posed height drops to <= 0.75x its standing height above the terrain (sprawlers: area-weighted, against the walking chassis)',
+    /**
+     * ORCHESTRATOR RULING Sep 26 (docs/ROUND4-AUDIT.md §4, machines-expansion
+     * block — "machine-rig owns the gate change"; applied by machines-expansion
+     * in residue round 2). Three changes, and the bar (0.75) is untouched:
+     *
+     *   1. "the reference height is the species' LOCOMOTION pose (median
+     *      chassis height while walking/high-walking over 2 s), not its idle
+     *      rest" — for the SPRAWLERS, "Snapmaw, Corruptor, any species whose
+     *      living rest pose is lying down". The two the ruling names are the
+     *      list below; a new species that rests lying down is added to it.
+     *      Each is brought inside the animation LOD ring (the player is moved
+     *      80 m from it, outside its perception), taken off its bask / wait,
+     *      and walked along its own patrol route; the reference is, as the
+     *      ruling words it, the MEDIAN CHASSIS HEIGHT — the area-weighted median
+     *      of the chassis vertices (dominant bone \`rig_pelvis\` / \`rig_spine\`
+     *      / \`rig_chest\`, the corpse solve's own chassis/chain split) above the
+     *      terrain — taken as the median over >= 2 s of MOVING frames (speed
+     *      >= 0.5x walkSpeed over sim time, A48's definition). The wreck is
+     *      read exactly as every other species' is (area-weighted median of
+     *      every posed vertex); the whole-machine walking median is reported
+     *      beside it. The player is put back before anything dies.
+     *   2. "If a species has no locomotion pose that lifts the chassis, the
+     *      gate SKIPs that species with a note naming it." Lift is measured,
+     *      not declared: the CHASSIS is every vertex whose dominant bone is
+     *      the rig's pelvis, spine or chest (autorig's \`rig_pelvis\` /
+     *      \`rig_spine\` / \`rig_chest\` — the same split the corpse solve
+     *      uses; legs, neck, head and tail are chains), and its lowest vertex
+     *      must clear the terrain under it by more than 0.05 m on the median
+     *      walking frame. (A first cut took "the central half of the body's
+     *      footprint" and read a sprawling croc's KNEES as its belly.)
+     *   3. "Samples are area-weighted per mesh, not per vertex." Every mesh
+     *      contributes its world surface area, spread evenly over its samples,
+     *      and the medians are weighted medians — so a dense little lens or
+     *      eye rig no longer outvotes a hull plate twenty times its size.
+     *      SCOPE: the ruling's bullet is the SPRAWLER rule ("A47c-corpse-mass
+     *      for sprawlers (...): ... Samples are area-weighted"), so the
+     *      sprawlers are graded area-weighted — reference and wreck alike —
+     *      and every other species keeps the per-vertex reading and the rest
+     *      reference it was graded on before. Both readings are REPORTED for
+     *      every species (\`areaRatio\` / \`vertexRatio\`), so the effect of
+     *      applying the weighting more widely is on the record rather than
+     *      decided here (measured on the non-sprawlers: Behemoth 0.64 -> 0.70-
+     *      0.76 and Tallneck 0.61 -> 0.73-0.75 area-weighted; Stormbird 0.70 ->
+     *      0.63-0.67).
+     */
+    settle: 600, timeout: 240000,
     assert: `(async () => {
       ${WAIT_VARIETY}
       ${SPECIES}
       const V = __CTX__.player.position.constructor;
       const T = __CTX__.terrain;
+      const E = __CTX__.engine;
+      const P0 = __CTX__.player;
+      const SPRAWLERS = ['snapmaw', 'corruptor'];      // named by the ruling
+      const wait = (ms) => new Promise(r => setTimeout(r, ms));
+      const frame = () => new Promise(r => requestAnimationFrame(r));
+      // world surface area of a mesh, once (triangles of its own buffer x its world scale^2)
+      const areaOf = new Map();
+      const meshArea = (o) => {
+        if (areaOf.has(o.geometry)) return areaOf.get(o.geometry) * worldScale2(o);
+        const g = o.geometry, P = g.attributes.position, I = g.index;
+        const tri = Math.floor((I ? I.count : P.count) / 3);
+        const step = Math.max(1, Math.floor(tri / 6000));
+        const a = new V(), b = new V(), c = new V(), u = new V(), w = new V();
+        let A = 0;
+        for (let t = 0; t < tri; t += step) {
+          const i0 = I ? I.getX(t * 3) : t * 3, i1 = I ? I.getX(t * 3 + 1) : t * 3 + 1, i2 = I ? I.getX(t * 3 + 2) : t * 3 + 2;
+          a.fromBufferAttribute(P, i0); b.fromBufferAttribute(P, i1); c.fromBufferAttribute(P, i2);
+          A += u.subVectors(b, a).cross(w.subVectors(c, a)).length() * 0.5;
+        }
+        A *= step;
+        areaOf.set(g, A);
+        return A * worldScale2(o);
+      };
+      const worldScale2 = (o) => {
+        const e = o.matrixWorld.elements;
+        const sx = Math.hypot(e[0], e[1], e[2]), sy = Math.hypot(e[4], e[5], e[6]), sz = Math.hypot(e[8], e[9], e[10]);
+        return Math.pow(Math.max(1e-9, sx * sy * sz), 2 / 3);
+      };
       // The quantity a judge measured by hand on fix round 1: where the MASS
       // of the machine is, not where its lowest single vertex is. A47/A47b
       // grade one point against a window, which a splayed limb or an antenna
       // satisfies while the body floats — six of eight species sat HIGHER dead
       // than alive and passed both.
-      const stats = (m) => {
+      const stats = (m, withBelly) => {
         m.root.updateMatrixWorld(true);
         const p = new V();
-        const ys = [];
+        const ys = [], ws = [], pts = withBelly ? [] : null, meshRows = [];
         let mnx = 1e9, mxx = -1e9, mnz = 1e9, mxz = -1e9;
         m.root.traverse((o) => {
           if (!o.isMesh || !o.visible || !o.geometry?.attributes?.position) return;
           if (o.userData.noHull) return;
           const P = o.geometry.attributes.position;
           const step = Math.max(1, Math.floor(P.count / 900));
+          const n0 = ys.length;
+          const SI = o.isSkinnedMesh ? o.geometry.attributes.skinIndex : null;
+          const SW = o.isSkinnedMesh ? o.geometry.attributes.skinWeight : null;
+          const bones = o.isSkinnedMesh ? o.skeleton?.bones : null;
           for (let i = 0; i < P.count; i += step) {
             p.fromBufferAttribute(P, i);
             if (o.isSkinnedMesh) o.applyBoneTransform(i, p);
             p.applyMatrix4(o.matrixWorld);
             ys.push(p.y);
+            if (pts) {
+              let chassis = 0;
+              if (SI && SW && bones) {
+                let bi = -1, bw = -1;
+                for (let c = 0; c < 4; c++) { const w = SW.getComponent(i, c); if (w > bw) { bw = w; bi = SI.getComponent(i, c); } }
+                chassis = /^rig_(pelvis|spine|chest)$/.test(bones[bi]?.name || '') ? 1 : 0;
+              }
+              pts.push(p.x, p.y, p.z, chassis);
+            }
             if (p.x < mnx) mnx = p.x; if (p.x > mxx) mxx = p.x;
             if (p.z < mnz) mnz = p.z; if (p.z > mxz) mxz = p.z;
           }
+          const n = ys.length - n0;
+          const A = n ? meshArea(o) : 0;
+          const w = n ? A / n : 0;
+          for (let k = 0; k < n; k++) ws.push(w);
+          if (n) meshRows.push({ name: o.name || o.type, area: A, ys: ys.slice(n0) });
         });
         if (!ys.length) return null;
         const gy = T.getHeight((mnx + mxx) / 2, (mnz + mxz) / 2);
-        ys.sort((a, b) => a - b);
-        const at = (f) => ys[Math.min(ys.length - 1, Math.floor(ys.length * f))] - gy;
-        return { median: +at(0.5).toFixed(3), p90: +at(0.9).toFixed(3), low: +(ys[0] - gy).toFixed(3), n: ys.length };
+        const idx = ys.map((_, i) => i).sort((a, b) => ys[a] - ys[b]);
+        let W = 0; for (const w of ws) W += w;
+        const at = (f) => {
+          let acc = 0;
+          for (const i of idx) { acc += ws[i]; if (acc >= f * W) return ys[i] - gy; }
+          return ys[idx[idx.length - 1]] - gy;
+        };
+        // the per-vertex reading (the gate's statistic before the ruling)
+        const vAt = (f) => ys[idx[Math.min(idx.length - 1, Math.floor(idx.length * f))]] - gy;
+        const out = { median: +at(0.5).toFixed(3), p90: +at(0.9).toFixed(3), low: +(ys[idx[0]] - gy).toFixed(3), n: ys.length,
+                      vMedian: +vAt(0.5).toFixed(3), vP90: +vAt(0.9).toFixed(3) };
+        // diagnostics only (not graded): each mesh's share of the area and its own median
+        out.meshes = meshRows.map((r) => {
+          const sub = r.ys.slice().sort((a, b) => a - b);
+          return (r.name || '?').slice(0, 16) + ' ' + Math.round(100 * r.area / Math.max(1e-9, W)) + '% @' + (sub[Math.floor(sub.length / 2)] - gy).toFixed(2);
+        });
+        if (pts) {
+          // THE CHASSIS (dominant bone pelvis/spine/chest): its lowest vertex's
+          // clearance over the terrain under it, and its own area-weighted median
+          let belly = 1e9;
+          const cy = [], cw = [];
+          for (let i = 0, k = 0; i < pts.length; i += 4, k++) {
+            if (!pts[i + 3]) continue;
+            const c = pts[i + 1] - T.getHeight(pts[i], pts[i + 2]);
+            if (c < belly) belly = c;
+            cy.push(pts[i + 1]); cw.push(ws[k]);
+          }
+          out.belly = belly < 1e8 ? +belly.toFixed(3) : null;
+          if (cy.length) {
+            const ci = cy.map((_, i) => i).sort((a, b) => cy[a] - cy[b]);
+            let CW = 0; for (const w of cw) CW += w;
+            let acc = 0, cm = null;
+            for (const i of ci) { acc += cw[i]; if (acc >= 0.5 * CW) { cm = cy[i] - gy; break; } }
+            out.chassisMedian = cm === null ? null : +cm.toFixed(3);
+          } else out.chassisMedian = null;
+        }
+        return out;
       };
+      const med = (a) => { const s = a.slice().sort((x, y) => x - y); return s.length ? s[Math.floor(s.length / 2)] : null; };
+
       const alive = {};
-      for (const [kind, m] of species) alive[kind] = stats(m);
+      for (const [kind, m] of species) alive[kind] = stats(m, false);
+
+      // ---- (1)+(2) the sprawlers' LOCOMOTION reference, walked on their own route
+      const loco = {};
+      const home = { x: P0.position.x, y: P0.position.y, z: P0.position.z, yaw: P0.camYaw };
+      for (const kind of SPRAWLERS) {
+        const m = species.get(kind);
+        if (!m) continue;
+        const keep = { basking: m.basking };
+        try {
+          const wp = (m.route && m.route.length) ? m.route[m._wpIndex % m.route.length] : null;
+          // the player 80 m off, on the far side from the next waypoint: inside the
+          // animation LOD ring, outside every sprawler's sight and hearing
+          const ax = wp ? m.position.x - wp.x : 1, az = wp ? m.position.z - wp.z : 0;
+          const al = Math.hypot(ax, az) || 1;
+          P0.position.set(m.position.x + ax / al * 80, 0, m.position.z + az / al * 80);
+          P0._snapToGround?.();
+          m.basking = false;
+          m.suspicion = 0;
+          if (m.state !== 'patrol') { try { m.setState?.('patrol'); } catch (e) { /* */ } }
+          const samples = [], bellies = [], chassis = [];
+          let movingS = 0, px = m.position.x, pz = m.position.z, ps = E.simTime, pw = performance.now(), lastSample = 0;
+          const t0 = performance.now();
+          while (movingS < 2.0 && performance.now() - t0 < 12000) {
+            m._waitT = 0;                              // no patrol wait inside the window
+            await frame();
+            const now = performance.now(), st = E.simTime;
+            const dS = st - ps, dW = (now - pw) / 1000;
+            const sp = dS > 1e-5 ? Math.hypot(m.position.x - px, m.position.z - pz) / dS : 0;
+            px = m.position.x; pz = m.position.z; ps = st; pw = now;
+            if (sp < 0.5 * Math.max(0.1, m.walkSpeed || 1) || m.lowLOD) continue;
+            movingS += dW;
+            if (now - lastSample < 90) continue;
+            lastSample = now;
+            const s = stats(m, true);
+            if (s) {
+              samples.push(s.median);
+              if (s.belly !== null) bellies.push(s.belly);
+              if (s.chassisMedian !== null) chassis.push(s.chassisMedian);
+            }
+          }
+          loco[kind] = { movingS: +movingS.toFixed(2), samples: samples.length,
+                         chassisMedian: chassis.length ? +med(chassis).toFixed(3) : null,
+                         wholeMedian: samples.length ? +med(samples).toFixed(3) : null,
+                         belly: bellies.length ? +med(bellies).toFixed(3) : null, state: m.state };
+        } finally {
+          m.basking = keep.basking;
+        }
+      }
+      P0.position.set(home.x, home.y, home.z); P0.camYaw = home.yaw; P0._snapToGround?.();
+      await wait(300);
+
       for (const [, m] of species) {
         try { m.takeDamage({ impact: 99999, dir: new V(0, 0, 1), point: m.position.clone() }); } catch (e) { /* */ }
         if (m.alive) { try { m._die(); } catch (e) { /* */ } }
       }
-      await new Promise(r => setTimeout(r, 6500));
-      const out = {}; const offenders = []; let checked = 0;
+      await wait(6500);
+      const out = {}; const offenders = []; const skipped = []; let checked = 0;
       for (const [kind, m] of species) {
-        const a = alive[kind]; const d = stats(m);
+        const a = alive[kind]; const d = stats(m, false);
         if (!a || !d) { out[kind] = 'no geometry'; continue; }
-        const ratio = a.median > 0.05 ? d.median / a.median : 1;
-        out[kind] = { aliveMedianM: a.median, deadMedianM: d.median, ratio: +ratio.toFixed(2),
-                      aliveP90M: a.p90, deadP90M: d.p90 };
+        if (SPRAWLERS.includes(kind)) {
+          const L = loco[kind];
+          if (!L || L.movingS < 2.0 || L.chassisMedian === null) {
+            out[kind] = { note: 'sprawler: could not be walked for 2 s of moving frames', loco: L, restMedianM: a.median, deadMedianM: d.median };
+            offenders.push(kind); checked++; continue;
+          }
+          if (!(L.belly > 0.05)) {
+            out[kind] = { note: 'SKIP (ruling Sep 26): no locomotion pose lifts the chassis — belly clearance ' + L.belly + ' m walking',
+                          loco: L, restMedianM: a.median, deadMedianM: d.median };
+            skipped.push(kind); continue;
+          }
+          const ratio = L.chassisMedian > 0.05 ? d.median / L.chassisMedian : 1;
+          out[kind] = { reference: 'LOCOMOTION chassis (area-weighted)', locoChassisMedianM: L.chassisMedian, locoWholeMedianM: L.wholeMedian,
+                        locoBellyM: L.belly, locoMovingS: L.movingS,
+                        locoSamples: L.samples, restMedianM: a.median, deadMedianM: d.median, ratio: +ratio.toFixed(2),
+                        deadP90M: d.p90, vertexRatioVsRest: a.vMedian > 0.05 ? +(d.vMedian / a.vMedian).toFixed(2) : null,
+                        deadMeshes: d.meshes };
+          if (ratio > 0.75) offenders.push(kind);
+          checked++;
+          continue;
+        }
+        // non-sprawlers: per-vertex, rest reference — exactly as before the ruling
+        const ratio = a.vMedian > 0.05 ? d.vMedian / a.vMedian : 1;
+        const areaRatio = a.median > 0.05 ? d.median / a.median : 1;
+        out[kind] = { aliveMedianM: a.vMedian, deadMedianM: d.vMedian, ratio: +ratio.toFixed(2),
+                      aliveP90M: a.vP90, deadP90M: d.vP90, areaRatio: +areaRatio.toFixed(2) };
+        if (ratio > 0.75) { out[kind].aliveMeshes = a.meshes; out[kind].deadMeshes = d.meshes; }
         if (ratio > 0.75) offenders.push(kind);
         checked++;
       }
       if (!checked) return { pass: null, detail: { note: 'SKIP: no corpse geometry', out } };
       return { pass: offenders.length === 0,
-               detail: { budget: 'deadMedian <= 0.75 x aliveMedian (height above terrain)',
-                         offenders, speciesChecked: checked, out } };
+               detail: { budget: 'deadMedian <= 0.75 x reference median (height above terrain). Sprawlers (' + SPRAWLERS.join('/') + '): area-weighted, reference = walking chassis median; everyone else: per-vertex, reference = standing rest (areaRatio reported)',
+                         offenders, skipped, speciesChecked: checked, out } };
     })()`,
   },
 

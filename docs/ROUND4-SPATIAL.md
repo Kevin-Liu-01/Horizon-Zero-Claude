@@ -241,6 +241,39 @@ still pushed out of a machine, and it is pushed out *at* the metal), and reports
 `_meleeAsideAt`) in `src/core/collision.js`; the term is owned by `player-melee`, not
 by this lane. Round 4's `Collision._meleePad` no longer exists.*
 
+> **ROUND 6 (Sep 27) — rulings R6 and R7, from the r5 skeptic.** Two changes to the term;
+> the outline, the live check and the rolling refresh below are unchanged.
+>
+> **R6 — the release is a ratchet that never pushes.** Fix pass 1 relaxed a released term
+> back to the machine's own standoff at `MELEE_RELAX_SPEED` 1.5 m/s: the collider moving her.
+> The skeptic holstered in front of a frozen Watcher, Strider and Redeye and measured a
+> **0.37–0.67 m glide backwards** over 0.23–0.44 s (every frame under the 0.15 m bar) with a
+> planted foot **dragged up to 0.34 m**. Now, while released and latched (`_meleeLatched`: her
+> capsule still inside the machine's FULL-standoff capsule), the radius at her bearing grows
+> only to where she herself stands (`min(own outline, her distance − 0.01 m)`), and toward the
+> hull outline only by her OWN step that frame; standing still, nothing moves; stepping back,
+> it follows her; outside the full capsule it lets go. The live hull push (a limb moving INTO
+> her) is unchanged. `MELEE_RELAX_SPEED`/`rec.mRelax` are no longer read by the release.
+> Gated: A106 clause 3 now sums the collision's contribution over the WHOLE release (stand
+> 0.8 s + walk away 1 s, bar **0.10 m total**) and tracks every planted foot (bar **0.08 m**),
+> Watcher / Strider / Redeye / **Thunderjaw**, 5 runs × holster / target-lost; clause 5 stands
+> 1.2 s after the holster (latched, must not move her) before walking away.
+>
+> **R7 — the floor is the manager's circle, not a cut capsule.** The floor under the outline
+> was the round-4 term capsule (the segment shortened by `MELEE_L_CUT`, a third of it at
+> least, pad `MELEE_PAD_FLOOR`), and on machines with a long standoff SEGMENT it was the whole
+> bound: a Thunderjaw's floor end sat 6.17 m from its centre (blade 1.13–1.19 m short of the
+> hull, the skeptic), a grounded Stormbird's (segment 9.28 m) 11.2 m out. The only thing the
+> floor must still guarantee is the manager agreement — her position outside every
+> `bodyRadius + 0.6` push sphere by a frame of travel — and that needs no segment:
+> `meleeStandoffHalfLen` is published as **0** (the manager keeps its single centre sphere) and
+> the floor is the circle `bodyRadius + MELEE_PAD_FLOOR + 0.4` about the centre (0.12 m
+> outside the sphere, as before). The hull outline does the bounding. The old floor is kept as
+> the diagnostic `rec.bFloorOld`. A106 clause 4 (every species, 17 bearings) reads 0
+> penetrations of her body capsule on this build; clause 4/5 now also measure both forearms.
+> The rest of R7 (the blade AIMED at the hull, `melee._aimAt` / `meleeLayer._strikeAim`) is
+> pose, not collision — `docs/ROUND4-PLAYER-MELEE.md` §0r6.
+
 > **ROUND 5 (Sep 26) — THE TERM WAS REBUILT, from orchestrator ruling R4.** Everything
 > from "What it is" down to the end of this section describes the round-4 / fix-pass
 > mechanism (a pad and a symmetric segment cut on the machine's own capsule) and is kept

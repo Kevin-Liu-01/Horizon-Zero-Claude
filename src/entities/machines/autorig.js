@@ -243,11 +243,34 @@ export function buildRig(machine, spec) {
     segs.push([s.pos, end, s.r, -1, boneIndex.get(spineBones[i])]);
   }
   const tailChain = [spec.spine[0], ...spec.tail];
+  const tailSeg = new Set();
   for (let i = 1; i < tailChain.length; i++) {
     const s = tailChain[i];
     const nxt = tailChain[i + 1];
-    segs.push([s.pos, nxt ? nxt.pos : s.pos, s.r, -1, boneIndex.get(tailBones[i - 1])]);
+    const seg = [s.pos, nxt ? nxt.pos : s.pos, s.r, -1, boneIndex.get(tailBones[i - 1])];
+    tailSeg.add(seg);
+    segs.push(seg);
   }
+  /**
+   * THE TAIL GATE (opt-in: `spec.tailGateY`, body metres; absent = off) — the
+   * tail's skin re-rooted BEHIND the abdomen (ORCHESTRATOR RULING Sep 26,
+   * `A47c-corpse-mass`: "the Corruptor is closable in-lane — re-root the tail
+   * behind the abdomen so it droops without pushing the belly up").
+   *
+   * The same idea as `legGateY`, for a trunk that runs on BEHIND the tail's
+   * first joint. Measured on the Corruptor (per vertex, dominant bone, body
+   * space): the Scorpion donor's abdomen runs back to z -3.75 at belly height
+   * (y 0.21-1.22), well behind `rig_tail1` at z -1.45 — and every one of those
+   * vertices fell to the tail, 18-56 per 0.25 m slice, through the
+   * outside-every-capsule fallback (nearest segment wins, and behind the
+   * pelvis the nearest segment is the tail's). A tail root that droops swings
+   * a point 2.3 m behind its pivot down by 2.3 m x sin(droop): at 0.3 rad that
+   * is the belly 0.68 m into the soil, which is why `layTailRoot` had to be 0
+   * and the wreck kept a 2.1 m hump. Below the gate no tail bone may take a
+   * vertex, by capsule or by fallback: the abdomen is chassis, and the tail
+   * starts where the geometry rises off it.
+   */
+  const tailGate = typeof spec.tailGateY === 'number' ? spec.tailGateY : null;
   for (let li = 0; li < legs.length; li++) {
     const L = spec.legs[li];
     segs.push([L.hip, L.knee, L.r, li, boneIndex.get(legs[li].thigh)]);
@@ -303,8 +326,11 @@ export function buildRig(machine, spec) {
         const px = _v1.x, py = _v1.y, pz = _v1.z;
         // best two influences
         let i0 = -1, w0 = 0, i1 = -1, w1 = 0;
-        for (const [a, b, r, legIdx, bi] of segs) {
+        const belowTail = tailGate !== null && py < tailGate;
+        for (const seg of segs) {
+          const [a, b, r, legIdx, bi] = seg;
           if (legIdx >= 0 && py > spec.legGateY) continue; // legs never grab high verts
+          if (belowTail && tailSeg.has(seg)) continue;      // ...nor the tail the belly
           // ...nor anything further inboard than a leg plate reaches (above)
           if (legIdx >= 0 && inboardLimit.length
               && Math.abs(px) < inboardLimit[legIdx]) continue;
@@ -319,8 +345,10 @@ export function buildRig(machine, spec) {
         if (i0 < 0) {
           // outside every capsule: nearest spine/tail segment wins outright
           let best = 1e9;
-          for (const [a, b, , legIdx, bi] of segs) {
+          for (const seg of segs) {
+            const [a, b, , legIdx, bi] = seg;
             if (legIdx >= 0) continue;
+            if (belowTail && tailSeg.has(seg)) continue;
             const d = segDist(px, py, pz, a, b);
             if (d < best) { best = d; i0 = bi; }
           }

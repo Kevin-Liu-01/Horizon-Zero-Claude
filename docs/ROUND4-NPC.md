@@ -46,6 +46,8 @@ ctx.npcs.landmarks()     // per-NPC hand/head landmarks (V35's probe)
 ctx.npcs.walkingFeet()   // per-foot { id, name, planted, world, epoch, clip, state }
 ctx.npcs.standingFeet()  // the same, for EVERY body on its feet (A97 reads this)
 ctx.npcs.loopTravel      // the boot-time cycle-travel bake of every stageable loop
+                         //   (+ hipsStart / hipsEnd: pelvis height on its first
+                         //   and last frame — what a sit or a stand measures, §4h)
 ctx.npcs.signature(n)    // mesh + vertex-colour fingerprint of one NPC
 ctx.npcs.crowdSpacing()  // { min, a, b, states } — the closest two people NOW
 ctx.npcs.unstickCount()  // total rescues; A96/A97 fail the build on any
@@ -80,6 +82,13 @@ A conversation `progression` opens WITHOUT going through `talkTo` (VARL's own
 `TALK · VARL` prompt) is picked up from `dialogue-open` and engages the speaker
 the same way. While the card is open the speaker keeps turning and gesturing
 even though the card has frozen the rest of the world (§4g).
+
+A SEATED speaker (VALA, KARST on the fire ring) whom the player addresses from
+more than 1.2 rad off their heading stands up (`Sitting_Exit`), steps round to
+face her, talks on their feet, and goes back to the seat once the conversation
+is over; from in front they stay seated and turn their head (§4h). While the
+card is open the speaker's talk timer does not run down — in normal play too —
+and a speaker's head follows the player all the way round.
 
 So registering the other twelve is a data change on your side and needs no edit
 here. Every non-Varl NPC already has a live `TALK · NAME` interactable following
@@ -675,7 +684,10 @@ so VARL never went through `talkTo` at all. `talkTo`'s body is now
 **Memory.** One closure and one event subscription, made once at construction;
 `dispose()` splices the hook out of `engine.onAfterRender` and unsubscribes. The
 hold allocates nothing per frame (`_hold` is preallocated; the stepping and the
-leg solve were already allocation-free). `ctx.npcs.talkHoldStats()` publishes
+leg solve were already allocation-free). **Corrected in §4h:** it did allocate —
+two small objects per speaker-frame inherited from the crowd update
+(`_lockFeet`'s result, `_resolveBody`'s options); both are reused since.
+`ctx.npcs.talkHoldStats()` publishes
 `{ frames, secs, id }` so a probe can see the hold did the work.
 
 ### The gate: `A97b-npc-talk-freeze`
@@ -724,7 +736,7 @@ sim time 0.
   freeze in force, from directly behind): 3.142 → 0.234 → **0.000 rad** in about
   2 s, 6 steps, state `talk`.
 - A seated speaker (KARST on the fire logs): body yaw unchanged (seated — no
-  honest step, as before), `sitIdle` → `sitTalk` crossfade completed and the
+  honest step, as before — **the film judge's r1 major; superseded by §4h**), `sitIdle` → `sitTalk` crossfade completed and the
   pose animating through the card, sim time 0.
 - **`A97-npc-no-skate` 5/5 PASS in isolation** on this code (its turn phase now
   runs from the shared `TURN_PROBE`): crowd worst stance drift 0.0066–0.0642 m
@@ -747,6 +759,166 @@ sim time 0.
   subscription (1 → 0), `ctx.npcs` null; frames kept rendering with the card
   still open, then a VARL conversation opened with no crowd listening — no system
   errors, no console errors.
+
+## 4h. POLISH (film judge r1, 70) — a seated speaker stands up to talk
+
+Judge finding (major): *seated speakers (VALA, KARST) talk with their back or
+shoulder to Aloy for the whole conversation, and their head does not track her.*
+True on 5e0a9b3: `_engageTalk`'s seated branch only swapped to `sitTalk`, `_look`
+left `sit` out of `facingPlayer`, and `NpcAnimator._look` dropped any target more
+than 1.45 rad off the nose to idle drift. A97b could not see it — `pickSubject`
+only picks standing people.
+
+**ORCHESTRATOR RULING Sep 26** (docs/ROUND4-AUDIT.md §4 "npc"): a seated speaker
+whose bearing error to Aloy exceeds ~1.2 rad at `talkTo` sit-exits, turns with the
+stepped turn + head tracking, talks standing, and returns to the seat when
+`talkT` runs out; A97b gains the seated case. Applied as written.
+
+### What changed
+
+`src/world/npc/npc.js`
+- **`_engageTalk`, seated branch** — bearing error over `STAND_TO_TALK` (1.2 rad):
+  `NpcAnimator.standUp('idleTalk')`, state `talk`, `talkT` 5.5 s. `_look` then
+  steps them round (the existing stepped turn, unchanged) the moment the exit
+  has left the stage (`canStep`). Under 1.2 rad they stay seated on `sitTalk`
+  and turn their head, which reaches that far on its own. Nothing here needs
+  `_brain`: the exit hands the stage to `idleTalk` on the mixer's own clock, so
+  the conversation hold (`_holdSpeaker`, §4g) runs the whole stand-up under the
+  dialogue freeze.
+- **Back to the seat** — `talkT` runs out → `_replan` → `_goSit` (a sitter's
+  existing path): `_faceFirst` steps them round to the fire and they sit. Two
+  things in that path had to change for it to work with the player still
+  standing there: a sitter turning back to the seat (`face`, `faceThen: 'sit'`)
+  no longer waits for the player to leave — it used to hold until `faceT` ran
+  out and then ASSIGN the rest of the turn in one frame — and while turning back
+  it is rooted in the crowd like a sitter (a passer-by shoved KARST 0.50 m off
+  his seat in that turn in one gate run).
+- **The talk timer does not run down while the speaker's card is open**, in
+  normal play as well (`_isSpeaker`). Under the freeze nothing ticked anyway;
+  under `?shot` a seated speaker would otherwise sit back down, and a standing
+  one walk off to work, in the middle of the conversation. `_tickSit` likewise
+  does not swap loops or get up to leave while its card is open.
+- **A person in a conversation holds their ground** (`SEP_W('talk')` 0.45 → 0,
+  and `_dodge` gives them a sitter's berth). Measured before: KARST, stood up
+  to talk by the fire, shoved 0.98 m by a passer-by mid-conversation (A97b
+  normal play), then walked back to a seat 0.68 m off his mark.
+- **The seat drop moves with the pelvis.** `_seat` used to measure the pelvis on
+  the first frame after `_goSit` — still standing — hit its −0.30 m clamp and
+  write it straight into `yOffset`, so every sit began with a STANDING body
+  sinking 0.30 m into the ground over a few frames, and every sit-leave popped
+  a seated one 0.30 m up. The number is kept (both sitters have always been
+  drawn at −0.30: the fire-ring logs `_seat` was written for are not in the
+  settlement any more), computed from the boot-time bake before the sit, and
+  `_settle` blends it by `NpcAnimator.hipsK` — 0 seated, 1 standing, read off the
+  live pelvis against the clips' own pelvis heights.
+- **Feet on the ground while seated** (`NpcAnimator.seatDrop`). That −0.30 m drop
+  had both sitters' toes 0.29 m under the ground for as long as they sat (film:
+  `shots/npc-seat-before.png`, shins cut off at the dirt). The animator now
+  raises each ankle back by the drop and the two-bone leg solve folds the knee:
+  they sit low with their knees up and their boots on the ground
+  (`shots/npc-seat-after.png`). The stepped solve adds the drop to its own
+  targets and hands the legs straight to this solve when it releases.
+- `_resolveBody`'s options are a frozen module constant (minor, below).
+
+`src/world/npc/npcAnim.js`
+- **`standUp(base)`** stages `Sitting_Exit` over `base` with its last frame HELD
+  one fade length. Measured on the rig: the exit steps the right foot back
+  0.39 m (ankle lifted 0.07 m) between 0.67 s and 1.0 s, but a one-shot starts
+  handing the stage back one fade before its clip ends — the old sit-leave
+  (onDone at 0.7 s) crossfaded out of the frame just before that step and slid
+  the still-forward right foot 0.43 m along the ground in 0.3 s. Held, the
+  hand-back starts from the finished stance, which is the standing loops' own.
+  The sitter's own leave-the-seat beat uses the same call.
+- **`sitDown(seatLoop)`** is `_goSit`'s staging tracked as a transit, with a
+  0.05 s fade on `Sitting_Enter`: that clip starts in `Idle_Loop`'s own pose
+  (feet, pelvis, head within 3 mm) and steps the right foot forward 0.05–0.48 s
+  in; a 0.25 s crossfade held the lifting toe down under the idle's weight while
+  it moved (0.066 m of toe drag within 3 cm of the ground, measured). That left
+  the clip's own scuff — its right toe travels 0.054 m forward before it is 3 cm
+  up — which A97b's no-exclusion planted-foot term read as 0.03–0.077 m depending
+  on where the frames fell (eight runs at 0.05 s, three over 0.073 against the
+  0.08 bar). So **`_liftFirst`** holds each toe where it stood as the sit began
+  until the clip lifts it (the whole foot translated so the toe stays put and the
+  heel rises as authored; the hold fades between 2 and 4.5 cm of toe height,
+  first 0.4 s of the sit only): the same term now reads ≤ 0.024 m.
+- **`lookWide`** (set by `NpcSystem._look` for anyone in state `talk` or whose
+  card is open): the head no longer gives up past 1.45 rad; the look reaches
+  1.9 rad, the neck and head keeping their 1.25 and the upper spine taking the
+  rest. Dead behind (within 0.14 rad of pi) the look keeps its side
+  (`lookSide`) and `_look` turns the body toward that side — before, the head
+  swung from +1.9 to −1.9 rad across the chest in 0.3 s as the body started
+  round the other way. While a reachable target is tracked, the body's own yaw
+  since last frame is taken out of the look, so the eyes hold their world
+  bearing while the body turns under them (the ease had trailed by ~0.3 rad).
+- The bake (`measureLoopTravel`) also records each clip's pelvis height on its
+  first and last frame (`hipsStart` / `hipsEnd`); the last frame is read on its
+  own, because at t = duration a repeating action has wrapped to its first
+  (the first cut read `Sitting_Exit`'s END as seated and the seat drop popped).
+  Travel numbers are untouched.
+- `_lockFeet` returns one reused record (minor, below).
+
+### The gate: `A97b-npc-talk-freeze` gains the seated case
+
+Recorded in the gate header. The standing case is unchanged. Added: both seated
+speakers, from BEHIND (pi) and from the SIDE (+pi/2 under the freeze, −pi/2 in
+normal play), in the frozen-world state (`talk-live`) and in normal play
+(`talk`, `?shot`, the world running behind the card) — eight conversations,
+player 1.8 m away, through the same `TURN_PROBE` (a named-subject mode; the
+standing path is textually unchanged). Each must: stand up (`Sitting_Exit` at
+full weight, state `talk`); face her (≤ 0.35 rad) while the card is open within
+3.0 s + the stand-up (1.0 s clip + 0.3 s hold + 0.3 s hand-back, read from the
+bake: 4.6 s) of the speaker's own clock, and stay facing to the close; keep the
+drawn head bone within 0.35 rad of her, or of the most a 1.9 rad look reaches,
+every frame from 1 s on; run the talk gesture; show the freeze in force
+(`talk-live`: sim time 0, nobody else moved); keep A97's stance and contact
+windows ≤ 0.08 m while on their feet, AND the planted foot ≤ 0.08 m through the
+stand-up, turn, return and sit-down with NO crossfade exclusion (the any-toe
+contact term over that span is reported: the pack's own sit clips begin and end
+their steps with a few cm of toe scuff); and after the card, be back on the seat
+— settled, ≤ 0.7 m from the mark (`_goSit`'s own rule), ≤ 0.1 rad from the seat
+heading, the seat drop restored — with no heading change over 0.1 rad in one
+frame on the way.
+
+**Proved to catch the finding:** the same gate on the pre-fix tree (HEAD df66655 via
+`git archive` — the npc files as committed in 5e0a9b3 — with only the new gate
+file copied in, on scratch port 5238) FAILS all eight
+seated runs — body error 3.142 / 1.571 rad at the card and at the close, never
+faced, head error 2.97–3.13 rad from behind and 1.07–1.56 from the side
+(`headTracked` false in 7 of 8; KARST's side run tracked at 1.37 rad, inside the
+old 1.45 reach, and still never faced), `stoodUp` and `talkGestureRan` false in
+all eight. The standing case passes there, as it should.
+
+### Measured
+
+__MEASURED__
+
+### Film (Aloy's chase camera, read)
+
+`shots/npc-seat-r1-vala-live-behind.png`, `npc-seat-r1-karst-live-behind.png`
+(freeze in force, from behind) and `npc-seat-r1-vala-play-side.png`,
+`npc-seat-r1-karst-play-side.png` (normal play, from the side): ten frames each,
+cropped round the speaker. Before `talkTo` the speaker sits with their back
+(or shoulder) to Aloy; 0.3 s the head is already coming round as `Sitting_Exit`
+lifts them; 1.1 s up, looking at her over the shoulder with the chest turned;
+1.8–3.4 s stepping round, face on her; 4.2 s squared up and talking. After the
+card they turn back to the fire, sit (`Sitting_Enter`) and are seated with their
+back to her again. `shots/npc-seat-before.png` / `npc-seat-after.png`: the
+seated pose before and after the seat-foot solve.
+
+### The r1 film judge's minors
+
+- **Allocation claims** — CLOSED. `_lockFeet` returns one reused record per
+  animator, `_resolveBody` passes a frozen constant; the claims in npc.js, §4g
+  and §7 are corrected. Per-frame paths of both files re-read for literals: the
+  only allocations left are event-rate (beat pools, route legs).
+- **Planted feet slide in the crossfades a conversation triggers** — the seated
+  transitions are fixed (the stand-up hold; the sit fade) and A97b judges them
+  with no crossfade exclusion. The general case (gait → stand, kneel → stand at
+  `talkTo`, and A97's crossfade exclusion) is NOT closed: owner npc, next round.
+- **The `[E] TALK` prompt stays on screen during a live conversation** — out of
+  lane (`src/items/interactables.js` clears it only in `update`, which does not
+  tick under the freeze; visible again in the KARST films as "TALK · KARST").
+  Owner: items/interactables or shell-hud.
 
 ## 5. The no-skate contract
 
@@ -814,7 +986,12 @@ rotation over a clip in this repo wants the same guard — or anim-core's
   is not the camp (bodies are not drawn past 70 m; only the nearest four cast a
   shadow, and only inside 30 m). The mixers keep running either way.
 - **Simulation.** Full rate inside 70 m, 24 Hz to 140 m, 6 Hz beyond. No
-  per-frame allocation anywhere in the update.
+  per-frame allocation in the update. (Corrected in npc polish, §4h: until then
+  this line was not true — a judge found two small objects per NPC per frame,
+  `NpcAnimator._lockFeet`'s fresh `{ x, z }` result and `_resolveBody`'s fresh
+  options record, 26 a frame across the crowd. Both are reused now. What does
+  allocate is event-rate, not frame-rate: a beat pool when a fidget or work
+  beat fires, a route leg when one is planned.)
 - **Memory.** `dispose()` releases every geometry, material, skeleton, mixer,
   collider and interactable, removes the scene group and the system, and nulls
   `ctx.npcs`. Re-measured on the round-3 code: scene objects **−716**, NPC
@@ -826,9 +1003,9 @@ rotation over a clip in this repo wants the same guard — or anim-core's
   outside the draw distance when the probe ran. The crowd is built once at boot
   and never respawns, so it contributes nothing to `A90-memory-stability`'s
   growth window; the round-3 cycle-travel bake runs once on ONE throwaway
-  skeleton that is released, and the update loop still allocates nothing per
-  frame (the new crossfade scan reads the layer set's own array, not a Map
-  iterator).
+  skeleton that is released, and the update loop allocates nothing per frame
+  (the crossfade scan reads the layer set's own array, not a Map iterator; see
+  the Simulation line for the two objects this claim missed until §4h).
 - **Posture.** Every person carries a cell of a 4x4 SHOULDER GIRDLE lattice —
   clavicle raise x clavicle protraction — plus a hashed elbow/upper-arm bias, a
   spine lean clamped to 0.12 rad, and their own place in every loop's cycle

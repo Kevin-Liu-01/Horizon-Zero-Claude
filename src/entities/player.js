@@ -236,19 +236,41 @@ const ORBIT_A0 = -Math.PI / 2;
 const ORBIT_PMAX = Math.PI / 2;
 /**
  * Fraction of the last `ORBIT_WIN` frames (one stride) on which a candidate
- * hid her head above which it counts as hiding it — the gate asks for her
- * head seen on >= 90 % of samples, so the solver holds itself to the same.
+ * may hide her head for free — the gate asks for her head seen on >= 90 % of
+ * samples, so the solver holds itself to the same.
  */
 const ORBIT_HID_MAX = 0.10;
+/**
+ * m above the candidate's nominal lens height the hidden-head test is run
+ * from: the delivered lens rides 0-8 cm over it (run bob, pivot damp), and a
+ * higher lens sees her head along a flatter line, i.e. more hidden.  A
+ * candidate hidden NOW is also rejected, not only one hidden over the stride:
+ * starting a run, the lean grows faster than the window fills.
+ */
+const ORBIT_HID_LIFT = 0.05;
+/** m of padding on the occluder capsules for the same test: the lens is priced a render behind the frame it films. */
+const ORBIT_HID_PAD = 0.03;
 /** rad of turn still ahead of her (rendered facing -> travel direction) above which the orbit prices the turn. */
 const ORBIT_TURN_IN = 0.12;
+/** rad her rendered facing may have turned since a clearance / hidden-head row was priced for that row still to count. */
+const ORBIT_HIST_YAW = 0.35;
 /** m/s the orbit radius may step OUT at while she turns (vs `ORBIT_RATE_R`). */
 const ORBIT_RATE_R_OUT = 4.0;
+/** m of (predicted) clearance a candidate needs to be taken or passed while she turns (vs `ORBIT_PASS`). */
+const ORBIT_PASS_TURN = 0.24;
 /**
- * Lateral view offset the run framing may take (rad, 17.2 deg), and its cost
- * per radian in the candidate score (NDC-equivalent).  See `_orbitStep`.
+ * RUN OFFSET (residue fix round 2): the view turn the run framing may take
+ * toward her head — sideways, and DOWN toward her but never up past the
+ * request — as a norm in radians (22.9 deg, inside the 25.8 deg aim budget at
+ * the clamp; it is added to the ground hijack and the sum is capped at
+ * `camHijackMax`, then slew-limited with it), and its cost per radian in the
+ * candidate score (NDC-equivalent).  Running away at the clamp, the only
+ * lenses that see her head past her shoulders sit 75-85 deg round her, where
+ * the requested view has her head at NDC x -1.0..-1.2; the offset brings it
+ * back to x ~ -0.55 at 8.5 deg of delivered elevation.  0 standing, aiming,
+ * or below `LEAN_UP_IN` (the run framing is off there).  See `_runOffset`.
  */
-const RUN_YAW_MAX = 0.30;
+const RUN_YAW_MAX = 0.40;
 const RUN_YAW_K = 1.0;
 /** m of clearance a candidate must keep from her proxy over the window (full mesh >= 0.2 measured). */
 const ORBIT_CLR = 0.22;
@@ -261,8 +283,8 @@ const ORBIT_HYST = 0.20;                  // NDC a new goal must beat the held o
 /** rad either side of her TRAILING direction the lens may never sweep through. */
 const ORBIT_TAIL = 0.35;
 /** Radii priced per angle: the framing radius `Rf`, then `ORBIT_NR - 1` rings `ORBIT_DR` wider. */
-const ORBIT_NR = 4;
-const ORBIT_DR = 0.08;
+const ORBIT_NR = 6;                       // 4 until residue fix round 2: a turn that sweeps her back onto the lens needs room to pass it
+const ORBIT_DR = 0.10;                    // 0.08 until residue fix round 2
 /** Framing cost (NDC) per step out in radius — the near ring is preferred when both clear. */
 const ORBIT_RCOST = 0.06;
 /** A candidate must keep her head inside this much of the frame (NDC) to be taken. */
@@ -270,8 +292,18 @@ const ORBIT_XMAX = 0.62;
 const ORBIT_YMAX = 0.65;
 /** Score (NDC-equivalent) per metre of clearance under `ORBIT_CLR`, and per NDC of head past the edge limits. */
 const ORBIT_CLRK = 8;
-/** Score for a candidate whose sight line to her crown passes through her torso / shoulders / upper arms. */
-const ORBIT_HIDK = 0.5;
+/**
+ * Score for a candidate whose sight line to her head passes through her torso
+ * / shoulders / upper arms: `ORBIT_HIDK` per unit of the fraction of the last
+ * stride it was hidden on (past `ORBIT_HID_MAX`), plus `ORBIT_HIDK_NOW` if it
+ * is hidden this frame.  A flat 0.5 until residue fix round 2, which framing
+ * outbid on every candidate of the away sprint (judge: "films her shoulder in
+ * the corner"); now a candidate that hides her head for a whole stride costs
+ * more than any framing difference in the frame, and when every candidate
+ * hides it some of the time the least-hidden wins.
+ */
+const ORBIT_HIDK = 3.0;
+const ORBIT_HIDK_NOW = 0.6;
 /**
  * m above `head_0104` the head-visibility sight line aims at.  `head_0104`
  * sits at her MOUTH (lip bones at +0.00, brows +0.075, top of the skull
@@ -287,9 +319,10 @@ const ORBIT_EDGEK = 4;
 const ORBIT_RATE_R = 1.0;                 // m/s the orbit radius may change
 const ORBIT_RMIN = 0.5;                   // m: the closest the framing radius may bring the lens
 /** Radius (m) of a cloth-chain capsule: the chain runs down the MIDDLE of a skirt panel, whose edge is ~0.1 m off it (see `_orbitProxyReady`). */
-const ORBIT_CLOTH_R = 0.10;
+const ORBIT_CLOTH_R = 0.13;                // 0.10 until residue fix round 2: a skirt-D panel measured 0.11 m past its chain at 0.10
 /** Vertex samples per visible RIGID mesh (stowed bow, quiver): no skinning, cheap. */
-const ORBIT_RIGID_PTS = 16;
+/** m: every vertex of a visible rigid mesh is within this of a proxy sample (16 stride samples per mesh until residue fix round 2). */
+const ORBIT_RIGID_GAP = 0.06;
 /**
  * Her BODY as capsules (bone, bone, radius m) — skinning a vertex proxy of
  * the 14k-vertex body every frame cost 0.5 ms; bone segments cost nothing.
@@ -310,6 +343,17 @@ const ORBIT_CAPS = [
 ];
 /** Cloth chains that hang where the lens goes: skirt panels, leg / hip flaps, the sash. */
 const ORBIT_CLOTH = /^dyn_(skirt|legFlap|hipFlap|hipSash)/;
+/**
+ * …and her HAIR (residue fix round 2): the hair mesh is skinned to these
+ * chains and a sprint throws it 0.17 m past the head capsule, a standing
+ * braid 0.10 m past the torso one — both measured as the nearest vertex to
+ * the lens on film while the proxy read clear.
+ */
+const ORBIT_HAIR = /^dyn_(hairBack|frontLock)/;
+const ORBIT_HAIR_R = 0.09;
+/** Skin vertices weighted to these chains are sampled into the proxy as points (the hip quiver). */
+const ORBIT_SKIN_GEAR = /^dyn_(quiver|arrow)/;
+const ORBIT_SKIN_GEAR_PTS = 20;
 /** m above / below the lens height beyond which her geometry cannot bind the clearance. */
 const ORBIT_BAND = 0.6;
 /**
@@ -344,7 +388,7 @@ const SWING_FRAME = 0.90;                 // of the half-FOV her upper body must
 const SWING_FRAME_OK = 0.55;              // …and anything inside this counts as centred
 const SWING_COST = 0.20;                  // score per rad of swing, when choosing a side
 const SWING_HOLD_SLACK = 0.10;            // the held side keeps its answer this much longer
-const SWING_RATE = 3;                     // rad/s the swing may turn (residue fix round 1)
+const SWING_RATE = 1.5;                   // rad/s the swing may turn (3 in residue fix round 1; see SWING_RATE_AIM)
 /**
  * …and while AIMING (residue fix round 2).  Aimed, the hijack pays back only
  * what is past `AIM_FRAME` of the half-frame, so her head starts a swing
@@ -380,6 +424,8 @@ const SWING_MARGIN = 0.15;                // m a swing candidate must clear by (
  */
 const ROT_UP_IN = SWING_UP_MIN - 0.10;
 const SWING_CLR = 0.22;
+/** m of that the held side may give back before it lets go (her idle sway toggled a -85 deg swing on and off). */
+const SWING_CLR_HOLD = 0.05;
 /**
  * DEEP LOOK-UP DOLLY (residue fix round 2).  At a deep look-up the ground's
  * last answer used to be the boom march: slide the lens up the boom toward the
@@ -400,7 +446,7 @@ const SWING_CLR = 0.22;
  *                 0.4 m back-off that put the lens in her.
  */
 const DOLLY_HEAD = 0.55;
-const DOLLY_GAP = 0.86;
+const DOLLY_GAP = 0.90;
 const DOLLY_STEPS = 12;
 const DOLLY_REL = 4;
 const DOLLY_BODY_MIN = 0.16;              // m: never pushed closer to her body than this (near plane 0.10)
@@ -588,13 +634,21 @@ const AIM_FRAME = 0.8;
 /**
  * Hijack slew limit (see HIJACK SLEW LIMIT in `_updateCamera`): the most the
  * ground's framing offset may change per update (2.5 deg) and per second
- * (57 deg/s).  The per-second rate is what binds a RENDERED frame: the loop
+ * (49 deg/s).  The per-second rate is what binds a RENDERED frame: the loop
  * sub-steps a slow frame (up to 3 x 1/60 s, 0.05 s), so the per-update cap
  * alone let a slow frame move the view 4.3 deg beyond the input, measured;
- * 57 deg/s keeps even a 50 ms frame under 3 deg.
+ * 49 deg/s keeps even a 50 ms frame under 3 deg with a pan's own excess on top.
  */
 const HIJACK_STEP = 0.0436;
-const HIJACK_RATE = 1.0;
+/*
+ * Residue fix round 2: 1.0 -> 0.85 rad/s (48.7 deg/s, 2.4 deg in a 50 ms
+ * frame).  A yaw pan at a deep look-up adds its own few tenths of a degree on
+ * top — the offset is carried in the requested axis' tangent plane, and a view
+ * tilted down toward her swings further per radian of yaw than the request
+ * does (cos 34 deg vs cos 46 deg) — and at 1.0 that put a 50 ms frame at
+ * 3.03 deg past the input with A31b's per-frame film sampling running.
+ */
+const HIJACK_RATE = 0.85;
 /**
  * Lens-proximity fade floor.  The occluder arm below reads WHY the boom is
  * short; this arm reads only HOW CLOSE the lens ended up, because a lens
@@ -908,12 +962,22 @@ export class Player {
     /** Windowed head-hidden fraction per candidate, and the admissible flags (residue fix round 2). */
     this._orbitHidK = new Float32Array(ORBIT_N * ORBIT_NR);
     this._orbitHidRing = new Uint8Array(ORBIT_WIN * ORBIT_N * ORBIT_NR);
+    this._orbitRowYaw = new Float32Array(ORBIT_WIN);
+    this._orbitEnvArg = new Int16Array(ORBIT_N * ORBIT_NR);
     this._orbitHidCnt = new Uint16Array(ORBIT_N * ORBIT_NR);
+    this._orbitAllRows = false;
+    this._orbitRowOK = new Uint8Array(ORBIT_WIN);
     this._orbitAdm = new Uint8Array(ORBIT_N * ORBIT_NR);
+    this._orbitReach = new Uint8Array(ORBIT_N * ORBIT_NR);
     /** Lateral view offset (rad, + = right) the run framing asks for, already x runF once read. */
     this._runYaw = 0;
+    this._runPitch = 0;
+    this._runOff = { px: 0, py: 0, n: 0, X: 0, Y: 0 };
     this.camRunYaw = 0;
+    this.camRunPitch = 0;
     this.camTurnAhead = 0;
+    this._tailA = 0;
+    this._tailSpan = 0;
     this._orbitOccIdx = new Int32Array(0);
     this._orbitRadii = new Float32Array(ORBIT_NR);
     this._orbitView = new Float32Array(10);
@@ -944,6 +1008,7 @@ export class Player {
     this.camHeadDrop = 0;
     this._dollyC = 0;
     this._camTick = 0;
+    this._rigStale = false;
     this._bodyTick = -1;
     this._bodyOK = false;
     /** The lifted orbit centre the boom is swept from (`camPivot` + `camLift`). */
@@ -2063,7 +2128,7 @@ void main() {
       this._orbitPsi = psi0; this._orbitGoal = psi0; this._orbitR = Rp;
       this._leanX = 0; this._leanZ = 0;
       this.camLean = 0; this.camArmOut = 0; this.camOrbitPsi = psi0;
-      this._runYaw = 0;
+      this._runYaw = 0; this._runPitch = 0;
       return;
     }
     // her head's lead, damped: a lean, not a footfall
@@ -2121,7 +2186,8 @@ void main() {
    *
    * Candidates: the [-90, +90] deg grid at `ORBIT_NR` radii — `radii[0]`, the
    * radius that holds her head at its standing elevation from the lens, then
-   * two wider ones for when a run's limbs close the near ring.  Each is priced
+   * five wider ones for when a run's limbs or a turn close the near ring
+   * (residue fix round 2: 6 rings 0.10 m apart; 4 x 0.08 before).  Each is priced
    * against the last render's proxy of her visible meshes and her limb /
    * cloth capsules, and keeps the SMALLEST clearance it had over the last
    * `ORBIT_WIN` frames — a stride's worth, so a fist or a skirt panel that
@@ -2140,7 +2206,7 @@ void main() {
    */
   _orbitStep(bx, bz, radii, psi0, lensDY, X0, Y0, view, dt) {
     const N = ORBIT_N, NR = ORBIT_NR, NT = N * NR;
-    if (!this._bodyReady()) { this._orbitR = radii[0]; this._runYaw = 0; return psi0; }
+    if (!this._bodyReady()) { this._orbitR = radii[0]; this._runYaw = 0; this._runPitch = 0; return psi0; }
     const sx = bz, sz = -bx;
     const hb = this._headBone.matrixWorld.elements, rm = this.model.matrixWorld.elements;
     const Hx = hb[12], Hy = hb[13], Hz = hb[14], Ly = rm[13] + lensDY;
@@ -2167,10 +2233,32 @@ void main() {
     if (!this._orbitLive) {
       ring.fill(9); this._orbitRingPos = 0; this._orbitLive = true; this._orbitPrimed = false;
       this._orbitPsi = psi0; this._orbitGoal = psi0; this._orbitR = radii[0]; this._orbitGoalR = 0;
-      this._orbitGoalJ = -1; hidK.fill(0); this._runYaw = 0;
-      this._orbitHidRing.fill(0); this._orbitHidCnt.fill(0);
+      this._orbitGoalJ = -1; hidK.fill(0); this._runYaw = 0; this._runPitch = 0;
+      this._orbitHidRing.fill(0);
     }
-    const hidRing = this._orbitHidRing, hidCnt = this._orbitHidCnt, hidFirst = !this._orbitPrimed;
+    const hidRing = this._orbitHidRing, hidFirst = !this._orbitPrimed;
+    /* HISTORY IN HER FRAME (residue fix round 2).  The window remembers what
+     * swung past each candidate over the last stride — but the candidates are
+     * fixed in the CAMERA's frame, so once she has turned, those rows describe
+     * a body facing somewhere else: after a turn out of a run the window held
+     * the turn's clearances for 0.7 s and kept the lens on an outer ring with
+     * her head on the bottom edge.  A row only counts while her rendered
+     * facing is within `ORBIT_HIST_YAW` of the one it was priced at. */
+    const yawR = Math.atan2(rm[8], rm[10]);
+    const rowYaw = this._orbitRowYaw, rowOK = this._orbitRowOK;
+    if (hidFirst) rowYaw.fill(yawR);
+    rowYaw[this._orbitRingPos] = yawR;
+    let nRows = 0;
+    for (let r = 0; r < ORBIT_WIN; r++) {
+      let d = rowYaw[r] - yawR;
+      while (d > Math.PI) d -= 2 * Math.PI;
+      while (d < -Math.PI) d += 2 * Math.PI;
+      rowOK[r] = d < ORBIT_HIST_YAW && d > -ORBIT_HIST_YAW ? 1 : 0;
+      nRows += rowOK[r];
+    }
+    const allRows = nRows === ORBIT_WIN && this._orbitAllRows;
+    this._orbitAllRows = nRows === ORBIT_WIN;
+    const envArg = this._orbitEnvArg, hidCnt = this._orbitHidCnt;
     const row = this._orbitRingPos * NT;
     const Fx = view[0], Fy = view[1], Fz = view[2], Rx = view[3], Rz = view[4];
     const Ux = view[5], Uy = view[6], Uz = view[7], tV = view[8], tH = view[9];
@@ -2188,12 +2276,20 @@ void main() {
      * all of the remaining turn; and while turning EVERY candidate is priced
      * every frame (not half of them), so the held one cannot coast on last
      * frame's number. */
-    const vx = this.velocity.x, vz = this.velocity.z;
     let turn = 0;
-    if (vx * vx + vz * vz > 0.25) {
-      turn = Math.atan2(vx, vz) - Math.atan2(rm[8], rm[10]);
-      while (turn > Math.PI) turn -= 2 * Math.PI;
-      while (turn < -Math.PI) turn += 2 * Math.PI;
+    {
+      /* where she is GOING to face: the stick (her travel direction answers
+       * it over ~0.2 s and her facing follows that at 4.6-14 rad/s — the
+       * velocity lags the turn by exactly the frames the lens needs), else
+       * her velocity */
+      const w = this._wishDir();
+      let tx = w.x, tz = w.z;
+      if (tx * tx + tz * tz < 0.01) { tx = this.velocity.x; tz = this.velocity.z; }
+      if (tx * tx + tz * tz > 0.01) {
+        turn = Math.atan2(tx, tz) - Math.atan2(rm[8], rm[10]);
+        while (turn > Math.PI) turn -= 2 * Math.PI;
+        while (turn < -Math.PI) turn += 2 * Math.PI;
+      }
     }
     const turning = turn > ORBIT_TURN_IN || turn < -ORBIT_TURN_IN;
     const ct1 = Math.cos(-turn), st1 = Math.sin(-turn), ct2 = Math.cos(-turn * 0.5), st2 = Math.sin(-turn * 0.5);
@@ -2203,17 +2299,25 @@ void main() {
      * window cannot tell from a fresh one — and it halves the cost. */
     const half = (this._orbitFrame & 1);
     const last = this._orbitLast;
+    const gAlways = this._orbitGoalJ;
+    const aCur = Math.round((this._orbitPsi - ORBIT_A0) / ORBIT_DA);
     for (let j = 0; j < NT; j++) {
       const ri = (j / N) | 0, a = j - ri * N, R = radii[ri];
       const ps = ORBIT_A0 + a * ORBIT_DA;
       const c = Math.cos(ps), sn = Math.sin(ps);
       const ox = R * (bx * c + sx * sn), oz = R * (bz * c + sz * sn);
       const Lx = Hx + ox, Lz = Hz + oz;
-      if (((j + half) & 1) && this._orbitPrimed && !turning) {
+      /* Half the candidates are priced each frame — while turning too; the
+       * ones the lens is at or going to are priced EVERY frame (`always`), so
+       * the held candidate never coasts on last frame's number. */
+      const always = j === gAlways || a === aCur;
+      const skip = ((j + half) & 1) && this._orbitPrimed && !always;
+      if (skip) {
         ring[row + j] = last[j];
       } else {
         let m = this._orbitClearAt(Lx, Ly, Lz, pts, pi, np, cps, caps, ci, nc);
-        if (turning) {
+        // (a candidate already too close NOW needs no prediction to be refused)
+        if (turning && m >= ORBIT_PASS_TURN) {
           const m1 = this._orbitClearAt(Hx + ox * ct1 - oz * st1, Ly, Hz + ox * st1 + oz * ct1, pts, pi, np, cps, caps, ci, nc);
           const m2 = this._orbitClearAt(Hx + ox * ct2 - oz * st2, Ly, Hz + ox * st2 + oz * ct2, pts, pi, np, cps, caps, ci, nc);
           if (m1 < m) m = m1;
@@ -2221,9 +2325,22 @@ void main() {
         }
         ring[row + j] = m; last[j] = m;
       }
-      let e = ring[row + j];
-      for (let w = j; w < ring.length; w += NT) if (ring[w] < e) e = ring[w];
-      env[j] = e;
+      /* the window minimum, incrementally while every row is in her current
+       * frame (a full scan only when the row it came from is overwritten, or
+       * while a turn has invalidated rows) */
+      const nv = ring[row + j];
+      if (allRows && !hidFirst) {
+        if (nv <= env[j]) { env[j] = nv; envArg[j] = this._orbitRingPos; }
+        else if (envArg[j] === this._orbitRingPos) {
+          let e = nv, ea = this._orbitRingPos;
+          for (let r = 0, w = j; r < ORBIT_WIN; r++, w += NT) if (ring[w] < e) { e = ring[w]; ea = r; }
+          env[j] = e; envArg[j] = ea;
+        }
+      } else {
+        let e = nv, ea = this._orbitRingPos;
+        for (let r = 0, w = j; r < ORBIT_WIN; r++, w += NT) if (rowOK[r] && ring[w] < e) { e = ring[w]; ea = r; }
+        env[j] = e; envArg[j] = ea;
+      }
       // where her head lands in the frame from this candidate (requested view)
       const hx = Hx - Lx, hy = Hy - Ly, hz = Hz - Lz;
       const zz = hx * Fx + hy * Fy + hz * Fz;
@@ -2238,15 +2355,18 @@ void main() {
        * stride it was hidden on): a stride hides and shows the head in turn,
        * and a candidate that hides it half the stride is a frame of her back
        * half the time. */
-      let hid = 0;
-      const occ = this._orbitOccIdx;
-      for (let o = 0; o < occ.length; o++) {
-        const q6 = occ[o] * 6;
-        const d = segSegDist(Lx, Ly, Lz, Hx, Hy + ORBIT_CROWN, Hz,
-          cps[q6], cps[q6 + 1], cps[q6 + 2], cps[q6 + 3], cps[q6 + 4], cps[q6 + 5]);
-        if (d < caps[occ[o]][2]) { hid = 1; break; }
+      let hid = this._orbitHid[j];
+      if (!skip || hidFirst) {
+        hid = 0;
+        const occ = this._orbitOccIdx;
+        for (let o = 0; o < occ.length; o++) {
+          const q6 = occ[o] * 6;
+          const d = segSegDist(Lx, Ly + ORBIT_HID_LIFT, Lz, Hx, Hy + ORBIT_CROWN, Hz,
+            cps[q6], cps[q6 + 1], cps[q6 + 2], cps[q6 + 3], cps[q6 + 4], cps[q6 + 5]);
+          if (d < caps[occ[o]][2] + ORBIT_HID_PAD) { hid = 1; break; }
+        }
+        this._orbitHid[j] = hid;
       }
-      this._orbitHid[j] = hid;
       if (hidFirst) {
         for (let w = j; w < hidRing.length; w += NT) hidRing[w] = hid;
         hidCnt[j] = hid * ORBIT_WIN;
@@ -2254,42 +2374,63 @@ void main() {
         hidCnt[j] += hid - hidRing[row + j];
         hidRing[row + j] = hid;
       }
-      hidK[j] = hidCnt[j] / ORBIT_WIN;
+      if (allRows) hidK[j] = hidCnt[j] / ORBIT_WIN;
+      else {
+        let hc = 0;
+        for (let r = 0, w = j; r < ORBIT_WIN; r++, w += NT) if (rowOK[r]) hc += hidRing[w];
+        hidK[j] = hc / nRows;
+      }
     }
     this._orbitRingPos = (this._orbitRingPos + 1) % ORBIT_WIN;
     this._orbitPrimed = true;
 
     // her TRAILING direction as an orbit angle: the lens never parks in it and
-    // never sweeps across it (that is sweeping through her legs and back)
+    // never sweeps across it (that is sweeping through her legs and back).
+    // Residue fix round 2: while she turns, the trail SWEEPS from where it is
+    // to where the turn ends (`turn`), and the whole swept arc is her back.
     const hx = Math.sin(this.heading), hz = Math.cos(this.heading);
     const tail = Math.atan2(-(hx * sx + hz * sz), -(hx * bx + hz * bz));
+    this._tailA = tail; this._tailSpan = turning ? turn : 0;
     const cur = this._orbitPsi;
     // the radius index the lens is nearest now: paths are checked on it
     let rc = 0;
     for (let r = 1; r < NR; r++) if (Math.abs(radii[r] - this._orbitR) < Math.abs(radii[rc] - this._orbitR)) rc = r;
-    const stuck = this._orbitEnvAt(cur, rc) < ORBIT_PASS;
+    const curEnv = this._orbitEnvAt(cur, rc);
+    const stuck = curEnv < ORBIT_PASS;
+    /* Stuck, the lens may still not sweep THROUGH her on the way out: its
+     * path must be at least as clear as where it is (residue fix round 2 —
+     * skipping the path test when stuck let a turn out of a sprint carry the
+     * lens across her back, 0.013 m past the stowed bow). */
+    /* While she turns the pose itself is changing under the prediction (her
+     * lean, the swing of the stowed spear), so a candidate needs
+     * `ORBIT_PASS_TURN` of predicted clearance to be taken or passed. */
+    const passBar = turning ? ORBIT_PASS_TURN : ORBIT_PASS;
+    const pathBar = stuck ? Math.max(0, curEnv - 0.02) : passBar;
     /* A turn can sweep her trail ONTO the lens; then it may leave by either
      * side (framing decides), rather than being held inside her by a rule
      * written for the lens crossing her. */
-    const inTail = Math.abs(cur - tail) < ORBIT_TAIL;
-    /* Pass 1: which candidates are admissible at all, and does any of them
-     * SEE her head (residue fix round 2: a hidden head is a hard reject when
-     * an admissible candidate that sees it exists — as a 0.5 score penalty it
-     * lost to framing, and the away sprint filmed her pauldron). */
+    const inTail = this._inTail(cur);
+    /* Pass 1: which candidates are admissible at all.  Reachability along
+     * the orbit (every half-step between the lens and the candidate clear by
+     * `pathBar` on the ring it is priced on, and — unless the lens is in her
+     * trail already — none of them in her trail) is walked outward from the
+     * lens once per ring (`_orbitReachWalk`), not re-walked per candidate. */
     const adm = this._orbitAdm;
-    let anyVis = false, fall = -1, fallE = -Infinity;
+    this._orbitReachWalk(cur, pathBar, inTail);
+    const reach = this._orbitReach;
+    let fall = -1, fallE = -Infinity;
     for (let j = 0; j < NT; j++) {
       adm[j] = 0;
-      const ri = (j / N) | 0, ps = ORBIT_A0 + (j - ri * N) * ORBIT_DA;
+      const ri = (j / N) | 0, a = j - ri * N, ps = ORBIT_A0 + a * ORBIT_DA;
       if (ps < -ORBIT_PMAX - 1e-6 || ps > ORBIT_PMAX + 1e-6) continue;
-      if (Math.abs(ps - tail) < ORBIT_TAIL) continue;
-      if (!inTail && (cur - tail) * (ps - tail) < 0) continue;
-      if (!stuck && !this._orbitPathClear(cur, ps, rc)) continue;
+      if (this._inTail(ps)) continue;
+      /* the path is priced on the ring the lens will pass at: it steps out
+       * (`ORBIT_RATE_R_OUT`) as it sweeps, so an outer goal is judged there */
+      if (!reach[(ri > rc ? ri : rc) * N + a]) continue;
       const e = env[j];
       if (e > fallE) { fallE = e; fall = j; }
-      if (e < ORBIT_PASS) continue;
+      if (e < passBar) continue;
       adm[j] = 1;
-      if (hidK[j] <= ORBIT_HID_MAX) anyVis = true;
     }
     /* Pass 2: one score, framing first — how far this candidate moves her
      * head from the pinned framing, plus what it costs in clearance below
@@ -2303,28 +2444,24 @@ void main() {
      * axis by up to `RUN_YAW_MAX` (paid out of the same aim budget as the
      * ground hijack, slew-limited with it), at `RUN_YAW_K` per radian — a
      * candidate that frames her without it always wins. */
-    const a0 = Math.atan(X0 * tH), yawMax = RUN_YAW_MAX;
-    let best = -1, bestC = Infinity, bestPhi = 0;
+    const a0 = Math.atan(X0 * tH), b0 = Math.atan(Y0 * tV), yawMax = RUN_YAW_MAX;
+    let best = -1, bestC = Infinity;
     for (let j = 0; j < NT; j++) {
       if (!adm[j]) continue;
-      if (anyVis && hidK[j] > ORBIT_HID_MAX) continue;
       const ri = (j / N) | 0, e = env[j];
       let X = fx[j], Y = fy[j], phi = 0;
       if (X < 8) {
-        const al = Math.atan(X * tH);
-        phi = al - a0;
-        phi = phi > yawMax ? yawMax : phi < -yawMax ? -yawMax : phi;
-        const al2 = al - phi;
-        X = Math.tan(al2) / tH;
-        Y = Y * Math.cos(al) / Math.cos(al2);
+        const o = this._runOffset(X, Y, a0, b0, tH, tV, yawMax);
+        X = o.X; Y = o.Y; phi = o.n;
       }
       const ax = X < 0 ? -X : X, ay = Y < 0 ? -Y : Y;
-      let cost = Math.hypot(X - X0, Y - Y0) + ORBIT_RCOST * ri + (hidK[j] > ORBIT_HID_MAX ? ORBIT_HIDK : 0)
-        + RUN_YAW_K * (phi < 0 ? -phi : phi)
+      let cost = Math.hypot(X - X0, Y - Y0) + ORBIT_RCOST * ri
+        + ORBIT_HIDK * (hidK[j] > ORBIT_HID_MAX ? hidK[j] : 0) + (this._orbitHid[j] ? ORBIT_HIDK_NOW : 0)
+        + RUN_YAW_K * phi
         + (e < ORBIT_CLR ? ORBIT_CLRK * (ORBIT_CLR - e) : 0)
         + ORBIT_EDGEK * ((ax > ORBIT_XMAX ? ax - ORBIT_XMAX : 0) + (ay > ORBIT_YMAX ? ay - ORBIT_YMAX : 0));
       if (j === this._orbitGoalJ) cost -= ORBIT_HYST;
-      if (cost < bestC) { bestC = cost; best = j; bestPhi = phi; }
+      if (cost < bestC) { bestC = cost; best = j; }
     }
     const gj = best >= 0 ? best : fall >= 0 ? fall : this._orbitGoalJ;
     let goal = cur, goalR = this._orbitR;
@@ -2344,24 +2481,48 @@ void main() {
     const rStep = (turning && goalR > this._orbitR ? ORBIT_RATE_R_OUT : ORBIT_RATE_R) * dt;
     let dr = goalR - this._orbitR;
     if (dr > rStep) dr = rStep; else if (dr < -rStep) dr = -rStep;
+    /* …and it only comes back IN once the inner ring is clear all the way to
+     * the goal: crossing on the way in took the lens past the stowed spear at
+     * 0.149 m on a jog turn (residue fix round 2). */
+    if (dr < 0 && gj >= 0 && !this._orbitPathClear(this._orbitPsi, goal, (gj / N) | 0, passBar)) dr = 0;
     this._orbitR += dr;
-    /* The lateral offset the lens it is ACTUALLY at needs (not the goal's):
-     * her head from the delivered orbit position, turned toward `X0`. */
+    /* The offset the lens where it ACTUALLY is needs (not the goal's): her
+     * head from the delivered orbit position (orbit geometry about the damped
+     * head, so it does not follow the stride's sway), turned toward the
+     * pinned framing — including while the lens is in transit, when her head
+     * is furthest from where the framing wants it. */
     {
       const c = Math.cos(this._orbitPsi), sn = Math.sin(this._orbitPsi), R = this._orbitR;
       const qx = -R * (bx * c + sx * sn), qy = Hy - Ly, qz = -R * (bz * c + sz * sn);
       const zz = qx * Fx + qy * Fy + qz * Fz;
-      let phi = 0;
-      if (zz > 0.05 && best >= 0 && bestPhi !== 0) {
-        phi = Math.atan2(qx * Rx + qz * Rz, zz) - a0;
-        phi = phi > yawMax ? yawMax : phi < -yawMax ? -yawMax : phi;
-        // only toward her head, and never more than the goal itself asks for
-        if (phi * bestPhi <= 0) phi = 0;
-        else if (Math.abs(phi) > Math.abs(bestPhi)) phi = bestPhi;
+      this._runYaw = 0; this._runPitch = 0;
+      if (zz > 0.05) {
+        const o = this._runOffset((qx * Rx + qz * Rz) / (zz * tH), (qx * Ux + qy * Uy + qz * Uz) / (zz * tV),
+          a0, b0, tH, tV, yawMax);
+        this._runYaw = o.px; this._runPitch = o.py;
       }
-      this._runYaw = phi;
     }
     return this._orbitPsi;
+  }
+
+  /**
+   * RUN OFFSET (residue fix round 2): the view turn (rad, in the requested
+   * axis' tangent plane: `px` right, `py` up) that brings her head from NDC
+   * (`X`, `Y`) toward the pinned framing (`a0`, `b0` as angles), capped at
+   * `max` in norm, and never tilting the view UP past the request (only down
+   * toward her).  Writes the residual NDC (`X`, `Y`) and the offset's norm
+   * into a shared scratch object (no allocation).
+   */
+  _runOffset(X, Y, a0, b0, tH, tV, max) {
+    const o = this._runOff;
+    const ax = Math.atan(X * tH), ay = Math.atan(Y * tV);
+    let px = ax - a0, py = ay - b0;
+    if (py > 0) py = 0;
+    const n = Math.hypot(px, py);
+    if (n > max) { px *= max / n; py *= max / n; }
+    o.px = px; o.py = py; o.n = n > max ? max : n;
+    o.X = Math.tan(ax - px) / tH; o.Y = Math.tan(ay - py) / tV;
+    return o;
   }
 
   /** Clearance (m, capped at `ORBIT_BAND`) of a lens at `L` from the band-filtered proxy. */
@@ -2374,6 +2535,7 @@ void main() {
       if (d2 < m2) m2 = d2;
     }
     let m = Math.sqrt(m2);
+    const radii = this._orbitCapR;
     for (let qq = 0; qq < nc; qq++) {
       const q = ci[qq], q6 = q * 6;
       const ax = cps[q6], ay = cps[q6 + 1], az = cps[q6 + 2];
@@ -2383,10 +2545,59 @@ void main() {
       let t = uu > 1e-8 ? (wx * ux + wy * uy + wz * uz) / uu : 0;
       t = t < 0 ? 0 : t > 1 ? 1 : t;
       const ex = wx - ux * t, ey = wy - uy * t, ez = wz - uz * t;
-      const d = Math.sqrt(ex * ex + ey * ey + ez * ez) - caps[q][2];
+      const e2 = ex * ex + ey * ey + ez * ez, mr = m + radii[q];
+      if (e2 >= mr * mr) continue;              // cannot beat the current minimum: no sqrt
+      const d = Math.sqrt(e2) - radii[q];
       if (d < m) m = d;
     }
     return m;
+  }
+
+  /** Is orbit angle `a` inside her trail — the arc it sweeps this turn (`_tailA` + `_tailSpan`), widened by `ORBIT_TAIL`? */
+  _inTail(a) {
+    let d = a - this._tailA;
+    while (d > Math.PI) d -= 2 * Math.PI;
+    while (d < -Math.PI) d += 2 * Math.PI;
+    const sp = this._tailSpan;
+    return sp >= 0 ? d >= -ORBIT_TAIL && d <= sp + ORBIT_TAIL : d >= sp - ORBIT_TAIL && d <= ORBIT_TAIL;
+  }
+
+  /** Would the lens cross her trail moving along the orbit from `from` to `to`? */
+  _crossesTail(from, to) {
+    const h = ORBIT_DA * 0.5, n = Math.floor(Math.abs(to - from) / h), s = to > from ? h : -h;
+    for (let i = 1; i <= n; i++) if (this._inTail(from + s * i)) return true;
+    return this._inTail(to);
+  }
+
+  /**
+   * `_orbitReach[r * ORBIT_N + a]` = 1 when candidate angle `a` is reachable
+   * from the lens at `cur` along ring `r`: every half-step strictly between
+   * keeps `bar` (`_orbitPathClear`'s test) and — unless `inTail` — none of them
+   * lies in her trail (`_crossesTail`'s).  One walk outward each way per ring.
+   */
+  _orbitReachWalk(cur, bar, inTail) {
+    const N = ORBIT_N, h = ORBIT_DA * 0.5, reach = this._orbitReach;
+    for (let r = 0; r < ORBIT_NR; r++) {
+      const o = r * N;
+      for (let dir = 1; dir >= -1; dir -= 2) {
+        let ok = true, p = cur;
+        // candidates in this direction, nearest first
+        let a = dir > 0 ? Math.ceil((cur - ORBIT_A0) / ORBIT_DA - 1e-9) : Math.floor((cur - ORBIT_A0) / ORBIT_DA + 1e-9);
+        if (dir > 0 && ORBIT_A0 + a * ORBIT_DA - cur < 1e-9 && a < N) { reach[o + a] = 1; a++; }
+        for (; dir > 0 ? a < N : a >= 0; a += dir) {
+          if (a < 0 || a >= N) continue;
+          const ps = ORBIT_A0 + a * ORBIT_DA;
+          // advance the half-step walk up to (not including) this candidate
+          while (ok && (dir > 0 ? p + h < ps - 1e-9 : p - h > ps + 1e-9)) {
+            p += dir * h;
+            if (this._orbitEnvAt(p, r) < bar) ok = false;
+            else if (!inTail && this._inTail(p)) ok = false;
+          }
+          reach[o + a] = ok && (inTail || !this._inTail(ps)) ? 1 : 0;
+          if (!ok) { for (a += dir; dir > 0 ? a < N : a >= 0; a += dir) reach[o + a] = 0; break; }
+        }
+      }
+    }
   }
 
   /** Windowed clearance at an arbitrary orbit angle on radius `ri`: the worse of the two grid angles around it. */
@@ -2400,15 +2611,15 @@ void main() {
     return e0 < e1 ? e0 : e1;
   }
 
-  /** True when every orbit angle strictly between `from` and `to` keeps `ORBIT_PASS` on radius `ri`. */
-  _orbitPathClear(from, to, ri) {
+  /** True when every orbit angle strictly between `from` and `to` keeps `bar` (default `ORBIT_PASS`) on radius `ri`. */
+  _orbitPathClear(from, to, ri, bar = ORBIT_PASS) {
     const h = ORBIT_DA * 0.5;
     const n = Math.floor(Math.abs(to - from) / h);
     const s = to > from ? h : -h;
     for (let i = 1; i <= n; i++) {
       const ps = from + s * i;
       if ((s > 0 && ps >= to) || (s < 0 && ps <= to)) break;
-      if (this._orbitEnvAt(ps, ri) < ORBIT_PASS) return false;
+      if (this._orbitEnvAt(ps, ri) < bar) return false;
     }
     return true;
   }
@@ -2422,6 +2633,7 @@ void main() {
   _bodyReady() {
     if (this._bodyTick === this._camTick) return this._bodyOK;
     this._bodyTick = this._camTick;
+    if (this._rigStale) { this._bodyOK = false; return false; }
     this._bodyOK = this._orbitProxyReady();
     if (this._bodyOK) this._orbitRefresh();
     return this._bodyOK;
@@ -2429,6 +2641,7 @@ void main() {
 
   /** Her head (`head_0104`, last render) into `_hw`; false while the rig has no head bone. */
   _headWorld() {
+    if (this._rigStale) return false;
     if (!this._headBone && !this._readHeadOffset()) return false;
     const e = this._headBone.matrixWorld.elements;
     this._hw.set(e[12], e[13], e[14]);
@@ -2492,13 +2705,30 @@ void main() {
          * 0.156 m from the lens): step it OUT along the same line, which
          * keeps her head where it was in frame, as far as the ground lets. */
         if (i === 0 && body && c1 < DOLLY_OUT_CLR) {
-          let to = 1;
+          /* out along the line first (her head keeps its place in frame) … */
+          let to = 1, bc = c1;
           for (let k = 1; k <= DOLLY_OUT_STEPS; k++) {
             const tk = 1 + k * DOLLY_OUT_STEP;
             if (this._dollyClear(O, Lx, Ly, Lz, tk) < ROT_MARGIN) break;
-            to = tk;
             const ox = H.x + (Lx - H.x) * tk, oy = H.y + (Ly - H.y) * tk, oz = H.z + (Lz - H.z) * tk;
-            if (this._bodyClear(ox, oy, oz) >= DOLLY_OUT_CLR) break;
+            const b = this._bodyClear(ox, oy, oz);
+            if (b > bc) { bc = b; to = tk; }
+            if (b >= DOLLY_OUT_CLR) break;
+          }
+          /* … and where the ground stops that short (the up-slope quarter of
+           * the 38.4 deg face held a clamp pan 0.145 m off her stowed bow),
+           * IN along it, which lifts the lens off a bow limb at hip height */
+          if (bc < DOLLY_OUT_CLR) {
+            for (let k = 1; k <= DOLLY_OUT_STEPS; k++) {
+              const tk = 1 - k * DOLLY_OUT_STEP;
+              if (tk < tMin) break;
+              const ox = H.x + (Lx - H.x) * tk, oy = H.y + (Ly - H.y) * tk, oz = H.z + (Lz - H.z) * tk;
+              if (Math.hypot(ox - P.x, oy - P.y, oz - P.z) < DOLLY_GAP) break;
+              if (this._dollyClear(O, Lx, Ly, Lz, tk) < ROT_MARGIN) continue;
+              const b = this._bodyClear(ox, oy, oz);
+              if (b > bc + 0.02) { bc = b; to = tk; }
+              if (b >= DOLLY_OUT_CLR) break;
+            }
           }
           this._dollyC = c; return to;
         }
@@ -2584,10 +2814,13 @@ void main() {
            * met it at 0.12 m; a segment's capsule follows the panel wherever
            * the simulation throws it. */
           this.model.traverse((o) => {
-            if (!o.isBone || !ORBIT_CLOTH.test(o.name)) return;
-            for (const c of o.children) if (c.isBone) { caps.push([o, c, ORBIT_CLOTH_R]); break; }
+            if (!o.isBone) return;
+            const r = ORBIT_CLOTH.test(o.name) ? ORBIT_CLOTH_R : ORBIT_HAIR.test(o.name) ? ORBIT_HAIR_R : 0;
+            if (!r) return;
+            for (const c of o.children) if (c.isBone) { caps.push([o, c, r]); break; }
           });
           this._orbitCaps = caps;
+          this._orbitCapR = Float32Array.from(caps, (c) => c[2]);
           this._orbitCapPts = new Float32Array(caps.length * 6);
           this._orbitCIdx = new Int32Array(caps.length);
         }
@@ -2609,21 +2842,50 @@ void main() {
       for (let i = 0; i < list.length; i++) {
         const o = list[i];
         if (o.isSkinnedMesh || !this._onRig(o)) continue;
+        /* Samples such that EVERY vertex of the mesh is within
+         * `ORBIT_RIGID_GAP` of one (greedy, in the mesh's own space, scaled by
+         * its world scale; re-run only when the visible set changes).  Stride
+         * samples of the 1.5 m bow and the 1.16 m spear shaft left 0.1 m gaps
+         * along a limb (residue fix round 2): a turn swept the spear butt to
+         * 0.03 m, a clamp pan the bow limb to 0.073 m, with the proxy reading
+         * clear. */
         const pa = o.geometry.attributes.position, cnt = pa.count;
-        const st = Math.max(1, Math.floor(cnt / ORBIT_RIGID_PTS));
-        for (let k = 0; k < cnt; k += st) { M.push(o); idx.push(k); }
-        /* …plus its extreme vertex along each local axis, both ways (residue
-         * fix round 2): a stride sample of the 1.16 m spear shaft skipped its
-         * butt, which a turn out of a run swept to 0.03 m from the lens. */
-        const ext = [0, 0, 0, 0, 0, 0];
-        for (let k = 1; k < cnt; k++) {
-          for (let a = 0; a < 3; a++) {
-            const v = pa.getComponent(k, a);
-            if (v < pa.getComponent(ext[a * 2], a)) ext[a * 2] = k;
-            if (v > pa.getComponent(ext[a * 2 + 1], a)) ext[a * 2 + 1] = k;
+        o.updateWorldMatrix(true, false);
+        const sc = Math.max(1e-6, o.matrixWorld.getMaxScaleOnAxis()), g2 = (ORBIT_RIGID_GAP / sc) ** 2;
+        const picked = [];
+        for (let k = 0; k < cnt; k++) {
+          const x = pa.getX(k), y = pa.getY(k), z = pa.getZ(k);
+          let near = false;
+          for (let q = 0; q < picked.length; q++) {
+            const pk = picked[q];
+            const dx = pa.getX(pk) - x, dy = pa.getY(pk) - y, dz = pa.getZ(pk) - z;
+            if (dx * dx + dy * dy + dz * dz < g2) { near = true; break; }
           }
+          if (!near) picked.push(k);
         }
-        for (let e = 0; e < 6; e++) if (ext[e] % st !== 0 && ext.indexOf(ext[e]) === e) { M.push(o); idx.push(ext[e]); }
+        for (const k of picked) { M.push(o); idx.push(k); }
+      }
+      /* …and the gear that is part of her SKIN (residue fix round 2): the
+       * hip quiver and its arrows are body-mesh vertices weighted to the
+       * `dyn_quiver*` / `dyn_arrow*` chain, a 0.38 m-wide mass at hip height
+       * that no bone capsule covers — a dollied clamp lens came to 0.142 m of
+       * it while the proxy read 0.23.  Sampled like a rigid mesh, skinned on
+       * refresh. */
+      for (let i = 0; i < list.length; i++) {
+        const o = list[i];
+        if (!o.isSkinnedMesh || !this._onRig(o) || !o.skeleton) continue;
+        const si = o.geometry.attributes.skinIndex, sw = o.geometry.attributes.skinWeight;
+        if (!si || !sw) continue;
+        const bones = o.skeleton.bones, gear = [];
+        for (let k = 0; k < si.count; k++) {
+          let wb = 0, bi = -1;
+          for (let c = 0; c < 4; c++) { const w = sw.getComponent(k, c); if (w > wb) { wb = w; bi = si.getComponent(k, c); } }
+          const b = bones[bi];
+          if (b && ORBIT_SKIN_GEAR.test(b.name)) gear.push(k);
+        }
+        if (!gear.length) continue;
+        const st = Math.max(1, Math.floor(gear.length / ORBIT_SKIN_GEAR_PTS));
+        for (let g = 0; g < gear.length; g += st) { M.push(o); idx.push(gear[g]); }
       }
       this._orbitPI = Int32Array.from(idx);
       this._orbitPts = new Float32Array(M.length * 3);
@@ -2709,10 +2971,27 @@ void main() {
     const cp = Math.cos(pitch), sp = Math.sin(pitch);
     const cur = this._swingTgt > 0.03 ? 1 : this._swingTgt < -0.03 ? -1 : 0;
     const c0 = this._clearAlong(P.x, P.y, P.z, Math.sin(yaw) * cp, sp, Math.cos(yaw) * cp, len);
-    if (c0 >= ROT_MARGIN + (cur ? SWING_HYST : 0)) { this._swingTgt = 0; return 0; }
+    const body0 = this._bodyReady();
+    /* Residue fix round 2: the un-swung boom can clear the ground and still
+     * park the lens 0.14 m off her stowed bow — a yaw pan at the clamp carries
+     * the rig's 0.54 m reach past her side.  The dolly steps it out along the
+     * line to her head where the ground lets it; where the ground does NOT
+     * (the up-slope quarter of the 38.4 deg face), that is the swing's to
+     * answer too. */
+    let bodyNeed = false;
+    if (body0 && this._headWorld()) {
+      const Lx = P.x + Math.sin(yaw) * cp * len, Ly = P.y + sp * len, Lz = P.z + Math.cos(yaw) * cp * len;
+      const b0 = this._bodyClear(Lx, Ly, Lz);
+      if (b0 < SWING_CLR + (cur ? 0.02 : 0)) {
+        const t = this._dollyFor(P, Lx, Ly, Lz, 4);
+        const H = this._hw;
+        bodyNeed = !(t >= 1 && this._bodyClear(H.x + (Lx - H.x) * t, H.y + (Ly - H.y) * t, H.z + (Lz - H.z) * t)
+          >= SWING_CLR - 0.02);
+      }
+    }
+    if (c0 >= ROT_MARGIN + (cur ? SWING_HYST : 0) && !bodyNeed) { this._swingTgt = 0; return 0; }
     const halfH = Math.atan(Math.tan(halfFov) * aspect);
     const hx0 = this.position.x + this._leanX, hz0 = this.position.z + this._leanZ;
-    const body0 = this._bodyReady();
     let pick = 0, pickScore = Infinity, curPick = 0;
     for (let k = 0; k < 2; k++) {
       const sgn = k === 0 ? 1 : -1;
@@ -2736,7 +3015,7 @@ void main() {
         const m = this._swingFrames(Lx, Ly, Lz, yaw, pitch, this._tgtK(psi, 0), hijackMax, halfFov, halfH);
         if (!(m <= SWING_FRAME + slack)) continue;
         // …and clear of HER, not only of the vertical through her head
-        if (body0 && this._bodyClear(Lx, Ly, Lz) < SWING_CLR) continue;
+        if (body0 && this._bodyClear(Lx, Ly, Lz) < SWING_CLR - (held ? SWING_CLR_HOLD : 0)) continue;
         const score = (m > SWING_FRAME_OK ? m : SWING_FRAME_OK) + SWING_COST * psi;
         if (held) curPick = sgn * psi;
         if (score < pickScore) { pickScore = score; pick = sgn * psi; }
@@ -2871,6 +3150,14 @@ void main() {
     const halfH = dk > 1e-3 ? Math.atan(Math.tan(halfFov) * this.ctx.camera.aspect) : 0;
     const swingB = yaw - viewYaw;
     const hw = dk > 0.5 && this._headWorld();
+    /* …and at a deep look-up a rotation also answers HER, not only the
+     * ground: where the un-rotated lens sits inside `SWING_CLR` of her body
+     * and neither the dolly nor a swing can move it off (a clamp pan's
+     * up-slope quarter pinned the lens between the hill and her stowed bow at
+     * 0.137 m), the smallest rotation that clears BOTH is taken — it lifts
+     * the lens off a bow limb at hip height. */
+    const bodyOn = hw && this._bodyReady();
+    let bodyNeed = false, bestBodyRot = -1, bestBody = -1e9;
     let bestRot = 0, bestClear = -1e9;
     for (let i = 0; i <= steps; i++) {
       const rot = (i / ROT_STEPS) * cap;
@@ -2904,10 +3191,20 @@ void main() {
         if (!(m <= frameLimit)) break;
       }
       const c = clear + lift;
+      if (bodyOn) {
+        const bc = this._bodyClear(P.x + sy * cp * len, P.y + lift + sp * len, P.z + cy * cp * len);
+        if (i === 0) bodyNeed = bc < SWING_CLR;
+        if (bodyNeed) {
+          if (c >= ROT_MARGIN && bc >= SWING_CLR) return rot;
+          if (c >= ROT_MARGIN && bc > bestBody) { bestBody = bc; bestBodyRot = rot; }
+          if (c > bestClear) { bestClear = c; bestRot = rot; }
+          continue;
+        }
+      }
       if (c >= ROT_MARGIN) return rot;                 // smallest that clears
       if (c > bestClear) { bestClear = c; bestRot = rot; }
     }
-    return bestRot;
+    return bestBodyRot >= 0 ? bestBodyRot : bestRot;
   }
 
   /**
@@ -2959,6 +3256,16 @@ void main() {
     const targetDist = this.aiming ? CAM_DIST_AIM
       : this.crouching ? CAM_DIST_CROUCH : CAM_DIST;
     this._camTick = (this._camTick || 0) + 1;
+    /* Her bones are read as of the LAST render; after a teleport (respawn, a
+     * gate staging) that render is somewhere else, and a head or body proxy
+     * read off it is not hers.  Anything that reads them sits this frame out
+     * (residue fix round 2: a stale head seeded a staging's swing at 0 and
+     * the 3 rad/s transit to its real -85 deg carried her off the frame). */
+    {
+      const me = this.model.matrixWorld.elements;
+      const dx = me[12] - this.position.x, dz = me[14] - this.position.z;
+      this._rigStale = dx * dx + dz * dz > 0.25;
+    }
     // camera-feel-06: at a steep look-up the boom is SHORTENED rather than
     // swung under her feet, which is what used to force the pitch clamp.
     const up = Math.max(0, -(this.camPitch) / -PITCH_UP);
@@ -3592,10 +3899,10 @@ void main() {
       let oxw = tn > 1e-9 ? h * dr / tn : 0, oyw = tn > 1e-9 ? h * du / tn : 0;
       /* RUN LATERAL OFFSET (residue fix round 2, see `RUN_YAW_MAX`): the run
        * framing's turn toward her head, out of the same aim budget. */
-      const ry = runF * this._runYaw;
-      this.camRunYaw = ry;
-      if (ry !== 0) {
-        oxw += ry;
+      const ry = runF * this._runYaw, rp = runF * this._runPitch;
+      this.camRunYaw = ry; this.camRunPitch = rp;
+      if (ry !== 0 || rp !== 0) {
+        oxw += ry; oyw += rp;
         const ol = Math.hypot(oxw, oyw);
         if (ol > hijackMax) { oxw *= hijackMax / ol; oyw *= hijackMax / ol; }
       }

@@ -247,6 +247,14 @@ export const EXPANSION_RIGS = {
     ],
     legGateY: 0.72,
     legInboard: 0.30,
+    /**
+     * THE TAIL STARTS BEHIND THE ABDOMEN (residue round 2, ORCHESTRATOR
+     * RULING Sep 26 on `A47c`). The Scorpion's abdomen runs back to z -3.75
+     * at belly height (y 0.21-1.22, measured per vertex), under the arch the
+     * tail bones follow; without a gate the fallback handed all of it to
+     * `rig_tail1`. Nothing below 1.3 m is tail (autorig.js `tailGateY`).
+     */
+    tailGateY: 1.3,
     legs: [
       { id: 'LF', parent: 'chest', hinge: 1, hip: [-0.62, 0.72, 0.62], knee: [-1.35, 1.05, 0.48], ankle: [-1.85, 0.48, 0.38], toe: [-2.05, 0.03, 0.32], r: 0.24, restFoot: [-2.05, 0.40] },
       { id: 'RF', parent: 'chest', hinge: 1, hip: [0.62, 0.72, 0.62], knee: [1.35, 1.05, 0.48], ankle: [1.85, 0.48, 0.38], toe: [2.05, 0.03, 0.32], r: 0.24, restFoot: [2.05, 0.40] },

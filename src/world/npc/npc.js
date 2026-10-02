@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { NpcRigSource, NPC_CLIPS, B } from './npcRig.js';
 import { buildNpcBody, resolveVariant, makeNpcMaterial, BODIES } from './npcBody.js';
-import { NpcAnimator, measureGaits, measureLoopTravel } from './npcAnim.js';
+import { NpcAnimator, measureGaits, measureLoopTravel, LOOK_FLIP } from './npcAnim.js';
 import { ROSTER, ROUTES, STATIONS, CAMP } from './waypoints.js';
 
 /**
@@ -117,9 +117,14 @@ const SEP_FAST = 2.2;
 const SEP_WALK = 0.06;
 const SEP_HARD = 0.66;
 
-/** How much of a pair's correction a body in this state is willing to take. */
-const SEP_W = (state) => (state === 'sit' || state === 'sleep' ? 0
-  : state === 'work' || state === 'talk' ? 0.45 : 1);
+/**
+ * How much of a pair's correction a body in this state is willing to take.
+ * (npc polish) A person in a conversation with the player ('talk') takes none
+ * of it, like a sitter: they are standing where the player is looking at them,
+ * often right where they got up from a seat, and a passer-by goes round them.
+ */
+const SEP_W = (state) => (state === 'sit' || state === 'sleep' || state === 'talk' ? 0
+  : state === 'work' ? 0.45 : 1);
 
 /**
  * …and this PERSON (fix round 4). A body in a pose with no honest step — kneeling
@@ -130,7 +135,10 @@ const SEP_W = (state) => (state === 'sit' || state === 'sleep' ? 0
  * correction at `SEP_WALK` and `_dodge` / `SEP_HARD` do the rest, as they always
  * have for sitters.
  */
-const sepWeight = (n) => (n.anim && !n.anim.canStep ? 0 : SEP_W(n.state));
+const sepWeight = (n) => (n.anim && !n.anim.canStep ? 0
+  // a sitter turning back to the seat after a conversation is at their seat
+  // (npc polish: a passer-by shoved KARST 0.50 m off it in that turn)
+  : n.state === 'face' && n.faceThen === 'sit' ? 0 : SEP_W(n.state));
 
 /**
  * Look-ahead, steering lane and the clearance a pass must leave, for `_dodge`.
@@ -188,6 +196,17 @@ const GRIND_WAIT = 0.3;
 const FACE_OK = 0.05;
 
 /**
+ * SEATED SPEAKERS STAND TO TALK (orchestrator ruling Sep 26, from the film
+ * judge's major: VALA and KARST held whole conversations with their back or
+ * shoulder to Aloy, head drifting idly). A seated person whose bearing error to
+ * the player is over this at `talkTo` gets up (`Sitting_Exit`), steps round to
+ * face her with the same stepped turn every standing speaker uses, talks on
+ * their feet, and goes back to the seat when the conversation is over. Under it
+ * they stay seated and turn their head (1.2 rad is inside the head's own reach).
+ */
+const STAND_TO_TALK = 1.2;
+
+/**
  * States in which the body is standing on its own two feet — `standingFeet()`,
  * and therefore `A97-npc-no-skate`. `WALKING_STATES` is the old narrower set
  * `walkingFeet()` still answers with.
@@ -205,6 +224,8 @@ const GDZ = [0, 0, 1, -1, 1, -1, 1, -1];
 /** Colliders an NPC must not be depenetrated by: other actors. */
 const NOT_ACTOR = (c) => c.blocking
   && c.kind !== 'npc' && c.kind !== 'machine' && c.kind !== 'machine-cam' && c.kind !== 'canopy';
+/** `_resolveBody`'s options — one frozen record, not a fresh object per call */
+const RESOLVE_OPTS = Object.freeze({ passes: 2, filter: NOT_ACTOR });
 
 /** People are not world geometry — own-property raycast keeps them out of
  * `collision.seedWorld()`, out of `A61`'s candidate walk and off the aim ray. */
@@ -407,7 +428,12 @@ export class NpcSystem {
         station: row.station || null, errand: row.errand || null,
         speed: row.speed ?? 1, walked: 0, clips: anim.clipsPlayed,
         target: new THREE.Vector3(), lookVec: new THREE.Vector3(),
-        yOffset: 0, seatY: 0, fidgetT: 3 + rng() * 6, tempT: 0,
+        /**
+         * `seatOff` is the drop that puts this person's seated pelvis on the
+         * seat; `seatBlend` is true while a sit or a stand is blending it in or
+         * out with the pelvis (`NpcAnimator.hipsK`) — see `_seat`.
+         */
+        yOffset: 0, seatOff: 0, seatBlend: false, stoodToTalk: 0, fidgetT: 3 + rng() * 6, tempT: 0,
         collider: null, colliderId: -1, entry: null, hut: null,
         errandT: 20 + rng() * 25, acc: 0, dist: 0, talkT: 0, sitMode: 0,
         progT: 0, blockedFor: 0, detour: 0, detourT: 0,
@@ -944,8 +970,7 @@ export class NpcSystem {
   _resolveBody(n, p) {
     const C = this.ctx.collision;
     if (!C) return null;
-    return C.resolveCapsule(p, BODY_R, BODY_H * (n.variant.scale || 1),
-      { passes: 2, filter: NOT_ACTOR });
+    return C.resolveCapsule(p, BODY_R, BODY_H * (n.variant.scale || 1), RESOLVE_OPTS);
   }
 
   /**
@@ -1273,10 +1298,13 @@ export class NpcSystem {
     n.group.rotation.y = want;
     // the seated loop takes the stage NOW, with the enter clip as a one-shot
     // over it: two sitters mid-`Sitting_Enter` read as the same pose, and
-    // `V35-settlement` compares every pair
-    n.anim.play(n.row.sitTalk ? 'sitTalk' : 'sitIdle', { fade: 0.25 });
-    n.seatPending = true;
-    n.anim.once('sitEnter', { fade: 0.25 });
+    // `V35-settlement` compares every pair. `sitDown` tracks the sit as a
+    // transit so the seat drop is blended in with the pelvis (`_seat`,
+    // `_settle`, npc polish) instead of sinking a standing body 0.3 m into the
+    // ground on the first frames of the sit
+    this._seat(n);
+    n.seatBlend = true;
+    n.anim.sitDown(n.row.sitTalk ? 'sitTalk' : 'sitIdle', { fade: 0.25 });
     return n;
   }
 
@@ -1740,7 +1768,14 @@ export class NpcSystem {
       }
     }
     if (n.talkT > 0) {
-      n.talkT -= dt;
+      // the talk timer does not run down while this person's conversation card
+      // is open — in live play nothing ticks under the card anyway, and under
+      // '?shot' a seated speaker who stood up must not sit back down (or a
+      // standing one walk off to work) in the middle of the conversation
+      if (!this._isSpeaker(n)) n.talkT -= dt;
+      // a seated speaker who stood to talk (`_engageTalk`) goes back to the
+      // seat here: `_replan` sends a sitter to `_goSit`, which steps them round
+      // to the fire and sits them down (`NpcAnimator.sitDown`)
       if (n.talkT <= 0 && n.state === 'talk') this._replan(n);
       if (n.state === 'talk') return;
     }
@@ -1923,7 +1958,9 @@ export class NpcSystem {
   }
 
   _tickSit(n, dt) {
-    if (n.seatPending) { this._seat(n); n.seatPending = false; }
+    // a seated person being spoken to stays in the conversation: no swap to
+    // the quiet loop and no getting up to leave half way through it
+    if (this._isSpeaker(n)) return;
     n.sitSwapT -= dt;
     n.sitLeaveT -= dt;
     if (n.sitSwapT <= 0) {
@@ -1936,25 +1973,39 @@ export class NpcSystem {
       n.sitLeaveT = 60 + n.rng() * 40;
       n.state = 'idle';
       n.stateT = 5 + n.rng() * 4;
-      n.yOffset = 0;
-      n.anim.once('sitExit', { fade: 0.3, onDone: () => n.anim.play('idle', { fade: 0.3 }) });
+      // the same stand-up a seated speaker makes (`NpcAnimator.standUp`): the
+      // seat drop comes out with the pelvis, not in one 0.3 m pop, and the
+      // exit's own step back finishes before the crossfade to idle begins (the
+      // old onDone at 0.7 s slid that foot 0.43 m along the ground)
+      n.seatBlend = true;
+      n.anim.standUp('idle', { fade: 0.3 });
     }
   }
 
   /**
-   * Drop the sitting NPC so its pelvis meets the log instead of hovering over
+   * Drop the sitting NPC so its pelvis meets the seat instead of hovering over
    * it: the clip was authored for a chair of its own height, which is not the
    * height of a felled pine.
+   *
+   * The offset is now computed BEFORE the sit (npc polish) and blended in with
+   * the pelvis by `_settle`. It used to be measured off the live pelvis on the
+   * first frame after `_goSit` and written straight into `yOffset` — a frame on
+   * which the body is still standing, so it read the STANDING pelvis, hit the
+   * clamp (-0.30 m for both sitters) and dropped a standing person 0.30 m into
+   * the ground over the next few frames before the sit had begun. The seated
+   * pose that produced is what the camp has been drawn with all round (the
+   * fire-ring logs this was written for are not in the settlement any more:
+   * the sitters sit low, skirt and cloak to the ground), so the NUMBER is kept —
+   * the same measurement, against the same standing pelvis, read from the
+   * boot-time bake (`Sitting_Enter`'s first frame) instead of from whatever
+   * frame the brain first ticked on — and only the timing changes.
    */
   _seat(n) {
     const s = STATIONS[n.station];
-    if (!s?.seat) return;
-    const hips = n.byName.get(B.hips);
-    if (!hips) return;
-    n.group.updateMatrixWorld(true);
-    const hipsY = hips.matrixWorld.elements[13] - n.group.position.y;
-    const seatY = this._groundY(s.x, s.z) + (s.seatUp ?? 0.30);
-    n.yOffset = THREE.MathUtils.clamp((seatY + 0.11) - (this._groundY(s.x, s.z) + hipsY), -0.30, 0.30);
+    if (!s?.seat) { n.seatOff = 0; return; }
+    const t = this.loopTravel || {};
+    const hipsY = (t.sitEnter?.hipsStart || t.idle?.hipsStart || 0.87) * (n.group.scale.y || 1);
+    n.seatOff = THREE.MathUtils.clamp((s.seatUp ?? 0.30) + 0.11 - hipsY, -0.30, 0.30);
   }
 
   _fidget(n, dt) {
@@ -2026,8 +2077,27 @@ export class NpcSystem {
      * is why `_dodge` waits rather than relying on this.
      */
     if (crowd) this._separate(n, dt);
-    const gy = this._groundY(g.position.x, g.position.z) + n.yOffset;
+    /**
+     * THE SEAT DROP MOVES WITH THE PELVIS (npc polish). While a sit or a stand
+     * is in progress the drop is scaled by how far up the body is (0 seated, 1
+     * standing — `NpcAnimator.hipsK`, read off the pelvis this frame), so the
+     * offset comes in as the pelvis goes down and out as it comes up. Runs here
+     * so the conversation hold (`_holdSpeaker`) blends it too.
+     */
+    if (n.seatBlend) {
+      n.yOffset = n.seatOff * (1 - n.anim.hipsK);
+      if (!n.anim.transit) {
+        n.seatBlend = false;
+        n.yOffset = n.state === 'sit' ? n.seatOff : 0;
+      }
+    }
+    const ground = this._groundY(g.position.x, g.position.z);
+    const gy = ground + n.yOffset;
     g.position.y += (gy - g.position.y) * 0.45;
+    // how far the seat drop has the body below the ground it sits on: the
+    // animator raises the ankles back by it, so the knees bend and the feet
+    // stay on the ground (`NpcAnimator.seatDrop`)
+    n.anim.seatDrop = (n.yOffset < -0.005 || n.seatBlend) ? Math.max(0, ground - g.position.y) : 0;
     const C = this.ctx.collision;
     if (!C) return;
     _p.copy(g.position);
@@ -2226,7 +2296,12 @@ export class NpcSystem {
        * of them and neither stands on a route. Everyone else keeps the narrow
        * lane, which is what stops the plaza seizing up.
        */
-      const rooted = o.state === 'sit' || o.state === 'sleep';
+      // (npc polish) and so does the person the player is TALKING to: a
+      // conversation partner holds their ground like a sitter — a judge-run
+      // measured KARST, stood up to talk by the fire, shoved 0.98 m by a
+      // passer-by in the middle of the conversation (`SEP_W`)
+      const rooted = o.state === 'sit' || o.state === 'sleep' || o.state === 'talk'
+        || (o.state === 'face' && o.faceThen === 'sit');
       if (!this._givesWay(n, o)) continue;
       /**
        * STOP FOR A PREDICTED COLLISION, NOT FOR A NEIGHBOUR.
@@ -2379,6 +2454,8 @@ export class NpcSystem {
   }
 
   _look(n, player, dt) {
+    // a speaker's head follows the player all the way round (`lookWide`)
+    n.anim.lookWide = n.state === 'talk' || this._isSpeaker(n);
     if (!player) { n.facingPlayer = false; n.anim.lookAt(null); return; }
     const g = n.group;
     const dx = player.position.x - g.position.x, dz = player.position.z - g.position.z;
@@ -2401,11 +2478,19 @@ export class NpcSystem {
        * (`canStep`); sitters and sleepers were already excluded here.
        */
       const facing = n.state === 'talk' || d2 < 6.5;
+      // a sitter turning back to the fire after a conversation (`_goSit` ->
+      // `_faceFirst`) is going back to the seat: the head keeps the player, the
+      // body does not wait for her to leave — it used to, until `faceT` ran out
+      // and the sit ASSIGNED the rest of the turn in one frame
+      const reseat = n.state === 'face' && n.faceThen === 'sit';
       n.facingPlayer = facing && n.state !== 'walk' && n.state !== 'goto' && n.state !== 'sit'
-        && n.state !== 'sleep' && n.anim.canStep;
+        && n.state !== 'sleep' && !reseat && n.anim.canStep;
       if (n.facingPlayer) {
         const want = Math.atan2(dx, dz);
-        const err = wrapPi(want - g.rotation.y);
+        let err = wrapPi(want - g.rotation.y);
+        // dead behind, either way round is the same distance: go round the
+        // side the head is already looking over (`lookSide`), never the other
+        if (n.anim.lookWide && Math.abs(err) > LOOK_FLIP && err * n.anim.lookSide < 0) err += err > 0 ? -Math.PI * 2 : Math.PI * 2;
         if (Math.abs(err) > 0.02) n.anim.turn(THREE.MathUtils.clamp(err, -1.4 * dt, 1.4 * dt), want);
       }
     } else {
@@ -2534,13 +2619,37 @@ export class NpcSystem {
        * turns at once; the BODY is turned by `_look`, which faces anyone in
        * state `talk` through the same stepped turn as every other standing turn
        * (`NpcAnimator.turn`) — and keeps doing so while the conversation card
-       * has the rest of the world frozen (`_holdSpeaker`, fix round 5). A seated
-       * person turns their head and stays seated.
+       * has the rest of the world frozen (`_holdSpeaker`, fix round 5).
        */
       n.lookVec.set(p.position.x, p.position.y + 1.42, p.position.z);
       n.anim.lookAt(n.lookVec);
     }
     if (n.state === 'sit') {
+      /**
+       * A SEATED SPEAKER STANDS UP TO TALK when the player is not in front of
+       * them (orchestrator ruling Sep 26; see `STAND_TO_TALK`). The body rises
+       * on `Sitting_Exit` (`NpcAnimator.standUp`: the exit's own step back is
+       * finished before the hand-back begins, so no foot slides), the seat
+       * drop comes out with the pelvis, state `talk` hands the heading to
+       * `_look`, which
+       * steps them round to face the player the moment the exit has left the
+       * stage (`canStep`), and the head tracks her the whole way (`lookWide`).
+       * All of that is mixer- and `_look`-driven, so it runs under the dialogue
+       * freeze too (`_holdSpeaker`). When `talkT` runs out, `_brain` ->
+       * `_replan` -> `_goSit` takes them back to the seat.
+       *
+       * In front of them (error <= 1.2 rad) they stay seated, play the seated
+       * talk loop and turn their head, which reaches that far on its own.
+       */
+      const err = p ? Math.abs(wrapPi(Math.atan2(p.position.x - n.group.position.x,
+        p.position.z - n.group.position.z) - n.group.rotation.y)) : 0;
+      if (err > STAND_TO_TALK && n.anim.has('sitExit') && n.anim.standUp('idleTalk', { fade: 0.3 })) {
+        n.state = 'talk';
+        n.talkT = 5.5;
+        n.stoodToTalk++;
+        n.seatBlend = true;
+        return;
+      }
       if (n.anim.has('sitTalk')) n.anim.play('sitTalk', { fade: 0.3 });
     } else {
       n.state = 'talk';
@@ -2548,6 +2657,12 @@ export class NpcSystem {
       n.anim.play('idleTalk', { fade: 0.25 });
       n.anim.once('interact', { fade: 0.2, rate: 1.05 });
     }
+  }
+
+  /** Is `n` the person the open conversation card belongs to? */
+  _isSpeaker(n) {
+    const c = this.ctx.progression?.dialogue;
+    return !!(c && c.open && c.npc === n.id);
   }
 
   /** A conversation `progression` opened without going through `talkTo`. */
@@ -2582,7 +2697,16 @@ export class NpcSystem {
    * a turn that takes two seconds.
    *
    * No allocation: `_hold` is a preallocated record, `n.lookVec` is the
-   * record's own vector.
+   * record's own vector. (That claim was not true until npc polish: a judge
+   * found two small objects per speaker-frame on this path, both older than
+   * the hold — `_lockFeet`'s fresh `{ x, z }` result and `_resolveBody`'s fresh
+   * options object, 26 of each per frame across the crowd update. The first is
+   * now one record per animator, reused; the second a frozen module constant.)
+   *
+   * A SEATED speaker standing up (npc polish, the seated-speaker ruling) needs
+   * nothing more from here: the `Sitting_Exit` one-shot hands the stage to
+   * `idleTalk` on the mixer's own clock (`anim.update`), `_look` then steps them
+   * round, and `_settle` blends the seat drop out with the pelvis.
    */
   _holdSpeaker(engine) {
     if (!this.ok || this.disposed) return;

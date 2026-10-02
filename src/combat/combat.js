@@ -1029,15 +1029,16 @@ export class Combat {
 
   /** `combat-bow-stowed-in-combat` — the 8 s holster timer + threat check. */
   _updateWield(realDt, playing, aiming) {
-    /* LANE player-melee, OUTSIDE ITS GRANT (round 5 fix pass 1; declared in
-     * docs/ROUND4-PLAYER-MELEE.md §0r5fp and awaiting an orchestrator grant
-     * extension — revert these lines and V46/V47 show the bow in her fist
-     * again). A spear swing is not a bow action, and while the spear is out
-     * of its back socket her LEFT hand is empty (spear-canon.md finding 2 /
-     * M3), so the bow stays on her back: judge finding, round 5 — every live
-     * swing parented the bow to hand_l_014 until HOLSTER_TIME ran out. Aim
-     * still wins (melee holsters the spear the moment the bow comes up). */
-    const spearOut = !aiming && !!this.melee && this.melee.stance !== 'holstered';
+    /* LANE player-melee (grant extended Sep 27, ROUND4-AUDIT.md §4). A spear
+     * swing is not a bow action, and while the spear is in her RIGHT hand her
+     * LEFT hand is empty (spear-canon.md finding 2 / M3), so the bow stays on
+     * her back. Round 6 (ruling R8, "never both in hand"): keyed on the spear
+     * actually being in her fist, AIMING INCLUDED — round 5 let an aim pull
+     * the bow into her left hand while the swing and the holster still had
+     * the spear in her right (~0.5 s of both, the r5 skeptic). Aim still wins:
+     * melee cuts the recover and stows the spear fast, and the bow comes up
+     * the frame the spear is back on its socket. */
+    const spearOut = !!this.melee && !!this.melee.spearInHand;
     if (aiming || this._drawing) this._holsterT = HOLSTER_TIME;
     else this._holsterT = Math.max(0, this._holsterT - realDt);
 

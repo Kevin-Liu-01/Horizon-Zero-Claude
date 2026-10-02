@@ -143,6 +143,32 @@ state system drives (the Redeye's red calm).
 
 Per-machine wrapper over `disposeRig`. `machines.sites.dispose(m)` calls it.
 
+### Added in residue round 2 (§13)
+
+* **`debugFeet()[i].stances`** (`gait.js`, `rig/footlock.js`) — the per-foot
+  count of stance windows the rig's phase authority opened (the gait's pattern
+  crossing an integer, or the clip's stance phase). Monotone; survives a slow
+  frame. `A48-cadence` counts its increments. Both cadence loops close over
+  `ledger.stanceWraps`, the sum.
+* **`markWreckShadow(machine)`** (`rig/lod.js`) — sets the wreck's prime shadow
+  caster (through `setCaster`, so the engine's cull still owns distance).
+  Called from `settleCorpseNow()`, from the first corpse tick, and after the
+  site manager's freeze (the rig's `disposeFx(true)` hook). *Invariant:* a
+  wreck keeps exactly its prime; do not re-enable other casters on a wreck.
+* **Spawn size cull** (`rig/lod.js`, automatic from `attachRigRuntime`) — the
+  machine's first drawn frame applies `engine.js`'s own screen-size test and
+  `__sizeCulled` flag to its meshes. *Invariant:* it never hides a mesh the
+  engine would not; the engine un-hides it.
+* **Shared part geometry** (`parts.js` `shareGeo`) — every part factory's
+  geometry is pooled per content (pool `parts`). *Invariant:* a part geometry
+  is read-only and its `dispose()` is a no-op; never mutate one in place.
+* **Donor host** (`rig/components.js`) — a shell-less machine whose skinned
+  donor is under `DONOR_HOST_MAX_VERTS` (20,000; today the Strider) draws its
+  components inside the donor's own draw. The combined buffer is pooled per
+  species and de-quantised.
+* **`spec.tailGateY`** (`autorig.js`, opt-in; `RIGS.corruptor` 1.3) — below it
+  no tail bone takes a vertex, by capsule or by fallback.
+
 ## 4. The rig side
 
 * `rig/rigs-expansion.js` — `EXPANSION_RIGS`, merged into `autorig.RIGS`. Every
@@ -227,32 +253,24 @@ rule rather than through a gate opt-out — see `stormbird.js` `debugFeet()`.
 
 ## 8. Known gaps
 
-Current as of residue fix round 2 (§12); the history of each is in §9-§12.
+Current as of residue round 2 (§13); the history of each is in §9-§13.
 
-* `A47c-corpse-mass` is red on two species: **Snapmaw 0.95-1.05** (median
-  1.01) and **Corruptor 0.74-0.83** (median 0.77), bar 0.75; the Stormbird
-  sits at the bar (0.70-0.75, over it in 1 of 5). The cause this section used
-  to give — "both rest their bellies on the soil alive, so the wreck is as low
-  as the living body" — was wrong: the wrecks sat 0.13-0.20 m ABOVE the
-  living bodies, from four causes measured and fixed in §12.3. What is left
-  is the Snapmaw's reference pose (it BASKS, belly on the soil, by canon) and
-  the Corruptor's tail root skinned to its abdomen. A sprawler ruling is
-  requested (§12.3).
-* `A47-corpse-grounded` 4 of 5 at load 22-33: the Thunderjaw where its slide
-  ends on ground whose two gate references differ by > 0.3 m (a pair 0.53 m
-  wide against a 0.50 m shared window), and machine-rig's Glinthawk (§12.2).
-* `A48-cadence` is flaky (3 of 5 on the final code): patrol waits inside the
-  5-s wall window (machine-ai), a flyer's takeoff read from the last sample
-  (machine-rig's gate), and an escorting Ravager whose touchdowns run out of
-  reach (half fixed, §12.4). Walking cadence is 1.29-1.54x the floor.
-* `A50b-aim-on-drawn-geometry` reads 94 % on the Watcher and Redeye in some
-  runs: core-platform's screen-size cull hides their small eye / head-frill
-  meshes at the gate's range while the hit hulls built from them stay live
-  (§11.14).
-* `A44-socket-integrity` has read the Longleg's `dead:head` at 0.13-0.15
-  under full-suite load (0.000 in isolation).
-* The Watcher's eye and antenna parts are not folded (they draw themselves)
-  and cost two geometries per living Watcher.
+* `A47c-corpse-mass` is red on ONE species: the **Corruptor, 0.75-0.78** in 5
+  of 5 isolated runs against its walking-chassis reference (area-weighted, as
+  ruled). The ruled in-lane lever (tail re-rooted behind the abdomen) is in
+  and measured insufficient: the 0.9 m hub is 64 % of the area and walks only
+  0.11-0.15 m off the ground (§13.3). Ruling requested. The Snapmaw SKIPs as
+  ruled (its walking chassis clears the ground by -0.03 m).
+* `A50b-aim-on-drawn-geometry` fails intermittently on the Watcher / Redeye
+  (2 arrows of 50 on a size-culled `Eye_Lense` / `Headplate_Frill`) — on the
+  committed tree too (2 of 2 runs), so it is not this round's: core-platform's
+  screen-size cull hides those meshes while their hit hulls stay live (§11.14).
+* `A48-cadence` never grades the Snapmaw (it basks through the gate's
+  `PROVOKE` in every run — ambush perception) and grades the Stormbird only
+  when it is on the ground for 2 s of moving frames (2 of 6 runs).
+* The Watcher keeps its separate component mesh (two draws per Watcher): its
+  donor is 73,818 vertices and a pooled second copy for the donor-host fold
+  costs ~6.5 MB (§13.1).
 
 ---
 
@@ -1682,3 +1700,369 @@ PENDING: `A21-real-draw-calls` (core-platform clock terms; draw calls
 gates in the same run: `A44`, `A44b`, `A44c` A/B, `A45`, `A45b`, `A45c`, `A46`,
 `A47`, `A47b`, `A48b`, `A50`, `A50b`, `A76b`, `V26c`, `A90-memory-stability`,
 `A90-memory-stability-expansion`, `A90-rig-reclaim`, `A90b` all PASS.
+
+---
+
+## 13. Residue round 2 — the six findings, applied as the Sep 26 rulings say
+
+Port 5207, one to three other lanes running suites on the same box (load 3-7
+in the isolation loops). Every gate change below is one a ruling names, and is
+recorded in the gate's own header. No bar moved. "Before" numbers come either
+from this round's first runs (before any edit) or from the committed tree
+(`df66655`) served unchanged from a scratch copy on port 5277 and measured by
+the SAME gate or probe code — each table says which.
+
+### 13.1 `A21-real-draw-calls` (blocker) — the lever finished; draw term inside budget 3/3
+
+The ruling's lever — one component draw per machine, per-vertex slot id, a
+torn/hidden mask — has been in the tree since §11.4 for every machine with an
+authored shell (the components ride the shell's own draw). This round
+enumerated what was left of it in the staged fight, mesh by mesh
+(`renderBufferDirect` census of one frozen frame, DPR 2): every tearable
+component on every machine in view was already folded, and the only
+component draws left were the two shell-less species' SEPARATE component
+meshes — the Watcher's and the Strider's (2 draws per machine: donor +
+components). The Strider is a herd animal (six in `west-herd`), so its fold
+was finished: `rig/components.js` DONOR HOST. The components ride the donor's
+own draw exactly as they ride a shell's (scene-hook buffer swap only inside
+`renderer.render`; everything that reads geometry outside a render reads the
+donor as built), with one addition a shell never needed: the donor is
+TEXTURED, so for a component vertex the patch replaces what the donor's maps
+produced (albedo after `color_fragment`, roughness / metalness after their map
+chunks, normal after `normal_fragment_maps`, AO after `aomap_fragment`,
+emission after `emissivemap_fragment`) with the proxy material's live values —
+a `mix` on a flat per-triangle flag, no texture sampled in divergent flow — and
+the emissive mask travels per vertex (`cmpLit`) with the accent tint
+(`cmpTint`). The combined buffer copies the donor's vertices, so it is POOLED
+per species (nothing in it is per machine) and de-quantised (the Strider donor
+ships KHR_mesh_quantization Int16 positions — the first cut wrote floats into
+them and filmed a screen-filling black polygon, `shots/mx-r7-strider-close-5207.png`
+before the fix). The Watcher stays on its separate component mesh: its donor
+is 73,818 vertices, and a second copy (~6.5 MB) for one draw per Watcher in
+view fails the memory rule (`DONOR_HOST_MAX_VERTS` 20,000). Tear-off, weak
+points, damage flashes and ray tagging are untouched — the proxies are the same
+objects — and `A42-stagger`, `A42-expansion`, `A44`, `A44b`, `A4`, `A5` PASS
+(§13.7). Film: `shots/mx-r7-strider-donorfold-vs-head.png` (left this build,
+right `df66655`: blue lens and orange back canister both drawn, same read).
+
+Machine draws, staged fight, frozen census (A21's own `drawsPerFrame`):
+
+| | main | shadow | total |
+| --- | --- | --- | --- |
+| before (`df66655` tree, this round's first A21 run) | 26 | 3 | 29 |
+| after | **25** | 3 | **28** |
+| west-herd, main pass | 24 -> **18** | | |
+
+Worst-frame machine draws (probe `a21worst`: A21's own staging, 240 LIVE frames
+at DPR 1.5 and 2, every `renderBufferDirect` bucketed per frame): **before 29 in
+the worst frame and in every frame (26 main + 3 shadow); after 28 (25 + 3).**
+Worst whole frame 336 -> 334 at DPR 1.5, 331 -> 331 at DPR 2. The machine term
+does not vary frame to frame; what varies is `unnamedRoots` (5-9, per-event FX
+sprites/meshes `machine.js` adds to the scene root — machine-rig's / machine-ai's
+file, not a component).
+
+**`A21` three runs in isolation, final code — drawCalls term PASS 3/3:**
+
+| run | staged-fight | west-herd | spawn-vista | budget |
+| --- | --- | --- | --- | --- |
+| 1 | 340 | 211 | 319 | 350 |
+| 2 | 341 | 211 | 318 | 350 |
+| 3 | 339 | 211 | 319 | 350 |
+
+(before: 342 / 217 / 318.) Triangles PASS in all three. The gate's verdict
+reads PENDING in all three because its three clock terms are declared
+unattributable by the gate itself (null frame p95 17.8-20 ms, burst
+instability 2.3-3.0x on a shared GPU) — core-platform's instrument. No
+shadow-caster range was touched. **The judge's 368 was not reproduced**: every
+staged-fight reading on this box this round (five gate runs) was
+339-342, and the frame's machine term is 28-29 draws of it; the remaining
+~310 are props 45+48, vegetation 43+33, other 22+23, player 16+15-21,
+terrainSky 13+9, post 22.
+
+### 13.2 `A48-cadence` flaky (blocker) — moving frames + the published stance window; 6/6
+
+Both halves of the ruling, as written.
+
+**The gate** (`tools/gates.config.mjs`, header records the ruling). A frame is
+graded only if the machine's horizontal speed over SIM time is at least 0.5x
+its current `walkSpeed` (a grounded Stormbird publishes its ground walk there);
+for a flier (`flyCruise` defined) every frame within 1.0 sim-s of an
+`_airborne` change is excluded on both sides, and a frame reporting fewer than
+two feet is excluded outright. The window is 5 s of MOVING wall time,
+collected for at most 15 s of wall time (it was 5 s of any wall time, which is
+how a 3-s patrol wait became a 0.3 Hz "cadence"); under 2 s of moving time a
+species reads `idle` and is not graded, which is what `moved < 0.4 m` did
+before. The band, its reference and its width are untouched. `A48b` applies
+the same moving-frame test to the loop telemetry it grades (per drawn frame,
+the loop's `moveFrames` / `ceilFrames` increments are kept only on a moving
+frame) — its 25 % bar and 60-update floor are untouched.
+
+**The ledger** (`rig/contact.js`, `gait.js`, `rig/footlock.js`). Every
+`debugFeet()` row now publishes `stances`, the per-foot count of stance
+windows the rig's phase authority opened — `FootLock` from the clip's stance
+phase (Watcher, Redeye, Longleg, already counted since §11.5), and the
+`GaitController` from its own pattern: foot L's window opens every time
+`phase + offset[L]` crosses an integer, counted on the substep it happens (so a
+slow frame cannot swallow it) and never twice (the pattern only moves
+forward; the per-leg clock the reach guard resets is NOT the authority — that
+reset is how the escorting Ravager reported three touchdowns per commanded
+step, §12.4). A foot held off the ground for the window (leap, stomp lift,
+limp) counts nothing. `A48` counts increments of that counter; a row without
+it falls back to the rising edge of `planted`. The gait's cadence loop now
+closes over the same count (`ledger.stanceWraps`), as the clip-driven species
+already did, so the rig steers by the number the gate reads.
+
+**Six consecutive runs in isolation, final code: 6/6 PASS** (15, 14, 14, 14,
+15, 15 species graded). Per species, the graded cadence and its margin over
+the band floor across the six:
+
+| species | graded | Hz (6 runs) | band | worst / floor |
+| --- | --- | --- | --- | --- |
+| watcher | 6/6 | 1.39-1.50 | 0.94-2.81 | 1.48 |
+| sawtooth | 6/6 | 1.14-1.35 | 0.74-2.22 | 1.54 |
+| behemoth | 6/6 | 0.90-0.94 | 0.50-1.51 | 1.80 |
+| thunderjaw | 6/6 | 0.66-0.80 | 0.39-1.17 | 1.69 |
+| strider | 6/6 | 1.43-1.64 | 0.84-2.53 | 1.70 |
+| scrapper | 6/6 | 1.89-2.04 | 1.06-3.17 | 1.78 |
+| longleg | 6/6 | 1.88-2.19 | 1.14-3.41 | 1.65 |
+| broadhead | 6/6 | 1.09-1.39 | 0.67-2.01 | 1.63 |
+| redeye | 6/6 | 1.29-1.39 | 0.90-2.71 | 1.43 |
+| grazer | 6/6 | 1.48-1.69 | 0.85-2.54 | 1.74 |
+| ravager | 6/6 | 1.14-1.20 | 0.63-1.88 | 1.81 |
+| shellwalker | 6/6 | 0.89-1.10 | 0.58-1.75 | 1.53 |
+| corruptor | 6/6 | 0.80-1.00 | 0.48-1.44 | 1.67 |
+| tallneck | 6/6 | 0.75-0.95 | 0.51-1.52 | 1.47 |
+| stormbird | 2/6 | 0.69-0.70 | 0.37-1.11 | 1.86 (airborne at the check in 3, 1.8 s moving in 1) |
+| snapmaw | 0/6 | — | 0.55-1.64 | basks through `PROVOKE` in all six (ambush perception) |
+| glinthawk | — | — | — | no feet (flier) |
+
+No reading above 0.8x of its ceiling in any run; the escorting Ravager, which
+read 1.99 over a 1.87 ceiling in the last suite, reads 1.14-1.20. `A45`,
+`A45b`, `A45c`, `A46`, `A76b` PASS on the final code (§13.7).
+
+
+### 13.3 `A47c-corpse-mass` for sprawlers (major) — ruled gate applied; Snapmaw SKIPs; Corruptor NOT closed (0.75-0.78)
+
+**The gate** (`tools/gates.round4.machine-rig.mjs`, header records the ruling):
+
+* sprawlers = the two the ruling names (Snapmaw, Corruptor). Each is brought
+  inside the animation LOD ring (the player 80 m off, outside its perception),
+  taken off its bask / patrol wait and walked on its own patrol route; the
+  reference is the ruling's "median chassis height while walking" — the
+  area-weighted median of the CHASSIS vertices (dominant bone `rig_pelvis` /
+  `rig_spine` / `rig_chest`, the corpse solve's own chassis/chain split) above
+  the terrain, as the median over >= 2 s of moving frames (A48's definition).
+  The player is put back before anything dies.
+* the SKIP: a species whose walking chassis does not clear the ground — its
+  lowest chassis vertex no more than 0.05 m above the terrain under it on the
+  median walking frame — SKIPs with a note naming it. (A first cut took "the
+  central half of the footprint" and read a sprawling croc's knees as its
+  belly.)
+* area weighting: each mesh's world surface area spread evenly over its
+  samples; weighted medians. Scoped as ruled — the bullet is the sprawler rule —
+  so the sprawlers are graded area-weighted and every other species keeps its
+  per-vertex reading against its standing rest. Both readings are reported for
+  every species (`areaRatio`), so the effect of a wider application is on the
+  record: Behemoth 0.59-0.63 -> 0.71-0.74, Tallneck 0.61-0.66 -> 0.72-0.75,
+  Longleg 0.20-0.56 -> 0.36-0.85 (a death-roll/twist coin: roll and twist the
+  same way read 0.42-0.47, opposite ways 0.71-0.87, measured on 8 forced
+  deaths), Stormbird 0.72-0.73 -> 0.63-0.64.
+
+**The Corruptor's tail, re-rooted as ruled** (`autorig.js` `tailGateY`,
+`RIGS.corruptor.tailGateY` 1.3). Measured per vertex before: the donor's rear
+abdomen runs back to z -3.75 at belly height (y 0.21-1.22) under `rig_tail1`
+(z -1.45) and fell to it through the outside-every-capsule fallback, 18-56
+vertices per 0.25 m slice — a droop swung it through the soil. Below the gate
+no tail bone takes a vertex; the abdomen is chassis; the root now takes the
+default chassis-mode droop (0.33 rad; it was held at 0) without moving the
+belly. **It does not close the gate**, measured: a root-droop sweep on 8
+spawned Corruptors read the wreck's area-weighted median at 0.671 / 0.687 m
+(0.33 rad), 0.675 / 0.689 (0.6), and 1.36 / 1.37 (0.9) and 1.44 / 1.49 (1.6) —
+the deeper droops swing the donor's rear tail through the soil and the solve
+lifts the whole wreck, so 0.33 stays. Per bone group, the wreck's hub (64 % of
+its area) lies at 1.03 m dead against ~1.1 m walking: the living Corruptor
+carries its 0.9 m-thick hub 0.11-0.15 m off the ground, so a wreck lying on
+its belly can only drop the hub by that much. The chains already come down
+(tail 2.9 -> 0.75-0.95 m, legs 0.37 m, claws 0.49-0.71 m).
+
+**Five runs in isolation, final code:**
+
+| species | graded on | 5 runs | |
+| --- | --- | --- | --- |
+| **corruptor** | area, walking chassis | **0.76 0.76 0.78 0.77 0.75** (chassis 0.886-0.902 m, wreck 0.680-0.692 m) | **FAIL 5/5** — over by 0.00-0.03 |
+| snapmaw | — | SKIP 5/5: walking chassis clearance -0.03 m (its walk is a belly-drag sprawl, wreck 0.57 m vs walking chassis 0.43 m) | SKIP, as ruled |
+| stormbird | vertex | 0.72 0.73 0.72 0.72 0.72 | 5/5 |
+| behemoth | vertex | 0.63 0.63 0.59 0.63 0.62 | 5/5 |
+| tallneck | vertex | 0.61 0.61 0.61 0.66 0.61 | 5/5 |
+| strider / broadhead / shellwalker | vertex | 0.60-0.65 / 0.64-0.66 / 0.61-0.62 | 5/5 |
+| every other species | vertex | 0.08-0.58 | 5/5 |
+
+Same gate on `df66655`: Corruptor 0.76 (chassis 0.931, wreck 0.704) — the
+re-root moved the abdomen into the chassis, which lowers the walking chassis
+median by ~0.03 and the wreck by ~0.02, a wash. What would close the
+Corruptor, and why it is not done here: a hub that walks higher (a scorpion's
+stilt walk — the rig has the reach for ~0.12 m more) raises the reference, but
+it changes the living machine to pass a corpse gate, and the casting card
+calls it "a low hub"; that is an owner call, not a residue fix. Owner:
+machines-expansion, pending an orchestrator ruling on whether a 0.11-0.15 m
+walking clearance under a 0.9 m hub "lifts the chassis" in the ruling's sense.
+
+### 13.4 Wrecks keep one shadow caster (major) — CLOSED; the freeze was switching it off
+
+§11.7's fix only ever ASKED for the prime through the ring rule, from the corpse
+tick — and the corpse tick stops at the freeze. `ai/sites.js` `_freeze()`
+(machine-ai's file) writes `castShadow = false` on every mesh of a wreck 10 s
+after death, and a frozen wreck's `update()` never runs again. A prime the
+engine had already distance-culled survived by accident (the engine keeps the
+wish in `__shadowBase` and restores it when the player comes back in range);
+one inside the engine's 120 m caster range when the freeze ran lost its shadow
+for good.
+
+Now (`rig/lod.js` `markWreckShadow`): the prime caster is set explicitly at
+death — from `settleCorpseNow()` in every species' `_die()`, and from the first
+corpse tick of a species that has none (the Glinthawk's own grounder) — through
+`setCaster`, so a culled prime records the wish rather than fighting the
+engine; and it is set AGAIN after the freeze, from the `disposeFx(true)` call
+the freeze ends on, which the rig's teardown hook already wraps. Only the prime:
+a wreck casts its silhouette, one draw per cascade. The engine's distance cull
+retires far wrecks, as ruled.
+
+Measured with one probe on both builds (`shots/mx-r7-wreck-shadow-{before,after}.png`
+are its last frames): 16 species staged 90-140 m from the player, killed there,
+waited out until every wreck read `_frozen`, then the player walked up to each
+at ~9 m and the wreck's shadow-pass draws were counted over four frames.
+
+| | shadow draws per wreck at 9 m, after the freeze |
+| --- | --- |
+| before (`df66655`) | **0** on Broadhead, Shell-Walker, Longleg; Thunderjaw 6 (its two disc launchers, not its body); 3 on the other 12 (the prime the engine happened to hold in `__shadowBase`) |
+| after | **3 on all 16** (the prime in each cascade), Thunderjaw 9 (prime + its two disc launchers) |
+
+No per-frame cost: a handful of property writes per death and per freeze.
+
+### 13.5 `V26a` / `V27a` staging (major) — verified at the rule, re-shot
+
+All three parts of the ruling are in the tree from residue round 1 (§11.1-§11.3)
+and were verified against the ruling's own words this round rather than
+re-built: `repairCast` gives each machine the slot pitch its own projected
+silhouette needs to stand `H_MIN` = 0.28 NDC (14 % of the frame, the 12 % bar
+plus margin) — the frame-height fit for long, low bodies; the `A44c` speck test
+is `w / 2 < 0.12 || h / 2 < 0.12` on the PROJECTED POSED VERTICES, i.e. 0.24
+NDC; and the Redeye carries `REDEYE_SHELL` (crown ridge, brow and cheek guards,
+flank scales, thigh armour, one skinned draw) over its donor on
+`STYLE.redeye.underbody`. Measured on the final code: `A44c-lineup-expansion`
+PASS — Snapmaw 30.5 % x **13.9 %**, Broadhead 13.9 x 15.7, Grazer 15.9 x 38.5,
+Ravager 15.9 x 22.0, Redeye 13.9 x 32.7; `-b` PASS — Shell-Walker 30.3 x 22.5,
+Stormbird 31.3 x 35.4, Corruptor 30.3 x 23.9; no speck, clip or undrawn machine.
+`V26c-plate-contrast-expansion` PASS: Redeye plate/hide 118.0 / 46.0 = **2.57x**
+(bar 1.9), Broadhead 2.94, Grazer 5.32, Snapmaw 5.98. Films in §13.8.
+
+### 13.6 `A90-rig-reclaim` fingerprint (carried) — both halves found and fixed; 6/6
+
+An instrumented copy of the gate (same loop, plus a registration census:
+three adds its `onGeometryDispose` listener exactly when it first uploads a
+geometry, so wrapping `addEventListener` names every upload and the phase it
+happened in) and a per-frame trace of each held Watcher's pooled meshes found
+two things, both real:
+
+1. **The held 4.** Each newly spawned Watcher DREW its species-pooled eye and
+   frill meshes (`Eye001_Eye_texture_0`, `Eye_Lense_1001_Glass_Lense_0`,
+   `Eye_Camera001_...`, `Headplate_Frill_...-x4`) on its first 2-3 frames;
+   then `engine.js`'s 10 Hz screen-size cull hid them (`__sizeCulled`,
+   sub-pixel at 49-56 m). A geometry is uploaded the first frame its mesh is in
+   the frustum, so WHO first uploaded the pool — a boot Watcher, a warm-phase
+   one or a HELD one — was a race between the spawn and the cull clock; in the
+   losing case the four pooled buffers appeared inside the per-live bracket
+   and, being pooled, stayed (§10.6's census named the same four). Fix
+   (`rig/lod.js` spawn size cull): a machine's FIRST drawn frame applies the
+   engine's own test — same projected-diameter formula against the base
+   resolution, same glow allowance, same `__sizeCulled` flag, so the engine
+   owns the mesh from then on and un-hides it when it grows past the limit —
+   from the scene's `onBeforeRender`, once per machine. Nothing is hidden that
+   the engine would not hide 0-100 ms later.
+2. **The per-live term.** The component PROXIES (`material.visible = false`
+   since §11.4, never drawn) were still uploaded: three registers a mesh's
+   geometry in `projectObject` before it looks at `material.visible`. The
+   census counted 3-8 of the eight held Watchers' `lens` (328 v) and `antenna`
+   (155 v) proxies uploaded inside the bracket: 0.38-1.0 per live Watcher
+   against a 1.0 bar, from buffers nobody draws. Fix (`parts.js` `shareGeo`):
+   every part factory's geometry is shared per content through the species
+   pool (`parts`), so the first machine pays for a shape and every later one
+   borrows it; the pooled `dispose()` is a no-op (debris, `sites.dispose` and
+   `disposeRig` all call it), `disposeGeometryPool()` releases it.
+
+**Six runs in isolation, final code: 6/6 PASS.**
+
+| run | `perLiveGeo` (bar 1.0) | `perLiveTex` | `heldThenReleased.geo` | `afterCycles.geo` (bar 40) |
+| --- | --- | --- | --- | --- |
+| 1 | 0 | 0.38 | 1 | +3 |
+| 2 | 0 | 0.25 | 0 | +7 |
+| 3 | 0 | 0.38 | 0 | +10 |
+| 4 | 0 | 0.25 | 0 | +9 |
+| 5 | 0.13 | 0.50 | 1 | +10 |
+| 6 | 0 | 0.38 | 0 | +9 |
+
+Before (baseline run this round): `perLiveGeo` 1.0, held **4** — the
+fingerprint, at the edge of the bar. The `afterCycles` term rose from +1..+9
+to +3..+10 because a shared part shape that is first drawn inside the 30
+cycles is now retained once instead of uploaded and freed each cycle — a
+species-lifetime buffer, counted once.
+
+### 13.7 Memory and the named must-not-regress gates
+
+| gate | now | before |
+| --- | --- | --- |
+| `A90-memory-stability` | PASS: geometries **+11** (168 -> 179), textures -18, heap -8.3 % | PASS, +36 from 173 (§12.5) |
+| `A90-memory-stability-expansion` | PASS: geometries +4, textures -17, 0 non-machine nodes, 0 orphans, heap -5.6 % | PASS, +23 |
+| `A90-rig-reclaim` | **6/6 PASS**, per-live 0-0.13, held 0-1 (§13.6) | 1.0 / held 4 this round's baseline |
+| `A90b-memory-attribution` | PASS, 0 offenders, 0 orphaned textures | PASS |
+| `A9-perf-budget` | PENDING: draw calls **319** (callsOk), fps not attributable (null frame 5.32 ms GPU) | PENDING, 319 |
+| `A21-real-draw-calls` | draw term PASS 3/3 (339-341), PENDING on its clock terms (§13.1) | 342 |
+| `A45` / `A45b` / `A45c` / `A46` | PASS: worst stance drift 0.011 m; 0 merged stance reports; 0 continuity offenders; ground error 0.059 m | PASS |
+| `A44` / `A44b` | PASS: worst 0.000 / 0.029 m over 246 sockets | PASS |
+| `A47` / `A47b` | PASS, 17 species, 0 offenders each | PASS |
+| `A42-stagger` / `A42-expansion` (tear-off) | PASS / PASS, 8 kinds | PASS |
+| `A4-draw-strength` / `A5-arrow-fired-event` | PASS / PASS | PASS |
+| `A50-hulls-visible`, `A76b-footfall-species` | PASS / PASS | PASS |
+| `A48b-cadence-headroom-expansion` | 3/3 PASS, every species 0.000 | PASS |
+
+Every runtime object this round adds has a dispose path and nothing is
+allocated per frame: the pooled donor-host buffer and the shared part
+geometries are released by `disposeGeometryPool()` (a per-machine release is a
+deliberate no-op); `markWreckShadow` writes flags; the spawn size cull's queue
+drops a machine at its first render, at `disposeRig`, or after 600 renders
+out of the scene, and its traversal runs once per machine; the stance counter
+is one integer per leg. The geometry baseline `A90` starts from fell from
+173-200 to 168: part shapes are no longer one buffer per machine.
+
+### 13.8 Films, re-shot and read against `casting-v4.md`
+
+`V26`, `V27`, `V26a`, `V26b`, `V27a`, `V27b` re-shot on the final code
+(`shots/gates/`, and again by the full suite), read against `casting-v4` §6's
+criteria:
+
+* **V26a** — Broadhead: wide horns over four legs, orange canisters on the
+  flank; Grazer: rotor-blade antlers, two dorsal canister rows; Ravager: a cat
+  with the cannon rail on its back and its head high; Snapmaw: long low sprawl,
+  knees outboard, scute ridge down spine and tail, full length at 13.9 % of the
+  frame height; Redeye: grey plates over the dark donor, red sensor lit. Plate
+  over dark on all five.
+* **V26b** — Shell-Walker: six legs, two arm-claws raised clear, the cargo drum;
+  Stormbird: spread wing, three countable nacelles on the near wing, keel;
+  Corruptor: matte black, claws forward, tail ARCHED over its back — the tail
+  re-root (§13.3) does not flatten the living arch.
+* **V27a** — Broadhead horns down, Grazer rotors up, Ravager coiled with the
+  cannon over its back, Snapmaw reared with its jaws open; all four at
+  readable size, no speck banner.
+* **V27b** — Shell-Walker arm-claws raised, Stormbird wing swept, Corruptor
+  tail coiled over the back.
+* **V26 / V27** (machine-rig's cast) — unchanged reads: the Sawtooth, the
+  Thunderjaw's boxy head and horizontal tail, the Scrapper with its radar, the
+  Longleg, the Glinthawk with wings.
+
+Also filmed this round: `shots/mx-r7-strider-donorfold-vs-head.png` (§13.1),
+`shots/mx-r7-wreck-shadow-{before,after}.png` (§13.4 probe's last frames),
+`shots/mx-r7-corruptor-wreck-side.png` (§13.3).
+
+### 13.9 The full suite on 5207 — every FAIL, with an owner
+
+TBD

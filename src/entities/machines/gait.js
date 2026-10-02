@@ -796,6 +796,8 @@ export class GaitController {
         relSeen: true,  // has a consumer seen that release? (rig/contact.js)
         rptPlanted: false, // last per-frame contact sample (rig/contact.js)
         plants: 0,      // touchdown counter -> `debugFeet()[i].plantId`
+        wraps: 0,       // stance windows opened -> `debugFeet()[i].stances`
+        wrapCyc: undefined, // last pattern cycle a stance window was counted on
         reachSwing: false, // thrown into swing by the reach guard; see update()
         reachCycle: 0,
         crouchDrop,
@@ -1000,8 +1002,19 @@ export class GaitController {
     // ---- closed-loop trim on the footfalls actually DELIVERED (see the note
     // above `DEBT_CYCLES`). Integrated on the WALL clock, so every loss
     // between `phaseRate` and a drawn touchdown is corrected at once.
+    /**
+     * THE LOOP CLOSES OVER THE SAME COUNT THE RIG PUBLISHES (ruling Sep 26):
+     * stance windows, one per foot per pattern cycle (`ledger.stanceWraps`,
+     * counted in the leg loop below). It used to close over
+     * `ledger.observedPlants` — the touchdowns a once-per-frame sample
+     * happened to catch — which under load reads fewer stances than the rig
+     * made, winds the trim up and steps the machine faster into frames nobody
+     * can see (the Longleg's positive-feedback loop, §11.5), and on the
+     * escorting Ravager read its reach flicker as over-delivery (§12.4). The
+     * clip-driven species (Watcher, Longleg) already close over stance wraps.
+     */
     const trim = this.cadLoop.step(engine, wantWallHz,
-      this.ledger.observedPlants, this.legs.length, dt);
+      this.ledger.stanceWraps, this.legs.length, dt);
     if (moving) {
       /**
        * THE CEILING IS A BOUND ON A RUNAWAY INTEGRATOR, NOT A BOUND ON THE
@@ -1154,6 +1167,29 @@ export class GaitController {
       // per-leg clock: advances with the global phase but is allowed to break
       // early out of stance (reach) — then eases back onto the pattern
       const want = this.phase + (offsets[L.id] ?? 0);
+      /**
+       * ONE STANCE WINDOW PER FOOT PER PATTERN CYCLE — the count this rig
+       * PUBLISHES (ORCHESTRATOR RULING Sep 26, `A48-cadence`: "the stance
+       * ledger publishes a window that survives a slow frame — rig/contact.js
+       * counts a plant per dominant-clip stance wrap").
+       *
+       * The gait's dominant clip is its own pattern: foot L's stance window
+       * opens every time `phase + offset[L]` crosses an integer. `phase` only
+       * ever moves forward, so the crossing is counted on the SUBSTEP it
+       * happens, whatever drawn frame it straddles — a slow frame cannot
+       * swallow it, and it is never counted twice. The per-leg clock
+       * (`leg.ph`) is NOT the authority here: the reach guard below resets it
+       * mid-stance and the re-sync pulls it back and forth, which is how an
+       * escorting Ravager reported three touchdowns per commanded step
+       * (§12.4). A foot held off the ground for the whole window (a leap, a
+       * stomp lift, a limp) opens no stance and counts nothing.
+       */
+      const wc = Math.floor(want);
+      if (leg.wrapCyc === undefined) leg.wrapCyc = wc;
+      else if (wc > leg.wrapCyc) {
+        leg.wrapCyc = wc;
+        if (!airborne && !(pose.legLift[li] > 0.001) && pose.limpLeg !== li) this.ledger.countWrap(leg);
+      }
       leg.ph += dt * phaseRate;
       let err = want - leg.ph;
       err -= Math.round(err);                       // shortest way round
@@ -1300,6 +1336,9 @@ export class GaitController {
     this.phase += dt * hz;
     for (const leg of this.legs) {
       leg.ph += dt * hz;
+      // no stance window is counted out here (no feet are solved); the pattern
+      // cursor is re-anchored when the machine comes back inside the LOD ring
+      leg.wrapCyc = undefined;
       // stale plants, honestly reported — and on the ledger, so the first
       // real touchdown after the machine comes back inside the LOD ring is
       // not read as a continuation of the stance it had when it left.
@@ -1549,6 +1588,9 @@ export class GaitController {
     // plant?" answerable without assuming anything about the sample rate.
     for (let i = 0; i < feet.length && i < this.legs.length; i++) {
       feet[i].plantId = this.legs[i].plants;
+      // STANCE WINDOWS OPENED, per foot (ruling Sep 26): a counter survives a
+      // slow frame where a boolean edge does not — `A48-cadence` counts it
+      feet[i].stances = this.legs[i].wraps || 0;
     }
     this.ledger.observe(this.legs, feet);
     return feet;
@@ -2564,10 +2606,11 @@ export class GaitController {
             b.localToWorld(_vD1);
             r = (rig.tailR?.[i] ?? 0.25) * LAY_R;
           }
-          // the ROOT joint's bone is skinned to the rear of the body as well
-          // as to the tail (measured on the Corruptor: `rig_tail1` owns
-          // vertices from body y 0.00 to 1.10), so it may droop no further
-          // than the chassis-mode droop always allowed; the rest lie down
+          // the ROOT joint's bone may be skinned to the rear of the body as
+          // well as to the tail, so by default it droops no further than the
+          // chassis-mode droop always allowed; a species whose tail skin is
+          // gated off its body (`tailGateY`, the Corruptor since residue
+          // round 2) raises `layTailRoot`. The rest lie down.
           this._layToward(rig.tail[i], _vD1,
             this._layGround(T, _vD1) + r + LAY_CLEAR - (this.grounder?.restOffset() || 0), foldB,
             null, i === 0 ? (this.layTailRoot ?? CHASSIS_TAIL_DROOP / tn) : 1.6);

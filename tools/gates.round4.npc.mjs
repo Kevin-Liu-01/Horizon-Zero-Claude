@@ -81,6 +81,13 @@ const IN_CAMP = `
  *   'talk'      'talkTo' from behind, under '?shot' (the world keeps running);
  *   'talk-live' 'talkTo' from behind with the dialogue freeze IN FORCE (fix
  *               round 5) — see the note inside.
+ * 'runTurn(how, { id, ang, dist })' (npc polish, the seated-speaker ruling) runs
+ * the same talk turn on ONE NAMED SEATED person instead, the player placed
+ * 'dist' m away at 'ang' rad off their heading (pi = behind, +-pi/2 = side):
+ * it waits until they are seated and settled, measures the head as well as the
+ * body, keeps every toe on the GROUND judged through the stand-up and the
+ * sit-down (no crossfade exclusion), and after the card closes follows them
+ * back to the seat. The standing path is textually unchanged.
  */
 const TURN_PROBE = `
       const wrapA = (a) => { a %= Math.PI * 2; if (a > Math.PI) a -= Math.PI * 2; if (a < -Math.PI) a += Math.PI * 2; return a; };
@@ -102,7 +109,8 @@ const TURN_PROBE = `
         c.sort((a, b) => b.stateT - a.stateT);
         return c[0] || null;
       };
-      const runTurn = async (how) => {
+      const runTurn = async (how, opt = null) => {
+        const seated = !!(opt && opt.id);
         /**
          * THE SAME DROPPED-FRAME RULE, ON THIS PHASE'S OWN CADENCE. The crowd
          * probe calibrates 'a dropped frame' as 45 ms or 2.5x the median of its
@@ -123,11 +131,26 @@ const TURN_PROBE = `
         cad.sort((a, b) => a - b);
         const hitchT = Math.max(45, cad[20] * 2.5);
         let n = null;
-        for (let k = 0; k < 40 && !n; k++) { n = pickSubject(); if (!n) await sleep(250); }
+        if (seated) {
+          // the named sitter, seated and settled: on the seat loop, no sit or
+          // stand in progress, no one-shot on stage
+          const cand = S.byId.get(opt.id);
+          for (let k = 0; k < 160 && cand; k++) {
+            if (cand.state === 'sit' && !cand.anim.transit && !cand.anim.busy
+              && /^sit/.test(cand.anim.current || '')) { n = cand; break; }
+            await sleep(250);
+          }
+          if (!n) return { id: opt.id, how, seated: true, error: 'never seated', state: cand && cand.state };
+        } else {
+          for (let k = 0; k < 40 && !n; k++) { n = pickSubject(); if (!n) await sleep(250); }
+        }
         if (!n) return null;
         used.add(n.id);
         const g = n.group;
-        const behind = { x: g.position.x - Math.sin(g.rotation.y) * 1.6, z: g.position.z - Math.cos(g.rotation.y) * 1.6 };
+        const behind = seated
+          ? { x: g.position.x + Math.sin(g.rotation.y + opt.ang) * (opt.dist || 1.8),
+            z: g.position.z + Math.cos(g.rotation.y + opt.ang) * (opt.dist || 1.8) }
+          : { x: g.position.x - Math.sin(g.rotation.y) * 1.6, z: g.position.z - Math.cos(g.rotation.y) * 1.6 };
         p.position.set(behind.x, p.position.y, behind.z);
         p.velocity?.set?.(0, 0, 0);
         p._snapToGround?.();
@@ -163,7 +186,10 @@ const TURN_PROBE = `
         const layerW = (name) => { const O = n.anim.layers.order; for (let i = 0; i < O.length; i++) if (O[i].name === name) return O[i].weight; return 0; };
         let talkOff = false;
         let sim0 = 0, hold0 = 0;
-        if (live) {
+        // the seated case tracks the same series in BOTH modes (normal play and
+        // the freeze); the standing path tracks them under the freeze only, as before
+        const track = live || seated;
+        if (track) {
           rec.errAtOpenRad = +bearingErr().toFixed(3);
           rec.errSeriesRad = [];
           rec.firstUnderS = null; rec.firstUnderHoldS = null; rec.maxErrAfterUnderRad = 0;
@@ -172,8 +198,109 @@ const TURN_PROBE = `
           sim0 = ctx.engine.simTime;
           hold0 = S.talkHoldStats ? S.talkHoldStats().secs : 0;
         }
+        /**
+         * THE SEATED CASE (npc polish — the orchestrator's ruling of Sep 26 on the
+         * film judge's major: VALA and KARST talked with their back or shoulder to
+         * Aloy for the whole card and their head did not track her).
+         *
+         * The speaker's own clock: the hold's under the freeze, simulation time in
+         * normal play.
+         *
+         * THE HEAD is measured off the drawn head bone — its rotation away from the
+         * bind pose carried onto the character's forward axis — not off the look
+         * code's own numbers. From 1 s of the speaker's clock on (the look eases in
+         * with a 0.22 s time constant) it must point within 0.35 rad of Aloy, or as
+         * close as a speaker's look reaches (1.9 rad off the body, 'LOOK_WIDE'):
+         * head error <= max(0, body error - 1.9) + 0.35 on every frame.
+         *
+         * THE PLANTED FOOT is judged the whole way — the stand-up, the turn, and
+         * after the card the turn back round to the seat and the sit-down — with
+         * A97's stance windows (the support toe, XZ extent, cut at WINDOW_MAX,
+         * closed when the support changes) and NO crossfade exclusion: the
+         * sit-to-stand crossfade is exactly where the old code slid a foot 0.43 m.
+         * Only a dropped frame excludes a window. The contact term (any toe within
+         * 3 cm of the floor — the floor being the ground under the body's origin,
+         * since a seated body is drawn below it with its ankles raised back) is
+         * REPORTED alongside: the pack's own sit clips begin and end their step
+         * with the toe a few cm off the ground (Sitting_Enter's right toe travels
+         * 0.049 m below 3 cm before it clears it), so that term measures the clip
+         * as authored as much as this lane.
+         */
+        const seatWins = [];
+        const seatContact = [];
+        let seqT0 = performance.now();
+        const sw = { L: null, R: null };
+        const sc2 = { L: null, R: null };
+        const tv = new p.position.constructor();
+        const hpos = new p.position.constructor();
+        const hfw = new p.position.constructor();
+        const Qc = g.quaternion.constructor;
+        const qh = new Qc();
+        const headE = n.anim.eHead || null;
+        const qWinv = headE ? new Qc().copy(headE.W).invert() : null;
+        const clock = () => (live ? (S.talkHoldStats ? S.talkHoldStats().secs - hold0 : 0) : ctx.engine.simTime - sim0);
+        const headErr = () => {
+          if (!headE) return null;
+          headE.bone.getWorldQuaternion(qh);
+          hfw.set(0, 0, 1).applyQuaternion(qWinv).applyQuaternion(qh);
+          headE.bone.getWorldPosition(hpos);
+          return Math.abs(wrapA(Math.atan2(p.position.x - hpos.x, p.position.z - hpos.z) - Math.atan2(hfw.x, hfw.z)));
+        };
+        const closeSeat = (w, key, list = seatWins) => {
+          if (!w || w.n < 3) return;
+          if (w.bad) { rec.seatExcludedHitch++; return; }
+          list.push({ toe: key, n: w.n, d: +Math.hypot(w.x1 - w.x0, w.z1 - w.z0).toFixed(4), state: w.st, transit: w.tr,
+            // when, in seconds since 'talkTo' (wall): where in the sequence it fell
+            s0: +((w.t0 - seqT0) / 1000).toFixed(2), s1: +((w.tl - seqT0) / 1000).toFixed(2) });
+        };
+        const growSeat = (W, key, on, now, hitch, list) => {
+          const w = W[key];
+          if (on) {
+            if (!w) W[key] = { x0: tv.x, x1: tv.x, z0: tv.z, z1: tv.z, n: 1, t0: now, tl: now, bad: hitch, st: n.state, tr: n.anim.transit || '' };
+            else {
+              w.tl = now;
+              w.x0 = Math.min(w.x0, tv.x); w.x1 = Math.max(w.x1, tv.x);
+              w.z0 = Math.min(w.z0, tv.z); w.z1 = Math.max(w.z1, tv.z);
+              w.n++;
+              if (hitch) w.bad = true;
+              if (n.state !== w.st && w.st.indexOf(n.state) < 0) w.st += '>' + n.state;
+              if (n.anim.transit && w.tr.indexOf(n.anim.transit) < 0) w.tr += (w.tr ? '>' : '') + n.anim.transit;
+              if (now - w.t0 >= WINDOW_MAX * 1000) {
+                closeSeat(w, key, list);
+                W[key] = { x0: tv.x, x1: tv.x, z0: tv.z, z1: tv.z, n: 1, t0: now, tl: now, bad: hitch, st: n.state, tr: n.anim.transit || '' };
+              }
+            }
+          } else if (w) { closeSeat(w, key, list); W[key] = null; }
+        };
+        const seatSample = (now, hitch) => {
+          g.updateMatrixWorld(true);
+          const fl = Math.max(g.position.y, ctx.terrain.getHeight(g.position.x, g.position.z));
+          const sc = g.scale.x || 1;
+          const toes = [n.anim.toeL, n.anim.toeR];
+          const feet = n.anim.debugFeet();
+          for (let k = 0; k < 2; k++) {
+            const key = k ? 'R' : 'L';
+            if (!toes[k]) continue;
+            tv.setFromMatrixPosition(toes[k].matrixWorld);
+            // the support toe (A97's stance window) — judged
+            growSeat(sw, key, !!feet[k].planted, now, hitch, seatWins);
+            // any toe within 3 cm of the floor — reported
+            growSeat(sc2, key, tv.y - fl < CONTACT_H * sc, now, hitch, seatContact);
+          }
+        };
+        if (seated) {
+          rec.seated = true; rec.approachRad = opt.ang;
+          rec.seat = { x: +g.position.x.toFixed(3), z: +g.position.z.toFixed(3), yaw: +g.rotation.y.toFixed(3) };
+          rec.stood0 = n.stoodToTalk || 0;
+          rec.exitSeen = false; rec.headSeriesRad = []; rec.headWorstExcessRad = null; rec.headSamples = 0;
+          rec.firstUnderClockS = null; rec.seatExcludedHitch = 0;
+          // what moved the body, if anything did: the world's depenetration
+          // ('pushed'), another body ('sepM'), a rescue ('unstuck')
+          rec.moved0 = { pushed: n.pushed, sepM: n.sepM, unstuck: n.unstuck };
+        }
         if (how === 'talk' || live) {
           const y0 = g.rotation.y;
+          seqT0 = performance.now();
           S.talkTo(n.id);
           rec.syncYawChangeRad = +Math.abs(wrapA(g.rotation.y - y0)).toFixed(4);
         }
@@ -202,10 +329,12 @@ const TURN_PROBE = `
             }
           };
           let prevT = performance.now();
-          while (performance.now() - t0 < 6500) {
+          const gapsOpen = [];               // frame gaps while this loop runs (reported)
+          while (performance.now() - t0 < (seated ? 11000 : 6500)) {
             await new Promise((r) => requestAnimationFrame(r));
             const now = performance.now();
             const hitch = now - prevT > hitchT;
+            gapsOpen.push(now - prevT);
             prevT = now;
             const dy = wrapA(g.rotation.y - prevYaw);
             prevYaw = g.rotation.y;
@@ -236,7 +365,7 @@ const TURN_PROBE = `
                 }
               } else if (c) { closeW(c, contactWindows, f.name); cw[f.name] = null; }
             }
-            if (live) {
+            if (track) {
               const er = bearingErr();
               const sOpen = (now - t0) / 1000;
               rec.frames++;
@@ -246,6 +375,18 @@ const TURN_PROBE = `
               if (rec.firstUnderS === null && er <= 0.35) {
                 rec.firstUnderS = +sOpen.toFixed(2);
                 rec.firstUnderHoldS = S.talkHoldStats ? +(S.talkHoldStats().secs - hold0).toFixed(2) : null;
+                if (seated) rec.firstUnderClockS = +clock().toFixed(2);
+              }
+              if (seated) {
+                seatSample(now, hitch);
+                if (layerW('sitExit') >= 0.99) rec.exitSeen = true;
+                const he = headErr();
+                if (he !== null && clock() >= 1.0) {
+                  const excess = he - (Math.max(0, er - 1.9) + 0.35);
+                  rec.headSamples++;
+                  if (rec.headWorstExcessRad === null || excess > rec.headWorstExcessRad) rec.headWorstExcessRad = +excess.toFixed(3);
+                }
+                if (he !== null && rec.frames % 12 === 0) rec.headSeriesRad.push(+he.toFixed(3));
               }
               if (rec.firstUnderS !== null) rec.maxErrAfterUnderRad = Math.max(rec.maxErrAfterUnderRad, +er.toFixed(3));
               const wTalk = layerW('idleTalk');
@@ -255,9 +396,16 @@ const TURN_PROBE = `
             // done once the body has come round and the feet have been put down
             // (a live card is held open at least 3 s — the heading has to STAY —
             // and until the talk gesture has handed the stage back)
-            if (Math.abs(rec.turnedRad) > 2.5 && !n.anim.stepping
-              && (!live || (now - t0 > 3000 && rec.talkGestureDoneS !== null))) { if (++quiet > 8) break; } else quiet = 0;
-            if (n.state !== 'work' && n.state !== 'idle' && n.state !== 'errand' && n.state !== 'talk' && n.state !== 'face') break;
+            // (a seated speaker: once they have faced her for a second, the
+            // card has been up 3 s, the feet are down and the gesture is done)
+            const settledStanding = !seated && Math.abs(rec.turnedRad) > 2.5 && !n.anim.stepping
+              && (!live || (now - t0 > 3000 && rec.talkGestureDoneS !== null));
+            const settledSeated = seated && rec.firstUnderS !== null && (now - t0) / 1000 >= rec.firstUnderS + 1.0
+              && now - t0 > 3000 && !n.anim.stepping && rec.talkGestureDoneS !== null;
+            if (settledStanding || settledSeated) { if (++quiet > 8) break; } else quiet = 0;
+            // (a seated subject is followed for the whole card whatever its
+            // state: one that never stands up is exactly what is being measured)
+            if (!seated && n.state !== 'work' && n.state !== 'idle' && n.state !== 'errand' && n.state !== 'talk' && n.state !== 'face') break;
           }
           for (const k of Object.keys(ow)) closeW(ow[k], turnWindows, k);
           for (const k of Object.keys(cw)) closeW(cw[k], contactWindows, k);
@@ -271,19 +419,70 @@ const TURN_PROBE = `
           rec.contactWindows = mineC.length;
           rec.worstContactM = mineC.length ? Math.max(...mineC.map((w) => w.d)) : 0;
           rec.originMovedM = +Math.hypot(g.position.x - o0.x, g.position.z - o0.z).toFixed(3);
+          gapsOpen.sort((a, b) => a - b);
+          rec.gapMedianMs = gapsOpen.length ? +gapsOpen[gapsOpen.length >> 1].toFixed(1) : null;
+          rec.hitchFrames = gapsOpen.filter((x) => x > hitchT).length;
           rec.state1 = n.state; rec.clip1 = n.anim.current;
-          if (live) {
+          if (track) {
             rec.errAtCloseRad = +bearingErr().toFixed(3);
             rec.simDuringCardS = +(ctx.engine.simTime - sim0).toFixed(4);
-            rec.othersMovedM = +Math.max(0, ...others.map(([o, x, z]) => Math.hypot(o.group.position.x - x, o.group.position.z - z))).toFixed(4);
+            rec.othersMovedM = live ? +Math.max(0, ...others.map(([o, x, z]) => Math.hypot(o.group.position.x - x, o.group.position.z - z))).toFixed(4) : null;
             rec.holdS = S.talkHoldStats ? +(S.talkHoldStats().secs - hold0).toFixed(2) : null;
           }
+          if (seated) rec.stood = (n.stoodToTalk || 0) - rec.stood0;
         } finally {
           // the page goes back to '?shot' BEFORE the card closes (a live close
           // asks for pointer lock), and whatever happened in between
           if (hadShot && !ctx.params.has('shot')) ctx.params.set('shot', '1');
         }
         if (how === 'talk' || live) { try { ctx.progression?.closeDialogue?.(); } catch { /* no panel */ } }
+        /**
+         * BACK TO THE SEAT (seated case). The world runs again once the card is
+         * closed; the speaker's talk timer runs out, they step round to the fire
+         * and sit. Followed until they are seated and settled (the seat loop at
+         * full weight, no sit in progress) or 30 s: every frame's heading change
+         * (the old return ASSIGNED a heading when its turn timed out), the feet
+         * on the ground (the same contact windows), and the seat they end on.
+         */
+        if (seated) {
+          const r0 = performance.now();
+          const simR0 = ctx.engine.simTime;
+          let prevY = g.rotation.y, prevT = r0;
+          rec.maxReturnYawStepRad = 0;
+          rec.back = null;
+          while (performance.now() - r0 < 30000) {
+            await new Promise((r) => requestAnimationFrame(r));
+            const now = performance.now();
+            const hitch = now - prevT > hitchT;
+            prevT = now;
+            const dy = Math.abs(wrapA(g.rotation.y - prevY));
+            prevY = g.rotation.y;
+            if (!hitch) rec.maxReturnYawStepRad = Math.max(rec.maxReturnYawStepRad, +dy.toFixed(4));
+            seatSample(now, hitch);
+            if (n.state === 'sit' && !n.anim.transit && !n.anim.busy && layerW(n.anim.current) >= 0.99) {
+              rec.back = {
+                afterSimS: +(ctx.engine.simTime - simR0).toFixed(2),
+                state: n.state, clip: n.anim.current,
+                fromSeatM: +Math.hypot(g.position.x - rec.seat.x, g.position.z - rec.seat.z).toFixed(3),
+                headingFromSeatRad: +Math.abs(wrapA(g.rotation.y - rec.seat.yaw)).toFixed(3),
+                // (a build without a seat offset of its own reads its seated drop)
+                yOffset: +n.yOffset.toFixed(3), seatOff: +(n.seatOff ?? n.yOffset).toFixed(3),
+              };
+              break;
+            }
+          }
+          if (!rec.back) rec.backState = { state: n.state, clip: n.anim.current, transit: n.anim.transit };
+          rec.movedBy = { worldM: +(n.pushed - rec.moved0.pushed).toFixed(3), crowdM: +(n.sepM - rec.moved0.sepM).toFixed(3),
+            rescues: n.unstuck - rec.moved0.unstuck };
+          closeSeat(sw.L, 'L'); closeSeat(sw.R, 'R');
+          closeSeat(sc2.L, 'L', seatContact); closeSeat(sc2.R, 'R', seatContact);
+          rec.seatWindows = seatWins.length;
+          rec.seatWorstM = seatWins.length ? Math.max(...seatWins.map((w) => w.d)) : 0;
+          rec.seatWorstFive = seatWins.slice().sort((a, b) => b.d - a.d).slice(0, 5);
+          rec.seatContactWindows = seatContact.length;
+          rec.seatContactWorstM = seatContact.length ? Math.max(...seatContact.map((w) => w.d)) : 0;
+          rec.seatContactWorstFive = seatContact.slice().sort((a, b) => b.d - a.d).slice(0, 5);
+        }
         turnSubjects.push(rec);
         return rec;
       };
@@ -824,8 +1023,8 @@ export const GATES = [
   /* ----------------------------------------------------------------- A97b */
   {
     id: 'A97b-npc-talk-freeze', kind: 'action', lane: 'npc',
-    title: 'Spoken to from behind with the dialogue freeze IN FORCE (not ?shot): the speaker steps round to face the player while the card is up',
-    settle: 2000, timeout: 120000,
+    title: 'Spoken to from behind with the dialogue freeze IN FORCE (not ?shot): the speaker steps round to face the player while the card is up — and a SEATED speaker (VALA, KARST; behind and side; freeze and normal play) stands, faces her, head tracking, and goes back to the seat',
+    settle: 2000, timeout: 420000,
     /**
      * FIX ROUND 5 (judge finding, major). 'talkTo' stopped snapping the heading
      * in fix round 4 and left the turn to '_look'; outside '?shot' the open card
@@ -843,6 +1042,43 @@ export const GATES = [
      *   - the talk crossfade and gesture run while the card is open;
      *   - no one-frame snap, and the feet obey A97's bar while they turn
      *     (stance windows AND ground contact <= 0.08 m).
+     *
+     * THE SEATED CASE (npc polish; ORCHESTRATOR RULING Sep 26 in
+     * docs/ROUND4-AUDIT.md §4 "npc", from the film judge's r1 major: seated
+     * speakers VALA and KARST talked with their back or shoulder to Aloy for the
+     * whole card and their head did not track her — the gate could not see it,
+     * 'pickSubject' only ever picks standing people). The ruling: a seated
+     * speaker whose bearing error at 'talkTo' is over ~1.2 rad sits-exits, steps
+     * round (stepped turn + head tracking), talks standing, and goes back to the
+     * seat when the conversation is over. Run on BOTH seated speakers, from
+     * BEHIND (pi) and from the SIDE (+pi/2 under the freeze, -pi/2 in normal
+     * play), in the FROZEN-WORLD state ('talk-live') and in NORMAL PLAY ('talk',
+     * '?shot', the world running behind the card) — eight conversations, player
+     * 1.8 m away. Each must:
+     *   - stand up: 'Sitting_Exit' on stage at full weight, state 'talk';
+     *   - face her (<= 0.35 rad) while the card is open, within 3.0 s + the
+     *     stand-up of the speaker's own clock (the hold under the freeze, sim time
+     *     otherwise). The stand-up is the exit clip plus its held last frame plus
+     *     the hand-back fade (1.0 + 0.3 + 0.3 = 1.6 s, read from the bake): the
+     *     standing bar of 3.0 s is unchanged and starts once they are up. And
+     *     stay facing until the card closes;
+     *   - head: within 0.35 rad of her, or of the most a speaker's look reaches
+     *     (1.9 rad off the body), every frame from 1 s on — see TURN_PROBE;
+     *   - the talk gesture ran (the idleTalk layer came back to full weight
+     *     after the exit took the stage);
+     *   - freeze really in force in 'talk-live' (sim time 0, nobody else moved);
+     *   - feet: A97's stance and contact windows <= 0.08 m while on their feet
+     *     (TURN_PROBE's own), AND the planted foot judged through the stand-up,
+     *     turn, return and sit-down with NO crossfade exclusion, <= 0.08 m (the
+     *     any-toe contact term over the same span is reported);
+     *   - back to the seat after the card: seated and settled, within 0.7 m of
+     *     the mark ('_goSit' re-walks anything further) and 0.1 rad of the seat
+     *     heading, the seat drop restored, and no heading change over 0.1 rad in
+     *     one frame on the way (the stepped turn moves <= 0.08 at the 50 ms frame
+     *     ceiling; the old return ASSIGNED what was left when its turn timed out).
+     * Proved to catch the finding: run against the pre-fix npc files (5e0a9b3)
+     * all eight seated runs FAIL — body error 3.142 / 1.571 rad at the card and at
+     * the close, never faced, never stood, head 2.97-3.13 rad off from behind.
      */
     assert: `(async () => {
       ${CROWD}
@@ -871,10 +1107,60 @@ export const GATES = [
         groundContact: r.worstContactM <= 0.08,
       };
       const failed = Object.keys(checks).filter((k) => !checks[k]);
+
+      /* ---- the seated case (see the header) ---- */
+      const exitDur = S.loopTravel?.sitExit?.duration ?? 1.0;
+      const FACE_BAR_SEATED = 3.0 + exitDur + 0.6;
+      const seatedRuns = [];
+      for (const how of ['talk-live', 'talk']) {
+        for (const id of ['vala', 'karst']) {
+          for (const side of ['behind', 'side']) {
+            const ang = side === 'behind' ? Math.PI : (how === 'talk-live' ? Math.PI / 2 : -Math.PI / 2);
+            const q = await runTurn(how, { id, ang, dist: 1.8 });
+            if (!q || q.error) { seatedRuns.push({ id, how, side, pass: false, failed: ['subject'], rec: q }); continue; }
+            const c = {
+              spokenToOffFacing: q.errAtOpenRad > 1.2,
+              stoodUp: q.stood === 1 && q.exitSeen === true,
+              freezeInForce: how !== 'talk-live' || (q.simDuringCardS === 0 && q.othersMovedM === 0 && q.notDialogueFrames === 0),
+              cardOpenThroughout: q.cardClosedFrames === 0,
+              noSnapInTalkTo: q.syncYawChangeRad === 0,
+              facedWhileCardOpen: q.firstUnderClockS !== null && q.firstUnderClockS <= FACE_BAR_SEATED,
+              stayedFacing: q.firstUnderS !== null && q.maxErrAfterUnderRad <= 0.35 && q.errAtCloseRad <= 0.35,
+              headTracked: q.headSamples >= 10 && q.headWorstExcessRad !== null && q.headWorstExcessRad <= 0,
+              talkGestureRan: q.talkGestureDoneS !== null,
+              stanceWindows: q.worstM <= 0.08,
+              groundContact: q.worstContactM <= 0.08,
+              plantedFootThroughout: q.seatWindows >= 4 && q.seatWorstM <= 0.08,
+              backToSeat: !!q.back && q.back.fromSeatM <= 0.7 && q.back.headingFromSeatRad <= 0.1
+                && Math.abs(q.back.yOffset - q.back.seatOff) < 1e-3,
+              noSnapOnReturn: q.maxReturnYawStepRad <= 0.1,
+            };
+            const f = Object.keys(c).filter((k) => !c[k]);
+            seatedRuns.push({
+              id, how, side, pass: f.length === 0, failed: f,
+              errAtOpenRad: q.errAtOpenRad, errAtCloseRad: q.errAtCloseRad,
+              facedAfterSpeakerClockS: q.firstUnderClockS, faceBarS: +FACE_BAR_SEATED.toFixed(2),
+              maxErrAfterFacingRad: q.maxErrAfterUnderRad, headWorstExcessRad: q.headWorstExcessRad,
+              headSamples: q.headSamples, headErrEvery12Frames: q.headSeriesRad, headingErrEvery12Frames: q.errSeriesRad,
+              simTimeDuringCardS: q.simDuringCardS, othersMovedM: q.othersMovedM, speakerHoldS: q.holdS,
+              steps: q.steps, turnedRad: q.turnedRad, stanceWindows: q.windows, maxStanceDriftM: q.worstM,
+              contactWindows: q.contactWindows, maxGroundContactSlideM: q.worstContactM,
+              seatFootWindows: q.seatWindows, maxSeatFootSlideM: q.seatWorstM, seatFootWorstFive: q.seatWorstFive,
+              seatFootExcludedHitch: q.seatExcludedHitch,
+              seatContactWindows: q.seatContactWindows, maxSeatContactSlideM: q.seatContactWorstM,
+              seatContactWorstFive: q.seatContactWorstFive,
+              back: q.back, backState: q.backState || null, maxReturnYawStepRad: q.maxReturnYawStepRad,
+              movedBy: q.movedBy,
+            });
+          }
+        }
+      }
+      const seatedFailed = seatedRuns.filter((x) => !x.pass).map((x) => x.id + '/' + x.how + '/' + x.side + ':' + x.failed.join('+'));
       return {
-        pass: failed.length === 0,
+        pass: failed.length === 0 && seatedRuns.length === 8 && seatedFailed.length === 0,
         detail: {
-          failed, checks,
+          failed, checks, seatedFailed,
+          seated: seatedRuns,
           speaker: r.id, state0: r.state0, clip0: r.clip0, state1: r.state1, clip1: r.clip1,
           headingErrAtOpenRad: r.errAtOpenRad, headingErrAtCloseRad: r.errAtCloseRad,
           facedAfterS: r.firstUnderS, facedAfterSpeakerClockS: r.firstUnderHoldS,
@@ -886,6 +1172,7 @@ export const GATES = [
           stanceWindows: r.windows, maxStanceDriftM: r.worstM,
           contactWindows: r.contactWindows, maxGroundContactSlideM: r.worstContactM,
           excludedCrossfadeOrHitch: turnExcluded, hitchThresholdMs: r.hitchThresholdMs,
+          frameGapMedianMs: r.gapMedianMs, hitchFrames: r.hitchFrames,
           attempts: turnSubjects.length,
         },
       };

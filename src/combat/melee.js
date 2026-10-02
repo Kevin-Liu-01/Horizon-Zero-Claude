@@ -107,6 +107,16 @@ const _bTip = new THREE.Vector3();
 /** `_aimAt`'s predicted contact tip (round 6). */
 const _aTip = new THREE.Vector3();
 const _aSh = new THREE.Vector3();
+/** `_fistHits`' own: the contact key's wrist (world), the candidate line, the
+ *  predicted fist, the pitch axis / horizontal, and the two turns. */
+const _aKeyH = new THREE.Vector3();
+const _aV = new THREE.Vector3();
+const _aF = new THREE.Vector3();
+const _aH = new THREE.Vector3();
+const _aAx = new THREE.Vector3();
+const _aUp = new THREE.Vector3(0, 1, 0);
+const _aQ = new THREE.Quaternion();
+const _aQ2 = new THREE.Quaternion();
 const _aHd = new THREE.Vector3();
 const _aDir = new THREE.Vector3();
 
@@ -151,6 +161,31 @@ function surfaceGap(m, x, z) {
 }
 
 const SPARK_STEEL = [[1.0, 0.72, 0.28], [1.0, 0.5, 0.1], [0.95, 0.85, 0.6]];
+
+/** Segment-segment distance on plain numbers (no allocation). */
+function segSegDist(p1x, p1y, p1z, q1x, q1y, q1z, p2x, p2y, p2z, q2x, q2y, q2z) {
+  const d1x = q1x - p1x, d1y = q1y - p1y, d1z = q1z - p1z;
+  const d2x = q2x - p2x, d2y = q2y - p2y, d2z = q2z - p2z;
+  const rx = p1x - p2x, ry = p1y - p2y, rz = p1z - p2z;
+  const a = d1x * d1x + d1y * d1y + d1z * d1z, e = d2x * d2x + d2y * d2y + d2z * d2z;
+  const f = d2x * rx + d2y * ry + d2z * rz;
+  let s = 0, t = 0;
+  if (a <= 1e-9 && e <= 1e-9) { s = 0; t = 0; }
+  else if (a <= 1e-9) { s = 0; t = Math.min(1, Math.max(0, f / e)); }
+  else {
+    const c = d1x * rx + d1y * ry + d1z * rz;
+    if (e <= 1e-9) { t = 0; s = Math.min(1, Math.max(0, -c / a)); }
+    else {
+      const b = d1x * d2x + d1y * d2y + d1z * d2z;
+      const den = a * e - b * b;
+      s = den > 1e-12 ? Math.min(1, Math.max(0, (b * f - c * e) / den)) : 0;
+      t = (b * s + f) / e;
+      if (t < 0) { t = 0; s = Math.min(1, Math.max(0, -c / a)); }
+      else if (t > 1) { t = 1; s = Math.min(1, Math.max(0, (b - c) / a)); }
+    }
+  }
+  return Math.hypot(p1x + d1x * s - (p2x + d2x * t), p1y + d1y * s - (p2y + d2y * t), p1z + d1z * s - (p2z + d2z * t));
+}
 
 /**
  * WHERE IN THE STRIKE PHASE THE BLADE ARRIVES.
@@ -252,7 +287,15 @@ const SPEAR_SCALE = 0.80;
  * reproduced (2.11 m). A longer draw is fewer radians per frame at every frame
  * rate and is inside the band §4 gives.
  */
-const DRAW_T = 0.30;
+const DRAW_T = 0.26;
+/* ROUND 6 (ruling R5): 0.30 -> 0.26. The draw now ENDS on the grip being
+ * rigid at its fraction (the hand-over blend is the pull leg, meleeLayer
+ * `handoverDone`), where round 5 declared it over on the clock and let the
+ * blend run on up to 0.55 s into the first swing. Everything the click has to
+ * wait for is inside this clock now, and at 0.30 the click -> first swing
+ * frame measured 0.34-0.37 s — the top of the 0.25-0.35 s the ruling asks
+ * for. The stance clock is still capped per rendered frame
+ * (`STANCE_STEP_MAX`), so a slow box gets more frames, not a skipped pose. */
 /**
  * The most of a draw/holster one RENDERED frame may consume (`_stanceTick`).
  *
@@ -268,7 +311,14 @@ const DRAW_T = 0.30;
  * the far end of the haft moves ~0.3 m per frame at any frame rate. Above
  * ~25 fps the cap never binds and the draw is the `DRAW_T` it always was.
  */
-const STANCE_STEP_MAX = 0.08;
+const STANCE_STEP_MAX = 0.10;
+/* ROUND 6: 0.08 -> 0.10 (a ten-frame floor instead of thirteen). With the
+ * draw now 0.26 s and ending on the grip (ruling R5), the thirteen-frame floor
+ * bound below ~50 fps and stretched a click from holstered to 0.41 s at 32 ms
+ * frames (A101's sprint row) against the 0.25-0.35 s the ruling asks for; at
+ * ten frames 30 fps draws in ~0.33 s. The re-parent clause this exists for
+ * (A102, tip across the re-parent <= 0.9 m under 20-80 ms stalls) read
+ * 0.19-0.26 m on round 5 — the floor has the room. */
 /**
  * ...and of one swing PHASE (see `_phaseTick`).
  *
@@ -297,6 +347,9 @@ const GRAB_HOLD_MAX = 0.10;
  *  what it normally costs — see `_advanceStance`). */
 const DRAW_WAIT_MAX = 0.12;
 const HOLSTER_T = 0.42;
+/** The stow an AIM asks for (round 6): the bow waits for the spear's
+ *  re-parent, so this is how long the left hand is empty after RMB. */
+const HOLSTER_T_AIM = 0.30;
 /** How long the ready stance persists after the last swing. */
 const READY_HOLD = 3.6;
 /**
@@ -375,7 +428,7 @@ const LUNGE_LEAVE = 0;
  * inside the surface so the blade lands on the machine rather than beside it.
  */
 const AIM_RANGE = 1.2;
-const AIM_SINK = 0.06;
+const AIM_SINK = 0.15;
 /** The cone a spear can be pointed through (radians): at most `AIM_SIDE` off
  *  the swing's bearing, between `AIM_DOWN` below and `AIM_ABS_UP` above the
  *  horizontal, from her shoulder; and what a radian off the beat's own contact
@@ -385,8 +438,24 @@ const AIM_SIDE = 60 * Math.PI / 180;
 const AIM_ABS_UP = 75 * Math.PI / 180;
 const AIM_ANGLE_COST = 0.25;
 const AIM_SHORT_COST = 6.0;
-/** How far the haft (fist -> target) must pass from her head bone. */
+const AIM_OVER_COST = 0.5;
+/** (unused since the axial check below replaced it; kept as its history) */
 const AIM_HEAD_CLEAR = 0.25;
+/** ...its body version (axial bones: head, neck, spine, pelvis) and how many
+ *  of the cheapest candidates are checked for it. */
+const AIM_BODY_CLEAR = 0.12;
+/** The forearm along an aim line (see `_armLineHits`): from / to (m out from
+ *  the shoulder) and the daylight it keeps to a hull. */
+const AIM_ARM_FROM = 0.20;
+const AIM_ARM_TO = 0.66;
+const AIM_ARM_CLEAR = 0.10;
+/** ...the predicted forearm: this last share of shoulder -> wrist. */
+const AIM_FORE = 0.55;
+/** Where along the shoulder->target line the proxy haft starts: the fist is
+ *  ~0.45 m out and OFFSET beside the line, so the butt's 0.30 m behind it
+ *  lands about here (measured against the contact frames' own shaftClear). */
+const AIM_BUTT_FROM = 0.35;
+const AIM_KEEP = 20;
 
 export class Melee {
   constructor(ctx, combat) {
@@ -429,6 +498,9 @@ export class Melee {
     this.aimOk = false;
     this.aimPoint = new THREE.Vector3();
     this.aimGap = null;
+    /** `_aimAt`'s shortlist: AIM_KEEP x (cost, x, y, z, dist), sorted. */
+    this._aimBuf = new Float64Array(AIM_KEEP * 5);
+    this._aimN = 0;
 
     this._t = 0;              // phase clock (real seconds)
     this._phaseEnd = 0;
@@ -568,7 +640,9 @@ export class Melee {
    */
   poseState() {
     const s = this._pose;
-    const ahead = Math.min(0.05, Math.max(0, performance.now() / 1000 - this._stampT));
+    // the extrapolation covers a frame of GAME time (a frozen photo mode or a
+    // hitstop extrapolates nothing)
+    const ahead = Math.min(0.05, Math.max(0, performance.now() / 1000 - this._stampT)) * this._timeScale();
     s.stance = this.stance;
     s.phase = this.phase;
     s.combo = this._i ?? 0;
@@ -584,13 +658,29 @@ export class Melee {
      * latency and never becomes a prediction. */
     const cap = Math.min(ahead, this._phaseEnd * 0.30);
     s.k = this._phaseEnd > 1e-4 ? Math.min(1, (this._t + cap) / this._phaseEnd) : 0;
-    const dur = this.stance === 'draw' ? DRAW_T : HOLSTER_T;
+    const dur = this.stance === 'draw' ? DRAW_T : (this._holsterDur || HOLSTER_T);
     s.drawK = Math.min(1, (this._drawT + ahead) / dur);
     return s;
   }
 
+  /** The engine's resolved time scale, 0..1 (1 with no engine). */
+  _timeScale() {
+    const e = this.ctx.engine;
+    const t = e ? e.timeScale : 1;
+    return typeof t === 'number' && Number.isFinite(t) ? Math.max(0, Math.min(1, t)) : 1;
+  }
+
   /** True once the spear is in her hand and the guard is up. */
   get ready() { return this.stance === 'ready' || this.stance === 'swing'; }
+
+  /** True while the spear is physically in her right hand (the layer's
+   *  re-parent, not the stance clock) — combat.js keeps the bow on her back
+   *  while it is (round 6: never both in hand). */
+  get spearInHand() {
+    const lay = this.layer;
+    if (lay && lay.ok) return !!lay._held;
+    return this.stance !== 'holstered';
+  }
 
   /** Ask for the spear. Returns the seconds until it is swingable. */
   drawSpear(hold = READY_HOLD) {
@@ -599,7 +689,7 @@ export class Melee {
     if (this.stance === 'draw') return DRAW_T - this._drawT;
     // reverse a holster in progress rather than restarting the draw
     if (this.stance === 'holster') {
-      this._drawT = Math.max(0, DRAW_T * (1 - this._drawT / HOLSTER_T));
+      this._drawT = Math.max(0, DRAW_T * (1 - this._drawT / (this._holsterDur || HOLSTER_T)));
     } else {
       this._drawT = 0;
     }
@@ -607,21 +697,28 @@ export class Melee {
     return DRAW_T - this._drawT;
   }
 
-  /** Put it back. */
-  holsterSpear() {
+  /** Put it back. `fast` = the bow is coming up (aim): the quick stow. */
+  holsterSpear(fast = false) {
     if (this.stance === 'holstered' || this.stance === 'holster') return;
     if (this.active) return;
+    this._holsterDur = fast ? HOLSTER_T_AIM : HOLSTER_T;
     this._drawT = this.stance === 'draw'
-      ? Math.max(0, HOLSTER_T * (1 - this._drawT / DRAW_T)) : 0;
+      ? Math.max(0, this._holsterDur * (1 - this._drawT / DRAW_T)) : 0;
     this.stance = 'holster';
     this._readyT = 0;
     this._queued = null;
   }
 
-  /** Advance draw/holster/ready. Real seconds — the spear is not slow-mo. */
+  /** Advance draw/holster/ready, on the GAME clock (`update` scales it by the
+   *  engine time scale — round 6). */
   _advanceStance(realDt, p, aiming) {
     // aim wins, always (§4.6): a bow coming up puts the spear back on her back
-    if (aiming && this.stance !== 'holstered' && !this.active) this.holsterSpear();
+    /* ...and it does not wait out a follow-through (round 6): the recover is
+     * cut and the stow is the quick one, so the bow is in her left hand ~0.2 s
+     * after the aim instead of the ~0.6 s the r5 skeptic filmed with the bow
+     * and the spear BOTH in her hands. A windup or a strike still lands. */
+    if (aiming && this.active && this.phase === 'recover') this._cancel();
+    if (aiming && this.stance !== 'holstered' && !this.active) this.holsterSpear(true);
 
     const stanceDt = this._stanceTick(realDt);
     if (this.stance === 'draw') {
@@ -661,9 +758,10 @@ export class Melee {
       }
     } else if (this.stance === 'holster') {
       this._drawT += stanceDt;
-      if (this._drawT >= HOLSTER_T && this._waitForHand(stanceDt)) {
-        this._drawT = HOLSTER_T * 0.75;
-      } else if (this._drawT >= HOLSTER_T) {
+      const HT = this._holsterDur || HOLSTER_T;
+      if (this._drawT >= HT && this._waitForHand(stanceDt)) {
+        this._drawT = HT * 0.75;
+      } else if (this._drawT >= HT) {
         this._drawT = 0; this._grabHold = 0; this.stance = 'holstered';
       }
     } else if (this.stance === 'ready') {
@@ -786,11 +884,17 @@ export class Melee {
      * that point and the predicted contact tip, along the swing. Over-asking
      * is still free: the collision solve (the hull outline) is what stops
      * her. */
-    if (this.aimOk && this.layer?.ok && this.layer.contactTipWorld(this.heavy, this._i ?? 0, _aTip)) {
-      this._aimBasis();
-      const tipAhead = (_aTip.x - p.position.x) * _dir.x + (_aTip.z - p.position.z) * _dir.z;
-      const aimAhead = (this.aimPoint.x - p.position.x) * _dir.x + (this.aimPoint.z - p.position.z) * _dir.z;
-      const want = aimAhead - tipAhead + LUNGE_LEAVE;
+    if (this.aimOk && this.layer?.ok && this.layer.shoulderWorld(_aSh)) {
+      /* what the blade is still short of the aimed skin point, in 3-D from
+       * her shoulder (the pivot the aim bends about), turned into the
+       * horizontal step that closes it: a step of x closes a target at
+       * elevation e by ~x cos e (a steep stab up at a Longleg's body needs
+       * more step for the same shortfall than a level thrust) */
+      const dx = this.aimPoint.x - _aSh.x, dy = this.aimPoint.y - _aSh.y, dz = this.aimPoint.z - _aSh.z;
+      const d3 = Math.hypot(dx, dy, dz);
+      const short = d3 - (this._aimReach || d3);
+      const cosE = Math.max(0.35, Math.hypot(dx, dz) / Math.max(1e-3, d3));
+      const want = short / cosE + LUNGE_LEAVE;
       if (!(want > base)) return base;
       return Math.min(LUNGE_MAX, want);
     }
@@ -827,7 +931,7 @@ export class Melee {
     if (!m || !lay || !lay.ok || m.alive === false) return;
     if (!lay.contactTipWorld(this.heavy, this._i ?? 0, _aTip)) return;
     if (!lay.shoulderWorld(_aSh)) return;
-    if (!lay.headWorld(_aHd)) return;
+    if (!lay.contactHandWorld(this.heavy, this._i ?? 0, _aKeyH)) return;
     const hulls = this._hullSet(m);
     if (!hulls || !hulls.length) return;
     /* THE NEAREST PART OF THE MACHINE THE BLADE CAN GET TO, not the nearest
@@ -847,11 +951,12 @@ export class Melee {
      * typical clamp */
     const seen = typeof lay.contactReach === 'function' ? lay.contactReach(this.heavy, this._i ?? 0) : 0;
     const reach = seen > 0.3 ? seen : keyReach - 0.15;
+    this._aimReach = reach;
     const pa = Math.asin(Math.max(-1, Math.min(1, _aDir.y)));
     const ya = Math.atan2(_aDir.x, _aDir.z);
     this._aimBasis();
     const fwdYaw = Math.atan2(_dir.x, _dir.z);
-    let best = Infinity, bestD = Infinity;  // bestD: shoulder to the chosen skin point
+    this._aimN = 0;
     for (let i = 0; i < hulls.length; i++) {
       const h = hulls[i];
       const r = h.wr || 0;
@@ -882,19 +987,6 @@ export class Melee {
         let off = Math.atan2(dx, dz) - fwdYaw;
         off = Math.atan2(Math.sin(off), Math.cos(off));
         if (Math.abs(off) > AIM_SIDE || pb < -AIM_DOWN) continue;
-        /* ...and never a line that runs the haft across her own head: the
-         * haft guard (A104) would push it off again after the aim, and the
-         * blade would land wherever the guard left it (a Thunderjaw jaw 50 deg
-         * to her left, stabbed at from the right shoulder) */
-        {
-          // the haft runs from about the fist (0.4 m out along the line) to
-          // the target; the head must clear THAT segment
-          const hx = _aHd.x - _aSh.x, hy = _aHd.y - _aSh.y, hz = _aHd.z - _aSh.z;
-          const t0 = Math.min(1, 0.40 / dl);
-          let tt = (hx * dx + hy * dy + hz * dz) / (dl * dl);
-          tt = tt < t0 ? t0 : (tt > 1 ? 1 : tt);
-          if (Math.hypot(hx - dx * tt, hy - dy * tt, hz - dz * tt) < AIM_HEAD_CLEAR) continue;
-        }
         /* the TIP is what lands: a surface point at the blade's own reach, so
          * the tip ends on the skin — not a nearer one the blade would pass
          * through and come out of the far side into air (a Behemoth's head
@@ -905,17 +997,157 @@ export class Melee {
          * light-1 sweep points at, and that is the difference between on and
          * short. The absolute pitch is bounded too — never straight up. */
         if (pb > AIM_ABS_UP) continue;
-        const cost = Math.abs(dl - reach) + AIM_SHORT_COST * Math.max(0, dl - reach)
+        /* an OVERSHOOT costs less than a shortfall: a thrust stopped on the
+         * near skin (the arm gives back up to `AIM_PULL_MAX`, meleeLayer) or
+         * carried on into a thick body both land; only a thin overhang lets
+         * the tip out the far side, and the near skin is also where the ARM
+         * stays out of the machine (a Sawtooth's head at arm height) */
+        const cost = (dl < reach ? AIM_OVER_COST : 1) * Math.abs(dl - reach)
+          + AIM_SHORT_COST * Math.max(0, dl - reach)
           + AIM_ANGLE_COST * Math.hypot(dp, dyaw * (this.heavy ? 2 : 1));
-        if (cost >= best) continue;
-        best = cost; bestD = dl;
-        this.aimPoint.set(px, py, pz);
+        this._aimKeep(cost, px, py, pz, dl);
       }
     }
-    if (best === Infinity) return;
+    /* ...AND NOT THROUGH HER OWN BODY. The haft guard (A104: the haft >= 0.12
+     * m off her head, neck, spine and pelvis; it steers for 0.20) runs after
+     * the aim and wins, so a line that lays the haft across her — a steep
+     * stab up and to her right swings the butt down across her chest — lands
+     * wherever the guard leaves it, not on the target. The best few are
+     * checked against her axial bones along a proxy haft (`AIM_BUTT_FROM` out
+     * along the line to the target) and the first clear one wins. */
+    const K = this._aimN;
+    const B = this._aimBuf;
+    let fallback = -1;
+    for (let n = 0; n < K; n++) {
+      const o = n * 5;
+      const px = B[o + 1], py = B[o + 2], pz = B[o + 3], dl = B[o + 4];
+      const f0 = Math.min(1, AIM_BUTT_FROM / dl);
+      const gap = lay.axialGap(_aSh.x + (px - _aSh.x) * f0, _aSh.y + (py - _aSh.y) * f0,
+        _aSh.z + (pz - _aSh.z) * f0, px, py, pz);
+      if (gap < AIM_BODY_CLEAR) continue;
+      /* ...and preferably not a line that puts her ARM in the machine: the
+       * forearm lies along the first ~0.6 m of it (S5 — a Behemoth's head
+       * overhangs her reach: aimed at the skin 1.7 m out, the fist went into
+       * the underside 0.5 m out, and the arm guard and the aim fought over it
+       * every frame). When every line clear of her body would put the arm
+       * against the machine (she is under its head), the best of them is
+       * still taken — the arm guard (meleeLayer `_armHullGuard`) keeps the arm
+       * out, and an aimed blade short by the guard's margin beats an unaimed
+       * one short by the whole overhang. */
+      if (this._fistHits(hulls, px, py, pz, dl, reach)) { if (fallback < 0) fallback = n; continue; }
+      /* ...and a NEAR target only if the blade ends in the machine: the arm
+       * draws back part of an overshoot, not always all of it (the forearm
+       * and haft guards have their say), and a thin overhang (a Tallneck's
+       * jaw) lets the rest of the tip out the far side into air */
+      if (dl < reach - 0.10 && !this._tipLands(hulls, px, py, pz, dl, reach)) { if (fallback < 0) fallback = n; continue; }
+      fallback = n;
+      break;
+    }
+    if (fallback < 0) return;
+    const o = fallback * 5;
+    this.aimPoint.set(B[o + 1], B[o + 2], B[o + 3]);
     this.aimOk = true;
-    // how far the blade will still be short of it once it is bent there (<= 0: it lands)
-    this.aimGap = +(bestD - reach).toFixed(3);
+    // how far the blade will still be short of it once bent there (<= 0: it lands)
+    this.aimGap = +(B[o + 4] - reach).toFixed(3);
+  }
+
+  /**
+   * Would the ARM, bent onto the line shoulder -> (px,py,pz) the way
+   * meleeLayer `_strikeAim` bends it (the contact key's wrist turned about the
+   * shoulder by the same pitch-then-yaw, drawn back by the same pull when the
+   * target is nearer than the reach), come within `AIM_ARM_CLEAR` of a hull?
+   * The forearm is taken as the last `AIM_FORE` of shoulder -> wrist, radius
+   * 0.05 m. (`_aKeyH` / `_aDir` hold the key's wrist and tip direction.)
+   */
+  _fistHits(hulls, px, py, pz, dl, reach) {
+    _aV.set(px - _aSh.x, py - _aSh.y, pz - _aSh.z).multiplyScalar(1 / dl);
+    const pa = Math.asin(Math.max(-1, Math.min(1, _aDir.y)));
+    const pb = Math.asin(Math.max(-1, Math.min(1, _aV.y)));
+    let dy = Math.atan2(_aV.x, _aV.z) - Math.atan2(_aDir.x, _aDir.z);
+    dy = Math.atan2(Math.sin(dy), Math.cos(dy));
+    _aH.set(_aDir.x, 0, _aDir.z);
+    if (_aH.lengthSq() < 1e-6) _aH.set(0, 0, 1);
+    _aH.normalize();
+    _aAx.set(_aH.z, 0, -_aH.x);                 // (h x Y), pitch axis
+    _aQ.setFromAxisAngle(_aAx, pb - pa);
+    _aQ2.setFromAxisAngle(_aUp, dy);
+    _aQ.premultiply(_aQ2);
+    _aF.subVectors(_aKeyH, _aSh).applyQuaternion(_aQ);
+    const over = reach - dl;
+    if (over > 0) _aF.addScaledVector(_aV, -Math.min(over, 0.60));   // meleeLayer AIM_PULL_MAX
+    const fl = _aF.length();
+    if (fl > 0.62) _aF.multiplyScalar(0.62 / fl);   // the arm has ~0.6 m to give
+    _aF.add(_aSh);
+    const ax = _aSh.x + (_aF.x - _aSh.x) * (1 - AIM_FORE), ay = _aSh.y + (_aF.y - _aSh.y) * (1 - AIM_FORE),
+      az = _aSh.z + (_aF.z - _aSh.z) * (1 - AIM_FORE);
+    for (let i = 0; i < hulls.length; i++) {
+      const h = hulls[i];
+      const r = h.wr || 0;
+      if (r <= 1e-4 || h.off) continue;
+      if (segSegDist(ax, ay, az, _aF.x, _aF.y, _aF.z, h.wax, h.way, h.waz, h.wbx, h.wby, h.wbz) - r - 0.05 < AIM_ARM_CLEAR) return true;
+    }
+    return false;
+  }
+
+  /** Where the tip ends if the arm gives back only half the overshoot: is that
+   *  inside (or within 5 cm of) one of the machine's hull capsules? */
+  _tipLands(hulls, px, py, pz, dl, reach) {
+    const over = reach - dl;
+    const end = dl + over - Math.min(over, 0.60) * 0.5;
+    const k = end / dl;
+    const qx = _aSh.x + (px - _aSh.x) * k, qy = _aSh.y + (py - _aSh.y) * k, qz = _aSh.z + (pz - _aSh.z) * k;
+    for (let i = 0; i < hulls.length; i++) {
+      const h = hulls[i];
+      const r = h.wr || 0;
+      if (r <= 1e-4 || h.off) continue;
+      if (segSegDist(qx, qy, qz, qx, qy, qz, h.wax, h.way, h.waz, h.wbx, h.wby, h.wbz) - r < 0.05) return true;
+    }
+    return false;
+  }
+
+  /** Would a forearm along shoulder -> (px,py,pz) — from `AIM_ARM_FROM` to
+   *  `AIM_ARM_TO` m out, radius 0.05 — come within `AIM_ARM_CLEAR` of a hull? */
+  _armLineHits(hulls, px, py, pz, dl) {
+    const dx = (px - _aSh.x) / dl, dy = (py - _aSh.y) / dl, dz = (pz - _aSh.z) / dl;
+    const ax = _aSh.x + dx * AIM_ARM_FROM, ay = _aSh.y + dy * AIM_ARM_FROM, az = _aSh.z + dz * AIM_ARM_FROM;
+    const bx = _aSh.x + dx * AIM_ARM_TO, by = _aSh.y + dy * AIM_ARM_TO, bz = _aSh.z + dz * AIM_ARM_TO;
+    for (let i = 0; i < hulls.length; i++) {
+      const h = hulls[i];
+      const r = h.wr || 0;
+      if (r <= 1e-4 || h.off) continue;
+      if (segSegDist(ax, ay, az, bx, by, bz, h.wax, h.way, h.waz, h.wbx, h.wby, h.wbz) - r - 0.05 < AIM_ARM_CLEAR) return true;
+    }
+    return false;
+  }
+
+  /** Keep the `AIM_KEEP` cheapest aim candidates (cost, x, y, z, dist). */
+  _aimKeep(cost, x, y, z, dl) {
+    const B = this._aimBuf;
+    let n = this._aimN;
+    if (n === AIM_KEEP && cost >= B[(n - 1) * 5]) return;
+    let i = n < AIM_KEEP ? n : n - 1;
+    while (i > 0 && B[(i - 1) * 5] > cost) {
+      for (let c = 0; c < 5; c++) B[i * 5 + c] = B[(i - 1) * 5 + c];
+      i--;
+    }
+    B[i * 5] = cost; B[i * 5 + 1] = x; B[i * 5 + 2] = y; B[i * 5 + 3] = z; B[i * 5 + 4] = dl;
+    if (n < AIM_KEEP) this._aimN = n + 1;
+  }
+
+  /**
+   * The hulls her ARMS must stay out of (round 6, S5 — the r5 skeptic's hand
+   * 0.03-0.10 m inside a Behemoth's head and a Glinthawk's body, which A106's
+   * body capsule never reached): the machine the spear is on, and for a
+   * couple of seconds after the wedge lets it go (a holster, a turn) so the
+   * stow cannot put a forearm through the head she was just fighting.
+   * Returns the machine's live hull capsule list, or null.
+   */
+  armHulls() {
+    const now = performance.now();
+    if (this.approachMachine) { this._armM = this.approachMachine; this._armT = now; }
+    const m = this._armM;
+    if (!m || m.alive === false || m._disposed || now - (this._armT || 0) > 2500) return null;
+    return this._hullSet(m);
   }
 
   /** The machine's live hull capsules (world), without allocating. */
@@ -1149,9 +1381,24 @@ export class Melee {
    * meaning: aiming -> draw/loose, not aiming -> spear.
    */
   update(realDt, playing) {
-    this._visT = Math.max(0, this._visT - realDt);
-    this._comboT = Math.max(0, this._comboT - realDt);
-    this._stepDrive(realDt);
+    /* THE SPEAR RUNS ON THE GAME'S CLOCK (round 6, the r5 skeptic's photo
+     * mode and hitstop). `combat` hands this its REAL dt, and every clock
+     * below used to run on it, while the animator that poses the swing runs
+     * on the engine's SCALED time: photo mode at 0 froze the pose while the
+     * swing ran on underneath (enter it in a heavy's windup, leave 0.9 s later
+     * in its recover — the blade jumped 0.84 m on the exit frame), and a
+     * hitstop froze the world while the blade carried on through it. The
+     * engine's resolved `timeScale` (studio > wheel > hitstop >
+     * concentration) is the single time authority, so the state clocks are
+     * scaled by it here: a hitstop now HOLDS the blade on the machine it hit,
+     * which is what a hitstop is for. Concentration and the wheel never reach
+     * a swing (aim holsters the spear; the wheel blocks LMB). The LMB charge
+     * stays on real time — it measures a thumb, not the world. */
+    const ts = this._timeScale();
+    const dt = realDt * ts;
+    this._visT = Math.max(0, this._visT - dt);
+    this._comboT = Math.max(0, this._comboT - dt);
+    this._stepDrive(dt);
     if (this._comboT <= 0 && !this.active) this.combo = 0;
 
     const ctx = this.ctx;
@@ -1194,7 +1441,7 @@ export class Melee {
     }
     this._keyWas = keyNow;
 
-    this._advanceStance(realDt, p, aiming);
+    this._advanceStance(dt, p, aiming);
     /* WHICH MACHINE THE BLADE IS APPROACHING (fix round 4, F3). Runs before
      * the swing advances so the collision solve is already using the reduced
      * standoff on the frame the step-in fires. */
@@ -1209,8 +1456,8 @@ export class Melee {
       _pPrev.copy(_pNow);
       if (p) _pNow.copy(p.position);
     }
-    if (this.active) this._advance(realDt);
-    this._updateTrail(realDt);
+    if (this.active) this._advance(dt);
+    this._updateTrail(dt);
     if (!this.layer) this._poseSpearFallback();
 
     // --- Silent Strike offer (10 Hz; it gates a prompt, not a hit)
@@ -1975,14 +2222,16 @@ export class Melee {
     /* THE APPROACH TERM GOES WITH IT (round 5, ruling R4 / M2). These three
      * are what `core/collision.js::_meleeStandoff` keys the term on; left
      * set, a disposed melee would keep one machine's standoff reduced for the
-     * rest of the session. Clearing them is a RELEASE, not a snap: collision
-     * relaxes the term back to that machine's own standoff at
-     * `MELEE_RELAX_SPEED` (never more than `MELEE_GROW_STEP` in a drawn frame)
-     * and lets go when it gets there or when she is outside it. */
+     * rest of the session. Clearing them is a RELEASE, not a snap: since round
+     * 6 (ruling R6) collision holds a released term exactly where she stands
+     * and lets go the moment she steps out of that machine's own standoff —
+     * it never moves her itself. */
     this.approachMachine = null;
     this.approachPad = null;
     this.approachGap = null;
     this.lastContactGap = null;
+    this.aimOk = false;
+    this._armM = null;
   }
 
   _updateTrail(realDt) {

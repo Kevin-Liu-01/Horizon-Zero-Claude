@@ -95,6 +95,47 @@ const VISIBLE = `function onRig(o) { for (let q = o; q; q = q.parent) if (!q.vis
 const SILHOUETTE_VIS = SILHOUETTE.replace('function silhouette() {', 'function silhouette() {\n  /* visible meshes only (see VISIBLE) */')
   .replace("if (!o.isSkinnedMesh && !o.isMesh) return;", "if (!o.isSkinnedMesh && !o.isMesh) return;\n    if (!onRig(o)) return;");
 
+/**
+ * RESIDUE FIX ROUND 2 — one per-frame sample of what the camera films of her:
+ * the fraction of her VISIBLE vertices inside the frame (in front of the
+ * lens), the nearest visible vertex to the lens (m), and whether `head_0104`
+ * is inside the frame and in front of the lens.  Needs VISIBLE's `onRig`.
+ */
+const FRAME_SAMPLE = `const _fsHead = (() => { let h = null; __CTX__.player.model.traverse((o) => { if (o.isBone && o.name === 'head_0104') h = o; }); return h; })();
+function frameSample() {
+  const C = __CTX__, p = C.player, V = p.position.constructor;
+  const v = new V(), vw = new V(), e = C.camera.position;
+  let nIn = 0, inBox = 0, nearest = 9;
+  p.model.updateWorldMatrix(true, true);
+  p.model.traverse((o) => {
+    if (!o.isSkinnedMesh && !o.isMesh) return;
+    if (!onRig(o)) return;
+    const pos = o.geometry && o.geometry.attributes && o.geometry.attributes.position;
+    if (!pos) return;
+    const stride = Math.max(1, Math.floor(pos.count / 2500));
+    for (let i = 0; i < pos.count; i += stride) {
+      v.fromBufferAttribute(pos, i);
+      if (o.isSkinnedMesh && o.applyBoneTransform) o.applyBoneTransform(i, v);
+      v.applyMatrix4(o.matrixWorld);
+      const d = v.distanceTo(e);
+      if (d < nearest) nearest = d;
+      vw.copy(v).applyMatrix4(C.camera.matrixWorldInverse);
+      if (vw.z > -C.camera.near) continue;
+      v.project(C.camera);
+      if (v.x >= -1 && v.x <= 1 && v.y >= -1 && v.y <= 1) inBox++;
+      nIn++;
+    }
+  });
+  let headIn = false, hx = 9, hy = 9;
+  if (_fsHead) {
+    const h = new V(); _fsHead.getWorldPosition(h);
+    const hv = h.clone().applyMatrix4(C.camera.matrixWorldInverse);
+    const hp = h.clone().project(C.camera);
+    if (hv.z < -C.camera.near) { hx = hp.x; hy = hp.y; headIn = Math.abs(hp.x) <= 1 && Math.abs(hp.y) <= 1; }
+  }
+  return { frac: nIn ? inBox / nIn : 0, nearest, headIn, hx, hy };
+}`;
+
 export const GATES = [
   /* ------------------------------------------------------------------ A28 */
   {
@@ -1014,7 +1055,7 @@ export const GATES = [
    */
   {
     id: 'A31b-no-ghost-without-occluder', kind: 'action', lane: 'player-control',
-    title: 'Hillside/valley/sprint look-ups across the WHOLE pitch range (-0.5, -0.8, -1.15 clamp): opacity >= 0.98, lens never inside her, aim within budget, framing within FRAME_KEEP of a flat-ground control staged at the SAME pitch and gait (one control per pitch/gait); a 360 deg yaw pan on the hillside at -0.8/-1.15, aiming and not, slow and moderate, never lurches the view more than 3 deg past the input, never dithers her, never puts the lens inside her; a trunk still fades her < 0.8',
+    title: 'Hillside/valley/sprint look-ups across the WHOLE pitch range (-0.5, -0.8, -1.15 clamp): opacity >= 0.98, lens never inside her, aim within budget, framing within FRAME_KEEP of a flat-ground control staged at the SAME pitch and gait (one control per pitch/gait); a 360 deg yaw pan on the hillside at -0.8/-1.15, aiming and not, slow and moderate, on EVERY sampled frame: view <= 3 deg past the input, opacity >= 0.98, head in frame, onFrac >= FRAME_KEEP x the flat control at that pitch, nearest visible vertex >= 0.15 m, lens >= 0.85 m from the pivot; a 24-yaw static sweep of the same face at -0.8/-1.15 held to the same bars; a trunk still fades her < 0.8',
     criteria: 'Film shows Aloy SOLID on the hillside look-up staging — no screen-door dither on body, hair, '
       + 'bow or quiver — she is IN FRAME at a normal chase distance, and the camera is LOOKING UP (sky and '
       + 'horizon in shot, not a frame of dirt). FAIL if she is translucent anywhere, if the lens is inside '
@@ -1025,6 +1066,7 @@ export const GATES = [
       ${FREEZE}
       ${VISIBLE}
       ${SILHOUETTE_VIS}
+      ${FRAME_SAMPLE}
       const C = __CTX__, p = C.player, T = C.terrain, K = C.collision;
       freeze();
       const V = p.position.constructor, n = new V();
@@ -1057,7 +1099,7 @@ export const GATES = [
         p._relief = 0; p._lift = 0; p._pivotSeeded = false;
         C.input.keys.clear(); C.input.mouse.buttons = 0;
         if (s.keys) for (const k of s.keys) C.input.keys.add(k);
-        let worst = null, minGap = 9, maxLoss = -99, minElev = 99, occAny = 0, frames = 0;
+        let worst = null, worstAny = null, occFrames = 0, minGap = 9, maxLoss = -99, minElev = 99, occAny = 0, frames = 0;
         const fracs = [];                    // how much of her is in frame, per sample
         for (let i = 0; i < FRAMES; i++) {
           await frame();
@@ -1099,8 +1141,20 @@ export const GATES = [
             blended: p._mats.filter((m) => m.mat.transparent === true).length,
             depthOff: p._mats.filter((m) => m.mat.depthWrite === false).length,
           };
-          if (!worst || row.opacity < worst.opacity) worst = row;
+          /* RESIDUE FIX ROUND 2: the worst frame is taken over the frames
+           * with NO hider near the lens (a hider is exactly where a fade is
+           * right), and the row counts as judged while >= 75 % of its frames
+           * are clear.  Under load the 56-frame sprint windows cover up to
+           * twice the distance and the downhill clamp sprint ran into a
+           * trunk for its last frames — correctly faded, and the whole row
+           * was booked unjudgeable. */
+          if (occ) occFrames++;
+          if (!occ && (!worst || row.opacity < worst.opacity)) worst = row;
+          if (!worstAny || row.opacity < worstAny.opacity) worstAny = row;
         }
+        if (!worst || occFrames > 0.25 * frames) worst = worstAny;
+        else worst.occ = 0;
+        if (worst) worst.hiderFrames = occFrames;
         const sil = silhouette();                  // is she actually ON SCREEN?
         C.input.keys.clear();
         if (!worst) return null;
@@ -1337,26 +1391,59 @@ export const GATES = [
        *            requested view did (the angle between consecutive REQUESTED
        *            directions, computed from camYaw/camPitch — not the raw
        *            yaw rate, which overstates it at a look-up);
-       *   SOLID    applied opacity >= 0.98;
-       *   GAP      lens >= 1.20 m from her pivot — or, aiming, >= 0.95 of the
-       *            gap the camera itself chooses on flat open ground at that
-       *            pitch (the aim boom at the clamp is 1.02 m by design, A32b:
-       *            a bar above the flat-ground aim boom would fail the flat
-       *            ground itself). */
-      const flatAimGap = {};
+       *   SOLID    applied opacity >= 0.98.
+       *
+       * RESIDUE FIX ROUND 2 (judge: "a whole yaw sector and every pan crossing
+       * have no Aloy in frame, and clamp pans put the lens inside her gear;
+       * A31b's pan rows do not measure either").  They did not: a row was ok
+       * on view step, opacity and a lens-to-PIVOT gap, and the judge filmed 234
+       * consecutive frames of a clamp pan with under 5 % of her in frame and
+       * her stowed gear 0.033 m from the lens while that gap read 1.315 m.
+       * Every pan row now also holds, on every sampled frame (every frame at
+       * 0.02, every 2nd at 0.005):
+       *   IN FRAME   head_0104 inside the frame, in front of the lens;
+       *   FRAMING    onFrac >= FRAME_KEEP x the flat control at the SAME pitch
+       *              (floor 0.12), per frame, not as a median;
+       *   NOT IN HER no vertex of her visible mesh within 0.15 m of the lens
+       *              (the near plane is 0.10).
+       * Aimed rows are held to the flat AIMED control at their pitch (the aim
+       * rig's framing contract is the reticle, A32: at the clamp the flat aim
+       * control itself has her head off the frame, onFrac 0.006, so its head
+       * bar applies only where that control has her head in frame on >= 90 %
+       * of samples, and then on >= 90 % of the row's).
+       *
+       * GAP.  The lens-to-pivot bar these rows carried (1.2 m, or 0.95 of the
+       * flat aim gap) is now 0.85 m — the camera's own dolly floor
+       * (DOLLY_GAP 0.90 less 0.05 of placement slop, above the fade's absolute LENS_JAM 0.80) — and
+       * the direct measurement above is what stands for "never inside her".
+       * A 360 deg pan must carry the lens across the UP-slope bearing once,
+       * and on this 38.4 deg face no lens 1.2 m from the pivot there both
+       * clears the ground and keeps her in the frame (brute force over swing
+       * x rotation x length, docs/ROUND4-PLAYER-CONTROL.md §13): the old bar
+       * could only be met by filming the mountain, which is the finding.  The
+       * pivot sits 0.45 m ABOVE her crown at a deep look-up, so "1.2 m from
+       * the pivot" never measured the lens against her anyway — the judge's
+       * 0.033 m frame read 1.315 m on it. */
+      const flatAimGap = {}, AIMCTL = {};
       for (const pitch of [-0.8, -1.15]) {
         p.position.set(flat.x, 0, flat.z); p.velocity.set(0, 0, 0); p._snapToGround();
         p.heading = 0; p.camYaw = Math.PI; p.camPitch = pitch;
         p._relief = 0; p._lift = 0; p._pivotSeeded = false;
         C.input.keys.clear(); C.input.mouse.buttons = 4;
-        for (let i = 0; i < 40; i++) {
+        const af = []; let ah = 0, an = 0;
+        for (let i = 0; i < 56; i++) {
           await frame();
           p.position.x = flat.x; p.position.z = flat.z; p.velocity.x = 0; p.velocity.z = 0;
           p.camYaw = Math.PI; p.camPitch = pitch; C.input.mouse.buttons |= 4;
+          if (i < 16 || i % 2) continue;
+          const m = frameSample(); af.push(m.frac); an++; if (m.headIn) ah++;
         }
         flatAimGap[pitch] = C.camera.position.distanceTo(p.camPivot);
+        af.sort((a, b) => a - b);
+        AIMCTL[pitch] = { ctrl: af[af.length >> 1], headIn: ah / an };
         C.input.mouse.buttons = 0;
       }
+      const GAP_FLOOR = 0.85, NEAR_BAR = 0.15;
       const reqDir = (yaw, pitch, out) => out.set(-Math.sin(yaw) * Math.cos(pitch), -Math.sin(pitch), -Math.cos(yaw) * Math.cos(pitch));
       const pan = async (pitch, rate, aim) => {
         const tag = 'pan' + (aim ? '-aim' : '') + '@' + pitch + '/' + rate;
@@ -1369,11 +1456,18 @@ export const GATES = [
           p.camPitch = pitch; if (aim) C.input.mouse.buttons |= 4;
         };
         for (let i = 0; i < 30; i++) { await frame(); hold(); }
-        const N = Math.ceil(2 * Math.PI / rate);
+        const N = Math.ceil(2 * Math.PI / rate), every = rate < 0.01 ? 2 : 1;
         const dPrev = new V(), dNow = new V(), rPrev = new V(), rNow = new V();
         C.camera.getWorldDirection(dPrev);
         reqDir(p.camYaw + (p.recoil ? p.recoil.yaw : 0), p.camPitch, rPrev);
         let maxEx = 0, exAt = -1, minU = 1, minGap = 9, occFrames = 0, over = 0;
+        let samples = 0, headIn = 0, headRun = 0, headRunMax = 0, minFrac = 9, fracLow = 0, minNear = 9, nearAt = -1, nearDeg = 0;
+        const ctl = aim ? AIMCTL[pitch] : { ctrl: CTRL.pin[pitch].ctrl, headIn: 1 };
+        /* an aimed control that does not have her in frame (the clamp: head
+         * off the frame, onFrac 0.08) has no framing to keep — judged on the
+         * other bars and reported */
+        const framed = !aim || ctl.headIn >= 0.9;
+        const fracBar = !framed ? 0 : aim ? FRAME_KEEP * ctl.ctrl : Math.max(ONFRAC_FLOOR, FRAME_KEEP * ctl.ctrl);
         for (let i = 0; i < N; i++) {
           p.camYaw += rate;
           await frame();
@@ -1391,12 +1485,24 @@ export const GATES = [
           for (const m of p._mats) if (m.u.value < minU) minU = m.u.value;
           const g = e.distanceTo(p.camPivot);
           if (g < minGap) minGap = g;
+          if (i % every) continue;
+          const m = frameSample();
+          samples++;
+          if (m.headIn) { headIn++; headRun = 0; } else { headRun++; if (headRun > headRunMax) headRunMax = headRun; }
+          if (m.frac < minFrac) minFrac = m.frac;
+          if (m.frac < fracBar) fracLow++;
+          if (m.nearest < minNear) { minNear = m.nearest; nearAt = i; nearDeg = ((p.camYaw - hill.down - Math.PI) * DEG) % 360; }
         }
         C.input.mouse.buttons = 0;
-        const gapBar = aim ? Math.min(1.2, 0.95 * flatAimGap[pitch]) : 1.2;
+        const headNeed = !aim ? 1 : ctl.headIn >= 0.9 ? 0.9 : 0;
+        const headFrac = samples ? headIn / samples : 0;
+        const ok = maxEx <= 3 && minU >= 0.98 && minGap >= GAP_FLOOR && occFrames < N * 0.1
+          && headFrac >= headNeed && fracLow === 0 && minNear >= NEAR_BAR;
         return { tag, frames: N, occFrames, maxViewExcessDeg: +maxEx.toFixed(2), at: exAt, framesOver3Deg: over,
-          minOpacity: +minU.toFixed(3), minLensGap: +minGap.toFixed(2), gapBar: +gapBar.toFixed(2),
-          ok: maxEx <= 3 && minU >= 0.98 && minGap >= gapBar && occFrames < N * 0.1 };
+          minOpacity: +minU.toFixed(3), minLensGap: +minGap.toFixed(2), gapBar: GAP_FLOOR,
+          samples, headInFrame: +headFrac.toFixed(3), headBar: headNeed, headOutRunMax: headRunMax,
+          minOnFrac: +minFrac.toFixed(3), onFracBar: +fracBar.toFixed(3), framesUnderFracBar: fracLow,
+          nearestVertexM: +minNear.toFixed(3), nearAt, nearAtPanDeg: +nearDeg.toFixed(1), ok };
       };
       const pans = [];
       for (const pitch of [-0.8, -1.15]) {
@@ -1405,6 +1511,53 @@ export const GATES = [
         }
       }
       const panFails = pans.filter((r) => !r.ok);
+
+      /* --- 7. STATIC YAW SWEEP (residue fix round 2, judge: "static at the
+       * clamp, camYaw 15/30/45 deg to one side of straight up-slope: onFrac
+       * 0, head in frame 0 … the one yaw A31b stages (offset 0) is fine").
+       * 24 camera yaws in 15 deg steps round the same 38.4 deg face, pinned,
+       * at -0.8 and the clamp, each judged on 20 samples after a 16-frame
+       * settle against the pinned flat control at its pitch: head in frame on
+       * every sample, onFrac >= FRAME_KEEP x control (floor 0.12) on every
+       * sample, nearest visible vertex >= 0.15 m, opacity >= 0.98, lens >=
+       * GAP_FLOOR from the pivot (see GAP above). */
+      const sweep = [];
+      for (const pitch of [-0.8, -1.15]) {
+        const fracBar = Math.max(ONFRAC_FLOOR, FRAME_KEEP * CTRL.pin[pitch].ctrl);
+        for (let off = 0; off < 360; off += 15) {
+          const yaw = hill.down + Math.PI + off / DEG;
+          p.position.set(hill.x, 0, hill.z); p.velocity.set(0, 0, 0); p._snapToGround();
+          p.heading = hill.down; p.camYaw = yaw; p.camPitch = pitch;
+          p._relief = 0; p._lift = 0; p._pivotSeeded = false;
+          C.input.keys.clear(); C.input.mouse.buttons = 0;
+          let n = 0, hin = 0, minF = 9, near = 9, u = 1, gap = 9, occ = 0;
+          const fr = [];
+          for (let i = 0; i < 56; i++) {
+            await frame();
+            p.position.x = hill.x; p.position.z = hill.z; p.velocity.x = 0; p.velocity.z = 0;
+            p.camYaw = yaw; p.camPitch = pitch;
+            if (i < 16) continue;
+            for (const m of p._mats) if (m.u.value < u) u = m.u.value;
+            const e = C.camera.position;
+            if (K.sphereQuery(e.x, e.y, e.z, 1.1, [], hider).length) occ++;
+            gap = Math.min(gap, e.distanceTo(p.camPivot));
+            if (i % 2) continue;
+            const m = frameSample(); n++; fr.push(m.frac);
+            if (m.headIn) hin++;
+            if (m.frac < minF) minF = m.frac;
+            if (m.nearest < near) near = m.nearest;
+          }
+          fr.sort((a, b) => a - b);
+          const row = { off, pitch, onFrac: +fr[fr.length >> 1].toFixed(3), minOnFrac: +minF.toFixed(3), bar: +fracBar.toFixed(3),
+            headInFrame: +(hin / n).toFixed(3), nearestVertexM: +near.toFixed(3), minOpacity: +u.toFixed(3), minLensGap: +gap.toFixed(2),
+            swingDeg: +((p.camSwing ?? 0) * DEG).toFixed(1), reliefDeg: +(p.camRelief * DEG).toFixed(1), dolly: +(p.camDolly ?? 1).toFixed(3),
+            elevDeg: +(p.camElev * DEG).toFixed(1), occ };
+          row.ok = occ > 0 || (hin === n && minF >= fracBar && near >= NEAR_BAR && u >= 0.98 && gap >= GAP_FLOOR);
+          sweep.push(row);
+        }
+      }
+      const sweepFails = sweep.filter((r) => !r.ok);
+      const sweepJudged = sweep.filter((r) => r.occ === 0).length;
 
       const clearRows = [...controls, hillside, hillside80, hillsideClamp, valley,
         sprint, uphill, sprintClamp, uphillClamp, uphill80];
@@ -1471,7 +1624,8 @@ export const GATES = [
       const pass = filmSolid && judged.length === clearRows.length
         && ghosted.length === 0 && misbooked.length === 0
         && jammed.length === 0 && hijacked.length === 0 && offScreen.length === 0
-        && blended.length === 0 && fades && faceOK && panFails.length === 0;
+        && blended.length === 0 && fades && faceOK && panFails.length === 0
+        && sweepFails.length === 0 && sweepJudged >= sweep.length - 4;
       const ctrlTable = {};
       for (const k of Object.keys(CTRL.pin)) ctrlTable['pinned@' + k] = { ctrl: +CTRL.pin[k].ctrl.toFixed(3), bar: +CTRL.pin[k].bar.toFixed(3) };
       for (const k of Object.keys(CTRL.run)) ctrlTable['sprint@' + k] = { ctrl: +CTRL.run[k].ctrl.toFixed(3), bar: +CTRL.run[k].bar.toFixed(3) };
@@ -1480,6 +1634,16 @@ export const GATES = [
         filmed, filmSolid, flatAt: flat, controls: ctrlTable,
         flatAimGap: { '-0.8': +flatAimGap[-0.8].toFixed(2), '-1.15': +flatAimGap[-1.15].toFixed(2) },
         pans, panFails: panFails.length,
+        aimControls: { '-0.8': { ctrl: +AIMCTL[-0.8].ctrl.toFixed(3), headIn: +AIMCTL[-0.8].headIn.toFixed(2) },
+          '-1.15': { ctrl: +AIMCTL[-1.15].ctrl.toFixed(3), headIn: +AIMCTL[-1.15].headIn.toFixed(2) } },
+        sweepFails: sweepFails.length, sweepJudged, sweepFailRows: sweepFails,
+        sweepWorst: sweep.length ? {
+          minOnFracRatio: +Math.min(...sweep.map((r) => r.minOnFrac / r.bar)).toFixed(2),
+          minHeadIn: Math.min(...sweep.map((r) => r.headInFrame)),
+          minNearestVertexM: Math.min(...sweep.map((r) => r.nearestVertexM)),
+          minLensGap: Math.min(...sweep.map((r) => r.minLensGap)),
+          minOpacity: Math.min(...sweep.map((r) => r.minOpacity)) } : null,
+        sweep: sweep.map((r) => [r.pitch, r.off, r.onFrac, r.minOnFrac, r.headInFrame, r.nearestVertexM, r.minLensGap, r.swingDeg, r.reliefDeg, r.dolly, r.elevDeg].join(' ')),
         frameKeep: FRAME_KEEP, onFracFloor: ONFRAC_FLOOR,
         hillside, hillside80, hillsideClamp, valley, sprint, uphill,
         sprintClamp, uphillClamp, uphill80, face, faceOK, occluded,
@@ -1527,12 +1691,16 @@ export const GATES = [
    *   SOLID           applied opacity >= 0.98 throughout.
    * Measured on her VISIBLE meshes only (see VISIBLE above): 53 of the rig's
    * 69 meshes are the hidden spare weapons in her left fist.
-   * The four diagonals and three turns out of a run away are measured too and
-   * reported under `diagnostics` — not judged (see the lane doc's known gaps).
+   *
+   * RESIDUE FIX ROUND 2 (judge r1): the AWAY rows must also see her head past
+   * her own shoulders (an occlusion-aware test, see `crownHidden`) on >= 90 %
+   * of samples, and eight turns out of an ESTABLISHED run (60 frames first)
+   * are judged every frame: lens >= 0.15 m from her visible mesh, opacity
+   * >= 0.98.  The four diagonals are still reported under `diagnostics`.
    */
   {
     id: 'A31c-clamp-framing', kind: 'action', lane: 'player-control',
-    title: 'Pitch-clamp framing on FLAT ground, in FOUR run directions (away / left / right / toward the lens) at jog and sprint: head_0104 in frame and |NDC x| <= 0.8 on >= 90% of samples, moving keeps >= 0.75 of the pinned onFrac, pinned >= 0.25, lens >= 0.15 m from her visible mesh, opacity >= 0.98',
+    title: 'Pitch-clamp framing on FLAT ground, in FOUR run directions (away / left / right / toward the lens) at jog and sprint: head_0104 in frame and |NDC x| <= 0.8 on >= 90% of samples, running AWAY her head seen past her shoulders (occlusion-aware) on >= 90%, moving keeps >= 0.75 of the pinned onFrac, pinned >= 0.25, lens >= 0.15 m from her visible mesh, opacity >= 0.98; eight turns out of an ESTABLISHED run (60 frames) keep the lens >= 0.15 m from her mesh and her solid on every frame',
     criteria: 'Film: flat open ground, SPRINTING at the pitch clamp (camPitch -1.15, looking steeply up). Aloy\'s head, braid, '
       + 'shoulders and upper back are IN THE PICTURE in the lower part of the frame, solid, with sky above, and not pushed to a frame edge. '
       + 'FAIL if only the bow or spear is visible, if she is off the bottom or side edge, or if the lens is visibly inside her body.',
@@ -1550,6 +1718,47 @@ export const GATES = [
       let head = null;
       p.model.traverse((o) => { if (o.isBone && o.name === 'head_0104') head = o; });
       if (!head) return { pass: null, detail: 'SKIP: head_0104 not found on the rig' };
+      /* RESIDUE FIX ROUND 2 (judge: "A31c's head test is a projection with no
+       * occlusion check … make the head-visible test occlusion-aware: the
+       * ORBIT_CAPS torso/shoulder segment test on the crown sight line").
+       * The same capsules and radii the solver's list flags as occluders
+       * (upper arms, clavicles, pelvis to neck), read LIVE off her bones,
+       * against the sight line from the lens that filmed the frame to a point
+       * 0.13 m over head_0104.  head_0104 sits at her mouth (lip bones +0.00,
+       * brows +0.075, top of the skull +0.176, measured on the idle rig), so
+       * 0.13 is the middle of the upper half of her head: a clear line to it
+       * is at least the top half of her head in the picture. */
+      const OCC = [['upperarm_l', 'lowerarm_l', 0.07], ['upperarm_r', 'lowerarm_r', 0.07], ['clavicle_l', 'upperarm_l', 0.09],
+        ['clavicle_r', 'upperarm_r', 0.09], ['pelvis', 'spine_01', 0.17], ['spine_01', 'spine_03', 0.17],
+        ['spine_03', 'spine_05', 0.17], ['spine_05', 'neck_01', 0.12]];
+      const bones = {};
+      p.model.traverse((o) => {
+        if (!o.isBone) return;
+        if (!bones[o.name]) bones[o.name] = o;
+        const cut = o.name.replace(/_[0-9]+$/, '');
+        if (cut !== o.name && !bones[cut]) bones[cut] = o;
+      });
+      const occ = OCC.filter(([a, b]) => bones[a] && bones[b]);
+      if (occ.length !== OCC.length) return { pass: null, detail: 'SKIP: occluder bones missing on the rig' };
+      const segDist = (a, b, c, d) => {   // closest distance between segments ab and cd (Vector3s)
+        const u = b.clone().sub(a), v = d.clone().sub(c), w = a.clone().sub(c);
+        const A = u.dot(u), B = u.dot(v), Cc = v.dot(v), D = u.dot(w), E = v.dot(w), den = A * Cc - B * B;
+        let sc = den > 1e-9 ? (B * E - Cc * D) / den : 0; sc = Math.max(0, Math.min(1, sc));
+        let tc = Cc > 1e-9 ? (B * sc + E) / Cc : 0;
+        if (tc < 0) { tc = 0; sc = A > 1e-9 ? Math.max(0, Math.min(1, -D / A)) : 0; }
+        else if (tc > 1) { tc = 1; sc = A > 1e-9 ? Math.max(0, Math.min(1, (B - D) / A)) : 0; }
+        return a.clone().addScaledVector(u, sc).sub(c.clone().addScaledVector(v, tc)).length();
+      };
+      const _ca = new V(), _cb = new V(), _cr = new V();
+      const crownHidden = () => {
+        head.getWorldPosition(_cr); _cr.y += 0.13;
+        const e = C.camera.position.clone();
+        for (const [a, b, r] of occ) {
+          bones[a].getWorldPosition(_ca); bones[b].getWorldPosition(_cb);
+          if (segDist(e, _cr, _ca, _cb) < r) return true;
+        }
+        return false;
+      };
       /** In-frame fraction of her VISIBLE vertices, and the nearest one to the lens. */
       const measure = () => {
         const v = new V(), vw = new V(), e = C.camera.position;
@@ -1580,7 +1789,7 @@ export const GATES = [
         const front = hv.z < -C.camera.near;
         const headIn = front && Math.abs(hp.x) <= 1 && Math.abs(hp.y) <= 1;
         const headX = front && Math.abs(hp.x) <= 0.8 && Math.abs(hp.y) <= 1;
-        return { frac: nIn ? inBox / nIn : 0, nearest, headIn, headX, hx: hp.x, hy: hp.y };
+        return { frac: nIn ? inBox / nIn : 0, nearest, headIn, headX, hx: hp.x, hy: hp.y, seen: headIn && !crownHidden() };
       };
       // the same flat, clear control ground A31b stages its controls on
       let flat = null;
@@ -1605,7 +1814,8 @@ export const GATES = [
         C.input.keys.clear(); C.input.mouse.buttons = 0;
         for (const k of keys) C.input.keys.add(k);
         const fracs = [], xs = [];
-        let heads = 0, headXs = 0, samples = 0, nearest = 9, minU = 1, speed = 0, lean = 0, worstHeadY = 9;
+        let heads = 0, headXs = 0, seen = 0, samples = 0, nearest = 9, minU = 1, speed = 0, lean = 0, worstHeadY = 9;
+        const hidAt = [];
         for (let i = 0; i < FRAMES; i++) {
           await frame();
           if (pin) { p.position.x = flat.x; p.position.z = flat.z; p.velocity.x = 0; p.velocity.z = 0; }
@@ -1615,6 +1825,8 @@ export const GATES = [
           if (i % 2) continue;
           const m = measure();
           fracs.push(m.frac); samples++; if (m.headIn) heads++; if (m.headX) headXs++;
+          if (m.seen) seen++;
+          else hidAt.push(i + ':' + ((p.camOrbitPsi ?? 0) * DEG).toFixed(0) + '/' + (p._orbitR ?? 0).toFixed(2) + '/k' + (p.camRunK ?? 0).toFixed(2));
           xs.push(m.hx);
           if (m.nearest < nearest) nearest = m.nearest;
           if (m.hy < worstHeadY) worstHeadY = m.hy;
@@ -1624,6 +1836,7 @@ export const GATES = [
         fracs.sort((a, b) => a - b); xs.sort((a, b) => a - b);
         return { tag, onFrac: +fracs[fracs.length >> 1].toFixed(3), onFracMin: +fracs[0].toFixed(3),
           headInFrame: +(heads / samples).toFixed(3), headXInside08: +(headXs / samples).toFixed(3),
+          headSeen: +(seen / samples).toFixed(3), headHiddenAtFrames: hidAt.join(','),
           headNdcX: [+xs[0].toFixed(2), +xs[xs.length >> 1].toFixed(2), +xs[xs.length - 1].toFixed(2)],
           worstHeadNdcY: +worstHeadY.toFixed(2),
           nearestVertexM: +nearest.toFixed(3), minOpacity: +minU.toFixed(3),
@@ -1637,7 +1850,7 @@ export const GATES = [
         moving.push(await run('sprint-' + name, [key, 'ShiftLeft'], false, h));
       }
       const rows = [pinned, ...moving];
-      const HEAD_IN = 0.9, HEAD_X = 0.9, KEEP = 0.75, PIN_FLOOR = 0.25, NEAR = 0.15;
+      const HEAD_IN = 0.9, HEAD_X = 0.9, KEEP = 0.75, PIN_FLOOR = 0.25, NEAR = 0.15, SEEN = 0.9;
       const failing = [];
       for (const r of rows) {
         r.bar = r === pinned ? PIN_FLOOR : +(KEEP * pinned.onFrac).toFixed(3);
@@ -1646,6 +1859,7 @@ export const GATES = [
         if (r.onFrac < r.bar) failing.push(r.tag + ': onFrac ' + r.onFrac + ' < ' + r.bar);
         if (r.nearestVertexM < NEAR) failing.push(r.tag + ': lens ' + r.nearestVertexM + ' m from her mesh');
         if (r.minOpacity < 0.98) failing.push(r.tag + ': opacity ' + r.minOpacity);
+        if (/-away$/.test(r.tag) && r.headSeen < SEEN) failing.push(r.tag + ': head seen past her shoulders on ' + r.headSeen);
       }
       for (const r of moving) {
         const want = r.tag.startsWith('sprint') ? 5.5 : 3.5;
@@ -1660,8 +1874,50 @@ export const GATES = [
         ['toward-left', ['KeyS', 'KeyA'], 3 * Math.PI / 4], ['toward-right', ['KeyS', 'KeyD'], -3 * Math.PI / 4]]) {
         diagnostics.push(await run('sprint-' + name, [...keys, 'ShiftLeft'], false, h));
       }
-      for (const [name, keys] of [['left', ['KeyA']], ['away-left', ['KeyW', 'KeyA']], ['toward', ['KeyS']]]) {
-        diagnostics.push(await run('turn-from-away-to-' + name, [...keys, 'ShiftLeft'], false, 0));
+      /* TURNS OUT OF AN ESTABLISHED RUN (residue fix round 2, judge:
+       * "turning out of an established run at the pitch clamp puts the lens
+       * inside her … A31c's turn diagnostics start the turn from a standstill,
+       * before the 42-frame clearance window and the orbit are established").
+       * Each turn now starts after 60 frames of running away from the lens,
+       * and is JUDGED over the 45 frames after the stick changes, every frame:
+       * nearest visible vertex >= 0.15 m and opacity >= 0.98.  Head in frame is
+       * reported, not judged. */
+      const turns = [];
+      const turn = async (gait, then) => {
+        const tag = gait + '-away-then-' + then.name;
+        p.position.set(flat.x, 0, flat.z); p.velocity.set(0, 0, 0); p._snapToGround();
+        face(0); p.camYaw = Math.PI; p.camPitch = -1.15;
+        p._relief = 0; p._lift = 0; p._pivotSeeded = false;
+        C.input.keys.clear(); C.input.mouse.buttons = 0;
+        C.input.keys.add('KeyW'); if (gait === 'sprint') C.input.keys.add('ShiftLeft');
+        for (let i = 0; i < 60; i++) { await frame(); p.camYaw = Math.PI; p.camPitch = -1.15; }
+        const speed0 = Math.hypot(p.velocity.x, p.velocity.z);
+        C.input.keys.clear();
+        for (const k of then.keys) C.input.keys.add(k);
+        if (gait === 'sprint') C.input.keys.add('ShiftLeft');
+        let nearest = 9, nearAt = -1, minU = 1, heads = 0, n = 0, under = 0;
+        for (let i = 0; i < 45; i++) {
+          await frame(); p.camYaw = Math.PI; p.camPitch = -1.15;
+          for (const m of p._mats) if (m.u.value < minU) minU = m.u.value;
+          const m = measure(); n++;
+          if (m.headIn) heads++;
+          if (m.nearest < NEAR) under++;
+          if (m.nearest < nearest) { nearest = m.nearest; nearAt = i; }
+        }
+        C.input.keys.clear();
+        return { tag, runSpeedBefore: +speed0.toFixed(2), nearestVertexM: +nearest.toFixed(3), nearAt, framesUnder015: under,
+          minOpacity: +minU.toFixed(3), headInFrame: +(heads / n).toFixed(3), headingEndDeg: +(p.heading * DEG % 360).toFixed(1) };
+      };
+      for (const gait of ['sprint', 'jog']) {
+        for (const then of [{ name: 'left', keys: ['KeyA'] }, { name: 'right', keys: ['KeyD'] },
+          { name: 'toward', keys: ['KeyS'] }, { name: 'away-left', keys: ['KeyW', 'KeyA'] }]) {
+          turns.push(await turn(gait, then));
+        }
+      }
+      for (const r of turns) {
+        if (r.nearestVertexM < NEAR) failing.push(r.tag + ': lens ' + r.nearestVertexM + ' m from her mesh (frame ' + r.nearAt + ' of the turn)');
+        if (r.minOpacity < 0.98) failing.push(r.tag + ': opacity ' + r.minOpacity);
+        if (r.runSpeedBefore < (r.tag.startsWith('sprint') ? 5.5 : 3.5)) failing.push(r.tag + ': run not established before the turn (' + r.runSpeedBefore + ' m/s)');
       }
 
       /* The FILM is the sprint away — the staging the judge first filmed as a
@@ -1680,10 +1936,10 @@ export const GATES = [
       const film = measure();
 
       return { pass: failing.length === 0, detail: {
-        flatAt: flat, bars: { headIn: HEAD_IN, headXInside08: HEAD_X, keep: KEEP, pinnedFloor: PIN_FLOOR, nearestVertexM: NEAR },
-        pinned, moving, failing, diagnostics,
+        flatAt: flat, bars: { headIn: HEAD_IN, headXInside08: HEAD_X, keep: KEEP, pinnedFloor: PIN_FLOOR, nearestVertexM: NEAR, headSeenAway: SEEN },
+        pinned, moving, turns, failing, diagnostics,
         film: { onFrac: +film.frac.toFixed(3), headIn: film.headIn, headNdcX: +film.hx.toFixed(2), headNdcY: +film.hy.toFixed(2),
-          nearestVertexM: +film.nearest.toFixed(3), camLeanM: +(p.camLean || 0).toFixed(3) },
+          nearestVertexM: +film.nearest.toFixed(3), camLeanM: +(p.camLean || 0).toFixed(3), headSeen: film.seen },
       } };
     })()`,
   },

@@ -150,14 +150,21 @@ export class Corruptor extends ExpansionMachine {
       standLift: 0.26,
       bellyMin: 0.08,
       /**
-       * THE TAIL ROOT DOES NOT DROOP WHEN THE WRECK LIES DOWN. `RIGS.corruptor`
-       * starts the tail at z -1.45, inside the abdomen, so `rig_tail1` is
-       * skinned to the rear of the body (body y 0.00-1.10) as well as to the
-       * tail base; any droop there swings that belly through the soil
-       * (measured: 0.1-0.2 m under, and the corpse bend then lifted the whole
-       * tail 0.65 rad back up). The tail is laid from `rig_tail2` on.
+       * THE TAIL ROOT DROOPS WHEN THE WRECK LIES DOWN (residue round 2, the
+       * ruling's in-lane close for `A47c`). It could not before: `rig_tail1`
+       * sits at z -1.45, inside the abdomen, and the donor's whole rear
+       * abdomen (z -2.0 ... -3.75, belly height) was skinned to it, so any
+       * droop swung that belly through the soil and the corpse solve lifted
+       * the wreck back out — `layTailRoot: 0` and a 2.1 m hump. The tail's
+       * skin is now re-rooted behind the abdomen (`RIGS.corruptor.tailGateY`,
+       * autorig.js): below 1.3 m nothing is tail, the abdomen is chassis, and
+       * the root takes the default chassis-mode droop (0.33 rad) without
+       * moving the belly. A deeper root droop was measured and is NOT used:
+       * 0.6 rad reads the same wreck (area-weighted median 0.675 / 0.689 m
+       * against 0.671 / 0.687 at 0.33), and 0.9 or 1.6 rad swing the donor's
+       * rear tail through the soil and the corpse solve lifts the whole wreck
+       * to 1.36-1.49 m.
        */
-      layTailRoot: 0,
       // the wreck lies down: legs and tail laid along the ground (`gait.js` `layWreck`)
       layWreck: true,
       fidgets: [

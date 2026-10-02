@@ -153,6 +153,19 @@ export class ContactLedger {
   /**
    * Record that leg `leg`'s stance window just OPENED (its phase authority
    * went from swing to stance on this substep). Allocation-free; one integer.
+   *
+   * THE PUBLISHED STANCE WINDOW (ORCHESTRATOR RULING Sep 26, `A48-cadence`):
+   * "the stance ledger publishes a window that survives a slow frame
+   * (rig/contact.js latch counts a plant per dominant-clip stance wrap)".
+   * `leg.wraps` is that window, per foot, and BOTH controllers now publish it
+   * on every `debugFeet()` row as `stances` — `FootLock` from the clip's
+   * stance phase (Watcher, Redeye, Longleg), `GaitController` from its own
+   * pattern (`phase + offset[foot]` crossing an integer, gait.js). A consumer
+   * that samples once per drawn frame — or once per ten — reads the counter's
+   * increment and cannot lose a stance that opened and closed between two of
+   * its samples, which a rising edge of the boolean `planted` flag can. Both
+   * cadence loops close over `stanceWraps`, so the rig steers by the same
+   * number the gate reads.
    */
   countWrap(leg) {
     this.stanceWraps++;
