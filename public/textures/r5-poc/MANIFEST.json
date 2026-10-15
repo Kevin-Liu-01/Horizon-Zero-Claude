@@ -1,0 +1,41 @@
+{
+  "generatedBy": "tools/r5-poc/gen-ground.mjs",
+  "layers": [
+    {
+      "files": [
+        "sand_a.webp",
+        "sand_n.webp"
+      ],
+      "route": "procedural (node, tileable fbm/worley)",
+      "source": "tools/r5-poc/gen-ground.mjs",
+      "licence": "original work (generated)"
+    },
+    {
+      "files": [
+        "salt_a.webp",
+        "salt_n.webp"
+      ],
+      "route": "procedural (node, tileable fbm/worley)",
+      "source": "tools/r5-poc/gen-ground.mjs",
+      "licence": "original work (generated)"
+    },
+    {
+      "files": [
+        "rockp_a.webp",
+        "rockp_n.webp"
+      ],
+      "route": "procedural (node, tileable fbm/worley)",
+      "source": "tools/r5-poc/gen-ground.mjs",
+      "licence": "original work (generated)"
+    },
+    {
+      "files": [
+        "rock_a.webp",
+        "rock_n.webp"
+      ],
+      "route": "CC0 scan, Poly Haven rock_face 1K (diff + nor_gl + arm JPG), repacked",
+      "source": "https://polyhaven.com/a/rock_face",
+      "licence": "CC0 1.0 (Poly Haven: no attribution required)"
+    }
+  ]
+}

@@ -1,0 +1,128 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 790" font-family="Helvetica, Arial, sans-serif">
+<rect width="1200" height="790" fill="#141416"/>
+<text x="20" y="36" font-size="14" letter-spacing="3" fill="#EDEAE2">LAND</text>
+<rect x="20" y="46" width="135" height="70" rx="4" fill="#1C1B1E" stroke="#55555a"/>
+<text x="20" y="134" font-size="13" fill="#EDEAE2">Lapilli Black</text>
+<text x="20" y="151" font-size="12" fill="#9a9a9f" font-family="Menlo, monospace">#1C1B1E</text>
+<rect x="165" y="46" width="135" height="70" rx="4" fill="#3A3A3F" stroke="#55555a"/>
+<text x="165" y="134" font-size="13" fill="#EDEAE2">Basalt</text>
+<text x="165" y="151" font-size="12" fill="#9a9a9f" font-family="Menlo, monospace">#3A3A3F</text>
+<rect x="310" y="46" width="135" height="70" rx="4" fill="#2A2826" stroke="#55555a"/>
+<text x="310" y="134" font-size="13" fill="#EDEAE2">Wet Sand</text>
+<text x="310" y="151" font-size="12" fill="#9a9a9f" font-family="Menlo, monospace">#2A2826</text>
+<rect x="455" y="46" width="135" height="70" rx="4" fill="#EDEAE2" stroke="#55555a"/>
+<text x="455" y="134" font-size="13" fill="#EDEAE2">Salt White</text>
+<text x="455" y="151" font-size="12" fill="#9a9a9f" font-family="Menlo, monospace">#EDEAE2</text>
+<rect x="600" y="46" width="135" height="70" rx="4" fill="#B9C3C9" stroke="#55555a"/>
+<text x="600" y="134" font-size="13" fill="#EDEAE2">Salt Shadow</text>
+<text x="600" y="151" font-size="12" fill="#9a9a9f" font-family="Menlo, monospace">#B9C3C9</text>
+<rect x="745" y="46" width="135" height="70" rx="4" fill="#8E3B23" stroke="#55555a"/>
+<text x="745" y="134" font-size="13" fill="#EDEAE2">Cinder Rust</text>
+<text x="745" y="151" font-size="12" fill="#9a9a9f" font-family="Menlo, monospace">#8E3B23</text>
+<rect x="890" y="46" width="135" height="70" rx="4" fill="#C98B4E" stroke="#55555a"/>
+<text x="890" y="134" font-size="13" fill="#EDEAE2">Calima Ochre</text>
+<text x="890" y="151" font-size="12" fill="#9a9a9f" font-family="Menlo, monospace">#C98B4E</text>
+<rect x="1035" y="46" width="135" height="70" rx="4" fill="#CFC6B4" stroke="#55555a"/>
+<text x="1035" y="134" font-size="13" fill="#EDEAE2">Pumice</text>
+<text x="1035" y="151" font-size="12" fill="#9a9a9f" font-family="Menlo, monospace">#CFC6B4</text>
+<text x="20" y="186" font-size="14" letter-spacing="3" fill="#EDEAE2">LIFE + WATER</text>
+<rect x="20" y="196" width="135" height="70" rx="4" fill="#3E5B3A" stroke="#55555a"/>
+<text x="20" y="284" font-size="13" fill="#EDEAE2">Laurel</text>
+<text x="20" y="301" font-size="12" fill="#9a9a9f" font-family="Menlo, monospace">#3E5B3A</text>
+<rect x="165" y="196" width="135" height="70" rx="4" fill="#9AA67E" stroke="#55555a"/>
+<text x="165" y="284" font-size="13" fill="#EDEAE2">Lichen Sage</text>
+<text x="165" y="301" font-size="12" fill="#9a9a9f" font-family="Menlo, monospace">#9AA67E</text>
+<rect x="310" y="196" width="135" height="70" rx="4" fill="#4C5A2E" stroke="#55555a"/>
+<text x="310" y="284" font-size="13" fill="#EDEAE2">Pine Needle</text>
+<text x="310" y="301" font-size="12" fill="#9a9a9f" font-family="Menlo, monospace">#4C5A2E</text>
+<rect x="455" y="196" width="135" height="70" rx="4" fill="#B5313A" stroke="#55555a"/>
+<text x="455" y="284" font-size="13" fill="#EDEAE2">Tajinaste Red</text>
+<text x="455" y="301" font-size="12" fill="#9a9a9f" font-family="Menlo, monospace">#B5313A</text>
+<rect x="600" y="196" width="135" height="70" rx="4" fill="#2F8F6F" stroke="#55555a"/>
+<text x="600" y="284" font-size="13" fill="#EDEAE2">Lagoon Emerald</text>
+<text x="600" y="301" font-size="12" fill="#9a9a9f" font-family="Menlo, monospace">#2F8F6F</text>
+<rect x="745" y="196" width="135" height="70" rx="4" fill="#1F4E66" stroke="#55555a"/>
+<text x="745" y="284" font-size="13" fill="#EDEAE2">Atlantic Deep</text>
+<text x="745" y="301" font-size="12" fill="#9a9a9f" font-family="Menlo, monospace">#1F4E66</text>
+<rect x="890" y="196" width="135" height="70" rx="4" fill="#F2F4F0" stroke="#55555a"/>
+<text x="890" y="284" font-size="13" fill="#EDEAE2">Surf Foam</text>
+<text x="890" y="301" font-size="12" fill="#9a9a9f" font-family="Menlo, monospace">#F2F4F0</text>
+<rect x="1035" y="196" width="135" height="70" rx="4" fill="#AEB4B1" stroke="#55555a"/>
+<text x="1035" y="284" font-size="13" fill="#EDEAE2">Fog Grey</text>
+<text x="1035" y="301" font-size="12" fill="#9a9a9f" font-family="Menlo, monospace">#AEB4B1</text>
+<text x="20" y="336" font-size="14" letter-spacing="3" fill="#EDEAE2">PEOPLE (dyes + fibres)</text>
+<rect x="20" y="346" width="135" height="70" rx="4" fill="#6B3F73" stroke="#55555a"/>
+<text x="20" y="434" font-size="13" fill="#EDEAE2">Orchil Violet</text>
+<text x="20" y="451" font-size="12" fill="#9a9a9f" font-family="Menlo, monospace">#6B3F73</text>
+<rect x="165" y="346" width="135" height="70" rx="4" fill="#A3213A" stroke="#55555a"/>
+<text x="165" y="434" font-size="13" fill="#EDEAE2">Cochineal</text>
+<text x="165" y="451" font-size="12" fill="#9a9a9f" font-family="Menlo, monospace">#A3213A</text>
+<rect x="310" y="346" width="135" height="70" rx="4" fill="#E4DDCC" stroke="#55555a"/>
+<text x="310" y="434" font-size="13" fill="#EDEAE2">Linen</text>
+<text x="310" y="451" font-size="12" fill="#9a9a9f" font-family="Menlo, monospace">#E4DDCC</text>
+<rect x="455" y="346" width="135" height="70" rx="4" fill="#BBAE94" stroke="#55555a"/>
+<text x="455" y="434" font-size="13" fill="#EDEAE2">Undyed Wool</text>
+<text x="455" y="451" font-size="12" fill="#9a9a9f" font-family="Menlo, monospace">#BBAE94</text>
+<rect x="600" y="346" width="135" height="70" rx="4" fill="#56603F" stroke="#55555a"/>
+<text x="600" y="434" font-size="13" fill="#EDEAE2">Felt Moss</text>
+<text x="600" y="451" font-size="12" fill="#9a9a9f" font-family="Menlo, monospace">#56603F</text>
+<rect x="745" y="346" width="135" height="70" rx="4" fill="#22201E" stroke="#55555a"/>
+<text x="745" y="434" font-size="13" fill="#EDEAE2">Tar (brea)</text>
+<text x="745" y="451" font-size="12" fill="#9a9a9f" font-family="Menlo, monospace">#22201E</text>
+<rect x="890" y="346" width="135" height="70" rx="4" fill="#B08A45" stroke="#55555a"/>
+<text x="890" y="434" font-size="13" fill="#EDEAE2">Brass</text>
+<text x="890" y="451" font-size="12" fill="#9a9a9f" font-family="Menlo, monospace">#B08A45</text>
+<rect x="1035" y="346" width="135" height="70" rx="4" fill="#8A5A3C" stroke="#55555a"/>
+<text x="1035" y="434" font-size="13" fill="#EDEAE2">Skin ref (Brea)</text>
+<text x="1035" y="451" font-size="12" fill="#9a9a9f" font-family="Menlo, monospace">#8A5A3C</text>
+<text x="20" y="486" font-size="14" letter-spacing="3" fill="#EDEAE2">INSTRUMENTS</text>
+<rect x="20" y="496" width="135" height="70" rx="4" fill="#E6DCC8" stroke="#55555a"/>
+<text x="20" y="584" font-size="13" fill="#EDEAE2">Bone Glaze</text>
+<text x="20" y="601" font-size="12" fill="#9a9a9f" font-family="Menlo, monospace">#E6DCC8</text>
+<rect x="165" y="496" width="135" height="70" rx="4" fill="#A9C4B0" stroke="#55555a"/>
+<text x="165" y="584" font-size="13" fill="#EDEAE2">Celadon</text>
+<text x="165" y="601" font-size="12" fill="#9a9a9f" font-family="Menlo, monospace">#A9C4B0</text>
+<rect x="310" y="496" width="135" height="70" rx="4" fill="#6E2421" stroke="#55555a"/>
+<text x="310" y="584" font-size="13" fill="#EDEAE2">Oxblood</text>
+<text x="310" y="601" font-size="12" fill="#9a9a9f" font-family="Menlo, monospace">#6E2421</text>
+<rect x="455" y="496" width="135" height="70" rx="4" fill="#A07A3F" stroke="#55555a"/>
+<text x="455" y="584" font-size="13" fill="#EDEAE2">Bronze</text>
+<text x="455" y="601" font-size="12" fill="#9a9a9f" font-family="Menlo, monospace">#A07A3F</text>
+<rect x="600" y="496" width="135" height="70" rx="4" fill="#4F8F7E" stroke="#55555a"/>
+<text x="600" y="584" font-size="13" fill="#EDEAE2">Verdigris</text>
+<text x="600" y="601" font-size="12" fill="#9a9a9f" font-family="Menlo, monospace">#4F8F7E</text>
+<rect x="745" y="496" width="135" height="70" rx="4" fill="#2B2C30" stroke="#55555a"/>
+<text x="745" y="584" font-size="13" fill="#EDEAE2">Graphite</text>
+<text x="745" y="601" font-size="12" fill="#9a9a9f" font-family="Menlo, monospace">#2B2C30</text>
+<rect x="890" y="496" width="135" height="70" rx="4" fill="#D2452E" stroke="#55555a"/>
+<text x="890" y="584" font-size="13" fill="#EDEAE2">Survey Vermilion</text>
+<text x="890" y="601" font-size="12" fill="#9a9a9f" font-family="Menlo, monospace">#D2452E</text>
+<rect x="1035" y="496" width="135" height="70" rx="4" fill="#F1EEE6" stroke="#55555a"/>
+<text x="1035" y="584" font-size="13" fill="#EDEAE2">Staff White</text>
+<text x="1035" y="601" font-size="12" fill="#9a9a9f" font-family="Menlo, monospace">#F1EEE6</text>
+<text x="20" y="636" font-size="14" letter-spacing="3" fill="#EDEAE2">SENSOR STATES + UI</text>
+<rect x="20" y="646" width="135" height="70" rx="4" fill="#6FE3B4" stroke="#55555a"/>
+<text x="20" y="734" font-size="13" fill="#EDEAE2">Calm</text>
+<text x="20" y="751" font-size="12" fill="#9a9a9f" font-family="Menlo, monospace">#6FE3B4</text>
+<rect x="165" y="646" width="135" height="70" rx="4" fill="#B07CFF" stroke="#55555a"/>
+<text x="165" y="734" font-size="13" fill="#EDEAE2">Wary</text>
+<text x="165" y="751" font-size="12" fill="#9a9a9f" font-family="Menlo, monospace">#B07CFF</text>
+<rect x="310" y="646" width="135" height="70" rx="4" fill="#F4F1EA" stroke="#55555a"/>
+<text x="310" y="734" font-size="13" fill="#EDEAE2">Hostile (strobe)</text>
+<text x="310" y="751" font-size="12" fill="#9a9a9f" font-family="Menlo, monospace">#F4F1EA</text>
+<rect x="455" y="646" width="135" height="70" rx="4" fill="#050505" stroke="#55555a"/>
+<text x="455" y="734" font-size="13" fill="#EDEAE2">Dead</text>
+<text x="455" y="751" font-size="12" fill="#9a9a9f" font-family="Menlo, monospace">#050505</text>
+<rect x="600" y="646" width="135" height="70" rx="4" fill="#DA7756" stroke="#55555a"/>
+<text x="600" y="734" font-size="13" fill="#EDEAE2">Spark Coral</text>
+<text x="600" y="751" font-size="12" fill="#9a9a9f" font-family="Menlo, monospace">#DA7756</text>
+<rect x="745" y="646" width="135" height="70" rx="4" fill="#EDEAE2" stroke="#55555a"/>
+<text x="745" y="734" font-size="13" fill="#EDEAE2">UI Paper</text>
+<text x="745" y="751" font-size="12" fill="#9a9a9f" font-family="Menlo, monospace">#EDEAE2</text>
+<rect x="890" y="646" width="135" height="70" rx="4" fill="#1C1B1E" stroke="#55555a"/>
+<text x="890" y="734" font-size="13" fill="#EDEAE2">UI Smoke</text>
+<text x="890" y="751" font-size="12" fill="#9a9a9f" font-family="Menlo, monospace">#1C1B1E</text>
+<rect x="1035" y="646" width="135" height="70" rx="4" fill="#A3213A" stroke="#55555a"/>
+<text x="1035" y="734" font-size="13" fill="#EDEAE2">UI Ink Red</text>
+<text x="1035" y="751" font-size="12" fill="#9a9a9f" font-family="Menlo, monospace">#A3213A</text>
+</svg>

@@ -1,0 +1,161 @@
+{
+  "mode": "creature",
+  "site": {
+    "x": 96,
+    "z": 144,
+    "score": 2.138911777612884,
+    "slope": 0.8905124923466541,
+    "dh": 3.6271857053245977,
+    "grass": 2.13408,
+    "surface": "gravel"
+  },
+  "timings": {
+    "loadExtraMs": 429.9,
+    "spawnFirstMs": 5.3,
+    "spawnCapsuleMs": 37.2
+  },
+  "census": {
+    "meshes": 4,
+    "skinned": 2,
+    "casters": 1,
+    "materials": 4,
+    "tris": 33240,
+    "verts": 25643,
+    "bones": 24
+  },
+  "weights": {
+    "authored": {
+      "verts": 25445,
+      "wrongDominant": 0,
+      "wrongPct": 0,
+      "legBodyCross": 0,
+      "blendedVerts": 0,
+      "topMisassignments": []
+    },
+    "capsule": {
+      "verts": 25445,
+      "wrongDominant": 6350,
+      "wrongPct": 25,
+      "legBodyCross": 863,
+      "blendedVerts": 12247,
+      "topMisassignments": [
+        [
+          "chest->pelvis",
+          2274
+        ],
+        [
+          "neck->chest",
+          530
+        ],
+        [
+          "tail2->tail1",
+          528
+        ],
+        [
+          "neck->head",
+          316
+        ],
+        [
+          "head->chest",
+          194
+        ],
+        [
+          "RM_thigh->RH_thigh",
+          142
+        ]
+      ]
+    },
+    "seededVerts": 25445
+  },
+  "feet": {
+    "seconds": 8,
+    "frames": 450,
+    "fps": 56.3,
+    "travelM": 10.93,
+    "speedMps": 1.37,
+    "state": "patrol",
+    "plants": 68,
+    "plantsPerSec": 8.5,
+    "plantedFraction": 0.61,
+    "slipWorstPerFrameM": 0.0116,
+    "slipMeanPerFrameM": 0.00002,
+    "groundErrWorstM": 0.0115,
+    "groundErrMeanM": 0,
+    "cadenceHz": 1.206,
+    "band": [
+      0.741,
+      2.223
+    ],
+    "bodyLength": 4.46,
+    "drawnPad": {
+      "probes": 6,
+      "slipWorstPerFrameM": 0.0115,
+      "slipMeanPerFrameM": 0.00064,
+      "groundErrWorstM": 0.0686,
+      "groundErrMeanM": 0.0119,
+      "swingLiftMaxM": 0.517,
+      "samples": 1588
+    }
+  },
+  "draws": {
+    "withCreature": {
+      "calls": 134,
+      "tris": 2366276
+    },
+    "without": {
+      "calls": 128,
+      "tris": 2239660
+    },
+    "creatureDraws": 6,
+    "creatureTris": 126616,
+    "cascades": 3,
+    "timeScaleWas": 1
+  },
+  "memory": {
+    "rounds": 3,
+    "perRound": 4,
+    "before": {
+      "geo": 246,
+      "tex": 172,
+      "progs": 205,
+      "objs": 4312,
+      "heap": 367002624
+    },
+    "peaks": [
+      {
+        "geo": 245,
+        "tex": 174,
+        "progs": 205,
+        "objs": 4386,
+        "heap": 351491628
+      },
+      {
+        "geo": 245,
+        "tex": 175,
+        "progs": 205,
+        "objs": 4385,
+        "heap": 372686576
+      },
+      {
+        "geo": 247,
+        "tex": 175,
+        "progs": 205,
+        "objs": 4385,
+        "heap": 381160775
+      }
+    ],
+    "after": {
+      "geo": 247,
+      "tex": 172,
+      "progs": 205,
+      "objs": 4274,
+      "heap": 402671621
+    },
+    "geoGrowth": 1,
+    "texGrowth": 0,
+    "objGrowth": -38
+  },
+  "systemErrors": [],
+  "consoleErrors": [],
+  "warnings": []
+}

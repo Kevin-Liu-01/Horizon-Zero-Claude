@@ -2169,7 +2169,8 @@ void main() {
   _readHeadOffset() {
     let b = this._headBone;
     if (!b) {
-      b = this.animator && this.animator.bones ? this.animator.bones['head_0104'] : null;
+      b = this.animator && this.animator.bones
+        ? (this.animator.bones['head_0104'] || this.animator.b?.head?.bone || null) : null;
       if (!b) return false;
       this._headBone = b;
     }

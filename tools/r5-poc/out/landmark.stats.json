@@ -1,0 +1,16 @@
+{
+  "landmark": "sounding-ring",
+  "bytes": 186348,
+  "tris": 22120,
+  "verts": 14794,
+  "materials": 2,
+  "meshes": 2,
+  "textures": 1,
+  "kb": 182,
+  "size": [
+    33.5,
+    26.3,
+    21.7
+  ],
+  "genMs": 154.1
+}

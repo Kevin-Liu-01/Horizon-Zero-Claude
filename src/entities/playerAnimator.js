@@ -406,8 +406,16 @@ export class PlayerAnimator {
       return e;
     };
 
+    /* Round 5 rig seam: a non-Aloy body names its bones on
+     * `model.userData.rigProfile.key` (same short keys; null = absent). With no
+     * profile `this.KEY === KEY` and nothing below changes. */
+    const prof = model.userData?.rigProfile || null;
+    this.rigName = prof?.name || 'aloy';
+    this.KEY = prof?.key
+      ? Object.assign(Object.fromEntries(Object.keys(KEY).map((k) => [k, null])), prof.key)
+      : KEY;
     this.b = {};
-    for (const [short, name] of Object.entries(KEY)) this.b[short] = makeEntry(name);
+    for (const [short, name] of Object.entries(this.KEY)) this.b[short] = makeEntry(name);
 
     // fingers: curl by local Z (rig curls fingers about local +Z on both hands)
     this._fingerL = [];
@@ -416,11 +424,13 @@ export class PlayerAnimator {
       for (const f of FINGERS) {
         for (const seg of FINGER_SEGS) {
           const e = makeEntry(this._findName(`${f}_${seg}_${side}_`));
+          if (e && prof?.fingerAxes?.[e.name]) e.curlAxis = new THREE.Vector3().fromArray(prof.fingerAxes[e.name]);
           if (e) list.push(e);
         }
       }
       for (const seg of FINGER_SEGS) {
         const e = makeEntry(this._findName(`thumb_${seg}_${side}_`));
+        if (e && prof?.fingerAxes?.[e.name]) e.curlAxis = new THREE.Vector3().fromArray(prof.fingerAxes[e.name]);
         if (e) { e.isThumb = true; list.push(e); }
       }
     };
@@ -491,7 +501,7 @@ export class PlayerAnimator {
     this.space = BoneSpace.adopt(this._entries, model);
     this.rest = new RestPose({ space: this.space, positions: true });
     this.rest.markClipDriven(this.lib ? [...this.lib.animatedNames] : []);
-    this.dbg = new RigDebug({ space: this.space, label: 'aloy' });
+    this.dbg = new RigDebug({ space: this.space, label: this.rigName });
 
     // bones the mixer never writes are reset every frame (overlays would
     // otherwise accumulate on them); bones the mixer DOES write keep a copy of
@@ -637,7 +647,7 @@ export class PlayerAnimator {
     // anim-core §2 step 6 — declare the convention (gate A26-one-convention)
     register({
       id: 'playerAnimator', file: 'src/entities/playerAnimator.js',
-      owner: 'player-anim', rig: 'aloy', convention: 'BoneSpace',
+      owner: 'player-anim', rig: this.rigName, convention: 'BoneSpace',
       status: 'migrated', bones: this.space.size,
       chains: this._chains.length, twists: this._twists.length,
     });
@@ -853,7 +863,7 @@ export class PlayerAnimator {
 
   handAttach(side) {
     const s = String(side || 'r').toLowerCase()[0];
-    return s === 'l' ? this.bones[KEY.handL] : this.bones[KEY.handR];
+    return s === 'l' ? this.bones[this.KEY.handL] : this.bones[this.KEY.handR];
   }
 
   /** Feet world positions + planted flags (gates: A13-no-skate). */
@@ -1116,6 +1126,9 @@ export class PlayerAnimator {
 
   _findName(prefix) {
     if (this.bones[prefix]) return prefix;
+    // Round 5: suffix-free rigs (UBC `index_01_r`) answer the Aloy-style
+    // `index_01_r_` prefix with the bone named exactly the stem
+    if (prefix.endsWith('_') && this.bones[prefix.slice(0, -1)]) return prefix.slice(0, -1);
     let best = null;
     for (const n in this.bones) {
       if (n.startsWith(prefix) && !n.includes('_end') && !n.includes('_Base')) {
@@ -3384,7 +3397,9 @@ export class PlayerAnimator {
     if (curl === 0 && thumbCurl === 0) return;
     for (let i = 0; i < list.length; i++) {
       const e = list[i];
-      _q1.setFromAxisAngle(Z_AXIS, e.isThumb ? thumbCurl : curl);
+      // Round 5: a rig whose fingers do not curl about local +Z (Rigify-style
+      // UBC: local X) sets `e.curlAxis` per finger; Aloy leaves it unset
+      _q1.setFromAxisAngle(e.curlAxis || Z_AXIS, e.isThumb ? thumbCurl : curl);
       e.bone.quaternion.multiply(_q1);
     }
   }
@@ -3507,20 +3522,20 @@ export class PlayerAnimator {
     const WQ = (bone) => bone.getWorldQuaternion(new THREE.Quaternion());
     const SPECS = [
       // [twist prefix, limb bone (source of the frame), distal joint, mode]
-      ['lowerarm_twist_01_l_', KEY.loArmL, KEY.handL, 'distal'],
-      ['lowerarm_twist_02_l_', KEY.loArmL, KEY.handL, 'distal'],
-      ['lowerarm_twist_01_r_', KEY.loArmR, KEY.handR, 'distal'],
-      ['lowerarm_twist_02_r_', KEY.loArmR, KEY.handR, 'distal'],
-      ['upperarm_twist_01_l_', KEY.upArmL, KEY.loArmL, 'proximal'],
-      ['upperarm_twist_02_l_', KEY.upArmL, KEY.loArmL, 'proximal'],
-      ['upperarm_twist_01_r_', KEY.upArmR, KEY.loArmR, 'proximal'],
-      ['upperarm_twist_02_r_', KEY.upArmR, KEY.loArmR, 'proximal'],
-      ['calf_twist_01_l_', KEY.calfL, KEY.footL, 'distal'],
-      ['calf_twist_02_l_', KEY.calfL, KEY.footL, 'distal'],
-      ['calf_twist_01_r_', KEY.calfR, KEY.footR, 'distal'],
-      ['calf_twist_02_r_', KEY.calfR, KEY.footR, 'distal'],
-      ['thigh_twist_01_l_', KEY.thighL, KEY.calfL, 'proximal'],
-      ['thigh_twist_01_r_', KEY.thighR, KEY.calfR, 'proximal'],
+      ['lowerarm_twist_01_l_', this.KEY.loArmL, this.KEY.handL, 'distal'],
+      ['lowerarm_twist_02_l_', this.KEY.loArmL, this.KEY.handL, 'distal'],
+      ['lowerarm_twist_01_r_', this.KEY.loArmR, this.KEY.handR, 'distal'],
+      ['lowerarm_twist_02_r_', this.KEY.loArmR, this.KEY.handR, 'distal'],
+      ['upperarm_twist_01_l_', this.KEY.upArmL, this.KEY.loArmL, 'proximal'],
+      ['upperarm_twist_02_l_', this.KEY.upArmL, this.KEY.loArmL, 'proximal'],
+      ['upperarm_twist_01_r_', this.KEY.upArmR, this.KEY.loArmR, 'proximal'],
+      ['upperarm_twist_02_r_', this.KEY.upArmR, this.KEY.loArmR, 'proximal'],
+      ['calf_twist_01_l_', this.KEY.calfL, this.KEY.footL, 'distal'],
+      ['calf_twist_02_l_', this.KEY.calfL, this.KEY.footL, 'distal'],
+      ['calf_twist_01_r_', this.KEY.calfR, this.KEY.footR, 'distal'],
+      ['calf_twist_02_r_', this.KEY.calfR, this.KEY.footR, 'distal'],
+      ['thigh_twist_01_l_', this.KEY.thighL, this.KEY.calfL, 'proximal'],
+      ['thigh_twist_01_r_', this.KEY.thighR, this.KEY.calfR, 'proximal'],
     ];
     for (const [prefix, limbName, jointName, mode] of SPECS) {
       const name = this._findName(prefix);

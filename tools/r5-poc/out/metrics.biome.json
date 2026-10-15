@@ -1,0 +1,256 @@
+{
+  "mode": "biome",
+  "build": {
+    "buildMs": {
+      "start": 727,
+      "textures": 8,
+      "mask": 115,
+      "terrain": 54,
+      "scatter": 66,
+      "glb": 12,
+      "warmUp": 377,
+      "total": 833
+    },
+    "patch": {
+      "size": 200,
+      "seg": 200,
+      "terrainTris": 80000,
+      "skirtTris": 64800
+    },
+    "scatter": {
+      "columns": {
+        "instances": 1427,
+        "clusters": 11,
+        "trisEach": 48
+      },
+      "boulders": {
+        "instances": 160,
+        "trisEach": 180
+      },
+      "marram": {
+        "instances": 5200,
+        "trisEach": 96
+      },
+      "glasswort": {
+        "instances": 2600,
+        "trisEach": 36
+      },
+      "saltshards": {
+        "instances": 167,
+        "trisEach": 12
+      },
+      "kitbash": {
+        "source": "Quaternius Animated Mech \"Mike\" (CC0 1.0)",
+        "tris": 6062,
+        "ms": 164
+      }
+    },
+    "landmarkTris": 22120,
+    "tillerTris": 65920,
+    "bytes": {
+      "poc-biome.js": 223562,
+      "sand_a.webp": 406158,
+      "sand_n.webp": 764554,
+      "salt_a.webp": 384668,
+      "rock_a.webp": 638316,
+      "salt_n.webp": 758920,
+      "rock_n.webp": 702406,
+      "sounding-ring.glb": 186348,
+      "tiller.glb": 309656
+    },
+    "totalKB": 4272.1,
+    "memory": {
+      "geometries": 14,
+      "textures": 38,
+      "programs": 36
+    },
+    "rock": "rock"
+  },
+  "perf": {
+    "view": "vista",
+    "viewport": [
+      1600,
+      900
+    ],
+    "dpr": 1,
+    "snap": {
+      "gpuFrames": 180,
+      "p95GpuMs": 23.66,
+      "medianGpuMs": 13.74,
+      "frames": 180,
+      "medianFrameMs": 16.7,
+      "p95FrameMs": 18.5,
+      "maxFrameMs": 25.1,
+      "p95JsMs": 0.9,
+      "medianJsMs": 0.6,
+      "maxJsMs": 1.2,
+      "p95SimMs": 0,
+      "medianSimMs": 0,
+      "p95RenderMs": 0.8,
+      "medianRenderMs": 0.6,
+      "p95TailMs": 0,
+      "jsTerm": "sim(steps+interpolate) + renderSubmit + frameTail",
+      "maxDrawCalls": 50,
+      "minDrawCalls": 50,
+      "medianDrawCalls": 50,
+      "maxTriangles": 1406700,
+      "fps": 59.7,
+      "pixelRatio": 1,
+      "renderScale": 1,
+      "quality": "high"
+    },
+    "total": {
+      "calls": 50,
+      "tris": 1406700
+    },
+    "ledger": {
+      "sky": {
+        "draws": 1,
+        "tris": 960
+      },
+      "terrain": {
+        "draws": 1,
+        "tris": 80000
+      },
+      "skirt": {
+        "draws": 1,
+        "tris": 64800
+      },
+      "water": {
+        "draws": 1,
+        "tris": 2
+      },
+      "columns": {
+        "draws": 4,
+        "tris": 273984
+      },
+      "boulders": {
+        "draws": 4,
+        "tris": 115200
+      },
+      "marram": {
+        "draws": 1,
+        "tris": 499200
+      },
+      "glasswort": {
+        "draws": 1,
+        "tris": 93600
+      },
+      "saltshards": {
+        "draws": 1,
+        "tris": 2004
+      },
+      "landmark": {
+        "draws": 5,
+        "tris": 86320
+      },
+      "tillers": {
+        "draws": 8,
+        "tris": 190608
+      }
+    }
+  },
+  "gpuStatesDpr1": {
+    "all": {
+      "gpu": 28.89,
+      "calls": 50
+    },
+    "noGround": {
+      "gpu": 16.54,
+      "calls": 48
+    },
+    "noVegetation": {
+      "gpu": 17.57,
+      "calls": 48
+    },
+    "noRocks": {
+      "gpu": 18.55,
+      "calls": 42
+    },
+    "noProps": {
+      "gpu": 19.29,
+      "calls": 37
+    },
+    "noWater": {
+      "gpu": 17.93,
+      "calls": 49
+    },
+    "emptyFrame": {
+      "gpu": 7.59,
+      "calls": 23
+    }
+  },
+  "memoryBeforeDispose": {
+    "geometries": 15,
+    "textures": 38
+  },
+  "memoryAfterDispose": {
+    "geometries": 1,
+    "textures": 28
+  },
+  "perfDpr1.5": {
+    "snap": {
+      "gpuFrames": 180,
+      "p95GpuMs": 26.85,
+      "medianGpuMs": 24.38,
+      "frames": 180,
+      "medianFrameMs": 16.7,
+      "p95FrameMs": 18.3,
+      "maxFrameMs": 20.1,
+      "p95JsMs": 0.8,
+      "medianJsMs": 0.5,
+      "maxJsMs": 0.9,
+      "p95SimMs": 0,
+      "medianSimMs": 0,
+      "p95RenderMs": 0.8,
+      "medianRenderMs": 0.5,
+      "p95TailMs": 0,
+      "jsTerm": "sim(steps+interpolate) + renderSubmit + frameTail",
+      "maxDrawCalls": 50,
+      "minDrawCalls": 50,
+      "medianDrawCalls": 50,
+      "maxTriangles": 1406700,
+      "fps": 60,
+      "pixelRatio": 1.5,
+      "renderScale": 1,
+      "quality": "high"
+    },
+    "total": {
+      "calls": 50,
+      "tris": 1406700
+    },
+    "dpr": 1.5
+  },
+  "gpuStatesDpr1_5": {
+    "all": {
+      "gpu": 39.68,
+      "calls": 50
+    },
+    "noGround": {
+      "gpu": 16.54,
+      "calls": 48
+    },
+    "noVegetation": {
+      "gpu": 21.76,
+      "calls": 48
+    },
+    "noRocks": {
+      "gpu": 50.2,
+      "calls": 42
+    },
+    "noProps": {
+      "gpu": 24.68,
+      "calls": 37
+    },
+    "noWater": {
+      "gpu": 24.57,
+      "calls": 49
+    },
+    "emptyFrame": {
+      "gpu": 13.82,
+      "calls": 23
+    }
+  },
+  "consoleErrors": [],
+  "warnings": []
+}

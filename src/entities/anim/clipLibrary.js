@@ -179,9 +179,9 @@ function contactTravel(track, other, flags, times, n) {
 }
 
 /** Measure nominal speed, stance flags + phase offset from the recorded tracks. */
-export function analyzeGait(info) {
-  const FL = info.contactTracks[FOOT_L], FR = info.contactTracks[FOOT_R];
-  const L = info.contactTracks[BALL_L], R = info.contactTracks[BALL_R];
+export function analyzeGait(info, feet = null) {
+  const FL = info.contactTracks[feet?.FOOT_L ?? FOOT_L], FR = info.contactTracks[feet?.FOOT_R ?? FOOT_R];
+  const L = info.contactTracks[feet?.BALL_L ?? BALL_L], R = info.contactTracks[feet?.BALL_R ?? BALL_R];
   const times = info.times, n = info.frames;
   const empty = { nominalSpeed: 0, cycleDist: 0, phaseOffset: 0, stanceJitter: 0, stanceL: null, stanceR: null, warp: null };
   if (!L || !R || !FL || !FR || n < 3) return empty;
@@ -316,9 +316,16 @@ export class ClipLibrary {
     this.source = ualGltf.scene;
     this.source.updateMatrixWorld(true);
     this.sourceClips = ualGltf.animations || [];
+    /* Round 5 rig seam: a body other than Aloy carries its own bone map on
+     * `root.userData.rigProfile` ({ name, map, aim, contacts, feet }); with no
+     * profile this is byte-for-byte the Aloy setup. */
+    const prof = aloyModel.root.userData?.rigProfile || null;
+    this.rigName = prof?.name || 'aloy';
+    this.feet = prof?.feet || null;
     this.retargeter = new Retargeter({
       targetRoot: this.rig, sourceRoot: this.source,
-      map: UAL_TO_ALOY, hip: UAL_HIP, aim: AIM_RULES, contacts: CONTACT_BONES,
+      map: prof?.map || UAL_TO_ALOY, hip: UAL_HIP, aim: prof?.aim || AIM_RULES,
+      contacts: prof?.contacts || CONTACT_BONES,
       correct: 'all', rootMotion: 'strip',
     });
     this.animatedNames = new Set(this.retargeter.animatedTargetNames());
@@ -326,7 +333,7 @@ export class ClipLibrary {
     this.bakeMs = 0;
     register({
       id: 'anim/clipLibrary', file: 'src/entities/anim/clipLibrary.js',
-      owner: 'anim-core', rig: 'aloy', convention: 'BoneSpace (via Retargeter)',
+      owner: 'anim-core', rig: this.rigName, convention: 'BoneSpace (via Retargeter)',
       status: 'migrated', bones: this.animatedNames.size,
     });
   }
@@ -385,7 +392,7 @@ export class ClipLibrary {
         groundFix: opts.groundFix !== false, amp, name: so.name ?? name,
       });
       r.clip.name = so.name ?? name;
-      r.gait = isGait ? analyzeGait(r.info)
+      r.gait = isGait ? analyzeGait(r.info, this.feet)
         : { nominalSpeed: 0, cycleDist: 0, phaseOffset: 0, stanceJitter: 0, stanceL: null, stanceR: null };
       r.amp = amp;
       return r;
