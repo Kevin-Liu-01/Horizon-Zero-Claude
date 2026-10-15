@@ -890,20 +890,146 @@ all eight. The standing case passes there, as it should.
 
 ### Measured
 
-__MEASURED__
+Port 5218, in isolation, on this code (the box shared with five other lanes'
+suites: load average 9–348, median frame gap 56–99 ms — 10–18 fps).
+
+**`A97b-npc-talk-freeze` 10/10 PASS** on the final gate (eight seated
+conversations a run, so 80 seated + 10 standing):
+
+| | from behind (π) | from the side (±π/2) |
+|---|---|---|
+| bearing error at the card | 3.142 rad | 1.571 rad |
+| stood up (`Sitting_Exit` at full weight, state `talk`) | 40 / 40 | 40 / 40 |
+| faced (≤ 0.35 rad), speaker's clock, bar 4.6 s | 3.30–3.46 s | 2.08–2.35 s |
+| worst error after facing / at the close | ≤ 0.348 / ≤ 0.019 rad | ≤ 0.345 / ≤ 0.018 rad |
+| back on the seat after (simulation) | 9.57–9.65 s | 8.33–8.40 s |
+
+- Head: the drawn head bone stayed at least **0.187 rad inside** its bar on every
+  frame from 1 s on in all 80 (worst excess −0.315 … −0.187 rad).
+- Freeze in force in all 40 `talk-live` conversations: simulation time during
+  the card **0**, every other person moved **0.000 m**; in `?shot` the world ran
+  3.23–4.73 s behind the card.
+- Feet: stance windows while standing 0.0008–0.0096 m, ground contact
+  0.0126–0.0178 m; the planted foot through stand-up, turn, return and sit-down
+  with NO crossfade exclusion **0.0122–0.0229 m** (13–36 windows a conversation)
+  against 0.08; the any-toe contact term over the same span (reported)
+  0.018–0.064 m — the clip's own scuff (`Sitting_Enter`'s right toe; see the
+  `_liftFirst` note above).
+- Back on the seat: **0.000 m and 0.000 rad** off the mark in all 80, seat drop
+  −0.30 restored, largest heading change on the way 0.062–0.080 rad in one frame
+  (bar 0.1); crowd push 0.000 m, world push 0.000 m, rescues 0.
+- Standing case (THOK, from behind, freeze): 3.142 → 0.000–0.013 rad, faced after
+  2.05–2.11 s of his clock, 6 steps, stance 0.0015–0.0040 m, contact
+  0.0023–0.0193 m.
+
+The ten runs BEFORE the gate change below: 9/10 PASS (every other term of all
+ten inside its bar: faced 2.05–3.48 s, planted foot ≤ 0.021 m, back on the mark
+0.000 m / 0.000 rad in the 79 returns that finished); run 9 FAILED one term,
+`vala/talk-live/side:backToSeat` — `back` null, VALA in state `sit`
+with `Sitting_Enter` still in progress when the 30 s return window ran out.
+
+**One gate change, recorded in the gate header (no bar moved).** The return to the
+seat was followed for 30 s of WALL time. It runs on the simulation clock
+(talkT 5.5 s, the stepped turn, `Sitting_Enter`) and took 8.33–8.40 s (side) /
+9.57–9.65 s (behind) of simulation in all 79 returns that finished — but main.js
+clamps a frame to 50 ms, so at 10–12 fps 30 s of wall bought about 15 s of
+simulation, and with the box stalling during run 9 it bought less. The window is
+now 30 s of SIMULATION time (a 150 s wall guard), the rule `RUN_SIM` states for
+every other window in this file; the seated card hold is likewise 11 s of the
+speaker's own clock (a 90 s wall guard) instead of 11 s of wall. What
+`backToSeat` and `facedWhileCardOpen` assert is unchanged.
+
+**`A95-npc-roster` 10/10** (13 NPCs, 13 signatures, 6 builds, 13 skeletons, 13
+TALK entries). **`A96-npc-animated` 10/10** (closest pair 0.622–0.653 m against
+0.55, 0 frames under the bar, 0 rescues, 6–7 route-walkers over 8 m, every NPC
+≥ 3 clips, mixers 60.01–60.04 s). **`A97-npc-no-skate` 10/10** (crowd worst
+stance 0.003–0.034 m — working 0.003–0.017, walking 0–0.034 — over 51–106
+working and 55–119 walking windows, 0 rescues; turn phase stance 0.0018–0.0058 m,
+ground contact 0.0031–0.0078 m, 14–19 turn windows, `talkTo` heading change 0 in
+all ten; the excluded crossfade windows it reports read 0.54–1.21 m — the open
+crossfade minor below). **`V40-settlement-life` PASS** (13 in frame, 8 activities
+at 19:24; read zoomed: two walkers in stride, a kneeling repair, a standing
+talker, a sitter talking at the fire, two talkers gesturing, a lookout with a
+spear). **`V41-npc-closeup` PASS** (SONA 1.803 m vs BAST 1.753 m, knee swing
+1.244 / 1.267 rad, 8.23 / 8.09 m in 8 s, max lean 3.4°; read: the same framing as
+round 5 — the pair from behind in tall grass, outfits and hair plainly different,
+faces and feet not visible in the still, so the gait / no-skate half of its
+verdict is the measured terms, not the picture).
+
+**Memory and budget, on this code** (one run each, `--only` on 5218):
+`A90-memory-stability` **PASS** — 30 kills, heap −3.1 %, geometries **+12** from the
+low 168 baseline (round 5: +33 from 173), textures −19, scene objects −644;
+`A90-memory-stability-expansion` **PASS** — `nonMachineGrowth` **0**, orphan
+machine roots **0**, heap +0.6 %, objects −971; `A90-rig-reclaim` **PASS** — geo
++6 / tex 0 after 30 cycles (budget 40 / 30), per live machine geo 0 / tex 0.38,
+held-then-released 0 / 0 (round 5: 0 / 0; the 30-cycle term is ROUND4-MEMORY.md
+§6.3's +1…+9 range and machines-expansion's, not this lane's — nothing here
+creates or frees a machine); `A9-perf-budget` **PENDING** (319 draw calls, inside
+350; fps 10.6 not attributable — null-frame GPU 7.78 ms on this box);
+`A21-real-draw-calls` **PENDING** (draw calls 322 / 211 / 339 and triangles PASS;
+GPU and frame-time terms not attributable — null-frame GPU 16.15 ms). Nothing in
+this round creates a geometry, texture, material or scene object: the stand-up,
+the return and the prompt flag run on the bodies, mixers and entries built at
+boot; the few records added (`_liftHold`, the reused `_lockFeet` result, the
+frozen `_resolveBody` options) are made once, at construction or module load, and
+the per-frame cost the prompt rule adds is one boolean write per person.
+`dispose()` is unchanged and still releases every entry, collider, mixer and
+skeleton.
 
 ### Film (Aloy's chase camera, read)
 
-`shots/npc-seat-r1-vala-live-behind.png`, `npc-seat-r1-karst-live-behind.png`
-(freeze in force, from behind) and `npc-seat-r1-vala-play-side.png`,
-`npc-seat-r1-karst-play-side.png` (normal play, from the side): ten frames each,
-cropped round the speaker. Before `talkTo` the speaker sits with their back
-(or shoulder) to Aloy; 0.3 s the head is already coming round as `Sitting_Exit`
-lifts them; 1.1 s up, looking at her over the shoulder with the chest turned;
-1.8–3.4 s stepping round, face on her; 4.2 s squared up and talking. After the
-card they turn back to the fire, sit (`Sitting_Enter`) and are seated with their
-back to her again. `shots/npc-seat-before.png` / `npc-seat-after.png`: the
-seated pose before and after the seat-foot solve.
+Final films (r2, this code): `shots/npc-seat-r2-vala-live-behind.png`,
+`npc-seat-r2-karst-live-behind.png` — a REAL session (no `shot` param at all,
+`__GAME__.start(false)`, the card freezes the world), Aloy 1.8 m behind the
+seat, the card opened with the player's own E hold on the speaker's TALK prompt
+(VALA from 0.15 rad off dead-behind, where her prompt and not TEB's is the
+nearest); `npc-seat-r2-vala-play-side.png` (−π/2) and
+`npc-seat-r2-karst-play-otherside.png` (+π/2) — `?shot`, the world running
+behind the card (from KARST's −π/2 side VARL and a spear rack stand between
+the chase camera and him; the gate runs that side). Each is a CDP screencast of
+the whole conversation from Aloy's chase camera, with 19 frames picked on the
+SPEAKER'S own clock (the hold under the freeze, simulation time otherwise),
+cropped round the speaker, body and head error to Aloy burned into each tile;
+`-full-0/1/2.png` are the uncropped before / 4.2 s into the card / back-on-the-
+seat frames. Read, frame by frame, zoomed:
+
+- **VALA, real session, from behind** — before: seated, back to Aloy,
+  `TALK · VALA` filling under the E hold. 0.3–1.1 s: `Sitting_Exit` lifts her,
+  back still to Aloy, head coming round over her right shoulder (head error
+  1.73 → 1.21 rad with the body still at 2.99 — the look's 1.9 rad reach). 1.5–
+  2.9 s: stepping round (body 2.71 → 0.80), face on Aloy (head 0.39 → 0.04).
+  3.5 s squared up (body 0.00) and talking to 5.5 s; no prompt in any card frame.
+  Card closed: she stays on her feet facing Aloy for the rest of `talkT`, then
+  (+5.5 → +8.1 s of simulation) steps back round to the fire and (+8.9 s) sits on
+  `Sitting_Enter`, back to Aloy again: 0.000 m and 0.000 rad off her mark, seat
+  drop −0.30 restored, largest heading change on the way 0.080 rad in one frame.
+- **KARST, real session, from behind** — the same arc: up with his back to her
+  by 1.1 s, looking over his shoulder; profile at 1.9 s, 3/4 at 2.9 s, faced at
+  **3.42 s** of his clock (body 0.000 from 4.2 s); back on his mark 0.000 m /
+  0.000 rad; 0 prompt frames in 137.
+- **VALA, `?shot`, from the side** — head on Aloy by 1.1 s (0.04) while still
+  rising side-on, faced at **2.25 s**; back on her mark 0.000 m / 0.000 rad.
+- **KARST, `?shot`, from the other side** — head on Aloy by 1.1 s (0.09), faced at
+  **2.20 s**, turned back and seated at +8.1 s; 0.000 m / 0.000 rad.
+
+The judge's own staging for a conversation (round 5: Aloy walks up from behind,
+stops at 2.5 m, holds 0.35 s, presses E), in a real session, same screencast:
+`npc-seat-r2-vala-live-behind-walkin.png` (from 6.5 m; W released at 2.5 m, she
+coasts to 1.62 m; E opens VALA's card; error 2.992 rad at the card, faced at
+**3.22 s**, back on her mark 0.000 m / 0.000 rad, 0 prompt frames in 373),
+`npc-seat-r2-karst-live-behind-walkin.png` (from 4 m — from 6.5 m on either line
+the fire ring's logs and the tents stop her at 5.35–5.55 m, so E finds no prompt;
+stops at 2.37 m, E opens KARST's card; 3.06 rad, faced at **3.41 s**, back
+0.000 m / 0.000 rad, 0 prompt frames) and `npc-seat-r2-karst-live-otherside-walkin.png`
+(from 4 m on the +π/2 line; 1.63 m; 1.646 rad, faced at **2.26 s**; back 0.000 m /
+0.000 rad). No console errors. These three are reported by their logged numbers
+only: the image viewer was unavailable when they were taken, so their frames
+have NOT been read (the four films above were).
+
+No console errors in any of the four. `shots/npc-seat-before.png` /
+`npc-seat-after.png`: the seated pose before and after the seat-foot solve. (The
+r1 films of the checkpoint, `npc-seat-r1-*`, were taken with a direct `talkTo`
+and wall-clock frame times; superseded.)
 
 ### The r1 film judge's minors
 
@@ -914,11 +1040,33 @@ seated pose before and after the seat-foot solve.
 - **Planted feet slide in the crossfades a conversation triggers** — the seated
   transitions are fixed (the stand-up hold; the sit fade) and A97b judges them
   with no crossfade exclusion. The general case (gait → stand, kneel → stand at
-  `talkTo`, and A97's crossfade exclusion) is NOT closed: owner npc, next round.
-- **The `[E] TALK` prompt stays on screen during a live conversation** — out of
-  lane (`src/items/interactables.js` clears it only in `update`, which does not
-  tick under the freeze; visible again in the KARST films as "TALK · KARST").
-  Owner: items/interactables or shell-hud.
+  `talkTo`, and A97's crossfade exclusion) is NOT closed, and is not cheap: the
+  pack has no kneel-exit clip and a gait → stand blend needs a stepped
+  transition like the stand-up's. What A97 excludes and reports for it this
+  round: worst crossfade window per run 0.54–1.21 m over ten runs — OLIN's
+  `walk` → `goto` hand-off in 8 of 10 (1.00–1.21 m in 0.31–0.75 s, the body still
+  travelling while the stance foot blends), DELVE idling in 2 (0.54–0.55 m).
+  Owner npc, next round.
+- **The `[E] TALK` prompt stays on screen during a live conversation** — the
+  speaker's own prompt is CLOSED in lane; the general rule is not this lane's.
+  Traced: in a real session the E press that opens the card nulls
+  `interactables.current` in `_fire`, and nothing re-picks one while the world
+  is frozen, so the films' "TALK · KARST" came from two staging artefacts — the
+  r1 freeze films opened the card with a direct `talkTo` (no E press, so the
+  last frame's prompt stayed), and under `?shot` `interactables.update` keeps
+  running behind the card (its `live` test admits `shot`) and re-picks the
+  nearest entry every frame, which is the person being spoken to. `NpcSystem.update`
+  now sets the entry contract's own `disabled` flag on every person's TALK entry
+  while a card is open (one boolean per person per frame, no allocation;
+  re-enabled the frame the card closes). Measured in the r2 films: real session,
+  card opened with the player's E hold — **0 prompt frames in 189 (VALA) and
+  137 (KARST)**; `?shot`, world running — no `TALK · VALA` / `TALK · KARST` in
+  any card frame. What `?shot` still shows under the card is the next-nearest
+  entry that is NOT this lane's: `REST & SAVE` (the campfire) beside VALA and
+  `TALK · VARL` (progression's own VARL entry) beside KARST. A rule that no
+  prompt is picked while `ctx.state === 'dialogue'` belongs to
+  `src/items/interactables.js` (focus-items) or the HUD (shell-hud); owner:
+  focus-items.
 
 ## 5. The no-skate contract
 
@@ -1137,6 +1285,42 @@ A41c-expansion (protocol timeout after 909 s at the load peak); player-control
 A31b-no-ghost-without-occluder; spatial A23-aim-cost, A23b-hull-fidelity.
 PENDING: A9-perf-budget (core), A21-real-draw-calls (core-platform),
 A31-aim-strafe-skate (animator).
+
+npc polish (film judge r1, 70) final state (port 5218): `A97b-npc-talk-freeze`
+gained the seated case (§4h) and its seated windows moved from wall time to the
+speaker's / simulation clock (recorded in the gate header; no bar moved).
+Isolation: `A97b` **10/10** on the final gate (9/10 on the wall-clock window
+before it — the one FAIL was that window, §4h), `A95` **10/10**, `A96` **10/10**,
+`A97` **10/10**, `V40` PASS, `V41` PASS; memory `A90-memory-stability`,
+`A90-memory-stability-expansion`, `A90-rig-reclaim` PASS, `A9` and `A21` PENDING
+(not attributable on this box) — numbers in §4h.
+
+Full suite on port 5218 on the final code, run to completion (12:27–15:13,
+load average 7–79 with five other lanes' suites running): **244 gates — 179
+PASS, 19 FAIL, 4 PENDING, 42 NEEDS-JUDGE**, no lane file failed to load, no gate
+unrun. Every gate of this lane PASSES inside it — `A95-npc-roster`,
+`A96-npc-animated` (closest pair 0.657 m, 0 frames under the bar),
+`A97-npc-no-skate` (turn phase 0.0021 m stance / 0.0070 m contact),
+`A97b-npc-talk-freeze` (all eight seated conversations), `V40-settlement-life`
+(13 in frame, 7 activities), `V41-npc-closeup` — and so do the neighbours that
+call `talkTo`: `A99-dialogue`, `A65-save-restore(-expansion)`,
+`A66-quest-objectives(-expansion)`, `V35-settlement`; `V45-dialogue-panel`
+NEEDS-JUDGE (its frame, `shots/npc-polish-V45.png`, not read this round — viewer
+unavailable). `A90-memory-stability`, `A90-memory-stability-expansion`,
+`A90-rig-reclaim` and `A90b-memory-attribution` PASS inside the suite too. None
+of the 19 FAILs is this lane's; by owner: combat A4-draw-strength, A51-nock-gap;
+animator A17-draw-beats; core-platform A20b-no-system-errors (systemErrors and
+hook errors empty — `framesAdvanced` 71 < 120 on this box); anim-core
+A27-timescale-safe; audio A75c-suspicion-scan (`pingThrottled`);
+core-platform-followup2 A81-canon-speed-bands; core-platform-gtao
+A108-ao-periodicity; machine-ai A40-lost-contact, A41c-sustained-variety (assert
+timeout 480 s); machine-ai-expansion A41c-expansion (protocol timeout after
+923 s), A41d-held-radius-coverage (assert timeout 420 s); machine-rig
+A47b-corpse-posed, A47c-corpse-mass, A50b-aim-on-drawn-geometry; player-control
+A31b-no-ghost-without-occluder, A31c-clamp-framing; spatial A23-aim-cost,
+A23b-hull-fidelity. PENDING: A9-perf-budget (core), A21-real-draw-calls
+(core-platform), A13-no-skate and A31-aim-strafe-skate (animator, too few clean
+stance windows on this box).
 
 Round-3 full-lane state (port 5218): `A95-npc-roster` PASS (13 NPCs, 13 distinct
 signatures, 6 builds, 13 unique skeletons); `A96-npc-animated` **17/17 PASS in

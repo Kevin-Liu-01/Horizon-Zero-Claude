@@ -155,6 +155,9 @@ import { SaveSystem, SLOT } from './save.js';
 import { QuestLogUI } from '../ui/quests.js';
 import { SkillTreeUI } from '../ui/skills.js';
 import { DialogueUI } from '../ui/dialogue.js';
+// READ-ONLY: `MELEE.silent` (instant list + heavyFrac) belongs to player-melee.
+// weapons.js imports nothing, so this cannot form a cycle.
+import { MELEE } from '../combat/weapons.js';
 
 /* ========================================================================== */
 /* 1. XP + LEVELS                                                             */
@@ -218,6 +221,94 @@ export const PLACE_NAMES = {
 /* ========================================================================== */
 
 /**
+ * SILENT STRIKE on anything melee does not kill outright is a FRACTION OF MAX
+ * HEALTH hit, not a raw-impact hit (fix round 1, judge-progression-r2-r0).
+ *
+ * `melee.silentStrike()` sends `impact = maxHealth × MELEE.silent.heavyFrac`
+ * (0.55, owned by player-melee) for every species outside
+ * `MELEE.silent.instant`. The two Prowler nodes used to multiply that impact by
+ * 1.75 × 2.0 = 3.5, so three skill points turned one stab into 1.35 × a
+ * Thunderjaw's max health — the apex fight, and the win condition, ended from
+ * the grass. Canon (docs/research/mechanics.md, Silent Strike row): instant
+ * kills on humans and small machines only, "big damage + brief stun on
+ * mediums". So the skills now RAISE THE FRACTION, one `fracStep` each
+ * (0.55 → 0.65 → 0.75), and the wrapper clamps the hit's FINAL damage — after
+ * armour, weak spots and BRITTLE, which can all multiply impact in
+ * `Machine.takeDamage` — to:
+ *   - at most `capFrac` × maxHealth on every non-instant species (a
+ *     full-health medium always survives one stab, at any difficulty), and
+ *   - for `apex` species, additionally at most `health − 1`: a Silent Strike
+ *     can never be the killing blow on an apex machine.
+ * Difficulty and Precision (`damageOut`) still scale the stab like every other
+ * hit; the clamp is what keeps Story + every skill inside canon.
+ */
+export const SILENT_STRIKE = {
+  fracStep: 0.10,
+  capFrac: 0.8,
+  apex: ['thunderjaw', 'stormbird', 'behemoth', 'tallneck', 'corruptor'],
+};
+const SILENT_APEX = new Set(SILENT_STRIKE.apex);
+/** player-melee's base fraction, read live so a retune there is followed. */
+const silentBaseFrac = () => {
+  const f = MELEE?.silent?.heavyFrac;
+  return Number.isFinite(f) && f > 0 ? f : 0.55;
+};
+/** Species melee's own Silent Strike kills outright (no fraction, no clamp). */
+const silentInstant = (kind) => !!MELEE?.silent?.instant?.includes?.(kind);
+const _pct = (f) => Math.round(f * 100);
+
+const _silentWp = new THREE.Vector3();
+/**
+ * The factor `Machine.takeDamage` will multiply this hit's impact by — the
+ * same three steps, in the same order, as machine.js's impact channel: armour
+ * floor, then weak spots / weak struck part (max), then BRITTLE ×2. The clamp
+ * has to be on DAMAGE, not on impact, or a stab that happens to land on a
+ * Thunderjaw's heart (×3) or on a frozen one (×2) walks straight through it.
+ * A64c re-measures the outcome through the real method, so if machine.js ever
+ * grows a fourth factor this mirror is caught, not trusted.
+ * Not a hot path: one call per Silent Strike.
+ */
+function silentImpactMult(m, hit) {
+  let mult = 1 - (m.armor ?? 0);
+  let part = null;
+  for (let o = hit.object; o; o = o.parent) {
+    if (o.userData?.part) { part = o.userData.part; break; }
+  }
+  if (part && !part.attached) part = null;
+  if (!part && hit.point && typeof m.resolveHitVolume === 'function') {
+    const v = m.resolveHitVolume(hit.point);
+    if (v && v.part) {
+      for (const q of (m.parts || [])) { if (q.name === v.part && q.attached) { part = q; break; } }
+    }
+  }
+  if (hit.point) {
+    for (const wp of (m.weakPoints || [])) {
+      if (!wp || wp.enabled === false || !wp.obj) continue;
+      wp.obj.getWorldPosition(_silentWp);
+      if (_silentWp.distanceToSquared(hit.point) <= wp.radius * wp.radius) {
+        mult = Math.max(mult, wp.mult ?? 3);
+      }
+    }
+  }
+  if (part?.weak) mult = Math.max(mult, part.weakMult ?? 1);
+  if (m.brittleT > 0) mult *= 2;
+  return mult;
+}
+
+/**
+ * Largest IMPACT this Silent Strike may carry so its final damage stays inside
+ * `SILENT_STRIKE` — ≤ capFrac × maxHealth, and for an apex ≤ health − 1.
+ */
+function silentImpactCap(m, hit) {
+  const maxH = m.maxHealth ?? 100;
+  let cap = SILENT_STRIKE.capFrac * maxH;
+  if (SILENT_APEX.has(m.kind)) cap = Math.min(cap, (m.health ?? maxH) - 1);
+  if (!(cap > 0)) return 0;
+  const k = silentImpactMult(m, hit);
+  return k > 0 ? cap / k : cap;
+}
+
+/**
  * `mult` keys are read through `progression.mult(key)` and are applied at the
  * call sites listed in `hook`. Nothing here is a number on a screen that does
  * not exist: every node changes a value the simulation already reads this
@@ -230,9 +321,10 @@ export const SKILLS = [
   {
     id: 'prowler-silent-strike', tree: 'Prowler', tier: 1, cost: 1,
     name: 'Silent Strike', requires: [],
-    desc: 'Strikes from cover deal +75% damage.',
-    mult: { silentStrikeDamage: 1.75 },
-    hook: 'Machine.takeDamage — hit.type "silent-strike"/"melee-stealth"',
+    desc: `Silent Strikes on machines too big to kill outright hit for ${
+      _pct(silentBaseFrac() + SILENT_STRIKE.fracStep)}% of their max health before armour, up from ${_pct(silentBaseFrac())}%.`,
+    mult: { silentStrikeFrac: SILENT_STRIKE.fracStep },
+    hook: 'Machine.takeDamage — hit.type "silent-strike" (or hit.silent === true)',
   },
   {
     id: 'prowler-low-profile', tree: 'Prowler', tier: 1, cost: 1,
@@ -251,8 +343,8 @@ export const SKILLS = [
   {
     id: 'prowler-strike-from-above', tree: 'Prowler', tier: 3, cost: 2,
     name: 'Strike from Above', requires: ['prowler-silent-strike'],
-    desc: 'Silent Strike damage doubles again, and tears components loose.',
-    mult: { silentStrikeDamage: 2.0, tearOut: 1.15 },
+    desc: `Silent Strikes hit for ${_pct(silentBaseFrac() + 2 * SILENT_STRIKE.fracStep)}% of a large machine's max health before armour, and tear components loose. An apex machine always survives one.`,
+    mult: { silentStrikeFrac: SILENT_STRIKE.fracStep, tearOut: 1.15 },
     hook: 'Machine.takeDamage',
   },
 
@@ -324,9 +416,10 @@ const MULT_DEFAULTS = {
   silentStrikeDamage: 1, detectionRate: 1, noiseRadius: 1, tearOut: 1,
   damageOut: 1, damageIn: 1, concentrationDuration: 1, herbPotency: 1,
   lootYield: 1, gatherYield: 0, pouchBonus: 0, deathPouchKeep: 0,
+  silentStrikeFrac: 0,
 };
 /** Keys that ADD instead of multiply. */
-const ADDITIVE = new Set(['gatherYield', 'pouchBonus', 'deathPouchKeep']);
+const ADDITIVE = new Set(['gatherYield', 'pouchBonus', 'deathPouchKeep', 'silentStrikeFrac']);
 
 /* ========================================================================== */
 /* 3. DIFFICULTY (missing-systems-difficulty / progression-014)               */
@@ -1215,6 +1308,11 @@ export class Progression {
         else out[k] = (out[k] ?? 1) * s.mult[k];
       }
     }
+    // `silentStrikeDamage` stays a published multiplier, but it is DERIVED from
+    // the fraction the skills add — (0.55 + Σstep) / 0.55, i.e. 1 → 1.18 → 1.36
+    // — never a product of per-node factors (that product was 3.5).
+    const hf = silentBaseFrac();
+    out.silentStrikeDamage = (hf + out.silentStrikeFrac) / hf;
     // difficulty folds into the same two combat channels the skills use
     const d = this.difficultyDef;
     out.damageIn *= d.damageIn;
@@ -2949,7 +3047,11 @@ export class Progression {
       p.addPouch = wrapped;
     }
 
-    /* ---- damage dealt: difficulty.damageOut × Precision × Tinker × Strike ---- */
+    /* ---- damage dealt: difficulty.damageOut × Precision × Tinker × Strike ----
+     * A Silent Strike on a non-instant species is a fraction-of-health hit:
+     * the Prowler nodes raise the fraction (`silentStrikeDamage` is derived
+     * from it), and `silentImpactCap` clamps the final damage to
+     * SILENT_STRIKE.capFrac × maxHealth, and below lethal on an apex. */
     const first = this.ctx.machines?.list?.[0];
     const Proto = first ? Object.getPrototypeOf(first) : null;
     const MachineProto = this._rootMachineProto(Proto);
@@ -2962,9 +3064,13 @@ export class Progression {
           if (!wrapped.__hzcNative && hit) {
             const dmg = self.mult('damageOut');
             const tear = self.mult('tearOut');
-            const silent = (hit.type === 'silent-strike' || hit.silent === true)
-              ? self.mult('silentStrikeDamage') : 1;
-            if (dmg !== 1 || tear !== 1 || silent !== 1) {
+            const isSilent = hit.type === 'silent-strike' || hit.silent === true;
+            const silent = isSilent ? self.mult('silentStrikeDamage') : 1;
+            // A Silent Strike melee does not kill outright is a fraction-of-
+            // health hit and always takes the clamp (SILENT_STRIKE above) —
+            // even at Normal with no skills, where nothing else is off 1.0.
+            const fracHit = isSilent && !silentInstant(this.kind);
+            if (dmg !== 1 || tear !== 1 || silent !== 1 || fracHit) {
               // `machine.js:640` maps the ROUND-1 channel onto impact, but ONLY
               // while `hit.impact === undefined`. Writing `impact: 0` over a
               // legacy `{ baseDamage }` hit therefore did not scale that hit —
@@ -2976,18 +3082,20 @@ export class Progression {
               const sTear = tear * (silent > 1 ? 1.15 : 1);
               // shallow copy: `combat` may be reusing its hit record
               h = { ...hit };
+              let scaled = (legacy ? hit.baseDamage : (hit.impact ?? 0)) * dmg * silent;
+              if (fracHit) scaled = Math.min(scaled, silentImpactCap(this, hit));
               if (legacy) {
                 // Leave `impact` undefined so machine.js still runs its own
                 // compat branch — that branch is also what maps a legacy
                 // `type:'fire'|'shock'|'freeze'` onto elemental buildup, which
                 // a resolved-to-impact copy would silently drop.
-                h.baseDamage = hit.baseDamage * dmg * silent;
+                h.baseDamage = scaled;
                 // ...but pin `tear` here, or the derived tear would ride the
                 // scaled baseDamage (picking up damageOut) and miss tearOut.
                 // 0.35 mirrors machine.js:643.
                 h.tear = (hit.tear ?? hit.baseDamage * 0.35) * sTear;
               } else {
-                h.impact = (hit.impact ?? 0) * dmg * silent;
+                h.impact = scaled;
                 h.tear = (hit.tear ?? 0) * sTear;
                 // keep the legacy field in sync: a consumer reading either one
                 // must see the same, skill-scaled number.
@@ -3257,6 +3365,7 @@ export class Progression {
       mults: {
         damageIn: this.mult('damageIn'), damageOut: this.mult('damageOut'),
         silentStrikeDamage: this.mult('silentStrikeDamage'),
+        silentStrikeFrac: this.mult('silentStrikeFrac'),
         concentrationDuration: this.mult('concentrationDuration'),
         gatherYield: this.mult('gatherYield'), lootYield: this.mult('lootYield'),
         detectionRate: this.mult('detectionRate'), noiseRadius: this.mult('noiseRadius'),

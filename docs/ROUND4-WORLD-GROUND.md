@@ -553,6 +553,24 @@ lattice. The one action that closes V33-rim and the V44 rim tiles is the
 `updateGtaoMaterial` call quoted above, landed by core-platform or by orchestrator
 grant.
 
+**CLOSED (Oct 2, `world-ground-r2` fix round, HEAD 2ce8e0c).** `core-platform-gtao`
+landed the fix in `df66655`, not as the `updateGtaoMaterial` call quoted above. It
+patches the shader instead: the centre depth is read from one texel, and AO fades
+out between 60 and 120 m (`docs/ROUND4-CORE-GTAO.md`). `engine.gtaoPatched` is
+`true`, and GTAO stays on at the high tier (`gtaoScale` 0.5), the tier that showed
+the lattice. The same-page A/B against GTAO off, taken on 5210 at the V33 camera
+over the massif band (rows 230–520, cols 250–1340), now measures **rms 0.0001,
+peak 0.0168**. Before the fix it was 0.0614–0.0655. Off against off is 0.0000.
+At the V44 station, the wall band (top 40 % of each full-res frame) measures rms
+0.0001 / 0.0001 / 0.0001 / 0.0002 at bearings 35 / 125 / 215 / 305. Film:
+`shots/gates/V33-rim.png`, the 2x crop `shots/wgr2-fix1-v33-crop.png`,
+`shots/gates/V44-biomes.png` and `shots/wgr2-fix1-v44-crop.png`, all with strata,
+talus and haze, and no screen-locked grid. The speckle still visible on the V44
+wall is rock grain from the terrain shader; GTAO on and off are identical there.
+**A63's GTAO bypass is deleted** (`tools/gates.round4.world-ground.mjs`), so the
+beds are now measured in the shipped frame: A63 PASS, bedRms 0.02247, unchanged.
+`terrain.js`, `vegetation.js` and `water.js` are untouched.
+
 ---
 
 ## WAVE 4 — `world-ground-expansion`: biomes inside the 330 m disc
@@ -962,8 +980,7 @@ three consecutive PASSes on this build. The species flake belongs to
   attribution: 80 machine draws in the worst frame, engine-side ceiling spent,
   owner `machine-rig` LOD chains. Unchanged by this lane (vegetation is 43
   draws, terrain+sky 13).
-* **The GTAO lattice on every distant vista** (still visible in `V33-rim` and
-  `V44-biomes`) — `src/core/engine.js`, `core-platform`, one line
-  (`screenSpaceRadius: true` or a distance fade). Diagnosis and the
-  one-line repro are in FIX ROUND 1 §1 above.
+* ~~The GTAO lattice on every distant vista~~ — CLOSED by `core-platform-gtao`
+  (`df66655`); measured on 5210 as rms 0.0001 vs GTAO-off at V33 (see the CLOSED
+  note under "ROUTED TO `core-platform`").
 

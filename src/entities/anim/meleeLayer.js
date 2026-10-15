@@ -86,6 +86,11 @@ const _rgDir = new THREE.Vector3();
 const _snapD = new THREE.Vector3();
 /** `_bowSolve`'s copy of the raw escape, kept across the constraint projection. */
 const _bsRaw = new THREE.Vector3();
+/** The carry's tilt search (round 6): the midpoint it started from, the best
+ *  candidate's midpoint and haft direction. */
+const _bsMid0 = new THREE.Vector3();
+const _bsMidBest = new THREE.Vector3();
+const _bsDirBest = new THREE.Vector3();
 /** `_bowClearDir`'s second escape: the predicted bow's, kept beside the live one. */
 const _bwDir2 = new THREE.Vector3();
 /** `_hairGapFor`'s own three: a candidate carry segment and one strand. */
@@ -138,6 +143,8 @@ const _ahDir = new THREE.Vector3();
 const _ahX = new THREE.Vector3();
 const _ahA = new THREE.Vector3();
 const _ahB = new THREE.Vector3();
+/** ...and `_armHullFinal`'s wrist goal (char). */
+const _ahG = new THREE.Vector3();
 const _ahQi = new THREE.Quaternion();
 const _ident = new THREE.Quaternion();
 /** The identity, as a value (never mutated). */
@@ -1152,13 +1159,33 @@ const FORE_CLEAR = 0.24;
 /** S5: the forearm/fist capsule radius, and the daylight kept to a hull. */
 const ARM_R = 0.05;
 const ARM_CLEAR = 0.06;
+/** `_armHullFinal`'s own daylight (round 6): it works on the drawn matrices,
+ *  so it needs no prediction margin — it acts when the forearm or fist is
+ *  within this of a hull, and stops when it is this clear. (Tried at 0.012 to
+ *  give marginal swings at a Tallneck's foot lattice more reach: 5 of 12
+ *  whiffed against 3 of 12 at 0.03 — the reach there is short by itself, not
+ *  by this margin — so it stays.) */
+const ARM_CLEAR_FINAL = 0.03;
 /** ...and the most the guard may move the wrist goal in one frame (sideways
  *  out of a hull / back toward the shoulder): the blade is rigid in the fist,
  *  and a guard that shoves the hand half a metre takes the blade off the
  *  machine it was aimed at — the aim (melee `_aimAt`) is what picks a line the
  *  arm fits on; this only takes out what that proxy misses. */
 const ARM_PUSH_MAX = 0.40;
-const ARM_RETRACT_MAX = 0.25;
+/* round 6, Oct 2: 0.25 -> 0.40. A heavy recovering against a Sawtooth's low
+ * head sandwiches the fist between two head capsules (the escape flips each
+ * pass, so the guard draws the fist back toward the shoulder instead), and
+ * 0.25 m of draw-back left it 0.062 m short of `ARM_CLEAR` — A106's swing row
+ * read the forearm 0.004 m INSIDE rig_head#55 on one frame of 39. The recover
+ * is after the hit: the blade has nothing left to land, so the arm may fold as
+ * far as the push may move it. The strike-leg trim (`ARM_PUSH_STRIKE`, the
+ * `1 - sw` taper below) is unchanged. */
+const ARM_RETRACT_MAX = 0.40;
+/** ...and when the fist is actually INSIDE a hull (see `_armHullGuard`): as
+ *  far back toward the shoulder as the arm folds (the 0.25 m floor there) —
+ *  a heavy's contact puts the fist 0.80 m out (ruling R3), and a Tallneck's
+ *  foot lattice stands 0.5 m in front of her chest at the head-on stand. */
+const ARM_RETRACT_INSIDE = 0.65;
 /** ...and through the release and the strike, where the blade is on its way
  *  to the aimed skin: a trim, never a shove, and the elbow may roll <= 45 deg. */
 const ARM_PUSH_STRIKE = 0.15;
@@ -1784,6 +1811,7 @@ export class MeleeLayer {
     const D = this._dbg;
     D.stance = stance;
     D.phase = st?.phase || 'idle';
+    D.drawK = st?.drawK ?? 0;   // what this frame was POSED at (V49's captions)
 
     /* the hand-over blend (see `_blendCarry`) and this frame's ponytail */
     /* THE HAND-OVER BLEND IS ALSO CAPPED PER RENDERED FRAME (fix round 2).
@@ -1873,6 +1901,15 @@ export class MeleeLayer {
       this._strikeAim(st, beat, w);
       this._groundClear(st);
       u.armLift = (_hand.y - 1.0) * 2;
+    } else if (stance === 'ready' || this._held) {
+      /* ...and the GUARD too (round 6): its blade is authored forward-down at
+       * shin height on flat ground (canon M7), so on a 25 deg rise it sat
+       * 0.04-0.23 m INSIDE the hillside after every swing uphill (probed on
+       * the r5 skeptic's slope, Oct 2) — and so did the last frames of a DRAW
+       * (the pull ends on that guard: 0.04-0.26 m in, a click from holstered
+       * uphill) and the first of a holster. Whenever the spear is in her hand.
+       * Flat ground: untouched. */
+      this._groundClear(st);
     }
 
     /* ------------------------- the clip layer ------------------------- */
@@ -1946,7 +1983,7 @@ export class MeleeLayer {
     /* ...and the blade stays out of the ground as POSED (the goal-side check
      * in `_groundClear` is a prediction; the arm clamps, the wrist limits and
      * the stance's pelvis drop, added after this layer, all move the tip) */
-    if (stance === 'swing' && this._groundResidual()) this._solveRight(w, u);
+    if ((stance === 'swing' || stance === 'ready' || this._held) && this._groundResidual()) this._solveRight(w, u);
     /* ...and her ARM stays out of the machine (round 6, S5): the blade may
      * go into the hull it hits, the hand and forearm holding it may not. */
     this._armHullGuard(w, st);
@@ -2260,10 +2297,50 @@ export class MeleeLayer {
    * Nothing is read when no machine is in play; nothing allocates.
    */
   _armHullGuard(w, st) {
+    this._dbg.armHullFull = 0;
+    this._armHullPasses(w, st);
+    /* THE LAST RESORT, WHEN THE FIST IS STILL IN THE METAL (round 6, Oct 2).
+     * The passes above escape locally — roll the elbow, push out of the
+     * nearest capsule, draw back — and a CAGE of thin capsules defeats that
+     * (a Tallneck's foot lattice: eight bars from knee to shoulder height
+     * 0.5-0.9 m in front of her chest at the head-on stand; each escape finds
+     * the next bar, and the heavy's recover left the knuckles 0.02-0.04 m
+     * inside on 5 of 5 probed swings). Her own body capsule is clear of every
+     * hull by construction (the melee term), so the space between her
+     * shoulder and the fist's goal is clear near the shoulder: the goal is
+     * drawn straight back along shoulder -> fist in 0.05 m steps until the
+     * forearm and fist clear `ARM_CLEAR`, or the arm is folded to its 0.25 m
+     * floor. Only while the arm is inside (`armHullFull`), so every other
+     * frame is untouched. */
+    const D = this._dbg;
+    if (!D.armHullFull) return;
+    const mel = this.ctx.combat?.melee;
+    const hulls = mel && typeof mel.armHulls === 'function' ? mel.armHulls() : null;
+    if (!hulls || !hulls.length) return;
+    const an = this.an;
+    const M = an.model.matrixWorld;
+    let worst = this._armDeficit(hulls, M);
+    let steps = 0;
+    while (worst > 1e-3 && steps < 12) {
+      an._charOf(an.b.upArmR.bone, _ahA);
+      _ahX.subVectors(_ahA, _hand);
+      const lx = _ahX.length();
+      if (lx < 0.27) break;
+      _hand.addScaledVector(_ahX, Math.min(0.05, lx - 0.25) / lx);
+      an._ikArm('r', _hand, _pole, w, null);
+      this._alignHaft(w);
+      worst = this._armDeficit(hulls, M);
+      steps++;
+    }
+    D.armHullBack = steps;
+    D.armHullLeft = +worst.toFixed(3);
+  }
+
+  _armHullPasses(w, st) {
     const mel = this.ctx.combat?.melee;
     const hulls = mel && typeof mel.armHulls === 'function' ? mel.armHulls() : null;
     const D = this._dbg;
-    D.armHullPush = 0; D.armHullRoll = 0; D.armHullRetract = 0;
+    D.armHullPush = 0; D.armHullRoll = 0; D.armHullRetract = 0; D.armHullBack = 0;
     if (!hulls || !hulls.length || !this.an.b.handR) return;
     const an = this.an;
     an.model.updateWorldMatrix(true, false);
@@ -2283,14 +2360,28 @@ export class MeleeLayer {
     // phase boundary would step the arm), 0 everywhere else
     const sw = st && st.phase === 'strike'
       ? smoothstep(st.k ?? 0, 0, Math.max(0.1, (st.contactK ?? 0.7) - HIT_LEAD)) : 0;
-    const pushMax = ARM_PUSH_MAX + (ARM_PUSH_STRIKE - ARM_PUSH_MAX) * sw;
-    const retractMax = ARM_RETRACT_MAX * (1 - sw);
-    const rollMax = sw > 0.5 ? ARM_ROLL_STRIKE : Math.PI;
-    let retract = false;
-    for (let pass = 0; pass < 6; pass++) {
+    let pushMax = ARM_PUSH_MAX + (ARM_PUSH_STRIKE - ARM_PUSH_MAX) * sw;
+    let retractMax = ARM_RETRACT_MAX * (1 - sw);
+    let rollMax = sw > 0.5 ? ARM_ROLL_STRIKE : Math.PI;
+    let retract = false, pushUsed = 0, retrUsed = 0;
+    for (let pass = 0; pass < 10; pass++) {
       if (pass > 0) _ahX.copy(_ahDir);          // last pass's escape, to spot a flip
       const worst = this._armDeficit(hulls, M);
-      if (pass === 0) D.armHullDeficit = +worst.toFixed(3);
+      if (pass === 0) {
+        D.armHullDeficit = +worst.toFixed(3);
+        /* INSIDE IS NOT A TRIM (round 6, Oct 2). The strike's taper above is
+         * for an arm that brushes the `ARM_CLEAR` margin on its way to the
+         * aimed skin; a fist actually INSIDE a hull is not what any aim is
+         * for. When `_aimAt` had to take a line the arm does not fit on (every
+         * candidate clear of her body put the forearm against the machine — a
+         * Tallneck's neck base head-on) the trim left the knuckles 0.04-0.09 m
+         * inside it through the strike (A106's swing row, Oct 2). Then the
+         * guard has its full reach, strike or not: the arm comes out, and the
+         * blade lands wherever that leaves it — a whiff, if it is then out of
+         * reach (melee `HIT_TIP_REACH`), never a fist through the metal. */
+        D.armHullFull = worst > ARM_CLEAR ? 1 : 0;
+        if (worst > ARM_CLEAR) { pushMax = ARM_PUSH_MAX; retractMax = ARM_RETRACT_INSIDE; rollMax = Math.PI; }
+      }
       D.armHullLeft = +worst.toFixed(3);
       if (worst <= 1e-4) return;
       D.armHullT = +(this._ahT || 0).toFixed(2);
@@ -2306,20 +2397,29 @@ export class MeleeLayer {
        * flips from pass to pass): the way out is back toward her, so the
        * fist is drawn in toward the shoulder instead */
       if (pass > 0 && _ahX.dot(_ahDir) < 0) retract = true;
+      /* ...and when the way OUT is spent and the arm is still in (round 6,
+       * Oct 2 — a Tallneck's foot lattice, eight thin capsules 0.5-0.9 m in
+       * front of her chest at the head-on stand: every sideways escape found
+       * another bar and the push ran out with the knuckles 0.11 m inside),
+       * the way out is back toward her too */
+      if (!retract && !(pushMax - pushUsed > 0.002)) retract = true;
       let push;
       if (retract) {
-        if (D.armHullRetract >= retractMax) return;
+        if (retrUsed >= retractMax) return;
         an._charOf(an.b.upArmR.bone, _ahA);
         _ahX.subVectors(_ahA, _hand);
         const lx = _ahX.length();
         if (lx < 0.25) return;                          // the arm is folded as far as it goes
         _ahX.multiplyScalar(1 / lx);
-        push = Math.min(retractMax - D.armHullRetract, worst + 0.01);
-        D.armHullRetract = +((D.armHullRetract || 0) + push).toFixed(3);
+        push = Math.min(retractMax - retrUsed, worst + 0.01, lx - 0.25);
+        if (!(push > 0.002)) return;
+        retrUsed += push;
+        D.armHullRetract = +retrUsed.toFixed(3);
       } else {
         _ahX.copy(_ahDir).applyQuaternion(_ahQi);      // world -> char
-        push = Math.min(pushMax - D.armHullPush, (worst + 0.01) / Math.max(0.35, this._ahT));
+        push = Math.min(pushMax - pushUsed, (worst + 0.01) / Math.max(0.35, this._ahT));
         if (!(push > 0.002)) return;
+        pushUsed += push;
       }
       _hand.addScaledVector(_ahX, push);
       an._ikArm('r', _hand, _pole, w, null);
@@ -2337,9 +2437,20 @@ export class MeleeLayer {
   _armDeficit(hulls, M) {
     const an = this.an, b = an.b;
     an._charOf(b.loArmR.bone, _ahE).add(_ahSh).applyMatrix4(M);
-    an._charOf(b.handR.bone, _ahH);
-    an._liveW(b.handR.bone, _q1);
-    _ahF.copy(this.palmOffL).applyQuaternion(_q1).add(_ahH).add(_ahSh).applyMatrix4(M);
+    /* the FIST, where A106 measures it (round 6, Oct 2): the middle of the
+     * knuckle line (index_01 .. pinky_01), not the palm centre — the knuckles
+     * sit ~0.04 m past it, and a guard that cleared the palm by its margin
+     * left the knuckles that much nearer the metal than it thought */
+    const K = this._knuckle;
+    if (K && K.i && K.p) {
+      an._charOf(K.i, _ahH);
+      an._charOf(K.p, _ahF);
+      _ahF.add(_ahH).multiplyScalar(0.5).add(_ahSh).applyMatrix4(M);
+    } else {
+      an._charOf(b.handR.bone, _ahH);
+      an._liveW(b.handR.bone, _q1);
+      _ahF.copy(this.palmOffL).applyQuaternion(_q1).add(_ahH).add(_ahSh).applyMatrix4(M);
+    }
     return this._segHullDeficit(hulls, _ahE, _ahF, true);
   }
 
@@ -3206,18 +3317,30 @@ export class MeleeLayer {
        * whole block only runs on a frame where the bow is actually close, so
        * idle, walk, run and the bow draw never pay for it. */
       if (gap != null && gap < CARRY.BOW_KEEP) {
+        /* EACH CANDIDATE FROM THE SAME START, AND THE BEST ONE KEPT (round 6,
+         * Oct 2). The search used to re-solve every candidate tilt from the
+         * midpoint the PREVIOUS candidate's solve had left, then set the best
+         * tilt and solve once more from wherever the last one ended — so the
+         * winner was never the carry it had scored. A100's dodge row, repeated
+         * 12 times on the real input path (aim, draw, stow, roll), dipped to
+         * 0.07 m once and 0.14-0.18 m twice on the one roll frame where the
+         * bow sweeps across the haft. Now every candidate (seven across the
+         * band, the current tilt included) starts from the same midpoint and
+         * the best candidate's midpoint AND haft direction are what is kept. */
+        _bsMid0.copy(_skMid);
+        _bsMidBest.copy(_skMid); _bsDirBest.copy(outD);
         const tilt0 = Math.acos(clamp(outD.y, -1, 1));
-        let best = gap, bestT = tilt0;
-        for (let i = 1; i <= 3; i++) {
-          const t = CARRY.TILT_MIN + (CARRY.TILT_MAX - CARRY.TILT_MIN) * (i / 3);
+        let best = gap;
+        for (let i = 0; i <= 6 && best < CARRY.BOW_KEEP; i++) {
+          const t = CARRY.TILT_MIN + (CARRY.TILT_MAX - CARRY.TILT_MIN) * (i / 6);
           if (Math.abs(t - tilt0) < 0.02) continue;
+          _skMid.copy(_bsMid0);
           this._setTilt(outD, t);
           const g2 = this._bowSolve(_skMid, outD, L, _skA, _skB);
-          if (g2 != null && g2 > best) { best = g2; bestT = t; }
-          if (best >= CARRY.BOW_KEEP) break;
+          if (g2 != null && g2 > best) { best = g2; _bsMidBest.copy(_skMid); _bsDirBest.copy(outD); }
         }
-        this._setTilt(outD, bestT);
-        gap = this._bowSolve(_skMid, outD, L, _skA, _skB);
+        _skMid.copy(_bsMidBest); outD.copy(_bsDirBest);
+        gap = best;
       }
       /* THE BLADE CEILING HAS THE LAST WORD (fix round 4).
        *
@@ -4612,6 +4735,7 @@ export class MeleeLayer {
     this._cacheHair();
     const an = this.an, e = an.b.handR;
     if (e && this._held && this._guardOn && this.w >= 0.2) this._handOffSelf(an, e);
+    if (e && this._held && this.w >= 0.2) this._armHullFinal(an);
     /* THE BRAID GIVES WAY LAST, because the hand moved the haft above it.
      * Filmed with the order the other way round: `_hairOffHaft` pushed the
      * braid clear, then the hand guard rotated the haft back into it, and
@@ -4629,6 +4753,74 @@ export class MeleeLayer {
      * is the same one-frame lag every damped layer in this rig already has. */
     this._carryServo(this._lastDt || 0.016);
     this._bowSample();
+  }
+
+  /**
+   * THE FIST OUT OF THE METAL, ON THE MATRICES THAT GET DRAWN (round 6, Oct
+   * 2). `_armHullGuard` runs inside the pose pass and has to PREDICT where the
+   * arm will be drawn: the stance's pelvis offset and the conform clamp move
+   * the whole upper body after this layer, and it uses last frame's shift.
+   * Through a heavy's recover that offset changes fastest (the deepest stance
+   * rising back up, the spine still pitched in), and the prediction was off by
+   * up to 0.09 m: a Tallneck's foot lattice measured the knuckles 0.08 m
+   * inside a bar the guard had scored 0.012 m clear. Here, on the final
+   * matrices: if the forearm or fist is INSIDE a hull (past `ARM_CLEAR`), the
+   * wrist is drawn straight back toward the shoulder in 0.04 m steps and the
+   * arm re-solved until it clears, or the arm is folded to its 0.25 m floor.
+   * The spear rides the hand. Nothing allocates; nothing runs unless the fist
+   * is in a hull.
+   */
+  _armHullFinal(an) {
+    const st = this._dbg.stance;
+    if (st !== 'swing' && st !== 'ready') return;
+    const mel = this.ctx.combat?.melee;
+    const hulls = mel && typeof mel.armHulls === 'function' ? mel.armHulls() : null;
+    if (!hulls || !hulls.length) return;
+    an.model.updateWorldMatrix(true, false);
+    const M = an.model.matrixWorld;
+    _ahSh.set(0, 0, 0);                        // nothing moves the body after this
+    let worst = this._armDeficit(hulls, M);
+    this._dbg.armHullFinal = 0;
+    const goal = ARM_CLEAR - ARM_CLEAR_FINAL;   // the deficit that leaves ARM_CLEAR_FINAL of daylight
+    if (!(worst > goal)) return;
+    const b = an.b;
+    an._charOf(b.handR.bone, _ahG);
+    let steps = 0, rolls = 0;
+    while (worst > goal && steps < 16) {
+      /* the ELBOW first: a folded arm's elbow is what pokes forward into a
+       * bar (the fist is already by her shoulder) — round it on its circle
+       * about shoulder -> wrist to the clearest angle (the wrist stays) */
+      if (rolls < 3 && this._armRollOut(hulls, M, worst, Math.PI)) {
+        rolls++;
+        this._rollOff = true; this._alignHaft(1); this._rollOff = false;
+        worst = this._armDeficit(hulls, M);
+        if (!(worst > goal)) break;
+      }
+      an._charOf(b.upArmR.bone, _ahA);
+      _ahX.subVectors(_ahA, _ahG);
+      const lx = _ahX.length();
+      if (lx < 0.27) break;
+      _ahG.addScaledVector(_ahX, Math.min(0.04, lx - 0.25) / lx);
+      an._ikArm('r', _ahG, _pole, 1, null);
+      this._alignHaft(1);
+      worst = this._armDeficit(hulls, M);
+      steps++;
+    }
+    /* ...and if the arm is folded as far as it goes and still in, it is her
+     * LEAN that has put her shoulder at the metal (a heavy's spine pitch puts
+     * the drive shoulder 0.23 m ahead of her root; a Tallneck's foot bars are
+     * 0.48 m out): she straightens out of it — the upper spine pitched back
+     * in 0.03 rad steps, arm and spear riding along rigidly, at most 0.36
+     * rad. */
+    let backs = 0;
+    while (worst > goal && backs < 6 && b.spine2 && b.spine3) {
+      an._rot(b.spine2, X_AXIS, -0.03);
+      an._rot(b.spine3, X_AXIS, -0.03);
+      backs++;
+      worst = this._armDeficit(hulls, M);
+    }
+    this._dbg.armHullFinal = steps + rolls * 100 + backs * 1000;
+    this._dbg.armHullFinalLeft = +worst.toFixed(3);
   }
 
   /** The hand guard's three passes (see `postFix`). */

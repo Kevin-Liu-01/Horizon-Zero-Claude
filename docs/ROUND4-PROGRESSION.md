@@ -84,7 +84,8 @@ Level-up grants `+1` skill point and `+15` max health and heals to full.
 | member | meaning |
 |---|---|
 | `has(id)` | boolean — the check every hook should make |
-| `mult(key)` | number, never NaN. Keys: `silentStrikeDamage` `detectionRate` `noiseRadius` `tearOut` `damageOut` `damageIn` `concentrationDuration` `herbPotency` `lootYield` `gatherYield` `pouchBonus` `deathPouchKeep` |
+| `mult(key)` | number, never NaN. Keys: `silentStrikeDamage` `silentStrikeFrac` `detectionRate` `noiseRadius` `tearOut` `damageOut` `damageIn` `concentrationDuration` `herbPotency` `lootYield` `gatherYield` `pouchBonus` `deathPouchKeep`. `silentStrikeFrac` is ADDITIVE (0 / 0.10 / 0.20, one `SILENT_STRIKE.fracStep` per Prowler damage node); `silentStrikeDamage` is DERIVED from it, `(heavyFrac + silentStrikeFrac) / heavyFrac` = 1 / 1.18 / 1.36 — never the old per-node product (3.5). |
+| `SILENT_STRIKE` (export) | `{ fracStep: 0.10, capFrac: 0.8, apex: ['thunderjaw','stormbird','behemoth','tallneck','corruptor'] }` — see §3 item 4, "Silent Strike is a fraction of health" |
 | `skillTree()` | 12 nodes with `unlocked` / `available` |
 | `canUnlock(id)` → `{ok, reason}` · `unlock(id)` | |
 
@@ -364,6 +365,55 @@ carry `within: seconds`, which makes it a timed trial — see `trialState()`.
    > in-page as the negative control): three `{ baseDamage: 14 }` hits on a
    > watcher at 8–10 m on Hard. Fixed: bar at ~62 %, three "11" numerals,
    > 90 → 56.1 HP. Control: bar full, no numerals, 90 → 90 HP.
+
+   > **progression-r2 FIX ROUND 1 — Silent Strike is a fraction of health
+   > (judge-progression-r2-r0, major).** The two Prowler nodes multiplied
+   > melee's Silent Strike impact (`maxHealth × MELEE.silent.heavyFrac` = 0.55
+   > for every species outside `MELEE.silent.instant`) by 1.75 × 2.0 = 3.5, so
+   > three skill points made one stab 1.347 × a Thunderjaw's max health and
+   > the win screen followed; Behemoth / Stormbird / Ravager died the same way.
+   > Canon (docs/research/mechanics.md, Silent Strike row): instant kills on
+   > humans and small machines only, big damage + a stun on mediums. Now:
+   > - the nodes are ADDITIVE fraction steps (`silentStrikeFrac`, +0.10 each):
+   >   the stab is 0.55 → 0.65 → 0.75 of max health before armour, i.e.
+   >   impact × 1.18 / × 1.36. `silentStrikeDamage` is derived from it. The
+   >   skill descriptions are built from `MELEE.silent.heavyFrac` at load, so
+   >   they print the real percentages;
+   > - the wrapper clamps the FINAL damage of every non-instant Silent Strike
+   >   (after armour, weak spot and BRITTLE ×2, mirrored from machine.js's
+   >   impact channel by `silentImpactMult`) to `capFrac` 0.8 × maxHealth — a
+   >   full-health medium always survives one stab, at any difficulty — and
+   >   on an `apex` species also to `health − 1`, so a stab is never the
+   >   killing blow on an apex. A wounded medium can still be finished.
+   >   The clamp runs even at Normal with no skills (nothing else is off 1.0);
+   > - species on melee's instant list are untouched (Watcher still dies).
+   >
+   > **For `player-melee`:** `MELEE.silent.heavyFrac` and `.instant` stay
+   > yours and are read live (`import { MELEE }` from weapons.js, read-only);
+   > a retune there moves the skill steps and the descriptions with it. The
+   > 0.8 cap and the apex list are this lane's, in `SILENT_STRIKE`. If you
+   > (or `machine-ai`, per the request above) ever read
+   > `progression.mult('silentStrikeDamage')` natively, apply it to
+   > the FRACTION and keep the clamp (or set `__hzcNative` and port
+   > `silentImpactCap`), or A64c goes red.
+   >
+   > Measured (A64c, port 5213): Thunderjaw, Normal, no skills 693 dmg
+   > (0.385, armour 0.3); all Prowler 945 (ratio 1.3636 = 0.75 / 0.55).
+   > Judge's case through melee's REAL `silentStrike()` from behind, Easy +
+   > all Prowler: 1181.25 dmg = 0.656 × max, Thunderjaw alive at 618.75.
+   > Worst reachable case, Story (1.60) × Precision (1.15) + all Prowler on a
+   > BRITTLE machine: Thunderjaw / Stormbird / Behemoth / Corruptor / Ravager
+   > / Sawtooth all take exactly 0.800 × max and live (Tallneck 0.138). A
+   > Thunderjaw at 500 HP ends at 1 HP. Real stab on a Watcher: killed. Film:
+   > `shots/prog-r2f1-silent-apex-fixed-side.png` (Easy + all Prowler, real
+   > stab, Thunderjaw standing, LV 27 bar ≈ 34 %, "1181 +TEAR", SPOTTED) vs
+   > `shots/prog-r2f1-silent-apex-control.png` (the pre-fix 3.5× wrapper
+   > re-installed in-page, same stab: Thunderjaw dead, QUEST COMPLETE ·
+   > VALLEY RECLAIMED — the judge's shot, reproduced).
+   >
+   > Not changed (outside the finding): Strike from Above's `tearOut 1.15`
+   > still applies to every hit, and a skilled silent stab still carries the
+   > extra ×1.15 tear.
 5. **`focus-items`** — publish `items.serializeCapacities()` /
    `restoreCapacities(obj)` so purchased pocket capacities survive a save.
    `SaveSystem.apply` already clamps restored counts to `inventory.capacity(id)`.
@@ -418,7 +468,10 @@ carry `within: seconds`, which makes it a timed trial — see `trialState()`.
 (a literal `location.reload()` between save and Continue), `A66-quest-objectives`
 (all five objective types on their real events), `A67-machine-respawn`, and the
 residue-round regression gate `A64b-damage-channels` (the legacy `baseDamage`
-channel under a non-1 `damageOut`).
+channel under a non-1 `damageOut`), and the progression-r2 fix-round gate
+`A64c-silent-apex` (Prowler skills raise Silent Strike's health fraction but a
+stab never takes more than 0.8 × max health off a non-instant machine and never
+kills an apex; a Watcher still dies — see §3 item 4).
 Run: `node tools/gates.mjs --port 5213 --lane progression`.
 
 ### Expansion round — `tools/gates.round4.progression-expansion.mjs`

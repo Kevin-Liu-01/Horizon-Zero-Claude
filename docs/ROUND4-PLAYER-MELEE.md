@@ -1,12 +1,137 @@
 # player-melee — how Aloy holds and swings the spear
 
-Round 4, Wave 4. Owner `player-melee`, port 5205. **Round 5 (Sep 26): §0r5 below. Round 5 fix pass 1 (Sep 26, evening): §0r5fp. Round 5 fix pass 2 (Sep 26–27, night): §0r5fp2, first.**
+Round 4, Wave 4. Owner `player-melee`, port 5205. **Round 6 (Sep 27 → Oct 2, across the weekly-limit outage): §0r6, first.** Round 5 (Sep 26): §0r5. Round 5 fix pass 1 (Sep 26, evening): §0r5fp. Round 5 fix pass 2 (Sep 26–27, night): §0r5fp2.
 Subject: Kevin, Sep 17 — *"melee and how spear is held needs to be fixed too"*.
 
 Reference canon: [`docs/research/spear-canon.md`](research/spear-canon.md) and the eight
 `reference/spear-*.jpg` stills. Gates: `tools/gates.round4.player-melee.mjs`
 (`node tools/gates.mjs --port 5205 --lane player-melee`).
 
+
+---
+
+## 0r6. ROUND 6 — the paths no gate staged (rulings R5–R9, items S1–S6)
+
+Round 5 passed both judges and was **refuted by the r5 skeptic on real-input paths no gate
+staged**; the orchestrator turned the findings into rulings R5–R9 (`ROUND4-AUDIT.md` §4,
+Sep 27). The weekly-limit outage (Sep 27 → Oct 2) killed this round mid-flight; the partial
+work was committed in `2ce8e0c` (draw-before-swing, release ratchet, hull floor, strike aim,
+arm-path guard, A107/V49). **This section is the round finished and measured on Oct 2, port
+5205, on the final build** — the shots and logs carry Oct 2 timestamps, not Sep 27, because
+that is when they were taken.
+
+**The skeptic's own probes did not survive the outage.** `scratchpad/sk/` held only its
+`node_modules` symlink on Oct 2: the macOS `/tmp` cleaner had deleted every *file* in the
+session scratchpad (directories and symlinks remained; `find … -type f` counted 0). They were
+rebuilt from the skeptic's findings (the task brief quotes every number) and its 44 frames
+(`shots/skeptic-melee-r5-*.png`) as `scratchpad/sk6/sc-*.js`, driven **only** through the real
+input path — `input.mouse.buttons` bit 0 for LMB, the melee key `KeyB`, `KeyW`/`ShiftLeft`/
+`KeyS` for the gait, and RMB as bit **2** (`buttons |= 4`: `input.js` sets `1 << e.button`, so
+the brief's `|= 2` would be the middle button) — and run by `sk6/runner.mjs` (puppeteer on
+port 5205, no protocol timeout; one walk of every species takes ~4 min). Outputs:
+`sk6/out-*.json`. Machines staged against are frozen and, for the probes that swing many
+times, made invulnerable (`health = maxHealth = 1e9`): the first cut of the release probe
+killed the Watcher with its own clicks and then measured her walking through the wreck.
+
+### 0r6.1 Item by item
+
+| item | the skeptic's finding (ruling) | what changed | measured on the final build (Oct 2) |
+|---|---|---|---|
+| **S1** first swing from holstered | after READY_HOLD the first LMB swung while the haft was still sliding through her fist: grip **0.38–0.45** of the haft at contact (canon 0.15–0.28; 0.197 from the guard), **22–29 of ~31** swing frames inside the hand-over, the frames A101 filtered (R5) | *(2ce8e0c)* the draw ENDS on the grip: the pull leg drives the hand-over blend and `melee._advanceStance` only declares the guard up when the layer reports `handoverDone` (bounded wait `DRAW_WAIT_MAX` 0.12 s); the queued strike fires on that frame; `DRAW_T` 0.30 → 0.26, `STANCE_STEP_MAX` 0.08 → 0.10, `GRAB_HOLD_MAX` 0.45 → 0.10. *(this session)* the LMB charge is measured on the **wall clock**: it summed `realDt`, which `main.js` caps at 0.05 s a frame, so on a box drawing 11 fps a 0.42 s hold summed to 0.23 s and played a LIGHT (caught by A101's jog/sprint hold rows) | **A101 from-holstered 6/6** (idle/jog/sprint × click/hold, real LMB): grip **0.197** at contact on every row, **0** swing frames in the hand-over, the beat the input asked for on all 6; no frame is filtered any more. Probe `sc-fromholster` (the guard first times out BY ITSELF — verified holstered before every click — 12 runs): grip 0.197 on all 12, 0 hand-over frames, the held LMB a heavy on all 6. Click → first swing frame: **0.39–0.50 s of game time** at 45–97 ms frames (wall 0.43–0.83 s); the draw has a 10-rendered-frame floor (`STANCE_STEP_MAX`, the A102 anti-teleport bound), so it is ~0.28 s at 60 fps and ~0.33 s at 30 fps — §0r6.4 |
+| **S2** holster release glides her | holstering in front of a frozen Watcher/Strider/Redeye: **0.37–0.67 m** of backwards glide, a planted foot dragged **up to 0.34 m** (R6) | *(2ce8e0c, `collision.js`, recorded in `ROUND4-SPATIAL.md`)* a released term is a ratchet: held where she stands while she is inside the machine's full standoff, following her out as she steps back, never pushing; the live hull push (a limb moving INTO her) unchanged. *(this session)* **the latch also covers the machine manager's half of the standoff.** The rebuilt release probe found the r5 defect's mirror image: holstering at a Thunderjaw head-on, SHE did not move — the MACHINE jumped **1.05–2.0 m** in one frame. The solver's full standoff is a slanted capsule and she stood outside it, so the term let go; `machines/index.js`'s hard standoff (three flat `bodyRadius + 0.6` spheres along the heading) still had her 2.0 m inside its snout sphere, and the moment the term stopped publishing `meleeStandoffHalfLen` 0 it pushed the machine off her. `_meleeLatched` and the release's let-go now also hold while she is inside the manager's spheres (`collision.js`, recorded in `ROUND4-SPATIAL.md`); A106's release rows gate the machine's displacement (≤ 0.005 m). And a step the collider is holding is no longer banked: the lunge drive ended on distance, so a blocked drive ran on for up to 1.3 s and paid out when the collider let go; it now ends after 0.12 s of making under a quarter of its ask. A106's walk-away runs until the release is due (≥ 1 s, ≤ 4 s) instead of a fixed 1 s (a Thunderjaw's full standoff ends 2.7 m behind the stand; at 12–14 fps the 1 s backpedal fell short on 2 of 10 runs) | **A106 clause 3, 40/40 release runs** (Watcher, Strider, Redeye, Thunderjaw × holster/target-lost × 5): total collision displacement **0.000 m** on every run (bar 0.10), planted-foot drag ≤ **0.025 m** (bar 0.08), released on every run (Thunderjaw at 7.58–7.61 m from its centre, its end-on full standoff 7.415 m). Probe `sc-release` (walk in drawn while clicking, stop, then the guard TIMING OUT and the melee key; Watcher, Strider, Redeye, Thunderjaw): her root path **0.000 m**, planted foot ≤ **0.002 m**, the machine moved **0.000 m** (was 1.05 m on the Thunderjaw before the latch fix), the term still latched while she stands on all 8 |
+| **S3** big machines | Thunderjaw hits landed with the blade **1.13–1.19 m** short of the hull; Behemoth **0.19–0.32 m** (R7) | *(2ce8e0c)* the term's floor is the manager's circle (`meleeStandoffHalfLen` 0) — the old cut capsule held a Thunderjaw 6.17 m out; the strike is AIMED at the hull (`melee._aimAt`, `meleeLayer._strikeAim/_aimResidual/_aimLean`) and the lunge closes to the aim point. *(this session)* on the **real input path** (walk up holstered, click) three defects the gate's drawn walk-in never met: **(a)** a hit landed at any distance the GAMEPLAY standoff capsule allowed — the arc test measured to the keep-out capsule and the blade ray ran 0.45 m past the tip: damage dealt with the blade **6.1–6.6 m** from a grounded Stormbird, **0.38–0.56 m** from a Tallneck, **0.32 m** from a Shellwalker (`sk6/out-bigmach-before.json`). A hit now needs the TIP within **`HIT_TIP_REACH` 0.15 m** of the target's hull (A103's own bar) and resolves on the first strike frame from k 0.30 the blade is there, else keeps looking to the strike's end (a whiff if it never gets there) — a fixed contact frame turned a heavy chopped THROUGH a Watcher's back into a whiff; **(b)** the strike lunge cancelled itself: `_stepIn`'s runner rule compared her speed against the drive's own 1.15 m/s floor (`STEP_DRIVE_SLACK`); **(c)** the step-in starts with the DRAW when a strike is asked for (queued or the button down) and the wedge has a machine | **A103 every species 3/3 in `lane5`** (17 kinds incl. grounded Stormbird; gate-side tip-to-hull at the hit ≤ **0.146 m**, bar 0.15) — **but 2/3 on one or two species in each final-build run** (`suite3`: Longleg L2 and Tallneck heavy; `lane6`: Shellwalker L1 — honest whiffs where a limb holds her at arm's length, §0r6.4) + **real-input rows 12/12 in every run** (Watcher, Thunderjaw, Behemoth, Tallneck, Stormbird, Shellwalker × light/heavy, holstered walk-up and LMB): every hit that fired had the tip ≤ **0.145 m**; the Tallneck (8.8 m) and Stormbird (12.1 m) stops are out of reach and **whiff honestly**, then W with the spear out walks her in under the term and the same input lands. Probe `sc-bigmach` (all 17, light + heavy, real input): **34/34 land** (31/34 on the first click, the rest after walking in), worst tip at any hit **0.143 m** |
+| **S4** draw from a jog | right elbow **0.14–0.19 m above** the head and **0.26–0.34 m behind** it for ~0.25 s; from the rear-3/4 the forearm across the back of her head — Kevin's exact complaint (R8) | *(2ce8e0c)* the draw/holster re-authored as an arm path: the reach starts from the arm's own locomotion pose (`_drawFrom`), the chest turns TOWARD the drawing hand (`DRAW_YAW` +0.42, round 5 turned it away), the IK pole points the elbow forward-out, the wrist correction may not spend the elbow roll on the path, and `_elbowGuard` holds the bound on the solved arm every frame (elbow ≤ head − 0.01; above the shoulder, ≤ 0.07 behind the head plane); A107 + V49. *(this session)* A107 clause **(c)**: the forearm against the BACK half of the animator's own head ellipsoid (`HEAD_R`), ≥ 0.05 m, every draw/holster frame — non-vacuous, unlike (b) (§0r6.4); V49's captions carry the drawK the layer actually posed | **A107 5/5 + aim stow, idle/jog/sprint**: elbow over the head max **−0.018 m** (bar +0.05; the skeptic +0.14..+0.19); elbow never above the shoulder joint (max **−0.017 m**), so (b)'s band reads 0 frames; forearm to the back of the head ≥ **0.189 m** (bar 0.05). Probe `sc-draw` (KeyB, 3 cycles × idle/jog/sprint): elbow over head ≤ **−0.065 m**, forearm to back of head ≥ **0.202 m**, elbow behind the head plane band-free ≤ 0.347 m (the jog arm swing and the ribs-side guard — §0r6.4) |
+| **S5a** bow and spear both in hand | an aim (RMB) during a swing's follow-through: the bow in her left fist while the spear was still in her right, ~0.5 s (R8) | *(2ce8e0c)* `combat.js::_updateWield`'s granted `spearOut` keys on `melee.spearInHand` (the layer's re-parent), aim included; an aim cuts the recover and takes the quick stow (`HOLSTER_T_AIM` 0.30 s) | **A101 never-both 2/2** (idle, jog): 0 frames both in hand; the bow in her hand **0.26–0.42 s** after the aim. Probe `sc-misc` (aim in the windup / strike / recover, idle and jog): 0 frames both in hand on all 6; a windup or strike still lands first |
+| **S5b** heavy recover across the belly | the forearm folded across the belly on the recover (R9) | *(2ce8e0c)* `_foreGuard`: the forearm segment held `FORE_CLEAR` 0.24 m off the pelvis→neck axis on every swing frame | **A104** moving-heavy recover: forearm to the spine axis ≥ **0.205 m** (bar 0.10). Probe `sc-misc` (heavy standing / jog / sprint-stop, real hold): ≥ **0.21 m** on recover frames |
+| **S5c** hand into hulls | the hand 0.03–0.10 m inside a Behemoth's head and a Glinthawk's body, where A106's body capsule never reaches | *(2ce8e0c)* `_armHullGuard` (roll the elbow, push out, draw back) + A106's forearm/fist rows. *(this session)* A106's new swing row found the guard's limits: a Sawtooth heavy recover **−0.004 m** in its head (retract budget 0.25 spent), then a Tallneck's foot **lattice** (eight thin bars 0.48–0.9 m in front of her chest at the head-on stand) **−0.03 m**, reproduced at −0.02..−0.11 m. Now: the guard measures the FIST at the knuckle line (A106's point, 0.04 m past the palm); full authority whenever the fist is actually inside (the strike's "trim only" was for the margin, not for metal); the sideways budget falls back to drawing back; and a last pass in `postFix` (`_armHullFinal`) on the matrices that get DRAWN (the in-pose guard predicts the body's post-layer shift and was off by up to 0.09 m in a heavy's recover): roll the elbow, draw the wrist back, and — if her own lean has put her shoulder at the metal — straighten the upper spine ≤ 0.36 rad until the arm has 0.03 m | **A106 swing rows 17/17 species**, 0 forearm/fist frames inside any hull, worst **0.032 m**; standing-place rows 0 penetrations of body or arms. Probe `sc-armhull` (Behemoth, Glinthawk, Thunderjaw, Tallneck, Stormbird, Watcher; holstered walk-up and drawn walk-in; a light chain + a heavy, real input): **0** frames inside, worst clearance **0.003 m**. Probe on the Tallneck lattice (5 × light + heavy at A106's stand): ≥ 0.030 m |
+| **S5d** 25° slope | uphill the blade buried itself: light **0.16 m**, heavy **0.57 m** into the terrain (R9) | *(2ce8e0c)* `_groundClear` / `_groundResidual` pitch the swing up about the shoulder by the angle that clears the terrain under the predicted / posed tip. *(this session)* the same for the **ready guard** and for every frame the spear is in her hand (the draw's pull ends on that guard): authored forward-down at shin height on flat ground, after a swing uphill it sat 0.04–0.23 m inside the hillside, and the last frame of a draw clicked from holstered uphill 0.04–0.26 m — and A103's slope row now reads 24 guard frames after each swing | **A103 slope 6/6** (uphill/across/downhill × light/heavy): tip above the terrain at contact ≥ **0.125 m**, on every swing frame ≥ **0.062 m**, in the guard after ≥ **0.081 m**. Probe `sc-misc` (real clicks/holds, 12 swings): min over every swing frame **0.053 m**, guard after ≥ **0.073 m** |
+| **S5e** photo mode and hitstop on the real clock | photo mode at time scale 0 froze the pose while the swing ran on underneath — enter in a heavy's windup, leave 0.9 s later in its recover, the blade jumped **0.84 m** on the exit frame; a hitstop froze the world while the blade carried on | *(2ce8e0c)* every melee clock (`update`'s dt, the stance, the phase, the step drive, the trail, `poseState`'s extrapolation) is scaled by `engine.timeScale` — the engine's RESOLVED scale (studio > wheel > hitstop > concentration). `requestTimeScale` is the API for the owner of a slow-mo; melee owns none, it is a consumer, so reading the resolved scale is the honest fix and no `requestTimeScale` call was added. The LMB charge stays on the wall clock (it times a thumb) | Probe `sc-photo`: in photo mode at 0 the swing clock advances **0.000 s** and the blade **0.000 m** over 0.9 s; at 0.1, 0.04 s; on the exit frame the swing clock advances one frame and the swing clock advances ONE frame (0.03–0.057 s) and the blade steps **0.23–0.54 m** — the heavy windup's own per-frame travel at this frame rate (0.47–0.54 m on the frames after it) — where the skeptic's exit jumped a whole phase (windup → recover, 0.84 m). Hitstop (a heavy into a frozen Watcher, ×3): blade travel during the hitstop **0.000 m** |
+| **found on the way** A100's dodge row | the full suite (`suite2`, Oct 2) read the haft **0.084 m** from the stowed bow on one roll frame (bar 0.10) — round 5's thinnest clause; 12 dodges repeated on the real path (aim, draw, stow, roll) dipped to 0.07 m once and 0.14–0.18 m twice | the carry's tilt search re-solved each candidate tilt from the midpoint the PREVIOUS candidate had left and then solved the winner once more from wherever the last one ended, so the carry it kept was never the one it had scored: every candidate (seven across the 30–60° band) now starts from the same midpoint, and the best one's midpoint and haft direction are what is kept | 24 dodges after (`sk6/out-dodge*.json`): worst **0.114 m**, none under the bar (12 before: one at 0.07); A100 PASS in `suite3` (dodge 0.22) and the final lane run |
+
+### 0r6.2 The gates this round, clause by clause
+
+| gate | added (nothing was loosened) |
+|---|---|
+| A101 | *(2ce8e0c)* from-holstered rows (6, real LMB), no frame filtered, never-both-in-hand rows; *(this session)* `clickToFirstSwingGameS` published beside the wall-clock figure |
+| A103 | *(2ce8e0c)* every species × 3, slope rows; *(this session)* **real-input rows** (holstered walk-up + LMB, 6 kinds × light/heavy: every hit ≤ 0.15 m, a whiff must land after walking in drawn); slope rows read 24 **guard** frames after each swing; timeout 480 → 720 s (the runtime, not a bar) |
+| A106 | *(2ce8e0c)* clause 3 totals (0.10 m root, 0.08 m planted foot) over the whole release, Thunderjaw added; forearm/fist rows at the standing places and through a swing; *(this session)* the walk-away runs until the release is due (≤ 4 s) and publishes where it let go against the full standoff |
+| A107 | *(2ce8e0c)* the gate; *(this session)* clause **(c)** forearm vs the back of the head ellipsoid ≥ 0.05 m; `elbowAboveShoulderMaxM` and the (b) band frame count published |
+| V49 | *(this session)* each caption carries the drawK the layer actually posed that frame |
+
+### 0r6.3 Evidence — every file shot on this build (Oct 2) and read
+
+| file | Oct 2 | what is in it (read) |
+|---|---|---|
+| `shots/melee-r6-V49-draw-from-jog.png` | 20:53 (final lane run; first read on the 12:49 and 13:49 cuts of the same staging) | twelve tiles, the draw played at time scale 0.25 and frozen per tile, captions printing the posed drawK (0.14 / 0.28 / 0.43 / 0.57–0.58 / 0.78 / guard). **Rear-3/4**: the right hand comes up her right side to her shoulder, the elbow out to the side at or under shoulder height — never above or behind her head; at 0.57 the fist takes the haft just behind the right shoulder, beside her braid, the forearm running out to her right, not across the back of her head; at 0.78 the spear comes forward over the shoulder; guard: the spear in front of her, arm down at her side. **Side**: the hand rises up the FRONT of her shoulder with the elbow low; the pull brings the haft forward level at chest height; she is mid-stride in every tile (criterion 5); the bow stays on her back; the left arm swings with the stride, never folded across her chest. The first cut of this sheet (12:47) showed its first tile already at drawK 0.52 — the reach leg was never on it — which is why it is now filmed in slow motion |
+| `shots/melee-r6-V46-spear-ready.png` · `V47-melee-swing.png` · `V48-spear-holster.png` | 20:53 (final lane run; read on the 12:47 cut, same poses) | **V46**: side and front-quarter of one frozen guard — spear in her right hand only, forward-down across the thigh, blade at shin height, bow on her back, left hand empty, no T-rex. **V47**: the twelve tiles of round 5 fp2, unchanged in pose (the pinned contacts carry no machine, so none of this round's aim/arm-guard code runs in them): three windups high and forward of the head, four distinct contacts, the jogging L3/HV contacts with her head up, the live smear trailing the blade. **V48**: from behind at a sprint, spear and bow on their two diagonals, not crossing, nothing through the braid |
+| `scratchpad/sk6/sc-*.js` + `final/out-*.json` | 19:02–19:34 | the rebuilt skeptic probes and their outputs on the final build: `fromholster`, `release`, `bigmach` (17 kinds), `draw`, `misc` (aim during a swing, heavy recover, slope), `photo` (photo mode + hitstop), `armhull`, `dodge` (A100's roll ×12, before and ×24 after the carry fix). `out-bigmach-before.json` is the build before the hit-reach fix (damage at 6.6 m) |
+| `shots/skeptic-melee-r5-*.png` | Sep 27 | the r5 skeptic's frames the probes were rebuilt from; read for the staging (draw from a jog side/rear, from-holstered strips, the big-machine strip, release, slope, photo) |
+
+### 0r6.4 Gate table and honest gaps
+
+Runs on port 5205, Oct 2, beside the other lanes' suites (load average 25–36; frames 45–135 ms).
+
+| gate | `lane5` (13:49, before the carry tilt fix) | `suite2` (killed by the 2 h tool limit at 195 of ~248; before the latch/drive/tilt fixes) | **`suite3`** (19:50, final build) | **`lane6`** (20:53, final build — the fresh lane run) |
+|---|---|---|---|---|
+| A100 | PASS | **FAIL** dodge 0.084 m | PASS (dodge 0.22) | PASS (dodge 0.22) |
+| A101 | PASS | PASS | PASS (6/6 from holstered) | PASS — from holstered 6/6: grip 0.197 at contact on all six, 0 hand-over frames, heavy on hold; never-both 0 frames; ready tip 0.499 m |
+| A102 | PASS | PASS | PASS | PASS (4 distinct arcs, re-parent gap 0) |
+| A103 | PASS | PASS | **FAIL** — longleg light-2 and tallneck heavy: no hit fired | **FAIL** — shellwalker light-1: no hit fired; every other row of 63 lands; species reach −1.007…+0.145 m; real-input rows 12/12; slope 6/6 (guard ≥ 0.084 m) |
+| A104 | PASS | PASS | PASS | PASS (moving heavy recover ≥ 0.200 m) |
+| A105 | PASS | PASS | **FAIL** — heavy/L3 segment planted foot 0.098 m (bar 0.08) | PASS (speed ratio 1.001, drift ≤ 0.005 m) |
+| A106 | PASS | PASS | PASS | PASS — release 40/40, total 0.000 m, foot ≤ 0.010 m, machine 0.000 m; swing arm 0 inside (worst 0.003 m); body 0 inside (worst 0.054 m); live hulls ≥ 0.0555 m |
+| A107 | PASS | PASS | PASS | PASS — elbow over head ≤ −0.045 m, above shoulder ≤ −0.018 m, forearm to back of head ≥ 0.157 m |
+| V46–V49 | read | — | NEEDS-JUDGE | NEEDS-JUDGE, read (§0r6.3) |
+
+**Full suite `suite3`: 248 gates — 196 PASS, 8 FAIL, 2 PENDING, 42 NEEDS-JUDGE.** Not this lane's: A17-draw-beats (animator, `looseRearM` 0.27, failed in every suite this round), A81-canon-speed-bands (core-platform-followup2), A47c-corpse-mass (machine-rig), A31c-clamp-framing (player-control, mid-edit), A23-aim-cost and A23b-hull-fidelity (spatial). This lane's: **A103 and A105** (above). Combat's A49 / A50 / A51 PASS (the hit-reach rule does not stop a Watcher hit from 1.5 m off its shell: HP −24.7). **Memory and perf, run last** (`--only A90-memory-stability,A9-perf-budget`, 21:35–21:43): **A90 PASS** — heap **−4.3 %**, geometries **+12**, textures **−19**, objects **−526** (round 5 fp2: −6.7 % / +20 / −18 / −422); **A9 PENDING** — draw calls **319** (unchanged), 29.4 fps not attributable (the box gave 6.48 ms of GPU with nothing drawn). New per-frame state this round is plain numbers and module-scope scratch (`_bsMid0/_bsMidBest/_bsDirBest`, `_ahG`, the drive's three fields); the probes and gates allocate, the game paths do not.
+
+* **A103 is not green in either final-build run, and this is the reason.** Three different rows
+  whiffed across the two runs — Longleg light-2 and Tallneck heavy (`suite3`), Shellwalker light-1
+  (`lane6`) — each where the machine's own limb holds her at arm's length: the Shellwalker's claw
+  stopped the walk-in at 4.0 m instead of the usual 3.1–3.3, the Tallneck's foot is a lattice of
+  thin bars 0.48–0.9 m in front of her chest. Two rules of this round meet there: a hit needs the
+  blade TIP within 0.15 m of the hull (`HIT_TIP_REACH`, A103's own bar — before this round those
+  swings dealt damage from wherever the arc test found the machine), and the forearm/fist may not
+  enter a hull (S5c, A106). With a 1.5 m spear the tip can only land 1.4 m or more ahead, so at
+  a limb 0.5 m away the fist must stay out and the tip ends wherever that leaves it. Measured with
+  A103's own staging (`sk6/sc-dbg18.js`, `sc-dbg19.js`): Longleg 12/12, Shellwalker 12/12 from its
+  3.15 m stand, **Tallneck 9/12** at the lattice (a second run with the final arm pass's daylight cut
+  from 0.03 to 0.012 m: 7/12, so it was put back — its hits land at 0.142–0.148 m: there is no
+  reach margin there at all). The fixes I can see — a per-species melee stand that keeps her off a
+  lattice by an arm's envelope, or a hit rule for the spear's steel rather than its point — move
+  a stand or a bar, so they are the orchestrator's call, not mine; nothing here was loosened.
+* **A105 failed once in `suite3`** (a planted foot 0.098 m on the jogging heavy/L3 segment, bar
+  0.08) and passed in every lane run this round (drift ≤ 0.005–0.019 m). Nothing changed this round
+  runs in a jogging swing with no machine (the runner rule keeps the drive off, the arm passes have
+  no hulls to read, the ground clearance is a no-op on flat ground); reported, not explained.
+* **The first click at a Tallneck or a grounded Stormbird from where she stops walking up is a
+  whiff.** Holstered, the machine manager's own standoff (not this lane's) holds her 8.8 m from a
+  Tallneck's centre and 12.1 m from a grounded Stormbird's; the lunge is capped at 1.0 m at the
+  leg-safe 1.15 m/s and cannot close 1.06 m (Tallneck) or 6.3 m (Stormbird) before the blade's
+  contact. Until this round those clicks DEALT DAMAGE from there; now they are honest misses,
+  and with the spear out W walks her in under the melee term to where the next click lands
+  (A103 real-input rows, `sc-bigmach`).
+* **A107 clause (b) evaluates no frames on this build.** Its band (elbow above the shoulder
+  joint, where "behind the head" means something) is never entered: the re-authored reach keeps
+  the elbow at or below the shoulder joint through every draw and holster (max −0.017 m).
+  The band-free reading is published (0.347 m) and is the locomotion arm and the guard:
+  at the grab the hand is 0.22–0.24 m behind the shoulder plane (the haft rides 0.13 m behind
+  the spine), and with a 0.25 m forearm the elbow is 0.1–0.2 m behind the head plane on ANY roll
+  of its circle unless it goes UP above the shoulder — the pose the skeptic filmed. Clause (c)
+  (forearm off the back of the head) is the one that binds every frame.
+* **Click → first swing is 0.35–0.45 s of game time on this box** (63–97 ms frames under the
+  concurrent lanes), 0.28 s at 60 fps, 0.33 s at 30 fps: the draw may not take more than a tenth
+  of itself per rendered frame (the A102 tip-teleport bound), so it has a 10-frame floor. A101
+  gates the wall clock ≤ 0.35 s only at ≤ 25 ms frames and publishes both clocks every row.
+* **Hits now land earlier in the strike** (k 0.23–0.47 against the pose's contact key at 0.70):
+  the hit follows the blade onto the hull rather than a fixed fraction of a 0.10 s window the box
+  draws in two or three frames. The pinned contact poses (A102, V47) are unchanged.
+* **A swing that kills mid-lunge finishes its step into the freed space** (0.6–0.84 m measured,
+  feet stepping, planted drag ≤ 0.002 m): the drive is a velocity floor the collider was holding
+  back. Not a glide, not changed.
+* **The arm's last resort can straighten her** (≤ 0.36 rad of upper-spine pitch) when her own
+  lean has put her drive shoulder at the metal — measured only against a Tallneck's foot lattice
+  at the head-on stand, and only on frames where the arm would otherwise be inside it.
 
 ---
 

@@ -26,7 +26,7 @@ import { MELEE } from './weapons.js';
  *   silentTarget            the machine the prompt is offered on, or null
  *   swing({ heavy })        fire a swing (gates + scripted beats)
  *   silentStrike()          execute the prompt right now; -> result | null
- *   audit()                 { swings, hits, silent, crits }
+ *   audit()                 { swings, hits, silent, crits, outOfReach }
  * Events: 'melee-hit' { machine, damage, heavy, combo, point, killed },
  *         'silent-strike' { machine, killed, damage },
  *         'critical-hit'  { machine, damage }   (shared with machine-ai)
@@ -389,6 +389,19 @@ const STEP_ACCEL = 5.5;
  * bar). The distance is unchanged — the drive simply lasts longer.
  */
 const STEP_SPEED = 1.15;
+/**
+ * ...and how far over `STEP_SPEED` her speed may read WHILE A DRIVE IS
+ * CARRYING HER before `_stepIn` takes her for a runner (round 6). The runner
+ * rule compared against `STEP_SPEED` itself, so the drive's OWN floor (1.15
+ * m/s, read back a hair over by the controller) tripped it: the strike's lunge,
+ * fired at the windup->strike boundary while the windup's lunge was still
+ * carrying her, cancelled itself and the windup's drive with it. Filmed on the
+ * real input path (walk up to a Tallneck, click): the lunge asked for 0.81 m,
+ * delivered 0.13 m, and the hit landed 0.38-0.56 m short. With no drive in
+ * progress the rule is unchanged (a crouch-walk at 1.4 m/s still owns its own
+ * step).
+ */
+const STEP_DRIVE_SLACK = 1.25;
 
 /** Peak opacity of the swing smear (was 0.9 — see the geometry comment). */
 const TRAIL_PEAK = 0.32;
@@ -422,6 +435,23 @@ const LUNGE_MAX = 1.0;
  * subtracted from a distance she never covers.
  */
 const LUNGE_LEAVE = 0;
+/**
+ * A HIT LANDS WHERE THE BLADE IS (round 6, ruling R7 on the real input path).
+ * The blade tip must be within this of the target's hull SURFACE (negative =
+ * inside it) on the frame the hit resolves, or the swing is a whiff: no
+ * damage, no sparks, no `melee-hit`. Until round 6 the arc test measured to
+ * the machine's GAMEPLAY standoff capsule — a keep-out volume, 9.3 m of
+ * half-length on a grounded Stormbird — and the blade-line ray reached 0.45 m
+ * past the tip, so a click from where she stops walking up to a Stormbird
+ * dealt damage with the blade 6.1-6.6 m from any part of it, a Tallneck's
+ * 0.38-0.56 m and a Shellwalker's 0.32 m (`scratchpad/sk6/out-bigmach.json`,
+ * Oct 2). It is A103's own reach bar, so every hit the game deals is one the
+ * gate would pass.
+ */
+const HIT_TIP_REACH = 0.15;
+/** From this fraction of the strike leg on, the hit is looked for every frame
+ *  (see `_advance`) — the blade's release, not the cock. */
+const STRIKE_EARLY = 0.30;
 /**
  * The aim (round 6, R7 — see `aimPoint`): only a hull surface within this of
  * the predicted contact tip is aimed at, and the aim point sits `AIM_SINK`
@@ -506,12 +536,13 @@ export class Melee {
     this._phaseEnd = 0;
     this._struck = false;
     this._chargeT = 0;
+    this._chargeT0 = 0;
     this._charging = false;
     this._buffered = false;
     this._comboT = 0;
     this._visT = 0;           // legacy 'swung recently' cue (kept for readers)
     this._scanT = 0;
-    this._stats = { swings: 0, hits: 0, silent: 0, crits: 0 };
+    this._stats = { swings: 0, hits: 0, silent: 0, crits: 0, outOfReach: 0 };
 
     /* ------------------------- stance (player-melee) --------------------- */
     /** 'holstered' | 'draw' | 'ready' | 'swing' | 'holster' */
@@ -519,9 +550,11 @@ export class Melee {
     this._drawT = 0;          // clock inside draw/holster
     this._frameId = -1;       // rendered-frame id the clock budgets are keyed on
     this._frameBudget = [1, 1]; // [stance, phase] seconds left in this frame
-    this._driveBuf = { t: 0, dur: 0, want: 0, went: 0, px0: 0, pz0: 0, v: 0, x: 0, z: 1, pre: 0 };
+    this._driveBuf = { t: 0, dur: 0, want: 0, went: 0, px0: 0, pz0: 0, v: 0, x: 0, z: 1, pre: 0,
+      lastWent: 0, lastTarget: 0, blocked: 0 };
     this._readyT = 0;         // seconds of ready left before it re-holsters
     this._queued = null;      // a swing asked for while the spear was on her back
+    this._drawLunged = false; // the draw's step-in has been started (round 6)
     this._keyWas = false;     // melee-key edge
     this._aimYaw = 0;         // swing bearing relative to her facing (rad)
     /**
@@ -694,6 +727,7 @@ export class Melee {
       this._drawT = 0;
     }
     this.stance = 'draw';
+    this._drawLunged = false;
     return DRAW_T - this._drawT;
   }
 
@@ -723,6 +757,23 @@ export class Melee {
     const stanceDt = this._stanceTick(realDt);
     if (this.stance === 'draw') {
       this._drawT += stanceDt;
+      /* THE STEP-IN STARTS WITH THE DRAW (round 6, R7 on the real input
+       * path). A click from holstered plays the draw first (ruling R5), and
+       * where she stopped walking up to a big machine is its FULL standoff —
+       * a Tallneck's hull 0.3 m past the blade even after the windup's lunge,
+       * because the windup is too short to carry a long step. A fighter steps
+       * in while she draws: with a strike asked for (queued, or the button
+       * still down) and the wedge on a machine, the lunge `_fire` would ask
+       * for is started now, once, and `_fire` re-aims and re-asks from
+       * wherever this has carried her. No machine in the wedge, nothing
+       * changes (A101's from-holstered rows). */
+      if (!this._drawLunged && (this._queued || this._charging) && this.approachMachine) {
+        this._preLunge(this._queued ? this._queued.heavy : this._chargeT >= MELEE.heavy.chargeTime);
+        // once it has started (she may still be coasting in from the walk-up
+        // above the drive's speed — `_stepIn`'s runner rule — so it is asked
+        // again each frame of the draw until it takes)
+        this._drawLunged = !!this._drive;
+      }
       if (this._drawT >= DRAW_T && this._waitForHand(stanceDt)) {
         /* 0.75, not 0.985, and the 0.985 was a real bug: `poseState` adds up
          * to 50 ms of extrapolation on top of `_drawT` before dividing by
@@ -753,6 +804,7 @@ export class Melee {
           this._drawWait = 0;
           this.stance = 'ready';
           this._readyT = Math.max(this._readyT, READY_HOLD);
+          this._drawLunged = false;
           if (this._queued) { const q = this._queued; this._queued = null; this._fire(q.heavy); }
         }
       }
@@ -1162,6 +1214,26 @@ export class Melee {
     return set ? set.hulls : null;
   }
 
+  /** The blade TIP's distance to `m`'s nearest hull surface right now (< 0
+   *  inside it), off the live hull set — no allocation; Infinity when there
+   *  is no layer or no hull set to read (round 6, see `_advance`). */
+  _tipGap(m) {
+    const lay = this.layer;
+    if (!m || !lay || !lay.ok || !lay.tipWorld(_aTip)) return Infinity;
+    const hulls = this._hullSet(m);
+    if (!hulls || !hulls.length) return Infinity;
+    let best = Infinity;
+    for (let i = 0; i < hulls.length; i++) {
+      const h = hulls[i];
+      const r = h.wr || 0;
+      if (r <= 1e-4 || h.off) continue;
+      const d = segSegDist(_aTip.x, _aTip.y, _aTip.z, _aTip.x, _aTip.y, _aTip.z,
+        h.wax, h.way, h.waz, h.wbx, h.wby, h.wbz) - r;
+      if (d < best) best = d;
+    }
+    return best;
+  }
+
   /** How far ahead of her root the blade tip sits right now, in metres. */
   _bladeReach() {
     const lay = this.layer;
@@ -1212,7 +1284,7 @@ export class Melee {
      * for; a floor that is below her speed is a no-op on the way in but still
      * cancels velocity on the way out, and that cancel is a brake applied once
      * per swing.) */
-    if (speed > STEP_SPEED) { this._drive = null; return; }
+    if (speed > STEP_SPEED * (this._drive ? STEP_DRIVE_SLACK : 1)) { this._drive = null; return; }
     const want = metres * k;
     // a new step replaces the old one outright: two overlapping drives add
     // their distances and A102's 0.25-0.8 m band is about ONE swing's step
@@ -1224,6 +1296,7 @@ export class Melee {
     // `_stepDrive`), so throttling for the legs costs time, never reach
     d.dur = Math.min(1.30, Math.max(0.22, want / STEP_SPEED + 0.09) * 1.9);
     d.want = want; d.went = 0;
+    d.lastWent = 0; d.lastTarget = 0; d.blocked = 0;
     d.px0 = p.position.x; d.pz0 = p.position.z;
     d.v = STEP_SPEED;
     d.x = _dir.x; d.z = _dir.z;
@@ -1292,15 +1365,36 @@ export class Melee {
     const load = this.ctx.player?.animator?.footLockLoad ?? 0;
     const give = 1 - Math.min(1, Math.max(0, (load - 0.45) / 0.40));
     const target = d.v * Math.max(0, k) * give;
+    // ground actually covered along the step line, measured on the ROOT — the
+    // same quantity A102 gates — so the throttle above costs time, never reach
+    const went = (p.position.x - d.px0) * d.x + (p.position.z - d.pz0) * d.z;
+    /* A STEP THE MACHINE IS STOPPING IS NOT BANKED (round 6, Oct 2). The drive
+     * ends on distance, and a collider holding her (the melee term's outline,
+     * a machine's standoff) kept `went` at 0 while the clock ran on: the
+     * unwalked step was carried for up to 1.3 s and paid out the moment the
+     * collider let go — a kill mid-lunge stepped her 0.6-0.84 m into the
+     * wreck, and a holster at a Thunderjaw (the term letting go) 0.29 m at
+     * it, after she had stood still for half a second. When the root has
+     * made under a quarter of what the drive asked for over 0.12 s, the step
+     * is over: she was stopped. */
+    const asked = d.lastTarget * dt;
+    if (asked > 1e-4 && went - d.lastWent < 0.25 * asked) d.blocked += dt;
+    else d.blocked = 0;
+    d.lastWent = went;
+    d.went = went;
+    if (d.blocked > 0.12) {
+      const cur0 = p.velocity.x * d.x + p.velocity.z * d.z;
+      if (cur0 > d.pre) { const cut = cur0 - d.pre; p.velocity.x -= d.x * cut; p.velocity.z -= d.z * cut; }
+      this._drive = null;
+      return;
+    }
+    d.lastTarget = target;
     const cur = p.velocity.x * d.x + p.velocity.z * d.z;
     if (cur < target) {
       const add = target - cur;
       p.velocity.x += d.x * add;
       p.velocity.z += d.z * add;
     }
-    // ground actually covered along the step line, measured on the ROOT — the
-    // same quantity A102 gates — so the throttle above costs time, never reach
-    d.went = (p.position.x - d.px0) * d.x + (p.position.z - d.pz0) * d.z;
   }
 
   /**
@@ -1415,10 +1509,17 @@ export class Melee {
       // spear is in her hand by the time the release resolves
       if (!this._charging && !this.active) {
         this._charging = true; this._chargeT = 0;
+        this._chargeT0 = performance.now();
         this.drawSpear();
       }
       if (this._charging) {
-        this._chargeT += realDt;
+        /* THE CHARGE IS THE THUMB'S, ON THE WALL CLOCK (round 6). It was
+         * summed from `realDt`, which main.js caps at 0.05 s a frame: on a box
+         * drawing 11 fps a 0.42 s hold summed to 0.23 s, under the 0.28 s
+         * heavy threshold, and the held LMB played a LIGHT (A101's
+         * from-holstered jog/sprint hold rows, Oct 2). How long a button has
+         * been down is not game time. */
+        this._chargeT = (performance.now() - this._chargeT0) / 1000;
         // committed heavies fire on their own so a held button is never lost
         if (this._chargeT > 0.9) { this._charging = false; this.swing({ heavy: true }); }
       } else if (this.active && this.phase === 'recover' && !this._buffered) {
@@ -1537,6 +1638,16 @@ export class Melee {
     if (want > 0.01) this._stepIn(want);
   }
 
+  /** The draw's step-in (see `_advanceStance`): aim the beat that is about to
+   *  fire and start its lunge. `heavy` / `_i` are the queued beat's — exactly
+   *  what `_fire` sets a few frames later. */
+  _preLunge(heavy) {
+    this.heavy = !!heavy;
+    this._i = heavy ? 0 : Math.min(this.combo, MELEE.light.damage.length - 1);
+    this._aimAt();
+    this._lungeIn();
+  }
+
   _cancel() {
     this.active = false;
     this.phase = 'idle';
@@ -1566,12 +1677,38 @@ export class Melee {
      * (filmed: tip 1.72 m and 1.87 m from the impact point against a 1.2 m
      * bar). Half a frame of look-ahead picks whichever side of the boundary is
      * closer, which is the best an integer number of frames allows. */
-    if (this.phase === 'strike' && !this._struck
-        && this._t + realDt * 0.5 >= this._phaseEnd * CONTACT_K) {
-      this._struck = true;
-      this._resolve();
+    if (this.phase === 'strike' && !this._struck) {
+      const atContact = this._t + realDt * 0.5 >= this._phaseEnd * CONTACT_K;
+      /* ...AND IT LANDS WHEN THE BLADE GETS THERE (round 6, with
+       * `HIT_TIP_REACH`). A hit now needs the tip on the hull, and the
+       * contact frame is a fixed fraction of a 0.10 s window that this box
+       * draws in two or three frames: a heavy chopped THROUGH a Watcher's back
+       * from where she stops walking up (tip 0.21 m inside it the frame
+       * before) and came out under its belly on the contact frame — a whiff,
+       * on the real input path. So through the strike leg the tip is read
+       * against the target's hulls every frame (no allocation): it resolves
+       * on the first frame from `STRIKE_EARLY` on that has the tip within
+       * reach, at the contact frame if it is there, and otherwise keeps
+       * looking until the strike ends — where it resolves anyway (a whiff if
+       * the blade never got there). No target in the wedge: the contact
+       * frame, exactly as before. */
+      const k = this._phaseEnd > 1e-4 ? (this._t + realDt * 0.5) / this._phaseEnd : 1;
+      const m = this.approachMachine;
+      let fire = false;
+      if (!m) fire = atContact;
+      else if (k >= STRIKE_EARLY) {
+        const gap = this._tipGap(m);
+        fire = gap <= HIT_TIP_REACH || (atContact && gap === Infinity);
+      }
+      if (fire) {
+        this._struck = true;
+        this._resolve();
+      }
     }
     if (this._t < this._phaseEnd) return;
+    // the strike ran out without the blade getting there: resolve it (a whiff
+    // unless the line or the arc finds something in reach)
+    if (this.phase === 'strike' && !this._struck) { this._struck = true; this._resolve(); }
 
     if (this.phase === 'windup') {
       this.phase = 'strike';
@@ -1911,6 +2048,14 @@ export class Melee {
               }
             }
           }
+        }
+        /* ...AND IF THE BLADE IS NOT THERE, NOTHING IS HIT (round 6, see
+         * `HIT_TIP_REACH`). The machine the line or the arc chose is out of
+         * the blade's reach on this frame: a whiff, honestly. */
+        if (bestD > HIT_TIP_REACH) {
+          this._stats.outOfReach++;
+          machine = null;
+          object = null;
         }
       }
     }

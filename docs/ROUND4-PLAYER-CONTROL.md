@@ -150,7 +150,7 @@ lens only, so it can never accumulate into the player's aim.
 | `terrainCut` | m | the part of `boomCut` the **ground** explains. Never fades her — a hillside is not an occluder (see §7) |
 | `solidCut` | m | `camDist - solidReach` — what a **collider** took. This, and only this, drives the fade (§8) |
 | `solidReach` | m | boom length a **collider** allows, measured independently of the boom sweep (§8) |
-| `camRelief` | rad | how far the ground behind her is pushing the **boom** up right now, 0 on the flat, ≤ `ROT_MAX` (0.95). It rotates about her chest, so the lens gap is untouched — and it no longer moves the **view** (§10) |
+| `camRelief` | rad | how far the ground behind her is pushing the **boom** up right now, 0 on the flat, ≤ `ROT_MAX` (0.95). It rotates about her chest, so the lens gap is untouched — and it no longer moves the **view** (§10). Crouch-aiming at a deep look-up it is non-zero on **flat** ground too: the 0.9 m boom from A31's 1.2 m pivot needs 14–19° of it to stay out of the grass (placement only, absorbed by the aim comfort zone, §14) |
 | `camBoomElev` | rad | the elevation the boom is actually swept at = requested pitch + `camRelief`. The VIEW is aimed at the requested pitch, not at this (§10) |
 | `camLift` | m | how far the ground is raising the **orbit centre** right now, 0 on the flat, ≤ 1.6. It translates — the boom keeps both its length and its axis (§9) |
 | `camOrbit` | vec3 | the lifted orbit centre the boom is swept from = `camPivot + (0, camLift, 0)` (§9) |
@@ -158,11 +158,11 @@ lens only, so it can never accumulate into the player's aim.
 | `lensGap` | m | lens-to-pivot distance this frame. Below `LENS_NEAR` (1.05) **and** below `camDist − LENS_SLACK` (the boom the camera chose, less 0.18 m of placement slop) she dissolves whatever cut the boom; below `LENS_JAM` (0.80) she dissolves regardless (§9) |
 | `camElev` / `camElevWant` | rad | delivered / requested forward elevation, + = looking up (§9) |
 | `camAimBudget` | rad | the most look-down the ground may take from the requested shot this frame: `AIM_MAX` (0.80) level or down, `clamp(elevReq × (1 − AIM_KEEP), AIM_FLOOR, AIM_UP_MAX)` = `clamp(elevReq × 0.75, 0.12, 0.45)` on a look-up (§9) |
-| `camHijack` / `camHijackMax` | rad | how far the framing actually rotated the view toward her, and its ceiling (§9). Toward the pivot on an un-swung rig; toward her upper body as `camSwing` grows (§11) or, at a deep look-up, as `camRelief` grows (§13). **Slew-limited** (§12): changes by at most `HIJACK_RATE` (49°/s since §13; 57°/s before) and 2.5° per update; while **aiming** it pays back only the part of the offset past `AIM_FRAME` (0.8) of the half-frame. Includes the run offset (`camRunYaw`/`camRunPitch`, §13), the sum capped at `camHijackMax` |
+| `camHijack` / `camHijackMax` | rad | how far the framing actually rotated the view toward her, and its ceiling (§9). Toward the pivot on an un-swung rig; toward her upper body as `camSwing` grows (§11) or, at a deep look-up, as `camRelief` grows (§13). **Slew-limited** (§12): changes by at most `HIJACK_RATE` (49°/s since §13; 57°/s before) and 2.5° per update; while **aiming** it pays back only the part of the offset past `AIM_FRAME` (0.8) of the half-frame. Includes the run offset (`camRunYaw`/`camRunPitch`, §13; ≤ 3.4° since §14), the sum capped at `camHijackMax`. On aim entry the run part leaves in two updates (§14) |
 | `camSwing` | rad | how far the ground has swung the boom about the vertical through the pivot, + = shoulder side. 0 on open ground, below `SWING_UP_MIN` of the look-up, and while aiming (§11, §13) |
 | `camDolly` | 0..1.3 | at a deep look-up, the fraction of the head-to-lens line the lens keeps: < 1 = pulled toward her head because the ground asked (her head keeps its place in frame), > 1 = stepped out from her body; 1 on open ground (§13) |
 | `camHeadDrop` | m | how far the rig follows her stance down at a deep look-up (her head below its flat-ground height, past 0.03 m, ≤ 0.20 m); 0 on flat ground (§13) |
-| `camRunYaw` / `camRunPitch` | rad | the run framing's view turn toward her head actually applied (× `camRunK`): right / up in the requested axis' tangent plane, pitch ≤ 0 (never up past the request) (§13) |
+| `camRunYaw` / `camRunPitch` | rad | the run framing's view turn toward her head actually applied (× `camRunK`): right / up in the requested axis' tangent plane, pitch ≤ 0 (never up past the request), norm ≤ `RUN_YAW_MAX` = **0.06 rad (3.4°)** since §14 (0.40 in §13). While aiming it is the part still being released (half per update, §14) |
 | `camTurnAhead` | rad | while running at a deep look-up, how much turn is still ahead of her rendered facing (to the stick direction) — the orbit prices it (§13) |
 | `camRunK` | 0..1 | how much of the **run framing** is applied (§12): `smoothstep(up, LEAN_UP_IN, LEAN_UP_FULL) × runK`, 0 standing, aiming or below `LEAN_UP_IN` |
 | `camLean` | m | horizontal distance the run framing has moved the rig (head orbit + clearance), 0 when `camRunK` is 0 (§12; was the forward lean of §11) |
@@ -258,7 +258,9 @@ sliders straight to these; nothing needs to be told about a change.
 | `ORBIT_XMAX` / `ORBIT_YMAX` / `ORBIT_CLRK` / `ORBIT_EDGEK` / `ORBIT_RCOST` / `ORBIT_HIDK` / `ORBIT_HYST` | 0.62 / 0.65 NDC / 8 / 4 / 0.06 / 3.0 per stride-fraction / 0.20 | its **framing score** — see §12, §13 (`ORBIT_HIDK` was a flat 0.5) |
 | `ORBIT_HID_MAX` / `ORBIT_HIDK_NOW` / `ORBIT_HID_LIFT` / `ORBIT_HID_PAD` / `ORBIT_CROWN` | 0.10 / 0.6 / 0.05 m / 0.03 m / 0.13 m | the **hidden-head** test and price — see §13 (`ORBIT_CROWN` was 0.08) |
 | `ORBIT_TURN_IN` / `ORBIT_HIST_YAW` / `ORBIT_PASS_TURN` / `ORBIT_RATE_R_OUT` | 0.12 rad / 0.35 rad / 0.24 m / 4 m/s | **turns** out of a run — see §13 |
-| `RUN_YAW_MAX` / `RUN_YAW_K` | 0.40 rad (norm) / 1.0 per rad | the run framing's **view turn** toward her head — see §13 |
+| `RUN_YAW_MAX` / `RUN_YAW_K` | **0.06 rad (3.4°)** (norm; 0.40 in §13) / 1.0 per rad | the run framing's **view turn** toward her head — see §13, capped in §14 |
+| `ORBIT_XOFF` / `ORBIT_YOFF` / `ORBIT_OFFK` | 0.75 / 0.85 NDC / 20 per NDC | the run framing's **off-frame** price: her head in the frame before her head past her shoulders — see §14 |
+| `ROT_PLACE_LEAD` / `ROT_PLACE_RATE` / `ROT_PLACE_ROOM` | 0.12 s / 60 /s / 0.08 m | the **placement rotation** while aiming with no dolly room (crouch-aim at a deep look-up) — see §14 |
 | `ORBIT_RATE` / `ORBIT_RATE_R` | 5 rad/s / 1 m/s | how fast the orbit may move — see §12 |
 | `ORBIT_CAPS` / `ORBIT_CLOTH` / `ORBIT_CLOTH_R` / `ORBIT_HAIR` / `ORBIT_HAIR_R` / `ORBIT_SKIN_GEAR` / `ORBIT_RIGID_GAP` | 22 bone capsules / `dyn_(skirt\|legFlap\|hipFlap\|hipSash)` / 0.13 m / `dyn_(hairBack\|frontLock)` / 0.09 m / `dyn_(quiver\|arrow)` skin points (20) / every vertex within 0.06 m of a sample (`ORBIT_RIGID_GAP`) | its **proxy of her body** — see §12, §13 (cloth 0.10 m, no hair, no quiver, 16 stride samples per mesh before) |
 | `SWING_UP_MIN` / `SWING_MAX` / `SWING_STEPS` / `SWING_HYST` / `SWING_FRAME` / `SWING_FRAME_OK` / `SWING_COST` / `SWING_HOLD_SLACK` / `SWING_BODY` / `FRAME_TGT_BELOW` / `SWING_TGT_FULL` | 0.55 of the look-up / 1.75 rad / 20 / 0.08 m / 0.90 / 0.55 / 0.20 per rad / 0.10 / 0.52 m / 0.15 m / 0.35 rad | the **ground yaw swing** — see §11 |
@@ -1102,3 +1104,275 @@ change to an existing measurement, and it is stated above.
   (0.31–0.51 m; head in frame 0.80–1.00 on toward-left).
 * **Aiming at the clamp** (standing or crouched) still frames the bow and sky, not her —
   unchanged from §11; the contract there is reticle reach.
+
+---
+
+## §13 Residue fix round 2 (`player-control-r2`, judge round r1): the deep look-up contract
+
+> **Written in residue fix round 3.** The round-2 build shipped this section's code and cited
+> "§13" 18 times (here, in `player.js` and in the gate file) without writing it — the r2
+> judge's fifth finding. Everything below is read off the code that shipped and re-measured
+> on this tree; the round-2 lane-run output itself was not kept (the round was checkpointed
+> mid-flight in `2ce8e0c`), so its before/after numbers are quoted from the code comments that
+> recorded them, and marked as such.
+
+### The r1 findings, verbatim, and what answered them
+
+| # | r1 finding (verbatim, from the comment that answers it) | answer | gate row (now) |
+|---|---|---|---|
+| 1 | "a whole yaw sector and every pan crossing have no Aloy in frame, and clamp pans put the lens inside her gear; A31b's pan rows do not measure either" | the **deep-look-up contract** (`ROT_UP_IN`), the **dolly**, `SWING_CLR` on the swing; pan rows gained IN FRAME / FRAMING / NOT IN HER bars | `A31d-hillside-pan-0.8`, `A31e-hillside-pan-clamp` (split out of A31b in §14) |
+| 2 | "static at the clamp, camYaw 15/30/45 deg to one side of straight up-slope: onFrac 0, head in frame 0 … the one yaw A31b stages (offset 0) is fine" | same contract; a 24-yaw static sweep | `A31f-hillside-yaw-sweep` |
+| 3 | "turning out of an established run at the pitch clamp puts the lens inside her … A31c's turn diagnostics start the turn from a standstill, before the 42-frame clearance window and the orbit are established" | **turn prediction** in the orbit solver; eight turns out of a 60-frame run judged every frame | A31c `turns` |
+| 4 | "films her shoulder in the corner with the stowed bow and spear dominant" (A31c sprint away) | orbit widened to ±90°, the hidden-head price windowed, `ORBIT_CROWN` 0.08 → 0.13, and a **run offset** (`RUN_YAW_MAX` 0.40) — **the offset is withdrawn in §14** (r2 finding 4) | A31c `sprint-away` |
+| 5 | "A31c's head test is a projection with no occlusion check … make the head-visible test occlusion-aware: the ORBIT_CAPS torso/shoulder segment test on the crown sight line" | `crownHidden` in A31c; away rows must see her head past her shoulders on ≥ 90 % | A31c `headSeen` |
+
+Two more defects the round's stagings exposed were answered in the same build (comments in
+`player.js`): a sprint **throws her hair 0.17 m past the head capsule** and the braid 0.10 m past
+the torso one (both the nearest vertex on film while the proxy read clear → hair chains in the
+proxy), and an aimed pan at `camPitch -0.8` filmed her **head on the bottom edge** for 36 frames
+because her stance on the 38.4° face holds it 1.17–1.25 m above her feet against 1.36–1.38 m on flat ground (→ the stance follow).
+
+### The contracts
+
+* **Deep-look-up contract** (`_deepK` = smoothstep of the look-up from `ROT_UP_IN` 0.45 to
+  `SWING_UP_MIN` 0.55). At a deep look-up the orbit centre sits above her crown, so the two
+  levers that RAISE the lens only drop her under the bottom edge. Therefore, weighted by
+  `_deepK`: (a) a pitch-rotation candidate must keep her upper body within `SWING_FRAME` of the
+  frame after the hijack (the limit loosens by `2·(1−_deepK)` below full), and the scan stops at
+  the first one that loses her; (b) the orbit lift is scaled by `1 − _deepK`; (c) the boom-length
+  march is blended out by `_deepK` and the **dolly** answers the ground instead; (d) the hijack
+  target slides from the pivot to her upper body as the rotation grows (`_tgtK`); (e) where the
+  un-rotated lens sits inside `SWING_CLR` of her body proxy, the smallest rotation that clears the
+  ground **and** her is taken.
+* **Dolly** (`DOLLY_*`, `camDolly`). The lens slides along the line to her HEAD, so seen along
+  the unchanged requested view her head keeps its place in frame: the largest fraction
+  `t ∈ [DOLLY_HEAD/r, 1]`, scanned in `DOLLY_STEPS`, whose boom clears the ground by
+  `ROT_MARGIN`, keeping `DOLLY_GAP` (0.90) from the pivot and her body clearance above
+  `max(DOLLY_BODY_MIN, min(SWING_CLR, c₁ − 0.02))`. It comes in on the frame the ground asks
+  and releases at `DOLLY_REL`. When the un-pushed lens is already inside `DOLLY_OUT_CLR` of her
+  (a pan carries the 0.54 m clamp reach past her hanging hand), it steps OUT along the same line,
+  up to 1.3×, at `DOLLY_OUT_RATE`. The hijack target moves with it, and the fade's gap reference
+  is the dollied boom (a lens the dolly put 0.9 m from the pivot is a camera decision).
+* **Stance follow** (`HEAD_*`, `camHeadDrop`). At a deep look-up, standing and not running, the
+  whole rig follows her head down by its drop below `HEAD_REST` (1.36 m) past `HEAD_DEAD`
+  (0.03), capped at `HEAD_FOLLOW_MAX` (0.20), × `_deepK` × (1 − run weight), damped at 6/s.
+  Zero on flat ground.
+* **Run offset** (`RUN_YAW_*`, `camRunYaw` / `camRunPitch`). Each orbit candidate could turn
+  the view toward her head by up to 0.40 rad, out of the aim budget, slew-limited with the
+  hijack. **Withdrawn to 3.4° in §14.**
+* **Turn prediction** (`ORBIT_TURN_IN` / `ORBIT_HIST_YAW` / `ORBIT_PASS_TURN` /
+  `ORBIT_RATE_R_OUT`, `camTurnAhead`). `turn` = stick (else velocity) direction − her rendered
+  facing. While `|turn| > ORBIT_TURN_IN` every candidate is priced every frame, at its own
+  position and at half and all of the remaining turn (rotating the candidate's offset from her
+  head by `−turn` is the same as rotating her body by `turn` about the head), a candidate needs
+  `ORBIT_PASS_TURN` of predicted clearance to be taken or passed, the radius may step out at
+  `ORBIT_RATE_R_OUT`, the trailing arc sweeps with the turn, and history rows only count while
+  her facing is within `ORBIT_HIST_YAW` of the one they were priced at. The radius comes back
+  in only when the inner ring is clear all the way to the goal.
+* **Hidden-head windowing** (`ORBIT_HID_*`, `ORBIT_CROWN`). The crown sight line (`head_0104`
+  + 0.13 m, from the lens + 0.05 m, against the torso / shoulder / upper-arm capsules + 0.03 m)
+  per candidate, windowed over the stride (`ORBIT_WIN`); priced `ORBIT_HIDK` × the hidden
+  fraction past `ORBIT_HID_MAX`, plus `ORBIT_HIDK_NOW` when hidden this frame.
+* **Body proxy**: hair chains (`ORBIT_HAIR`, r 0.09 m), the quiver/arrow skin points
+  (`ORBIT_SKIN_GEAR`), cloth capsules r 0.10 → 0.13 m, rigid meshes sampled until every vertex
+  is within `ORBIT_RIGID_GAP` of a sample. A teleport marks the rig stale for one update
+  (`_rigStale`): bones are read as of the last render.
+* **Rates**: `SWING_RATE` 3 → 1.5 rad/s; `SWING_RATE_AIM` 1.2 rad/s (an aimed swing at 3 rad/s
+  carried her head to x −1.47 for 16 frames of a moderate pan); `HIJACK_RATE` 1.0 → 0.85 rad/s
+  (a 50 ms frame read 3.03° past the input at 1.0). Orbit candidates 29 × 4 → 37 × 6.
+* **Pan gap floor**: the pan rows' lens-to-pivot bar went 1.2 m → `GAP_FLOOR` 0.85 m (the
+  dolly's own floor, `DOLLY_GAP` less placement slop, above `LENS_JAM`), with the direct
+  nearest-vertex measurement (≥ 0.15 m) standing for "never inside her": a 360° pan must carry
+  the lens across the up-slope bearing of the 38.4° face, where the round-2 builder's brute
+  force over swing × rotation × length found no lens 1.2 m from the pivot that both clears the
+  ground and keeps her in frame, and the pivot sits 0.45 m above her crown, so the old bar never
+  measured the lens against her (the judge's 0.033 m frame read 1.315 m on it).
+
+### Gate record and cost
+
+This tree's numbers for every row above are §14's lane run (A31c, A31d, A31e, A31f). The
+`_updateCamera` cost the r2 judge re-measured (0.6–0.8 ms median, 1.2–2.9 ms p95 per call at a
+clamp sprint, under host load) is re-measured in §14 per rendered frame.
+
+### Known gaps left by round 2 (all r2 judge findings, answered in §14)
+
+A31b's film failed its own criteria; A31b timed out in the full suite; crouch-aim at a 56–66°
+look-up dissolved her on flat ground; the run offset turned the delivered view 23° off the
+input and drifted the reticle on aim entry; and this section did not exist.
+
+---
+
+## §14 Residue fix round 3 (`player-control-r2`, judge round r2): five majors
+
+Measured on this tree, port 5204. Lane runs at a load average of ~18 unless noted.
+
+### Finding 1 — A31b's film failed its own criteria (a frame of dirt)
+
+*Judge: "Re-stage the film … pick a hill spot with a horizon … then tighten filmSolid to match
+the written criteria (head and shoulders in frame, ndcTop > 0, some sky)."*
+
+The film was the −0.5 hillside row. From that spot the aim budget leaves 7.2° of the 28.6°
+asked and the bowl's far wall fills everything above her: **0 of 63** view rays reach sky
+(9 × 7 grid, `shots/pcr2f1-hill-0.8.png` probe). That row is still judged on its numbers; the
+film is now the **same 38.4° face at `camPitch −0.8`** (45.8° asked — the ground swing row),
+and `filmSolid` asserts the written criteria literally: opacity > 0.98, lens ≥ 1.20 m,
+delivered elevation > 15°, `head_0104` and **both clavicles** inside |0.9| of the frame,
+`ndcTop > 0`, and a sky test that marches the 63 view rays through the heightfield — ≥ 60 % of
+the top row and ≥ 25 % of all rays reach sky, ≥ 10 % end on terrain beyond 40 m (the skyline),
+≤ 25 % end on ground within 40 m. The criteria text now names the staging (`camPitch −0.8`);
+its requirements are unchanged.
+
+| A31b film | before (r2 judge) | now |
+|---|---|---|
+| staging | hillside −0.5 | hillside −0.8 (swing −90°) |
+| delivered elevation | 7.2° | 53.2° |
+| head / clavicles (NDC) | crown only, bottom 20 % | (0.63, −0.08) / (0.74, −0.26), (0.82, −0.32) |
+| ndcTop / silVisible | −0.21 / 0.396 | 1.15 / 1.000 (onFrac 0.678) |
+| sky rays / top row / skyline / near ground | 0 / 0 / 0.94 / 0.06 | 0.60 / 0.89 / 0.40 / 0 |
+| opacity / lens gap | 1.000 / 1.65 | 1.000 / 1.45 m |
+
+### Finding 2 — A31b timed out (600 s) in the full suite
+
+The yaw pans and the 24-yaw static sweep — 9,200 of the gate's ~10,300 frames — are their own
+gates now, with the same rows, bars and estimators (the pinned flat controls are re-staged in
+each, with A31b's estimator; the shared staging is `HILLSIDE` in the gate file):
+
+| gate | rows | timeout | lane run, load ~18 | lane run, load ~43 |
+|---|---|---|---|---|
+| `A31b-no-ghost-without-occluder` | controls, hillside/valley/sprint/face/trunk rows, film | 900 s | **28 s** | 68 s |
+| `A31d-hillside-pan-0.8` (new) | 4 pans at −0.8 | 1200 s | **69 s** | 141 s |
+| `A31e-hillside-pan-clamp` (new) | 4 pans at −1.15 | 1200 s | **68 s** | 147 s |
+| `A31f-hillside-yaw-sweep` (new) | 48-row static sweep | 1200 s | **63 s** | 93 s |
+
+(A31b alone was 558 s isolated / 611 s timed out under load.) `A31-crouch-aim`'s timeout went
+90 → 300 s: the load-43 lane run timed it out at 90 s with no bar failing (~830 frames).
+
+### Finding 3 — crouch-aim at 56–66° dissolved her on flat open ground
+
+*Judge: "Give the deep-look-up path a lever when the boom is already at or under DOLLY_GAP …
+let the ground rotation through while aiming."* The cause was as read: the 0.9 m crouch-aim
+boom sits at `DOLLY_GAP`, so the dolly had no room; the rotation was refused for framing (the
+aimed frame at 66° never holds her body — A32's contract there is the reticle); the lift and
+march are blended out at a deep look-up; the lens sat 0.38 m over the grass and `cameraBoom` cut
+the boom to 0.5 m.
+
+**Fix — the placement rotation (`_rotPlace`).** Aiming or crouched, at a deep look-up, with the
+look-up rules' boom within `ROT_PLACE_ROOM` (0.08 m) of `DOLLY_GAP`: the rotation is chosen on
+clearance alone, priced at the boom the lens is actually on (the length spring lags a flick:
+1.36 m at 37° for a 0.9 m target), paid back toward the **pivot** (so AIM COMFORT absorbs it),
+solved `ROT_PLACE_LEAD` (0.12 s) ahead along the look-up and assigned outright when the boom it
+has would be cut this frame (otherwise it attacks at 60/s). Standing aim is never this short
+(1.015 m at the clamp), so A32b's standing rows and the aimed pans are untouched.
+
+| flat ground (−150, 39), crouch-aim | before | now |
+|---|---|---|
+| pinned −0.96 / −1.0 / −1.15: opacity | 1.00 / 0.064 / 0.063 | 1.000 / 1.000 / 1.000 |
+| pinned −1.0 / −1.15: lens gap, boom | 0.50, 0.50 m | 0.90, 0.90 m |
+| real sweeps `mouse.dy` −40 / −120 / −400 / −900, every frame | u 0.06 from frame 12 | min opacity 1.000, min gap 0.90 m |
+| relief / delivered elevation at the clamp | 0° / 65.9° | 14–18.7° / 64.8–65.9° |
+| crouched, **not** aiming, at the clamp (the judge's "related" number) | 42.5° delivered | 44–49° (r1 tree 50.3°) |
+
+Gates: **A32b** gained the judge's row — C through the real listener, RMB, `mouse.dy` −40 and
+−400 to the clamp, 100 frames, every frame opacity ≥ 0.98 and lens ≥ 0.85 m: measured 1.000 /
+0.90 m on both. **A32**'s crouch row asserts opacity ≥ 0.98 and `boomM` ≥ 0.85 beside the
+reticle: 1.000 / 0.90 m, 65.7°, both targets on the reticle. A31's pivot is still 1.2000 m.
+Film: `shots/pcr2f1-crouchaim-clamp.png`.
+
+### Finding 4 — the run framing turned the view 23° off the input, and aim entry drifted
+
+*Judge: "Do not spend the aim budget on flat-ground run framing … or cap RUN_YAW_MAX to a few
+degrees so aim entry cannot pan the sky. Add a gate row: sprint at the clamp, then RMB;
+delivered view within 2 deg of the requested axis within 2 frames of aim entry, and |camElev −
+request| bounded while running on flat ground."*
+
+Four changes, each measured:
+
+* `RUN_YAW_MAX` 0.40 → **0.06 rad (3.4°)**.
+* **Aim entry**: the run turn the view carried leaves in two updates (half each, on top of the
+  ordinary slew), instead of at `HIJACK_RATE`.
+* Removing the turn exposed **two more sources** of view turn on flat ground, both closed: the
+  body-clearance rotation and swing of §13 (e) fired every stride while she ran (2–9° of
+  rotation, paid back toward her body: 12–18° of elevation gone on a jog away) — they now stand
+  down while the run framing owns her body clearance (`camRunK > 0`); and the hijack aimed from
+  the **bobbed** lens, re-pointing the view at the pivot every footfall (up to 1.3°) — it aims
+  from the lens as placed now (`_lensPre`), so the bob and the shake stay translations.
+* With no turn to frame her head, the orbit chose lenses that see her head past her shoulders
+  and left it **off the left edge** (head in frame 0.25 on a jog away). `ORBIT_OFFK` prices her
+  head leaving the frame past 0.75 NDC at 20/NDC: in the frame comes first.
+
+| flat ground, clamp (A31c) | shipped (r2 judge) | now |
+|---|---|---|
+| view off the input, running (8 rows) | 23.9° sprint away, 23.0° jog away | max 0.8–5.9° |
+| elevation off the request, running | 8.7° sprint away, 15.2–15.5° sprint left | max 0.7–5.4° |
+| aim entry out of an established sprint (away / left) | 23.6 → 0.3° over 11 frames | 3.5° → **1.7°** (frame 1) → **0.18°** (frame 2 on) |
+| largest single-frame view step on the draw | 2.5° | 1.8° |
+
+A31c gained the bars: view ≤ 6° off the input and elevation ≤ 5.5° off the request on every
+judged frame of the eight run rows (run turn 3.4° + 0.2° frame drop + the decaying standstill
+body rotation, 2–3° when she starts facing sideways), and the aim-entry rows (≤ 2° from the
+second frame of the draw, no frame stepping the view > 3°). Film: `shots/pcr2f1-aim-entry.png`.
+
+**The cost, and the conflict it leaves.** A31c's AWAY rows also carry the r1 judge's bar "her
+head seen past her shoulders (occlusion-aware) on ≥ 90 %" alongside "|head NDC x| ≤ 0.8 on
+≥ 90 %". The 23° turn was the only thing meeting both. Measured on the sprint-away pose at the
+clamp (head 1.20 m up, 0.42 m ahead of her root), every lens position with the view on the
+request — angle −90…+100° round her head, radius 0.35–1.0 m, height 0.50–0.95 m, each over a
+60-frame stride, against the gate's own capsule test and the solver's body proxy:
+
+* every lens that sees her crown past her shoulders on ≥ 85 % of the stride, with her head
+  below the top edge, puts it at mean |x| ≥ **0.83** (stride max ≥ 1.0) at the 60° sprint FOV —
+  80–90° round her, beside her;
+* every lens with mean |x| ≤ 0.75 and her head in frame sees it on ≤ **0.68** of the stride;
+* behind her, where the frame holds her head (x −0.3…−0.6), her forward lean hides it on
+  95–100 % — the pinned standing rig itself scores 0.00 on this test.
+
+So with the view on the request the two away bars cannot both pass; meeting them takes a view
+turn of an estimated ~8° (sprint) to ~11° (jog) — or an FOV of ~72°: an adaptive zoom was built and
+measured (FOV 71.5° held her head at x −0.86…−0.97, the solver taking 0.85 m radii), and was not
+shipped. **A31c now fails only `jog-away` / `sprint-away: head seen past her shoulders` (0.00 /
+0.05)**; every other A31c bar passes. This needs a ruling — the r2 judge's rule (the view is the
+player's, to a few degrees) against the r1 judge's away-row bar. Recommended: keep the r2 rule
+and re-specify the away-row visibility bar for a lens behind her (e.g. head in frame and within
+0.35 NDC of the pinned framing, crown hidden on no more than N consecutive frames). The gate is
+left failing, unweakened, until then. Film: `shots/pcr2f1-sprint-away.png`.
+
+### Finding 5 — §13 did not exist
+
+Written above, from the code and gate file that shipped, with this round's numbers for its rows.
+
+### `_updateCamera` cost, re-measured
+
+| staging | tight loop, 250 calls × 8 (ms/call) | in-frame, 150 frames: per call median / p95 | per rendered frame median / p95 (calls/frame) |
+|---|---|---|---|
+| level, standing | 0.012 | ≤ 0.1 / 0.1 | 0.1 / 0.2 (1.97) |
+| clamp, pinned | 0.036 | 0.1 / 0.2 | 0.2 / 0.4 (1.71) |
+| clamp, sprint (run framing) | **0.25** | **0.5 / 0.7** | **0.8 / 1.2** (1.61) |
+| clamp, crouch-aim (placement rotation) | — | 0.2 / 0.3 | 0.3 / 0.5 (1.71) |
+| hillside −0.8, swung | — | 0.2 / 0.4 | 0.5 / 0.8 (2.37) |
+| hillside clamp, panning | — | 0.2 / 0.3 | 0.3 / 0.5 (1.78) |
+
+Load average 17–19 (the box was not quiet; the in-frame numbers are quantised to 0.1 ms by
+`performance.now`). The headless page renders at ~35 fps, hence 1.6–2.4 fixed sub-steps per
+frame; at 60 fps it is one call per frame, i.e. ~0.5 ms at a clamp sprint, almost all of it
+the run framing's 222-candidate orbit solve. No per-frame allocation was added this round.
+
+### Gate (port 5204)
+
+Lane run: **14 / 15 PASS** — A28, A28b, A29, A30, A30b, A31, A32, V22, A29b, A32b, A31b,
+A31d, A31e, A31f; **A31c FAIL** on the away-row visibility bar only (see Finding 4). New ids:
+`A31d-hillside-pan-0.8`, `A31e-hillside-pan-clamp`, `A31f-hillside-yaw-sweep` (none was
+registered). No existing bar was loosened; added bars: A31b film (head + clavicles, ndcTop,
+sky/skyline/near ground), A32 crouch opacity and boom, A32b crouch-aim sweeps, A31c view /
+elevation / aim-entry rows.
+
+### Known gaps
+
+* **A31c away rows** — the ruling above.
+* Crouched (not aiming) at the clamp she gets 44–49° of the 65.9° asked: the 0.9 m boom needs
+  14–22° of rotation to stay out of the grass, paid back out of the aim budget (inside
+  `camAimBudget`).
+* Aiming at the clamp still frames the bow and sky (A31e's aimed control: onFrac 0.12, head in
+  frame 0) — the contract there is the reticle.
+* Starting a run while facing sideways at the clamp, the standstill rig's body-clearance
+  rotation (2–3°) is still in the view for ~0.4 s while it decays.
+* At deep look-ups her stowed bow and spear still cross the upper frame (the gear's mount).

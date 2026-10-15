@@ -136,6 +136,88 @@ function frameSample() {
   return { frac: nIn ? inBox / nIn : 0, nearest, headIn, hx, hy };
 }`;
 
+/**
+ * RESIDUE FIX ROUND 3 — the hillside staging A31b / A31d / A31e / A31f share
+ * (judge: "A31b failed the full-suite run on its 600 s timeout … move the pan
+ * and sweep rows into their own gate ids with their own timeouts").  The same
+ * searches A31b has always used: the flat clear control ground (14 m of clear
+ * air, under 3 deg) and the steepest clear, grass-free 26-40 deg face; and the
+ * PINNED flat control at a pitch, measured with A31b's own estimator (56
+ * frames, 16 to settle, `silhouette().onFrac` every 2nd frame, the median).
+ * Needs FREEZE, VISIBLE and SILHOUETTE_VIS above it.
+ */
+const HILLSIDE = `const C = __CTX__, p = C.player, T = C.terrain, K = C.collision;
+      freeze();
+      const V = p.position.constructor, n = new V();
+      const frame = () => new Promise((r) => requestAnimationFrame(r));
+      const DEG = 180 / Math.PI;
+      const hider = (c) => c.camera || c.kind === 'canopy';
+      const ONFRAC_FLOOR = 0.12, FRAME_KEEP = 0.45;
+      let flat = null;
+      for (let x = -220; x <= 220 && !flat; x += 7) {
+        for (let z = -220; z <= 220; z += 7) {
+          T.getNormal(x, z, n);
+          if (Math.acos(Math.max(-1, Math.min(1, n.y))) * DEG > 3) continue;
+          if (K.sphereQuery(x, T.getHeight(x, z) + 1, z, 14, [], hider).length) continue;
+          flat = { x, z }; break;
+        }
+      }
+      let hill = null;
+      for (let x = -300; x <= 300; x += 9) {
+        for (let z = -300; z <= 300; z += 9) {
+          if (Math.hypot(x, z) > 310) continue;
+          T.getNormal(x, z, n);
+          const d = Math.acos(Math.max(-1, Math.min(1, n.y))) * DEG;
+          if (d < 26 || d > 40) continue;
+          const h = T.getHeight(x, z);
+          if (K.sphereQuery(x, h + 1, z, 7, [], hider).length) continue;
+          if (T.tallGrassDensity && T.tallGrassDensity(x, z) > 0.12) continue;
+          if (!hill || d > hill.deg) hill = { x, z, deg: +d.toFixed(1), down: Math.atan2(n.x, n.z) };
+        }
+      }
+      const CTRL = { pin: {} };
+      const pinnedControl = async (pitch) => {
+        p.position.set(flat.x, 0, flat.z); p.velocity.set(0, 0, 0); p._snapToGround();
+        p.heading = 0; p.camYaw = Math.PI; p.camPitch = pitch;
+        p._relief = 0; p._lift = 0; p._pivotSeeded = false;
+        C.input.keys.clear(); C.input.mouse.buttons = 0;
+        const fracs = [];
+        for (let i = 0; i < 56; i++) {
+          await frame();
+          p.position.x = flat.x; p.position.z = flat.z; p.velocity.x = 0; p.velocity.z = 0;
+          p.camYaw = Math.PI; p.camPitch = pitch;
+          if (i < 16) continue;
+          if (i % 2 === 0) { const sq = silhouette(); fracs.push(sq.n ? sq.onFrac : 0); }
+        }
+        fracs.sort((a, b) => a - b);
+        const ctrl = fracs[fracs.length >> 1];
+        CTRL.pin[pitch] = { ctrl, bar: Math.max(ONFRAC_FLOOR, FRAME_KEEP * ctrl) };
+      };
+      /* the film: re-stage a pinned hillside frame and hold it for the shutter
+       * (the pin retires after 12 s so it cannot leak into the next gate) */
+      const filmAt = async (pitch, offDeg) => {
+        const yaw = hill.down + Math.PI + offDeg / DEG;
+        p.position.set(hill.x, 0, hill.z); p.velocity.set(0, 0, 0); p._snapToGround();
+        p.heading = hill.down; p.camYaw = yaw; p.camPitch = pitch;
+        p._relief = 0; p._lift = 0; p._pivotSeeded = false;
+        C.input.keys.clear(); C.input.mouse.buttons = 0;
+        const until = performance.now() + 12000;
+        const pin = () => {
+          if (performance.now() > until) return;
+          p.position.x = hill.x; p.position.z = hill.z; p.velocity.x = 0; p.velocity.z = 0;
+          p.camPitch = pitch; p.camYaw = yaw; p.heading = hill.down;
+          requestAnimationFrame(pin);
+        };
+        pin();
+        for (let i = 0; i < 40; i++) await frame();
+        let u = 1; for (const m of p._mats) if (m.u.value < u) u = m.u.value;
+        const m = frameSample();
+        return { pitch, offDeg, opacity: +u.toFixed(3), onFrac: +m.frac.toFixed(3), headIn: m.headIn,
+          head: [+m.hx.toFixed(2), +m.hy.toFixed(2)], nearestVertexM: +m.nearest.toFixed(3),
+          lensGap: +C.camera.position.distanceTo(p.camPivot).toFixed(2), swingDeg: +((p.camSwing ?? 0) * DEG).toFixed(1),
+          ok: u >= 0.98 && m.headIn && m.nearest >= 0.15 };
+      };`;
+
 export const GATES = [
   /* ------------------------------------------------------------------ A28 */
   {
@@ -488,7 +570,9 @@ export const GATES = [
     id: 'A31-crouch-aim', kind: 'action', lane: 'player-control',
     title: 'C toggles crouch and aiming does not cancel it: grass stealth holds, pivot <= 1.2 m',
     setup: `__CTX__.input.enabled = true;`,
-    settle: 700, timeout: 90000,
+    /* 300 s (was 90): ~830 frames of sweeps; under a load average of 43 the
+     * lane run timed out at 90 s with no bar failing (residue fix round 3) */
+    settle: 700, timeout: 300000,
     assert: `(async () => {
       ${FREEZE}
       const C = __CTX__, p = C.player, T = C.terrain;
@@ -625,7 +709,7 @@ export const GATES = [
   /* ------------------------------------------------------------------ A32 */
   {
     id: 'A32-look-up', kind: 'action', lane: 'player-control',
-    title: 'Forward pitch reaches >= 60 deg while aiming, standing AND crouched; a Glinthawk at 10 m / 16 m altitude is on the reticle in both',
+    title: 'Forward pitch reaches >= 60 deg while aiming, standing AND crouched; a Glinthawk at 10 m / 16 m altitude is on the reticle in both; crouched, she stays solid (opacity >= 0.98) and the boom >= 0.85 m at the clamp',
     setup: `__CTX__.input.enabled = true;`,
     settle: 700, timeout: 90000,
     assert: `(async () => {
@@ -687,16 +771,32 @@ export const GATES = [
       await new Promise((r) => setTimeout(r, 350));
       C.input.mouse.buttons |= 4;
       await new Promise((r) => setTimeout(r, 500));
+      /* RESIDUE FIX ROUND 3 (judge: "crouch-aim at a 56-66 deg look-up
+       * dissolves Aloy to opacity 0.06 on flat open ground … A32's crouch row
+       * records crouchAim.atClamp {boomM 0.5, reliefDeg 0} and passes, because
+       * it only checks pitch and reticle").  The crouch row now also holds her
+       * applied opacity (every frame of the sweep and the 30 frames after it)
+       * and the boom at the clamp (>= 0.85 m: the crouch-aim boom is 0.9 m,
+       * BOOM_MIN, and the judge's dissolved frame read 0.5). */
+      let crouchMinU = 1;
+      const minU = () => { let u = 1; for (const m of p._mats) if (m.u.value < u) u = m.u.value; return u; };
       for (let i = 0; i < 90; i++) {
         C.input.mouse.dy = -400;
         await new Promise((r) => requestAnimationFrame(r));
+        crouchMinU = Math.min(crouchMinU, minU());
+      }
+      for (let i = 0; i < 30; i++) {
+        await new Promise((r) => requestAnimationFrame(r));
+        crouchMinU = Math.min(crouchMinU, minU());
       }
       await new Promise((r) => setTimeout(r, 200));
+      crouchMinU = Math.min(crouchMinU, minU());
       const cfwd = new V(0, 0, -1).applyQuaternion(C.camera.quaternion).normalize();
       const crouchPitch = Math.asin(Math.max(-1, Math.min(1, cfwd.y))) * 180 / Math.PI;
       const crouchAt = { camPitch: +p.camPitch.toFixed(3), boomM: +p.boomLength.toFixed(2),
         crouchAim: p.crouchAim, pivotAboveFeet: +(p.camPivot.y - p.position.y).toFixed(3),
-        reliefDeg: +((p.camRelief || 0) * 180 / Math.PI).toFixed(1), hijackDeg: +((p.camHijack || 0) * 180 / Math.PI).toFixed(1) };
+        reliefDeg: +((p.camRelief || 0) * 180 / Math.PI).toFixed(1), hijackDeg: +((p.camHijack || 0) * 180 / Math.PI).toFixed(1),
+        lensGapM: +C.camera.position.distanceTo(p.camPivot).toFixed(2), minOpacity: +crouchMinU.toFixed(3) };
       const cbx = Math.sin(p.heading), cbz = Math.cos(p.heading);
       const crouchTargets = [];
       for (const alt of [10, 16]) {
@@ -714,10 +814,11 @@ export const GATES = [
       const crouchHeld = p.crouching && p.aiming && p.crouchAim;
       C.input.mouse.buttons = 0;
       p.setCrouch(false);
+      const crouchSolid = crouchAt.minOpacity >= 0.98 && crouchAt.boomM >= 0.85;
       const pass = forwardPitch >= 60 && targets.every((t) => t.onReticle)
-        && crouchHeld && crouchPitch >= 60 && crouchTargets.every((t) => t.onReticle);
+        && crouchHeld && crouchPitch >= 60 && crouchTargets.every((t) => t.onReticle) && crouchSolid;
       return { pass, detail: { forwardPitchDeg: +forwardPitch.toFixed(1), atClamp, targets,
-        crouchAim: { held: crouchHeld, forwardPitchDeg: +crouchPitch.toFixed(1), atClamp: crouchAt, targets: crouchTargets } } };
+        crouchAim: { held: crouchHeld, forwardPitchDeg: +crouchPitch.toFixed(1), atClamp: crouchAt, solid: crouchSolid, targets: crouchTargets } } };
     })()`,
   },
 
@@ -918,7 +1019,7 @@ export const GATES = [
   /* ----------------------------------------------------------------- A32b */
   {
     id: 'A32b-lookup-no-ghost', kind: 'action', lane: 'player-control',
-    title: 'Look-up never ghosts her without an occluder; a real occluder still fades her, dithered, with depth',
+    title: 'Look-up never ghosts her without an occluder (standing, free, and CROUCH-AIMING swept to the clamp through the real input: opacity >= 0.98 and lens >= 0.85 m from the pivot every frame); a real occluder still fades her, dithered, with depth',
     criteria: 'Film shows Aloy SOLID while aiming steeply up at open sky (bow, arrow, hair all opaque, '
       + 'no see-through interior). FAIL if she is translucent, if her silhouette shows internal geometry, '
       + 'or if the weapon stays solid while the body dissolves.',
@@ -959,6 +1060,53 @@ export const GATES = [
       };
       const aimRows = await sweep(true);
       const freeRows = await sweep(false);
+
+      /* --- 1b. CROUCH-AIM to the clamp (residue fix round 3, judge:
+       * "crouch-aim at a 56-66 deg look-up dissolves Aloy to opacity 0.06 on
+       * flat open ground … A32b stages standing aim only").  The judge's own
+       * staging through the real input path: C (keydown/keyup on the real
+       * listener), RMB, mouse.dy sweeps to the clamp — slow (-40/frame) and a
+       * flick (-400) — then held 60 frames.  On EVERY frame of the sweep and
+       * the hold, on clear ground: applied opacity >= 0.98 and the lens >=
+       * 0.85 m from the pivot (the crouch-aim boom is BOOM_MIN 0.9 m; the
+       * dissolved frame sat at 0.50). */
+      const crouchAim = [];
+      {
+        const key = (code, type) => window.dispatchEvent(new KeyboardEvent(type, { code }));
+        const minU = () => { let u = 1; for (const m of p._mats) if (m.u.value < u) u = m.u.value; return u; };
+        for (const dy of [-40, -400]) {
+          p.position.set(spot.x, 0, spot.z); p.velocity.set(0, 0, 0); p._snapToGround();
+          p.camYaw = Math.PI; p.heading = 0; p.camPitch = 0; C.input.keys.clear(); C.input.mouse.buttons = 0;
+          if (p.crouching) p.setCrouch(false);
+          for (let i = 0; i < 10; i++) await new Promise((r) => requestAnimationFrame(r));
+          key('KeyC', 'keydown'); await new Promise((r) => requestAnimationFrame(r)); key('KeyC', 'keyup');
+          C.input.mouse.buttons |= 4;
+          for (let i = 0; i < 25; i++) await new Promise((r) => requestAnimationFrame(r));
+          let u = 1, gap = 9, occ = 0, frames = 0, worst = null, peak = 0;
+          for (let i = 0; i < 100; i++) {
+            if (i < 40) C.input.mouse.dy = dy;
+            C.input.mouse.buttons |= 4;
+            await new Promise((r) => requestAnimationFrame(r));
+            p.position.x = spot.x; p.position.z = spot.z; p.velocity.x = 0; p.velocity.z = 0;
+            const e = C.camera.position;
+            if (C.collision.sphereQuery(e.x, e.y, e.z, 1.0, [], blocking).length) { occ++; continue; }
+            frames++;
+            const uu = minU(), g = e.distanceTo(p.camPivot);
+            peak = Math.max(peak, -p.camPitch * 180 / Math.PI);
+            if (uu < u || g < gap) worst = { frame: i, pitchDeg: +(-p.camPitch * 180 / Math.PI).toFixed(1), opacity: +uu.toFixed(3),
+              lensGap: +g.toFixed(2), boom: +p.boomLength.toFixed(2), reliefDeg: +(p.camRelief * 180 / Math.PI).toFixed(1) };
+            u = Math.min(u, uu); gap = Math.min(gap, g);
+          }
+          crouchAim.push({ dy, crouchAim: p.crouchAim, peakPitchDeg: +peak.toFixed(1), frames, occ,
+            minOpacity: +u.toFixed(3), minLensGap: +gap.toFixed(2), worst,
+            elevDeg: +(p.camElev * 180 / Math.PI).toFixed(1), reliefDeg: +(p.camRelief * 180 / Math.PI).toFixed(1),
+            ok: p.crouchAim === true && peak >= 60 && occ === 0 && u >= 0.98 && gap >= 0.85 });
+          C.input.mouse.buttons = 0;
+          key('KeyC', 'keydown'); await new Promise((r) => requestAnimationFrame(r)); key('KeyC', 'keyup');
+        }
+        if (p.crouching) p.setCrouch(false);
+      }
+      const crouchAimOK = crouchAim.every((r) => r.ok);
       const clear = [...aimRows, ...freeRows].filter((r) => r.occ === 0);
       const ghosted = clear.filter((r) => r.fade < 0.999);
       const sunk = clear.filter((r) => r.lensAboveFeet < 0.5);
@@ -1008,7 +1156,7 @@ export const GATES = [
       const parked = { fade: +p.fade.toFixed(3), boom: +p.boomLength.toFixed(2) };
       C.input.mouse.buttons = 0;
 
-      const pass = ghosted.length === 0 && sunk.length === 0 && mono && camDistMono
+      const pass = ghosted.length === 0 && sunk.length === 0 && mono && camDistMono && crouchAimOK
         && parked.fade > 0.999
         && !!occluded && occluded.fade < 0.9 && occluded.matsLeftSolid === 0
         && occluded.depthOff === 0 && occluded.blended === 0;
@@ -1018,6 +1166,7 @@ export const GATES = [
         aimCamDist48to66: steepAim.map((r) => [r.deg, r.camDist]), minFadeOnClearGround: +Math.min(...clear.map((r) => r.fade)).toFixed(3),
         minLensAboveFeet: +Math.min(...clear.map((r) => r.lensAboveFeet)).toFixed(3),
         parkedAt66deg: parked, occluded, worstClear: ghosted.slice(0, 4),
+        crouchAim, crouchAimOK,
       } };
     })()`,
   },
@@ -1055,18 +1204,18 @@ export const GATES = [
    */
   {
     id: 'A31b-no-ghost-without-occluder', kind: 'action', lane: 'player-control',
-    title: 'Hillside/valley/sprint look-ups across the WHOLE pitch range (-0.5, -0.8, -1.15 clamp): opacity >= 0.98, lens never inside her, aim within budget, framing within FRAME_KEEP of a flat-ground control staged at the SAME pitch and gait (one control per pitch/gait); a 360 deg yaw pan on the hillside at -0.8/-1.15, aiming and not, slow and moderate, on EVERY sampled frame: view <= 3 deg past the input, opacity >= 0.98, head in frame, onFrac >= FRAME_KEEP x the flat control at that pitch, nearest visible vertex >= 0.15 m, lens >= 0.85 m from the pivot; a 24-yaw static sweep of the same face at -0.8/-1.15 held to the same bars; a trunk still fades her < 0.8',
-    criteria: 'Film shows Aloy SOLID on the hillside look-up staging — no screen-door dither on body, hair, '
-      + 'bow or quiver — she is IN FRAME at a normal chase distance, and the camera is LOOKING UP (sky and '
-      + 'horizon in shot, not a frame of dirt). FAIL if she is translucent anywhere, if the lens is inside '
-      + 'her, if she is off the edge of the frame, or if the shot points down when a look-up was asked for.',
+    title: 'Hillside/valley/sprint look-ups across the WHOLE pitch range (-0.5, -0.8, -1.15 clamp): opacity >= 0.98, lens never inside her, aim within budget, framing within FRAME_KEEP of a flat-ground control staged at the SAME pitch and gait (one control per pitch/gait); a trunk still fades her < 0.8; the filmed frame (the 38.4 deg hillside at camPitch -0.8) is solid, looks up > 15 deg, has her head and both shoulders in frame with her top above centre, and shows sky (>= 60% of the top row, >= 25% of all view rays) and the skyline (>= 10% far terrain) with <= 25% near ground. Yaw pans and the 24-yaw sweep: A31d / A31e / A31f',
+    criteria: 'Film: the 38.4 deg hillside at a deep look-up (camPitch -0.8, 45.8 deg asked), camera on the slope '
+      + 'behind her. Aloy is SOLID — no screen-door dither on body, hair, bow or quiver — her head and shoulders are '
+      + 'IN FRAME at a normal chase distance, and the camera is LOOKING UP (sky and the skyline in shot, not a frame '
+      + 'of dirt). FAIL if she is translucent anywhere, if the lens is inside her, if she is off the edge of the '
+      + 'frame, or if the shot points down when a look-up was asked for.',
     setup: `__CTX__.input.enabled = true; document.getElementById('hud').style.display = 'none';`,
-    settle: 700, timeout: 600000,
+    settle: 700, timeout: 900000,
     assert: `(async () => {
       ${FREEZE}
       ${VISIBLE}
       ${SILHOUETTE_VIS}
-      ${FRAME_SAMPLE}
       const C = __CTX__, p = C.player, T = C.terrain, K = C.collision;
       freeze();
       const V = p.position.constructor, n = new V();
@@ -1380,6 +1529,187 @@ export const GATES = [
       const occluded = await run({ tag: 'trunk-occluder', x: ox, z: oz,
         heading: oyaw + Math.PI, yaw: oyaw, pitch: 0.05, pin: true });
 
+      /* --- 6/7. The hillside YAW PANS and the 24-yaw STATIC SWEEP were rows
+       * of this gate until residue fix round 3 (judge: "A31b failed the
+       * full-suite run on its 600 s timeout and has only a 7% margin in
+       * isolation").  They are their own gates now, with their own timeouts
+       * and the same bars: A31d-hillside-pan-0.8, A31e-hillside-pan-clamp,
+       * A31f-hillside-yaw-sweep. */
+
+      const clearRows = [...controls, hillside, hillside80, hillsideClamp, valley,
+        sprint, uphill, sprintClamp, uphillClamp, uphill80];
+      /* The A29-face contract: aim delivered, hill not booked, no blending,
+       * and a dissolve only ever explained by the lens being inside her. */
+      const faceOK = !face || (face.occ > 0) || (
+        face.solidCut <= 0.01 && face.blended === 0 && face.depthOff === 0
+        && face.aimLossDeg <= face.budgetDeg + 2 && face.elevMinDeg > 0
+        && (face.opacity >= 0.98 ? face.onScreen : face.minLensGap < 1.05));
+      /* A row with a hider near the lens for the WHOLE window cannot be judged;
+       * if the world has moved under a staging, say so rather than passing. */
+      const judged = clearRows.filter((r) => r && r.occ === 0 && r.minLensGap < 9);
+      const ghosted = judged.filter((r) => r.opacity < 0.98 || r.fade < 0.98);
+      const misbooked = judged.filter((r) => r.solidCut > 0.01);
+      /* THE lens-in-head bar (judge round: 0.45 m, opacity 1.000, she rendered
+       * absent).  1.20 m is above the 1.05 m the fade itself trips at, so a
+       * clear staging never even reaches the dissolve. */
+      const jammed = judged.filter((r) => r.minLensGap < 1.20);
+      /* THE aim bar.  The ground may take at most the published budget (plus
+       * 2 deg for the framing tilt, the bob and the damp), and a real look-up
+       * may never come back as a look-DOWN. */
+      const hijacked = judged.filter((r) => r.aimLossDeg > r.budgetDeg + 2
+        || (r.elevReqDeg >= 15 && r.elevMinDeg <= 0));
+      /* …and she has to be IN THE PICTURE.  Without this the lift can buy a
+       * perfect opacity/lens-gap row by pushing her under the bottom edge, and
+       * the first cut of this gate filmed exactly that. */
+      const offScreen = judged.filter((r) => !r.onScreen);
+      // ...and she must still be a solid, depth-writing, non-blended draw
+      const blended = clearRows.filter((r) => r && (r.blended > 0 || r.depthOff > 0));
+      const fades = !!occluded && occluded.opacity < 0.8 && occluded.solidCut > 0.5 && occluded.occ > 0;
+
+      /* THE FILM (residue fix round 3, judge: "A31b film fails its own written
+       * criteria: a frame of dirt, she is mostly off the bottom edge").  It
+       * was the -0.5 hillside row, and from that spot the aim budget leaves
+       * 7.2 deg of the 28.6 asked and the bowl's far wall fills everything
+       * above her: no lens there can show sky, so that row is judged on its
+       * numbers above and no longer filmed.  The film is the SAME 38.4 deg
+       * face at camPitch -0.8 (45.8 deg asked) — a hillside look-up the
+       * camera answers with the ground swing — and the captured frame is held
+       * to the written criteria literally:
+       *   SOLID       applied opacity > 0.98, lens >= 1.20 m from the pivot;
+       *   LOOKING UP  delivered elevation > 15 deg;
+       *   IN FRAME    head_0104 in the frame (|x|, |y| <= 0.9) and both
+       *               clavicles in it — head and shoulders — and her top
+       *               above the frame's centre line (ndcTop > 0);
+       *   SKY         a 9 x 7 grid of view rays marched through the
+       *               heightfield: >= 60 % of the TOP row and >= 25 % of all
+       *               rays reach open sky, >= 10 % end on terrain more than
+       *               40 m out (the skyline: horizon in shot), and <= 25 %
+       *               end on ground within 40 m (not a frame of dirt).
+       * The pin retires itself after 12 s so it cannot leak into whatever
+       * gate runs next in this page. */
+      const FILM_PITCH = -0.8;
+      p.position.set(hill.x, 0, hill.z); p.velocity.set(0, 0, 0); p._snapToGround();
+      p.heading = hill.down; p.camYaw = hill.down + Math.PI; p.camPitch = FILM_PITCH;
+      p._relief = 0; p._lift = 0; p._pivotSeeded = false;
+      C.input.keys.clear(); C.input.mouse.buttons = 0;
+      const until = performance.now() + 12000;
+      const pin = () => {
+        if (performance.now() > until) return;
+        p.position.x = hill.x; p.position.z = hill.z;
+        p.velocity.x = 0; p.velocity.z = 0;
+        p.camPitch = FILM_PITCH; p.camYaw = hill.down + Math.PI; p.heading = hill.down;
+        requestAnimationFrame(pin);
+      };
+      pin();
+      for (let i = 0; i < 40; i++) await frame();
+      let filmU = 1;
+      for (const m of p._mats) if (m.u.value < filmU) filmU = m.u.value;
+      const fsil = silhouette();
+      const ndcOf = (name) => {
+        let b = null;
+        p.model.traverse((o) => { if (!b && o.isBone && (o.name === name || o.name.replace(/_[0-9]+$/, '') === name)) b = o; });
+        if (!b) return null;
+        const w = new V(); b.getWorldPosition(w);
+        const cv = w.clone().applyMatrix4(C.camera.matrixWorldInverse);
+        const q = w.clone().project(C.camera);
+        return { x: +q.x.toFixed(2), y: +q.y.toFixed(2), front: cv.z < -C.camera.near };
+      };
+      const inF = (q) => !!q && q.front && Math.abs(q.x) <= 0.9 && Math.abs(q.y) <= 0.9;
+      const headN = ndcOf('head_0104'), clavL = ndcOf('clavicle_l'), clavR = ndcOf('clavicle_r');
+      /* sky: march each view ray through the heightfield until it is above
+       * the highest terrain anywhere (sky) or under the ground (land) */
+      let topH = -1e9;
+      for (let x = -340; x <= 340; x += 8) for (let z = -340; z <= 340; z += 8) { const h = T.getHeight(x, z); if (h > topH) topH = h; }
+      const sky = (() => {
+        const o = C.camera.position, d = new V();
+        let skyN = 0, tot = 0, topSky = 0, topN = 0, far = 0, near = 0;
+        const rows = [];
+        for (let yi = 0; yi < 7; yi++) {
+          const ny = 0.95 - yi * 0.3; let row = '';
+          for (let xi = 0; xi < 9; xi++) {
+            d.set(-0.9 + xi * 0.225, ny, 0.5).unproject(C.camera).sub(o).normalize();
+            let hit = -1;
+            for (let t = 0.5; t < 1500; t *= 1.04) {
+              const x = o.x + d.x * t, y = o.y + d.y * t, z = o.z + d.z * t;
+              if (y > topH + 1) break;
+              if (y < T.getHeight(x, z)) { hit = t; break; }
+            }
+            tot++;
+            if (hit < 0) skyN++; else if (hit > 40) far++; else near++;
+            if (yi === 0) { topN++; if (hit < 0) topSky++; }
+            row += hit < 0 ? 'S' : hit > 40 ? 'f' : 'd';
+          }
+          rows.push(row);
+        }
+        return { skyFrac: +(skyN / tot).toFixed(2), topRowSky: +(topSky / topN).toFixed(2),
+          skylineFrac: +(far / tot).toFixed(2), nearGroundFrac: +(near / tot).toFixed(2), rows };
+      })();
+      const filmed = { pitch: FILM_PITCH, opacity: +filmU.toFixed(3), boom: +p.boomLength.toFixed(2),
+        lensGap: +C.camera.position.distanceTo(p.camPivot).toFixed(2),
+        elevDeg: +(p.camElev * DEG).toFixed(1), elevReqDeg: +(-FILM_PITCH * DEG).toFixed(1),
+        swingDeg: +((p.camSwing ?? 0) * DEG).toFixed(1),
+        ndcTop: +fsil.maxY.toFixed(2), ndcBottom: +fsil.minY.toFixed(2),
+        silVisible: +fsil.visible.toFixed(3), onFrac: +fsil.onFrac.toFixed(3),
+        head: headN, clavicleL: clavL, clavicleR: clavR, sky };
+      // the frame that is actually captured is held to the written criteria
+      const filmSolid = filmed.opacity > 0.98 && filmed.lensGap >= 1.20
+        && filmed.elevDeg > 15 && inF(headN) && inF(clavL) && inF(clavR) && fsil.maxY > 0
+        && sky.topRowSky >= 0.6 && sky.skyFrac >= 0.25 && sky.skylineFrac >= 0.1 && sky.nearGroundFrac <= 0.25;
+
+      const pass = filmSolid && judged.length === clearRows.length
+        && ghosted.length === 0 && misbooked.length === 0
+        && jammed.length === 0 && hijacked.length === 0 && offScreen.length === 0
+        && blended.length === 0 && fades && faceOK;
+      const ctrlTable = {};
+      for (const k of Object.keys(CTRL.pin)) ctrlTable['pinned@' + k] = { ctrl: +CTRL.pin[k].ctrl.toFixed(3), bar: +CTRL.pin[k].bar.toFixed(3) };
+      for (const k of Object.keys(CTRL.run)) ctrlTable['sprint@' + k] = { ctrl: +CTRL.run[k].ctrl.toFixed(3), bar: +CTRL.run[k].bar.toFixed(3) };
+      return { pass, detail: {
+        hillAt: hill, faceDeg: +faceDeg.toFixed(1), valleyAt: [low.x, low.z, +low.h.toFixed(1)], slopeAt: dh,
+        filmed, filmSolid, flatAt: flat, controls: ctrlTable,
+        frameKeep: FRAME_KEEP, onFracFloor: ONFRAC_FLOOR,
+        hillside, hillside80, hillsideClamp, valley, sprint, uphill,
+        sprintClamp, uphillClamp, uphill80, face, faceOK, occluded,
+        judgedClearStagings: judged.length, ghostedWithoutOccluder: ghosted.length,
+        hillBookedAsOccluder: misbooked.length, lensInsideHer: jammed.length,
+        aimHijacked: hijacked.length, offScreen: offScreen.length,
+        blendedOrDepthOff: blended.length,
+        occluderDoesFade: fades,
+        worstFrameRatio: judged.length
+          ? +Math.min(...judged.filter((r) => r.frameRatio != null).map((r) => r.frameRatio)).toFixed(2) : null,
+        minOpacityNoOccluder: judged.length ? +Math.min(...judged.map((r) => r.opacity)).toFixed(3) : null,
+        minLensGapM: judged.length ? +Math.min(...judged.map((r) => r.minLensGap)).toFixed(2) : null,
+        maxAimLossDeg: judged.length ? +Math.max(...judged.map((r) => r.aimLossDeg)).toFixed(1) : null,
+        occluderOpacity: occluded ? occluded.opacity : null,
+      } };
+    })()`,
+  },
+
+  /* ---------------------------------------------------------------- A31d-hillside-pan-0.8 */
+  /**
+   * RESIDUE FIX ROUND 3 — A31b's YAW PAN rows at camPitch -0.8, as their own
+   * gate (judge: "A31b failed the full-suite run on its 600 s timeout").  The
+   * rows, the bars and the estimator are A31b's, unchanged (residue fix rounds
+   * 1 and 2, see the comment block inside): a full 360 deg pan of the 38.4 deg
+   * hillside at 0.005 and 0.02 rad/frame, aiming and not, judged on every
+   * sampled frame.  Only the pitch axis is split across two gate ids.
+   */
+  {
+    id: 'A31d-hillside-pan-0.8', kind: 'action', lane: 'player-control',
+    title: 'A full 360 deg yaw pan of the 38.4 deg hillside at camPitch -0.8 (45.8 deg asked), slow (0.005 rad/frame) and moderate (0.02), aiming and not, on EVERY sampled frame: view <= 3 deg past the input, opacity >= 0.98, head in frame, onFrac >= FRAME_KEEP x the pinned flat control at that pitch (aimed rows: the aimed control), nearest visible vertex >= 0.15 m, lens >= 0.85 m from the pivot',
+    criteria: 'Film: the 38.4 deg hillside at camPitch -0.8, the camera swung 90 deg across the slope (mid-pan). Aloy is SOLID '
+      + 'and IN FRAME, the lens is not inside her or her gear. FAIL if she is dithered, off the frame, or the frame is her gear at the near plane.',
+    setup: `__CTX__.input.enabled = true; document.getElementById('hud').style.display = 'none';`,
+    settle: 700, timeout: 1200000,
+    assert: `(async () => {
+      ${FREEZE}
+      ${VISIBLE}
+      ${SILHOUETTE_VIS}
+      ${FRAME_SAMPLE}
+      ${HILLSIDE}
+      if (!flat) return { pass: null, detail: 'SKIP: no flat clear control ground found' };
+      if (!hill) return { pass: null, detail: 'SKIP: no clear 26-40 deg standable face found' };
+      const PITCHES = [-0.8];
+      for (const pitch of PITCHES) await pinnedControl(pitch);
       /* --- 6. YAW PANS on the hillside (residue fix round 1, judge: "ground
        * yaw swing breaks yaw pans at a deep look-up: 15-22 deg one-frame view
        * lurches and ghosting with no occluder").  Every staging above pins
@@ -1425,7 +1755,7 @@ export const GATES = [
        * the pivot" never measured the lens against her anyway — the judge's
        * 0.033 m frame read 1.315 m on it. */
       const flatAimGap = {}, AIMCTL = {};
-      for (const pitch of [-0.8, -1.15]) {
+      for (const pitch of PITCHES) {
         p.position.set(flat.x, 0, flat.z); p.velocity.set(0, 0, 0); p._snapToGround();
         p.heading = 0; p.camYaw = Math.PI; p.camPitch = pitch;
         p._relief = 0; p._lift = 0; p._pivotSeeded = false;
@@ -1505,13 +1835,216 @@ export const GATES = [
           nearestVertexM: +minNear.toFixed(3), nearAt, nearAtPanDeg: +nearDeg.toFixed(1), ok };
       };
       const pans = [];
-      for (const pitch of [-0.8, -1.15]) {
+      for (const pitch of PITCHES) {
         for (const aim of [false, true]) {
           for (const rate of [0.005, 0.02]) pans.push(await pan(pitch, rate, aim));
         }
       }
       const panFails = pans.filter((r) => !r.ok);
-
+      const film = await filmAt(-0.8, 90);
+      const pass = panFails.length === 0 && pans.length === 4 && film.ok;
+      return { pass, detail: {
+        hillAt: hill, flatAt: flat, pitch: -0.8,
+        control: { ctrl: +CTRL.pin[-0.8].ctrl.toFixed(3), bar: +CTRL.pin[-0.8].bar.toFixed(3) },
+        aimControl: { ctrl: +AIMCTL[-0.8].ctrl.toFixed(3), headIn: +AIMCTL[-0.8].headIn.toFixed(2) },
+        flatAimGap: +flatAimGap[-0.8].toFixed(2),
+        pans, panFails: panFails.length, film,
+      } };
+    })()`,
+  },
+  /* ---------------------------------------------------------------- A31e-hillside-pan-clamp */
+  /**
+   * RESIDUE FIX ROUND 3 — A31b's YAW PAN rows at camPitch -1.15, as their own
+   * gate (judge: "A31b failed the full-suite run on its 600 s timeout").  The
+   * rows, the bars and the estimator are A31b's, unchanged (residue fix rounds
+   * 1 and 2, see the comment block inside): a full 360 deg pan of the 38.4 deg
+   * hillside at 0.005 and 0.02 rad/frame, aiming and not, judged on every
+   * sampled frame.  Only the pitch axis is split across two gate ids.
+   */
+  {
+    id: 'A31e-hillside-pan-clamp', kind: 'action', lane: 'player-control',
+    title: 'A full 360 deg yaw pan of the 38.4 deg hillside at camPitch -1.15 (the 65.9 deg clamp), slow (0.005 rad/frame) and moderate (0.02), aiming and not, on EVERY sampled frame: view <= 3 deg past the input, opacity >= 0.98, head in frame, onFrac >= FRAME_KEEP x the pinned flat control at that pitch (aimed rows: the aimed control), nearest visible vertex >= 0.15 m, lens >= 0.85 m from the pivot',
+    criteria: 'Film: the 38.4 deg hillside at camPitch -1.15, the camera swung 90 deg across the slope (mid-pan). Aloy is SOLID '
+      + 'and IN FRAME, the lens is not inside her or her gear. FAIL if she is dithered, off the frame, or the frame is her gear at the near plane.',
+    setup: `__CTX__.input.enabled = true; document.getElementById('hud').style.display = 'none';`,
+    settle: 700, timeout: 1200000,
+    assert: `(async () => {
+      ${FREEZE}
+      ${VISIBLE}
+      ${SILHOUETTE_VIS}
+      ${FRAME_SAMPLE}
+      ${HILLSIDE}
+      if (!flat) return { pass: null, detail: 'SKIP: no flat clear control ground found' };
+      if (!hill) return { pass: null, detail: 'SKIP: no clear 26-40 deg standable face found' };
+      const PITCHES = [-1.15];
+      for (const pitch of PITCHES) await pinnedControl(pitch);
+      /* --- 6. YAW PANS on the hillside (residue fix round 1, judge: "ground
+       * yaw swing breaks yaw pans at a deep look-up: 15-22 deg one-frame view
+       * lurches and ghosting with no occluder").  Every staging above pins
+       * camYaw, so the swing was only ever seen settled; a player tracking a
+       * flier pans.  Each row pans a full 360 deg at a slow (0.005 rad/frame)
+       * and a moderate (0.02) rate, pinned on the hillside, at -0.8 and the
+       * clamp, aiming and not, and on EVERY frame:
+       *   STEP     the delivered view may move at most 3 deg more than the
+       *            requested view did (the angle between consecutive REQUESTED
+       *            directions, computed from camYaw/camPitch — not the raw
+       *            yaw rate, which overstates it at a look-up);
+       *   SOLID    applied opacity >= 0.98.
+       *
+       * RESIDUE FIX ROUND 2 (judge: "a whole yaw sector and every pan crossing
+       * have no Aloy in frame, and clamp pans put the lens inside her gear;
+       * A31b's pan rows do not measure either").  They did not: a row was ok
+       * on view step, opacity and a lens-to-PIVOT gap, and the judge filmed 234
+       * consecutive frames of a clamp pan with under 5 % of her in frame and
+       * her stowed gear 0.033 m from the lens while that gap read 1.315 m.
+       * Every pan row now also holds, on every sampled frame (every frame at
+       * 0.02, every 2nd at 0.005):
+       *   IN FRAME   head_0104 inside the frame, in front of the lens;
+       *   FRAMING    onFrac >= FRAME_KEEP x the flat control at the SAME pitch
+       *              (floor 0.12), per frame, not as a median;
+       *   NOT IN HER no vertex of her visible mesh within 0.15 m of the lens
+       *              (the near plane is 0.10).
+       * Aimed rows are held to the flat AIMED control at their pitch (the aim
+       * rig's framing contract is the reticle, A32: at the clamp the flat aim
+       * control itself has her head off the frame, onFrac 0.006, so its head
+       * bar applies only where that control has her head in frame on >= 90 %
+       * of samples, and then on >= 90 % of the row's).
+       *
+       * GAP.  The lens-to-pivot bar these rows carried (1.2 m, or 0.95 of the
+       * flat aim gap) is now 0.85 m — the camera's own dolly floor
+       * (DOLLY_GAP 0.90 less 0.05 of placement slop, above the fade's absolute LENS_JAM 0.80) — and
+       * the direct measurement above is what stands for "never inside her".
+       * A 360 deg pan must carry the lens across the UP-slope bearing once,
+       * and on this 38.4 deg face no lens 1.2 m from the pivot there both
+       * clears the ground and keeps her in the frame (brute force over swing
+       * x rotation x length, docs/ROUND4-PLAYER-CONTROL.md §13): the old bar
+       * could only be met by filming the mountain, which is the finding.  The
+       * pivot sits 0.45 m ABOVE her crown at a deep look-up, so "1.2 m from
+       * the pivot" never measured the lens against her anyway — the judge's
+       * 0.033 m frame read 1.315 m on it. */
+      const flatAimGap = {}, AIMCTL = {};
+      for (const pitch of PITCHES) {
+        p.position.set(flat.x, 0, flat.z); p.velocity.set(0, 0, 0); p._snapToGround();
+        p.heading = 0; p.camYaw = Math.PI; p.camPitch = pitch;
+        p._relief = 0; p._lift = 0; p._pivotSeeded = false;
+        C.input.keys.clear(); C.input.mouse.buttons = 4;
+        const af = []; let ah = 0, an = 0;
+        for (let i = 0; i < 56; i++) {
+          await frame();
+          p.position.x = flat.x; p.position.z = flat.z; p.velocity.x = 0; p.velocity.z = 0;
+          p.camYaw = Math.PI; p.camPitch = pitch; C.input.mouse.buttons |= 4;
+          if (i < 16 || i % 2) continue;
+          const m = frameSample(); af.push(m.frac); an++; if (m.headIn) ah++;
+        }
+        flatAimGap[pitch] = C.camera.position.distanceTo(p.camPivot);
+        af.sort((a, b) => a - b);
+        AIMCTL[pitch] = { ctrl: af[af.length >> 1], headIn: ah / an };
+        C.input.mouse.buttons = 0;
+      }
+      const GAP_FLOOR = 0.85, NEAR_BAR = 0.15;
+      const reqDir = (yaw, pitch, out) => out.set(-Math.sin(yaw) * Math.cos(pitch), -Math.sin(pitch), -Math.cos(yaw) * Math.cos(pitch));
+      const pan = async (pitch, rate, aim) => {
+        const tag = 'pan' + (aim ? '-aim' : '') + '@' + pitch + '/' + rate;
+        p.position.set(hill.x, 0, hill.z); p.velocity.set(0, 0, 0); p._snapToGround();
+        p.heading = hill.down; p.camYaw = hill.down + Math.PI; p.camPitch = pitch;
+        p._relief = 0; p._lift = 0; p._pivotSeeded = false;
+        C.input.keys.clear(); C.input.mouse.buttons = aim ? 4 : 0;
+        const hold = () => {
+          p.position.x = hill.x; p.position.z = hill.z; p.velocity.x = 0; p.velocity.z = 0;
+          p.camPitch = pitch; if (aim) C.input.mouse.buttons |= 4;
+        };
+        for (let i = 0; i < 30; i++) { await frame(); hold(); }
+        const N = Math.ceil(2 * Math.PI / rate), every = rate < 0.01 ? 2 : 1;
+        const dPrev = new V(), dNow = new V(), rPrev = new V(), rNow = new V();
+        C.camera.getWorldDirection(dPrev);
+        reqDir(p.camYaw + (p.recoil ? p.recoil.yaw : 0), p.camPitch, rPrev);
+        let maxEx = 0, exAt = -1, minU = 1, minGap = 9, occFrames = 0, over = 0;
+        let samples = 0, headIn = 0, headRun = 0, headRunMax = 0, minFrac = 9, fracLow = 0, minNear = 9, nearAt = -1, nearDeg = 0;
+        const ctl = aim ? AIMCTL[pitch] : { ctrl: CTRL.pin[pitch].ctrl, headIn: 1 };
+        /* an aimed control that does not have her in frame (the clamp: head
+         * off the frame, onFrac 0.08) has no framing to keep — judged on the
+         * other bars and reported */
+        const framed = !aim || ctl.headIn >= 0.9;
+        const fracBar = !framed ? 0 : aim ? FRAME_KEEP * ctl.ctrl : Math.max(ONFRAC_FLOOR, FRAME_KEEP * ctl.ctrl);
+        for (let i = 0; i < N; i++) {
+          p.camYaw += rate;
+          await frame();
+          hold();
+          C.camera.getWorldDirection(dNow);
+          reqDir(p.camYaw, p.camPitch, rNow);
+          const step = Math.acos(Math.max(-1, Math.min(1, dNow.dot(dPrev)))) * DEG;
+          const req = Math.acos(Math.max(-1, Math.min(1, rNow.dot(rPrev)))) * DEG;
+          dPrev.copy(dNow); rPrev.copy(rNow);
+          const e = C.camera.position;
+          if (K.sphereQuery(e.x, e.y, e.z, 1.1, [], hider).length) { occFrames++; continue; }
+          const ex = step - req;
+          if (ex > maxEx) { maxEx = ex; exAt = i; }
+          if (ex > 3) over++;
+          for (const m of p._mats) if (m.u.value < minU) minU = m.u.value;
+          const g = e.distanceTo(p.camPivot);
+          if (g < minGap) minGap = g;
+          if (i % every) continue;
+          const m = frameSample();
+          samples++;
+          if (m.headIn) { headIn++; headRun = 0; } else { headRun++; if (headRun > headRunMax) headRunMax = headRun; }
+          if (m.frac < minFrac) minFrac = m.frac;
+          if (m.frac < fracBar) fracLow++;
+          if (m.nearest < minNear) { minNear = m.nearest; nearAt = i; nearDeg = ((p.camYaw - hill.down - Math.PI) * DEG) % 360; }
+        }
+        C.input.mouse.buttons = 0;
+        const headNeed = !aim ? 1 : ctl.headIn >= 0.9 ? 0.9 : 0;
+        const headFrac = samples ? headIn / samples : 0;
+        const ok = maxEx <= 3 && minU >= 0.98 && minGap >= GAP_FLOOR && occFrames < N * 0.1
+          && headFrac >= headNeed && fracLow === 0 && minNear >= NEAR_BAR;
+        return { tag, frames: N, occFrames, maxViewExcessDeg: +maxEx.toFixed(2), at: exAt, framesOver3Deg: over,
+          minOpacity: +minU.toFixed(3), minLensGap: +minGap.toFixed(2), gapBar: GAP_FLOOR,
+          samples, headInFrame: +headFrac.toFixed(3), headBar: headNeed, headOutRunMax: headRunMax,
+          minOnFrac: +minFrac.toFixed(3), onFracBar: +fracBar.toFixed(3), framesUnderFracBar: fracLow,
+          nearestVertexM: +minNear.toFixed(3), nearAt, nearAtPanDeg: +nearDeg.toFixed(1), ok };
+      };
+      const pans = [];
+      for (const pitch of PITCHES) {
+        for (const aim of [false, true]) {
+          for (const rate of [0.005, 0.02]) pans.push(await pan(pitch, rate, aim));
+        }
+      }
+      const panFails = pans.filter((r) => !r.ok);
+      const film = await filmAt(-1.15, 90);
+      const pass = panFails.length === 0 && pans.length === 4 && film.ok;
+      return { pass, detail: {
+        hillAt: hill, flatAt: flat, pitch: -1.15,
+        control: { ctrl: +CTRL.pin[-1.15].ctrl.toFixed(3), bar: +CTRL.pin[-1.15].bar.toFixed(3) },
+        aimControl: { ctrl: +AIMCTL[-1.15].ctrl.toFixed(3), headIn: +AIMCTL[-1.15].headIn.toFixed(2) },
+        flatAimGap: +flatAimGap[-1.15].toFixed(2),
+        pans, panFails: panFails.length, film,
+      } };
+    })()`,
+  },
+  /* ---------------------------------------------------------------- A31f */
+  /**
+   * RESIDUE FIX ROUND 3 — A31b's 24-yaw STATIC SWEEP of the 38.4 deg hillside,
+   * as its own gate (judge: "A31b failed the full-suite run on its 600 s
+   * timeout").  Rows, bars and estimator unchanged (residue fix round 2, see
+   * the comment block inside).
+   */
+  {
+    id: 'A31f-hillside-yaw-sweep', kind: 'action', lane: 'player-control',
+    title: '24 camera yaws (15 deg steps) round the 38.4 deg hillside, pinned, at camPitch -0.8 and the -1.15 clamp, each on 20 samples after a 16-frame settle: head in frame on every sample, onFrac >= FRAME_KEEP x the pinned flat control at that pitch on every sample, nearest visible vertex >= 0.15 m, opacity >= 0.98, lens >= 0.85 m from the pivot; at most 4 rows unjudgeable',
+    criteria: 'Film: the 38.4 deg hillside at the pitch clamp, camera 45 deg off straight up-slope. Aloy is SOLID and IN FRAME, the lens '
+      + 'is not inside her or her gear. FAIL if she is dithered, off the frame, or the frame is her gear at the near plane.',
+    setup: `__CTX__.input.enabled = true; document.getElementById('hud').style.display = 'none';`,
+    settle: 700, timeout: 1200000,
+    assert: `(async () => {
+      ${FREEZE}
+      ${VISIBLE}
+      ${SILHOUETTE_VIS}
+      ${FRAME_SAMPLE}
+      ${HILLSIDE}
+      if (!flat) return { pass: null, detail: 'SKIP: no flat clear control ground found' };
+      if (!hill) return { pass: null, detail: 'SKIP: no clear 26-40 deg standable face found' };
+      const PITCHES = [-0.8, -1.15];
+      for (const pitch of PITCHES) await pinnedControl(pitch);
+      const GAP_FLOOR = 0.85, NEAR_BAR = 0.15;
       /* --- 7. STATIC YAW SWEEP (residue fix round 2, judge: "static at the
        * clamp, camYaw 15/30/45 deg to one side of straight up-slope: onFrac
        * 0, head in frame 0 … the one yaw A31b stages (offset 0) is fine").
@@ -1522,7 +2055,7 @@ export const GATES = [
        * sample, nearest visible vertex >= 0.15 m, opacity >= 0.98, lens >=
        * GAP_FLOOR from the pivot (see GAP above). */
       const sweep = [];
-      for (const pitch of [-0.8, -1.15]) {
+      for (const pitch of PITCHES) {
         const fracBar = Math.max(ONFRAC_FLOOR, FRAME_KEEP * CTRL.pin[pitch].ctrl);
         for (let off = 0; off < 360; off += 15) {
           const yaw = hill.down + Math.PI + off / DEG;
@@ -1558,84 +2091,12 @@ export const GATES = [
       }
       const sweepFails = sweep.filter((r) => !r.ok);
       const sweepJudged = sweep.filter((r) => r.occ === 0).length;
-
-      const clearRows = [...controls, hillside, hillside80, hillsideClamp, valley,
-        sprint, uphill, sprintClamp, uphillClamp, uphill80];
-      /* The A29-face contract: aim delivered, hill not booked, no blending,
-       * and a dissolve only ever explained by the lens being inside her. */
-      const faceOK = !face || (face.occ > 0) || (
-        face.solidCut <= 0.01 && face.blended === 0 && face.depthOff === 0
-        && face.aimLossDeg <= face.budgetDeg + 2 && face.elevMinDeg > 0
-        && (face.opacity >= 0.98 ? face.onScreen : face.minLensGap < 1.05));
-      /* A row with a hider near the lens for the WHOLE window cannot be judged;
-       * if the world has moved under a staging, say so rather than passing. */
-      const judged = clearRows.filter((r) => r && r.occ === 0 && r.minLensGap < 9);
-      const ghosted = judged.filter((r) => r.opacity < 0.98 || r.fade < 0.98);
-      const misbooked = judged.filter((r) => r.solidCut > 0.01);
-      /* THE lens-in-head bar (judge round: 0.45 m, opacity 1.000, she rendered
-       * absent).  1.20 m is above the 1.05 m the fade itself trips at, so a
-       * clear staging never even reaches the dissolve. */
-      const jammed = judged.filter((r) => r.minLensGap < 1.20);
-      /* THE aim bar.  The ground may take at most the published budget (plus
-       * 2 deg for the framing tilt, the bob and the damp), and a real look-up
-       * may never come back as a look-DOWN. */
-      const hijacked = judged.filter((r) => r.aimLossDeg > r.budgetDeg + 2
-        || (r.elevReqDeg >= 15 && r.elevMinDeg <= 0));
-      /* …and she has to be IN THE PICTURE.  Without this the lift can buy a
-       * perfect opacity/lens-gap row by pushing her under the bottom edge, and
-       * the first cut of this gate filmed exactly that. */
-      const offScreen = judged.filter((r) => !r.onScreen);
-      // ...and she must still be a solid, depth-writing, non-blended draw
-      const blended = clearRows.filter((r) => r && (r.blended > 0 || r.depthOff > 0));
-      const fades = !!occluded && occluded.opacity < 0.8 && occluded.solidCut > 0.5 && occluded.occ > 0;
-
-      /* The FILM is the hillside look-up — the shot the finding was written
-       * against — so re-stage it and hold it: the runner shoots the frame
-       * immediately after this resolves, and a 56 deg face slides her out of
-       * the staging in ~0.2 s.  The pin retires itself after 12 s so it cannot
-       * leak into whatever gate runs next in this page. */
-      p.position.set(hill.x, 0, hill.z); p.velocity.set(0, 0, 0); p._snapToGround();
-      p.heading = hill.down; p.camYaw = hill.down + Math.PI; p.camPitch = -0.5;
-      p._relief = 0; p._lift = 0; p._pivotSeeded = false;
-      C.input.keys.clear(); C.input.mouse.buttons = 0;
-      const until = performance.now() + 12000;
-      const pin = () => {
-        if (performance.now() > until) return;
-        p.position.x = hill.x; p.position.z = hill.z;
-        p.velocity.x = 0; p.velocity.z = 0;
-        p.camPitch = -0.5; p.camYaw = hill.down + Math.PI; p.heading = hill.down;
-        requestAnimationFrame(pin);
-      };
-      pin();
-      for (let i = 0; i < 34; i++) await frame();
-      let filmU = 1;
-      for (const m of p._mats) if (m.u.value < filmU) filmU = m.u.value;
-      const fsil = silhouette();
-      const filmed = { opacity: +filmU.toFixed(3), boom: +p.boomLength.toFixed(2),
-        lensGap: +C.camera.position.distanceTo(p.camPivot).toFixed(2),
-        elevDeg: +(p.camElev * DEG).toFixed(1), elevReqDeg: +(0.5 * DEG).toFixed(1),
-        ndcTop: +fsil.maxY.toFixed(2), ndcBottom: +fsil.minY.toFixed(2),
-        silVisible: +fsil.visible.toFixed(3) };
-      // the frame that is actually captured must itself be solid, look UP, and
-      // have her in it
-      const filmSolid = filmed.opacity > 0.98 && filmed.lensGap >= 1.20
-        && filmed.elevDeg > 0 && fsil.maxY > -0.6 && fsil.visible > 0.15;
-
-      const pass = filmSolid && judged.length === clearRows.length
-        && ghosted.length === 0 && misbooked.length === 0
-        && jammed.length === 0 && hijacked.length === 0 && offScreen.length === 0
-        && blended.length === 0 && fades && faceOK && panFails.length === 0
-        && sweepFails.length === 0 && sweepJudged >= sweep.length - 4;
-      const ctrlTable = {};
-      for (const k of Object.keys(CTRL.pin)) ctrlTable['pinned@' + k] = { ctrl: +CTRL.pin[k].ctrl.toFixed(3), bar: +CTRL.pin[k].bar.toFixed(3) };
-      for (const k of Object.keys(CTRL.run)) ctrlTable['sprint@' + k] = { ctrl: +CTRL.run[k].ctrl.toFixed(3), bar: +CTRL.run[k].bar.toFixed(3) };
+      const film = await filmAt(-1.15, 45);
+      const pass = sweepFails.length === 0 && sweepJudged >= sweep.length - 4 && film.ok;
       return { pass, detail: {
-        hillAt: hill, faceDeg: +faceDeg.toFixed(1), valleyAt: [low.x, low.z, +low.h.toFixed(1)], slopeAt: dh,
-        filmed, filmSolid, flatAt: flat, controls: ctrlTable,
-        flatAimGap: { '-0.8': +flatAimGap[-0.8].toFixed(2), '-1.15': +flatAimGap[-1.15].toFixed(2) },
-        pans, panFails: panFails.length,
-        aimControls: { '-0.8': { ctrl: +AIMCTL[-0.8].ctrl.toFixed(3), headIn: +AIMCTL[-0.8].headIn.toFixed(2) },
-          '-1.15': { ctrl: +AIMCTL[-1.15].ctrl.toFixed(3), headIn: +AIMCTL[-1.15].headIn.toFixed(2) } },
+        hillAt: hill, flatAt: flat,
+        controls: { '-0.8': { ctrl: +CTRL.pin[-0.8].ctrl.toFixed(3), bar: +CTRL.pin[-0.8].bar.toFixed(3) },
+          '-1.15': { ctrl: +CTRL.pin[-1.15].ctrl.toFixed(3), bar: +CTRL.pin[-1.15].bar.toFixed(3) } },
         sweepFails: sweepFails.length, sweepJudged, sweepFailRows: sweepFails,
         sweepWorst: sweep.length ? {
           minOnFracRatio: +Math.min(...sweep.map((r) => r.minOnFrac / r.bar)).toFixed(2),
@@ -1644,20 +2105,7 @@ export const GATES = [
           minLensGap: Math.min(...sweep.map((r) => r.minLensGap)),
           minOpacity: Math.min(...sweep.map((r) => r.minOpacity)) } : null,
         sweep: sweep.map((r) => [r.pitch, r.off, r.onFrac, r.minOnFrac, r.headInFrame, r.nearestVertexM, r.minLensGap, r.swingDeg, r.reliefDeg, r.dolly, r.elevDeg].join(' ')),
-        frameKeep: FRAME_KEEP, onFracFloor: ONFRAC_FLOOR,
-        hillside, hillside80, hillsideClamp, valley, sprint, uphill,
-        sprintClamp, uphillClamp, uphill80, face, faceOK, occluded,
-        judgedClearStagings: judged.length, ghostedWithoutOccluder: ghosted.length,
-        hillBookedAsOccluder: misbooked.length, lensInsideHer: jammed.length,
-        aimHijacked: hijacked.length, offScreen: offScreen.length,
-        blendedOrDepthOff: blended.length,
-        occluderDoesFade: fades,
-        worstFrameRatio: judged.length
-          ? +Math.min(...judged.filter((r) => r.frameRatio != null).map((r) => r.frameRatio)).toFixed(2) : null,
-        minOpacityNoOccluder: judged.length ? +Math.min(...judged.map((r) => r.opacity)).toFixed(3) : null,
-        minLensGapM: judged.length ? +Math.min(...judged.map((r) => r.minLensGap)).toFixed(2) : null,
-        maxAimLossDeg: judged.length ? +Math.max(...judged.map((r) => r.aimLossDeg)).toFixed(1) : null,
-        occluderOpacity: occluded ? occluded.opacity : null,
+        film,
       } };
     })()`,
   },
@@ -1700,7 +2148,7 @@ export const GATES = [
    */
   {
     id: 'A31c-clamp-framing', kind: 'action', lane: 'player-control',
-    title: 'Pitch-clamp framing on FLAT ground, in FOUR run directions (away / left / right / toward the lens) at jog and sprint: head_0104 in frame and |NDC x| <= 0.8 on >= 90% of samples, running AWAY her head seen past her shoulders (occlusion-aware) on >= 90%, moving keeps >= 0.75 of the pinned onFrac, pinned >= 0.25, lens >= 0.15 m from her visible mesh, opacity >= 0.98; eight turns out of an ESTABLISHED run (60 frames) keep the lens >= 0.15 m from her mesh and her solid on every frame',
+    title: 'Pitch-clamp framing on FLAT ground, in FOUR run directions (away / left / right / toward the lens) at jog and sprint: head_0104 in frame and |NDC x| <= 0.8 on >= 90% of samples, running AWAY her head seen past her shoulders (occlusion-aware) on >= 90%, moving keeps >= 0.75 of the pinned onFrac, pinned >= 0.25, lens >= 0.15 m from her visible mesh, opacity >= 0.98, the view <= 6 deg off the input and the elevation <= 5.5 deg off the request on every judged frame; eight turns out of an ESTABLISHED run (60 frames) keep the lens >= 0.15 m from her mesh and her solid on every frame; RMB out of an established clamp sprint puts the view within 2 deg of the request from the 2nd frame of the draw, no frame stepping it > 3 deg',
     criteria: 'Film: flat open ground, SPRINTING at the pitch clamp (camPitch -1.15, looking steeply up). Aloy\'s head, braid, '
       + 'shoulders and upper back are IN THE PICTURE in the lower part of the frame, solid, with sky above, and not pushed to a frame edge. '
       + 'FAIL if only the bow or spear is visible, if she is off the bottom or side edge, or if the lens is visibly inside her body.',
@@ -1807,6 +2255,15 @@ export const GATES = [
        * the lens, +PI/2 to the frame's LEFT (A), -PI/2 to its RIGHT (D), and
        * PI TOWARD the lens (S). */
       const face = (h) => { p.heading = h; p._faceX = p._candX = Math.sin(h); p._faceZ = p._candZ = Math.cos(h); };
+      /* Angle (deg) between the delivered view axis and the REQUESTED one
+       * (camYaw / camPitch): residue fix round 3, judge: "run framing turns the
+       * delivered view about 23 deg off the player's input on flat ground". */
+      const _vd = new V(), _vr = new V();
+      const viewOff = () => {
+        C.camera.getWorldDirection(_vd);
+        _vr.set(-Math.sin(p.camYaw) * Math.cos(p.camPitch), -Math.sin(p.camPitch), -Math.cos(p.camYaw) * Math.cos(p.camPitch));
+        return Math.acos(Math.max(-1, Math.min(1, _vd.dot(_vr)))) * DEG;
+      };
       const run = async (tag, keys, pin, heading) => {
         p.position.set(flat.x, 0, flat.z); p.velocity.set(0, 0, 0); p._snapToGround();
         face(heading); p.camYaw = Math.PI; p.camPitch = -1.15;
@@ -1815,6 +2272,7 @@ export const GATES = [
         for (const k of keys) C.input.keys.add(k);
         const fracs = [], xs = [];
         let heads = 0, headXs = 0, seen = 0, samples = 0, nearest = 9, minU = 1, speed = 0, lean = 0, worstHeadY = 9;
+        let viewErr = 0, elevLoss = 0;
         const hidAt = [];
         for (let i = 0; i < FRAMES; i++) {
           await frame();
@@ -1822,6 +2280,9 @@ export const GATES = [
           p.camYaw = Math.PI; p.camPitch = -1.15;
           if (i < SETTLE) continue;
           for (const m of p._mats) if (m.u.value < minU) minU = m.u.value;
+          /* the VIEW is the player's (residue fix round 3): every judged frame */
+          viewErr = Math.max(viewErr, viewOff());
+          elevLoss = Math.max(elevLoss, Math.abs(1.15 - p.camElev) * DEG);
           if (i % 2) continue;
           const m = measure();
           fracs.push(m.frac); samples++; if (m.headIn) heads++; if (m.headX) headXs++;
@@ -1840,6 +2301,7 @@ export const GATES = [
           headNdcX: [+xs[0].toFixed(2), +xs[xs.length >> 1].toFixed(2), +xs[xs.length - 1].toFixed(2)],
           worstHeadNdcY: +worstHeadY.toFixed(2),
           nearestVertexM: +nearest.toFixed(3), minOpacity: +minU.toFixed(3),
+          maxViewOffInputDeg: +viewErr.toFixed(2), maxElevOffRequestDeg: +elevLoss.toFixed(2),
           speedMs: +(speed / samples).toFixed(2), camLeanM: +(lean / samples).toFixed(3), samples };
       };
       const DIRS = [['away', 'KeyW', 0], ['left', 'KeyA', Math.PI / 2], ['right', 'KeyD', -Math.PI / 2], ['toward', 'KeyS', Math.PI]];
@@ -1851,6 +2313,7 @@ export const GATES = [
       }
       const rows = [pinned, ...moving];
       const HEAD_IN = 0.9, HEAD_X = 0.9, KEEP = 0.75, PIN_FLOOR = 0.25, NEAR = 0.15, SEEN = 0.9;
+      const VIEW_OFF = 6.0, VIEW_ELEV = 5.5, AIM_ENTRY = 2.0;
       const failing = [];
       for (const r of rows) {
         r.bar = r === pinned ? PIN_FLOOR : +(KEEP * pinned.onFrac).toFixed(3);
@@ -1864,6 +2327,53 @@ export const GATES = [
       for (const r of moving) {
         const want = r.tag.startsWith('sprint') ? 5.5 : 3.5;
         if (r.speedMs < want) failing.push(r.tag + ': staging did not reach speed (' + r.speedMs + ' m/s)');
+        /* RESIDUE FIX ROUND 3: on flat ground the run framing may turn the
+         * view by at most RUN_YAW_MAX (3.4 deg), plus the 0.2 deg frame drop
+         * and what is left of the standstill rig's body-clearance rotation
+         * (2-3 deg when she starts facing sideways, decaying at 4.5/s once
+         * the run framing takes her body clearance over); the delivered
+         * elevation may not leave the request by more than VIEW_ELEV.  The
+         * shipped build measured 23.9 deg of view and 15.2 deg of elevation
+         * off the request here. */
+        if (r.maxViewOffInputDeg > VIEW_OFF) failing.push(r.tag + ': view ' + r.maxViewOffInputDeg + ' deg off the input');
+        if (r.maxElevOffRequestDeg > VIEW_ELEV) failing.push(r.tag + ': elevation ' + r.maxElevOffRequestDeg + ' deg off the request');
+      }
+
+      /* AIM ENTRY (residue fix round 3, judge: "on aim entry the reticle
+       * drifts 23 deg over about 0.5 s … add a gate row: sprint at the clamp,
+       * then RMB; delivered view within 2 deg of the requested axis within 2
+       * frames of aim entry").  An ESTABLISHED run (60 frames) away from the
+       * lens and to the frame's left (the two directions that took the most
+       * turn), then RMB with the keys still held: from the SECOND frame after
+       * the press the view is within AIM_ENTRY of the requested axis on every
+       * frame of the next 30, and no frame steps the view by more than 3 deg
+       * beyond the input (the draw may not lurch it either). */
+      const aimEntry = [];
+      for (const [name, keys, h] of [['away', ['KeyW', 'ShiftLeft'], 0], ['left', ['KeyA', 'ShiftLeft'], Math.PI / 2]]) {
+        p.position.set(flat.x, 0, flat.z); p.velocity.set(0, 0, 0); p._snapToGround();
+        face(h); p.camYaw = Math.PI; p.camPitch = -1.15;
+        p._relief = 0; p._lift = 0; p._pivotSeeded = false;
+        C.input.keys.clear(); C.input.mouse.buttons = 0;
+        for (const k of keys) C.input.keys.add(k);
+        for (let i = 0; i < 60; i++) { await frame(); p.camYaw = Math.PI; p.camPitch = -1.15; }
+        const before = viewOff();
+        const dPrev = new V(); C.camera.getWorldDirection(dPrev);
+        C.input.mouse.buttons |= 4;
+        const errs = []; let maxStep = 0;
+        for (let i = 0; i < 32; i++) {
+          await frame(); p.camYaw = Math.PI; p.camPitch = -1.15; C.input.mouse.buttons |= 4;
+          errs.push(+viewOff().toFixed(2));
+          const dNow = new V(); C.camera.getWorldDirection(dNow);
+          maxStep = Math.max(maxStep, Math.acos(Math.max(-1, Math.min(1, dNow.dot(dPrev)))) * DEG);
+          dPrev.copy(dNow);
+        }
+        C.input.mouse.buttons = 0; C.input.keys.clear();
+        const after = errs.slice(1);
+        const r = { tag: 'sprint-' + name + '-then-aim', viewOffBeforeDeg: +before.toFixed(2), viewOffFrames: errs.slice(0, 8),
+          maxAfter2ndFrameDeg: Math.max(...after), maxStepDeg: +maxStep.toFixed(2), aiming: p.aiming };
+        aimEntry.push(r);
+        if (r.maxAfter2ndFrameDeg > AIM_ENTRY) failing.push(r.tag + ': view ' + r.maxAfter2ndFrameDeg + ' deg off the request after the 2nd frame of the draw');
+        if (r.maxStepDeg > 3) failing.push(r.tag + ': the draw stepped the view ' + r.maxStepDeg + ' deg in one frame');
       }
 
       /* Diagnostics (reported, NOT judged): the four diagonals at a sprint,
@@ -1936,8 +2446,9 @@ export const GATES = [
       const film = measure();
 
       return { pass: failing.length === 0, detail: {
-        flatAt: flat, bars: { headIn: HEAD_IN, headXInside08: HEAD_X, keep: KEEP, pinnedFloor: PIN_FLOOR, nearestVertexM: NEAR, headSeenAway: SEEN },
-        pinned, moving, turns, failing, diagnostics,
+        flatAt: flat, bars: { headIn: HEAD_IN, headXInside08: HEAD_X, keep: KEEP, pinnedFloor: PIN_FLOOR, nearestVertexM: NEAR, headSeenAway: SEEN,
+          viewOffInputDeg: VIEW_OFF, elevOffRequestDeg: VIEW_ELEV, aimEntryDeg: AIM_ENTRY },
+        pinned, moving, turns, aimEntry, failing, diagnostics,
         film: { onFrac: +film.frac.toFixed(3), headIn: film.headIn, headNdcX: +film.hx.toFixed(2), headNdcY: +film.hy.toFixed(2),
           nearestVertexM: +film.nearest.toFixed(3), camLeanM: +(p.camLean || 0).toFixed(3), headSeen: film.seen },
       } };

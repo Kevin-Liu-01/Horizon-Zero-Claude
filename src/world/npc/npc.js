@@ -1548,6 +1548,7 @@ export class NpcSystem {
 
     const cam = ctx.camera;
     const player = ctx.player;
+    const cardOpen = !!ctx.progression?.dialogue?.open;
     this._shadowT -= dt;
     const doShadow = this._shadowT <= 0;
     if (doShadow) this._shadowT = 0.5;
@@ -1615,7 +1616,20 @@ export class NpcSystem {
       this._watchProgress(n, d);
       this._ensureRegistered(n);
       this._syncCollider(n);
-      if (n.entry) n.entry.position.copy(n.group.position).setY(n.group.position.y + 1.0);
+      if (n.entry) {
+        n.entry.position.copy(n.group.position).setY(n.group.position.y + 1.0);
+        /**
+         * NO `TALK` PROMPT WHILE A CONVERSATION IS UP (npc polish, the r1 film
+         * judge's minor: "TALK · KARST" stayed over the speaker for the whole
+         * card). `interactables.update` keeps choosing the nearest entry under
+         * `?shot`, where the world runs behind the card, and the nearest is the
+         * person being spoken to. The entry contract's own `disabled` flag
+         * takes every person out of that choice for the life of the card (in
+         * live play the E press that opened it already cleared the prompt, and
+         * nothing re-picks one while the world is frozen).
+         */
+        n.entry.disabled = cardOpen;
+      }
     }
 
     if (doShadow) this._shadowLod();

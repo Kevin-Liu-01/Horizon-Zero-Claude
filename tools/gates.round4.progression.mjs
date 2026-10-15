@@ -752,4 +752,188 @@ export const GATES = [
       return { pass: alive && scales && parity && tearClean && elemental, detail };
     })()`,
   },
+
+  /* ----------------------------------------------------------------- A64c */
+  /**
+   * FIX ROUND 1 regression gate for judge-progression-r2-r0: "Silent Strike +
+   * Strike from Above stack 3.5x onto melee's max-health-fraction silent
+   * strike: one stab kills any unaware apex, and the Thunderjaw kill ends the
+   * game". The two Prowler nodes multiplied `impact = maxHealth × 0.55` by
+   * 1.75 × 2.0, so three skill points made one stab 1.347 × a Thunderjaw's
+   * max health and the VALLEY RECLAIMED screen followed.
+   *
+   * What the fix has to hold, measured through the shipped code:
+   *   1. the judge's case, through melee's REAL `silentStrike()` (player
+   *      placed behind an unaware Thunderjaw, `_sneakOk` true): all four
+   *      Prowler nodes on Easy, full health -> alive, damage <= 0.8 x max;
+   *   2. worst case the game can reach — Story (1.60) + Precision (1.15) + all
+   *      Prowler, on a BRITTLE machine (x2 in machine.js) — on every apex and
+   *      on two full-health mediums: alive, damage <= 0.8 x max. This is the
+   *      row that proves the clamp is on DAMAGE, after the armour/weak/brittle
+   *      factors, and not on impact;
+   *   3. a wounded apex (Thunderjaw at 500) is never finished by a stab:
+   *      health ends >= 1;
+   *   4. the skills still bite: Normal, all Prowler vs none, the Thunderjaw
+   *      stab grows by exactly (0.55 + 0.20) / 0.55 and `silentStrikeDamage`
+   *      reads that number, not 3.5;
+   *   5. a Watcher (melee's instant list) still dies to one REAL stab.
+   * Rows 2-4 send the exact record melee.js:2199-2203 builds (impact =
+   * maxHealth x MELEE.silent.heavyFrac, tear = MELEE.silent.tear, no struck
+   * object, point at 0.62 x height). `A64c-silent-apex` was checked against
+   * every id in tools/gates.config.mjs and tools/gates.round4.*.mjs —
+   * unclaimed.
+   */
+  {
+    id: 'A64c-silent-apex', kind: 'action', lane: 'progression',
+    title: 'Prowler skills raise Silent Strike\'s health fraction without one-shotting apex machines: a skilled stab on an unaware Thunderjaw leaves it alive at <= 0.8 x max, a Watcher still dies',
+    timeout: 120000,
+    setup: UP,
+    settle: 1200,
+    assert: `(async () => {
+      ${HELP}
+      const C = __CTX__;
+      const prog = window.__PROG__;
+      if (!prog) return { pass: false, detail: 'installProgression did not publish' };
+      if (!window.__PREINSTALLED__) {
+        return { pass: false, detail: 'ctx.progression was NOT built by main.js — the lane is dead code in a normal session' };
+      }
+      if (!prog._machineProto || !prog._machineProto.takeDamage.__hzcWrapped) {
+        return { pass: false, detail: 'the machine damage wrapper is not installed' };
+      }
+      const M = C.combat?.melee;
+      const p = C.player;
+      if (!M || typeof M.silentStrike !== 'function' || typeof M._sneakOk !== 'function') {
+        return { pass: false, detail: 'combat.melee.silentStrike is not published' };
+      }
+      // Difficulty is PERSISTED (hzc.meta.v4) and the browser profile is
+      // shared, so every exit — pass, fail or throw — restores Normal; a gate
+      // that died at Story would otherwise hand the next lane a 1.6x player.
+      try { return await (async () => {
+      const { MELEE } = await import('/src/combat/weapons.js');
+      const { SILENT_STRIKE } = await import('/src/core/progression.js');
+      const hf = MELEE.silent.heavyFrac;
+      const CAP = SILENT_STRIKE.capFrac;
+      const list = C.machines.list;
+      await until(() => list.some((m) => m.alive && m.kind === 'thunderjaw'), 40000);
+      const get = (kind) => {
+        let m = list.find((x) => x && x.alive && !x._disposed && x.kind === kind);
+        if (!m && C.machines.spawn) {
+          try { m = C.machines.spawn(kind, p.position.x + 220, p.position.z + 220); } catch { m = null; }
+        }
+        return m && m.kind === kind && m.alive ? m : null;
+      };
+      const calm = (m) => {
+        m.suspicion = 0; m.brittleT = 0;
+        if (['alert', 'attack', 'stagger', 'downed'].includes(m.state)) m.setState?.('patrol');
+        if (['alert', 'attack', 'stagger', 'downed'].includes(m.state)) m.state = 'patrol';
+      };
+      const holdParts = (m) => { for (const q of (m.parts || [])) { if (q && q.attached) q.tearHp = 1e9; } };
+      /** melee.js silentStrike()'s hit record, field for field. */
+      const rec = (m) => {
+        const cfg = MELEE.silent;
+        const dmg = cfg.instant.includes(m.kind)
+          ? (m.health ?? 1) * 4 + 1000 : (m.maxHealth ?? 100) * cfg.heavyFrac;
+        const pt = m.position.clone(); pt.y += (m.height ?? 2) * 0.62;
+        return { point: pt, object: null, dir: { x: 0, y: 0, z: 1 }, impact: dmg, tear: cfg.tear,
+          element: 'none', elementAmount: 0, type: 'silent-strike', baseDamage: dmg, draw: 1, seen: true };
+      };
+      const stab = (m, { health, brittle } = {}) => {
+        m.health = health ?? m.maxHealth; m.brittleT = brittle ? 5 : 0;
+        holdParts(m);
+        const h0 = m.health;
+        const r = m.takeDamage(rec(m));
+        const dealt = h0 - m.health;
+        return { kind: m.kind, max: m.maxHealth, h0: +h0.toFixed(2), damage: +(r?.damage ?? 0).toFixed(3),
+          dealt: +dealt.toFixed(3), frac: +((r?.damage ?? 0) / m.maxHealth).toFixed(4),
+          alive: m.alive, health: +m.health.toFixed(3) };
+      };
+      /** melee's REAL Silent Strike, from behind, the way the prompt fires it. */
+      const realStab = (m) => {
+        calm(m); m.health = m.maxHealth; holdParts(m);
+        const hx = Math.sin(m.heading ?? 0), hz = Math.cos(m.heading ?? 0);
+        let placed = null;
+        for (let d = 14; d >= 0.5; d -= 0.25) {
+          p.position.set(m.position.x - hx * d, p.position.y, m.position.z - hz * d);
+          if (M._sneakOk(m)) { placed = d; break; }
+        }
+        if (placed === null) return { kind: m.kind, placed: null, state: m.state, suspicion: m.suspicion };
+        M.silentTarget = m;
+        const h0 = m.health;
+        let res = null, err = null;
+        try { res = M.silentStrike(); } catch (e) { err = String(e && e.message || e); }
+        return { kind: m.kind, placed, h0, health: +m.health.toFixed(3), alive: m.alive,
+          killed: !!res?.killed, damage: +((h0 - m.health)).toFixed(3),
+          frac: +((h0 - m.health) / m.maxHealth).toFixed(4), err };
+      };
+
+      const bad = [];
+      const detail = { heavyFrac: hf, capFrac: CAP, apex: SILENT_STRIKE.apex };
+      const tj = get('thunderjaw');
+      if (!tj) return { pass: false, detail: 'no Thunderjaw in the scene' };
+
+      // 4a. baseline: Normal, no skills
+      prog.setDifficulty('normal');
+      const base = stab(tj);
+      detail.baseline = base;
+
+      prog.skillPoints += 20;
+      for (const id of ['prowler-low-profile', 'prowler-quiet-step', 'prowler-silent-strike', 'prowler-strike-from-above']) {
+        if (!prog.unlock(id)) bad.push('could not unlock ' + id);
+      }
+      // 4b. the skills still bite, by exactly the fraction step
+      const skilled = stab(tj);
+      const wantRatio = (hf + 2 * SILENT_STRIKE.fracStep) / hf;
+      detail.skilledNormal = skilled;
+      detail.ratio = +(skilled.damage / base.damage).toFixed(4);
+      detail.wantRatio = +wantRatio.toFixed(4);
+      detail.silentStrikeDamage = +prog.mult('silentStrikeDamage').toFixed(4);
+      if (!(Math.abs(skilled.damage / base.damage - wantRatio) <= 0.02 * wantRatio)) bad.push('skills do not scale the stab by ' + wantRatio.toFixed(3));
+      if (!(Math.abs(prog.mult('silentStrikeDamage') - wantRatio) < 1e-6)) bad.push('mult(silentStrikeDamage) = ' + prog.mult('silentStrikeDamage'));
+
+      // 1. the judge's case through the REAL method: Easy + all Prowler
+      prog.setDifficulty('easy');
+      const real = realStab(tj);
+      detail.realThunderjawEasy = real;
+      if (real.placed === null) bad.push('could not reach a legal Silent Strike on the Thunderjaw (state ' + real.state + ')');
+      else if (real.err) bad.push('silentStrike threw: ' + real.err);
+      else if (!real.alive || real.killed || real.damage > CAP * tj.maxHealth + 1e-6) bad.push('real stab on a full-health Thunderjaw: alive=' + real.alive + ' frac=' + real.frac);
+      if (!tj.alive) return { pass: false, detail: Object.assign(detail, { bad }) };
+
+      // 2. worst reachable case on every apex + two mediums
+      prog.unlock('brave-precision');
+      prog.setDifficulty('story');
+      detail.storyDamageOut = +prog.mult('damageOut').toFixed(4);
+      const worst = [];
+      for (const kind of [...SILENT_STRIKE.apex, 'ravager', 'sawtooth']) {
+        const m = get(kind);
+        if (!m) { worst.push({ kind, missing: true }); if (kind === 'thunderjaw' || kind === 'stormbird' || kind === 'behemoth') bad.push('no ' + kind); continue; }
+        const r = stab(m, { brittle: true });
+        worst.push(r);
+        if (!r.alive || r.damage > CAP * r.max + 1e-6) bad.push(kind + ' worst case: alive=' + r.alive + ' frac=' + r.frac);
+      }
+      detail.worstStoryPrecisionBrittle = worst;
+
+      // 3. a wounded apex is never finished by a stab
+      const wounded = stab(tj, { health: 500, brittle: true });
+      detail.woundedThunderjaw = wounded;
+      if (!wounded.alive || wounded.health < 1 - 1e-6) bad.push('wounded Thunderjaw finished: health ' + wounded.health);
+
+      // 5. a Watcher still dies to one REAL stab
+      prog.setDifficulty('easy');
+      const w = get('watcher');
+      if (!w) bad.push('no watcher');
+      else {
+        const rw = realStab(w);
+        detail.realWatcher = rw;
+        if (rw.placed === null) bad.push('could not reach a legal Silent Strike on the Watcher');
+        else if (rw.alive || !rw.killed) bad.push('watcher survived a Silent Strike');
+      }
+
+      // leave the session as UP found it
+      tj.health = tj.maxHealth; tj.brittleT = 0;
+      detail.bad = bad;
+      return { pass: bad.length === 0, detail };
+      })(); } finally { prog.setDifficulty('normal'); }
+    })()`,
+  },
 ];

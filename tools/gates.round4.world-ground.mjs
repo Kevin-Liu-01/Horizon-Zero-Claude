@@ -729,16 +729,10 @@ export const GATES = [
       if (ctx.studio) ctx.studio.update = () => {};
       ctx.environment?.setWeather?.('clear', 0);
       ctx.environment?.setTime?.(12.0);
-      // core-platform's GTAO is blended out for this measurement: its tile grid
-      // is a separate artefact on the same pixels and is reported separately.
-      const gtaoWas = [];
-      for (const ps of (engine.composer?.passes || [])) {
-        if (ps && ps.constructor && /GTAO/i.test(ps.constructor.name)) {
-          gtaoWas.push([ps, ps.enabled, ps.blendIntensity]);
-          ps.enabled = false;
-          if ('blendIntensity' in ps) ps.blendIntensity = 0;
-        }
-      }
+      // GTAO stays ON for this measurement: core-platform-gtao (df66655, gates
+      // V33b/A108/A109) removed the half-res lattice that used to share these
+      // pixels, so the old blend-out bypass is gone and the beds are measured in
+      // the shipped frame.
       const hidden = [];
       for (const gr of [ctx.vegetation?.group, ctx.props?.group, ctx.machines?.group]) {
         if (gr && gr.visible) { gr.visible = false; hidden.push(gr); }
@@ -764,10 +758,6 @@ export const GATES = [
         // never leave the scene mutated for the gates that run after this one
         T.setStrataStrength(1);
         for (const gr of hidden) gr.visible = true;
-        for (const [ps, en, bi] of gtaoWas) {
-          ps.enabled = en;
-          if ('blendIntensity' in ps) ps.blendIntensity = bi;
-        }
       }
       let sq = 0, n = 0, peak = 0;
       const x0 = Math.round(W * 0.10), x1 = Math.round(W * 0.92);

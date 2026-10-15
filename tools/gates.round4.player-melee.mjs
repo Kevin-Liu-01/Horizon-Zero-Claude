@@ -786,8 +786,9 @@ export const GATES = [
           { const tq = performance.now(); while (performance.now() - tq < (keys.length ? 1400 : 300)) await frame(); }
           const out = [];
           const t0 = performance.now();
+          const g0 = C.engine.wallTime;
           C.input.mouse.buttons |= 1;
-          let released = false, seen = false, firstSwingT = null, heavy = null;
+          let released = false, seen = false, firstSwingT = null, firstSwingG = null, heavy = null;
           while (performance.now() - t0 < 4000) {
             await frame();
             const t = (performance.now() - t0) / 1000;
@@ -803,7 +804,7 @@ export const GATES = [
             }
             out.push({ t, stance: d.stance, phase: d.phase, k: M._phaseEnd > 1e-4 ? M._t / M._phaseEnd : 0,
               carryB: d.carryBlend, done: d.handoverDone, gfn: d.gripFracNow, gf, held: d.held });
-            if (d.stance === 'swing') { if (firstSwingT == null) { firstSwingT = t; heavy = !!M.heavy; } seen = true; }
+            if (d.stance === 'swing') { if (firstSwingT == null) { firstSwingT = t; firstSwingG = C.engine.wallTime - g0; heavy = !!M.heavy; } seen = true; }
             if (seen && !M.active && M.stance !== 'swing') break;
           }
           C.input.mouse.buttons &= ~1;
@@ -817,6 +818,8 @@ export const GATES = [
           return { label, swingFrames: swing.length, swingFramesInHandover: inHand.length,
             gripFracAtContact: c ? +c.gf.toFixed(3) : null, contactK: c ? +c.k.toFixed(2) : null,
             clickToFirstSwingS: firstSwingT == null ? null : +firstSwingT.toFixed(3),
+            // the same on the GAME clock (engine.wallTime: real time capped at 0.05 s a frame)
+            clickToFirstSwingGameS: firstSwingG == null ? null : +firstSwingG.toFixed(3),
             drawFrameMs: fdt == null ? null : +(fdt * 1000).toFixed(1), heavy,
             gripFracPath: out.filter((x, i) => i % 3 === 0 && (x.stance === 'draw' || x.stance === 'swing'))
               .slice(0, 14).map((x) => (x.stance[0] + (x.gf == null ? '?' : x.gf.toFixed(2)))) };
@@ -1606,7 +1609,7 @@ export const GATES = [
   /* -------------------------------------------- A103-melee-contact-sync */
   {
     id: 'A103-melee-contact-sync', kind: 'action', lane: 'player-melee',
-    timeout: 480000, settle: 600,
+    timeout: 720000, settle: 600,
     title: 'Swinging at a machine: melee-hit fires INSIDE the strike phase, the blade actually '
       + 'REACHES the hull (tip <= 0.15 m from the nearest surface) and the sparks are on it — on '
       + 'EVERY species in the roster (grounded fliers included), and on a 25 deg slope the blade '
@@ -2060,6 +2063,139 @@ export const GATES = [
         }
       }
 
+      /* ---- ROUND 6, R7 ON THE REAL INPUT PATH ----
+       * The species rows above walk in with the spear DRAWN and call
+       * M.swing(): the melee term lets her in to the hull before the swing.
+       * A player walks up with the spear on her back — the machine's FULL
+       * standoff stops her — and clicks. Probed on that path (Oct 2,
+       * scratchpad/sk6/out-bigmach-before.json) the build dealt damage with
+       * the blade 6.1-6.6 m from a grounded Stormbird, 0.38-0.56 m from a
+       * Tallneck and 0.32 m from a Shellwalker: the arc test measured to the
+       * standoff capsule and the blade ray ran 0.45 m past the tip. So, per
+       * species below (the Watcher as the control, then the tall and the wide
+       * ones), a LIGHT (click) and a HEAVY (held LMB) through the real bits:
+       *   - walk up holstered (KeyW) until the solve stops her, click;
+       *   - EVERY melee-hit that fires has the tip <= 0.15 m from the hull
+       *     (A103's own bar) and fires in the strike phase — a swing that
+       *     cannot reach is a whiff, never a hit at a distance;
+       *   - a whiff is followed the way a player follows it: the spear is out
+       *     now, so W walks her in under the melee term until the solve stops
+       *     her, and the same input again — which MUST land, tip <= 0.15. */
+      const realRows = [];
+      {
+        const list = C.machines?.list || [];
+        const M = C.combat.melee;
+        const prevState = C.state;
+        C.state = 'playing';
+        M.aimLock = 0;
+        const fr = () => new Promise((r) => requestAnimationFrame(r));
+        const gk = (kind) => {
+          let mm = list.find((x) => x.alive && x.kind === kind);
+          if (!mm && C.machines.spawn) { try { mm = C.machines.spawn(kind, p.position.x + 60, p.position.z + 40); } catch { mm = null; } }
+          return mm && mm.kind === kind ? mm : null;
+        };
+        const distTo = (mm) => Math.hypot(p.position.x - mm.position.x, p.position.z - mm.position.z);
+        const walkIn = async (mm, ms, drawn) => {
+          C.input.keys.add('KeyW');
+          let last = 99, still = 0;
+          const t0 = performance.now();
+          while (performance.now() - t0 < ms) {
+            await fr();
+            if (drawn) M.drawSpear(3.6);
+            const d2 = distTo(mm);
+            if (Math.abs(d2 - last) < 0.002) { if (++still > 8) break; } else still = 0;
+            last = d2;
+          }
+          C.input.keys.delete('KeyW');
+          for (let f = 0; f < 10; f++) await fr();
+        };
+        const click = async (mm, holdMs) => {
+          let hit = null;
+          const onHit = () => {
+            if (hit) return;
+            const dd = an.debugMelee();
+            const caps = C.hitHulls && C.hitHulls.hulls ? C.hitHulls.hulls(mm) : null;
+            hit = { phase: M.phase, heavy: !!M.heavy, gap: dd && caps ? tipToHull(dd.tipWorld, caps) : null, stand: +distTo(mm).toFixed(3) };
+          };
+          C.events.on('melee-hit', onHit);
+          C.input.mouse.buttons |= 1;
+          const t0 = performance.now();
+          let up = false, seen = false, heavy = null;
+          while (performance.now() - t0 < 4500) {
+            await fr();
+            if (!up && performance.now() - t0 > holdMs) { C.input.mouse.buttons &= ~1; up = true; }
+            if (M.stance === 'swing') { seen = true; if (heavy == null) heavy = !!M.heavy; }
+            if (seen && !M.active) break;
+          }
+          C.input.mouse.buttons &= ~1;
+          C.events.off?.('melee-hit', onHit);
+          return { hit, swung: seen, heavy };
+        };
+        for (const other of list) {
+          if (other.alive && Math.hypot(other.position.x - p.position.x, other.position.z - p.position.z) < 70) {
+            other.position.x += 250; if (other.root) other.root.position.x = other.position.x;
+          }
+        }
+        for (const kind of ['watcher', 'thunderjaw', 'behemoth', 'tallneck', 'stormbird', 'shellwalker']) {
+          const mm = gk(kind);
+          if (!mm) { bad.push('real input: no ' + kind + ' could be staged'); continue; }
+          const hp0 = mm.health, mh0 = mm.maxHealth;
+          mm.maxHealth = 1e9; mm.health = 1e9;
+          for (const [beat, holdMs] of [['light', 70], ['heavy', 520]]) {
+            C.input.keys.clear(); C.input.mouse.buttons &= ~1;
+            M.holsterSpear();
+            { const tq = performance.now(); while (M.stance !== 'holstered' && performance.now() - tq < 3000) await fr(); }
+            ${STAGE}
+            p.heading = 0; p._faceX = 0; p._faceZ = 1; p._candX = 0; p._candZ = 1; p._latchT = 0;
+            p.camYaw = Math.PI;
+            if (p.model) p.model.rotation.y = 0;
+            const d0 = (mm.standoffHalfLen || 0) + (mm.bodyRadius || 1) + 0.95 + 1.6;
+            const mx = p.position.x, mz = p.position.z + d0;
+            const gy = C.terrain ? C.terrain.getHeight(mx, mz) : mm.position.y;
+            mm.update = () => {};
+            mm.position.set(mx, gy, mz); mm.heading = Math.PI; mm.state = 'idle';
+            if (mm.root) { mm.root.position.set(mx, gy, mz); mm.root.rotation.set(0, Math.PI, 0); }
+            if (typeof mm._airborne === 'boolean' && typeof mm.animate === 'function') {
+              mm._airborne = false; mm._groundHold = 1e9;
+              for (let f = 0; f < 30; f++) { try { mm.animate(1 / 60, performance.now() / 1000); } catch { /* pose best-effort */ } }
+              mm.position.y = gy; if (mm.root) mm.root.position.y = gy;
+            }
+            for (let f = 0; f < 6; f++) await fr();
+            await walkIn(mm, 6000, false);
+            const standHolstered = +distTo(mm).toFixed(3);
+            const c1 = await click(mm, holdMs);
+            const row = { kind, beat, standHolsteredM: standHolstered, swung: c1.swung, beatPlayed: c1.heavy == null ? null : (c1.heavy ? 'heavy' : 'light'),
+              firstClick: c1.hit ? { phase: c1.hit.phase, standM: c1.hit.stand, tipToHullM: c1.hit.gap == null ? null : +c1.hit.gap.toFixed(3) } : 'whiff (out of reach)' };
+            const tag = 'real input ' + kind + ' ' + beat;
+            const judgeHit = (h, what) => {
+              if (h.phase !== 'strike') bad.push(tag + ' (' + what + '): the hit fired in phase "' + h.phase + '"');
+              if (h.gap == null) bad.push(tag + ' (' + what + '): the gate could not solve the tip against the hull');
+              else if (!(h.gap <= 0.15)) {
+                bad.push(tag + ' (' + what + '): a melee-hit LANDED with the blade ' + h.gap.toFixed(3) + ' m from the hull (bar 0.15) — damage at a distance');
+              }
+            };
+            if (!c1.swung) bad.push(tag + ': the click never swung');
+            if (c1.heavy != null && c1.heavy !== (beat === 'heavy')) bad.push(tag + ': a ' + (c1.heavy ? 'heavy' : 'light') + ' played for a ' + beat + ' input');
+            if (c1.hit) judgeHit(c1.hit, 'first click');
+            else {
+              await walkIn(mm, 4500, true);
+              row.walkedInDrawnToM = +distTo(mm).toFixed(3);
+              const c2 = await click(mm, holdMs);
+              row.afterWalkIn = c2.hit ? { phase: c2.hit.phase, standM: c2.hit.stand, tipToHullM: c2.hit.gap == null ? null : +c2.hit.gap.toFixed(3) } : 'whiff';
+              if (!c2.hit) bad.push(tag + ': out of reach from the holstered stop (' + standHolstered + ' m), and STILL no hit after walking in drawn to '
+                + row.walkedInDrawnToM + ' m — the hull is unreachable on the real input path');
+              else judgeHit(c2.hit, 'after walking in');
+            }
+            realRows.push(row);
+            await new Promise((r) => setTimeout(r, 120));
+          }
+          mm.maxHealth = mh0; mm.health = hp0;
+          mm.position.x += 250; if (mm.root) mm.root.position.x = mm.position.x;
+        }
+        C.input.keys.clear(); C.input.mouse.buttons &= ~1;
+        C.state = prevState;
+      }
+
       /* ---- ROUND 6, RULING R9 (S5): THE BLADE STAYS OUT OF THE GROUND ----
        * The r5 skeptic's 25 deg slope (x -264, z -176, uphill heading -1.99):
        * swung uphill, the light-1's tip went 0.16 m and the heavy's 0.57 m
@@ -2096,21 +2232,37 @@ export const GATES = [
               if (under < minAll) minAll = under;
               if (x.phase === 'strike' && (cK == null || Math.abs(x.k - 0.70) < Math.abs(cK.k - 0.70))) cK = { k: x.k, under };
             }
+            /* ...and the GUARD she settles into after it (round 6): the
+             * probe on this slope found the ready guard's forward-down blade
+             * 0.04-0.23 m inside the hillside once the swing was over, on
+             * frames this row used to stop reading at. 24 rendered frames. */
+            let minGuard = 9, guardFrames = 0;
+            for (let f = 0; f < 24; f++) {
+              await frame();
+              const dg = an.debugMelee();
+              if (!dg || !dg.tipWorld || dg.stance !== 'ready') continue;
+              guardFrames++;
+              const ug = dg.tipWorld[1] - T.getHeight(dg.tipWorld[0], dg.tipWorld[2]);
+              if (ug < minGuard) minGuard = ug;
+            }
             const row = { dir, beat: heavy ? 'heavy' : 'light-1', slopeDeg: slope,
               tipAboveGroundAtContact: cK ? +cK.under.toFixed(3) : null,
-              tipAboveGroundMinAllFrames: +minAll.toFixed(3) };
+              tipAboveGroundMinAllFrames: +minAll.toFixed(3),
+              guardFrames, tipAboveGroundGuardMin: guardFrames ? +minGuard.toFixed(3) : null };
             slopeRows.push(row);
             const tag = 'slope ' + dir + ' ' + row.beat;
             if (row.tipAboveGroundAtContact == null) bad.push(tag + ': no contact frame sampled');
             else if (!(row.tipAboveGroundAtContact > 0)) bad.push(tag + ': the blade was ' + row.tipAboveGroundAtContact + ' m into the ground at contact — ruling R9');
             if (!(row.tipAboveGroundMinAllFrames > 0)) bad.push(tag + ': the blade went ' + row.tipAboveGroundMinAllFrames + ' m into the ground during the swing');
+            if (!(guardFrames >= 6)) bad.push(tag + ': only ' + guardFrames + ' guard frames after the swing');
+            else if (!(row.tipAboveGroundGuardMin > 0)) bad.push(tag + ': the guard after the swing put the blade ' + row.tipAboveGroundGuardMin + ' m into the ground');
           }
         }
       }
 
       const reaches = rows.map((r) => r.tipToHullAtHit).filter((v) => typeof v === 'number');
       const spReach = speciesRows.map((r) => r.tipToHullAtHit).filter((v) => typeof v === 'number');
-      return { pass: bad.length === 0, detail: { bad, speciesSummary: speciesSum, slopeRows, rows, contactK: 0.70,
+      return { pass: bad.length === 0, detail: { bad, speciesSummary: speciesSum, realInputRows: realRows, slopeRows, rows, contactK: 0.70,
         reachRangeM: reaches.length ? [Math.min(...reaches), Math.max(...reaches)] : null,
         speciesReachRangeM: spReach.length ? [Math.min(...spReach), Math.max(...spReach)] : null,
         speciesRows,
@@ -3158,6 +3310,15 @@ export const GATES = [
         let worstCorr = 0, worstStep = 0, worstStandStep = 0, latched = 0, frames = 0, worstAt = null;
         let totalCorr = 0, standCorr = 0;
         let px = p.position.x, pz = p.position.z;
+        /* ...AND THE MACHINE (round 6, Oct 2): letting go of the term must not
+         * move IT either. The manager's hard standoff pushes the machine root
+         * when she is inside its snout/centre/rear spheres; on a Thunderjaw
+         * head-on the term let go while she was 2.0 m inside the snout sphere
+         * and the machine jumped 2.0 m in one frame (the real-input release
+         * probe). Its root is tracked over the whole release (it is frozen:
+         * any motion is the release's). */
+        const mx0 = m.position.x, mz0 = m.position.z;
+        let mWorstFrame = 0, mpx = mx0, mpz = mz0;
         corr = 0;
         /* ROUND 6 (ruling R6): the TOTAL the release moves her, and the
          * planted feet. A per-frame bar let fix pass 1's relax glide her
@@ -3212,14 +3373,33 @@ export const GATES = [
           if (phase === 'stand' && st > worstStandStep) worstStandStep = st;
           const rc = Cc._machineMap && Cc._machineMap.get(m);
           if (rc && rc.mLatched) latched++;
+          const ms = Math.hypot(m.position.x - mpx, m.position.z - mpz);
+          if (ms > mWorstFrame) mWorstFrame = ms;
+          mpx = m.position.x; mpz = m.position.z;
           px = p.position.x; pz = p.position.z; corr = 0; frames++;
         };
         if (how === 'holster') M.holsterSpear(); else M.aimLock = 1.66;
         // 0.8 s of standing: fix pass 1's glide ran 0.23-0.44 s — all of it in here
         { const ts = performance.now(); while (performance.now() - ts < 800) { await frame(); sample('stand'); } }
+        /* THE WALK-AWAY ENDS WHERE THE RELEASE IS DUE, NOT ON A CLOCK (round
+         * 6). R6 holds the term while she is inside the machine's FULL
+         * standoff and lets go the step she leaves it; on a Thunderjaw that
+         * capsule ends 2.7 m behind where the term lets her stand, and a fixed
+         * 1 s backpedal on a box rendering at 12-14 fps (MAX_FRAME caps the sim
+         * at 0.05 s a frame) covered less than that on 2 of 10 runs. So she
+         * backs away for at least 1 s and on until the term lets go, 4 s at
+         * most; the clause below is unchanged and still fails a term that is
+         * holding her 4 s of backpedal later. Where she was when it let go is
+         * published against the full standoff. */
         C.input.keys.add('KeyS');
         const t1 = performance.now();
-        while (performance.now() - t1 < 1000) { await frame(); sample('walk'); }
+        let relDist = null;
+        while (performance.now() - t1 < 4000) {
+          await frame(); sample('walk');
+          if (relDist == null && m.meleeStandoffHalfLen == null) relDist = Math.hypot(p.position.x - m.position.x, p.position.z - m.position.z);
+          if (performance.now() - t1 >= 1000 && m.meleeStandoffHalfLen == null) break;
+        }
+        const walkAwayS = (performance.now() - t1) / 1000;
         C.input.keys.delete('KeyS');
         for (let f = 0; f < 6; f++) { await frame(); sample('walk'); }
         M.aimLock = 0;
@@ -3229,7 +3409,10 @@ export const GATES = [
           totalCorrectionM: +totalCorr.toFixed(4), standCorrectionM: +standCorr.toFixed(4),
           plantedFootDragM: +Math.max(footDragStand, footDragWalk).toFixed(4), plantedFootDragStandM: +footDragStand.toFixed(4),
           plantedFootDragWalkM: +footDragWalk.toFixed(4), plantedFootDriftWalkRawM: +footWalkRaw.toFixed(4),
-          worstFrameStepM: +worstStep.toFixed(4), worstStandStepM: +worstStandStep.toFixed(4) };
+          worstFrameStepM: +worstStep.toFixed(4), worstStandStepM: +worstStandStep.toFixed(4),
+          walkAwayS: +walkAwayS.toFixed(2), releasedAtCentreDistM: relDist == null ? null : +relDist.toFixed(3),
+          machineMovedM: +Math.hypot(m.position.x - mx0, m.position.z - mz0).toFixed(4), machineWorstFrameM: +mWorstFrame.toFixed(4),
+          fullStandoffEndOnM: +((m.standoffHalfLen || 0) + (m.bodyRadius || 1) + Cc.machinePad + 0.4).toFixed(3) };
       };
       try {
         for (const kind of ['watcher', 'strider', 'redeye', 'thunderjaw']) {
@@ -3277,6 +3460,10 @@ export const GATES = [
                 bad.push(tag + ': the term was not live at the stand — the row proves nothing');
               } else if (!r.released) {
                 bad.push(tag + ': the term had not released by the end of the walk-away');
+              }
+              if (!(r.machineMovedM <= 0.005)) {
+                bad.push(tag + ': letting go of the term moved the MACHINE ' + r.machineMovedM + ' m (worst frame '
+                  + r.machineWorstFrameM + ' m) — the manager pushed it off her; bar 0.005 m');
               }
               if (!(r.worstFrameCorrectionM <= 0.15)) {
                 bad.push(tag + ': the term release moved her root ' + r.worstFrameCorrectionM.toFixed(3)
@@ -3813,8 +4000,8 @@ export const GATES = [
     id: 'A107-draw-arm-path', kind: 'action', lane: 'player-melee',
     timeout: 300000, settle: 500,
     title: 'Draw and holster from idle, a jog and a sprint (real key, 5 cycles each, plus the '
-      + 'aim stow): the right elbow never above her head (+0.05 m) and, wherever it is up at '
-      + 'shoulder height, never more than 0.10 m behind her head',
+      + 'aim stow): the right elbow never above her head (+0.05 m), wherever it is up at '
+      + 'shoulder height never more than 0.10 m behind her head, and the forearm never on the back of her head',
     setup: `__CTX__.input.enabled = true;`,
     assert: `(async () => {
       const C = __CTX__, p = C.player, an = p.animator;
@@ -3855,22 +4042,47 @@ export const GATES = [
       const M = C.combat.melee;
       M.aimLock = 0;
       const V3 = p.position.constructor;
-      const wE = new V3(), wH = new V3(), wS = new V3();
+      const wE = new V3(), wH = new V3(), wS = new V3(), wW = new V3(), wQ = new V3(), wU = new V3();
       const inv = p.model.matrixWorld.clone();
+      /* (c), round 6: the right FOREARM (elbow -> wrist, 11 samples) against
+       * the animator's own head ellipsoid (playerAnimator HEAD_R, fitted to
+       * the skull: 0.105 x 0.135 x 0.115 m semi-axes about the head bone),
+       * measured radially, on the BACK half of it (head-frame z < 0) — the
+       * r5 skeptic's rear-3/4 frames had the forearm lying across the back of
+       * her skull. Clearance in metres to the surface; a forearm is ~0.05 m
+       * thick, so the bar is 0.05. Published for the whole head as well. */
+      const hasHead = typeof an._headFrame === 'function' && typeof an._headUnit === 'function';
       const read = () => {
         p.model.updateWorldMatrix(true, false);
         inv.copy(p.model.matrixWorld).invert();
         an.b.loArmR.bone.getWorldPosition(wE).applyMatrix4(inv);
         an.b.head.bone.getWorldPosition(wH).applyMatrix4(inv);
         an.b.upArmR.bone.getWorldPosition(wS).applyMatrix4(inv);
-        return { over: wE.y - wH.y, behind: wH.z - wE.z, aboveSh: wE.y - wS.y };
+        an.b.handR.bone.getWorldPosition(wW).applyMatrix4(inv);
+        let back = 9, any = 9;
+        if (hasHead) {
+          an._headFrame();
+          for (let i = 0; i <= 10; i++) {
+            wQ.copy(wE).lerp(wW, i / 10);
+            an._headUnit(wQ, wU);
+            const L = wU.length();
+            if (L < 1e-6) { back = Math.min(back, -0.1); any = Math.min(any, -0.1); continue; }
+            const g = (L - 1) * Math.hypot(wU.x / L * 0.105, wU.y / L * 0.135, wU.z / L * 0.115);
+            if (g < any) any = g;
+            if (wU.z < 0 && g < back) back = g;
+          }
+        }
+        return { over: wE.y - wH.y, behind: wH.z - wE.z, aboveSh: wE.y - wS.y, back, any };
       };
       const tapB = async () => { C.input.keys.add('KeyB'); await frame(); await frame(); C.input.keys.delete('KeyB'); };
       const stats = () => ({ frames: 0, overMax: -9, behindBandMax: -9, behindAnyMax: -9, bandFrames: 0,
-        overAt: null, behindAt: null });
+        overAt: null, behindAt: null, backMin: 9, anyMin: 9, aboveShMax: -9, backAt: null });
       const take = (st, tag, phase) => {
         const r = read();
         st.frames++;
+        if (r.back < st.backMin) { st.backMin = r.back; st.backAt = tag + ' ' + phase; }
+        if (r.any < st.anyMin) st.anyMin = r.any;
+        if (r.aboveSh > st.aboveShMax) st.aboveShMax = r.aboveSh;
         if (r.over > st.overMax) { st.overMax = r.over; st.overAt = tag + ' ' + phase; }
         if (r.behind > st.behindAnyMax) st.behindAnyMax = r.behind;
         if (r.aboveSh > 0) {
@@ -3916,7 +4128,10 @@ export const GATES = [
             pathFrames: st.frames, bandFrames: st.bandFrames,
             elbowOverHeadMaxM: +st.overMax.toFixed(3), elbowOverAt: st.overAt,
             elbowBehindHeadBandMaxM: st.bandFrames ? +st.behindBandMax.toFixed(3) : null, elbowBehindAt: st.behindAt,
-            elbowBehindAnyMaxM: +st.behindAnyMax.toFixed(3) };
+            elbowBehindAnyMaxM: +st.behindAnyMax.toFixed(3),
+            elbowAboveShoulderMaxM: +st.aboveShMax.toFixed(3),
+            forearmToBackOfHeadMinM: hasHead ? +st.backMin.toFixed(3) : null, forearmBackAt: st.backAt,
+            forearmToHeadMinM: hasHead ? +st.anyMin.toFixed(3) : null };
           rows.push(row);
           if (!drew || !(st.frames >= 6)) { bad.push(tag + ': the draw/holster did not play (' + st.frames + ' path frames)'); continue; }
           if (!(row.elbowOverHeadMaxM <= 0.05)) {
@@ -3925,6 +4140,11 @@ export const GATES = [
           if (row.elbowBehindHeadBandMaxM != null && !(row.elbowBehindHeadBandMaxM <= 0.10)) {
             bad.push(tag + ': with the elbow up at shoulder height it was ' + row.elbowBehindHeadBandMaxM
               + ' m BEHIND her head (' + row.elbowBehindAt + ') — bar 0.10 m, Kevin\\'s "arm literally behind head"');
+          }
+          if (!hasHead) bad.push(tag + ': no head ellipsoid to measure the forearm against (clause c)');
+          else if (!(row.forearmToBackOfHeadMinM >= 0.05)) {
+            bad.push(tag + ': the right forearm came within ' + row.forearmToBackOfHeadMinM + ' m of the BACK of her head ('
+              + row.forearmBackAt + ') — bar 0.05 m, the r5 skeptic\\'s "forearm across the back of her head"');
           }
           if (keys.length) {
             // keep her moving: re-press what the aim or the keys may have left
@@ -3937,14 +4157,25 @@ export const GATES = [
       const per = {};
       for (const r of rows) {
         const k = r.mode;
-        per[k] = per[k] || { cycles: 0, overMax: -9, behindBandMax: -9, behindAnyMax: -9 };
+        per[k] = per[k] || { cycles: 0, overMax: -9, behindBandMax: -9, behindAnyMax: -9, bandFrames: 0, aboveShoulderMax: -9, forearmBackOfHeadMin: 9 };
         per[k].cycles++;
+        per[k].bandFrames += r.bandFrames;
+        per[k].aboveShoulderMax = Math.max(per[k].aboveShoulderMax, r.elbowAboveShoulderMaxM);
+        if (r.forearmToBackOfHeadMinM != null) per[k].forearmBackOfHeadMin = Math.min(per[k].forearmBackOfHeadMin, r.forearmToBackOfHeadMinM);
         per[k].overMax = Math.max(per[k].overMax, r.elbowOverHeadMaxM);
         if (r.elbowBehindHeadBandMaxM != null) per[k].behindBandMax = Math.max(per[k].behindBandMax, r.elbowBehindHeadBandMaxM);
         per[k].behindAnyMax = Math.max(per[k].behindAnyMax, r.elbowBehindAnyMaxM);
       }
       return { pass: bad.length === 0, detail: { bad, perMode: per, rows,
-        note: 'R8 as gated: (a) elbow <= head + 0.05 m on every draw/holster frame; (b) elbow no '
+        note: 'ROUND 6 (c): the right forearm >= 0.05 m off the BACK half of her head ellipsoid on every '
+          + 'draw/holster frame (forearmToBackOfHeadMinM). WHY (b) READS NO FRAMES ON THIS BUILD, stated so '
+          + 'nobody has to discover it: the re-authored reach never lifts the elbow above the shoulder joint '
+          + '(elbowAboveShoulderMaxM, bandFrames 0) — which is the strongest form of "not up behind her '
+          + 'head"; (a) and (c) are the clauses that bind every frame. The band itself is geometry: the '
+          + 'haft rides on her back 0.13 m behind the spine, so at the grab the hand is 0.2+ m behind the '
+          + 'shoulder plane and, with a 0.25 m forearm, the elbow is 0.1-0.2 m behind the head plane on ANY '
+          + 'roll of the elbow circle unless it goes up above the shoulder. '
+          + 'R8 as gated: (a) elbow <= head + 0.05 m on every draw/holster frame; (b) elbow no '
           + 'more than 0.10 m behind the head\\'s frontal plane on every such frame where the elbow '
           + 'is above the shoulder joint. elbowBehindAnyMaxM is the band-free reading, published: '
           + 'it is dominated by the guard/idle arm at the ends of the path, whose elbow sits beside '
@@ -4344,7 +4575,9 @@ export const GATES = [
       + 'up the SIDE and over the shoulder, never up behind her head',
     criteria: 'Twelve captioned tiles, two rows of six, of ONE real draw each (the melee key, '
       + 'pressed mid-jog; ruling R8): ROW 1 from her rear-3/4 right, ROW 2 from her right side, '
-      + 'each at draw 0.10 / 0.25 / 0.40 / 0.55 / 0.75 and the first guard frame. Judge against '
+      + 'each at draw 0.10 / 0.25 / 0.40 / 0.55 / 0.75 and the first guard frame (the draw is played '
+      + 'at time scale 0.25 and frozen on each tile\'s frame; the caption prints the drawK actually '
+      + 'posed). Judge against '
       + 'Kevin\'s standing complaints ("arm literally behind head", "arms crossing into her body") '
       + 'and reference/spear-holster-back-hfw.jpg. PASS requires ALL of: (1) in every tile the '
       + 'right ELBOW is at or below the top of her head and, whenever it is up at shoulder '
@@ -4368,6 +4601,18 @@ export const GATES = [
       const M = C.combat.melee;
       C.state = 'playing';
       C.input.enabled = true;
+      /* THE CAPTION SAYS WHAT WAS POSED (round 6). The grab lands on the
+       * frame AFTER the draw clock crossed the tile's fraction, and on a box
+       * drawing 12-15 fps one frame of draw is up to 0.10 of it — so each
+       * caption carries the drawK the layer actually posed that frame (or
+       * GUARD), not only the fraction it was aiming for. */
+      const BASE = LABELS.slice();
+      const lay = p.animator && p.animator.melee;
+      e.onAfterRender.unshift(() => {
+        if (!want || got >= LABELS.length || !lay || !lay._dbg) return;
+        const D = lay._dbg;
+        LABELS[got] = BASE[got] + (D.stance === 'draw' ? ' (posed ' + (+D.drawK).toFixed(2) + ')' : D.stance === 'ready' ? '' : ' (' + D.stance + ')');
+      });
       const grabNow = async () => {
         const g0 = got; want = true;
         const tq = performance.now();
@@ -4381,17 +4626,36 @@ export const GATES = [
         { const tq = performance.now(); while (performance.now() - tq < 1500) await frame(); }
         cam();
         for (let i = 0; i < 6; i++) await frame();
+        /* SLOW MOTION, THEN A FREEZE PER TILE (round 6). The draw is 0.26 s;
+         * on a box drawing 12-15 fps that is three or four rendered frames, and
+         * the first cut of this sheet (captions carrying the posed drawK) showed
+         * its first tile at 0.52 and its third already at 1.00 — the reach leg,
+         * where the skeptic's elbow went up behind her head, was never on the
+         * sheet. So the whole draw is played at time scale 0.25 (every melee
+         * clock and the stride scale with engine.timeScale, so it is the same
+         * motion, sampled ~4x finer), and on the frame the posed drawK reaches
+         * each tile's fraction the world is frozen (time scale 0) while that
+         * frame is grabbed. The caption prints the drawK actually posed. */
+        e.timeScale = 0.25;
         C.input.keys.add('KeyB'); await frame(); await frame(); C.input.keys.delete('KeyB');
         const targets = [0.10, 0.25, 0.40, 0.55, 0.75];
+        const lay2 = p.animator && p.animator.melee;
         const tq = performance.now();
-        while (targets.length && performance.now() - tq < 3000) {
+        while (targets.length && performance.now() - tq < 8000) {
           await frame();
-          if (M.stance === 'draw' && M.poseState().drawK >= targets[0]) { targets.shift(); await grabNow(); }
-          else if (M.stance === 'ready') { while (targets.length) { targets.shift(); await grabNow(); } }
+          const D = lay2 && lay2._dbg;
+          const posed = D && D.stance === 'draw' ? +D.drawK : (M.stance === 'ready' ? 1 : -1);
+          if (posed >= targets[0]) {
+            e.timeScale = 0;
+            while (targets.length && posed >= targets[0]) { targets.shift(); await grabNow(); }
+            e.timeScale = 0.25;
+          }
         }
-        { const tr = performance.now(); while (M.stance !== 'ready' && performance.now() - tr < 2000) await frame(); }
-        await frame();
+        { const tr = performance.now(); while (M.stance !== 'ready' && performance.now() - tr < 4000) await frame(); }
+        for (let i = 0; i < 4; i++) await frame();
+        e.timeScale = 0;
         await grabNow();
+        e.timeScale = 1;
       };
       await drawRow(() => lockCam(-1.1, 1.7, 1.7, 1.35, 42));
       await drawRow(() => lockCam(-2.0, 0.1, 1.5, 1.25, 42));

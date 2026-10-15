@@ -1749,7 +1749,10 @@ export class Collision {
         if (live - dl > (rec.pushMax || 0)) rec.pushMax = live - dl;
       }
     }
-    if (!on && rec.mR >= this._meleeBaseOutline(rec, ang) - 0.005) {
+    /* ...and it lets go at the machine's own outline only where the
+     * manager's spheres would not then push the machine off her (round 6,
+     * Oct 2: see `_meleeLatched`) */
+    if (!on && rec.mR >= this._meleeBaseOutline(rec, ang) - 0.005 && !this._meleeLatched(m, base)) {
       this._meleeWithdraw(m, rec);
       return;
     }
@@ -1833,7 +1836,27 @@ export class Collision {
     const d = solverAxisDist(p.position.x, p.position.y, p.position.z,
       m.position.x - fx * base, m.position.y + 0.15, m.position.z - fz * base,
       m.position.x + fx * base, top, m.position.z + fz * base);
-    return d < (m.bodyRadius || 1) + this.machinePad + MELEE_BODY_R + 0.02;
+    if (d < (m.bodyRadius || 1) + this.machinePad + MELEE_BODY_R + 0.02) return true;
+    /* ...AND WHILE SHE IS INSIDE THE MANAGER'S PUSH SPHERES (round 6, Oct 2).
+     * The solver's full standoff is a SLANTED capsule (low at the far end,
+     * `top` at the near one); `machines/index.js`'s hard standoff is three
+     * flat spheres of `bodyRadius + 0.6` at the rear, centre and snout
+     * (± `standoffHalfLen` along the heading). The term keeps the manager on
+     * its centre sphere alone (`meleeStandoffHalfLen` 0); withdrawn, the
+     * snout sphere comes back. On a Thunderjaw head-on she stood 5.07 m from
+     * its centre — outside the slanted capsule, so the term let go, and 2.0 m
+     * inside the snout sphere, so on the holster frame the manager shoved
+     * the MACHINE 2.0 m away in one frame (real input probe, Oct 2). The
+     * term now holds while she is inside either, so it lets go only where
+     * neither half of the standoff would push anything. */
+    const min = (m.bodyRadius || 1) + 0.6 + 0.02;
+    for (let s = -1; s <= 1; s++) {
+      const off = s * base;
+      const dx = m.position.x + fx * off - p.position.x, dz = m.position.z + fz * off - p.position.z;
+      if (dx * dx + dz * dz < min * min) return true;
+      if (!(base > 0)) break;
+    }
+    return false;
   }
 
   /**

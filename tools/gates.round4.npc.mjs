@@ -330,7 +330,11 @@ const TURN_PROBE = `
           };
           let prevT = performance.now();
           const gapsOpen = [];               // frame gaps while this loop runs (reported)
-          while (performance.now() - t0 < (seated ? 11000 : 6500)) {
+          // the seated card is held for 11 s of the SPEAKER'S clock (the hold
+          // under the freeze, simulation time otherwise; a 90 s wall guard), not
+          // of wall time — see BACK TO THE SEAT. The standing path's 6.5 s wall
+          // window is unchanged.
+          while (seated ? (clock() < 11 && performance.now() - t0 < 90000) : performance.now() - t0 < 6500) {
             await new Promise((r) => requestAnimationFrame(r));
             const now = performance.now();
             const hitch = now - prevT > hitchT;
@@ -440,9 +444,21 @@ const TURN_PROBE = `
          * BACK TO THE SEAT (seated case). The world runs again once the card is
          * closed; the speaker's talk timer runs out, they step round to the fire
          * and sit. Followed until they are seated and settled (the seat loop at
-         * full weight, no sit in progress) or 30 s: every frame's heading change
-         * (the old return ASSIGNED a heading when its turn timed out), the feet
-         * on the ground (the same contact windows), and the seat they end on.
+         * full weight, no sit in progress) or 30 s OF SIMULATION TIME: every
+         * frame's heading change (the old return ASSIGNED a heading when its turn
+         * timed out), the feet on the ground (the same contact windows), and the
+         * seat they end on.
+         *
+         * The 30 s was WALL time until npc polish run 9 of 10: the return is
+         * simulated (talkT 5.5 s, the stepped turn, Sitting_Enter) and took
+         * 8.33-8.39 s (side) / 9.58-9.65 s (behind) of simulation in all 79
+         * returns that finished, but main.js clamps a frame to 50 ms, so at the
+         * 10-12 fps this box ran under load (median frame gap 57-99 ms) 30 s of
+         * wall bought as little as ~15 s of simulation, and one return (VALA,
+         * freeze, side) was mid-'Sitting_Enter' when the wall clock ran out. The
+         * window now counts the clock the behaviour runs on — RUN_SIM's rule for
+         * every other window in this file — with a 150 s wall guard. What
+         * 'backToSeat' asserts is unchanged.
          */
         if (seated) {
           const r0 = performance.now();
@@ -450,7 +466,7 @@ const TURN_PROBE = `
           let prevY = g.rotation.y, prevT = r0;
           rec.maxReturnYawStepRad = 0;
           rec.back = null;
-          while (performance.now() - r0 < 30000) {
+          while (ctx.engine.simTime - simR0 < 30 && performance.now() - r0 < 150000) {
             await new Promise((r) => requestAnimationFrame(r));
             const now = performance.now();
             const hitch = now - prevT > hitchT;
@@ -1079,6 +1095,12 @@ export const GATES = [
      * Proved to catch the finding: run against the pre-fix npc files (5e0a9b3)
      * all eight seated runs FAIL — body error 3.142 / 1.571 rad at the card and at
      * the close, never faced, never stood, head 2.97-3.13 rad off from behind.
+     *
+     * The seated card and the return to the seat are followed on the clock the
+     * behaviour runs on (the speaker's: the hold under the freeze, simulation
+     * time otherwise), not wall time — one of ten isolation runs on a box at
+     * 10-12 fps ran out of a 30 s WALL window with VALA mid-sit (TURN_PROBE,
+     * BACK TO THE SEAT). No bar moved.
      */
     assert: `(async () => {
       ${CROWD}

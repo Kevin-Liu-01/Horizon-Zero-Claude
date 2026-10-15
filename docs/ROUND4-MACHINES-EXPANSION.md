@@ -1779,7 +1779,7 @@ staged-fight reading on this box this round (five gate runs) was
 ~310 are props 45+48, vegetation 43+33, other 22+23, player 16+15-21,
 terrainSky 13+9, post 22.
 
-### 13.2 `A48-cadence` flaky (blocker) — moving frames + the published stance window; 6/6
+### 13.2 `A48-cadence` flaky (blocker) — moving frames + the published stance window; 6/6 (second pass: 5/6, the miss a single 3.7 s frame — §13.9)
 
 Both halves of the ruling, as written.
 
@@ -1841,7 +1841,7 @@ read 1.99 over a 1.87 ceiling in the last suite, reads 1.14-1.20. `A45`,
 `A45b`, `A45c`, `A46`, `A76b` PASS on the final code (§13.7).
 
 
-### 13.3 `A47c-corpse-mass` for sprawlers (major) — ruled gate applied; Snapmaw SKIPs; Corruptor NOT closed (0.75-0.78)
+### 13.3 `A47c-corpse-mass` for sprawlers (major) — ruled gate applied; Snapmaw SKIPs; Corruptor NOT closed (second pass: the lever taken to the bone, measured worse, reverted; ruling requested)
 
 **The gate** (`tools/gates.round4.machine-rig.mjs`, header records the ruling):
 
@@ -1906,6 +1906,68 @@ it changes the living machine to pass a corpse gate, and the casting card
 calls it "a low hub"; that is an owner call, not a residue fix. Owner:
 machines-expansion, pending an orchestrator ruling on whether a 0.11-0.15 m
 walking clearance under a 0.9 m hub "lifts the chassis" in the ruling's sense.
+
+**Second pass (Oct 2, after the outage) — the ruling's lever taken all the
+way, measured, and reverted.** The first pass re-rooted the tail's SKIN (a
+y-gate) and left the tail BONES where they were. Measured this pass, that was
+the wrong half: an area-sampled occupancy map of the Scorpion donor in body
+y-z (0.25 m cells) shows its real tail leaving the body behind the abdomen
+(z -1.85, y 0.55), running back low to z -4.3, rising as a column at z -4.5 to
+y 2.25 and curling FORWARD to the sting at (2.7, -3.3) — while `rig_tail1..4`
+climbed diagonally from the hub top (1.25, -1.45) to the curl through empty
+air, with the shell's tail plates on that diagonal. The donor's column was
+skinned to `tail3` hanging up to 1.35 m below the bone, which is why a deep
+root droop lifted the wreck (root 1.6 rad measured: wreck median 1.50 m, body
+held 0.82 m up). So the bones were re-rooted onto the donor's own centreline
+(`tail1` at the abdomen's end, corner, column top, curl), the shell tail
+re-plated along them, the y-gate removed, and the wreck's tail laid flat on the
+ground behind it (`shots/r2c-corr-alive-new.png`, `shots/r2c-corr-dead-new.png`:
+a clean scorpion hook alive, the tail lying flat dead).
+
+It reads better and it measures WORSE, on the Corruptor's own ground. The
+walking reference rose 0.03 (0.90 -> 0.93: the abdomen taper and the low tail
+stop counting as chassis), the laid tail's joints sat 0.51-0.62 m up, but the
+Corruptor lives on a 10-11 degree hillside at the cauldron, and a 4.5 m laid
+tail moves the wreck's two gate ground references apart: `A47`'s box reference
+(terrain under the mean of the per-mesh box centres) sat 0.07-0.14 m above
+`A47c`'s (terrain under the posed-sample centre), and the box floor that keeps
+`A47` green lifted the wreck by that much (`boxErr` pinned at -0.03, chassis
+0.08-0.15 m up). Gate-faithful runs (the gate's own assert, extracted, plus
+diagnostics; port 5277):
+
+| build | graded runs: ratio | SKIP (walking belly <= 0.05 m) |
+| --- | --- | --- |
+| committed tree (scratch copy of `2ce8e0c`) | 0.82, 0.76 | 1 of 3 |
+| bones re-rooted, tail laid straight back | 0.72, 0.93, 0.74, 0.74, 0.95, 0.72, 0.75, 0.87 | 3 of 11 |
+| ...tail radii cut to the measured half-thickness (tail rests on the soil) | 0.94, 0.97, 0.87, 0.89, 0.86 | 0 of 5 |
+| ...tail column laid sideways (compact wreck) | 0.89, 0.80, 0.79 | 1 of 4 |
+| ...every tail joint curled 0.5 rad to the fall side | 0.80 | 3 of 4 |
+
+Worse than the committed tree in every variant, so all of it was reverted; the
+tree is the checkpoint's (y-gated skin, 0.33 rad root droop).
+
+**The gate on the committed tree, five runs in isolation on 5207 (load 13-55):**
+Corruptor graded in 2 — **0.86 and 0.84 (FAIL)**, reference 0.868 / 0.883 m,
+wreck 0.750 / 0.739 m — and SKIPped in 3 (walking belly 0.050, 0.039, 0.037 m).
+Snapmaw SKIP 5/5 as ruled. Stormbird 0.73 0.72 0.73 0.69 0.72 (5/5). Every
+other species 0.66-0.69 or lower (5/5).
+
+**Why the Corruptor cannot close on this gate in-lane, measured.** Its walking
+chassis clears the soil by 0.04-0.12 m (`standLift` 0.26 and `bellyMin` 0.08
+are relative to the rest pelvis, not the terrain), under a 0.9 m hub that is
+55 % of the machine's area — so a wreck lying on its belly can lower the hub
+only by that clearance, the ratio rests on the limbs and on which slope the
+gate's 2-s walk ends on (reference 0.87-0.99 m across runs), and the SKIP
+threshold (0.05 m) sits inside the walk's own clearance range, so the species
+flips between graded and skipped run to run. The one lever measured to close
+it is the ruling's own "high-walking": `highWalk` 0.15 m set at runtime on the
+committed rig read **0.67, 0.72, 0.74** with the walking belly at 0.17-0.21 m
+(never SKIPs) — HZD's Corruptor carries its body high on its legs; casting-v4
+§2.6 calls it "a low hub". That changes the living machine, so it is not
+shipped without a ruling. **Owner: machines-expansion; ruling requested:**
+(a) a walking stilt for the Corruptor (`highWalk` ~0.15 m while moving, rest
+pose unchanged), or (b) the Corruptor SKIPs as a sprawler whose walk lifts the
+chassis by less than ~0.15 m.
 
 ### 13.4 Wrecks keep one shadow caster (major) — CLOSED; the freeze was switching it off
 
@@ -2063,6 +2125,80 @@ Also filmed this round: `shots/mx-r7-strider-donorfold-vs-head.png` (§13.1),
 `shots/mx-r7-wreck-shadow-{before,after}.png` (§13.4 probe's last frames),
 `shots/mx-r7-corruptor-wreck-side.png` (§13.3).
 
-### 13.9 The full suite on 5207 — every FAIL, with an owner
+### 13.9 Second pass (Oct 2, after the weekly-limit outage) — every finding re-measured
 
-TBD
+The work above was checkpointed mid-round (`2ce8e0c`). This pass re-ran every
+cited gate in isolation on 5207 on that tree, under load 13-60 (four to six
+other lanes' Chrome instances on the box), filmed at the judges' angles, and
+changed no source file: the one attempt at a source change (the Corruptor's
+tail re-rooted onto its bones, §13.3) measured worse and was reverted, and a
+diagnostic briefly added to `A48` was removed again (see `A48` below).
+
+| finding | gate, runs in isolation | reading | verdict |
+| --- | --- | --- | --- |
+| (1) `A21` staged fight | `A21-real-draw-calls` x3 | draw term **337 / 342 / 339** (west-herd 211, spawn-vista 319-322), triangles PASS; clock terms PENDING (null-frame GPU 11.5-19.6 ms) | draw term PASS 3/3 |
+| (2) `A48` flake | `A48-cadence` x6 | **5 PASS, 1 FAIL**: Longleg 0.98 against a 0.99 floor in run 2, every other species in band in all six (worst margin over a floor 1.28x, Behemoth; highest reading 0.73x of a ceiling, Watcher). The failing window holds ONE 3.7 s frame (`movingS` 8.71 for a 5 s window, 54 frames): `wallPerSim` drops wall deltas over 3 s from its average by design, so that frame advanced the gait 0.05 sim-s while the gate charged it 3.7 wall-s. Without it the same 17 plants read ~1.7 Hz, in line with the other five runs (1.79-1.97). | **5/6, not 6/6** — a box stall, measured; owner: this lane for the record, core-platform for the stall |
+| (2) `A48b` | `A48b-cadence-headroom-expansion` x2 | every species 0 ceiling-bound frames | PASS 2/2 |
+| (3) `A47c` | `A47c-corpse-mass` x5 | Corruptor graded 2 (0.86, 0.84 FAIL), SKIPped 3 (walking belly 0.050 / 0.039 / 0.037 m); Snapmaw SKIP 5/5 as ruled; Stormbird 0.69-0.73; all others <= 0.69 | **NOT closed for the Corruptor** — §13.3, ruling requested |
+| (4) wreck shadows | a scratchpad probe (§13.4's, re-written): every species staged 90-140 m off, killed there, waited out to `_frozen`, player walked to 9 m, shadow-pass draws counted over 4 frames | **17 of 17 species cast**: 3 draws per frame (the prime, one per cascade), Thunderjaw 9; four wrecks the site lifecycle disposed during the walk-up were re-staged in a second run and cast 3 each (`shots/mx-r8-wreck-shadow.png`, `-b.png`) | CLOSED |
+| (5) `V26a` / `V27a` staging | `A44c-lineup-expansion` A/B, `V26c` | Snapmaw 29.9 % x **13.9 %** of the frame, Broadhead 14.1 x 15.9, Grazer 16.0 x 39.4, Ravager 16.0 x 22.1, Redeye 14.0 x 33.6; B: Shell-Walker 30.3 x 21.9, Stormbird 31.2 x 28.0, Corruptor 30.3 x 23.8; no speck, clip or undrawn. `V26c` Redeye plate/hide 165.7 / 75.2 = **2.20x** (bar 1.9), Broadhead 2.02, Grazer 4.12 | PASS |
+| (6) `A90-rig-reclaim` | x6 | `perLiveGeo` **0** in all six, `heldThenReleased.geo` **0** in all six, `afterCycles.geo` +3..+9 | PASS 6/6 |
+
+Memory, run at the end as the brief asks (`--only A90-memory-stability,
+A90-memory-stability-expansion,A90-rig-reclaim,A9-perf-budget,
+A21-real-draw-calls`): `A90` PASS geometries **+12** (168 -> 180, the §13.7
+reading was +11), textures -19, heap -6.8 %; `A90-expansion` PASS geometries
++4, non-machine growth 0, orphans 0, heap -7.9 %; `A90-rig-reclaim` PASS
+(0 / 0 / +6); `A9` PENDING (319 draw calls in budget, fps not attributable:
+null frame 5.81 ms GPU); `A21` PENDING (339 / 211 / 319 draws PASS, clock
+terms unattributable). No worse than §13.7 on any term.
+
+Films, re-shot on this tree and read against `casting-v4` §6
+(`shots/gates/V26-silhouette.png`, `V26a`, `V26b`, `V27-attack-pose.png`,
+`V27a`, `V27b`): V26a — Broadhead (smallest in the row; the horns read as two
+thin pale prongs), Grazer rotor antlers and two canister rows, Ravager with the
+rail over its back, Snapmaw full length with the scute ridge and open jaws,
+Redeye grey plates over the dark donor with the red sensor; V27a — Broadhead
+horns down, Grazer rotors up, Ravager coiled with its cannon lit, Snapmaw
+reared, jaws open; V26b — Shell-Walker's six legs, raised arm-claws and drum,
+Stormbird's spread wing with three nacelles, the black Corruptor with claws
+forward and the tail arched over its rear; V27b — arm-claws raised, wing
+swept, tail coiled; V26 / V27 — Sawtooth, Thunderjaw, Scrapper with its radar,
+Longleg, Glinthawk, unchanged reads. No regression against §13.8.
+
+### 13.10 The full suite on 5207 — every FAIL, with an owner
+
+`node tools/gates.mjs --port 5207`, 11:27-14:55, load 10-96 (a 2.4 fps
+spawn vista at the worst; the runner relaunched its browser twice and one gate
+hit ENOSPC on a 99 %-full disk): **244 gates: 173 pass, 23 fail, 6 pending,
+42 need judging.** The tree is the checkpoint's for every file this lane owns
+(§13.9). Re-checks of this lane's rows in isolation on 5277 follow the table.
+
+| gate | owner | reading |
+| --- | --- | --- |
+| `A47c-corpse-mass` | this lane (ruling requested, §13.3) | Corruptor **0.76** (walking chassis 0.921 m, wreck 0.703 m, walking belly 0.118 m); Stormbird 0.70; Snapmaw SKIP as ruled |
+| `A47-corpse-grounded` | this lane (`glinthawk.js` owns its own death) | Glinthawk wreck +2.02 m above the soil under the 96-load spike; **PASS in isolation** on re-check (+0.09 m), every other species -0.03..+0.05 |
+| `A76b-footfall-species` | this lane — NEW finding, not fixed (outside the six) | Stormbird silent, in the suite AND in isolation. Measured: ~75 s after load the bird is in the airborne half of its calm perch cycle (`_perch`, `stormbird.js`), and nothing holds a CALM flier's altitude — `_fly` is only called from the engaged branch in `machine.js` — so it "flies" its patrol at 8 m/s with its legs tucked at ground level, its root at -0.01 m and then 2.3 m BELOW the terrain once provoked (a scratchpad probe: 75 s idle, then A76b's own provoke); no feet down, no footfalls in A76b's 3.2 s window. Needs a calm-flight altitude hold and a landing descent in the species file |
+| `A50b-aim-on-drawn-geometry` | core-platform (`engine.js` size cull) + spatial (`hitHulls`) — NEW finding | Shell-Walker 68 % (16 holes on `shell-hard`); isolation re-check Shell-Walker 90 % and Redeye 68 % with 16 hits on the Watcher donor's `Headplate_Frill` while it is hidden. Measured: the donor's eye and frill are skinned meshes whose GEOMETRY is millimetre-sized under a scaled bind (bounding sphere 0.001-0.005 m), so the engine's screen-size cull, which reads `geometry.boundingSphere`, puts them at 0.2-0.8 px at 10 m and hides them at every distance in play (they draw only in staged films, which set `noSizeCull`); their hit hulls stay live. `rig/lod.js`'s spawn cull mirrors the engine's test and inherits the same reading |
+| `A41c-expansion`, `A41c-sustained-variety`, `A41d-held-radius-coverage` | machine-ai-expansion / machine-ai | runner timeouts under load (912 s / 498 s / 450 s) |
+| `A2`, `A12`, `A17`, `A28` | animator | not this lane (`A12` also hit ENOSPC writing its shot) |
+| `A10-loot-single-render` | hud | not this lane |
+| `A20b-no-system-errors`, `A81-canon-speed-bands` | core-platform / core-platform-followup2 | not this lane |
+| `A27-timescale-safe` | anim-core | not this lane |
+| `A75c-suspicion-scan` | audio | not this lane |
+| `A51-nock-gap` | combat | not this lane |
+| `A31b`, `A31c` | player-control | not this lane (`A31b` a 600 s timeout) |
+| `A103-melee-contact-sync`, `A105-melee-while-moving` | player-melee | not this lane (Tallneck heavy: no melee-hit; a timeout) |
+| `A69-death-choice` | shell-menus | not this lane |
+| `A23b-hull-fidelity` | spatial | not this lane |
+
+PENDING: `A21-real-draw-calls` (draw calls **339 / 211 / 322**, triangles PASS;
+clock terms unattributable), `A9-perf-budget` (319 draw calls in budget; fps
+2.4 not attributable), `A3`, `A13`, `A31` (animator: the box too wedged to
+sample), `A23-aim-cost` (spatial). This lane's and the must-not-regress gates
+in the same run all PASS: `A4`, `A5`, `A42-stagger`, `A42-expansion`, `A44`
+(worst 0.000 m), `A44b` (0.029 m over 246 sockets), `A44c` staged / A / B,
+`A45` (worst 0.049 m), `A45b` (0 merges), `A45c`, `A46` (worst 0.06 m),
+`A47b`, **`A48-cadence`** (14 species, Longleg 1.60 Hz), `A48b`, `A50`,
+`V26c`, `A90-memory-stability` (geometries +11, textures -18, heap -10.9 %),
+`A90-memory-stability-expansion`, `A90-rig-reclaim`, `A90b`.

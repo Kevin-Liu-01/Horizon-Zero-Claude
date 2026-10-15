@@ -273,6 +273,17 @@ by this lane. Round 4's `Collision._meleePad` no longer exists.*
 > penetrations of her body capsule on this build; clause 4/5 now also measure both forearms.
 > The rest of R7 (the blade AIMED at the hull, `melee._aimAt` / `meleeLayer._strikeAim`) is
 > pose, not collision — `docs/ROUND4-PLAYER-MELEE.md` §0r6.
+>
+> **R6, completed Oct 2 — the latch also covers the MANAGER's half of the standoff.**
+> `_meleeLatched` tested only the solver's full-standoff capsule, which is SLANTED (low at
+> the far end, `top` at the near end). `machines/index.js`'s hard standoff is three flat
+> spheres of `bodyRadius + 0.6` (rear, centre, snout at ± `standoffHalfLen`); while the term
+> is in force it publishes `meleeStandoffHalfLen` 0 and the manager keeps only the centre
+> sphere. On a Thunderjaw head-on she stood 5.07 m from its centre: outside the slanted
+> capsule (so the term let go on the holster frame) and 2.0 m inside the snout sphere (so the
+> manager then shoved the MACHINE 2.0 m away in one frame) — found by the real-input release
+> probe (`scratchpad/sk6/sc-release.js`). The latch now holds while she is inside either; A106's
+> release clause gates the machine's displacement over the release (≤ 0.005 m) beside hers.
 
 > **ROUND 5 (Sep 26) — THE TERM WAS REBUILT, from orchestrator ruling R4.** Everything
 > from "What it is" down to the end of this section describes the round-4 / fix-pass
