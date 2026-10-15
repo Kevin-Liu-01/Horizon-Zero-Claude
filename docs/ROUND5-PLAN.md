@@ -43,7 +43,7 @@ Owner: lead designer + technical director, Round 5 (Oct 15 2026). Content canon:
    global run uses **5270**; independent judges use **5271**. **Port 5173 is Kevin's and is never
    touched.** Each lane runs Vite only as `npx vite --port <p> --strictPort` in its own worktree, and
    headless Chrome only through `tools/gates.mjs` / `tools/screenshot.mjs`. These scripts refuse to run
-   without `--port` or `SHOT_PORT` in 5250–5271 and refuse 5173 outright (`A-port-guard`, gates-perf
+   without `--port` or `SHOT_PORT` in 5250–5299 and refuse 5173 outright. **Orchestrator amendment (Oct 15):** a lane's engineering/film judge runs on the lane port + 30 (5280–5299) so the two judges of a lane never share a Vite; 5272–5279 stay reserved (`A-port-guard`, gates-perf
    W0a). Every lane kills its Vite and Chrome before ending its turn and leaves 0 Chrome profiles
    (`A80`). Scratch goes under
    `/private/tmp/claude-501/-Users-kevinliu-Horizon-Zero-Claude/db31a0fa-9701-46f4-8234-5158425c1e49/scratchpad/r5/<lane>/`.
