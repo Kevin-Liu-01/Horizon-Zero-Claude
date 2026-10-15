@@ -2,8 +2,10 @@ import * as THREE from 'three';
 import { clone as skeletonClone } from 'three/examples/jsm/utils/SkeletonUtils.js';
 import { PlayerAnimator } from './playerAnimator.js';
 import { installSpatial } from '../core/collision.js';
+import { REST } from '../world/island/sites.js';
+import { PLAY_RADIUS, EXTENT } from '../world/island/extent.js';
 
-const CAMP_POS = new THREE.Vector3(18, 0, 26);
+const CAMP_POS = new THREE.Vector3(REST.x, 0, REST.z);
 
 /* ===========================================================================
  * ROUND 4 — lane `player-control`.
@@ -91,8 +93,8 @@ const MANTLE_MIN = 0.35;
 const MANTLE_MAX = 1.7;
 
 /* -------------------------------- world --------------------------------- */
-const WORLD_R = 330;                      // terrain contract (frozen)
-const EDGE_SOFT = 312;                    // steer + taper start here
+const WORLD_R = PLAY_RADIUS;              // terrain contract (frozen)
+const EDGE_SOFT = PLAY_RADIUS + EXTENT.edgeSoft; // steer + taper start here
 
 /* -------------------------------- camera -------------------------------- */
 /**
@@ -865,7 +867,7 @@ export class Player {
     queueMicrotask(() => this._orderSystems());
 
     // --- model
-    const src = ctx.assets.models.aloy;
+    const src = ctx.assets.models.hero;
     this.model = skeletonClone(src.root);
     this.model.name = 'player';
     ctx.scene.add(this.model);
@@ -956,8 +958,8 @@ export class Player {
     this.health = this.maxHealth;
     // HZD medicine pouch: a 0..100 meter filled by medicinal herbs; holding Q
     // transfers pouch -> health over time (research: docs/research/mechanics.md)
-    this.pouch = 60;
-    this.maxPouch = 100;
+    this.gourd = 60;
+    this.maxGourd = 100;
     this.healing = false;
     this.inTallGrass = false;
 
@@ -1301,12 +1303,12 @@ void main() {
   }
 
   /** Herbs and looted medicine refill the pouch meter. */
-  addPouch(amount) {
-    this.pouch = Math.min(this.maxPouch, this.pouch + amount);
+  addGourd(amount) {
+    this.gourd = Math.min(this.maxGourd, this.gourd + amount);
   }
 
   /** Deprecated alias for the pre-pouch HUD; do not use in new code. */
-  get medicine() { return Math.ceil(this.pouch / 25); }
+  get gourdDoses() { return Math.ceil(this.gourd / 25); }
 
   /** Additive screen shake, 0..1. Kept as `_shake` too: combat writes that. */
   addShake(amount) { this._shake = Math.min(1, this._shake + amount); }
@@ -1328,7 +1330,7 @@ void main() {
     setTimeout(() => {
       if (this.ctx.state !== 'dead') return; // victory/pause may have superseded
       this.health = this.maxHealth;
-      this.pouch = 60;
+      this.gourd = 60;
       this.position.set(CAMP_POS.x, 0, CAMP_POS.z);
       this._snapToGround();
       this.ctx.state = 'playing';
@@ -1733,7 +1735,7 @@ void main() {
   }
 
   /**
-   * camera-feel-12 — the world used to end at a hard `position *= 330/r` clamp:
+   * camera-feel-12 — the world used to end at a hard `position *= WORLD_R/r` clamp:
    * a sprint into it stopped dead with no warning and no explanation.  Steer
    * the outward component away over the last 18 m, taper speed, prompt once.
    */
@@ -1913,11 +1915,11 @@ void main() {
     this.model.rotation.y = this.heading;
 
     // --- hold Q: transfer medicine pouch into health (HZD pouch mechanic)
-    this.healing = input.actionDown('heal') && this.pouch > 0.5 && this.health < this.maxHealth;
+    this.healing = input.actionDown('heal') && this.gourd > 0.5 && this.health < this.maxHealth;
     if (this.healing) {
       const rate = 16; // hp per second, 1 pouch unit = 1 hp
-      const amt = Math.min(rate * dt, this.pouch, this.maxHealth - this.health);
-      this.pouch -= amt;
+      const amt = Math.min(rate * dt, this.gourd, this.maxHealth - this.health);
+      this.gourd -= amt;
       this.health += amt;
     }
 

@@ -15,7 +15,7 @@
  * judges), drawn in HZD's chrome — tracked caps for the name, a gold chamfered
  * slab, numbered choices with a role tag on the right.
  *
- *   #hzc-dlg  ─ never a child of #hud or #hzc-prog, injects its own <style>
+ *   #cal-dlg  ─ never a child of #hud or #cal-prog, injects its own <style>
  *               once, and is removed whole by `dispose()`.
  *
  * RULES THIS FILE KEEPS
@@ -32,50 +32,50 @@
  *     pause code, and closing it always puts the state back.
  */
 
-const STYLE_ID = 'hzc-dlg-style';
+const STYLE_ID = 'cal-dlg-style';
 
 const CSS = `
-#hzc-dlg {
+#cal-dlg {
   position: fixed; inset: 0; pointer-events: none; z-index: 62;
   font-family: var(--font, 'Rajdhani', system-ui, sans-serif);
-  color: var(--hzc-text, #efe6d5);
+  color: var(--cal-text, #efe6d5);
   --dlg-gold: #c8a24b;
-  --dlg-teal: var(--hzc-accent, #59c1c6);
+  --dlg-teal: var(--cal-accent, #59c1c6);
   opacity: 0; visibility: hidden;
   transition: opacity 0.18s ease;
 }
-#hzc-dlg.show { opacity: 1; visibility: visible; }
+#cal-dlg.show { opacity: 1; visibility: visible; }
 
 /* the card sits in the bottom third: the speaker stays visible above it */
-#hzc-dlg .dlg-stage {
+#cal-dlg .dlg-stage {
   position: absolute; left: 50%; bottom: 6.5vh; transform: translateX(-50%);
   width: min(920px, 74vw);
   pointer-events: auto;
 }
 
 /* --------------------------------- speaker -------------------------------- */
-#hzc-dlg .dlg-who {
+#cal-dlg .dlg-who {
   display: flex; align-items: baseline; gap: 14px;
   padding: 0 4px 9px;
 }
-#hzc-dlg .dlg-mark {
+#cal-dlg .dlg-mark {
   width: 11px; height: 11px; flex: 0 0 11px;
   background: var(--dlg-gold);
   clip-path: polygon(50% 0, 100% 50%, 50% 100%, 0 50%);
   transform: translateY(-1px);
 }
-#hzc-dlg .dlg-name {
+#cal-dlg .dlg-name {
   font-family: var(--font-display, 'Michroma', sans-serif);
   font-size: 17px; letter-spacing: 0.30em; text-indent: 0.30em;
   color: #FAF9F5; text-shadow: 0 2px 16px rgba(0,0,0,0.85);
 }
-#hzc-dlg .dlg-role {
+#cal-dlg .dlg-role {
   font-size: 10px; letter-spacing: 0.26em; text-indent: 0.26em;
   text-transform: uppercase; color: rgba(239,230,213,0.58);
 }
 
 /* ---------------------------------- card ---------------------------------- */
-#hzc-dlg .dlg-card {
+#cal-dlg .dlg-card {
   position: relative;
   background: linear-gradient(168deg, rgba(12,17,21,0.93), rgba(7,10,13,0.96));
   border: 1px solid rgba(200,162,75,0.34);
@@ -83,24 +83,24 @@ const CSS = `
   clip-path: polygon(0 0, calc(100% - 17px) 0, 100% 17px, 100% 100%, 17px 100%, 0 calc(100% - 17px));
   padding: 17px 22px 13px;
 }
-#hzc-dlg .dlg-card::before {
+#cal-dlg .dlg-card::before {
   content: ''; position: absolute; left: 0; top: 10px; bottom: 10px; width: 2px;
   background: linear-gradient(180deg, transparent, var(--dlg-gold), transparent);
 }
-#hzc-dlg .dlg-line {
+#cal-dlg .dlg-line {
   font-size: 16.5px; line-height: 1.52; letter-spacing: 0.012em;
   color: rgba(250,249,245,0.94);
   min-height: 2.4em;
   padding-left: 12px;
 }
-#hzc-dlg .dlg-rule {
+#cal-dlg .dlg-rule {
   height: 1px; margin: 13px 0 9px;
   background: linear-gradient(90deg, rgba(200,162,75,0.42), rgba(200,162,75,0.05) 62%, transparent);
 }
 
 /* -------------------------------- choices --------------------------------- */
-#hzc-dlg .dlg-choices { display: flex; flex-direction: column; gap: 3px; }
-#hzc-dlg .dlg-choice {
+#cal-dlg .dlg-choices { display: flex; flex-direction: column; gap: 3px; }
+#cal-dlg .dlg-choice {
   display: flex; align-items: center; gap: 12px;
   width: 100%; text-align: left;
   background: transparent; border: 0; border-left: 2px solid transparent;
@@ -110,42 +110,42 @@ const CSS = `
   cursor: pointer;
   transition: background 0.12s ease, border-color 0.12s ease, color 0.12s ease;
 }
-#hzc-dlg .dlg-choice:hover, #hzc-dlg .dlg-choice.sel {
+#cal-dlg .dlg-choice:hover, #cal-dlg .dlg-choice.sel {
   background: rgba(200,162,75,0.11);
   border-left-color: var(--dlg-gold);
   color: #FAF9F5;
 }
-#hzc-dlg .dlg-key {
+#cal-dlg .dlg-key {
   flex: 0 0 20px; height: 20px;
   display: flex; align-items: center; justify-content: center;
   font-size: 10.5px; letter-spacing: 0;
   color: var(--dlg-gold);
   border: 1px solid rgba(200,162,75,0.45);
 }
-#hzc-dlg .dlg-choice:hover .dlg-key, #hzc-dlg .dlg-choice.sel .dlg-key {
+#cal-dlg .dlg-choice:hover .dlg-key, #cal-dlg .dlg-choice.sel .dlg-key {
   background: var(--dlg-gold); color: #0b0e11; border-color: var(--dlg-gold);
 }
-#hzc-dlg .dlg-text { flex: 1 1 auto; }
-#hzc-dlg .dlg-hint {
+#cal-dlg .dlg-text { flex: 1 1 auto; }
+#cal-dlg .dlg-hint {
   flex: 0 0 auto; font-size: 9.5px; letter-spacing: 0.24em; text-indent: 0.24em;
   text-transform: uppercase; color: var(--dlg-teal); opacity: 0.85;
 }
-#hzc-dlg .dlg-choice[data-kind="quest-accept"] .dlg-hint,
-#hzc-dlg .dlg-choice[data-kind="quest-turnin"] .dlg-hint { color: var(--dlg-gold); }
+#cal-dlg .dlg-choice[data-kind="quest-accept"] .dlg-hint,
+#cal-dlg .dlg-choice[data-kind="quest-turnin"] .dlg-hint { color: var(--dlg-gold); }
 
 /* --------------------------------- footer --------------------------------- */
-#hzc-dlg .dlg-foot {
+#cal-dlg .dlg-foot {
   display: flex; gap: 22px; justify-content: flex-end;
   padding: 9px 4px 0;
   font-size: 9.5px; letter-spacing: 0.24em; text-indent: 0.24em;
   text-transform: uppercase; color: rgba(239,230,213,0.45);
 }
-#hzc-dlg .dlg-foot kbd {
+#cal-dlg .dlg-foot kbd {
   font: inherit; color: var(--dlg-gold); margin-right: 7px;
 }
 @media (max-width: 900px) {
-  #hzc-dlg .dlg-stage { width: 88vw; bottom: 4vh; }
-  #hzc-dlg .dlg-line { font-size: 15px; }
+  #cal-dlg .dlg-stage { width: 88vw; bottom: 4vh; }
+  #cal-dlg .dlg-line { font-size: 15px; }
 }
 `;
 
@@ -189,10 +189,10 @@ export class DialogueUI {
   /* ------------------------------ construction --------------------------- */
 
   _build() {
-    let root = document.getElementById('hzc-dlg');
+    let root = document.getElementById('cal-dlg');
     if (!root) {
       root = document.createElement('div');
-      root.id = 'hzc-dlg';
+      root.id = 'cal-dlg';
       document.body.appendChild(root);
     }
     root.innerHTML = '';

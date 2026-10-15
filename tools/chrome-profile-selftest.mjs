@@ -11,7 +11,7 @@
  * It also exercises the sweep's discrimination. The sweep is the dangerous half
  * of the fix — seven lanes have live profiles under the same root, and a sweep
  * that reaps one of those kills a running suite. Both roots it scans are
- * redirected here (`HZC_CHROME_PROFILE_ROOT` and `TMPDIR`), so the fixtures
+ * redirected here (`CAL_CHROME_PROFILE_ROOT` and `TMPDIR`), so the fixtures
  * below are the only things it can see and no real run is ever at risk.
  *
  * FIX ROUND 2 — THE ORPHAN FIXTURES. The case that actually accumulated on this
@@ -31,7 +31,7 @@
  * orphan is spawned via a throwaway middle process that exits immediately, which
  * is how a killed lane's browser gets reparented to init for real.
  *
- * Usage: HZC_CHROME_PROFILE_ROOT=<dir> TMPDIR=<dir> node chrome-profile-selftest.mjs
+ * Usage: CAL_CHROME_PROFILE_ROOT=<dir> TMPDIR=<dir> node chrome-profile-selftest.mjs
  * Prints one line: `SELFTEST {json}`.
  */
 import { mkdirSync, existsSync, utimesSync, symlinkSync, writeFileSync, readFileSync, statSync, rmSync } from 'fs';
@@ -60,17 +60,17 @@ const alive = (pid) => {
 // --- fixtures -------------------------------------------------------------
 const fx = {
   // ours, owner still alive -> must survive however old it is
-  liveOwner: path.join(PROFILE_ROOT, `hzc-${process.pid}-9999-90`),
+  liveOwner: path.join(PROFILE_ROOT, `cal-${process.pid}-9999-90`),
   // ours, owner dead, old -> the actual leak; must be reaped
-  deadOld: path.join(PROFILE_ROOT, `hzc-${DEAD}-9999-91`),
+  deadOld: path.join(PROFILE_ROOT, `cal-${DEAD}-9999-91`),
   // ours, owner dead, but young -> a run that just started; must survive
-  deadYoung: path.join(PROFILE_ROOT, `hzc-${DEAD2}-9999-92`),
+  deadYoung: path.join(PROFILE_ROOT, `cal-${DEAD2}-9999-92`),
   // ours, owner dead, FRESH mtime, held by an ORPHANED Chrome -> reap dir, kill tree
-  orphanHeld: path.join(PROFILE_ROOT, `hzc-${DEAD3}-9999-93`),
+  orphanHeld: path.join(PROFILE_ROOT, `cal-${DEAD3}-9999-93`),
   // ours, owner dead, held by a live NON-Chrome (recycled pid) -> keep both
-  orphanForeign: path.join(PROFILE_ROOT, `hzc-${DEAD4}-9999-94`),
+  orphanForeign: path.join(PROFILE_ROOT, `cal-${DEAD4}-9999-94`),
   // ours, owner dead, Chrome with a LIVE parent (a running suite) -> keep both
-  orphanManaged: path.join(PROFILE_ROOT, `hzc-${DEAD5}-9999-95`),
+  orphanManaged: path.join(PROFILE_ROOT, `cal-${DEAD5}-9999-95`),
   // ours, owner pid RECYCLED onto a live stranger, nothing holding it, old ->
   // reaped. Filled in below once we know the stranger's pid.
   recycledOwner: null,
@@ -97,7 +97,7 @@ mkFixtures();
  * flag on a real command line, which is the only identity evidence the sweep
  * trusts (a recycled pid cannot forge it).
  */
-const BIN_DIR = path.join(PROFILE_ROOT, '..', 'hzc-selftest-bin');
+const BIN_DIR = path.join(PROFILE_ROOT, '..', 'cal-selftest-bin');
 mkdirSync(BIN_DIR, { recursive: true });
 const FAKE_CHROME = path.join(BIN_DIR, 'Google Chrome for Testing');
 const spawnFailures = [];
@@ -189,8 +189,8 @@ const managedPid = spawnManaged(FAKE_CHROME, fx.orphanManaged);
  */
 const recycledPid = spawnOrphan(process.execPath, path.join(BIN_DIR, 'not-a-profile'));
 if (recycledPid) {
-  fx.recycledOwner = path.join(PROFILE_ROOT, `hzc-${recycledPid}-9999-96`);
-  fx.recycledOrphan = path.join(PROFILE_ROOT, `hzc-${recycledPid}-9999-97`);
+  fx.recycledOwner = path.join(PROFILE_ROOT, `cal-${recycledPid}-9999-96`);
+  fx.recycledOrphan = path.join(PROFILE_ROOT, `cal-${recycledPid}-9999-97`);
   mkFixtures();
 }
 const recycledOrphanPid = fx.recycledOrphan ? spawnOrphan(FAKE_CHROME, fx.recycledOrphan) : null;

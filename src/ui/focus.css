@@ -1,5 +1,5 @@
 /* Focus v2 UI skin — owned by the focus builder.
-   Namespace: hzcf- (kept independent of hud.css, which is owned elsewhere).
+   Namespace: calf- (kept independent of hud.css, which is owned elsewhere).
    Palette + fonts come from :root vars in style.css. */
 
 /* ------------------------------- screen tint ------------------------------- */
@@ -14,7 +14,7 @@
    grazing strength, because it is what makes the frame read as a lens.
    `FocusSystem._vignette()` measures these numbers off the computed style, so
    the gate and the CSS can never disagree. */
-.hzcf-tint {
+.calf-tint {
   position: absolute; inset: 0;
   opacity: 0;
   pointer-events: none;
@@ -30,11 +30,11 @@
       rgba(86, 62, 172, 0.105) 82%,
       rgba(52, 36, 122, 0.190) 100%);
 }
-.hzcf-tint.on { opacity: 1; }
+.calf-tint.on { opacity: 1; }
 
 /* ------------------------------- DOM layer -------------------------------- */
 /* Sits UNDER #hud (z-index 40) so HUD chrome always draws above Focus glass. */
-#hzcf-layer {
+#calf-layer {
   position: fixed; inset: 0;
   pointer-events: none;
   z-index: 39;
@@ -43,22 +43,22 @@
 }
 
 /* small focus reticle at screen center while Focus is on */
-.hzcf-reticle {
+.calf-reticle {
   position: absolute; left: 50%; top: 50%;
   width: 26px; height: 26px;
   margin: -13px 0 0 -13px;
   opacity: 0;
   transition: opacity 0.3s ease;
 }
-.hzcf-reticle.on { opacity: 0.85; }
-.hzcf-reticle::before {
+.calf-reticle.on { opacity: 0.85; }
+.calf-reticle::before {
   content: '';
   position: absolute; inset: 8px;
   border: 1px solid rgba(180, 162, 255, 0.9);
   transform: rotate(45deg);
   box-shadow: 0 0 6px rgba(123, 92, 214, 0.8);
 }
-.hzcf-reticle::after {
+.calf-reticle::after {
   content: '';
   position: absolute; left: 50%; top: 50%;
   width: 2px; height: 2px; margin: -1px 0 0 -1px;
@@ -67,11 +67,11 @@
 }
 
 /* ------------------------------- info card -------------------------------- */
-.hzcf-card {
+.calf-card {
   position: absolute;
   width: 268px;
   padding: 10px 12px 9px;
-  color: var(--hzc-text, #efe6d5);
+  color: var(--cal-text, #efe6d5);
   background: rgba(9, 12, 20, 0.9);
   border: 1px solid rgba(156, 140, 255, 0.62);
   box-shadow:
@@ -82,138 +82,138 @@
   transform: translateY(6px);
   transition: opacity 0.22s ease, transform 0.22s ease;
 }
-.hzcf-card.show {
+.calf-card.show {
   opacity: 1;
   transform: translateY(0);
-  animation: hzcf-card-in 0.24s ease;
+  animation: calf-card-in 0.24s ease;
 }
-@keyframes hzcf-card-in {
+@keyframes calf-card-in {
   0% { clip-path: polygon(0 0, calc(100% - 14px) 0, 100% 14px, 100% 0, 0 0); }
   100% { clip-path: polygon(0 0, calc(100% - 14px) 0, 100% 14px, 100% 100%, 0 100%); }
 }
-.hzcf-card::before { /* holographic scanlines inside the card */
+.calf-card::before { /* holographic scanlines inside the card */
   content: '';
   position: absolute; inset: 0;
   pointer-events: none;
   background: repeating-linear-gradient(0deg,
     rgba(156, 140, 255, 0.05) 0 1px, transparent 1px 3px);
 }
-.hzcf-card-accent { /* thin purple energy line down the left edge */
+.calf-card-accent { /* thin purple energy line down the left edge */
   position: absolute; left: 0; top: 0; bottom: 0; width: 3px;
   background: linear-gradient(#9c8cff, rgba(106, 90, 224, 0.15));
   box-shadow: 0 0 8px rgba(143, 123, 232, 0.9);
 }
-.hzcf-card-head {
+.calf-card-head {
   display: flex; align-items: baseline; justify-content: space-between;
   gap: 8px;
 }
-.hzcf-name {
+.calf-name {
   font-size: 16px; font-weight: 600;
   letter-spacing: 0.14em;
   color: #efe9ff;
   text-shadow: 0 0 8px rgba(143, 123, 232, 0.7);
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
-.hzcf-lv {
+.calf-lv {
   font-size: 12px; font-weight: 600;
   letter-spacing: 0.1em;
   color: #ffd34d; /* reference component-yellow, replaces mustard */
   text-shadow: 0 0 6px rgba(255, 211, 77, 0.5);
   flex: none;
 }
-.hzcf-class {
+.calf-class {
   font-size: 9px; letter-spacing: 0.34em;
   color: rgba(180, 168, 232, 0.75);
   margin: 1px 0 6px;
 }
-.hzcf-div {
+.calf-div {
   height: 1px; margin: 0 0 6px;
   background: linear-gradient(90deg,
     rgba(156, 140, 255, 0.65), rgba(156, 140, 255, 0.08));
 }
-.hzcf-row {
+.calf-row {
   display: flex; align-items: center; gap: 7px;
   font-size: 11px; letter-spacing: 0.14em;
   margin: 3px 0;
   color: rgba(239, 230, 213, 0.92);
 }
-.hzcf-row .hzcf-lbl {
+.calf-row .calf-lbl {
   color: rgba(180, 168, 232, 0.8);
   font-size: 10px; letter-spacing: 0.22em;
   width: 52px; flex: none;
 }
-.hzcf-glyph {
+.calf-glyph {
   width: 15px; height: 15px; flex: none;
   filter: drop-shadow(0 0 4px currentColor);
 }
-.hzcf-glyph svg { width: 100%; height: 100%; display: block; }
-.hzcf-g-fire   { color: #f0a03c; }
-.hzcf-g-freeze { color: #59c1c6; }
-.hzcf-g-shock  { color: #4fa3e3; }
-.hzcf-g-none   { color: rgba(239, 230, 213, 0.5); font-size: 11px; width: auto; }
-.hzcf-comp {
+.calf-glyph svg { width: 100%; height: 100%; display: block; }
+.calf-g-fire   { color: #f0a03c; }
+.calf-g-freeze { color: #59c1c6; }
+.calf-g-shock  { color: #4fa3e3; }
+.calf-g-none   { color: rgba(239, 230, 213, 0.5); font-size: 11px; width: auto; }
+.calf-comp {
   margin-top: 5px;
   color: #ffd34d;
   text-shadow: 0 0 6px rgba(255, 211, 77, 0.4);
   font-weight: 600;
 }
-.hzcf-comp .hzcf-comp-n { font-size: 13px; margin-right: 5px; }
+.calf-comp .calf-comp-n { font-size: 13px; margin-right: 5px; }
 
 /* ------------------------------- tag markers ------------------------------- */
-.hzcf-tag {
+.calf-tag {
   position: absolute;
   transform: translate(-50%, -50%);
   text-align: center;
   will-change: left, top;
 }
-.hzcf-diamond {
+.calf-diamond {
   width: 13px; height: 13px;
   margin: 0 auto;
   border: 2px solid #ffd34d;
   background: rgba(255, 211, 77, 0.2);
   transform: rotate(45deg);
   box-shadow: 0 0 9px rgba(255, 211, 77, 0.8), inset 0 0 4px rgba(255, 223, 107, 0.55);
-  animation: hzcf-diamond-pulse 1.6s ease-in-out infinite;
+  animation: calf-diamond-pulse 1.6s ease-in-out infinite;
 }
-@keyframes hzcf-diamond-pulse {
+@keyframes calf-diamond-pulse {
   0%, 100% { transform: rotate(45deg) scale(1); }
   50%      { transform: rotate(45deg) scale(0.82); }
 }
-.hzcf-dist {
+.calf-dist {
   margin-top: 7px;
   font-size: 11px; font-weight: 600;
   letter-spacing: 0.1em;
   color: #ffd34d;
   text-shadow: 0 0 6px rgba(0, 0, 0, 0.9), 0 0 10px rgba(255, 211, 77, 0.4);
 }
-.hzcf-tag.clamped .hzcf-diamond {
+.calf-tag.clamped .calf-diamond {
   border-style: dashed;
   background: rgba(242, 194, 48, 0.1);
 }
-.hzcf-tag.clamped .hzcf-dist { opacity: 0.85; }
+.calf-tag.clamped .calf-dist { opacity: 0.85; }
 
 /* ========================================================================== */
 /* ui-10 — COMPONENT LIST inside the scan card                                */
 /* ========================================================================== */
 
-.hzcf-comp-head {
+.calf-comp-head {
   display: flex; align-items: baseline; justify-content: space-between;
   margin: 0 0 4px;
 }
-.hzcf-comp-head .hzcf-lbl {
+.calf-comp-head .calf-lbl {
   color: rgba(180, 168, 232, 0.8);
   font-size: 10px; letter-spacing: 0.22em;
 }
-.hzcf-comp-n {
+.calf-comp-n {
   font-size: 12px; font-weight: 600; letter-spacing: 0.08em;
   color: #ffd34d;
   text-shadow: 0 0 6px rgba(255, 211, 77, 0.45);
 }
-.hzcf-comp-list {
+.calf-comp-list {
   display: flex; flex-direction: column; gap: 3px;
   max-height: 46vh; overflow: hidden;
 }
-.hzcf-comp-row {
+.calf-comp-row {
   display: grid;
   grid-template-columns: 1fr auto;
   grid-template-areas: 'name tags' 'loot loot';
@@ -223,45 +223,45 @@
   background: linear-gradient(90deg,
     rgba(255, 211, 77, 0.10), rgba(255, 211, 77, 0.015) 70%, transparent);
 }
-.hzcf-comp-row.torn {
+.calf-comp-row.torn {
   border-left-color: rgba(150, 142, 128, 0.55);
   background: none;
   opacity: 0.45;
 }
-.hzcf-comp-name em {
+.calf-comp-name em {
   font-style: normal;
   margin-left: 5px;
   font-size: 9.5px;
   color: rgba(255, 231, 168, 0.7);
 }
-.hzcf-comp-name {
+.calf-comp-name {
   grid-area: name;
   font-size: 11px; font-weight: 600; letter-spacing: 0.10em;
   color: #ffd870;
   text-shadow: 0 0 6px rgba(255, 211, 77, 0.4);
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
-.hzcf-comp-row.torn .hzcf-comp-name {
+.calf-comp-row.torn .calf-comp-name {
   color: rgba(214, 206, 190, 0.8); text-decoration: line-through;
 }
-.hzcf-comp-tags { grid-area: tags; display: flex; gap: 3px; flex: none; }
-.hzcf-comp-tags i {
+.calf-comp-tags { grid-area: tags; display: flex; gap: 3px; flex: none; }
+.calf-comp-tags i {
   font-style: normal;
   font-size: 8px; font-weight: 700; letter-spacing: 0.14em;
   padding: 1px 4px;
   border: 1px solid currentColor;
   line-height: 1.25;
 }
-.hzcf-tag-weak { color: #ff9a5e; }
-.hzcf-tag-tear { color: #9c8cff; }
-.hzcf-tag-el.hzcf-g-fire { color: #f0a03c; }
-.hzcf-tag-el.hzcf-g-freeze { color: #59c1c6; }
-.hzcf-comp-loot {
+.calf-tag-weak { color: #ff9a5e; }
+.calf-tag-tear { color: #9c8cff; }
+.calf-tag-el.calf-g-fire { color: #f0a03c; }
+.calf-tag-el.calf-g-freeze { color: #59c1c6; }
+.calf-comp-loot {
   grid-area: loot;
   display: flex; flex-wrap: wrap; gap: 3px;
   margin-top: 1px;
 }
-.hzcf-loot-chip {
+.calf-loot-chip {
   display: inline-flex; align-items: center; gap: 3px;
   font-size: 8.5px; letter-spacing: 0.10em;
   color: rgba(239, 230, 213, 0.86);
@@ -269,13 +269,13 @@
   border-left: 2px solid var(--chip, #efe6d5);
   background: rgba(239, 230, 213, 0.05);
 }
-.hzcf-loot-chip i { font-style: normal; color: var(--chip, #efe6d5); }
+.calf-loot-chip i { font-style: normal; color: var(--chip, #efe6d5); }
 
 /* ========================================================================== */
 /* ui-10 — in-world component labels (yellow, named)                          */
 /* ========================================================================== */
 
-.hzcf-plabel {
+.calf-plabel {
   position: absolute;
   display: flex; align-items: center; gap: 5px;
   transform: translate(10px, -50%);
@@ -290,23 +290,23 @@
   opacity: 0.82;
   will-change: left, top;
 }
-.hzcf-plabel .hzcf-pdot {
+.calf-plabel .calf-pdot {
   width: 5px; height: 5px; flex: none;
   background: #ffd34d;
   transform: rotate(45deg);
   box-shadow: 0 0 7px rgba(255, 211, 77, 0.95);
 }
-.hzcf-plabel .hzcf-ploot {
+.calf-plabel .calf-ploot {
   font-size: 8.5px; letter-spacing: 0.1em;
   color: rgba(255, 231, 168, 0.72);
 }
-.hzcf-plabel .hzcf-ploot:not(:empty)::before { content: '· '; }
-.hzcf-plabel.is-weak { border-left-color: #ff9a5e; }
+.calf-plabel .calf-ploot:not(:empty)::before { content: '· '; }
+.calf-plabel.is-weak { border-left-color: #ff9a5e; }
 /* Flipped: the label hangs to the LEFT of its anchor with the bracket on the
    right. `order` (not row-reverse) so the text still reads name-then-loot
    left to right — reversing the flex axis put the loot in front of the part
    name, which is the wrong way round for something you scan at a glance. */
-.hzcf-plabel.flip {
+.calf-plabel.flip {
   transform: translate(calc(-100% - 10px), -50%);
   border-left: none;
   border-right: 2px solid rgba(255, 211, 77, 0.9);
@@ -314,12 +314,12 @@
     rgba(20, 16, 8, 0.72), rgba(20, 16, 8, 0.22));
   padding: 1px 3px 1px 6px;
 }
-.hzcf-plabel.flip .hzcf-pname { order: 1; }
-.hzcf-plabel.flip .hzcf-ploot { order: 2; }
-.hzcf-plabel.flip .hzcf-pdot  { order: 3; }
-.hzcf-plabel.flip.is-weak { border-right-color: #ff9a5e; }
-.hzcf-plabel.flip.hovered { border-right-width: 3px; }
-.hzcf-plabel.hovered {
+.calf-plabel.flip .calf-pname { order: 1; }
+.calf-plabel.flip .calf-ploot { order: 2; }
+.calf-plabel.flip .calf-pdot  { order: 3; }
+.calf-plabel.flip.is-weak { border-right-color: #ff9a5e; }
+.calf-plabel.flip.hovered { border-right-width: 3px; }
+.calf-plabel.hovered {
   opacity: 1;
   font-size: 11px;
   border-left-width: 3px;
@@ -327,16 +327,16 @@
     rgba(46, 34, 8, 0.9), rgba(30, 22, 6, 0.35));
   box-shadow: 0 0 14px rgba(255, 211, 77, 0.28);
 }
-.hzcf-plabel.hovered .hzcf-pdot {
+.calf-plabel.hovered .calf-pdot {
   box-shadow: 0 0 12px rgba(255, 211, 77, 1);
-  animation: hzcf-diamond-pulse 1.2s ease-in-out infinite;
+  animation: calf-diamond-pulse 1.2s ease-in-out infinite;
 }
 
 /* ========================================================================== */
 /* A63 — LOOT / DATAPOINT / GATHER reveals, projected onto the thing itself   */
 /* ========================================================================== */
 
-.hzcf-reveal {
+.calf-reveal {
   position: absolute;
   display: flex; align-items: center; gap: 5px;
   transform: translate(-50%, -100%);
@@ -349,34 +349,34 @@
   box-shadow: 0 0 12px color-mix(in srgb, var(--rar, #b8b0a0) 26%, transparent);
   text-shadow: 0 0 6px rgba(0, 0, 0, 0.95);
   will-change: left, top;
-  animation: hzcf-reveal-in 0.28s ease both;
+  animation: calf-reveal-in 0.28s ease both;
 }
-@keyframes hzcf-reveal-in {
+@keyframes calf-reveal-in {
   0% { opacity: 0; transform: translate(-50%, -100%) scale(0.86); }
   100% { opacity: 1; transform: translate(-50%, -100%) scale(1); }
 }
-.hzcf-reveal .hzcf-rmark {
+.calf-reveal .calf-rmark {
   width: 6px; height: 6px; flex: none;
   background: var(--rar, #b8b0a0);
   transform: rotate(45deg);
   box-shadow: 0 0 8px var(--rar, #b8b0a0);
 }
-.hzcf-reveal .hzcf-rkind { font-weight: 700; }
-.hzcf-reveal .hzcf-rname {
+.calf-reveal .calf-rkind { font-weight: 700; }
+.calf-reveal .calf-rname {
   font-size: 8.5px; letter-spacing: 0.12em;
   color: rgba(239, 230, 213, 0.7);
   max-width: 190px; overflow: hidden; text-overflow: ellipsis;
 }
-.hzcf-reveal .hzcf-rname:not(:empty)::before { content: '· '; }
-.hzcf-reveal.k-datapoint {
+.calf-reveal .calf-rname:not(:empty)::before { content: '· '; }
+.calf-reveal.k-datapoint {
   color: #7fe8ff;
   border-color: rgba(127, 232, 255, 0.6);
   box-shadow: 0 0 14px rgba(127, 232, 255, 0.3);
 }
-.hzcf-reveal.k-datapoint .hzcf-rmark { background: #7fe8ff; box-shadow: 0 0 9px #7fe8ff; }
-.hzcf-reveal.k-gather {
+.calf-reveal.k-datapoint .calf-rmark { background: #7fe8ff; box-shadow: 0 0 9px #7fe8ff; }
+.calf-reveal.k-gather {
   color: #7fe0a8;
   border-color: rgba(127, 224, 168, 0.5);
 }
-.hzcf-reveal.k-gather .hzcf-rmark { background: #7fe0a8; box-shadow: 0 0 8px #7fe0a8; }
-.hzcf-reveal.k-pick-up { color: #f2c230; }
+.calf-reveal.k-gather .calf-rmark { background: #7fe0a8; box-shadow: 0 0 8px #7fe0a8; }
+.calf-reveal.k-pick-up { color: #f2c230; }

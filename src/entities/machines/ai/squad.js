@@ -1,6 +1,9 @@
 import * as THREE from 'three';
 import { ECOSYSTEM, span } from './tables.js';
 import { safeEmit } from './emit.js';
+import { PLAY_RADIUS, EXTENT } from '../../../world/island/extent.js';
+
+const FLEE_RIM = PLAY_RADIUS + EXTENT.fleeRim;
 
 /**
  * Squad + ecosystem behaviour — `machine-ai-07` (herd doctrine is a one-shot
@@ -256,7 +259,7 @@ export class Squads {
     let dx = h.vector.x, dz = h.vector.z;
     const px = m.position.x, pz = m.position.z;
     const r = Math.hypot(px, pz);
-    if (r > 285) {
+    if (r > FLEE_RIM) {
       const side = (px * dz - pz * dx) >= 0 ? 1 : -1;
       dx = (-pz / r) * side; dz = (px / r) * side;
     }

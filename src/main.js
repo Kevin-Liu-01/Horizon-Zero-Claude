@@ -62,7 +62,7 @@ class Game {
       input: null, events: new Events(), assets: new Assets(),
       terrain: null, environment: null, vegetation: null, camp: null,
       player: null, inventory: null, machines: null, combat: null,
-      wheel: null, focus: null, interactables: null,
+      wheel: null, sighting: null, interactables: null,
       hud: null, audio: null,
       state: 'loading', // loading | title | playing | paused | dead | victory
       settings: { quality: params.get('q') || 'high' },
@@ -121,7 +121,7 @@ class Game {
     ctx.machines = this._add(new Machines(ctx));
     ctx.combat = this._add(new Combat(ctx));
     ctx.wheel = this._add(new WeaponWheel(ctx));
-    ctx.focus = this._add(new FocusSystem(ctx));
+    ctx.sighting = this._add(new FocusSystem(ctx));
     ctx.interactables = this._add(new Interactables(ctx));
     installProgression(ctx); // Round 4 progression lane: XP/levels/skills, quests, save/continue (registers its own systems)
     ctx.audio = this._add(new GameAudio(ctx));
@@ -234,7 +234,7 @@ class Game {
       rec.count++;
       if (rec.logs === 0) {
         rec.logs = 1;
-        console.warn(`[HZC] system "${key}" threw — simulation continues, this is logged once:\n`, err);
+        console.warn(`[CAL] system "${key}" threw — simulation continues, this is logged once:\n`, err);
         this.ctx.events.emit('system-error', rec);
       }
       this.ctx.engine.systemErrorCount = this.systemErrors.reduce((n, r) => n + r.count, 0);
@@ -251,7 +251,7 @@ class Game {
       rec = { key, name: 'Game', phase, message: String(err?.message || err), stack: String(err?.stack || ''), count: 0, logs: 1 };
       this._errIndex.set(key, rec);
       this.systemErrors.push(rec);
-      console.warn(`[HZC] ${key} threw — recovered, logged once:\n`, err);
+      console.warn(`[CAL] ${key} threw — recovered, logged once:\n`, err);
     }
     rec.count++;
     if (this.ctx.engine) this.ctx.engine.systemErrorCount = this.systemErrors.reduce((n, r) => n + r.count, 0);
@@ -400,7 +400,7 @@ if (POC) {
 }
 
 if (POC !== 'biome') new Game().boot().catch((err) => {
-  console.error('[HZC] boot failed:', err);
+  console.error('[CAL] boot failed:', err);
   const label = document.getElementById('load-label');
   if (label) {
     label.textContent = `BOOT FAILED — ${err.message}`;

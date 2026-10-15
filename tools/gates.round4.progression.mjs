@@ -16,7 +16,7 @@
  * none of them was taken, so they keep the audit's names unsuffixed.
  */
 
-const KEYS = ['hzc.save.v4', 'hzc.checkpoint.v4', 'hzc.meta.v4'];
+const KEYS = ['cal.save.v5', 'cal.checkpoint.v5', 'cal.meta.v5'];
 
 /**
  * Gates share one browser profile, so localStorage carries between them: a save
@@ -41,7 +41,7 @@ const RESET = `for (const k of ${JSON.stringify(KEYS)}) { try { localStorage.rem
  *
  * `newGame('normal')` then puts that live instance at a known start: the page
  * is fresh, but `Progression`'s constructor reads persisted difficulty out of
- * `hzc.meta.v4` (progression.js:535), so a preset written by an earlier gate in
+ * `cal.meta.v5` (progression.js:535), so a preset written by an earlier gate in
  * the shared browser profile would otherwise change what the next one measures.
  * It is the same call the title screen's NEW GAME makes.
  */
@@ -136,8 +136,8 @@ export const GATES = [
       off();
 
       const gained = prog.totalXp - xp0;
-      const pops = document.querySelectorAll('#hzc-prog .pg-toast').length;
-      const popText = [...document.querySelectorAll('#hzc-prog .pg-toast')].map((n) => n.textContent).join('|');
+      const pops = document.querySelectorAll('#cal-prog .pg-toast').length;
+      const popText = [...document.querySelectorAll('#cal-prog .pg-toast')].map((n) => n.textContent).join('|');
 
       /**
        * FIX ROUND 2 — world-content XP actually pays.
@@ -195,7 +195,7 @@ export const GATES = [
       const d2 = prog.discover('hunting-ground-valley');   // idempotent
       const d3 = prog.discover('dp-gate-quiet');           // ledgered, no banner
       offD();
-      const discBanners = [...document.querySelectorAll('#hzc-prog .pg-banner')]
+      const discBanners = [...document.querySelectorAll('#cal-prog .pg-banner')]
         .filter((n) => /DISCOVERED/.test(n.textContent));
       const awardOk = api.award === 'function' && api.discover === 'function'
         && cachePaid === 15 && cacheAgain === 0
@@ -219,7 +219,7 @@ export const GATES = [
       prog.addXp(need, 'gate');
       await until(() => prog.level > lvl0, 8000);
       off2();
-      const banners = [...document.querySelectorAll('#hzc-prog .pg-banner')].map((n) => n.textContent);
+      const banners = [...document.querySelectorAll('#cal-prog .pg-banner')].map((n) => n.textContent);
 
       const detail = {
         machineLevel: level, expect, thunderjawWouldBe: other, gained, died,
@@ -318,7 +318,7 @@ export const GATES = [
       prog.discover('a65-place');
 
       const res = prog.save('campfire');
-      const snap = prog.saves.read('hzc.save.v4');
+      const snap = prog.saves.read('cal.save.v5');
 
       const expected = {
         bytes: res.bytes,
@@ -480,11 +480,11 @@ export const GATES = [
       const watcher = ctx.machines.list.find((m) => m.kind === 'watcher' && m.alive);
       const tagState = { at: prog.state(QID).current.id, tagged: false, liveTagsAfter: -1 };
       await guard('oob-scan', async () => {
-        if (!watcher || !ctx.focus) return;
-        ctx.focus._target = watcher; ctx.focus.tagTarget();   // emits machine-tagged
-        ctx.focus._target = watcher; ctx.focus.tagTarget();   // toggles the marker OFF, emits nothing
+        if (!watcher || !ctx.sighting) return;
+        ctx.sighting._target = watcher; ctx.sighting.tagTarget();   // emits machine-tagged
+        ctx.sighting._target = watcher; ctx.sighting.tagTarget();   // toggles the marker OFF, emits nothing
         tagState.tagged = true;
-        tagState.liveTagsAfter = ctx.focus.tags.size;
+        tagState.liveTagsAfter = ctx.sighting.tags.size;
       });
       const scanDoneEarly = objOf('scan').done;               // must still be 0/1: order holds
 
@@ -684,7 +684,7 @@ export const GATES = [
       const alive_ = ctx.machines.list.filter((mm) => mm && mm.alive);
       const m = alive_.find((mm) => mm.kind === 'watcher') || alive_[0];
       if (!m) return { pass: null, detail: 'SKIP: no living machine' };
-      if (!prog._machineProto || !prog._machineProto.takeDamage.__hzcWrapped) {
+      if (!prog._machineProto || !prog._machineProto.takeDamage.__calWrapped) {
         return { pass: false, detail: 'the machine damage wrapper is not installed' };
       }
 
@@ -797,7 +797,7 @@ export const GATES = [
       if (!window.__PREINSTALLED__) {
         return { pass: false, detail: 'ctx.progression was NOT built by main.js — the lane is dead code in a normal session' };
       }
-      if (!prog._machineProto || !prog._machineProto.takeDamage.__hzcWrapped) {
+      if (!prog._machineProto || !prog._machineProto.takeDamage.__calWrapped) {
         return { pass: false, detail: 'the machine damage wrapper is not installed' };
       }
       const M = C.combat?.melee;
@@ -805,7 +805,7 @@ export const GATES = [
       if (!M || typeof M.silentStrike !== 'function' || typeof M._sneakOk !== 'function') {
         return { pass: false, detail: 'combat.melee.silentStrike is not published' };
       }
-      // Difficulty is PERSISTED (hzc.meta.v4) and the browser profile is
+      // Difficulty is PERSISTED (cal.meta.v5) and the browser profile is
       // shared, so every exit — pass, fail or throw — restores Normal; a gate
       // that died at Story would otherwise hand the next lane a 1.6x player.
       try { return await (async () => {
@@ -835,7 +835,7 @@ export const GATES = [
           ? (m.health ?? 1) * 4 + 1000 : (m.maxHealth ?? 100) * cfg.heavyFrac;
         const pt = m.position.clone(); pt.y += (m.height ?? 2) * 0.62;
         return { point: pt, object: null, dir: { x: 0, y: 0, z: 1 }, impact: dmg, tear: cfg.tear,
-          element: 'none', elementAmount: 0, type: 'silent-strike', baseDamage: dmg, draw: 1, seen: true };
+          element: 'none', elementAmount: 0, type: 'undercut', baseDamage: dmg, draw: 1, seen: true };
       };
       const stab = (m, { health, brittle } = {}) => {
         m.health = health ?? m.maxHealth; m.brittleT = brittle ? 5 : 0;

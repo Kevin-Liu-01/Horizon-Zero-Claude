@@ -28,7 +28,7 @@ import { MELEE } from './weapons.js';
  *   silentStrike()          execute the prompt right now; -> result | null
  *   audit()                 { swings, hits, silent, crits, outOfReach }
  * Events: 'melee-hit' { machine, damage, heavy, combo, point, killed },
- *         'silent-strike' { machine, killed, damage },
+ *         'undercut' { machine, killed, damage },
  *         'critical-hit'  { machine, damage }   (shared with machine-ai)
  *
  * Cost: ONE `ctx.hitHulls.raycast` per strike frame (not per frame), plus
@@ -2222,7 +2222,7 @@ export class Melee {
       res = m.takeDamage({
         point: _pt.clone(), object: null, dir: _hitDir.clone(),
         impact: dmg, tear: cfg.tear, element: 'none', elementAmount: 0,
-        type: 'silent-strike', baseDamage: dmg, draw: 1, seen: true,
+        type: 'undercut', baseDamage: dmg, draw: 1, seen: true,
       });
     } catch { res = null; }
 
@@ -2243,7 +2243,7 @@ export class Melee {
     this._sneak.disabled = true;
 
     const out = { machine: m, killed: !!res?.killed || m.alive === false, damage: res?.damage ?? dmg };
-    this.ctx.events.emit('silent-strike', out);
+    this.ctx.events.emit('undercut', out);
     // a kill from behind is quiet; a wounded machine screams
     this._noise(out.killed ? 'noise' : 'impact', _pt, out.killed ? 0.3 : 0.9);
     return out;

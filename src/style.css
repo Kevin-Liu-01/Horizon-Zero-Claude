@@ -44,14 +44,14 @@
 }
 
 :root {
-  --hzc-accent: #59c1c6;         /* HZD teal */
-  --hzc-warn: #f2c230;           /* weak-point / gauge yellow */
-  --hzc-danger: #b03a2e;         /* health red */
-  --hzc-med: #7fb069;            /* medicine green */
-  --hzc-focus: #7b5cd6;          /* focus purple */
-  --hzc-hostile: #e8762c;        /* hostile orange */
-  --hzc-text: #efe6d5;           /* parchment */
-  --hzc-scrim: rgba(8, 14, 18, 0.55);
+  --cal-accent: #59c1c6;         /* HZD teal */
+  --cal-warn: #f2c230;           /* weak-point / gauge yellow */
+  --cal-danger: #b03a2e;         /* health red */
+  --cal-med: #7fb069;            /* medicine green */
+  --cal-focus: #7b5cd6;          /* focus purple */
+  --cal-hostile: #e8762c;        /* hostile orange */
+  --cal-text: #efe6d5;           /* parchment */
+  --cal-scrim: rgba(8, 14, 18, 0.55);
   --font: 'Rajdhani', 'Segoe UI', system-ui, sans-serif;
   --font-display: 'Michroma', 'Orbitron', sans-serif;
   --font-stinger: 'Orbitron', sans-serif;
@@ -63,7 +63,7 @@ html, body {
   overflow: hidden;
   background: #06090c;
   font-family: var(--font);
-  color: var(--hzc-text);
+  color: var(--cal-text);
 }
 
 #app, #app canvas { width: 100%; height: 100%; display: block; }
@@ -85,7 +85,7 @@ html, body {
   font-weight: 400;
   letter-spacing: 0.28em;
   text-align: center;
-  color: var(--hzc-text);
+  color: var(--cal-text);
   text-shadow: 0 0 24px rgba(89, 193, 198, 0.35);
 }
 .game-title span {
@@ -93,7 +93,7 @@ html, body {
   font-family: var(--font-display);
   font-size: 24px;
   letter-spacing: 0.5em;
-  color: var(--hzc-accent);
+  color: var(--cal-accent);
   margin-top: 10px;
 }
 
@@ -106,8 +106,8 @@ html, body {
 }
 #load-fill {
   width: 0%; height: 100%;
-  background: var(--hzc-accent);
-  box-shadow: 0 0 12px var(--hzc-accent);
+  background: var(--cal-accent);
+  box-shadow: 0 0 12px var(--cal-accent);
   transition: width 0.2s ease;
 }
 #load-label {
@@ -127,9 +127,9 @@ html, body {
   font-family: var(--font);
   font-size: 16px; letter-spacing: 0.32em;
   padding: 14px 46px;
-  color: var(--hzc-text);
+  color: var(--cal-text);
   background: transparent;
-  border: 1px solid var(--hzc-accent);
+  border: 1px solid var(--cal-accent);
   cursor: pointer;
   transition: all 0.25s ease;
 }
@@ -147,15 +147,15 @@ html, body {
   color: rgba(232,236,236,0.5);
   text-align: left;
 }
-.controls-grid b { color: var(--hzc-accent); font-weight: 600; margin-right: 8px; }
+.controls-grid b { color: var(--cal-accent); font-weight: 600; margin-right: 8px; }
 
 #hud { position: fixed; inset: 0; pointer-events: none; z-index: 40; }
 
 /* ===========================================================================
    SHELL / MENUS  —  lane `shell-menus`
    Title flow, tabbed pause hub, world map, death + victory cards, settings,
-   credits. Everything below is scoped under `.hzc-menus-root`, `#title` or a
-   `body.hzc-*` class this lane sets, so no other lane's selector is touched.
+   credits. Everything below is scoped under `.cal-menus-root`, `#title` or a
+   `body.cal-*` class this lane sets, so no other lane's selector is touched.
    =========================================================================== */
 
 :root {
@@ -174,34 +174,34 @@ html, body {
 /* The Round-3 HUD keeps its own pause/death/victory cards as a bridge and
    already returns early from all three when `ctx.menus` exists. This is the
    belt to that brace: while this lane is installed, those cards never paint. */
-body.hzc-menus .hzc-pause,
-body.hzc-menus .hzc-death { display: none !important; }
+body.cal-menus .cal-pause,
+body.cal-menus .cal-death { display: none !important; }
 
 /* Under the death card the gameplay HUD is noise — the player is not reading
    their ammo count, they are choosing how to come back. Keyed on a body class
    only THIS lane sets, so `shell-hud` keeps every rule it wrote; drop the
    install and the HUD never dims. */
-body.hzc-dead #hud {
+body.cal-dead #hud {
   opacity: 0.14;
   transition: opacity 0.7s ease;
 }
 
-body.hzc-reduced-motion .hzc-menus-root *,
-body.hzc-reduced-motion #title * {
+body.cal-reduced-motion .cal-menus-root *,
+body.cal-reduced-motion #title * {
   animation: none !important;
   transition: none !important;
 }
 
 .mn-hidden { display: none !important; }
 
-.hzc-menus-root {
+.cal-menus-root {
   position: fixed; inset: 0;
   z-index: var(--mn-z);
   pointer-events: none;
   font-family: var(--font);
   color: var(--mn-ink);
 }
-.hzc-menus-root button { font-family: var(--font); color: inherit; cursor: pointer; }
+.cal-menus-root button { font-family: var(--font); color: inherit; cursor: pointer; }
 
 /* --------------------------------------------------------------- buttons */
 
@@ -215,10 +215,10 @@ body.hzc-reduced-motion #title * {
   transition: background 0.16s ease, border-color 0.16s ease, box-shadow 0.16s ease;
   clip-path: polygon(8px 0, 100% 0, 100% calc(100% - 8px), calc(100% - 8px) 100%, 0 100%, 0 8px);
 }
-.mn-btn:hover { background: rgba(89, 193, 198, 0.14); border-color: var(--hzc-accent); }
+.mn-btn:hover { background: rgba(89, 193, 198, 0.14); border-color: var(--cal-accent); }
 .mn-btn.small { font-size: 10.5px; letter-spacing: 0.16em; padding: 7px 13px 6px; }
-.mn-btn.primary { border-color: var(--hzc-accent); color: #dff6f7; }
-.mn-btn.danger:hover { background: rgba(176, 58, 46, 0.22); border-color: var(--hzc-danger); }
+.mn-btn.primary { border-color: var(--cal-accent); color: #dff6f7; }
+.mn-btn.danger:hover { background: rgba(176, 58, 46, 0.22); border-color: var(--cal-danger); }
 /* a control that exists but is not available yet — it PRINTS THE REASON, so it
    must still be readable, not a ghost (missing-systems-accessibility). */
 .mn-btn.off {
@@ -232,7 +232,7 @@ body.hzc-reduced-motion #title * {
 /* =========================================================== title screen */
 
 #title .title-inner { position: relative; }
-body.hzc-title-live #loading { display: none !important; }
+body.cal-title-live #loading { display: none !important; }
 
 /**
  * THE SCRIM IS PART OF THE SHOT (V38).
@@ -241,7 +241,7 @@ body.hzc-title-live #loading { display: none !important; }
  * that had no moving vista behind it, and it turned the new aerial into brown
  * soup: every value in the frame arrived within a few percent of every other
  * one. This lane owns the title flow, so it owns the veil over it — and
- * `body.hzc-title-live #title.overlay` outranks that rule without touching
+ * `body.cal-title-live #title.overlay` outranks that rule without touching
  * another lane's file or deleting anything (drop the install and the Round-3
  * wash comes straight back).
  *
@@ -251,7 +251,7 @@ body.hzc-title-live #loading { display: none !important; }
  * radial one is a soft column down the centre, behind the menu column only, so
  * the text never has to fight a tree while the edges of the frame stay bright.
  */
-body.hzc-title-live #title.overlay {
+body.cal-title-live #title.overlay {
   background:
     linear-gradient(180deg,
       rgba(6, 9, 12, 0.70) 0%,
@@ -375,13 +375,13 @@ body.hzc-title-live #title.overlay {
   color: var(--mn-faint);
 }
 .mn-tab:hover { color: var(--mn-ink); background: rgba(239, 230, 213, 0.05); }
-.mn-tab.on { color: #dff6f7; border-bottom-color: var(--hzc-accent); }
-.mn-tab.on kbd { border-color: var(--hzc-accent); color: var(--hzc-accent); }
+.mn-tab.on { color: #dff6f7; border-bottom-color: var(--cal-accent); }
+.mn-tab.on kbd { border-color: var(--cal-accent); color: var(--cal-accent); }
 .mn-hub-status {
   font-size: 11px; letter-spacing: 0.14em; color: var(--mn-dim);
   display: flex; gap: 8px; align-items: center; white-space: nowrap;
 }
-.mn-hub-status b { color: var(--hzc-warn); font-weight: 600; }
+.mn-hub-status b { color: var(--cal-warn); font-weight: 600; }
 .mn-hub-status i { color: var(--mn-faint); font-style: normal; }
 
 .mn-hub-body { flex: 1; min-height: 0; padding: 16px 0 12px; overflow: hidden; }
@@ -426,21 +426,21 @@ body.hzc-title-live #title.overlay {
   white-space: nowrap; pointer-events: none;
 }
 .mn-map-tip b { color: var(--mn-ink); font-weight: 600; }
-.mn-map-tip i { color: var(--hzc-accent); font-style: normal; margin-left: 8px; }
+.mn-map-tip i { color: var(--cal-accent); font-style: normal; margin-left: 8px; }
 .mn-map-tip u { color: var(--mn-faint); text-decoration: none; margin-left: 8px; }
 
 .mn-map-side { flex: 1; min-width: 210px; display: flex; flex-direction: column; gap: 16px; overflow-y: auto; }
 .mn-map-stats { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 14px; }
 .mn-map-stats div { display: flex; flex-direction: column; gap: 2px; }
-.mn-map-stats b { font-family: var(--font-display); font-size: 16px; letter-spacing: 0.08em; color: var(--hzc-accent); }
+.mn-map-stats b { font-family: var(--font-display); font-size: 16px; letter-spacing: 0.08em; color: var(--cal-accent); }
 .mn-map-stats span { font-size: 9.5px; letter-spacing: 0.24em; color: var(--mn-faint); }
 
 .mn-map-wp { border: 1px solid var(--mn-line); padding: 10px 12px; display: flex; flex-direction: column; gap: 9px; }
 .mn-map-wp-empty { font-size: 10.5px; letter-spacing: 0.24em; color: var(--mn-faint); }
 .mn-map-wp-live { display: flex; align-items: center; gap: 9px; font-size: 11.5px; letter-spacing: 0.18em; }
 .mn-map-wp-live b { font-weight: 600; }
-.mn-map-wp-live i { margin-left: auto; font-style: normal; color: var(--hzc-accent); }
-.mn-map-wp-dot { width: 8px; height: 8px; background: var(--hzc-accent); transform: rotate(45deg); }
+.mn-map-wp-live i { margin-left: auto; font-style: normal; color: var(--cal-accent); }
+.mn-map-wp-dot { width: 8px; height: 8px; background: var(--cal-accent); transform: rotate(45deg); }
 .mn-map-wp-site {
   font-size: 10px; letter-spacing: 0.22em; color: var(--mn-faint);
   border-top: 1px solid var(--mn-line); padding-top: 9px;
@@ -469,16 +469,16 @@ body.hzc-title-live #title.overlay {
   width: 0; height: 0; margin-bottom: 3px;
   border-left: 5px solid transparent;
   border-right: 5px solid transparent;
-  border-top: 7px solid var(--hzc-accent);
+  border-top: 7px solid var(--cal-accent);
 }
-.mn-wp-caret.edge { border-top-color: var(--hzc-warn); }
+.mn-wp-caret.edge { border-top-color: var(--cal-warn); }
 .mn-wp-body {
   display: flex; justify-content: center; gap: 9px;
   font-size: 10.5px; letter-spacing: 0.2em;
   color: var(--mn-ink);
   text-shadow: 0 1px 6px rgba(0, 0, 0, 0.9);
 }
-.mn-wp-dist { color: var(--hzc-accent); }
+.mn-wp-dist { color: var(--cal-accent); }
 
 /* ============================================================== settings */
 
@@ -496,7 +496,7 @@ body.hzc-title-live #title.overlay {
   border: 1px solid rgba(200, 162, 75, 0.5); padding: 0 4px; margin-left: 8px;
 }
 .mn-set-ctrl { display: flex; align-items: center; gap: 10px; }
-.mn-set-val { font-size: 11px; letter-spacing: 0.1em; color: var(--hzc-accent); min-width: 46px; text-align: right; }
+.mn-set-val { font-size: 11px; letter-spacing: 0.1em; color: var(--cal-accent); min-width: 46px; text-align: right; }
 .mn-set-hint { grid-column: 1 / -1; font-size: 10px; letter-spacing: 0.06em; color: var(--mn-faint); }
 .mn-set-note { font-size: 10.5px; letter-spacing: 0.08em; color: var(--mn-faint); line-height: 1.6; }
 .mn-set-note code { font-family: var(--font-focus); color: var(--mn-dim); }
@@ -505,11 +505,11 @@ body.hzc-title-live #title.overlay {
 .mn-range { -webkit-appearance: none; appearance: none; width: 150px; height: 3px; background: rgba(239, 230, 213, 0.18); outline: none; }
 .mn-range::-webkit-slider-thumb {
   -webkit-appearance: none; appearance: none;
-  width: 11px; height: 15px; background: var(--hzc-accent);
+  width: 11px; height: 15px; background: var(--cal-accent);
   clip-path: polygon(50% 0, 100% 28%, 100% 100%, 0 100%, 0 28%);
   cursor: pointer;
 }
-.mn-range::-moz-range-thumb { width: 11px; height: 15px; background: var(--hzc-accent); border: 0; cursor: pointer; }
+.mn-range::-moz-range-thumb { width: 11px; height: 15px; background: var(--cal-accent); border: 0; cursor: pointer; }
 
 .mn-toggle {
   min-width: 54px;
@@ -518,7 +518,7 @@ body.hzc-title-live #title.overlay {
   font-size: 10.5px; letter-spacing: 0.18em;
   padding: 5px 10px 4px; color: var(--mn-faint);
 }
-.mn-toggle.on { border-color: var(--hzc-accent); color: #dff6f7; background: rgba(89, 193, 198, 0.14); }
+.mn-toggle.on { border-color: var(--cal-accent); color: #dff6f7; background: rgba(89, 193, 198, 0.14); }
 
 .mn-seg { display: flex; border: 1px solid var(--mn-line); }
 .mn-seg-btn {
@@ -552,7 +552,7 @@ body.hzc-title-live #title.overlay {
 }
 .mn-modal-title { font-family: var(--font-display); font-size: 14px; letter-spacing: 0.3em; }
 .mn-x { background: none; border: 0; font-size: 15px; color: var(--mn-faint); }
-.mn-x:hover { color: var(--hzc-danger); }
+.mn-x:hover { color: var(--cal-danger); }
 .mn-modal-body { padding: 18px 22px 24px; overflow-y: auto; }
 .mn-modal-lead { font-size: 12px; color: var(--mn-dim); line-height: 1.6; margin-bottom: 14px; max-width: 62ch; }
 
@@ -572,7 +572,7 @@ body.hzc-title-live #title.overlay {
   border: 1px solid var(--mn-line);
   padding: 10px 14px; margin-bottom: 7px;
 }
-.mn-diff:hover { border-color: var(--hzc-accent); background: rgba(89, 193, 198, 0.12); }
+.mn-diff:hover { border-color: var(--cal-accent); background: rgba(89, 193, 198, 0.12); }
 .mn-diff b { font-size: 13px; letter-spacing: 0.22em; }
 .mn-diff span { font-size: 10px; letter-spacing: 0.1em; color: var(--mn-faint); }
 
@@ -604,7 +604,7 @@ body.hzc-title-live #title.overlay {
   text-shadow: 0 0 40px rgba(176, 58, 46, 0.55);
 }
 .mn-death-killer { font-size: 12.5px; letter-spacing: 0.24em; color: var(--mn-dim); }
-.mn-death-killer b { color: var(--hzc-danger); font-weight: 600; }
+.mn-death-killer b { color: var(--cal-danger); font-weight: 600; }
 .mn-death-rule {
   width: 320px; height: 1px; margin: 18px auto;
   background: linear-gradient(90deg, transparent, var(--mn-line), transparent);
@@ -628,7 +628,7 @@ body.hzc-title-live #title.overlay {
   transition: background 0.15s ease, border-color 0.15s ease;
   clip-path: polygon(10px 0, 100% 0, 100% calc(100% - 10px), calc(100% - 10px) 100%, 0 100%, 0 10px);
 }
-.mn-death-opt:hover { background: rgba(89, 193, 198, 0.14); border-color: var(--hzc-accent); }
+.mn-death-opt:hover { background: rgba(89, 193, 198, 0.14); border-color: var(--cal-accent); }
 .mn-death-opt b { font-size: 13px; letter-spacing: 0.22em; font-weight: 600; }
 .mn-death-opt span { font-size: 10px; letter-spacing: 0.14em; color: var(--mn-faint); }
 

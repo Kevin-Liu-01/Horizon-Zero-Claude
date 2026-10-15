@@ -19,12 +19,13 @@
  */
 import * as THREE from 'three';
 import { riverFactor } from '../world/terrain.js';
+import { PLAY_RADIUS, EXTENT } from '../world/island/extent.js';
 
 const CELL = 2;
-const R = 332;                     // playable radius the grid spans
+const R = PLAY_RADIUS + EXTENT.navSpan; // playable radius the grid spans
 const N = (R * 2) / CELL + 1;      // 333
 const ORIGIN = -R;
-const OUTER = 324;                 // hard edge (player clamp is 330)
+const OUTER = PLAY_RADIUS + EXTENT.navOuter; // hard edge (player clamp is PLAY_RADIUS)
 
 const BLOCKED = 0;
 const _v = new THREE.Vector3();

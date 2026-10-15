@@ -354,7 +354,7 @@ export const GATES = [
       // --- live behaviour, in a sandbox of its own --------------------------
       // Both roots the sweep scans are redirected, so no other lane's live
       // profile is reachable from this gate however it fails.
-      const sandbox = mkdtempSync(path.join(os.tmpdir(), 'hzc-profile-selftest-'));
+      const sandbox = mkdtempSync(path.join(os.tmpdir(), 'cal-profile-selftest-'));
       let out = null;
       let fixtureUp = false;
       try {
@@ -362,7 +362,7 @@ export const GATES = [
           encoding: 'utf8', timeout: 30000,
           env: {
             ...process.env,
-            HZC_CHROME_PROFILE_ROOT: path.join(sandbox, 'root'),
+            CAL_CHROME_PROFILE_ROOT: path.join(sandbox, 'root'),
             TMPDIR: path.join(sandbox, 'tmp'),
           },
         });

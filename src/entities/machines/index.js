@@ -11,6 +11,8 @@ import { loadVarietyModels } from './variety-assets.js';
 import { installMachineAI } from './ai/index.js';
 import { ECOSYSTEM } from './ai/tables.js';
 import { setAiRng, seededRng, aiRngSeeded } from './ai/rng.js';
+import { REST_SITE } from '../../world/island/sites.js';
+import { PLAY_RADIUS, EXTENT } from '../../world/island/extent.js';
 import {
   BODY as EXPANSION_BODY, CHASSIS, installDoctrine, installExpansionDoctrine,
   spawnExpansion, doctrineAudit,
@@ -26,7 +28,8 @@ import {
  * the animation-studio cast contract: `kinds` + `spawn(kind, x, z)`.
  */
 
-const CAMP = { x: 22, z: 30, r: 25 };
+const CAMP = REST_SITE;            // { x, z, r }: the Instrument no-spawn ring
+const ROUTE_RIM = PLAY_RADIUS + EXTENT.routeRim;
 const LOD_DIST = 250;
 const LOD_TICK = 0.25;
 
@@ -149,7 +152,7 @@ export class Machines {
       }
       // ... and inside the playable valley
       const wr = Math.hypot(x, z);
-      if (wr > 310) { x *= 310 / wr; z *= 310 / wr; }
+      if (wr > ROUTE_RIM) { x *= ROUTE_RIM / wr; z *= ROUTE_RIM / wr; }
       pts.push(new THREE.Vector3(x, 0, z));
     }
     return pts;

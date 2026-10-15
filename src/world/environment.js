@@ -32,7 +32,7 @@ import { RiverWater } from './water.js';
  *   environment.wetness              0–1 surface wetness (world-ground reads it)
  *   environment.wind                 { x, z, strength, gust } (gust hook)
  *   environment.fogParams            aerial-perspective contract (world-ground)
- *   environment.uniforms             shared uniform holders, incl. `hzcWeather`
+ *   environment.uniforms             shared uniform holders, incl. `calWeather`
  *                                    (vec4 wetness, gust, windX, windZ) which is
  *                                    declared for every fogged material already
  *   environment.registerMaterial(m)  opt a custom material into fog + cascades
@@ -57,7 +57,7 @@ import { RiverWater } from './water.js';
  * than fork every material in four other lanes, the fog chunks are replaced
  * once (the same technique three's own CSM uses for the lighting chunks) and
  * every scene material is handed the shared uniform objects. A material that is
- * never registered still renders correctly: `hzcFogA.x == 0` falls back to
+ * never registered still renders correctly: `calFogA.x == 0` falls back to
  * stock exp2 fog.
  */
 
@@ -170,8 +170,8 @@ let _chunksPatched = false;
  * Replace three's fog chunks with a height + distance + in-scatter model, and
  * fold a cloud-shadow term into the directional-light loop.
  *
- * Every uniform introduced here is optional: with `hzcFogA.x == 0` the fog
- * falls back to stock exp2 and `hzcCloudShadow()` returns 1, so a material this
+ * Every uniform introduced here is optional: with `calFogA.x == 0` the fog
+ * falls back to stock exp2 and `calCloudShadow()` returns 1, so a material this
  * file never registers still renders exactly as it did before.
  *
  * Called AFTER `engine.enableCSM()` because CSM's `injectInclude()` overwrites
@@ -192,9 +192,9 @@ function patchShaderChunks() {
 #ifdef USE_FOG
   varying float vFogDepth;
   varying vec3 vFogWorldPos;
-  uniform mat4 hzcViewInv;
+  uniform mat4 calViewInv;
   // wetness, gust, windX, windZ — world-ground's surface + foliage contract
-  uniform vec4 hzcWeather;
+  uniform vec4 calWeather;
 #endif`;
 
   // World position from VIEW position, not from `transformed`: sprite_vert has
@@ -204,7 +204,7 @@ function patchShaderChunks() {
   C.fog_vertex = /* glsl */`
 #ifdef USE_FOG
   vFogDepth = - mvPosition.z;
-  vFogWorldPos = ( hzcViewInv * vec4( mvPosition.xyz, 1.0 ) ).xyz;
+  vFogWorldPos = ( calViewInv * vec4( mvPosition.xyz, 1.0 ) ).xyz;
 #endif`;
 
   C.fog_pars_fragment = /* glsl */`
@@ -219,63 +219,63 @@ function patchShaderChunks() {
     uniform float fogFar;
   #endif
   // density, 1/heightFalloff, heightRef, inscatterPow
-  uniform vec4 hzcFogA;
+  uniform vec4 calFogA;
   // inscatterStrength, groundGlow, maxOpacity, unused
-  uniform vec4 hzcFogB;
-  uniform vec3 hzcFogHorizon;
-  uniform vec3 hzcFogZenith;
-  uniform vec3 hzcFogSun;
-  uniform vec3 hzcSunDir;
-  uniform vec3 hzcCamPos;
+  uniform vec4 calFogB;
+  uniform vec3 calFogHorizon;
+  uniform vec3 calFogZenith;
+  uniform vec3 calFogSun;
+  uniform vec3 calSunDir;
+  uniform vec3 calCamPos;
   // scale (1/m), coverage, strength, softness
-  uniform vec4 hzcCloudA;
-  uniform vec2 hzcCloudDrift;
+  uniform vec4 calCloudA;
+  uniform vec2 calCloudDrift;
   // wetness, gust, windX, windZ — world-ground's surface + foliage contract
-  uniform vec4 hzcWeather;
+  uniform vec4 calWeather;
 
-  float hzcHash21( vec2 p ) { return fract( sin( dot( p, vec2( 127.1, 311.7 ) ) ) * 43758.5453 ); }
-  float hzcNoise2( vec2 p ) {
+  float calHash21( vec2 p ) { return fract( sin( dot( p, vec2( 127.1, 311.7 ) ) ) * 43758.5453 ); }
+  float calNoise2( vec2 p ) {
     vec2 i = floor( p ), f = fract( p );
     f = f * f * ( 3.0 - 2.0 * f );
-    return mix( mix( hzcHash21( i ), hzcHash21( i + vec2( 1.0, 0.0 ) ), f.x ),
-                mix( hzcHash21( i + vec2( 0.0, 1.0 ) ), hzcHash21( i + vec2( 1.0, 1.0 ) ), f.x ), f.y );
+    return mix( mix( calHash21( i ), calHash21( i + vec2( 1.0, 0.0 ) ), f.x ),
+                mix( calHash21( i + vec2( 0.0, 1.0 ) ), calHash21( i + vec2( 1.0, 1.0 ) ), f.x ), f.y );
   }
-  float hzcCloudShadow() {
-    if ( hzcCloudA.z <= 0.001 ) return 1.0;
-    vec2 uv = vFogWorldPos.xz * hzcCloudA.x + hzcCloudDrift;
-    float n = hzcNoise2( uv ) * 0.64 + hzcNoise2( uv * 2.17 + 13.7 ) * 0.36;
-    float m = smoothstep( hzcCloudA.y, hzcCloudA.y + hzcCloudA.w, n );
-    return 1.0 - m * hzcCloudA.z;
+  float calCloudShadow() {
+    if ( calCloudA.z <= 0.001 ) return 1.0;
+    vec2 uv = vFogWorldPos.xz * calCloudA.x + calCloudDrift;
+    float n = calNoise2( uv ) * 0.64 + calNoise2( uv * 2.17 + 13.7 ) * 0.36;
+    float m = smoothstep( calCloudA.y, calCloudA.y + calCloudA.w, n );
+    return 1.0 - m * calCloudA.z;
   }
 #endif`;
 
   C.fog_fragment = /* glsl */`
 #ifdef USE_FOG
-  if ( hzcFogA.x > 0.0 ) {
+  if ( calFogA.x > 0.0 ) {
     // Analytic height fog: density falls off as exp( -(y - ref) / H ), so the
     // integral along the ray has a closed form. Both endpoints matter, which is
     // what makes a ridge top read thinner than a valley floor at the same range.
-    float hzcK = hzcFogA.y;
-    float hzcDy = vFogWorldPos.y - hzcCamPos.y;
-    float hzcBase = exp( - ( hzcCamPos.y - hzcFogA.z ) * hzcK );
-    float hzcE = hzcDy * hzcK;
-    float hzcAvg = abs( hzcE ) < 0.002 ? hzcBase : hzcBase * ( 1.0 - exp( - hzcE ) ) / hzcE;
-    float hzcTau = hzcFogA.x * vFogDepth * clamp( hzcAvg, 0.0, 12.0 );
-    float hzcTrans = clamp( exp( - hzcTau ), 1.0 - hzcFogB.z, 1.0 );
+    float calK = calFogA.y;
+    float calDy = vFogWorldPos.y - calCamPos.y;
+    float calBase = exp( - ( calCamPos.y - calFogA.z ) * calK );
+    float calE = calDy * calK;
+    float calAvg = abs( calE ) < 0.002 ? calBase : calBase * ( 1.0 - exp( - calE ) ) / calE;
+    float calTau = calFogA.x * vFogDepth * clamp( calAvg, 0.0, 12.0 );
+    float calTrans = clamp( exp( - calTau ), 1.0 - calFogB.z, 1.0 );
 
-    vec3 hzcDv = vFogWorldPos - hzcCamPos;
-    vec3 hzcVd = hzcDv / max( length( hzcDv ), 1e-3 );
-    float hzcUp = clamp( hzcVd.y * 1.55 + 0.10, 0.0, 1.0 );
-    vec3 hzcSky = mix( hzcFogHorizon, hzcFogZenith, hzcUp * hzcUp );
-    float hzcSd = max( dot( hzcVd, hzcSunDir ), 0.0 );
+    vec3 calDv = vFogWorldPos - calCamPos;
+    vec3 calVd = calDv / max( length( calDv ), 1e-3 );
+    float calUp = clamp( calVd.y * 1.55 + 0.10, 0.0, 1.0 );
+    vec3 calSky = mix( calFogHorizon, calFogZenith, calUp * calUp );
+    float calSd = max( dot( calVd, calSunDir ), 0.0 );
     // Forward in-scatter: the haze lights up toward the sun and warms the
     // ridges that face it. Squared so it stays a glow, not a second sun.
     // No (1 - trans) factor here: the mix() below already scales the whole
     // in-scatter term by it, and double-counting made the fogged pixel leave
     // the straight line between "no fog" and "full fog" that A57 measures.
-    hzcSky += hzcFogSun * pow( hzcSd, hzcFogA.w ) * hzcFogB.x;
-    hzcSky += hzcFogSun * hzcSd * hzcSd * hzcFogB.y;
-    gl_FragColor.rgb = mix( hzcSky, gl_FragColor.rgb, hzcTrans );
+    calSky += calFogSun * pow( calSd, calFogA.w ) * calFogB.x;
+    calSky += calFogSun * calSd * calSd * calFogB.y;
+    gl_FragColor.rgb = mix( calSky, gl_FragColor.rgb, calTrans );
   } else {
     #ifdef FOG_EXP2
       float fogFactor = 1.0 - exp( - fogDensity * fogDensity * vFogDepth * vFogDepth );
@@ -297,20 +297,20 @@ function patchShaderChunks() {
 let cloudShadowSites = 0;
 function patchLightChunks(C) {
   const lf = C.lights_fragment_begin;
-  if (lf.indexOf('hzcCloudShadow') < 0) {
+  if (lf.indexOf('calCloudShadow') < 0) {
     let n = 0;
     C.lights_fragment_begin = lf.replace(
       /getDirectionalLightInfo\(\s*(directionalLight|directionalLights\[\s*0\s*\])\s*,\s*directLight\s*\);/g,
-      (m) => { n++; return `${m}\n\t\t\tdirectLight.color *= hzcCloudShadow();`; },
+      (m) => { n++; return `${m}\n\t\t\tdirectLight.color *= calCloudShadow();`; },
     );
     cloudShadowSites = n;
   }
-  if (C.lights_pars_begin.indexOf('hzcCloudShadow') < 0) {
+  if (C.lights_pars_begin.indexOf('calCloudShadow') < 0) {
     // Lit materials with fog:false never see the fog chunk, so they need the
     // stub. USE_FOG is a compile define, so this is order-independent.
     C.lights_pars_begin = /* glsl */`
 #ifndef USE_FOG
-  float hzcCloudShadow() { return 1.0; }
+  float calCloudShadow() { return 1.0; }
 #endif
 ` + C.lights_pars_begin;
   }
@@ -362,17 +362,17 @@ export class Environment {
     // Updating `.value` here updates every material at once — no per-material
     // bookkeeping, no per-frame allocation.
     this.u = {
-      hzcViewInv: { value: new THREE.Matrix4() },
-      hzcFogA: { value: new THREE.Vector4(0.00157, FOG_HEIGHT_FALLOFF, FOG_HEIGHT_REF, 7.0) },
-      hzcFogB: { value: new THREE.Vector4(0.55, 0.16, 1.0, 0) },
-      hzcFogHorizon: { value: new THREE.Color('#cfa87f') },
-      hzcFogZenith: { value: new THREE.Color('#365a8d') },
-      hzcFogSun: { value: new THREE.Color('#ffa54f') },
-      hzcSunDir: { value: new THREE.Vector3(0, 1, 0) },
-      hzcCamPos: { value: new THREE.Vector3() },
-      hzcCloudA: { value: new THREE.Vector4(1 / 190, 0.52, 0.26, 0.30) },
-      hzcCloudDrift: { value: new THREE.Vector2() },
-      hzcWeather: { value: new THREE.Vector4(0, 0, 0.82, 0.57) },
+      calViewInv: { value: new THREE.Matrix4() },
+      calFogA: { value: new THREE.Vector4(0.00157, FOG_HEIGHT_FALLOFF, FOG_HEIGHT_REF, 7.0) },
+      calFogB: { value: new THREE.Vector4(0.55, 0.16, 1.0, 0) },
+      calFogHorizon: { value: new THREE.Color('#cfa87f') },
+      calFogZenith: { value: new THREE.Color('#365a8d') },
+      calFogSun: { value: new THREE.Color('#ffa54f') },
+      calSunDir: { value: new THREE.Vector3(0, 1, 0) },
+      calCamPos: { value: new THREE.Vector3() },
+      calCloudA: { value: new THREE.Vector4(1 / 190, 0.52, 0.26, 0.30) },
+      calCloudDrift: { value: new THREE.Vector2() },
+      calWeather: { value: new THREE.Vector4(0, 0, 0.82, 0.57) },
     };
     /** Alias so other lanes can plug the shared holders into their own shaders. */
     this.uniforms = this.u;
@@ -505,8 +505,8 @@ export class Environment {
     scene.onBeforeRender = (r, sc, camera, target) => {
       if (typeof prevOBR === 'function') prevOBR.call(scene, r, sc, camera, target);
       if (camera && camera.isCamera) {
-        this.u.hzcCamPos.value.setFromMatrixPosition(camera.matrixWorld);
-        this.u.hzcViewInv.value.copy(camera.matrixWorld);
+        this.u.calCamPos.value.setFromMatrixPosition(camera.matrixWorld);
+        this.u.calViewInv.value.copy(camera.matrixWorld);
       }
     };
 
@@ -555,7 +555,7 @@ export class Environment {
       sunIntensity: this.sun.intensity,
       hemiIntensity: this.hemi.intensity,
       envIntensity: this.ctx.scene.environmentIntensity,
-      fogDensity: this.u.hzcFogA.value.x,
+      fogDensity: this.u.calFogA.value.x,
       transmittance300: this.fogParams.transmittance(300, 6, 6),
       cascades: csm ? csm.cascades : 0,
       nearTexelM: near ? (near.right - near.left) / csm.shadowMapSize : null,
@@ -622,18 +622,18 @@ export class Environment {
     const self = this;
     return {
       uniforms: u,
-      get density() { return u.hzcFogA.value.x; },
-      get heightFalloff() { return u.hzcFogA.value.y; },
-      get heightRef() { return u.hzcFogA.value.z; },
-      get inscatterPow() { return u.hzcFogA.value.w; },
-      get inscatterStrength() { return u.hzcFogB.value.x; },
-      horizon: u.hzcFogHorizon.value,
-      zenith: u.hzcFogZenith.value,
-      sun: u.hzcFogSun.value,
-      sunDir: u.hzcSunDir.value,
+      get density() { return u.calFogA.value.x; },
+      get heightFalloff() { return u.calFogA.value.y; },
+      get heightRef() { return u.calFogA.value.z; },
+      get inscatterPow() { return u.calFogA.value.w; },
+      get inscatterStrength() { return u.calFogB.value.x; },
+      horizon: u.calFogHorizon.value,
+      zenith: u.calFogZenith.value,
+      sun: u.calFogSun.value,
+      sunDir: u.calSunDir.value,
       /** Beer-Lambert transmittance for a ray of `dist` m between two heights. */
       transmittance(dist, camY = FOG_HEIGHT_REF, fragY = camY) {
-        const a = u.hzcFogA.value;
+        const a = u.calFogA.value;
         const k = a.y;
         const base = Math.exp(-(camY - a.z) * k);
         const e = (fragY - camY) * k;
@@ -642,8 +642,8 @@ export class Environment {
       },
       /** GLSL a custom material can paste; identical maths to the chunk. */
       glsl: {
-        parsVertex: 'varying vec3 vFogWorldPos; varying float vFogDepth; uniform mat4 hzcViewInv;',
-        vertex: 'vFogDepth = -mvPosition.z; vFogWorldPos = (hzcViewInv * vec4(mvPosition.xyz,1.0)).xyz;',
+        parsVertex: 'varying vec3 vFogWorldPos; varying float vFogDepth; uniform mat4 calViewInv;',
+        vertex: 'vFogDepth = -mvPosition.z; vFogWorldPos = (calViewInv * vec4(mvPosition.xyz,1.0)).xyz;',
         note: 'Built-in materials get this for free once registerMaterial() has seen them.',
       },
       register: (m) => self.registerMaterial(m),
@@ -679,17 +679,17 @@ export class Environment {
       if (prev) prev.call(this, shader, renderer);
       if (csmFn) csmFn.call(this, shader, renderer);
       const su = shader.uniforms;
-      su.hzcViewInv = u.hzcViewInv;
-      su.hzcFogA = u.hzcFogA;
-      su.hzcFogB = u.hzcFogB;
-      su.hzcFogHorizon = u.hzcFogHorizon;
-      su.hzcFogZenith = u.hzcFogZenith;
-      su.hzcFogSun = u.hzcFogSun;
-      su.hzcSunDir = u.hzcSunDir;
-      su.hzcCamPos = u.hzcCamPos;
-      su.hzcCloudA = u.hzcCloudA;
-      su.hzcCloudDrift = u.hzcCloudDrift;
-      su.hzcWeather = u.hzcWeather;
+      su.calViewInv = u.calViewInv;
+      su.calFogA = u.calFogA;
+      su.calFogB = u.calFogB;
+      su.calFogHorizon = u.calFogHorizon;
+      su.calFogZenith = u.calFogZenith;
+      su.calFogSun = u.calFogSun;
+      su.calSunDir = u.calSunDir;
+      su.calCamPos = u.calCamPos;
+      su.calCloudA = u.calCloudA;
+      su.calCloudDrift = u.calCloudDrift;
+      su.calWeather = u.calWeather;
     };
     mat.needsUpdate = true;
     return mat;
@@ -733,16 +733,16 @@ export class Environment {
    * 178 cached meshes and no allocation.
    */
   _shadowPolicy(o) {
-    if (o.userData.__hzcShadow) return;
+    if (o.userData.__calShadow) return;
     const n = o.name || '';
     if (n.startsWith('bushes-')) {
-      o.userData.__hzcShadow = 1;
+      o.userData.__calShadow = 1;
       o.castShadow = true;
       if (o.userData.__shadowCulled === true) o.userData.__shadowBase = true;
       return;
     }
     if (!n.startsWith('grass-chunk')) return;
-    o.userData.__hzcShadow = 1;
+    o.userData.__calShadow = 1;
     this._grassCasters.push(o);
   }
 
@@ -857,8 +857,8 @@ export class Environment {
 
     /* ---- follow the camera / player ---- */
     const cam = ctx.camera;
-    this.u.hzcCamPos.value.copy(cam.position);
-    this.u.hzcViewInv.value.copy(cam.matrixWorld);
+    this.u.calCamPos.value.copy(cam.position);
+    this.u.calViewInv.value.copy(cam.matrixWorld);
     const p = ctx.player?.position;
     if (p) {
       this._updateGrassCasters(p.x, p.z);
@@ -873,11 +873,11 @@ export class Environment {
     this._rainMat.uniforms.uWind.value.set(this.wind.x * this.wind.strength, 0, this.wind.z * this.wind.strength);
 
     /* ---- weather uniform (wetness + gust hook for world-ground) ---- */
-    this.u.hzcWeather.value.set(this.wetness, this.wind.gust,
+    this.u.calWeather.value.set(this.wetness, this.wind.gust,
       this.wind.x * this.wind.strength, this.wind.z * this.wind.strength);
 
     /* ---- cloud shadow drift ---- */
-    const cd = this.u.hzcCloudDrift.value;
+    const cd = this.u.calCloudDrift.value;
     cd.x += dt * this.wind.x * this.wind.strength * 0.0016;
     cd.y += dt * this.wind.z * this.wind.strength * 0.0016;
 
@@ -943,7 +943,7 @@ export class Environment {
     this.sun.intensity = intensity;
     // The publicly visible sun direction is the SUN's, even at night — audio,
     // AI and the shaft pass want to know where the sun is, not the light.
-    this.u.hzcSunDir.value.copy(this.sunDir.y > -0.05 ? this.sunDir : dir);
+    this.u.calSunDir.value.copy(this.sunDir.y > -0.05 ? this.sunDir : dir);
 
     if (this.csm) {
       _v0.copy(dir).multiplyScalar(-1);
@@ -969,29 +969,29 @@ export class Environment {
 
     /* ---- fog / aerial perspective ---- */
     const dens = k.dens * w.densMul;
-    const fa = this.u.hzcFogA.value;
+    const fa = this.u.calFogA.value;
     fa.x = dens;
     fa.y = FOG_HEIGHT_FALLOFF;
     fa.z = FOG_HEIGHT_REF;
     fa.w = 7.0;
-    const fb = this.u.hzcFogB.value;
+    const fb = this.u.calFogB.value;
     fb.x = 0.55 * (1 - w.desat * 0.7) * (1 - k.night * 0.75);
     fb.y = 0.16 * (1 - w.desat * 0.8) * (1 - k.night * 0.8);
     fb.z = 1.0;
     _c1.copy(k.fogHC);
     if (w.desat > 0.001) _c1.lerp(_c0.setRGB(0.62, 0.64, 0.67), w.desat * 0.6);
-    this.u.hzcFogHorizon.value.copy(_c1);
+    this.u.calFogHorizon.value.copy(_c1);
     _c1.copy(k.fogZC);
     if (w.desat > 0.001) _c1.lerp(_c0.setRGB(0.48, 0.51, 0.56), w.desat * 0.6);
-    this.u.hzcFogZenith.value.copy(_c1);
-    this.u.hzcFogSun.value.copy(k.fogSunC);
+    this.u.calFogZenith.value.copy(_c1);
+    this.u.calFogSun.value.copy(k.fogSunC);
     // keep the fallback path (and anything reading scene.fog) in step
     const fog = this.ctx.scene.fog;
     fog.density = dens;
-    fog.color.copy(this.u.hzcFogHorizon.value);
+    fog.color.copy(this.u.calFogHorizon.value);
 
     /* ---- cloud shadows ---- */
-    const ca = this.u.hzcCloudA.value;
+    const ca = this.u.calCloudA.value;
     ca.x = 1 / 190;
     ca.y = 0.58 - w.cloud * 0.20;
     ca.z = w.cloudShadow * (1 - k.night) * (this.sunAboveHorizon ? 1 : 0);
@@ -1002,7 +1002,7 @@ export class Environment {
     su.uSunDir.value.copy(this.sunDir);
     su.uMoonDir.value.copy(this.moonDir);
     su.uSunCol.value.copy(k.sunC);
-    su.uHorizon.value.copy(this.u.hzcFogHorizon.value);
+    su.uHorizon.value.copy(this.u.calFogHorizon.value);
     su.uMid.value.copy(k.midC);
     su.uZenith.value.copy(k.zenC);
     su.uNight.value = k.night;
@@ -1145,7 +1145,7 @@ export class Environment {
       depthBuffer: false,
       stencilBuffer: false,
     });
-    rt.texture.name = 'HZC.lightShafts';
+    rt.texture.name = 'CAL.lightShafts';
 
     const gather = new THREE.ShaderMaterial({
       depthTest: false,

@@ -32,12 +32,13 @@
  */
 
 import { WORLD_SIZE, WORLD_HALF, PLAY_RADIUS } from '../world/terrain.js';
+import { REST } from '../world/island/sites.js';
 
 const FOG_N = 72;                       // fog cells per axis (10 m cells)
 const FOG_REVEAL_M = 95;                // how far Aloy's presence clears fog
 const BAKE_N = 288;                     // relief samples per axis (2.5 m/px)
 const MAP_PX = 720;                     // canvas pixels per axis
-const FOG_KEY = 'hzc.map.v1';
+const FOG_KEY = 'cal.map.v5';
 
 /** Marker kinds you can travel TO (a quest arrow or a machine is not a place). */
 const TRAVELABLE = new Set(['camp', 'landmark', 'tallneck', 'lookout', 'cache', 'override', 'hunting-ground']);
@@ -383,7 +384,7 @@ export class WorldMap {
   markers() {
     const out = [];
     const ctx = this.ctx;
-    const camp = { x: 18, z: 26 };
+    const camp = { x: REST.x, z: REST.z };
     out.push({ kind: 'camp', x: camp.x, z: camp.z, name: 'Mother’s Watch', done: false });
 
     for (const l of (ctx.props?.landmarks || [])) {
@@ -403,7 +404,7 @@ export class WorldMap {
     } catch { /* progression may be mid-refresh */ }
 
     // ui-04: only what Focus has TAGGED, never a live radar of the roster
-    const tags = ctx.focus?.tags;
+    const tags = ctx.sighting?.tags;
     if (tags && typeof tags.forEach === 'function') {
       tags.forEach((_v, m) => {
         const mm = m?.position ? m : _v;
@@ -725,7 +726,7 @@ export class WorldMap {
  * of the contract and it is deliberately self-retiring:
  *
  *   · if `ctx.hud.setWaypoint` exists, that lane renders it and this draws nothing;
- *   · otherwise it docks itself to the live `.hzc-compass` element (measured, not
+ *   · otherwise it docks itself to the live `.cal-compass` element (measured, not
  *     hard-coded) and draws the caret at the waypoint's bearing inside the same
  *     ±70° window the ribbon uses, with the distance in metres under it.
  *
@@ -764,7 +765,7 @@ export class WaypointBeacon {
     // dock under the compass ribbon if one exists (re-measured at 2 Hz)
     if (now - this._rectT > 500) {
       this._rectT = now;
-      const comp = document.querySelector('.hzc-compass');
+      const comp = document.querySelector('.cal-compass');
       this._rect = comp ? comp.getBoundingClientRect() : null;
     }
     /**

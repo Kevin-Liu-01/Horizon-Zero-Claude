@@ -205,7 +205,7 @@
 canvas.studio-film { filter: none !important; }
 
 /**
- * THE DEATH AND VICTORY CARDS ARE NOT IN THE PHOTOGRAPH. `body.hzc-photo` is
+ * THE DEATH AND VICTORY CARDS ARE NOT IN THE PHOTOGRAPH. `body.cal-photo` is
  * set for exactly as long as photo mode is open. Filming a death raises
  * shell-menus' full-screen card, which waits for input by design (their A69) —
  * correct for a player who just died, wrong for a photographer who pressed the
@@ -214,5 +214,5 @@ canvas.studio-film { filter: none !important; }
  * and this rule is the seam between them. It comes off on exit, where the
  * staged death is handed back through ctx.menus.respawn('checkpoint').
  */
-body.hzc-photo .mn-death,
-body.hzc-photo .mn-victory { display: none !important; }
+body.cal-photo .mn-death,
+body.cal-photo .mn-victory { display: none !important; }

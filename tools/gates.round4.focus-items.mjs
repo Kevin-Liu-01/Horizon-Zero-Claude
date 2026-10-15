@@ -64,7 +64,7 @@ const CRATE = `function crateEntry() {
  */
 const OVERLAPS = `function labelOverlaps() {
   const W = window.innerWidth, H = window.innerHeight;
-  const els = [...document.querySelectorAll('.hzcf-plabel, .hzcf-reveal')]
+  const els = [...document.querySelectorAll('.calf-plabel, .calf-reveal')]
     .filter((el) => el.style.display !== 'none' && el.offsetParent !== null);
   const all = els.map((el) => [el.getBoundingClientRect(), el.textContent.trim()]);
   const off = [];
@@ -116,11 +116,11 @@ export const GATES = [
       const m = ctx.machines?.list?.find((x) => x.kind === 'sawtooth' && x.alive)
         || ctx.machines?.list?.find((x) => x.alive && Array.isArray(x.parts) && x.parts.length);
       if (!m) return { pass: null, detail: 'SKIP: no living machine with parts' };
-      if (typeof ctx.focus?.audit !== 'function') {
+      if (typeof ctx.sighting?.audit !== 'function') {
         return { pass: null, detail: 'SKIP: focus.audit() missing' };
       }
       faceTarget(m.position, 15, 0.8, -0.03);
-      ctx.focus.toggle(true);
+      ctx.sighting.toggle(true);
       // the machine keeps patrolling, so re-aim while we wait out the 1.5 s
       // activation pulse and the card's 0.4 s crosshair dwell
       let a = null;
@@ -128,7 +128,7 @@ export const GATES = [
       while (performance.now() - t0 < 12000) {
         await new Promise((r) => setTimeout(r, 250));
         faceTarget(m.position, 15, 0.8, -0.03);
-        a = ctx.focus.audit();
+        a = ctx.sighting.audit();
         if (a.cardVisible && (a.partLabels?.length ?? 0) >= 3
           && performance.now() - t0 > 2000) break;
       }
@@ -146,14 +146,14 @@ export const GATES = [
       // and the shells that name those components have to be DRAWN: the part
       // holder is hidden by the rig LOD at this range, so a shell parented to
       // it renders nothing at all (the bug this gate missed in round 1)
-      const shells = [...(ctx.focus._parts?.values?.() ?? [])]
+      const shells = [...(ctx.sighting._parts?.values?.() ?? [])]
         .filter((e) => e.machine === m)
         .reduce((n, e) => n + e.meshes.filter((x) => x.visible && x.parent).length, 0);
       const ov = labelOverlaps();
       // round 2: audit() may not over-report. Every label it publishes has to
       // be a DOM box really inside the frame, and its own coordinates have to
       // be inside the viewport it reports.
-      const drawnLabels = onScreenCount('.hzcf-plabel');
+      const drawnLabels = onScreenCount('.calf-plabel');
       const vp = a.viewport ?? { w: innerWidth, h: innerHeight };
       const strayCoords = labels.filter(
         (l) => !(l.x >= 0 && l.x <= vp.w && l.y >= 0 && l.y <= vp.h));
@@ -188,7 +188,7 @@ export const GATES = [
     assert: `(async () => {
       ${FACE}${PLACE_MACHINE}${KILL}${CRATE}${OVERLAPS}${ON_SCREEN}
       const ctx = __CTX__;
-      if (typeof ctx.focus?.audit !== 'function') {
+      if (typeof ctx.sighting?.audit !== 'function') {
         return { pass: null, detail: 'SKIP: focus.audit() missing' };
       }
       const crate = crateEntry();
@@ -219,11 +219,11 @@ export const GATES = [
       const mid = { x: (cx + m.position.x) / 2, z: (cz + m.position.z) / 2 };
       const ang = Math.atan2(mid.x - cx, mid.z - cz);
       faceTarget(mid, 11, ang + Math.PI, -0.16);
-      ctx.focus.toggle(false);
-      ctx.focus.toggle(true);
+      ctx.sighting.toggle(false);
+      ctx.sighting.toggle(true);
       await new Promise((r) => setTimeout(r, 1900));
 
-      const a = ctx.focus.audit();
+      const a = ctx.sighting.audit();
       const reveals = a.reveals ?? [];
       const loots = reveals.filter((r) => r.kind === 'LOOT');
       const wreckRow = loots.find((r) => /WRECK/.test(r.name || ''));
@@ -231,8 +231,8 @@ export const GATES = [
       // Every reveal must be a real DOM element MEASURED inside the frame.
       // Round 1 filtered on offsetParent, which an element at x = 2407 also
       // passes, so the assertion was vacuous on exactly the axis it claimed.
-      const drawn = onScreenCount('.hzcf-reveal');
-      const shown = [...document.querySelectorAll('.hzcf-reveal')]
+      const drawn = onScreenCount('.calf-reveal');
+      const shown = [...document.querySelectorAll('.calf-reveal')]
         .filter((el) => el.style.display !== 'none' && el.offsetParent !== null).length;
       const vp = a.viewport ?? { w: innerWidth, h: innerHeight };
       const stray = reveals.filter(
@@ -299,7 +299,7 @@ export const GATES = [
       // behind Aloy's head — still inside the crosshair cone, so the card and
       // the component labels stay up
       ctx.player.camYaw = ang + 0.17;
-      ctx.focus.toggle(true);
+      ctx.sighting.toggle(true);
       // Hold the aim until the scan card is actually up: the card needs the
       // machine inside the crosshair cone for its 0.4 s dwell, and one frame
       // of drift during the settle window loses it. Framing, not grading —
@@ -309,7 +309,7 @@ export const GATES = [
         await new Promise((r) => setTimeout(r, 200));
         faceTarget(m.position, 15, ang, -0.12);
         ctx.player.camYaw = ang + 0.17;
-        const a2 = ctx.focus.audit();
+        const a2 = ctx.sighting.audit();
         if (a2.cardVisible && (a2.partLabels?.length ?? 0) >= 3) break;
       }
       return m.kind;

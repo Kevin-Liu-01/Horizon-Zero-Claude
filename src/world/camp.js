@@ -3,9 +3,10 @@ import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js
 import { buildSettlement } from './props/settlement.js';
 import { buildNpcCrowd, ROSTER } from './props/npcs.js';
 import { installNpcs } from './npc/npc.js';
+import { REST_SITE } from './island/sites.js';
 
 /**
- * Hunter camp at (22, 30) — the respawn point. Campfire with shader-billboard
+ * Hunter camp at `REST_SITE` — the respawn point. Campfire with shader-billboard
  * flames/embers/smoke, flickering warm point light (the single extra light,
  * shadow-free), the static NPC by the fire, hide tents on A-frame poles,
  * crates, a weapon rack with spears and machine-part trophies.
@@ -21,7 +22,7 @@ import { installNpcs } from './npc/npc.js';
  * `props/` is this lane's directory. See `_buildSettlement` / `_placeNpcs`.
  */
 
-const FIRE_X = 22, FIRE_Z = 30;
+const FIRE_X = REST_SITE.x, FIRE_Z = REST_SITE.z;
 
 // Deterministic rng so screenshots are reproducible between runs.
 function makeRng(seed) {
@@ -257,7 +258,7 @@ export class Camp {
     const p = ctx.player;
     if (p) {
       p.health = p.maxHealth ?? p.health;
-      p.pouch = p.maxPouch ?? p.pouch;
+      p.gourd = p.maxGourd ?? p.gourd;
       ctx.events?.emit?.('player-hurt', { health: p.health, max: p.maxHealth });
     }
     prog?.save?.('campfire');

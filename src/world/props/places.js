@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { REST_SITE } from '../island/sites.js';
 import {
   SimplexNoise, mulberry32, composeMat, tint, paintRust, paintConcrete, paintRock,
   rustTube, tube, bake, materials, roughen,
@@ -855,7 +856,7 @@ export class Places {
     const B = Places.buckets();
 
     // the axis: the mouth faces the hunter camp, the chamber is up the hill
-    const YAW = Math.atan2(22 - X, 30 - Z);           // toward the camp
+    const YAW = Math.atan2(REST_SITE.x - X, REST_SITE.z - Z);           // toward the camp
     const fx = Math.sin(YAW), fz = Math.cos(YAW);     // unit, mouth-ward
     /** local (u = lateral, v = along the axis, +v toward the mouth) -> world */
     const at = (u, v) => [X + fx * v - fz * u, Z + fz * v + fx * u];
@@ -1178,7 +1179,7 @@ export class Places {
 
     /* ------------------------- the ring wall ---------------------------- */
     const R = 21;
-    const ENTRY_A = Math.atan2(22 - X, 30 - Z);   // facing the camp
+    const ENTRY_A = Math.atan2(REST_SITE.x - X, REST_SITE.z - Z);   // facing the camp
     for (let i = 0; i < 46; i++) {
       const a = (i / 46) * Math.PI * 2;
       const da = Math.abs(((a - (Math.PI / 2 - ENTRY_A) + Math.PI * 3) % (Math.PI * 2)) - Math.PI);

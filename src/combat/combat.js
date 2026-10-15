@@ -19,11 +19,11 @@ import { CombatFeedback } from './feedback.js';
  *   craftAmmo(ammoId?), recipeStatus(ammoId), ammoCount(id), ammo {id:n}
  *   arrowCounts (legacy alias of ammo), arrowType (legacy)
  *   drawStrength 0..1, aimPoint, bow (active model), ammoDefs
- *   concentration { active, gauge 0..1 }
+ *   steady { active, gauge 0..1 }
  *   grantWeapon('disc-launcher', shots)
  * Events: 'arrow-fired' {type, drawStrength, weapon}, 'arrow-hit' {...},
  *   'weapon-switch' {weapon}, 'ammo-crafted' {ammo, n},
- *   'concentration-start' / 'concentration-end'.
+ *   'steady-start' / 'steady-end'.
  */
 
 /**
@@ -326,7 +326,7 @@ export class Combat {
     // --- public state
     this.drawStrength = 0;                     // 0..1, animator reads this
     this.aimPoint = new THREE.Vector3();       // camera-ray world hit
-    this.concentration = { active: false, gauge: 1 };
+    this.steady = { active: false, gauge: 1 };
     /**
      * `combat-no-nock-delay` + the character-lane handoff
      * (docs/ROUND4-CHARACTER.md §9.5). `nockLanded` is FALSE while Aloy is
@@ -705,9 +705,9 @@ export class Combat {
     this.craft.progress = 0;
     this.craft.holding = false;
     this.traps?.clearPlacement?.();
-    if (this.concentration.active) {
-      this.concentration.active = false;
-      this.ctx.events.emit('concentration-end', { gauge: this.concentration.gauge });
+    if (this.steady.active) {
+      this.steady.active = false;
+      this.ctx.events.emit('steady-end', { gauge: this.steady.gauge });
     }
     if (this._disc) this._dropDisc(true);
     // unconditional: death must never inherit concentration/hitstop slow-mo
@@ -975,12 +975,12 @@ export class Combat {
       this._hsActive = false;
       e.requestTimeScale('hitstop', null);
     }
-    const target = this.concentration.active ? CONC_TIMESCALE : 1;
-    if (this.concentration.active || this._concTs < 0.999) {
+    const target = this.steady.active ? CONC_TIMESCALE : 1;
+    if (this.steady.active || this._concTs < 0.999) {
       this._concTs = Math.abs(this._concTs - target) < 0.004
         ? target
         : THREE.MathUtils.damp(this._concTs, target, 9, realDt);
-      if (!this.concentration.active && this._concTs >= 0.999) {
+      if (!this.steady.active && this._concTs >= 0.999) {
         this._concTs = 1;
         e.requestTimeScale('concentration', null);
       } else {
@@ -1149,7 +1149,7 @@ export class Combat {
     );
   }
 
-  _tsTarget() { return this.concentration.active ? CONC_TIMESCALE : 1; }
+  _tsTarget() { return this.steady.active ? CONC_TIMESCALE : 1; }
 
   /**
    * `combat-concentration-sprint-edge`.
@@ -1168,7 +1168,7 @@ export class Combat {
    * shell-hud's desaturate + cool-tint + vignette veil can ramp with it.
    */
   _updateConcentration(realDt, playing, aiming) {
-    const c = this.concentration;
+    const c = this.steady;
     const code = this.ctx.input.codeFor?.('sprint') || 'ShiftLeft';
     const shiftNow = this.ctx.input.isDown(code) || this.ctx.input.isDown('ShiftLeft');
     const edge = shiftNow && !this._shiftPrev;
@@ -1177,7 +1177,7 @@ export class Combat {
       // arm ONLY on a Shift press that happens while already aiming
       if (edge && playing && aiming && c.gauge > 0.05) {
         c.active = true;
-        this.ctx.events.emit('concentration-start', { gauge: c.gauge });
+        this.ctx.events.emit('steady-start', { gauge: c.gauge });
       } else {
         c.gauge = Math.min(1, c.gauge + realDt / CONC_TIME);
       }
@@ -1187,7 +1187,7 @@ export class Combat {
       if (!held || c.gauge <= 0) {
         c.gauge = Math.max(0, c.gauge);
         c.active = false;
-        this.ctx.events.emit('concentration-end', { gauge: c.gauge });
+        this.ctx.events.emit('steady-end', { gauge: c.gauge });
       }
     }
     this._shiftPrev = shiftNow;
@@ -2348,10 +2348,10 @@ export class Combat {
     const list = this.ctx.interactables?.list;
     if (!Array.isArray(list)) return;
     for (const e of list) {
-      if (!e || e.__hzcWeaponWrapped) continue;
+      if (!e || e.__calWeaponWrapped) continue;
       const wid = e.pickupWeapon ?? e.part?.pickupWeapon ?? e.userData?.pickupWeapon;
       if (wid !== 'disc-launcher') continue;
-      e.__hzcWeaponWrapped = true;
+      e.__calWeaponWrapped = true;
       const orig = e.onInteract;
       const self = this;
       e.onInteract = function wrapped(...args) {

@@ -8,6 +8,7 @@ import {
   northBenchFactor,
 } from './terrain.js';
 import { Props } from './props.js';
+import { REST_SITE } from './island/sites.js';
 
 /**
  * ROUND 4 — lane `world-ground`. Everything that grows on the ground.
@@ -53,7 +54,7 @@ import { Props } from './props.js';
 
 /* ------------------------------- tuning ---------------------------------- */
 const GRASS_MAX_R = 336;          // no grass beyond the playable rim
-const CAMP = { x: 22, z: 30 };
+const CAMP = { x: REST_SITE.x, z: REST_SITE.z };
 // ruin clusters + watchtower (see props.js) — keep trees/bushes from
 // spawning through the structures
 const KEEPOUT = [[-150, -55, 14], [135, -35, 14], [-45, 185, 14], [33, -14, 9]];

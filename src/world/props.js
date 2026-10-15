@@ -11,6 +11,7 @@ import { Rockworks } from './props/rockworks.js';
 import { Activities } from './props/activities.js';
 import { Places } from './props/places.js';
 import { Fauna } from './fauna.js';
+import { REST_SITE } from './island/sites.js';
 
 /**
  * Static world props, all baked at construction into a handful of merged
@@ -30,7 +31,7 @@ import { Fauna } from './fauna.js';
  * anchors, behemoth (-160,90), thunderjaw (30,-220) r 42).
  */
 
-const CAMP = { x: 22, z: 30 };
+const CAMP = { x: REST_SITE.x, z: REST_SITE.z };
 
 function mulberry32(seed) {
   let a = seed >>> 0;

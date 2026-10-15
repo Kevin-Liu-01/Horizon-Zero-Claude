@@ -437,7 +437,7 @@ export class Studio {
      * touched, and the class comes off on exit so the card the studio staged is
      * handed straight back (see `exit()`'s `menus.respawn`).
      */
-    document.body.classList.add('hzc-photo');
+    document.body.classList.add('cal-photo');
     this.lens.active = true;
     this._applyTimeScale();
     this._ui.classList.remove('hidden');
@@ -522,7 +522,7 @@ export class Studio {
     this._guides.classList.add('hidden');
     this.setChromeHidden(false);
     this._canvas().classList.remove('studio-film');
-    document.body.classList.remove('hzc-photo');
+    document.body.classList.remove('cal-photo');
     document.exitPointerLock?.();
     return true;
   }
@@ -980,7 +980,7 @@ export class Studio {
     const url = this._canvas().toDataURL('image/png');
     const a = document.createElement('a');
     a.href = url;
-    a.download = 'hzc-studio-' + Date.now() + '.png';
+    a.download = 'cal-studio-' + Date.now() + '.png';
     a.click();
   }
 

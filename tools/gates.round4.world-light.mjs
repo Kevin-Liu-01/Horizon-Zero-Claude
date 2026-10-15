@@ -340,9 +340,9 @@ export const GATES = [
       const p = ctx.player;
       p.position.set(0, 0, 0); p._snapToGround?.();
       const cy = gy(0, 0) + 3.2;
-      const dens0 = env.u.hzcFogA.value.x;
+      const dens0 = env.u.calFogA.value.x;
       const fogDens0 = ctx.scene.fog.density;
-      const setDens = (d) => { env.u.hzcFogA.value.x = d; ctx.scene.fog.density = d; };
+      const setDens = (d) => { env.u.calFogA.value.x = d; ctx.scene.fog.density = d; };
 
       const rows = [];
       for (const B of [0.4, 1.3, 1.9, 2.6, 3.4, 4.2, 4.9, 5.6]) {

@@ -1,6 +1,8 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { HERBS, itemDef } from './items.js';
+import { REST_SITE } from '../world/island/sites.js';
+import { PLAY_RADIUS, EXTENT } from '../world/island/extent.js';
 
 /**
  * World gather nodes (docs/research/mechanics.md §5-6: "the rhythm is fight,
@@ -23,7 +25,7 @@ import { HERBS, itemDef } from './items.js';
  * clearing + steep rock. Zero per-frame allocations.
  */
 
-const CAMP = { x: 22, z: 30 };
+const CAMP = { x: REST_SITE.x, z: REST_SITE.z };
 const CAMP_EXCLUDE = 9;      // spec: none in the camp clearing (min 7 m)
 const RESPAWN_S = 120;
 
@@ -101,7 +103,7 @@ export class Gather {
   _ok(x, z, maxH, maxSlope) {
     const t = this.ctx.terrain;
     if (Math.hypot(x - CAMP.x, z - CAMP.z) < CAMP_EXCLUDE) return false;
-    if (Math.hypot(x, z) > 315) return false;
+    if (Math.hypot(x, z) > PLAY_RADIUS + EXTENT.gatherRim) return false;
     const h = t.getHeight(x, z);
     if (h > maxH) return false;
     const gx = (t.getHeight(x + 0.8, z) - h) / 0.8;
@@ -446,13 +448,13 @@ export class Gather {
       const variant = node.variant ?? HERBS[1];
       const def = itemDef(variant.id);
       const p = ctx.player;
-      const room = p ? Math.max(0, (p.maxPouch ?? 100) - p.pouch) : 0;
+      const room = p ? Math.max(0, (p.maxGourd ?? 100) - p.gourd) : 0;
       const filled = Math.min(room, variant.pouch);
-      if (filled > 0) p?.addPouch?.(filled);
+      if (filled > 0) p?.addGourd?.(filled);
       ctx.inventory?.add?.(variant.id, 1);
       ctx.events.emit('herb-gathered', {
         id: variant.id, name: def.name, pouch: filled, value: variant.pouch,
-        total: Math.round(p?.pouch ?? 0),
+        total: Math.round(p?.gourd ?? 0),
       });
     } else if (node.kind === 'wood') {
       const n = 2 + ((node.index * 7919) % 3); // deterministic 2..4

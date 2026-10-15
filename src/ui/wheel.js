@@ -128,7 +128,7 @@ export class WeaponWheel {
     this._step = 360 / n;
 
     const root = document.createElement('div');
-    root.id = 'hzc-wheel';
+    root.id = 'cal-wheel';
 
     // ---- ring chrome: one hover arc + one ammo-arc group per sector
     const pad = 4;                       // degrees of gap between sectors

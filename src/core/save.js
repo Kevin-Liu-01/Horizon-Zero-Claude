@@ -45,12 +45,12 @@
  * Events: `save-written`, `save-loaded`, `save-error`, `checkpoint-loaded`.
  */
 
-export const SAVE_VERSION = 4;
+export const SAVE_VERSION = 5;   // Round 5: slots moved to cal.*.v5; a pre-Round-5 save is never read
 
 export const SLOT = {
-  main: 'hzc.save.v4',
-  checkpoint: 'hzc.checkpoint.v4',
-  meta: 'hzc.meta.v4',
+  main: 'cal.save.v5',
+  checkpoint: 'cal.checkpoint.v5',
+  meta: 'cal.meta.v5',
 };
 
 /* -------------------------------------------------------------------------- */
@@ -63,7 +63,7 @@ function store() {
     const s = globalThis.localStorage;
     if (!s) return null;
     // Presence is not permission: Safari private mode throws on setItem only.
-    const probe = '__hzc_probe__';
+    const probe = '__cal_probe__';
     s.setItem(probe, '1');
     s.removeItem(probe);
     return s;
@@ -178,8 +178,8 @@ export class SaveSystem {
         heading: round(p.heading ?? 0, 4),
         health: round(p.health, 2),
         maxHealth: round(p.maxHealth, 2),
-        pouch: round(p.pouch, 2),
-        maxPouch: round(p.maxPouch, 2),
+        pouch: round(p.gourd, 2),
+        maxPouch: round(p.maxGourd, 2),
       } : null,
       prog: prog ? prog.serialize() : null,
       inventory: inv,
@@ -325,9 +325,9 @@ export class SaveSystem {
         if (!p || !s) return;
         p.maxHealth = s.maxHealth ?? p.maxHealth;
         p.health = Math.min(p.maxHealth, s.health ?? p.maxHealth);
-        p.maxPouch = s.maxPouch ?? p.maxPouch;
+        p.maxGourd = s.maxPouch ?? p.maxGourd;
         // progression-019: NO free refill. The pouch is exactly what it was.
-        p.pouch = Math.max(0, Math.min(p.maxPouch, s.pouch ?? 0));
+        p.gourd = Math.max(0, Math.min(p.maxGourd, s.pouch ?? 0));
         p.position.set(s.x ?? p.position.x, s.y ?? p.position.y, s.z ?? p.position.z);
         if (Number.isFinite(s.camYaw)) p.camYaw = s.camYaw;
         if (Number.isFinite(s.camPitch)) p.camPitch = s.camPitch;

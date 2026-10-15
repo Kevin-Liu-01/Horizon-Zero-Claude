@@ -86,7 +86,7 @@ for (const p of pairs) {
 }
 
 writeFileSync('shots/compare/index.html', `<!doctype html><meta charset="utf8">
-<title>HZC Round 3 — before/after</title>
+<title>CAL Round 3 — before/after</title>
 <body style="background:#101418;color:#EFE6D5;font-family:Helvetica;margin:0;padding:24px">
 <h1 style="font-weight:300;letter-spacing:6px">HORIZON ZERO CLAUDE — ROUND 3 COMPARISONS</h1>
 ${made.map((m) => `<img src="${m.file}" style="width:100%;max-width:1400px;display:block;margin:0 0 28px">`).join('\n')}

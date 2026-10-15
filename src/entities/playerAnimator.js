@@ -627,7 +627,7 @@ export class PlayerAnimator {
     // the two-handed `Interact`.
     ctx.events?.on('item-gained', () => this._startAction('pickup', 0.85));
     ctx.events?.on('herb-gathered', () => this._startAction('pickup', 0.85));
-    for (const ev of ['override-node', 'supply-cache', 'datapoint-found']) {
+    for (const ev of ['override-node', 'cache-found', 'fieldbook-found']) {
       ctx.events?.on(ev, () => this._startAction('interact', 1.1));
     }
     ctx.events?.on('arrow-fired', () => {
@@ -2864,7 +2864,7 @@ export class PlayerAnimator {
     }
 
     // breathing sway (steadier under Concentration) + draw-hold tremble
-    const conc = this.ctx.combat?.concentration?.active ? 0.35 : 1;
+    const conc = this.ctx.combat?.steady?.active ? 0.35 : 1;
     const trem = smoothstep(this._holdT, 3, 4.6) * aimW;
     _dA.y += (this._brNow - 0.5) * 0.011 * conc + trem * 0.006 * Math.sin(t * 43);
     _dA.applyAxisAngle(Y_AXIS,

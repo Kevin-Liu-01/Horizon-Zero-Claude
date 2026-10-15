@@ -13,7 +13,7 @@ import { MeshoptDecoder } from 'three/examples/jsm/libs/meshopt_decoder.module.j
  */
 const SPECS = {
   // yOffset: skirt tassels hang below the feet, so bbox-min grounding floats her
-  aloy:       { url: '/models/aloy.glb',       targetHeight: 1.72, yaw: 0, yOffset: -0.055 },
+  hero:       { url: '/models/aloy.glb',       targetHeight: 1.72, yaw: 0, yOffset: -0.055 },
   watcher:    { url: '/models/watcher.glb',    targetHeight: 2.1,  yaw: 0 },
   // canon scale: sawtooth "towers over Aloy", thunderjaw is 9m tall / 24m long
   sawtooth:   { url: '/models/sawtooth.glb',   targetHeight: 2.75, yaw: 0 },

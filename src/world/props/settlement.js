@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { REST_SITE } from '../island/sites.js';
 import {
   SimplexNoise, mulberry32, composeMat, tint, tube, bake, materials, roughen,
 } from './kit.js';
@@ -6,7 +7,7 @@ import {
 /**
  * ROUND 4 — `world-12` (2-tent camp, 1 static NPC) and gate `V35-settlement`.
  *
- * The settlement build-out for the hunter camp at (22, 30): a palisade that
+ * The settlement build-out for the hunter camp at `REST_SITE`: a palisade that
  * follows the shoulder of the knoll, a gate with a walkway over it, six new
  * structures on top of the two Round-2 tents, four braziers, and the working
  * dressing (drying racks, a tanning frame, a trough, a totem, spear stands)
@@ -40,7 +41,7 @@ import {
  * and flame cones alone, which cost nothing.
  */
 
-const FIRE_X = 22, FIRE_Z = 30;
+const FIRE_X = REST_SITE.x, FIRE_Z = REST_SITE.z;
 
 /**
  * Palisade gates, as (bearing in radians, half-width in radians).

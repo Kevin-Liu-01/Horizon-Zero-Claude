@@ -4,7 +4,7 @@
  * Everything `progression` needs on screen that `shell-hud` and `shell-menus`
  * (Wave 3) have not built yet, kept deliberately in its own DOM island:
  *
- *   #hzc-prog  ─ never a child of #hud, never styled from style.css or
+ *   #cal-prog  ─ never a child of #hud, never styled from style.css or
  *                hud.css, and it injects its own <style> once. No other lane's
  *                file is touched, and when shell-hud ships the real XP bar and
  *                banner queue this whole layer can be retired by deleting one
@@ -27,26 +27,26 @@
 
 import { itemDef } from '../items/items.js';
 
-const STYLE_ID = 'hzc-prog-style';
+const STYLE_ID = 'cal-prog-style';
 
 const CSS = `
-#hzc-prog {
+#cal-prog {
   position: fixed; inset: 0; pointer-events: none; z-index: 60;
   font-family: var(--font, 'Rajdhani', system-ui, sans-serif);
-  color: var(--hzc-text, #efe6d5);
+  color: var(--cal-text, #efe6d5);
   --pg-gold: #c8a24b;
-  --pg-teal: var(--hzc-accent, #59c1c6);
+  --pg-teal: var(--cal-accent, #59c1c6);
   --pg-panel: linear-gradient(168deg, rgba(13,18,22,0.94), rgba(8,11,14,0.97));
 }
-#hzc-prog .pg-hidden { display: none !important; }
+#cal-prog .pg-hidden { display: none !important; }
 
 /* ------------------------------ bottom-left strip ------------------------- */
-#hzc-prog .pg-strip {
+#cal-prog .pg-strip {
   position: absolute; left: 30px; bottom: 26px; width: 288px;
   pointer-events: none;
 }
-#hzc-prog .pg-xprow { display: flex; align-items: center; gap: 9px; }
-#hzc-prog .pg-pip {
+#cal-prog .pg-xprow { display: flex; align-items: center; gap: 9px; }
+#cal-prog .pg-pip {
   width: 30px; height: 30px; flex: 0 0 30px;
   display: flex; align-items: center; justify-content: center;
   font-family: var(--font-display, 'Michroma', sans-serif);
@@ -54,39 +54,39 @@ const CSS = `
   clip-path: polygon(50% 0, 100% 50%, 50% 100%, 0 50%);
   text-shadow: none;
 }
-#hzc-prog .pg-xpwrap { flex: 1 1 auto; }
-#hzc-prog .pg-xplabel {
+#cal-prog .pg-xpwrap { flex: 1 1 auto; }
+#cal-prog .pg-xplabel {
   font-size: 9.5px; letter-spacing: 0.26em; text-transform: uppercase;
   color: rgba(239,230,213,0.62); margin-bottom: 3px;
   display: flex; justify-content: space-between;
 }
-#hzc-prog .pg-xpbar {
+#cal-prog .pg-xpbar {
   position: relative; height: 5px;
   background: rgba(239,230,213,0.13);
   border: 1px solid rgba(239,230,213,0.22);
 }
-#hzc-prog .pg-xpfill {
+#cal-prog .pg-xpfill {
   position: absolute; left: 0; top: 0; bottom: 0; width: 0%;
   background: linear-gradient(90deg, var(--pg-gold), #f0d590);
   transition: width 0.35s cubic-bezier(0.2,0.7,0.3,1);
 }
-#hzc-prog .pg-points {
+#cal-prog .pg-points {
   margin-top: 5px; font-size: 10px; letter-spacing: 0.2em;
   color: var(--pg-teal); text-transform: uppercase;
 }
-#hzc-prog .pg-track {
+#cal-prog .pg-track {
   margin-top: 9px; padding-left: 10px;
   border-left: 2px solid var(--pg-gold);
 }
-#hzc-prog .pg-track-title {
+#cal-prog .pg-track-title {
   font-size: 10px; letter-spacing: 0.24em; text-transform: uppercase;
   color: var(--pg-gold);
 }
-#hzc-prog .pg-track-obj {
+#cal-prog .pg-track-obj {
   font-size: 12.5px; letter-spacing: 0.05em; color: rgba(239,230,213,0.9);
   margin-top: 2px;
 }
-#hzc-prog .pg-track-count { color: var(--pg-teal); }
+#cal-prog .pg-track-count { color: var(--pg-teal); }
 
 /* ----------------------------- trial clock -------------------------------
  * HZD puts the Hunting Ground clock right under the objective, in the frame's
@@ -96,7 +96,7 @@ const CSS = `
  * hides that whole block) — it is its own node, and it stands down on its own
  * the moment ctx.hud.trialClock appears.
  */
-#hzc-prog .pg-trial {
+#cal-prog .pg-trial {
   position: absolute; left: 28px; top: 158px; width: 236px;
   pointer-events: none;
   padding: 9px 12px 10px;
@@ -108,62 +108,62 @@ const CSS = `
   opacity: 0; transform: translateY(-6px);
   transition: opacity 0.2s ease, transform 0.2s ease;
 }
-#hzc-prog .pg-trial.show { opacity: 1; transform: none; }
-#hzc-prog .pg-trial-kicker {
+#cal-prog .pg-trial.show { opacity: 1; transform: none; }
+#cal-prog .pg-trial-kicker {
   font-size: 9px; letter-spacing: 0.3em; text-transform: uppercase;
   color: var(--pg-gold);
 }
-#hzc-prog .pg-trial-row {
+#cal-prog .pg-trial-row {
   display: flex; align-items: baseline; justify-content: space-between; gap: 10px;
   margin-top: 3px;
 }
-#hzc-prog .pg-trial-time {
+#cal-prog .pg-trial-time {
   font-family: var(--font-display, 'Michroma', sans-serif);
   font-size: 23px; line-height: 1.1; color: #FAF9F5;
   font-variant-numeric: tabular-nums;
   text-shadow: 0 2px 14px rgba(0,0,0,0.8);
 }
-#hzc-prog .pg-trial-count {
+#cal-prog .pg-trial-count {
   font-size: 13px; letter-spacing: 0.1em; color: var(--pg-teal);
   font-variant-numeric: tabular-nums;
 }
-#hzc-prog .pg-trial-label {
+#cal-prog .pg-trial-label {
   font-size: 10.5px; letter-spacing: 0.05em; margin-top: 3px;
   color: rgba(239,230,213,0.76);
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 /* the last thirty seconds read as a warning, the way the HZD clock does */
-#hzc-prog .pg-trial.urgent { border-color: rgba(217,84,63,0.75); border-left-color: #d9543f; }
-#hzc-prog .pg-trial.urgent .pg-trial-kicker { color: #d9543f; }
-#hzc-prog .pg-trial.urgent .pg-trial-time { color: #f0a08c; animation: pgTrialPulse 1s ease-in-out infinite; }
+#cal-prog .pg-trial.urgent { border-color: rgba(217,84,63,0.75); border-left-color: #d9543f; }
+#cal-prog .pg-trial.urgent .pg-trial-kicker { color: #d9543f; }
+#cal-prog .pg-trial.urgent .pg-trial-time { color: #f0a08c; animation: pgTrialPulse 1s ease-in-out infinite; }
 @keyframes pgTrialPulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.55; } }
 
 /* -------------------------------- banners --------------------------------- */
-#hzc-prog .pg-banners {
+#cal-prog .pg-banners {
   position: absolute; left: 50%; top: 21%; transform: translateX(-50%);
   width: min(640px, 74vw); text-align: center;
 }
-#hzc-prog .pg-banner {
+#cal-prog .pg-banner {
   margin-bottom: 12px; opacity: 0;
   animation: pgBanner 3.4s cubic-bezier(0.2,0.8,0.3,1) forwards;
 }
-#hzc-prog .pg-banner .b-title {
+#cal-prog .pg-banner .b-title {
   font-family: var(--font-display, 'Michroma', sans-serif);
   font-size: 21px; letter-spacing: 0.34em; text-indent: 0.34em;
   color: #FAF9F5; text-shadow: 0 2px 22px rgba(0,0,0,0.8);
 }
-#hzc-prog .pg-banner .b-detail {
+#cal-prog .pg-banner .b-detail {
   margin-top: 6px; font-size: 12px; letter-spacing: 0.28em; text-indent: 0.28em;
   text-transform: uppercase; color: rgba(239,230,213,0.72);
 }
-#hzc-prog .pg-banner .b-rule {
+#cal-prog .pg-banner .b-rule {
   width: 190px; height: 1px; margin: 10px auto 0;
   background: linear-gradient(90deg, transparent, var(--pg-gold), transparent);
 }
-#hzc-prog .pg-banner.k-level .b-title { color: var(--pg-gold); }
-#hzc-prog .pg-banner.k-quest-done .b-title, #hzc-prog .pg-banner.k-victory .b-title { color: var(--pg-teal); }
-#hzc-prog .pg-banner.k-discovery .b-title { color: var(--pg-teal); }
-#hzc-prog .pg-banner.k-death .b-title { color: #d9543f; }
+#cal-prog .pg-banner.k-level .b-title { color: var(--pg-gold); }
+#cal-prog .pg-banner.k-quest-done .b-title, #cal-prog .pg-banner.k-victory .b-title { color: var(--pg-teal); }
+#cal-prog .pg-banner.k-discovery .b-title { color: var(--pg-teal); }
+#cal-prog .pg-banner.k-death .b-title { color: #d9543f; }
 @keyframes pgBanner {
   0% { opacity: 0; transform: translateY(12px) scale(0.985); }
   9% { opacity: 1; transform: translateY(0) scale(1); }
@@ -172,11 +172,11 @@ const CSS = `
 }
 
 /* --------------------------------- toasts --------------------------------- */
-#hzc-prog .pg-toasts {
+#cal-prog .pg-toasts {
   position: absolute; left: 50%; top: 34%; transform: translateX(-50%);
   text-align: center;
 }
-#hzc-prog .pg-toast {
+#cal-prog .pg-toast {
   font-family: var(--font-display, 'Michroma', sans-serif);
   font-size: 15px; letter-spacing: 0.16em; color: var(--pg-gold);
   text-shadow: 0 2px 14px rgba(0,0,0,0.8);
@@ -189,14 +189,14 @@ const CSS = `
 }
 
 /* -------------------------------- overlays -------------------------------- */
-#hzc-prog .pg-overlay {
+#cal-prog .pg-overlay {
   position: absolute; inset: 0; pointer-events: auto;
   background: radial-gradient(ellipse at 50% 45%, rgba(6,9,12,0.62), rgba(6,9,12,0.9));
   display: flex; align-items: center; justify-content: center;
   opacity: 0; visibility: hidden; transition: opacity 0.16s ease;
 }
-#hzc-prog .pg-overlay.show { opacity: 1; visibility: visible; }
-#hzc-prog .pg-panel {
+#cal-prog .pg-overlay.show { opacity: 1; visibility: visible; }
+#cal-prog .pg-panel {
   position: relative;
   background: var(--pg-panel);
   border: 1px solid rgba(239,230,213,0.18);
@@ -205,27 +205,27 @@ const CSS = `
   display: flex; flex-direction: column;
   clip-path: polygon(16px 0, 100% 0, 100% calc(100% - 16px), calc(100% - 16px) 100%, 0 100%, 0 16px);
 }
-#hzc-prog .pg-panel.narrow { width: min(560px, 88vw); }
-#hzc-prog .pg-head {
+#cal-prog .pg-panel.narrow { width: min(560px, 88vw); }
+#cal-prog .pg-head {
   font-family: var(--font-display, 'Michroma', sans-serif);
   font-size: 13px; letter-spacing: 0.5em; text-indent: 0.5em;
   color: var(--pg-gold); padding-bottom: 12px;
   border-bottom: 1px solid rgba(239,230,213,0.16);
 }
-#hzc-prog .pg-sub {
+#cal-prog .pg-sub {
   font-size: 11px; letter-spacing: 0.2em; color: rgba(239,230,213,0.55);
   text-transform: uppercase; margin-top: 6px;
 }
-#hzc-prog .pg-body { overflow-y: auto; padding: 14px 4px 4px; flex: 1 1 auto; }
-#hzc-prog .pg-body::-webkit-scrollbar { width: 6px; }
-#hzc-prog .pg-body::-webkit-scrollbar-thumb { background: rgba(239,230,213,0.22); }
-#hzc-prog .pg-foot {
+#cal-prog .pg-body { overflow-y: auto; padding: 14px 4px 4px; flex: 1 1 auto; }
+#cal-prog .pg-body::-webkit-scrollbar { width: 6px; }
+#cal-prog .pg-body::-webkit-scrollbar-thumb { background: rgba(239,230,213,0.22); }
+#cal-prog .pg-foot {
   padding-top: 12px; margin-top: 8px;
   border-top: 1px solid rgba(239,230,213,0.14);
   font-size: 10.5px; letter-spacing: 0.2em; text-transform: uppercase;
   color: rgba(239,230,213,0.5); display: flex; gap: 18px; flex-wrap: wrap;
 }
-#hzc-prog kbd {
+#cal-prog kbd {
   font-family: var(--font, sans-serif); font-weight: 700; font-size: 10px;
   border: 1px solid rgba(239,230,213,0.4); border-bottom-width: 2px;
   padding: 1px 6px 0; margin-right: 5px; color: #efe6d5;
@@ -233,38 +233,38 @@ const CSS = `
 }
 
 /* quest rows */
-#hzc-prog .pg-quest {
+#cal-prog .pg-quest {
   border-left: 2px solid rgba(239,230,213,0.2);
   padding: 10px 0 12px 14px; margin-bottom: 12px; cursor: pointer;
 }
-#hzc-prog .pg-quest:hover { background: rgba(239,230,213,0.04); }
-#hzc-prog .pg-quest.tracked { border-left-color: var(--pg-gold); }
-#hzc-prog .pg-quest.done { opacity: 0.5; border-left-color: var(--pg-teal); }
-#hzc-prog .pg-q-title {
+#cal-prog .pg-quest:hover { background: rgba(239,230,213,0.04); }
+#cal-prog .pg-quest.tracked { border-left-color: var(--pg-gold); }
+#cal-prog .pg-quest.done { opacity: 0.5; border-left-color: var(--pg-teal); }
+#cal-prog .pg-q-title {
   font-size: 15px; letter-spacing: 0.1em; text-transform: uppercase; color: #FAF9F5;
   display: flex; align-items: baseline; gap: 10px;
 }
-#hzc-prog .pg-q-tag {
+#cal-prog .pg-q-tag {
   font-size: 9px; letter-spacing: 0.2em; padding: 1px 6px;
   border: 1px solid currentColor; color: var(--pg-teal);
 }
-#hzc-prog .pg-q-tag.main { color: var(--pg-gold); }
-#hzc-prog .pg-q-sum { font-size: 12px; color: rgba(239,230,213,0.6); margin: 4px 0 7px; }
-#hzc-prog .pg-obj {
+#cal-prog .pg-q-tag.main { color: var(--pg-gold); }
+#cal-prog .pg-q-sum { font-size: 12px; color: rgba(239,230,213,0.6); margin: 4px 0 7px; }
+#cal-prog .pg-obj {
   font-size: 12.5px; color: rgba(239,230,213,0.85);
   display: flex; gap: 8px; padding: 1.5px 0;
 }
-#hzc-prog .pg-obj .mark { color: rgba(239,230,213,0.4); width: 13px; }
-#hzc-prog .pg-obj.done { color: rgba(239,230,213,0.42); text-decoration: line-through; }
-#hzc-prog .pg-obj.done .mark { color: var(--pg-teal); text-decoration: none; }
-#hzc-prog .pg-obj.next .mark { color: var(--pg-gold); }
-#hzc-prog .pg-rewards {
+#cal-prog .pg-obj .mark { color: rgba(239,230,213,0.4); width: 13px; }
+#cal-prog .pg-obj.done { color: rgba(239,230,213,0.42); text-decoration: line-through; }
+#cal-prog .pg-obj.done .mark { color: var(--pg-teal); text-decoration: none; }
+#cal-prog .pg-obj.next .mark { color: var(--pg-gold); }
+#cal-prog .pg-rewards {
   margin-top: 7px; font-size: 11px; letter-spacing: 0.12em;
   color: var(--pg-gold); text-transform: uppercase;
 }
 
 /* buttons */
-#hzc-prog .pg-btn {
+#cal-prog .pg-btn {
   font-family: var(--font, sans-serif); font-weight: 600;
   font-size: 12px; letter-spacing: 0.22em; text-transform: uppercase;
   color: #efe6d5; background: rgba(12,16,20,0.6);
@@ -273,54 +273,54 @@ const CSS = `
   clip-path: polygon(8px 0, 100% 0, 100% calc(100% - 8px), calc(100% - 8px) 100%, 0 100%, 0 8px);
   transition: background 0.14s ease, border-color 0.14s ease;
 }
-#hzc-prog .pg-btn:hover { background: rgba(200,162,75,0.18); border-color: var(--pg-gold); }
-#hzc-prog .pg-btn:disabled { opacity: 0.34; cursor: default; }
-#hzc-prog .pg-btn.primary { border-color: var(--pg-gold); }
-#hzc-prog .pg-row { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 14px; }
+#cal-prog .pg-btn:hover { background: rgba(200,162,75,0.18); border-color: var(--pg-gold); }
+#cal-prog .pg-btn:disabled { opacity: 0.34; cursor: default; }
+#cal-prog .pg-btn.primary { border-color: var(--pg-gold); }
+#cal-prog .pg-row { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 14px; }
 
 /* dialogue */
-#hzc-prog .pg-dlg-name {
+#cal-prog .pg-dlg-name {
   font-family: var(--font-display, 'Michroma', sans-serif);
   font-size: 16px; letter-spacing: 0.3em; color: var(--pg-gold);
 }
-#hzc-prog .pg-dlg-title { font-size: 11px; letter-spacing: 0.24em; color: rgba(239,230,213,0.5); text-transform: uppercase; margin-top: 4px; }
-#hzc-prog .pg-dlg-line {
+#cal-prog .pg-dlg-title { font-size: 11px; letter-spacing: 0.24em; color: rgba(239,230,213,0.5); text-transform: uppercase; margin-top: 4px; }
+#cal-prog .pg-dlg-line {
   font-size: 16px; line-height: 1.55; color: rgba(239,230,213,0.92);
   margin: 18px 0 6px; font-style: italic;
 }
-#hzc-prog .pg-choice {
+#cal-prog .pg-choice {
   display: block; width: 100%; text-align: left; margin-top: 8px;
   font-family: var(--font, sans-serif); font-size: 13.5px; letter-spacing: 0.06em;
   color: #efe6d5; background: rgba(239,230,213,0.05);
   border: 1px solid rgba(239,230,213,0.18); border-left-width: 3px;
   padding: 9px 14px; cursor: pointer;
 }
-#hzc-prog .pg-choice:hover { background: rgba(200,162,75,0.16); border-left-color: var(--pg-gold); }
-#hzc-prog .pg-choice .hint { color: var(--pg-teal); font-size: 11px; letter-spacing: 0.14em; margin-left: 8px; }
+#cal-prog .pg-choice:hover { background: rgba(200,162,75,0.16); border-left-color: var(--pg-gold); }
+#cal-prog .pg-choice .hint { color: var(--pg-teal); font-size: 11px; letter-spacing: 0.14em; margin-left: 8px; }
 
 /* trade */
-#hzc-prog .pg-trade { display: grid; grid-template-columns: 1fr 1fr; gap: 22px; }
-#hzc-prog .pg-trade h4 {
+#cal-prog .pg-trade { display: grid; grid-template-columns: 1fr 1fr; gap: 22px; }
+#cal-prog .pg-trade h4 {
   font-size: 10px; letter-spacing: 0.3em; text-transform: uppercase;
   color: var(--pg-gold); font-weight: 400; margin-bottom: 8px;
   border-bottom: 1px solid rgba(239,230,213,0.14); padding-bottom: 6px;
 }
-#hzc-prog .pg-item {
+#cal-prog .pg-item {
   display: flex; align-items: center; gap: 10px; padding: 6px 8px; cursor: pointer;
   border: 1px solid transparent;
 }
-#hzc-prog .pg-item:hover { background: rgba(239,230,213,0.06); border-color: rgba(239,230,213,0.18); }
-#hzc-prog .pg-item .glyph { width: 18px; text-align: center; font-size: 15px; }
-#hzc-prog .pg-item .nm { flex: 1 1 auto; font-size: 13px; }
-#hzc-prog .pg-item .qty { font-size: 11px; color: rgba(239,230,213,0.5); }
-#hzc-prog .pg-item .pr { font-size: 12px; color: var(--pg-gold); min-width: 46px; text-align: right; }
-#hzc-prog .pg-item.poor .pr { color: #d9543f; }
-#hzc-prog .pg-purse {
+#cal-prog .pg-item:hover { background: rgba(239,230,213,0.06); border-color: rgba(239,230,213,0.18); }
+#cal-prog .pg-item .glyph { width: 18px; text-align: center; font-size: 15px; }
+#cal-prog .pg-item .nm { flex: 1 1 auto; font-size: 13px; }
+#cal-prog .pg-item .qty { font-size: 11px; color: rgba(239,230,213,0.5); }
+#cal-prog .pg-item .pr { font-size: 12px; color: var(--pg-gold); min-width: 46px; text-align: right; }
+#cal-prog .pg-item.poor .pr { color: #d9543f; }
+#cal-prog .pg-purse {
   font-size: 12px; letter-spacing: 0.18em; color: var(--pg-gold);
   text-transform: uppercase;
 }
-#hzc-prog .pg-msg { font-size: 12px; color: var(--pg-teal); min-height: 16px; margin-top: 8px; letter-spacing: 0.1em; }
-#hzc-prog .pg-msg.bad { color: #d9543f; }
+#cal-prog .pg-msg { font-size: 12px; color: var(--pg-teal); min-height: 16px; margin-top: 8px; letter-spacing: 0.1em; }
+#cal-prog .pg-msg.bad { color: #d9543f; }
 `;
 
 /** Small DOM helper — no framework, no per-frame allocation. */
@@ -343,10 +343,10 @@ function ensureStyle() {
 /** Shared root so quests.js and skills.js never fight over a container. */
 export function progRoot() {
   ensureStyle();
-  let root = document.getElementById('hzc-prog');
+  let root = document.getElementById('cal-prog');
   if (!root) {
     root = document.createElement('div');
-    root.id = 'hzc-prog';
+    root.id = 'cal-prog';
     document.body.appendChild(root);
   }
   return root;

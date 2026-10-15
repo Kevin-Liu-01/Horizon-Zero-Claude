@@ -67,7 +67,7 @@ async function openPage(query) {
   const errors = [], warns = [];
   page.on('console', (m) => {
     if (m.type() === 'error') errors.push(m.text());
-    if (m.type() === 'warning' && /r5|HZC|gait|autorig/i.test(m.text())) warns.push(m.text().slice(0, 300));
+    if (m.type() === 'warning' && /r5|CAL|gait|autorig/i.test(m.text())) warns.push(m.text().slice(0, 300));
   });
   page.on('pageerror', (e) => errors.push(String(e)));
   await page.goto(`http://localhost:${PORT}/?${query}`, { waitUntil: 'domcontentloaded', timeout: 60000 });

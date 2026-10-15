@@ -144,9 +144,9 @@ export async function installPocHuman(ctx) {
   // animator's stock local +Z (the UE4 convention) instead of the derived axes
   if (P.get('pocFingerAxes') === '0') root.userData.rigProfile.fingerAxes = {};
 
-  // the Player and ClipLibrary read `models.aloy`: hand them the heroine
-  ctx.assets.models.aloyOriginal = ctx.assets.models.aloy;
-  ctx.assets.models.aloy = entry;
+  // the Player and ClipLibrary read `models.hero`: hand them the heroine
+  ctx.assets.models.heroOriginal = ctx.assets.models.hero;
+  ctx.assets.models.hero = entry;
   ctx.assets.models.heroine = entry;
 
   const state = {

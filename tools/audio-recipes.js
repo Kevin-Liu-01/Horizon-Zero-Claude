@@ -1325,7 +1325,7 @@
   /*  MELEE — the spear (audio content half)                               */
   /*                                                                       */
   /*  The Round 4 spear shipped with no audio at all: `melee-hit`,         */
-  /*  `critical-hit` and `silent-strike` were emitted by src/combat/melee.js*/
+  /*  `critical-hit` and `undercut` were emitted by src/combat/melee.js*/
   /*  and nobody listened. These are the four rungs that verb needs. The    */
   /*  timbre brief: a wooden HAFT carrying a metal head into machine plate  */
   /*  — so every cue is a wood-body transient (low, damped, short) plus a   */
@@ -1393,7 +1393,7 @@
   /*  TRAPS + ROPE — Tripcaster and Ropecaster (audio content half)        */
   /*                                                                       */
   /*  src/combat/traps.js emits `trap-placed`, `trap-triggered`,           */
-  /*  `rope-attached` and `machine-tied`; all four were silent.            */
+  /*  `net-fouled` and `instrument-fouled`; all four were silent.            */
   /* ===================================================================== */
   RECIPES['trap/place'] = (A) => {
     // a stake driven into ground, then the wire clipped on and tensioned
@@ -1444,5 +1444,5 @@
     }
   };
 
-  global.HZC_AUDIO_RECIPES = { RECIPES, kit, mulberry32, SR };
+  global.CAL_AUDIO_RECIPES = { RECIPES, kit, mulberry32, SR };
 })(typeof globalThis !== 'undefined' ? globalThis : window);

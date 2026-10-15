@@ -38,7 +38,7 @@ const PENTA = [220.0, 261.63, 293.66, 329.63, 392.0, 440.0]; // A min pentatonic
 const VOICE_CAP = 24;
 const clamp = (v, lo, hi) => (v < lo ? lo : v > hi ? hi : v);
 
-const SETTINGS_KEY = 'hzc.audio.v1';
+const SETTINGS_KEY = 'cal.audio.v5';
 
 /**
  * Is `v` usable as a WeakMap key? The per-machine cue throttles are WeakMaps so
@@ -157,7 +157,7 @@ export class GameAudio {
     this._concActive = false;     // Concentration slow-mo (Shift while aiming)
     this._concSetMs = -1e9;       // last event-driven flip (poll grace window)
     this._lpFreq = 16000;         // music low-pass current cutoff
-    this._focusOn = false;        // Focus mode hum ('focus-on'/'focus-off')
+    this._focusOn = false;        // Focus mode hum ('sighting-on'/'sighting-off')
     this._focusOffLag = 0;
     this._humLevel = 0;
     this._partTornMs = -1e9;      // dedupe 'part-torn' vs machine-damaged.tornPart
@@ -526,7 +526,7 @@ export class GameAudio {
   /**
    * Focus hologram hum: persistent detuned triangle pair (slow beat) + a thin
    * data-shimmer noise band + 5 Hz flutter. Runs forever at gain 0; update()
-   * fades humGain while Focus mode is active ('focus-on'/'focus-off').
+   * fades humGain while Focus mode is active ('sighting-on'/'sighting-off').
    */
   _buildFocusHum() {
     const ac = this.ac;
@@ -2296,7 +2296,7 @@ export class GameAudio {
   }
 
   _focus() {
-    // 'focus-on' + 'focus-pulse' can land the same frame — one blip is enough
+    // 'sighting-on' + 'sighting-pulse' can land the same frame — one blip is enough
     const nowMs = performance.now();
     if (nowMs - this._focusBlipMs < 150) return;
     this._focusBlipMs = nowMs;
@@ -2619,7 +2619,7 @@ export class GameAudio {
       if (!hit) this._clank(this._pan, Math.max(this._att, 0.35), !!e.crit);
     }));
 
-    ev.on('silent-strike', armed((e = {}) => {
+    ev.on('undercut', armed((e = {}) => {
       const pos = e.machine?.position ?? null;
       at(pos, 0.75);
       if (!this.playAt('melee/silent', pos, {
@@ -2648,7 +2648,7 @@ export class GameAudio {
       this._lastTenseT = this._t;
     }));
 
-    ev.on('rope-attached', armed((e = {}) => {
+    ev.on('net-fouled', armed((e = {}) => {
       const pos = e.machine?.position ?? null;
       at(pos, 0.8);
       // pitch climbs with each rope so the player HEARS the tie-down filling
@@ -2659,7 +2659,7 @@ export class GameAudio {
       });
     }));
 
-    ev.on('machine-tied', armed((e = {}) => {
+    ev.on('instrument-fouled', armed((e = {}) => {
       const pos = e.machine?.position ?? null;
       at(pos, 0.9);
       this.playAt('rope/tie', pos, { volume: 1, priority: PRI.big, duck: 0.3 });
@@ -2683,8 +2683,8 @@ export class GameAudio {
     }));
     ev.on('weapon-switch', armed(() => this._switchClick()));
     ev.on('ammo-crafted', armed(() => this._craftSound()));
-    ev.on('concentration-start', armed(() => this._concSet(true)));
-    ev.on('concentration-end', armed(() => this._concSet(false)));
+    ev.on('steady-start', armed(() => this._concSet(true)));
+    ev.on('steady-end', armed(() => this._concSet(false)));
 
     // v2: the audible dodge cue (eye-flash windup)
     ev.on('machine-telegraph', armed(({ machine } = {}) => {
@@ -2703,12 +2703,12 @@ export class GameAudio {
     }));
 
     // v2: Focus mode hum (focus builder emits these; harmless if absent)
-    ev.on('focus-on', armed(() => {
+    ev.on('sighting-on', armed(() => {
       this._focusOn = true;
       this._counts.focusToggles++;
       this._focus();
     }));
-    ev.on('focus-off', armed(() => {
+    ev.on('sighting-off', armed(() => {
       this._focusOn = false;
       this._focusOff();
     }));
@@ -2914,7 +2914,7 @@ export class GameAudio {
     }));
     ev.on('player-dodge', armed(() => this._dodgeWhoosh()));
     ev.on('victory', armed(() => this._victory()));
-    ev.on('focus-pulse', armed(() => this._focus()));
+    ev.on('sighting-pulse', armed(() => this._focus()));
     ev.on('objective-changed', armed(() => this._objectiveBlip()));
 
     /* ---------------- Round 4 content half: death, suspicion, effort ------
@@ -2978,7 +2978,7 @@ export class GameAudio {
     /* ------- discovery stingers on the score (audio-01, audio-12) ------- */
     const discover = armed(() => this.music?.sting('discover', { volume: 0.8, minGap: 8 }));
     for (const name of ['level-up', 'skill-unlocked', 'quest-started', 'quest-complete',
-      'datapoint-found', 'discovery', 'supply-cache', 'override-node', 'hunting-ground']) {
+      'fieldbook-found', 'discovery', 'cache-found', 'override-node', 'hunting-ground']) {
       ev.on(name, discover);
     }
 
@@ -3280,7 +3280,7 @@ export class GameAudio {
     // --- Concentration: reconcile with combat's gauge if exposed (covers a
     //     missed event either way), heartbeat on a WALL-CLOCK interval, and
     //     the music ducks under a low-pass while active
-    const conc = ctx.combat?.concentration;
+    const conc = ctx.combat?.steady;
     if (conc) {
       // grace window: if the event lands a frame before combat flips .active,
       // don't let the poll cancel and re-trigger (double breaths)
@@ -3302,9 +3302,9 @@ export class GameAudio {
 
     // --- Focus hologram hum: fades with real time while Focus mode is on.
     //     Safety: if the focus system reports inactive for a sustained
-    //     stretch (missed 'focus-off'), drop the hum. Lenient window so a
+    //     stretch (missed 'sighting-off'), drop the hum. Lenient window so a
     //     short pulse-style .active flag can't cut a legitimate mode hum.
-    if (this._focusOn && ctx.focus && ctx.focus.active === false) {
+    if (this._focusOn && ctx.sighting && ctx.sighting.active === false) {
       this._focusOffLag += rdt;
       if (this._focusOffLag > 2.5) this._focusOn = false;
     } else {
