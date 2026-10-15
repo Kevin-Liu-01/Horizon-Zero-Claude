@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { mulberry32, composeMat, tint } from './props/kit.js';
+import { REST_SITE } from './island/sites.js';
 
 /**
  * ROUND 4 — `world-15` (no wildlife). Three instanced species that graze the
@@ -684,7 +685,7 @@ export class Fauna {
     if (dh > 0.9) return false;
     const w = this.ctx.water?.levelAt?.(x, z);
     if (w !== null && w !== undefined && h < w + 0.15) return false;
-    if (Math.hypot(x - 22, z - 30) < 26) return false;      // the settlement
+    if (Math.hypot(x - REST_SITE.x, z - REST_SITE.z) < 26) return false;      // the settlement
     if (openOnly && T.tallGrassDensity && T.tallGrassDensity(x, z) > 0.3) return false;
     return true;
   }

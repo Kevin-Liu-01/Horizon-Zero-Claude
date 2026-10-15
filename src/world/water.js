@@ -14,7 +14,7 @@ import { riverCenterX, riverHalfWidth, marshFactor, MARSH_LEVEL } from './terrai
  *     glinthawk flock's contract and gate V8's anchor) and widened into the
  *     ribbon so they read as slack water rather than separate discs.
  *   - sky reflection taken from `world-light`'s own aerial-perspective colours
- *     (hzcFogHorizon / hzcFogZenith / hzcFogSun), so the water reflects THIS
+ *     (calFogHorizon / calFogZenith / calFogSun), so the water reflects THIS
  *     sky at THIS hour instead of a hard-coded blue.
  *   - refraction: the view ray is bent at the surface and the bed is shaded
  *     through it, with Beer–Lambert extinction by depth. No second render
@@ -380,9 +380,9 @@ export class RiverWater {
           vec3 warm = uWarm;
           #ifdef USE_FOG
             float up = clamp(rv.y * 1.8 + 0.08, 0.0, 1.0);
-            sky = mix(hzcFogHorizon, hzcFogZenith, up * up);
-            warm = hzcFogSun;
-            float sd = max(dot(rv, hzcSunDir), 0.0);
+            sky = mix(calFogHorizon, calFogZenith, up * up);
+            warm = calFogSun;
+            float sd = max(dot(rv, calSunDir), 0.0);
             sky += warm * pow(sd, 6.0) * 0.55;
           #endif
           vec3 col = mix(through, sky, fres);
@@ -390,7 +390,7 @@ export class RiverWater {
           // --- sun glint -----------------------------------------------------
           vec3 sdir = uSunDir;
           #ifdef USE_FOG
-            sdir = hzcSunDir;
+            sdir = calSunDir;
           #endif
           vec3 hv = normalize(view + normalize(sdir));
           float spec = pow(max(dot(n, hv), 0.0), 220.0);

@@ -1,4 +1,6 @@
 import * as THREE from 'three';
+import { REST_SITE } from './island/sites.js';
+import { PLAY_RADIUS } from './island/extent.js';
 
 /**
  * ROUND 4 — lane `world-ground`. Landform, ground material, the rim, and the
@@ -126,7 +128,7 @@ export class SimplexNoise {
 export const WORLD_SIZE = 720;         // playable square, meters
 export const WORLD_HALF = WORLD_SIZE / 2;
 /** The gameplay boundary (`player.js` steers here; the rim face is built for it). */
-export const PLAY_RADIUS = 330;
+export { PLAY_RADIUS };              // island/extent.js (W0-day1 stub; world-ground from W1)
 
 /**
  * SURFACE -> NEAREST FOLEY SET, published as `Terrain.SURFACE_AUDIO`.
@@ -458,13 +460,13 @@ export function shelfFactor(x, z) {
  */
 const PATHS = [
   // west: camp -> river ford -> a little beyond the far bank  (MAIN)
-  { main: true, pts: [[22, 30], [-16, 24], [-52, 14], [-84, 6], [-109, 8], [-136, 12]] },
+  { main: true, pts: [[REST_SITE.x, REST_SITE.z], [-16, 24], [-52, 14], [-84, 6], [-109, 8], [-136, 12]] },
   // south: camp -> Thunderjaw flats  (TRAIL)
-  { main: false, pts: [[22, 30], [27, -8], [35, -52], [28, -104], [23, -160], [30, -202]] },
+  { main: false, pts: [[REST_SITE.x, REST_SITE.z], [27, -8], [35, -52], [28, -104], [23, -160], [30, -202]] },
   // south-east: camp -> highland shelf  (MAIN — it climbs the benches)
-  { main: true, pts: [[22, 30], [58, 50], [96, 80], [136, 116], [168, 148], [188, 172]] },
+  { main: true, pts: [[REST_SITE.x, REST_SITE.z], [58, 50], [96, 80], [136, 116], [168, 148], [188, 172]] },
   // north spur  (TRAIL)
-  { main: false, pts: [[22, 30], [9, 72], [-2, 118], [-13, 156]] },
+  { main: false, pts: [[REST_SITE.x, REST_SITE.z], [9, 72], [-2, 118], [-13, 156]] },
 ];
 const CORE_MAIN = 1.10, EDGE_MAIN = 2.40;   // 2.2 m tread
 const CORE_TRAIL = 0.45, EDGE_TRAIL = 1.15; // 0.9 m tread
@@ -628,7 +630,7 @@ const ROUTE_TABLE = [
   // longlegs on the SE shelf
   [150, 95, 26, 5, 0.7], [174, 60, 22, 4, 2.9],
 ];
-const CAMP_KEEP = { x: 22, z: 30, r: 31 };
+const CAMP_KEEP = { x: REST_SITE.x, z: REST_SITE.z, r: REST_SITE.r + 6 };   // the ring `Machines._route` keeps out of
 
 /** Same warped ring `Machines._route` builds. */
 function routeRing(cx, cz, r, n, seed) {
@@ -1280,10 +1282,10 @@ uniform vec3 uScreeCol;
 uniform float uStrataMix;
 uniform vec3 uDetailScale;   // 1/metres for micro, gravel, macro
 
-vec3 hzcDetN;      // world-space normal perturbation, filled in color_fragment
-float hzcDetRough; // roughness modulation
-float hzcWet;      // 0..1 surface wetness
-float hzcSkyFill;  // hemisphere fill for rim rock, applied after the lights
+vec3 calDetN;      // world-space normal perturbation, filled in color_fragment
+float calDetRough; // roughness modulation
+float calWet;      // 0..1 surface wetness
+float calSkyFill;  // hemisphere fill for rim rock, applied after the lights
 
 float thash(vec2 p){ return fract(sin(dot(p, vec2(127.1,311.7)))*43758.5453); }
 float tnoise(vec2 p){
@@ -1333,9 +1335,9 @@ const TERRAIN_COLOR = /* glsl */ `
   vec3 wn = wnHi;
   float steepF = steepHi;
 
-  hzcWet = 0.0;
+  calWet = 0.0;
   #ifdef USE_FOG
-    hzcWet = clamp(hzcWeather.x, 0.0, 1.0);
+    calWet = clamp(calWeather.x, 0.0, 1.0);
   #endif
 
   /* WHY EVERY GATE BELOW IS WIDENED BY fwidth().
@@ -1452,9 +1454,9 @@ const TERRAIN_COLOR = /* glsl */ `
     nMac *= macroK;
   }
 
-  hzcDetN = nMic * (1.07 * microK) + nGrv * (0.90 * gravK)
+  calDetN = nMic * (1.07 * microK) + nGrv * (0.90 * gravK)
           + nMac * (0.55 - 0.34 * farK);
-  hzcDetRough = 1.0;
+  calDetRough = 1.0;
 
   vec4 mask = texture2D(uMask, clamp(vWPos.xz * ${(1 / WORLD_SIZE).toFixed(8)} + 0.5, 0.001, 0.999));
   vec4 mask2 = texture2D(uMask2, clamp(vWPos.xz * ${(1 / WORLD_SIZE).toFixed(8)} + 0.5, 0.001, 0.999));
@@ -1472,7 +1474,7 @@ const TERRAIN_COLOR = /* glsl */ `
   float stony = clamp(mask.b * 1.15 + mask2.g * 1.4 + mask.a + mask.r
                     + mask2.a * 1.3, 0.0, 1.0);
   float grainK = 0.34 + 0.52 * stony;
-  hzcDetN *= 0.42 + 1.05 * stony;
+  calDetN *= 0.42 + 1.05 * stony;
 
   float dn = mac.b;
   diffuseColor.rgb *= 0.82 + dn * 0.34;
@@ -1501,8 +1503,8 @@ const TERRAIN_COLOR = /* glsl */ `
     // wet dark grit, and V32 judges whether the cut carries a material CHANGE
     vec3 cc = mix(vec3(0.17, 0.155, 0.135), vec3(0.74, 0.71, 0.63), peb);
     diffuseColor.rgb = mix(diffuseColor.rgb, cc, cobble * 0.92);
-    hzcDetN *= 1.0 + cobble * 2.6;
-    hzcDetRough *= 1.0 - cobble * 0.16;
+    calDetN *= 1.0 + cobble * 2.6;
+    calDetRough *= 1.0 - cobble * 0.16;
   }
 
   // --- rocky SE highland ---------------------------------------------------
@@ -1519,7 +1521,7 @@ const TERRAIN_COLOR = /* glsl */ `
   if (scree > 0.004) {
     vec3 sc = uScreeCol * (0.62 + peb * 0.72);
     diffuseColor.rgb = mix(diffuseColor.rgb, sc, scree * 0.62);
-    hzcDetN *= 1.0 + scree * 2.4;
+    calDetN *= 1.0 + scree * 2.4;
   }
 
   // --- worn tread: packed earth with a rut down the middle -----------------
@@ -1527,14 +1529,14 @@ const TERRAIN_COLOR = /* glsl */ `
   if (pw > 0.003) {
     vec3 tread = uDirtCol * (0.80 + dn * 0.30) * (0.88 + 0.24 * mix(0.5, mic.b, microK));
     diffuseColor.rgb = mix(diffuseColor.rgb, tread, min(pw * 1.25, 0.94));
-    hzcDetN *= 1.0 - 0.55 * pw;                    // trodden smooth
-    hzcDetRough *= 1.0 - 0.12 * pw;
+    calDetN *= 1.0 - 0.55 * pw;                    // trodden smooth
+    calDetRough *= 1.0 - 0.12 * pw;
   }
   // machine track scars: darker, harder, pressed into the soil
   float trk = mask2.b;
   if (trk > 0.004) {
     diffuseColor.rgb = mix(diffuseColor.rgb, uDirtCol * 0.52, trk * 0.7);
-    hzcDetRough *= 1.0 - 0.18 * trk;
+    calDetRough *= 1.0 - 0.18 * trk;
   }
   // duff under the stealth grass: the ground reads darker where cover grows
   diffuseColor.rgb *= 1.0 - 0.16 * mask2.r;
@@ -1554,31 +1556,31 @@ const TERRAIN_COLOR = /* glsl */ `
       // needle litter: dark red-brown, matt, fine-grained, no stone showing
       vec3 duff = vec3(0.118, 0.092, 0.058) * (0.70 + 0.66 * peb);
       diffuseColor.rgb = mix(diffuseColor.rgb, duff, bFor * 0.60);
-      hzcDetRough *= 1.0 + 0.06 * bFor;
-      hzcDetN *= 1.0 - 0.22 * bFor;
+      calDetRough *= 1.0 + 0.06 * bFor;
+      calDetN *= 1.0 - 0.22 * bFor;
     }
     if (bScr > 0.004) {
       // scree field: broken plate stone with the grain turned all the way up
       vec3 gr = mix(vec3(0.255, 0.245, 0.222), vec3(0.63, 0.60, 0.53), peb);
       diffuseColor.rgb = mix(diffuseColor.rgb, gr, bScr * 0.76);
-      hzcDetN *= 1.0 + bScr * 2.8;
-      hzcDetRough *= 1.0 + 0.05 * bScr;
+      calDetN *= 1.0 + bScr * 2.8;
+      calDetRough *= 1.0 + 0.05 * bScr;
     }
     if (bMud > 0.004) {
       // marsh mud: dark wet silt, smooth, with a sheen that survives the sun
       float wetM = bMud * (1.0 - smoothstep(0.20, 0.52, steepF));
       vec3 md = vec3(0.104, 0.090, 0.066) * (0.76 + 0.54 * peb);
       diffuseColor.rgb = mix(diffuseColor.rgb, md, bMud * 0.82);
-      hzcDetRough *= 1.0 - 0.54 * wetM;
-      hzcDetN *= 1.0 - 0.34 * bMud;
+      calDetRough *= 1.0 - 0.54 * wetM;
+      calDetN *= 1.0 - 0.34 * bMud;
     }
     if (bAsh > 0.004) {
       // burn scar: charcoal under a pale ash bloom, and nothing reflective
       vec3 ch = mix(vec3(0.044, 0.040, 0.038), vec3(0.345, 0.330, 0.318),
                     smoothstep(0.34, 0.82, peb));
       diffuseColor.rgb = mix(diffuseColor.rgb, ch, bAsh * 0.88);
-      hzcDetRough *= 1.0 + 0.10 * bAsh;
-      hzcDetN *= 1.0 - 0.48 * bAsh;
+      calDetRough *= 1.0 + 0.10 * bAsh;
+      calDetN *= 1.0 - 0.48 * bAsh;
     }
     if (bSnow > 0.004) {
       /* Windblown dusting, not a snowfield: it lies in the hollows the macro
@@ -1589,8 +1591,8 @@ const TERRAIN_COLOR = /* glsl */ `
       vec3 sw = mix(vec3(0.72, 0.755, 0.815), vec3(0.94, 0.955, 0.985), drift);
       diffuseColor.rgb = mix(diffuseColor.rgb, sw,
         clamp(lie * (0.34 + 0.54 * drift), 0.0, 0.86));
-      hzcDetN *= 1.0 - 0.74 * lie;
-      hzcDetRough *= 1.0 - 0.20 * lie;
+      calDetN *= 1.0 - 0.74 * lie;
+      calDetRough *= 1.0 - 0.20 * lie;
     }
   }
 
@@ -1695,9 +1697,9 @@ const TERRAIN_COLOR = /* glsl */ `
     diffuseColor.rgb = mix(diffuseColor.rgb, sc,
       uStrataMix * steep * (0.30 * mix(0.35, 1.0, bandGate) + 0.24 * shelf)
       * snowGuard * bandFar);
-    hzcDetN *= 1.0 + steep * 1.5;
+    calDetN *= 1.0 + steep * 1.5;
     // bedding planes read as a normal ridge, not just a stripe
-    hzcDetN += wn.yzx * (band - 0.5) * 0.22 * uStrataMix * steep * bandK
+    calDetN += wn.yzx * (band - 0.5) * 0.22 * uStrataMix * steep * bandK
              * mix(0.14, 1.0, bandGate);
   }
 
@@ -1711,36 +1713,36 @@ const TERRAIN_COLOR = /* glsl */ `
    * same fog palette the rest of the frame is graded to, scaled down where the
    * sun already does the job so the massif keeps a sun face and a shade face.
    */
-  hzcSkyFill = 0.0;
+  calSkyFill = 0.0;
   #ifdef USE_FOG
   {
     float rimM = smoothstep(238.0, 322.0, length(vWPos.xz));
     float upK = 0.42 + 0.58 * clamp(wn.y * 0.5 + 0.5, 0.0, 1.0);
-    float nl = clamp(dot(wn, hzcSunDir), 0.0, 1.0);
-    hzcSkyFill = rimM * upK * (1.0 - 0.62 * nl) * 0.60;
+    float nl = clamp(dot(wn, calSunDir), 0.0, 1.0);
+    calSkyFill = rimM * upK * (1.0 - 0.62 * nl) * 0.60;
   }
   #endif
 
   // --- rain wetness (world-14 contract) ------------------------------------
-  if (hzcWet > 0.002) {
+  if (calWet > 0.002) {
     float pool = smoothstep(0.35, 0.0, steepF);   // water sits on the flats
-    diffuseColor.rgb *= 1.0 - 0.34 * hzcWet * (0.45 + 0.55 * pool);
-    hzcDetRough *= 1.0 - 0.55 * hzcWet * pool;
-    hzcDetN *= 1.0 - 0.45 * hzcWet * pool;
+    diffuseColor.rgb *= 1.0 - 0.34 * calWet * (0.45 + 0.55 * pool);
+    calDetRough *= 1.0 - 0.55 * calWet * pool;
+    calDetN *= 1.0 - 0.45 * calWet * pool;
   }
 }
 `;
 
 const TERRAIN_ROUGH = /* glsl */ `
 #include <roughnessmap_fragment>
-roughnessFactor = clamp(roughnessFactor * hzcDetRough, 0.06, 1.0);
+roughnessFactor = clamp(roughnessFactor * calDetRough, 0.06, 1.0);
 `;
 
 const TERRAIN_NORMAL = /* glsl */ `
 #include <normal_fragment_begin>
 {
-  // hzcDetN is world-space; the shader's normal at this point is view-space.
-  vec3 vn = (viewMatrix * vec4(hzcDetN, 0.0)).xyz;
+  // calDetN is world-space; the shader's normal at this point is view-space.
+  vec3 vn = (viewMatrix * vec4(calDetN, 0.0)).xyz;
   normal = normalize(normal + vn * 1.35);
 }
 `;
@@ -1751,8 +1753,8 @@ const TERRAIN_NORMAL = /* glsl */ `
 const TERRAIN_AO = /* glsl */ `
 #include <aomap_fragment>
 #ifdef USE_FOG
-  reflectedLight.indirectDiffuse += diffuseColor.rgb * hzcSkyFill
-    * mix(hzcFogHorizon, hzcFogZenith, 0.32);
+  reflectedLight.indirectDiffuse += diffuseColor.rgb * calSkyFill
+    * mix(calFogHorizon, calFogZenith, 0.32);
 #endif
 `;
 

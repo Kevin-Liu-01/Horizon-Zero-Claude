@@ -4,6 +4,10 @@ import {
   ECOSYSTEM, OVERRIDE,
 } from './tables.js';
 import { Squads } from './squad.js';
+import { REST_SITE } from '../../../world/island/sites.js';
+import { PLAY_RADIUS, EXTENT } from '../../../world/island/extent.js';
+
+const ANCHOR_RIM = PLAY_RADIUS + EXTENT.anchorRim;
 import { cannonMesh, cargoMesh, coreMesh, powerCellMesh, canisterMesh } from '../parts.js';
 
 /**
@@ -776,7 +780,7 @@ export const SPAWN_PLAN = [
 /**
  * Where a site actually goes: the published world-props POI when there is one,
  * else the measured fallback. Never inside the camp keep-out and never outside
- * the `_route` 310 m clamp — both are re-checked here because a POI list this
+ * the `_route` rim clamp (EXTENT.routeRim) — both are re-checked here because a POI list this
  * lane does not own could put a Stormbird in the hunter camp.
  */
 export function siteAnchor(ctx, plan) {
@@ -790,15 +794,15 @@ export function siteAnchor(ctx, plan) {
     }
   }
   // camp keep-out (the same circle `Machines._route` respects)
-  const dx = out.x - 22, dz = out.z - 30;
+  const dx = out.x - REST_SITE.x, dz = out.z - REST_SITE.z;
   const d = Math.hypot(dx, dz);
   if (d < 46) {
-    out.x = 22 + (dx / (d || 1)) * 46;
-    out.z = 30 + (dz / (d || 1)) * 46;
+    out.x = REST_SITE.x + (dx / (d || 1)) * 46;
+    out.z = REST_SITE.z + (dz / (d || 1)) * 46;
     out.clamped = 'camp';
   }
   const r = Math.hypot(out.x, out.z);
-  if (r > 296) { out.x *= 296 / r; out.z *= 296 / r; out.clamped = 'rim'; }
+  if (r > ANCHOR_RIM) { out.x *= ANCHOR_RIM / r; out.z *= ANCHOR_RIM / r; out.clamped = 'rim'; }
   return out;
 }
 

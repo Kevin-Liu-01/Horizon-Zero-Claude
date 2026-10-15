@@ -19,13 +19,13 @@
  *                           localStorage key; we only drive its published
  *                           setter (SPEC §13.3: "shell-menus owns the sliders,
  *                           audio owns the values").
- *   CSS custom properties   `--hud-scale` and the six `--hzc-*` palette vars
+ *   CSS custom properties   `--hud-scale` and the six `--cal-*` palette vars
  *                           live in `src/style.css` (this lane's file) and are
  *                           consumed 76× by hud.css, 15× by inventory.css and
  *                           7× by wheel.css, so a palette swap repaints the
  *                           whole interface without touching another lane.
  *
- * Persistence is `localStorage['hzc.settings.v1']`, written on every change
+ * Persistence is `localStorage['cal.settings.v5']`, written on every change
  * (debounced) and read once at install — BEFORE the first look sample, and
  * after `Player`'s constructor has seeded its `??=` defaults, so a restored
  * value wins over the default instead of being clobbered by it (gate
@@ -37,22 +37,22 @@
  * panel prints that, so the screen never claims an effect it does not have.
  */
 
-const STORE_KEY = 'hzc.settings.v1';
+const STORE_KEY = 'cal.settings.v5';
 
 /** Okabe-Ito derived palettes: every pair is separable under the named CVD. */
 export const PALETTES = {
   off: null,
   protanopia: {
-    '--hzc-accent': '#56b4e9', '--hzc-warn': '#f0e442', '--hzc-danger': '#d55e00',
-    '--hzc-med': '#009e73', '--hzc-focus': '#cc79a7', '--hzc-hostile': '#e69f00',
+    '--cal-accent': '#56b4e9', '--cal-warn': '#f0e442', '--cal-danger': '#d55e00',
+    '--cal-med': '#009e73', '--cal-focus': '#cc79a7', '--cal-hostile': '#e69f00',
   },
   deuteranopia: {
-    '--hzc-accent': '#4fa8dd', '--hzc-warn': '#f5e35b', '--hzc-danger': '#cf5b1c',
-    '--hzc-med': '#0072b2', '--hzc-focus': '#c07ec0', '--hzc-hostile': '#e0a01a',
+    '--cal-accent': '#4fa8dd', '--cal-warn': '#f5e35b', '--cal-danger': '#cf5b1c',
+    '--cal-med': '#0072b2', '--cal-focus': '#c07ec0', '--cal-hostile': '#e0a01a',
   },
   tritanopia: {
-    '--hzc-accent': '#1fa06a', '--hzc-warn': '#e8654f', '--hzc-danger': '#b3201f',
-    '--hzc-med': '#6fce8e', '--hzc-focus': '#d0417a', '--hzc-hostile': '#ef8a3c',
+    '--cal-accent': '#1fa06a', '--cal-warn': '#e8654f', '--cal-danger': '#b3201f',
+    '--cal-med': '#6fce8e', '--cal-focus': '#d0417a', '--cal-hostile': '#ef8a3c',
   },
 };
 
@@ -121,7 +121,7 @@ export const SCHEMA = [
       apply: (v, ctx, s) => {
         ctx.settings.reducedMotion = !!v;
         ctx.settings.cameraShake = v ? 0 : s.get('cameraShake');
-        document.body.classList.toggle('hzc-reduced-motion', !!v);
+        document.body.classList.toggle('cal-reduced-motion', !!v);
       } },
     { id: 'menuTips', kind: 'toggle', label: 'Show menu tips', dflt: true,
       apply: (v, ctx) => { ctx.settings.menuTips = !!v; } },
@@ -266,7 +266,7 @@ export class SettingsStore {
         hudScale: this.ctx.settings?.hudScale,
         hudScaleVar: (this.ctx.hud?.rootEl ?? document.getElementById('hud'))?.style
           ?.getPropertyValue?.('--hud-scale')?.trim?.() ?? '',
-        accent: getComputedStyle(document.documentElement).getPropertyValue('--hzc-accent').trim(),
+        accent: getComputedStyle(document.documentElement).getPropertyValue('--cal-accent').trim(),
         audio: this.ctx.audio?.volumes?.() ?? null,
       },
       raw: (() => { try { return localStorage.getItem(STORE_KEY); } catch { return null; } })(),
@@ -311,7 +311,7 @@ export class SettingsPanel {
     const reset = el('button', 'mn-btn small', foot, 'RESTORE DEFAULTS');
     reset.addEventListener('click', () => { this.store.reset(); this.refresh(); });
     el('div', 'mn-set-note', foot,
-      'Saved to this browser as <code>hzc.settings.v1</code> — restored on the next launch.');
+      'Saved to this browser as <code>cal.settings.v5</code> — restored on the next launch.');
     return this.root;
   }
 

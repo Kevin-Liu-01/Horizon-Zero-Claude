@@ -1489,7 +1489,7 @@ export const GATES = [
         a.setVolume('ui', 0.31);
         const applied = Math.abs(B.uiVol.gain.value - 0.31) < 1e-3;
         let persisted = false;
-        try { persisted = JSON.parse(localStorage.getItem('hzc.audio.v1')).ui === 0.31; } catch (e) { persisted = false; }
+        try { persisted = JSON.parse(localStorage.getItem('cal.audio.v5')).ui === 0.31; } catch (e) { persisted = false; }
         const readBack = a.getVolume('ui') === 0.31;
         a.setVolume('ui', before.ui);
         const restored = Math.abs(B.uiVol.gain.value - before.ui) < 1e-3;
@@ -1739,11 +1739,11 @@ export const GATES = [
         heard.light = await fire('melee-hit', (p) => ({ machine: mach(p), point: p, damage: 12, heavy: false, crit: false, combo: 0 }));
         heard.heavy = await fire('melee-hit', (p) => ({ machine: mach(p), point: p, damage: 30, heavy: true, crit: false, combo: 1 }));
         heard.crit = await fire('melee-hit', (p) => ({ machine: mach(p), point: p, damage: 90, heavy: true, crit: true, combo: 2 }));
-        heard.silent = await fire('silent-strike', (p) => ({ machine: mach(p), killed: true, damage: 120 }));
+        heard.silent = await fire('undercut', (p) => ({ machine: mach(p), killed: true, damage: 120 }));
         heard.trapPlace = await fire('trap-placed', (p) => ({ kind: 'blast-wire', a: p, b: p }));
         heard.trapTrigger = await fire('trap-triggered', (p) => ({ kind: 'blast-wire', machine: mach(p), point: p }));
-        heard.ropeAttach = await fire('rope-attached', (p) => ({ machine: mach(p), ropes: 1, need: 3 }));
-        heard.ropeTie = await fire('machine-tied', (p) => ({ machine: mach(p), ropes: 3 }));
+        heard.ropeAttach = await fire('net-fouled', (p) => ({ machine: mach(p), ropes: 1, need: 3 }));
+        heard.ropeTie = await fire('instrument-fouled', (p) => ({ machine: mach(p), ropes: 3 }));
 
         const has = (k, id) => heard[k].indexOf(id) >= 0;
         const checks = {

@@ -13,10 +13,10 @@ import { LOOT_POPUP } from './inventory.js';
  *                     `banner` / `xp-gained` / `level-up` / `quest-*`
  *   ctx.items.tools   slots[], index, cooldown, useKey, cycleKeys  (ui-11)
  *   ctx.combat        activeWeapon, activeAmmo, ammo, drawStrength,
- *                     nockProgress, weaponDrawn, concentration, craft
+ *                     nockProgress, weaponDrawn, steady, craft
  *   ctx.machines      list[], m.state/suspicion/detectFill/elemental
- *   ctx.focus         tags (Set<Machine>), scanTarget
- *   ctx.player        health/maxHealth, pouch/maxPouch, crouching, inTallGrass
+ *   ctx.sighting      tags (Set<Machine>), scanTarget
+ *   ctx.player        health/maxHealth, gourd/maxGourd, crouching, inTallGrass
  *
  * Round 4 findings closed here (docs/ROUND4-AUDIT.md §2):
  *   ui-04 compass truth      · ui-05 quest tracker + banners
@@ -36,16 +36,16 @@ import { LOOT_POPUP } from './inventory.js';
  *      screen-fixed fallback it exists to delete. Gate `A71f-interact-anchor`.
  *   2. The vitals' 4 s hide and the quest tracker's 26 s hide are independent
  *      timers and must never share an opacity. The tracker is a SIBLING of
- *      `.hzc-vitals` inside `.hzc-topleft`; fading `.hzc-topleft` zeroes the
+ *      `.cal-vitals` inside `.cal-topleft`; fading `.cal-topleft` zeroes the
  *      tracker in every calm state, boot included. Gate `A71g-tracker-live`.
- *   3. The world-projected layer (`.hzc-world`) is scaled ONCE, by the JS
+ *   3. The world-projected layer (`.cal-world`) is scaled ONCE, by the JS
  *      transform. Its stylesheet resets `--s` to 1 so its rules are a base
  *      size; a `calc(Npx * var(--s))` in there is scaled twice (s²) and paints
  *      a 224 px plate at 809 px and 11 px type at 7.7 px. Its multiplier is
  *      `_wscale` (= `_scale` floored at 1), not `_scale`, because that base
  *      type IS the 11 px floor. Gates `A71b-hud-scale-floor` / `A71c`.
  *   4. A world-projected element is anchored by its own transform and nothing
- *      else. `.hzc-mhb` carried a -112 px margin AND a translate(-50%): two
+ *      else. `.cal-mhb` carried a -112 px margin AND a translate(-50%): two
  *      centrings, so the plate painted half its width left of its machine at
  *      every scale, and the melee clamp pushed it into the quest tracker it
  *      was written to clear. Gates `A71c-hud-surfaces` (centre vs. re-projected
@@ -157,9 +157,9 @@ const AWARE_EDGE_MARGIN = 44;
 const HUD_SCALE_MIN = 0.85;
 const HUD_SCALE_MAX = 1.9;
 /**
- * ui-15, the world layer. `.hzc-world` resets `--s` to 1, so its type is laid
+ * ui-15, the world layer. `.cal-world` resets `--s` to 1, so its type is laid
  * out at its BASE size — and the smallest base size in there is exactly 11 px,
- * the floor itself (`.hzc-int-label`, `.hzc-objmark-dist/-label`). A transform
+ * the floor itself (`.cal-int-label`, `.cal-objmark-dist/-label`). A transform
  * scale below 1 would therefore paint world-projected type UNDER the floor no
  * matter what the stylesheet promises. The HUD slider may grow these markers;
  * it may not shrink them past legibility. Gate: `A71b-hud-scale-floor`.
@@ -168,7 +168,7 @@ const WORLD_SCALE_MIN = 1;
 const HUD_REF_W = 1600;
 const HUD_REF_H = 900;
 
-const TIP_STORE = 'hzc.hud.tips.v4';
+const TIP_STORE = 'cal.hud.tips.v5';
 
 /* ------------------------------ glyph library ------------------------------ */
 /* Flat "tribal glyph" icons per docs/research/ui.md — inline SVG, currentColor. */
@@ -501,89 +501,89 @@ export class HUD {
      * recipe hides every body child but #app, so gate films are unaffected.
      */
     const veil = document.createElement('div');
-    veil.id = 'hzc-veil';
-    veil.innerHTML = '<div class="hzc-veil-sat"></div><div class="hzc-veil-tint"></div>';
+    veil.id = 'cal-veil';
+    veil.innerHTML = '<div class="cal-veil-sat"></div><div class="cal-veil-tint"></div>';
     document.body.appendChild(veil);
     this._veilEl = veil;
     this._veilSat = veil.firstChild;
     this._veilTint = veil.lastChild;
 
-    this._vignette = div('hzc-vignette', root);
+    this._vignette = div('cal-vignette', root);
     // watcher flash-bang overlay ('watcher-flash' when close + facing it)
-    this._wflash = div('hzc-wflash', root);
+    this._wflash = div('cal-wflash', root);
 
     /* ---------------- top-left vitals: health, pouch, tracker -------------- */
-    const tl = div('hzc-topleft', root);
+    const tl = div('cal-topleft', root);
     this._topleftEl = tl;
 
     /**
      * The vitals' dynamic hide (4 s, full health) and the tracker's (26 s, no
      * objective change) are DELIBERATELY different timers, so they cannot
-     * share one opacity: `.hzc-topleft.idle` used to zero both, which meant
+     * share one opacity: `.cal-topleft.idle` used to zero both, which meant
      * the quest tracker — including the game's opening instruction at boot,
      * where `_vitalsIdleT` starts already past threshold — was invisible in
      * every calm full-health state. The vitals now fade inside their own
-     * wrapper and `.hzc-track` is its sibling, owning its own `.idle`.
-     * `.hzc-topleft` keeps only position + the `low`/`healing` state classes
+     * wrapper and `.cal-track` is its sibling, owning its own `.idle`.
+     * `.cal-topleft` keeps only position + the `low`/`healing` state classes
      * its descendant selectors read. Gate: `A71g-tracker-live`.
      */
-    const vitals = div('hzc-vitals', tl);
+    const vitals = div('cal-vitals', tl);
     this._vitalsEl = vitals;
 
-    const hrow = div('hzc-healthrow', vitals);
-    const hb = div('hzc-healthbar', hrow);
-    this._healthGhost = div('hzc-healthghost', hb);
-    this._healthFill = div('hzc-healthfill', hb);
+    const hrow = div('cal-healthrow', vitals);
+    const hb = div('cal-healthbar', hrow);
+    this._healthGhost = div('cal-healthghost', hb);
+    this._healthFill = div('cal-healthfill', hb);
     // ui-07: FOUR segments, divided by three hairline ticks
     for (const pct of [25, 50, 75]) {
-      const seg = div('hzc-health-seg', hb);
+      const seg = div('cal-health-seg', hb);
       seg.style.left = pct + '%';
     }
-    this._healthNum = div('hzc-health-num', hrow, '<b>100</b><span>/100</span>');
+    this._healthNum = div('cal-health-num', hrow, '<b>100</b><span>/100</span>');
 
-    const pr = div('hzc-pouchrow', vitals);
+    const pr = div('cal-pouchrow', vitals);
     this._pouchRow = pr;
-    const pbar = div('hzc-pouchbar', pr);
-    this._pouchFill = div('hzc-pouchfill', pbar);
-    this._pouchPips = div('hzc-pouchpips', pr);
+    const pbar = div('cal-pouchbar', pr);
+    this._pouchFill = div('cal-pouchfill', pbar);
+    this._pouchPips = div('cal-pouchpips', pr);
     this._pouchKey = document.createElement('kbd');
-    this._pouchKey.className = 'hzc-pouch-key';
+    this._pouchKey.className = 'cal-pouch-key';
     this._pouchKey.textContent = 'Q';
     pr.appendChild(this._pouchKey);
 
     // ui-05: quest tracker UNDER the vitals, not top-right
-    const tr = div('hzc-track', tl);
+    const tr = div('cal-track', tl);
     this._trackEl = tr;
-    div('hzc-track-kicker', tr, 'THE HUNT');
-    this._trackTitle = div('hzc-track-title', tr);
-    this._trackObj = div('hzc-track-obj', tr);
-    this._trackMeta = div('hzc-track-meta', tr);
+    div('cal-track-kicker', tr, 'THE HUNT');
+    this._trackTitle = div('cal-track-title', tr);
+    this._trackObj = div('cal-track-obj', tr);
+    this._trackMeta = div('cal-track-meta', tr);
 
     /* ------------------------------- compass ------------------------------ */
-    const comp = div('hzc-compass', root);
-    const win = div('hzc-compass-window', comp);
-    const track = div('hzc-compass-track', win);
+    const comp = div('cal-compass', root);
+    const win = div('cal-compass-window', comp);
+    const track = div('cal-compass-track', win);
     this._ticks = [];
     for (let a = 0; a < 360; a += 15) {
       if (a % 45 === 0) continue;
-      this._ticks.push({ a, el: div('hzc-tick', track), label: false, vis: null });
+      this._ticks.push({ a, el: div('cal-tick', track), label: false, vis: null });
     }
     const dirs = [
       [0, 'N'], [45, 'NE'], [90, 'E'], [135, 'SE'],
       [180, 'S'], [225, 'SW'], [270, 'W'], [315, 'NW'],
     ];
     for (const [a, n] of dirs) {
-      let cls = 'hzc-cdir';
+      let cls = 'cal-cdir';
       if (n.length === 1) cls += ' main';
       if (n === 'N') cls += ' north';
       this._ticks.push({ a, el: div(cls, track, n), label: true, vis: null });
     }
-    this._pipLayer = div('hzc-compass-pips', win);
-    div('hzc-compass-caret', comp);
-    this._bearingEl = div('hzc-bearing', comp, '000');
+    this._pipLayer = div('cal-compass-pips', win);
+    div('cal-compass-caret', comp);
+    this._bearingEl = div('cal-bearing', comp, '000');
 
     // ui-12: stealth eye, directly under the compass
-    const eye = div('hzc-eye', root);
+    const eye = div('cal-eye', root);
     this._eyeEl = eye;
     eye.innerHTML =
       '<svg viewBox="0 0 44 26" xmlns="http://www.w3.org/2000/svg">'
@@ -592,37 +592,37 @@ export class HUD {
       + '<circle class="pupil" cx="22" cy="13" r="2.3"/>'
       + '<path class="closed" d="M4 13 C12 19 32 19 40 13"/>'
       + '</svg>'
-      + '<div class="hzc-eye-bars"><i></i><i></i><i></i></div>'
-      + '<div class="hzc-eye-label">HIDDEN</div>';
-    this._eyeLabel = eye.querySelector('.hzc-eye-label');
-    this._eyeBars = eye.querySelector('.hzc-eye-bars');
+      + '<div class="cal-eye-bars"><i></i><i></i><i></i></div>'
+      + '<div class="cal-eye-label">HIDDEN</div>';
+    this._eyeLabel = eye.querySelector('.cal-eye-label');
+    this._eyeBars = eye.querySelector('.cal-eye-bars');
 
     /* --------------- projected layers (machine bars, markers) ------------- */
-    this._worldLayer = div('hzc-world', root);
+    this._worldLayer = div('cal-world', root);
     for (let i = 0; i < MHB_CAP; i++) this._mhbSlots.push(this._makeMhb());
 
     // in-world objective diamond with metres (onboarding-loop-objective-guidance)
-    this._objDiamond = div('hzc-objmark', this._worldLayer,
-      '<div class="hzc-objmark-d"><svg viewBox="0 0 24 24"><polygon points="12,1 23,12 12,23 1,12"/></svg></div>'
-      + '<div class="hzc-objmark-dist">0m</div>'
-      + '<div class="hzc-objmark-label"></div>');
-    this._objDiamondDist = this._objDiamond.querySelector('.hzc-objmark-dist');
-    this._objDiamondLabel = this._objDiamond.querySelector('.hzc-objmark-label');
+    this._objDiamond = div('cal-objmark', this._worldLayer,
+      '<div class="cal-objmark-d"><svg viewBox="0 0 24 24"><polygon points="12,1 23,12 12,23 1,12"/></svg></div>'
+      + '<div class="cal-objmark-dist">0m</div>'
+      + '<div class="cal-objmark-label"></div>');
+    this._objDiamondDist = this._objDiamond.querySelector('.cal-objmark-dist');
+    this._objDiamondLabel = this._objDiamond.querySelector('.cal-objmark-label');
 
     // awareness indicator layer (screen-projected, edge-clamped)
-    this._awareLayer = div('hzc-awares', root);
+    this._awareLayer = div('cal-awares', root);
 
     /* ------------------------------ reticle ------------------------------- */
     // ui-08 bracket reticle: four corner brackets that converge with draw, a
     // centre dot, and the draw-progress ring behind them. Every stroke is
     // doubled (dark under, light over) so it reads on sky and on chrome.
-    const cross = div('hzc-cross', root);
+    const cross = div('cal-cross', root);
     this._crossEl = cross;
-    this._dotEl = div('hzc-dot', cross);
-    this._brackets = div('hzc-brk', cross);
-    for (const c of ['tl', 'tr', 'bl', 'br']) div('hzc-brk-a ' + c, this._brackets);
+    this._dotEl = div('cal-dot', cross);
+    this._brackets = div('cal-brk', cross);
+    for (const c of ['tl', 'tr', 'bl', 'br']) div('cal-brk-a ' + c, this._brackets);
     this._brkArm = this._brackets.firstElementChild;   // audit probe (0x0 parent)
-    this._ring = div('hzc-ring', cross);
+    this._ring = div('cal-ring', cross);
     this._ring.innerHTML =
       '<svg viewBox="0 0 72 72">' +
       '<circle class="track-under" cx="36" cy="36" r="26"/>' +
@@ -638,118 +638,118 @@ export class HUD {
       el.style.strokeDashoffset = this._ringC.toFixed(2);
     }
     // re-nock pip: the arrow is still travelling to the string (combat.nockProgress)
-    this._nockEl = div('hzc-nock', cross);
-    this._nockFill = div('hzc-nock-fill', this._nockEl);
+    this._nockEl = div('cal-nock', cross);
+    this._nockFill = div('cal-nock-fill', this._nockEl);
     // Concentration gauge: thin yellow vertical drain bar beside the reticle
-    this._concEl = div('hzc-conc', cross);
-    this._concFill = div('hzc-conc-fill', this._concEl);
+    this._concEl = div('cal-conc', cross);
+    this._concFill = div('cal-conc-fill', this._concEl);
 
     /* ------------------------- interaction prompt ------------------------- */
     // ui-16: projected AT the interactable, not screen-fixed
-    this._intEl = div('hzc-interact', this._worldLayer);
-    this._intRing = div('hzc-int-ring', this._intEl);
+    this._intEl = div('cal-interact', this._worldLayer);
+    this._intRing = div('cal-int-ring', this._intEl);
     const intKey = document.createElement('kbd');
-    intKey.className = 'hzc-int-key';
+    intKey.className = 'cal-int-key';
     intKey.textContent = 'E';
     this._intRing.appendChild(intKey);
-    this._intLabel = div('hzc-int-label', this._intEl, 'LOOT');
+    this._intLabel = div('cal-int-label', this._intEl, 'LOOT');
 
     /* ----------------------- bottom-left: tools strip --------------------- */
     // ui-11 — data and behaviour belong to `ctx.items.tools`; this owns pixels.
-    const tools = div('hzc-tools', root);
+    const tools = div('cal-tools', root);
     this._toolsEl = tools;
-    this._toolPrev = div('hzc-tool-chev prev', tools, '<span>‹</span><kbd>[</kbd>');
-    this._toolRow = div('hzc-tool-row', tools);
-    this._toolNext = div('hzc-tool-chev next', tools, '<kbd>]</kbd><span>›</span>');
+    this._toolPrev = div('cal-tool-chev prev', tools, '<span>‹</span><kbd>[</kbd>');
+    this._toolRow = div('cal-tool-row', tools);
+    this._toolNext = div('cal-tool-chev next', tools, '<kbd>]</kbd><span>›</span>');
     this._toolSlots = [];
 
     /* --------------------- bottom-centre: XP + level pip ------------------ */
-    const xp = div('hzc-xp', root);
+    const xp = div('cal-xp', root);
     this._xpEl = xp;
-    this._xpPip = div('hzc-xp-pip', xp, '<span>1</span>');
-    const xpw = div('hzc-xp-wrap', xp);
-    const xpl = div('hzc-xp-label', xpw);
+    this._xpPip = div('cal-xp-pip', xp, '<span>1</span>');
+    const xpw = div('cal-xp-wrap', xp);
+    const xpl = div('cal-xp-label', xpw);
     this._xpLeft = document.createElement('span');
     this._xpLeft.textContent = 'LEVEL 1';
     this._xpRight = document.createElement('span');
     this._xpRight.textContent = '0 / 100 XP';
     xpl.append(this._xpLeft, this._xpRight);
-    const xpb = div('hzc-xp-bar', xpw);
-    this._xpFill = div('hzc-xp-fill', xpb);
-    this._xpPoints = div('hzc-xp-points', xp);
+    const xpb = div('cal-xp-bar', xpw);
+    this._xpFill = div('cal-xp-fill', xpb);
+    this._xpPoints = div('cal-xp-points', xp);
     // +XP pops (progression-012) replace the kill feed entirely
-    this._xpPops = div('hzc-xp-pops', root);
+    this._xpPops = div('cal-xp-pops', root);
 
     /* -------------------------- bottom-right: weapon ---------------------- */
-    const wpn = div('hzc-weapon', root);
+    const wpn = div('cal-weapon', root);
     this._wpnEl = wpn;
-    const wtop = div('hzc-wpn-top', wpn);
-    this._wpnName = div('hzc-wpn-name', wtop, 'HUNTER BOW');
-    this._wpnDots = div('hzc-wpn-dots', wtop);
-    const wrow = div('hzc-wpn-row', wpn);
-    this._wpnArt = div('hzc-wpn-art', wrow, weaponArt('hunter-bow'));
-    const wmid = div('hzc-wpn-mid', wrow);
-    this._wpnAmmoName = div('hzc-wpn-ammoname', wmid, 'HUNTER ARROW');
-    const wcount = div('hzc-wpn-countrow', wmid);
-    this._wpnGlyph = div('hzc-wpn-glyph', wcount, svgIcon('arrow', '#efe6d5'));
-    this._wpnCount = div('hzc-wpn-count', wcount, '∞');
+    const wtop = div('cal-wpn-top', wpn);
+    this._wpnName = div('cal-wpn-name', wtop, 'HUNTER BOW');
+    this._wpnDots = div('cal-wpn-dots', wtop);
+    const wrow = div('cal-wpn-row', wpn);
+    this._wpnArt = div('cal-wpn-art', wrow, weaponArt('hunter-bow'));
+    const wmid = div('cal-wpn-mid', wrow);
+    this._wpnAmmoName = div('cal-wpn-ammoname', wmid, 'HUNTER ARROW');
+    const wcount = div('cal-wpn-countrow', wmid);
+    this._wpnGlyph = div('cal-wpn-glyph', wcount, svgIcon('arrow', '#efe6d5'));
+    this._wpnCount = div('cal-wpn-count', wcount, '∞');
     // craft hold (onboarding-loop-crafting-feedback)
-    this._craftEl = div('hzc-craft', wpn,
-      '<kbd>R</kbd><div class="hzc-craft-bar"><i></i></div><span>CRAFT</span>');
+    this._craftEl = div('cal-craft', wpn,
+      '<kbd>R</kbd><div class="cal-craft-bar"><i></i></div><span>CRAFT</span>');
     this._craftFill = this._craftEl.querySelector('i');
     this._craftLabel = this._craftEl.querySelector('span');
 
     // item pickup toasts (bottom-right stack, above the weapon HUD)
-    this._itemsEl = div('hzc-items', root);
+    this._itemsEl = div('cal-items', root);
 
     /* --------------------------- damage numbers --------------------------- */
-    const dl = div('hzc-dmglayer', root);
+    const dl = div('cal-dmglayer', root);
     this._dmgPool = [];
     for (let i = 0; i < 24; i++) {
       this._dmgPool.push({
-        el: div('hzc-dmg', dl),
+        el: div('cal-dmg', dl),
         active: false, age: 0, dur: 1, drift: 0,
         world: new THREE.Vector3(),
       });
     }
 
     /* ------------------------- banners + tutorial ------------------------- */
-    this._bannerEl = div('hzc-banners', root);
-    this._tipEl = div('hzc-tip', root);
+    this._bannerEl = div('cal-banners', root);
+    this._tipEl = div('cal-tip', root);
     this._tipEl.innerHTML =
-      '<div class="hzc-bracket tl"></div><div class="hzc-bracket br"></div>'
-      + '<div class="hzc-tip-title"></div><div class="hzc-tip-keys"></div>'
-      + '<div class="hzc-tip-body"></div>';
-    this._tipTitle = this._tipEl.querySelector('.hzc-tip-title');
-    this._tipKeys = this._tipEl.querySelector('.hzc-tip-keys');
-    this._tipBody = this._tipEl.querySelector('.hzc-tip-body');
+      '<div class="cal-bracket tl"></div><div class="cal-bracket br"></div>'
+      + '<div class="cal-tip-title"></div><div class="cal-tip-keys"></div>'
+      + '<div class="cal-tip-body"></div>';
+    this._tipTitle = this._tipEl.querySelector('.cal-tip-title');
+    this._tipKeys = this._tipEl.querySelector('.cal-tip-keys');
+    this._tipBody = this._tipEl.querySelector('.cal-tip-body');
 
     /* ----------------------------- end screens ---------------------------- */
-    this._deathEl = div('hzc-death', root);
-    div('hzc-death-title', this._deathEl, 'YOU DIED');
-    div('hzc-death-rule', this._deathEl);
-    div('hzc-death-sub', this._deathEl, 'THE CAMPFIRE REKINDLES YOUR SPARK');
+    this._deathEl = div('cal-death', root);
+    div('cal-death-title', this._deathEl, 'YOU DIED');
+    div('cal-death-rule', this._deathEl);
+    div('cal-death-sub', this._deathEl, 'THE CAMPFIRE REKINDLES YOUR SPARK');
 
-    this._victoryEl = div('hzc-victory', root);
-    div('hzc-victory-kicker', this._victoryEl, 'QUEST COMPLETED');
-    div('hzc-victory-title', this._victoryEl, 'VALLEY RECLAIMED');
-    div('hzc-victory-line', this._victoryEl);
-    div('hzc-victory-sub', this._victoryEl, 'EVERY MACHINE LIES SILENT · THE HUNT IS OVER');
+    this._victoryEl = div('cal-victory', root);
+    div('cal-victory-kicker', this._victoryEl, 'QUEST COMPLETED');
+    div('cal-victory-title', this._victoryEl, 'VALLEY RECLAIMED');
+    div('cal-victory-line', this._victoryEl);
+    div('cal-victory-sub', this._victoryEl, 'EVERY MACHINE LIES SILENT · THE HUNT IS OVER');
 
     // pause menu (only HUD child with pointer events) — `shell-menus` replaces
     // this with the tabbed hub; until then it is the bridge that was here.
-    this._pauseEl = div('hzc-pause', root);
-    const pi = div('hzc-pause-inner', this._pauseEl);
-    for (const c of ['tl', 'tr', 'bl', 'br']) div('hzc-bracket ' + c, pi);
-    div('hzc-pause-kicker', pi, 'THE HUNT HOLDS');
-    div('hzc-pause-title', pi, 'PAUSED');
-    div('hzc-pause-rule', pi);
+    this._pauseEl = div('cal-pause', root);
+    const pi = div('cal-pause-inner', this._pauseEl);
+    for (const c of ['tl', 'tr', 'bl', 'br']) div('cal-bracket ' + c, pi);
+    div('cal-pause-kicker', pi, 'THE HUNT HOLDS');
+    div('cal-pause-title', pi, 'PAUSED');
+    div('cal-pause-rule', pi);
     const btn = document.createElement('button');
-    btn.className = 'hzc-btn';
+    btn.className = 'cal-btn';
     btn.textContent = 'RESUME THE HUNT';
     btn.addEventListener('click', () => this.setPaused(false));
     pi.appendChild(btn);
-    div('hzc-pause-hints', pi,
+    div('cal-pause-hints', pi,
       '<div><b>WASD</b> Move</div><div><b>SHIFT</b> Sprint · Concentration (aim)</div>' +
       '<div><b>C</b> Crouch</div><div><b>SPACE / CTRL</b> Dodge roll</div>' +
       '<div><b>RMB</b> Aim</div><div><b>LMB</b> Draw / loose · Spear</div>' +
@@ -764,25 +764,25 @@ export class HUD {
 
   /** One pooled projected machine bar (ui-06): plate, name+LV, bar, elem rings. */
   _makeMhb() {
-    const el = div('hzc-mhb', this._worldLayer);
-    const plate = div('hzc-mhb-plate', el);
-    const head = div('hzc-mhb-head', plate);
-    const aware = div('hzc-mhb-aware', head,
-      '<div class="hzc-mhb-aware-circle"></div>'
-      + '<div class="hzc-mhb-aware-diamond"><svg viewBox="0 0 30 30">'
+    const el = div('cal-mhb', this._worldLayer);
+    const plate = div('cal-mhb-plate', el);
+    const head = div('cal-mhb-head', plate);
+    const aware = div('cal-mhb-aware', head,
+      '<div class="cal-mhb-aware-circle"></div>'
+      + '<div class="cal-mhb-aware-diamond"><svg viewBox="0 0 30 30">'
       + '<polygon points="15,1 18.4,9.2 26,5.6 21.4,12.6 29,15 21.4,17.4 26,24.4 18.4,20.8 15,29 11.6,20.8 4,24.4 8.6,17.4 1,15 8.6,12.6 4,5.6 11.6,9.2"/>'
       + '</svg></div>');
-    const name = div('hzc-mhb-name', head, 'MACHINE');
-    const bar = div('hzc-mhb-bar', plate);
-    const ghost = div('hzc-mhb-ghost', bar);
-    const fill = div('hzc-mhb-fill', bar);
-    const elems = div('hzc-mhb-elems', el);
+    const name = div('cal-mhb-name', head, 'MACHINE');
+    const bar = div('cal-mhb-bar', plate);
+    const ghost = div('cal-mhb-ghost', bar);
+    const fill = div('cal-mhb-fill', bar);
+    const elems = div('cal-mhb-elems', el);
     const elemEls = {};
     for (const e of ['fire', 'shock', 'freeze']) {
-      const row = div('hzc-elem', elems);
+      const row = div('cal-elem', elems);
       row.dataset.e = e;
-      const ring = div('hzc-elem-ring', row);
-      div('hzc-elem-ic', ring, svgIcon(e, 'currentColor'));
+      const ring = div('cal-elem-ring', row);
+      div('cal-elem-ic', ring, svgIcon(e, 'currentColor'));
       elemEls[e] = { row, ring, w: -1, trig: null, shown: null };
     }
     return {
@@ -872,7 +872,7 @@ export class HUD {
   /**
    * ui-15. Reports the EFFECTIVE type size — the stylesheet's px times every
    * transform between the element and the screen. Reading `fontSize` alone is
-   * how `.hzc-mhb-name` shipped a round at a painted 9.35 px while this audit
+   * how `.cal-mhb-name` shipped a round at a painted 9.35 px while this audit
    * answered 11: the stylesheet said 11, and the transform that halved it was
    * invisible from here. For the same reason the probe list now contains the
    * world-projected layer, which it never did — the blind spot that also let
@@ -891,7 +891,7 @@ export class HUD {
       ['bearing', this._bearingEl],
       ['ammoName', this._wpnAmmoName],
       ['xpLabel', this._xpLeft],
-      ['toolCount', this._toolRow.querySelector('.hzc-tool-n')],
+      ['toolCount', this._toolRow.querySelector('.cal-tool-n')],
       ['eye', this._eyeLabel],
       ['tip', this._tipBody],
       ['mhbName', mhb?.name, W],
@@ -1065,8 +1065,8 @@ export class HUD {
     on('tool-used', () => { this._lastToolSig = ''; });
 
     /* --------------------------- Concentration veil ----------------------- */
-    on('concentration-start', () => { this._concOn = true; });
-    on('concentration-end', () => { this._concOn = false; });
+    on('steady-start', () => { this._concOn = true; });
+    on('steady-end', () => { this._concOn = false; });
 
     /* ------------------------------- input -------------------------------- */
     ctx.input.onDown('Escape', () => {
@@ -1200,7 +1200,7 @@ export class HUD {
   /** ui-05 — centre banners, rendered from `progression`'s `banner` event. */
   _banner(title, detail, kind = 'info') {
     if (!title) return;
-    const b = div(`hzc-banner k-${kind}`, this._bannerEl);
+    const b = div(`cal-banner k-${kind}`, this._bannerEl);
     div('b-title', b, String(title));
     if (detail) div('b-detail', b, String(detail));
     div('b-rule', b);
@@ -1211,14 +1211,14 @@ export class HUD {
 
   /** Small centre-bottom flash for craft / pocket-full / tool-blocked. */
   _flash(text, kind = 'info') {
-    const el = div(`hzc-flash k-${kind}`, this._xpPops, String(text));
+    const el = div(`cal-flash k-${kind}`, this._xpPops, String(text));
     setTimeout(() => el.remove(), 1900);
     while (this._xpPops.childElementCount > 5) this._xpPops.firstElementChild.remove();
   }
 
   /** progression-012 — the kill feed is gone; this is what replaced it. */
   _xpPop(amount, reason) {
-    const el = div('hzc-xppop', this._xpPops,
+    const el = div('cal-xppop', this._xpPops,
       `+${amount}<span>XP</span>${reason === 'quest' ? '<i>QUEST</i>' : ''}`);
     setTimeout(() => el.remove(), 1750);
     while (this._xpPops.childElementCount > 5) this._xpPops.firstElementChild.remove();
@@ -1265,7 +1265,7 @@ export class HUD {
     const color = e?.rarityColor ?? entry?.color ?? e?.color ?? local.color ?? '#efe6d5';
     const glyphKey = entry?.glyph && GLYPHS[entry.glyph] ? entry.glyph : local.glyph;
     const icon = glyphKey ? svgIcon(glyphKey, color)
-      : e?.glyph ? `<span class="hzc-item-tg" style="color:${color}">${e.glyph}</span>`
+      : e?.glyph ? `<span class="cal-item-tg" style="color:${color}">${e.glyph}</span>`
         : svgIcon('shard', color);
 
     // merge into the newest row when the same item streams in
@@ -1275,7 +1275,7 @@ export class HUD {
       last.remove();
     }
     const el = document.createElement('div');
-    el.className = 'hzc-item';
+    el.className = 'cal-item';
     el.dataset.id = id;
     el.dataset.n = String(n);
     el.innerHTML = `${icon}<span>${name}</span><b>${n > 0 ? '×' + n : ''}</b>`;
@@ -1304,7 +1304,7 @@ export class HUD {
     slot.world.y += 0.15;
     slot.drift = (Math.random() - 0.5) * 40;
     slot.el.textContent = text;
-    slot.el.className = 'hzc-dmg' + (cls ? ' ' + cls : '');
+    slot.el.className = 'cal-dmg' + (cls ? ' ' + cls : '');
     slot.el.style.fontSize = px.toFixed(1) + 'px';
     slot.el.style.visibility = 'visible';
   }
@@ -1495,7 +1495,7 @@ export class HUD {
     const c = this.ctx.combat;
     const engaged = !!p.aiming
       || (c?.drawStrength ?? 0) > 0.02
-      || !!c?.concentration?.active
+      || !!c?.steady?.active
       || !!c?.weaponDrawn
       || !!this.ctx.wheel?.open
       || this._anyHostile
@@ -1569,8 +1569,8 @@ export class HUD {
       this._healthGhost.style.width = gq + '%';
     }
 
-    const maxPouch = p.maxPouch || 100;
-    const raw = p.pouch ?? 0;
+    const maxPouch = p.maxGourd || 100;
+    const raw = p.gourd ?? 0;
     const pouch = clamp01(raw / maxPouch);
     const pw = Math.round(pouch * 100);
     if (pw !== this._lastPouch) {
@@ -1606,7 +1606,7 @@ export class HUD {
     const idle = this._vitalsIdleT > VITALS_IDLE_S;
     if (idle !== this._lastIdle) {
       this._lastIdle = idle;
-      // the WRAPPER, not `.hzc-topleft` — the tracker is its sibling and runs
+      // the WRAPPER, not `.cal-topleft` — the tracker is its sibling and runs
       // its own 26 s timer (see `_build`).
       this._vitalsEl.classList.toggle('idle', idle);
     }
@@ -1676,7 +1676,7 @@ export class HUD {
   /**
    * ui-04 COMPASS TRUTH. A pip is drawn for a machine only when the player has
    * EARNED that information:
-   *   · it is Focus-tagged (`ctx.focus.tags`), or
+   *   · it is Focus-tagged (`ctx.sighting.tags`), or
    *   · it is the target of the tracked quest objective, or
    *   · it is currently fighting her (alert/attack, or hit in the last 5 s).
    * Everything else — the 320 m radar sweep this used to be — is gone. Quest
@@ -1708,7 +1708,7 @@ export class HUD {
     this._questKind = this._trackedKillKind();
     const list = this.ctx.machines?.list;
     if (Array.isArray(list)) {
-      const tags = this.ctx.focus?.tags;
+      const tags = this.ctx.sighting?.tags;
       let questTarget = null;
       if (this._questKind) {
         let bd = Infinity;
@@ -1736,9 +1736,9 @@ export class HUD {
           continue;
         }
         if (!pip) {
-          const el = div('hzc-pip', this._pipLayer);
-          div('hzc-pip-d', el);
-          pip = { el, lab: div('hzc-pip-dist', el), s: null, vis: null, dist: -1, k: null };
+          const el = div('cal-pip', this._pipLayer);
+          div('cal-pip-d', el);
+          pip = { el, lab: div('cal-pip-dist', el), s: null, vis: null, dist: -1, k: null };
           this._pips.set(m, pip);
         }
         const pos = m.position ?? m.root?.position;
@@ -1793,9 +1793,9 @@ export class HUD {
     const marks = this.ctx.progression?.getMarkers?.();
     const n = Array.isArray(marks) ? Math.min(marks.length, 6) : 0;
     while (this._questPips.length < n) {
-      const el = div('hzc-pip qm', this._pipLayer);
-      div('hzc-pip-d', el);
-      this._questPips.push({ el, lab: div('hzc-pip-dist', el), dist: -1, vis: null });
+      const el = div('cal-pip qm', this._pipLayer);
+      div('cal-pip-d', el);
+      this._questPips.push({ el, lab: div('cal-pip-dist', el), dist: -1, vis: null });
     }
     for (let i = 0; i < this._questPips.length; i++) {
       const q = this._questPips[i];
@@ -1823,7 +1823,7 @@ export class HUD {
     let pips = 0, quest = 0;
     for (const [, pip] of this._pips) if (pip.vis) pips++;
     for (const q of this._questPips) if (q.vis) quest++;
-    const tags = this.ctx.focus?.tags;
+    const tags = this.ctx.sighting?.tags;
     const list = this.ctx.machines?.list ?? [];
     return {
       machinePips: pips,
@@ -1883,9 +1883,9 @@ export class HUD {
   _awareEntry(m) {
     let a = this._awares.get(m);
     if (!a) {
-      const el = div('hzc-aware', this._awareLayer);
-      div('hzc-aware-circle', el);
-      div('hzc-aware-diamond', el,
+      const el = div('cal-aware', this._awareLayer);
+      div('cal-aware-circle', el);
+      div('cal-aware-diamond', el,
         '<svg viewBox="0 0 30 30"><polygon points="15,1 18.4,9.2 26,5.6 21.4,12.6 29,15 21.4,17.4 26,24.4 18.4,20.8 15,29 11.6,20.8 4,24.4 8.6,17.4 1,15 8.6,12.6 4,5.6 11.6,9.2"/></svg>');
       a = { el, circle: el.firstChild, mode: null, frac: -1, vis: null, edge: null, chirped: false };
       this._awares.set(m, a);
@@ -1966,7 +1966,7 @@ export class HUD {
       if (mode === 'fill' && Math.abs(frac - a.frac) > 0.02) {
         a.frac = frac;
         a.circle.style.background =
-          `conic-gradient(var(--hzc-yellow) ${(frac * 100).toFixed(0)}%, rgba(8, 10, 12, 0.35) 0)`;
+          `conic-gradient(var(--cal-yellow) ${(frac * 100).toFixed(0)}%, rgba(8, 10, 12, 0.35) 0)`;
       }
     }
   }
@@ -2080,7 +2080,7 @@ export class HUD {
     slot.aware.dataset.m = aMode;
     if (aMode === 'fill') {
       slot.awareCircle.style.background =
-        `conic-gradient(var(--hzc-yellow) ${(aFrac * 100).toFixed(0)}%, rgba(8, 10, 12, 0.4) 0)`;
+        `conic-gradient(var(--cal-yellow) ${(aFrac * 100).toFixed(0)}%, rgba(8, 10, 12, 0.4) 0)`;
     }
   }
 
@@ -2108,7 +2108,7 @@ export class HUD {
       const pw = Math.round(val * 100);
       if (pw !== e.w || trig !== e.trig) {
         e.w = pw;
-        const col = trig ? 'var(--hzc-ring-cd)' : 'var(--c)';
+        const col = trig ? 'var(--cal-ring-cd)' : 'var(--c)';
         e.ring.style.background =
           `conic-gradient(${col} ${pw}%, rgba(10, 13, 16, 0.68) 0)`;
       }
@@ -2156,7 +2156,7 @@ export class HUD {
       if (nq >= 0) this._nockFill.style.width = (np * 100).toFixed(0) + '%';
     }
 
-    const conc = c?.concentration;
+    const conc = c?.steady;
     const gauge = clamp01(conc?.gauge ?? 1);
     const active = !!conc?.active;
     const show = gauge < 0.995 || active;
@@ -2261,16 +2261,16 @@ export class HUD {
     this._toolsEl.classList.add('show');
 
     while (this._toolSlots.length < tools.slots.length) {
-      const el = div('hzc-tool', this._toolRow);
+      const el = div('cal-tool', this._toolRow);
       // The angled corner lives on this plate, not on the tile: `clip-path`
       // clips descendants, and the use-key glyph hangs ABOVE the tile.
-      div('hzc-tool-plate', el);
-      const ic = div('hzc-tool-ic', el);
-      const n = div('hzc-tool-n', el);
+      div('cal-tool-plate', el);
+      const ic = div('cal-tool-ic', el);
+      const n = div('cal-tool-n', el);
       const key = document.createElement('kbd');
-      key.className = 'hzc-tool-key';
+      key.className = 'cal-tool-key';
       el.appendChild(key);
-      const sweep = div('hzc-tool-cd', el);
+      const sweep = div('cal-tool-cd', el);
       this._toolSlots.push({ el, ic, n, key, sweep, sig: '' });
     }
     for (let i = 0; i < this._toolSlots.length; i++) {
@@ -2325,7 +2325,7 @@ export class HUD {
     this._lastCraftSig = sig;
     this._craftEl.classList.toggle('on', !!c.holding);
     this._craftFill.style.width = (prog * 100).toFixed(0) + '%';
-    this._craftFill.style.background = c.ok === false ? 'var(--hzc-alert)' : 'var(--hzc-yellow)';
+    this._craftFill.style.background = c.ok === false ? 'var(--cal-alert)' : 'var(--cal-yellow)';
     this._craftLabel.textContent = c.holding && c.blocker
       ? String(c.blocker).toUpperCase()
       : 'CRAFT';
@@ -2403,7 +2403,7 @@ export class HUD {
     this._intEl.classList.add('show');
     this._intLabel.textContent = label;
     this._intRing.style.background =
-      `conic-gradient(var(--hzc-yellow) ${(prog * 100).toFixed(0)}%, rgba(239, 230, 213, 0.18) 0)`;
+      `conic-gradient(var(--cal-yellow) ${(prog * 100).toFixed(0)}%, rgba(239, 230, 213, 0.18) 0)`;
   }
 
   /* ---------------------- in-world objective diamond ------------------------- */
@@ -2495,11 +2495,11 @@ export class HUD {
   /**
    * ui-19 / combat-concentration-presentation — Concentration desaturates the
    * world, cools it, and pulls a vignette in. The ramp is real-time (a 0.22 s
-   * attack, 0.34 s release) and it is driven off the `concentration-start` /
-   * `-end` events with a poll on `combat.concentration.active` as the belt.
+   * attack, 0.34 s release) and it is driven off the `steady-start` /
+   * `-end` events with a poll on `combat.steady.active` as the belt.
    */
   _updateConcVeil(dt) {
-    const active = this._concOn || !!this.ctx.combat?.concentration?.active;
+    const active = this._concOn || !!this.ctx.combat?.steady?.active;
     const target = active ? 1 : 0;
     const rate = active ? 1 / 0.22 : 1 / 0.34;
     if (this._concVeil < target) this._concVeil = Math.min(target, this._concVeil + rate * dt);
@@ -2605,7 +2605,7 @@ export class HUD {
         visible: vis(this._vitalsEl),
         pct: this._lastHp,
         numerals: this._healthNum.textContent.trim(),
-        segments: this._topleftEl.querySelectorAll('.hzc-health-seg').length + 1,
+        segments: this._topleftEl.querySelectorAll('.cal-health-seg').length + 1,
         // the fill is a vertical red gradient, so `backgroundColor` is
         // transparent — the gate needs the image string to prove it is RED.
         fillColor: getComputedStyle(this._healthFill).backgroundColor,
@@ -2709,11 +2709,11 @@ export class HUD {
         text: this._xpRight.textContent },
       weapon: { visible: vis(this._wpnEl), name: this._wpnName.textContent,
         dots: this._wpnDots.childElementCount, art: this._wpnArt.querySelector('svg') != null },
-      // `.hzc-cross` is a 0x0 anchor at screen centre — everything it draws is
+      // `.cal-cross` is a 0x0 anchor at screen centre — everything it draws is
       // absolutely positioned off it, so the ANCHOR is never "visible". Grade
       // the marks: the centre dot and the four corner brackets.
       reticle: (() => {
-        // both `.hzc-cross` and `.hzc-brk` are 0x0 anchors that everything is
+        // both `.cal-cross` and `.cal-brk` are 0x0 anchors that everything is
         // positioned off, so neither is ever "visible" by rect. Grade the marks
         // themselves, and read the bracket's opacity off its own parent.
         const brkOn = parseFloat(getComputedStyle(this._brackets).opacity) > 0.04
@@ -2735,7 +2735,7 @@ export class HUD {
       banners: this._bannerEl.childElementCount,
       xpPops: this._xpPops.childElementCount,
       tip: { visible: vis(this._tipEl), title: this._tipTitle.textContent },
-      killFeed: document.querySelectorAll('.hzc-toast').length,
+      killFeed: document.querySelectorAll('.cal-toast').length,
       scale: this._scaleAudit(),
     };
   }

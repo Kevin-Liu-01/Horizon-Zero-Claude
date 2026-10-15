@@ -12,7 +12,7 @@
  *
  * THE FIX, three parts, all here so both harnesses get them:
  *   1. `profileDir()` hands out an EXPLICIT userDataDir under one known root,
- *      named `hzc-<pid>-<port>-<n>` so a leftover can always be traced to the
+ *      named `cal-<pid>-<port>-<n>` so a leftover can always be traced to the
  *      process that made it.
  *   2. `disposeProfile()` / `installProfileCleanup()` remove it in a finally and
  *      again from `exit`/SIGINT/SIGTERM/uncaught handlers — the paths puppeteer
@@ -39,7 +39,7 @@
  * about them:
  *   • `puppeteer_dev_chrome_profile-*` — owner unknowable. Conservative rule
  *     unchanged: a live SingletonLock always wins, we never kill.
- *   • `hzc-<pid>-<port>-<n>` — OURS. The name proves which process launched it,
+ *   • `cal-<pid>-<port>-<n>` — OURS. The name proves which process launched it,
  *     `disposeProfile()` bins it at every relaunch, so once that pid is dead and
  *     the dir is older than `maxAgeMs` any Chrome still on it is orphaned by
  *     construction. (A second forever-keep hides in the same rule: once the
@@ -60,11 +60,11 @@ import os from 'os';
 import path from 'path';
 
 /** One root we own, so a sweep never has to guess what is ours. */
-export const PROFILE_ROOT = process.env.HZC_CHROME_PROFILE_ROOT
-  || path.join(os.tmpdir(), 'hzc-chrome-profiles');
+export const PROFILE_ROOT = process.env.CAL_CHROME_PROFILE_ROOT
+  || path.join(os.tmpdir(), 'cal-chrome-profiles');
 
-/** `hzc-<pid>-<port>-<n>` — the pid is the liveness evidence for the sweep. */
-const OURS = /^hzc-(\d+)-\d+-\d+$/;
+/** `cal-<pid>-<port>-<n>` — the pid is the liveness evidence for the sweep. */
+const OURS = /^cal-(\d+)-\d+-\d+$/;
 /** Profiles puppeteer made for itself before/beside us; still ours to reap. */
 const PUPPETEER = /^puppeteer_dev_chrome_profile-/;
 
@@ -149,7 +149,7 @@ function processSnapshot() {
 
 /**
  * Does this command line run Chrome against exactly `dir`? Substring alone would
- * make `hzc-1-2-3` match `hzc-1-2-30`, so the flag must end at a boundary.
+ * make `cal-1-2-3` match `cal-1-2-30`, so the flag must end at a boundary.
  */
 function cmdUsesDir(cmd, dir) {
   const flag = `--user-data-dir=${dir}`;
@@ -386,7 +386,7 @@ const live = new Set();
 
 /** A fresh, empty, explicitly-owned userDataDir. Pass it to puppeteer.launch(). */
 export function profileDir(port = 0) {
-  const dir = path.join(PROFILE_ROOT, `hzc-${process.pid}-${port}-${seq++}`);
+  const dir = path.join(PROFILE_ROOT, `cal-${process.pid}-${port}-${seq++}`);
   mkdirSync(dir, { recursive: true });
   live.add(dir);
   return dir;

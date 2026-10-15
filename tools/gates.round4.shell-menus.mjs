@@ -269,7 +269,7 @@ export const GATES = [
 
         const b = m.beacon.audit();
         const hudOwns = typeof c.hud?.setWaypoint === 'function';
-        const compass = document.querySelector('.hzc-compass');
+        const compass = document.querySelector('.cal-compass');
         const metres = (b.text || '').match(/(\\d+)\\s*m/);
         out.compass = { hudOwns, beaconVisible: b.visible, beaconText: b.text,
                         beaconOpacity: b.opacity, compassFound: !!compass,
@@ -357,7 +357,7 @@ export const GATES = [
      * `plain: true` boots the real title screen (no `?shot=1` auto-start). The
      * audit's V38 fails "on a double logo or a keybind wall" — a judge reading
      * a PNG can miss a second wordmark scrolled under the fold, so this counts
-     * the RENDERED ones: every `.hzc-logo` with a non-zero box and a non-zero
+     * the RENDERED ones: every `.cal-logo` with a non-zero box and a non-zero
      * opacity. The dolly is measured as metres of camera travel, because a
      * still vista with a menu over it looks identical in a screenshot.
      *
@@ -536,7 +536,7 @@ export const GATES = [
         m.settings.set('invertY', true);
         m.settings.set('fov', 78);
         m.settings.set('vol_music', 0.34);
-        out.stored = JSON.parse(localStorage.getItem('hzc.settings.v1') || 'null');
+        out.stored = JSON.parse(localStorage.getItem('cal.settings.v5') || 'null');
         out.live = { sens: c.settings.sensitivity, inv: c.settings.invertY, fov: c.settings.fov,
                      inputShares: c.input.settings === c.settings,
                      inputSens: c.input.opt('sensitivity'), inputInv: c.input.opt('invertY') };
@@ -591,7 +591,7 @@ export const GATES = [
     /**
      * Each row is checked at its DESTINATION, never at the store: the HUD scale
      * on the variable `hud.css` reads, the palette on the computed
-     * `--hzc-accent` every panel inherits, reduced motion on the body class the
+     * `--cal-accent` every panel inherits, reduced motion on the body class the
      * animations are keyed to AND on the camera-shake value it is supposed to
      * zero, and hold-crouch by pressing and releasing C and watching
      * `player.crouching`.
@@ -604,7 +604,7 @@ export const GATES = [
         const S = m.settings;
         const out = {};
         const hudRoot = c.hud?.rootEl ?? document.getElementById('hud');
-        const accent = () => getComputedStyle(document.documentElement).getPropertyValue('--hzc-accent').trim();
+        const accent = () => getComputedStyle(document.documentElement).getPropertyValue('--cal-accent').trim();
 
         out.accentBefore = accent();
         S.set('hudScale', 1.3); await frames(3);
@@ -614,7 +614,7 @@ export const GATES = [
         S.set('colourblind', 'deuteranopia'); await frames(3);
         out.palette = { accent: accent(), changed: accent() !== out.accentBefore };
         S.set('reducedMotion', true); await frames(3);
-        out.reduced = { body: document.body.classList.contains('hzc-reduced-motion'),
+        out.reduced = { body: document.body.classList.contains('cal-reduced-motion'),
                         shake: c.settings.cameraShake, flag: c.settings.reducedMotion };
 
         // hold-vs-toggle, measured on the player
@@ -635,13 +635,13 @@ export const GATES = [
         out.hold = { down: heldOn, afterRelease: p.crouching };
 
         // and every one of them is on disk for the next launch
-        const raw = JSON.parse(localStorage.getItem('hzc.settings.v1') || '{}');
+        const raw = JSON.parse(localStorage.getItem('cal.settings.v5') || '{}');
         out.persisted = { hudScale: raw.hudScale, colourblind: raw.colourblind,
                           reducedMotion: raw.reducedMotion, holdCrouch: raw.holdCrouch };
 
         S.reset();
         await frames(3);
-        out.afterReset = { accent: accent(), body: document.body.classList.contains('hzc-reduced-motion') };
+        out.afterReset = { accent: accent(), body: document.body.classList.contains('cal-reduced-motion') };
 
         const pass = out.hudScale.settings === 1.3 && out.hudScale.pref === '1.3'
           && out.hudScale.onHud !== ''

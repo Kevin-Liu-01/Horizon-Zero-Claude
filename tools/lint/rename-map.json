@@ -1,0 +1,41 @@
+{
+  "about": "Plan §7.1 W0-day1 rename table as grep data. Read by A-identifiers-renamed (tools/gates.r5.brand.mjs); W0b's namecheck.mjs folds it into the union lexicon. Every 'from' must have 0 hits in scope. tools/lint/** is excluded because it IS the lexicon (§7.4); the r5-poc horizon-lexicon.txt is excluded for the same reason (pipeline promotes it at W0b).",
+  "scope": ["src", "tools", "index.html"],
+  "exclude": ["tools/lint/", "tools/r5-poc/direction-a/horizon-lexicon.txt", "tools/r5-poc/assets/", "tools/r5-poc/out/"],
+  "extensions": [".js", ".mjs", ".cjs", ".css", ".html", ".json", ".txt", ".md", ".py", ".glsl"],
+  "rows": [
+    { "class": "project prefix", "from": "hzc / .hzc-* / --hzc-* / #hzc-prog / [HZC]", "to": "cal / .cal-* / --cal-* / #cal-prog / [CAL]", "re": "hzc", "flags": "gi" },
+    { "class": "storage key", "from": "hzc.save.v4", "to": "cal.save.v5", "re": "hzc\\.save\\.v4", "flags": "g" },
+    { "class": "storage key", "from": "hzc.checkpoint.v4", "to": "cal.checkpoint.v5", "re": "hzc\\.checkpoint\\.v4", "flags": "g" },
+    { "class": "storage key", "from": "hzc.meta.v4", "to": "cal.meta.v5", "re": "hzc\\.meta\\.v4", "flags": "g" },
+    { "class": "storage key", "from": "hzc.settings.v1", "to": "cal.settings.v5", "re": "hzc\\.settings\\.v1", "flags": "g" },
+    { "class": "storage key", "from": "hzc.audio.v1", "to": "cal.audio.v5", "re": "hzc\\.audio\\.v1", "flags": "g" },
+    { "class": "storage key", "from": "hzc.map.v1", "to": "cal.map.v5", "re": "hzc\\.map\\.v1", "flags": "g" },
+    { "class": "storage key", "from": "hzc.hud.tips.v4", "to": "cal.hud.tips.v5", "re": "hzc\\.hud\\.tips\\.v4", "flags": "g" },
+    { "class": "event", "from": "datapoint-found", "to": "fieldbook-found", "re": "(?<![\\w-])datapoint-found(?![\\w-])", "flags": "g" },
+    { "class": "event", "from": "supply-cache", "to": "cache-found", "re": "(?<![\\w-])supply-cache(?![\\w-])", "flags": "g" },
+    { "class": "event", "from": "silent-strike", "to": "undercut", "re": "(?<![\\w-])silent-strike(?![\\w-])", "flags": "g" },
+    { "class": "event", "from": "focus-on", "to": "sighting-on", "re": "(?<![\\w-])focus-on(?![\\w-])", "flags": "g" },
+    { "class": "event", "from": "focus-off", "to": "sighting-off", "re": "(?<![\\w-])focus-off(?![\\w-])", "flags": "g" },
+    { "class": "event", "from": "focus-pulse", "to": "sighting-pulse", "re": "(?<![\\w-])focus-pulse(?![\\w-])", "flags": "g" },
+    { "class": "event", "from": "concentration-start", "to": "steady-start", "re": "(?<![\\w-])concentration-start(?![\\w-])", "flags": "g" },
+    { "class": "event", "from": "concentration-end", "to": "steady-end", "re": "(?<![\\w-])concentration-end(?![\\w-])", "flags": "g" },
+    { "class": "event", "from": "machine-tied", "to": "instrument-fouled", "re": "(?<![\\w-])machine-tied(?![\\w-])", "flags": "g" },
+    { "class": "event", "from": "rope-attached", "to": "net-fouled", "re": "(?<![\\w-])rope-attached(?![\\w-])", "flags": "g" },
+    { "class": "ctx member", "from": "ctx.focus", "to": "ctx.sighting", "re": "\\b(?:ctx|__CTX__)\\??\\.focus\\b(?!\\s*\\()", "flags": "g" },
+    { "class": "ctx member", "from": "combat.concentration", "to": "combat.steady", "re": "\\bcombat\\??\\.concentration\\b", "flags": "g" },
+    { "class": "ctx member", "from": "combat.concentration (inside combat.js / hud.js)", "to": "this.steady / c?.steady", "re": "\\bthis\\.concentration\\b|\\bc\\?\\.concentration\\b", "flags": "g", "files": ["src/combat/combat.js", "src/ui/hud.js"] },
+    { "class": "ctx member", "from": "player.pouch / player.medicine", "to": "player.gourd / player.gourdDoses", "re": "\\bplayer\\??\\.(?:pouch|maxPouch|addPouch|medicine)\\b", "flags": "g" },
+    { "class": "ctx member", "from": "player.pouch (receivers audited to be the player)", "to": "player.gourd", "re": "\\b(?:p|this|ctx\\.player|this\\.ctx\\.player)\\??\\.(?:pouch|maxPouch|addPouch)\\b|\\bget medicine\\(|^\\s*addPouch\\(", "flags": "gm", "files": ["src/entities/player.js", "src/ui/inventory.js", "src/ui/hud.js", "src/core/progression.js", "src/core/save.js", "src/world/camp.js", "src/items/tools.js", "src/items/gather.js"] },
+    { "class": "asset rig row", "from": "assets.models.aloy", "to": "assets.models.hero", "re": "\\bmodels\\??\\.aloy\\w*\\b|models\\[['\"]aloy['\"]\\]|^\\s*aloy:\\s+\\{ url:", "flags": "gm" }
+  ],
+  "removed": {
+    "about": "§7.1 'removed events' row: deleted WITH their systems by other lanes, so they are counted and reported, never failed, by the W0-day1 gate.",
+    "rows": [
+      { "from": "override-node", "owner": "instruments-core W0a", "re": "(?<![\\w-])override-node(?![\\w-])", "flags": "g" },
+      { "from": "cauldron-override", "owner": "instruments-core W0a", "re": "(?<![\\w-])cauldron-override(?![\\w-])", "flags": "g" },
+      { "from": "hunting-ground", "owner": "progression W3", "re": "(?<![\\w-])hunting-ground(?![\\w-])", "flags": "g" }
+    ]
+  },
+  "package": { "file": "package.json", "name": "calima", "description": "CALIMA — a survey-machine hunting game" }
+}

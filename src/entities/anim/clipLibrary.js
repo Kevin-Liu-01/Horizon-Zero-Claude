@@ -304,7 +304,7 @@ let _shared = null;
 
 export class ClipLibrary {
   /**
-   * @param {{root: THREE.Object3D}} aloyModel  assets.models.aloy
+   * @param {{root: THREE.Object3D}} aloyModel  assets.models.hero
    * @param {{scene: THREE.Object3D, animations: THREE.AnimationClip[]}} ualGltf  assets.anims.ual
    */
   constructor(aloyModel, ualGltf, speeds) {
@@ -341,7 +341,7 @@ export class ClipLibrary {
   /** One library per boot: the bake is deterministic and the clips bind by name. */
   static shared(assets, speeds) {
     if (_shared) return _shared;
-    const aloy = assets?.models?.aloy;
+    const aloy = assets?.models?.hero;
     const ual = assets?.anims?.ual;
     if (!aloy || !ual) return null;
     _shared = new ClipLibrary(aloy, ual, speeds);

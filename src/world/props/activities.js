@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { REST_SITE } from '../island/sites.js';
 import {
   SimplexNoise, mulberry32, composeMat, tint, paintRust,
   rustTube, tube, bake, materials,
@@ -33,11 +34,11 @@ import {
  * `ctx.progression?.discover?.(id)` are attempted and the event is emitted
  * either way. Nothing here breaks if that module never arrives.
  *
- * EVENTS: `datapoint-found` {id, title, text, index, total} — now raised for
+ * EVENTS: `fieldbook-found` {id, title, text, index, total} — now raised for
  *         EVERY record in the unified set, this lane's twelve and
  *         `focus-items`' twelve alike, so `playerAnimator`'s interact beat and
  *         anything else already wired to it fire on all twenty-four,
- *         `override-node` {id, x, z}, `supply-cache` {id},
+ *         `override-node` {id, x, z}, `cache-found` {id},
  *         `hunting-ground` {id, trials}.
  */
 
@@ -316,7 +317,7 @@ export class Activities {
     {
       const bx = X - 1.2, bz = Z - 3.4;
       const by = this.gy(bx, bz);
-      const yaw = Math.atan2(22 - bx, 30 - bz);
+      const yaw = Math.atan2(REST_SITE.x - bx, REST_SITE.z - bz);
       for (const s of [-1, 1]) {
         tube(wood, [bx + Math.cos(yaw) * s * 1.1, by - 0.3, bz - Math.sin(yaw) * s * 1.1],
           [bx + Math.cos(yaw) * s * 1.05, by + 2.05, bz - Math.sin(yaw) * s * 1.05], 0.1, 0.08, '#4a3826', 6, 0.07, rng);
@@ -409,7 +410,7 @@ export class Activities {
 
     /**
      * One listener for the whole unified set. `focus-items` emits
-     * `datapoint-collected`; this re-raises `datapoint-found` for it so
+     * `datapoint-collected`; this re-raises `fieldbook-found` for it so
      * `playerAnimator`'s interact beat (playerAnimator.js:555) and every other
      * existing consumer keep firing — and now fire on all twenty-four records
      * rather than on half of them. XP is awarded here too, once per id,
@@ -424,7 +425,7 @@ export class Activities {
   }
 
   /**
-   * The single place a datapoint pickup becomes progression + `datapoint-found`,
+   * The single place a datapoint pickup becomes progression + `fieldbook-found`,
    * whichever system owned the entry. Idempotent per id.
    */
   _collected(id, title, storeEvent) {
@@ -441,7 +442,7 @@ export class Activities {
 
     const store = this.datapointStore;
     const mine = this.datapoints.filter((x) => x.found).length;
-    ctx.events.emit('datapoint-found', {
+    ctx.events.emit('fieldbook-found', {
       id, title: title ?? d?.title ?? 'DATAPOINT',
       text: d?.text ?? (storeEvent ? store?.record?.(id)?.body?.join(' ') ?? '' : ''),
       index: d?.index ?? -1,
@@ -522,7 +523,7 @@ export class Activities {
         onInteract: () => {
           c.looted = true;
           ctx.progression?.award?.({ xp: 15, reason: 'cache', id: c.id });
-          ctx.events.emit('supply-cache', { id: c.id, loot: c.loot });
+          ctx.events.emit('cache-found', { id: c.id, loot: c.loot });
         },
       });
       this.entries.push(entry);

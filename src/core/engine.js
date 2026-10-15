@@ -443,7 +443,7 @@ export class Engine {
       depthTexture: this.depthTexture,
       samples: this.tier.msaa,
     });
-    sceneRT.texture.name = 'HZC.sceneTarget';
+    sceneRT.texture.name = 'CAL.sceneTarget';
     this.sceneTarget = sceneRT;
 
     this.composer = new EffectComposer(this.renderer, sceneRT);
@@ -455,8 +455,8 @@ export class Engine {
 
     this.composer.renderTarget2.depthTexture?.dispose();
     this.composer.renderTarget2.dispose();
-    this.composer.renderTarget2 = this._makePostTarget(w, h, 'HZC.postA');
-    this.postTarget = this._makePostTarget(w, h, 'HZC.postB');
+    this.composer.renderTarget2 = this._makePostTarget(w, h, 'CAL.postA');
+    this.postTarget = this._makePostTarget(w, h, 'CAL.postB');
 
     this.scenePass = new ScenePass(this.scene, this.camera, this);
     this.composer.addPass(this.scenePass);
@@ -467,7 +467,7 @@ export class Engine {
     this._attachGtaoDepth();
     // depth-consistent centre sample + view-distance fade (see patchGtaoShader)
     this.gtaoPatched = patchGtaoShader(this.gtao.gtaoMaterial);
-    if (!this.gtaoPatched) console.warn('[HZC] GTAO shader patch anchors missing — stock GTAO (screen-locked lattice on distant terrain)');
+    if (!this.gtaoPatched) console.warn('[CAL] GTAO shader patch anchors missing — stock GTAO (screen-locked lattice on distant terrain)');
     this.gtao.blendIntensity = 0.9;
     this.gtao.updateGtaoMaterial({
       radius: 0.55, distanceExponent: 1.6, thickness: 0.7,
@@ -738,7 +738,7 @@ export class Engine {
       this.renderer.compile(scene, camera);
       await this._awaitProgramsReady(timeoutMs);
     } catch (err) {
-      console.warn('[HZC] shader warm-up skipped:', err?.message || err);
+      console.warn('[CAL] shader warm-up skipped:', err?.message || err);
     }
     const textures = this.warmUpTextures(scene);
     this.warmUpMs = Math.round(performance.now() - t0);
@@ -898,7 +898,7 @@ export class Engine {
     this._hookErrors = this._hookErrors || new Map();
     const n = (this._hookErrors.get(key) || 0) + 1;
     this._hookErrors.set(key, n);
-    if (n === 1) console.warn(`[HZC] ${key} threw — recovered, logged once:`, err);
+    if (n === 1) console.warn(`[CAL] ${key} threw — recovered, logged once:`, err);
     this.hookErrorCount = (this.hookErrorCount ?? 0) + 1;
   }
 
@@ -1214,7 +1214,7 @@ export class Engine {
     const info = this.renderer.info;
     const errs = this.systemErrorCount ?? 0;
     this.statsEl.textContent =
-      `HZC  ${s.fps} fps   ${s.medianFrameMs}ms med  ${s.p95FrameMs}ms p95  ${s.maxFrameMs}ms max`
+      `CAL  ${s.fps} fps   ${s.medianFrameMs}ms med  ${s.p95FrameMs}ms p95  ${s.maxFrameMs}ms max`
       + `${s.p95GpuMs != null ? `  gpu ${s.medianGpuMs}/${s.p95GpuMs}ms` : ''}\n`
       + `js ${s.p95JsMs}ms p95 = sim ${s.p95SimMs} + submit ${s.p95RenderMs} + tail ${s.p95TailMs}\n`
       + `draw ${this.lastFrame.calls}  tris ${(this.lastFrame.triangles / 1000).toFixed(0)}k  `

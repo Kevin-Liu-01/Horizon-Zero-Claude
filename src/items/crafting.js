@@ -14,7 +14,7 @@ import { itemDef, ITEMS } from './items.js';
  *     'inventory-full' instead of silently swallowing the overflow.
  *
  *     Pouch capacity is deliberately NOT here: `progression` owns
- *     `player.maxPouch` through its skill tree, and two lanes writing one
+ *     `player.maxGourd` through its skill tree, and two lanes writing one
  *     number is how you get a bug nobody can bisect.
  *
  *  2. **Recipes.** Tools and potions this lane owns, crafted from resources.

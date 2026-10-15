@@ -648,7 +648,7 @@ export const GATES = [
    * two pickups share a square metre), that all twelve of this lane's ids are
    * in the store, that the duplicate mote mesh is gone from the frame, and
    * that collecting one of THIS lane's records fills the Notebook and raises
-   * both `datapoint-collected` and `datapoint-found`.
+   * both `datapoint-collected` and `fieldbook-found`.
    */
   {
     id: 'A61c-datapoints-unified', kind: 'action', lane: 'world-props',
@@ -697,7 +697,7 @@ export const GATES = [
       const ev = ctx.events;
       const seen = [];
       const origEmit = ev.emit.bind(ev);
-      ev.emit = (t, p) => { if (t === 'datapoint-collected' || t === 'datapoint-found') seen.push(t); return origEmit(t, p); };
+      ev.emit = (t, p) => { if (t === 'datapoint-collected' || t === 'fieldbook-found') seen.push(t); return origEmit(t, p); };
       const before = store.count;
       const entry = entries.find((e) => e.datapoint && e.datapoint.id === pick);
       if (entry && entry.onInteract) { try { await entry.onInteract(); } catch (err) { /* below */ } }
@@ -719,7 +719,7 @@ export const GATES = [
         && minPairDist > 1.5
         && after === before + 1
         && seen.indexOf('datapoint-collected') >= 0
-        && seen.indexOf('datapoint-found') >= 0;
+        && seen.indexOf('fieldbook-found') >= 0;
       note([
         'A61c datapoints  ' + (pass ? 'PASS' : 'FAIL'),
         'DATAPOINT pickups in the world: ' + entries.length

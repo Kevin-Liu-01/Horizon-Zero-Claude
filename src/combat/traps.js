@@ -25,7 +25,7 @@ import { AMMO, tieDownCount } from './weapons.js';
  *   tiedCount(machine) ropes currently on it
  *   fireRope(origin, dir) / placeWire(point)     (combat drives these)
  *   audit()            { ropes, wires, pins, trips }
- * Events: 'rope-attached' { machine, ropes, need }, 'machine-tied' { machine },
+ * Events: 'net-fouled' { machine, ropes, need }, 'instrument-fouled' { machine },
  *         'trap-placed' { kind, a, b }, 'trap-triggered' { kind, machine }
  *
  * Everything is pooled: 24 rope segments, 8 wires, no per-frame allocation.
@@ -184,7 +184,7 @@ export class Traps {
 
     const n = this.tiedCount(m);
     const need = tieDownCount(m.kind);
-    ctx.events.emit('rope-attached', { machine: m, ropes: n, need });
+    ctx.events.emit('net-fouled', { machine: m, ropes: n, need });
     // a rope makes a dull thud, not a bang
     try { ctx.machines?.noise?.({ x: _p.x, z: _p.z, kind: 'noise', strength: 0.4 }); } catch { /* */ }
     if (n >= need) this._pin(m);
@@ -220,7 +220,7 @@ export class Traps {
     if (m.state === 'downed') return;
     try { m.forceState('downed'); } catch { return; }
     this._stats.pins++;
-    this.ctx.events.emit('machine-tied', { machine: m, ropes: this.tiedCount(m) });
+    this.ctx.events.emit('instrument-fouled', { machine: m, ropes: this.tiedCount(m) });
   }
 
   /* ============================ TRIPCASTER ============================= */

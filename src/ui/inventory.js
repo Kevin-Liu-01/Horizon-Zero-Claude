@@ -62,43 +62,43 @@ export class InventoryScreen {
 
   _build() {
     // own root on <body>: #hud belongs to the HUD lane
-    this.root = el('div', 'hzc-inv', document.body);
+    this.root = el('div', 'cal-inv', document.body);
     this.root.addEventListener('mousedown', (e) => {
       if (e.target === this.root) this.close(); // click-outside resumes
     });
 
-    const shell = el('div', 'hzc-inv-shell', this.root);
-    for (const c of ['tl', 'tr', 'bl', 'br']) el('i', `hzc-inv-corner ${c}`, shell);
+    const shell = el('div', 'cal-inv-shell', this.root);
+    for (const c of ['tl', 'tr', 'bl', 'br']) el('i', `cal-inv-corner ${c}`, shell);
 
-    const head = el('div', 'hzc-inv-head', shell);
-    const title = el('div', 'hzc-inv-titles', head);
-    el('div', 'hzc-inv-kicker', title, 'SATCHEL');
-    el('div', 'hzc-inv-title', title, 'INVENTORY');
-    this._shardsEl = el('div', 'hzc-inv-shards', head, '');
+    const head = el('div', 'cal-inv-head', shell);
+    const title = el('div', 'cal-inv-titles', head);
+    el('div', 'cal-inv-kicker', title, 'SATCHEL');
+    el('div', 'cal-inv-title', title, 'INVENTORY');
+    this._shardsEl = el('div', 'cal-inv-shards', head, '');
 
-    const cols = el('div', 'hzc-inv-cols', shell);
+    const cols = el('div', 'cal-inv-cols', shell);
 
     // --- left rail: pockets
-    this._railEl = el('nav', 'hzc-inv-rail', cols);
+    this._railEl = el('nav', 'cal-inv-rail', cols);
     this._railBtns = new Map();
     for (const p of POCKETS) {
-      const b = el('button', 'hzc-inv-pocket', this._railEl,
-        `<i class="hzc-inv-pglyph">${p.glyph}</i>`
-        + `<span class="hzc-inv-plabel">${p.label}</span>`
-        + '<span class="hzc-inv-pcount"></span>');
+      const b = el('button', 'cal-inv-pocket', this._railEl,
+        `<i class="cal-inv-pglyph">${p.glyph}</i>`
+        + `<span class="cal-inv-plabel">${p.label}</span>`
+        + '<span class="cal-inv-pcount"></span>');
       b.addEventListener('click', () => { this.pocket = p.id; this._selected = null; this._render(); });
       this._railBtns.set(p.id, b);
     }
 
     // --- middle: the pocket body
-    const main = el('section', 'hzc-inv-main', cols);
-    this._capEl = el('div', 'hzc-inv-cap', main);
-    this._bodyEl = el('div', 'hzc-inv-body', main);
+    const main = el('section', 'cal-inv-main', cols);
+    this._capEl = el('div', 'cal-inv-cap', main);
+    this._bodyEl = el('div', 'cal-inv-body', main);
 
     // --- right: detail pane
-    this._detailEl = el('aside', 'hzc-inv-detail', cols);
+    this._detailEl = el('aside', 'cal-inv-detail', cols);
 
-    el('div', 'hzc-inv-foot', shell,
+    el('div', 'cal-inv-foot', shell,
       '<span><kbd>I</kbd> / <kbd>ESC</kbd> RESUME</span>'
       + '<span>CLICK A POCKET TO SWITCH · CLICK AN ITEM TO INSPECT</span>');
   }
@@ -209,15 +209,15 @@ export class InventoryScreen {
     const def = items.POCKETS?.[pocketId];
     const tier = items.capacityTier(pocketId);
     const cost = items.upgradeCost(pocketId);
-    const bar = el('div', 'hzc-cap', this._capEl);
-    el('span', 'hzc-cap-label', bar, def?.label ?? 'CAPACITY');
-    const pips = el('span', 'hzc-cap-pips', bar);
+    const bar = el('div', 'cal-cap', this._capEl);
+    el('span', 'cal-cap-label', bar, def?.label ?? 'CAPACITY');
+    const pips = el('span', 'cal-cap-pips', bar);
     for (let i = 0; i < 3; i++) el('i', i < tier ? 'on' : '', pips);
-    el('span', 'hzc-cap-tier', bar, tier ? `TIER ${tier}` : 'BASE');
+    el('span', 'cal-cap-tier', bar, tier ? `TIER ${tier}` : 'BASE');
 
-    if (!cost) { el('span', 'hzc-cap-max', bar, 'FULLY UPGRADED'); return; }
+    if (!cost) { el('span', 'cal-cap-max', bar, 'FULLY UPGRADED'); return; }
     const can = items.canUpgrade(pocketId);
-    const b = el('button', `hzc-cap-up${can.ok ? '' : ' off'}`, bar,
+    const b = el('button', `cal-cap-up${can.ok ? '' : ' off'}`, bar,
       `UPGRADE · <i>${itemDef('metal-shards').glyph}</i>${cost.shards}`
       + cost.items.map(([id, n]) =>
         ` · <i style="color:${itemDef(id).color}">${itemDef(id).glyph}</i>${n}`).join(''));
@@ -261,7 +261,7 @@ export class InventoryScreen {
       return;
     }
 
-    const grid = el('div', 'hzc-grid', this._bodyEl);
+    const grid = el('div', 'cal-grid', this._bodyEl);
     let first = null;
     for (const r of rows) {
       const card = this._itemCard(grid, r.id, r.count, r.cap);
@@ -285,14 +285,14 @@ export class InventoryScreen {
   _itemCard(parent, id, count, cap) {
     const def = itemDef(id);
     const rar = rarityDef(def.rarity);
-    const card = el('button', `hzc-card r-${rar.id}`, parent);
+    const card = el('button', `cal-card r-${rar.id}`, parent);
     card.style.setProperty('--rar', rar.color);
     card.style.setProperty('--glow', rar.glow);
-    el('i', 'hzc-card-glyph', card, def.glyph).style.color = def.color;
-    el('span', 'hzc-card-name', card, esc(def.name.toUpperCase()));
-    el('span', 'hzc-card-n', card, String(count));
+    el('i', 'cal-card-glyph', card, def.glyph).style.color = def.color;
+    el('span', 'cal-card-name', card, esc(def.name.toUpperCase()));
+    el('span', 'cal-card-n', card, String(count));
     if (cap) {
-      const bar = el('span', 'hzc-card-bar', card);
+      const bar = el('span', 'cal-card-bar', card);
       const fill = el('i', '', bar);
       const frac = Math.min(1, count / cap);
       fill.style.width = `${Math.round(frac * 100)}%`;
@@ -304,22 +304,22 @@ export class InventoryScreen {
   _pouchMeter() {
     const p = this.ctx.player;
     if (!p) return;
-    const pouch = el('div', 'hzc-pouch', this._bodyEl);
-    el('span', 'hzc-pouch-label', pouch, 'MEDICINE POUCH');
-    const bar = el('div', 'hzc-pouch-bar', pouch);
-    const fill = el('div', 'hzc-pouch-fill', bar);
-    const frac = Math.max(0, Math.min(1, (p.pouch ?? 0) / (p.maxPouch || 100)));
+    const pouch = el('div', 'cal-pouch', this._bodyEl);
+    el('span', 'cal-pouch-label', pouch, 'MEDICINE POUCH');
+    const bar = el('div', 'cal-pouch-bar', pouch);
+    const fill = el('div', 'cal-pouch-fill', bar);
+    const frac = Math.max(0, Math.min(1, (p.gourd ?? 0) / (p.maxGourd || 100)));
     fill.style.width = `${Math.round(frac * 100)}%`;
-    el('span', 'hzc-pouch-num', pouch,
-      `${Math.round(p.pouch ?? 0)} / ${Math.round(p.maxPouch ?? 100)}`);
+    el('span', 'cal-pouch-num', pouch,
+      `${Math.round(p.gourd ?? 0)} / ${Math.round(p.maxGourd ?? 100)}`);
   }
 
-  _empty(text) { el('div', 'hzc-inv-empty', this._bodyEl, text); }
+  _empty(text) { el('div', 'cal-inv-empty', this._bodyEl, text); }
 
   /* --------------------------------------------------------- detail pane */
 
   _detailHint() {
-    el('div', 'hzc-det-hint', this._detailEl, 'NOTHING SELECTED');
+    el('div', 'cal-det-hint', this._detailEl, 'NOTHING SELECTED');
   }
 
   _detailItem(id) {
@@ -329,22 +329,22 @@ export class InventoryScreen {
     const rar = rarityDef(def.rarity);
     const d = this._detailEl;
     d.style.setProperty('--rar', rar.color);
-    el('div', 'hzc-det-rar', d, rar.name);
-    const head = el('div', 'hzc-det-head', d);
-    el('i', 'hzc-det-glyph', head, def.glyph).style.color = def.color;
-    el('span', 'hzc-det-name', head, esc(def.name.toUpperCase()));
-    el('p', 'hzc-det-desc', d, esc(def.desc ?? ''));
+    el('div', 'cal-det-rar', d, rar.name);
+    const head = el('div', 'cal-det-head', d);
+    el('i', 'cal-det-glyph', head, def.glyph).style.color = def.color;
+    el('span', 'cal-det-name', head, esc(def.name.toUpperCase()));
+    el('p', 'cal-det-desc', d, esc(def.desc ?? ''));
 
     const cap = items?.capacity ? items.capacity(id) : (def.cap ?? 0);
     const have = inv?.count?.(id) ?? 0;
-    const stats = el('div', 'hzc-det-stats', d);
+    const stats = el('div', 'cal-det-stats', d);
     this._stat(stats, 'CARRIED', `${have} / ${cap}`);
     this._stat(stats, 'POCKET',
       (items?.POCKETS?.[items.pocketOf(id)]?.label) ?? 'SATCHEL');
     if (def.pouch) this._stat(stats, 'RESTORES', `${def.pouch} POUCH`);
     if (def.value) this._stat(stats, 'VALUE', `${def.value} SHARDS EACH`);
 
-    const bar = el('div', 'hzc-det-bar', d);
+    const bar = el('div', 'cal-det-bar', d);
     const fill = el('i', '', bar);
     fill.style.width = `${Math.round(Math.min(1, cap ? have / cap : 0) * 100)}%`;
 
@@ -353,7 +353,7 @@ export class InventoryScreen {
     if (def.category === 'tool' && tools) {
       const i = tools.slots.findIndex((s) => s.id === id);
       if (i >= 0) {
-        const b = el('button', 'hzc-det-act', d,
+        const b = el('button', 'cal-det-act', d,
           `EQUIP TO SLOT ${i + 1} · <kbd>${tools.useKey.replace('Key', '')}</kbd> USE`);
         b.addEventListener('click', () => { tools.select(i); this._render(); });
         if (tools.index === i) { b.classList.add('on'); b.textContent = 'EQUIPPED'; }
@@ -362,7 +362,7 @@ export class InventoryScreen {
   }
 
   _stat(parent, k, v) {
-    const row = el('div', 'hzc-det-stat', parent);
+    const row = el('div', 'cal-det-stat', parent);
     el('span', 'k', row, k);
     el('span', 'v', row, String(v));
   }
@@ -372,19 +372,19 @@ export class InventoryScreen {
   _renderAmmo() {
     const c = this.ctx.combat;
     const counts = (c && (c.ammo || c.arrowCounts)) || {};
-    let grid = el('div', 'hzc-grid', this._bodyEl);
+    let grid = el('div', 'cal-grid', this._bodyEl);
     let rendered = 0;
     let first = null;
 
     const push = (id, n, active, name) => {
       const def = ammoDef(id);
       const rar = rarityDef(def.rarity);
-      const card = el('button', `hzc-card r-${rar.id}${active ? ' active' : ''}`, grid);
+      const card = el('button', `cal-card r-${rar.id}${active ? ' active' : ''}`, grid);
       card.style.setProperty('--rar', rar.color);
       card.style.setProperty('--glow', rar.glow);
-      el('i', 'hzc-card-glyph', card, def.glyph).style.color = def.color;
-      el('span', 'hzc-card-name', card, esc((name ?? def.name).toUpperCase()));
-      el('span', 'hzc-card-n', card, n == null ? '—' : String(n));
+      el('i', 'cal-card-glyph', card, def.glyph).style.color = def.color;
+      el('span', 'cal-card-name', card, esc((name ?? def.name).toUpperCase()));
+      el('span', 'cal-card-n', card, n == null ? '—' : String(n));
       card.addEventListener('click', () => {
         this._selected = { kind: 'ammo', id }; this._render();
       });
@@ -396,11 +396,11 @@ export class InventoryScreen {
     if (Array.isArray(c?.weapons) && c.weapons.length) {
       for (const w of c.weapons) {
         if (!w) continue;
-        el('div', 'hzc-inv-group', this._bodyEl,
+        el('div', 'cal-inv-group', this._bodyEl,
           esc(String(w.name ?? w.id ?? 'WEAPON').toUpperCase()));
         // each weapon gets its OWN grid: reusing one node moved every card
         // under the last header instead of grouping them by weapon
-        grid = el('div', 'hzc-grid', this._bodyEl);
+        grid = el('div', 'cal-grid', this._bodyEl);
         for (const a of (Array.isArray(w.ammoTypes) ? w.ammoTypes : [])) {
           const id = typeof a === 'string' ? a : a?.id;
           if (!id) continue;
@@ -428,31 +428,31 @@ export class InventoryScreen {
     const rar = rarityDef(def.rarity);
     const d = this._detailEl;
     d.style.setProperty('--rar', rar.color);
-    el('div', 'hzc-det-rar', d, rar.name);
-    const head = el('div', 'hzc-det-head', d);
-    el('i', 'hzc-det-glyph', head, def.glyph).style.color = def.color;
-    el('span', 'hzc-det-name', head, esc(def.name.toUpperCase()));
-    const stats = el('div', 'hzc-det-stats', d);
+    el('div', 'cal-det-rar', d, rar.name);
+    const head = el('div', 'cal-det-head', d);
+    el('i', 'cal-det-glyph', head, def.glyph).style.color = def.color;
+    el('span', 'cal-det-name', head, esc(def.name.toUpperCase()));
+    const stats = el('div', 'cal-det-stats', d);
     this._stat(stats, 'IN QUIVER', String(counts?.[id] ?? '—'));
     const status = typeof c?.recipeStatus === 'function' ? c.recipeStatus(id) : null;
     if (Array.isArray(status) && status.length) {
-      el('div', 'hzc-det-sub', d, 'CRAFTS FROM');
-      const list = el('div', 'hzc-recipe', d);
+      el('div', 'cal-det-sub', d, 'CRAFTS FROM');
+      const list = el('div', 'cal-recipe', d);
       for (const r of status) {
         const rd = itemDef(r.id);
-        const row = el('div', `hzc-recipe-row${r.ok ? '' : ' short'}`, list);
+        const row = el('div', `cal-recipe-row${r.ok ? '' : ' short'}`, list);
         el('i', '', row, rd.glyph).style.color = rd.color;
         el('span', 'n', row, esc(rd.name.toUpperCase()));
         el('span', 'c', row, `${r.have} / ${r.need}`);
       }
       const ok = typeof c?.canCraft === 'function' ? c.canCraft(id) : false;
-      const b = el('button', `hzc-det-act${ok ? '' : ' off'}`, d, 'CRAFT');
+      const b = el('button', `cal-det-act${ok ? '' : ' off'}`, d, 'CRAFT');
       b.addEventListener('click', () => {
         if (c?.craftAmmo?.(id)) this._render();
         else this._flash(b, c?.craftBlocker?.(id) ?? 'CANNOT CRAFT');
       });
     } else {
-      el('p', 'hzc-det-desc', d, 'Found, not made. Machines carry it; you take it.');
+      el('p', 'cal-det-desc', d, 'Found, not made. Machines carry it; you take it.');
     }
   }
 
@@ -461,11 +461,11 @@ export class InventoryScreen {
   _renderCrafting() {
     const items = this.ctx.items;
     const combat = this.ctx.combat;
-    el('div', 'hzc-cap-title', this._capEl, 'WORKBENCH — CRAFT FROM THE SATCHEL');
+    el('div', 'cal-cap-title', this._capEl, 'WORKBENCH — CRAFT FROM THE SATCHEL');
 
     // 1) tools & potions this lane owns
-    el('div', 'hzc-inv-group', this._bodyEl, 'TOOLS & DRAUGHTS');
-    const gridA = el('div', 'hzc-grid', this._bodyEl);
+    el('div', 'cal-inv-group', this._bodyEl, 'TOOLS & DRAUGHTS');
+    const gridA = el('div', 'cal-grid', this._bodyEl);
     let first = null;
     for (const r of (items?.recipes?.() ?? [])) {
       const ok = items.canCraft(r.id);
@@ -491,17 +491,17 @@ export class InventoryScreen {
       }
     }
     if (ammoIds.length) {
-      el('div', 'hzc-inv-group', this._bodyEl, 'AMMUNITION');
-      const gridB = el('div', 'hzc-grid', this._bodyEl);
+      el('div', 'cal-inv-group', this._bodyEl, 'AMMUNITION');
+      const gridB = el('div', 'cal-grid', this._bodyEl);
       for (const id of ammoIds) {
         const def = ammoDef(id);
         const rar = rarityDef(def.rarity);
-        const card = el('button', `hzc-card r-${rar.id}`, gridB);
+        const card = el('button', `cal-card r-${rar.id}`, gridB);
         card.style.setProperty('--rar', rar.color);
         card.style.setProperty('--glow', rar.glow);
-        el('i', 'hzc-card-glyph', card, def.glyph).style.color = def.color;
-        el('span', 'hzc-card-name', card, esc(def.name.toUpperCase()));
-        el('span', 'hzc-card-n', card, String(combat.ammo?.[id] ?? 0));
+        el('i', 'cal-card-glyph', card, def.glyph).style.color = def.color;
+        el('span', 'cal-card-name', card, esc(def.name.toUpperCase()));
+        el('span', 'cal-card-n', card, String(combat.ammo?.[id] ?? 0));
         card.classList.toggle('craftable', !!combat.canCraft?.(id));
         card.addEventListener('click', () => {
           this._selected = { kind: 'ammo', id }; this._render();
@@ -512,18 +512,18 @@ export class InventoryScreen {
     }
 
     // 3) capacity upgrades — every pocket, in one place
-    el('div', 'hzc-inv-group', this._bodyEl, 'CARRY CAPACITY');
-    const caps = el('div', 'hzc-caps', this._bodyEl);
+    el('div', 'cal-inv-group', this._bodyEl, 'CARRY CAPACITY');
+    const caps = el('div', 'cal-caps', this._bodyEl);
     for (const [pid, pdef] of Object.entries(items?.POCKETS ?? {})) {
       const tier = items.capacityTier(pid);
       const cost = items.upgradeCost(pid);
-      const row = el('div', 'hzc-caps-row', caps);
-      el('span', 'hzc-caps-name', row, pdef.label);
-      const pips = el('span', 'hzc-cap-pips', row);
+      const row = el('div', 'cal-caps-row', caps);
+      el('span', 'cal-caps-name', row, pdef.label);
+      const pips = el('span', 'cal-cap-pips', row);
       for (let i = 0; i < 3; i++) el('i', i < tier ? 'on' : '', pips);
-      if (!cost) { el('span', 'hzc-cap-max', row, 'MAX'); continue; }
+      if (!cost) { el('span', 'cal-cap-max', row, 'MAX'); continue; }
       const can = items.canUpgrade(pid);
-      const b = el('button', `hzc-cap-up${can.ok ? '' : ' off'}`, row,
+      const b = el('button', `cal-cap-up${can.ok ? '' : ' off'}`, row,
         `×${cost.mult} · <i>${itemDef('metal-shards').glyph}</i>${cost.shards}`
         + cost.items.map(([id, n]) =>
           ` · <i style="color:${itemDef(id).color}">${itemDef(id).glyph}</i>${n}`).join(''));
@@ -548,27 +548,27 @@ export class InventoryScreen {
     const rar = rarityDef(def.rarity);
     const d = this._detailEl;
     d.style.setProperty('--rar', rar.color);
-    el('div', 'hzc-det-rar', d, rar.name);
-    const head = el('div', 'hzc-det-head', d);
-    el('i', 'hzc-det-glyph', head, def.glyph).style.color = def.color;
-    el('span', 'hzc-det-name', head, esc(def.name.toUpperCase()));
+    el('div', 'cal-det-rar', d, rar.name);
+    const head = el('div', 'cal-det-head', d);
+    el('i', 'cal-det-glyph', head, def.glyph).style.color = def.color;
+    el('span', 'cal-det-name', head, esc(def.name.toUpperCase()));
     const r = items?.crafting?.recipe?.(id);
-    el('p', 'hzc-det-desc', d, esc(r?.note ?? def.desc ?? ''));
-    const stats = el('div', 'hzc-det-stats', d);
+    el('p', 'cal-det-desc', d, esc(r?.note ?? def.desc ?? ''));
+    const stats = el('div', 'cal-det-stats', d);
     this._stat(stats, 'CARRIED',
       `${this.ctx.inventory?.count?.(id) ?? 0} / ${items.capacity(id)}`);
     this._stat(stats, 'MAKES', `${r?.batch ?? 1} PER CRAFT`);
 
-    el('div', 'hzc-det-sub', d, 'CRAFTS FROM');
-    const list = el('div', 'hzc-recipe', d);
+    el('div', 'cal-det-sub', d, 'CRAFTS FROM');
+    const list = el('div', 'cal-recipe', d);
     for (const s of items.recipeStatus(id)) {
-      const row = el('div', `hzc-recipe-row${s.ok ? '' : ' short'}`, list);
+      const row = el('div', `cal-recipe-row${s.ok ? '' : ' short'}`, list);
       el('i', '', row, s.def.glyph).style.color = s.def.color;
       el('span', 'n', row, esc(s.def.name.toUpperCase()));
       el('span', 'c', row, `${s.have} / ${s.need}`);
     }
     const ok = items.canCraft(id);
-    const b = el('button', `hzc-det-act${ok ? '' : ' off'}`, d, 'CRAFT');
+    const b = el('button', `cal-det-act${ok ? '' : ' off'}`, d, 'CRAFT');
     b.addEventListener('click', () => {
       if (items.craft(id)) this._render();
       else this._flash(b, items.craftBlocker(id) ?? 'CANNOT CRAFT');
@@ -580,18 +580,18 @@ export class InventoryScreen {
   _renderNotebook() {
     const dp = this.ctx.items?.datapoints;
     if (!dp) { this._empty('NO RECORDS FOUND YET'); this._detailHint(); return; }
-    el('div', 'hzc-cap-title', this._capEl,
+    el('div', 'cal-cap-title', this._capEl,
       `NOTEBOOK — ${dp.count} OF ${dp.total} RECORDS RECOVERED`);
 
     let first = null;
     for (const cat of dp.categories()) {
-      el('div', 'hzc-inv-group', this._bodyEl, `${cat.label} · ${cat.have}/${cat.total}`);
-      const list = el('div', 'hzc-notes', this._bodyEl);
+      el('div', 'cal-inv-group', this._bodyEl, `${cat.label} · ${cat.have}/${cat.total}`);
+      const list = el('div', 'cal-notes', this._bodyEl);
       for (const rec of dp.list.filter((r) => r.category === cat.id)) {
         const had = dp.collected.has(rec.id);
-        const row = el('button', `hzc-note${had ? '' : ' locked'}`, list);
-        el('i', 'hzc-note-mark', row, had ? '❐' : '·');
-        el('span', 'hzc-note-title', row,
+        const row = el('button', `cal-note${had ? '' : ' locked'}`, list);
+        el('i', 'cal-note-mark', row, had ? '❐' : '·');
+        el('span', 'cal-note-title', row,
           had ? esc(rec.title.toUpperCase()) : 'UNRECOVERED RECORD');
         if (had) {
           if (!first) first = rec.id;
@@ -607,7 +607,7 @@ export class InventoryScreen {
     const want = this._selected?.kind === 'record' && dp.collected.has(this._selected.id)
       ? this._selected.id : first;
     if (!want) {
-      el('div', 'hzc-det-hint', this._detailEl,
+      el('div', 'cal-det-hint', this._detailEl,
         'FOCUS REVEALS OLD-WORLD RECORDS. HOLD E TO READ ONE.');
       return;
     }
@@ -619,12 +619,12 @@ export class InventoryScreen {
     if (!rec) { this._detailHint(); return; }
     const d = this._detailEl;
     d.style.setProperty('--rar', '#7fe8ff');
-    el('div', 'hzc-det-rar', d, rec.categoryLabel ?? 'RECORD');
-    const head = el('div', 'hzc-det-head', d);
-    el('i', 'hzc-det-glyph', head, '❐').style.color = '#7fe8ff';
-    el('span', 'hzc-det-name', head, esc(rec.title.toUpperCase()));
-    if (rec.author) el('div', 'hzc-det-sub', d, esc(rec.author));
-    const body = el('div', 'hzc-read', d);
+    el('div', 'cal-det-rar', d, rec.categoryLabel ?? 'RECORD');
+    const head = el('div', 'cal-det-head', d);
+    el('i', 'cal-det-glyph', head, '❐').style.color = '#7fe8ff';
+    el('span', 'cal-det-name', head, esc(rec.title.toUpperCase()));
+    if (rec.author) el('div', 'cal-det-sub', d, esc(rec.author));
+    const body = el('div', 'cal-read', d);
     for (const para of rec.body) el('p', '', body, esc(para));
   }
 
@@ -634,18 +634,18 @@ export class InventoryScreen {
     const merch = this.ctx.progression?.merchant;
     const inv = this.ctx.inventory;
     if (!merch) {
-      el('div', 'hzc-cap-title', this._capEl, 'TRADE');
+      el('div', 'cal-cap-title', this._capEl, 'TRADE');
       this._empty('NO TRADER IN RANGE — FIND THE CAMP HUNTER');
       this._detailHint();
       return;
     }
-    el('div', 'hzc-cap-title', this._capEl,
+    el('div', 'cal-cap-title', this._capEl,
       `TRADE — ${merch.shards?.() ?? inv?.count?.('metal-shards') ?? 0} SHARDS`);
 
-    const cols = el('div', 'hzc-trade', this._bodyEl);
+    const cols = el('div', 'cal-trade', this._bodyEl);
 
     // --- WARES (buy)
-    const buyCol = el('div', 'hzc-trade-col', cols);
+    const buyCol = el('div', 'cal-trade-col', cols);
     el('h4', '', buyCol, 'HIS WARES');
     const stock = merch.stock?.() ?? [];
     let anyStock = false;
@@ -658,22 +658,22 @@ export class InventoryScreen {
       row.addEventListener('click', () => {
         const out = merch.buy?.(s.id, 1);
         if (out?.ok) this._render();
-        else this._flash(row.querySelector('.hzc-trade-price'), out?.reason?.toUpperCase() ?? 'NO');
+        else this._flash(row.querySelector('.cal-trade-price'), out?.reason?.toUpperCase() ?? 'NO');
       });
     }
-    if (!anyStock) el('div', 'hzc-inv-empty', buyCol, 'SOLD OUT');
+    if (!anyStock) el('div', 'cal-inv-empty', buyCol, 'SOLD OUT');
 
     // --- YOURS (sell)
-    const sellCol = el('div', 'hzc-trade-col', cols);
+    const sellCol = el('div', 'cal-trade-col', cols);
     el('h4', '', sellCol, 'YOURS TO SELL');
     const sellable = merch.sellable?.() ?? [];
-    if (!sellable.length) el('div', 'hzc-inv-empty', sellCol, 'NOTHING HE WANTS');
+    if (!sellable.length) el('div', 'cal-inv-empty', sellCol, 'NOTHING HE WANTS');
     for (const s of sellable) {
       const row = this._tradeRow(sellCol, s.id, s.n, s.price, true, true);
       row.addEventListener('click', () => {
         const out = merch.sell?.(s.id, 1);
         if (out?.ok) this._render();
-        else this._flash(row.querySelector('.hzc-trade-price'), out?.reason?.toUpperCase() ?? 'NO');
+        else this._flash(row.querySelector('.cal-trade-price'), out?.reason?.toUpperCase() ?? 'NO');
       });
     }
 
@@ -685,12 +685,12 @@ export class InventoryScreen {
   _tradeRow(parent, id, qty, price, afford, selling = false) {
     const def = itemDef(id);
     const rar = rarityDef(def.rarity);
-    const row = el('button', `hzc-trade-row r-${rar.id}${afford ? '' : ' off'}`, parent);
+    const row = el('button', `cal-trade-row r-${rar.id}${afford ? '' : ' off'}`, parent);
     row.style.setProperty('--rar', rar.color);
-    el('i', 'hzc-trade-glyph', row, def.glyph).style.color = def.color;
-    el('span', 'hzc-trade-name', row, esc(def.name.toUpperCase()));
-    el('span', 'hzc-trade-qty', row, `×${qty}`);
-    el('span', 'hzc-trade-price', row,
+    el('i', 'cal-trade-glyph', row, def.glyph).style.color = def.color;
+    el('span', 'cal-trade-name', row, esc(def.name.toUpperCase()));
+    el('span', 'cal-trade-qty', row, `×${qty}`);
+    el('span', 'cal-trade-price', row,
       `${selling ? '+' : ''}${price} ${itemDef('metal-shards').glyph}`);
     row.addEventListener('mouseenter', () => {
       this._selected = { kind: 'item', id };
@@ -730,11 +730,11 @@ export const LOOT_POPUP = { instance: null };
 export class LootPopup {
   constructor(ctx) {
     this.ctx = ctx ?? null;
-    this.root = el('div', 'hzc-loot', document.body);
-    this._kicker = el('div', 'hzc-loot-kicker', this.root, 'LOOT');
-    this._source = el('div', 'hzc-loot-source', this.root, '');
-    this._rows = el('div', 'hzc-loot-rows', this.root);
-    this._foot = el('div', 'hzc-loot-foot', this.root, 'TAKE ALL — AUTO');
+    this.root = el('div', 'cal-loot', document.body);
+    this._kicker = el('div', 'cal-loot-kicker', this.root, 'LOOT');
+    this._source = el('div', 'cal-loot-source', this.root, '');
+    this._rows = el('div', 'cal-loot-rows', this.root);
+    this._foot = el('div', 'cal-loot-foot', this.root, 'TAKE ALL — AUTO');
     this._timer = 0;
     this._anchor = null;         // world position of the source, or null
     this.shownIds = new Set();   // ids of the loot event currently displayed
@@ -759,12 +759,12 @@ export class LootPopup {
     for (const r of rows) {
       const def = itemDef(r.id);
       const rar = rarityDef(def.rarity);
-      const row = el('div', `hzc-loot-row r-${rar.id}`, this._rows);
+      const row = el('div', `cal-loot-row r-${rar.id}`, this._rows);
       row.style.setProperty('--rar', rar.color);
-      const g = el('span', 'hzc-loot-glyph', row, def.glyph);
+      const g = el('span', 'cal-loot-glyph', row, def.glyph);
       g.style.color = def.color;
-      el('span', 'hzc-loot-name', row, esc(def.name.toUpperCase()));
-      el('span', 'hzc-loot-n', row, `×${r.n ?? 1}`);
+      el('span', 'cal-loot-name', row, esc(def.name.toUpperCase()));
+      el('span', 'cal-loot-n', row, `×${r.n ?? 1}`);
     }
     this._foot.textContent = 'TAKE ALL — AUTO';
     this._record(rows.map((r) => r.id));
@@ -780,11 +780,11 @@ export class LootPopup {
     this._source.textContent = opts.sourceName ?? '';
     this._source.style.display = opts.sourceName ? '' : 'none';
     this._rows.innerHTML = '';
-    const row = el('div', `hzc-loot-row r-${rar.id}`, this._rows);
+    const row = el('div', `cal-loot-row r-${rar.id}`, this._rows);
     row.style.setProperty('--rar', rar.color);
-    const g = el('span', 'hzc-loot-glyph', row, def.glyph);
+    const g = el('span', 'cal-loot-glyph', row, def.glyph);
     g.style.color = def.color;
-    el('span', 'hzc-loot-name', row, esc(def.name.toUpperCase()));
+    el('span', 'cal-loot-name', row, esc(def.name.toUpperCase()));
     this._foot.textContent = text;
     this._record([id]);
     this._setAnchor(opts.position);

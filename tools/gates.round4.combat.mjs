@@ -233,7 +233,7 @@ export const GATES = [
       const target = C.combat.melee.silentTarget?.kind ?? null;
 
       let ev = null;
-      C.events.on('silent-strike', (e) => { ev = e; });
+      C.events.on('undercut', (e) => { ev = e; });
       const res = C.combat.melee.silentStrike();
       await simSleep(0.35);
       const dead = m.alive === false || m.health <= 0;
@@ -443,8 +443,8 @@ export const GATES = [
       const C = __CTX__;
       freezeAll([]);
       const p = place(0, 0, {});
-      C.combat.concentration.active = false;
-      C.combat.concentration.gauge = 1;
+      C.combat.steady.active = false;
+      C.combat.steady.gauge = 1;
       p.aiming = false;
       C.input.mouse.buttons = 0;
 
@@ -462,10 +462,10 @@ export const GATES = [
       p.aiming = true;
       let armed = false, tsMin = 1;
       await simSleep(1.2, () => {
-        if (C.combat.concentration.active) armed = true;
+        if (C.combat.steady.active) armed = true;
         tsMin = Math.min(tsMin, C.engine.timeScale);
       });
-      const active = C.combat.concentration.active;
+      const active = C.combat.steady.active;
       const ts = C.engine.timeScale;
 
       /* And the control half: releasing Shift and pressing it again WHILE
@@ -475,7 +475,7 @@ export const GATES = [
       await simSleep(0.25);
       C.input.keys.add(sprint);
       await simSleep(0.45);
-      const rearms = C.combat.concentration.active;
+      const rearms = C.combat.steady.active;
 
       // clean up
       C.input.keys.delete(sprint); C.input.keys.delete('ShiftLeft'); C.input.keys.delete('KeyW');

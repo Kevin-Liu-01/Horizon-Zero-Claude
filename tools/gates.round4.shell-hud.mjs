@@ -155,8 +155,8 @@ export const GATES = [
       ${FACE_MACHINE}
       const hud = window.__HUD_DEBUG__;
       if (!hud) return { pass: false, detail: 'no window.__HUD_DEBUG__ — HUD did not build' };
-      const focus = __CTX__.focus;
-      if (!focus) return { pass: null, detail: 'SKIP: ctx.focus not installed' };
+      const focus = __CTX__.sighting;
+      if (!focus) return { pass: null, detail: 'SKIP: ctx.sighting not installed' };
 
       await frames(8);
       const before = hud.compass();
@@ -230,7 +230,7 @@ export const GATES = [
        * probe list this gate grades used to contain nothing from the
        * world-projected layer — the one layer that is scaled by a transform
        * rather than by the stylesheet. It therefore graded the half of the HUD
-       * that could not be scaled twice, and passed while .hzc-mhb-name
+       * that could not be scaled twice, and passed while .cal-mhb-name
        * painted 7.7 px. A live bar makes the world probes read through an
        * ACTUAL transform, and plateW re-runs the judge's own measurement:
        * the painted plate must be 224 px times the world scale ONCE.
@@ -415,8 +415,8 @@ export const GATES = [
     settle: 1200,
     /**
      * combat-concentration-presentation. `combat` owns the gauge; this lane
-     * owns what it LOOKS like. The veil ramps off `concentration-start` /
-     * `-end` with a poll on `combat.concentration.active` as the belt, so the
+     * owns what it LOOKS like. The veil ramps off `steady-start` /
+     * `-end` with a poll on `combat.steady.active` as the belt, so the
      * gate drives the events (the published contract) and then checks that the
      * veil element is actually painting — opacity on both the saturation layer
      * and the tint layer, not just a class.
@@ -425,21 +425,21 @@ export const GATES = [
       ${FRAMES}
       const hud = window.__HUD_DEBUG__;
       if (!hud) return { pass: false, detail: 'no window.__HUD_DEBUG__' };
-      const veilEl = document.getElementById('hzc-veil');
-      if (!veilEl) return { pass: false, detail: 'no #hzc-veil element' };
+      const veilEl = document.getElementById('cal-veil');
+      if (!veilEl) return { pass: false, detail: 'no #cal-veil element' };
       __CTX__.input.enabled = true;
       await frames(8);
 
       const off0 = hud.surfaces().concentration;
-      __CTX__.events.emit('concentration-start', { gauge: 1 });
+      __CTX__.events.emit('steady-start', { gauge: 1 });
       await frames(40);                      // > the 0.22 s attack
       const on = hud.surfaces().concentration;
-      const sat = parseFloat(getComputedStyle(veilEl.querySelector('.hzc-veil-sat')).opacity) || 0;
-      const tint = parseFloat(getComputedStyle(veilEl.querySelector('.hzc-veil-tint')).opacity) || 0;
+      const sat = parseFloat(getComputedStyle(veilEl.querySelector('.cal-veil-sat')).opacity) || 0;
+      const tint = parseFloat(getComputedStyle(veilEl.querySelector('.cal-veil-tint')).opacity) || 0;
       const painting = getComputedStyle(veilEl).display !== 'none'
         && parseFloat(getComputedStyle(veilEl).opacity) > 0.05;
 
-      __CTX__.events.emit('concentration-end', { gauge: 0 });
+      __CTX__.events.emit('steady-end', { gauge: 0 });
       await frames(60);                      // > the 0.34 s release
       const off1 = hud.surfaces().concentration;
 
@@ -483,11 +483,11 @@ export const GATES = [
       const shown = hud.showTip('focus');
       await frames(30);
       const card = hud.surfaces().tip;
-      const el = document.querySelector('.hzc-tip');
+      const el = document.querySelector('.cal-tip');
       const kbd = el ? el.querySelectorAll('kbd').length : 0;
       const kbdText = el ? [...el.querySelectorAll('kbd')].map(k => k.textContent) : [];
       const bodyPx = el
-        ? Math.round(parseFloat(getComputedStyle(el.querySelector('.hzc-tip-body')).fontSize) || 0)
+        ? Math.round(parseFloat(getComputedStyle(el.querySelector('.cal-tip-body')).fontSize) || 0)
         : 0;
 
       // one-shot: asking for the same card again must be refused

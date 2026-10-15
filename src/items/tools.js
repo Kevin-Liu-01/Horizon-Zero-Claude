@@ -178,10 +178,10 @@ export class Tools {
   _use_potion_vigor() {
     const p = this.ctx.player;
     if (!p) return { ok: false, reason: 'NO POUCH' };
-    if (p.pouch >= (p.maxPouch ?? 100) - 0.5) return { ok: false, reason: 'POUCH FULL' };
-    p.addPouch?.((p.maxPouch ?? 100) - p.pouch);
+    if (p.gourd >= (p.maxGourd ?? 100) - 0.5) return { ok: false, reason: 'POUCH FULL' };
+    p.addGourd?.((p.maxGourd ?? 100) - p.gourd);
     this.ctx.events?.emit?.('item-gained', {
-      id: 'potion-vigor', count: 1, total: Math.round(p.pouch ?? 0),
+      id: 'potion-vigor', count: 1, total: Math.round(p.gourd ?? 0),
       name: 'Pouch Refilled', glyph: '⚱', color: '#7fb069',
     });
     return { ok: true, cooldown: 1.4 };

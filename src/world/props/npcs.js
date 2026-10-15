@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { REST_SITE } from '../island/sites.js';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { mulberry32, composeMat, tint, tube, bake, materials } from './kit.js';
 
@@ -71,10 +72,10 @@ export const POSES = {
  * one `progression` already registers a TALK interactable on (Varl).
  */
 export const ROSTER = [
-  { id: 'varl', name: 'VARL', x: 23.0, z: 31.9, pose: 'warm', scale: 1.03, tint: '#c9b79a', face: [22, 30] },
+  { id: 'varl', name: 'VARL', x: 23.0, z: 31.9, pose: 'warm', scale: 1.03, tint: '#c9b79a', face: [REST_SITE.x, REST_SITE.z] },
   { id: 'sona', name: 'SONA', x: 18.6, z: 22.0, pose: 'hips', scale: 1.05, tint: '#8ea0a6', face: [13.1, 11] },
   { id: 'teb', name: 'TEB', x: 13.4, z: 34.4, pose: 'work', scale: 0.97, tint: '#b98f5e', face: [12.2, 35.2] },
-  { id: 'bast', name: 'BAST', x: 26.9, z: 28.3, pose: 'spear', scale: 1.01, tint: '#a0705a', face: [22, 30], gear: 'spear' },
+  { id: 'bast', name: 'BAST', x: 26.9, z: 28.3, pose: 'spear', scale: 1.01, tint: '#a0705a', face: [REST_SITE.x, REST_SITE.z], gear: 'spear' },
   { id: 'vala', name: 'VALA', x: 18.4, z: 34.2, pose: 'talk', scale: 0.95, tint: '#9d7fa0', face: [20.0, 35.4] },
   { id: 'karst', name: 'KARST', x: 20.2, z: 35.7, pose: 'cross', scale: 1.0, tint: '#7f8a6a', face: [18.4, 34.2] },
 ];
@@ -136,7 +137,7 @@ export function buildNpcCrowd(ctx, group, roster = ROSTER) {
     const arms = [armOf(1, pose.armR), armOf(-1, pose.armL)];
     const head = new Joint(HEAD_PIVOT, pose.head);
     const spine = new Joint(SPINE_PIVOT, pose.spine);
-    const yaw = Math.atan2((spec.face?.[0] ?? 22) - spec.x, (spec.face?.[1] ?? 30) - spec.z);
+    const yaw = Math.atan2((spec.face?.[0] ?? REST_SITE.x) - spec.x, (spec.face?.[1] ?? REST_SITE.z) - spec.z);
     const gy = ctx.terrain.getHeight(spec.x, spec.z) - 0.03;
     const place = composeMat(spec.x, gy, spec.z, 0, yaw, 0, spec.scale);
     const phase = n * 1.97 + rng() * 0.6;

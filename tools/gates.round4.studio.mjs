@@ -298,7 +298,7 @@ export const GATES = [
       // A death the studio staged is the studio's to retire on the way out:
       // leaving the card up hands the photographer a living valley with YOU
       // DIED painted across it.
-      const cardLeftUp = !!document.body.classList.contains('hzc-dead')
+      const cardLeftUp = !!document.body.classList.contains('cal-dead')
         || !!ctx.menus?.deathState
         || !!document.querySelector('.mn-death.show');
       const filterLeftOn = (getComputedStyle(ctx.renderer.domElement).filter || 'none') !== 'none';
@@ -452,7 +452,7 @@ export const GATES = [
 
       /* ---- 2. z-order: nothing another lane owns can steal a click ----
        * NOT a hard-coded selector list. Other lanes build their chrome at
-       * runtime (#hzc-wheel, #hzc-menus, #hzc-inv, #perf-stats are nowhere in
+       * runtime (#cal-wheel, #cal-menus, #cal-inv, #perf-stats are nowhere in
        * index.html), so a fixed list quietly checked nothing but #hud — and an
        * overlay landing at z 99999 shipped green under it. Scan the WHOLE
        * document: anything outside the studio's OWN three roots that claims a
@@ -891,7 +891,7 @@ export const GATES = [
 
       const hubOpen = !!ctx.menus?.hubOpen;
       const hubShown = !!document.querySelector('.mn-hub.show, #hub.show');
-      const bodyHub = document.body.classList.contains('hzc-hub-open');
+      const bodyHub = document.body.classList.contains('cal-hub-open');
       /* The decisive read is not a class name, it is WHAT IS IN FRONT OF THE
        * LENS. Hit-test the middle of the viewport: it must be the renderer's
        * canvas (or the studio's own chrome), never another lane's surface. */
@@ -911,7 +911,7 @@ export const GATES = [
         : 'null';
       if (hubOpen) bad.push('the pause hub is still open over the photograph');
       if (hubShown) bad.push('the hub element still carries .show');
-      if (bodyHub) bad.push('body still carries hzc-hub-open');
+      if (bodyHub) bad.push('body still carries cal-hub-open');
       if (!hitOk) bad.push('the centre of frame is ' + hitName + ', not the render canvas');
 
       /* ---- 2. ESC IS ONE PRESS ------------------------------------------

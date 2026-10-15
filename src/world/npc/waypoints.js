@@ -1,7 +1,7 @@
 /**
  * NPC ROSTER, STATIONS AND ROUTES — lane `npc`.
  *
- * Authored against the settlement `world-props` built at (22, 30): palisade
+ * Authored against the settlement `world-props` built at `REST_SITE`: palisade
  * radius 14–20.5 m, main gate on bearing 205°, six huts, and the working
  * dressing (drying racks, tanning frame, trough, spear stands, crates, wood
  * pile). Nothing here reaches into that lane's code — the positions are the
@@ -10,13 +10,15 @@
  * by a metre moves the person standing at it instead of burying them in it.
  */
 
-export const CAMP = { x: 22, z: 30 };
+import { REST_SITE } from '../island/sites.js';
+
+export const CAMP = { x: REST_SITE.x, z: REST_SITE.z };
 
 /** Work / rest stations. `seat` marks a log an NPC actually sits ON. */
 export const STATIONS = {
-  fire: { x: 22.0, z: 30.0, r: 2.4 },
-  logA: { x: 20.2, z: 28.6, seat: true, seatUp: 0.30, face: [22, 30] },
-  logB: { x: 23.9, z: 32.6, seat: true, seatUp: 0.30, face: [22, 30] },
+  fire: { x: REST_SITE.x, z: REST_SITE.z, r: 2.4 },
+  logA: { x: 20.2, z: 28.6, seat: true, seatUp: 0.30, face: [REST_SITE.x, REST_SITE.z] },
+  logB: { x: 23.9, z: 32.6, seat: true, seatUp: 0.30, face: [REST_SITE.x, REST_SITE.z] },
   rackA: { x: 20.6, z: 36.6, r: 1.15 },
   /**
    * `standBearing` is in the same frame as `_place`: x += sin(a), z += cos(a).

@@ -1,6 +1,9 @@
 import * as THREE from 'three';
 import { SEARCH, span } from './tables.js';
 import { safeEmit } from './emit.js';
+import { PLAY_RADIUS, EXTENT } from '../../../world/island/extent.js';
+
+const SEARCH_RIM = PLAY_RADIUS + EXTENT.searchRim;
 
 /**
  * Search sweeps — `machine-ai-11`, `stealth-search-behaviour-shallow`.
@@ -55,7 +58,7 @@ export class Search {
       const r = span(SEARCH.radius);
       const x = cx + Math.sin(a) * r, z = cz + Math.cos(a) * r;
       const rr = Math.hypot(x, z);
-      if (rr > 310) continue;
+      if (rr > SEARCH_RIM) continue;
       cand.push({ x, z, a, s: this._score(x, z) });
     }
     cand.sort((p, q) => q.s - p.s);

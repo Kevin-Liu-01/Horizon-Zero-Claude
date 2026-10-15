@@ -146,7 +146,7 @@ const BUILD = [
 
   /* --- the spear (audio content half) -----------------------------------
    * `src/combat/melee.js` emits `melee-hit`, `critical-hit` and
-   * `silent-strike`; before this pass nothing in the mix listened, so the
+   * `undercut`; before this pass nothing in the mix listened, so the
    * headline Round 4 melee verb was completely silent. Four rungs, matching
    * the arrow hit ladder's logic: light / heavy / crit / silent, plus the
    * swing that precedes all of them.
@@ -159,7 +159,7 @@ const BUILD = [
 
   /* --- Tripcaster + Ropecaster ------------------------------------------
    * `src/combat/traps.js` emits `trap-placed`, `trap-triggered`,
-   * `rope-attached` and `machine-tied`. Same story: four emitted events, no
+   * `net-fouled` and `instrument-fouled`. Same story: four emitted events, no
    * listener, two whole weapons that made no sound of their own.
    */
   { set: 'trap/place', variants: 2, dur: 0.42, gain: 0.95, tags: ['trap', 'place'] },
@@ -352,7 +352,7 @@ window.__realtimeAlive = async function () {
 
 /** Render + peak-normalise one cue offline. Never needs a device. */
 window.__renderBuffer = async function (job) {
-  const { RECIPES, kit } = window.HZC_AUDIO_RECIPES;
+  const { RECIPES, kit } = window.CAL_AUDIO_RECIPES;
   const fn = RECIPES[job.recipe];
   if (!fn) throw new Error('no recipe ' + job.recipe);
   const oc = new OfflineAudioContext(job.ch, Math.ceil(48000 * job.dur), 48000);

@@ -8,7 +8,7 @@
    on the outer ring, a stat row in the centre, a hold-R craft radial, and the
    whole wheel OFFSET RIGHT so the left third of the screen stays clear. */
 
-#hzc-wheel {
+#cal-wheel {
   position: fixed;
   inset: 0;
   z-index: 60;
@@ -21,12 +21,12 @@
   pointer-events: none;
   transition: opacity 0.14s ease-out;
   font-family: var(--font, 'Rajdhani', sans-serif);
-  color: var(--hzc-text, #efe6d5);
+  color: var(--cal-text, #efe6d5);
   user-select: none;
 }
-#hzc-wheel.open { opacity: 1; }
+#cal-wheel.open { opacity: 1; }
 
-#hzc-wheel .ww-scrim {
+#cal-wheel .ww-scrim {
   position: absolute;
   inset: 0;
   background: radial-gradient(
@@ -38,34 +38,34 @@
   -webkit-backdrop-filter: blur(5px) saturate(0.82);
 }
 
-#hzc-wheel .ww-wrap {
+#cal-wheel .ww-wrap {
   position: relative;
   width: min(640px, 62vh);
   height: min(640px, 62vh);
   transform: scale(0.94);
   transition: transform 0.16s ease-out;
 }
-#hzc-wheel.open .ww-wrap { transform: scale(1); }
+#cal-wheel.open .ww-wrap { transform: scale(1); }
 
 /* rings: thin parchment hairlines */
-#hzc-wheel .ww-rings {
+#cal-wheel .ww-rings {
   position: absolute;
   inset: 0;
   width: 100%;
   height: 100%;
   overflow: visible;
 }
-#hzc-wheel .ww-ring {
+#cal-wheel .ww-ring {
   fill: none;
   stroke: rgba(239, 230, 213, 0.28);
   stroke-width: 1;
 }
-#hzc-wheel .ww-ring-in { stroke: rgba(239, 230, 213, 0.16); }
-#hzc-wheel .ww-ring-out {
+#cal-wheel .ww-ring-in { stroke: rgba(239, 230, 213, 0.16); }
+#cal-wheel .ww-ring-out {
   stroke: rgba(239, 230, 213, 0.11);
   stroke-dasharray: 2 7;
 }
-#hzc-wheel .ww-arc {
+#cal-wheel .ww-arc {
   fill: none;
   stroke: #ffd34d;
   stroke-width: 2.5;
@@ -74,16 +74,16 @@
   filter: drop-shadow(0 0 6px rgba(255, 211, 77, 0.75));
   transition: opacity 0.1s;
 }
-#hzc-wheel .ww-arc.on { opacity: 0.95; }
+#cal-wheel .ww-arc.on { opacity: 0.95; }
 
 /* ---- ammo arcs: dim track + coloured fill = how full that quiver is ------- */
-#hzc-wheel .ww-aarc-bg {
+#cal-wheel .ww-aarc-bg {
   fill: none;
   stroke: rgba(239, 230, 213, 0.13);
   stroke-width: 5;
   stroke-linecap: butt;
 }
-#hzc-wheel .ww-aarc {
+#cal-wheel .ww-aarc {
   fill: none;
   stroke: var(--ac, #e8d9b0);
   stroke-width: 5;
@@ -91,14 +91,14 @@
   opacity: 0.34;
   transition: opacity 0.12s, stroke-width 0.12s;
 }
-#hzc-wheel .ww-aarcs.on .ww-aarc { opacity: 0.95; }
-#hzc-wheel .ww-aarcs.on .ww-aarc.sel {
+#cal-wheel .ww-aarcs.on .ww-aarc { opacity: 0.95; }
+#cal-wheel .ww-aarcs.on .ww-aarc.sel {
   stroke-width: 9;
   filter: drop-shadow(0 0 6px currentColor);
 }
 
 /* ---- petals: positioned by angle, centred on their point ------------------ */
-#hzc-wheel .ww-slot {
+#cal-wheel .ww-slot {
   position: absolute;
   width: 164px;
   margin: 0 0 0 -82px;
@@ -110,25 +110,25 @@
   opacity: 0.66;
   transition: opacity 0.1s, transform 0.1s;
 }
-#hzc-wheel .ww-slot.hover {
+#cal-wheel .ww-slot.hover {
   opacity: 1;
   transform: translateY(-50%) scale(1.09);
 }
 
 /* weapon silhouette (ui-09: art, not a label to read mid-fight) */
-#hzc-wheel .ww-art {
+#cal-wheel .ww-art {
   width: 46px;
   height: 46px;
   color: rgba(239, 230, 213, 0.88);
   filter: drop-shadow(0 1px 4px rgba(0, 0, 0, 0.85));
   transition: color 0.1s, filter 0.1s;
 }
-#hzc-wheel .ww-slot.hover .ww-art {
+#cal-wheel .ww-slot.hover .ww-art {
   color: #ffd34d;
   filter: drop-shadow(0 0 8px rgba(255, 211, 77, 0.6));
 }
 
-#hzc-wheel .ww-slot-head {
+#cal-wheel .ww-slot-head {
   display: flex;
   align-items: center;
   gap: 7px;
@@ -139,8 +139,8 @@
   text-shadow: 0 1px 6px rgba(0, 0, 0, 0.9);
   white-space: nowrap;
 }
-#hzc-wheel .ww-slot.hover .ww-slot-name { color: #ffd34d; }
-#hzc-wheel .ww-slot.equipped .ww-slot-head::after {
+#cal-wheel .ww-slot.hover .ww-slot-name { color: #ffd34d; }
+#cal-wheel .ww-slot.equipped .ww-slot-head::after {
   content: '';
   width: 5px;
   height: 5px;
@@ -149,7 +149,7 @@
   box-shadow: 0 0 6px rgba(200, 162, 75, 0.8);
 }
 
-#hzc-wheel kbd {
+#cal-wheel kbd {
   font-family: var(--font, 'Rajdhani', sans-serif);
   font-size: 11px;
   font-weight: 700;
@@ -162,12 +162,12 @@
 }
 
 /* ammo chips under each petal */
-#hzc-wheel .ww-ammos {
+#cal-wheel .ww-ammos {
   display: flex;
   gap: 6px;
   justify-content: center;
 }
-#hzc-wheel .ww-ammo {
+#cal-wheel .ww-ammo {
   width: 42px;
   padding: 4px 3px 3px;
   display: flex;
@@ -179,29 +179,29 @@
   border-radius: 3px;
   transition: border-color 0.1s, background 0.1s;
 }
-#hzc-wheel .ww-ammo-ic {
+#cal-wheel .ww-ammo-ic {
   width: 20px;
   height: 20px;
   color: var(--ac, #e8d9b0);
   filter: drop-shadow(0 0 4px rgba(0, 0, 0, 0.7));
 }
-#hzc-wheel .ww-ammo-n {
+#cal-wheel .ww-ammo-n {
   font-size: 12px;
   font-weight: 600;
   letter-spacing: 0.06em;
   color: rgba(239, 230, 213, 0.85);
 }
 /* yellow selection highlight (canon) */
-#hzc-wheel .ww-ammo.sel {
+#cal-wheel .ww-ammo.sel {
   border-color: #ffd34d;
   background: rgba(14, 18, 15, 0.85);
   box-shadow: 0 0 10px -2px rgba(255, 211, 77, 0.75);
 }
-#hzc-wheel .ww-ammo.empty .ww-ammo-ic { opacity: 0.35; }
-#hzc-wheel .ww-ammo.empty .ww-ammo-n { color: var(--hzc-danger, #b03a2e); }
+#cal-wheel .ww-ammo.empty .ww-ammo-ic { opacity: 0.35; }
+#cal-wheel .ww-ammo.empty .ww-ammo-n { color: var(--cal-danger, #b03a2e); }
 
 /* ------------------------------ centre card -------------------------------- */
-#hzc-wheel .ww-center {
+#cal-wheel .ww-center {
   position: absolute;
   left: 50%;
   top: 50%;
@@ -218,15 +218,15 @@
   text-align: center;
   padding: 20px;
 }
-#hzc-wheel .ww-weapon-name {
+#cal-wheel .ww-weapon-name {
   font-size: 19px;
   font-weight: 600;
   letter-spacing: 0.26em;
   text-indent: 0.26em;
   text-transform: uppercase;
-  color: var(--hzc-text, #efe6d5);
+  color: var(--cal-text, #efe6d5);
 }
-#hzc-wheel .ww-ammo-name {
+#cal-wheel .ww-ammo-name {
   display: flex;
   align-items: center;
   gap: 7px;
@@ -236,14 +236,14 @@
   text-transform: uppercase;
   color: rgba(239, 230, 213, 0.85);
 }
-#hzc-wheel .ww-ammo-name i {
+#cal-wheel .ww-ammo-name i {
   display: inline-block;
   width: 17px;
   height: 17px;
 }
 
 /* stat bars (ui-09: "which of these is the hard-hitting one") */
-#hzc-wheel .ww-stats {
+#cal-wheel .ww-stats {
   display: grid;
   grid-template-columns: auto 1fr;
   gap: 3px 8px;
@@ -251,22 +251,22 @@
   width: 150px;
   margin: 5px 0 1px;
 }
-#hzc-wheel .ww-stat { display: contents; }
-#hzc-wheel .ww-stat-k {
+#cal-wheel .ww-stat { display: contents; }
+#cal-wheel .ww-stat-k {
   font-size: 9.5px;
   font-weight: 700;
   letter-spacing: 0.18em;
   color: rgba(239, 230, 213, 0.5);
   text-align: right;
 }
-#hzc-wheel .ww-stat-bar {
+#cal-wheel .ww-stat-bar {
   position: relative;
   height: 4px;
   background: rgba(239, 230, 213, 0.12);
   border-radius: 2px;
   overflow: hidden;
 }
-#hzc-wheel .ww-stat-bar i {
+#cal-wheel .ww-stat-bar i {
   position: absolute;
   inset: 0 auto 0 0;
   width: 0;
@@ -274,21 +274,21 @@
   box-shadow: 0 0 6px -1px rgba(255, 211, 77, 0.8);
   transition: width 0.12s ease-out;
 }
-#hzc-wheel .ww-stat-bar i.none { background: rgba(239, 230, 213, 0.2); box-shadow: none; }
+#cal-wheel .ww-stat-bar i.none { background: rgba(239, 230, 213, 0.2); box-shadow: none; }
 
-#hzc-wheel .ww-divider {
+#cal-wheel .ww-divider {
   width: 120px;
   height: 1px;
   margin: 3px 0;
   background: linear-gradient(90deg, transparent, rgba(239, 230, 213, 0.42), transparent);
 }
-#hzc-wheel .ww-recipe {
+#cal-wheel .ww-recipe {
   display: flex;
   flex-direction: column;
   gap: 2px;
   min-height: 18px;
 }
-#hzc-wheel .ww-ing {
+#cal-wheel .ww-ing {
   display: flex;
   align-items: center;
   justify-content: center;
@@ -298,13 +298,13 @@
   letter-spacing: 0.08em;
   color: rgba(239, 230, 213, 0.75);
 }
-#hzc-wheel .ww-ing i { width: 14px; height: 14px; color: rgba(239, 230, 213, 0.65); }
-#hzc-wheel .ww-ing b { font-weight: 600; color: rgba(239, 230, 213, 0.5); }
-#hzc-wheel .ww-ing.no { color: var(--hzc-danger, #b03a2e); }
-#hzc-wheel .ww-ing.no i { color: var(--hzc-danger, #b03a2e); }
+#cal-wheel .ww-ing i { width: 14px; height: 14px; color: rgba(239, 230, 213, 0.65); }
+#cal-wheel .ww-ing b { font-weight: 600; color: rgba(239, 230, 213, 0.5); }
+#cal-wheel .ww-ing.no { color: var(--cal-danger, #b03a2e); }
+#cal-wheel .ww-ing.no i { color: var(--cal-danger, #b03a2e); }
 
 /* ---- hold-R craft radial (one state machine with the hip-fire craft) ------ */
-#hzc-wheel .ww-craft {
+#cal-wheel .ww-craft {
   position: relative;
   display: flex;
   align-items: center;
@@ -317,8 +317,8 @@
   color: #ffd34d;
   transition: padding-left 0.12s;
 }
-#hzc-wheel .ww-craft.disabled { opacity: 0.4; color: rgba(239, 230, 213, 0.7); }
-#hzc-wheel .ww-craft-ring {
+#cal-wheel .ww-craft.disabled { opacity: 0.4; color: rgba(239, 230, 213, 0.7); }
+#cal-wheel .ww-craft-ring {
   position: absolute;
   left: -4px;
   top: 50%;
@@ -329,35 +329,35 @@
   transform: rotate(-90deg);
   transition: opacity 0.1s;
 }
-#hzc-wheel .ww-craft.holding { padding-left: 28px; }
-#hzc-wheel .ww-craft.holding .ww-craft-ring { opacity: 1; }
-#hzc-wheel .ww-craft-ring .bg {
+#cal-wheel .ww-craft.holding { padding-left: 28px; }
+#cal-wheel .ww-craft.holding .ww-craft-ring { opacity: 1; }
+#cal-wheel .ww-craft-ring .bg {
   fill: none;
   stroke: rgba(239, 230, 213, 0.2);
   stroke-width: 3;
 }
-#hzc-wheel .ww-craft-ring .fg {
+#cal-wheel .ww-craft-ring .fg {
   fill: none;
   stroke: #ffd34d;
   stroke-width: 3;
   stroke-linecap: round;
   filter: drop-shadow(0 0 4px rgba(255, 211, 77, 0.7));
 }
-#hzc-wheel .ww-craft.disabled .ww-craft-ring .fg { stroke: var(--hzc-danger, #b03a2e); }
-#hzc-wheel .ww-craft.flash { animation: ww-craft-flash 0.45s ease-out; }
-#hzc-wheel .ww-craft.deny { animation: ww-craft-deny 0.3s ease-out; }
+#cal-wheel .ww-craft.disabled .ww-craft-ring .fg { stroke: var(--cal-danger, #b03a2e); }
+#cal-wheel .ww-craft.flash { animation: ww-craft-flash 0.45s ease-out; }
+#cal-wheel .ww-craft.deny { animation: ww-craft-deny 0.3s ease-out; }
 @keyframes ww-craft-flash {
   0% { text-shadow: 0 0 14px rgba(255, 211, 77, 0.9); transform: scale(1.14); }
   100% { text-shadow: none; transform: scale(1); }
 }
 @keyframes ww-craft-deny {
-  0%, 66% { color: var(--hzc-danger, #b03a2e); }
+  0%, 66% { color: var(--cal-danger, #b03a2e); }
   25% { transform: translateX(-3px); }
   50% { transform: translateX(3px); }
 }
 
 /* the hint sits BELOW the wheel, never across the side petals */
-#hzc-wheel .ww-hint {
+#cal-wheel .ww-hint {
   position: absolute;
   left: 50%;
   top: 100%;
@@ -371,4 +371,4 @@
   gap: 5px;
   white-space: nowrap;
 }
-#hzc-wheel .ww-hint kbd { font-size: 9px; padding: 1px 4px 2px; }
+#cal-wheel .ww-hint kbd { font-size: 9px; padding: 1px 4px 2px; }

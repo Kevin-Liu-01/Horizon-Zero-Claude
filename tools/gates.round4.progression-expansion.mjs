@@ -29,7 +29,7 @@
  * Run: node tools/gates.mjs --port 5213 --lane progression-expansion
  */
 
-const KEYS = ['hzc.save.v4', 'hzc.checkpoint.v4', 'hzc.meta.v4'];
+const KEYS = ['cal.save.v5', 'cal.checkpoint.v5', 'cal.meta.v5'];
 const RESET = `for (const k of ${JSON.stringify(KEYS)}) { try { localStorage.removeItem(k); } catch { /* locked down */ } }`;
 
 /**
@@ -165,7 +165,7 @@ export const GATES = [
        * written by the 5 Hz sampler and read here a tick later.
        */
       await simWait(ctx, 0.4);
-      const chipEl = document.querySelector('#hzc-prog .pg-trial');
+      const chipEl = document.querySelector('#cal-prog .pg-trial');
       const at = prog.activeTrial();
       const chipSecs = (() => {
         const txt = chipEl && chipEl.querySelector('.pg-trial-time')
@@ -587,10 +587,10 @@ export const GATES = [
       const opened = ctx.npcs.talkTo('karst');
       await until(() => prog.dialogueUI.isOpen, 3000);
       const panel = prog.dialogueUI.audit();
-      const rootShown = !!document.querySelector('#hzc-dlg.show');
-      const rows = [...document.querySelectorAll('#hzc-dlg .dlg-choice')];
-      const nameOnScreen = (document.querySelector('#hzc-dlg .dlg-name') || {}).textContent || '';
-      const lineOnScreen = (document.querySelector('#hzc-dlg .dlg-line') || {}).textContent || '';
+      const rootShown = !!document.querySelector('#cal-dlg.show');
+      const rows = [...document.querySelectorAll('#cal-dlg .dlg-choice')];
+      const nameOnScreen = (document.querySelector('#cal-dlg .dlg-name') || {}).textContent || '';
+      const lineOnScreen = (document.querySelector('#cal-dlg .dlg-line') || {}).textContent || '';
       const stateWhileOpen = ctx.state;
       // ...and NOT through the old journal-overlay card
       const journalNotUsed = prog.ui.state !== 'dialogue';
@@ -605,12 +605,12 @@ export const GATES = [
 
       /* --- 4. a topic choice changes the line and pays once --------------- */
       const xp0 = prog.totalXp;
-      const topicRow = [...document.querySelectorAll('#hzc-dlg .dlg-choice')]
+      const topicRow = [...document.querySelectorAll('#cal-dlg .dlg-choice')]
         .find((r) => r.dataset.kind === 'topic');
-      const lineBefore = (document.querySelector('#hzc-dlg .dlg-line') || {}).textContent || '';
+      const lineBefore = (document.querySelector('#cal-dlg .dlg-line') || {}).textContent || '';
       if (topicRow) topicRow.click();
       await sleep(60);
-      const lineAfter = (document.querySelector('#hzc-dlg .dlg-line') || {}).textContent || '';
+      const lineAfter = (document.querySelector('#cal-dlg .dlg-line') || {}).textContent || '';
       const xpAfterTopic = prog.totalXp;
       // asking the same thing twice does not pay twice
       const seenKey = [...prog.dialogue.seen][0];
@@ -618,7 +618,7 @@ export const GATES = [
 
       /* --- 5. leaving closes cleanly and credits the talk ----------------- */
       const talkBefore = prog.tally.talk.karst || 0;
-      const leaveRow = [...document.querySelectorAll('#hzc-dlg .dlg-choice')]
+      const leaveRow = [...document.querySelectorAll('#cal-dlg .dlg-choice')]
         .find((r) => r.dataset.kind === 'leave');
       if (leaveRow) leaveRow.click();
       await until(() => !prog.dialogueUI.isOpen, 3000);
@@ -837,7 +837,7 @@ export const GATES = [
       const wasRegistered = systems.includes(prog);
       /** the lane's DOM island, counted so the teardown/rebuild is non-vacuous */
       const domNodes = () => {
-        const r = document.getElementById('hzc-prog');
+        const r = document.getElementById('cal-prog');
         return r ? r.querySelectorAll('*').length + 1 : 0;
       };
       const domBefore = domNodes();
@@ -876,7 +876,7 @@ export const GATES = [
       const corpseStaysDead = prog._disposed === true && !systems.includes(prog);
       const domAfterReinstall = domNodes();
       // the island must come BACK, not merely leave an empty shell behind: the
-      // corpse's dispose() leaves the bare #hzc-prog div (1 node), so a "> 0"
+      // corpse's dispose() leaves the bare #cal-prog div (1 node), so a "> 0"
       // threshold would have passed on the broken build.
       const reinstallDom = domBefore > 0 && domAfterDispose < domBefore
         && domAfterReinstall >= Math.max(10, Math.floor(domBefore * 0.5));
@@ -892,7 +892,7 @@ export const GATES = [
       try {
         re.talkTo('varl');
         await sleep(200);
-        const dlg = document.getElementById('hzc-dlg');
+        const dlg = document.getElementById('cal-dlg');
         const txt = dlg ? (dlg.innerText || '').trim() : '';
         reinstallDialogue = !!dlg && re.dialogueUI && re.dialogueUI.isOpen === true && txt.length > 8;
         re.closeDialogue();

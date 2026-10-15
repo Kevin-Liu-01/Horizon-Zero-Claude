@@ -1,6 +1,8 @@
 import * as THREE from 'three';
 import { clone as skeletonClone } from 'three/examples/jsm/utils/SkeletonUtils.js';
 import { MachineAI } from './ai/index.js';
+import { REST_SITE } from '../../world/island/sites.js';
+import { PLAY_RADIUS, EXTENT } from '../../world/island/extent.js';
 import { Squads } from './ai/squad.js';
 import { safeEmit, machineCtx } from './ai/emit.js';
 import {
@@ -13,8 +15,8 @@ import {
  * death FX. Subclasses supply model config, procedural animation and attacks.
  */
 
-const CAMP = { x: 22, z: 30, r: 25 };
-const WORLD_LIMIT = 318;
+const CAMP = REST_SITE;            // { x, z, r }: the Instrument no-spawn ring
+const WORLD_LIMIT = PLAY_RADIUS + EXTENT.machineRim;
 
 export const EYE_COLORS = {
   calm: new THREE.Color('#38c6ff'),

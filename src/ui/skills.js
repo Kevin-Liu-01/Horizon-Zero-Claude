@@ -7,92 +7,92 @@
  * 3 progression was not "there is no tree", it was "nothing it could change
  * exists"; showing the hook keeps this lane honest.
  *
- * Shares the `#hzc-prog` DOM island and the stylesheet that `ui/quests.js`
+ * Shares the `#cal-prog` DOM island and the stylesheet that `ui/quests.js`
  * injects — one style tag, one root, two panels, and nothing appended into
  * `#hud` (which belongs to `shell-hud`).
  */
 
 import { progRoot } from './quests.js';
 
-const STYLE_ID = 'hzc-skills-style';
+const STYLE_ID = 'cal-skills-style';
 
 const CSS = `
-#hzc-prog .sk-overlay {
+#cal-prog .sk-overlay {
   position: absolute; inset: 0; pointer-events: auto;
   background: radial-gradient(ellipse at 50% 45%, rgba(6,9,12,0.64), rgba(6,9,12,0.92));
   display: flex; align-items: center; justify-content: center;
   opacity: 0; visibility: hidden; transition: opacity 0.16s ease;
 }
-#hzc-prog .sk-overlay.show { opacity: 1; visibility: visible; }
-#hzc-prog .sk-panel {
+#cal-prog .sk-overlay.show { opacity: 1; visibility: visible; }
+#cal-prog .sk-panel {
   background: linear-gradient(168deg, rgba(13,18,22,0.95), rgba(8,11,14,0.98));
   border: 1px solid rgba(239,230,213,0.18);
   padding: 24px 28px 20px; width: min(1020px, 92vw); max-height: 86vh;
   display: flex; flex-direction: column;
   clip-path: polygon(16px 0, 100% 0, 100% calc(100% - 16px), calc(100% - 16px) 100%, 0 100%, 0 16px);
 }
-#hzc-prog .sk-head {
+#cal-prog .sk-head {
   display: flex; align-items: baseline; justify-content: space-between;
   border-bottom: 1px solid rgba(239,230,213,0.16); padding-bottom: 12px;
 }
-#hzc-prog .sk-title {
+#cal-prog .sk-title {
   font-family: var(--font-display, 'Michroma', sans-serif);
   font-size: 13px; letter-spacing: 0.5em; text-indent: 0.5em; color: var(--pg-gold, #c8a24b);
 }
-#hzc-prog .sk-points {
+#cal-prog .sk-points {
   font-size: 12px; letter-spacing: 0.22em; text-transform: uppercase;
   color: var(--pg-teal, #59c1c6);
 }
-#hzc-prog .sk-cols {
+#cal-prog .sk-cols {
   display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px;
   overflow-y: auto; padding: 16px 4px 4px; flex: 1 1 auto;
 }
-#hzc-prog .sk-cols::-webkit-scrollbar { width: 6px; }
-#hzc-prog .sk-cols::-webkit-scrollbar-thumb { background: rgba(239,230,213,0.22); }
-#hzc-prog .sk-col h3 {
+#cal-prog .sk-cols::-webkit-scrollbar { width: 6px; }
+#cal-prog .sk-cols::-webkit-scrollbar-thumb { background: rgba(239,230,213,0.22); }
+#cal-prog .sk-col h3 {
   font-family: var(--font-display, 'Michroma', sans-serif);
   font-weight: 400; font-size: 11px; letter-spacing: 0.34em;
   color: #FAF9F5; text-align: center; padding-bottom: 10px;
   border-bottom: 1px solid rgba(239,230,213,0.14); margin-bottom: 4px;
 }
-#hzc-prog .sk-col.Prowler h3 { color: #9ad9c0; }
-#hzc-prog .sk-col.Brave h3 { color: #e8a06a; }
-#hzc-prog .sk-col.Forager h3 { color: #b9d17a; }
+#cal-prog .sk-col.Prowler h3 { color: #9ad9c0; }
+#cal-prog .sk-col.Brave h3 { color: #e8a06a; }
+#cal-prog .sk-col.Forager h3 { color: #b9d17a; }
 
-#hzc-prog .sk-node {
+#cal-prog .sk-node {
   position: relative; margin-top: 12px; padding: 11px 13px 12px 42px;
   border: 1px solid rgba(239,230,213,0.16);
   background: rgba(239,230,213,0.03);
   cursor: default; transition: border-color 0.14s ease, background 0.14s ease;
 }
-#hzc-prog .sk-node .sk-dot {
+#cal-prog .sk-node .sk-dot {
   position: absolute; left: 12px; top: 13px;
   width: 18px; height: 18px;
   border: 1px solid rgba(239,230,213,0.4);
   transform: rotate(45deg);
 }
-#hzc-prog .sk-node .sk-dot::after {
+#cal-prog .sk-node .sk-dot::after {
   content: ''; position: absolute; inset: 3px; background: transparent;
 }
-#hzc-prog .sk-node.available { cursor: pointer; border-color: rgba(200,162,75,0.55); }
-#hzc-prog .sk-node.available:hover { background: rgba(200,162,75,0.13); }
-#hzc-prog .sk-node.available .sk-dot { border-color: var(--pg-gold, #c8a24b); }
-#hzc-prog .sk-node.unlocked { border-color: rgba(89,193,198,0.55); background: rgba(89,193,198,0.07); }
-#hzc-prog .sk-node.unlocked .sk-dot { border-color: var(--pg-teal, #59c1c6); }
-#hzc-prog .sk-node.unlocked .sk-dot::after { background: var(--pg-teal, #59c1c6); }
-#hzc-prog .sk-node.locked { opacity: 0.45; }
-#hzc-prog .sk-name {
+#cal-prog .sk-node.available { cursor: pointer; border-color: rgba(200,162,75,0.55); }
+#cal-prog .sk-node.available:hover { background: rgba(200,162,75,0.13); }
+#cal-prog .sk-node.available .sk-dot { border-color: var(--pg-gold, #c8a24b); }
+#cal-prog .sk-node.unlocked { border-color: rgba(89,193,198,0.55); background: rgba(89,193,198,0.07); }
+#cal-prog .sk-node.unlocked .sk-dot { border-color: var(--pg-teal, #59c1c6); }
+#cal-prog .sk-node.unlocked .sk-dot::after { background: var(--pg-teal, #59c1c6); }
+#cal-prog .sk-node.locked { opacity: 0.45; }
+#cal-prog .sk-name {
   font-size: 14px; letter-spacing: 0.09em; text-transform: uppercase; color: #FAF9F5;
   display: flex; justify-content: space-between; gap: 10px;
 }
-#hzc-prog .sk-cost { font-size: 11px; color: var(--pg-gold, #c8a24b); letter-spacing: 0.16em; }
-#hzc-prog .sk-desc { font-size: 12px; color: rgba(239,230,213,0.7); margin-top: 4px; line-height: 1.45; }
-#hzc-prog .sk-req { font-size: 10.5px; letter-spacing: 0.14em; color: #d9543f; margin-top: 5px; text-transform: uppercase; }
-#hzc-prog .sk-hook {
+#cal-prog .sk-cost { font-size: 11px; color: var(--pg-gold, #c8a24b); letter-spacing: 0.16em; }
+#cal-prog .sk-desc { font-size: 12px; color: rgba(239,230,213,0.7); margin-top: 4px; line-height: 1.45; }
+#cal-prog .sk-req { font-size: 10.5px; letter-spacing: 0.14em; color: #d9543f; margin-top: 5px; text-transform: uppercase; }
+#cal-prog .sk-hook {
   font-size: 9.5px; letter-spacing: 0.1em; color: rgba(239,230,213,0.35);
   margin-top: 6px; font-family: var(--font-focus, monospace); word-break: break-word;
 }
-#hzc-prog .sk-foot {
+#cal-prog .sk-foot {
   padding-top: 12px; margin-top: 8px; border-top: 1px solid rgba(239,230,213,0.14);
   font-size: 10.5px; letter-spacing: 0.2em; text-transform: uppercase;
   color: rgba(239,230,213,0.5); display: flex; gap: 20px; flex-wrap: wrap;

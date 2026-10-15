@@ -12,12 +12,12 @@ import { itemDef, rarityDef } from '../items/items.js';
  *                              skipped instead of drawn a loop they ignore
  *   onboarding-loop-loot-feel  LOOT reveals carry the source name + rarity
  *
- * PUBLISHED — `ctx.focus`
+ * PUBLISHED — `ctx.sighting`
  *   on · toggle(force?) · tags (Map machine -> marker el)
  *   scanTarget      -> the machine under the crosshair, or null
  *   components(m)   -> [{ name, weak, tearable, torn, elemental, loot[] }]
  *   audit()         -> one flat object every gate in this lane reads
- * EVENTS  'focus-on' · 'focus-off' · 'focus-pulse' · 'machine-tagged'
+ * EVENTS  'sighting-on' · 'sighting-off' · 'sighting-pulse' · 'machine-tagged'
  *
  * Focus v2 behaviour (kept): V TOGGLES Focus — no time limit.
  * While on: activation pulse (ground ring + wave), persistent violet
@@ -32,7 +32,7 @@ import { itemDef, rarityDef } from '../items/items.js';
  *
  * Cross-builder reads are all defensive: machine.parts / route / kind,
  * ctx.interactables.list, terrain.getHeight may land in any order.
- * Emits: 'focus-on', 'focus-off' (+ legacy 'focus-pulse' on activation).
+ * Emits: 'sighting-on', 'sighting-off' (+ legacy 'sighting-pulse' on activation).
  * Consumes: 'player-died', 'machine-killed'.
  */
 
@@ -81,11 +81,11 @@ const REVEAL_TICK = 0.2;   // seconds between interactable registry polls
  * the next candidate. These are the box extents the placement solve uses.  */
 const VIEW_MARGIN = 8;     // px a label box must reach inside the frame
 const VIEW_FRAC = 0.6;     // ...and this much of its width must be inside
-const PLABEL_GAP = 10;     // .hzcf-plabel translate(10px) off its anchor
+const PLABEL_GAP = 10;     // .calf-plabel translate(10px) off its anchor
 const PLABEL_W = 190;      // widest name + loot chip at 10px/0.14em
 const PLABEL_H = 11;       // half-height
 const PLABEL_MID = PLABEL_GAP + PLABEL_W * 0.5;  // anchor -> box centre
-const REVEAL_HW = 105;     // .hzcf-reveal is centred: half its widest box
+const REVEAL_HW = 105;     // .calf-reveal is centred: half its widest box
 const REVEAL_H = 22;       // ...and it sits fully ABOVE its anchor
 // --- stealth-focus-path-fidelity ------------------------------------------
 const SPLINE_STEP = 1.1;   // metres between Catmull-Rom samples on the ribbon
@@ -243,7 +243,7 @@ export class FocusSystem {
     if (this.on) {
       this.on = false;
       this.active = false;
-      this.ctx.events.emit('focus-off');
+      this.ctx.events.emit('sighting-off');
     }
     this._tint.classList.remove('on');
     this._reticle.classList.remove('on');
@@ -267,8 +267,8 @@ export class FocusSystem {
       return;
     }
     const el = document.createElement('div');
-    el.className = 'hzcf-tag';
-    el.innerHTML = '<div class="hzcf-diamond"></div><div class="hzcf-dist"></div>';
+    el.className = 'calf-tag';
+    el.innerHTML = '<div class="calf-diamond"></div><div class="calf-dist"></div>';
     this._layer.appendChild(el);
     this._tags.set(m, el);
     this.ctx.events.emit('machine-tagged', { machine: m });
@@ -286,8 +286,8 @@ export class FocusSystem {
     this._gather.visible = true;
     this._gatherPoll = 0;   // refresh immediately
     this._partPoll = 0;
-    this.ctx.events.emit('focus-on');
-    this.ctx.events.emit('focus-pulse'); // legacy: round-1 audio hook
+    this.ctx.events.emit('sighting-on');
+    this.ctx.events.emit('sighting-pulse'); // legacy: round-1 audio hook
   }
 
   _deactivate() {
@@ -299,7 +299,7 @@ export class FocusSystem {
     this._ring.visible = false;
     this._gather.visible = false;
     this._disposePaths();
-    this.ctx.events.emit('focus-off');
+    this.ctx.events.emit('sighting-off');
   }
 
   _firePulse() {
@@ -318,20 +318,20 @@ export class FocusSystem {
   _buildDom() {
     // cool/purple fullscreen tint — first #hud child so HUD text sits above it
     this._tint = document.createElement('div');
-    this._tint.className = 'hzcf-tint';
+    this._tint.className = 'calf-tint';
     (document.getElementById('hud') ?? document.body).prepend(this._tint);
 
     // card + markers live in their own fixed layer UNDER #hud
     this._layer = document.createElement('div');
-    this._layer.id = 'hzcf-layer';
+    this._layer.id = 'calf-layer';
     document.body.appendChild(this._layer);
 
     this._reticle = document.createElement('div');
-    this._reticle.className = 'hzcf-reticle';
+    this._reticle.className = 'calf-reticle';
     this._layer.appendChild(this._reticle);
 
     this._card = document.createElement('div');
-    this._card.className = 'hzcf-card';
+    this._card.className = 'calf-card';
     this._layer.appendChild(this._card);
 
     // ui-10 — pooled in-world component labels (yellow, named). Pooled and
@@ -339,12 +339,12 @@ export class FocusSystem {
     this._labelPool = [];
     for (let i = 0; i < LABEL_CAP; i++) {
       const el = document.createElement('div');
-      el.className = 'hzcf-plabel';
-      el.innerHTML = '<i class="hzcf-pdot"></i><span class="hzcf-pname"></span>'
-        + '<span class="hzcf-ploot"></span>';
+      el.className = 'calf-plabel';
+      el.innerHTML = '<i class="calf-pdot"></i><span class="calf-pname"></span>'
+        + '<span class="calf-ploot"></span>';
       this._layer.appendChild(el);
       this._labelPool.push({
-        el, name: el.querySelector('.hzcf-pname'), loot: el.querySelector('.hzcf-ploot'),
+        el, name: el.querySelector('.calf-pname'), loot: el.querySelector('.calf-ploot'),
       });
     }
     // live rows are REUSED records, never fresh objects: this runs every frame
@@ -362,12 +362,12 @@ export class FocusSystem {
     this._revealPool = [];
     for (let i = 0; i < REVEAL_CAP; i++) {
       const el = document.createElement('div');
-      el.className = 'hzcf-reveal';
-      el.innerHTML = '<i class="hzcf-rmark"></i>'
-        + '<span class="hzcf-rkind"></span><span class="hzcf-rname"></span>';
+      el.className = 'calf-reveal';
+      el.innerHTML = '<i class="calf-rmark"></i>'
+        + '<span class="calf-rkind"></span><span class="calf-rname"></span>';
       this._layer.appendChild(el);
       this._revealPool.push({
-        el, kind: el.querySelector('.hzcf-rkind'), name: el.querySelector('.hzcf-rname'),
+        el, kind: el.querySelector('.calf-rkind'), name: el.querySelector('.calf-rname'),
       });
     }
     this._revealsLive = [];
@@ -1061,11 +1061,11 @@ export class FocusSystem {
       }
     }
     const glyphs = [...weak].map((w) =>
-      `<span class="hzcf-glyph hzcf-g-${w}" title="${w}">${GLYPH_SVG[w] ?? ''}</span>`
-    ).join('') || '<span class="hzcf-g-none">—</span>';
+      `<span class="calf-glyph calf-g-${w}" title="${w}">${GLYPH_SVG[w] ?? ''}</span>`
+    ).join('') || '<span class="calf-g-none">—</span>';
 
     const resist = (RESIST[kind] ?? []).map((w) =>
-      `<span class="hzcf-glyph hzcf-g-${w}">${GLYPH_SVG[w] ?? ''}</span>`
+      `<span class="calf-glyph calf-g-${w}">${GLYPH_SVG[w] ?? ''}</span>`
     ).join('');
 
     // ui-10 — the component LIST. This is the whole finding: a count told the
@@ -1074,39 +1074,39 @@ export class FocusSystem {
     const comps = this.componentRows(m);
     const rows = comps.map((c) => {
       const tags = [];
-      if (c.weak) tags.push('<i class="hzcf-tag-weak">WEAK</i>');
-      if (c.tearable) tags.push('<i class="hzcf-tag-tear">TEAR</i>');
-      if (c.elemental) tags.push(`<i class="hzcf-tag-el hzcf-g-${c.elemental === 'blaze' ? 'fire' : 'freeze'}">${c.elemental === 'blaze' ? 'BLAZE' : 'FREEZE'}</i>`);
+      if (c.weak) tags.push('<i class="calf-tag-weak">WEAK</i>');
+      if (c.tearable) tags.push('<i class="calf-tag-tear">TEAR</i>');
+      if (c.elemental) tags.push(`<i class="calf-tag-el calf-g-${c.elemental === 'blaze' ? 'fire' : 'freeze'}">${c.elemental === 'blaze' ? 'BLAZE' : 'FREEZE'}</i>`);
       const loot = c.loot.map((l) =>
-        `<span class="hzcf-loot-chip" style="--chip:${l.color}">`
+        `<span class="calf-loot-chip" style="--chip:${l.color}">`
         + `<i>${l.glyph}</i>${l.name.toUpperCase()}${l.n > 1 ? ` ×${l.n}` : ''}</span>`
       ).join('');
-      return `<div class="hzcf-comp-row${c.torn ? ' torn' : ''}">
-          <span class="hzcf-comp-name">${c.name}${c.count > 1 ? `<em>×${c.count}</em>` : ''}</span>
-          <span class="hzcf-comp-tags">${tags.join('')}</span>
-          ${loot ? `<span class="hzcf-comp-loot">${loot}</span>` : ''}
+      return `<div class="calf-comp-row${c.torn ? ' torn' : ''}">
+          <span class="calf-comp-name">${c.name}${c.count > 1 ? `<em>×${c.count}</em>` : ''}</span>
+          <span class="calf-comp-tags">${tags.join('')}</span>
+          ${loot ? `<span class="calf-comp-loot">${loot}</span>` : ''}
         </div>`;
     }).join('');
     const intact = comps.reduce((n, c) => n + (c.count - c.tornCount), 0);
     const total = comps.reduce((n, c) => n + c.count, 0);
 
     return `
-      <div class="hzcf-card-accent"></div>
-      <div class="hzcf-card-head">
-        <span class="hzcf-name">${name}</span>
-        <span class="hzcf-lv">LV ${lv}</span>
+      <div class="calf-card-accent"></div>
+      <div class="calf-card-head">
+        <span class="calf-name">${name}</span>
+        <span class="calf-lv">LV ${lv}</span>
       </div>
-      <div class="hzcf-class">${cls}</div>
-      <div class="hzcf-div"></div>
-      <div class="hzcf-row"><span class="hzcf-lbl">WEAK</span>${glyphs}</div>
-      ${resist ? `<div class="hzcf-row"><span class="hzcf-lbl">RESIST</span>${resist}</div>` : ''}
+      <div class="calf-class">${cls}</div>
+      <div class="calf-div"></div>
+      <div class="calf-row"><span class="calf-lbl">WEAK</span>${glyphs}</div>
+      ${resist ? `<div class="calf-row"><span class="calf-lbl">RESIST</span>${resist}</div>` : ''}
       ${comps.length ? `
-        <div class="hzcf-div"></div>
-        <div class="hzcf-comp-head">
-          <span class="hzcf-lbl">COMPONENTS</span>
-          <span class="hzcf-comp-n">${intact} / ${total}</span>
+        <div class="calf-div"></div>
+        <div class="calf-comp-head">
+          <span class="calf-lbl">COMPONENTS</span>
+          <span class="calf-comp-n">${intact} / ${total}</span>
         </div>
-        <div class="hzcf-comp-list">${rows}</div>` : ''}
+        <div class="calf-comp-list">${rows}</div>` : ''}
     `;
   }
 
@@ -1498,7 +1498,7 @@ export class FocusSystem {
         entry: e, kind, d2, rarity,
         name: inter.sourceName ? inter.sourceName(e) : (e.label ?? ''),
         // derived once per poll, not once per frame
-        cls: `hzcf-reveal k-${kind.replace(/\s+/g, '-').toLowerCase()}`,
+        cls: `calf-reveal k-${kind.replace(/\s+/g, '-').toLowerCase()}`,
         rarColor: rarityDef(rarity).color,
       });
     }

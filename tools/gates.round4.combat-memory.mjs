@@ -143,7 +143,7 @@ const KILL = `function kill(m) {
  * and a level-up surfaces a "6 SKILL POINTS" callout plus whatever quest and
  * toast DOM the HUD pools happen to be holding at the final snapshot. Combat
  * allocated none of it. Measured here (shots/probe-dom-attr1.png), one clean
- * run of the exact A93 workload moved `#hud` by +20 and `#hzc-prog` by -3 for
+ * run of the exact A93 workload moved `#hud` by +20 and `#cal-prog` by -3 for
  * a dDoc of +17, while the number of DOM elements created by ANY file under
  * `/src/combat/` during those 60 shots and 10 kills was ZERO.
  *
@@ -159,7 +159,7 @@ const KILL = `function kill(m) {
  *                         absorbs the one-time lazy builds, so a per-shot
  *                         allocation still fails this).
  *   combatStray  === 0    nothing combat made is connected outside its own
- *                         `#hzc-cfx` overlay.
+ *                         `#cal-cfx` overlay.
  *
  * and `dCombatNodes === 0` (the overlay's own node count) is kept exactly as
  * it was — it was never the flaky half.
@@ -616,7 +616,7 @@ export const GATES = [
       const ctl = watchDom();
       let probe = null;
       try { probe = new (C.combat.feedback.constructor)(C.combat.ctx || C); } catch (e) {}
-      if (probe && probe.root) probe.root.id = 'hzc-cfx-gate-control';
+      if (probe && probe.root) probe.root.id = 'cal-cfx-gate-control';
       await new Promise(r => setTimeout(r, 150));
       const control = ctl.stop();
       if (probe) { try { probe.dispose(); } catch (e) { if (probe.root) probe.root.remove(); } }

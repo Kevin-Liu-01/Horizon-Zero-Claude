@@ -267,7 +267,7 @@ export const PERF_SCENARIOS = {
 import { pathToFileURL } from 'url';
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  console.log('HZC frame budgets (tools/budgets.mjs)\n');
+  console.log('CAL frame budgets (tools/budgets.mjs)\n');
   for (const [k, v] of Object.entries(BUDGETS)) {
     console.log(`  ${k.padEnd(20)} ${typeof v === 'object' ? JSON.stringify(v) : v}`);
   }

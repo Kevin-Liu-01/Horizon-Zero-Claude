@@ -53,7 +53,7 @@ const FREEZE = `for (const m of __CTX__.machines.list) m.update = () => {};`;
  *
  * FIX ROUND 1: the setup used to hide `#hud`, and the XP bar, the quest banner
  * and the focus layer are NOT inside it — they are their own top-level
- * siblings (`#hzcf-layer`, the progression bar, `#hzc-cfx`, `#hzc-wheel`,
+ * siblings (`#calf-layer`, the progression bar, `#cal-cfx`, `#cal-wheel`,
  * `#perf-stats`, …). They stayed on screen over a gate shot whose whole
  * subject is a 20 cm region of her face.
  */

@@ -1,7 +1,7 @@
 {
-  "name": "horizon-zero-claude",
+  "name": "calima",
   "version": "1.0.0",
-  "description": "Horizon Zero Dawn homage in three.js — Round 4",
+  "description": "CALIMA — a survey-machine hunting game",
   "scripts": {
     "dev": "vite",
     "build": "vite build",

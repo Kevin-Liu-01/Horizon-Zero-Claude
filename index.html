@@ -22,8 +22,8 @@
     }
     #title .title-inner { text-align: center; max-width: 880px; padding: 0 24px; }
 
-    .hzc-logo { user-select: none; }
-    .hzc-logo .hzc-main {
+    .cal-logo { user-select: none; }
+    .cal-logo .cal-main {
       font-family: 'Julius Sans One', var(--font-display), sans-serif;
       font-weight: 400;
       font-size: 64px;
@@ -33,14 +33,14 @@
       line-height: 1;
       text-shadow: 0 2px 24px rgba(0, 0, 0, 0.55);
     }
-    .hzc-dawn {
+    .cal-dawn {
       position: relative;
       height: 44px;
       margin: 6px auto 10px;
       width: min(560px, 80vw);
     }
     /* horizon rule the spark crests over */
-    .hzc-dawn::before, .hzc-dawn::after {
+    .cal-dawn::before, .cal-dawn::after {
       content: '';
       position: absolute;
       bottom: 0;
@@ -48,9 +48,9 @@
       height: 1px;
       background: linear-gradient(90deg, transparent, rgba(218, 119, 86, 0.85));
     }
-    .hzc-dawn::before { left: 0; }
-    .hzc-dawn::after { right: 0; transform: scaleX(-1); }
-    .hzc-dawn .hzc-spark {
+    .cal-dawn::before { left: 0; }
+    .cal-dawn::after { right: 0; transform: scaleX(-1); }
+    .cal-dawn .cal-spark {
       position: absolute;
       left: 50%;
       bottom: -26px;               /* center rides just above the rule: ~2/3 of the spark crests */
@@ -60,7 +60,7 @@
       clip-path: inset(0 0 34% 0); /* below-horizon rays hidden, as if behind the landscape */
       filter: drop-shadow(0 0 18px rgba(218, 119, 86, 0.55));
     }
-    .hzc-dawn .hzc-glow {
+    .cal-dawn .cal-glow {
       position: absolute;
       left: 50%;
       bottom: -30px;
@@ -71,7 +71,7 @@
         rgba(218, 119, 86, 0.28) 0%, rgba(218, 119, 86, 0.12) 45%, transparent 72%);
       pointer-events: none;
     }
-    .hzc-logo .hzc-sub {
+    .cal-logo .cal-sub {
       font-family: 'Julius Sans One', var(--font-display), sans-serif;
       font-weight: 400;
       font-size: 20px;
@@ -81,10 +81,10 @@
       line-height: 1;
       text-shadow: 0 0 18px rgba(218, 119, 86, 0.35);
     }
-    #loading .hzc-logo .hzc-main { font-size: 46px; }
-    #loading .hzc-logo .hzc-sub { font-size: 15px; }
-    #loading .hzc-dawn { height: 34px; width: 420px; }
-    #loading .hzc-dawn .hzc-spark { width: 58px; height: 58px; bottom: -20px; }
+    #loading .cal-logo .cal-main { font-size: 46px; }
+    #loading .cal-logo .cal-sub { font-size: 15px; }
+    #loading .cal-dawn { height: 34px; width: 420px; }
+    #loading .cal-dawn .cal-spark { width: 58px; height: 58px; bottom: -20px; }
 
     /* tagline in the thin tracked-caps HUD language */
     .tagline {
@@ -171,11 +171,11 @@
 
   <div id="loading" class="overlay">
     <div class="load-inner">
-      <div class="hzc-logo">
-        <div class="hzc-main">HORIZON</div>
-        <div class="hzc-dawn">
-          <div class="hzc-glow"></div>
-          <svg class="hzc-spark" viewBox="0 0 100 100" aria-hidden="true">
+      <div class="cal-logo">
+        <div class="cal-main">HORIZON</div>
+        <div class="cal-dawn">
+          <div class="cal-glow"></div>
+          <svg class="cal-spark" viewBox="0 0 100 100" aria-hidden="true">
             <g stroke="#DA7756" stroke-width="8.5" stroke-linecap="round">
               <line x1="0" y1="-14" x2="0" y2="-42" transform="translate(50 50)"/>
               <line x1="0" y1="-14" x2="0" y2="-30" transform="translate(50 50) rotate(38)"/>
@@ -190,7 +190,7 @@
             </g>
           </svg>
         </div>
-        <div class="hzc-sub">ZERO CLAUDE</div>
+        <div class="cal-sub">ZERO CLAUDE</div>
       </div>
       <div class="load-bar"><div id="load-fill"></div></div>
       <div id="load-label">Waking the machines…</div>
@@ -199,11 +199,11 @@
 
   <div id="title" class="overlay hidden">
     <div class="title-inner">
-      <div class="hzc-logo">
-        <div class="hzc-main">HORIZON</div>
-        <div class="hzc-dawn">
-          <div class="hzc-glow"></div>
-          <svg class="hzc-spark" viewBox="0 0 100 100" aria-hidden="true">
+      <div class="cal-logo">
+        <div class="cal-main">HORIZON</div>
+        <div class="cal-dawn">
+          <div class="cal-glow"></div>
+          <svg class="cal-spark" viewBox="0 0 100 100" aria-hidden="true">
             <g stroke="#DA7756" stroke-width="8.5" stroke-linecap="round">
               <line x1="0" y1="-14" x2="0" y2="-42" transform="translate(50 50)"/>
               <line x1="0" y1="-14" x2="0" y2="-30" transform="translate(50 50) rotate(38)"/>
@@ -218,7 +218,7 @@
             </g>
           </svg>
         </div>
-        <div class="hzc-sub">ZERO CLAUDE</div>
+        <div class="cal-sub">ZERO CLAUDE</div>
       </div>
       <p class="tagline">The valley belongs to the machines. Take it back.</p>
       <button id="btn-start">BEGIN THE HUNT</button>

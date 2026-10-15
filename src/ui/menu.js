@@ -25,7 +25,7 @@
  *     lane's screen is up. Nothing is re-implemented here.
  *   · `shell-hud` already yields: `hud.js` returns early from its pause card,
  *     death card and victory card when `ctx.menus` exists. The CSS rule in this
- *     lane's own `style.css` (keyed on `body.hzc-menus`) is the belt to that
+ *     lane's own `style.css` (keyed on `body.cal-menus`) is the belt to that
  *     brace — remove the install and the Round-3 shell comes back untouched.
  *   · the waypoint is published as data (`ctx.menus.waypoint` +
  *     `waypoint-set` / `waypoint-cleared`) for `shell-hud`'s compass, and
@@ -59,6 +59,7 @@
 import { SettingsStore, SettingsPanel } from './settings.js';
 import { WorldMap, WaypointBeacon } from './map.js';
 import { Tips } from './tips.js';
+import { REST } from '../world/island/sites.js';
 
 const el = (tag, cls, parent, html) => {
   const n = document.createElement(tag);
@@ -94,7 +95,7 @@ const PANEL_STATES = ['quests', 'dialogue', 'trade', 'campfire', 'skills', 'inve
 const DEATH_HOLD_S = 1.15;    // let the crumple play before the card takes over
 const VICTORY_S = 3.0;        // ui-13: banner, then the valley is yours again
 const GRAY_RAMP_S = 1.6;
-const CAMP = { x: 18, z: 26 };
+const CAMP = { x: REST.x, z: REST.z };
 const START_ANG = 3.7;        // title dolly: the sector that frames best (see _dolly)
 
 /**
@@ -195,7 +196,7 @@ export class Menus {
     this._build();
     this._bindKeys();
     this._bindEvents();
-    document.body.classList.add('hzc-menus');
+    document.body.classList.add('cal-menus');
 
     // presentation loop: must run while the simulation is frozen
     this._raf = (now) => {
@@ -213,8 +214,8 @@ export class Menus {
   /* ===================================================================== */
 
   _build() {
-    this.root = el('div', 'hzc-menus-root', document.body);
-    this.root.id = 'hzc-menus';
+    this.root = el('div', 'cal-menus-root', document.body);
+    this.root.id = 'cal-menus';
 
     /* ---- hub ---- */
     this.hub = el('div', 'mn-hub', this.root);
@@ -292,7 +293,7 @@ export class Menus {
     if (!host) return;
     if (this._titleBuilt) { this._refreshTitle(); return; }
     this._titleBuilt = true;
-    document.body.classList.add('hzc-title-live');
+    document.body.classList.add('cal-title-live');
 
     // ONE logo (V38): the wordmark that already lives in index.html is kept and
     // everything else is rebuilt around it. The keybind wall moves wholesale
@@ -480,7 +481,7 @@ export class Menus {
   /** Hand off to main.js's own start path so nothing about it is duplicated. */
   _startGame() {
     this.closeModal();
-    document.body.classList.remove('hzc-title-live');
+    document.body.classList.remove('cal-title-live');
     const btn = document.getElementById('btn-start');
     if (btn) btn.click();
     else this.ctx.game?.start?.(!this.ctx.params?.has?.('shot'));
@@ -518,7 +519,7 @@ export class Menus {
     ctx.state = 'paused';
     ctx.input?.exitPointerLock?.();
     this.hub.classList.add('show');
-    document.body.classList.add('hzc-hub-open');
+    document.body.classList.add('cal-hub-open');
     this.setTab(tab, true);
     this._emit('ui-open', { screen: 'hub', tab: this.tab });
     return true;
@@ -531,7 +532,7 @@ export class Menus {
     this._closeDelegated();
     this.hub.classList.remove('show');
     this.hub.classList.remove('delegated');
-    document.body.classList.remove('hzc-hub-open');
+    document.body.classList.remove('cal-hub-open');
     this._clearBody();
     if (ctx.state === 'paused' || PANEL_STATES.includes(ctx.state)) ctx.state = 'playing';
     if (!silent) {
@@ -725,7 +726,7 @@ export class Menus {
     this.deathKiller = this.ctx.progression?.lastKiller ?? this._lastDamageFrom ?? null;
     this.closeModal();
     if (this.hubOpen) this.closeHub(true);
-    document.body.classList.add('hzc-dead');
+    document.body.classList.add('cal-dead');
     this._log.push({ what: 'death', killer: this.deathKiller });
     this._trimLog();
   }
@@ -815,7 +816,7 @@ export class Menus {
   _hideDeath() {
     this.deathState = null;
     this.deathEl.classList.remove('show');
-    document.body.classList.remove('hzc-dead');
+    document.body.classList.remove('cal-dead');
     this.gray = 0;
     this._applyGray(0);
   }
@@ -993,7 +994,7 @@ export class Menus {
       if (e?.from) this._lastDamageFrom = e.from?.displayName ?? e.from?.kind ?? String(e.from);
     });
     on('game-start', () => {
-      document.body.classList.remove('hzc-title-live');
+      document.body.classList.remove('cal-title-live');
       this._refreshTitle();
     });
     for (const name of ['inventory-close', 'ui-close']) {
@@ -1111,7 +1112,7 @@ export class Menus {
       const r = n.getBoundingClientRect();
       return r.width > 2 && r.height > 2 && +getComputedStyle(n).opacity > 0.05;
     };
-    const logos = [...document.querySelectorAll('.hzc-logo')].filter(vis);
+    const logos = [...document.querySelectorAll('.cal-logo')].filter(vis);
     return {
       installed: true,
       state: ctx.state,
@@ -1170,7 +1171,7 @@ export class Menus {
     window.removeEventListener('mousedown', this._onClickAnywhere, true);
     this.beacon.dispose();
     this.root?.remove();
-    document.body.classList.remove('hzc-menus', 'hzc-hub-open', 'hzc-dead', 'hzc-title-live');
+    document.body.classList.remove('cal-menus', 'cal-hub-open', 'cal-dead', 'cal-title-live');
     if (this.ctx.menus === this) this.ctx.menus = null;
   }
 }
@@ -1204,8 +1205,8 @@ export function installMenus(ctx) {
  */
 export function autoInstall() {
   if (typeof window === 'undefined') return;
-  if (window.__HZC_MENUS_BOOT__) return;
-  window.__HZC_MENUS_BOOT__ = true;
+  if (window.__CAL_MENUS_BOOT__) return;
+  window.__CAL_MENUS_BOOT__ = true;
   let tries = 0;
   const tick = () => {
     const ctx = window.__CTX__;

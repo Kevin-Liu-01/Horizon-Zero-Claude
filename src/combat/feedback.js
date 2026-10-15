@@ -16,7 +16,7 @@ import { AMMO, ammoIconSVG } from './weapons.js';
  *                 ring, a denial state when the recipe is short, and an
  *                 `ammo-crafted` toast on completion.
  *
- * This is a combat-owned overlay (`#hzc-cfx`, z-index 46, pointer-events
+ * This is a combat-owned overlay (`#cal-cfx`, z-index 46, pointer-events
  * none) so `shell-hud` never has to be edited for combat to confirm a hit.
  * It renders nothing the HUD already renders — damage NUMBERS stay in
  * `src/ui/hud.js`, which is shell-hud's file.
@@ -42,7 +42,7 @@ export class CombatFeedback {
   constructor(ctx) {
     this.ctx = ctx;
     const root = document.createElement('div');
-    root.id = 'hzc-cfx';
+    root.id = 'cal-cfx';
     root.innerHTML = `
       <div class="cfx-tick">
         <svg viewBox="0 0 74 74" aria-hidden="true">

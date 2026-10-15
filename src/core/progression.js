@@ -104,7 +104,7 @@
  *
  * 3. FOUR NEW OBJECTIVE TYPES, each on an event that already existed:
  *       datapoint  'datapoint-collected'   (src/items/datapoints.js)
- *       cache      'supply-cache'          (src/world/props/activities.js)
+ *       cache      'cache-found'          (src/world/props/activities.js)
  *       override   'override-node'         (idem)
  *       hunt       'fauna-killed'          (src/world/fauna.js)
  *    plus `within: seconds` on a kill objective — a TIMED trial. The window
@@ -152,6 +152,7 @@
 
 import * as THREE from 'three';
 import { SaveSystem, SLOT } from './save.js';
+import { REST_SITE } from '../world/island/sites.js';
 import { QuestLogUI } from '../ui/quests.js';
 import { SkillTreeUI } from '../ui/skills.js';
 import { DialogueUI } from '../ui/dialogue.js';
@@ -324,7 +325,7 @@ export const SKILLS = [
     desc: `Silent Strikes on machines too big to kill outright hit for ${
       _pct(silentBaseFrac() + SILENT_STRIKE.fracStep)}% of their max health before armour, up from ${_pct(silentBaseFrac())}%.`,
     mult: { silentStrikeFrac: SILENT_STRIKE.fracStep },
-    hook: 'Machine.takeDamage — hit.type "silent-strike" (or hit.silent === true)',
+    hook: 'Machine.takeDamage — hit.type "undercut" (or hit.silent === true)',
   },
   {
     id: 'prowler-low-profile', tree: 'Prowler', tier: 1, cost: 1,
@@ -361,7 +362,7 @@ export const SKILLS = [
     name: 'Concentration+', requires: [],
     desc: 'Concentration lasts 60% longer.',
     mult: { concentrationDuration: 1.6 },
-    hook: 'combat.concentration.gauge top-up in Progression.update',
+    hook: 'combat.steady.gauge top-up in Progression.update',
   },
   {
     id: 'brave-fortitude', tree: 'Brave', tier: 2, cost: 1,
@@ -391,7 +392,7 @@ export const SKILLS = [
     name: 'Herbalist', requires: [],
     desc: 'Medicinal herbs restore 50% more, and the pouch holds 25 more.',
     mult: { herbPotency: 1.5, pouchBonus: 25 },
-    hook: 'player.addPouch wrapper + player.maxPouch on unlock',
+    hook: 'player.addGourd wrapper + player.maxGourd on unlock',
   },
   {
     id: 'forager-scavenger', tree: 'Forager', tier: 2, cost: 1,
@@ -405,7 +406,7 @@ export const SKILLS = [
     name: 'Healer', requires: ['forager-herbalist'],
     desc: 'The pouch holds 30 more still, and you keep half of it when you fall.',
     mult: { pouchBonus: 30, deathPouchKeep: 0.5 },
-    hook: 'player.maxPouch on unlock + checkpoint restore',
+    hook: 'player.maxGourd on unlock + checkpoint restore',
   },
 ];
 
@@ -787,7 +788,7 @@ export const QUESTS = [
    *
    * Objective types added this round, every one on a REAL published event:
    *   datapoint  'datapoint-collected'  (src/items/datapoints.js)
-   *   cache      'supply-cache'         (src/world/props/activities.js)
+   *   cache      'cache-found'         (src/world/props/activities.js)
    *   override   'override-node'        (idem)
    *   hunt       'fauna-killed'         (src/world/fauna.js)
    *   kill + `within`  a TIMED trial: the window starts when the objective
@@ -983,7 +984,7 @@ export class Progression {
     this.skillPoints = 0;
     this.unlocked = new Set();
     this.baseMaxHealth = ctx.player?.maxHealth ?? 100;
-    this.baseMaxPouch = ctx.player?.maxPouch ?? 100;
+    this.baseMaxPouch = ctx.player?.maxGourd ?? 100;
 
     /* ---- difficulty ---- */
     this._difficulty = 'normal';
@@ -1281,8 +1282,8 @@ export class Progression {
     p.maxHealth = maxH;
     p.health = Math.min(maxH, Math.max(0, maxH * ratio));
     const maxP = this.baseMaxPouch + this.mult('pouchBonus');
-    p.maxPouch = maxP;
-    p.pouch = Math.min(p.pouch, maxP);
+    p.maxGourd = maxP;
+    p.gourd = Math.min(p.gourd, maxP);
   }
 
   /* ====================================================================== */
@@ -1544,7 +1545,7 @@ export class Progression {
 
   /** Machines currently wearing a Focus tag that match `kind` (belt for scan). */
   _liveTags(kind) {
-    const tags = this.ctx.focus?.tags;
+    const tags = this.ctx.sighting?.tags;
     if (!tags || !tags.size) return 0;
     if (!kind) return tags.size;
     let n = 0;
@@ -2903,7 +2904,7 @@ export class Progression {
      * WORLD-CONTENT OBJECTIVES (expansion round). Four types, four events that
      * already existed and that nothing was listening to for quest credit:
      *   'datapoint-collected'  src/items/datapoints.js   (all 24 records)
-     *   'supply-cache'         src/world/props/activities.js
+     *   'cache-found'         src/world/props/activities.js
      *   'override-node'        idem
      *   'fauna-killed'         src/world/fauna.js
      * Each is tallied by id/species AND under '*', so an objective can ask for
@@ -2913,7 +2914,7 @@ export class Progression {
       this._bump('datapoint', id);
       this._advance('datapoint', (o) => !o.dp || o.dp === id);
     });
-    on('supply-cache', ({ id } = {}) => {
+    on('cache-found', ({ id } = {}) => {
       this._bump('cache', id);
       this._advance('cache', (o) => !o.node || o.node === id);
     });
@@ -2934,7 +2935,7 @@ export class Progression {
 
     on('player-died', () => {
       this.stats.deaths++;
-      this._deathPouch = this.ctx.player?.pouch ?? 0;
+      this._deathPouch = this.ctx.player?.gourd ?? 0;
     });
 
     /**
@@ -2949,9 +2950,9 @@ export class Progression {
       const p = this.ctx.player;
       if (!res.ok && p) {
         // no checkpoint yet: still no free refill
-        p.pouch = Math.min(p.maxPouch, this._deathPouch * Math.max(0.25, this.mult('deathPouchKeep')));
+        p.gourd = Math.min(p.maxGourd, this._deathPouch * Math.max(0.25, this.mult('deathPouchKeep')));
       } else if (p) {
-        p.pouch = Math.min(p.maxPouch, Math.max(p.pouch * 0.5, this._deathPouch * this.mult('deathPouchKeep')));
+        p.gourd = Math.min(p.maxGourd, Math.max(p.gourd * 0.5, this._deathPouch * this.mult('deathPouchKeep')));
       }
       this.banner('YOU FELL', this.lastKiller ? `KILLED BY ${String(this.lastKiller).toUpperCase()}` : 'CHECKPOINT RESTORED', 'death');
     });
@@ -2998,10 +2999,10 @@ export class Progression {
    * lanes, so this lane wraps the two published methods instead of editing
    * either file. Both wrappers:
    *   - are installed once and are idempotent,
-   *   - keep the original on `__hzcOriginal` so an owner can retire them,
+   *   - keep the original on `__calOriginal` so an owner can retire them,
    *   - never throw (a wrapper that can throw is worse than no skill), and
    *   - become no-ops the moment the owner reads `ctx.progression.mult()`
-   *     natively (they check `__hzcNative`).
+   *     natively (they check `__calNative`).
    * Requested in the lane report: `player-control` reading `damageIn` inside
    * `takeDamage`, and `machine-ai` reading `damageOut`/`tearOut`/
    * `silentStrikeDamage` inside `Machine.takeDamage`.
@@ -3012,12 +3013,12 @@ export class Progression {
 
     /* ---- damage taken: difficulty.damageIn × Fortitude ---- */
     const p = this.ctx.player;
-    if (p && typeof p.takeDamage === 'function' && !p.takeDamage.__hzcWrapped) {
+    if (p && typeof p.takeDamage === 'function' && !p.takeDamage.__calWrapped) {
       const orig = p.takeDamage.bind(p);
       const wrapped = function (amount, from) {
         let a = amount;
         try {
-          if (!wrapped.__hzcNative) a = amount * self.mult('damageIn');
+          if (!wrapped.__calNative) a = amount * self.mult('damageIn');
           // onboarding-loop-death-no-stakes wants the killer's NAME on the death
           // card. The `player-damage` listener in `_bind` gets it for machine
           // hits (verified: `lastKiller` reads "Watcher" after one emit). This
@@ -3028,23 +3029,23 @@ export class Progression {
         } catch { a = amount; }
         return orig(a, from);
       };
-      wrapped.__hzcWrapped = true;
-      wrapped.__hzcOriginal = orig;
+      wrapped.__calWrapped = true;
+      wrapped.__calOriginal = orig;
       p.takeDamage = wrapped;
       this._playerHook = wrapped;
     }
 
     /* ---- pouch: Herbalist potency ---- */
-    if (p && typeof p.addPouch === 'function' && !p.addPouch.__hzcWrapped) {
-      const orig = p.addPouch.bind(p);
+    if (p && typeof p.addGourd === 'function' && !p.addGourd.__calWrapped) {
+      const orig = p.addGourd.bind(p);
       const wrapped = function (amount) {
         let a = amount;
         try { a = amount * self.mult('herbPotency'); } catch { a = amount; }
         return orig(a);
       };
-      wrapped.__hzcWrapped = true;
-      wrapped.__hzcOriginal = orig;
-      p.addPouch = wrapped;
+      wrapped.__calWrapped = true;
+      wrapped.__calOriginal = orig;
+      p.addGourd = wrapped;
     }
 
     /* ---- damage dealt: difficulty.damageOut × Precision × Tinker × Strike ----
@@ -3056,15 +3057,15 @@ export class Progression {
     const Proto = first ? Object.getPrototypeOf(first) : null;
     const MachineProto = this._rootMachineProto(Proto);
     if (MachineProto && typeof MachineProto.takeDamage === 'function'
-        && !MachineProto.takeDamage.__hzcWrapped) {
+        && !MachineProto.takeDamage.__calWrapped) {
       const orig = MachineProto.takeDamage;
       const wrapped = function (hit) {
         let h = hit;
         try {
-          if (!wrapped.__hzcNative && hit) {
+          if (!wrapped.__calNative && hit) {
             const dmg = self.mult('damageOut');
             const tear = self.mult('tearOut');
-            const isSilent = hit.type === 'silent-strike' || hit.silent === true;
+            const isSilent = hit.type === 'undercut' || hit.silent === true;
             const silent = isSilent ? self.mult('silentStrikeDamage') : 1;
             // A Silent Strike melee does not kill outright is a fraction-of-
             // health hit and always takes the clamp (SILENT_STRIKE above) —
@@ -3106,15 +3107,15 @@ export class Progression {
         } catch { h = hit; }
         return orig.call(this, h);
       };
-      wrapped.__hzcWrapped = true;
-      wrapped.__hzcOriginal = orig;
+      wrapped.__calWrapped = true;
+      wrapped.__calOriginal = orig;
       MachineProto.takeDamage = wrapped;
       this._machineProto = MachineProto;
     }
 
     /* ---- noise: Quiet Sprint ---- */
     const machines = this.ctx.machines;
-    if (machines && typeof machines.noise === 'function' && !machines.noise.__hzcWrapped) {
+    if (machines && typeof machines.noise === 'function' && !machines.noise.__calWrapped) {
       const orig = machines.noise.bind(machines);
       const wrapped = function (opts) {
         try {
@@ -3125,8 +3126,8 @@ export class Progression {
         } catch { /* fall through to the untouched call */ }
         return orig(opts);
       };
-      wrapped.__hzcWrapped = true;
-      wrapped.__hzcOriginal = orig;
+      wrapped.__calWrapped = true;
+      wrapped.__calOriginal = orig;
       machines.noise = wrapped;
     }
 
@@ -3142,8 +3143,8 @@ export class Progression {
      * `update()` re-attempts at 1 Hz until this flips.
      */
     this._hooked = !!(this._playerHook && this._machineProto
-      && (!machines || machines.noise?.__hzcWrapped)
-      && (!p || p.addPouch?.__hzcWrapped));
+      && (!machines || machines.noise?.__calWrapped)
+      && (!p || p.addGourd?.__calWrapped));
   }
 
   /**
@@ -3172,7 +3173,7 @@ export class Progression {
 
     if (!this._campEntry) {
       const fire = ctx.camp?.firePosition;
-      const pos = fire ? fire.clone() : new THREE.Vector3(22, 0, 30);
+      const pos = fire ? fire.clone() : new THREE.Vector3(REST_SITE.x, 0, REST_SITE.z);
       if (!fire) pos.y = ctx.terrain?.getHeight?.(pos.x, pos.z) ?? 0;
       this._campEntry = inter.register({
         position: pos, radius: 3.4, label: 'REST & SAVE', hold: 0.55,
@@ -3211,7 +3212,7 @@ export class Progression {
     const p = this.ctx.player;
     if (p) {
       p.health = p.maxHealth;
-      p.pouch = p.maxPouch;
+      p.gourd = p.maxGourd;
       this._emit('player-hurt', { health: p.health, max: p.maxHealth });
     }
     this.checkpoint('rest');
@@ -3288,7 +3289,7 @@ export class Progression {
     }
 
     /* --- Concentration+ : hand back part of the drain --- */
-    const conc = this.ctx.combat?.concentration;
+    const conc = this.ctx.combat?.steady;
     if (conc?.active) {
       const m = this.mult('concentrationDuration');
       if (m > 1 && conc.gauge > 0) {
@@ -3411,10 +3412,10 @@ export class Progression {
       awarded: [...this.awarded],
       discovered: [...this.discovered],
       hooks: {
-        player: !!this.ctx.player?.takeDamage?.__hzcWrapped,
-        machine: !!this._machineProto?.takeDamage?.__hzcWrapped,
-        noise: !!this.ctx.machines?.noise?.__hzcWrapped,
-        pouch: !!this.ctx.player?.addPouch?.__hzcWrapped,
+        player: !!this.ctx.player?.takeDamage?.__calWrapped,
+        machine: !!this._machineProto?.takeDamage?.__calWrapped,
+        noise: !!this.ctx.machines?.noise?.__calWrapped,
+        pouch: !!this.ctx.player?.addGourd?.__calWrapped,
       },
       save: {
         hasSave: this.hasSave(),
@@ -3475,13 +3476,13 @@ export class Progression {
     for (const off of this._off) { try { off?.(); } catch { /* already gone */ } }
     this._off.length = 0;
     const p = this.ctx.player;
-    if (p?.takeDamage?.__hzcOriginal) p.takeDamage = p.takeDamage.__hzcOriginal;
-    if (p?.addPouch?.__hzcOriginal) p.addPouch = p.addPouch.__hzcOriginal;
-    if (this._machineProto?.takeDamage?.__hzcOriginal) {
-      this._machineProto.takeDamage = this._machineProto.takeDamage.__hzcOriginal;
+    if (p?.takeDamage?.__calOriginal) p.takeDamage = p.takeDamage.__calOriginal;
+    if (p?.addGourd?.__calOriginal) p.addGourd = p.addGourd.__calOriginal;
+    if (this._machineProto?.takeDamage?.__calOriginal) {
+      this._machineProto.takeDamage = this._machineProto.takeDamage.__calOriginal;
     }
     const machines = this.ctx.machines;
-    if (machines?.noise?.__hzcOriginal) machines.noise = machines.noise.__hzcOriginal;
+    if (machines?.noise?.__calOriginal) machines.noise = machines.noise.__calOriginal;
     if (this._campEntry) this.ctx.interactables?.unregister?.(this._campEntry);
     if (this._npcEntry) this.ctx.interactables?.unregister?.(this._npcEntry);
     this.trials.clear();
@@ -3517,7 +3518,7 @@ export class Progression {
  * instance is now replaced: fresh `Progression`, re-published on `ctx`,
  * re-pushed onto the system list. The corpse stays dead and stays out of the
  * loop; the hook wrappers it restored on teardown are re-applied by the new
- * instance (they are `__hzcWrapped`-guarded), and the `#hzc-prog` /`#hzc-dlg`
+ * instance (they are `__calWrapped`-guarded), and the `#cal-prog` /`#cal-dlg`
  * islands are re-created by `progRoot()` and the dialogue panel.
  *
  * Callers that cached the old reference must re-read `ctx.progression` — this
