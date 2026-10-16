@@ -557,6 +557,15 @@ Blunt, Charred, Seized, Clouded, Field Book, Gourd, Kit Rack, salt, certificatio
 
 ---
 
+### 8.3 Orchestrator rulings (W0a exit, Oct 16 2026)
+
+<!-- r5-ruling pool-terrain-build=accepted -->
+<!-- r5-ruling rt-ledger-bar=W0b -->
+
+- **pool-terrain-build = accepted.** The worker-pool terrain build is byte-identical to the single-thread build and builds the 1024 m island in 421–451 ms on a quiet box (single-thread 964–969 ms), so the W1 world is **1024 m (`PLAY_RADIUS` ≈ 490)**. Conditions: world-ground ships the pool in `src/world/terrain.js` at W1 (not only in the probe), and `A-world-size` times the **real cold boot** with one competing gate Chrome alive; if that run exceeds the probe bar on 3 of 5 runs, the size falls back to 860 m through `extent.js`.
+- **rt-ledger-bar = W0b.** `A-rt-ledger` (render targets ≤ 170 MB, staged-fight total ≤ 450 MB) is graded at the W0b exit, after engine-gpu chooses the tier levers (DPR cap, GTAO resolution, AA). At W0a it is reported, not graded. W0a measured 340.74 MB of render targets, attributed to the byte.
+- **R30 completion.** The orchestrator deleted the four IP machine GLBs (`watcher`, `sawtooth`, `behemoth`, `thunderjaw`) on main after instruments-core's code removal and pipeline's loader rows merged; `aloy.glb` goes at hero-body's W0b exit as planned.
+
 ## 9. GATE SPEC — the literal acceptance bar per lane
 
 Same contract as `tools/gates.config.mjs`: **action** gates run JS in page context with

@@ -7,7 +7,7 @@
  * bytes with spaces); every following chunk (BIN) is copied byte for byte and
  * verified identical afterwards. For a .gltf the block is inserted textually
  * into the `asset` object, so every other byte of the file stays put. Existing
- * `asset.extras` keys (e.g. the Round-1 optimiser block, `hzcRig`) are kept.
+ * `asset.extras` keys (e.g. the Round-1 optimiser block and the legacy rig block) are kept.
  *
  * The licence and source come from the file's row in public/LICENSES.json;
  * a row marked `ip: true` is never stamped (it cannot be given a shippable
