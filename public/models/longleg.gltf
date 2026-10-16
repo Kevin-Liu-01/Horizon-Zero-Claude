@@ -1,5 +1,6 @@
 {
     "asset" : {
+        "extras" : {"provenance":{"generator":"legacy-r4","recipe":"legacy-r4 (see models-staging/MANIFEST.md)","sources":["legacy-donor-longleg"],"licence":"CC0-1.0"}},
         "generator" : "Khronos glTF Blender I/O v1.7.33",
         "version" : "2.0"
     },

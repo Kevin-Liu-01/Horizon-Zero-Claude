@@ -1,0 +1,558 @@
+{
+  "schema": 1,
+  "project": "CALIMA",
+  "about": "One row per source. Every file under public/ matches exactly one row (tools/licences/check.mjs, gate A-licence-manifest). Rows are added through tools/licences/add.mjs. `legacy` rows are pre-Round-5 files kept until their deletion wave (`delete_at`, `delete_owner`). Plan: docs/ROUND5-PLAN.md section 10.",
+  "rows": [
+    {
+      "id": "calima-licence-manifest",
+      "paths": [
+        "public/LICENSES.json"
+      ],
+      "title": "CALIMA licence manifest",
+      "author": "CALIMA project",
+      "source_url": "tools/licences/",
+      "licence": "project-original",
+      "licence_text": null,
+      "archive_sha256": null,
+      "retrieved": null,
+      "modified": null,
+      "attribution": null
+    },
+    {
+      "id": "calima-licence-texts",
+      "paths": [
+        "public/licences/*"
+      ],
+      "title": "Licence texts of shipped third-party code",
+      "author": "the respective authors (see each file)",
+      "source_url": "node_modules/{three,three-mesh-bvh,meshoptimizer}/LICENSE*",
+      "licence": "project-original",
+      "licence_text": null,
+      "archive_sha256": null,
+      "retrieved": null,
+      "modified": "copied verbatim",
+      "attribution": null
+    },
+    {
+      "id": "code-meshopt-decoder",
+      "paths": [
+        "dist/assets/*.js (bundled: three/examples/jsm/libs/meshopt_decoder.module.js)"
+      ],
+      "title": "meshoptimizer decoder",
+      "author": "Arseny Kapoulkine",
+      "source_url": "https://github.com/zeux/meshoptimizer",
+      "licence": "MIT",
+      "licence_text": "public/licences/meshoptimizer-LICENSE.txt",
+      "archive_sha256": null,
+      "retrieved": null,
+      "modified": null,
+      "attribution": "meshoptimizer decoder © 2016–2022 Arseny Kapoulkine (MIT)"
+    },
+    {
+      "id": "code-three",
+      "paths": [
+        "dist/assets/*.js (bundled)"
+      ],
+      "title": "three.js r169",
+      "author": "three.js authors",
+      "source_url": "https://github.com/mrdoob/three.js",
+      "licence": "MIT",
+      "licence_text": "public/licences/three-LICENSE.txt",
+      "archive_sha256": null,
+      "retrieved": null,
+      "modified": null,
+      "attribution": "three.js © 2010–2024 three.js authors (MIT)"
+    },
+    {
+      "id": "code-three-mesh-bvh",
+      "paths": [
+        "dist/assets/*.js (bundled)"
+      ],
+      "title": "three-mesh-bvh 0.9.14",
+      "author": "Garrett Johnson",
+      "source_url": "https://github.com/gkjohnson/three-mesh-bvh",
+      "licence": "MIT",
+      "licence_text": "public/licences/three-mesh-bvh-LICENSE.txt",
+      "archive_sha256": null,
+      "retrieved": null,
+      "modified": null,
+      "attribution": "three-mesh-bvh © 2018 Garrett Johnson (MIT)"
+    },
+    {
+      "id": "instrument-tiller",
+      "paths": [
+        "public/models/instruments/tiller.glb",
+        "public/models/r5-poc/tiller.glb"
+      ],
+      "title": "Tiller (survey walker, W0 staging fixture; r5-poc/ path = the same bytes at the fixture URL until the W0 exit)",
+      "author": "CALIMA project",
+      "source_url": "tools/build/instruments/gen-tiller.mjs",
+      "licence": "project-original",
+      "licence_text": null,
+      "archive_sha256": null,
+      "retrieved": null,
+      "modified": null,
+      "attribution": null
+    },
+    {
+      "id": "legacy-anims-duplicates",
+      "paths": [
+        "public/anims-hybrid/ual/**",
+        "public/anims-reskin/**",
+        "public/anims-retarget/**"
+      ],
+      "title": "Round-4 lab copies of the Universal Animation Library",
+      "author": "Quaternius",
+      "source_url": "https://quaternius.itch.io/universal-animation-library",
+      "licence": "CC0-1.0",
+      "licence_text": "public/anims/LICENSE",
+      "archive_sha256": null,
+      "retrieved": null,
+      "modified": null,
+      "attribution": null,
+      "legacy": "r4",
+      "delete_at": "W0a",
+      "delete_owner": "gates-perf"
+    },
+    {
+      "id": "legacy-anims-lab-bake",
+      "paths": [
+        "public/anims-hybrid/aloy-ual.json"
+      ],
+      "title": "Round-4 lab bake of the CC0 clips onto the Round-4 hero rig",
+      "author": "CALIMA project (tools/spike-hybrid-bake.mjs)",
+      "source_url": "tools/spike-hybrid-bake.mjs",
+      "licence": "project-original",
+      "licence_text": null,
+      "archive_sha256": null,
+      "retrieved": null,
+      "modified": null,
+      "attribution": null,
+      "legacy": "r4",
+      "ip": true,
+      "delete_at": "W0a",
+      "delete_owner": "gates-perf",
+      "ip_note": "Our bake, but keyed to the IP hero rig: per-bone rest directions of that rig (aloyBindDir on its bone names). Treated as IP-derived (R30); gates-perf deletes it with public/anims-hybrid/** at W0a."
+    },
+    {
+      "id": "legacy-audio",
+      "paths": [
+        "public/audio/**"
+      ],
+      "title": "Synthesized audio bank (Round 4 set names)",
+      "author": "CALIMA project (tools/audio-bank.mjs + tools/audio-recipes.js)",
+      "source_url": "tools/audio-bank.mjs",
+      "licence": "project-original",
+      "licence_text": null,
+      "archive_sha256": null,
+      "retrieved": null,
+      "modified": null,
+      "attribution": null,
+      "legacy": "r4",
+      "delete_at": "W3 exit (regenerated under new set names)",
+      "delete_owner": "audio"
+    },
+    {
+      "id": "legacy-donor-broadhead",
+      "paths": [
+        "public/models/broadhead.glb"
+      ],
+      "title": "Bull (Ultimate Animated Animal pack)",
+      "author": "Quaternius",
+      "source_url": "https://quaternius.com/packs/ultimateanimatedanimals.html",
+      "licence": "CC0-1.0",
+      "licence_text": null,
+      "archive_sha256": null,
+      "retrieved": "2026-09-10",
+      "modified": "binary re-write + rig bake (tools/bake-rigs.mjs)",
+      "attribution": null,
+      "legacy": "r4",
+      "delete_at": "W2 exit",
+      "delete_owner": "instruments-b"
+    },
+    {
+      "id": "legacy-donor-corruptor",
+      "paths": [
+        "public/models/corruptor.glb"
+      ],
+      "title": "Scorpion",
+      "author": "Poly by Google",
+      "source_url": "https://poly.pizza/m/6Bu7d_Pkm5o",
+      "licence": "CC-BY-3.0",
+      "licence_text": null,
+      "licence_url": "https://creativecommons.org/licenses/by/3.0/",
+      "archive_sha256": null,
+      "retrieved": "2026-09-10",
+      "modified": "binary re-write + rig bake (tools/bake-rigs.mjs)",
+      "attribution": "\"Scorpion\" by Poly by Google (https://poly.pizza/m/6Bu7d_Pkm5o), CC-BY 3.0",
+      "legacy": "r4",
+      "delete_at": "W2 exit",
+      "delete_owner": "instruments-b"
+    },
+    {
+      "id": "legacy-donor-glinthawk",
+      "paths": [
+        "public/models/glinthawk.glb"
+      ],
+      "title": "Robot Enemy Flying",
+      "author": "Quaternius",
+      "source_url": "https://poly.pizza/m/lF3jeRJwiH",
+      "licence": "CC0-1.0",
+      "licence_text": null,
+      "archive_sha256": null,
+      "retrieved": "2026-08-05",
+      "modified": null,
+      "attribution": null,
+      "legacy": "r4",
+      "delete_at": "W2 exit",
+      "delete_owner": "instruments-b"
+    },
+    {
+      "id": "legacy-donor-grazer",
+      "paths": [
+        "public/models/grazer.glb"
+      ],
+      "title": "Deer (Ultimate Animated Animal pack)",
+      "author": "Quaternius",
+      "source_url": "https://quaternius.com/packs/ultimateanimatedanimals.html",
+      "licence": "CC0-1.0",
+      "licence_text": null,
+      "archive_sha256": null,
+      "retrieved": "2026-09-10",
+      "modified": "binary re-write + rig bake (tools/bake-rigs.mjs)",
+      "attribution": null,
+      "legacy": "r4",
+      "delete_at": "W2 exit",
+      "delete_owner": "instruments-b"
+    },
+    {
+      "id": "legacy-donor-longleg",
+      "paths": [
+        "public/models/longleg.gltf"
+      ],
+      "title": "Birb (Ultimate Monsters pack)",
+      "author": "Quaternius",
+      "source_url": "https://quaternius.com/packs/ultimatemonsters.html",
+      "licence": "CC0-1.0",
+      "licence_text": null,
+      "archive_sha256": null,
+      "retrieved": "2026-08-05",
+      "modified": null,
+      "attribution": null,
+      "legacy": "r4",
+      "delete_at": "W2 exit",
+      "delete_owner": "instruments-b"
+    },
+    {
+      "id": "legacy-donor-ravager",
+      "paths": [
+        "public/models/ravager.glb"
+      ],
+      "title": "Lion",
+      "author": "Poly by Google",
+      "source_url": "https://polygone.art/model/cC_IFclYA4c",
+      "licence": "CC-BY-3.0",
+      "licence_text": null,
+      "licence_url": "https://creativecommons.org/licenses/by/3.0/",
+      "archive_sha256": null,
+      "retrieved": "2026-09-10",
+      "modified": "binary re-write + rig bake (tools/bake-rigs.mjs); retired under an authored shell",
+      "attribution": "\"Lion\" by Poly by Google (https://polygone.art/model/cC_IFclYA4c), CC-BY 3.0",
+      "legacy": "r4",
+      "delete_at": "W2 exit",
+      "delete_owner": "instruments-b"
+    },
+    {
+      "id": "legacy-donor-scrapper",
+      "paths": [
+        "public/models/scrapper.glb"
+      ],
+      "title": "Robocat",
+      "author": "Jordan Hill",
+      "source_url": "https://poly.pizza/m/d78wyEWCmTC",
+      "licence": "CC-BY-3.0",
+      "licence_text": null,
+      "licence_url": "https://creativecommons.org/licenses/by/3.0/",
+      "archive_sha256": null,
+      "retrieved": "2026-08-05",
+      "modified": "optimised (gltf-transform); cast under a procedural shell",
+      "attribution": "\"Robocat\" by Jordan Hill (https://poly.pizza/m/d78wyEWCmTC), CC-BY 3.0",
+      "legacy": "r4",
+      "delete_at": "W2 exit",
+      "delete_owner": "instruments-b"
+    },
+    {
+      "id": "legacy-donor-shellwalker",
+      "paths": [
+        "public/models/shellwalker.glb"
+      ],
+      "title": "Spider",
+      "author": "Quaternius",
+      "source_url": "https://poly.pizza/m/yRYJiAJyiM",
+      "licence": "CC0-1.0",
+      "licence_text": null,
+      "archive_sha256": null,
+      "retrieved": "2026-09-10",
+      "modified": "binary re-write + rig bake (tools/bake-rigs.mjs); retired under an authored shell",
+      "attribution": null,
+      "legacy": "r4",
+      "delete_at": "W2 exit",
+      "delete_owner": "instruments-b"
+    },
+    {
+      "id": "legacy-donor-snapmaw",
+      "paths": [
+        "public/models/snapmaw.glb"
+      ],
+      "title": "Black Caiman",
+      "author": "Poly by Google",
+      "source_url": "https://poly.pizza/m/5etIv4omd7Z",
+      "licence": "CC-BY-3.0",
+      "licence_text": null,
+      "licence_url": "https://creativecommons.org/licenses/by/3.0/",
+      "archive_sha256": null,
+      "retrieved": "2026-09-10",
+      "modified": "binary re-write + rig bake (tools/bake-rigs.mjs)",
+      "attribution": "\"Black Caiman\" by Poly by Google (https://poly.pizza/m/5etIv4omd7Z), CC-BY 3.0",
+      "legacy": "r4",
+      "delete_at": "W2 exit",
+      "delete_owner": "instruments-b"
+    },
+    {
+      "id": "legacy-donor-stormbird",
+      "paths": [
+        "public/models/stormbird.glb"
+      ],
+      "title": "Hawk (low-poly, rigged)",
+      "author": "Sherkiz",
+      "source_url": "https://poly.pizza/m/RkN6MEbP6g",
+      "licence": "CC-BY-3.0",
+      "licence_text": null,
+      "licence_url": "https://creativecommons.org/licenses/by/3.0/",
+      "archive_sha256": null,
+      "retrieved": "2026-09-10",
+      "modified": "binary re-write + rig bake (tools/bake-rigs.mjs); retired under an authored shell",
+      "attribution": "\"Hawk (low-poly, rigged)\" by Sherkiz (https://poly.pizza/m/RkN6MEbP6g), CC-BY 3.0",
+      "legacy": "r4",
+      "delete_at": "W2 exit",
+      "delete_owner": "instruments-b"
+    },
+    {
+      "id": "legacy-donor-strider",
+      "paths": [
+        "public/models/strider.glb"
+      ],
+      "title": "Mechanical Horse",
+      "author": "jake young",
+      "source_url": "https://poly.pizza/m/d4bayjeM1aD",
+      "licence": "CC-BY-3.0",
+      "licence_text": null,
+      "licence_url": "https://creativecommons.org/licenses/by/3.0/",
+      "archive_sha256": null,
+      "retrieved": "2026-08-05",
+      "modified": "optimised (gltf-transform); cast under a procedural shell",
+      "attribution": "\"Mechanical Horse\" by jake young (https://poly.pizza/m/d4bayjeM1aD), CC-BY 3.0",
+      "legacy": "r4",
+      "delete_at": "W2 exit",
+      "delete_owner": "instruments-b"
+    },
+    {
+      "id": "legacy-favicon",
+      "paths": [
+        "public/favicon.svg"
+      ],
+      "title": "Round-4 favicon",
+      "author": "CALIMA project",
+      "source_url": "public/favicon.svg",
+      "licence": "project-original",
+      "licence_text": null,
+      "archive_sha256": null,
+      "retrieved": null,
+      "modified": null,
+      "attribution": null,
+      "legacy": "r4",
+      "delete_at": "W0b (replaced)",
+      "delete_owner": "brand"
+    },
+    {
+      "id": "legacy-font-chakra-petch",
+      "paths": [
+        "public/fonts/ChakraPetch-*.ttf"
+      ],
+      "title": "Chakra Petch",
+      "author": "Cadson Demak",
+      "source_url": "https://fonts.google.com/specimen/Chakra+Petch",
+      "licence": "OFL-1.1",
+      "licence_text": null,
+      "archive_sha256": null,
+      "retrieved": null,
+      "modified": null,
+      "attribution": null,
+      "legacy": "r4",
+      "delete_at": "W0 exit",
+      "delete_owner": "brand"
+    },
+    {
+      "id": "legacy-font-julius-sans-one",
+      "paths": [
+        "public/fonts/JuliusSansOne-*.ttf"
+      ],
+      "title": "Julius Sans One",
+      "author": "LatinoType",
+      "source_url": "https://fonts.google.com/specimen/Julius+Sans+One",
+      "licence": "OFL-1.1",
+      "licence_text": null,
+      "archive_sha256": null,
+      "retrieved": null,
+      "modified": null,
+      "attribution": null,
+      "legacy": "r4",
+      "delete_at": "W0 exit",
+      "delete_owner": "brand"
+    },
+    {
+      "id": "legacy-font-michroma",
+      "paths": [
+        "public/fonts/Michroma-*.ttf"
+      ],
+      "title": "Michroma",
+      "author": "Vernon Adams",
+      "source_url": "https://fonts.google.com/specimen/Michroma",
+      "licence": "OFL-1.1",
+      "licence_text": null,
+      "archive_sha256": null,
+      "retrieved": null,
+      "modified": null,
+      "attribution": null,
+      "legacy": "r4",
+      "delete_at": "W0 exit",
+      "delete_owner": "brand"
+    },
+    {
+      "id": "legacy-font-orbitron",
+      "paths": [
+        "public/fonts/Orbitron-*.ttf"
+      ],
+      "title": "Orbitron",
+      "author": "Matt McInerney",
+      "source_url": "https://fonts.google.com/specimen/Orbitron",
+      "licence": "OFL-1.1",
+      "licence_text": null,
+      "archive_sha256": null,
+      "retrieved": null,
+      "modified": null,
+      "attribution": null,
+      "legacy": "r4",
+      "delete_at": "W0 exit",
+      "delete_owner": "brand"
+    },
+    {
+      "id": "legacy-font-rajdhani",
+      "paths": [
+        "public/fonts/Rajdhani-*.ttf"
+      ],
+      "title": "Rajdhani",
+      "author": "Indian Type Foundry",
+      "source_url": "https://fonts.google.com/specimen/Rajdhani",
+      "licence": "OFL-1.1",
+      "licence_text": null,
+      "archive_sha256": null,
+      "retrieved": null,
+      "modified": null,
+      "attribution": null,
+      "legacy": "r4",
+      "delete_at": "W0 exit",
+      "delete_owner": "brand"
+    },
+    {
+      "id": "legacy-hero-body",
+      "paths": [
+        "public/models/aloy.glb"
+      ],
+      "title": "Round-4 hero body: \"Aloy - Fortnite\" (third-party game IP)",
+      "author": "Yxboireal (https://sketchfab.com/Yeboireal), as uploaded to Sketchfab",
+      "source_url": "https://sketchfab.com/3d-models/aloy-fortnite-96b484dee22d487fa3ad40f14f4f277b",
+      "licence": "CC-BY-4.0",
+      "licence_text": null,
+      "licence_url": "http://creativecommons.org/licenses/by/4.0/",
+      "archive_sha256": null,
+      "retrieved": null,
+      "modified": null,
+      "attribution": "\"Aloy - Fortnite\" by Yxboireal (https://sketchfab.com/Yeboireal), CC-BY-4.0",
+      "legacy": "r4",
+      "ip": true,
+      "delete_at": "W0 exit (R30)",
+      "delete_owner": "hero-body",
+      "ip_note": "The uploader's CC-BY licence cannot cover a Sony/Guerrilla character in an Epic rig: IP whatever the licence says (docs/ROUND5-INVENTORY.md section 0.2). Recorded here as provenance of a file that must go; never credited (plan section 10.2)."
+    },
+    {
+      "id": "pipeline-probe",
+      "paths": [
+        "public/models/pipeline/probe.glb"
+      ],
+      "title": "Pipeline loader fixture (datum probe)",
+      "author": "CALIMA project",
+      "source_url": "tools/build/pipeline/gen-probe.mjs",
+      "licence": "project-original",
+      "licence_text": null,
+      "archive_sha256": null,
+      "retrieved": null,
+      "modified": null,
+      "attribution": null
+    },
+    {
+      "id": "r5-poc-ground-generated",
+      "paths": [
+        "public/textures/r5-poc/{sand,salt,rockp}_{a,n}.webp",
+        "public/textures/r5-poc/MANIFEST.json"
+      ],
+      "title": "Round-5 proof ground layers (procedural)",
+      "author": "CALIMA project (tools/r5-poc/gen-ground.mjs)",
+      "source_url": "tools/r5-poc/gen-ground.mjs",
+      "licence": "project-original",
+      "licence_text": null,
+      "archive_sha256": null,
+      "retrieved": null,
+      "modified": null,
+      "attribution": null,
+      "legacy": "r5-poc",
+      "delete_at": "W1 exit",
+      "delete_owner": "world-ground"
+    },
+    {
+      "id": "r5-poc-rock-scan",
+      "paths": [
+        "public/textures/r5-poc/rock_{a,n}.webp"
+      ],
+      "title": "Rock Face (1K scan, repacked)",
+      "author": "Poly Haven",
+      "source_url": "https://polyhaven.com/a/rock_face",
+      "licence": "CC0-1.0",
+      "licence_text": null,
+      "archive_sha256": null,
+      "retrieved": null,
+      "modified": "diff + nor_gl + arm repacked to 2 x RGBA WebP (tools/r5-poc/gen-ground.mjs)",
+      "attribution": null,
+      "legacy": "r5-poc",
+      "delete_at": "W1 exit",
+      "delete_owner": "world-ground",
+      "pending": "archive_sha256 + retrieved: recorded by the W0b re-fetch (Poly Haven scans are on the re-fetch list, plan section 10.1)"
+    },
+    {
+      "id": "ual1",
+      "paths": [
+        "public/anims/**"
+      ],
+      "title": "Universal Animation Library [Standard] (Godot export)",
+      "author": "Quaternius",
+      "source_url": "https://quaternius.itch.io/universal-animation-library",
+      "licence": "CC0-1.0",
+      "licence_text": "public/anims/LICENSE",
+      "archive_sha256": null,
+      "retrieved": null,
+      "modified": null,
+      "attribution": null,
+      "pending": "archive_sha256 + retrieved: recorded by the W0b re-fetch (plan section 10.1, E32)"
+    }
+  ]
+}
