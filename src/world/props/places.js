@@ -993,7 +993,6 @@ export class Places {
       rustTube(inner.metal, [ax, deckY + 5.0, az], [ax, deckY + 5.9, az], 0.05, 0.05, 9840 + i, N, 4);
     }
 
-    // -- the OVERRIDE TERMINAL, on the back wall of the chamber
     {
       const [tx, tz] = at(0, -CHAMBER_R + 2.4);
       const ty = deckY;
@@ -2300,21 +2299,6 @@ export class Places {
           onInteract: () => ev.emit('cauldron-parts', { id: c.id, site: 'cauldron-kappa' }),
         });
       }
-      const t = this.cauldronTerminal;
-      this._reg('cauldron-kappa', {
-        position: { x: t.x, y: t.y + 1.7, z: t.z }, radius: 2.8, hold: 1.2,
-        label: 'OVERRIDE TERMINAL', once: true, site: 'cauldron-override',
-        onInteract: () => {
-          this.cauldronOverridden = true;
-          ctx.progression?.award?.({ xp: 200, reason: 'cauldron-override', id: 'cauldron-kappa' });
-          ctx.progression?.discover?.('cauldron-kappa', { label: 'Cauldron KAPPA' });
-          ev.emit('cauldron-override', {
-            id: 'cauldron-kappa', x: t.x, z: t.z,
-            reveals: this.props.activities?.revealList?.() ?? [],
-          });
-          ctx.audio?.play2D?.('machine/alarm', { category: 'ui', volume: 0.32 });
-        },
-      });
     }
 
     /* ----------------------------- arena --------------------------------- */

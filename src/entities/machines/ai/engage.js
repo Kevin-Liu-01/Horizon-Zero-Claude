@@ -808,8 +808,8 @@ export class Engage {
      * route planned for the OTHER destination" (the belief vs the seek spot),
      * so that is what is checked: a route remembers which of the two it was
      * planned for and is dropped once when the answer changes; `_seekClearSpot`
-     * drops it when it picks a new spot. A moving destination (an overridden
-     * machine chasing) keeps the plain `repath` cadence it always had.
+     * drops it when it picks a new spot. A moving destination
+     * keeps the plain `repath` cadence it always had.
      */
     const seeking = this.seek.t > 0;
     if (this.path && this._pathSeek !== seeking) this.path = null;

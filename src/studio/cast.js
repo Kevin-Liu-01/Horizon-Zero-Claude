@@ -15,7 +15,7 @@
  *     Besides setting the state it wires the INPUTS that state's own exit tests
  *     read (suspicion, `_unseenT`, `lastKnown`, the attack cooldown) and routes
  *     the transient poses to their real owners (`ai.reactions._stagger`,
- *     `_down`, `_die`, `manager.override`).
+ *     `_down`, `_die`).
  *
  *  2. A HOLD. `forceState` is a shove, not a clamp: `attack` still exits on
  *     `_unseenT > 4.5` (the player is 60 m away behind the camera in a photo
@@ -32,7 +32,7 @@ import * as THREE from 'three';
 const _v = new THREE.Vector3();
 
 /** Sustained states: re-asserted every frame while held. */
-export const HOLD_STATES = ['patrol', 'suspicious', 'alert', 'search', 'attack', 'overridden'];
+export const HOLD_STATES = ['patrol', 'suspicious', 'alert', 'search', 'attack'];
 /** One-shot poses: fired once, never re-asserted (they resolve by design). */
 export const SHOT_STATES = ['stagger', 'downed', 'dead'];
 
@@ -45,7 +45,6 @@ export const CAST_STATES = [
   { id: 'stagger', label: 'Stagger' },
   { id: 'downed', label: 'Downed' },
   { id: 'dead', label: 'Death' },
-  { id: 'overridden', label: 'Override' },
 ];
 
 export class CastDirector {

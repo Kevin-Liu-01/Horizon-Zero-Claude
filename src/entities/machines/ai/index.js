@@ -7,11 +7,10 @@ import { Reactions } from './reactions.js';
 import { StimulusBus } from './stimulus.js';
 import { SiteManager } from './sites.js';
 import { Squads } from './squad.js';
-import { OverrideSystem } from './override.js';
 import { perceptionCfg, attackMode, NOISE } from './tables.js';
 import { listenerErrors, clearListenerErrors } from './emit.js';
 
-export { Perception, Engage, Search, AttackPicker, Reactions, StimulusBus, SiteManager, Squads, OverrideSystem };
+export { Perception, Engage, Search, AttackPicker, Reactions, StimulusBus, SiteManager, Squads };
 
 /**
  * ============================ LANE CONTRACT ============================
@@ -28,11 +27,9 @@ export { Perception, Engage, Search, AttackPicker, Reactions, StimulusBus, SiteM
  *       arrow impacts, explosions, thrown rocks and melee.
  *   machines.lure(pos, opts)         whistle / thrown rock (pulls + holds)
  *   machines.alarm(caller, radius)   squad alarm (converges on the CALLER)
- *   machines.canOverride(m) / override(m) / mount(m) / dismount()
- *   machines.mounted                 machine | null
  *   machines.shotOrigin(hit)         reconstructed shot origin for a hit
  *   machines.sites.advance(s)        debug/gate: run the corpse clock forward
- *   machines.aiAudit()               { roster, states, stimuli, sites, mounted,
+ *   machines.aiAudit()               { roster, states, stimuli, sites,
  *                                      listenerErrors, fx }
  *   machines.setAiRng(fn) -> prevFn   swap the dice this lane rolls (Engage's
  *       orbit flips + ring roll + jitter, AttackPicker._score's jitter, every
@@ -90,7 +87,6 @@ export { Perception, Engage, Search, AttackPicker, Reactions, StimulusBus, SiteM
  *   machines.expansionReady          the expansion roster exists
  *   machines.squads.registerConvoy({ members, route, defend })
  *   machines.squads.registerBasking({ x, z, members })
- *   machines.squads.corrupt(v, source) / uncorrupt(v)
  *   machines.squads.forget(machine)  drop every squad-side reference (called
  *                                    by the site lifecycle on disposal)
  *   Squads.alarmHerd(m) / Squads.stepFlee(m, dt) / Squads.stepConvoy(m, dt)
@@ -102,8 +98,7 @@ export { Perception, Engage, Search, AttackPicker, Reactions, StimulusBus, SiteM
  *                       `kind` except while a kind rides a chassis. EVERYTHING
  *                       that frees GPU memory must key off this, not `kind`.
  *   machine.docile      never leaves `patrol` (Tallneck) — hard guard in
- *                       `setState`, and `canOverride` refuses it
- *   machine.corrupted   hostile to everything, cannot be overridden
+ *                       `setState`
  *   machine._eyeCalm    per-species CALM sensor colour (Redeye is red idle)
  *   machine.herd / .convoy / .basking   squad membership, held by the BASE
  *                       class so no species file has to remember to copy it,
@@ -130,12 +125,10 @@ export { Perception, Engage, Search, AttackPicker, Reactions, StimulusBus, SiteM
  *                       air->ground, casting-v4 §5.2)
  *
  * --- events the expansion adds -----------------------------------------
- *   'machine-corrupted'   { machine, source }
- *   'machine-uncorrupted' { machine }
  *   'machine-grounded'    { machine }    a flier that lost every engine
  *
  * --- machine fields other lanes read ------------------------------------
- *   machine.state       + 'stagger' | 'downed' | 'overridden'
+ *   machine.state       + 'stagger' | 'downed'
  *   machine.suspicion   0..1        (HUD stealth meter, ui-12)
  *   machine.detectFill  fill/s right now (0 when it cannot see her)
  *   machine.scanOffset  sensor sweep offset (rad) applied to the sight cone
@@ -223,11 +216,6 @@ export { Perception, Engage, Search, AttackPicker, Reactions, StimulusBus, SiteM
  *                       the BAND against `lastKnown` instead of handing the
  *                       frame to the long-haul `pursue` (ENGAGE.beliefHold)
  *
- * --- player fields this lane writes (mount only) ------------------------
- *   player.mounted      machine | null      (player-control: suppress its own
- *                       locomotion while set; player-anim: ride pose)
- *   player.mountSeat    Vector3 saddle position, valid while mounted
- *
  * --- events emitted -----------------------------------------------------
  *   'machine-state'         { machine, state, prev }
  *   'machine-scan'          { machine, sweep, search? }
@@ -237,8 +225,6 @@ export { Perception, Engage, Search, AttackPicker, Reactions, StimulusBus, SiteM
  *   'machine-flinch'        { machine, strength }
  *   'machine-stagger'       { machine, duration, kind:'stagger'|'downed' }
  *   'critical-hit'          { machine, damage }
- *   'machine-overridden'    { machine, mountable }
- *   'player-mounted' / 'player-dismounted'  { machine }
  *   'machine-scavenge'      { machine }
  *   'machine-disposed'      { kind, site }
  *   'machine-respawned'     { machine, site }
@@ -301,7 +287,7 @@ export class MachineAI {
   /** A whistle/thrown rock: investigate the SOURCE and hold there. */
   lure(x, z, hold) {
     const m = this.m;
-    if (m.state === 'attack' || m.state === 'overridden' || !m.alive) return;
+    if (m.state === 'attack' || !m.alive) return;
     this.lureT = hold ?? NOISE.lureHold;
     this.lurePos.set(x, m.ctx.terrain.getHeight(x, z), z);
     m.lastKnown.copy(this.lurePos);
@@ -362,7 +348,7 @@ export class MachineAI {
 
 /**
  * Manager-side install: builds the stimulus bus, the site lifecycle, squad
- * doctrine and the override system, and publishes their API on `ctx.machines`.
+ * doctrine, and publishes their API on `ctx.machines`.
  * Called from `Machines`' constructor.
  */
 export function installMachineAI(machines) {
@@ -371,8 +357,6 @@ export function installMachineAI(machines) {
   machines.stimulus = new StimulusBus(machines);
   machines.sites = new SiteManager(machines);
   machines.squads = new Squads(machines);
-  machines.overrides = new OverrideSystem(machines);
-  machines.mounted = null;
 
   /* ---------------------------- public API ---------------------------- */
 
@@ -390,16 +374,11 @@ export function installMachineAI(machines) {
   };
   /** Squad alarm; recipients converge on the caller in `search`. */
   machines.alarm = (caller, radius) => machines.stimulus.alarm(caller, radius);
-  machines.canOverride = (m) => machines.overrides.canOverride(m);
-  machines.override = (m) => machines.overrides.override(m);
-  machines.mount = (m) => machines.overrides.mount(m);
-  machines.dismount = () => machines.overrides.dismount();
   machines.aiAudit = () => ({
     roster: machines.list.length,
     states: machines.list.reduce((a, m) => { a[m.state] = (a[m.state] || 0) + 1; return a; }, {}),
     stimuli: machines.stimulus.count,
     sites: machines.sites.audit(),
-    mounted: machines.mounted ? machines.mounted.kind : null,
     /**
      * Foreign subscribers that threw out of a machine event and were isolated
      * (see `ai/emit.js`). Never empty by accident: an entry here is a real

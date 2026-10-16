@@ -6,7 +6,8 @@ import { GaitController, deathDt } from './gait.js';
 import { settleCorpseNow } from './rig/ground.js';
 import { attachRigRuntime, updateRigLOD, foldMachineMeshes } from './rig/lod.js';
 import { snapSockets } from './rig/sockets.js';
-import { buildShell, hideSculpt, SCRAPPER_SHELL } from './rig/shells.js';
+import { buildShell, hideSculpt } from './rig/shells.js';
+import { SCRAPPER_SHELL } from './rig/shells-expansion.js';
 
 /**
  * Scrapper: T1 pack scavenger (roster-v2 §4 — hyena role, recast onto the

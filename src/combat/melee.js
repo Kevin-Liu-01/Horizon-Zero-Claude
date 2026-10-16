@@ -123,7 +123,7 @@ const _aDir = new THREE.Vector3();
 /** Aware = it already knows something is wrong and is looking for you. */
 const AWARE_STATES = new Set(['alert', 'attack']);
 /** States where a Silent Strike is not the right verb. */
-const NO_SNEAK_STATES = new Set(['dead', 'downed', 'stagger', 'overridden']);
+const NO_SNEAK_STATES = new Set(['dead', 'downed', 'stagger']);
 
 /**
  * DISTANCE TO THE SILHOUETTE, not to the navel.
@@ -1249,7 +1249,7 @@ export class Melee {
    */
   _stepIn(metres) {
     const p = this.ctx.player;
-    if (!p || !p.grounded || p.dodging || p.mantling || p.mounted) return;
+    if (!p || !p.grounded || p.dodging || p.mantling) return;
     if (!(metres > 0.01)) return;
     /* A step-in is a step ONTO the target, and she has already taken most of it
      * if she arrived at a run. Adding the full standing impulse on top of a
@@ -1315,14 +1315,14 @@ export class Melee {
   /**
    * Hold the step-in's forward speed for the length of the step (see
    * `_stepIn`). A floor, never a set: her own input can always out-run it, and
-   * a dodge or a mount cancels it outright.
+   * a dodge cancels it outright.
    */
   _stepDrive(dt) {
     const d = this._drive;
     if (!d) return;
     const p = this.ctx.player;
     d.t += dt;
-    if (!p || !p.grounded || p.dodging || p.mounted || d.t >= d.dur || d.went >= d.want) {
+    if (!p || !p.grounded || p.dodging || d.t >= d.dur || d.went >= d.want) {
       /* THE STEP ENDS ON A PLANTED FOOT, NOT ON A COAST (fix round 2).
        * Leaving the drive's speed in the controller to be eaten by drag adds
        * half a second of walking-pace travel AFTER the swing — which crosses
@@ -1499,7 +1499,7 @@ export class Melee {
     const p = ctx.player;
     const aiming = !!p?.aiming;
     const wheelOpen = !!ctx.wheel?.open;
-    const canSwing = playing && !aiming && !wheelOpen && !p?.mounted && (p?.health ?? 1) > 0;
+    const canSwing = playing && !aiming && !wheelOpen && (p?.health ?? 1) > 0;
 
     // --- charge / release
     const lmb = canSwing && ctx.input.mouseDown(0);

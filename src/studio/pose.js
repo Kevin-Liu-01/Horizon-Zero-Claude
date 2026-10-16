@@ -10,8 +10,8 @@
  *    animator every frame from its hit / air / act channels. The sanctioned way
  *    to start one is therefore the animator's own EVENT inputs — `player-damage`
  *    (hitChest/hitHead by damage class), `player-jump` / `player-land`
- *    (jumpStart/jumpLoop/jumpLand), `item-gained` (pickup), `override-node`
- *    (interact) — plus `player.dodge()` for the roll layer and `takeDamage()`
+ *    (jumpStart/jumpLoop/jumpLand), `item-gained` (pickup)
+ *    — plus `player.dodge()` for the roll layer and `takeDamage()`
  *    for the death layer. Writing `loco.actSlot` directly would be clobbered on
  *    the next frame; these are not.
  *
@@ -71,7 +71,6 @@ export const POSES = [
   { id: 'jump', label: 'Jump', kind: 'jump' },
   { id: 'land', label: 'Land', kind: 'land', fall: 4.5 },
   { id: 'pickup', label: 'Pick up', kind: 'event', event: 'item-gained' },
-  { id: 'interact', label: 'Interact', kind: 'event', event: 'override-node' },
   { id: 'crouch', label: 'Crouch', kind: 'crouch' },
   { id: 'death', label: 'Death', kind: 'death' },
 ];

@@ -1,4 +1,4 @@
-import { legPieces, spinePieces } from './shells.js';
+import { legPieces, spinePieces, boneBodyPos } from './shells.js';
 
 /**
  * ROUND-4 EXPANSION SHELLS (`machines-expansion`).
@@ -826,98 +826,273 @@ export function STORMBIRD_SHELL(m, rig) {
   return P;
 }
 
-/* ------------------------------------------------------------------ */
-/* REDEYE WATCHER — `casting-v4` §2.9                                   */
-/* ------------------------------------------------------------------ */
+/* =======================================================================
+ * LEGACY ROUND-3 SHELLS (moved here from `rig/shells.js`, Round 5 W0a)
+ * ======================================================================= */
+
 /**
- * THE REDEYE'S ARMOUR, AUTHORED (residue fix round 1).
+ * SCRAPPER — roster-v2 §4: a LOW FOUR-LEGGED scavenger with a long forward
+ * snout, a hunched back and a cable tail.
  *
- * Judge finding (blocker): "V26a-silhouette fails its own written material
- * criterion — Redeye reads as scrap, not as a Watcher body with plate-over-dark
- * contrast ... uniformly dark", with the remedy "Author a Redeye-specific shell
- * large enough to dominate the donor's silhouette ... and apply the same
- * underbody-palette treatment (STYLE[kind].underbody) used elsewhere".
- *
- * Measured before: the shell was three pieces — a 0.2 x 0.6 m dorsal strip and
- * two sensor slits — whose merged mesh had a 0.44 m bounding radius against the
- * donor's 2.66 m, and the donor itself is a near-black albedo atlas under a
- * bronze specular sheen (its material came through `styleMachine` at metalness
- * 0.55). Nothing on the machine was white-grey, so nothing could read as plate.
- *
- * Now the donor is the dark synthetic muscle every other donor-keeping species
- * uses (`variety-assets.js` STYLE.redeye.underbody: matte, darkened) and the
- * plate is authored over it, in the family's hex-plate language:
- *
- *  - a CROWN RIDGE of seven overlapping plates down the top of the carapace,
- *  - a BROW plate and swept cheek guards on the carapace's front face,
- *  - two staggered rows of FLANK scales per side with a dark seam between them,
- *  - THIGH armour on both upper legs,
- *  - CHEEK and CHIN plates round the eye pod,
- *  - the red dorsal strip that reads as "Redeye" from behind.
- *
- * WHY THE PIECES NAME BONES. The Watcher is clip-driven on its own skeleton —
- * there is no autorig to skin a model-space shell — so every piece is authored
- * in BODY space on the bone that carries that part of the donor (`hipsBone_`
- * for the carapace, `*_Upleg_jnt_0_` for the thighs, `Neck_Bone_7_` for the eye
- * pod). Coordinates are the donor's MEASURED rest-pose surface, per bone group
- * and per 0.4 m z slice (`shots/mx-r4-redeye5`): carapace x ±0.9, top
- * y 2.5-3.7 from z +2.0 to -2.0; thighs x ±1.3, y 0.7-2.4; eye pod x ±0.3,
- * y 0.74-1.64, z 1.4-2.4. `redeye.js` then folds the bone buckets into ONE
- * skinned draw, so the whole shell costs a single draw call.
+ * ROUND-4 FIX ROUND 1: built entirely on the quadruped rig spec in
+ * `scrapper.js` and the upright chrome-biped sculpt retired. Gate `V26` read
+ * the plates-over-biped version as "an amorphous plate pile" in side profile
+ * and only resolved a quadruped off-axis.
  */
-export function REDEYE_SHELL() {
-  const H = 'hipsBone_';
+export function SCRAPPER_SHELL(m, rig) {
   const P = [];
-  const CROWN_Z = [1.75, 1.2, 0.62, 0.02, -0.6, -1.2, -1.75];
-  const CROWN_Y = [2.55, 3.05, 3.28, 3.5, 3.45, 3.1, 3.05];
-  const CROWN_W = [0.9, 1.15, 1.3, 1.35, 1.25, 1.0, 0.8];
-  const CROWN_PITCH = [-0.7, -0.35, -0.12, 0.0, 0.12, 0.35, 0.3];
-  for (let i = 0; i < CROWN_Z.length; i++) {
+  if (!rig) return P;
+  // NARROW TRUNK OVER A WIDE STANCE (fix round 2 — see the header comment in
+  // `scrapper.js`). `spinePieces` sizes the trunk off the widest hip, so the
+  // `width` multiplier IS the trunk-to-stance ratio: 1.10 puts the trunk's
+  // outer corner at x 0.17 between hips at x 0.30, which is what keeps the
+  // body off the thigh capsules and the machine in one piece when it walks.
+  P.push(...spinePieces(rig, { width: 1.10, taper: 1.05, taperTo: 0.30, deep: 0.82, wear: 0.5 }));
+  // THICK legs. A 0.17 m capsule drawn at `wide: 1.05` is a 0.17 m bar, and
+  // four of those crossing under a 0.36 m trunk read as scaffolding, not as
+  // legs — V26 wants a COLUMN. 1.35 is as thick as the inboard rule allows
+  // (see `legInboard` in scrapper.js: the plate may reach 0.108 m inboard of
+  // its hip, the underbelly starts at 0.165 m).
+  P.push(...legPieces(rig, { claws: true, wide: 1.35, wear: 0.55 }));
+
+  // --- shoulders / haunches: carried ABOVE the leg gate, so the swing of a
+  //     thigh cannot take them with it
+  P.push({ m: 'muscle', g: 'ico', p: [0.25, 1.00, 0.36], s: [0.20, 0.28, 0.42], mirror: true });
+  P.push({ m: 'muscle', g: 'ico', p: [0.23, 0.98, -0.40], s: [0.22, 0.30, 0.44], mirror: true });
+  P.push({ m: 'plate', g: 'plate', p: [0.24, 1.16, 0.26], s: [0.20, 0.14, 0.48], r: [0, 0, -0.9], mirror: true, wear: 0.6 });
+
+  // --- LOW FORWARD SNOUT: the hyena read. The head joint is at y 0.98 with
+  //     its tip at y 0.88 / z 1.10, so the muzzle drops as it runs forward.
+  P.push({ m: 'plate', g: 'box', p: [0, 0.92, 0.82], s: [0.28, 0.26, 0.42], r: [0.22, 0, 0], wear: 0.55 });
+  P.push({ m: 'plate', g: 'wedge', p: [0, 0.80, 1.08], s: [0.21, 0.18, 0.44], r: [0.26, 0, 0], wear: 0.65 });
+  P.push({ m: 'muscle', g: 'box', p: [0, 0.71, 1.06], s: [0.17, 0.10, 0.42], r: [0.26, 0, 0] });
+  P.push({ m: 'lacquer', g: 'box', p: [0, 1.02, 0.74], s: [0.24, 0.09, 0.34], r: [0.20, 0, 0], wear: 0.7 });
+  P.push({ m: 'lacquer', g: 'fang', p: [0.06, 0.71, 1.24], s: [0.05, 0.14, 0.05], r: [Math.PI, 0, 0], mirror: true, wear: 0.9 });
+  P.push({ m: 'sensor', g: 'ico', p: [0.10, 0.97, 0.94], s: [0.09, 0.09, 0.09], mirror: true });
+  // swept-back ears: the second thing after the snout that says "animal"
+  P.push({ m: 'lacquer', g: 'blade', p: [0.13, 1.14, 0.58], s: [0.05, 0.24, 0.18], r: [-0.30, 0, -0.55], mirror: true, wear: 0.8 });
+
+  // --- hunched dorsal ridge
+  for (let i = 0; i < 5; i++) {
+    const t = i / 4;
     P.push({
-      m: i % 3 === 1 ? 'lacquer' : 'plate', g: 'plate', bone: H,
-      p: [0, CROWN_Y[i], CROWN_Z[i]], s: [CROWN_W[i], 0.13, 0.66], r: [CROWN_PITCH[i], 0, 0], wear: 0.5,
+      m: 'plate', g: 'blade', p: [0, 1.24 - t * 0.06, 0.30 - t * 0.80],
+      s: [0.06, 0.16 - t * 0.05, 0.22], r: [0.16, 0, 0], wear: 0.7,
     });
   }
-  // flank scales: an upper row that follows the carapace's shoulder and a
-  // lower row staggered between it, so the side reads as overlapping armour
-  const UP_Z = [1.35, 0.65, -0.05, -0.75, -1.4];
-  const UP_Y = [2.55, 2.75, 2.85, 2.7, 2.75];
-  for (let i = 0; i < UP_Z.length; i++) {
+  // --- RUMP, not a tail (roster-v2 §4: "Quadruped, humped, no tail"). A
+  //     rounded haunch block closes the silhouette off behind the hips.
+  P.push({ m: 'muscle', g: 'ico', p: [0, 0.96, -0.56], s: [0.30, 0.30, 0.34] });
+  P.push({ m: 'plate', g: 'wedge', p: [0, 1.02, -0.60], s: [0.24, 0.22, 0.30], r: [-0.55, 0, 0], wear: 0.6 });
+  P.push({ m: 'trim', g: 'box', p: [0, 0.86, -0.58], s: [0.18, 0.12, 0.22], wear: 0.7 });
+  return P;
+}
+
+/**
+ * LONGLEG — roster-v2 §4: a TALL recon bird. Two long legs, a compact high
+ * body, STUB WINGS folded against the ribs, a crested skull.
+ *
+ * ROUND-4 FIX ROUND 2, judge finding "Longleg is still the donor cartoon-bird
+ * sculpt". Round 4 and fix round 1 both treated this species as "reads
+ * correctly already" and only bolted wings onto the sculpt — and the wings
+ * were authored for a 3.6 m creature whose bones top out at 2.4 m, so they
+ * floated behind the head as debris while the donor (a mesh literally named
+ * `Birb`: beak, round eye, stubby arms) was what a judge graded.
+ *
+ * This is a WHOLE MACHINE built on the donor's own skeleton — every piece
+ * carries the bone that drives it, read live from the rig — and the sculpt is
+ * retired underneath it. Proportions are the terror-bird read: the leg is 55 %
+ * of standing height, the body is a compact keel carried high, and the wings
+ * are three overlapping armour blades swept back along the flank so they are
+ * unmistakably WINGS and not the donor's arms.
+ */
+export function LONGLEG_SHELL(m) {
+  const P = [];
+  // Live bone positions in body space — the shell measures the rig it is
+  // drawn on rather than assuming a scale.
+  const B = (name, dflt) => boneBodyPos(m, name, dflt) || dflt;
+  const hips = B('Hips', [0, 0.84, -0.70]);
+  const torso = B('Torso', [0, 1.61, -0.66]);
+  const neck = B('Neck', [0, 2.30, -0.34]);
+  const head = B('Head', [0, 2.40, -0.13]);
+  const upLeg = B('UpperLegL', [0.44, 1.07, -0.65]);
+  const loLeg = B('LowerLegL', [0.44, 0.61, -0.37]);
+  const foot = B('FootL', [0.45, 0.06, -0.73]);
+  const HX = Math.abs(upLeg[0]);          // half stance width
+  const Z = hips[2];                      // body-space z of the hips
+
+  /* ------------------------------ LEGS ------------------------------- */
+  // THIN, LONG and stick-straight against a compact body — that is the whole
+  // "tall legs" read. Every piece is centred close to the bone that drives it
+  // (the earlier draft hung a femur housing 0.9 m above the hip joint and the
+  // Walk clip sheared it into a pair of crossed planks).
+  for (const sx of [1, -1]) {
+    const B_UP = sx > 0 ? 'UpperLegL' : 'UpperLegR';
+    const B_LO = sx > 0 ? 'LowerLegL' : 'LowerLegR';
+    const B_FT = sx > 0 ? 'FootL' : 'FootR';
+    const hipTop = [sx * HX, upLeg[1] + 0.20, upLeg[2] + 0.02];
+    const knee = [sx * HX, loLeg[1], loLeg[2]];
+    P.push({ m: 'plate', g: 'seg', bone: B_UP, a: hipTop, b: knee, w: 0.24, d: 0.21, k: 1.05, wear: 0.5 });
+    P.push({ m: 'muscle', g: 'seg', bone: B_UP, a: hipTop, b: knee, w: 0.17, d: 0.27, k: 1.08 });
+    P.push({ m: 'plate', g: 'ico', bone: B_UP, p: [sx * HX, upLeg[1] + 0.08, upLeg[2]], s: [0.30, 0.36, 0.34], wear: 0.45 });
+    // forward-kneed hock blister — the bird read
+    P.push({ m: 'plate', g: 'ico', bone: B_LO, p: knee, s: [0.24, 0.26, 0.26], wear: 0.6 });
+    P.push({ m: 'trim', g: 'seg', bone: B_LO, a: knee, b: [sx * HX, foot[1] + 0.08, foot[2]], w: 0.125, d: 0.125, k: 1.06, wear: 0.7 });
+    P.push({ m: 'cable', g: 'seg', bone: B_LO, a: [sx * HX, loLeg[1] - 0.03, loLeg[2] - 0.09], b: [sx * HX, foot[1] + 0.12, foot[2] - 0.05], w: 0.055, d: 0.055, k: 1.0 });
+    // SHANK, bound to the FOOT HANDLE and overlapping the shin above it.
+    //
+    // This rig's FootL/FootR are IK handles parented to Root, so the foot art
+    // (bound to the handle) and the shin art (bound to LowerLeg) travel on
+    // different transforms: any displacement the foot lock applies opens a gap
+    // between them, and gate V26 filmed exactly that — two flat slats floating
+    // clear of the shin ends with sky between. A 0.5 m shank on the handle
+    // side, overlapping the shin's own trim, keeps the leg reading as one
+    // chain across the whole range the lock can move a foot through.
+    P.push({ m: 'muscle', g: 'seg', bone: B_FT,
+      a: [sx * HX, foot[1] + 0.55, foot[2] - 0.02], b: [sx * HX, foot[1] + 0.06, foot[2] + 0.02],
+      w: 0.105, d: 0.105, k: 1.04 });
+    // talon: a splayed two-toe foot
+    P.push({ m: 'plate', g: 'box', bone: B_FT, p: [sx * HX, foot[1] + 0.05, foot[2] + 0.09], s: [0.21, 0.10, 0.38], wear: 0.75 });
+    for (const tz of [0.27, 0.16]) {
+      for (const ox of [0.06, -0.06]) {
+        P.push({ m: 'lacquer', g: 'fang', bone: B_FT, p: [sx * HX + ox, foot[1] + 0.03, foot[2] + tz], s: [0.07, 0.20, 0.07], r: [Math.PI * 0.55, 0, 0], wear: 0.9 });
+      }
+    }
+  }
+
+  /* ------------------------- PELVIS + BODY --------------------------- */
+  // Compact: a small deep keel carried high on the legs, ~0.8 m of body on a
+  // 2.8 m machine, so the legs read as most of the animal.
+  P.push({ m: 'plate', g: 'wedge', bone: 'Hips', p: [0, hips[1] + 0.22, Z + 0.02], s: [0.52, 0.46, 0.62], r: [0.32, 0, 0], wear: 0.5 });
+  P.push({ m: 'muscle', g: 'ico', bone: 'Abdomen', p: [0, torso[1] - 0.30, Z + 0.10], s: [0.56, 0.58, 0.80] });
+  P.push({ m: 'plate', g: 'wedge', bone: 'Torso', p: [0, torso[1] - 0.02, Z + 0.26], s: [0.62, 0.78, 0.88], r: [0.10, 0, 0], wear: 0.45 });
+  P.push({ m: 'lacquer', g: 'blade', bone: 'Torso', p: [0, torso[1] - 0.32, Z + 0.52], s: [0.09, 0.32, 0.46], r: [0.38, 0, 0], wear: 0.7 });
+  // concussion sac housings on the chest (the part sockets snap onto these)
+  P.push({ m: 'trim', g: 'cyl', bone: 'Torso', p: [0.22, torso[1] - 0.08, Z + 0.48], s: [0.24, 0.18, 0.24], r: [Math.PI / 2, 0, 0], mirror: true, wear: 0.6 });
+  // back plate + power-cell housing (the lower-back component)
+  P.push({ m: 'plate', g: 'box', bone: 'Torso', p: [0, torso[1] + 0.26, Z + 0.10], s: [0.40, 0.17, 0.52], r: [-0.14, 0, 0], wear: 0.5 });
+  P.push({ m: 'trim', g: 'box', bone: 'Abdomen', p: [0, torso[1] - 0.26, Z - 0.30], s: [0.30, 0.26, 0.26], wear: 0.65 });
+
+  /* ------------------------- STUB WINGS ------------------------------ */
+  // FOUR overlapping armour blades per side, hinged high on the ribs and
+  // swept DOWN and BACK along the flank — folded, not spread. Their thin axis
+  // faces outward so they lie flat on the ribs, they stand 0.08 m proud of the
+  // keel with a dark muscle gap behind them so the fold reads at silhouette
+  // distance, and they stop above the hip so they cannot be read as a
+  // foreleg. Carried on the TORSO, not the shoulder: a folded wing is part of
+  // the body, and the donor's shoulder bone is swung by the Walk clip.
+  const WX = 0.36, WY = torso[1] + 0.20, WZ = Z + 0.10;
+  P.push({ m: 'trim', g: 'box', bone: 'Torso', p: [WX - 0.02, WY + 0.06, WZ + 0.12], s: [0.14, 0.22, 0.30], mirror: true, wear: 0.5 });
+  for (let i = 0; i < 4; i++) {
+    const t = i / 3;
     P.push({
-      m: 'plate', g: 'plate', bone: H,
-      p: [i === 4 ? 0.66 : 0.84, UP_Y[i], UP_Z[i]], s: [0.82, 0.1, 0.64],
-      r: [0, 0, Math.PI / 2 - 0.42], mirror: true, wear: 0.55,
+      m: 'plate', g: 'blade', bone: 'Torso',
+      p: [WX + i * 0.035, WY - 0.30 - t * 0.05, WZ - 0.06 - t * 0.13],
+      s: [0.07, 0.60 - t * 0.09, 0.30 - t * 0.04],
+      r: [-2.62 - t * 0.10, 0, 0], mirror: true, wear: 0.45 + t * 0.2,
     });
   }
-  const LO_Z = [1.0, 0.3, -0.4];
-  const LO_Y = [1.95, 2.05, 2.1];
-  for (let i = 0; i < LO_Z.length; i++) {
+  // primaries: three short quills off the folded tip, swept further back
+  for (let i = 0; i < 3; i++) {
     P.push({
-      m: 'plate', g: 'plate', bone: H,
-      p: [0.9, LO_Y[i], LO_Z[i]], s: [0.72, 0.1, 0.6],
-      r: [0, 0, Math.PI / 2 - 0.12], mirror: true, wear: 0.6,
+      m: 'lacquer', g: 'blade', bone: 'Torso',
+      p: [WX + 0.11, WY - 0.70 - i * 0.02, WZ - 0.24 - i * 0.09],
+      s: [0.05, 0.28, 0.13], r: [-2.42 - i * 0.10, 0, 0], mirror: true, wear: 0.8,
     });
   }
-  P.push({ m: 'trim', g: 'seg', bone: H, a: [0.9, 2.32, 1.5], b: [0.9, 2.42, -0.9], w: 0.07, d: 0.09, mirror: true, wear: 0.6 });
-  // thigh armour (the mirror lands on the right leg's own bone, which is not
-  // the `L`/`R` swap of this rig's names: `L_Upleg_jnt_0_012` vs `R_..._04`)
-  P.push({
-    m: 'plate', g: 'plate', bone: 'L_Upleg_jnt_0_', boneMirror: 'R_Upleg_jnt_0_',
-    p: [1.25, 1.85, 1.05], s: [0.95, 0.11, 0.85], r: [0, 0, Math.PI / 2 - 0.1], mirror: true, wear: 0.5,
-  });
-  P.push({
-    m: 'lacquer', g: 'plate', bone: 'L_Upleg_jnt_0_', boneMirror: 'R_Upleg_jnt_0_',
-    p: [1.18, 1.25, 1.1], s: [0.6, 0.09, 0.55], r: [0, 0, Math.PI / 2 + 0.25], mirror: true, wear: 0.55,
-  });
-  // the FRONT of the carapace — the face a 3/4 view and an approaching player
-  // actually see: a brow plate over the eye pod and two swept cheek guards
-  P.push({ m: 'plate', g: 'plate', bone: H, p: [0, 2.12, 2.12], s: [1.05, 0.1, 0.78], r: [Math.PI / 2 - 0.35, 0, 0], wear: 0.5 });
-  P.push({ m: 'lacquer', g: 'plate', bone: H, p: [0.5, 1.72, 2.0], s: [0.7, 0.09, 0.62], r: [Math.PI / 2 - 0.2, 0.55, 0], mirror: true, wear: 0.55 });
-  // eye pod: cheeks and a chin plate under the sensor
-  P.push({ m: 'plate', g: 'plate', bone: 'Neck_Bone_7_', p: [0.31, 1.22, 1.8], s: [0.62, 0.08, 0.7], r: [0, 0, Math.PI / 2], mirror: true, wear: 0.5 });
-  P.push({ m: 'plate', g: 'plate', bone: 'Neck_Bone_7_', p: [0, 0.76, 1.85], s: [0.5, 0.08, 0.7], wear: 0.55 });
-  // the red dorsal strip — "Redeye" from behind, where the sensor is hidden
-  P.push({ m: 'trim', g: 'box', bone: H, p: [0, 3.62, 0.0], s: [0.2, 0.06, 1.3], wear: 0.7 });
-  P.push({ m: 'sensor', g: 'box', bone: H, p: [0, 3.66, 0.0], s: [0.1, 0.04, 1.1], wear: 0.2 });
+
+  /* --------------------- NECK, SKULL, CREST -------------------------- */
+  // The neck is drawn TWICE across the joint — the lower half on `Neck`, an
+  // overlapping collar on `Head` — so head-turn can never open a seam between
+  // the skull and the body (it did: the first draft's crest floated a head's
+  // width clear of the neck the moment the Idle clip moved).
+  P.push({ m: 'muscle', g: 'seg', bone: 'Neck', a: [0, torso[1] + 0.28, Z + 0.22], b: [0, neck[1] + 0.06, neck[2] + 0.02], w: 0.21, d: 0.23, k: 1.20 });
+  P.push({ m: 'plate', g: 'seg', bone: 'Neck', a: [0, torso[1] + 0.34, Z + 0.18], b: [0, neck[1] + 0.10, neck[2] - 0.02], w: 0.17, d: 0.18, k: 1.15, wear: 0.55 });
+  P.push({ m: 'plate', g: 'seg', bone: 'Head', a: [0, neck[1] - 0.08, neck[2] - 0.02], b: [0, head[1] + 0.10, head[2] + 0.02], w: 0.19, d: 0.20, k: 1.25, wear: 0.5 });
+  const HY = head[1] + 0.12;
+  P.push({ m: 'plate', g: 'wedge', bone: 'Head', p: [0, HY, head[2] + 0.12], s: [0.28, 0.28, 0.44], r: [0.20, 0, 0], wear: 0.6 });
+  P.push({ m: 'plate', g: 'box', bone: 'Head', p: [0.13, HY - 0.02, head[2] + 0.08], s: [0.06, 0.20, 0.34], mirror: true, wear: 0.65 });
+  // CREST: the tall swept blade that names the silhouette
+  P.push({ m: 'lacquer', g: 'blade', bone: 'Head', p: [0, HY + 0.26, head[2] - 0.09], s: [0.06, 0.44, 0.34], r: [-0.55, 0, 0], wear: 0.8 });
+  P.push({ m: 'lacquer', g: 'blade', bone: 'Head', p: [0.09, HY + 0.18, head[2] - 0.11], s: [0.05, 0.27, 0.22], r: [-0.60, 0, -0.30], mirror: true, wear: 0.85 });
+  // beak
+  P.push({ m: 'lacquer', g: 'cone', bone: 'Head', p: [0, HY - 0.09, head[2] + 0.44], s: [0.16, 0.42, 0.18], r: [Math.PI / 2 + 0.22, 0, 0], wear: 0.7 });
+  P.push({ m: 'muscle', g: 'box', bone: 'Head', p: [0, HY - 0.16, head[2] + 0.26], s: [0.19, 0.08, 0.30], r: [0.20, 0, 0] });
+  P.push({ m: 'sensor', g: 'ico', bone: 'Head', p: [0.10, HY + 0.04, head[2] + 0.20], s: [0.07, 0.07, 0.07], mirror: true });
+  // alarm antenna mast (the head component socket lands on this)
+  P.push({ m: 'trim', g: 'tube', bone: 'Head', p: [0, HY + 0.28, head[2] - 0.02], s: [0.05, 0.24, 0.05], r: [-0.25, 0, 0] });
+  return P;
+}
+
+/**
+ * GLINTHAWK — roster-v2 §4: a heavy scavenger BIRD, and the one thing it must
+ * have is WINGS: a spanned surface on each side, not a bare armature.
+ *
+ * ROUND-4 FIX ROUND 1. The Round-4 shell was three narrow blades per side over
+ * a see-through sculpt and `V26` read the result as "a sphere with four flat
+ * rectangular fins". The wing is now ONE spanned plane per side, built from
+ * the sculpt's own arm chain (`ShoulderL -> UpperArmL -> LowerArmL -> HandL`,
+ * read live so it lands on the bones that flap it) with a leading-edge spar
+ * and primaries off the tip — and the armature underneath is retired.
+ */
+export function GLINTHAWK_SHELL(m) {
+  const P = [];
+  const root = boneBodyPos(m, 'Root', [0, 0.95, 0]);
+  const y = root[1];
+  const B = 'Root';                          // one rigid bird on the root bone
+  const span = 2.6;                          // half-span, metres
+
+  // --- WINGS: ONE spanned surface per side. Round 4 built three narrow
+  // blades per side off the arm chain and read as "a sphere with four flat
+  // rectangular fins"; worse, the blades were authored from whatever pose the
+  // arm bones happened to be in at spawn, so they scattered. A wing is a
+  // plane: inner bay, outer bay, swept primaries, and a leading-edge spar.
+  // Three spanwise panels with a falling chord and a swept leading edge, so
+  // the plan-form is a WING and not a plank; fix round 1's two big rectangles
+  // plus a 2.55 m spar rod read as scaffolding at any angle off dead-side-on.
+  // DIHEDRAL. A flat wing is edge-on and invisible in the side profile V26
+  // grades from — the fix-round-1 shot could only show a wing by staging the
+  // bird obliquely, which a judge (rightly) called unverifiable. A hovering
+  // scavenger holds its wings in a shallow V, and a V projects as a long
+  // diagonal plane from the side: the wing is legible at every angle.
+  const DIH = 0.26;
+  const dy = (x) => Math.tan(DIH) * x;
+  P.push({ m: 'plate', g: 'box', p: [0.72, y + 0.09 + dy(0.72), -0.02], s: [1.05, 0.09, 1.45], r: [0, 0.06, DIH], mirror: true, wear: 0.45 });
+  P.push({ m: 'plate', g: 'box', p: [1.68, y + 0.05 + dy(1.68), -0.30], s: [0.95, 0.075, 1.10], r: [0, 0.22, DIH], mirror: true, wear: 0.5 });
+  P.push({ m: 'plate', g: 'box', p: [2.48, y + 0.01 + dy(2.48), -0.68], s: [0.75, 0.06, 0.74], r: [0, 0.40, DIH], mirror: true, wear: 0.55 });
+  // leading edge: a swept spar BURIED IN the wing's front rim, not a rod
+  // slung under it
+  P.push({ m: 'trim', g: 'box', p: [0.72, y + 0.13 + dy(0.72), 0.66], s: [1.05, 0.11, 0.16], r: [0, 0.06, DIH], mirror: true, wear: 0.7 });
+  P.push({ m: 'trim', g: 'box', p: [1.68, y + 0.09 + dy(1.68), 0.14], s: [0.95, 0.10, 0.15], r: [0, 0.22, DIH], mirror: true, wear: 0.7 });
+  P.push({ m: 'trim', g: 'box', p: [2.48, y + 0.05 + dy(2.48), -0.36], s: [0.75, 0.09, 0.14], r: [0, 0.40, DIH], mirror: true, wear: 0.7 });
+  for (let i = 0; i < 4; i++) {
+    P.push({
+      m: 'lacquer', g: 'blade', p: [2.62 + i * 0.05, y + dy(2.62), -1.02 - i * 0.28],
+      s: [0.90 - i * 0.14, 0.05, 0.26], r: [0, 0.44 + i * 0.15, DIH], mirror: true, wear: 0.7,
+    });
+  }
+  // shoulder blisters where the wings leave the body
+  P.push({ m: 'muscle', g: 'ico', p: [0.34, y + 0.14, -0.02], s: [0.36, 0.38, 0.62], mirror: true });
+
+  // --- BODY: deep keel, plated back, hooked beak, tail fan, tucked talons
+  P.push({ m: 'plate', g: 'wedge', p: [0, y + 0.02, 0.18], s: [0.62, 0.66, 1.45], r: [0.05, 0, 0], wear: 0.45 });
+  P.push({ m: 'muscle', g: 'ico', p: [0, y - 0.20, 0.02], s: [0.56, 0.48, 1.20] });
+  P.push({ m: 'plate', g: 'box', p: [0, y + 0.30, -0.30], s: [0.50, 0.22, 1.10], wear: 0.55 });
+  // neck + skull, thrust forward the way a scavenger bird carries it
+  P.push({ m: 'muscle', g: 'seg', a: [0, y + 0.22, 0.55], b: [0, y + 0.30, 1.00], w: 0.30, d: 0.32, k: 1.15 });
+  P.push({ m: 'plate', g: 'wedge', p: [0, y + 0.32, 1.12], s: [0.36, 0.34, 0.50], r: [0.18, 0, 0], wear: 0.6 });
+  P.push({ m: 'lacquer', g: 'cone', p: [0, y + 0.22, 1.48], s: [0.20, 0.52, 0.22], r: [Math.PI / 2 + 0.30, 0, 0], wear: 0.8 });
+  P.push({ m: 'sensor', g: 'ico', p: [0.12, y + 0.40, 1.14], s: [0.09, 0.09, 0.09], mirror: true });
+  // tail fan
+  for (let i = 0; i < 3; i++) {
+    P.push({
+      m: 'plate', g: 'box', p: [i * 0.20, y + 0.04, -1.25 - i * 0.05],
+      s: [0.36, 0.05, 0.95], r: [0, -i * 0.26, 0], mirror: i > 0, wear: 0.6,
+    });
+  }
+  // talons folded under the keel
+  P.push({ m: 'trim', g: 'tube', p: [0.22, y - 0.42, 0.30], s: [0.09, 0.44, 0.09], r: [0.75, 0, 0], mirror: true });
+  P.push({ m: 'lacquer', g: 'fang', p: [0.22, y - 0.62, 0.48], s: [0.06, 0.20, 0.06], r: [Math.PI * 0.62, 0, 0], mirror: true, wear: 0.9 });
+  for (const piece of P) piece.bone = B;
   return P;
 }
