@@ -28,6 +28,16 @@ import { CSM } from 'three/examples/jsm/csm/CSM.js';
  *   engine.onAfterRender[]                  callbacks run right after the composer
  *   engine.perfReset() / engine.perfSnapshot(n)   honest per-frame stats (perf-tech-02)
  *   engine.warmUp(scene, camera)            shader pre-compile (perf-tech-10)
+ *
+ * ROUND 5 (engine-gpu W0a) — render-target measurement hooks, gate A-rt-ledger,
+ * docs/ROUND5-ENGINE.md. On demand only: nothing here runs per frame.
+ *   engine.renderTargetLedger()              every render target -> GPU bytes
+ *   engine.registerRenderTarget(owner, rt)   a lane's own target (held weakly; survives setSize)
+ *   engine.unregisterRenderTarget(rt)
+ *   engine.trackRenderTargets(on)            measurement mode: remember every bound target
+ *   engine.glTally                           `?rtTally=1` only: GL allocation tally from boot (census)
+ * PMREMGenerator outputs are remembered by texture (WeakRef to the target) so
+ * the ledger counts scene.environment with the depth renderbuffer fromScene made.
  */
 
 /** Quality tiers (perf-tech-05). `?q=low|medium|high|ultra`, default high. */
@@ -285,6 +295,217 @@ class ScenePass extends Pass {
 
 const _wp = new THREE.Vector3();
 
+/** Bytes per texel of a texture as the GPU stores it (render-target ledger). */
+function _texelBytes(t) {
+  if (!t) return 0;
+  const T = THREE;
+  if (t.format === T.DepthFormat) return t.type === T.UnsignedShortType ? 2 : 4;
+  if (t.format === T.DepthStencilFormat) return t.type === T.FloatType ? 8 : 4;
+  if (t.type === T.UnsignedShort4444Type || t.type === T.UnsignedShort5551Type) return 2;
+  if (t.type === T.UnsignedInt248Type || t.type === T.UnsignedInt5999Type) return 4;
+  const ch = t.format === T.RedFormat || t.format === T.RedIntegerFormat || t.format === T.AlphaFormat ? 1
+    : t.format === T.RGFormat || t.format === T.RGIntegerFormat ? 2 : 4;   // RGB is padded to 4
+  const by = t.type === T.HalfFloatType || t.type === T.ShortType || t.type === T.UnsignedShortType ? 2
+    : t.type === T.FloatType || t.type === T.IntType || t.type === T.UnsignedIntType ? 4 : 1;
+  return ch * by;
+}
+
+/** A mipmapped texture holds 4/3 of its base level. */
+function _mipFactor(t) {
+  return t && t.generateMipmaps && t.minFilter !== THREE.NearestFilter && t.minFilter !== THREE.LinearFilter ? 4 / 3 : 1;
+}
+
+/**
+ * PMREM outputs (render-target ledger). PMREMGenerator.fromScene() returns a
+ * cubeUV render target that carries a DEPTH renderbuffer (three r169 sets
+ * `depthBuffer = true` on it before rendering the cube faces). A caller that
+ * keeps only `.texture` (environment.js does, for scene.environment) leaves the
+ * ledger no target to read that depth from, and the 768x1024 DEPTH_COMPONENT24
+ * (3,145,728 B) went uncounted. Every PMREM output is remembered here by its
+ * texture; the target only through a WeakRef, so this never keeps it alive.
+ * Runs once per PMREM call (boot), never per frame.
+ */
+const _pmremOut = new WeakMap();
+{
+  const P = THREE.PMREMGenerator.prototype;
+  if (!Object.prototype.hasOwnProperty.call(P, '__ledgerWrapped')) {
+    for (const k of ['fromScene', 'fromEquirectangular', 'fromCubemap']) {
+      const orig = P[k];
+      if (typeof orig !== 'function') continue;
+      P[k] = function () {
+        const rt = orig.apply(this, arguments);
+        if (rt && rt.isRenderTarget && rt.texture) {
+          _pmremOut.set(rt.texture, { ref: new WeakRef(rt), via: k, width: rt.width, height: rt.height,
+            depthBuffer: !!rt.depthBuffer && !rt.depthTexture, stencil: !!rt.stencilBuffer });
+        }
+        return rt;
+      };
+    }
+    Object.defineProperty(P, '__ledgerWrapped', { value: true });
+  }
+}
+
+/**
+ * MEASUREMENT MODE `?rtTally=1` ONLY (gate A-rt-ledger-census). Wraps the
+ * WebGL2 prototype BEFORE the renderer creates its context, so every GL
+ * allocation of the page is recorded from the first call: texture levels
+ * (texImage*, texStorage*, compressed*, copyTexImage2D, generateMipmap),
+ * renderbuffer storage (incl. multisample), framebuffer attachments, explicit
+ * deletes. Raw call parameters only (internal format, size, samples, levels):
+ * the census does its own byte arithmetic from GL enums, independent of the
+ * ledger's, and attributes every live attachment to a ledger row, so a target
+ * the ledger omits cannot pass. While installed it holds every GL object that
+ * was not explicitly deleted (an object dropped without dispose() stays
+ * counted: the conservative reading). Never installed in a normal run. Its
+ * per-call bookkeeping writes into slots created on the first upload of each
+ * level, so steady-state frames allocate nothing here either.
+ */
+function _installGlTally() {
+  const G = typeof window !== 'undefined' ? window.WebGL2RenderingContext : null;
+  if (!G || window.__rtTally) return window.__rtTally || null;
+  const P = G.prototype;
+  const tally = { tex: new Set(), rb: new Set(), fb: new Set(), info: new WeakMap(), orphanCalls: 0, since: performance.now() };
+  const states = new WeakMap();
+  const st = (gl) => {
+    let s = states.get(gl);
+    if (!s) {
+      const n = 32;
+      s = { unit: 0, b2d: new Array(n).fill(null), bcube: new Array(n).fill(null), b3d: new Array(n).fill(null),
+        b2da: new Array(n).fill(null), rb: null, draw: null, read: null };
+      states.set(gl, s);
+    }
+    return s;
+  };
+  const TEX_2D = 0x0DE1, CUBE = 0x8513, CUBE_X = 0x8515, TEX_3D = 0x806F, TEX_2DA = 0x8C1A;
+  const FB = 0x8D40, DRAW_FB = 0x8CA9, READ_FB = 0x8CA8;
+  const texFor = (gl, target) => {
+    const s = st(gl);
+    if (target === TEX_2D) return s.b2d[s.unit];
+    if (target === CUBE || (target >= CUBE_X && target < CUBE_X + 6)) return s.bcube[s.unit];
+    if (target === TEX_3D) return s.b3d[s.unit];
+    if (target === TEX_2DA) return s.b2da[s.unit];
+    return null;
+  };
+  const slot = (info, face, level) => {
+    const k = face * 32 + level;
+    let v = info.lv[k];
+    if (!v) { v = info.lv[k] = { face, level, ifmt: 0, fmt: 0, type: 0, w: 0, h: 0, d: 1, bytes: -1 }; }
+    return v;
+  };
+  const level = (gl, target, lvl, ifmt, fmt, type, w, h, d, bytes) => {
+    const obj = texFor(gl, target);
+    const info = obj && tally.info.get(obj);
+    if (!info) { tally.orphanCalls++; return; }
+    const face = target >= CUBE_X && target < CUBE_X + 6 ? target - CUBE_X : 0;
+    const v = slot(info, face, lvl);
+    v.ifmt = ifmt; v.fmt = fmt; v.type = type; v.w = w; v.h = h; v.d = d; v.bytes = bytes;
+  };
+  // Wrappers take named parameters and hand them on one by one (never `arguments` itself, which
+  // would materialise an object per GL call); `orig.apply(this, arguments)` is V8's no-copy path.
+  const wrap = (name, after) => {
+    const orig = P[name];
+    if (typeof orig !== 'function') return;
+    P[name] = function (a0, a1, a2, a3, a4, a5, a6, a7, a8) {
+      const out = orig.apply(this, arguments);
+      after(this, out, arguments.length, a0, a1, a2, a3, a4, a5, a6, a7, a8);
+      return out;
+    };
+  };
+  const srcW = (src) => (src ? src.width || src.videoWidth || src.naturalWidth || src.displayWidth || 0 : 0);
+  const srcH = (src) => (src ? src.height || src.videoHeight || src.naturalHeight || src.displayHeight || 0 : 0);
+  const sizeOf = (v) => (typeof v === 'number' ? v : (v && v.byteLength) || 0);
+  wrap('createTexture', (gl, obj) => {
+    if (!obj) return;
+    const info = { kind: 'tex', obj, lv: [], deleted: false };
+    tally.info.set(obj, info); tally.tex.add(info);
+  });
+  wrap('deleteTexture', (gl, out, n, obj) => {
+    const info = obj && tally.info.get(obj);
+    if (info) { info.deleted = true; tally.tex.delete(info); }
+  });
+  wrap('activeTexture', (gl, out, n, unit) => { st(gl).unit = unit - 0x84C0; });
+  wrap('bindTexture', (gl, out, n, t, obj) => {
+    const s = st(gl);
+    if (t === TEX_2D) s.b2d[s.unit] = obj; else if (t === CUBE) s.bcube[s.unit] = obj;
+    else if (t === TEX_3D) s.b3d[s.unit] = obj; else if (t === TEX_2DA) s.b2da[s.unit] = obj;
+  });
+  // texImage2D(target, level, ifmt, w, h, border, format, type, ...) or (target, level, ifmt, format, type, source)
+  wrap('texImage2D', (gl, out, n, t, l, ifmt, a3, a4, a5, a6, a7) => {
+    if (n >= 8) level(gl, t, l, ifmt, a6, a7, a3, a4, 1, -1);
+    else level(gl, t, l, ifmt, a3, a4, srcW(a5), srcH(a5), 1, -1);
+  });
+  wrap('texImage3D', (gl, out, n, t, l, ifmt, w, h, d, border, fmt, type) => level(gl, t, l, ifmt, fmt, type, w, h, d, -1));
+  wrap('copyTexImage2D', (gl, out, n, t, l, ifmt, x, y, w, h) => level(gl, t, l, ifmt, 0, 0, w, h, 1, -1));
+  wrap('compressedTexImage2D', (gl, out, n, t, l, ifmt, w, h, border, data) => level(gl, t, l, ifmt, 0, 0, w, h, 1, sizeOf(data)));
+  wrap('compressedTexImage3D', (gl, out, n, t, l, ifmt, w, h, d, border, data) => level(gl, t, l, ifmt, 0, 0, w, h, d, sizeOf(data)));
+  wrap('texStorage2D', (gl, out, n, target, levels, ifmt, w, h) => {
+    for (let f = 0; f < (target === CUBE ? 6 : 1); f++) {
+      for (let l = 0; l < levels; l++) {
+        level(gl, target === CUBE ? CUBE_X + f : target, l, ifmt, 0, 0, Math.max(1, w >> l), Math.max(1, h >> l), 1, -1);
+      }
+    }
+  });
+  wrap('texStorage3D', (gl, out, n, target, levels, ifmt, w, h, d) => {
+    for (let l = 0; l < levels; l++) {
+      level(gl, target, l, ifmt, 0, 0, Math.max(1, w >> l), Math.max(1, h >> l), target === TEX_3D ? Math.max(1, d >> l) : d, -1);
+    }
+  });
+  wrap('generateMipmap', (gl, out, n, target) => {
+    const obj = texFor(gl, target);
+    const info = obj && tally.info.get(obj);
+    if (!info) { tally.orphanCalls++; return; }
+    for (let f = 0; f < (target === CUBE ? 6 : 1); f++) {
+      const base = info.lv[f * 32];
+      if (!base) continue;
+      for (let l = 1, w = base.w, h = base.h, d = base.d; (w > 1 || h > 1 || (target === TEX_3D && d > 1)) && l < 32; l++) {
+        w = Math.max(1, w >> 1); h = Math.max(1, h >> 1); if (target === TEX_3D) d = Math.max(1, d >> 1);
+        const v = slot(info, f, l);
+        v.ifmt = base.ifmt; v.fmt = base.fmt; v.type = base.type; v.w = w; v.h = h; v.d = d; v.bytes = -1;
+      }
+    }
+  });
+  wrap('createRenderbuffer', (gl, obj) => {
+    if (!obj) return;
+    const info = { kind: 'rb', obj, ifmt: 0, w: 0, h: 0, samples: 0, deleted: false };
+    tally.info.set(obj, info); tally.rb.add(info);
+  });
+  wrap('deleteRenderbuffer', (gl, out, n, obj) => {
+    const info = obj && tally.info.get(obj);
+    if (info) { info.deleted = true; tally.rb.delete(info); }
+  });
+  wrap('bindRenderbuffer', (gl, out, n, t, obj) => { st(gl).rb = obj; });
+  const storage = (gl, samples, ifmt, w, h) => {
+    const obj = st(gl).rb, info = obj && tally.info.get(obj);
+    if (!info) { tally.orphanCalls++; return; }
+    info.samples = samples; info.ifmt = ifmt; info.w = w; info.h = h;
+  };
+  wrap('renderbufferStorage', (gl, out, n, t, ifmt, w, h) => storage(gl, 0, ifmt, w, h));
+  wrap('renderbufferStorageMultisample', (gl, out, n, t, samples, ifmt, w, h) => storage(gl, samples, ifmt, w, h));
+  wrap('createFramebuffer', (gl, obj) => {
+    if (!obj) return;
+    const info = { kind: 'fb', obj, att: {}, deleted: false };
+    tally.info.set(obj, info); tally.fb.add(info);
+  });
+  wrap('deleteFramebuffer', (gl, out, n, obj) => {
+    const info = obj && tally.info.get(obj);
+    if (info) { info.deleted = true; tally.fb.delete(info); }
+  });
+  wrap('bindFramebuffer', (gl, out, n, t, fb) => {
+    const s = st(gl);
+    if (t === FB) { s.draw = fb; s.read = fb; } else if (t === DRAW_FB) s.draw = fb; else if (t === READ_FB) s.read = fb;
+  });
+  const attach = (gl, target, attachment, obj) => {
+    const s = st(gl), fb = target === READ_FB ? s.read : s.draw, info = fb && tally.info.get(fb);
+    if (!info) { if (fb) tally.orphanCalls++; return; }
+    info.att[attachment] = obj ? tally.info.get(obj) || null : null;
+  };
+  wrap('framebufferTexture2D', (gl, out, n, t, attachment, textarget, tex) => attach(gl, t, attachment, tex));
+  wrap('framebufferTextureLayer', (gl, out, n, t, attachment, tex) => attach(gl, t, attachment, tex));
+  wrap('framebufferRenderbuffer', (gl, out, n, t, attachment, rbt, rb) => attach(gl, t, attachment, rb));
+  window.__rtTally = tally;
+  return tally;
+}
+
 /** Does this material put light into the bloom chain? (allocation-free) */
 function _glowsOne(m) {
   if (!m) return false;
@@ -310,6 +531,9 @@ export class Engine {
     this.tier = tier;
     /** Screenshots/gates must be bit-deterministic: no dynamic resolution there. */
     this.drsEnabled = tier.drs && opts.dynamicResolution !== false;
+
+    // measurement mode only (gate A-rt-ledger-census): GL allocation tally from the context's first call
+    this.glTally = typeof location !== 'undefined' && /[?&]rtTally=1(&|$)/.test(location.search) ? _installGlTally() : null;
 
     this.renderer = new THREE.WebGLRenderer({
       // AA is the composer's job now (MSAA render target + SMAA) — canvas AA
@@ -596,6 +820,180 @@ export class Engine {
     });
     this.sizeCulled = 0;
     return n;
+  }
+
+  // ------------------------------------------------- render-target ledger
+
+  /**
+   * A lane that owns a render target outside the post chain and the lights
+   * (a reflection, an impostor bake, light shafts, a map canvas) registers it
+   * so the ledger names it.
+   *
+   * The registry holds the target WEAKLY (owner in a WeakMap, enumeration
+   * through WeakRefs) and does NOT listen for 'dispose': three's
+   * RenderTarget.setSize() dispatches 'dispose' on every size change, so a
+   * dispose listener silently dropped every target that resizes (a 2x2
+   * target sized on first use, a DPR change). A disposed target stays named
+   * and reads `allocated: false` (0 bytes summed) until it is bound again at
+   * its new size, unregistered, or garbage-collected — the registry never
+   * keeps a target alive.
+   */
+  registerRenderTarget(owner, rt) {
+    if (!rt || !rt.isRenderTarget) return rt;
+    const owners = this._rtOwners || (this._rtOwners = new WeakMap());
+    const refs = this._rtRefs || (this._rtRefs = new Set());
+    const had = owners.get(rt);
+    if (!had) refs.add(new WeakRef(rt));
+    owners.set(rt, String(owner));
+    return rt;
+  }
+
+  /** Drop a registered target from the ledger (e.g. before handing it to another owner). */
+  unregisterRenderTarget(rt) {
+    const owners = this._rtOwners;
+    if (!rt || !owners || !owners.has(rt)) return false;
+    owners.delete(rt);
+    for (const ref of this._rtRefs) if (ref.deref() === rt) { this._rtRefs.delete(ref); break; }
+    return true;
+  }
+
+  /**
+   * Measurement mode: while on, every target bound through setRenderTarget is
+   * remembered, so the ledger can name targets nobody registered. Off restores
+   * the renderer's own method and drops the set (no reference outlives it).
+   */
+  trackRenderTargets(on) {
+    const r = this.renderer;
+    if (on && !this._rtSeen) {
+      const seen = this._rtSeen = new Set();
+      const orig = this._rtOrigSet = r.setRenderTarget;
+      r.setRenderTarget = function (t, a, b) { if (t) seen.add(t); return orig.call(this, t, a, b); };
+    } else if (!on && this._rtSeen) {
+      r.setRenderTarget = this._rtOrigSet;
+      this._rtSeen = null;
+      this._rtOrigSet = null;
+    }
+    return !!this._rtSeen;
+  }
+
+  /**
+   * Every render target this frame can touch, with the GPU bytes its
+   * allocation costs (gate A-rt-ledger). Sources: the post chain (the scene
+   * target and the ping-pong pair, then every pass's own targets found by a
+   * property scan, so a new pass is counted without editing this), every
+   * light's shadow map (CSM cascades named), the PMREM target behind
+   * scene.environment / scene.background (with its depth renderbuffer, also
+   * after its owner dropped the target object), registered targets, and
+   * targets seen while `trackRenderTargets(true)`. Each row carries its
+   * `target` (null for a texture-only row) and `texture`, for the census.
+   *
+   * Bytes are what the allocation holds: colour texture(s) x mips x faces,
+   * the multisampled colour and depth renderbuffers (x samples) of an MSAA
+   * target, the depth renderbuffer or depth texture. DEPTH_COMPONENT24 counts
+   * 4 bytes. `allocated` is false for a target the GPU has never seen (a pass
+   * that has been off since boot); those bytes are listed but not summed.
+   * The canvas drawing buffer is reported apart (`canvasBytes`): it is not a
+   * three render target. 1 MB = 1e6 bytes, the unit of docs/ROUND5-PLAN §4.4.
+   */
+  renderTargetLedger() {
+    const r = this.renderer;
+    const rows = [];
+    const seen = new Set();
+    const add = (owner, rt) => {
+      if (!rt || !rt.isRenderTarget || seen.has(rt)) return;
+      seen.add(rt);
+      const props = r.properties.has(rt) ? r.properties.get(rt) : null;
+      const allocated = !!(props && props.__webglFramebuffer !== undefined);
+      const px = rt.width * rt.height * (rt.isWebGLCubeRenderTarget ? 6 : 1) * Math.max(1, rt.depth || 1);
+      // three's MSAA path (WebGLTextures.setupRenderTarget): renderbuffers x
+      // samples unless the tile-memory render-to-texture extension takes it
+      const rtt = r.extensions.has('WEBGL_multisampled_render_to_texture') && props?.__useRenderToTexture !== false;
+      const msaa = rt.samples > 0 && !rtt ? Math.min(r.capabilities.maxSamples, rt.samples) : 0;
+      let color = 0;
+      for (const t of rt.textures || [rt.texture]) color += px * _texelBytes(t) * _mipFactor(t);
+      // a depth renderbuffer is DEPTH_COMPONENT24 or DEPTH24_STENCIL8: 4 bytes
+      const depthBpp = rt.depthTexture ? _texelBytes(rt.depthTexture) : 4;
+      const parts = {
+        color,
+        msaaColor: msaa ? rt.width * rt.height * msaa * _texelBytes(rt.texture) : 0,
+        msaaDepth: msaa && rt.depthBuffer ? rt.width * rt.height * msaa * depthBpp : 0,
+        depth: rt.depthBuffer ? px * depthBpp : 0,
+      };
+      const bytes = parts.color + parts.msaaColor + parts.msaaDepth + parts.depth;
+      rows.push({ owner, name: rt.texture?.name || '', width: rt.width, height: rt.height, samples: msaa,
+        type: rt.texture?.type, format: rt.texture?.format, depth: rt.depthTexture ? 'texture' : rt.depthBuffer ? 'renderbuffer' : 'none',
+        parts, bytes, mb: +(bytes / 1e6).toFixed(3), allocated, target: rt, texture: rt.texture || null });
+    };
+    add('post:scene', this.sceneTarget);
+    add('post:pingA', this.composer.renderTarget2);
+    add('post:pingB', this.postTarget);
+    for (const pass of this.composer.passes) {
+      const pn = pass.constructor?.name?.replace(/^_/, '') || 'Pass';
+      for (const k of Object.keys(pass)) {
+        const v = pass[k];
+        if (v?.isRenderTarget) add(`post:${pn}.${k}`, v);
+        else if (Array.isArray(v)) for (let i = 0; i < v.length; i++) if (v[i]?.isRenderTarget) add(`post:${pn}.${k}[${i}]`, v[i]);
+      }
+    }
+    const csmLights = this.csm?.lights || [];
+    this.scene.traverse((o) => {
+      if (!o.isLight || !o.shadow?.map) return;
+      const ci = csmLights.indexOf(o);
+      add(ci >= 0 ? `shadow:csm[${ci}]` : `shadow:${o.name || o.type}`, o.shadow.map);
+    });
+    // A texture a lane's REGISTERED target owns (world-sky registering its PMREM target as 'env:pmrem')
+    // is counted once, on the registered row below, never again as scene.environment.
+    const registeredTex = new Set();
+    if (this._rtRefs) {
+      for (const ref of this._rtRefs) {
+        const rt = ref.deref();
+        if (rt && this._rtOwners.get(rt)) for (const t of rt.textures || [rt.texture]) registeredTex.add(t);
+      }
+    }
+    for (const k of ['environment', 'background']) {
+      const t = this.scene[k];
+      if (!t?.isRenderTargetTexture || seen.has(t) || registeredTex.has(t)) continue;
+      seen.add(t);
+      // A PMREM output: count the TARGET that produced it (colour + its depth renderbuffer: fromScene
+      // renders the cube faces with depth) while that target object is alive...
+      const pm = _pmremOut.get(t);
+      const src = pm && pm.ref.deref();
+      if (src && !seen.has(src)) { add(`env:${k}`, src); rows[rows.length - 1].pmrem = pm.via; continue; }
+      // ...and after the caller dropped it (environment.js keeps only .texture; three never deletes the
+      // depth renderbuffer of a target nobody disposes), the colour from the texture plus the depth
+      // the target was produced with. Not a PMREM output: the texture alone.
+      const w = t.image?.width || 0, h = t.image?.height || 0;
+      const color = w * h * _texelBytes(t);
+      const depth = pm && pm.depthBuffer ? w * h * 4 : 0;
+      const bytes = color + depth;
+      const props = r.properties.has(t) ? r.properties.get(t) : null;
+      rows.push({ owner: `env:${k}`, name: t.name || 'PMREM', width: w, height: h, samples: 0,
+        type: t.type, format: t.format, depth: depth ? 'renderbuffer (producing target dropped by its owner)' : 'none',
+        parts: { color, msaaColor: 0, msaaDepth: 0, depth }, pmrem: pm ? pm.via : null,
+        bytes, mb: +(bytes / 1e6).toFixed(3), allocated: !!props?.__webglTexture, target: null, texture: t });
+    }
+    if (this._rtRefs) {
+      for (const ref of this._rtRefs) {
+        const rt = ref.deref();
+        const owner = rt && this._rtOwners.get(rt);
+        if (!owner) { this._rtRefs.delete(ref); continue; }   // collected or unregistered
+        add(owner, rt);
+      }
+    }
+    if (this._rtSeen) for (const rt of this._rtSeen) add('unregistered', rt);
+    let total = 0, provisioned = 0;
+    for (const row of rows) { if (row.allocated) total += row.bytes; else provisioned += row.bytes; }
+    const gl = r.getContext();
+    const attrs = gl.getContextAttributes?.() || {};
+    const canvasBytes = gl.drawingBufferWidth * gl.drawingBufferHeight
+      * (4 + (attrs.depth ? 4 : 0) + (attrs.antialias ? 4 * 4 + (attrs.depth ? 4 * 4 : 0) : 0));
+    return {
+      rows, bytes: total, mb: +(total / 1e6).toFixed(2), provisionedBytes: provisioned,
+      canvas: { width: gl.drawingBufferWidth, height: gl.drawingBufferHeight, bytes: canvasBytes, mb: +(canvasBytes / 1e6).toFixed(2) },
+      pixelRatio: +r.getPixelRatio().toFixed(3), quality: this.quality, msaa: this.sceneTarget.samples,
+      gtao: !!this.gtao.enabled, gtaoScale: this.tier.gtaoScale, bloom: !!this.bloom.enabled, smaa: !!this.smaa.enabled,
+      tracking: !!this._rtSeen,
+    };
   }
 
   // ------------------------------------------------------------- timeScale
