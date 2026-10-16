@@ -17,9 +17,7 @@ import {
  * frame's `t`, cost one quaternion write each, and allocate nothing.
  *
  * A collapsed transmission pylon leans against the rear leg as the climb, with
- * a plate landing 9 m up — that landing carries the OVERRIDE interactable
- * (`activities.js`), which is the canon reward loop: climb the Tallneck, and
- * the map opens.
+ * a plate landing 9 m up.
  *
  * THE LOOKOUT (`world-11`, 12–15 m)
  * A Nora watch-post on the knoll north-east of the camp at (52, 66): 14.2 m of

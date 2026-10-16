@@ -1,107 +1,23 @@
 import * as THREE from 'three';
-import { Broadhead } from './broadhead.js';
-import { Grazer } from './grazer.js';
-import { Snapmaw } from './snapmaw.js';
-import { Ravager } from './ravager.js';
-import { ShellWalker } from './shellwalker.js';
-import { Corruptor } from './corruptor.js';
-import { Stormbird } from './stormbird.js';
-import { Redeye } from './redeye.js';
-
 /**
- * The expansion species this lane has shipped, keyed by `kind`. Every entry
- * retires a chassis the moment its sculpt is loaded — see
- * `registerExpansionSpecies` at the bottom of this file.
+ * Machine model LOAD + STYLE pass — kind-agnostic (Round 5, instruments-core).
+ *
+ *   loadKindModels(ctx, rows, { onLoaded, onProgress })   one loader for every kind
+ *   styleMachine(root, styleRow)                           the family colour pass
+ *   freezeSkins(root)                                      bind-pose bake of a rigged donor
+ *   MACHINE_SHADOWS                                        the one-caster shadow policy
+ *
+ * `assets.loadExtra()` (src/core/assets.js) owns loading and normalisation;
+ * this module is the per-kind STYLE application plus the bake. It names no
+ * kind: the rows (asset spec, style, bake) live with their owners —
+ * `machines/legacy.js` for the legacy donors, `src/instruments/kinds/*` for
+ * Instrument kinds (generated kinds carry their palette and skip the style).
+ *
+ * STYLE PASS (legacy donors): store-bought sculpts arrive in toy colours. Every
+ * material is desaturated onto a chassis/muscle ramp, metal/rough clamped, and
+ * at most one material per kind becomes a flat emissive sensor that
+ * `Machine._collectEmissive` wires into the eye-state system.
  */
-const EXPANSION_SPECIES = {
-  broadhead: Broadhead,
-  grazer: Grazer,
-  snapmaw: Snapmaw,
-  ravager: Ravager,
-  shellwalker: ShellWalker,
-  corruptor: Corruptor,
-  stormbird: Stormbird,
-  redeye: Redeye,
-  // TALLNECK: not shipped by this lane — it stays on its `behemoth` chassis.
-  // `casting-v4` §4 puts it last ("if budget allows") and §2.8 states why: the
-  // donor is a 49.7 x 11.7 horizontal sauropod with a TWO-JOINT neck, so the
-  // species is a re-proportion job at a scale nothing else in the build uses,
-  // not a rig job. Shipping it half-built would put a 14 m dinosaur in the
-  // valley; the chassis at least walks a docile fixed loop.
-};
-
-/**
- * Machine-variety model STYLE pass (Round 4).
- *
- * Round 3 shipped a second GLTFLoader here plus a verbatim copy of
- * `Assets._normalize` — the duplicated asset pipeline that decision **D8**
- * names as the cost of the frozen-file contract (`perf-tech-12`). Both are
- * gone: `assets.loadExtra()` (src/core/assets.js) owns loading and
- * normalisation for every lane now, and this module is only what it should
- * always have been — the per-species STYLE table plus the `onEntry` hook that
- * applies it.
- *
- * Sources are preprocessed copies in public/models/ (MechanicalHorse merged
- * 480 meshes -> 7, Robocat's display stand excised; see
- * models-staging/MANIFEST.md for licenses).
- *
- * STYLE PASS: the four store-bought sculpts arrive in toy colors. To read as
- * the same machine family as the big four (roster-v2.md §1: white-grey armor
- * plates over dark synthetic muscle, ONE state-colored sensor), every
- * material is desaturated onto a chassis/muscle ramp, metal/rough clamped,
- * and exactly one material per species is turned into a flat emissive sensor
- * that Machine._collectEmissive wires into the EYE_COLORS state system.
- */
-
-const SPECS = {
-  // Orientation contract: the inner wrapper keeps yaw 0 and
-  // each SPECIES passes its facing correction as `yawFix` (holder rotation) —
-  // baking yaw here too would double-rotate (that bug shipped tails-first
-  // striders for about twenty minutes).
-  // horse reads ~1.8 m at the shoulder with the head topping 2.0 (roster 1.8x3)
-  strider:   { url: '/models/strider.glb',   targetHeight: 2.0,  yaw: 0 },
-  scrapper:  { url: '/models/scrapper.glb',  targetHeight: 1.5,  yaw: 0 },
-  // scale by wingspan: 0.64 raw height * (5.5/2.27 span) => targetHeight 1.55
-  glinthawk: { url: '/models/glinthawk.glb', targetHeight: 1.55, yaw: 0 },
-  longleg:   { url: '/models/longleg.gltf',   targetHeight: 4.0,  yaw: 0 },
-
-  /* ---------------- ROUND 4 EXPANSION (casting-v4.md §0) ----------------
-   * Every `targetHeight` below is derived from the roster's LENGTH, not from
-   * its height, because `assets.normalize()` scales on the bbox height: a
-   * 17.97-deep Black Caiman normalised to 0.98 tall IS an 8.03 m croc. The
-   * numbers are `casting-v4.md` §0's table, and `tools/bake-rigs.mjs --report`
-   * re-derives them from the baked bytes.
-   *
-   * ORIENTATION CONTRACT (unchanged): `yaw` stays 0 here and each SPECIES
-   * passes its facing correction as `yawFix` on the holder. Baking it in both
-   * places double-rotates.
-   */
-  broadhead:   { url: '/models/broadhead.glb',   targetHeight: 2.0,  yaw: 0 },
-  grazer:      { url: '/models/grazer.glb',      targetHeight: 2.72, yaw: 0 },
-  snapmaw:     { url: '/models/snapmaw.glb',     targetHeight: 0.98, yaw: 0 },
-  ravager:     { url: '/models/ravager.glb',     targetHeight: 3.66, yaw: 0 },
-  shellwalker: { url: '/models/shellwalker.glb', targetHeight: 2.1,  yaw: 0 },
-  corruptor:   { url: '/models/corruptor.glb',   targetHeight: 2.95, yaw: 0 },
-  stormbird:   { url: '/models/stormbird.glb',   targetHeight: 7.89, yaw: 0 },
-  /**
-   * TALLNECK IS NOT LOADED. Judge finding, fix round 1: "Tallneck is not
-   * shipped but is still cast in both batch-B gates, and its unused 359 KB
-   * donor is loaded at every boot ... EXPANSION_SPECIES has no tallneck entry,
-   * so registerExpansionSpecies never calls registerKind for it and nothing
-   * ever draws it. Dead payload in the one lane whose §4 bar is geometry and
-   * texture growth." The SPECS entry, the EXPANSION_KINDS membership and the
-   * gate cast are gone together, so the GLB is never fetched, never baked and
-   * never held. The `tallneck` KIND still exists on `ai/doctrine.js`'s behemoth
-   * chassis; that is machine-ai's file and machine-ai's call.
-   */
-  /**
-   * REDEYE: zero new asset. The Watcher sculpt is loaded a SECOND time under
-   * its own key rather than aliased (casting-v4 §2.9) so the per-machine
-   * material clones — and the red calm sensor that is the whole point of the
-   * variant — stay separate from the Watcher's.
-   */
-  redeye:      { url: '/models/watcher.glb',     targetHeight: 2.1,  yaw: 0 },
-};
 
 /**
  * Machines cast their silhouette, not their bolt heads (`perf-tech-03`).
@@ -109,69 +25,12 @@ const SPECS = {
  * so the roster ships one caster per model and `rig/lod.js` re-applies the
  * same policy to the per-machine clone.
  */
-const MACHINE_SHADOWS = { minFraction: 0.85, alwaysLargest: 1 };
-for (const k in SPECS) SPECS[k].shadowPolicy = MACHINE_SHADOWS;
+export const MACHINE_SHADOWS = { minFraction: 0.85, alwaysLargest: 1 };
 
 const CHASSIS = new THREE.Color(0xd0d5da); // lacquered plate white-grey
 const MID = new THREE.Color(0x878d95);     // secondary panels
 const MUSCLE = new THREE.Color(0x22262b);  // dark synthetic-muscle underside
 const SENSOR_BASE = new THREE.Color(0x0a0d10);
-
-/** Per-species style config. `sensor(mat)` picks THE eye material. */
-const STYLE = {
-  strider: {},   // no reliable eye material — the species file adds a lens part
-  scrapper: {
-    // mat12: yellow helmet eyes (+ matching accent stripes) become the sensor
-    sensor: (m) => m.color.r > 0.9 && m.color.g > 0.7 && m.color.b < 0.2,
-  },
-  glinthawk: {
-    // "Material": the big red mono-eye
-    sensor: (m) => m.color.r > 0.6 && m.color.g < 0.15 && m.color.b < 0.15,
-  },
-  longleg: { texSat: 0.12, texBright: 1.5 }, // atlas texture -> grey chassis
-
-  /* ---------------- ROUND 4 EXPANSION ----------------
-   * Every one of these is an ANIMAL sculpt in animal colours (a brown bull, a
-   * tan deer, a black caiman, an orange lion, a blue spider, a sand scorpion,
-   * a brown hawk), and `roster-v2 §1` is explicit that the family reads as
-   * white-grey armour plate over dark synthetic muscle with ONE state sensor.
-   * The luminance ramp below does that work; the species files then add the
-   * plate/muscle shell that carries the machine detail.
-   *
-   * `sensor` is deliberately absent on all of them: not one of these donors
-   * has a material that is only the eye (the Bull's `Eye_Black` also paints
-   * the muzzle rim, the Lion's face groups are four tiny colour patches), so
-   * every species file adds its own `lensMesh` part instead — which is also
-   * what lets the socket pass put the sensor exactly where `casting-v4` §2
-   * measured it.
-   */
-  broadhead: { rank: true, underbody: true },
-  grazer: { rank: true, underbody: true },
-  snapmaw: { rank: true, underbody: true, texSat: 0.06, texBright: 0.55 }, // 1024² caiman atlas
-  ravager: { rank: true },        // donor retired under the shell: nothing to tone
-  shellwalker: { rank: true },    // donor retired under the shell
-  corruptor: {
-    /**
-     * THE ONE SPECIES THAT OPTS OUT OF THE FAMILY PALETTE (`roster-v2 §4`:
-     * "matte black chassis"). `tint` replaces the chassis/mid/muscle ramp with
-     * a near-black one plus red trim, which is what `casting-v4` §5.3 asks
-     * `shellMaterials(tint)` for on the shell side.
-     */
-    rank: true,
-    tint: { chassis: 0x2a2b2e, mid: 0x1b1c1f, muscle: 0x0d0e10 },
-    underbody: true,
-    // ...and the same for any MAPPED surface: the ramp only reaches materials
-    // with a flat colour, and a Faro machine that is matte black everywhere
-    // except where it happens to carry a texture is not matte black.
-    texSat: 0.04, texBright: 0.42,
-  },
-  stormbird: { rank: true },      // donor retired under the shell (see stormbird.js)
-  // the Redeye keeps its Watcher donor as the DARK underbody and carries
-  // authored plate over it (rig/shells-expansion.js REDEYE_SHELL): the donor
-  // atlas is near-black under a bronze sheen, and forced to metalness 0.55 it
-  // read as one uniformly dark tangle with no plate at all (judge, residue r0)
-  redeye: { underbody: true },
-};
 
 /** Desaturate a texture toward machine-chassis grey via a canvas redraw. */
 function desatTexture(tex, sat, bright) {
@@ -226,7 +85,7 @@ const _bv = new THREE.Vector3();
  *
  * @returns {number} meshes baked
  */
-function freezeSkins(root) {
+export function freezeSkins(root) {
   const jobs = [];
   root.traverse((o) => { if (o.isSkinnedMesh && o.skeleton && o.geometry) jobs.push(o); });
   if (!jobs.length) return 0;
@@ -423,7 +282,7 @@ const UNDER_MUSCLE = new THREE.Color(0x121519);
 const UNDER_METAL = 0.10;
 const UNDER_ROUGH = 0.90;
 
-function styleMachine(root, style) {
+export function styleMachine(root, style) {
   const seen = new Set();
   // per-species palette override (the Corruptor's matte-black chassis)
   let chassis = style.tint ? new THREE.Color(style.tint.chassis) : CHASSIS;
@@ -500,62 +359,74 @@ function styleMachine(root, style) {
   });
 }
 
-let _promise = null;
-
 /**
- * Load + normalize + style the variety models, injecting them into
- * ctx.assets.models under their species keys. Idempotent; resolves to the
- * models map. `machines/index.js` defers the variety spawns on this.
+ * Load, normalise and style a set of machine kinds — ONE loader, ONE
+ * normaliser: `assets.loadExtra` (D8 / perf-tech-12).
  *
- * ONE loader, ONE normaliser: `assets.loadExtra` (D8 / perf-tech-12).
+ *   loadKindModels(ctx, rows, { onLoaded }) -> Promise<{ loaded, failed }>
+ *     rows: { [kind]: { spec: { url, targetHeight, yaw, shadowPolicy? },
+ *                       style?: STYLE row, bake?: boolean } }
+ *     onLoaded(kind, entry) runs once per kind whose model is in
+ *     `ctx.assets.models` afterwards.
+ *
+ * Round 5 (instruments-core W0a): this module no longer names a kind. The
+ * rows come from their owners (`machines/legacy.js`, the Instrument registry).
+ * Each kind loads ON ITS OWN, so one missing or broken model costs that kind
+ * only — it is reported in `failed` with one console.warn and is never
+ * spawned — instead of rejecting the whole roster.
+ *
+ * A model a boot loader already put in `ctx.assets.models` (e.g. a
+ * data-driven `assets.js` that reads the same rows) is styled here exactly
+ * once (`entry.styledKind`), so the order the two loaders run in never
+ * changes what is drawn.
+ *
+ * BOOT MODELS FINISH SYNCHRONOUSLY (fix round 1). A kind whose model is
+ * already in `ctx.assets.models` when this is called is styled, listed in
+ * `loaded` and handed to `onLoaded` BEFORE this function returns — not on a
+ * later microtask — so a caller running inside the `Machines` constructor can
+ * register and spawn it in that same constructor. That is what keeps the
+ * boot contract: the authored roster exists at `__READY__`, and
+ * `progression.js` finds the Machine prototype through `machines.list[0]` at
+ * its own construction. Only the kinds still to fetch wait for the promise.
  */
-export function loadVarietyModels(ctx, onProgress) {
-  if (_promise) return _promise;
-  _promise = ctx.assets
-    .loadExtra(SPECS, {
-      onProgress: onProgress ?? (() => {}),
-      onEntry: (entry, name) => {
-        // the expansion species are auto-rigged, so their donors are baked out
-        // of their bind pose first (see `freezeSkins`)
-        if (EXPANSION_KINDS.has(name)) entry.bakedSkins = freezeSkins(entry.root);
-        styleMachine(entry.root, STYLE[name] ?? {});
-      },
-    })
-    .then(() => {
-      registerExpansionSpecies(ctx);
-      return ctx.assets.models;
-    });
-  return _promise;
-}
-
-/** Species whose donor is baked out of its bind pose (see `freezeSkins`). */
-const EXPANSION_KINDS = new Set([
-  'broadhead', 'grazer', 'snapmaw', 'ravager',
-  'shellwalker', 'corruptor', 'stormbird',
-]);
-
-/**
- * THE CHASSIS HANDOVER (`machines-expansion` -> `machine-ai`).
- *
- * `ai/doctrine.js` ships every expansion kind on a CHASSIS — an existing
- * species class borrowed for its body while the kind's own tables, doctrine and
- * gates run — and publishes ONE call to retire it:
- * `machines.registerKind(kind, Cls)`. This is where that call is made, from
- * inside this lane's own file: the moment the sculpt is loaded, the real class
- * takes over every future spawn, including every site respawn. Nothing else
- * changes — the tables, the spawn plan and the gate keys all key off `kind`.
- *
- * Order matters and it is guaranteed: `index.js` spawns the expansion layout
- * from `.then()` on this same promise, so registration lands first and not one
- * machine is ever built on a chassis whose species file is present.
- */
-function registerExpansionSpecies(ctx) {
-  const M = ctx.machines;
-  if (!M?.registerKind) return 0;
-  let n = 0;
-  for (const [kind, Cls] of Object.entries(EXPANSION_SPECIES)) {
-    if (!ctx.assets.models[kind]) continue;
-    try { M.registerKind(kind, Cls); n++; } catch (e) { console.warn(`[machines] registerKind ${kind}`, e); }
+export function loadKindModels(ctx, rows, { onLoaded = null, onProgress = () => {} } = {}) {
+  const kinds = Object.keys(rows);
+  const loaded = [];
+  const failed = [];
+  const finish = (kind, entry) => {
+    const row = rows[kind];
+    if (entry.styledKind !== kind) {
+      // the expansion species are auto-rigged, so their donors are baked out
+      // of their bind pose first (see `freezeSkins`)
+      if (row.bake) entry.bakedSkins = freezeSkins(entry.root);
+      if (row.style) styleMachine(entry.root, row.style);
+      entry.styledKind = kind;
+    }
+    loaded.push(kind);
+    onLoaded?.(kind, entry);
+  };
+  let done = 0;
+  const pending = [];
+  for (const kind of kinds) {
+    const entry = ctx.assets.models[kind];
+    if (!entry) { pending.push(kind); continue; }
+    finish(kind, entry);
+    done++;
+    onProgress(done / kinds.length, kind);
   }
-  return n;
+  return Promise.all(pending.map((kind) => {
+    const row = rows[kind];
+    const spec = { ...row.spec, shadowPolicy: row.spec.shadowPolicy ?? MACHINE_SHADOWS };
+    return ctx.assets.loadExtra({ [kind]: spec })
+      .then(() => {
+        const entry = ctx.assets.models[kind];
+        if (entry) finish(kind, entry);
+        else failed.push(kind);
+      })
+      .catch((err) => {
+        failed.push(kind);
+        console.warn(`[machines] '${kind}' model did not load (${row.spec.url}); the kind is not spawned:`, err?.message ?? err);
+      })
+      .finally(() => { done++; onProgress(done / kinds.length, kind); });
+  })).then(() => ({ loaded, failed }));
 }

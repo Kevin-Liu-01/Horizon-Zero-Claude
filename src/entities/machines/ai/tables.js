@@ -10,6 +10,11 @@ import { aiRandom } from './rng.js';
  *
  * Every block is keyed by machine kind with a `default` fallback; `cfg()`
  * merges the two so a species only states what it changes.
+ *
+ * Round 5 (instruments-core): this file now holds ONLY the defaults and the
+ * shape. Per-kind rows are registered by their owners through
+ * `registerKindTables()` (bottom of this file) — `machines/legacy.js` for the
+ * legacy kinds, `src/instruments/registry.js` for every Instrument kind.
  */
 
 /* ------------------------------------------------------------------ */
@@ -96,25 +101,6 @@ export const PERCEPTION = {
     tick: 0.1,           // perception tick (s)
     omni: null,          // { radius, part, weight, ignoreStealth } — TJ radar
   },
-  watcher: { periphRange: 9, scanSweep: 1.05, scanPeriod: 5.2 },
-  strider: { gain: 2.15, periphRange: 9, scanSweep: 1.0, scanPeriod: 5.0, contactRange: 4.4 },
-  scrapper: { gain: 2.1, periphRange: 7.5 },
-  glinthawk: { gain: 2.0, periphRange: 7, scanSweep: 0.7 },
-  longleg: { gain: 2.1, periphRange: 8.5, scanSweep: 1.0, contactRange: 4.5 },
-  sawtooth: { gain: 1.95, periphRange: 8, contactRange: 4.2 },
-  // contact range scales with the body: a Behemoth's flank IS six metres of
-  // machine, so "touching it" is not the same radius it is for a Scrapper.
-  behemoth: { gain: 1.95, periphRange: 9, scanSweep: 0.7, scanPeriod: 8, contactRange: 6.5 },
-  /**
-   * `machine-ai-19` TJ canon: while the RADAR dish is attached the Thunderjaw
-   * sees omnidirectionally out to 34 m and tall grass does not hide you. Tear
-   * the dish off and stealth works again. This is per-species canon, not the
-   * global bubble the audit deleted.
-   */
-  thunderjaw: {
-    gain: 1.95, periphRange: 10, contactRange: 7.5,
-    omni: { radius: 34, part: 'radar', weight: 0.8, ignoreStealth: true },
-  },
 };
 
 /* ------------------------------------------------------------------ */
@@ -153,7 +139,7 @@ export const ALARM = {
   recipientState: 'search',
   recipientSuspicion: 0.72,
   callerJitter: 3,      // metres of spread so a squad doesn't stack up
-  radius: { watcher: 60, longleg: 75, default: 45 },
+  radius: { default: 45 },   // per-kind rows come from registerKindTables(kind, { alarm })
   /** Re-alarm cooldown so a squad does not chirp every frame. */
   cooldown: 6,
 };
@@ -326,56 +312,7 @@ export const ENGAGE = {
    * kick. Every close-range floor below is therefore set at least 0.8 m under
    * the shortest move it has to set up, which leaves >= 0.5 m of band the
    * machine can actually orbit in and still be in range.
-   *
-   *   watcher   4.6  (skitter-bite 5.6)   sawtooth 2.5 (swipe 3.4)
-   *   strider   3.8  (front-kick  4.6)    scrapper 2.5 (claw  3.4)
-   *   longleg   6.1  (jet-blast   7.0)
    */
-  watcher: { band: [4.6, 11], orbitSpeed: 0.7, orbitFlip: [1.8, 3.6] },
-  // the band's OUTER edge has to reach the outer moves, or the machine circles
-  // forever at pounce range and its charge never gets a chance to exist
-  // band[0] must reach the CLOSE moves too (the authored paw swipe tops out at
-  // 3.4 m); a band that starts above a move's max range makes that move
-  // unreachable footwork-wise and it never appears on screen.
-  sawtooth: { archetype: 'stalker', band: [2.5, 14], orbitSpeed: 0.66, orbitFlip: [2, 4] },
-  /**
-   * band[1] 12 -> 13.5 (FIX ROUND 3, judge-machine-ai-r2 §2). The
-   * `gravity-boulder` row starts at 11 m, so against a 12 m outer edge and a
-   * ring window that stops half a hysteresis short of it the lob had a
-   * SEVEN-HUNDRED-MILLIMETRE shell of holdable radius — [11, 11.7] — at the
-   * exact outer lip of the band, which is the hardest radius on any ground to
-   * hold. Measured on its own ground: the Behemoth reached 11.25 m, banked
-   * 4.5 decayed seconds at the 10 m bucket and none at 11 m, and gave the
-   * boulder up to `arrangeGiveUp` without ever throwing it. Same shape as the
-   * Scrapper laser, reached from the table side rather than the terrain side.
-   * 13.5 m gives the lob [11, 13.2] to work in and still leaves every metre
-   * of the band answered by two rows (slam 0-12, charge 6-30), which is what
-   * `A41b-attack-coverage` checks.
-   */
-  behemoth: { archetype: 'bruiser', band: [5, 13.5], orbitSpeed: 0.5, closeSpeed: 1, orbitFlip: [3, 6] },
-  thunderjaw: { archetype: 'artillery', band: [14, 30], orbitSpeed: 0.55, orbitFlip: [3, 6], missRecover: 0.8 },
-  /**
-   * band 10-22 -> 4.2-14 (judge-machine-ai-followup-r0 §2). The old band sat
-   * entirely ABOVE both kicks, so `_pickRing` could never park the Strider at
-   * kick range and `charge` was the only row `coveredAt()` could satisfy
-   * anywhere inside it — the dead zone was closed by making one move do
-   * everything, which is `machine-ai-08` ("fixed attack ladder") again at the
-   * other end of the range. The inner edge is now just below the front kick's
-   * 4.4 m row so the footwork can set the kick up, and the outer edge is 14 m
-   * so no single row owns more than 60 % of the band alone
-   * (`A41b-attack-coverage` gates both).
-   */
-  strider: { archetype: 'skittish', band: [3.8, 14], orbitSpeed: 0.8, backSpeed: 0.9 },
-  scrapper: { archetype: 'pack', band: [2.5, 10], orbitSpeed: 0.75, orbitFlip: [1.6, 3.2] },
-  // band[1] 16 -> 12.5: the Longleg's longest move is the 13 m scream, so the
-  // old outer edge parked it 3 m past anything it could throw (A41b).
-  // band[0] 7 -> 6.4 (FIX ROUND 2): the jet blast is a 7 m cone and the ring
-  // floor sat at 7.3 m, so the Longleg could arrange for a move it could never
-  // be in range of — the Strider livelock in miniature, and it left the
-  // species only TWO moves the footwork could set up. 6.4 puts the floor at
-  // 6.7 m, inside the cone, and gives the harrier its third arrangeable move.
-  longleg: { archetype: 'harrier', band: [6.1, 12.5], orbitSpeed: 0.7, orbitFlip: [2, 4] },
-  glinthawk: { archetype: 'flyer', band: [12, 22], orbitSpeed: 0.8 },
 };
 
 /* ------------------------------------------------------------------ */
@@ -428,152 +365,6 @@ export const ENGAGE = {
  *      measures it; `A41b-attack-coverage` fails on it.
  */
 export const ATTACKS = {
-  watcher: [
-    // guard: `dist > attackRange * 1.25` with attackRange 2.5 -> 3.125 m
-    { id: 'peck', min: 0, max: 3.1, cd: 2.1, score: 1.0, authored: 'species' },
-    { id: 'flash', min: 5.5, max: 11.5, cd: 12, score: 0.8, authored: '_flashAttack', cdField: '_cdFlash' },
-    { id: 'energy-blast', min: 7, max: 26, cd: 6.5, score: 0.75, authored: '_energyBlast', cdField: '_cdBlast' },
-    // reaches 5.6 rather than 4.4 so the 4.4-5.5 m hole between the bite and
-    // the stun flash is closed (the dash is 2.6 m onto a 3.4 m bite)
-    { id: 'skitter-bite', min: 0, max: 5.6, cd: 3.4, score: 0.62, generic: 'lunge',
-      params: { damage: 12, windup: 0.32, strike: 0.14, recover: 0.5, dash: 2.6, range: 3.4 } },
-  ],
-  sawtooth: [
-    { id: 'swipe', min: 0, max: 3.4, cd: 1.6, score: 1.0, authored: 'species' },
-    { id: 'pounce', min: 3, max: 9, cd: 3.2, score: 0.95, authored: 'species' },
-    // canon moves the Round-3 ladder never had (machine-ai-08)
-    { id: 'charge', min: 6, max: 26, cd: 6.5, score: 0.92, generic: 'charge',
-      params: { damage: 28, windup: 0.6, strike: 0.75, recover: 0.9, speed: 13, knock: 9, range: 3.2 } },
-    { id: 'bite', min: 0, max: 4.6, cd: 2.6, score: 0.78, generic: 'lunge',
-      params: { damage: 26, windup: 0.4, strike: 0.18, recover: 0.62, dash: 2.2, range: 4 } },
-    /**
-     * Canon (roster-v2 §4: "Berserker Fury multi-slash 3-10 m"). Round 4 shipped
-     * a rear-arc `tail-lash` here, which was fabricated: roster-v2 §3 gives the
-     * Sawtooth "Quadruped, front-heavy, NO TAIL", the rig has no tail bone, and
-     * the move dealt 18 damage from behind with no visible limb and no
-     * telegraph the player could see. Deleted; this is the move the audit
-     * (machine-ai-08) actually asked for. Front arc, three slashes.
-     */
-    { id: 'berserker', min: 3, max: 10, cd: 9, score: 0.85, generic: 'flurry',
-      params: { damage: 36, hits: 3, windup: 0.55, strike: 0.95, recover: 0.75, range: 4.6, arcDeg: 140, close: 11 } },
-  ],
-  behemoth: [
-    { id: 'slam', min: 0, max: 12, cd: 7, score: 1.0, authored: 'species' },
-    { id: 'gravity-boulder', min: 11, max: 42, cd: 9, score: 0.9, authored: 'species' },
-    { id: 'charge', min: 6, max: 30, cd: 4.5, score: 0.9, authored: 'species' },
-    { id: 'shoulder-check', min: 0, max: 7.5, cd: 5.5, score: 0.72, generic: 'sweep',
-      params: { damage: 30, windup: 0.55, strike: 0.22, recover: 0.85, range: 7.5, arcDeg: 150, knock: 12 } },
-  ],
-  thunderjaw: [
-    { id: 'tail', min: 0, max: 15, cd: 6, score: 1.0, arc: 'rear', authored: '_tailSweep', cdField: '_cdTail' },
-    { id: 'stomp', min: 0, max: 11, cd: 6, score: 0.95, authored: '_stomp', cdField: '_cdStomp' },
-    // machine-ai-19: the mouth laser is canon at ANY health, not under 40 %
-    { id: 'laser', min: 13, max: 65, cd: 9.5, score: 0.88, authored: '_laser', pass: 'dist', cdField: '_cdLaser' },
-    { id: 'disc', min: 16, max: 90, cd: 8.5, score: 0.82, authored: '_discs', cdField: '_cdDisc', needPart: 'disc-launcher' },
-    // min 10.5, not 13: stomp stops at 11 and the bite at 7, so 11-13 m used
-    // to be a hole a player could simply stand in (tail is rear-arc only)
-    { id: 'cannon', min: 10.5, max: 70, cd: 7, score: 0.78, authored: '_cannonBurst', pass: 'dist', cdField: '_cdCannon' },
-    { id: 'bite', min: 0, max: 7, cd: 4.5, score: 0.72, generic: 'lunge',
-      params: { damage: 45, windup: 0.55, strike: 0.2, recover: 0.85, dash: 3.2, range: 7 } },
-  ],
-  /**
-   * THE DEAD ZONE, fixed TWICE.
-   *
-   * Round 4 wave 1 closed the original 4.2-15 m hole by widening `charge` down
-   * to 4.2 m. That removed the hole and created a worse one: with the engage
-   * band at 10-22 m and both kicks capped at 4.4 m, `charge` became the ONLY
-   * row legal anywhere the footwork ever stood, so the species had a single
-   * move — and a gallop the roster puts at 15-50 m was being thrown from 5.5 m
-   * (measured: front-kick at 2 m, charge at every other staging).
-   *
-   * The band now covers kick range (ENGAGE.strider above) and the ladder has a
-   * middle rung, so each range has a DIFFERENT answer:
-   *
-   *   0   - 4.6 m   front-kick  the authored double front-kick, reach 4.6 m
-   *   0   - 4.4 m   back-kick   authored, rear arc only (never arranged for)
-   *   4.0 - 8.4 m   dash-kick   skitter in and land the same double kick
-   *   8.2 - 30  m   charge      the committed gallop, back at gallop distance
-   *
-   * FIX ROUND 2 (judge-machine-ai-followup-r1): `front-kick`'s row max was
-   * 4.4 m — a tenth of a metre INSIDE the smallest ring the footwork can hold
-   * (band[0] 4.2 + half a hysteresis = 4.5 m). The kick was therefore the move
-   * the picker arranged for on every flip and the one move that could never
-   * fire, so the Strider held 4.5 m for a whole fight and threw `dash-kick`
-   * seven times: the dead zone back for a third time, wearing the ring instead
-   * of the range. The row now reads 4.6 m, which is what the builder actually
-   * strikes with (`strider.js:_frontKick` -> `damagePlayer(16, 4.6)`), so it
-   * is honest AND clears the ring floor. The livelock itself is closed
-   * structurally in `AttackPicker._reachable` / `Engage._ringWindow` — this
-   * row is data being truthful, not the fix.
-   *
-   * `dash-kick` is the canon "Double front-kick 0-7 m" (roster-v2 §4) with the
-   * approach the authored version does not have: `lunge` dashes 4.2 m through
-   * the strike phase and rolls its 4.6 m front-arc damage check every frame of
-   * it, so from the row's own maximum it arrives at 4.2 m and connects. It is
-   * built HERE rather than by widening `strider.js:_frontKick`, whose
-   * `damagePlayer(16, 4.6)` is a standing kick and belongs to `machine-rig`;
-   * the ask to give that builder the canon 7 m reach (and to correct its
-   * stale "Charge 15-50 m (roster)" docstring, which `ATTACK_MODE.strider =
-   * 'table'` has made unreachable) is published in the LANE CONTRACT.
-   *
-   * Coverage is continuous 0-30 m and no row is the sole answer for more than
-   * 57 % of the 4.2-14 m band. `A41b-attack-coverage` asserts both.
-   */
-  strider: [
-    { id: 'front-kick', min: 0, max: 4.6, cd: 3, score: 1.0, authored: '_frontKick' },
-    { id: 'back-kick', min: 0, max: 4.4, cd: 4.5, score: 0.8, arc: 'rear', authored: '_backKick' },
-    { id: 'dash-kick', min: 4, max: 8.4, cd: 3.6, score: 0.92, generic: 'lunge',
-      params: { damage: 16, windup: 0.45, strike: 0.22, recover: 0.7, dash: 4.2, range: 4.6 } },
-    { id: 'charge', min: 8.2, max: 30, cd: 6, score: 0.7, authored: '_charge', pass: 'dist', cdField: '_cdCharge' },
-  ],
-  scrapper: [
-    { id: 'claw', min: 0, max: 3.4, cd: 2.4, score: 1.0, authored: 'species' },
-    /**
-     * min 7 -> 6.4 (FIX ROUND 5, A41c/A41d Scrapper). The laser's floor sat
-     * exactly on `dart-bite`'s 7.2 m ceiling, and `dart-bite` is a 4.2 m dash:
-     * so the only radii where the laser was legal were ones the bite could
-     * reach and immediately close. Traced on the Scrapper's hardest arc — the
-     * footwork got to 7.03 m and held it for 0.10 decayed seconds across a
-     * 30 s duel, threw `dart-bite` six times from 4-6.8 m, and the laser was
-     * fresh, arrangeable and unblocked the whole way. 6.4 gives the laser
-     * 0.8 m of overlap INSIDE the bite's reach — the same clearance rule the
-     * band floors above already follow, applied to the other end of the
-     * ladder — so the ranged move becomes legal before the closing move can
-     * take the range away, and the fresh-first tier can actually pick it.
-     * It is still a ranged burst: the claw is 3.4 m and the bite strikes at
-     * 3.2 m.
-     *
-     * 6.4 -> 5.8 after one more pass. On the hardest FAIR arc `hardBearing`
-     * can find around the Scrapper's ruin, the footwork's MEASURED reach over
-     * four duels was 5.63 / 6.09 / 6.56 / 8.44 m: a floor at 6.4 sat above
-     * where this species can stand on its own worst ground half the time, so
-     * the laser was a move it carried and could not take — which is the
-     * defect `A41d-held-radius-coverage` exists to name, not a reason to
-     * stage an easier arc. 5.8 is inside the measured occupancy of every one
-     * of those duels and still 2.4 m beyond the claw.
-     */
-    { id: 'laser', min: 5.8, max: 29, cd: 6, score: 0.85, authored: '_laserBurst', cdField: '_cdLaser' },
-    // max 7.2, not 6.5: the old table left half a metre of nothing at exactly
-    // the 7 m the Round-3 audit already caught this species parking at
-    { id: 'dart-bite', min: 0, max: 7.2, cd: 3.2, score: 0.8, generic: 'lunge',
-      params: { damage: 15, windup: 0.3, strike: 0.14, recover: 0.45, dash: 4.2, range: 3.2 } },
-  ],
-  glinthawk: [
-    // `dive` claims the flock's single diver token, so a second Glinthawk has
-    // only the spit — which is why the spit now reaches in to 5 m instead of 9
-    { id: 'dive', min: 0, max: 34, cd: 6, score: 1.0, authored: 'species' },
-    { id: 'freeze-spit', min: 5, max: 30, cd: 5, score: 0.85, authored: '_freezeSpit', cdField: '_cdSpit' },
-  ],
-  longleg: [
-    { id: 'scream', min: 0, max: 13, cd: 8, score: 1.0, authored: 'species' },
-    // the jet blast is a 7 m cone (`damagePlayer(24, 7)`), not a 20 m one; the
-    // old row was legal out to 20 m and built nothing past 6.5
-    { id: 'jet-blast', min: 0, max: 7, cd: 6, score: 0.85, authored: '_jetBlast', cdField: '_cdJet' },
-    { id: 'peck', min: 0, max: 4, cd: 2.6, score: 0.8, authored: 'species' },
-    // 0.9 s of strike at 13 m/s covers 11.7 m, so a 12 m hop actually arrives
-    { id: 'hop-strike', min: 4, max: 12, cd: 5.5, score: 0.74, generic: 'charge',
-      params: { damage: 22, windup: 0.5, strike: 0.9, recover: 0.8, speed: 13, knock: 7, range: 3 } },
-  ],
 };
 
 /**
@@ -584,7 +375,7 @@ export const ATTACKS = {
  * `hybrid` — the species' `chooseAttack()` offers one candidate and the table
  *            rows compete with it. Default.
  */
-export const ATTACK_MODE = { default: 'hybrid', thunderjaw: 'table', strider: 'table' };
+export const ATTACK_MODE = { default: 'hybrid' };
 export const attackMode = (kind) => ATTACK_MODE[kind] ?? ATTACK_MODE.default;
 
 /** Scoring weights shared by every species. */
@@ -718,14 +509,6 @@ export const REACT = {
     critHold: 0.35,
     staggerCd: 1.2,       // minimum seconds between staggers (no lock-loops)
   },
-  watcher: { staggerFrac: 0.14, downedFrac: 0.34, downedTime: [3, 4] },
-  strider: { staggerFrac: 0.14, downedFrac: 0.3 },
-  scrapper: { staggerFrac: 0.13, downedFrac: 0.32 },
-  glinthawk: { staggerFrac: 0.12, downedFrac: 0.26, downedTime: [4, 5.5] },
-  longleg: { staggerFrac: 0.12, downedFrac: 0.3 },
-  sawtooth: { staggerFrac: 0.12, downedFrac: 0.3, critDamage: 0.32 },
-  behemoth: { staggerFrac: 0.12, downedFrac: 0.34, impulse: 0.6, pushBack: 0.2, staggerTime: [0.7, 1.2] },
-  thunderjaw: { staggerFrac: 0.12, downedFrac: 0.35, impulse: 0.5, pushBack: 0.15, staggerTime: [0.7, 1.2] },
 };
 
 /* ------------------------------------------------------------------ */
@@ -734,18 +517,10 @@ export const REACT = {
 /**
  * Buildup needed to trigger a status. `machine.elemental` stays normalised
  * 0..100 for the HUD; incoming `elementAmount` is scaled by 100/threshold, so
- * a 60-point Freeze arrow is one watcher and nine Thunderjaws.
+ * a 60-point Freeze arrow fills a 60-threshold kind and a ninth of a 520 one.
  */
 export const ELEM_THRESHOLD = {
   default: 100,
-  watcher: 60,
-  strider: 70,
-  scrapper: 90,
-  glinthawk: 110,
-  longleg: 150,
-  sawtooth: 240,
-  behemoth: 380,
-  thunderjaw: 520,
 };
 
 /* ------------------------------------------------------------------ */
@@ -763,57 +538,19 @@ export const SITE = {
 };
 
 /* ------------------------------------------------------------------ */
-/* OVERRIDE / MOUNT (missing-systems-override-mount)                   */
-/* ------------------------------------------------------------------ */
-export const OVERRIDE = {
-  /** Which species the Spear can override, and whether they can be ridden. */
-  kinds: {
-    strider: { mount: true, time: 1.1 },
-    watcher: { mount: false, time: 1.0 },
-    scrapper: { mount: false, time: 1.3 },
-    longleg: { mount: false, time: 1.4 },
-    sawtooth: { mount: false, time: 1.6 },
-    behemoth: { mount: true, time: 1.8 },
-    glinthawk: { mount: false, time: 1.5 },
-    thunderjaw: { mount: false, time: 2.2 },
-  },
-  label: 'OVERRIDE',
-  mountLabel: 'MOUNT',
-  radius: 3.2,
-  /** Overridden machines fight for the player inside this radius of her. */
-  followBand: [4, 9],
-  helpRadius: 40,
-  eyeColor: 0x19ffd0,
-  /** Mount: saddle height as a fraction of machine height, ride speeds. */
-  seat: 0.78,
-  rideSpeed: 11,
-  rideTurn: 2.0,
-};
-
-/* ------------------------------------------------------------------ */
 /* ECOSYSTEM (machine-ai-14)                                           */
 /* ------------------------------------------------------------------ */
 export const ECOSYSTEM = {
   /** Escort formation: which kinds shepherd which, and the slot ring. */
-  escort: {
-    watcher: { guards: ['strider'], radius: 22, band: [16, 30] },
-    longleg: { guards: ['strider', 'scrapper'], radius: 26, band: [18, 34] },
-  },
+  escort: {},      // kind -> { guards, radius, band }; rows via registerKindTables(kind, { escort })
   /** Scavengers converge on fresh wrecks and pick them over. */
   scavenger: {
-    kinds: ['scrapper'],
+    kinds: [],       // kinds that scavenge; rows via registerKindTables(kind, { scavenger: true })
     radius: 90,
     window: 45,      // s a wreck stays attractive
     dwell: [8, 16],  // s spent picking at it
     arrive: 3.5,
   },
-  /**
-   * CORRUPTION (casting-v4.md §2.6). A Corruptor flips nearby machines to a
-   * hyper-aggressive `corrupted` flavour of the override machinery. HARD
-   * CAPPED — the card says so in as many words, because an uncapped radius
-   * turns one machine into a valley-wide cascade.
-   */
-  corruption: { radius: 25, max: 2, period: 4 },
   /**
    * POPULATION BUDGET — the bound that replaces "the app crashed on memory".
    *
@@ -864,13 +601,87 @@ export function cfg(table, kind, tag) {
   return v;
 }
 
+/* ------------------------------------------------------------------ */
+/* KIND REGISTRATION (Round 5, instruments-core W0a)                   */
+/* ------------------------------------------------------------------ */
+/**
+ * THE TABLES CARRY NO KIND ROWS OF THEIR OWN ANY MORE. Every block above holds
+ * its `default` (and the shared shape); a kind's rows arrive through ONE call,
+ * made by whoever owns that kind:
+ *
+ *   registerKindTables(kind, {
+ *     perception?, engage?, attacks?, attackMode?, react?, elem?,
+ *     alarm?,            // ALARM.radius[kind] (metres)
+ *     escort?,           // ECOSYSTEM.escort[kind] = { guards, radius, band }
+ *     scavenger?,        // true -> kind joins ECOSYSTEM.scavenger.kinds
+ *   }, { replace = false } = {}) -> string[]   // the blocks written
+ *
+ *   unregisterKindTables(kind) -> boolean       // every row of that kind gone
+ *   registeredKindTables() -> string[]          // kinds registered so far
+ *
+ * Callers: `machines/legacy.js` (the legacy kinds, deleted at the W2 exit) and
+ * `src/instruments/registry.js` (every `src/instruments/kinds/*.js` module).
+ * Without `replace` an existing row is never overwritten (first writer wins,
+ * the merge rule `ai/doctrine.js` always had). Either call drops that kind's
+ * memoised `cfg()` merges, so a row registered after a first read is still the
+ * one `cfg()` returns.
+ */
+const BLOCKS = {
+  perception: () => PERCEPTION,
+  engage: () => ENGAGE,
+  attacks: () => ATTACKS,
+  attackMode: () => ATTACK_MODE,
+  react: () => REACT,
+  elem: () => ELEM_THRESHOLD,
+  alarm: () => ALARM.radius,
+  escort: () => ECOSYSTEM.escort,
+};
+const _registered = new Set();
+
+function _forget(kind) {
+  for (const key of [..._cache.keys()]) if (key.endsWith(`:${kind}`)) _cache.delete(key);
+}
+
+export function registerKindTables(kind, rows = {}, { replace = false } = {}) {
+  if (!kind || kind === 'default') return [];
+  const wrote = [];
+  for (const [block, get] of Object.entries(BLOCKS)) {
+    if (rows[block] === undefined) continue;
+    const table = get();
+    if (!replace && Object.prototype.hasOwnProperty.call(table, kind)) continue;
+    table[kind] = rows[block];
+    wrote.push(block);
+  }
+  if (rows.scavenger && !ECOSYSTEM.scavenger.kinds.includes(kind)) {
+    ECOSYSTEM.scavenger.kinds.push(kind);
+    wrote.push('scavenger');
+  }
+  _registered.add(kind);
+  _forget(kind);
+  return wrote;
+}
+
+export function unregisterKindTables(kind) {
+  if (!kind || kind === 'default') return false;
+  let had = _registered.delete(kind);
+  for (const get of Object.values(BLOCKS)) {
+    const table = get();
+    if (Object.prototype.hasOwnProperty.call(table, kind)) { delete table[kind]; had = true; }
+  }
+  const i = ECOSYSTEM.scavenger.kinds.indexOf(kind);
+  if (i >= 0) { ECOSYSTEM.scavenger.kinds.splice(i, 1); had = true; }
+  _forget(kind);
+  return had;
+}
+
+export const registeredKindTables = () => [..._registered];
+
 export const perceptionCfg = (kind) => cfg(PERCEPTION, kind, 'perc');
 export const engageCfg = (kind) => cfg(ENGAGE, kind, 'eng');
 export const reactCfg = (kind) => cfg(REACT, kind, 'react');
 export const elemThreshold = (kind) => ELEM_THRESHOLD[kind] ?? ELEM_THRESHOLD.default;
 export const alarmRadius = (kind) => ALARM.radius[kind] ?? ALARM.radius.default;
 export const attackTable = (kind) => ATTACKS[kind] || [];
-export const overrideCfg = (kind) => OVERRIDE.kinds[kind] || null;
 
 /**
  * Deterministic-ish pick inside a [min,max] pair.

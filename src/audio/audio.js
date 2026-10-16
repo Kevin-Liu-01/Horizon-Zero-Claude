@@ -2978,7 +2978,7 @@ export class GameAudio {
     /* ------- discovery stingers on the score (audio-01, audio-12) ------- */
     const discover = armed(() => this.music?.sting('discover', { volume: 0.8, minGap: 8 }));
     for (const name of ['level-up', 'skill-unlocked', 'quest-started', 'quest-complete',
-      'fieldbook-found', 'discovery', 'cache-found', 'override-node', 'hunting-ground']) {
+      'fieldbook-found', 'discovery', 'cache-found', 'hunting-ground']) {
       ev.on(name, discover);
     }
 

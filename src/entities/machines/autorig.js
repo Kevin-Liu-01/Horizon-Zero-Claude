@@ -2,7 +2,6 @@ import * as THREE from 'three';
 import { BoneSpace, RestPose } from '../anim/index.js';
 import { buildHullProxy } from './rig/sockets.js';
 import { skinnedBounds } from './rig/lod.js';
-import { EXPANSION_RIGS } from './rig/rigs-expansion.js';
 
 /**
  * Runtime auto-rig: converts a static machine sculpt into a SkinnedMesh with
@@ -38,84 +37,35 @@ const _v3 = new THREE.Vector3();
 const _m1 = new THREE.Matrix4();
 
 /* ------------------------------------------------------------------ */
-/* per-species rig specs (fitted to the sculpt vertex data)            */
+/* per-kind rig specs (registered by each kind's owner)                */
 /* ------------------------------------------------------------------ */
 
-export const RIGS = {
-  sawtooth: {
-    // H 2.75, half-width 0.66, z in [-2.32, 2.32]. Sculpt frozen mid-prowl.
-    spine: [
-      { name: 'pelvis', pos: [0, 1.45, -1.15], r: 1.55 },
-      { name: 'spine', pos: [0, 1.58, -0.35], r: 1.05 },
-      { name: 'chest', pos: [0, 1.58, 0.55], r: 1.0 },
-      { name: 'neck', pos: [0, 1.4, 1.35], r: 0.85 },
-      { name: 'head', pos: [0, 1.0, 1.95], r: 0.9, tip: [0, 0.8, 2.4] },
-    ],
-    tail: [],
-    legGateY: 1.32,
-    legs: [
-      { id: 'LF', parent: 'chest', hinge: -1, hip: [-0.44, 1.45, 0.62], knee: [-0.48, 0.78, 0.1], ankle: [-0.48, 0.34, 0.1], toe: [-0.48, 0.03, 0.48], r: 0.42, restFoot: [-0.46, 0.78] },
-      { id: 'RF', parent: 'chest', hinge: -1, hip: [0.42, 1.45, 0.85], knee: [0.46, 0.78, 0.95], ankle: [0.48, 0.36, 1.1], toe: [0.48, 0.03, 1.5], r: 0.42, restFoot: [0.46, 0.78] },
-      { id: 'LH', parent: 'pelvis', hinge: 1, hip: [-0.34, 1.42, -1.2], knee: [-0.33, 0.8, -1.45], ankle: [-0.32, 0.4, -1.65], toe: [-0.32, 0.03, -1.5], r: 0.44, restFoot: [-0.34, -1.1] },
-      { id: 'RH', parent: 'pelvis', hinge: 1, hip: [0.34, 1.42, -1.05], knee: [0.33, 0.8, -0.85], ankle: [0.32, 0.36, -0.72], toe: [0.32, 0.03, -0.55], r: 0.44, restFoot: [0.34, -1.1] },
-    ],
-  },
+/**
+ * `RIGS[kind]` — the rig spec a kind's class passes to `buildRig`. Round 5
+ * (instruments-core W0a): this module no longer carries any kind's rows. The
+ * three Round-3 rows fitted to the CC-BY-NC sculpts were deleted with those
+ * sculpts (R30); the Round-4 rows (`rig/rigs-expansion.js`) are registered by
+ * `machines/legacy.js`; generated Instrument kinds carry their spec in their
+ * GLB (`asset.extras.r5Rig`) and register it through
+ * `src/instruments/registry.js`.
+ *
+ *   registerRig(kind, spec, { replace = false }) -> boolean
+ *   unregisterRig(kind) -> boolean
+ */
+export const RIGS = {};
 
-  behemoth: {
-    // H 4.5, half-width 1.78, z in [-5.51, 5.51]. Near-symmetric stance;
-    // low grinder jaw reaches ~ground at z≈5; big side skirts hang at
-    // (±1.36, -0.34) and MUST stay on the torso (leg capture r excludes them).
-    spine: [
-      { name: 'pelvis', pos: [0, 2.75, -2.3], r: 2.6 },
-      { name: 'spine', pos: [0, 3.0, -0.8], r: 2.6 },
-      { name: 'chest', pos: [0, 3.0, 0.7], r: 2.5 },
-      { name: 'neck', pos: [0, 2.5, 2.7], r: 2.1 },
-      { name: 'head', pos: [0, 1.7, 4.1], r: 2.0, tip: [0, 1.0, 5.3] },
-    ],
-    tail: [
-      { name: 'tail1', pos: [0, 3.1, -3.7], r: 1.7 },
-      { name: 'tail2', pos: [0, 3.3, -5.1], r: 1.5 },
-    ],
-    legGateY: 2.35,
-    legs: [
-      { id: 'LF', parent: 'chest', hinge: -1, hip: [-0.73, 2.45, 1.05], knee: [-0.72, 1.35, 1.0], ankle: [-0.72, 0.55, 1.08], toe: [-0.72, 0.05, 1.25], r: 0.6, restFoot: [-0.73, 1.1] },
-      { id: 'RF', parent: 'chest', hinge: -1, hip: [0.73, 2.45, 1.05], knee: [0.72, 1.35, 1.0], ankle: [0.72, 0.55, 1.08], toe: [0.72, 0.05, 1.25], r: 0.6, restFoot: [0.73, 1.1] },
-      { id: 'LH', parent: 'pelvis', hinge: 1, hip: [-0.92, 2.45, -1.62], knee: [-1.0, 1.35, -1.75], ankle: [-1.05, 0.55, -1.72], toe: [-1.05, 0.06, -1.58], r: 0.62, restFoot: [-1.0, -1.62] },
-      { id: 'RH', parent: 'pelvis', hinge: 1, hip: [0.92, 2.45, -1.62], knee: [1.0, 1.35, -1.75], ankle: [1.05, 0.55, -1.72], toe: [1.05, 0.06, -1.58], r: 0.62, restFoot: [1.0, -1.62] },
-    ],
-  },
+export function registerRig(kind, spec, { replace = false } = {}) {
+  if (!kind || !spec) return false;
+  if (RIGS[kind] && !replace) return false;
+  RIGS[kind] = spec;
+  return true;
+}
 
-  thunderjaw: {
-    // H 9.4, half-width 3.14, z in [-6.47, 6.47]. Bipedal T-rex: low wide
-    // head forward, giant upswept tail crest rear. Sculpt frozen mid-stride —
-    // left foot planted under the body, right leg swung far out to
-    // (2.55, 0.76); restFoot pulls both feet into a mirrored neutral stance.
-    spine: [
-      { name: 'pelvis', pos: [0, 4.6, 0.0], r: 3.4 },
-      { name: 'chest', pos: [0, 4.1, 2.0], r: 2.9 },
-      { name: 'neck', pos: [0, 3.4, 3.4], r: 2.3 },
-      { name: 'head', pos: [0, 2.5, 4.7], r: 3.3, tip: [0, 2.0, 6.3] },
-    ],
-    tail: [
-      { name: 'tail1', pos: [0, 5.3, -1.5], r: 3.9 },
-      { name: 'tail2', pos: [0, 5.7, -3.1], r: 3.4 },
-      { name: 'tail3', pos: [0, 5.9, -4.6], r: 2.9 },
-      { name: 'tail4', pos: [0, 6.0, -6.1], r: 2.6 },
-    ],
-    legGateY: 4.05,
-    legs: [
-      { id: 'L', parent: 'pelvis', hinge: 1, hip: [-1.0, 4.2, -0.55], knee: [-1.15, 2.35, -1.3], ankle: [-1.12, 0.95, -1.6], toe: [-1.15, 0.1, -1.0], r: 1.12, restFoot: [-1.2, -0.55] },
-      { id: 'R', parent: 'pelvis', hinge: 1, hip: [1.1, 4.0, 0.1], knee: [2.4, 2.3, 0.5], ankle: [2.55, 0.85, 0.8], toe: [2.6, 0.1, 1.15], r: 1.12, restFoot: [1.2, -0.55] },
-    ],
-  },
-
-  /**
-   * ROUND 4 — the expansion species (`rig/rigs-expansion.js`). Merged in here
-   * rather than declared here so the big three above stay readable, and so a
-   * caller only ever needs `RIGS[kind]`.
-   */
-  ...EXPANSION_RIGS,
-};
+export function unregisterRig(kind) {
+  if (!RIGS[kind]) return false;
+  delete RIGS[kind];
+  return true;
+}
 
 /* ------------------------------------------------------------------ */
 /* skeleton construction                                               */

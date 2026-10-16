@@ -22,9 +22,6 @@ import {
  *                      — see `_register()`. The local mote mesh and the local
  *                      `interactables` entry are the NO-`focus-items` fallback
  *                      only, and are hidden the moment the store adopts them.
- *    1 OVERRIDE NODE   the maintenance interface at the Tallneck's rear foot.
- *                      Overriding it reveals every site in the valley:
- *                      `props.revealed === true`, event `override-node`.
  *    6 SUPPLY CACHES   pre-Fall crates at the megastructures, real loot.
  *    1 HUNTING GROUND  the Nora trial ground east of the camp: a totem ring, a
  *                      trial board and three named trials in `props.trials`.
@@ -38,7 +35,7 @@ import {
  *         EVERY record in the unified set, this lane's twelve and
  *         `focus-items`' twelve alike, so `playerAnimator`'s interact beat and
  *         anything else already wired to it fire on all twenty-four,
- *         `override-node` {id, x, z}, `cache-found` {id},
+ *         `cache-found` {id},
  *         `hunting-ground` {id, trials}.
  */
 
@@ -100,7 +97,6 @@ export class Activities {
 
     this._buildDatapoints();
     this._buildCaches();
-    this._buildOverrideNode();
     this._buildHuntingGround();
 
     ctx.scene.add(this.group);
@@ -228,51 +224,6 @@ export class Activities {
     }
     const mesh = bake(geos, materials().metal, { name: 'activity-supply-caches' });
     if (mesh) this.group.add(mesh);
-  }
-
-  /* ----------------------------- override node --------------------------- */
-
-  _buildOverrideNode() {
-    const T = this.props.tallneck;
-    const bx = T ? T.base.x - 11.0 : -36, bz = T ? T.base.z - 7.4 : 213;
-    const y = this.gy(bx, bz);
-    this.overrideNode = { id: 'override-tallneck', x: bx, y, z: bz, used: false };
-
-    const N = this.noise;
-    const geos = [], lights = [];
-    // a machine-plate pillar with a slanted interface face
-    const pillar = new THREE.CylinderGeometry(0.46, 0.62, 2.05, 8, 2);
-    paintRust(pillar, 8400, N, 99, 0.5);
-    pillar.applyMatrix4(composeMat(bx, y + 1.0, bz, 0, 0.4, 0));
-    geos.push(pillar.toNonIndexed());
-    const head = new THREE.BoxGeometry(0.95, 0.62, 0.34, 2, 2, 1);
-    paintRust(head, 8410, N, 99, 0.4);
-    head.applyMatrix4(composeMat(bx, y + 2.16, bz, -0.5, 0.4, 0));
-    geos.push(head.toNonIndexed());
-    for (let i = 0; i < 3; i++) {
-      const a = 0.4 + (i - 1) * 2.1;
-      rustTube(geos, [bx + Math.cos(a) * 0.5, y + 0.05, bz + Math.sin(a) * 0.5],
-        [bx + Math.cos(a) * 1.25, y + 0.02, bz + Math.sin(a) * 1.25], 0.09, 0.06, 8420 + i, N, 4);
-    }
-    // the interface glow
-    const face = new THREE.PlaneGeometry(0.72, 0.42);
-    tint(face, '#8fe8ff', 0.03, mulberry32(9));
-    face.applyMatrix4(composeMat(bx + Math.sin(0.4) * 0.02, y + 2.24, bz + Math.cos(0.4) * 0.19, -0.5, 0.4, 0));
-    lights.push(face);
-    const ring = new THREE.TorusGeometry(0.5, 0.045, 5, 16);
-    ring.rotateX(Math.PI / 2);
-    tint(ring, '#7fdcff', 0.03, mulberry32(11));
-    ring.applyMatrix4(composeMat(bx, y + 0.09, bz));
-    lights.push(ring);
-
-    const m = bake(geos, materials().metal, { name: 'activity-override-node' });
-    if (m) this.group.add(m);
-    this.overrideMat = new THREE.MeshStandardMaterial({
-      color: 0xa9edff, emissive: 0x36c4f0, emissiveIntensity: 2.6,
-      roughness: 0.3, metalness: 0, toneMapped: false, side: THREE.DoubleSide,
-    });
-    const ml = bake(lights, this.overrideMat, { name: 'activity-override-glow', castShadow: false });
-    if (ml) { ml.raycast = () => {}; this.group.add(ml); }   // glow decal: not solid
   }
 
   /* ---------------------------- hunting ground --------------------------- */
@@ -530,29 +481,6 @@ export class Activities {
     }
 
     {
-      const o = this.overrideNode;
-      const entry = I.register({
-        position: { x: o.x, y: o.y + 1.3, z: o.z },
-        radius: 2.6, hold: 1.2, label: 'OVERRIDE', once: true,
-        site: 'override',
-        onInteract: () => {
-          o.used = true;
-          this.revealed = true;
-          this.props.revealed = true;
-          ctx.progression?.award?.({ xp: 150, reason: 'override-node', id: o.id });
-          ctx.progression?.discover?.('tallneck');
-          ctx.events.emit('override-node', {
-            id: o.id, x: o.x, z: o.z,
-            // the whole unified set, not just this lane's half of it
-            reveals: this.revealList(),
-          });
-          ctx.audio?.play2D?.('machine/alarm', { category: 'ui', volume: 0.35 });
-        },
-      });
-      this.entries.push(entry);
-    }
-
-    {
       const h = this.huntingGround;
       const entry = I.register({
         position: { x: h.x, y: h.y + 1.1, z: h.z },
@@ -605,7 +533,6 @@ export class Activities {
     const out = [];
     for (const d of this.datapoints) out.push({ kind: 'datapoint', id: d.id, x: d.x, z: d.z, name: d.title, done: d.found });
     for (const c of this.caches) out.push({ kind: 'cache', id: c.id, x: c.x, z: c.z, name: 'Supply Cache', done: c.looted });
-    out.push({ kind: 'override', id: this.overrideNode.id, x: this.overrideNode.x, z: this.overrideNode.z, name: 'Override Node', done: this.overrideNode.used });
     out.push({ kind: 'hunting-ground', id: this.huntingGround.id, x: this.huntingGround.x, z: this.huntingGround.z, name: 'Hunting Ground', done: this.huntingGround.entered });
     return out;
   }
@@ -613,11 +540,5 @@ export class Activities {
   update(dt, t) {
     this.ensureRegistered();
     this._syncMotes(t);
-    if (this.overrideMat) {
-      this.overrideMat.emissiveIntensity = this.overrideNode.used
-        ? 1.1 + 0.2 * Math.sin(t * 1.1)
-        : 2.2 + 0.9 * Math.sin(t * 3.1);
-      if (this.overrideNode.used) this.overrideMat.emissive.setHex(0x37e0a0);
-    }
   }
 }

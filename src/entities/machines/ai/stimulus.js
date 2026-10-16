@@ -48,7 +48,6 @@ export class StimulusBus {
 
     for (const m of this.machines.list) {
       if (!m.alive || m._disposed || m === ev.source) continue;
-      if (m.state === 'overridden') continue;
       const dx = m.position.x - x, dz = m.position.z - z;
       const d2 = dx * dx + dz * dz;
       if (d2 > r2) continue;
@@ -81,7 +80,7 @@ export class StimulusBus {
     let n = 0;
     for (const m of this.machines.list) {
       if (m === caller || !m.alive || m._disposed) continue;
-      if (m.state === 'attack' || m.state === 'alert' || m.state === 'overridden'
+      if (m.state === 'attack' || m.state === 'alert'
         || m.state === 'downed' || m.state === 'dead') continue;
       if (m.position.distanceToSquared(caller.position) > r2) continue;
       const j = ALARM.callerJitter;

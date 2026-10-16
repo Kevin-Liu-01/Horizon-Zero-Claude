@@ -24,8 +24,19 @@ export const EYE_COLORS = {
   hostile: new THREE.Color('#ff2413'),
   dead: new THREE.Color('#050505'),
   flash: new THREE.Color(3.0, 3.0, 2.55), // white-hot attack telegraph
-  override: new THREE.Color('#19ffd0'),   // Aloy's machine — canon teal
 };
+
+/**
+ * THE MACHINE FSM, CLOSED (Round 5, R17). These nine are every state the
+ * update switch, the reactions and the death path handle; `setState` refuses
+ * any other name, so no caller — a gate, the studio's cast panel, a stray
+ * `forceState` — can park a machine in a state nothing runs (the ally state
+ * of the mechanic R17 deleted was exactly such a name).
+ */
+export const MACHINE_STATES = Object.freeze([
+  'patrol', 'suspicious', 'alert', 'search', 'attack', 'return', 'stagger', 'downed', 'dead',
+]);
+const STATE_SET = new Set(MACHINE_STATES);
 
 const FROST_COLOR = new THREE.Color(0xbfe9ff);
 const ELEM_DECAY = 7;      // buildup meter decay per second
@@ -263,11 +274,7 @@ export class Machine {
     this.basking = opts.basking ?? null;
     /** Never leaves `patrol` — see `setState` (casting-v4 §2.8, Tallneck). */
     this.docile = !!opts.docile;
-    /** Corrupted by a Corruptor: hostile to everything, cannot be overridden. */
-    this.corrupted = false;
     this.scavenge = null;
-    this.overridden = false;
-    this.mountedBy = null;
     this._site = opts._site ?? null;
     this._frozen = false;
     this._disposed = false;
@@ -662,7 +669,7 @@ export class Machine {
 
   /**
    * Which bone volume does this world point land in? Used when a hit arrives
-   * with no `object` (splash damage, a Critical Hit, an override ally strike)
+   * with no `object` (splash damage, a Critical Hit)
    * so it still attributes to a component instead of the body centre.
    * Not a hot path — one call per impact, never per frame.
    */
@@ -1073,8 +1080,6 @@ export class Machine {
     this.ai?.search.stop();
     this.escort = null;
     this.scavenge = null;
-    if (this.mountedBy) this.manager.dismount?.();
-    if (this._mountEntry) { this.ctx.interactables?.unregister?.(this._mountEntry); this._mountEntry = null; }
     this.burnT = 0;
     this.stunT = 0;
     this._deathT = 0;
@@ -1101,6 +1106,7 @@ export class Machine {
      * case another lane kills one deliberately).
      */
     if (this.docile && name !== 'patrol' && name !== 'dead') return;
+    if (!STATE_SET.has(name)) return;
     if (this.state === name) return;
     const wasCalm = this.state === 'patrol' || this.state === 'return' || this.state === 'suspicious';
     const prev = this.state;
@@ -1125,7 +1131,6 @@ export class Machine {
   forceState(name) {
     const p = this.ctx.player;
     if (name === 'dead') { this.health = 0; this._die(); return; }
-    if (name === 'overridden') { this.manager.override?.(this); return; }
     if (name === 'stagger') { this.ai.reactions._stagger(0.9); return; }
     if (name === 'downed') { this.ai.reactions._down(); return; }
     if (name === 'alert' || name === 'attack' || name === 'search' || name === 'suspicious') {
@@ -1222,7 +1227,6 @@ export class Machine {
       case 'return': this._stateReturn(dt); break;
       case 'stagger': this._stateStagger(dt); break;
       case 'downed': this._stateDowned(dt); break;
-      case 'overridden': this._stateOverridden(dt); break;
     }
 
     this._conform(dt);
@@ -1525,11 +1529,6 @@ export class Machine {
   /** Down: the Critical Hit window. Reactions owns the timer. */
   _stateDowned(dt) {
     this._speed = THREE.MathUtils.damp(this._speed, 0, 8, dt);
-  }
-
-  /** Aloy's machine: heels, defends, or is being ridden. */
-  _stateOverridden(dt) {
-    this.manager.overrides?.step?.(this, dt);
   }
 
   /* ------------------------- attacks ------------------------- */
@@ -2247,8 +2246,6 @@ export class Machine {
       case 'attack': target = EYE_COLORS.hostile; pulse = 1.1 + 0.15 * Math.sin(t * 11); break;
       // downed: the sensor guts out and stutters — the Critical Hit window
       case 'downed': target = EYE_COLORS.hostile; pulse = Math.random() < 0.4 ? 1.5 : 0.25; break;
-      // Aloy's machine burns teal (canon override colour)
-      case 'overridden': target = EYE_COLORS.override; pulse = 1.0 + 0.25 * Math.sin(t * 3.3); break;
       default: target = this._eyeCalm || EYE_COLORS.calm; pulse = 0.85 + 0.2 * Math.sin(t * 2.1);
     }
     if (this.stunT > 0) pulse = Math.random() < 0.5 ? 1.6 : 0.2;
