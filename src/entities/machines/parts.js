@@ -2,6 +2,10 @@ import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { glowTexture } from './machine.js';
 import { poolGeometry } from './rig/lod.js';
+import { LAMP_STATES } from '../../instruments/lamps.js';
+
+/** Sensor lamps start in the calm lamp token (bible §7.2); `_updateEyes` drives them by state. */
+const LAMP_CALM = new THREE.Color(LAMP_STATES.calm.token).getHex();
 
 /**
  * Procedural machine component meshes (spec v2 parts contract).
@@ -15,7 +19,7 @@ import { poolGeometry } from './rig/lod.js';
  * - part meshes NEVER cast shadows, except the two Thunderjaw disc
  *   launchers (the signature pickup must ground itself visually)
  * - materials with `userData.sensor = true` are picked up by Machine.addPart
- *   and driven by the eye-state system (blue/yellow/red + telegraph flash,
+ *   and driven by the eye-state system (the lamp tokens + telegraph flash,
  *   dark on death); other emissives stay identity-colored but die on death.
  */
 
@@ -300,7 +304,7 @@ function tintGeo(geo, k) {
 }
 
 /** Thin sensor antenna with a state-colored tip light. Authored up along +Y. */
-export function antennaMesh({ len = 0.65, color = 0x565c64, tip = 0x38c6ff } = {}) {
+export function antennaMesh({ len = 0.65, color = 0x565c64, tip = LAMP_CALM } = {}) {
   const g = new THREE.Group();
   // base + rod + tip light: ONE draw. The tip is a SENSOR (follows machine
   // eye state, dies on death) and the emissive mask keeps the rod dark.
@@ -328,13 +332,13 @@ export function lensMesh({ r = 0.26 } = {}) {
   g.add(foldedPart({
     metal: [new THREE.TorusGeometry(r * 1.0, r * 0.18, 6, 18)],
     accent: [new THREE.SphereGeometry(r, 14, 12)],
-    color: 0x9aa0a8, rough: 0.3, emissive: 0x38c6ff, intensity: 2.1, sensor: true,
+    color: 0x9aa0a8, rough: 0.3, emissive: LAMP_CALM, intensity: 2.1, sensor: true,
   }));
   return noShadows(g);
 }
 
 /** Behemoth anti-gravity Force Loader: metal ring + purple-blue emissive disc (+Y out). */
-export function forceLoaderMesh({ r = 0.4, color = 0x8f7bff } = {}) {
+export function forceLoaderMesh({ r = 0.4, color = 0xd2452e } = {}) {      // survey vermilion (was violet)
   const g = new THREE.Group();
   // ring + anti-grav disc in ONE draw, and NO glow sprite — six of these ride
   // on a behemoth, so the sprite alone was six draws. The same argument the
@@ -354,7 +358,7 @@ export function forceLoaderMesh({ r = 0.4, color = 0x8f7bff } = {}) {
 }
 
 /** Thunderjaw back Radar: base + pole + rotating fin (userData.fin). Upright. */
-export function radarMesh({ accent = 0x9fd8ff } = {}) {
+export function radarMesh({ accent = LAMP_CALM } = {}) {
   const g = new THREE.Group();
   // base + pole: one metal material, merged
   const mastSrc = [
@@ -383,7 +387,7 @@ export function radarMesh({ accent = 0x9fd8ff } = {}) {
 
 /** Thunderjaw Disc Launcher: boxy turret w/ 3 stacked barrels + emissive vents. Upright, barrels +Z.
  *  The ONLY part that casts shadows (signature pickup must sit visually). */
-export function discLauncherMesh({ accent = 0x8fd8ff } = {}) {
+export function discLauncherMesh({ accent = 0xe8c48a } = {}) {      // bronze chip (was ice blue)
   const g = new THREE.Group();
   // turret body + all three barrels in ONE draw (perf-tech-14)
   const geos = [tintGeo(new THREE.BoxGeometry(0.6, 0.62, 1.5).translate(0, 0.34, 0), 1.15)];

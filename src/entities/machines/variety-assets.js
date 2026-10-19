@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { LAMP_STATES } from '../../instruments/lamps.js';
 /**
  * Machine model LOAD + STYLE pass — kind-agnostic (Round 5, instruments-core).
  *
@@ -304,9 +305,9 @@ export function styleMachine(root, style) {
       seen.add(m);
       if (style.sensor?.(m)) {
         // THE sensor: flat emissive, no map -> _collectEmissive gives it the
-        // full state color treatment (blue/yellow/red, telegraph, death fade)
+        // full state colour treatment (the lamp tokens, telegraph, death fade)
         m.color.copy(SENSOR_BASE);
-        m.emissive = new THREE.Color(0x38c6ff);
+        m.emissive = new THREE.Color(LAMP_STATES.calm.token);
         m.emissiveIntensity = 1.6;
         m.metalness = 0.2;
         m.roughness = 0.4;

@@ -8,6 +8,7 @@ import { safeEmit, machineCtx } from './ai/emit.js';
 import {
   perceptionCfg, engageCfg, elemThreshold, alarmRadius,
 } from './ai/tables.js';
+import { LAMP_STATES, lampStateFor, lampGain } from '../../instruments/lamps.js';
 
 /**
  * Base Machine: state machine, perception, terrain-conforming steering,
@@ -18,13 +19,37 @@ import {
 const CAMP = REST_SITE;            // { x, z, r }: the Instrument no-spawn ring
 const WORLD_LIMIT = PLAY_RADIUS + EXTENT.machineRim;
 
+/**
+ * Sensor colours by state — THE LAMP GRAMMAR (bible §7.2, `src/instruments/
+ * lamps.js` LAMP_STATES; Round 5 W0b). The Round-4 values were Horizon's own
+ * sensor canon; every machine (legacy kinds included, until they go at W2)
+ * now glows in the CALIMA lamp tokens, and `_updateEyes` runs the lamp
+ * rhythm (steady / 1 Hz pulse / 4 Hz flicker). Instrument kinds also carry
+ * an iris lens + beam drawn by `machines.lamps` (see `addLamp`).
+ */
 export const EYE_COLORS = {
-  calm: new THREE.Color('#38c6ff'),
-  wary: new THREE.Color('#ffb31f'),
-  hostile: new THREE.Color('#ff2413'),
-  dead: new THREE.Color('#050505'),
+  calm: new THREE.Color(LAMP_STATES.calm.token),
+  wary: new THREE.Color(LAMP_STATES.wary.token),
+  hostile: new THREE.Color(LAMP_STATES.hostile.token),
+  dead: new THREE.Color(LAMP_STATES.dark.token),
   flash: new THREE.Color(3.0, 3.0, 2.55), // white-hot attack telegraph
 };
+
+/**
+ * VFX palette (A-vfx-palette): no particle or glint within ΔE2000 15 of the
+ * Horizon sensor blue / override teal. Elements per bible §5.8: `fire` =
+ * Cinder, `freeze` = Brine, `shock` = Dust. Glints are salt / bronze chips.
+ */
+export const VFX_COLORS = Object.freeze({
+  cinderHot: 0xfff1d8, cinderMid: 0xff7a1e, cinderLate: 0xc23a10,
+  brineHot: 0xf1eee6, brineMid: 0xbde6e3, brineLate: 0x6f9e98,
+  dustHot: 0xfff3d8, dustMid: 0xc98b4e, dustLate: 0x6e4a28,
+  saltGlint: 0xf3efe4,      // seized-joint crust shatter / crawl glints
+  bronzeChip: 0xe8c48a,     // shock arcs and generic sparks (was ice blue)
+  beacon: 0xe9c77b,         // loot beacon column (was cyan)
+  brineFrost: 0xd6ece6,     // seized tint on plates
+  flameLate: 0xc23a10,      // flame licks cool toward cinder, not toward the hostile lamp
+});
 
 /**
  * THE MACHINE FSM, CLOSED (Round 5, R17). These nine are every state the
@@ -38,7 +63,8 @@ export const MACHINE_STATES = Object.freeze([
 ]);
 const STATE_SET = new Set(MACHINE_STATES);
 
-const FROST_COLOR = new THREE.Color(0xbfe9ff);
+const FROST_COLOR = new THREE.Color(VFX_COLORS.brineFrost);
+const _flameLate = new THREE.Color(VFX_COLORS.flameLate);
 const ELEM_DECAY = 7;      // buildup meter decay per second
 const TELEGRAPH_T = 0.4;   // eye-flash duration at attack windup (canon dodge cue)
 
@@ -881,7 +907,7 @@ export class Machine {
       this.brittleT = 8;
       _v1.copy(point ?? this.position);
       if (!point) _v1.y += this.height * 0.5;
-      this._sparkBurst(_v1, 26, 0xbfefff); // icy shatter glints
+      this._sparkBurst(_v1, 26, VFX_COLORS.saltGlint); // seized-crust shatter glints
     }
   }
 
@@ -1033,9 +1059,10 @@ export class Machine {
 
   /** Elemental explosion FX: fireball/ice-burst + ring + sparks + smoke. */
   _explosionFX(pos, el) {
-    const hot = new THREE.Color(el === 'fire' ? 0xfff1d8 : el === 'freeze' ? 0xf2ffff : 0xffffff);
-    const mid = new THREE.Color(el === 'fire' ? 0xff7a1e : el === 'freeze' ? 0x63d8ff : 0x8fb8ff);
-    const late = new THREE.Color(el === 'fire' ? 0xc23a10 : el === 'freeze' ? 0x2a7ab8 : 0x4a5fb8);
+    const V = VFX_COLORS;
+    const hot = new THREE.Color(el === 'fire' ? V.cinderHot : el === 'freeze' ? V.brineHot : V.dustHot);
+    const mid = new THREE.Color(el === 'fire' ? V.cinderMid : el === 'freeze' ? V.brineMid : V.dustMid);
+    const late = new THREE.Color(el === 'fire' ? V.cinderLate : el === 'freeze' ? V.brineLate : V.dustLate);
     this.spawnShockRing(pos.x, pos.z, 5.5, 0.5, 0, 0);
     this._sparkBurst(pos, 34, mid.getHex());
     if (el === 'fire') this._smokeBurst(pos, 8);
@@ -1252,7 +1279,7 @@ export class Machine {
       this._iceClock -= dt;
       if (this._iceClock <= 0 && !this.lowLOD) {
         this._iceClock = 0.22;
-        this._arcFlash(0xaef2ff); // icy glints crawling over frozen plates
+        this._arcFlash(VFX_COLORS.saltGlint); // salt-crust glints crawling over seized plates
       }
     }
     const k = THREE.MathUtils.damp(this._frostK, this.brittleT > 0 ? 1 : 0, 5, dt);
@@ -1826,7 +1853,7 @@ export class Machine {
     const h = Math.max(4, this.height * 1.4);
     const geo = new THREE.CylinderGeometry(0.09, 0.16, h, 8, 1, true);
     const mat = new THREE.MeshBasicMaterial({
-      color: 0x7fe8ff, transparent: true, opacity: 0.35,
+      color: VFX_COLORS.beacon, transparent: true, opacity: 0.35,
       blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false,
       side: THREE.DoubleSide,
     });
@@ -1958,7 +1985,7 @@ export class Machine {
         s.position.y += dt * 1.6;
         s.scale.multiplyScalar(1 - dt * 0.8);
         mat.opacity = 0.85 * (1 - t / 0.55);
-        mat.color.lerp(EYE_COLORS.hostile, dt * 2);
+        mat.color.lerp(_flameLate, dt * 2);
         if (t > 0.55) { this._fxDrop(s); mat.dispose(); return false; }
         return true;
       },
@@ -1992,7 +2019,7 @@ export class Machine {
   }
 
   /** Jittering electric arc streak across the body while shock-stunned. */
-  _arcFlash(color = 0xbfe8ff) {
+  _arcFlash(color = VFX_COLORS.bronzeChip) {
     const mat = new THREE.SpriteMaterial({
       map: glowTexture(), color, transparent: true, opacity: 0.95,
       blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false,
