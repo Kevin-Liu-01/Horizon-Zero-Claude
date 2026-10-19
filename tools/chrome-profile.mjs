@@ -54,7 +54,7 @@
  *     prove orphaned (a foreign process on the dir, a live parent, no process
  *     table at all) falls back to the conservative keep.
  */
-import { mkdirSync, rmSync, readdirSync, statSync, readlinkSync, realpathSync } from 'fs';
+import { mkdirSync, rmSync, readdirSync, statSync, readlinkSync, realpathSync, statfsSync, writeFileSync, readFileSync, existsSync } from 'fs';
 import { spawnSync } from 'child_process';
 import os from 'os';
 import path from 'path';
@@ -466,3 +466,36 @@ export function countProfiles() {
   }
   return n;
 }
+
+export function guardPort(raw, p = Number(raw)) {   // R5 gates-perf W0a, plan §0 rules 6 + 8: lanes 5250-5269, orchestrator 5270, judges 5271 + 5280-5299; 5272-5279 reserved; 5173 never
+  if (/^\d+$/.test(String(raw ?? '')) && p >= 5250 && p <= 5299 && !(p >= 5272 && p <= 5279)) return p;
+  console.error(`[port-guard] refused port ${raw ?? '(none)'}: pass --port or SHOT_PORT in 5250-5271 or 5280-5299 (5173 is never used; 5272-5279 reserved)`); process.exit(2);
+}
+export function preflight(env = process.env) {   // CAL_PREFLIGHT_FREE_GB / CAL_PREFLIGHT_MEM_FREE_PCT simulate a reading
+  let gb = Number(env.CAL_PREFLIGHT_FREE_GB);
+  try { if (!env.CAL_PREFLIGHT_FREE_GB) { const s = statfsSync(existsSync('/System/Volumes/Data') ? '/System/Volumes/Data' : os.tmpdir()); gb = s.bavail * s.bsize / 2 ** 30; } } catch { gb = Infinity; }
+  const pct = Number(env.CAL_PREFLIGHT_MEM_FREE_PCT || /free percentage:\s*(\d+)/.exec(spawnSync('memory_pressure', { encoding: 'utf8' }).stdout || '')?.[1] || 100);
+  const why = gb < 3 ? `free disk ${gb.toFixed(2)} GB < 3 GB` : pct < 25 ? `memory_pressure free ${pct} % < 25 %` : null;
+  return { ok: !why, why, freeGB: +gb.toFixed(2), memFreePct: pct };
+}
+export const SEMAPHORE_DIR = path.join(PROFILE_ROOT, 'chrome-semaphore'), CHROME_SLOTS = Math.min(2, Math.max(1, Number(process.env.CAL_CHROME_SLOTS) || 2));
+let ticket = null;
+const born = (pid) => spawnSync('ps', ['-o', 'lstart=', '-p', String(pid)], { encoding: 'utf8' }).stdout?.trim() || null;
+export async function acquireChromeSlot() {   // FIFO tickets `<n>` = `pid|start`: the first CHROME_SLOTS live tickets may run a Chrome; a SIGKILLed or recycled pid's ticket is dead
+  for (let n = 0, said = 0; ; await new Promise((r) => setTimeout(r, 250))) {
+    const pf = preflight();
+    if (!pf.ok) { releaseChromeSlot(); throw new Error(`infra: preflight refused to launch Chrome: ${pf.why} (plan §0 rule 8: wait, then retry)`); }
+    const ids = () => (mkdirSync(SEMAPHORE_DIR, { recursive: true }), readdirSync(SEMAPHORE_DIR).filter((f) => /^\d+$/.test(f)).map(Number).sort((a, b) => a - b));
+    for (n = Math.max(n, ...ids()) + 1; !ticket || !existsSync(ticket); n++) {
+      try { writeFileSync(path.join(SEMAPHORE_DIR, `${n}`), `${process.pid}|${born(process.pid)}`, { flag: 'wx' }); ticket = path.join(SEMAPHORE_DIR, `${n}`); process.once('exit', releaseChromeSlot); } catch { /* taken */ }
+    }
+    const all = ids(), live = all.filter((k) => {   // a dead ticket below the top is removed (the top stays, so its number is never reissued)
+      try { const [pid, b] = readFileSync(path.join(SEMAPHORE_DIR, `${k}`), 'utf8').split('|'); if (b === 'null' ? pidAlive(+pid) : born(+pid) === b) return true; } catch { return false; }
+      return k < all[all.length - 1] && rmSync(path.join(SEMAPHORE_DIR, `${k}`), { force: true }), false;
+    });
+    const rank = live.indexOf(Number(path.basename(ticket)));
+    if (rank >= 0 && rank < CHROME_SLOTS) return { ticket, rank, queue: live };
+    if (!(said++ % 120)) console.log(`[semaphore] waiting for one of ${CHROME_SLOTS} machine-wide Chrome slots (queue ${live.join(',')}, mine ${path.basename(ticket)})`);
+  }
+}
+export function releaseChromeSlot() { if (ticket) rmSync(ticket, { force: true }); ticket = null; }

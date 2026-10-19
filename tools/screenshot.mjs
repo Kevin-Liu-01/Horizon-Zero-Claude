@@ -18,7 +18,7 @@ import puppeteer from 'puppeteer';
 import { spawn } from 'child_process';
 import { mkdirSync } from 'fs';
 import net from 'net';
-import { sweepProfiles, profileDir, disposeProfile, installProfileCleanup } from './chrome-profile.mjs';
+import { sweepProfiles, profileDir, disposeProfile, installProfileCleanup, guardPort, acquireChromeSlot } from './chrome-profile.mjs';
 
 const args = process.argv.slice(2);
 const name = args[0] && !args[0].startsWith('--') ? args[0] : 'shot';
@@ -29,7 +29,7 @@ const getFlag = (flag, dflt) => {
 const params = getFlag('--params', '');
 const wait = parseInt(getFlag('--wait', '1200'), 10);
 const evalJs = getFlag('--eval', null);
-const PORT = parseInt(getFlag('--port', process.env.SHOT_PORT || '5173'), 10);
+const PORT = guardPort(getFlag('--port', process.env.SHOT_PORT));
 
 function portOpen(port) {
   return new Promise((resolve) => {
@@ -71,6 +71,7 @@ installProfileCleanup();
       + `(pids ${s.killedPids.join(',')}) and reclaimed their profiles`);
   }
 }
+await acquireChromeSlot();
 const userDataDir = profileDir(PORT);
 const browser = await puppeteer.launch({
   headless: 'new',

@@ -98,6 +98,12 @@ export const BUDGETS = {
   /** p95 of the rAF frame interval, milliseconds. */
   frameP95Ms: 20,
   /**
+   * Median scene GPU time (EXT_disjoint_timer_query), milliseconds, at the shipped default tier
+   * (plan §9 A21 re-cast: "median GPU <= 14 ms at the A-gpu-tier tier"; engine-gpu's W0b
+   * A-gpu-tier chooses that tier). Round 4 graded the GPU term against frameP95Ms (20 ms).
+   */
+  gpuMedianMs: 14,
+  /**
    * p95 of the JS half of the frame, milliseconds. "Half of the frame" means
    * the WHOLE main-loop callback: every system update in every fixed sub-step,
    * every `interpolate()`, the render submit and the frame tail. Round 4 judge
@@ -150,8 +156,8 @@ export const STAGE_PRELUDE = `
         if (m.spawnPos) m.position.set(m.spawnPos.x, m.spawnPos.y, m.spawnPos.z);
         m.position.y = groundY(m.position.x, m.position.z);
         m.heading = (i * 0.61) % (Math.PI * 2);
-        // Do NOT null lastKnown: watcher.js:466 copies it unconditionally once
-        // the machine is in attack, and a null there throws inside
+        // Do NOT null lastKnown: a kind's attack update may copy it unconditionally
+        // once the machine is in attack (Round 4's sentry did), and a null there throws inside
         // Machines.update every frame (the guarded loop survives it, but a
         // throwing update is not a scene worth measuring). Reported to
         // machine-ai as a missing null guard.
@@ -191,31 +197,83 @@ export const STAGE_PRELUDE = `
         if (i >= 0) ctx.engine.onAfterRender.splice(i, 1);
       };
     };
-    return { machines, resetAll, pick, place, lookAt, pinAll, groundY };
+    /**
+     * R5: turn [[role, n], ...] into a per-role kind plan. A role without a
+     * kind borrows, in order, from the roles that have one, and says so.
+     * Every role missing -> { skip } carrying the roster's named note.
+     * Needs the gate-roster prelude (KIND, roleSkip) in scope.
+     */
+    const castPlan = (want) => {
+      const have = want.map(([r]) => r).filter((r) => KIND[r]);
+      const pool = have.length ? have : Object.keys(KIND).filter((r) => KIND[r]);
+      if (!pool.length) return { skip: roleSkip(...want.map(([r]) => r)).detail };
+      const fallbacks = [];
+      let k = 0;
+      const rows = want.map(([role, n]) => {
+        if (KIND[role]) return { role, kind: KIND[role], n };
+        const from = pool[k++ % pool.length];
+        fallbacks.push(role + ' -> ' + from + ' (' + KIND[from] + '): ' + (ROLE_NOTE[role].label || 'no kind'));
+        return { role, kind: KIND[from], n };
+      });
+      return { rows, fallbacks };
+    };
+    /** The plan's machines: live ones first, the deficit spawned at (x, z). */
+    const fill = (plan, x, z) => {
+      const out = [];
+      for (const row of plan.rows) {
+        const got = machines().filter((m) => m.kind === row.kind && !out.includes(m)).slice(0, row.n);
+        for (let i = got.length; i < row.n; i++) {
+          let m = null;
+          try { m = ctx.machines.spawn(row.kind, x + 3 * i, z + 3 * i); } catch (e) { m = null; }
+          if (!m) break;
+          got.push(m);
+        }
+        out.push(...got);
+      }
+      return out;
+    };
+    return { machines, resetAll, pick, place, lookAt, pinAll, groundY, castPlan, fill, casts: {} };
   })();
 `;
 
 /**
  * Scenarios A21 walks. Each expression stages a fixed scene and evaluates to
- * the unpin function for it — `const unpin = eval(SC[name]); … ; unpin();`.
+ * the unpin function for it — `const unpin = eval(SC[name]); … ; unpin();` —
+ * or, when its cast cannot be staged, to `{ skip: '<SKIP label>: <named note>' }`.
+ *
+ * ROUND 5 RE-CAST (gates-perf W0a, plan §9 `A21-real-draw-calls`): the cast is
+ * by ROLE (`KIND.<role>` from tools/gate-roster.mjs) and the stage by PLACE
+ * (`PLACE(name)` / `standAt()` from tools/gate-places.mjs), both spliced into
+ * A21's body before these are eval'd. No species, no coordinate.
+ *   vista         the spawn vista (gatePlaces.spawnVista), whatever the world has in view
+ *   herd          herd x6 + sentry x2 at gatePlaces.herdSite
+ *   staged-fight  colossus, heavy, artillery, duelist, sentry, herd, flanker, spotter in a
+ *                 forward arc at gatePlaces.fightGround
+ * A role with no live kind is filled from the roles that have one, and every
+ * substitution is NAMED in `__stage.casts[scenario].fallbacks` (R18); a
+ * scenario whose roles ALL lack a kind is skipped with the R18/R28/R30 note.
+ * Legacy kinds are never cast (R28). Missing instances are spawned for the
+ * scenario (every gate runs on a fresh page, so nothing outlives the gate).
  */
 export const PERF_SCENARIOS = {
-  'spawn-vista': `(() => {
+  vista: `(() => {
     __stage.resetAll();
     const p = __CTX__.player;
-    p.position.set(0, 0, 0); p.camPitch = 0.06; p._snapToGround?.();
-    p.camYaw = Math.PI;
+    const s = standAt(p, 'spawnVista'); p.camPitch = s.pitch ?? 0.06;
+    __stage.casts.vista = { cast: 'world as found', place: s.note || 'spawnVista' };
     return __stage.pinAll();
   })()`,
 
-  'west-herd': `(() => {
-    // The literal west meadow herd, STAGED: 6 striders + a 2-watcher escort at
-    // fixed offsets around (-205,-55). Before this, the scenario only moved the
-    // camera and measured whichever machines the AI happened to leave in frame.
+  herd: `(() => {
+    // herd x6 + a sentry x2 escort at fixed offsets around gatePlaces.herdSite,
+    // placed (not camera-only) so the AI cannot walk the scene out of frame.
+    const want = [['herd', 6], ['sentry', 2]];
+    const plan = __stage.castPlan(want);
+    if (plan.skip) return plan;
     __stage.resetAll();
-    const HC = { x: -205, z: -55 };
+    const HC = PLACE('herdSite');
     const OFF = [[0, 0], [6.5, 3], [-5, 4.5], [3, -6], [-7.5, -3], [9, -7.5], [-11, 1.5], [12.5, 6]];
-    const herd = [...__stage.pick('strider', 6), ...__stage.pick('watcher', 2)];
+    const herd = __stage.fill(plan, HC.x, HC.z);
     herd.forEach((m, i) => {
       const o = OFF[i] || [0, 0];
       __stage.place(m, HC.x + o[0], HC.z + o[1], (i * 0.8) % (Math.PI * 2));
@@ -223,32 +281,28 @@ export const PERF_SCENARIOS = {
     const p = __CTX__.player;
     p.position.set(HC.x + 24, 0, HC.z + 24); p.camPitch = 0.06; p._snapToGround?.();
     __stage.lookAt(HC.x, HC.z);
+    __stage.casts.herd = { cast: herd.map((m) => m.kind), fallbacks: plan.fallbacks, place: HC.note || 'herdSite' };
     return __stage.pinAll();
   })()`,
 
   'staged-fight': `(() => {
-    // Deterministic: staged on the flat ground at spawn so the scenario cannot
-    // inherit whatever biome the previous one left us in, and the cast is one
-    // of each species (topped up from the roster) so it is the same eight
-    // machines on every run regardless of list-order churn.
+    // Deterministic: staged on flat ground (gatePlaces.fightGround) so the
+    // scenario cannot inherit whatever biome the previous one left us in, one
+    // machine per fighting role in a fixed order, topped up from the roles that
+    // have a kind (named), so it is the same eight on every run.
     //
-    // FIX ROUND 1: they used to be placed on a full ring around the player, so
-    // five of the eight were behind the camera and never rendered — the gate
-    // called it an eight-machine fight and measured three. They are staged in
-    // a forward arc now, +-38 degrees (the camera's horizontal half-FOV at
-    // 55 deg vertical / 16:9 is 42 deg), 9-17 m out in two ranks, so all eight
-    // are inside the frustum. That is a strictly heavier frame than the ring
-    // was; see shots/perf-staged-fight.png.
+    // FIX ROUND 1 (kept): a forward arc, +-38 degrees (the camera's horizontal
+    // half-FOV at 55 deg vertical / 16:9 is 42 deg), 9-17 m out in two ranks, so
+    // all eight are inside the frustum.
+    const order = ['colossus', 'heavy', 'artillery', 'duelist', 'sentry', 'herd', 'flanker', 'spotter'];
+    const plan = __stage.castPlan(order.map((r) => [r, 1]));
+    if (plan.skip) return plan;
     __stage.resetAll();
     const p = __CTX__.player;
-    p.position.set(0, 0, 0); p.camPitch = 0.05; p._snapToGround?.();
-    p.camYaw = Math.PI;
+    const s = standAt(p, 'fightGround'); p.camPitch = s.pitch ?? 0.05;
+    const cast = __stage.fill(plan, p.position.x, p.position.z);
     // camera forward for camYaw: (-sin, -cos) — see player.js _updateCamera
     const fx = -Math.sin(p.camYaw), fz = -Math.cos(p.camYaw);
-    const order = ['thunderjaw', 'sawtooth', 'behemoth', 'longleg', 'watcher', 'strider', 'scrapper', 'glinthawk'];
-    const seen = new Set(); const cast = [];
-    for (const k of order) { const m = __stage.pick(k, 1)[0]; if (m && !seen.has(m)) { cast.push(m); seen.add(m); } }
-    for (const m of __stage.machines()) { if (cast.length >= 8) break; if (!seen.has(m)) { cast.push(m); seen.add(m); } }
     cast.slice(0, 8).forEach((m, i) => {
       const spread = (i - 3.5) / 3.5;                 // -1 .. 1 across the arc
       const a = Math.atan2(fx, fz) + spread * 0.66;   // +-38 degrees of forward
@@ -260,6 +314,7 @@ export const PERF_SCENARIOS = {
         m.state = 'attack'; m.alerted = true; m.suspicion = 1;
       } catch (e) { /* machine-ai owns these */ }
     });
+    __stage.casts['staged-fight'] = { cast: cast.slice(0, 8).map((m) => m.kind), fallbacks: plan.fallbacks, place: s.note || 'fightGround' };
     return __stage.pinAll();
   })()`,
 };
@@ -271,5 +326,5 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
   for (const [k, v] of Object.entries(BUDGETS)) {
     console.log(`  ${k.padEnd(20)} ${typeof v === 'object' ? JSON.stringify(v) : v}`);
   }
-  console.log(`\n  scenarios: ${Object.keys(PERF_SCENARIOS).join(', ')} (staged + pinned)`);
+  console.log(`\n  scenarios: ${Object.keys(PERF_SCENARIOS).join(', ')} (staged by role + place, pinned)`);
 }
