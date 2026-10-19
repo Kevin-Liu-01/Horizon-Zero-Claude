@@ -16,7 +16,9 @@
  *      and the specs module is pure data (only plain-object exports);
  *   4. serves the copy with Vite in MIDDLEWARE mode (no TCP port at all: an
  *      http server on a unix socket, `server.ws: false`, a scratch `cacheDir`
- *      so the shared node_modules/.vite cache is never written), and drives
+ *      so the shared node_modules/.vite cache is never written) from the
+ *      copy's REAL path (W0b fix, below), proves Vite transforms modules
+ *      before any Chrome launches (`viteProbe`), and drives
  *      ONE headless Chrome whose every request to the fake origin
  *      `http://specs-fixture.invalid` is intercepted and forwarded to that
  *      socket — an un-intercepted request cannot resolve and fails loudly;
@@ -25,16 +27,31 @@
  *      them: fresh page, HMR stub, `?shot=1`, __READY__, setup, settle,
  *      assert, quarantine ledger, any console error = FAIL;
  *   6. tears everything down (browser, profile, Vite, socket, copy).
+ *
+ * W0b FIX — why the gate failed on main only (orchestrator run, Oct 16): with
+ * R5_SCRATCH unset the scratch defaults to os.tmpdir(), which on macOS is
+ * `/var/folders/...` — a path THROUGH the `/var -> /private/var` symlink. Vite
+ * keeps `root` as given but resolves every module id to its real path
+ * (`/private/var/...`), so `isFileServingAllowed` (fs.allow is derived from
+ * the un-real root) refused every source file, the transform was skipped, and
+ * the request fell through to the plain static server: JS came back raw and a
+ * CSS file imported from JS came back as `text/css` — "Failed to load module
+ * script ... MIME type text/css", no __READY__, A1/A20b timed out. The lane
+ * runs passed only because R5_SCRATCH pointed at /private/tmp (already real).
+ * Now the scratch, the copy and the served root are realpath'd, and
+ * `viteProbe` fails in < 1 s with the served MIME types if Vite ever serves
+ * an untransformed module again (no 2 x 120 s timeouts, no Chrome launched).
  */
 import http from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import {
-  existsSync, mkdirSync, rmSync, copyFileSync, symlinkSync, readFileSync, writeFileSync,
+  existsSync, mkdirSync, rmSync, copyFileSync, symlinkSync, readFileSync, writeFileSync, readdirSync,
   realpathSync, statfsSync, constants as FS,
 } from 'node:fs';
 import { pathToFileURL, fileURLToPath } from 'node:url';
+import { cloneFiles } from '../lib/clone.mjs';
 
 export const FIXTURE_ROW = 'probe';
 export const FIXTURE_FILE = 'public/models/pipeline/probe.glb';
@@ -69,14 +86,14 @@ function treeFiles(root) {
     && existsSync(path.join(root, f)));
 }
 
-/** Clone the tree into `dst` (APFS clonefile when available: ~0 bytes of disk). */
+/**
+ * Clone the tree into `dst` with `cp -c` (clonefile: ~0 bytes of disk). W0b:
+ * node's COPYFILE_FICLONE was measured making FULL copies on this volume
+ * (tools/build/lib/clone.mjs), i.e. every fixture run cost the tree's size.
+ */
 export function cloneTree(root, dst) {
   const files = treeFiles(root);
-  for (const f of files) {
-    const to = path.join(dst, f);
-    mkdirSync(path.dirname(to), { recursive: true });
-    copyFileSync(path.join(root, f), to, FS.COPYFILE_FICLONE);
-  }
+  cloneFiles(files.map((f) => [path.join(root, f), path.join(dst, f)]));
   symlinkSync(realpathSync(path.join(root, 'node_modules')), path.join(dst, 'node_modules'));
   return files.length;
 }
@@ -151,6 +168,93 @@ function forward(socketPath, req) {
   });
 }
 
+/** First `import './x.css'` statement in a src/**.js file of `dir` -> its URL, or null. */
+function firstCssImport(dir) {
+  const files = [];
+  const walk = (rel) => {
+    for (const e of readdirSync(path.join(dir, rel), { withFileTypes: true })) {
+      const r = `${rel}/${e.name}`;
+      if (e.isDirectory()) walk(r); else if (e.name.endsWith('.js')) files.push(r);
+    }
+  };
+  walk('src');
+  files.sort();
+  for (const f of files) {
+    let text = '';
+    try { text = readFileSync(path.join(dir, f), 'utf8'); } catch { continue; }
+    const m = /^\s*import\s+['"](\.{1,2}\/[^'"]+\.css)['"]/m.exec(text);
+    if (m) return `/${path.posix.join(path.posix.dirname(f), m[1])}`;
+  }
+  return null;
+}
+
+/**
+ * Before any Chrome: the served copy must TRANSFORM modules. Requests the
+ * entry module and the first CSS file a src module imports, the way a module
+ * script asks (Accept: *\/*): both must come back as JavaScript, and the entry
+ * must carry Vite's rewritten imports. Returns { ok, checks }.
+ */
+export async function viteProbe(dir, socketPath) {
+  const get = (p) => new Promise((resolve) => {
+    const r = http.get({ socketPath, path: p, headers: { host: 'localhost', accept: '*/*' } }, (res) => {
+      const chunks = [];
+      res.on('data', (c) => chunks.push(c));
+      res.on('end', () => resolve({ path: p, status: res.statusCode, type: String(res.headers['content-type'] || ''), body: Buffer.concat(chunks).toString('utf8') }));
+    });
+    r.on('error', (err) => resolve({ path: p, status: 0, type: '', body: '', error: String(err?.message || err) }));
+  });
+  const isJs = (r) => r && r.status === 200 && /javascript/.test(r.type);
+  const entry = await get('/src/main.js');
+  // a transformed entry has its relative imports rewritten to root URLs and the dev-only define replaced
+  const checks = [{ path: entry.path, status: entry.status, type: entry.type, bytes: entry.body.length,
+    ok: isJs(entry) && /from\s+["']\/src\//.test(entry.body), want: 'transformed JS (imports rewritten to /src/...)' }];
+  const cssUrl = firstCssImport(dir);
+  if (cssUrl) {
+    const css = await get(cssUrl);
+    checks.push({ path: css.path, status: css.status, type: css.type, bytes: css.body.length, ok: isJs(css), want: 'CSS imported from JS served as a JS module' });
+  }
+  return { ok: checks.every((c) => c.ok), root: dir, checks };
+}
+
+/** Vite in middleware mode on a unix socket, root exactly as given. `control`: quiet, no dep scan. */
+async function startVite(dir, sock, { control = false, cacheDir = null } = {}) {
+  const { createServer } = await import('vite');
+  const vite = await createServer({
+    root: dir,
+    configFile: path.join(dir, 'vite.config.js'),
+    cacheDir: cacheDir || path.join(dir, '.vite-cache'),
+    logLevel: control ? 'silent' : 'error',
+    clearScreen: false,
+    ...(control ? { optimizeDeps: { noDiscovery: true, include: [] } } : {}),
+    server: { middlewareMode: true, hmr: false, ws: false, watch: { ignored: ['**/*'] } },
+  });
+  rmSync(sock, { force: true });
+  const server = http.createServer(vite.middlewares);
+  await new Promise((r, j) => { server.once('error', j); server.listen(sock, r); });
+  return { vite, server };
+}
+
+/**
+ * NEGATIVE CONTROL for `viteProbe`: serve the same copy through a symlinked
+ * path WITHOUT realpath (the failure mode of the orchestrator's main run) —
+ * the probe must report it (ok: false). No Chrome. Returns { caught, probe }.
+ */
+export async function probeControl(dir, sock) {
+  const link = `${dir}-via-link`;
+  rmSync(link, { force: true });
+  symlinkSync(dir, link);
+  let v = null;
+  try {
+    v = await startVite(link, sock, { control: true });
+    const probe = await viteProbe(link, sock);
+    return { caught: !probe.ok, probe };
+  } finally {
+    if (v) { await new Promise((r) => v.server.close(() => r())); await v.vite.close().catch(() => {}); }
+    rmSync(sock, { force: true });
+    rmSync(link, { force: true });
+  }
+}
+
 export async function runGate(browser, gate, socketPath) {
   const res = { id: gate.id };
   const errors = [];
@@ -171,7 +275,7 @@ export async function runGate(browser, gate, socketPath) {
     await page.setViewport({ width: 1600, height: 900 });
     await page.evaluateOnNewDocument(HMR_STUB);
     await page.goto(`${ORIGIN}/?shot=1${gate.params ? `&${gate.params}` : ''}`, { waitUntil: 'domcontentloaded', timeout: 60000 });
-    await page.waitForFunction('window.__READY__ === true', { timeout: 120000 });
+    await page.waitForFunction(gate.ready || 'window.__READY__ === true', { timeout: gate.readyTimeout ?? 120000 });
     if (gate.setup) await page.evaluate(gate.setup);
     await sleep(gate.settle ?? 1200);
     const budget = gate.timeout ?? 30000;
@@ -201,24 +305,21 @@ export async function runGate(browser, gate, socketPath) {
  * headless Chrome through request interception. Everything is torn down
  * before it returns. Exported for integration checks of a merged copy.
  */
-export async function serveAndRun(dir, gateDefs, { port = 0, sock = path.join(os.tmpdir(), `cal-sf-${process.pid}.sock`) } = {}) {
+export async function serveAndRun(dir, gateDefs, { port = 0, sock = path.join(os.tmpdir(), `cal-sf-${process.pid}.sock`), onProbe = null, cacheDir = null } = {}) {
   let vite = null, server = null, browser = null, profile = null, slot = false;
+  // the served root must be the REAL path (W0b fix, header): Vite resolves module ids to real paths
+  dir = realpathSync(dir);
   const toolsDir = path.dirname(path.dirname(path.dirname(fileURLToPath(import.meta.url))));
   const cp = await import(pathToFileURL(path.join(toolsDir, 'chrome-profile.mjs')).href);
   const results = [];
   try {
-    const { createServer } = await import('vite');
-    vite = await createServer({
-      root: dir,
-      configFile: path.join(dir, 'vite.config.js'),
-      cacheDir: path.join(dir, '.vite-cache'),
-      logLevel: 'error',
-      clearScreen: false,
-      server: { middlewareMode: true, hmr: false, ws: false, watch: { ignored: ['**/*'] } },
-    });
-    rmSync(sock, { force: true });
-    server = http.createServer(vite.middlewares);
-    await new Promise((r, j) => { server.once('error', j); server.listen(sock, r); });
+    ({ vite, server } = await startVite(dir, sock, { cacheDir }));
+    const probe = await viteProbe(dir, sock);
+    if (onProbe) onProbe(probe);
+    if (!probe.ok) {
+      for (const gate of gateDefs) results.push({ id: gate.id, pass: false, error: `vite served an untransformed module before any Chrome launched: ${JSON.stringify(probe.checks)}` });
+      return results;
+    }
     const puppeteer = (await import('puppeteer')).default;
     // gates-perf's machine-wide semaphore (W0a), when it is in this tree. Call
     // this module from its own process (see the CLI below): the ticket is per
@@ -246,7 +347,12 @@ export async function serveAndRun(dir, gateDefs, { port = 0, sock = path.join(os
  * Returns { pass: true|false|null, detail }.
  */
 export async function runSpecsFixture({ root, scratch, port = 0, waitMs = 180000, log = () => {} }) {
-  if (!scratch || path.resolve(scratch).startsWith(path.resolve(root) + path.sep)) {
+  if (!scratch) return { pass: false, detail: { error: 'scratch dir required (outside the repo)' } };
+  // compare and use REAL paths (W0b fix, header): TMPDIR is /var/folders/... -> /private/var/folders/...
+  mkdirSync(scratch, { recursive: true });
+  scratch = realpathSync(scratch);
+  root = realpathSync(root);
+  if (scratch === root || scratch.startsWith(root + path.sep)) {
     return { pass: false, detail: { error: `scratch dir must be outside the repo (got ${scratch})` } };
   }
   const t0 = Date.now();
@@ -268,9 +374,11 @@ export async function runSpecsFixture({ root, scratch, port = 0, waitMs = 180000
     detail.specsPureData = await specsArePureData(path.join(work, SPECS_FILE));
     if (!detail.dataOnly || !detail.specsPureData.ok) return { pass: false, detail };
 
+    // the probe's negative control: the same copy through a symlink, un-realpath'd, must be caught (no Chrome)
+    detail.probeControl = await probeControl(work, sock).catch((err) => ({ caught: null, error: String(err?.message || err).slice(0, 200) }));
     const { GATES } = await import(pathToFileURL(path.join(root, 'tools/gates.config.mjs')).href);
     const defs = GATE_IDS.map((id) => GATES.find((g) => g.id === id) || { id, missing: true });
-    detail.gates = await serveAndRun(work, defs, { port, sock });
+    detail.gates = await serveAndRun(work, defs, { port, sock, onProbe: (p) => { detail.viteProbe = p; } });
     const fixtureGone = detail.gates.every((g) => g.ledger && !g.ledger.models.includes(FIXTURE_ROW) && !g.ledger.specs.includes(FIXTURE_ROW));
     detail.fixtureAbsentInCopy = fixtureGone;
     return { pass: detail.gates.every((g) => g.pass === true) && fixtureGone, detail };

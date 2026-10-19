@@ -1,4 +1,15 @@
-#!/usr/bin/env node
+/**
+ * PROMOTED REFERENCE (pipeline lane, W0b) — the Round-5 proof's ground-layer builder,
+ * moved verbatim from tools/r5-poc/gen-ground.mjs (plan §2: pipeline promotes
+ * `ground/lib/**`; world-ground owns `tools/build/ground/**` layer recipes from W1).
+ *
+ * NOT a recipe (lib/ is never discovered by tools/build/build-assets.mjs) and not
+ * runnable as-is: it reads the Poly Haven rock scan (LICENSES row r5-poc-rock-scan),
+ * which is not staged in models-staging/r5-src yet, and writes the W0 proof textures
+ * public/textures/r5-poc/* (world-ground's, deleted at the W1 exit). world-ground's W1
+ * layer recipes start from it: stage the scan with tools/build/sources.mjs stage-zip,
+ * read it from r5-src, drop the timing stats, write public/textures/ground/**.
+ */
 /**
  * ROUND 5 PIPELINE PROOF — ground materials for the biome patch.
  *

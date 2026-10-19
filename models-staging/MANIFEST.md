@@ -1,5 +1,24 @@
 # Models Staging Manifest
 
+## Round 5 (pipeline lane, W0b) — read this first
+
+- **`models-staging/r5-src/`** (git-ignored; the orchestrator symlinks it into lane worktrees) holds the
+  third-party sources the deterministic asset build reads, one directory per `public/LICENSES.json` row id:
+  `ubc-standard/` (Universal Base Characters [Standard]), `mco-fantasy/` (Modular Character Outfits –
+  Fantasy [Standard]), `ual2-standard/` (Universal Animation Library 2 [Standard]), `ual1/` (the shipped UAL
+  v1 Godot export). Every staged file's SHA-256 is in the tracked lock `tools/build/sources.lock.json`;
+  `node tools/build/sources.mjs status` is gate `A-sources-staged`. Sources are added with
+  `tools/build/sources.mjs stage-zip` (and an extracted copy is tied to its archive with `verify-zip`).
+- **The Round-4 staging below is legacy.** Its bulk (originals, bake backups, donor caches, CC0 packs no
+  Round-5 lane names) is untracked and lives only in the main tree; `node tools/build/staging-cleanup.mjs`
+  lists it (133.8 MB measured on main, Oct 19) and `--apply` deletes it (orchestrator). The tracked licence
+  files of the CC0 animal donors stay until those legacy kinds are deleted (instruments-b, W2 exit).
+  Deleted in W0b: `npc/MANIFEST.md` (the `npc.glb` fan-art record, R30), the lab-anim staging licence
+  copies (`anims-{hybrid,reskin,retarget}/`), and the AnimatedMech / UltimateMonsters licence files (no
+  shipped file comes from either pack).
+
+## Round 4 record (Aug–Sep 2026)
+
 Downloaded 2026-08-05. Total ~32 MB. All files verified: `.glb` start with `glTF` magic; `.gltf` are valid JSON with embedded (base64) buffers and textures — every file is fully self-contained. Structure inspected with `node tools/dump-structure.mjs <path>`; animation clips read via `@gltf-transform/core`.
 
 ## Individual models (staging root)

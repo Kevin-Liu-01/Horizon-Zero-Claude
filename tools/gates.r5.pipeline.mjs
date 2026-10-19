@@ -14,9 +14,10 @@
  * the first" per gate; nothing runs twice).
  *
  * W0a gates (plan §3.1): A-ID-ip-assets-gone, A-assets-tracked,
- * A-specs-data-driven. Global list items owned here: A-licence-manifest
- * (complete at W0b: SHA-256 re-fetch + brand's credits wiring are PENDING
- * clauses until then). Loader grant check: A-loader-fixes. Lane guards (not
+ * A-specs-data-driven. W0b gates (plan §9 pipeline): A-sources-staged,
+ * A-build-deterministic, A-build-only-lane, A-glb-budget, A-human-bind,
+ * A-poc-promoted (W0 exit), A-loader-fixes. Global list items owned here:
+ * A-licence-manifest, A-ID-ip-assets-gone, A-assets-tracked. Lane guards (not
  * §9 ids): A-pipeline-boot-rows (every boot row loads; no placeholder body
  * exists anywhere), A-pipeline-r30-merge-order (fix round 3: every R30 file
  * and the class that reads it are in the tree together or gone together —
@@ -24,9 +25,11 @@
  * instruments-core's §6 deletion of the four machine GLBs is in;
  * docs/ROUND5-PIPELINE.md §4.1).
  *
- * ORDER MATTERS: A-specs-data-driven launches its own headless Chrome, so it
- * runs before any page gate of this file (the harness launches its browser
- * lazily, on the first page gate) — one Chrome alive at a time.
+ * ORDER MATTERS: A-specs-data-driven and A-poc-promoted launch their own
+ * headless Chrome (in a child process), so they run before any page gate of
+ * this file (the harness launches its browser lazily, on the first page
+ * gate) — one Chrome alive at a time. A-build-deterministic runs two full
+ * builds (~1 min CPU each; minutes of wall on a loaded box).
  */
 import os from 'node:os';
 import path from 'node:path';
@@ -99,17 +102,17 @@ async function assetsTracked() {
   //    src/instruments/kinds/tiller.js once instruments-core merges) is the one
   //    tracked file under r5-poc/; every other proof output stays ignored.
   const mustTrack = ['public/models/hero/brea-body.glb', 'public/models/instruments/tiller.glb', 'public/models/a/b/c.glb', 'public/models/pipeline/probe.glb',
-    'public/models/r5-poc/tiller.glb'];
+    'public/models/r5-poc/tiller.glb', 'public/models/r5-poc/sounding-ring.glb'];
   const mustIgnore = ['public/models/x.baked.glb', 'public/models/hero/x.baked.glb', 'public/models/x.orig', 'public/models/a/b/x.orig',
     'models-staging/r5-src', 'models-staging/r5-src/ubc/x.glb', 'models-staging/r5-src/ual2.zip',
-    'public/models/r5-poc/sounding-ring.glb', 'public/models/r5-poc/x.glb', 'public/models/r5-poc/tiller.baked.glb'];
+    'public/models/r5-poc/proof-output.glb', 'public/models/r5-poc/x.glb', 'public/models/r5-poc/tiller.baked.glb'];
   const wronglyIgnored = ignore(mustTrack);
   const ig = new Set(ignore(mustIgnore));
   const notIgnored = mustIgnore.filter((p) => !ig.has(p));
   // 4. NEGATIVE CONTROL (fix round 2, the judge's merged-tree defect): a src
   //    URL literal that names an ignored proof output is caught by the same
   //    reference pipeline — a fresh clone would not have that file
-  const CONTROL = 'public/models/r5-poc/sounding-ring.glb';
+  const CONTROL = 'public/models/r5-poc/proof-output.glb';
   const controlCaught = ignore([...live, CONTROL]).includes(CONTROL);
   const fixtureUrl = 'public/models/r5-poc/tiller.glb';
   const fixture = { exists: existsSync(path.join(ROOT, fixtureUrl)), ignored: ignore([fixtureUrl]).length > 0, referencedBy: refs.get(fixtureUrl) ?? null };
@@ -387,9 +390,81 @@ async function r30MergeOrder() {
   return { pass: !problems.length, detail };
 }
 
+
+/* ---------------------------------------------------------------- */
+/* W0b: A-sources-staged (+ negative control), child-process Chrome   */
+/* ---------------------------------------------------------------- */
+const scratchRoot = () => process.env.R5_SCRATCH || path.join(os.tmpdir(), 'calima-r5-scratch', 'pipeline');
+
+async function sourcesStaged() {
+  const S = await imp('tools/build/sources.mjs');
+  const r = await S.status();
+  // NEGATIVE CONTROL: a copy-on-write clone of r5-src with one staged byte changed and one stray file must FAIL
+  let control = { ok: null };
+  const src = S.srcDir();
+  if (existsSync(src)) {
+    const { mkdirSync, rmSync, appendFileSync, writeFileSync, realpathSync } = await import('node:fs');
+    mkdirSync(scratchRoot(), { recursive: true });
+    const tamper = path.join(realpathSync(scratchRoot()), `r5-src-control-${process.pid}`);
+    rmSync(tamper, { recursive: true, force: true });
+    try {
+      execFileSync('cp', ['-cR', realpathSync(src), tamper]);
+      const lock = S.loadLock();
+      const [row, ent] = Object.entries(lock.sources)[0];
+      const victim = Object.keys(ent.files).sort()[0];
+      appendFileSync(path.join(tamper, row, victim), 'x');
+      writeFileSync(path.join(tamper, row, 'stray.bin'), 'stray');
+      const c = await S.status({ env: { ...process.env, R5_SRC: tamper } });
+      const caught = c.pass === false && c.detail.problems.some((x) => x.includes('differ')) && c.detail.problems.some((x) => x.includes('not in the lock'));
+      control = { ok: caught, tampered: `${row}/${victim}`, problems: c.detail.problems.slice(0, 3) };
+    } finally { rmSync(tamper, { recursive: true, force: true }); }
+  }
+  const pass = control.ok === false ? false : r.pass;
+  return { pass, detail: { ...r.detail, negativeControl: control } };
+}
+
+function childJson(script, args, timeoutMs) {
+  return new Promise((resolve) => {
+    const child = spawn(process.execPath, [path.join(ROOT, script), ...args], { cwd: ROOT, stdio: ['ignore', 'pipe', 'inherit'] });
+    let out = '';
+    child.stdout.on('data', (d) => { out += d; });
+    const kill = setTimeout(() => child.kill('SIGTERM'), timeoutMs);
+    child.on('close', (code) => {
+      clearTimeout(kill);
+      try { resolve(JSON.parse(out.trim().split('\n').pop())); } catch { resolve({ pass: false, detail: { error: `${script} exited ${code} with no result` } }); }
+    });
+  });
+}
+
+async function pocPromoted({ PORT }) {
+  const W = await imp('tools/build/pipeline/w0b-checks.mjs');
+  const st = W.pocPromotedStatic();
+  // dynamic: ?poc=biome still serves (its own Chrome, in a child, before any page gate)
+  const dyn = await childJson('tools/build/pipeline/biome-check.mjs', ['--scratch', scratchRoot(), '--port', String(PORT)], 600000);
+  const pass = st.pass === false || dyn.pass === false ? false : st.pass && dyn.pass ? true : null;
+  return { pass, detail: { static: st.detail, biome: dyn.detail?.gate ? { pass: dyn.detail.gate.pass, ...dyn.detail.gate.detail, consoleErrors: dyn.detail.gate.consoleErrors, error: dyn.detail.gate.error } : dyn.detail, biomeMs: dyn.detail?.ms } };
+}
+
+/** A-human-bind: the hero body's rig profile binds every UAL clip bone (plan §9: 52/52, no missing source/target). */
+const HUMAN_BIND = `(async () => {
+  const A = __CTX__.assets, p = __CTX__.player, an = p?.animator, lib = an?.lib, rt = lib?.retargeter;
+  const prof = p?.model?.userData?.rigProfile || A.models.hero?.root?.userData?.rigProfile || null;
+  if (!prof) return { pass: null, detail: { pending: 'SKIP-pending (hero-body W0b): the hero body carries no rig profile yet (SPECS.hero still serves the Round-4 body); graded on the merged tree once Brea is the hero row', heroUrl: A.specs.hero?.url ?? null } };
+  if (!an || !rt) return { pass: false, detail: { error: 'no animator / retargeter on the player' } };
+  const mapSize = Object.keys(prof.map || {}).length;
+  const keyMissing = Object.entries(an.KEY).filter(([k]) => !an.b[k]).map(([k]) => k);
+  const allowed = /^(neck2|eye[LR]|lid(UL|LL|UR|LR))$/;
+  const extraMissing = keyMissing.filter((k) => !allowed.test(k));
+  const pairs = rt.pairs.length;
+  const pass = pairs === 52 && mapSize === 52 && !rt.missingSource.length && !rt.missingTarget.length && !extraMissing.length;
+  return { pass, detail: { rig: prof.name, heroUrl: A.specs.hero?.url ?? null, pairs, mapSize, missingSource: rt.missingSource, missingTarget: rt.missingTarget,
+    keyMissing, extraMissing, animated: lib.animatedNames.size, hipScale: +rt.hipScale.toFixed(4) } };
+})()`;
+export const HUMAN_BIND_ASSERT = HUMAN_BIND;
+
 export const GATES = [
   {
-    id: 'A-ID-ip-assets-gone', kind: 'runner', lane: 'pipeline', timeout: 120000,
+    id: 'A-ID-ip-assets-gone', kind: 'runner', lane: 'pipeline', timeout: 400000,
     title: 'No IP/NC asset in the working tree: every public GLB read with gltf-transform, provenance licence in the allowed set, no NC/ND declared in any manifest (R30)',
     check: async () => {
       const { scan, selfTest } = await imp('tools/licences/ip-scan.mjs');
@@ -416,9 +491,34 @@ export const GATES = [
     },
   },
   {
+    id: 'A-sources-staged', kind: 'runner', lane: 'pipeline', timeout: 120000,
+    title: 'models-staging/r5-src holds the trimmed UBC, MCO, UAL1, UAL2 (+ any scan/font source row) <= 150 MB, every file equal to the lock, archive SHA-256s equal to LICENSES.json, no transient zip',
+    check: sourcesStaged,
+  },
+  {
+    id: 'A-glb-budget', kind: 'runner', lane: 'pipeline', timeout: 120000,
+    title: 'Every generated GLB under public/models is inside its plan 4.1 class budget (tris, draws, materials, bones, file size)',
+    check: async () => (await imp('tools/build/pipeline/w0b-checks.mjs')).glbBudget(),
+  },
+  {
+    id: 'A-build-only-lane', kind: 'runner', lane: 'pipeline', timeout: 1800000,
+    title: 'build:assets --only <lane> for each lane writes only that lane\'s output paths (mtime audit of public/ + tools/build/), <= 60 s each',
+    check: async () => (await imp('tools/build/pipeline/w0b-checks.mjs')).buildOnlyLane(),
+  },
+  {
+    id: 'A-build-deterministic', kind: 'runner', lane: 'pipeline', timeout: 2400000,
+    title: 'build:assets twice into two scratch dirs with the network denied: byte-identical GLB/WebP, <= 180 s, <= 2 GB peak RSS, sources from r5-src only',
+    check: async () => (await imp('tools/build/pipeline/w0b-checks.mjs')).buildDeterministic(),
+  },
+  {
     id: 'A-specs-data-driven', kind: 'runner', lane: 'pipeline', timeout: 900000,
     title: 'SPECS are data: assets.js names no row; with the fixture row and its file removed in a scratch copy, A1 and A20b pass with 0 code edits',
     check: specsDataDriven,
+  },
+  {
+    id: 'A-poc-promoted', kind: 'runner', lane: 'pipeline', timeout: 900000,
+    title: 'W0 exit: no ?poc=human|creature path in src/main.js; tools/r5-poc and public/models/r5-poc reduced to the ?poc=biome closure; ?poc=biome still serves its vista',
+    check: pocPromoted,
   },
   {
     id: 'A-loader-fixes', kind: 'action', lane: 'pipeline', timeout: 90000, settle: 1500,
@@ -434,5 +534,10 @@ export const GATES = [
     id: 'A-pipeline-r30-merge-order', kind: 'runner', lane: 'pipeline', timeout: 30000,
     title: 'Lane guard: every R30 file and the class that reads it are present together or gone together (no half state, no orphaned IP file); npc.glb gone; licence table agrees',
     check: r30MergeOrder,
+  },
+  {
+    id: 'A-human-bind', kind: 'action', lane: 'pipeline', timeout: 60000, settle: 2000,
+    title: 'The hero body binds through its rig profile: 52/52 UAL pairs, missingSource and missingTarget empty, missing animator keys within {neck2, eyes, lids}',
+    assert: HUMAN_BIND,
   },
 ];

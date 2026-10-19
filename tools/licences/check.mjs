@@ -103,17 +103,25 @@ export async function check(root = ROOT, { env = process.env } = {}) {
   }
   put('row-schema', bad.length ? 'FAIL' : 'PASS', { rows: rows.length, problems: bad });
 
-  // third-party (non-legacy, not project-original, not code)
+  // third-party (non-legacy, not project-original, not code). W0b: a row built FROM staged sources declares
+  // `derived_from: [source row ids]`; its archive record is its sources' (each graded here as its own row)
   const tp = rows.filter((r) => !r.legacy && r.licence !== 'project-original' && !CODE_LICENCES.includes(r.licence)
     || (r.legacy && r.pending));
-  const missing = [], pending = [];
+  const missing = [], pending = [], derived = [];
   for (const r of tp) {
+    if (Array.isArray(r.derived_from) && r.derived_from.length) {
+      const srcs = r.derived_from.map((id) => rows.find((x) => x.id === id));
+      const bad = r.derived_from.filter((id, i) => !srcs[i] || !srcs[i].source_url || srcs[i].derived_from);
+      if (bad.length) missing.push({ id: r.id, missing: [`derived_from source row(s) absent or not a source: ${bad.join(', ')}`] });
+      else derived.push({ id: r.id, from: r.derived_from });
+      continue;
+    }
     const need = ['source_url', 'archive_sha256', 'retrieved'].filter((k) => !r[k]);
     if (!need.length) continue;
     if (r.pending) pending.push({ id: r.id, missing: need, pending: r.pending });
     else missing.push({ id: r.id, missing: need });
   }
-  put('third-party', missing.length ? 'FAIL' : pending.length ? 'PENDING' : 'PASS', { rows: tp.length, missing, pending });
+  put('third-party', missing.length ? 'FAIL' : pending.length ? 'PENDING' : 'PASS', { rows: tp.length, missing, pending, derived });
 
   // legacy-source
   const rowFiles = (r) => files.filter((f) => byFile.get(f).includes(r.id));
@@ -157,19 +165,28 @@ export async function check(root = ROOT, { env = process.env } = {}) {
   const texts = rows.filter((r) => r.licence_text).map((r) => ({ id: r.id, file: r.licence_text, ok: existsSync(path.join(root, r.licence_text)) }));
   put('licence-texts', texts.every((t) => t.ok) ? 'PASS' : 'FAIL', { missing: texts.filter((t) => !t.ok) });
 
-  // credits (brand surfaces)
+  // credits (brand surfaces). In-game: either menu.js carries the attribution verbatim, or it renders the generated
+  // `public/licences/credits.json` (tools/licences/credits.mjs --write), which must then equal the generator output
   const credits = readmeCredits(root);
   let menu = '';
   try { menu = readFileSync(path.join(root, 'src/ui/menu.js'), 'utf8'); } catch { /* absent */ }
+  const { creditsJson } = await import('./credits.mjs');
+  const dataFile = path.join(root, 'public/licences/credits.json');
+  const dataText = existsSync(dataFile) ? readFileSync(dataFile, 'utf8') : null;
+  const dataInSync = dataText !== null && dataText === creditsJson(manifest);
+  const menuRendersData = /licences\/credits\.json/.test(menu);
+  const gameText = menu + (menuRendersData && dataInSync ? dataText : '');
   // ip rows are never credited (plan §10.2: no fan-art rows in the credits;
   // credits.mjs skips them). That is not a bypass: legacy-source above keeps
   // this gate from passing while any ip file ships.
   const needCredit = rows.filter((r) => r.attribution && r.ip !== true);
   const notInReadme = needCredit.filter((r) => !credits.includes(r.attribution)).map((r) => r.id);
-  const notInGame = needCredit.filter((r) => !menu.includes(r.attribution)).map((r) => r.id);
-  put('credits', notInReadme.length || notInGame.length ? 'PENDING' : 'PASS', {
-    attributions: needCredit.length, notInReadme, notInGame,
-    owner: 'brand W0b: paste `node tools/licences/credits.mjs --md` into README "Credits" and feed `--json` to src/ui/menu.js CREDITS',
+  const notInGame = needCredit.filter((r) => !gameText.includes(JSON.stringify(r.attribution).slice(1, -1)) && !gameText.includes(r.attribution)).map((r) => r.id);
+  const staleData = dataText !== null && !dataInSync;
+  put('credits', staleData ? 'FAIL' : notInReadme.length || notInGame.length ? 'PENDING' : 'PASS', {
+    attributions: needCredit.length, notInReadme, notInGame, creditsJson: { present: dataText !== null, inSync: dataInSync, renderedByMenu: menuRendersData },
+    ...(staleData ? { stale: 'public/licences/credits.json differs from the manifest: run node tools/licences/credits.mjs --write' } : {}),
+    owner: 'brand W0b: paste `node tools/licences/credits.mjs --md` into README "Credits"; src/ui/menu.js renders /licences/credits.json (or carries the rows verbatim)',
   });
 
   // size

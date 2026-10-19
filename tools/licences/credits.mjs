@@ -3,6 +3,11 @@
  *
  *   node tools/licences/credits.mjs --md     README "Credits" section body
  *   node tools/licences/credits.mjs --json   rows for src/ui/menu.js CREDITS
+ *   node tools/licences/credits.mjs --write  writes public/licences/credits.json (W0b): the in-game surface's
+ *                                            data file; menu.js fetches `/licences/credits.json` and renders
+ *                                            `groups[].head` + `groups[].lines[].text` (check.mjs requires the
+ *                                            file to equal this output byte for byte)
+ *   node tools/licences/credits.mjs --check  exit 1 if public/licences/credits.json is missing or stale
  *
  * Every CC-BY and MIT `attribution` string is emitted VERBATIM (A-licence-
  * manifest checks both surfaces for it); CC0 sources are thanked; OFL fonts
@@ -11,8 +16,11 @@
  * deterministic, so brand can diff it (A-credits, W4).
  */
 import path from 'node:path';
+import { readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { loadManifest } from './lib.mjs';
+import { loadManifest, ROOT } from './lib.mjs';
+
+export const CREDITS_JSON = 'public/licences/credits.json';
 
 const GROUPS = [
   { key: 'cc-by', head: 'Attribution required (CC BY)', test: (r) => /^CC-BY-/.test(r.licence) },
@@ -50,7 +58,18 @@ export function creditsMarkdown(manifest = loadManifest()) {
   return `${parts.join('\n')}\n`;
 }
 
+/** The in-game data file: deterministic JSON (sorted groups and lines, no timestamps). */
+export function creditsJson(manifest = loadManifest()) {
+  return `${JSON.stringify({ generated_by: 'tools/licences/credits.mjs from public/LICENSES.json', groups: creditRows(manifest) }, null, 2)}\n`;
+}
+
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  if (process.argv.includes('--json')) console.log(JSON.stringify(creditRows(), null, 2));
+  const file = path.join(ROOT, CREDITS_JSON);
+  if (process.argv.includes('--write')) { writeFileSync(file, creditsJson()); console.log(`[credits] wrote ${CREDITS_JSON}`); }
+  else if (process.argv.includes('--check')) {
+    const ok = existsSync(file) && readFileSync(file, 'utf8') === creditsJson();
+    console.log(ok ? '[credits] in sync' : `[credits] ${CREDITS_JSON} missing or stale: run --write`);
+    if (!ok) process.exitCode = 1;
+  } else if (process.argv.includes('--json')) console.log(JSON.stringify(creditRows(), null, 2));
   else process.stdout.write(creditsMarkdown());
 }

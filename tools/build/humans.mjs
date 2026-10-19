@@ -1,74 +1,102 @@
 /**
- * ROUND 5 · HUMAN-PIPELINE PROOF — asset build (node only, no Blender).
+ * CALIMA — the HUMAN build library (pipeline lane, W0b; promoted from the
+ * Round-5 proof `tools/r5-poc/build-human.mjs`, plan §2 "promoted from
+ * tools/r5-poc/: humans.mjs"). Node only, no Blender.
  *
- * Turns the two CC0 Quaternius packs into the three GLBs the `?poc=human`
- * boot loads, all bound to ONE 65-joint skeleton:
+ * Every function below is the proof's, statement for statement; the promotion
+ * changes the ENVELOPE only:
+ *   - sources come from `models-staging/r5-src/` (or R5_SRC), never from a
+ *     scratch path, and are resolved by LICENSES.json row id
+ *     (`sourcePaths()`), so the build is offline and reproducible
+ *     (A-build-deterministic, A-sources-staged);
+ *   - every written GLB carries `asset.extras.provenance` (generator, recipe,
+ *     sources = row ids, licence) and `asset.extras.r5Stats`
+ *     (`writeHuman()`), like tools/build/lib/glb.mjs (A-ID-ip-assets-gone,
+ *     A-glb-budget);
+ *   - logs go to stderr and only with R5_BUILD_VERBOSE=1 (the build driver
+ *     prints exactly one JSON line on stdout);
+ *   - no clocks, no randomness.
  *
- *   tools/r5-poc/assets/heroine-base.glb   body (full + head/neck cut), eyes,
- *                                          brows+hair, and a PROCEDURAL braid
- *                                          on new `dyn_hairBraid_*` bones
- *   tools/r5-poc/assets/outfit-ranger.glb  armor/outfit variant A
- *   tools/r5-poc/assets/outfit-peasant.glb armor/outfit variant B
+ * CONTRACT for recipe authors (hero-body `recipes/brea.mjs`, settlements
+ * `recipes/npc/**`, armory `recipes/armor/**`):
  *
- * SOURCES (not in git; fetch by hand, see docs/research/round5-pipeline-humans.md §3):
- *   Universal Base Characters [Standard]  — quaternius.itch.io/universal-base-characters, CC0 1.0
- *   Modular Character Outfits - Fantasy [Standard]
- *                                          — quaternius.itch.io/modular-character-outfits-fantasy, CC0 1.0
- * Unzip so that `<src>/ubc/Base Characters/Godot - UE/*.gltf`,
- * `<src>/ubc/Hairstyles/Rigged to Head Bone/glTF (Godot -Unreal)/*.gltf` and
- * `<src>/mco/Modular Parts/*.gltf` exist.
- *
- * Usage: node tools/r5-poc/build-human.mjs --src <dir> [--hair Hair_BuzzedFemale]
- *
- * What the build does, and why (each step is a pipeline step the doc names):
- *   1. read each glTF, repairing the packs' broken image URIs (`*_png.png`)
- *   2. strip what three.js never reads: TEXCOORD_1..4, COLOR_0..2 (Blender
- *      export residue — 40 % of the vertex bytes)
- *   3. fold 8-influence skins (JOINTS_1/WEIGHTS_1) to the top 4, renormalised —
- *      three.js skins with 4, and silently drops the second set
- *   4. graft every part onto the BASE skin by joint NAME (remap JOINTS_0), after
- *      checking the part's inverse-bind matrices match the base's (same bind)
- *   5. cut a head+neck body piece from the full body by skin weight, for use
- *      under an outfit (the pack's own readme: "only the head is required")
- *   6. author a braid procedurally: 5 `dyn_hairBraid_*` joints + `_end` under
- *      `Head`, a plaited tube skinned along them — the existing hair-spring
- *      solver discovers it by name, no code change
- *   7. join primitives per material (draw calls), resize textures to the
- *      per-asset budget, WebP-encode, meshopt-compress
+ *   import * as H from '../humans.mjs';          // from tools/build/recipes/
+ *   const S = H.sourcePaths();                   // { src, ubc, hair, mco } absolute dirs
+ *   const doc = await H.readGltf(path.join(S.ubc, 'Superhero_Female_FullBody.gltf'));
+ *   H.cleanDoc(doc);                             // drop TEXCOORD_1+/COLOR_n, fold 8 -> 4 influences
+ *   H.headCut(doc, bodyNode, ['Head', 'neck_01'], 'Body_Head');
+ *   H.graft(doc, partDoc, label) -> Node[]       // re-point a part at the base skin by joint name (LBS re-bind if the bind differs)
+ *   H.addBraid(doc, { color, rootRadius })       // dyn_hairBraid_01..06 + _07_end under Head
+ *   H.joinByMaterial(doc, nodes, name, keepSeparate: RegExp[])
+ *   await H.writeHuman(doc, outFile, { texSize: 1024, hairTexSize: 512,
+ *     provenance: { recipe: 'tools/build/recipes/brea.mjs', sources: ['ubc-standard', 'mco-fantasy'], licence: 'CC0-1.0' } })
+ *     -> { kb, tris, prims, stats }
+ *   H.buildHeroineBase(file, opts) / H.buildMaleBase(file, opts) / H.buildOutfit(name, file, opts), H.OUTFITS
+ *     the proof's three builders (opts.provenance required), used by tools/build/pipeline/gen-humans-proof.mjs
  */
-import { Document, NodeIO } from '@gltf-transform/core';
+import { NodeIO } from '@gltf-transform/core';
 import { ALL_EXTENSIONS } from '@gltf-transform/extensions';
 import {
   mergeDocuments, prune, dedup, joinPrimitives, textureCompress, meshopt, unpartition,
 } from '@gltf-transform/functions';
 import { MeshoptEncoder, MeshoptDecoder } from 'meshoptimizer';
 import sharp from 'sharp';
-import { readFileSync, existsSync, statSync, mkdirSync } from 'fs';
-import path from 'path';
+import { readFileSync, existsSync, statSync, mkdirSync } from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { checkProvenance } from './lib/glb.mjs';
 
-const args = process.argv.slice(2);
-const flag = (f, d) => { const i = args.indexOf(f); return i >= 0 ? args[i + 1] : d; };
-const SRC = flag('--src', process.env.R5_SRC || '');
-const HAIR = flag('--hair', 'Hair_BuzzedFemale');
-const OUT = path.resolve('tools/r5-poc/assets');
-if (!SRC || !existsSync(SRC)) {
-  console.error('usage: node tools/r5-poc/build-human.mjs --src <dir containing ubc/ and mco/>');
-  process.exit(1);
-}
-mkdirSync(OUT, { recursive: true });
+const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
+const log = (...a) => { if (process.env.R5_BUILD_VERBOSE) console.error(...a); };
 
 await MeshoptEncoder.ready;
-const io = new NodeIO().registerExtensions(ALL_EXTENSIONS)
+export const io = new NodeIO().registerExtensions(ALL_EXTENSIONS)
   .registerDependencies({ 'meshopt.encoder': MeshoptEncoder, 'meshopt.decoder': MeshoptDecoder });
 
-const UBC = path.join(SRC, 'ubc/Base Characters/Godot - UE');
-const HAIRDIR = path.join(SRC, 'ubc/Hairstyles/Rigged to Head Bone/glTF (Godot -Unreal)');
-const MCO = path.join(SRC, 'mco/Modular Parts');
+/**
+ * Source directories inside r5-src, by LICENSES.json row id (tools/build/sources.mjs layout):
+ *   ubc  = <src>/ubc-standard/Base Characters/Godot - UE
+ *   hair = <src>/ubc-standard/Hairstyles/Rigged to Head Bone/glTF (Godot -Unreal)
+ *   mco  = <src>/mco-fantasy/Modular Parts
+ */
+export function sourcePaths(src = process.env.R5_SRC || path.join(ROOT, 'models-staging/r5-src')) {
+  const S = {
+    src,
+    ubc: path.join(src, 'ubc-standard/Base Characters/Godot - UE'),
+    hair: path.join(src, 'ubc-standard/Hairstyles/Rigged to Head Bone/glTF (Godot -Unreal)'),
+    mco: path.join(src, 'mco-fantasy/Modular Parts'),
+  };
+  for (const [k, d] of Object.entries(S)) if (!existsSync(d)) throw new Error(`humans.mjs: source dir missing (${k}): ${d} — stage it with tools/build/sources.mjs`);
+  return S;
+}
 
-/* ------------------------------------------------------------------ read */
+/** r5Stats of a document (tris, verts, materials, meshes, textures, bones), like lib/glb.mjs. */
+export function docStats(doc) {
+  const root = doc.getRoot();
+  let tris = 0, verts = 0;
+  for (const m of root.listMeshes()) for (const p of m.listPrimitives()) {
+    tris += (p.getIndices()?.getCount() ?? p.getAttribute('POSITION').getCount()) / 3;
+    verts += p.getAttribute('POSITION').getCount();
+  }
+  const bones = root.listSkins().reduce((n, s) => Math.max(n, s.listJoints().length), 0);
+  return { tris, verts, materials: root.listMaterials().length, meshes: root.listMeshes().length, textures: root.listTextures().length, bones };
+}
+
+/** The proof's write() + provenance and r5Stats in asset.extras. */
+export async function writeHuman(doc, file, { texSize = 1024, hairTexSize = 512, provenance, extras = {} } = {}) {
+  const prov = checkProvenance(provenance);
+  mkdirSync(path.dirname(file), { recursive: true });
+  const asset = doc.getRoot().getAsset();
+  asset.generator = 'CALIMA tools/build (gltf-transform)';
+  const pre = docStats(doc);
+  const res = await writeRawStamped(doc, file, texSize, hairTexSize, () => {
+    doc.getRoot().getAsset().extras = { ...extras, provenance: prov, r5Stats: pre };
+  });
+  return { ...res, stats: pre };
+}
 
 /** Read a .gltf, repairing image URIs the pack ships under a different name. */
-async function readGltf(file) {
+export async function readGltf(file) {
   const dir = path.dirname(file);
   const json = JSON.parse(readFileSync(file, 'utf8'));
   const resources = {};
@@ -87,7 +115,7 @@ async function readGltf(file) {
 /* ------------------------------------------------------------- cleaning */
 
 /** Step 2 + 3: drop unread attributes, fold 8 influences to 4. */
-function cleanPrimitive(prim) {
+export function cleanPrimitive(prim) {
   for (const sem of prim.listSemantics()) {
     if (/^TEXCOORD_[1-9]$/.test(sem) || /^COLOR_\d$/.test(sem)) prim.setAttribute(sem, null);
   }
@@ -121,7 +149,7 @@ function cleanPrimitive(prim) {
   if (I && !(I.getArray() instanceof Uint32Array)) I.setArray(Uint32Array.from(I.getArray()));
 }
 
-function cleanDoc(doc) {
+export function cleanDoc(doc) {
   for (const m of doc.getRoot().listMeshes()) for (const p of m.listPrimitives()) cleanPrimitive(p);
 }
 
@@ -164,7 +192,7 @@ const m4 = {
  * the base's: v' = sum_j w_j * inv(IBM_base[j]) * IBM_part[j] * v. A part on the
  * same bind (every female piece here) is untouched.
  */
-function graft(base, part, label) {
+export function graft(base, part, label) {
   const bSkin = base.getRoot().listSkins()[0];
   const bJoints = bSkin.listJoints().map((j) => j.getName());
   const bIndex = new Map(bJoints.map((n, i) => [n, i]));
@@ -221,13 +249,13 @@ function graft(base, part, label) {
   for (const pn of part.getRoot().listNodes()) if (!pn.getMesh()) map.get(pn)?.dispose();
   map.get(pSkin)?.dispose();
   for (const s of part.getRoot().listScenes()) map.get(s)?.dispose();
-  console.log(`  graft ${label}: ${made.length} mesh node(s), ${used.size} joints used, `
+  log(`  graft ${label}: ${made.length} mesh node(s), ${used.size} joints used, `
     + `ibm max delta ${worst.toExponential(1)}${rebound ? ' -> RE-BOUND by LBS' : ''}`);
   return made;
 }
 
 /** LBS a primitive's bind-pose positions/normals through per-joint deltas (null = identity). */
-function rebindPrimitive(prim, delta) {
+export function rebindPrimitive(prim, delta) {
   const P = prim.getAttribute('POSITION'), N = prim.getAttribute('NORMAL');
   const J = prim.getAttribute('JOINTS_0'), W = prim.getAttribute('WEIGHTS_0');
   const p = [0, 0, 0], n = [0, 0, 0], j = [0, 0, 0, 0], w = [0, 0, 0, 0];
@@ -261,7 +289,7 @@ function rebindPrimitive(prim, delta) {
 /* --------------------------------------------------------- head/neck cut */
 
 /** Step 5: triangles any of whose vertices are >= 50 % Head/neck weighted. */
-function headCut(doc, srcNode, keepNames, name) {
+export function headCut(doc, srcNode, keepNames, name) {
   const skin = srcNode.getSkin();
   const keep = new Set(skin.listJoints().map((j, i) => (keepNames.includes(j.getName()) ? i : -1)).filter((i) => i >= 0));
   const prim = srcNode.getMesh().listPrimitives()[0];
@@ -285,7 +313,7 @@ function headCut(doc, srcNode, keepNames, name) {
   const mesh = doc.createMesh(name).addPrimitive(p2);
   const node = doc.createNode(name).setMesh(mesh).setSkin(skin);
   srcNode.listParents().find((p) => p.propertyType === 'Node')?.addChild(node);
-  console.log(`  head cut: ${kept.length / 3} of ${idx.length / 3} tris kept`);
+  log(`  head cut: ${kept.length / 3} of ${idx.length / 3} tris kept`);
   return node;
 }
 
@@ -347,7 +375,7 @@ function matToQuat(m) {
  * +Y up, +Z forward, metres) and converted to Head-local TRS + inverse-bind
  * matrices. The tube is skinned by arc length to the two nearest joints.
  */
-function addBraid(doc, { color = [0.11, 0.07, 0.05], rootRadius = 0.034 } = {}) {
+export function addBraid(doc, { color = [0.11, 0.07, 0.05], rootRadius = 0.034 } = {}) {
   const root = doc.getRoot();
   const skin = root.listSkins()[0];
   const head = skin.listJoints().find((j) => j.getName() === 'Head');
@@ -460,14 +488,14 @@ function addBraid(doc, { color = [0.11, 0.07, 0.05], rootRadius = 0.034 } = {}) 
   prim.setMaterial(mat);
   const node = doc.createNode('Braid').setMesh(doc.createMesh('Braid').addPrimitive(prim)).setSkin(skin);
   root.listNodes().find((n) => n.getName() === 'Armature')?.addChild(node);
-  console.log(`  braid: ${names.length - 1} driven joints + _end, ${idx.length / 3} tris`);
+  log(`  braid: ${names.length - 1} driven joints + _end, ${idx.length / 3} tris`);
   return node;
 }
 
 /* ------------------------------------------------------------ finishing */
 
 /** Join every primitive that shares a material, per mesh-node group. */
-function joinByMaterial(doc, nodes, name, keepSeparate = []) {
+export function joinByMaterial(doc, nodes, name, keepSeparate = []) {
   const groups = new Map();
   for (const n of nodes) {
     if (keepSeparate.some((re) => re.test(n.getName()))) continue;
@@ -491,7 +519,7 @@ function joinByMaterial(doc, nodes, name, keepSeparate = []) {
   for (const n of nodes) if (n.getMesh() && n.getMesh().listPrimitives().length === 0) { n.getMesh().dispose(); n.dispose(); }
 }
 
-async function write(doc, file, texSize, hairTexSize) {
+async function writeRawStamped(doc, file, texSize, hairTexSize, stamp) {
   // hair/eye textures are grey strand detail tinted by the material colour: half res
   await doc.transform(
     dedup(), prune({ keepLeaves: true }), unpartition(),
@@ -501,23 +529,23 @@ async function write(doc, file, texSize, hairTexSize) {
       pattern: /^(?!.*(Hair|Eye)).*$/ }),
     meshopt({ encoder: MeshoptEncoder, level: 'medium' }),
   );
+  stamp();
   await io.write(file, doc);
   const kb = statSync(file).size / 1024;
   let tris = 0, prims = 0;
   for (const m of doc.getRoot().listMeshes()) for (const p of m.listPrimitives()) { tris += p.getIndices().getCount() / 3; prims++; }
   const tex = doc.getRoot().listTextures().map((t) => `${t.getName() || t.getURI()}:${t.getSize()?.join('x')}`);
-  console.log(`  -> ${path.relative(process.cwd(), file)}  ${kb.toFixed(0)} KB, ${prims} primitives, ${tris} tris, textures [${tex.join(', ')}]`);
-  return { kb, tris, prims };
+  log(`  -> ${path.relative(process.cwd(), file)}  ${kb.toFixed(0)} KB, ${prims} primitives, ${tris} tris, textures [${tex.join(', ')}]`);
+  return { kb: +kb.toFixed(1), tris, prims };
 }
 
-/* ================================================================== main */
+/* ------------------------------------------------- the proof's builders */
 
-const report = {};
-
-// ---- heroine base: body + head cut + eyes + brows + hair (+ alternates) + braid
-{
-  console.log('heroine-base');
-  const base = await readGltf(path.join(UBC, 'Superhero_Female_FullBody.gltf'));
+/** heroine base: body + head cut + eyes + brows + hair (+ alternates) + braid. */
+export async function buildHeroineBase(file, { hair = 'Hair_BuzzedFemale', src, provenance } = {}) {
+  const S = sourcePaths(src);
+  log('heroine-base');
+  const base = await readGltf(path.join(S.ubc, 'Superhero_Female_FullBody.gltf'));
   cleanDoc(base);
   const root = base.getRoot();
   for (const n of root.listNodes()) {
@@ -526,28 +554,30 @@ const report = {};
   }
   const bodyNode = root.listNodes().find((n) => n.getName() === 'Body_Full');
   headCut(base, bodyNode, ['Head', 'neck_01'], 'Body_Head');
-  for (const [i, h] of [HAIR, 'Hair_Long', 'Hair_Buns'].entries()) {
-    const hair = await readGltf(path.join(HAIRDIR, `${h}.gltf`));
-    cleanDoc(hair);
-    for (const n of graft(base, hair, h)) n.setName(i === 0 ? 'Hair' : `HairAlt_${h.replace('Hair_', '')}`);
+  for (const [i, h] of [hair, 'Hair_Long', 'Hair_Buns'].entries()) {
+    const hd = await readGltf(path.join(S.hair, `${h}.gltf`));
+    cleanDoc(hd);
+    for (const n of graft(base, hd, h)) n.setName(i === 0 ? 'Hair' : `HairAlt_${h.replace('Hair_', '')}`);
   }
   addBraid(base);
   await base.transform(dedup());
   for (const m of root.listMaterials()) {
     if (/Hair/.test(m.getName())) m.setBaseColorFactor([0.16, 0.10, 0.075, 1]); // near-black brown, tinted grey strands
   }
-  report.base = await write(base, path.join(OUT, 'heroine-base.glb'), 1024, 512);
+  return writeHuman(base, file, { texSize: 1024, hairTexSize: 512, provenance });
 }
 
-// ---- male NPC base: the outfits' REGULAR male skeleton (the free kit ships only
-// the Superhero male, whose limbs sit 2-3 cm wider) + the Superhero male's
-// head/neck cut (head and spine joints are identical) + hair, re-bound by LBS
-{
-  console.log('npc-male-base');
-  const base = await readGltf(path.join(MCO, 'Male_Peasant_Body.gltf'));
+/**
+ * male NPC base: the outfits' REGULAR male skeleton (the free kit ships only the Superhero male, whose limbs
+ * sit 2-3 cm wider) + the Superhero male's head/neck cut (head and spine joints are identical) + hair, re-bound by LBS.
+ */
+export async function buildMaleBase(file, { src, provenance } = {}) {
+  const S = sourcePaths(src);
+  log('npc-male-base');
+  const base = await readGltf(path.join(S.mco, 'Male_Peasant_Body.gltf'));
   cleanDoc(base);
   for (const n of base.getRoot().listNodes()) if (n.getMesh()) { n.getMesh().dispose(); n.dispose(); }
-  const sh = await readGltf(path.join(UBC, 'Superhero_Male_FullBody.gltf'));
+  const sh = await readGltf(path.join(S.ubc, 'Superhero_Male_FullBody.gltf'));
   cleanDoc(sh);
   for (const n of sh.getRoot().listNodes()) {
     if (n.getName() === 'SuperHero_Male') n.setName('Body_Full');
@@ -558,44 +588,44 @@ const report = {};
   full.getMesh().dispose(); full.dispose();
   graft(base, sh, 'Superhero_Male head');
   for (const [i, h] of ['Hair_SimpleParted', 'Hair_Buzzed', 'Hair_Beard'].entries()) {
-    const hair = await readGltf(path.join(HAIRDIR, `${h}.gltf`));
-    cleanDoc(hair);
-    for (const n of graft(base, hair, h)) n.setName(i === 0 ? 'Hair' : `HairAlt_${h.replace('Hair_', '')}`);
+    const hd = await readGltf(path.join(S.hair, `${h}.gltf`));
+    cleanDoc(hd);
+    for (const n of graft(base, hd, h)) n.setName(i === 0 ? 'Hair' : `HairAlt_${h.replace('Hair_', '')}`);
   }
   await base.transform(dedup());
   for (const m of base.getRoot().listMaterials()) if (/Hair/.test(m.getName())) m.setBaseColorFactor([0.30, 0.20, 0.13, 1]);
-  report.male = await write(base, path.join(OUT, 'npc-male-base.glb'), 1024, 512);
+  return writeHuman(base, file, { texSize: 1024, hairTexSize: 512, provenance });
 }
 
-// ---- outfits: each a set of modular parts grafted onto ONE skeleton
-const OUTFITS = {
-  ranger: { skel: [UBC, 'Superhero_Female_FullBody.gltf'], parts: ['Female_Ranger_Body', 'Female_Ranger_Arms',
+/** outfits: each a set of modular parts grafted onto ONE skeleton (skel: 'ubc' | 'mco' + file). */
+export const OUTFITS = {
+  ranger: { skel: ['ubc', 'Superhero_Female_FullBody.gltf'], parts: ['Female_Ranger_Body', 'Female_Ranger_Arms',
     'Female_Ranger_Legs', 'Female_Ranger_Feet', 'Female_Ranger_Acc_Pauldrons', 'Female_Ranger_Head_Hood'] },
-  peasant: { skel: [UBC, 'Superhero_Female_FullBody.gltf'], parts: ['Female_Peasant_Body', 'Female_Peasant_Arms',
+  peasant: { skel: ['ubc', 'Superhero_Female_FullBody.gltf'], parts: ['Female_Peasant_Body', 'Female_Peasant_Arms',
     'Female_Peasant_Legs', 'Female_Peasant_Feet'] },
-  'male-ranger': { skel: [MCO, 'Male_Peasant_Body.gltf'], parts: ['Male_Ranger_Body', 'Male_Ranger_Arms',
+  'male-ranger': { skel: ['mco', 'Male_Peasant_Body.gltf'], parts: ['Male_Ranger_Body', 'Male_Ranger_Arms',
     'Male_Ranger_Legs', 'Male_Ranger_Feet_Boots', 'Male_Ranger_Acc_Pauldron', 'Male_Ranger_Head_Hood'] },
-  'male-peasant': { skel: [MCO, 'Male_Peasant_Body.gltf'], parts: ['Male_Peasant_Body', 'Male_Peasant_Arms',
+  'male-peasant': { skel: ['mco', 'Male_Peasant_Body.gltf'], parts: ['Male_Peasant_Body', 'Male_Peasant_Arms',
     'Male_Peasant_Legs', 'Male_Peasant_Feet'] },
 };
-for (const [name, { skel, parts }] of Object.entries(OUTFITS)) {
-  console.log(`outfit-${name}`);
+
+export async function buildOutfit(name, file, { src, provenance } = {}) {
+  const S = sourcePaths(src);
+  const { skel, parts } = OUTFITS[name];
+  log(`outfit-${name}`);
   // a skeleton-only base: the matching body's armature, meshes removed
-  const doc = await readGltf(path.join(...skel));
+  const doc = await readGltf(path.join(S[skel[0]], skel[1]));
   cleanDoc(doc);
   for (const n of doc.getRoot().listNodes()) if (n.getMesh()) { n.getMesh().dispose(); n.dispose(); }
   const nodes = [];
   for (const part of parts) {
-    const p = await readGltf(path.join(MCO, `${part}.gltf`));
+    const p = await readGltf(path.join(S.mco, `${part}.gltf`));
     cleanDoc(p);
     for (const n of graft(doc, p, part)) { n.setName(part.replace(/^(Fem|M)ale_/, '')); nodes.push(n); }
   }
-  // the parts arrive with one copy of each material per file: dedup first so
-  // "MI_Ranger" is ONE material, then variant pieces that toggle stay their own
-  // draw and everything else joins per material
+  // the parts arrive with one copy of each material per file: dedup first so "MI_Ranger" is ONE material, then
+  // variant pieces that toggle stay their own draw and everything else joins per material
   await doc.transform(dedup());
   joinByMaterial(doc, nodes, name, [/Hood/, /Pauldron/]);
-  report[name] = await write(doc, path.join(OUT, `outfit-${name}.glb`), 1024, 512);
+  return writeHuman(doc, file, { texSize: 1024, hairTexSize: 512, provenance });
 }
-
-console.log(JSON.stringify(report));

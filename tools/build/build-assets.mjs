@@ -17,6 +17,10 @@
  *     asset.extras.provenance and r5Size, and adds its LICENSES.json rows with
  *     tools/licences/add.mjs.
  *
+ * `export const PROOF = true` (W0b) marks a recipe whose outputs are build
+ * evidence, not content: the driver runs it only with an explicit `--out`
+ * (A-build-deterministic), never into the repository.
+ *
  * The driver imports recipes in sorted path order, runs the selected lanes
  * sequentially (peak memory stays one recipe wide), and prints one JSON line:
  * per output SHA-256 + bytes, wall ms, peak RSS. `npm run build:assets` is
@@ -48,7 +52,7 @@ export async function loadRecipes() {
   for (const file of discoverRecipes()) {
     const mod = await import(pathToFileURL(file).href);
     if (typeof mod.build !== 'function' || !mod.LANE || !Array.isArray(mod.OUTPUTS)) continue;   // a helper, not a recipe
-    recipes.push({ file: path.relative(ROOT, file).split(path.sep).join('/'), lane: mod.LANE, outputs: mod.OUTPUTS, build: mod.build });
+    recipes.push({ file: path.relative(ROOT, file).split(path.sep).join('/'), lane: mod.LANE, outputs: mod.OUTPUTS, build: mod.build, proof: mod.PROOF === true });
   }
   return recipes;
 }
@@ -61,7 +65,10 @@ export async function buildAssets({ only = null, out = ROOT } = {}) {
   const lanes = only ? new Set(only) : null;
   const picked = all.filter((r) => !lanes || lanes.has(r.lane));
   const results = [];
+  const skipped = [];
   for (const r of picked) {
+    // PROOF recipes (W0b) write only under an explicit --out: never into the repository, never shipped
+    if (r.proof && path.resolve(out) === ROOT) { skipped.push({ recipe: r.file, why: 'PROOF recipe: outputs only with --out <dir>' }); continue; }
     const stats = await r.build({ out });
     const files = r.outputs.map((o) => {
       const abs = path.join(out, o);
@@ -70,7 +77,7 @@ export async function buildAssets({ only = null, out = ROOT } = {}) {
     results.push({ recipe: r.file, lane: r.lane, files, stats: { ...stats, files: undefined } });
   }
   return {
-    lanes: [...new Set(picked.map((r) => r.lane))], recipes: results.length, results,
+    lanes: [...new Set(picked.map((r) => r.lane))], recipes: results.length, results, skipped,
     wallMs: Date.now() - t0, peakRssMb: +(process.resourceUsage().maxRSS / 1024).toFixed(1),
   };
 }

@@ -103,13 +103,6 @@ class Game {
       if (label) label.textContent = text;
     };
     await ctx.assets.loadAll((p, name) => setLoad(p * 0.86, `Calibrating ${name}…`));
-    // Round 5 human-pipeline proof (`?poc=human`): swaps the protagonist body
-    // for the CC0 UBC heroine before the Player is built. Dev-only, never
-    // bundled (docs/research/round5-pipeline-humans.md); no flag, no change.
-    if (params.get('poc') === 'human') {
-      const { installPocHuman } = await import(/* @vite-ignore */ '/tools/r5-poc/pocHuman.js');
-      await installPocHuman(ctx);
-    }
 
     // Construction order matters: world -> actors -> presentation.
     ctx.terrain = this._add(new Terrain(ctx));
@@ -388,11 +381,10 @@ class Game {
 
 /**
  * ROUND 5 PIPELINE PROOF (docs/research/round5-pipeline-creatures-world.md):
- * `?poc=creature` stages a generated creature in the running game,
  * `?poc=biome` replaces the boot with a standalone biome patch. Dev-only
  * modules under tools/r5-poc/, never bundled; with no flag nothing changes.
  */
-const POC = ['creature', 'biome'].includes(params.get('poc')) ? params.get('poc') : null;
+const POC = ['biome'].includes(params.get('poc')) ? params.get('poc') : null;
 if (POC) {
   import(/* @vite-ignore */ `/tools/r5-poc/poc-${POC}.js`)
     .then((m) => m.default(params))

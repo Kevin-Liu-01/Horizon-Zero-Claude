@@ -17,6 +17,11 @@ dist/
 # `dir/*` + `!file` (a `dir/` pattern could not re-include a child).
 public/models/r5-poc/*
 !public/models/r5-poc/tiller.glb
+# W0b: `?poc=biome` (A-gpu-tier's vista until the W1 exit) loads the Sounding
+# Ring from this folder; the promoted generator
+# (tools/build/landmarks/gen-sounding-ring.mjs) writes it, so it is tracked too
+# and the vista boots in every worktree and fresh clone. Goes with ?poc=biome.
+!public/models/r5-poc/sounding-ring.glb
 shots/
 
 # Round 4: generated film + staging bulk

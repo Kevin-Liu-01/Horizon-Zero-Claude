@@ -20,9 +20,16 @@ import { readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { ROOT, MANIFEST, ASSET_LICENCES, CODE_LICENCES, NEEDS_ATTRIBUTION, FORBIDDEN_LICENCE, loadManifest } from './lib.mjs';
+import { creditsJson, CREDITS_JSON } from './credits.mjs';
+
+/** Every manifest write regenerates the in-game credits data file (W0b), so the two never drift. */
+function writeManifest(manifest, root = ROOT) {
+  writeFileSync(path.join(root, MANIFEST), serialise(manifest));
+  writeFileSync(path.join(root, CREDITS_JSON), creditsJson(manifest));
+}
 
 export const FIELD_ORDER = ['id', 'paths', 'title', 'author', 'source_url', 'licence', 'licence_text', 'licence_url',
-  'archive_sha256', 'archive_bytes', 'retrieved', 'modified', 'attribution', 'legacy', 'ip', 'delete_at', 'delete_owner', 'pending'];
+  'archive_sha256', 'archive_bytes', 'archive_name', 'derived_from', 'retrieved', 'modified', 'attribution', 'legacy', 'ip', 'delete_at', 'delete_owner', 'pending'];
 
 export function validateRow(r) {
   const errs = [];
@@ -62,7 +69,7 @@ export function upsert(rows, { root = ROOT } = {}) {
     const i = manifest.rows.findIndex((r) => r.id === row.id);
     if (i >= 0) manifest.rows[i] = row; else manifest.rows.push(row);
   }
-  writeFileSync(path.join(root, MANIFEST), serialise(manifest));
+  writeManifest(manifest, root);
   return manifest.rows.length;
 }
 
@@ -72,13 +79,13 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
   if (a.includes('--format')) {
     const m = loadManifest();
     for (const r of m.rows) { const e = validateRow(r); if (e.length) console.error(`[licences] ${r.id}: ${e.join('; ')}`); }
-    writeFileSync(path.join(ROOT, MANIFEST), serialise(m));
+    writeManifest(m);
     console.log(`[licences] formatted ${m.rows.length} rows`);
   } else if (val('--remove')) {
     const m = loadManifest();
     const before = m.rows.length;
     m.rows = m.rows.filter((r) => r.id !== val('--remove'));
-    writeFileSync(path.join(ROOT, MANIFEST), serialise(m));
+    writeManifest(m);
     console.log(`[licences] removed ${before - m.rows.length} row(s)`);
   } else {
     const src = val('--file') ? readFileSync(val('--file'), 'utf8') : val('--json');

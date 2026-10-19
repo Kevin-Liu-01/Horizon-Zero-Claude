@@ -1,0 +1,129 @@
+{
+  "generated_by": "tools/licences/credits.mjs from public/LICENSES.json",
+  "groups": [
+    {
+      "group": "cc-by",
+      "head": "Attribution required (CC BY)",
+      "lines": [
+        {
+          "id": "legacy-donor-snapmaw",
+          "text": "\"Black Caiman\" by Poly by Google (https://poly.pizza/m/5etIv4omd7Z), CC-BY 3.0"
+        },
+        {
+          "id": "legacy-donor-stormbird",
+          "text": "\"Hawk (low-poly, rigged)\" by Sherkiz (https://poly.pizza/m/RkN6MEbP6g), CC-BY 3.0"
+        },
+        {
+          "id": "legacy-donor-ravager",
+          "text": "\"Lion\" by Poly by Google (https://polygone.art/model/cC_IFclYA4c), CC-BY 3.0"
+        },
+        {
+          "id": "legacy-donor-strider",
+          "text": "\"Mechanical Horse\" by jake young (https://poly.pizza/m/d4bayjeM1aD), CC-BY 3.0"
+        },
+        {
+          "id": "legacy-donor-scrapper",
+          "text": "\"Robocat\" by Jordan Hill (https://poly.pizza/m/d78wyEWCmTC), CC-BY 3.0"
+        },
+        {
+          "id": "legacy-donor-corruptor",
+          "text": "\"Scorpion\" by Poly by Google (https://poly.pizza/m/6Bu7d_Pkm5o), CC-BY 3.0"
+        }
+      ]
+    },
+    {
+      "group": "code",
+      "head": "Code (MIT)",
+      "lines": [
+        {
+          "id": "code-meshopt-decoder",
+          "text": "meshoptimizer decoder © 2016–2022 Arseny Kapoulkine (MIT)"
+        },
+        {
+          "id": "code-three-mesh-bvh",
+          "text": "three-mesh-bvh © 2018 Garrett Johnson (MIT)"
+        },
+        {
+          "id": "code-three",
+          "text": "three.js © 2010–2024 three.js authors (MIT)"
+        }
+      ]
+    },
+    {
+      "group": "ofl",
+      "head": "Typefaces (SIL Open Font License 1.1)",
+      "lines": [
+        {
+          "id": "legacy-font-chakra-petch",
+          "text": "Chakra Petch — Cadson Demak (https://fonts.google.com/specimen/Chakra+Petch)"
+        },
+        {
+          "id": "legacy-font-julius-sans-one",
+          "text": "Julius Sans One — LatinoType (https://fonts.google.com/specimen/Julius+Sans+One)"
+        },
+        {
+          "id": "legacy-font-michroma",
+          "text": "Michroma — Vernon Adams (https://fonts.google.com/specimen/Michroma)"
+        },
+        {
+          "id": "legacy-font-orbitron",
+          "text": "Orbitron — Matt McInerney (https://fonts.google.com/specimen/Orbitron)"
+        },
+        {
+          "id": "legacy-font-rajdhani",
+          "text": "Rajdhani — Indian Type Foundry (https://fonts.google.com/specimen/Rajdhani)"
+        }
+      ]
+    },
+    {
+      "group": "cc0",
+      "head": "Thanks (CC0, no attribution required)",
+      "lines": [
+        {
+          "id": "legacy-donor-longleg",
+          "text": "Birb (Ultimate Monsters pack) — Quaternius (https://quaternius.com/packs/ultimatemonsters.html)"
+        },
+        {
+          "id": "legacy-donor-broadhead",
+          "text": "Bull (Ultimate Animated Animal pack) — Quaternius (https://quaternius.com/packs/ultimateanimatedanimals.html)"
+        },
+        {
+          "id": "legacy-donor-grazer",
+          "text": "Deer (Ultimate Animated Animal pack) — Quaternius (https://quaternius.com/packs/ultimateanimatedanimals.html)"
+        },
+        {
+          "id": "mco-fantasy",
+          "text": "Modular Character Outfits - Fantasy [Standard] — Quaternius (https://quaternius.itch.io/modular-character-outfits-fantasy)"
+        },
+        {
+          "id": "legacy-donor-glinthawk",
+          "text": "Robot Enemy Flying — Quaternius (https://poly.pizza/m/lF3jeRJwiH)"
+        },
+        {
+          "id": "r5-poc-rock-scan",
+          "text": "Rock Face (1K scan, repacked) — Poly Haven (https://polyhaven.com/a/rock_face)"
+        },
+        {
+          "id": "legacy-anims-duplicates",
+          "text": "Round-4 lab copies of the Universal Animation Library — Quaternius (https://quaternius.itch.io/universal-animation-library)"
+        },
+        {
+          "id": "legacy-donor-shellwalker",
+          "text": "Spider — Quaternius (https://poly.pizza/m/yRYJiAJyiM)"
+        },
+        {
+          "id": "ual1",
+          "text": "Universal Animation Library [Standard] (Godot export) — Quaternius (https://quaternius.itch.io/universal-animation-library)"
+        },
+        {
+          "id": "ual2-standard",
+          "text": "Universal Animation Library 2 [Standard] — Quaternius (https://quaternius.itch.io/universal-animation-library-2)"
+        },
+        {
+          "id": "ubc-standard",
+          "text": "Universal Base Characters [Standard] — Quaternius (https://quaternius.itch.io/universal-base-characters)"
+        }
+      ]
+    }
+  ]
+}

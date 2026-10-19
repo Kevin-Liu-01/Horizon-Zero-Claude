@@ -95,6 +95,23 @@
       "attribution": null
     },
     {
+      "id": "landmark-sounding-ring-poc",
+      "paths": [
+        "public/models/r5-poc/sounding-ring.glb"
+      ],
+      "title": "Sounding Ring (biome-vista landmark for ?poc=biome; goes with the ?poc=biome hook at the W1 exit)",
+      "author": "CALIMA project",
+      "source_url": "tools/build/landmarks/gen-sounding-ring.mjs",
+      "licence": "project-original",
+      "licence_text": null,
+      "archive_sha256": null,
+      "retrieved": null,
+      "modified": null,
+      "attribution": null,
+      "delete_at": "W1 exit",
+      "delete_owner": "world-ground"
+    },
+    {
       "id": "legacy-anims-duplicates",
       "paths": [
         "public/anims-hybrid/ual/**",
@@ -486,6 +503,24 @@
       "ip_note": "The uploader's CC-BY licence cannot cover a Sony/Guerrilla character in an Epic rig: IP whatever the licence says (docs/ROUND5-INVENTORY.md section 0.2). Recorded here as provenance of a file that must go; never credited (plan section 10.2)."
     },
     {
+      "id": "mco-fantasy",
+      "paths": [
+        "models-staging/r5-src/mco-fantasy/**"
+      ],
+      "title": "Modular Character Outfits - Fantasy [Standard]",
+      "author": "Quaternius",
+      "source_url": "https://quaternius.itch.io/modular-character-outfits-fantasy",
+      "licence": "CC0-1.0",
+      "licence_text": "public/licences/quaternius-mco-fantasy-License_Standard.txt",
+      "archive_sha256": null,
+      "archive_bytes": 294347394,
+      "archive_name": "Modular Character Outfits - Fantasy[Standard].zip",
+      "retrieved": "2026-10-15",
+      "modified": "source archive: staged subset (Modular Parts) in models-staging/r5-src/mco-fantasy; shipped GLBs built from it carry derived_from: [\"mco-fantasy\"]",
+      "attribution": null,
+      "pending": "archive_sha256: the Oct 15 zip was deleted after the Round-5 proof; recorded by `node tools/build/sources.mjs verify-zip --row mco-fantasy --zip <file> --delete-zip` once the archive is downloaded again (itch.io free download; Kevin's go-ahead)"
+    },
+    {
       "id": "pipeline-probe",
       "paths": [
         "public/models/pipeline/probe.glb"
@@ -549,10 +584,47 @@
       "licence": "CC0-1.0",
       "licence_text": "public/anims/LICENSE",
       "archive_sha256": null,
+      "archive_name": "Universal Animation Library[Standard].zip",
       "retrieved": null,
       "modified": null,
       "attribution": null,
-      "pending": "archive_sha256 + retrieved: recorded by the W0b re-fetch (plan section 10.1, E32)"
+      "pending": "archive_sha256: the shipped files are UAL v1 (DEF-* rig names, R15 keeps it); the itch page has served v3.0 since 16 Jun 2026, so the v1 archive cannot be re-fetched. Staged per-file SHA-256s are in tools/build/sources.lock.json (ual1). Needs an orchestrator/Kevin ruling: accept per-file hashes + the supersession record, or a v1 archive from a backup"
+    },
+    {
+      "id": "ual2-standard",
+      "paths": [
+        "models-staging/r5-src/ual2-standard/**"
+      ],
+      "title": "Universal Animation Library 2 [Standard]",
+      "author": "Quaternius",
+      "source_url": "https://quaternius.itch.io/universal-animation-library-2",
+      "licence": "CC0-1.0",
+      "licence_text": "public/licences/quaternius-ual2-License.txt",
+      "archive_sha256": null,
+      "archive_bytes": null,
+      "archive_name": "Universal Animation Library 2[Standard].zip",
+      "retrieved": "2026-10-15",
+      "modified": "source archive: staged subset (UAL2_Standard.glb) in models-staging/r5-src/ual2-standard; shipped clip files built from it carry derived_from: [\"ual2-standard\"]",
+      "attribution": null,
+      "pending": "archive_sha256 + archive_bytes (zip ~17 MB): recorded by `node tools/build/sources.mjs verify-zip --row ual2-standard --zip <file> --delete-zip` once the archive is downloaded again (itch.io free download; Kevin's go-ahead)"
+    },
+    {
+      "id": "ubc-standard",
+      "paths": [
+        "models-staging/r5-src/ubc-standard/**"
+      ],
+      "title": "Universal Base Characters [Standard]",
+      "author": "Quaternius",
+      "source_url": "https://quaternius.itch.io/universal-base-characters",
+      "licence": "CC0-1.0",
+      "licence_text": "public/licences/quaternius-ubc-License_Standard.txt",
+      "archive_sha256": null,
+      "archive_bytes": 128968391,
+      "archive_name": "Universal Base Characters[Standard].zip",
+      "retrieved": "2026-10-15",
+      "modified": "source archive: staged subset (Base Characters/Godot - UE, Base Characters/Textures, Hairstyles/Rigged to Head Bone/glTF) in models-staging/r5-src/ubc-standard; shipped GLBs built from it carry derived_from: [\"ubc-standard\"]",
+      "attribution": null,
+      "pending": "archive_sha256: the Oct 15 zip was deleted after the Round-5 proof; the staged files are its extracted subset (per-file SHA-256 in tools/build/sources.lock.json). Recorded by `node tools/build/sources.mjs verify-zip --row ubc-standard --zip <file> --delete-zip` once the archive is downloaded again (itch.io free download; Kevin's go-ahead)"
     }
   ]
 }

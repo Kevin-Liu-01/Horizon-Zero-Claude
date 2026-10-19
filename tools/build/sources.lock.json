@@ -1,0 +1,470 @@
+{
+  "schema": 1,
+  "about": "Third-party sources staged in models-staging/r5-src/<row-id>/ (git-ignored). Written by tools/build/sources.mjs; A-sources-staged checks every file against these SHA-256s and each archive SHA-256 against public/LICENSES.json.",
+  "sources": {
+    "mco-fantasy": {
+      "row": "mco-fantasy",
+      "archive": {
+        "name": "Modular Character Outfits - Fantasy[Standard].zip",
+        "bytes": 294347394,
+        "sha256": null,
+        "retrieved": "2026-10-15",
+        "page": "https://quaternius.itch.io/modular-character-outfits-fantasy"
+      },
+      "strip": null,
+      "files": {
+        "License_Standard.txt": {
+          "bytes": 728,
+          "sha256": "2202cc2f608c4210790b112e5f121bc2e7f8dced7b5b1c7f4be6203461bdebbb"
+        },
+        "Modular Parts/Female_Peasant_Arms.bin": {
+          "bytes": 327920,
+          "sha256": "b79abe12089d1894fa5349fbc29d2864f8c1e6f976665eb74edb328204872565"
+        },
+        "Modular Parts/Female_Peasant_Arms.gltf": {
+          "bytes": 23970,
+          "sha256": "7f2446a7bab93b882e4095a9583219de3f381962551e8a7d451c287d74a8987e"
+        },
+        "Modular Parts/Female_Peasant_Body.bin": {
+          "bytes": 203524,
+          "sha256": "f1346372e81f9e906709b3adb84320c8f86f520efcbfa0292323fabecd2f4f22"
+        },
+        "Modular Parts/Female_Peasant_Body.gltf": {
+          "bytes": 88739,
+          "sha256": "9c4edd8d18a028ee721fbaa5431a42e6ae1b579ac3bd756604bf888b387d4529"
+        },
+        "Modular Parts/Female_Peasant_Feet.bin": {
+          "bytes": 140776,
+          "sha256": "0e1f7ac2f5a349dbeb3560c820f9b8588ab5c205fc2b0b70f852c153a19c6262"
+        },
+        "Modular Parts/Female_Peasant_Feet.gltf": {
+          "bytes": 24397,
+          "sha256": "1c8cfde62c44e578d10194f769a568dd40a7f0523d0d286661660141704715de"
+        },
+        "Modular Parts/Female_Peasant_Legs.bin": {
+          "bytes": 74376,
+          "sha256": "4a86e2896a6efec9c72828b0fd9a0c8d483495061c45ef1f3e434a6951823abb"
+        },
+        "Modular Parts/Female_Peasant_Legs.gltf": {
+          "bytes": 23962,
+          "sha256": "1369d75a8197e9e9fdbaf9491b276e7a31c08944377145ff5e497a7c1ac81ea3"
+        },
+        "Modular Parts/Female_Ranger_Acc_Pauldrons.bin": {
+          "bytes": 91040,
+          "sha256": "32213f8f5d44bc2a060c21e822db501e92ae3c9782d01df68bc670958c7a312c"
+        },
+        "Modular Parts/Female_Ranger_Acc_Pauldrons.gltf": {
+          "bytes": 24621,
+          "sha256": "9ebbd79c8cf2316f0edf1ab76c6613ff8f7c5842d9faf98825b9afc205f6ce1e"
+        },
+        "Modular Parts/Female_Ranger_Arms.bin": {
+          "bytes": 557480,
+          "sha256": "55592d6a2c47f120f76fd84a5caa6728fb8ec169c9b19d71f8132d32f8bedf12"
+        },
+        "Modular Parts/Female_Ranger_Arms.gltf": {
+          "bytes": 29655,
+          "sha256": "98a1b7a5d5d98b6de2f914f810cf75b359d7e11c62f33197948cf4c17c2c95eb"
+        },
+        "Modular Parts/Female_Ranger_Body.bin": {
+          "bytes": 421432,
+          "sha256": "3c9ce3dfc1511ab2a44a1f5050dc0c3ffd67d8814fd8a87dcdf0c8150839f01b"
+        },
+        "Modular Parts/Female_Ranger_Body.gltf": {
+          "bytes": 29451,
+          "sha256": "7215f19c1c31fa8f19286357f93e6e043b0dd162d4418fdc73f530a88717db35"
+        },
+        "Modular Parts/Female_Ranger_Feet.bin": {
+          "bytes": 791720,
+          "sha256": "35c4350bed0931ad015cd959d9750de0d103d7575deb3ac4c257488daf294b54"
+        },
+        "Modular Parts/Female_Ranger_Feet.gltf": {
+          "bytes": 24625,
+          "sha256": "11fef23ffa6099722f44f7411622f24db8728e9b7b5c028d5c40f980f5f97501"
+        },
+        "Modular Parts/Female_Ranger_Head_Hood.bin": {
+          "bytes": 106256,
+          "sha256": "ad02a4529f77562e248a2de6f5f69e3625ae18740c1abb975d957b28017959f3"
+        },
+        "Modular Parts/Female_Ranger_Head_Hood.gltf": {
+          "bytes": 24614,
+          "sha256": "3ac6867e32cba7793d9393d4844cc21f38c53e833d468d7d5adebfb42bba7d0e"
+        },
+        "Modular Parts/Female_Ranger_Legs.bin": {
+          "bytes": 74404,
+          "sha256": "aeab54821bec8c817b519af10129f5a8c5d71c10d9800c60922470fc00c5e81e"
+        },
+        "Modular Parts/Female_Ranger_Legs.gltf": {
+          "bytes": 24978,
+          "sha256": "804932b0e0b49601a565aef57422bc7ca17e526656518e399ef5d72f7134db6c"
+        },
+        "Modular Parts/Male_Peasant_Arms.bin": {
+          "bytes": 274868,
+          "sha256": "d24f6475c4edf51fe9383eca73a0cff76762c54df3a4cc96506533a20617f660"
+        },
+        "Modular Parts/Male_Peasant_Arms.gltf": {
+          "bytes": 26703,
+          "sha256": "4eb0fff5637cb65909103fee86c799f13883c9fa18a0118cc5233a77b67db1d2"
+        },
+        "Modular Parts/Male_Peasant_Body.bin": {
+          "bytes": 219680,
+          "sha256": "d9b380153cbac7850ab3c65c95e831164873f1f7ff696cf8d20a9532c8a45e0f"
+        },
+        "Modular Parts/Male_Peasant_Body.gltf": {
+          "bytes": 23738,
+          "sha256": "daaa452abe8762c3bee7b1b30066c76d62077873c72cbf826de1a0f575ac3cb0"
+        },
+        "Modular Parts/Male_Peasant_Feet.bin": {
+          "bytes": 139880,
+          "sha256": "cb35f50fb3e784cac5e3193ed82034454af550a9e7f33d01345ce615d7b05add"
+        },
+        "Modular Parts/Male_Peasant_Feet.gltf": {
+          "bytes": 23740,
+          "sha256": "191a2d70d6c2e550669bb7b1fc1c07be650d7168512e18eb2acb0e55d0535c52"
+        },
+        "Modular Parts/Male_Peasant_Legs.bin": {
+          "bytes": 52816,
+          "sha256": "529bfc210a2de7e7ef6e704b59a11f88704068726cdda7d3b8db8e705273d5dc"
+        },
+        "Modular Parts/Male_Peasant_Legs.gltf": {
+          "bytes": 23721,
+          "sha256": "207933393b7a2ef436c0ffea65b70e35feaee084992e798c3eb31e0c771fabb0"
+        },
+        "Modular Parts/Male_Ranger_Acc_Pauldron.bin": {
+          "bytes": 69200,
+          "sha256": "e8ccb52c8e2bc771ffa53d03dd6bda9e13680b91f3feec78e2d6451f8d3a20be"
+        },
+        "Modular Parts/Male_Ranger_Acc_Pauldron.gltf": {
+          "bytes": 23314,
+          "sha256": "967bd4e8d85821fbc7116269440b9a90904f6c7eeb0fc17b86349ee1fa3a7aa9"
+        },
+        "Modular Parts/Male_Ranger_Arms.bin": {
+          "bytes": 252752,
+          "sha256": "d630f5cd806c8edce8c48f807d64468ef4207d317baf238d942fe630afd4c023"
+        },
+        "Modular Parts/Male_Ranger_Arms.gltf": {
+          "bytes": 26704,
+          "sha256": "437d71553d79dbf4583351718b5cb5c6d342f5e0682b287a7cd806630ed2b349"
+        },
+        "Modular Parts/Male_Ranger_Body.bin": {
+          "bytes": 309108,
+          "sha256": "e3ebad21b1865c37e46b93c9249d0eb58949498ad99773e9db415b48d8df925e"
+        },
+        "Modular Parts/Male_Ranger_Body.gltf": {
+          "bytes": 26865,
+          "sha256": "c5bb520006116222bad30533bd39e0f215abbf8d44e3fa1769ebad12043eac57"
+        },
+        "Modular Parts/Male_Ranger_Feet_Boots.bin": {
+          "bytes": 710328,
+          "sha256": "8079ffa4ac2c9a3522a6aa08386e6df92f2de900ece8102d12cdeb96e4476625"
+        },
+        "Modular Parts/Male_Ranger_Feet_Boots.gltf": {
+          "bytes": 23762,
+          "sha256": "e71cd92792aeabca0dd1621556c54945dd97d154147790a5cb1afd75415a4e02"
+        },
+        "Modular Parts/Male_Ranger_Head_Hood.bin": {
+          "bytes": 96336,
+          "sha256": "d126c2e0438508983ca092847b772691c3cd6a80fc355c7ea7921324c1ff8053"
+        },
+        "Modular Parts/Male_Ranger_Head_Hood.gltf": {
+          "bytes": 23737,
+          "sha256": "57affa34c145d2c1a02a3d9b17066e22b84eb4ce2bb79c6c7b90588af00846b6"
+        },
+        "Modular Parts/Male_Ranger_Legs.bin": {
+          "bytes": 52144,
+          "sha256": "74691dd17e15f755436fafdc75da25ddc156c7c7811c43f08a4b9f55eba90666"
+        },
+        "Modular Parts/Male_Ranger_Legs.gltf": {
+          "bytes": 23712,
+          "sha256": "c415a01384d34b77a98ff4b0d01d42453dfe98bee259e58a328a803d36ac9df2"
+        },
+        "Modular Parts/T_Peasant_BaseColor.png": {
+          "bytes": 5055760,
+          "sha256": "a43635628d95571cd62fd4db0cc3a6ea32778b2bc02f242dda224c89d07f1ade"
+        },
+        "Modular Parts/T_Peasant_Normal.png": {
+          "bytes": 14110336,
+          "sha256": "7598fa7b63e46fd4dac29708bf5a81e05eb9a67280f7b13c61e28a9110eeb679"
+        },
+        "Modular Parts/T_Peasant_ORM.png": {
+          "bytes": 9903835,
+          "sha256": "e1932f5f91104afca89c501416a5fec09069b8552734237fc09045fabc4ca9b4"
+        },
+        "Modular Parts/T_Ranger_BaseColor.png": {
+          "bytes": 6630927,
+          "sha256": "846ef2170b04ee584ad83bb8a1e86dab57a9a43b1193204505912c274d949925"
+        },
+        "Modular Parts/T_Ranger_Normal.png": {
+          "bytes": 12713653,
+          "sha256": "dd64da2af3180f0c8f0b721cfc5f0d2720c351b97da8285c6cf49e7717c84147"
+        },
+        "Modular Parts/T_Ranger_ORM.png": {
+          "bytes": 10792085,
+          "sha256": "aca03d2fba12508ef07d5968ca22267fb207ea26ae898b6b2def8a296bd44f1c"
+        },
+        "Modular Parts/T_Regular_Female_Dark_BaseColor.png": {
+          "bytes": 1348542,
+          "sha256": "3b6ab973f9f3d6f8961226a0dbd99cf6d1b72df3795a8a5c1620a55754c161c2"
+        },
+        "Modular Parts/T_Regular_Female_Normal.png": {
+          "bytes": 3913459,
+          "sha256": "e1051d3d56df9cf061bc14c769c37253aecd595f8275f9d4c0d6e0e953c00e18"
+        },
+        "Modular Parts/T_Regular_Female_Roughness.png": {
+          "bytes": 3274215,
+          "sha256": "da541fbd4b3bffe754fada5c29f8a0d8f836bf20ce7df8273607af4729a3a5ae"
+        },
+        "Modular Parts/T_Regular_Male_Dark_BaseColor.png": {
+          "bytes": 1316151,
+          "sha256": "b4dcc0f4139aab548d7c070c4655bd2080ef16caeaaabee6c4aeb693c524e802"
+        },
+        "Modular Parts/T_Regular_Male_Normal.png": {
+          "bytes": 4064184,
+          "sha256": "10cd71e2453e577fdd43e912b6016a99baf64964f0593e524bdd304855e15e2a"
+        },
+        "Modular Parts/T_Regular_Male_Roughness.png": {
+          "bytes": 3160102,
+          "sha256": "086c2eb25bddfdb77d8e639ccbffb8df723ef4a1910d8e1b217e852f8668bfe5"
+        },
+        "Readme.txt": {
+          "bytes": 311,
+          "sha256": "2f87579c277cde1e1ddbd4b8d823bed618728781cb6597b4dee3978c589ff5c4"
+        }
+      },
+      "totalBytes": 81815336,
+      "stagedFrom": "Round-5 proof extract (Oct 15 download; the zip was deleted after the proof). verify-zip with the re-downloaded archive records its SHA-256"
+    },
+    "ual1": {
+      "row": "ual1",
+      "archive": {
+        "name": "Universal Animation Library[Standard].zip",
+        "bytes": null,
+        "sha256": null,
+        "retrieved": null,
+        "page": "https://quaternius.itch.io/universal-animation-library"
+      },
+      "strip": null,
+      "files": {
+        "AnimationLibrary_Godot_Standard.bin": {
+          "bytes": 1587224,
+          "sha256": "6e65377d81558333c4093dbb144a48fd19019343d82b1a3a7992a98ec0e0543c"
+        },
+        "AnimationLibrary_Godot_Standard.gltf": {
+          "bytes": 2459987,
+          "sha256": "0ff075c7ad6855c5c2c37a171592ee8f0d6ab2f58259e2be77a9b63dd8027765"
+        },
+        "LICENSE": {
+          "bytes": 7048,
+          "sha256": "a2010f343487d3f7618affe54f789f5487602331c0a8d03f49e9a7c547cf0499"
+        }
+      },
+      "totalBytes": 4054259,
+      "stagedFrom": "public/anims (the shipped UAL v1 Godot export). The v1 archive is superseded upstream: the itch page serves v3.0 since 16 Jun 2026, so verify-zip needs a v1 archive from a backup"
+    },
+    "ual2-standard": {
+      "row": "ual2-standard",
+      "archive": {
+        "name": "Universal Animation Library 2[Standard].zip",
+        "bytes": null,
+        "sha256": null,
+        "retrieved": "2026-10-15",
+        "page": "https://quaternius.itch.io/universal-animation-library-2"
+      },
+      "strip": null,
+      "files": {
+        "License.txt": {
+          "bytes": 332,
+          "sha256": "6d01f55c6e4c49a2c9963e147e561945ae2c83958c8ca667d90a6bffdbfac061"
+        },
+        "README.txt": {
+          "bytes": 702,
+          "sha256": "ccd02718886b5a57f10f0a8911a38cfe10c36880e1d6dfa3445923fba32d2a72"
+        },
+        "UAL2_Standard.glb": {
+          "bytes": 8091444,
+          "sha256": "8cee20ab1bc55130092447e810e26df22dd2803eccc54f52137a7d54d7ab88a8"
+        }
+      },
+      "totalBytes": 8092478,
+      "stagedFrom": "Round-5 proof extract (Oct 15 download; the zip was deleted after the proof). verify-zip with the re-downloaded archive records its SHA-256"
+    },
+    "ubc-standard": {
+      "row": "ubc-standard",
+      "archive": {
+        "name": "Universal Base Characters[Standard].zip",
+        "bytes": 128968391,
+        "sha256": null,
+        "retrieved": "2026-10-15",
+        "page": "https://quaternius.itch.io/universal-base-characters"
+      },
+      "strip": null,
+      "files": {
+        "Base Characters/Godot - UE/Superhero_Female_FullBody.bin": {
+          "bytes": 990808,
+          "sha256": "3a8220a485b33d05d879115a50697728b45a151781106033afb8b8c243fca208"
+        },
+        "Base Characters/Godot - UE/Superhero_Female_FullBody.gltf": {
+          "bytes": 31656,
+          "sha256": "adedf28000a0716f689b009a70314506fc62f827498f77ba852acb5610f3f3f4"
+        },
+        "Base Characters/Godot - UE/Superhero_Male_FullBody.bin": {
+          "bytes": 720076,
+          "sha256": "459003f9745853ae562a85506a2b94dd56515c1f37728f9fa3d2ce1a3e4cd92f"
+        },
+        "Base Characters/Godot - UE/Superhero_Male_FullBody.gltf": {
+          "bytes": 30989,
+          "sha256": "e7fcea214ecf8855afbf910b50de6f9c7d1decfb71ca28bad8a4481452dafeb4"
+        },
+        "Base Characters/Godot - UE/T_Eye_Brown.png": {
+          "bytes": 35958,
+          "sha256": "d08e3356a83211bc6ca21fe3a8e39f4b5c1a3b8f85457fc2c0fb57be09935025"
+        },
+        "Base Characters/Godot - UE/T_Eye_Normal.png": {
+          "bytes": 15099,
+          "sha256": "9ed61f7726a54fe346a78b9e5a18905d8e2b88f86235d97f53cd207a26f3f8c7"
+        },
+        "Base Characters/Godot - UE/T_Hair_1_BaseColor.png": {
+          "bytes": 1570376,
+          "sha256": "bc7aa863bd22ab0a995cd838cceb4d3a5186ee54ee2fb0108fad85d20c057e6e"
+        },
+        "Base Characters/Godot - UE/T_Hair_1_BaseColor_png.png": {
+          "bytes": 1570376,
+          "sha256": "bc7aa863bd22ab0a995cd838cceb4d3a5186ee54ee2fb0108fad85d20c057e6e"
+        },
+        "Base Characters/Godot - UE/T_Hair_1_Normal.png": {
+          "bytes": 4326126,
+          "sha256": "57fd0ad8c96a4d01b38769637e066cecaa285b456f6e48ce00863754a457affb"
+        },
+        "Base Characters/Godot - UE/T_Hair_2_BaseColor.png": {
+          "bytes": 1729467,
+          "sha256": "f9f4f2fb3eeeefb0b6f0fdef38b0770fd6607640c1c680b8139dd76697e9f9b3"
+        },
+        "Base Characters/Godot - UE/T_Hair_2_BaseColor_png.png": {
+          "bytes": 1729467,
+          "sha256": "f9f4f2fb3eeeefb0b6f0fdef38b0770fd6607640c1c680b8139dd76697e9f9b3"
+        },
+        "Base Characters/Godot - UE/T_Hair_2_Normal.png": {
+          "bytes": 4710013,
+          "sha256": "172f230aae0d4366c3cfc0402b2e6d1811b11f8487344bff28605eeacac1558d"
+        },
+        "Base Characters/Godot - UE/T_Superhero_Female_Dark_BaseColor.png": {
+          "bytes": 1319410,
+          "sha256": "d366843ee7d9e9f37ec87a0e1c98c7f2e45573c08eeb80a51a6d9344e68cf288"
+        },
+        "Base Characters/Godot - UE/T_Superhero_Female_Normal.png": {
+          "bytes": 3940537,
+          "sha256": "cf922460b43ccd31e983e34db05514c9d451dd2f9cdd01a843978e797719f859"
+        },
+        "Base Characters/Godot - UE/T_Superhero_Female_Roughness.png": {
+          "bytes": 3277022,
+          "sha256": "d2beabf2bd0313e32c68dcdbb80dca371a6e994fabf96efa97128bf9f14fa57b"
+        },
+        "Base Characters/Godot - UE/T_Superhero_Male_Dark.png": {
+          "bytes": 1384380,
+          "sha256": "df680cbc1967a61e85998bfafb8f7bc0a36dd604bb3266486c4b06b1a184bb45"
+        },
+        "Base Characters/Godot - UE/T_Superhero_Male_Normal.png": {
+          "bytes": 4252937,
+          "sha256": "9b25cf9200216eb754b79cf4c63b5380c419780788322f3c57cdd2b3e02679a6"
+        },
+        "Base Characters/Godot - UE/T_Superhero_Male_Roughness.png": {
+          "bytes": 3152049,
+          "sha256": "c70dabf48574cda55644d556beae1ee7cf1bdcf68a50d259d20f2f2358f27991"
+        },
+        "Base Characters/Textures/T_Superhero_Female_Light_BaseColor.png": {
+          "bytes": 1317541,
+          "sha256": "743f811857db0b950f3ad09a0733dfa4888801ead332313ca25becea14c54f8d"
+        },
+        "Base Characters/Textures/T_Superhero_Male_Ligh.png": {
+          "bytes": 1389170,
+          "sha256": "419f96dbb8811511e2d515bcdabc085ff2f219ec7b8b4e91050a84cba6888fe9"
+        },
+        "Hairstyles/Rigged to Head Bone/glTF (Godot -Unreal)/Eyebrows_Female.bin": {
+          "bytes": 100592,
+          "sha256": "7a450832ca276c3d8299acaf78cd83c53b4290d79375c85266286ef617932e46"
+        },
+        "Hairstyles/Rigged to Head Bone/glTF (Godot -Unreal)/Eyebrows_Female.gltf": {
+          "bytes": 25053,
+          "sha256": "ec294eb3dbe1b2027090e336255fa34ade5f2182c8964530404f3af7ad45939e"
+        },
+        "Hairstyles/Rigged to Head Bone/glTF (Godot -Unreal)/Eyebrows_Regular.bin": {
+          "bytes": 43656,
+          "sha256": "11b8092c27f17b329210d057eb69019d73130154b45a396b32801975099ffdf5"
+        },
+        "Hairstyles/Rigged to Head Bone/glTF (Godot -Unreal)/Eyebrows_Regular.gltf": {
+          "bytes": 23117,
+          "sha256": "ced6afcce12cc72a27e30fc06880401aff2b3fe883a01739299a5b49e5f7509e"
+        },
+        "Hairstyles/Rigged to Head Bone/glTF (Godot -Unreal)/Hair_Beard.bin": {
+          "bytes": 41356,
+          "sha256": "bf2f46ef5808665ef31082f787bc68c51ff063e81b76ca1a51ac86a9ae723be7"
+        },
+        "Hairstyles/Rigged to Head Bone/glTF (Godot -Unreal)/Hair_Beard.gltf": {
+          "bytes": 23104,
+          "sha256": "80013b9791ce12c65fbe693cf669b02ef5c38091c653bf13b9415d2d8380e0ce"
+        },
+        "Hairstyles/Rigged to Head Bone/glTF (Godot -Unreal)/Hair_Buns.bin": {
+          "bytes": 205916,
+          "sha256": "811606cc84f0bfdefa2e6f1396f3d94c35138308a96d78a4f447b2e7dfc6ed6c"
+        },
+        "Hairstyles/Rigged to Head Bone/glTF (Godot -Unreal)/Hair_Buns.gltf": {
+          "bytes": 23807,
+          "sha256": "cbdd6f509ec8f1021361b53da6fa1a077b95762ebc8bc2d8acae59bb0cb263c1"
+        },
+        "Hairstyles/Rigged to Head Bone/glTF (Godot -Unreal)/Hair_Buzzed.bin": {
+          "bytes": 33372,
+          "sha256": "5d4b5452ff879ed1d516694be57d1106c070c7133e747a8c9432b01ebf20e908"
+        },
+        "Hairstyles/Rigged to Head Bone/glTF (Godot -Unreal)/Hair_Buzzed.gltf": {
+          "bytes": 23108,
+          "sha256": "6e709c691d4feccda9788df917bf9604e751f02da21cee2bc81bcc3d26b3b580"
+        },
+        "Hairstyles/Rigged to Head Bone/glTF (Godot -Unreal)/Hair_BuzzedFemale.bin": {
+          "bytes": 33372,
+          "sha256": "48fcdac8751e85c1d08ac9ff25b5c4d649e5b5d450d37ad8743b9f111a3a7e04"
+        },
+        "Hairstyles/Rigged to Head Bone/glTF (Godot -Unreal)/Hair_BuzzedFemale.gltf": {
+          "bytes": 23779,
+          "sha256": "096a7a4ea5bcadc588f4c1e95f04b3461f8a20f3643a0308cfd23e81e180ab32"
+        },
+        "Hairstyles/Rigged to Head Bone/glTF (Godot -Unreal)/Hair_Long.bin": {
+          "bytes": 181756,
+          "sha256": "268fd531d2c2ac321783d36fcf106d15c5c76e8923eec2c8704d5fe9de953589"
+        },
+        "Hairstyles/Rigged to Head Bone/glTF (Godot -Unreal)/Hair_Long.gltf": {
+          "bytes": 23813,
+          "sha256": "27e2c63e8f98c79fb600268ffcc92b36c621b8653b5a7dcbadb08328f3f887a9"
+        },
+        "Hairstyles/Rigged to Head Bone/glTF (Godot -Unreal)/Hair_SimpleParted.bin": {
+          "bytes": 51332,
+          "sha256": "ecd7c81959f3985d6254458a440daaaa18a8bfbb1dbe111c68a04a72374d54db"
+        },
+        "Hairstyles/Rigged to Head Bone/glTF (Godot -Unreal)/Hair_SimpleParted.gltf": {
+          "bytes": 23114,
+          "sha256": "fe0f354d7f95d83d38e15c60794dcc063fa4d60550706f3d7ba51491cdc07c56"
+        },
+        "Hairstyles/Rigged to Head Bone/glTF (Godot -Unreal)/T_Hair_1_BaseColor.png": {
+          "bytes": 1570376,
+          "sha256": "bc7aa863bd22ab0a995cd838cceb4d3a5186ee54ee2fb0108fad85d20c057e6e"
+        },
+        "Hairstyles/Rigged to Head Bone/glTF (Godot -Unreal)/T_Hair_1_Normal.png": {
+          "bytes": 4326126,
+          "sha256": "57fd0ad8c96a4d01b38769637e066cecaa285b456f6e48ce00863754a457affb"
+        },
+        "Hairstyles/Rigged to Head Bone/glTF (Godot -Unreal)/T_Hair_2_BaseColor.png": {
+          "bytes": 1729467,
+          "sha256": "f9f4f2fb3eeeefb0b6f0fdef38b0770fd6607640c1c680b8139dd76697e9f9b3"
+        },
+        "Hairstyles/Rigged to Head Bone/glTF (Godot -Unreal)/T_Hair_2_Normal.png": {
+          "bytes": 4710013,
+          "sha256": "172f230aae0d4366c3cfc0402b2e6d1811b11f8487344bff28605eeacac1558d"
+        },
+        "License_Standard.txt": {
+          "bytes": 806,
+          "sha256": "0f4beaf0fe360a7732e58bbe3dbf60a2422367fbea60cb9ea4add968f383268e"
+        }
+      },
+      "totalBytes": 50710492,
+      "stagedFrom": "Round-5 proof extract (Oct 15 download; the zip was deleted after the proof). verify-zip with the re-downloaded archive records its SHA-256"
+    }
+  }
+}

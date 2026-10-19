@@ -20,30 +20,6 @@ const io = new NodeIO()
 mkdirSync('public/models', { recursive: true });
 
 const JOBS = [
-  {
-    in: 'aloy_-_fortnite.glb', out: 'public/models/aloy.glb',
-    textureSize: 1024, simplifyRatio: null, // skinned, already low-poly
-  },
-  {
-    in: 'redeye_watcher_rig__horizon_zero_dawn.glb', out: 'public/models/watcher.glb',
-    textureSize: 1024, simplifyRatio: null, specGloss: true,
-  },
-  {
-    in: 'sawtooth_from_horizon_zero_dawn.glb', out: 'public/models/sawtooth.glb',
-    textureSize: null, simplifyRatio: 0.5, joinStatic: true,
-  },
-  {
-    in: 'thunderjaw_from_horizon_zero_dawn.glb', out: 'public/models/thunderjaw.glb',
-    textureSize: null, simplifyRatio: 0.5, joinStatic: true,
-  },
-  {
-    in: 'behemoth_from_horizon_zero_dawn.glb', out: 'public/models/behemoth.glb',
-    textureSize: 1024, simplifyRatio: 0.12, joinStatic: true,
-  },
-  {
-    in: 'horizon_zero_dawn_character_fanart.glb', out: 'public/models/npc.glb',
-    textureSize: 1024, simplifyRatio: null,
-  },
 ];
 
 const only = process.argv[2];
