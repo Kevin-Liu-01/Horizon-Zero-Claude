@@ -96,52 +96,83 @@ const DEATH_HOLD_S = 1.15;    // let the crumple play before the card takes over
 const VICTORY_S = 3.0;        // ui-13: banner, then the valley is yours again
 const GRAY_RAMP_S = 1.6;
 const CAMP = { x: REST.x, z: REST.z };
-const START_ANG = 3.7;        // title dolly: the sector that frames best (see _dolly)
+/**
+ * Title framing (brand, W0b; bible §9.8 "the Pans in calima"). The camera faces
+ * the SUN's azimuth, offset so the disc sits on the right third clear of the
+ * centred lockup, and looks across REST from that side. The heading is fixed
+ * for the whole title: the slow drift is a lateral truck, not an orbit, so the
+ * frame can never swing round onto whatever stands behind it (Round 4's orbit
+ * walked the old walker tower into shot after a minute on the title).
+ */
+const TITLE_SUN_OFFSET = 0.42;    // rad from the sun's azimuth to the heading: the disc sits ~24° right of centre
+const TITLE_NIGHT_HEADING = 3.6;  // rad, used only when the sun is under the horizon
+const TITLE_TRUCK_M = 24;         // lateral drift amplitude, m
+const TITLE_TRUCK_W = 0.045;      // rad/s of the drift (one sway ≈ 140 s)
+const TITLE_TILT_DEG = 9;         // upward tilt at the start of the move (+3° across the ease)
+/** The title's one-line field notes (bible §10 words; rotated per title visit). */
+const TITLE_LINES = [
+  'Hold <kbd>RMB</kbd> to aim, <kbd>LMB</kbd> to draw. Release at full draw for the damage the shot is worth.',
+  'Raise the Alidade with <kbd>V</kbd> to read an Instrument before you loose: its lamp, its joints, its tools.',
+  'Hold <kbd>Shift</kbd> while aiming to Steady: a held breath, and the world keeps its pace.',
+];
 
 /**
- * Credits rows. Provenance is copied from the manifests that are the source of
- * truth — `models-staging/MANIFEST.md`, `public/audio/MANIFEST.md`,
- * `public/anims/LICENSE` and README.md's own Credits section. Nothing here is
- * invented: a row exists only if one of those backs it.
+ * Credits (brand, W0b; plan §10.2). Two kinds of row, kept apart on purpose:
+ *
+ *   CREDITS_LICENSED  every licence row that needs credit, GENERATED between the
+ *                     markers by `node tools/lint/credits-sync.mjs` from
+ *                     `tools/licences/credits.mjs` (public/LICENSES.json). Never
+ *                     edit it by hand; `--check` fails on drift, and
+ *                     A-licence-manifest reads each CC-BY / MIT attribution from
+ *                     this file verbatim.
+ *   the project rows  what the project is and how its audio is made; not
+ *                     licence claims.
  */
+// <credits:generated>
+const CREDITS_LICENSED = [
+  { head: 'ATTRIBUTION REQUIRED (CC BY)', rows: [
+    ['"Black Caiman" by Poly by Google (https://poly.pizza/m/5etIv4omd7Z), CC-BY 3.0', ''],
+    ['"Hawk (low-poly, rigged)" by Sherkiz (https://poly.pizza/m/RkN6MEbP6g), CC-BY 3.0', ''],
+    ['"Lion" by Poly by Google (https://polygone.art/model/cC_IFclYA4c), CC-BY 3.0', ''],
+    ['"Mechanical Horse" by jake young (https://poly.pizza/m/d4bayjeM1aD), CC-BY 3.0', ''],
+    ['"Robocat" by Jordan Hill (https://poly.pizza/m/d78wyEWCmTC), CC-BY 3.0', ''],
+    ['"Scorpion" by Poly by Google (https://poly.pizza/m/6Bu7d_Pkm5o), CC-BY 3.0', ''],
+  ] },
+  { head: 'CODE (MIT)', rows: [
+    ['meshoptimizer decoder © 2016–2022 Arseny Kapoulkine (MIT)', ''],
+    ['three-mesh-bvh © 2018 Garrett Johnson (MIT)', ''],
+    ['three.js © 2010–2024 three.js authors (MIT)', ''],
+  ] },
+  { head: 'TYPEFACES (SIL OPEN FONT LICENSE 1.1)', rows: [
+    ['Bodoni Moda — Owen Earl (indestructible type*) (https://fonts.google.com/specimen/Bodoni+Moda)', ''],
+    ['IBM Plex Mono — IBM Corp. (Mike Abbink, Bold Monday) (https://fonts.google.com/specimen/IBM+Plex+Mono)', ''],
+    ['IBM Plex Sans Condensed — IBM Corp. (Mike Abbink, Bold Monday) (https://fonts.google.com/specimen/IBM+Plex+Sans+Condensed)', ''],
+  ] },
+  { head: 'THANKS (CC0, NO ATTRIBUTION REQUIRED)', rows: [
+    ['Birb (Ultimate Monsters pack) — Quaternius (https://quaternius.com/packs/ultimatemonsters.html)', ''],
+    ['Bull (Ultimate Animated Animal pack) — Quaternius (https://quaternius.com/packs/ultimateanimatedanimals.html)', ''],
+    ['Deer (Ultimate Animated Animal pack) — Quaternius (https://quaternius.com/packs/ultimateanimatedanimals.html)', ''],
+    ['Robot Enemy Flying — Quaternius (https://poly.pizza/m/lF3jeRJwiH)', ''],
+    ['Rock Face (1K scan, repacked) — Poly Haven (https://polyhaven.com/a/rock_face)', ''],
+    ['Round-4 lab copies of the Universal Animation Library — Quaternius (https://quaternius.itch.io/universal-animation-library)', ''],
+    ['Spider — Quaternius (https://poly.pizza/m/yRYJiAJyiM)', ''],
+    ['Universal Animation Library [Standard] (Godot export) — Quaternius (https://quaternius.itch.io/universal-animation-library)', ''],
+  ] },
+];
+// </credits:generated>
 const CREDITS = [
-  { head: 'HORIZON ZERO CLAUDE', rows: [
-    ['An unaffiliated homage', 'Horizon Zero Dawn is © Guerrilla Games / Sony Interactive Entertainment'],
-    ['Built with', 'Claude Code — agent fleets, literal gates and film loops'],
+  { head: 'CALIMA', rows: [
+    ['An original game', 'Orchil, its Instruments and its people belong to this project'],
+    ['Built with', 'Claude Code — agent lanes, literal gates and film loops'],
   ] },
-  { head: 'ENGINE', rows: [
-    ['three.js r169', 'MIT'],
-    ['three-mesh-bvh', 'MIT — collision, navigation and hit hulls'],
-    ['Vite', 'MIT'],
-  ] },
-  { head: 'MACHINE MODELS  ·  CC-BY 3.0', rows: [
-    ['“Mechanical Horse” — jake young', 'poly.pizza/m/d4bayjeM1aD  ·  Strider donor'],
-    ['“Robocat” — Jordan Hill', 'poly.pizza/m/d78wyEWCmTC  ·  Scrapper donor'],
-    ['“Velocirobot” — Hoai Nguyen', 'poly.pizza/m/4XsUYx8ON1T  ·  Watcher / Sawtooth donor'],
-    ['“MechQuadruped” — 3Donimus', 'poly.pizza/m/5x1hRpbmdfo  ·  Behemoth donor'],
-  ] },
-  { head: 'MACHINE MODELS  ·  CC0 1.0', rows: [
-    ['“Robot Enemy Flying”, Animated Mech, Ultimate Monsters — Quaternius', 'quaternius.com  ·  Glinthawk, Longleg, Thunderjaw donors'],
-    ['Fox — PixelMannen, tomkranis, @AsoboStudio, @scurest', 'Khronos glTF-Sample-Assets  ·  CC0 model, CC-BY 4.0 rig / conversion  ·  rig-pipeline reference'],
-  ] },
-  { head: 'ANIMATION', rows: [
-    ['AnimationLibrary_Godot_Standard — 46 clips', 'CC0 1.0  ·  public/anims/LICENSE  ·  retargeted onto Aloy at boot'],
-  ] },
-  { head: 'AUDIO  ·  CC0 1.0', rows: [
-    // counted live: the bank grew from 58 sets to 95 between two waves and a
-    // hard-coded number in a credits screen is a licence claim that goes stale.
+  ...CREDITS_LICENSED,
+  { head: 'AUDIO  ·  SYNTHESIZED', rows: [
+    // counted live: a hard-coded number in a credits screen is a licence claim that goes stale
     [() => {
       const n = window.__CTX__?.audio?.bank?.size;
       return n ? `${n} cues loaded, synthesized by this repository` : 'Synthesized by this repository';
     }, 'public/audio/MANIFEST.md  ·  tools/audio-bank.mjs + audio-recipes.js'],
     ['No third-party audio is bundled', 'no attribution, share-alike or non-commercial obligation in the tree'],
-  ] },
-  { head: 'TYPEFACES  ·  SIL OPEN FONT LICENSE', rows: [
-    ['Julius Sans One — LatinoType', 'wordmark and display'],
-    ['Michroma · Orbitron · Rajdhani · Chakra Petch', 'interface, stingers, Focus'],
-  ] },
-  { head: 'CHARACTER & MACHINE SCULPTS (ROUND 1)', rows: [
-    ['Sketchfab fan-art rigs — Aloy, Watcher, Sawtooth, Thunderjaw, Behemoth', 'used as fan-art in a non-commercial tech demo — see README.md “Credits”'],
   ] },
 ];
 
@@ -224,7 +255,7 @@ export class Menus {
 
     const head = el('header', 'mn-hub-head', shell);
     const brand = el('div', 'mn-hub-brand', head);
-    el('div', 'mn-hub-kicker', brand, 'HORIZON ZERO CLAUDE');
+    el('div', 'mn-hub-kicker', brand, 'CALIMA');
     this._hubTitle = el('div', 'mn-hub-title', brand, 'MAP');
     this._tabsEl = el('nav', 'mn-tabs', head);
     this._tabBtns = new Map();
@@ -303,6 +334,8 @@ export class Menus {
     if (wall) { wall.remove(); this._manualNode = wall; }
     document.getElementById('btn-start')?.classList.add('mn-hidden');
 
+    this._titleFrame();
+
     this.titleEl = el('div', 'mn-title', host);
     this._pressEl = el('div', 'mn-title-press', this.titleEl, '<span>PRESS ANY KEY</span>');
     this.titleMenu = el('nav', 'mn-title-menu', this.titleEl);
@@ -327,15 +360,23 @@ export class Menus {
       { label: 'FIELD MANUAL', fn: () => this.openModal('manual') },
       { label: 'CREDITS', fn: () => this.openModal('credits') },
     ];
-    for (const it of items) {
-      const b = el('button', `mn-title-item${it.disabled ? ' disabled' : ''}`, this.titleMenu, it.label);
+    for (let i = 0; i < items.length; i++) {
+      const it = items[i];
+      // field-book stations (bible §9.7): a Plex Mono station number, then the label
+      const b = el('button', `mn-title-item${it.disabled ? ' disabled' : ''}`, this.titleMenu,
+        `<span class="cal-stn" aria-hidden="true">${String(i + 1).padStart(2, '0')}</span>${it.label}`);
       if (it.disabled) b.disabled = true;
       else b.addEventListener('click', () => { this._emit('ui-confirm', { label: it.label }); it.fn(); });
     }
     this._titleSave.textContent = info
       ? `LAST SAVE · LEVEL ${info.level ?? 1} · ${String(info.quest || 'THE VALLEY').toUpperCase()}`
       : 'NO SAVED HUNT — START A NEW ONE';
-    if (this._titleTip) this._titleTip.innerHTML = this.tips.peek('title');
+    if (this._titleTip) {
+      // the title's own line (brand): CALIMA's words, one per visit, never the
+      // shared tip feed (whose Round-4 lines still name the old mechanics)
+      this._titleTipN = (this._titleTipN ?? -1) + 1;
+      this._titleTip.innerHTML = TITLE_LINES[this._titleTipN % TITLE_LINES.length];
+    }
   }
 
   /** Any key (or click) on the title starts the dolly and reveals the menu. */
@@ -349,62 +390,77 @@ export class Menus {
   }
 
   /**
+   * Choose the title heading once per title visit (brand, W0b). Faces the sun's
+   * azimuth + TITLE_SUN_OFFSET so the calima disc sits on the right third; at
+   * night a fixed heading. Also asks the renderer for calima: once world-sky
+   * ships the `calima` weather (W1) `setWeather('calima')` returns 'calima', the
+   * CSS stand-in (#cal-calima) switches off and the start restores the weather.
+   * Allocates once per visit, never per frame.
+   */
+  _titleFrame() {
+    const env = this.ctx.environment;
+    const sun = env?.sunDir;
+    const az = sun && sun.y > 0.02 ? Math.atan2(sun.x, sun.z) + TITLE_SUN_OFFSET : TITLE_NIGHT_HEADING;
+    this._titleHead = { sx: Math.sin(az), cz: Math.cos(az), az };
+    this._sunV = this._sunV || this.ctx.camera?.position.clone() || null;
+    this._sunPx = this._sunPx || { x: -1, y: -1, on: null };
+    this._sunEl = this._sunEl || document.querySelector('#cal-calima .cal-calima-sun');
+    // the disc is a screen-space stand-in, so it is shown only when the sun clears
+    // the skyline from where the shot starts (crest + the disc's own radius)
+    this._sunClear = false;
+    const T = this.ctx.terrain;
+    if (sun && sun.y > 0.02 && T?.getHeight) {
+      const saz = Math.atan2(sun.x, sun.z), sel = Math.asin(Math.min(1, sun.y));
+      const cx = CAMP.x - this._titleHead.sx * 150, cz = CAMP.z - this._titleHead.cz * 150;
+      const y = T.getHeight(cx, cz) + 32;
+      let crest = -1;
+      for (let d = 10; d <= 1500; d += 10) crest = Math.max(crest, Math.atan2(T.getHeight(cx + Math.sin(saz) * d, cz + Math.cos(saz) * d) - y, d));
+      this._sunClear = crest + 0.05 < sel;     // 0.05 rad ≈ the disc's radius + a margin
+      this._sunCrestDeg = crest * 180 / Math.PI;
+    }
+    this._calimaWeather = null;
+    if (env?.setWeather && env.weather !== 'calima') {
+      const prev = env.weather;
+      if (env.setWeather('calima', 0) === 'calima') this._calimaWeather = prev;
+    }
+    document.body.classList.toggle('cal-calima-live', env?.weather === 'calima');
+  }
+
+  /** Leave the title: hand the weather back if the title borrowed calima. */
+  _titleLeave() {
+    const env = this.ctx.environment;
+    if (this._calimaWeather != null && env?.setWeather) env.setWeather(this._calimaWeather, 0);
+    this._calimaWeather = null;
+    document.body.classList.remove('cal-calima-live');
+    this._sunEl?.classList.remove('on');
+    if (this._sunPx) this._sunPx.on = null;
+  }
+
+  /**
    * The scripted aerial dolly. Runs in `update()` because 'title' is one of the
    * live states, and writes the camera LAST in the frame (this system is
    * appended to `game.systems` after `Player`), so the chase camera does not
    * fight it. Pure trigonometry on the existing camera — no allocation per
    * frame, nothing added to the scene.
    *
-   * FRAMING IS THE WHOLE SHOT (V38, judged on film). The first cut put the
-   * camera 118 m up and aimed it at a point 12 m above the camp: a 27° stare
-   * straight down that pushed the horizon and the entire sky out of frame, so
-   * the title read as a muddy top-down diorama with a menu on it. A landscape
-   * needs a horizon, so the pitch is the authored quantity here, not the look
-   * target. The look point is derived from it (`lookY = camY - reach·tan θ`)
-   * instead of the other way round, which is what keeps the composition steady
-   * while the height, the radius and the terrain under the camera all change.
-   *
-   * THE SECOND CUT AIMED THE TILT THE WRONG WAY, and it took a measurement to
-   * see it. A probe marched the look ray at 16 points around the ring and read
-   * the rim crest's ELEVATION from the camera: 16.6–32.1°, and 18° in this
-   * sector. The camera's vertical half-FOV is 27.5° (`camera.fov` is vertical
-   * in three.js), so a 6° DOWNWARD tilt puts the top of frame at 21.5° — three
-   * and a half degrees above an eighteen-degree crest. That is the whole reason
-   * the shot read as a flat beige wall with the wordmark painted on it: the sky
-   * was there, but only a notch of it cleared the ridge.
-   *
-   * Tilting UP ~1.5–4.5° instead lifts the top of frame to 29–32° and gives the
-   * ridgeline a real band of sky above it, which is what turns the rim from the
-   * subject into a silhouette. Raising the camera would do it too, but that is
-   * the 118 m contour map again — at 590–640 m out, dropping the crest to 12°
-   * needs 113 m of altitude, and everything the world lanes built disappears
-   * below the resolution of the shot. So: stay low, tilt up, keep the meadow.
+   * ROUND 5 (brand, W0b). The authored quantities and the two clocks are the
+   * Round-4 ones (A70c-title-flow grades them): `_dollyT` runs from the moment
+   * the title appears, `_titleT` from the key press; the closing ease is keyed
+   * to the press, so nothing moves on the press frame; the radius closes from
+   * 150 m to 116 m over 9 s; the menu arrives 1.1 s after the press; altitude
+   * is ~32 m over the ground under the camera, and the tilt opens by 3° UP across
+   * the move (TITLE_TILT_DEG, now 9° → 12° so the sky and the disc hold the upper
+   * third over the rim). What changed is the heading:
+   * fixed toward the sun (see `_titleFrame`) instead of an orbit, with a slow
+   * lateral truck for life, and the calima disc is placed on the projected sun.
    */
   _dolly(dt) {
     const cam = this.ctx.camera;
     const terrain = this.ctx.terrain;
     if (!cam) return;
+    if (!this._titleHead) this._titleFrame();
     this._dollyT += dt;
     const t = this._dollyT;
-    /**
-     * TWO CLOCKS, AND THEY ARE NOT INTERCHANGEABLE — this was a real jump cut.
-     *
-     *   `_dollyT` counts from the moment the title appears. It drives the
-     *     CONTINUOUS orbit below, which is already running while the player
-     *     reads the press-any-key line.
-     *   `_titleT` is zeroed by `_titleAdvance()` on the keypress, so it counts
-     *     from the PRESS. It drives everything that is supposed to be triggered
-     *     BY the press: the closing ease and the menu beat.
-     *
-     * Keying the ease to `_dollyT` meant `closing` was already spent before the
-     * player touched anything: `closing` is clamped to 0 during 'press', so the
-     * frame the stage flipped it snapped from 0 to titleTime/9 in one step —
-     * measured at 35 m of camera translation in a single frame after an 8 s
-     * title, with the rim, the Tallneck and the camp all sliding at once. Past
-     * 9 s of title there was no move left at all, only the orbit. It also ate
-     * the 1.1 s beat: `t > 1.1` was already true, so the menu appeared on the
-     * first frame instead of after the vista had started travelling.
-     */
     const since = this._titleT;
 
     // the menu fades in 1.1 s AFTER THE PRESS, so the vista is already
@@ -414,42 +470,25 @@ export class Menus {
       this.titleEl?.classList.add('menu-in');
     }
 
-    // a slow arc over the valley that descends toward the camp once a key is hit
+    // closing move: starts at the press, never before (A70c)
     const closing = this.titleStage === 'press' ? 0 : clamp(since / 9, 0, 1);
     const ease = closing * closing * (3 - 2 * closing);
-    // START_ANG is a composition choice, not a default: filmed at eight points
-    // around the ring, this is the sector that puts the Tallneck's silhouette
-    // on the right third, sky in the rim's notches above the wordmark, and
-    // Mother's Watch under the menu column.
-    const ang = START_ANG + t * 0.026 + ease * 0.09;
     const radius = 150 - ease * 34;
-    const cx = CAMP.x + Math.sin(ang) * radius;
-    const cz = CAMP.z + Math.cos(ang) * radius;
+    const hx = this._titleHead.sx, hz = this._titleHead.cz;
+    // lateral truck along the heading's right vector (-hz, hx): a sway, not an orbit
+    const lat = TITLE_TRUCK_M * Math.sin(t * TITLE_TRUCK_W);
+    const cx = CAMP.x - hx * radius - hz * lat;
+    const cz = CAMP.z - hz * radius + hx * lat;
     const ground = terrain?.getHeight ? terrain.getHeight(cx, cz) : 0;
-    /**
-     * ALTITUDE, measured from the ground the camera is actually over so the arc
-     * keeps its height as it crosses the hills — and kept LOW on purpose.
-     * Filmed at 118 m and at 105 m the valley reads as a beige contour map:
-     * everything the world lanes built (autumn meadow, tree silhouettes, the
-     * palisade, the campfire smoke) is below the resolution of the shot and the
-     * only things left are haze and the rim. At ~30 m the same frame has a
-     * foreground, Mother's Watch is a legible subject, and the rim ring becomes
-     * a backdrop instead of the subject.
-     */
     const camY = ground + 32 - ease * 7;
     cam.position.set(cx, camY, cz);
-    /**
-     * NEGATIVE = TILT UP, and it has to grow across the move. Closing in costs
-     * sky twice over: the camera drops 7 m and the crest gets 34 m nearer, so
-     * the same ridge subtends a larger angle at the end of the arc than at the
-     * start. Opening the tilt from 1.5° to 4.5° holds the ridgeline in the same
-     * band of the frame from the first beat to the last — filmed at ease 0,
-     * 0.25, 0.5, 0.75 and 1 to check that no frame in between collapses.
-     */
-    const pitch = (-1.5 - ease * 3) * (Math.PI / 180);
+    // NEGATIVE = TILT UP, opening across the move. 9° → 12° up keeps the calima
+    // sky (and the disc, ~27° high at 17:00) in the upper third over the rim.
+    const pitch = (-TITLE_TILT_DEG - ease * 3) * (Math.PI / 180);
     const reach = radius * 1.05;
-    cam.lookAt(CAMP.x, camY - reach * Math.tan(pitch), CAMP.z);
+    cam.lookAt(cx + hx * reach, camY - reach * Math.tan(pitch), cz + hz * reach);
     cam.updateMatrixWorld();
+    this._placeSun(cam);
 
     // mutate in place — no allocation inside the frame loop
     const di = this._dollyInfo;
@@ -457,7 +496,29 @@ export class Menus {
     di.ease = ease;
     di.radius = radius;
     di.camY = camY;
-    di.pitchDeg = -(1.5 + ease * 3);
+    di.pitchDeg = -(TITLE_TILT_DEG + ease * 3);
+  }
+
+  /**
+   * Put the calima disc (#cal-calima, the CSS stand-in) on the projected sun.
+   * Writes the DOM only when the rounded pixel position or visibility changes:
+   * the heading is fixed and the sun is at infinity, so in the press stage and
+   * after the ease it does not move at all.
+   */
+  _placeSun(cam) {
+    const el = this._sunEl, v = this._sunV, sun = this.ctx.environment?.sunDir, px = this._sunPx;
+    if (!el || !v || !sun || !px) return;
+    // a direction, not a point: any distance inside the frustum projects the same
+    v.copy(sun).multiplyScalar(100).add(cam.position).project(cam);
+    const w = window.innerWidth, h = window.innerHeight;
+    const x = Math.round((v.x + 1) * 0.5 * w), y = Math.round((1 - v.y) * 0.5 * h);
+    const on = this._sunClear && sun.y > 0.02 && v.z > -1 && v.z < 1
+      && x > -60 && x < w + 60 && y > -60 && y < h + 60;
+    if (on !== px.on) { el.classList.toggle('on', on); px.on = on; }
+    if (on && (x !== px.x || y !== px.y)) {
+      px.x = x; px.y = y;
+      el.style.transform = `translate(${x}px, ${y}px)`;
+    }
   }
 
   continueGame() {
@@ -481,6 +542,7 @@ export class Menus {
   /** Hand off to main.js's own start path so nothing about it is duplicated. */
   _startGame() {
     this.closeModal();
+    this._titleLeave();
     document.body.classList.remove('cal-title-live');
     const btn = document.getElementById('btn-start');
     if (btn) btn.click();
@@ -501,6 +563,7 @@ export class Menus {
     document.getElementById('title')?.classList.remove('hidden');
     ctx.state = 'title';
     this._titleBuilt = false;
+    this._titleHead = null;
     this._enterTitle();
     this._emit('ui-back', { screen: 'title' });
     this._log.push({ what: 'quit-to-title' });
@@ -671,7 +734,7 @@ export class Menus {
         }
       }
       el('div', 'mn-set-note', this.modalBody,
-        'Full manifests: <code>models-staging/MANIFEST.md</code> · <code>public/audio/MANIFEST.md</code> · <code>public/anims/LICENSE</code>');
+        'Full manifest: <code>public/LICENSES.json</code> · licence texts: <code>public/licences/</code> and <code>public/fonts/*-OFL.txt</code>');
     } else if (kind === 'manual') {
       this._modalTitle.textContent = 'FIELD MANUAL';
       if (this._manualNode) this.modalBody.appendChild(this._manualNode);
@@ -683,7 +746,7 @@ export class Menus {
       this._modalTitle.textContent = 'NEW GAME';
       const list = this.ctx.progression?.DIFFICULTIES || [{ id: 'normal', name: 'Normal' }];
       el('p', 'mn-modal-lead', this.modalBody,
-        'Difficulty scales the damage you take and deal, the loot machines drop and how fast they notice you. It can be changed later.');
+        'Difficulty scales the damage you take and deal, what the Instruments drop and how fast they notice you. It can be changed later.');
       for (const d of list) {
         const row = el('button', 'mn-diff', this.modalBody);
         el('b', null, row, String(d.name).toUpperCase());

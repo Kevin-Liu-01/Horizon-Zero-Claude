@@ -1,62 +1,89 @@
 * { margin: 0; padding: 0; box-sizing: border-box; }
 
-/* Bundled OFL fonts (see docs/research/ui.md) */
+/* ===========================================================================
+   CALIMA type + tokens  —  lane `brand` (bible §9.1, §9.7; plan §2 brand row)
+   Three SIL OFL-1.1 families, self-hosted latin-subset woff2, each with its
+   OFL text in public/fonts/ and a public/LICENSES.json row:
+     Bodoni Moda              display, wordmark, place names (italic on the map)
+     IBM Plex Sans Condensed  500 / 600 — HUD, menus
+     IBM Plex Mono            500 — numerals, bearings, damage numbers
+   =========================================================================== */
 @font-face {
-  font-family: 'Michroma';
-  src: url('/fonts/Michroma-Regular.ttf') format('truetype');
-  font-display: swap;
-}
-@font-face {
-  font-family: 'Orbitron';
-  src: url('/fonts/Orbitron-Variable.ttf') format('truetype');
+  font-family: 'Bodoni Moda';
+  src: url('/fonts/BodoniModa-Variable.woff2') format('woff2');
   font-weight: 400 900;
+  font-style: normal;
   font-display: swap;
 }
 @font-face {
-  font-family: 'Rajdhani';
-  src: url('/fonts/Rajdhani-Medium.ttf') format('truetype');
+  font-family: 'Bodoni Moda';
+  src: url('/fonts/BodoniModa-Italic-Variable.woff2') format('woff2');
+  font-weight: 400 900;
+  font-style: italic;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'IBM Plex Sans Condensed';
+  src: url('/fonts/IBMPlexSansCondensed-Medium.woff2') format('woff2');
   font-weight: 500;
+  font-style: normal;
   font-display: swap;
 }
 @font-face {
-  font-family: 'Rajdhani';
-  src: url('/fonts/Rajdhani-SemiBold.ttf') format('truetype');
+  font-family: 'IBM Plex Sans Condensed';
+  src: url('/fonts/IBMPlexSansCondensed-SemiBold.woff2') format('woff2');
   font-weight: 600;
+  font-style: normal;
   font-display: swap;
 }
 @font-face {
-  font-family: 'Rajdhani';
-  src: url('/fonts/Rajdhani-Bold.ttf') format('truetype');
-  font-weight: 700;
-  font-display: swap;
-}
-@font-face {
-  font-family: 'Chakra Petch';
-  src: url('/fonts/ChakraPetch-Regular.ttf') format('truetype');
-  font-weight: 400;
-  font-display: swap;
-}
-@font-face {
-  font-family: 'Chakra Petch';
-  src: url('/fonts/ChakraPetch-SemiBold.ttf') format('truetype');
-  font-weight: 600;
+  font-family: 'IBM Plex Mono';
+  src: url('/fonts/IBMPlexMono-Medium.woff2') format('woff2');
+  font-weight: 500;
+  font-style: normal;
   font-display: swap;
 }
 
 :root {
-  --cal-accent: #59c1c6;         /* HZD teal */
+  /* ---- CALIMA palette (bible §9.1 "Brand / UI" + the field-book swatches) ---- */
+  --cal-spark: #DA7756;          /* the Claude spark: logo and the calima sun ONLY */
+  --cal-sun: #F2A27E;            /* the calima disc (bible §9.4) */
+  --cal-ochre: #C98B4E;          /* calima dust */
+  --cal-ink: #26343F;            /* UI ink */
+  --cal-paper: #E2D3B0;          /* field-book paper */
+  --cal-cobalt: #2C4F8A;         /* cobalt ink (weak points, Sighting rings) */
+  --cal-vermilion: #D2452E;      /* survey vermilion (staff graduations, margin rule) */
+  --cal-staff: #F1EEE6;          /* staff white */
+  --cal-salt: #EDEAE2;
+  --cal-lapilli: #1C1B1E;
+  --cal-violet: #6B3F73;         /* Orchil violet */
+  --cal-carmine: #A3213A;
+  --cal-brass: #B08A45;
+  --cal-linen: #D9CFBA;
+  --cal-scrim-dust: rgba(28, 27, 30, 0.72);   /* bible §9.1 scrim */
+  --cal-font-display: 'Bodoni Moda', 'Bodoni 72', Didot, serif;
+  --cal-font-ui: 'IBM Plex Sans Condensed', 'Arial Narrow', sans-serif;
+  --cal-font-mono: 'IBM Plex Mono', ui-monospace, Menlo, monospace;
+
+  /* ---- Round-4 HUD palette, kept by value until shell-ui's field-book HUD (W2) ---- */
+  --cal-accent: #59c1c6;
   --cal-warn: #f2c230;           /* weak-point / gauge yellow */
   --cal-danger: #b03a2e;         /* health red */
-  --cal-med: #7fb069;            /* medicine green */
-  --cal-focus: #7b5cd6;          /* focus purple */
+  --cal-med: #7fb069;            /* gourd green */
+  --cal-focus: #7b5cd6;          /* Sighting violet (retired by shell-ui W2, bible §9.7) */
   --cal-hostile: #e8762c;        /* hostile orange */
   --cal-text: #efe6d5;           /* parchment */
   --cal-scrim: rgba(8, 14, 18, 0.55);
-  --font: 'Rajdhani', 'Segoe UI', system-ui, sans-serif;
-  --font-display: 'Michroma', 'Orbitron', sans-serif;
-  --font-stinger: 'Orbitron', sans-serif;
-  --font-focus: 'Chakra Petch', monospace;
+
+  /* ---- family tokens every lane's CSS already reads, re-pointed at W0b ---- */
+  --font: var(--cal-font-ui);
+  --font-display: var(--cal-font-display);
+  --font-stinger: var(--cal-font-display);
+  --font-focus: var(--cal-font-mono);
 }
+
+/* the families ship 500/600 (Plex) and a variable 400–900 (Bodoni): never fake a weight */
+html { font-synthesis-weight: none; }
 
 html, body {
   width: 100%; height: 100%;
@@ -71,7 +98,7 @@ html, body {
 .overlay {
   position: fixed; inset: 0;
   display: flex; align-items: center; justify-content: center;
-  background: radial-gradient(ellipse at 50% 40%, #12202a 0%, #06090c 75%);
+  background: radial-gradient(ellipse at 50% 40%, #2a2826 0%, #151416 75%);
   z-index: 50;
   transition: opacity 0.6s ease;
 }
@@ -79,49 +106,157 @@ html, body {
 .hidden { display: none; }
 .overlay.hidden { display: flex; }
 
-.game-title {
-  font-family: var(--font-display);
-  font-size: 54px;
-  font-weight: 400;
-  letter-spacing: 0.28em;
-  text-align: center;
-  color: var(--cal-text);
-  text-shadow: 0 0 24px rgba(89, 193, 198, 0.35);
+/* ===========================================================================
+   THE CALIMA LOCKUP  —  lane `brand` (bible §9.8)
+   CALIMA in Bodoni Moda 500 caps, tracking 0.18 em. The I is a plumb line (a
+   thin stroke ending in a bob) and its dot is the full, unclipped Claude spark
+   ABOVE the word — the calima sun. Beneath: one hairline datum rule the full
+   width of the word, and under the I a small spark-coral benchmark broad-arrow
+   pointing up at the spark. Nothing else: no tagline, no second line.
+
+   Geometry is in em of the lockup's own font-size, from the Bodoni Moda metrics
+   (2000 upm: ascender 2250, descender 800, cap height 1500), so the line box of
+   `line-height: 1` puts the baseline 0.8625 em below its top and the cap line
+   0.75 em above the baseline. The I keeps a transparent real "I" glyph, so its
+   advance, tracking and the word's text ("CALIMA") are the font's own.
+   =========================================================================== */
+.cal-logo {
+  --cal-lk: 88px;                       /* lockup size (font-size of the word) */
+  --cal-trk: 0.18em;                    /* tracking */
+  --cal-base: 0.8625em;                 /* baseline below the top of the word box */
+  --cal-cap: 0.75em;                    /* cap height */
+  --cal-rule-gap: 0.15em;               /* baseline -> datum rule */
+  --cal-word-ink: var(--cal-staff);
+  --cal-rule-ink: rgba(241, 238, 230, 0.86);
+  --cal-rule-track: transparent;
+  --cal-load: 1;                        /* datum-rule fill, 0..1 (loading screen) */
+  position: relative;
+  display: inline-block;
+  font-size: var(--cal-lk);
+  line-height: 1;
+  padding: 0.80em 0 0.40em;             /* room for the spark above, the arrow below */
+  user-select: none;
 }
-.game-title span {
-  display: block;
-  font-family: var(--font-display);
-  font-size: 24px;
-  letter-spacing: 0.5em;
-  color: var(--cal-accent);
-  margin-top: 10px;
+.cal-word {
+  position: relative;
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  font-family: var(--cal-font-display);
+  font-weight: 500;
+  font-optical-sizing: auto;
+  letter-spacing: var(--cal-trk);
+  color: var(--cal-word-ink);
+  white-space: nowrap;
+  margin-right: calc(-1 * var(--cal-trk));   /* the last letter's tracking is not part of the word */
+}
+.cal-word > span { display: inline-block; }
+/* the I: a real glyph for metrics + text, painted by the plumb line instead */
+.cal-i { position: relative; color: transparent; }
+.cal-i > svg { position: absolute; overflow: visible; pointer-events: none; }
+/* every part is centred on the I's axis: the glyph box minus its trailing tracking */
+.cal-plumb {
+  color: var(--cal-word-ink);
+  left: calc((100% - var(--cal-trk)) / 2);
+  top: calc(var(--cal-base) - var(--cal-cap));
+  width: 0.20em; height: var(--cal-cap);
+  transform: translateX(-50%);
+}
+.cal-spark {
+  left: calc((100% - var(--cal-trk)) / 2);
+  top: calc(var(--cal-base) - var(--cal-cap) - 0.115em - 0.64em);
+  width: 0.64em; height: 0.64em;
+  transform: translateX(-50%);
+}
+.cal-arrow {
+  left: calc((100% - var(--cal-trk)) / 2);
+  top: calc(var(--cal-base) + var(--cal-rule-gap) + 0.055em);
+  width: 0.20em; height: 0.20em;
+  transform: translateX(-50%);
+}
+/* one hairline datum rule, the full width of the word (C's left edge to A's right edge) */
+.cal-datum {
+  position: absolute;
+  left: 0; right: var(--cal-trk);
+  top: calc(var(--cal-base) + var(--cal-rule-gap));
+  height: max(1px, 0.0125em);
+  background: var(--cal-rule-track);
+}
+.cal-datum > i {
+  position: absolute; left: 0; top: 0; bottom: 0;
+  width: 100%;
+  transform-origin: 0 50%;
+  transform: scaleX(var(--cal-load));
+  background: var(--cal-rule-ink);
 }
 
-.load-inner, .title-inner { text-align: center; }
-
-.load-bar {
-  width: 380px; height: 2px;
-  background: rgba(255,255,255,0.12);
-  margin: 42px auto 14px;
+/* ============================================================ loading screen
+   Field-book paper; the datum rule fills left to right as progress (bible §9.8). */
+#loading.overlay { background: var(--cal-paper); }
+#loading .cal-logo {
+  --cal-lk: 76px;
+  --cal-word-ink: var(--cal-ink);
+  --cal-rule-ink: var(--cal-ink);
+  --cal-rule-track: rgba(38, 52, 63, 0.16);
+  --cal-load: 0;
 }
-#load-fill {
-  width: 0%; height: 100%;
-  background: var(--cal-accent);
-  box-shadow: 0 0 12px var(--cal-accent);
-  transition: width 0.2s ease;
-}
+#loading .cal-datum > i { transition: transform 0.25s ease-out; }
 #load-label {
-  font-size: 12px; letter-spacing: 0.28em;
-  color: rgba(232,236,236,0.55);
-  text-transform: uppercase;
+  margin-top: 18px;
+  font-family: var(--cal-font-ui);
+  font-weight: 500;
+  font-size: 15px;
+  letter-spacing: 0.06em;
+  color: rgba(38, 52, 63, 0.78);
 }
 
-.tagline {
-  margin: 18px 0 40px;
-  font-size: 14px; letter-spacing: 0.22em;
-  color: rgba(232,236,236,0.6);
-  text-transform: uppercase;
+/* =================================================================== title */
+#title .cal-logo {
+  --cal-lk: 92px;
+  filter: drop-shadow(0 2px 14px rgba(28, 27, 30, 0.42));
 }
+#title .title-inner { padding-top: 2vh; }
+
+/* The calima wash over the live vista (title only). A STAND-IN until world-sky's
+   `calima` weather (W1) draws the ochre sky and the coral disc in the renderer:
+   it sits between the canvas (#app) and #title, so its blend modes reach the
+   rendered frame. menu.js places the disc on the projected sun direction. */
+#cal-calima {
+  position: fixed; inset: 0;
+  z-index: 49;
+  pointer-events: none;
+  display: none;
+}
+body.cal-title-live #cal-calima { display: block; }
+body.cal-calima-live #cal-calima { display: none; }   /* the renderer draws calima itself */
+#cal-calima > i { position: absolute; display: block; }
+.cal-calima-tint {
+  inset: 0;
+  background: var(--cal-ochre);
+  mix-blend-mode: color;
+  opacity: 0.55;
+}
+.cal-calima-haze {
+  inset: 0;
+  background: linear-gradient(180deg,
+    rgba(201, 139, 78, 0.34) 0%,
+    rgba(214, 160, 106, 0.30) 38%,
+    rgba(201, 139, 78, 0.16) 62%,
+    rgba(120, 82, 46, 0.10) 100%);
+}
+.cal-calima-sun {
+  left: 0; top: 0;
+  width: 132px; height: 132px;
+  margin: -66px 0 0 -66px;
+  border-radius: 50%;
+  /* the calima disc: a soft coral sun you can look at (#F2A27E), a dust halo round it */
+  background: radial-gradient(circle,
+    rgba(242, 162, 126, 0.96) 0%, rgba(242, 162, 126, 0.96) 24%,
+    rgba(242, 162, 126, 0.55) 29%, rgba(236, 150, 110, 0.20) 45%, rgba(218, 140, 100, 0) 70%);
+  opacity: 0;
+  will-change: transform;
+}
+.cal-calima-sun.on { opacity: 1; }
 
 #btn-start {
   font-family: var(--font);
@@ -129,25 +264,53 @@ html, body {
   padding: 14px 46px;
   color: var(--cal-text);
   background: transparent;
-  border: 1px solid var(--cal-accent);
+  border: 1px solid var(--cal-staff);
   cursor: pointer;
-  transition: all 0.25s ease;
-}
-#btn-start:hover {
-  background: rgba(53, 200, 220, 0.12);
-  box-shadow: 0 0 24px rgba(53, 200, 220, 0.35);
 }
 
+.load-inner, .title-inner { text-align: center; }
+
+/* The Field Manual panel (index.html; menu.js lends it to its FIELD MANUAL modal). */
+.keybinds-panel {
+  position: relative;
+  margin: 42px auto 0;
+  padding: 18px 28px 20px;
+  background: rgba(28, 27, 30, 0.80);
+  border: 1px solid rgba(241, 238, 230, 0.16);
+  display: inline-block;
+}
+.keybinds-title {
+  font-family: var(--cal-font-ui);
+  font-weight: 600;
+  font-size: 11px; letter-spacing: 0.32em; text-indent: 0.32em;
+  color: var(--cal-paper);
+  margin-bottom: 16px;
+}
 .controls-grid {
   display: grid;
-  grid-template-columns: repeat(2, minmax(150px, auto));
-  gap: 8px 40px;
-  margin-top: 48px;
-  font-size: 12px; letter-spacing: 0.12em;
-  color: rgba(232,236,236,0.5);
+  grid-template-columns: repeat(3, minmax(200px, auto));
+  gap: 7px 34px;
+  font-family: var(--cal-font-ui);
+  font-size: 13px; letter-spacing: 0.04em;
+  color: rgba(241, 238, 230, 0.72);
   text-align: left;
 }
-.controls-grid b { color: var(--cal-accent); font-weight: 600; margin-right: 8px; }
+.controls-grid > div { display: flex; align-items: center; gap: 9px; white-space: nowrap; }
+.controls-grid kbd {
+  font-family: var(--cal-font-mono);
+  font-weight: 500; font-size: 11px; letter-spacing: 0.02em;
+  color: var(--cal-staff);
+  background: rgba(241, 238, 230, 0.08);
+  border: 1px solid rgba(241, 238, 230, 0.34);
+  border-bottom-width: 2px;
+  padding: 1px 7px 0;
+  min-width: 24px;
+  text-align: center;
+}
+.controls-grid .sep { color: rgba(241, 238, 230, 0.3); margin: 0 -4px; }
+@media (max-width: 1100px) {
+  .controls-grid { grid-template-columns: repeat(2, minmax(200px, auto)); }
+}
 
 #hud { position: fixed; inset: 0; pointer-events: none; z-index: 40; }
 
@@ -252,22 +415,25 @@ body.cal-title-live #loading { display: none !important; }
  * the text never has to fight a tree while the edges of the frame stay bright.
  */
 body.cal-title-live #title.overlay {
+  /* brand W0b: the bible's lapilli scrim, lighter at the top so the calima sky
+     glows behind the lockup; darker at the foot for the tip and the save line */
   background:
     linear-gradient(180deg,
-      rgba(6, 9, 12, 0.70) 0%,
-      rgba(6, 9, 12, 0.40) 22%,
-      rgba(6, 9, 12, 0.16) 44%,
-      rgba(6, 9, 12, 0.30) 66%,
-      rgba(6, 9, 12, 0.62) 86%,
-      rgba(6, 9, 12, 0.88) 100%),
-    radial-gradient(ellipse 40% 54% at 50% 52%,
-      rgba(6, 9, 12, 0.52) 0%,
-      rgba(6, 9, 12, 0.26) 58%,
-      rgba(6, 9, 12, 0) 100%);
+      rgba(28, 27, 30, 0.30) 0%,
+      rgba(28, 27, 30, 0.12) 30%,
+      rgba(28, 27, 30, 0.10) 50%,
+      rgba(28, 27, 30, 0.34) 72%,
+      rgba(28, 27, 30, 0.62) 88%,
+      rgba(28, 27, 30, 0.80) 100%),
+    radial-gradient(ellipse 34% 40% at 50% 62%,
+      rgba(28, 27, 30, 0.42) 0%,
+      rgba(28, 27, 30, 0.20) 60%,
+      rgba(28, 27, 30, 0) 100%);
 }
 
 .mn-title { margin-top: 26px; }
 .mn-title-press {
+  font-family: var(--cal-font-ui);
   font-size: 13px; letter-spacing: 0.42em; text-indent: 0.42em;
   color: var(--mn-dim);
   text-transform: uppercase;
@@ -291,24 +457,36 @@ body.cal-title-live #title.overlay {
 .mn-title-item {
   position: relative;
   background: none; border: 0;
-  font-size: 17px; letter-spacing: 0.34em; text-indent: 0.34em;
-  padding: 9px 34px 8px;
-  color: var(--mn-dim);
+  font-family: var(--cal-font-ui);
+  font-weight: 500;
+  font-size: 17px; letter-spacing: 0.30em; text-indent: 0.30em;
+  padding: 8px 34px 7px 30px;
+  color: rgba(241, 238, 230, 0.74);
   text-transform: uppercase;
-  transition: color 0.16s ease, letter-spacing 0.16s ease;
+  transition: color 0.16s ease;
 }
+/* field-book stations (bible §9.7): STN numbers in Plex Mono */
+.mn-title-item .cal-stn {
+  font-family: var(--cal-font-mono);
+  font-weight: 500;
+  font-size: 11px; letter-spacing: 0.04em; text-indent: 0;
+  color: rgba(241, 238, 230, 0.46);
+  margin-right: 14px;
+  vertical-align: 2px;
+}
+/* hover: a survey-vermilion tick on the margin (the spark coral is the logo's alone) */
 .mn-title-item::before {
-  content: ''; position: absolute; left: 8px; top: 50%;
-  width: 7px; height: 7px; margin-top: -4px;
-  transform: rotate(45deg) scale(0);
-  background: var(--mn-spark);
+  content: ''; position: absolute; left: 6px; top: 50%;
+  width: 14px; height: 2px; margin-top: -1px;
+  transform: scaleX(0); transform-origin: 0 50%;
+  background: var(--cal-vermilion);
   transition: transform 0.16s ease;
 }
-.mn-title-item:hover, .mn-title-item:focus-visible {
-  color: #fff8ec; letter-spacing: 0.40em; text-indent: 0.40em; outline: none;
-}
-.mn-title-item:hover::before, .mn-title-item:focus-visible::before { transform: rotate(45deg) scale(1); }
-.mn-title-item.disabled { color: rgba(239, 230, 213, 0.22); cursor: not-allowed; }
+.mn-title-item:hover, .mn-title-item:focus-visible { color: var(--cal-staff); outline: none; }
+.mn-title-item:hover::before, .mn-title-item:focus-visible::before { transform: scaleX(1); }
+.mn-title-item:hover .cal-stn, .mn-title-item:focus-visible .cal-stn { color: var(--cal-vermilion); }
+.mn-title-item.disabled { color: rgba(241, 238, 230, 0.26); cursor: not-allowed; }
+.mn-title-item.disabled .cal-stn { color: rgba(241, 238, 230, 0.18); }
 
 .mn-title-save {
   margin-top: 16px;

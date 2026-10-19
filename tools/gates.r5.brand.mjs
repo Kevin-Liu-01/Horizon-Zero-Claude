@@ -1,37 +1,37 @@
 /**
- * ROUND 5 — lane `brand` gates (docs/ROUND5-PLAN.md §9 "brand", W0-day1 block).
+ * ROUND 5 — lane `brand` gates (docs/ROUND5-PLAN.md §9 "brand": W0-day1 + W0b blocks).
  *
  *   node tools/gates.mjs --port 5253 --extra tools/gates.r5.brand.mjs --lane brand
  *
- * tools/gates.mjs is frozen for this lane (plan §1.1; only gates-perf edits the
- * harness), and its directory scan still merges `gates.round4.*.mjs` only, so
- * until gates-perf's A-gates-autodiscover (W0a) imports every
- * `tools/gates.r5.*.mjs` by pattern, this file is merged through the runner's
- * existing `--extra <file>` flag — the same import + same-shape GATES merge the
- * lane files get. After A-gates-autodiscover lands, drop `--extra`:
+ * HOW THIS FILE IS MERGED. On main today `tools/gates.mjs` scans
+ * `gates.round4.*.mjs` only, and its `--extra <file>` flag imports ONE more module
+ * and merges its `GATES` exactly like a scanned lane file (same loader, same
+ * load-failure reporting, same duplicate-id rule, and `--lane` sees its rows) —
+ * so the command above runs every brand row. gates-perf's r5 registry
+ * (`gates.config.mjs` + `LANE_FILE_RE = /^gates\.r5\.([a-z0-9][a-z0-9-]*)\.mjs$/`,
+ * A-gates-autodiscover) picks this file up by its name once it merges; then
  *   node tools/gates.mjs --port 5253 --lane brand
- * (keeping `--extra` then would only log a "duplicate gate id … keeping the
- * first" line per gate; nothing runs twice).
+ * runs the same rows (an `--extra` left on only prints one "duplicate gate id …
+ * keeping the first" line per row). `V38-title` here SHADOWS the carried row of
+ * the same id (plan §3.3) while brand is active.
  *
- * W0-day1 is the MECHANICAL PASS (plan §7.1): identifier/string renames, the two
- * data stubs `src/world/island/{sites,extent}.js` at today's values, and every
- * camp/extent literal replaced by imports. Nothing may change behaviour, so the
- * gates below compare the build against numbers measured on the UNMODIFIED tree
- * (commit c32e968, port 5253, two runs, identical) — see `BASELINE`.
- *
- * The grep halves run in node when this module loads (they read the tree this
- * file sits in) and ride into the page assert as data, so one gate id carries
- * both halves and either half failing fails the gate. No gate here names a
- * coordinate: the rest point comes from the page's own `sites.js` module (the
- * same module instance the game imported) and extents from `extent.js`.
+ * STAGING RULE (plan §9, A-gate-preludes): no gate here names a species, a
+ * coordinate or a bone. The rest point comes from `src/world/island/sites.js`
+ * (imported in node and in the page), extents from `extent.js`, the forbidden
+ * vocabularies from `tools/lint/` (rename-map.json, lexicon.json), and the
+ * allowed non-camp coincidences of A-single-rest are pinned by a hash of the
+ * line, not by its text.
  */
-import { readFileSync, readdirSync, lstatSync, existsSync } from 'fs';
+import { readFileSync, readdirSync, lstatSync, existsSync, statSync } from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { REST, REST_SITE } from '../src/world/island/sites.js';
+import { loadLexicon, matchTexts, playerStatic, scanCode, gradeCode } from './lint/namecheck.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const rel = (abs) => path.relative(ROOT, abs).split(path.sep).join('/');
 const read = (r) => readFileSync(path.join(ROOT, r), 'utf8');
+const fnv = (s) => { let h = 0x811c9dc5; for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 0x01000193) >>> 0; } return h.toString(16).padStart(8, '0'); };
 
 function walk(r, exts, exclude, out = []) {
   const abs = path.join(ROOT, r);
@@ -133,29 +133,29 @@ function extentGrep() {
 /* A-single-rest — grep half                                                */
 /* ------------------------------------------------------------------------ */
 
-/** Files whose camp literals the pass replaced; each must now import sites.js. */
+/** Files whose camp literals the day-1 pass replaced; each must still import sites.js. */
 const REST_FILES = [
   'src/entities/player.js', 'src/ui/map.js', 'src/ui/menu.js', 'src/world/props.js', 'src/world/terrain.js',
   'src/world/npc/waypoints.js', 'src/world/vegetation.js', 'src/items/gather.js', 'src/entities/machines/index.js',
   'src/entities/machines/machine.js', 'src/entities/machines/ai/doctrine.js', 'src/core/progression.js',
   'src/world/fauna.js', 'src/world/camp.js', 'src/world/props/settlement.js', 'src/world/props/activities.js',
   'src/world/props/places.js', 'src/world/props/npcs.js',
-];
+].filter((f) => existsSync(path.join(ROOT, f)));   // a file its owner deletes (§6) no longer needs the import
 /**
- * Numbers that happen to sit next to each other and are NOT the camp. Matched by
- * exact trimmed line so a real camp literal can never hide behind an entry.
+ * Lines whose numbers happen to match the rest point and are NOT it, pinned by
+ * file + FNV-1a of the trimmed line (so a real copy can never hide behind an
+ * entry, and this file never spells the line out).
  */
 const NOT_CAMP = new Map([
-  ["src/ui/hud.js|P('M6 22 H34 V30 H6 Z')", 'SVG glyph path'],
-  ['src/world/fauna.js|roam: 18, hp: 26,', 'fauna stat block'],
-  ["src/entities/machines/ai/tables.js|watcher: { guards: ['strider'], radius: 22, band: [16, 30] },", 'guard radius + band'],
-  ['src/entities/machines/sawtooth.js|// damage ladder (research 5): sawtooth hits 22-30', 'damage range comment'],
-  ['src/world/npc/npc.js|/** 06:00–19:00 day · 19:00–22:30 evening · else night. */', 'clock times'],
+  ['src/world/fauna.js|d4fa3db7', 'fauna stat block (roam / hp)'],
+  ['src/world/npc/npc.js|710951a9', 'clock times in a comment'],
 ]);
-const n = (v) => `(?<![\\w.])${v}(?:\\.0+)?(?![\\w.])`;
+/** The rest point's own numbers, read from sites.js — never written here. */
+const num = (v) => `(?<![\\w.])${v}(?:\\.0+)?(?![\\w.])`;
 const CAMP_RES = [
-  new RegExp(`${n(22)}.{0,40}${n(30)}`), new RegExp(`${n(18)}.{0,40}${n(26)}`),
-  new RegExp(`${n('(?:22|30)')}\\s*\\+\\s*\\(`),           // doctrine-style `22 + (dx …`
+  new RegExp(`${num(REST_SITE.x)}.{0,40}${num(REST_SITE.z)}`),
+  new RegExp(`${num(REST.x)}.{0,40}${num(REST.z)}`),
+  new RegExp(`${num(`(?:${REST_SITE.x}|${REST_SITE.z})`)}\\s*\\+\\s*\\(`),      // doctrine-style `x + (dx …`
   /FIRE_[XZ]\s*=\s*\d/,
 ];
 
@@ -165,7 +165,7 @@ function restGrep() {
   for (const f of files) {
     read(f).split('\n').forEach((ln, i) => {
       if (!CAMP_RES.some((re) => re.test(ln))) return;
-      const why = NOT_CAMP.get(`${f}|${ln.trim()}`);
+      const why = NOT_CAMP.get(`${f}|${fnv(ln.trim())}`);
       if (why) allowed.push(`${f}:${i + 1} (${why})`);
       else hits.push(`${f}:${i + 1}: ${ln.trim().slice(0, 100)}`);
     });
@@ -175,9 +175,18 @@ function restGrep() {
 }
 
 /* ------------------------------------------------------------------------ */
-/* the old-map baseline (UNMODIFIED tree, c32e968, two identical runs)       */
+/* the day-1 old-map baseline (UNMODIFIED tree, c32e968, two identical runs) */
 /* ------------------------------------------------------------------------ */
 
+/**
+ * A-extent-refactor proved the day-1 pass changed no number. Its HASH half is the
+ * day-1 old map: W0a deleted content (the IP machine GLBs, the camp NPC bodies),
+ * so from W0a on the collider / nav / gather hashes may legitimately differ. At
+ * W0b the hashes are REPORTED against this baseline and the extents are graded
+ * by value, by grep and by the structural probes (route, machine, doctrine and
+ * player clamps), which content deletions cannot move. A-reach-all-sites takes
+ * over at W1.
+ */
 const BASELINE = {
   extents: { WORLD_R: 330, EDGE_SOFT: 312, R: 332, OUTER: 324, WORLD_LIMIT: 318, 'gather rim': 315,
     '_route clamp': 310, 'search cut': 310, 'siteAnchor rim': 296, 'flee rim': 285 },
@@ -186,7 +195,6 @@ const BASELINE = {
   gather: { n: 203, hash: 'fa5d3dbc', maxR: 309.325 },
   route: { rimMaxR: 310, campMinD: 31 }, machine: { rimR: 318, campRingR: 25 },
   doctrine: { rimR: 296, campD: 46 }, playerRimMax: 330.05,
-  spawn: { x: 18, z: 26 }, campRespawn: { x: 18, z: 26 },
 };
 
 /* Page-context probe library (no allocation concerns: runs once per gate). */
@@ -273,7 +281,443 @@ const LIB = `
 const KEY_PAIRS = JSON.parse(read('tools/lint/rename-map.json')).rows
   .filter((r) => r.class === 'storage key').map((r) => [r.from, r.to]);
 
-export const GATES = [
+
+/* ======================================================================== */
+/* W0b                                                                      */
+/* ======================================================================== */
+
+const PLAN = read('docs/ROUND5-PLAN.md');
+/** the A-ui-words regex, read from the plan bullet (so this file never spells the words) */
+const UI_WORDS_RE = (() => {
+  const line = PLAN.split('\n').find((l) => l.includes('**A-ui-words**'));
+  const m = line && /`\/(.+?)\/i`/.exec(line);
+  return m ? m[1] : null;
+})();
+/** the retired families, read from the A-fonts-licensed bullet ("0 references to A, B, … in CSS/JS") */
+const OLD_FAMILIES = (() => {
+  const line = PLAN.split('\n').find((l) => l.includes('**A-fonts-licensed**'));
+  const m = line && /0 references to (.+?) in CSS\/JS/.exec(line);
+  return m ? m[1].split(/,\s*|\s+and\s+/).map((s) => s.trim()).filter(Boolean) : [];
+})();
+const OLD_FAMILY_RE = OLD_FAMILIES.length
+  ? new RegExp(OLD_FAMILIES.map((f) => f.split(/\s+/).join('\\s*')).join('|'), 'i') : /$^/;
+
+/** The three CALIMA families (bible §9.7) and their files' stems. */
+const FAMILIES = [
+  { family: 'Bodoni Moda', stem: 'BodoniModa', role: 'display, wordmark, place names' },
+  { family: 'IBM Plex Sans Condensed', stem: 'IBMPlexSansCondensed', role: 'HUD, menus' },
+  { family: 'IBM Plex Mono', stem: 'IBMPlexMono', role: 'numerals, bearings' },
+];
+
+/**
+ * Which lane owns a file (plan §2 at W0b), for naming whoever must clear a
+ * reference brand may not edit (rule 1). brand's own W0 files are listed first.
+ */
+const OWNERS = [
+  [/^(index\.html|src\/style\.css|src\/main\.js|src\/ui\/menu\.js|public\/fonts\/|public\/favicon\.svg|README\.md|tools\/lint\/)/, 'brand'],
+  [/^src\/ui\/(quests|skills)\.js$/, 'progression (W3)'],
+  [/^src\/ui\/wheel\.|^src\/combat\//, 'combat-kit (W2)'],
+  [/^src\/ui\/dialogue\.js$/, 'frozen UI engine (plan §1.1; orchestrator grant)'],
+  [/^src\/ui\//, 'shell-ui (W2)'],
+  [/^src\/studio\//, 'brand (W4: src/studio/**)'],
+  [/^tools\/r5-direction\//, 'orchestrator (direction mock, no lane)'],
+  [/^tools\//, 'gates-perf / tools owner'],
+  [/^src\//, 'see plan §2'],
+];
+const ownerOf = (f) => (OWNERS.find(([re]) => re.test(f)) || [null, 'unknown'])[1];
+
+/** A-fonts-licensed, node half: the folder, the manifest rows, the old-family references. */
+function fontsNode() {
+  const dir = path.join(ROOT, 'public/fonts');
+  const files = readdirSync(dir).filter((f) => f !== '.DS_Store').sort();
+  const manifest = JSON.parse(read('public/LICENSES.json'));
+  const fams = FAMILIES.map(({ family, stem }) => {
+    const woff2 = files.filter((f) => new RegExp(`^${stem}-[A-Za-z-]+\\.woff2$`).test(f));
+    const ofl = files.filter((f) => f === `${stem}-OFL.txt`);
+    const magic = woff2.map((f) => readFileSync(path.join(dir, f)).subarray(0, 4).toString('latin1'));
+    const row = manifest.rows.find((r) => r.licence === 'OFL-1.1' && woff2.length
+      && woff2.every((f) => (r.paths || []).includes(`public/fonts/${f}`)));
+    return {
+      family, woff2, oflTexts: ofl.length, woff2Magic: magic.every((m) => m === 'wOF2'),
+      row: row ? { id: row.id, licence: row.licence, licence_text: row.licence_text, sha256: row.archive_sha256, retrieved: row.retrieved, source_url: row.source_url } : null,
+      rowOk: !!row && row.licence_text === `public/fonts/${stem}-OFL.txt` && !!row.archive_sha256 && !!row.retrieved,
+      bytes: woff2.reduce((n, f) => n + statSync(path.join(dir, f)).size, 0),
+    };
+  });
+  const stray = files.filter((f) => !FAMILIES.some(({ stem }) => new RegExp(`^${stem}-[A-Za-z-]+\\.woff2$`).test(f) || f === `${stem}-OFL.txt`));
+  // references to the retired families in CSS / JS / HTML (tools/lint is the lexicon: excluded)
+  const scanned = [...walk('src', ['.css', '.js', '.mjs', '.html'], []), 'index.html',
+    ...walk('tools', ['.css', '.js', '.mjs', '.html'], ['tools/lint/'])];
+  const refs = [];
+  for (const f of scanned) {
+    read(f).split('\n').forEach((ln, i) => { if (OLD_FAMILY_RE.test(ln)) refs.push({ file: f, line: i + 1, owner: ownerOf(f), text: ln.trim().slice(0, 90) }); });
+  }
+  const byOwner = {};
+  for (const r of refs) (byOwner[r.owner] = byOwner[r.owner] || new Set()).add(r.file);
+  return {
+    families: fams, stray, oldFamilies: OLD_FAMILIES,
+    refsTotal: refs.length, refsBrand: refs.filter((r) => r.owner === 'brand'),
+    refsForeign: refs.filter((r) => r.owner !== 'brand').length,
+    foreignFilesByOwner: Object.fromEntries(Object.entries(byOwner).filter(([o]) => o !== 'brand').map(([o, s]) => [o, [...s]])),
+    sample: refs.slice(0, 12).map((r) => `${r.file}:${r.line} [${r.owner}] ${r.text}`),
+    shippedBytes: fams.reduce((n, f) => n + f.bytes, 0),
+  };
+}
+
+const PRESS = `window.dispatchEvent(new KeyboardEvent('keydown', { code: 'Space', key: ' ', bubbles: true, cancelable: true }));`;
+/** wait (in the page) until the title menu is in, so a shot is the menu and not the press beat */
+const UNTIL_MENU = `await (async () => { const t0 = performance.now(); while (__CTX__.menus?.titleStage !== 'menu' && performance.now() - t0 < 20000) await new Promise((r) => setTimeout(r, 100)); })();`;
+/** freeze the real loading screen (the boot's own DOM and setLoad) at a progress value */
+const LOADING_AT = (p) => `(() => {
+  document.body.classList.remove('cal-title-live');
+  document.getElementById('title').classList.add('hidden');
+  const L = document.getElementById('loading'); L.classList.remove('hidden');
+  __GAME__.setLoad(${p}, 'gate');
+})()`;
+
+const W0B = [
+  /* ------------------------------------------------------------ the lints */
+  {
+    id: 'A-no-horizon-terms-code', kind: 'runner', lane: 'brand', timeout: 120000,
+    title: 'namecheck --code: every Horizon-lexicon hit in identifiers + strings of src/**, index.html, tools/** (minus tools/lint, comments stripped) is covered by tools/lint/engine-allow.json; no entry over its cap; total <= the W0b ratchet',
+    check: () => {
+      const scan = scanCode();
+      const allow = JSON.parse(read('tools/lint/engine-allow.json'));
+      const g = gradeCode(scan, allow);
+      const byKind = {};
+      for (const e of g.entries) byKind[e.kind] = (byKind[e.kind] || 0) + e.count;
+      return { pass: g.pass, detail: {
+        filesScanned: scan.files, distinctPairs: scan.hits.length, occurrences: scan.occurrences,
+        total: g.total, ratchetTotal: g.ratchetTotal, byKind, uncovered: g.uncovered.slice(0, 20), uncoveredN: g.uncovered.length,
+        overCap: g.over, entries: g.entries.length,
+        lexicon: loadLexicon().union,
+      } };
+    },
+  },
+  {
+    id: 'A-no-horizon-terms-player', kind: 'action', lane: 'brand', plain: true, timeout: 300000, settle: 1500,
+    title: 'namecheck --player: the union lexicon over rendered DOM text (title, loading, every title modal, HUD, every hub tab, menus cards, every tip), content ids (kinds, roles, events, audio sets, items, quests), every key and display string of the exported content tables, and public/**/*.{json,md,txt} -> distinct (surface, term) hits <= the W0b ratchet',
+    get assert() {
+      const lex = loadLexicon();
+      const st = playerStatic('named');
+      const stLit = playerStatic('literal');
+      const ratchet = JSON.parse(read('tools/lint/ratchet.json')).player || {};
+      return `(async () => {
+      const LEX = ${JSON.stringify(lex)};
+      const matchTexts = ${matchTexts.toString()};
+      const STATIC = ${JSON.stringify(st.hits)};
+      const STATIC_LIT = ${stLit.hits.length};
+      const RATCHET = ${JSON.stringify(ratchet)};
+      const ctx = __CTX__, m = ctx.menus;
+      const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+      const texts = [];
+      const add = (where, t) => { if (t != null && String(t).trim()) texts.push({ where, text: String(t) }); };
+      const strip = (h) => String(h).replace(/<[^>]+>/g, ' ');
+      const surfaces = [];
+      // --- the title (press beat, then the menu), the loading screen, the title modals
+      add('dom:document-title', document.title);
+      add('dom:loading', document.getElementById('loading')?.textContent);
+      add('dom:title-press', document.getElementById('title')?.innerText);
+      ${PRESS}
+      ${UNTIL_MENU}
+      add('dom:title-menu', document.getElementById('title')?.innerText);
+      for (const k of ['credits', 'manual', 'difficulty', 'settings']) {
+        m.openModal(k); await wait(350); add('dom:modal:' + k, m.modalEl?.innerText); m.closeModal();
+      }
+      // --- every card the menus lane prebuilds (death, victory, hub chrome)
+      add('dom:menus-cards', document.getElementById('cal-menus')?.textContent);
+      // --- into the game: the HUD, then every hub tab
+      // the shipped start path minus the pointer lock a headless page cannot take
+      m.closeModal(); m._titleLeave?.(); m.titleStage = 'idle';
+      document.body.classList.remove('cal-title-live');
+      __GAME__.start(false);
+      await wait(3000);
+      add('dom:hud', document.getElementById('hud')?.innerText);
+      for (const t of m.audit().tabs) { m.openHub(t); await wait(700); add('dom:hub:' + t, document.body.innerText); }
+      m.closeHub(true);
+      await wait(300);
+      // --- every tip (all tags), the tab tags
+      try { const T = await import('/src/ui/tips.js'); for (const t of T.TIPS) add('tips', strip(t.text)); } catch (e) { surfaces.push('tips: ' + e.message); }
+      // --- content ids
+      add('ids:kinds', (ctx.machines?.kinds || []).join(' '));
+      add('ids:roles', JSON.stringify(ctx.machines?.roles || {}));
+      add('ids:events', [...(ctx.events?.map?.keys?.() || [])].join(' '));
+      try { add('ids:audio-sets', JSON.stringify(Object.keys(ctx.audio?.bank?.sets || {}))); } catch { /* none */ }
+      // --- the exported content tables: keys (depth <= 3) and display strings (depth <= 5)
+      const MODULES = ${JSON.stringify(CONTENT_MODULES)};
+      const SHOW = /^(id|ids|name|label|title|text|desc|description|line|lines|hint|sub|prompt|kicker|head|say|reply|options|label2|short|long|blurb|lore|quest|objective|objectives|tag|tags|kind|role|faction|set|sets|item|items)$/;
+      const walkT = (where, v, depth, out, key) => {
+        if (v == null || depth > 5 || out.length > 4000) return;
+        if (typeof v === 'string') { if (depth === 0 || key === '*' || SHOW.test(key || '')) out.push(v); return; }
+        if (typeof v !== 'object' || ArrayBuffer.isView(v)) return;
+        if (Array.isArray(v)) { for (const x of v) walkT(where, x, depth + 1, out, typeof x === 'string' ? '*' : key); return; }
+        for (const [k, x] of Object.entries(v)) { if (depth <= 3) out.push(k); walkT(where, x, depth + 1, out, k); }
+      };
+      let tables = 0;
+      for (const mod of MODULES) {
+        let M = null;
+        try { M = await import(mod); } catch (e) { surfaces.push(mod + ': ' + e.message); continue; }
+        for (const n of Object.keys(M)) {
+          const v = M[n];
+          if (!v || typeof v !== 'object' || ArrayBuffer.isView(v) || (Object.getPrototypeOf(v) !== Object.prototype && !Array.isArray(v))) continue;
+          tables++;
+          const out = []; walkT(mod + '#' + n, v, 0, out, n);
+          add('table:' + mod.replace('/src/', '') + '#' + n, out.join(' \\u00b7 '));
+        }
+      }
+      const dom = matchTexts(LEX, texts, 'named');
+      const lit = matchTexts(LEX, texts, 'literal');
+      const count = STATIC.length + dom.length;
+      const bySurface = {};
+      for (const h of [...STATIC, ...dom]) { const s = h.where.split(':').slice(0, 2).join(':'); bySurface[s] = (bySurface[s] || 0) + 1; }
+      const byTerm = {};
+      for (const h of [...STATIC, ...dom]) byTerm[h.term] = (byTerm[h.term] || 0) + 1;
+      const top = Object.entries(byTerm).sort((a, b) => b[1] - a[1]).slice(0, 30).map(([t, n]) => t + ':' + n).join(' ');
+      const pass = RATCHET.count == null ? null : count <= RATCHET.count;
+      return { pass, detail: {
+        verdict: RATCHET.count == null ? 'PENDING: no ratchet recorded yet; this run measured ' + count : (pass ? 'PASS ' : 'FAIL ') + count + ' <= ' + RATCHET.count + ' (W0b ratchet)',
+        count, ratchet: RATCHET.count, literal: STATIC_LIT + lit.length, staticHits: STATIC.length, domHits: dom.length,
+        surfacesHarvested: texts.length, contentTables: tables, chars: texts.reduce((n, t) => n + t.text.length, 0), problems: surfaces,
+        bySurface, topTerms: top,
+        brandSurfaceHits: dom.filter((h) => /^dom:(document-title|loading|title|modal:(credits|manual|difficulty))/.test(h.where)).map((h) => h.where + ' "' + h.word + '" -> ' + h.term),
+        sample: dom.slice(0, 40).map((h) => h.where + ' "' + h.word + '" -> ' + h.term + ' (' + h.rule + ')'),
+      } };
+    })()`;
+    },
+  },
+  /* ---------------------------------------------------------------- fonts */
+  {
+    id: 'A-fonts-licensed', kind: 'action', lane: 'brand', plain: true, settle: 1200, timeout: 90000,
+    title: 'public/fonts holds only Bodoni Moda, IBM Plex Sans Condensed, IBM Plex Mono (woff2) + one OFL.txt each, each with an OFL-1.1 LICENSES.json row; the wordmark, a HUD label and a numeral resolve to those families; 0 references to the retired families in CSS/JS',
+    get assert() {
+      const F = fontsNode();
+      return `(async () => {
+      const F = ${JSON.stringify(F)};
+      const OLD = ${JSON.stringify(OLD_FAMILIES)};
+      await document.fonts.ready;
+      const GENERIC = /^(serif|sans-serif|monospace|system-ui|cursive|fantasy|ui-monospace|ui-sans-serif|ui-serif|math|emoji)$/i;
+      /** emulate the browser's fallback walk: the first family in the computed stack that has a LOADED face */
+      const resolve = async (el) => {
+        if (!el) return { family: null, why: 'element missing' };
+        const cs = getComputedStyle(el);
+        const stack = cs.fontFamily.split(',').map((s) => s.trim().replace(/^["']|["']$/g, ''));
+        const sample = (el.textContent || 'A').trim().slice(0, 40) || 'A';
+        for (const f of stack) {
+          if (GENERIC.test(f)) return { family: f, generic: true, stack: cs.fontFamily };
+          const faces = [...document.fonts].filter((ff) => ff.family.replace(/["']/g, '') === f);
+          if (!faces.length) continue;
+          try { await document.fonts.load(cs.fontStyle + ' ' + cs.fontWeight + ' 16px "' + f + '"', sample); } catch { /* error status below */ }
+          if (faces.some((ff) => ff.status === 'loaded')) return { family: f, weight: cs.fontWeight, style: cs.fontStyle, stack: cs.fontFamily };
+        }
+        return { family: null, stack: cs.fontFamily };
+      };
+      const word = document.querySelector('#title .cal-word');
+      // a HUD label: the first #hud element with its own words (3+ letters) in its direct text
+      const hudLabel = [...document.querySelectorAll('#hud *')].find((el) => [...el.childNodes].some((n) => n.nodeType === 3 && /[A-Za-z]{3,}/.test(n.textContent)));
+      const numeral = document.querySelector('#title .cal-stn');
+      const r = { wordmark: await resolve(word), hudLabel: { ...(await resolve(hudLabel)), el: hudLabel ? (hudLabel.className || hudLabel.tagName) : null, text: hudLabel?.textContent?.trim().slice(0, 30) },
+        numeral: { ...(await resolve(numeral)), text: numeral?.textContent } };
+      const oldFaces = [...document.fonts].filter((ff) => OLD.some((o) => ff.family.replace(/["']/g, '').toLowerCase() === o.toLowerCase()))
+        .map((ff) => ff.family + ':' + ff.status);
+      const checks = {
+        onlyTheThreeFamilies: F.stray.length === 0 && F.families.every((f) => f.woff2.length >= 1 && f.woff2Magic),
+        oneOflPerFamily: F.families.every((f) => f.oflTexts === 1),
+        oflRowPerFamily: F.families.every((f) => f.rowOk),
+        wordmarkBodoni: r.wordmark.family === 'Bodoni Moda',
+        hudLabelPlexCondensed: r.hudLabel.family === 'IBM Plex Sans Condensed',
+        numeralPlexMono: r.numeral.family === 'IBM Plex Mono',
+        noOldFaceLoaded: !oldFaces.some((s) => /:loaded$/.test(s)),
+        zeroBrandRefs: F.refsBrand.length === 0,
+        zeroRefsAnywhere: F.refsTotal === 0,
+      };
+      return { pass: Object.values(checks).every(Boolean), detail: {
+        failed: Object.keys(checks).filter((k) => !checks[k]), checks, resolved: r, oldFaces,
+        families: F.families.map((f) => ({ family: f.family, woff2: f.woff2, ofl: f.oflTexts, row: f.row && f.row.id })),
+        shippedKB: Math.round(F.shippedBytes / 1024), stray: F.stray,
+        oldFamilyRefs: { total: F.refsTotal, inBrandFiles: F.refsBrand.length, inOtherLanesFiles: F.refsForeign, byOwner: F.foreignFilesByOwner, sample: F.sample,
+          note: 'every remaining reference is a fallback string or comment in a file brand may not edit (rule 1); none resolves (see resolved / oldFaces). The removal-only patch is tools/lint/patches/w0b-retired-font-refs.patch for the orchestrator to apply at merge' },
+      } };
+    })()`;
+    },
+  },
+  /* -------------------------------------------------------------- UI words */
+  {
+    id: 'A-ui-words', kind: 'action', lane: 'brand', plain: true, settle: 1200, timeout: 90000,
+    title: 'brand surfaces (tab title, loading, title press + menu + line, credits, field manual, new-game modal) render none of the plan §9 A-ui-words terms',
+    assert: `(async () => {
+      const RE = new RegExp(${JSON.stringify(UI_WORDS_RE)}, 'gi');
+      const m = __CTX__.menus;
+      const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+      const s = {};
+      s['document.title'] = document.title;
+      s.loading = document.getElementById('loading')?.textContent || '';
+      s.titlePress = document.getElementById('title')?.innerText || '';
+      ${PRESS}
+      ${UNTIL_MENU}
+      s.titleMenu = document.getElementById('title')?.innerText || '';
+      for (const k of ['credits', 'manual', 'difficulty']) { m.openModal(k); await wait(350); s['modal:' + k] = m.modalEl?.innerText || ''; m.closeModal(); }
+      // the title's other field notes (one shows per visit)
+      for (let i = 0; i < 3; i++) { m._refreshTitle(); s['titleLine' + i] = m._titleTip?.innerText || ''; }
+      const hits = [];
+      for (const [k, t] of Object.entries(s)) for (const mm of t.matchAll(RE)) hits.push(k + ': "' + mm[0] + '"');
+      return { pass: !!${JSON.stringify(UI_WORDS_RE)} && hits.length === 0 && s.titleMenu.length > 20,
+        detail: { hits, regexFromPlan: !!${JSON.stringify(UI_WORDS_RE)}, surfaces: Object.fromEntries(Object.entries(s).map(([k, t]) => [k, t.length])), menuText: s.titleMenu.replace(/\\s+/g, ' ').slice(0, 200) } };
+    })()`,
+  },
+  /* ------------------------------------------------- the lockup, literally */
+  {
+    id: 'A-logo-construction', kind: 'action', lane: 'brand', plain: true, settle: 1500, timeout: 60000,
+    title: 'the title lockup measured: ONE logo; the word is CALIMA in Bodoni Moda 500, tracking 0.18 em; the spark is unclipped, inside the frame, above the cap line and centred on the plumb line; ONE hairline datum rule under the word spanning it; the coral broad-arrow centred under the I, below the rule; nothing else in the lockup',
+    assert: `(async () => {
+      await document.fonts.ready;
+      const logo = [...document.querySelectorAll('.cal-logo')].filter((n) => { const r = n.getBoundingClientRect(); return r.width > 2 && r.height > 2 && +getComputedStyle(n).opacity > 0.05; });
+      const L = document.querySelector('#title .cal-logo');
+      const word = L.querySelector('.cal-word'), I = L.querySelector('.cal-i');
+      const spark = L.querySelector('.cal-spark'), plumb = L.querySelector('.cal-plumb'), arrow = L.querySelector('.cal-arrow');
+      const rules = L.querySelectorAll('.cal-datum');
+      const R = (el) => { const b = el.getBoundingClientRect(); return { x: b.x, y: b.y, w: b.width, h: b.height, r: b.right, b: b.bottom, cx: b.x + b.width / 2 }; };
+      const ws = getComputedStyle(word);
+      const fs = parseFloat(ws.fontSize), ls = parseFloat(ws.letterSpacing);
+      const spans = [...word.children].filter((c) => c.tagName === 'SPAN');
+      const glyphL = R(spans[0]).x, glyphR = R(spans[spans.length - 1]).r - ls;     // the last letter's tracking is not the word
+      const sp = R(spark), pl = R(plumb), ar = R(arrow), ru = rules[0] ? R(rules[0]) : null, ib = R(I);
+      // clipping: no clip-path / mask / overflow:hidden from the spark up to the logo
+      const clipped = []; for (let n = spark; n && n !== L.parentElement; n = n.parentElement) {
+        const c = getComputedStyle(n);
+        if (c.clipPath !== 'none' || (c.maskImage && c.maskImage !== 'none') || (n !== spark && /hidden|clip/.test(c.overflow))) clipped.push(n.className?.baseVal ?? n.className);
+      }
+      const stroke = arrow.querySelector('path')?.getAttribute('stroke');
+      const sparkStroke = spark.querySelector('g')?.getAttribute('stroke');
+      const capTop = pl.y;                                   // the plumb line spans cap line -> baseline
+      const text = L.textContent.replace(/\\s+/g, '');
+      const checks = {
+        oneLogo: logo.length === 1,
+        wordIsCalima: word.textContent.replace(/\\s+/g, '') === 'CALIMA' && text === 'CALIMA',
+        bodoni500: /Bodoni Moda/.test(ws.fontFamily) && ws.fontWeight === '500' && ws.textTransform === 'none',
+        tracking018: Math.abs(ls / fs - 0.18) < 0.005,
+        sparkInFrame: sp.x >= 0 && sp.y >= 0 && sp.r <= innerWidth && sp.b <= innerHeight,
+        sparkUnclipped: clipped.length === 0 && getComputedStyle(spark).overflow === 'visible',
+        sparkAboveCapLine: sp.b <= capTop - 0.05 * fs,
+        sparkOnAxis: Math.abs(sp.cx - pl.cx) <= 1,
+        sparkCoral: (sparkStroke || '').toUpperCase() === '#DA7756',
+        oneRule: rules.length === 1,
+        ruleUnderWord: !!ru && ru.y >= pl.b && ru.h <= Math.max(1.5, 0.02 * fs),
+        ruleSpansWord: !!ru && Math.abs(ru.x - glyphL) <= 2 && Math.abs(ru.r - glyphR) <= 2,
+        ruleNotTouchingSpark: !!ru && sp.b < ru.y,
+        arrowUnderI: Math.abs(ar.cx - pl.cx) <= 1,
+        arrowBelowRule: !!ru && ar.y >= ru.b,
+        arrowCoral: (stroke || '').toUpperCase() === '#DA7756',
+        plumbIsTheI: Math.abs(pl.cx - (ib.x + (ib.w - ls) / 2)) <= 1 && getComputedStyle(I).color === 'rgba(0, 0, 0, 0)',
+      };
+      const r1 = (o) => Object.fromEntries(Object.entries(o).map(([k, v]) => [k, Math.round(v * 10) / 10]));
+      return { pass: Object.values(checks).every(Boolean), detail: {
+        failed: Object.keys(checks).filter((k) => !checks[k]), checks,
+        fontSize: fs, trackingEm: +(ls / fs).toFixed(4), family: ws.fontFamily, weight: ws.fontWeight,
+        spark: r1(sp), plumb: r1(pl), rule: ru && r1(ru), arrow: r1(ar), glyphSpan: [Math.round(glyphL), Math.round(glyphR)],
+        gapSparkToCap: +(capTop - sp.b).toFixed(1), gapRuleToArrow: ru ? +(ar.y - ru.b).toFixed(1) : null, clipped, logos: logo.length } };
+    })()`,
+  },
+  {
+    id: 'A-loading-fill', kind: 'action', lane: 'brand', plain: true, settle: 600, timeout: 60000,
+    title: 'the real loading screen (main.js setLoad) frozen at 40 % and 100 %: the datum rule fill is 0.40 / 1.00 of the rule, the copy reads "Reading the benchmarks…" and never the Round-4 line, on field-book paper',
+    assert: `(async () => {
+      ${LOADING_AT(0.4)};
+      const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+      const frac = () => { const t = document.querySelector('#loading .cal-datum').getBoundingClientRect(); const f = document.querySelector('#loading .cal-datum > i').getBoundingClientRect(); return { f: f.width / t.width, left: f.x - t.x, w: t.width }; };
+      await wait(600);
+      const at40 = frac();
+      const label40 = document.getElementById('load-label').textContent;
+      __GAME__.setLoad(1, 'gate');
+      await wait(600);
+      const at100 = frac();
+      const label100 = document.getElementById('load-label').textContent;
+      const bg = getComputedStyle(document.getElementById('loading')).backgroundColor;
+      const loadingText = document.getElementById('loading').textContent;
+      const COPY = 'Reading the benchmarks\\u2026';
+      const checks = {
+        fill40: Math.abs(at40.f - 0.40) <= 0.01 && Math.abs(at40.left) < 0.5,
+        fill100: Math.abs(at100.f - 1) <= 0.005,
+        copy: label40 === COPY && label100 === COPY,
+        noRoundFourLine: !/waking/i.test(loadingText),
+        paper: bg === 'rgb(226, 211, 176)',
+        oneLogo: document.querySelectorAll('#loading .cal-logo').length === 1,
+      };
+      return { pass: Object.values(checks).every(Boolean), detail: { failed: Object.keys(checks).filter((k) => !checks[k]), checks,
+        at40: +at40.f.toFixed(4), at100: +at100.f.toFixed(4), ruleWidth: Math.round(at40.w), label: label40, background: bg } };
+    })()`,
+  },
+  /* ------------------------------------------------------------- visuals */
+  {
+    id: 'V-logo', kind: 'visual', lane: 'brand', plain: true, settle: 2600,
+    title: 'Title screen at 1600x900 after settle (press beat): the CALIMA lockup',
+    reference: ['reference/r5/brand/bodoni-manuale-tipografico-1818.jpg', 'reference/r5/brand/os-benchmark-broad-arrow.jpg'],
+    criteria: 'Bible 9.8. PASS: CALIMA in Didone (Bodoni) caps with real thick/thin contrast, comparable to the Bodoni 1818 caps in the reference; '
+      + 'the I is a thin plumb line ending in a pointed bob, and its dot is the FULL coral spark (ten rays, none cut) floating ABOVE the word; '
+      + 'ONE hairline datum rule under the word, as wide as the word; under the I, below that rule, a small coral broad-arrow '
+      + 'pointing UP at the spark, shaped like the benchmark arrow in the reference. '
+      + 'FAIL on: any second line of text or tagline, a kicker naming another brand, the spark on, under, behind or clipped by a rule, '
+      + 'reflection dashes, thin wide-tracked sans caps, or the words HORIZON or ZERO anywhere.',
+  },
+  {
+    id: 'V-logo-4k', kind: 'visual', lane: 'brand', plain: true, settle: 2600,
+    title: 'The lockup at 2.4x (a 3840x2160-equivalent crop): the same vector construction rendered at 4K pixel density',
+    setup: `(() => { const L = document.querySelector('#title .cal-logo'); L.style.setProperty('--cal-lk', (92 * 2.4) + 'px');
+      for (const s of ['.mn-title', '#btn-start']) document.querySelectorAll('#title ' + s).forEach((n) => { n.style.visibility = 'hidden'; }); })()`,
+    reference: ['reference/r5/brand/bodoni-manuale-tipografico-1818.jpg', 'reference/r5/brand/os-benchmark-broad-arrow.jpg'],
+    criteria: 'The V-logo construction up close. PASS: the spark is whole (ten round-capped rays, none clipped or overlapped), clear of the cap line; '
+      + 'the plumb line is a single thin stroke from the cap line to a pointed bob whose tip sits on the baseline; the datum rule is one hairline, '
+      + 'straight, edge to edge of the word; the broad-arrow is three coral strokes meeting at an apex just under the rule, centred on the plumb line; '
+      + 'the Bodoni caps show hairline serifs and vertical stress like the reference. FAIL on jagged or broken strokes, a misplaced or doubled part, '
+      + 'or any text besides CALIMA.',
+  },
+  {
+    id: 'V38-title', kind: 'visual', lane: 'brand', plain: true, settle: 2200,
+    title: 'Title screen with the menu in: one logo over the live vista in calima, vertical menu (shadows the carried V38-title)',
+    setup: `(async () => { ${PRESS} ${UNTIL_MENU} })()`,
+    reference: ['reference/r5/brand/calima-dawn-maspalomas.jpg', 'reference/r5/brand/salinas-de-janubio.jpg'],
+    criteria: 'Bible 9.8 title. PASS: exactly ONE logo (the V-logo lockup); a vertical menu (CONTINUE / NEW GAME / SETTINGS / FIELD MANUAL / CREDITS, '
+      + 'station numbers, CONTINUE greyed with no save), a save line and one field-note line, all readable; behind it a LIVE vista in calima: '
+      + 'an ochre-hazed flat sky and skyline with a soft coral disc sun, low contrast like the calima reference. '
+      + 'STAGING NOTE (W0b): the Pans do not exist until world-ground W1 and the calima weather until world-sky W1, so this shot is the best '
+      + 'available calima-tinted vista: the Round-4 valley rim seen from REST toward the sun, under the brand stand-in wash (an ochre colour '
+      + 'blend + haze over the canvas, the coral disc placed on the projected sun direction and shown only when the sun clears the skyline). '
+      + 'Salt grid and white surf on black sand are NOT expected until W1 (salinas reference = the target). '
+      + 'FAIL on: a second logo, a tall walker silhouette (the old long-necked tower) on the skyline, live lava, the keybind wall, a start button beside the menu, '
+      + 'or menu text unreadable against the vista.',
+  },
+  {
+    id: 'V-loading', kind: 'visual', lane: 'brand', plain: true, settle: 900,
+    title: 'Loading screen at 40 % (the real boot DOM + main.js setLoad, frozen)',
+    setup: LOADING_AT(0.4),
+    reference: ['reference/r5/brand/os-benchmark-broad-arrow.jpg'],
+    criteria: 'Bible 9.8 loading. PASS: the CALIMA lockup in ink on field-book paper; its datum rule is drawn as a faint track and filled solidly from the '
+      + 'LEFT to about 40 % of the word width; the copy under it reads "Reading the benchmarks…"; nothing else. FAIL on a separate progress bar, '
+      + 'any other copy (no "Waking the machines"), a teal or glowing bar, or the fill starting anywhere but the left end.',
+  },
+  {
+    id: 'V-loading-100', kind: 'visual', lane: 'brand', plain: true, settle: 900,
+    title: 'Loading screen at 100 % (frozen)',
+    setup: LOADING_AT(1),
+    reference: ['reference/r5/brand/os-benchmark-broad-arrow.jpg'],
+    criteria: 'As V-loading at 100 %: the datum rule is one complete hairline under the whole word (the finished lockup); copy unchanged. FAIL as V-loading.',
+  },
+];
+
+/**
+ * The content modules the player lint reads: EVERY export that is a plain object
+ * or array is a content table (keys + display strings); functions and classes
+ * are skipped. A module that fails to import is reported, not fatal.
+ */
+const CONTENT_MODULES = [
+  '/src/ui/tips.js', '/src/core/progression.js', '/src/combat/weapons.js', '/src/items/items.js', '/src/items/crafting.js',
+  '/src/items/datapoints.js', '/src/world/props/places.js', '/src/world/props/megastructures.js', '/src/world/props/npcs.js',
+  '/src/world/npc/waypoints.js', '/src/audio/manifest.js', '/src/audio/music.js', '/src/entities/machines/legacy.js',
+  '/src/entities/machines/ai/tables.js', '/src/instruments/roles.js', '/src/studio/pose.js', '/src/studio/cast.js',
+  '/src/core/assets.specs.js',
+];
+
+
+const DAY1 = [
   {
     id: 'A-identifiers-renamed', kind: 'runner', lane: 'brand',
     title: 'W0-day1: 0 hits in src/ tools/ index.html for every §7.1 "from" (prefixes, storage keys, events, ctx members, the asset rig row); package renamed',
@@ -451,3 +895,5 @@ export const GATES = [
     })()`,
   },
 ];
+
+export const GATES = [...DAY1, ...W0B];

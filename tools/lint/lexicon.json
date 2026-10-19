@@ -1,0 +1,3811 @@
+{
+ "schema": 1,
+ "built": "node tools/lint/namecheck.mjs --rebuild-lexicon",
+ "rules": {
+  "name": "named reading: exact, or the term inside the word (both >= 5 chars). literal reading: Direction A as written — exact; substring either way when both >= 5; edit distance <= 1 when both >= 5",
+  "common": "phrase-only (Direction B: never split a Horizon name into generic words)",
+  "phrase": "contiguous normalised word sequence",
+  "short": "entries under 3 characters are split artefacts (B drops them): not matched",
+  "line": "A's whole lines with spaces / slashes / notes: matched through their expanded phrases"
+ },
+ "union": {
+  "entries": 426,
+  "tokens": 372,
+  "phrases": 54,
+  "name": 241,
+  "common": 107,
+  "line": 22,
+  "short": 2
+ },
+ "generic": [
+  "lance",
+  "cliff",
+  "shelf",
+  "salt",
+  "glaze",
+  "arrow"
+ ],
+ "tokens": [
+  {
+   "n": "abadund",
+   "t": "Abadund",
+   "cls": "name",
+   "src": [
+    "A:broad",
+    "B"
+   ]
+  },
+  {
+   "n": "abbrev",
+   "t": "abbrev",
+   "cls": "name",
+   "src": [
+    "A:tracked"
+   ]
+  },
+  {
+   "n": "acid",
+   "t": "Acid",
+   "cls": "name",
+   "src": [
+    "A:broad"
+   ]
+  },
+  {
+   "n": "adhesive",
+   "t": "Adhesive",
+   "cls": "name",
+   "src": [
+    "A:broad"
+   ]
+  },
+  {
+   "n": "aether",
+   "t": "AETHER",
+   "cls": "name",
+   "src": [
+    "A:broad",
+    "B"
+   ]
+  },
+  {
+   "n": "ahsis",
+   "t": "Ahsis",
+   "cls": "name",
+   "src": [
+    "A:broad"
+   ]
+  },
+  {
+   "n": "alight",
+   "t": "Alight",
+   "cls": "common",
+   "src": [
+    "A:broad"
+   ]
+  },
+  {
+   "n": "allmother",
+   "t": "All-Mother",
+   "cls": "name",
+   "src": [
+    "A:tracked",
+    "B"
+   ]
+  },
+  {
+   "n": "aloy",
+   "t": "Aloy",
+   "cls": "name",
+   "src": [
+    "A:tracked",
+    "A:broad",
+    "B"
+   ]
+  },
+  {
+   "n": "aloys",
+   "t": "Aloy's",
+   "cls": "name",
+   "src": [
+    "A:broad"
+   ]
+  },
+  {
+   "n": "alva",
+   "t": "Alva",
+   "cls": "name",
+   "src": [
+    "A:broad",
+    "B"
+   ]
+  },
+  {
+   "n": "anointed",
+   "t": "Anointed",
+   "cls": "name",
+   "src": [
+    "A:broad"
+   ]
+  },
+  {
+   "n": "apex",
+   "t": "Apex",
+   "cls": "name",
+   "src": [
+    "A:broad",
+    "B"
+   ]
+  },
+  {
+   "n": "apollo",
+   "t": "APOLLO",
+   "cls": "name",
+   "src": [
+    "A:broad",
+    "B"
+   ]
+  },
+  {
+   "n": "aratak",
+   "t": "Aratak",
+   "cls": "name",
+   "src": [
+    "A:broad",
+    "B"
+   ]
+  },
+  {
+   "n": "arena",
+   "t": "Arena",
+   "cls": "common",
+   "src": [
+    "A:broad"
+   ]
+  },
+  {
+   "n": "arokkeh",
+   "t": "Arokkeh",
+   "cls": "name",
+   "src": [
+    "A:broad",
+    "B"
+   ]
+  },
+  {
+   "n": "arrowhand",
+   "t": "Arrowhand",
+   "cls": "name",
+   "src": [
+    "A:broad",
+    "B"
+   ]
+  },
+  {
+   "n": "artemis",
+   "t": "ARTEMIS",
+   "cls": "name",
+   "src": [
+    "A:broad",
+    "B"
+   ]
+  },
+  {
+   "n": "atekka",
+   "t": "Atekka",
+   "cls": "name",
+   "src": [
+    "A:broad"
+   ]
+  },
+  {
+   "n": "avad",
+   "t": "Avad",
+   "cls": "name",
+   "src": [
+    "A:broad",
+    "B"
+   ]
+  },
+  {
+   "n": "banuk",
+   "t": "Banuk",
+   "cls": "name",
+   "src": [
+    "A:tracked",
+    "A:broad",
+    "B"
+   ]
+  },
+  {
+   "n": "banur",
+   "t": "Ban-Ur",
+   "cls": "name",
+   "src": [
+    "A:broad"
+   ]
+  },
+  {
+   "n": "barren",
+   "t": "Barren",
+   "cls": "common",
+   "src": [
+    "A:broad"
+   ]
+  },
+  {
+   "n": "base",
+   "t": "Base",
+   "cls": "common",
+   "src": [
+    "A:broad"
+   ]
+  },
+  {
+   "n": "bast",
+   "t": "Bast",
+   "cls": "name",
+   "src": [
+    "B"
+   ]
+  },
+  {
+   "n": "bayak",
+   "t": "Bayak",
+   "cls": "name",
+   "src": [
+    "A:broad"
+   ]
+  },
+  {
+   "n": "behemoth",
+   "t": "Behemoth",
+   "cls": "name",
+   "src": [
+    "A:tracked",
+    "A:broad",
+    "B"
+   ]
+  },
+  {
+   "n": "bellowback",
+   "t": "Bellowback",
+   "cls": "name",
+   "src": [
+    "A:tracked",
+    "A:broad",
+    "B"
+   ]
+  },
+  {
+   "n": "beta",
+   "t": "Beta",
+   "cls": "name",
+   "src": [
+    "A:broad",
+    "B"
+   ]
+  },
+  {
+   "n": "bilegut",
+   "t": "Bilegut",
+   "cls": "name",
+   "src": [
+    "A:broad"
+   ]
+  },
+  {
+   "n": "bileguts",
+   "t": "Bileguts",
+   "cls": "name",
+   "src": [
+    "B"
+   ]
+  },
+  {
+   "n": "blameless",
+   "t": "Blameless",
+   "cls": "common",
+   "src": [
+    "A:broad"
+   ]
+  },
+  {
+   "n": "blast",
+   "t": "Blast",
+   "cls": "common",
+   "src": [
+    "A:tracked",
+    "A:broad"
+   ]
+  },
+  {
+   "n": "blastsling",
+   "t": "Blast Sling",
+   "cls": "line",
+   "src": [
+    "A:tracked"
+   ]
+  },
+  {
+   "n": "blaze",
+   "t": "Blaze",
+   "cls": "name",
+   "src": [
+    "A:tracked",
+    "A:broad",
+    "B"
+   ]
+  },
+  {
+   "n": "bleeding",
+   "t": "Bleeding",
+   "cls": "common",
+   "src": [
+    "A:broad"
+   ]
+  },
+  {
+   "n": "blight",
+   "t": "Blight",
+   "cls": "name",
+   "src": [
+    "B"
+   ]
+  },
+  {
+   "n": "boltblaster",
+   "t": "Boltblaster",
+   "cls": "name",
+   "src": [
+    "A:broad",
+    "B"
+   ]
+  },
+  {
+   "n": "boomer",
+   "t": "Boomer",
+   "cls": "common",
+   "src": [
+    "A:broad"
+   ]
+  },
+  {
+   "n": "bow",
+   "t": "Bow",
+   "cls": "common",
+   "src": [
+    "A:broad"
+   ]
+  },
+  {
+   "n": "brave",
+   "t": "Brave",
+   "cls": "name",
+   "src": [
+    "A:tracked",
+    "A:broad",
+    "B"
+   ]
+  },
+  {
+   "n": "brave/seeker/outcast",
+   "t": "Brave/Seeker/Outcast",
+   "cls": "line",
+   "src": [
+    "A:tracked"
+   ]
+  },
+  {
+   "n": "brightmarket",
+   "t": "Brightmarket",
+   "cls": "name",
+   "src": [
+    "A:broad"
+   ]
+  },
+  {
+   "n": "bristleback",
+   "t": "Bristleback",
+   "cls": "name",
+   "src": [
+    "A:broad",
+    "B"
+   ]
+  },
+  {
+   "n": "brittle",
+   "t": "Brittle",
+   "cls": "name",
+   "src": [
+    "plan"
+   ]
+  },
+  {
+   "n": "broadhead",
+   "t": "Broadhead",
+   "cls": "name",
+   "src": [
+    "A:tracked",
+    "A:broad",
+    "B"
+   ]
+  },
+  {
+   "n": "bulwark",
+   "t": "Bulwark",
+   "cls": "common",
+   "src": [
+    "A:broad"
+   ]
+  },
+  {
+   "n": "burrower",
+   "t": "Burrower",
+   "cls": "name",
+   "src": [
+    "A:broad",
+    "B",
+    "plan"
+   ]
+  },
+  {
+   "n": "camp",
+   "t": "Camp",
+   "cls": "name",
+   "src": [
+    "A:broad",
+    "plan"
+   ]
+  },
+  {
+   "n": "carja",
+   "t": "Carja",
+   "cls": "name",
+   "src": [
+    "A:tracked",
+    "A:broad",
+    "B"
+   ]
+  },
+  {
+   "n": "cauldron",
+   "t": "Cauldron",
+   "cls": "name",
+   "src": [
+    "A:tracked",
+    "A:broad",
+    "B"
+   ]
+  },
+  {
+   "n": "chainscrape",
+   "t": "Chainscrape",
+   "cls": "name",
+   "src": [
+    "A:broad",
+    "B"
+   ]
+  },
+  {
+   "n": "charger",
+   "t": "Charger",
+   "cls": "name",
+   "src": [
+    "A:tracked",
+    "A:broad",
+    "B",
+    "plan"
+   ]
+  },
+  {
+   "n": "chariot",
+   "t": "Chariot",
+   "cls": "name",
+   "src": [
+    "B"
+   ]
+  },
+  {
+   "n": "chillwater",
+   "t": "Chillwater",
+   "cls": "name",
+   "src": [
+    "A:tracked",
+    "A:broad",
+    "B"
+   ]
+  },
+  {
+   "n": "circulator",
+   "t": "Circulator",
+   "cls": "name",
+   "src": [
+    "B"
+   ]
+  },
+  {
+   "n": "clamberjaw",
+   "t": "Clamberjaw",
+   "cls": "name",
+   "src": [
+    "A:broad",
+    "B"
+   ]
+  },
+  {
+   "n": "clan",
+   "t": "Clan",
+   "cls": "common",
+   "src": [
+    "A:broad"
+   ]
+  },
+  {
+   "n": "clawstrider",
+   "t": "Clawstrider",
+   "cls": "name",
+   "src": [
+    "A:broad",
+    "B"
+   ]
+  },
+  {
+   "n": "concentration",
+   "t": "Concentration",
+   "cls": "name",
+   "src": [
+    "A:tracked",
+    "A:broad",
+    "B"
+   ]
+  },
+  {
+   "n": "concord",
+   "t": "Concord",
+   "cls": "name",
+   "src": [
+    "B"
+   ]
+  },
+  {
+   "n": "contract",
+   "t": "Contract",
+   "cls": "common",
+   "src": [
+    "A:broad"
+   ]
+  },
+  {
+   "n": "corrupted",
+   "t": "Corrupted",
+   "cls": "name",
+   "src": [
+    "A:tracked",
+    "B"
+   ]
+  },
+  {
+   "n": "corrupted/corruption",
+   "t": "Corrupted/Corruption",
+   "cls": "line",
+   "src": [
+    "A:tracked"
+   ]
+  },
+  {
+   "n": "corruption",
+   "t": "Corruption",
+   "cls": "name",
+   "src": [
+    "A:tracked",
+    "B"
+   ]
+  },
+  {
+   "n": "corruptor",
+   "t": "Corruptor",
+   "cls": "name",
+   "src": [
+    "A:tracked",
+    "A:broad",
+    "B"
+   ]
+  },
+  {
+   "n": "cradle",
+   "t": "Cradle",
+   "cls": "common",
+   "src": [
+    "A:broad"
+   ]
+  },
+  {
+   "n": "crest",
+   "t": "Crest",
+   "cls": "common",
+   "src": [
+    "A:broad"
+   ]
+  },
+  {
+   "n": "critical",
+   "t": "Critical",
+   "cls": "common",
+   "src": [
+    "A:tracked",
+    "A:broad"
+   ]
+  },
+  {
+   "n": "criticalstrike/hit",
+   "t": "Critical Strike/Hit",
+   "cls": "line",
+   "src": [
+    "A:tracked"
+   ]
+  },
+  {
+   "n": "cut",
+   "t": "Cut",
+   "cls": "common",
+   "src": [
+    "A:broad"
+   ]
+  },
+  {
+   "n": "cyan",
+   "t": "CYAN",
+   "cls": "name",
+   "src": [
+    "A:broad",
+    "B"
+   ]
+  },
+  {
+   "n": "datapoint",
+   "t": "Datapoint",
+   "cls": "name",
+   "src": [
+    "A:tracked",
+    "A:broad",
+    "B"
+   ]
+  },
+  {
+   "n": "daunt",
+   "t": "Daunt",
+   "cls": "name",
+   "src": [
+    "A:broad",
+    "B"
+   ]
+  },
+  {
+   "n": "dawn",
+   "t": "Dawn",
+   "cls": "common",
+   "src": [
+    "A:tracked"
+   ]
+  },
+  {
+   "n": "deathbringer",
+   "t": "Deathbringer",
+   "cls": "name",
+   "src": [
+    "A:tracked",
+    "A:broad",
+    "B"
+   ]
+  },
+  {
+   "n": "dekka",
+   "t": "Dekka",
+   "cls": "name",
+   "src": [
+    "A:broad",
+    "B"
+   ]
+  },
+  {
+   "n": "delah",
+   "t": "Delah",
+   "cls": "name",
+   "src": [
+    "A:broad",
+    "B"
+   ]
+  },
+  {
+   "n": "demeter",
+   "t": "DEMETER",
+   "cls": "name",
+   "src": [
+    "A:broad",
+    "B"
+   ]
+  },
+  {
+   "n": "derangement",
+   "t": "Derangement",
+   "cls": "name",
+   "src": [
+    "B"
+   ]
+  },
+  {
+   "n": "dervahl",
+   "t": "Dervahl",
+   "cls": "name",
+   "src": [
+    "B"
+   ]
+  },
+  {
+   "n": "desert",
+   "t": "Desert",
+   "cls": "common",
+   "src": [
+    "A:broad"
+   ]
+  },
+  {
+   "n": "devil",
+   "t": "Devil",
+   "cls": "common",
+   "src": [
+    "A:broad"
+   ]
+  },
+  {
+   "n": "disc",
+   "t": "Disc",
+   "cls": "common",
+   "src": [
+    "A:tracked"
+   ]
+  },
+  {
+   "n": "disclauncher",
+   "t": "Disc Launcher",
+   "cls": "line",
+   "src": [
+    "A:tracked"
+   ]
+  },
+  {
+   "n": "diving",
+   "t": "Diving",
+   "cls": "common",
+   "src": [
+    "A:broad"
+   ]
+  },
+  {
+   "n": "down",
+   "t": "down",
+   "cls": "common",
+   "src": [
+    "A:tracked"
+   ]
+  },
+  {
+   "n": "drain",
+   "t": "Drain",
+   "cls": "common",
+   "src": [
+    "A:broad"
+   ]
+  },
+  {
+   "n": "drakka",
+   "t": "Drakka",
+   "cls": "name",
+   "src": [
+    "A:broad",
+    "B"
+   ]
+  },
+  {
+   "n": "dreadwing",
+   "t": "Dreadwing",
+   "cls": "name",
+   "src": [
+    "A:broad",
+    "B"
+   ]
+  },
+  {
+   "n": "dukkah",
+   "t": "Dukkah",
+   "cls": "name",
+   "src": [
+    "A:broad"
+   ]
+  },
+  {
+   "n": "eclipse",
+   "t": "Eclipse",
+   "cls": "name",
+   "src": [
+    "A:broad",
+    "B"
+   ]
+  },
+  {
+   "n": "edge",
+   "t": "Edge",
+   "cls": "common",
+   "src": [
+    "A:broad"
+   ]
+  },
+  {
+   "n": "ekkia",
+   "t": "Ekkia",
+   "cls": "name",
+   "src": [
+    "A:broad"
+   ]
+  },
+  {
+   "n": "eleuthia",
+   "t": "Eleuthia",
+   "cls": "name",
+   "src": [
+    "B"
+   ]
+  },
+  {
+   "n": "elisabet",
+   "t": "Elisabet",
+   "cls": "name",
+   "src": [
+    "A:tracked",
+    "A:broad",
+    "B"
+   ]
+  },
+  {
+   "n": "ember",
+   "t": "Ember",
+   "cls": "common",
+   "src": [
+    "A:broad"
+   ]
+  },
+  {
+   "n": "embrace",
+   "t": "Embrace",
+   "cls": "name",
+   "src": [
+    "A:tracked",
+    "A:broad",
+    "B"
+   ]
+  },
+  {
+   "n": "embrace(nora)",
+   "t": "Embrace (Nora)",
+   "cls": "line",
+   "src": [
+    "A:tracked"
+   ]
+  },
+  {
+   "n": "end",
+   "t": "End",
+   "cls": "common",
+   "src": [
+    "A:broad"
+   ]
+  },
+  {
+   "n": "epic",
+   "t": "Epic",
+   "cls": "common",
+   "src": [
+    "A:tracked"
+   ]
+  },
+  {
+   "n": "epicgames",
+   "t": "Epic Games",
+   "cls": "line",
+   "src": [
+    "A:tracked"
+   ]
+  },
+  {
+   "n": "erend",
+   "t": "Erend",
+   "cls": "name",
+   "src": [
+    "A:tracked",
+    "A:broad",
+    "B"
+   ]
+  },
+  {
+   "n": "erik",
+   "t": "Erik",
+   "cls": "name",
+   "src": [
+    "A:broad"
+   ]
+  },
+  {
+   "n": "ersa",
+   "t": "Ersa",
+   "cls": "name",
+   "src": [
+    "B"
+   ]
+  },
+  {
+   "n": "falls",
+   "t": "Fall's",
+   "cls": "common",
+   "src": [
+    "A:broad"
+   ]
+  },
+  {
+   "n": "fanghorn",
+   "t": "Fanghorn",
+   "cls": "name",
+   "src": [
+    "A:broad",
+    "B"
+   ]
+  },
+  {
+   "n": "far",
+   "t": "Far",
+   "cls": "common",
+   "src": [
+    "A:broad"
+   ]
+  },
+  {
+   "n": "faro",
+   "t": "Faro",
+   "cls": "name",
+   "src": [
+    "A:broad",
+    "B"
+   ]
+  },
+  {
+   "n": "firebreak",
+   "t": "Firebreak",
+   "cls": "common",
+   "src": [
+    "A:broad"
+   ]
+  },
+  {
+   "n": "fireclaw",
+   "t": "Fireclaw",
+   "cls": "name",
+   "src": [
+    "A:tracked",
+    "A:broad",
+    "B"
+   ]
+  },
+  {
+   "n": "firegleam",
+   "t": "Firegleam",
+   "cls": "name",
+   "src": [
+    "A:broad"
+   ]
+  },
+  {
+   "n": "firespitter",
+   "t": "Firespitter",
+   "cls": "name",
+   "src": [
+    "A:broad",
+    "B"
+   ]
+  },
+  {
+   "n": "fleets",
+   "t": "Fleet's",
+   "cls": "common",
+   "src": [
+    "A:broad"
+   ]
+  },
+  {
+   "n": "focus",
+   "t": "Focus",
+   "cls": "name",
+   "src": [
+    "A:tracked",
+    "A:broad",
+    "B"
+   ]
+  },
+  {
+   "n": "forager",
+   "t": "Forager",
+   "cls": "name",
+   "src": [
+    "B"
+   ]
+  },
+  {
+   "n": "forbidden",
+   "t": "Forbidden",
+   "cls": "common",
+   "src": [
+    "A:tracked"
+   ]
+  },
+  {
+   "n": "forbiddenwest",
+   "t": "Forbidden West",
+   "cls": "line",
+   "src": [
+    "A:tracked"
+   ]
+  },
+  {
+   "n": "forgefire",
+   "t": "Forgefire",
+   "cls": "name",
+   "src": [
+    "B"
+   ]
+  },
+  {
+   "n": "fortnite",
+   "t": "Fortnite",
+   "cls": "name",
+   "src": [
+    "A:tracked"
+   ]
+  },
+  {
+   "n": "free",
+   "t": "Free",
+   "cls": "common",
+   "src": [
+    "A:broad"
+   ]
+  },
+  {
+   "n": "frost",
+   "t": "Frost",
+   "cls": "name",
+   "src": [
+    "plan"
+   ]
+  },
+  {
+   "n": "frostbite",
+   "t": "Frostbite",
+   "cls": "common",
+   "src": [
+    "A:broad"
+   ]
+  },
+  {
+   "n": "frostclaw",
+   "t": "Frostclaw",
+   "cls": "name",
+   "src": [
+    "A:broad",
+    "B"
+   ]
+  },
+  {
+   "n": "gaia",
+   "t": "GAIA",
+   "cls": "name",
+   "src": [
+    "A:tracked",
+    "A:broad",
+    "B"
+   ]
+  },
+  {
+   "n": "games",
+   "t": "Games",
+   "cls": "common",
+   "src": [
+    "A:tracked"
+   ]
+  },
+  {
+   "n": "gauntlet",
+   "t": "Gauntlet",
+   "cls": "common",
+   "src": [
+    "A:broad"
+   ]
+  },
+  {
+   "n": "gerard",
+   "t": "Gerard",
+   "cls": "name",
+   "src": [
+    "A:broad"
+   ]
+  },
+  {
+   "n": "gerrit",
+   "t": "Gerrit",
+   "cls": "name",
+   "src": [
+    "B"
+   ]
+  },
+  {
+   "n": "gildun",
+   "t": "Gildun",
+   "cls": "name",
+   "src": [
+    "A:broad"
+   ]
+  },
+  {
+   "n": "glinthawk",
+   "t": "Glinthawk",
+   "cls": "name",
+   "src": [
+    "A:tracked",
+    "A:broad",
+    "B"
+   ]
+  },
+  {
+   "n": "gravehoard",
+   "t": "Grave-Hoard",
+   "cls": "name",
+   "src": [
+    "B"
+   ]
+  },
+  {
+   "n": "grazer",
+   "t": "Grazer",
+   "cls": "name",
+   "src": [
+    "A:tracked",
+    "A:broad",
+    "B",
+    "plan"
+   ]
+  },
+  {
+   "n": "grimhorn",
+   "t": "Grimhorn",
+   "cls": "name",
+   "src": [
+    "A:broad",
+    "B"
+   ]
+  },
+  {
+   "n": "grounds",
+   "t": "Grounds",
+   "cls": "common",
+   "src": [
+    "A:tracked",
+    "A:broad"
+   ]
+  },
+  {
+   "n": "grove",
+   "t": "Grove",
+   "cls": "common",
+   "src": [
+    "A:broad"
+   ]
+  },
+  {
+   "n": "guerrilla",
+   "t": "Guerrilla",
+   "cls": "name",
+   "src": [
+    "A:tracked",
+    "B"
+   ]
+  },
+  {
+   "n": "hades",
+   "t": "HADES",
+   "cls": "name",
+   "src": [
+    "A:tracked",
+    "A:broad",
+    "B"
+   ]
+  },
+  {
+   "n": "hardpoint",
+   "t": "Hardpoint",
+   "cls": "name",
+   "src": [
+    "B"
+   ]
+  },
+  {
+   "n": "heart",
+   "t": "Heart",
+   "cls": "common",
+   "src": [
+    "A:tracked",
+    "A:broad"
+   ]
+  },
+  {
+   "n": "hekarro",
+   "t": "Hekarro",
+   "cls": "name",
+   "src": [
+    "A:broad",
+    "B"
+   ]
+  },
+  {
+   "n": "helis",
+   "t": "Helis",
+   "cls": "name",
+   "src": [
+    "A:broad",
+    "B"
+   ]
+  },
+  {
+   "n": "hephaestus",
+   "t": "HEPHAESTUS",
+   "cls": "name",
+   "src": [
+    "A:broad",
+    "B"
+   ]
+  },
+  {
+   "n": "hfw",
+   "t": "HFW",
+   "cls": "name",
+   "src": [
+    "A:tracked"
+   ]
+  },
+  {
+   "n": "hidden",
+   "t": "Hidden",
+   "cls": "common",
+   "src": [
+    "A:broad"
+   ]
+  },
+  {
+   "n": "horizon",
+   "t": "Horizon",
+   "cls": "name",
+   "src": [
+    "A:tracked",
+    "B"
+   ]
+  },
+  {
+   "n": "horizon(title)",
+   "t": "Horizon (title)",
+   "cls": "line",
+   "src": [
+    "A:tracked"
+   ]
+  },
+  {
+   "n": "horus",
+   "t": "Horus",
+   "cls": "name",
+   "src": [
+    "A:broad",
+    "B"
+   ]
+  },
+  {
+   "n": "hunter",
+   "t": "Hunter",
+   "cls": "common",
+   "src": [
+    "A:tracked",
+    "A:broad"
+   ]
+  },
+  {
+   "n": "hunterbow",
+   "t": "Hunter Bow",
+   "cls": "line",
+   "src": [
+    "A:tracked"
+   ]
+  },
+  {
+   "n": "hunting",
+   "t": "Hunting",
+   "cls": "common",
+   "src": [
+    "A:tracked",
+    "A:broad"
+   ]
+  },
+  {
+   "n": "huntinggrounds",
+   "t": "Hunting Grounds",
+   "cls": "line",
+   "src": [
+    "A:tracked"
+   ]
+  },
+  {
+   "n": "hunts",
+   "t": "Hunts",
+   "cls": "common",
+   "src": [
+    "A:broad"
+   ]
+  },
+  {
+   "n": "huntslikepack",
+   "t": "Hunts-Like-Pack",
+   "cls": "name",
+   "src": [
+    "A:broad"
+   ]
+  },
+  {
+   "n": "hzc(projectabbrev)",
+   "t": "HZC (project abbrev)",
+   "cls": "line",
+   "src": [
+    "A:tracked"
+   ]
+  },
+  {
+   "n": "hzd",
+   "t": "HZD",
+   "cls": "name",
+   "src": [
+    "A:tracked"
+   ]
+  },
+  {
+   "n": "icerail",
+   "t": "Icerail",
+   "cls": "name",
+   "src": [
+    "B"
+   ]
+  },
+  {
+   "n": "igniter",
+   "t": "Igniter",
+   "cls": "name",
+   "src": [
+    "B"
+   ]
+  },
+  {
+   "n": "impact",
+   "t": "Impact",
+   "cls": "name",
+   "src": [
+    "plan"
+   ]
+  },
+  {
+   "n": "ironeater",
+   "t": "Ironeater",
+   "cls": "name",
+   "src": [
+    "A:broad"
+   ]
+  },
+  {
+   "n": "isle",
+   "t": "Isle",
+   "cls": "common",
+   "src": [
+    "A:broad"
+   ]
+  },
+  {
+   "n": "itamen",
+   "t": "Itamen",
+   "cls": "name",
+   "src": [
+    "B"
+   ]
+  },
+  {
+   "n": "janeva",
+   "t": "Janeva",
+   "cls": "name",
+   "src": [
+    "B"
+   ]
+  },
+  {
+   "n": "jezza",
+   "t": "Jezza",
+   "cls": "name",
+   "src": [
+    "B"
+   ]
+  },
+  {
+   "n": "jiran",
+   "t": "Jiran",
+   "cls": "name",
+   "src": [
+    "A:broad"
+   ]
+  },
+  {
+   "n": "karst",
+   "t": "Karst",
+   "cls": "name",
+   "src": [
+    "B"
+   ]
+  },
+  {
+   "n": "kavvoh",
+   "t": "Kavvoh",
+   "cls": "name",
+   "src": [
+    "A:broad"
+   ]
+  },
+  {
+   "n": "kina",
+   "t": "Kina",
+   "cls": "name",
+   "src": [
+    "A:broad",
+    "B"
+   ]
+  },
+  {
+   "n": "king",
+   "t": "King",
+   "cls": "common",
+   "src": [
+    "A:tracked"
+   ]
+  },
+  {
+   "n": "kotallo",
+   "t": "Kotallo",
+   "cls": "name",
+   "src": [
+    "A:broad",
+    "B"
+   ]
+  },
+  {
+   "n": "kue",
+   "t": "Kue",
+   "cls": "name",
+   "src": [
+    "A:broad"
+   ]
+  },
+  {
+   "n": "kulrut",
+   "t": "Kulrut",
+   "cls": "name",
+   "src": [
+    "A:broad",
+    "B"
+   ]
+  },
+  {
+   "n": "lancehorn",
+   "t": "Lancehorn",
+   "cls": "name",
+   "src": [
+    "A:tracked",
+    "A:broad",
+    "B"
+   ]
+  },
+  {
+   "n": "landfall",
+   "t": "Landfall",
+   "cls": "common",
+   "src": [
+    "A:broad"
+   ]
+  },
+  {
+   "n": "lands",
+   "t": "Lands",
+   "cls": "common",
+   "src": [
+    "A:broad"
+   ]
+  },
+  {
+   "n": "lansra",
+   "t": "Lansra",
+   "cls": "name",
+   "src": [
+    "A:broad",
+    "B"
+   ]
+  },
+  {
+   "n": "larend",
+   "t": "Larend",
+   "cls": "name",
+   "src": [
+    "A:broad"
+   ]
+  },
+  {
+   "n": "latopolis",
+   "t": "Latopolis",
+   "cls": "name",
+   "src": [
+    "A:broad"
+   ]
+  },
+  {
+   "n": "launcher",
+   "t": "Launcher",
+   "cls": "common",
+   "src": [
+    "A:tracked"
+   ]
+  },
+  {
+   "n": "lawan",
+   "t": "Lawan",
+   "cls": "name",
+   "src": [
+    "A:broad"
+   ]
+  },
+  {
+   "n": "leaplasher",
+   "t": "Leaplasher",
+   "cls": "name",
+   "src": [
+    "A:broad",
+    "B"
+   ]
+  },
+  {
+   "n": "legacys",
+   "t": "Legacy's",
+   "cls": "common",
+   "src": [
+    "A:broad"
+   ]
+  },
+  {
+   "n": "lens",
+   "t": "Lens",
+   "cls": "name",
+   "src": [
+    "A:tracked",
+    "plan"
+   ]
+  },
+  {
+   "n": "light",
+   "t": "Light",
+   "cls": "common",
+   "src": [
+    "A:broad"
+   ]
+  },
+  {
+   "n": "lightkeep",
+   "t": "Lightkeep",
+   "cls": "name",
+   "src": [
+    "A:broad"
+   ]
+  },
+  {
+   "n": "like",
+   "t": "Like",
+   "cls": "common",
+   "src": [
+    "A:broad"
+   ]
+  },
+  {
+   "n": "londra",
+   "t": "Londra",
+   "cls": "name",
+   "src": [
+    "B"
+   ]
+  },
+  {
+   "n": "longleg",
+   "t": "Longleg",
+   "cls": "name",
+   "src": [
+    "A:tracked",
+    "A:broad",
+    "B"
+   ]
+  },
+  {
+   "n": "lowell",
+   "t": "Lowell",
+   "cls": "name",
+   "src": [
+    "B"
+   ]
+  },
+  {
+   "n": "lowland",
+   "t": "Lowland",
+   "cls": "name",
+   "src": [
+    "A:broad",
+    "B"
+   ]
+  },
+  {
+   "n": "machine",
+   "t": "Machine",
+   "cls": "name",
+   "src": [
+    "A:tracked",
+    "A:broad"
+   ]
+  },
+  {
+   "n": "machinemuscle/lens/heart",
+   "t": "Machine Muscle/Lens/Heart",
+   "cls": "line",
+   "src": [
+    "A:tracked"
+   ]
+  },
+  {
+   "n": "makers",
+   "t": "Maker's",
+   "cls": "common",
+   "src": [
+    "A:broad"
+   ]
+  },
+  {
+   "n": "marad",
+   "t": "Marad",
+   "cls": "name",
+   "src": [
+    "A:broad",
+    "B"
+   ]
+  },
+  {
+   "n": "mark",
+   "t": "Mark",
+   "cls": "common",
+   "src": [
+    "A:broad"
+   ]
+  },
+  {
+   "n": "mask",
+   "t": "Mask",
+   "cls": "common",
+   "src": [
+    "A:broad"
+   ]
+  },
+  {
+   "n": "matriarch",
+   "t": "Matriarch",
+   "cls": "name",
+   "src": [
+    "B"
+   ]
+  },
+  {
+   "n": "medicine",
+   "t": "Medicine",
+   "cls": "name",
+   "src": [
+    "A:tracked",
+    "A:broad"
+   ]
+  },
+  {
+   "n": "medicinepouch",
+   "t": "Medicine Pouch",
+   "cls": "line",
+   "src": [
+    "A:tracked"
+   ]
+  },
+  {
+   "n": "melee",
+   "t": "Melee",
+   "cls": "common",
+   "src": [
+    "A:broad"
+   ]
+  },
+  {
+   "n": "memorial",
+   "t": "Memorial",
+   "cls": "common",
+   "src": [
+    "A:broad"
+   ]
+  },
+  {
+   "n": "meridian",
+   "t": "Meridian",
+   "cls": "name",
+   "src": [
+    "A:tracked",
+    "A:broad",
+    "B"
+   ]
+  },
+  {
+   "n": "metal",
+   "t": "Metal",
+   "cls": "common",
+   "src": [
+    "A:tracked",
+    "A:broad"
+   ]
+  },
+  {
+   "n": "metalshards",
+   "t": "Metal Shards",
+   "cls": "line",
+   "src": [
+    "A:tracked"
+   ]
+  },
+  {
+   "n": "minerva",
+   "t": "MINERVA",
+   "cls": "name",
+   "src": [
+    "A:broad",
+    "B"
+   ]
+  },
+  {
+   "n": "morlund",
+   "t": "Morlund",
+   "cls": "name",
+   "src": [
+    "A:broad",
+    "B"
+   ]
+  },
+  {
+   "n": "mother",
+   "t": "Mother",
+   "cls": "common",
+   "src": [
+    "A:tracked"
+   ]
+  },
+  {
+   "n": "mothers",
+   "t": "Mother's",
+   "cls": "common",
+   "src": [
+    "A:tracked",
+    "A:broad"
+   ]
+  },
+  {
+   "n": "mothersheart/watch/rise",
+   "t": "Mother's Heart/Watch/Rise",
+   "cls": "line",
+   "src": [
+    "A:tracked"
+   ]
+  },
+  {
+   "n": "muscle",
+   "t": "Muscle",
+   "cls": "common",
+   "src": [
+    "A:tracked"
+   ]
+  },
+  {
+   "n": "nakoa",
+   "t": "Nakoa",
+   "cls": "name",
+   "src": [
+    "B"
+   ]
+  },
+  {
+   "n": "nemesis",
+   "t": "NEMESIS",
+   "cls": "name",
+   "src": [
+    "A:broad"
+   ]
+  },
+  {
+   "n": "nil",
+   "t": "Nil",
+   "cls": "name",
+   "src": [
+    "A:broad",
+    "B"
+   ]
+  },
+  {
+   "n": "nora",
+   "t": "Nora",
+   "cls": "name",
+   "src": [
+    "A:tracked",
+    "A:broad",
+    "B"
+   ]
+  },
+  {
+   "n": "of",
+   "t": "of",
+   "cls": "short",
+   "src": [
+    "A:broad"
+   ]
+  },
+  {
+   "n": "old",
+   "t": "Old",
+   "cls": "common",
+   "src": [
+    "A:broad"
+   ]
+  },
+  {
+   "n": "olin",
+   "t": "Olin",
+   "cls": "name",
+   "src": [
+    "B"
+   ]
+  },
+  {
+   "n": "ones",
+   "t": "Ones",
+   "cls": "common",
+   "src": [
+    "A:broad"
+   ]
+  },
+  {
+   "n": "oseram",
+   "t": "Oseram",
+   "cls": "name",
+   "src": [
+    "A:tracked",
+    "A:broad",
+    "B"
+   ]
+  },
+  {
+   "n": "ourea",
+   "t": "Ourea",
+   "cls": "name",
+   "src": [
+    "A:broad",
+    "B"
+   ]
+  },
+  {
+   "n": "outcast",
+   "t": "Outcast",
+   "cls": "name",
+   "src": [
+    "A:tracked",
+    "A:broad"
+   ]
+  },
+  {
+   "n": "overdraw",
+   "t": "Overdraw",
+   "cls": "name",
+   "src": [
+    "A:broad"
+   ]
+  },
+  {
+   "n": "override",
+   "t": "Override",
+   "cls": "name",
+   "src": [
+    "A:tracked",
+    "A:broad",
+    "B"
+   ]
+  },
+  {
+   "n": "pack",
+   "t": "Pack",
+   "cls": "common",
+   "src": [
+    "A:broad"
+   ]
+  },
+  {
+   "n": "petra",
+   "t": "Petra",
+   "cls": "name",
+   "src": [
+    "A:broad",
+    "B"
+   ]
+  },
+  {
+   "n": "pit",
+   "t": "Pit",
+   "cls": "common",
+   "src": [
+    "A:broad"
+   ]
+  },
+  {
+   "n": "pitchcliff",
+   "t": "Pitchcliff",
+   "cls": "name",
+   "src": [
+    "A:broad",
+    "B"
+   ]
+  },
+  {
+   "n": "plainsong",
+   "t": "Plainsong",
+   "cls": "name",
+   "src": [
+    "A:broad",
+    "B"
+   ]
+  },
+  {
+   "n": "plasma",
+   "t": "Plasma",
+   "cls": "name",
+   "src": [
+    "A:broad"
+   ]
+  },
+  {
+   "n": "playstation",
+   "t": "PlayStation",
+   "cls": "name",
+   "src": [
+    "B"
+   ]
+  },
+  {
+   "n": "plowhorn",
+   "t": "Plowhorn",
+   "cls": "name",
+   "src": [
+    "A:broad",
+    "B"
+   ]
+  },
+  {
+   "n": "point",
+   "t": "Point",
+   "cls": "common",
+   "src": [
+    "A:broad"
+   ]
+  },
+  {
+   "n": "poseidon",
+   "t": "POSEIDON",
+   "cls": "name",
+   "src": [
+    "A:broad",
+    "B"
+   ]
+  },
+  {
+   "n": "pouch",
+   "t": "Pouch",
+   "cls": "common",
+   "src": [
+    "A:tracked",
+    "A:broad"
+   ]
+  },
+  {
+   "n": "project",
+   "t": "project",
+   "cls": "common",
+   "src": [
+    "A:tracked"
+   ]
+  },
+  {
+   "n": "proving",
+   "t": "Proving",
+   "cls": "name",
+   "src": [
+    "A:tracked",
+    "A:broad",
+    "B"
+   ]
+  },
+  {
+   "n": "prowler",
+   "t": "Prowler",
+   "cls": "name",
+   "src": [
+    "B"
+   ]
+  },
+  {
+   "n": "pullcaster",
+   "t": "Pullcaster",
+   "cls": "name",
+   "src": [
+    "A:broad",
+    "B"
+   ]
+  },
+  {
+   "n": "purgewater",
+   "t": "Purgewater",
+   "cls": "name",
+   "src": [
+    "A:broad",
+    "B"
+   ]
+  },
+  {
+   "n": "quen",
+   "t": "Quen",
+   "cls": "name",
+   "src": [
+    "A:broad",
+    "B"
+   ]
+  },
+  {
+   "n": "raintrace",
+   "t": "Raintrace",
+   "cls": "name",
+   "src": [
+    "B"
+   ]
+  },
+  {
+   "n": "rattler",
+   "t": "Rattler",
+   "cls": "name",
+   "src": [
+    "B"
+   ]
+  },
+  {
+   "n": "ravager",
+   "t": "Ravager",
+   "cls": "name",
+   "src": [
+    "A:tracked",
+    "A:broad",
+    "B"
+   ]
+  },
+  {
+   "n": "rebel",
+   "t": "Rebel",
+   "cls": "common",
+   "src": [
+    "A:broad"
+   ]
+  },
+  {
+   "n": "redeye",
+   "t": "Redeye",
+   "cls": "name",
+   "src": [
+    "A:tracked",
+    "A:broad",
+    "B"
+   ]
+  },
+  {
+   "n": "regalla",
+   "t": "Regalla",
+   "cls": "name",
+   "src": [
+    "A:broad",
+    "B"
+   ]
+  },
+  {
+   "n": "relic",
+   "t": "Relic",
+   "cls": "common",
+   "src": [
+    "A:broad"
+   ]
+  },
+  {
+   "n": "resonator",
+   "t": "Resonator",
+   "cls": "name",
+   "src": [
+    "B"
+   ]
+  },
+  {
+   "n": "ridge",
+   "t": "Ridge",
+   "cls": "common",
+   "src": [
+    "A:tracked",
+    "A:broad"
+   ]
+  },
+  {
+   "n": "ridgewood",
+   "t": "Ridge-wood",
+   "cls": "name",
+   "src": [
+    "A:tracked",
+    "A:broad",
+    "B"
+   ]
+  },
+  {
+   "n": "rise",
+   "t": "Rise",
+   "cls": "common",
+   "src": [
+    "A:tracked"
+   ]
+  },
+  {
+   "n": "rockbreaker",
+   "t": "Rockbreaker",
+   "cls": "name",
+   "src": [
+    "A:tracked",
+    "A:broad",
+    "B"
+   ]
+  },
+  {
+   "n": "rollerback",
+   "t": "Rollerback",
+   "cls": "name",
+   "src": [
+    "A:broad",
+    "B",
+    "plan"
+   ]
+  },
+  {
+   "n": "ropecaster",
+   "t": "Ropecaster",
+   "cls": "name",
+   "src": [
+    "A:tracked",
+    "A:broad",
+    "B"
+   ]
+  },
+  {
+   "n": "ropes",
+   "t": "Ropes",
+   "cls": "name",
+   "src": [
+    "A:tracked"
+   ]
+  },
+  {
+   "n": "ropes/tiedown",
+   "t": "Ropes/tie-down",
+   "cls": "line",
+   "src": [
+    "A:tracked"
+   ]
+  },
+  {
+   "n": "rost",
+   "t": "Rost",
+   "cls": "name",
+   "src": [
+    "A:tracked",
+    "A:broad",
+    "B"
+   ]
+  },
+  {
+   "n": "ruin",
+   "t": "Ruin",
+   "cls": "common",
+   "src": [
+    "A:broad"
+   ]
+  },
+  {
+   "n": "run",
+   "t": "Run",
+   "cls": "common",
+   "src": [
+    "A:broad"
+   ]
+  },
+  {
+   "n": "sacred",
+   "t": "Sacred",
+   "cls": "common",
+   "src": [
+    "A:broad"
+   ]
+  },
+  {
+   "n": "saltbite",
+   "t": "Saltbite",
+   "cls": "name",
+   "src": [
+    "B",
+    "plan"
+   ]
+  },
+  {
+   "n": "salvage",
+   "t": "Salvage",
+   "cls": "common",
+   "src": [
+    "A:broad"
+   ]
+  },
+  {
+   "n": "sawtooth",
+   "t": "Sawtooth",
+   "cls": "name",
+   "src": [
+    "A:tracked",
+    "A:broad",
+    "B"
+   ]
+  },
+  {
+   "n": "scalding",
+   "t": "Scalding",
+   "cls": "common",
+   "src": [
+    "A:broad"
+   ]
+  },
+  {
+   "n": "scorcher",
+   "t": "Scorcher",
+   "cls": "name",
+   "src": [
+    "A:broad",
+    "B"
+   ]
+  },
+  {
+   "n": "scrapper",
+   "t": "Scrapper",
+   "cls": "name",
+   "src": [
+    "A:tracked",
+    "A:broad",
+    "B"
+   ]
+  },
+  {
+   "n": "scrounger",
+   "t": "Scrounger",
+   "cls": "name",
+   "src": [
+    "A:broad",
+    "B"
+   ]
+  },
+  {
+   "n": "seeker",
+   "t": "Seeker",
+   "cls": "name",
+   "src": [
+    "A:tracked",
+    "A:broad",
+    "B"
+   ]
+  },
+  {
+   "n": "seyka",
+   "t": "Seyka",
+   "cls": "name",
+   "src": [
+    "A:broad",
+    "B"
+   ]
+  },
+  {
+   "n": "shadow",
+   "t": "Shadow",
+   "cls": "common",
+   "src": [
+    "A:broad"
+   ]
+  },
+  {
+   "n": "shards",
+   "t": "Shards",
+   "cls": "name",
+   "src": [
+    "A:tracked",
+    "A:broad",
+    "B",
+    "plan"
+   ]
+  },
+  {
+   "n": "sharpshot",
+   "t": "Sharpshot",
+   "cls": "name",
+   "src": [
+    "A:tracked",
+    "A:broad",
+    "B"
+   ]
+  },
+  {
+   "n": "shell",
+   "t": "Shell",
+   "cls": "common",
+   "src": [
+    "A:tracked",
+    "A:broad"
+   ]
+  },
+  {
+   "n": "shellsnapper",
+   "t": "Shellsnapper",
+   "cls": "name",
+   "src": [
+    "A:broad",
+    "B"
+   ]
+  },
+  {
+   "n": "shellwalker",
+   "t": "Shell-Walker",
+   "cls": "name",
+   "src": [
+    "A:tracked",
+    "A:broad",
+    "B"
+   ]
+  },
+  {
+   "n": "shield",
+   "t": "Shield",
+   "cls": "common",
+   "src": [
+    "A:broad"
+   ]
+  },
+  {
+   "n": "shieldweaver",
+   "t": "Shield-Weaver",
+   "cls": "name",
+   "src": [
+    "A:broad"
+   ]
+  },
+  {
+   "n": "shieldwing",
+   "t": "Shieldwing",
+   "cls": "name",
+   "src": [
+    "A:broad",
+    "B"
+   ]
+  },
+  {
+   "n": "shock",
+   "t": "Shock",
+   "cls": "name",
+   "src": [
+    "A:broad"
+   ]
+  },
+  {
+   "n": "shredder",
+   "t": "Shredder",
+   "cls": "common",
+   "src": [
+    "A:broad"
+   ]
+  },
+  {
+   "n": "silent",
+   "t": "Silent",
+   "cls": "common",
+   "src": [
+    "A:tracked",
+    "A:broad"
+   ]
+  },
+  {
+   "n": "silentstrike",
+   "t": "Silent Strike",
+   "cls": "line",
+   "src": [
+    "A:tracked"
+   ]
+  },
+  {
+   "n": "sketchfab",
+   "t": "Sketchfab",
+   "cls": "name",
+   "src": [
+    "A:tracked"
+   ]
+  },
+  {
+   "n": "sky",
+   "t": "Sky",
+   "cls": "common",
+   "src": [
+    "A:broad"
+   ]
+  },
+  {
+   "n": "skydrifter",
+   "t": "Skydrifter",
+   "cls": "name",
+   "src": [
+    "A:broad",
+    "B"
+   ]
+  },
+  {
+   "n": "slaughterspine",
+   "t": "Slaughterspine",
+   "cls": "name",
+   "src": [
+    "A:broad",
+    "B"
+   ]
+  },
+  {
+   "n": "sling",
+   "t": "Sling",
+   "cls": "common",
+   "src": [
+    "A:tracked",
+    "A:broad"
+   ]
+  },
+  {
+   "n": "slitherfang",
+   "t": "Slitherfang",
+   "cls": "name",
+   "src": [
+    "A:broad",
+    "B"
+   ]
+  },
+  {
+   "n": "snapmaw",
+   "t": "Snapmaw",
+   "cls": "name",
+   "src": [
+    "A:tracked",
+    "A:broad",
+    "B"
+   ]
+  },
+  {
+   "n": "sobeck",
+   "t": "Sobeck",
+   "cls": "name",
+   "src": [
+    "A:broad",
+    "B"
+   ]
+  },
+  {
+   "n": "sona",
+   "t": "Sona",
+   "cls": "name",
+   "src": [
+    "A:broad",
+    "B"
+   ]
+  },
+  {
+   "n": "sony",
+   "t": "Sony",
+   "cls": "name",
+   "src": [
+    "A:tracked",
+    "B"
+   ]
+  },
+  {
+   "n": "sparker",
+   "t": "Sparker",
+   "cls": "name",
+   "src": [
+    "A:tracked",
+    "A:broad",
+    "B"
+   ]
+  },
+  {
+   "n": "spear",
+   "t": "Spear",
+   "cls": "name",
+   "src": [
+    "A:tracked",
+    "A:broad"
+   ]
+  },
+  {
+   "n": "spear(aloyweapon)",
+   "t": "Spear (Aloy weapon)",
+   "cls": "line",
+   "src": [
+    "A:tracked"
+   ]
+  },
+  {
+   "n": "specter",
+   "t": "Specter",
+   "cls": "name",
+   "src": [
+    "A:broad",
+    "B"
+   ]
+  },
+  {
+   "n": "spectre",
+   "t": "Spectre",
+   "cls": "name",
+   "src": [
+    "A:broad"
+   ]
+  },
+  {
+   "n": "spike",
+   "t": "Spike",
+   "cls": "common",
+   "src": [
+    "A:broad"
+   ]
+  },
+  {
+   "n": "spikesnout",
+   "t": "Spikesnout",
+   "cls": "name",
+   "src": [
+    "A:broad",
+    "B"
+   ]
+  },
+  {
+   "n": "spinner",
+   "t": "Spinner",
+   "cls": "common",
+   "src": [
+    "A:broad"
+   ]
+  },
+  {
+   "n": "spire",
+   "t": "Spire",
+   "cls": "common",
+   "src": [
+    "A:broad"
+   ]
+  },
+  {
+   "n": "spires",
+   "t": "Spires",
+   "cls": "common",
+   "src": [
+    "A:broad"
+   ]
+  },
+  {
+   "n": "stalker",
+   "t": "Stalker",
+   "cls": "name",
+   "src": [
+    "A:tracked",
+    "A:broad",
+    "B",
+    "plan"
+   ]
+  },
+  {
+   "n": "stillsands",
+   "t": "Stillsands",
+   "cls": "name",
+   "src": [
+    "A:broad",
+    "B"
+   ]
+  },
+  {
+   "n": "stingspawn",
+   "t": "Stingspawn",
+   "cls": "name",
+   "src": [
+    "A:broad",
+    "B"
+   ]
+  },
+  {
+   "n": "stone",
+   "t": "Stone",
+   "cls": "common",
+   "src": [
+    "A:broad"
+   ]
+  },
+  {
+   "n": "stormbird",
+   "t": "Stormbird",
+   "cls": "name",
+   "src": [
+    "A:tracked",
+    "A:broad",
+    "B"
+   ]
+  },
+  {
+   "n": "stormslinger",
+   "t": "Stormslinger",
+   "cls": "name",
+   "src": [
+    "B"
+   ]
+  },
+  {
+   "n": "strider",
+   "t": "Strider",
+   "cls": "name",
+   "src": [
+    "A:tracked",
+    "A:broad",
+    "B"
+   ]
+  },
+  {
+   "n": "strike",
+   "t": "Strike",
+   "cls": "common",
+   "src": [
+    "A:tracked",
+    "A:broad"
+   ]
+  },
+  {
+   "n": "strikes",
+   "t": "Strikes",
+   "cls": "common",
+   "src": [
+    "A:broad"
+   ]
+  },
+  {
+   "n": "sunfall",
+   "t": "Sunfall",
+   "cls": "name",
+   "src": [
+    "A:broad",
+    "B"
+   ]
+  },
+  {
+   "n": "sunhawk",
+   "t": "Sunhawk",
+   "cls": "name",
+   "src": [
+    "A:broad"
+   ]
+  },
+  {
+   "n": "sunking",
+   "t": "Sun-King",
+   "cls": "name",
+   "src": [
+    "A:tracked",
+    "B"
+   ]
+  },
+  {
+   "n": "sunpriest",
+   "t": "Sun-Priest",
+   "cls": "name",
+   "src": [
+    "B"
+   ]
+  },
+  {
+   "n": "sunstone",
+   "t": "Sunstone",
+   "cls": "name",
+   "src": [
+    "A:broad",
+    "B"
+   ]
+  },
+  {
+   "n": "sunwing",
+   "t": "Sunwing",
+   "cls": "name",
+   "src": [
+    "A:tracked",
+    "A:broad",
+    "B"
+   ]
+  },
+  {
+   "n": "surge",
+   "t": "Surge",
+   "cls": "common",
+   "src": [
+    "A:broad"
+   ]
+  },
+  {
+   "n": "sylens",
+   "t": "Sylens",
+   "cls": "name",
+   "src": [
+    "A:tracked",
+    "A:broad",
+    "B"
+   ]
+  },
+  {
+   "n": "talanah",
+   "t": "Talanah",
+   "cls": "name",
+   "src": [
+    "A:broad",
+    "B"
+   ]
+  },
+  {
+   "n": "tallneck",
+   "t": "Tallneck",
+   "cls": "name",
+   "src": [
+    "A:tracked",
+    "A:broad",
+    "B"
+   ]
+  },
+  {
+   "n": "tear",
+   "t": "Tear",
+   "cls": "name",
+   "src": [
+    "plan"
+   ]
+  },
+  {
+   "n": "tearblast",
+   "t": "Tearblast",
+   "cls": "name",
+   "src": [
+    "A:tracked",
+    "A:broad",
+    "B"
+   ]
+  },
+  {
+   "n": "teb",
+   "t": "Teb",
+   "cls": "name",
+   "src": [
+    "A:tracked",
+    "A:broad",
+    "B"
+   ]
+  },
+  {
+   "n": "ted",
+   "t": "Ted",
+   "cls": "name",
+   "src": [
+    "A:broad"
+   ]
+  },
+  {
+   "n": "teersa",
+   "t": "Teersa",
+   "cls": "name",
+   "src": [
+    "A:broad",
+    "B"
+   ]
+  },
+  {
+   "n": "tenakth",
+   "t": "Tenakth",
+   "cls": "name",
+   "src": [
+    "A:tracked",
+    "A:broad",
+    "B"
+   ]
+  },
+  {
+   "n": "thornmarsh",
+   "t": "Thornmarsh",
+   "cls": "name",
+   "src": [
+    "A:broad",
+    "B"
+   ]
+  },
+  {
+   "n": "thrower",
+   "t": "Thrower",
+   "cls": "common",
+   "src": [
+    "A:broad"
+   ]
+  },
+  {
+   "n": "thrush",
+   "t": "Thrush",
+   "cls": "common",
+   "src": [
+    "A:broad"
+   ]
+  },
+  {
+   "n": "thunderjaw",
+   "t": "Thunderjaw",
+   "cls": "name",
+   "src": [
+    "A:tracked",
+    "A:broad",
+    "B"
+   ]
+  },
+  {
+   "n": "tideripper",
+   "t": "Tideripper",
+   "cls": "name",
+   "src": [
+    "A:broad",
+    "B"
+   ]
+  },
+  {
+   "n": "tilda",
+   "t": "Tilda",
+   "cls": "name",
+   "src": [
+    "A:broad",
+    "B"
+   ]
+  },
+  {
+   "n": "tinker",
+   "t": "Tinker",
+   "cls": "name",
+   "src": [
+    "B"
+   ]
+  },
+  {
+   "n": "title",
+   "t": "title",
+   "cls": "common",
+   "src": [
+    "A:tracked"
+   ]
+  },
+  {
+   "n": "trampler",
+   "t": "Trampler",
+   "cls": "name",
+   "src": [
+    "A:tracked",
+    "A:broad",
+    "B"
+   ]
+  },
+  {
+   "n": "travis",
+   "t": "Travis",
+   "cls": "name",
+   "src": [
+    "A:broad"
+   ]
+  },
+  {
+   "n": "tremortusk",
+   "t": "Tremortusk",
+   "cls": "name",
+   "src": [
+    "A:tracked",
+    "A:broad",
+    "B"
+   ]
+  },
+  {
+   "n": "tripcaster",
+   "t": "Tripcaster",
+   "cls": "name",
+   "src": [
+    "A:tracked",
+    "A:broad",
+    "B"
+   ]
+  },
+  {
+   "n": "ulvund",
+   "t": "Ulvund",
+   "cls": "name",
+   "src": [
+    "A:broad",
+    "B"
+   ]
+  },
+  {
+   "n": "uncharted",
+   "t": "Uncharted",
+   "cls": "name",
+   "src": [
+    "B"
+   ]
+  },
+  {
+   "n": "utaru",
+   "t": "Utaru",
+   "cls": "name",
+   "src": [
+    "A:tracked",
+    "A:broad",
+    "B"
+   ]
+  },
+  {
+   "n": "uthid",
+   "t": "Uthid",
+   "cls": "name",
+   "src": [
+    "A:broad"
+   ]
+  },
+  {
+   "n": "vala",
+   "t": "Vala",
+   "cls": "name",
+   "src": [
+    "B"
+   ]
+  },
+  {
+   "n": "valor",
+   "t": "Valor",
+   "cls": "common",
+   "src": [
+    "A:broad"
+   ]
+  },
+  {
+   "n": "vanasha",
+   "t": "Vanasha",
+   "cls": "name",
+   "src": [
+    "A:broad",
+    "B"
+   ]
+  },
+  {
+   "n": "varl",
+   "t": "Varl",
+   "cls": "name",
+   "src": [
+    "A:tracked",
+    "A:broad",
+    "B"
+   ]
+  },
+  {
+   "n": "vista",
+   "t": "Vista",
+   "cls": "common",
+   "src": [
+    "A:broad"
+   ]
+  },
+  {
+   "n": "vuadis",
+   "t": "Vuadis",
+   "cls": "name",
+   "src": [
+    "A:broad"
+   ]
+  },
+  {
+   "n": "walker",
+   "t": "Walker",
+   "cls": "common",
+   "src": [
+    "A:tracked",
+    "A:broad"
+   ]
+  },
+  {
+   "n": "war",
+   "t": "War",
+   "cls": "common",
+   "src": [
+    "A:broad"
+   ]
+  },
+  {
+   "n": "warbow",
+   "t": "War Bow",
+   "cls": "line",
+   "src": [
+    "A:tracked"
+   ]
+  },
+  {
+   "n": "warrior",
+   "t": "Warrior",
+   "cls": "common",
+   "src": [
+    "A:broad"
+   ]
+  },
+  {
+   "n": "watch",
+   "t": "Watch",
+   "cls": "common",
+   "src": [
+    "A:tracked"
+   ]
+  },
+  {
+   "n": "watcher",
+   "t": "Watcher",
+   "cls": "name",
+   "src": [
+    "A:tracked",
+    "A:broad",
+    "B",
+    "plan"
+   ]
+  },
+  {
+   "n": "waterwing",
+   "t": "Waterwing",
+   "cls": "name",
+   "src": [
+    "A:broad",
+    "B"
+   ]
+  },
+  {
+   "n": "weapon",
+   "t": "weapon",
+   "cls": "common",
+   "src": [
+    "A:tracked"
+   ]
+  },
+  {
+   "n": "weaponwheel",
+   "t": "Weapon wheel",
+   "cls": "line",
+   "src": [
+    "A:tracked"
+   ]
+  },
+  {
+   "n": "weaver",
+   "t": "Weaver",
+   "cls": "common",
+   "src": [
+    "A:broad"
+   ]
+  },
+  {
+   "n": "werak",
+   "t": "Werak",
+   "cls": "name",
+   "src": [
+    "B"
+   ]
+  },
+  {
+   "n": "west",
+   "t": "West",
+   "cls": "common",
+   "src": [
+    "A:tracked"
+   ]
+  },
+  {
+   "n": "wheel",
+   "t": "wheel",
+   "cls": "common",
+   "src": [
+    "A:tracked"
+   ]
+  },
+  {
+   "n": "widemaw",
+   "t": "Widemaw",
+   "cls": "name",
+   "src": [
+    "A:broad",
+    "B"
+   ]
+  },
+  {
+   "n": "wood",
+   "t": "wood",
+   "cls": "common",
+   "src": [
+    "A:tracked",
+    "A:broad"
+   ]
+  },
+  {
+   "n": "world",
+   "t": "World",
+   "cls": "common",
+   "src": [
+    "A:broad"
+   ]
+  },
+  {
+   "n": "yarra",
+   "t": "Yarra",
+   "cls": "name",
+   "src": [
+    "A:broad",
+    "B"
+   ]
+  },
+  {
+   "n": "zenith",
+   "t": "Zenith",
+   "cls": "name",
+   "src": [
+    "A:broad",
+    "B"
+   ]
+  },
+  {
+   "n": "zeniths",
+   "t": "Zeniths",
+   "cls": "name",
+   "src": [
+    "A:broad",
+    "B"
+   ]
+  },
+  {
+   "n": "zero",
+   "t": "Zero",
+   "cls": "common",
+   "src": [
+    "A:tracked"
+   ]
+  },
+  {
+   "n": "zerodawn",
+   "t": "Zero Dawn",
+   "cls": "line",
+   "src": [
+    "A:tracked"
+   ]
+  },
+  {
+   "n": "zo",
+   "t": "Zo",
+   "cls": "short",
+   "src": [
+    "A:broad"
+   ]
+  }
+ ],
+ "phrases": [
+  {
+   "words": [
+    "barren",
+    "light"
+   ],
+   "t": "Barren Light",
+   "src": [
+    "B"
+   ]
+  },
+  {
+   "words": [
+    "blast",
+    "sling"
+   ],
+   "t": "Blast Sling",
+   "src": [
+    "A:tracked",
+    "B"
+   ]
+  },
+  {
+   "words": [
+    "bleeding",
+    "mark"
+   ],
+   "t": "Bleeding Mark",
+   "src": [
+    "B"
+   ]
+  },
+  {
+   "words": [
+    "braided",
+    "wire"
+   ],
+   "t": "Braided Wire",
+   "src": [
+    "B"
+   ]
+  },
+  {
+   "words": [
+    "burning",
+    "shores"
+   ],
+   "t": "Burning Shores",
+   "src": [
+    "B"
+   ]
+  },
+  {
+   "words": [
+    "call",
+    "of",
+    "the",
+    "mountain"
+   ],
+   "t": "Call of the Mountain",
+   "src": [
+    "B",
+    "plan"
+   ]
+  },
+  {
+   "words": [
+    "clan",
+    "lands"
+   ],
+   "t": "Clan Lands",
+   "src": [
+    "B"
+   ]
+  },
+  {
+   "words": [
+    "critical",
+    "hit"
+   ],
+   "t": "Critical Hit",
+   "src": [
+    "A:tracked"
+   ]
+  },
+  {
+   "words": [
+    "critical",
+    "strike"
+   ],
+   "t": "Critical Strike",
+   "src": [
+    "A:tracked",
+    "B"
+   ]
+  },
+  {
+   "words": [
+    "devils",
+    "thirst"
+   ],
+   "t": "Devil's Thirst",
+   "src": [
+    "B"
+   ]
+  },
+  {
+   "words": [
+    "disc",
+    "launcher"
+   ],
+   "t": "Disc Launcher",
+   "src": [
+    "A:tracked"
+   ]
+  },
+  {
+   "words": [
+    "diving",
+    "mask"
+   ],
+   "t": "Diving Mask",
+   "src": [
+    "B"
+   ]
+  },
+  {
+   "words": [
+    "epic",
+    "games"
+   ],
+   "t": "Epic Games",
+   "src": [
+    "A:tracked"
+   ]
+  },
+  {
+   "words": [
+    "falls",
+    "edge"
+   ],
+   "t": "Fall's Edge",
+   "src": [
+    "B"
+   ]
+  },
+  {
+   "words": [
+    "far",
+    "zenith"
+   ],
+   "t": "Far Zenith",
+   "src": [
+    "B"
+   ]
+  },
+  {
+   "words": [
+    "faro",
+    "plague"
+   ],
+   "t": "Faro Plague",
+   "src": [
+    "B"
+   ]
+  },
+  {
+   "words": [
+    "forbidden",
+    "west"
+   ],
+   "t": "Forbidden West",
+   "src": [
+    "A:tracked",
+    "B"
+   ]
+  },
+  {
+   "words": [
+    "free",
+    "heart"
+   ],
+   "t": "Free Heart",
+   "src": [
+    "B"
+   ]
+  },
+  {
+   "words": [
+    "frozen",
+    "wilds"
+   ],
+   "t": "Frozen Wilds",
+   "src": [
+    "B"
+   ]
+  },
+  {
+   "words": [
+    "heart",
+    "o",
+    "the",
+    "mother"
+   ],
+   "t": "Heart-o-the-Mother",
+   "src": [
+    "B"
+   ]
+  },
+  {
+   "words": [
+    "hidden",
+    "ember"
+   ],
+   "t": "Hidden Ember",
+   "src": [
+    "B"
+   ]
+  },
+  {
+   "words": [
+    "hunter",
+    "bow"
+   ],
+   "t": "Hunter Bow",
+   "src": [
+    "A:tracked",
+    "B"
+   ]
+  },
+  {
+   "words": [
+    "hunters",
+    "lodge"
+   ],
+   "t": "Hunter's Lodge",
+   "src": [
+    "B"
+   ]
+  },
+  {
+   "words": [
+    "hunting",
+    "grounds"
+   ],
+   "t": "Hunting Grounds",
+   "src": [
+    "A:tracked",
+    "B"
+   ]
+  },
+  {
+   "words": [
+    "isle",
+    "of",
+    "spires"
+   ],
+   "t": "Isle of Spires",
+   "src": [
+    "B"
+   ]
+  },
+  {
+   "words": [
+    "legacys",
+    "landfall"
+   ],
+   "t": "Legacy's Landfall",
+   "src": [
+    "B"
+   ]
+  },
+  {
+   "words": [
+    "machine",
+    "core"
+   ],
+   "t": "Machine Core",
+   "src": [
+    "B"
+   ]
+  },
+  {
+   "words": [
+    "machine",
+    "heart"
+   ],
+   "t": "Machine Heart",
+   "src": [
+    "A:tracked"
+   ]
+  },
+  {
+   "words": [
+    "machine",
+    "lens"
+   ],
+   "t": "Machine Lens",
+   "src": [
+    "A:tracked"
+   ]
+  },
+  {
+   "words": [
+    "machine",
+    "muscle"
+   ],
+   "t": "Machine Muscle",
+   "src": [
+    "A:tracked"
+   ]
+  },
+  {
+   "words": [
+    "maw",
+    "of",
+    "the",
+    "arena"
+   ],
+   "t": "Maw of the Arena",
+   "src": [
+    "B"
+   ]
+  },
+  {
+   "words": [
+    "medicine",
+    "pouch"
+   ],
+   "t": "Medicine Pouch",
+   "src": [
+    "A:tracked",
+    "B"
+   ]
+  },
+  {
+   "words": [
+    "metal",
+    "devil"
+   ],
+   "t": "Metal Devil",
+   "src": [
+    "B"
+   ]
+  },
+  {
+   "words": [
+    "metal",
+    "shards"
+   ],
+   "t": "Metal Shards",
+   "src": [
+    "A:tracked",
+    "B"
+   ]
+  },
+  {
+   "words": [
+    "mothers",
+    "crown"
+   ],
+   "t": "Mother's Crown",
+   "src": [
+    "B"
+   ]
+  },
+  {
+   "words": [
+    "mothers",
+    "heart"
+   ],
+   "t": "Mother's Heart",
+   "src": [
+    "A:tracked",
+    "B"
+   ]
+  },
+  {
+   "words": [
+    "mothers",
+    "rise"
+   ],
+   "t": "Mother's Rise",
+   "src": [
+    "A:tracked"
+   ]
+  },
+  {
+   "words": [
+    "mothers",
+    "watch"
+   ],
+   "t": "Mother's Watch",
+   "src": [
+    "A:tracked",
+    "B"
+   ]
+  },
+  {
+   "words": [
+    "no",
+    "mans",
+    "land"
+   ],
+   "t": "No Man's Land",
+   "src": [
+    "B"
+   ]
+  },
+  {
+   "words": [
+    "old",
+    "ones"
+   ],
+   "t": "Old Ones",
+   "src": [
+    "B"
+   ]
+  },
+  {
+   "words": [
+    "sac",
+    "webbing"
+   ],
+   "t": "Sac Webbing",
+   "src": [
+    "B"
+   ]
+  },
+  {
+   "words": [
+    "sacred",
+    "lands"
+   ],
+   "t": "Sacred Lands",
+   "src": [
+    "B"
+   ]
+  },
+  {
+   "words": [
+    "scalding",
+    "spear"
+   ],
+   "t": "Scalding Spear",
+   "src": [
+    "B"
+   ]
+  },
+  {
+   "words": [
+    "shadow",
+    "carja"
+   ],
+   "t": "Shadow Carja",
+   "src": [
+    "B"
+   ]
+  },
+  {
+   "words": [
+    "shredder",
+    "gauntlet"
+   ],
+   "t": "Shredder Gauntlet",
+   "src": [
+    "B"
+   ]
+  },
+  {
+   "words": [
+    "silent",
+    "strike"
+   ],
+   "t": "Silent Strike",
+   "src": [
+    "A:tracked",
+    "B"
+   ]
+  },
+  {
+   "words": [
+    "spike",
+    "thrower"
+   ],
+   "t": "Spike Thrower",
+   "src": [
+    "B"
+   ]
+  },
+  {
+   "words": [
+    "ted",
+    "faro"
+   ],
+   "t": "Ted Faro",
+   "src": [
+    "B"
+   ]
+  },
+  {
+   "words": [
+    "the",
+    "cut"
+   ],
+   "t": "The Cut",
+   "src": [
+    "B"
+   ]
+  },
+  {
+   "words": [
+    "valor",
+    "surge"
+   ],
+   "t": "Valor Surge",
+   "src": [
+    "B"
+   ]
+  },
+  {
+   "words": [
+    "war",
+    "bow"
+   ],
+   "t": "War Bow",
+   "src": [
+    "A:tracked",
+    "B"
+   ]
+  },
+  {
+   "words": [
+    "warrior",
+    "bow"
+   ],
+   "t": "Warrior Bow",
+   "src": [
+    "B"
+   ]
+  },
+  {
+   "words": [
+    "weapon",
+    "wheel"
+   ],
+   "t": "Weapon wheel",
+   "src": [
+    "A:tracked"
+   ]
+  },
+  {
+   "words": [
+    "zero",
+    "dawn"
+   ],
+   "t": "Zero Dawn",
+   "src": [
+    "A:tracked",
+    "B"
+   ]
+  }
+ ]
+}

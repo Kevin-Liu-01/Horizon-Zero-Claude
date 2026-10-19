@@ -47,6 +47,8 @@ const params = new URLSearchParams(location.search);
  * `engine.stepMode = 'fixed'`. See docs/SPEC.md §4.1.
  */
 const FIXED_DT = 1 / 60;
+/** The loading copy (bible §9.8, §10.1). */
+const LOADING_COPY = 'Reading the benchmarks…';
 const MAX_STEPS = 3;              // 0.05 s ceiling, same as the Round 3 dt clamp
 const MAX_FRAME = 0.05;
 /** Snap near-vsync deltas so a 60 Hz display never beats against the step. */
@@ -96,13 +98,22 @@ class Game {
     ctx.renderer = engine.renderer;
     ctx.input = new Input(engine.renderer.domElement);
 
-    const fill = document.getElementById('load-fill');
+    // Loading (brand, bible §9.8): the lockup's datum rule fills left to right
+    // as progress and the copy stays "Reading the benchmarks…". The step being
+    // loaded is kept on `data-step` for debugging, never rendered.
+    const loadLogo = document.querySelector('#loading .cal-logo');
     const label = document.getElementById('load-label');
-    const setLoad = (p, text) => {
-      if (fill) fill.style.width = `${Math.round(p * 100)}%`;
-      if (label) label.textContent = text;
+    const setLoad = (p, step) => {
+      const k = Math.max(0, Math.min(1, p));
+      if (loadLogo) loadLogo.style.setProperty('--cal-load', k.toFixed(3));
+      if (label) {
+        if (label.textContent !== LOADING_COPY) label.textContent = LOADING_COPY;
+        label.dataset.step = step;
+      }
+      this.loadProgress = k;
     };
-    await ctx.assets.loadAll((p, name) => setLoad(p * 0.86, `Calibrating ${name}…`));
+    this.setLoad = setLoad;   // the V-loading gates freeze the real screen at 40 % / 100 %
+    await ctx.assets.loadAll((p, name) => setLoad(p * 0.86, `asset:${name}`));
     // Round 5 human-pipeline proof (`?poc=human`): swaps the protagonist body
     // for the CC0 UBC heroine before the Player is built. Dev-only, never
     // bundled (docs/research/round5-pipeline-humans.md); no flag, no change.
@@ -131,9 +142,9 @@ class Game {
 
     // perf-tech-10 — compile every program behind the loading bar so the first
     // arrow, the first Focus pulse and the first Thunderjaw do not stall.
-    setLoad(0.93, 'Compiling shaders…');
+    setLoad(0.93, 'shaders');
     const warm = await engine.warmUp(ctx.scene, ctx.camera);
-    setLoad(1, `Ready — ${warm.programs} programs in ${warm.ms} ms`);
+    setLoad(1, `ready:${warm.programs} programs in ${warm.ms} ms`);
 
     // Automation harness: always available, so F3/console debugging works in
     // a normal session too.
@@ -404,6 +415,6 @@ if (POC !== 'biome') new Game().boot().catch((err) => {
   const label = document.getElementById('load-label');
   if (label) {
     label.textContent = `BOOT FAILED — ${err.message}`;
-    label.style.color = '#e04f3f';
+    label.style.color = '#D2452E';
   }
 });
