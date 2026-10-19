@@ -1,6 +1,8 @@
 import * as THREE from 'three';
 import { clone as skeletonClone } from 'three/examples/jsm/utils/SkeletonUtils.js';
 import { PlayerAnimator } from './playerAnimator.js';
+import { attachRigProfile } from './anim/rigs/index.js';
+import { installHero } from '../hero/index.js';
 import { installSpatial } from '../core/collision.js';
 import { REST } from '../world/island/sites.js';
 import { PLAY_RADIUS, EXTENT } from '../world/island/extent.js';
@@ -868,6 +870,9 @@ export class Player {
 
     // --- model
     const src = ctx.assets.models.hero;
+    // Round 5: the body's rig profile (Brea: UBC) rides on the source root, so
+    // the clone, the ClipLibrary bake and the animator all read the same one
+    attachRigProfile(src.root);
     this.model = skeletonClone(src.root);
     this.model.name = 'player';
     ctx.scene.add(this.model);
@@ -1137,6 +1142,8 @@ export class Player {
     this._candZ = 1;
     this._latchT = 0;
 
+    /** Brea's parts (outfit, stow kit) and the published `player.hero` surface. */
+    this.hero = installHero(this);
     this.animator = new PlayerAnimator(ctx, this.model);
 
     ctx.input.onDown('Space', () => this.jump());
@@ -1190,7 +1197,13 @@ export class Player {
           c = m.clone(); seen.set(m, c);
           const u = { value: 1 };
           c.userData.fadeU = u;
+          // a part material may carry its own vertex stage (the stow kit's piece
+          // mask, src/hero/stowkit.js): the fade clone composes it, and keys
+          // its program by it, so the mask survives the dither
+          const hook = m.userData?.vertexHook || null;
+          const key = m.userData?.cacheKey ? `hero-fade-dither|${m.userData.cacheKey}` : 'hero-fade-dither';
           c.onBeforeCompile = (shader) => {
+            if (hook) hook(shader);
             shader.uniforms.uFadeK = u;
             shader.fragmentShader = shader.fragmentShader.replace('void main() {', `
 uniform float uFadeK;
@@ -1204,7 +1217,7 @@ void main() {
           // so without this the dithered program could be handed to an
           // identically-parameterised material elsewhere in the scene (which
           // has no uFadeK to bind) — or she could be handed theirs.
-          c.customProgramCacheKey = () => 'aloy-fade-dither';
+          c.customProgramCacheKey = () => key;
           c.needsUpdate = true;
           this._mats.push({ mat: c, u });
         }
@@ -1216,6 +1229,35 @@ void main() {
       }
       if (changed) o.material = Array.isArray(o.material) ? out : out[0];
     });
+  }
+
+  /**
+   * Release the fade clones of `meshes`' materials (a part leaving her, e.g. an
+   * outfit swapped out): a clone is disposed and forgotten once no mesh still
+   * on her uses it. Part of the hero parts' dispose path (src/hero/parts.js).
+   */
+  releaseMaterialsOf(meshes) {
+    if (!this._matMap) return 0;
+    const live = new Set();
+    this.model.traverse((o) => {
+      if (!o.isMesh) return;
+      for (const m of Array.isArray(o.material) ? o.material : [o.material]) if (m) live.add(m);
+    });
+    let n = 0;
+    for (const mesh of meshes) {
+      for (const mat of Array.isArray(mesh.material) ? mesh.material : [mesh.material]) {
+        if (!mat || live.has(mat)) continue;
+        for (const [srcMat, clone] of this._matMap) {
+          if (clone !== mat) continue;
+          this._matMap.delete(srcMat);
+          const i = this._mats.findIndex((e) => e.mat === clone);
+          if (i >= 0) this._mats.splice(i, 1);
+          clone.dispose();
+          n++;
+        }
+      }
+    }
+    return n;
   }
 
   /**
@@ -1569,6 +1611,7 @@ void main() {
 
     if (ctx.state !== 'playing' && !ctx.params.has('shot')) {
       this.animator.update(dt, t);
+      this.hero?.update();
       return;
     }
 
@@ -1925,6 +1968,7 @@ void main() {
 
     this._updateCamera(realDt, t);
     this.animator.update(dt, t);
+    this.hero?.update();
   }
 
   /**
@@ -2889,7 +2933,11 @@ void main() {
             if (m && m[2] && !byName[m[1]]) byName[m[1]] = o;
           });
           const occ = [];
-          for (const [a, b, r, o] of ORBIT_CAPS) {
+          // Round 5: a body's own capsule list rides on its rig profile (UBC
+          // names its terminators `*_04_leaf_*` / `ball_leaf_*` and its head
+          // `Head`; the Round-4 list silently lost those capsules on it)
+          const prof = this.model.userData?.rigProfile;
+          for (const [a, b, r, o] of (prof?.orbitCaps || ORBIT_CAPS)) {
             if (!byName[a] || !byName[b]) continue;
             if (o) occ.push(caps.length);
             caps.push([byName[a], byName[b], r]);
@@ -2901,9 +2949,11 @@ void main() {
            * which is where a decimated vertex proxy had no sample and the lens
            * met it at 0.12 m; a segment's capsule follows the panel wherever
            * the simulation throws it. */
+          const clothRe = prof?.orbitChains?.cloth ? new RegExp(prof.orbitChains.cloth) : ORBIT_CLOTH;
+          const hairRe = prof?.orbitChains?.hair ? new RegExp(prof.orbitChains.hair) : ORBIT_HAIR;
           this.model.traverse((o) => {
             if (!o.isBone) return;
-            const r = ORBIT_CLOTH.test(o.name) ? ORBIT_CLOTH_R : ORBIT_HAIR.test(o.name) ? ORBIT_HAIR_R : 0;
+            const r = clothRe.test(o.name) ? ORBIT_CLOTH_R : hairRe.test(o.name) ? ORBIT_HAIR_R : 0;
             if (!r) return;
             for (const c of o.children) if (c.isBone) { caps.push([o, c, r]); break; }
           });

@@ -124,6 +124,17 @@ const _cp1 = new THREE.Vector3();
 const _cp2 = new THREE.Vector3();
 // twist-joint scratch
 const _twQ = new THREE.Quaternion();
+// alidade overlay (E5) scratch: never reallocated
+const _alM = new THREE.Matrix4();
+const _alM2 = new THREE.Matrix4();
+const _alQ = new THREE.Quaternion();
+const _alQ2 = new THREE.Quaternion();
+const _alV = new THREE.Vector3();
+const _alV2 = new THREE.Vector3();
+const _alS = new THREE.Vector3();
+const _alEye = new THREE.Vector3();
+const _alFwd = new THREE.Vector3();
+const _alX = new THREE.Vector3(1, 0, 0);
 const _twA = new THREE.Vector3();
 
 
@@ -416,6 +427,47 @@ export class PlayerAnimator {
       : KEY;
     this.b = {};
     for (const [short, name] of Object.entries(this.KEY)) this.b[short] = makeEntry(name);
+    /* Round 5 (hero-body, E2): the aim/draw constants are body geometry. A
+     * profile's `tune` replaces the Round-4 values (kept below as the defaults
+     * for a body that ships none); `bow` is that body's Lmax solve. */
+    const tn = prof?.tune || null;
+    const tv = (a, d) => (a ? new THREE.Vector3().fromArray(a) : d.clone());
+    this.T = {
+      quiverHip: tv(tn?.quiverHip, QUIVER_HIP), anchorOff: tv(tn?.anchorOff, ANCHOR_OFF),
+      anchorDrop: tn?.anchorDrop ?? ANCHOR_DROP, handAnchorR: tn?.handAnchorR ?? HAND_ANCHOR_R,
+      handAnchorFrom: tn?.handAnchorFrom ?? HAND_ANCHOR_FROM,
+      headOff: tv(tn?.headOff, HEAD_OFF), headR: tv(tn?.headR, HEAD_R), handIn: tn?.handIn ?? HAND_IN,
+      bowArmLock: tn?.bowArmLock ?? BOW_ARM_LOCK,
+      restGrip: tv(tn?.restGrip, new THREE.Vector3(0.14, 1.42, 0.03)), restReach: tn?.restReach ?? 0.42,
+      rayFwd: tn?.rayFwd ?? 0.45, rayH: tn?.rayH ?? 1.43,
+      handBehindNock: tn?.handBehindNock ?? 0.068, looseKick: tn?.looseKick ?? 0.075,
+      bowPole: tv(tn?.bowPole, new THREE.Vector3(0.3, -0.95, 0.12)),
+      eyeR: tn?.eyeR ? new THREE.Vector3().fromArray(tn.eyeR) : null,
+      pitchShare: tn?.pitchShare ?? [0.14, 0.15, 0.13, 0.2, 0.28],
+    };
+    this.bowSolve = prof?.bow || null;
+    /* M10 (E3): the spring-side capsule on the DRAW hand + forearm. */
+    const hc = prof?.handCollider || null;
+    this._handCol = hc ? {
+      a: this.bones[hc.from] || null, b: this.bones[hc.to] || null, c: this.bones[hc.tip] || null,
+      r: hc.r, caps: [
+        { a: new THREE.Vector3(), b: new THREE.Vector3(), r: hc.r },
+        { a: new THREE.Vector3(), b: new THREE.Vector3(), r: hc.r },
+      ], active: false, pushes: 0, minAxis: Infinity,
+    } : null;
+    this._hairChainRoot = prof?.hairChain || null;
+    /* E5: the alidade rides `dyn_alidadeCord_02`; the raise moves that bone so
+     * the brass tube sits at her right eye. Its bind matrix in CHARACTER space
+     * and the tube's bind centre / axis are captured here, at bind. */
+    const cord = this.bones.dyn_alidadeCord_02 || null;
+    const cordEnd = this.bones.dyn_alidadeCord_end || null;
+    this._ali = cord ? {
+      bone: cord,
+      bindChar: new THREE.Matrix4().copy(invModelM).multiply(cord.matrixWorld),
+      c0: cordEnd ? cordEnd.getWorldPosition(new THREE.Vector3()).applyMatrix4(invModelM) : cord.getWorldPosition(new THREE.Vector3()).applyMatrix4(invModelM),
+      w: 0, tw: 0, target: new THREE.Matrix4(), tube: new THREE.Vector3(), eye: new THREE.Vector3(),
+      restPos: cord.position.clone(), restQ: cord.quaternion.clone(),
+    } : null;
 
     // fingers: curl by local Z (rig curls fingers about local +Z on both hands)
     this._fingerL = [];
@@ -581,7 +633,7 @@ export class PlayerAnimator {
     this._gripValid = false;
     // aim diagnostics (written by _aimLayer, read by debugAim()/the gates)
     this._aimDbg = {
-      idealGripDist: 0, reach: 0, slide: 0, nockToAnchor: 0, anchorDrop: 0,
+      idealGripDist: 0, reach: 0, slide: 0, nockToAnchor: 0, anchorDrop: 0, lmax: 0, pull: 0, restZ: 0,
       shoulderX: 0, shoulderZ: 0,
       anchor: new THREE.Vector3(), nock: new THREE.Vector3(),
     };
@@ -950,6 +1002,7 @@ export class PlayerAnimator {
       idealGripDist: +D.idealGripDist.toFixed(4), reach: +D.reach.toFixed(4),
       slide: +D.slide.toFixed(4), nockToAnchor: +D.nockToAnchor.toFixed(4),
       anchorDrop: D.anchorDrop ?? 0,
+      lmax: +D.lmax.toFixed(4), pull: D.pull, restZ: D.restZ,
       anchor: { x: D.anchor.x, y: D.anchor.y, z: D.anchor.z },
       nock: { x: D.nock.x, y: D.nock.y, z: D.nock.z },
       quiverT: this._quiverT, looseT: this._looseT, drawS: this._drawS,
@@ -1044,7 +1097,7 @@ export class PlayerAnimator {
       // "on the cheek, not inside the skull". headClear tests only the two arm
       // SEGMENTS and stayed > 1 while this sat at 0.94.
       handHeadUnit: +handHeadUnit.toFixed(3),
-      handToQuiver: +_sg2.distanceTo(QUIVER_HIP).toFixed(4),
+      handToQuiver: +_sg2.distanceTo(this.T.quiverHip).toFixed(4),
       // --- gate A35-cheek-anchor reads the four numbers below ---
       // interior elbow angle (deg): 180 = locked out, 90 = folded
       elbowDeg: +this._elbowDeg(_sg0, _sg1, _sg2).toFixed(2),
@@ -1101,7 +1154,7 @@ export class PlayerAnimator {
    */
   _faceDepth(pt) {
     _sgD.set(0, 0, 1).applyQuaternion(_hdQ);       // head live forward, char
-    return HEAD_R.z - _sgD.dot(_hp2.subVectors(pt, _hd));
+    return this.T.headR.z - _sgD.dot(_hp2.subVectors(pt, _hd));
   }
 
   /** Clip name + weight of the dominant mixer action (gates: A12-clip-driven). */
@@ -1570,6 +1623,15 @@ export class PlayerAnimator {
     if (this._carryBowW > 0.01) {
       this._bowCarryLayer(this._carryBowW * (1 - aimW) * (1 - dodgeW) * (1 - this._deadW), p, t);
     }
+    /* ============ OVERLAY 4b: the alidade raise (Sighting, E5) ============ */
+    // right hand to the right eye, the brass tube at the eye; not while the
+    // bow is up, the lance is out or she is rolling. Rate 14/s: down in < 0.3 s.
+    if (this._ali) {
+      const want = !!this.ctx.sighting?.on && !p.aiming && !dead && !heavy
+        && !(this.melee?.ok && this.ctx.combat?.melee?.stance && this.ctx.combat.melee.stance !== 'holstered');
+      this._ali.w = damp(this._ali.w, want ? 1 : 0, 14, dt);
+      if (this._ali.w > 0.004) this._alidadeLayer(this._ali.w * (1 - dodgeW) * (1 - this._deadW) * (1 - aimW));
+    }
 
     /* ============ OVERLAY 4b: the spear — carry, draw, swing ============= */
     // `melee.js` owns the state machine and publishes it; this layer owns the
@@ -1618,6 +1680,7 @@ export class PlayerAnimator {
 
     /* ------------------ secondary motion: dyn_ spring chains --------------- */
     this._springs(dt, t, ph, speed, moveW, runW);
+    if (this._ali) this._alidadePlace();
 
     /* --- player-melee: the haft's last clearance check, after the hair sim -- */
     // The guard inside the melee arm solve runs several layers earlier and is
@@ -1732,7 +1795,7 @@ export class PlayerAnimator {
       const k = Math.sin(Math.PI * this._healT) * live * (1 - aimW) * (1 - carryW);
       if (k > 0.01) {
         // right hand dips to the pouch on her left hip, then up to the chest
-        _grip.copy(QUIVER_HIP);
+        _grip.copy(this.T.quiverHip);
         _grip.x = 0.17; _grip.z = -0.02;
         _grip.lerp(_v4.set(0.12, 1.30, 0.16), smoothstep(this._healT, 0.45, 0.95));
         _pole.set(-0.55, -0.85, -0.2);
@@ -2800,9 +2863,14 @@ export class PlayerAnimator {
     this._rotL(b.spine1, Y_AXIS, spineYaw);
     this._rotL(b.spine2, Y_AXIS, spineYaw);
     this._rotL(b.spine3, Y_AXIS, spineYaw);
-    this._rot(b.spine2, X_AXIS, pitch * 0.14 * aimW);
-    this._rot(b.spine3, X_AXIS, pitch * 0.15 * aimW);
-    this._rot(b.spine4, X_AXIS, pitch * 0.13 * aimW);
+    // aim pitch shared down the trunk and up the neck (profile `tune.pitchShare`
+    // = [spine2, spine3, spine4, neck, head]): an archer elevates from the
+    // waist, so the more of it the trunk carries, the less the cheek anchor
+    // swings against the bow shoulder and the flatter Lmax is over pitch
+    const PS = this.T.pitchShare;
+    this._rot(b.spine2, X_AXIS, pitch * PS[0] * aimW);
+    this._rot(b.spine3, X_AXIS, pitch * PS[1] * aimW);
+    this._rot(b.spine4, X_AXIS, pitch * PS[2] * aimW);
     // slight brace lean into the bow (reference/draw-side.jpg)
     this._rot(b.spine2, Z_AXIS, 0.05 * aimW);
     this._rot(b.spine1, X_AXIS, 0.035 * aimW);
@@ -2819,8 +2887,8 @@ export class PlayerAnimator {
     // head: face the target (counter the chest blade), carry the aim pitch
     this._rotL(b.neck1, Y_AXIS, -chestYaw * 0.45);
     this._rotL(b.head, Y_AXIS, -chestYaw * 0.6);
-    this._rot(b.neck1, X_AXIS, pitch * 0.2 * aimW);
-    this._rot(b.head, X_AXIS, pitch * 0.28 * aimW);
+    this._rot(b.neck1, X_AXIS, pitch * PS[3] * aimW);
+    this._rot(b.head, X_AXIS, pitch * PS[4] * aimW);
 
     const sp = Math.sin(pitch), cp = Math.cos(pitch);
     const cmb = this.ctx.combat;
@@ -2845,9 +2913,9 @@ export class PlayerAnimator {
         _v7.subVectors(cmb.aimPoint, this._gripW);
       } else {
         _v7.copy(cmb.aimPoint);
-        _v7.x -= p.position.x + sy * 0.45;
-        _v7.y -= p.position.y + 1.43;
-        _v7.z -= p.position.z + cy * 0.45;
+        _v7.x -= p.position.x + sy * this.T.rayFwd;
+        _v7.y -= p.position.y + this.T.rayH;
+        _v7.z -= p.position.z + cy * this.T.rayFwd;
       }
       // FIX ROUND 2: this used to demand a 2m aim point, and aiming steeply
       // down (camPitch 1.05, the game's own limit) the crosshair hits the
@@ -2879,7 +2947,7 @@ export class PlayerAnimator {
     this._charOf(b.head.bone, _anch);
     this._liveW(b.head.bone, _q1);
     _q2.copy(_q1).multiply(b.head.invW);     // delta from bind, char space
-    _v7.copy(ANCHOR_OFF).applyQuaternion(_q2);
+    _v7.copy(this.T.anchorOff).applyQuaternion(_q2);
     _anch.add(_v7);
     // ...and the head's own DOWN axis, captured here while _q2 is still the
     // head delta (the anchor-relief bisection below slides along it)
@@ -2924,9 +2992,17 @@ export class PlayerAnimator {
      * `_ikMaxK` lets `_ikArm` actually deliver it (its own clamp was the real
      * ceiling — raising `reachL` alone would have changed nothing).
      */
-    const reachL = (this._lenUpL + this._lenLoL) * BOW_ARM_LOCK;
+    const reachL = (this._lenUpL + this._lenLoL) * this.T.bowArmLock;
     const D = this._aimDbg;
     this._charOf(b.upArmL.bone, _v4); // live bow shoulder (kept for reach clamp)
+    // Lmax (bible §3.8 step 2, gate A-lmax-solve): the longest anchor->grip
+    // draw the LOCKED bow arm can carry from this anchor along this aim
+    {
+      _v5.subVectors(_anch, _v4);
+      const ud = _v5.dot(_dA), disc = ud * ud - _v5.lengthSq() + reachL * reachL;
+      D.lmax = disc > 0 ? -ud + Math.sqrt(disc) : -1;
+      D.pull = pull; D.restZ = restZ;
+    }
 
     // ---- ANCHOR RELIEF, before anything is derived from it.
     //
@@ -2945,7 +3021,7 @@ export class PlayerAnimator {
     // above the shoulder.
     // the grip this anchor implies, written into _grip; returns its overreach
     const gripFor = (a) => {
-      _grip.set(0.14, 1.42, 0.03).addScaledVector(_dA, 0.42);
+      _grip.copy(this.T.restGrip).addScaledVector(_dA, this.T.restReach);
       _v5.copy(a).sub(_nockOff);
       _grip.lerp(_v5, dEase);
       _grip.x += 0.035 * dEase;
@@ -2958,7 +3034,7 @@ export class PlayerAnimator {
     if (dEase > 0.01 && gripFor(_anch) > 0) {
       // _hdDown (head-frame down) was captured with the anchor: the slide runs
       // along the jaw, not through the sky
-      let lo = 0, hi = ANCHOR_DROP;
+      let lo = 0, hi = this.T.anchorDrop;
       _v6.copy(_anch).addScaledVector(_hdDown, hi);
       if (gripFor(_v6) > 0) lo = hi;               // even the chin is not enough
       else {
@@ -3000,7 +3076,7 @@ export class PlayerAnimator {
     // the grip back brings the nock TO the hand instead of leaving a gap.
     const reachR = (this._lenUpR + this._lenLoR) * 0.985;
     this._charOf(b.upArmR.bone, _v6);
-    _v7.copy(_grip).add(_nockOff).addScaledVector(_dA, -0.068).sub(_v6);
+    _v7.copy(_grip).add(_nockOff).addScaledVector(_dA, -this.T.handBehindNock).sub(_v6);
     const sR = slideFor(_v7, reachR);
     if (sL < 0 || sR < 0) {
       radial = true;
@@ -3033,8 +3109,8 @@ export class PlayerAnimator {
     // soft elbow bend points at the ground (reference/draw-front.jpg). The
     // bow arm alone is allowed to lock out (see BOW_ARM_LOCK) — the DRAW arm
     // must not, or the string hand cannot reach the cheek at all.
-    _pole.set(0.3, -0.95, 0.12);
-    this._ikMaxK = BOW_ARM_LOCK;
+    _pole.copy(this.T.bowPole);
+    this._ikMaxK = this.T.bowArmLock;
     this._ikArm('l', _grip, _pole, aimW, _hand);
     this._ikMaxK = 0.985;
     // wrist: brace hand upright behind the bow
@@ -3056,19 +3132,19 @@ export class PlayerAnimator {
     const hold = this._looseT < 1
       ? Math.max(0, (this._looseDraw ?? 0) * (1 - smoothstep(this._looseT, 0.25, 1)) - drawS)
       : 0;
-    _v7.copy(_grip).addScaledVector(_dA, -0.068 - 0.075 * lk - pull * hold);
+    _v7.copy(_grip).addScaledVector(_dA, -this.T.handBehindNock - this.T.looseKick * lk - pull * hold);
     // ANCHOR CLAMP (see HAND_ANCHOR_R). Past ~0.72 of draw the hand belongs on
     // her face, not wherever the reach clamp's residual left the nock; pull it
     // back onto a sphere around the anchor along the direction it already sits
     // in, so the arrow line through the cheek is preserved and only the error
     // is removed. Skipped while the loose follow-through is carrying the hand
     // rearward on purpose.
-    const anchorPull = smoothstep(drawS, HAND_ANCHOR_FROM, 0.96) * aimW * (1 - lk);
+    const anchorPull = smoothstep(drawS, this.T.handAnchorFrom, 0.96) * aimW * (1 - lk);
     if (anchorPull > 0.01 && hold <= 0) {
       _v6.subVectors(_v7, _anch);
       const dh = _v6.length();
-      if (dh > HAND_ANCHOR_R) {
-        _v6.multiplyScalar(HAND_ANCHOR_R / dh).add(_anch);
+      if (dh > this.T.handAnchorR) {
+        _v6.multiplyScalar(this.T.handAnchorR / dh).add(_anch);
         _v7.lerp(_v6, anchorPull);
       }
     }
@@ -3095,7 +3171,7 @@ export class PlayerAnimator {
       const tq = this._quiverT;
       const reach = smoothstep(tq, 0, 0.18) * (1 - smoothstep(tq, 0.62, 1));
       qw = reach * aimW * (1 - smoothstep(drawS, 0.02, 0.14));
-      _v6.copy(QUIVER_HIP);
+      _v6.copy(this.T.quiverHip);
       _v7.lerp(_v6, qw * 0.92);
       qOpen = 0.45 + 0.55 * Math.max(this._quiverT, smoothstep(drawS, 0.02, 0.14));
     }
@@ -3105,7 +3181,7 @@ export class PlayerAnimator {
     // the hand 21cm down under her chin on every shot, while a sphere small
     // enough to allow a cheek anchor lets the wrist sink into the jaw.
     this._headFrame();
-    this._pushOutOfHead(_v7, HAND_IN);
+    this._pushOutOfHead(_v7, this.T.handIn);
     /*
      * Archery form: draw elbow straight BACK, level with the ARROW LINE,
      * fractionally below the shoulder (reference/draw-side.jpg).
@@ -3224,7 +3300,7 @@ export class PlayerAnimator {
     this._charOf(loE.bone, _sg1);
     this._charOf(haE.bone, _sg2);
     if (this._segInHead(_sg0, _sg1) || this._segInHead(_sg1, _sg2)
-      || this._headUnit(_sg2, _hp1).length() < HAND_IN) {
+      || this._headUnit(_sg2, _hp1).length() < this.T.handIn) {
       _q3.setFromAxisAngle(_reAx, -th);
       this._rotQL(upE, _q3);
     }
@@ -3238,6 +3314,109 @@ export class PlayerAnimator {
    * back and down until both segments clear the skull sphere (at most three
    * tries — this only ever engages at steep pitches).
    */
+  /**
+   * The alidade raise (bible §3.1, §3.7; gate A-alidade-pose): the right hand
+   * comes up under the right eye and the 6 cm tube (on `dyn_alidadeCord_02`,
+   * the stow kit's alidade piece) is laid along her gaze with its eyepiece at
+   * the eye. Elbow down and in front of the head plane, never above the head.
+   * Runs after the springs would be too late for the cord, so it writes the
+   * cord bone's LOCAL transform here and `_springs` (which reads the animated
+   * pose as its rest) carries it; the blend is by `w`.
+   */
+  _alidadeLayer(w) {
+    const A = this._ali, b = this.b;
+    if (!b.head || !b.handR) return;
+    // eye + gaze in character space, carried by the head's live delta from bind
+    this._charOf(b.head.bone, _alEye);
+    this._liveW(b.head.bone, _alQ);
+    _alQ.multiply(b.head.invW);
+    if (this.T.eyeR) _alEye.add(_alV.copy(this.T.eyeR).applyQuaternion(_alQ));
+    else if (b.eyeR) this._charOf(b.eyeR.bone, _alEye);
+    _alFwd.set(0, 0, 1).applyQuaternion(_alQ).normalize();
+    A.eye.copy(_alEye);
+    // tube centre 4.5 cm ahead of the eye (eyepiece ~1.5 cm off it)
+    _alV.copy(_alEye).addScaledVector(_alFwd, 0.045);
+    A.tube.copy(_alEye).addScaledVector(_alFwd, 0.015);
+    // ---- the hand: under the tube, wrist a little back and below
+    _alV2.set(0, -1, 0).applyQuaternion(_alQ);                       // head-down
+    _ik5.copy(_alV).addScaledVector(_alV2, 0.055).addScaledVector(_alFwd, -0.045);
+    _ik5.x -= 0.012;
+    _pole.set(-0.35, -0.9, 0.15);
+    this._ikArm('r', _ik5, _pole, w, null);
+    this._curlFingers(this._fingerR, 0.75 * w, 0.55 * w);
+    // ---- the tube target: X = T(centre) R(+X -> gaze) T(-c0); cord bone = X * bind
+    // (char space; placed AFTER the springs by `_alidadePlace`, so the cord's
+    // spring cannot fight it)
+    _alQ2.setFromUnitVectors(_alX, _alFwd);
+    A.target.makeRotationFromQuaternion(_alQ2).premultiply(_alM.makeTranslation(_alV.x, _alV.y, _alV.z));
+    A.target.multiply(_alM.makeTranslation(-A.c0.x, -A.c0.y, -A.c0.z)).multiply(A.bindChar);
+    A.tw = w;
+  }
+
+  /** After `_springs`: blend the cord bone onto the raise target by `tw`. */
+  _alidadePlace() {
+    const A = this._ali;
+    if (!(A.tw > 0.004)) return;
+    _alM2.copy(A.target).premultiply(this.model.matrixWorld);           // world
+    A.bone.parent.updateWorldMatrix(true, false);
+    _alM.copy(A.bone.parent.matrixWorld).invert().multiply(_alM2);      // local
+    _alM.decompose(_alV2, _alQ2, _alS);
+    A.bone.position.lerp(_alV2, A.tw);
+    A.bone.quaternion.slerp(_alQ2, A.tw);
+    A.tw = 0;
+  }
+
+  /** Alidade diagnostics (gate A-alidade-pose), character space. */
+  debugAlidade() {
+    const A = this._ali;
+    if (!A) return null;
+    this.model.updateMatrixWorld(true);
+    this._headFrame();
+    this._charOf(this.b.loArmR.bone, _sg1);
+    // the eyepiece where it actually renders: the cord bone's live matrix
+    // applied to the bind eyepiece (3 cm back from the tube centre along +X)
+    _alV.copy(A.c0).addScaledVector(_alX, -0.03).applyMatrix4(_alM.copy(A.bindChar).invert());
+    _alV.applyMatrix4(_alM.multiplyMatrices(this.model.matrixWorld.clone().invert(), A.bone.matrixWorld));
+    _alV2.copy(A.c0).addScaledVector(_alX, 0.03).applyMatrix4(_alM2.copy(A.bindChar).invert())
+      .applyMatrix4(_alM2.multiplyMatrices(this.model.matrixWorld.clone().invert(), A.bone.matrixWorld));
+    const near = _alV.distanceTo(A.eye) < _alV2.distanceTo(A.eye) ? _alV : _alV2;
+    return {
+      w: +A.w.toFixed(3),
+      eye: { x: A.eye.x, y: A.eye.y, z: A.eye.z },
+      eyepiece: { x: near.x, y: near.y, z: near.z },
+      tubeToEye: +near.distanceTo(A.eye).toFixed(4),
+      // elbow under the head ellipsoid's bottom and ahead of its centre plane
+      elbowBelowHead: +(_hd.y - this.T.headR.y - _sg1.y).toFixed(4),
+      elbowAheadOfHeadPlane: +(_sg1.clone().sub(_hd).dot(_alFwd.set(0, 0, 1).applyQuaternion(_hdQ))).toFixed(4),
+    };
+  }
+
+  /** World point -> character space. */
+  _charOfWorld(world, out) {
+    return out.copy(world).applyMatrix4(_alM2.copy(this.model.matrixWorld).invert());
+  }
+
+  /**
+   * The chain a gate stages by class (`chainOf('hair')` = the knot tail on
+   * Brea, the profile's `hairChain`): the chain's bones, root first, or null.
+   */
+  chainOf(cls) {
+    if (cls === 'hair' && this._hairChainRoot) {
+      const c = this._chains.find((x) => x.links[0].name === this._hairChainRoot);
+      if (c) return c.links.map((l) => l.bone);
+    }
+    let best = null;
+    for (const c of this._chains) if (c.cls.name === cls && (!best || c.links.length > best.links.length)) best = c;
+    return best ? best.links.map((l) => l.bone) : null;
+  }
+
+  /** M10 diagnostics (gate A-wrap-clear): is the hand capsule live, and the closest dyn_ particle to its axis. */
+  debugHandCollider() {
+    const H = this._handCol;
+    if (!H) return null;
+    return { active: H.active, r: H.r, minAxis: +H.minAxis.toFixed(4), pushes: H.pushes };
+  }
+
   _clearArmOfHead(upE, loE, haE, target, pole, w) {
     if (!upE || !loE || !haE || w < 0.02) return;
     const side = upE === this.b.upArmL ? 'l' : 'r';
@@ -3255,7 +3434,7 @@ export class PlayerAnimator {
       // through the glove. The hand gets a small allowed penetration (the
       // anchor IS meant to touch the face) — HAND_IN is how deep.
       const inHead = this._segInHead(_sg0, _sg1) || this._segInHead(_sg1, _sg2)
-        || this._headUnit(_sg2, _hp1).length() < HAND_IN;
+        || this._headUnit(_sg2, _hp1).length() < this.T.handIn;
       if (!high && !inHead) return;
       // pole further down (drops the elbow) and back (swings the forearm
       // behind the jaw line instead of across the eyes)
@@ -3276,13 +3455,14 @@ export class PlayerAnimator {
     this._liveW(this.b.head.bone, _hdQ);
     _hdQ.multiply(this.b.head.invW);
     _hdQi.copy(_hdQ).invert();
-    _hd.add(_hp1.copy(HEAD_OFF).applyQuaternion(_hdQ));
+    _hd.add(_hp1.copy(this.T.headOff).applyQuaternion(_hdQ));
   }
 
   /** Char point -> head bind frame, scaled so the ellipsoid is the unit sphere. */
   _headUnit(p, out) {
     out.subVectors(p, _hd).applyQuaternion(_hdQi);
-    out.x /= HEAD_R.x; out.y /= HEAD_R.y; out.z /= HEAD_R.z;
+    const R = this.T.headR;
+    out.x /= R.x; out.y /= R.y; out.z /= R.z;
     return out;
   }
 
@@ -3296,7 +3476,8 @@ export class PlayerAnimator {
     const d = _hp1.length();
     if (d >= k) return false;
     if (d < 1e-4) _hp1.set(-1, -0.2, 0).normalize(); else _hp1.divideScalar(d);
-    _hp1.x *= HEAD_R.x * k; _hp1.y *= HEAD_R.y * k; _hp1.z *= HEAD_R.z * k;
+    const R = this.T.headR;
+    _hp1.x *= R.x * k; _hp1.y *= R.y * k; _hp1.z *= R.z * k;
     pt.copy(_hd).add(_hp1.applyQuaternion(_hdQ));
     return true;
   }
@@ -3648,6 +3829,16 @@ export class PlayerAnimator {
    * `rest` is the point's animated rest position (may be null to fall back to
    * the plain capsule).
    */
+  /** Distance from point p to segment ab (scratch-free: uses _cp0/_cp1). */
+  _segDist(p, a, b) {
+    _cp0.subVectors(b, a);
+    const l2 = _cp0.lengthSq();
+    _cp1.subVectors(p, a);
+    let t = l2 > 1e-9 ? _cp1.dot(_cp0) / l2 : 0;
+    t = t < 0 ? 0 : t > 1 ? 1 : t;
+    return _cp1.addScaledVector(_cp0, -t).length();
+  }
+
   _pushOutOfCapsule(p, cap, rest) {
     // PRIVATE scratch only. The caller passes `_spC` as `p`, and the first
     // drop of this method wrote its working vectors into `_spC` — so `p` and
@@ -3730,6 +3921,20 @@ export class PlayerAnimator {
     // pass re-derives only what we rotate below
     this.model.updateMatrixWorld(true);
     const caps = this._bodyCapsules();
+    // M10: the draw hand + forearm capsule (two segments: forearm, hand to the
+    // middle fingertip). Every dyn_ particle of every class is pushed out of it
+    // at full radius, whatever its rest — the wrap tail and knot tail can never
+    // lie through the hand that draws the string.
+    const H = this._handCol;
+    let hcN = 0;
+    if (H && H.a && H.b) {
+      H.caps[0].a.setFromMatrixPosition(H.a.matrixWorld);
+      H.caps[0].b.setFromMatrixPosition(H.b.matrixWorld);
+      H.caps[1].a.copy(H.caps[0].b);
+      if (H.c) H.caps[1].b.setFromMatrixPosition(H.c.matrixWorld); else H.caps[1].b.copy(H.caps[0].b);
+      hcN = 2;
+      H.active = true; H.pushes = 0; H.minAxis = Infinity;
+    }
 
     // per-foot plant edges -> the flick that runs up a strand once per step.
     // Sized so the impulse alone is worth ~4-6 cm of tip travel on the
@@ -3857,6 +4062,20 @@ export class PlayerAnimator {
           _spA.set(_spC.x - pos[i0], _spC.y - pos[i0 + 1], _spC.z - pos[i0 + 2]);
           if (_spA.lengthSq() < 1e-12) _spA.copy(_spB); else _spA.normalize();
           _spC.set(pos[i0], pos[i0 + 1], pos[i0 + 2]).addScaledVector(_spA, c.seg[j]);
+        }
+        if (hcN) {
+          let hit = false;
+          for (let q = 0; q < hcN; q++) hit = this._pushOutOfCapsule(_spC, H.caps[q], null) || hit;
+          if (hit) {
+            H.pushes++;
+            _spA.set(_spC.x - pos[i0], _spC.y - pos[i0 + 1], _spC.z - pos[i0 + 2]);
+            if (_spA.lengthSq() < 1e-12) _spA.copy(_spB); else _spA.normalize();
+            _spC.set(pos[i0], pos[i0 + 1], pos[i0 + 2]).addScaledVector(_spA, c.seg[j]);
+          }
+          for (let q = 0; q < hcN; q++) {
+            const d = this._segDist(_spC, H.caps[q].a, H.caps[q].b);
+            if (d < H.minAxis) H.minAxis = d;
+          }
         }
         // Constraint velocity correction (position-based dynamics), CLAMPED.
         // Un-clamped this is `|projection| / dt`: a 0.3 m projection at 60 Hz
