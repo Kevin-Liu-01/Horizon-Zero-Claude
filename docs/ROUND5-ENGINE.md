@@ -15,12 +15,14 @@ ANGLE/Metal, headless, 1600×900 CSS px; fix rounds 2 and 3: Oct 16); 1 MB = 10�
 
 ## 1. Render-target ledger
 
-Read off the running build by `engine.renderTargetLedger()` (src/core/engine.js) at the shipped tier
-`high` (MSAA ×4 HalfFloat scene target, GTAO at ½ resolution, bloom capped at 1280 px wide, SMAA,
-CSM 3 × 2048² from `environment.js`), **DPR 1.25** (2000 × 1125 device px), on the spawn vista and
-then the staged fight (`tools/budgets.mjs`). Bytes are what each allocation holds: colour × mips ×
-faces, the multisampled colour and depth renderbuffers (× samples), the depth renderbuffer
-(DEPTH_COMPONENT24 = 4 B) or depth texture; RGB is stored as 4 channels.
+**W0b: graded at the shipped default tier** (`QUALITY_TIERS.high` after the W0b decision, §3: SMAA-only,
+GTAO at quarter resolution, SMAA targets RGBA8, CSM cascades 2048 / 1024 / 1024, bloom capped at 1280 px
+wide), **DPR 1.25** (a DPR-2 display under the tier's 1.25 cap: 2000 × 1125 device px), 1600 × 900, read
+off the running build by `engine.renderTargetLedger()` on the spawn vista and then the staged fight
+(`tools/budgets.mjs`). Bytes are what each allocation holds: colour × mips × faces, the multisampled colour
+and depth renderbuffers (× samples) when a target is multisampled, the depth renderbuffer
+(DEPTH_COMPONENT24 = 4 B) or depth texture; RGB is stored as 4 channels. W0a's ledger of the Round-4 tier
+(340.74 MB) is kept in §1.3.
 
 **How it is checked (fix round 3).** `A-rt-ledger-census` boots the page with `?rtTally=1`, which
 makes `engine.js` wrap the WebGL2 prototype *before the renderer's context exists*. Every texture
@@ -29,45 +31,40 @@ call parameters. The census sizes them with its own table of GL internal formats
 three-enum arithmetic), takes every live attachment of every live framebuffer plus every live
 renderbuffer, and attributes each GL object to a ledger row: through three's properties for a row
 with a target, through the shared framebuffer for a texture-only row. It passes only when nothing is
-unattributed and every row's GL bytes equal its ledger bytes, to the byte. The fix-round-2 recount
-used the ledger's own arithmetic over targets bound during 150 frames, so it could not see the next
-item.
+unattributed and every row's GL bytes equal its ledger bytes, to the byte.
 
-**The environment row was short by 3,145,728 B (fix-round-2 judge, `J-eg-env-depth`).** three r169's
-`PMREMGenerator.fromScene()` renders the cube faces into the cube-UV target *with a depth
-renderbuffer* (`depthBuffer = true`). `environment.js:446–449` keeps only `.texture` for
-`scene.environment` and drops the target, so the ledger counted the 768 × 1024 RGBA16F texture and
-missed the 768 × 1024 DEPTH_COMPONENT24 renderbuffer behind it. `engine.js` now remembers every PMREM
-output by its texture (a WeakRef to the target; nothing is kept alive), and the ledger counts the
-producing target with its depth — also after its owner dropped the target object. three never deletes
-that renderbuffer: the target that owns it has no `dispose()` path left (handoff to world-sky, §1.5).
+**The environment row** counts the PMREM target `fromScene` made *with its 768 × 1024 DEPTH_COMPONENT24
+renderbuffer* (3,145,728 B), also after `environment.js` dropped the target object (fix-round-2 judge,
+`J-eg-env-depth`; handoff to world-sky in §1.5).
 
 A lane's registered target stays named through `setSize()` (three dispatches `dispose` there) with
 its new bytes; the census walks one through 2×2 → 64×32 → 128×48 → dispose → unregister (fix round
-1). A texture a registered target owns is counted once, on the registered row.
+1). A texture a registered target owns is counted once, on the registered row. Since W0b,
+`registerRenderTarget` sweeps dead WeakRefs (collected or unregistered targets) before adding one (the
+W0a judge's minor finding).
 
-### 1.1 Per target (`A-rt-ledger`; `RT_LEDGER` in the leaf module `tools/r5-probes/rt-ledger.mjs`)
+### 1.1 Per target at the shipped tier (`A-rt-ledger`; `RT_LEDGER` in the leaf module `tools/r5-probes/rt-ledger.mjs`)
 
 <!-- rt-ledger:begin -->
 | owner | target | device px | layout | bytes |
 |---|---|---|---|---|
-| `post:scene` | CAL.sceneTarget | 2000 × 1125 | RGBA16F resolve 18.0 MB + MSAA×4 RGBA16F 72.0 MB + MSAA×4 depth24 36.0 MB + depth texture 9.0 MB | 135,000,000 |
+| `post:scene` | CAL.sceneTarget | 2000 × 1125 | RGBA16F 18.0 MB + depth texture (DEPTH24) 9.0 MB; no MSAA | 27,000,000 |
 | `post:pingA` | CAL.postA | 2000 × 1125 | RGBA16F, no depth | 18,000,000 |
 | `post:pingB` | CAL.postB | 2000 × 1125 | RGBA16F, no depth | 18,000,000 |
-| `post:GTAOPass.gtaoRenderTarget` | GTAO | 1000 × 563 | RGBA16F + depth24 renderbuffer | 6,756,000 |
-| `post:GTAOPass.pdRenderTarget` | GTAO denoise | 1000 × 563 | RGBA16F + depth24 renderbuffer | 6,756,000 |
+| `post:GTAOPass.gtaoRenderTarget` | GTAO (quarter res) | 500 × 281 | RGBA16F + depth24 renderbuffer | 1,686,000 |
+| `post:GTAOPass.pdRenderTarget` | GTAO denoise | 500 × 281 | RGBA16F + depth24 renderbuffer | 1,686,000 |
 | `post:UnrealBloomPass.bloom-chain` | bright + 5 H + 5 V mips | 640 × 360 … 40 × 23 | RGBA16F + depth24 renderbuffer each | 10,130,880 |
-| `post:SMAAPass.edgesRT` | SMAA edges | 2000 × 1125 | RGBA16F, no depth | 18,000,000 |
-| `post:SMAAPass.weightsRT` | SMAA weights | 2000 × 1125 | RGBA16F, no depth | 18,000,000 |
+| `post:SMAAPass.edgesRT` | SMAA edges | 2000 × 1125 | RGBA8, no depth | 9,000,000 |
+| `post:SMAAPass.weightsRT` | SMAA weights | 2000 × 1125 | RGBA8, no depth | 9,000,000 |
 | `shadow:csm[0]` | CSM cascade 0 | 2048 × 2048 | RGBA8 packed depth + depth24 renderbuffer | 33,554,432 |
-| `shadow:csm[1]` | CSM cascade 1 | 2048 × 2048 | RGBA8 packed depth + depth24 renderbuffer | 33,554,432 |
-| `shadow:csm[2]` | CSM cascade 2 | 2048 × 2048 | RGBA8 packed depth + depth24 renderbuffer | 33,554,432 |
+| `shadow:csm[1]` | CSM cascade 1 (capped) | 1024 × 1024 | RGBA8 packed depth + depth24 renderbuffer | 8,388,608 |
+| `shadow:csm[2]` | CSM cascade 2 (capped) | 1024 × 1024 | RGBA8 packed depth + depth24 renderbuffer | 8,388,608 |
 | `env:environment` | PMREM (cube-UV, `fromScene`) | 768 × 1024 | RGBA16F 6.29 MB + depth24 renderbuffer 3.15 MB | 9,437,184 |
 <!-- rt-ledger:end -->
 
 | | MB |
 |---|---|
-| **render targets, total** | **340.74** (340,743,360 B; bar ≤ 170; the plan's estimate was ≈ 150). Fix round 2 read 337.6: the PMREM depth renderbuffer (3.15 MB) was missing |
+| **render targets, total** | **154.27** (154,271,712 B; bar ≤ 170: **+15.73 MB** of margin). W0a, Round-4 tier: 340.74 |
 | canvas drawing buffer (not a three target; reported apart) | 18.0 (RGBA8 + depth24 at 2000 × 1125) |
 | provisioned, never allocated | 0 (the GTAO G-buffer is shrunk to 1 × 1 and never bound) |
 | the sun's 2048² map (`environment.js:431`) | 0 — it is the no-CSM fallback only; with CSM the sun casts no shadow |
@@ -79,7 +76,7 @@ Three costs were not in the ≈ 150 MB estimate: the MSAA ×4 **depth** renderbu
 every r169 shadow map (three packs depth into RGBA; each 2048² map is 16.8 MB of colour + 16.8 MB of
 depth, not 16.8 MB), and the two **HalfFloat SMAA** targets at full resolution (36 MB).
 
-### 1.3 Levers: every row measured live (re-measured fix round 3, env depth included)
+### 1.3 W0a: the Round-4 tier and its levers, every row measured live (fix round 3, env depth included)
 
 `A-rt-ledger` applies each lever to the live staged frame and reads `engine.renderTargetLedger()`.
 The levers are:

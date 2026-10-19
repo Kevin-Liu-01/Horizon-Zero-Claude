@@ -6,6 +6,7 @@ import { ShaderPass } from 'three/examples/jsm/postprocessing/ShaderPass.js';
 import { SMAAPass } from 'three/examples/jsm/postprocessing/SMAAPass.js';
 import { GTAOPass } from 'three/examples/jsm/postprocessing/GTAOPass.js';
 import { CSM } from 'three/examples/jsm/csm/CSM.js';
+import { CSMFrustum } from 'three/examples/jsm/csm/CSMFrustum.js';
 
 /**
  * Renderer + scene + camera + post stack + the perf/quality plumbing every
@@ -38,27 +39,64 @@ import { CSM } from 'three/examples/jsm/csm/CSM.js';
  *   engine.glTally                           `?rtTally=1` only: GL allocation tally from boot (census)
  * PMREMGenerator outputs are remembered by texture (WeakRef to the target) so
  * the ledger counts scene.environment with the depth renderbuffer fromScene made.
+ *
+ * ROUND 5 (engine-gpu W0b) — THE GPU TIER DECISION, gates A-gpu-tier and
+ * A-rt-ledger, numbers in docs/ROUND5-ENGINE.md §3. The shipped default tier
+ * (`high`) takes the plan's levers: DPR cap 1.25, SMAA-only (no MSAA; R25),
+ * GTAO at quarter resolution, SMAA targets RGBA8, and per-cascade shadow-map
+ * caps applied inside enableCSM (world-sky still asks for its own size).
+ *   QUALITY_TIERS.<tier>.smaaHalfFloat / .csmMapCaps   the two new levers
+ *   ROUND4_HIGH                              the Round-4 `high` row, for before/after
+ *   engine.applyTier(row, name)              apply any tier row at runtime (setQuality's body)
+ *   engine.csmMapSizes                       the per-cascade map sizes in force
  */
 
-/** Quality tiers (perf-tech-05). `?q=low|medium|high|ultra`, default high. */
+/**
+ * Quality tiers (perf-tech-05). `?q=low|medium|high|ultra`, default high.
+ *
+ * `csmMapCaps[i]` caps cascade i's shadow map (the last entry repeats); null =
+ * every cascade at the size world-sky asks for. `smaaHalfFloat: false` stores
+ * the SMAA edge and blend-weight targets as RGBA8, which is the format the
+ * SMAA reference implementation uses for both (three r169 allocates them as
+ * HalfFloat: 18 MB for nothing at 2000 x 1125).
+ */
 export const QUALITY_TIERS = {
   low: {
-    dprCap: 1.0, msaa: 2, gtao: false, gtaoScale: 0.5, smaa: true, bloom: true, sizeCullPx: 11,
+    dprCap: 1.0, msaa: 0, gtao: false, gtaoScale: 0.25, smaa: true, smaaHalfFloat: false, csmMapCaps: [1024],
+    bloom: true, sizeCullPx: 11,
     shadowCullDistance: 70, shadowCasterBudget: 60, shadowType: THREE.PCFShadowMap, drs: true, drsFloor: 0.55,
   },
   medium: {
-    dprCap: 1.25, msaa: 4, gtao: false, gtaoScale: 0.5, smaa: true, bloom: true, sizeCullPx: 9,
+    dprCap: 1.25, msaa: 0, gtao: false, gtaoScale: 0.25, smaa: true, smaaHalfFloat: false, csmMapCaps: [2048, 1024],
+    bloom: true, sizeCullPx: 9,
     shadowCullDistance: 95, shadowCasterBudget: 95, shadowType: THREE.PCFShadowMap, drs: true, drsFloor: 0.65,
   },
+  /** THE SHIPPED DEFAULT (W0b decision, A-gpu-tier / A-rt-ledger). */
   high: {
-    dprCap: 1.5, msaa: 4, gtao: true, gtaoScale: 0.5, smaa: true, bloom: true, sizeCullPx: 7,
+    dprCap: 1.25, msaa: 0, gtao: true, gtaoScale: 0.25, smaa: true, smaaHalfFloat: false, csmMapCaps: [2048, 1024],
+    bloom: true, sizeCullPx: 7,
     shadowCullDistance: 120, shadowCasterBudget: 150, shadowType: THREE.PCFSoftShadowMap, drs: true, drsFloor: 0.7,
   },
   ultra: {
-    dprCap: 2.0, msaa: 4, gtao: true, gtaoScale: 1.0, smaa: true, bloom: true, sizeCullPx: 4,
+    dprCap: 2.0, msaa: 4, gtao: true, gtaoScale: 1.0, smaa: true, smaaHalfFloat: true, csmMapCaps: null,
+    bloom: true, sizeCullPx: 4,
     shadowCullDistance: 190, shadowCasterBudget: 260, shadowType: THREE.PCFSoftShadowMap, drs: false, drsFloor: 0.85,
   },
 };
+
+/** The tier a fresh install boots into (main.js: `?q=` or this). */
+export const DEFAULT_TIER = 'high';
+
+/**
+ * Round 4's `high` row, kept for the before/after measurement of the W0b
+ * decision (A-gpu-tier applies it through engine.applyTier on the same frame).
+ * Not a selectable tier.
+ */
+export const ROUND4_HIGH = Object.freeze({
+  dprCap: 1.5, msaa: 4, gtao: true, gtaoScale: 0.5, smaa: true, smaaHalfFloat: true, csmMapCaps: null,
+  bloom: true, sizeCullPx: 7,
+  shadowCullDistance: 120, shadowCasterBudget: 150, shadowType: THREE.PCFSoftShadowMap, drs: true, drsFloor: 0.7,
+});
 
 /** Highest wins. Anything not listed sorts just above `legacy`. */
 const TS_PRIORITY = ['studio', 'wheel', 'hitstop', 'concentration', 'legacy'];
@@ -204,13 +242,22 @@ const GTAO_FADE_END = 120;
  * band 0.765 in odd-parity rows against 0.983 in even ones. Runs of columns x
  * runs of rows = the screen-locked plaid on every distant vista.
  *
- * Fix: fetch ONE deterministic texel (the one under the first quarter of the AO
- * texel's footprint, robust at any AO:depth ratio incl. 1:1 on ultra and DRS
- * sizes) and rebuild the centre position and normal at THAT texel's centre, so
- * depth and position always describe the same point. Measured at tier high,
- * DPR 1 / 1.5, V33 camera: the far-massif autocorrelation peak 0.19-0.38 drops
- * to the GTAO-off control's 0.05-0.10. Replacing the noise texture (candidate a)
- * or only the normal (candidate d) left the lattice untouched.
+ * Fix: fetch ONE deterministic texel and rebuild the centre position and
+ * normal at THAT texel's centre, so depth and position always describe the
+ * same point. Measured at tier high, DPR 1 / 1.5, V33 camera: the far-massif
+ * autocorrelation peak 0.19-0.38 drops to the GTAO-off control's 0.05-0.10.
+ * Replacing the noise texture (candidate a) or only the normal (candidate d)
+ * left the lattice untouched.
+ *
+ * WHICH texel (Round 5 W0b, quarter-resolution GTAO). Round 4 took
+ * `floor(uv * depthSize - 0.25 * k)` with k = depth px per AO px: k*i + 0.25
+ * at k = 1 and k*i + 0.5 at k = 2, both mid-texel. At k = 4 (the W0b tier) that
+ * is k*i + 1.0 — exactly a texel boundary again, the original defect. The texel
+ * is now picked from the AO texel's own index i = floor(uv * resolution):
+ * floor((i + 0.125) * k) = k*i + 0.125 k, i.e. the SAME texel as before at
+ * k = 1 and 2 (i, 2i) and mid-texel at k = 4 (4i + 0.5). At a non-integer k
+ * (dynamic resolution) only isolated columns can land within float error of a
+ * boundary, never whole runs, so no plaid.
  *
  * Returns false (and leaves the stock shader) if three's source moved under an
  * anchor; `engine.gtaoPatched` carries the answer and A108 asserts it.
@@ -222,7 +269,8 @@ function patchGtaoShader(material) {
       'uniform float scale;\n\t\tuniform float aoFadeStart;\n\t\tuniform float aoFadeEnd;'],
     [/float depth = getDepth\(vUv\.xy\);/,
       'vec2 depthSize = vec2(textureSize(tDepth, 0));\n'
-      + '\t\t\tivec2 centerTexel = ivec2(floor(vUv * depthSize - 0.25 * depthSize / resolution));\n'
+      + '\t\t\tvec2 aoTexel = floor(vUv * resolution);\n'
+      + '\t\t\tivec2 centerTexel = ivec2(floor((aoTexel + 0.125) * depthSize / resolution));\n'
       + '\t\t\tvec2 centerUv = (vec2(centerTexel) + 0.5) / depthSize;\n'
       + '\t\t\tfloat depth = texelFetch(tDepth, centerTexel, 0).DEPTH_SWIZZLING;'],
     [/vec3 viewPos = getViewPosition\(vUv, depth\);\s*vec3 viewNormal = getViewNormal\(vUv\);/,
@@ -294,6 +342,21 @@ class ScenePass extends Pass {
 }
 
 const _wp = new THREE.Vector3();
+
+/*
+ * Scratch for Engine._csmUpdate (the per-cascade, allocation-free CSM.update).
+ * three r169's CSM.update() runs every frame and builds `new Vector3()` for its
+ * lookAt origin each call; these are the same objects CSM.js keeps at module
+ * scope, plus that origin.
+ */
+const _csmOrigin = new THREE.Vector3();
+const _csmUp = new THREE.Vector3(0, 1, 0);
+const _csmCenter = new THREE.Vector3();
+const _csmBox = new THREE.Box3();
+const _csmCamToLight = new THREE.Matrix4();
+const _csmLightOri = new THREE.Matrix4();
+const _csmLightOriInv = new THREE.Matrix4();
+const _csmLightFrustum = new CSMFrustum();
 
 /** Bytes per texel of a texture as the GPU stores it (render-target ledger). */
 function _texelBytes(t) {
@@ -526,8 +589,9 @@ function _glows(mat) {
 export class Engine {
   constructor(container, opts = {}) {
     this.opts = opts;
-    this.quality = QUALITY_TIERS[opts.quality] ? opts.quality : 'high';
-    const tier = QUALITY_TIERS[this.quality];
+    this.quality = QUALITY_TIERS[opts.quality] ? opts.quality : DEFAULT_TIER;
+    // a per-engine copy: a gate or a probe that moves one lever on `engine.tier` never edits the table
+    const tier = { ...QUALITY_TIERS[this.quality] };
     this.tier = tier;
     /** Screenshots/gates must be bit-deterministic: no dynamic resolution there. */
     this.drsEnabled = tier.drs && opts.dynamicResolution !== false;
@@ -579,6 +643,8 @@ export class Engine {
 
     // ---- CSM plumbing (world-01 / perf-tech-03) ----
     this.csm = null;
+    /** per-cascade shadow-map sizes in force (tier csmMapCaps applied), or null without CSM */
+    this.csmMapSizes = null;
     this._csmMaterials = new Set();
 
     // ---- distance caster culling (perf-tech-03) ----
@@ -722,7 +788,25 @@ export class Engine {
 
     this.smaa = new SMAAPass(w, h);
     this.smaa.enabled = this.tier.smaa;
+    this._applySmaaType();
     this.composer.addPass(this.smaa);
+  }
+
+  /**
+   * SMAA edge + blend-weight targets: RGBA8 unless the tier asks for HalfFloat
+   * (`smaaHalfFloat`). Both hold values in [0, 1] that the reference SMAA
+   * stores in RGBA8; three r169 makes them HalfFloat. Changing the type of an
+   * allocated target disposes it, and three re-allocates it at the new type on
+   * its next bind. Returns the type in force.
+   */
+  _applySmaaType() {
+    const type = this.tier.smaaHalfFloat === false ? THREE.UnsignedByteType : THREE.HalfFloatType;
+    for (const rt of [this.smaa?.edgesRT, this.smaa?.weightsRT]) {
+      if (!rt || rt.texture.type === type) continue;
+      rt.texture.type = type;
+      rt.dispose();
+    }
+    return type;
   }
 
   _makePostTarget(w, h, name) {
@@ -762,6 +846,18 @@ export class Engine {
   setQuality(name) {
     const tier = QUALITY_TIERS[name];
     if (!tier || name === this.quality) return this.quality;
+    return this.applyTier(tier, name);
+  }
+
+  /**
+   * Apply a tier ROW (any object shaped like a QUALITY_TIERS entry) at
+   * runtime: every lever, render targets rebuilt in place. setQuality's body;
+   * A-gpu-tier also uses it to measure ROUND4_HIGH against the shipped tier on
+   * the same frame. The engine keeps its own copy of the row.
+   */
+  applyTier(row, name = 'custom') {
+    if (!row) return this.quality;
+    const tier = { ...row };
     this.quality = name;
     this.tier = tier;
     this.basePixelRatio = Math.min(window.devicePixelRatio || 1, tier.dprCap);
@@ -774,10 +870,14 @@ export class Engine {
     this.gtao.enabled = tier.gtao;
     this.bloom.enabled = tier.bloom;
     this.smaa.enabled = tier.smaa;
+    this._applySmaaType();
+    this._applyCsmCaps();
     this.drsEnabled = tier.drs && this.opts.dynamicResolution !== false;
     // MSAA sample count is a render-target property: rebuild in place.
-    this.sceneTarget.samples = tier.msaa;
-    this.sceneTarget.dispose();
+    if (this.sceneTarget.samples !== tier.msaa) {
+      this.sceneTarget.samples = tier.msaa;
+      this.sceneTarget.dispose();
+    }
     this.resize();
     return this.quality;
   }
@@ -842,6 +942,14 @@ export class Engine {
     if (!rt || !rt.isRenderTarget) return rt;
     const owners = this._rtOwners || (this._rtOwners = new WeakMap());
     const refs = this._rtRefs || (this._rtRefs = new Set());
+    // Sweep first (W0a judge): a WeakRef whose target was collected, or that
+    // was unregistered, is dead weight in the Set until the ledger next runs —
+    // and a lane that registers per spawn without ever reading the ledger would
+    // grow it without bound. On demand only (registration), never per frame.
+    for (const ref of refs) {
+      const t = ref.deref();
+      if (!t || !owners.has(t)) refs.delete(ref);
+    }
     const had = owners.get(rt);
     if (!had) refs.add(new WeakRef(rt));
     owners.set(rt, String(owner));
@@ -1055,8 +1163,75 @@ export class Engine {
       light.castShadow = false;
       for (const l of this.csm.lights) l.color.copy(light.color);
     }
+    this._applyCsmCaps();
     this.csm.updateFrustums();
     return this.csm;
+  }
+
+  /**
+   * The tier's per-cascade shadow-map caps (W0b, A-rt-ledger). world-sky asks
+   * enableCSM for a size (2048); cascade i gets min(that, tier.csmMapCaps[i]),
+   * the last cap repeating. `csm.shadowMapSize` stays the requested size, which
+   * is cascade 0's at every tier that caps only the far cascades (A56 reads the
+   * near texel from it). A map whose size changes is disposed; three allocates
+   * it again at the new size on the next shadow render. Returns the sizes.
+   */
+  _applyCsmCaps() {
+    const csm = this.csm;
+    if (!csm) { this.csmMapSizes = null; return null; }
+    const caps = this.tier.csmMapCaps;
+    const sizes = [];
+    for (let i = 0; i < csm.lights.length; i++) {
+      const cap = caps && caps.length ? caps[Math.min(i, caps.length - 1)] : Infinity;
+      const size = Math.max(1, Math.min(csm.shadowMapSize, cap));
+      const sh = csm.lights[i].shadow;
+      if (sh.mapSize.x !== size || sh.mapSize.y !== size) {
+        sh.mapSize.set(size, size);
+        if (sh.map) { sh.map.dispose(); sh.map = null; }
+      }
+      sizes.push(size);
+    }
+    this.renderer.shadowMap.needsUpdate = true;
+    this.csmMapSizes = sizes;
+    return sizes;
+  }
+
+  /**
+   * CSM.update() (three r169) with two changes and nothing else: each cascade
+   * snaps its light to ITS OWN texel grid (`shadow.mapSize`, which
+   * _applyCsmCaps may have made smaller than `csm.shadowMapSize`; snapping a
+   * 1024 map on a 2048 grid moves it by half texels and the far shadows
+   * shimmer), and nothing is allocated (CSM.update builds a Vector3 per call,
+   * every frame). With every cascade at csm.shadowMapSize it places the lights
+   * exactly where CSM.update does.
+   */
+  _csmUpdate() {
+    const csm = this.csm;
+    if (!csm) return;
+    const frustums = csm.frustums;
+    _csmLightOri.lookAt(_csmOrigin, csm.lightDirection, _csmUp);
+    _csmLightOriInv.copy(_csmLightOri).invert();
+    for (let i = 0; i < frustums.length; i++) {
+      const light = csm.lights[i];
+      const sc = light.shadow.camera;
+      const tw = (sc.right - sc.left) / (light.shadow.mapSize.x || csm.shadowMapSize);
+      const th = (sc.top - sc.bottom) / (light.shadow.mapSize.y || csm.shadowMapSize);
+      _csmCamToLight.multiplyMatrices(_csmLightOriInv, csm.camera.matrixWorld);
+      frustums[i].toSpace(_csmCamToLight, _csmLightFrustum);
+      const nv = _csmLightFrustum.vertices.near, fv = _csmLightFrustum.vertices.far;
+      _csmBox.makeEmpty();
+      for (let j = 0; j < 4; j++) { _csmBox.expandByPoint(nv[j]); _csmBox.expandByPoint(fv[j]); }
+      _csmBox.getCenter(_csmCenter);
+      _csmCenter.z = _csmBox.max.z + csm.lightMargin;
+      _csmCenter.x = Math.floor(_csmCenter.x / tw) * tw;
+      _csmCenter.y = Math.floor(_csmCenter.y / th) * th;
+      _csmCenter.applyMatrix4(_csmLightOri);
+      light.position.copy(_csmCenter);
+      light.target.position.copy(_csmCenter);
+      light.target.position.x += csm.lightDirection.x;
+      light.target.position.y += csm.lightDirection.y;
+      light.target.position.z += csm.lightDirection.z;
+    }
   }
 
   disableCSM() {
@@ -1067,6 +1242,7 @@ export class Engine {
     this.csm.dispose?.();
     if (this.csmSourceLight) this.csmSourceLight.castShadow = this._csmLightShadowWas ?? true;
     this.csm = null;
+    this.csmMapSizes = null;
   }
 
   /**
@@ -1659,7 +1835,7 @@ export class Engine {
     this.renderer.info.reset();
     const t0 = performance.now();
     this._cullPass(realDt);
-    this.csm?.update();
+    this._csmUpdate();
     // Deterministic ping-pong: ScenePass always resolves into renderTarget2 and
     // the chain alternates rt2 <-> postTarget from there. Without re-seating,
     // the composer's swap parity drifts frame to frame and the multisampled

@@ -47,8 +47,21 @@
  *                             exit), and it reads FAIL — the bar is reachable
  *                             only through the W0b tier levers, measured live
  *                             in its detail.
- * A-gpu-tier, A22-msaa, A108, A109, V20, V33b are W0b (the tier decision) and
- * are not registered here yet. Every row carries `wave`.
+ * W0b — THE GPU TIER DECISION (src/core/engine.js QUALITY_TIERS.high, the
+ * shipped default; numbers in docs/ROUND5-ENGINE.md §3):
+ *   A-gpu-tier-box            (runner) the box witness for A-gpu-tier
+ *   A-gpu-tier                the shipped tier's GPU / fps on the Pans POC
+ *                             (?poc=biome, hosted in an iframe: see POC_KIT),
+ *                             quiet box only; before/after per lever; docs row
+ *   A-rt-ledger               now GRADED (plan §8.3 rt-ledger-bar=W0b)
+ *   A22-msaa, V20-aa-crop, A108-ao-periodicity, A109-ao-distance-fade,
+ *   V33b-no-ao-lattice        re-staged on the Pans POC; they SHADOW the
+ *                             Round-4 rows by id (see SHADOW BY ID: before
+ *                             gates-perf's registry is in the tree they run
+ *                             as `<id>@r5`)
+ *   node tools/gates.mjs --port 5251 --extra tools/gates.r5.engine-gpu.mjs --only A-gpu-tier-box,A-gpu-tier
+ *   node tools/gates.mjs --port 5251 --extra tools/gates.r5.engine-gpu.mjs --lane engine-gpu   (W0a probe included: ~10 min)
+ * Every row carries `wave`.
  *
  * No gate here names a species, a coordinate or a bone: the vista and the
  * staged fight come from tools/budgets.mjs (gates-perf), the island sites from
@@ -58,7 +71,7 @@ import { readFileSync, existsSync } from 'fs';
 import os from 'os';
 import path from 'path';
 import { execFileSync } from 'child_process';
-import { fileURLToPath } from 'url';
+import { fileURLToPath, pathToFileURL } from 'url';
 import * as BUDGETS_MOD from './budgets.mjs';
 import { RT_LEDGER } from './r5-probes/rt-ledger.mjs';
 
@@ -193,7 +206,23 @@ export function sampleBox() {
  * silent re-point.
  */
 const PERF_SCENARIOS = BUDGETS_MOD.PERF_SCENARIOS || {};
-const STAGE_PRELUDE = BUDGETS_MOD.STAGE_PRELUDE || '';
+/**
+ * gates-perf's role/place re-cast (W0a, not yet merged into this tree when
+ * W0b started) evaluates its scenarios against two more page preludes,
+ * `ROSTER` (tools/gate-roster.mjs: KIND, roleSkip, ROLE_NOTE) and `PLACES`
+ * (tools/gate-places.mjs: PLACE, standAt). They are spliced in front of
+ * STAGE_PRELUDE when those modules exist, so this file stages correctly
+ * before and after that merge. Loaded with a guarded dynamic import: neither
+ * module imports this file, so there is no cycle (the W0a lesson).
+ */
+const optionalModule = async (rel) => {
+  const f = path.join(ROOT, 'tools', rel);
+  if (!existsSync(f)) return null;
+  try { return await import(pathToFileURL(f).href); } catch (err) { return { __loadError: String(err.message) }; }
+};
+const ROSTER_MOD = await optionalModule('gate-roster.mjs');
+const PLACES_MOD = await optionalModule('gate-places.mjs');
+const STAGE_PRELUDE = (ROSTER_MOD?.ROSTER || '') + (PLACES_MOD?.PLACES || '') + (BUDGETS_MOD.STAGE_PRELUDE || '');
 const VISTA = PERF_SCENARIOS['spawn-vista'] || PERF_SCENARIOS.vista || null;
 const FIGHT = PERF_SCENARIOS['staged-fight'] || null;
 const STAGING_MISSING = !STAGE_PRELUDE || !VISTA || !FIGHT
@@ -275,6 +304,8 @@ export const VRAM_CENSUS = `
       const by = (ty === 1016 || ty === 1011 || ty === 1012) ? 2 : (ty === 1015 || ty === 1013 || ty === 1014) ? 4 : 1;
       return ch * by;
     };
+    const big = [];
+    let curOwner = '';
     const addTex = (t) => {
       if (!t || !t.isTexture || texSeen.has(t) || t.isRenderTargetTexture) return;
       texSeen.add(t);
@@ -289,6 +320,12 @@ export const VRAM_CENSUS = `
         bytes = w * h * depth * faces * bpt(t) * mips;
       }
       tex += bytes; texCount++;
+      if (bytes >= 1e6) {
+        const img = Array.isArray(t.image) ? t.image[0] : t.image;
+        const src = (img && (img.currentSrc || img.src)) || '';
+        big.push({ mb: +(bytes / 1e6).toFixed(2), name: t.name || (src ? src.split('/').pop().slice(0, 60) : ''), owner: curOwner,
+          size: img ? (img.width || 0) + 'x' + (img.height || 0) : '?' });
+      }
     };
     const addBuf = (a) => {
       if (!a) return;
@@ -304,6 +341,8 @@ export const VRAM_CENSUS = `
     };
     ctx.scene.traverse((o) => {
       const mats = Array.isArray(o.material) ? o.material : (o.material ? [o.material] : []);
+      let top = o; while (top.parent && top.parent !== ctx.scene) top = top.parent;
+      curOwner = (top.name || top.type) + (o !== top ? ' > ' + (o.name || o.type) : '');
       for (const m of mats) {
         for (const k in m) { const v = m[k]; if (v && v.isTexture) addTex(v); }
         if (m.uniforms) for (const k in m.uniforms) {
@@ -317,21 +356,28 @@ export const VRAM_CENSUS = `
       if (o.isInstancedMesh) { addBuf(o.instanceMatrix); addBuf(o.instanceColor); }
     });
     for (const k of ['environment', 'background']) { const t = ctx.scene[k]; if (t && t.isTexture) addTex(t); }
-    return { textureBytes: Math.round(tex), textures: texCount, geometryBytes: geo, buffers: bufSeen.size };
+    big.sort((a, b) => b.mb - a.mb);
+    return { textureBytes: Math.round(tex), textures: texCount, geometryBytes: geo, buffers: bufSeen.size, top: big.slice(0, 14) };
   };
 `;
 
 /** Ledger staging: shipped tier, DPR 1.25, DRS off; spawn vista then the staged fight. */
 const LEDGER_STAGE = `
+  /**
+   * The shipped default tier on a DPR-2 display: basePixelRatio = min(2, tier.dprCap) (1.25 at W0b),
+   * DRS off; the vista, then the staged fight. A scenario that cannot cast (gates-perf's role re-cast
+   * returns { skip }) leaves the stage unstaged and says so: the caller reports PENDING, never PASS.
+   */
   const __stageLedger = async () => {
     const ctx = __CTX__, e = ctx.engine;
     e.setDynamicResolution(false);
-    e.basePixelRatio = 1.25; e.renderScale = 1; e.resize();
+    e.basePixelRatio = Math.min(2, e.tier.dprCap); e.renderScale = 1; e.resize();
     const unpinA = eval(${JSON.stringify(VISTA)});
     await __frames(60);
-    unpinA();
+    if (typeof unpinA === 'function') unpinA();
     const unpinF = eval(${JSON.stringify(FIGHT)});
     await __frames(90);
+    if (typeof unpinF !== 'function') { const sk = unpinF; const f = () => {}; f.skip = (sk && sk.skip) || 'staged-fight did not stage'; return f; }
     return unpinF;
   };
   /**
@@ -433,6 +479,691 @@ const LEDGER_STAGE = `
     return out;
   };
 `;
+
+/* ------------------------------------------------------------------------ */
+/* W0b: the Pans POC host (A-gpu-tier, A22, A108, A109, V20, V33b)           */
+/* ------------------------------------------------------------------------ */
+
+/**
+ * THE PANS POC HOST. Plan §9 stages the W0b block on `?poc=biome` (the Pans
+ * proof: tools/r5-poc/poc-biome.js, pipeline's, kept for A-gpu-tier until the
+ * W1 Pans replace it), and that flag replaces the game boot, so the runner's
+ * `window.__READY__` never comes. The gates therefore boot the normal page,
+ * STOP the game's frame loop (one GPU client measured, not two), hide its
+ * canvas, and open `/?poc=biome` in a same-origin iframe the size of the
+ * viewport. The iframe is a separate window: its own engine.js module, its
+ * own WebGL context, its own rAF. Everything below drives `__R5BIOME__`
+ * (engine, scene, camera, views, groups) through the public engine API, and
+ * every tier row comes from the iframe's own engine.js
+ * (`await W.eval("import('/src/core/engine.js')")` is not needed: the outer
+ * page imports the same module URL and the rows are plain data).
+ *
+ * "DPR 2" means basePixelRatio = min(2, tier.dprCap), exactly what a DPR-2
+ * display gets (the runner's page is 1600 x 900 at deviceScaleFactor 1), as
+ * Round 4's GTAO gates did. Splice inside an async body.
+ */
+export const POC_KIT = `
+  const __EM = await import('/src/core/engine.js');
+  const QUALITY_TIERS = __EM.QUALITY_TIERS, ROUND4_HIGH = __EM.ROUND4_HIGH, DEFAULT_TIER = __EM.DEFAULT_TIER;
+  const __POCM = await import('/tools/r5-poc/poc-biome.js');
+  const pocHeight = __POCM.height;
+  const __pocBoot = async (query) => {
+    const C = window.__CTX__;
+    if (C && C.engine) { C.engine.renderer.setAnimationLoop(null); C.engine.renderer.domElement.style.visibility = 'hidden'; }
+    const hud = document.getElementById('hud'); if (hud) hud.style.display = 'none';
+    const f = document.createElement('iframe');
+    f.src = '/?poc=biome' + (query ? '&' + query : '');
+    f.style.cssText = 'position:fixed;left:0;top:0;width:' + innerWidth + 'px;height:' + innerHeight + 'px;border:0;z-index:2147483640;background:#000';
+    document.body.appendChild(f);
+    const t0 = performance.now();
+    for (;;) {
+      const w = f.contentWindow;
+      if (w && w.__R5BIOME_READY__ && w.__R5BIOME__) break;
+      if (performance.now() - t0 > 90000) throw new Error('the Pans POC (?poc=biome) did not boot within 90 s');
+      await new Promise((r) => setTimeout(r, 100));
+    }
+    return f;
+  };
+  const __F = await __pocBoot();
+  const PW = __F.contentWindow, PB = PW.__R5BIOME__, E = PB.engine, R = E.renderer, gl = R.getContext(), cam = E.camera;
+  const pfr = (n) => new Promise((res) => { let k = 0; const t = () => { if (++k >= (n || 1)) res(); else PW.requestAnimationFrame(t); }; PW.requestAnimationFrame(t); });
+  const r2 = (v) => (v == null ? null : +(+v).toFixed(2));
+  const r3 = (v) => (v == null ? null : +(+v).toFixed(3));
+  const median = (a) => { const s = a.filter((v) => v != null).sort((x, y) => x - y), n = s.length; return n ? (n % 2 ? s[(n - 1) / 2] : (s[n / 2 - 1] + s[n / 2]) / 2) : null; };
+  const quantile = (a, q) => { const s = a.filter((v) => v != null).sort((x, y) => x - y); if (!s.length) return null; const h = (s.length - 1) * q, lo = Math.floor(h), hi = Math.ceil(h); return s[lo] + (s[hi] - s[lo]) * (h - lo); };
+  /** apply a tier row at "DPR dpr" (min(dpr, row.dprCap)), DRS off */
+  const setTierDpr = (row, name, dpr) => {
+    E.applyTier(row, name);
+    E.setDynamicResolution(false);
+    E.basePixelRatio = Math.min(dpr, row.dprCap); E.renderScale = 1; E.resize();
+  };
+  /** n synchronous renders (cull pass forced), for framebuffer reads in the same task */
+  let camFn = null;
+  const draw = (n) => { for (let i = 0; i < (n || 5); i++) { if (camFn) camFn(); E._shadowCullClock = 0; E.render(0.05); } };
+  const W = () => R.domElement.width, H = () => R.domElement.height;
+  const readRect = (x0, yTop, w, h) => {
+    const buf = new Uint8Array(w * h * 4);
+    gl.readPixels(x0, H() - yTop - h, w, h, gl.RGBA, gl.UNSIGNED_BYTE, buf);
+    const out = new Uint8Array(w * h * 4);
+    for (let r = 0; r < h; r++) out.set(buf.subarray((h - 1 - r) * w * 4, (h - r) * w * 4), r * w * 4);
+    return out;
+  };
+  const lum = (rgba, i) => (0.2126 * rgba[i * 4] + 0.7152 * rgba[i * 4 + 1] + 0.0722 * rgba[i * 4 + 2]) / 255;
+  const lumCrop = (cx, cy, S) => {
+    const x0 = Math.max(0, Math.min(W() - S, Math.round(cx * W() - S / 2)));
+    const y0 = Math.max(0, Math.min(H() - S, Math.round(cy * H() - S / 2)));
+    const px = readRect(x0, y0, S, S), L = new Float64Array(S * S);
+    for (let i = 0; i < S * S; i++) L[i] = lum(px, i);
+    return L;
+  };
+  const meanLum = (fx0, fy0, fx1, fy1) => {
+    const x0 = Math.round(fx0 * W()), y0 = Math.round(fy0 * H());
+    const w = Math.round((fx1 - fx0) * W()), h = Math.round((fy1 - fy0) * H());
+    const px = readRect(x0, y0, w, h);
+    let s = 0;
+    for (let i = 0; i < w * h; i++) s += lum(px, i);
+    return s / (w * h);
+  };
+  const hf = (u) => {
+    const s = (u & 0x8000) ? -1 : 1, ex = (u >> 10) & 0x1f, f = u & 0x3ff;
+    if (ex === 0) return s * Math.pow(2, -14) * (f / 1024);
+    if (ex === 31) return f ? NaN : s * Infinity;
+    return s * Math.pow(2, ex - 15) * (1 + f / 1024);
+  };
+  /** a camera at (x, z), h m over the POC ground, looking at bearing yawDeg (0 = +z, 90 = +x), pitch deg */
+  const camAt = (x, z, h, yawDeg, pitchDeg, fov) => {
+    const gy = Math.max(pocHeight(x, z), -0.9), yaw = yawDeg * Math.PI / 180, pit = (pitchDeg || 0) * Math.PI / 180;
+    camFn = () => {
+      cam.fov = fov || 50; cam.updateProjectionMatrix();
+      cam.position.set(x, gy + h, z);
+      cam.lookAt(x + Math.sin(yaw) * Math.cos(pit) * 100, gy + h + Math.sin(pit) * 100, z + Math.cos(yaw) * Math.cos(pit) * 100);
+      cam.updateMatrixWorld(true);
+    };
+    camFn();
+    if (PB.scene.fog) PB.scene.fog.density = 0.0026;
+    E.csm && E.csm.updateFrustums && E.csm.updateFrustums();
+  };
+  const viewNamed = (name) => { camFn = null; PB.view(name); cam.updateMatrixWorld(true); };
+
+  /* --- autocorrelation (Round 4 core-platform-gtao A108, unchanged) ------- */
+  const fft1 = (re, im, inv) => {
+    const n = re.length;
+    for (let i = 1, j = 0; i < n; i++) {
+      let bit = n >> 1;
+      for (; j & bit; bit >>= 1) j ^= bit;
+      j ^= bit;
+      if (i < j) { let t = re[i]; re[i] = re[j]; re[j] = t; t = im[i]; im[i] = im[j]; im[j] = t; }
+    }
+    for (let len = 2; len <= n; len <<= 1) {
+      const ang = (inv ? 2 : -2) * Math.PI / len, wr = Math.cos(ang), wi = Math.sin(ang);
+      for (let i = 0; i < n; i += len) {
+        let cr = 1, ci = 0;
+        for (let k = 0; k < len / 2; k++) {
+          const a = i + k, b = a + len / 2;
+          const tr = re[b] * cr - im[b] * ci, ti = re[b] * ci + im[b] * cr;
+          re[b] = re[a] - tr; im[b] = im[a] - ti; re[a] += tr; im[a] += ti;
+          const nr = cr * wr - ci * wi; ci = cr * wi + ci * wr; cr = nr;
+        }
+      }
+    }
+  };
+  const fft2 = (re, im, N, inv) => {
+    const rr = new Float64Array(N), ii = new Float64Array(N);
+    for (let y = 0; y < N; y++) {
+      for (let x = 0; x < N; x++) { rr[x] = re[y * N + x]; ii[x] = im[y * N + x]; }
+      fft1(rr, ii, inv);
+      for (let x = 0; x < N; x++) { re[y * N + x] = rr[x]; im[y * N + x] = ii[x]; }
+    }
+    for (let x = 0; x < N; x++) {
+      for (let y = 0; y < N; y++) { rr[y] = re[y * N + x]; ii[y] = im[y * N + x]; }
+      fft1(rr, ii, inv);
+      for (let y = 0; y < N; y++) { re[y * N + x] = rr[y]; im[y * N + x] = ii[y]; }
+    }
+  };
+  const acorr = (L, S) => {
+    const hp = 12;
+    const blur = (src) => {
+      const tmp = new Float64Array(S * S), dst = new Float64Array(S * S);
+      for (let y = 0; y < S; y++) {
+        let acc = 0, n = 0;
+        for (let x = 0; x <= hp && x < S; x++) { acc += src[y * S + x]; n++; }
+        for (let x = 0; x < S; x++) {
+          tmp[y * S + x] = acc / n;
+          const xo = x - hp, xi = x + hp + 1;
+          if (xo >= 0) { acc -= src[y * S + xo]; n--; }
+          if (xi < S) { acc += src[y * S + xi]; n++; }
+        }
+      }
+      for (let x = 0; x < S; x++) {
+        let acc = 0, n = 0;
+        for (let y = 0; y <= hp && y < S; y++) { acc += tmp[y * S + x]; n++; }
+        for (let y = 0; y < S; y++) {
+          dst[y * S + x] = acc / n;
+          const yo = y - hp, yi = y + hp + 1;
+          if (yo >= 0) { acc -= tmp[yo * S + x]; n--; }
+          if (yi < S) { acc += tmp[yi * S + x]; n++; }
+        }
+      }
+      return dst;
+    };
+    const lo = blur(blur(L)), N = S * 2;
+    const re = new Float64Array(N * N), im = new Float64Array(N * N);
+    let v0 = 0;
+    for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) {
+      const d = L[y * S + x] - lo[y * S + x];
+      re[y * N + x] = d; v0 += d * d;
+    }
+    fft2(re, im, N, false);
+    for (let i = 0; i < N * N; i++) { re[i] = re[i] * re[i] + im[i] * im[i]; im[i] = 0; }
+    fft2(re, im, N, true);
+    const r0 = re[0] / (S * S);
+    const Rr = (dx, dy) => {
+      const ix = (dx + N) % N, iy = (dy + N) % N;
+      return (re[iy * N + ix] / ((S - Math.abs(dx)) * (S - Math.abs(dy)))) / r0;
+    };
+    let best = { peak: -1, lag: [0, 0] };
+    for (let dy = -32; dy <= 32; dy++) for (let dx = 0; dx <= 32; dx++) {
+      const ch = Math.max(Math.abs(dx), Math.abs(dy));
+      if (ch < 2 || (dx === 0 && dy < 0)) continue;
+      const v = Rr(dx, dy);
+      let isMax = v > best.peak;
+      for (let oy = -1; oy <= 1 && isMax; oy++) for (let ox = -1; ox <= 1; ox++) {
+        if ((ox || oy) && Rr(dx + ox, dy + oy) >= v) { isMax = false; break; }
+      }
+      if (isMax) best = { peak: v, lag: [dx, dy] };
+    }
+    return { peak: +best.peak.toFixed(3), lag: best.lag, rms: +Math.sqrt(v0 / (S * S)).toFixed(4) };
+  };
+  /** contact-sheet helpers: a 1600 x 900 canvas of 400 x 225 tiles, shown over everything at the end */
+  const sheetNew = (cols, rows) => {
+    const c = document.createElement('canvas'); c.width = 1600; c.height = 900;
+    const g = c.getContext('2d'); g.fillStyle = '#111'; g.fillRect(0, 0, 1600, 900);
+    const tmp = document.createElement('canvas'), tg = tmp.getContext('2d');
+    const TW = 1600 / cols, TH = 900 / rows;
+    const put = (rgba, w, h, col, row, label, nearest) => {
+      tmp.width = w; tmp.height = h;
+      tg.putImageData(new ImageData(new Uint8ClampedArray(rgba.buffer), w, h), 0, 0);
+      g.imageSmoothingEnabled = !nearest;
+      g.drawImage(tmp, 0, 0, w, h, col * TW, row * TH, TW, TH);
+      g.imageSmoothingEnabled = true;
+      g.fillStyle = '#000'; g.globalAlpha = 0.62; g.fillRect(col * TW, row * TH, 8 + label.length * 7.3, 18);
+      g.globalAlpha = 1; g.fillStyle = '#ffe3b0'; g.font = '12px ui-monospace, monospace';
+      g.fillText(label, col * TW + 5, row * TH + 13);
+    };
+    const show = () => {
+      const img = new Image(); img.src = c.toDataURL('image/png');
+      img.style.cssText = 'position:fixed;inset:0;width:100vw;height:100vh;z-index:2147483647';
+      document.body.appendChild(img);
+      return new Promise((r) => { img.onload = () => r(); setTimeout(r, 2000); });
+    };
+    return { put, show, TW, TH };
+  };
+`;
+
+/* ------------------------------------------------------------------------ */
+/* A-gpu-tier (W0b)                                                          */
+/* ------------------------------------------------------------------------ */
+
+/** Plan §4.3 / §9 bars, and the lever chain the plan names, in its order. */
+export const GPU_TIER_BAR = Object.freeze({ emptyGpuMs: 7, vistaGpuMs: 13, medianFps: 58, p95FrameMs: 20 });
+
+/**
+ * docs/ROUND5-ENGINE.md records the chosen tier between
+ * `<!-- gpu-tier:begin -->` and `<!-- gpu-tier:end -->`, including one line
+ * `tier-row: {json}` with the levers. A-gpu-tier compares it with the live
+ * QUALITY_TIERS[DEFAULT_TIER] (so the doc can never describe a tier that is not
+ * the one shipped).
+ */
+function docsGpuTier() {
+  const f = path.join(ROOT, 'docs/ROUND5-ENGINE.md');
+  if (!existsSync(f)) return { present: false };
+  const text = readFileSync(f, 'utf8');
+  const a = text.indexOf('<!-- gpu-tier:begin -->'), b = text.indexOf('<!-- gpu-tier:end -->');
+  if (a < 0 || b < 0) return { present: true, marked: false };
+  const block = text.slice(a, b);
+  const m = block.match(/tier-row:\s*`?(\{[^\n`]*\})`?/);
+  let row = null;
+  try { row = m ? JSON.parse(m[1]) : null; } catch (err) { row = null; }
+  return { present: true, marked: true, row, hasBeforeAfter: /before/i.test(block) && /after/i.test(block) };
+}
+const DOCS_GPU_TIER = JSON.stringify(docsGpuTier());
+
+/**
+ * A-gpu-tier, measured on the Pans POC at the SHIPPED DEFAULT TIER on a DPR-2
+ * display (basePixelRatio = min(2, dprCap) = 1.25), 1600 x 900, DRS off:
+ *   empty frame   only the sky + the whole post chain (every other POC group
+ *                 hidden; the POC's own `gpuStates().emptyFrame` set)
+ *   vista         the POC's `vista` view, everything drawn
+ * 4 rounds of (vista 2 s, empty 2 s), GPU time by EXT_disjoint_timer_query
+ * (engine.perfSnapshot), frame intervals from the POC loop's own
+ * engine._recordFrame ring (every frame of the 4 vista bursts pooled: median
+ * fps = 1000 / median interval, p95 interval).
+ * JUDGED ONLY ON A QUIET BOX (the W0a rule, QUIET): load < 3 and 0 other
+ * headless Chromes (sampled in node by A-gpu-tier-box), a null frame (nothing
+ * drawn, DPR 0.5) < 3 ms before and after, and the 4 burst medians of each
+ * scene within 1.4x. Otherwise PENDING with every number reported.
+ * Then, for the record (ungraded), the plan's levers one at a time from
+ * Round 4's `high` (DPR 1.5): DPR cap 1.25, + GTAO quarter-res, + SMAA-only,
+ * = shipped (+ SMAA RGBA8 + far-cascade caps), 2 rounds each, and the
+ * render-target MB of each from engine.renderTargetLedger().
+ * The docs clause is graded on any box.
+ */
+function gpuTierAssert(box) {
+  return `(async () => {
+      ${POC_KIT}
+      const BOX = ${JSON.stringify(box)};
+      const QUIET = ${JSON.stringify(QUIET)};
+      const BAR = ${JSON.stringify(GPU_TIER_BAR)};
+      const DOCS = ${DOCS_GPU_TIER};
+      const out = { bars: BAR, box: BOX };
+      const why = [];
+      if (!BOX) why.push('box not sampled (A-gpu-tier-box samples load and headless Chromes in node and hands them here; run both: --lane engine-gpu)');
+      else {
+        if (Date.now() - BOX.sampledAt > QUIET.maxBoxAgeMs) why.push('box sample ' + Math.round((Date.now() - BOX.sampledAt) / 1000) + ' s old');
+        if (!(BOX.load1 < QUIET.load1)) why.push('load average ' + BOX.load1 + ' (needs < ' + QUIET.load1 + ')');
+        if (BOX.otherHeadlessChromes == null || BOX.otherHeadlessChromes > QUIET.otherHeadlessChromes) why.push(BOX.otherHeadlessChromes + ' other headless Chrome(s) (needs 0)');
+      }
+      E.enableGpuTimer(true);
+      const P = E._perf;
+      /** a burst of the POC's own loop; returns GPU median + every frame interval it recorded */
+      const burst = async (ms) => {
+        await pfr(6); E.perfReset();
+        const t0 = performance.now(); let n = 0;
+        while (performance.now() - t0 < ms) { await pfr(1); n++; }
+        const s = E.perfSnapshot(n);
+        const cnt = Math.min(n, P.n), cap = P.ms.length, iv = [];
+        for (let k = 0; k < cnt; k++) iv.push(P.ms[(P.i - 1 - k + cap * 2) % cap]);
+        return { gpu: s ? s.medianGpuMs : null, gpuFrames: s ? s.gpuFrames : 0, frames: n, intervals: iv,
+          calls: s ? s.medianDrawCalls : null, tris: s ? s.maxTriangles : null };
+      };
+      const groups = PB.groups;
+      const showOnly = (keep) => { for (const k in groups) groups[k].visible = keep === null ? k !== 'kitbash' : keep.includes(k); };
+      const nullFrame = async () => {
+        const keep = { pr: E.basePixelRatio, g: E.gtao.enabled, b: E.bloom.enabled, s: E.smaa.enabled, sh: R.shadowMap.enabled };
+        try {
+          E.gtao.enabled = false; E.bloom.enabled = false; E.smaa.enabled = false; R.shadowMap.enabled = false; PB.scene.visible = false;
+          E.basePixelRatio = 0.5; E.resize();
+          return r2((await burst(900)).gpu);
+        } finally {
+          PB.scene.visible = true; E.gtao.enabled = keep.g; E.bloom.enabled = keep.b; E.smaa.enabled = keep.s; R.shadowMap.enabled = keep.sh;
+          E.basePixelRatio = keep.pr; E.resize();
+        }
+      };
+      const SHIPPED = QUALITY_TIERS[DEFAULT_TIER];
+      const levers = (row) => ({ dprCap: row.dprCap, msaa: row.msaa, gtao: row.gtao, gtaoScale: row.gtaoScale, smaa: row.smaa,
+        smaaHalfFloat: row.smaaHalfFloat, csmMapCaps: row.csmMapCaps });
+      const measure = async (rounds, ms) => {
+        const v = [], m = [];
+        for (let k = 0; k < rounds; k++) {
+          showOnly(null); v.push(await burst(ms));
+          showOnly(['sky']); m.push(await burst(ms));
+        }
+        showOnly(null);
+        const iv = [].concat(...v.map((b) => b.intervals));
+        const inst = (a) => { const s = a.filter((x) => x != null && x > 0); return s.length === a.length && s.length > 1 ? r3(Math.max(...s) / Math.min(...s)) : null; };
+        return { vistaGpu: v.map((b) => r2(b.gpu)), emptyGpu: m.map((b) => r2(b.gpu)), vistaGpuMedian: r2(median(v.map((b) => b.gpu))),
+          emptyGpuMedian: r2(median(m.map((b) => b.gpu))), vistaInstability: inst(v.map((b) => b.gpu)), emptyInstability: inst(m.map((b) => b.gpu)),
+          medianFrameMs: r2(median(iv)), medianFps: iv.length ? r2(1000 / median(iv)) : null, p95FrameMs: r2(quantile(iv, 0.95)),
+          frames: iv.length, drawCalls: { vista: v[0].calls, empty: m[0].calls }, vistaTris: v[0].tris };
+      };
+
+      // ---- the shipped default tier ----
+      viewNamed('vista');
+      setTierDpr(SHIPPED, DEFAULT_TIER, 2);
+      await pfr(30);
+      const L = E.renderTargetLedger();
+      out.shipped = { tier: DEFAULT_TIER, levers: levers(SHIPPED), pixelRatio: r3(R.getPixelRatio()), drawingBuffer: [W(), H()],
+        msaaSamples: E.sceneTarget.samples, gtaoBuffer: [E.gtao.width, E.gtao.height], smaaType: E.smaa.edgesRT.texture.type,
+        csmMapSizes: E.csmMapSizes, renderTargetMB: L.mb };
+      const nullBefore = await nullFrame();
+      const ship = await measure(4, 2000);
+      const nullAfter = await nullFrame();
+      Object.assign(out.shipped, ship, { nullFrameGpuMs: [nullBefore, nullAfter] });
+      if (!(nullBefore < QUIET.nullFrameGpuMs) || !(nullAfter < QUIET.nullFrameGpuMs)) why.push('null-frame GPU ' + nullBefore + ' / ' + nullAfter + ' ms (needs < ' + QUIET.nullFrameGpuMs + ')');
+      if (!(ship.vistaInstability <= QUIET.burstInstability) || !(ship.emptyInstability <= QUIET.burstInstability)) why.push('burst instability vista ' + ship.vistaInstability + ' / empty ' + ship.emptyInstability + ' (needs <= ' + QUIET.burstInstability + ')');
+      const terms = { emptyGpuMs: ship.emptyGpuMedian != null && ship.emptyGpuMedian <= BAR.emptyGpuMs,
+        vistaGpuMs: ship.vistaGpuMedian != null && ship.vistaGpuMedian <= BAR.vistaGpuMs,
+        medianFps: ship.medianFps != null && ship.medianFps >= BAR.medianFps,
+        p95FrameMs: ship.p95FrameMs != null && ship.p95FrameMs <= BAR.p95FrameMs };
+      const shippedOk = out.shipped.pixelRatio === 1.25 && E.quality === DEFAULT_TIER;
+      if (!shippedOk) why.push('not measured at the shipped tier on a DPR-2 display (quality ' + E.quality + ', pixel ratio ' + out.shipped.pixelRatio + ')');
+
+      // ---- before -> after, the plan's levers in its order (ungraded record) ----
+      const chain = [
+        ['Round-4 high (DPR 1.5, MSAA x4, GTAO 1/2, SMAA HalfFloat, CSM 3 x 2048)', ROUND4_HIGH],
+        ['lever 1: DPR cap 1.25', Object.assign({}, ROUND4_HIGH, { dprCap: 1.25 })],
+        ['lever 2: + GTAO quarter-res', Object.assign({}, ROUND4_HIGH, { dprCap: 1.25, gtaoScale: 0.25 })],
+        ['lever 3: + SMAA-only (MSAA 0)', Object.assign({}, ROUND4_HIGH, { dprCap: 1.25, gtaoScale: 0.25, msaa: 0 })],
+        ['shipped ' + DEFAULT_TIER + ' (+ SMAA RGBA8, far cascades capped)', SHIPPED],
+      ];
+      out.leverChain = [];
+      for (const [label, row] of chain) {
+        setTierDpr(row, 'lever', 2);
+        await pfr(20);
+        const m = await measure(2, 1500);
+        out.leverChain.push({ label, pixelRatio: r3(R.getPixelRatio()), renderTargetMB: E.renderTargetLedger().mb,
+          vistaGpuMedian: m.vistaGpuMedian, emptyGpuMedian: m.emptyGpuMedian, medianFps: m.medianFps, p95FrameMs: m.p95FrameMs,
+          vistaGpu: m.vistaGpu, emptyGpu: m.emptyGpu });
+      }
+      setTierDpr(SHIPPED, DEFAULT_TIER, 2);
+      await pfr(10);
+
+      // ---- the docs clause (graded on any box) ----
+      const live = levers(SHIPPED);
+      const docsOk = !!(DOCS.marked && DOCS.row && DOCS.hasBeforeAfter
+        && Object.keys(live).every((k) => JSON.stringify(DOCS.row[k]) === JSON.stringify(live[k])));
+      out.docs = { recorded: DOCS, live, ok: docsOk };
+      out.terms = terms;
+      out.judged = why.length === 0;
+      out.pendingBecause = why;
+      const clockPass = Object.values(terms).every(Boolean);
+      const pass = !docsOk ? false : !out.judged ? null : clockPass;
+      if (!out.judged) out.unjudgedReads = clockPass ? 'every clock under its bar' : 'red on ' + Object.keys(terms).filter((k) => !terms[k]).join(', ');
+      return { pass, detail: out };
+    })()`;
+}
+
+/* ------------------------------------------------------------------------ */
+/* A22-msaa (R25), V20, A108, A109, V33b — re-staged on the Pans POC (W0b)   */
+/* ------------------------------------------------------------------------ */
+
+/**
+ * SHADOW BY ID (plan §3.3). These five rows replace the Round-4 rows of the
+ * same id while this lane is active. gates-perf's registry (W0a, merged into
+ * main after this tree was cut) does the replacement; this tree's Round-4
+ * runner instead keeps the FIRST of two equal ids, i.e. the Round-4 row. So
+ * until `tools/gates.r5.carried.mjs` (the registry's sign) exists in the tree,
+ * the rows run under `<id>@r5`, which the Round-4 runner cannot shadow; after
+ * the merge they take their real ids and shadow the carried rows. Same body
+ * either way.
+ */
+const PRE_MERGE = !existsSync(path.join(ROOT, 'tools/gates.r5.carried.mjs'));
+export const SHADOWED_IDS = Object.freeze(['A22-msaa', 'A108-ao-periodicity', 'A109-ao-distance-fade', 'V20-aa-crop', 'V33b-no-ao-lattice']);
+export const SHADOW_ID_SUFFIX = PRE_MERGE ? '@r5' : '';
+const sid = (id) => (SHADOWED_IDS.includes(id) ? id + SHADOW_ID_SUFFIX : id);
+
+/**
+ * The AA frame (V20 and A22's R25 clause): basalt columns on the Pans shelf
+ * against the sky. `crop` is in CSS px of the 1600 x 900 frame and is read at
+ * the device ratio in force.
+ */
+const AA_FRAME = Object.freeze({ cam: [16, 22, 2.2, 53, 14, 50], crop: [860, 30, 200, 112] });
+
+/**
+ * Edge anti-aliasing, measured: on every pixel whose 3x3 neighbourhood spans
+ * more than 0.25 of luminance (a silhouette), t = (L - min) / (max - min);
+ * the pixel is INTERMEDIATE when 0.2 <= t <= 0.8. With no AA a hard
+ * silhouette leaves two plateaus (t near 0 or 1); SMAA / MSAA put ramp values
+ * on the boundary. Returns the intermediate fraction over edge pixels.
+ */
+const AA_METRIC = `
+  const aaMetric = (px, w, h) => {
+    const Lm = new Float32Array(w * h);
+    for (let i = 0; i < w * h; i++) Lm[i] = lum(px, i);
+    let edges = 0, inter = 0;
+    for (let y = 1; y < h - 1; y++) for (let x = 1; x < w - 1; x++) {
+      let mn = 1, mx = 0;
+      for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) { const v = Lm[(y + dy) * w + x + dx]; if (v < mn) mn = v; if (v > mx) mx = v; }
+      const c = mx - mn;
+      if (c <= 0.25) continue;
+      edges++;
+      const t = (Lm[y * w + x] - mn) / c;
+      if (t >= 0.2 && t <= 0.8) inter++;
+    }
+    return { edges, intermediate: inter, fraction: edges ? +(inter / edges).toFixed(4) : null };
+  };
+  const aaStage = () => camAt(${AA_FRAME.cam.join(', ')});
+  const aaCrop = () => {
+    const pr = R.getPixelRatio(), c = ${JSON.stringify(AA_FRAME.crop)};
+    const x0 = Math.round(c[0] * pr), y0 = Math.round(c[1] * pr), w = Math.round(c[2] * pr), h = Math.round(c[3] * pr);
+    draw(4);
+    return { px: readRect(x0, y0, w, h), w, h };
+  };
+`;
+
+/**
+ * A22-msaa under R25 (A-gpu-tier picked SMAA-only). Mechanical: the scene
+ * target is composer.renderTarget1; at the shipped tier its sample count is the
+ * tier's; SMAA is present and enabled. Then R25's "V20-aa-crop passes" is
+ * backed by a MEASURED clause on V20's own crop: SMAA must put ramp values on
+ * the silhouettes (intermediate fraction >= AA_BAR.minFraction and >=
+ * AA_BAR.minGainOverOff x the same frame with SMAA off). Round 4's MSAA x4 +
+ * SMAA on the same crop is reported for scale. The V20 verdict itself is the
+ * judge's (R29).
+ */
+export const AA_BAR = Object.freeze({ minFraction: 0.2, minGainOverOff: 1.5 });
+const A22_ASSERT = `(async () => {
+  ${POC_KIT}
+  ${AA_METRIC}
+  const SHIP = QUALITY_TIERS[DEFAULT_TIER], BAR = ${JSON.stringify(AA_BAR)};
+  setTierDpr(SHIP, DEFAULT_TIER, 2);
+  aaStage();
+  const aaP = E.composer.passes.find((p) => /SMAA|TAA/.test(p.constructor.name)) || null;
+  const mech = { quality: E.quality, defaultTier: DEFAULT_TIER, samples: E.sceneTarget.samples, tierMsaa: SHIP.msaa,
+    sceneTargetIsRenderTarget1: E.composer.renderTarget1 === E.sceneTarget,
+    aaPass: aaP ? aaP.constructor.name : null,
+    smaaEnabled: !!E.smaa.enabled, smaaInChain: E.composer.passes.includes(E.smaa), pixelRatio: r3(R.getPixelRatio()) };
+  const msaaPath = SHIP.msaa >= 4;
+  const mechOk = mech.sceneTargetIsRenderTarget1 && mech.smaaEnabled && mech.smaaInChain && mech.quality === DEFAULT_TIER
+    && (msaaPath ? mech.samples >= 4 : mech.samples === 0);
+  const on = aaCrop(); const mOn = aaMetric(on.px, on.w, on.h);
+  E.smaa.enabled = false; const off = aaCrop(); const mOff = aaMetric(off.px, off.w, off.h); E.smaa.enabled = true;
+  setTierDpr(ROUND4_HIGH, 'round4-high', 2); aaStage();
+  const r4 = aaCrop(); const mR4 = aaMetric(r4.px, r4.w, r4.h);
+  setTierDpr(SHIP, DEFAULT_TIER, 2);
+  const gain = mOff.fraction ? +(mOn.fraction / mOff.fraction).toFixed(3) : null;
+  const measured = msaaPath ? null : { smaaOn: mOn, smaaOff: mOff, round4MsaaX4PlusSmaa: mR4, gainOverOff: gain,
+    ok: mOn.edges >= 200 && mOn.fraction >= BAR.minFraction && gain != null && gain >= BAR.minGainOverOff };
+  const pass = mechOk && (msaaPath || measured.ok);
+  return { pass, detail: { path: msaaPath ? 'MSAA x' + mech.samples + ' + SMAA' : 'R25: SMAA-only (V20-aa-crop graded by the R29 judge)',
+    mechanical: Object.assign(mech, { ok: mechOk }), measuredAA: measured, bar: BAR, crop: ${JSON.stringify(AA_FRAME)} } };
+})()`;
+
+/**
+ * V20 on the Pans POC: the shipped tier's 4x nearest crop of basalt-column
+ * silhouettes against the sky, with the same crop with NO anti-aliasing (what
+ * stair-steps look like) and with Round 4's MSAA x4 + SMAA for scale.
+ * A visual setup must return within the runner's 60 s, and the POC boot can
+ * take most of that on a busy box: the sheet is built in the background and
+ * the runner's settle waits for it (the PNG says "incomplete" otherwise).
+ */
+const V20_SETUP = `(async () => { const __work = (async () => {
+  ${POC_KIT}
+  const SHIP = QUALITY_TIERS[DEFAULT_TIER];
+  const sh = sheetNew(2, 2);
+  const c = ${JSON.stringify(AA_FRAME.crop)};
+  const grab = () => { const pr = R.getPixelRatio(); draw(4);
+    return { px: readRect(Math.round(c[0] * pr), Math.round(c[1] * pr), Math.round(c[2] * pr), Math.round(c[3] * pr)), w: Math.round(c[2] * pr), h: Math.round(c[3] * pr) }; };
+  setTierDpr(SHIP, DEFAULT_TIER, 2); camAt(${AA_FRAME.cam.join(', ')});
+  let g = grab(); sh.put(g.px, g.w, g.h, 0, 0, 'SHIPPED ' + DEFAULT_TIER + ': SMAA-only, DPR ' + R.getPixelRatio() + ', 4x nearest', true);
+  E.smaa.enabled = false; g = grab(); sh.put(g.px, g.w, g.h, 1, 0, 'same frame, NO AA (stair-steps), 4x nearest', true); E.smaa.enabled = true;
+  setTierDpr(ROUND4_HIGH, 'r4', 2); camAt(${AA_FRAME.cam.join(', ')});
+  g = grab(); sh.put(g.px, g.w, g.h, 0, 1, 'Round-4 high: MSAA x4 + SMAA, DPR ' + R.getPixelRatio() + ', 4x nearest', true);
+  setTierDpr(SHIP, DEFAULT_TIER, 1); camAt(${AA_FRAME.cam.join(', ')}); draw(4);
+  const full = readRect(0, 0, W(), H());
+  sh.put(full, W(), H(), 1, 1, 'where: crop box ' + c.join(','), false);
+  await sh.show();
+  // outline the crop on the overview tile
+  const ov = document.createElement('div');
+  ov.style.cssText = 'position:fixed;z-index:2147483647;border:2px solid #ff4040;left:' + (800 + c[0] / 2) + 'px;top:' + (450 + c[1] / 2) + 'px;width:' + c[2] / 2 + 'px;height:' + c[3] / 2 + 'px';
+  document.body.appendChild(ov);
+  window.__V20_DONE__ = true;
+})(); window.__V20_WORK__ = __work; await Promise.race([__work, new Promise((r) => setTimeout(r, 52000))]); })()`;
+
+/**
+ * A108 on the Pans POC. Same instrument and rule as Round 4's A108 (the
+ * lattice it guards is screen-locked periodicity from GTAO's centre-depth
+ * fetch): normalised 2-D luminance autocorrelation of 256 x 256 device-px
+ * crops, high-passed, strongest strict local maximum at lags 2..32 px. A crop
+ * is MEASURABLE when its GTAO-off control peaks below BAR in that
+ * configuration; GTAO on must then stay below BAR. FAR crops (the defect
+ * region) must be measurable everywhere. A near/mid crop whose control peaks
+ * is content-limited: GTAO may add at most 0.03 there, and more than one such
+ * crop in a configuration fails it as unmeasured. Every tier with GTAO on, at
+ * DPR 1 and 2 (= min(2, dprCap)); the AO buffer must follow the tier's scale.
+ * Crops chosen by a survey of 135 positions x 4 frames x 4 configurations
+ * (docs/ROUND5-ENGINE.md §3.5): the far crops are the NE mesas and the haze
+ * band (>= 150 m), the mid crops the open pan and the shelf top, with no
+ * grass in them (grass blades darkened by real contact AO read as vertical
+ * structure at ultra@2, content not lattice; the survey records it).
+ */
+const A108_FRAMES = [
+  { name: 'mesas E from the vista spot', cam: [-82, 0, 2.6, 80, 2, 46], crops: { far147m: [0.5, 0.5], far128m: [0.4, 0.55], mid87m: [0.5, 0.6] }, far: ['far147m', 'far128m'] },
+  { name: 'the pan from 14 m', cam: [-70, -40, 14, 50, -14, 40], crops: { far129m: [0.4, 0.25], far108m: [0.5, 0.35], mid87m: [0.5, 0.4], mid62m: [0.4, 0.5] }, far: ['far129m', 'far108m'] },
+  { name: 'the shelf from 6 m', cam: [-30, -20, 6, 60, -6, 46], crops: { mid68m: [0.6, 0.5], near23m: [0.5, 0.75] }, far: [] },
+];
+const A108_ASSERT = `(async () => {
+  ${POC_KIT}
+  const FRAMES = ${JSON.stringify(A108_FRAMES)};
+  const BAR = 0.15, S = 256, SLACK = 0.03;
+  const configs = [], fails = [];
+  let worst = { peak: -1 };
+  for (const tierName of Object.keys(QUALITY_TIERS)) {
+    const row = QUALITY_TIERS[tierName];
+    if (!row.gtao) { configs.push(tierName + ': gtao off in this tier (not measured)'); continue; }
+    for (const dpr of [1, 2]) {
+      setTierDpr(row, tierName, dpr);
+      const tag = tierName + '@' + r2(R.getPixelRatio());
+      const wantW = Math.max(2, Math.round(W() * E.tier.gtaoScale));
+      if (E.gtao.width !== wantW) fails.push(tag + ': AO buffer ' + E.gtao.width + ' px wide, tier wants ' + wantW);
+      const cfg = { cfg: tag, ao: E.gtao.width + 'x' + E.gtao.height };
+      let limited = 0;
+      for (const fr of FRAMES) {
+        camAt(...fr.cam);
+        const got = {};
+        for (const on of [false, true]) {
+          E.gtao.enabled = on; draw(5);
+          const Ls = {};
+          for (const k in fr.crops) Ls[k] = lumCrop(fr.crops[k][0], fr.crops[k][1], S);
+          for (const k in Ls) (got[k] = got[k] || {})[on ? 'on' : 'off'] = acorr(Ls[k], S);
+        }
+        E.gtao.enabled = E.tier.gtao;
+        for (const k in got) {
+          const g = got[k], isFar = fr.far.includes(k);
+          cfg[k] = g.on.peak + '@' + g.on.lag.join(',') + ' (off ' + g.off.peak + ')';
+          if (g.off.peak >= BAR) {
+            limited++; cfg[k] += ' CONTENT-LIMITED';
+            if (isFar) fails.push(tag + ' ' + k + ': CONTROL peaks ' + g.off.peak + ' on a far crop: the defect region is unmeasurable');
+            if (g.on.peak > g.off.peak + SLACK) fails.push(tag + ' ' + k + ': GTAO adds periodicity on a content-limited crop, ' + g.off.peak + ' -> ' + g.on.peak);
+            continue;
+          }
+          if (g.on.peak >= BAR) fails.push(tag + ' ' + k + ': periodic peak ' + g.on.peak + ' at lag ' + g.on.lag.join(',') + ' (control ' + g.off.peak + ')');
+          if (g.on.peak > worst.peak) worst = { peak: g.on.peak, lag: g.on.lag, where: tag + ' ' + k, control: g.off.peak };
+        }
+      }
+      if (limited > 1) fails.push(tag + ': ' + limited + ' crops content-limited: this configuration was not measured');
+      configs.push(cfg);
+    }
+  }
+  setTierDpr(QUALITY_TIERS[DEFAULT_TIER], DEFAULT_TIER, 2);
+  if (E.gtaoPatched !== true) fails.push('engine.gtaoPatched is ' + E.gtaoPatched + ': the depth-consistent GTAO shader is not installed');
+  return { pass: fails.length === 0, detail: { bar: BAR, worstMeasured: worst, fails: fails.slice(0, 10), configs, frames: FRAMES } };
+})()`;
+
+/**
+ * A109 on the Pans POC: AO against view distance, read from the AO target
+ * itself (the GTAO shader writes the view distance into alpha for this read;
+ * the denoise reads rgb only), binned; occlusion = mean(1 - ao) of the raw
+ * term. Pass: occlusion past 150 m <= 10 % of its 4-6 m value, the 4-6 m value
+ * >= 0.05 (contact AO still there), >= 500 texels in both bins; and the far
+ * mesa band's luminance with GTAO on within 3 % of GTAO off. At every tier
+ * with GTAO on, DPR 1 (Round 4 measured at DPR 1).
+ */
+const A109_FRAMES = Object.freeze({ near: [30, 26, 1.6, 60, -10, 50], far: [-82, 0, 2.6, 45, 3, 46], farBand: [0.12, 0.22, 0.88, 0.42] });
+const A109_ASSERT = `(async () => {
+  ${POC_KIT}
+  const F = ${JSON.stringify(A109_FRAMES)};
+  const m = E.gtao.gtaoMaterial;
+  const BINS = { at5m: [4, 6], at50m: [45, 55], at200m: [150, 250], beyond150m: [150, 1e9] };
+  const tiers = [], fails = [];
+  for (const tierName of Object.keys(QUALITY_TIERS)) {
+    const trow = QUALITY_TIERS[tierName];
+    if (!trow.gtao) { tiers.push({ tier: tierName, note: 'gtao off in this tier' }); continue; }
+    setTierDpr(trow, tierName, 1);
+    const row = { tier: tierName, ao: E.gtao.width + 'x' + E.gtao.height };
+    // AO against view distance, binned, read off the AO target (alpha = view distance for this read):
+    // the near bins from a contact-rich frame (rocks and column feet at 2-6 m), the far bins from the
+    // mesa frame (the Pans POC has no single frame with both; Round 4's camp frame had)
+    const readBins = (cam) => {
+      camAt(...cam);
+      E.gtao.enabled = true;
+      m.defines.FRAGMENT_OUTPUT = 'vec4(vec3(ao), -viewPos.z)';
+      m.needsUpdate = true;
+      let a;
+      try {
+        draw(4);
+        const rt = E.gtao.gtaoRenderTarget;
+        a = new Uint16Array(rt.width * rt.height * 4);
+        R.readRenderTargetPixels(rt, 0, 0, rt.width, rt.height, a);
+      } finally { delete m.defines.FRAGMENT_OUTPUT; m.needsUpdate = true; }
+      const acc = {};
+      for (const k in BINS) acc[k] = { n: 0, occ: 0 };
+      for (let i = 0; i < a.length / 4; i++) {
+        const d = hf(a[i * 4 + 3]);
+        if (!(d > 2)) continue;
+        const occ = 1 - hf(a[i * 4]);
+        for (const k in BINS) if (d >= BINS[k][0] && d < BINS[k][1]) { acc[k].n++; acc[k].occ += occ; }
+      }
+      const o = {};
+      for (const k in BINS) o[k] = { n: acc[k].n, occ: +(acc[k].occ / Math.max(1, acc[k].n)).toFixed(4) };
+      return o;
+    };
+    const nb = readBins(F.near), fb = readBins(F.far);
+    row.at5m = nb.at5m; row.at50m = fb.at50m; row.at200m = fb.at200m; row.beyond150m = fb.beyond150m;
+    row.nearFrameAt50m = nb.at50m;
+    const o5 = row.at5m.occ, oFar = row.beyond150m.occ;
+    row.farOverNear = +(oFar / Math.max(1e-6, o5)).toFixed(4);
+    if (row.at5m.n < 500) fails.push(tierName + ': only ' + row.at5m.n + ' AO texels at 4-6 m');
+    if (row.beyond150m.n < 500) fails.push(tierName + ': only ' + row.beyond150m.n + ' AO texels past 150 m');
+    if (o5 < 0.05) fails.push(tierName + ': near-field AO is ' + o5 + ' at 4-6 m (contact AO must stay visible)');
+    if (oFar > 0.10 * o5) fails.push(tierName + ': AO past 150 m is ' + row.farOverNear + ' of its 5 m value (bar 0.10)');
+    camAt(...F.far);
+    const band = [];
+    for (const on of [false, true]) { E.gtao.enabled = on; draw(5); band.push(meanLum(F.farBand[0], F.farBand[1], F.farBand[2], F.farBand[3])); }
+    E.gtao.enabled = E.tier.gtao;
+    row.farLumOff = +band[0].toFixed(4); row.farLumOn = +band[1].toFixed(4); row.farRatio = +(band[1] / band[0]).toFixed(4);
+    if (Math.abs(row.farRatio - 1) > 0.03) fails.push(tierName + ': far mesa band luminance with GTAO is ' + row.farRatio + ' of GTAO-off (bar +-3 %)');
+    tiers.push(row);
+  }
+  setTierDpr(QUALITY_TIERS[DEFAULT_TIER], DEFAULT_TIER, 2);
+  return { pass: fails.length === 0, detail: { fails, tiers, frames: F } };
+})()`;
+
+/**
+ * V33b on the Pans POC: a 4 x 4 contact sheet of 400 x 225 tiles.
+ *   row 0  shipped tier (`high`), GTAO on: the vista spot at bearings N / E / S / W
+ *   row 1  ultra, GTAO on: the same four
+ *   row 2  1:1 device-pixel crops of the far NE mesas: high on | high OFF | ultra on | ultra OFF
+ *   row 3  the 2 m contact close-up: high on | high OFF | ultra on | ultra OFF
+ * Built in the background (visual setups get 60 s and the POC boot can take most of it).
+ */
+const V33B_FRAMES = Object.freeze({ spot: [-82, 0, 2.6], pitch: 2, fov: 50, mesa: [-82, 0, 2.6, 45, 3, 46], mesaCrop: [0.42, 0.33], close: [30, 26, 1.6, 60, -10, 50] });
+const V33B_SETUP = `(async () => { const __work = (async () => {
+  ${POC_KIT}
+  const F = ${JSON.stringify(V33B_FRAMES)};
+  const sh = sheetNew(4, 4);
+  const full = () => { draw(4); return readRect(0, 0, W(), H()); };
+  const crop = () => { draw(4); return readRect(Math.round(F.mesaCrop[0] * W() - 200), Math.round(F.mesaCrop[1] * H() - 112), 400, 225); };
+  const YAWS = [[0, 'N'], [90, 'E'], [180, 'S'], [270, 'W']];
+  [DEFAULT_TIER, 'ultra'].forEach((tierName, r) => {
+    setTierDpr(QUALITY_TIERS[tierName], tierName, 1);
+    E.gtao.enabled = true;
+    YAWS.forEach(([yaw, nm], c) => { camAt(F.spot[0], F.spot[1], F.spot[2], yaw, F.pitch, F.fov); sh.put(full(), W(), H(), c, r, tierName + ' gtao on  bearing ' + nm + ' (ao ' + E.gtao.width + 'x' + E.gtao.height + ')'); });
+  });
+  [DEFAULT_TIER, 'ultra'].forEach((tierName, t) => {
+    setTierDpr(QUALITY_TIERS[tierName], tierName, 1);
+    camAt(...F.mesa);
+    E.gtao.enabled = true; sh.put(crop(), 400, 225, t * 2, 2, tierName + ' on   1:1 far mesas', true);
+    E.gtao.enabled = false; sh.put(crop(), 400, 225, t * 2 + 1, 2, tierName + ' OFF  1:1 far mesas', true);
+    camAt(...F.close);
+    E.gtao.enabled = true; sh.put(full(), W(), H(), t * 2, 3, tierName + ' on   2 m contact close-up');
+    E.gtao.enabled = false; sh.put(full(), W(), H(), t * 2 + 1, 3, tierName + ' OFF  2 m contact close-up');
+    E.gtao.enabled = E.tier.gtao;
+  });
+  setTierDpr(QUALITY_TIERS[DEFAULT_TIER], DEFAULT_TIER, 2);
+  await sh.show();
+  window.__V33B_DONE__ = true;
+})(); window.__V33B_WORK__ = __work; await Promise.race([__work, new Promise((r) => setTimeout(r, 52000))]); })()`;
 
 /* ------------------------------------------------------------------------ */
 /* A-terrain-1024-probe                                                      */
@@ -876,24 +1607,75 @@ const PROBE_GATE = {
   assert: probeAssert(null),
 };
 
-const BOX_GATE = {
-  id: 'A-terrain-1024-probe-box', kind: 'runner', lane: 'engine-gpu', wave: 'W0a', timeout: 15000,
-  title: 'Box witness for A-terrain-1024-probe: 1-min load average < 3 and 0 other headless Chromes, sampled in node and handed to the probe (every clock it grades — build, nav, GPU — is judged only on a quiet box); PENDING on a loud box',
-  check({ GATES: all }) {
-    const box = sampleBox();
-    const target = (all || []).find((g) => g.id === PROBE_GATE.id);
-    if (target) target.assert = probeAssert(box);
-    const why = [];
-    if (box.psError) why.push('ps failed: ' + box.psError);
-    if (!(box.load1 < QUIET.load1)) why.push(`load average ${box.load1} (needs < ${QUIET.load1})`);
-    if (box.otherHeadlessChromes > QUIET.otherHeadlessChromes) why.push(`${box.otherHeadlessChromes} other headless Chrome(s) (needs 0)`);
-    return { pass: box.quiet ? true : null, detail: { ...box, handedTo: target ? target.id : null, pendingBecause: why } };
-  },
+/**
+ * A box witness (kind 'runner', node side): samples load and other headless
+ * Chromes and rewrites the TARGET gate's assert with the sample, on the gate
+ * object the runner passes to check({ GATES }) — the same object it then runs.
+ * Run it in the same invocation, before its target (`--lane engine-gpu` does;
+ * with --only, list both). A target run alone reads "box not sampled" and its
+ * clocks stay PENDING — never a silent PASS.
+ */
+function boxGate(id, wave, targetId, assertFor, what) {
+  return {
+    id, kind: 'runner', lane: 'engine-gpu', wave, timeout: 15000,
+    title: `Box witness for ${targetId}: 1-min load average < 3 and 0 other headless Chromes, sampled in node and handed to it (${what} judged only on a quiet box); PENDING on a loud box`,
+    check({ GATES: all }) {
+      const box = sampleBox();
+      const target = (all || []).find((g) => g.id === targetId);
+      if (target) target.assert = assertFor(box);
+      const why = [];
+      if (box.psError) why.push('ps failed: ' + box.psError);
+      if (!(box.load1 < QUIET.load1)) why.push(`load average ${box.load1} (needs < ${QUIET.load1})`);
+      if (box.otherHeadlessChromes > QUIET.otherHeadlessChromes) why.push(`${box.otherHeadlessChromes} other headless Chrome(s) (needs 0)`);
+      return { pass: box.quiet ? true : null, detail: { ...box, handedTo: target ? target.id : null, pendingBecause: why } };
+    },
+  };
+}
+const BOX_GATE = boxGate('A-terrain-1024-probe-box', 'W0a', PROBE_GATE.id, probeAssert, 'every clock it grades — build, nav, GPU — is');
+
+const GPU_TIER_GATE = {
+  id: 'A-gpu-tier', kind: 'action', lane: 'engine-gpu', wave: 'W0b', timeout: 420000, settle: 1500,
+  title: 'The shipped default tier on a DPR-2 display (DPR 1.25), 1600×900, on the Pans POC (?poc=biome), quiet box only: empty frame (sky + post) GPU median ≤ 7 ms, Pans vista GPU median ≤ 13 ms, median fps ≥ 58, p95 frame ≤ 20 ms; the chosen levers recorded in docs/ROUND5-ENGINE.md with before/after numbers (Round-4 high and each lever measured on the same page)',
+  assert: gpuTierAssert(null),
 };
+const GPU_TIER_BOX = boxGate('A-gpu-tier-box', 'W0b', GPU_TIER_GATE.id, gpuTierAssert, 'every clock A-gpu-tier grades is');
 
 export const GATES = [
   BOX_GATE,
   PROBE_GATE,
+
+  // ---------------------------------------------------------------- W0b
+  GPU_TIER_BOX,
+  GPU_TIER_GATE,
+  {
+    id: sid('A22-msaa'), kind: 'action', lane: 'engine-gpu', wave: 'W0b', timeout: 240000, settle: 1500, shadows: 'A22-msaa',
+    title: 'A22 under R25 (A-gpu-tier picked SMAA-only): the scene target is composer.renderTarget1 with the tier\'s sample count (≥ 4 if the tier keeps MSAA, else 0) and SMAA is present and enabled at the shipped tier; measured on V20\'s crop of the Pans POC, SMAA puts ramp values on ≥ 20 % of silhouette pixels and ≥ 1.5× the same frame with SMAA off (V20 itself is the R29 judge\'s)',
+    assert: A22_ASSERT,
+  },
+  {
+    id: sid('V20-aa-crop'), kind: 'visual', lane: 'engine-gpu', wave: 'W0b', timeout: 240000, settle: 100000, shadows: 'V20-aa-crop',
+    title: 'Anti-aliasing at the shipped tier: 4× nearest crop of basalt-column silhouettes against the sky on the Pans POC, beside the same crop with no AA and with Round 4\'s MSAA×4 + SMAA',
+    setup: V20_SETUP,
+    criteria: 'Top-left tile (the SHIPPED tier, SMAA-only at DPR 1.25, 4x nearest): every silhouette edge of the basalt columns against the sky — column tops, the sides of the columns, any grass blade — shows a ramp of intermediate pixels between the rock colour and the sky colour (a soft 2-3 pixel gradient at this magnification). Compare with the top-right tile (the same frame with NO anti-aliasing), whose edges are hard two-colour stair-steps: PASS needs the top-left edges to read clearly softer than the top-right and comparable to the bottom-left tile (Round 4\'s MSAA x4 + SMAA). Bottom-right shows where the crop is (red box). FAIL if the top-left edges are hard stair-steps with no in-between values (looks like the top-right tile), or if the sheet is missing.',
+  },
+  {
+    id: sid('A108-ao-periodicity'), kind: 'action', lane: 'engine-gpu', wave: 'W0b', timeout: 420000, settle: 1500, shadows: 'A108-ao-periodicity',
+    title: 'Re-staged on the Pans POC: no periodic luminance peak above 0.15 at lags 2-32 px on the far mesas, the haze band or the mid-ground with GTAO on, at every GTAO tier (shipped quarter-res `high` included) and DPR 1 and 2 (GTAO-off control peak-free on the same crops); the AO buffer follows the tier\'s scale; the depth-consistent GTAO shader is installed',
+    assert: A108_ASSERT,
+  },
+  {
+    id: sid('A109-ao-distance-fade'), kind: 'action', lane: 'engine-gpu', wave: 'W0b', timeout: 300000, settle: 1500, shadows: 'A109-ao-distance-fade',
+    title: 'Re-staged on the Pans POC: AO occlusion past 150 m ≤ 10 % of its 4-6 m value (which stays ≥ 0.05), and the far mesa band with GTAO on within 3 % of GTAO off, at every GTAO tier',
+    assert: A109_ASSERT,
+  },
+  {
+    id: sid('V33b-no-ao-lattice'), kind: 'visual', lane: 'engine-gpu', wave: 'W0b', timeout: 300000, settle: 120000, shadows: 'V33b-no-ao-lattice',
+    title: 'GTAO on (shipped high at quarter-res + ultra): no screen-locked lattice on the Pans POC at four bearings, and contact AO still reads in a 2 m close-up',
+    setup: V33B_SETUP,
+    criteria: 'A 4x4 contact sheet of the Pans POC. Row 1: the shipped tier (high, GTAO at quarter resolution) at bearings N/E/S/W from the vista spot. Row 2: the same at ultra (full-res GTAO). Row 3: 1:1 device-pixel crops of the far north-east mesas, GTAO on next to GTAO OFF, high then ultra. Row 4: a 2 m close-up of basalt column feet / rocks on the ground, on next to OFF, high then ultra. PASS: no screen-locked lattice, grid, plaid, dither or banding on the distant mesas, the haze band or the sky edge in any tile; each "on" crop in row 3 is indistinguishable from its "OFF" neighbour; in row 4 the "on" tiles show soft contact darkening where rock meets ground and between columns that the "OFF" tiles lack, with no blocky halo or dark outline along silhouettes against the sky and no pattern on the ground. FAIL on any regular vertical bars / horizontal bands / checker, on visible blocky AO halos around objects at the shipped quarter resolution, or if the close-up on and OFF tiles are identical (AO switched off rather than fixed).',
+  },
+
+  // ---------------------------------------------------------------- W0a (kept)
 
   {
     id: 'A-rt-ledger-census', kind: 'action', lane: 'engine-gpu', wave: 'W0a', timeout: 120000, settle: 2500,
@@ -999,9 +1781,9 @@ export const GATES = [
   },
 
   {
-    // the wave that grades the BAR is the orchestrator's ruling (plan marker `r5-ruling rt-ledger-bar`); unruled: W0a
-    id: 'A-rt-ledger', kind: 'action', lane: 'engine-gpu', wave: RULINGS.rtLedgerBar || 'W0a', timeout: 180000, settle: 2500,
-    title: 'Render targets at the shipped tier, DPR 1.25, 1600×900: total ≤ 170 MB; textures + RTs + geometry ≤ 450 MB at the staged fight; bytes recorded in docs/ROUND5-ENGINE.md and tools/budgets.mjs (the tier levers that could meet the bar are measured live and restored; which wave grades the bar awaits an orchestrator ruling)',
+    // the wave that grades the BAR is the orchestrator's ruling (plan §8.3 `rt-ledger-bar=W0b`)
+    id: 'A-rt-ledger', kind: 'action', lane: 'engine-gpu', wave: RULINGS.rtLedgerBar || 'W0a', timeout: 240000, settle: 2500,
+    title: 'Render targets at the SHIPPED DEFAULT TIER on a DPR-2 display (DPR 1.25), 1600×900: total ≤ 170 MB; textures + RTs + geometry ≤ 450 MB at the staged fight; bytes recorded in docs/ROUND5-ENGINE.md and tools/budgets.mjs; Round-4 high and each W0b lever measured live on the same frame and the shipped tier restored to the byte',
     assert: `(async () => {
       ${GUARD}
       ${FRAMES}
@@ -1010,67 +1792,48 @@ export const GATES = [
       ${VRAM_CENSUS}
       const ctx = __CTX__, e = ctx.engine;
       if (typeof e.renderTargetLedger !== 'function') return { pass: null, detail: 'engine.renderTargetLedger missing' };
+      const EM = await import('/src/core/engine.js');
       const BAR = { rtMB: 170, totalMB: 450 };
       const unpin = await __stageLedger();
+      if (unpin.skip) return { pass: null, detail: { stagedFight: 'not staged: ' + unpin.skip } };
       const L = e.renderTargetLedger();
       const V = __vramCensus();
       const live = __byOwner(L);
       const mb = (b) => +(b / 1e6).toFixed(2);
+      const shipped = { quality: L.quality, defaultTier: EM.DEFAULT_TIER, pixelRatio: L.pixelRatio, msaa: L.msaa, gtaoScale: L.gtaoScale,
+        smaaType: e.smaa.edgesRT.texture.type, csmMapSizes: e.csmMapSizes };
+      const atShipped = L.quality === EM.DEFAULT_TIER && L.pixelRatio === 1.25;
 
-      // ---- levers, MEASURED LIVE on the same staged frame, then restored ----
-      const UBYTE = 1009;
-      const csmLights = (e.csm && e.csm.lights) || [];
-      const csm0 = e.csm ? e.csm.shadowMapSize : null;
-      const setCsm = (size) => {
-        for (const l of csmLights) { l.shadow.mapSize.set(size, size); if (l.shadow.map) { l.shadow.map.dispose(); l.shadow.map = null; } }
-        if (e.csm) e.csm.shadowMapSize = size;
-        e.renderer.shadowMap.needsUpdate = true;
-      };
-      const smaaRTs = [e.smaa.edgesRT, e.smaa.weightsRT].filter(Boolean);
-      const smaaType0 = smaaRTs.map((t) => t.texture.type);
-      const msaa0 = e.sceneTarget.samples;
-      const gtao0 = e.tier.gtaoScale;
-      const LEVERS = {
-        msaa0: [() => { e.sceneTarget.samples = 0; e.sceneTarget.dispose(); }, () => { e.sceneTarget.samples = msaa0; e.sceneTarget.dispose(); }],
-        csm1536: [() => setCsm(1536), () => setCsm(csm0)],
-        csm1024: [() => setCsm(1024), () => setCsm(csm0)],
-        smaaRGBA8: [() => { for (const t of smaaRTs) { t.texture.type = UBYTE; t.dispose(); } },
-          () => { smaaRTs.forEach((t, i) => { t.texture.type = smaaType0[i]; t.dispose(); }); }],
-        gtaoQuarter: [() => { e.tier.gtaoScale = gtao0 * 0.5; }, () => { e.tier.gtaoScale = gtao0; }],
-        dpr1: [() => { e.basePixelRatio = 1; }, () => { e.basePixelRatio = 1.25; }],
-        dpr15: [() => { e.basePixelRatio = 1.5; }, () => { e.basePixelRatio = 1.25; }],
-      };
-      const measureSet = async (names) => {
-        try { for (const n of names) LEVERS[n][0](); e.resize(); await __frames(10); return e.renderTargetLedger(); }
-        finally { for (const n of names.slice().reverse()) LEVERS[n][1](); e.resize(); await __frames(10); }
-      };
-      const SETS = {
-        'SMAA-only (MSAA 0)': ['msaa0'],
-        'CSM 3 x 1536': ['csm1536'],
-        'CSM 3 x 1024': ['csm1024'],
-        'SMAA targets RGBA8': ['smaaRGBA8'],
-        'GTAO quarter-res': ['gtaoQuarter'],
-        'DPR 1.0': ['dpr1'],
-        'DPR 1.5 (today high cap)': ['dpr15'],
-        'SMAA-only + CSM 3 x 1536 + SMAA RGBA8': ['msaa0', 'csm1536', 'smaaRGBA8'],
-        'SMAA-only + CSM 3 x 1536 + SMAA RGBA8 + GTAO quarter': ['msaa0', 'csm1536', 'smaaRGBA8', 'gtaoQuarter'],
-        'SMAA-only + CSM 3 x 1024': ['msaa0', 'csm1024'],
-        'SMAA-only + CSM 3 x 1024 + SMAA RGBA8': ['msaa0', 'csm1024', 'smaaRGBA8'],
-      };
-      const levers = {};
-      for (const [label, names] of Object.entries(SETS)) {
-        const l = await measureSet(names);
-        const by = __byOwner(l);
-        levers[label] = { mb: l.mb, marginToBarMB: +(BAR.rtMB - l.mb).toFixed(2),
-          shadowMB: mb(Object.entries(by).filter(([k]) => /^shadow:/.test(k)).reduce((s, [, v]) => s + v, 0)),
-          sceneMB: mb(by['post:scene'] || 0), smaaMB: mb((by['post:SMAAPass.edgesRT'] || 0) + (by['post:SMAAPass.weightsRT'] || 0)),
-          gtaoMB: mb(Object.entries(by).filter(([k]) => /GTAOPass/.test(k)).reduce((s, [, v]) => s + v, 0)) };
+      // ---- before -> after: Round-4 high and the W0b levers, MEASURED LIVE on the same staged frame ----
+      const SHIP = EM.QUALITY_TIERS[EM.DEFAULT_TIER], R4 = EM.ROUND4_HIGH;
+      const CHAIN = [
+        ['Round-4 high (DPR 1.5)', R4],
+        ['Round-4 high at DPR 1.25', Object.assign({}, R4, { dprCap: 1.25 })],
+        ['+ SMAA-only (MSAA 0)', Object.assign({}, R4, { dprCap: 1.25, msaa: 0 })],
+        ['+ GTAO quarter-res', Object.assign({}, R4, { dprCap: 1.25, msaa: 0, gtaoScale: 0.25 })],
+        ['+ SMAA targets RGBA8', Object.assign({}, R4, { dprCap: 1.25, msaa: 0, gtaoScale: 0.25, smaaHalfFloat: false })],
+        ['+ far cascades capped = shipped ' + EM.DEFAULT_TIER, SHIP],
+        ['alternative: shipped with GTAO half-res', Object.assign({}, SHIP, { gtaoScale: 0.5 })],
+        ['alternative: shipped with CSM 3 x 1536', Object.assign({}, SHIP, { csmMapCaps: [1536] })],
+      ];
+      const levers = [];
+      for (const [label, row] of CHAIN) {
+        e.applyTier(row, 'lever'); e.setDynamicResolution(false);
+        e.basePixelRatio = Math.min(2, row.dprCap); e.renderScale = 1; e.resize();
+        await __frames(12);
+        const l = e.renderTargetLedger(), by = __byOwner(l);
+        levers.push({ label, pixelRatio: l.pixelRatio, mb: l.mb, marginToBarMB: +(BAR.rtMB - l.mb).toFixed(2),
+          sceneMB: mb(by['post:scene'] || 0), shadowMB: mb(Object.entries(by).filter(([k]) => /^shadow:/.test(k)).reduce((s2, [, v]) => s2 + v, 0)),
+          smaaMB: mb((by['post:SMAAPass.edgesRT'] || 0) + (by['post:SMAAPass.weightsRT'] || 0)),
+          gtaoMB: mb(Object.entries(by).filter(([k]) => /GTAOPass/.test(k)).reduce((s2, [, v]) => s2 + v, 0)),
+          csmMapSizes: e.csmMapSizes });
       }
-      await __frames(10);
+      e.applyTier(SHIP, EM.DEFAULT_TIER); e.setDynamicResolution(false);
+      e.basePixelRatio = Math.min(2, SHIP.dprCap); e.renderScale = 1; e.resize();
+      await __frames(12);
       const Lafter = e.renderTargetLedger();
       unpin();
-      const restored = Lafter.bytes === L.bytes && Lafter.pixelRatio === L.pixelRatio && e.sceneTarget.samples === msaa0
-        && e.tier.gtaoScale === gtao0 && (!e.csm || e.csm.shadowMapSize === csm0);
+      const restored = Lafter.bytes === L.bytes && Lafter.pixelRatio === L.pixelRatio && e.quality === EM.DEFAULT_TIER;
       const B = ${BUDGETS_REC};
       const DOCS = ${DOCS};
       const totalBytes = L.bytes + V.textureBytes + V.geometryBytes;
@@ -1085,27 +1848,31 @@ export const GATES = [
         return bad;
       };
       const docsBad = DOCS.marked ? rowsMatch(DOCS.rows) : [{ owner: '*', recorded: 'docs/ROUND5-ENGINE.md ledger table missing' }];
-      const budgetsBad = B.present ? rowsMatch(B.rows) : [{ owner: '*', recorded: 'tools/budgets.mjs exports no RT_LEDGER' }];
+      const budgetsBad = B.present ? rowsMatch(B.rows) : null;
       const terms = {
+        atShippedTier: atShipped,
         rtTotal: L.bytes / 1e6 <= BAR.rtMB,
         sumAtStagedFight: totalBytes / 1e6 <= BAR.totalMB,
         recordedInDocs: docsBad.length === 0,
-        recordedInBudgets: budgetsBad.length === 0,
+        // tools/budgets.mjs is gates-perf's file: until it re-exports RT_LEDGER this clause is OUTSTANDING (null), never PASS
+        recordedInBudgets: budgetsBad === null ? null : budgetsBad.length === 0,
         leversRestored: restored,
       };
-      const pass = Object.values(terms).every(Boolean);
+      const vals = Object.values(terms);
+      const pass = vals.some((v) => v === false) ? false : vals.some((v) => v === null) ? null : true;
+      // the texture census's biggest entries, so a red total names its owners
       return { pass, detail: {
-        at: { quality: L.quality, pixelRatio: L.pixelRatio, msaa: L.msaa, gtaoScale: L.gtaoScale, viewport: [innerWidth, innerHeight] },
+        at: Object.assign(shipped, { viewport: [innerWidth, innerHeight] }),
         rtMB: L.mb, bars: BAR, terms,
         byOwnerMB: Object.fromEntries(Object.entries(live).map(([k, v]) => [k, mb(v)])),
         canvasMB: L.canvas.mb, provisionedNotAllocatedMB: mb(L.provisionedBytes),
-        stagedFight: { textureMB: mb(V.textureBytes), textures: V.textures, geometryMB: mb(V.geometryBytes), buffers: V.buffers,
-          rtMB: L.mb, totalMB: mb(totalBytes) },
-        leversMeasuredLive: levers, afterLeversMB: Lafter.mb,
+        stagedFight: { cast: (typeof __stage !== 'undefined' && __stage.casts && __stage.casts['staged-fight']) || null,
+          textureMB: mb(V.textureBytes), textures: V.textures, geometryMB: mb(V.geometryBytes), buffers: V.buffers,
+          rtMB: L.mb, totalMB: mb(totalBytes), topTextures: V.top },
+        beforeAfterMeasuredLive: levers, afterRestoreMB: Lafter.mb,
         waveRuling: ${JSON.stringify(RULINGS.rtLedgerBar)},
-        rulingRequested: ${JSON.stringify(RULINGS.rtLedgerBar)} ? null : 'which wave grades this bar: W0a (orchestrator brief: "the render-target ledger measurements") or W0b (plan section 3.1 W0b exit: "GPU tier chosen and render targets measured"); until ruled (plan marker <!-- r5-ruling rt-ledger-bar=W0a|W0b -->) it is graded at W0a and reads as measured',
         docsMismatch: docsBad, budgetsMismatch: budgetsBad,
-        budgetsRecord: B.present ? 'present (' + (B.measured || 'no measured stamp') + ')' : 'absent: gates-perf adds  export { RT_LEDGER } from "./r5-probes/rt-ledger.mjs";  to tools/budgets.mjs (a leaf module: no import cycle)',
+        budgetsRecord: B.present ? 'present (' + (B.measured || 'no measured stamp') + ')' : 'OUTSTANDING (gates-perf): tools/budgets.mjs needs the one line  export { RT_LEDGER } from "./r5-probes/rt-ledger.mjs";  (a leaf module: no import cycle)',
       } };
     })()`,
   },
