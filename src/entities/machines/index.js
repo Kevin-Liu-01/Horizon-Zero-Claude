@@ -1,13 +1,5 @@
 import * as THREE from 'three';
-import { Watcher } from './watcher.js';
-import { Sawtooth } from './sawtooth.js';
-import { Behemoth } from './behemoth.js';
-import { Thunderjaw } from './thunderjaw.js';
-import { Strider } from './strider.js';
-import { Scrapper } from './scrapper.js';
-import { Glinthawk } from './glinthawk.js';
-import { Longleg } from './longleg.js';
-import { loadVarietyModels } from './variety-assets.js';
+import { installInstruments } from '../../instruments/registry.js';
 import { installMachineAI } from './ai/index.js';
 import { ECOSYSTEM } from './ai/tables.js';
 import { setAiRng, seededRng, aiRngSeeded } from './ai/rng.js';
@@ -19,14 +11,35 @@ import {
 } from './ai/doctrine.js';
 
 /**
- * Machine ecosystem manager: spawns the herd layout, runs the update loop
- * with distance LOD, broadcasts watcher alerts, keeps machines separated.
- *
- * Round 3 adds the variety wave (strider/scrapper/glinthawk/longleg): their
- * models load asynchronously (assets.js is frozen — see variety-assets.js),
- * so those spawns are deferred a few seconds behind boot. It also exposes
+ * Machine ecosystem manager: spawns the layout, runs the update loop with
+ * distance LOD, broadcasts alarms, keeps machines separated. It also exposes
  * the animation-studio cast contract: `kinds` + `spawn(kind, x, z)`.
+ *
+ * Round 5 (instruments-core W0a): this file names no kind. Kinds arrive from
+ * two registrars, both called below before `kinds` is built:
+ *   - `machines/legacy.js` `installLegacy(this)` — every pre-CALIMA kind
+ *     (deleted at the W2 exit);
+ *   - `src/instruments/registry.js` `installInstruments(this)` — every module
+ *     in `src/instruments/kinds/`, auto-registered, plus `this.roles`.
+ *
+ * THE BOOT CONTRACT (as base, fix round 1): every kind whose model the boot
+ * loader already holds is registered and its authored roster SPAWNED INSIDE
+ * THIS CONSTRUCTOR, so machines exist at `__READY__` and `progression.js`
+ * finds the Machine prototype through `list[0]` when it is built. Only the
+ * kinds whose models stream in later (the Round-4 expansion species, the
+ * Instrument kinds) spawn after `ready`, which is when `varietyReady` and
+ * `expansionReady` go up.
  */
+
+/**
+ * THE ONE DOOR TO THE LEGACY KINDS (`A-legacy-collapse`, `A-legacy-gone`).
+ * A glob, not an import: when instruments-b deletes `legacy.js` at the W2 exit
+ * the glob resolves to nothing and the manager boots with Instrument kinds
+ * only — 0 edits here. While it exists, it is the only module that reaches a
+ * legacy species file.
+ */
+const LEGACY_MODULE = import.meta.glob('./legacy.js', { eager: true })['./legacy.js'] || null;
+const NO_LEGACY = { kinds: [], boot: [], ready: Promise.resolve({ loaded: [], failed: [] }) };
 
 const CAMP = REST_SITE;            // { x, z, r }: the Instrument no-spawn ring
 const ROUTE_RIM = PLAY_RADIUS + EXTENT.routeRim;
@@ -44,7 +57,7 @@ export class Machines {
     this.ctx = ctx;
     this.list = [];
 
-    // AI services: stimulus bus, site lifecycle, squad doctrine, override
+    // AI services: stimulus bus, site lifecycle, squad doctrine
     installMachineAI(this);
     // ...and the Round-4 expansion doctrine (one manager-side listener)
     installExpansionDoctrine(this);
@@ -52,73 +65,80 @@ export class Machines {
     this._shotSeq = 0;
     ctx.events.on('arrow-fired', () => this._noteShot());
 
-    this._registry = {
-      watcher: Watcher,
-      sawtooth: Sawtooth,
-      behemoth: Behemoth,
-      thunderjaw: Thunderjaw,
-      strider: Strider,
-      scrapper: Scrapper,
-      glinthawk: Glinthawk,
-      longleg: Longleg,
-    };
-    /**
-     * EXPANSION KINDS ON A CHASSIS (see `ai/doctrine.js` §CHASSIS).
-     *
-     * Nine Round-4 kinds whose BEHAVIOUR ships here and whose SCULPT belongs
-     * to `machines-expansion`. Until their species classes land, each is
-     * constructed from an existing class with its own `kind` and the donor's
-     * `modelKind`, so every table, gate and line of doctrine is already the
-     * new species'. `registerKind()` retires a chassis in one call.
-     */
-    this._chassis = { ...CHASSIS };
-
-    // --- SPEC layout: 4 watchers on patrol routes, 2 sawtooths,
-    //     1 territorial behemoth, thunderjaw alone in the far south.
-    this._spawnCls(Watcher, -30, -40, { route: this._route(-30, -40, 26, 5, 0.4), heading: 0.8 });
-    this._spawnCls(Watcher, -60, 10, { route: this._route(-60, 14, 30, 5, 1.7), heading: -0.5 });
-    this._spawnCls(Watcher, 40, -70, { route: this._route(44, -74, 24, 4, 3.1), heading: 2.2 });
-    this._spawnCls(Watcher, 90, 30, { route: this._route(88, 34, 28, 5, 4.9), heading: 3.0 });
-    this._spawnCls(Sawtooth, -110, -90, { route: this._route(-110, -90, 34, 4, 0.9), heading: 0.4 });
-    this._spawnCls(Sawtooth, 120, -130, { route: this._route(118, -128, 30, 4, 2.2), heading: -2.0 });
-    this._spawnCls(Behemoth, -160, 90, { route: this._route(-160, 90, 26, 5, 1.2), heading: 1.2 });
-    this._spawnCls(Thunderjaw, 30, -220, { route: this._route(30, -220, 42, 5, 0.2), heading: 0.2 });
-
-    // --- Round 3 cast contract (animation studio): all constructible kinds
-    this.kinds = [...Object.keys(this._registry), ...Object.keys(CHASSIS)];
+    /** kind -> class, filled by the registrars below (`registerKind`). */
+    this._registry = {};
     this.varietyReady = false;
     this.expansionReady = false;
     /**
      * The boot watermark for the population budget: the node count and the
-     * highest site id of the AUTHORED roster. Both are taken after the
-     * expansion spawn below, so the world the game ships can never be evicted
-     * by its own ceiling — only spawns past it are bounded.
+     * highest site id of the AUTHORED roster. Both are taken after the boot
+     * spawn below, so the world the game ships can never be evicted by its
+     * own ceiling — only spawns past it are bounded.
      */
     this._bootNodes = null;
     this._bootSiteId = 0;
     this._recycled = 0;
     this.expansionAudit = null;
-    loadVarietyModels(ctx)
-      .then(() => {
+    this.bootAudit = null;
+
+    /**
+     * EXPANSION KINDS ON A CHASSIS (see `ai/doctrine.js` §CHASSIS): a kind
+     * whose class is not registered yet is constructed from a donor class with
+     * its own `kind`; `registerKind()` retires a chassis in one call. Both
+     * tables exist BEFORE the registrars run, because a registrar hands over a
+     * model the boot loader already holds synchronously (`registerKind` inside
+     * this constructor), and are completed after them.
+     */
+    this._chassis = {};
+    this.kinds = [];
+
+    // --- the two registrars (rows + every boot-loaded model now, the rest async)
+    const legacy = LEGACY_MODULE?.installLegacy ? LEGACY_MODULE.installLegacy(this) : NO_LEGACY;
+    const instruments = installInstruments(this);
+    for (const kind of Object.keys(CHASSIS)) {
+      if (!this._registry[kind]) this._chassis[kind] = CHASSIS[kind];
+    }
+    // --- cast contract (animation studio): all constructible kinds
+    this.kinds = [...new Set([...this.kinds, ...Object.keys(this._registry), ...Object.keys(this._chassis)])];
+
+    // --- THE BOOT ROSTER, here and now (see the class doc): every authored
+    //     roster whose kind can be built from a model the boot loader holds
+    const audit = {
+      boot: { kinds: legacy.boot.slice(), roster: 0 },
+      deferred: { roster: 0, expansion: 0 },
+      legacy: null, instruments: null,
+    };
+    this.bootAudit = audit;
+    try {
+      audit.boot.roster = LEGACY_MODULE?.spawnLegacyRoster ? LEGACY_MODULE.spawnLegacyRoster(this) : 0;
+    } catch (err) {
+      console.error('[machines] boot roster spawn failed:', err);
+    }
+
+    // --- ...and the deferred kinds, once their models are in
+    Promise.all([legacy.ready, instruments.ready])
+      .then(([leg, ins]) => {
         this.varietyReady = true;
-        this._spawnVariety();
-        // ...and the nine Round-4 kinds (ai/doctrine.js SPAWN_PLAN)
+        audit.legacy = leg;
+        audit.instruments = ins;
         try {
+          // a boot row that fell back to deferred loading spawns its roster now
+          audit.deferred.roster = LEGACY_MODULE?.spawnLegacyRoster ? LEGACY_MODULE.spawnLegacyRoster(this) : 0;
+          // ...and every registered doctrine's spawn rows (ai/doctrine.js SPAWN_PLAN)
           this.expansionAudit = spawnExpansion(this);
+          audit.deferred.expansion = this.expansionAudit.spawned;
         } catch (err) {
-          console.error('[machines] expansion spawn failed:', err);
+          console.error('[machines] deferred spawn failed:', err);
         }
         this._bootSiteId = this.sites._nextId;
         this._bootNodes = this._machineNodes();
         this.expansionReady = true;
-      })
-      .catch((err) => console.error('[machines] variety model load failed:', err));
+      });
 
     // calm everything down when the player respawns at the campfire
     ctx.events.on('player-respawn', () => {
       for (const m of this.list) {
         if (!m.alive || m._disposed) continue;
-        if (m.state === 'overridden') continue;
         m.suspicion = 0;
         m._unseenT = 99;
         m._cancelAttack();
@@ -163,7 +183,7 @@ export class Machines {
     this.list.push(m);
     // expansion kinds get their components + doctrine here, so a SITE RESPAWN
     // gets them back too (the site replays the same opts through `spawn`)
-    if (EXPANSION_BODY[m.kind]) installDoctrine(m, opts);
+    installDoctrine(m, opts);
     /**
      * MachineSite: remember how to repopulate this spot after the wreck goes.
      *
@@ -411,7 +431,7 @@ export class Machines {
    * headroom)` scene nodes. Past that, spawning first RECYCLES — disposes,
    * through the ordinary lifecycle, so nothing is special-cased — the
    * cheapest-to-lose machine: alive, outside `keepRadius` of the player, not
-   * mounted/overridden/corrupted, and never one of the authored roster (a
+   * docile, and never one of the authored roster (a
    * site whose id predates the boot watermark). Newest surplus goes first, so
    * a flood eats itself rather than the world. If nothing qualifies the spawn
    * proceeds anyway — refusing it would be a worse failure than a temporary
@@ -437,8 +457,8 @@ export class Machines {
     for (let guard = 0; guard < 8 && nodes > budget; guard++) {
       let victim = null;
       for (const m of this.list) {
-        if (!m.alive || m._disposed || m.mountedBy) continue;
-        if (m.state === 'overridden' || m.corrupted || m.docile) continue;
+        if (!m.alive || m._disposed) continue;
+        if (m.docile) continue;
         if (!m._site || m._site.id <= this._bootSiteId) continue;   // authored roster
         if (p) {
           const d2 = m.position.distanceToSquared(p.position);
@@ -497,73 +517,8 @@ export class Machines {
   /** PUBLISHED: what `ai/doctrine.js` has actually built in this world. */
   doctrineAudit() { return doctrineAudit(this); }
 
-  /** Deferred Round-3 population (casting-v3.md spawn plan). */
-  _spawnVariety() {
-    // --- Strider herd x6 in the west meadow across the dried river, with a
-    //     2-Watcher escort circuit (roster-v2 §2 herd doctrine).
-    const HC = { x: -205, z: -55 };
-    const herd = {
-      center: new THREE.Vector3(HC.x, 0, HC.z),
-      vector: new THREE.Vector3(0, 0, 1),
-      alarmed: false,
-      rearguard: null,
-      members: [],
-    };
-    this._striderHerd = herd;
-    this.squads.registerHerd(herd);   // machine-ai-07: the alarm flag RESETS
-    const spots = [[-12, -8], [8, -14], [-3, 6], [14, 4], [-18, 12], [4, 18]];
-    for (let i = 0; i < spots.length; i++) {
-      this.spawn('strider', HC.x + spots[i][0], HC.z + spots[i][1], {
-        herd,
-        route: this._route(HC.x, HC.z, 18 + (i % 3) * 6, 4, i * 1.7),
-        heading: Math.random() * Math.PI * 2,
-      });
-    }
-    // machine-ai-14: the two Watchers ESCORT the herd — they hold slots on a
-    // ring around it and re-space as members die, instead of walking an
-    // unrelated loop that happens to be nearby.
-    const guards = [];
-    for (const seed of [0.9, 3.9]) {
-      guards.push(this._spawnCls(Watcher,
-        HC.x + Math.sin(seed) * 30, HC.z + Math.cos(seed) * 30,
-        { route: this._route(HC.x, HC.z, 32, 6, seed), heading: seed }));
-    }
-    this.squads.assignEscorts(HC, guards, ECOSYSTEM.escort.watcher.radius);
-
-    // --- Scrapper pack x3 at the rusted-hull ruin (~135,-35): loping
-    //     circuits, flanking arcs assigned across the pack.
-    const packSpots = [[135, -35, 0], [143, -28, 1], [127, -26, -1]];
-    for (let i = 0; i < packSpots.length; i++) {
-      const [x, z, flank] = packSpots[i];
-      this.spawn('scrapper', x, z, {
-        flank,
-        route: this._route(135, -32, 15, 4, i * 2.1),
-        heading: Math.random() * Math.PI * 2,
-      });
-    }
-
-    // --- Glinthawk flock x3 circling above the riverbed pools (sequential
-    //     dives via the shared flock token).
-    const pools = this.ctx.environment?.water?.pools ?? [];
-    const flock = { diver: null };
-    for (let i = 0; i < 3; i++) {
-      const pool = pools.length
-        ? pools[i % Math.min(pools.length, 2)]
-        : { x: -122, z: -60 }; // contract gap fallback: river channel center
-      this.spawn('glinthawk', pool.x + (i - 1) * 9, pool.z + (i % 2) * 10, {
-        flock,
-        pool: { x: pool.x, z: pool.z },
-        phase: i * 2.1,
-      });
-    }
-
-    // --- Longleg x2 on the SE rocky shelf (shelfFactor landform).
-    this.spawn('longleg', 150, 95, { route: this._route(150, 95, 26, 5, 0.7), heading: -2.2 });
-    this.spawn('longleg', 174, 60, { route: this._route(174, 60, 22, 4, 2.9), heading: 2.8 });
-  }
-
   /**
-   * Watcher chirp / Longleg recon ping.
+   * Recon alarm ping (a sentry's call).
    *
    * `machine-ai-06` + `stealth-alarm-leaks-position`: this used to hand every
    * recipient `player.position` and full red alert, so one chirp made an
@@ -581,7 +536,6 @@ export class Machines {
     this.stimulus.update(dt);
     this.sites.update(dt);
     this.squads.update(dt);
-    this.overrides.update(dt);
 
     /**
      * THE CEILING IS A CEILING, NOT A DOOR POLICY (`memory-attribution`).
@@ -661,7 +615,7 @@ export class Machines {
      * keeps `standoffHalfLen` itself, which this term never writes. */
     if (p) {
       for (const m of this.list) {
-        if (!m.alive || m._disposed || m.mountedBy) continue;
+        if (!m.alive || m._disposed) continue;
         const min = m.bodyRadius + 0.6;
         const L = m.meleeStandoffHalfLen ?? m.standoffHalfLen ?? 0;
         const fx = Math.sin(m.heading), fz = Math.cos(m.heading);

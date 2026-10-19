@@ -4,7 +4,8 @@ import { antennaMesh, canisterMesh, powerCellMesh, lensMesh, pulseGlow } from '.
 import { ClipLayerSet, BoneSpace } from '../anim/index.js';
 import { attachRigRuntime, updateRigLOD, foldMachineMeshes } from './rig/lod.js';
 import { snapSockets } from './rig/sockets.js';
-import { buildShell, hideSculpt, LONGLEG_SHELL } from './rig/shells.js';
+import { buildShell, hideSculpt } from './rig/shells.js';
+import { LONGLEG_SHELL } from './rig/shells-expansion.js';
 import { FootLock, findLeg } from './rig/footlock.js';
 import { groundCorpse, settleCorpseNow } from './rig/ground.js';
 import { cadenceBand, cadenceTarget, measureBodyLength, wallPerSim, deathDt, CadenceLoop, cadCeilK } from './gait.js';

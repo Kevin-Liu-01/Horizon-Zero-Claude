@@ -92,7 +92,7 @@ const SPLINE_STEP = 1.1;   // metres between Catmull-Rom samples on the ribbon
 /**
  * AI states in which a machine is actually walking its route. `machine-ai`
  * publishes patrol · return · suspicious · search · alert · attack · stagger ·
- * downed · overridden · dead; only the first two follow the route, so those
+ * downed · dead; only the first two follow the route, so those
  * are the two that get a ribbon. (`idle`/`graze` are accepted as forward
  * compatibility for a herd state that lane may add.) Everything else is a
  * non-route mover — `stealth-focus-path-fidelity`: drawing it a tidy loop it
@@ -836,12 +836,12 @@ export class FocusSystem {
   /**
    * `stealth-focus-path-fidelity` — is this machine actually walking its
    * route? A Sawtooth mid-fight is not, and drawing it a tidy patrol loop is
-   * a lie the player will act on. Anything alerted / attacking / searching /
-   * overridden / mounted is skipped, and the ribbon fades out from under it.
+   * a lie the player will act on. Anything alerted / attacking / searching
+   * is skipped, and the ribbon fades out from under it.
    */
   _walksRoute(m) {
     if (!m || m.alive === false) return false;
-    if (m.mountedBy || m.overridden || m.downed) return false;
+    if (m.downed) return false;
     const st = m.ai?.state ?? m.state ?? null;
     if (typeof st === 'string' && st) return ROUTE_STATES.has(st);
     return true; // no published state: trust the route it carries

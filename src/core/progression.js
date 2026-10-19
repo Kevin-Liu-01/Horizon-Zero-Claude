@@ -14,7 +14,7 @@
  *   progression-005  weapon/ammo TIERS gated by level (D7 slice)
  *   progression-009  side content: four side quests from a named NPC, plus the
  *                    `award()`/`discover()` world-content XP the other lanes'
- *                    24 datapoints / 6 caches / override node / hunting ground
+ *                    24 datapoints / 6 caches / hunting ground
  *                    / fauna kills call into (FIX ROUND 2 — see `award()`)
  *   progression-012  `+XP` from `machine.level` instead of a kill feed
  *   progression-014  difficulty presets (damage in/out, loot, gauge, XP)
@@ -95,7 +95,7 @@
  *       `dialogue-close {npc}` (unchanged).
  *
  * 2. SITE-ANCHORED SIDE QUESTS. Six new quests (`side-hunting-trial`,
- *    `side-cauldron-override`, `side-outpost-supply`, `side-lakeshore-fisher`,
+ *    `side-outpost-supply`, `side-lakeshore-fisher`,
  *    `side-cave-datapoints`, `side-wreck-salvage`) anchored at
  *    `ctx.props.sites()` BY KIND through `at:{ site, alt? }`, with the authored
  *    `x/z` as the fallback for a build where that site kind does not exist yet.
@@ -105,7 +105,6 @@
  * 3. FOUR NEW OBJECTIVE TYPES, each on an event that already existed:
  *       datapoint  'datapoint-collected'   (src/items/datapoints.js)
  *       cache      'cache-found'          (src/world/props/activities.js)
- *       override   'override-node'         (idem)
  *       hunt       'fauna-killed'          (src/world/fauna.js)
  *    plus `within: seconds` on a kill objective — a TIMED trial. The window
  *    opens when the objective becomes current, restarts when the player
@@ -213,7 +212,6 @@ export const AWARD_REPEATABLE = new Set(['hunt', 'kill', 'combat', 'trial', 'bon
  */
 export const PLACE_NAMES = {
   tallneck: 'TALLNECK',
-  'override-tallneck': 'TALLNECK',
   'hunting-ground-valley': 'HUNTING GROUND',
 };
 
@@ -778,7 +776,7 @@ export const QUESTS = [
   /* ------------------- SIDE quests anchored at the world's SITES ----------- */
   /**
    * EXPANSION ROUND. `world-props` publishes `ctx.props.sites()` — datapoints,
-   * caches, the override node, the hunting ground, and (as that lane's own
+   * caches, the hunting ground, and (as that lane's own
    * expansion lands) the outpost, the cauldron mouth, the lakeshore and the
    * wrecks. These six quests are anchored to those sites BY KIND, not by
    * coordinate: `_anchor()` resolves `at:{site}` against the live registry at
@@ -789,7 +787,6 @@ export const QUESTS = [
    * Objective types added this round, every one on a REAL published event:
    *   datapoint  'datapoint-collected'  (src/items/datapoints.js)
    *   cache      'cache-found'         (src/world/props/activities.js)
-   *   override   'override-node'        (idem)
    *   hunt       'fauna-killed'         (src/world/fauna.js)
    *   kill + `within`  a TIMED trial: the window starts when the objective
    *                    becomes current, restarts when the player re-enters the
@@ -812,21 +809,6 @@ export const QUESTS = [
       },
     ],
     rewards: { xp: 260, shards: 120, items: [{ id: 'wire', n: 6 }], skillPoints: 1 },
-  },
-  {
-    id: 'side-cauldron-override',
-    title: 'The Cauldron Door',
-    type: 'side',
-    giver: 'karst',
-    offerAtLevel: 2,
-    site: 'cauldron',
-    summary: 'Karst will not say the word out loud. The door under the hill is a Cauldron, and it answers to an override.',
-    objectives: [
-      { id: 'terminal', type: 'goto', at: { site: 'cauldron', alt: 'override' }, x: -36, z: 213, radius: 14, label: 'Reach the Cauldron terminal' },
-      { id: 'records', type: 'datapoint', count: 3, at: { site: 'datapoint' }, label: 'Scan three datapoints inside' },
-      { id: 'node', type: 'override', count: 1, at: { site: 'override' }, label: 'Override the node' },
-    ],
-    rewards: { xp: 340, shards: 160, items: [{ id: 'echo-shell', n: 3 }], skillPoints: 1 },
   },
   {
     id: 'side-outpost-supply',
@@ -950,7 +932,7 @@ const _anchorOut = { x: 0, z: 0, ok: false, site: null };
  * world-content types; `freshTally` is the single place the shape is defined,
  * used by the constructor, `newGame()` and `deserialize()` alike.
  */
-export const TALLY_TYPES = ['kill', 'scan', 'talk', 'datapoint', 'cache', 'override', 'hunt'];
+export const TALLY_TYPES = ['kill', 'scan', 'talk', 'datapoint', 'cache', 'hunt'];
 function freshTally(src = null) {
   const out = Object.create(null);
   for (const t of TALLY_TYPES) out[t] = { ...(src && src[t] ? src[t] : {}) };
@@ -1164,7 +1146,6 @@ export class Progression {
    *   src/world/props/activities.js:439  discover(id)            (datapoint)
    *   src/world/props/activities.js:440  award 25  'datapoint'   × 24
    *   src/world/props/activities.js:524  award 15  'cache'       × 6
-   *   src/world/props/activities.js:541  award 150 'override-node'
    *   src/world/props/activities.js:542  discover('tallneck')
    *   src/world/props/activities.js:562  discover(hunting-ground)
    *   src/world/fauna.js:624             award 20/12 'hunt'      × every kill
@@ -1588,7 +1569,7 @@ export class Progression {
        * this quest already spent — so a cache emptied on the walk out counts
        * when the objective comes up, and a reload cannot double-credit it.
        */
-      case 'datapoint': case 'cache': case 'override': case 'hunt': {
+      case 'datapoint': case 'cache': case 'hunt': {
         const k = o.id2 ?? o.dp ?? o.node ?? o.species ?? '*';
         n = (this.tally[o.type][k] ?? 0) - (st.base?.[o.type]?.[k] ?? 0);
         break;
@@ -1791,7 +1772,7 @@ export class Progression {
         const npc = this._npcPos(o.npc);
         if (npc) { x = npc.x; z = npc.z; }
       } else {
-        // goto / datapoint / cache / override / timed kill — all of them resolve
+        // goto / datapoint / cache / timed kill — all of them resolve
         // through the site registry, so the pip lands on the real thing
         const a = this._anchor(o);
         if (a.ok) { x = a.x; z = a.z; }
@@ -1815,7 +1796,7 @@ export class Progression {
    *
    * `_rebuildMarkers` bakes the anchor into scalars and only re-runs when
    * `_markersDirty` is set, which nothing does on a timer. Every other anchor
-   * kind (`goto`/`datapoint`/`cache`/`override`) resolves through the static
+   * kind (`goto`/`datapoint`/`cache`) resolves through the static
    * `ctx.props.sites()` registry and is genuinely static, so caching is right
    * for them — but `npc` (port 5218) walks thirteen Nora around camp, and this
    * lane put four `talk` objectives on the roving ones. Measured: the marker
@@ -2905,7 +2886,6 @@ export class Progression {
      * already existed and that nothing was listening to for quest credit:
      *   'datapoint-collected'  src/items/datapoints.js   (all 24 records)
      *   'cache-found'         src/world/props/activities.js
-     *   'override-node'        idem
      *   'fauna-killed'         src/world/fauna.js
      * Each is tallied by id/species AND under '*', so an objective can ask for
      * "three datapoints" or for one named record with the same machinery.
@@ -2917,10 +2897,6 @@ export class Progression {
     on('cache-found', ({ id } = {}) => {
       this._bump('cache', id);
       this._advance('cache', (o) => !o.node || o.node === id);
-    });
-    on('override-node', ({ id } = {}) => {
-      this._bump('override', id);
-      this._advance('override', (o) => !o.node || o.node === id);
     });
     on('fauna-killed', ({ species } = {}) => {
       this._bump('hunt', species);

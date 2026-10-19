@@ -146,7 +146,8 @@ export class Camp {
       return;
     }
     this.crowd = buildNpcCrowd(this.ctx, this.group, ROSTER);
-    if (!this.crowd) { this._placeNpc(); return; }   // no model: Round-2 path
+    // no model: Round-2 path — and no body at all once npc.glb is gone (R30, W0a)
+    if (!this.crowd) { if (this.ctx.assets.models.npc) this._placeNpc(); return; }
     this.npcs = this.crowd.anchors;
     this.npcLandmarks = this.crowd.landmarks;
     this.npc = this.crowd.byId.varl ?? this.crowd.anchors[0];

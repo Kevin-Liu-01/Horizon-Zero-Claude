@@ -4,7 +4,8 @@ import { canisterMesh, pulseGlow } from './parts.js';
 import { ClipLayerSet } from '../anim/index.js';
 import { attachRigRuntime, updateRigLOD, foldMachineMeshes } from './rig/lod.js';
 import { snapSockets } from './rig/sockets.js';
-import { buildShell, hideSculpt, GLINTHAWK_SHELL } from './rig/shells.js';
+import { buildShell, hideSculpt } from './rig/shells.js';
+import { GLINTHAWK_SHELL } from './rig/shells-expansion.js';
 import { CorpseGrounder } from './rig/ground.js';
 
 /**

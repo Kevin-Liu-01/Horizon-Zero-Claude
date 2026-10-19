@@ -627,7 +627,7 @@ export class PlayerAnimator {
     // the two-handed `Interact`.
     ctx.events?.on('item-gained', () => this._startAction('pickup', 0.85));
     ctx.events?.on('herb-gathered', () => this._startAction('pickup', 0.85));
-    for (const ev of ['override-node', 'cache-found', 'fieldbook-found']) {
+    for (const ev of ['cache-found', 'fieldbook-found']) {
       ctx.events?.on(ev, () => this._startAction('interact', 1.1));
     }
     ctx.events?.on('arrow-fired', () => {
@@ -2524,8 +2524,7 @@ export class PlayerAnimator {
      * shifts weight, so the stance weights dip on their own and the system
      * stood down for 50 % of the frames it was needed (measured: 91 dead
      * frames out of 186, every one of them for that reason). */
-    /* A LOCK THAT IS ABOUT TO SLIDE DOES **NOT** OVERRIDE THE MOVE TEST, and
-     * this was tried and reverted rather than guessed. Letting a hot lock
+    /* Letting a hot lock
      * force the system live put it to work while she was JOGGING, where the
      * "home" stance it steps back to is meaningless because the stride is
      * meant to be moving the feet: A105's jogging row went from 0.001 m of
@@ -2662,7 +2661,7 @@ export class PlayerAnimator {
   _tryStep(side, err, vx, vz) {
     const b = this.b;
     const busy = this._flight[0] || this._flight[1];
-    /* THE OVERRIDE THAT MAKES THE DRIFT BAR A GUARANTEE.
+    /* THE DRIFT BAR GUARANTEE.
      *
      * The cooldown and the one-at-a-time rule exist to stop chatter, but they
      * are also two ways for a foot to be told to wait — and a foot that waits

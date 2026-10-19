@@ -21,8 +21,6 @@ const FLEE_RIM = PLAY_RADIUS + EXTENT.fleeRim;
  */
 
 const _v = new THREE.Vector3();
-/** A corrupted machine's IDLE sensor colour (see `Machine._eyeCalm`). */
-const CORRUPT_EYE = new THREE.Color('#ff2413');
 
 export class Squads {
   constructor(machines) {
@@ -373,76 +371,6 @@ export class Squads {
     }
   }
 
-  /**
-   * CORRUPTION (casting-v4.md §2.6 — the Corruptor, "the highest-risk
-   * behaviour in the expansion").
-   *
-   * A Corruptor turns nearby machines against everything. This reuses the
-   * OVERRIDE machinery with the polarity flipped rather than writing a second
-   * machine-vs-machine targeting path: a corrupted victim is hyper-aggressive,
-   * burns the hostile sensor colour, and `overrideCfg` refuses it, so the
-   * Spear cannot take it back.
-   *
-   * HARD CAPPED at `ECOSYSTEM.corruption.max` concurrent victims per
-   * Corruptor, which the card asks for by name: an uncapped radius turns one
-   * machine into a valley-wide cascade that no gate would catch before a judge
-   * did. Victims are released the moment their Corruptor dies.
-   */
-  _updateCorruption(dt) {
-    const cfg = ECOSYSTEM.corruption;
-    if (!cfg) return;
-    for (const m of this.machines.list) {
-      if (!m._corruptor) continue;
-      const live = m._corruptor.victims.filter((v) => v.alive && !v._disposed && v.corrupted);
-      m._corruptor.victims = live;
-      if (!m.alive || m._disposed) {           // the source is gone: release them
-        for (const v of live) this.uncorrupt(v);
-        m._corruptor.victims = [];
-        continue;
-      }
-      m._corruptor.t -= dt;
-      if (m._corruptor.t > 0) continue;
-      m._corruptor.t = cfg.period;
-      if (live.length >= cfg.max) continue;
-      if (m.state === 'patrol' || m.state === 'return') continue;
-      const r2 = cfg.radius * cfg.radius;
-      for (const v of this.machines.list) {
-        if (v === m || !v.alive || v._disposed) continue;
-        if (v.corrupted || v.docile || v.state === 'overridden') continue;
-        if (v.kind === m.kind) continue;                 // it does not eat its own
-        if (v.position.distanceToSquared(m.position) > r2) continue;
-        this.corrupt(v, m);
-        break;                                            // one per period
-      }
-    }
-  }
-
-  /** Flip a machine to the corrupted flavour of the override machinery. */
-  corrupt(v, source) {
-    if (v.corrupted || v.docile) return false;
-    v.corrupted = true;
-    v._corruptedBy = source;
-    v._eyeCalm = CORRUPT_EYE;
-    v.suspicion = 1;
-    v._unseenT = 0;
-    const p = this.ctx.player;
-    if (p) v.lastKnown.copy(p.position);
-    if (v.state !== 'attack') v.setState('alert');
-    source._corruptor.victims.push(v);
-    safeEmit(this.ctx, 'machine-corrupted', { machine: v, source });
-    return true;
-  }
-
-  /** ...and back, when its Corruptor dies. */
-  uncorrupt(v) {
-    if (!v.corrupted) return;
-    v.corrupted = false;
-    v._corruptedBy = null;
-    v._eyeCalm = undefined;
-    if (v.alive && !v._disposed) { v.suspicion = 0; v._unseenT = 99; v.setState('return'); }
-    safeEmit(this.ctx, 'machine-uncorrupted', { machine: v });
-  }
-
   /** Slot escorts around a herd (or any anchor) at a fixed ring. */
   assignEscorts(anchor, guards, radius) {
     for (let i = 0; i < guards.length; i++) {
@@ -471,15 +399,8 @@ export class Squads {
     if (this.wrecks.length > 12) this.wrecks.shift();
     /**
      * A DEAD MACHINE RELEASES WHAT IT OWNED (`A90-memory-stability`). A
-     * Corruptor that dies with victims would otherwise leave them corrupted
-     * for ever, each one retaining the dead machine through `_corruptedBy`;
-     * a dead convoy carrier would leave its escorts orbiting a corpse.
+     * dead convoy carrier would leave its escorts orbiting a corpse.
      */
-    if (machine._corruptor) {
-      for (const v of machine._corruptor.victims) this.uncorrupt(v);
-      machine._corruptor.victims.length = 0;
-    }
-    if (machine.corrupted) this.uncorrupt(machine);
     const c = machine.convoy;
     if (c && c.carrier === machine) this._electCarrier(c);
   }
@@ -505,12 +426,6 @@ export class Squads {
       const i = b.members.indexOf(machine);
       if (i >= 0) b.members.splice(i, 1);
     }
-    if (machine._corruptor) {
-      for (const v of machine._corruptor.victims) this.uncorrupt(v);
-      machine._corruptor.victims.length = 0;
-      machine._corruptor = null;
-    }
-    if (machine.corrupted) this.uncorrupt(machine);
     machine.convoy = null;
     machine.basking = null;
     machine.herd = null;
@@ -531,13 +446,12 @@ export class Squads {
       if (hot) h._calmT = 0;
       else h._calmT = (h._calmT || 0) + dt;
 
-      // the rearguard died (or was overridden): post a new one immediately
+      // the rearguard died: post a new one immediately
       if (h.alarmed && (!h.rearguard || !h.rearguard.alive
-        || h.rearguard._disposed || h.rearguard.state === 'overridden')) {
+        || h.rearguard._disposed)) {
         const p = this.ctx.player;
         let best = null, bd = Infinity;
         for (const m of living) {
-          if (m.state === 'overridden') continue;
           const d = p ? m.position.distanceToSquared(p.position) : 0;
           if (d < bd) { bd = d; best = m; }
         }
@@ -631,7 +545,6 @@ export class Squads {
     this._updateHerds(dt);
     this._updateConvoys(dt);
     this._updateBaskings(dt);
-    this._updateCorruption(dt);
     this._t += dt;
     if (this._t < 0.5) return;
     this._updateScavengers(this._t);

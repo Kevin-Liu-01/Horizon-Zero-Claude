@@ -784,7 +784,7 @@ export class Menus {
    * hands back a player at zero who can never die again because nothing
    * re-enters `_die()` until the next damage tick. The restore is correct to
    * own health in general (respawning at the 40 HP you saved with is the
-   * point), so the guard is narrow: only a non-positive restore is overridden,
+   * point), so the guard is narrow: only a non-positive restore,
    * and only on the frame after the restore has run.
    */
   respawn(mode = 'checkpoint') {
