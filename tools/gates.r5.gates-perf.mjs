@@ -1648,7 +1648,9 @@ async function classifyRow(g, r, run, verdicts, gradeVisual, trust = { regs: new
  *     round, so a full carried run is one observation of every row and a sealed PARTIAL run, `--only` of
  *     carried ids, is one more observation of the rows it ran):
  *       PASS at baseline  -> PASS in every observation (R30: SKIP-legacy-deleted is allowed, its subject
- *                            was deleted at W0a and the row names it until the replacement lands);
+ *                            was deleted at W0a and the row names it until the replacement lands; a
+ *                            Round-4-ATTRIBUTED PENDING — the box could not be measured — is no observation,
+ *                            and at least one measured PASS is needed);
  *       known-flaky       (A13 under R27, and every row the baseline shows flaky) -> the FIRST 5
  *                            observations on this build decide: >= 3 PASS (re-running cannot replace them);
  *       FAIL / PENDING    -> listed, not graded, but never WORSE (pass > named SKIP or attributed PENDING >
