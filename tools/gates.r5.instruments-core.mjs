@@ -2169,6 +2169,22 @@ async function allocMachines({ PORT }) {
         mine: rows.filter((r) => r.owner === 'instruments-core'), frozenMachine: rows.filter((r) => r.owner === 'frozen-machine'),
         topOther: rows.filter((r) => r.owner === 'other').slice(0, 12) };
     };
+    let inGame = null;
+    if (process.env.R5_IC_INGAME) {
+      // diagnosis only: heap delta around single in-game calls (real tiers, real context), negative deltas (a GC) dropped
+      inGame = await page.evaluate(`(async () => {
+        const C = __CTX__, M = C.machines, mem = () => performance.memory.usedJSHeapSize;
+        const wrap = (obj, name, label, acc) => { const f = obj[name]; obj[name] = function (...a) { const h0 = mem(); const r = f.apply(this, a); const d = mem() - h0; if (d >= 0) { acc[label] = acc[label] || [0, 0]; acc[label][0] += d; acc[label][1]++; } return r; }; return () => { obj[name] = f; }; };
+        const acc = {}; const undo = [];
+        undo.push(wrap(M.lamps, 'update', 'lamps.update', acc));
+        undo.push(wrap(M, '_standoffPass', '_standoffPass', acc));
+        undo.push(wrap(M, '_separationPass', '_separationPass', acc));
+        await new Promise(r => setTimeout(r, 6000));
+        for (const u of undo) u();
+        const out = {}; for (const [k, [b, n]] of Object.entries(acc)) out[k] = { calls: n, bytesPerCall: +(b / n).toFixed(1) };
+        return out;
+      })()`).catch((e) => ({ error: String(e).slice(0, 200) }));
+    }
     const fight = await phase('staged fight', null);
     let micro = null;
     if (process.env.R5_IC_MICRO) {
@@ -2179,6 +2195,8 @@ async function allocMachines({ PORT }) {
         const P = m.ai.perception, mem = () => performance.memory.usedJSHeapSize;
         const st = M.list.find(x => x !== m && x.alive);
         const L = M.list.filter(x => x.alive && !x._frozenByGate);
+        const __st = (await import('/src/entities/machines/machine.js'))._st;
+        const __v = new (C.player.position.constructor)();
         // every case runs over EVERY live machine (a dozen classes: the megamorphic context of the game)
         const cases = {
           'perception._scan': (x) => x.ai.perception._scan(0.016),
@@ -2189,6 +2207,9 @@ async function allocMachines({ PORT }) {
           '_turnToward': (x) => x._turnToward(x.heading + 0.01, 0.016),
           '_steerAlong': (x) => { x._steerAlong(0.3, 0.9, x.position.x + 1, x.position.z + 4, 2.0, 0.016); },
           '_navToward': (x) => { x._navToward(x.position.x + 5, x.position.z + 5, 1.5, 0.016); },
+          '_steerAlongS': (x) => { const st = __st; st.x = 0.3; st.z = 0.9; st.fx = x.position.x + 1; st.fz = x.position.z + 4; st.speed = 2.0; x._steerAlongS(0.016); },
+          '_turnS': (x) => { __st.want = x.sc.heading + 0.01; x._turnS(0.016); },
+          'nav.steer (frozen)': (x) => { C.nav.steer(x.position, x.moveDir, __v, null); },
           '_statePatrol': (x) => { const w = x.sc._waitT; x.sc._waitT = 0; x._statePatrol(0.016); x.sc._waitT = w; },
           '_updateEyes': (x) => x._updateEyes(0.016, C.engine.simTime),
           '_updateParts': (x) => x._updateParts(0.016, C.engine.simTime),
@@ -2221,7 +2242,9 @@ async function allocMachines({ PORT }) {
           'Machine.update': m.update, '_updateEyes': m._updateEyes, '_conform': m._conform, '_steerAlong': m._steerAlong, '_navToward': m._navToward,
           '_applyStep': m._applyStep, '_moveToward': m._moveToward, '_turnToward': m._turnToward, '_statePatrol': m._statePatrol, '_updateParts': m._updateParts,
           'Perception.update': m.ai.perception.update, 'hasLOS': m.ai.perception.hasLOS, 'ai.tick': m.ai.tick, 'gait.update': m.gait && m.gait.update,
-          'terrain.getHeight': C.terrain.getHeight };
+          'terrain.getHeight': C.terrain.getHeight, '_steerAlongS': m._steerAlongS, '_navTowardS': m._navTowardS, '_turnS': m._turnS,
+          'perception._scan': m.ai.perception._scan, 'perception._sight': m.ai.perception._sight, 'perception._belief': m.ai.perception._belief,
+          'Machines._stepMachines': M._stepMachines, 'Machines._standoffPass': M._standoffPass, 'Machines._separationPass': M._separationPass };
         const out = {}; for (const [k, f] of Object.entries(fns)) { try { out[k] = typeof f === 'function' ? %GetOptimizationStatus(f) : null; } catch (e) { out[k] = String(e).slice(0, 80); } }
         return out; })()`).catch((e) => ({ error: String(e).slice(0, 200) }));
     }
@@ -2237,7 +2260,7 @@ async function allocMachines({ PORT }) {
       topOther: ph.topOther.map((r) => `${r.gradedKBps} KB/s  ${r.fn}`), getterCallers: ph.getterCallers });
     return { pass, detail: {
       verdict: (pass ? 'PASS' : 'FAIL') + `: ${over.length} instruments-core frame(s) over ${FN_BAR} KB/s` + (over.length ? ' — ' + over.map((o) => `${o.fn} ${o.gradedKBps} (${o.phase})`).join('; ') : ''),
-      staged, end, tiers, micro, consoleErrors: errors.slice(0, 5),
+      staged, end, tiers, micro, inGame, consoleErrors: errors.slice(0, 5),
       deopts: process.env.R5_IC_TRACEDEOPT ? { lines: deopts.lines, top: [...deopts.byFn.entries()].sort((a, b) => b[1] - a[1]).slice(0, 40).map(([k, n]) => n + '  ' + k) } : undefined,
       inlining: process.env.R5_IC_NOINLINE ? 'OFF (diagnosis run, not gradeable)' : 'default',
       phases: [fmt(fight), fmt(sprint)],

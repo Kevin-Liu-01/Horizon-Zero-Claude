@@ -183,6 +183,17 @@ export class MachineScalars {
     this._eLight = -1;
     this._eN = -1;
     this._eEmis = -1;   //   ...and the body-strip emissive last written
+    /*
+     * PUBLISHED BOXES for the doubles that frozen files read every frame through
+     * the old names (`m.heading` in collision / gait / melee, `m._speed` and
+     * `m._accelPitch` in gait / footlock): the getter returns ONE boxed copy per
+     * change (`_pb*`, a Tagged field: returning it allocates nothing) instead of
+     * a fresh HeapNumber per read. `_pv*` is the value that box holds.
+     */
+    this._pbheading = null; this._pbheading = 0; this._pvheading = 0.5;
+    this._pb_speed = null; this._pb_speed = 0; this._pv_speed = 0.5;
+    this._pb_accelPitch = null; this._pb_accelPitch = 0; this._pv_accelPitch = 0.5;
+    this._pbstrafeK = null; this._pbstrafeK = 0; this._pvstrafeK = 0.5;
     this.heading = 0;
     this._speed = 0;
     this._accelPitch = 0;
@@ -512,13 +523,13 @@ export class Machine {
   }
 
   /* --------- the hot scalars by their old names (see MachineScalars) --------- */
-  get heading() { return this.sc.heading; }
+  get heading() { const sc = this.sc; if (sc.heading !== sc._pvheading) { sc._pbheading = sc.heading; sc._pvheading = sc.heading; } return sc._pbheading; }
   set heading(v) { this.sc.heading = v; }
-  get _speed() { return this.sc._speed; }
+  get _speed() { const sc = this.sc; if (sc._speed !== sc._pv_speed) { sc._pb_speed = sc._speed; sc._pv_speed = sc._speed; } return sc._pb_speed; }
   set _speed(v) { this.sc._speed = v; }
-  get _accelPitch() { return this.sc._accelPitch; }
+  get _accelPitch() { const sc = this.sc; if (sc._accelPitch !== sc._pv_accelPitch) { sc._pb_accelPitch = sc._accelPitch; sc._pv_accelPitch = sc._accelPitch; } return sc._pb_accelPitch; }
   set _accelPitch(v) { this.sc._accelPitch = v; }
-  get strafeK() { return this.sc.strafeK; }
+  get strafeK() { const sc = this.sc; if (sc.strafeK !== sc._pvstrafeK) { sc._pbstrafeK = sc.strafeK; sc._pvstrafeK = sc.strafeK; } return sc._pbstrafeK; }
   set strafeK(v) { this.sc.strafeK = v; }
   get suspicion() { return this.sc.suspicion; }
   set suspicion(v) { this.sc.suspicion = v; }
@@ -882,7 +893,9 @@ export class Machine {
   }
 
   _updateParts(dt, t) {
-    for (const p of this.parts) {
+    const parts = this.parts;
+    for (let i = 0; i < parts.length; i++) {
+      const p = parts[i];
       if (p.attached && p.update) p.update(dt, t, p);
     }
   }

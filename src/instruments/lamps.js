@@ -727,10 +727,17 @@ export class LampSystem {
       if (Math.abs(target - r.aperture) < 0.004) r.aperture = target;
 
       r.anchor.updateWorldMatrix(true, false);
-      r.anchor.matrixWorld.decompose(_p, _q, _s);
-      _s.x = r.radius; _s.y = r.radius; _s.z = r.radius;
-      _m.compose(_p, _q, _s);
-      _m.toArray(this.lampMesh.instanceMatrix.array, n * 16);
+      // the instance matrix = the anchor's world matrix with its basis rescaled to the lamp radius,
+      // written element by element (Matrix4.decompose + compose box doubles: 16 B per lamp measured)
+      {
+        const te = r.anchor.matrixWorld.elements, im = this.lampMesh.instanceMatrix.array, ob = n * 16, rad = r.radius;
+        for (let c = 0; c < 12; c += 4) {
+          const a = te[c], b = te[c + 1], d = te[c + 2];
+          const k = rad / (Math.sqrt(a * a + b * b + d * d) || 1);
+          im[ob + c] = a * k; im[ob + c + 1] = b * k; im[ob + c + 2] = d * k; im[ob + c + 3] = 0;
+        }
+        im[ob + 12] = te[12]; im[ob + 13] = te[13]; im[ob + 14] = te[14]; im[ob + 15] = 1;
+      }
       const h = this.hdr[colourId];
       const o = n * 4;
       L[o] = h.r * gain; L[o + 1] = h.g * gain; L[o + 2] = h.b * gain;
@@ -744,6 +751,7 @@ export class LampSystem {
       // ---- the beam ----
       r.beamOn = false;
       if (air && spec.beam && nb < this.capacity && !m.lowLOD) {
+        r.anchor.matrixWorld.decompose(_p, _q, _s);      // (beams only: fog or night)
         if (spec.beam === 'lock' && player) {
           _t.x = player.position.x; _t.y = player.position.y + 1.3; _t.z = player.position.z;
         } else if (m.lastKnown) {

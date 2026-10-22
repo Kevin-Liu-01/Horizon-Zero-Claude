@@ -241,7 +241,9 @@ export function glowSprite(color, scale, opacity = 0.4) {
 export function pulseGlow(group, t, speed = 4) {
   const cm = group.userData.coreMat;
   const gm = group.userData.glowMat;
-  const k = 0.5 + 0.5 * Math.sin(t * speed + (group.userData.pulseSeed ?? 0));
+  // the seed is an integer (milli-radians): userData is a different shape on every part, and a
+  // megamorphic read of a double boxes it; a Smi does not (memory rule, W0b fix round 1)
+  const k = 0.5 + 0.5 * Math.sin(t * speed + (group.userData.pulseSeedMr ?? 0) * 0.001);
   if (cm) cm.emissiveIntensity = 1.7 + k * 1.2;
   if (gm) gm.opacity = 0.24 + k * 0.15;
 }
@@ -271,7 +273,7 @@ export function canisterMesh({ color = 0xff7a1e, r = 0.21, h = 0.6, shell = 0x9a
   // no glow sprite: the pulsing emissive core + bloom carry the aim-marker
   // read (draw-call budget)
   g.userData.coreMat = mesh.material;
-  g.userData.pulseSeed = Math.random() * 7;
+  g.userData.pulseSeedMr = Math.floor(Math.random() * 7000);
   return noShadows(g);
 }
 
@@ -353,7 +355,7 @@ export function forceLoaderMesh({ r = 0.4, color = 0xd2452e } = {}) {      // su
   });
   g.add(mesh);
   g.userData.coreMat = mesh.material;
-  g.userData.pulseSeed = Math.random() * 7;
+  g.userData.pulseSeedMr = Math.floor(Math.random() * 7000);
   return noShadows(g);
 }
 
@@ -404,7 +406,7 @@ export function discLauncherMesh({ accent = 0xe8c48a } = {}) {      // bronze ch
   });
   g.add(body);
   g.userData.coreMat = body.material;
-  g.userData.pulseSeed = Math.random() * 7;
+  g.userData.pulseSeedMr = Math.floor(Math.random() * 7000);
   noShadows(g);
   body.castShadow = true;
   body.userData.keepShadow = true;
@@ -450,7 +452,7 @@ export function powerCellMesh({ color = 0xffd23d } = {}) {
   });
   g.add(mesh);
   g.userData.coreMat = mesh.material;
-  g.userData.pulseSeed = Math.random() * 7;
+  g.userData.pulseSeedMr = Math.floor(Math.random() * 7000);
   return noShadows(g);
 }
 
@@ -463,7 +465,7 @@ export function coreMesh({ color = 0xff9a3d, r = 0.32 } = {}) {
   g.add(glow);
   g.userData.coreMat = core.material;
   g.userData.glowMat = glow.material;
-  g.userData.pulseSeed = Math.random() * 7;
+  g.userData.pulseSeedMr = Math.floor(Math.random() * 7000);
   return noShadows(g);
 }
 
