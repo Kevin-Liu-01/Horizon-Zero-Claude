@@ -1661,14 +1661,24 @@ const GATES = [
       // draw edge, so for its whole 0.28s the hand hung at her hip while the
       // string was already bending (nock -> hand 0.63m); the string must never
       // go live before the hand is back on it, which is asserted here too.
-      let minQ = 99, frames = 0, drawDuringFlourish = 0;
+      // R11 (plan §8.2): the flourish frames are counted on the SIM clock
+      // (>= 8 sim frames at 60 Hz). Every animator update is one sim step, so
+      // the count is the number of updates (dt > 0) that end inside the beat;
+      // rendered frames are reported beside it (on a loaded box main.js runs
+      // up to 3 sim steps per rendered frame, which is what the Round-4 rAF
+      // count measured: 7 rendered frames for a 20-sim-frame beat, Oct 22).
+      let minQ = 99, frames = 0, simFrames = 0, drawDuringFlourish = 0;
+      const upd = an.update;
+      an.update = function (dt, t) { const r = upd.call(this, dt, t); if (dt > 0 && this._quiverT < 1) simFrames++; return r; };
       C.input.mouse.buttons |= 4;
       const t0 = performance.now();
-      while (performance.now() - t0 < 700) {
-        minQ = Math.min(minQ, an.debugArm('r').handToQuiver);
-        if (an._quiverT < 1) { frames++; drawDuringFlourish = Math.max(drawDuringFlourish, C.combat.drawStrength); }
-        await new Promise(r => requestAnimationFrame(r));
-      }
+      try {
+        while (performance.now() - t0 < 700) {
+          minQ = Math.min(minQ, an.debugArm('r').handToQuiver);
+          if (an._quiverT < 1) { frames++; drawDuringFlourish = Math.max(drawDuringFlourish, C.combat.drawStrength); }
+          await new Promise(r => requestAnimationFrame(r));
+        }
+      } finally { an.update = upd; }
       C.input.mouse.buttons |= 1;
       await new Promise(r => setTimeout(r, 1500));
       // --- loose: the hand holds at the anchor and kicks back along -aim
@@ -1682,9 +1692,9 @@ const GATES = [
         await new Promise(r => requestAnimationFrame(r));
       }
       C.input.mouse.buttons = 0;
-      const pass = minQ <= 0.18 && maxBack >= 0.05 && frames >= 8 && drawDuringFlourish <= 0.02;
+      const pass = minQ <= 0.18 && maxBack >= 0.05 && simFrames >= 8 && drawDuringFlourish <= 0.02;
       return { pass, detail: { minHandToQuiverM: +minQ.toFixed(3),
-                               flourishFrames: frames,
+                               flourishSimFrames: simFrames, flourishRenderedFrames: frames,
                                maxDrawDuringFlourish: +drawDuringFlourish.toFixed(3),
                                looseRearM: +maxBack.toFixed(4) } };
     })()`),

@@ -351,10 +351,15 @@ export async function traversalOverlay(ctx) {
 /**
  * The STOCK UBC face (the comparison V-brea-face asks for), rendered from the
  * CC0 source with the same lights and lens as Brea's: front + profile at
- * 1.2 m. The sheet tool stores them in reference/r5/hero/ (the proof's stock
- * body is deleted at the W0 exit; the reference renders stay).
+ * 1.2 m. The renders are stored in reference/r5/hero/ (`ubc-stock-front.png`,
+ * `ubc-stock-profile.png`), and `faceSheetOverlay(ctx)` reads THOSE by
+ * default, so the sheet needs no source body at all. `url` is REQUIRED (no
+ * default): the stock heroine GLB pipeline's `tools/build/humans.mjs
+ * buildHeroineBase()` writes from `models-staging/r5-src/` (W0b pipeline
+ * request §6.4: the Round-5 proof's copy is not a reader any more).
  */
-export async function renderStockFace(ctx, url = '/tools/r5-poc/assets/heroine-base.glb') {
+export async function renderStockFace(ctx, url) {
+  if (!url) throw new Error('[sheets] renderStockFace(ctx, url): pass the stock heroine GLB (pipeline humans.mjs buildHeroineBase); the sheet reads reference/r5/hero/ubc-stock-*.png by default');
   const { GLTFLoader } = await import('three/examples/jsm/loaders/GLTFLoader.js');
   const { MeshoptDecoder } = await import('three/examples/jsm/libs/meshopt_decoder.module.js');
   const loader = new GLTFLoader(); loader.setMeshoptDecoder(MeshoptDecoder);
