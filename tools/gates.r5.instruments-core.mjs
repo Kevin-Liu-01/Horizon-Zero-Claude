@@ -2087,9 +2087,28 @@ async function allocMachines({ PORT }) {
   const jsFlags = ['--expose-gc'];
   if (process.env.R5_IC_NOINLINE) jsFlags.push('--no-turbo-inlining', '--max-inlined-bytecode-size=0');   // diagnosis only: one frame per function
   if (process.env.R5_IC_OPTSTATUS) jsFlags.push('--allow-natives-syntax');                                 // diagnosis only: tier of each hot function
-  const browser = await puppeteer.launch({ protocolTimeout: 900000, headless: 'new', userDataDir: dir,
+  if (process.env.R5_IC_TRACEDEOPT) jsFlags.push('--trace-deopt');                                         // diagnosis only: deopts per function
+  const browser = await puppeteer.launch({ protocolTimeout: 900000, headless: 'new', userDataDir: dir, dumpio: !!process.env.R5_IC_TRACEDEOPT,
     args: ['--use-angle=metal', '--enable-gpu', '--ignore-gpu-blocklist', '--window-size=1600,940', `--js-flags=${jsFlags.join(' ')}`, '--enable-precise-memory-info'] });
   const r2 = (x) => Math.round(x * 100) / 100;
+  // --trace-deopt lines, counted only while a window is open
+  const deopts = { open: false, byFn: new Map(), lines: 0 };
+  if (process.env.R5_IC_TRACEDEOPT) {
+    const onData = (buf) => {
+      if (!deopts.open) return;
+      for (const line of String(buf).split('\n')) {
+        const mm = /deoptimizing [^<]*<JSFunction ([^ >]+)[^>]*>.*?reason: ([^)\]]+)/.exec(line) || /reason: ([^)\]]+)\).*?<JSFunction ([^ >]+)/.exec(line);
+        if (!/deoptimiz/.test(line)) continue;
+        deopts.lines++;
+        const fn = (/<JSFunction ([^ >]+)/.exec(line) || [])[1] || '?';
+        const why = (/reason: ([^)\],]+)/.exec(line) || [])[1] || '?';
+        const k = fn + ' — ' + why;
+        deopts.byFn.set(k, (deopts.byFn.get(k) || 0) + 1);
+      }
+    };
+    browser.process()?.stdout?.on('data', onData);
+    browser.process()?.stderr?.on('data', onData);
+  }
   try {
     const page = await browser.newPage();
     const errors = [];
@@ -2111,7 +2130,9 @@ async function allocMachines({ PORT }) {
       await cdp.send('HeapProfiler.collectGarbage');
       await cdp.send('HeapProfiler.startSampling', { samplingInterval: INTERVAL, includeObjectsCollectedByMajorGC: true, includeObjectsCollectedByMinorGC: true });
       const tS = Date.now();
+      deopts.open = true;
       await sleep(WINDOW);
+      deopts.open = false;
       const { profile } = await cdp.send('HeapProfiler.stopSampling');
       const secs = (Date.now() - tS) / 1000;
       const frames = (await page.evaluate('__CTX__.engine.frames')) - f0;
@@ -2149,6 +2170,49 @@ async function allocMachines({ PORT }) {
         topOther: rows.filter((r) => r.owner === 'other').slice(0, 12) };
     };
     const fight = await phase('staged fight', null);
+    let micro = null;
+    if (process.env.R5_IC_MICRO) {
+      // diagnosis only: bytes per call of each hot function, called in a loop on one live herd-role machine
+      micro = await page.evaluate(`(async () => {
+        const C = __CTX__, M = C.machines; const m = M.list.find(x => x.alive && x.kind === M.roles.herd);
+        if (!m || typeof gc !== 'function') return { error: 'no machine or no gc' };
+        const P = m.ai.perception, mem = () => performance.memory.usedJSHeapSize;
+        const st = M.list.find(x => x !== m && x.alive);
+        const L = M.list.filter(x => x.alive && !x._frozenByGate);
+        // every case runs over EVERY live machine (a dozen classes: the megamorphic context of the game)
+        const cases = {
+          'perception._scan': (x) => x.ai.perception._scan(0.016),
+          'perception._sight': (x) => x.ai.perception._sight(),
+          'perception._belief': (x) => x.ai.perception._belief(0.1),
+          '_conform (moving)': (x) => { x.position.x += 1e-5; x._conform(0.016); x.position.x -= 1e-5; },
+          '_conform (still)': (x) => x._conform(0.016),
+          '_turnToward': (x) => x._turnToward(x.heading + 0.01, 0.016),
+          '_steerAlong': (x) => { x._steerAlong(0.3, 0.9, x.position.x + 1, x.position.z + 4, 2.0, 0.016); },
+          '_navToward': (x) => { x._navToward(x.position.x + 5, x.position.z + 5, 1.5, 0.016); },
+          '_statePatrol': (x) => { const w = x.sc._waitT; x.sc._waitT = 0; x._statePatrol(0.016); x.sc._waitT = w; },
+          '_updateEyes': (x) => x._updateEyes(0.016, C.engine.simTime),
+          '_updateParts': (x) => x._updateParts(0.016, C.engine.simTime),
+          'ai.tick': (x) => x.ai.tick(0.016),
+          'Machine.update': (x) => x.update(0.016, C.engine.simTime),
+          'lamps.update (once)': (x) => { if (x === L[0]) M.lamps.update(); },
+          '_standoffPass (once)': (x) => { if (x === L[0]) M._standoffPass(C.player.position); },
+          '_separationPass (once)': (x) => { if (x === L[0]) M._separationPass(); },
+          'gait.update (frozen)': (x) => x.gait && x.gait.update(0.016, C.engine.simTime),
+        };
+        const out = { machines: L.length, kinds: [...new Set(L.map(x => x.kind))].length };
+        for (const [k, f] of Object.entries(cases)) {
+          try {
+            for (let i = 0; i < 150; i++) for (let j = 0; j < L.length; j++) f(L[j]);      // warm (optimise)
+            gc(); gc();
+            const h0 = mem();
+            for (let i = 0; i < 60; i++) for (let j = 0; j < L.length; j++) f(L[j]);
+            const h1 = mem();
+            out[k] = +((h1 - h0) / 60).toFixed(1) + ' B/frame-equivalent';
+          } catch (e) { out[k] = 'ERR ' + String(e).slice(0, 80); }
+        }
+        return out;
+      })()`).catch((e) => ({ error: String(e).slice(0, 200) }));
+    }
     let tiers = null;
     if (process.env.R5_IC_OPTSTATUS) {
       // %GetOptimizationStatus bits (V8 runtime-test.cc): 16 optimized, 32 maglev, 64 turbofan, 128 interpreted, 8 maybe-deopted, 256 marked, 2048+ baseline
@@ -2173,7 +2237,9 @@ async function allocMachines({ PORT }) {
       topOther: ph.topOther.map((r) => `${r.gradedKBps} KB/s  ${r.fn}`), getterCallers: ph.getterCallers });
     return { pass, detail: {
       verdict: (pass ? 'PASS' : 'FAIL') + `: ${over.length} instruments-core frame(s) over ${FN_BAR} KB/s` + (over.length ? ' — ' + over.map((o) => `${o.fn} ${o.gradedKBps} (${o.phase})`).join('; ') : ''),
-      staged, end, tiers, consoleErrors: errors.slice(0, 5), inlining: process.env.R5_IC_NOINLINE ? 'OFF (diagnosis run, not gradeable)' : 'default',
+      staged, end, tiers, micro, consoleErrors: errors.slice(0, 5),
+      deopts: process.env.R5_IC_TRACEDEOPT ? { lines: deopts.lines, top: [...deopts.byFn.entries()].sort((a, b) => b[1] - a[1]).slice(0, 40).map(([k, n]) => n + '  ' + k) } : undefined,
+      inlining: process.env.R5_IC_NOINLINE ? 'OFF (diagnosis run, not gradeable)' : 'default',
       phases: [fmt(fight), fmt(sprint)],
       method: `CDP HeapProfiler.startSampling (interval ${INTERVAL} B, minor+major GC objects included), ${WARM / 1000} s warm-up, ${WINDOW / 1000} s window per phase; graded = max(measured KB/s, KB/frame x 60) on self attribution (gates-perf A-alloc-rate's method); bar ${FN_BAR} KB/s per instruments-core function` } };
   } finally {

@@ -437,10 +437,12 @@ export class AttackPicker {
   constructor(machine) {
     this.m = machine;
     this.rows = attackTable(machine.kind);
-    this.cd = new Map();          // row id -> seconds remaining
+    /** The picker's clock: the sum of every `tick(dt)` (the hold maps store expiry times on it). */
+    this._now = 0;
+    this.cd = new Map();          // row id -> expiry (picker clock); `_held(cd, id)` asks
     this.lastId = null;
     this.streak = 0;
-    this.missed = new Map();      // row id -> seconds of miss memory left
+    this.missed = new Map();      // row id -> miss memory expiry (picker clock)
     this.used = new Set();        // distinct ids used this life (A41 evidence)
     /**
      * Rows that were LEGAL and still built nothing (`authored: 'species'` with
@@ -528,27 +530,18 @@ export class AttackPicker {
   }
 
   tick(dt) {
-    for (const [k, v] of this.cd) {
-      const n = v - dt;
-      if (n <= 0) this.cd.delete(k); else this.cd.set(k, n);
-    }
-    for (const [k, v] of this.missed) {
-      const n = v - dt;
-      if (n <= 0) this.missed.delete(k); else this.missed.set(k, n);
-    }
-    for (const [k, v] of this.stalled) {
-      const n = v - dt;
-      if (n <= 0) this.stalled.delete(k); else this.stalled.set(k, n);
-    }
-    for (const [k, v] of this.blind) {
-      const n = v - dt;
-      if (n <= 0) this.blind.delete(k); else this.blind.set(k, n);
-    }
-    for (const [k, v] of this.unreach) {
-      const n = v - dt;
-      if (n <= 0) { this.unreach.delete(k); this._unreachAt.delete(k); }
-      else this.unreach.set(k, n);
-    }
+    /*
+     * ONE CLOCK, NO PER-FRAME MAP WRITES (memory rule; instruments-core W0b fix
+     * round 1). The five hold maps (`cd`, `missed`, `stalled`, `blind`,
+     * `unreach`) used to count every entry down here each frame — a
+     * `for (const [k, v] of map)` (an iterator and an entry array per step) and
+     * a `map.set(k, n)` that boxes the new double — 200 B per machine per frame
+     * measured. They now hold the EXPIRY time on this picker's own clock
+     * (`_now`, advanced by exactly the dt this method always counted down), and
+     * `_held(map, id)` drops an entry the first time it is asked after expiry:
+     * the same moment the countdown would have deleted it.
+     */
+    this._now += dt;
     if (this._arrangedId) {
       this._arrangedT += dt;
       /**
@@ -567,7 +560,7 @@ export class AttackPicker {
        */
       if (!this.m._attack) this._setupT += dt;
       if (this._arrangedT >= SCORING.arrangeGiveUp) {
-        this.stalled.set(this._arrangedId, SCORING.stallHold);
+        this.stalled.set(this._arrangedId, this._now + SCORING.stallHold);
         this._arrangedId = null;
         this._arrangedT = 0;
         this._setupT = 0;
@@ -580,6 +573,20 @@ export class AttackPicker {
    * clock only restarts when the ANSWER changes, so re-choosing the same move
    * on every orbit flip — the hostage case — keeps accumulating.
    */
+  /**
+   * Is `id` still held in `map` (one of the five hold maps, whose values are
+   * expiry times on `_now`)? An expired entry is dropped here, which is the
+   * moment the old per-frame countdown would have deleted it. No allocation.
+   */
+  _held(map, id) {
+    const t = map.get(id);
+    if (t === undefined) return false;
+    if (t > this._now) return true;
+    map.delete(id);
+    if (map === this.unreach) this._unreachAt.delete(id);
+    return false;
+  }
+
   noteArranged(id) {
     if (id === this._arrangedId) return;
     this._arrangedId = id || null;
@@ -598,13 +605,13 @@ export class AttackPicker {
    */
   noteBlindRing(id, ring = null) {
     if (!id) return;
-    this.blind.set(id, SCORING.blindHold);
+    this.blind.set(id, this._now + SCORING.blindHold);
     this._blindRingAt = ring;
     if (this._arrangedId === id) { this._arrangedId = null; this._arrangedT = 0; this._setupT = 0; }
   }
 
   /** PUBLISHED (gates + HUD): `[[id, secondsLeft], ...]`. ALLOCATES. */
-  blindRings() { return [...this.blind.entries()].map(([k, v]) => [k, +v.toFixed(2)]); }
+  blindRings() { return [...this.blind.entries()].filter(([k]) => this._held(this.blind, k)).map(([k, v]) => [k, +(v - this._now).toFixed(2)]); }
 
   /**
    * `Engage` reporting that it spent a whole `ENGAGE.ringPatience` walking at
@@ -614,15 +621,15 @@ export class AttackPicker {
    */
   noteUnreachableRing(id, ring = null) {
     if (!id) return;
-    this.unreach.set(id, SCORING.unreachHold);
+    this.unreach.set(id, this._now + SCORING.unreachHold);
     if (ring != null) this._unreachAt.set(id, +ring.toFixed(2));
     if (this._arrangedId === id) { this._arrangedId = null; this._arrangedT = 0; this._setupT = 0; }
   }
 
   /** PUBLISHED (gates + HUD): `[[id, secondsLeft, ringM], ...]`. ALLOCATES. */
   unreachableRings() {
-    return [...this.unreach.entries()]
-      .map(([k, v]) => [k, +v.toFixed(2), this._unreachAt.get(k) ?? null]);
+    return [...this.unreach.entries()].filter(([k]) => this._held(this.unreach, k))
+      .map(([k, v]) => [k, +(v - this._now).toFixed(2), this._unreachAt.get(k) ?? null]);
   }
 
   _playerBehind() {
@@ -669,7 +676,7 @@ export class AttackPicker {
   _legal(row, dist) {
     const m = this.m;
     if (dist < row.min || dist > row.max) return false;
-    if (this.cd.has(row.id)) return false;
+    if (this._held(this.cd, row.id)) return false;
     if (!this._needPartOk(row.needPart)) return false;
     if (m.attackDisabled(row.id)) return false;
     if (row.arc === 'rear' && !this._playerBehind()) return false;
@@ -679,7 +686,7 @@ export class AttackPicker {
   _score(row, dist) {
     let s = row.score;
     if (this.lastId === row.id) s *= SCORING.repeatPenalty * (this.streak > 1 ? SCORING.streakPenalty : 1);
-    if (this.missed.has(row.id)) s *= SCORING.missPenalty;
+    if (this._held(this.missed, row.id)) s *= SCORING.missPenalty;
     if (!this.used.has(row.id)) s *= SCORING.freshBonus;   // show the whole moveset
     const mid = (row.min + row.max) * 0.5;
     const spread = Math.max(1, (row.max - row.min) * 0.5);
@@ -733,7 +740,7 @@ export class AttackPicker {
     const id = this._arrangedId;
     if (!id || this.used.has(id)) return false;
     if (!this.used.size) return false;                 // never delay the opener
-    if (this.cd.has(id) || this.stalled.has(id)) return false;
+    if (this._held(this.cd, id) || this._held(this.stalled, id)) return false;
     const row = this.rowById.get(id);
     if (!row) return false;
     if (dist >= row.min && dist <= row.max) return false;   // already there: throw it
@@ -804,7 +811,7 @@ export class AttackPicker {
     // the species' own cooldown field, set only for the move that actually
     // fires (`_build` no longer touches it)
     if (bestRow && bestRow.cdField) this.m[bestRow.cdField] = bestRow.cd;
-    this.cd.set(id, (bestRow?.cd ?? best.cooldown ?? 2.5));
+    this.cd.set(id, this._now + (bestRow?.cd ?? best.cooldown ?? 2.5));
     this.streak = this.lastId === id ? this.streak + 1 : 0;
     this.lastId = id;
     this.used.add(id);
@@ -874,10 +881,10 @@ export class AttackPicker {
 
   /** Rows the footwork is allowed to arrange for (cooldown + reach + parts). */
   _arrangeable(row, lo = null, hi = null) {
-    if (this.cd.has(row.id)) return false;
+    if (this._held(this.cd, row.id)) return false;
     if (row.arc === 'rear') return false;               // not ours to arrange
     if (this.phantom.has(row.id)) return false;         // in the table, not in the world
-    if (this.stalled.has(row.id)) return false;         // held the ring and never fired
+    if (this._held(this.stalled, row.id)) return false;         // held the ring and never fired
     if (!this._needPartOk(row.needPart)) return false;
     if (this.m.attackDisabled(row.id)) return false;
     return this._reachable(row, lo, hi) != null;
@@ -1133,11 +1140,11 @@ export class AttackPicker {
   _bestArrangeablePass(lo, hi, skipBlind) {
     let best = null, bs = -1;
     for (const row of this.rows) {
-      if (skipBlind && (this.blind.has(row.id) || this.unreach.has(row.id))) continue;
+      if (skipBlind && (this._held(this.blind, row.id) || this._held(this.unreach, row.id))) continue;
       if (!this._arrangeable(row, lo, hi)) continue;
       let s = row.score;
       if (this.lastId === row.id) s *= SCORING.repeatPenalty;
-      if (this.missed.has(row.id)) s *= SCORING.missPenalty;
+      if (this._held(this.missed, row.id)) s *= SCORING.missPenalty;
       // same hard tier as `_score`: the footwork sets up an UNSEEN move first
       if (!this.used.has(row.id)) s = s * SCORING.freshBonus + SCORING.freshTier;
       if (s > bs) { bs = s; best = row; }
@@ -1211,6 +1218,6 @@ export class AttackPicker {
   /** Called when an attack finishes so a whiff is remembered. */
   finish(a) {
     if (!a || !a.needsHit) return;
-    if (!a.hit) this.missed.set(a.rowId || a.kind, SCORING.missMemory);
+    if (!a.hit) this.missed.set(a.rowId || a.kind, this._now + SCORING.missMemory);
   }
 }

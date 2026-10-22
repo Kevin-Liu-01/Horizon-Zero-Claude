@@ -162,8 +162,9 @@ export { Perception, PerceptionHooks, Engage, Search, AttackPicker, Reactions, S
  *                       reading falls by one at the same instant a regression
  *                       pushes a row out of the fight.
  *   machine.ai.picker.movesetRows()   ...and the ids behind it
- *   machine.ai.picker.stalled        Map(id -> s) moves given up on because
- *                       they held the ring without firing (SCORING.arrangeGiveUp)
+ *   machine.ai.picker.stalled        Map(id -> expiry on picker._now) moves given up on
+ *                       because they held the ring without firing (SCORING.arrangeGiveUp);
+ *                       ask `picker._held(picker.stalled, id)` (W0b: no per-frame countdown)
  *   machine.ai.picker.arrangedId     the move the ring is set up for, or null
  *   machine.ai.picker.blindRings()   [[id, s], ...] moves whose ring the
  *                       machine could not SEE from — set by

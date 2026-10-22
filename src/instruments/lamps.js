@@ -78,6 +78,7 @@ export const LAMP_STATES = Object.freeze({
   dark: Object.freeze({ id: 'dark', token: '#3B3A36', aperture: 0.0, beam: false, rhythm: 'sputter', hz: 0 }),
 });
 export const LAMP_ORDER = Object.freeze(['calm', 'wary', 'hostile', 'dark']);
+const AP_CALM = LAMP_STATES.calm.aperture, AP_WARY = LAMP_STATES.wary.aperture, AP_HOSTILE = LAMP_STATES.hostile.aperture;
 /** The tokens as numbers (three.js colour ints), for materials that take a hex. */
 export const LAMP_HEX = Object.freeze(Object.fromEntries(LAMP_ORDER.map((s) => [s, parseInt(LAMP_STATES[s].token.slice(1), 16)])));
 /**
@@ -673,10 +674,11 @@ export class LampSystem {
     const nf = env ? env.nightFactor : 0;
     this.night = typeof nf === 'number' ? nf : 0;
     if (env) {
+      // (field writes, not Vector3.set: a double argument to a call that is not inlined is boxed)
       const u = this._uLight, sd = env.sunDir, sun = env.sun, hemi = env.hemi;
-      if (sd) u.uSunDir.value.set(sd.x, sd.y, sd.z);
-      if (sun) { const ks = sun.intensity / Math.PI; u.uSunRad.value.set(sun.color.r * ks, sun.color.g * ks, sun.color.b * ks); }
-      if (hemi) { const kh = hemi.intensity / Math.PI; u.uSkyRad.value.set(hemi.color.r * kh, hemi.color.g * kh, hemi.color.b * kh); }
+      if (sd) { const v = u.uSunDir.value; v.x = sd.x; v.y = sd.y; v.z = sd.z; }
+      if (sun) { const ks = sun.intensity / Math.PI, v = u.uSunRad.value, c = sun.color; v.x = c.r * ks; v.y = c.g * ks; v.z = c.b * ks; }
+      if (hemi) { const kh = hemi.intensity / Math.PI, v = u.uSkyRad.value, c = hemi.color; v.x = c.r * kh; v.y = c.g * kh; v.z = c.b * kh; }
     }
     const t = E ? E.simTime : performance.now() / 1000;
     const dt = this._lastT < 0 ? 0 : Math.min(0.25, Math.max(0, t - this._lastT));
@@ -704,8 +706,8 @@ export class LampSystem {
       const s = lampStateFor(m);
       if (s !== r.state) { r.prev = r.state; r.state = s; r.since = t; }
       const spec = LAMP_STATES[s];
-      // aperture eases toward the state (the iris moves in ~0.15 s)
-      let target = spec.aperture;
+      // aperture eases toward the state (the iris moves in ~0.15 s); constants, not a keyed double load
+      let target = s === 'calm' ? AP_CALM : s === 'wary' ? AP_WARY : s === 'hostile' ? AP_HOSTILE : 0;
       const age = t - r.since;
       let colourId = s;
       // lampGain(s, t, phase), written out (a double return from a call would box)
@@ -716,7 +718,8 @@ export class LampSystem {
       if (s === 'dark' && age < SPUTTER_S && r.prev !== 'dark') {
         // sputter, then out: the previous colour stutters through a closing iris
         const on = Math.sin(t * 97.0 + r.phase * 13.0) > 0.1;
-        target = on ? LAMP_STATES[r.prev].aperture * (1 - age / SPUTTER_S) : 0;
+        const pa = r.prev === 'calm' ? AP_CALM : r.prev === 'wary' ? AP_WARY : r.prev === 'hostile' ? AP_HOSTILE : 0;
+        target = on ? pa * (1 - age / SPUTTER_S) : 0;
         colourId = r.prev;
         gain = on ? 0.9 : 0.2;
       }
@@ -725,7 +728,7 @@ export class LampSystem {
 
       r.anchor.updateWorldMatrix(true, false);
       r.anchor.matrixWorld.decompose(_p, _q, _s);
-      _s.setScalar(r.radius);
+      _s.x = r.radius; _s.y = r.radius; _s.z = r.radius;
       _m.compose(_p, _q, _s);
       _m.toArray(this.lampMesh.instanceMatrix.array, n * 16);
       const h = this.hdr[colourId];
@@ -742,9 +745,9 @@ export class LampSystem {
       r.beamOn = false;
       if (air && spec.beam && nb < this.capacity && !m.lowLOD) {
         if (spec.beam === 'lock' && player) {
-          _t.set(player.position.x, player.position.y + 1.3, player.position.z);
+          _t.x = player.position.x; _t.y = player.position.y + 1.3; _t.z = player.position.z;
         } else if (m.lastKnown) {
-          _t.set(m.lastKnown.x, (m.lastKnown.y || m.position.y) + 1.0, m.lastKnown.z);
+          _t.x = m.lastKnown.x; _t.y = (m.lastKnown.y || m.position.y) + 1.0; _t.z = m.lastKnown.z;
         } else {
           _t.copy(_z).applyQuaternion(_q).multiplyScalar(10).add(_p);
         }
@@ -753,7 +756,7 @@ export class LampSystem {
         _d.normalize();
         if (spec.beam === 'sweep') {
           const a = (BEAM.sweepDeg * Math.PI / 180) * Math.sin(2 * Math.PI * spec.sweepHz * (t + r.phase));
-          _qs.setFromAxisAngle(_up, a);
+          _qs._x = 0; _qs._y = Math.sin(a * 0.5); _qs._z = 0; _qs._w = Math.cos(a * 0.5);   // setFromAxisAngle(up, a)
           _d.applyQuaternion(_qs);
         }
         if (!r.dirSet) { r.dir.copy(_d); r.dirSet = true; }
@@ -763,7 +766,7 @@ export class LampSystem {
         const len = Math.max(2, (sr || 30) * scale);
         const rad = len * Math.tan(BEAM.halfAngleDeg * Math.PI / 180);
         _qs.setFromUnitVectors(_z, r.dir);
-        _s.set(rad, rad, len);
+        _s.x = rad; _s.y = rad; _s.z = len;
         _m.compose(_p, _qs, _s);
         _m.toArray(this.beamMesh.instanceMatrix.array, nb * 16);
         const lc = this.lin[s];

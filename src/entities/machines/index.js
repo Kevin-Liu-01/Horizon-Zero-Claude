@@ -6,7 +6,7 @@ import { ECOSYSTEM } from './ai/tables.js';
 import { setAiRng, seededRng, aiRngSeeded } from './ai/rng.js';
 import { REST_SITE } from '../../world/island/sites.js';
 import { PLAY_RADIUS, EXTENT } from '../../world/island/extent.js';
-import { stepRoot } from './machine.js';
+import { _st, stepRootS } from './machine.js';
 import {
   BODY as EXPANSION_BODY, CHASSIS, installDoctrine, installExpansionDoctrine,
   spawnExpansion, doctrineAudit,
@@ -617,8 +617,15 @@ export class Machines {
       this._recycleForBudget(null, true);
     }
 
-    const list = this.list;
     const pp = p ? p.position : null;
+    this._stepMachines(dt, t, pp);
+    if (pp) this._standoffPass(pp);
+    this._separationPass();
+  }
+
+  /** Step every machine (distance LOD: far machines tick coarsely). */
+  _stepMachines(dt, t, pp) {
+    const list = this.list;
     for (let i = list.length - 1; i >= 0; i--) {
       const m = list[i];
       if (m._disposed) continue;
@@ -647,14 +654,18 @@ export class Machines {
       }
       m.update(dt, t);
     }
+  }
 
+  /** Hard standoff between the player and every machine body (see the notes inside). */
+  _standoffPass(pp) {
+    const list = this.list;
     /**
      * ALLOCATION-FREE (memory rule; W0b fix round 1). Both loops below read every
      * machine's doubles through `m.sc` (machine.js MachineScalars): a dozen
      * machine classes make `m.heading` / `m.bodyRadius` megamorphic, and a
      * megamorphic double load boxes a HeapNumber — 2 per pair of the O(n^2)
      * separation pass, 1.8 MB/s on the staged fight. `moveRoot` is replaced by the
-     * same clamp written out (`Machine.applyStepXZ`, monomorphic on `sc`).
+     * same clamp as a module function fed through `_st` (machine.js `stepRootS`): no double crosses a call.
      */
     // hard standoff: machines never interpenetrate the player — in EVERY
     // state (patrol/return wander included: a behemoth must not stroll
@@ -671,7 +682,7 @@ export class Machines {
      * drawn-spear case A25 cannot see). Everything that reads the machine's
      * GEOMETRY — strider/behemoth charge reach, the Silent Strike prompt —
      * keeps `standoffHalfLen` itself, which this term never writes. */
-    if (pp) {
+    {
       for (let i = 0; i < list.length; i++) {
         const m = list[i];
         if (!m.alive || m._disposed) continue;
@@ -687,31 +698,35 @@ export class Machines {
           if (d2 < min * min && d2 > 1e-6) {
             const d = Math.sqrt(d2);
             const k = (min - d) / d;
-            stepRoot(m, vx * k, vz * k);
+            _st.sx = vx * k; _st.sz = vz * k; stepRootS(m);
           }
           if (L === 0) break;
         }
       }
     }
+  }
 
+  /** Soft separation so machines don't interpenetrate (O(n^2) over the live list). */
+  _separationPass() {
+    const list = this.list;
     // soft separation so machines don't interpenetrate
     const n = list.length;
     for (let i = 0; i < n; i++) {
       const a = list[i];
       if (!a.alive) continue;
-      const ap = a.position;
+      const ap = a.position, ar = a.bodyRadius;
       for (let j = i + 1; j < n; j++) {
         const b = list[j];
         if (!b.alive) continue;
         const bp = b.position;
         const vx = bp.x - ap.x, vz = bp.z - ap.z;
-        const min = a.bodyRadius + b.bodyRadius;
+        const min = ar + b.bodyRadius;
         const d2 = vx * vx + vz * vz;
         if (d2 > min * min || d2 < 1e-6) continue;
         const d = Math.sqrt(d2);
         const k = ((min - d) / d) * 0.5;
-        stepRoot(b, vx * k, vz * k);
-        stepRoot(a, -vx * k, -vz * k);
+        _st.sx = vx * k; _st.sz = vz * k; stepRootS(b);
+        _st.sx = -vx * k; _st.sz = -vz * k; stepRootS(a);
       }
     }
   }

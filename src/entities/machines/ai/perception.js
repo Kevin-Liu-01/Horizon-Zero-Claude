@@ -2,6 +2,8 @@ import * as THREE from 'three';
 import { perceptionCfg, NOISE } from './tables.js';
 import { safeEmit } from './emit.js';
 import { aiRandom } from './rng.js';
+
+const DEG = Math.PI / 180;
 import { perceptionScale, weatherName } from '../../../instruments/lib/weather.js';
 
 /**
@@ -47,6 +49,9 @@ export class Perception {
     this.visibleT = 0;          // seconds of continuous sight
     this.lastSeenAt = -999;
     this.lastStimulus = null;   // { x, z, kind, t }
+    this._stim = { x: 0.5, z: 0.5, kind: null };
+    this._tickVisible = false;
+    this._tickFill = 0.5;
     this.hearAcc = 0;
     this._hearPos = new THREE.Vector3();
     this._hearStrength = 0;
@@ -88,7 +93,6 @@ export class Perception {
   /** True when the machine's own sensors have an unobstructed line. */
   hasLOS(target) {
     const m = this.m;
-    const ms = m.sc;
     const ctx = m.ctx;
     const t = ctx.terrain;
     const y0 = m.position.y + m.eyeHeight;
@@ -101,8 +105,8 @@ export class Perception {
     }
     // machine-ai-04: trunks, big rocks, ruins and tents break the sightline
     const C = ctx.collision;
-    _eye.set(m.position.x, y0, m.position.z);
-    _tgt.set(target.x, y1, target.z);
+    _eye.x = m.position.x; _eye.y = y0; _eye.z = m.position.z;
+    _tgt.x = target.x; _tgt.y = y1; _tgt.z = target.z;
     if (C && C.occluded && C.occluded(_eye, _tgt)) return false;
     // a Dust cloud (a Dust Pot, W2) blinds the line as well (bible §5.8 Clouded)
     const H = m.manager?.perception;
@@ -161,17 +165,27 @@ export class Perception {
   }
 
   update(dt) {
+    this._scan(dt);
+    this.acc += dt;
+    if (this.acc < this.cfg.tick) return;
+    const pd = this.acc;
+    this.acc = 0;
+    this._sight();
+    this._belief(pd);
+  }
+
+  /** Per frame: the calm sensor sweep (the cone itself scans). */
+  _scan(dt) {
     const m = this.m;
     const ms = m.sc;
     const c = this.cfg;
-    const p = m.ctx.player;
 
     // sensor sweep: the cone itself scans while the machine is calm, which is
     // what stops the peripheral arc from being a static bubble
     const calm = m.state === 'patrol' || m.state === 'return' || m.state === 'suspicious';
     this.scanT += dt;
     const want = calm ? Math.sin((this.scanT / c.scanPeriod) * Math.PI * 2) * c.scanSweep : 0;
-    this.scanOffset = THREE.MathUtils.damp(this.scanOffset, want, 4, dt);
+    this.scanOffset += (want - this.scanOffset) * (1 - Math.exp(-4 * dt));
     ms.scanOffset = this.scanOffset;
     if (calm && !m.lowLOD) {
       this._scanEmit -= dt;
@@ -181,22 +195,38 @@ export class Perception {
       }
     }
 
-    this.acc += dt;
-    if (this.acc < c.tick) return;
-    const pd = this.acc;
-    this.acc = 0;
+  }
+
+  /** Per perception tick: can it see her, and how fast does the sight fill? -> `_tickVisible`, `_tickFill`. */
+  _sight() {
+    const m = this.m;
+    const ms = m.sc;
+    const c = this.cfg;
+    const p = m.ctx.player;
 
     let visible = false;
     let fill = 0;
     let dist = 999;
 
     if (p && p.health > 0 && m.alive) {
-      _d.set(p.position.x - m.position.x, 0, p.position.z - m.position.z);
-      dist = Math.sqrt(_d.x * _d.x + _d.z * _d.z);
+      // (the helpers below are written out: a double crossing a call that is not inlined is boxed)
+      const ddx = p.position.x - m.position.x, ddz = p.position.z - m.position.z;
+      dist = Math.sqrt(ddx * ddx + ddz * ddz);
       ms.playerDist = dist;
 
       const hidden = !!(p.crouching && p.inTallGrass);
-      const omniW = this._omni(dist);
+      // _omni(dist)
+      let omniW = 0;
+      const o = c.omni;
+      if (o) {
+        let ok = true;
+        if (o.part) {
+          ok = false;
+          const parts = m.parts;
+          for (let i = 0; i < parts.length; i++) if (parts[i].name === o.part) { ok = parts[i].attached; break; }
+        }
+        if (ok && dist <= o.radius) omniW = o.weight;
+      }
       const ignoreStealth = omniW > 0 && c.omni && c.omni.ignoreStealth;
       /**
        * WEATHER (instruments-core W0b, bible §2.3, `A-perception-weather`):
@@ -212,10 +242,20 @@ export class Perception {
       if (dist < maxSee || omniW > 0) {
         let w = 0;
         if (dist < maxSee) {
-          const dir = ms.heading + this.scanOffset * this._sweepScale();
+          // _sweepScale()
+          const cap = m.sightHalf * 0.5, sa = Math.abs(c.scanSweep) || 1e-6;
+          const sws = cap / sa < 1 ? cap / sa : 1;
+          const dir = ms.heading + this.scanOffset * sws;
           const fx = Math.sin(dir), fz = Math.cos(dir);
-          const dot = dist > 0.01 ? (_d.x * fx + _d.z * fz) / dist : 1;
-          w = this._coneWeight(dot, dist, hidden && !ignoreStealth);
+          const dot = dist > 0.01 ? (ddx * fx + ddz * fz) / dist : 1;
+          // _coneWeight(dot, dist, hidden && !ignoreStealth)
+          const hid = hidden && !ignoreStealth;
+          const fa = m.sightHalf + c.focusPad;
+          if (dot >= Math.cos(fa < Math.PI ? fa : Math.PI)) w = 1;
+          else if (!(hid && !c.hiddenPeriph)) {
+            const range = hid ? c.hiddenPeriph : c.periphRange;
+            if (dist <= range && dot >= Math.cos(c.periphDeg * DEG)) w = c.periphWeight;
+          }
           /**
            * Engaged contact (see PERCEPTION.engagedRange in ai/tables.js): a
            * machine that is ALREADY in the fight does not lose a player it is
@@ -235,7 +275,9 @@ export class Perception {
           visible = true;
           const pose = p.crouching ? c.poseCrouch : c.poseStand;
           const dd = dist / c.d0;
-          fill = (c.gain / (1 + dd * dd)) * w * pose * this._motion(p);
+          const sp = p.moveSpeed ?? 0;                  // _motion(p)
+          const mot = sp < 0.5 ? c.motionStill : sp < 4.2 ? c.motionWalk : c.motionRun;
+          fill = (c.gain / (1 + dd * dd)) * w * pose * mot;
           // perk hook `perception.detectMul` (bible §4.7 "Read as true"):
           // the build-up of a machine that has not yet found her; hostile is unchanged
           if (H && !HOSTILE_STATES.has(m.state)) fill *= H.detectMul;
@@ -243,6 +285,17 @@ export class Perception {
       }
     }
 
+    this._tickVisible = visible;
+    this._tickFill = fill;
+  }
+
+  /** Per perception tick: suspicion, belief and hearing from this tick's sight (`pd` = the tick's seconds). */
+  _belief(pd) {
+    const m = this.m;
+    const ms = m.sc;
+    const c = this.cfg;
+    const p = m.ctx.player;
+    const visible = this._tickVisible, fill = this._tickFill;
     if (visible) {
       ms.suspicion = Math.min(1.25, ms.suspicion + fill * pd);
       m.lastKnown.copy(p.position);
@@ -261,7 +314,9 @@ export class Perception {
           m.lastKnown.copy(this._hearPos);
           m.lastKnown.y = m.ctx.terrain.getHeight(m.lastKnown.x, m.lastKnown.z);
         }
-        this.lastStimulus = { x: this._hearPos.x, z: this._hearPos.z, kind: this._hearKind };
+        // one record per machine, rewritten (read only here and by debug views): no object per tick
+        const st = this._stim; st.x = this._hearPos.x; st.z = this._hearPos.z; st.kind = this._hearKind;
+        this.lastStimulus = st;
         if (m.state === 'attack') ms._unseenT = Math.min(ms._unseenT, 1.5);
       } else {
         const rate = m.state === 'search' || m.state === 'suspicious' ? c.decay : c.decayCalm;

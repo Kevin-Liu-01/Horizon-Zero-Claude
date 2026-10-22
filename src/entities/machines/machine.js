@@ -109,14 +109,28 @@ const _sphereGeo = new THREE.SphereGeometry(1, 10, 8);
 
 
 /**
- * The root step every mover shares — hunter-camp safe ring and world rim — as a
- * module function on `m.sc` (monomorphic, allocation-free), so the manager's
- * standoff / separation passes can call it without a megamorphic `moveRoot`.
+ * STEERING SCRATCH. Doubles handed between the steering helpers travel through
+ * this ONE monomorphic object, never as call arguments or return values: a
+ * double that crosses a call V8 does not inline is boxed (a HeapNumber per
+ * argument and per return), which on the staged fight was most of what the
+ * steering frames allocated. Each helper copies its inputs to locals on entry
+ * and writes its outputs on exit, so the nested calls may reuse the fields.
+ *   want -> d          _turnS     (heading wanted -> signed difference before the step)
+ *   x, z               _faceS     (face a point)
+ *   x, z, speed -> out _moveTowardS / _navTowardS (point, speed -> distance)
+ *   x, z, fx, fz, speed -> out _steerAlongS (direction, face point, speed -> metres)
+ *   sx, sz             stepRootS  (the root step)
  */
-export function stepRoot(m, dx, dz) {
+export const _st = { want: 0.5, d: 0.5, x: 0.5, z: 0.5, fx: 0.5, fz: 0.5, speed: 0.5, out: 0.5, sx: 0.5, sz: 0.5 };
+
+/**
+ * The root step every mover shares — hunter-camp safe ring and world rim —
+ * reading (`_st.sx`, `_st.sz`): allocation-free whether or not it is inlined.
+ */
+export function stepRootS(m) {
   const p = m.position;
-  let nx = p.x + dx;
-  let nz = p.z + dz;
+  let nx = p.x + _st.sx;
+  let nz = p.z + _st.sz;
   // hunter camp is a safe zone
   const cx = nx - CAMP.x, cz = nz - CAMP.z;
   const cd = Math.sqrt(cx * cx + cz * cz);
@@ -130,6 +144,8 @@ export function stepRoot(m, dx, dz) {
   p.x = nx;
   p.z = nz;
 }
+/** The same step with arguments (kept for callers outside the hot paths). */
+export function stepRoot(m, dx, dz) { _st.sx = dx; _st.sz = dz; stepRootS(m); }
 
 /**
  * MONOMORPHIC HOT SCALARS — the memory rule (plan §0 rule 5, `A-alloc-rate`;
@@ -159,6 +175,14 @@ export function stepRoot(m, dx, dz) {
 export const MACHINE_SCALARS = Object.freeze(['heading', '_speed', '_accelPitch', 'strafeK', 'suspicion', '_unseenT', '_stateT', 'playerDist', 'detectFill', 'scanOffset', 'health', 'lampDarkT', 'stunT', 'burnT', '_burnDps', '_flameClock', '_arcClock', 'brittleT', '_frostK', '_iceClock', '_elemHold', '_eyeFlare', '_telegraphT', '_deathT', '_waitT', '_lodAccum', '_lampSince', '_lampPhase', '_alarmCd', '_attackCd']);
 export class MachineScalars {
   constructor() {
+    this._cgOk = 0;     // _conform terrain sample cache: valid?
+    this._cgx = 0.5;    //   at x
+    this._cgz = 0.5;    //   at z
+    this._cgy = 0.5;    //   ground height there
+    this._ePulse = -1;  // _updateEyes: the pulse, light and lens count last written to the materials
+    this._eLight = -1;
+    this._eN = -1;
+    this._eEmis = -1;   //   ...and the body-strip emissive last written
     this.heading = 0;
     this._speed = 0;
     this._accelPitch = 0;
@@ -478,6 +502,7 @@ export class Machine {
     this._lootRegistered = false;
 
     this._normal = new THREE.Vector3(0, 1, 0);
+    this._gN = new THREE.Vector3(0, 1, 0);   // ground normal at the last terrain sample (_conform)
 
     this.root.traverse((o) => { o.userData.machine = this; });
     ctx.scene.add(this.root);
@@ -564,10 +589,10 @@ export class Machine {
         // color shows. Body strips keep their map and only pulse intensity.
         const n = (m.name || '').toLowerCase();
         if (!m.emissiveMap) {
-          this._eyeMats.push({ mat: c, base: 1.6, kind: 'emissive' });
+          this._eyeMats.push({ mat: c, base: 1.6, kind: 'emissive', last: -1 });
         } else if (n.includes('lense') || n.includes('lens') || n.includes('light')) {
           c.emissiveMap = null;
-          this._eyeMats.push({ mat: c, base: 2.2, kind: 'emissive' });
+          this._eyeMats.push({ mat: c, base: 2.2, kind: 'emissive', last: -1 });
         } else {
           this._emisMats.push(c);
         }
@@ -600,7 +625,7 @@ export class Machine {
     spr.userData.machine = this;
     spr.raycast = () => {}; // glow is FX, not a hitbox (weak hits must hit the model)
     parent.add(spr);
-    this._eyeMats.push({ mat, base: intensity, kind: 'sprite' });
+    this._eyeMats.push({ mat, base: intensity, kind: 'sprite', last: -1 });
     if (core > 0) {
       const cm = new THREE.MeshBasicMaterial({ toneMapped: false, transparent: true });
       const mesh = new THREE.Mesh(_sphereGeo, cm);
@@ -609,7 +634,7 @@ export class Machine {
       mesh.userData.machine = this;
       mesh.raycast = () => {};
       parent.add(mesh);
-      this._eyeMats.push({ mat: cm, base: 1, kind: 'basic' });
+      this._eyeMats.push({ mat: cm, base: 1, kind: 'basic', last: -1 });
     }
     return spr;
   }
@@ -761,7 +786,7 @@ export class Machine {
           this._partGlows.push({ part, mat: m, sprite: true, base: m.opacity });
         } else if (m.emissive && m.emissive.r + m.emissive.g + m.emissive.b > 0.05) {
           if (m.userData?.sensor) {
-            this._eyeMats.push({ mat: m, base: m.emissiveIntensity, kind: 'emissive', part });
+            this._eyeMats.push({ mat: m, base: m.emissiveIntensity, kind: 'emissive', last: -1, part });
           } else {
             this._partGlows.push({ part, mat: m, sprite: false, base: m.emissiveIntensity });
           }
@@ -1488,7 +1513,7 @@ export class Machine {
         this._arcFlash(VFX_COLORS.saltGlint); // salt-crust glints crawling over seized plates
       }
     }
-    const k = THREE.MathUtils.damp(sc._frostK, sc.brittleT > 0 ? 1 : 0, 5, dt);
+    const k = sc._frostK + ((sc.brittleT > 0 ? 1 : 0) - sc._frostK) * (1 - Math.exp(-5 * dt));
     if (Math.abs(k - sc._frostK) > 1e-4 || k > 0.003) {
       sc._frostK = k;
       this._applyFrost();
@@ -1540,7 +1565,7 @@ export class Machine {
       const b = this._basking;
       if (b) {
         b.t += dt;
-        sc._speed = THREE.MathUtils.damp(sc._speed, 0, 8, dt);
+        sc._speed += (0 - sc._speed) * (1 - Math.exp(-8 * dt));
         sc.heading += Math.sin(b.t * 0.35 + b.phase) * dt * 0.12;
         this.aiPose.forage = 0.15 + 0.15 * Math.sin(b.t * 0.9 + b.phase);
         return;
@@ -1548,11 +1573,13 @@ export class Machine {
     }
     if (sc._waitT > 0) {
       sc._waitT -= dt;
-      sc._speed = THREE.MathUtils.damp(sc._speed, 0, 6, dt);
+      sc._speed += (0 - sc._speed) * (1 - Math.exp(-6 * dt));
       return;
     }
     const wp = this.route[this._wpIndex];
-    const d = this._navToward(wp.x, wp.z, this.walkSpeed, dt);
+    _st.x = wp.x; _st.z = wp.z; _st.speed = this.walkSpeed;
+    this._navTowardS(dt);
+    const d = _st.out;
     if (d < this.bodyRadius + 0.6) {
       this._wpIndex = (this._wpIndex + 1) % this.route.length;
       sc._waitT = 1.2 + Math.random() * 2.4;
@@ -1570,13 +1597,16 @@ export class Machine {
     if (sc.suspicion < 0.06 && this.ai.lureT <= 0) { this.setState('return'); return; }
     const lk = this.ai.lureT > 0 ? this.ai.lurePos : this.lastKnown;
     if (sc._stateT < 0.9) {
-      this._face(lk.x, lk.z, dt);
-      sc._speed = THREE.MathUtils.damp(sc._speed, 0, 6, dt);
+      _st.x = lk.x; _st.z = lk.z;
+      this._faceS(dt);
+      sc._speed += (0 - sc._speed) * (1 - Math.exp(-6 * dt));
       return;
     }
-    const d = this._navToward(lk.x, lk.z, this.walkSpeed * 0.7, dt);
+    _st.x = lk.x; _st.z = lk.z; _st.speed = this.walkSpeed * 0.7;
+    this._navTowardS(dt);
+    const d = _st.out;
     if (d < 2.5) {
-      sc._speed = THREE.MathUtils.damp(sc._speed, 0, 6, dt);
+      sc._speed += (0 - sc._speed) * (1 - Math.exp(-6 * dt));
       sc.heading += Math.sin(sc._stateT * 1.6) * dt * 0.9;
       if (this.ai.lureT <= 0) sc.suspicion = Math.max(0, sc.suspicion - dt * 0.3);
     }
@@ -1591,8 +1621,9 @@ export class Machine {
     const sc = this.sc;
     const p = this.ctx.player;
     const face = this._visible && p ? p.position : this.lastKnown;
-    this._face(face.x, face.z, dt);
-    sc._speed = THREE.MathUtils.damp(sc._speed, 0, 6, dt);
+    _st.x = face.x; _st.z = face.z;
+    this._faceS(dt);
+    sc._speed += (0 - sc._speed) * (1 - Math.exp(-6 * dt));
     if (sc._stateT > 0.65) this.setState('attack');
   }
 
@@ -1661,7 +1692,8 @@ export class Machine {
     if (this._fleeing && typeof this._flee === 'function') { this._flee(dt); return; }
     // a burn-grounded flier flops toward her: pure Critical Hit window
     if (this._downT > 0) {
-      this._moveToward(p.position.x, p.position.z, 1.4, dt);
+      _st.x = p.position.x; _st.z = p.position.z; _st.speed = 1.4;
+      this._moveTowardS(dt);
       return;
     }
 
@@ -1752,7 +1784,9 @@ export class Machine {
     if (sc.suspicion >= c.alertAt) { this.setState('alert'); return; }
     if (sc.suspicion > c.susEnter) { this.setState('suspicious'); return; }
     const wp = this.route[this._wpIndex];
-    const d = this._navToward(wp.x, wp.z, this.walkSpeed * 1.25, dt);
+    _st.x = wp.x; _st.z = wp.z; _st.speed = this.walkSpeed * 1.25;
+    this._navTowardS(dt);
+    const d = _st.out;
     if (d < this.bodyRadius + 1) {
       sc.suspicion = 0;
       this.ai.engage.reset();
@@ -1763,13 +1797,13 @@ export class Machine {
   /** Planted while a hit lands home (`machine-ai-10`); the rig reads `_react`. */
   _stateStagger(dt) {
     const sc = this.sc;
-    sc._speed = THREE.MathUtils.damp(sc._speed, 0, 8, dt);
+    sc._speed += (0 - sc._speed) * (1 - Math.exp(-8 * dt));
   }
 
   /** Down: the Critical Hit window. Reactions owns the timer. */
   _stateDowned(dt) {
     const sc = this.sc;
-    sc._speed = THREE.MathUtils.damp(sc._speed, 0, 8, dt);
+    sc._speed += (0 - sc._speed) * (1 - Math.exp(-8 * dt));
   }
 
   /* ------------------------- attacks ------------------------- */
@@ -1801,7 +1835,8 @@ export class Machine {
         // track the target it can actually see; otherwise commit to lastKnown
         const p = this._visible ? this.ctx.player : null;
         const tgt = p ? p.position : this.lastKnown;
-        this._face(tgt.x, tgt.z, dt);
+        _st.x = tgt.x; _st.z = tgt.z;
+        this._faceS(dt);
       }
     } else if (a.t < w + s) {
       if (!a.struck) { a.struck = true; a.onStrike?.(a); }
@@ -1820,7 +1855,7 @@ export class Machine {
       const planted = plant === 'windup'
         ? a.phase === 'windup' || a.phase === 'recover'
         : true;
-      if (planted) sc._speed = THREE.MathUtils.damp(sc._speed, 0, 10, dt);
+      if (planted) sc._speed += (0 - sc._speed) * (1 - Math.exp(-10 * dt));
     }
     if (a.phase !== was) {
       this.emit('machine-attack-phase', { machine: this, kind: a.kind, attack: a.kind, phase: a.phase });
@@ -1920,83 +1955,120 @@ export class Machine {
 
   /* ------------------------- steering ------------------------- */
 
-  _turnToward(want, dt) {
+  /* The steering helpers. The `S` forms read and write `_st` (see STEERING
+   * SCRATCH) and take only `dt`; the named forms below keep their signatures
+   * for every other caller (engage, squads, search, the species files). */
+
+  /** Turn toward `_st.want` at `turnRate`; `_st.d` = the signed difference before the step. */
+  _turnS(dt) {
     const sc = this.sc;
-    let d = want - sc.heading;
+    let d = _st.want - sc.heading;
     while (d > Math.PI) d -= Math.PI * 2;
     while (d < -Math.PI) d += Math.PI * 2;
-    const step = THREE.MathUtils.clamp(d, -this.turnRate * dt, this.turnRate * dt);
-    sc.heading += step;
-    return d;
+    const lim = this.turnRate * dt;
+    sc.heading += d < -lim ? -lim : d > lim ? lim : d;
+    _st.d = d;
   }
 
-  _face(x, z, dt) {
-    return this._turnToward(Math.atan2(x - this.position.x, z - this.position.z), dt);
+  /** Face the point (`_st.x`, `_st.z`). */
+  _faceS(dt) {
+    const p = this.position;
+    _st.want = Math.atan2(_st.x - p.x, _st.z - p.z);
+    this._turnS(dt);
   }
 
-  _moveToward(x, z, speed, dt) {
-    const sc = this.sc;
-    const dx = x - this.position.x, dz = z - this.position.z;
+  /** Plain heading chase to (`_st.x`, `_st.z`) at `_st.speed`; `_st.out` = distance. */
+  _moveTowardS(dt) {
+    const sc = this.sc, p = this.position;
+    const dx = _st.x - p.x, dz = _st.z - p.z, speed = _st.speed;
     const dist = Math.sqrt(dx * dx + dz * dz);
-    if (dist < 0.01) return dist;
-    const diff = this._turnToward(Math.atan2(dx, dz), dt);
-    const align = Math.cos(diff);
-    const target = align > 0.25 ? speed * THREE.MathUtils.clamp(align, 0, 1) : 0;
-    sc._speed = THREE.MathUtils.damp(sc._speed, target, 5, dt);
-    const step = Math.min(sc._speed * dt, dist);
-    this._applyStep(Math.sin(sc.heading) * step, Math.cos(sc.heading) * step);
-    return dist;
+    if (dist < 0.01) { _st.out = dist; return; }
+    _st.want = Math.atan2(dx, dz);
+    this._turnS(dt);
+    const align = Math.cos(_st.d);
+    const target = align > 0.25 ? speed * (align > 1 ? 1 : align) : 0;
+    sc._speed += (target - sc._speed) * (1 - Math.exp(-5 * dt));
+    const v = sc._speed * dt;
+    const step = v < dist ? v : dist;
+    _st.sx = Math.sin(sc.heading) * step; _st.sz = Math.cos(sc.heading) * step;
+    stepRootS(this);
+    _st.out = dist;
   }
 
   /**
-   * Combat footwork primitive (`machine-ai-02`): translate along `dx,dz`
-   * while the heading turns toward `faceX,faceZ`. Sideways travel costs speed,
-   * which is what keeps a circling predator readable rather than a hovercraft.
-   * Publishes `moveDir` / `strafeK` for `machine-rig`'s gait.
-   * @returns metres actually covered this frame.
+   * Combat footwork primitive (`machine-ai-02`): translate along (`_st.x`,
+   * `_st.z`) while the heading turns toward (`_st.fx`, `_st.fz`). Sideways
+   * travel costs speed, which is what keeps a circling predator readable rather
+   * than a hovercraft. Publishes `moveDir` / `strafeK` for `machine-rig`'s gait.
+   * `_st.out` = metres actually covered this frame.
    */
-  _steerAlong(dx, dz, faceX, faceZ, speed, dt) {
-    const sc = this.sc;
+  _steerAlongS(dt) {
+    const sc = this.sc, p = this.position;
+    let dx = _st.x, dz = _st.z;
+    const faceX = _st.fx, faceZ = _st.fz, speed = _st.speed;
     const l = Math.sqrt(dx * dx + dz * dz);
     if (l < 1e-5) {
-      sc._speed = THREE.MathUtils.damp(sc._speed, 0, 6, dt);
-      return 0;
+      sc._speed += (0 - sc._speed) * (1 - Math.exp(-6 * dt));
+      _st.out = 0;
+      return;
     }
     dx /= l; dz /= l;
-    this._turnToward(Math.atan2(faceX - this.position.x, faceZ - this.position.z), dt);
+    _st.want = Math.atan2(faceX - p.x, faceZ - p.z);
+    this._turnS(dt);
     const fx = Math.sin(sc.heading), fz = Math.cos(sc.heading);
     const align = dx * fx + dz * fz;                 // 1 forward, 0 sideways
     const lx = dx - fx * align, lz = dz - fz * align;
-    const lateral = Math.min(1, Math.sqrt(lx * lx + lz * lz));
+    const lat = Math.sqrt(lx * lx + lz * lz);
+    const lateral = lat < 1 ? lat : 1;
     const target = speed * (1 - 0.42 * lateral) * (align < -0.25 ? 0.55 : 1);
-    sc._speed = THREE.MathUtils.damp(sc._speed, target, 5, dt);
+    sc._speed += (target - sc._speed) * (1 - Math.exp(-5 * dt));
     const step = sc._speed * dt;
-    this._applyStep(dx * step, dz * step);
-    this.moveDir.set(dx, 0, dz);
+    _st.sx = dx * step; _st.sz = dz * step;
+    stepRootS(this);
+    const md = this.moveDir;
+    md.x = dx; md.y = 0; md.z = dz;
     sc.strafeK = (dz * fx - dx * fz);
-    return step;
+    _st.out = step;
   }
 
   /**
-   * Waypoint travel with the navgrid's whiskers applied (`machine-ai-01`).
-   * Falls back to the plain heading chase when `ctx.nav` is not installed.
+   * Waypoint travel with the navgrid's whiskers applied (`machine-ai-01`) to
+   * (`_st.x`, `_st.z`) at `_st.speed`; `_st.out` = distance. Falls back to the
+   * plain heading chase when `ctx.nav` is not installed.
    */
-  _navToward(x, z, speed, dt) {
-    const sc = this.sc;
-    const nav = this.ctx.nav;
-    const dx = x - this.position.x, dz = z - this.position.z;
+  _navTowardS(dt) {
+    const nav = this.ctx.nav, p = this.position;
+    const x = _st.x, z = _st.z, speed = _st.speed;
+    const dx = x - p.x, dz = z - p.z;
     const dist = Math.sqrt(dx * dx + dz * dz);
-    if (dist < 0.01) return dist;
+    if (dist < 0.01) { _st.out = dist; return; }
     if (nav && nav.ready && nav.steer) {
-      _v3.set(dx / dist, 0, dz / dist);
-      _steerOpts.radius = this.bodyRadius;                 // reused: nav.steer reads it and keeps nothing
-      nav.steer(this.position, _v3, _v3, _steerOpts);
-      this._steerAlong(_v3.x, _v3.z,
-        this.position.x + _v3.x * 4, this.position.z + _v3.z * 4, speed, dt);
-      return dist;
+      _v3.x = dx / dist; _v3.y = 0; _v3.z = dz / dist;
+      _steerOpts.radius = this.bodyRadius;               // reused: nav.steer reads it and keeps nothing
+      nav.steer(p, _v3, _v3, _steerOpts);
+      _st.x = _v3.x; _st.z = _v3.z; _st.fx = p.x + _v3.x * 4; _st.fz = p.z + _v3.z * 4; _st.speed = speed;
+      this._steerAlongS(dt);
+      _st.out = dist;
+      return;
     }
-    return this._moveToward(x, z, speed, dt);
+    this._moveTowardS(dt);
   }
+
+  _turnToward(want, dt) { _st.want = want; this._turnS(dt); return _st.d; }
+
+  _face(x, z, dt) { _st.x = x; _st.z = z; this._faceS(dt); return _st.d; }
+
+  _moveToward(x, z, speed, dt) { _st.x = x; _st.z = z; _st.speed = speed; this._moveTowardS(dt); return _st.out; }
+
+  /** See `_steerAlongS`. @returns metres actually covered this frame. */
+  _steerAlong(dx, dz, faceX, faceZ, speed, dt) {
+    _st.x = dx; _st.z = dz; _st.fx = faceX; _st.fz = faceZ; _st.speed = speed;
+    this._steerAlongS(dt);
+    return _st.out;
+  }
+
+  /** See `_navTowardS`. @returns the distance to the point. */
+  _navToward(x, z, speed, dt) { _st.x = x; _st.z = z; _st.speed = speed; this._navTowardS(dt); return _st.out; }
 
   /** Move the root directly (attack root-motion). Respects camp/world limits. */
   moveRoot(dx, dz) {
@@ -2004,28 +2076,39 @@ export class Machine {
   }
 
   _applyStep(dx, dz) {
-    stepRoot(this, dx, dz);
+    _st.sx = dx; _st.sz = dz;
+    stepRootS(this);
   }
 
   _conform(dt) {
-    const sc = this.sc;
+    const sc = this.sc, pos = this.position;
     const t = this.ctx.terrain;
-    const gy = t.getHeight(this.position.x, this.position.z);
+    /* The terrain is sampled only when the root moved since the last sample (a
+     * standing machine re-uses it exactly): terrain.getHeight / getNormal take
+     * (x, z) numbers, and every call boxes both. */
+    const x = pos.x, z = pos.z;
+    if (sc._cgOk === 0 || x !== sc._cgx || z !== sc._cgz) {
+      sc._cgy = t.getHeight(x, z);
+      if (this.alignToTerrain) t.getNormal(x, z, this._gN);
+      sc._cgx = x; sc._cgz = z; sc._cgOk = 1;
+    }
+    const gy = sc._cgy;
     if (!this._airborne) {
-      this.position.y = Math.abs(this.position.y - gy) > 4
-        ? gy : THREE.MathUtils.damp(this.position.y, gy, 12, dt);
+      const dy = pos.y - gy;
+      pos.y = (dy > 4 || dy < -4) ? gy : pos.y + (gy - pos.y) * (1 - Math.exp(-12 * dt));
     }
-    if (this.alignToTerrain) {
-      t.getNormal(this.position.x, this.position.z, _v2);
-      this._normal.lerp(_v2, Math.min(1, dt * 3.5)).normalize();
-    } else {
-      this._normal.lerp(_UP, Math.min(1, dt * 3.5)).normalize();
-    }
-    _q1.setFromUnitVectors(_UP, this._normal);
-    _q2.setFromAxisAngle(_UP, sc.heading);
+    // the body normal eases toward the ground normal (or up), written out: no Vector3 call takes a double
+    const n = this._normal, g = this.alignToTerrain ? this._gN : _UP;
+    const k = dt * 3.5 < 1 ? dt * 3.5 : 1;
+    const nx = n.x + (g.x - n.x) * k, ny = n.y + (g.y - n.y) * k, nz = n.z + (g.z - n.z) * k;
+    const nl = Math.sqrt(nx * nx + ny * ny + nz * nz) || 1;
+    n.x = nx / nl; n.y = ny / nl; n.z = nz / nl;
+    _q1.setFromUnitVectors(_UP, n);
+    const hh = sc.heading * 0.5;
+    _q2._x = 0; _q2._y = Math.sin(hh); _q2._z = 0; _q2._w = Math.cos(hh);   // setFromAxisAngle(UP, heading)
     this.root.quaternion.copy(_q1).multiply(_q2);
     // smoothed acceleration → pitch cue for subclass body motion
-    sc._accelPitch = THREE.MathUtils.damp(sc._accelPitch, sc._speed, 4, dt);
+    sc._accelPitch += (sc._speed - sc._accelPitch) * (1 - Math.exp(-4 * dt));
   }
 
   /* ------------------------- death / fx ------------------------- */
@@ -2601,27 +2684,39 @@ export class Machine {
         pulse = Math.max(pulse, 2.6);
       }
     }
-    this._eyeColor.lerp(target, Math.min(1, dt * (target === EYE_COLORS.flash ? 25 : 12)));
-
+    // the colour eases toward the target (written out: no call takes a double)
+    const ec = this._eyeColor;
+    const ea = Math.min(1, dt * (target === EYE_COLORS.flash ? 25 : 12));
+    const dr = target.r - ec.r, dg = target.g - ec.g, db = target.b - ec.b;
+    const easing = dr * dr + dg * dg + db * db > 1e-12;
+    if (easing) { ec.r += dr * ea; ec.g += dg * ea; ec.b += db * ea; }
+    const lightK = this.state === 'dead' ? Math.max(0, 1 - sc._deathT * 0.55) : 1;
     const eyes = this._eyeMats;
+    // nothing a lens shows changed (steady calm, a settled colour): no material is touched
+    if (!easing && pulse === sc._ePulse && lightK === sc._eLight && eyes.length === sc._eN) return;
+    sc._ePulse = pulse; sc._eLight = lightK; sc._eN = eyes.length;
+
     for (let i = 0; i < eyes.length; i++) {
       const e = eyes[i];
       if (e.kind === 'sprite' || e.kind === 'basic') {
-        e.mat.color.copy(this._eyeColor).multiplyScalar(pulse * (e.base ?? 1));
+        const k = pulse * (e.base ?? 1), c = e.mat.color;
+        c.r = ec.r * k; c.g = ec.g * k; c.b = ec.b * k;
         // solid eye cores would linger as black balls on a dead machine
         if (e.kind === 'basic') e.mat.opacity = this.state === 'dead' ? 0 : 1;
       } else {
-        e.mat.emissive.copy(this._eyeColor);
+        const em = e.mat.emissive;
+        em.r = ec.r; em.g = ec.g; em.b = ec.b;
         // an Instrument's lamp glass is the state colour at emissive x2.5 (bible §7.2 / §10 "lamp
-        // glass ... emissive x2.5"): it clears the bloom threshold, so a lens reads at noon
-        e.mat.emissiveIntensity = this.lamp ? LAMP_GLASS_GAIN * pulse : e.base * pulse;
+        // glass ... emissive x2.5"): it clears the bloom threshold, so a lens reads at noon.
+        // Written only when it changed (`e.last`): a store into a material is boxed.
+        const v = this.lamp ? LAMP_GLASS_GAIN * pulse : e.base * pulse;
+        if (v !== e.last) { e.mat.emissiveIntensity = v; e.last = v; }
       }
     }
     // death: EVERY light dies out (research 0.4) — body strips fade with the
-    // eyes, and identity-colored part glows (canisters/loaders/vents) gutter
-    const lightK = this.state === 'dead' ? Math.max(0, 1 - sc._deathT * 0.55) : 1;
+    // eyes, and identity-colored part glows (canisters/loaders/vents) gutter (lightK above)
     const emis = this._emisMats, ek = (0.6 + pulse * 0.7) * lightK;
-    for (let i = 0; i < emis.length; i++) emis[i].emissiveIntensity = ek;
+    if (ek !== sc._eEmis) { sc._eEmis = ek; for (let i = 0; i < emis.length; i++) emis[i].emissiveIntensity = ek; }
     if (lightK < 1) {
       for (let i = 0; i < this._partGlows.length; i++) {
         const g = this._partGlows[i];

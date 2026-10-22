@@ -596,7 +596,18 @@ export function cfg(table, kind, tag) {
   const key = `${tag}:${kind}`;
   let v = _cache.get(key);
   if (!v) {
-    v = { ...(table.default || {}), ...(table[kind] || {}) };
+    const merged = { ...(table.default || {}), ...(table[kind] || {}) };
+    /*
+     * TAGGED FIELDS (memory rule; instruments-core W0b fix round 1). Every
+     * kind's merge has its own shape, so the per-frame reads of these rows
+     * (`c.scanPeriod`, `c.susEnter`, ...) across a dozen kinds are megamorphic,
+     * and a megamorphic read of a Double-representation field boxes a
+     * HeapNumber. Each key is added as `null` first, so every field takes the
+     * Tagged representation and a read returns the stored number as-is.
+     */
+    v = {};
+    for (const k of Object.keys(merged)) v[k] = null;
+    for (const k of Object.keys(merged)) v[k] = merged[k];
     _cache.set(key, v);
   }
   return v;
