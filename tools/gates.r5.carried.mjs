@@ -21485,7 +21485,14 @@ const GATES = [
         let m = null;
         try { m = spawnRole(a.role, pl.x + 7 * (__phase++), pl.z); } catch (e) { m = null; }
         if (m) await new Promise((r) => setTimeout(r, 700));
-        return m && isStaged(m) && m.root ? park(m) : null;
+        if (!(m && isStaged(m) && m.root)) return null;
+        park(m);
+        // settle the shooter at the stand-off BEFORE plant() fires: measured, the control phase (the first teleport
+        // from wherever the previous row left her) took 1 / 5 / 7 riders of 14 while phases A and B, already beside
+        // the impact ground, took 8; the first arrows left from the old spot or a lens still swinging round
+        await face(m, 9);
+        await new Promise((r) => setTimeout(r, 600));
+        return m;
       };
 
       /* A rider can only exist on a machine that is TICKING: its per-bone hit
