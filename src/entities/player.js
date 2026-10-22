@@ -448,6 +448,14 @@ const ORBIT_BAND = 0.6;
  * taken and the pitch rotation/lift path runs exactly as before.
  */
 const SWING_UP_MIN = 0.55;                // of the look-up
+/* R5 fix round 3: the ground yaw swing itself engages from this much of the
+ * look-up (was `SWING_UP_MIN`, 0.55 — camPitch -0.63). At camPitch -0.8 on the
+ * 38.8 deg face, with her standing (not lunged, see `_footLock`), the swing
+ * carried the lens 90 deg round to her side at knee height and the view up at
+ * 53 deg: all sky, no skyline (A31b's film); the boom ROTATION — the other
+ * lever, and the one that keeps the lens behind her — clears there. The
+ * swing stays the clamp's answer (A31e / A31f, where rotation alone loses her). */
+const SWING_UP_ON = 0.80;
 const SWING_MAX = 1.75;                   // rad (100 deg) either side
 const SWING_STEPS = 20;                   // scan resolution over [0, SWING_MAX]
 const SWING_HYST = 0.08;                  // m of extra clearance to release it
@@ -4083,7 +4091,7 @@ void main() {
      *           frames.  Solved where the boom is, the rotation lifts it over
      *           the hill for exactly as long as the crossing takes (the old
      *           un-swung rig's own answer: opacity 1.000 on the same pan). */
-    const swingWant = (up >= SWING_UP_MIN && ctx.terrain && !this.aiming)
+    const swingWant = (up >= SWING_UP_ON && ctx.terrain && !this.aiming)
       ? this._groundSwingFor(yaw, pitch, wantDist, pivotLift, hijackMax, halfFov, cam.aspect)
       : (this._swingTgt = 0);
     if (seeding) this._swing = swingWant;
@@ -4217,17 +4225,18 @@ void main() {
      * then dragged the lens toward her head to 0.99 m, when the SAME rotation
      * cleared a 1.45-1.60 m boom by 0.07-0.005 m (measured Oct 22). At a deep
      * look-up the rotated boom keeps its extra length only as far as that
-     * length clears (`ROT_MARGIN`), never less than the un-rotated boom. */
+     * length clears (`PRE_CUT_MARGIN`, the march's own clearance plus 1 cm),
+     * never less than the un-rotated boom. */
     if (this._relief > 0.05 && this._deepK > 0.5 && ctx.terrain) {
       const L0 = this._lenAtElev(pitch, wantFlat0, pivotLift);
       if (wantDist > L0 + 0.02) {
         const P = this._pivotPos, oy = P.y + (this._lift || 0);
-        if (this._clearAlong(P.x, oy, P.z, dir.x, dir.y, dir.z, wantDist) < ROT_MARGIN) {
+        if (this._clearAlong(P.x, oy, P.z, dir.x, dir.y, dir.z, wantDist) < PRE_CUT_MARGIN) {
           let lo = L0, hi = wantDist;
-          if (this._clearAlong(P.x, oy, P.z, dir.x, dir.y, dir.z, lo) >= ROT_MARGIN) {
+          if (this._clearAlong(P.x, oy, P.z, dir.x, dir.y, dir.z, lo) >= PRE_CUT_MARGIN) {
             for (let i = 0; i < 10; i++) {
               const m = (lo + hi) * 0.5;
-              if (this._clearAlong(P.x, oy, P.z, dir.x, dir.y, dir.z, m) >= ROT_MARGIN) lo = m; else hi = m;
+              if (this._clearAlong(P.x, oy, P.z, dir.x, dir.y, dir.z, m) >= PRE_CUT_MARGIN) lo = m; else hi = m;
             }
           }
           wantDist = lo; wantFlat = Math.min(wantFlat, lo);
