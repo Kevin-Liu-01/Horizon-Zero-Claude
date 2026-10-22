@@ -482,7 +482,8 @@ export class PlayerAnimator {
       drawRetractDown: tn?.drawRetractDown ?? 0.8,
       drawHandRoll: tn?.drawHandRoll ?? 0,
       looseOnJaw: !!tn?.looseOnJaw,
-      anchorNock: !!tn?.anchorNock, handOut: tn?.handOut ?? 0,
+      anchorNock: !!tn?.anchorNock, handOut: tn?.handOut ?? 0, drawWristExt: tn?.drawWristExt ?? 0,
+      gripOut: tn?.gripOut ?? 0.035,
     };
     this.bowSolve = prof?.bow || null;
     /* M10 (E3): the spring-side capsule on the DRAW hand + forearm. */
@@ -675,7 +676,7 @@ export class PlayerAnimator {
       idealGripDist: 0, reach: 0, slide: 0, nockToAnchor: 0, anchorDrop: 0, lmax: 0, pull: 0, restZ: 0,
       u: new THREE.Vector3(), d: new THREE.Vector3(), sh: new THREE.Vector3(),
       shoulderX: 0, shoulderZ: 0,
-      anchor: new THREE.Vector3(), nock: new THREE.Vector3(), wristT: new THREE.Vector3(),
+      anchor: new THREE.Vector3(), nock: new THREE.Vector3(), wristT: new THREE.Vector3(), headAt: new THREE.Vector3(),
     };
 
     /* ------------- Round 4 · reactions, traversal, interaction ------------- */
@@ -1053,6 +1054,7 @@ export class PlayerAnimator {
       anchor: { x: D.anchor.x, y: D.anchor.y, z: D.anchor.z },
       nock: { x: D.nock.x, y: D.nock.y, z: D.nock.z },
       wristT: { x: D.wristT.x, y: D.wristT.y, z: D.wristT.z },
+      headAt: { x: D.headAt.x, y: D.headAt.y, z: D.headAt.z },
       quiverT: this._quiverT, looseT: this._looseT, drawS: this._drawS,
     };
   }
@@ -3304,7 +3306,10 @@ export class PlayerAnimator {
       _grip.copy(this.T.restGrip).addScaledVector(_dA, this.T.restReach);
       _v5.copy(a).sub(_nockOff);
       _grip.lerp(_v5, dEase);
-      _grip.x += 0.035 * dEase;
+      // Round 4 slid the whole bow 3.5 cm to her left (char +X) of the anchor
+      // line; on Brea that ran the string 3.5 cm INSIDE the jaw-corner anchor,
+      // i.e. through her face, and the fist with it (profile `tune.gripOut`)
+      _grip.x += this.T.gripOut * dEase;
       // (the old code also pushed the grip a further 0.05m out along the aim,
       // 5cm of pure draw-length cost the reach clamp then paid back as slide.
       // The correct grip is exactly anchor - nockOffset.)
@@ -3501,6 +3506,7 @@ export class PlayerAnimator {
     this._headFrame();
     this._pushOutOfHead(_v7, this.T.handIn);
     D.wristT.copy(_v7);
+    this._charOf(b.head.bone, D.headAt);
     /*
      * Archery form: draw elbow straight BACK, level with the ARROW LINE,
      * fractionally below the shoulder (reference/draw-side.jpg).
@@ -3602,6 +3608,30 @@ export class PlayerAnimator {
             _q3.setFromAxisAngle(_reAx, ang * 0.45);
             this._rotQL(b.handR, _q3);
           }
+        }
+      }
+    }
+    /*
+     * R5 the string hand's wrist EXTENSION (profile `tune.drawWristExt`,
+     * radians). The forearm comes in from an elbow held out level behind her,
+     * so a straight wrist points the fist across the string INTO the jaw (the
+     * middle / index knuckles and the thumb tip inside the posed head mesh,
+     * Oct 22). A relaxed archer's wrist is bent back a little: the knuckles
+     * ride out toward the back of the hand (her right), the hooked fingers
+     * curl in to the string, the wrist and the anchor do not move.
+     */
+    if (this.T.drawWristExt && aimW > 0.02) {
+      const xw = this.T.drawWristExt * aimW * smoothstep(drawS, 0.3, 0.9) * (1 - lk) * (1 - qw);
+      if (xw > 1e-3) {
+        this._liveW(b.handR.bone, _q3);
+        _q3.multiply(b.handR.invW);
+        _reU.set(0, 1, 0).applyQuaternion(_q3);    // the back of the hand (bind: +Y)
+        _reV.set(-1, 0, 0).applyQuaternion(_q3);   // the fingers (bind: the right hand points to her right, -X)
+        _reAx.crossVectors(_reV, _reU);            // +angle turns the fingers toward the back of the hand
+        if (_reAx.lengthSq() > 1e-8) {
+          _reAx.normalize();
+          _q3.setFromAxisAngle(_reAx, xw);
+          this._rotQL(b.handR, _q3);
         }
       }
     }

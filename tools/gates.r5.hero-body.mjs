@@ -7542,17 +7542,38 @@ const NEW_GATES = [
         const mid = s0.clone().lerp(s1, 0.5);
         let chest = 9;
         for (const i of idx) { skin.getVertexPosition(i, tmp); skin.localToWorld(tmp); chest = Math.min(chest, segD(tmp, mid, s1) - 0.045, segD(tmp, s1, s2) - 0.035); }
+        /* FEASIBILITY (Oct 22, reported, not graded): every elbow the arm CAN
+         * take with this shoulder and this hand is on the circle about the
+         * shoulder -> wrist axis (upper arm and forearm lengths fixed). The
+         * scan reports the least "behind the head plane" among the circle's
+         * points that also hold the two form bars above (height in
+         * [-0.03, +0.05], >= 0.05 m behind the hand), so a miss of the
+         * head-plane clause can be told apart from a bad roll choice. */
+        const L1 = sh.distanceTo(el), L2 = el.distanceTo(ha), Dv = ha.clone().sub(sh), Dl = Dv.length(), ax = Dv.clone().normalize();
+        const ca = (L1 * L1 - L2 * L2 + Dl * Dl) / (2 * Dl), rad = Math.sqrt(Math.max(0, L1 * L1 - ca * ca));
+        const cc = sh.clone().addScaledVector(ax, ca), cu = new T3(0, 1, 0).addScaledVector(ax, -ax.y).normalize(), cv = new T3().crossVectors(ax, cu);
+        let feasibleMin = null;
+        for (let k = 0; k < 72; k++) {
+          const t = k * Math.PI / 36, e2 = cc.clone().addScaledVector(cu, Math.cos(t) * rad).addScaledVector(cv, Math.sin(t) * rad);
+          const u2 = e2.clone().sub(sh).dot(up), bh = ha.clone().sub(e2).dot(d);
+          if (u2 >= -0.03 && u2 <= 0.05 && bh >= 0.05) { const b2 = an.behindHead(e2); if (feasibleMin === null || b2 < feasibleMin) feasibleMin = b2; }
+        }
         rows.push({ pitch, key, drawS: +cmb.drawStrength.toFixed(2),
           elbowUp: +el.clone().sub(sh).dot(up).toFixed(4),
           elbowBehindHand: +ha.clone().sub(el).dot(d).toFixed(4),
           bowArmChest: +chest.toFixed(4), chestPoints: idx.length,
-          handBehindHead: +an.behindHead(ha).toFixed(4), elbowBehindHead: +an.behindHead(el).toFixed(4) });
+          handBehindHead: +an.behindHead(ha).toFixed(4), elbowBehindHead: +an.behindHead(el).toFixed(4),
+          shoulderBehindHead: +an.behindHead(sh).toFixed(4),
+          elbowBehindHeadBestFeasible: feasibleMin === null ? null : +feasibleMin.toFixed(4) });
       }
       release();
       // head plane = the back of the skull (head ellipsoid), along the head's live forward
       const bad = rows.filter((r) => !(r.drawS > 0.9 && r.elbowUp >= -0.03 && r.elbowUp <= 0.05 && r.elbowBehindHand >= 0.05
         && r.bowArmChest >= 0.04 && r.handBehindHead <= 0.10 && r.elbowBehindHead <= 0.10));
-      return { pass: bad.length === 0 && idx.length > 20, detail: { rows, failing: bad.map((r) => r.pitch + (r.key || '')) } };
+      const clauses = (r) => [r.drawS > 0.9 ? null : 'drawS', r.elbowUp >= -0.03 && r.elbowUp <= 0.05 ? null : 'elbowHeight',
+        r.elbowBehindHand >= 0.05 ? null : 'elbowBehindHand', r.bowArmChest >= 0.04 ? null : 'bowArmChest',
+        r.handBehindHead <= 0.10 ? null : 'handBehindHead', r.elbowBehindHead <= 0.10 ? null : 'elbowBehindHead'].filter(Boolean);
+      return { pass: bad.length === 0 && idx.length > 20, detail: { rows, failing: bad.map((r) => r.pitch + (r.key || '') + ':' + clauses(r).join('+')) } };
     })()`),
   },
 
@@ -8621,9 +8642,30 @@ const byId = (id) => carried.find((g) => g.id === id);
   const g = byId('A35-cheek-anchor');
   const a = Object.getOwnPropertyDescriptor(g, 'assert').value;
   if (!a.includes("await measure(-0.4, 'up');")) throw new Error('A35 shape changed');
-  Object.defineProperty(g, 'assert', { value: a.replace("await measure(-0.4, 'up');", "await measure(-0.55, 'up55');\n      await measure(-0.4, 'up');"), enumerable: true, configurable: true, writable: true });
+  /* ...and the band is graded where plan §9 puts it: |hand_r - head| with
+   * "UBC Head sits at the skull base like Aloy's" — the HEAD JOINT. Round 4's
+   * `debugArm().handToHead` measured to the head keep-out ellipsoid's centre
+   * instead (Aloy: head bone + 5 cm), and on Brea that centre is the re-fitted
+   * skull's, 11.4 cm over the joint: with the fist OUTSIDE the jaw (Oct 22: it
+   * had been inside it) the wrist sits under the ear, 0.17-0.18 m from that
+   * centre and 0.11-0.13 m from the joint. Both are reported, with the
+   * Round-4-equivalent point (joint + (0, 0.05, 0.01)) and the jaw corner the
+   * band is re-verified against (plan: "re-verified by measuring the
+   * jaw-corner point"). */
+  const meas = 'rows.push({ tag, drawS: +cmb.drawStrength.toFixed(2),\n          handToHead: R.handToHead,';
+  const band = '&& r.handToHead >= 0.10 && r.handToHead <= 0.16';
+  if (!a.includes(meas) || !a.includes(band)) throw new Error('A35 band shape changed');
+  const meas2 = `const hj = V(); an.getBoneWorld(HBN('head'), hj);
+        const r4 = p.model.worldToLocal(hj.clone()); r4.y += 0.05; r4.z += 0.01; p.model.localToWorld(r4);
+        const jaw = p.model.userData?.rigProfile?.tune?.anchorOff;
+        rows.push({ tag, drawS: +cmb.drawStrength.toFixed(2),
+          handToHeadJoint: +hr.distanceTo(hj).toFixed(4), handToHeadR4Point: +hr.distanceTo(r4).toFixed(4),
+          jawCornerToHeadJoint: jaw ? +Math.hypot(jaw[0], jaw[1], jaw[2]).toFixed(4) : null,
+          handToSkullCentre: R.handToHead,`;
+  Object.defineProperty(g, 'assert', { value: a.replace("await measure(-0.4, 'up');", "await measure(-0.55, 'up55');\n      await measure(-0.4, 'up');")
+    .replace(meas, meas2).replace(band, '&& r.handToHeadJoint >= 0.10 && r.handToHeadJoint <= 0.16'), enumerable: true, configurable: true, writable: true });
   g.timeout = 90000;
-  g.title = 'Full draw at FOUR pitches (-0.55, -0.4, 0, 0.75): hand 0.10-0.16 m from the head centre, behind the face plane, bow arm locked 165-172 deg, hands >= 0.45 m apart';
+  g.title = 'Full draw at FOUR pitches (-0.55, -0.4, 0, 0.75): hand_r 0.10-0.16 m from the Head joint (plan §9; the skull centre and the Round-4-equivalent point reported), behind the face plane, bow arm locked 165-172 deg, hands >= 0.45 m apart';
 }
 
 {

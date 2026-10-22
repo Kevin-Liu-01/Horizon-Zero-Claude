@@ -131,14 +131,20 @@ export const UBC_TUNE = {
   // string hand behind the nock; the loose: the hand slides back along the jaw
   // from the anchor by looseKick at the kick's peak (bible §5.2: 8-12 cm), not
   // out along the un-clamped string line (Oct 22: 0.30 m, the arm behind the head)
-  handBehindNock: 0.082, looseKick: 0.10,          // 0.068, 0.075
+  handBehindNock: 0.076, looseKick: 0.10,          // 0.068, 0.075
   looseOnJaw: true,
   // the draw hand is placed off the NOCK's anchor, not on it: the wrist
   // `handBehindNock` back along the arrow (UBC wrist -> middle knuckle 0.084 m:
-  // the knuckles at the jaw corner, inside A16's 0.09 m nock-to-hand bar) and
+  // the knuckle row at the jaw corner, inside A16's 0.09 m nock-to-hand bar) and
   // `handOut` to her right (the back of the hand outside the face; Oct 22 the
   // knuckles and thumb were inside the jaw mesh)
-  anchorNock: true, handOut: 0.022,
+  anchorNock: true, handOut: 0.020,
+  // ...and the wrist bent back this much (radians) at full draw, so the
+  // knuckles ride outside the jaw and the hooked fingers curl in to the string
+  drawWristExt: 0.35,
+  // the bow's lateral offset off the anchor line (char +X = her left; Round 4
+  // 0.035): Brea's string touches the jaw corner, a hair outside it
+  gripOut: -0.008,
   // bow-arm elbow pole (char space)
   bowPole: [0.3, -0.95, 0.12],                     // same
   // the right eye relative to `Head` at bind (UBC Eyes mesh centre; alidade raise)
