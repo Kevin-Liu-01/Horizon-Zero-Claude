@@ -63,7 +63,21 @@ until the orchestrator records a ruling (below). No bar moved; the allocation ga
   FAIL). `A-kind-block-file` reports PENDING (never PASS) when its only non-green row is that cross-lane
   clause, and names it.
 
-{{WEAK40}}
+**Measured** (run F2, port 5254, the per-kind block on the Tiller fixture inside `A-kind-block-file`):
+
+| clause | measured | bar | verdict |
+|---|---|---|---|
+| weak point at 40 m | hit sphere 11.2 px, lit glass 5.5 px across (24 lit px) | ≥ 5 px | PASS |
+| glass vs drum face, 13:00, lens facing the sun (axis · sun azimuth 1.00, sun 49.9° up) | ring 0.843 / face 0.044 = **9.46 : 1** | — | reported |
+| glass vs hull beyond the drum (672 machine-masked pixels) | ring 0.843 / hull median 0.123 = **5.15 : 1** (hull P75 0.391 → 2.02 : 1, P90 0.706, reported) | — | reported |
+| **graded contrast = min of the two** | **5.15 : 1** | ≥ 3 : 1 | PASS |
+| calima | no `calima` state in `environment.weatherStates` | ≥ 3 : 1 | **PENDING** (world-sky W1) |
+| `A-weak40:herd` verdict | every 13:00 clause PASS, calima pending | | **PENDING** |
+| `A-kind-block-file` verdict | 19 PASS + 5 SKIP-fixture + `A-weak40` PENDING (calima); `A41c` 5 / 5 | | **PENDING**, naming the clause |
+
+The hull here is the median, as the judge's fix asks; the 75th percentile (the brightest quarter of the
+sunlit glaze) is below 3 : 1 and is reported, not graded. If the orchestrator wants that percentile as
+the bar, every generator needs a darker hull behind the drum (gap 1).
 
 ### Findings 1 and 2 — the memory rule on this lane's frames
 
