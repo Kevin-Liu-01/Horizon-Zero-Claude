@@ -19,7 +19,7 @@ export const VFX_COLORS = Object.freeze({
   saltGlint: 0xf3efe4,      // seized-joint crust shatter / crawl glints
   bronzeChip: 0xe8c48a,     // shock arcs, generic sparks, projectile flashes (was ice blue 0xbfe8ff)
   beacon: 0xe9c77b,         // loot beacon column (was cyan 0x7fe8ff)
-  brineFrost: 0xd6ece6,     // Seized tint on plates (was 0xbfe9ff)
+  seizedTint: 0xd6ece6,     // Seized (Brine) tint on plates (was 0xbfe9ff)
   flameLate: 0xc23a10,      // flame licks cool toward cinder, not toward the hostile lamp
   sensorPing: 0xf2ead3,     // radar / echolocation ping rings: the calm lamp token (bible §7.2)
 });

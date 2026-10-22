@@ -52,7 +52,7 @@ export const MACHINE_STATES = Object.freeze([
 ]);
 const STATE_SET = new Set(MACHINE_STATES);
 
-const FROST_COLOR = new THREE.Color(VFX_COLORS.brineFrost);
+const FROST_COLOR = new THREE.Color(VFX_COLORS.seizedTint);
 const _flameLate = new THREE.Color(VFX_COLORS.flameLate);
 const ELEM_DECAY = 7;      // buildup meter decay per second
 const TELEGRAPH_T = 0.4;   // eye-flash duration at attack windup (legacy kinds' dodge cue)

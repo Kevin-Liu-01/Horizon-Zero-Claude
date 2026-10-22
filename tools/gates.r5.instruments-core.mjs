@@ -57,6 +57,36 @@ const rel = (abs) => path.relative(ROOT, abs).split(path.sep).join('/');
 const read = (r) => readFileSync(path.join(ROOT, r), 'utf8');
 const LANE = 'instruments-core';
 
+/**
+ * OLD KIND NAMES COME FROM THE SPEC, NEVER FROM LITERALS HERE (plan §9 "no gate
+ * names a species"; gates-perf's `A-gate-preludes` scans this file for quoted
+ * Round-4 kind ids): the Round-4 kinds are bible §10.2's "old kind" column (by
+ * role), the deleted IP kinds are the `*.js` files of plan §6's first row (R30).
+ * The static scans need the names to prove the deletions; no page gate stages
+ * one (R28).
+ */
+function oldKindVocabulary() {
+  const bible = read('docs/ROUND5-BIBLE.md');
+  const at = bible.indexOf('### 10.2 Machines');
+  const byRole = {};
+  const all = [];
+  for (const line of bible.slice(at, bible.indexOf('\n### ', at + 10)).split('\n')) {
+    const m = /^\| ([^|]+) \| \*\*[A-Za-z]+\*\* \| `([a-z]+)` \|$/.exec(line.trim());
+    if (!m) continue;
+    const names = m[1].split(',').map((w) => w.trim().toLowerCase().replace(/-/g, '')).filter((w) => /^[a-z]+$/.test(w));
+    byRole[m[2]] = names;
+    all.push(...names);
+  }
+  const plan = read('docs/ROUND5-PLAN.md');
+  const s6 = plan.slice(plan.indexOf('## 6. DELETE list'));
+  const row = s6.split('\n').find((l) => /HZD IP/.test(l)) || '';
+  const ip = [...row.matchAll(/`(\w+)\.js`/g)].map((m) => m[1]).filter((k) => k !== 'legacy');
+  return { all: [...new Set(all)], byRole, ip };
+}
+export const OLD_KINDS = oldKindVocabulary();
+/** A quoted kind id for the Round-4 source text a re-stage rewrites (built, so this file holds no literal). */
+const q = (k) => "'" + k + "'";
+
 /** The commit the W0a removal-only pass is measured against (W0-day1 + the port amendment). */
 export const W0A_BASE = '9d3b891';
 
@@ -247,8 +277,7 @@ async function noCorruptionStatic() {
 /* ------------------------------------------------------------------ */
 /* A-legacy-collapse — static half (import graph + kept-file rows)     */
 /* ------------------------------------------------------------------ */
-const IP_KIND_FILES = ['watcher', 'sawtooth', 'behemoth', 'thunderjaw', 'redeye']
-  .map((k) => `src/entities/machines/${k}.js`);
+const IP_KIND_FILES = OLD_KINDS.ip.map((k) => `src/entities/machines/${k}.js`);
 const LEGACY_DATA_FILES = ['src/entities/machines/rig/shells-expansion.js', 'src/entities/machines/rig/rigs-expansion.js'];
 const KEPT_MACHINE_FILES = [
   'src/entities/machines/index.js', 'src/entities/machines/machine.js', 'src/entities/machines/autorig.js',
@@ -300,7 +329,7 @@ async function legacyCollapseStatic() {
   }
   // kept machine files carry no legacy (or IP) kind ROW: no `kind:` key and no
   // 'kind' string literal in their code
-  const allKinds = [...new Set([...kinds, 'watcher', 'sawtooth', 'behemoth', 'thunderjaw', 'redeye', 'tallneck'])];
+  const allKinds = [...new Set([...kinds, ...OLD_KINDS.ip, ...OLD_KINDS.all])];
   const rowRe = new RegExp(`(^|[\\s{,])(${allKinds.join('|')})\\s*:|['"](${allKinds.join('|')})['"]`);
   const keptRows = [];
   for (const f of KEPT_MACHINE_FILES) {
@@ -484,10 +513,42 @@ function dropLegacyRow(dir, kind) {
 /* ------------------------------------------------------------------ */
 /* the static halves, computed once per invocation that needs them     */
 /* ------------------------------------------------------------------ */
+/**
+ * The kind that used to corrupt others, read from the W0a base's doctrine
+ * (`if (kind === X) { m._corruptor = ... }`), so A-no-corruption stages the old
+ * trigger without naming a species here.
+ */
+function corruptingKind() {
+  try {
+    const t = git('show', `${W0A_BASE}:src/entities/machines/ai/doctrine.js`);
+    return (/if \(kind === '(\w+)'\) \{\s*m\._corruptor = /.exec(t) || [])[1] || null;
+  } catch { return null; }
+}
+const CORRUPTING_KIND = wanted('A-no-corruption') ? corruptingKind() : null;
+
 const STATIC = {
   override: wanted('A-no-override') ? await noOverrideStatic() : null,
   corruption: wanted('A-no-corruption') ? await noCorruptionStatic() : null,
 };
+
+/**
+ * gates-perf's role roster (`tools/gate-roster.mjs`, §3.2 consumer of
+ * `ctx.machines.roles`): A-roles-published runs its ROSTER prelude in the page.
+ * In a tree without it (before gates-perf merges) `R5_GATE_ROSTER=<path>` names
+ * the module to grade against; with neither, that clause is PENDING.
+ */
+async function rosterInfo() {
+  const cands = [path.join(ROOT, 'tools/gate-roster.mjs'), process.env.R5_GATE_ROSTER].filter(Boolean);
+  for (const f of cands) {
+    if (!existsSync(f)) continue;
+    try {
+      const mod = await import(pathToFileURL(path.resolve(f)).href);
+      if (typeof mod.ROSTER === 'string') return { file: f.startsWith(ROOT) ? rel(f) : f, prelude: mod.ROSTER, roles: mod.ROLES || null };
+    } catch { /* try the next */ }
+  }
+  return null;
+}
+const ROSTER_INFO = wanted('A-roles-published') ? await rosterInfo() : null;
 
 /** The static halves, exported so they can be run on their own (`node -e`). */
 export { noOverrideStatic, noCorruptionStatic, legacyCollapseStatic, removalOnlyAudit };
@@ -498,7 +559,20 @@ const WAIT_BOOT = `
   { const t0 = performance.now();
     while (!M.expansionReady && performance.now() - t0 < 90000) await new Promise(r => setTimeout(r, 250)); }`;
 
-const LEGACY_PROBE_KINDS = ['scrapper', 'snapmaw'];
+/**
+ * The two legacy rows the A-legacy-collapse probes delete: one BOOT kind and one
+ * deferred kind, read from legacy.js's own rows (the 2nd boot row and the 3rd
+ * deferred row: the same two the W0a probes deleted).
+ */
+function legacyProbeKinds() {
+  const f = 'src/entities/machines/legacy.js';
+  if (!existsSync(path.join(ROOT, f))) return [];
+  const text = read(f);
+  const rows = [...text.matchAll(/^ {2}(\w+): \{$([\s\S]*?)^ {2}\},$/gm)].map((m) => ({ kind: m[1], boot: /registerAt: 'boot'/.test(m[2]) }));
+  const boot = rows.filter((r) => r.boot), later = rows.filter((r) => !r.boot);
+  return [boot[1]?.kind, later[2]?.kind].filter(Boolean);
+}
+const LEGACY_PROBE_KINDS = legacyProbeKinds();
 /** Wall clock for one nested probe run (two page gates; ~60 s when healthy). */
 const PROBE_DEADLINE = 240000;
 
@@ -628,7 +702,8 @@ const W0A_GATES = [
       const p = __CTX__.player;
       const cx = p.position.x + 40, cz = p.position.z - 40;
       const kinds = M.kinds.filter(k => M.canSpawn(k));
-      const order = kinds.includes('corruptor') ? ['corruptor', ...kinds.filter(k => k !== 'corruptor')] : kinds;
+      const OLD_CORRUPTOR = ${JSON.stringify(CORRUPTING_KIND)};
+      const order = OLD_CORRUPTOR && kinds.includes(OLD_CORRUPTOR) ? [OLD_CORRUPTOR, ...kinds.filter(k => k !== OLD_CORRUPTOR)] : kinds;
       const staged = [];
       for (let i = 0; i < Math.min(order.length, 7); i++) {
         const a = (i / 7) * Math.PI * 2;
@@ -697,11 +772,29 @@ const W0A_GATES = [
         staged = m ? { kind: m.kind, modelKind: m.modelKind, legacy: M.isLegacyKind(m.kind) } : null;
         if (m) M.sites.dispose(m);
       }
-      const pass = shape && legacyMapped.length === 0 && nullWithoutNote.length === 0 && notLive.length === 0
+      // "tools/gate-roster.mjs resolves every role": gates-perf's ROSTER prelude run against this page
+      const RS = ${JSON.stringify(ROSTER_INFO ? { file: ROSTER_INFO.file, roles: ROSTER_INFO.roles } : null)};
+      let gateRoster = null;
+      if (RS) {
+        const RR = await (async () => {
+          ${ROSTER_INFO ? ROSTER_INFO.prelude : ''}
+          return { KIND, ROLE_NOTE, STAGED_KINDS: typeof STAGED_KINDS !== 'undefined' ? STAGED_KINDS : null };
+        })();
+        const rows = ROLES.map(r => ({ role: r, published: R ? R[r] : undefined, roster: RR.KIND[r], label: RR.ROLE_NOTE[r] && RR.ROLE_NOTE[r].label }));
+        const unresolved = rows.filter(x => x.published ? x.roster !== x.published : !(x.roster === null && x.label));
+        const rosterRoles = RS.roles || [];
+        gateRoster = { file: RS.file, rosterRolesMatch: rosterRoles.length === 12 && ROLES.every(r => rosterRoles.includes(r)),
+          unresolved, stagedKinds: RR.STAGED_KINDS, stagedLegacy: (RR.STAGED_KINDS || []).filter(k => M.isLegacyKind(k)), rows };
+        gateRoster.ok = gateRoster.rosterRolesMatch && unresolved.length === 0 && gateRoster.stagedLegacy.length === 0
+          && Array.isArray(RR.STAGED_KINDS) && RR.STAGED_KINDS.includes(R.herd);
+      }
+      const core = shape && legacyMapped.length === 0 && nullWithoutNote.length === 0 && notLive.length === 0
         && forbidden.length === 0 && R.herd === 'tiller' && staged && staged.kind === 'tiller' && !staged.legacy;
+      // the gate-roster clause is graded whenever the roster module exists; without it the gate cannot PASS (PENDING, named)
+      const pass = !core ? false : !gateRoster ? null : gateRoster.ok;
       return { pass, detail: {
         roles: R, notes: N, legacyMapped, nullWithoutNote, notLive, forbidden, staged,
-        gateRoster: 'tools/gate-roster.mjs is gates-perf\\'s (W0a); its "resolves every role" clause is graded at the W0 exit',
+        gateRoster: gateRoster || 'PENDING: tools/gate-roster.mjs (gates-perf) is not in this tree and R5_GATE_ROSTER is unset — the "resolves every role" clause cannot be graded',
       } };
     })()`,
   },
@@ -800,6 +893,7 @@ const W0A_GATES = [
 const PROBE_KIND_FILE = 'src/instruments/kinds/zz-icprobe.js';
 /** A new kind built from the fixture's class and model, with tables of its own. */
 const PROBE_KIND_SRC = `import tiller from './tiller.js';
+import { REST_SITE } from '../../world/island/sites.js';
 export default {
   ...tiller,
   id: 'icprobe',
@@ -813,7 +907,7 @@ export default {
     elem: 77,
   },
   audio: { set: 'icprobe', mass: 'small' },
-  doctrine: { spawn: [{ n: 1, x: 120, z: 40, route: 12, poi: 'ic-probe' }] },
+  doctrine: { spawn: [{ n: 1, x: REST_SITE.x + 98, z: REST_SITE.z + 10, route: 12, poi: 'ic-probe' }] },
 };
 `;
 const KIND_ASSERT = (id, want) => `(async () => {
@@ -1252,12 +1346,13 @@ const A_BEAMS_ONE_DRAW = `(async () => {
       cam.updateMatrixWorld();
       await wait(800);
       const wary = await grabFrames(40);
+      const lampsWary = ms.filter(m => m.lamp && m.lamp.state === 'wary').length;
       // the same frozen frame with the eight in calm: the beam owner's draws are the difference
       for (const m of ms) { thaw(m); park(m, m.heading); freezeOne(m); }
       await wait(600);
       const calm = await grabFrames(40);
       measure = {
-        lampsWary: ms.filter(m => m.lamp && m.lamp.state === 'wary').length,
+        lampsWary,
         beamDrawsPerFrame: { min: Math.min(...wary.beamDraws), max: Math.max(...wary.beamDraws), median: med(wary.beamDraws) },
         beamInstancesPerFrame: { min: Math.min(...wary.beamCount), max: Math.max(...wary.beamCount) },
         callsWaryMedian: med(wary.calls), callsCalmMedian: med(calm.calls),
@@ -1283,7 +1378,7 @@ const A_BEAMS_ONE_DRAW = `(async () => {
     lampMesh: L.lampMesh.uuid, beamMesh: L.beamMesh.uuid, lampGeo: L.lampMesh.geometry.uuid, beamGeo: L.beamMesh.geometry.uuid };
   env.setWeather('clear', 0.05);
   const checks = {
-    eightWaryInFog: !!measure && measure.beamInstancesPerFrame.min === 8 && measure.fogK > 1.2,
+    eightWaryInFog: !!measure && measure.lampsWary === 8 && measure.beamInstancesPerFrame.min === 8 && measure.fogK > 1.2,
     beamDrawsExactlyOne: !!measure && measure.beamDrawsPerFrame.min === 1 && measure.beamDrawsPerFrame.max === 1,
     attributedDrawsOne: !!measure && measure.attributedBeamDraws === 1,
     noBeamsInCalm: !!measure && measure.calmBeamInstances === 0 && measure.calmBeamDraws === 0,
@@ -1359,6 +1454,9 @@ const A_PERCEPTION_WEATHER = `(async () => {
   async function fillAt20(mul) {
     H.detectMul = mul;
     placeAt(m, h, 20);
+    // 0.25 sim-s (>= 2 perception ticks at 0.1 s) before sampling: detectFill is the LAST tick's
+    // value, so the first samples after a change still carry the previous multiplier
+    await simSleep(0.25, () => { m.suspicion = 0; });
     const xs = [];
     await simSleep(1.6, () => { if (m.detectFill > 0) xs.push(m.detectFill); m.suspicion = 0; });
     H.detectMul = 1;
@@ -1416,6 +1514,8 @@ const A_PERK_HOOKS = `(async () => {
     H.detectMul = mul;
     if (hostile) { m.state = 'attack'; } else { m.state = 'patrol'; }
     placeAt(m, h, 20);
+    // settle 0.25 sim-s (>= 2 perception ticks) so no sample carries the previous multiplier or state
+    await simSleep(0.25, () => { m.suspicion = hostile ? 1 : 0; });
     const xs = [];
     await simSleep(1.6, () => { if (m.detectFill > 0) xs.push(m.detectFill); m.suspicion = hostile ? 1 : 0; });
     H.detectMul = 1;
@@ -1642,8 +1742,8 @@ const A_VFX = (S) => `(async () => {
     // every attack row that carries its own projectile / flash colour fires its flash
     for (const row of T.attackTable(k)) if (row.params && row.params.color !== undefined) { try { m._arcFlash(row.params.color); ex.push('flash ' + row.id); } catch (e) { /* */ } }
     for (const fn of ['_pingRing', '_freezeSpit', '_spit', '_shatterBurst']) if (typeof m[fn] === 'function') { try { m[fn](); ex.push(fn); } catch (e) { /* needs a target */ } }
-    // run the statuses for a beat (burn flames + smoke, seized-crust glints, Clouded arcs)
-    m.burnT = Math.max(m.burnT, 1); m._burnDps = 0.01; m.brittleT = Math.max(m.brittleT, 1); m.stunT = Math.max(m.stunT, 0.6);
+    // run the statuses for a beat (burn flames + smoke, seized-crust glints from the Brine hit, Clouded arcs)
+    m.burnT = Math.max(m.burnT, 1); m._burnDps = 0.01; m.stunT = Math.max(m.stunT, 0.6);   // (the seized crust is already on from the Brine hit above)
     await new Promise(r => setTimeout(r, 900));
     // death sparks + smoke, then the loot beacon
     hit({ impact: 1e6, baseDamage: 1e6 }); ex.push('death');
@@ -1701,8 +1801,10 @@ const HERD_STAGE = `
       let w = ctx.machines.list.find(m => m.kind === __herd && m.alive && !m._disposed);
       if (!w) { const pp = ctx.player.position; w = ctx.machines.spawn(__herd, pp.x + 24, pp.z + 24); await new Promise(r => setTimeout(r, 900)); }
       if (!w || !w.alive) return { pass: null, detail: 'SKIP: no living ' + __herd + ' (herd role) could be staged' };`;
-const WATCHER_STAGE = `const w = ctx.machines.list.find(m => m.kind === 'watcher' && m.alive);
-      if (!w) return { pass: null, detail: 'SKIP: no living watcher' };`;
+/** The Round-4 rows' staging text (their sentry kind, bible §10.2), which the re-stage replaces by role. */
+const OLD_SENTRY = OLD_KINDS.byRole.sentry?.[0] || '';
+const WATCHER_STAGE = `const w = ctx.machines.list.find(m => m.kind === ${q(OLD_SENTRY)} && m.alive);
+      if (!w) return { pass: null, detail: 'SKIP: no living ${OLD_SENTRY}' };`;
 
 const A37_HERD = restage(rowOf(MAI, 'A37-stealth-approach'), [[WATCHER_STAGE, HERD_STAGE]], {
   id: shadowId('A37-stealth-approach'), lane: LANE, shadowOf: 'A37-stealth-approach',
@@ -1733,7 +1835,7 @@ const A90_RIG = restage(rowOf(await importFirst(['tools/gates.round4.machines-ex
   `// R5 (R28): the staged role kinds only, never a legacy kind
       const roster = [...new Set(Object.values(M.roles || {}).filter(Boolean))].filter(k => M.canSpawn(k));
       if (!roster.length) return { pass: null, detail: { note: 'SKIP-R18: no role resolves to a live kind', roles: M.roles } };`],
-  [`const liveKind = roster.includes('watcher') ? 'watcher' : roster[0];`, 'const liveKind = roster[0];'],
+  [`const liveKind = roster.includes(${q(OLD_SENTRY)}) ? ${q(OLD_SENTRY)} : roster[0];`, 'const liveKind = roster[0];'],
 ], {
   id: shadowId('A90-rig-reclaim'), lane: LANE, shadowOf: 'A90-rig-reclaim',
   title: 'RIG-SIDE RECLAIM on the staged role kinds (the Tiller fixture, R28): 30 spawn/kill/dispose cycles grow geometries <= +40 and textures <= +30, and a LIVE machine costs <= 1 of each',
@@ -1748,7 +1850,7 @@ const A90B = restage(rowOf(MEM, 'A90b-memory-attribution'), [
       if (!HERD) return { pass: null, detail: 'SKIP-R18: role herd has no live kind — the R34 workload cannot run' };`],
   [`          if (m) { kill(m); kills++; }`, `          const killedKind = m ? m.kind : null;
           if (m) { kill(m); kills++; W.kills++; }`],
-  [`          try { ctx.machines.spawn('watcher', ctx.player.position.x + 30, ctx.player.position.z + 30); } catch (e) {}`,
+  [`          try { ctx.machines.spawn(${q(OLD_SENTRY)}, ctx.player.position.x + 30, ctx.player.position.z + 30); } catch (e) {}`,
     `          if (killedKind) { let s = null; try { s = ctx.machines.spawn(HERD, ctx.player.position.x + 30, ctx.player.position.z + 30); } catch (e) { s = null; } if (s) W.respawned++; else W.respawnFailed++; }`],
   ['        return {\n          pass: offenders.length === 0,\n          detail: {\n            kills, selfTest: self, offenders,', `        const R34_LOC = /machine\\.js|autorig\\.js/;
         const r34Offenders = offenders.filter((o) => R34_LOC.test(JSON.stringify(o.at || '')));
@@ -1770,13 +1872,13 @@ const A90B = restage(rowOf(MEM, 'A90b-memory-attribution'), [
 /* ------------------------------------------------------------------ */
 /* the lamp film (frames for the lane and the R29 judge)               */
 /* ------------------------------------------------------------------ */
-const FILM = (state, { fov = 4, both = false } = {}) => `(async () => {
+const FILM = (state, { fov = 4, both = false, dist = 15, night = false } = {}) => `(async () => {
   ${KP}
   if (!KIND) return;
   const E = __C.engine, cam = __C.camera, p = __C.player, env = __C.environment, T = __C.terrain;
   E.setDynamicResolution?.(false);
-  env.setTime?.(13);
-  env.setWeather(${JSON.stringify(state === 'beams' ? 'rain' : 'clear')}, 0.05);
+  env.setTime?.(${night ? 23 : 13});
+  env.setWeather(${JSON.stringify(state === 'beams' && !night ? 'rain' : 'clear')}, 0.05);
   const hud = document.getElementById('hud'); if (hud) hud.style.display = 'none';
   for (const o of __M.list) if (o.alive && o.state !== 'patrol') { try { park(o); } catch (e) { /* */ } }
   freezeAll([]);
@@ -1795,9 +1897,9 @@ const FILM = (state, { fov = 4, both = false } = {}) => `(async () => {
     rec.anchor.updateWorldMatrix(true, false);
     lampPos.setFromMatrixPosition(rec.anchor.matrixWorld);
     axis.set(0, 0, 1).transformDirection(rec.anchor.matrixWorld); axis.y = 0; axis.normalize();
-    cam.position.copy(lampPos).addScaledVector(axis, 15);
+    cam.position.copy(lampPos).addScaledVector(axis, ${dist});
     ok = true;
-    for (let s = 1; s < 30; s++) { const q = lampPos.clone().lerp(cam.position, s / 30); if (T.getHeight(q.x, q.z) > q.y - 0.4) { ok = false; break; } }
+    for (let s = 1; s < 60; s++) { const q = lampPos.clone().lerp(cam.position, s / 60); if (T.getHeight(q.x, q.z) > q.y - 0.4) { ok = false; break; } }
     if (ok && __C.collision?.occluded?.(cam.position, lampPos)) ok = false;   // walls, rocks, props
   }
   const st = ${JSON.stringify(state)};
@@ -1820,17 +1922,17 @@ const FILM = (state, { fov = 4, both = false } = {}) => `(async () => {
     cam.lookAt(lampPos.clone().addScaledVector(axis, 5));
   } else {
     cam.zoom = cam.fov / ${fov}; cam.updateProjectionMatrix();
-    cam.position.copy(lampPos).addScaledVector(axis, 15);
+    cam.position.copy(lampPos).addScaledVector(axis, ${dist});
     cam.lookAt(lampPos);
   }
   cam.updateMatrixWorld();
   window.__IC_FILM__ = { state: st, camDistM: +cam.position.distanceTo(lampPos).toFixed(2), fov: cam.fov, zoom: cam.zoom, clearLine: ok, lampState: m.lamp ? m.lamp.state : null, aperture: m.lamp ? +m.lamp.aperture.toFixed(2) : null };
 })()`;
 const FILM_ROWS = [
-  ['calm', 'calm: the iris fully open (100 %), bone lamp #F2EAD3, steady; a bronze bezel ring; no beam'],
+  ['calm', 'calm: the iris fully open (100 %), bone lamp #F2EAD3, steady; a thin dark bezel ring; no beam'],
   ['wary', 'wary: the iris at HALF area (50 %), level-vial chartreuse #B5E61D; the closed half reads as dark blades'],
   ['hostile', 'hostile: a PINHOLE (20 % area), cochineal magenta #FF2D8C; blades dark around it'],
-  ['dark', 'dark (a precise hit on the lamp): the iris CLOSED and cracked, #3B3A36 blades; no lit glass'],
+  ['dark', 'dark (a precise hit on the lamp): the iris CLOSED and cracked (a fracture with a branch, not a cross), #3B3A36 blades; no lit glass'],
 ].map(([st, crit]) => ({
   id: `V-lamp-${st}-15m`, kind: 'visual', lane: 'instruments-core-film', timeout: 120000,
   title: `Lamp grammar, ${st}: the herd-role Instrument's drum lamp filmed from 15.0 m on its lens axis (camera.zoom to a 4 deg lens so the iris can be read)`,
@@ -1842,6 +1944,18 @@ FILM_ROWS.push({
   title: 'Lamp grammar, hostile, at the game lens (55 deg) from 15.0 m: the scale a player sees it at',
   setup: FILM('hostile', { fov: 55 }), settle: 1200,
   criteria: 'At play scale the drum lamp reads as a small magenta point in a dark bezel on the front drum of the Tiller; the hull is not blown out. FAIL if the lamp blooms into a glow ball larger than the drum.',
+});
+FILM_ROWS.push({
+  id: 'V-lamp-calm-40m-wide', kind: 'visual', lane: 'instruments-core-film', timeout: 120000,
+  title: 'Lamp at A-weak40 range: calm, the game lens (55 deg), 40.0 m on the lens axis (the weak-point size and contrast frame)',
+  setup: FILM('calm', { fov: 55, dist: 40 }), settle: 1200,
+  criteria: 'At 40 m the drum lamp still reads as a distinct bone-white point on the front drum, brighter than the glazed hull around it. FAIL if the lamp cannot be told apart from the hull.',
+});
+FILM_ROWS.push({
+  id: 'V-lamp-beams-night', kind: 'visual', lane: 'instruments-core-film', timeout: 120000,
+  title: 'Beams at night (clear, 23:00): a wary Tiller sweeping toward its stimulus, a hostile Tiller locked on Brea; side view',
+  setup: FILM('beams', { both: true, night: true }), settle: 1500,
+  criteria: 'At night the lamps rule the frame: two narrow additive shafts from the drum lamps, chartreuse (wary) and magenta (hostile, ending on the player), brightest at the lens and fading with length. FAIL if a beam is opaque, a solid block, or missing.',
 });
 FILM_ROWS.push({
   id: 'V-lamp-beams-fog', kind: 'visual', lane: 'instruments-core-film', timeout: 120000,
@@ -1962,7 +2076,15 @@ const W0B_GATES = [
     },
   },
   A37_HERD, A39_HERD, A43_HERD, A90_RIG, A90B,
-  ...FILM_ROWS,
+  /**
+   * THE LAMP FILMS ARE NOT §9 ROWS (instruments-core's §9 block has 0 visual
+   * gates; A-lamp-states grades the lamp from rendered pixels). They are the
+   * lane's advisory frames, registered only on request so they are never
+   * counted as graded V gates without a licence-clean reference
+   * (gates-perf A-reference-set):
+   *   R5_IC_FILM=1 node tools/gates.mjs --port <p> --extra tools/gates.r5.instruments-core.mjs --lane instruments-core-film
+   */
+  ...(process.env.R5_IC_FILM ? FILM_ROWS : []),
   ...KB.kindBlock({ role: 'herd', fixture: true, lane: KIND_LANE, class: 'medium' }),
 ];
 
@@ -1976,3 +2098,4 @@ const W0B_GATES = [
 export const GATES = [...W0A_GATES, ...W0B_GATES]
   .sort((a, b) => (a.kind === 'runner' ? 0 : 1) - (b.kind === 'runner' ? 0 : 1));
 export const INSTRUMENTS_CORE_W0B_IDS = W0B_GATES.map((g) => g.id);
+export { FILM_ROWS };

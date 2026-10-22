@@ -299,10 +299,11 @@ const IRIS_FRAG = /* glsl */`
       float s = abs(fract(a * 6.0 + r * 0.55) - 0.5);
       float seam = 1.0 - smoothstep(0.0, 0.03, 0.5 - s);
       c = vIris.rgb * (1.0 - 0.45 * (1.0 - seam) * step(0.5, 1.0 - vIris.a));
-      // a cracked (dark) iris: two hairline fractures across the closed blades
+      // a cracked (dark) iris: one wavering fracture across the closed blades and a branch
+      // running off it below (never a symmetric cross: it must not read as a reticle)
       if (vIris.a > 0.5) {
-        float k1 = abs(vP.y - 0.35 * vP.x - 0.08);
-        float k2 = abs(vP.x + 0.6 * vP.y + 0.22);
+        float k1 = abs(vP.y - 0.35 * vP.x - 0.08 + 0.05 * sin(vP.x * 23.0));
+        float k2 = abs(vP.x + 0.6 * vP.y + 0.22 + 0.04 * sin(vP.y * 31.0)) + step(0.003, vP.y) * 10.0;
         c *= 1.0 - 0.5 * (1.0 - smoothstep(0.0, 0.025, min(k1, k2)));
       }
     }
@@ -331,7 +332,7 @@ const BEAM_FRAG = /* glsl */`
   varying float vEdge;
   void main() {
     float along = (1.0 - vZ);
-    float a = along * along * pow(vEdge, 1.5);
+    float a = along * along * vEdge * vEdge;   // bright on the axis, gone at the silhouette: a shaft, not a wedge
     gl_FragColor = vec4(vCol * a, 1.0);
   }
 `;
@@ -536,7 +537,7 @@ export class LampSystem {
     const dark = this.hdr.dark;
     const air = this.beamsOn();
     const scale = perceptionScale(this.ctx.environment);
-    const fogBoost = Math.min(2.5, 0.6 + 0.35 * Math.max(0, this.fogK - 1) + 0.9 * this.night);
+    const fogBoost = Math.min(2.5, 0.6 + 0.8 * Math.max(0, this.fogK - 1) + 0.9 * this.night);
     const player = this.ctx.player;
     let n = 0, nb = 0;
     for (let i = 0; i < recs.length; i++) {
