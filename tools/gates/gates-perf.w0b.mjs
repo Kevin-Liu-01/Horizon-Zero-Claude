@@ -322,26 +322,38 @@ async function allocRate({ PORT }) {
       for (let k = 1; k <= 4; k++) { await sleep((B.windowS * 1000 - 2000) / 4 - 150); heap.push([(Date.now() - tS) / 1000, await gcAndHeap(cdp)]); }
       const { profile } = await cdp.send('HeapProfiler.stopSampling');
       const seconds = (Date.now() - tS) / 1000;
-      if (stopDrive) await stopDrive();
+      const driveWitness = stopDrive ? await stopDrive() : null;
       const frames = (await page.evaluate('__CTX__.engine.frames')) - f0;
       const a = attribute(profile, seconds, frames, PORT);
       const s = slope(heap);
       for (const x of a.topSrcSelf) x.owner = srcOwner(x.fn);
-      return { name, ...a, heapPostGcB: heap.map(([t, b]) => [r2(t), b]), heapSlopeBps: s === null ? null : Math.round(s), wallS: r2((Date.now() - t0) / 1000),
+      return { name, ...a, driveWitness, heapPostGcB: heap.map(([t, b]) => [r2(t), b]), heapSlopeBps: s === null ? null : Math.round(s), wallS: r2((Date.now() - t0) / 1000),
         crossCheck: { usedHeapRisesKBps: sawtoothKBps, note: 'used-heap rises over 2 s, no forced GC: a lower bound on all allocation (src + three + browser)' } };
     };
     const fightPhase = await phase('staged fight', null);
     await page.evaluate(UNSTAGE);
     // sprint-and-draw: open ground, W + Shift held; every 2.5 s a full draw (RMB aim + LMB draw, held 1.2 s) and a loose
     await page.evaluate(`(async () => { ${PLACES} const p = __CTX__.player; if (PLACE('openGround')) standAt(p, 'openGround'); __CTX__.input.enabled = true; return true; })()`);
+    // the drive is WITNESSED: every 100 ms the page records whether she is sprinting / aiming and her speed, and it
+    // counts the 'arrow-fired' events, so the phase is known to be the sprint-and-draw it is named for
     const drive = async () => {
-      await page.evaluate(`(() => { const I = __CTX__.input; I.keys.add('KeyW'); I.keys.add('ShiftLeft');
-        window.__w0bDraw = setInterval(() => { I.mouse.buttons |= 4; I.mouse.buttons |= 1; setTimeout(() => { I.mouse.buttons &= ~1; setTimeout(() => { I.mouse.buttons &= ~4; }, 150); }, 1200); }, 2500);
+      await page.evaluate(`(() => { const C = __CTX__, I = C.input, p = C.player;
+        const W = window.__w0bDrive = { samples: 0, sprinting: 0, aiming: 0, maxSpeed: 0, fired: 0, maxDraw: 0 };
+        W.onFire = (e) => { W.fired++; if (e && e.drawStrength > W.maxDraw) W.maxDraw = e.drawStrength; };
+        C.events.on('arrow-fired', W.onFire);
+        I.keys.add('KeyW'); I.keys.add('ShiftLeft');
+        W.draw = setInterval(() => { I.mouse.buttons |= 4; I.mouse.buttons |= 1; setTimeout(() => { I.mouse.buttons &= ~1; setTimeout(() => { I.mouse.buttons &= ~4; }, 150); }, 1200); }, 2500);
+        W.watch = setInterval(() => { W.samples++; if (p.sprinting) W.sprinting++; if (p.aiming) W.aiming++;
+          const v = p.velocity ? Math.hypot(p.velocity.x, p.velocity.z) : 0; if (v > W.maxSpeed) W.maxSpeed = v; }, 100);
         return true; })()`);
-      return () => page.evaluate(`(() => { clearInterval(window.__w0bDraw); const I = __CTX__.input; I.keys.delete('KeyW'); I.keys.delete('ShiftLeft'); I.mouse.buttons = 0; return true; })()`);
+      return () => page.evaluate(`(() => { const C = __CTX__, I = C.input, W = window.__w0bDrive;
+        clearInterval(W.draw); clearInterval(W.watch); C.events.off('arrow-fired', W.onFire);
+        I.keys.delete('KeyW'); I.keys.delete('ShiftLeft'); I.mouse.buttons = 0; window.__w0bDrive = null;
+        return { samples: W.samples, sprintingFraction: +(W.sprinting / Math.max(1, W.samples)).toFixed(2), aimingFraction: +(W.aiming / Math.max(1, W.samples)).toFixed(2),
+          maxSpeed: +W.maxSpeed.toFixed(2), arrowsFired: W.fired, maxDrawStrength: +W.maxDraw.toFixed(2) }; })()`);
     };
     const runPhase = await phase('sprint and draw', drive);
-    const shots = await page.evaluate(`(() => ({ arrowsFired: __CTX__.combat?.stats?.arrowsFired ?? null, sprinting: !!__CTX__.player.sprinting }))()`).catch(() => null);
+    const shots = runPhase.driveWitness || null;
     const phases = [fightPhase, runPhase];
     const worstSrc = Math.max(...phases.map((p) => p.srcSelf.gradedKBps));
     const worstFn = phases.flatMap((p) => p.topSrcSelf.map((x) => ({ ...x, phase: p.name }))).sort((a, b) => b.gradedKBps - a.gradedKBps)[0] || null;
@@ -356,6 +368,7 @@ async function allocRate({ PORT }) {
       noSrcFunctionOverBudget: !worstFn || worstFn.gradedKBps <= B.fnKBps,
       postGcHeapSlopeNotPositive: slopes.every((s) => s !== null && s <= B.heapSlopeBps),
       profilerSawAllocations: phases.every((p) => p.total.measuredKBps > 0),
+      sprintAndDrawHappened: !!shots && shots.sprintingFraction > 0.2 && shots.arrowsFired >= 2,
     };
     const pass = Object.values(checks).every(Boolean);
     return { pass, detail: {

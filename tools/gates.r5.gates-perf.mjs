@@ -1537,7 +1537,9 @@ function sealsOfTree(L, { port = null, explicit = [] } = {}, now, head) {
     const why = [];
     if (s.build?.atStart?.digest !== s.build?.atEnd?.digest) why.push('the build changed DURING the run');
     if (now && s.build?.atEnd?.digest !== now.digest) why.push(`stale: the build changed after the run (newest file now ${now.newest.file} @ ${now.newest.mtime})`);
-    if (head && s.gitHead !== head) why.push('stale: git HEAD moved since the run');
+    // (W0b) git HEAD is RECORDED, not compared: the orchestrator checkpoints every lane tree with WIP commits while
+    // lanes run (~every 25 min), which moves HEAD without touching a file; the build fingerprint (size + mtime of
+    // every runtime, harness and carried-row file) is what says whether the run measured this build
     // fix round 3: frames bound at capture + the run's own 5173/cache/box monitor; an older seal has neither
     if (!(s.sealVersion >= SEAL_VERSION)) why.push(`seal v${s.sealVersion || 2}: frames not capture-bound and no run monitor (fix round 3 needs v${SEAL_VERSION})`);
     // a report or monitor copy is never pruned: a missing or edited one is TAMPERING, and fails the gate
@@ -1843,7 +1845,7 @@ async function carriedSuite({ PORT, GATES: ALL }) {
   const tree0 = realpathSync(ROOT);
   const sealedRunIds = new Set(L.entries.map((e) => e.entry).filter((e) => e.kind === 'seal' && e.runId).map((e) => e.runId));
   const unsealedStarts = L.entries.map((e) => e.entry).filter((e) => e.kind === 'run-start' && e.tree === tree0 && Number(e.port) === Number(PORT)
-      && e.build === now.digest && e.gitHead === head && !sealedRunIds.has(e.runId))
+      && e.build === now.digest && !sealedRunIds.has(e.runId))
     .map((e) => ({ runId: e.runId, at: e.at, partial: !!e.partial, state: e.pid !== process.pid && pidAliveP(e.pid) ? 'running now' : 'never sealed (aborted or crashed)' }));
   const boxOf = (c) => `quiet ${c.quietFraction == null ? '?' : (c.quietFraction * 100).toFixed(0) + ' %'}${c.louderThanBaseline ? ' (LOUDER than the baseline\'s ' + (baseQuiet * 100).toFixed(0) + ' %)' : ''}, load max ${c.seal.monitor?.box?.loadMax}, other gate Chromes max ${c.seal.monitor?.box?.otherGateChromesMax}`;
   const runsLine = `${fullRuns.length} full: ` + (fullRuns.map((c) => `${c.seal.sealId} (${c.seal.reportStamp}, ${boxOf(c)}${c.complete ? '' : `, INCOMPLETE: ${c.infraRows.length} row(s) not observed by the harness`})`).join('; ') || 'none')
