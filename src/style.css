@@ -849,8 +849,7 @@ body.cal-title-live #title.overlay {
 /**
  * VICTORY IS ONE CARD, NOT THREE (filmed at `shots/sm-victory.png`).
  *
- * `progression` raises its own `PROGRESS SAVED · VICTORY` and `VALLEY
- * RECLAIMED · THE THUNDERJAW IS DOWN` banners through `shell-hud`'s banner
+ * `progression` raises its own two victory banners through `shell-hud`'s banner
  * queue, and both land in the top third — so the shipped endgame was the same
  * two words printed three times, overlapping. Neither of those lanes can be
  * edited from here, and neither is wrong on its own. So this card stops being
