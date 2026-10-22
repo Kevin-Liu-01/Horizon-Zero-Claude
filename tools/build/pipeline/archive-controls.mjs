@@ -21,8 +21,9 @@
  *   E' (after E) the recorded lock/row pair agrees (`archiveAgreement`), an edited member listing is caught
  *   K  record-per-file (UAL1's ruling path): refused without <!-- r5-ruling archive-per-file-<row>=accepted -->,
  *      with it the per-file SHA-256 manifest is recorded in the lock and the row (`archive_note` says why)
- *   J  `archiveAgreement` on the real lock/rows: 0 disagreements; 4 hand edits (lock name, row size, a made-up hash in
- *      both, a hash in the row only) all caught — the term status() and tools/licences/check.mjs FAIL on
+ *   J  `archiveAgreement` on the real lock/rows: 0 disagreements; 5 hand edits (lock name, row size, a made-up hash in
+ *      both, a hash in the row only, lock + row size both moved off the plan's §10.1 size) all caught — the term
+ *      status() and tools/licences/check.mjs FAIL on
  *
  * Every refused case must leave the scratch lock, the scratch LICENSES.json and the scratch r5-src untouched. The
  * scratch root holds copies of tools/build/sources.lock.json, public/LICENSES.json and a plan whose only ruling lines
@@ -175,8 +176,10 @@ export async function archiveControls({ root = ROOT, scratch = path.join(os.tmpd
     { const r = clone(rowOf(named)); r.archive_bytes = (r.archive_bytes ?? 0) + 1; tam.push({ edit: `${named}: row archive_bytes + 1`, d: S.archiveAgreement(r, lock.sources[named], { root }), want: 'archive size' }); }
     { const e = clone(lock.sources[pick]), r = clone(rowOf(pick)); e.archive.sha256 = r.archive_sha256 = 'f'.repeat(64); tam.push({ edit: `${pick}: the same made-up SHA-256 in lock and row, no size / listing`, d: S.archiveAgreement(r, e, { root }), want: 'not tied to the upstream archive' }); }
     { const r = clone(rowOf(pick)); r.archive_sha256 = 'e'.repeat(64); tam.push({ edit: `${pick}: SHA-256 in the row only`, d: S.archiveAgreement(r, lock.sources[pick], { root }), want: 'archive SHA-256' }); }
+    const pinned = Object.keys(S.PLAN_BYTES).find((id) => lock.sources[id] && rowOf(id));
+    if (pinned) { const e = clone(lock.sources[pinned]), r = clone(rowOf(pinned)); e.archive.bytes = r.archive_bytes = 1066685; tam.push({ edit: `${pinned}: lock AND row size both moved to a re-zip's size`, d: S.archiveAgreement(r, e, { root }), want: 'plan §10.1' }); }
     const okJ = real.every((x) => !x.d.length) && tam.every((t) => t.d.some((d) => d.includes(t.want)));
-    cases.push({ case: 'J agreement term: the real records agree; 4 hand edits caught', expect: '0 real disagreements, 4/4 caught', ok: okJ,
+    cases.push({ case: `J agreement term: the real records agree; ${tam.length} hand edits caught`, expect: `0 real disagreements, ${tam.length}/${tam.length} caught`, ok: okJ && tam.length === 5,
       realDisagreements: real.filter((x) => x.d.length), tampered: tam.map((t) => ({ edit: t.edit, caught: t.d.some((d) => d.includes(t.want)) })) });
     // K: record-per-file (the UAL1 ruling path) refuses without its ruling, records the per-file manifest with it
     reset({ bytes: null });

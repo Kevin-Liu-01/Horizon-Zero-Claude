@@ -68,7 +68,8 @@
  *   - its file name equals the lock's `archive.name`, which equals the row's `archive_name` (a browser copy
  *     "… (1).zip" is renamed back by hand; a source with no recorded name cannot be re-fetched);
  *   - its byte size equals the recorded `archive.bytes` (= the row's `archive_bytes`; plan §10.1 kept the UBC and MCO
- *     sizes for exactly this). A source with NO recorded size (UAL2, UAL1) needs the orchestrator ruling
+ *     sizes for exactly this, and `PLAN_BYTES` pins those two here as well, so moving them takes an edit to this tool,
+ *     the lock and the row; stage-dir never rewrites a recorded name or size). A source with NO recorded size (UAL2, UAL1) needs the orchestrator ruling
  *     `<!-- r5-ruling archive-size-<row>=first-fetch -->` in docs/ROUND5-PLAN.md §8.3, and then its size must still
  *     fall inside the lock's `approxBytes` window when one is recorded (UAL2: the proof's "zip 17 MB");
  *   - it holds members BEYOND the staged subset (a zip of exactly the trimmed files is a re-zip, not the pack);
@@ -106,6 +107,12 @@ export const REQUIRED = ['ubc-standard', 'mco-fantasy-standard', 'ual1', 'ual2-s
 /** The published directory of each required source (the lock's `dir`; a new row defaults to its id). */
 export const DIRS = { 'ubc-standard': 'ubc', 'mco-fantasy-standard': 'mco', ual1: 'ual1', 'ual2-standard': 'ual2' };
 
+/**
+ * The upstream archive sizes the PLAN itself recorded (§10.1: "only byte sizes were kept: 128,968,391 and
+ * 294,347,394 B"). archiveIdentity checks a zip against these too, so moving a source to another file needs an edit to
+ * this tool as well as to the lock and the row (and is refused without the new-version ruling).
+ */
+export const PLAN_BYTES = { 'ubc-standard': 128968391, 'mco-fantasy-standard': 294347394 };
 /** The orchestrator's plan (§8.3 rulings are `<!-- r5-ruling key=value -->` lines, the form engine-gpu's gates read). */
 export const PLAN = 'docs/ROUND5-PLAN.md';
 /** Tracked member listings of the recorded archives: `<LISTINGS>/<row>.tsv`. */
@@ -193,6 +200,7 @@ export function archiveAgreement(licRow, ent, { root = ROOT } = {}) {
   if (a.kind === 'file-manifest') return out;                       // stage-files: the hash is the per-file manifest's
   if ((licRow?.archive_name ?? null) !== (a.name ?? null)) out.push(`archive name: LICENSES.json "${licRow?.archive_name ?? null}" != lock "${a.name ?? null}"`);
   if ((licRow?.archive_bytes ?? null) !== (a.bytes ?? null)) out.push(`archive size: LICENSES.json ${licRow?.archive_bytes ?? null} != lock ${a.bytes ?? null}`);
+  if (ent?.row && PLAN_BYTES[ent.row] != null && a.bytes !== PLAN_BYTES[ent.row] && !a.newVersionRuling) out.push(`archive size: lock ${a.bytes ?? null} != plan §10.1 ${PLAN_BYTES[ent.row]}`);
   if (a.sha256) {
     const why = [];
     if (a.bytes == null) why.push('no byte size');
@@ -247,6 +255,7 @@ export function archiveIdentity({ row, ent, licRow, zipName, bytes, entries, rul
   if (licRow && (licRow.archive_name ?? null) !== (a.name ?? null)) problems.push(`LICENSES.json ${row}.archive_name "${licRow.archive_name ?? null}" != lock archive.name "${a.name ?? null}"`);
   if (licRow && (licRow.archive_bytes ?? null) !== (a.bytes ?? null)) problems.push(`LICENSES.json ${row}.archive_bytes ${licRow.archive_bytes ?? null} != lock archive.bytes ${a.bytes ?? null}`);
   let bytesFrom = null;
+  if (PLAN_BYTES[row] != null && a.bytes !== PLAN_BYTES[row] && !(mode === 'restage' && newVersion)) problems.push(`the recorded size ${a.bytes ?? null} B is not the plan's ${PLAN_BYTES[row]} B for ${row} (plan §10.1)`);
   if (a.bytes != null) {
     if (bytes !== a.bytes && !(mode === 'restage' && newVersion)) problems.push(`the zip is ${bytes} B; the recorded upstream archive is ${a.bytes} B${mode === 'restage' ? ` (a new upstream version needs <!-- r5-ruling archive-new-version-${row}=accepted -->)` : ''}`);
   } else if (!sizeRuling) {
@@ -283,6 +292,11 @@ async function licRowOf(row, root) {
 /** stage-dir: files already extracted; archive hash unknown until verify-zip. */
 export async function stageDir({ row, from, keeps = [], move = false, archiveName, archiveBytes, retrieved, page = null, dir = null, root = ROOT }) {
   if (!row || !from || !retrieved) throw new Error('stage-dir needs --row --from --retrieved (and --archive-name / --archive-bytes when known)');
+  const prior = loadLock(root).sources[row]?.archive;
+  // fix round 3: the archive record is the upstream file's; stage-dir never rewrites a recorded name or size
+  if (prior?.name && archiveName && archiveName !== prior.name) throw new Error(`stage-dir: ${row} already records archive "${prior.name}" (got --archive-name "${archiveName}")`);
+  if (prior?.bytes != null && archiveBytes != null && Number(archiveBytes) !== prior.bytes) throw new Error(`stage-dir: ${row} already records ${prior.bytes} B (got --archive-bytes ${archiveBytes})`);
+  if (PLAN_BYTES[row] != null && archiveBytes != null && Number(archiveBytes) !== PLAN_BYTES[row]) throw new Error(`stage-dir: plan §10.1 records ${PLAN_BYTES[row]} B for ${row}`);
   const dirName = dir || loadLock(root).sources[row]?.dir || DIRS[row] || row;
   const dst = path.join(srcDir(root), dirName);
   mkdirSync(dst, { recursive: true });
@@ -298,7 +312,8 @@ export async function stageDir({ row, from, keeps = [], move = false, archiveNam
     total += buf.length;
   }
   const lock = loadLock(root);
-  lock.sources[row] = { row, dir: dirName, archive: { name: archiveName || null, bytes: archiveBytes ? Number(archiveBytes) : null, sha256: null, retrieved, page }, strip: null, files, totalBytes: total, stagedFrom: 'extracted copy (archive not on disk): run verify-zip with the archive to record its SHA-256' };
+  lock.sources[row] = { row, dir: dirName, archive: { ...(prior?.approxBytes ? { approxBytes: prior.approxBytes } : {}), name: archiveName || prior?.name || null,
+    bytes: archiveBytes ? Number(archiveBytes) : prior?.bytes ?? null, sha256: null, retrieved, page: page ?? prior?.page ?? null }, strip: null, files, totalBytes: total, stagedFrom: 'extracted copy (archive not on disk): run verify-zip with the archive to record its SHA-256' };
   saveLock(lock, root);
   return { row, files: Object.keys(files).length, totalBytes: total };
 }
@@ -395,8 +410,10 @@ export async function stageZip({ row, zip, keeps = [], strip = null, retrieved, 
   const day = retrieved || zipDay(zip);
   const lock = loadLock(root);
   const name = prior?.archive?.name || licRow?.archive_name || path.basename(zip);   // equal to the zip's when declared (checked)
+  const newVersion = PLAN_BYTES[row] != null && bytes !== PLAN_BYTES[row];   // only reachable under archive-new-version-<row>=accepted
   lock.sources[row] = { row, dir: dirName, archive: { ...(prior?.archive?.approxBytes ? { approxBytes: prior.archive.approxBytes } : {}),
-    name, bytes, sha256, members: id.listing.members, listingSha256: id.listing.sha256, retrieved: day, page: page ?? prior?.archive?.page ?? null },
+    name, bytes, sha256, members: id.listing.members, listingSha256: id.listing.sha256, retrieved: day, page: page ?? prior?.archive?.page ?? null,
+    ...(newVersion ? { newVersionRuling: `archive-new-version-${row}=accepted` } : {}) },
   strip, files, totalBytes: total, verifiedAgainstArchive: true };
   saveLock(lock, root);
   writeListing(row, id.listing, root);

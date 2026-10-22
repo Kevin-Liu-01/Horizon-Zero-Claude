@@ -54,6 +54,11 @@
  * positive cases record a name- and size-checked hash with its member listing;
  * hand-edited lock/row records are caught by the shared `archiveAgreement`
  * term that status() and tools/licences/check.mjs (third-party) grade.
+ * A-poc-promoted grades the orchestrator's ruling once it is recorded in the
+ * plan (`<!-- r5-ruling poc-closure=w1-exit|literal -->`, the marker form
+ * engine-gpu's gates read); with no marker the literal bar stands (at best
+ * PENDING) and both options are projected on the current tree. Symlinks inside
+ * the POC folders now count as left on disk (a symlinked dir kept the folder).
  */
 import os from 'node:os';
 import path from 'node:path';
