@@ -104,16 +104,21 @@ and these are MY readings: advisory, and there is still no licence-clean referen
 
 | frame | what I see |
 |---|---|
-| `V-lamp-iris-calm-15m-zoom` (4°, face to the sun) | A white-hot core with a soft glow into a bone ring. Dark graphite face, six blade seams, grey bezel. It reads as a lit lens in a lamp drum, not a flat cream disc |
+| `V-lamp-calm-15m` (4°) | A white-hot core glowing into a bone ring. Around it: the dark graphite face with six blade seams, then a grey bezel. A lit lens in a lamp drum, not a flat cream disc |
+| `V-lamp-iris-calm-15m-zoom` (4°, face to the sun) | The same lens in full sun, still glowing and still ringed dark. Two palisade posts cut into the left foreground (see below) |
 | `V-lamp-calm-sunlit-15m` (55°, face to the sun) | At play scale, a bright glowing point in a dark ring on the bone drum: the first thing the eye finds on the machine |
-| `V-lamp-calm-40m-wide` (55°, 40 m, face to the sun) | Still a distinct lit point with a dark ring at 40 m |
-| `V-lamp-wary-sunlit-15m` | Chartreuse half-iris with a yellow-white core in the dark face; it reads at noon |
-| `V-lamp-calm-sunlit-threeq-15m` (40° off-axis, 12°) | The lamp is a short dark barrel set into the drum with the lit glass at its face: an object with depth, not a sticker |
-| `V-lamp-hostile-15m` (4°) | A magenta pinhole with a pink-white core and a magenta bloom halo across the closed blades |
-
-Frames are 1600 × 900, read by me and then deleted (disk rule). They were filmed at 17:04 UTC; the sunlit
-frames were re-filmed at a spot away from the camp palisade, whose thin posts are not collision
-occluders and cut into the first sunlit close-up.
+| `V-lamp-calm-40m-wide` (55°, 40 m, face to the sun) | Still a distinct lit point with a dark ring |
+| `V-lamp-wary-15m` / `V-lamp-wary-sunlit-15m` | A half-closed iris: chartreuse glass with a yellow-white core in the dark face. It reads at noon |
+| `V-lamp-hostile-15m` / `V-lamp-hostile-15m-wide` | A magenta pinhole with a pink-white core and a magenta bloom across the closed blades. At play scale, a magenta point in a dark ring |
+| `V-lamp-dark-15m` | The iris closed in grey, with a jagged fracture and its branch across it; no lit glass |
+| `V-lamp-calm-sunlit-threeq-15m` (40° off-axis) | The lamp is a short dark barrel set into the drum, with the lit glass at its face: an object with depth, not a sticker |
+| `V-lamp-beams-night` / `-fog` | A soft chartreuse shaft sweeping from the wary lamp. The hostile shaft is fainter from this side angle (its pixel probe in `A-lamp-states`: +61.7 at night, +42.2 in fog) |
+Frames are 1600 × 900, filmed at 17:04 UTC, read by me and then deleted (disk rule).
+- **Palisade in the sunlit close-up.** In `V-lamp-iris-calm-15m-zoom` the sun-facing heading put two
+  camp palisade posts (thin, not collision occluders) into the left of the frame. The lamp itself is
+  unobstructed; the clean full-face close-up is `V-lamp-calm-15m`.
+- **A failed attempt, reverted.** Staging the sunlit frames 90–150 m out put tall grass and branches
+  between the camera and the lamp, so the staging is back at 30–60 m.
 
 ### Finding 1 — the memory rule on this lane's frames
 
