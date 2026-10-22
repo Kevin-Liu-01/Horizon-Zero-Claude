@@ -1580,8 +1580,10 @@ function judgeFacts(v, seal, id, regs = new Map(), trusted = new Set()) {
   return { ok: why.length === 0 && anchored.length > 0, unanchored: why.length === 0 && anchored.length === 0, why, registeredBy };
 }
 
-/** Plan §9: who absorbs a Round-4 row, i.e. who fixes it or asks the orchestrator for the ruling. */
-const ownerOf = (g) => g?.absorbedBy || 'orchestrator';
+/** Plan §9: who absorbs a Round-4 row, i.e. who fixes it or asks the orchestrator for the ruling. A §8.3 ruling
+ *  that routes a row's fix to another lane overrides it (W0b fix round 1): R34 gives A90b to instruments-core. */
+const RULED_OWNER = Object.freeze({ 'A90b-memory-attribution': 'instruments-core (R34: the machine.js model clone + autorig.js bones retained after the Tiller workload)' });
+const ownerOf = (g) => RULED_OWNER[g?.id] || g?.absorbedBy || 'orchestrator';
 
 /** Plan §8 rulings that name a gate ("- **R11 — A17 flourish frames …"), keyed by the gate's short id (A17). */
 function planRulings() {
