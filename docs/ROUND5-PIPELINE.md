@@ -39,7 +39,23 @@ with nothing edited while it ran (`git status` hash equal at start and end), and
 (heap −6.2 %, non-machine growth 0, orphan roots 0), A90b **PASS** (0 offenders, 0 orphaned textures, heap −0.2 % after
 forced GC), A90-rig-reclaim **PASS** (30 cycles, geo +5, tex 0; per live strider 0 geo / 0.38 tex), A21 **PENDING** (draws
 309 / 195 / 325 ≤ 350 and 4.12 / 3.67 / 4.23 M tris ≤ 6.5 M pass; the GPU terms are unjudged on this box),
-@@A9@@ Not in this tree (other lanes' unmerged files): A90-abs, A-alloc-rate, A-vram-ledger, both horizon-terms lints,
+and A9 **FAIL** as the gate printed it: 309 draws pass, but 41.6 fps < 45. The gate's empty-frame probe read 60.2 fps /
+0.35 ms of GPU, so it attributed the 49.57 ms of scene GPU to the scene.
+
+**A9 context (I am not reclassifying the verdict):**
+- This tree's runtime on the default boot is main's. The only runtime diff to `263ae19` is the removal of the two dead
+  `?poc=human` / `?poc=creature` branches in `src/main.js` (+1/−9 lines, never reached without the flag).
+- The frame is the same camp view, at the same 309 draws.
+- The empty-frame probe is one sample. Brand's judge Chrome was alive when the global run started (preflight:
+  1 other headless Chrome, load 2.50).
+- On this box A9 has read 32–52 fps across the lanes' reports. Round 3 read 38.3 fps here, unattributable (3.13 ms
+  empty frame). engine-gpu recorded 41.4 fps once in a state no CPU witness sees.
+- I tried one more measurement on a quiet box (a slot plus 0 other headless Chromes). The box never went quiet in 25
+  minutes (2 other lanes' Chromes the whole time), so no second A9 was taken, and I did not re-run it under contention.
+- R26/R33(f) put A9's bar at 58 fps median on a quiet box. Whether this reading counts is for the orchestrator or
+  gates-perf to grade on a sealed quiet run, not for this lane.
+
+Not in this tree (other lanes' unmerged files): A90-abs, A-alloc-rate, A-vram-ledger, both horizon-terms lints,
 A-reach-all-sites, A-port-guard, A-carried-suite.
 
 **Registration:** r5 auto-discovery (gates-perf) is still not on main, so this file goes in through the runner's
@@ -51,7 +67,8 @@ scan, and the run log lists this file as the 28th merged file. `--lane pipeline`
 The judges (`pipeline-W0b-r3`, `judge-pipeline-w0b-r3-eng`) filed eleven findings. One is this lane's code and is fixed
 below. The other ten are the five open blockers of round 3, each filed by both judges. Each needs Kevin's download, an
 orchestrator ruling or another lane's merge. I re-checked every one this round, and none changed: no archive is on the
-machine, no ruling is in main's plan (`263ae19`, unchanged since round 3), and no lane merged.
+machine, no ruling marker is in main's plan (now `6bfae9f`, whose only new section is R35, hero-body's bow-draw elbow), and no
+lane merged.
 
 ### R4-F1 (major, judge-pipeline-w0b-r3-eng): "The archive-identity control suite throws in the state it exists to certify" — **fixed: 14/14 on the current records AND on two simulated post-fetch record sets, inside the gate**
 
@@ -361,6 +378,7 @@ fetch the Poly Haven scan now, or defer its hash to world-ground's W1 ground rec
 | **gates-perf** | the W0a deletion of `public/anims-{hybrid,reskin,retarget}/**` (done in your tree) must merge: until it does, A-ID-ip-assets-gone and A-licence-manifest FAIL at W0b on `aloy-ual.json` in every W0b tree |
 | **hero-body** | done since round 2, thank you: your branch tracks main's `tools/gates.r5.pipeline.mjs` again |
 | **world-ground (W1)** | under `poc-closure=w1-exit` you inherit the closure's deletion row (§5 step 9) |
+| **gates-perf / orchestrator** | A9 printed FAIL in this round's global run (41.6 fps < 45, attributed by a one-sample empty-frame probe while another lane's Chrome was alive); this tree's default boot is main's. Grade A9 on a sealed quiet run under R26/R33(f); this lane could not get a quiet box in 25 min (§0) |
 
 ## 7. Honest gaps
 
@@ -392,18 +410,20 @@ fetch the Poly Haven scan now, or defer its hash to world-ground's W1 ground rec
    record. After that, the recorded hash refuses every other zip.
 6. The UAL2 window (15.5–19 MB) comes from a rounded figure in the proof ("zip 17 MB"). Under its ruling, a UAL2 zip's
    exact size is taken from the first fetch.
-7. **A9's fps term reads ~37–52 fps on this box depending on contention**, and this lane changed nothing on the default
+7. **A9's fps term reads 32–52 fps on this box depending on contention**, and this lane changed nothing on the default
    boot: the only runtime diff to main is the removal of the two dead `?poc` branches. See the A9 note in §0.
 8. `tools/measure-machines.mjs` still hard-codes `cwd: '/Users/kevinliu/horizon-zero-claude'` (outside the
    removal-only grant's scope).
 
 ## 8. Files changed
 
-`git status --short` at the end of the round (relative to the orchestrator's checkpoint `02d07ee`, which holds all of
-round 3):
+`git status --short` at the end of the round:
 ```
-@@STATUS@@
+ M docs/ROUND5-PIPELINE.md
 ```
+The orchestrator checkpointed this round twice, at `6ab98e5` (13:23Z) and `cdb8613` (13:50Z). Between them they hold
+every code change below and the orchestrator's sync of main's `docs/ROUND5-PLAN.md` (R35, not a lane edit). Since
+round 3's checkpoint `02d07ee`:
 - `tools/build/pipeline/archive-controls.mjs`, rewritten (R4-F1):
   - the cases now run on the synthetic scratch-only row `archive-control-synthetic`;
   - each case has its own try/catch, and E′ and F are guarded on E;
@@ -427,17 +447,26 @@ No file outside the §2 row and the W0b grants was edited. Every other lane tree
 
 ## 9. Process hygiene
 
-- **Chrome:** one machine-wide slot (`slot1`, owner line = the pid of the wrapper that ran the Chrome), held
-  10:50:03–11:01:21Z for the lane block, the global items and the main proof in sequence, one Chrome alive at a time.
-  Preflight: 49 GB free, memory 76 % free, 0 other headless Chromes, load 3.5. A first waiter was stopped before it took
-  a slot, because I still had code to change (no slot was held while editing).
-- **Vite:** started only by `tools/gates.mjs` (`npx vite --port 5250 --strictPort` from this tree) and killed by it;
-  the fixture used middleware mode on a unix socket. At the end nothing listens on 5250, no Chrome of this lane is alive,
-  and the harness left 0 Chrome profiles of its own. Port 5173 was never touched.
-- **Disk:** 49–50 GB free all round. 22 MB of shots in the tree were read where cited and deleted with `shots/`; the
-  scratch zips (≈ 4 MB per control run) were deleted by the controls themselves. Logs and reports are kept in
-  `scratchpad/r5/pipeline/w0b-r3/` (< 1 MB).
-- **Git:** read-only only (`status`, `diff`, `log`, `show`, `ls-files`).
+- **Chrome, under the machine-wide two-slot lock** (plan §0 rule 8 amendment):
+  - The first job held `slot2` 13:22:01–13:34:15Z: lane block, global items, the main proof and the biome film, in
+    sequence.
+  - The second lane block held `slot2` 13:35:03–13:36:22Z.
+  - One Chrome of this lane was alive at a time. The preflights read 45 GB free, 73–78 % memory free, at most 1 other
+    headless Chrome, and load 2.5–2.9.
+  - The quiet-box A9 attempt (13:37–14:02Z) waited **without** holding a slot. It never got 0 other headless Chromes,
+    so it took no slot and launched nothing.
+  - No slot was held while I edited. My one edit during a run (the A-specs-data-driven race, §0) was a doc edit during
+    the first job, and it is why the lane block was re-run.
+- **Vite:** started only by `tools/gates.mjs`, `tools/screenshot.mjs` and the fixture, all on 5250 or a unix socket,
+  and stopped by them. The failed biome screenshot's Vite was killed by the job (`pkill -f "vite --port 5250"`). At the
+  end nothing listens on 5250, no Chrome of this lane is alive, and there are 0 `puppeteer_dev_chrome_profile-*` in
+  `$TMPDIR`. Port 5173 was never touched.
+- **Disk:** 45 GB free all round. About 19 MB of shots in the tree were read where cited and deleted with `shots/`, and
+  so were their scratch copies. The controls delete their own scratch zips (< 30 KB per run now). Logs, reports and the
+  two scratch scripts (`demo/mutate.mjs`, `demo/before-after.mjs`, run from outside the tree) are kept in
+  `scratchpad/r5/pipeline/w0b-r4/` (≈ 400 KB).
+- **Git:** read-only only (`status`, `diff`, `log`, `show`). The orchestrator's checkpoint `6ab98e5` (13:23Z) and its
+  sync of main's `docs/ROUND5-PLAN.md` (R35, 13:24Z) are not this lane's writes. I left the synced plan as it is.
 - **Downloads:** none.
 
 ---
