@@ -4142,7 +4142,7 @@ export class PlayerAnimator {
           _v3.subVectors(_sg1, _sg0); _v4.subVectors(_ik5, _sg0);
           _v5.crossVectors(_v3, _v4);
           if (cl > 0.03 && _v5.lengthSq() > 1e-8) {
-            _q3.setFromAxisAngle(_v5.normalize(), Math.min(0.6, Math.asin(Math.min(1, short / cl))) * w);
+            _q3.setFromAxisAngle(_v5.normalize(), Math.min(0.9, Math.asin(Math.min(1, short / cl))) * w);   // R5 fix round 2: 0.6 left the walk-in palm 2-3 cm past A-climb-1m's 0.05 m on some runs
             this._rotQL(clv, _q3);
           }
         }
