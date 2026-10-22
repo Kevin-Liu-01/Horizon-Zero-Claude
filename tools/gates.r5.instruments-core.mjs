@@ -2113,7 +2113,8 @@ async function allocMachines({ PORT }) {
   if (process.env.R5_IC_NOINLINE) jsFlags.push('--no-turbo-inlining', '--max-inlined-bytecode-size=0');   // diagnosis only: one frame per function
   if (process.env.R5_IC_OPTSTATUS) jsFlags.push('--allow-natives-syntax');                                 // diagnosis only: tier of each hot function
   if (process.env.R5_IC_TRACEDEOPT) jsFlags.push('--trace-deopt');                                         // diagnosis only: deopts per function, timed
-  const diag = !!(process.env.R5_IC_NOINLINE || process.env.R5_IC_OPTSTATUS || process.env.R5_IC_TRACEDEOPT || process.env.R5_IC_PROTOWATCH || process.env.R5_IC_MICRO || process.env.R5_IC_INGAME);
+  if (process.env.R5_IC_PROTOTRACE) jsFlags.push('--trace-prototype-users', '--allow-natives-syntax');      // diagnosis only: which prototype map is invalidated
+  const diag = !!(process.env.R5_IC_SHAPEWATCH || process.env.R5_IC_PROTOTRACE || process.env.R5_IC_NOINLINE || process.env.R5_IC_OPTSTATUS || process.env.R5_IC_TRACEDEOPT || process.env.R5_IC_PROTOWATCH || process.env.R5_IC_MICRO || process.env.R5_IC_INGAME);
   let protoLock = null;
   const browser = await puppeteer.launch({ protocolTimeout: 900000, headless: 'new', userDataDir: dir, dumpio: false,
     args: ['--use-angle=metal', '--enable-gpu', '--ignore-gpu-blocklist', '--window-size=1600,940', `--js-flags=${jsFlags.join(' ')}`, '--enable-precise-memory-info'] });
@@ -2135,6 +2136,22 @@ async function allocMachines({ PORT }) {
     browser.process()?.stdout?.on('data', onData);
     browser.process()?.stderr?.on('data', onData);
   }
+  // --trace-prototype-users invalidations + %DebugPrint map snapshots of every candidate prototype (diagnosis only)
+  const pt = { inval: [], snaps: [], cur: null, idx: null };
+  if (process.env.R5_IC_PROTOTRACE) {
+    let tail = '';
+    const onData = (buf) => {
+      const lines = (tail + String(buf)).split('\n'); tail = lines.pop(); const now = Date.now();
+      for (const line of lines) {
+        let m;
+        if ((m = /Invalidating prototype map (0x[0-9a-f]+)/.exec(line))) { pt.inval.push([now, m[1]]); continue; }
+        if ((m = /^DebugPrint: Smi: 0x[0-9a-f]+ \((-?\d+)\)/.exec(line))) { const i = +m[1]; if (i === -1) { pt.cur = { t: now, maps: new Map() }; } else if (i === -2) { if (pt.cur) pt.snaps.push(pt.cur); pt.cur = null; } else pt.idx = i; continue; }
+        if (pt.cur && pt.idx !== null && (m = /^ - map: (0x[0-9a-f]+)/.exec(line))) { pt.cur.maps.set(m[1], pt.idx); pt.idx = null; }
+      }
+    };
+    browser.process()?.stdout?.on('data', onData);
+    browser.process()?.stderr?.on('data', onData);
+  }
   try {
     const page = await browser.newPage();
     const errors = [];
@@ -2148,6 +2165,9 @@ async function allocMachines({ PORT }) {
     const staged = await page.evaluate(ALLOC_STAGE);
     if (staged.skip) return { pass: null, detail: staged.skip };
     if (process.env.R5_IC_PROTOWATCH) await page.evaluate(PROTOWATCH_ON);
+    if (process.env.R5_IC_SHAPEWATCH) await page.evaluate(SHAPEWATCH_ON);
+    let ptLabels = null;
+    if (process.env.R5_IC_PROTOTRACE) ptLabels = await page.evaluate(PROTOTRACE_ON);
     if (process.env.R5_IC_PROTOLOCK) setTimeout(() => { page.evaluate(PROTOLOCK_ON).then((r) => { protoLock = r; }).catch((e) => { protoLock = { error: String(e).slice(0, 200) }; }); }, 20000);
     const srcRe = new RegExp(`^https?://(localhost|127\\.0\\.0\\.1|\\[::1\\]):${PORT}/src/`);
     const keyOf = (cf) => `${cf.functionName || '(anonymous)'} ${String(cf.url).replace(/^https?:\/\/[^/]+/, '').replace(/\?.*$/, '')}:${cf.lineNumber + 1}`;
@@ -2236,7 +2256,22 @@ async function allocMachines({ PORT }) {
     await sleep(SPRINT_WARM);
     for (let i = 0; i < SPRINT_WINDOWS; i++) await window1(`sprint ${i + 1}/${SPRINT_WINDOWS}`);
     const end = await page.evaluate(ALLOC_SPRINT_OFF);
+    const shapeLog = process.env.R5_IC_SHAPEWATCH ? await page.evaluate(SHAPEWATCH_OFF).catch((e) => ({ error: String(e).slice(0, 200) })) : null;
     const protoLog = process.env.R5_IC_PROTOWATCH ? await page.evaluate(PROTOWATCH_OFF).catch((e) => ({ error: String(e).slice(0, 200) })) : null;
+    let protoTrace = null;
+    if (process.env.R5_IC_PROTOTRACE) {
+      await page.evaluate('(() => { clearInterval(window.__icPTtimer); return true; })()').catch(() => {});
+      const t0 = windows.length ? windows[0].tS - WARM : 0;
+      const hits = [];
+      for (const [t, addr] of pt.inval) {
+        let who = null;
+        for (let i = pt.snaps.length - 1; i >= 0; i--) { const sn = pt.snaps[i]; if (sn.t > t) continue; if (sn.maps.has(addr)) { who = ptLabels.labels[sn.maps.get(addr)]; break; } }
+        hits.push([r2((t - t0) / 1000), addr, who]);
+      }
+      const by = new Map(); for (const [t, a, w] of hits) { const k = w || ('(unknown map ' + a + ')'); const e = by.get(k) || { n: 0, at: [] }; e.n++; if (e.at.length < 12) e.at.push(t); by.set(k, e); }
+      protoTrace = { candidates: ptLabels && ptLabels.labels.length, snapshots: pt.snaps.length, invalidations: pt.inval.length,
+        afterWarmupStart: hits.filter((h) => h[0] >= 0).length, byPrototype: [...by.entries()].sort((a, b) => b[1].n - a[1].n).slice(0, 60).map(([k, e]) => `${e.n}x ${k} @ ${e.at.join(', ')} s`) };
+    }
     const protoLockLog = process.env.R5_IC_PROTOLOCK ? { locked: protoLock, hits: await page.evaluate('window.__icLockHits || null').catch(() => null) } : null;
     let micro = null;
     if (process.env.R5_IC_MICRO) {
@@ -2338,7 +2373,7 @@ async function allocMachines({ PORT }) {
         + ` | ruling ic-alloc-residual=carried: ${residualRuling ? 'RECORDED' : 'NOT recorded (the residual fails the gate)'}`
         + ` | lane sum per window (KB/s): ${windows.map((w) => sum(w, 'mine')).join(' / ')} | fps ${windows.map((w) => w.fps).join(' / ')} | cast hostile per window ${windows.map((w) => w.castHostile).join(' / ')}${fought ? '' : ' (STAGING FAILED: the cast did not fight through every window)'}` + (diag ? ' | DIAGNOSIS FLAGS ON (not gradeable)' : ''),
       staged, end, residualRuling, functions: fnRows.slice(0, 60).map((e) => `${e.worst} KB/s worst [${e.perWindow.join(', ')}] self [${e.self.join(', ')}] [${e.cls}${e.frozenReaderShare !== undefined ? ' frozen-reader share ' + e.frozenReaderShare : ''}]  ${e.fn}`),
-      tiers, micro, inGame, protoLog, protoLockLog, deopts, consoleErrors: errors.slice(0, process.env.R5_IC_PROTOLOCK ? 40 : 5),
+      tiers, micro, inGame, protoLog, shapeLog, protoLockLog, protoTrace, deopts, consoleErrors: errors.slice(0, process.env.R5_IC_PROTOLOCK ? 40 : 5),
       inlining: process.env.R5_IC_NOINLINE ? 'OFF (diagnosis run, not gradeable)' : 'default',
       windows: windows.map(fmtW),
       method: `CDP HeapProfiler.startSampling (interval ${INTERVAL} B, minor+major GC objects included); ${WARM / 1000} s warm-up after staging, then ${FIGHT_WINDOWS} x ${WINDOW / 1000} s windows of the staged fight and ${SPRINT_WINDOWS} x ${WINDOW / 1000} s of sprint (after ${SPRINT_WARM / 1000} s); graded per window = max(measured KB/s, KB/frame x 60) on CALLER attribution (nearest src/** frame, gates-perf budgets.mjs alloc.attribution); a function fails if ANY window is over ${FN_BAR} KB/s; graded set = every src frame in a file instruments-core edits (incl. the legacy species files until their W2 deletion)` } };
@@ -2390,6 +2425,48 @@ const PROTOWATCH_ON = `(() => {
  * NON-EXTENSIBLE, and Object.defineProperty / defineProperties / setPrototypeOf / Reflect.* / Object.assign are
  * wrapped: any later attempt to add a property to a prototype throws (strict code) or is logged with its stack.
  * That names the code that keeps invalidating prototype chains. Breaks that code: never in a graded run. */
+/* DIAGNOSIS ONLY (R5_IC_SHAPEWATCH): the INSTANCES other systems' code treats as fixed (every object reachable from the
+ * root ctx to depth 2 — the engine, terrain, nav, player, environment, collision ... — plus Math and the HOT record)
+ * are fingerprinted every 200 ms by own keys and the representation class of each value (smi / double / null /
+ * object / function / ...): a key added or removed, or a value changing class, is a MAP TRANSITION of that object,
+ * which deoptimises every function that relied on its map ("dependent prototype chain changed" for constants,
+ * "wrong map" for checks). Logged with the object's path and the time since the warm-up began. */
+const SHAPEWATCH_ON = `(async () => {
+  const C = __CTX__; const objs = []; const seen = new Set();
+  const cls = (v) => v === null ? 'null' : typeof v === 'number' ? (Number.isInteger(v) && Math.abs(v) < 1073741824 ? 'smi' : 'dbl') : typeof v;
+  const fp = (o) => { const m = new Map(); let keys; try { keys = Object.keys(o); } catch (e) { return m; } for (const k of keys) { let d; try { d = Object.getOwnPropertyDescriptor(o, k); } catch (e) { continue; } m.set(k, d && 'value' in d ? cls(d.value) : 'acc'); } return m; };
+  const add = (path, o, depth) => { if (!o || typeof o !== 'object' || seen.has(o) || objs.length > 4000 || Array.isArray(o) || ArrayBuffer.isView(o) || o instanceof Map || o instanceof Set || o instanceof Node) return; seen.add(o); objs.push({ path, o, f: fp(o) });
+    if (depth >= 2) return; for (const k of Object.keys(o)) { let v; try { const d = Object.getOwnPropertyDescriptor(o, k); v = d && 'value' in d ? d.value : null; } catch (e) { continue; } if (v && typeof v === 'object') add(path + '.' + k, v, depth + 1); } };
+  add('ctx', C, 0);
+  add('Math', Math, 2);
+  const H = (await import('/src/instruments/lib/hot.js')).HOT; add('HOT', H, 2);
+  const W = window.__icShape = { log: [], t0: Date.now(), n: objs.length };
+  W.timer = setInterval(() => {
+    for (const e of objs) {
+      const f = fp(e.o);
+      for (const [k, v] of f) { const was = e.f.get(k); if (was === undefined) W.log.push([Date.now() - W.t0, e.path, '+' + k, v]); else if (was !== v && !(was === 'smi' && v === 'smi')) W.log.push([Date.now() - W.t0, e.path, '~' + k, was + '->' + v]); }
+      for (const k of e.f.keys()) if (!f.has(k)) W.log.push([Date.now() - W.t0, e.path, '-' + k, '']);
+      e.f = f;
+      if (W.log.length > 6000) break;
+    }
+  }, 200);
+  return { watched: objs.length };
+})()`;
+const SHAPEWATCH_OFF = `(() => { const W = window.__icShape; if (!W) return null; clearInterval(W.timer);
+  const by = new Map(); for (const [t, p, k, v] of W.log) { const key = p + ' ' + k + ' ' + v; const e = by.get(key) || { n: 0, first: t, last: t }; e.n++; e.last = t; by.set(key, e); }
+  const out = { watched: W.n, changes: W.log.length, byKey: [...by.entries()].sort((a, b) => a[1].first - b[1].first).slice(0, 150).map(([k, e]) => (e.first / 1000).toFixed(1) + 's' + (e.n > 1 ? ' (' + e.n + 'x, last ' + (e.last / 1000).toFixed(1) + 's)' : '') + ' ' + k) };
+  window.__icShape = null; return out; })()`;
+/* DIAGNOSIS ONLY (R5_IC_PROTOTRACE, with --trace-prototype-users): every 1.5 s, %DebugPrint each candidate prototype
+ * after a Smi marker with its index, so node can map the "Invalidating prototype map 0x..." lines to the object
+ * whose map that was (the most recent snapshot before the invalidation). */
+const PROTOTRACE_ON = `(() => {
+  ${PROTO_COLLECT}
+  protos.set(C, 'ctx(root)'); protos.set(C.events, 'ctx.events');
+  const P = [...protos.keys()], labels = P.map((p) => protos.get(p));
+  const snap = () => { %DebugPrint(-1); for (let i = 0; i < P.length; i++) { %DebugPrint(i); %DebugPrint(P[i]); } %DebugPrint(-2); };
+  snap(); window.__icPTtimer = setInterval(snap, 1500);
+  return { labels };
+})()`;
 const PROTOLOCK_ON = `(() => {
   ${PROTO_COLLECT}
   const hits = window.__icLockHits = [];
