@@ -145,6 +145,12 @@ const _tp0 = new THREE.Vector3();   // trunk posture: pelvis, then neck (char)
 const _tp1 = new THREE.Vector3();
 const _anW = new THREE.Vector3();   // R5: the WRIST's anchor (the nock's anchor, less the hand), char
 const _rOut = new THREE.Vector3();  // R5: her right of the arrow (the back of the draw hand), char
+const _efC = new THREE.Vector3();   // R5 fix round 3: the draw elbow's circle centre (form scan), char
+const _efF = new THREE.Vector3();   // ...the head's live forward
+const _efUp = new THREE.Vector3();  // ...the aim frame's up
+const _efE = new THREE.Vector3();   // ...a candidate elbow
+const _rkA = new THREE.Vector3(), _rkB = new THREE.Vector3();   // R5 fix round 3: rest kicks
+const _rkQ = new THREE.Quaternion();
 
 
 // (ball- and ankle-bone rest heights are MEASURED off the bind pose in the
@@ -484,6 +490,15 @@ export class PlayerAnimator {
       looseOnJaw: !!tn?.looseOnJaw,
       anchorNock: !!tn?.anchorNock, handOut: tn?.handOut ?? 0, drawWristExt: tn?.drawWristExt ?? 0,
       gripOut: tn?.gripOut ?? 0.035,
+      // R5 fix round 3 (null / 1 / 0 = the Round-4 behaviour): the closed-loop
+      // chest blade, the bow shoulder's protraction share at a steep down aim,
+      // the loose's clearance of the back of the skull and its outward share,
+      // and the draw elbow's form scan (see `_aimLayer`)
+      bladeLock: tn?.bladeLock ?? null,
+      drawProtDown: tn?.drawProtDown ?? 1, drawShrugDown: tn?.drawShrugDown ?? 0,
+      looseClear: tn?.looseClear ?? null,
+      looseOut: tn?.looseOut ?? 0, looseDown: tn?.looseDown ?? 0,
+      elbowForm: tn?.elbowForm ?? null,
     };
     this.bowSolve = prof?.bow || null;
     /* M10 (E3): the spring-side capsule on the DRAW hand + forearm. */
@@ -533,6 +548,18 @@ export class PlayerAnimator {
     this._chains = [];
     this._buildChains(makeEntry);
     this._initChainSolver();
+    /* R5 fix round 3 — REST KICKS (profile `tune.restKick`, bible §3.2 cue 2
+     * "a 0.40 m cloth tail trailing left-rear", V-brea-one-glance): a chain
+     * whose authored rest hangs flat against her (the wrap tail down the left
+     * of the spine) is turned at its root, every frame before the springs read
+     * the pose, so its root -> end line points along `dir` (character space,
+     * +X her left, -Z back): the springs then hang, bounce and collide it about
+     * that rest. Resolved once here; no allocation per frame. */
+    this._restKick = [];
+    for (const k of (prof?.tune?.restKick || [])) {
+      const e = makeEntry(k.bone), tip = this.bones[k.tip] || null;
+      if (e && tip) this._restKick.push({ e, tip, dir: new THREE.Vector3().fromArray(k.dir).normalize(), w: k.w ?? 1 });
+    }
     // 26 twist joints: swing-twist redistribution targets (player-anim-06)
     this._twists = [];
     this._buildTwists(makeEntry, invModelM, invModelQ);
@@ -664,6 +691,7 @@ export class PlayerAnimator {
     this._settleT = 1; this._prevSpd = 0; this._recentSpd = 0; // stop settle
     this._settleAmp = 0;
     this._looseT = 1; this._looseDraw = 0;   // arrow-release follow-through
+    this._looseOff = new THREE.Vector3();    // R5: the full-draw wrist off its anchor (char), for the loose
     this._carryW = 0;                        // heavy two-hand carry weight
     this._dieT = 0; this._wasDead = false;   // death timeline
     this._leanAcc = 0; this._bank = 0;       // smoothed accel lean / turn bank
@@ -677,6 +705,7 @@ export class PlayerAnimator {
       u: new THREE.Vector3(), d: new THREE.Vector3(), sh: new THREE.Vector3(),
       shoulderX: 0, shoulderZ: 0,
       anchor: new THREE.Vector3(), nock: new THREE.Vector3(), wristT: new THREE.Vector3(), headAt: new THREE.Vector3(),
+      shYaw0: 0, bladeCorr: 0, looseClamp: 0, elbowScan: 0,
     };
 
     /* ------------- Round 4 · reactions, traversal, interaction ------------- */
@@ -1048,6 +1077,7 @@ export class PlayerAnimator {
     return {
       idealGripDist: +D.idealGripDist.toFixed(4), reach: +D.reach.toFixed(4),
       slide: +D.slide.toFixed(4), nockToAnchor: +D.nockToAnchor.toFixed(4),
+      shYaw0: +D.shYaw0.toFixed(4), bladeCorr: +D.bladeCorr.toFixed(4), looseClamp: +D.looseClamp.toFixed(4), elbowScan: +D.elbowScan.toFixed(4),
       anchorDrop: D.anchorDrop ?? 0,
       lmax: +D.lmax.toFixed(4), pull: D.pull, restZ: D.restZ,
       u: D.u.toArray().map((v) => +v.toFixed(3)), d: D.d.toArray().map((v) => +v.toFixed(3)), shoulder: D.sh.toArray().map((v) => +v.toFixed(3)),
@@ -1833,6 +1863,15 @@ export class PlayerAnimator {
     this._twistLayer();
 
     /* ------------------ secondary motion: dyn_ spring chains --------------- */
+    for (let i = 0; i < this._restKick.length; i++) {
+      const K = this._restKick[i];
+      this._charOf(K.e.bone, _rkA); this._charOf(K.tip, _rkB);
+      _rkB.sub(_rkA);
+      if (_rkB.lengthSq() < 1e-8) continue;
+      _rkQ.setFromUnitVectors(_rkB.normalize(), K.dir);
+      if (K.w < 1) _rkQ.slerp(Q_IDENT, 1 - K.w);
+      this._rotQL(K.e, _rkQ);
+    }
     this._springs(dt, t, ph, speed, moveW, runW);
     if (this._ali) this._alidadePlace();
 
@@ -2582,6 +2621,21 @@ export class PlayerAnimator {
       }
       L.w = 1;
       ex = L.x - ballW.x; ez = L.z - ballW.z;
+      /* R5 fix round 3 — A TELEPORT IS NOT A SLIP. A lock whose anchor is
+       * more than `RESEAT_D2` (1 m) from the ball was planted somewhere she no
+       * longer is (a respawn, a gate staging, a ride's end): sliding it to
+       * MAX_LOCK — the branch below — left BOTH feet held 0.30 m toward the
+       * place she came from for as long as she stood still. On the 38.8 deg
+       * face that was a lunge: the downhill ball 0.43 m under her root, the
+       * pelvis 0.50 m over it (0.82 standing) and her head 0.27 m low — the
+       * camera rig, hung off her head, sank with it, and A31b's -0.8 staging
+       * cut its lens to 0.99 m (measured Oct 22). The lock re-captures here
+       * instead (error 0, nothing pops); a frame hitch or a shove (<= 0.55 m,
+       * A13's replica) still slides as before. */
+      if (ex * ex + ez * ez > RESEAT_D2 && !this._dbgNoLockFix) {
+        L.x = ballW.x; L.z = ballW.z; L.sx = ballW.x; L.sz = ballW.z; L.wx = ballW.x; L.wz = ballW.z;
+        ex = 0; ez = 0;
+      }
       // Past MAX_LOCK, SLIDE the anchor up to the limit instead of dropping the
       // lock: releasing it would snap the leg back to the clip pose in one
       // frame. Only a frame hitch or a hard pivot gets here.
@@ -3060,7 +3114,7 @@ export class PlayerAnimator {
     const tz = f.fz + (_v5.z - f.fz) * e;
     const lift = STEP_LIFT * Math.sin(Math.PI * t);
     const ty = (terr?.getHeight ? terr.getHeight(tx, tz) : 0) + this._ballRest + lift;
-    this._stepDbg.lift = +lift.toFixed(3);
+    this._stepDbg.lift = Math.round(lift * 1e3) / 1e3;   // (no per-frame string)
     // toe down through the lift, heel first on the way in — a flat slab of a
     // foot translating through the air is the thing that reads as a cheat
     const e2 = side === 0 ? this.b.footL : this.b.footR;
@@ -3075,6 +3129,34 @@ export class PlayerAnimator {
     const pitch = clamp(p.camPitch ?? 0, -0.6, 1.05);
     const stanceW = aimW * (1 - moveW * 0.85);
 
+    /*
+     * R5 fix round 3 — THE CLOSED-LOOP BLADE (profile `tune.bladeLock`). The
+     * stance + chest blade below are open loop: they add a fixed yaw to whatever the clip and
+     * the locomotion overlays left the shoulders at. Standing, that is square
+     * and the blade lands the shoulder line side-on; in the aim side-step and
+     * the aim walk the strafe loop's own trunk twist survived it, and the
+     * shoulder line sat ~23 deg short of side-on (measured Oct 22: the bow
+     * shoulder 4 cm further back of the anchor and the draw shoulder 10 cm
+     * out to her right of it), so the bow arm could not reach the nock to the
+     * anchor — the reach clamp slid the whole draw 8.6-9.0 cm back, which put
+     * the draw hand 2 cm off the back of the skull and the elbow 0.19 m behind
+     * it while strafing (A-draw-elbow-level). The shoulder line's yaw is
+     * measured here, before the stance and the blade, and the trunk (spine_03)
+     * is turned so it starts from `ref`, as it does standing; the neck turns
+     * back by the same amount so the head keeps its own facing.
+     */
+    let bladeCorr = 0;
+    const BL = this.T.bladeLock;
+    if (BL && b.upArmL && b.upArmR && b.spine3) {
+      this._charOf(b.upArmL.bone, _sg0); this._charOf(b.upArmR.bone, _sg1);
+      const y0 = Math.atan2(-(_sg0.z - _sg1.z), _sg0.x - _sg1.x);
+      this._aimDbg.shYaw0 = y0;
+      let dy = (BL.ref ?? 0) - y0;
+      if (dy > Math.PI) dy -= 2 * Math.PI; else if (dy < -Math.PI) dy += 2 * Math.PI;
+      bladeCorr = clamp(dy, -0.9, 0.9) * (BL.gain ?? 1) * aimW;
+      if (Math.abs(bladeCorr) > 1e-4) this._rotL(b.spine3, Y_AXIS, bladeCorr);
+      this._aimDbg.bladeCorr = bladeCorr;
+    }
     // Staggered archer stance: hips bladed, left side toward the target. The
     // hip/knee flex is inherited by the ankle, so each foot gets the exact
     // counter-pitch — without it the rear foot stood 12deg up on its toe, in
@@ -3132,7 +3214,12 @@ export class PlayerAnimator {
     const levelK = 1 - smoothstep(pitch, 0.15, 0.6);
     this._rot(b.clavL, Z_AXIS, 0.04 * aimW);
     this._rot(b.clavR, Z_AXIS, -0.06 * aimW);
-    this._rotL(b.clavL, Y_AXIS, -prot);
+    // R5 fix round 3 (profile `tune.drawProtDown`): the bow shoulder pushes
+    // forward less at a steep down aim, where the falling arrow already runs
+    // close to it — the down aim's Lmax stood 0.02 m over the other pitches,
+    // and the pull is cut to the largest one (A-lmax-solve), so every other
+    // pitch slid its whole draw 2-4 cm back off the anchor
+    this._rotL(b.clavL, Y_AXIS, -prot * (1 - (1 - this.T.drawProtDown) * (1 - levelK)));
     const rL = this.T.drawRetract ?? 0.8, rD = this.T.drawRetractDown ?? 0.8;
     this._rotL(b.clavR, Y_AXIS, -prot * (rD + (rL - rD) * levelK));
     // R5 draw shrug (profile `tune.drawShrug`, V24 "forearm in line with the
@@ -3146,7 +3233,11 @@ export class PlayerAnimator {
       // (half of it at the -0.55 up-aim: there the string hand already sits
       // under the aim frame's shoulder line and a full shrug drops the elbow
       // through A-draw-elbow-level's -0.03 floor)
-      const sh = this.T.drawShrug * drawS * aimW * levelK * (1 - 0.5 * clamp(-pitch / 0.55, 0, 1));
+      // (fix round 3, profile `tune.drawShrugDown`: a share of it at a steep
+      // DOWN aim too, where A16 holds the elbow under the shoulder joint and
+      // A-draw-elbow-level wants it >= 0.05 m up-and-back of the hand along
+      // the falling arrow — the joint has to rise for both to hold)
+      const sh = this.T.drawShrug * drawS * aimW * (levelK + (this.T.drawShrugDown ?? 0) * (1 - levelK)) * (1 - 0.5 * clamp(-pitch / 0.55, 0, 1));
       if (sh > 1e-4) {
         this._charOf(b.clavR.bone, _sg0); this._charOf(b.upArmR.bone, _sg1);
         _v3.subVectors(_sg1, _sg0).cross(Y_AXIS);
@@ -3155,7 +3246,7 @@ export class PlayerAnimator {
     }
 
     // head: face the target (counter the chest blade), carry the aim pitch
-    this._rotL(b.neck1, Y_AXIS, -chestYaw * 0.45);
+    this._rotL(b.neck1, Y_AXIS, -chestYaw * 0.45 - bladeCorr);
     this._rotL(b.head, Y_AXIS, -chestYaw * 0.6);
     rotP(b.neck1, pitch * PS[3] * aimW);
     rotP(b.head, pitch * PS[4] * aimW);
@@ -3330,7 +3421,7 @@ export class PlayerAnimator {
         }
         lo = hi;
       }
-      D.anchorDrop = +lo.toFixed(4);
+      D.anchorDrop = Math.round(lo * 1e4) / 1e4;   // (no per-frame string)
       _anch.addScaledVector(_hdDown, lo);
     }
     D.anchor.copy(_anch);
@@ -3467,8 +3558,26 @@ export class PlayerAnimator {
      * decay together.
      */
     const lw = this.T.looseOnJaw ? Math.min(1, Math.max(lk, hold)) * aimW : 0;
+    // fix round 3: where the wrist sits off its own anchor at full draw (the
+    // reach clamp leaves the nock ~1 cm short of the anchor at some pitches),
+    // remembered so the follow-through starts from the wrist, not 1-2 cm
+    // ahead of it (that much of the kick was spent getting back to the anchor)
+    if (this._looseT >= 1 && drawS > 0.9 && aimW > 0.5) {
+      this._looseOff.subVectors(_v7, _anW);
+      if (this._looseOff.lengthSq() > 0.0009) this._looseOff.setLength(0.03);
+    } else if (this._looseT >= 1 && drawS < 0.5) this._looseOff.set(0, 0, 0);
     if (lw > 0.001) {
-      _v6.copy(_anW).addScaledVector(_dA, -this.T.looseKick * lk);
+      // fix round 3 (profile `tune.looseOut`): the kick runs back along the
+      // jaw AND out, away from the face, as an archer's opening hand does —
+      // the back of the skull is only 5-8 cm behind the wrist at full draw,
+      // so a kick straight back along the arrow had nowhere to go but behind
+      // the head (judge trace, Oct 22: the wrist +0.03..+0.06 m past the
+      // skull's back plane at looseT 0.22-0.44); the clamp below holds it
+      // ...and `looseDown` of it down the line of the jaw toward the neck
+      const ko = this.T.looseOut, kd = this.T.looseDown, kk = this.T.looseKick * lk;
+      _v6.copy(_anW).add(this._looseOff).addScaledVector(_dA, -kk * Math.sqrt(Math.max(0, 1 - ko * ko - kd * kd)));
+      if (ko > 0 && this.T.anchorNock) _v6.addScaledVector(_rOut, kk * ko);
+      if (kd > 0) _v6.addScaledVector(_hdDown, kk * kd);
       _v7.lerp(_v6, lw);
     }
     // nock flourish: the string hand dips to the HIP quiver and comes back up
@@ -3505,6 +3614,26 @@ export class PlayerAnimator {
     // enough to allow a cheek anchor lets the wrist sink into the jaw.
     this._headFrame();
     this._pushOutOfHead(_v7, this.T.handIn);
+    /*
+     * R5 fix round 3 — THE STRING HAND NEVER GOES BEHIND THE HEAD (profile
+     * `tune.looseClear`; Kevin "never an arm behind the head", R35 "the hand
+     * always in front of the back of the skull"). A hard guard on the wrist
+     * target, every aimed frame — full draw, the loose, the return: the wrist
+     * is held `looseClear` m in front of the back of the skull ellipsoid,
+     * measured along the head's live forward (the plane `behindHead` and
+     * A-draw-elbow-level grade). The IK solves the wrist onto this target, so
+     * the rendered wrist is where the guard put it.
+     */
+    D.looseClamp = 0;
+    if (this.T.looseClear != null && aimW > 0.02) {
+      _efF.set(0, 0, 1).applyQuaternion(_hdQ);
+      const over = -_v6.subVectors(_v7, _hd).dot(_efF) - this.T.headR.z + this.T.looseClear;
+      if (over > 0) {
+        _v7.addScaledVector(_efF, over);
+        D.looseClamp = over;
+        this._pushOutOfHead(_v7, this.T.handIn);
+      }
+    }
     D.wristT.copy(_v7);
     this._charOf(b.head.bone, D.headAt);
     /*
@@ -3570,6 +3699,7 @@ export class PlayerAnimator {
           this._charOf(b.upArmR.bone, _sg0);
           this._charOf(b.loArmR.bone, _sg1);
           if (_sg1.y > _sg0.y - 0.006) this._rollElbow('r', _sg0.y - 0.006, ew);
+          if (this.T.elbowForm) this._elbowForm(ew, this._looseT < 1 ? lw : 0);
         } else {
           const ideal = _sg2.y - fore * _v6.y;      // elbow on the arrow line
           const cap = _sg0.y - 0.018;               // never up over the shoulder
@@ -3712,6 +3842,102 @@ export class PlayerAnimator {
       _q3.setFromAxisAngle(_reAx, -th);
       this._rotQL(upE, _q3);
     }
+  }
+
+  /**
+   * R5 fix round 3 — THE DRAW ELBOW'S FORM SCAN (profile `tune.elbowForm`,
+   * A-draw-elbow-level, R35, bible §5.2). With the shoulder and the wrist
+   * fixed, every elbow the arm can take lies on one circle about the
+   * shoulder -> wrist axis. `_rollElbow` places it by height alone; at a steep
+   * down aim that left it 0.034-0.055 m behind the hand along the falling
+   * arrow (bar 0.05, run to run), and nothing kept it off the back of the
+   * head. Here the circle is scored against the whole form at
+   * once (every 5 deg, then every 0.5 deg about the best) — the height band
+   * about the aim frame's shoulder line (`up`), at
+   * least `behindHand` back of the wrist along the arrow, at most `behindHead`
+   * past the back of the skull, never over the shoulder joint (A16) — and the
+   * arm is turned to the nearest point that holds all of them (or, failing
+   * that, the least violation). The current elbow wins whenever it already
+   * holds them, so a good pose is never touched. Undone if a segment would
+   * enter the skull, like `_rollElbow`. No allocation.
+   */
+  _elbowForm(w, lf = 0) {
+    const EF = this.T.elbowForm, b = this.b;
+    if (w < 0.02 || !b.upArmR || !b.loArmR || !b.handR) return;
+    this._charOf(b.upArmR.bone, _sg0);
+    this._charOf(b.loArmR.bone, _sg1);
+    this._charOf(b.handR.bone, _sg2);
+    _reAx.subVectors(_sg2, _sg0);
+    const len = _reAx.length();
+    if (len < 0.08) return;
+    _reAx.divideScalar(len);
+    _reU.subVectors(_sg1, _sg0);
+    const along = _reU.dot(_reAx);
+    _reU.addScaledVector(_reAx, -along);
+    const r = _reU.length();
+    if (r < 0.02) return;
+    _reU.divideScalar(r);
+    _reV.crossVectors(_reAx, _reU);
+    _efC.copy(_sg0).addScaledVector(_reAx, along);
+    this._headFrame();
+    _efF.set(0, 0, 1).applyQuaternion(_hdQ);
+    _efUp.set(0, 1, 0).addScaledVector(_dA, -_dA.y);
+    if (_efUp.lengthSq() < 1e-6) return;
+    _efUp.normalize();
+    const S = this._efS || (this._efS = { r: 0, shU: 0, shY: 0, hR: 0, hdF: 0, hD: 0, lo: 0, hi: 0, bh: 0, bd: 0, drop: 0 });   // once
+    S.r = r; S.shU = _sg0.dot(_efUp); S.shY = _sg0.y; S.hR = this.T.headR.z; S.hdF = _hd.dot(_efF);
+    S.hD = _sg2.dot(_dA); S.lo = EF.up[0]; S.hi = EF.up[1]; S.bh = EF.behindHand; S.bd = EF.behindHead;
+    // through the LOOSE the elbow may drop under the full-draw height band
+    // (an archer's follow-through: the hand opens back and out, the elbow
+    // settles) — the band is a full-draw bar; behind the head is not
+    S.drop = (EF.looseDrop ?? 0) * lf;
+    // 5 deg over the whole circle, then 0.5 deg about the best of those
+    const c0 = this._efCost(0);
+    let bestT = 0, bestC = c0;
+    for (let k = 1; k < 72; k++) {
+      const th = (k < 36 ? k : k - 72) * (Math.PI / 36);
+      const cc = this._efCost(th);
+      if (cc < bestC) { bestC = cc; bestT = th; }
+    }
+    const t0 = bestT;
+    for (let k = -10; k <= 10; k++) {
+      const th = t0 + k * (Math.PI / 360);
+      const cc = this._efCost(th);
+      if (cc < bestC) { bestC = cc; bestT = th; }
+    }
+    this._aimDbg.elbowScan = bestT * w;
+    if (Math.abs(bestT) < 1e-3 || c0 - bestC < 1e-4) return;
+    const th = bestT * w;
+    _q3.setFromAxisAngle(_reAx, th);
+    this._rotQL(b.upArmR, _q3);
+    this._headFrame();
+    this._charOf(b.upArmR.bone, _sg0);
+    this._charOf(b.loArmR.bone, _sg1);
+    this._charOf(b.handR.bone, _sg2);
+    if (this._segInHead(_sg0, _sg1) || this._segInHead(_sg1, _sg2)) {
+      _q3.setFromAxisAngle(_reAx, -th);
+      this._rotQL(b.upArmR, _q3);
+      this._aimDbg.elbowScan = 0;
+    }
+  }
+
+  /** `_elbowForm`'s cost of the elbow at roll `th` off the current one (the circle in _efC/_reU/_reV, the rest in `_efS`). */
+  _efCost(th) {
+    const S = this._efS;
+    _efE.copy(_efC).addScaledVector(_reU, Math.cos(th) * S.r).addScaledVector(_reV, Math.sin(th) * S.r);
+    const u = _efE.dot(_efUp) - S.shU;
+    const bhd = S.hD - _efE.dot(_dA);
+    const dep = S.hdF - _efE.dot(_efF) - S.hR;
+    const above = _efE.y - S.shY;
+    // the GATE bars, hard (x1000): height [-0.03, 0.05] (the floor lowered by
+    // `drop` through the loose), >= 0.055 behind the hand, <= 0.195 past the
+    // back of the skull, never over the shoulder joint (A16)
+    const hard = Math.max(0, -0.026 - S.drop - u) + Math.max(0, u - 0.046) + Math.max(0, 0.055 - bhd)
+      + Math.max(0, dep - 0.195) + Math.max(0, above + 0.002);
+    // ...and the form TARGETS inside them, soft (x100)
+    const soft = Math.max(0, S.lo - S.drop - u) + Math.max(0, u - S.hi) + Math.max(0, S.bh - bhd)
+      + Math.max(0, dep - S.bd) + Math.max(0, above + 0.006);
+    return hard * 1000 + soft * 100 + Math.abs(th) * 0.01;
   }
 
   /**

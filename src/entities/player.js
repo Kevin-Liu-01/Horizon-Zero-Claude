@@ -3177,12 +3177,12 @@ void main() {
    * ground clearance at the returned `t`; when nothing admissible clears, the
    * admissible `t` with the most clearance.
    */
-  _dollyFor(O, Lx, Ly, Lz, steps = DOLLY_STEPS) {
+  _dollyFor(O, Lx, Ly, Lz, steps = DOLLY_STEPS, least = false) {
     const H = this._hw, P = this._pivotPos;
     const tMin = this._dollyMin(Lx, Ly, Lz);
     const body = this._bodyReady();
     let bodyBar = 0, c1 = 9;
-    let bestT = 1, bestC = -9;
+    let bestT = 1, bestC = -9, zeroT = -1, zeroC = 0;
     for (let i = 0; i <= steps; i++) {
       const t = 1 - (i / steps) * (1 - tMin);
       const x = H.x + (Lx - H.x) * t, y = H.y + (Ly - H.y) * t, z = H.z + (Lz - H.z) * t;
@@ -3232,7 +3232,19 @@ void main() {
         this._dollyC = c; return t;
       }
       if (c > bestC) { bestC = c; bestT = t; }
+      // R5 fix round 3: the least push-in that clears at all (see below)
+      if (c >= 0 && zeroT < 0) { zeroT = t; zeroC = c; }
     }
+    /* R5 fix round 3 (A31b's −0.8 hillside staging on Brea: lens gap 0.99 m
+     * against its 1.20 m bar). Where no push-in reaches `ROT_MARGIN`, this used
+     * to return the push-in with the MOST clearance — measured: a boom that
+     * cleared the ground by 0.031 m un-pushed was pulled 2.23 -> 0.99 m toward
+     * her head to gain 4 mm. The least push-in that clears at all (>= 0, i.e.
+     * `cameraBoom`'s own march will not cut it; `_preCut` is the backstop) is
+     * taken instead (`least`: the push-in the camera APPLIES; the rotation
+     * scan still prices the dolly at its best), and the most-clearance one
+     * only when none clears. */
+    if (least && zeroT >= 0) { this._dollyC = zeroC; return zeroT; }
     this._dollyC = bestC;
     return bestT;
   }
@@ -3730,7 +3742,7 @@ void main() {
          * proxy reading 0.007 m; dithered to 0.31) — Aloy's 1.16 m spear never
          * reached that far round her back, Brea's 1.55 m R10 diagonal does. */
         const H = this._hw;
-        if (this._dollyC > clear && (!bodyOn || t >= 1 || this._dbgNoDollyBody
+        if (this._dollyC > clear && (!bodyOn || t >= 1
           || this._bodyClear(H.x + (Lx - H.x) * t, H.y + (Ly - H.y) * t, H.z + (Lz - H.z) * t) >= SWING_CLR)) clear = this._dollyC;
       }
       const need = clear < 0 ? -clear : 0;
@@ -4312,7 +4324,7 @@ void main() {
     this._dollyOff.set(0, 0, 0);
     let dollyE = 1;
     if (this._deepK > 1e-3 && ctx.terrain && this._headWorld()) {
-      const tw = this._dollyFor(orbit, desired.x, desired.y, desired.z);
+      const tw = this._dollyFor(orbit, desired.x, desired.y, desired.z, DOLLY_STEPS, true);
       if (seeding || tw < this._dollyT) this._dollyT = tw;
       else this._dollyT = Math.min(tw, THREE.MathUtils.damp(this._dollyT, tw, tw > 1 ? DOLLY_OUT_RATE : DOLLY_REL, dt));
       dollyE = 1 - this._deepK * (1 - this._dollyT);
@@ -4342,7 +4354,7 @@ void main() {
      * shortened to the longest length that clears (bisected), so the march
      * has nothing to cut. */
     this._preCut = 0;
-    if (this._deepK > 0.5 && !this.aiming && ctx.terrain && !this._dbgNoPreCut) {
+    if (this._deepK > 0.5 && !this.aiming && ctx.terrain) {
       const L = desired.distanceTo(orbit);
       if (L > 0.5) {
         const ux = (desired.x - orbit.x) / L, uy = (desired.y - orbit.y) / L, uz = (desired.z - orbit.z) / L;
@@ -4699,7 +4711,7 @@ void main() {
       const tookK = Math.max(THREE.MathUtils.smoothstep(this._relief || 0, 0.15, 0.35),
         THREE.MathUtils.smoothstep(1 - (this.camDolly ?? 1), 0.05, 0.25)) * (this._deepK || 0);
       const rotK = tookK;
-      const groundK = this._dbgNoKeepExt ? swingK : Math.max(swingK, tookK);
+      const groundK = Math.max(swingK, tookK);
       if (!this.aiming && ly > 0.05 && c0 && c1 && groundK > 0) {
         const e0 = c0.matrixWorld.elements, e1 = c1.matrixWorld.elements;
         const py = Math.min(e0[13], e1[13]), px = (e0[12] + e1[12]) * 0.5, pz = (e0[14] + e1[14]) * 0.5;
