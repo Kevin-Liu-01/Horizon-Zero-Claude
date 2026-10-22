@@ -37,7 +37,7 @@ const STYLE_ID = 'cal-dlg-style';
 const CSS = `
 #cal-dlg {
   position: fixed; inset: 0; pointer-events: none; z-index: 62;
-  font-family: var(--font, 'Rajdhani', system-ui, sans-serif);
+  font-family: var(--font, system-ui, sans-serif);
   color: var(--cal-text, #efe6d5);
   --dlg-gold: #c8a24b;
   --dlg-teal: var(--cal-accent, #59c1c6);
@@ -65,7 +65,7 @@ const CSS = `
   transform: translateY(-1px);
 }
 #cal-dlg .dlg-name {
-  font-family: var(--font-display, 'Michroma', sans-serif);
+  font-family: var(--font-display, sans-serif);
   font-size: 17px; letter-spacing: 0.30em; text-indent: 0.30em;
   color: #FAF9F5; text-shadow: 0 2px 16px rgba(0,0,0,0.85);
 }

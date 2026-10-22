@@ -1,0 +1,1435 @@
+{
+ "schema": 1,
+ "lint": "node tools/lint/namecheck.mjs --code (plan §7.4, §9 A-no-horizon-terms-code)",
+ "unit": "a hit is a distinct (lexicon term, code token) pair over src/**, index.html and tools/** minus tools/lint/** (comments stripped); an entry covers a hit when the term is one of its terms and the file matches one of its paths (first entry in this order wins); its count is the number of distinct pairs it covers; a pair occurring in two entries' areas counts once in each",
+ "rules": "every hit covered; no entry over its cap; the total never above ratchet.total. Caps and the total only go DOWN: `node tools/lint/namecheck.mjs --record` lowers them after an owner removes content; `--record --initial` is run ONCE, at the W0b exit on merged main. kind engine = stays (plan §7.4 list + identifiers in frozen kept-system files); guard = a lint or gate that must spell the words it forbids; scheduled = dies with its owner's content by `until`. At W4 only engine + guard entries may remain.",
+ "definitions": {
+  "engine": [
+   {
+    "id": "engine:machines",
+    "terms": [
+     "Machine"
+    ],
+    "reason": "ctx.machines and the src/entities/machines/** engine path stay (plan §7.4); new identifiers say Instrument"
+   },
+   {
+    "id": "engine:channels",
+    "terms": [
+     "Tear",
+     "Impact",
+     "Shock"
+    ],
+    "reason": "damage-channel keys tear / impact and the element channel shock stay in the engine (bible §10.3); the player words are Pry, Blunt, Dust"
+   },
+   {
+    "id": "engine:lens",
+    "terms": [
+     "Lens"
+    ],
+    "reason": "camera lens (studio, chase camera); the <kind>-lens item ids die at combat-kit W2 (lampglass)"
+   },
+   {
+    "id": "engine:focus",
+    "terms": [
+     "Focus"
+    ],
+    "reason": "DOM focus() / :focus-visible / camera focus distance; the FocusSystem class dies at shell-ui W2 (Sighting)"
+   },
+   {
+    "id": "engine:camp",
+    "terms": [
+     "Camp"
+    ],
+    "reason": "hunter-camp (frozen collision.js) and the REST camp scaffolding until settlements W2 deletes camp.js"
+   },
+   {
+    "id": "engine:spear",
+    "terms": [
+     "Spear"
+    ],
+    "paths": [
+     "src/combat/lanceStow.js"
+    ],
+    "reason": "spear* in lanceStow.js (melee W1, plan §7.4)"
+   },
+   {
+    "id": "engine:sky-geometry",
+    "terms": [
+     "Horizon",
+     "Zenith",
+     "Beta",
+     "Apex"
+    ],
+    "paths": [
+     "src/world/environment.js",
+     "src/world/terrain.js",
+     "src/world/water.js",
+     "src/world/vegetation.js",
+     "src/entities/player.js",
+     "src/entities/machines/autorig.js",
+     "src/ui/focus.js"
+    ],
+    "reason": "the English words: the sky horizon / zenith, a jump apex, a math beta, horizontal (not the title or the characters)"
+   }
+  ],
+  "guard": [
+   {
+    "id": "guard:instruments-core",
+    "paths": [
+     "src/instruments/**",
+     "tools/gates.r5.instruments-core.mjs"
+    ],
+    "owner": "instruments-core",
+    "reason": "A-roles-published / A-no-override / A-no-corruption regexes name the forbidden words"
+   },
+   {
+    "id": "guard:licences",
+    "paths": [
+     "tools/licences/**"
+    ],
+    "owner": "pipeline",
+    "reason": "IP_PATTERN and the R30 scheduled-IP table name the forbidden provenance"
+   },
+   {
+    "id": "guard:brand-gates",
+    "paths": [
+     "tools/gates.r5.brand.mjs"
+    ],
+    "owner": "brand",
+    "reason": "the brand gates name the plan ids (A-no-horizon-terms-*) and the words a V criterion must forbid"
+   },
+   {
+    "id": "guard:gates-r5",
+    "paths": [
+     "tools/gates.r5.pipeline.mjs",
+     "tools/gates.r5.engine-gpu.mjs",
+     "tools/gates.r5.gates-perf.mjs",
+     "tools/gates.r5.carried.mjs"
+    ],
+    "owner": "gates-perf",
+    "reason": "gate files that grep for the deleted IP names"
+   }
+  ],
+  "areas": [
+   {
+    "glob": "src/entities/machines/**",
+    "owner": "instruments-b",
+    "until": "W2 exit (legacy kinds deleted, §6)"
+   },
+   {
+    "glob": "src/entities/anim/**",
+    "owner": "hero-body",
+    "until": "W0 exit (Brea rig profile; aloy.glb deleted)"
+   },
+   {
+    "glob": "src/entities/{player,playerAnimator}.js",
+    "owner": "hero-body",
+    "until": "W0 exit"
+   },
+   {
+    "glob": "src/combat/melee.js",
+    "owner": "melee",
+    "until": "W1 exit (lance tables)"
+   },
+   {
+    "glob": "src/combat/**",
+    "owner": "combat-kit",
+    "until": "W2 exit (weapon catalog + item renames, §7.2)"
+   },
+   {
+    "glob": "src/items/datapoints.js",
+    "owner": "progression",
+    "until": "W3 exit (fieldbooks.js)"
+   },
+   {
+    "glob": "src/items/**",
+    "owner": "combat-kit",
+    "until": "W2 exit (item renames, §7.2)"
+   },
+   {
+    "glob": "src/ui/{quests,skills}.js",
+    "owner": "progression",
+    "until": "W3 exit"
+   },
+   {
+    "glob": "src/ui/wheel.*",
+    "owner": "combat-kit",
+    "until": "W2 exit (Kit Rack)"
+   },
+   {
+    "glob": "src/ui/**",
+    "owner": "shell-ui",
+    "until": "W2 exit (field-book HUD, Sighting, menus)"
+   },
+   {
+    "glob": "src/core/{progression,save}.js",
+    "owner": "progression",
+    "until": "W3 exit (certifications, quests, save v6)"
+   },
+   {
+    "glob": "src/core/assets{,.specs}.js",
+    "owner": "pipeline",
+    "until": "W0 exit (rows of deleted IP)"
+   },
+   {
+    "glob": "src/core/**",
+    "owner": "frozen",
+    "until": "W4 (comment scrub only; identifiers in frozen engine files stay)"
+   },
+   {
+    "glob": "src/world/props/{npcs,settlement}.js",
+    "owner": "settlements",
+    "until": "W2 exit (deleted)"
+   },
+   {
+    "glob": "src/world/{camp,fauna}.js",
+    "owner": "settlements",
+    "until": "W2 exit (camp.js deleted; fauna re-pick world-props W3)"
+   },
+   {
+    "glob": "src/world/npc/**",
+    "owner": "settlements",
+    "until": "W2 exit"
+   },
+   {
+    "glob": "src/world/props/**",
+    "owner": "world-props",
+    "until": "W1 exit (tallneck, megastructures, old PLACES)"
+   },
+   {
+    "glob": "src/world/props.js",
+    "owner": "world-props",
+    "until": "W1 exit"
+   },
+   {
+    "glob": "src/world/environment.js",
+    "owner": "world-sky",
+    "until": "W1 exit"
+   },
+   {
+    "glob": "src/world/**",
+    "owner": "world-ground",
+    "until": "W1 exit"
+   },
+   {
+    "glob": "src/audio/**",
+    "owner": "audio",
+    "until": "W3 exit (sets regenerated under new names)"
+   },
+   {
+    "glob": "src/studio/**",
+    "owner": "brand",
+    "until": "W4 (studio renames)"
+   },
+   {
+    "glob": "{src/main.js,src/style.css,index.html}",
+    "owner": "brand",
+    "until": "W4 (imports follow the classes they name)"
+   },
+   {
+    "glob": "tools/gates.round4.*.mjs",
+    "owner": "gates-perf",
+    "until": "W0b (archived to tools/gates/archive/)"
+   },
+   {
+    "glob": "tools/gates/archive/**",
+    "owner": "gates-perf",
+    "until": "archive: Round-4 originals, read-only"
+   },
+   {
+    "glob": "tools/gates.config.mjs",
+    "owner": "gates-perf",
+    "until": "W0b (r5 registry)"
+   },
+   {
+    "glob": "tools/gates.r5.brand.mjs",
+    "owner": "brand",
+    "until": "W4"
+   },
+   {
+    "glob": "tools/r5-poc/**",
+    "owner": "pipeline",
+    "until": "W1 exit (world-ground deletes tools/r5-poc with the ?poc=biome hook, plan §8.3 R40)"
+   },
+   {
+    "glob": "tools/r5-direction/**",
+    "owner": "orchestrator",
+    "until": "W0b: the direction-B lexicon source, copied into tools/lint/lexicon/"
+   },
+   {
+    "glob": "tools/scratch/**",
+    "owner": "gates-perf",
+    "until": "W0a (deleted, §6)"
+   },
+   {
+    "glob": "tools/spike-*.mjs",
+    "owner": "gates-perf",
+    "until": "W0a (deleted, §6)"
+   },
+   {
+    "glob": "tools/{optimize,bake-rigs,measure-machines}.mjs",
+    "owner": "pipeline",
+    "until": "W0b (HZD donor lists removed, §6)"
+   },
+   {
+    "glob": "tools/{audio-bank,audio-recipes}.*",
+    "owner": "audio",
+    "until": "W3 exit"
+   },
+   {
+    "glob": "tools/build/**",
+    "owner": "pipeline",
+    "until": "W0 exit"
+   },
+   {
+    "glob": "tools/**",
+    "owner": "gates-perf",
+    "until": "W0b (harness and measurement tools)"
+   }
+  ]
+ },
+ "ratchet": {
+  "wave": "W0b",
+  "recorded": "2026-10-19",
+  "total": 1435,
+  "initialRecord": true
+ },
+ "entries": [
+  {
+   "id": "engine:machines",
+   "kind": "engine",
+   "owner": "engine",
+   "until": "permanent (capped)",
+   "terms": [
+    "Machine"
+   ],
+   "paths": [
+    "**"
+   ],
+   "reason": "ctx.machines and the src/entities/machines/** engine path stay (plan §7.4); new identifiers say Instrument",
+   "cap": 158
+  },
+  {
+   "id": "engine:channels",
+   "kind": "engine",
+   "owner": "engine",
+   "until": "permanent (capped)",
+   "terms": [
+    "Tear",
+    "Impact",
+    "Shock"
+   ],
+   "paths": [
+    "**"
+   ],
+   "reason": "damage-channel keys tear / impact and the element channel shock stay in the engine (bible §10.3); the player words are Pry, Blunt, Dust",
+   "cap": 53
+  },
+  {
+   "id": "engine:lens",
+   "kind": "engine",
+   "owner": "engine",
+   "until": "permanent (capped)",
+   "terms": [
+    "Lens"
+   ],
+   "paths": [
+    "**"
+   ],
+   "reason": "camera lens (studio, chase camera); the <kind>-lens item ids die at combat-kit W2 (lampglass)",
+   "cap": 50
+  },
+  {
+   "id": "engine:focus",
+   "kind": "engine",
+   "owner": "engine",
+   "until": "permanent (capped)",
+   "terms": [
+    "Focus"
+   ],
+   "paths": [
+    "**"
+   ],
+   "reason": "DOM focus() / :focus-visible / camera focus distance; the FocusSystem class dies at shell-ui W2 (Sighting)",
+   "cap": 35
+  },
+  {
+   "id": "engine:camp",
+   "kind": "engine",
+   "owner": "engine",
+   "until": "permanent (capped)",
+   "terms": [
+    "Camp"
+   ],
+   "paths": [
+    "**"
+   ],
+   "reason": "hunter-camp (frozen collision.js) and the REST camp scaffolding until settlements W2 deletes camp.js",
+   "cap": 41
+  },
+  {
+   "id": "engine:sky-geometry",
+   "kind": "engine",
+   "owner": "engine",
+   "until": "permanent (capped)",
+   "terms": [
+    "Horizon",
+    "Zenith",
+    "Beta",
+    "Apex"
+   ],
+   "paths": [
+    "src/world/environment.js",
+    "src/world/terrain.js",
+    "src/world/water.js",
+    "src/world/vegetation.js",
+    "src/entities/player.js",
+    "src/entities/machines/autorig.js",
+    "src/ui/focus.js"
+   ],
+   "reason": "the English words: the sky horizon / zenith, a jump apex, a math beta, horizontal (not the title or the characters)",
+   "cap": 13
+  },
+  {
+   "id": "guard:instruments-core",
+   "kind": "guard",
+   "owner": "instruments-core",
+   "until": "while the guard exists",
+   "terms": [
+    "Apex",
+    "Behemoth",
+    "Burrower",
+    "Cauldron",
+    "Charger",
+    "Corrupted",
+    "Corruption",
+    "Corruptor",
+    "Grazer",
+    "Metal Shards",
+    "Override",
+    "Redeye",
+    "Sawtooth",
+    "Scrapper",
+    "Shards",
+    "Snapmaw",
+    "Stalker",
+    "Tallneck",
+    "Thunderjaw",
+    "Watcher"
+   ],
+   "paths": [
+    "src/instruments/**",
+    "tools/gates.r5.instruments-core.mjs"
+   ],
+   "reason": "A-roles-published / A-no-override / A-no-corruption regexes name the forbidden words",
+   "cap": 49
+  },
+  {
+   "id": "guard:licences",
+   "kind": "guard",
+   "owner": "pipeline",
+   "until": "while the guard exists",
+   "terms": [
+    "Aloy",
+    "Behemoth",
+    "Broadhead",
+    "Corruptor",
+    "Fortnite",
+    "Grazer",
+    "Guerrilla",
+    "HFW",
+    "HZD",
+    "Horizon",
+    "Ravager",
+    "Redeye",
+    "Sawtooth",
+    "Shell-Walker",
+    "Sketchfab",
+    "Snapmaw",
+    "Sony",
+    "Stormbird",
+    "Thunderjaw",
+    "Watcher"
+   ],
+   "paths": [
+    "tools/licences/**"
+   ],
+   "reason": "IP_PATTERN and the R30 scheduled-IP table name the forbidden provenance",
+   "cap": 28
+  },
+  {
+   "id": "guard:brand-gates",
+   "kind": "guard",
+   "owner": "brand",
+   "until": "while the guard exists",
+   "terms": [
+    "Apex",
+    "Datapoint",
+    "Horizon"
+   ],
+   "paths": [
+    "tools/gates.r5.brand.mjs"
+   ],
+   "reason": "the brand gates name the plan ids (A-no-horizon-terms-*) and the words a V criterion must forbid",
+   "cap": 6
+  },
+  {
+   "id": "scheduled:instruments-b:src/entities/machines/**",
+   "kind": "scheduled",
+   "owner": "instruments-b",
+   "until": "W2 exit (legacy kinds deleted, §6)",
+   "terms": [
+    "Blaze",
+    "Braided Wire",
+    "Brittle",
+    "Broadhead",
+    "Cauldron",
+    "Chillwater",
+    "Corruption",
+    "Corruptor",
+    "Critical Hit",
+    "Disc Launcher",
+    "Frost",
+    "Glinthawk",
+    "Grazer",
+    "Longleg",
+    "Machine Core",
+    "Machine Heart",
+    "Metal Shards",
+    "Ravager",
+    "Scrapper",
+    "Shards",
+    "Shell-Walker",
+    "Snapmaw",
+    "Sparker",
+    "Stalker",
+    "Stormbird",
+    "Strider",
+    "Watcher"
+   ],
+   "paths": [
+    "src/entities/machines/**"
+   ],
+   "reason": "dies with its content (plan §6 / §7.2)",
+   "cap": 65
+  },
+  {
+   "id": "scheduled:hero-body:src/entities/anim/**",
+   "kind": "scheduled",
+   "owner": "hero-body",
+   "until": "W0 exit (Brea rig profile; aloy.glb deleted)",
+   "terms": [
+    "Aloy",
+    "Behemoth",
+    "Glinthawk",
+    "Longleg",
+    "Override",
+    "Sawtooth",
+    "Scrapper",
+    "Spear",
+    "Strider",
+    "Thunderjaw",
+    "Watcher"
+   ],
+   "paths": [
+    "src/entities/anim/**"
+   ],
+   "reason": "dies with its content (plan §6 / §7.2)",
+   "cap": 21
+  },
+  {
+   "id": "scheduled:hero-body:src/entities/{player,playerAnimator}.js",
+   "kind": "scheduled",
+   "owner": "hero-body",
+   "until": "W0 exit",
+   "terms": [
+    "Aloy"
+   ],
+   "paths": [
+    "src/entities/{player,playerAnimator}.js"
+   ],
+   "reason": "dies with its content (plan §6 / §7.2)",
+   "cap": 2
+  },
+  {
+   "id": "scheduled:melee:src/combat/melee.js",
+   "kind": "scheduled",
+   "owner": "melee",
+   "until": "W1 exit (lance tables)",
+   "terms": [
+    "Critical Hit",
+    "Silent Strike",
+    "Spear"
+   ],
+   "paths": [
+    "src/combat/melee.js"
+   ],
+   "reason": "dies with its content (plan §6 / §7.2)",
+   "cap": 12
+  },
+  {
+   "id": "scheduled:combat-kit:src/combat/**",
+   "kind": "scheduled",
+   "owner": "combat-kit",
+   "until": "W2 exit (weapon catalog + item renames, §7.2)",
+   "terms": [
+    "Aloy",
+    "Behemoth",
+    "Blast Sling",
+    "Blaze",
+    "Chillwater",
+    "Concentration",
+    "Disc Launcher",
+    "Glinthawk",
+    "Hardpoint",
+    "Hunter Bow",
+    "Longleg",
+    "Metal Shards",
+    "Ropecaster",
+    "Ropes",
+    "Sawtooth",
+    "Scrapper",
+    "Shards",
+    "Sharpshot",
+    "Sparker",
+    "Spear",
+    "Strider",
+    "Tearblast",
+    "Thunderjaw",
+    "Tripcaster",
+    "War Bow",
+    "Watcher"
+   ],
+   "paths": [
+    "src/combat/**"
+   ],
+   "reason": "dies with its content (plan §6 / §7.2)",
+   "cap": 45
+  },
+  {
+   "id": "scheduled:progression:src/items/datapoints.js",
+   "kind": "scheduled",
+   "owner": "progression",
+   "until": "W3 exit (fieldbooks.js)",
+   "terms": [
+    "Blaze",
+    "Datapoint",
+    "Faro",
+    "Grazer",
+    "Nora",
+    "Sawtooth",
+    "Shards",
+    "Strider",
+    "Watcher"
+   ],
+   "paths": [
+    "src/items/datapoints.js"
+   ],
+   "reason": "dies with its content (plan §6 / §7.2)",
+   "cap": 20
+  },
+  {
+   "id": "scheduled:combat-kit:src/items/**",
+   "kind": "scheduled",
+   "owner": "combat-kit",
+   "until": "W2 exit (item renames, §7.2)",
+   "terms": [
+    "Behemoth",
+    "Blaze",
+    "Brittle",
+    "Chillwater",
+    "Datapoint",
+    "Disc Launcher",
+    "Hardpoint",
+    "Machine Core",
+    "Machine Heart",
+    "Medicine",
+    "Metal Shards",
+    "Nora",
+    "Sawtooth",
+    "Shards",
+    "Sparker",
+    "Tearblast",
+    "Thunderjaw",
+    "Watcher"
+   ],
+   "paths": [
+    "src/items/**"
+   ],
+   "reason": "dies with its content (plan §6 / §7.2)",
+   "cap": 37
+  },
+  {
+   "id": "scheduled:progression:src/ui/{quests,skills}.js",
+   "kind": "scheduled",
+   "owner": "progression",
+   "until": "W3 exit",
+   "terms": [
+    "Brave",
+    "Forager",
+    "HZD",
+    "Prowler",
+    "Shards",
+    "Varl"
+   ],
+   "paths": [
+    "src/ui/{quests,skills}.js"
+   ],
+   "reason": "dies with its content (plan §6 / §7.2)",
+   "cap": 7
+  },
+  {
+   "id": "scheduled:combat-kit:src/ui/wheel.*",
+   "kind": "scheduled",
+   "owner": "combat-kit",
+   "until": "W2 exit (Kit Rack)",
+   "terms": [
+    "Weapon wheel"
+   ],
+   "paths": [
+    "src/ui/wheel.*"
+   ],
+   "reason": "dies with its content (plan §6 / §7.2)",
+   "cap": 1
+  },
+  {
+   "id": "scheduled:shell-ui:src/ui/**",
+   "kind": "scheduled",
+   "owner": "shell-ui",
+   "until": "W2 exit (field-book HUD, Sighting, menus)",
+   "terms": [
+    "Apex",
+    "Behemoth",
+    "Blast Sling",
+    "Blaze",
+    "Brittle",
+    "Chillwater",
+    "Concentration",
+    "Datapoint",
+    "Disc Launcher",
+    "Glinthawk",
+    "HZD",
+    "Hardpoint",
+    "Hunter Bow",
+    "Longleg",
+    "Machine Core",
+    "Machine Heart",
+    "Medicine",
+    "Metal Shards",
+    "Override",
+    "Redeye",
+    "Ropecaster",
+    "Sawtooth",
+    "Scrapper",
+    "Shards",
+    "Sharpshot",
+    "Sparker",
+    "Spear",
+    "Strider",
+    "Tallneck",
+    "Tearblast",
+    "Thunderjaw",
+    "Tripcaster",
+    "Varl",
+    "War Bow",
+    "Watcher"
+   ],
+   "paths": [
+    "src/ui/**"
+   ],
+   "reason": "dies with its content (plan §6 / §7.2)",
+   "cap": 71
+  },
+  {
+   "id": "scheduled:progression:src/core/{progression,save}.js",
+   "kind": "scheduled",
+   "owner": "progression",
+   "until": "W3 exit (certifications, quests, save v6)",
+   "terms": [
+    "Apex",
+    "Bast",
+    "Behemoth",
+    "Blaze",
+    "Brave",
+    "Brittle",
+    "Broadhead",
+    "Cauldron",
+    "Chillwater",
+    "Concentration",
+    "Corrupted",
+    "Corruptor",
+    "Datapoint",
+    "Forager",
+    "Glinthawk",
+    "Grazer",
+    "Hardpoint",
+    "Karst",
+    "Longleg",
+    "Machine Core",
+    "Machine Heart",
+    "Matriarch",
+    "Medicine",
+    "Metal Shards",
+    "Nil",
+    "Olin",
+    "Proving",
+    "Prowler",
+    "Ravager",
+    "Redeye",
+    "Sawtooth",
+    "Scrapper",
+    "Seeker",
+    "Shards",
+    "Shell-Walker",
+    "Silent Strike",
+    "Snapmaw",
+    "Sona",
+    "Sparker",
+    "Spear",
+    "Stormbird",
+    "Strider",
+    "Tallneck",
+    "Tearblast",
+    "Teb",
+    "Thunderjaw",
+    "Tinker",
+    "Vala",
+    "Varl",
+    "Watcher"
+   ],
+   "paths": [
+    "src/core/{progression,save}.js"
+   ],
+   "reason": "dies with its content (plan §6 / §7.2)",
+   "cap": 108
+  },
+  {
+   "id": "scheduled:pipeline:src/core/assets{,.specs}.js",
+   "kind": "scheduled",
+   "owner": "pipeline",
+   "until": "W0 exit (rows of deleted IP)",
+   "terms": [
+    "Aloy",
+    "Behemoth",
+    "Sawtooth",
+    "Thunderjaw",
+    "Watcher"
+   ],
+   "paths": [
+    "src/core/assets{,.specs}.js"
+   ],
+   "reason": "dies with its content (plan §6 / §7.2)",
+   "cap": 5
+  },
+  {
+   "id": "scheduled:frozen:src/core/**",
+   "kind": "engine",
+   "owner": "frozen (W4 comment scrub only)",
+   "until": "W4 (comment scrub only; identifiers in frozen engine files stay)",
+   "terms": [
+    "Concentration",
+    "HZD"
+   ],
+   "paths": [
+    "src/core/**"
+   ],
+   "reason": "identifiers in frozen kept-system files stay (plan §1.1); comments are scrubbed at W4",
+   "cap": 2
+  },
+  {
+   "id": "scheduled:settlements:src/world/props/{npcs,settlement}.js",
+   "kind": "scheduled",
+   "owner": "settlements",
+   "until": "W2 exit (deleted)",
+   "terms": [
+    "Apex",
+    "Bast",
+    "Karst",
+    "Sona",
+    "Spear",
+    "Teb",
+    "Vala",
+    "Varl"
+   ],
+   "paths": [
+    "src/world/props/{npcs,settlement}.js"
+   ],
+   "reason": "dies with its content (plan §6 / §7.2)",
+   "cap": 14
+  },
+  {
+   "id": "scheduled:settlements:src/world/{camp,fauna}.js",
+   "kind": "scheduled",
+   "owner": "settlements",
+   "until": "W2 exit (camp.js deleted; fauna re-pick world-props W3)",
+   "terms": [
+    "Spear",
+    "Varl"
+   ],
+   "paths": [
+    "src/world/{camp,fauna}.js"
+   ],
+   "reason": "dies with its content (plan §6 / §7.2)",
+   "cap": 3
+  },
+  {
+   "id": "scheduled:settlements:src/world/npc/**",
+   "kind": "scheduled",
+   "owner": "settlements",
+   "until": "W2 exit",
+   "terms": [
+    "Bast",
+    "Karst",
+    "Nil",
+    "Olin",
+    "Shards",
+    "Sona",
+    "Spear",
+    "Strider",
+    "Teb",
+    "Vala",
+    "Varl",
+    "Watcher"
+   ],
+   "paths": [
+    "src/world/npc/**"
+   ],
+   "reason": "dies with its content (plan §6 / §7.2)",
+   "cap": 21
+  },
+  {
+   "id": "scheduled:world-props:src/world/props/**",
+   "kind": "scheduled",
+   "owner": "world-props",
+   "until": "W1 exit (tallneck, megastructures, old PLACES)",
+   "terms": [
+    "Blaze",
+    "Cauldron",
+    "Datapoint",
+    "Metal Shards",
+    "Nora",
+    "Proving",
+    "Sawtooth",
+    "Shards",
+    "Sparker",
+    "Tallneck",
+    "Watcher"
+   ],
+   "paths": [
+    "src/world/props/**"
+   ],
+   "reason": "dies with its content (plan §6 / §7.2)",
+   "cap": 49
+  },
+  {
+   "id": "scheduled:world-props:src/world/props.js",
+   "kind": "scheduled",
+   "owner": "world-props",
+   "until": "W1 exit",
+   "terms": [
+    "Datapoint",
+    "HADES",
+    "Nora",
+    "Tallneck"
+   ],
+   "paths": [
+    "src/world/props.js"
+   ],
+   "reason": "dies with its content (plan §6 / §7.2)",
+   "cap": 7
+  },
+  {
+   "id": "scheduled:world-ground:src/world/**",
+   "kind": "scheduled",
+   "owner": "world-ground",
+   "until": "W1 exit",
+   "terms": [
+    "Frost"
+   ],
+   "paths": [
+    "src/world/**"
+   ],
+   "reason": "dies with its content (plan §6 / §7.2)",
+   "cap": 1
+  },
+  {
+   "id": "scheduled:audio:src/audio/**",
+   "kind": "scheduled",
+   "owner": "audio",
+   "until": "W3 exit (sets regenerated under new names)",
+   "terms": [
+    "Aloy",
+    "Behemoth",
+    "Blaze",
+    "Brittle",
+    "Concentration",
+    "Frost",
+    "Glinthawk",
+    "Horizon",
+    "Longleg",
+    "Ropecaster",
+    "Ropes",
+    "Sawtooth",
+    "Scrapper",
+    "Sharpshot",
+    "Strider",
+    "Thunderjaw",
+    "Watcher"
+   ],
+   "paths": [
+    "src/audio/**"
+   ],
+   "reason": "dies with its content (plan §6 / §7.2)",
+   "cap": 25
+  },
+  {
+   "id": "scheduled:brand:src/studio/**",
+   "kind": "scheduled",
+   "owner": "brand",
+   "until": "W4 (studio renames)",
+   "terms": [
+    "Aloy",
+    "Concentration"
+   ],
+   "paths": [
+    "src/studio/**"
+   ],
+   "reason": "dies with its content (plan §6 / §7.2)",
+   "cap": 10
+  },
+  {
+   "id": "scheduled:brand:{src/main.js,src/style.css,index.html}",
+   "kind": "scheduled",
+   "owner": "brand",
+   "until": "W4 (imports follow the classes they name)",
+   "terms": [
+    "Weapon wheel"
+   ],
+   "paths": [
+    "{src/main.js,src/style.css,index.html}"
+   ],
+   "reason": "dies with its content (plan §6 / §7.2)",
+   "cap": 1
+  },
+  {
+   "id": "scheduled:gates-perf:tools/gates.round4.*.mjs",
+   "kind": "scheduled",
+   "owner": "gates-perf",
+   "until": "W0b (archived to tools/gates/archive/)",
+   "terms": [
+    "Aloy",
+    "Apex",
+    "Bast",
+    "Behemoth",
+    "Blast Sling",
+    "Blaze",
+    "Brave",
+    "Brittle",
+    "Broadhead",
+    "Cauldron",
+    "Concentration",
+    "Corrupted",
+    "Corruption",
+    "Corruptor",
+    "Datapoint",
+    "Disc Launcher",
+    "Forager",
+    "Glinthawk",
+    "Grazer",
+    "HFW",
+    "HZD",
+    "Hardpoint",
+    "Horizon",
+    "Hunter Bow",
+    "Karst",
+    "Longleg",
+    "Medicine",
+    "Medicine Pouch",
+    "Metal Shards",
+    "Nil",
+    "Nora",
+    "Olin",
+    "Override",
+    "Proving",
+    "Prowler",
+    "Ravager",
+    "Redeye",
+    "Ropecaster",
+    "Ropes",
+    "Sawtooth",
+    "Scrapper",
+    "Shards",
+    "Sharpshot",
+    "Shell-Walker",
+    "Silent Strike",
+    "Snapmaw",
+    "Sona",
+    "Spear",
+    "Stormbird",
+    "Strider",
+    "Tallneck",
+    "Tearblast",
+    "Thunderjaw",
+    "Tripcaster",
+    "Vala",
+    "Varl",
+    "War Bow",
+    "Watcher"
+   ],
+   "paths": [
+    "tools/gates.round4.*.mjs"
+   ],
+   "reason": "dies with its content (plan §6 / §7.2)",
+   "cap": 180
+  },
+  {
+   "id": "scheduled:gates-perf:tools/gates.config.mjs",
+   "kind": "scheduled",
+   "owner": "gates-perf",
+   "until": "W0b (r5 registry)",
+   "terms": [
+    "Aloy",
+    "HZD",
+    "Horizon",
+    "Sawtooth",
+    "Strider",
+    "Watcher"
+   ],
+   "paths": [
+    "tools/gates.config.mjs"
+   ],
+   "reason": "dies with its content (plan §6 / §7.2)",
+   "cap": 12
+  },
+  {
+   "id": "scheduled:pipeline:tools/r5-poc/**",
+   "kind": "scheduled",
+   "owner": "pipeline",
+   "until": "W1 exit (world-ground deletes tools/r5-poc with the ?poc=biome hook, plan §8.3 R40)",
+   "terms": [
+    "Horizon",
+    "Metal Shards",
+    "Shards"
+   ],
+   "paths": [
+    "tools/r5-poc/**"
+   ],
+   "reason": "dies with its content (plan §6 / §7.2)",
+   "cap": 6
+  },
+  {
+   "id": "scheduled:orchestrator:tools/r5-direction/**",
+   "kind": "scheduled",
+   "owner": "orchestrator",
+   "until": "W0b: the direction-B lexicon source, copied into tools/lint/lexicon/",
+   "terms": [
+    "AETHER",
+    "APOLLO",
+    "ARTEMIS",
+    "Abadund",
+    "Aloy",
+    "Alva",
+    "Apex",
+    "Aratak",
+    "Arokkeh",
+    "Arrowhand",
+    "Avad",
+    "Banuk",
+    "Bast",
+    "Behemoth",
+    "Bellowback",
+    "Beta",
+    "Bileguts",
+    "Blaze",
+    "Blight",
+    "Boltblaster",
+    "Brave",
+    "Bristleback",
+    "Brittle",
+    "Broadhead",
+    "Burrower",
+    "CYAN",
+    "Carja",
+    "Cauldron",
+    "Chainscrape",
+    "Charger",
+    "Chariot",
+    "Chillwater",
+    "Circulator",
+    "Clamberjaw",
+    "Clawstrider",
+    "Concentration",
+    "Concord",
+    "Corrupted",
+    "Corruption",
+    "Corruptor",
+    "DEMETER",
+    "Datapoint",
+    "Daunt",
+    "Deathbringer",
+    "Dekka",
+    "Delah",
+    "Derangement",
+    "Dervahl",
+    "Drakka",
+    "Dreadwing",
+    "Eclipse",
+    "Eleuthia",
+    "Elisabet",
+    "Embrace",
+    "Erend",
+    "Ersa",
+    "Fanghorn",
+    "Faro",
+    "Fireclaw",
+    "Firespitter",
+    "Forager",
+    "Forgefire",
+    "Frostclaw",
+    "GAIA",
+    "Gerrit",
+    "Glinthawk",
+    "Grazer",
+    "Grimhorn",
+    "Guerrilla",
+    "HADES",
+    "HEPHAESTUS",
+    "Hardpoint",
+    "Heart-o-the-Mother",
+    "Hekarro",
+    "Helis",
+    "Horizon",
+    "Horus",
+    "Icerail",
+    "Igniter",
+    "Itamen",
+    "Janeva",
+    "Jezza",
+    "Karst",
+    "Kina",
+    "Kotallo",
+    "Kulrut",
+    "Lancehorn",
+    "Lansra",
+    "Leaplasher",
+    "Londra",
+    "Longleg",
+    "Lowell",
+    "Lowland",
+    "MINERVA",
+    "Marad",
+    "Matriarch",
+    "Medicine",
+    "Meridian",
+    "Morlund",
+    "Nakoa",
+    "Nil",
+    "Nora",
+    "Olin",
+    "Oseram",
+    "Ourea",
+    "Override",
+    "POSEIDON",
+    "Petra",
+    "Pitchcliff",
+    "Plainsong",
+    "Plowhorn",
+    "Proving",
+    "Prowler",
+    "Pullcaster",
+    "Purgewater",
+    "Quen",
+    "Raintrace",
+    "Rattler",
+    "Ravager",
+    "Redeye",
+    "Regalla",
+    "Resonator",
+    "Rockbreaker",
+    "Rollerback",
+    "Ropecaster",
+    "Rost",
+    "Saltbite",
+    "Sawtooth",
+    "Scorcher",
+    "Scrapper",
+    "Scrounger",
+    "Seeker",
+    "Seyka",
+    "Shards",
+    "Sharpshot",
+    "Shellsnapper",
+    "Shieldwing",
+    "Skydrifter",
+    "Slaughterspine",
+    "Slitherfang",
+    "Snapmaw",
+    "Sobeck",
+    "Sona",
+    "Sony",
+    "Sparker",
+    "Spear",
+    "Specter",
+    "Spikesnout",
+    "Stalker",
+    "Stillsands",
+    "Stingspawn",
+    "Stormbird",
+    "Stormslinger",
+    "Strider",
+    "Sunfall",
+    "Sunstone",
+    "Sunwing",
+    "Sylens",
+    "Talanah",
+    "Tallneck",
+    "Tearblast",
+    "Teb",
+    "Ted",
+    "Teersa",
+    "Tenakth",
+    "Thornmarsh",
+    "Thunderjaw",
+    "Tideripper",
+    "Tilda",
+    "Tinker",
+    "Trampler",
+    "Tremortusk",
+    "Tripcaster",
+    "Ulvund",
+    "Uncharted",
+    "Utaru",
+    "Vala",
+    "Vanasha",
+    "Varl",
+    "Watcher",
+    "Waterwing",
+    "Werak",
+    "Widemaw",
+    "Yarra",
+    "Zenith",
+    "Zeniths"
+   ],
+   "paths": [
+    "tools/r5-direction/**"
+   ],
+   "reason": "dies with its content (plan §6 / §7.2)",
+   "cap": 188
+  },
+  {
+   "id": "scheduled:gates-perf:tools/scratch/**",
+   "kind": "scheduled",
+   "owner": "gates-perf",
+   "until": "W0a (deleted, §6)",
+   "terms": [
+    "Behemoth",
+    "Blaze",
+    "Disc Launcher",
+    "Glinthawk",
+    "Longleg",
+    "Sawtooth",
+    "Scrapper",
+    "Sketchfab",
+    "Strider",
+    "Thunderjaw",
+    "Watcher"
+   ],
+   "paths": [
+    "tools/scratch/**"
+   ],
+   "reason": "dies with its content (plan §6 / §7.2)",
+   "cap": 17
+  },
+  {
+   "id": "scheduled:gates-perf:tools/spike-*.mjs",
+   "kind": "scheduled",
+   "owner": "gates-perf",
+   "until": "W0a (deleted, §6)",
+   "terms": [
+    "Aloy"
+   ],
+   "paths": [
+    "tools/spike-*.mjs"
+   ],
+   "reason": "dies with its content (plan §6 / §7.2)",
+   "cap": 7
+  },
+  {
+   "id": "scheduled:pipeline:tools/{optimize,bake-rigs,measure-machines}.mjs",
+   "kind": "scheduled",
+   "owner": "pipeline",
+   "until": "W0b (HZD donor lists removed, §6)",
+   "terms": [
+    "Aloy",
+    "Behemoth",
+    "Broadhead",
+    "Corruptor",
+    "Fortnite",
+    "Grazer",
+    "Horizon",
+    "Ravager",
+    "Redeye",
+    "Sawtooth",
+    "Shell-Walker",
+    "Snapmaw",
+    "Stormbird",
+    "Thunderjaw",
+    "Watcher",
+    "Zero Dawn"
+   ],
+   "paths": [
+    "tools/{optimize,bake-rigs,measure-machines}.mjs"
+   ],
+   "reason": "dies with its content (plan §6 / §7.2)",
+   "cap": 30
+  },
+  {
+   "id": "scheduled:audio:tools/{audio-bank,audio-recipes}.*",
+   "kind": "scheduled",
+   "owner": "audio",
+   "until": "W3 exit",
+   "terms": [
+    "Aloy",
+    "Behemoth",
+    "Frost",
+    "Glinthawk",
+    "Horizon",
+    "Longleg",
+    "Sawtooth",
+    "Scrapper",
+    "Sharpshot",
+    "Strider",
+    "Thunderjaw",
+    "Watcher"
+   ],
+   "paths": [
+    "tools/{audio-bank,audio-recipes}.*"
+   ],
+   "reason": "dies with its content (plan §6 / §7.2)",
+   "cap": 14
+  },
+  {
+   "id": "scheduled:gates-perf:tools/**",
+   "kind": "scheduled",
+   "owner": "gates-perf",
+   "until": "W0b (harness and measurement tools)",
+   "terms": [
+    "Behemoth",
+    "Glinthawk",
+    "HZD",
+    "Horizon",
+    "Longleg",
+    "Sawtooth",
+    "Scrapper",
+    "Strider",
+    "Thunderjaw",
+    "Watcher"
+   ],
+   "paths": [
+    "tools/**"
+   ],
+   "reason": "dies with its content (plan §6 / §7.2)",
+   "cap": 21
+  }
+ ]
+}

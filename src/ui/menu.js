@@ -59,6 +59,7 @@
 import { SettingsStore, SettingsPanel } from './settings.js';
 import { WorldMap, WaypointBeacon } from './map.js';
 import { Tips } from './tips.js';
+import * as THREE from 'three';
 import { REST } from '../world/island/sites.js';
 
 const el = (tag, cls, parent, html) => {
@@ -96,52 +97,152 @@ const DEATH_HOLD_S = 1.15;    // let the crumple play before the card takes over
 const VICTORY_S = 3.0;        // ui-13: banner, then the valley is yours again
 const GRAY_RAMP_S = 1.6;
 const CAMP = { x: REST.x, z: REST.z };
-const START_ANG = 3.7;        // title dolly: the sector that frames best (see _dolly)
+/**
+ * Title framing (brand, W0b; bible §9.8 "the Pans in calima"). The camera LOOKS
+ * along the sun's azimuth + TITLE_LOOK_OFFSET, so the calima disc sits on the
+ * right third, clear of the centred lockup (never behind the spark: no
+ * rising-sun reading). It STANDS on a line through REST whose bearing is the
+ * sun's azimuth + the position offset `_titleChooseFrame` picks so the terrain
+ * skyline stays under the disc from every point of the camera path. Both are
+ * fixed for the whole title: the slow drift is a lateral truck, not an orbit,
+ * so the frame can never swing round onto whatever stands behind it (Round 4's
+ * orbit walked the old walker tower into shot after a minute on the title).
+ */
+const TITLE_LOOK_OFFSET = 0.42;   // rad from the sun's azimuth to the view: the disc ~24° right of centre
+const TITLE_POS_OFFSETS = [0, 0.05, -0.05, 0.1, -0.1, 0.15, -0.15, 0.2, -0.2, 0.3, -0.3, 0.42];   // rad, the camera's bearing from REST, candidates
+/**
+ * Nothing behind the spark (fix round 2 after the W0b judges: "a needle spire rises
+ * straight up behind the spark on the plumb axis, so the spark reads as pinned on a
+ * stick"; bible §9.8: the spark is the dot of the I, "the calima sun"). The framing is
+ * chosen so the spark stands in CLEAR SKY: along the rays through the spark box's bottom
+ * edge, widened by TITLE_SPARK_PAD of its width on each side, the terrain crest stays
+ * at least TITLE_SPARK_MARGIN_DEG under it from every point of the camera path, in both
+ * layouts (the press beat and the menu). On the Round-4 valley's jagged rim no bearing or
+ * view does that at the old 9° tilt (measured: the crest stood up to 13.4° over the spark),
+ * so the chooser may also raise the camera's tilt (TITLE_TILT_EXTRA) and take the title's
+ * hour from TITLE_HOURS (a higher sun keeps the disc in the upper band as the tilt rises):
+ * the least extra tilt wins, then the hour, the view and the bearing in preference order.
+ * The disc must stay in the upper band, right of the lockup: its centre at or above the
+ * spark box's centre and at least TITLE_DISC_GAP_PX right of the lockup, whole in the frame
+ * with TITLE_DISC_EDGE_PX to spare, at both ends of the closing move. Nothing found: the
+ * Round-4 framing (TITLE_HOUR, no extra tilt, TITLE_LOOK_OFFSET), reported in the audit.
+ */
+const TITLE_LOOK_OFFSETS = [TITLE_LOOK_OFFSET, 0.39, 0.45, 0.36, 0.48];   // rad; 0.55 was measured too far into the vignette (round 3)
+const TITLE_HOURS = [17, 16.5, 17.5, 16, 15.5, 15];   // the boot hour first
+const TITLE_TILT_EXTRA = [0, 1, 2, 3, 4, 5, 6, 7, 8]; // deg added to TITLE_TILT_DEG
+const TITLE_SPARK_MARGIN_DEG = 0.8;   // the design margin; A-title-spark-clear's bar is 0.4° on the live camera (the chooser's rays and 5 m steps sample the path)
+const TITLE_SPARK_PAD = 0.25;
+const TITLE_SPARK_COLS = 7;
+const TITLE_DISC_GAP_PX = 100;
+const TITLE_DISC_EDGE_PX = 40;
+const TITLE_TRUCK_STEPS = [-1, -0.5, 0, 0.5, 1];   // of TITLE_TRUCK_M: the truck's samples
+const TITLE_EASE_STEPS = [0, 0.5, 1];              // the closing move's samples (menu layout; the press beat is ease 0)
+const TITLE_NIGHT_HEADING = 3.6;  // rad, used only when the sun is under the horizon
+const TITLE_TRUCK_M = 24;         // lateral drift amplitude, m
+const TITLE_TRUCK_W = 0.045;      // rad/s of the drift (one sway ≈ 140 s)
+const TITLE_TILT_DEG = 9;         // upward tilt at the start of the move (+3° across the ease)
+/**
+ * The title's own hour (fix round 1, judge r0): the title BORROWS an hour with the
+ * clock, whatever hour the player quit at (at 12:00 the sun stood above the frame,
+ * at 21:00 there was none), and `_titleLeave` hands the player's hour back. Since fix
+ * round 2 the hour is the chooser's, from TITLE_HOURS; TITLE_HOUR, the boot hour, is
+ * the first choice and the fallback.
+ */
+const TITLE_HOUR = 17;
+const DEG = Math.PI / 180;
+/**
+ * The calima disc (bible §9.4: calima "draws the sun as a soft coral disc
+ * #F2A27E"): a far billboard IN the 3D scene, depth-tested and never writing
+ * depth, so terrain or a prop in front of the sun hides it exactly like the sun.
+ * It exists only while the title stands in for calima (world-sky ships the
+ * real weather and its disc at W1; then `cal-calima-live` and no billboard).
+ *
+ * Fix round 2 (judge r1: the disc read darker than the sky round it). The quad
+ * now spans `radiusDeg` round the sun and does two things in ONE draw with
+ * custom blending (out = src.rgb + dst * src.a):
+ *   - the CORE (radius `coreDeg`, edge feathered by `soft`) replaces the sky
+ *     with `color`, scene-linear HDR;
+ *   - round it, the dust ABSORBS the clear-sky glow the Round-4 sky paints
+ *     about the sun: the sky is multiplied by
+ *     1 - absorb * (1 - smoothstep(absorbIn, radiusDeg, deg))^absorbPow,
+ *     0.32 next to the core back to 1 at the quad's edge, and again by
+ *     1 - corona * (1 - smoothstep(core edge, coronaOutDeg, deg)) for the
+ *     Round-4 sun's tight corona, so the disc is the brightest point of the
+ *     sky (no brighter rim round it) and nothing else changes.
+ * `color` and the absorption curve are fitted on filmed frames through the
+ * engine's ACES + grade + vignette and the CSS wash (docs/ROUND5-BRAND.md §5):
+ * the core lands near #F2A27E and the sky round it falls away monotonically.
+ */
+const CALIMA_DISC = {
+  dist: 1500, radiusDeg: 12, coreDeg: 1.5, soft: 0.16, clearDeg: 2.3,
+  color: [4.81, 0.026, 0.403],   // fix round 2: x1.3 (the disc stands higher, in the top haze and the vignette; fitted on filmed frames)
+  absorb: 0.68, absorbIn: 2, absorbPow: 1.4,     // the broad glow, out to radiusDeg
+  corona: 0.26, coronaOutDeg: 3,                 // the tight corona, from the core's edge out to coronaOutDeg
+};
+/** The title's one-line field notes (bible §10 words; rotated per title visit). */
+const TITLE_LINES = [
+  'Hold <kbd>RMB</kbd> to aim, <kbd>LMB</kbd> to draw. Release at full draw for the damage the shot is worth.',
+  'Raise the Alidade with <kbd>V</kbd> to read an Instrument before you loose: its lamp, its joints, its tools.',
+  'Hold <kbd>Shift</kbd> while aiming to Steady: a held breath, and everything else keeps its pace.',
+];
 
 /**
- * Credits rows. Provenance is copied from the manifests that are the source of
- * truth — `models-staging/MANIFEST.md`, `public/audio/MANIFEST.md`,
- * `public/anims/LICENSE` and README.md's own Credits section. Nothing here is
- * invented: a row exists only if one of those backs it.
+ * Credits (brand, W0b; plan §10.2). Two kinds of row, kept apart on purpose:
+ *
+ *   CREDITS_LICENSED  every licence row that needs credit, GENERATED between the
+ *                     markers by `node tools/lint/credits-sync.mjs` from
+ *                     `tools/licences/credits.mjs` (public/LICENSES.json). Never
+ *                     edit it by hand; `--check` fails on drift, and
+ *                     A-licence-manifest reads each CC-BY / MIT attribution from
+ *                     this file verbatim.
+ *   the project rows  what the project is and how its audio is made; not
+ *                     licence claims.
  */
+// <credits:generated>
+const CREDITS_LICENSED = [
+  { head: 'ATTRIBUTION REQUIRED (CC BY)', rows: [
+    ['"Black Caiman" by Poly by Google (https://poly.pizza/m/5etIv4omd7Z), CC-BY 3.0', ''],
+    ['"Hawk (low-poly, rigged)" by Sherkiz (https://poly.pizza/m/RkN6MEbP6g), CC-BY 3.0', ''],
+    ['"Lion" by Poly by Google (https://polygone.art/model/cC_IFclYA4c), CC-BY 3.0', ''],
+    ['"Mechanical Horse" by jake young (https://poly.pizza/m/d4bayjeM1aD), CC-BY 3.0', ''],
+    ['"Robocat" by Jordan Hill (https://poly.pizza/m/d78wyEWCmTC), CC-BY 3.0', ''],
+    ['"Scorpion" by Poly by Google (https://poly.pizza/m/6Bu7d_Pkm5o), CC-BY 3.0', ''],
+  ] },
+  { head: 'CODE (MIT)', rows: [
+    ['meshoptimizer decoder © 2016–2022 Arseny Kapoulkine (MIT)', ''],
+    ['three-mesh-bvh © 2018 Garrett Johnson (MIT)', ''],
+    ['three.js © 2010–2024 three.js authors (MIT)', ''],
+  ] },
+  { head: 'TYPEFACES (SIL OPEN FONT LICENSE 1.1)', rows: [
+    ['Bodoni Moda — Owen Earl (indestructible type*) (https://fonts.google.com/specimen/Bodoni+Moda)', ''],
+    ['IBM Plex Mono — IBM Corp. (Mike Abbink, Bold Monday) (https://fonts.google.com/specimen/IBM+Plex+Mono)', ''],
+    ['IBM Plex Sans Condensed — IBM Corp. (Mike Abbink, Bold Monday) (https://fonts.google.com/specimen/IBM+Plex+Sans+Condensed)', ''],
+  ] },
+  { head: 'THANKS (CC0, NO ATTRIBUTION REQUIRED)', rows: [
+    ['Birb (Ultimate Monsters pack) — Quaternius (https://quaternius.com/packs/ultimatemonsters.html)', ''],
+    ['Bull (Ultimate Animated Animal pack) — Quaternius (https://quaternius.com/packs/ultimateanimatedanimals.html)', ''],
+    ['Deer (Ultimate Animated Animal pack) — Quaternius (https://quaternius.com/packs/ultimateanimatedanimals.html)', ''],
+    ['Robot Enemy Flying — Quaternius (https://poly.pizza/m/lF3jeRJwiH)', ''],
+    ['Rock Face (1K scan, repacked) — Poly Haven (https://polyhaven.com/a/rock_face)', ''],
+    ['Round-4 lab copies of the Universal Animation Library — Quaternius (https://quaternius.itch.io/universal-animation-library)', ''],
+    ['Spider — Quaternius (https://poly.pizza/m/yRYJiAJyiM)', ''],
+    ['Universal Animation Library [Standard] (Godot export) — Quaternius (https://quaternius.itch.io/universal-animation-library)', ''],
+  ] },
+];
+// </credits:generated>
 const CREDITS = [
-  { head: 'HORIZON ZERO CLAUDE', rows: [
-    ['An unaffiliated homage', 'Horizon Zero Dawn is © Guerrilla Games / Sony Interactive Entertainment'],
-    ['Built with', 'Claude Code — agent fleets, literal gates and film loops'],
+  { head: 'CALIMA', rows: [
+    ['An original game', 'Orchil, its Instruments and its people are original to CALIMA'],
+    ['Built with', 'Claude Code: parallel agents, literal tests, filmed checks'],
   ] },
-  { head: 'ENGINE', rows: [
-    ['three.js r169', 'MIT'],
-    ['three-mesh-bvh', 'MIT — collision, navigation and hit hulls'],
-    ['Vite', 'MIT'],
-  ] },
-  { head: 'MACHINE MODELS  ·  CC-BY 3.0', rows: [
-    ['“Mechanical Horse” — jake young', 'poly.pizza/m/d4bayjeM1aD  ·  Strider donor'],
-    ['“Robocat” — Jordan Hill', 'poly.pizza/m/d78wyEWCmTC  ·  Scrapper donor'],
-    ['“Velocirobot” — Hoai Nguyen', 'poly.pizza/m/4XsUYx8ON1T  ·  Watcher / Sawtooth donor'],
-    ['“MechQuadruped” — 3Donimus', 'poly.pizza/m/5x1hRpbmdfo  ·  Behemoth donor'],
-  ] },
-  { head: 'MACHINE MODELS  ·  CC0 1.0', rows: [
-    ['“Robot Enemy Flying”, Animated Mech, Ultimate Monsters — Quaternius', 'quaternius.com  ·  Glinthawk, Longleg, Thunderjaw donors'],
-    ['Fox — PixelMannen, tomkranis, @AsoboStudio, @scurest', 'Khronos glTF-Sample-Assets  ·  CC0 model, CC-BY 4.0 rig / conversion  ·  rig-pipeline reference'],
-  ] },
-  { head: 'ANIMATION', rows: [
-    ['AnimationLibrary_Godot_Standard — 46 clips', 'CC0 1.0  ·  public/anims/LICENSE  ·  retargeted onto Aloy at boot'],
-  ] },
-  { head: 'AUDIO  ·  CC0 1.0', rows: [
-    // counted live: the bank grew from 58 sets to 95 between two waves and a
-    // hard-coded number in a credits screen is a licence claim that goes stale.
+  ...CREDITS_LICENSED,
+  { head: 'AUDIO  ·  SYNTHESIZED', rows: [
+    // counted live: a hard-coded number in a credits screen is a licence claim that goes stale
     [() => {
       const n = window.__CTX__?.audio?.bank?.size;
       return n ? `${n} cues loaded, synthesized by this repository` : 'Synthesized by this repository';
     }, 'public/audio/MANIFEST.md  ·  tools/audio-bank.mjs + audio-recipes.js'],
     ['No third-party audio is bundled', 'no attribution, share-alike or non-commercial obligation in the tree'],
-  ] },
-  { head: 'TYPEFACES  ·  SIL OPEN FONT LICENSE', rows: [
-    ['Julius Sans One — LatinoType', 'wordmark and display'],
-    ['Michroma · Orbitron · Rajdhani · Chakra Petch', 'interface, stingers, Focus'],
-  ] },
-  { head: 'CHARACTER & MACHINE SCULPTS (ROUND 1)', rows: [
-    ['Sketchfab fan-art rigs — Aloy, Watcher, Sawtooth, Thunderjaw, Behemoth', 'used as fan-art in a non-commercial tech demo — see README.md “Credits”'],
   ] },
 ];
 
@@ -182,6 +283,19 @@ export class Menus {
      * and mutated in place; `_dolly` runs every frame of the title.
      */
     this._dollyInfo = { since: 0, ease: 0, radius: 0, camY: 0, pitchDeg: 0 };
+    /**
+     * The title HOLDS the world clock (brand, W0b; judge r1): the vista is
+     * framed once per visit for the sun where it stands, and a running clock
+     * (dayLengthSeconds 1800) sank the calima disc behind the skyline within a
+     * minute of real time. `_titleFrame` borrows `environment.timeFrozen` and
+     * `_titleLeave` hands back the value it found (null = not borrowed).
+     * Fix round 1 (judge r0): it borrows the HOUR too. `_hourHeld` is the hour
+     * the world was at when the title came up (null = not borrowed); the title
+     * stands at TITLE_HOUR and `_titleLeave` hands the held hour back.
+     */
+    this._clockHeld = null;
+    this._hourHeld = null;
+    this._titleRest = false;   // a rest was still running while the title held the hour (see `_dolly`)
     this._lastState = ctx.state;
     /**
      * Audit trail for gates — CAPPED (`memory-attribution`). `audit()` only
@@ -224,7 +338,7 @@ export class Menus {
 
     const head = el('header', 'mn-hub-head', shell);
     const brand = el('div', 'mn-hub-brand', head);
-    el('div', 'mn-hub-kicker', brand, 'HORIZON ZERO CLAUDE');
+    el('div', 'mn-hub-kicker', brand, 'CALIMA');
     this._hubTitle = el('div', 'mn-hub-title', brand, 'MAP');
     this._tabsEl = el('nav', 'mn-tabs', head);
     this._tabBtns = new Map();
@@ -294,6 +408,9 @@ export class Menus {
     if (this._titleBuilt) { this._refreshTitle(); return; }
     this._titleBuilt = true;
     document.body.classList.add('cal-title-live');
+    // a QUIT TO TITLE rebuilds the block: drop the previous visit's (Round 4
+    // appended a second one beside it, so the title showed two menus)
+    this.titleEl?.remove();
 
     // ONE logo (V38): the wordmark that already lives in index.html is kept and
     // everything else is rebuilt around it. The keybind wall moves wholesale
@@ -310,6 +427,9 @@ export class Menus {
     this._titleSave = el('div', 'mn-title-save', this.titleEl);
 
     this._refreshTitle();
+    // framed after the title block exists (fix round 2): the chooser reads where the
+    // spark stands in both layouts, and the menu block moves the lockup
+    this._titleFrame();
     this.titleStage = 'press';
     this._titleT = 0;
     this._dollyT = 0;
@@ -327,15 +447,23 @@ export class Menus {
       { label: 'FIELD MANUAL', fn: () => this.openModal('manual') },
       { label: 'CREDITS', fn: () => this.openModal('credits') },
     ];
-    for (const it of items) {
-      const b = el('button', `mn-title-item${it.disabled ? ' disabled' : ''}`, this.titleMenu, it.label);
+    for (let i = 0; i < items.length; i++) {
+      const it = items[i];
+      // field-book stations (bible §9.7): a Plex Mono station number, then the label
+      const b = el('button', `mn-title-item${it.disabled ? ' disabled' : ''}`, this.titleMenu,
+        `<span class="cal-stn" aria-hidden="true">${String(i + 1).padStart(2, '0')}</span>${it.label}`);
       if (it.disabled) b.disabled = true;
       else b.addEventListener('click', () => { this._emit('ui-confirm', { label: it.label }); it.fn(); });
     }
     this._titleSave.textContent = info
       ? `LAST SAVE · LEVEL ${info.level ?? 1} · ${String(info.quest || 'THE VALLEY').toUpperCase()}`
       : 'NO SAVED HUNT — START A NEW ONE';
-    if (this._titleTip) this._titleTip.innerHTML = this.tips.peek('title');
+    if (this._titleTip) {
+      // the title's own line (brand): CALIMA's words, one per visit, never the
+      // shared tip feed (whose Round-4 lines still name the old mechanics)
+      this._titleTipN = (this._titleTipN ?? -1) + 1;
+      this._titleTip.innerHTML = TITLE_LINES[this._titleTipN % TITLE_LINES.length];
+    }
   }
 
   /** Any key (or click) on the title starts the dolly and reveals the menu. */
@@ -349,62 +477,479 @@ export class Menus {
   }
 
   /**
+   * Frame the title once per visit (brand, W0b): the chooser (`_titleChooseFrame`)
+   * picks the title's hour, the camera's bearing, the view and the extra tilt; at
+   * night (only when the hour cannot be borrowed) a fixed heading. Also asks the
+   * renderer for calima: once world-sky ships the `calima` weather (W1)
+   * `setWeather('calima')` returns 'calima', the CSS stand-in (#cal-calima) and the
+   * disc billboard switch off and the start restores the weather. Allocates once
+   * per visit (the billboard: one quad, one material, dropped in `_titleLeave`).
+   *
+   * The clock AND the hour are borrowed FIRST, before anything reads the sun: the
+   * title is framed for its own hour, not for the hour the player quit at.
+   */
+  _titleFrame() {
+    const env = this.ctx.environment;
+    if (env && this._clockHeld == null) {
+      this._clockHeld = !!env.timeFrozen;
+      env.timeFrozen = true;
+      if (typeof env.setTime === 'function') this._hourHeld = env.time;
+    }
+    this._titleHead = { sx: 0, cz: 0, az: 0, lx: 0, lz: 0, look: 0, tilt: 0 };
+    this._titleAim();
+    this._calimaWeather = null;
+    if (env?.setWeather && env.weather !== 'calima') {
+      const prev = env.weather;
+      if (env.setWeather('calima', 0) === 'calima') this._calimaWeather = prev;
+    }
+    const live = env?.weather === 'calima';
+    document.body.classList.toggle('cal-calima-live', live);
+    const sun = env?.sunDir;
+    if (sun && sun.y > 0.02 && !live) this._discMake(); else this._discDrop();
+  }
+
+  /**
+   * Run the chooser, set the world to the title's hour (only while the title holds
+   * the hour) and write the bearing line through REST (sx, cz), the view (lx, lz)
+   * and the extra tilt into `_titleHead` in place.
+   */
+  _titleAim(opts) {
+    const env = this.ctx.environment;
+    const pick = this._titleChooseFrame(opts);
+    this._titleHour = pick?.hour ?? TITLE_HOUR;
+    if (this._hourHeld != null && typeof env?.setTime === 'function' && env.time !== this._titleHour) env.setTime(this._titleHour);
+    const sun = env?.sunDir;
+    const day = !!sun && sun.y > 0.02 && !!pick;
+    const saz = day ? Math.atan2(sun.x, sun.z) : 0;
+    const pos = day ? saz + pick.pos : TITLE_NIGHT_HEADING;
+    const look = day ? saz + pick.look : TITLE_NIGHT_HEADING;
+    const h = this._titleHead;
+    h.sx = Math.sin(pos); h.cz = Math.cos(pos); h.az = pos; h.lx = Math.sin(look); h.lz = Math.cos(look); h.look = look;
+    h.tilt = day ? pick.tilt : 0;
+  }
+
+  /**
+   * Re-choose the framing for the lockup as it is laid out NOW, for a gate that
+   * restages the lockup on the press beat: V-logo-4k scales it 2.4x, which no player
+   * layout does, and films the construction, not the disc, so it passes { disc: false }
+   * (the disc's upper-band rule cannot hold beside a lockup that wide). The clock and
+   * the weather stay as `_titleFrame` borrowed them; the hour may move within
+   * TITLE_HOURS. Returns the audit's disc info, or null before a title.
+   */
+  _titleReframe(opts) {
+    if (!this._titleHead) return null;
+    this._titleAim(opts);
+    return this._titleDiscInfo;
+  }
+
+  /** The chooser's scratch objects, made once and kept until the title is left (no GPU resources). */
+  _titleScratchGet() {
+    if (!this._titleScratch) {
+      this._titleScratch = { cam: new THREE.PerspectiveCamera(), v: new THREE.Vector3(), from: new THREE.Vector3(), sun: new THREE.Vector3(),
+        box: new THREE.Box3(), head: { sx: 0, cz: 0, lx: 0, lz: 0, tilt: 0 } };
+    }
+    const S = this._titleScratch, cam = this.ctx.camera, pc = S.cam;
+    if (cam && (pc.fov !== cam.fov || pc.aspect !== cam.aspect)) { pc.fov = cam.fov; pc.aspect = cam.aspect; pc.near = cam.near; pc.far = cam.far; pc.updateProjectionMatrix(); }
+    return S;
+  }
+
+  /**
+   * The chooser (`disc: false` only for `_titleReframe`'s construction shot). Candidates, in preference order: the hour (TITLE_HOURS), the view
+   * (TITLE_LOOK_OFFSETS) and the bearing (TITLE_POS_OFFSETS whose path keeps the
+   * skyline under the disc, best first); each takes the least extra tilt that keeps
+   * the spark in clear sky, and the least extra tilt wins (then that order). A
+   * candidate must also place the disc in the upper band (`_titleDiscPlaced`) and pass
+   * the full spark test at its tilt. None: the Round-4 framing at the first hour, with
+   * the spark reported unclear. Once per title visit; timed in the audit (about 250 ms
+   * for the full search on the Round-4 valley; a later visit with the same layout first
+   * re-checks the last pick, `_titlePickLast`, and keeps it when it still passes).
+   * Returns { hour, pos, look, tilt } (offsets in rad from the sun's azimuth), or null at night.
+   */
+  _titleChooseFrame({ disc = true } = {}) {
+    const env = this.ctx.environment, T = this.ctx.terrain, cam = this.ctx.camera;
+    const info = { hour: null, posOffset: TITLE_POS_OFFSETS[0], lookOffset: TITLE_LOOK_OFFSET, tiltExtraDeg: 0, clearanceDeg: null, tried: [], ms: 0,
+      coreDeg: CALIMA_DISC.coreDeg, edgeDeg: +(CALIMA_DISC.coreDeg * (1 + CALIMA_DISC.soft)).toFixed(3),
+      radiusDeg: CALIMA_DISC.radiusDeg, skySun: !!this._skyDome(),
+      spark: { measured: false, ndc: null, clear: false, marginDeg: null, need: TITLE_SPARK_MARGIN_DEG, candidates: 0, verified: 0, cached: false }, discPx: null };
+    this._titleDiscInfo = info;
+    if (!env?.sunDir) return null;
+    const t0 = performance.now();
+    const S = this._titleScratchGet();
+    const Env = env.constructor;
+    const canHour = typeof Env?.direction === 'function' && typeof env.setTime === 'function' && this._hourHeld != null;
+    const hours = canHour ? TITLE_HOURS : [null];          // null: the world's own sun (the hour cannot be borrowed)
+    const sunOf = (h) => (h == null ? S.sun.copy(env.sunDir) : Env.direction(h, S.sun));
+    const p1 = new Map();
+    const clearOf = (h) => { if (!p1.has(h)) { const sun = sunOf(h); p1.set(h, sun.y > 0.02 ? this._titleDiscClearance(sun) : null); } return p1.get(h); };
+    let spk = null;
+    const done = (pick, tried, clear) => {
+      info.hour = pick.hour ?? +env.time;
+      info.posOffset = pick.pos; info.lookOffset = pick.look; info.tiltExtraDeg = pick.tilt;
+      info.tried = tried; info.clearanceDeg = (tried.find((r) => r[0] === pick.pos) || [0, null])[1];
+      if (spk) {
+        const sun = sunOf(pick.hour), saz = Math.atan2(sun.x, sun.z);
+        info.spark.clear = !!clear;
+        info.spark.marginDeg = +(this._titleSparkMargin(saz, pick.pos, pick.look, pick.tilt, spk, -Infinity, false) / DEG).toFixed(2);
+        this._titleDiscPlaced(sun, saz, pick.pos, pick.look, pick.tilt, spk);   // the audit's discPx, for the pick
+      }
+      info.ms = +(performance.now() - t0).toFixed(1);
+      return pick;
+    };
+    const tr0 = clearOf(hours[0]);
+    if (!tr0) { info.ms = +(performance.now() - t0).toFixed(1); return null; }
+    const fb = tr0.reduce((a, b) => (b[1] > a[1] ? b : a));
+    const fallback = { hour: hours[0], pos: fb[0], look: TITLE_LOOK_OFFSET, tilt: 0 };
+    spk = T?.getHeight && cam ? this._titleSparkNdc() : null;
+    if (!spk) return done(fallback, tr0, false);
+    info.spark.measured = true;
+    info.spark.ndc = { press: spk.press, menu: spk.menu };
+    const need = TITLE_SPARK_MARGIN_DEG * DEG;
+    const maxTilt = TITLE_TILT_EXTRA[TITLE_TILT_EXTRA.length - 1];
+    /** the full test at a tilt, the disc's placement first (cheap); true = pick it */
+    const passes = (c, tilt) => {
+      const sun = sunOf(c.hour);
+      if (!this._titleDiscPlaced(sun, c.saz, c.pos, c.look, tilt, spk) && disc) return false;
+      info.spark.verified++;
+      return this._titleSparkMargin(c.saz, c.pos, c.look, tilt, spk, need, false) >= need;
+    };
+    // a later visit with the same layout re-checks the last pick first: pass 1 for its hour
+    // (the sky's sun moves with the player) and the full spark test at its tilt
+    const key = [spk.press.x0, spk.press.x1, spk.press.y, spk.menu.y, cam.fov, cam.aspect.toFixed(4), disc].join('|');
+    const keep = (pick, tr) => { this._titlePickLast = { key, pick }; return done(pick, tr, true); };
+    const last = this._titlePickLast;
+    if (last && last.key === key && hours.includes(last.pick.hour)) {
+      const tr = clearOf(last.pick.hour), row = tr && tr.find((r) => r[0] === last.pick.pos);
+      if (row && row[1] >= 0) {
+        const sun = sunOf(last.pick.hour);
+        if (passes({ ...last.pick, saz: Math.atan2(sun.x, sun.z) }, last.pick.tilt)) { info.spark.cached = true; return done(last.pick, tr, true); }
+      }
+    }
+    const cands = [];
+    for (const h of hours) {
+      const tr = clearOf(h);
+      if (!tr) continue;
+      const sun = sunOf(h), saz = Math.atan2(sun.x, sun.z);
+      const byClear = tr.filter((r) => r[1] >= 0).sort((a, b) => b[1] - a[1]);
+      for (const lo of TITLE_LOOK_OFFSETS) {
+        for (const r of byClear) {
+          info.spark.candidates++;
+          // the quick read (fewer rays) can only overstate the margin, so its tilt is a lower bound
+          const m = this._titleSparkMargin(saz, r[0], lo, 0, spk, -Infinity, true);
+          const tilt = TITLE_TILT_EXTRA.find((t) => m + t * DEG >= need);
+          if (tilt == null) continue;
+          const c = { hour: h, pos: r[0], look: lo, tilt, saz, n: cands.length };
+          if (tilt === 0 && passes(c, 0)) return keep({ hour: h, pos: c.pos, look: lo, tilt: 0 }, tr);
+          cands.push(c);
+        }
+      }
+    }
+    cands.sort((a, b) => a.tilt - b.tilt || a.n - b.n);
+    for (let t = 0; t <= maxTilt; t++) {
+      for (const c of cands) {
+        if (c.tilt > t) break;
+        if (TITLE_TILT_EXTRA.includes(t) && passes(c, t)) return keep({ hour: c.hour, pos: c.pos, look: c.look, tilt: t }, clearOf(c.hour));
+      }
+    }
+    return done(fallback, tr0, false);
+  }
+
+  /**
+   * Pass 1, for one sun: per bearing of TITLE_POS_OFFSETS (rad from the sun's
+   * azimuth), how far the terrain skyline stays under the disc (its core + rim + a
+   * margin, CALIMA_DISC.clearDeg, across its whole width) from every point the title
+   * visits: both ends of the lateral truck and its middle, at the opening and the
+   * closing radius and height. The sun is taken where the sky draws it, seen from
+   * each of those points (`_titleSunPoint`). The billboard's depth test still hides
+   * whatever part of the sun really is behind terrain or a prop. 12 bearings x 6
+   * positions x 5 azimuths x 70 samples of the analytic height. -> [[offset, deg], ...]
+   */
+  _titleDiscClearance(sun) {
+    const T = this.ctx.terrain;
+    const S = this._titleScratchGet();
+    const saz = Math.atan2(sun.x, sun.z);
+    const cam = S.from, sp = S.v;
+    const out = [];
+    for (const off of TITLE_POS_OFFSETS) {
+      const hx = Math.sin(saz + off), hz = Math.cos(saz + off);
+      let worst = Infinity;
+      for (const radius of [150, 116]) {
+        for (const lat of [-TITLE_TRUCK_M, 0, TITLE_TRUCK_M]) {
+          const cx = CAMP.x - hx * radius - hz * lat, cz = CAMP.z - hz * radius + hx * lat;
+          const cy = T.getHeight(cx, cz) + (radius === 150 ? 32 : 25);
+          // the sun where the sky draws it, seen from this point of the path
+          this._titleSunPoint(sp, cam.set(cx, cy, cz), sun).sub(cam);
+          const az = Math.atan2(sp.x, sp.z), lowEdge = Math.asin(sp.y / sp.length()) - CALIMA_DISC.clearDeg * DEG;
+          for (let k = -2; k <= 2; k++) {
+            const a = az + k * 0.5 * CALIMA_DISC.clearDeg * DEG, sx = Math.sin(a), sz = Math.cos(a);
+            let crest = -Math.PI / 2;
+            for (let d = 20; d <= 1400; d += 20) {
+              const e = Math.atan2(T.getHeight(cx + sx * d, cz + sz * d) - cy, d);
+              if (e > crest) crest = e;
+            }
+            if (lowEdge - crest < worst) worst = lowEdge - crest;
+          }
+        }
+      }
+      out.push([off, +(worst / DEG).toFixed(2)]);
+    }
+    return out;
+  }
+
+  /**
+   * Where the spark's box stands, in NDC, in both title layouts: the press beat and
+   * the menu (the menu block is taller, so the centred lockup rises); plus, in px, the
+   * menu layout's spark centre and lockup right edge for the disc's placement. Read
+   * once per visit; the menu layout by adding `lit` for one synchronous layout, then
+   * restoring it, so nothing paints in between. null when the title is not laid out.
+   */
+  _titleSparkNdc() {
+    const s = document.querySelector('#title .cal-spark'), L = document.querySelector('#title .cal-logo'), t = this.titleEl;
+    if (!s || !L || !t || !(innerWidth > 0) || !(innerHeight > 0)) return null;
+    const read = () => {
+      const r = s.getBoundingClientRect();
+      return r.width > 0 ? { x0: +(r.left / innerWidth * 2 - 1).toFixed(4), x1: +(r.right / innerWidth * 2 - 1).toFixed(4), y: +(1 - r.bottom / innerHeight * 2).toFixed(4), cy: (r.top + r.bottom) / 2 } : null;
+    };
+    const lit = t.classList.contains('lit');
+    t.classList.remove('lit');
+    const press = read();
+    t.classList.add('lit');
+    const menu = read();
+    const lockRight = L.getBoundingClientRect().right;
+    if (!lit) t.classList.remove('lit');
+    return press && menu ? { press, menu, px: { sparkCy: menu.cy, lockRight } } : null;
+  }
+
+  /**
+   * The camera on the title path (the one formula `_dolly` uses): ease 0..1 of the
+   * closing move, `lat` m of the truck, `head` = { sx, cz, lx, lz, tilt }. Sets the
+   * camera's position and orientation and updates its matrix; returns camY. No allocation.
+   */
+  _titlePlace(cam, head, ease, lat) {
+    const terrain = this.ctx.terrain;
+    const radius = 150 - ease * 34;
+    const cx = CAMP.x - head.sx * radius - head.cz * lat;
+    const cz = CAMP.z - head.cz * radius + head.sx * lat;
+    const ground = terrain?.getHeight ? terrain.getHeight(cx, cz) : 0;
+    const camY = ground + 32 - ease * 7;
+    cam.position.set(cx, camY, cz);
+    // NEGATIVE = TILT UP, opening across the move: 9° → 12° up, plus the chooser's extra
+    // tilt (fix round 2), keeps the sky, the disc and the spark over the rim.
+    const pitch = (-TITLE_TILT_DEG - (head.tilt || 0) - ease * 3) * DEG;
+    const reach = radius * 1.05;
+    cam.lookAt(cx + head.lx * reach, camY - reach * Math.tan(pitch), cz + head.lz * reach);
+    cam.updateMatrixWorld();
+    return camY;
+  }
+
+  /**
+   * One candidate framing (bearing saz + po, view saz + lo, extra tilt in deg): the
+   * least angle, over the path, by which the rays through the spark box's bottom edge
+   * (widened by TITLE_SPARK_PAD each side) clear the terrain crest under them (rad;
+   * < 0 = something stands behind the spark). Returns as soon as it drops under
+   * `need`. The full read: 20 path points, a ray at least every 8 px, 5 m steps;
+   * `quick`: 9 path points, 3 rays, 20 m steps (an upper bound on the full read, used
+   * only to rank candidates). The crest is marched only over the rendered terrain mesh (its
+   * world box); beyond it the sky ring's ridges stand far lower. No allocation.
+   */
+  _titleSparkMargin(saz, po, lo, tilt, spk, need, quick) {
+    const T = this.ctx.terrain;
+    if (!T?.getHeight) return Infinity;
+    const S = this._titleScratchGet(), pc = S.cam, v = S.v, head = S.head;
+    const box = T.mesh ? S.box.setFromObject(T.mesh) : null;
+    head.sx = Math.sin(saz + po); head.cz = Math.cos(saz + po); head.lx = Math.sin(saz + lo); head.lz = Math.cos(saz + lo); head.tilt = tilt;
+    const step = quick ? 20 : 5;
+    let worst = Infinity;
+    for (let L = 0; L < 2; L++) {
+      const lay = L === 0 ? spk.press : spk.menu;
+      const pad = (lay.x1 - lay.x0) * TITLE_SPARK_PAD;
+      // the full read: a ray at least every 8 px across the widened box, so a needle cannot slip between rays
+      const cols = quick ? 3 : Math.max(TITLE_SPARK_COLS, Math.ceil((lay.x1 - lay.x0 + 2 * pad) * innerWidth / 2 / 8) + 1);
+      const ne = L === 0 ? 1 : TITLE_EASE_STEPS.length;
+      for (let e = 0; e < ne; e++) {
+        const ease = L === 0 ? 0 : TITLE_EASE_STEPS[e];
+        if (quick && ease === 0.5) continue;
+        for (let k = 0; k < TITLE_TRUCK_STEPS.length; k++) {
+          if (quick && (k & 1)) continue;
+          const camY = this._titlePlace(pc, head, ease, TITLE_TRUCK_STEPS[k] * TITLE_TRUCK_M);
+          const px = pc.position.x, pz = pc.position.z;
+          for (let c = 0; c < cols; c++) {
+            v.set(lay.x0 - pad + (lay.x1 - lay.x0 + 2 * pad) * c / (cols - 1), lay.y, 0.5).unproject(pc).sub(pc.position);
+            const hz = Math.hypot(v.x, v.z), el = Math.atan2(v.y, hz), sx = v.x / hz, sz = v.z / hz;
+            let crest = -Math.PI / 2;
+            for (let d = step; d <= 1400; d += step) {
+              const x = px + sx * d, z = pz + sz * d;
+              if (box && (x < box.min.x || x > box.max.x || z < box.min.z || z > box.max.z)) break;
+              const a = Math.atan2(T.getHeight(x, z) - camY, d);
+              if (a > crest) crest = a;
+            }
+            if (el - crest < worst) { worst = el - crest; if (worst < need) return worst; }
+          }
+        }
+      }
+    }
+    return worst;
+  }
+
+  /**
+   * The disc in the upper band for one candidate: with the menu in, at both ends of the
+   * closing move, its centre at or above the spark's centre, at least TITLE_DISC_GAP_PX
+   * right of the lockup, and its core whole in the frame with TITLE_DISC_EDGE_PX to spare.
+   * Writes the opening position into the audit's `discPx`. No allocation.
+   */
+  _titleDiscPlaced(sun, saz, po, lo, tilt, spk) {
+    const S = this._titleScratchGet(), pc = S.cam, v = S.v, head = S.head;
+    head.sx = Math.sin(saz + po); head.cz = Math.cos(saz + po); head.lx = Math.sin(saz + lo); head.lz = Math.cos(saz + lo); head.tilt = tilt;
+    const W = innerWidth, H = innerHeight;
+    const r = CALIMA_DISC.coreDeg * (1 + CALIMA_DISC.soft) * (H / 2) / Math.tan(pc.fov * DEG / 2) * DEG;
+    for (let e = 0; e <= 1; e++) {
+      this._titlePlace(pc, head, e, 0);
+      this._titleSunPoint(v, pc.position, sun).project(pc);
+      const x = (v.x + 1) / 2 * W, y = (1 - v.y) / 2 * H;
+      if (e === 0 && this._titleDiscInfo) this._titleDiscInfo.discPx = [Math.round(x), Math.round(y)];
+      if (!(v.z < 1) || y > spk.px.sparkCy || x < spk.px.lockRight + TITLE_DISC_GAP_PX
+        || y - r < TITLE_DISC_EDGE_PX || x + r > W - TITLE_DISC_EDGE_PX) return false;
+    }
+    return true;
+  }
+
+  /** The Round-4 sky dome (world-sky's `environment.sky`), when it is the kind this title knows how to read. */
+  _skyDome() {
+    const sky = this.ctx.environment?.sky;
+    const R = sky?.geometry?.parameters?.radius;
+    return sky && R > 0 ? sky : null;
+  }
+
+  /**
+   * Where the sky draws the sun, as a world point (fix round 2 of round 2). The sky is
+   * a dome of radius R centred on the player at y = 0, not on the camera, so from the
+   * title camera (~150 m off, ~30 m up) its sun stands about 4° under `sunDir`; the disc
+   * must cover THAT sun or the frame shows two. `sun` defaults to the world's sunDir (the
+   * chooser passes an hour's sun). Falls back to `from` + sun * CALIMA_DISC.dist when the
+   * dome is not there. No allocation.
+   */
+  _titleSunPoint(out, from, sun = this.ctx.environment.sunDir) {
+    const sky = this._skyDome();
+    if (sky) return out.copy(sun).multiplyScalar(sky.geometry.parameters.radius * 0.98).add(sky.position);
+    return out.copy(from).addScaledVector(sun, CALIMA_DISC.dist);
+  }
+
+  /** The calima disc billboard (CALIMA_DISC), made once per title visit. */
+  _discMake() {
+    const scene = this.ctx.scene;
+    if (this._disc || !scene) return;
+    const D = CALIMA_DISC;
+    const geo = new THREE.PlaneGeometry(1, 1);
+    const mat = new THREE.ShaderMaterial({
+      transparent: true, depthWrite: false, depthTest: true, fog: false,
+      // out.rgb = src.rgb + dst.rgb * src.a ; the target's alpha is kept
+      blending: THREE.CustomBlending, blendEquation: THREE.AddEquation,
+      blendSrc: THREE.OneFactor, blendDst: THREE.SrcAlphaFactor,
+      blendSrcAlpha: THREE.ZeroFactor, blendDstAlpha: THREE.OneFactor,
+      uniforms: {
+        uColor: { value: new THREE.Color().setRGB(...D.color) },
+        uCore: { value: D.coreDeg / D.radiusDeg },
+        uSoft: { value: D.soft },
+        uAbsorb: { value: new THREE.Vector3(D.absorb, D.absorbIn / D.radiusDeg, D.absorbPow) },
+        uCorona: { value: new THREE.Vector3(D.corona, D.coreDeg * (1 + D.soft) / D.radiusDeg, D.coronaOutDeg / D.radiusDeg) },
+      },
+      vertexShader: /* glsl */`
+        varying vec2 vUv;
+        void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }
+      `,
+      fragmentShader: /* glsl */`
+        uniform vec3 uColor;
+        uniform float uCore, uSoft;
+        uniform vec3 uAbsorb;                                      // amount, inner radius (0..1), power
+        uniform vec3 uCorona;                                      // amount, inner, outer radius (0..1)
+        varying vec2 vUv;
+        void main() {
+          float r = length(vUv - 0.5) * 2.0;                       // 0 centre .. 1 the quad's radius
+          if (r >= 1.0) discard;
+          float core = 1.0 - smoothstep(uCore * (1.0 - uSoft), uCore * (1.0 + uSoft), r);
+          float keep = 1.0 - uAbsorb.x * pow(1.0 - smoothstep(uAbsorb.y, 1.0, r), uAbsorb.z);
+          keep *= 1.0 - uCorona.x * (1.0 - smoothstep(uCorona.y, uCorona.z, r));
+          gl_FragColor = vec4(uColor * core, keep * (1.0 - core));
+        }
+      `,
+    });
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.name = 'cal-title-calima-disc';
+    mesh.renderOrder = 1;
+    mesh.frustumCulled = false;
+    mesh.castShadow = false;
+    mesh.receiveShadow = false;
+    mesh.visible = false;               // placed and sized by _dolly on the next frame
+    scene.add(mesh);
+    this._disc = mesh;
+  }
+
+  /** Remove and dispose the billboard (title leave, night, or real calima). */
+  _discDrop() {
+    const d = this._disc;
+    if (!d) return;
+    d.parent?.remove(d);
+    d.geometry.dispose();
+    d.material.dispose();
+    this._disc = null;
+  }
+
+  /**
+   * Leave the title: hand back the clock, the hour and the weather the title
+   * borrowed; drop the disc. Idempotent: the start path and the `game-start`
+   * event both call it, so a start that bypasses the menu (`__GAME__.start()`)
+   * still cleans up. The hour goes back only while the world still stands at
+   * TITLE_HOUR: an hour something else set on the title (a rest that was still
+   * running, a script) is kept. CONTINUE then loads the save's own hour.
+   */
+  _titleLeave() {
+    const env = this.ctx.environment;
+    if (this._clockHeld != null && env) {
+      env.timeFrozen = this._clockHeld;
+      if (this._hourHeld != null && env.time === (this._titleHour ?? TITLE_HOUR)) env.setTime(this._hourHeld);
+    }
+    this._clockHeld = null;
+    this._hourHeld = null;
+    this._titleRest = false;
+    if (this._calimaWeather != null && env?.setWeather) env.setWeather(this._calimaWeather, 0);
+    this._calimaWeather = null;
+    document.body.classList.remove('cal-calima-live');
+    this._discDrop();
+    this._titleScratch = null;   // the chooser's scratch camera and vectors (no GPU resources)
+  }
+
+  /**
    * The scripted aerial dolly. Runs in `update()` because 'title' is one of the
    * live states, and writes the camera LAST in the frame (this system is
    * appended to `game.systems` after `Player`), so the chase camera does not
    * fight it. Pure trigonometry on the existing camera — no allocation per
-   * frame, nothing added to the scene.
+   * frame (the disc billboard is made once per title visit, in `_titleFrame`).
    *
-   * FRAMING IS THE WHOLE SHOT (V38, judged on film). The first cut put the
-   * camera 118 m up and aimed it at a point 12 m above the camp: a 27° stare
-   * straight down that pushed the horizon and the entire sky out of frame, so
-   * the title read as a muddy top-down diorama with a menu on it. A landscape
-   * needs a horizon, so the pitch is the authored quantity here, not the look
-   * target. The look point is derived from it (`lookY = camY - reach·tan θ`)
-   * instead of the other way round, which is what keeps the composition steady
-   * while the height, the radius and the terrain under the camera all change.
-   *
-   * THE SECOND CUT AIMED THE TILT THE WRONG WAY, and it took a measurement to
-   * see it. A probe marched the look ray at 16 points around the ring and read
-   * the rim crest's ELEVATION from the camera: 16.6–32.1°, and 18° in this
-   * sector. The camera's vertical half-FOV is 27.5° (`camera.fov` is vertical
-   * in three.js), so a 6° DOWNWARD tilt puts the top of frame at 21.5° — three
-   * and a half degrees above an eighteen-degree crest. That is the whole reason
-   * the shot read as a flat beige wall with the wordmark painted on it: the sky
-   * was there, but only a notch of it cleared the ridge.
-   *
-   * Tilting UP ~1.5–4.5° instead lifts the top of frame to 29–32° and gives the
-   * ridgeline a real band of sky above it, which is what turns the rim from the
-   * subject into a silhouette. Raising the camera would do it too, but that is
-   * the 118 m contour map again — at 590–640 m out, dropping the crest to 12°
-   * needs 113 m of altitude, and everything the world lanes built disappears
-   * below the resolution of the shot. So: stay low, tilt up, keep the meadow.
+   * ROUND 5 (brand, W0b). The authored quantities and the two clocks are the
+   * Round-4 ones (A70c-title-flow grades them): `_dollyT` runs from the moment
+   * the title appears, `_titleT` from the key press; the closing ease is keyed
+   * to the press, so nothing moves on the press frame; the radius closes from
+   * 150 m to 116 m over 9 s; the menu arrives 1.1 s after the press; altitude
+   * is ~32 m over the ground under the camera, and the tilt opens by 3° UP across
+   * the move (TITLE_TILT_DEG, now 9° → 12° so the sky and the disc hold the upper
+   * third over the rim). What changed is the heading:
+   * fixed toward the sun (see `_titleFrame`) instead of an orbit, with a slow
+   * lateral truck for life, and the calima disc billboard follows the camera.
    */
   _dolly(dt) {
     const cam = this.ctx.camera;
-    const terrain = this.ctx.terrain;
     if (!cam) return;
+    if (!this._titleHead) this._titleFrame();
+    // a rest still running when the player quit (fix round 1): the environment
+    // drives the hour until it lands, then THAT hour is the one to hand back and
+    // the title goes back to its own. The environment updates before this system,
+    // so the snap lands before the frame renders. One boolean read per frame.
+    const env = this.ctx.environment;
+    if (this._hourHeld != null && env) {
+      if (env.resting) this._titleRest = true;
+      else if (this._titleRest) { this._titleRest = false; this._hourHeld = env.time; env.setTime(this._titleHour ?? TITLE_HOUR); }
+    }
     this._dollyT += dt;
     const t = this._dollyT;
-    /**
-     * TWO CLOCKS, AND THEY ARE NOT INTERCHANGEABLE — this was a real jump cut.
-     *
-     *   `_dollyT` counts from the moment the title appears. It drives the
-     *     CONTINUOUS orbit below, which is already running while the player
-     *     reads the press-any-key line.
-     *   `_titleT` is zeroed by `_titleAdvance()` on the keypress, so it counts
-     *     from the PRESS. It drives everything that is supposed to be triggered
-     *     BY the press: the closing ease and the menu beat.
-     *
-     * Keying the ease to `_dollyT` meant `closing` was already spent before the
-     * player touched anything: `closing` is clamped to 0 during 'press', so the
-     * frame the stage flipped it snapped from 0 to titleTime/9 in one step —
-     * measured at 35 m of camera translation in a single frame after an 8 s
-     * title, with the rim, the Tallneck and the camp all sliding at once. Past
-     * 9 s of title there was no move left at all, only the orbit. It also ate
-     * the 1.1 s beat: `t > 1.1` was already true, so the menu appeared on the
-     * first frame instead of after the vista had started travelling.
-     */
     const since = this._titleT;
 
     // the menu fades in 1.1 s AFTER THE PRESS, so the vista is already
@@ -414,42 +959,24 @@ export class Menus {
       this.titleEl?.classList.add('menu-in');
     }
 
-    // a slow arc over the valley that descends toward the camp once a key is hit
+    // closing move: starts at the press, never before (A70c)
     const closing = this.titleStage === 'press' ? 0 : clamp(since / 9, 0, 1);
     const ease = closing * closing * (3 - 2 * closing);
-    // START_ANG is a composition choice, not a default: filmed at eight points
-    // around the ring, this is the sector that puts the Tallneck's silhouette
-    // on the right third, sky in the rim's notches above the wordmark, and
-    // Mother's Watch under the menu column.
-    const ang = START_ANG + t * 0.026 + ease * 0.09;
     const radius = 150 - ease * 34;
-    const cx = CAMP.x + Math.sin(ang) * radius;
-    const cz = CAMP.z + Math.cos(ang) * radius;
-    const ground = terrain?.getHeight ? terrain.getHeight(cx, cz) : 0;
-    /**
-     * ALTITUDE, measured from the ground the camera is actually over so the arc
-     * keeps its height as it crosses the hills — and kept LOW on purpose.
-     * Filmed at 118 m and at 105 m the valley reads as a beige contour map:
-     * everything the world lanes built (autumn meadow, tree silhouettes, the
-     * palisade, the campfire smoke) is below the resolution of the shot and the
-     * only things left are haze and the rim. At ~30 m the same frame has a
-     * foreground, Mother's Watch is a legible subject, and the rim ring becomes
-     * a backdrop instead of the subject.
-     */
-    const camY = ground + 32 - ease * 7;
-    cam.position.set(cx, camY, cz);
-    /**
-     * NEGATIVE = TILT UP, and it has to grow across the move. Closing in costs
-     * sky twice over: the camera drops 7 m and the crest gets 34 m nearer, so
-     * the same ridge subtends a larger angle at the end of the arc than at the
-     * start. Opening the tilt from 1.5° to 4.5° holds the ridgeline in the same
-     * band of the frame from the first beat to the last — filmed at ease 0,
-     * 0.25, 0.5, 0.75 and 1 to check that no frame in between collapses.
-     */
-    const pitch = (-1.5 - ease * 3) * (Math.PI / 180);
-    const reach = radius * 1.05;
-    cam.lookAt(CAMP.x, camY - reach * Math.tan(pitch), CAMP.z);
-    cam.updateMatrixWorld();
+    // lateral truck along the bearing line's right vector (-hz, hx): a sway, not an orbit;
+    // the placement is `_titlePlace`, the same formula the framing chooser samples
+    const lat = TITLE_TRUCK_M * Math.sin(t * TITLE_TRUCK_W);
+    const camY = this._titlePlace(cam, this._titleHead, ease, lat);
+    // the calima disc sits on the sky's own sun (see _titleSunPoint), faces the camera and
+    // keeps its angular size; no allocation
+    const disc = this._disc, sun = this.ctx.environment?.sunDir;
+    if (disc && sun) {
+      disc.visible = sun.y > 0.02;
+      this._titleSunPoint(disc.position, cam.position);
+      disc.quaternion.copy(cam.quaternion);
+      const w = 2 * disc.position.distanceTo(cam.position) * Math.tan(CALIMA_DISC.radiusDeg * DEG);
+      disc.scale.set(w, w, 1);
+    }
 
     // mutate in place — no allocation inside the frame loop
     const di = this._dollyInfo;
@@ -457,7 +984,7 @@ export class Menus {
     di.ease = ease;
     di.radius = radius;
     di.camY = camY;
-    di.pitchDeg = -(1.5 + ease * 3);
+    di.pitchDeg = -(TITLE_TILT_DEG + (this._titleHead.tilt || 0) + ease * 3);
   }
 
   continueGame() {
@@ -481,6 +1008,7 @@ export class Menus {
   /** Hand off to main.js's own start path so nothing about it is duplicated. */
   _startGame() {
     this.closeModal();
+    this._titleLeave();
     document.body.classList.remove('cal-title-live');
     const btn = document.getElementById('btn-start');
     if (btn) btn.click();
@@ -501,6 +1029,7 @@ export class Menus {
     document.getElementById('title')?.classList.remove('hidden');
     ctx.state = 'title';
     this._titleBuilt = false;
+    this._titleHead = null;
     this._enterTitle();
     this._emit('ui-back', { screen: 'title' });
     this._log.push({ what: 'quit-to-title' });
@@ -671,7 +1200,7 @@ export class Menus {
         }
       }
       el('div', 'mn-set-note', this.modalBody,
-        'Full manifests: <code>models-staging/MANIFEST.md</code> · <code>public/audio/MANIFEST.md</code> · <code>public/anims/LICENSE</code>');
+        'Full manifest: <code>public/LICENSES.json</code> · licence texts: <code>public/licences/</code> and <code>public/fonts/*-OFL.txt</code>');
     } else if (kind === 'manual') {
       this._modalTitle.textContent = 'FIELD MANUAL';
       if (this._manualNode) this.modalBody.appendChild(this._manualNode);
@@ -683,7 +1212,7 @@ export class Menus {
       this._modalTitle.textContent = 'NEW GAME';
       const list = this.ctx.progression?.DIFFICULTIES || [{ id: 'normal', name: 'Normal' }];
       el('p', 'mn-modal-lead', this.modalBody,
-        'Difficulty scales the damage you take and deal, the loot machines drop and how fast they notice you. It can be changed later.');
+        'Difficulty scales the damage you take and deal, what the Instruments drop and how fast they notice you. It can be changed later.');
       for (const d of list) {
         const row = el('button', 'mn-diff', this.modalBody);
         el('b', null, row, String(d.name).toUpperCase());
@@ -994,6 +1523,7 @@ export class Menus {
       if (e?.from) this._lastDamageFrom = e.from?.displayName ?? e.from?.kind ?? String(e.from);
     });
     on('game-start', () => {
+      this._titleLeave();
       document.body.classList.remove('cal-title-live');
       this._refreshTitle();
     });
@@ -1139,6 +1669,9 @@ export class Menus {
           titleT: +this._titleT.toFixed(3),
           dollyT: +this._dollyT.toFixed(3),
         },
+        disc: this._disc ? { visible: this._disc.visible, ...(this._titleDiscInfo || {}) } : null,
+        clock: { held: this._clockHeld != null, frozen: !!ctx.environment?.timeFrozen, handBack: this._clockHeld,
+          hour: ctx.environment?.time ?? null, titleHour: this._titleHour ?? TITLE_HOUR, hourHandBack: this._hourHeld },
         camera: ctx.camera ? {
           x: +ctx.camera.position.x.toFixed(2),
           y: +ctx.camera.position.y.toFixed(2),

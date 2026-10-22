@@ -19,6 +19,22 @@
       "attribution": null
     },
     {
+      "id": "calima-favicon",
+      "paths": [
+        "public/favicon.svg"
+      ],
+      "title": "CALIMA favicon — the calima sun (bare spark)",
+      "author": "CALIMA project",
+      "source_url": "public/favicon.svg",
+      "licence": "project-original",
+      "licence_text": null,
+      "archive_sha256": null,
+      "retrieved": null,
+      "modified": "Round-3 spark geometry kept pixel-identical (10 rays, stroke 8.5, #DA7756); comment only changed at W0b",
+      "attribution": null,
+      "note": "the spark is the Claude mark; the Anthropic brand-terms check for its use as a game logo is release-blocking (PLAN §11 decision 3)"
+    },
+    {
       "id": "calima-licence-texts",
       "paths": [
         "public/licences/*"
@@ -77,6 +93,116 @@
       "retrieved": null,
       "modified": null,
       "attribution": "three-mesh-bvh © 2018 Garrett Johnson (MIT)"
+    },
+    {
+      "id": "font-bodoni-moda",
+      "paths": [
+        "public/fonts/BodoniModa-Variable.woff2",
+        "public/fonts/BodoniModa-Italic-Variable.woff2",
+        "public/fonts/BodoniModa-OFL.txt"
+      ],
+      "title": "Bodoni Moda",
+      "author": "Owen Earl (indestructible type*)",
+      "source_url": "https://fonts.google.com/specimen/Bodoni+Moda",
+      "licence": "OFL-1.1",
+      "licence_text": "public/fonts/BodoniModa-OFL.txt",
+      "archive_sha256": "0854f8df59047ff85cdac23551b2acd2ba03ed52990f20f17c9bf2a546bb62c5",
+      "archive_bytes": 104288,
+      "retrieved": "2026-10-19",
+      "modified": "unmodified: the Google Fonts latin-subset woff2 (Version 2.005, axes wght 400..900 + opsz 6..96), roman and italic; renamed only",
+      "attribution": null,
+      "files": [
+        {
+          "path": "public/fonts/BodoniModa-Variable.woff2",
+          "source_url": "https://fonts.gstatic.com/s/bodonimoda/v28/aFTQ7PxzY382XsXX63LUYJSKSKjWXFBP.woff2",
+          "sha256": "fe710b15e2acd1f30159cec96b10c3455a32d27104c29d4027c5465d81fc11fe",
+          "bytes": 46248
+        },
+        {
+          "path": "public/fonts/BodoniModa-Italic-Variable.woff2",
+          "source_url": "https://fonts.gstatic.com/s/bodonimoda/v28/aFTS7PxzY382XsXX63LUYJSPeKrcW3JNsao.woff2",
+          "sha256": "3fac62d55a70c44bce64ff97db280b6b1c346575ea4c26c99b40eaf2367511b5",
+          "bytes": 53640
+        },
+        {
+          "path": "public/fonts/BodoniModa-OFL.txt",
+          "source_url": "https://raw.githubusercontent.com/google/fonts/main/ofl/bodonimoda/OFL.txt",
+          "sha256": "931dfe2e0cd3c9443295f5c1d754b8a8403bf060df50c1d5900267ade83d0046",
+          "bytes": 4400
+        }
+      ],
+      "archive_note": "archive_sha256 = SHA-256 of the sorted `sha256  filename` manifest of the files below (no single archive: Google Fonts serves one woff2 per subset); each file keeps its own source_url + sha256"
+    },
+    {
+      "id": "font-ibm-plex-mono",
+      "paths": [
+        "public/fonts/IBMPlexMono-Medium.woff2",
+        "public/fonts/IBMPlexMono-OFL.txt"
+      ],
+      "title": "IBM Plex Mono",
+      "author": "IBM Corp. (Mike Abbink, Bold Monday)",
+      "source_url": "https://fonts.google.com/specimen/IBM+Plex+Mono",
+      "licence": "OFL-1.1",
+      "licence_text": "public/fonts/IBMPlexMono-OFL.txt",
+      "archive_sha256": "eb0ab81349423cd0dbbc13bd7fc461a64fa7019d88730b19980755c6cb3670da",
+      "archive_bytes": 14516,
+      "retrieved": "2026-10-19",
+      "modified": "unmodified: the Google Fonts latin-subset woff2 (Version 2.3), weight 500; renamed only",
+      "attribution": null,
+      "files": [
+        {
+          "path": "public/fonts/IBMPlexMono-Medium.woff2",
+          "source_url": "https://fonts.gstatic.com/s/ibmplexmono/v20/-F6qfjptAgt5VM-kVkqdyU8n3twJwlBFgsAXHNk.woff2",
+          "sha256": "a76f53ca6612e7b3828eec2311098675b7f9849ae4169a8bcef6302aec02a6c0",
+          "bytes": 10060
+        },
+        {
+          "path": "public/fonts/IBMPlexMono-OFL.txt",
+          "source_url": "https://raw.githubusercontent.com/google/fonts/main/ofl/ibmplexmono/OFL.txt",
+          "sha256": "7e6b2818edbd8f6a01ae80641cc8f16a51080d08fb4e532be3a0b6f74adb07da",
+          "bytes": 4456
+        }
+      ],
+      "archive_note": "archive_sha256 = SHA-256 of the sorted `sha256  filename` manifest of the files below (no single archive: Google Fonts serves one woff2 per subset); each file keeps its own source_url + sha256"
+    },
+    {
+      "id": "font-ibm-plex-sans-condensed",
+      "paths": [
+        "public/fonts/IBMPlexSansCondensed-Medium.woff2",
+        "public/fonts/IBMPlexSansCondensed-SemiBold.woff2",
+        "public/fonts/IBMPlexSansCondensed-OFL.txt"
+      ],
+      "title": "IBM Plex Sans Condensed",
+      "author": "IBM Corp. (Mike Abbink, Bold Monday)",
+      "source_url": "https://fonts.google.com/specimen/IBM+Plex+Sans+Condensed",
+      "licence": "OFL-1.1",
+      "licence_text": "public/fonts/IBMPlexSansCondensed-OFL.txt",
+      "archive_sha256": "3d1dc2e3ebe18b05c0b9412750cd5ae7b0454b658fada899489b2c946e1d07c6",
+      "archive_bytes": 33940,
+      "retrieved": "2026-10-19",
+      "modified": "unmodified: the Google Fonts latin-subset woff2 (Version 1.3), weights 500 and 600; renamed only",
+      "attribution": null,
+      "files": [
+        {
+          "path": "public/fonts/IBMPlexSansCondensed-Medium.woff2",
+          "source_url": "https://fonts.gstatic.com/s/ibmplexsanscondensed/v15/Gg8gN4UfRSqiPg7Jn2ZI12V4DCEwkj1E4LVeHY5a67vspYYnFBq4.woff2",
+          "sha256": "98ee889126fecbce6d97f156ad4fbff1806be7bcc8afa4c688848738ec121d0a",
+          "bytes": 14708
+        },
+        {
+          "path": "public/fonts/IBMPlexSansCondensed-SemiBold.woff2",
+          "source_url": "https://fonts.gstatic.com/s/ibmplexsanscondensed/v15/Gg8gN4UfRSqiPg7Jn2ZI12V4DCEwkj1E4LVeHY527LvspYYnFBq4.woff2",
+          "sha256": "63e486a9c9ec9fb7459a4239d1e538c87239a261b26444ca8ae8017f52c5e282",
+          "bytes": 14776
+        },
+        {
+          "path": "public/fonts/IBMPlexSansCondensed-OFL.txt",
+          "source_url": "https://raw.githubusercontent.com/google/fonts/main/ofl/ibmplexsanscondensed/OFL.txt",
+          "sha256": "7e6b2818edbd8f6a01ae80641cc8f16a51080d08fb4e532be3a0b6f74adb07da",
+          "bytes": 4456
+        }
+      ],
+      "archive_note": "archive_sha256 = SHA-256 of the sorted `sha256  filename` manifest of the files below (no single archive: Google Fonts serves one woff2 per subset); each file keeps its own source_url + sha256"
     },
     {
       "id": "instrument-tiller",
@@ -355,114 +481,6 @@
       "legacy": "r4",
       "delete_at": "W2 exit",
       "delete_owner": "instruments-b"
-    },
-    {
-      "id": "legacy-favicon",
-      "paths": [
-        "public/favicon.svg"
-      ],
-      "title": "Round-4 favicon",
-      "author": "CALIMA project",
-      "source_url": "public/favicon.svg",
-      "licence": "project-original",
-      "licence_text": null,
-      "archive_sha256": null,
-      "retrieved": null,
-      "modified": null,
-      "attribution": null,
-      "legacy": "r4",
-      "delete_at": "W0b (replaced)",
-      "delete_owner": "brand"
-    },
-    {
-      "id": "legacy-font-chakra-petch",
-      "paths": [
-        "public/fonts/ChakraPetch-*.ttf"
-      ],
-      "title": "Chakra Petch",
-      "author": "Cadson Demak",
-      "source_url": "https://fonts.google.com/specimen/Chakra+Petch",
-      "licence": "OFL-1.1",
-      "licence_text": null,
-      "archive_sha256": null,
-      "retrieved": null,
-      "modified": null,
-      "attribution": null,
-      "legacy": "r4",
-      "delete_at": "W0 exit",
-      "delete_owner": "brand"
-    },
-    {
-      "id": "legacy-font-julius-sans-one",
-      "paths": [
-        "public/fonts/JuliusSansOne-*.ttf"
-      ],
-      "title": "Julius Sans One",
-      "author": "LatinoType",
-      "source_url": "https://fonts.google.com/specimen/Julius+Sans+One",
-      "licence": "OFL-1.1",
-      "licence_text": null,
-      "archive_sha256": null,
-      "retrieved": null,
-      "modified": null,
-      "attribution": null,
-      "legacy": "r4",
-      "delete_at": "W0 exit",
-      "delete_owner": "brand"
-    },
-    {
-      "id": "legacy-font-michroma",
-      "paths": [
-        "public/fonts/Michroma-*.ttf"
-      ],
-      "title": "Michroma",
-      "author": "Vernon Adams",
-      "source_url": "https://fonts.google.com/specimen/Michroma",
-      "licence": "OFL-1.1",
-      "licence_text": null,
-      "archive_sha256": null,
-      "retrieved": null,
-      "modified": null,
-      "attribution": null,
-      "legacy": "r4",
-      "delete_at": "W0 exit",
-      "delete_owner": "brand"
-    },
-    {
-      "id": "legacy-font-orbitron",
-      "paths": [
-        "public/fonts/Orbitron-*.ttf"
-      ],
-      "title": "Orbitron",
-      "author": "Matt McInerney",
-      "source_url": "https://fonts.google.com/specimen/Orbitron",
-      "licence": "OFL-1.1",
-      "licence_text": null,
-      "archive_sha256": null,
-      "retrieved": null,
-      "modified": null,
-      "attribution": null,
-      "legacy": "r4",
-      "delete_at": "W0 exit",
-      "delete_owner": "brand"
-    },
-    {
-      "id": "legacy-font-rajdhani",
-      "paths": [
-        "public/fonts/Rajdhani-*.ttf"
-      ],
-      "title": "Rajdhani",
-      "author": "Indian Type Foundry",
-      "source_url": "https://fonts.google.com/specimen/Rajdhani",
-      "licence": "OFL-1.1",
-      "licence_text": null,
-      "archive_sha256": null,
-      "retrieved": null,
-      "modified": null,
-      "attribution": null,
-      "legacy": "r4",
-      "delete_at": "W0 exit",
-      "delete_owner": "brand"
     },
     {
       "id": "legacy-hero-body",

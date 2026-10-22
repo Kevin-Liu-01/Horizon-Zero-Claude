@@ -13,7 +13,7 @@
   inset: 0;
   z-index: 900;
   pointer-events: none;
-  font-family: var(--font, 'Rajdhani', sans-serif);
+  font-family: var(--font, sans-serif);
   user-select: none;
   color: #efe6d5;
 }
@@ -39,7 +39,7 @@
 }
 
 #studio-ui .studio-title {
-  font-family: 'Julius Sans One', var(--font-display, sans-serif);
+  font-family: var(--font-display, sans-serif);
   font-size: 11px;
   letter-spacing: 0.5em;
   text-indent: 0.5em;
@@ -81,7 +81,7 @@
 #studio-ui .studio-lens { right: 258px; }
 
 #studio-ui .studio-head {
-  font-family: 'Julius Sans One', var(--font-display, sans-serif);
+  font-family: var(--font-display, sans-serif);
   font-size: 11px;
   letter-spacing: 0.42em;
   color: #DA7756;

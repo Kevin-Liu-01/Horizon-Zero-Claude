@@ -1,120 +1,92 @@
-# HORIZON ZERO CLAUDE
+# CALIMA
 
-A browser-native, third-person robot-dinosaur hunting game in the spirit of
-*Horizon Zero Dawn* — built end-to-end by Claude using the
-[Gauntlet Loop](https://somethingbig.ai/gauntlet-loop) methodology: parallel
-builder agents, adversarial critic agents, and concrete reference standards
-("does this look like HZD, or a programmer demo?") iterated until it passes.
+*On a volcanic Atlantic island, survey machines are still holding the ground to
+an 800-year-old map, and they flatten anything that isn't on it. A salt-pan
+Reckoner has to survey the island again, villages included, before its western
+flank slides into the sea.*
 
-![Horizon Zero Claude](docs/media/hero.png)
+CALIMA is a browser-native third-person game set on **Orchil**, a fictional
+island in Macaronesia. *Calima* is the Canary Islands' word for the Saharan
+dust haze that turns the sky ochre and the sun into a soft coral disc. Brea, a
+salt-pan surveyor with a brass alidade, a juniper bow and a shepherd's lance,
+hunts the **Instruments**: theodolite tripods, soil samplers, a road grader, a
+pottery kiln, a tide gauge, still keeping the island true to the Datum.
+
+The game is being rebuilt (Round 5) on the kept rigging and movement stack of
+the previous rounds. Creative canon: [`docs/ROUND5-BIBLE.md`](docs/ROUND5-BIBLE.md).
+Build plan, lanes and gates: [`docs/ROUND5-PLAN.md`](docs/ROUND5-PLAN.md).
+Older rounds' documents live in [`docs/archive/`](docs/archive/).
 
 ## Play
 
 ```bash
 npm install
-npm run dev        # http://localhost:5173
+npm run dev
 ```
 
 | Input | Action |
 |---|---|
 | WASD · Shift | Move · Sprint |
-| C | Crouch (stealth in tall grass) |
+| C | Crouch |
 | Space / LCtrl | Dodge roll |
 | RMB · LMB | Aim · Draw / loose |
-| Shift (aiming) | Concentration (slow-mo gauge) |
-| Tab (hold) | Weapon wheel — time slows, craft ammo with R |
-| 1–4 · Z/X | Weapon quick-slots · cycle ammo |
-| V · T | Focus toggle · tag machine |
-| E (hold) | Interact — loot, gather herbs & ridge-wood |
-| Q (hold) | Medicine pouch → health |
+| Shift (aiming) | Steady — hold your breath |
+| Tab (hold) | Kit Rack |
+| 1–4 · Z/X | Quick slots · cycle ammo |
+| V · T | Raise the Alidade (Sighting) · Flag an Instrument |
+| E (hold) | Interact |
+| Q (hold) | Drink from the Gourd |
 | R · I · Esc | Craft ammo · inventory · pause |
 
-**The hunt:** clear the valley — 4 Watchers, 2 Sawtooths, the Behemoth, and
-finally the Thunderjaw in the southern wastes. Freeze it brittle, tearblast
-its disc launchers off, then pick one up and kill it with its own gun.
+## Gates
 
-## What's inside
+Every lane is accepted by literal action and visual gates, never by
+self-report:
 
-- **Three.js + Vite**, no game engine, no frameworks.
-- Six Sketchfab GLB models (435 MB raw) crunched to ~22 MB via
-  `gltf-transform` (meshopt + quantization + WebP), `npm run optimize`.
-- **Procedural animation** — the models shipped with zero animation clips.
-  Aloy's locomotion (banked turns, plant-and-turn, exertion breathing,
-  quiver-flourish nock, dodge roll), the Watcher's walk/neck-scan, and the
-  death crumples are all runtime bone posing; the big machines move with
-  root-motion + procedural sway.
-- **Component damage** — every machine carries tearable parts at canon
-  locations (blaze canisters that explode, force loaders that gate attacks,
-  the Thunderjaw's radar/jaw cannons/disc launchers) with three damage
-  channels: impact, tear, and elemental buildup (burn / stun / freeze-brittle).
-  Torn parts fall with physics and can be looted — or picked up and fired.
-- **Real HZD systems, from research** (`docs/research/`): 4 weapons × 8 ammo
-  types with the canon crafting economy, hold-Tab weapon wheel with time-slow,
-  Concentration gauge, medicine pouch (hold Q), Focus with component
-  highlights / patrol paths / info cards / tagging, satchel inventory,
-  gatherable herbs and ridge-wood, and the 2020 PC port's keybinds.
-- Terraced badlands terrain with a dried river, worn trails, and 2M+ blades
-  of wind-swaying instanced grass; bundled OFL fonts (Michroma/Rajdhani);
-  fully procedural WebAudio soundscape (not a single audio file).
-- A puppeteer screenshot harness (`npm run shot`) that the builder/critic
-  agents used to judge their own work — the gauntlet loop's eyes.
+```bash
+node tools/gates.mjs --port <lane port> --lane <lane>
+```
 
-## Gallery
-
-| | |
-|---|---|
-| ![Weapon wheel](docs/media/wheel.png) | ![Focus](docs/media/focus.png) |
-| ![Camp](docs/media/camp.png) | ![Inventory](docs/media/inventory.png) |
-| ![River](docs/media/river.png) | ![Thunderjaw](docs/media/thunderjaw.png) |
-
-## How it was built (the Gauntlet Loop)
-
-1. **Scaffold** — asset pipeline, engine, terrain, player controller, and a
-   puppeteer screenshot harness so agents can *see* their work.
-2. **Build fleet** — 7 parallel builder agents (vegetation, camp, animation,
-   machines, combat, HUD, audio), each iterating build → screenshot →
-   self-critique against the spec's interface contracts.
-3. **Critic fleet** — 6 adversarial critics (world, character, machines,
-   combat/HUD, QA torture-testing, static code review) hunting for anything
-   that "reads as a programmer demo" vs HZD stills — with instrumented
-   measurements (bone-to-terrain distances, draw calls, state-machine probes).
-4. **Fix fleet** — 6 fixers applying every finding, verified numerically
-   (foot contact ±5mm, standoff distances, weak-point hit resolution).
-5. **Verify fleet** — final re-critique: SHIP/HOLD per dimension, last two
-   HOLDs fixed by hand, re-verified.
+The name lints (`node tools/lint/namecheck.mjs --player | --code`) keep the
+project's words its own; `node tools/licences/check.mjs` keeps every shipped
+file matched to a licence row.
 
 ## Credits
 
-Models from Sketchfab (Aloy Fortnite rig, Redeye Watcher rig, Sawtooth,
-Thunderjaw, Behemoth scans, HZD character fanart) — used here as fan-art in a
-non-commercial tech demo. Horizon Zero Dawn is © Guerrilla Games / Sony
-Interactive Entertainment; this project is an unaffiliated homage.
+<!-- generated by tools/licences/credits.mjs from public/LICENSES.json; do not edit by hand -->
 
-Round 3 machine-variety models (see models-staging/MANIFEST.md for full manifest):
+**Attribution required (CC BY)**
 
-- "Mechanical Horse" by jake young — [Poly Pizza](https://poly.pizza/m/d4bayjeM1aD), CC-BY 3.0 (Strider)
-- "Robocat" by Jordan Hill — [Poly Pizza](https://poly.pizza/m/d78wyEWCmTC), CC-BY 3.0 (Scrapper)
-- "Robot Enemy Flying" and Ultimate Monsters pack by [Quaternius](https://quaternius.com) — CC0
-  (Glinthawk, Longleg)
-- Fox rig reference — Khronos glTF-Sample-Assets, CC0/CC-BY 4.0
+- "Black Caiman" by Poly by Google (https://poly.pizza/m/5etIv4omd7Z), CC-BY 3.0
+- "Hawk (low-poly, rigged)" by Sherkiz (https://poly.pizza/m/RkN6MEbP6g), CC-BY 3.0
+- "Lion" by Poly by Google (https://polygone.art/model/cC_IFclYA4c), CC-BY 3.0
+- "Mechanical Horse" by jake young (https://poly.pizza/m/d4bayjeM1aD), CC-BY 3.0
+- "Robocat" by Jordan Hill (https://poly.pizza/m/d78wyEWCmTC), CC-BY 3.0
+- "Scorpion" by Poly by Google (https://poly.pizza/m/6Bu7d_Pkm5o), CC-BY 3.0
 
-Round 4 machine-expansion donors (see `models-staging/MANIFEST.md` and
-`docs/research/casting-v4.md` §0; rebuild with `node tools/bake-rigs.mjs`).
-**CC-BY 3.0 — attribution required:**
+**Code (MIT)**
 
-- "Black Caiman" by Poly by Google — [Poly Pizza](https://poly.pizza/m/5etIv4omd7Z), CC-BY 3.0 (Snapmaw)
-- "Lion" by Poly by Google — [polygone.art](https://polygone.art/model/cC_IFclYA4c), CC-BY 3.0 (Ravager)
-- "Scorpion" by Poly by Google — [Poly Pizza](https://poly.pizza/m/6Bu7d_Pkm5o), CC-BY 3.0 (Corruptor)
-- "Hawk (low-poly, rigged)" by Sherkiz — [Poly Pizza](https://poly.pizza/m/RkN6MEbP6g), CC-BY 3.0 (Stormbird)
+- meshoptimizer decoder © 2016–2022 Arseny Kapoulkine (MIT)
+- three-mesh-bvh © 2018 Garrett Johnson (MIT)
+- three.js © 2010–2024 three.js authors (MIT)
 
-CC0 1.0 (courtesy credit): "Bull" and "Deer" from the Ultimate Animated Animals
-pack and "Spider" by [Quaternius](https://quaternius.com) (Broadhead, Grazer,
-Shell-Walker). The pack's "Apatosaurus" was staged as a Tallneck donor and is
-not shipped — no Tallneck species was built, so the model is not loaded.
+**Typefaces (SIL Open Font License 1.1)**
 
-The Lion, Spider and Hawk donors are retired under authored shells
-(`hideSculpt`); their attribution stands because the files are still in the
-repository and were used to derive the rigs.
-- Julius Sans One typeface — LatinoType, SIL Open Font License (wordmark/display)
+- Bodoni Moda — Owen Earl (indestructible type*) (https://fonts.google.com/specimen/Bodoni+Moda)
+- IBM Plex Mono — IBM Corp. (Mike Abbink, Bold Monday) (https://fonts.google.com/specimen/IBM+Plex+Mono)
+- IBM Plex Sans Condensed — IBM Corp. (Mike Abbink, Bold Monday) (https://fonts.google.com/specimen/IBM+Plex+Sans+Condensed)
 
-🤖 Built with [Claude Code](https://claude.com/claude-code)
+**Thanks (CC0, no attribution required)**
+
+- Birb (Ultimate Monsters pack) — Quaternius (https://quaternius.com/packs/ultimatemonsters.html)
+- Bull (Ultimate Animated Animal pack) — Quaternius (https://quaternius.com/packs/ultimateanimatedanimals.html)
+- Deer (Ultimate Animated Animal pack) — Quaternius (https://quaternius.com/packs/ultimateanimatedanimals.html)
+- Robot Enemy Flying — Quaternius (https://poly.pizza/m/lF3jeRJwiH)
+- Rock Face (1K scan, repacked) — Poly Haven (https://polyhaven.com/a/rock_face)
+- Round-4 lab copies of the Universal Animation Library — Quaternius (https://quaternius.itch.io/universal-animation-library)
+- Spider — Quaternius (https://poly.pizza/m/yRYJiAJyiM)
+- Universal Animation Library [Standard] (Godot export) — Quaternius (https://quaternius.itch.io/universal-animation-library)
+
+Full manifest: `public/LICENSES.json`; licence texts: `public/licences/`.
+
+Built with [Claude Code](https://claude.com/claude-code).

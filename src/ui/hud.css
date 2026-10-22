@@ -3,7 +3,7 @@
    in style.css (FROZEN) — everything else lives on #hud below.
 
    Language per docs/research/ui.md §2 + reference-v3.md PART 2: thin widely
-   tracked all-caps headers (Julius Sans One for display, Rajdhani for HUD
+   tracked all-caps headers (Bodoni Moda for display, IBM Plex Sans Condensed for HUD
    labels), off-white #EFE6D5 on dark translucent panels, hairline rules +
    corner brackets, muted gold #C8A24B sparingly, terracotta #DA7756 only as
    the Claude hover/active accent, weak-point yellow #FFD34D, danger red,
@@ -16,19 +16,13 @@
    and every TEXT size is `max(11px, …)` so the 11 px legibility floor is a CSS
    guarantee, not a promise made in JS. Gate: `A71b-hud-scale-floor`. */
 
-@font-face {
-  font-family: 'Julius Sans One';
-  src: url('/fonts/JuliusSansOne-Regular.ttf') format('truetype');
-  font-display: swap;
-}
-
 #hud {
   font-family: var(--font);
   color: var(--cal-text);
   user-select: none;
   --hud-scale: 1;
   --s: var(--hud-scale);
-  --cal-display: 'Julius Sans One', var(--font-display), sans-serif;
+  --cal-display: var(--font-display), sans-serif;
   --cal-gold: #c8a24b;                     /* muted gold — sparing accents */
   --cal-yellow: #ffd34d;                   /* weak-point / gauge / scanning */
   --cal-terra: #da7756;                    /* Claude accent: hover/active */

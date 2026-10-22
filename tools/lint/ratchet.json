@@ -1,0 +1,15 @@
+{
+ "player": {
+  "wave": "W0b",
+  "count": 1508,
+  "reading": "plan §9 (graded): the 410-entry union lexicon (A's 331 through A's tokenizer, B's 235 = 189 names + 46 phrases, the 15 plan additions); exact / substring >= 5 / edit <= 1 (Direction A's rules); multi-word names as word sequences; allowlist = bible §10.4 GENERIC only; unit = distinct (surface, offending word or phrase)",
+  "namedAdvisory": 718,
+  "recorded": "2026-10-19 (fix round 2)",
+  "measured": "A-no-horizon-terms-player on port 5253, brand tree (W0b fix round 2), identical in every run: 182 static (public/**, of which 61 in the verbatim OFL/MIT licence texts) + 1326 page. Fix round 2 closed the judge-r1 blind spot: every person's dialogue card and every topic answer is opened through progression.talkTo/choose and read (13 people, 53 cards, 40 topics: 80 hits), and every key and EVERY string value of the 78 exported content tables is read at any depth, Sets, Maps and exported strings included (4,788 strings, 9,199 keys; NPCS alone 41 -> 66). Round 1's 1278 missed those surfaces; brand surfaces: 3, all inside generated credit attributions (Pack, Round, of)",
+  "rule": "never goes up at a wave exit; plan §9 says 0 at the W4 exit with only the GENERIC nouns allowed, which the literal reading cannot reach (it counts 'of', 'title', 'light', 'point' and the licence texts): ruling requested (docs/ROUND5-BRAND.md §7). Re-record ONCE on merged main at the W0b exit if other W0b lanes moved it.",
+  "previous": {
+   "count": 1278,
+   "why_superseded": "the round-1 harvest read only display-named keys of the content tables and never opened a dialogue card (judge r1)"
+  }
+ }
+}

@@ -525,7 +525,7 @@ export class WorldMap {
     const glyph = GLYPHS[m.kind] || GLYPHS.landmark;
     const pt = this.worldToMap(m.x, m.z);
     g.save();
-    g.font = `${m.kind === 'quest' ? 20 : 17}px "Rajdhani", system-ui, sans-serif`;
+    g.font = `${m.kind === 'quest' ? 20 : 17}px "IBM Plex Sans Condensed", system-ui, sans-serif`;
     g.textAlign = 'center';
     g.textBaseline = 'middle';
     g.lineWidth = 3;

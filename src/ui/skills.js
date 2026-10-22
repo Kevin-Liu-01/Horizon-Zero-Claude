@@ -36,7 +36,7 @@ const CSS = `
   border-bottom: 1px solid rgba(239,230,213,0.16); padding-bottom: 12px;
 }
 #cal-prog .sk-title {
-  font-family: var(--font-display, 'Michroma', sans-serif);
+  font-family: var(--font-display, sans-serif);
   font-size: 13px; letter-spacing: 0.5em; text-indent: 0.5em; color: var(--pg-gold, #c8a24b);
 }
 #cal-prog .sk-points {
@@ -50,7 +50,7 @@ const CSS = `
 #cal-prog .sk-cols::-webkit-scrollbar { width: 6px; }
 #cal-prog .sk-cols::-webkit-scrollbar-thumb { background: rgba(239,230,213,0.22); }
 #cal-prog .sk-col h3 {
-  font-family: var(--font-display, 'Michroma', sans-serif);
+  font-family: var(--font-display, sans-serif);
   font-weight: 400; font-size: 11px; letter-spacing: 0.34em;
   color: #FAF9F5; text-align: center; padding-bottom: 10px;
   border-bottom: 1px solid rgba(239,230,213,0.14); margin-bottom: 4px;
