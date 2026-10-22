@@ -1263,7 +1263,7 @@ const V_LOOK_SETUP = `(async () => { const __work = (async () => {
   const sh = sheetNew(4, 4);
   const c = ${JSON.stringify(LOOK_CROP)};
   const CROP_AT = [[0, 236], [800, 236], [0, 486], [800, 486]];
-  const shoot = (row, name, k) => {
+  const shoot = (row, name, k, short) => {
     setTierDpr(row, name, 2); viewNamed('vista'); draw(6);
     const pr = R.getPixelRatio();
     const an = row.maxAnisotropy || row.maxAnisotropyData ? 'aniso colour ' + (row.maxAnisotropy || 'max') + 'x / data ' + (row.maxAnisotropyData === undefined ? row.maxAnisotropy : row.maxAnisotropyData || 'max') + 'x' : 'aniso 8x (as authored)';
@@ -1271,15 +1271,15 @@ const V_LOOK_SETUP = `(async () => { const __work = (async () => {
     sh.box(k * 400 + c[0] / 4, c[1] / 4, c[2] / 4, c[3] / 4);
     const w = Math.round(c[2] * pr), h = Math.round(c[3] * pr);
     sh.putRect(readRect(Math.round(c[0] * pr), Math.round(c[1] * pr), w, h), w, h, CROP_AT[k][0], CROP_AT[k][1], 800, 240,
-      (k + 1) + ' ' + name + ' | DPR ' + pr + ', ' + an + ' | far ground, nearest x' + (800 / w).toFixed(2), true);
+      (k + 1) + ' ' + short + ' | DPR ' + pr + ', ' + an + ' | far ground, nearest x' + (800 / w).toFixed(2), true);
   };
   // the alternative the decision was taken against: fix round 1's 2x / 2x, or 4x / 4x if that is what ships
   const ALT = SHIP.maxAnisotropy === 2 && SHIP.maxAnisotropyData === 2 ? [4, 4] : [2, 2];
   const capTxt = (c, d) => 'colour ' + c + 'x / data ' + d + 'x';
-  shoot(ROUND4_HIGH, 'Round-4 high', 0);
-  shoot(Object.assign({}, SHIP, { maxAnisotropy: null, maxAnisotropyData: null }), 'shipped levers, aniso as authored', 1);
-  shoot(Object.assign({}, SHIP, { maxAnisotropy: ALT[0], maxAnisotropyData: ALT[1] }), 'NOT SHIPPED: shipped levers, ' + capTxt(ALT[0], ALT[1]), 2);
-  shoot(SHIP, 'SHIPPED ' + DEFAULT_TIER + ' (' + capTxt(SHIP.maxAnisotropy, SHIP.maxAnisotropyData) + ')', 3);
+  shoot(ROUND4_HIGH, 'Round-4 high', 0, 'Round-4 high');
+  shoot(Object.assign({}, SHIP, { maxAnisotropy: null, maxAnisotropyData: null }), 'shipped levers, aniso as authored', 1, 'shipped levers');
+  shoot(Object.assign({}, SHIP, { maxAnisotropy: ALT[0], maxAnisotropyData: ALT[1] }), 'NOT SHIPPED: shipped levers, ' + capTxt(ALT[0], ALT[1]), 2, 'NOT SHIPPED');
+  shoot(SHIP, 'SHIPPED ' + DEFAULT_TIER + ' (' + capTxt(SHIP.maxAnisotropy, SHIP.maxAnisotropyData) + ')', 3, 'SHIPPED ' + DEFAULT_TIER);
   setTierDpr(SHIP, DEFAULT_TIER, 2); viewNamed('vista');
   const g = sh.g;
   g.fillStyle = '#ffe3b0'; g.font = '13px ui-monospace, monospace';

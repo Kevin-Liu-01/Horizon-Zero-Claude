@@ -453,15 +453,15 @@ the 13 ms bar. Fix round 1 added four more, all inside the engine grant (post ch
 `ultra` keeps MSAA ×4 + SMAA HalfFloat, full-res GTAO, DPR cap 2, 3 × 2048, every cascade every frame and
 anisotropy as authored. `medium` (2× / 2×) and `low` (1× / 1×) are SMAA-only, folded, cadence 2.
 
-**What it costs the picture** (filmed for the judge in `V-gpu-tier-look`: Round 4's `high` | the shipped levers
-with anisotropy as authored | the shipped `high`; my reading in the lane report): everything but the far
-ground is the same picture (§3.8: the topology and the cadence move 0 pixels on static frames; the fold and the
-RGBA8 SMAA input move 2–7 % of channels by one level and ≤ 0.03 % by more, on near-threshold SMAA edges). The
-far ground is softer twice over: DPR 1.25 against 1.5 (plan lever 1) costs some of the salt-pan crust's
-sharpness, and the anisotropy cap costs most of what is left: at 40–80 m the crust's light polygon pattern,
-still visible in the middle column, becomes faint horizontal streaks in the right one; the dune ripples keep
-their read. The cap is the price of the 13 ms vista on this content: 4× reads 15.16 ms in a clean run (§3.4)
-and fails.
+**What it costs the picture** (filmed for the judge in `V-gpu-tier-look`, fix round 2 layout: 1 Round 4's
+`high` | 2 the shipped levers with anisotropy as authored | 3 NOT shipped: fix round 1's 2× on every texture |
+4 the SHIPPED `high`; my reading in the lane report): everything but the far ground is the same picture (§3.8:
+the topology and the cadence move 0 pixels on static frames; the fold and the RGBA8 SMAA input move 2–7 % of
+channels by one level and ≤ 0.03 % by more, on near-threshold SMAA edges). The far ground is softer: DPR 1.25
+against 1.5 (plan lever 1) costs some of the salt-pan crust's sharpness everywhere. Fix round 1's 2× on every
+texture cost most of what was left (crop 3: the crust's polygon pattern becomes faint horizontal streaks, the
+dune ripples nearly go); with the data textures at 4× (fix round 2, crop 4) the crust and the ripples stay, as a
+softer version of crop 2 (§3.4).
 
 <!-- gpu-tier:begin -->
 Shipped default tier, as `A-gpu-tier` compares it with the live `QUALITY_TIERS.high` (before/after numbers
@@ -585,7 +585,7 @@ state. Read the rows that matter against the judged runs above: the shipped row 
 (15.03–16.41; one unjudged run on a loud box read 12.77 — another process on the GPU raises the clock and
 lowers the reading, §3.4).
 
-### 3.4 What this GPU timer measures, and why the anisotropy cap is the lever
+### 3.4 What this GPU timer measures, and why the anisotropy cap (split by role) is the lever
 
 **Calibration (`X-cal`, quiet box apart from one late Chrome).** An extra full-screen ALU pass of n loop
 iterations inserted into the timed composer on the empty frame (2000 × 1125, RGBA8 target):
@@ -618,18 +618,27 @@ anisotropic filtering, across a frame whose lower half is ground at grazing angl
 direct topology, cadence) and 8× the vista stays at 16.2–17.8 ms in every run; nothing else the engine owns
 reaches it (measured at 2×, same run: shadows off −0.3 ms, SMAA off +0.2, GTAO off −0.8).
 
-**Where the crust lives, and why the cap is not split by role.** Filmed per role at DPR 1.25 (`X-film-role`,
-`X-film-role4`): the far salt crust is drawn by the ground's NORMAL maps — colour 8× with normal maps 1× loses
-it, colour 2× with normal maps 8× or 4× keeps it. But the normal-map fetches are where the cost is: in the
-same (unfortunately not clean: one other gate Chrome) interleaved run, colour 2× / normal 8× read 16.14 ms,
-colour 2× / normal 4× 12.02, colour 1× / normal 8× 13.73, 2× everywhere 11.05, as authored 15.61 (`S11-1`).
-A per-role cap would also need a per-texture hook on three's `Texture` (three only clamps globally); it was
-built, measured and taken out again. The shipped lever is the plain global cap three supports.
+**Where the crust lives, and the role split (fix round 2).** Filmed per role at DPR 1.25 on
+`V-gpu-tier-look`'s crop (fix round 1: `X-film-role`, `X-film-role4`; fix round 2: `X-role-film` by setting
+each texture's `anisotropy`, `X-role2-film` through the engine's tier row): the far salt crust and the dune
+ripples are drawn by the ground's DATA textures (the normal + rough/AO packs) — colour 8× with data 1× loses
+them; colour 2× or 1× with data 4× keeps them, close to 4× / 4×; 2× / 2× (fix round 1's shipped row) turns the
+crust into horizontal streaks. And the colour fetches cost more than their count suggests: fix round 1's
+`S11-1` (one other gate Chrome) read colour 2× / data 8× 16.14 ms but colour 1× / data 8× 13.73, colour 2× /
+data 4× 12.02, 2× everywhere 11.05; `X-sim8` (clean) read colour 4× / data 2× at 10.96 against 4× / 4× at 15.16.
+(Why sRGB fetches cost more is not measured here; a likely reason is per-tap sRGB decode.) So fix round 2 splits
+the cap: `maxAnisotropy` (colour, sRGB) and `maxAnisotropyData` (everything else), shipped 2× / 4×. three clamps
+globally, so the engine lowers the colour textures itself after three's upload (§3.1 "Anisotropy, by role";
+fix round 1 had tried a per-texture hook on three's `Texture` and taken it out; this one sits on the GL texture
+three made and three's state cache, and `X-role2-check` reads every POC texture's `TEXTURE_MAX_ANISOTROPY` back
+through six cap changes and a forced re-upload).
+
+<!-- XROLE -->
 
 **At W1 this is re-graded on the real Pans** (`A-gpu-tier` re-runs at `gatePlaces.vistas.pans`, plan §6):
 plan §4.3 holds world-ground's shader to ≤ 3 layers per pixel with triplanar on slopes only, about half the
-POC's fetches. The chain's "anisotropy cap 4" row is the number to watch: when the real Pans read it ≤ 13 ms,
-`high` should go back to 4×.
+POC's fetches. The chain's "4× / 4×" row is the number to watch: when the real Pans read it ≤ 13 ms, `high`
+should go back to 4× on every texture.
 
 ### 3.5 Earlier baselines (W0a, game spawn vista, Round-4 content)
 
@@ -677,22 +686,23 @@ frame on a boulder in the dunes, far bins from the vista spot looking NE.
 
 R25 grades A22 as "SMAA present and `V20-aa-crop` passes". A22 also MEASURES the AA on V20's own crop
 (basalt-column tops against the sky, `AA_FRAME` in the gate file): on every pixel whose 3 × 3 neighbourhood
-spans > 0.25 of luminance, t = (L − min) / (max − min); intermediate if 0.2 ≤ t ≤ 0.8. Fix round 1 (SMAA now
-reads the grade's RGBA8 output):
+spans > 0.25 of luminance, t = (L − min) / (max − min); intermediate if 0.2 ≤ t ≤ 0.8. Fix round 2's final
+engine (`F4`; SMAA reads the grade's RGBA8 output since fix round 1):
 
 | frame (DPR from the tier on a DPR-2 display) | silhouette px | intermediate | fraction |
 |---|---|---|---|
-| shipped `high`: SMAA only, DPR 1.25 | 893 | 283 | **0.317** (round 0: 0.316) |
-| the same frame, SMAA off (no AA at all) | 943 | 184 | 0.195 |
-| Round-4 `high`: MSAA ×4 + SMAA, DPR 1.5 | 1075 | 403 | 0.375 |
+| shipped `high`: SMAA only, DPR 1.25 | 893 | 284 | **0.318** (fix round 1: 0.317; round 0: 0.316) |
+| the same frame, SMAA off (no AA at all) | 941 | 185 | 0.197 |
+| Round-4 `high`: MSAA ×4 + SMAA, DPR 1.5 | 1073 | 402 | 0.375 |
 
-Bar: ≥ 0.20 and ≥ 1.5 × the no-AA frame (shipped: 1.624 ×).
+Bar: ≥ 0.20 and ≥ 1.5 × the no-AA frame (shipped: 1.617 ×).
 
 ### 3.8 The new post chain against Round 4's, pixel by pixel (`X-equiv2`, `X-cadence`)
 
 Five POC frames at the shipped tier, DPR 1.25, each lever switched alone against Round 4's chain (resolve
-copy into HalfFloat, in-place blends, every cascade every frame); fraction of RGB channels that differ, and
-how many differ by more than 8 levels:
+copy into HalfFloat, in-place blends, every cascade every frame), anisotropy held equal on both sides (fix
+round 1; the post chain is unchanged in fix round 2, whose only change is the anisotropy split, filmed in
+`V-gpu-tier-look`); fraction of RGB channels that differ, and how many differ by more than 8 levels:
 
 | change alone | vista | landmark | AA frame | near frame |
 |---|---|---|---|---|
