@@ -495,7 +495,7 @@ export class PlayerAnimator {
       // the loose's clearance of the back of the skull and its outward share,
       // and the draw elbow's form scan (see `_aimLayer`)
       bladeLock: tn?.bladeLock ?? null,
-      drawProtDown: tn?.drawProtDown ?? 1,
+      drawProtDown: tn?.drawProtDown ?? 1, drawShrugDown: tn?.drawShrugDown ?? 0,
       looseClear: tn?.looseClear ?? null,
       looseOut: tn?.looseOut ?? 0, looseDown: tn?.looseDown ?? 0,
       elbowForm: tn?.elbowForm ?? null,
@@ -3218,7 +3218,11 @@ export class PlayerAnimator {
       // (half of it at the -0.55 up-aim: there the string hand already sits
       // under the aim frame's shoulder line and a full shrug drops the elbow
       // through A-draw-elbow-level's -0.03 floor)
-      const sh = this.T.drawShrug * drawS * aimW * levelK * (1 - 0.5 * clamp(-pitch / 0.55, 0, 1));
+      // (fix round 3, profile `tune.drawShrugDown`: a share of it at a steep
+      // DOWN aim too, where A16 holds the elbow under the shoulder joint and
+      // A-draw-elbow-level wants it >= 0.05 m up-and-back of the hand along
+      // the falling arrow — the joint has to rise for both to hold)
+      const sh = this.T.drawShrug * drawS * aimW * (levelK + (this.T.drawShrugDown ?? 0) * (1 - levelK)) * (1 - 0.5 * clamp(-pitch / 0.55, 0, 1));
       if (sh > 1e-4) {
         this._charOf(b.clavR.bone, _sg0); this._charOf(b.upArmR.bone, _sg1);
         _v3.subVectors(_sg1, _sg0).cross(Y_AXIS);

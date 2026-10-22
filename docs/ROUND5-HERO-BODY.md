@@ -7,7 +7,139 @@ Plan: `docs/ROUND5-PLAN.md` §2 (row), §1.2 (grants), §3.1 (W0b exit), §3.2 (
 
 **Status (Oct 22, fix round 2).** Brea runs the kept stack on the W0 loadout. Final lane run on 5252 (`lane4`, 58 gates): **39 PASS · 5 FAIL · 2 PENDING · 12 NEEDS-JUDGE**, and A-run-arms PASS in the follow-up global batch after a gate-windowing fix (§4.1), so 40 of 46 action rows pass. **The draw hand is now OUTSIDE the jaw** (it had been inside it, §0.1): V24 shows the fist on the jaw corner with the ∴ facing the lens; the loose no longer throws the arm behind the head (§0.2). Open: A-draw-elbow-level's head-plane clause (infeasible with the hand outside the face — proof in the gate, ruling requested, §0.5); camera rows A31d / A31e at the pitch clamp up-slope (one marginal row each in the final run, A31f and A31b passing; the worst cause found and fixed, §0.4, §4.3); A31c (failed at baseline, R33 b). A13 5/5 (R27) in all four full runs of this round. Global list items present: A1, A20b, A9, A90 ×4 PASS; A21 PENDING (timing); the pipeline items fail on other lanes' unmerged rows (§4.5). `public/models/aloy.glb` is deleted; nothing in `src/` loads it.
 
-## 0. Fix round 2 (Oct 22) — what changed, by finding
+## 00. Fix round 3 (Oct 22, after judge r0) — what changed, by finding
+
+Rulings applied (plan §8.3): **R35** (A-draw-elbow-level: the hand ≤ 0.10 m behind the head plane and always in
+front of the back of the skull, the elbow ≤ 0.20 m), **R36** (A31c listed, must not get worse; A31b/d/e/f must
+pass on Brea), **R37** (V12 against `run-side.jpg`, 10–30° lean), **R38** (A-hero-draws / A-input-actions: the other
+lane's clause deferred), **R39** (the `SPECS.hero` swap is merged with pipeline's row, pipeline first). The head
+plane in this gate is, as it has been since fix round 1, the back of the skull ellipsoid along the head's live
+forward (`animator.behindHead`) — the same plane my R35 estimate of the reference elbow (≈ 0.18 m) was measured to.
+
+### 00.1 The loose went BEHIND the skull, and the draw sat on its elbow bars (judge findings 1, 9, 10)
+
+*Found* (`loose.js` / `sweep*.js` probes, every sim step of the loose, the four pitches, strafing both ways, from a
+jog, from a sprint — the judge's protocol): the wrist +0.028 … +0.066 m behind the back of the skull through the
+follow-through (judge: +0.023 … +0.064), the elbow 0.21–0.23 m. Four causes, all measured:
+
+1. **The draw slid back off the anchor.** The pull is cut to the largest Lmax over the gate pitches, and the
+   0.75 down aim stood 0.02 m over the other three (0.553 vs 0.526–0.533), so at every other pitch the reach clamp
+   slid the whole draw 2–4 cm back (`slide` 0.022–0.035) — the wrist with it, to 0.044 m in front of the back of
+   the skull at a level aim.
+2. **Strafing and the aim walk lost the blade.** The strafe / aim-walk loops twisted the trunk 0.2–0.6 rad back
+   toward square; the bow arm could not reach and the draw slid 8.6–9.0 cm (`slide`), the wrist 0.019 m in front of
+   the plane, the elbow 0.19 m behind it.
+3. **The kick ran straight back along the arrow** from the wrist's ANCHOR by `looseKick` 0.10 — 5–8 cm more than
+   the room there was, and 1–2 cm of it spent first getting back from the slid wrist to the anchor.
+4. **The down-aim elbow was placed by height alone** (`_rollElbow`): 0.034–0.055 m up-and-back of the hand along
+   the falling arrow, run to run (bar 0.05).
+
+*Fix* (`src/entities/playerAnimator.js`, profile `src/entities/anim/rigs/ubc.js`; every new behaviour is a profile
+`tune` key whose absence is the Round-4 behaviour):
+
+- `tune.drawProtDown` 0.7 — the bow shoulder protracts less at a steep down aim: the four Lmax now agree within
+  0.004 m (0.526–0.532), the pull is re-derived (`UBC_BOW.drawLength` 0.548 → **0.527**, pull 0.603 → **0.582**,
+  arrow 0.803 → **0.782**), and the standing slide is 0–1.4 cm.
+- `tune.bladeLock { ref: −0.311, gain: 1 }` — **a closed-loop chest blade**: the shoulder line's yaw is measured
+  before the stance and the blade (−0.311 rad standing, every pitch) and the trunk (`spine_03`) is turned back to it,
+  the neck turned back by the same amount so the head keeps its facing. Strafing the slide drops 0.087 → 0.02–0.04.
+- `tune.handBehindNock` 0.076 → **0.060**, `tune.handOut` 0.020 → **0.026** — the wrist closer behind the nock and a
+  little further out of the face: 0/6 knuckle joints inside the posed head mesh at every row (ray parity, as §0.1).
+- **The loose** — `tune.looseOut` 0.6 / `looseDown` 0.25: the kick runs back along the jaw, out away from the face
+  and a little down toward the neck; it starts from where the wrist actually was at full draw (`_looseOff`); and
+  **`tune.looseClear` 0.012 — a hard guard on the wrist target on every aimed frame (full draw, loose, return):
+  the wrist is held ≥ 0.012 m in front of the back of the skull**, along the same plane the gate grades.
+- `tune.drawShrugDown` 0.4 — a share of the draw shrug at the steep down aim (the joint rises, so the elbow can be
+  up-and-back of the hand AND under the shoulder joint, A16).
+- `_elbowForm` (`tune.elbowForm`) — **the draw elbow's form scan**: every elbow the arm can take is on the circle
+  about the shoulder → wrist axis; it is scored against the gate bars as HARD limits (height [−0.03, +0.05], ≥ 0.055
+  behind the hand, ≤ 0.195 past the skull, never over the shoulder joint) and form targets inside them (≥ 0.072,
+  ≤ 0.17) and the arm turned to the nearest best point; through the loose the height floor drops 0.15 m
+  (`looseDrop`: the elbow settles as the hand opens). Allocation-free (a preallocated scratch, no closures); two
+  per-frame `toFixed` strings elsewhere in the aim layer were removed too.
+
+*After* (gate run `f3draw1`, port 5252, A-draw-elbow-level PASS; behind-head values in m, + = behind the back of the
+skull):
+
+| row | elbow up (aim frame) | elbow behind hand | bow arm off chest | hand | elbow | loose: hand max | loose: elbow max | loose rear |
+|---|---|---|---|---|---|---|---|---|
+| −0.55 | −0.003 | 0.236 | 0.198 | −0.094 | 0.097 | **−0.012** | 0.173 | 0.066 |
+| −0.4 | −0.003 | 0.235 | 0.199 | −0.088 | 0.112 | **−0.012** | 0.172 | 0.064 |
+| 0 | −0.007 | 0.225 | 0.203 | −0.081 | 0.130 | **−0.012** | 0.170 | 0.058 |
+| 0.75 | −0.006 | **0.066** | 0.179 | −0.055 | 0.061 | **−0.012** | 0.093 | 0.157 |
+| strafe D | −0.008 | 0.231 | 0.210 | −0.073 | **0.139** | **−0.012** | 0.170 | 0.046 |
+| strafe A | −0.009 | 0.229 | 0.220 | −0.062 | **0.149** | **−0.012** | 0.170 | 0.043 |
+| from a jog | −0.010 | 0.232 | 0.216 | −0.068 | 0.144 | **−0.012** | 0.171 | 0.045 |
+| from a sprint | −0.011 | 0.230 | 0.218 | −0.065 | 0.144 | **−0.012** | 0.170 | 0.040 |
+
+Bars: elbow up [−0.03, +0.05], behind hand ≥ 0.05, chest ≥ 0.04, hand ≤ 0.10 and < 0, elbow ≤ 0.20; loose hand < 0,
+loose elbow ≤ 0.20. **The strafing elbow is 0.052–0.061 m under the 0.20 bar** (it was 0.003–0.004); the down aim's
+elbow is 0.066 m behind the hand (it was 0.041–0.053); **the loose hand never passes −0.012 m** (it was
++0.023 … +0.066), the loose elbow ≤ 0.173 m (it was 0.21–0.23). In the same run: A16 PASS (nock-to-hand 0.064–0.072 m, elbow ≤ −0.006 m vs the
+shoulder, launch 0.0°), A17 PASS (**loose 0.061 m rearward**, flourish 24 sim frames), A32 PASS (≤ 0.044 m through the
+ramp), A35 PASS (hand → Head joint 0.107 / 0.112 / 0.115 / 0.126 m at 0 / −0.4 / −0.55 / 0.75; bow elbow 167.9°),
+A-lmax-solve PASS (live Lmax 0.527 / 0.529 / 0.531 / 0.533, bows 0.582 against the 0.588 solution), A-wrap-clear PASS
+(0.055 m). Knuckle joints inside the posed head mesh: 0 of 6 at every row (probe).
+
+The gate (`tools/gates.r5.hero-body.mjs`, A-draw-elbow-level) now encodes R35 literally — `handBehindHeadPlane`
+(≤ 0.10), `handBehindSkull` (< 0), `elbowBehindHead` (≤ 0.20) — and adds **the follow-through**: on every animator
+update (one sim step) from the release until 0.3 s after it, at all eight rows (four pitches, strafing D / A, from a
+jog, from a sprint), `looseHandBehindSkull` (< 0) and `looseElbowBehindHead` (≤ 0.20); it reports per row
+`looseMaxHandBehindHead`, `looseMaxElbowBehindHead`, the forearm midpoint and the rear travel, and a `margin` block
+(the strafing elbow's distance to 0.20, the down aim's elbow-behind-hand, the worst loose hand / elbow).
+
+### 00.2 Camera rows A31b / A31d / A31e / A31f on Brea (judge findings 2, 11) — R36
+
+⟨TBD⟩
+
+### 00.3 A31c (finding 3) — R36
+
+Listed, not a W0b blocker (R36: failed at the W0-day1 baseline, `carried-baseline.json` fail ×3); it goes to the
+camera backlog (§11) with an owner named at the W1 exit. This round's numbers: ⟨TBD⟩.
+
+### 00.4 V12 (finding 4) — R37
+
+The row's criteria are now R37's text, judged beside `reference/r5/gates-perf/run-side.jpg` (10–30° lean, stance
+leg near vertical with the swing thigh forward, arms bent fore-aft beside the body, never crossing / T-rex /
+prancing). ⟨TBD reading⟩
+
+### 00.5 V23 (finding 5)
+
+Re-staged: filmed from her FRONT-LEFT three-quarter, 2.3 m out at chest height (`lockCam(1.9, 1.3, −1.35, 1.2)`,
+was a pure left side at 3.5 m), the sun on that side — the sternum and the alidade tube, the sash end at the left
+hip against the dark trousers, the wrap tail trailing left-rear past her shoulder and the knot tail behind the
+head are all in the lens at twice the old scale. The cord already swings (A19 gear 22° at a sprint); it was not in
+the old frame at all. ⟨TBD reading⟩
+
+### 00.6 V-brea-one-glance (finding 6): the wrap tail and the crescent
+
+- **Wrap tail** — `tune.restKick` (new animator feature, `_restKick`): before the springs read the pose each frame,
+  the wrap tail's root is turned so its root → end line points left-rear (`dir` (0.55, −0.62, −0.56), char space,
+  ~50° off the vertical); the springs hang, bounce and collide it about that rest. At idle its end sits 0.25 m to
+  her left and 0.25 m behind its root. It now leaves the outline at 64 px in the front, back and 3/4 black fills.
+- **Crescent bracer** — the bronze fin is 1.5× taller (horns 7.2 → 10.8 cm proud, belly 2.4 → 3.8 cm):
+  `kit-v0.mjs` gains `CRESCENT_K` 1.5 for a rebuild, and because the UBC sources are not on this machine,
+  `tools/build/recipes/weapons/kit-v0-crescent.mjs` applied exactly that change to the shipped
+  `stowkit-v0.glb` (the bracer piece, `_PIECE` 8: 102 crescent vertices) and `bracer-crescent-v0.glb`, in place,
+  idempotent (`asset.extras.patches`), no triangle added.
+- The sheet is re-filmed and re-committed: `reference/r5/hero/brea-silhouette-sheet.png` (and the face sheet,
+  unchanged face, re-filmed with the new tail). ⟨TBD reading⟩
+
+### 00.7 A-hero-draws / A-input-actions (finding 7) — R38
+
+Both gates grade their binding clauses and report the other lane's clause **DEFERRED by name**: A-hero-draws —
+Brea's own measure binding (≤ 4 draws, ≤ 2 casters, ≤ 20 k tris for body + outfit + kit — the 20 k clause is new
+in the gate), the held-Sabina clause graded at armory's W1 exit; A-input-actions — actions, pad entries, rebind
+persistence binding, the settings-list clause graded at shell-ui's W2 exit. Both grade the deferred clause here the
+moment its piece exists. ⟨TBD numbers⟩
+
+### 00.8 A-assets-tracked (finding 8) — R39
+
+Nothing changes in this tree: `src/core/assets.specs.js` is pipeline's file. R39: the orchestrator merges
+pipeline's `SPECS.hero` swap (`/models/hero/brea.glb` + `heroOutfitPan1`, `heroStowKit`, `ANIMS.heroUal2`) first,
+in the same merge window as this branch's `aloy.glb` deletion; A-assets-tracked is graded on main after both.
+
+## 0. Fix round 2 (Oct 22, morning) — what changed, by finding (kept for the record; §0.2 corrected, §0.5 superseded)
 
 Every finding below was measured in this tree on port 5252 (probes through `tools/screenshot.mjs --eval`, the
 gate rows through `tools/gates.mjs`); the frames were read.
@@ -43,8 +175,13 @@ UN-clamped string line pushed back by the whole pull — the arm straight out be
 hand 0.195–0.255 m and the elbow 0.21–0.25 m behind the back of the skull, 0.30 m of travel.
 *Fix:* `tune.looseOnJaw` — through the follow-through the hand rides the wrist's anchor slid back along the arrow
 by `looseKick` (UBC 0.10, bible 8–12 cm), the elbow roll held; it returns to the string as the kick and the hold
-decay together. *After:* the loose hand stays 0.031–0.041 m IN FRONT of the skull's back plane (idle / jog /
-sprint), A17's rearward follow-through 0.064–0.078 m (bar ≥ 0.05).
+decay together. *After (as reported then):* "the loose hand stays 0.031–0.041 m IN FRONT of the skull's back
+plane". **CORRECTION (fix round 3): that claim was wrong — the sign was flipped.** The judge's per-frame trace
+(`animator.behindHead(hand_r)`, positive = behind) and this lane's own re-measurement on the same build both read
+the wrist +0.028 … +0.066 m BEHIND the back of the skull at looseT 0.2–0.45 (the loose.js probe, Oct 22: +0.028
+at −0.55, +0.035 at −0.4, +0.053 level, +0.066 at the 0.75 down aim, +0.050 / +0.054 strafing, +0.046 / +0.045 from a
+jog / a sprint), the elbow 0.21–0.23 m behind it. R35 was issued on the wrong number. What actually fixes it is
+§00.1 below.
 
 ### 0.3 The A17 flourish was counted on rendered frames (R11 says sim frames)
 
@@ -70,7 +207,7 @@ held its boom at a 1.11 m cut against that gate's 1.20 m bar — measured, then 
 climbs 7.8° → 26° in four frames and holds it, gap 0.94–0.99 m, opacity 1.0, the lance 0.29 m from the lens. The
 remaining misses are §4.3.
 
-### 0.5 A-draw-elbow-level — the head-plane clause cannot hold with the hand outside the face (RULING NEEDED)
+### 0.5 A-draw-elbow-level — the head-plane clause cannot hold with the hand outside the face (SUPERSEDED: ruled by R35, encoded in fix round 3, §00.1)
 
 With the hand on the jaw and the forearm in line with the arrow (V24, Kevin "elbow level/back", the licence-clean
 `draw-side.jpg` reference), the draw elbow sits 0.12–0.19 m behind the back of the skull. The gate now reports, per

@@ -664,6 +664,9 @@ const ROT_MARGIN = 0.04;                  // m of slack over cameraBoom's own ma
  * the placement asked for, to under `DOLLY_GAP`, raises the rotation floor by
  * `REL_CUT_STEP` (rad) per cut frame; free, the floor eases off with motion
  * (below). */
+/* R5 fix round 3: the clearance (m) a deep look-up boom is pre-shortened to
+ * before `cameraBoom` sweeps it (see `_preCut` in `_updateCamera`) */
+const PRE_CUT_MARGIN = 0.01;
 const REL_CUT_SLACK = 0.08;
 const REL_CUT_STEP = 0.06;
 /* fix round 3: the floor eases off with MOTION, not the clock — `REL_CUT_PER_RAD`
@@ -4327,6 +4330,36 @@ void main() {
       if (r > 0) desired.y += r;
     }
 
+    /* R5 fix round 3 — NEVER HAND THE BOOM A CUT IT WILL MAKE 0.4 m DEEP
+     * (A31e / A31f on Brea, judge r0: "minLensGap 0.63, minOpacity 0.70").
+     * `cameraBoom`'s terrain march answers a sample inside its 0.45 m
+     * clearance by backing the whole boom off 0.4 m — at the pitch clamp,
+     * up-slope, a plan that grazed it by millimetres (the rotation easing,
+     * her idle sway moving the dolly line) became a one-frame 1.03 -> 0.63 m
+     * jump: her head off the frame and the gap fade dithering her (measured
+     * frame by frame, Oct 22). At a deep look-up the planned boom is checked
+     * against that same three-sample march first and, if it would be cut,
+     * shortened to the longest length that clears (bisected), so the march
+     * has nothing to cut. */
+    this._preCut = 0;
+    if (this._deepK > 0.5 && !this.aiming && ctx.terrain) {
+      const L = desired.distanceTo(orbit);
+      if (L > 0.5) {
+        const ux = (desired.x - orbit.x) / L, uy = (desired.y - orbit.y) / L, uz = (desired.z - orbit.z) / L;
+        if (this._clearAlong(orbit.x, orbit.y, orbit.z, ux, uy, uz, L) < PRE_CUT_MARGIN) {
+          let lo = 0.45, hi = L;
+          for (let i = 0; i < 12; i++) {
+            const m = (lo + hi) * 0.5;
+            if (this._clearAlong(orbit.x, orbit.y, orbit.z, ux, uy, uz, m) >= PRE_CUT_MARGIN) lo = m; else hi = m;
+          }
+          if (this._clearAlong(orbit.x, orbit.y, orbit.z, ux, uy, uz, lo) >= 0) {
+            this._preCut = L - lo;
+            desired.set(orbit.x + ux * lo, orbit.y + uy * lo, orbit.z + uz * lo);
+          }
+        }
+      }
+    }
+
     // camera-feel-03: 12-sample whisker sweep against the real collision world
     const C = ctx.collision;
     if (C) {
@@ -4336,7 +4369,8 @@ void main() {
       // camPitch -0.8 the hillside's own rotation answers, and a floor carried
       // there held the boom at a 1.11 m cut (A31b's 1.20 m lens-gap bar)
       if (this._deepK > 0.5 && !this.aiming && pitch <= PITCH_UP + 0.15) {
-        const planned = Math.hypot(desired.x - orbit.x, desired.y - orbit.y, desired.z - orbit.z);
+        // (a boom the pre-march shortened counts as cut by what it took off)
+        const planned = Math.hypot(desired.x - orbit.x, desired.y - orbit.y, desired.z - orbit.z) + this._preCut;
         // only a cut that parks the lens inside the dolly's own gap floor (where
         // the fade dithers her): at camPitch -0.8 a 1.1 m cut is the hillside's
         // ordinary answer, and raising the rotation there cost A31b its 1.20 m gap

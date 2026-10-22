@@ -131,11 +131,12 @@ export const UBC_TUNE = {
   // string hand behind the nock; the loose: the hand slides back along the jaw
   // from the anchor by looseKick at the kick's peak (bible §5.2: 8-12 cm), not
   // out along the un-clamped string line (Oct 22: 0.30 m, the arm behind the head)
-  // fix round 3: the wrist 6.6 cm behind the nock (was 7.6): with the draw
+  // fix round 3: the wrist 6.0 cm behind the nock (was 7.6): with the draw
   // no longer sliding back off the anchor (`drawProtDown`, the re-derived
-  // pull) the wrist sits 7-8 cm in front of the back of the skull at full
-  // draw, which is the room the loose has (`looseClear`)
-  handBehindNock: 0.066, looseKick: 0.11,          // 0.068, 0.075
+  // pull) the wrist sits 8-9.5 cm in front of the back of the skull at full
+  // draw, which is the room the loose has (`looseClear`); knuckles still 0/6
+  // inside the posed head mesh at every gate pitch (Oct 22 probe)
+  handBehindNock: 0.060, looseKick: 0.11,          // 0.068, 0.075
   looseOnJaw: true,
   // the loose (fix round 3; judge r0: the wrist went 0.03-0.06 m BEHIND the
   // back of the skull at looseT 0.22-0.44): the kick runs back along the jaw
@@ -184,6 +185,11 @@ export const UBC_TUNE = {
   // hand with it, toward the back of the skull. At 0.7 the four Lmax agree
   // within 0.004 m (0.528-0.532, Oct 22 sweep)
   drawProtDown: 0.7,
+  // ...and a share of the draw shrug at the steep down aim (fix round 3): the
+  // joint rises so the elbow can sit >= 0.05 m up-and-back of the hand along
+  // the falling arrow (A-draw-elbow-level) AND under the shoulder joint (A16):
+  // 0.057 -> 0.077 m behind the hand, -0.006 under the joint (Oct 22 sweep)
+  drawShrugDown: 0.4,
   // the closed-loop chest blade (fix round 3): the shoulder line's yaw before
   // the stance and the blade, standing, is -0.311 rad at every gate pitch
   // (Oct 22 sweep); while aiming on the move the trunk is turned back to it
