@@ -3,21 +3,21 @@
 The measured engine facts other lanes plan against. Owned by engine-gpu (plan §2); the lane report
 is `docs/ROUND5-ENGINE-GPU.md`. Every number here comes from a gate in
 `tools/gates.r5.engine-gpu.mjs` run on port 5251 (Oct 15 2026, Apple M3 Pro, Chrome for Testing,
-ANGLE/Metal, headless, 1600×900 CSS px; fix rounds 2 and 3: Oct 16); 1 MB = 10⁶ bytes, the unit of plan §4.4.
+ANGLE/Metal, headless, 1600×900 CSS px; fix rounds 2 and 3: Oct 16; W0b and its fix round 1: Oct 19); 1 MB = 10⁶ bytes, the unit of plan §4.4.
 
 | section | status |
 |---|---|
-| 1. Render-target ledger (`A-rt-ledger-census`, `A-rt-ledger`) | **measured W0a, 340.74 MB**, now recounted from the GL allocation calls since boot and equal to the byte (the PMREM depth renderbuffer, 3.15 MB, was missing in fix round 2); levers measured live; `A-rt-ledger` FAILs its ≤ 170 / ≤ 450 MB bar at today's tier. Which wave grades that bar is the orchestrator's ruling (`r5-ruling rt-ledger-bar`), requested; unruled, W0a. The levers that meet it are the W0b tier decision |
+| 1. Render-target ledger (`A-rt-ledger-census`, `A-rt-ledger`) | **W0b fix round 1, graded (ruling `rt-ledger-bar=W0b`): 127.27 MB at the shipped tier, DPR 1.25** (bar ≤ 170; round 0: 154.27), recounted from the GL allocation calls and equal to the byte; staged-fight total **342.45 MB** (bar ≤ 450). The one clause left is the record in `tools/budgets.mjs` (gates-perf's file, one line; with it the gate passes every clause, §3.10). W0a's Round-4 tier ledger (340.74 MB) is §1.3 |
 | 2. 1024 m terrain + nav probe (`A-terrain-1024-probe-box` + `A-terrain-1024-probe`) | **Judged on a quiet box (fix round 3: 4 quiet runs; Q5p and Q6p judged every term).** Single-thread build: 1024 m and 860 m FAIL, 720 m PASS. Pool build (bit-identical, own witness): PASS at every size. GPU delta +0.23 / +0.20 ms PASS; nav 43–44 ms PASS; vertex 20.77 MB PASS. **W1 size by ruling: `pool-terrain-build=accepted` → 1024 m; `=rejected` → 720 m.** The gate stays PENDING, and writes no size, until the orchestrator rules (§2.5). Conditions for W1 in §2.6. |
-| 3. GPU tier (`A-gpu-tier`) | W0b (not started; the W0a inputs are in §1.3 and §3) |
-
+| 3. GPU tier (`A-gpu-tier`) | **W0b fix round 1: shipped `high` = DPR cap 1.25 + GTAO ¼ + SMAA-only + SMAA RGBA8 + far cascades 1024 + direct post topology + GTAO/bloom folded into the grade + far cascades on alternate frames + anisotropic filtering capped at 2×** (§3.1). `A-gpu-tier` **PASS in 3 judged runs**: Pans POC vista 10.28 / 11.62 / 11.23 ms ≤ 13, empty frame 4.83 / 4.87 / 4.85 ms ≤ 7, fps 59.88–60.24, p95 18.5–18.7 ms (§3.3; another lane's gate Chrome was alive during part of each run, §3.3). Render targets **PASS** (127.27 MB). The cap costs far-ground texture detail (filmed, `V-gpu-tier-look`, §3.1); the GPU timer reads a clock state on this machine (§3.4). A22 (R25), A108, A109 PASS; V20, V33b, V-gpu-tier-look filmed for the judge |
 ---
 
 ## 1. Render-target ledger
 
 **W0b: graded at the shipped default tier** (`QUALITY_TIERS.high` after the W0b decision, §3: SMAA-only,
 GTAO at quarter resolution, SMAA targets RGBA8, CSM cascades 2048 / 1024 / 1024, bloom capped at 1280 px
-wide), **DPR 1.25** (a DPR-2 display under the tier's 1.25 cap: 2000 × 1125 device px), 1600 × 900, read
+wide; fix round 1: the direct post topology, §3.1 — no resolve copy, `renderTarget2` holds the grade's RGBA8
+output, `postTarget` released), **DPR 1.25** (a DPR-2 display under the tier's 1.25 cap: 2000 × 1125 device px), 1600 × 900, read
 off the running build by `engine.renderTargetLedger()` on the spawn vista and then the staged fight
 (`tools/budgets.mjs`). Bytes are what each allocation holds: colour × mips × faces, the multisampled colour
 and depth renderbuffers (× samples) when a target is multisampled, the depth renderbuffer
@@ -49,8 +49,8 @@ W0a judge's minor finding).
 | owner | target | device px | layout | bytes |
 |---|---|---|---|---|
 | `post:scene` | CAL.sceneTarget | 2000 × 1125 | RGBA16F 18.0 MB + depth texture (DEPTH24) 9.0 MB; no MSAA | 27,000,000 |
-| `post:pingA` | CAL.postA | 2000 × 1125 | RGBA16F, no depth | 18,000,000 |
-| `post:pingB` | CAL.postB | 2000 × 1125 | RGBA16F, no depth | 18,000,000 |
+| `post:pingA` | CAL.postA | 2000 × 1125 | RGBA8 (the grade's tonemapped output, read by SMAA), no depth | 9,000,000 |
+| `post:pingB` | CAL.postB | — | released in the direct topology; allocated only when a pass after the grade needs a write target (the studio pass), then RGBA16F 18.0 MB | 0 |
 | `post:GTAOPass.gtaoRenderTarget` | GTAO (quarter res) | 500 × 281 | RGBA16F + depth24 renderbuffer | 1,686,000 |
 | `post:GTAOPass.pdRenderTarget` | GTAO denoise | 500 × 281 | RGBA16F + depth24 renderbuffer | 1,686,000 |
 | `post:UnrealBloomPass.bloom-chain` | bright + 5 H + 5 V mips | 640 × 360 … 40 × 23 | RGBA16F + depth24 renderbuffer each | 10,130,880 |
@@ -64,9 +64,9 @@ W0a judge's minor finding).
 
 | | MB |
 |---|---|
-| **render targets, total** | **154.27** (154,271,712 B; bar ≤ 170: **+15.73 MB** of margin). W0a, Round-4 tier: 340.74 |
+| **render targets, total** | **127.27** (127,271,712 B; bar ≤ 170: **+42.73 MB** of margin). W0b round 0: 154.27; W0a, Round-4 tier: 340.74 |
 | canvas drawing buffer (not a three target; reported apart) | 18.0 (RGBA8 + depth24 at 2000 × 1125) |
-| provisioned, never allocated | 0 (the GTAO G-buffer is shrunk to 1 × 1 and never bound) |
+| provisioned, never allocated | 0 (the GTAO G-buffer is shrunk to 1 × 1 and never bound; `postTarget` is released, not provisioned) |
 | the sun's 2048² map (`environment.js:431`) | 0 — it is the no-CSM fallback only; with CSM the sun casts no shadow |
 
 ### 1.2 Where the plan's estimate went wrong
@@ -116,7 +116,7 @@ Not graded yet: whether RGBA8 SMAA targets and 1024² cascades still look right.
 The shadow-map size is a world-sky value passed to `engine.enableCSM`. A tier-table cap applied inside
 `enableCSM` (engine grant) is the seam that does not touch world-sky's file.
 
-### 1.4 GPU memory at the staged fight (today's Round-4 content; `A-rt-ledger` second clause)
+### 1.4 GPU memory at the staged fight — W0a (Round-4 tier and content; W0b numbers in §3.2)
 
 | bucket | MB | plan §4.4 bar |
 |---|---|---|
@@ -428,25 +428,308 @@ nothing, as the rule requires. Their ranges are in §2.2–§2.4.
 
 ---
 
-## 3. GPU baseline for the W0b tier decision (spawn vista, Round-4 content)
+## 3. The GPU tier (W0b decision; gates `A-gpu-tier`, `A-rt-ledger`, `A22-msaa`, `V20`, `A108`, `A109`, `V33b`, `V-gpu-tier-look`)
 
-| DPR (tier `high`, DRS off) | median GPU ms | p95 GPU ms | fps |
+### 3.1 The decision (W0b, fix round 1)
+
+The shipped default tier is `high` (`DEFAULT_TIER` in `src/core/engine.js`; the game boots it unless
+`?q=` says otherwise, and the Pans POC asks for it by name). Round 0 of W0b put in the plan's three
+levers and two render-target levers; the judges then measured the Pans vista at 16.05 / 17.27 ms against
+the 13 ms bar. Fix round 1 adds four more, all inside the engine grant (post chain, tier table):
+
+| lever | Round-4 `high` | shipped `high` | what it buys (measured, §3.2–§3.4) |
+|---|---|---|---|
+| DPR cap (plan lever 1) | 1.5 | **1.25** | pixel count ×0.69 |
+| GTAO resolution (plan lever 2) | ½ per axis | **¼ per axis** (500 × 281 at DPR 1.25) | −10.1 MB; AO pass ×¼ |
+| AA (plan lever 3, R25) | MSAA ×4 + SMAA | **SMAA only** | −108 MB of MSAA buffers and the resolve |
+| SMAA edge / weight targets | RGBA16F | **RGBA8** | −18 MB |
+| CSM cascade maps (cap in `enableCSM`) | 3 × 2048² | **2048 + 2 × 1024** | −50.3 MB; A56's near texel unchanged |
+| **post topology** (fix round 1; follows MSAA 0) | resolve copy into a HalfFloat `renderTarget2`, ping-pong with `postTarget` | **direct**: the scene target is the composer's read buffer (no copy); `renderTarget2` holds only the grade's output as RGBA8; `postTarget` released until a pass after the grade needs it | −1 full-resolution HalfFloat pass; −27 MB; pixel-identical by itself (§3.8) |
+| **`postFold`** (fix round 1) | GTAO's multiply and bloom's composite are two full-resolution in-place blends | **both done inside the grade pass** (the bright pass applies the AO it used to read) | −2 full-resolution read-modify-write passes; empty frame 6.3 → 4.85 ms |
+| **`csmFarCadence`** (fix round 1) | every cascade every frame | **cascade 0 every frame; cascades 1 and 2 on alternate frames** | one 1024² shadow render per frame fewer; vista 49 → 41 draws |
+| **`maxAnisotropy`** (fix round 1) | as authored (the POC ground asks 8×) | **2×** | the lever that moves the vista: §3.4 |
+
+`ultra` keeps MSAA ×4 + SMAA HalfFloat, full-res GTAO, DPR cap 2, 3 × 2048, every cascade every frame and
+anisotropy as authored. `medium` (cap 2) and `low` (cap 1) are SMAA-only, folded, cadence 2.
+
+**What it costs the picture** (filmed for the judge in `V-gpu-tier-look`: Round 4's `high` | the shipped levers
+with anisotropy as authored | the shipped `high`; my reading in the lane report): everything but the far
+ground is the same picture (§3.8: the topology and the cadence move 0 pixels on static frames; the fold and the
+RGBA8 SMAA input move 2–7 % of channels by one level and ≤ 0.03 % by more, on near-threshold SMAA edges). The
+far ground is softer twice over: DPR 1.25 against 1.5 (plan lever 1) costs some of the salt-pan crust's
+sharpness, and the anisotropy cap costs most of what is left: at 40–80 m the crust's light polygon pattern,
+still visible in the middle column, becomes faint horizontal streaks in the right one; the dune ripples keep
+their read. The cap is the price of the 13 ms vista on this content: 4× reads 15.16 ms in a clean run (§3.4)
+and fails.
+
+<!-- gpu-tier:begin -->
+Shipped default tier, as `A-gpu-tier` compares it with the live `QUALITY_TIERS.high` (before/after numbers
+in §3.2–§3.4):
+
+tier-row: `{"dprCap":1.25,"msaa":0,"gtao":true,"gtaoScale":0.25,"smaa":true,"smaaHalfFloat":false,"csmMapCaps":[2048,1024],"postFold":true,"csmFarCadence":2,"maxAnisotropy":2}`
+
+Before: Round-4 `high` `{"dprCap":1.5,"msaa":4,"gtao":true,"gtaoScale":0.5,"smaa":true,"smaaHalfFloat":true,"csmMapCaps":null,"postFold":false,"csmFarCadence":1,"maxAnisotropy":null}`.
+After: the row above.
+<!-- gpu-tier:end -->
+
+New engine API (engine grant: post / tiers / DPR):
+
+```js
+QUALITY_TIERS.<tier>.smaaHalfFloat: boolean      // false: SMAA edge + weight targets RGBA8
+QUALITY_TIERS.<tier>.csmMapCaps: number[] | null // cascade i's map = min(requested, caps[min(i, last)])
+QUALITY_TIERS.<tier>.postFold: boolean           // GTAO multiply + bloom composite inside the grade pass
+QUALITY_TIERS.<tier>.csmFarCadence: number       // cascades >= 1 render when (frame + i) % n === 0; 1 = every frame
+QUALITY_TIERS.<tier>.maxAnisotropy: number|null  // cap on every texture's anisotropic filtering; null = GPU max
+DEFAULT_TIER: 'high'                             // what a fresh boot uses
+ROUND4_HIGH                                      // frozen Round-4 `high` row (before/after measurement only)
+engine.applyTier(row, name = 'custom') → name    // setQuality's body: every lever, targets rebuilt in place
+engine.csmMapSizes: number[] | null              // per-cascade map sizes in force
+engine.postDirect: boolean                       // the direct topology is in force (scene target has no MSAA)
+engine.anisotropyCap: number                     // the anisotropic-filtering cap in force
+engine.tier                                      // a per-engine COPY of the row
+engine.grade.uniforms.{tAO, uAOMix, tBloom, uBloomOn}   // the folded inputs, re-armed every frame by GTAO / bloom
+```
+
+How the levers are wired (all on demand or per frame without allocation):
+- **Direct topology.** `engine.render()` seats `composer.readBuffer = sceneTarget`, `writeBuffer = renderTarget2`
+  when the scene target has no samples; `ScenePass` skips its copy when the read buffer is the scene target.
+  `composer.swapBuffers` is replaced by one that never hands the scene target out as a write buffer (it carries
+  the depth texture GTAO and the studio pass sample), so after the grade's swap the pair is
+  `renderTarget2 ↔ postTarget` as before. `_applyPostTopology()` runs on every tier change.
+- **Fold.** `_postFold()` is true when the tier asks for it and the grade pass is enabled; otherwise GTAO and
+  bloom blend in place exactly as in Round 4 (a probe that disables the grade still gets AO and bloom). The
+  grade shader applies `src.rgb *= mix(1, ao.rgb, uAOMix); src.a *= ao.a` then `src.rgb += bloom.rgb ·
+  bloom.a; src.a += bloom.a²` — GTAOBlendShader's DstColor×Zero blend and the CopyShader SrcAlpha×One blend,
+  in that order. The patch anchors in three's high-pass shader are checked; if they move, folding is off.
+- **Cadence.** `_csmUpdate()` sets `shadow.autoUpdate = false` on cascades ≥ 1 and `needsUpdate` on their
+  frames; a cascade that skips keeps both its map and its shadow matrix from the frame it rendered (three
+  updates both only when it renders), so receivers stay registered; a missing map renders at once.
+- **Anisotropy.** three clamps each texture's `anisotropy` by `capabilities.getMaxAnisotropy()` at upload; the
+  engine answers that call with the tier's cap, and on a cap change re-uploads the scene's textures that ask
+  for more than 1× (maps and program uniforms), once.
+
+### 3.2 Render targets, before → after (`A-rt-ledger`, measured live on the staged fight)
+
+Each row applies the tier row with `engine.applyTier` on the same staged frame, DPR = min(2, cap), then
+reads `engine.renderTargetLedger()`; the shipped tier is restored to the byte afterwards.
+
+<!-- rt-levers:begin -->
+| configuration | DPR | RT MB | margin to 170 | scene / shadow / SMAA / GTAO MB |
+|---|---|---|---|---|
+| Round-4 `high` | 1.5 | 437.75 | −267.75 | 194.4 / 100.66 / 51.84 / 19.44 |
+| Round-4 `high` at the 1.25 cap | 1.25 | 340.74 | −170.74 | 135 / 100.66 / 36 / 13.51 |
+| + SMAA-only (MSAA 0; direct topology: `renderTarget2` RGBA8, `postTarget` released) | 1.25 | 205.74 | −35.74 | 27 / 100.66 / 36 / 13.51 |
+| + GTAO quarter-res | 1.25 | 195.60 | −25.60 | 27 / 100.66 / 36 / 3.37 |
+| + SMAA targets RGBA8 | 1.25 | 177.60 | −7.60 | 27 / 100.66 / 18 / 3.37 |
+| **+ far cascades capped = shipped `high`** (fold, cadence and anisotropy move no target) | 1.25 | **127.27** | **+42.73** | 27 / 50.33 / 18 / 3.37 |
+| alternative: shipped with GTAO ½ | 1.25 | 137.41 | +32.59 | 27 / 50.33 / 18 / 13.51 |
+| alternative: shipped with CSM 3 × 1536 | 1.25 | 133.56 | +36.44 | 27 / 56.62 / 18 / 3.37 |
+<!-- rt-levers:end -->
+
+Staged fight, shipped tier (`A-rt-ledger` second clause, the W0a census arithmetic): textures **100.28 MB**
+(87 uploaded) + geometry **114.90 MB** (1,707 buffers) + render targets **127.27 MB** = **342.45 MB ≤ 450**
+(W0b round 0: 369.45; W0a: 891.87). GL recount (`A-rt-ledger-census`): 127,271,712 B, equal to the ledger
+to the byte, 21 live framebuffers, 39 GL objects, 0 unattributed.
+
+### 3.3 The GPU and frame time (`A-gpu-tier`, Pans POC, quiet box only)
+
+**Instrument (unchanged from round 0).** The Pans POC (`?poc=biome`) is hosted in a same-origin iframe the
+size of the viewport after the game's own frame loop is stopped (one GPU client measured); the shipped tier
+is applied with `engine.applyTier` and DPR = min(2, cap) = 1.25 (2000 × 1125 device px). Empty frame = sky +
+the whole post chain (every other POC group hidden); vista = the POC's `vista` view. 4 rounds × (vista 2 s,
+empty 2 s), GPU time from `EXT_disjoint_timer_query` (`engine.perfSnapshot`), frame intervals from the POC
+loop's own `_recordFrame` ring. Judged only with the box witness quiet (load < 3, 0 other headless Chromes),
+null frame < 3 ms before and after, burst instability ≤ 1.4. Bars unchanged: empty ≤ 7 ms, vista ≤ 13 ms,
+median ≥ 58 fps, p95 ≤ 20 ms.
+
+**Judged results, fix round 1 (shipped `high`, DPR 1.25):**
+
+| run | box at start: load, other headless Chromes | other gate Chromes seen DURING the run (my 2 s monitor) | verdict | vista GPU, 4 bursts → median (bar 13) | empty median (bar 7) | median fps (≥ 58) | p95 ms (≤ 20) | null frame; instability | A9 in the same run |
+|---|---|---|---|---|---|---|---|---|---|
+| G1 | 1.34, 0 | 1 (load max 2.38) | PASS | 10.1 / 10.04 / 10.46 / 12.8 → **10.28** | 4.83 | 59.88 | 18.5 | 0.22 / 0.21; 1.275 / 1.012 | — |
+| QJ1-0944 | 2.75, 0 | 1 (load max 4.54) | PASS | 10.07 / 12.78 / 13.62 / 10.46 → **11.62** | 4.87 | 60.24 | 18.7 | 0.21 / 0.16; 1.353 / 1.031 | 58 fps / 17.74 ms |
+| QJ2-0946 | 2.85, 0 | 2 (load max 4.31) | PASS | 12.64 / 10.09 / 12.3 / 10.17 → **11.23** | 4.85 | 59.88 | 18.7 | 0.21 / 0.2; 1.253 / 1.008 | 58.8 fps / 18.59 ms |
+
+Every judged run PASSES every term. Honest caveat: my in-run monitor saw another lane's gate Chrome alive at some point in every one of these runs (column 3); the gate's own witness samples the box only at its start. Another process on the GPU tends to raise the GPU clock and LOWER this timer's reading (§3.4), so these are not the strongest possible evidence; the clean exploration runs agree (X-sim9: 10.08–10.22 ms at the shipped levers; X-sim8: 11.91).
+
+**Before → after, lever by lever** (the same page, 2 rounds of 1.5 s each, vista / empty GPU median ms;
+run G1):
+
+| configuration | DPR | RT MB | G1: vista / empty |
+|---|---|---|---|
+| Round-4 high (DPR 1.5, MSAA x4, GTAO 1/2, SMAA HalfFloat, CSM 3 x 2048, in-place GTAO + bloom blends, every cascade every frame, anisotropy as authored) | 1.5 | 437.75 | 21.71 / 12.76 (21.64 , 21.78) |
+| lever 1: DPR cap 1.25 | 1.25 | 340.74 | 18.02 / 13.04 (17.9 , 18.14) |
+| lever 2: + GTAO quarter-res | 1.25 | 330.6 | 17.2 / 9.81 (17.85 , 16.55) |
+| lever 3: + SMAA-only (MSAA 0: the scene target is read directly, no resolve copy; grade output RGBA8) | 1.25 | 195.6 | 20.14 / 5.11 (15.65 , 24.62) |
+| lever 4: + SMAA targets RGBA8, far cascades capped at 1024 (W0b fix round 0 = its shipped row) | 1.25 | 127.27 | 19.77 / 4.59 (20.11 , 19.42) |
+| lever 5: + GTAO multiply and bloom composite folded into the grade pass | 1.25 | 127.27 | 17.42 / 4.96 (18.28 , 16.56) |
+| lever 6: + far cascades rendered on alternate frames | 1.25 | 127.27 | 17.33 / 4.83 (16.92 , 17.73) |
+| lever 7: + anisotropic filtering capped at 2 = shipped high | 1.25 | 127.27 | 11.41 / 4.86 (12.85 , 9.96) |
+| NOT shipped: shipped row with the anisotropy cap at 4 | 1.25 | 127.27 | 15.34 / 4.87 (15.83 , 14.85) |
+
+The chain is the record the plan asks for, not a grade: each row is two 1.5 s bursts and, as §3.4 shows, the
+timer's reading for one configuration can move by several ms between bursts when the GPU changes clock
+state. Read the rows that matter against the judged runs above: the shipped row reads like the judged runs
+(10.18–11.41 in G1, QJ1, QJ2), and the anisotropy-4 row (NOT shipped) is over the bar in every judged run
+(15.03–16.41; one unjudged run on a loud box read 12.77 — another process on the GPU raises the clock and
+lowers the reading, §3.4).
+
+### 3.4 What this GPU timer measures, and why the anisotropy cap is the lever
+
+**Calibration (`X-cal`, quiet box apart from one late Chrome).** An extra full-screen ALU pass of n loop
+iterations inserted into the timed composer on the empty frame (2000 × 1125, RGBA8 target):
+
+| n (ascending) | 0 | 2 | 4 | 8 | 14 | 18 | **22** | 27 | 33 | **40** | 48 | **58** | 70 | 85 |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| reading ms | 4.88 | 5.31 | 5.75 | 6.65 | 8.17 | 9.57 | **6.20** | 7.23 | 8.42 | **14.12** | 16.31 | **11.76** | 10.59 | 12.16 |
+| n (descending) | 70 | 58 | 48 | 40 | 33 | 27 | 22 | 18 | 14 | 11 | 8 | 4 | 0 | |
+| reading ms | 12.58 | 11.39 | 10.43 | 9.20 | 12.86 | 7.40 | 7.44 | 9.42 | 8.28 | 7.61 | 6.72 | 6.05 | 4.77 | |
+
+48 extra tiny render passes (64 × 64) read 4.75 ms: pass count costs nothing. The reading is linear in the
+work only inside one GPU clock state (0.22–0.26 ms per iteration), drops when the GPU's governor steps the
+clock up (n = 22, 58), rises when it steps down (n = 40), and has hysteresis (n = 33 reads 8.42 going up,
+12.86 coming down). At 60 Hz the governor keeps the clock as low as still meets the frame. So the bar reads:
+*the frame fits in the clock state the governor picks, with ≤ 13 ms of the 16.7 ms used*. It also means
+removing work can RAISE the reading: on the vista at anisotropy 2, hiding the vegetation read 15.44 ms
+against 10.20 with it, in the same clean run (`X-sim9`). Each lever below was therefore judged on the
+gate's own measurement, interleaved, on quiet boxes, never on one reading.
+
+**The vista's cost is the POC ground's anisotropic texture fetches.** The ground material samples 11
+textures per pixel (sand, salt and a triplanar rock evaluated everywhere, each with a normal map), all at 8×
+anisotropic filtering, across a frame whose lower half is ground at grazing angles. Clean interleaved run
+(`X-sim8`, 0 other Chromes, load ≤ 2.0, 4 bursts of 2 s each, all post-chain levers in):
+
+| anisotropy (colour / normal maps) | 8 / 8 (as authored) | 4 / 4 | 3 / 3 | **2 / 2** | 4 / 2 | 8 / 2 | 4 / 1 |
+|---|---|---|---|---|---|---|---|
+| vista GPU median ms | 16.73 | 15.16 | 14.67 | **11.91** | 10.96 | 15.04 | 12.89 |
+
+`X-sim9` (clean) read the shipped 2× vista at 10.08–10.22 in four bursts. With the post chain alone (fold,
+direct topology, cadence) and 8× the vista stays at 16.2–17.8 ms in every run; nothing else the engine owns
+reaches it (measured at 2×, same run: shadows off −0.3 ms, SMAA off +0.2, GTAO off −0.8).
+
+**Where the crust lives, and why the cap is not split by role.** Filmed per role at DPR 1.25 (`X-film-role`,
+`X-film-role4`): the far salt crust is drawn by the ground's NORMAL maps — colour 8× with normal maps 1× loses
+it, colour 2× with normal maps 8× or 4× keeps it. But the normal-map fetches are where the cost is: in the
+same (unfortunately not clean: one other gate Chrome) interleaved run, colour 2× / normal 8× read 16.14 ms,
+colour 2× / normal 4× 12.02, colour 1× / normal 8× 13.73, 2× everywhere 11.05, as authored 15.61 (`S11-1`).
+A per-role cap would also need a per-texture hook on three's `Texture` (three only clamps globally); it was
+built, measured and taken out again. The shipped lever is the plain global cap three supports.
+
+**At W1 this is re-graded on the real Pans** (`A-gpu-tier` re-runs at `gatePlaces.vistas.pans`, plan §6):
+plan §4.3 holds world-ground's shader to ≤ 3 layers per pixel with triplanar on slopes only, about half the
+POC's fetches. The chain's "anisotropy cap 4" row is the number to watch: when the real Pans read it ≤ 13 ms,
+`high` should go back to 4×.
+
+### 3.5 Earlier baselines (W0a, game spawn vista, Round-4 content)
+
+| DPR (Round-4 tier `high`, DRS off) | median GPU ms | p95 GPU ms | fps |
 |---|---|---|---|
 | 1.0 | 19.4 | 21.0 | 60 |
 | 1.25 | 26.1 | 29.8 | 60 |
-| 1.5 (today's cap) | 48.4 | 49.4 | 48.7 |
+| 1.5 (Round-4 cap) | 48.4 | 49.4 | 48.7 |
 
-Box: load average 1.4–2.7, Kevin's 5173 alive, one lane Chrome. W0b measures `A-gpu-tier` on the
-Pans POC at the candidate tiers.
+W0a fix round 3, quiet box: A9 (DPR 1) 19.43–19.67 ms GPU, 48.6–52.2 fps; A21 `capped` (DPR 1.5)
+50.06 ms; A21 `rawDpr2` 78.7 ms. Read with §3.4: those GPU readings are clock-state readings too.
 
-Fix round 3, quiet box (0 other headless Chromes, load < 3), spawn vista, tier `high`:
+### 3.6 GTAO at quarter resolution: the lattice fix generalised (A108, A109, V33b)
 
-| source | DPR | median GPU ms | fps |
+Round 4's fix fetched the centre depth at `floor(uv · depthSize − 0.25 · k)` (k = depth px per AO px):
+k·i + 0.25 at k = 1 and k·i + 0.5 at k = 2, both mid-texel. At the shipped k = 4 that is k·i + 1.0, a
+texel boundary, so float rounding picks 4i or 4i + 1. Because Round 4 rebuilds the position at whichever
+texel it fetched, that is a one-depth-texel jitter of the sample point, not the Round-4 depth/position
+mismatch — and the negative control confirms it: **A108 with Round 4's formula at the shipped tier reads
+the same as with the new one** (worst peak 0.134 vs 0.135, every crop within 0.005;
+`X-a108-r4-formula-control`). The texel is now taken from the AO texel's own index,
+`floor((floor(uv · resolution) + 0.125) · k)`: the same texel as Round 4 at k = 1 (i) and k = 2 (2i),
+mid-texel at k = 4 (4i + 0.5). A determinism change, not a defect fix; stated as such.
+
+Round 0 made GTAO multiply its AO into the frame in place (one full-resolution pass instead of a copy and a
+blend; pixel-identical on 6 frames, `X-gtao-inplace`). Fix round 1 folds even that blend into the grade pass
+(§3.1, `postFold`); the AO texture, its resolution, its fade and the lattice fix are unchanged, and A108,
+A109 and V33b re-ran on the folded chain (§3.9).
+
+`A108` on the Pans POC (Round 4's instrument and rule: 256² device-px crops, high-passed 2-D
+autocorrelation, strongest local peak at lags 2–32 px, bar 0.15, the GTAO-off control must be clean): crops
+chosen by a survey of 135 positions × 4 frames × 4 configurations (`scratchpad/r5/engine-gpu/explore/crops.json`),
+keeping those whose control is below the bar in all four; grass crops excluded as Round 4 excluded its
+meadow (grass blades darkened by real contact AO read as vertical structure, not a screen-locked grid).
+**Sensitivity witness:** with the 60–120 m fade the graded far crops carry almost no AO, so A108 also swaps
+the stock three r169 centre sample (the Round-4 lattice itself) back in at the shipped tier, DPR 1, on two
+near dune-grass crops, and requires it to raise a peak ≥ 0.15 there while the shipped shader stays under;
+if it does not, the gate fails as blind.
+
+`A109` on the POC (Round 4's instrument: view distance in the AO target's alpha for the read, occlusion =
+mean(1 − ao) per distance bin, ≥ 500 texels per bin, 4–6 m occlusion ≥ 0.05): near bins from a 2 m-high
+frame on a boulder in the dunes, far bins from the vista spot looking NE.
+
+### 3.7 Anti-aliasing (A22 under R25, V20)
+
+R25 grades A22 as "SMAA present and `V20-aa-crop` passes". A22 also MEASURES the AA on V20's own crop
+(basalt-column tops against the sky, `AA_FRAME` in the gate file): on every pixel whose 3 × 3 neighbourhood
+spans > 0.25 of luminance, t = (L − min) / (max − min); intermediate if 0.2 ≤ t ≤ 0.8. Fix round 1 (SMAA now
+reads the grade's RGBA8 output):
+
+| frame (DPR from the tier on a DPR-2 display) | silhouette px | intermediate | fraction |
 |---|---|---|---|
-| A9 (×5 PASS runs: this lane's `engine.js` ×3, HEAD's ×2) | 1 | 19.43–19.67 | 48.6–52.2 |
-| A21 `capped` (Q5a) | 1.5 | 50.06 (burst instability 1.02) | — |
-| A21 `rawDpr2` (Q5a) | 2 | 78.7 (1.01) | — |
+| shipped `high`: SMAA only, DPR 1.25 | 893 | 283 | **0.317** (round 0: 0.316) |
+| the same frame, SMAA off (no AA at all) | 943 | 184 | 0.195 |
+| Round-4 `high`: MSAA ×4 + SMAA, DPR 1.5 | 1075 | 403 | 0.375 |
 
-GPU time roughly follows pixel count (×2.25 at 1.5, ×4 at 2: 19.5 → 50 → 79 ms). The GPU also has slow
-states that no CPU-side witness sees: in the same window A9 once read 34.4 ms at DPR 1 (41.4 fps),
-and the probe's 1.5 s bursts swung between ≈ 19 and ≈ 70 ms (§2.4).
+Bar: ≥ 0.20 and ≥ 1.5 × the no-AA frame (shipped: 1.624 ×).
+
+### 3.8 The new post chain against Round 4's, pixel by pixel (`X-equiv2`, `X-cadence`)
+
+Five POC frames at the shipped tier, DPR 1.25, each lever switched alone against Round 4's chain (resolve
+copy into HalfFloat, in-place blends, every cascade every frame); fraction of RGB channels that differ, and
+how many differ by more than 8 levels:
+
+| change alone | vista | landmark | AA frame | near frame |
+|---|---|---|---|---|
+| direct topology (no copy, HalfFloat kept) | 0 | 0 | 0 | 0 |
+| far-cascade cadence 2 (static frame) | 0 | 0 | 0 | 0 |
+| fold (GTAO + bloom into the grade) | 1.0 %, 60 > 8 | 1.9 %, 108 > 8 | 0.4 %, 28 > 8 | 0.5 %, 7 > 8 |
+| direct + RGBA8 grade target | 4.8 %, 719 > 8 | 5.5 %, 666 > 8 | 3.2 %, 356 > 8 | 2.2 %, 514 > 8 |
+| shipped (all of them) | 5.7 %, 676 > 8 | 7.1 %, 697 > 8 | 3.6 %, 344 > 8 | 2.7 %, 517 > 8 |
+
+(6.75 M channels per frame.) Almost every differing channel is off by 1 level (float instead of a HalfFloat
+intermediate; 8-bit SMAA input); the few hundred larger ones are SMAA edges whose detect/blend decision flips
+near its threshold. **Cadence under motion** (`X-cadence`): a 16-frame walk at 0.6 m and 1.5° per frame,
+cadence 2 against cadence 1, frame by frame: 3–39 channels of 6.75 M differ, max 7 levels, none over 8.
+
+### 3.9 The W0b gate block (port 5251, this tree; reports `scratchpad/r5/engine-gpu/run/report.{F2,G1,Q*}.json`)
+
+| gate | verdict | numbers |
+|---|---|---|
+| `A-gpu-tier-box` + `A-gpu-tier` | **PASS** (judged runs in §3.3) | vista 10.28 / 11.62 / 11.23 ms ≤ 13; empty 4.83 / 4.87 / 4.85 ms ≤ 7; fps 59.88 / 60.24 / 59.88 ≥ 58; p95 18.5 / 18.7 / 18.7 ≤ 20; null frames 0.16–0.22 ms; instability ≤ 1.35; docs row = live tier |
+| `A-rt-ledger` | **PENDING** on one clause | RT 127.27 MB ≤ 170 PASS; staged fight 342.45 MB ≤ 450 PASS; docs PASS; levers restored PASS; at the shipped tier and DPR 1.25 PASS; **`tools/budgets.mjs` has no `RT_LEDGER`** (gates-perf's file): outstanding. With that one line (run `L11`, against a copy of `budgets.mjs`): **PASS on every clause** |
+| `A-rt-ledger-census` (W0a) | **PASS** | GL recount 127,271,712 B = ledger, 21 live framebuffers, 39 GL objects, 0 unattributed, 0 mismatches; docs and `RT_LEDGER` match; registration contract and weak hold PASS |
+| `A22-msaa` (R25) | **PASS** | samples 0 = the tier's, SMAA present and enabled; measured AA 0.317 vs 0.195 off (1.624 ×) |
+| `V20-aa-crop` | NEEDS-JUDGE | filmed (F2); lane reading in the lane report |
+| `A108-ao-periodicity` | **PASS** | worst 0.135 (ultra @ 1, control 0.137), 0 fails; witness: stock sample 0.236 on the first witness crop, shipped 0.099; the second crop reads stock 0.096 / shipped 0.101 (the gate requires the stock sample to see the defect on at least one witness crop; it does) |
+| `A109-ao-distance-fade` | **PASS** | high (AO 400 × 225): 4–6 m 0.0682, past 150 m 0, far band 1.000 of GTAO-off; ultra 0.0718, 0, 1.000 |
+| `V33b-no-ao-lattice` | NEEDS-JUDGE | filmed (F2) on the folded chain; lane reading in the lane report |
+| `V-gpu-tier-look` (new) | NEEDS-JUDGE | filmed (`L13`); lane reading in the lane report: the far salt crust softens |
+
+Must stay green (F2, the round's one full run; the box got loud during it): `A20-frame-loop-survives` PASS,
+`A22b-fov-recompile` PASS, `A56-cascades` PASS (near texel 1.38 cm, `shadowMapSize` 2048). Global items present
+in this tree: A1, A9 (57.9 fps / 19.2 ms in F2; 58.0 and 58.8 fps in QJ1, QJ2), A20b, A90, A90-expansion,
+A90b, A90-rig-reclaim, A-ID-ip-assets-gone, A-assets-tracked PASS; A-licence-manifest PENDING (pipeline's
+clauses); A21 FAIL on its Round-4 GPU term (its baseline verdict; draws and triangles PASS) — lane report §5.2.
+
+### 3.10 For the orchestrator
+
+- No bar moved and no gate was loosened: the vista and empty-frame terms are measured exactly as in round 0;
+  the lever record gained the four new levers and an anisotropy-4 row; `V-gpu-tier-look` was added so the
+  judge sees what the tier costs the picture.
+- **The timer is a clock-state reading on this machine (§3.4).** A frame whose work sits near a governor
+  threshold can read on either side of the bar in different runs; the shipped tier's spread is in §3.3.
+  If the orchestrator wants a capacity number instead, that is a new instrument (a fixed-clock or saturated
+  measurement), a ruling, not something this lane changed.
+- **`A-rt-ledger`'s last clause** is gates-perf's one line in `tools/budgets.mjs`
+  (`export { RT_LEDGER } from './r5-probes/rt-ledger.mjs';`). With it the gate passes every clause: proved by
+  a run against a copy of `budgets.mjs` with that line (`scratchpad/r5/engine-gpu/budgets-proof/`,
+  report `L11`), patch at `scratchpad/r5/engine-gpu/budgets-rt-ledger.patch`.
+- **The trade is the orchestrator's to accept.** The two choices the measurements leave for W0b: ship
+  `maxAnisotropy: 2` (the vista passes; the far salt crust softens, `V-gpu-tier-look`), or ship 4× and record
+  the vista term red on the POC until the W1 re-grade. The tier row is one field either way.
+- **W1:** re-grade on the real Pans and try `maxAnisotropy: 4` there (§3.4).

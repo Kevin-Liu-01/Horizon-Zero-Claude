@@ -54,6 +54,10 @@
  *                             (?poc=biome, hosted in an iframe: see POC_KIT),
  *                             quiet box only; before/after per lever; docs row
  *   A-rt-ledger               now GRADED (plan §8.3 rt-ledger-bar=W0b)
+ *   V-gpu-tier-look           (fix round 1) the vista at Round 4's `high` beside
+ *                             the shipped `high`, full frame + far-ground crop:
+ *                             what the tier's levers cost the picture, for the
+ *                             R29 judge
  *   A22-msaa, V20-aa-crop, A108-ao-periodicity, A109-ao-distance-fade,
  *   V33b-no-ao-lattice        re-staged on the Pans POC; they SHADOW the
  *                             Round-4 rows by id (see SHADOW BY ID: before
@@ -791,7 +795,8 @@ function gpuTierAssert(box) {
       };
       const SHIPPED = QUALITY_TIERS[DEFAULT_TIER];
       const levers = (row) => ({ dprCap: row.dprCap, msaa: row.msaa, gtao: row.gtao, gtaoScale: row.gtaoScale, smaa: row.smaa,
-        smaaHalfFloat: row.smaaHalfFloat, csmMapCaps: row.csmMapCaps });
+        smaaHalfFloat: row.smaaHalfFloat, csmMapCaps: row.csmMapCaps, postFold: row.postFold, csmFarCadence: row.csmFarCadence,
+        maxAnisotropy: row.maxAnisotropy });
       const measure = async (rounds, ms) => {
         const v = [], m = [];
         for (let k = 0; k < rounds; k++) {
@@ -829,12 +834,20 @@ function gpuTierAssert(box) {
       if (!shippedOk) why.push('not measured at the shipped tier on a DPR-2 display (quality ' + E.quality + ', pixel ratio ' + out.shipped.pixelRatio + ')');
 
       // ---- before -> after, the plan's levers in its order (ungraded record) ----
+      const L3 = Object.assign({}, ROUND4_HIGH, { dprCap: 1.25, gtaoScale: 0.25, msaa: 0 });
+      const L4 = Object.assign({}, L3, { smaaHalfFloat: false, csmMapCaps: SHIPPED.csmMapCaps });
+      const L5 = Object.assign({}, L4, { postFold: true });
+      const L6 = Object.assign({}, L5, { csmFarCadence: SHIPPED.csmFarCadence });
       const chain = [
-        ['Round-4 high (DPR 1.5, MSAA x4, GTAO 1/2, SMAA HalfFloat, CSM 3 x 2048)', ROUND4_HIGH],
+        ['Round-4 high (DPR 1.5, MSAA x4, GTAO 1/2, SMAA HalfFloat, CSM 3 x 2048, in-place GTAO + bloom blends, every cascade every frame, anisotropy as authored)', ROUND4_HIGH],
         ['lever 1: DPR cap 1.25', Object.assign({}, ROUND4_HIGH, { dprCap: 1.25 })],
         ['lever 2: + GTAO quarter-res', Object.assign({}, ROUND4_HIGH, { dprCap: 1.25, gtaoScale: 0.25 })],
-        ['lever 3: + SMAA-only (MSAA 0)', Object.assign({}, ROUND4_HIGH, { dprCap: 1.25, gtaoScale: 0.25, msaa: 0 })],
-        ['shipped ' + DEFAULT_TIER + ' (+ SMAA RGBA8, far cascades capped)', SHIPPED],
+        ['lever 3: + SMAA-only (MSAA 0: the scene target is read directly, no resolve copy; grade output RGBA8)', L3],
+        ['lever 4: + SMAA targets RGBA8, far cascades capped at 1024 (W0b fix round 0 = its shipped row)', L4],
+        ['lever 5: + GTAO multiply and bloom composite folded into the grade pass', L5],
+        ['lever 6: + far cascades rendered on alternate frames', L6],
+        ['lever 7: + anisotropic filtering capped at ' + SHIPPED.maxAnisotropy + ' = shipped ' + DEFAULT_TIER, SHIPPED],
+        ['NOT shipped: shipped row with the anisotropy cap at 4', Object.assign({}, SHIPPED, { maxAnisotropy: 4 })],
       ];
       out.leverChain = [];
       for (const [label, row] of chain) {
@@ -887,7 +900,7 @@ const sid = (id) => (SHADOWED_IDS.includes(id) ? id + SHADOW_ID_SUFFIX : id);
  * against the sky. `crop` is in CSS px of the 1600 x 900 frame and is read at
  * the device ratio in force.
  */
-const AA_FRAME = Object.freeze({ cam: [16, 22, 2.2, 53, 14, 50], crop: [860, 30, 200, 112] });
+const AA_FRAME = Object.freeze({ cam: [16, 22, 2.2, 53, 14, 50], crop: [860, 62, 200, 112] });
 
 /**
  * Edge anti-aliasing, measured: on every pixel whose 3x3 neighbourhood spans
@@ -1008,9 +1021,19 @@ const V20_SETUP = `(async () => { const __work = (async () => {
  * structure at ultra@2, content not lattice; the survey records it).
  */
 const A108_FRAMES = [
-  { name: 'mesas E from the vista spot', cam: [-82, 0, 2.6, 80, 2, 46], crops: { far147m: [0.5, 0.5], far128m: [0.4, 0.55], mid87m: [0.5, 0.6] }, far: ['far147m', 'far128m'] },
-  { name: 'the pan from 14 m', cam: [-70, -40, 14, 50, -14, 40], crops: { far129m: [0.4, 0.25], far108m: [0.5, 0.35], mid87m: [0.5, 0.4], mid62m: [0.4, 0.5] }, far: ['far129m', 'far108m'] },
+  { name: 'mesas E from the vista spot', cam: [-82, 0, 2.6, 80, 2, 46], crops: { far147m: [0.5, 0.5], far128m: [0.4, 0.55], mid87m: [0.5, 0.6], mid47m: [0.5, 0.65], mid32m: [0.8, 0.6] }, far: ['far147m', 'far128m'] },
+  { name: 'the pan from 14 m', cam: [-70, -40, 14, 50, -14, 40], crops: { far129m: [0.4, 0.25], far108m: [0.5, 0.35], mid87m: [0.5, 0.4], mid62m: [0.4, 0.5], mid46m: [0.1, 0.6], mid41m: [0.8, 0.65] }, far: ['far129m', 'far108m'] },
   { name: 'the shelf from 6 m', cam: [-30, -20, 6, 60, -6, 46], crops: { mid68m: [0.6, 0.5], near23m: [0.5, 0.75] }, far: [] },
+];
+/**
+ * Witness crops for A108's sensitivity self-test (survey 2, docs/ROUND5-ENGINE.md §3.5): at the shipped
+ * tier, DPR 1, the stock three centre sample raised the peak to 0.238 / 0.225 here while the shipped
+ * shader read 0.100 / 0.122 and GTAO-off 0.111 / 0.102. They hold grass, which is why they are a
+ * witness and not a graded crop (Round 4 excluded grass from the graded crops).
+ */
+const A108_WITNESS = [
+  { name: 'sand + grass below the shelf, 2 m up', cam: [50, 18, 2, 330, 3, 46], crop: [0.2, 0.8] },
+  { name: 'near dune grass from the vista spot', cam: [-82, 0, 2.6, 80, 2, 46], crop: [0.6, 0.8] },
 ];
 const A108_ASSERT = `(async () => {
   ${POC_KIT}
@@ -1055,9 +1078,34 @@ const A108_ASSERT = `(async () => {
       configs.push(cfg);
     }
   }
+  // ---- SENSITIVITY WITNESS (negative control): can this instrument see the Round-4 defect on THIS content? ----
+  // At the shipped tier, DPR 1, the stock three r169 centre sample (depth NEAREST at vUv, position rebuilt at
+  // vUv: the Round-4 lattice) is swapped in on the witness crops: it must raise a peak >= BAR there while the
+  // shipped shader stays under it. If the stock sample raises nothing, the crops above prove nothing and the
+  // gate fails as blind.
+  const W_ = ${JSON.stringify(A108_WITNESS)};
+  const mtl = E.gtao.gtaoMaterial, PATCHED = mtl.fragmentShader;
+  const STOCK = PATCHED.replace('float depth = texelFetch(tDepth, centerTexel, 0).DEPTH_SWIZZLING;', 'float depth = getDepth(vUv.xy);')
+    .replace('vec3 viewPos = getViewPosition(centerUv, depth);', 'vec3 viewPos = getViewPosition(vUv, depth);')
+    .replace('vec3 viewNormal = getViewNormal(centerUv);', 'vec3 viewNormal = getViewNormal(vUv);');
+  const stockEdits = ['getDepth(vUv.xy)', 'getViewPosition(vUv, depth)', 'getViewNormal(vUv)'].filter((t) => STOCK.includes(t)).length;
+  setTierDpr(QUALITY_TIERS[DEFAULT_TIER], DEFAULT_TIER, 1);
+  const witness = { crops: W_, stockEditsInstalled: stockEdits, rows: [] };
+  try {
+    for (const w of W_) {
+      camAt(...w.cam);
+      const peakWith = (fs, on) => { mtl.fragmentShader = fs; mtl.needsUpdate = true; E.gtao.enabled = on; draw(5); return acorr(lumCrop(w.crop[0], w.crop[1], S), S); };
+      const off = peakWith(PATCHED, false), ship = peakWith(PATCHED, true), stock = peakWith(STOCK, true);
+      witness.rows.push({ name: w.name, off: off.peak, shipped: ship.peak + '@' + ship.lag.join(','), stock: stock.peak + '@' + stock.lag.join(','),
+        stockSeesDefect: off.peak < BAR && stock.peak >= BAR, shippedClean: ship.peak < BAR });
+    }
+  } finally { mtl.fragmentShader = PATCHED; mtl.needsUpdate = true; E.gtao.enabled = E.tier.gtao; draw(1); }
+  witness.instrumentSees = stockEdits === 3 && witness.rows.some((r) => r.stockSeesDefect);
+  if (!witness.instrumentSees) fails.push('sensitivity witness: the stock (Round-4 defect) centre sample raised no peak >= ' + BAR + ' on the witness crops: the instrument is blind on this content');
+  for (const r of witness.rows) if (r.stockSeesDefect && !r.shippedClean) fails.push('witness ' + r.name + ': shipped shader peaks too (' + r.shipped + ')');
   setTierDpr(QUALITY_TIERS[DEFAULT_TIER], DEFAULT_TIER, 2);
   if (E.gtaoPatched !== true) fails.push('engine.gtaoPatched is ' + E.gtaoPatched + ': the depth-consistent GTAO shader is not installed');
-  return { pass: fails.length === 0, detail: { bar: BAR, worstMeasured: worst, fails: fails.slice(0, 10), configs, frames: FRAMES } };
+  return { pass: fails.length === 0, detail: { bar: BAR, worstMeasured: worst, fails: fails.slice(0, 10), sensitivityWitness: witness, configs, frames: FRAMES } };
 })()`;
 
 /**
@@ -1069,7 +1117,7 @@ const A108_ASSERT = `(async () => {
  * mesa band's luminance with GTAO on within 3 % of GTAO off. At every tier
  * with GTAO on, DPR 1 (Round 4 measured at DPR 1).
  */
-const A109_FRAMES = Object.freeze({ near: [30, 26, 1.6, 60, -10, 50], far: [-82, 0, 2.6, 45, 3, 46], farBand: [0.12, 0.22, 0.88, 0.42] });
+const A109_FRAMES = Object.freeze({ near: [25, 22, 2.0, 60, -10, 55], far: [-82, 0, 2.6, 45, 3, 46], farBand: [0.12, 0.22, 0.88, 0.42] });
 const A109_ASSERT = `(async () => {
   ${POC_KIT}
   const F = ${JSON.stringify(A109_FRAMES)};
@@ -1137,7 +1185,7 @@ const A109_ASSERT = `(async () => {
  *   row 3  the 2 m contact close-up: high on | high OFF | ultra on | ultra OFF
  * Built in the background (visual setups get 60 s and the POC boot can take most of it).
  */
-const V33B_FRAMES = Object.freeze({ spot: [-82, 0, 2.6], pitch: 2, fov: 50, mesa: [-82, 0, 2.6, 45, 3, 46], mesaCrop: [0.42, 0.33], close: [30, 26, 1.6, 60, -10, 50] });
+const V33B_FRAMES = Object.freeze({ spot: [-82, 0, 2.6], pitch: 2, fov: 50, mesa: [-40, -30, 4, 70, 0, 46], mesaCrop: [0.5, 0.46], close: [25, 22, 2.0, 60, -22, 55], closeCrop: [0.62, 0.40] });
 const V33B_SETUP = `(async () => { const __work = (async () => {
   ${POC_KIT}
   const F = ${JSON.stringify(V33B_FRAMES)};
@@ -1150,15 +1198,27 @@ const V33B_SETUP = `(async () => { const __work = (async () => {
     E.gtao.enabled = true;
     YAWS.forEach(([yaw, nm], c) => { camAt(F.spot[0], F.spot[1], F.spot[2], yaw, F.pitch, F.fov); sh.put(full(), W(), H(), c, r, tierName + ' gtao on  bearing ' + nm + ' (ao ' + E.gtao.width + 'x' + E.gtao.height + ')'); });
   });
+  /** what GTAO adds: 255 - 8 x (luminance OFF - luminance ON), white = no AO, dark = AO darkening */
+  const darkening = (on, off) => {
+    const d = new Uint8Array(400 * 225 * 4);
+    for (let j = 0; j < 400 * 225; j++) { const v = Math.max(0, Math.min(255, Math.round(255 - (lum(off, j) - lum(on, j)) * 255 * 8))); d[j * 4] = d[j * 4 + 1] = d[j * 4 + 2] = v; d[j * 4 + 3] = 255; }
+    return d;
+  };
   [DEFAULT_TIER, 'ultra'].forEach((tierName, t) => {
     setTierDpr(QUALITY_TIERS[tierName], tierName, 1);
     camAt(...F.mesa);
-    E.gtao.enabled = true; sh.put(crop(), 400, 225, t * 2, 2, tierName + ' on   1:1 far mesas', true);
-    E.gtao.enabled = false; sh.put(crop(), 400, 225, t * 2 + 1, 2, tierName + ' OFF  1:1 far mesas', true);
+    E.gtao.enabled = true; sh.put(crop(), 400, 225, t * 2, 2, tierName + ' on   1:1 far shelf wall across the pan', true);
+    E.gtao.enabled = false; sh.put(crop(), 400, 225, t * 2 + 1, 2, tierName + ' OFF  1:1 far shelf wall', true);
     camAt(...F.close);
-    E.gtao.enabled = true; sh.put(full(), W(), H(), t * 2, 3, tierName + ' on   2 m contact close-up');
-    E.gtao.enabled = false; sh.put(full(), W(), H(), t * 2 + 1, 3, tierName + ' OFF  2 m contact close-up');
+    const cc = () => { draw(4); return readRect(Math.round(F.closeCrop[0] * W() - 200), Math.round(F.closeCrop[1] * H() - 112), 400, 225); };
+    E.gtao.enabled = true; const on = cc();
+    E.gtao.enabled = false; const off = cc();
     E.gtao.enabled = E.tier.gtao;
+    if (t === 0) {
+      sh.put(on, 400, 225, 0, 3, tierName + ' on   2 m up, 1:1 boulder foot + grass', true);
+      sh.put(off, 400, 225, 1, 3, tierName + ' OFF  same 1:1 crop', true);
+    }
+    sh.put(darkening(on, off), 400, 225, 2 + t, 3, tierName + ' AO darkening x8 (white = none)', true);
   });
   setTierDpr(QUALITY_TIERS[DEFAULT_TIER], DEFAULT_TIER, 2);
   await sh.show();
@@ -1168,6 +1228,41 @@ const V33B_SETUP = `(async () => { const __work = (async () => {
 /* ------------------------------------------------------------------------ */
 /* A-terrain-1024-probe                                                      */
 /* ------------------------------------------------------------------------ */
+
+/**
+ * V-gpu-tier-look (W0b fix round 1): what the shipped tier costs the picture.
+ * The A-gpu-tier levers are measured in milliseconds; this films what they do
+ * to the Pans POC vista, Round 4's `high` beside the shipped `high`, full
+ * frame and the far ground (where the anisotropic-filtering cap acts), so the
+ * R29 judge grades the trade with their own eyes. Static camera, every pass
+ * of both chains; the crop is the same CSS box read at each tier's DPR.
+ */
+export const LOOK_CROP = Object.freeze([540, 445, 500, 150]);
+const V_LOOK_SETUP = `(async () => { const __work = (async () => {
+  ${POC_KIT}
+  const SHIP = QUALITY_TIERS[DEFAULT_TIER];
+  const sh = sheetNew(3, 2);
+  const c = ${JSON.stringify(LOOK_CROP)};
+  const shoot = (row, name, col) => {
+    setTierDpr(row, name, 2); viewNamed('vista'); draw(6);
+    const pr = R.getPixelRatio();
+    const full = readRect(0, 0, W(), H());
+    sh.put(full, W(), H(), col, 0, name + ': DPR ' + pr + ', anisotropy ' + (row.maxAnisotropy ? 'cap ' + row.maxAnisotropy + 'x' : 'as authored (8x)'), false);
+    const w = Math.round(c[2] * pr), h = Math.round(c[3] * pr);
+    sh.put(readRect(Math.round(c[0] * pr), Math.round(c[1] * pr), w, h), w, h, col, 1, name + ': far ground in the box', true);
+  };
+  shoot(ROUND4_HIGH, 'Round-4 high', 0);
+  shoot(Object.assign({}, SHIP, { maxAnisotropy: null }), 'shipped, aniso as authored', 1);
+  shoot(SHIP, 'shipped ' + DEFAULT_TIER, 2);
+  setTierDpr(SHIP, DEFAULT_TIER, 2); viewNamed('vista');
+  await sh.show();
+  for (const col of [0, 1, 2]) {
+    const ov = document.createElement('div');
+    ov.style.cssText = 'position:fixed;z-index:2147483647;border:2px solid #ff4040;left:' + (col * 1600 / 3 + c[0] / 3) + 'px;top:' + (c[1] / 2) + 'px;width:' + c[2] / 3 + 'px;height:' + c[3] / 2 + 'px';
+    document.body.appendChild(ov);
+  }
+  window.__VLOOK_DONE__ = true;
+})(); await Promise.race([__work, new Promise((r) => setTimeout(r, 52000))]); })()`;
 
 /**
  * The probe's assert, with the node-side box sample baked in (null = not
@@ -1672,7 +1767,13 @@ export const GATES = [
     id: sid('V33b-no-ao-lattice'), kind: 'visual', lane: 'engine-gpu', wave: 'W0b', timeout: 300000, settle: 120000, shadows: 'V33b-no-ao-lattice',
     title: 'GTAO on (shipped high at quarter-res + ultra): no screen-locked lattice on the Pans POC at four bearings, and contact AO still reads in a 2 m close-up',
     setup: V33B_SETUP,
-    criteria: 'A 4x4 contact sheet of the Pans POC. Row 1: the shipped tier (high, GTAO at quarter resolution) at bearings N/E/S/W from the vista spot. Row 2: the same at ultra (full-res GTAO). Row 3: 1:1 device-pixel crops of the far north-east mesas, GTAO on next to GTAO OFF, high then ultra. Row 4: a 2 m close-up of basalt column feet / rocks on the ground, on next to OFF, high then ultra. PASS: no screen-locked lattice, grid, plaid, dither or banding on the distant mesas, the haze band or the sky edge in any tile; each "on" crop in row 3 is indistinguishable from its "OFF" neighbour; in row 4 the "on" tiles show soft contact darkening where rock meets ground and between columns that the "OFF" tiles lack, with no blocky halo or dark outline along silhouettes against the sky and no pattern on the ground. FAIL on any regular vertical bars / horizontal bands / checker, on visible blocky AO halos around objects at the shipped quarter resolution, or if the close-up on and OFF tiles are identical (AO switched off rather than fixed).',
+    criteria: 'A 4x4 contact sheet of the Pans POC. Row 1: the shipped tier (high, GTAO at quarter resolution) at bearings N/E/S/W from the vista spot. Row 2: the same at ultra (full-res GTAO). Row 3: 1:1 device-pixel crops of the far basalt shelf wall seen across the salt pan (100-200 m, hills in the haze behind), GTAO on next to GTAO OFF, high then ultra. Row 4: 1:1 device-pixel crops of a 2 m-high close-up where a boulder sits on the dune sand (grass around it): the shipped tier with GTAO on, the same crop OFF, then what GTAO adds there at high and at ultra, amplified 8x (white = no darkening). PASS: no screen-locked lattice, grid, plaid, dither or banding on the distant shelf wall, the hills, the haze band or the sky edge in any tile; each "on" crop in row 3 is indistinguishable from its "OFF" neighbour; in row 4 the two darkening tiles show soft contact darkening concentrated where the boulder meets the sand and at the grass bases (the on tile reads slightly darker there than the OFF tile), smooth at the quarter resolution of high (no blocks, no stair-stepped halo, no dark outline running along silhouettes against the sky) and with no pattern on open ground. FAIL on any regular vertical bars / horizontal bands / checker or grid in any tile, on blocky AO halos at the shipped quarter resolution, or if a darkening tile is blank white (AO switched off rather than fixed).',
+  },
+  {
+    id: 'V-gpu-tier-look', kind: 'visual', lane: 'engine-gpu', wave: 'W0b', timeout: 240000, settle: 90000,
+    title: 'What the shipped tier costs the picture: the Pans POC vista at Round 4\'s `high`, at the shipped levers with anisotropy as authored, and at the shipped `high` (full frame + nearest-neighbour crop of the far ground)',
+    setup: V_LOOK_SETUP,
+    criteria: 'Three columns of the Pans POC vista, same camera. Left: Round 4\'s `high` (DPR 1.5, MSAA x4 + SMAA, anisotropic filtering as authored, 8x). Middle: the shipped levers with anisotropic filtering left as authored (DPR 1.25, SMAA only, GTAO quarter-res, AO and bloom folded into the grade, far cascades on alternate frames). Right: the shipped `high` (the middle plus the anisotropic-filtering cap of 2x). Top row: full frames. Bottom row: the far ground in the red box (salt pan beyond the dune crest, the basalt shelf foot), nearest-neighbour. PASS: the three top tiles show the same scene with the same light, shadow shapes (the ring\'s ellipse shadow on the pan), contact darkening, bloom and grade, with no shadow missing or blocky, no AO halo, no colour shift and no new banding or aliasing; and in the bottom-right tile the salt pan still reads as pale crusted ground and the dune ripples are still there, as a softer version of the bottom-middle tile. FAIL if the bottom-right salt pan reads as flat untextured colour or as horizontal streaks where the bottom-middle shows crust texture, if the dune ripples are gone, or if anything other than softness differs between the top tiles.',
   },
 
   // ---------------------------------------------------------------- W0a (kept)
@@ -1809,7 +1910,7 @@ export const GATES = [
       const CHAIN = [
         ['Round-4 high (DPR 1.5)', R4],
         ['Round-4 high at DPR 1.25', Object.assign({}, R4, { dprCap: 1.25 })],
-        ['+ SMAA-only (MSAA 0)', Object.assign({}, R4, { dprCap: 1.25, msaa: 0 })],
+        ['+ SMAA-only (MSAA 0: no resolve copy, so renderTarget2 holds only the grade output, RGBA8, and postTarget is released)', Object.assign({}, R4, { dprCap: 1.25, msaa: 0 })],
         ['+ GTAO quarter-res', Object.assign({}, R4, { dprCap: 1.25, msaa: 0, gtaoScale: 0.25 })],
         ['+ SMAA targets RGBA8', Object.assign({}, R4, { dprCap: 1.25, msaa: 0, gtaoScale: 0.25, smaaHalfFloat: false })],
         ['+ far cascades capped = shipped ' + EM.DEFAULT_TIER, SHIP],
