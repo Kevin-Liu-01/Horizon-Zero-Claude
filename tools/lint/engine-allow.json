@@ -91,6 +91,14 @@
     "reason": "IP_PATTERN and the R30 scheduled-IP table name the forbidden provenance"
    },
    {
+    "id": "guard:brand-gates",
+    "paths": [
+     "tools/gates.r5.brand.mjs"
+    ],
+    "owner": "brand",
+    "reason": "the brand gates name the plan ids (A-no-horizon-terms-*) and the words a V criterion must forbid"
+   },
+   {
     "id": "guard:gates-r5",
     "paths": [
      "tools/gates.r5.pipeline.mjs",
@@ -448,6 +456,22 @@
    ],
    "reason": "IP_PATTERN and the R30 scheduled-IP table name the forbidden provenance",
    "cap": 28
+  },
+  {
+   "id": "guard:brand-gates",
+   "kind": "guard",
+   "owner": "brand",
+   "until": "while the guard exists",
+   "terms": [
+    "Apex",
+    "Datapoint",
+    "Horizon"
+   ],
+   "paths": [
+    "tools/gates.r5.brand.mjs"
+   ],
+   "reason": "the brand gates name the plan ids (A-no-horizon-terms-*) and the words a V criterion must forbid",
+   "cap": 6
   },
   {
    "id": "scheduled:instruments-b:src/entities/machines/**",
@@ -1076,22 +1100,6 @@
    ],
    "reason": "dies with its content (plan §6 / §7.2)",
    "cap": 12
-  },
-  {
-   "id": "scheduled:brand:tools/gates.r5.brand.mjs",
-   "kind": "scheduled",
-   "owner": "brand",
-   "until": "W4",
-   "terms": [
-    "Apex",
-    "Datapoint",
-    "Horizon"
-   ],
-   "paths": [
-    "tools/gates.r5.brand.mjs"
-   ],
-   "reason": "dies with its content (plan §6 / §7.2)",
-   "cap": 6
   },
   {
    "id": "scheduled:pipeline:tools/r5-poc/**",

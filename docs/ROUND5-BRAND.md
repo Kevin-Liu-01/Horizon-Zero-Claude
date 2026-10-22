@@ -1,4 +1,282 @@
-# ROUND 5 — lane `brand`, W0-day1 (mechanical pass)
+# ROUND 5 — lane `brand`
+
+Port 5253 · tree `scratchpad/r5/brand/tree` (branch `r5/w0b-brand`, base `a953355`; the orchestrator's backup
+checkpoint `c4675b3` sits on it) · plan §2 brand row, §6, §7.4, §9 "brand" · bible §9.7–9.8, §10.
+
+This file holds the **W0b report after fix round 2** (sections 0–7) and, unchanged below it, the **W0-day1
+report** (Appendix A). Every number here was measured on port 5253 in this tree. They come from one full run
+(36 gates, `work2/full.log` in brand's scratch) and from the targeted runs named where they are used. My
+reading of the V gates is advisory (R29); the independent judge grades them.
+
+---
+
+## 0. Fix round 2: what changed, finding by finding
+
+| judge finding | what I did | measured now |
+|---|---|---|
+| **5 (major): the disc sank behind the spires in real time; the drift shots were synthetic** | The title now **holds the world clock**. `_titleFrame` borrows `environment.timeFrozen`, the public field documented in `environment.js`, the same way it borrows the weather. `_titleLeave` hands back the value it found. `_titleLeave` also runs on the `game-start` event now. A start that bypasses the menu (`__GAME__.start()`) used to leave the disc in the scene and keep the borrowed weather; now it cleans up. **A-title-disc-depth** now samples in **real time**: every 5 s, with no clock or dolly jump, until the dolly clock passes 105 s, which covers both truck extremes. Each sample measures the whole disc core against the terrain crest seen from the live camera. The drift shots `X-V38-drift35` and `-drift105` now wait real time (settle 32.5 s and 102.5 s). | **PASS**, 18/18 checks. 22 samples over 105 s; dolly clock 2.3 → 107.2 s; hour 17.000 throughout. The core bottom stays **≥ 1.36°** above the crest at every sample; the judge's probe found −1.88° at 40 s. In play the clock runs again: 17.0036 → 17.0303 over 2 s, and `timeFrozen` is back to false. On `game-start` the disc is removed and its geometry and material dispose events fire. |
+| **4 (major): the disc did not read as a sun.** Centre (181,120,95) against #F2A27E, and darker than "the sky glow 40–80 px below it" | Measuring that frame found **three causes**:<br>(a) **The CSS calima wash was mis-built.** Its wrapper (`position: fixed; z-index: 49`) is a stacking context, so it is an isolated group. The tint's `mix-blend-mode: color` blended with nothing and painted a flat 55 % ochre veil. On the measured pixels the old stack gave final = 0.25 × canvas + const; a model of exactly that gives (181,140,103) against the measured (181,141,103). That capped the disc at R 181 and flattened the vista. Now the wrapper is `display: contents` and each layer is its own fixed sheet in the root stacking context. The colour blend reaches the canvas and keeps the scene's luminance.<br>(b) **The "glow 40–80 px below" was the Round-4 sky's own sun.** The sky dome is centred on the player, not the camera, so from the title camera its sun sits about 3.1° below `sunDir`. The old disc sat on `sunDir`, so the frame showed two suns and the white one bled through as the glow. The disc now sits **on the sky's sun** (`_titleSunPoint`, read from `environment.sky`, falling back to `sunDir`) at a constant angular size, and the chooser frames that point.<br>(c) **The scrim's dark top band sat over the disc.** The lockup's darkening is now an ellipse behind the lockup only, 330 px half-width. The sun stands about 385 px off-centre at 900 px, whatever the aspect.<br>The disc shader now does two things in one draw (custom blend `src + dst·a`). The core (1.5°, edge feathered 16 %) replaces the sky. Out to 12° round it, the dust absorbs the Round-4 clear-sky glow and corona. The absorption is fitted on filmed frames so the sky falls away steadily with no dark ring. The core colour is calibrated on filmed frames too. Two new gates, **A-title-disc-sun** and **A-title-disc-sun-pixels**, read the composited screenshot (canvas + CSS + UI). | **PASS.** Disc centre **(234,163,126)** against #F2A27E (242,162,126): **CIE76 ΔE 3.77**; the core is 100 % whole. Centre luminance **175.2**. That beats every 3×3 sky patch from the feathered edge out to 5° above the centre (max **165.9**). The band 40–80 px under the disc is **140.2**, no longer brighter than the disc. Upper-half sky profile: 176 at the core, 156 at 2°, then 152 / 150 / 149 / 148 / 147 out to 4°, and about 150 flat out to 12°. R is 8 short because the engine's own vignette (×0.936 at that spot) and the haze cap it; G and B are on target. |
+| **2 (blocker) / 4 (major): no Pans vista in calima** | Unchanged in substance: the Pans are world-ground W1, calima is world-sky W1, and brand may not build either. The V38 criteria stay the **plan text, verbatim**, read from the plan at load. As the orchestrator's W0b task asked, the gate **title** now carries a separate staging note: the shot is staged over the Round-4 valley under brand's stand-in, and the Pans clause cannot pass before W1. The note does not change the criteria. | **My reading: V38 FAILs its Pans clause**: no salt grid, no surf, no black sand. Holding: one logo, vertical menu 01–05, no walker, no lava. The coral disc now reads as the sun (row above). **Orchestrator: a §8.3 ruling, or V38 stays FAIL until W1.** |
+| **6 (major): the player-lint harvest skipped dialogue** | The gate now opens **every person's dialogue card** through the shipped path: `progression.talkTo`, then `choose('topic:…')` for every topic, including the ones the 2-choice cut hides. It reads each rendered card. Every content table is now read in full: **every key and every string value at any depth**, including Sets, Maps and exported strings. There is no display-key filter and no length cap; truncation would be reported, and there was none. The **W0b ratchet is re-recorded** in `tools/lint/ratchet.json`, with the reason and the value it replaces. | **PASS 1508 ≤ 1508**, the same count in both runs (run 7 and the full run). Dialogue: 13 people, 53 cards, 40 topics, **80 hits**. The `NPCS` table goes from 41 hits to **66**, the judge's number. 78 tables, 4,788 strings, 9,199 keys. Static 182 + page 1,326. Advisory named reading: 718. Brand surfaces: 3, all inside generated credit attributions. |
+| **1 (blocker) / 3 (major): A-fonts-licensed fails; old fonts already deleted** | **Brand-side:** a second bridge in `src/style.css` (`body #studio-ui .studio-title, .studio-head`) makes the photo studio's two kickers resolve to Bodoni Moda with no request. The gate now **also enters the photo studio** for 1.5 s before it reads requests and stacks. No screen can request a deleted retired file any more. The 37 references are text in other lanes' files, so **only the orchestrator can clear them** (rule 1; `dialogue.js` is frozen). The patch is unchanged and still applies. Re-measured this round in a scratch copy: 0 references after it, and the code lint drops from 1,435 to **1,246**. | **FAIL on one clause only, `zeroRefsAnywhere`**: 37 lines in 11 files. `noStackLeadsWithRetired` now **PASSes**: 0 elements in the HUD and the studio. `noRetiredFontFileRequested` **PASSes** with the HUD shown and the studio visited: 4 requests, all woff2 of the three families. Every other clause PASSes. **Orchestrator: add the §1.2 grant and apply the patch at the merge** (§7.1). |
+
+---
+
+## 1. What was built (W0b)
+
+| deliverable (plan §2 / bible) | where | notes |
+|---|---|---|
+| **CALIMA wordmark + logo** (bible §9.8) | `index.html` (the lockup markup, twice: loading + title), `src/style.css` ("THE CALIMA LOCKUP") | CALIMA in **Bodoni Moda 500 caps, tracking 0.18 em**. The **I is a plumb line**: a 0.028 em stroke from the cap line to a pointed bob whose tip sits on the baseline. A transparent real "I" glyph keeps the font's own advance, so the word's text is literally `CALIMA`. Its dot is the **full, unclipped Round-3 spark** (`#DA7756`, ten round-capped rays), 0.64 em across, 0.115 em above the cap line, centred on the plumb axis. **One hairline datum rule** runs under the word from C to A. **Under the I, below the rule**, a coral **broad-arrow** points up at the spark. Nothing else. All geometry is in em of `--cal-lk`. Unchanged since round 1 |
+| **Fonts** (bible §9.7) | `public/fonts/` | `BodoniModa-Variable.woff2`, `BodoniModa-Italic-Variable.woff2`, `IBMPlexSansCondensed-{Medium,SemiBold}.woff2`, `IBMPlexMono-Medium.woff2`: Google Fonts latin subsets, unmodified, **136 KB**, one `*-OFL.txt` per family. The 8 Round-4 `.ttf` files (1.4 MB) are deleted in this tree (plan §6). No screen can request them any more (§0) |
+| **Licence rows** | `public/LICENSES.json` via `tools/licences/add.mjs` | `font-bodoni-moda`, `font-ibm-plex-sans-condensed`, `font-ibm-plex-mono`: OFL-1.1, with `licence_text`, `source_url`, `retrieved`, `archive_sha256` and per-file SHA-256s |
+| **`--cal-*` tokens** | `src/style.css` `:root` | The bible §9.1 palette plus `--cal-font-display` / `-ui` / `-mono`; the legacy `--font*` names point at them. Two bridges stay until the retired-font patch lands: `body #hud`, and (new) `body #studio-ui .studio-title, .studio-head` |
+| **Title screen** (V38) | `index.html`, `src/style.css`, `src/ui/menu.js` (title block) | One lockup; a vertical Plex Mono menu, `01 CONTINUE` … `05 CREDITS`; the title's own field line, rotated per visit.<br>**Framing:** the view looks along the sun's azimuth + 0.42 rad. The camera stands on the bearing from REST whose whole path keeps the skyline under **the sun as the sky draws it** (`_titleChooseFrame`: 12 candidates, 25 ms, once per visit). The Round-4 dolly clocks and ease are unchanged (A70c).<br>**New in round 2:** the **world clock is held** while the title is up.<br>**Calima stand-in:** the CSS wash `#cal-calima` (now a true colour blend: ochre at 0.55, luminance kept) plus a top-weighted ochre haze, and the **coral disc** (CALIMA_DISC: depth-tested, on the sky's sun, with the dust's absorption round it).<br>**Forward hook:** the title calls `environment.setWeather('calima', 0)`. Once world-sky ships `calima`, `body.cal-calima-live` switches the wash off, no disc is made, and the start restores the weather |
+| **Title scrim** | `src/style.css` (`body.cal-title-live #title.overlay`) | **Round 2:** an ellipse behind the lockup only; clear across the sky; darker at the foot, behind the menu column, the tip and the save line |
+| **Loading screen** (V-loading) | `index.html`, `src/style.css`, `src/main.js` | Field-book paper. **The lockup's own datum rule is the progress bar** (`--cal-load` 0..1). The copy is **"Reading the benchmarks…"**. Unchanged |
+| **Credits** | `src/ui/menu.js` (`CREDITS_LICENSED`, generated block), `README.md` "## Credits" | Generated from pipeline's `tools/licences/credits.mjs` by `tools/lint/credits-sync.mjs` (`--check` passes): 6 sections, 24 rows. Unchanged |
+| **Field Manual, README, favicon** | `index.html`, `README.md`, `public/favicon.svg` | Unchanged; the Field Manual has 17 rows in bible §10 words |
+| **Union lexicon + lints** | `tools/lint/{lexicon.json, lexicon/*, namecheck.mjs, engine-allow.json, ratchet.json}` | See §3. **Round 2:** the player gate's harvest now covers dialogue and every table string, and the W0b player ratchet is re-recorded at 1508 |
+| **Retired-font patch** | `tools/lint/patches/w0b-retired-font-refs.patch` | Unchanged; for the orchestrator (§7.1) |
+| **`docs/archive/` moves** (§6) | `docs/archive/` | `docs/ROUND3.md`, 25 `docs/ROUND4-*.md`, 8 `docs/research/*.md`, plus a README |
+| **References** | `reference/r5/brand/` + `MANIFEST.md` | Bodoni 1818 (PD), the OS bench-mark arrow (PD), "Calima al amanecer, Maspalomas" (CC BY 3.0), "Salinas de Janubio" (CC BY 2.0) |
+| **Gates** | `tools/gates.r5.brand.mjs` | The W0b block, the five W0-day1 rows, A-logo-construction, A-loading-fill, A-title-disc-depth (now in real time) and, **new**, A-title-disc-sun + A-title-disc-sun-pixels |
+
+---
+
+## 2. APIs and contracts published (exact signatures)
+
+```js
+// src/main.js — the loading screen (the V-loading gates freeze the real one)
+__GAME__.setLoad(p /* 0..1 */, step /* string, kept on #load-label[data-step] */)  // sets --cal-load on #loading .cal-logo
+__GAME__.loadProgress                                                             // last value, 0..1
+
+// src/ui/menu.js — the title block
+ctx.menus._titleFrame()          // once per title visit: holds the clock (environment.timeFrozen = true, the old value
+                                 // kept), view = sun azimuth + TITLE_LOOK_OFFSET (0.42 rad), camera bearing from
+                                 // _titleChooseFrame(sun); calima hook setWeather('calima', 0) === 'calima'
+                                 // -> body.cal-calima-live; makes the disc unless night or real calima
+ctx.menus._titleChooseFrame(sun /* THREE.Vector3, unit, toward the sun */) // -> bearing (rad); fills _titleDiscInfo;
+                                 // judges the sun where the sky draws it, from every point of the camera path
+ctx.menus._skyDome()             // -> environment.sky when it is a dome with geometry.parameters.radius, else null
+ctx.menus._titleSunPoint(out /* Vector3 */, from /* Vector3 */) // -> out: where the sky draws the sun
+                                 // (sunDir * R * 0.98 + sky.position); fallback from + sunDir * 1500. No allocation
+ctx.menus._discMake() / ._discDrop()  // the CALIMA_DISC quad: one PlaneGeometry + one ShaderMaterial (custom blend
+                                 // out = src.rgb + dst * src.a), name 'cal-title-calima-disc', in ctx.scene;
+                                 // drop = remove + dispose both
+ctx.menus._titleLeave()          // idempotent; on the menu's start AND on 'game-start': hands back the clock and the
+                                 // weather, drops the disc
+ctx.menus.audit().title          // A70c shape unchanged +
+  .disc   // null | { visible, posOffset, lookOffset, clearanceDeg, tried: [[offset, deg], ...], ms,
+          //          coreDeg, edgeDeg, radiusDeg, skySun }
+  .clock  // { held, frozen, handBack /* the value _titleLeave restores, or null */ }
+```
+
+**Consumed:**
+- **world-sky** (`environment.js`, read-only):
+  - `environment.setWeather(name, fade)`, which must return `name` once it knows `'calima'`;
+  - `environment.sunDir`;
+  - `environment.timeFrozen`: the title sets it while it is up and restores it on leave;
+  - **new:** `environment.sky.position` and `environment.sky.geometry.parameters.radius`, to put the disc on the sun the dome draws.
+
+  If world-sky replaces the dome, `_skyDome()` returns null and the disc falls back to `sunDir`. Once world-sky draws calima itself, no disc is made.
+- **world-ground** (frozen API): `terrain.getHeight(x, z)`.
+
+CSS contract (any lane may use; brand owns the values):
+
+| token / hook | meaning |
+|---|---|
+| `--cal-font-display`, `--cal-font-ui`, `--cal-font-mono` | Bodoni Moda / IBM Plex Sans Condensed / IBM Plex Mono stacks |
+| `--font`, `--font-display`, `--font-stinger`, `--font-focus` | legacy names, now `var(--cal-font-ui | display | display | mono)` |
+| `--cal-display` inside `#hud`; `#studio-ui .studio-title/.studio-head` | pinned by brand to the display family (bridges until the retired-font patch lands) |
+| `--cal-spark` … `--cal-scrim-dust` | bible §9.1 palette (spark coral = logo + calima sun only) |
+| `.cal-logo` + `--cal-lk`, `--cal-load`, `--cal-word-ink`, `--cal-rule-ink`, `--cal-rule-track` | the lockup; markup in `index.html` |
+| `#cal-calima` (a box-less wrapper; each `<i>` is a fixed sheet in the root stacking context), `body.cal-calima-live` | the title's calima wash. **A blend layer must not sit inside a stacking context**, or its blend mode stops reaching the canvas. Set `cal-calima-live` when the renderer draws calima |
+
+Lint tools (`tools/lint/`), unchanged signatures:
+
+```js
+// namecheck.mjs
+buildLexicon({ dictionary = '/usr/share/dict/web2' } = {})   // -> lexicon.json content (schema 2: plan, tokens, phrases, union)
+loadLexicon()                                                 // lexicon.json
+matchTexts(lex, texts /* [{ where, text }] */, mode = 'plan' | 'named')
+    // -> [{ where, word, term, rule: 'exact'|'substring'|'edit1'|'phrase' }], one per distinct (surface, offending
+    //    word or phrase); 'plan' is the graded §9 reading, 'named' advisory; serialisable (no closures)
+playerStatic(mode = 'plan')                                   // public/**/*.{json,md,txt} -> { files, hits, verbatimLicenceHits }
+scanCode()                                                    // -> { files, occurrences, hits: [{ term, token, files, occurrences, first }] }
+gradeCode(scan, allow)                                        // -> { pass, total, ratchetTotal, uncovered, over, entries }
+recordAllow({ initial = false })                              // lowers engine-allow caps; initial = the one W0b record
+// CLI: --player [--dom harvest.json] [--json] | --code [--json] | --record [--initial] | --rebuild-lexicon
+
+// credits-sync.mjs
+sync({ write = true }) -> { readme: drifted, menu: drifted }   // CLI: (no flag) rewrite | --check (exit 1 on drift)
+```
+
+---
+
+## 3. The lints
+
+**The union lexicon** (`lexicon.json` → `plan`, 410 distinct entries; bible §10.4, plan §9) is unchanged: A's 331 (through A's own tokenizer), B's 235 (189 single names + 46 phrases) and the plan's 15 additions.
+
+**A-no-horizon-terms-player**, graded on the plan §9 reading:
+- **Matching:** exact, substring ≥ 5, or edit ≤ 1 when both words are at least 5 letters.
+- **Allowlist:** the six GENERIC nouns.
+- **Unit:** one hit per distinct (surface, word or phrase).
+- **Scope, round 2:**
+  - rendered DOM: title, loading, every title modal, menus cards, HUD, every hub tab, and (**new**) every dialogue card and topic answer;
+  - every tip;
+  - content ids;
+  - **every key and every string value** of the 78 exported content tables;
+  - all of `public/**/*.{json,md,txt}`.
+
+**W0b ratchet: 1508.** Round 1 recorded 1278 with the blind spot. The same count came out in both runs.
+
+| part | hits |
+|---|---|
+| static: `public/**` | 182 (61 of them in the verbatim OFL/MIT texts) |
+| page: hub tabs | 207 |
+| page: dialogue | 80 |
+| page: tips | 32 |
+| page: ids | 69 |
+| page: tables | the rest (`NPCS` 66, `QUESTS` 70, `ITEMS` 67, …) |
+| brand surfaces (counted above) | 3, all inside generated attributions (`pack`, `Round`, `of`) |
+
+By rule: exact 881, substring 484, edit-1 78, phrase 65. The advisory named reading is 718.
+
+**A-no-horizon-terms-code: PASS 1,435 ≤ 1,435.** 246 files, 929 (term, token) pairs, 8,215 occurrences, 0 uncovered, 0 over cap. One new string in my own gate file ("horizontal") briefly took `guard:brand-gates` to 7 against its cap of 6. I reworded the string rather than raising the cap. After the retired-font patch the total is **1,246**, re-measured this round in a scratch copy.
+
+---
+
+## 4. Gates (W0b block + the day-1 rows; port 5253)
+
+Lane rows: `node tools/gates.mjs --port 5253 --extra tools/gates.r5.brand.mjs --lane brand` (§6).
+
+This round's one full run used a scratch combiner, `work2/full.gates.mjs`, as the single `--extra` file. It holds:
+- brand's GATES;
+- the four V38 aliases (the main runner keeps the Round-4 `V38-title` first; the two drift aliases wait in real time);
+- pipeline's three licence gates.
+
+Result: **36 gates, 24 PASS, 1 FAIL, 3 PENDING, 8 NEEDS-JUDGE**. Two other lanes' Chromes were alive during the run: gates-perf's 67-minute carried run and instruments-core.
+
+| gate | verdict | measured |
+|---|---|---|
+| **A-no-horizon-terms-player** | **PASS** | **1508 ≤ 1508**, identical in 2 runs; dialogue 13 people / 53 cards / 40 topics |
+| **A-no-horizon-terms-code** | **PASS** | 1,435 ≤ 1,435; 1,246 after the font patch |
+| **A-fonts-licensed** | **FAIL (1 clause, other lanes' files)** | **FAIL:** `zeroRefsAnywhere`, 37 lines in 11 files: shell-ui 4 files, combat-kit 2, progression 2, studio 1, frozen `dialogue.js` 1, `tools/r5-direction` 1. The patch applies and leaves 0 references.<br>**PASS, every other clause:** 3 families, 5 woff2 files, 136 KB, one OFL text and one row each. The wordmark resolves to Bodoni 500, the HUD label to Bodoni, all 47 HUD texts to licensed families (41 Plex Sans Condensed, 6 Bodoni), the numeral to Plex Mono.<br>**In play, studio visited:** 4 font requests, 0 retired, 0 stacks leading with a retired face |
+| **A-storage-keys** / **-reload** | PASS / PASS | 7 keys, all `/^cal\..*\.v5$/`; old keys only → fresh start |
+| **A-ui-words** | PASS | 0 hits on 10 brand surfaces |
+| A-logo-construction | PASS | 17/17 |
+| A-loading-fill | PASS | 0.400 / 1.000; "Reading the benchmarks…"; paper rgb(226, 211, 176) |
+| **A-title-disc-depth** (real time) | **PASS** | 18/18 checks.<br>**Placement:** depth-tested, no depth write, no fog; **0.000° off the sky's sun** (3.09° below `sunDir`); constant 12° quad; 1,860 m from the camera (far plane 2,400 m); bearing −0.05 rad (chooser clearance 0.11°).<br>**Real time:** 22 samples over 105 s, dolly clock 2.3 → 107.2 s, hour held at 17.000; the core bottom stays ≥ **1.36°** above the crest.<br>**Leaving:** removed and disposed on `game-start`; the clock runs again in play |
+| **A-title-disc-sun** + **-pixels** (new) | **PASS / PASS** | centre (234,163,126), ΔE 3.77 to #F2A27E; core 100 % whole; centre L 175.2 > sky ring max 165.9 > band below 140.2 |
+| **V-logo**, **V-logo-4k** | NEEDS-JUDGE | filmed (§5) |
+| **V38-title** (as `X-V38-title`, `-drift35`, `-drift105`, `-quit-to-title`) | NEEDS-JUDGE; **my reading: FAIL** on the Pans clause | criteria verbatim from the plan; staging note in the title (§0) |
+| **V-loading** / V-loading-100 | NEEDS-JUDGE | filmed |
+| A-identifiers-renamed / A-extent-refactor / A-single-rest (day-1) | PASS / PASS / PASS | 0 hits over 241 files; every extent identical; spawn and respawn 0.00 m from REST |
+| *global:* A1-boot-clean, A20b-no-system-errors | PASS, PASS | `state=playing`; 0 system or hook errors over 284 frames |
+| *global:* A9-perf-budget | **PENDING (contention)** | 309 draws < 350, but 35.6 fps that the gate cannot attribute: the null frame alone took 3.52 ms of GPU with two other Chromes alive. Round 1 measured PASS (309 draws, 47.4 fps). Brand's round-2 changes do not draw in play: the wash and the disc exist only on the title. Both Chrome slots stayed taken after the run, so I did not re-run it |
+| *global:* A21-real-draw-calls | PENDING (draws and triangles PASS) | Draws 309 / 195 / 323; triangles 4.12 / 3.67 / 4.25 M. The GPU and frame terms cannot be attributed on this box (null-frame GPU 4.77 ms, burst 1.52×). Medians 125 / 117 / 98 ms against 20 ms; the Round-4 baseline also fails this term. Engine-gpu's W0b tier decision owns it |
+| *global:* A90-memory-stability | PASS | 28 kills; heap **−8.9 %**, geometries **+7**, textures **−28**, objects **−1096** |
+| *global:* A90-memory-stability-expansion | PASS | objects −1059, nonMachineGrowth 0, orphan roots 0, heap −12.7 % |
+| *global:* A90b-memory-attribution | PASS | 0 offenders, 0 orphaned textures, heap −4.2 % after forced GC |
+| *global:* A90-rig-reclaim | PASS | 30 cycles: geo +6, tex 0; per live machine geo 0 / tex 0.38 |
+| *global:* A-ID-ip-assets-gone, A-assets-tracked | PASS, PASS | 19 GLBs, 0 IP hits (`aloy.glb` is a scheduled hero-body exception); 221 referenced, 0 wrongly ignored |
+| *global:* A-licence-manifest | PENDING | every clause PASSes except third-party and legacy-source (pipeline's W0b re-fetch; `aloy.glb`) |
+| *global, not in this tree:* A90-abs, A-alloc-rate, A-vram-ledger, A-port-guard, A-carried-suite (gates-perf), A-reach-all-sites (no gate file has it yet) | — | not run |
+| must-stay-green: A70c-title-flow | PASS | one logo at press and menu; easeAtPress 0.0002, endEase 0.509, radiusDrop 17.32 m, dolly 18.8 m, maxStep 0.24 m; manual 17 rows; credits 6 sections / 24 rows |
+| must-stay-green: A72-settings-persist / A72b-accessibility | PASS / PASS | |
+
+**A-gate-preludes** on `tools/gates.r5.brand.mjs`, run through my port of gates-perf's scans (`work/preludes-check.mjs`): 0 species literals, 0 coordinates, 0 IP terms in judged text, no rig literals.
+
+**Memory rule.** No new per-frame allocation:
+- `_dolly` places, turns and sizes the disc in place.
+- `_titleSunPoint` writes into the vector it is given.
+- The chooser makes 2 vectors, once per visit.
+- The disc is one geometry and one material per title visit, disposed on leave and on `game-start`. A-title-disc-depth checks the dispose events.
+
+---
+
+## 5. Frames read (advisory; the judge grades)
+
+Read against their criteria and `reference/r5/brand/`. Pixel values are taken from the PNGs.
+
+- **X-V38-title** (menu in): one lockup, the vertical menu `01 CONTINUE` (greyed) to `05 CREDITS`, the field line and the save line.
+  - The vista is an **ochre haze that keeps its depth**: spires, ridges and the valley floor all read, which they did not under the old flat veil.
+  - **One coral disc**, upper right, sits in a clear gap between two spires. It is clearly the brightest thing in the sky, with a crisp, soft edge, no white sun under it and no dark ring round it.
+  - Sunlit spire rims next to it are as light as the disc. That is rock lit by the Round-4 clear-weather sun at full strength; world-sky's calima will dim it.
+  - No long-necked tower and no lava.
+  - **Against the verbatim criteria it FAILS**: no salt grid, no surf, no black sand. The jagged Round-4 spires still dominate, unlike the flat sea horizon of the calima reference.
+- **X-V38-drift35 / -drift105** (real time, about 35 s and 105 s; truck near +24 m and −24 m): the disc is whole and clear of the skyline in both, in the same gap. At 105 s a thin needle spire stands behind the logo's spark. It is backdrop rock; the spark is in front of it and whole.
+- **X-V38-quit-to-title**: one title block, so the round-1 fix holds. The disc is clear, and the field line has rotated to the Steady line.
+- **V-logo** (press beat): CALIMA in Bodoni caps with real thick/thin contrast.
+  - The I is a plumb line with a pointed bob.
+  - The full ten-ray spark floats above it.
+  - One hairline rule, with the coral broad-arrow under the I pointing up.
+  - No second line, no tagline, no HORIZON or ZERO.
+  - The disc sits upper right, away from the lockup. The scrim ellipse keeps the lockup on a slightly darker field than the open sky.
+- **V-logo-4k**: every part of the lockup is whole at 4K density: the rays have round caps, the rule is one straight line, and the arrow is centred under the plumb. The spark sits over rock texture, not over a line.
+- **V-loading / V-loading-100**: the lockup in ink on field-book paper. The rule is filled from the left to about 40 %, then complete. The copy reads "Reading the benchmarks…". Unchanged.
+
+---
+
+## 6. How the lane file is registered
+
+- **Today, on main:** `tools/gates.mjs` scans `gates.round4.*.mjs` only. Its `--extra <file>` imports one more module and merges its `GATES` with the same loader and the same duplicate-id rule; `--lane brand` then selects its rows. So `node tools/gates.mjs --port 5253 --extra tools/gates.r5.brand.mjs --lane brand` runs every brand row now.
+- **After gates-perf's registry merges:** the file name matches gates-perf's `LANE_FILE_RE`, so `node tools/gates.mjs --port 5253 --lane brand` will run the same rows.
+- **Order matters for two gates.** `A-title-disc-sun-pixels` is a node `runner` gate. It reads the screenshot that `A-title-disc-sun` just wrote, so it must run in the same run, after that gate. The two sit next to each other in the file, and the runner keeps file order. Run alone, it reports PENDING with the reason.
+- **Transitional:** main's runner keeps the **first** row of a duplicated id, so brand's `V38-title` is dropped in favour of the Round-4 row. It is filmed through the `X-V38-*` aliases, which carry the same criteria. Under gates-perf's registry, a lane row shadows the carried row (plan §3.3).
+
+---
+
+## 7. Honest gaps, rulings requested, and what others must do
+
+1. **A-fonts-licensed: orchestrator action needed (rule 1).** Brand may not edit the 11 files at W0b. Apply `tools/lint/patches/w0b-retired-font-refs.patch` at the brand merge (`git apply --check` passes). Afterwards there are **0 references** and the code lint total is 1,246. Then re-run A-fonts-licensed on merged main: `zeroRefsAnywhere`, `noStackLeadsWithRetired` and `noRetiredFontFileRequested` must all be true. Brand's two bridges in `src/style.css` (`body #hud`, `body #studio-ui …`) become redundant and can go in the same merge. **The §1.2 grant row** to add:
+
+   `| brand | W0b exit (orchestrator applies) | src/ui/{hud.css,focus.css,focus.js,inventory.css,wheel.css,map.js,quests.js,skills.js,dialogue.js}, src/combat/feedback.css, src/studio/studio.css, tools/r5-direction/** | rename/remove only: the retired family names (Julius Sans One, Rajdhani, Chakra Petch, Michroma, Orbitron) in fallback stacks, comments and one canvas font string, as tools/lint/patches/w0b-retired-font-refs.patch; delete tools/r5-direction/ (its lexicon lives in tools/lint/lexicon/direction-b.json). No selector, property, value or logic change |`
+
+   **About the patch:**
+   - It touches 12 source files: the 11 the gate counts, plus `focus.js`. There, "Chakra / Petch" is split across two comment lines, which is why the per-line gate does not count it.
+   - The `src/ui/dialogue.js` hunk changes only a frozen UI engine's two CSS fallbacks, so the grant must name that file.
+   - Two corrections this round: the `focus.js` hunk no longer leaves a stray "Petch" in its comment, and the three stacks that lost Julius keep their original generic fallback (`sans-serif`), so every changed line is now strictly a rename or a removal.
+   - The two deleted files are `tools/r5-direction/{names-check,sheet-b}.mjs`.
+
+   **On the plan §6 timing** (judge finding 3): the 8 retired `.ttf` files are deleted in this lane tree, ahead of the clause that unlocks deleting them. Since round 2 no screen can request them:
+   - the HUD and the studio are bridged;
+   - the other references sit in `var(--x, fallback)` fallbacks, which are never used because the variables are defined;
+   - one map canvas string names a family that has no `@font-face`.
+
+   The deletion lands at the merge, together with the patch. If the orchestrator will not grant the patch, restore the 8 files from main at the merge instead. A-fonts-licensed then fails `onlyTheThreeFamilies` as well as `zeroRefsAnywhere`, which is honest either way.
+2. **Ruling needed: V38 at W0b.** V38 FAILs its Pans clause until world-ground (the Pans) and world-sky (`calima`) land at W1. I recommend a §8.3 ruling. At the W0b exit, grade only one logo, the vertical menu, no walker and no lava; all of these hold. Move the Pans/calima clause to the W1 exit as PENDING-dependency and re-film then. Without that ruling, V38 is FAIL at W0b.
+3. **Ruling needed: the player lint's W4 target.** On the literal §9 reading, 0 at W4 cannot be reached. The count includes "of", "title" and "light", near-misses such as Speak→Spear, and 61 hits in licence texts that no lane may edit. The ratchet is now 1508. I recommend two things:
+   - grade the ratchet on this reading;
+   - set the W4 target on the named reading (718 today), with the licence texts exempt.
+
+   Either way, **re-record once on merged main** at the W0b exit.
+4. **The code lint's reading** stays the named reading. §9 gives it no matching rule, and the §7.4 allowlist lists names.
+5. **The title vista is still the Round-4 valley** under the stand-in, and the spires still dominate. Some of the title's behaviour carries over to W1 automatically:
+   - the chooser re-picks the bearing on every visit;
+   - when `setWeather('calima')` returns `'calima'`, the wash and the disc switch off.
+
+   **For world-sky:** your calima sun should be the brightest point of the sky. The title's disc shows one way to get there: the core, plus the dust absorbing the clear-sky glow, fitted on filmed frames. Also note that **the dome is centred on the player**: from any camera away from the player, the dome's sun is not on `sunDir`.
+6. **The disc's R channel lands at 234, not 242.** The engine's own vignette (×0.936 at that spot, part of engine-gpu's grade) and the CSS haze cap it. G and B are on target, and ΔE is 3.77. Changing the engine's vignette on the title is engine-gpu's call, so I left it.
+7. **The look of the vista changed** with the colour-blend fix: more depth, less flat. The judge should re-grade V38 and V-logo on the new frames.
+8. **A9 and A21 are PENDING on contention in this run.** Run A9 on a quiet box: it measured PASS in round 1, and nothing brand changed draws in play. A21's GPU term is engine-gpu's.
+9. **Two strings outside menu.js's title and credits blocks** are unchanged since the first W0b pass: the hub kicker "CALIMA" and the new-game modal's "Instruments". Revert them if they are out of scope.
+10. **A-extent-refactor** is graded against the W0b-start hashes, because W0a changed one collider.
+11. **Other lanes' surfaces still use Round-4 words** (shell-ui W2, combat-kit W2, progression W3). Dialogue now counts too. All of it is inside the 1508.
+12. **Latin subsets only.** ∴ ■ ● ▲ ◆ fall back to a system font.
+13. **`docs/ROUND5-PLAN.md`** shows as modified in this tree. That is the orchestrator's sync of R33(g)/R34 from main (`a3465f1`), not a brand edit.
+14. **Downloads this round:** none.
+
+**For other lanes.**
+- **world-sky:** `setWeather('calima', 0)` should return `'calima'`. The title also reads `timeFrozen`, and the sky dome's position and radius, read-only.
+- **world-ground:** the title reads `REST`, the sky's sun point and `terrain.getHeight`.
+- **shell-ui (W2):** use `--cal-font-*` and the palette. When you restyle `hud.css`, drop the retired face, and brand removes its bridge.
+- **gates-perf:** brand's `V38-title` shadows the carried row. `A-title-disc-sun-pixels` needs `A-title-disc-sun`'s screenshot from the same run.
+- **orchestrator:** see items 1–3.
+
+---
+
+## Appendix A — W0-day1 report (unchanged; numbers are W0-day1's)
 
 Port 5253 · tree `scratchpad/r5/brand/tree` (branch of c32e968) · plan §7.1, grant §1.2 (brand W0-day1),
 gate block §9 "brand / W0-day1". Wordmark, fonts, loading copy, README and the lints are **not** in this
@@ -10,7 +288,7 @@ patch, re-applied and verified byte-identical with `cmp`).
 
 ---
 
-## 1. What was built
+### A.1. What was built
 
 | item | where | notes |
 |---|---|---|
@@ -35,9 +313,9 @@ film below).
 
 ---
 
-## 2. Contracts published (exact signatures)
+### A.2. Contracts published (exact signatures)
 
-### `src/world/island/sites.js` (brand stub; world-ground owns it from W1)
+#### A.`src/world/island/sites.js` (brand stub; world-ground owns it from W1)
 
 ```js
 export const REST      = Object.freeze({ x: 18, z: 26 });          // spawn + "RESPAWN AT CAMP"
@@ -50,7 +328,7 @@ read `REST`; `machines/index.js` and `machines/machine.js` use `REST_SITE` itsel
 builds); `ai/doctrine.js` keeps site anchors 46 m from `REST_SITE`; props/vegetation/gather/waypoints/npc/
 fauna/camp/settlement/activities/places read `REST_SITE.x/z`. No imports, frozen, safe from node and page.
 
-### `src/world/island/extent.js` (brand stub; world-ground owns it from W1)
+#### A.`src/world/island/extent.js` (brand stub; world-ground owns it from W1)
 
 ```js
 export const PLAY_RADIUS = 330;
@@ -72,7 +350,7 @@ Every consumer computes `PLAY_RADIUS + EXTENT.<name>`; `player.js` WORLD_R is `P
 (≈ 490 m at 1024 m) every margin moves with it. `nav.js` N stays `(R*2)/CELL + 1` (333 today; keep R an
 integer).
 
-### Renamed runtime names other lanes now code against
+#### A.Renamed runtime names other lanes now code against
 
 | was | is | kind |
 |---|---|---|
@@ -87,7 +365,7 @@ integer).
 
 ---
 
-## 3. Gates
+### A.3. Gates
 
 **How the lane file is registered.** `tools/gates.mjs` is frozen for brand (§1.1: the harness is
 gates-perf's W0a grant; brand's W0-day1 grant is renames only), and its directory scan merges
@@ -105,7 +383,7 @@ Once `gates.config.mjs` imports `tools/gates.r5.*.mjs` by pattern, the same comm
 "duplicate gate id … keeping the first" line per gate and runs nothing twice. Carried/global gates run by
 id with the same flag: `--extra tools/gates.r5.brand.mjs --only A1-boot-clean,A20b-no-system-errors,…`.
 
-### 3.1 W0-day1 block
+#### A.3.1 W0-day1 block
 
 | gate | verdict | measured |
 |---|---|---|
@@ -115,7 +393,7 @@ id with the same flag: `--extra tools/gates.r5.brand.mjs --only A1-boot-clean,A2
 | `A1-boot-clean` | **PASS** | `state=playing`, 0 console errors (before: PASS) |
 | `A20b-no-system-errors` | **PASS** | 0 system errors, 0 hook errors, 337 frames advanced (before: PASS, 342) |
 
-### 3.2 Storage keys (brand W0b gate, implemented and passing now)
+#### A.3.2 Storage keys (brand W0b gate, implemented and passing now)
 
 | gate | verdict | measured |
 |---|---|---|
@@ -123,7 +401,7 @@ id with the same flag: `--extra tools/gates.r5.brand.mjs --only A1-boot-clean,A2
 | `A-storage-keys-reload` | **PASS** (3/3 after the fix below) | the next boot (same profile, only old keys present): no save; the only checkpoint is the game's own `'start'` checkpoint written 1.5 s into a run with none under the new key (never the planted one); meta fresh, sensitivity 1 (default), music 0.8 (default), fog 284/5,184 seen, tips fresh; old keys byte-identical (never rewritten), 0 stray keys, **0 console errors**; cleans the plants up. One earlier run FAILED its first-draft check "no checkpoint at all": the game had written its `'start'` checkpoint before the read (timing); the check now accepts exactly that and nothing else |
 | positive control (scratch, not shipped) | see §3.5 | the same plants under the NEW keys are picked up by the reload, so the fresh start above is evidence, not a blind probe |
 
-### 3.3 Carried gates that must not move (same port, same tree)
+#### A.3.3 Carried gates that must not move (same port, same tree)
 
 | gate | before the pass | after the pass |
 |---|---|---|
@@ -143,7 +421,7 @@ id with the same flag: `--extra tools/gates.r5.brand.mjs --only A1-boot-clean,A2
 (hero-body W0b, 5/5). `A21` fails only its GPU term, exactly as the inventory recorded on this commit
 (engine-gpu W0a/W0b). Neither is caused or fixed by a rename pass, and this wave may not change logic.
 
-### 3.4 Visual identity (filmed and read)
+#### A.3.4 Visual identity (filmed and read)
 
 Frames: `scratchpad/r5/brand/frames/{before,after}/BASE-V-{spawn,title}.png` (1600×900, `?shot=1` spawn view
 and the plain title screen). Read side by side: same camera, same camp layout, the same HUD (compass `S 180`,
@@ -153,7 +431,7 @@ diff: weapon panel mean |Δ| **0.008**, compass 0.08, title lockup 0.36; whole s
 idle animation phase, campfire flicker), whole title 0.66 (dolly time). The CSS prefix rename left no
 unstyled element.
 
-### 3.5 A90 family, storage controls, and every Round-4 gate the rename touched
+#### A.3.5 A90 family, storage controls, and every Round-4 gate the rename touched
 
 A90 family, one run, quiet-ish box (load 3–4, Kevin's 5173 alive), all **PASS**:
 
@@ -187,7 +465,7 @@ tips include `craft`, and (with no settings key, the condition `A-storage-keys-r
 
 ---
 
-### 3.6 Fix round 1 (judge finding: logic edit to the frozen harness)
+#### A.3.6 Fix round 1 (judge finding: logic edit to the frozen harness)
 
 Finding: the first pass widened `tools/gates.mjs`'s lane-file filter to `gates.(round4|r5).*` — a logic
 edit to a file §1.1 freezes for every lane but gates-perf, outside brand's rename-only W0-day1 grant.
@@ -205,7 +483,7 @@ nothing else changed. Re-run on port 5253 in this tree after the revert:
 | A90 family | A90-memory-stability heap **+0.8 %**, geo **+13**, tex **−19**, objects **−525**; -expansion nonMachineGrowth 0, objects −527; A90b 0 offenders, heap −4 % after GC; A90-rig-reclaim geo +7, tex 0, per-live 0 / 0.25, held-released 0 / 0 — all PASS |
 | BASE-V-spawn / BASE-V-title re-filmed, read | same camera, camp, HUD and lockup as the pre-pass frames; weapon panel mean abs diff 0.012, compass 0.077; whole title 0.42 |
 
-## 4. Honest gaps
+### A.4. Honest gaps
 
 1. **A13 is intermittent before and after** (§3.3). Not a W0-day1 regression; owner hero-body (R27).
 2. **A21 GPU term fails before and after** (inventory). Owner engine-gpu.
@@ -225,7 +503,7 @@ nothing else changed. Re-run on port 5253 in this tree after the revert:
 
 ---
 
-## 5. For the orchestrator and other lanes
+### A.5. For the orchestrator and other lanes
 
 1. **Vite dep cache would clobber Kevin's 5173.** Vite's optimizer hash includes the project root, so a
    lane tree whose `node_modules` is a symlink to main's gets a different `configHash` (`89346238` here vs

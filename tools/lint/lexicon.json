@@ -1,14 +1,27 @@
 {
- "schema": 1,
+ "schema": 2,
  "built": "node tools/lint/namecheck.mjs --rebuild-lexicon",
  "rules": {
-  "name": "named reading: exact, or the term inside the word (both >= 5 chars). literal reading: Direction A as written — exact; substring either way when both >= 5; edit distance <= 1 when both >= 5",
-  "common": "phrase-only (Direction B: never split a Horizon name into generic words)",
+  "plan": "GRADED (plan §9, bible §10.4 A's rules): every union entry; exact, or substring either way when both >= 5 characters, or edit distance <= 1 when both >= 5; multi-word names also as contiguous word sequences; allowlist = GENERIC only",
+  "name": "advisory named reading: exact, or the term inside the word (both >= 5 chars)",
+  "common": "advisory named reading: phrase-only (Direction B: never split a Horizon name into generic words)",
   "phrase": "contiguous normalised word sequence",
-  "short": "entries under 3 characters are split artefacts (B drops them): not matched",
-  "line": "A's whole lines with spaces / slashes / notes: matched through their expanded phrases"
+  "short": "advisory named reading: entries under 3 characters not matched alone",
+  "line": "advisory named reading: A's whole lines with spaces / slashes / notes, matched through their expanded phrases"
  },
  "union": {
+  "plan": 410,
+  "planSources": {
+   "A": 331,
+   "B": 235,
+   "bSingles": 189,
+   "bPhrases": 46,
+   "additions": 15
+  },
+  "sourceCopies": {
+   "directionA": true,
+   "directionB": true
+  },
   "entries": 426,
   "tokens": 372,
   "phrases": 54,
@@ -24,6 +37,3459 @@
   "salt",
   "glaze",
   "arrow"
+ ],
+ "plan": [
+  {
+   "n": "abadund",
+   "len": 7,
+   "t": "Abadund",
+   "src": [
+    "A",
+    "B"
+   ]
+  },
+  {
+   "n": "abbrev",
+   "len": 6,
+   "t": "abbrev",
+   "src": [
+    "A"
+   ]
+  },
+  {
+   "n": "acid",
+   "len": 4,
+   "t": "Acid",
+   "src": [
+    "A"
+   ]
+  },
+  {
+   "n": "adhesive",
+   "len": 8,
+   "t": "Adhesive",
+   "src": [
+    "A"
+   ]
+  },
+  {
+   "n": "aether",
+   "len": 6,
+   "t": "AETHER",
+   "src": [
+    "A",
+    "B"
+   ]
+  },
+  {
+   "n": "ahsis",
+   "len": 5,
+   "t": "Ahsis",
+   "src": [
+    "A"
+   ]
+  },
+  {
+   "n": "alight",
+   "len": 6,
+   "t": "Alight",
+   "src": [
+    "A"
+   ]
+  },
+  {
+   "n": "allmother",
+   "len": 10,
+   "t": "All-Mother",
+   "src": [
+    "A",
+    "B"
+   ]
+  },
+  {
+   "n": "aloy",
+   "len": 4,
+   "t": "Aloy",
+   "src": [
+    "A",
+    "B"
+   ]
+  },
+  {
+   "n": "aloys",
+   "len": 6,
+   "t": "Aloy's",
+   "src": [
+    "A"
+   ]
+  },
+  {
+   "n": "alva",
+   "len": 4,
+   "t": "Alva",
+   "src": [
+    "A",
+    "B"
+   ]
+  },
+  {
+   "n": "anointed",
+   "len": 8,
+   "t": "Anointed",
+   "src": [
+    "A"
+   ]
+  },
+  {
+   "n": "apex",
+   "len": 4,
+   "t": "Apex",
+   "src": [
+    "A",
+    "B"
+   ]
+  },
+  {
+   "n": "apollo",
+   "len": 6,
+   "t": "APOLLO",
+   "src": [
+    "A",
+    "B"
+   ]
+  },
+  {
+   "n": "aratak",
+   "len": 6,
+   "t": "Aratak",
+   "src": [
+    "A",
+    "B"
+   ]
+  },
+  {
+   "n": "arena",
+   "len": 5,
+   "t": "Arena",
+   "src": [
+    "A"
+   ]
+  },
+  {
+   "n": "arokkeh",
+   "len": 7,
+   "t": "Arokkeh",
+   "src": [
+    "A",
+    "B"
+   ]
+  },
+  {
+   "n": "arrowhand",
+   "len": 9,
+   "t": "Arrowhand",
+   "src": [
+    "A",
+    "B"
+   ]
+  },
+  {
+   "n": "artemis",
+   "len": 7,
+   "t": "ARTEMIS",
+   "src": [
+    "A",
+    "B"
+   ]
+  },
+  {
+   "n": "atekka",
+   "len": 6,
+   "t": "Atekka",
+   "src": [
+    "A"
+   ]
+  },
+  {
+   "n": "avad",
+   "len": 4,
+   "t": "Avad",
+   "src": [
+    "A",
+    "B"
+   ]
+  },
+  {
+   "n": "banuk",
+   "len": 5,
+   "t": "Banuk",
+   "src": [
+    "A",
+    "B"
+   ]
+  },
+  {
+   "n": "banur",
+   "len": 6,
+   "t": "Ban-Ur",
+   "src": [
+    "A"
+   ]
+  },
+  {
+   "n": "barren",
+   "len": 6,
+   "t": "Barren",
+   "src": [
+    "A"
+   ]
+  },
+  {
+   "n": "barrenlight",
+   "len": 12,
+   "t": "Barren Light",
+   "src": [
+    "B-phrase"
+   ]
+  },
+  {
+   "n": "base",
+   "len": 4,
+   "t": "Base",
+   "src": [
+    "A"
+   ]
+  },
+  {
+   "n": "bast",
+   "len": 4,
+   "t": "Bast",
+   "src": [
+    "B"
+   ]
+  },
+  {
+   "n": "bayak",
+   "len": 5,
+   "t": "Bayak",
+   "src": [
+    "A"
+   ]
+  },
+  {
+   "n": "behemoth",
+   "len": 8,
+   "t": "Behemoth",
+   "src": [
+    "A",
+    "B"
+   ]
+  },
+  {
+   "n": "bellowback",
+   "len": 10,
+   "t": "Bellowback",
+   "src": [
+    "A",
+    "B"
+   ]
+  },
+  {
+   "n": "beta",
+   "len": 4,
+   "t": "Beta",
+   "src": [
+    "A",
+    "B"
+   ]
+  },
+  {
+   "n": "bilegut",
+   "len": 7,
+   "t": "Bilegut",
+   "src": [
+    "A"
+   ]
+  },
+  {
+   "n": "bileguts",
+   "len": 8,
+   "t": "Bileguts",
+   "src": [
+    "B"
+   ]
+  },
+  {
+   "n": "blameless",
+   "len": 9,
+   "t": "Blameless",
+   "src": [
+    "A"
+   ]
+  },
+  {
+   "n": "blast",
+   "len": 5,
+   "t": "Blast",
+   "src": [
+    "A"
+   ]
+  },
+  {
+   "n": "blastsling",
+   "len": 11,
+   "t": "Blast Sling",
+   "src": [
+    "A",
+    "B-phrase"
+   ]
+  },
+  {
+   "n": "blaze",
+   "len": 5,
+   "t": "Blaze",
+   "src": [
+    "A",
+    "B"
+   ]
+  },
+  {
+   "n": "bleeding",
+   "len": 8,
+   "t": "Bleeding",
+   "src": [
+    "A"
+   ]
+  },
+  {
+   "n": "bleedingmark",
+   "len": 13,
+   "t": "Bleeding Mark",
+   "src": [
+    "B-phrase"
+   ]
+  },
+  {
+   "n": "blight",
+   "len": 6,
+   "t": "Blight",
+   "src": [
+    "B"
+   ]
+  },
+  {
+   "n": "boltblaster",
+   "len": 11,
+   "t": "Boltblaster",
+   "src": [
+    "A",
+    "B"
+   ]
+  },
+  {
+   "n": "boomer",
+   "len": 6,
+   "t": "Boomer",
+   "src": [
+    "A"
+   ]
+  },
+  {
+   "n": "bow",
+   "len": 3,
+   "t": "Bow",
+   "src": [
+    "A"
+   ]
+  },
+  {
+   "n": "braidedwire",
+   "len": 12,
+   "t": "Braided Wire",
+   "src": [
+    "B-phrase"
+   ]
+  },
+  {
+   "n": "brave",
+   "len": 5,
+   "t": "Brave",
+   "src": [
+    "A",
+    "B"
+   ]
+  },
+  {
+   "n": "brave/seeker/outcast",
+   "len": 20,
+   "t": "Brave/Seeker/Outcast",
+   "src": [
+    "A"
+   ]
+  },
+  {
+   "n": "brightmarket",
+   "len": 12,
+   "t": "Brightmarket",
+   "src": [
+    "A"
+   ]
+  },
+  {
+   "n": "bristleback",
+   "len": 11,
+   "t": "Bristleback",
+   "src": [
+    "A",
+    "B"
+   ]
+  },
+  {
+   "n": "brittle",
+   "len": 7,
+   "t": "Brittle",
+   "src": [
+    "plan"
+   ]
+  },
+  {
+   "n": "broadhead",
+   "len": 9,
+   "t": "Broadhead",
+   "src": [
+    "A",
+    "B"
+   ]
+  },
+  {
+   "n": "bulwark",
+   "len": 7,
+   "t": "Bulwark",
+   "src": [
+    "A"
+   ]
+  },
+  {
+   "n": "burningshores",
+   "len": 14,
+   "t": "Burning Shores",
+   "src": [
+    "B-phrase"
+   ]
+  },
+  {
+   "n": "burrower",
+   "len": 8,
+   "t": "Burrower",
+   "src": [
+    "A",
+    "B",
+    "plan"
+   ]
+  },
+  {
+   "n": "callofthemountain",
+   "len": 20,
+   "t": "Call of the Mountain",
+   "src": [
+    "B-phrase",
+    "plan"
+   ]
+  },
+  {
+   "n": "camp",
+   "len": 4,
+   "t": "Camp",
+   "src": [
+    "A",
+    "plan"
+   ]
+  },
+  {
+   "n": "carja",
+   "len": 5,
+   "t": "Carja",
+   "src": [
+    "A",
+    "B"
+   ]
+  },
+  {
+   "n": "cauldron",
+   "len": 8,
+   "t": "Cauldron",
+   "src": [
+    "A",
+    "B"
+   ]
+  },
+  {
+   "n": "chainscrape",
+   "len": 11,
+   "t": "Chainscrape",
+   "src": [
+    "A",
+    "B"
+   ]
+  },
+  {
+   "n": "charger",
+   "len": 7,
+   "t": "Charger",
+   "src": [
+    "A",
+    "B",
+    "plan"
+   ]
+  },
+  {
+   "n": "chariot",
+   "len": 7,
+   "t": "Chariot",
+   "src": [
+    "B"
+   ]
+  },
+  {
+   "n": "chillwater",
+   "len": 10,
+   "t": "Chillwater",
+   "src": [
+    "A",
+    "B"
+   ]
+  },
+  {
+   "n": "circulator",
+   "len": 10,
+   "t": "Circulator",
+   "src": [
+    "B"
+   ]
+  },
+  {
+   "n": "clamberjaw",
+   "len": 10,
+   "t": "Clamberjaw",
+   "src": [
+    "A",
+    "B"
+   ]
+  },
+  {
+   "n": "clan",
+   "len": 4,
+   "t": "Clan",
+   "src": [
+    "A"
+   ]
+  },
+  {
+   "n": "clanlands",
+   "len": 10,
+   "t": "Clan Lands",
+   "src": [
+    "B-phrase"
+   ]
+  },
+  {
+   "n": "clawstrider",
+   "len": 11,
+   "t": "Clawstrider",
+   "src": [
+    "A",
+    "B"
+   ]
+  },
+  {
+   "n": "concentration",
+   "len": 13,
+   "t": "Concentration",
+   "src": [
+    "A",
+    "B"
+   ]
+  },
+  {
+   "n": "concord",
+   "len": 7,
+   "t": "Concord",
+   "src": [
+    "B"
+   ]
+  },
+  {
+   "n": "contract",
+   "len": 8,
+   "t": "Contract",
+   "src": [
+    "A"
+   ]
+  },
+  {
+   "n": "corrupted",
+   "len": 9,
+   "t": "Corrupted",
+   "src": [
+    "A",
+    "B"
+   ]
+  },
+  {
+   "n": "corrupted/corruption",
+   "len": 20,
+   "t": "Corrupted/Corruption",
+   "src": [
+    "A"
+   ]
+  },
+  {
+   "n": "corruption",
+   "len": 10,
+   "t": "Corruption",
+   "src": [
+    "A",
+    "B"
+   ]
+  },
+  {
+   "n": "corruptor",
+   "len": 9,
+   "t": "Corruptor",
+   "src": [
+    "A",
+    "B"
+   ]
+  },
+  {
+   "n": "cradle",
+   "len": 6,
+   "t": "Cradle",
+   "src": [
+    "A"
+   ]
+  },
+  {
+   "n": "crest",
+   "len": 5,
+   "t": "Crest",
+   "src": [
+    "A"
+   ]
+  },
+  {
+   "n": "critical",
+   "len": 8,
+   "t": "Critical",
+   "src": [
+    "A"
+   ]
+  },
+  {
+   "n": "criticalstrike",
+   "len": 15,
+   "t": "Critical Strike",
+   "src": [
+    "B-phrase"
+   ]
+  },
+  {
+   "n": "criticalstrike/hit",
+   "len": 19,
+   "t": "Critical Strike/Hit",
+   "src": [
+    "A"
+   ]
+  },
+  {
+   "n": "cut",
+   "len": 3,
+   "t": "Cut",
+   "src": [
+    "A"
+   ]
+  },
+  {
+   "n": "cyan",
+   "len": 4,
+   "t": "CYAN",
+   "src": [
+    "A",
+    "B"
+   ]
+  },
+  {
+   "n": "datapoint",
+   "len": 9,
+   "t": "Datapoint",
+   "src": [
+    "A",
+    "B"
+   ]
+  },
+  {
+   "n": "daunt",
+   "len": 5,
+   "t": "Daunt",
+   "src": [
+    "A",
+    "B"
+   ]
+  },
+  {
+   "n": "dawn",
+   "len": 4,
+   "t": "Dawn",
+   "src": [
+    "A"
+   ]
+  },
+  {
+   "n": "deathbringer",
+   "len": 12,
+   "t": "Deathbringer",
+   "src": [
+    "A",
+    "B"
+   ]
+  },
+  {
+   "n": "dekka",
+   "len": 5,
+   "t": "Dekka",
+   "src": [
+    "A",
+    "B"
+   ]
+  },
+  {
+   "n": "delah",
+   "len": 5,
+   "t": "Delah",
+   "src": [
+    "A",
+    "B"
+   ]
+  },
+  {
+   "n": "demeter",
+   "len": 7,
+   "t": "DEMETER",
+   "src": [
+    "A",
+    "B"
+   ]
+  },
+  {
+   "n": "derangement",
+   "len": 11,
+   "t": "Derangement",
+   "src": [
+    "B"
+   ]
+  },
+  {
+   "n": "dervahl",
+   "len": 7,
+   "t": "Dervahl",
+   "src": [
+    "B"
+   ]
+  },
+  {
+   "n": "desert",
+   "len": 6,
+   "t": "Desert",
+   "src": [
+    "A"
+   ]
+  },
+  {
+   "n": "devil",
+   "len": 5,
+   "t": "Devil",
+   "src": [
+    "A"
+   ]
+  },
+  {
+   "n": "devilsthirst",
+   "len": 14,
+   "t": "Devil's Thirst",
+   "src": [
+    "B-phrase"
+   ]
+  },
+  {
+   "n": "disc",
+   "len": 4,
+   "t": "Disc",
+   "src": [
+    "A"
+   ]
+  },
+  {
+   "n": "disclauncher",
+   "len": 13,
+   "t": "Disc Launcher",
+   "src": [
+    "A"
+   ]
+  },
+  {
+   "n": "diving",
+   "len": 6,
+   "t": "Diving",
+   "src": [
+    "A"
+   ]
+  },
+  {
+   "n": "divingmask",
+   "len": 11,
+   "t": "Diving Mask",
+   "src": [
+    "B-phrase"
+   ]
+  },
+  {
+   "n": "down",
+   "len": 4,
+   "t": "down",
+   "src": [
+    "A"
+   ]
+  },
+  {
+   "n": "drain",
+   "len": 5,
+   "t": "Drain",
+   "src": [
+    "A"
+   ]
+  },
+  {
+   "n": "drakka",
+   "len": 6,
+   "t": "Drakka",
+   "src": [
+    "A",
+    "B"
+   ]
+  },
+  {
+   "n": "dreadwing",
+   "len": 9,
+   "t": "Dreadwing",
+   "src": [
+    "A",
+    "B"
+   ]
+  },
+  {
+   "n": "dukkah",
+   "len": 6,
+   "t": "Dukkah",
+   "src": [
+    "A"
+   ]
+  },
+  {
+   "n": "eclipse",
+   "len": 7,
+   "t": "Eclipse",
+   "src": [
+    "A",
+    "B"
+   ]
+  },
+  {
+   "n": "edge",
+   "len": 4,
+   "t": "Edge",
+   "src": [
+    "A"
+   ]
+  },
+  {
+   "n": "ekkia",
+   "len": 5,
+   "t": "Ekkia",
+   "src": [
+    "A"
+   ]
+  },
+  {
+   "n": "eleuthia",
+   "len": 8,
+   "t": "Eleuthia",
+   "src": [
+    "B"
+   ]
+  },
+  {
+   "n": "elisabet",
+   "len": 8,
+   "t": "Elisabet",
+   "src": [
+    "A",
+    "B"
+   ]
+  },
+  {
+   "n": "ember",
+   "len": 5,
+   "t": "Ember",
+   "src": [
+    "A"
+   ]
+  },
+  {
+   "n": "embrace",
+   "len": 7,
+   "t": "Embrace",
+   "src": [
+    "A",
+    "B"
+   ]
+  },
+  {
+   "n": "embrace(nora)",
+   "len": 14,
+   "t": "Embrace (Nora)",
+   "src": [
+    "A"
+   ]
+  },
+  {
+   "n": "end",
+   "len": 3,
+   "t": "End",
+   "src": [
+    "A"
+   ]
+  },
+  {
+   "n": "epic",
+   "len": 4,
+   "t": "Epic",
+   "src": [
+    "A"
+   ]
+  },
+  {
+   "n": "epicgames",
+   "len": 10,
+   "t": "Epic Games",
+   "src": [
+    "A"
+   ]
+  },
+  {
+   "n": "erend",
+   "len": 5,
+   "t": "Erend",
+   "src": [
+    "A",
+    "B"
+   ]
+  },
+  {
+   "n": "erik",
+   "len": 4,
+   "t": "Erik",
+   "src": [
+    "A"
+   ]
+  },
+  {
+   "n": "ersa",
+   "len": 4,
+   "t": "Ersa",
+   "src": [
+    "B"
+   ]
+  },
+  {
+   "n": "falls",
+   "len": 6,
+   "t": "Fall's",
+   "src": [
+    "A"
+   ]
+  },
+  {
+   "n": "fallsedge",
+   "len": 11,
+   "t": "Fall's Edge",
+   "src": [
+    "B-phrase"
+   ]
+  },
+  {
+   "n": "fanghorn",
+   "len": 8,
+   "t": "Fanghorn",
+   "src": [
+    "A",
+    "B"
+   ]
+  },
+  {
+   "n": "far",
+   "len": 3,
+   "t": "Far",
+   "src": [
+    "A"
+   ]
+  },
+  {
+   "n": "faro",
+   "len": 4,
+   "t": "Faro",
+   "src": [
+    "A",
+    "B"
+   ]
+  },
+  {
+   "n": "faroplague",
+   "len": 11,
+   "t": "Faro Plague",
+   "src": [
+    "B-phrase"
+   ]
+  },
+  {
+   "n": "farzenith",
+   "len": 10,
+   "t": "Far Zenith",
+   "src": [
+    "B-phrase"
+   ]
+  },
+  {
+   "n": "firebreak",
+   "len": 9,
+   "t": "Firebreak",
+   "src": [
+    "A"
+   ]
+  },
+  {
+   "n": "fireclaw",
+   "len": 8,
+   "t": "Fireclaw",
+   "src": [
+    "A",
+    "B"
+   ]
+  },
+  {
+   "n": "firegleam",
+   "len": 9,
+   "t": "Firegleam",
+   "src": [
+    "A"
+   ]
+  },
+  {
+   "n": "firespitter",
+   "len": 11,
+   "t": "Firespitter",
+   "src": [
+    "A",
+    "B"
+   ]
+  },
+  {
+   "n": "fleets",
+   "len": 7,
+   "t": "Fleet's",
+   "src": [
+    "A"
+   ]
+  },
+  {
+   "n": "focus",
+   "len": 5,
+   "t": "Focus",
+   "src": [
+    "A",
+    "B"
+   ]
+  },
+  {
+   "n": "forager",
+   "len": 7,
+   "t": "Forager",
+   "src": [
+    "B"
+   ]
+  },
+  {
+   "n": "forbidden",
+   "len": 9,
+   "t": "Forbidden",
+   "src": [
+    "A"
+   ]
+  },
+  {
+   "n": "forbiddenwest",
+   "len": 14,
+   "t": "Forbidden West",
+   "src": [
+    "A",
+    "B-phrase"
+   ]
+  },
+  {
+   "n": "forgefire",
+   "len": 9,
+   "t": "Forgefire",
+   "src": [
+    "B"
+   ]
+  },
+  {
+   "n": "fortnite",
+   "len": 8,
+   "t": "Fortnite",
+   "src": [
+    "A"
+   ]
+  },
+  {
+   "n": "free",
+   "len": 4,
+   "t": "Free",
+   "src": [
+    "A"
+   ]
+  },
+  {
+   "n": "freeheart",
+   "len": 10,
+   "t": "Free Heart",
+   "src": [
+    "B-phrase"
+   ]
+  },
+  {
+   "n": "frost",
+   "len": 5,
+   "t": "Frost",
+   "src": [
+    "plan"
+   ]
+  },
+  {
+   "n": "frostbite",
+   "len": 9,
+   "t": "Frostbite",
+   "src": [
+    "A"
+   ]
+  },
+  {
+   "n": "frostclaw",
+   "len": 9,
+   "t": "Frostclaw",
+   "src": [
+    "A",
+    "B"
+   ]
+  },
+  {
+   "n": "frozenwilds",
+   "len": 12,
+   "t": "Frozen Wilds",
+   "src": [
+    "B-phrase"
+   ]
+  },
+  {
+   "n": "gaia",
+   "len": 4,
+   "t": "GAIA",
+   "src": [
+    "A",
+    "B"
+   ]
+  },
+  {
+   "n": "games",
+   "len": 5,
+   "t": "Games",
+   "src": [
+    "A"
+   ]
+  },
+  {
+   "n": "gauntlet",
+   "len": 8,
+   "t": "Gauntlet",
+   "src": [
+    "A"
+   ]
+  },
+  {
+   "n": "gerard",
+   "len": 6,
+   "t": "Gerard",
+   "src": [
+    "A"
+   ]
+  },
+  {
+   "n": "gerrit",
+   "len": 6,
+   "t": "Gerrit",
+   "src": [
+    "B"
+   ]
+  },
+  {
+   "n": "gildun",
+   "len": 6,
+   "t": "Gildun",
+   "src": [
+    "A"
+   ]
+  },
+  {
+   "n": "glinthawk",
+   "len": 9,
+   "t": "Glinthawk",
+   "src": [
+    "A",
+    "B"
+   ]
+  },
+  {
+   "n": "gravehoard",
+   "len": 11,
+   "t": "Grave-Hoard",
+   "src": [
+    "B"
+   ]
+  },
+  {
+   "n": "grazer",
+   "len": 6,
+   "t": "Grazer",
+   "src": [
+    "A",
+    "B",
+    "plan"
+   ]
+  },
+  {
+   "n": "grimhorn",
+   "len": 8,
+   "t": "Grimhorn",
+   "src": [
+    "A",
+    "B"
+   ]
+  },
+  {
+   "n": "grounds",
+   "len": 7,
+   "t": "Grounds",
+   "src": [
+    "A"
+   ]
+  },
+  {
+   "n": "grove",
+   "len": 5,
+   "t": "Grove",
+   "src": [
+    "A"
+   ]
+  },
+  {
+   "n": "guerrilla",
+   "len": 9,
+   "t": "Guerrilla",
+   "src": [
+    "A",
+    "B"
+   ]
+  },
+  {
+   "n": "hades",
+   "len": 5,
+   "t": "HADES",
+   "src": [
+    "A",
+    "B"
+   ]
+  },
+  {
+   "n": "hardpoint",
+   "len": 9,
+   "t": "Hardpoint",
+   "src": [
+    "B"
+   ]
+  },
+  {
+   "n": "heart",
+   "len": 5,
+   "t": "Heart",
+   "src": [
+    "A"
+   ]
+  },
+  {
+   "n": "heartothemother",
+   "len": 18,
+   "t": "Heart-o-the-Mother",
+   "src": [
+    "B-phrase"
+   ]
+  },
+  {
+   "n": "hekarro",
+   "len": 7,
+   "t": "Hekarro",
+   "src": [
+    "A",
+    "B"
+   ]
+  },
+  {
+   "n": "helis",
+   "len": 5,
+   "t": "Helis",
+   "src": [
+    "A",
+    "B"
+   ]
+  },
+  {
+   "n": "hephaestus",
+   "len": 10,
+   "t": "HEPHAESTUS",
+   "src": [
+    "A",
+    "B"
+   ]
+  },
+  {
+   "n": "hfw",
+   "len": 3,
+   "t": "HFW",
+   "src": [
+    "A"
+   ]
+  },
+  {
+   "n": "hidden",
+   "len": 6,
+   "t": "Hidden",
+   "src": [
+    "A"
+   ]
+  },
+  {
+   "n": "hiddenember",
+   "len": 12,
+   "t": "Hidden Ember",
+   "src": [
+    "B-phrase"
+   ]
+  },
+  {
+   "n": "horizon",
+   "len": 7,
+   "t": "Horizon",
+   "src": [
+    "A",
+    "B"
+   ]
+  },
+  {
+   "n": "horizon(title)",
+   "len": 15,
+   "t": "Horizon (title)",
+   "src": [
+    "A"
+   ]
+  },
+  {
+   "n": "horus",
+   "len": 5,
+   "t": "Horus",
+   "src": [
+    "A",
+    "B"
+   ]
+  },
+  {
+   "n": "hunter",
+   "len": 6,
+   "t": "Hunter",
+   "src": [
+    "A"
+   ]
+  },
+  {
+   "n": "hunterbow",
+   "len": 10,
+   "t": "Hunter Bow",
+   "src": [
+    "A",
+    "B-phrase"
+   ]
+  },
+  {
+   "n": "hunterslodge",
+   "len": 14,
+   "t": "Hunter's Lodge",
+   "src": [
+    "B-phrase"
+   ]
+  },
+  {
+   "n": "hunting",
+   "len": 7,
+   "t": "Hunting",
+   "src": [
+    "A"
+   ]
+  },
+  {
+   "n": "huntinggrounds",
+   "len": 15,
+   "t": "Hunting Grounds",
+   "src": [
+    "A",
+    "B-phrase"
+   ]
+  },
+  {
+   "n": "hunts",
+   "len": 5,
+   "t": "Hunts",
+   "src": [
+    "A"
+   ]
+  },
+  {
+   "n": "huntslikepack",
+   "len": 15,
+   "t": "Hunts-Like-Pack",
+   "src": [
+    "A"
+   ]
+  },
+  {
+   "n": "hzc(projectabbrev)",
+   "len": 20,
+   "t": "HZC (project abbrev)",
+   "src": [
+    "A"
+   ]
+  },
+  {
+   "n": "hzd",
+   "len": 3,
+   "t": "HZD",
+   "src": [
+    "A"
+   ]
+  },
+  {
+   "n": "icerail",
+   "len": 7,
+   "t": "Icerail",
+   "src": [
+    "B"
+   ]
+  },
+  {
+   "n": "igniter",
+   "len": 7,
+   "t": "Igniter",
+   "src": [
+    "B"
+   ]
+  },
+  {
+   "n": "impact",
+   "len": 6,
+   "t": "Impact",
+   "src": [
+    "plan"
+   ]
+  },
+  {
+   "n": "ironeater",
+   "len": 9,
+   "t": "Ironeater",
+   "src": [
+    "A"
+   ]
+  },
+  {
+   "n": "isle",
+   "len": 4,
+   "t": "Isle",
+   "src": [
+    "A"
+   ]
+  },
+  {
+   "n": "isleofspires",
+   "len": 14,
+   "t": "Isle of Spires",
+   "src": [
+    "B-phrase"
+   ]
+  },
+  {
+   "n": "itamen",
+   "len": 6,
+   "t": "Itamen",
+   "src": [
+    "B"
+   ]
+  },
+  {
+   "n": "janeva",
+   "len": 6,
+   "t": "Janeva",
+   "src": [
+    "B"
+   ]
+  },
+  {
+   "n": "jezza",
+   "len": 5,
+   "t": "Jezza",
+   "src": [
+    "B"
+   ]
+  },
+  {
+   "n": "jiran",
+   "len": 5,
+   "t": "Jiran",
+   "src": [
+    "A"
+   ]
+  },
+  {
+   "n": "karst",
+   "len": 5,
+   "t": "Karst",
+   "src": [
+    "B"
+   ]
+  },
+  {
+   "n": "kavvoh",
+   "len": 6,
+   "t": "Kavvoh",
+   "src": [
+    "A"
+   ]
+  },
+  {
+   "n": "kina",
+   "len": 4,
+   "t": "Kina",
+   "src": [
+    "A",
+    "B"
+   ]
+  },
+  {
+   "n": "king",
+   "len": 4,
+   "t": "King",
+   "src": [
+    "A"
+   ]
+  },
+  {
+   "n": "kotallo",
+   "len": 7,
+   "t": "Kotallo",
+   "src": [
+    "A",
+    "B"
+   ]
+  },
+  {
+   "n": "kue",
+   "len": 3,
+   "t": "Kue",
+   "src": [
+    "A"
+   ]
+  },
+  {
+   "n": "kulrut",
+   "len": 6,
+   "t": "Kulrut",
+   "src": [
+    "A",
+    "B"
+   ]
+  },
+  {
+   "n": "lancehorn",
+   "len": 9,
+   "t": "Lancehorn",
+   "src": [
+    "A",
+    "B"
+   ]
+  },
+  {
+   "n": "landfall",
+   "len": 8,
+   "t": "Landfall",
+   "src": [
+    "A"
+   ]
+  },
+  {
+   "n": "lands",
+   "len": 5,
+   "t": "Lands",
+   "src": [
+    "A"
+   ]
+  },
+  {
+   "n": "lansra",
+   "len": 6,
+   "t": "Lansra",
+   "src": [
+    "A",
+    "B"
+   ]
+  },
+  {
+   "n": "larend",
+   "len": 6,
+   "t": "Larend",
+   "src": [
+    "A"
+   ]
+  },
+  {
+   "n": "latopolis",
+   "len": 9,
+   "t": "Latopolis",
+   "src": [
+    "A"
+   ]
+  },
+  {
+   "n": "launcher",
+   "len": 8,
+   "t": "Launcher",
+   "src": [
+    "A"
+   ]
+  },
+  {
+   "n": "lawan",
+   "len": 5,
+   "t": "Lawan",
+   "src": [
+    "A"
+   ]
+  },
+  {
+   "n": "leaplasher",
+   "len": 10,
+   "t": "Leaplasher",
+   "src": [
+    "A",
+    "B"
+   ]
+  },
+  {
+   "n": "legacys",
+   "len": 8,
+   "t": "Legacy's",
+   "src": [
+    "A"
+   ]
+  },
+  {
+   "n": "legacyslandfall",
+   "len": 17,
+   "t": "Legacy's Landfall",
+   "src": [
+    "B-phrase"
+   ]
+  },
+  {
+   "n": "lens",
+   "len": 4,
+   "t": "Lens",
+   "src": [
+    "A",
+    "plan"
+   ]
+  },
+  {
+   "n": "light",
+   "len": 5,
+   "t": "Light",
+   "src": [
+    "A"
+   ]
+  },
+  {
+   "n": "lightkeep",
+   "len": 9,
+   "t": "Lightkeep",
+   "src": [
+    "A"
+   ]
+  },
+  {
+   "n": "like",
+   "len": 4,
+   "t": "Like",
+   "src": [
+    "A"
+   ]
+  },
+  {
+   "n": "londra",
+   "len": 6,
+   "t": "Londra",
+   "src": [
+    "B"
+   ]
+  },
+  {
+   "n": "longleg",
+   "len": 7,
+   "t": "Longleg",
+   "src": [
+    "A",
+    "B"
+   ]
+  },
+  {
+   "n": "lowell",
+   "len": 6,
+   "t": "Lowell",
+   "src": [
+    "B"
+   ]
+  },
+  {
+   "n": "lowland",
+   "len": 7,
+   "t": "Lowland",
+   "src": [
+    "A",
+    "B"
+   ]
+  },
+  {
+   "n": "machine",
+   "len": 7,
+   "t": "Machine",
+   "src": [
+    "A"
+   ]
+  },
+  {
+   "n": "machinecore",
+   "len": 12,
+   "t": "Machine Core",
+   "src": [
+    "B-phrase"
+   ]
+  },
+  {
+   "n": "machinemuscle/lens/heart",
+   "len": 25,
+   "t": "Machine Muscle/Lens/Heart",
+   "src": [
+    "A"
+   ]
+  },
+  {
+   "n": "makers",
+   "len": 7,
+   "t": "Maker's",
+   "src": [
+    "A"
+   ]
+  },
+  {
+   "n": "marad",
+   "len": 5,
+   "t": "Marad",
+   "src": [
+    "A",
+    "B"
+   ]
+  },
+  {
+   "n": "mark",
+   "len": 4,
+   "t": "Mark",
+   "src": [
+    "A"
+   ]
+  },
+  {
+   "n": "mask",
+   "len": 4,
+   "t": "Mask",
+   "src": [
+    "A"
+   ]
+  },
+  {
+   "n": "matriarch",
+   "len": 9,
+   "t": "Matriarch",
+   "src": [
+    "B"
+   ]
+  },
+  {
+   "n": "mawofthearena",
+   "len": 16,
+   "t": "Maw of the Arena",
+   "src": [
+    "B-phrase"
+   ]
+  },
+  {
+   "n": "medicine",
+   "len": 8,
+   "t": "Medicine",
+   "src": [
+    "A"
+   ]
+  },
+  {
+   "n": "medicinepouch",
+   "len": 14,
+   "t": "Medicine Pouch",
+   "src": [
+    "A",
+    "B-phrase"
+   ]
+  },
+  {
+   "n": "melee",
+   "len": 5,
+   "t": "Melee",
+   "src": [
+    "A"
+   ]
+  },
+  {
+   "n": "memorial",
+   "len": 8,
+   "t": "Memorial",
+   "src": [
+    "A"
+   ]
+  },
+  {
+   "n": "meridian",
+   "len": 8,
+   "t": "Meridian",
+   "src": [
+    "A",
+    "B"
+   ]
+  },
+  {
+   "n": "metal",
+   "len": 5,
+   "t": "Metal",
+   "src": [
+    "A"
+   ]
+  },
+  {
+   "n": "metaldevil",
+   "len": 11,
+   "t": "Metal Devil",
+   "src": [
+    "B-phrase"
+   ]
+  },
+  {
+   "n": "metalshards",
+   "len": 12,
+   "t": "Metal Shards",
+   "src": [
+    "A",
+    "B-phrase"
+   ]
+  },
+  {
+   "n": "minerva",
+   "len": 7,
+   "t": "MINERVA",
+   "src": [
+    "A",
+    "B"
+   ]
+  },
+  {
+   "n": "morlund",
+   "len": 7,
+   "t": "Morlund",
+   "src": [
+    "A",
+    "B"
+   ]
+  },
+  {
+   "n": "mother",
+   "len": 6,
+   "t": "Mother",
+   "src": [
+    "A"
+   ]
+  },
+  {
+   "n": "mothers",
+   "len": 8,
+   "t": "Mother's",
+   "src": [
+    "A"
+   ]
+  },
+  {
+   "n": "motherscrown",
+   "len": 14,
+   "t": "Mother's Crown",
+   "src": [
+    "B-phrase"
+   ]
+  },
+  {
+   "n": "mothersheart",
+   "len": 14,
+   "t": "Mother's Heart",
+   "src": [
+    "B-phrase"
+   ]
+  },
+  {
+   "n": "mothersheart/watch/rise",
+   "len": 25,
+   "t": "Mother's Heart/Watch/Rise",
+   "src": [
+    "A"
+   ]
+  },
+  {
+   "n": "motherswatch",
+   "len": 14,
+   "t": "Mother's Watch",
+   "src": [
+    "B-phrase"
+   ]
+  },
+  {
+   "n": "muscle",
+   "len": 6,
+   "t": "Muscle",
+   "src": [
+    "A"
+   ]
+  },
+  {
+   "n": "nakoa",
+   "len": 5,
+   "t": "Nakoa",
+   "src": [
+    "B"
+   ]
+  },
+  {
+   "n": "nemesis",
+   "len": 7,
+   "t": "NEMESIS",
+   "src": [
+    "A"
+   ]
+  },
+  {
+   "n": "nil",
+   "len": 3,
+   "t": "Nil",
+   "src": [
+    "A",
+    "B"
+   ]
+  },
+  {
+   "n": "nomansland",
+   "len": 13,
+   "t": "No Man's Land",
+   "src": [
+    "B-phrase"
+   ]
+  },
+  {
+   "n": "nora",
+   "len": 4,
+   "t": "Nora",
+   "src": [
+    "A",
+    "B"
+   ]
+  },
+  {
+   "n": "of",
+   "len": 2,
+   "t": "of",
+   "src": [
+    "A"
+   ]
+  },
+  {
+   "n": "old",
+   "len": 3,
+   "t": "Old",
+   "src": [
+    "A"
+   ]
+  },
+  {
+   "n": "oldones",
+   "len": 8,
+   "t": "Old Ones",
+   "src": [
+    "B-phrase"
+   ]
+  },
+  {
+   "n": "olin",
+   "len": 4,
+   "t": "Olin",
+   "src": [
+    "B"
+   ]
+  },
+  {
+   "n": "ones",
+   "len": 4,
+   "t": "Ones",
+   "src": [
+    "A"
+   ]
+  },
+  {
+   "n": "oseram",
+   "len": 6,
+   "t": "Oseram",
+   "src": [
+    "A",
+    "B"
+   ]
+  },
+  {
+   "n": "ourea",
+   "len": 5,
+   "t": "Ourea",
+   "src": [
+    "A",
+    "B"
+   ]
+  },
+  {
+   "n": "outcast",
+   "len": 7,
+   "t": "Outcast",
+   "src": [
+    "A"
+   ]
+  },
+  {
+   "n": "overdraw",
+   "len": 8,
+   "t": "Overdraw",
+   "src": [
+    "A"
+   ]
+  },
+  {
+   "n": "override",
+   "len": 8,
+   "t": "Override",
+   "src": [
+    "A",
+    "B"
+   ]
+  },
+  {
+   "n": "pack",
+   "len": 4,
+   "t": "Pack",
+   "src": [
+    "A"
+   ]
+  },
+  {
+   "n": "petra",
+   "len": 5,
+   "t": "Petra",
+   "src": [
+    "A",
+    "B"
+   ]
+  },
+  {
+   "n": "pit",
+   "len": 3,
+   "t": "Pit",
+   "src": [
+    "A"
+   ]
+  },
+  {
+   "n": "pitchcliff",
+   "len": 10,
+   "t": "Pitchcliff",
+   "src": [
+    "A",
+    "B"
+   ]
+  },
+  {
+   "n": "plainsong",
+   "len": 9,
+   "t": "Plainsong",
+   "src": [
+    "A",
+    "B"
+   ]
+  },
+  {
+   "n": "plasma",
+   "len": 6,
+   "t": "Plasma",
+   "src": [
+    "A"
+   ]
+  },
+  {
+   "n": "playstation",
+   "len": 11,
+   "t": "PlayStation",
+   "src": [
+    "B"
+   ]
+  },
+  {
+   "n": "plowhorn",
+   "len": 8,
+   "t": "Plowhorn",
+   "src": [
+    "A",
+    "B"
+   ]
+  },
+  {
+   "n": "point",
+   "len": 5,
+   "t": "Point",
+   "src": [
+    "A"
+   ]
+  },
+  {
+   "n": "poseidon",
+   "len": 8,
+   "t": "POSEIDON",
+   "src": [
+    "A",
+    "B"
+   ]
+  },
+  {
+   "n": "pouch",
+   "len": 5,
+   "t": "Pouch",
+   "src": [
+    "A"
+   ]
+  },
+  {
+   "n": "project",
+   "len": 7,
+   "t": "project",
+   "src": [
+    "A"
+   ]
+  },
+  {
+   "n": "proving",
+   "len": 7,
+   "t": "Proving",
+   "src": [
+    "A",
+    "B"
+   ]
+  },
+  {
+   "n": "prowler",
+   "len": 7,
+   "t": "Prowler",
+   "src": [
+    "B"
+   ]
+  },
+  {
+   "n": "pullcaster",
+   "len": 10,
+   "t": "Pullcaster",
+   "src": [
+    "A",
+    "B"
+   ]
+  },
+  {
+   "n": "purgewater",
+   "len": 10,
+   "t": "Purgewater",
+   "src": [
+    "A",
+    "B"
+   ]
+  },
+  {
+   "n": "quen",
+   "len": 4,
+   "t": "Quen",
+   "src": [
+    "A",
+    "B"
+   ]
+  },
+  {
+   "n": "raintrace",
+   "len": 9,
+   "t": "Raintrace",
+   "src": [
+    "B"
+   ]
+  },
+  {
+   "n": "rattler",
+   "len": 7,
+   "t": "Rattler",
+   "src": [
+    "B"
+   ]
+  },
+  {
+   "n": "ravager",
+   "len": 7,
+   "t": "Ravager",
+   "src": [
+    "A",
+    "B"
+   ]
+  },
+  {
+   "n": "rebel",
+   "len": 5,
+   "t": "Rebel",
+   "src": [
+    "A"
+   ]
+  },
+  {
+   "n": "redeye",
+   "len": 6,
+   "t": "Redeye",
+   "src": [
+    "A",
+    "B"
+   ]
+  },
+  {
+   "n": "regalla",
+   "len": 7,
+   "t": "Regalla",
+   "src": [
+    "A",
+    "B"
+   ]
+  },
+  {
+   "n": "relic",
+   "len": 5,
+   "t": "Relic",
+   "src": [
+    "A"
+   ]
+  },
+  {
+   "n": "resonator",
+   "len": 9,
+   "t": "Resonator",
+   "src": [
+    "B"
+   ]
+  },
+  {
+   "n": "ridge",
+   "len": 5,
+   "t": "Ridge",
+   "src": [
+    "A"
+   ]
+  },
+  {
+   "n": "ridgewood",
+   "len": 10,
+   "t": "Ridge-wood",
+   "src": [
+    "A",
+    "B"
+   ]
+  },
+  {
+   "n": "rise",
+   "len": 4,
+   "t": "Rise",
+   "src": [
+    "A"
+   ]
+  },
+  {
+   "n": "rockbreaker",
+   "len": 11,
+   "t": "Rockbreaker",
+   "src": [
+    "A",
+    "B"
+   ]
+  },
+  {
+   "n": "rollerback",
+   "len": 10,
+   "t": "Rollerback",
+   "src": [
+    "A",
+    "B",
+    "plan"
+   ]
+  },
+  {
+   "n": "ropecaster",
+   "len": 10,
+   "t": "Ropecaster",
+   "src": [
+    "A",
+    "B"
+   ]
+  },
+  {
+   "n": "ropes",
+   "len": 5,
+   "t": "Ropes",
+   "src": [
+    "A"
+   ]
+  },
+  {
+   "n": "ropes/tiedown",
+   "len": 14,
+   "t": "Ropes/tie-down",
+   "src": [
+    "A"
+   ]
+  },
+  {
+   "n": "rost",
+   "len": 4,
+   "t": "Rost",
+   "src": [
+    "A",
+    "B"
+   ]
+  },
+  {
+   "n": "ruin",
+   "len": 4,
+   "t": "Ruin",
+   "src": [
+    "A"
+   ]
+  },
+  {
+   "n": "run",
+   "len": 3,
+   "t": "Run",
+   "src": [
+    "A"
+   ]
+  },
+  {
+   "n": "sacred",
+   "len": 6,
+   "t": "Sacred",
+   "src": [
+    "A"
+   ]
+  },
+  {
+   "n": "sacredlands",
+   "len": 12,
+   "t": "Sacred Lands",
+   "src": [
+    "B-phrase"
+   ]
+  },
+  {
+   "n": "sacwebbing",
+   "len": 11,
+   "t": "Sac Webbing",
+   "src": [
+    "B-phrase"
+   ]
+  },
+  {
+   "n": "saltbite",
+   "len": 8,
+   "t": "Saltbite",
+   "src": [
+    "B",
+    "plan"
+   ]
+  },
+  {
+   "n": "salvage",
+   "len": 7,
+   "t": "Salvage",
+   "src": [
+    "A"
+   ]
+  },
+  {
+   "n": "sawtooth",
+   "len": 8,
+   "t": "Sawtooth",
+   "src": [
+    "A",
+    "B"
+   ]
+  },
+  {
+   "n": "scalding",
+   "len": 8,
+   "t": "Scalding",
+   "src": [
+    "A"
+   ]
+  },
+  {
+   "n": "scaldingspear",
+   "len": 14,
+   "t": "Scalding Spear",
+   "src": [
+    "B-phrase"
+   ]
+  },
+  {
+   "n": "scorcher",
+   "len": 8,
+   "t": "Scorcher",
+   "src": [
+    "A",
+    "B"
+   ]
+  },
+  {
+   "n": "scrapper",
+   "len": 8,
+   "t": "Scrapper",
+   "src": [
+    "A",
+    "B"
+   ]
+  },
+  {
+   "n": "scrounger",
+   "len": 9,
+   "t": "Scrounger",
+   "src": [
+    "A",
+    "B"
+   ]
+  },
+  {
+   "n": "seeker",
+   "len": 6,
+   "t": "Seeker",
+   "src": [
+    "A",
+    "B"
+   ]
+  },
+  {
+   "n": "seyka",
+   "len": 5,
+   "t": "Seyka",
+   "src": [
+    "A",
+    "B"
+   ]
+  },
+  {
+   "n": "shadow",
+   "len": 6,
+   "t": "Shadow",
+   "src": [
+    "A"
+   ]
+  },
+  {
+   "n": "shadowcarja",
+   "len": 12,
+   "t": "Shadow Carja",
+   "src": [
+    "B-phrase"
+   ]
+  },
+  {
+   "n": "shards",
+   "len": 6,
+   "t": "Shards",
+   "src": [
+    "A",
+    "B",
+    "plan"
+   ]
+  },
+  {
+   "n": "sharpshot",
+   "len": 9,
+   "t": "Sharpshot",
+   "src": [
+    "A",
+    "B"
+   ]
+  },
+  {
+   "n": "shell",
+   "len": 5,
+   "t": "Shell",
+   "src": [
+    "A"
+   ]
+  },
+  {
+   "n": "shellsnapper",
+   "len": 12,
+   "t": "Shellsnapper",
+   "src": [
+    "A",
+    "B"
+   ]
+  },
+  {
+   "n": "shellwalker",
+   "len": 12,
+   "t": "Shell-Walker",
+   "src": [
+    "A",
+    "B"
+   ]
+  },
+  {
+   "n": "shield",
+   "len": 6,
+   "t": "Shield",
+   "src": [
+    "A"
+   ]
+  },
+  {
+   "n": "shieldweaver",
+   "len": 12,
+   "t": "Shieldweaver",
+   "src": [
+    "A"
+   ]
+  },
+  {
+   "n": "shieldweaver",
+   "len": 13,
+   "t": "Shield-Weaver",
+   "src": [
+    "A"
+   ]
+  },
+  {
+   "n": "shieldwing",
+   "len": 10,
+   "t": "Shieldwing",
+   "src": [
+    "A",
+    "B"
+   ]
+  },
+  {
+   "n": "shock",
+   "len": 5,
+   "t": "Shock",
+   "src": [
+    "A"
+   ]
+  },
+  {
+   "n": "shredder",
+   "len": 8,
+   "t": "Shredder",
+   "src": [
+    "A"
+   ]
+  },
+  {
+   "n": "shreddergauntlet",
+   "len": 17,
+   "t": "Shredder Gauntlet",
+   "src": [
+    "B-phrase"
+   ]
+  },
+  {
+   "n": "silent",
+   "len": 6,
+   "t": "Silent",
+   "src": [
+    "A"
+   ]
+  },
+  {
+   "n": "silentstrike",
+   "len": 13,
+   "t": "Silent Strike",
+   "src": [
+    "A",
+    "B-phrase"
+   ]
+  },
+  {
+   "n": "sketchfab",
+   "len": 9,
+   "t": "Sketchfab",
+   "src": [
+    "A"
+   ]
+  },
+  {
+   "n": "sky",
+   "len": 3,
+   "t": "Sky",
+   "src": [
+    "A"
+   ]
+  },
+  {
+   "n": "skydrifter",
+   "len": 10,
+   "t": "Skydrifter",
+   "src": [
+    "A",
+    "B"
+   ]
+  },
+  {
+   "n": "slaughterspine",
+   "len": 14,
+   "t": "Slaughterspine",
+   "src": [
+    "A",
+    "B"
+   ]
+  },
+  {
+   "n": "sling",
+   "len": 5,
+   "t": "Sling",
+   "src": [
+    "A"
+   ]
+  },
+  {
+   "n": "slitherfang",
+   "len": 11,
+   "t": "Slitherfang",
+   "src": [
+    "A",
+    "B"
+   ]
+  },
+  {
+   "n": "snapmaw",
+   "len": 7,
+   "t": "Snapmaw",
+   "src": [
+    "A",
+    "B"
+   ]
+  },
+  {
+   "n": "sobeck",
+   "len": 6,
+   "t": "Sobeck",
+   "src": [
+    "A",
+    "B"
+   ]
+  },
+  {
+   "n": "sona",
+   "len": 4,
+   "t": "Sona",
+   "src": [
+    "A",
+    "B"
+   ]
+  },
+  {
+   "n": "sony",
+   "len": 4,
+   "t": "Sony",
+   "src": [
+    "A",
+    "B"
+   ]
+  },
+  {
+   "n": "sparker",
+   "len": 7,
+   "t": "Sparker",
+   "src": [
+    "A",
+    "B"
+   ]
+  },
+  {
+   "n": "spear",
+   "len": 5,
+   "t": "Spear",
+   "src": [
+    "A"
+   ]
+  },
+  {
+   "n": "spear(aloyweapon)",
+   "len": 19,
+   "t": "Spear (Aloy weapon)",
+   "src": [
+    "A"
+   ]
+  },
+  {
+   "n": "specter",
+   "len": 7,
+   "t": "Specter",
+   "src": [
+    "A",
+    "B"
+   ]
+  },
+  {
+   "n": "spectre",
+   "len": 7,
+   "t": "Spectre",
+   "src": [
+    "A"
+   ]
+  },
+  {
+   "n": "spike",
+   "len": 5,
+   "t": "Spike",
+   "src": [
+    "A"
+   ]
+  },
+  {
+   "n": "spikesnout",
+   "len": 10,
+   "t": "Spikesnout",
+   "src": [
+    "A",
+    "B"
+   ]
+  },
+  {
+   "n": "spikethrower",
+   "len": 13,
+   "t": "Spike Thrower",
+   "src": [
+    "B-phrase"
+   ]
+  },
+  {
+   "n": "spinner",
+   "len": 7,
+   "t": "Spinner",
+   "src": [
+    "A"
+   ]
+  },
+  {
+   "n": "spire",
+   "len": 5,
+   "t": "Spire",
+   "src": [
+    "A"
+   ]
+  },
+  {
+   "n": "spires",
+   "len": 6,
+   "t": "Spires",
+   "src": [
+    "A"
+   ]
+  },
+  {
+   "n": "stalker",
+   "len": 7,
+   "t": "Stalker",
+   "src": [
+    "A",
+    "B",
+    "plan"
+   ]
+  },
+  {
+   "n": "stillsands",
+   "len": 10,
+   "t": "Stillsands",
+   "src": [
+    "A",
+    "B"
+   ]
+  },
+  {
+   "n": "stingspawn",
+   "len": 10,
+   "t": "Stingspawn",
+   "src": [
+    "A",
+    "B"
+   ]
+  },
+  {
+   "n": "stone",
+   "len": 5,
+   "t": "Stone",
+   "src": [
+    "A"
+   ]
+  },
+  {
+   "n": "stormbird",
+   "len": 9,
+   "t": "Stormbird",
+   "src": [
+    "A",
+    "B"
+   ]
+  },
+  {
+   "n": "stormslinger",
+   "len": 12,
+   "t": "Stormslinger",
+   "src": [
+    "B"
+   ]
+  },
+  {
+   "n": "strider",
+   "len": 7,
+   "t": "Strider",
+   "src": [
+    "A",
+    "B"
+   ]
+  },
+  {
+   "n": "strike",
+   "len": 6,
+   "t": "Strike",
+   "src": [
+    "A"
+   ]
+  },
+  {
+   "n": "strikes",
+   "len": 7,
+   "t": "Strikes",
+   "src": [
+    "A"
+   ]
+  },
+  {
+   "n": "sunfall",
+   "len": 7,
+   "t": "Sunfall",
+   "src": [
+    "A",
+    "B"
+   ]
+  },
+  {
+   "n": "sunhawk",
+   "len": 7,
+   "t": "Sunhawk",
+   "src": [
+    "A"
+   ]
+  },
+  {
+   "n": "sunking",
+   "len": 8,
+   "t": "Sun-King",
+   "src": [
+    "A",
+    "B"
+   ]
+  },
+  {
+   "n": "sunpriest",
+   "len": 10,
+   "t": "Sun-Priest",
+   "src": [
+    "B"
+   ]
+  },
+  {
+   "n": "sunstone",
+   "len": 8,
+   "t": "Sunstone",
+   "src": [
+    "A",
+    "B"
+   ]
+  },
+  {
+   "n": "sunwing",
+   "len": 7,
+   "t": "Sunwing",
+   "src": [
+    "A",
+    "B"
+   ]
+  },
+  {
+   "n": "surge",
+   "len": 5,
+   "t": "Surge",
+   "src": [
+    "A"
+   ]
+  },
+  {
+   "n": "sylens",
+   "len": 6,
+   "t": "Sylens",
+   "src": [
+    "A",
+    "B"
+   ]
+  },
+  {
+   "n": "talanah",
+   "len": 7,
+   "t": "Talanah",
+   "src": [
+    "A",
+    "B"
+   ]
+  },
+  {
+   "n": "tallneck",
+   "len": 8,
+   "t": "Tallneck",
+   "src": [
+    "A",
+    "B"
+   ]
+  },
+  {
+   "n": "tear",
+   "len": 4,
+   "t": "Tear",
+   "src": [
+    "plan"
+   ]
+  },
+  {
+   "n": "tearblast",
+   "len": 9,
+   "t": "Tearblast",
+   "src": [
+    "A",
+    "B"
+   ]
+  },
+  {
+   "n": "teb",
+   "len": 3,
+   "t": "Teb",
+   "src": [
+    "A",
+    "B"
+   ]
+  },
+  {
+   "n": "ted",
+   "len": 3,
+   "t": "Ted",
+   "src": [
+    "A"
+   ]
+  },
+  {
+   "n": "tedfaro",
+   "len": 8,
+   "t": "Ted Faro",
+   "src": [
+    "B-phrase"
+   ]
+  },
+  {
+   "n": "teersa",
+   "len": 6,
+   "t": "Teersa",
+   "src": [
+    "A",
+    "B"
+   ]
+  },
+  {
+   "n": "tenakth",
+   "len": 7,
+   "t": "Tenakth",
+   "src": [
+    "A",
+    "B"
+   ]
+  },
+  {
+   "n": "thecut",
+   "len": 7,
+   "t": "The Cut",
+   "src": [
+    "B-phrase"
+   ]
+  },
+  {
+   "n": "thornmarsh",
+   "len": 10,
+   "t": "Thornmarsh",
+   "src": [
+    "A",
+    "B"
+   ]
+  },
+  {
+   "n": "thrower",
+   "len": 7,
+   "t": "Thrower",
+   "src": [
+    "A"
+   ]
+  },
+  {
+   "n": "thrush",
+   "len": 6,
+   "t": "Thrush",
+   "src": [
+    "A"
+   ]
+  },
+  {
+   "n": "thunderjaw",
+   "len": 10,
+   "t": "Thunderjaw",
+   "src": [
+    "A",
+    "B"
+   ]
+  },
+  {
+   "n": "tideripper",
+   "len": 10,
+   "t": "Tideripper",
+   "src": [
+    "A",
+    "B"
+   ]
+  },
+  {
+   "n": "tilda",
+   "len": 5,
+   "t": "Tilda",
+   "src": [
+    "A",
+    "B"
+   ]
+  },
+  {
+   "n": "tinker",
+   "len": 6,
+   "t": "Tinker",
+   "src": [
+    "B"
+   ]
+  },
+  {
+   "n": "title",
+   "len": 5,
+   "t": "title",
+   "src": [
+    "A"
+   ]
+  },
+  {
+   "n": "trampler",
+   "len": 8,
+   "t": "Trampler",
+   "src": [
+    "A",
+    "B"
+   ]
+  },
+  {
+   "n": "travis",
+   "len": 6,
+   "t": "Travis",
+   "src": [
+    "A"
+   ]
+  },
+  {
+   "n": "tremortusk",
+   "len": 10,
+   "t": "Tremortusk",
+   "src": [
+    "A",
+    "B"
+   ]
+  },
+  {
+   "n": "tripcaster",
+   "len": 10,
+   "t": "Tripcaster",
+   "src": [
+    "A",
+    "B"
+   ]
+  },
+  {
+   "n": "ulvund",
+   "len": 6,
+   "t": "Ulvund",
+   "src": [
+    "A",
+    "B"
+   ]
+  },
+  {
+   "n": "uncharted",
+   "len": 9,
+   "t": "Uncharted",
+   "src": [
+    "B"
+   ]
+  },
+  {
+   "n": "utaru",
+   "len": 5,
+   "t": "Utaru",
+   "src": [
+    "A",
+    "B"
+   ]
+  },
+  {
+   "n": "uthid",
+   "len": 5,
+   "t": "Uthid",
+   "src": [
+    "A"
+   ]
+  },
+  {
+   "n": "vala",
+   "len": 4,
+   "t": "Vala",
+   "src": [
+    "B"
+   ]
+  },
+  {
+   "n": "valor",
+   "len": 5,
+   "t": "Valor",
+   "src": [
+    "A"
+   ]
+  },
+  {
+   "n": "valorsurge",
+   "len": 11,
+   "t": "Valor Surge",
+   "src": [
+    "B-phrase"
+   ]
+  },
+  {
+   "n": "vanasha",
+   "len": 7,
+   "t": "Vanasha",
+   "src": [
+    "A",
+    "B"
+   ]
+  },
+  {
+   "n": "varl",
+   "len": 4,
+   "t": "Varl",
+   "src": [
+    "A",
+    "B"
+   ]
+  },
+  {
+   "n": "vista",
+   "len": 5,
+   "t": "Vista",
+   "src": [
+    "A"
+   ]
+  },
+  {
+   "n": "vuadis",
+   "len": 6,
+   "t": "Vuadis",
+   "src": [
+    "A"
+   ]
+  },
+  {
+   "n": "walker",
+   "len": 6,
+   "t": "Walker",
+   "src": [
+    "A"
+   ]
+  },
+  {
+   "n": "war",
+   "len": 3,
+   "t": "War",
+   "src": [
+    "A"
+   ]
+  },
+  {
+   "n": "warbow",
+   "len": 7,
+   "t": "War Bow",
+   "src": [
+    "A",
+    "B-phrase"
+   ]
+  },
+  {
+   "n": "warrior",
+   "len": 7,
+   "t": "Warrior",
+   "src": [
+    "A"
+   ]
+  },
+  {
+   "n": "warriorbow",
+   "len": 11,
+   "t": "Warrior Bow",
+   "src": [
+    "B-phrase"
+   ]
+  },
+  {
+   "n": "watch",
+   "len": 5,
+   "t": "Watch",
+   "src": [
+    "A"
+   ]
+  },
+  {
+   "n": "watcher",
+   "len": 7,
+   "t": "Watcher",
+   "src": [
+    "A",
+    "B",
+    "plan"
+   ]
+  },
+  {
+   "n": "waterwing",
+   "len": 9,
+   "t": "Waterwing",
+   "src": [
+    "A",
+    "B"
+   ]
+  },
+  {
+   "n": "weapon",
+   "len": 6,
+   "t": "weapon",
+   "src": [
+    "A"
+   ]
+  },
+  {
+   "n": "weaponwheel",
+   "len": 12,
+   "t": "Weapon wheel",
+   "src": [
+    "A"
+   ]
+  },
+  {
+   "n": "weaver",
+   "len": 6,
+   "t": "Weaver",
+   "src": [
+    "A"
+   ]
+  },
+  {
+   "n": "werak",
+   "len": 5,
+   "t": "Werak",
+   "src": [
+    "B"
+   ]
+  },
+  {
+   "n": "west",
+   "len": 4,
+   "t": "West",
+   "src": [
+    "A"
+   ]
+  },
+  {
+   "n": "wheel",
+   "len": 5,
+   "t": "wheel",
+   "src": [
+    "A"
+   ]
+  },
+  {
+   "n": "widemaw",
+   "len": 7,
+   "t": "Widemaw",
+   "src": [
+    "A",
+    "B"
+   ]
+  },
+  {
+   "n": "wood",
+   "len": 4,
+   "t": "wood",
+   "src": [
+    "A"
+   ]
+  },
+  {
+   "n": "world",
+   "len": 5,
+   "t": "World",
+   "src": [
+    "A"
+   ]
+  },
+  {
+   "n": "yarra",
+   "len": 5,
+   "t": "Yarra",
+   "src": [
+    "A",
+    "B"
+   ]
+  },
+  {
+   "n": "zenith",
+   "len": 6,
+   "t": "Zenith",
+   "src": [
+    "A",
+    "B"
+   ]
+  },
+  {
+   "n": "zeniths",
+   "len": 7,
+   "t": "Zeniths",
+   "src": [
+    "A",
+    "B"
+   ]
+  },
+  {
+   "n": "zero",
+   "len": 4,
+   "t": "Zero",
+   "src": [
+    "A"
+   ]
+  },
+  {
+   "n": "zerodawn",
+   "len": 9,
+   "t": "Zero Dawn",
+   "src": [
+    "A",
+    "B-phrase"
+   ]
+  },
+  {
+   "n": "zo",
+   "len": 2,
+   "t": "Zo",
+   "src": [
+    "A"
+   ]
+  }
  ],
  "tokens": [
   {

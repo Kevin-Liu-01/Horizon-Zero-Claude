@@ -59,6 +59,7 @@
 import { SettingsStore, SettingsPanel } from './settings.js';
 import { WorldMap, WaypointBeacon } from './map.js';
 import { Tips } from './tips.js';
+import * as THREE from 'three';
 import { REST } from '../world/island/sites.js';
 
 const el = (tag, cls, parent, html) => {
@@ -97,23 +98,57 @@ const VICTORY_S = 3.0;        // ui-13: banner, then the valley is yours again
 const GRAY_RAMP_S = 1.6;
 const CAMP = { x: REST.x, z: REST.z };
 /**
- * Title framing (brand, W0b; bible §9.8 "the Pans in calima"). The camera faces
- * the SUN's azimuth, offset so the disc sits on the right third clear of the
- * centred lockup, and looks across REST from that side. The heading is fixed
- * for the whole title: the slow drift is a lateral truck, not an orbit, so the
- * frame can never swing round onto whatever stands behind it (Round 4's orbit
- * walked the old walker tower into shot after a minute on the title).
+ * Title framing (brand, W0b; bible §9.8 "the Pans in calima"). The camera LOOKS
+ * along the sun's azimuth + TITLE_LOOK_OFFSET, so the calima disc sits on the
+ * right third, clear of the centred lockup (never behind the spark: no
+ * rising-sun reading). It STANDS on a line through REST whose bearing is the
+ * sun's azimuth + the position offset `_titleChooseFrame` picks so the terrain
+ * skyline stays under the disc from every point of the camera path. Both are
+ * fixed for the whole title: the slow drift is a lateral truck, not an orbit,
+ * so the frame can never swing round onto whatever stands behind it (Round 4's
+ * orbit walked the old walker tower into shot after a minute on the title).
  */
-const TITLE_SUN_OFFSET = 0.42;    // rad from the sun's azimuth to the heading: the disc sits ~24° right of centre
+const TITLE_LOOK_OFFSET = 0.42;   // rad from the sun's azimuth to the view: the disc ~24° right of centre
+const TITLE_POS_OFFSETS = [0, 0.05, -0.05, 0.1, -0.1, 0.15, -0.15, 0.2, -0.2, 0.3, -0.3, 0.42];   // rad, the camera's bearing from REST, candidates
 const TITLE_NIGHT_HEADING = 3.6;  // rad, used only when the sun is under the horizon
 const TITLE_TRUCK_M = 24;         // lateral drift amplitude, m
 const TITLE_TRUCK_W = 0.045;      // rad/s of the drift (one sway ≈ 140 s)
 const TITLE_TILT_DEG = 9;         // upward tilt at the start of the move (+3° across the ease)
+const DEG = Math.PI / 180;
+/**
+ * The calima disc (bible §9.4: calima "draws the sun as a soft coral disc
+ * #F2A27E"): a far billboard IN the 3D scene, depth-tested and never writing
+ * depth, so terrain or a prop in front of the sun hides it exactly like the sun.
+ * It exists only while the title stands in for calima (world-sky ships the
+ * real weather and its disc at W1; then `cal-calima-live` and no billboard).
+ *
+ * Fix round 2 (judge r1: the disc read darker than the sky round it). The quad
+ * now spans `radiusDeg` round the sun and does two things in ONE draw with
+ * custom blending (out = src.rgb + dst * src.a):
+ *   - the CORE (radius `coreDeg`, edge feathered by `soft`) replaces the sky
+ *     with `color`, scene-linear HDR;
+ *   - round it, the dust ABSORBS the clear-sky glow the Round-4 sky paints
+ *     about the sun: the sky is multiplied by
+ *     1 - absorb * (1 - smoothstep(absorbIn, radiusDeg, deg))^absorbPow,
+ *     0.32 next to the core back to 1 at the quad's edge, and again by
+ *     1 - corona * (1 - smoothstep(core edge, coronaOutDeg, deg)) for the
+ *     Round-4 sun's tight corona, so the disc is the brightest point of the
+ *     sky (no brighter rim round it) and nothing else changes.
+ * `color` and the absorption curve are fitted on filmed frames through the
+ * engine's ACES + grade + vignette and the CSS wash (docs/ROUND5-BRAND.md §5):
+ * the core lands near #F2A27E and the sky round it falls away monotonically.
+ */
+const CALIMA_DISC = {
+  dist: 1500, radiusDeg: 12, coreDeg: 1.5, soft: 0.16, clearDeg: 2.3,
+  color: [3.7, 0.02, 0.31],
+  absorb: 0.68, absorbIn: 2, absorbPow: 1.4,     // the broad glow, out to radiusDeg
+  corona: 0.26, coronaOutDeg: 3,                 // the tight corona, from the core's edge out to coronaOutDeg
+};
 /** The title's one-line field notes (bible §10 words; rotated per title visit). */
 const TITLE_LINES = [
   'Hold <kbd>RMB</kbd> to aim, <kbd>LMB</kbd> to draw. Release at full draw for the damage the shot is worth.',
   'Raise the Alidade with <kbd>V</kbd> to read an Instrument before you loose: its lamp, its joints, its tools.',
-  'Hold <kbd>Shift</kbd> while aiming to Steady: a held breath, and the world keeps its pace.',
+  'Hold <kbd>Shift</kbd> while aiming to Steady: a held breath, and everything else keeps its pace.',
 ];
 
 /**
@@ -162,8 +197,8 @@ const CREDITS_LICENSED = [
 // </credits:generated>
 const CREDITS = [
   { head: 'CALIMA', rows: [
-    ['An original game', 'Orchil, its Instruments and its people belong to this project'],
-    ['Built with', 'Claude Code — agent lanes, literal gates and film loops'],
+    ['An original game', 'Orchil, its Instruments and its people are original to CALIMA'],
+    ['Built with', 'Claude Code: parallel agents, literal tests, filmed checks'],
   ] },
   ...CREDITS_LICENSED,
   { head: 'AUDIO  ·  SYNTHESIZED', rows: [
@@ -213,6 +248,14 @@ export class Menus {
      * and mutated in place; `_dolly` runs every frame of the title.
      */
     this._dollyInfo = { since: 0, ease: 0, radius: 0, camY: 0, pitchDeg: 0 };
+    /**
+     * The title HOLDS the world clock (brand, W0b; judge r1): the vista is
+     * framed once per visit for the sun where it stands, and a running clock
+     * (dayLengthSeconds 1800) sank the calima disc behind the skyline within a
+     * minute of real time. `_titleFrame` borrows `environment.timeFrozen` and
+     * `_titleLeave` hands back the value it found (null = not borrowed).
+     */
+    this._clockHeld = null;
     this._lastState = ctx.state;
     /**
      * Audit trail for gates — CAPPED (`memory-attribution`). `audit()` only
@@ -325,6 +368,9 @@ export class Menus {
     if (this._titleBuilt) { this._refreshTitle(); return; }
     this._titleBuilt = true;
     document.body.classList.add('cal-title-live');
+    // a QUIT TO TITLE rebuilds the block: drop the previous visit's (Round 4
+    // appended a second one beside it, so the title showed two menus)
+    this.titleEl?.remove();
 
     // ONE logo (V38): the wordmark that already lives in index.html is kept and
     // everything else is rebuilt around it. The keybind wall moves wholesale
@@ -390,50 +436,180 @@ export class Menus {
   }
 
   /**
-   * Choose the title heading once per title visit (brand, W0b). Faces the sun's
-   * azimuth + TITLE_SUN_OFFSET so the calima disc sits on the right third; at
-   * night a fixed heading. Also asks the renderer for calima: once world-sky
-   * ships the `calima` weather (W1) `setWeather('calima')` returns 'calima', the
-   * CSS stand-in (#cal-calima) switches off and the start restores the weather.
-   * Allocates once per visit, never per frame.
+   * Frame the title once per visit (brand, W0b): the view looks along the sun's
+   * azimuth + TITLE_LOOK_OFFSET so the calima disc sits on the right third, and
+   * the camera stands on the bearing `_titleChooseFrame` picks; at night a
+   * fixed heading for both. Also asks the renderer for calima:
+   * once world-sky ships the `calima` weather (W1) `setWeather('calima')`
+   * returns 'calima', the CSS stand-in (#cal-calima) and the disc billboard
+   * switch off and the start restores the weather. Allocates once per visit
+   * (the billboard: one quad, one material, dropped in `_titleLeave`).
    */
   _titleFrame() {
     const env = this.ctx.environment;
     const sun = env?.sunDir;
-    const az = sun && sun.y > 0.02 ? Math.atan2(sun.x, sun.z) + TITLE_SUN_OFFSET : TITLE_NIGHT_HEADING;
-    this._titleHead = { sx: Math.sin(az), cz: Math.cos(az), az };
-    this._sunV = this._sunV || this.ctx.camera?.position.clone() || null;
-    this._sunPx = this._sunPx || { x: -1, y: -1, on: null };
-    this._sunEl = this._sunEl || document.querySelector('#cal-calima .cal-calima-sun');
-    // the disc is a screen-space stand-in, so it is shown only when the sun clears
-    // the skyline from where the shot starts (crest + the disc's own radius)
-    this._sunClear = false;
-    const T = this.ctx.terrain;
-    if (sun && sun.y > 0.02 && T?.getHeight) {
-      const saz = Math.atan2(sun.x, sun.z), sel = Math.asin(Math.min(1, sun.y));
-      const cx = CAMP.x - this._titleHead.sx * 150, cz = CAMP.z - this._titleHead.cz * 150;
-      const y = T.getHeight(cx, cz) + 32;
-      let crest = -1;
-      for (let d = 10; d <= 1500; d += 10) crest = Math.max(crest, Math.atan2(T.getHeight(cx + Math.sin(saz) * d, cz + Math.cos(saz) * d) - y, d));
-      this._sunClear = crest + 0.05 < sel;     // 0.05 rad ≈ the disc's radius + a margin
-      this._sunCrestDeg = crest * 180 / Math.PI;
-    }
+    const day = !!sun && sun.y > 0.02;
+    const saz = day ? Math.atan2(sun.x, sun.z) : 0;
+    const pos = day ? this._titleChooseFrame(sun) : TITLE_NIGHT_HEADING;
+    const look = day ? saz + TITLE_LOOK_OFFSET : TITLE_NIGHT_HEADING;
+    // (sx, cz): the camera's bearing line through REST; (lx, lz): where it looks
+    this._titleHead = { sx: Math.sin(pos), cz: Math.cos(pos), az: pos, lx: Math.sin(look), lz: Math.cos(look), look };
     this._calimaWeather = null;
+    if (env && this._clockHeld == null) { this._clockHeld = !!env.timeFrozen; env.timeFrozen = true; }
     if (env?.setWeather && env.weather !== 'calima') {
       const prev = env.weather;
       if (env.setWeather('calima', 0) === 'calima') this._calimaWeather = prev;
     }
-    document.body.classList.toggle('cal-calima-live', env?.weather === 'calima');
+    const live = env?.weather === 'calima';
+    document.body.classList.toggle('cal-calima-live', live);
+    if (day && !live) this._discMake(); else this._discDrop();
   }
 
-  /** Leave the title: hand the weather back if the title borrowed calima. */
+  /**
+   * The camera's bearing from REST: of TITLE_POS_OFFSETS (rad from the sun's
+   * azimuth), the one whose camera path keeps the terrain skyline furthest
+   * under the disc (its core + rim + a margin, CALIMA_DISC.clearDeg, across its
+   * whole width), from every point the title visits: both ends of the lateral
+   * truck and its middle, at the opening and the closing radius and height.
+   * The sun is taken where the sky draws it, seen from each of those points
+   * (`_titleSunPoint`). The billboard's depth test still hides whatever part of
+   * the sun really is behind terrain or a prop. Once per title visit: 12
+   * bearings x 6 positions x 5 azimuths x 70 samples of the analytic height
+   * (timed in the audit).
+   */
+  _titleChooseFrame(sun) {
+    const T = this.ctx.terrain;
+    const saz = Math.atan2(sun.x, sun.z);
+    const info = { posOffset: TITLE_POS_OFFSETS[0], lookOffset: TITLE_LOOK_OFFSET, clearanceDeg: null, tried: [], ms: 0,
+      coreDeg: CALIMA_DISC.coreDeg, edgeDeg: +(CALIMA_DISC.coreDeg * (1 + CALIMA_DISC.soft)).toFixed(3),
+      radiusDeg: CALIMA_DISC.radiusDeg, skySun: !!this._skyDome() };
+    this._titleDiscInfo = info;
+    if (!T?.getHeight) return saz + info.posOffset;
+    const t0 = performance.now();
+    const cam = new THREE.Vector3(), sp = new THREE.Vector3();   // once per visit
+    let best = -Infinity;
+    for (const off of TITLE_POS_OFFSETS) {
+      const hx = Math.sin(saz + off), hz = Math.cos(saz + off);
+      let worst = Infinity;
+      for (const radius of [150, 116]) {
+        for (const lat of [-TITLE_TRUCK_M, 0, TITLE_TRUCK_M]) {
+          const cx = CAMP.x - hx * radius - hz * lat, cz = CAMP.z - hz * radius + hx * lat;
+          const cy = T.getHeight(cx, cz) + (radius === 150 ? 32 : 25);
+          // the sun where the sky draws it, seen from this point of the path
+          this._titleSunPoint(sp, cam.set(cx, cy, cz)).sub(cam);
+          const az = Math.atan2(sp.x, sp.z), lowEdge = Math.asin(sp.y / sp.length()) - CALIMA_DISC.clearDeg * DEG;
+          for (let k = -2; k <= 2; k++) {
+            const a = az + k * 0.5 * CALIMA_DISC.clearDeg * DEG, sx = Math.sin(a), sz = Math.cos(a);
+            let crest = -Math.PI / 2;
+            for (let d = 20; d <= 1400; d += 20) {
+              const e = Math.atan2(T.getHeight(cx + sx * d, cz + sz * d) - cy, d);
+              if (e > crest) crest = e;
+            }
+            if (lowEdge - crest < worst) worst = lowEdge - crest;
+          }
+        }
+      }
+      info.tried.push([off, +(worst / DEG).toFixed(2)]);
+      if (worst > best) { best = worst; info.posOffset = off; info.clearanceDeg = +(worst / DEG).toFixed(2); }
+    }
+    info.ms = +(performance.now() - t0).toFixed(1);
+    return saz + info.posOffset;
+  }
+
+  /** The Round-4 sky dome (world-sky's `environment.sky`), when it is the kind this title knows how to read. */
+  _skyDome() {
+    const sky = this.ctx.environment?.sky;
+    const R = sky?.geometry?.parameters?.radius;
+    return sky && R > 0 ? sky : null;
+  }
+
+  /**
+   * Where the sky draws the sun, as a world point (fix round 2). The sky is a
+   * dome of radius R centred on the player at y = 0, not on the camera, so from
+   * the title camera (~150 m off, ~30 m up) its sun stands about 4° under
+   * `sunDir`; the disc must cover THAT sun or the frame shows two. Falls back to
+   * `from` + sunDir * CALIMA_DISC.dist when the dome is not there. No allocation.
+   */
+  _titleSunPoint(out, from) {
+    const sun = this.ctx.environment.sunDir, sky = this._skyDome();
+    if (sky) return out.copy(sun).multiplyScalar(sky.geometry.parameters.radius * 0.98).add(sky.position);
+    return out.copy(from).addScaledVector(sun, CALIMA_DISC.dist);
+  }
+
+  /** The calima disc billboard (CALIMA_DISC), made once per title visit. */
+  _discMake() {
+    const scene = this.ctx.scene;
+    if (this._disc || !scene) return;
+    const D = CALIMA_DISC;
+    const geo = new THREE.PlaneGeometry(1, 1);
+    const mat = new THREE.ShaderMaterial({
+      transparent: true, depthWrite: false, depthTest: true, fog: false,
+      // out.rgb = src.rgb + dst.rgb * src.a ; the target's alpha is kept
+      blending: THREE.CustomBlending, blendEquation: THREE.AddEquation,
+      blendSrc: THREE.OneFactor, blendDst: THREE.SrcAlphaFactor,
+      blendSrcAlpha: THREE.ZeroFactor, blendDstAlpha: THREE.OneFactor,
+      uniforms: {
+        uColor: { value: new THREE.Color().setRGB(...D.color) },
+        uCore: { value: D.coreDeg / D.radiusDeg },
+        uSoft: { value: D.soft },
+        uAbsorb: { value: new THREE.Vector3(D.absorb, D.absorbIn / D.radiusDeg, D.absorbPow) },
+        uCorona: { value: new THREE.Vector3(D.corona, D.coreDeg * (1 + D.soft) / D.radiusDeg, D.coronaOutDeg / D.radiusDeg) },
+      },
+      vertexShader: /* glsl */`
+        varying vec2 vUv;
+        void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }
+      `,
+      fragmentShader: /* glsl */`
+        uniform vec3 uColor;
+        uniform float uCore, uSoft;
+        uniform vec3 uAbsorb;                                      // amount, inner radius (0..1), power
+        uniform vec3 uCorona;                                      // amount, inner, outer radius (0..1)
+        varying vec2 vUv;
+        void main() {
+          float r = length(vUv - 0.5) * 2.0;                       // 0 centre .. 1 the quad's radius
+          if (r >= 1.0) discard;
+          float core = 1.0 - smoothstep(uCore * (1.0 - uSoft), uCore * (1.0 + uSoft), r);
+          float keep = 1.0 - uAbsorb.x * pow(1.0 - smoothstep(uAbsorb.y, 1.0, r), uAbsorb.z);
+          keep *= 1.0 - uCorona.x * (1.0 - smoothstep(uCorona.y, uCorona.z, r));
+          gl_FragColor = vec4(uColor * core, keep * (1.0 - core));
+        }
+      `,
+    });
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.name = 'cal-title-calima-disc';
+    mesh.renderOrder = 1;
+    mesh.frustumCulled = false;
+    mesh.castShadow = false;
+    mesh.receiveShadow = false;
+    mesh.visible = false;               // placed and sized by _dolly on the next frame
+    scene.add(mesh);
+    this._disc = mesh;
+  }
+
+  /** Remove and dispose the billboard (title leave, night, or real calima). */
+  _discDrop() {
+    const d = this._disc;
+    if (!d) return;
+    d.parent?.remove(d);
+    d.geometry.dispose();
+    d.material.dispose();
+    this._disc = null;
+  }
+
+  /**
+   * Leave the title: hand back the clock and the weather the title borrowed;
+   * drop the disc. Idempotent: the start path and the `game-start` event both
+   * call it, so a start that bypasses the menu (`__GAME__.start()`) still
+   * cleans up.
+   */
   _titleLeave() {
     const env = this.ctx.environment;
+    if (this._clockHeld != null && env) env.timeFrozen = this._clockHeld;
+    this._clockHeld = null;
     if (this._calimaWeather != null && env?.setWeather) env.setWeather(this._calimaWeather, 0);
     this._calimaWeather = null;
     document.body.classList.remove('cal-calima-live');
-    this._sunEl?.classList.remove('on');
-    if (this._sunPx) this._sunPx.on = null;
+    this._discDrop();
   }
 
   /**
@@ -441,7 +617,7 @@ export class Menus {
    * live states, and writes the camera LAST in the frame (this system is
    * appended to `game.systems` after `Player`), so the chase camera does not
    * fight it. Pure trigonometry on the existing camera — no allocation per
-   * frame, nothing added to the scene.
+   * frame (the disc billboard is made once per title visit, in `_titleFrame`).
    *
    * ROUND 5 (brand, W0b). The authored quantities and the two clocks are the
    * Round-4 ones (A70c-title-flow grades them): `_dollyT` runs from the moment
@@ -452,7 +628,7 @@ export class Menus {
    * the move (TITLE_TILT_DEG, now 9° → 12° so the sky and the disc hold the upper
    * third over the rim). What changed is the heading:
    * fixed toward the sun (see `_titleFrame`) instead of an orbit, with a slow
-   * lateral truck for life, and the calima disc is placed on the projected sun.
+   * lateral truck for life, and the calima disc billboard follows the camera.
    */
   _dolly(dt) {
     const cam = this.ctx.camera;
@@ -475,7 +651,7 @@ export class Menus {
     const ease = closing * closing * (3 - 2 * closing);
     const radius = 150 - ease * 34;
     const hx = this._titleHead.sx, hz = this._titleHead.cz;
-    // lateral truck along the heading's right vector (-hz, hx): a sway, not an orbit
+    // lateral truck along the bearing line's right vector (-hz, hx): a sway, not an orbit
     const lat = TITLE_TRUCK_M * Math.sin(t * TITLE_TRUCK_W);
     const cx = CAMP.x - hx * radius - hz * lat;
     const cz = CAMP.z - hz * radius + hx * lat;
@@ -486,9 +662,18 @@ export class Menus {
     // sky (and the disc, ~27° high at 17:00) in the upper third over the rim.
     const pitch = (-TITLE_TILT_DEG - ease * 3) * (Math.PI / 180);
     const reach = radius * 1.05;
-    cam.lookAt(cx + hx * reach, camY - reach * Math.tan(pitch), cz + hz * reach);
+    cam.lookAt(cx + this._titleHead.lx * reach, camY - reach * Math.tan(pitch), cz + this._titleHead.lz * reach);
     cam.updateMatrixWorld();
-    this._placeSun(cam);
+    // the calima disc sits on the sky's own sun (see _titleSunPoint), faces the camera and
+    // keeps its angular size; no allocation
+    const disc = this._disc, sun = this.ctx.environment?.sunDir;
+    if (disc && sun) {
+      disc.visible = sun.y > 0.02;
+      this._titleSunPoint(disc.position, cam.position);
+      disc.quaternion.copy(cam.quaternion);
+      const w = 2 * disc.position.distanceTo(cam.position) * Math.tan(CALIMA_DISC.radiusDeg * DEG);
+      disc.scale.set(w, w, 1);
+    }
 
     // mutate in place — no allocation inside the frame loop
     const di = this._dollyInfo;
@@ -497,28 +682,6 @@ export class Menus {
     di.radius = radius;
     di.camY = camY;
     di.pitchDeg = -(TITLE_TILT_DEG + ease * 3);
-  }
-
-  /**
-   * Put the calima disc (#cal-calima, the CSS stand-in) on the projected sun.
-   * Writes the DOM only when the rounded pixel position or visibility changes:
-   * the heading is fixed and the sun is at infinity, so in the press stage and
-   * after the ease it does not move at all.
-   */
-  _placeSun(cam) {
-    const el = this._sunEl, v = this._sunV, sun = this.ctx.environment?.sunDir, px = this._sunPx;
-    if (!el || !v || !sun || !px) return;
-    // a direction, not a point: any distance inside the frustum projects the same
-    v.copy(sun).multiplyScalar(100).add(cam.position).project(cam);
-    const w = window.innerWidth, h = window.innerHeight;
-    const x = Math.round((v.x + 1) * 0.5 * w), y = Math.round((1 - v.y) * 0.5 * h);
-    const on = this._sunClear && sun.y > 0.02 && v.z > -1 && v.z < 1
-      && x > -60 && x < w + 60 && y > -60 && y < h + 60;
-    if (on !== px.on) { el.classList.toggle('on', on); px.on = on; }
-    if (on && (x !== px.x || y !== px.y)) {
-      px.x = x; px.y = y;
-      el.style.transform = `translate(${x}px, ${y}px)`;
-    }
   }
 
   continueGame() {
@@ -1057,6 +1220,7 @@ export class Menus {
       if (e?.from) this._lastDamageFrom = e.from?.displayName ?? e.from?.kind ?? String(e.from);
     });
     on('game-start', () => {
+      this._titleLeave();
       document.body.classList.remove('cal-title-live');
       this._refreshTitle();
     });
@@ -1202,6 +1366,8 @@ export class Menus {
           titleT: +this._titleT.toFixed(3),
           dollyT: +this._dollyT.toFixed(3),
         },
+        disc: this._disc ? { visible: this._disc.visible, ...(this._titleDiscInfo || {}) } : null,
+        clock: { held: this._clockHeld != null, frozen: !!ctx.environment?.timeFrozen, handBack: this._clockHeld },
         camera: ctx.camera ? {
           x: +ctx.camera.position.x.toFixed(2),
           y: +ctx.camera.position.y.toFixed(2),

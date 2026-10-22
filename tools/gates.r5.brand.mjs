@@ -25,6 +25,7 @@
 import { readFileSync, readdirSync, lstatSync, existsSync, statSync } from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { execFileSync } from 'child_process';
 import { REST, REST_SITE } from '../src/world/island/sites.js';
 import { loadLexicon, matchTexts, playerStatic, scanCode, gradeCode } from './lint/namecheck.mjs';
 
@@ -195,6 +196,8 @@ const BASELINE = {
   gather: { n: 203, hash: 'fa5d3dbc', maxR: 309.325 },
   route: { rimMaxR: 310, campMinD: 31 }, machine: { rimR: 318, campRingR: 25 },
   doctrine: { rimR: 296, campD: 46 }, playerRimMax: 330.05,
+  /** the W0b-start map (main after the W0a merges): the two hashes W0a's content deletions moved */
+  w0b: { navCostHash: 'e18558a5', colliders: { n: 4825, hash: 'd834f783' } },
 };
 
 /* Page-context probe library (no allocation concerns: runs once per gate). */
@@ -293,6 +296,13 @@ const UI_WORDS_RE = (() => {
   const m = line && /`\/(.+?)\/i`/.exec(line);
   return m ? m[1] : null;
 })();
+/** V38-title's criteria: the plan §9 bullet, verbatim (read from the plan, never paraphrased here) */
+const V38_CRITERIA = (() => {
+  const line = PLAN.split('\n').find((l) => l.includes('**V38-title**'));
+  const m = line && /shot: (.+)$/.exec(line);
+  if (!m) throw new Error('plan §9 V38-title bullet not found');
+  return 'PLAN §9 V38-title, verbatim: shot: ' + m[1].replace(/\*\*/g, '');
+})();
 /** the retired families, read from the A-fonts-licensed bullet ("0 references to A, B, … in CSS/JS") */
 const OLD_FAMILIES = (() => {
   const line = PLAN.split('\n').find((l) => l.includes('**A-fonts-licensed**'));
@@ -314,16 +324,20 @@ const FAMILIES = [
  * reference brand may not edit (rule 1). brand's own W0 files are listed first.
  */
 const OWNERS = [
-  [/^(index\.html|src\/style\.css|src\/main\.js|src\/ui\/menu\.js|public\/fonts\/|public\/favicon\.svg|README\.md|tools\/lint\/)/, 'brand'],
+  [/^(index\.html|src\/style\.css|src\/main\.js|src\/ui\/menu\.js|public\/fonts\/|public\/favicon\.svg|README\.md|tools\/lint\/|tools\/gates\.r5\.brand\.mjs$)/, 'brand'],
   [/^src\/ui\/(quests|skills)\.js$/, 'progression (W3)'],
   [/^src\/ui\/wheel\.|^src\/combat\//, 'combat-kit (W2)'],
   [/^src\/ui\/dialogue\.js$/, 'frozen UI engine (plan §1.1; orchestrator grant)'],
   [/^src\/ui\//, 'shell-ui (W2)'],
   [/^src\/studio\//, 'brand (W4: src/studio/**)'],
-  [/^tools\/r5-direction\//, 'orchestrator (direction mock, no lane)'],
+  [/^tools\/r5-direction\//, 'orchestrator (direction-B mock + checker, no lane): delete'],
   [/^tools\//, 'gates-perf / tools owner'],
   [/^src\//, 'see plan §2'],
 ];
+/** The §1.2 grant row A-fonts-licensed needs (brand cannot edit these files at W0b, plan rule 1). */
+const GRANT_LINE = '| brand | W0b exit (orchestrator applies) | `src/ui/{hud.css,focus.css,focus.js,inventory.css,wheel.css,map.js,quests.js,skills.js,dialogue.js}`, '
+  + '`src/combat/feedback.css`, `src/studio/studio.css`, `tools/r5-direction/**` | rename/remove only: the retired family names (' + OLD_FAMILIES.join(', ') + ') in fallback stacks, comments and one canvas font string, as `tools/lint/patches/w0b-retired-font-refs.patch`; delete '
+  + '`tools/r5-direction/` (its lexicon lives in `tools/lint/lexicon/direction-b.json`). No selector, property, value or logic change |';
 const ownerOf = (f) => (OWNERS.find(([re]) => re.test(f)) || [null, 'unknown'])[1];
 
 /** A-fonts-licensed, node half: the folder, the manifest rows, the old-family references. */
@@ -354,13 +368,24 @@ function fontsNode() {
   }
   const byOwner = {};
   for (const r of refs) (byOwner[r.owner] = byOwner[r.owner] || new Set()).add(r.file);
+  // the removal patch brand hands the orchestrator for the files it may not edit (rule 1)
+  const PATCH = 'tools/lint/patches/w0b-retired-font-refs.patch';
+  let patch = null;
+  if (existsSync(path.join(ROOT, PATCH))) {
+    const body = read(PATCH).split('\n');
+    const removed = body.filter((l) => l.startsWith('-') && !l.startsWith('---') && OLD_FAMILY_RE.test(l)).length;
+    const added = body.filter((l) => l.startsWith('+') && !l.startsWith('+++') && OLD_FAMILY_RE.test(l)).length;
+    let applies = null;
+    try { execFileSync('git', ['apply', '--check', PATCH], { cwd: ROOT, stdio: 'pipe' }); applies = true; } catch { applies = false; }
+    patch = { file: PATCH, applies, refLinesRemoved: removed, refLinesAdded: added, refsAfterPatch: refs.length - removed + added };
+  }
   return {
     families: fams, stray, oldFamilies: OLD_FAMILIES,
     refsTotal: refs.length, refsBrand: refs.filter((r) => r.owner === 'brand'),
     refsForeign: refs.filter((r) => r.owner !== 'brand').length,
     foreignFilesByOwner: Object.fromEntries(Object.entries(byOwner).filter(([o]) => o !== 'brand').map(([o, s]) => [o, [...s]])),
     sample: refs.slice(0, 12).map((r) => `${r.file}:${r.line} [${r.owner}] ${r.text}`),
-    shippedBytes: fams.reduce((n, f) => n + f.bytes, 0),
+    shippedBytes: fams.reduce((n, f) => n + f.bytes, 0), patch,
   };
 }
 
@@ -396,27 +421,33 @@ const W0B = [
   },
   {
     id: 'A-no-horizon-terms-player', kind: 'action', lane: 'brand', plain: true, timeout: 300000, settle: 1500,
-    title: 'namecheck --player: the union lexicon over rendered DOM text (title, loading, every title modal, HUD, every hub tab, menus cards, every tip), content ids (kinds, roles, events, audio sets, items, quests), every key and display string of the exported content tables, and public/**/*.{json,md,txt} -> distinct (surface, term) hits <= the W0b ratchet',
+    title: 'namecheck --player, plan §9 reading (the 410-entry union lexicon; exact / substring >= 5 / edit <= 1; allowlist = bible §10.4 GENERIC only) over rendered DOM text (title, loading, every title modal, HUD, every hub tab, menus cards, every person\'s dialogue card and every topic answer, every tip), content ids (kinds, roles, events, audio sets, items, quests), every key and every string value of the exported content tables (any depth, Sets and Maps included), and public/**/*.{json,md,txt} -> distinct (surface, offending word or phrase) hits <= the W0b ratchet',
     get assert() {
       const lex = loadLexicon();
-      const st = playerStatic('named');
-      const stLit = playerStatic('literal');
+      const st = playerStatic('plan');
+      const stNamed = playerStatic('named');
       const ratchet = JSON.parse(read('tools/lint/ratchet.json')).player || {};
       return `(async () => {
       const LEX = ${JSON.stringify(lex)};
       const matchTexts = ${matchTexts.toString()};
       const STATIC = ${JSON.stringify(st.hits)};
-      const STATIC_LIT = ${stLit.hits.length};
+      const STATIC_VERBATIM = ${st.verbatimLicenceHits};
+      const STATIC_NAMED = ${stNamed.hits.length};
       const RATCHET = ${JSON.stringify(ratchet)};
       const ctx = __CTX__, m = ctx.menus;
       const wait = (ms) => new Promise((r) => setTimeout(r, ms));
       const texts = [];
       const add = (where, t) => { if (t != null && String(t).trim()) texts.push({ where, text: String(t) }); };
       const strip = (h) => String(h).replace(/<[^>]+>/g, ' ');
+      // the text of a (possibly hidden) subtree with a space between text nodes, so two
+      // elements' words never run together into one token (textContent glues them)
+      const textOf = (el) => { if (!el) return ''; const w = document.createTreeWalker(el, NodeFilter.SHOW_TEXT); const out = []; for (let n = w.nextNode(); n; n = w.nextNode()) out.push(n.textContent); return out.join(' '); };
       const surfaces = [];
+      // the deferred species stream in a few seconds after boot: harvest ids once they have landed
+      { const t0 = performance.now(); while (!ctx.machines?.varietyReady && performance.now() - t0 < 30000) await wait(250); }
       // --- the title (press beat, then the menu), the loading screen, the title modals
       add('dom:document-title', document.title);
-      add('dom:loading', document.getElementById('loading')?.textContent);
+      add('dom:loading', textOf(document.getElementById('loading')));
       add('dom:title-press', document.getElementById('title')?.innerText);
       ${PRESS}
       ${UNTIL_MENU}
@@ -425,7 +456,7 @@ const W0B = [
         m.openModal(k); await wait(350); add('dom:modal:' + k, m.modalEl?.innerText); m.closeModal();
       }
       // --- every card the menus lane prebuilds (death, victory, hub chrome)
-      add('dom:menus-cards', document.getElementById('cal-menus')?.textContent);
+      add('dom:menus-cards', textOf(document.getElementById('cal-menus')));
       // --- into the game: the HUD, then every hub tab
       // the shipped start path minus the pointer lock a headless page cannot take
       m.closeModal(); m._titleLeave?.(); m.titleStage = 'idle';
@@ -436,6 +467,34 @@ const W0B = [
       for (const t of m.audit().tabs) { m.openHub(t); await wait(700); add('dom:hub:' + t, document.body.innerText); }
       m.closeHub(true);
       await wait(300);
+      // --- dialogue (plan §9 scope; judge r1): open every person's card through the shipped path
+      // (progression.talkTo -> the dialogue panel), read it, then ask every topic and read each answer
+      const prog = ctx.progression;
+      const dlgRoot = () => document.getElementById('cal-dlg') || prog?.dialogueUI?.root || null;
+      const npcIds = Object.keys((await import('/src/core/progression.js')).NPCS || {});
+      const dialogue = { people: 0, cards: 0, topics: 0, missing: [] };
+      for (const id of npcIds) {
+        try {
+          if (!prog.talkTo(id)) { dialogue.missing.push(id); continue; }
+          await wait(120);
+          dialogue.people++;
+          add('dom:dialogue:' + id, textOf(dlgRoot())); dialogue.cards++;
+          const st = prog.dialogueState(id);
+          for (const c of (st?.choices || []).filter((x) => x.kind === 'topic')) {
+            prog.choose(c.id); await wait(60);
+            add('dom:dialogue:' + id, textOf(dlgRoot())); dialogue.cards++; dialogue.topics++;
+          }
+          // the topics the 2-choice cut hid: ask them through the same API
+          for (const t of (prog._dialogueFor?.(id)?.topics || [])) {
+            if (prog.dialogue?.topic === t.id) continue;
+            const r = prog.choose('topic:' + t.id);
+            if (r && r.state && r.state.topic === t.id) { await wait(60); add('dom:dialogue:' + id, textOf(dlgRoot())); dialogue.cards++; dialogue.topics++; }
+          }
+          prog.closeDialogue();
+          await wait(60);
+        } catch (e) { dialogue.missing.push(id + ': ' + (e?.message || e)); }
+      }
+      if (ctx.state === 'dialogue') ctx.state = 'playing';
       // --- every tip (all tags), the tab tags
       try { const T = await import('/src/ui/tips.js'); for (const t of T.TIPS) add('tips', strip(t.text)); } catch (e) { surfaces.push('tips: ' + e.message); }
       // --- content ids
@@ -443,15 +502,21 @@ const W0B = [
       add('ids:roles', JSON.stringify(ctx.machines?.roles || {}));
       add('ids:events', [...(ctx.events?.map?.keys?.() || [])].join(' '));
       try { add('ids:audio-sets', JSON.stringify(Object.keys(ctx.audio?.bank?.sets || {}))); } catch { /* none */ }
-      // --- the exported content tables: keys (depth <= 3) and display strings (depth <= 5)
+      // --- the exported content tables: EVERY key and EVERY string value, at any depth (judge r1: a
+      // display-key filter skipped dialogue questions/answers, greetings and quest summaries), plus
+      // exported strings and the members of exported Sets and Maps
       const MODULES = ${JSON.stringify(CONTENT_MODULES)};
-      const SHOW = /^(id|ids|name|label|title|text|desc|description|line|lines|hint|sub|prompt|kicker|head|say|reply|options|label2|short|long|blurb|lore|quest|objective|objectives|tag|tags|kind|role|faction|set|sets|item|items)$/;
-      const walkT = (where, v, depth, out, key) => {
-        if (v == null || depth > 5 || out.length > 4000) return;
-        if (typeof v === 'string') { if (depth === 0 || key === '*' || SHOW.test(key || '')) out.push(v); return; }
-        if (typeof v !== 'object' || ArrayBuffer.isView(v)) return;
-        if (Array.isArray(v)) { for (const x of v) walkT(where, x, depth + 1, out, typeof x === 'string' ? '*' : key); return; }
-        for (const [k, x] of Object.entries(v)) { if (depth <= 3) out.push(k); walkT(where, x, depth + 1, out, k); }
+      const tableStats = { strings: 0, keys: 0, truncated: [] };
+      const walkT = (v, depth, out, seen) => {
+        if (v == null || depth > 12) return;
+        if (typeof v === 'string') { out.push(v); tableStats.strings++; return; }
+        if (typeof v !== 'object' || ArrayBuffer.isView(v) || seen.has(v)) return;
+        seen.add(v);
+        if (Array.isArray(v) || v instanceof Set) { for (const x of v) walkT(x, depth + 1, out, seen); return; }
+        if (v instanceof Map) { for (const [k, x] of v) { walkT(k, depth + 1, out, seen); walkT(x, depth + 1, out, seen); } return; }
+        const proto = Object.getPrototypeOf(v);
+        if (proto !== Object.prototype && proto !== null) return;   // class instances (three objects, systems): not content
+        for (const [k, x] of Object.entries(v)) { out.push(k); tableStats.keys++; walkT(x, depth + 1, out, seen); }
       };
       let tables = 0;
       for (const mod of MODULES) {
@@ -459,14 +524,17 @@ const W0B = [
         try { M = await import(mod); } catch (e) { surfaces.push(mod + ': ' + e.message); continue; }
         for (const n of Object.keys(M)) {
           const v = M[n];
-          if (!v || typeof v !== 'object' || ArrayBuffer.isView(v) || (Object.getPrototypeOf(v) !== Object.prototype && !Array.isArray(v))) continue;
+          const isTable = typeof v === 'string' || (v && typeof v === 'object' && !ArrayBuffer.isView(v)
+            && (Array.isArray(v) || v instanceof Set || v instanceof Map || Object.getPrototypeOf(v) === Object.prototype || Object.getPrototypeOf(v) === null));
+          if (!isTable) continue;
           tables++;
-          const out = []; walkT(mod + '#' + n, v, 0, out, n);
+          const out = [n]; walkT(v, 0, out, new Set());
+          if (out.length > 60000) tableStats.truncated.push(mod + '#' + n + ': ' + out.length);
           add('table:' + mod.replace('/src/', '') + '#' + n, out.join(' \\u00b7 '));
         }
       }
-      const dom = matchTexts(LEX, texts, 'named');
-      const lit = matchTexts(LEX, texts, 'literal');
+      const dom = matchTexts(LEX, texts, 'plan');
+      const named = matchTexts(LEX, texts, 'named');
       const count = STATIC.length + dom.length;
       const bySurface = {};
       for (const h of [...STATIC, ...dom]) { const s = h.where.split(':').slice(0, 2).join(':'); bySurface[s] = (bySurface[s] || 0) + 1; }
@@ -475,9 +543,11 @@ const W0B = [
       const top = Object.entries(byTerm).sort((a, b) => b[1] - a[1]).slice(0, 30).map(([t, n]) => t + ':' + n).join(' ');
       const pass = RATCHET.count == null ? null : count <= RATCHET.count;
       return { pass, detail: {
-        verdict: RATCHET.count == null ? 'PENDING: no ratchet recorded yet; this run measured ' + count : (pass ? 'PASS ' : 'FAIL ') + count + ' <= ' + RATCHET.count + ' (W0b ratchet)',
-        count, ratchet: RATCHET.count, literal: STATIC_LIT + lit.length, staticHits: STATIC.length, domHits: dom.length,
-        surfacesHarvested: texts.length, contentTables: tables, chars: texts.reduce((n, t) => n + t.text.length, 0), problems: surfaces,
+        verdict: RATCHET.count == null ? 'PENDING: no ratchet recorded yet; this run measured ' + count : (pass ? 'PASS ' : 'FAIL ') + count + ' <= ' + RATCHET.count + ' (W0b ratchet, plan §9 reading)',
+        reading: 'plan §9: ' + LEX.union.plan + ' union entries (A ' + LEX.union.planSources.A + ', B ' + LEX.union.planSources.B + ' = ' + LEX.union.planSources.bSingles + ' names + ' + LEX.union.planSources.bPhrases + ' phrases, plan additions ' + LEX.union.planSources.additions + '); exact / substring >= 5 / edit <= 1; allowlist ' + LEX.generic.join(', '),
+        count, ratchet: RATCHET.count, namedAdvisory: STATIC_NAMED + named.length, staticHits: STATIC.length, staticVerbatimLicenceTexts: STATIC_VERBATIM, domHits: dom.length,
+        byRule: (() => { const r = {}; for (const h of [...STATIC, ...dom]) r[h.rule] = (r[h.rule] || 0) + 1; return r; })(),
+        surfacesHarvested: texts.length, contentTables: tables, tableStrings: tableStats.strings, tableKeys: tableStats.keys, tableTruncated: tableStats.truncated, dialogue, varietyReady: !!ctx.machines?.varietyReady, chars: texts.reduce((n, t) => n + t.text.length, 0), problems: surfaces,
         bySurface, topTerms: top,
         brandSurfaceHits: dom.filter((h) => /^dom:(document-title|loading|title|modal:(credits|manual|difficulty))/.test(h.where)).map((h) => h.where + ' "' + h.word + '" -> ' + h.term),
         sample: dom.slice(0, 40).map((h) => h.where + ' "' + h.word + '" -> ' + h.term + ' (' + h.rule + ')'),
@@ -493,8 +563,39 @@ const W0B = [
       const F = fontsNode();
       return `(async () => {
       const F = ${JSON.stringify(F)};
-      const OLD = ${JSON.stringify(OLD_FAMILIES)};
+      const OLD = new RegExp(${JSON.stringify(OLD_FAMILY_RE.source)}, 'i');
       await document.fonts.ready;
+      // --- FIRST, IN PLAY: the HUD on screen for 2.5 s, before this gate asks for any face itself:
+      // (a) no request was made for a retired font FILE, (b) no element's computed stack leads with a retired family
+      const m = __CTX__.menus;
+      m.closeModal?.(); m._titleLeave?.(); m.titleStage = 'idle';
+      document.body.classList.remove('cal-title-live');
+      __GAME__.start(false);
+      await new Promise((res) => setTimeout(res, 2500));
+      // ... and the photo studio (its two kickers led with a retired face): enter, 1.5 s, read, leave
+      let studioVisited = false;
+      const studioLeading = [];
+      try {
+        const S = __CTX__.studio;
+        if (S?.enter) {
+          S.enter(); await new Promise((res) => setTimeout(res, 1500));
+          studioVisited = !!document.querySelector('#studio-ui');
+          for (const el of document.querySelectorAll('#studio-ui *')) {
+            const first = getComputedStyle(el).fontFamily.split(',')[0].trim().replace(/^["']|["']$/g, '');
+            if (OLD.test(first)) studioLeading.push(typeof el.className === 'string' && el.className ? el.className.split(/\s+/)[0] : el.tagName);
+          }
+          S.exit(); await new Promise((res) => setTimeout(res, 600));
+        }
+      } catch (e) { studioLeading.push('studio error: ' + (e?.message || e)); }
+      const OLD_FILE = new RegExp('/fonts/[^?#]*(' + F.oldFamilies.map((f) => f.replace(/\\s+/g, '')).join('|') + ')', 'i');
+      const fontRequests = performance.getEntriesByType('resource').map((e) => e.name).filter((n) => /\\/fonts\\//.test(n));
+      const retiredRequests = fontRequests.filter((n) => OLD_FILE.test(n));
+      const leading = [];
+      for (const el of document.querySelectorAll('*')) {
+        const first = getComputedStyle(el).fontFamily.split(',')[0].trim().replace(/^["']|["']$/g, '');
+        if (OLD.test(first)) leading.push((el.id ? '#' + el.id : '') + (typeof el.className === 'string' && el.className ? '.' + el.className.split(/\\s+/)[0] : el.tagName));
+      }
+      const hudInPlay = { visible: !document.getElementById('hud')?.classList.contains('hidden'), state: __CTX__.state };
       const GENERIC = /^(serif|sans-serif|monospace|system-ui|cursive|fantasy|ui-monospace|ui-sans-serif|ui-serif|math|emoji)$/i;
       /** emulate the browser's fallback walk: the first family in the computed stack that has a LOADED face */
       const resolve = async (el) => {
@@ -512,30 +613,45 @@ const W0B = [
         return { family: null, stack: cs.fontFamily };
       };
       const word = document.querySelector('#title .cal-word');
-      // a HUD label: the first #hud element with its own words (3+ letters) in its direct text
-      const hudLabel = [...document.querySelectorAll('#hud *')].find((el) => [...el.childNodes].some((n) => n.nodeType === 3 && /[A-Za-z]{3,}/.test(n.textContent)));
+      // HUD labels: every #hud element with its own words (3+ letters) in its direct text
+      const hudEls = [...document.querySelectorAll('#hud *')].filter((el) => [...el.childNodes].some((n) => n.nodeType === 3 && /[A-Za-z]{3,}/.test(n.textContent)));
+      const hudLabel = hudEls[0];
       const numeral = document.querySelector('#title .cal-stn');
+      const LICENSED = ['Bodoni Moda', 'IBM Plex Sans Condensed', 'IBM Plex Mono'];
+      const hudFamilies = {}; const hudUnlicensed = [];
+      for (const el of hudEls) {
+        const res = await resolve(el);
+        hudFamilies[res.family] = (hudFamilies[res.family] || 0) + 1;
+        if (!LICENSED.includes(res.family)) hudUnlicensed.push((el.className || el.tagName) + ': ' + res.stack);
+      }
       const r = { wordmark: await resolve(word), hudLabel: { ...(await resolve(hudLabel)), el: hudLabel ? (hudLabel.className || hudLabel.tagName) : null, text: hudLabel?.textContent?.trim().slice(0, 30) },
-        numeral: { ...(await resolve(numeral)), text: numeral?.textContent } };
-      const oldFaces = [...document.fonts].filter((ff) => OLD.some((o) => ff.family.replace(/["']/g, '').toLowerCase() === o.toLowerCase()))
-        .map((ff) => ff.family + ':' + ff.status);
+        numeral: { ...(await resolve(numeral)), text: numeral?.textContent }, hudLabels: { n: hudEls.length, byFamily: hudFamilies, unlicensed: hudUnlicensed.slice(0, 8) } };
+      // a retired family's @font-face still declared by another lane's CSS: load it the way a page would, then read its status
+      const oldFaceObjs = [...document.fonts].filter((ff) => OLD.test(ff.family.replace(/["']/g, '')));
+      for (const ff of oldFaceObjs) { try { await ff.load(); } catch { /* status 'error' */ } }
+      const oldFaces = oldFaceObjs.map((ff) => ff.family.replace(/["']/g, '') + ':' + ff.status);
       const checks = {
         onlyTheThreeFamilies: F.stray.length === 0 && F.families.every((f) => f.woff2.length >= 1 && f.woff2Magic),
         oneOflPerFamily: F.families.every((f) => f.oflTexts === 1),
         oflRowPerFamily: F.families.every((f) => f.rowOk),
         wordmarkBodoni: r.wordmark.family === 'Bodoni Moda',
-        hudLabelPlexCondensed: r.hudLabel.family === 'IBM Plex Sans Condensed',
+        hudLabelLicensed: LICENSED.includes(r.hudLabel.family),
+        everyHudLabelLicensed: hudEls.length > 0 && hudUnlicensed.length === 0,
         numeralPlexMono: r.numeral.family === 'IBM Plex Mono',
         noOldFaceLoaded: !oldFaces.some((s) => /:loaded$/.test(s)),
+        noRetiredFontFileRequested: hudInPlay.visible && studioVisited && retiredRequests.length === 0,
+        noStackLeadsWithRetired: leading.length === 0 && studioLeading.length === 0,
         zeroBrandRefs: F.refsBrand.length === 0,
         zeroRefsAnywhere: F.refsTotal === 0,
       };
       return { pass: Object.values(checks).every(Boolean), detail: {
         failed: Object.keys(checks).filter((k) => !checks[k]), checks, resolved: r, oldFaces,
+        inPlay: { ...hudInPlay, studioVisited, studioStacksLeadingWithRetired: studioLeading.slice(0, 6), fontRequests: fontRequests.map((n) => n.replace(/^https?:\\/\\/[^/]+/, '')), retiredRequests, stacksLeadingWithRetired: leading.length, sample: leading.slice(0, 6) },
         families: F.families.map((f) => ({ family: f.family, woff2: f.woff2, ofl: f.oflTexts, row: f.row && f.row.id })),
         shippedKB: Math.round(F.shippedBytes / 1024), stray: F.stray,
-        oldFamilyRefs: { total: F.refsTotal, inBrandFiles: F.refsBrand.length, inOtherLanesFiles: F.refsForeign, byOwner: F.foreignFilesByOwner, sample: F.sample,
-          note: 'every remaining reference is a fallback string or comment in a file brand may not edit (rule 1); none resolves (see resolved / oldFaces). The removal-only patch is tools/lint/patches/w0b-retired-font-refs.patch for the orchestrator to apply at merge' },
+        oldFamilyRefs: { total: F.refsTotal, inBrandFiles: F.refsBrand.length, inOtherLanesFiles: F.refsForeign, byOwner: F.foreignFilesByOwner, sample: F.sample, patch: F.patch,
+          note: 'every remaining reference is in a file brand may not edit at W0b (rule 1). tools/lint/patches/w0b-retired-font-refs.patch renames/removes them and deletes tools/r5-direction; it needs the §1.2 grant line in grantNeeded and is applied by the orchestrator at the brand merge',
+          grantNeeded: ${JSON.stringify(GRANT_LINE)} },
       } };
     })()`;
     },
@@ -646,12 +762,195 @@ const W0B = [
         at40: +at40.f.toFixed(4), at100: +at100.f.toFixed(4), ruleWidth: Math.round(at40.w), label: label40, background: bg } };
     })()`,
   },
+  /* ------------------------------------- the calima disc (judge r0 finding) */
+  {
+    id: 'A-title-disc-depth', kind: 'action', lane: 'brand', plain: true, settle: 1500, timeout: 240000,
+    title: 'the title calima disc is a depth-tested billboard in the 3D scene (terrain in front of the sun hides it; it is never composited over terrain), placed every frame on the sun the sky draws (the dome is centred on the player, so from the title camera that sun sits under sunDir) at a constant angular size, from a camera bearing whose whole path keeps the terrain skyline under it (clearance >= 0); IN REAL TIME (no clock or dolly jump) for the whole sway (dolly clock past 105 s): the world clock is held, the sun does not move, and the whole disc core stays above the skyline seen from the live camera at every 5 s sample; a start that bypasses the menu (__GAME__.start, the game-start event) still removes and disposes the disc (geometry + material dispose events) and hands the clock back (it runs again in play)',
+    assert: `(async () => {
+      const ctx = __CTX__, m = ctx.menus, scene = ctx.scene, env = ctx.environment, T = ctx.terrain, R = ctx.engine?.renderer || ctx.renderer;
+      const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+      const DEG = Math.PI / 180;
+      const find = () => { let d = null; scene.traverse((o) => { if (o.name === 'cal-title-calima-disc') d = o; }); return d; };
+      const sun = env?.sunDir;
+      ${PRESS}
+      ${UNTIL_MENU}
+      await wait(400);
+      const d = find();
+      const cam = ctx.camera;
+      const toDisc = d ? d.position.clone().sub(cam.position) : null;
+      // the sun as the sky draws it from this camera (menus._titleSunPoint; the dome is centred on the player)
+      const skySun = d ? m._titleSunPoint(d.position.clone(), cam.position).sub(cam.position) : null;
+      const angDeg = toDisc && skySun ? toDisc.angleTo(skySun) * 180 / Math.PI : null;
+      const offTrueSunDeg = toDisc && sun ? toDisc.angleTo(sun) * 180 / Math.PI : null;
+      const angSizeDeg = d ? Math.atan(d.scale.x / 2 / toDisc.length()) * 180 / Math.PI : null;
+      const facing = d ? d.quaternion.angleTo(cam.quaternion) * 180 / Math.PI : null;
+      const audit = m.audit().title.disc;
+      const parentAtTitle = d && d.parent ? (d.parent === scene ? 'ctx.scene' : d.parent.type + ':' + d.parent.name) : null;
+      // --- REAL TIME: sample every 5 s until the dolly clock is past 105 s (both truck extremes), no jumps
+      const core = audit?.coreDeg ?? null;
+      const crestAt = (cx, cy, cz, a) => { let c = -Math.PI / 2; const sx = Math.sin(a), sz = Math.cos(a);
+        for (let k = 20; k <= 1400; k += 20) { const e = Math.atan2(T.getHeight(cx + sx * k, cz + sz * k) - cy, k); if (e > c) c = e; } return c; };
+      const v = d ? new d.position.constructor() : null, sp = d ? new d.position.constructor() : null;
+      const samples = [];
+      const hour0 = env.time;
+      const t0 = performance.now();
+      while (d && core != null && T?.getHeight && performance.now() - t0 < 170000) {
+        const p = cam.position;
+        m._titleSunPoint(sp, p).sub(p);
+        const sel = Math.asin(sp.y / sp.length()), saz = Math.atan2(sp.x, sp.z);
+        let crest = -Math.PI / 2;
+        for (let k = -2; k <= 2; k++) crest = Math.max(crest, crestAt(p.x, p.y, p.z, saz + k * 0.5 * core * DEG));
+        v.copy(d.position).project(cam);
+        const ti = m.audit().title;
+        samples.push({ s: +((performance.now() - t0) / 1000).toFixed(1), dollyT: ti.dolly.dollyT, hour: +env.time.toFixed(5), sunElDeg: +(sel / DEG).toFixed(3),
+          coreBottomMinusCrestDeg: +((sel - core * DEG - crest) / DEG).toFixed(2), ndc: [+v.x.toFixed(3), +v.y.toFixed(3)], visible: d.visible, inScene: d.parent === scene,
+          cam: [ti.camera.x, ti.camera.z] });
+        if (ti.dolly.dollyT > 106) break;
+        await wait(5000);
+      }
+      const clockAtTitle = m.audit().title.clock;
+      const hour1 = env.time;
+      // --- leave WITHOUT the menu's own start path: __GAME__.start emits game-start, menus must clean up
+      const disposed = { geometry: false, material: false };
+      if (d) { d.geometry.addEventListener('dispose', () => { disposed.geometry = true; }); d.material.addEventListener('dispose', () => { disposed.material = true; }); }
+      const geoBefore = R?.info?.memory?.geometries ?? null;
+      __GAME__.start(false);
+      await wait(400);
+      const hourStart = env.time;
+      await wait(2000);
+      const hourPlay = env.time;
+      const after = find();
+      const geoAfter = R?.info?.memory?.geometries ?? null;
+      const minClear = samples.length ? Math.min(...samples.map((x) => x.coreBottomMinusCrestDeg)) : null;
+      const sway = samples.length ? [Math.min(...samples.map((x) => x.dollyT)), Math.max(...samples.map((x) => x.dollyT))] : null;
+      const checks = {
+        inScene: parentAtTitle === 'ctx.scene',
+        visible: !!d && d.visible,
+        depthTested: !!d && d.material.depthTest === true,
+        writesNoDepth: !!d && d.material.depthWrite === false,
+        noFog: !!d && d.material.fog === false,
+        onTheSkysSun: angDeg != null && angDeg < 0.01,
+        constantAngularSize: angSizeDeg != null && Math.abs(angSizeDeg - audit.radiusDeg) < 0.01,
+        facesCamera: facing != null && facing < 0.01,
+        inFrustum: !!d && d.position.distanceTo(cam.position) < cam.far,
+        frameChosen: !!audit && typeof audit.posOffset === 'number' && Array.isArray(audit.tried) && audit.tried.length > 0,
+        skylineUnderDisc: !!audit && audit.clearanceDeg >= 0,
+        realTimeWholeSway: !!sway && sway[1] > 105 && samples.length >= 15,
+        clockHeldOnTitle: clockAtTitle.held && clockAtTitle.frozen && Math.abs(hour1 - hour0) < 1e-9,
+        coreClearEverySample: minClear != null && minClear >= 0,
+        inFrameEverySample: samples.length > 0 && samples.every((x) => x.visible && x.inScene && Math.abs(x.ndc[0]) < 1 && Math.abs(x.ndc[1]) < 1),
+        removedOnGameStart: !after,
+        disposedOnGameStart: disposed.geometry && disposed.material,
+        clockHandedBack: typeof clockAtTitle.handBack === 'boolean' && env.timeFrozen === clockAtTitle.handBack && hourPlay > hourStart,
+      };
+      return { pass: Object.values(checks).every(Boolean), detail: {
+        failed: Object.keys(checks).filter((k) => !checks[k]), checks,
+        sunElevationDeg: sun ? +(Math.asin(sun.y) * 180 / Math.PI).toFixed(2) : null,
+        parentAtTitle,
+        discFromCamM: d ? +d.position.distanceTo(cam.position).toFixed(1) : null, cameraFar: cam.far,
+        angleToSkySunDeg: angDeg, skySunBelowSunDirDeg: offTrueSunDeg, angularRadiusDeg: angSizeDeg, facingDeg: facing, chosen: audit,
+        realTime: { samples: samples.length, seconds: samples.length ? samples[samples.length - 1].s : 0, dollyT: sway, hourAtTitle: [hour0, hour1], minCoreBottomMinusCrestDeg: minClear,
+          clock: clockAtTitle, hourInPlay: [hourStart, hourPlay], timeFrozenAfter: env.timeFrozen,
+          rows: samples.map((x) => x.s + 's dolly ' + x.dollyT + ' h ' + x.hour + ' el ' + x.sunElDeg + ' clear ' + x.coreBottomMinusCrestDeg + ' ndc ' + x.ndc.join(',') + ' cam ' + x.cam.join(',')) },
+        disposed, geometries: { titled: geoBefore, afterLeave: geoAfter },
+      } };
+    })()`,
+  },
+  /* ------------------------------ the calima disc reads as the sun (judge r1) */
+  {
+    id: 'A-title-disc-sun', kind: 'action', lane: 'brand', plain: true, settle: 1500, timeout: 60000,
+    title: 'the title frame as filmed for V38 (menu in, 2.5 s after it lands): writes a 4-px marker into the top-left corner (the disc\'s screen centre and core radius, and a signature) for A-title-disc-sun-pixels, which reads THIS gate\'s screenshot (canvas + CSS calima wash + scrim + UI)',
+    assert: `(async () => {
+      const ctx = __CTX__, m = ctx.menus, cam = ctx.camera;
+      ${PRESS}
+      ${UNTIL_MENU}
+      await new Promise((r) => setTimeout(r, 2500));
+      let d = null; ctx.scene.traverse((o) => { if (o.name === 'cal-title-calima-disc') d = o; });
+      if (!d || !d.visible) return { pass: false, detail: { why: 'no visible calima disc on the title' } };
+      const v = d.position.clone().project(cam);
+      const x = Math.round((v.x + 1) / 2 * innerWidth), y = Math.round((1 - v.y) / 2 * innerHeight);
+      const { coreDeg, edgeDeg } = m.audit().title.disc;
+      const pxPerDeg = (innerHeight / 2) / Math.tan(cam.fov * Math.PI / 360) * Math.PI / 180;
+      const r10 = Math.round(coreDeg * pxPerDeg * 10), p10 = Math.round(pxPerDeg * 10), e10 = Math.round(edgeDeg * pxPerDeg * 10);
+      const mk = document.createElement('div'); mk.id = 'cal-gate-marker';
+      mk.style.cssText = 'position:fixed;left:0;top:0;width:6px;height:1px;z-index:2147483647;display:flex;pointer-events:none';
+      for (const c of [[x >> 8, x & 255, 197], [y >> 8, y & 255, 197], [r10 >> 8, r10 & 255, 197], [p10 >> 8, p10 & 255, 197], [e10 >> 8, e10 & 255, 197], [202, 17, 165]]) {
+        const i = document.createElement('i'); i.style.cssText = 'display:block;width:1px;height:1px;background:rgb(' + c.join(',') + ')'; mk.appendChild(i);
+      }
+      document.body.appendChild(mk);
+      await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+      return { pass: true, detail: { discPx: [x, y], coreRadiusPx: r10 / 10, edgeRadiusPx: e10 / 10, pxPerDeg: p10 / 10, dpr: devicePixelRatio, hour: ctx.environment.time } };
+    })()`,
+  },
+  {
+    id: 'A-title-disc-sun-pixels', kind: 'runner', lane: 'brand', timeout: 60000,
+    title: 'on the composited title frame (the screenshot of A-title-disc-sun, same run): the calima disc core reads as the bible §9.4 coral (#F2A27E, CIE76 dE <= 10 at its centre), it is whole (>= 97 % of its core within dE 12 of its centre colour), and it is the brightest point of the sky round it: its luminance beats every 3x3 patch of the sky ring from just outside its feathered edge (edge + 2.5 px) to 5° from its centre, at or above the level of its centre, and the mean of the band 40-80 px under it (where judge r1 measured a brighter glow)',
+    check: async () => {
+      const shot = path.join(ROOT, 'shots/gates/A-title-disc-sun.png');
+      if (!existsSync(shot)) return { pass: null, detail: { why: 'no shots/gates/A-title-disc-sun.png: run A-title-disc-sun first, in the same run' } };
+      const ageS = Math.round((Date.now() - statSync(shot).mtimeMs) / 1000);
+      if (ageS > 900) return { pass: null, detail: { why: 'the A-title-disc-sun screenshot is ' + ageS + ' s old: run both gates in the same run', ageS } };
+      const { default: sharp } = await import('sharp');
+      const { data, info } = await sharp(shot).removeAlpha().raw().toBuffer({ resolveWithObject: true });
+      const W = info.width, H = info.height;
+      const at = (x, y) => { const i = (y * W + x) * 3; return [data[i], data[i + 1], data[i + 2]]; };
+      const lum = (c) => 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2];
+      const lab = (c) => {
+        const l = c.map((v) => { v /= 255; return v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; });
+        const X = (0.4124 * l[0] + 0.3576 * l[1] + 0.1805 * l[2]) / 0.95047, Y = 0.2126 * l[0] + 0.7152 * l[1] + 0.0722 * l[2], Z = (0.0193 * l[0] + 0.1192 * l[1] + 0.9505 * l[2]) / 1.08883;
+        const f = (t) => (t > 216 / 24389 ? Math.cbrt(t) : (24389 / 27 * t + 16) / 116);
+        return [116 * f(Y) - 16, 500 * (f(X) - f(Y)), 200 * (f(Y) - f(Z))];
+      };
+      const dE = (a, b) => { const p = lab(a), q = lab(b); return Math.hypot(p[0] - q[0], p[1] - q[1], p[2] - q[2]); };
+      const near = (c, t) => c.every((v, i) => Math.abs(v - t[i]) <= 2);
+      const mk = [0, 1, 2, 3, 4, 5].map((i) => at(i, 0));
+      const markerOk = W > 8 && near(mk[5], [202, 17, 165]) && mk.slice(0, 5).every((c) => Math.abs(c[2] - 197) <= 2);
+      if (!markerOk) return { pass: false, detail: { why: 'marker not found (device pixel ratio other than 1, or the page did not paint it)', marker: mk, size: [W, H] } };
+      const cx = mk[0][0] * 256 + mk[0][1], cy = mk[1][0] * 256 + mk[1][1], rc = (mk[2][0] * 256 + mk[2][1]) / 10, ppd = (mk[3][0] * 256 + mk[3][1]) / 10;
+      // the sky ring starts outside the disc's feathered edge plus the 3x3 patch and one pixel of AA
+      const ringIn = ((mk[4][0] * 256 + mk[4][1]) / 10 + 2.5) / ppd, ringOut = 5;
+      const mean = (pts) => { const s = [0, 0, 0]; for (const c of pts) { s[0] += c[0]; s[1] += c[1]; s[2] += c[2]; } return s.map((v) => v / Math.max(1, pts.length)); };
+      const disk = (r) => { const out = []; for (let y = Math.floor(cy - r); y <= Math.ceil(cy + r); y++) for (let x = Math.floor(cx - r); x <= Math.ceil(cx + r); x++) if ((x - cx) ** 2 + (y - cy) ** 2 <= r * r && x >= 0 && y >= 0 && x < W && y < H) out.push(at(x, y)); return out; };
+      const centre = mean(disk(rc * 0.5));
+      const core = disk(rc * 0.85);
+      const coreMean = mean(core);
+      const whole = core.filter((c) => dE(c, centre) <= 12).length / core.length;
+      const CORAL = [0xF2, 0xA2, 0x7E];
+      const Lc = lum(centre);
+      // the sky ring, edge + 2.5 px out to 5°, at or above the disc's centre: 3x3 patch means
+      let ringMax = 0, ringAt = null, ringN = 0;
+      for (let y = Math.floor(cy - ringOut * ppd); y <= cy; y++) for (let x = Math.floor(cx - ringOut * ppd); x <= Math.ceil(cx + ringOut * ppd); x++) {
+        const r = Math.hypot(x - cx, y - cy) / ppd;
+        if (r < ringIn || r > ringOut || x < 1 || y < 1 || x >= W - 1 || y >= H - 1) continue;
+        const pts = []; for (let j = -1; j <= 1; j++) for (let i = -1; i <= 1; i++) pts.push(at(x + i, y + j));
+        const L = lum(mean(pts)); ringN++;
+        if (L > ringMax) { ringMax = L; ringAt = [x, y, +r.toFixed(2)]; }
+      }
+      const band = []; for (let y = cy + 40; y <= cy + 80 && y < H; y++) for (let x = cx - 12; x <= cx + 12; x++) band.push(at(x, y));
+      const bandMean = mean(band);
+      const r1 = (c) => c.map((v) => Math.round(v));
+      const checks = {
+        coreIsCoral: dE(centre, CORAL) <= 10,
+        coreWhole: whole >= 0.97,
+        brighterThanSkyRing: ringN > 0 && Lc > ringMax,
+        brighterThanBandBelow: Lc > lum(bandMean),
+      };
+      return { pass: Object.values(checks).every(Boolean), detail: {
+        failed: Object.keys(checks).filter((k) => !checks[k]), checks,
+        discPx: [cx, cy], coreRadiusPx: rc, pxPerDeg: ppd, shotAgeS: ageS,
+        centre: r1(centre), coreMean: r1(coreMean), target: CORAL, dE76: +dE(centre, CORAL).toFixed(2), coreWholeFraction: +whole.toFixed(3),
+        centreLum: +Lc.toFixed(1), skyRing: [+ringIn.toFixed(2), ringOut], skyRingMaxLum: +ringMax.toFixed(1), skyRingMaxAt: ringAt, skyRingPatches: ringN,
+        bandBelowMean: r1(bandMean), bandBelowLum: +lum(bandMean).toFixed(1),
+      } };
+    },
+  },
   /* ------------------------------------------------------------- visuals */
   {
     id: 'V-logo', kind: 'visual', lane: 'brand', plain: true, settle: 2600,
     title: 'Title screen at 1600x900 after settle (press beat): the CALIMA lockup',
     reference: ['reference/r5/brand/bodoni-manuale-tipografico-1818.jpg', 'reference/r5/brand/os-benchmark-broad-arrow.jpg'],
-    criteria: 'Bible 9.8. PASS: CALIMA in Didone (Bodoni) caps with real thick/thin contrast, comparable to the Bodoni 1818 caps in the reference; '
+    criteria: 'Bible 9.8. The LOCKUP is the wordmark, the spark, the rule and the arrow; the PRESS ANY KEY line, the field-note line and the save line '
+      + 'below it are the title menu, not the lockup. PASS: CALIMA in Didone (Bodoni) caps with real thick/thin contrast, comparable to the Bodoni 1818 caps in the reference; '
       + 'the I is a thin plumb line ending in a pointed bob, and its dot is the FULL coral spark (ten rays, none cut) floating ABOVE the word; '
       + 'ONE hairline datum rule under the word, as wide as the word; under the I, below that rule, a small coral broad-arrow '
       + 'pointing UP at the spark, shaped like the benchmark arrow in the reference. '
@@ -672,18 +971,13 @@ const W0B = [
   },
   {
     id: 'V38-title', kind: 'visual', lane: 'brand', plain: true, settle: 2200,
-    title: 'Title screen with the menu in: one logo over the live vista in calima, vertical menu (shadows the carried V38-title)',
+    title: 'Title screen after settle (menu in): plan §9 V38-title, criteria verbatim from the plan (shadows the carried V38-title). '
+      + 'STAGING NOTE (orchestrator W0b instruction; the criteria are NOT changed by it): the Pans are world-ground W1 and the calima weather world-sky W1, '
+      + 'so this shot is staged over the best available vista (the Round-4 valley) under brand\'s calima stand-in (the CSS wash and the depth-tested coral disc); '
+      + 'the Pans clause cannot pass before W1',
     setup: `(async () => { ${PRESS} ${UNTIL_MENU} })()`,
     reference: ['reference/r5/brand/calima-dawn-maspalomas.jpg', 'reference/r5/brand/salinas-de-janubio.jpg'],
-    criteria: 'Bible 9.8 title. PASS: exactly ONE logo (the V-logo lockup); a vertical menu (CONTINUE / NEW GAME / SETTINGS / FIELD MANUAL / CREDITS, '
-      + 'station numbers, CONTINUE greyed with no save), a save line and one field-note line, all readable; behind it a LIVE vista in calima: '
-      + 'an ochre-hazed flat sky and skyline with a soft coral disc sun, low contrast like the calima reference. '
-      + 'STAGING NOTE (W0b): the Pans do not exist until world-ground W1 and the calima weather until world-sky W1, so this shot is the best '
-      + 'available calima-tinted vista: the Round-4 valley rim seen from REST toward the sun, under the brand stand-in wash (an ochre colour '
-      + 'blend + haze over the canvas, the coral disc placed on the projected sun direction and shown only when the sun clears the skyline). '
-      + 'Salt grid and white surf on black sand are NOT expected until W1 (salinas reference = the target). '
-      + 'FAIL on: a second logo, a tall walker silhouette (the old long-necked tower) on the skyline, live lava, the keybind wall, a start button beside the menu, '
-      + 'or menu text unreadable against the vista.',
+    criteria: V38_CRITERIA,
   },
   {
     id: 'V-loading', kind: 'visual', lane: 'brand', plain: true, settle: 900,
@@ -739,10 +1033,10 @@ const DAY1 = [
       const route = routeProbe(), machine = machineProbe(), doctrine = await doctrineProbe(), playerRimR = await playerRimProbe();
       const checks = {
         values: valuesOk,
-        navN: nav?.N === BASE.navN, navCost: nav?.costHash === BASE.navCostHash,
+        navN: nav?.N === BASE.navN, navCost: nav?.costHash === BASE.w0b.navCostHash,
         navPaths: nav?.pathHash === BASE.navPathHash && nav?.nulls === BASE.navNulls,
         terrain: terrain === BASE.terrainHash,
-        colliders: colliders.n === BASE.colliders.n && colliders.hash === BASE.colliders.hash,
+        colliders: colliders.n === BASE.w0b.colliders.n && colliders.hash === BASE.w0b.colliders.hash,
         gather: !!gather && gather.n === BASE.gather.n && gather.hash === BASE.gather.hash && gather.maxR === BASE.gather.maxR,
         route: !!route && route.rimMaxR === BASE.route.rimMaxR && route.campMinD === BASE.route.campMinD,
         machine: !!machine && machine.rimR === BASE.machine.rimR && machine.campRingR === BASE.machine.campRingR,
@@ -756,6 +1050,8 @@ const DAY1 = [
         values, PLAY_RADIUS: E.PLAY_RADIUS, terrainReexportsSame: T.PLAY_RADIUS === E.PLAY_RADIUS,
         nav, terrain, colliders, gather, route, machine, doctrine, playerRimR,
         grep: { leftovers: GREP.leftovers, missingImportOrUse: GREP.rows, checked: GREP.checked, terrainReexport: GREP.terrainReexport },
+        day1Hashes: { navCost: nav?.costHash === BASE.navCostHash, colliders: colliders.n === BASE.colliders.n && colliders.hash === BASE.colliders.hash,
+          note: 'the day-1 old map (c32e968). W0a (merged before W0b) changed the static collider set by one (4826 -> 4825) and with it the nav cost grid; brand W0b touches no world file, so the graded hashes are the W0b-start map (BASELINE.w0b)' },
         note: 'A3 / A13 unchanged is graded by those gates: node tools/gates.mjs --port 5253 --only A3-sprint-speed,A13-no-skate',
       } };
     })()`,

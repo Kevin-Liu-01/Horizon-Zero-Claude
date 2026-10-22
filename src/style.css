@@ -85,6 +85,22 @@
 /* the families ship 500/600 (Plex) and a variable 400–900 (Bodoni): never fake a weight */
 html { font-synthesis-weight: none; }
 
+/* W0b bridge (brand owns the --cal-* token values). The HUD's own sheet still
+   sets --cal-display inside #hud with a retired display face first, whose file
+   brand deleted (plan §6); left alone, every HUD kicker makes the browser fetch
+   that missing file before falling back. One step more specific, the token
+   resolves to the display family directly: the same face the HUD already falls
+   back to, and no request. Remove together with the retired-font patch
+   (tools/lint/patches/w0b-retired-font-refs.patch) once it is applied. */
+body #hud { --cal-display: var(--cal-font-display); }
+/* The same bridge for the photo studio's two kickers (studio.css puts the
+   retired display face FIRST in their stacks, and hud.css still declares it
+   over the deleted file): one step more specific, they resolve to the display
+   family with no request. Brand owns src/studio/** from W4; remove with the
+   patch. */
+body #studio-ui .studio-title,
+body #studio-ui .studio-head { font-family: var(--cal-font-display); }
+
 html, body {
   width: 100%; height: 100%;
   overflow: hidden;
@@ -152,7 +168,9 @@ html, body {
 }
 .cal-word > span { display: inline-block; }
 /* the I: a real glyph for metrics + text, painted by the plumb line instead */
-.cal-i { position: relative; color: transparent; }
+/* the plumb line is thinner than the I's stem: close the I's side bearings a little so
+   the gaps either side read as the word's tracking, not as spaces */
+.cal-i { position: relative; color: transparent; margin: 0 -0.035em; }
 .cal-i > svg { position: absolute; overflow: visible; pointer-events: none; }
 /* every part is centred on the I's axis: the glyph box minus its trailing tracking */
 .cal-plumb {
@@ -218,45 +236,42 @@ html, body {
 #title .title-inner { padding-top: 2vh; }
 
 /* The calima wash over the live vista (title only). A STAND-IN until world-sky's
-   `calima` weather (W1) draws the ochre sky and the coral disc in the renderer:
-   it sits between the canvas (#app) and #title, so its blend modes reach the
-   rendered frame. menu.js places the disc on the projected sun direction. */
-#cal-calima {
+   `calima` weather (W1) draws the ochre sky and the coral disc in the renderer.
+   The coral disc itself is NOT here: menu.js draws it in the 3D scene (a
+   depth-tested billboard on the sun direction, under this wash), so terrain in
+   front of the sun hides it.
+
+   FIX ROUND 2 (judge r1, the disc read darker than the sky round it): the
+   wrapper used to be `position: fixed; z-index: 49`, which makes it a stacking
+   context and therefore an ISOLATED group, so the tint's `mix-blend-mode:
+   color` blended with nothing and painted as a flat 55 % ochre veil. With the
+   haze and the scrim on top, the frame kept a quarter of the scene's contrast
+   (measured: every canvas value v landed on 0.25 v + const), which flattened
+   the vista and capped the disc at rgb(181, …). Now the wrapper has no box
+   (`display: contents`) and each layer is its own fixed sheet in the ROOT
+   stacking context, so the colour blend reaches the canvas: it recolours the
+   frame toward the dust's ochre and keeps the scene's luminance. */
+#cal-calima { display: none; }
+body.cal-title-live #cal-calima { display: contents; }
+body.cal-calima-live #cal-calima { display: none; }   /* the renderer draws calima itself */
+#cal-calima > i {
   position: fixed; inset: 0;
   z-index: 49;
+  display: block;
   pointer-events: none;
-  display: none;
 }
-body.cal-title-live #cal-calima { display: block; }
-body.cal-calima-live #cal-calima { display: none; }   /* the renderer draws calima itself */
-#cal-calima > i { position: absolute; display: block; }
 .cal-calima-tint {
-  inset: 0;
   background: var(--cal-ochre);
   mix-blend-mode: color;
   opacity: 0.55;
 }
 .cal-calima-haze {
-  inset: 0;
   background: linear-gradient(180deg,
     rgba(201, 139, 78, 0.34) 0%,
     rgba(214, 160, 106, 0.30) 38%,
     rgba(201, 139, 78, 0.16) 62%,
     rgba(120, 82, 46, 0.10) 100%);
 }
-.cal-calima-sun {
-  left: 0; top: 0;
-  width: 132px; height: 132px;
-  margin: -66px 0 0 -66px;
-  border-radius: 50%;
-  /* the calima disc: a soft coral sun you can look at (#F2A27E), a dust halo round it */
-  background: radial-gradient(circle,
-    rgba(242, 162, 126, 0.96) 0%, rgba(242, 162, 126, 0.96) 24%,
-    rgba(242, 162, 126, 0.55) 29%, rgba(236, 150, 110, 0.20) 45%, rgba(218, 140, 100, 0) 70%);
-  opacity: 0;
-  will-change: transform;
-}
-.cal-calima-sun.on { opacity: 1; }
 
 #btn-start {
   font-family: var(--font);
@@ -408,19 +423,27 @@ body.cal-title-live #loading { display: none !important; }
  * another lane's file or deleting anything (drop the install and the Round-3
  * wash comes straight back).
  *
- * Two layers, each with a job. The linear one is dark at the top (the wordmark
- * sits over the rim), opens across the middle band so the meadow keeps its
- * colour, and closes again at the bottom for the tip and the save line. The
- * radial one is a soft column down the centre, behind the menu column only, so
- * the text never has to fight a tree while the edges of the frame stay bright.
+ * Three layers, each with a job. An ellipse sits behind the lockup only (its
+ * 330 px half-width is the lockup's 221 px plus a fade, so it never reaches the
+ * calima disc: the sun stands 0.855 x half the frame height off-centre, about
+ * 385 px at 900 px, whatever the aspect). The linear one is clear across the
+ * sky (fix round 2: its old dark top band sat over the disc and capped it),
+ * opens across the middle band so the ground keeps its colour, and closes at
+ * the bottom for the tip and the save line. The radial one is a soft column
+ * down the centre, behind the menu column only, so the text never has to fight
+ * a tree while the edges of the frame stay bright.
  */
 body.cal-title-live #title.overlay {
-  /* brand W0b: the bible's lapilli scrim, lighter at the top so the calima sky
-     glows behind the lockup; darker at the foot for the tip and the save line */
+  /* brand W0b: the bible's lapilli scrim: behind the lockup, clear in the sky
+     so the calima disc reads as the light, darker at the foot for the text */
   background:
+    radial-gradient(ellipse 330px 19% at 50% 34%,
+      rgba(28, 27, 30, 0.22) 0%,
+      rgba(28, 27, 30, 0.16) 62%,
+      rgba(28, 27, 30, 0) 100%),
     linear-gradient(180deg,
-      rgba(28, 27, 30, 0.30) 0%,
-      rgba(28, 27, 30, 0.12) 30%,
+      rgba(28, 27, 30, 0) 0%,
+      rgba(28, 27, 30, 0) 34%,
       rgba(28, 27, 30, 0.10) 50%,
       rgba(28, 27, 30, 0.34) 72%,
       rgba(28, 27, 30, 0.62) 88%,

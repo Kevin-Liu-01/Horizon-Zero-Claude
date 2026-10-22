@@ -6,53 +6,55 @@
  *   node tools/lint/namecheck.mjs --record [--initial]   lower engine-allow caps (or record them once)
  *   node tools/lint/namecheck.mjs --rebuild-lexicon
  *
- * THE LEXICON (tools/lint/lexicon.json, built from tools/lint/lexicon/*):
- * the union the bible §10.4 describes — Direction A's `horizon-lexicon.txt`
- * through A's own tokenizer (every line, plus every part >= 4 characters:
- * 331 entries), Direction B's 190 single names (>= 3 characters, B's rule) and
- * 46 phrases, and the plan's additions (Brittle, Impact, Tear, Frost, Lens,
- * Shards, Stalker, Watcher, Grazer, Charger, Burrower, Rollerback, Saltbite,
- * Call of the Mountain, Camp). The reproducible union of those files is 410
- * entries (the bible counts 417: B's file holds 190 + 46 = 236 where B's
- * write-up counted 235 + 46).
+ * THE UNION LEXICON (`lexicon.json` → `plan`, built from tools/lint/lexicon/*),
+ * exactly as bible §10.4 and plan §9 define it — 410 distinct entries:
+ *   A  Direction A's `horizon-lexicon.txt` (355 lines) through A's own tokenizer
+ *      (tools/r5-poc/direction-a/namecheck.py: every line lower-cased, plus every
+ *      part >= 4 characters after splitting on space / slash / brackets /
+ *      hyphen): 331 entries — "A's 331"
+ *   B  Direction B's names (`names-check.mjs` HORIZON, >= 3 characters, B's own
+ *      filter): 189, and its 46 phrases (MULTI) — "B's 235": B's write-up
+ *      (docs/research/round5-direction-b.md:17) counts "235 Horizon names and
+ *      terms (189 single words, 46 phrases)", so plan §9's "B's 235 + 46
+ *      phrases" names the 46 phrases twice; every one of them is here
+ *   +  the plan §9 additions: Brittle, Impact, Tear, Frost, Lens, Shards,
+ *      Stalker, Watcher, Grazer, Charger, Burrower, Rollerback, Saltbite,
+ *      Call of the Mountain, Camp.
+ * (The bible prints "417 tokens"; the files reproduce 410 after lower-case
+ * de-duplication. Both direction sources are byte-copies, checked at build.)
  *
- * TWO CLASSES OF ENTRY. A's tokenizer splits multi-word names into their
- * words, so the union also holds ~120 ordinary English words that are only
- * Horizon terms inside their name (light, world, point, end, run, of, heart,
- * stone, weapon …). Matched alone they would flag every sentence a lane ever
- * writes. Direction B's rule — "multi-word Horizon names: matched as whole word
- * sequences, never split into generic words" — is applied to exactly those:
- *   name    matched alone: exact, or the Horizon term INSIDE a longer word
- *           (both >= 5 characters: watchers, thunderjaws, focused). Not the
- *           English word inside a Horizon compound (under / thunderjaw, other /
- *           all-mother) and not edit distance 1 (blade / blaze, brace / brave):
- *           in running UI text those are ordinary words, not uses of the name
- *   common  an English dictionary word (macOS web2, at build time) that is not
- *           one of: A's single-word "tracked" terms, B's names, the plan's
- *           additions, the A-ui-words terms, or the Horizon element / mechanic /
- *           character words listed in PROTECT below. Matched only as part of a
- *           phrase.
- *   phrase  every multi-word entry (A's multi-word lines with their "/"
- *           alternatives expanded, B's phrases, "Call of the Mountain"),
- *           matched as a contiguous word sequence.
- * The literal reading — every entry alone with ALL of Direction A's rules
- * (exact; substring either way when both >= 5; edit distance <= 1 when both
- * >= 5), allowlist = bible §10.4's six GENERIC nouns only — is ALSO counted and
- * reported as `literal`, so the orchestrator can choose which reading the
- * ratchet grades (see docs/ROUND5-BRAND.md).
- * GENERIC (never a hit, bible §10.4): lance, cliff, shelf, salt, glaze, arrow.
+ * THE GRADED READING (`plan`, plan §9 / bible §10.4 "A's rules"): every DOM
+ * word, id part or table key is compared with EVERY union entry —
+ *   exact      the word equals the entry
+ *   substring  either contains the other, both >= 5 characters
+ *   edit <= 1  Levenshtein distance <= 1, both >= 5 characters
+ * plus every multi-word name as a contiguous word sequence. Allowlist: bible
+ * §10.4's GENERIC nouns only (lance, cliff, shelf, salt, glaze, arrow, and
+ * their plurals). Nothing else is exempt: A's split-off words (of, end, run,
+ * light, world, title …) and the edit-1 neighbours (blade/blaze, brace/brave)
+ * are hits, as the plan wrote it. Unit: one per distinct (surface, offending
+ * word or phrase); a surface that says a word ten times holds it once.
  *
- * --player  public/**\/*.{json,md,txt} here in node; the rendered DOM text,
- *           content ids and content-table keys come from the gate
- *           A-no-horizon-terms-player (page context), which calls the same
- *           matcher (`matchTexts`, serialisable) and folds both halves.
+ * THE ADVISORY READING (`named`, reported beside the graded count, never
+ * graded): only the Horizon NAMES alone — exact, or the name inside a longer
+ * word (both >= 5) — with A's split-off English words matched only inside
+ * their multi-word name (Direction B's rule). It shows how much of the graded
+ * count is English rather than Horizon (docs/ROUND5-BRAND.md, ruling request).
+ *
+ * --player  public/**\/*.{json,md,txt} (all of it, licence texts included) here
+ *           in node; the rendered DOM text, content ids and content-table keys
+ *           come from the gate A-no-horizon-terms-player (page context), which
+ *           calls the same matcher (`matchTexts`, serialisable) and folds both.
  * --code    identifiers and strings (comments stripped) in src/**, index.html
- *           and tools/** except tools/lint/**. A hit is a distinct (lexicon
- *           term, code token) pair; raw occurrences are reported too. Every hit
- *           must be covered by an entry of tools/lint/engine-allow.json and no
- *           entry may exceed its cap (a count of distinct pairs), so USING a
- *           kept engine identifier again never moves the count, while coining
- *           a new Horizon-named identifier does.
+ *           and tools/** except tools/lint/**, matched with the NAMED reading
+ *           (plan §9 gives the code lint no matching rule; §7.4's allowlist
+ *           lists engine NAMES — machine(s), tear/impact, lens, focus,
+ *           hunter-camp, spear — not English words). A hit is a distinct
+ *           (lexicon term, code token) pair; raw occurrences are reported too.
+ *           Every hit must be covered by an entry of tools/lint/engine-allow.json
+ *           and no entry may exceed its cap (a count of distinct pairs), so
+ *           USING a kept engine identifier again never moves the count, while
+ *           coining a new Horizon-named identifier does.
  */
 import { readFileSync, writeFileSync, readdirSync, lstatSync, existsSync } from 'node:fs';
 import path from 'node:path';
@@ -157,17 +159,49 @@ export function buildLexicon({ dictionary = '/usr/share/dict/web2' } = {}) {
   tokens.sort((a, b) => a.n.localeCompare(b.n));
   const ph = [...phrases.values()].map((p) => ({ words: p.words, t: p.t, src: [...p.src] })).sort((a, b) => a.words.join(' ').localeCompare(b.words.join(' ')));
   const count = (c) => tokens.filter((x) => x.cls === c).length;
+
+  // ---- the plan §9 union (the GRADED lexicon): A's tokenizer verbatim + B + the additions
+  const planMap = new Map();               // lower-case entry -> { t, src:Set }
+  const addPlan = (t, src) => {
+    const l = String(t).toLowerCase();
+    if (!planMap.has(l)) planMap.set(l, { t, src: new Set() });
+    planMap.get(l).src.add(src);
+  };
+  for (const { line } of A) {               // namecheck.py: lex.add(line.lower()); parts >= 4
+    addPlan(line, 'A');
+    for (const p of line.split(/[ /()\-]+/)) if (p.length >= 4) addPlan(p, 'A');
+  }
+  const aEntries = new Set([...planMap.keys()]).size;
+  const bSingles = B.names.filter((w) => w.length >= 3);    // names-check.mjs: terms >= 3 characters
+  for (const w of bSingles) addPlan(w, 'B');
+  for (const p of B.phrases) addPlan(p, 'B-phrase');
+  for (const w of PLAN_ADDITIONS) addPlan(w, 'plan');
+  const plan = [...planMap.entries()].map(([l, e]) => ({ n: norm(l), len: l.length, t: e.t, src: [...e.src].sort() }))
+    .sort((a, b) => a.n.localeCompare(b.n) || a.len - b.len);
+  // byte-copy checks of the two direction sources (only while the originals exist)
+  const same = (copy, orig) => (existsSync(path.join(ROOT, orig)) ? rd(copy) === rd(orig) : null);
+  let bSame = null;
+  if (existsSync(path.join(ROOT, 'tools/r5-direction/names-check.mjs'))) {
+    const src = rd('tools/r5-direction/names-check.mjs');
+    const H = /const HORIZON = `([\s\S]*?)`;/.exec(src)[1].split(/\s+/).filter(Boolean);
+    const M = [...(/const MULTI = \[([\s\S]*?)\];/.exec(src)[1]).matchAll(/'((?:[^'\\]|\\.)*)'|"((?:[^"\\]|\\.)*)"/g)].map((m) => (m[1] ?? m[2]).replace(/\\'/g, "'"));
+    bSame = H.length === B.names.length && H.every((w, i) => w === B.names[i]) && M.length === B.phrases.length && M.every((p, i) => p === B.phrases[i]);
+  }
   return {
-    schema: 1,
+    schema: 2,
     built: 'node tools/lint/namecheck.mjs --rebuild-lexicon',
-    rules: { name: 'named reading: exact, or the term inside the word (both >= 5 chars). literal reading: Direction A as written — exact; substring either way when both >= 5; edit distance <= 1 when both >= 5',
-      common: 'phrase-only (Direction B: never split a Horizon name into generic words)',
-      phrase: 'contiguous normalised word sequence', short: 'entries under 3 characters are split artefacts (B drops them): not matched',
-      line: "A's whole lines with spaces / slashes / notes: matched through their expanded phrases" },
-    union: { entries: tokens.length + ph.length, tokens: tokens.length, phrases: ph.length,
+    rules: {
+      plan: "GRADED (plan §9, bible §10.4 A's rules): every union entry; exact, or substring either way when both >= 5 characters, or edit distance <= 1 when both >= 5; multi-word names also as contiguous word sequences; allowlist = GENERIC only",
+      name: 'advisory named reading: exact, or the term inside the word (both >= 5 chars)',
+      common: 'advisory named reading: phrase-only (Direction B: never split a Horizon name into generic words)',
+      phrase: 'contiguous normalised word sequence', short: 'advisory named reading: entries under 3 characters not matched alone',
+      line: "advisory named reading: A's whole lines with spaces / slashes / notes, matched through their expanded phrases" },
+    union: { plan: plan.length, planSources: { A: aEntries, B: bSingles.length + B.phrases.length, bSingles: bSingles.length, bPhrases: B.phrases.length, additions: PLAN_ADDITIONS.length },
+      sourceCopies: { directionA: same('tools/lint/lexicon/direction-a.txt', 'tools/r5-poc/direction-a/horizon-lexicon.txt'), directionB: bSame },
+      entries: tokens.length + ph.length, tokens: tokens.length, phrases: ph.length,
       name: count('name'), common: count('common'), line: count('line'), short: count('short') },
     generic: GENERIC,
-    tokens, phrases: ph,
+    plan, tokens, phrases: ph,
   };
 }
 
@@ -182,17 +216,25 @@ export function loadLexicon() {
 /**
  * The matcher, written to be SERIALISED into a page (`matchTexts.toString()`):
  * no closures over this module. `lex` is lexicon.json; `texts` is
- * [{ where, text }]; `mode` 'named' (the graded reading) or 'literal'.
- * Returns [{ where, word, term, rule }] — one per distinct (where, term), with the first word seen.
+ * [{ where, text }]; `mode` 'plan' (the GRADED plan §9 reading, see the header)
+ * or 'named' (advisory). Returns [{ where, word, term, rule }]: one per distinct
+ * (surface, offending text unit) — a word / id / table key that hits (the whole
+ * token, or any of its camelCase / hyphen parts), or a multi-word name found as
+ * a word sequence — with the first lexicon entry it hit and the rule.
  */
-export function matchTexts(lex, texts, mode = 'named') {
+export function matchTexts(lex, texts, mode = 'plan') {
   const nm = (s) => String(s).toLowerCase().normalize('NFKD').replace(/[̀-ͯ]/g, '')
     .replace(/[’'‘`]/g, '').replace(/[\s\-_]/g, '');
   const generic = new Set(lex.generic);
   const isGeneric = (w) => generic.has(w) || (w.endsWith('s') && generic.has(w.slice(0, -1)));
-  const solo = lex.tokens.filter((t) => t.cls === 'name' || (mode === 'literal' && t.cls !== 'line'));
-  const exact = new Map(solo.map((t) => [t.n, t]));
-  const long = solo.filter((t) => t.n.length >= 5);
+  const PLAN = mode === 'plan';
+  // plan: every union entry (len = the lower-case entry's own length, A's ">= 5" test)
+  // named: the advisory classes
+  const solo = PLAN ? lex.plan.map((e) => ({ n: e.n, t: e.t, len: e.len }))
+    : lex.tokens.filter((t) => t.cls === 'name').map((t) => ({ n: t.n, t: t.t, len: t.n.length }));
+  const exact = new Map();
+  for (const t of solo) if (t.n && !exact.has(t.n)) exact.set(t.n, t);
+  const long = solo.filter((t) => t.len >= 5 && t.n.length >= 1);
   const lev1 = (a, b) => {
     if (Math.abs(a.length - b.length) > 1) return false;
     let i = 0, j = 0, d = 0;
@@ -204,23 +246,27 @@ export function matchTexts(lex, texts, mode = 'named') {
     return d + (a.length - i) + (b.length - j) <= 1;
   };
   const memo = new Map();
-  const wordHits = (w) => {
-    if (memo.has(w)) return memo.get(w);
-    const hits = [];
-    if (w.length >= 1 && !isGeneric(w)) {
+  /** w: normalised word; rawLen: its length as written (A compares len(word) >= 5) */
+  const wordHit = (w, rawLen) => {
+    const key = w + '\u0000' + (rawLen >= 5 ? 1 : 0);
+    if (memo.has(key)) return memo.get(key);
+    let hit = null;
+    if (w && !isGeneric(w)) {
       const e = exact.get(w);
-      if (e) hits.push({ term: e.t, rule: 'exact' });
-      else if (w.length >= 5) {
-        // named: only a Horizon term INSIDE the word (watchers, thunderjaws, focused); an English
-        // word inside a Horizon compound (under/thunderjaw, other/all-mother) is not a use of it
-        for (const t of long) {
-          if (w.includes(t.n) || (mode === 'literal' && t.n.includes(w))) { hits.push({ term: t.t, rule: 'substring' }); break; }
+      if (e) hit = { term: e.t, rule: 'exact' };
+      else if (rawLen >= 5) {
+        if (PLAN) {
+          // A's rules: substring either way (both >= 5), then edit distance <= 1 (both >= 5)
+          for (const t of long) if (w.includes(t.n) || t.n.includes(w)) { hit = { term: t.t, rule: 'substring' }; break; }
+          if (!hit) for (const t of long) if (lev1(w, t.n)) { hit = { term: t.t, rule: 'edit1' }; break; }
+        } else {
+          // named (advisory): only a Horizon name INSIDE the word (watchers, thunderjaws)
+          for (const t of long) if (w.includes(t.n)) { hit = { term: t.t, rule: 'substring' }; break; }
         }
-        if (!hits.length && mode === 'literal') for (const t of long) if (lev1(w, t.n)) { hits.push({ term: t.t, rule: 'edit1' }); break; }
       }
     }
-    memo.set(w, hits);
-    return hits;
+    memo.set(key, hit);
+    return hit;
   };
   const byFirst = new Map();
   for (const p of lex.phrases) {
@@ -229,33 +275,33 @@ export function matchTexts(lex, texts, mode = 'named') {
   }
   const out = [];
   const seen = new Set();
-  // one hit per distinct (surface, term): a surface that says a term ten times, or in
-  // two spellings, holds that term once
-  const push = (where, word, term, rule) => {
-    const k = where + '\u0000' + term;
+  const push = (where, unit, word, term, rule) => {
+    const k = where + '\u0000' + unit;
     if (seen.has(k)) return;
     seen.add(k);
     out.push({ where, word, term, rule });
   };
   for (const { where, text } of texts) {
     if (!text) continue;
-    // words: letters (any script) joined by internal apostrophes / hyphens
+    // tokens: letters (any script) joined by internal apostrophes / hyphens
     const raw = String(text).match(/[\p{L}\p{N}]+(?:[’'\-][\p{L}\p{N}]+)*/gu) || [];
     const words = [];
     for (const r of raw) {
-      // camelCase / digit boundaries split too (content ids and table keys)
-      const parts = r.replace(/([a-z])([A-Z])/g, '$1 $2').replace(/([A-Za-z])(\d)/g, '$1 $2').split(/[\s\-]+/);
+      // camelCase / digit / hyphen boundaries split too (content ids and table keys)
+      const parts = r.replace(/([a-z])([A-Z])/g, '$1 $2').replace(/([A-Za-z])(\d)/g, '$1 $2').split(/[\s\-]+/).filter(Boolean);
       const whole = nm(r);
-      if (parts.length > 1 && whole) for (const h of wordHits(whole)) push(where, r, h.term, h.rule);
+      let hit = whole ? wordHit(whole, r.length) : null;
+      let word = r;
+      if (!hit && parts.length > 1) for (const p of parts) { const h = wordHit(nm(p), p.length); if (h) { hit = h; word = p; break; } }
+      if (hit) push(where, 'w:' + whole, word, hit.term, hit.rule);
       for (const p of parts) { const n = nm(p); if (n) words.push(n); }
     }
     for (let i = 0; i < words.length; i++) {
-      for (const h of wordHits(words[i])) push(where, words[i], h.term, h.rule);
       const cands = byFirst.get(words[i]);
       if (cands) for (const p of cands) {
         let ok = true;
         for (let k = 1; k < p.words.length; k++) if (words[i + k] !== p.words[k]) { ok = false; break; }
-        if (ok) push(where, p.words.join(' '), p.t, 'phrase');
+        if (ok) push(where, 'p:' + p.words.join(' '), p.words.join(' '), p.t, 'phrase');
       }
     }
   }
@@ -276,18 +322,21 @@ function walk(rel, exts, exclude, out = []) {
 }
 
 /**
- * Third-party licence texts that must ship VERBATIM (OFL.txt, the MIT notices):
- * they are the licensors' words, not the project's, and cannot be edited, so
- * they are outside the player lint's public/** scope.
+ * Third-party licence texts that ship VERBATIM (OFL.txt, the MIT notices): the
+ * licensors' words, which no lane may edit. They ARE in the graded scope (plan
+ * §9 says public/**\/*.{json,md,txt}, no exception); `playerStatic` reports
+ * their share separately so the ruling on them can be made with the number.
  */
 export const VERBATIM_LICENCE_TEXTS = [/^public\/licences\//, /^public\/fonts\/[^/]+-OFL\.txt$/, /(^|\/)LICENSE(\.txt)?$/];
 
-/** public/**\/*.{json,md,txt}, less the verbatim licence texts */
-export function playerStatic(mode = 'named') {
+/** public/**\/*.{json,md,txt}, every file (the verbatim licence texts' share reported apart) */
+export function playerStatic(mode = 'plan') {
   const lex = loadLexicon();
-  const files = walk('public', ['.json', '.md', '.txt'], []).filter((f) => !VERBATIM_LICENCE_TEXTS.some((re) => re.test(f)));
+  const files = walk('public', ['.json', '.md', '.txt'], []);
   const texts = files.map((f) => ({ where: f, text: rd(f) }));
-  return { files: files.length, hits: matchTexts(lex, texts, mode) };
+  const hits = matchTexts(lex, texts, mode);
+  const verbatim = hits.filter((h) => VERBATIM_LICENCE_TEXTS.some((re) => re.test(h.where))).length;
+  return { files: files.length, hits, verbatimLicenceHits: verbatim };
 }
 
 /* ------------------------------------------------------------------ code */
@@ -532,19 +581,23 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
     console.log(`[namecheck] lexicon.json: ${JSON.stringify(lex.union)}`);
   } else if (a.includes('--player')) {
     const lex = loadLexicon();
-    const st = playerStatic('named');
-    const lit = playerStatic('literal');
-    let dom = [];
+    const st = playerStatic('plan');
+    const stNamed = playerStatic('named');
+    let dom = [], domNamed = [];
     const domFile = flag('--dom');
-    if (domFile) dom = matchTexts(lex, JSON.parse(readFileSync(domFile, 'utf8')), 'named');
+    if (domFile) {
+      const texts = JSON.parse(readFileSync(domFile, 'utf8'));
+      dom = matchTexts(lex, texts, 'plan');
+      domNamed = matchTexts(lex, texts, 'named');
+    }
     const hits = [...st.hits, ...dom];
     const ratchet = JSON.parse(readFileSync(path.join(LINT, 'ratchet.json'), 'utf8'));
-    const res = { mode: 'named', staticFiles: st.files, staticHits: st.hits.length, staticLiteral: lit.hits.length, domHits: dom.length,
-      total: hits.length, ratchet: ratchet.player, hits };
+    const res = { mode: 'plan', staticFiles: st.files, staticHits: st.hits.length, staticVerbatimLicence: st.verbatimLicenceHits, domHits: dom.length,
+      total: hits.length, namedAdvisory: stNamed.hits.length + domNamed.length, ratchet: ratchet.player, hits };
     if (json) console.log(JSON.stringify(res, null, 1));
     else {
       for (const h of hits) console.log(`${h.where}: "${h.word}" -> ${h.term} (${h.rule})`);
-      console.log(`[namecheck --player] ${hits.length} hit(s) (static ${st.hits.length}, literal reading ${lit.hits.length}${domFile ? `, dom ${dom.length}` : ', DOM half: run the gate'}); W0b ratchet ${ratchet.player?.count ?? 'unset'}`);
+      console.log(`[namecheck --player] ${hits.length} hit(s), plan §9 reading (static ${st.hits.length} of which verbatim licence texts ${st.verbatimLicenceHits}${domFile ? `, dom ${dom.length}` : ', DOM half: run the gate'}); advisory named reading ${stNamed.hits.length + domNamed.length}; W0b ratchet ${ratchet.player?.count ?? 'unset'}`);
     }
   } else if (a.includes('--record')) {
     const r = recordAllow({ initial: a.includes('--initial') });
