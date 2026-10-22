@@ -944,6 +944,98 @@ const W0B = [
       } };
     },
   },
+  /* ------------------------- the title at whatever hour the player quits at (judge r0, fix round 1) */
+  {
+    id: 'A-title-any-hour', kind: 'action', lane: 'brand', plain: true, settle: 1500, timeout: 180000,
+    title: 'QUIT TO TITLE at any hour shows the title at its own hour: after play at 12:00, 21:00 and 03:00, and with a rest still running at the quit, the title stands at the hour of the first visit (the boot hour, the title hour) with the clock held, and ONE calima disc is in the scene, visible, its whole core inside the frame and above the terrain skyline seen from the live camera, when the menu is in and again 3 s later; leaving by NEW GAME removes and disposes that disc and hands back the hour the player quit at (the rest\'s end hour when a rest was running), and the clock runs again',
+    assert: `(async () => {
+      const ctx = __CTX__, M = ctx.menus, env = ctx.environment, T = ctx.terrain, cam = ctx.camera, scene = ctx.scene;
+      const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+      const DEG = Math.PI / 180;
+      const discs = () => { const out = []; scene.traverse((o) => { if (o.name === 'cal-title-calima-disc') out.push(o); }); return out; };
+      const untilPlaying = async () => { const t0 = performance.now(); while (ctx.state !== 'playing' && performance.now() - t0 < 30000) await wait(100); };
+      const crestAt = (cx, cy, cz, a) => { let c = -Math.PI / 2; const sx = Math.sin(a), sz = Math.cos(a);
+        for (let k = 20; k <= 1400; k += 20) { const e = Math.atan2(T.getHeight(cx + sx * k, cz + sz * k) - cy, k); if (e > c) c = e; } return c; };
+      const sp = cam.position.clone(), v = cam.position.clone();
+      /** one reading of the title as the player sees it: the hour, the clock, and the disc on screen */
+      const look = () => {
+        const ds = discs(), d = ds[0], a = M.audit().title;
+        const out = { hour: +env.time.toFixed(4), frozen: env.timeFrozen, held: a.clock.held, discs: ds.length };
+        if (!d || !T?.getHeight) return out;
+        const p = cam.position, core = a.disc?.coreDeg;
+        M._titleSunPoint(sp, p).sub(p);
+        const sel = Math.asin(sp.y / sp.length()), saz = Math.atan2(sp.x, sp.z);
+        let crest = -Math.PI / 2;
+        for (let k = -2; k <= 2; k++) crest = Math.max(crest, crestAt(p.x, p.y, p.z, saz + k * 0.5 * core * DEG));
+        v.copy(d.position).project(cam);
+        const pxPerDeg = (innerHeight / 2) / Math.tan(cam.fov * Math.PI / 360) * DEG;
+        const x = (v.x + 1) / 2 * innerWidth, y = (1 - v.y) / 2 * innerHeight, r = core * pxPerDeg;
+        return { ...out, visible: d.visible, inScene: d.parent === scene, px: [Math.round(x), Math.round(y)], corePx: +r.toFixed(1),
+          coreInFrame: v.z < 1 && x - r >= 0 && x + r <= innerWidth && y - r >= 0 && y + r <= innerHeight,
+          coreBottomMinusCrestDeg: +((sel - core * DEG - crest) / DEG).toFixed(2) };
+      };
+      // the first visit: the boot hour, which every other title gate measures, is the title hour
+      ${PRESS}
+      ${UNTIL_MENU}
+      await wait(300);
+      const first = look();
+      const titleHour = M.audit().title.clock.titleHour;
+      const CASES = [{ hour: 12 }, { hour: 21 }, { hour: 3 }, { hour: 12, rest: 6.2 }];
+      const rows = [];
+      let prev = null;   // the title being left, and the hour it must hand back
+      const leave = async () => {
+        const d = discs()[0] || null, disposed = { geometry: false, material: false };
+        if (d) { d.geometry.addEventListener('dispose', () => { disposed.geometry = true; }); d.material.addEventListener('dispose', () => { disposed.material = true; }); }
+        M.newGame();
+        const handedBack = env.time;   // read before any frame runs: exactly what _titleLeave restored
+        await untilPlaying();
+        await wait(1000);
+        return { handedBack: +handedBack.toFixed(4), discsAfter: discs().length, disposed, frozenInPlay: env.timeFrozen, clockRuns: env.time !== handedBack };
+      };
+      for (const c of CASES) {
+        const left = await leave();
+        if (prev) Object.assign(prev, { left, handBackOk: Math.abs(left.handedBack - prev.expectHandBack) < 1e-3 });
+        env.setTime(c.hour);
+        await wait(1500);   // play: the clock runs
+        if (c.rest != null) { env.rest({ toHour: c.rest, seconds: 2 }); await wait(150); }
+        const quitHour = env.time;
+        M.quitToTitle();
+        await wait(400);
+        ${PRESS}
+        ${UNTIL_MENU}
+        const t0 = performance.now();
+        while (env.resting && performance.now() - t0 < 5000) await wait(100);
+        await wait(300);
+        const menuIn = look();
+        await wait(3000);
+        const later = look();
+        prev = { case: c.rest != null ? c.hour + 'h, resting to ' + c.rest + 'h' : c.hour + 'h', quitHour: +quitHour.toFixed(4),
+          expectHandBack: c.rest != null ? c.rest : quitHour, menuIn, later };
+        rows.push(prev);
+      }
+      { const left = await leave(); Object.assign(prev, { left, handBackOk: Math.abs(left.handedBack - prev.expectHandBack) < 1e-3 }); }
+      const onTitle = (r) => r.hour === titleHour && r.frozen === true && r.held === true && r.discs === 1 && r.visible === true && r.inScene === true
+        && r.coreInFrame === true && r.coreBottomMinusCrestDeg >= 0;
+      const checks = {
+        firstVisitIsTheTitleHour: typeof titleHour === 'number' && first.hour === titleHour && first.discs === 1,
+        titleHourEveryVisit: rows.length === CASES.length && rows.every((r) => r.menuIn.hour === titleHour && r.later.hour === titleHour),
+        clockHeldEveryVisit: rows.every((r) => r.menuIn.frozen && r.later.frozen && r.menuIn.held),
+        oneDiscEveryVisit: rows.every((r) => r.menuIn.discs === 1 && r.later.discs === 1),
+        coreInFrameEveryVisit: rows.every((r) => r.menuIn.coreInFrame === true && r.later.coreInFrame === true),
+        coreClearOfSkylineEveryVisit: rows.every((r) => onTitle(r.menuIn) && onTitle(r.later)),
+        hourHandedBack: rows.every((r) => r.handBackOk === true),
+        discDroppedAndDisposedOnLeave: rows.every((r) => r.left && r.left.discsAfter === 0 && r.left.disposed.geometry && r.left.disposed.material),
+        clockRunsInPlay: rows.every((r) => r.left && r.left.frozenInPlay === false && r.left.clockRuns),
+      };
+      return { pass: Object.values(checks).every(Boolean), detail: {
+        failed: Object.keys(checks).filter((k) => !checks[k]), checks, titleHour, first,
+        rows: rows.map((r) => r.case + ' | quit at ' + r.quitHour + ' | menu in: h ' + r.menuIn.hour + ' discs ' + r.menuIn.discs + ' px ' + (r.menuIn.px || []).join(',')
+          + ' core ' + r.menuIn.corePx + 'px inFrame ' + r.menuIn.coreInFrame + ' clear ' + r.menuIn.coreBottomMinusCrestDeg + '° | +3 s: h ' + r.later.hour + ' px ' + (r.later.px || []).join(',')
+          + ' inFrame ' + r.later.coreInFrame + ' clear ' + r.later.coreBottomMinusCrestDeg + '° | left: hour ' + (r.left && r.left.handedBack) + ' (want ' + +(+r.expectHandBack).toFixed(4) + ')'
+          + ' discs ' + (r.left && r.left.discsAfter) + ' disposed ' + (r.left && r.left.disposed.geometry && r.left.disposed.material) + ' clock runs ' + (r.left && r.left.clockRuns)),
+      } };
+    })()`,
+  },
   /* ------------------------------------------------------------- visuals */
   {
     id: 'V-logo', kind: 'visual', lane: 'brand', plain: true, settle: 2600,
@@ -1197,7 +1289,10 @@ const DAY1 = [
  * so the judge can grade the title the player actually sits on and not one lucky frame:
  *   V38-title-drift35 / -drift105  real time (the title holds the world clock; no clock or dolly jump),
  *                                  near the two extremes of the lateral truck;
- *   V38-title-quit                 the SECOND title visit: NEW GAME, 4 s of play, QUIT TO TITLE, a key.
+ *   V38-title-quit                 the SECOND title visit: NEW GAME, 4 s of play, QUIT TO TITLE, a key;
+ *   V38-title-quit-12 / -quit-21   the same after play at 12:00 and at 21:00 (fix round 1, judge r0: the
+ *                                  title stands at its own hour whatever hour the player quit at;
+ *                                  A-title-any-hour grades it).
  * REGISTRATION ON MAIN TODAY. Main's runner merges `--extra` files after the Round-4 lane files and keeps
  * the FIRST row of a duplicated id, i.e. shell-menus' Round-4 `V38-title`, whose lane is not `brand`, so
  * `--extra tools/gates.r5.brand.mjs --lane brand` would film no V38 at all. Until gates-perf's registry
@@ -1206,6 +1301,19 @@ const DAY1 = [
  */
 const REGISTRY_LIVE = /export const LANE_FILE_RE/.test(read('tools/gates.config.mjs'));
 const V38_ROW = W0B.find((g) => g.id === 'V38-title');
+/** NEW GAME, play (at `hour` when given), QUIT TO TITLE, a key: the title a player who quits actually sees */
+const QUIT_SETUP = (hour) => `(async () => {
+      const M = __CTX__.menus;
+      ${PRESS} ${UNTIL_MENU}
+      M.newGame();
+      const t0 = performance.now();
+      while (__CTX__.state !== 'playing' && performance.now() - t0 < 30000) await new Promise((r) => setTimeout(r, 100));
+      ${hour == null ? '' : `__CTX__.environment.setTime(${hour});`}
+      await new Promise((r) => setTimeout(r, 4000));
+      M.quitToTitle();
+      await new Promise((r) => setTimeout(r, 400));
+      ${PRESS} ${UNTIL_MENU}
+    })()`;
 const V38_VARIANTS = [
   ...(REGISTRY_LIVE ? [] : [{ ...V38_ROW, id: 'V38-title-r5',
     title: V38_ROW.title + ' [published under this id while main\'s runner keeps the Round-4 V38-title row]' }]),
@@ -1215,17 +1323,14 @@ const V38_VARIANTS = [
     title: V38_ROW.title + ' [real time, about 105 s after the title appeared: the other end of the truck]' },
   { ...V38_ROW, id: 'V38-title-quit', settle: 2200,
     title: V38_ROW.title + ' [the second title visit: NEW GAME, 4 s of play, QUIT TO TITLE, a key press]',
-    setup: `(async () => {
-      const M = __CTX__.menus;
-      ${PRESS} ${UNTIL_MENU}
-      M.newGame();
-      const t0 = performance.now();
-      while (__CTX__.state !== 'playing' && performance.now() - t0 < 30000) await new Promise((r) => setTimeout(r, 100));
-      await new Promise((r) => setTimeout(r, 4000));
-      M.quitToTitle();
-      await new Promise((r) => setTimeout(r, 400));
-      ${PRESS} ${UNTIL_MENU}
-    })()` },
+    setup: QUIT_SETUP(null) },
+  // fix round 1 (judge r0): the player quits at whatever hour the world is in; the title stands at its own hour
+  { ...V38_ROW, id: 'V38-title-quit-12', settle: 2200,
+    title: V38_ROW.title + ' [the second title visit after play at 12:00: NEW GAME, the clock set to 12:00, 4 s of play, QUIT TO TITLE, a key press]',
+    setup: QUIT_SETUP(12) },
+  { ...V38_ROW, id: 'V38-title-quit-21', settle: 2200,
+    title: V38_ROW.title + ' [the second title visit after play at 21:00 (night): NEW GAME, the clock set to 21:00, 4 s of play, QUIT TO TITLE, a key press]',
+    setup: QUIT_SETUP(21) },
 ];
 
 export const GATES = [...DAY1, ...W0B, ...V38_VARIANTS];

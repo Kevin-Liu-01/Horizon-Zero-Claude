@@ -114,6 +114,14 @@ const TITLE_NIGHT_HEADING = 3.6;  // rad, used only when the sun is under the ho
 const TITLE_TRUCK_M = 24;         // lateral drift amplitude, m
 const TITLE_TRUCK_W = 0.045;      // rad/s of the drift (one sway ≈ 140 s)
 const TITLE_TILT_DEG = 9;         // upward tilt at the start of the move (+3° across the ease)
+/**
+ * The title's own hour (fix round 1, judge r0): the boot hour, 17:00, the one
+ * the framing, the disc and every title gate were built and measured at. The
+ * title BORROWS it with the clock, whatever hour the player quit at: at 12:00
+ * the sun stood above the frame (the disc at y -227 px) and at 21:00 there was
+ * no sun at all. `_titleLeave` hands the player's hour back.
+ */
+const TITLE_HOUR = 17;
 const DEG = Math.PI / 180;
 /**
  * The calima disc (bible §9.4: calima "draws the sun as a soft coral disc
@@ -254,8 +262,12 @@ export class Menus {
      * (dayLengthSeconds 1800) sank the calima disc behind the skyline within a
      * minute of real time. `_titleFrame` borrows `environment.timeFrozen` and
      * `_titleLeave` hands back the value it found (null = not borrowed).
+     * Fix round 1 (judge r0): it borrows the HOUR too. `_hourHeld` is the hour
+     * the world was at when the title came up (null = not borrowed); the title
+     * stands at TITLE_HOUR and `_titleLeave` hands the held hour back.
      */
     this._clockHeld = null;
+    this._hourHeld = null;
     this._lastState = ctx.state;
     /**
      * Audit trail for gates — CAPPED (`memory-attribution`). `audit()` only
@@ -444,9 +456,17 @@ export class Menus {
    * returns 'calima', the CSS stand-in (#cal-calima) and the disc billboard
    * switch off and the start restores the weather. Allocates once per visit
    * (the billboard: one quad, one material, dropped in `_titleLeave`).
+   *
+   * The clock AND the hour are borrowed FIRST, before anything reads the sun:
+   * the title is framed for TITLE_HOUR, not for the hour the player quit at.
    */
   _titleFrame() {
     const env = this.ctx.environment;
+    if (env && this._clockHeld == null) {
+      this._clockHeld = !!env.timeFrozen;
+      env.timeFrozen = true;
+      if (typeof env.setTime === 'function') { this._hourHeld = env.time; env.setTime(TITLE_HOUR); }
+    }
     const sun = env?.sunDir;
     const day = !!sun && sun.y > 0.02;
     const saz = day ? Math.atan2(sun.x, sun.z) : 0;
@@ -455,7 +475,6 @@ export class Menus {
     // (sx, cz): the camera's bearing line through REST; (lx, lz): where it looks
     this._titleHead = { sx: Math.sin(pos), cz: Math.cos(pos), az: pos, lx: Math.sin(look), lz: Math.cos(look), look };
     this._calimaWeather = null;
-    if (env && this._clockHeld == null) { this._clockHeld = !!env.timeFrozen; env.timeFrozen = true; }
     if (env?.setWeather && env.weather !== 'calima') {
       const prev = env.weather;
       if (env.setWeather('calima', 0) === 'calima') this._calimaWeather = prev;
@@ -597,15 +616,21 @@ export class Menus {
   }
 
   /**
-   * Leave the title: hand back the clock and the weather the title borrowed;
-   * drop the disc. Idempotent: the start path and the `game-start` event both
-   * call it, so a start that bypasses the menu (`__GAME__.start()`) still
-   * cleans up.
+   * Leave the title: hand back the clock, the hour and the weather the title
+   * borrowed; drop the disc. Idempotent: the start path and the `game-start`
+   * event both call it, so a start that bypasses the menu (`__GAME__.start()`)
+   * still cleans up. The hour goes back only while the world still stands at
+   * TITLE_HOUR: an hour something else set on the title (a rest that was still
+   * running, a script) is kept. CONTINUE then loads the save's own hour.
    */
   _titleLeave() {
     const env = this.ctx.environment;
-    if (this._clockHeld != null && env) env.timeFrozen = this._clockHeld;
+    if (this._clockHeld != null && env) {
+      env.timeFrozen = this._clockHeld;
+      if (this._hourHeld != null && env.time === TITLE_HOUR) env.setTime(this._hourHeld);
+    }
     this._clockHeld = null;
+    this._hourHeld = null;
     if (this._calimaWeather != null && env?.setWeather) env.setWeather(this._calimaWeather, 0);
     this._calimaWeather = null;
     document.body.classList.remove('cal-calima-live');
@@ -1224,6 +1249,15 @@ export class Menus {
       document.body.classList.remove('cal-title-live');
       this._refreshTitle();
     });
+    // a rest still running when the player quit to the title lands its hour
+    // after the title borrowed the clock: that hour is the one to hand back,
+    // and the title goes back to its own (fix round 1)
+    on('rest-end', (e) => {
+      const env = this.ctx.environment;
+      if (this._hourHeld == null || typeof env?.setTime !== 'function') return;
+      this._hourHeld = Number.isFinite(e?.hour) ? e.hour : env.time;
+      env.setTime(TITLE_HOUR);
+    });
     for (const name of ['inventory-close', 'ui-close']) {
       on(name, () => setTimeout(() => this._afterPanelClosed(), 0));
     }
@@ -1367,7 +1401,8 @@ export class Menus {
           dollyT: +this._dollyT.toFixed(3),
         },
         disc: this._disc ? { visible: this._disc.visible, ...(this._titleDiscInfo || {}) } : null,
-        clock: { held: this._clockHeld != null, frozen: !!ctx.environment?.timeFrozen, handBack: this._clockHeld },
+        clock: { held: this._clockHeld != null, frozen: !!ctx.environment?.timeFrozen, handBack: this._clockHeld,
+          hour: ctx.environment?.time ?? null, titleHour: TITLE_HOUR, hourHandBack: this._hourHeld },
         camera: ctx.camera ? {
           x: +ctx.camera.position.x.toFixed(2),
           y: +ctx.camera.position.y.toFixed(2),
