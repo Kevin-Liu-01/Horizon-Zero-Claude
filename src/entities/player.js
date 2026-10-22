@@ -601,8 +601,10 @@ const KEEP_NDC = 0.74;
 const KEEP_MAX = 0.35;
 /** R5 fix round 3: the keeper's allowance over the hijack's aim budget where the ground rotated the boom (rad, 12.6 deg) — AT THE PITCH CLAMP only: A31b holds every -0.8 staging's look-down to `camAimBudget` (unrestricted, its -0.8 hillside lost 28 deg of a 25.8 deg budget). */
 const KEEP_GROUND_EXTRA = 0.22;
-/** R5 fix round 3: the keeper's largest change in one frame (rad, 1.15 deg). */
-const KEEP_STEP = 0.02;
+/** R5 fix round 3: the keeper's rate (rad/s) ... */
+const KEEP_RATE = 0.6;
+/** ...and the hijack's steps plus the keeper's never more than this in one RENDERED frame (rad, 2.6 deg; A31e's bar is 3 deg past the input). */
+const KEEP_STEP_TOTAL = 0.045;
 /**
  * The point a swing candidate must keep in the picture: her upper chest,
  * this far under the UN-lifted pivot (1.30 m standing).  Chosen so the flat
@@ -3743,7 +3745,12 @@ void main() {
       /* At a deep look-up the ground's first answer below the swing is the
        * DOLLY (no aim, no framing, no lift): a rotation is only asked for
        * where even the deepest admissible push-in cannot clear. */
-      if (dk > 0.5 && hw) {
+      /* R5 fix round 3: ...at the pitch CLAMP. Under it (camPitch -0.8 on the
+       * 38.8 deg face) the swing no longer answers first (`SWING_UP_ON`), and
+       * a dolly answer there pulled the lens to 0.98 m of a 1.45 m boom —
+       * under A31b's 1.20 m bar — where the rotation that keeps the boom's
+       * length clears (measured Oct 22). */
+      if (dk > 0.5 && hw && pitch <= PITCH_UP + 0.15) {
         const Lx = P.x + sy * cp * len, Ly = P.y + sp * len, Lz = P.z + cy * cp * len;
         const t = this._dollyFor(P, Lx, Ly, Lz, 3);
         /* R5 (A31e / A31f on Brea): the push-in only answers the ground if
@@ -4699,12 +4706,19 @@ void main() {
         if (ol > hijackMax) { oxw *= hijackMax / ol; oyw *= hijackMax / ol; }
       }
       const O = this._hijO;
+      this._hijStep = 0;
+      // R5 fix round 3: the view's change is budgeted per RENDERED frame
+      // (main.js runs up to 3 sim steps, i.e. camera updates, per frame)
+      const vfr = this.ctx.engine?.frames ?? -1;
+      if (vfr !== this._viewFrame) { this._viewFrame = vfr; this._viewStepAcc = 0; }
       if (seeding) { O.x = oxw; O.y = oyw; }
       else {
         const lim = Math.min(HIJACK_STEP, HIJACK_RATE * dt) + relLim;
         const ddx = oxw - O.x, ddy = oyw - O.y, dl = Math.hypot(ddx, ddy);
         if (dl > lim) { O.x += ddx * (lim / dl); O.y += ddy * (lim / dl); }
         else { O.x = oxw; O.y = oyw; }
+        this._hijStep = dl < lim ? dl : lim;   // R5: what the view moved for the hijack this update (the keeper shares the step)
+        this._viewStepAcc = (this._viewStepAcc || 0) + this._hijStep;
       }
       const on = Math.hypot(O.x, O.y);
       if (on > 1e-9) {
@@ -4767,15 +4781,20 @@ void main() {
       // eased in and out — except on AIM, where the reticle is the shot and
       // the view returns to the request at once (A31c's aim-entry bars) — and
       // a SEEDED camera (teleport, staging) is settled at once
-      // (fix round 3: and never more than `KEEP_STEP` in one frame — the
-      // keeper sits on top of the hijack's own slew limit, and a loaded-box
-      // frame (dt 0.05) of the damp alone stepped the view 3.1-3.2 deg past
-      // the input on A31e's slow clamp pan, bar 3)
+      // (fix round 3: at `KEEP_RATE`, and sharing one per-RENDERED-frame
+      // budget with the hijack's slew — the keeper sits on top of it, and
+      // with 2-3 sim steps per frame the two summed to 3.1-3.7 deg past the
+      // input on A31e's clamp pans, bar 3)
       if (this.aiming) this._keepDrop = 0;
       else if (seeding) this._keepDrop = want;
       else {
+        // ...and the hijack's own step this frame counts against it: the two
+        // sum in the delivered view (A31e: 2.5 deg of hijack + 1.15 of keeper
+        // read 3.72 deg past the input on one frame of the slow clamp pan)
         const kd = this._keepDrop || 0, nk = THREE.MathUtils.damp(kd, want, 10, dt);
-        this._keepDrop = kd + THREE.MathUtils.clamp(nk - kd, -KEEP_STEP, KEEP_STEP);
+        const km = Math.max(0, Math.min(KEEP_RATE * dt, KEEP_STEP_TOTAL - (this._viewStepAcc || 0)));
+        this._keepDrop = kd + THREE.MathUtils.clamp(nk - kd, -km, km);
+        this._viewStepAcc = (this._viewStepAcc || 0) + Math.abs(this._keepDrop - kd);
       }
       if (this._keepDrop > 1e-4) {
         const ev2 = Math.asin(THREE.MathUtils.clamp(ly, -1, 1)) - this._keepDrop;
