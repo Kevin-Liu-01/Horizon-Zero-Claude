@@ -512,13 +512,12 @@
       "source_url": "https://quaternius.itch.io/modular-character-outfits-fantasy",
       "licence": "CC0-1.0",
       "licence_text": "public/licences/quaternius-mco-fantasy-License_Standard.txt",
-      "archive_sha256": null,
+      "archive_sha256": "c3468b18871cc8c8f05ab14df7712baf22cb9f389cbd870babf130e595187f70",
       "archive_bytes": 294347394,
       "archive_name": "Modular Character Outfits - Fantasy[Standard].zip",
-      "retrieved": "2026-10-15",
+      "retrieved": "2026-10-22",
       "modified": "source archive: staged subset (Modular Parts) in models-staging/r5-src/mco; shipped GLBs built from it carry derived_from: [\"mco-fantasy-standard\"]",
-      "attribution": null,
-      "pending": "archive_sha256: the Oct 15 zip was deleted after the Round-5 proof, and the staged extract was lost with the Oct 22 reboot (models-staging/r5-src is empty for this row). One command records the hash AND re-stages the trimmed files, verified byte for byte against tools/build/sources.lock.json: `node tools/build/sources.mjs restore --row mco-fantasy-standard --zip <file> --delete-zip` once the archive is downloaded again (itch.io free download; Kevin's go-ahead)"
+      "attribution": null
     },
     {
       "id": "pipeline-probe",
@@ -583,12 +582,12 @@
       "source_url": "https://quaternius.itch.io/universal-animation-library",
       "licence": "CC0-1.0",
       "licence_text": "public/anims/LICENSE",
-      "archive_sha256": null,
+      "archive_sha256": "45e8f8fa658fb615eb46bbac0dbee3c852c0f37e54ba6fe63590db695915069a",
       "archive_name": "Universal Animation Library[Standard].zip",
-      "retrieved": null,
+      "archive_note": "per-file SHA-256 manifest of the 3 staged files (ruling archive-per-file-ual1=accepted): the upstream archive of this version can no longer be fetched",
+      "retrieved": "2026-10-22",
       "modified": null,
-      "attribution": null,
-      "pending": "archive_sha256: the shipped files are UAL v1 (DEF-* rig names, R15 keeps it); the itch page has served v3.0 since 16 Jun 2026, so the v1 archive cannot be re-fetched. Staged per-file SHA-256s are in tools/build/sources.lock.json (ual1). Needs an orchestrator ruling: <!-- r5-ruling archive-per-file-ual1=accepted --> (then `node tools/build/sources.mjs record-per-file --row ual1` records the per-file manifest hash, stage-files form) or a v1 archive from a backup (then `restore --row ual1 --zip <file>` under <!-- r5-ruling archive-size-ual1=first-fetch -->, since no v1 size was kept)"
+      "attribution": null
     },
     {
       "id": "ual2-standard",
@@ -600,13 +599,12 @@
       "source_url": "https://quaternius.itch.io/universal-animation-library-2",
       "licence": "CC0-1.0",
       "licence_text": "public/licences/quaternius-ual2-License.txt",
-      "archive_sha256": null,
-      "archive_bytes": null,
+      "archive_sha256": "4008ea208a604773a2b2177d965f0f5d3195498b5bf838c3f5785d68e95f2a68",
+      "archive_bytes": 18735003,
       "archive_name": "Universal Animation Library 2[Standard].zip",
-      "retrieved": "2026-10-15",
+      "retrieved": "2026-10-22",
       "modified": "source archive: staged subset (UAL2_Standard.glb) in models-staging/r5-src/ual2; shipped clip files built from it carry derived_from: [\"ual2-standard\"]",
-      "attribution": null,
-      "pending": "archive_sha256: the Oct 15 zip was deleted after the Round-5 proof, and the staged extract was lost with the Oct 22 reboot (models-staging/r5-src is empty for this row). One command records the hash AND re-stages the trimmed files, verified byte for byte against tools/build/sources.lock.json: `node tools/build/sources.mjs restore --row ual2-standard --zip <file> --delete-zip` once the archive is downloaded again (itch.io free download; Kevin's go-ahead). No exact byte size was kept for this zip (the proof noted \"17 MB\"), so the restore also needs the orchestrator ruling <!-- r5-ruling archive-size-ual2-standard=first-fetch --> and a size inside the lock's 15.5–19 MB window"
+      "attribution": null
     },
     {
       "id": "ubc-standard",
@@ -618,13 +616,12 @@
       "source_url": "https://quaternius.itch.io/universal-base-characters",
       "licence": "CC0-1.0",
       "licence_text": "public/licences/quaternius-ubc-License_Standard.txt",
-      "archive_sha256": null,
+      "archive_sha256": "fdbf1804c90dfc1ea03e992bff7da2dfd1a79318e13270a660180f9308455f40",
       "archive_bytes": 128968391,
       "archive_name": "Universal Base Characters[Standard].zip",
-      "retrieved": "2026-10-15",
+      "retrieved": "2026-10-22",
       "modified": "source archive: staged subset (Base Characters/Godot - UE, Base Characters/Textures, Hairstyles/Rigged to Head Bone/glTF) in models-staging/r5-src/ubc; shipped GLBs built from it carry derived_from: [\"ubc-standard\"]",
-      "attribution": null,
-      "pending": "archive_sha256: the Oct 15 zip was deleted after the Round-5 proof, and the staged extract was lost with the Oct 22 reboot (models-staging/r5-src is empty for this row). One command records the hash AND re-stages the trimmed files, verified byte for byte against tools/build/sources.lock.json: `node tools/build/sources.mjs restore --row ubc-standard --zip <file> --delete-zip` once the archive is downloaded again (itch.io free download; Kevin's go-ahead)"
+      "attribution": null
     }
   ]
 }

@@ -8,9 +8,11 @@
       "archive": {
         "name": "Modular Character Outfits - Fantasy[Standard].zip",
         "bytes": 294347394,
-        "sha256": null,
-        "retrieved": "2026-10-15",
-        "page": "https://quaternius.itch.io/modular-character-outfits-fantasy"
+        "sha256": "c3468b18871cc8c8f05ab14df7712baf22cb9f389cbd870babf130e595187f70",
+        "retrieved": "2026-10-22",
+        "page": "https://quaternius.itch.io/modular-character-outfits-fantasy",
+        "members": 121,
+        "listingSha256": "6b252728865dd6d01d935e7055b2fe6c314ef0872044d1d733c9519f6ed937e5"
       },
       "strip": null,
       "files": {
@@ -232,7 +234,7 @@
         }
       },
       "totalBytes": 81815336,
-      "stagedFrom": "Round-5 proof extract (Oct 15 download; the zip was deleted after the proof; the staged copy was lost with the Oct 22 reboot). restore --zip with the re-downloaded archive re-stages these files (verified against the SHA-256s below) and records its SHA-256"
+      "verifiedAgainstArchive": true
     },
     "ual1": {
       "row": "ual1",
@@ -240,9 +242,11 @@
       "archive": {
         "name": "Universal Animation Library[Standard].zip",
         "bytes": null,
-        "sha256": null,
-        "retrieved": null,
-        "page": "https://quaternius.itch.io/universal-animation-library"
+        "sha256": "45e8f8fa658fb615eb46bbac0dbee3c852c0f37e54ba6fe63590db695915069a",
+        "retrieved": "2026-10-22",
+        "page": "https://quaternius.itch.io/universal-animation-library",
+        "kind": "file-manifest",
+        "ruling": "archive-per-file-ual1=accepted"
       },
       "strip": null,
       "files": {
@@ -259,23 +263,25 @@
           "sha256": "a2010f343487d3f7618affe54f789f5487602331c0a8d03f49e9a7c547cf0499"
         }
       },
-      "totalBytes": 4054259,
-      "stagedFrom": "public/anims (the shipped UAL v1 Godot export; restored with restore --from public/anims after the Oct 22 reboot). The v1 archive is superseded upstream: the itch page serves v3.0 since 16 Jun 2026, so its hash needs <!-- r5-ruling archive-per-file-ual1=accepted --> (record-per-file) or a v1 archive from a backup (restore --zip under <!-- r5-ruling archive-size-ual1=first-fetch -->)"
+      "totalBytes": 4054259
     },
     "ual2-standard": {
       "row": "ual2-standard",
       "dir": "ual2",
       "archive": {
         "name": "Universal Animation Library 2[Standard].zip",
-        "bytes": null,
+        "bytes": 18735003,
         "approxBytes": {
           "min": 15500000,
           "max": 19000000,
           "from": "docs/research/round5-pipeline-humans.md (Oct 15 proof): \"zip 17 MB\" (itch lists the size rounded; no exact byte count was kept)"
         },
-        "sha256": null,
-        "retrieved": "2026-10-15",
-        "page": "https://quaternius.itch.io/universal-animation-library-2"
+        "sha256": "4008ea208a604773a2b2177d965f0f5d3195498b5bf838c3f5785d68e95f2a68",
+        "retrieved": "2026-10-22",
+        "page": "https://quaternius.itch.io/universal-animation-library-2",
+        "bytesFrom": "first fetch (ruling archive-size-ual2-standard=first-fetch)",
+        "members": 13,
+        "listingSha256": "5b4860939ec59154d987b03151e77858286919f18ed02a40f7e4a8fd81ca61d7"
       },
       "strip": null,
       "files": {
@@ -293,7 +299,7 @@
         }
       },
       "totalBytes": 8092478,
-      "stagedFrom": "Round-5 proof extract (Oct 15 download; the zip was deleted after the proof; the staged copy was lost with the Oct 22 reboot). restore --zip with the re-downloaded archive re-stages these files (verified against the SHA-256s below) and records its SHA-256"
+      "verifiedAgainstArchive": true
     },
     "ubc-standard": {
       "row": "ubc-standard",
@@ -301,9 +307,11 @@
       "archive": {
         "name": "Universal Base Characters[Standard].zip",
         "bytes": 128968391,
-        "sha256": null,
-        "retrieved": "2026-10-15",
-        "page": "https://quaternius.itch.io/universal-base-characters"
+        "sha256": "fdbf1804c90dfc1ea03e992bff7da2dfd1a79318e13270a660180f9308455f40",
+        "retrieved": "2026-10-22",
+        "page": "https://quaternius.itch.io/universal-base-characters",
+        "members": 112,
+        "listingSha256": "fb8021cf2639e5c83132a09b8fc266f712c5bc526565da89e9830e2cd30eaed9"
       },
       "strip": null,
       "files": {
@@ -473,7 +481,7 @@
         }
       },
       "totalBytes": 50710492,
-      "stagedFrom": "Round-5 proof extract (Oct 15 download; the zip was deleted after the proof; the staged copy was lost with the Oct 22 reboot). restore --zip with the re-downloaded archive re-stages these files (verified against the SHA-256s below) and records its SHA-256"
+      "verifiedAgainstArchive": true
     }
   }
 }

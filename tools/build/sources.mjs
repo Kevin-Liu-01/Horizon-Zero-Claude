@@ -422,6 +422,17 @@ export async function stageZip({ row, zip, keeps = [], strip = null, retrieved, 
   return { row, ok: true, sha256, bytes, members: id.listing.members, files: Object.keys(files).length, totalBytes: total, zipDeleted: deleteZip };
 }
 
+/**
+ * A staged file name can match several archive members (UAL2 ships a README.txt at its root and another in
+ * "Female Mannequin/"). The lock records each staged file's bytes and SHA-256, so the member is chosen by CONTENT:
+ * exactly one candidate must equal the record; zero or several matches stay ambiguous. (orchestrator, Oct 22)
+ */
+async function pickByContent(z, hits, rec) {
+  const ok = [];
+  for (const h of hits) { const b = await z.read(h); if (b.length === rec.bytes && sha(b) === rec.sha256) ok.push({ h, b }); }
+  return ok.length === 1 ? ok[0] : null;
+}
+
 /** verify-zip: the staged files must equal their members in this archive, byte for byte. */
 export async function verifyZip({ row, zip, retrieved = null, deleteZip = false, root = ROOT }) {
   const lock = loadLock(root);
@@ -442,8 +453,9 @@ export async function verifyZip({ row, zip, retrieved = null, deleteZip = false,
       for (const [rel, rec] of Object.entries(ent.files)) {
         const hits = memberFor(members, rel);
         if (!hits.length) { out.missing.push(rel); continue; }
-        if (hits.length > 1) { out.ambiguous.push({ rel, members: hits.map((h) => h.name) }); continue; }
-        const buf = await z.read(hits[0]);
+        let pick = hits.length === 1 ? { h: hits[0], b: await z.read(hits[0]) } : await pickByContent(z, hits, rec);
+        if (!pick) { out.ambiguous.push({ rel, members: hits.map((h) => h.name) }); continue; }
+        const buf = pick.b; hits[0] = pick.h;
         out.checked++;
         if (buf.length !== rec.bytes || sha(buf) !== rec.sha256) out.mismatched.push({ rel, member: hits[0].name, bytes: buf.length, staged: rec.bytes });
       }
@@ -505,8 +517,10 @@ export async function restore({ row, from = null, zip = null, deleteZip = false,
       let buf = null, src = null;
       if (z) {
         const hits = memberFor(members, rel);
-        if (hits.length !== 1) { (hits.length ? out.ambiguous : out.missing).push(rel); continue; }
-        buf = await z.read(hits[0]);
+        if (!hits.length) { out.missing.push(rel); continue; }
+        const pick = hits.length === 1 ? { b: await z.read(hits[0]) } : await pickByContent(z, hits, rec);
+        if (!pick) { out.ambiguous.push(rel); continue; }
+        buf = pick.b;
       } else {
         const hits = fromFiles.includes(rel) ? [rel] : fromFiles.filter((f) => f.endsWith(`/${rel}`));
         if (hits.length !== 1) { (hits.length ? out.ambiguous : out.missing).push(rel); continue; }
