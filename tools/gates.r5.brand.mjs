@@ -1056,15 +1056,14 @@ const W0B = [
   },
   /* --------------------- nothing behind the spark (fix round 2, judge brand-W0b-judge-r1-eng-film) */
   {
-    // lane 'brand-w1': the W1 re-check the judge asked for (finding "V38-title FAILs its verbatim Pans-in-calima clause", fix:
-    // "At W1, re-check that the chooser's bearing clears the spark of any vertical skyline feature"). Run it by id
-    // (--only A-title-spark-clear) or with --lane brand-w1. Measured at W0b on the Round-4 valley: FAIL (docs/ROUND5-BRAND.md §0).
-    id: 'A-title-spark-clear', kind: 'action', lane: 'brand-w1', plain: true, settle: 1500, timeout: 300000,
-    title: 'W1 re-check (judge brand-W0b-judge-r1-eng-film). Nothing stands behind the spark (the judge saw a needle of rock rising behind it on the plumb axis, "pinned on a stick"): '
+    // fix round 2 (judge brand-W0b-judge-r1-eng-film saw a needle spire behind the spark; their fix: "At W1, re-check that
+    // the chooser's bearing clears the spark of any vertical skyline feature"). Graded now, and it is that W1 re-check.
+    id: 'A-title-spark-clear', kind: 'action', lane: 'brand', plain: true, settle: 1500, timeout: 300000,
+    title: 'Nothing stands behind the spark (the judge saw a needle of rock rising behind it on the plumb axis, "pinned on a stick"; bible 9.8: the spark is "the calima sun"): '
       + 'along the ray through every column of the spark box\'s bottom edge (one per 6 px, at least 9), from the LIVE camera, the terrain '
       + '(marched in 2 m steps over the rendered terrain mesh\'s box) and every other visible mesh in the scene (raycast; the sky dome and the disc excepted) '
       + 'are under the spark: on the press beat (0.3 s, 2.6 s), IN REAL TIME with the menu in every 5 s until the dolly clock passes 105 s (the whole truck), '
-      + 'on the second visit (QUIT TO TITLE) at the press beat, and with the lockup restaged at 2.4x as V-logo-4k films it; the chooser reports the spark clear on every visit',
+      + 'on the second visit (QUIT TO TITLE) at the press beat, and with the lockup restaged at 2.4x as V-logo-4k films it; the framing chooser reports the spark clear on both visits',
     assert: `(async () => {
       const ctx = __CTX__, M = ctx.menus, cam = ctx.camera, scene = ctx.scene, T = ctx.terrain, env = ctx.environment;
       const wait = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -1110,7 +1109,7 @@ const W0B = [
       const T0 = performance.now();
       const rows = [];
       const chooser = [];
-      const audit = () => { const s = M.audit().title.disc; return s ? { posOffset: s.posOffset, lookOffset: s.lookOffset, clearanceDeg: s.clearanceDeg, spark: s.spark, ms: s.ms } : null; };
+      const audit = () => { const s = M.audit().title.disc; return s ? { hour: s.hour, posOffset: s.posOffset, lookOffset: s.lookOffset, tiltExtraDeg: s.tiltExtraDeg, clearanceDeg: s.clearanceDeg, discPx: s.discPx, spark: s.spark, ms: s.ms } : null; };
       // the first visit: the press beat (V-logo films at 2.6 s), then the menu in real time over the whole truck
       chooser.push({ visit: 1, ...audit() });
       await wait(300); rows.push(look('press 0.3 s'));
@@ -1131,11 +1130,9 @@ const W0B = [
       chooser.push({ visit: 2, ...audit() });
       await wait(300); rows.push(look('visit 2 press 0.3 s'));
       await wait(2300); rows.push(look('visit 2 press 2.6 s'));
-      // V-logo-4k's staging: the lockup at 2.4x, framed for it (menus._titleReframe), the press beat
+      // V-logo-4k's staging: the lockup at 2.4x over the same framing, the press beat
       const L = document.querySelector('#title .cal-logo'), lk = L.style.getPropertyValue('--cal-lk');
       L.style.setProperty('--cal-lk', (92 * 2.4) + 'px');
-      const re = M._titleReframe ? M._titleReframe() : null;
-      chooser.push({ visit: '2 (lockup 2.4x)', ...(re ? audit() : { why: 'no _titleReframe' }) });
       await wait(300); rows.push(look('lockup 2.4x 0.3 s'));
       await wait(2300); rows.push(look('lockup 2.4x 2.6 s'));
       if (lk) L.style.setProperty('--cal-lk', lk); else L.style.removeProperty('--cal-lk');
@@ -1144,7 +1141,7 @@ const W0B = [
         nothingBehindTheSpark: rows.every((r) => r.hits === 0),
         terrainUnderTheSparkEverywhere: rows.every((r) => r.terrainMarginDeg >= 0),
         wholeTruckSampled: menuRows.length >= 15 && Math.max(...menuRows.map((r) => r.dollyT || 0)) > 105,
-        chooserReportsClear: chooser.length === 3 && chooser.every((c) => c.spark && c.spark.measured === true && c.spark.clear === true),
+        chooserReportsClear: chooser.length === 2 && chooser.every((c) => c.spark && c.spark.measured === true && c.spark.clear === true),
       };
       return { pass: Object.values(checks).every(Boolean), detail: {
         failed: Object.keys(checks).filter((k) => !checks[k]), checks,
@@ -1170,11 +1167,10 @@ const W0B = [
   },
   {
     id: 'V-logo-4k', kind: 'visual', lane: 'brand', plain: true, settle: 2600,
-    title: 'The lockup at 2.4x (a 3840x2160-equivalent crop): the same vector construction rendered at 4K pixel density; '
-      + 'the vista is framed for the lockup as staged (menus._titleReframe, fix round 2), so nothing stands behind the larger spark (A-title-spark-clear)',
+    title: 'The lockup at 2.4x (a 3840x2160-equivalent crop): the same vector construction rendered at 4K pixel density, over the title\'s own framing '
+      + '(A-title-spark-clear checks that nothing stands behind the larger spark in this staging too)',
     setup: `(() => { const L = document.querySelector('#title .cal-logo'); L.style.setProperty('--cal-lk', (92 * 2.4) + 'px');
-      for (const s of ['.mn-title', '#btn-start']) document.querySelectorAll('#title ' + s).forEach((n) => { n.style.visibility = 'hidden'; });
-      __CTX__.menus._titleReframe?.(); })()`,
+      for (const s of ['.mn-title', '#btn-start']) document.querySelectorAll('#title ' + s).forEach((n) => { n.style.visibility = 'hidden'; }); })()`,
     reference: ['reference/r5/brand/bodoni-manuale-tipografico-1818.jpg', 'reference/r5/brand/os-benchmark-broad-arrow.jpg'],
     criteria: 'The V-logo construction up close. PASS: the spark is whole (ten round-capped rays, none clipped or overlapped), clear of the cap line; '
       + 'the plumb line is a single thin stroke from the cap line to a pointed bob whose tip sits on the baseline; the datum rule is one hairline, '

@@ -416,7 +416,11 @@ body.cal-reduced-motion #title * {
 
 /* =========================================================== title screen */
 
-#title .title-inner { position: relative; }
+/* Fix round 2: the whole title block (lockup + menu) stands 10vh higher, so the
+   spark, the dot of the I and "the calima sun" (bible §9.8), sits in clear sky over
+   the rim instead of in front of it; src/ui/menu.js's framing chooser reads where it lands. */
+#title { --cal-title-lift: 10vh; }
+#title .title-inner { position: relative; top: calc(-1 * var(--cal-title-lift)); }
 body.cal-title-live #loading { display: none !important; }
 
 /**
@@ -444,7 +448,7 @@ body.cal-title-live #title.overlay {
   /* brand W0b: the bible's lapilli scrim: behind the lockup, clear in the sky
      so the calima disc reads as the light, darker at the foot for the text */
   background:
-    radial-gradient(ellipse 330px 19% at 50% 34%,
+    radial-gradient(ellipse 330px 19% at 50% calc(34% - var(--cal-title-lift, 0px)),
       rgba(28, 27, 30, 0.22) 0%,
       rgba(28, 27, 30, 0.16) 62%,
       rgba(28, 27, 30, 0) 100%),
@@ -455,7 +459,7 @@ body.cal-title-live #title.overlay {
       rgba(28, 27, 30, 0.34) 72%,
       rgba(28, 27, 30, 0.62) 88%,
       rgba(28, 27, 30, 0.80) 100%),
-    radial-gradient(ellipse 34% 40% at 50% 62%,
+    radial-gradient(ellipse 34% 40% at 50% calc(62% - var(--cal-title-lift, 0px)),
       rgba(28, 27, 30, 0.42) 0%,
       rgba(28, 27, 30, 0.20) 60%,
       rgba(28, 27, 30, 0) 100%);

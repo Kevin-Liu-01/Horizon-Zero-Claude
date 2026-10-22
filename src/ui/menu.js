@@ -113,16 +113,28 @@ const TITLE_POS_OFFSETS = [0, 0.05, -0.05, 0.1, -0.1, 0.15, -0.15, 0.2, -0.2, 0.
 /**
  * Nothing behind the spark (fix round 2 after the W0b judges: "a needle spire rises
  * straight up behind the spark on the plumb axis, so the spark reads as pinned on a
- * stick"). The chooser also keeps the spark's whole box in clear sky: along the ray
- * through every column of the box's bottom edge, the terrain crest stays at least
- * TITLE_SPARK_MARGIN_DEG under it, from every point of the camera path, in both
- * layouts (the press beat and the menu). The look offset may move off TITLE_LOOK_OFFSET
- * for that, in this preference order; the range keeps the disc 20–28° right of centre:
- * clear of the lockup, inside the engine's vignette (0.55 was measured too far out, round 3).
+ * stick"; bible §9.8: the spark is the dot of the I, "the calima sun"). The framing is
+ * chosen so the spark stands in CLEAR SKY: along the rays through the spark box's bottom
+ * edge, widened by TITLE_SPARK_PAD of its width on each side, the terrain crest stays
+ * at least TITLE_SPARK_MARGIN_DEG under it from every point of the camera path, in both
+ * layouts (the press beat and the menu). On the Round-4 valley's jagged rim no bearing or
+ * view does that at the old 9° tilt (measured: the crest stood up to 13.4° over the spark),
+ * so the chooser may also raise the camera's tilt (TITLE_TILT_EXTRA) and take the title's
+ * hour from TITLE_HOURS (a higher sun keeps the disc in the upper band as the tilt rises):
+ * the least extra tilt wins, then the hour, the view and the bearing in preference order.
+ * The disc must stay in the upper band, right of the lockup: its centre at or above the
+ * spark box's centre and at least TITLE_DISC_GAP_PX right of the lockup, whole in the frame
+ * with TITLE_DISC_EDGE_PX to spare, at both ends of the closing move. Nothing found: the
+ * Round-4 framing (TITLE_HOUR, no extra tilt, TITLE_LOOK_OFFSET), reported in the audit.
  */
-const TITLE_LOOK_OFFSETS = [TITLE_LOOK_OFFSET, 0.39, 0.45, 0.36, 0.48];
+const TITLE_LOOK_OFFSETS = [TITLE_LOOK_OFFSET, 0.39, 0.45, 0.36, 0.48];   // rad; 0.55 was measured too far into the vignette (round 3)
+const TITLE_HOURS = [17, 16.5, 17.5, 16, 15.5, 15];   // the boot hour first
+const TITLE_TILT_EXTRA = [0, 1, 2, 3, 4, 5, 6, 7, 8]; // deg added to TITLE_TILT_DEG
 const TITLE_SPARK_MARGIN_DEG = 0.4;
+const TITLE_SPARK_PAD = 0.25;
 const TITLE_SPARK_COLS = 7;
+const TITLE_DISC_GAP_PX = 100;
+const TITLE_DISC_EDGE_PX = 40;
 const TITLE_TRUCK_STEPS = [-1, -0.5, 0, 0.5, 1];   // of TITLE_TRUCK_M: the truck's samples
 const TITLE_EASE_STEPS = [0, 0.5, 1];              // the closing move's samples (menu layout; the press beat is ease 0)
 const TITLE_NIGHT_HEADING = 3.6;  // rad, used only when the sun is under the horizon
@@ -130,11 +142,11 @@ const TITLE_TRUCK_M = 24;         // lateral drift amplitude, m
 const TITLE_TRUCK_W = 0.045;      // rad/s of the drift (one sway ≈ 140 s)
 const TITLE_TILT_DEG = 9;         // upward tilt at the start of the move (+3° across the ease)
 /**
- * The title's own hour (fix round 1, judge r0): the boot hour, 17:00, the one
- * the framing, the disc and every title gate were built and measured at. The
- * title BORROWS it with the clock, whatever hour the player quit at: at 12:00
- * the sun stood above the frame (the disc at y -227 px) and at 21:00 there was
- * no sun at all. `_titleLeave` hands the player's hour back.
+ * The title's own hour (fix round 1, judge r0): the title BORROWS an hour with the
+ * clock, whatever hour the player quit at (at 12:00 the sun stood above the frame,
+ * at 21:00 there was none), and `_titleLeave` hands the player's hour back. Since fix
+ * round 2 the hour is the chooser's, from TITLE_HOURS; TITLE_HOUR, the boot hour, is
+ * the first choice and the fallback.
  */
 const TITLE_HOUR = 17;
 const DEG = Math.PI / 180;
@@ -163,7 +175,7 @@ const DEG = Math.PI / 180;
  */
 const CALIMA_DISC = {
   dist: 1500, radiusDeg: 12, coreDeg: 1.5, soft: 0.16, clearDeg: 2.3,
-  color: [3.7, 0.02, 0.31],
+  color: [4.25, 0.023, 0.357],   // fix round 2: x1.15 (the disc stands higher, in the top haze and the vignette; fitted on filmed frames)
   absorb: 0.68, absorbIn: 2, absorbPow: 1.4,     // the broad glow, out to radiusDeg
   corona: 0.26, coronaOutDeg: 3,                 // the tight corona, from the core's edge out to coronaOutDeg
 };
@@ -465,29 +477,26 @@ export class Menus {
   }
 
   /**
-   * Frame the title once per visit (brand, W0b): the view looks along the sun's
-   * azimuth + TITLE_LOOK_OFFSET so the calima disc sits on the right third, and
-   * the camera stands on the bearing `_titleChooseFrame` picks; at night a
-   * fixed heading for both. Also asks the renderer for calima:
-   * once world-sky ships the `calima` weather (W1) `setWeather('calima')`
-   * returns 'calima', the CSS stand-in (#cal-calima) and the disc billboard
-   * switch off and the start restores the weather. Allocates once per visit
-   * (the billboard: one quad, one material, dropped in `_titleLeave`).
+   * Frame the title once per visit (brand, W0b): the chooser (`_titleChooseFrame`)
+   * picks the title's hour, the camera's bearing, the view and the extra tilt; at
+   * night (only when the hour cannot be borrowed) a fixed heading. Also asks the
+   * renderer for calima: once world-sky ships the `calima` weather (W1)
+   * `setWeather('calima')` returns 'calima', the CSS stand-in (#cal-calima) and the
+   * disc billboard switch off and the start restores the weather. Allocates once
+   * per visit (the billboard: one quad, one material, dropped in `_titleLeave`).
    *
-   * The clock AND the hour are borrowed FIRST, before anything reads the sun:
-   * the title is framed for TITLE_HOUR, not for the hour the player quit at.
+   * The clock AND the hour are borrowed FIRST, before anything reads the sun: the
+   * title is framed for its own hour, not for the hour the player quit at.
    */
   _titleFrame() {
     const env = this.ctx.environment;
     if (env && this._clockHeld == null) {
       this._clockHeld = !!env.timeFrozen;
       env.timeFrozen = true;
-      if (typeof env.setTime === 'function') { this._hourHeld = env.time; env.setTime(TITLE_HOUR); }
+      if (typeof env.setTime === 'function') this._hourHeld = env.time;
     }
-    const sun = env?.sunDir;
-    const day = !!sun && sun.y > 0.02;
-    this._titleHead = { sx: 0, cz: 0, az: 0, lx: 0, lz: 0, look: 0 };
-    this._titleAim(day ? sun : null);
+    this._titleHead = { sx: 0, cz: 0, az: 0, lx: 0, lz: 0, look: 0, tilt: 0 };
+    this._titleAim();
     this._calimaWeather = null;
     if (env?.setWeather && env.weather !== 'calima') {
       const prev = env.weather;
@@ -495,58 +504,155 @@ export class Menus {
     }
     const live = env?.weather === 'calima';
     document.body.classList.toggle('cal-calima-live', live);
-    if (day && !live) this._discMake(); else this._discDrop();
+    const sun = env?.sunDir;
+    if (sun && sun.y > 0.02 && !live) this._discMake(); else this._discDrop();
   }
 
   /**
-   * Choose the bearing and the view for this visit and write them into `_titleHead`
-   * in place: (sx, cz) the camera's bearing line through REST, (lx, lz) where it looks.
-   * Night (`sun` null): the fixed heading for both.
+   * Run the chooser, set the world to the title's hour (only while the title holds
+   * the hour) and write the bearing line through REST (sx, cz), the view (lx, lz)
+   * and the extra tilt into `_titleHead` in place.
    */
-  _titleAim(sun) {
-    const saz = sun ? Math.atan2(sun.x, sun.z) : 0;
-    const pos = sun ? this._titleChooseFrame(sun) : TITLE_NIGHT_HEADING;
-    const look = sun ? saz + (this._titleDiscInfo?.lookOffset ?? TITLE_LOOK_OFFSET) : TITLE_NIGHT_HEADING;
+  _titleAim() {
+    const env = this.ctx.environment;
+    const pick = this._titleChooseFrame();
+    this._titleHour = pick?.hour ?? TITLE_HOUR;
+    if (this._hourHeld != null && typeof env?.setTime === 'function' && env.time !== this._titleHour) env.setTime(this._titleHour);
+    const sun = env?.sunDir;
+    const day = !!sun && sun.y > 0.02 && !!pick;
+    const saz = day ? Math.atan2(sun.x, sun.z) : 0;
+    const pos = day ? saz + pick.pos : TITLE_NIGHT_HEADING;
+    const look = day ? saz + pick.look : TITLE_NIGHT_HEADING;
     const h = this._titleHead;
     h.sx = Math.sin(pos); h.cz = Math.cos(pos); h.az = pos; h.lx = Math.sin(look); h.lz = Math.cos(look); h.look = look;
+    h.tilt = day ? pick.tilt : 0;
+  }
+
+  /** The chooser's scratch objects, made once and kept until the title is left (no GPU resources). */
+  _titleScratchGet() {
+    if (!this._titleScratch) {
+      this._titleScratch = { cam: new THREE.PerspectiveCamera(), v: new THREE.Vector3(), from: new THREE.Vector3(), sun: new THREE.Vector3(),
+        box: new THREE.Box3(), head: { sx: 0, cz: 0, lx: 0, lz: 0, tilt: 0 } };
+    }
+    const S = this._titleScratch, cam = this.ctx.camera, pc = S.cam;
+    if (cam && (pc.fov !== cam.fov || pc.aspect !== cam.aspect)) { pc.fov = cam.fov; pc.aspect = cam.aspect; pc.near = cam.near; pc.far = cam.far; pc.updateProjectionMatrix(); }
+    return S;
   }
 
   /**
-   * Re-choose the framing for the lockup as it is laid out NOW (fix round 2), for a gate
-   * that restages the lockup on the press beat (V-logo-4k scales it 2.4x). Only the
-   * bearing and the view change: the clock, the hour, the weather and the disc stay as
-   * `_titleFrame` borrowed them. Day only; returns the audit's disc info, or null.
+   * The chooser. Candidates, in preference order: the hour (TITLE_HOURS), the view
+   * (TITLE_LOOK_OFFSETS) and the bearing (TITLE_POS_OFFSETS whose path keeps the
+   * skyline under the disc, best first); each takes the least extra tilt that keeps
+   * the spark in clear sky, and the least extra tilt wins (then that order). A
+   * candidate must also place the disc in the upper band (`_titleDiscPlaced`) and pass
+   * the full spark test at its tilt. None: the Round-4 framing at the first hour, with
+   * the spark reported unclear. Once per title visit; timed in the audit.
+   * Returns { hour, pos, look, tilt } (offsets in rad from the sun's azimuth), or null at night.
    */
-  _titleReframe() {
-    const sun = this.ctx.environment?.sunDir;
-    if (!this._titleHead || !sun || sun.y <= 0.02) return null;
-    this._titleAim(sun);
-    return this._titleDiscInfo;
-  }
-
-  /**
-   * The camera's bearing from REST: of TITLE_POS_OFFSETS (rad from the sun's
-   * azimuth), the one whose camera path keeps the terrain skyline furthest
-   * under the disc (its core + rim + a margin, CALIMA_DISC.clearDeg, across its
-   * whole width), from every point the title visits: both ends of the lateral
-   * truck and its middle, at the opening and the closing radius and height.
-   * The sun is taken where the sky draws it, seen from each of those points
-   * (`_titleSunPoint`). The billboard's depth test still hides whatever part of
-   * the sun really is behind terrain or a prop. Once per title visit: 12
-   * bearings x 6 positions x 5 azimuths x 70 samples of the analytic height
-   * (timed in the audit).
-   */
-  _titleChooseFrame(sun) {
-    const T = this.ctx.terrain;
-    const saz = Math.atan2(sun.x, sun.z);
-    const info = { posOffset: TITLE_POS_OFFSETS[0], lookOffset: TITLE_LOOK_OFFSET, clearanceDeg: null, tried: [], ms: 0,
+  _titleChooseFrame() {
+    const env = this.ctx.environment, T = this.ctx.terrain, cam = this.ctx.camera;
+    const info = { hour: null, posOffset: TITLE_POS_OFFSETS[0], lookOffset: TITLE_LOOK_OFFSET, tiltExtraDeg: 0, clearanceDeg: null, tried: [], ms: 0,
       coreDeg: CALIMA_DISC.coreDeg, edgeDeg: +(CALIMA_DISC.coreDeg * (1 + CALIMA_DISC.soft)).toFixed(3),
-      radiusDeg: CALIMA_DISC.radiusDeg, skySun: !!this._skyDome() };
+      radiusDeg: CALIMA_DISC.radiusDeg, skySun: !!this._skyDome(),
+      spark: { measured: false, ndc: null, clear: false, marginDeg: null, need: TITLE_SPARK_MARGIN_DEG, candidates: 0, verified: 0, cached: false }, discPx: null };
     this._titleDiscInfo = info;
-    if (!T?.getHeight) return saz + info.posOffset;
+    if (!env?.sunDir) return null;
     const t0 = performance.now();
-    const cam = new THREE.Vector3(), sp = new THREE.Vector3();   // once per visit
-    let best = -Infinity;
+    const S = this._titleScratchGet();
+    const Env = env.constructor;
+    const canHour = typeof Env?.direction === 'function' && typeof env.setTime === 'function' && this._hourHeld != null;
+    const hours = canHour ? TITLE_HOURS : [null];          // null: the world's own sun (the hour cannot be borrowed)
+    const sunOf = (h) => (h == null ? S.sun.copy(env.sunDir) : Env.direction(h, S.sun));
+    const p1 = new Map();
+    const clearOf = (h) => { if (!p1.has(h)) { const sun = sunOf(h); p1.set(h, sun.y > 0.02 ? this._titleDiscClearance(sun) : null); } return p1.get(h); };
+    let spk = null;
+    const done = (pick, tried, clear) => {
+      info.hour = pick.hour ?? +env.time;
+      info.posOffset = pick.pos; info.lookOffset = pick.look; info.tiltExtraDeg = pick.tilt;
+      info.tried = tried; info.clearanceDeg = (tried.find((r) => r[0] === pick.pos) || [0, null])[1];
+      if (spk) {
+        const sun = sunOf(pick.hour), saz = Math.atan2(sun.x, sun.z);
+        info.spark.clear = !!clear;
+        info.spark.marginDeg = +(this._titleSparkMargin(saz, pick.pos, pick.look, pick.tilt, spk, -Infinity, false) / DEG).toFixed(2);
+        this._titleDiscPlaced(sun, saz, pick.pos, pick.look, pick.tilt, spk);   // the audit's discPx, for the pick
+      }
+      info.ms = +(performance.now() - t0).toFixed(1);
+      return pick;
+    };
+    const tr0 = clearOf(hours[0]);
+    if (!tr0) { info.ms = +(performance.now() - t0).toFixed(1); return null; }
+    const fb = tr0.reduce((a, b) => (b[1] > a[1] ? b : a));
+    const fallback = { hour: hours[0], pos: fb[0], look: TITLE_LOOK_OFFSET, tilt: 0 };
+    spk = T?.getHeight && cam ? this._titleSparkNdc() : null;
+    if (!spk) return done(fallback, tr0, false);
+    info.spark.measured = true;
+    info.spark.ndc = { press: spk.press, menu: spk.menu };
+    const need = TITLE_SPARK_MARGIN_DEG * DEG;
+    const maxTilt = TITLE_TILT_EXTRA[TITLE_TILT_EXTRA.length - 1];
+    /** the full test at a tilt, the disc's placement first (cheap); true = pick it */
+    const passes = (c, tilt) => {
+      const sun = sunOf(c.hour);
+      if (!this._titleDiscPlaced(sun, c.saz, c.pos, c.look, tilt, spk)) return false;
+      info.spark.verified++;
+      return this._titleSparkMargin(c.saz, c.pos, c.look, tilt, spk, need, false) >= need;
+    };
+    // a later visit with the same layout re-checks the last pick first: pass 1 for its hour
+    // (the sky's sun moves with the player) and the full spark test at its tilt
+    const key = [spk.press.x0, spk.press.x1, spk.press.y, spk.menu.y, cam.fov, cam.aspect.toFixed(4)].join('|');
+    const keep = (pick, tr) => { this._titlePickLast = { key, pick }; return done(pick, tr, true); };
+    const last = this._titlePickLast;
+    if (last && last.key === key && hours.includes(last.pick.hour)) {
+      const tr = clearOf(last.pick.hour), row = tr && tr.find((r) => r[0] === last.pick.pos);
+      if (row && row[1] >= 0) {
+        const sun = sunOf(last.pick.hour);
+        if (passes({ ...last.pick, saz: Math.atan2(sun.x, sun.z) }, last.pick.tilt)) { info.spark.cached = true; return done(last.pick, tr, true); }
+      }
+    }
+    const cands = [];
+    for (const h of hours) {
+      const tr = clearOf(h);
+      if (!tr) continue;
+      const sun = sunOf(h), saz = Math.atan2(sun.x, sun.z);
+      const byClear = tr.filter((r) => r[1] >= 0).sort((a, b) => b[1] - a[1]);
+      for (const lo of TITLE_LOOK_OFFSETS) {
+        for (const r of byClear) {
+          info.spark.candidates++;
+          // the quick read (fewer rays) can only overstate the margin, so its tilt is a lower bound
+          const m = this._titleSparkMargin(saz, r[0], lo, 0, spk, -Infinity, true);
+          const tilt = TITLE_TILT_EXTRA.find((t) => m + t * DEG >= need);
+          if (tilt == null) continue;
+          const c = { hour: h, pos: r[0], look: lo, tilt, saz, n: cands.length };
+          if (tilt === 0 && passes(c, 0)) return keep({ hour: h, pos: c.pos, look: lo, tilt: 0 }, tr);
+          cands.push(c);
+        }
+      }
+    }
+    cands.sort((a, b) => a.tilt - b.tilt || a.n - b.n);
+    for (let t = 0; t <= maxTilt; t++) {
+      for (const c of cands) {
+        if (c.tilt > t) break;
+        if (TITLE_TILT_EXTRA.includes(t) && passes(c, t)) return keep({ hour: c.hour, pos: c.pos, look: c.look, tilt: t }, clearOf(c.hour));
+      }
+    }
+    return done(fallback, tr0, false);
+  }
+
+  /**
+   * Pass 1, for one sun: per bearing of TITLE_POS_OFFSETS (rad from the sun's
+   * azimuth), how far the terrain skyline stays under the disc (its core + rim + a
+   * margin, CALIMA_DISC.clearDeg, across its whole width) from every point the title
+   * visits: both ends of the lateral truck and its middle, at the opening and the
+   * closing radius and height. The sun is taken where the sky draws it, seen from
+   * each of those points (`_titleSunPoint`). The billboard's depth test still hides
+   * whatever part of the sun really is behind terrain or a prop. 12 bearings x 6
+   * positions x 5 azimuths x 70 samples of the analytic height. -> [[offset, deg], ...]
+   */
+  _titleDiscClearance(sun) {
+    const T = this.ctx.terrain;
+    const S = this._titleScratchGet();
+    const saz = Math.atan2(sun.x, sun.z);
+    const cam = S.from, sp = S.v;
+    const out = [];
     for (const off of TITLE_POS_OFFSETS) {
       const hx = Math.sin(saz + off), hz = Math.cos(saz + off);
       let worst = Infinity;
@@ -555,7 +661,7 @@ export class Menus {
           const cx = CAMP.x - hx * radius - hz * lat, cz = CAMP.z - hz * radius + hx * lat;
           const cy = T.getHeight(cx, cz) + (radius === 150 ? 32 : 25);
           // the sun where the sky draws it, seen from this point of the path
-          this._titleSunPoint(sp, cam.set(cx, cy, cz)).sub(cam);
+          this._titleSunPoint(sp, cam.set(cx, cy, cz), sun).sub(cam);
           const az = Math.atan2(sp.x, sp.z), lowEdge = Math.asin(sp.y / sp.length()) - CALIMA_DISC.clearDeg * DEG;
           for (let k = -2; k <= 2; k++) {
             const a = az + k * 0.5 * CALIMA_DISC.clearDeg * DEG, sx = Math.sin(a), sz = Math.cos(a);
@@ -568,65 +674,39 @@ export class Menus {
           }
         }
       }
-      info.tried.push([off, +(worst / DEG).toFixed(2)]);
-      if (worst > best) { best = worst; info.posOffset = off; info.clearanceDeg = +(worst / DEG).toFixed(2); }
+      out.push([off, +(worst / DEG).toFixed(2)]);
     }
-    // pass 2 (fix round 2): nothing behind the spark. Of the bearings whose disc is
-    // clear (best first), and the look offsets in preference order, the first whose
-    // spark box stays in clear sky over the whole path; none: pass 1's choice, reported
-    const spk = this._titleSparkNdc();
-    info.spark = { measured: !!spk, ndc: spk, clear: null, marginDeg: null, need: TITLE_SPARK_MARGIN_DEG, evaluated: 0 };
-    if (spk) {
-      const need = TITLE_SPARK_MARGIN_DEG * DEG;
-      const order = info.tried.filter((r) => r[1] >= 0).sort((a, b) => b[1] - a[1]).map((r) => r[0]);
-      if (!order.length) order.push(info.posOffset);
-      let pick = null;
-      for (const lo of TITLE_LOOK_OFFSETS) {
-        for (const po of order) {
-          info.spark.evaluated++;
-          if (this._titleSparkMargin(saz, po, lo, spk, need) >= need) { pick = [po, lo]; break; }
-        }
-        if (pick) break;
-      }
-      if (pick) {
-        info.posOffset = pick[0];
-        info.lookOffset = pick[1];
-        info.clearanceDeg = info.tried.find((r) => r[0] === pick[0])[1];
-      }
-      const m = this._titleSparkMargin(saz, info.posOffset, info.lookOffset, spk, -Infinity);
-      info.spark.clear = !!pick;
-      info.spark.marginDeg = +(m / DEG).toFixed(2);
-    }
-    info.ms = +(performance.now() - t0).toFixed(1);
-    return saz + info.posOffset;
+    return out;
   }
 
   /**
    * Where the spark's box stands, in NDC, in both title layouts: the press beat and
-   * the menu (the menu block is taller, so the centred lockup rises). Read once per
-   * visit; the menu layout by adding `lit` for one synchronous layout, then restoring
-   * it, so nothing paints in between. null when the title is not laid out.
+   * the menu (the menu block is taller, so the centred lockup rises); plus, in px, the
+   * menu layout's spark centre and lockup right edge for the disc's placement. Read
+   * once per visit; the menu layout by adding `lit` for one synchronous layout, then
+   * restoring it, so nothing paints in between. null when the title is not laid out.
    */
   _titleSparkNdc() {
-    const s = document.querySelector('#title .cal-spark'), t = this.titleEl;
-    if (!s || !t || !(innerWidth > 0) || !(innerHeight > 0)) return null;
+    const s = document.querySelector('#title .cal-spark'), L = document.querySelector('#title .cal-logo'), t = this.titleEl;
+    if (!s || !L || !t || !(innerWidth > 0) || !(innerHeight > 0)) return null;
     const read = () => {
       const r = s.getBoundingClientRect();
-      return r.width > 0 ? { x0: +(r.left / innerWidth * 2 - 1).toFixed(4), x1: +(r.right / innerWidth * 2 - 1).toFixed(4), y: +(1 - r.bottom / innerHeight * 2).toFixed(4) } : null;
+      return r.width > 0 ? { x0: +(r.left / innerWidth * 2 - 1).toFixed(4), x1: +(r.right / innerWidth * 2 - 1).toFixed(4), y: +(1 - r.bottom / innerHeight * 2).toFixed(4), cy: (r.top + r.bottom) / 2 } : null;
     };
     const lit = t.classList.contains('lit');
     t.classList.remove('lit');
     const press = read();
     t.classList.add('lit');
     const menu = read();
+    const lockRight = L.getBoundingClientRect().right;
     if (!lit) t.classList.remove('lit');
-    return press && menu ? { press, menu } : null;
+    return press && menu ? { press, menu, px: { sparkCy: menu.cy, lockRight } } : null;
   }
 
   /**
    * The camera on the title path (the one formula `_dolly` uses): ease 0..1 of the
-   * closing move, `lat` m of the truck, `head` = { sx, cz, lx, lz }. Sets the camera's
-   * position and orientation and updates its matrix; returns camY. No allocation.
+   * closing move, `lat` m of the truck, `head` = { sx, cz, lx, lz, tilt }. Sets the
+   * camera's position and orientation and updates its matrix; returns camY. No allocation.
    */
   _titlePlace(cam, head, ease, lat) {
     const terrain = this.ctx.terrain;
@@ -636,9 +716,9 @@ export class Menus {
     const ground = terrain?.getHeight ? terrain.getHeight(cx, cz) : 0;
     const camY = ground + 32 - ease * 7;
     cam.position.set(cx, camY, cz);
-    // NEGATIVE = TILT UP, opening across the move. 9° → 12° up keeps the calima
-    // sky (and the disc, ~27° high at 17:00) in the upper third over the rim.
-    const pitch = (-TITLE_TILT_DEG - ease * 3) * DEG;
+    // NEGATIVE = TILT UP, opening across the move: 9° → 12° up, plus the chooser's extra
+    // tilt (fix round 2), keeps the sky, the disc and the spark over the rim.
+    const pitch = (-TITLE_TILT_DEG - (head.tilt || 0) - ease * 3) * DEG;
     const reach = radius * 1.05;
     cam.lookAt(cx + head.lx * reach, camY - reach * Math.tan(pitch), cz + head.lz * reach);
     cam.updateMatrixWorld();
@@ -646,36 +726,38 @@ export class Menus {
   }
 
   /**
-   * One candidate framing (bearing saz + po, view saz + lo): the least angle, over the
-   * path, by which the ray through the spark box's bottom edge clears the terrain crest
-   * under it (rad; < 0 = something stands behind the spark). Returns as soon as it
-   * drops under `need`. The crest is marched only over the rendered terrain mesh (its
-   * world box); beyond it the sky ring's ridges stand far lower. A scratch camera
-   * and two vectors are made once and kept (no GPU resources; dropped on leave).
+   * One candidate framing (bearing saz + po, view saz + lo, extra tilt in deg): the
+   * least angle, over the path, by which the rays through the spark box's bottom edge
+   * (widened by TITLE_SPARK_PAD each side) clear the terrain crest under them (rad;
+   * < 0 = something stands behind the spark). Returns as soon as it drops under
+   * `need`. `quick`: 9 of the 20 path points, 3 rays, 20 m steps (an upper bound on
+   * the full read). The crest is marched only over the rendered terrain mesh (its
+   * world box); beyond it the sky ring's ridges stand far lower. No allocation.
    */
-  _titleSparkMargin(saz, po, lo, spk, need) {
-    const T = this.ctx.terrain, cam = this.ctx.camera;
-    if (!T?.getHeight || !cam) return Infinity;
-    if (!this._titleScratch) {
-      this._titleScratch = { cam: new THREE.PerspectiveCamera(), v: new THREE.Vector3(), box: new THREE.Box3(), head: { sx: 0, cz: 0, lx: 0, lz: 0 } };
-    }
-    const S = this._titleScratch, pc = S.cam, v = S.v, head = S.head;
-    if (pc.fov !== cam.fov || pc.aspect !== cam.aspect) { pc.fov = cam.fov; pc.aspect = cam.aspect; pc.near = cam.near; pc.far = cam.far; pc.updateProjectionMatrix(); }
+  _titleSparkMargin(saz, po, lo, tilt, spk, need, quick) {
+    const T = this.ctx.terrain;
+    if (!T?.getHeight) return Infinity;
+    const S = this._titleScratchGet(), pc = S.cam, v = S.v, head = S.head;
     const box = T.mesh ? S.box.setFromObject(T.mesh) : null;
-    head.sx = Math.sin(saz + po); head.cz = Math.cos(saz + po); head.lx = Math.sin(saz + lo); head.lz = Math.cos(saz + lo);
+    head.sx = Math.sin(saz + po); head.cz = Math.cos(saz + po); head.lx = Math.sin(saz + lo); head.lz = Math.cos(saz + lo); head.tilt = tilt;
+    const cols = quick ? 3 : TITLE_SPARK_COLS, step = quick ? 20 : 10;
     let worst = Infinity;
     for (let L = 0; L < 2; L++) {
       const lay = L === 0 ? spk.press : spk.menu;
-      const eases = L === 0 ? 1 : TITLE_EASE_STEPS.length;
-      for (let e = 0; e < eases; e++) {
+      const pad = (lay.x1 - lay.x0) * TITLE_SPARK_PAD;
+      const ne = L === 0 ? 1 : TITLE_EASE_STEPS.length;
+      for (let e = 0; e < ne; e++) {
+        const ease = L === 0 ? 0 : TITLE_EASE_STEPS[e];
+        if (quick && ease === 0.5) continue;
         for (let k = 0; k < TITLE_TRUCK_STEPS.length; k++) {
-          const camY = this._titlePlace(pc, head, L === 0 ? 0 : TITLE_EASE_STEPS[e], TITLE_TRUCK_STEPS[k] * TITLE_TRUCK_M);
+          if (quick && (k & 1)) continue;
+          const camY = this._titlePlace(pc, head, ease, TITLE_TRUCK_STEPS[k] * TITLE_TRUCK_M);
           const px = pc.position.x, pz = pc.position.z;
-          for (let c = 0; c < TITLE_SPARK_COLS; c++) {
-            v.set(lay.x0 + (lay.x1 - lay.x0) * c / (TITLE_SPARK_COLS - 1), lay.y, 0.5).unproject(pc).sub(pc.position);
+          for (let c = 0; c < cols; c++) {
+            v.set(lay.x0 - pad + (lay.x1 - lay.x0 + 2 * pad) * c / (cols - 1), lay.y, 0.5).unproject(pc).sub(pc.position);
             const hz = Math.hypot(v.x, v.z), el = Math.atan2(v.y, hz), sx = v.x / hz, sz = v.z / hz;
             let crest = -Math.PI / 2;
-            for (let d = 10; d <= 1400; d += 10) {
+            for (let d = step; d <= 1400; d += step) {
               const x = px + sx * d, z = pz + sz * d;
               if (box && (x < box.min.x || x > box.max.x || z < box.min.z || z > box.max.z)) break;
               const a = Math.atan2(T.getHeight(x, z) - camY, d);
@@ -689,6 +771,28 @@ export class Menus {
     return worst;
   }
 
+  /**
+   * The disc in the upper band for one candidate: with the menu in, at both ends of the
+   * closing move, its centre at or above the spark's centre, at least TITLE_DISC_GAP_PX
+   * right of the lockup, and its core whole in the frame with TITLE_DISC_EDGE_PX to spare.
+   * Writes the opening position into the audit's `discPx`. No allocation.
+   */
+  _titleDiscPlaced(sun, saz, po, lo, tilt, spk) {
+    const S = this._titleScratchGet(), pc = S.cam, v = S.v, head = S.head;
+    head.sx = Math.sin(saz + po); head.cz = Math.cos(saz + po); head.lx = Math.sin(saz + lo); head.lz = Math.cos(saz + lo); head.tilt = tilt;
+    const W = innerWidth, H = innerHeight;
+    const r = CALIMA_DISC.coreDeg * (1 + CALIMA_DISC.soft) * (H / 2) / Math.tan(pc.fov * DEG / 2) * DEG;
+    for (let e = 0; e <= 1; e++) {
+      this._titlePlace(pc, head, e, 0);
+      this._titleSunPoint(v, pc.position, sun).project(pc);
+      const x = (v.x + 1) / 2 * W, y = (1 - v.y) / 2 * H;
+      if (e === 0 && this._titleDiscInfo) this._titleDiscInfo.discPx = [Math.round(x), Math.round(y)];
+      if (!(v.z < 1) || y > spk.px.sparkCy || x < spk.px.lockRight + TITLE_DISC_GAP_PX
+        || y - r < TITLE_DISC_EDGE_PX || x + r > W - TITLE_DISC_EDGE_PX) return false;
+    }
+    return true;
+  }
+
   /** The Round-4 sky dome (world-sky's `environment.sky`), when it is the kind this title knows how to read. */
   _skyDome() {
     const sky = this.ctx.environment?.sky;
@@ -697,14 +801,15 @@ export class Menus {
   }
 
   /**
-   * Where the sky draws the sun, as a world point (fix round 2). The sky is a
-   * dome of radius R centred on the player at y = 0, not on the camera, so from
-   * the title camera (~150 m off, ~30 m up) its sun stands about 4° under
-   * `sunDir`; the disc must cover THAT sun or the frame shows two. Falls back to
-   * `from` + sunDir * CALIMA_DISC.dist when the dome is not there. No allocation.
+   * Where the sky draws the sun, as a world point (fix round 2 of round 2). The sky is
+   * a dome of radius R centred on the player at y = 0, not on the camera, so from the
+   * title camera (~150 m off, ~30 m up) its sun stands about 4° under `sunDir`; the disc
+   * must cover THAT sun or the frame shows two. `sun` defaults to the world's sunDir (the
+   * chooser passes an hour's sun). Falls back to `from` + sun * CALIMA_DISC.dist when the
+   * dome is not there. No allocation.
    */
-  _titleSunPoint(out, from) {
-    const sun = this.ctx.environment.sunDir, sky = this._skyDome();
+  _titleSunPoint(out, from, sun = this.ctx.environment.sunDir) {
+    const sky = this._skyDome();
     if (sky) return out.copy(sun).multiplyScalar(sky.geometry.parameters.radius * 0.98).add(sky.position);
     return out.copy(from).addScaledVector(sun, CALIMA_DISC.dist);
   }
@@ -781,7 +886,7 @@ export class Menus {
     const env = this.ctx.environment;
     if (this._clockHeld != null && env) {
       env.timeFrozen = this._clockHeld;
-      if (this._hourHeld != null && env.time === TITLE_HOUR) env.setTime(this._hourHeld);
+      if (this._hourHeld != null && env.time === (this._titleHour ?? TITLE_HOUR)) env.setTime(this._hourHeld);
     }
     this._clockHeld = null;
     this._hourHeld = null;
@@ -822,7 +927,7 @@ export class Menus {
     const env = this.ctx.environment;
     if (this._hourHeld != null && env) {
       if (env.resting) this._titleRest = true;
-      else if (this._titleRest) { this._titleRest = false; this._hourHeld = env.time; env.setTime(TITLE_HOUR); }
+      else if (this._titleRest) { this._titleRest = false; this._hourHeld = env.time; env.setTime(this._titleHour ?? TITLE_HOUR); }
     }
     this._dollyT += dt;
     const t = this._dollyT;
@@ -860,7 +965,7 @@ export class Menus {
     di.ease = ease;
     di.radius = radius;
     di.camY = camY;
-    di.pitchDeg = -(TITLE_TILT_DEG + ease * 3);
+    di.pitchDeg = -(TITLE_TILT_DEG + (this._titleHead.tilt || 0) + ease * 3);
   }
 
   continueGame() {
@@ -1547,7 +1652,7 @@ export class Menus {
         },
         disc: this._disc ? { visible: this._disc.visible, ...(this._titleDiscInfo || {}) } : null,
         clock: { held: this._clockHeld != null, frozen: !!ctx.environment?.timeFrozen, handBack: this._clockHeld,
-          hour: ctx.environment?.time ?? null, titleHour: TITLE_HOUR, hourHandBack: this._hourHeld },
+          hour: ctx.environment?.time ?? null, titleHour: this._titleHour ?? TITLE_HOUR, hourHandBack: this._hourHeld },
         camera: ctx.camera ? {
           x: +ctx.camera.position.x.toFixed(2),
           y: +ctx.camera.position.y.toFixed(2),
