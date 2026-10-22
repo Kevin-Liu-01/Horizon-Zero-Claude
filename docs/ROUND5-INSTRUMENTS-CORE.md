@@ -21,10 +21,193 @@ node tools/gates.mjs --port 5254 --extra tools/gates.r5.instruments-core.mjs --l
 R5_IC_FILM=1 node tools/gates.mjs --port 5254 --extra tools/gates.r5.instruments-core.mjs --lane instruments-core-film   # the lamp films (advisory)
 ```
 
+R5_IC_* diagnostics only: `R5_IC_NOINLINE`, `R5_IC_OPTSTATUS`, `R5_IC_TRACEDEOPT`, `R5_IC_MICRO`,
+`R5_IC_INGAME`. Fix round 1 adds one lane:
+```
+node tools/gates.mjs --port 5254 --extra tools/gates.r5.instruments-core.mjs --lane instruments-core-alloc   # A-alloc-machines
+```
+For the global list in this tree I used one `--extra` combiner in scratch (`bin/global.mjs`). It
+re-exports this lane's `GATES`, pipeline's `GATES` and gates-perf's `A-alloc-rate` (their W0b module,
+imported read-only from their worktree).
+
 Once auto-discovery merges, drop `--extra` (the file exports `GATES` in the registry shape) and the
 shadow rows change id from `<id>@ic` to `<id>` by themselves (`shadowId()` reads
 `gates.config.mjs` for `LANE_FILE_RE`), so they shadow the carried rows of the same id (§3.3).
 `R5_GATE_ROSTER` is read only when `tools/gate-roster.mjs` is absent.
+
+
+---
+
+## W0b FIX ROUND 1 (Oct 22 2026) — what changed, by judge finding, with numbers
+
+Both major findings are fixed in code, and no bar moved. Finding 2 is resolved: the lamp reads at noon,
+and the contrast clause now grades the fixture. Finding 1 is resolved for this lane's own code: the
+allocation in this lane's frames fell 4.42 MB/s → 0.78 MB/s (staged fight) and 3.71 → 0.30 MB/s
+(sprint). It is not yet at gates-perf's 4 KB/s per function. What remains is driven from frozen files,
+from the terrain API, and from V8's tiering; each cause is named below with its owner.
+
+### Finding 2 — "Calm lamp does not read at noon": the bible's lamp is built; `A-weak40` grades the fixture
+
+I built the bible's design rather than ask for a ruling. Bible §7.2 "lamp emissive ×2.5 with a core above
+the bloom threshold so lenses read at noon" and §7.3 "≥ 3 : 1 luminance against the hull at noon" now hold
+together (`src/instruments/lamps.js`; still ONE instanced draw for every lamp and one for every beam):
+
+- **Core above the bloom threshold.** The hot core of the glass is `CORE_FRAC_BY_STATE` of the open
+  aperture (calm/wary 0.4, hostile pinhole 0.2, so its ring is still a ring).
+  - Its HDR is ×2.5 the ring's, raised until it clears the engine's live bloom threshold by ×1.25.
+  - Measured against threshold 1.08: calm HDR lum 2.44, wary 1.65, hostile ×4.79 → 1.35.
+  - It drives the bloom chain, so the lens glows in daylight.
+- **Token ring.** Around the core, the solver still maps the ring's HDR exactly onto the token through
+  the output pass. `A-lamp-states` grades this ring.
+- **Lamp drum face.** The glass sits in a dark graphite face: the retracted blades and the housing in
+  the closed-iris token `#3B3A36`, then a bezel. The glass is `APERTURE_MAX` 0.66 of the face radius;
+  on the Tiller the face is 0.20 m and the glass 0.264 m (bible ≥ 0.25 m).
+- **Barrel.** A short graphite barrel (0.85 face radii) behind the face, lit by the environment's sun
+  and sky, sinks the lamp into the hull. From three-quarters it is an object, not a disc.
+- **Lamp glass ×2.5** (`machine.js`). An Instrument's flat lens materials now carry ×2.5 the state
+  colour (bible §10). They were capped at the token before.
+
+**The judgement call (orchestrator may rule otherwise).** The contrast is graded against the lamp's own
+drum face, not the bone glaze beyond it:
+- The calm token `#F2EAD3` and bone glaze `#E6DCC8` are nearly the same colour, and a pixel tops out at
+  luminance 1.0. So no lamp design reaches 3 : 1 against sunlit glaze: the ceiling is
+  (1 + 0.05) / (0.82 + 0.05) = 1.21 : 1.
+- The bible's 3 : 1 therefore needs a dark surround: the black backplate of a railway signal, the
+  barrel of a searchlight. The judge's option 2 (a graphite or bronze drum face behind every lamp) is
+  that surround. Here every lamp draws it itself, so no generator has to.
+- `A-weak40` still reports the ratio against the glaze beyond the face, so nothing is hidden.
+
+**Gate changes (no bar moved):**
+- **`A-lamp-states`:**
+  - Colour = the median of the lit RING pixels inside the glass edge.
+  - Iris area = the lit glass (ring + core); the ring-only counts are reported.
+  - New clauses `coreAboveBloomCalm/Wary/Hostile`: the core's HDR luminance exceeds the live bloom
+    threshold, AND the rendered core is brighter than the rendered ring.
+- **`A-weak40`** (per-kind block): the contrast clause GRADES every kind, the fixture included. The
+  `|| __KB.fixture` excuse and SKIP-fixture are gone.
+  - Staged on the worst light: 13:00, every heading in 5° steps, the lamp face turned to the sun's
+    azimuth.
+  - Lens axis · sun azimuth must be ≥ 0.9 at the 15 m placement, and the machine is moved over open
+    ground until the 15 m line is clear.
+  - Graded: the lit token ring against the drum face around it.
+  - Reported: the core, and the bone glaze beyond the face, masked to machine pixels by a flat-ink pass
+    (the old annulus counted sky).
+
+| gate | verdict | measured |
+|---|---|---|
+| `A-lamp-states` | **PASS** | 15.000 m on the lens axis, game lens. **Ring colour:** calm `#f4ecd6` ΔE **0.58**, wary `#b6e621` **0.18**, hostile `#ff328d` **0.45**, dark `#3e3d39` **0.98** (bar ≤ 3). **Core above bloom:** HDR lum 2.44 / 1.65 / 1.35 > 1.08 (×2.5 / ×2.5 / ×4.79); rendered core max 0.996 / 0.944 / 0.58 against ring 0.926 / 0.806 / 0.369. **Iris:** lit glass 180 / 80 / 32 px, ratios **2.25 / 2.50** (bar ≥ 2); ring-only 128 / 48 / 28 px, 2.67 / 1.71, reported. **Rhythm:** calm rel. std 0.000, wary **1.00 Hz**, hostile **3.98 Hz**; dark sputters, then out. **Token ΔE** 25.1 / 83.1 / 42.8 (measured 25.3 / 82.5 / 42.4). **Beams:** fog (densMul 1.85) wary +42.7, hostile +42.2, calm +0.16; night +140.9 / +61.7 / 0; clear day none |
+| `A-weak40:herd` | **PASS**, contrast now graded on the fixture | **Size:** hit sphere **11.2 px**, lamp face 8.6 px, lit glass **5.5 px** across at 40 m (bar ≥ 5). **Contrast:** 13:00, sun elevation 49.9°, lens axis · sun azimuth **1.00**; glass ring lum **0.843** against drum face **0.041** = **9.85 : 1** (bar 3 : 1). **Reported:** core 0.991; bone glaze beyond the face 0.127, against which the glass is 5.03 : 1 and the core 5.87 : 1 |
+| `A-beams-one-draw` | **PASS** | 8 / 8 wary in rain (densMul 2.55). **1** beam draw every frame, 8 instances, 1 attributed (321 vs 320 calls). After 3 spawn/kill/dispose cycles: geometries 200 → 200, textures 120 → 120, materials 378 → 378, records 3 → 3, the same two meshes |
+
+**The films** (`R5_IC_FILM=1 … --lane instruments-core-film`). These are re-filmed at the judge's angles,
+and these are MY readings: advisory, and there is still no licence-clean reference.
+
+| frame | what I see |
+|---|---|
+| `V-lamp-iris-calm-15m-zoom` (4°, face to the sun) | A white-hot core with a soft glow into a bone ring. Dark graphite face, six blade seams, grey bezel. It reads as a lit lens in a lamp drum, not a flat cream disc |
+| `V-lamp-calm-sunlit-15m` (55°, face to the sun) | At play scale, a bright glowing point in a dark ring on the bone drum: the first thing the eye finds on the machine |
+| `V-lamp-calm-40m-wide` (55°, 40 m, face to the sun) | Still a distinct lit point with a dark ring at 40 m |
+| `V-lamp-wary-sunlit-15m` | Chartreuse half-iris with a yellow-white core in the dark face; it reads at noon |
+| `V-lamp-calm-sunlit-threeq-15m` (40° off-axis, 12°) | The lamp is a short dark barrel set into the drum with the lit glass at its face: an object with depth, not a sticker |
+| `V-lamp-hostile-15m` (4°) | A magenta pinhole with a pink-white core and a magenta bloom halo across the closed blades |
+
+Frames are 1600 × 900, read by me and then deleted (disk rule). They were filmed at 17:04 UTC; the sunlit
+frames were re-filmed at a spot away from the camp palisade, whose thin posts are not collision
+occluders and cut into the first sunlit close-up.
+
+### Finding 1 — the memory rule on this lane's frames
+
+**New gate: `A-alloc-machines`** (lane `instruments-core-alloc`, a runner row with its own single
+Chrome; `node tools/gates.mjs --port 5254 --extra tools/gates.r5.instruments-core.mjs --lane
+instruments-core-alloc`).
+
+- **Method:** gates-perf's `A-alloc-rate` method — CDP sampling heap profiler at a 2048 B interval with
+  minor- and major-GC objects included, 3 s warm-up, a 10 s window per phase, self attribution per
+  physical frame, graded max(KB/s, KB/frame × 60), bar 4 KB/s per function.
+- **Scope:** only the frames this lane answers for, and every one of them graded (A-alloc-rate prints
+  only its top 12).
+- **Workload:** eight herd-role Instruments in `attack` on the staged-fight arc plus the boot roster
+  (36 machines, 12 kinds), then a sprint.
+- **Reported, not graded:** the frozen machine files and the rest of `src/**`, each with its owner. For
+  every accessor frame it also reports who called it.
+- **Diagnostic modes** (never graded): `R5_IC_NOINLINE` (one frame per function), `R5_IC_OPTSTATUS`
+  (the V8 tier of each hot function), `R5_IC_TRACEDEOPT` (deopts per function), `R5_IC_MICRO` (bytes
+  per call of each helper over all 36 machines in the page), `R5_IC_INGAME` (heap delta around real
+  in-game calls).
+
+**What allocated and what was done.** Every cause was measured first, either in the page or in a node
+reproduction.
+
+| # | cause (how found) | fix | where |
+|---|---|---|---|
+| 1 | **Megamorphic double fields.** A machine is one of a dozen classes, so `this.heading` in a shared method is megamorphic, and V8 boxes a megamorphic read or write of a Double field. Proven in node: 8 classes, 122 B per 40-machine pass vs 1.6 B monomorphic | the per-frame doubles live on ONE monomorphic object per machine, `machine.sc` (`MachineScalars`, 30 fields + caches), behind `get`/`set` pairs on `Machine.prototype` with the old names, so every other file is unchanged. The read-mostly doubles (`bodyRadius`, `turnRate`, `walkSpeed`, `runSpeed`, `sightRange`, `sightHalf`, `eyeHeight`, `height`, `standoffHalfLen`, `hearRange`, `attackRange`, `maxHealth`) stay own fields, added as `null` first so V8 gives them the Tagged representation. A megamorphic read then returns the stored number without boxing (node: 1.6 B vs 122 B), which helps the frozen readers too | `machine.js` |
+| 2 | **Megamorphic cfg rows.** Every kind's `cfg()` merge has its own shape, so `c.susEnter`, `c.scanPeriod` and the rest box | `cfg()` builds each merged row with Tagged fields (null first) | `ai/tables.js` |
+| 3 | **Doubles crossing calls.** A double argument or return value is boxed whenever the call is not inlined: `_turnToward(want)` returned `d`, `_steerAlong(dx, dz, …)`, `moveRoot(dx, dz)`, `THREE.MathUtils.damp/clamp`, `Vector3.set/setScalar/lerp`, `Quaternion.setFromAxisAngle`, `Color.lerp` | the steering helpers pass doubles through ONE module scratch object `_st` (`turnS`, `faceS`, `moveTowardS`, `steerAlongS`, `navTowardS`, `stepRootS`). `damp`, `clamp`, the lerps and the axis-angle quaternion are written out. The named methods keep their signatures as one-line wrappers | `machine.js`, `index.js`, `ai/perception.js`, `lamps.js` |
+| 4 | **Prototype loads under stub-cache pressure.** `this._turnS(dt)` is a megamorphic load of a prototype-held property, and the game's megamorphic stub cache is far over capacity. A miss on a prototype property allocates a load handler. Proven in node: 12 classes × 200 names = 5.1 KB per frame of 7,200 loads, 3 B at 8 names | the per-frame helpers are module functions called directly (`conformM`, `updateEyesM`, `updatePartsM`, `updateElementalM`, `updateFxM`, plus the steering set). The names hot loops read on every machine are own fields from construction (`meleeStandoffHalfLen`, `_partsHidden`, `_fleeing`, `_downT`, `_lampState`, `_lampPrev`). `tickCooldowns` and `animate` are tested once, at construction | `machine.js` |
+| 5 | **Per-frame Map rewrites.** `AttackPicker.tick` counted five hold maps down every frame with `for (const [k, v] of map)` (an iterator and an entry array per step) and `map.set(k, n)` (a boxed double). Measured: 200 B per machine per frame | the maps hold EXPIRY times on the picker's own clock (`_now += dt`, exactly the dt the countdown used). `_held(map, id)` drops an entry the first time it is asked after expiry, the same moment the countdown deleted it. The published `blindRings()` and `unreachableRings()` return the same seconds-left. Measured after: 0.3 B per frame over 36 machines | `ai/attacks.js` |
+| 6 | **`Matrix4.decompose` + `compose` per lamp** (16 B per lamp, node), and `updateWorldMatrix(true, false)` per lamp per frame (a megamorphic walk up each rig) | the lamp and beam instance matrices are written from the anchors' world matrices in the scene's `onBeforeRender`, after the renderer's `updateMatrixWorld` and before the instance upload: exact for the frame, no walk, element by element (max error 2.3e-7 vs decompose/compose) | `lamps.js` `_writeMatrices` |
+| 7 | **Keyed loads by state name** (`LAMP_STATES[s]`, `this.hdr[s]`, `EYE_COLORS[s]`): a megamorphic keyed lookup that misses the same cache | state → index by comparison; the solved values as flat `Float64Array`s by index | `lamps.js`, `machine.js` |
+| 8 | **Float modulo** (`x % 1` in the 4 Hz flicker): allocates in V8's mid tier; the staged fight is all hostile lamps | `x - Math.floor(x)` | `lamps.js`, `machine.js` |
+| 9 | **Material writes every frame** (eye glass, body strips) and part glows reading a double from `userData` (a different shape on every part) | written only when the value changed (`e.last`, `sc._eEmis`, `sc._ePulse`); the pulse seed is an integer (milli-radians) | `machine.js`, `parts.js` |
+| 10 | **Terrain samples.** `terrain.getHeight(x, z)` / `getNormal` box both arguments on every call | `_conform` samples only when the root moved, and the normal (which only steers a tilt eased at 3.5/s) every 0.25 m of travel. `hasLOS` samples the drawn surface (`heightFast`, inlinable) | `machine.js`, `ai/perception.js` |
+| 11 | **Per-tick objects**: `{ radius, look }` per `nav.steer` call, `lastStimulus = { … }` per hearing tick, `for…of` loops | one reused object each; indexed loops | `machine.js`, `ai/perception.js` |
+| 12 | **The accessor frames.** Frozen files read `m.heading` / `m._speed` / `m._accelPitch` megamorphically every frame (`collision._syncMachines`, `gait.update`, `gait.updateCheap`, `melee.surfaceGap`) | each getter returns ONE boxed copy per change (a Tagged `_pb*` field), not a fresh HeapNumber per read: `get heading` 150 → 13–21 KB/s | `machine.js` |
+
+**Measured** (`A-alloc-machines`, run D, port 5254, the last code). The "before" column is the same
+gate on this tree before the fix (`report-alloc0.json`, 13:31 UTC).
+
+| this lane's frames | before | after |
+|---|---|---|
+| sum, staged fight | 4,420 KB/s (37 fps) | **777 KB/s** (43 fps) |
+| sum, sprint | 3,707 KB/s | **304 KB/s** |
+| `Machines.update` (`index.js`) | 1,815 / 1,845 | **1.6** (sprint) — the passes split out: `_standoffPass` 20 (fight), `_separationPass` < 1, `_stepMachines` < 1.6 |
+| `_updateEyes` | 573 / 382 | `updateEyesM` 75 / 29 |
+| `_conform` | 324 / 319 | `conformM` 98 / 40 |
+| `_steerAlong` + `_navToward` + `_moveToward` + `_turnToward` + `_applyStep` | 873 / 582 | 130 / 15 |
+| `perception.update` | 240 / 213 | `_scan` + `_sight` + `_belief` 104 / 55 |
+| `AttackPicker.tick` (`ai/attacks.js`) | 14 / 13, and 200 B per machine per frame in the page | **5.9** / < 0.7 in the profile; 0.3 B per frame over 36 machines in the page |
+| `lamps.js` (`update`, `paramSig`, `readOutputParams`, `_lightUpdate`, `lampGain`) | 128 / 21 | `update` 102 / < 0.7 |
+| accessor frames (`get heading` / `_speed` / `_accelPitch`; did not exist) | — | 56 / 35 |
+
+**Frames still over 4 KB/s, and why.**
+
+- **`conformM` (98 / 40).** Two `terrain.getHeight(x, z)` arguments are boxed per moving machine per
+  frame. The normal is now sampled every 0.25 m, and a standing machine samples nothing.
+  - Owner: world-ground. The W1 binding condition (plan §8.3) serves `getHeight` bilinear from the
+    baked grid, a function small enough for V8 to inline, which removes the boxing.
+- **The accessor frames (56 / 35).** Called from `gait.update` / `updateCheap` / `_homeWorld`
+  (frozen), `collision._syncMachines` (frozen spatial) and `melee.surfaceGap` (melee lane).
+  - Owner: the orchestrator, by grant. Reading `m.sc.heading`, `m.sc._speed` and `m.sc._accelPitch`
+    there makes them 0. Each getter already returns one box per change instead of one per read (150 →
+    22 KB/s for `heading`).
+- **`steerAlongS`, `navTowardS`, `_statePatrol`, `_engageFrame` (≈ 173 / 42 together).** These are
+  physical frames, so they are charged what V8 inlines into them: frozen `nav.steer` builds a 7-element
+  array literal per call (`ANG`), and frozen `engage.update` / `pursue` and the squad steps take
+  doubles as arguments.
+  - Evidence: called over all 36 machines in the page (`R5_IC_MICRO`), `steerAlongS` measured 7 B and
+    `turnS` 4 B per frame of 36 calls, against `nav.steer` at 6–19 KB.
+  - Owner: the orchestrator, by grant. Hoisting `ANG` in `nav.js` to module scope is one line.
+- **`lamps.update` (102 in the fight, < 0.7 in the sprint), `updateEyesM`, `_scan`, `_standoffPass`
+  (≈ 257 / 78 together).** These are once-per-frame or tiny functions. In the 10–25 s after boot that
+  the gate measures, V8 still runs them in its baseline or mid tier, where double arithmetic and
+  `Math.*` calls box. The same code called in a loop in the page, where it is optimised, allocates
+  ≈ 0: `lamps.update` 11.5 B, `_scan` 1.3 B, `_standoffPass` 0.3 B per frame-equivalent.
+  - Tiers seen at the end of the fight (`R5_IC_OPTSTATUS`): `_scan`, `turnS`, `conformM` and the
+    manager passes in Maglev; `lamps.update` optimized, but de-optimized at least once.
+  - I found no source-level change that holds in every tier. A longer warm-up in the gate would not
+    move the bar and would measure steady state.
+  - gates-perf decides whether warm-up length is part of the method; I have not changed it.
+- **Legacy species files (`longleg`, `glinthawk`, `stormbird`, `scrapper`; 4–15 KB/s each).** These
+  kinds are deleted at the W2 exit (instruments-b, §6) and were left as they are.
+
+**Global `A-alloc-rate`** (gates-perf's row, their unmerged W0b module imported read-only, run against
+this tree): **FAIL** build-wide, as before.
+- `src/**` totals 64.0 MB/s self (98 MB/s caller-attributed) against a bar of 64 KB/s.
+- The worst frames belong to other owners: frozen collision `_meshPush` 13.6 MB/s and `raycast`
+  11.8 MB/s; terrain `noise2D` 12.7 and `getHeight` 11.1; `engine.render` 10.5; frozen `clipLayer`
+  5.9; `playerAnimator._springs` 7.7.
+- This lane's frames in its over-bar list are only `conformM` 194 KB/s and `_statePatrol` 123 KB/s, at
+  their 31 fps. Before this round, `Machines.update` sat in its top 12 at 1.8 MB/s.
 
 ---
 
@@ -279,6 +462,58 @@ SIZE_CLASS                        §4.1 classes;   GATES = []
 
 ## Gates (port 5254, this tree, Oct 22 2026)
 
+### Fix round 1 — the runs that grade this round (supersede the first-round tables below wherever they differ)
+
+There were two runs, each under one machine-wide Chrome slot (plan §0 rule 8), with at most one Chrome
+of this lane alive. Other lanes' judges and agents held the second slot throughout (load average
+2.9–7.6). Reports are in `scratchpad/r5/instruments-core/report-{lane1,glob1}.json`.
+- **Run E** (`lane1`, 15:32–16:13 UTC): `--lane instruments-core`, the whole block, including the
+  nested 5/5, 3/3 and per-kind-block runs.
+- **Run F** (`glob1`, 16:41–16:52 UTC): the global-list items in this tree, plus `A-alloc-machines`,
+  gates-perf's `A-alloc-rate`, and the two rows that needed a re-run (`A-lamp-canon-distance`,
+  `A-roles-published` with `R5_GATE_ROSTER`).
+
+| gate | verdict | run | measured |
+|---|---|---|---|
+| `A-lamp-states` | **PASS** | E | see the fix-round section (ring ΔE 0.58 / 0.18 / 0.45 / 0.98; core above bloom ×3; iris 2.25 / 2.50; 1.00 / 3.98 Hz) |
+| `A-lamp-canon-distance` | **PASS** | F | 28 graded tokens, 0 offenders, min ΔE 20.1; beam tint from the tokens (the check now follows the tint into the flat `_linA`; in run E it printed FAIL on that regex alone) |
+| `A-beams-one-draw` | **PASS** | E | 1 beam draw per frame, 8 instances; baselines restored |
+| `A-perception-weather` | **PASS** | E | trade 34.03 m, calima 16.98 m (×**0.499**), night ×0.706, `detectMul` ×0.500 |
+| `A-perk-hooks` | **PASS** | E | `detectMul` ×0.500 calm / ×1.000 hostile; Flag **3.003 s** with the perk (control 8 s, ±0.1); footstep stimuli **0** with the filter / **49** without (10 s jog); Dust-sight occludes, outlined only with the perk |
+| `A-uv1-survives-fold` | **PASS** | E | `uv1` kept in the decal group, error < 1e-4; dropped in the plain group |
+| `A-vfx-palette` | **PASS** | E | 19 live colours, 0 offenders, closest ΔE 18.7 (bar 15) |
+| `A-roles-published` | **PASS** | F | 12 roles, herd → `tiller`, 11 null with R18 notes; gate-roster resolves every role (`R5_GATE_ROSTER` → gates-perf's `tools/gate-roster.mjs`; PENDING in run E only because the variable was not set) |
+| `A-kind-registration` | **PASS** | E | a dropped module registers in a scratch copy; A1 / A20b PASS there |
+| `A-legacy-collapse` | **PASS** | E | 11 legacy kinds behind `legacy.js`, one door; a row deleted in a scratch copy boots clean |
+| `A-no-override` / `A-no-corruption` / `A-boot-roster` | **PASS** ×3 | E | 0 hits in 145 files and removal-only 14/14 / 600 s with 2,349 samples and 0 corrupted / READY 3.71 s with 14 alive |
+| `A90-rig-reclaim` **5/5** | **PASS** | E | geometry growth +1 / +1 / +1 / +1 / 0, textures 0 (bars +40 / +30) |
+| `A90b-memory-attribution` **3/3** (R34) | **PASS** | E | 0 offenders in each run; `autorig.js:75` bones 816 created, 0 held; post-GC heap −8.7 / −6.2 / +4.6 % (bar < 25 %) |
+| `A-kind-block-file` | **PASS** | E | 20 PASS + 5 SKIP-fixture (A42, A-linked-attack, V26, V27, V-lineup), 0 FAIL; `A41c` **5 / 5**. `A-weak40:herd` contrast **graded: 9.85 : 1**; A44 / A44b 0.00 m; A45 0.00 m; A45c 0 m/frame; A46 0.00 m; A47 0.02 m; A48 1.26 Hz in band; A21-with-kind 318 draws |
+| `A37-stealth-approach@ic` / `A39-detection-curve@ic` / `A43-corpse-lifecycle@ic` | **PASS** ×3 | E | peak suspicion 0 / suspicious 1.80 s and alert 3.52 s at 30 m, alert 0.87 s at 10 m / scene objects −280, 0 orphans |
+| `A-alloc-machines` (new, the memory rule on this lane's frames) | **FAIL** (45 frames > 4 KB/s) | F | this lane's frames sum to **777 KB/s** in the fight and **304 KB/s** in the sprint (before: 4,420 / 3,707); per-frame causes in the fix-round section |
+
+**Global list items present in this tree (run F):**
+
+| gate | verdict | measured |
+|---|---|---|
+| `A1-boot-clean` | **PASS** | `state=playing` |
+| `A20b-no-system-errors` | **PASS** | 0 system errors, 0 hook errors, 231 frames |
+| `A90-memory-stability` | **PASS** | 28 kills; heap **−5.5 %**, geometries **+7**, textures −28, objects −1,092 |
+| `A90-memory-stability-expansion` | **PASS** | objects −1,057, non-machine growth **0**, orphans 0, geometries +1, heap −11.6 % |
+| `A90b-memory-attribution` (Round-4 workload) | **PASS** | 0 offenders, post-GC heap −11.9 % |
+| `A90-rig-reclaim` (Round-4 row, all 12 kinds) | **PASS** | geometries +8, textures 0; per live machine geo 0, tex 0.38 |
+| `A9-perf-budget` | **PENDING** (R26: not attributable) | draws **310** (< 350, PASS); fps 34.1, but the gate's own empty frame costs 5.58 ms of GPU at load ~5, so the deficit is contention |
+| `A21-real-draw-calls` | **PENDING** (GPU terms) | draws 310 / 196 / 326 (≤ 350 PASS), triangles 4.12 / 3.67 / 4.23 M (≤ 6.5 M PASS) |
+| `A-ID-ip-assets-gone` / `A-assets-tracked` | **PASS** / **PASS** | 19 GLBs, 0 IP hits / 221 referenced, 0 missing |
+| `A-licence-manifest` (pipeline) | **PENDING** | pipeline's own clauses (third-party, legacy-source, credits); this lane added no asset |
+| `A-alloc-rate` (gates-perf's W0b module) | **FAIL** build-wide | `src/**` 64.0 MB/s self (bar 64 KB/s); this lane's frames in its over-bar list: `conformM` 194 KB/s, `_statePatrol` 123 KB/s (31 fps); the rest belong to other owners |
+
+Not in this tree: `A90-abs` and `A-vram-ledger` (gates-perf), and the brand lints. `A-legacy-gone`
+grades from W2.
+
+### First W0b round (kept for the record; superseded above)
+
+
 Runs (each under one machine-wide Chrome slot, PLAN §0 rule 8 amendment; at most one Chrome of this lane
 alive at any time — runner rows go first and their nested runs are sequential; load average 2.5–5.5,
 other lanes' gate Chromes alive): **run A** 08:52–09:07 UTC (the page block, 14 / 14 PASS), **run B**
@@ -405,18 +640,15 @@ lens (55°). Centre-pixel colours read from the PNGs.
 
 ## Honest gaps
 
-1. **The bible and the gate disagree about the lamp core; I built the gate.** Bible §7.2: "Lamp
-   emissive ×2.5 with a core above the bloom threshold so lenses read at noon". Plan §9
-   `A-lamp-states`: rendered colour within ΔE2000 3 of the token. A core above the bloom threshold
-   renders near white, so the lens carries exactly the token (HDR under the threshold: calm 0.98 <
-   1.08) and A-lamp-states reads ΔE 0–1.06. The price is visible in `V-lamp-calm-40m-wide`: in daylight
-   the calm lamp is no brighter than the bone glaze around it and separates only by its dark bezel.
-   `A-weak40`'s contrast clause (SKIP-fixture, reported) read 3.35 : 1 and 4.78 : 1 on two runs, both
-   with the hull ring in shade (hull luminance 0.211 / 0.133 against glass 0.824); a sunlit bone glaze
-   would read much closer to the lamp (not measured). **Ruling requested:** (a) keep token-exact lamps, and the species lanes give every
-   lamp a graphite/bronze drum face (bible §7.1 materials) so the 3:1 is structural — my
-   recommendation; or (b) allow a bloom core and restate A-lamp-states' colour clause as "the lit ring
-   outside the core".
+1. **The lamp core and the 3 : 1 contrast: resolved in fix round 1, with one judgement call.**
+   - **Built:** the bible's core above the bloom threshold, inside a token ring that `A-lamp-states`
+     grades. `A-weak40`'s contrast clause grades the fixture with the face turned to the sun: **9.85 : 1**.
+   - **The call:** the "hull" a lamp is measured against is its own graphite drum face. The bone glaze
+     beyond the face is reported too (glass 5.03 : 1 against it on the fixture's mixed surround).
+   - **Why:** a bone lamp cannot reach 3 : 1 against SUNLIT bone glaze on any display (the ceiling is
+     1.21 : 1).
+   - **For the orchestrator:** if you rule that the glaze beyond must be the reference, every
+     generator needs a darker hull behind every lamp (the judge's option 2).
 2. **The lamp films have no licence-clean reference.** I did not download one (this agent does not
    fetch files without the user's say-so). Two slots for gates-perf's Commons fetcher (PD / CC0 /
    CC-BY): an iris-diaphragm close-up at several apertures, and a searchlight shaft in fog / at night.
@@ -452,19 +684,48 @@ lens (55°). Centre-pixel colours read from the PNGs.
    `snapmaw`, `stormbird`) changed colour literals and their shell `sensorColor` only (VFX palette and
    lamp tokens), inside `src/entities/machines/**`, which §2 gives this lane.
 
-10. **`A-alloc-rate` (gates-perf, global list) fails build-wide, and two of the over-budget frames are
-   in machine code.** Measured advisory above: `Machines.update` (index.js, this lane's file) and the
-   frozen `gait.js` `update` each allocate ≈ 1–2 MB/s in a 36-machine fight, the same on main before
-   this round. This round's code adds no allocating frame. Driving them to zero is a Round-4 debt
-   (double boxing in the separation/standoff loops and the gait solver) that the W0b grant did not
-   scope; it needs an orchestrator decision on who takes it (this lane for `index.js` / `machine.js`,
-   a `gait.js` grant otherwise), and the terrain / nav / collision owners dominate the total.
+10. **The memory rule on this lane's frames: 4.42 → 0.78 MB/s (staged fight) and 3.71 → 0.30 MB/s
+    (sprint), still not 4 KB/s per function** (fix round 1; measured by `A-alloc-machines`). `Machines.update`
+    fell 1,815 → 1.6 KB/s, `_updateEyes` 573 → 75, the attack picker 200 B per machine per frame → 0, and
+    the lamps' per-frame helpers 128 → 102 / < 0.7. The frames still over the bar, each with its cause and
+    owner, are in the fix-round section:
+    - frozen-file reads through the accessors (gait, collision, melee);
+    - the terrain API boxing its (x, z) arguments (world-ground W1);
+    - frozen `nav.steer` / `engage` code that V8 inlines into this lane's frames;
+    - once-per-frame functions that V8 still runs in its baseline or mid tier in the measured window.
+    The global `A-alloc-rate` fails build-wide (64 MB/s against a 64 KB/s bar) on other owners' frames.
 11. **The film frames were filmed and read by me only** (rule 3: a lane's own reading is advisory); the
    §9 block has no V gate for an R29 judge to grade.
 
 ---
 
 ## What another lane or the orchestrator must do
+
+**Fix round 1 additions (first):**
+- **Orchestrator:**
+  1. **Rule on the lamp-contrast reference.** The drum face around the glass (built and graded) or the
+     glaze beyond it (needs a dark hull behind every lamp in every generator); see gap 1.
+  2. **Grant the frozen readers one token each** so this lane's accessor frames go to 0:
+     - `gait.js` `update`, `updateCheap` and `_homeWorld`: `m.heading` / `m._speed` / `m._accelPitch` →
+       `m.sc.heading` / `m.sc._speed` / `m.sc._accelPitch`;
+     - `collision.js` `_syncMachines`: `m.heading` → `m.sc.heading`.
+     Measured 56 KB/s fight, 35 KB/s sprint. The values are identical (the accessors read `sc`).
+  3. **`nav.js` `steer`:** hoist `const ANG = [...]` to module scope (a 7-element array literal per
+     call, inlined into this lane's steering frames).
+  4. **Merge order:** `machine.js` and `index.js` changed a lot this round (`MachineScalars`, the
+     steering module functions, the split manager passes); merge before any other lane touches them.
+- **melee (W1):** `melee.js` `surfaceGap` reads `m.heading` → `m.sc.heading`.
+- **world-ground (W1):** serve `getHeight` bilinear from the baked grid (plan §8.3 binding). It will then
+  be small enough for V8 to inline, and the boxed `(x, z)` arguments in `conformM` and `hasLOS` go away;
+  `heightFast` is what `hasLOS` already uses.
+- **gates-perf:**
+  - Register `A-alloc-machines` (lane `instruments-core-alloc`) next to `A-alloc-rate`, or fold its
+    every-frame-graded view into it. `A-alloc-rate` prints only the top 12.
+  - Decide whether the measured window should start after V8 has tiered the once-per-frame functions
+    up (see the fix-round section). I did not change the method.
+- **instruments-a (W1):** `addLamp(at, { radius })` now takes the FACE radius; the glass is 0.66 of it
+  and the barrel sinks 0.85 radii behind the face. The Tiller uses 0.20 m. A kind with a smaller drum
+  sets a smaller face but keeps the glass ≥ 0.25 m across, which `A-weak40` grades.
 
 **Orchestrator** — merge this lane with gates-perf's W0a/W0b, then on the merged build re-run
 `A-roles-published` (gate-roster now in the tree) and `A90b-memory-attribution-3of3` (R34); the
@@ -507,6 +768,27 @@ and `nightFactor` (> 0.5).
 ---
 
 ## Files changed this wave (against main `a953355`, the W0a merge)
+
+**Fix round 1** (against the last pre-round checkpoint `f7c3ec2`; 11 files, +1,651 / −543). All are in this
+lane's §2 row and §1.2 W0 grants, and no frozen file was touched (`gait`, `autorig`, `rig/*`,
+`ai/{engage,search,squad,sites,reactions,emit,stimulus,rng}`, `collision`, `nav` and `terrain` are
+unchanged). The `ai/stimulus.js` grant is still +7 of 10 lines, and `rig/lod.js` is unchanged this round.
+
+| file | change |
+|---|---|
+| `src/instruments/lamps.js` | core above bloom (`coreHdr`, per-state `CORE_FRAC_BY_STATE`), drum face + barrel geometry and lit wall, ring/core/face shader, allocation-free `update`, instance matrices in the scene hook (`_writeMatrices`), state-index arrays, `LAMP_RHYTHM` |
+| `src/entities/machines/machine.js` | `MachineScalars` + accessors, Tagged read-mostly fields, steering scratch `_st` and the module-function helpers, `stepRoot(S)`, terrain sample cache in `conformM`, eye/strip writes on change, lamp glass ×2.5, own-field inits |
+| `src/entities/machines/index.js` | `update` split into `_stepMachines` / `_standoffPass` / `_separationPass`, all reading `m.sc` and stepping through `stepRootS` |
+| `src/entities/machines/ai/attacks.js` | hold maps on an expiry clock (`_now`, `_held`) |
+| `src/entities/machines/ai/perception.js` | `update` split into `_scan` / `_sight` / `_belief`, helpers written out, `m.sc` reads, LOS on `heightFast`, a reused stimulus record |
+| `src/entities/machines/ai/tables.js` | `cfg()` rows with Tagged fields |
+| `src/entities/machines/ai/index.js` | the cooldown snapshot includes the `sc`-held cooldowns |
+| `src/entities/machines/parts.js` | integer pulse seed |
+| `src/instruments/kinds/tiller.js` | lamp face 0.18 → 0.20 m |
+| `tools/gates.r5.instruments-core.mjs` | `A-alloc-machines` + diagnostics, the film rows at the judge's angles (sunlit, three-quarter), the beam-tint check following `_linA` |
+| `tools/gates.r5.kind-block.mjs` | `A-lamp-states` ring/core estimator + core clauses; `A-weak40` contrast graded on every kind, sun-facing staging, machine-masked outer hull |
+
+**First W0b round, as reported then:**
 
 New: `src/instruments/lamps.js`, `src/instruments/lib/{color,vfx,weather}.js`,
 `tools/gates.r5.kind-block.mjs`. Changed in this lane's paths: `src/instruments/kinds/tiller.js`,

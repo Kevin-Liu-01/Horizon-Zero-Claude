@@ -1886,7 +1886,8 @@ const FILM = (state, { fov = 4, both = false, dist = 15, night = false, sunlit =
   const hud = document.getElementById('hud'); if (hud) hud.style.display = 'none';
   for (const o of __M.list) if (o.alive && o.state !== 'patrol') { try { park(o); } catch (e) { /* */ } }
   freezeAll([]);
-  const spot = flatSpot(30, 60);
+  // the sunlit frames are staged away from the camp palisade (thin posts are not collision occluders)
+  const spot = flatSpot(${sunlit ? 90 : 30}, ${sunlit ? 150 : 60});
   const m = stageKind(spot.x, spot.z, { route: [new V(spot.x, 0, spot.z)] });
   const m2 = ${both ? 'stageKind(spot.x + 7, spot.z, { route: [new V(spot.x + 7, 0, spot.z)] })' : 'null'};
   await wait(1600);
