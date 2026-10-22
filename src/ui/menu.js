@@ -268,6 +268,7 @@ export class Menus {
      */
     this._clockHeld = null;
     this._hourHeld = null;
+    this._titleRest = false;   // a rest was still running while the title held the hour (see `_dolly`)
     this._lastState = ctx.state;
     /**
      * Audit trail for gates — CAPPED (`memory-attribution`). `audit()` only
@@ -631,6 +632,7 @@ export class Menus {
     }
     this._clockHeld = null;
     this._hourHeld = null;
+    this._titleRest = false;
     if (this._calimaWeather != null && env?.setWeather) env.setWeather(this._calimaWeather, 0);
     this._calimaWeather = null;
     document.body.classList.remove('cal-calima-live');
@@ -660,6 +662,15 @@ export class Menus {
     const terrain = this.ctx.terrain;
     if (!cam) return;
     if (!this._titleHead) this._titleFrame();
+    // a rest still running when the player quit (fix round 1): the environment
+    // drives the hour until it lands, then THAT hour is the one to hand back and
+    // the title goes back to its own. The environment updates before this system,
+    // so the snap lands before the frame renders. One boolean read per frame.
+    const env = this.ctx.environment;
+    if (this._hourHeld != null && env) {
+      if (env.resting) this._titleRest = true;
+      else if (this._titleRest) { this._titleRest = false; this._hourHeld = env.time; env.setTime(TITLE_HOUR); }
+    }
     this._dollyT += dt;
     const t = this._dollyT;
     const since = this._titleT;
@@ -1248,15 +1259,6 @@ export class Menus {
       this._titleLeave();
       document.body.classList.remove('cal-title-live');
       this._refreshTitle();
-    });
-    // a rest still running when the player quit to the title lands its hour
-    // after the title borrowed the clock: that hour is the one to hand back,
-    // and the title goes back to its own (fix round 1)
-    on('rest-end', (e) => {
-      const env = this.ctx.environment;
-      if (this._hourHeld == null || typeof env?.setTime !== 'function') return;
-      this._hourHeld = Number.isFinite(e?.hour) ? e.hour : env.time;
-      env.setTime(TITLE_HOUR);
     });
     for (const name of ['inventory-close', 'ui-close']) {
       on(name, () => setTimeout(() => this._afterPanelClosed(), 0));
