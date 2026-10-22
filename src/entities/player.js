@@ -659,8 +659,9 @@ const RELIEF_MAX = 0.80;                  // 46 deg — the old cap, kept for th
 const ROT_MAX = 0.95;                     // 54 deg, absolute
 const ROT_MARGIN = 0.04;                  // m of slack over cameraBoom's own march
 /* R5 the cut floor (see `_reliefFloor`): a boom cut this far (m) under what
- * the placement asked for raises the rotation floor by `REL_CUT_STEP` (rad)
- * per cut frame; free, the floor eases off at `REL_CUT_EASE` (rad/s). */
+ * the placement asked for, to under `DOLLY_GAP`, raises the rotation floor by
+ * `REL_CUT_STEP` (rad) per cut frame; free, the floor eases off at
+ * `REL_CUT_EASE` (rad/s). */
 const REL_CUT_SLACK = 0.08;
 const REL_CUT_STEP = 0.06;
 const REL_CUT_EASE = 0.08;
@@ -4325,7 +4326,10 @@ void main() {
       this.boomLength = C.lastBoom ?? askLen;
       if (this._deepK > 0.5 && !this.aiming) {
         const planned = Math.hypot(desired.x - orbit.x, desired.y - orbit.y, desired.z - orbit.z);
-        if (this.boomLength < planned - REL_CUT_SLACK) {
+        // only a cut that parks the lens inside the dolly's own gap floor (where
+        // the fade dithers her): at camPitch -0.8 a 1.1 m cut is the hillside's
+        // ordinary answer, and raising the rotation there cost A31b its 1.20 m gap
+        if (this.boomLength < planned - REL_CUT_SLACK && this.boomLength < DOLLY_GAP) {
           this._reliefFloor = Math.min(this._rotCapLast ?? ROT_MAX, Math.max(this._reliefFloor, this._relief) + REL_CUT_STEP);
         } else if (this._reliefFloor > 0) this._reliefFloor = Math.max(0, this._reliefFloor - REL_CUT_EASE * dt);
       } else this._reliefFloor = 0;
