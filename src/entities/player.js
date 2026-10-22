@@ -591,6 +591,8 @@ const HEAD_FOLLOW_MAX = 0.20;
 const KEEP_NDC = 0.74;
 /** ...for at most this much given-back elevation (rad, 20 deg). */
 const KEEP_MAX = 0.35;
+/** R5 fix round 3: where the ground ROTATED the boom, the keeper may exceed the hijack's aim budget by this (rad, 12.6 deg). */
+const KEEP_GROUND_EXTRA = 0.22;
 /**
  * The point a swing candidate must keep in the picture: her upper chest,
  * this far under the UN-lifted pivot (1.30 m standing).  Chosen so the flat
@@ -4626,7 +4628,24 @@ void main() {
       // face): on open ground the run framing's own bars hold the view to the
       // request (A31c: <= 6 deg off the input), and nothing is owed there
       const swingK = THREE.MathUtils.smoothstep(Math.abs(this.camSwing || 0), 0.09, 0.35);
-      if (!this.aiming && ly > 0.05 && c0 && c1 && swingK > 0) {
+      /* R5 fix round 3 (A31e / A31f on Brea, judge r0: "head out of frame at
+       * the pitch clamp, up-slope"): the ground also takes the shot by
+       * ROTATING the boom — up-slope of her on the 38.8 deg face the swing
+       * finds no side and the rotation (held by the cut floor) carries the
+       * lens 26-37 deg up the hill, with the view already at its look-up
+       * budget: her head sat at NDC y -1.0 .. -1.28, under the frame, for
+       * 41 consecutive samples of a clamp pan (measured Oct 22). Where the
+       * ROTATION (or the dolly) took the shot the keeper engages as it does for a swing, and
+       * may give back `KEEP_GROUND_EXTRA` more than the hijack's aim budget
+       * (her head in the picture outranks the last degrees of a look-up the
+       * hill is already refusing). Open ground has no rotation: untouched. */
+      // (...and the same where the ground pushed the lens IN along the line to
+      // her head — the dolly — which is the clamp's other up-slope answer)
+      const tookK = Math.max(THREE.MathUtils.smoothstep(this._relief || 0, 0.15, 0.35),
+        THREE.MathUtils.smoothstep(1 - (this.camDolly ?? 1), 0.05, 0.25)) * (this._deepK || 0);
+      const rotK = tookK;
+      const groundK = Math.max(swingK, tookK);
+      if (!this.aiming && ly > 0.05 && c0 && c1 && groundK > 0) {
         const e0 = c0.matrixWorld.elements, e1 = c1.matrixWorld.elements;
         const py = Math.min(e0[13], e1[13]), px = (e0[12] + e1[12]) * 0.5, pz = (e0[14] + e1[14]) * 0.5;
         const dx = px - this._camPos.x, dy = py - this._camPos.y, dz = pz - this._camPos.z;
@@ -4636,11 +4655,12 @@ void main() {
         // ...out of what the AIM BUDGET has left: the ELEVATION the player
         // asked for (`elevReq`) never loses more than the budget in all (the
         // hijack's yaw payback is not elevation and does not count)
-        want = swingK * Math.min(KEEP_MAX, Math.max(0, hijackMax - Math.max(0, elevReq - ev)), Math.max(0, (ev - es) - room));
+        want = groundK * Math.min(KEEP_MAX, Math.max(0, hijackMax + KEEP_GROUND_EXTRA * rotK - Math.max(0, elevReq - ev)), Math.max(0, (ev - es) - room));
       }
       // eased in and out — except on AIM, where the reticle is the shot and
-      // the view returns to the request at once (A31c's aim-entry bars)
-      this._keepDrop = this.aiming ? 0 : THREE.MathUtils.damp(this._keepDrop || 0, want, 10, dt);
+      // the view returns to the request at once (A31c's aim-entry bars) — and
+      // a SEEDED camera (teleport, staging) is settled at once
+      this._keepDrop = this.aiming ? 0 : seeding ? want : THREE.MathUtils.damp(this._keepDrop || 0, want, 10, dt);
       if (this._keepDrop > 1e-4) {
         const ev2 = Math.asin(THREE.MathUtils.clamp(ly, -1, 1)) - this._keepDrop;
         const hz = Math.hypot(lx, lz), k2 = hz > 1e-6 ? Math.cos(ev2) / hz : 0;
