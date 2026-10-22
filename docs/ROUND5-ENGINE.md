@@ -706,15 +706,15 @@ frame on a boulder in the dunes, far bins from the vista spot looking NE.
 R25 grades A22 as "SMAA present and `V20-aa-crop` passes". A22 also MEASURES the AA on V20's own crop
 (basalt-column tops against the sky, `AA_FRAME` in the gate file): on every pixel whose 3 × 3 neighbourhood
 spans > 0.25 of luminance, t = (L − min) / (max − min); intermediate if 0.2 ≤ t ≤ 0.8. Fix round 2's final
-engine (`F4`; SMAA reads the grade's RGBA8 output since fix round 1):
+row (`P2`; SMAA reads the grade's RGBA8 output since fix round 1):
 
 | frame (DPR from the tier on a DPR-2 display) | silhouette px | intermediate | fraction |
 |---|---|---|---|
-| shipped `high`: SMAA only, DPR 1.25 | 893 | 284 | **0.318** (fix round 1: 0.317; round 0: 0.316) |
-| the same frame, SMAA off (no AA at all) | 941 | 185 | 0.197 |
-| Round-4 `high`: MSAA ×4 + SMAA, DPR 1.5 | 1073 | 402 | 0.375 |
+| shipped `high`: SMAA only, DPR 1.25 | 892 | 278 | **0.312** (`F4`, colour 2×: 0.318; fix round 1: 0.317; round 0: 0.316) |
+| the same frame, SMAA off (no AA at all) | 941 | 178 | 0.189 |
+| Round-4 `high`: MSAA ×4 + SMAA, DPR 1.5 | 1072 | 401 | 0.374 |
 
-Bar: ≥ 0.20 and ≥ 1.5 × the no-AA frame (shipped: 1.617 ×).
+Bar: ≥ 0.20 and ≥ 1.5 × the no-AA frame (shipped: 1.647 ×).
 
 ### 3.8 The new post chain against Round 4's, pixel by pixel (`X-equiv2`, `X-cadence`)
 
@@ -736,23 +736,23 @@ intermediate; 8-bit SMAA input); the few hundred larger ones are SMAA edges whos
 near its threshold. **Cadence under motion** (`X-cadence`): a 16-frame walk at 0.6 m and 1.5° per frame,
 cadence 2 against cadence 1, frame by frame: 3–39 channels of 6.75 M differ, max 7 levels, none over 8.
 
-### 3.9 The W0b gate block (port 5251, this tree, Oct 22; reports `scratchpad/r5/engine-gpu/run/report.{F4,L12,G*}.json`)
+### 3.9 The W0b gate block (port 5251, this tree, Oct 22; reports `scratchpad/r5/engine-gpu/run/report.{P2,F4,L12,G*}.json`)
 
 | gate | verdict | numbers |
 |---|---|---|
 | `A-gpu-tier-box` + `A-gpu-tier` | §3.3 | <!-- G-TABLE --> |
-| `A-rt-ledger` | **PENDING** on one clause (`F4`) | RT 127.27 MB ≤ 170 PASS; staged fight 342.45 MB ≤ 450 PASS; docs PASS; levers restored PASS; at the shipped tier and DPR 1.25 PASS; **`tools/budgets.mjs` has no `RT_LEDGER`** (gates-perf's file): outstanding. With that one line (run `L12`, against a copy of `budgets.mjs`): **PASS on every clause** |
-| `A-rt-ledger-census` (W0a) | **PASS** (`F3`, `F4`) | GL recount 127,271,712 B = ledger, 0 unattributed, 0 mismatches; docs and `RT_LEDGER` match; registration contract and weak hold PASS |
-| `A22-msaa` (R25) | **PASS** (`P1`, `F4`) | samples 0 = the tier's, SMAA present and enabled; measured AA 0.318 vs 0.197 off (1.617 ×) |
-| `V20-aa-crop` | NEEDS-JUDGE | filmed (`F4`); lane reading in the lane report |
-| `A108-ao-periodicity` | **PASS** (`P1`, `F4`) | worst 0.135 (ultra @ 1, control 0.137), 0 fails; witness: stock sample 0.238 on the first witness crop, shipped 0.099 (the second crop does not separate, stock 0.127 / shipped 0.124; the gate needs one seeing crop) |
-| `A109-ao-distance-fade` | **PASS** (`P1`, `F4`) | high (AO 400 × 225): 4–6 m 0.0682, past 150 m 0, far band 1.000 of GTAO-off; ultra 0.0718, 0, 1.000 |
-| `V33b-no-ao-lattice` | NEEDS-JUDGE | filmed (`F4`); lane reading in the lane report |
-| `V-gpu-tier-look` | NEEDS-JUDGE | filmed on the final tier (<!-- VLOOK -->); lane reading in the lane report: crop 4 keeps the crust and the ripples, crop 3 (fix round 1's row) does not |
+| `A-rt-ledger` | **PENDING** on one clause (`F4`, `P2`) | RT 127.27 MB ≤ 170 PASS; staged fight 342.45 MB ≤ 450 PASS; docs PASS; levers restored PASS; at the shipped tier and DPR 1.25 PASS; **`tools/budgets.mjs` has no `RT_LEDGER`** (gates-perf's file): outstanding. With that one line (run `L12`, against a copy of `budgets.mjs`): **PASS on every clause** |
+| `A-rt-ledger-census` (W0a) | **PASS** (`F3`, `F4`, `P2`) | GL recount 127,271,712 B = ledger, 0 unattributed, 0 mismatches; docs and `RT_LEDGER` match; registration contract and weak hold PASS |
+| `A22-msaa` (R25) | **PASS** (`P1`, `F4`, `P2`) | samples 0 = the tier's, SMAA present and enabled; measured AA on the final row 0.312 vs 0.189 off (1.647 ×) |
+| `V20-aa-crop` | NEEDS-JUDGE | filmed on the final row (`P2`); lane reading in the lane report |
+| `A108-ao-periodicity` | **PASS** (`P1`, `F4`, `P2`) | worst 0.135 (ultra @ 1, control 0.137), 0 fails; witness (`P2`): stock sample 0.240 on the first witness crop, shipped 0.102 (the second crop does not separate, stock 0.127 / shipped 0.124; the gate needs one seeing crop) |
+| `A109-ao-distance-fade` | **PASS** (`P1`, `F4`, `P2`) | high (AO 400 × 225): 4–6 m 0.0682, past 150 m 0, far band 1.000 of GTAO-off; ultra 0.0718, 0, 1.000 |
+| `V33b-no-ao-lattice` | NEEDS-JUDGE | filmed on the final row (`P2`); lane reading in the lane report |
+| `V-gpu-tier-look` | NEEDS-JUDGE | filmed on the final row (`G2`); lane reading in the lane report: crop 4 keeps the crust and the ripples, crop 3 (fix round 1's row) does not |
 
-Must stay green (`F4`, final engine): `A20-frame-loop-survives` PASS, `A22b-fov-recompile` PASS, `A56-cascades`
-PASS (near texel 1.38 cm, `shadowMapSize` 2048). Global items present in this tree: A1, A9 (50.9 fps / 18.35 ms,
-loud box), A20b, A90 (heap −6.5 %, geo +9, tex −28), A90-expansion, A90b (0 offenders), A90-rig-reclaim,
+Must stay green (`F4`, the split mechanism; only the colour cap's value moved after it): `A20-frame-loop-survives` PASS, `A22b-fov-recompile` PASS, `A56-cascades`
+PASS (near texel 1.38 cm, `shadowMapSize` 2048). Global items present in this tree: A1, A9 (50.9 fps / 18.35 ms in `F4`, 48.0 / 40.98 in `P2`,
+loud boxes), A20b, A90 (heap −6.5 %, geo +9, tex −28), A90-expansion, A90b (0 offenders), A90-rig-reclaim,
 A-ID-ip-assets-gone, A-assets-tracked PASS; A-licence-manifest PENDING (pipeline's clauses); A21 PENDING on a
 loud box (its baseline verdict is FAIL on the Round-4 GPU term; draws and triangles PASS) — lane report §5.2.
 

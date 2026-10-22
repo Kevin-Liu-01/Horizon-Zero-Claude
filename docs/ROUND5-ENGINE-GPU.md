@@ -142,10 +142,13 @@ The POC needs the two read-only symlinks of §0 in a fresh tree.
 
 Reports in `scratchpad/r5/engine-gpu/run/`: `report.F3.json` (lane block + global items, on fix round 1's
 engine; the POC rows failed to boot, see §0), `report.P1.json` (the POC rows re-run, fix round 1's engine),
-`report.F4.json` (**the round's run on the final engine**: lane block without the timed pair + every
-global item present + must-stay-green, 22 gates), `report.L12.json` (A-rt-ledger with the `budgets.mjs`
-line), `report.G*.json` (A-gpu-tier, quiet box), exploration `report.X1.json` / `report.X2.json`
-(`explore/role.gates.mjs`, `explore/role2.gates.mjs`). Every run went through `run.sh` (the machine-wide
+`report.F4.json` (**the round's full run on the split mechanism**: lane block without the timed pair + every
+global item present + must-stay-green, 22 gates; the colour cap was 2× then), `report.P2.json` (**the lane's
+non-timed block + A1, A9, A20b on the final row, colour 1× / data 4×**), `report.L12.json` (A-rt-ledger with
+the `budgets.mjs` line), `report.G*.json` (A-gpu-tier; `G2` also films `V-gpu-tier-look` on the final row),
+exploration `report.X1.json` / `X2.json` (`explore/role.gates.mjs`, `explore/role2.gates.mjs`; the interleaved
+role comparison also ran inside `G1` and `G2`). Between `F4` and the final row only the tier table's numbers
+changed (`high` and `medium` colour cap 2 → 1), not the mechanism. Every run went through `run.sh` (the machine-wide
 Chrome slot of PLAN §0 rule 8, disk ≥ 3 GB and memory ≥ 25 % checked after taking it); timed runs through
 `qrun.sh` (waits for load < 3 and 0 headless Chromes, then samples load and headless Chromes every 2 s into
 `run/<tag>.box`).
@@ -156,22 +159,22 @@ Chrome slot of PLAN §0 rule 8, disk ≥ 3 GB and memory ≥ 25 % checked after 
 
 | gate | verdict | numbers |
 |---|---|---|
-| `A-rt-ledger` | **PENDING** (one clause, gates-perf's file) | 127.27 MB ≤ 170 ✓, 342.45 MB ≤ 450 ✓ (textures 100.28, geometry 114.90), docs ✓, levers restored ✓, shipped tier @ 1.25 ✓, `tools/budgets.mjs` record ✗ outstanding (`F4`); with the line (`L12`, proof root `scratchpad/r5/engine-gpu/budgets-proof/`): **PASS on every clause** |
-| `A-rt-ledger-census` (W0a row) | **PASS** (`F3`, `F4`) | GL 127,271,712 B = ledger, 0 unattributed, 0 mismatches, docs and `RT_LEDGER` match |
-| `A22-msaa` (`@r5`) | **PASS** (`P1`, `F4`) | R25 path; AA fraction 0.318 (SMAA) / 0.197 (none) / 0.375 (Round-4 MSAA ×4 + SMAA), gain 1.617 ≥ 1.5 |
+| `A-rt-ledger` | **PENDING** (one clause, gates-perf's file) | 127.27 MB ≤ 170 ✓, 342.45 MB ≤ 450 ✓ (textures 100.28, geometry 114.90), docs ✓, levers restored ✓, shipped tier @ 1.25 ✓, `tools/budgets.mjs` record ✗ outstanding (`F4`, `P2`); with the line (`L12`, proof root `scratchpad/r5/engine-gpu/budgets-proof/`): **PASS on every clause** |
+| `A-rt-ledger-census` (W0a row) | **PASS** (`F3`, `F4`, `P2`) | GL 127,271,712 B = ledger, 0 unattributed, 0 mismatches, docs and `RT_LEDGER` match |
+| `A22-msaa` (`@r5`) | **PASS** (`P1`, `F4`, `P2`) | R25 path; final row (`P2`): AA fraction 0.312 (SMAA) / 0.189 (none) / 0.374 (Round-4 MSAA ×4 + SMAA), gain 1.647 ≥ 1.5 (`F4`: 0.318 / 0.197, 1.617) |
 | `V20-aa-crop` (`@r5`) | NEEDS-JUDGE | §5.3 |
-| `A108-ao-periodicity` (`@r5`) | **PASS** (`P1`, `F4`) | worst 0.135 (ultra @ 1, far 128 m, control 0.137); 0 fails; witness crop 1: stock 0.238 ≥ 0.15, shipped 0.099 (crop 2 does not separate: stock 0.127, shipped 0.124; the gate needs one seeing crop) |
-| `A109-ao-distance-fade` (`@r5`) | **PASS** (`P1`, `F4`) | high: 4–6 m 0.0682 (n 3,037), past 150 m 0 (n 2,421), far band ratio 1.000; ultra: 0.0718, 0, 1.000 |
+| `A108-ao-periodicity` (`@r5`) | **PASS** (`P1`, `F4`, `P2`) | worst 0.135 (ultra @ 1, far 128 m, control 0.137); 0 fails; witness crop 1 (`P2`): stock 0.240 ≥ 0.15, shipped 0.102 (crop 2 does not separate: stock 0.126, shipped 0.124; the gate needs one seeing crop) |
+| `A109-ao-distance-fade` (`@r5`) | **PASS** (`P1`, `F4`, `P2`) | high: 4–6 m 0.0682 (n 3,037), past 150 m 0 (n 2,421), far band ratio 1.000; ultra: 0.0718, 0, 1.000 |
 | `V33b-no-ao-lattice` (`@r5`) | NEEDS-JUDGE | §5.3 |
 | `V-gpu-tier-look` | NEEDS-JUDGE | §5.3 |
 
-### 5.2 Global green list (the items that exist in this tree) and must-stay-green — `F4`, final engine
+### 5.2 Global green list (the items that exist in this tree) and must-stay-green — `F4` (split mechanism), A1 / A9 / A20b again in `P2` (final row)
 
 | gate | verdict | numbers |
 |---|---|---|
-| `A1-boot-clean` | PASS | `state=playing` |
-| `A9-perf-budget` | PASS (Round-4 bar ≥ 45 fps) | 262 draws, 50.9 fps, scene GPU 18.35 ms — loud box (another lane's Chrome alive), so R26's 58-fps quiet-box bar is not attributable here (`F3`: 54.3 fps) |
-| `A20b-no-system-errors` | PASS | 0 / 0, 353 frames |
+| `A1-boot-clean` | PASS (`F4`, `P2`) | `state=playing` |
+| `A9-perf-budget` | PASS (Round-4 bar ≥ 45 fps) | 262 draws; 50.9 fps / scene GPU 18.35 ms (`F4`), 48.0 fps / 40.98 ms (`P2`) — loud boxes (other lanes' Chromes alive), so R26's 58-fps quiet-box bar is not attributable here (`F3`: 54.3 fps) |
+| `A20b-no-system-errors` | PASS (`F4`, `P2`) | 0 / 0, 353 / 290 frames |
 | `A21-real-draw-calls` | PENDING (its baseline verdict is FAIL, R33: listed, not graded) | draws 266 / 171 / 279 ≤ 350 PASS; triangles 3.70 / 3.34 / 3.82 M PASS; GPU 96.6 / 129.7 / 83.4 ms at raw DPR 2, p95, JS: unattributable on this box (`F3`: GPU term FAIL at 102 / 134 / 106 ms) |
 | `A90-memory-stability` | PASS | heap −6.5 %, geometries +9, textures −28, objects −1,096 |
 | `A90-memory-stability-expansion` | PASS | objects −1,059, non-machine growth 0 |
@@ -190,21 +193,22 @@ and ruled at W0a; nothing here touches the terrain build or nav).
 
 ### 5.3 Film, read by the lane against the criteria (advisory; R29 judges grade)
 
-Sheets in `scratchpad/r5/engine-gpu/run/F4/` (`V20-aa-crop@r5.png`, `V33b-no-ao-lattice@r5.png`,
-`V-gpu-tier-look.png`), filmed on the final `engine.js`; the exploration crops in `run/X1/`, `run/X2/`.
+Sheets filmed on the final row: `scratchpad/r5/engine-gpu/run/P2/V20-aa-crop@r5.png`,
+`run/P2/V33b-no-ao-lattice@r5.png`, `run/G2/V-gpu-tier-look.png`; the exploration crops in `run/X1/`,
+`run/X2/`. (`F4` filmed all three on the 2× / 4× row and read the same; superseded sheets were deleted.)
 
-- **V-gpu-tier-look** (`F4`): top band, frames 1, 2 and 4 are the same scene — same light, the ring's ellipse
+- **V-gpu-tier-look** (`G2`): top band, frames 1, 2 and 4 are the same scene — same light, the ring's ellipse
   shadow on the pan, grade, bloom on the sky; 2 and 4 are a little softer than 1 (DPR 1.25 against 1.5).
   Crops, magnified: crop 1 (Round 4) shows the salt pan's light polygonal crust crisply and the dune ripples
   in front; crop 2 (shipped levers, 8×) the same, softer; **crop 4 (SHIPPED, colour 1× / data 4×) still shows
   the polygonal crust across the pan and the ripples on the dune — a softer crop 2, no streaks**; crop 3 (NOT
   shipped: fix round 1's 2× / 2×) shows what fix round 1 shipped: the crust gone into faint horizontal
   streaks, the ripples nearly gone. My reading: PASS (fix round 1's shipped row would have failed it).
-- **V20** (`F4`, `P1`): top-left (shipped, SMAA-only at 1.25, 4× nearest): the column tops and sides carry 1–2 px
+- **V20** (`P2`; `P1`, `F4` the same): top-left (shipped, SMAA-only at 1.25, 4× nearest): the column tops and sides carry 1–2 px
   ramps between rock and sky; top-right (no AA): hard two-colour stair-steps on the same edges, clearest on the
   tall column's left side; bottom-left (Round-4 MSAA ×4 + SMAA at 1.5): the softest, and the shipped tile keeps
   two or three visible steps on that near-vertical edge where Round 4 has none. My reading: PASS.
-- **V33b** (`F4`, `P1`): rows 1–2 (high at quarter-res, ultra) at four bearings: no bars, bands, checker or
+- **V33b** (`P2`; `P1`, `F4` the same): rows 1–2 (high at quarter-res, ultra) at four bearings: no bars, bands, checker or
   dither; row 3 (1:1 shelf wall across the pan): on and OFF indistinguishable at both tiers; row 4: the ×8
   darkening maps show soft darkening along the boulder's contact with the sand and at the grass bases (high
   broader and grainier, ultra sharper), white open ground, no blocks, no outline against the sky. My reading:
