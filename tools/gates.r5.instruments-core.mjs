@@ -1098,8 +1098,12 @@ async function canonDistanceStatic() {
   for (const s of L.LAMP_ORDER) grade('lamps.js COMPASS_PIP', s, L.COMPASS_PIP[s].color);
   for (const [k, v] of Object.entries(L.SCANNER_TOKENS)) grade('lamps.js SCANNER_TOKENS', k, v);
   const lampsSrc = read('src/instruments/lamps.js');
+  // the beam tint is the token's linear value: `this.lin[id]` from `LAMP_STATES[id].token`, copied into the flat
+  // `_linA` (fix round 1: no keyed load by state name per frame) that the beam colour reads
   const beamFromTokens = /this\.lin\[id\][\s\S]{0,40}|const c = hexToRgb\(LAMP_STATES\[id\]\.token\)/.test(lampsSrc)
-    && /const lc = this\.lin\[s\]/.test(lampsSrc);
+    && (/const lc = this\.lin\[s\]/.test(lampsSrc)
+      || (/l = this\.lin\[LAMP_ORDER\[i\]\][\s\S]{0,400}this\._linA\[i \* 3\] = l\.r/.test(lampsSrc)
+        && /const LA = this\._linA[\s\S]{0,200}B\[ob\] = LA\[si \* 3\] \* k/.test(lampsSrc)));
   for (const s of L.LAMP_ORDER) grade('lamps.js beam tint (LampSystem.lin <- LAMP_STATES)', s, L.LAMP_STATES[s].token);
   // 2. every colour literal in a lamp / beam / sensor / eye / scanner / sighting / compass / pip context
   const files = walkAll('src').filter((f) => /\.(js|css)$/.test(f)).concat(existsSync(path.join(ROOT, 'index.html')) ? ['index.html'] : []);
