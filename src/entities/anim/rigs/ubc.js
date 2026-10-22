@@ -131,29 +131,14 @@ export const UBC_TUNE = {
   // string hand behind the nock; the loose: the hand slides back along the jaw
   // from the anchor by looseKick at the kick's peak (bible §5.2: 8-12 cm), not
   // out along the un-clamped string line (Oct 22: 0.30 m, the arm behind the head)
-  // fix round 3: the wrist 6.0 cm behind the nock (was 7.6): with the draw
-  // no longer sliding back off the anchor (`drawProtDown`, the re-derived
-  // pull) the wrist sits 8-9.5 cm in front of the back of the skull at full
-  // draw, which is the room the loose has (`looseClear`); knuckles still 0/6
-  // inside the posed head mesh at every gate pitch (Oct 22 probe)
-  handBehindNock: 0.060, looseKick: 0.11,          // 0.068, 0.075
+  handBehindNock: 0.076, looseKick: 0.10,          // 0.068, 0.075
   looseOnJaw: true,
-  // the loose (fix round 3; judge r0: the wrist went 0.03-0.06 m BEHIND the
-  // back of the skull at looseT 0.22-0.44): the kick runs back along the jaw
-  // and `looseOut` of it out to her right, away from the face (`looseDown`
-  // of it down the jaw line toward the neck), and a hard
-  // guard holds the wrist `looseClear` m in front of the back of the skull on
-  // every aimed frame (R35 "always in front of the back of the skull")
-  looseOut: 0.6, looseDown: 0.25, looseClear: 0.012,
   // the draw hand is placed off the NOCK's anchor, not on it: the wrist
   // `handBehindNock` back along the arrow (UBC wrist -> middle knuckle 0.084 m:
   // the knuckle row at the jaw corner, inside A16's 0.09 m nock-to-hand bar) and
   // `handOut` to her right (the back of the hand outside the face; Oct 22 the
   // knuckles and thumb were inside the jaw mesh)
-  // (fix round 3: 0.020 -> 0.026, the wrist a little further out of the face:
-  // A35's hand-to-Head-joint read 0.1035 at the level aim with the draw no
-  // longer sliding back, 3.5 mm over its 0.10 floor)
-  anchorNock: true, handOut: 0.026,
+  anchorNock: true, handOut: 0.020,
   // ...and the wrist bent back this much (radians) at full draw, so the
   // knuckles ride outside the jaw and the hooked fingers curl in to the string
   drawWristExt: 0.35,
@@ -178,31 +163,6 @@ export const UBC_TUNE = {
   // line: with the hand outside the jaw (fix round 2) 1.1 dropped it to
   // -0.036..-0.040 there; 0.5 reads -0.009, 0.055 behind the hand (Oct 22 probe)
   drawRetractDown: 0.5,
-  // fix round 3: the bow shoulder's protraction share at a steep down aim
-  // (1 = Round 4). The down aim's Lmax stood 0.02 m over the other three
-  // pitches (0.553 vs 0.526-0.533), and the pull is cut to the largest, so the
-  // other pitches slid their whole draw 2-4 cm back off the anchor — the draw
-  // hand with it, toward the back of the skull. At 0.7 the four Lmax agree
-  // within 0.004 m (0.528-0.532, Oct 22 sweep)
-  drawProtDown: 0.7,
-  // ...and a share of the draw shrug at the steep down aim (fix round 3): the
-  // joint rises so the elbow can sit >= 0.05 m up-and-back of the hand along
-  // the falling arrow (A-draw-elbow-level) AND under the shoulder joint (A16):
-  // 0.057 -> 0.077 m behind the hand, -0.006 under the joint (Oct 22 sweep)
-  drawShrugDown: 0.4,
-  // the closed-loop chest blade (fix round 3): the shoulder line's yaw before
-  // the stance and the blade, standing, is -0.311 rad at every gate pitch
-  // (Oct 22 sweep); while aiming on the move the trunk is turned back to it
-  // (the strafe / aim-walk loops left it 0.2-0.6 rad short, and the reach
-  // clamp slid the draw 8.6-9.0 cm off the anchor)
-  bladeLock: { ref: -0.311, gain: 1 },
-  // the draw elbow's form scan (fix round 3; A-draw-elbow-level, R35): the
-  // elbow is rolled on its shoulder -> wrist circle to the nearest point
-  // inside the aim-frame height band `up` (m about the shoulder line), at
-  // least `behindHand` back of the wrist along the arrow and at most
-  // `behindHead` past the back of the skull (bars: [-0.03, 0.05], 0.05, 0.20)
-  // (`looseDrop`: through the loose the height floor drops this much, m)
-  elbowForm: { up: [-0.022, 0.04], behindHand: 0.072, behindHead: 0.17, looseDrop: 0.15 },
   // the string hand's roll at full draw (0..1 of the way to back-of-hand out,
   // palm to the neck): the hooked fingers stand on the vertical string and the
   // ∴ on the back of the right hand faces a side camera (V24)
@@ -229,14 +189,6 @@ export const UBC_TUNE = {
   // excess is given back, spread up the spine (`share`), neck + head forward
   // by `gaze` of it so the eyes stay on the horizon.
   trunk: { walk: 0.17, jog: 0.23, sprint: 0.30, crouch: 0.63, gain: 1.15, share: [0.25, 0.35, 0.40], shareCrouch: [0.05, 0.30, 0.65], gaze: [0.5, 0.45] },
-  // fix round 3 (V-brea-one-glance cue 2, bible §3.2 "a 0.40 m cloth tail
-  // trailing left-rear"): the wrap tail's authored rest hangs flat down the
-  // left of her spine and never left her outline at 64 px; its root -> end
-  // line is turned out to her LEFT-REAR every frame before the springs (which
-  // hang, bounce and collide it about that rest). Character space: +X her
-  // left, -Z back; ~50 deg off the vertical, as a stiff wrapped tail in the
-  // island's wind stands
-  restKick: [{ bone: 'dyn_wrapSash_01', tip: 'dyn_wrapSash_end', dir: [0.55, -0.62, -0.56] }],
   // the Head bone's standing height over her feet (camera stance follow; Aloy's
   // head_0104 stood at 1.36, the Round-4 HEAD_REST); measured idle on flat ground
   headRest: 1.468,
@@ -259,17 +211,12 @@ export const UBC_BOW = {
   // 0.75. Cut at the middle of the largest pitch's run-to-run spread, so every
   // run's solution stays within A-lmax-solve's +-0.01 (the reach clamp takes
   // the small excess as anchor drop / slide, never as a bent bow arm)
-  // FIX ROUND 3 (Oct 22): with `drawProtDown` 0.7 the down aim no longer
-  // stands over the others; the sweep's four-pitch Lmax: 0.5285-0.5301 /
-  // 0.5291-0.5306 / 0.5272-0.5296 / 0.5284-0.5323 (two runs). The draw is cut
-  // just under the run-to-run maximum so the slide at the other pitches is
-  // ~1 cm, not 2-4 (was drawLength 0.548, pull 0.603, arrow 0.803)
-  drawLength: 0.527,
+  drawLength: 0.548,
   pitches: [-0.55, -0.4, 0, 0.75],
-  lmaxMeasured: [[0.5285, 0.5301], [0.5291, 0.5306], [0.5272, 0.5296], [0.5284, 0.5323]],
+  lmaxMeasured: [[0.529, 0.532], [0.524, 0.530], [0.526, 0.533], [0.541, 0.550]],
   restZ: 0.055,
-  pull: 0.582,
-  arrowLen: 0.782,
+  pull: 0.603,
+  arrowLen: 0.803,
 };
 
 const _a = new THREE.Vector3(), _b = new THREE.Vector3(), _ax = new THREE.Vector3();

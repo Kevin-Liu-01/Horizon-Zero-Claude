@@ -3730,7 +3730,7 @@ void main() {
          * proxy reading 0.007 m; dithered to 0.31) — Aloy's 1.16 m spear never
          * reached that far round her back, Brea's 1.55 m R10 diagonal does. */
         const H = this._hw;
-        if (this._dollyC > clear && (!bodyOn || t >= 1
+        if (this._dollyC > clear && (!bodyOn || t >= 1 || this._dbgNoDollyBody
           || this._bodyClear(H.x + (Lx - H.x) * t, H.y + (Ly - H.y) * t, H.z + (Lz - H.z) * t) >= SWING_CLR)) clear = this._dollyC;
       }
       const need = clear < 0 ? -clear : 0;
@@ -4342,7 +4342,7 @@ void main() {
      * shortened to the longest length that clears (bisected), so the march
      * has nothing to cut. */
     this._preCut = 0;
-    if (this._deepK > 0.5 && !this.aiming && ctx.terrain) {
+    if (this._deepK > 0.5 && !this.aiming && ctx.terrain && !this._dbgNoPreCut) {
       const L = desired.distanceTo(orbit);
       if (L > 0.5) {
         const ux = (desired.x - orbit.x) / L, uy = (desired.y - orbit.y) / L, uz = (desired.z - orbit.z) / L;
@@ -4699,7 +4699,7 @@ void main() {
       const tookK = Math.max(THREE.MathUtils.smoothstep(this._relief || 0, 0.15, 0.35),
         THREE.MathUtils.smoothstep(1 - (this.camDolly ?? 1), 0.05, 0.25)) * (this._deepK || 0);
       const rotK = tookK;
-      const groundK = Math.max(swingK, tookK);
+      const groundK = this._dbgNoKeepExt ? swingK : Math.max(swingK, tookK);
       if (!this.aiming && ly > 0.05 && c0 && c1 && groundK > 0) {
         const e0 = c0.matrixWorld.elements, e1 = c1.matrixWorld.elements;
         const py = Math.min(e0[13], e1[13]), px = (e0[12] + e1[12]) * 0.5, pz = (e0[14] + e1[14]) * 0.5;
