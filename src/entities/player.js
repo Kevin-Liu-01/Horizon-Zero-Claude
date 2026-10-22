@@ -658,6 +658,12 @@ const RELIEF_MAX = 0.80;                  // 46 deg — the old cap, kept for th
  */
 const ROT_MAX = 0.95;                     // 54 deg, absolute
 const ROT_MARGIN = 0.04;                  // m of slack over cameraBoom's own march
+/* R5 the cut floor (see `_reliefFloor`): a boom cut this far (m) under what
+ * the placement asked for raises the rotation floor by `REL_CUT_STEP` (rad)
+ * per cut frame; free, the floor eases off at `REL_CUT_EASE` (rad/s). */
+const REL_CUT_SLACK = 0.08;
+const REL_CUT_STEP = 0.06;
+const REL_CUT_EASE = 0.08;
 const ROT_STEPS = 10;                     // scan resolution over [0, budget]
 const PITCH_B_MAX = 1.40;                 // rad: the boom stays BEHIND her
 /**
@@ -1190,6 +1196,8 @@ export class Player {
     this._deepK = 0;
     /** Aiming with no dolly room: the ground rotation is placement (see `ROT_PLACE_LEAD`). */
     this._rotPlace = false;
+    /** R5: the rotation the ground's last CUT asked for (see `_reliefFloor` below). */
+    this._reliefFloor = 0;
     this._pitchPrev = 0;
     this._pitchRate = 0;
     /** Deep-look-up dolly (see `DOLLY_HEAD`): fraction of the boom kept (1 = none), and the lens offset it made. */
@@ -4117,6 +4125,20 @@ void main() {
       const alone = this._groundRotFor(yawB, pitch, wantDist, pivotLift, rotCap, hijackMax, halfFov, false, yaw);
       if (alone > rotWant) rotWant = alone;
     }
+    /* R5 THE CUT FLOOR (A31e / A31f on Brea). The rotation is priced on three
+     * centre samples of the boom; `cameraBoom` sweeps a whisker ring, and on
+     * the 38.8 deg face at the pitch clamp, up-slope, the two disagreed: a
+     * 5 deg rotation the samples called clear was cut by the ring to a
+     * 0.63-0.67 m boom, which parks the lens on her stowed lance (0.06 m) and
+     * dithers her to 0.3 — and the release then walked the rotation back down
+     * from a clearing 26 deg to that same 5 deg (measured Oct 22, frame by
+     * frame). A boom the ground actually CUT raises a floor under the
+     * rotation (below, after the march); the floor eases off slowly once the
+     * boom runs free, so the release can never fall back into the cut. Not
+     * while aiming (the aim rig's own placement rotation owns that case). */
+    if (seeding) this._reliefFloor = 0;
+    if (this._reliefFloor > rotWant && !this.aiming) rotWant = Math.min(rotCap, this._reliefFloor);
+    this._rotCapLast = rotCap;
     if (seeding) this._relief = rotWant;
     else if (this._rotPlace && rotWant > this._relief && this._placeCut(yawB, pitch + this._relief, wantDist, pivotLift)) {
       /* a placement rotation that has not caught up with a flick leaves the
@@ -4300,6 +4322,12 @@ void main() {
     if (C) {
       C.cameraBoom(orbit, desired, this._camPos, 0.3);
       this.boomLength = C.lastBoom ?? askLen;
+      if (this._deepK > 0.5 && !this.aiming) {
+        const planned = Math.hypot(desired.x - orbit.x, desired.y - orbit.y, desired.z - orbit.z);
+        if (this.boomLength < planned - REL_CUT_SLACK) {
+          this._reliefFloor = Math.min(this._rotCapLast ?? ROT_MAX, Math.max(this._reliefFloor, this._relief) + REL_CUT_STEP);
+        } else if (this._reliefFloor > 0) this._reliefFloor = Math.max(0, this._reliefFloor - REL_CUT_EASE * dt);
+      } else this._reliefFloor = 0;
     } else {
       const minY = ctx.terrain.getHeight(desired.x, desired.z) + 0.4;
       if (desired.y < minY) desired.y = minY;
