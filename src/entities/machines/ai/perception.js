@@ -101,7 +101,10 @@ export class Perception {
       const k = i / 4;
       const x = m.position.x + (target.x - m.position.x) * k;
       const z = m.position.z + (target.z - m.position.z) * k;
-      if (t.getHeight(x, z) > y0 + (y1 - y0) * k + 1.2) return false;
+      // the DRAWN surface (heightFast: bilinear off the render grid, small enough to inline, so the
+      // sample costs no boxed arguments) is what hides her; getHeight where there is no grid
+      const gh = t.heightFast ? t.heightFast(x, z) : t.getHeight(x, z);
+      if (gh > y0 + (y1 - y0) * k + 1.2) return false;
     }
     // machine-ai-04: trunks, big rocks, ruins and tents break the sightline
     const C = ctx.collision;

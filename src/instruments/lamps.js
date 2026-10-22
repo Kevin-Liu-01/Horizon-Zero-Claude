@@ -104,8 +104,8 @@ export const APERTURE_MAX = 0.66;
 /** Core radius as a fraction of the CURRENT aperture radius (the hot centre of the glass). */
 export const CORE_FRAC = 0.4;
 /** ...per state: the 20 % pinhole keeps a smaller core, so its token ring is still a ring (0 calm, 1 wary, 2 hostile, 3 dark). */
-export const CORE_FRAC_BY_STATE = Object.freeze({ calm: 0.4, wary: 0.4, hostile: 0.3, dark: 0.4 });
-const CORE_FRAC_A = [0.4, 0.4, 0.3, 0.4];
+export const CORE_FRAC_BY_STATE = Object.freeze({ calm: 0.4, wary: 0.4, hostile: 0.2, dark: 0.4 });
+const CORE_FRAC_A = [0.4, 0.4, 0.2, 0.4];
 /** Core HDR = ring HDR x CORE_GAIN, raised until its luminance clears the bloom threshold by CORE_OVER. */
 export const CORE_GAIN = 2.5;
 const CORE_OVER = 1.25;
@@ -738,7 +738,7 @@ export class LampSystem {
       // lampGain(s, t, phase), written out (a double return from a call would box)
       const tp = t + r.phase;
       const stateGain = s === 'wary' ? PULSE_LOW + (1 - PULSE_LOW) * (0.5 + 0.5 * Math.cos(2 * Math.PI * tp))
-        : s === 'hostile' ? ((tp * 4) % 1 < 0.5 ? 1 : FLICKER_LOW) : 1;
+        : s === 'hostile' ? ((tp * 4) - Math.floor(tp * 4) < 0.5 ? 1 : FLICKER_LOW) : 1;
       let gain = stateGain;
       if (s === 'dark' && age < SPUTTER_S && r.prev !== 'dark') {
         // sputter, then out: the previous colour stutters through a closing iris

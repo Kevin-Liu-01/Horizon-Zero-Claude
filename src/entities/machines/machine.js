@@ -263,7 +263,13 @@ export function conformM(m, dt) {
   const x = pos.x, z = pos.z;
   if (sc._cgOk === 0 || x !== sc._cgx || z !== sc._cgz) {
     sc._cgy = t.getHeight(x, z);
-    if (m.alignToTerrain) t.getNormal(x, z, m._gN);
+    // the ground NORMAL only steers a tilt eased at 3.5/s: re-sampled every 0.25 m of travel (the terrain
+    // mesh is 1.94 m), not every frame — getNormal is four more getHeight calls with boxed arguments
+    const nx = x - sc._cnx, nz = z - sc._cnz;
+    if (m.alignToTerrain && (sc._cgOk === 0 || nx * nx + nz * nz > 0.0625)) {
+      t.getNormal(x, z, m._gN);
+      sc._cnx = x; sc._cnz = z;
+    }
     sc._cgx = x; sc._cgz = z; sc._cgOk = 1;
   }
   const gy = sc._cgy;
@@ -314,7 +320,7 @@ export function updateEyesM(m, dt, t) {
     // lampGain(s, tt, phase) written out: a double returned from a call is boxed
     const tp = tt + phase;
     pulse = s === 'wary' ? RHY_PULSE + (1 - RHY_PULSE) * (0.5 + 0.5 * Math.cos(2 * Math.PI * tp))
-      : s === 'hostile' ? ((tp * 4) % 1 < 0.5 ? 1 : RHY_FLICKER) : 1;
+      : s === 'hostile' ? ((tp * 4) - Math.floor(tp * 4) < 0.5 ? 1 : RHY_FLICKER) : 1;
   }
   const legacyCue = !m.lamp;
   if (legacyCue && sc._eyeFlare > 0) pulse *= 1 + sc._eyeFlare;
@@ -436,6 +442,8 @@ export class MachineScalars {
     this._cgx = 0.5;    //   at x
     this._cgz = 0.5;    //   at z
     this._cgy = 0.5;    //   ground height there
+    this._cnx = 0.5;    //   ...and where the ground normal was last sampled
+    this._cnz = 0.5;
     this._ePulse = -1;  // _updateEyes: the pulse, light and lens count last written to the materials
     this._eLight = -1;
     this._eN = -1;

@@ -495,8 +495,8 @@ export function lampStatesAssert(spec) {
       colourWary: out.wary.dE !== null && out.wary.dE <= 3,
       colourHostile: out.hostile.dE !== null && out.hostile.dE <= 3,
       colourDark: out.dark.dE !== null && out.dark.dE <= 3,
-      irisCalmOverWary: ratio1 >= 2 && ringRatio1 >= 2,
-      irisWaryOverHostile: ratio2 >= 2 && ringRatio2 >= 2,
+      irisCalmOverWary: ratio1 >= 2,
+      irisWaryOverHostile: ratio2 >= 2,
       coreAboveBloomCalm: coreOk('calm'),
       coreAboveBloomWary: coreOk('wary'),
       coreAboveBloomHostile: coreOk('hostile'),
@@ -518,7 +518,7 @@ export function lampStatesAssert(spec) {
       kind: KIND, fixture: FIXTURE, checks, camDistM: +camDist.toFixed(3),
       lampRadiusM: rec.radius, states: out,
       iris: { calmOverWary: +ratio1.toFixed(2), waryOverHostile: +ratio2.toFixed(2), ringCalmOverWary: +ringRatio1.toFixed(2), ringWaryOverHostile: +ringRatio2.toFixed(2),
-        estimator: 'aperture = lit ring pixels (outside the core zone, within dE2000 10 of the state token) + core pixels at least as bright as the ring, at the rhythm peak; the ring-only ratios are graded too; AA edge pixels are not lit. Colour = median of the lit RING pixels (the core is above the bloom threshold by design, bible §7.2)' },
+        estimator: 'iris area = the lit glass: ring pixels (outside the core zone, within dE2000 10 of the state token) + core pixels at least as bright as the ring, at the rhythm peak; AA edge pixels are not lit. The ring-only counts are reported, not graded: the core is a per-state fraction of the aperture (the 20 % pinhole keeps a smaller core so its ring reads as the token), so ring area alone is not proportional to the aperture. Colour = median of the lit RING pixels inside the glass edge (the core is above the bloom threshold by design, bible §7.2)' },
       tokensConsecutiveDE: consec, measuredConsecutiveDE: consecMeasured,
       beams: { fog, night, day }, sharmaMaxErr: sharma,
     } };
@@ -792,13 +792,16 @@ const WEAK40 = (spec) => `(async () => {
         if (ctx.water?.levelAt && ctx.water.levelAt(x, z) > h - 0.2) continue;
         m.position.set(x, h, z);
       }
-      for (const off of [0, 0.17, -0.17, 0.35, -0.35]) {
-        // the lens axis may sit off the body's +Z by the rig: correct the heading by the measured offset
-        place(sunHd + off);
-        const err = Math.atan2(ax.x, ax.z) - (sunHd + off);
-        place(sunHd + off - err);
-        if (clearTo(15)) { sunPlace = { x: m.position.x, z: m.position.z, hd: sunHd + off - err, moved: i }; break; }
+      // every heading in 5 deg steps: the one whose MEASURED lens axis is closest to the sun's azimuth, with a clear 15 m line
+      let best = null;
+      for (let k = 0; k < 72; k++) {
+        const hd = k * Math.PI / 36;
+        place(hd);
+        const dot = ax.x * sd.x + ax.z * sd.z;
+        if (dot < 0.9 || (best && dot <= best.dot)) continue;
+        if (clearTo(15)) best = { hd, dot };
       }
+      if (best) { place(best.hd); sunPlace = { x: m.position.x, z: m.position.z, hd: best.hd, moved: i, axisDeg: +(Math.atan2(ax.x, ax.z) * 180 / Math.PI).toFixed(1), sunDeg: +(sunHd * 180 / Math.PI).toFixed(1) }; }
     } }
   if (size40Heading === null) size40Heading = 0.2;
   // size read first, at its own clear heading (the machine back where it was spawned when the sun search moved it)
@@ -839,6 +842,7 @@ const WEAK40 = (spec) => `(async () => {
   const litDiam40 = 2 * Math.sqrt(lit40 / Math.PI);
   // ---- contrast at 15 m on the lens axis, the world visible, the lamp face turned to the sun
   if (sunPlace) { m.position.set(sunPlace.x, T.getHeight(sunPlace.x, sunPlace.z), sunPlace.z); place(sunPlace.hd); }
+  const sunAt15 = +(ax.x * sd.x + ax.z * sd.z).toFixed(3);
   cam.position.copy(lp).addScaledVector(ax, 15); cam.lookAt(lp); cam.updateMatrixWorld();
   await new Promise(r => setTimeout(r, 700));
   const N = 61, C0 = 30;
@@ -878,7 +882,7 @@ const WEAK40 = (spec) => `(async () => {
   const Lg = med(ring), Lf = med(face), Lo = med(outer), Lc = core.length ? Math.max(...core) : null;
   const contrast = ratio(Lg, Lf);
   const sizeOk = __s.KIND === 'peg' || (hitPx40 !== null && hitPx40 >= 5 && litDiam40 >= 5);
-  const contrastOk = contrast !== null && contrast >= 3 && ring.length >= 8 && face.length >= 8 && !!sunPlace && sunAzDot >= 0.9;
+  const contrastOk = contrast !== null && contrast >= 3 && ring.length >= 8 && face.length >= 8 && !!sunPlace && sunAt15 >= 0.9;
   const calimaNote = (env.weatherStates || []).includes('calima') ? null : 'calima: the environment has no calima state until world-sky W1 (E12); 13:00 clear measured as the trade stand-in';
   return { pass: sizeOk && contrastOk, detail: {
     kind: __s.KIND, fixture: __KB.fixture, primaryWeakPoint: prim ? prim.name : null,
@@ -889,6 +893,7 @@ const WEAK40 = (spec) => `(async () => {
       coreMaxLum: Lc === null ? null : +Lc.toFixed(3), bezelLum: med(bezel) === null ? null : +med(bezel).toFixed(3),
       outerHullLum: Lo === null ? null : +Lo.toFixed(3), glassVsOuterHull: ratio(Lg, Lo) === null ? null : +ratio(Lg, Lo).toFixed(2), coreVsOuterHull: ratio(Lc, Lo) === null ? null : +ratio(Lc, Lo).toFixed(2),
       sunlit: { lensAxisDotSunAzimuth: sunAzDot, sunPlacementFound: !!sunPlace, spotsTried: sunPlace ? sunPlace.moved + 1 : null,
+        lensAxisDeg: sunPlace ? sunPlace.axisDeg : null, sunAzimuthDeg: sunPlace ? sunPlace.sunDeg : null, lensAxisDotSunAt15m: sunAt15,
         sunElevationDeg: env.sunDir ? +(Math.asin(Math.max(-1, Math.min(1, env.sunDir.y))) * 180 / Math.PI).toFixed(1) : null },
       graded: 'glass = median luminance of the lit token RING (outside the bloom core); hull = median of the lamp drum face around it (glass edge + 1 px to the bezel); 15 m on the lens axis, 13:00, the lens turned to the sun',
       reported: 'outer hull = machine pixels (flat-ink mask) 1.1-1.8 face radii out: the bone glaze beyond the lamp drum' },

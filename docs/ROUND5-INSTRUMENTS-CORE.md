@@ -41,19 +41,31 @@ shadow rows change id from `<id>@ic` to `<id>` by themselves (`shadowId()` reads
 | dark (dead, a lamp hit for 6 s, Clouded = `stunT`) | `#3B3A36` | closed, cracked | 0.55 s sputter of the last colour, then out | never |
 
 - **Two instanced draws for every lamp of every Instrument** (`LampSystem`, owned by the manager as
-  `machines.lamps`): one `InstancedMesh` of iris discs (lens, six swept blades, bezel and the dark
-  fracture are one shader; capacity 128) and one `InstancedMesh` of additive 64-segment cones (the
-  beams, §4.1 "1 draw"). A kind registers its lens once with `machine.addLamp(at, { radius })`; nothing
-  is per machine (no geometry, material or texture). Instances are written in `Machines.interpolate()`
-  (once per rendered frame), allocation-free; records self-prune when a machine is disposed.
-- **The colour on screen is the token.** The engine tone-maps (ACES), sRGB-encodes and grades every
-  pixel in one output pass, so the lens carries the HDR value that the output pass maps back onto the
-  token (`outputInverse`: the grade, the sRGB transfer and the ACES fit inverted analytically, then
-  Newton on an exact copy of the forward pass). It re-solves only when exposure or a grade uniform
-  changes (a signature compare per frame), and a re-solve allocates nothing (scratch arrays; 20,000
-  solves in node: heap delta ≤ 0), so a per-frame exposure ramp from world-sky would cost no garbage. Lamps never cast shadows, are not fogged, and their
-  G-buffer copy is skipped (a `scene.onBeforeRender` chain hides both draws when
-  `scene.overrideMaterial` is set, i.e. in the GTAO normal/depth pass), so one draw stays one draw.
+  `machines.lamps`): one `InstancedMesh` of lamp drums and one `InstancedMesh` of additive
+  64-segment cones (the beams, §4.1 "1 draw"). A lamp drum is the face disc plus a short barrel, and
+  the lens, the core, the six swept blades, the drum face, the bezel and the dark fracture are all one
+  shader; capacity is 128. A kind registers its lamp once with `machine.addLamp(at, { radius })`;
+  nothing is per machine (no geometry, material or texture). The states, colours and apertures are
+  written in `Machines.interpolate()`. The instance matrices are written in the scene's onBeforeRender,
+  from fresh world matrices. Both paths are allocation-free, and records self-prune when a machine is
+  disposed.
+- **Fix round 1: the lamp reads at noon** (judge finding; see "W0b FIX ROUND 1" above).
+  - **Core:** a hot core above the bloom threshold (bible §7.2) inside the token ring.
+  - **Drum face:** a dark graphite drum face around the glass (the retracted blades and the housing).
+  - **Barrel:** a graphite barrel lit by the sun and sky, sinking into the hull.
+  - **Lens size:** on the Tiller the lens is 0.264 m across in a 0.40 m face.
+- **The ring on screen is the token.** The engine tone-maps (ACES), sRGB-encodes and grades every
+  pixel in one output pass, so the ring carries the HDR value that the output pass maps back onto the
+  token. This is `outputInverse`: the grade, the sRGB transfer and the ACES fit inverted analytically,
+  then Newton on an exact copy of the forward pass.
+  - **Core value:** the core is ×2.5 the ring's HDR, raised until it clears the live bloom threshold
+    by ×1.25.
+  - **Re-solve:** it runs only when exposure, a grade uniform or the bloom threshold changes (a cheap
+    change test per frame, plus the full signature every 64 frames).
+  - **Allocation:** a re-solve allocates nothing.
+  - **Lamps are not lit like the hull:** they never cast shadows, are not fogged, and their G-buffer
+    copy is skipped. A `scene.onBeforeRender` chain hides both draws when `scene.overrideMaterial` is
+    set (the GTAO normal/depth pass), so one draw stays one draw.
 - **Beams** are drawn only in wary/hostile and only when the air carries them: aerial-fog density
   multiplier > 1.2 (`environment.weatherParams.densMul`) or `nightFactor` > 0.5. Length = the
   machine's sight range × `perceptionScale`; half-angle 5°; brightness falls with length (`along²`)
@@ -67,7 +79,7 @@ shadow rows change id from `<id>@ic` to `<id>` by themselves (`shadowId()` reads
   `EYE_COLORS` are the four tokens (legacy kinds included, until they go at W2). The Round-4
   white-hot windup flash stays only on machines WITHOUT an iris lamp (the legacy kinds' dodge cue).
 - **The Tiller fixture** (`src/instruments/kinds/tiller.js`) registers its drum lamp at body
-  `[0, 2.28, 2.085]`, radius 0.18 m (just in front of the generator's lens dome, riding the head
+  `[0, 2.28, 2.085]`, face radius 0.20 m (fix round 1; was 0.18) (just in front of the generator's lens dome, riding the head
   bone); the drum lamp is its weak point, and a precise hit darkens it for 6 s (`lampDarkT`, which
   also blinds its perception: sight range 0, no omni).
 - Published for shell-ui (W2): `COMPASS_PIP` (the lamp tokens + apertures for the compass ◆), and
@@ -166,27 +178,33 @@ instruments-a/-b/-c/-d call it for their kinds.
 lamps.attach(machine, anchor: Object3D, { radius = 0.13 } = {}) -> record | null   (one lamp per machine; null at capacity, with one console.warn)
 lamps.detach(machine) -> boolean
 lamps.stateOf(machine) -> 'calm' | 'wary' | 'hostile' | 'dark'
-lamps.lampHdr(stateId) -> { r, g, b } | null      the solved lens value (a copy)
+lamps.lampHdr(stateId) -> { r, g, b } | null      the solved RING value (a copy)
+lamps.coreHdr(stateId) -> { r, g, b, k, lum } | null   the core: ring HDR x k (k >= 2.5, raised to clear the bloom threshold x1.25), its HDR luminance (fix round 1)
 lamps.beamsOn() -> boolean                          densMul > 1.2 or nightFactor > 0.5
 lamps.audit() -> { lamps, beams, capacity, lampDraws, beamDraws, solves, fogK, night, beamsOn, states }
-lamps.update()                                      called by Machines.interpolate() once per rendered frame
+lamps.update()                                      called by Machines.interpolate() once per rendered frame (states, colours, apertures)
+lamps._writeMatrices()                              the instance matrices, from the scene's onBeforeRender (fresh world matrices, before upload)
 lamps.lampMesh, lamps.beamMesh, lamps.group         the two instanced draws (and their parent in the scene)
 lamps.records, lamps.beamDraws, lamps.lampDraws, lamps.beamCount, lamps.fogK, lamps.night
 lamps.hideBeams = false                             gate/debug: draw the frame without the beams
 lamps.dispose()                                     (Machines.dispose())
-record = { machine, anchor, radius, phase, state, prev, since, aperture, dir, beamOn }   (machine.lamp)
+record = { machine, anchor, radius, phase, state, prev, since, aperture, dir, beamOn, slot, bslot, bmode, bt, blen }   (machine.lamp)
 ```
 Module exports: `LAMP_STATES` (frozen `{ calm, wary, hostile, dark }` rows `{ id, token, aperture,
 beam, rhythm, hz, sweepHz? }`), `LAMP_ORDER`, `LAMP_HEX`, `COMPASS_PIP` (`{ state: { color,
 aperture } }`), `LAMP_CANON` (the five forbidden Horizon colours), `SCANNER_TOKENS`,
 `SCANNER_HIGHLIGHTS`, `BEAM` (`{ fogK: 1.2, night: 0.5, halfAngleDeg: 5, segments: 64, sweepDeg:
-14, capacity: 128 }`), `APERTURE_MAX` (0.86), `lampStateFor(machine)`, `lampGain(state, t, phase)`,
+14, capacity: 128 }`), `APERTURE_MAX` (0.66 of the face radius; was 0.86), `CORE_FRAC` (0.4),
+`CORE_FRAC_BY_STATE` (`{ calm: 0.4, wary: 0.4, hostile: 0.2, dark: 0.4 }`, of the current aperture radius),
+`CORE_GAIN` (2.5), `BEZEL_IN` (0.93), `BARREL_DEPTH` (0.85 face radii), `LAMP_RHYTHM` (`{ pulseLow:
+0.55, flickerLow: 0.3 }`), `lampStateFor(machine)`, `lampGain(state, t, phase)`,
 `outputForward(x, P)`, `outputInverse(t, P)`, `LampSystem`; re-exports `WEATHER_PERCEPTION`,
 `NIGHT_PERCEPTION`, `perceptionScale`.
 
 ### On every machine (`machine.js`)
 ```
 machine.addLamp(at: Object3D | [x, y, z] body-space, { radius = 0.13 } = {}) -> record | null
+                      radius = the lamp FACE (glass = APERTURE_MAX of it); the barrel sinks 0.85 radii behind the face
                       an array makes an anchor facing +Z under machine.body (call BEFORE buildRig, so the rig carries it)
 machine.lamp          the record, or null
 machine.lampDarkT     seconds left dark after a precise hit on the weak point named 'lamp' (6 s, bible §7.3)
@@ -195,6 +213,16 @@ machine.dustOccluded  boolean, 5 Hz (the Dust-sight occlusion flag)
 machine.flagsOnSight  staging override of the perception row's `flags`
 PERCEPTION.default.flags = false                     a kind row sets `flags: true` (the sentry role, W1)
 EYE_COLORS = { calm, wary, hostile, dead: the four tokens, flash }   VFX_COLORS re-exported
+machine.sc            MachineScalars: the per-frame doubles (heading, _speed, _accelPitch, strafeK, suspicion, _unseenT,
+                      _stateT, playerDist, detectFill, scanOffset, health, lampDarkT, stunT, burnT, _burnDps, clocks,
+                      _alarmCd, _attackCd, ...); Machine.prototype get/set pairs keep every old name working
+MACHINE_SCALARS       the moved names (array)
+stepRoot(m, dx, dz), stepRootS(m)    the shared root step (camp ring + world rim); stepRootS reads _st.sx/_st.sz
+_st                   the steering scratch { want, d, x, z, fx, fz, speed, out, sx, sz }
+turnS(m, dt), faceS(m, dt), moveTowardS(m, dt), steerAlongS(m, dt), navTowardS(m, dt)   (read/write _st)
+conformM(m, dt), updateEyesM(m, dt, t), updatePartsM(m, dt, t), updateElementalM(m, dt), updateFxM(m, dt)
+                      the machine's per-frame helpers as module functions; the methods of the old names stay as wrappers
+picker._now, picker._held(map, id)   ai/attacks.js: the hold maps (cd, missed, stalled, blind, unreach) hold expiry times
 ```
 
 ### `ctx.machines.perception` — `PerceptionHooks` (`ai/perception.js`) and the noise filter
