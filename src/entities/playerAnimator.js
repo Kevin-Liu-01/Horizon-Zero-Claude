@@ -497,7 +497,7 @@ export class PlayerAnimator {
       bladeLock: tn?.bladeLock ?? null,
       drawProtDown: tn?.drawProtDown ?? 1,
       looseClear: tn?.looseClear ?? null,
-      looseOut: tn?.looseOut ?? 0,
+      looseOut: tn?.looseOut ?? 0, looseDown: tn?.looseDown ?? 0,
       elbowForm: tn?.elbowForm ?? null,
     };
     this.bowSolve = prof?.bow || null;
@@ -691,6 +691,7 @@ export class PlayerAnimator {
     this._settleT = 1; this._prevSpd = 0; this._recentSpd = 0; // stop settle
     this._settleAmp = 0;
     this._looseT = 1; this._looseDraw = 0;   // arrow-release follow-through
+    this._looseOff = new THREE.Vector3();    // R5: the full-draw wrist off its anchor (char), for the loose
     this._carryW = 0;                        // heavy two-hand carry weight
     this._dieT = 0; this._wasDead = false;   // death timeline
     this._leanAcc = 0; this._bank = 0;       // smoothed accel lean / turn bank
@@ -3538,6 +3539,14 @@ export class PlayerAnimator {
      * decay together.
      */
     const lw = this.T.looseOnJaw ? Math.min(1, Math.max(lk, hold)) * aimW : 0;
+    // fix round 3: where the wrist sits off its own anchor at full draw (the
+    // reach clamp leaves the nock ~1 cm short of the anchor at some pitches),
+    // remembered so the follow-through starts from the wrist, not 1-2 cm
+    // ahead of it (that much of the kick was spent getting back to the anchor)
+    if (this._looseT >= 1 && drawS > 0.9 && aimW > 0.5) {
+      this._looseOff.subVectors(_v7, _anW);
+      if (this._looseOff.lengthSq() > 0.0009) this._looseOff.setLength(0.03);
+    } else if (this._looseT >= 1 && drawS < 0.5) this._looseOff.set(0, 0, 0);
     if (lw > 0.001) {
       // fix round 3 (profile `tune.looseOut`): the kick runs back along the
       // jaw AND out, away from the face, as an archer's opening hand does —
@@ -3545,9 +3554,11 @@ export class PlayerAnimator {
       // so a kick straight back along the arrow had nowhere to go but behind
       // the head (judge trace, Oct 22: the wrist +0.03..+0.06 m past the
       // skull's back plane at looseT 0.22-0.44); the clamp below holds it
-      const ko = this.T.looseOut, kk = this.T.looseKick * lk;
-      _v6.copy(_anW).addScaledVector(_dA, -kk * Math.sqrt(1 - ko * ko));
+      // ...and `looseDown` of it down the line of the jaw toward the neck
+      const ko = this.T.looseOut, kd = this.T.looseDown, kk = this.T.looseKick * lk;
+      _v6.copy(_anW).add(this._looseOff).addScaledVector(_dA, -kk * Math.sqrt(Math.max(0, 1 - ko * ko - kd * kd)));
       if (ko > 0 && this.T.anchorNock) _v6.addScaledVector(_rOut, kk * ko);
+      if (kd > 0) _v6.addScaledVector(_hdDown, kk * kd);
       _v7.lerp(_v6, lw);
     }
     // nock flourish: the string hand dips to the HIP quiver and comes back up

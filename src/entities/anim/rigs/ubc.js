@@ -139,16 +139,20 @@ export const UBC_TUNE = {
   looseOnJaw: true,
   // the loose (fix round 3; judge r0: the wrist went 0.03-0.06 m BEHIND the
   // back of the skull at looseT 0.22-0.44): the kick runs back along the jaw
-  // and `looseOut` of it out to her right, away from the face, and a hard
+  // and `looseOut` of it out to her right, away from the face (`looseDown`
+  // of it down the jaw line toward the neck), and a hard
   // guard holds the wrist `looseClear` m in front of the back of the skull on
   // every aimed frame (R35 "always in front of the back of the skull")
-  looseOut: 0.6, looseClear: 0.012,
+  looseOut: 0.6, looseDown: 0.25, looseClear: 0.012,
   // the draw hand is placed off the NOCK's anchor, not on it: the wrist
   // `handBehindNock` back along the arrow (UBC wrist -> middle knuckle 0.084 m:
   // the knuckle row at the jaw corner, inside A16's 0.09 m nock-to-hand bar) and
   // `handOut` to her right (the back of the hand outside the face; Oct 22 the
   // knuckles and thumb were inside the jaw mesh)
-  anchorNock: true, handOut: 0.020,
+  // (fix round 3: 0.020 -> 0.026, the wrist a little further out of the face:
+  // A35's hand-to-Head-joint read 0.1035 at the level aim with the draw no
+  // longer sliding back, 3.5 mm over its 0.10 floor)
+  anchorNock: true, handOut: 0.026,
   // ...and the wrist bent back this much (radians) at full draw, so the
   // knuckles ride outside the jaw and the hooked fingers curl in to the string
   drawWristExt: 0.35,
@@ -191,7 +195,7 @@ export const UBC_TUNE = {
   // inside the aim-frame height band `up` (m about the shoulder line), at
   // least `behindHand` back of the wrist along the arrow and at most
   // `behindHead` past the back of the skull (bars: [-0.03, 0.05], 0.05, 0.20)
-  elbowForm: { up: [-0.022, 0.04], behindHand: 0.065, behindHead: 0.17 },
+  elbowForm: { up: [-0.022, 0.04], behindHand: 0.072, behindHead: 0.17 },
   // the string hand's roll at full draw (0..1 of the way to back-of-hand out,
   // palm to the neck): the hooked fingers stand on the vertical string and the
   // ∴ on the back of the right hand faces a side camera (V24)
