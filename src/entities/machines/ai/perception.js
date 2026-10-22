@@ -218,21 +218,38 @@ export class Perception {
     const c = this.cfg;
     // the player's values from lib/hot.js (copied once per frame): never her own object (see hot.js)
     const H0 = HOT, pp = H0.ppos;
+    /* EVERY INPUT IS READ ON EVERY TICK (W0b fix round 2). A property load that optimised code reaches for the
+     * first time mid-session — `c.motionRun` the first time she sprints, `c.poseCrouch` the first time she
+     * crouches, `c.hiddenRange` in grass — has no type feedback, so V8 deoptimises the function there and runs
+     * it in an allocating tier until it is re-optimised (measured: 7 KB/s in the window of her first sprint).
+     * The cfg row, the machine and the hooks are therefore read up front, unconditionally, and the branches
+     * below only pick among locals. */
+    const cOmni = c.omni, cHiddenRange = c.hiddenRange, cScanSweep = c.scanSweep, cFocusPad = c.focusPad;
+    const cHiddenPeriph = c.hiddenPeriph, cPeriphRange = c.periphRange, cPeriphDeg = c.periphDeg, cPeriphWeight = c.periphWeight;
+    const cEngagedRange = c.engagedRange, cEngagedWeight0 = c.engagedWeight, cPoseCrouch = c.poseCrouch, cPoseStand = c.poseStand;
+    const cD0 = c.d0, cMotionStill = c.motionStill, cMotionWalk = c.motionWalk, cMotionRun = c.motionRun, cGain = c.gain;
+    const cEngagedWeight = cEngagedWeight0 ?? 1;
+    const H = m.manager?.perception;
+    const hSightScale = H ? H.sightScale : 1, hDetectMul = H ? H.detectMul : 1;
+    const mSightHalf = m.sightHalf, mSightRange = m.sightRange, mAlive = m.alive, mState = m.state;
+    const msHeading = ms.heading, msLampDarkT = ms.lampDarkT, scanOffset = this.scanOffset;
+    const pOk = H0.pOk, pHealth = H0.pHealth, pCrouch = H0.pCrouch, pTallGrass = H0.pTallGrass, sp = H0.pMoveSpeed;
+    const hostileNow = HOSTILE_STATES.has(mState);
 
     let visible = false;
     let fill = 0;
     let dist = 999;
 
-    if (H0.pOk === 1 && H0.pHealth > 0 && m.alive) {
+    if (pOk === 1 && pHealth > 0 && mAlive) {
       // (the helpers below are written out: a double crossing a call that is not inlined is boxed)
       const ddx = pp.x - m.position.x, ddz = pp.z - m.position.z;
       dist = Math.sqrt(ddx * ddx + ddz * ddz);
       ms.playerDist = dist;
 
-      const hidden = H0.pCrouch === 1 && H0.pTallGrass === 1;
+      const hidden = pCrouch === 1 && pTallGrass === 1;
       // _omni(dist)
       let omniW = 0;
-      const o = c.omni;
+      const o = cOmni;
       if (o) {
         let ok = true;
         if (o.part) {
@@ -242,7 +259,7 @@ export class Perception {
         }
         if (ok && dist <= o.radius) omniW = o.weight;
       }
-      const ignoreStealth = omniW > 0 && c.omni && c.omni.ignoreStealth;
+      const ignoreStealth = omniW > 0 && cOmni && cOmni.ignoreStealth;
       /**
        * WEATHER (instruments-core W0b, bible §2.3, `A-perception-weather`):
        * calima and fog banks halve an Instrument's sight range, night is
@@ -250,26 +267,25 @@ export class Perception {
        * `environment` (`src/instruments/lib/weather.js`). A darkened lamp
        * (`lampDarkT`, a precise hit on the lamp, bible §7.3) sees nothing.
        */
-      const H = m.manager?.perception;
-      const blind = (ms.lampDarkT || 0) > 0;
-      const maxSee = blind ? 0 : (hidden && !ignoreStealth) ? c.hiddenRange : m.sightRange * (H ? H.sightScale : 1);
+      const blind = (msLampDarkT || 0) > 0;
+      const maxSee = blind ? 0 : (hidden && !ignoreStealth) ? cHiddenRange : mSightRange * hSightScale;
 
       if (dist < maxSee || omniW > 0) {
         let w = 0;
         if (dist < maxSee) {
           // _sweepScale()
-          const cap = m.sightHalf * 0.5, sa = Math.abs(c.scanSweep) || 1e-6;
+          const cap = mSightHalf * 0.5, sa = Math.abs(cScanSweep) || 1e-6;
           const sws = cap / sa < 1 ? cap / sa : 1;
-          const dir = ms.heading + this.scanOffset * sws;
+          const dir = msHeading + scanOffset * sws;
           const fx = Math.sin(dir), fz = Math.cos(dir);
           const dot = dist > 0.01 ? (ddx * fx + ddz * fz) / dist : 1;
           // _coneWeight(dot, dist, hidden && !ignoreStealth)
           const hid = hidden && !ignoreStealth;
-          const fa = m.sightHalf + c.focusPad;
+          const fa = mSightHalf + cFocusPad;
           if (dot >= Math.cos(fa < Math.PI ? fa : Math.PI)) w = 1;
-          else if (!(hid && !c.hiddenPeriph)) {
-            const range = hid ? c.hiddenPeriph : c.periphRange;
-            if (dist <= range && dot >= Math.cos(c.periphDeg * DEG)) w = c.periphWeight;
+          else if (!(hid && !cHiddenPeriph)) {
+            const range = hid ? cHiddenPeriph : cPeriphRange;
+            if (dist <= range && dot >= Math.cos(cPeriphDeg * DEG)) w = cPeriphWeight;
           }
           /**
            * Engaged contact (see PERCEPTION.engagedRange in ai/tables.js): a
@@ -280,22 +296,20 @@ export class Perception {
            * grass) is exactly as it was for every machine that has not yet
            * found her.
            */
-          if (m.state === 'attack' && dist <= c.engagedRange) {
-            const gw = c.engagedWeight ?? 1;
-            if (gw > w) w = gw;
+          if (mState === 'attack' && dist <= cEngagedRange) {
+            if (cEngagedWeight > w) w = cEngagedWeight;
           }
         }
         if (omniW > w && !blind) w = omniW;
         if (w > 0 && this.hasLOS(pp)) {
           visible = true;
-          const pose = H0.pCrouch === 1 ? c.poseCrouch : c.poseStand;
-          const dd = dist / c.d0;
-          const sp = H0.pMoveSpeed;                     // _motion(p)
-          const mot = sp < 0.5 ? c.motionStill : sp < 4.2 ? c.motionWalk : c.motionRun;
-          fill = (c.gain / (1 + dd * dd)) * w * pose * mot;
+          const pose = pCrouch === 1 ? cPoseCrouch : cPoseStand;
+          const dd = dist / cD0;
+          const mot = sp < 0.5 ? cMotionStill : sp < 4.2 ? cMotionWalk : cMotionRun;   // _motion(p)
+          fill = (cGain / (1 + dd * dd)) * w * pose * mot;
           // perk hook `perception.detectMul` (bible §4.7 "Read as true"):
           // the build-up of a machine that has not yet found her; hostile is unchanged
-          if (H && !HOSTILE_STATES.has(m.state)) fill *= H.detectMul;
+          if (H && !hostileNow) fill *= hDetectMul;
         }
       }
     }
@@ -314,6 +328,9 @@ export class Perception {
     const ms = m.sc;
     const c = this.cfg;
     const visible = this._tickVisible, fill = this._tickFill;
+    // every cfg input read on every tick, as in _sight (no load reached for the first time mid-session)
+    const cHearCap = c.hearCap, cHearGain = c.hearGain, cAlertAt = c.alertAt, cDecay = c.decay, cDecayCalm = c.decayCalm;
+    const mState = m.state, hearStrength = this._hearStrength;
     if (visible) {
       { const sv = ms.suspicion + fill * pd; ms.suspicion = sv < 1.25 ? sv : 1.25; }   // (no Math.* call takes a double)
       m.lastKnown.copy(HOT.ppos);          // (her position this frame, lib/hot.js)
@@ -324,20 +341,20 @@ export class Perception {
     } else {
       this.visibleT = 0;
       ms._unseenT += pd;
-      if (this._hearStrength > 0) {
+      if (hearStrength > 0) {
         // hearing raises suspicion toward — but never past — the alert line
-        const cap = m.state === 'attack' ? 1.25 : c.hearCap;
-        { const sv = ms.suspicion + c.hearGain * this._hearStrength * pd; ms.suspicion = sv < cap ? sv : cap; }
-        if (ms.suspicion < c.alertAt || this._hearKind === 'lure') {
+        const cap = mState === 'attack' ? 1.25 : cHearCap;
+        { const sv = ms.suspicion + cHearGain * hearStrength * pd; ms.suspicion = sv < cap ? sv : cap; }
+        if (ms.suspicion < cAlertAt || this._hearKind === 'lure') {
           m.lastKnown.copy(this._hearPos);
           m.lastKnown.y = HOT.terrain.getHeight(m.lastKnown.x, m.lastKnown.z);
         }
         // one record per machine, rewritten (read only here and by debug views): no object per tick
         const st = this._stim; st.x = this._hearPos.x; st.z = this._hearPos.z; st.kind = this._hearKind;
         this.lastStimulus = st;
-        if (m.state === 'attack' && ms._unseenT > 1.5) ms._unseenT = 1.5;
+        if (mState === 'attack' && ms._unseenT > 1.5) ms._unseenT = 1.5;
       } else {
-        const rate = m.state === 'search' || m.state === 'suspicious' ? c.decay : c.decayCalm;
+        const rate = mState === 'search' || mState === 'suspicious' ? cDecay : cDecayCalm;
         { const sv = ms.suspicion - rate * pd; ms.suspicion = sv > 0 ? sv : 0; }
       }
     }

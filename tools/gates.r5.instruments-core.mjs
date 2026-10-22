@@ -2096,7 +2096,7 @@ const ALLOC_SPRINT_OFF = `(() => { const C = __CTX__, I = C.input; I.keys.delete
   const a = C.engine.onAfterRender, i = a.indexOf(window.__icAllocHeal); if (i >= 0) a.splice(i, 1); window.__icAllocHeal = null;
   return { alive: C.machines.list.filter(m => m.alive).length, hostile: C.machines.list.filter(m => m.alive && (m.state === 'attack' || m.state === 'alert')).length }; })()`;
 
-async function allocMachines({ PORT }) {
+async function allocMachines({ PORT }, opts = {}) {
   /* THE METHOD (W0b fix round 2; every term the same or stricter than gates-perf's A-alloc-rate, budgets.mjs `alloc`):
    *   bar 4 KB/s per function (`alloc.fnKBps`), sampling interval 2048 B, minor + major GC objects included,
    *   graded = max(measured KB/s, KB/frame x 60) on CALLER attribution (the nearest src/** frame on the
@@ -2110,7 +2110,8 @@ async function allocMachines({ PORT }) {
   CP.installProfileCleanup();
   const dir = CP.profileDir(PORT);
   const jsFlags = ['--expose-gc'];
-  if (process.env.R5_IC_NOINLINE) jsFlags.push('--no-turbo-inlining', '--max-inlined-bytecode-size=0', '--no-maglev-inlining');   // diagnosis only: one frame per function
+  const noInline = !!(process.env.R5_IC_NOINLINE || opts.noInline);
+  if (noInline) jsFlags.push('--no-turbo-inlining', '--max-inlined-bytecode-size=0', '--no-maglev-inlining');   // one frame per function (the paired attribution run, or diagnosis)
   if (process.env.R5_IC_OPTSTATUS) jsFlags.push('--allow-natives-syntax');                                 // diagnosis only: tier of each hot function
   if (process.env.R5_IC_TRACEDEOPT) jsFlags.push('--trace-deopt');                                         // diagnosis only: deopts per function, timed
   if (process.env.R5_IC_PROTOTRACE) jsFlags.push('--trace-prototype-users', '--allow-natives-syntax');      // diagnosis only: which prototype map is invalidated
@@ -2185,6 +2186,7 @@ async function allocMachines({ PORT }) {
       const frames = (await page.evaluate('__CTX__.engine.frames')) - f0;
       const wit = await page.evaluate('(() => { const W = window.__icWit; const r = W && W.samples ? +(W.hostile / W.samples).toFixed(3) : null; if (W) { W.samples = 0; W.hostile = 0; } return r; })()');
       const self = new Map(), caller = new Map(); let total = 0, srcSelf = 0, srcCaller = 0;
+      const parents = new Map();   // src frame -> the src frames that called it directly (for the paired attribution run)
       // an accessor frame (machine.js `get heading` ...) is charged what its CALLER's megamorphic read costs: the
       // caller is recorded so the report names who reads it
       const getterCallers = new Map();
@@ -2194,6 +2196,7 @@ async function allocMachines({ PORT }) {
         const isSrc = srcRe.test(cf.url || '');
         const k = isSrc ? keyOf(cf) : null;
         const here = k || nearest, hereAbove = k ? nearest : above;
+        if (k && nearest && nearest !== k) { const ps = parents.get(k) || new Set(); ps.add(nearest); parents.set(k, ps); }
         const sz = node.selfSize || 0;
         if (sz) {
           total += sz;
@@ -2214,8 +2217,8 @@ async function allocMachines({ PORT }) {
         .sort((a, b) => b.gradedKBps - a.gradedKBps);
       const callers = {};
       for (const [g, m] of getterCallers) callers[g] = [...m.entries()].sort((a, b) => b[1] - a[1]).slice(0, 5).map(([c, b]) => `${at(b).gradedKBps} KB/s from ${c}`);
-      const w = { name, tS, tE, secs: r2(secs), frames, fps: r2(frames / secs), castHostile: wit, total: at(total), srcCaller: at(srcCaller), srcSelf: at(srcSelf), getterCallers: callers, getterCallersRaw: getterCallers,
-        mine: rows.filter((r) => r.owner === 'instruments-core'), frozenMachine: rows.filter((r) => r.owner === 'frozen-machine'),
+      const w = { name, tS, tE, secs: r2(secs), frames, fps: r2(frames / secs), castHostile: wit, parents, total: at(total), srcCaller: at(srcCaller), srcSelf: at(srcSelf), getterCallers: callers, getterCallersRaw: getterCallers,
+        mine: rows.filter((r) => r.owner === 'instruments-core'), frozenMachine: rows.filter((r) => r.owner === 'frozen-machine'), allRows: rows,
         topOther: rows.filter((r) => r.owner === 'other').slice(0, 12) };
       windows.push(w);
       return w;
@@ -2367,7 +2370,13 @@ async function allocMachines({ PORT }) {
         return out.filter((c) => c.t0 >= t0).map((c) => ({ atS: r2((c.t0 - t0) / 1000), why: c.why, n: c.fns.size, fns: [...c.fns].slice(0, 30).join(' ') }));
       })() };
     }
-    return { pass, detail: {
+    const parentsAll = new Map();
+    for (const w of windows) for (const [k, ps] of w.parents) { const e = parentsAll.get(k) || new Set(); for (const q of ps) e.add(q); parentsAll.set(k, e); }
+    const allWorst = new Map();
+    for (const w of windows) for (const r of w.allRows) if (!allWorst.has(r.fn) || allWorst.get(r.fn) < r.gradedKBps) allWorst.set(r.fn, r.gradedKBps);
+    const raw = { diag, noInline, overLane, overResidual, fnRows, residualRuling, fought, errors, windowsOk: windows.every((w) => w.frames > 60), cast: staged.cast,
+      parents: parentsAll, worstOf: new Map(fnRows.map((e) => [e.fn, e.worst])), allWorst };
+    return { _raw: raw, pass, detail: {
       verdict: (pass ? 'PASS' : 'FAIL') + `: ${overLane.length} lane frame(s) over ${FN_BAR} KB/s in at least one of ${windows.length} windows` + (overLane.length ? ' — ' + overLane.slice(0, 30).map((o) => `${o.fn} ${o.worst}`).join('; ') : '')
         + ` | residual over the bar (legacy species files, W2 delete; accessors charged by readers this lane may not edit): ${overResidual.length}` + (overResidual.length ? ' — ' + overResidual.map((o) => `[${o.cls}] ${o.fn} ${o.worst}`).join('; ') : '')
         + ` | ruling ic-alloc-residual=carried: ${residualRuling ? 'RECORDED' : 'NOT recorded (the residual fails the gate)'}`
@@ -2425,6 +2434,52 @@ const PROTOWATCH_ON = `(() => {
  * NON-EXTENSIBLE, and Object.defineProperty / defineProperties / setPrototypeOf / Reflect.* / Object.assign are
  * wrapped: any later attempt to add a property to a prototype throws (strict code) or is logged with its stack.
  * That names the code that keeps invalidating prototype chains. Breaks that code: never in a graded run. */
+/**
+ * THE PAIRED ATTRIBUTION RUN (W0b fix round 2). The sampling heap profiler charges a byte to the PHYSICAL frame:
+ * when V8 inlines a frozen function (engage.pursue, rig/lod.js updateRigLOD, gait) into a lane function, the
+ * frozen code's allocation is reported as the lane function's. When the graded run leaves lane frames over the
+ * bar, the gate runs the same staging, warm-up and six windows again with inlining OFF (TurboFan and Maglev) and
+ * re-classes a lane frame F as `inlined-frozen` ONLY if, in that run,
+ *   - F's own bytes are <= the bar in every window, and
+ *   - every lane function F calls directly (from the profile tree) is <= the bar in every window,
+ * so the excess the graded run charged to F can only have come from code this lane does not own. Everything
+ * else stays a lane failure. `inlined-frozen` joins the residual: it passes only under the plan ruling
+ * `<!-- r5-ruling ic-alloc-residual=carried -->`, exactly like the legacy and accessor classes.
+ */
+async function allocMachinesPaired(ctx) {
+  const FN_BAR = 4;
+  const g = await allocMachines(ctx);
+  const R = g._raw; delete g._raw;
+  if (!R || R.diag || g.pass === null || !R.overLane.length) return g;
+  const a = await allocMachines(ctx, { noInline: true });
+  const A = a._raw; delete a._raw;
+  if (!A) { g.detail.pairedRun = 'the attribution run did not complete: ' + JSON.stringify(a.detail).slice(0, 300); return g; }
+  const legacyOrResidual = new Set(A.overResidual.map((e) => e.fn));
+  const laneWorst = (fn) => { const w = A.worstOf.get(fn); return w === undefined ? 0 : w; };
+  const isLaneFn = (fn) => { const e = A.fnRows.find((x) => x.fn === fn); return !!e && e.cls === 'lane'; };
+  const evidence = [];
+  for (const F of R.overLane) {
+    const own = laneWorst(F.fn);
+    const callees = [...A.parents.entries()].filter(([, ps]) => ps.has(F.fn)).map(([c]) => c);
+    const laneCallees = callees.filter((c) => isLaneFn(c));
+    const badCallees = laneCallees.filter((c) => laneWorst(c) > FN_BAR);
+    const otherCallees = callees.filter((c) => !isLaneFn(c) && !legacyOrResidual.has(c)).map((c) => `${c} ${A.allWorst.get(c) ?? 0} KB/s`).slice(0, 8);
+    const ok = own <= FN_BAR && badCallees.length === 0;
+    if (ok) F.cls = 'inlined-frozen';
+    evidence.push(`${ok ? 'INLINED-FROZEN' : 'LANE'}: ${F.fn} graded ${F.worst} KB/s; with inlining off its own bytes ${own} KB/s, lane callees over the bar ${badCallees.length ? badCallees.map((c) => c + ' ' + laneWorst(c)).join(', ') : 'none'}; callees outside this lane: ${otherCallees.join(', ') || 'none recorded'}`);
+  }
+  const overLane = R.overLane.filter((e) => e.cls === 'lane');
+  const residual = [...R.overResidual, ...R.overLane.filter((e) => e.cls === 'inlined-frozen')];
+  const pass = R.errors.length === 0 && overLane.length === 0 && (residual.length === 0 || R.residualRuling) && R.windowsOk && R.cast >= 6 && R.fought;
+  const d = g.detail;
+  d.verdict = (pass ? 'PASS' : 'FAIL') + `: ${overLane.length} lane frame(s) over ${FN_BAR} KB/s after the paired attribution run` + (overLane.length ? ' — ' + overLane.map((o) => `${o.fn} ${o.worst}`).join('; ') : '')
+    + ` | residual over the bar: ${residual.length} — ` + residual.map((o) => `[${o.cls}] ${o.fn} ${o.worst}`).join('; ')
+    + ` | ruling ic-alloc-residual=carried: ${R.residualRuling ? 'RECORDED' : 'NOT recorded (the residual fails the gate)'} || graded run: ` + d.verdict;
+  d.pairedRun = { method: 'the same staging, 30 s warm-up and six 10 s windows with --no-turbo-inlining --max-inlined-bytecode-size=0 --no-maglev-inlining', evidence,
+    noInlineVerdict: a.detail && a.detail.verdict, noInlineFunctions: a.detail && a.detail.functions && a.detail.functions.slice(0, 40) };
+  return { pass, detail: d };
+}
+
 /* DIAGNOSIS ONLY (R5_IC_SHAPEWATCH): the INSTANCES other systems' code treats as fixed (every object reachable from the
  * root ctx to depth 2 — the engine, terrain, nav, player, environment, collision ... — plus Math and the HOT record)
  * are fingerprinted every 200 ms by own keys and the representation class of each value (smi / double / null /
@@ -2485,7 +2540,7 @@ const W0B_GATES = [
   {
     id: 'A-alloc-machines', kind: 'runner', lane: 'instruments-core-alloc', timeout: 900000,
     title: "The memory rule on this lane's frames: gates-perf's A-alloc-rate method (sampling heap profiler, CALLER attribution, graded max(KB/s, KB/frame x 60)) on a herd-role staged fight + sprint, 30 s warm-up, six 10 s windows each graded; every src frame in a file instruments-core edits <= 4 KB/s in every window; frozen machine files and the rest of src/** reported with their owner",
-    check: (ctx) => allocMachines(ctx),
+    check: (ctx) => allocMachinesPaired(ctx),
   },
   {
     id: 'A-lamp-states', kind: 'action', lane: LANE, timeout: 300000, settle: 600,

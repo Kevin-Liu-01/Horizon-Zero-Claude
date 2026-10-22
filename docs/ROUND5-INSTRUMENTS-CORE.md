@@ -21,10 +21,15 @@ node tools/gates.mjs --port 5254 --extra tools/gates.r5.instruments-core.mjs --l
 R5_IC_FILM=1 node tools/gates.mjs --port 5254 --extra tools/gates.r5.instruments-core.mjs --lane instruments-core-film   # the lamp films (advisory)
 ```
 
-R5_IC_* diagnostics only: `R5_IC_NOINLINE`, `R5_IC_OPTSTATUS`, `R5_IC_TRACEDEOPT`, `R5_IC_MICRO`,
-`R5_IC_INGAME`. Fix round 1 adds one lane:
+R5_IC_* diagnostics only (a report made with any of them says "DIAGNOSIS FLAGS ON (not gradeable)"):
+`R5_IC_NOINLINE`, `R5_IC_OPTSTATUS`, `R5_IC_TRACEDEOPT` (deopts timed against the windows, with the
+lazy-invalidation waves clustered), `R5_IC_SHAPEWATCH` (every object reachable from the root ctx
+fingerprinted every 200 ms: added/removed keys and value-representation changes, timed),
+`R5_IC_PROTOWATCH` (281 prototypes: key and value diffs), `R5_IC_PROTOLOCK` (prototypes made
+non-extensible; the stack of whoever adds to one), `R5_IC_PROTOTRACE` (`--trace-prototype-users`),
+`R5_IC_MICRO`, `R5_IC_INGAME`. The allocation gate has its own lane:
 ```
-node tools/gates.mjs --port 5254 --extra tools/gates.r5.instruments-core.mjs --lane instruments-core-alloc   # A-alloc-machines
+node tools/gates.mjs --port 5254 --extra tools/gates.r5.instruments-core.mjs --lane instruments-core-alloc   # A-alloc-machines (+ its paired attribution run)
 ```
 For the global list in this tree I used one `--extra` combiner in scratch (`bin/global.mjs`). It
 re-exports this lane's `GATES`, pipeline's `GATES` and gates-perf's `A-alloc-rate` (their W0b module,
@@ -35,6 +40,110 @@ shadow rows change id from `<id>@ic` to `<id>` by themselves (`shadowId()` reads
 `gates.config.mjs` for `LANE_FILE_RE`), so they shadow the carried rows of the same id (§3.3).
 `R5_GATE_ROSTER` is read only when `tools/gate-roster.mjs` is absent.
 
+
+---
+
+## W0b FIX ROUND 2 (Oct 22 2026) — what changed, by judge finding, with numbers
+
+Three findings. Finding 3 (`A-weak40`) is fixed in the gate. Findings 1 and 2 (the memory rule on this
+lane's frames) are fixed in the code for every frame whose allocation this lane causes; what is left
+over the 4 KB/s bar is code this lane may not edit, and the gate now names it, proves it and fails on it
+until the orchestrator records a ruling (below). No bar moved; the allocation gate got stricter.
+
+### Finding 3 — `A-weak40` graded two shader constants; calima was folded into PASS
+
+`tools/gates.r5.kind-block.mjs` (the per-kind block, handed to the orchestrator at W1):
+- **Contrast is the worse of two ratios:** `min(glass vs drum face, glass vs hull) >= 3`. The hull is the
+  machine's own surface beyond the drum (flat-ink machine mask, 1.1–1.8 face radii out), lit by the scene,
+  so a pale kind on a pale glaze fails it. Both medians were already measured; the face term alone could
+  not fail (both are unlit HDR constants in `lamps.js`), and the gate no longer relies on it.
+- **Calima is PENDING, never PASS.** When the environment publishes a `calima` state (world-sky W1) the
+  gate re-reads the same pixels under it and grades the same min-ratio; until then the clause is PENDING
+  and so is the row's verdict (`pass: null`), with every 13:00 clause still graded (a 13:00 failure is a
+  FAIL). `A-kind-block-file` reports PENDING (never PASS) when its only non-green row is that cross-lane
+  clause, and names it.
+
+{{WEAK40}}
+
+### Findings 1 and 2 — the memory rule on this lane's frames
+
+**What the judges measured, and why it happened.** With a 30 s warm-up the judge still saw this lane's
+functions at hundreds of KB/s in some windows (`updateEyesM` 775–887, `Machines._stepMachines` 443–461).
+I instrumented the gate (diagnosis modes, never graded) and found the cause:
+- **Deopt waves.** `R5_IC_TRACEDEOPT` timed every deoptimisation against the windows. Waves of lazy
+  "dependent prototype chain changed" deopts hit 30–100 functions at once (machines, the player, the
+  renderer) at ~10–12 s, ~40 s and ~61 s after staging, and this lane's per-machine functions then ran
+  in V8's interpreter/baseline tiers — where every double is a heap allocation — sometimes for a whole
+  10 s window (`updateEyesM` 953 KB/s in one window of my run `s6`).
+- **What triggers them** (`R5_IC_SHAPEWATCH`: every object reachable from the root ctx fingerprinted
+  every 200 ms by keys and value representation): at the player's first knockback (~12.6 s)
+  `player.moveSpeed` goes Smi → double and `player.contact` / `contactKind` go null → object/string; at her
+  first sprint (~61.2 s) `player.heading`, `fovBias`, `_fov`, `_faceX`, `velocity.x/z`, eleven
+  `player.animator` fields and `engine.camera.fov` go Smi → double, and `combat.melee._aimYaw`. Each such
+  first generalisation is a map transition of a singleton, and V8 throws away every optimised function
+  that read it. The wave at ~40 s matched no watched object (a deeper object or a GC clearing weakly
+  embedded objects — "embedded weak objects cleared" lands in the same batch).
+- **Why this lane's code was in the blast radius:** its per-machine paths read the player, the engine,
+  the terrain and the nav through `machine.ctx`, a prototype-chained VIEW of the root ctx
+  (`ai/emit.js` `machineCtx`), and this lane's own per-frame objects were born with integer fields
+  (`MachineScalars.heading = 0` …), so the FIRST wary pulse, telegraph, stun or fractional value was itself
+  a map transition that deoptimised all of this lane's code. `R5_IC_PROTOWATCH` (281 prototypes, key and
+  value diffs) and `R5_IC_PROTOTRACE` (`--trace-prototype-users`) showed no prototype being edited after
+  boot, which is how the cause above was isolated.
+
+**What I changed (code this lane owns; no frozen file touched):**
+
+| # | change | where |
+|---|---|---|
+| 1 | **`lib/hot.js` `HOT`**: one module record of fixed shape, filled once per frame by `Machines.update` (`refreshHot`): the services (terrain, nav, engine, environment, collision), the sim clock, and the PLAYER VALUES the machines read (`ppos`, a Vector3 it owns, `pHealth`, `pMoveSpeed`, `pCrouch`, `pTallGrass`). Every per-machine path reads `HOT`, never `machine.ctx` and never the player object, so another system's shape change deoptimises only `refreshHot` | new `src/instruments/lib/hot.js`; `machine.js`, `index.js`, `ai/perception.js`, `ai/attacks.js`, `lamps.js` |
+| 2 | **Doubles born Double**: every double field of `MachineScalars`, `Perception`, `MachineAI.lureT`, the picker clock, the lamp records and `LampSystem`, `HOT`, the attack objects' `t` / `phaseT` is stored as 0.5 first, so no first fractional value is ever a map transition mid-session | same files |
+| 3 | **One lens-record class** (`EyeRecord`): the five eye-record literal shapes (and the frozen shells' sixth) become one class with fixed fields; a foreign-shaped record is converted the first time `updateEyesM` meets it | `machine.js` |
+| 4 | **Own-field method slots** (judge item 2): `update`, the state methods, `animate`, `tickCooldowns` copied into own fields at construction (`m.update` in the manager is no longer a prototype load); `update` calls `ai.perception.update` directly | `machine.js` |
+| 5 | **No double crosses a call** (judge item 1): the far-LOD tick passes the constant `LOD_TICK` and carries the remainder (it passed `Math.min(accum, 0.4)`); frozen `engage.update(dt, x, z)` gets the player's x/z as two boxes shared by every machine per frame (`playerBoxes`) and `pursue` gets per-machine boxes re-made only when the belief moves (`lkBoxes`); the perception tick's seconds travel in a field (`_beliefTick`); `updateEyesM` reads the clock from `HOT` unconditionally (a merge of a double and the tagged `t` parameter was boxed on every call); `Math.min/max/hypot` on hot paths written out | `machine.js`, `index.js`, `ai/perception.js`, `ai/index.js`, `ai/attacks.js`, `lamps.js` |
+| 6 | **Terrain without boxed arguments**: `conformM` reads the drawn ground through a 1 m lattice — `heightFast` at the integer-metre corners of the cell under the root, sampled only when the root enters a new cell (2.04 calls per cell, corners reused; unit-tested exact), height and normal from the bilinear patch. Integer arguments are Smis: the call boxes nothing in any tier. `hasLOS` samples the drawn ground at the nearest integer metre (its 1.2 m clearance unchanged) | `machine.js`, `ai/perception.js` |
+| 7 | **Orientation written out**: tilt × yaw quaternion and three's XYZ Euler extraction stored into the private fields (it fired Object3D's quaternion→Euler sync twice per machine per frame: three.js calls handing doubles across). Checked against three.js on 200,000 random cases: max |Δq| 2.2e-16, max |ΔEuler| 1.1e-13 | `machine.js` `conformM` |
+| 8 | **The pulse folded into the emissive colour** (intensity held at 1; three uploads emissive × intensity, so the lens is lit exactly as before): a per-frame write is three Color stores, not a double stored into one of a dozen material shapes | `machine.js` `updateEyesM`, `emisBaseOf` |
+| 9 | **Publish-on-change boxes for every scalar accessor** (`get suspicion`, `get health`, … like `get heading`): a frozen read of an unchanged value allocates nothing. Settled values settle (`_speed` / `_accelPitch` snap inside 1 mm/s; heading untouched inside 1e-5 rad) | `machine.js` |
+| 10 | **Per-frame allocators removed**: `fx.splice` per finished effect → in-place compaction; the 'machine-scan' payload reused per machine; the Dust-sight occlusion pass run as a round-robin slice every frame (it ran over every machine five times a second, which V8 left un-optimised); the Flag pass reads `m.sc` and `HOT` | `machine.js`, `ai/perception.js` |
+
+**The gate got stricter (`A-alloc-machines`, lane `instruments-core-alloc`):**
+- **Caller attribution** (gates-perf's `budgets.mjs` `alloc.attribution`): a byte is charged to the
+  nearest src frame on its stack, so three.js or builtin work done for this lane's code counts.
+- **30 s warm-up, then six 10 s windows** (three of the staged fight, three of a sprint through the roster;
+  60 s of play), **each graded on its own**: a function over 4 KB/s in any window fails.
+- **The fight stays a fight**: with a 30 s warm-up the herd cast had gone back to patrol before the windows
+  opened (all 36 lamps calm, `probe1`), so the windows would have graded a calm patrol. A cast member
+  that leaves the fight is re-armed every second, and every window reports and requires the share of the
+  cast in a hostile state (≥ 0.75).
+- **Every frame is classed by who can fix it**, and only an orchestrator ruling recorded in the plan
+  (`<!-- r5-ruling ic-alloc-residual=carried -->`) lets a non-lane class pass:
+  - `lane` — code this lane edits whose allocation it causes. Must be ≤ 4 KB/s; no ruling helps.
+  - `legacy` — the legacy species files (derived from `legacy.js`'s class imports), deleted at W2.
+  - `accessor` — a published-name accessor in `machine.js` whose bytes are ≥ 90 % charged by readers
+    this lane may not edit (frozen gait / rig / collision, melee, the legacy species).
+  - `inlined-frozen` — a lane frame over the bar ONLY because V8 inlined frozen code into it. Decided by a
+    **paired attribution run** in the same gate: same staging, warm-up and windows with inlining off; the
+    frame qualifies only if its own bytes AND every lane function it calls are ≤ 4 KB/s in every window
+    of that run.
+
+{{ALLOC}}
+
+**What only the orchestrator (or another lane) can remove — the request for the ruling.** Record
+`<!-- r5-ruling ic-alloc-residual=carried -->` with these owners and dates, or deny it and the gate stays
+FAIL on them:
+
+{{RESIDUAL}}
+
+**The other lanes' share of the waves** (attribution for gates-perf and the owners; not this lane's to
+edit): hero-body — `player.js` / `playerAnimator.js` fields born as integers (`moveSpeed`, `heading`,
+`fovBias`, `_fov`, `_faceX`, `velocity`, `_bobK`, `_bobPhase`, the animator's `_prevHeading`, `_yawRate`,
+`_lvx/_lvz`, `_prevLvx/_prevLvz`, `_jerkX/_jerkZ`, `_leanAcc`, `_bank`, `_mx`, `_moveW`, `_flatW`,
+`_puff`, `_prevSpd`, `_recentSpd`, `_headStab`) and `contact`/`contactKind` born null; engine-gpu —
+`engine.camera.fov` born integer; melee — `_aimYaw`. Each one's first fractional value deoptimises every
+function in the game that read the object (store 0.5 first, as `MachineScalars` now does). gates-perf —
+`A-alloc-rate`'s 3 s warm-up measures exactly these waves (the player has not moved yet when its windows
+open); a warm-up that includes a knockback and a sprint, or the owners' fix, is needed before its
+per-function bar can grade steady state.
 
 ---
 
