@@ -103,6 +103,9 @@ export const BEAM = Object.freeze({
 export const APERTURE_MAX = 0.66;
 /** Core radius as a fraction of the CURRENT aperture radius (the hot centre of the glass). */
 export const CORE_FRAC = 0.4;
+/** ...per state: the 20 % pinhole keeps a smaller core, so its token ring is still a ring (0 calm, 1 wary, 2 hostile, 3 dark). */
+export const CORE_FRAC_BY_STATE = Object.freeze({ calm: 0.4, wary: 0.4, hostile: 0.3, dark: 0.4 });
+const CORE_FRAC_A = [0.4, 0.4, 0.3, 0.4];
 /** Core HDR = ring HDR x CORE_GAIN, raised until its luminance clears the bloom threshold by CORE_OVER. */
 export const CORE_GAIN = 2.5;
 const CORE_OVER = 1.25;
@@ -309,8 +312,9 @@ function paramSig(P) {
 const IRIS_VERT = /* glsl */`
   attribute vec4 aLamp;   // rgb: ring HDR (already x rhythm gain), a: aperture radius 0..1 of the face
   attribute vec4 aIris;   // rgb: blade HDR (the closed-iris token), a: 1 = cracked (dark)
-  attribute vec4 aCore;   // rgb: core HDR (x rhythm gain), a: unused
+  attribute vec4 aCore;   // rgb: core HDR (x rhythm gain), a: core radius / aperture radius
   varying vec2 vP;
+  varying float vCoreFrac;
   varying float vWall;
   varying vec3 vN;
   varying vec3 vV;
@@ -323,6 +327,7 @@ const IRIS_VERT = /* glsl */`
     vLamp = aLamp;
     vIris = aIris;
     vCore = aCore.rgb;
+    vCoreFrac = aCore.a;
     vec4 wp = modelMatrix * instanceMatrix * vec4(position, 1.0);
     vN = normalize(mat3(modelMatrix) * mat3(instanceMatrix) * normal);
     vV = cameraPosition - wp.xyz;
@@ -341,7 +346,9 @@ const IRIS_FRAG = /* glsl */`
   varying vec4 vLamp;
   varying vec4 vIris;
   varying vec3 vCore;
+  varying float vCoreFrac;
   void main() {
+    float aCoreFrac = vCoreFrac;
     if (vWall > 0.5) {
       // the barrel: graphite lit by sun + sky, a faint grazing sheen so it reads as metal
       vec3 n = normalize(vN);
@@ -357,7 +364,7 @@ const IRIS_FRAG = /* glsl */`
     float a = vLamp.a;
     if (r < a) {
       // the lit glass: a hot core above the bloom threshold inside the token ring
-      float rc = a * ${CORE_FRAC.toFixed(3)};
+      float rc = a * aCoreFrac;
       c = mix(vCore, vLamp.rgb, smoothstep(rc * 0.85, rc * 1.15, r));
     } else if (r > ${BEZEL_IN.toFixed(3)}) {
       c = vIris.rgb * 1.9;                 // housing bezel (darkened bronze)
@@ -444,6 +451,9 @@ export class LampSystem {
     /** Solved core HDR per state (ring x CORE_GAIN, raised to clear the bloom threshold) and its gain. */
     this.core = {};
     for (const id of LAMP_ORDER) this.core[id] = { r: 0, g: 0, b: 0, k: CORE_GAIN };
+    this._hdrA = new Float64Array(12);
+    this._coreA = new Float64Array(12);
+    this._linA = new Float64Array(12);
     /** Linear token colour per state (beam tint). */
     this.lin = {};
     for (const id of LAMP_ORDER) {
@@ -528,6 +538,7 @@ export class LampSystem {
     /** Last-seen output-pass inputs (the per-frame change test, allocation-free in optimized code). */
     this._pe = -1; this._pc = -1; this._ps = -1; this._pm = -1; this._pb = -1; this._pt = -1;
     this._sigEvery = 0;
+    this._matFrame = -2;
 
     this.group = new THREE.Group();
     this.group.name = 'instrument-lamps-root';
@@ -550,7 +561,10 @@ export class LampSystem {
       scene.onBeforeRender = function lampsOverrideSkip(r, sc, cam, target) {
         if (prev) prev.call(this, r, sc, cam, target);
         if (sc.overrideMaterial) { self.beamMesh.visible = false; self.lampMesh.visible = false; }
-        else { self.beamMesh.visible = self.beamCount > 0 && !self.hideBeams; self.lampMesh.visible = self.lampMesh.count > 0; }
+        else {
+          self.beamMesh.visible = self.beamCount > 0 && !self.hideBeams; self.lampMesh.visible = self.lampMesh.count > 0;
+          if (self.lampMesh.count > 0) self._writeMatrices();
+        }
       };
       this._scene = scene;
     }
@@ -575,6 +589,14 @@ export class LampSystem {
       const k = id === 'dark' ? 1 : Math.max(CORE_GAIN, lum > 1e-4 ? CORE_OVER * P.bloomThr / lum : CORE_GAIN);
       const c = this.core[id];
       c.k = k; c.r = x[0] * k; c.g = x[1] * k; c.b = x[2] * k;
+    }
+    // the same values as flat arrays by state index (0 calm, 1 wary, 2 hostile, 3 dark): the per-frame
+    // record loop reads these, never `this.hdr[stateName]` (a keyed load by string; see update())
+    for (let i = 0; i < LAMP_ORDER.length; i++) {
+      const h = this.hdr[LAMP_ORDER[i]], c = this.core[LAMP_ORDER[i]], l = this.lin[LAMP_ORDER[i]];
+      this._hdrA[i * 3] = h.r; this._hdrA[i * 3 + 1] = h.g; this._hdrA[i * 3 + 2] = h.b;
+      this._coreA[i * 3] = c.r; this._coreA[i * 3 + 1] = c.g; this._coreA[i * 3 + 2] = c.b;
+      this._linA[i * 3] = l.r; this._linA[i * 3 + 1] = l.g; this._linA[i * 3 + 2] = l.b;
     }
     this.solves++;
     return true;
@@ -616,6 +638,7 @@ export class LampSystem {
       aperture: LAMP_STATES.calm.aperture,
       dir: new THREE.Vector3(0, 0, 1), dirSet: false,
       beamOn: false,
+      slot: -1, bslot: -1, bmode: 'lock', bt: 0.5, blen: 30.5,   // written by update(), read by _writeMatrices()
     };
     this.records.push(rec);
     machine.lamp = rec;
@@ -686,7 +709,6 @@ export class LampSystem {
     const ease = 1 - Math.exp(-IRIS_RATE * dt);
     const recs = this.records;
     const L = this._aLamp.array, I = this._aIris.array, K = this._aCore.array, B = this._aBeam.array;
-    const dark = this.hdr.dark;
     const air = this.fogK > BEAM.fogK || this.night > BEAM.night;
     let scale = -1;                         // perceptionScale, read only if a beam is drawn
     const fogBoost = Math.min(2.5, 0.6 + 0.8 * Math.max(0, this.fogK - 1) + 0.9 * this.night);
@@ -705,11 +727,14 @@ export class LampSystem {
       }
       const s = lampStateFor(m);
       if (s !== r.state) { r.prev = r.state; r.state = s; r.since = t; }
-      const spec = LAMP_STATES[s];
+      // state -> index by comparison: a keyed load by a varying string (`LAMP_STATES[s]`, `this.hdr[s]`) is
+      // a megamorphic keyed lookup that allocates a handler whenever the game's stub cache misses
+      const si = s === 'calm' ? 0 : s === 'wary' ? 1 : s === 'hostile' ? 2 : 3;
+      const beamKind = si === 1 ? 'sweep' : si === 2 ? 'lock' : null;
       // aperture eases toward the state (the iris moves in ~0.15 s); constants, not a keyed double load
       let target = s === 'calm' ? AP_CALM : s === 'wary' ? AP_WARY : s === 'hostile' ? AP_HOSTILE : 0;
       const age = t - r.since;
-      let colourId = s;
+      let ci = si;
       // lampGain(s, t, phase), written out (a double return from a call would box)
       const tp = t + r.phase;
       const stateGain = s === 'wary' ? PULSE_LOW + (1 - PULSE_LOW) * (0.5 + 0.5 * Math.cos(2 * Math.PI * tp))
@@ -720,67 +745,35 @@ export class LampSystem {
         const on = Math.sin(t * 97.0 + r.phase * 13.0) > 0.1;
         const pa = r.prev === 'calm' ? AP_CALM : r.prev === 'wary' ? AP_WARY : r.prev === 'hostile' ? AP_HOSTILE : 0;
         target = on ? pa * (1 - age / SPUTTER_S) : 0;
-        colourId = r.prev;
+        ci = r.prev === 'calm' ? 0 : r.prev === 'wary' ? 1 : r.prev === 'hostile' ? 2 : 3;
         gain = on ? 0.9 : 0.2;
       }
       r.aperture += (target - r.aperture) * ease;
       if (Math.abs(target - r.aperture) < 0.004) r.aperture = target;
 
-      r.anchor.updateWorldMatrix(true, false);
-      // the instance matrix = the anchor's world matrix with its basis rescaled to the lamp radius,
-      // written element by element (Matrix4.decompose + compose box doubles: 16 B per lamp measured)
-      {
-        const te = r.anchor.matrixWorld.elements, im = this.lampMesh.instanceMatrix.array, ob = n * 16, rad = r.radius;
-        for (let c = 0; c < 12; c += 4) {
-          const a = te[c], b = te[c + 1], d = te[c + 2];
-          const k = rad / (Math.sqrt(a * a + b * b + d * d) || 1);
-          im[ob + c] = a * k; im[ob + c + 1] = b * k; im[ob + c + 2] = d * k; im[ob + c + 3] = 0;
-        }
-        im[ob + 12] = te[12]; im[ob + 13] = te[13]; im[ob + 14] = te[14]; im[ob + 15] = 1;
-      }
-      const h = this.hdr[colourId];
+      r.slot = n;                           // its instance matrix is written in `_writeMatrices` (scene hook)
+      const HA = this._hdrA, CA = this._coreA, c3 = ci * 3;
       const o = n * 4;
-      L[o] = h.r * gain; L[o + 1] = h.g * gain; L[o + 2] = h.b * gain;
+      L[o] = HA[c3] * gain; L[o + 1] = HA[c3 + 1] * gain; L[o + 2] = HA[c3 + 2] * gain;
       L[o + 3] = APERTURE_MAX * Math.sqrt(Math.max(0, r.aperture));
-      const kc = this.core[colourId];
-      K[o] = kc.r * gain; K[o + 1] = kc.g * gain; K[o + 2] = kc.b * gain; K[o + 3] = 0;
-      I[o] = dark.r; I[o + 1] = dark.g; I[o + 2] = dark.b;
+      K[o] = CA[c3] * gain; K[o + 1] = CA[c3 + 1] * gain; K[o + 2] = CA[c3 + 2] * gain; K[o + 3] = CORE_FRAC_A[ci];
+      I[o] = HA[9]; I[o + 1] = HA[10]; I[o + 2] = HA[11];
       I[o + 3] = s === 'dark' ? 1 : 0;
       n++;
 
-      // ---- the beam ----
+      // ---- the beam (its matrix too is written in `_writeMatrices`, from the fresh anchor) ----
       r.beamOn = false;
-      if (air && spec.beam && nb < this.capacity && !m.lowLOD) {
-        r.anchor.matrixWorld.decompose(_p, _q, _s);      // (beams only: fog or night)
-        if (spec.beam === 'lock' && player) {
-          _t.x = player.position.x; _t.y = player.position.y + 1.3; _t.z = player.position.z;
-        } else if (m.lastKnown) {
-          _t.x = m.lastKnown.x; _t.y = (m.lastKnown.y || m.position.y) + 1.0; _t.z = m.lastKnown.z;
-        } else {
-          _t.copy(_z).applyQuaternion(_q).multiplyScalar(10).add(_p);
-        }
-        _d.subVectors(_t, _p);
-        if (_d.lengthSq() < 1e-6) _d.copy(_z).applyQuaternion(_q);
-        _d.normalize();
-        if (spec.beam === 'sweep') {
-          const a = (BEAM.sweepDeg * Math.PI / 180) * Math.sin(2 * Math.PI * spec.sweepHz * (t + r.phase));
-          _qs._x = 0; _qs._y = Math.sin(a * 0.5); _qs._z = 0; _qs._w = Math.cos(a * 0.5);   // setFromAxisAngle(up, a)
-          _d.applyQuaternion(_qs);
-        }
-        if (!r.dirSet) { r.dir.copy(_d); r.dirSet = true; }
-        r.dir.lerp(_d, 0.2).normalize();
+      r.bslot = -1;
+      if (air && beamKind !== null && nb < this.capacity && !m.lowLOD) {
         if (scale < 0) scale = perceptionScale(this.ctx.environment);
         const sr = m.sightRange;
-        const len = Math.max(2, (sr || 30) * scale);
-        const rad = len * Math.tan(BEAM.halfAngleDeg * Math.PI / 180);
-        _qs.setFromUnitVectors(_z, r.dir);
-        _s.x = rad; _s.y = rad; _s.z = len;
-        _m.compose(_p, _qs, _s);
-        _m.toArray(this.beamMesh.instanceMatrix.array, nb * 16);
-        const lc = this.lin[s];
-        const k = 0.22 * fogBoost * stateGain;
+        r.blen = Math.max(2, (sr || 30) * scale);
+        r.bmode = beamKind;
+        r.bt = t;
+        r.bslot = nb;
+        const LA = this._linA, k = 0.22 * fogBoost * stateGain;
         const ob = nb * 4;
-        B[ob] = lc.r * k; B[ob + 1] = lc.g * k; B[ob + 2] = lc.b * k; B[ob + 3] = 1;
+        B[ob] = LA[si * 3] * k; B[ob + 1] = LA[si * 3 + 1] * k; B[ob + 2] = LA[si * 3 + 2] * k; B[ob + 3] = 1;
         r.beamOn = true;
         nb++;
       } else {
@@ -793,15 +786,72 @@ export class LampSystem {
     this.beamMesh.visible = nb > 0;
     this.beamCount = nb;
     if (n) {
-      this.lampMesh.instanceMatrix.needsUpdate = true;
       this._aLamp.needsUpdate = true;
       this._aIris.needsUpdate = true;
       this._aCore.needsUpdate = true;
     }
-    if (nb) {
-      this.beamMesh.instanceMatrix.needsUpdate = true;
-      this._aBeam.needsUpdate = true;
+    if (nb) this._aBeam.needsUpdate = true;
+  }
+
+  /**
+   * The lamp and beam instance matrices, written from the anchors' world
+   * matrices AFTER the renderer's `scene.updateMatrixWorld()` (this runs in the
+   * scene's onBeforeRender, before three uploads the instance buffers): exact
+   * for this frame with no `updateWorldMatrix(true, false)` walk per lamp — a
+   * walk of megamorphic three.js method calls up every rig that allocates
+   * load handlers under the game's stub-cache pressure. Once per frame;
+   * allocation-free for the lamps (beams, fog/night only, decompose).
+   */
+  _writeMatrices() {
+    const E = this.ctx.engine;
+    const f = E ? E.frames : -1;
+    if (f === this._matFrame && f !== -1) return;
+    this._matFrame = f;
+    const recs = this.records, im = this.lampMesh.instanceMatrix.array, bm = this.beamMesh.instanceMatrix.array;
+    const player = this.ctx.player;
+    let lamps = 0, beams = 0;
+    for (let i = 0; i < recs.length; i++) {
+      const r = recs[i];
+      if (r.slot < 0) continue;
+      // the anchor's world matrix with its basis rescaled to the lamp radius, element by element
+      // (Matrix4.decompose + compose box doubles: 16 B per lamp measured)
+      const te = r.anchor.matrixWorld.elements, ob = r.slot * 16, rad = r.radius;
+      for (let c = 0; c < 12; c += 4) {
+        const a = te[c], b = te[c + 1], d = te[c + 2];
+        const k = rad / (Math.sqrt(a * a + b * b + d * d) || 1);
+        im[ob + c] = a * k; im[ob + c + 1] = b * k; im[ob + c + 2] = d * k; im[ob + c + 3] = 0;
+      }
+      im[ob + 12] = te[12]; im[ob + 13] = te[13]; im[ob + 14] = te[14]; im[ob + 15] = 1;
+      lamps++;
+      if (r.bslot < 0) continue;
+      const m = r.machine;
+      r.anchor.matrixWorld.decompose(_p, _q, _s);
+      if (r.bmode === 'lock' && player) {
+        _t.x = player.position.x; _t.y = player.position.y + 1.3; _t.z = player.position.z;
+      } else if (m.lastKnown) {
+        _t.x = m.lastKnown.x; _t.y = (m.lastKnown.y || m.position.y) + 1.0; _t.z = m.lastKnown.z;
+      } else {
+        _t.copy(_z).applyQuaternion(_q).multiplyScalar(10).add(_p);
+      }
+      _d.subVectors(_t, _p);
+      if (_d.lengthSq() < 1e-6) _d.copy(_z).applyQuaternion(_q);
+      _d.normalize();
+      if (r.bmode === 'sweep') {
+        const a = (BEAM.sweepDeg * Math.PI / 180) * Math.sin(2 * Math.PI * LAMP_STATES.wary.sweepHz * (r.bt + r.phase));
+        _qs._x = 0; _qs._y = Math.sin(a * 0.5); _qs._z = 0; _qs._w = Math.cos(a * 0.5);   // setFromAxisAngle(up, a)
+        _d.applyQuaternion(_qs);
+      }
+      if (!r.dirSet) { r.dir.copy(_d); r.dirSet = true; }
+      r.dir.lerp(_d, 0.2).normalize();
+      const len = r.blen, brad = len * Math.tan(BEAM.halfAngleDeg * Math.PI / 180);
+      _qs.setFromUnitVectors(_z, r.dir);
+      _s.x = brad; _s.y = brad; _s.z = len;
+      _m.compose(_p, _qs, _s);
+      _m.toArray(bm, r.bslot * 16);
+      beams++;
     }
+    if (lamps) this.lampMesh.instanceMatrix.needsUpdate = true;
+    if (beams) this.beamMesh.instanceMatrix.needsUpdate = true;
   }
 
   audit() {

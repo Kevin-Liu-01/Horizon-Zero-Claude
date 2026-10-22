@@ -259,7 +259,8 @@ export function lampStatesAssert(spec) {
      * (CORE_FRAC of the aperture radius, above the bloom threshold) and the token RING around it.
      *   ringLit   ring pixels (outside the core + its blend band + 0.75 px) within dE 10 of the token
      *   coreLit   pixels inside the core zone brighter than the ring (the hot centre a viewer reads)
-     *   colour    median of the lit RING pixels (the core is not the token by design)
+     *   colour    median of the lit RING pixels inside the glass edge (the core is not the token by
+     *             design; a pixel straddling the glass edge is part blade)
      *   coreLum   mean luminance of the inner 0.7 of the aperture (the rhythm read)
      */
     const APMAX = L.APERTURE_MAX, CFRAC = L.CORE_FRAC;
@@ -269,7 +270,8 @@ export function lampStatesAssert(spec) {
       const cx = (v.x * 0.5 + 0.5) * fr.w - fr.x0, cy = (v.y * 0.5 + 0.5) * fr.h - fr.y0;
       const tl = TOKLAB[state];
       const apR = discR * APMAX * Math.sqrt(L.LAMP_STATES[state].aperture || 0);
-      const coreZone = apR * CFRAC * 1.15 + 0.75;
+      const cf = (L.CORE_FRAC_BY_STATE && L.CORE_FRAC_BY_STATE[state]) ?? CFRAC;
+      const coreZone = apR * cf * 1.15 + 0.75;
       let ringLit = 0, coreN = 0, coreLum = 0, discN = 0, coreLit = 0;
       const litR = [], litG = [], litB = [], dR = [], dG = [], dB = [], ringLums = [], coreLums = [];
       const rhythmRad = apR * 0.7;
@@ -283,7 +285,11 @@ export function lampStatesAssert(spec) {
         if (d <= rhythmRad) { coreN++; coreLum += lum; }
         if (d <= coreZone) { coreLums.push(lum); continue; }
         const de = Col.deltaE2000(Col.rgbToLab(rgb), tl);
-        if (de <= 10 && d <= apR + 1) { ringLit++; ringLums.push(lum); litR.push(rgb[0]); litG.push(rgb[1]); litB.push(rgb[2]); }
+        if (de <= 10 && d <= apR + 1) {
+          ringLit++; ringLums.push(lum);
+          // colour: the ring's interior only (a pixel straddling the glass edge is part blade)
+          if (d <= apR - 0.5) { litR.push(rgb[0]); litG.push(rgb[1]); litB.push(rgb[2]); }
+        }
       }
       const med = (a) => { if (!a.length) return null; const s = a.slice().sort((x, y) => x - y); return s[s.length >> 1]; };
       const ringLum = med(ringLums);
@@ -760,26 +766,45 @@ const WEAK40 = (spec) => `(async () => {
   const rec = m.lamp;
   const V = p.position.constructor;
   const lp = new V(), ax = new V();
-  // the SUNLIT face: of the headings with a clear 40 m line, the one whose lens axis is closest to the sun's azimuth
+  // two placements: the SIZE read needs any clear 40 m line on the lens axis; the CONTRAST read needs the
+  // lamp face turned TO THE SUN (the worst light for a lamp: a sunlit face) with a clear 15 m line
   const sd = env.sunDir ? new V(env.sunDir.x, 0, env.sunDir.z).normalize() : new V(0, 0, 1);
   const place = (hd) => {
     m.heading = hd; m.root.rotation.y = hd; m.root.updateMatrixWorld(true);
     if (rec) { rec.anchor.updateWorldMatrix(true, false); lp.setFromMatrixPosition(rec.anchor.matrixWorld); ax.set(0, 0, 1).transformDirection(rec.anchor.matrixWorld); ax.y = 0; ax.normalize(); }
     else { prim.obj.getWorldPosition(lp); ax.set(Math.sin(hd), 0, Math.cos(hd)); }
   };
-  let best = null;
-  for (let k = 0; k < 24; k++) {
-    const hd = k * Math.PI / 12;
-    place(hd);
-    let clear = true;
-    for (let s2 = 1; s2 < 60; s2++) { const q = lp.clone().addScaledVector(ax, 40 * s2 / 60); if (T.getHeight(q.x, q.z) > q.y - 0.4) { clear = false; break; } }
-    if (clear && ctx.collision?.occluded?.(lp.clone().addScaledVector(ax, 40), lp)) clear = false;
-    if (!clear) continue;
-    const sun = ax.x * sd.x + ax.z * sd.z;
-    if (!best || sun > best.sun) best = { hd, sun };
-  }
-  place(best ? best.hd : 0.2);
-  const sunAzDot = best ? +best.sun.toFixed(3) : null;
+  const clearTo = (dist) => {
+    for (let s2 = 1; s2 < 60; s2++) { const q = lp.clone().addScaledVector(ax, dist * s2 / 60); if (T.getHeight(q.x, q.z) > q.y - 0.4) return false; }
+    return !ctx.collision?.occluded?.(lp.clone().addScaledVector(ax, dist), lp);
+  };
+  let size40Heading = null;
+  for (let k = 0; k < 24 && size40Heading === null; k++) { place(k * Math.PI / 12); if (clearTo(40)) size40Heading = k * Math.PI / 12; }
+  // the sun placement: face the sun's azimuth (+-20 deg), moving the machine over open ground until the 15 m line is clear
+  const sunHd = Math.atan2(sd.x, sd.z);
+  let sunPlace = null;
+  const pos0 = m.position.clone();
+  { const pp = ctx.player.position;
+    for (let i = 0; i < 160 && !sunPlace; i++) {
+      if (i > 0) {
+        const a = (i * 2.399) % (Math.PI * 2), r = 25 + (i % 9) * 9;
+        const x = pp.x + Math.sin(a) * r, z = pp.z + Math.cos(a) * r, h = T.getHeight(x, z);
+        if (ctx.water?.levelAt && ctx.water.levelAt(x, z) > h - 0.2) continue;
+        m.position.set(x, h, z);
+      }
+      for (const off of [0, 0.17, -0.17, 0.35, -0.35]) {
+        // the lens axis may sit off the body's +Z by the rig: correct the heading by the measured offset
+        place(sunHd + off);
+        const err = Math.atan2(ax.x, ax.z) - (sunHd + off);
+        place(sunHd + off - err);
+        if (clearTo(15)) { sunPlace = { x: m.position.x, z: m.position.z, hd: sunHd + off - err, moved: i }; break; }
+      }
+    } }
+  if (size40Heading === null) size40Heading = 0.2;
+  // size read first, at its own clear heading (the machine back where it was spawned when the sun search moved it)
+  m.position.copy(pos0);
+  place(size40Heading);
+  const sunAzDot = sunPlace ? (() => { place(sunPlace.hd); const d = ax.x * sd.x + ax.z * sd.z; place(size40Heading); return +d.toFixed(3); })() : null;
   // only this lamp is drawn (the other Instruments' lamps are not the subject)
   for (const r of M.lamps.records.slice()) if (r.machine !== m) M.lamps.detach(r.machine);
   const hitPx40 = prim ? 2 * prim.radius * fovK / 40 : null;
@@ -812,7 +837,8 @@ const WEAK40 = (spec) => `(async () => {
     if (Col.deltaE2000(Col.rgbToLab([px40[j] / 255, px40[j + 1] / 255, px40[j + 2] / 255]), tok) <= 10) lit40++;
   }
   const litDiam40 = 2 * Math.sqrt(lit40 / Math.PI);
-  // ---- contrast at 15 m on the lens axis, the world visible, sunlit face
+  // ---- contrast at 15 m on the lens axis, the world visible, the lamp face turned to the sun
+  if (sunPlace) { m.position.set(sunPlace.x, T.getHeight(sunPlace.x, sunPlace.z), sunPlace.z); place(sunPlace.hd); }
   cam.position.copy(lp).addScaledVector(ax, 15); cam.lookAt(lp); cam.updateMatrixWorld();
   await new Promise(r => setTimeout(r, 700));
   const N = 61, C0 = 30;
@@ -852,7 +878,7 @@ const WEAK40 = (spec) => `(async () => {
   const Lg = med(ring), Lf = med(face), Lo = med(outer), Lc = core.length ? Math.max(...core) : null;
   const contrast = ratio(Lg, Lf);
   const sizeOk = __s.KIND === 'peg' || (hitPx40 !== null && hitPx40 >= 5 && litDiam40 >= 5);
-  const contrastOk = contrast !== null && contrast >= 3 && ring.length >= 8 && face.length >= 8;
+  const contrastOk = contrast !== null && contrast >= 3 && ring.length >= 8 && face.length >= 8 && !!sunPlace && sunAzDot >= 0.9;
   const calimaNote = (env.weatherStates || []).includes('calima') ? null : 'calima: the environment has no calima state until world-sky W1 (E12); 13:00 clear measured as the trade stand-in';
   return { pass: sizeOk && contrastOk, detail: {
     kind: __s.KIND, fixture: __KB.fixture, primaryWeakPoint: prim ? prim.name : null,
@@ -862,7 +888,8 @@ const WEAK40 = (spec) => `(async () => {
       pixels: { ring: ring.length, face: face.length, core: core.length, bezel: bezel.length, outerHull: outer.length },
       coreMaxLum: Lc === null ? null : +Lc.toFixed(3), bezelLum: med(bezel) === null ? null : +med(bezel).toFixed(3),
       outerHullLum: Lo === null ? null : +Lo.toFixed(3), glassVsOuterHull: ratio(Lg, Lo) === null ? null : +ratio(Lg, Lo).toFixed(2), coreVsOuterHull: ratio(Lc, Lo) === null ? null : +ratio(Lc, Lo).toFixed(2),
-      sunlit: { lensAxisDotSunAzimuth: sunAzDot, sunElevationDeg: env.sunDir ? +(Math.asin(Math.max(-1, Math.min(1, env.sunDir.y))) * 180 / Math.PI).toFixed(1) : null },
+      sunlit: { lensAxisDotSunAzimuth: sunAzDot, sunPlacementFound: !!sunPlace, spotsTried: sunPlace ? sunPlace.moved + 1 : null,
+        sunElevationDeg: env.sunDir ? +(Math.asin(Math.max(-1, Math.min(1, env.sunDir.y))) * 180 / Math.PI).toFixed(1) : null },
       graded: 'glass = median luminance of the lit token RING (outside the bloom core); hull = median of the lamp drum face around it (glass edge + 1 px to the bezel); 15 m on the lens axis, 13:00, the lens turned to the sun',
       reported: 'outer hull = machine pixels (flat-ink mask) 1.1-1.8 face radii out: the bone glaze beyond the lamp drum' },
     contrastClause: contrastOk ? 'pass (13:00, sunlit face, rendered pixels at 15 m)' : 'FAIL',
