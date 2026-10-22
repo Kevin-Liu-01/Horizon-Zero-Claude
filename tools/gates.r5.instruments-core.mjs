@@ -216,7 +216,7 @@ function removalOnlyAudit() {
     if (first) {
       const v = git('show', `${first}:${f}`);
       if (isSubsequence(before, v)) {
-        rows.push({ f, verdict: 'deletions-only', removedChars: before.length - v.length, against: first.slice(0, 9), laterEditsBy: 'other lanes' });
+        rows.push({ f, verdict: 'deletions-only', removedChars: before.length - v.length, against: first.slice(0, 9), laterEdits: 'after the W0a merge (other lanes, or a later grant)' });
         continue;
       }
     }
