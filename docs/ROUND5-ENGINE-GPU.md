@@ -285,7 +285,12 @@ Sheets filmed on the final row: `scratchpad/r5/engine-gpu/run/P2/V20-aa-crop@r5.
   bars, bands, checker or dither, including the bright S bearing over the water. In row 3, on and OFF are
   indistinguishable at both tiers on the shelf wall. In row 4, the ×8 darkening maps show soft contact darkening
   under the shelf lip and at the grass bases (high broader and grainier), white open sand, no blocks.
-  Reading: PASS. Sheets: `run/M2/V20-aa-crop.png`, `run/M2/V33b-no-ao-lattice.png`.
+  Reading: PASS. **V-gpu-tier-look** (`M4`, re-filmed on its own because the box was never quiet for the
+  timed pair; the film has no timing term): the four full frames are the same scene, light and grade. I also
+  compared crops 2, 3 and 4 at a further ×2 nearest. Crop 2 (shipped levers, 8×) and **crop 4 (SHIPPED,
+  colour 1× / data 4×) both show the salt pan's polygonal crust cell by cell** across the lower half of the
+  crop, crop 4 a shade softer toward the far edge. **Crop 3 (NOT shipped, 2× / 2×) turns the same ground into
+  horizontal streaks with no cells.** Reading: PASS. Sheet: `run/M4/V-gpu-tier-look.png`.
 - **V20** (`P2`; `P1`, `F4` the same): top-left (shipped, SMAA-only at 1.25, 4× nearest): the column tops and sides carry 1–2 px
   ramps between rock and sky; top-right (no AA): hard two-colour stair-steps on the same edges, clearest on the
   tall column's left side; bottom-left (Round-4 MSAA ×4 + SMAA at 1.5): the softest, and the shipped tile keeps
