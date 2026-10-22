@@ -66,7 +66,7 @@ W0a judge's minor finding).
 |---|---|
 | **render targets, total** | **127.27** (127,271,712 B; bar ≤ 170: **+42.73 MB** of margin). W0b round 0: 154.27; W0a, Round-4 tier: 340.74 |
 | canvas drawing buffer (not a three target; reported apart) | 18.0 (RGBA8 + depth24 at 2000 × 1125) |
-| provisioned, never allocated | 0 (the GTAO G-buffer is shrunk to 1 × 1 and never bound; `postTarget` is released, not provisioned) |
+| provisioned, not allocated (listed by the ledger, not summed) | 18.0 — `post:pingB` (`postTarget`, RGBA16F 2000 × 1125), released in the direct topology and allocated only while a pass after the grade needs a write target (the studio pass): then the total is 145.27 MB, still ≤ 170 (+24.73). The GTAO G-buffer is shrunk to 1 × 1 and never bound. (Fix round 1's table said 0 here; the ledger has always listed this 18 MB as provisioned — corrected Oct 22) |
 | the sun's 2048² map (`environment.js:431`) | 0 — it is the no-CSM fallback only; with CSM the sun casts no shadow |
 
 ### 1.2 Where the plan's estimate went wrong
