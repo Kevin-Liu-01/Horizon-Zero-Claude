@@ -501,14 +501,15 @@ async function pocPromoted({ PORT }) {
   const W = await imp('tools/build/pipeline/w0b-checks.mjs');
   const st = W.pocPromotedStatic();
   // dynamic: ?poc=biome still serves (its own Chrome, in a child, before any page gate)
-  const dyn = await childJson('tools/build/pipeline/biome-check.mjs', ['--scratch', scratchRoot(), '--port', String(PORT)], 600000);
+  // fix round 4: the child films the asserted biome state (shots/gates/A-poc-promoted-biome.png, 1600×900)
+  const dyn = await childJson('tools/build/pipeline/biome-check.mjs', ['--scratch', scratchRoot(), '--port', String(PORT), '--shot', path.join(ROOT, 'shots/gates/A-poc-promoted-biome.png')], 600000);
   // literal: PASS needs (a) + (b) absent folders + (c) biome serving; the static half is null (ruling) at best while
   // the closure files exist, so the gate cannot PASS with anything left in either folder
   // fix round 3: under the recorded ruling poc-closure=literal clause (c) is struck (the probe is reported, not graded);
   // with no ruling or poc-closure=w1-exit it is graded. No ruling = the literal bar, at best PENDING (w0b-checks.mjs)
   const struck = st.detail.ruling === 'poc-closure=literal';
   const pass = st.pass === false || (!struck && dyn.pass === false) ? false : st.pass === true && (struck || dyn.pass === true) ? true : null;
-  return { pass, detail: { clauseC: struck ? 'struck by ruling poc-closure=literal (probe reported only)' : 'graded', static: st.detail, biome: dyn.detail?.gate ? { pass: dyn.detail.gate.pass, ...dyn.detail.gate.detail, consoleErrors: dyn.detail.gate.consoleErrors, error: dyn.detail.gate.error } : dyn.detail, biomeMs: dyn.detail?.ms } };
+  return { pass, detail: { clauseC: struck ? 'struck by ruling poc-closure=literal (probe reported only)' : 'graded', static: st.detail, biome: dyn.detail?.gate ? { pass: dyn.detail.gate.pass, ...dyn.detail.gate.detail, consoleErrors: dyn.detail.gate.consoleErrors, error: dyn.detail.gate.error, shot: dyn.detail.gate.shot ? path.relative(ROOT, dyn.detail.gate.shot) : null } : dyn.detail, biomeMs: dyn.detail?.ms } };
 }
 
 /* ---------------------------------------------------------------- */

@@ -10,7 +10,11 @@
  * Tillers are in the scene (both r5-poc GLBs loaded), ground + scatter built,
  * 0 console errors. Run in a child so its Chrome holds its own ticket:
  *
- *   node tools/build/pipeline/biome-check.mjs --scratch <dir> [--port <p>]   -> one JSON line
+ *   node tools/build/pipeline/biome-check.mjs --scratch <dir> [--port <p>] [--shot <png>]   -> one JSON line
+ *
+ * Fix round 4: `--shot <png>` films the asserted state (1600×900, after the settle), so clause (c) carries a frame
+ * on every A-poc-promoted run (tools/screenshot.mjs cannot: it waits for `__READY__`, which the standalone biome boot
+ * never sets).
  */
 import os from 'node:os';
 import path from 'node:path';
@@ -29,17 +33,18 @@ export const BIOME_ASSERT = `(() => {
     scatter: s.scatter, bytes: s.bytes, buildMs: s.buildMs, memory: s.memory } };
 })()`;
 
-export async function biomeCheck({ root = ROOT, scratch, port = 0, waitMs = 180000 } = {}) {
+export async function biomeCheck({ root = ROOT, scratch, port = 0, waitMs = 180000, shot = null } = {}) {
   const t0 = Date.now();
   let pf = preflight(root);
   while (!pf.ok && Date.now() - t0 < waitMs) { await new Promise((r) => setTimeout(r, 10000)); pf = preflight(root); }
   if (!pf.ok) return { pass: null, detail: { pending: 'preflight refused to launch Chrome (plan §0 rule 8)', preflight: pf } };
   mkdirSync(scratch, { recursive: true });
+  if (shot) mkdirSync(path.dirname(path.resolve(shot)), { recursive: true });
   const cacheDir = path.join(realpathSync(scratch), `biome-vite-cache-${process.pid}`);
   const sock = path.join(os.tmpdir(), `cal-bc-${process.pid}.sock`);
   const detail = { preflight: pf };
   try {
-    const [g] = await serveAndRun(realpathSync(root), [{ id: 'poc-biome-serves', params: 'poc=biome', ready: 'window.__R5BIOME_READY__ === true', settle: 1500, timeout: 30000, assert: BIOME_ASSERT }],
+    const [g] = await serveAndRun(realpathSync(root), [{ id: 'poc-biome-serves', params: 'poc=biome', ready: 'window.__R5BIOME_READY__ === true', settle: 1500, timeout: 30000, assert: BIOME_ASSERT, ...(shot ? { shot: path.resolve(shot) } : {}) }],
       { port, sock, cacheDir, onProbe: (p) => { detail.viteProbe = p; } });
     detail.gate = g;
     return { pass: g.pass === true, detail };
@@ -56,6 +61,6 @@ export async function biomeCheck({ root = ROOT, scratch, port = 0, waitMs = 1800
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const a = process.argv.slice(2);
   const val = (f, d = null) => { const i = a.indexOf(f); return i >= 0 ? a[i + 1] : d; };
-  const res = await biomeCheck({ scratch: val('--scratch', path.join(os.tmpdir(), 'calima-r5-scratch', 'pipeline')), port: Number(val('--port', 0)) });
+  const res = await biomeCheck({ scratch: val('--scratch', path.join(os.tmpdir(), 'calima-r5-scratch', 'pipeline')), port: Number(val('--port', 0)), shot: val('--shot') });
   process.stdout.write(`${JSON.stringify(res)}\n`, () => process.exit(0));
 }
