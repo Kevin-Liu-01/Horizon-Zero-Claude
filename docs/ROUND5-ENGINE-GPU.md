@@ -1,4 +1,4 @@
-# ROUND 5 — lane engine-gpu, W0b report (the GPU tier decision) — fix round 2
+# ROUND 5 — lane engine-gpu, W0b report (the GPU tier decision) — fix round 3
 
 Port 5251, worktree `~/.calima-r5/trees/engine-gpu` (the orchestrator moved it there on Oct 22; the
 scratchpad path `scratchpad/r5/engine-gpu/tree` is a symlink to it), Oct 22 2026.
