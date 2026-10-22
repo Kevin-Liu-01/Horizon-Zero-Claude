@@ -684,23 +684,27 @@ export const POC_KIT = `
     const g = c.getContext('2d'); g.fillStyle = '#111'; g.fillRect(0, 0, 1600, 900);
     const tmp = document.createElement('canvas'), tg = tmp.getContext('2d');
     const TW = 1600 / cols, TH = 900 / rows;
-    const put = (rgba, w, h, col, row, label, nearest) => {
+    /** any rectangle of the sheet (x, y, dw, dh in sheet px); put() is the grid case */
+    const putRect = (rgba, w, h, x, y, dw, dh, label, nearest) => {
       tmp.width = w; tmp.height = h;
       tg.putImageData(new ImageData(new Uint8ClampedArray(rgba.buffer), w, h), 0, 0);
       g.imageSmoothingEnabled = !nearest;
-      g.drawImage(tmp, 0, 0, w, h, col * TW, row * TH, TW, TH);
+      g.drawImage(tmp, 0, 0, w, h, x, y, dw, dh);
       g.imageSmoothingEnabled = true;
-      g.fillStyle = '#000'; g.globalAlpha = 0.62; g.fillRect(col * TW, row * TH, 8 + label.length * 7.3, 18);
+      g.fillStyle = '#000'; g.globalAlpha = 0.62; g.fillRect(x, y, 8 + label.length * 7.3, 18);
       g.globalAlpha = 1; g.fillStyle = '#ffe3b0'; g.font = '12px ui-monospace, monospace';
-      g.fillText(label, col * TW + 5, row * TH + 13);
+      g.fillText(label, x + 5, y + 13);
     };
+    const put = (rgba, w, h, col, row, label, nearest) => putRect(rgba, w, h, col * TW, row * TH, TW, TH, label, nearest);
+    /** a red outline on the sheet (where a crop came from) */
+    const box = (x, y, w, h) => { g.strokeStyle = '#ff4040'; g.lineWidth = 2; g.strokeRect(x, y, w, h); };
     const show = () => {
       const img = new Image(); img.src = c.toDataURL('image/png');
       img.style.cssText = 'position:fixed;inset:0;width:100vw;height:100vh;z-index:2147483647';
       document.body.appendChild(img);
       return new Promise((r) => { img.onload = () => r(); setTimeout(r, 2000); });
     };
-    return { put, show, TW, TH };
+    return { put, putRect, box, show, TW, TH, g };
   };
 `;
 
@@ -1230,37 +1234,53 @@ const V33B_SETUP = `(async () => { const __work = (async () => {
 /* ------------------------------------------------------------------------ */
 
 /**
- * V-gpu-tier-look (W0b fix round 1): what the shipped tier costs the picture.
- * The A-gpu-tier levers are measured in milliseconds; this films what they do
- * to the Pans POC vista, Round 4's `high` beside the shipped `high`, full
- * frame and the far ground (where the anisotropic-filtering cap acts), so the
- * R29 judge grades the trade with their own eyes. Static camera, every pass
- * of both chains; the crop is the same CSS box read at each tier's DPR.
+ * V-gpu-tier-look (W0b fix round 1; layout fix round 2): what the shipped tier
+ * costs the picture. The A-gpu-tier levers are measured in milliseconds; this
+ * films what they do to the Pans POC vista, full frame and the far ground
+ * (where the anisotropic-filtering cap acts), so the R29 judge grades the
+ * trade with their own eyes. Four configurations, same static camera, every
+ * pass of each chain:
+ *   1  Round 4's `high` (DPR 1.5, anisotropy as authored, 8x)
+ *   2  the shipped levers with anisotropy as authored (8x)
+ *   3  NOT SHIPPED: the shipped levers with the cap at 4x (the alternative the
+ *      orchestrator may rule for; A-gpu-tier's lever record measures it)
+ *   4  the shipped `high` (cap 2x)
+ * Top band: the four full frames at 16:9 (400 x 225), the crop box outlined
+ * in red. Below: the four crops of the far ground at their native aspect,
+ * nearest-neighbour, 800 x 240 each (x1.07 at DPR 1.5, x1.28 at 1.25), in a
+ * 2 x 2 grid with the shipped crop bottom-right. The crop is the same CSS box
+ * read at each configuration's DPR.
  */
 export const LOOK_CROP = Object.freeze([540, 445, 500, 150]);
 const V_LOOK_SETUP = `(async () => { const __work = (async () => {
   ${POC_KIT}
   const SHIP = QUALITY_TIERS[DEFAULT_TIER];
-  const sh = sheetNew(3, 2);
+  const sh = sheetNew(4, 4);
   const c = ${JSON.stringify(LOOK_CROP)};
-  const shoot = (row, name, col) => {
+  const CROP_AT = [[0, 236], [800, 236], [0, 486], [800, 486]];
+  const shoot = (row, name, k) => {
     setTierDpr(row, name, 2); viewNamed('vista'); draw(6);
     const pr = R.getPixelRatio();
-    const full = readRect(0, 0, W(), H());
-    sh.put(full, W(), H(), col, 0, name + ': DPR ' + pr + ', anisotropy ' + (row.maxAnisotropy ? 'cap ' + row.maxAnisotropy + 'x' : 'as authored (8x)'), false);
+    const an = row.maxAnisotropy ? 'aniso cap ' + row.maxAnisotropy + 'x' : 'aniso 8x (as authored)';
+    sh.putRect(readRect(0, 0, W(), H()), W(), H(), k * 400, 0, 400, 225, (k + 1) + ' ' + name, false);
+    sh.box(k * 400 + c[0] / 4, c[1] / 4, c[2] / 4, c[3] / 4);
     const w = Math.round(c[2] * pr), h = Math.round(c[3] * pr);
-    sh.put(readRect(Math.round(c[0] * pr), Math.round(c[1] * pr), w, h), w, h, col, 1, name + ': far ground in the box', true);
+    sh.putRect(readRect(Math.round(c[0] * pr), Math.round(c[1] * pr), w, h), w, h, CROP_AT[k][0], CROP_AT[k][1], 800, 240,
+      (k + 1) + ' ' + name + ' | DPR ' + pr + ', ' + an + ' | far ground, nearest x' + (800 / w).toFixed(2), true);
   };
   shoot(ROUND4_HIGH, 'Round-4 high', 0);
-  shoot(Object.assign({}, SHIP, { maxAnisotropy: null }), 'shipped, aniso as authored', 1);
-  shoot(SHIP, 'shipped ' + DEFAULT_TIER, 2);
+  shoot(Object.assign({}, SHIP, { maxAnisotropy: null }), 'shipped levers, aniso as authored', 1);
+  shoot(Object.assign({}, SHIP, { maxAnisotropy: 4 }), 'NOT SHIPPED: shipped levers, cap 4x', 2);
+  shoot(SHIP, 'SHIPPED ' + DEFAULT_TIER + ' (cap ' + SHIP.maxAnisotropy + 'x)', 3);
   setTierDpr(SHIP, DEFAULT_TIER, 2); viewNamed('vista');
+  const g = sh.g;
+  g.fillStyle = '#ffe3b0'; g.font = '13px ui-monospace, monospace';
+  [ 'top: full frames, red box = the crop.  below: the far ground in the box, nearest-neighbour, native aspect',
+    '1 Round-4 high: DPR 1.5, MSAA x4 + SMAA, GTAO 1/2, anisotropic filtering as authored (8x)',
+    '2 shipped levers (DPR 1.25, SMAA only, GTAO 1/4 folded, bloom folded, far cascades alternate frames), anisotropy 8x',
+    '3 NOT SHIPPED: as 2 with the anisotropy cap at 4x (the alternative; vista GPU over 13 ms on this POC)',
+    '4 SHIPPED high: as 2 with the anisotropy cap at ' + SHIP.maxAnisotropy + 'x' ].forEach((t, i) => g.fillText(t, 12, 752 + i * 22));
   await sh.show();
-  for (const col of [0, 1, 2]) {
-    const ov = document.createElement('div');
-    ov.style.cssText = 'position:fixed;z-index:2147483647;border:2px solid #ff4040;left:' + (col * 1600 / 3 + c[0] / 3) + 'px;top:' + (c[1] / 2) + 'px;width:' + c[2] / 3 + 'px;height:' + c[3] / 2 + 'px';
-    document.body.appendChild(ov);
-  }
   window.__VLOOK_DONE__ = true;
 })(); await Promise.race([__work, new Promise((r) => setTimeout(r, 52000))]); })()`;
 
@@ -1771,9 +1791,9 @@ export const GATES = [
   },
   {
     id: 'V-gpu-tier-look', kind: 'visual', lane: 'engine-gpu', wave: 'W0b', timeout: 240000, settle: 90000,
-    title: 'What the shipped tier costs the picture: the Pans POC vista at Round 4\'s `high`, at the shipped levers with anisotropy as authored, and at the shipped `high` (full frame + nearest-neighbour crop of the far ground)',
+    title: 'What the shipped tier costs the picture: the Pans POC vista at Round 4\'s `high`, at the shipped levers with anisotropy as authored, at the shipped levers with a 4x cap (not shipped, for the ruling) and at the shipped `high` (full frames + native-aspect nearest-neighbour crops of the far ground)',
     setup: V_LOOK_SETUP,
-    criteria: 'Three columns of the Pans POC vista, same camera. Left: Round 4\'s `high` (DPR 1.5, MSAA x4 + SMAA, anisotropic filtering as authored, 8x). Middle: the shipped levers with anisotropic filtering left as authored (DPR 1.25, SMAA only, GTAO quarter-res, AO and bloom folded into the grade, far cascades on alternate frames). Right: the shipped `high` (the middle plus the anisotropic-filtering cap of 2x). Top row: full frames. Bottom row: the far ground in the red box (salt pan beyond the dune crest, the basalt shelf foot), nearest-neighbour. PASS: the three top tiles show the same scene with the same light, shadow shapes (the ring\'s ellipse shadow on the pan), contact darkening, bloom and grade, with no shadow missing or blocky, no AO halo, no colour shift and no new banding or aliasing; and in the bottom-right tile the salt pan still reads as pale crusted ground and the dune ripples are still there, as a softer version of the bottom-middle tile. FAIL if the bottom-right salt pan reads as flat untextured colour or as horizontal streaks where the bottom-middle shows crust texture, if the dune ripples are gone, or if anything other than softness differs between the top tiles.',
+    criteria: 'A sheet of the Pans POC vista in four configurations, same camera, numbered 1-4 in every label. Top band, left to right: four full frames — 1 Round 4\'s `high` (DPR 1.5, MSAA x4 + SMAA, anisotropic filtering as authored, 8x); 2 the shipped levers with anisotropic filtering as authored (DPR 1.25, SMAA only, GTAO quarter-res, AO and bloom folded into the grade, far cascades on alternate frames); 3 NOT SHIPPED: the shipped levers with the anisotropy cap at 4x; 4 the SHIPPED `high` (the shipped levers with the cap at 2x) — each with the crop box outlined in red. Below: the far ground in that box (salt pan beyond the dune crest, the basalt shelf foot) at native aspect, nearest-neighbour: crop 1 top-left, crop 2 top-right, crop 3 bottom-left, crop 4 (SHIPPED) bottom-right. PASS: frames 1, 2 and 4 show the same scene with the same light, shadow shapes (the ring\'s ellipse shadow on the pan), contact darkening, bloom and grade, with no shadow missing or blocky, no AO halo, no colour shift and no new banding or aliasing; and in crop 4 the salt pan still reads as pale crusted ground and the dune ripples are still there, as a softer version of crop 2. FAIL if crop 4\'s salt pan reads as flat untextured colour or as horizontal streaks where crop 2 shows crust texture, if the dune ripples are gone in crop 4, or if anything other than softness differs between frames 1, 2 and 4. Configuration 3 is NOT graded: it is the alternative the orchestrator may rule for (cap 4x; its vista GPU is over the 13 ms bar on this POC) — say whether crop 3 keeps the crust.',
   },
 
   // ---------------------------------------------------------------- W0a (kept)
