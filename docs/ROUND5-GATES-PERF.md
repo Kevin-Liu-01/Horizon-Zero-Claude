@@ -201,7 +201,29 @@ export const W0B_BUDGETS, UNATTRIBUTED_CAP_W0, DRAW_OWNERS, ownerOfName(name), G
 
 ## 3. Honest gaps
 
-TBD:gaps
+1. **A-carried-suite cannot PASS in a lane run.** V21 needs the orchestrator's R29 judge (my advisory reading is a
+   PASS, A.2); A90b (instruments-core, R34; fixed in its unmerged W0b tree) and A73 (the Tiller's voice seeds) regress.
+2. **A-alloc-rate, A-vram-ledger, A90-abs and A21's GPU term fail or wait on other lanes' code** (§4). The gates are
+   built and fail truthfully; nothing in this lane's paths can move them.
+3. **The box.** The two full runs' monitors saw a quiet fraction of TBD:quiet against the baseline's 39 %. A21's
+   GPU / frame / JS terms need load < 3 **and** 0 other gate Chromes when the row starts; another lane's gate Chrome was
+   alive at every A21 start this round, so they stay PENDING here (the orchestrator's 5270 run decides). Its GPU term is
+   expected to FAIL in this tree even on a quiet box: A9's own scene-GPU read on the same vista was 21.6 ms at load
+   2.9, over 14, until engine-gpu's tier lands.
+4. **A92 staging (TBD:a92gap).**
+5. **The machine-pick scan is lexical.** An alias annotated `census` or `clear` could later be used for a pick; every
+   annotated site (33) is listed in the gate's detail for audit, and the six reasons are a closed set.
+6. **SKIP-legacy (R28) for a baseline-PASS row is my reading** of plan §9 (A-carried-suite's allowed states) together with
+   R28; it applies to one row (A45c) and is listed by name. The orchestrator may overrule it (§4).
+7. **Slot discipline by others.** At 19:42Z another lane's judge re-took machine slot 1 while my diagnostic run held it
+   (3 gate Chromes for ~5 min). My scripts only ever release slots whose owner line is gates-perf's.
+8. **`shots/` peaked at 449 MB** during each full carried run (the harness writes one PNG per row, 236 rows); every
+   PNG was deleted as soon as the run's sealed copies were in the ledger. The 200 MB cap held only between runs.
+9. **One complete full run per build** is the floor (`CAL_CARRIED_RUNS` raises it); a known-flaky row is decided by its
+   first 5 observations.
+10. **Carried over:** the write tracer does not see worker threads; A-gates-autodiscover writes two probe lane files into
+    `tools/` for ~1.5 s; the baseline's own evidence is gone (the file is anchored by git); a forger with this
+    machine's account can forge the ledger (the orchestrator holds the ledger it grades and the key it trusts).
 
 ## 4. What other lanes and the orchestrator must do
 
