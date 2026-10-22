@@ -431,13 +431,18 @@ async function sourcesStaged() {
     try {
       execFileSync('cp', ['-cR', realpathSync(src), tamper]);
       const lock = S.loadLock();
-      const [row, ent] = Object.entries(lock.sources)[0];
-      const victim = Object.keys(ent.files).sort()[0];
-      appendFileSync(path.join(tamper, ent.dir || row, victim), 'x');
-      writeFileSync(path.join(tamper, ent.dir || row, 'stray.bin'), 'stray');
-      const c = await S.status({ env: { ...process.env, R5_SRC: tamper } });
-      const caught = c.pass === false && c.detail.problems.some((x) => x.includes('differ')) && c.detail.problems.some((x) => x.includes('not in the lock'));
-      control = { ok: caught, tampered: `${row}/${victim}`, problems: c.detail.problems.slice(0, 3) };
+      // fix round 2: tamper with a file that IS staged (after the Oct 22 reboot only ual1 is; the first lock entry's
+      // files were missing and the control threw ENOENT instead of grading)
+      const pick = Object.entries(lock.sources).flatMap(([row, ent]) => Object.keys(ent.files).sort()
+        .map((f) => ({ row, dir: ent.dir || row, f }))).find((x) => existsSync(path.join(tamper, x.dir, x.f)));
+      if (!pick) control = { ok: null, why: 'no staged file on disk to tamper with (every lock file is missing)' };
+      else {
+        appendFileSync(path.join(tamper, pick.dir, pick.f), 'x');
+        writeFileSync(path.join(tamper, pick.dir, 'stray.bin'), 'stray');
+        const c = await S.status({ env: { ...process.env, R5_SRC: tamper } });
+        const caught = c.pass === false && c.detail.problems.some((x) => x.includes(`${pick.row}: 1 staged file(s) differ`)) && c.detail.problems.some((x) => x.includes('not in the lock'));
+        control = { ok: caught, tampered: `${pick.row}/${pick.f}`, problems: c.detail.problems.filter((x) => x.startsWith(pick.row)).slice(0, 3) };
+      }
     } finally { rmSync(tamper, { recursive: true, force: true }); }
   }
   const pass = control.ok === false ? false : r.pass;
