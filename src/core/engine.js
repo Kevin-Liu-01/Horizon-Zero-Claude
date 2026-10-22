@@ -55,7 +55,10 @@ import { CSMFrustum } from 'three/examples/jsm/csm/CSMFrustum.js';
  *   engine.applyTier(row, name)              apply any tier row at runtime (setQuality's body)
  *   engine.csmMapSizes                       the per-cascade map sizes in force
  *   engine.postDirect                        the direct topology is in force (no MSAA)
- *   engine.anisotropyCap                     the anisotropic-filtering cap in force
+ *   engine.anisotropyCap                     the anisotropic-filtering cap in force (colour textures)
+ * Fix round 2: the cap is split by texture role.
+ *   QUALITY_TIERS.<tier>.maxAnisotropyData   cap on data textures (normal / rough / AO maps)
+ *   engine.anisotropyCapData                 the data-texture cap in force
  */
 
 /**
@@ -69,32 +72,34 @@ import { CSMFrustum } from 'three/examples/jsm/csm/CSMFrustum.js';
  * `postFold`: GTAO's multiply and bloom's composite run inside the grade pass
  * instead of as two full-resolution blends (false = Round 4's chain).
  * `csmFarCadence`: cascades >= 1 render every Nth frame, staggered (1 = every
- * frame); cascade 0 always renders. `maxAnisotropy`: cap on every texture's
- * anisotropic filtering (null = the GPU's maximum, i.e. as authored).
+ * frame); cascade 0 always renders. `maxAnisotropy`: cap on the anisotropic
+ * filtering of COLOUR (sRGB) textures; `maxAnisotropyData`: the cap on DATA
+ * textures (normal maps, roughness / AO packs: everything not sRGB);
+ * undefined = the colour cap; null = the GPU's maximum, i.e. as authored.
  */
 export const QUALITY_TIERS = {
   low: {
     dprCap: 1.0, msaa: 0, gtao: false, gtaoScale: 0.25, smaa: true, smaaHalfFloat: false, csmMapCaps: [1024],
-    postFold: true, csmFarCadence: 2, maxAnisotropy: 1,
+    postFold: true, csmFarCadence: 2, maxAnisotropy: 1, maxAnisotropyData: 1,
     bloom: true, sizeCullPx: 11,
     shadowCullDistance: 70, shadowCasterBudget: 60, shadowType: THREE.PCFShadowMap, drs: true, drsFloor: 0.55,
   },
   medium: {
     dprCap: 1.25, msaa: 0, gtao: false, gtaoScale: 0.25, smaa: true, smaaHalfFloat: false, csmMapCaps: [2048, 1024],
-    postFold: true, csmFarCadence: 2, maxAnisotropy: 2,
+    postFold: true, csmFarCadence: 2, maxAnisotropy: 2, maxAnisotropyData: 2,
     bloom: true, sizeCullPx: 9,
     shadowCullDistance: 95, shadowCasterBudget: 95, shadowType: THREE.PCFShadowMap, drs: true, drsFloor: 0.65,
   },
   /** THE SHIPPED DEFAULT (W0b decision, A-gpu-tier / A-rt-ledger). */
   high: {
     dprCap: 1.25, msaa: 0, gtao: true, gtaoScale: 0.25, smaa: true, smaaHalfFloat: false, csmMapCaps: [2048, 1024],
-    postFold: true, csmFarCadence: 2, maxAnisotropy: 2,
+    postFold: true, csmFarCadence: 2, maxAnisotropy: 2, maxAnisotropyData: 2,
     bloom: true, sizeCullPx: 7,
     shadowCullDistance: 120, shadowCasterBudget: 150, shadowType: THREE.PCFSoftShadowMap, drs: true, drsFloor: 0.7,
   },
   ultra: {
     dprCap: 2.0, msaa: 4, gtao: true, gtaoScale: 1.0, smaa: true, smaaHalfFloat: true, csmMapCaps: null,
-    postFold: true, csmFarCadence: 1, maxAnisotropy: null,
+    postFold: true, csmFarCadence: 1, maxAnisotropy: null, maxAnisotropyData: null,
     bloom: true, sizeCullPx: 4,
     shadowCullDistance: 190, shadowCasterBudget: 260, shadowType: THREE.PCFSoftShadowMap, drs: false, drsFloor: 0.85,
   },
@@ -110,7 +115,7 @@ export const DEFAULT_TIER = 'high';
  */
 export const ROUND4_HIGH = Object.freeze({
   dprCap: 1.5, msaa: 4, gtao: true, gtaoScale: 0.5, smaa: true, smaaHalfFloat: true, csmMapCaps: null,
-  postFold: false, csmFarCadence: 1, maxAnisotropy: null,
+  postFold: false, csmFarCadence: 1, maxAnisotropy: null, maxAnisotropyData: null,
   bloom: true, sizeCullPx: 7,
   shadowCullDistance: 120, shadowCasterBudget: 150, shadowType: THREE.PCFSoftShadowMap, drs: true, drsFloor: 0.7,
 });
@@ -1105,25 +1110,52 @@ export class Engine {
   }
 
   /**
-   * The tier's texture-filtering cap (`maxAnisotropy`; null = the GPU's
-   * maximum, i.e. as authored). three clamps every texture's `anisotropy` to
-   * `capabilities.getMaxAnisotropy()` when it uploads the texture, so the
-   * engine answers that call with the tier's cap. Textures already uploaded
-   * under a different cap are re-uploaded once (every scene material's maps
-   * and program uniforms), only when the effective cap changes. Returns the
-   * cap in force.
+   * The tier's texture-filtering caps, split by texture ROLE (W0b fix round 2):
+   * `maxAnisotropy` caps COLOUR textures (sRGB: albedo, emissive, decals) and
+   * `maxAnisotropyData` caps DATA textures (everything three does not decode
+   * from sRGB: normal maps, roughness / AO packs, masks); undefined = the same
+   * cap as colour, null = the GPU's maximum (as authored).
+   *
+   * three clamps every texture's `anisotropy` to
+   * `capabilities.getMaxAnisotropy()` when it uploads it (one global value), so
+   * the engine answers that call with the HIGHER of the two caps and lowers the
+   * other role's textures itself, right after three's upload, with one
+   * `texParameterf` on the texture three already made (`_anisoRoles`, run at
+   * the top of render(): an integer compare per frame, the sweep only when the
+   * renderer's texture count changes). Textures already uploaded under other
+   * caps are re-uploaded once when a cap changes. Returns the colour cap.
    */
   _applyAnisotropyCap() {
-    const caps = this.renderer.capabilities;
-    if (this._anisoHw === undefined) this._anisoHw = caps.getMaxAnisotropy();
-    const want = this.tier.maxAnisotropy;
-    const cap = want ? Math.max(1, Math.min(want, this._anisoHw)) : this._anisoHw;
-    if (cap === this.anisotropyCap) return cap;
+    const r = this.renderer, caps = r.capabilities;
+    if (this._anisoHw === undefined) {
+      this._anisoHw = caps.getMaxAnisotropy();
+      this._anisoExt = r.extensions.has('EXT_texture_filter_anisotropic') ? r.extensions.get('EXT_texture_filter_anisotropic') : null;
+      this._anisoLow = [];
+      this._anisoStamp = 0;
+      this._anisoTexCount = -1;
+      this._anisoVisit = (o) => {
+        const m = o.material;
+        if (!m) return;
+        if (Array.isArray(m)) { for (let i = 0; i < m.length; i++) this._anisoMat(m[i]); } else this._anisoMat(m);
+      };
+    }
+    const hw = this._anisoHw;
+    const clamp = (v) => (v ? Math.max(1, Math.min(v, hw)) : hw);
+    const colour = clamp(this.tier.maxAnisotropy);
+    const data = this.tier.maxAnisotropyData === undefined ? colour : clamp(this.tier.maxAnisotropyData);
+    if (colour === this.anisotropyCap && data === this.anisotropyCapData) return colour;
     const first = this.anisotropyCap === undefined;
-    this.anisotropyCap = cap;
-    caps.getMaxAnisotropy = () => cap;
+    const hi = Math.max(colour, data);
+    this.anisotropyCap = colour;
+    this.anisotropyCapData = data;
+    caps.getMaxAnisotropy = () => hi;
+    /** the role three's upload over-filters, and its cap; null = no split */
+    this._anisoLowRole = colour < data ? 'colour' : data < colour ? 'data' : null;
+    this._anisoLowCap = Math.min(colour, data);
+    this._anisoLow.length = 0;
+    this._anisoTexCount = -1;
     if (!first) {
-      const props = this.renderer.properties;
+      const props = r.properties;
       const bump = (t) => { if (t && t.isTexture && t.anisotropy > 1 && t.version > 0 && !t.isRenderTargetTexture) t.needsUpdate = true; };
       this.scene.traverse((o) => {
         if (!o.material) return;
@@ -1135,7 +1167,82 @@ export class Engine {
         }
       });
     }
-    return cap;
+    return colour;
+  }
+
+  /**
+   * Per frame, before the composer (no allocation): when a cap is split by
+   * role, sweep the scene for the low role's textures whenever the renderer's
+   * texture count moved (a texture was uploaded or disposed), and re-apply the
+   * low cap to any tracked texture three re-uploaded since (three sets the
+   * global cap on every upload).
+   */
+  _anisoRoles() {
+    if (this._anisoLowRole === null || !this._anisoExt) return;
+    const props = this.renderer.properties;
+    const n = this.renderer.info.memory.textures;
+    if (n !== this._anisoTexCount) {
+      this._anisoTexCount = n;
+      this._anisoStamp = (this._anisoStamp + 1) % 1e9;
+      this._anisoLow.length = 0;
+      this.scene.traverse(this._anisoVisit);
+      return;
+    }
+    const L = this._anisoLow;
+    for (let i = L.length - 1; i >= 0; i--) {
+      const t = L[i];
+      if (!props.has(t)) { L[i] = L[L.length - 1]; L.length--; continue; }   // disposed
+      const p = props.get(t);
+      if (p.__calAnisoVer !== p.__version) this._anisoSet(t, p);
+    }
+  }
+
+  /** one material of the sweep: its texture slots and its program's uniforms, once per sweep */
+  _anisoMat(m) {
+    const props = this.renderer.properties;
+    if (!props.has(m)) return;           // never rendered: its textures are not uploaded yet
+    const mp = props.get(m);
+    if (mp.__calAnisoStamp === this._anisoStamp) return;
+    mp.__calAnisoStamp = this._anisoStamp;
+    for (const k in m) this._anisoTex(m[k]);
+    const u = mp.uniforms;
+    if (u) for (const k in u) { const v = u[k]; if (v) this._anisoTex(v.value); }
+  }
+
+  /** a texture of the low role that three has uploaded: track it and lower its cap */
+  _anisoTex(t) {
+    if (!t || t.isTexture !== true || t.isRenderTargetTexture || !(t.anisotropy > 1)) return;
+    if ((t.colorSpace === THREE.SRGBColorSpace) !== (this._anisoLowRole === 'colour')) return;
+    const props = this.renderer.properties;
+    if (!props.has(t)) return;
+    const p = props.get(t);
+    if (p.__webglTexture === undefined) return;
+    if (p.__calAnisoStamp === this._anisoStamp) return;
+    p.__calAnisoStamp = this._anisoStamp;
+    this._anisoLow.push(t);
+    if (p.__calAnisoVer !== p.__version || p.__calAniso !== Math.min(t.anisotropy, this._anisoLowCap)) this._anisoSet(t, p);
+  }
+
+  /**
+   * TEXTURE_MAX_ANISOTROPY on the GL texture three made for `t`, under the
+   * same conditions three's setTextureParameters applies it (mipmapped linear
+   * minification, non-nearest magnification, filterable type), bound through
+   * three's state so its binding cache stays true.
+   */
+  _anisoSet(t, p) {
+    p.__calAnisoVer = p.__version;
+    const T3 = THREE;
+    if (t.magFilter === T3.NearestFilter) return;
+    if (t.minFilter !== T3.NearestMipmapLinearFilter && t.minFilter !== T3.LinearMipmapLinearFilter) return;
+    if (t.type === T3.FloatType && !this.renderer.extensions.has('OES_texture_float_linear')) return;
+    const gl = this.renderer.getContext();
+    const target = t.isCubeTexture ? gl.TEXTURE_CUBE_MAP
+      : (t.isDataArrayTexture || t.isCompressedArrayTexture) ? gl.TEXTURE_2D_ARRAY
+        : t.isData3DTexture ? gl.TEXTURE_3D : gl.TEXTURE_2D;
+    const want = Math.min(t.anisotropy, this._anisoLowCap);
+    this.renderer.state.bindTexture(target, p.__webglTexture);
+    gl.texParameterf(target, this._anisoExt.TEXTURE_MAX_ANISOTROPY_EXT, want);
+    p.__calAniso = want;
   }
 
   /**
@@ -2108,6 +2215,7 @@ export class Engine {
     const t0 = performance.now();
     this._cullPass(realDt);
     this._csmUpdate();
+    this._anisoRoles();
     // Deterministic ping-pong: ScenePass always resolves into renderTarget2 and
     // the chain alternates rt2 <-> postTarget from there. Without re-seating,
     // the composer's swap parity drifts frame to frame and the multisampled
