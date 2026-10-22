@@ -2079,10 +2079,20 @@ const ALLOC_STAGE = `(async () => {
   const heal = () => { if (p.maxHealth) p.health = p.maxHealth; };
   E.onAfterRender.push(heal);
   window.__icAllocHeal = heal;
+  /* KEEP THE FIGHT A FIGHT (fix round 2): with a 30 s warm-up a herd kind's cast loses interest long before the
+   * windows open (probe: all 36 lamps calm 30 s after staging), so the windows would grade a calm patrol. Every
+   * second a cast member that left the fight is re-armed on her (lastKnown, suspicion 1, attack); every 250 ms
+   * the share of the cast in a hostile state is sampled — the witness each window reports and the gate requires. */
+  const HOSTILE = new Set(['alert', 'attack', 'stagger', 'downed']);
+  window.__icRearm = setInterval(() => { for (const m of cast) { if (!m.alive || m._disposed) continue;
+    if (!HOSTILE.has(m.state)) { m.lastKnown.copy(p.position); m.suspicion = 1; m._unseenT = 0; m.forceState('attack'); } } }, 1000);
+  const W = window.__icWit = { samples: 0, hostile: 0 };
+  window.__icWitT = setInterval(() => { for (const m of cast) { if (!m.alive) continue; W.samples++; if (HOSTILE.has(m.state)) W.hostile++; } }, 250);
   return { kind: KIND, cast: cast.length, alive: M.list.filter(m => m.alive).length, list: M.list.length };
 })()`;
 const ALLOC_SPRINT_ON = `(() => { const I = __CTX__.input; I.keys.add('KeyW'); I.keys.add('ShiftLeft'); return true; })()`;
 const ALLOC_SPRINT_OFF = `(() => { const C = __CTX__, I = C.input; I.keys.delete('KeyW'); I.keys.delete('ShiftLeft');
+  clearInterval(window.__icRearm); clearInterval(window.__icWitT); window.__icRearm = window.__icWitT = null;
   const a = C.engine.onAfterRender, i = a.indexOf(window.__icAllocHeal); if (i >= 0) a.splice(i, 1); window.__icAllocHeal = null;
   return { alive: C.machines.list.filter(m => m.alive).length, hostile: C.machines.list.filter(m => m.alive && (m.state === 'attack' || m.state === 'alert')).length }; })()`;
 
@@ -2104,6 +2114,7 @@ async function allocMachines({ PORT }) {
   if (process.env.R5_IC_OPTSTATUS) jsFlags.push('--allow-natives-syntax');                                 // diagnosis only: tier of each hot function
   if (process.env.R5_IC_TRACEDEOPT) jsFlags.push('--trace-deopt');                                         // diagnosis only: deopts per function, timed
   const diag = !!(process.env.R5_IC_NOINLINE || process.env.R5_IC_OPTSTATUS || process.env.R5_IC_TRACEDEOPT || process.env.R5_IC_PROTOWATCH || process.env.R5_IC_MICRO || process.env.R5_IC_INGAME);
+  let protoLock = null;
   const browser = await puppeteer.launch({ protocolTimeout: 900000, headless: 'new', userDataDir: dir, dumpio: false,
     args: ['--use-angle=metal', '--enable-gpu', '--ignore-gpu-blocklist', '--window-size=1600,940', `--js-flags=${jsFlags.join(' ')}`, '--enable-precise-memory-info'] });
   const r2 = (x) => Math.round(x * 100) / 100;
@@ -2127,8 +2138,8 @@ async function allocMachines({ PORT }) {
   try {
     const page = await browser.newPage();
     const errors = [];
-    page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text().slice(0, 300)); });
-    page.on('pageerror', (e) => errors.push(String(e).slice(0, 300)));
+    page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text().slice(0, process.env.R5_IC_PROTOLOCK ? 900 : 300)); });
+    page.on('pageerror', (e) => errors.push((process.env.R5_IC_PROTOLOCK ? String(e && e.stack || e) : String(e)).slice(0, process.env.R5_IC_PROTOLOCK ? 900 : 300)));
     await page.setViewport({ width: 1600, height: 900 });
     await page.goto(`http://localhost:${PORT}/?shot=1`, { waitUntil: 'domcontentloaded', timeout: 60000 });
     await page.waitForFunction('window.__READY__ === true', { timeout: 120000 });
@@ -2137,11 +2148,13 @@ async function allocMachines({ PORT }) {
     const staged = await page.evaluate(ALLOC_STAGE);
     if (staged.skip) return { pass: null, detail: staged.skip };
     if (process.env.R5_IC_PROTOWATCH) await page.evaluate(PROTOWATCH_ON);
+    if (process.env.R5_IC_PROTOLOCK) setTimeout(() => { page.evaluate(PROTOLOCK_ON).then((r) => { protoLock = r; }).catch((e) => { protoLock = { error: String(e).slice(0, 200) }; }); }, 20000);
     const srcRe = new RegExp(`^https?://(localhost|127\\.0\\.0\\.1|\\[::1\\]):${PORT}/src/`);
     const keyOf = (cf) => `${cf.functionName || '(anonymous)'} ${String(cf.url).replace(/^https?:\/\/[^/]+/, '').replace(/\?.*$/, '')}:${cf.lineNumber + 1}`;
     const ownerOf = (fn) => { const file = fn.split(' ').slice(-1)[0].replace(/:\d+$/, ''); return !MINE_RE.test(file) ? 'other' : FROZEN_MACHINE_RE.test(file) ? 'frozen-machine' : 'instruments-core'; };
     const windows = [];
     const window1 = async (name) => {
+      await page.evaluate('(() => { const W = window.__icWit; if (W) { W.samples = 0; W.hostile = 0; } return true; })()');
       const f0 = await page.evaluate('__CTX__.engine.frames');
       await cdp.send('HeapProfiler.startSampling', { samplingInterval: INTERVAL, includeObjectsCollectedByMajorGC: true, includeObjectsCollectedByMinorGC: true });
       const tS = Date.now();
@@ -2150,6 +2163,7 @@ async function allocMachines({ PORT }) {
       const tE = Date.now();
       const secs = (tE - tS) / 1000;
       const frames = (await page.evaluate('__CTX__.engine.frames')) - f0;
+      const wit = await page.evaluate('(() => { const W = window.__icWit; const r = W && W.samples ? +(W.hostile / W.samples).toFixed(3) : null; if (W) { W.samples = 0; W.hostile = 0; } return r; })()');
       const self = new Map(), caller = new Map(); let total = 0, srcSelf = 0, srcCaller = 0;
       // an accessor frame (machine.js `get heading` ...) is charged what its CALLER's megamorphic read costs: the
       // caller is recorded so the report names who reads it
@@ -2180,7 +2194,7 @@ async function allocMachines({ PORT }) {
         .sort((a, b) => b.gradedKBps - a.gradedKBps);
       const callers = {};
       for (const [g, m] of getterCallers) callers[g] = [...m.entries()].sort((a, b) => b[1] - a[1]).slice(0, 5).map(([c, b]) => `${at(b).gradedKBps} KB/s from ${c}`);
-      const w = { name, tS, tE, secs: r2(secs), frames, fps: r2(frames / secs), total: at(total), srcCaller: at(srcCaller), srcSelf: at(srcSelf), getterCallers: callers,
+      const w = { name, tS, tE, secs: r2(secs), frames, fps: r2(frames / secs), castHostile: wit, total: at(total), srcCaller: at(srcCaller), srcSelf: at(srcSelf), getterCallers: callers, getterCallersRaw: getterCallers,
         mine: rows.filter((r) => r.owner === 'instruments-core'), frozenMachine: rows.filter((r) => r.owner === 'frozen-machine'),
         topOther: rows.filter((r) => r.owner === 'other').slice(0, 12) };
       windows.push(w);
@@ -2223,6 +2237,7 @@ async function allocMachines({ PORT }) {
     for (let i = 0; i < SPRINT_WINDOWS; i++) await window1(`sprint ${i + 1}/${SPRINT_WINDOWS}`);
     const end = await page.evaluate(ALLOC_SPRINT_OFF);
     const protoLog = process.env.R5_IC_PROTOWATCH ? await page.evaluate(PROTOWATCH_OFF).catch((e) => ({ error: String(e).slice(0, 200) })) : null;
+    const protoLockLog = process.env.R5_IC_PROTOLOCK ? { locked: protoLock, hits: await page.evaluate('window.__icLockHits || null').catch(() => null) } : null;
     let micro = null;
     if (process.env.R5_IC_MICRO) {
       // diagnosis only: bytes per call of each hot function over every live machine, after the graded windows
@@ -2264,10 +2279,38 @@ async function allocMachines({ PORT }) {
     const perFn = new Map();
     windows.forEach((w, wi) => { for (const r of w.mine) { const e = perFn.get(r.fn) || { fn: r.fn, perWindow: new Array(windows.length).fill(0), self: new Array(windows.length).fill(0) }; e.perWindow[wi] = r.gradedKBps; e.self[wi] = r.selfKBps; perFn.set(r.fn, e); } });
     const fnRows = [...perFn.values()].map((e) => ({ ...e, worst: Math.max(...e.perWindow) })).sort((a, b) => b.worst - a.worst);
+    /* WHO CAN FIX EACH FRAME (W0b fix round 2; judge instruments-core/W0b option (b)). Every frame above is
+     * graded. A frame over the bar is one of:
+     *   lane      code instruments-core edits and whose allocation it causes — must be <= the bar, no ruling
+     *   legacy    a legacy species file (the `legacy.js` imports): not in this lane's §1.2 edit grant,
+     *             deleted at the W2 exit by instruments-b (plan §6)
+     *   accessor  a published-name accessor in machine.js (`get heading` ...) whose bytes are >= 90 % charged
+     *             by readers this lane may not edit (frozen gait / rig / collision, melee, the legacy species):
+     *             one HeapNumber per changed value per frame, removable only by those readers reading
+     *             `m.sc.*` (orchestrator grant)
+     * The legacy and accessor classes PASS only under an explicit orchestrator ruling recorded in the plan
+     *   <!-- r5-ruling ic-alloc-residual=carried -->
+     * Without it the gate FAILS on them. A lane frame over the bar fails whatever the plan says. */
+    const residualRuling = /^[ \t]*<!--\s*r5-ruling\s+ic-alloc-residual\s*=\s*carried\s*-->[ \t]*$/m.test(read('docs/ROUND5-PLAN.md'));
+    const legacyFiles = new Set([...read('src/entities/machines/legacy.js').matchAll(/^import \{ [A-Z][A-Za-z]* \} from '\.\/([a-z]+)\.js';$/gm)].map((m) => `/src/entities/machines/${m[1]}.js`));
+    const notLaneCaller = (k) => { const f = String(k).split(' ').slice(-1)[0].replace(/:\d+$/, ''); return !MINE_RE.test(f) || FROZEN_MACHINE_RE.test(f) || legacyFiles.has(f); };
+    const accessorShare = new Map();
+    for (const w of windows) for (const [g, m] of w.getterCallersRaw) { const e = accessorShare.get(g) || [0, 0]; for (const [c, b] of m) { e[1] += b; if (notLaneCaller(c)) e[0] += b; } accessorShare.set(g, e); }
+    const classOf = (fn) => {
+      const file = fn.split(' ').slice(-1)[0].replace(/:\d+$/, '');
+      if (legacyFiles.has(file)) return 'legacy';
+      const sh = accessorShare.get(fn);
+      if (/^(get|set) /.test(fn) && sh && sh[1] > 0 && sh[0] / sh[1] >= 0.9) return 'accessor';
+      return 'lane';
+    };
+    for (const e of fnRows) { e.cls = classOf(e.fn); const sh = accessorShare.get(e.fn); if (sh) e.frozenReaderShare = r2(sh[0] / Math.max(1, sh[1])); }
     const over = fnRows.filter((e) => e.worst > FN_BAR);
+    const overLane = over.filter((e) => e.cls === 'lane'), overResidual = over.filter((e) => e.cls !== 'lane');
     const sum = (w, k) => r2(w[k].reduce((a, r) => a + r.gradedKBps, 0));
-    const pass = errors.length === 0 && over.length === 0 && windows.every((w) => w.frames > 60) && staged.cast >= 6;
-    const fmtW = (w) => ({ name: w.name, secs: w.secs, frames: w.frames, fps: w.fps, allKBps: w.total.measuredKBps, srcCallerKBps: w.srcCaller.gradedKBps, srcSelfKBps: w.srcSelf.gradedKBps,
+    // the staging witness: the cast fought through every window (>= 75 % of cast-samples hostile)
+    const fought = windows.every((w) => w.castHostile !== null && w.castHostile >= 0.75);
+    const pass = errors.length === 0 && overLane.length === 0 && (overResidual.length === 0 || residualRuling) && windows.every((w) => w.frames > 60) && staged.cast >= 6 && fought;
+    const fmtW = (w) => ({ name: w.name, secs: w.secs, frames: w.frames, fps: w.fps, castHostile: w.castHostile, allKBps: w.total.measuredKBps, srcCallerKBps: w.srcCaller.gradedKBps, srcSelfKBps: w.srcSelf.gradedKBps,
       mineSumKBps: sum(w, 'mine'), frozenMachineSumKBps: sum(w, 'frozenMachine'),
       mine: w.mine.slice(0, 40).map((r) => `${r.gradedKBps} KB/s (self ${r.selfKBps})  ${r.fn}`), frozenMachine: w.frozenMachine.slice(0, 25).map((r) => `${r.gradedKBps} KB/s  ${r.fn}`),
       topOther: w.topOther.map((r) => `${r.gradedKBps} KB/s  ${r.fn}`), getterCallers: w.getterCallers });
@@ -2290,10 +2333,12 @@ async function allocMachines({ PORT }) {
       })() };
     }
     return { pass, detail: {
-      verdict: (pass ? 'PASS' : 'FAIL') + `: ${over.length} instruments-core frame(s) over ${FN_BAR} KB/s in at least one of ${windows.length} windows` + (over.length ? ' — ' + over.slice(0, 30).map((o) => `${o.fn} ${o.worst}`).join('; ') : '')
-        + ` | lane sum per window (KB/s): ${windows.map((w) => sum(w, 'mine')).join(' / ')} | fps ${windows.map((w) => w.fps).join(' / ')}` + (diag ? ' | DIAGNOSIS FLAGS ON (not gradeable)' : ''),
-      staged, end, functions: fnRows.slice(0, 60).map((e) => `${e.worst} KB/s worst [${e.perWindow.join(', ')}] self [${e.self.join(', ')}]  ${e.fn}`),
-      tiers, micro, inGame, protoLog, deopts, consoleErrors: errors.slice(0, 5),
+      verdict: (pass ? 'PASS' : 'FAIL') + `: ${overLane.length} lane frame(s) over ${FN_BAR} KB/s in at least one of ${windows.length} windows` + (overLane.length ? ' — ' + overLane.slice(0, 30).map((o) => `${o.fn} ${o.worst}`).join('; ') : '')
+        + ` | residual over the bar (legacy species files, W2 delete; accessors charged by readers this lane may not edit): ${overResidual.length}` + (overResidual.length ? ' — ' + overResidual.map((o) => `[${o.cls}] ${o.fn} ${o.worst}`).join('; ') : '')
+        + ` | ruling ic-alloc-residual=carried: ${residualRuling ? 'RECORDED' : 'NOT recorded (the residual fails the gate)'}`
+        + ` | lane sum per window (KB/s): ${windows.map((w) => sum(w, 'mine')).join(' / ')} | fps ${windows.map((w) => w.fps).join(' / ')} | cast hostile per window ${windows.map((w) => w.castHostile).join(' / ')}${fought ? '' : ' (STAGING FAILED: the cast did not fight through every window)'}` + (diag ? ' | DIAGNOSIS FLAGS ON (not gradeable)' : ''),
+      staged, end, residualRuling, functions: fnRows.slice(0, 60).map((e) => `${e.worst} KB/s worst [${e.perWindow.join(', ')}] self [${e.self.join(', ')}] [${e.cls}${e.frozenReaderShare !== undefined ? ' frozen-reader share ' + e.frozenReaderShare : ''}]  ${e.fn}`),
+      tiers, micro, inGame, protoLog, protoLockLog, deopts, consoleErrors: errors.slice(0, process.env.R5_IC_PROTOLOCK ? 40 : 5),
       inlining: process.env.R5_IC_NOINLINE ? 'OFF (diagnosis run, not gradeable)' : 'default',
       windows: windows.map(fmtW),
       method: `CDP HeapProfiler.startSampling (interval ${INTERVAL} B, minor+major GC objects included); ${WARM / 1000} s warm-up after staging, then ${FIGHT_WINDOWS} x ${WINDOW / 1000} s windows of the staged fight and ${SPRINT_WINDOWS} x ${WINDOW / 1000} s of sprint (after ${SPRINT_WARM / 1000} s); graded per window = max(measured KB/s, KB/frame x 60) on CALLER attribution (nearest src/** frame, gates-perf budgets.mjs alloc.attribution); a function fails if ANY window is over ${FN_BAR} KB/s; graded set = every src frame in a file instruments-core edits (incl. the legacy species files until their W2 deletion)` } };
@@ -2304,23 +2349,31 @@ async function allocMachines({ PORT }) {
   }
 }
 
+const PROTO_COLLECT = `
+  const C = __CTX__; const protos = new Map(); const seen = new Set(); let n = 0;
+  const nameOf = (p) => { try { return (Object.prototype.hasOwnProperty.call(p, 'constructor') && typeof p.constructor === 'function' && p.constructor.name) ? p.constructor.name + '.prototype' : (typeof p === 'function' ? 'ctor ' + (p.name || '?') : '?'); } catch (e) { return '?'; } };
+  const addP = (p) => { if (p && !protos.has(p)) protos.set(p, nameOf(p)); };
+  const addChain = (o) => { let p = Object.getPrototypeOf(o), d = 0; while (p && d < 10) { addP(p); if (Object.prototype.hasOwnProperty.call(p, 'constructor') && typeof p.constructor === 'function') addP(p.constructor); p = Object.getPrototypeOf(p); d++; } };
+  const walk = (o, depth) => { if (!o || (typeof o !== 'object' && typeof o !== 'function') || seen.has(o) || n > 60000) return; seen.add(o); n++; addChain(o);
+    if (depth >= 3) return; let keys; try { keys = Object.keys(o); } catch (e) { return; } if (keys.length > 400) keys = keys.slice(0, 400);
+    for (const k of keys) { let v; try { const d = Object.getOwnPropertyDescriptor(o, k); v = d && 'value' in d ? d.value : undefined; } catch (e) { continue; } if (v && (typeof v === 'object' || typeof v === 'function') && !ArrayBuffer.isView(v)) walk(v, depth + 1); } };
+  walk(C, 0); for (const m of C.machines.list) walk(m, 1);
+  for (const B of [Object, Function, Array, Map, Set, WeakMap, Promise, Error, Number, String, Boolean, Symbol, RegExp, Date, ArrayBuffer, Float32Array, Float64Array, Uint8Array, Uint16Array, Uint32Array, Int32Array]) { addP(B.prototype); }
+  addP(Object.getPrototypeOf(Float32Array.prototype)); addP(Object.getPrototypeOf([][Symbol.iterator]())); addP(Object.getPrototypeOf(new Map()[Symbol.iterator]())); addP(Object.getPrototypeOf(new Set()[Symbol.iterator]()));
+`;
 /* DIAGNOSIS ONLY (R5_IC_PROTOWATCH): every 100 ms, diff the own keys and value identities of every object a
  * machine's code reaches through a PROTOTYPE chain (the root ctx behind each machine's ctx view, the event bus,
  * every class prototype and constructor on a machine's / its AI's / its perception's chain, Object.prototype ...),
  * and log what changed and when: a change to a prototype object invalidates every optimised function whose loads
  * depend on that chain ("dependent prototype chain changed"). */
 const PROTOWATCH_ON = `(() => {
-  const C = __CTX__, M = C.machines; const ids = new WeakMap(); let nid = 1;
-  const idOf = (v) => (v !== null && (typeof v === 'object' || typeof v === 'function')) ? (ids.get(v) || (ids.set(v, nid++), ids.get(v))) : (typeof v === 'number' ? (Number.isInteger(v) && Math.abs(v) < 1073741824 ? 'smi' : 'dbl') : typeof v);
+  ${PROTO_COLLECT}
+  for (const B of [C, C.events]) protos.set(B, B === C ? 'ctx(root)' : 'ctx.events');
+  const ids = new WeakMap(); let nid = 1;
+  const idOf = (v) => (v !== null && (typeof v === 'object' || typeof v === 'function')) ? (ids.get(v) || (ids.set(v, nid++), ids.get(v))) : (typeof v === 'number' ? 'n:' + v : typeof v === 'string' ? 's:' + v.slice(0, 20) : typeof v);
   const W = window.__icProto = { objs: [], log: [], t0: Date.now() };
-  const seen = new Set();
-  const snap = (o) => { const out = new Map(); for (const k of Reflect.ownKeys(o)) { const d = Reflect.getOwnPropertyDescriptor(o, k); out.set(String(k), d ? ('value' in d ? idOf(d.value) + (d.writable ? '' : ':ro') : 'acc') : '?'); } return out; };
-  const add = (name, o) => { if (!o || seen.has(o)) return; seen.add(o); W.objs.push({ name, o, s: snap(o) }); };
-  const chain = (label, o) => { let p = o && Object.getPrototypeOf(o), d = 0; while (p && d < 8) { const cn = (Object.prototype.hasOwnProperty.call(p, 'constructor') && p.constructor && p.constructor.name) || ('#' + d); add(label + '>' + cn + '.prototype', p); if (typeof p.constructor === 'function') add(label + '>' + cn + ' (ctor)', p.constructor); p = Object.getPrototypeOf(p); d++; } };
-  add('ctx(root)', C); add('ctx.events', C.events);
-  for (const m of M.list) { chain('machine', m); if (m.ctx) chain('m.ctx', m.ctx); if (m.ai) { chain('ai', m.ai); chain('perception', m.ai.perception); chain('engage', m.ai.engage); } chain('sc', m.sc); if (m.gait) chain('gait', m.gait); }
-  chain('player', C.player); chain('vec3', C.player.position); chain('engine', C.engine); chain('terrain', C.terrain); if (C.nav) chain('nav', C.nav);
-  add('Object.prototype', Object.prototype); add('Function.prototype', Function.prototype); add('Array.prototype', Array.prototype);
+  const snap = (o) => { const out = new Map(); for (const k of Reflect.ownKeys(o)) { const d = Reflect.getOwnPropertyDescriptor(o, k); out.set(String(k), d ? ('value' in d ? idOf(d.value) + (d.writable ? '' : ':ro') : 'acc') : '?'); } out.set('#ext', Object.isExtensible(o) ? 'y' : 'n'); return out; };
+  for (const [o, name] of protos) W.objs.push({ name, o, s: snap(o) });
   W.timer = setInterval(() => {
     for (const e of W.objs) {
       const s = snap(e.o);
@@ -2331,6 +2384,20 @@ const PROTOWATCH_ON = `(() => {
     }
   }, 100);
   return { watched: W.objs.length };
+})()`;
+/* DIAGNOSIS ONLY (R5_IC_PROTOLOCK): 20 s into the warm-up, every prototype object (and constructor) on the chain of
+ * every object reachable from the root ctx (depth 3) — plus Object / Function / Array prototypes — is made
+ * NON-EXTENSIBLE, and Object.defineProperty / defineProperties / setPrototypeOf / Reflect.* / Object.assign are
+ * wrapped: any later attempt to add a property to a prototype throws (strict code) or is logged with its stack.
+ * That names the code that keeps invalidating prototype chains. Breaks that code: never in a graded run. */
+const PROTOLOCK_ON = `(() => {
+  ${PROTO_COLLECT}
+  const hits = window.__icLockHits = [];
+  const note = (what, t, k) => { if (hits.length < 60) hits.push({ t: Date.now(), what, target: protos.get(t) || '?', key: String(k), stack: String(new Error().stack).split('\\n').slice(2, 9).join(' | ') }); };
+  const wrap = (obj, name) => { const f = obj[name]; obj[name] = function (...a) { if (protos.has(a[0])) note(name, a[0], a[1]); return f.apply(this, a); }; };
+  wrap(Object, 'defineProperty'); wrap(Object, 'defineProperties'); wrap(Object, 'setPrototypeOf'); wrap(Reflect, 'defineProperty'); wrap(Reflect, 'setPrototypeOf'); wrap(Object, 'assign');
+  let locked = 0; for (const p of protos.keys()) { if (p === Object || p === Function || p === Reflect) continue; try { Object.preventExtensions(p); locked++; } catch (e) { } }
+  return { locked, walked: n };
 })()`;
 const PROTOWATCH_OFF = `(() => { const W = window.__icProto; if (!W) return null; clearInterval(W.timer);
   const by = new Map(); for (const [t, n, k, v] of W.log) { const key = n + ' ' + k; const e = by.get(key) || { n: 0, first: t, last: t, v }; e.n++; e.last = t; e.v = v; by.set(key, e); }

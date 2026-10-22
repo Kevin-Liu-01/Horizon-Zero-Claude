@@ -61,6 +61,9 @@ export class Perception {
     this._losT = 0;
     this._losCached = false;
     this._scanEmit = 0;
+    // the 'machine-scan' payload, ONE per machine and rewritten per emit (listeners read it synchronously
+    // and keep nothing: audio's ping is the only one): no object per scan pulse
+    this._scanEv = { machine, sweep: 0.5 };
   }
 
   /**
@@ -194,7 +197,8 @@ export class Perception {
       this._scanEmit -= dt;
       if (this._scanEmit <= 0) {
         this._scanEmit = c.scanPeriod * 0.5;
-        safeEmit(m.ctx, 'machine-scan', { machine: m, sweep: this.scanOffset });
+        const ev = this._scanEv; ev.sweep = this.scanOffset;
+        safeEmit(m.ctx, 'machine-scan', ev);
       }
     }
 

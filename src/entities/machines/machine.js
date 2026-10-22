@@ -163,10 +163,14 @@ export function stepRoot(m, dx, dz) { _st.sx = dx; _st.sz = dz; stepRootS(m); }
  */
 /** `Machine._updateFx` as a module function (see HOT PATHS, NO PROTOTYPE LOADS). */
 export function updateFxM(m, dt) {
-  const fx = m._fx;
-  for (let i = fx.length - 1; i >= 0; i--) {
-    if (!fx[i].update(dt)) fx.splice(i, 1);
-  }
+  // finished effects are compacted out in place (`splice` returned a fresh array per removal); an effect
+  // spawned during the pass (pushed past `n`) is kept, un-stepped, after the survivors — as before
+  const fx = m._fx, n = fx.length;
+  if (n === 0) return;
+  let w = 0;
+  for (let i = 0; i < n; i++) { const f = fx[i]; if (f.update(dt)) fx[w++] = f; }
+  for (let i = n; i < fx.length; i++) fx[w++] = fx[i];
+  fx.length = w;
 }
 
 /** `Machine._turnS` as a module function (see HOT PATHS, NO PROTOTYPE LOADS). */
@@ -261,16 +265,24 @@ export function conformM(m, dt) {
   const sc = m.sc, pos = m.position;
   const t = HOT.terrain;                 // never through m.ctx (a prototype view: see lib/hot.js)
   /* The terrain is sampled only when the root moved since the last sample (a
-   * standing machine re-uses it exactly): terrain.getHeight / getNormal take
-   * (x, z) numbers, and every call boxes both. */
+   * standing machine re-uses it exactly).
+   * W0b FIX ROUND 2: the body sits on the DRAWN ground — `terrain.heightFast`, the published bilinear read
+   * of the render mesh's own grid (terrain.js: "agrees with the DRAWN surface"), which is also what plan
+   * §8.3 binds `getHeight` itself to serve at W1 (bilinear from the baked grid). It is small enough for V8
+   * to inline, so the per-frame sample hands no boxed (x, z) to a call; the analytic `getHeight` is not
+   * (multi-octave noise), and boxing its two arguments for every moving machine every frame was this
+   * function's whole allocation. Off the grid `heightFast` itself falls back to `getHeight`. */
   const x = pos.x, z = pos.z;
   if (sc._cgOk === 0 || x !== sc._cgx || z !== sc._cgz) {
-    sc._cgy = t.getHeight(x, z);
+    sc._cgy = t.heightFast(x, z);
     // the ground NORMAL only steers a tilt eased at 3.5/s: re-sampled every 0.25 m of travel (the terrain
-    // mesh is 1.94 m), not every frame — getNormal is four more getHeight calls with boxed arguments
+    // mesh is 1.94 m), not every frame — `getNormal`'s central differences (+-0.75 m), on the same drawn grid
     const nx = x - sc._cnx, nz = z - sc._cnz;
     if (m.alignToTerrain && (sc._cgOk === 0 || nx * nx + nz * nz > 0.0625)) {
-      t.getNormal(x, z, m._gN);
+      const hL = t.heightFast(x - 0.75, z), hR = t.heightFast(x + 0.75, z);
+      const hD = t.heightFast(x, z - 0.75), hU = t.heightFast(x, z + 0.75);
+      const gx = hL - hR, gz = hD - hU, gl = Math.sqrt(gx * gx + 2.25 + gz * gz);
+      const gN = m._gN; gN.x = gx / gl; gN.y = 1.5 / gl; gN.z = gz / gl;
       sc._cnx = x; sc._cnz = z;
     }
     sc._cgx = x; sc._cgz = z; sc._cgOk = 1;
@@ -286,10 +298,30 @@ export function conformM(m, dt) {
   const nx = n.x + (g.x - n.x) * k, ny = n.y + (g.y - n.y) * k, nz = n.z + (g.z - n.z) * k;
   const nl = Math.sqrt(nx * nx + ny * ny + nz * nz) || 1;
   n.x = nx / nl; n.y = ny / nl; n.z = nz / nl;
-  _q1.setFromUnitVectors(_UP, n);
-  const hh = sc.heading * 0.5;
-  _q2._x = 0; _q2._y = Math.sin(hh); _q2._z = 0; _q2._w = Math.cos(hh);   // setFromAxisAngle(UP, heading)
-  m.root.quaternion.copy(_q1).multiply(_q2);
+  const hh = sc.heading * 0.5, sy = Math.sin(hh), cy = Math.cos(hh);
+  const rq = m.root.quaternion, re = m.root.rotation, r1 = n.y + 1;
+  if (r1 > 1e-6 && re._order === 'XYZ') {
+    /* tilt(UP -> n) x yaw(heading), written out (W0b fix round 2). `quaternion.copy(q1).multiply(q2)` fired
+     * Object3D's quaternion -> Euler sync twice per machine per frame (makeRotationFromQuaternion,
+     * setFromRotationMatrix, MathUtils.clamp: three.js calls handing doubles across, which allocate in this
+     * frame), so the same arithmetic is done here: setFromUnitVectors((0,1,0), n) = normalize(n.z, 0, -n.x,
+     * n.y + 1), Hamilton product with (0, sin h/2, 0, cos h/2), and three's own XYZ Euler extraction, stored
+     * into the private fields so no callback re-derives either. Identical values to the three.js path. */
+    const ql = Math.sqrt(n.z * n.z + n.x * n.x + r1 * r1);
+    const ax = n.z / ql, az = -n.x / ql, aw = r1 / ql;
+    const x = ax * cy - az * sy, y = aw * sy, z = az * cy + ax * sy, w = aw * cy;
+    rq._x = x; rq._y = y; rq._z = z; rq._w = w;
+    const x2 = x + x, y2 = y + y, z2 = z + z;
+    const xx = x * x2, xy = x * y2, xz = x * z2, yy = y * y2, yz = y * z2, zz = z * z2, wx = w * x2, wy = w * y2, wz = w * z2;
+    const m11 = 1 - (yy + zz), m12 = xy - wz, m13 = xz + wy, m22 = 1 - (xx + zz), m23 = yz - wx, m32 = yz + wx, m33 = 1 - (xx + yy);
+    re._y = Math.asin(m13 < -1 ? -1 : m13 > 1 ? 1 : m13);
+    if (m13 < 0.9999999 && m13 > -0.9999999) { re._x = Math.atan2(-m23, m33); re._z = Math.atan2(-m12, m11); }
+    else { re._x = Math.atan2(m32, m22); re._z = 0; }
+  } else {
+    _q1.setFromUnitVectors(_UP, n);
+    _q2._x = 0; _q2._y = sy; _q2._z = 0; _q2._w = cy;   // setFromAxisAngle(UP, heading)
+    rq.copy(_q1).multiply(_q2);
+  }
   // smoothed acceleration → pitch cue for subclass body motion
   sc._accelPitch += (sc._speed - sc._accelPitch) * (1 - Math.exp(-4 * dt));
   /* SETTLED VALUES SETTLE (W0b fix round 2): every ease above is exponential, so a machine standing still
@@ -365,19 +397,33 @@ export function updateEyesM(m, dt, t) {
       // solid eye cores would linger as black balls on a dead machine
       if (e.kind === 'basic') e.mat.opacity = m.state === 'dead' ? 0 : 1;
     } else {
-      const em = e.mat.emissive;
-      em.r = ec.r; em.g = ec.g; em.b = ec.b;
       // an Instrument's lamp glass is the state colour at emissive x2.5 (bible §7.2 / §10 "lamp
       // glass ... emissive x2.5"): it clears the bloom threshold, so a lens reads at noon.
-      // Written only when it changed (`e.last`): a store into a material is boxed.
       const v = m.lamp ? LAMP_GLASS_GAIN * pulse : e.base * pulse;
-      if (v !== e.last) { e.mat.emissiveIntensity = v; e.last = v; }
+      /* W0b FIX ROUND 2: the pulse is folded into the emissive COLOUR and the intensity held at 1.
+       * three.js uploads emissive x emissiveIntensity, so the lens is lit exactly as before, but a
+       * per-frame write is now three stores into a THREE.Color (one class: no box) instead of a double
+       * stored into a material (a dozen material shapes: a megamorphic store boxes the value) — a wary
+       * lamp's 1 Hz pulse changes it every frame. */
+      const em = e.mat.emissive;
+      em.r = ec.r * v; em.g = ec.g * v; em.b = ec.b * v;
+      if (e.last !== 1) { e.mat.emissiveIntensity = 1; e.last = 1; }
     }
   }
   // death: EVERY light dies out (research 0.4) — body strips fade with the
   // eyes, and identity-colored part glows (canisters/loaders/vents) gutter (lightK above)
   const emis = m._emisMats, ek = (0.6 + pulse * 0.7) * lightK;
-  if (ek !== sc._eEmis) { sc._eEmis = ek; for (let i = 0; i < emis.length; i++) emis[i].emissiveIntensity = ek; }
+  if (ek !== sc._eEmis) {
+    sc._eEmis = ek;
+    // the same fold for the body strips: their own emissive colour (kept in `_emisBase` when first
+    // pulsed) x the pulse, intensity 1 — three stores into a THREE.Color, never a boxed material store
+    let base = m._emisBase;
+    if (base === null || base.length !== emis.length * 3) base = emisBaseOf(m);
+    for (let i = 0; i < emis.length; i++) {
+      const c = emis[i].emissive, j = i * 3;
+      c.r = base[j] * ek; c.g = base[j + 1] * ek; c.b = base[j + 2] * ek;
+    }
+  }
   if (lightK < 1) {
     for (let i = 0; i < m._partGlows.length; i++) {
       const g = m._partGlows[i];
@@ -385,6 +431,24 @@ export function updateEyesM(m, dt, t) {
       else g.mat.emissiveIntensity = g.base * lightK;
     }
   }
+}
+
+/**
+ * The body strips' own emissive colours, captured ONCE per material (`userData.emisBase`, the colour
+ * the model carried) when the strip is first pulsed, with its intensity set to 1: from then on
+ * `updateEyesM` pulses the colour, not the intensity (see there). The per-machine table is rebuilt only
+ * if the strip list changed size (dispose).
+ */
+function emisBaseOf(m) {
+  const emis = m._emisMats, base = new Float32Array(emis.length * 3);
+  for (let i = 0; i < emis.length; i++) {
+    const mat = emis[i], ud = mat.userData;
+    let b = ud.emisBase;
+    if (!b) { const c = mat.emissive; b = ud.emisBase = [c.r, c.g, c.b]; mat.emissiveIntensity = 1; }
+    base[i * 3] = b[0]; base[i * 3 + 1] = b[1]; base[i * 3 + 2] = b[2];
+  }
+  m._emisBase = base;
+  return base;
 }
 
 /**
@@ -774,6 +838,7 @@ export class Machine {
     this._eyeColor = this._eyeCalm.clone();
     this._eyeMats = [];   // sprite/basic materials fully colored by state
     this._emisMats = [];  // model emissive materials tinted by state
+    this._emisBase = null; // their own emissive colours (emisBaseOf), built when first pulsed
     this._collectEmissive();
 
     this.weakPoints = [];
