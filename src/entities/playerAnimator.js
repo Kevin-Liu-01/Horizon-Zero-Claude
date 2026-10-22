@@ -558,7 +558,7 @@ export class PlayerAnimator {
     this._restKick = [];
     for (const k of (prof?.tune?.restKick || [])) {
       const e = makeEntry(k.bone), tip = this.bones[k.tip] || null;
-      if (e && tip) this._restKick.push({ e, tip, dir: new THREE.Vector3().fromArray(k.dir).normalize(), w: k.w ?? 1 });
+      if (e && tip) this._restKick.push({ e, tip, dir: new THREE.Vector3().fromArray(k.dir).normalize(), w: k.w ?? 1, moveDamp: k.moveDamp ?? 0 });
     }
     // 26 twist joints: swing-twist redistribution targets (player-anim-06)
     this._twists = [];
@@ -1883,7 +1883,10 @@ export class PlayerAnimator {
       _rkB.sub(_rkA);
       if (_rkB.lengthSq() < 1e-8) continue;
       _rkQ.setFromUnitVectors(_rkB.normalize(), K.dir);
-      if (K.w < 1) _rkQ.slerp(Q_IDENT, 1 - K.w);
+      // (`moveDamp`: on the move the springs trail it behind her by
+      // themselves; the kick is the STANDING read)
+      const kw = K.w * (1 - K.moveDamp * clamp(this._moveW, 0, 1));
+      if (kw < 1) _rkQ.slerp(Q_IDENT, 1 - kw);
       this._rotQL(K.e, _rkQ);
     }
     this._springs(dt, t, ph, speed, moveW, runW);

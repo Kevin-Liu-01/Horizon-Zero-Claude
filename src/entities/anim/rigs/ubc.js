@@ -238,7 +238,10 @@ export const UBC_TUNE = {
   // island's wind stands
   // (more out to her left than back: kicked straight back it rode into the
   // line from a chase lens to her crown — A31c's run-away rows)
-  restKick: [{ bone: 'dyn_wrapSash_01', tip: 'dyn_wrapSash_end', dir: [0.68, -0.62, -0.39] }],
+  // `moveDamp`: on the move the kick fades by this share of the gait weight —
+  // the springs trail the tail behind her running, and the kicked rest held
+  // it out of a chase lens's frame (A31c's run rows' onFrac)
+  restKick: [{ bone: 'dyn_wrapSash_01', tip: 'dyn_wrapSash_end', dir: [0.68, -0.62, -0.39], moveDamp: 0.7 }],
   // the Head bone's standing height over her feet (camera stance follow; Aloy's
   // head_0104 stood at 1.36, the Round-4 HEAD_REST); measured idle on flat ground
   headRest: 1.468,
