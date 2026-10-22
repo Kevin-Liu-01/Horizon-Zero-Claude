@@ -853,7 +853,7 @@ function gpuTierAssert(box) {
         ['lever 7: + anisotropic filtering capped, colour (sRGB) textures ' + SHIPPED.maxAnisotropy + 'x / data textures (normal, rough/AO) ' + SHIPPED.maxAnisotropyData + 'x = shipped ' + DEFAULT_TIER, SHIPPED],
       ];
       // the alternatives the decision was taken against (fix round 1 shipped 2x / 2x), unless one is the shipped row
-      for (const [c, d, why] of [[2, 2, 'the fix-round-1 row'], [4, 4, 'every texture at 4x']]) {
+      for (const [c, d, why] of [[2, 2, 'the fix-round-1 row'], [2, 4, 'colour at 2x'], [4, 4, 'every texture at 4x']]) {
         if (SHIPPED.maxAnisotropy === c && SHIPPED.maxAnisotropyData === d) continue;
         chain.push(['NOT shipped: shipped row with anisotropy ' + c + 'x colour / ' + d + 'x data (' + why + ')', Object.assign({}, SHIPPED, { maxAnisotropy: c, maxAnisotropyData: d })]);
       }
@@ -1249,7 +1249,7 @@ const V33B_SETUP = `(async () => { const __work = (async () => {
  *   3  NOT SHIPPED: the shipped levers with the alternative anisotropy row
  *      (fix round 1's 2x on every texture, or 4x if 2x / 2x is what ships;
  *      A-gpu-tier's lever record measures it)
- *   4  the shipped `high` (fix round 2: colour textures 2x, data textures 4x)
+ *   4  the shipped `high` (fix round 2: colour textures 1x, data textures 4x)
  * Top band: the four full frames at 16:9 (400 x 225), the crop box outlined
  * in red. Below: the four crops of the far ground at their native aspect,
  * nearest-neighbour, 800 x 240 each (x1.07 at DPR 1.5, x1.28 at 1.25), in a

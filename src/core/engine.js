@@ -86,14 +86,14 @@ export const QUALITY_TIERS = {
   },
   medium: {
     dprCap: 1.25, msaa: 0, gtao: false, gtaoScale: 0.25, smaa: true, smaaHalfFloat: false, csmMapCaps: [2048, 1024],
-    postFold: true, csmFarCadence: 2, maxAnisotropy: 2, maxAnisotropyData: 2,
+    postFold: true, csmFarCadence: 2, maxAnisotropy: 1, maxAnisotropyData: 4,
     bloom: true, sizeCullPx: 9,
     shadowCullDistance: 95, shadowCasterBudget: 95, shadowType: THREE.PCFShadowMap, drs: true, drsFloor: 0.65,
   },
   /** THE SHIPPED DEFAULT (W0b decision, A-gpu-tier / A-rt-ledger). */
   high: {
     dprCap: 1.25, msaa: 0, gtao: true, gtaoScale: 0.25, smaa: true, smaaHalfFloat: false, csmMapCaps: [2048, 1024],
-    postFold: true, csmFarCadence: 2, maxAnisotropy: 2, maxAnisotropyData: 4,
+    postFold: true, csmFarCadence: 2, maxAnisotropy: 1, maxAnisotropyData: 4,
     bloom: true, sizeCullPx: 7,
     shadowCullDistance: 120, shadowCasterBudget: 150, shadowType: THREE.PCFSoftShadowMap, drs: true, drsFloor: 0.7,
   },

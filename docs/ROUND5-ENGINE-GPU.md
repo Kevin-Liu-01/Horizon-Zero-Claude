@@ -19,7 +19,7 @@ re-run on this code, in this tree, on Oct 22.
 
 | finding | what was done | result now |
 |---|---|---|
-| **Fix round 1's own film failed its own criterion** (`V-gpu-tier-look`: with the anisotropy cap at 2× on every texture, the salt pan's crust became faint horizontal streaks — fix round 1's report said "I would not pass it myself") | Re-filmed per texture ROLE on the gate's crop (`X-role-film`, `X-role2-film`): the crust and the dune ripples are drawn by the DATA textures (the normal + rough/AO packs). **The cap is now split by role** (engine grant, tier table): `maxAnisotropy` caps colour (sRGB) textures, new `maxAnisotropyData` caps data textures. Shipped `high`: **colour 2×, data 4×**. Mechanism verified on the GL side (`X-role2-check`) | `V-gpu-tier-look` crop 4 (shipped) shows the crust and the ripples as a softer crop 2 (8×); crop 3 (fix round 1's 2× / 2×) shows the streaks (§5.3). A-gpu-tier on the new row: §5.1 |
+| **Fix round 1's own film failed its own criterion** (`V-gpu-tier-look`: with the anisotropy cap at 2× on every texture, the salt pan's crust became faint horizontal streaks — fix round 1's report said "I would not pass it myself") | Re-filmed per texture ROLE on the gate's crop (`X-role-film`, `X-role2-film`): the crust and the dune ripples are drawn by the DATA textures (the normal + rough/AO packs). **The cap is now split by role** (engine grant, tier table): `maxAnisotropy` caps colour (sRGB) textures, new `maxAnisotropyData` caps data textures. Shipped `high` (and `medium`): **colour 1×, data 4×** — 2× / 4× keeps the crust as well but straddles a GPU clock step (interleaved `X-role2-sim`: 2× / 4× 12.05 ms with a 19.18 burst, 1× / 4× 9.91, 2× / 2× 10.11, 4× / 4× 17.57; `docs/ROUND5-ENGINE.md` §3.4). Mechanism verified on the GL side (`X-role2-check`) | `V-gpu-tier-look` crop 4 (shipped) shows the crust and the ripples as a softer crop 2 (8×); crop 3 (fix round 1's 2× / 2×) shows the streaks (§5.3). A-gpu-tier on the new row: §5.1 |
 | `V-gpu-tier-look` was three columns of squashed tiles | Four configurations (Round-4 `high` / shipped levers at 8× / the alternative NOT shipped / SHIPPED), full frames at 16:9, crops at their native aspect ×1.07–1.28 nearest | filmed in `F4` |
 | The POC did not boot in the re-created tree (`A22`, `A108`, `A109` failed "did not boot within 90 s" in `F3`) | Re-created the two gitignored, untracked, read-only symlinks to main's files (`public/models/r5-poc/sounding-ring.glb`, `models-staging/quaternius-animatedmech/Mike.gltf`), as in round 0 | `P1`, `F4`: PASS |
 | `docs/ROUND5-ENGINE.md` §1.1 said "provisioned, never allocated: 0" | The ledger has always listed `post:pingB` (`postTarget`, 18 MB RGBA16F) as provisioned-not-allocated in the direct topology. Corrected: allocated only while a pass after the grade (the studio pass) needs it, then 145.27 MB, still ≤ 170 | doc fixed |
@@ -29,8 +29,8 @@ re-run on this code, in this tree, on Oct 22.
 
 | item | file | status |
 |---|---|---|
-| the GPU tier decision: shipped `high` = DPR cap 1.25 + GTAO ¼ + SMAA-only + SMAA RGBA8 + far cascades 1024 (round 0) + direct post topology + post fold + far-cascade cadence 2 (fix round 1) + **anisotropy colour 2× / data 4×** (fix round 2) | `src/core/engine.js` (tier table, `applyTier`, `_applyAnisotropyCap`, `_anisoRoles`, `_anisoMat`, `_anisoTex`, `_anisoSet`; fix round 1's `_applyPostTopology`, `_postFold`, `_bloomFold`, `_gtaoInPlace`, `_csmUpdate`, `ScenePass`, `OutputGradeShader`) | done |
-| `A-gpu-tier` as a measured exit gate, before/after per lever | `tools/gates.r5.engine-gpu.mjs` (`A-gpu-tier-box` + `A-gpu-tier`); the lever record now ends with the shipped split and two NOT-shipped rows (2× / 2×, 4× / 4×) | §5.1 |
+| the GPU tier decision: shipped `high` = DPR cap 1.25 + GTAO ¼ + SMAA-only + SMAA RGBA8 + far cascades 1024 (round 0) + direct post topology + post fold + far-cascade cadence 2 (fix round 1) + **anisotropy colour 1× / data 4×** (fix round 2) | `src/core/engine.js` (tier table, `applyTier`, `_applyAnisotropyCap`, `_anisoRoles`, `_anisoMat`, `_anisoTex`, `_anisoSet`; fix round 1's `_applyPostTopology`, `_postFold`, `_bloomFold`, `_gtaoInPlace`, `_csmUpdate`, `ScenePass`, `OutputGradeShader`) | done |
+| `A-gpu-tier` as a measured exit gate, before/after per lever | `tools/gates.r5.engine-gpu.mjs` (`A-gpu-tier-box` + `A-gpu-tier`); the lever record now ends with the shipped split and three NOT-shipped rows (2× / 2×, 2× / 4×, 4× / 4×) | §5.1 |
 | what the tier costs the picture, filmed | `V-gpu-tier-look` (re-laid out, four configurations) | filmed (`F4`), NEEDS-JUDGE; lane reading PASS (§5.3) |
 | `A-rt-ledger` graded (ruling `rt-ledger-bar=W0b`) | same file; `tools/r5-probes/rt-ledger.mjs` (unchanged: re-verified to the byte) | 127.27 MB ≤ 170, 342.45 MB ≤ 450; PENDING only on gates-perf's `budgets.mjs` line; PASS with it (`L12`) |
 | GTAO lattice fix intact (A108 / A109 / V33b) on the folded chain | `engine.js`; gates unchanged | A108 PASS, A109 PASS, V33b filmed |
@@ -53,7 +53,7 @@ file). Two untracked, gitignored, read-only symlinks to main's files keep the PO
 | bloom composite | full-res additive blend | **added in the grade pass** |
 | post topology | resolve copy, HalfFloat ping-pong | **direct; `renderTarget2` RGBA8; `postTarget` released** |
 | CSM | 3 × 2048, every frame | **2048 + 2 × 1024; cascades 1/2 alternate frames** |
-| anisotropic filtering | as authored (POC ground 8×) | **colour (sRGB) textures 2×, data textures (normal, rough/AO) 4×** |
+| anisotropic filtering | as authored (POC ground 8×; the game's terrain detail and grass cards 4×) | **colour (sRGB) textures 1× (trilinear), data textures (normal, rough/AO) 4×** |
 | render targets, DPR 1.25 | 340.74 MB (437.75 at its 1.5 cap) | **127.27 MB** |
 | staged fight, textures + geometry + RTs | 891.87 MB (W0a content) | **342.45 MB** |
 | Pans vista / empty-frame GPU (gate reading) | 21.6 / 12.8 ms | §5.1 |
@@ -91,7 +91,7 @@ never bound as a write target; the studio pass appended after SMAA still gets a 
 allocated on demand); `setGrade(false)` keeps the tonemap and the folded AO/bloom; disabling the grade pass
 brings back Round 4's in-place blends. **New in fix round 2:** `renderer.capabilities.getMaxAnisotropy()`
 answers the HIGHER of the two role caps (4 at `high`); a lane that sets `texture.anisotropy` from it gets 4,
-and the engine lowers that texture to its role's cap after three uploads it (colour textures: 2). A lane that
+and the engine lowers that texture to its role's cap after three uploads it (colour textures: 1). A lane that
 swaps a material's texture to one already uploaded elsewhere is swept on the next texture-count change.
 
 ### 3.2 `tools/r5-probes/rt-ledger.mjs`
@@ -196,7 +196,7 @@ Sheets in `scratchpad/r5/engine-gpu/run/F4/` (`V20-aa-crop@r5.png`, `V33b-no-ao-
 - **V-gpu-tier-look** (`F4`): top band, frames 1, 2 and 4 are the same scene — same light, the ring's ellipse
   shadow on the pan, grade, bloom on the sky; 2 and 4 are a little softer than 1 (DPR 1.25 against 1.5).
   Crops, magnified: crop 1 (Round 4) shows the salt pan's light polygonal crust crisply and the dune ripples
-  in front; crop 2 (shipped levers, 8×) the same, softer; **crop 4 (SHIPPED, colour 2× / data 4×) still shows
+  in front; crop 2 (shipped levers, 8×) the same, softer; **crop 4 (SHIPPED, colour 1× / data 4×) still shows
   the polygonal crust across the pan and the ripples on the dune — a softer crop 2, no streaks**; crop 3 (NOT
   shipped: fix round 1's 2× / 2×) shows what fix round 1 shipped: the crust gone into faint horizontal
   streaks, the ripples nearly gone. My reading: PASS (fix round 1's shipped row would have failed it).
@@ -212,24 +212,28 @@ Sheets in `scratchpad/r5/engine-gpu/run/F4/` (`V20-aa-crop@r5.png`, `V33b-no-ao-
 
 ## 6. Honest gaps
 
-1. **The split is tuned on the POC.** The crust lives in the POC ground's normal maps; the real Pans at W1
+1. **Colour textures get no anisotropic filtering at `high` (1×, trilinear).** On the POC that is invisible
+   at the gate's crop because the far relief is in the normal maps, but any albedo-borne detail seen at a
+   grazing angle (painted lines, text, the Round-4 grass cards' sRGB atlas, 4× in Round 4) is blurrier along
+   the view direction than in Round 4. 2× / 4× was the better picture and the riskier bar (§0).
+2. **The split is tuned on the POC.** The crust lives in the POC ground's normal maps; the real Pans at W1
    (world-ground, plan §4.3: ≤ 3 layers, triplanar on slopes only) are about half the POC's fetches, and
    `A-gpu-tier` re-runs there (plan §6). The lever record carries the 4× / 4× row each time so `high` can go
    back to 4× on everything when it fits.
-2. **The GPU timer reads a clock state, not a cost** (`docs/ROUND5-ENGINE.md` §3.4, calibration). One
+3. **The GPU timer reads a clock state, not a cost** (`docs/ROUND5-ENGINE.md` §3.4, calibration). One
    configuration reads several ms apart between 2 s bursts; another process on the GPU raises the clock and
    LOWERS the reading. Nothing in the gate was changed for this; a capacity instrument would be a ruling.
-3. **`A-rt-ledger`'s `budgets.mjs` clause stays PENDING in this tree** (gates-perf's file); proved passing
+4. **`A-rt-ledger`'s `budgets.mjs` clause stays PENDING in this tree** (gates-perf's file); proved passing
    with the one line (`L12`).
-4. **A21's GPU term** fails at baseline (R33: listed, not graded); this tree reads it unattributable on a loud
+5. **A21's GPU term** fails at baseline (R33: listed, not graded); this tree reads it unattributable on a loud
    box (`F4`) or FAIL (`F3`, 83–134 ms at raw DPR 2); draws and triangles PASS.
-5. **Box quietness.** Six lanes and their judges share one GPU; other lanes' gate Chromes start between the
+6. **Box quietness.** Six lanes and their judges share one GPU; other lanes' gate Chromes start between the
    slot holders. The gate's own witness samples the box only at its start; `run/<tag>.box` says what my
    monitor saw during each timed run.
-6. **The role rule is the colour space.** A colour texture authored in a linear colour space (a float/HDR
+7. **The role rule is the colour space.** A colour texture authored in a linear colour space (a float/HDR
    albedo) is treated as data (gets the 4× cap). None exists today. A texture swapped onto a material without
    any texture being uploaded or disposed that frame is lowered at the next texture-count change.
-7. **The POC is not shipped content** and the re-staged gates need `?poc=biome`, `window.__R5BIOME__` and the two
+8. **The POC is not shipped content** and the re-staged gates need `?poc=biome`, `window.__R5BIOME__` and the two
    symlinks of §0 until `A-gpu-tier` re-stages on the W1 Pans (round 0 gap, unchanged).
 
 ## 7. For other lanes and the orchestrator
@@ -242,7 +246,7 @@ Sheets in `scratchpad/r5/engine-gpu/run/F4/` (`V20-aa-crop@r5.png`, `V33b-no-ao-
 - **gates-perf:** add `export { RT_LEDGER } from './r5-probes/rt-ledger.mjs';` to `tools/budgets.mjs` (leaf
   module, no cycle); `A-vram-ledger` can reuse `VRAM_CENSUS`.
 - **world-ground (W1):** the ground shader is the vista's cost; keep relief in the normal maps (data textures
-  get 4× at `high`) and expect albedo at 2×. §4.3's limits are what let `high` return to 4× everywhere.
+  get 4× at `high`) and expect albedo at 1× (trilinear) on the POC's evidence; the W1 re-grade can raise it. §4.3's limits are what let `high` return to 4× everywhere.
 - **world-sky (W1):** cascades ≥ 1 render on alternate frames at `high` (`csmFarCadence`); ask `enableCSM`
   for what you want, `engine.csmMapSizes` says what you got. A camera cut shows one frame of the previous
   far-cascade map.
