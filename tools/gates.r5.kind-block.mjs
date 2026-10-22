@@ -730,11 +730,17 @@ const SIL40 = (spec) => `(async () => {
  * lamp face turned to the sun (the clear 40 m line whose lens axis is closest to the sun's azimuth),
  * 13:00. What is compared, at 15 m on the lens axis:
  *   glass   the lit RING (the token-coloured glass outside the bloom core: the dimmest lit part)
- *   hull    what the glass sits in: the lamp drum face around it (between the glass and the bezel)
- * Reported, not graded: the core, the bezel, and the machine's own surface beyond the lamp (bone
- * glaze, masked to machine pixels with a flat-ink pass so sky and ground are never counted) with its
- * ratio — a bone lamp against sunlit bone glaze is capped near 1.2 : 1 by the display itself
- * ((1 + 0.05) / (0.82 + 0.05)), which is why every lamp carries its own dark drum face (lamps.js).
+ *   face    what the glass sits in: the lamp drum face around it (between the glass and the bezel)
+ *   hull    the machine's own surface beyond the lamp drum (masked to machine pixels with a flat-ink
+ *           pass so sky and ground are never counted), 1.1-1.8 face radii out
+ * W0b FIX ROUND 2 (judge finding "A-weak40's graded contrast compares two shader constants"): the
+ * ring and the drum face are both unlit HDR constants in lamps.js, so ring vs face alone cannot fail
+ * on any hull. The graded contrast is the WORSE of the two: min(glass vs face, glass vs hull) >= 3,
+ * each a luminance ratio of medians of rendered pixels — plan §9 says "vs hull", and the hull term is
+ * scene-lit, so a pale kind on a pale glaze fails it.
+ * CALIMA: graded the same way under `setWeather('calima')` when the environment publishes that state;
+ * until world-sky does (W1, E12) the clause is PENDING and the gate's verdict is PENDING (pass: null),
+ * never PASS (plan §9: a missing API reports PENDING).
  */
 const WEAK40 = (spec) => `(async () => {
   ${KB_PRELUDE(spec)}
@@ -880,25 +886,52 @@ const WEAK40 = (spec) => `(async () => {
   const med = (a) => { const s = a.slice().sort((x, y) => x - y); return s.length ? s[s.length >> 1] : null; };
   const ratio = (a, b) => (a === null || b === null) ? null : (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05);
   const Lg = med(ring), Lf = med(face), Lo = med(outer), Lc = core.length ? Math.max(...core) : null;
-  const contrast = ratio(Lg, Lf);
+  const vsFace = ratio(Lg, Lf), vsHull = ratio(Lg, Lo);
+  const contrast = (vsFace === null || vsHull === null) ? null : Math.min(vsFace, vsHull);
   const sizeOk = __s.KIND === 'peg' || (hitPx40 !== null && hitPx40 >= 5 && litDiam40 >= 5);
-  const contrastOk = contrast !== null && contrast >= 3 && ring.length >= 8 && face.length >= 8 && !!sunPlace && sunAt15 >= 0.9;
-  const calimaNote = (env.weatherStates || []).includes('calima') ? null : 'calima: the environment has no calima state until world-sky W1 (E12); 13:00 clear measured as the trade stand-in';
-  return { pass: sizeOk && contrastOk, detail: {
+  const contrastOk = contrast !== null && contrast >= 3 && ring.length >= 8 && face.length >= 8 && outer.length >= 8 && !!sunPlace && sunAt15 >= 0.9;
+  // ---- calima: the same read under the calima state, when the environment publishes it (world-sky W1)
+  let calima = null;
+  if ((env.weatherStates || []).includes('calima')) {
+    env.setWeather('calima', 0.05);
+    await new Promise(r => setTimeout(r, 900));
+    const pxC = await grab(N);
+    const lumC = (j) => { const c = [pxC[j], pxC[j + 1], pxC[j + 2]].map(v => Col.srgbToLinear(v / 255)); return 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2]; };
+    const rC = [], fC = [], oC = [];
+    for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
+      const d = Math.hypot(x - C0, y - C0), j = (y * N + x) * 4;
+      if (d <= coreZone) continue;
+      if (d <= apR - 0.75) rC.push(lumC(j));
+      else if (d >= apR + 1 && d <= discR * L.BEZEL_IN - 0.75) fC.push(lumC(j));
+      else if (d >= discR * 1.1 && d <= discR * 1.8 && maskPx[j] < 128) oC.push(lumC(j));
+    }
+    const g = med(rC), f = med(fC), o = med(oC), cf = ratio(g, f), ch = ratio(g, o);
+    const c = (cf === null || ch === null) ? null : Math.min(cf, ch);
+    calima = { glassRingLum: g === null ? null : +g.toFixed(3), drumFaceLum: f === null ? null : +f.toFixed(3), hullLum: o === null ? null : +o.toFixed(3),
+      glassVsFace: cf === null ? null : +cf.toFixed(2), glassVsHull: ch === null ? null : +ch.toFixed(2), ratio: c === null ? null : +c.toFixed(2),
+      ok: c !== null && c >= 3 && rC.length >= 8 && fC.length >= 8 && oC.length >= 8 };
+    env.setWeather('clear', 0.05);
+  }
+  const calimaClause = calima ? (calima.ok ? 'pass' : 'FAIL') : 'PENDING: the environment publishes no calima state until world-sky W1 (E12); graded here automatically once it does';
+  const tradeOk = sizeOk && contrastOk;
+  return { pass: !tradeOk ? false : calima ? calima.ok : null, detail: {
+    verdict: !tradeOk ? 'FAIL' + (sizeOk ? '' : ' size40') + (contrastOk ? '' : ' contrast13h') : calima ? (calima.ok ? 'PASS (13:00 and calima)' : 'FAIL calima') : 'PENDING — every 13:00 clause PASSES; the calima clause awaits world-sky W1',
     kind: __s.KIND, fixture: __KB.fixture, primaryWeakPoint: prim ? prim.name : null,
     size40: { hitSpherePx: hitPx40 === null ? null : +hitPx40.toFixed(1), lampFacePx: +(2 * discR40).toFixed(1), litGlassEquivDiameterPx: +litDiam40.toFixed(1), litPixels: lit40, ok: sizeOk,
       estimator: 'lit glass = pixels within dE2000 10 of the calm token inside the projected aperture (+1 px), the machine and its lamp alone in the frame (haze and output pass applied)' },
-    contrast13h: { glassRingLum: Lg === null ? null : +Lg.toFixed(3), drumFaceLum: Lf === null ? null : +Lf.toFixed(3), ratio: contrast === null ? null : +contrast.toFixed(2), ok: contrastOk,
+    contrast13h: { glassRingLum: Lg === null ? null : +Lg.toFixed(3), drumFaceLum: Lf === null ? null : +Lf.toFixed(3), hullLum: Lo === null ? null : +Lo.toFixed(3),
+      glassVsFace: vsFace === null ? null : +vsFace.toFixed(2), glassVsHull: vsHull === null ? null : +vsHull.toFixed(2),
+      ratio: contrast === null ? null : +contrast.toFixed(2), ok: contrastOk,
       pixels: { ring: ring.length, face: face.length, core: core.length, bezel: bezel.length, outerHull: outer.length },
       coreMaxLum: Lc === null ? null : +Lc.toFixed(3), bezelLum: med(bezel) === null ? null : +med(bezel).toFixed(3),
       outerHullLum: Lo === null ? null : +Lo.toFixed(3), glassVsOuterHull: ratio(Lg, Lo) === null ? null : +ratio(Lg, Lo).toFixed(2), coreVsOuterHull: ratio(Lc, Lo) === null ? null : +ratio(Lc, Lo).toFixed(2),
       sunlit: { lensAxisDotSunAzimuth: sunAzDot, sunPlacementFound: !!sunPlace, spotsTried: sunPlace ? sunPlace.moved + 1 : null,
         lensAxisDeg: sunPlace ? sunPlace.axisDeg : null, sunAzimuthDeg: sunPlace ? sunPlace.sunDeg : null, lensAxisDotSunAt15m: sunAt15,
         sunElevationDeg: env.sunDir ? +(Math.asin(Math.max(-1, Math.min(1, env.sunDir.y))) * 180 / Math.PI).toFixed(1) : null },
-      graded: 'glass = median luminance of the lit token RING (outside the bloom core); hull = median of the lamp drum face around it (glass edge + 1 px to the bezel); 15 m on the lens axis, 13:00, the lens turned to the sun',
-      reported: 'outer hull = machine pixels (flat-ink mask) 1.1-1.8 face radii out: the bone glaze beyond the lamp drum' },
-    contrastClause: contrastOk ? 'pass (13:00, sunlit face, rendered pixels at 15 m)' : 'FAIL',
-    calimaNote } };
+      graded: 'ratio = min(glass vs face, glass vs hull) >= 3: glass = median luminance of the lit token RING (outside the bloom core); face = median of the lamp drum face around it (glass edge + 1 px to the bezel); hull = median of the machine pixels (flat-ink mask) 1.1-1.8 face radii out, beyond the drum; 15 m on the lens axis, 13:00, the lens turned to the sun',
+      percentiles: (() => { const s2 = outer.slice().sort((a, b) => a - b); const q = (f) => s2.length ? +s2[Math.min(s2.length - 1, Math.floor(f * s2.length))].toFixed(3) : null; return { hullP25: q(0.25), hullP50: q(0.5), hullP75: q(0.75), hullP90: q(0.9), glassVsHullP75: ratio(Lg, q(0.75)) === null ? null : +ratio(Lg, q(0.75)).toFixed(2) }; })() },
+    contrastClause: contrastOk ? 'pass (13:00, sunlit face, rendered pixels at 15 m; min of glass vs face and glass vs hull)' : 'FAIL',
+    calima, calimaClause } };
 })()`;
 
 /** A-linked-attack: after its tool is torn, the linked attack fires 0 times in a 60 s duel. */

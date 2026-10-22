@@ -2,6 +2,17 @@ import * as THREE from 'three';
 import { VFX_COLORS } from '../../../instruments/lib/vfx.js';
 import { attackTable, SCORING } from './tables.js';
 import { aiRandom } from './rng.js';
+import { HOT } from '../../../instruments/lib/hot.js';
+import { _st, stepRootS } from '../machine.js';
+
+/*
+ * THE GENERIC MOVES' PER-FRAME WRITES (W0b fix round 2, the memory rule): an `onUpdate` runs every frame
+ * of every attack on a dozen machine classes, so it never goes through the machine's prototype accessors
+ * (`m.heading = x` / `m._speed = x` are setter CALLS taking a double: boxed) nor `m.moveRoot(dx, dz)` /
+ * `THREE.MathUtils.damp(...)` (doubles crossing calls): it writes `m.sc` (one monomorphic object per
+ * machine) and steps the root through the steering scratch (`_st` + `stepRootS`, machine.js). Same
+ * arithmetic: damp(x, y, l, dt) = x + (y - x) * (1 - exp(-l dt)).
+ */
 
 /**
  * Scored attack selection — `machine-ai-08` ("fixed attack ladder"),
@@ -40,7 +51,7 @@ function lunge(m, p) {
       const pose = poseOf(m);
       if (a.phase === 'strike' && p.dash) {
         const step = (p.dash / p.strike) * dt;
-        m.moveRoot(Math.sin(m.heading) * step, Math.cos(m.heading) * step);
+        { const h = m.sc.heading; _st.sx = Math.sin(h) * step; _st.sz = Math.cos(h) * step; stepRootS(m); }
         m.aiPose.lunge = 1 - a.phaseT;
         if (pose) {
           // legs gather under the body, chest extends, jaws lead
@@ -86,7 +97,7 @@ function charge(m, p) {
     cooldown: p.gap ?? 1.6, track: true, needsHit: true, plant: 'windup',
     onWindup: () => { m.aiPose.coil = 1; },
     onStrike: (a) => {
-      const pl = m.ctx.player;
+      const pl = HOT.player;
       dir.set(Math.sin(m.heading), 0, Math.cos(m.heading));
       if (pl) {
         dir.set(pl.position.x - m.position.x, 0, pl.position.z - m.position.z);
@@ -99,7 +110,7 @@ function charge(m, p) {
       const pose = poseOf(m);
       if (a.phase === 'windup') {
         m.aiPose.coil = a.phaseT;
-        m._speed = THREE.MathUtils.damp(m._speed, 0, 9, dt);
+        { const sc = m.sc; sc._speed += (0 - sc._speed) * (1 - Math.exp(-9 * dt)); }
         if (pose) {
           // dig in: shoulders drop, head comes down into the ram line
           pose.crouch = 0.42 * a.phaseT;
@@ -112,8 +123,8 @@ function charge(m, p) {
         m.aiPose.coil = 0;
         m.aiPose.charge = 1;
         const step = p.speed * dt;
-        m.moveRoot(dir.x * step, dir.z * step);
-        m._speed = p.speed;             // the gait must gallop, not skate
+        _st.sx = dir.x * step; _st.sz = dir.z * step; stepRootS(m);
+        m.sc._speed = p.speed;          // the gait must gallop, not skate
         if (pose) {
           // head held low and level through the plough; the gallop owns the legs
           pose.crouch = 0.18;
@@ -128,7 +139,7 @@ function charge(m, p) {
         }
       } else {
         m.aiPose.charge = Math.max(0, 1 - a.phaseT * 2);
-        m._speed = THREE.MathUtils.damp(m._speed, 0, 3, dt);
+        { const sc = m.sc; sc._speed += (0 - sc._speed) * (1 - Math.exp(-3 * dt)); }
         if (pose) {
           const f = Math.max(0, 1 - a.phaseT * 1.5);
           pose.crouch = 0.18 * f;
@@ -210,18 +221,18 @@ function flurry(m, p) {
         const side = idx % 2 === 0 ? 1 : -1;
         // run her down: the row is legal out to 10 m but the paws reach 4.6, so
         // a flurry that stood still simply whiffed three times from 8 m
-        const pl = m.ctx.player;
+        const pl = HOT.player;
         if (p.close && pl) {
           const dx = pl.position.x - m.position.x, dz = pl.position.z - m.position.z;
-          const d = Math.hypot(dx, dz) || 1;
+          const d = Math.sqrt(dx * dx + dz * dz) || 1;   // (Math.hypot is a call: its arguments box)
           const want = reach * 0.7;
           if (d > want) {
             const step = Math.min(p.close * dt, d - want);
-            m.moveRoot((dx / d) * step, (dz / d) * step);
-            m.heading = Math.atan2(dx / d, dz / d);
-            m._speed = p.close;            // the gait must run, not skate
+            _st.sx = (dx / d) * step; _st.sz = (dz / d) * step; stepRootS(m);
+            m.sc.heading = Math.atan2(dx / d, dz / d);
+            m.sc._speed = p.close;         // the gait must run, not skate
           } else {
-            m._speed = THREE.MathUtils.damp(m._speed, 0, 8, dt);
+            const sc = m.sc; sc._speed += (0 - sc._speed) * (1 - Math.exp(-8 * dt));
           }
         }
         // a slash stays PENDING until it lands or the next one is due, so the
@@ -388,7 +399,7 @@ function volley(m, p) {
       const pose = poseOf(m);
       if (a.phase === 'windup') {
         // plant and aim: the body stops, the head comes up onto the line
-        m._speed = THREE.MathUtils.damp(m._speed, 0, 9, dt);
+        { const sc = m.sc; sc._speed += (0 - sc._speed) * (1 - Math.exp(-9 * dt)); }
         m.aiPose.coil = a.phaseT;
         if (pose) {
           pose.crouch = 0.18 * a.phaseT;
@@ -396,7 +407,7 @@ function volley(m, p) {
           pose.headPitch = -0.26 * a.phaseT;
         }
       } else if (a.phase === 'strike') {
-        m._speed = THREE.MathUtils.damp(m._speed, 0, 12, dt);
+        { const sc = m.sc; sc._speed += (0 - sc._speed) * (1 - Math.exp(-12 * dt)); }
         m.aiPose.coil = 0;
         const want = Math.min(shots, Math.floor(a.phaseT * shots) + 1);
         while (done < want) {

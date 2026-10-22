@@ -7,6 +7,7 @@ import { setAiRng, seededRng, aiRngSeeded } from './ai/rng.js';
 import { REST_SITE } from '../../world/island/sites.js';
 import { PLAY_RADIUS, EXTENT } from '../../world/island/extent.js';
 import { _st, stepRootS } from './machine.js';
+import { refreshHot } from '../../instruments/lib/hot.js';
 import {
   BODY as EXPANSION_BODY, CHASSIS, installDoctrine, installExpansionDoctrine,
   spawnExpansion, doctrineAudit,
@@ -76,6 +77,7 @@ export class Machines {
   constructor(ctx) {
     this.ctx = ctx;
     this.list = [];
+    refreshHot(ctx);   // lib/hot.js: valid before the first update (re-copied every frame)
 
     // AI services: stimulus bus, site lifecycle, squad doctrine, perception hooks
     installMachineAI(this);
@@ -574,6 +576,8 @@ export class Machines {
   }
 
   update(dt, t) {
+    // the services every per-frame machine path reads, copied off the root ctx once (lib/hot.js)
+    refreshHot(this.ctx);
     const p = this.ctx.player;
     // world stimuli (player footsteps), perk/weather/Flag hooks, corpse lifecycle, squad doctrine
     this.stimulus.update(dt);
@@ -643,12 +647,17 @@ export class Machines {
           }
         }
         if (far) {
-          // coarse tick: batch time and step a few times per second
+          /* coarse tick: a FIXED step of LOD_TICK seconds a few times per second, the remainder carried
+           * (W0b fix round 2). It used to pass `Math.min(accum, 0.4)` — a fresh double handed to a
+           * megamorphic call, boxed per far machine per tick; LOD_TICK is a module constant, already a
+           * box. Same simulated time: the carry keeps every elapsed second (capped at one extra step,
+           * as the 0.4 s cap capped it before). */
           const ms = m.sc;
           ms._lodAccum += dt;
           if (ms._lodAccum < LOD_TICK) continue;
-          m.update(Math.min(ms._lodAccum, 0.4), t);
-          ms._lodAccum = 0;
+          const left = ms._lodAccum - LOD_TICK;
+          ms._lodAccum = left < LOD_TICK ? left : LOD_TICK;
+          m.update(LOD_TICK, t);
           continue;
         }
       }

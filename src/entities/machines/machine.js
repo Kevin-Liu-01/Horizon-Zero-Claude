@@ -10,6 +10,7 @@ import {
 } from './ai/tables.js';
 import { LAMP_STATES, lampStateFor, LAMP_RHYTHM } from '../../instruments/lamps.js';
 import { VFX_COLORS } from '../../instruments/lib/vfx.js';
+import { HOT, playerBoxes, refreshHot } from '../../instruments/lib/hot.js';
 
 /**
  * Base Machine: state machine, perception, terrain-conforming steering,
@@ -175,7 +176,9 @@ export function turnS(m, dt) {
   while (d > Math.PI) d -= Math.PI * 2;
   while (d < -Math.PI) d += Math.PI * 2;
   const lim = m.turnRate * dt;
-  sc.heading += d < -lim ? -lim : d > lim ? lim : d;
+  // facing within 1e-5 rad (0.0006°) is facing: the heading is left alone instead of being re-written in its
+  // last bits every frame (frozen gait / collision re-box `m.heading` on every change; see `get heading`)
+  if (d > 1e-5 || d < -1e-5) sc.heading += d < -lim ? -lim : d > lim ? lim : d;
   _st.d = d;
 }
 
@@ -236,7 +239,7 @@ export function steerAlongS(m, dt) {
 
 /** `Machine._navTowardS` as a module function (see HOT PATHS, NO PROTOTYPE LOADS). */
 export function navTowardS(m, dt) {
-  const nav = m.ctx.nav, p = m.position;
+  const nav = HOT.nav, p = m.position;   // never through m.ctx (a prototype view: see lib/hot.js)
   const x = _st.x, z = _st.z, speed = _st.speed;
   const dx = x - p.x, dz = z - p.z;
   const dist = Math.sqrt(dx * dx + dz * dz);
@@ -256,7 +259,7 @@ export function navTowardS(m, dt) {
 /** `Machine._conform` as a module function (see HOT PATHS, NO PROTOTYPE LOADS). */
 export function conformM(m, dt) {
   const sc = m.sc, pos = m.position;
-  const t = m.ctx.terrain;
+  const t = HOT.terrain;                 // never through m.ctx (a prototype view: see lib/hot.js)
   /* The terrain is sampled only when the root moved since the last sample (a
    * standing machine re-uses it exactly): terrain.getHeight / getNormal take
    * (x, z) numbers, and every call boxes both. */
@@ -289,12 +292,21 @@ export function conformM(m, dt) {
   m.root.quaternion.copy(_q1).multiply(_q2);
   // smoothed acceleration → pitch cue for subclass body motion
   sc._accelPitch += (sc._speed - sc._accelPitch) * (1 - Math.exp(-4 * dt));
+  /* SETTLED VALUES SETTLE (W0b fix round 2): every ease above is exponential, so a machine standing still
+   * kept changing `_speed` and `_accelPitch` in the last bits for ever — and frozen gait / collision read both
+   * through the published boxes every frame (`get _speed`: one HeapNumber per change). Inside 1 mm/s they
+   * snap to their target, which nothing can see. */
+  const sp = sc._speed;
+  if (sp < 1e-3 && sp > -1e-3 && sp !== 0) sc._speed = 0;
+  const dap = sc._speed - sc._accelPitch;
+  if (dap < 1e-3 && dap > -1e-3 && dap !== 0) sc._accelPitch = sc._speed;
 }
 
 /** `Machine._updateEyes` as a module function (see HOT PATHS, NO PROTOTYPE LOADS). */
 export function updateEyesM(m, dt, t) {
   const sc = m.sc;
-  const tt = m.ctx.engine?.simTime ?? t;
+  const E = HOT.engine;                  // never through m.ctx (a prototype view: see lib/hot.js)
+  const tt = E ? E.simTime : t;
   const s = lampStateFor(m);
   if (s !== m._lampState) {
     m._lampPrev = m._lampState || 'calm';
@@ -330,16 +342,16 @@ export function updateEyesM(m, dt, t) {
     if (legacyCue) {
       // attack-windup telegraph (legacy kinds): eye burns white-hot for ~0.4 s
       target = EYE_COLORS.flash;
-      pulse = Math.max(pulse, 2.6);
+      if (pulse < 2.6) pulse = 2.6;
     }
   }
   // the colour eases toward the target (written out: no call takes a double)
   const ec = m._eyeColor;
-  const ea = Math.min(1, dt * (target === EYE_COLORS.flash ? 25 : 12));
+  const ea0 = dt * (target === EYE_COLORS.flash ? 25 : 12), ea = ea0 < 1 ? ea0 : 1;   // (no Math.* call takes a double)
   const dr = target.r - ec.r, dg = target.g - ec.g, db = target.b - ec.b;
   const easing = dr * dr + dg * dg + db * db > 1e-12;
   if (easing) { ec.r += dr * ea; ec.g += dg * ea; ec.b += db * ea; }
-  const lightK = m.state === 'dead' ? Math.max(0, 1 - sc._deathT * 0.55) : 1;
+  const lk0 = 1 - sc._deathT * 0.55, lightK = m.state === 'dead' ? (lk0 > 0 ? lk0 : 0) : 1;
   const eyes = m._eyeMats;
   // nothing a lens shows changed (steady calm, a settled colour): no material is touched
   if (!easing && pulse === sc._ePulse && lightK === sc._eLight && eyes.length === sc._eN) return;
@@ -373,6 +385,19 @@ export function updateEyesM(m, dt, t) {
       else g.mat.emissiveIntensity = g.base * lightK;
     }
   }
+}
+
+/**
+ * `lastKnown` x / z as two Tagged own fields (`_lkxB`, `_lkzB`), re-boxed only when the belief moved:
+ * frozen `engage.update` / `pursue` take (x, z) numbers, and a double handed to a call that is not
+ * inlined is boxed at the call — per machine, per frame. A megamorphic load of a Tagged field returns
+ * the stored box as-is, so a machine working the band against a fixed belief allocates nothing.
+ */
+export function lkBoxes(m) {
+  const sc = m.sc, lk = m.lastKnown;
+  if (sc._lkx === lk.x && sc._lkz === lk.z && m._lkxB !== null) return;
+  sc._lkx = lk.x; sc._lkz = lk.z;
+  m._lkxB = lk.x; m._lkzB = lk.z;
 }
 
 /** `Machine._updateParts` as a module function (see HOT PATHS, NO PROTOTYPE LOADS). */
@@ -444,6 +469,8 @@ export class MachineScalars {
     this._cgy = 0.5;    //   ground height there
     this._cnx = 0.5;    //   ...and where the ground normal was last sampled
     this._cnz = 0.5;
+    this._lkx = 0.5;    // lkBoxes: the lastKnown the boxes below hold
+    this._lkz = 0.5;
     this._ePulse = -1;  // _updateEyes: the pulse, light and lens count last written to the materials
     this._eLight = -1;
     this._eN = -1;
@@ -508,6 +535,8 @@ export class Machine {
     this.turnRate = null; this.bodyRadius = null; this.walkSpeed = null; this.runSpeed = null;
     this.sightRange = null; this.sightHalf = null; this.eyeHeight = null; this.height = null;
     this.standoffHalfLen = null; this.hearRange = null; this.attackRange = null; this.maxHealth = null;
+    /** lkBoxes(): `lastKnown` x / z boxed once per change, and the pursuit speed (Tagged; see lkBoxes) */
+    this._lkxB = null; this._lkzB = null; this._pursueRs = null; this._pursueV = null;
     /**
      * NOT the root ctx: a read-only, prototype-chained view of it whose
      * `events.emit` is `safeEmit` (see ai/emit.js). Species files write the
@@ -520,6 +549,8 @@ export class Machine {
     this.ctx = machineCtx(ctx);
     /** The un-facaded ctx, for anything that needs bus identity. */
     this.rootCtx = ctx;
+    // the per-frame paths read lib/hot.js, never this.ctx (a prototype view); valid before the first frame
+    if (HOT.root === null && ctx) refreshHot(ctx);
     this.manager = manager;
 
     this.kind = opts.kind;
@@ -1694,8 +1725,8 @@ export class Machine {
     }
 
     this.ai.tick(dt);
-    sc._alarmCd = Math.max(0, sc._alarmCd - dt);
-    if (sc.lampDarkT > 0) sc.lampDarkT = Math.max(0, sc.lampDarkT - dt);
+    { const a = sc._alarmCd - dt; sc._alarmCd = a > 0 ? a : 0; }      // (no Math.* call takes a double)
+    if (sc.lampDarkT > 0) { const d = sc.lampDarkT - dt; sc.lampDarkT = d > 0 ? d : 0; }
 
     // attack-timer cooldowns tick unconditionally (lowLOD coarse steps and
     // stun must not freeze them — subclasses implement tickCooldowns)
@@ -1878,7 +1909,7 @@ export class Machine {
 
   _stateAlert(dt) {
     const sc = this.sc;
-    const p = this.ctx.player;
+    const p = HOT.player;
     const face = this._visible && p ? p.position : this.lastKnown;
     _st.x = face.x; _st.z = face.z;
     faceS(this, dt);
@@ -1907,7 +1938,7 @@ export class Machine {
     const sc = this.sc;
     if (this._attack) { this._updateAttack(dt); return; }
     sc._attackCd -= dt;
-    const p = this.ctx.player;
+    const p = HOT.player;
     if (!p) { this.setState('return'); return; }
 
     /**
@@ -1929,8 +1960,9 @@ export class Machine {
      * earned), and a machine that has genuinely lost her — stale belief —
      * gets nothing and keeps searching. See PERCEPTION.contactRange notes.
      */
-    _v1.set(p.position.x - this.position.x, 0, p.position.z - this.position.z);
-    const distNow = Math.sqrt(_v1.x * _v1.x + _v1.z * _v1.z);
+    const pp = p.position, mp = this.position;
+    const ddx = pp.x - mp.x, ddz = pp.z - mp.z;
+    const distNow = Math.sqrt(ddx * ddx + ddz * ddz);
     const cr = this.perceptCfg.contactRange ?? 0;
     let contact = false;
     if (!this._visible && cr > 0 && distNow <= cr + this.bodyRadius) {
@@ -1958,7 +1990,10 @@ export class Machine {
 
     if (engaged) {
       this.ai.engage.noteSeen();
-      this.ai.engage.update(dt, p.position.x, p.position.z);
+      // the player's x / z as this frame's two shared boxes (lib/hot.js): a double handed to frozen
+      // engage.update is otherwise boxed per call, per machine, per frame
+      playerBoxes();
+      this.ai.engage.update(dt, HOT.playerX, HOT.playerZ);
     } else if (this.ai.engage.noteBlind(dt)) {
       /**
        * A LOST SIGHTLINE IS NOT A LOST FIGHT (FIX ROUND 3,
@@ -1992,10 +2027,13 @@ export class Machine {
        * the band still owns the frame. Past `beliefHold` it says no and the
        * pursuit below takes over; past `_unseenT > 4.5` the fight is a search.
        */
-      this.ai.engage.update(dt, this.lastKnown.x, this.lastKnown.z);
+      lkBoxes(this);
+      this.ai.engage.update(dt, this._lkxB, this._lkzB);
     } else {
       // it knows roughly where she was; it does not know where she IS
-      this.ai.engage.pursue(dt, this.lastKnown.x, this.lastKnown.z, this.runSpeed * 0.9);
+      lkBoxes(this);
+      if (this._pursueRs !== this.runSpeed) { this._pursueRs = this.runSpeed; this._pursueV = this.runSpeed * 0.9; }
+      this.ai.engage.pursue(dt, this._lkxB, this._lkzB, this._pursueV);
     }
     // a flier holds its cruise altitude while it works the band (the flight
     // model owns y; `_steerAlong` only ever moves it in XZ)
@@ -2016,8 +2054,8 @@ export class Machine {
        * gate exists for, arriving by a different road. One hypot, and only on
        * the frames the machine is actually off its global attack cooldown.
        */
-      _v1.set(p.position.x - this.position.x, 0, p.position.z - this.position.z);
-      const a = this.ai.chooseAttack(Math.sqrt(_v1.x * _v1.x + _v1.z * _v1.z));
+      const sx = pp.x - mp.x, sz = pp.z - mp.z;   // after this frame's footwork moved it
+      const a = this.ai.chooseAttack(Math.sqrt(sx * sx + sz * sz));
       if (a) this._startAttack(a);
     }
   }
@@ -2092,7 +2130,7 @@ export class Machine {
       a.phase = 'windup'; a.phaseT = a.t / w;
       if (a.track !== false) {
         // track the target it can actually see; otherwise commit to lastKnown
-        const p = this._visible ? this.ctx.player : null;
+        const p = this._visible ? HOT.player : null;
         const tgt = p ? p.position : this.lastKnown;
         _st.x = tgt.x; _st.z = tgt.z;
         faceS(this, dt);

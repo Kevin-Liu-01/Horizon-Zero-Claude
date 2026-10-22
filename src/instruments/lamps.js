@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { hexToRgb, srgbToLinear } from './lib/color.js';
 import { perceptionScale } from './lib/weather.js';
+import { HOT } from './lib/hot.js';
 
 /**
  * LAMP STATES — the Instruments' lamp grammar (instruments-core W0b; bible §7.2,
@@ -676,7 +677,8 @@ export class LampSystem {
   update() {
     this.beamDraws = 0;
     this.lampDraws = 0;
-    const E = this.ctx.engine;
+    // the root ctx is a prototype object (lib/hot.js): the per-frame reads come from HOT, copied once per frame
+    const E = HOT.engine || this.ctx.engine;
     const rr = E ? E.renderer : null, gu = E && E.grade ? E.grade.uniforms : null;
     if (rr && gu) {
       const e = rr.toneMappingExposure, c = gu.uContrast.value, sa = gu.uSaturation.value, mx = gu.uGradeMix.value;
@@ -689,7 +691,7 @@ export class LampSystem {
       this._sigEvery = (this._sigEvery + 1) & 63;
       if (this._sigEvery === 0) this._solve(false);
     } else if (this._pe === -1) { this._pe = 0; this._solve(false); }
-    const env = this.ctx.environment;
+    const env = HOT.environment;
     // the air (fog density > 1.2 or night) and the barrel's sun + sky
     const wp = env ? env.weatherParams : null;
     const dm = wp ? wp.densMul : 1;
@@ -712,7 +714,6 @@ export class LampSystem {
     const air = this.fogK > BEAM.fogK || this.night > BEAM.night;
     let scale = -1;                         // perceptionScale, read only if a beam is drawn
     const fogBoost = Math.min(2.5, 0.6 + 0.8 * Math.max(0, this.fogK - 1) + 0.9 * this.night);
-    const player = this.ctx.player;
     let n = 0, nb = 0;
     for (let i = 0; i < recs.length; i++) {
       const r = recs[i];
@@ -765,7 +766,7 @@ export class LampSystem {
       r.beamOn = false;
       r.bslot = -1;
       if (air && beamKind !== null && nb < this.capacity && !m.lowLOD) {
-        if (scale < 0) scale = perceptionScale(this.ctx.environment);
+        if (scale < 0) scale = perceptionScale(env);
         const sr = m.sightRange;
         r.blen = Math.max(2, (sr || 30) * scale);
         r.bmode = beamKind;
@@ -803,12 +804,12 @@ export class LampSystem {
    * allocation-free for the lamps (beams, fog/night only, decompose).
    */
   _writeMatrices() {
-    const E = this.ctx.engine;
+    const E = HOT.engine || this.ctx.engine;
     const f = E ? E.frames : -1;
     if (f === this._matFrame && f !== -1) return;
     this._matFrame = f;
     const recs = this.records, im = this.lampMesh.instanceMatrix.array, bm = this.beamMesh.instanceMatrix.array;
-    const player = this.ctx.player;
+    const player = HOT.player;
     let lamps = 0, beams = 0;
     for (let i = 0; i < recs.length; i++) {
       const r = recs[i];

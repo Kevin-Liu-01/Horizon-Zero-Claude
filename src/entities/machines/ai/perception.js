@@ -5,6 +5,7 @@ import { aiRandom } from './rng.js';
 
 const DEG = Math.PI / 180;
 import { perceptionScale, weatherName } from '../../../instruments/lib/weather.js';
+import { HOT } from '../../../instruments/lib/hot.js';
 
 /**
  * Perception — the honest senses of a machine.
@@ -93,8 +94,7 @@ export class Perception {
   /** True when the machine's own sensors have an unobstructed line. */
   hasLOS(target) {
     const m = this.m;
-    const ctx = m.ctx;
-    const t = ctx.terrain;
+    const t = HOT.terrain;               // never through m.ctx (a prototype view: see lib/hot.js)
     const y0 = m.position.y + m.eyeHeight;
     const y1 = target.y + this.cfg.targetEyeY;
     for (let i = 1; i <= 3; i++) {
@@ -107,7 +107,7 @@ export class Perception {
       if (gh > y0 + (y1 - y0) * k + 1.2) return false;
     }
     // machine-ai-04: trunks, big rocks, ruins and tents break the sightline
-    const C = ctx.collision;
+    const C = HOT.collision;
     _eye.x = m.position.x; _eye.y = y0; _eye.z = m.position.z;
     _tgt.x = target.x; _tgt.y = y1; _tgt.z = target.z;
     if (C && C.occluded && C.occluded(_eye, _tgt)) return false;
@@ -205,7 +205,7 @@ export class Perception {
     const m = this.m;
     const ms = m.sc;
     const c = this.cfg;
-    const p = m.ctx.player;
+    const p = HOT.player;                // never through m.ctx (a prototype view: see lib/hot.js)
 
     let visible = false;
     let fill = 0;
@@ -297,7 +297,7 @@ export class Perception {
     const m = this.m;
     const ms = m.sc;
     const c = this.cfg;
-    const p = m.ctx.player;
+    const p = HOT.player;
     const visible = this._tickVisible, fill = this._tickFill;
     if (visible) {
       ms.suspicion = Math.min(1.25, ms.suspicion + fill * pd);
@@ -315,7 +315,7 @@ export class Perception {
         ms.suspicion = Math.min(cap, ms.suspicion + c.hearGain * this._hearStrength * pd);
         if (ms.suspicion < c.alertAt || this._hearKind === 'lure') {
           m.lastKnown.copy(this._hearPos);
-          m.lastKnown.y = m.ctx.terrain.getHeight(m.lastKnown.x, m.lastKnown.z);
+          m.lastKnown.y = HOT.terrain.getHeight(m.lastKnown.x, m.lastKnown.z);
         }
         // one record per machine, rewritten (read only here and by debug views): no object per tick
         const st = this._stim; st.x = this._hearPos.x; st.z = this._hearPos.z; st.kind = this._hearKind;
@@ -491,14 +491,14 @@ export class PerceptionHooks {
   outlined(m) { return !!(this.dustSight && m && m.dustOccluded); }
 
   _dustPass() {
-    const p = this.ctx.player;
+    const p = HOT.player;
     if (!p) return;
     const calima = this.weather === 'calima';
-    _da.set(p.position.x, p.position.y + 1.6, p.position.z);
+    _da.x = p.position.x; _da.y = p.position.y + 1.6; _da.z = p.position.z;   // (no double crosses a call)
     const c2 = this.calimaClear * this.calimaClear;
     for (const m of this.machines.list) {
       if (m._disposed) continue;
-      _db.set(m.position.x, m.position.y + (m.height || 2) * 0.6, m.position.z);
+      _db.x = m.position.x; _db.y = m.position.y + (m.height || 2) * 0.6; _db.z = m.position.z;
       const dx = _db.x - _da.x, dz = _db.z - _da.z;
       m.dustOccluded = (calima && dx * dx + dz * dz > c2) || this.dustBetween(_da, _db);
     }
@@ -507,7 +507,7 @@ export class PerceptionHooks {
   /** Once per sim step, from `Machines.update`. */
   update(dt) {
     this.clock += dt;
-    const env = this.ctx.environment;
+    const env = HOT.environment;
     this.sightScale = perceptionScale(env);
     this.weather = weatherName(env);
     const cl = this._clouds;
