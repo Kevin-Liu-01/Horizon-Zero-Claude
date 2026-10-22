@@ -591,8 +591,10 @@ const HEAD_FOLLOW_MAX = 0.20;
 const KEEP_NDC = 0.74;
 /** ...for at most this much given-back elevation (rad, 20 deg). */
 const KEEP_MAX = 0.35;
-/** R5 fix round 3: where the ground ROTATED the boom, the keeper may exceed the hijack's aim budget by this (rad, 12.6 deg). */
+/** R5 fix round 3: the keeper's allowance over the hijack's aim budget where the ground rotated the boom (rad, 12.6 deg) — AT THE PITCH CLAMP only: A31b holds every -0.8 staging's look-down to `camAimBudget` (unrestricted, its -0.8 hillside lost 28 deg of a 25.8 deg budget). */
 const KEEP_GROUND_EXTRA = 0.22;
+/** R5 fix round 3: the keeper's largest change in one frame (rad, 1.15 deg). */
+const KEEP_STEP = 0.02;
 /**
  * The point a swing candidate must keep in the picture: her upper chest,
  * this far under the UN-lifted pivot (1.30 m standing).  Chosen so the flat
@@ -1507,6 +1509,7 @@ void main() {
       this.gourd = 60;
       this.position.set(CAMP_POS.x, 0, CAMP_POS.z);
       this._snapToGround();
+      this.animator?.replant?.();   // R5 fix round 3: her feet re-plant where she respawns
       this.ctx.state = 'playing';
       this.ctx.events.emit('player-respawn');
     }, 3200);
@@ -4204,8 +4207,33 @@ void main() {
      * share — the lift and the boom-length march both spend out of this. */
     const frameLim = Math.max(0, hijackMax + this._frameLow * halfFov - this._relief);
     const dropB = Math.max(0, -dir.y);
+    const wantFlat0 = wantFlat;
     wantFlat = this._lenAtElev(pitchB, wantFlat, pivotLift);
     wantDist = Math.min(wantDist, wantFlat);
+    /* R5 fix round 3 (A31b's −0.8 hillside staging on Brea, lens gap 0.99 m
+     * against 1.20): a ROTATED boom is allowed the longer length its higher
+     * elevation permits (above) — but on the 38.8 deg face, rotated 36 deg,
+     * that 2.23 m boom ran back into the hill, and the deep look-up dolly
+     * then dragged the lens toward her head to 0.99 m, when the SAME rotation
+     * cleared a 1.45-1.60 m boom by 0.07-0.005 m (measured Oct 22). At a deep
+     * look-up the rotated boom keeps its extra length only as far as that
+     * length clears (`ROT_MARGIN`), never less than the un-rotated boom. */
+    if (this._relief > 0.05 && this._deepK > 0.5 && ctx.terrain) {
+      const L0 = this._lenAtElev(pitch, wantFlat0, pivotLift);
+      if (wantDist > L0 + 0.02) {
+        const P = this._pivotPos, oy = P.y + (this._lift || 0);
+        if (this._clearAlong(P.x, oy, P.z, dir.x, dir.y, dir.z, wantDist) < ROT_MARGIN) {
+          let lo = L0, hi = wantDist;
+          if (this._clearAlong(P.x, oy, P.z, dir.x, dir.y, dir.z, lo) >= ROT_MARGIN) {
+            for (let i = 0; i < 10; i++) {
+              const m = (lo + hi) * 0.5;
+              if (this._clearAlong(P.x, oy, P.z, dir.x, dir.y, dir.z, m) >= ROT_MARGIN) lo = m; else hi = m;
+            }
+          }
+          wantDist = lo; wantFlat = Math.min(wantFlat, lo);
+        }
+      }
+    }
     if (dropB > 1e-3 && ctx.terrain && this._deepK < 1) {
       const terr = ctx.terrain;
       const P = this._pivotPos;
@@ -4702,10 +4730,12 @@ void main() {
        * lens 26-37 deg up the hill, with the view already at its look-up
        * budget: her head sat at NDC y -1.0 .. -1.28, under the frame, for
        * 41 consecutive samples of a clamp pan (measured Oct 22). Where the
-       * ROTATION (or the dolly) took the shot the keeper engages as it does for a swing, and
-       * may give back `KEEP_GROUND_EXTRA` more than the hijack's aim budget
-       * (her head in the picture outranks the last degrees of a look-up the
-       * hill is already refusing). Open ground has no rotation: untouched. */
+       * ROTATION (or the dolly) took the shot the keeper engages as it does
+       * for a swing, and at the pitch clamp it may give back
+       * `KEEP_GROUND_EXTRA` more than the aim budget (her head in the picture
+       * outranks the last degrees of a look-up the hill is refusing; A31b
+       * grades the -0.8 stagings' look-down against `camAimBudget`, so not
+       * there). Open ground has no rotation: untouched. */
       // (...and the same where the ground pushed the lens IN along the line to
       // her head — the dolly — which is the clamp's other up-slope answer)
       const tookK = Math.max(THREE.MathUtils.smoothstep(this._relief || 0, 0.15, 0.35),
@@ -4722,12 +4752,22 @@ void main() {
         // ...out of what the AIM BUDGET has left: the ELEVATION the player
         // asked for (`elevReq`) never loses more than the budget in all (the
         // hijack's yaw payback is not elevation and does not count)
-        want = groundK * Math.min(KEEP_MAX, Math.max(0, hijackMax + KEEP_GROUND_EXTRA * rotK - Math.max(0, elevReq - ev)), Math.max(0, (ev - es) - room));
+        const clampK = THREE.MathUtils.smoothstep(-(this.camPitch ?? 0), -PITCH_UP - 0.15, -PITCH_UP - 0.05);
+        want = groundK * Math.min(KEEP_MAX, Math.max(0, hijackMax + KEEP_GROUND_EXTRA * rotK * clampK - Math.max(0, elevReq - ev)), Math.max(0, (ev - es) - room));
       }
       // eased in and out — except on AIM, where the reticle is the shot and
       // the view returns to the request at once (A31c's aim-entry bars) — and
       // a SEEDED camera (teleport, staging) is settled at once
-      this._keepDrop = this.aiming ? 0 : seeding ? want : THREE.MathUtils.damp(this._keepDrop || 0, want, 10, dt);
+      // (fix round 3: and never more than `KEEP_STEP` in one frame — the
+      // keeper sits on top of the hijack's own slew limit, and a loaded-box
+      // frame (dt 0.05) of the damp alone stepped the view 3.1-3.2 deg past
+      // the input on A31e's slow clamp pan, bar 3)
+      if (this.aiming) this._keepDrop = 0;
+      else if (seeding) this._keepDrop = want;
+      else {
+        const kd = this._keepDrop || 0, nk = THREE.MathUtils.damp(kd, want, 10, dt);
+        this._keepDrop = kd + THREE.MathUtils.clamp(nk - kd, -KEEP_STEP, KEEP_STEP);
+      }
       if (this._keepDrop > 1e-4) {
         const ev2 = Math.asin(THREE.MathUtils.clamp(ly, -1, 1)) - this._keepDrop;
         const hz = Math.hypot(lx, lz), k2 = hz > 1e-6 ? Math.cos(ev2) / hz : 0;

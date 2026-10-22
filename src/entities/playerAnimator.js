@@ -1201,6 +1201,21 @@ export class PlayerAnimator {
   disposeMelee() { this.melee?.dispose?.(); this.melee = null; }
 
   /**
+   * R5 fix round 3: re-plant both feet where she stands now (a respawn). A
+   * planted foot lock keeps its WORLD anchor; moved far, `_footLock` slides
+   * that anchor only to MAX_LOCK (0.30 m) toward where it was — so after a
+   * respawn both feet stood 0.30 m toward the place she died, and on a slope
+   * that read as a lunge (measured on the 38.8 deg face after a staging
+   * teleport: the downhill ball 0.43 m under her root, her head 0.27 m low).
+   * Called by `Player._die`'s respawn. (Gate stagings write `position`
+   * directly and keep the Round-4 behaviour every camera row was tuned on —
+   * see docs/ROUND5-HERO-BODY.md §00.2.)
+   */
+  replant() {
+    for (let s = 0; s < 2; s++) { const L = this._locks[s]; L.on = false; L.w = 0; L.cx = 0; L.cz = 0; this._flight[s] = null; }
+  }
+
+  /**
    * Live char-space unit axis pelvis -> spine_03. Gate A36-hit-react-visible
    * compares this against the axis it sampled just BEFORE the hit: measuring
    * the angle from BIND instead is wrong, because the idle clip already sits
@@ -2621,21 +2636,6 @@ export class PlayerAnimator {
       }
       L.w = 1;
       ex = L.x - ballW.x; ez = L.z - ballW.z;
-      /* R5 fix round 3 — A TELEPORT IS NOT A SLIP. A lock whose anchor is
-       * more than `RESEAT_D2` (1 m) from the ball was planted somewhere she no
-       * longer is (a respawn, a gate staging, a ride's end): sliding it to
-       * MAX_LOCK — the branch below — left BOTH feet held 0.30 m toward the
-       * place she came from for as long as she stood still. On the 38.8 deg
-       * face that was a lunge: the downhill ball 0.43 m under her root, the
-       * pelvis 0.50 m over it (0.82 standing) and her head 0.27 m low — the
-       * camera rig, hung off her head, sank with it, and A31b's -0.8 staging
-       * cut its lens to 0.99 m (measured Oct 22). The lock re-captures here
-       * instead (error 0, nothing pops); a frame hitch or a shove (<= 0.55 m,
-       * A13's replica) still slides as before. */
-      if (ex * ex + ez * ez > RESEAT_D2 && !this._dbgNoLockFix) {
-        L.x = ballW.x; L.z = ballW.z; L.sx = ballW.x; L.sz = ballW.z; L.wx = ballW.x; L.wz = ballW.z;
-        ex = 0; ez = 0;
-      }
       // Past MAX_LOCK, SLIDE the anchor up to the limit instead of dropping the
       // lock: releasing it would snap the leg back to the clip pose in one
       // frame. Only a frame hitch or a hard pivot gets here.
