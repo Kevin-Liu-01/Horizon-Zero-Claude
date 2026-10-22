@@ -800,7 +800,7 @@ function gpuTierAssert(box) {
       const SHIPPED = QUALITY_TIERS[DEFAULT_TIER];
       const levers = (row) => ({ dprCap: row.dprCap, msaa: row.msaa, gtao: row.gtao, gtaoScale: row.gtaoScale, smaa: row.smaa,
         smaaHalfFloat: row.smaaHalfFloat, csmMapCaps: row.csmMapCaps, postFold: row.postFold, csmFarCadence: row.csmFarCadence,
-        maxAnisotropy: row.maxAnisotropy });
+        maxAnisotropy: row.maxAnisotropy, maxAnisotropyData: row.maxAnisotropyData });
       const measure = async (rounds, ms) => {
         const v = [], m = [];
         for (let k = 0; k < rounds; k++) {
@@ -850,9 +850,13 @@ function gpuTierAssert(box) {
         ['lever 4: + SMAA targets RGBA8, far cascades capped at 1024 (W0b fix round 0 = its shipped row)', L4],
         ['lever 5: + GTAO multiply and bloom composite folded into the grade pass', L5],
         ['lever 6: + far cascades rendered on alternate frames', L6],
-        ['lever 7: + anisotropic filtering capped at ' + SHIPPED.maxAnisotropy + ' = shipped ' + DEFAULT_TIER, SHIPPED],
-        ['NOT shipped: shipped row with the anisotropy cap at 4', Object.assign({}, SHIPPED, { maxAnisotropy: 4 })],
+        ['lever 7: + anisotropic filtering capped, colour (sRGB) textures ' + SHIPPED.maxAnisotropy + 'x / data textures (normal, rough/AO) ' + SHIPPED.maxAnisotropyData + 'x = shipped ' + DEFAULT_TIER, SHIPPED],
       ];
+      // the alternatives the decision was taken against (fix round 1 shipped 2x / 2x), unless one is the shipped row
+      for (const [c, d, why] of [[2, 2, 'the fix-round-1 row'], [4, 4, 'every texture at 4x']]) {
+        if (SHIPPED.maxAnisotropy === c && SHIPPED.maxAnisotropyData === d) continue;
+        chain.push(['NOT shipped: shipped row with anisotropy ' + c + 'x colour / ' + d + 'x data (' + why + ')', Object.assign({}, SHIPPED, { maxAnisotropy: c, maxAnisotropyData: d })]);
+      }
       out.leverChain = [];
       for (const [label, row] of chain) {
         setTierDpr(row, 'lever', 2);
@@ -1261,25 +1265,28 @@ const V_LOOK_SETUP = `(async () => { const __work = (async () => {
   const shoot = (row, name, k) => {
     setTierDpr(row, name, 2); viewNamed('vista'); draw(6);
     const pr = R.getPixelRatio();
-    const an = row.maxAnisotropy ? 'aniso cap ' + row.maxAnisotropy + 'x' : 'aniso 8x (as authored)';
+    const an = row.maxAnisotropy || row.maxAnisotropyData ? 'aniso colour ' + (row.maxAnisotropy || 'max') + 'x / data ' + (row.maxAnisotropyData === undefined ? row.maxAnisotropy : row.maxAnisotropyData || 'max') + 'x' : 'aniso 8x (as authored)';
     sh.putRect(readRect(0, 0, W(), H()), W(), H(), k * 400, 0, 400, 225, (k + 1) + ' ' + name, false);
     sh.box(k * 400 + c[0] / 4, c[1] / 4, c[2] / 4, c[3] / 4);
     const w = Math.round(c[2] * pr), h = Math.round(c[3] * pr);
     sh.putRect(readRect(Math.round(c[0] * pr), Math.round(c[1] * pr), w, h), w, h, CROP_AT[k][0], CROP_AT[k][1], 800, 240,
       (k + 1) + ' ' + name + ' | DPR ' + pr + ', ' + an + ' | far ground, nearest x' + (800 / w).toFixed(2), true);
   };
+  // the alternative the decision was taken against: fix round 1's 2x / 2x, or 4x / 4x if that is what ships
+  const ALT = SHIP.maxAnisotropy === 2 && SHIP.maxAnisotropyData === 2 ? [4, 4] : [2, 2];
+  const capTxt = (c, d) => 'colour ' + c + 'x / data ' + d + 'x';
   shoot(ROUND4_HIGH, 'Round-4 high', 0);
-  shoot(Object.assign({}, SHIP, { maxAnisotropy: null }), 'shipped levers, aniso as authored', 1);
-  shoot(Object.assign({}, SHIP, { maxAnisotropy: 4 }), 'NOT SHIPPED: shipped levers, cap 4x', 2);
-  shoot(SHIP, 'SHIPPED ' + DEFAULT_TIER + ' (cap ' + SHIP.maxAnisotropy + 'x)', 3);
+  shoot(Object.assign({}, SHIP, { maxAnisotropy: null, maxAnisotropyData: null }), 'shipped levers, aniso as authored', 1);
+  shoot(Object.assign({}, SHIP, { maxAnisotropy: ALT[0], maxAnisotropyData: ALT[1] }), 'NOT SHIPPED: shipped levers, ' + capTxt(ALT[0], ALT[1]), 2);
+  shoot(SHIP, 'SHIPPED ' + DEFAULT_TIER + ' (' + capTxt(SHIP.maxAnisotropy, SHIP.maxAnisotropyData) + ')', 3);
   setTierDpr(SHIP, DEFAULT_TIER, 2); viewNamed('vista');
   const g = sh.g;
   g.fillStyle = '#ffe3b0'; g.font = '13px ui-monospace, monospace';
   [ 'top: full frames, red box = the crop.  below: the far ground in the box, nearest-neighbour, native aspect',
     '1 Round-4 high: DPR 1.5, MSAA x4 + SMAA, GTAO 1/2, anisotropic filtering as authored (8x)',
     '2 shipped levers (DPR 1.25, SMAA only, GTAO 1/4 folded, bloom folded, far cascades alternate frames), anisotropy 8x',
-    '3 NOT SHIPPED: as 2 with the anisotropy cap at 4x (the alternative; vista GPU over 13 ms on this POC)',
-    '4 SHIPPED high: as 2 with the anisotropy cap at ' + SHIP.maxAnisotropy + 'x' ].forEach((t, i) => g.fillText(t, 12, 752 + i * 22));
+    '3 NOT SHIPPED: as 2 with anisotropy ' + capTxt(ALT[0], ALT[1]) + ' (the alternative; see the A-gpu-tier lever record)',
+    '4 SHIPPED high: as 2 with anisotropy ' + capTxt(SHIP.maxAnisotropy, SHIP.maxAnisotropyData) + '  (colour = sRGB albedo; data = normal + rough/AO maps)' ].forEach((t, i) => g.fillText(t, 12, 752 + i * 22));
   await sh.show();
   window.__VLOOK_DONE__ = true;
 })(); await Promise.race([__work, new Promise((r) => setTimeout(r, 52000))]); })()`;
