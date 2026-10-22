@@ -70,13 +70,18 @@ if (OVERRIDE) {
 export const ROLE_OVERRIDE = OVERRIDE;
 
 /**
- * Page-context prelude. Must be spliced inside an `async` function body (it
- * declares consts; it does not await). Accepts every published shape of
+ * Page-context prelude. Must be spliced inside an `async` function body (it declares consts and, since W0b,
+ * awaits the deferred Instrument kinds, at most 25 s). Accepts every published shape of
  * `ctx.machines.roles` the contract allows: a plain object or Map of
  * `role -> kind | null | { kind, note }`, or an object with `get(role)`.
  */
 export const ROSTER = `
       /* __R5_ROSTER__ (tools/gate-roster.mjs) */
+      /* W0b: Instrument kinds stream in AFTER __READY__ (machines/index.js registers a kind when its model loads,
+         then sets varietyReady and expansionReady); read the role map only once the deferred kinds are in, or
+         the Tiller fixture's herd role reads "not in ctx.machines.kinds" and every herd row SKIPs. Bounded. */
+      { const __rT0 = performance.now();
+        while (window.__CTX__?.machines && !window.__CTX__.machines.expansionReady && performance.now() - __rT0 < 25000) await new Promise((r) => setTimeout(r, 150)); }
       const __rC = window.__CTX__;
       const __rSrc = __rC?.machines?.roles ?? null;
       const __rOverride = ${JSON.stringify(OVERRIDE)};

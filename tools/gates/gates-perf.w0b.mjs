@@ -62,30 +62,31 @@ const MB = (b) => r2(b / 1e6);
 /* budgets: tools/budgets.mjs MEMORY_BUDGETS (plan §4.2, §4.4, §9; the plan's numbers, verbatim) */
 export const W0B_BUDGETS = MEMORY_BUDGETS;
 
-/**
- * THE W0 UNATTRIBUTED-DRAW CAP (plan §4.2 row "unattributed scene children (measured at W0, capped <= 30 by W2)").
- * Recorded from the first W0b measurement of A-unattributed-cap on the staged fight (the run is named); every later
- * wave must measure <= this, and <= 30 from the W2 exit. null = not recorded yet (the gate then records nothing and
- * reports PENDING with the measured value, which is what gets written here).
- */
-export const UNATTRIBUTED_CAP_W0 = null;
+/** THE W0 UNATTRIBUTED-DRAW CAP (plan §4.2): recorded in tools/budgets.mjs MEMORY_BUDGETS.unattributed.w0Cap */
+export const UNATTRIBUTED_CAP_W0 = MEMORY_BUDGETS.unattributed.w0Cap ? MEMORY_BUDGETS.unattributed.w0Cap.draws : null;
 
 /**
- * DRAW OWNERS (plan §4.2 rows). A top-level scene child is REGISTERED to an owner when its name matches that
- * owner's pattern; draws from a scene child that matches none (or has no name) are UNATTRIBUTED. The post chain
- * is not a scene child (its fullscreen quads have no scene ancestor) and is measured as its own row.
+ * DRAW OWNERS (plan §4.2 rows) — the registration table. A top-level scene child is REGISTERED to an owner when
+ * its name matches that owner's pattern; draws from a scene child that matches none (or has no name) are
+ * UNATTRIBUTED. Names only: a lane registers its scene children by naming them for its row (an unnamed root can
+ * never be registered). Lights and their targets draw nothing themselves and are never hidden (hiding a light
+ * would remove every other owner's shadow draws). The post chain is not a scene child (its fullscreen quads have
+ * no scene ancestor) and is measured as its own row. Each owner names the lane(s) that answer for its draws.
  */
 export const DRAW_OWNERS = Object.freeze([
-  { id: 'terrain-sky-sea', row: 'terrain, skirt, sky, sea', re: /^(terrain|terrain-?skirt|skirt|sky|sky-?dome|sea|ocean|water|river-?water|horizon-?ring|ridges?)$/i },
-  { id: 'ground-scatter', row: 'ground scatter', re: /scatter|rocks?$|pebbles|ground-?cover/i },
-  { id: 'vegetation', row: 'vegetation chunks', re: /^vegetation|grass|trees?$|shrubs?/i },
-  { id: 'landmarks-places', row: 'landmarks + places', re: /^props?$|landmark|places?$|sites?$|megastructure|rockworks|gather/i },
-  { id: 'settlement', row: 'settlement kit', re: /settlement|^camp$|hamlet/i },
-  { id: 'instruments', row: 'Instruments', re: /^machines?$|instruments?$/i },
-  { id: 'lamp-beams', row: 'lamp beams', re: /beam/i },
-  { id: 'hero', row: 'Brea + gear', re: /^(player|hero|brea)/i },
-  { id: 'npcs', row: 'NPCs', re: /^npcs?$|people/i },
-  { id: 'vfx-ui-pooled', row: 'VFX, UI, pooled', re: /particles?|vfx|fx$|arrows?|trails?|decals?|projectiles?|pool|fauna|weather|rain|dust/i },
+  { id: 'terrain-sky-sea', row: 'terrain, skirt, sky, sea', lanes: 'world-ground, world-sky',
+    re: /^(terrain|terrain-?skirt|skirt|sky|sky-?dome|sea|ocean|water|river-?water|far-?ridges|ridges?|horizon-?ring|clouds?|cloud-?sea)$/i },
+  { id: 'ground-scatter', row: 'ground scatter', lanes: 'world-ground', re: /^(ground-?)?scatter|^pebbles|^ground-?cover|^rock-?scatter/i },
+  { id: 'vegetation', row: 'vegetation chunks', lanes: 'world-ground', re: /^vegetation|^grass|^trees?$|^shrubs?/i },
+  { id: 'landmarks-places', row: 'landmarks + places', lanes: 'world-props',
+    re: /^(world-)?props?$|landmark|^places?$|^sites?$|^(world-)?rockworks$|^gather-nodes$|^(world-)?activities$|^datapoints$|megastructure/i },
+  { id: 'settlement', row: 'settlement kit', lanes: 'settlements', re: /settlement|^(hunter-)?camp$|hamlet/i },
+  { id: 'instruments', row: 'Instruments', lanes: 'instruments lanes (legacy kinds: instruments-core / -b)', re: /^machines?$|^instruments?$|-machine$|-instrument$/i },
+  { id: 'lamp-beams', row: 'lamp beams', lanes: 'instruments-core', re: /beam/i },
+  { id: 'hero', row: 'Brea + gear', lanes: 'hero-body, armory', re: /^(player|hero|brea)\b/i },
+  { id: 'npcs', row: 'NPCs', lanes: 'settlements', re: /^npcs?$|^npc-crowd$|^people$/i },
+  { id: 'vfx-ui-pooled', row: 'VFX, UI, pooled', lanes: 'combat-kit, world-props (fauna), world-sky (weather)',
+    re: /particles?|vfx|-fx$|^fx$|arrows?|trails?|decals?|projectiles?|^thrown-|pool|fauna|weather|rain|dust|flocks|motes/i },
 ]);
 export const ownerOfName = (name) => (name ? (DRAW_OWNERS.find((o) => o.re.test(name)) || null) : null);
 
@@ -279,6 +280,23 @@ function attribute(profile, seconds, frames, PORT) {
     topSrcSelf: top(self), topSrcCaller: top(caller, 8), topOutsideSrc: top(outside, 8), srcFunctionsSeen: self.size };
 }
 
+/** who answers for a src/** file's per-frame allocations (plan §1.1 frozen systems, §2 lane rows) */
+const SRC_OWNERS = [
+  [/^\/src\/world\/(terrain|vegetation|water)\.js|^\/src\/world\/island\//, 'world-ground (W1)'],
+  [/^\/src\/world\/environment\.js/, 'world-sky (W1)'],
+  [/^\/src\/core\/(collision|nav|hitHulls)\.js/, 'FROZEN spatial (plan §1.1): needs an orchestrator grant'],
+  [/^\/src\/core\/engine\.js|^\/src\/main\.js/, 'engine-gpu (engine.js grant) / FROZEN frame loop (main.js)'],
+  [/^\/src\/entities\/(player|playerAnimator)\.js|^\/src\/entities\/anim\//, 'hero-body (W0b; melee from W1)'],
+  [/^\/src\/entities\/machines\/|^\/src\/instruments\//, 'instruments-core / the Instruments lanes'],
+  [/^\/src\/world\/(props|fauna)|^\/src\/world\/props\/|^\/src\/world\/sites\//, 'world-props'],
+  [/^\/src\/world\/(camp|npc|settlements)/, 'settlements (W2)'],
+  [/^\/src\/combat\/|^\/src\/items\//, 'combat-kit (W2) / armory'],
+  [/^\/src\/audio\//, 'audio (W3)'],
+  [/^\/src\/ui\//, 'shell-ui (W2)'],
+  [/^\/src\/core\/(progression|save)\.js/, 'progression (W3)'],
+];
+const srcOwner = (fnKey) => { const file = String(fnKey).split(' ').slice(-1)[0].replace(/:\d+$/, ''); return (SRC_OWNERS.find(([re]) => re.test(file)) || [null, 'orchestrator'])[1]; };
+
 async function allocRate({ PORT }) {
   const B = W0B_BUDGETS.alloc;
   return onPage(PORT, async ({ page, cdp }) => {
@@ -294,14 +312,23 @@ async function allocRate({ PORT }) {
       await cdp.send('HeapProfiler.startSampling', { samplingInterval: B.samplingIntervalB, includeObjectsCollectedByMajorGC: true, includeObjectsCollectedByMinorGC: true });
       const tS = Date.now();
       const stopDrive = drive ? await drive() : null;
-      for (let k = 1; k <= 4; k++) { await sleep((B.windowS * 1000) / 4 - 150); heap.push([(Date.now() - tS) / 1000, await gcAndHeap(cdp)]); }
+      // CROSS-CHECK (independent of the profiler's attribution): the used heap read every 100 ms for 2 s with no
+      // forced GC; the sum of its rises is a LOWER bound on everything allocated in that time (a minor GC in
+      // between hides what it reclaimed)
+      const saw = []; const tw = Date.now();
+      while (Date.now() - tw < 2000) { saw.push((await cdp.send('Runtime.getHeapUsage')).usedSize); await sleep(100); }
+      let rises = 0; for (let k = 1; k < saw.length; k++) if (saw[k] > saw[k - 1]) rises += saw[k] - saw[k - 1];
+      const sawtoothKBps = r1(rises / 1024 / ((Date.now() - tw) / 1000));
+      for (let k = 1; k <= 4; k++) { await sleep((B.windowS * 1000 - 2000) / 4 - 150); heap.push([(Date.now() - tS) / 1000, await gcAndHeap(cdp)]); }
       const { profile } = await cdp.send('HeapProfiler.stopSampling');
       const seconds = (Date.now() - tS) / 1000;
       if (stopDrive) await stopDrive();
       const frames = (await page.evaluate('__CTX__.engine.frames')) - f0;
       const a = attribute(profile, seconds, frames, PORT);
       const s = slope(heap);
-      return { name, ...a, heapPostGcB: heap.map(([t, b]) => [r2(t), b]), heapSlopeBps: s === null ? null : Math.round(s), wallS: r2((Date.now() - t0) / 1000) };
+      for (const x of a.topSrcSelf) x.owner = srcOwner(x.fn);
+      return { name, ...a, heapPostGcB: heap.map(([t, b]) => [r2(t), b]), heapSlopeBps: s === null ? null : Math.round(s), wallS: r2((Date.now() - t0) / 1000),
+        crossCheck: { usedHeapRisesKBps: sawtoothKBps, note: 'used-heap rises over 2 s, no forced GC: a lower bound on all allocation (src + three + browser)' } };
     };
     const fightPhase = await phase('staged fight', null);
     await page.evaluate(UNSTAGE);
@@ -318,6 +345,11 @@ async function allocRate({ PORT }) {
     const phases = [fightPhase, runPhase];
     const worstSrc = Math.max(...phases.map((p) => p.srcSelf.gradedKBps));
     const worstFn = phases.flatMap((p) => p.topSrcSelf.map((x) => ({ ...x, phase: p.name }))).sort((a, b) => b.gradedKBps - a.gradedKBps)[0] || null;
+    // every src function over the per-function bar, merged over both phases (worst phase kept), with its owner
+    const overFn = new Map();
+    for (const p of phases) for (const x of p.topSrcSelf) if (x.gradedKBps > B.fnKBps && (!overFn.has(x.fn) || overFn.get(x.fn).gradedKBps < x.gradedKBps)) overFn.set(x.fn, { ...x, phase: p.name });
+    const byOwner = {};
+    for (const x of overFn.values()) (byOwner[x.owner] = byOwner[x.owner] || []).push(x.fn + ' ' + x.gradedKBps + ' KB/s');
     const slopes = phases.map((p) => p.heapSlopeBps);
     const checks = {
       srcAllocationWithinBudget: worstSrc <= B.srcKBps,
@@ -328,8 +360,9 @@ async function allocRate({ PORT }) {
     const pass = Object.values(checks).every(Boolean);
     return { pass, detail: {
       verdict: (pass ? 'PASS' : 'FAIL: ' + Object.keys(checks).filter((k) => !checks[k]).join(', ')) + ` — src/** ${worstSrc} KB/s (bar ${B.srcKBps}), worst src function ${worstFn ? worstFn.fn + ' ' + worstFn.gradedKBps + ' KB/s in ' + worstFn.phase : 'none'} (bar ${B.fnKBps}), post-GC heap slope ${slopes.map((s) => (s === null ? '?' : r1(s / 1024) + ' KB/s')).join(' / ')} (bar <= 0); `
-        + phases.map((p) => `${p.name}: ${p.fps} fps, all allocation ${p.total.measuredKBps} KB/s`).join('; ') + ` — staged fight ${JSON.stringify(fight.cast?.cast || [])} at pixel ratio ${fight.appliedPixelRatio} (tier ${fight.quality})`,
-      checks, budget: B, fight, phases, input: shots,
+        + phases.map((p) => `${p.name}: ${p.fps} fps, all allocation ${p.total.measuredKBps} KB/s (used-heap rises ${p.crossCheck.usedHeapRisesKBps} KB/s)`).join('; ') + ` — staged fight ${JSON.stringify(fight.cast?.cast || [])} at pixel ratio ${fight.appliedPixelRatio} (tier ${fight.quality})`
+        + (Object.keys(byOwner).length ? ` — src functions over ${B.fnKBps} KB/s by owner: ` + Object.entries(byOwner).map(([o, l]) => o + ': ' + l.slice(0, 4).join(', ')).join('; ') : ''),
+      checks, budget: B, fight, phases, input: shots, functionsOverBarByOwner: byOwner,
       method: 'CDP HeapProfiler.startSampling (interval ' + B.samplingIntervalB + ' B, objects collected by minor and major GC included) over ' + B.windowS + ' s per phase after ' + B.warmupS + ' s of warm-up; graded = self attribution to src/** frames, max(measured KB/s, KB/frame x 60); post-GC heap = Runtime.getHeapUsage after two HeapProfiler.collectGarbage, 5 readings per phase, least-squares slope',
     } };
   });
@@ -555,36 +588,44 @@ async function a90Abs({ PORT }) {
 /* ------------------------------------------------------------------------------------------------ */
 const DRAW_PROBE = `(async () => {
   ${FRAMES}
-  const ctx = __CTX__, R = ctx.engine.renderer, scene = ctx.scene;
+  const ctx = __CTX__, e = ctx.engine, R = e.renderer, scene = ctx.scene;
   const OWNERS = ${JSON.stringify(DRAW_OWNERS.map((o) => ({ id: o.id, row: o.row, re: o.re.source, flags: o.re.flags })))}.map((o) => ({ ...o, re: new RegExp(o.re, o.flags) }));
   const ownerOf = (name) => (name ? (OWNERS.find((o) => o.re.test(name)) || null) : null);
-  // draws per frame (renderer.info with autoReset off, accumulated over whole frames)
-  const drawsPerFrame = async (n = 8) => {
-    const ar = R.info.autoReset; R.info.autoReset = false; R.info.reset();
-    const f0 = ctx.engine.frames; await __frames(n); const f = ctx.engine.frames - f0;
-    const calls = R.info.render.calls; R.info.autoReset = ar; R.info.reset();
-    return f ? calls / f : null;
+  // draws per frame: the engine owns renderer.info (autoReset off, reset at the top of render()) and records
+  // every frame's calls in its perf ring, so a frame's draws are perfSnapshot().medianDrawCalls over n frames
+  const drawsPerFrame = async (n = 8) => { e.perfReset(); const f0 = e.frames; while (e.frames - f0 < n) await new Promise((r) => requestAnimationFrame(r));
+    const s = e.perfSnapshot(n); return s ? s.medianDrawCalls : null; };
+  const describe = (c, i) => {
+    if (c.name) return c.name;
+    let tris = 0, meshes = 0; c.traverse((o) => { if (o.isMesh) { meshes++; const g = o.geometry; tris += g ? (g.index ? g.index.count : (g.attributes.position?.count || 0)) / 3 : 0; } });
+    return '(unnamed ' + c.type + ' #' + i + (c.isMesh ? ': ' + (c.geometry?.type || '?') + ' / ' + (c.material?.type || '?') : meshes ? ': ' + meshes + ' meshes' : '') + (tris ? ', ' + Math.round(tris) + ' tris' : '') + ')';
   };
-  const roots = scene.children.map((c) => ({ obj: c, name: c.name || '', type: c.type, owner: ownerOf(c.name)?.id || null, visible: c.visible }));
+  // a light or a light's target (an empty Object3D) draws nothing itself; hiding it would remove OTHER owners' shadow draws
+  const isLightish = (c) => c.isLight || (!c.isMesh && c.type === 'Object3D' && !c.children.length);
+  const roots = scene.children.map((c, i) => ({ obj: c, label: describe(c, i), owner: ownerOf(c.name)?.id || null, visible: c.visible, light: isLightish(c) }));
+  const rootIndex = new Map(roots.map((r, i) => [r.obj, i]));
   const settle = () => __frames(4);
   await settle();
   const total = await drawsPerFrame();
-  // DIRECT attribution (cross-check): wrap renderBufferDirect, bucket each draw by its scene root's owner
+  // DIRECT attribution (cross-check): every renderBufferDirect call (main, shadow and post passes) bucketed by
+  // the scene root it belongs to
   const direct = await (async () => {
-    const real = R.renderBufferDirect.bind(R);
-    const by = {}; let n = 0;
+    const real = R.renderBufferDirect;
+    const perRoot = new Float64Array(roots.length); let post = 0, n = 0, other = 0;
     R.renderBufferDirect = function (camera, sc, geometry, material, object, group) {
       let o = object, root = null; while (o) { if (o.parent === scene) { root = o; break; } o = o.parent; }
-      const k = !root ? 'post (no scene ancestor)' : (ownerOf(root.name)?.id || 'UNATTRIBUTED: ' + (root.name || '(unnamed ' + root.type + ')'));
-      by[k] = (by[k] || 0) + 1; n++;
-      return real(camera, sc, geometry, material, object, group);
+      if (!root) post++; else { const i = rootIndex.get(root); if (i === undefined) other++; else perRoot[i]++; }
+      n++;
+      return real.call(this, camera, sc, geometry, material, object, group);
     };
-    const f0 = ctx.engine.frames; await __frames(8); const f = ctx.engine.frames - f0;
+    const f0 = e.frames; await __frames(8); const f = e.frames - f0;
     R.renderBufferDirect = real;
-    for (const k in by) by[k] = Math.round((by[k] / f) * 10) / 10;
-    return { perFrame: Math.round((n / f) * 10) / 10, by };
+    const rows = roots.map((r, i) => ({ root: r.label, owner: r.owner, draws: Math.round((perRoot[i] / f) * 10) / 10 })).filter((x) => x.draws > 0).sort((a, b) => b.draws - a.draws);
+    const by = {};
+    for (const x of rows) { const k = x.owner || 'UNATTRIBUTED'; by[k] = Math.round(((by[k] || 0) + x.draws) * 10) / 10; }
+    return { perFrame: Math.round((n / f) * 10) / 10, post: Math.round((post / f) * 10) / 10, addedDuringProbe: Math.round((other / f) * 10) / 10, by, rows };
   })();
-  // HIDE EACH REGISTERED OWNER IN TURN (plan §9): its draws = total - draws with it hidden
+  // HIDE EACH REGISTERED OWNER IN TURN (plan §4.2 / §9): its draws = total - draws with it hidden
   const hidden = {};
   for (const o of OWNERS) {
     const mine = roots.filter((r) => r.owner === o.id && r.obj.visible);
@@ -592,24 +633,24 @@ const DRAW_PROBE = `(async () => {
     for (const r of mine) r.obj.visible = false;
     await settle(); const without = await drawsPerFrame();
     for (const r of mine) r.obj.visible = r.visible;
-    hidden[o.id] = { roots: mine.length, names: mine.map((r) => r.name), draws: Math.round((total - without) * 10) / 10 };
+    hidden[o.id] = { row: o.row, roots: mine.length, names: [...new Set(mine.map((r) => r.label))].slice(0, 12), draws: total - without };
   }
   // every scene child hidden: what is left is the post chain (+ passes that draw without the scene)
   for (const r of roots) r.obj.visible = false;
   await settle(); const postOnly = await drawsPerFrame();
   for (const r of roots) r.obj.visible = r.visible;
   // the unregistered roots, hidden together: the direct measure of the unattributed row
-  const un = roots.filter((r) => !r.owner && r.obj.visible);
+  const un = roots.filter((r) => !r.owner && !r.light && r.obj.visible);
   for (const r of un) r.obj.visible = false;
   await settle(); const withoutUn = await drawsPerFrame();
   for (const r of un) r.obj.visible = r.visible;
   await settle();
   const ownedSum = Object.values(hidden).reduce((a, h) => a + h.draws, 0);
-  return { total, postOnly, owners: hidden, ownedSum: Math.round(ownedSum * 10) / 10,
-    unattributedByHidingOwners: Math.round((total - postOnly - ownedSum) * 10) / 10,
-    unattributedByHidingUnregistered: Math.round((total - withoutUn) * 10) / 10,
-    unregisteredRoots: un.map((r) => r.name || '(unnamed ' + r.type + ')'),
-    rootsByOwner: roots.reduce((a, r) => { const k = r.owner || 'UNREGISTERED'; (a[k] = a[k] || []).push(r.name || '(unnamed ' + r.type + ')'); return a; }, {}),
+  return { total, postOnly, owners: hidden, ownedSum,
+    unattributedByHidingOwners: total - postOnly - ownedSum,
+    unattributedByHidingUnregistered: total - withoutUn,
+    unregisteredRoots: [...new Set(un.map((r) => r.label))], lightsNotHidden: roots.filter((r) => r.light).map((r) => r.label),
+    rootsByOwner: roots.reduce((a, r) => { const k = r.owner || 'UNREGISTERED'; (a[k] = a[k] || []).push(r.label); return a; }, {}),
     direct };
 })()`;
 
@@ -632,10 +673,10 @@ async function unattributedCap({ PORT }) {
     const pass = cap === null ? null : Object.values(checks).every(Boolean);
     return { pass, detail: {
       verdict: (cap === null ? `PENDING: W0 cap not recorded yet — record ${measured} (this measurement) as UNATTRIBUTED_CAP_W0` : pass ? 'PASS' : 'FAIL: ' + Object.keys(checks).filter((k) => !checks[k]).join(', '))
-        + ` — ${measured} draws/frame from scene children with no registered owner (hide-each-owner method; hiding the unregistered roots directly: ${m.unattributedByHidingUnregistered}; direct per-draw count: ${Object.entries(m.direct.by).filter(([k]) => k.startsWith('UNATTRIBUTED')).reduce((a, [, v]) => a + v, 0)}), `
-        + `of ${r1(m.total)} total (post chain ${r1(m.postOnly)}); W0 cap ${cap === null ? 'unrecorded' : cap}, W2 bar ${W0B_BUDGETS.unattributed.w2Bar}; wave ${wave}; unregistered roots: ${m.unregisteredRoots.join(', ') || 'none'}`,
+        + ` — ${measured} draws/frame from scene children with no registered owner (hide-each-owner method; hiding the unregistered roots directly: ${m.unattributedByHidingUnregistered}; direct per-draw count: ${m.direct.by.UNATTRIBUTED || 0}), `
+        + `of ${r1(m.total)} total (post chain ${r1(m.postOnly)}); W0 cap ${cap === null ? 'unrecorded' : cap + ' (' + MEMORY_BUDGETS.unattributed.w0Cap.measured + ')'}, W2 bar ${W0B_BUDGETS.unattributed.w2Bar}; wave ${wave}; unregistered roots: ${m.unregisteredRoots.join(', ') || 'none'}`,
       checks, measured, cap, wave, probe: m, fight,
-      owners: DRAW_OWNERS.map((o) => ({ id: o.id, row: o.row, pattern: String(o.re) })),
+      owners: DRAW_OWNERS.map((o) => ({ id: o.id, row: o.row, lanes: o.lanes, pattern: String(o.re) })),
     } };
   });
 }

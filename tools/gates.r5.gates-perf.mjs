@@ -1361,7 +1361,8 @@ if (RUN_ACTIVE && !globalThis.__CAL_SEAL_HOOK__) {
       const sel = carriedRowsThisInvocation(m.GATES);
       const all = selectedThisInvocation(m.GATES);
       const targeted = sel.length > 0 && sel.length === all.length && argFlag('--only', null) != null;
-      if ((sel.length >= 0.8 * CARRIED_IDS.size || targeted) && ledgerOutsideTrees().ok) {
+      // a child gates.mjs of a monitored run (A-chrome-semaphore's harness exercises) is never an observation
+      if (!monCoveredBy && (sel.length >= 0.8 * CARRIED_IDS.size || targeted) && ledgerOutsideTrees().ok) {
         appendLedger({ kind: 'run-start', runId: RUN_ID, at: isoOf(startedAtMs), tree: realpathSync(ROOT), port: RUN_PORT, pid: process.pid,
           argv: process.argv.slice(2), carriedRowsSelected: sel.length, partial: sel.length < 0.8 * CARRIED_IDS.size, build: atStart.digest, gitHead: gitHead() });
         runStarted = true;
@@ -1375,7 +1376,9 @@ if (RUN_ACTIVE && !globalThis.__CAL_SEAL_HOOK__) {
     try { startMonitor(); } catch (e) { writeSync(2, `[monitor] not started: ${e.message}\n`); }
   }
   process.on('exit', () => {
-    try { if (atStart) sealRun(startedAtMs, atStart, cfg, loadStart, sealer); } catch (e) { try { writeSync(2, `[ledger] SEAL FAILED: ${e.message}\n`); } catch { /* */ } }
+    // a child gates.mjs of a monitored run (A-chrome-semaphore's four A1 runs and its preflight refusals) exercises
+    // the harness; it is never sealed as an observation of the build (its monitor is its parent's)
+    try { if (atStart && !monCoveredBy) sealRun(startedAtMs, atStart, cfg, loadStart, sealer); } catch (e) { try { writeSync(2, `[ledger] SEAL FAILED: ${e.message}\n`); } catch { /* */ } }
     try { if (CAP.dir) rmSync(CAP.dir, { recursive: true, force: true }); } catch { /* */ }
     try { if (MON_FILE) { rmSync(MON_FILE, { force: true }); rmSync(MON_FILE + '.tmp', { force: true }); } } catch { /* */ }
   });
@@ -1671,7 +1674,7 @@ const VISUAL_JUDGE_PORT = 5271;
 /** complete FULL carried runs of this build the gate needs (one per round, orchestrator W0b); CAL_CARRIED_RUNS raises it */
 const MIN_FULL_RUNS = Math.max(1, Math.floor(Number(process.env.CAL_CARRIED_RUNS) || 1));
 const RANK = (c) => (c === 'pass' ? 4 : /^skip/.test(c) || c === 'pendingAttributed' ? 3 : c === 'pendingUnattributed' ? 2 : c === 'fail' ? 1 : 0);
-const BAD_ACTION_R33 = ['override', 'unrun', 'regression', 'needsRuns', 'worseThanBaseline', 'stagingFlaky'];
+const BAD_ACTION_R33 = ['override', 'unrun', 'regression', 'needsRuns', 'needsQuietBox', 'worseThanBaseline', 'stagingFlaky'];
 
 /** a row's baseline verdict from its classes in the baseline runs (infra = not observed) */
 function baselineVerdict(kind, classes) {
@@ -1901,11 +1904,15 @@ async function carriedSuite({ PORT, GATES: ALL }) {
       if (hard) { row.cls = hard; row.note = (seen.find((p) => p.cls === hard) || {}).note; }
       else if (!classes.length) { row.cls = 'unrun'; row.note = 'never observed on this build (every run that held it lost it to the harness)'; }
       else if (expect === 'pass') {
-        if (classes.every((c) => c === 'pass')) row.cls = 'pass';
+        // a Round-4-ATTRIBUTED PENDING (the box could not be measured: R26's loud box, a contended GPU) is not a
+        // measurement of the row: it neither passes nor fails it; the row needs one measured PASS and no other result
+        const measured = classes.filter((c) => c !== 'pendingAttributed');
+        if (!measured.length) { row.cls = 'needsQuietBox'; row.note = 'PASSED at baseline; every observation on this build is an attributed PENDING (box not measurable): re-run it on a quiet box — ' + firstBad((c) => c === 'pass'); }
+        else if (measured.every((c) => c === 'pass')) { row.cls = 'pass'; if (measured.length < classes.length) row.note = `${classes.length - measured.length} attributed PENDING observation(s) not counted`; }
         else if (classes.every((c) => c === 'skipR30')) { row.cls = 'skipR30'; row.note = 'PASSED at baseline; its subject was deleted at W0a (R30) and it reports SKIP-legacy-deleted until the replacement lands: ' + firstBad((c) => c === 'pass'); }
         else { row.cls = mixedStaging ? 'stagingFlaky' : 'regression'; row.note = 'PASSED at baseline; now ' + classes.join(' / ') + ': ' + firstBad((c) => c === 'pass'); }
       } else if (expect === 'flaky') {
-        const win = classes.slice(0, FLAKY_WINDOW), passes = win.filter((c) => c === 'pass').length, misses = win.length - passes;
+        const win = classes.filter((c) => c !== 'pendingAttributed').slice(0, FLAKY_WINDOW), passes = win.filter((c) => c === 'pass').length, misses = win.length - passes;
         row.cls = passes >= FLAKY_PASSES ? 'pass' : misses > FLAKY_WINDOW - FLAKY_PASSES ? 'regression' : 'needsRuns';
         row.note = `known-flaky (${R27_FLAKY.includes(g.id) ? 'R27' : 'baseline ' + bRow.perRun.join('/')}): ${passes} pass of the first ${win.length} observation(s) on this build (${win.join(' / ')}); needs ${FLAKY_PASSES} of the first ${FLAKY_WINDOW}`
           + (row.cls === 'pass' ? '' : ': ' + firstBad((c) => c === 'pass').slice(0, 140));
@@ -1963,6 +1970,7 @@ async function carriedSuite({ PORT, GATES: ALL }) {
       ruling: r.cls === 'awaitingJudge' ? `orchestrator: an R29 judge on port ${VISUAL_JUDGE_PORT} (its key registered with --judge-register) grades ${r.shot} and signs the verdict with node tools/gates.r5.gates-perf.mjs --judge --seal ${judgedRun.seal.sealId} --id ${r.id} … --judge-key <its key>`
         : r.cls === 'judgeUnanchored' ? 'grade with CAL_ORCHESTRATOR_PUBKEY set to the orchestrator key that registered the judge (the grader trusts no key by default)'
         : r.cls === 'judgeInvalid' || r.cls === 'shotInvalid' ? 're-film (a fresh sealed full run) and re-judge'
+        : r.cls === 'needsQuietBox' ? `re-run it on a quiet box (1-min load < 3, 0 other gate Chromes): node tools/gates.mjs --port ${PORT} --only ${r.id} (a sealed partial run), or the orchestrator's 5270 run`
         : r.cls === 'needsRuns' ? `re-run it (node tools/gates.mjs --port ${PORT} --only ${r.id}, sealed as a partial run) until its first ${FLAKY_WINDOW} observations on this build decide`
         : 'fix by ' + r.owner + ', or an orchestrator ruling recorded in the plan (no exemption in this gate)',
       ...(r.round4 ? { inheritedFromRound4: r.round4 } : {}), ...(r.planRulings ? { planRulings: r.planRulings } : {}),

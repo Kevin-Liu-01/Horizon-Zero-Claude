@@ -15,7 +15,7 @@ offline). Gates: `A-reference-clean`, `A-reference-set` (`tools/gates/gates-perf
 
 | folder | rows | serves |
 |---|---|---|
-| `reference/r5/gates-perf/` | 13 stored (11 PD, 1 CC0, 1 CC BY 2.0) | the carried Round-4 visual rows gates-perf re-staged: V1–V4, V12–V14, V21 (R33 c) and the lance slots V46–V49 name |
+| `reference/r5/gates-perf/` | 13 stored (11 PD, 1 CC0, 1 CC BY 2.0) | the carried Round-4 visual rows gates-perf re-staged: V1–V4, V12–V14, V21 (R33 c), the framing row V22 (`run-rear`), V24, and the lance slots V46–V49 name |
 
 Other lanes add `reference/r5/<lane>/` (e.g. hero-body's `reference/r5/hero/`) with the same MANIFEST format.
 

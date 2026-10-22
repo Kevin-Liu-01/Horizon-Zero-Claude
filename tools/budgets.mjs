@@ -150,8 +150,16 @@ export const MEMORY_BUDGETS = Object.freeze({
   vram: Object.freeze({ texturesB: 160e6, renderTargetsB: 170e6, geometryB: 120e6, totalB: 450e6 }),
   /** A90-abs: post-GC JS heap <= 450 MB, Chrome GPU-process footprint <= 1.5 GB at the staged fight (60 s after the A90 workload) */
   abs: Object.freeze({ heapB: 450e6, gpuProcessB: 1.5e9, fightS: 60, a90LoopS: 150, a90LifecycleS: 150, minKills: 25 }),
-  /** A-unattributed-cap: draws from scene children with no registered owner, <= 30 from the W2 exit (§4.2) */
-  unattributed: Object.freeze({ w2Bar: 30 }),
+  /**
+   * A-unattributed-cap: draws from scene children with no registered owner (tools/gates/gates-perf.w0b.mjs
+   * DRAW_OWNERS) — the cap is the W0 MEASUREMENT (plan §4.2: "measured at W0, capped <= 30 by W2"); every later
+   * wave must measure <= it, and <= 30 from the W2 exit. Recorded once from the first W0b measurement; the three
+   * methods agreed (hide each owner in turn, hide the unregistered roots, per-draw count): 5 draws, the five
+   * unnamed instanced particle quads of src/combat/particles.js (frozen; named -> registered by whoever holds
+   * its grant). 335 draws in that frame, post chain 22.
+   */
+  unattributed: Object.freeze({ w2Bar: 30, w0Cap: Object.freeze({ draws: 5,
+    measured: '2026-10-22, gates-perf port 5255, staged fight (8 x herd/Tiller fixture, R18 fallbacks named), tier high, pixel ratio 1.5, 1600x900' }) }),
 });
 
 /**
