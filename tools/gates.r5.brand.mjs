@@ -1060,9 +1060,9 @@ const W0B = [
     // the chooser's bearing clears the spark of any vertical skyline feature"). Graded now, and it is that W1 re-check.
     id: 'A-title-spark-clear', kind: 'action', lane: 'brand', plain: true, settle: 1500, timeout: 300000,
     title: 'Nothing stands behind the spark (the judge saw a needle of rock rising behind it on the plumb axis, "pinned on a stick"; bible 9.8: the spark is "the calima sun"): '
-      + 'along the ray through every column of the spark box\'s bottom edge (one per 6 px, at least 9), from the LIVE camera, the terrain '
-      + '(marched in 2 m steps over the rendered terrain mesh\'s box) and every other visible mesh in the scene (raycast; the sky dome and the disc excepted) '
-      + 'are under the spark: on the press beat (0.3 s, 2.6 s), IN REAL TIME with the menu in every 5 s until the dolly clock passes 105 s (the whole truck), '
+      + 'along the ray through every column of the spark box\'s bottom edge (one per 6 px, at least 9), from the LIVE camera, every other visible mesh in the scene '
+      + '(raycast; the sky dome and the disc excepted) is under the spark, and the terrain (marched in 2 m steps over the rendered terrain mesh\'s box) '
+      + 'stays at least 0.4° (about 6 px) under it: on the press beat (0.3 s, 2.6 s), IN REAL TIME with the menu in every 5 s until the dolly clock passes 105 s (the whole truck), '
       + 'on the second visit (QUIT TO TITLE) at the press beat, and with the lockup restaged at 2.4x as V-logo-4k films it; the framing chooser reports the spark clear every time',
     assert: `(async () => {
       const ctx = __CTX__, M = ctx.menus, cam = ctx.camera, scene = ctx.scene, T = ctx.terrain, env = ctx.environment;
@@ -1141,7 +1141,8 @@ const W0B = [
       const menuRows = rows.filter((r) => r.label === 'menu');
       const checks = {
         nothingBehindTheSpark: rows.every((r) => r.hits === 0),
-        terrainUnderTheSparkEverywhere: rows.every((r) => r.terrainMarginDeg >= 0),
+        // a needle whose tip stops a few px under the spark still reads as "pinned on a stick": 0.4° (about 6 px) of air
+        terrainUnderTheSparkEverywhere: rows.every((r) => r.terrainMarginDeg >= 0.4),
         wholeTruckSampled: menuRows.length >= 15 && Math.max(...menuRows.map((r) => r.dollyT || 0)) > 105,
         chooserReportsClear: chooser.length === 3 && chooser.every((c) => c.spark && c.spark.measured === true && c.spark.clear === true),
       };

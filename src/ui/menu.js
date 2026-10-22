@@ -746,8 +746,9 @@ export class Menus {
    * least angle, over the path, by which the rays through the spark box's bottom edge
    * (widened by TITLE_SPARK_PAD each side) clear the terrain crest under them (rad;
    * < 0 = something stands behind the spark). Returns as soon as it drops under
-   * `need`. `quick`: 9 of the 20 path points, 3 rays, 20 m steps (an upper bound on
-   * the full read). The crest is marched only over the rendered terrain mesh (its
+   * `need`. The full read: 20 path points, a ray at least every 8 px, 5 m steps;
+   * `quick`: 9 path points, 3 rays, 20 m steps (an upper bound on the full read, used
+   * only to rank candidates). The crest is marched only over the rendered terrain mesh (its
    * world box); beyond it the sky ring's ridges stand far lower. No allocation.
    */
   _titleSparkMargin(saz, po, lo, tilt, spk, need, quick) {
@@ -756,11 +757,13 @@ export class Menus {
     const S = this._titleScratchGet(), pc = S.cam, v = S.v, head = S.head;
     const box = T.mesh ? S.box.setFromObject(T.mesh) : null;
     head.sx = Math.sin(saz + po); head.cz = Math.cos(saz + po); head.lx = Math.sin(saz + lo); head.lz = Math.cos(saz + lo); head.tilt = tilt;
-    const cols = quick ? 3 : TITLE_SPARK_COLS, step = quick ? 20 : 10;
+    const step = quick ? 20 : 5;
     let worst = Infinity;
     for (let L = 0; L < 2; L++) {
       const lay = L === 0 ? spk.press : spk.menu;
       const pad = (lay.x1 - lay.x0) * TITLE_SPARK_PAD;
+      // the full read: a ray at least every 8 px across the widened box, so a needle cannot slip between rays
+      const cols = quick ? 3 : Math.max(TITLE_SPARK_COLS, Math.ceil((lay.x1 - lay.x0 + 2 * pad) * innerWidth / 2 / 8) + 1);
       const ne = L === 0 ? 1 : TITLE_EASE_STEPS.length;
       for (let e = 0; e < ne; e++) {
         const ease = L === 0 ? 0 : TITLE_EASE_STEPS[e];
