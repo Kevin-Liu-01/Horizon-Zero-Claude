@@ -90,7 +90,43 @@ jog, from a sprint), `looseHandBehindSkull` (< 0) and `looseElbowBehindHead` (�
 
 ### 00.2 Camera rows A31b / A31d / A31e / A31f on Brea (judge findings 2, 11) — R36
 
-⟨TBD⟩
+**The root cause of the run-to-run flips was not the camera: it was her stance after a staging teleport.** Every
+camera row stages her with `p.position.set(...)` on the 38.8° face. A planted foot lock keeps its WORLD anchor, and
+`_footLock` answered an anchor 100+ m away by sliding it to `MAX_LOCK` — 0.30 m toward the place she came from —
+so whenever her feet had planted before the teleport (a page that had idled ~30 frames) BOTH feet stood 0.30 m off,
+and on the face that is a lunge: the downhill ball 0.43 m under her root, the pelvis 0.50 m over it (0.82 standing),
+**her Head joint 1.09 m over her feet instead of 1.36** (`lockdbg.js`, `hill4.js`, Oct 22). The rig hangs off her
+head (stance follow), so the whole camera sank 0.1–0.2 m with it, and which of the two worlds a gate saw decided
+A31b's −0.8 staging (relief 0 / boom 1.45 / gap 1.45, or relief 36° / gap 0.99–1.12) and the clamp rows' margins.
+That is why lane1/2/4 passed and lane3 / the judge's run / this round's first runs did not.
+
+*Fixes* (`src/entities/playerAnimator.js`, `src/entities/player.js` camera, hero-body's grant):
+
+- **`_footLock`: a teleport is not a slip** — a lock whose anchor is > 1 m (`RESEAT_D2`) from its ball re-captures
+  (error 0); a hitch or a shove (≤ 0.55 m, A13's replica) still slides as before. `replant()` (respawn) does the
+  same explicitly. After a staging teleport she now stands at 1.35–1.37 m on the face.
+- **`SWING_UP_ON` 0.80** — the ground yaw swing engages from 80 % of the look-up (was `SWING_UP_MIN`, 55 %). Standing,
+  at camPitch −0.8 up-slope, the swing carried the lens 90° round to her side at knee height and the view up to 53°
+  (all sky, A31b's film); the boom rotation, which keeps the lens behind her, answers there now. The clamp keeps the
+  swing (A31e/f).
+- **Dolly floor under the clamp** (`DOLLY_GAP_UNDER` 1.25): under the pitch clamp the deep-look-up push-in keeps
+  1.25 m from the pivot (A31b's bar is 1.20); the clamp keeps `DOLLY_GAP` 0.90. **The applied push-in is the least that
+  clears** (`least`), not the one with most clearance (a 0.031 m-clear boom had been pulled 2.23 → 0.99 m for 4 mm).
+- **Rotated booms keep their length only as far as it clears** (and ≤ the un-rotated boom + 0.05 m): rotated 36°,
+  the 2.23 m boom ran back into the hill where 1.45–1.60 m cleared.
+- **`_preCut` — never hand `cameraBoom` a cut it would make 0.4 m deep**: at a deep look-up the planned boom is
+  checked against `cameraBoom`'s own three-sample terrain march first and, if it would be cut, bisected to the longest
+  length that clears by 1 cm (the march answered a millimetre graze with a 0.4 m back-off: a one-frame 1.03 → 0.63 m
+  jump, head off the frame, the gap fade dithering her to 0.64–0.85).
+- **The cut floor eases with motion, not the clock** (`REL_CUT_PER_RAD` 0.4 / `REL_CUT_PER_M` 0.5 /
+  `REL_CUT_TRICKLE` 0.01 rad/s): a still camera no longer walks its rotation back into the same cut every second.
+- **The head-and-shoulders keeper also engages where the ground ROTATED or DOLLIED the boom**, not only where it
+  swung; at the pitch clamp only it may give back `KEEP_GROUND_EXTRA` (0.22 rad) past the aim budget (her head in the
+  picture outranks the last degrees of a look-up the hill refuses; A31b grades the −0.8 stagings against the budget,
+  so not there). Its change shares one per-RENDERED-frame budget with the hijack's slew (`KEEP_STEP_TOTAL` 2.6°):
+  with 2–3 sim steps per frame the two had summed to 3.1–3.7° past the input on A31e's pans (bar 3).
+
+⟨TBD runs table⟩
 
 ### 00.3 A31c (finding 3) — R36
 
