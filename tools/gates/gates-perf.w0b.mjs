@@ -19,10 +19,10 @@
  *   A-unattributed-cap   staged fight, hide each registered draw owner in turn: draws from scene children with no
  *                        registered owner are recorded at W0 (the cap), non-increasing every wave, <= 30 from W2
  *
- * REGISTRATION. Until the orchestrator closes W0a gates-perf this module is run with
- *   node tools/gates.mjs --port 5255 --extra tools/gates/gates-perf.w0b.mjs --only <ids>
- * and then registered by one line in tools/gates.r5.gates-perf.mjs (its GATES array spreads this GATES), after
- * which `node tools/gates.mjs --port 5255 --lane gates-perf` runs it.
+ * REGISTRATION. tools/gates.r5.gates-perf.mjs spreads this GATES into its own (before A-port-guard, which stays
+ * last), so `node tools/gates.mjs --port 5255 --lane gates-perf` runs it; gates.config.mjs discovers that file by
+ * pattern. In a tree without gates-perf's gates.config.mjs:
+ *   node tools/gates.mjs --port <p> --extra tools/gates.r5.gates-perf.mjs --lane gates-perf
  *
  * CHROME. The four perf rows are RUNNER rows (they need CDP: the sampling heap profiler, HeapProfiler GC,
  * SystemInfo). Each opens ONE page: on the harness's own Chrome when this gates.mjs process already has one
@@ -42,10 +42,9 @@ import path from 'path';
 import os from 'os';
 import { fileURLToPath } from 'url';
 import { PROFILE_ROOT, profileDir, disposeProfile, acquireChromeSlot, installProfileCleanup } from '../chrome-profile.mjs';
-import { BUDGETS, STAGE_PRELUDE, PERF_SCENARIOS } from '../budgets.mjs';
+import { BUDGETS, STAGE_PRELUDE, PERF_SCENARIOS, MEMORY_BUDGETS, RT_LEDGER } from '../budgets.mjs';
 import { ROSTER } from '../gate-roster.mjs';
 import { PLACES } from '../gate-places.mjs';
-import { RT_LEDGER } from '../r5-probes/rt-ledger.mjs';
 import { verify as verifyReferenceSet } from '../r5-refs/fetch.mjs';
 import { classifierSelfTest, FORBIDDEN_SOURCE_RE, STORED_LICENCES } from '../r5-refs/licence.mjs';
 import { readManifest, laneFolders } from '../r5-refs/manifest.mjs';
@@ -60,16 +59,8 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const r1 = (x) => Math.round(x * 10) / 10, r2 = (x) => Math.round(x * 100) / 100;
 const MB = (b) => r2(b / 1e6);
 
-/* ------------------------------------------------------------------------------------------------ */
-/* budgets (plan §4.4, §9). They move into tools/budgets.mjs when W0a gates-perf has closed (that file */
-/* is part of the W0a carried build fingerprint until then); the numbers are the plan's, verbatim.     */
-/* ------------------------------------------------------------------------------------------------ */
-export const W0B_BUDGETS = Object.freeze({
-  alloc: { srcKBps: 64, fnKBps: 4, heapSlopeBps: 0, windowS: 10, warmupS: 3, samplingIntervalB: 2048, refFps: 60 },
-  vram: { texturesB: 160e6, renderTargetsB: 170e6, geometryB: 120e6, totalB: 450e6 },
-  abs: { heapB: 450e6, gpuProcessB: 1.5e9, fightS: 60, a90LoopS: 150, a90LifecycleS: 150, minKills: 25 },
-  unattributed: { w2Bar: 30 },
-});
+/* budgets: tools/budgets.mjs MEMORY_BUDGETS (plan §4.2, §4.4, §9; the plan's numbers, verbatim) */
+export const W0B_BUDGETS = MEMORY_BUDGETS;
 
 /**
  * THE W0 UNATTRIBUTED-DRAW CAP (plan §4.2 row "unattributed scene children (measured at W0, capped <= 30 by W2)").
@@ -88,7 +79,7 @@ export const DRAW_OWNERS = Object.freeze([
   { id: 'terrain-sky-sea', row: 'terrain, skirt, sky, sea', re: /^(terrain|terrain-?skirt|skirt|sky|sky-?dome|sea|ocean|water|river-?water|horizon-?ring|ridges?)$/i },
   { id: 'ground-scatter', row: 'ground scatter', re: /scatter|rocks?$|pebbles|ground-?cover/i },
   { id: 'vegetation', row: 'vegetation chunks', re: /^vegetation|grass|trees?$|shrubs?/i },
-  { id: 'landmarks-places', row: 'landmarks + places', re: /^props?$|landmark|places?$|sites?$|megastructure|tallneck|rockworks|gather/i },
+  { id: 'landmarks-places', row: 'landmarks + places', re: /^props?$|landmark|places?$|sites?$|megastructure|rockworks|gather/i },
   { id: 'settlement', row: 'settlement kit', re: /settlement|^camp$|hamlet/i },
   { id: 'instruments', row: 'Instruments', re: /^machines?$|instruments?$/i },
   { id: 'lamp-beams', row: 'lamp beams', re: /beam/i },
@@ -736,7 +727,8 @@ function referenceClean({ GATES }) {
   // V12 / V22 / V24 / V46 / V48 point at reference/r5/**
   const NAMED = ['V12', 'V22', 'V24', 'V46', 'V48'];
   const pointing = NAMED.map((short) => {
-    const g = (GATES || []).find((x) => new RegExp(`^${short}-`).test(x.id) && x.kind === 'visual');
+    // any kind: V22-chase-framing is an ACTION row that names its framing reference
+    const g = (GATES || []).find((x) => new RegExp(`^${short}-`).test(x.id));
     if (!g) return { gate: short, present: false };
     const t = referenceTokens(g);
     const res = t.refs.map(resolveRef);

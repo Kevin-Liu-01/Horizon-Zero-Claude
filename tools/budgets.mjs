@@ -131,6 +131,30 @@ export const BUDGETS = {
 };
 
 /**
+ * engine-gpu's MEASURED render-target ledger (plan §9 `A-rt-ledger`: "bytes per target recorded in
+ * docs/ROUND5-ENGINE.md and tools/budgets.mjs"). Recorded here by re-export from engine-gpu's leaf
+ * module (no imports, so no cycle with the lane files that import this one); never copied by hand.
+ */
+export { RT_LEDGER } from './r5-probes/rt-ledger.mjs';
+
+/**
+ * ROUND 5 W0b memory budgets (gates-perf: `A-alloc-rate`, `A-vram-ledger`, `A90-abs`,
+ * `A-unattributed-cap`; plan §4.2, §4.4, §9). The numbers are the plan's, verbatim; the windows and
+ * durations are the method. Units: 1 KB = 1024 B for allocation rates; 1 MB = 1e6 B and 1 GB = 1e9 B
+ * for memory (the A-rt-ledger convention).
+ */
+export const MEMORY_BUDGETS = Object.freeze({
+  /** A-alloc-rate: steady-state allocation attributed to src/** (sampling heap profiler) */
+  alloc: Object.freeze({ srcKBps: 64, fnKBps: 4, heapSlopeBps: 0, windowS: 10, warmupS: 3, samplingIntervalB: 2048, refFps: 60 }),
+  /** A-vram-ledger: plan §4.4 — textures <= 160, render targets <= the A-rt-ledger cap 170, geometry <= 120, total <= 450 MB */
+  vram: Object.freeze({ texturesB: 160e6, renderTargetsB: 170e6, geometryB: 120e6, totalB: 450e6 }),
+  /** A90-abs: post-GC JS heap <= 450 MB, Chrome GPU-process footprint <= 1.5 GB at the staged fight (60 s after the A90 workload) */
+  abs: Object.freeze({ heapB: 450e6, gpuProcessB: 1.5e9, fightS: 60, a90LoopS: 150, a90LifecycleS: 150, minKills: 25 }),
+  /** A-unattributed-cap: draws from scene children with no registered owner, <= 30 from the W2 exit (§4.2) */
+  unattributed: Object.freeze({ w2Bar: 30 }),
+});
+
+/**
  * Page-context staging kit shared by every perf scenario (and available to any
  * other gate that needs a reproducible scene). Injected once before the
  * scenario expressions are eval'd.

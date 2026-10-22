@@ -16,7 +16,7 @@ export const SLOTS = [
   { lane: 'gates-perf', intro: INTRO, slot: 'run-side', gates: ['V12-sprint-vs-reference', 'V1-sprint-frame'],
     subject: 'sprint, true side view: forward lean, opposing arm swing beside the body, long stride, contact on the ground line',
     query: 'Warrior Games track sprint', file: 'File:Marine team makes winning sprint toward Chairman’s Cup during 2013 Warrior Games 130514-M-HQ478-240.jpg' },
-  { lane: 'gates-perf', slot: 'run-rear', gates: ['V1-sprint-frame'],
+  { lane: 'gates-perf', slot: 'run-rear', gates: ['V1-sprint-frame', 'V22-chase-framing'],
     subject: 'runner from behind / rear three-quarter: arms swing fore-aft beside the body, counter-rotation, trailing leg',
     query: 'runner seen from behind', file: 'File:The Operation Jack Marathon? (5108837840).jpg' },
   { lane: 'gates-perf', slot: 'idle-stand', gates: ['V2-idle-frame'],

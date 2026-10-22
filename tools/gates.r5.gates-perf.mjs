@@ -11,11 +11,11 @@
  *                            an offending file named with its owning lane; staging via the preludes
  *   A-gates-no-hero-literals no Round-4 rig bone or rig name in tools/gate*.mjs (W0 scope)
  *   A-gates-autodiscover     gates.config.mjs loads tools/gates.r5.*.mjs by pattern; lane rows shadow carried rows by id
- *   A-carried-suite          (runner) gates.r5.carried.mjs holds every CARRY/RESTAGE Appendix-B gate, and in each
- *                            of the (at least 3) SEALED carried runs of this tree + port on the current build (the
- *                            run ledger, outside every tree) every row is PASS / named SKIP / attributed PENDING; every
- *                            visual row of the newest run is an R29 judge PASS bound to its sealed frame, or a
- *                            filmed SKIP card
+ *   A-carried-suite          (runner, R33) gates.r5.carried.mjs holds every CARRY/RESTAGE Appendix-B gate and is a
+ *                            regression guard against tools/gates/carried-baseline.json over every SEALED observation
+ *                            of this build (>= 1 complete full carried run, once per round, + targeted partial
+ *                            re-runs; the run ledger lies outside every tree); the kept visual rows are signed R29
+ *                            verdicts on the newest full run's frames, every other visual row is SKIP-replaced
  *   A-chrome-semaphore       machine-wide Chrome slots, released on exit and on SIGKILL; the disk/memory
  *                            preflight refuses to launch Chrome
  *   A-port-guard             (LAST) both harnesses refuse no-port / 5173 / out-of-range before opening a socket or a
@@ -23,8 +23,10 @@
  *                            listener) show 0 connections to :5173 from this lane run's process tree and from every
  *                            sealed carried run it vouches for, gap-free; no tree's Vite cacheDir is Kevin's
  * A79-runner-verdict-line / A80-chrome-profile-hygiene are CARRY rows and run in the carried suite; A9 (R26)
- * and A21 (§9 re-cast GPU bar) are carried rows edited in place. A-alloc-rate, A-vram-ledger, A90-abs,
- * A-unattributed-cap, A-reference-clean and A-reference-set are this lane's W0b rows, not in this file yet.
+ * and A21 (§9 re-cast GPU bar, R33 f: names its DPR) are carried rows edited in place.
+ *
+ * W0b block (tools/gates/gates-perf.w0b.mjs, spread into GATES below, before A-port-guard):
+ *   A-reference-clean, A-reference-set, A-alloc-rate, A-vram-ledger, A90-abs, A-unattributed-cap
  *
  * CLIs (not gates):
  *   node tools/gates.r5.gates-perf.mjs --watch-5173 <out.json> [--seconds N]
@@ -59,6 +61,7 @@ import net from 'net';
 import { fileURLToPath, pathToFileURL } from 'url';
 import { W0_PLACES } from './gate-places.mjs';
 import { ROSTER, ROLE_PENDING } from './gate-roster.mjs';
+import { GATES as W0B_GATES } from './gates/gates-perf.w0b.mjs';
 
 const TOOLS = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(TOOLS, '..');
@@ -108,7 +111,7 @@ const LANE_FILE_RE_LOCAL = /^gates\.r5\.([a-z0-9][a-z0-9-]*)\.mjs$/;
 
 /** The files this lane owns among the gate sources (stricter scan: no species WORD at all). */
 const OWNED = ['gates.mjs', 'gates.config.mjs', 'gates.r5.carried.mjs', 'gates.r5.gates-perf.mjs',
-  'gate-roster.mjs', 'gate-places.mjs', 'budgets.mjs'];
+  'gate-roster.mjs', 'gate-places.mjs', 'budgets.mjs', 'gates/gates-perf.w0b.mjs'];
 
 /** `tools/gates*.mjs` (A-gate-preludes) and `tools/gate*.mjs` (A-gates-no-hero-literals). */
 const gatesGlob = () => readdirSync(TOOLS).filter((f) => /^gates.*\.mjs$/.test(f)).sort();
@@ -253,7 +256,7 @@ const textOf = (v) => (Array.isArray(v) ? v.join(' ') : typeof v === 'string' ? 
 /* ------------------------------------------------------------------------ */
 function gatePreludes(GATES) {
   const files = gatesGlob();
-  const extra = ['budgets.mjs'];          // A21's staging lives there
+  const extra = ['budgets.mjs', 'gates/gates-perf.w0b.mjs'];   // A21's staging lives in budgets.mjs; the W0b rows in tools/gates/
   const scan = [...files, ...extra.filter((f) => !files.includes(f))];
   const speciesLiterals = {}, ownedSpeciesWords = {}, coords = {};
   const vocab = oldMapVocabulary();
@@ -928,7 +931,6 @@ const LEDGER_DIR = path.resolve(process.env.CAL_GATE_LEDGER || path.join(os.tmpd
 const LEDGER_FILE = path.join(LEDGER_DIR, 'ledger.jsonl');
 const LEDGER_RUNS = path.join(LEDGER_DIR, 'runs');
 const LEDGER_KEEP_RUNS = 4;          // carried runs that keep their FRAMES, per (tree, port); every report copy is kept
-const MIN_RUNS = Math.max(3, Math.floor(Number(process.env.CAL_CARRIED_RUNS) || 3));   // a floor, never lowered
 const sha256 = (buf) => createHash('sha256').update(buf).digest('hex');
 /** The ledger must live outside every worktree of the repo (a lane can then not ship its own verdicts in a merge). */
 function ledgerOutsideTrees() {
@@ -1023,7 +1025,9 @@ const isoOf = (ms) => (Number.isFinite(ms) ? new Date(ms).toISOString() : null);
 function pruneRuns(tree, port) {
   const L = readLedger();
   const mine = L.entries.map((e) => e.entry).filter((e) => e.kind === 'seal' && e.tree === tree && Number(e.port) === Number(port)).reverse();
-  for (const s of mine.slice(LEDGER_KEEP_RUNS)) {
+  // frames of the newest LEDGER_KEEP_RUNS full runs and of the newest LEDGER_KEEP_RUNS partial re-runs are kept
+  const old = [...mine.filter((e) => !e.partial).slice(LEDGER_KEEP_RUNS), ...mine.filter((e) => e.partial).slice(LEDGER_KEEP_RUNS)];
+  for (const s of old) {
     const dir = path.join(LEDGER_RUNS, s.sealId);
     let files = [];
     try { files = readdirSync(dir).filter((f) => f.endsWith('.png')); } catch { files = []; }
@@ -1290,7 +1294,12 @@ function sealRun(startedAtMs, atStart, cfg, loadStart, sealer) {
   if (Number(rep.port) !== port) return;
   const results = rep.results || [];
   const carried = results.filter((r) => CARRIED_IDS.has(r.id)).length;
-  if (carried < 0.8 * CARRIED_IDS.size) {                            // only carried runs are sealed; say what was observed
+  // W0b: the full suite runs once per round (orchestrator), so a TARGETED re-run — `--only` of carried ids and
+  // nothing else — is sealed too, as a PARTIAL run: one more observation of exactly the rows it ran (how a
+  // known-flaky row gets its first-5 window, R33 b). Anything else under 80 % of the carried rows is not sealed.
+  const partial = carried < 0.8 * CARRIED_IDS.size;
+  const targeted = partial && carried > 0 && carried === results.length && argFlag('--only', null) != null;
+  if (partial && !targeted) {                                        // only carried runs are sealed; say what was observed
     if (carried) writeSync(1, `[ledger] not sealed (${carried} of ${CARRIED_IDS.size} carried rows < 80 %): report captured at ${isoOf(CAP.report.at)}, `
       + `${Object.keys(CAP.frames).length} carried frame(s) capture-bound (${Object.entries(CAP.frames).map(([k, v]) => k + ' ' + v.sha256.slice(0, 12)).join(', ') || 'none'}), `
       + `monitor: ${monSummary(readMonitor())}\n`);
@@ -1320,7 +1329,7 @@ function sealRun(startedAtMs, atStart, cfg, loadStart, sealer) {
   const monBuf = Buffer.from(JSON.stringify(MON));
   writeFileSync(path.join(dir, 'monitor.json'), monBuf);
   const endedAt = new Date().toISOString();
-  appendLedger({ kind: 'seal', sealVersion: SEAL_VERSION, sealId, runId: runStarted ? RUN_ID : null, at: endedAt, tree: realpathSync(ROOT), port, pid: process.pid,
+  appendLedger({ kind: 'seal', sealVersion: SEAL_VERSION, sealId, partial, runId: runStarted ? RUN_ID : null, at: endedAt, tree: realpathSync(ROOT), port, pid: process.pid,
     argv: process.argv.slice(2), startedAt: isoOf(startedAtMs), endedAt,
     load: { start: loadStart, end: os.loadavg().map((x) => +x.toFixed(2)) },
     reportStamp: rep.stamp, reportSha256: sha256(buf), reportCapturedAt: isoOf(CAP.report.at), results: results.length, carriedRows: carried,
@@ -1331,7 +1340,7 @@ function sealRun(startedAtMs, atStart, cfg, loadStart, sealer) {
       gateConnections: MON.gateConnectionCount, mainCacheRewrites: (MON.mainViteCache?.changes || []).length, box: MON.box, coveredByAncestor: MON.coveredByAncestor || null },
     concurrentSameTreeRuns: Object.values(MON.sameTreeRuns || {}) });
   pruneRuns(realpathSync(ROOT), port);
-  writeSync(1, `[ledger] sealed carried run ${sealId}: report + ${Object.keys(frames).length} capture-bound frames + run monitor (${MON.samples} samples) copied to ${dir}; seal appended to ${LEDGER_FILE}\n`);
+  writeSync(1, `[ledger] sealed ${partial ? 'PARTIAL (targeted re-run of ' + carried + ' carried row(s))' : 'FULL'} carried run ${sealId}: report + ${Object.keys(frames).length} capture-bound frames + run monitor (${MON.samples} samples) copied to ${dir}; seal appended to ${LEDGER_FILE}\n`);
 }
 
 let runStarted = false;
@@ -1350,9 +1359,11 @@ if (RUN_ACTIVE && !globalThis.__CAL_SEAL_HOOK__) {
     // before its seal still leaves a trace that A-carried-suite reports (it can no longer vanish)
     try {
       const sel = carriedRowsThisInvocation(m.GATES);
-      if (sel.length >= 0.8 * CARRIED_IDS.size && ledgerOutsideTrees().ok) {
+      const all = selectedThisInvocation(m.GATES);
+      const targeted = sel.length > 0 && sel.length === all.length && argFlag('--only', null) != null;
+      if ((sel.length >= 0.8 * CARRIED_IDS.size || targeted) && ledgerOutsideTrees().ok) {
         appendLedger({ kind: 'run-start', runId: RUN_ID, at: isoOf(startedAtMs), tree: realpathSync(ROOT), port: RUN_PORT, pid: process.pid,
-          argv: process.argv.slice(2), carriedRowsSelected: sel.length, build: atStart.digest, gitHead: gitHead() });
+          argv: process.argv.slice(2), carriedRowsSelected: sel.length, partial: sel.length < 0.8 * CARRIED_IDS.size, build: atStart.digest, gitHead: gitHead() });
         runStarted = true;
       }
     } catch (e) { try { writeSync(2, `[ledger] run-start not recorded: ${e.message}\n`); } catch { /* */ } }
@@ -1623,25 +1634,42 @@ async function classifyRow(g, r, run, verdicts, gradeVisual, trust = { regs: new
 /**
  * (a) The baseline: every carried row's verdict on the W0-day1 base (0b75036), recorded ONCE in
  *     tools/gates/carried-baseline.json from sealed runs of that base (`--carried-baseline`), with each
- *     run's box sample. The gate re-derives it from the ledger's report copies on every grading: a
- *     baseline that does not match its own sealed runs FAILs.
- * (b) Action rows: PASS at baseline -> must PASS in every graded run; known-flaky (A13 under R27, and
- *     any row the baseline shows flaky) -> PASS on >= 3 of the newest 5 graded runs; FAIL / PENDING /
- *     SKIP at baseline -> listed, not graded, but must not get WORSE (rank: pass > named SKIP or
- *     attributed PENDING > unattributed PENDING > FAIL).
+ *     run's box sample. It is ANCHORED one of two ways: (1) when its sealed runs are in the ledger the
+ *     gate re-derives every row from their report copies (a baseline that does not match its own runs
+ *     FAILs); (2) otherwise (a fresh ledger: the orchestrator's own, or a $TMPDIR the machine lost, as on
+ *     Oct 22) the file must be byte-identical to the version that FIRST added it to git — recorded once,
+ *     never edited — and internally consistent (every verdict follows from its per-run classes).
+ * (b) Action rows, over every observation of this build (W0b, orchestrator: the full suite runs ONCE per
+ *     round, so a full carried run is one observation of every row and a sealed PARTIAL run, `--only` of
+ *     carried ids, is one more observation of the rows it ran):
+ *       PASS at baseline  -> PASS in every observation (R30: SKIP-legacy-deleted is allowed, its subject
+ *                            was deleted at W0a and the row names it until the replacement lands);
+ *       known-flaky       (A13 under R27, and every row the baseline shows flaky) -> the FIRST 5
+ *                            observations on this build decide: >= 3 PASS (re-running cannot replace them);
+ *       FAIL / PENDING    -> listed, not graded, but never WORSE (pass > named SKIP or attributed PENDING >
+ *                            unattributed PENDING > FAIL);
+ *       SKIP at baseline, staged now (R28: the Tiller fixture took the herd role) -> NEWLY STAGED: listed
+ *                            with its result and owner (there is no Round-4 verdict on that content to
+ *                            regress from; the owner's own must-stay-green list grades it).
  * (c) Visual rows: only the KEPT systems (V1-V4, V12-V14, V21; plus any row a lane has re-staged by
- *     shadowing it) are graded, by a signed R29 verdict from port 5271; every other visual row is
- *     SKIP-replaced, naming its absorbing lane.
+ *     shadowing it) are graded, by a signed R29 verdict from port 5271 on the newest complete full run's
+ *     frame; every other visual row is SKIP-replaced, naming its absorbing lane.
  * (d) Integrity: sealed runs only (seal v3: capture-bound frames, run id in the frame path and the
  *     report, the run's own monitor); a stale, forged, tampered or self-judged report FAILs.
+ * THE BOX: each run's quiet fraction is reported beside the baseline's lowest; a louder run is still graded
+ * (a loud box can only make a row worse) and says so; the orchestrator's quiet-box run on 5270 is the
+ * authoritative one.
  */
 const BASELINE_FILE = path.join(TOOLS, 'gates', 'carried-baseline.json');
+const BASELINE_REL = 'tools/gates/carried-baseline.json';
 const BASE_COMMIT = '0b75036';
 const KEPT_VISUAL = ['V1-sprint-frame', 'V2-idle-frame', 'V3-crouch-stalk', 'V4-aim-anchor', 'V12-sprint-vs-reference',
   'V13-aim-strafe', 'V14-slope-contour', 'V21-camera-cover'];
 const R27_FLAKY = ['A13-no-skate'];
 const FLAKY_WINDOW = 5, FLAKY_PASSES = 3;
 const VISUAL_JUDGE_PORT = 5271;
+/** complete FULL carried runs of this build the gate needs (one per round, orchestrator W0b); CAL_CARRIED_RUNS raises it */
+const MIN_FULL_RUNS = Math.max(1, Math.floor(Number(process.env.CAL_CARRIED_RUNS) || 1));
 const RANK = (c) => (c === 'pass' ? 4 : /^skip/.test(c) || c === 'pendingAttributed' ? 3 : c === 'pendingUnattributed' ? 2 : c === 'fail' ? 1 : 0);
 const BAD_ACTION_R33 = ['override', 'unrun', 'regression', 'needsRuns', 'worseThanBaseline', 'stagingFlaky'];
 
@@ -1713,21 +1741,56 @@ async function baselineCli() {
   return 0;
 }
 
-/** the baseline file, verified against its own sealed runs in the ledger */
+/**
+ * The baseline file, anchored (R33 a): re-derived from its own sealed runs when they are in this ledger,
+ * else byte-identical to the version that FIRST added it to git (recorded once) and internally consistent.
+ */
 async function loadBaseline(L) {
-  let f;
-  try { f = JSON.parse(read(BASELINE_FILE)); } catch (e) { return { ok: false, why: `no baseline file ${rel(BASELINE_FILE)} (R33 a): ${String(e.message).slice(0, 80)}` }; }
+  let raw, f;
+  try { raw = readFileSync(BASELINE_FILE); f = JSON.parse(raw); } catch (e) { return { ok: false, why: `no baseline file ${rel(BASELINE_FILE)} (R33 a): ${String(e.message).slice(0, 80)}` }; }
   const ids = (f.runs || []).map((r) => r.sealId);
   if (!ids.length) return { ok: false, why: 'the baseline names no sealed run' };
   if (f.base !== BASE_COMMIT) return { ok: false, why: `the baseline is of ${f.base}, not ${BASE_COMMIT}` };
   if (!f.evidence?.runtimeDiffIsDeletionsOnly) return { ok: false, why: 'the baseline runs did not serve the base runtime (non-deletion changes vs ' + BASE_COMMIT + ')' };
-  let again;
-  try { again = await baselineFromSeals(L, ids); } catch (e) { return { ok: false, why: e.message }; }
-  const mismatched = Object.keys(again.rows).filter((id) => again.rows[id].kind !== 'visual'
-    && (f.rows?.[id]?.verdict !== again.rows[id].verdict || JSON.stringify(f.rows?.[id]?.perRun) !== JSON.stringify(again.rows[id].perRun)));
-  if (mismatched.length) return { ok: false, why: `${mismatched.length} row(s) of the baseline file differ from its sealed runs (edited?): ${mismatched.slice(0, 5).join(', ')}` };
   const missing = CARRIED.filter((g) => !f.rows?.[g.id]).map((g) => g.id);
-  return { ok: missing.length === 0, why: missing.length ? `${missing.length} carried row(s) have no baseline: ${missing.slice(0, 5).join(', ')}` : null, file: f };
+  if (missing.length) return { ok: false, why: `${missing.length} carried row(s) have no baseline: ${missing.slice(0, 5).join(', ')}` };
+  // internally consistent: every action row's verdict follows from its per-run classes, and the tally is the rows'
+  const inconsistent = Object.entries(f.rows).filter(([, r]) => r.kind !== 'visual' && baselineVerdict(r.kind, r.perRun || []) !== r.verdict).map(([id]) => id);
+  if (inconsistent.length) return { ok: false, why: `${inconsistent.length} baseline row(s) whose verdict does not follow from their per-run classes (edited?): ${inconsistent.slice(0, 5).join(', ')}` };
+  const tally = {};
+  for (const r of Object.values(f.rows)) tally[r.verdict] = (tally[r.verdict] || 0) + 1;
+  const norm = (t) => JSON.stringify(Object.keys(t || {}).sort().map((k) => [k, t[k]]));
+  if (norm(tally) !== norm(f.verdictTally)) return { ok: false, why: `the baseline's verdictTally ${norm(f.verdictTally)} is not its rows' ${norm(tally)}` };
+  const inLedger = ids.filter((id) => L.entries.some((e) => e.entry.kind === 'seal' && e.entry.sealId === id));
+  if (inLedger.length === ids.length) {
+    let again;
+    try { again = await baselineFromSeals(L, ids); } catch (e) { return { ok: false, why: e.message }; }
+    const mismatched = Object.keys(again.rows).filter((id) => again.rows[id].kind !== 'visual'
+      && (f.rows?.[id]?.verdict !== again.rows[id].verdict || JSON.stringify(f.rows?.[id]?.perRun) !== JSON.stringify(again.rows[id].perRun)));
+    if (mismatched.length) return { ok: false, why: `${mismatched.length} row(s) of the baseline file differ from its sealed runs (edited?): ${mismatched.slice(0, 5).join(', ')}` };
+    return { ok: true, file: f, anchor: `ledger: re-derived from its ${ids.length} sealed runs in ${L.file}` };
+  }
+  if (inLedger.length) return { ok: false, why: `only ${inLedger.length} of the baseline's ${ids.length} sealed runs are in this ledger (${inLedger.join(', ')}): a partial ledger cannot anchor it` };
+  // the git anchor: recorded ONCE — the working copy is byte for byte the version that first added the file
+  const log = spawnSync('git', ['-C', ROOT, 'log', '--diff-filter=A', '--format=%H %cI', '--', BASELINE_REL], { encoding: 'utf8' });
+  const adds = (log.stdout || '').trim().split('\n').filter(Boolean);
+  if (log.status !== 0 || !adds.length) return { ok: false, why: `its ${ids.length} sealed runs are not in this ledger (${L.file}) and the file was never committed: unanchored (record it with --carried-baseline in a ledger the grader holds, or have the orchestrator commit it)` };
+  const [first, at] = adds[adds.length - 1].split(' ');
+  const committed = spawnSync('git', ['-C', ROOT, 'show', `${first}:${BASELINE_REL}`], { encoding: 'buffer', maxBuffer: 64 * 1024 * 1024 });
+  if (committed.status !== 0) return { ok: false, why: `git show ${first.slice(0, 10)}:${BASELINE_REL} failed` };
+  if (!Buffer.from(committed.stdout).equals(raw)) return { ok: false, why: `the working copy differs from the version first committed in ${first.slice(0, 10)} (${at}): the baseline is recorded once and never edited` };
+  return { ok: true, file: f, anchor: `git: byte-identical to the version first committed in ${first.slice(0, 10)} (${at}); its ${ids.length} sealed runs are not in this ledger (${L.file})` };
+}
+
+/** every gate id THIS invocation of gates.mjs selects (the harness's --only / --lane rules) */
+function selectedThisInvocation(ALL) {
+  if (!IS_GATES_RUN) return [];
+  const only = argFlag('--only', null)?.split(',').map((s) => s.trim());
+  const lane = argFlag('--lane', null);
+  let sel = ALL || [];
+  if (only) sel = sel.filter((g) => only.includes(g.id));
+  if (lane) sel = sel.filter((g) => g.lane === lane);
+  return sel.map((g) => g.id);
 }
 
 async function carriedSuite({ PORT, GATES: ALL }) {
@@ -1755,70 +1818,76 @@ async function carriedSuite({ PORT, GATES: ALL }) {
     return { pass: false, detail: { verdict: `FAIL: ${tampered.length} sealed run(s) of this tree and port were tampered with after sealing: ` + tampered.map((t) => t.sealId + ' (' + t.why + ')').join('; '),
       composition: comp, tampered } };
   }
-  // EVERY fresh sealed run of this exact build whose box is comparable to the baseline's is graded (a flaky
-  // row cannot be retried until lucky runs line up: the runs it failed in stay in the record); only
-  // COMPLETE runs count toward the minimum.
-  // COMPARABLE BOX (R33 a records each baseline run's box sample): a run's quiet fraction (monitor samples
-  // with 1-minute load < 3 and no other gate Chrome) must reach the LOWEST quiet fraction of the baseline
-  // runs. A louder run is not a measurement against that baseline: it is listed with every row that did not
-  // pass in it (nothing hidden), and it neither grades nor counts. It cannot be chosen after the fact: the
-  // fraction is the run's own monitor, sealed with it.
+  // EVERY fresh sealed run of this exact build is an observation (no run can be dropped after the fact). The
+  // box is reported, not used to drop a run: each run's own monitor gives its quiet fraction (samples with a
+  // 1-minute load < 3 and no other gate Chrome), compared with the baseline runs' lowest.
   const quietFrac = (box, n) => (box && n ? (box.quietSamples || 0) / n : null);
   const baseQuiet = Math.min(...base.file.runs.map((r) => quietFrac(r.box, r.monitorSamples) ?? 1));
   const fresh = considered.filter((c) => c.why.length === 0);
   for (const c of fresh) {
+    c.partial = c.seal.partial === true;
     c.infraRows = (c.rep?.results || []).filter((r) => CARRIED_IDS.has(r.id) && isInfraResult(r)).map((r) => r.id);
     c.complete = c.infraRows.length === 0;
     c.quietFraction = quietFrac(c.seal.monitor?.box, c.seal.monitor?.samples);
-    c.comparable = c.quietFraction != null && c.quietFraction >= baseQuiet - 1e-9;
+    c.louderThanBaseline = !(c.quietFraction != null && c.quietFraction >= baseQuiet - 1e-9);
   }
-  const loudRuns = fresh.filter((c) => !c.comparable).map((c) => ({ sealId: c.seal.sealId, quietFraction: c.quietFraction == null ? null : +c.quietFraction.toFixed(3),
-    baselineFloor: +baseQuiet.toFixed(3), loadMax: c.seal.monitor?.box?.loadMax ?? null, otherGateChromesMax: c.seal.monitor?.box?.otherGateChromesMax ?? null,
-    rowsNotPassing: (c.rep?.results || []).filter((r) => CARRIED_IDS.has(r.id) && (r.status === 'FAIL' || r.status === 'ERROR')).map((r) => r.id) }));
-  const runs = fresh.filter((c) => c.comparable);
-  const complete = runs.filter((c) => c.complete);
-  const incompleteRuns = runs.filter((c) => !c.complete).map((c) => ({ sealId: c.seal.sealId, infraRows: c.infraRows.length,
+  const chrono = fresh.slice().sort((a, b) => Date.parse(a.seal.startedAt) - Date.parse(b.seal.startedAt));   // oldest first
+  const fullRuns = fresh.filter((c) => !c.partial);                       // newest first
+  const completeFull = fullRuns.filter((c) => c.complete);
+  const partialRuns = fresh.filter((c) => c.partial);
+  const incompleteRuns = fresh.filter((c) => !c.complete).map((c) => ({ sealId: c.seal.sealId, partial: c.partial, infraRows: c.infraRows.length,
     first: c.infraRows.slice(0, 3), why: String((c.rep.results || []).find((r) => isInfraResult(r))?.error || 'browser lost').slice(0, 120) }));
   const tree0 = realpathSync(ROOT);
   const sealedRunIds = new Set(L.entries.map((e) => e.entry).filter((e) => e.kind === 'seal' && e.runId).map((e) => e.runId));
   const unsealedStarts = L.entries.map((e) => e.entry).filter((e) => e.kind === 'run-start' && e.tree === tree0 && Number(e.port) === Number(PORT)
       && e.build === now.digest && e.gitHead === head && !sealedRunIds.has(e.runId))
-    .map((e) => ({ runId: e.runId, at: e.at, state: e.pid !== process.pid && pidAliveP(e.pid) ? 'running now' : 'never sealed (aborted or crashed)' }));
-  const runsLine = runs.map((c) => `${c.seal.sealId} (${c.seal.reportStamp}, quiet ${(c.quietFraction * 100).toFixed(0)} %, load max ${c.seal.monitor?.box?.loadMax}${c.complete ? '' : `, INCOMPLETE: ${c.infraRows.length} row(s) not observed by the harness`})`).join('; ')
-    + (loudRuns.length ? `; ${loudRuns.length} run(s) LOUDER than the baseline box (quiet fraction < ${(baseQuiet * 100).toFixed(0)} %), listed not graded: ${loudRuns.map((x) => `${x.sealId} (quiet ${x.quietFraction == null ? '?' : (x.quietFraction * 100).toFixed(0) + ' %'}, load max ${x.loadMax}, ${x.rowsNotPassing.length} row(s) failed)`).join(', ')}` : '')
+    .map((e) => ({ runId: e.runId, at: e.at, partial: !!e.partial, state: e.pid !== process.pid && pidAliveP(e.pid) ? 'running now' : 'never sealed (aborted or crashed)' }));
+  const boxOf = (c) => `quiet ${c.quietFraction == null ? '?' : (c.quietFraction * 100).toFixed(0) + ' %'}${c.louderThanBaseline ? ' (LOUDER than the baseline\'s ' + (baseQuiet * 100).toFixed(0) + ' %)' : ''}, load max ${c.seal.monitor?.box?.loadMax}, other gate Chromes max ${c.seal.monitor?.box?.otherGateChromesMax}`;
+  const runsLine = `${fullRuns.length} full: ` + (fullRuns.map((c) => `${c.seal.sealId} (${c.seal.reportStamp}, ${boxOf(c)}${c.complete ? '' : `, INCOMPLETE: ${c.infraRows.length} row(s) not observed by the harness`})`).join('; ') || 'none')
+    + (partialRuns.length ? `; ${partialRuns.length} partial: ${partialRuns.map((c) => `${c.seal.sealId} (${(c.rep?.results || []).filter((r) => CARRIED_IDS.has(r.id)).map((r) => r.id).join(' ')}; ${boxOf(c)})`).join('; ')}` : '')
     + (unsealedStarts.length ? `; ${unsealedStarts.length} run(s) started on this build and not sealed: ${unsealedStarts.map((u) => u.runId + ' (' + u.state + ')').join(', ')}` : '');
   const ledgerInfo = { file: L.file, entries: L.entries.length, head: L.head.slice(0, 16), runsDir: LEDGER_RUNS };
-  const notGraded = considered.filter((c) => c.why.length).slice(0, 8).map((c) => ({ sealId: c.seal.sealId, stamp: c.seal.reportStamp, why: c.why }));
-  const baselineInfo = { file: rel(BASELINE_FILE), base: base.file.base, runs: base.file.runs.map((r) => r.sealId), verdictTally: base.file.verdictTally,
-    verifiedAgainstLedger: true, carriedChangedSinceBaseline: base.file.evidence?.carriedSha256AtRuns !== sha256(readFileSync(path.join(TOOLS, 'gates.r5.carried.mjs'))) };
-  if (complete.length < MIN_RUNS) {
+  const notGraded = considered.filter((c) => c.why.length).slice(0, 8).map((c) => ({ sealId: c.seal.sealId, stamp: c.seal.reportStamp, partial: c.seal.partial === true, why: c.why }));
+  const baselineInfo = { file: rel(BASELINE_FILE), base: base.file.base, runs: base.file.runs.map((r) => r.sealId), recordedAt: base.file.recordedAt, verdictTally: base.file.verdictTally,
+    anchor: base.anchor, lowestQuietFraction: +baseQuiet.toFixed(3),
+    carriedChangedSinceBaseline: base.file.evidence?.carriedSha256AtRuns !== sha256(readFileSync(path.join(TOOLS, 'gates.r5.carried.mjs'))) };
+  if (completeFull.length < MIN_FULL_RUNS) {
     return { pass: false, detail: {
-      verdict: `FAIL: ${complete.length} complete fresh sealed carried run(s) of this tree on port ${PORT} on a box comparable to the baseline's${explicit.length ? ' (CAL_CARRIED_SEALS)' : ''}${incompleteRuns.length ? ` (+${incompleteRuns.length} incomplete)` : ''}${loudRuns.length ? ` (+${loudRuns.length} louder than the baseline box, listed not graded)` : ''}; the gate needs at least ${MIN_RUNS} complete runs of the same build. Run node tools/gates.mjs --port ${PORT} --lane carried ${MIN_RUNS - complete.length} more time(s), on an unchanged build and a box at least ${(baseQuiet * 100).toFixed(0)} % quiet, then judge the newest complete run's kept visual rows — ${runsLine}`,
-      composition: comp, ledger: ledgerInfo, baseline: baselineInfo, build: { now, gitHead: head }, freshRuns: runs.map((c) => c.seal.sealId), incompleteRuns, loudRuns, unsealedStarts, notGraded } };
+      verdict: `FAIL: ${completeFull.length} complete fresh sealed FULL carried run(s) of this tree on port ${PORT}${explicit.length ? ' (CAL_CARRIED_SEALS)' : ''}${incompleteRuns.length ? ` (+${incompleteRuns.length} incomplete)` : ''}; the gate needs ${MIN_FULL_RUNS}. Run node tools/gates.mjs --port ${PORT} --lane carried on an unchanged build, then re-run the known-flaky rows with --only until their first ${FLAKY_WINDOW} observations decide, then judge the newest complete full run's kept visual rows — ${runsLine}`,
+      composition: comp, ledger: ledgerInfo, baseline: baselineInfo, build: { now, gitHead: head }, freshRuns: fresh.map((c) => c.seal.sealId), incompleteRuns, unsealedStarts, notGraded } };
   }
   const verdicts = verdictIndex(L);
   const trust = { regs: registrationIndex(L), trusted: trustedOrchestratorKeys() };
   const r4 = round4Fails();
   const rulings = planRulings();
-  const byRun = runs.map((c) => new Map((c.rep.results || []).map((r) => [r.id, r])));
-  const vIdx = runs.indexOf(complete[0]);                // the judged frames: the newest COMPLETE run
+  const byRun = new Map(chrono.map((c) => [c.seal.sealId, new Map((c.rep.results || []).map((r) => [r.id, r]))]));
+  const judgedRun = completeFull[0];                     // the judged frames: the newest COMPLETE full run
   const rows = [];
   for (const g of CARRIED) {
+    // one observation per run that ran this row: every full run (a missing row there is `unrun`), and the
+    // partial runs that selected it; oldest first
     const per = [];
-    for (let k = 0; k < runs.length; k++) per.push(await classifyRow(g, byRun[k].get(g.id), runs[k], verdicts, k === vIdx, trust));
+    for (const c of chrono) {
+      const r = byRun.get(c.seal.sealId).get(g.id);
+      if (c.partial && !r) continue;
+      per.push({ run: c, ...(await classifyRow(g, r, c, verdicts, c === judgedRun, trust)) });
+    }
     const bRow = base.file.rows[g.id];
-    const row = { id: g.id, kind: g.kind, owner: ownerOf(g), perRun: per.map((p) => p.cls), baseline: bRow.verdict };
-    const seen = per.filter((p) => p.cls !== 'infra');    // the runs that observed this row, newest first
+    const row = { id: g.id, kind: g.kind, owner: ownerOf(g), baseline: bRow.verdict, perRun: per.map((p) => p.cls),
+      runs: per.map((p) => ({ run: p.run.seal.sealId, partial: p.run.partial || undefined, status: p.status, cls: p.cls, note: p.cls === 'pass' ? undefined : String(p.note || '').slice(0, 120) })) };
+    const seen = per.filter((p) => p.cls !== 'infra');    // the observations of this row, oldest first
     if (g.kind === 'visual') {
+      const j = per.find((p) => p.run === judgedRun) || { cls: 'unrun', note: 'not in the judged run' };
       if (!KEPT_VISUAL.includes(g.id) && !shadowedIds.has(g.id)) {
-        Object.assign(row, { cls: 'skipReplaced', note: `SKIP-replaced (R33 c): its subject is content scheduled for replacement; graded when ${row.owner} re-stages it on new content (shadows this id)`, shot: per[vIdx].shot });
+        Object.assign(row, { cls: 'skipReplaced', note: `SKIP-replaced (R33 c): its subject is content scheduled for replacement; graded when ${row.owner} re-stages it on new content (shadows this id)`, shot: j.shot });
       } else {
-        // graded on the newest complete run's frame (the judges' frame); the other runs must have filmed it too
-        Object.assign(row, { cls: per[vIdx].cls, note: per[vIdx].note, shot: per[vIdx].shot, judge: per[vIdx].judge });
-        const older = per.filter((p, k) => k !== vIdx && (p.cls === 'shotInvalid' || p.cls === 'unrun' || p.cls === 'fail'));
+        // graded on the newest complete full run's frame (the judges' frame); every other full run must have filmed it too
+        Object.assign(row, { cls: j.cls, note: j.note, shot: j.shot, judge: j.judge });
+        const fullSeen = seen.filter((p) => !p.run.partial);
+        const older = fullSeen.filter((p) => p.run !== judgedRun && (p.cls === 'shotInvalid' || p.cls === 'unrun' || p.cls === 'fail'));
         if (older.length && !BAD_VISUAL.includes(row.cls)) { row.cls = 'shotInvalid'; row.note = 'an older graded run did not film this frame: ' + older.map((p) => p.note).join('; '); }
-        row.flaky = new Set(seen.filter((p) => p.cls !== 'filmedPruned').map((p) => (/^skip/.test(p.cls) ? 'skip' : 'staged'))).size > 1;
-        if (row.flaky && !BAD_VISUAL.includes(row.cls)) { row.cls = 'stagingFlaky'; row.note = 'SKIP card in some runs, staged in others: ' + per.map((p) => p.cls).join(' / '); }
+        row.flaky = new Set(fullSeen.filter((p) => p.cls !== 'filmedPruned').map((p) => (/^skip/.test(p.cls) ? 'skip' : 'staged'))).size > 1;
+        if (row.flaky && !BAD_VISUAL.includes(row.cls)) { row.cls = 'stagingFlaky'; row.note = 'SKIP card in some runs, staged in others: ' + fullSeen.map((p) => p.cls).join(' / '); }
       }
     } else {
       const classes = seen.map((p) => p.cls);
@@ -1826,24 +1895,34 @@ async function carriedSuite({ PORT, GATES: ALL }) {
       row.expect = expect;
       row.flaky = new Set(seen.map((p) => p.status)).size > 1;
       const hard = ['override', 'unrun'].find((b) => classes.includes(b));
-      const mixedStaging = classes.some((c) => /^skip/.test(c)) && classes.some((c) => !/^skip/.test(c));
+      const isSkip = (c) => /^skip/.test(c);
+      const mixedStaging = classes.some(isSkip) && classes.some((c) => !isSkip(c));
+      const firstBad = (ok) => String((seen.find((p) => !ok(p.cls)) || {}).note || '').slice(0, 160);
       if (hard) { row.cls = hard; row.note = (seen.find((p) => p.cls === hard) || {}).note; }
+      else if (!classes.length) { row.cls = 'unrun'; row.note = 'never observed on this build (every run that held it lost it to the harness)'; }
       else if (expect === 'pass') {
-        row.cls = classes.every((c) => c === 'pass') ? 'pass' : mixedStaging ? 'stagingFlaky' : 'regression';
-        if (row.cls !== 'pass') row.note = 'PASSED at baseline; now ' + classes.join(' / ') + ': ' + String((seen.find((p) => p.cls !== 'pass') || {}).note || '').slice(0, 160);
+        if (classes.every((c) => c === 'pass')) row.cls = 'pass';
+        else if (classes.every((c) => c === 'skipR30')) { row.cls = 'skipR30'; row.note = 'PASSED at baseline; its subject was deleted at W0a (R30) and it reports SKIP-legacy-deleted until the replacement lands: ' + firstBad((c) => c === 'pass'); }
+        else { row.cls = mixedStaging ? 'stagingFlaky' : 'regression'; row.note = 'PASSED at baseline; now ' + classes.join(' / ') + ': ' + firstBad((c) => c === 'pass'); }
       } else if (expect === 'flaky') {
         const win = classes.slice(0, FLAKY_WINDOW), passes = win.filter((c) => c === 'pass').length, misses = win.length - passes;
         row.cls = passes >= FLAKY_PASSES ? 'pass' : misses > FLAKY_WINDOW - FLAKY_PASSES ? 'regression' : 'needsRuns';
-        row.note = `known-flaky (${R27_FLAKY.includes(g.id) ? 'R27' : 'baseline ' + bRow.perRun.join('/')}): ${passes} pass of the newest ${win.length} graded run(s); needs ${FLAKY_PASSES} of ${FLAKY_WINDOW}`
-          + (row.cls === 'pass' ? '' : ': ' + String((seen.find((p) => p.cls !== 'pass') || {}).note || '').slice(0, 140));
+        row.note = `known-flaky (${R27_FLAKY.includes(g.id) ? 'R27' : 'baseline ' + bRow.perRun.join('/')}): ${passes} pass of the first ${win.length} observation(s) on this build (${win.join(' / ')}); needs ${FLAKY_PASSES} of the first ${FLAKY_WINDOW}`
+          + (row.cls === 'pass' ? '' : ': ' + firstBad((c) => c === 'pass').slice(0, 140));
       } else {
         const worstNow = classes.slice().sort((a, b) => RANK(a) - RANK(b))[0];
-        const worse = RANK(worstNow) < RANK(bRow.verdict);
-        row.cls = mixedStaging && !worse ? 'stagingFlaky' : worse ? 'worseThanBaseline' : 'listed';
         row.current = worstNow;
-        row.note = `baseline ${bRow.verdict}${bRow.perRun ? ' (' + bRow.perRun.join('/') + ')' : ''}, now ${classes.join(' / ')}${worse ? ' — WORSE' : ''}: ` + String((seen.find((p) => p.cls === worstNow) || {}).note || '').slice(0, 140);
+        if (isSkip(bRow.verdict) && classes.some((c) => !isSkip(c))) {
+          // R28: the role now has a live non-legacy kind (the Tiller fixture) — there is no Round-4 verdict on that
+          // content to regress from; listed with its result and owner (the owner's must-stay-green list grades it)
+          row.cls = 'newlyStaged';
+          row.note = `${bRow.verdict} at baseline (not staged), now staged: ${classes.join(' / ')}${worstNow === 'pass' ? '' : ' — ' + firstBad((c) => c === 'pass').slice(0, 140)}`;
+        } else {
+          const worse = RANK(worstNow) < RANK(bRow.verdict);
+          row.cls = mixedStaging && !worse ? 'stagingFlaky' : worse ? 'worseThanBaseline' : 'listed';
+          row.note = `baseline ${bRow.verdict}${bRow.perRun ? ' (' + bRow.perRun.join('/') + ')' : ''}, now ${classes.join(' / ')}${worse ? ' — WORSE' : ''}: ` + String((seen.find((p) => p.cls === worstNow) || {}).note || '').slice(0, 140);
+        }
       }
-      if (row.flaky) row.runs = per.map((p, i) => ({ run: runs[i].seal.sealId, status: p.status, cls: p.cls, note: p.cls === 'pass' ? undefined : String(p.note || '').slice(0, 120) })).filter((x) => x.cls !== 'infra');
     }
     if (r4[g.id]) row.round4 = r4[g.id];
     const short = /^(A\d+[a-z]?)(?:-|$)/.exec(g.id)?.[1];
@@ -1857,9 +1936,9 @@ async function carriedSuite({ PORT, GATES: ALL }) {
   const checks = {
     composition: comp.ok,
     ledgerIntact: L.ok,
-    baselineVerified: base.ok,
-    enoughCompleteFreshSealedRuns: complete.length >= MIN_RUNS,
-    everyRunLoadedEveryFile: runs.every((c) => (c.rep.loadFailures || []).length === 0),
+    baselineAnchored: base.ok,
+    enoughCompleteFullRuns: completeFull.length >= MIN_FULL_RUNS,
+    everyRunLoadedEveryFile: fresh.every((c) => (c.rep.loadFailures || []).length === 0),
     notAnOverrideRun: !(tally.override > 0),
     noActionRowRegressed: !bad.some((r) => r.kind !== 'visual'),
     keptVisualRowsJudgedPassOrSkipCard: !bad.some((r) => r.kind === 'visual'),
@@ -1868,27 +1947,30 @@ async function carriedSuite({ PORT, GATES: ALL }) {
   const count = (list) => Object.entries(list.reduce((a, r) => { a[r.cls] = (a[r.cls] || 0) + 1; return a; }, {})).map(([k, n]) => n + ' ' + k).join(', ');
   return { pass, detail: {
     verdict: (pass ? 'PASS' : 'FAIL: ' + Object.keys(checks).filter((k) => !checks[k]).join(', ')
-      + (bad.length ? ` — ${bad.length} row(s): ${count(bad)} (${bad.map((r) => r.id).slice(0, 12).join(', ')}${bad.length > 12 ? ', …' : ''})` : ''))
-      + ` — R33 regression guard vs the ${base.file.base} baseline; graded ${runs.length} sealed run(s): ${runsLine}`,
+      + (bad.length ? ` — ${bad.length} row(s): ${count(bad)} (${bad.map((r) => r.id).slice(0, 14).join(', ')}${bad.length > 14 ? ', …' : ''})` : ''))
+      + ` — R33 regression guard vs the ${base.file.base} baseline (${base.anchor.split(':')[0]} anchor); observations: ${runsLine}`,
     checks, tally, composition: comp, ledger: ledgerInfo, baseline: baselineInfo,
     judgeTrust: { visualJudgePort: VISUAL_JUDGE_PORT, trustedOrchestratorKeys: [...trust.trusted].map(fingerprint),
       registrations: [...trust.regs.values()].flat().map((r) => ({ judge: r.judge, port: r.port, judgeKey: fingerprint(r.judgePub), by: fingerprint(r.orchestratorPub), sigOk: r.sigOk, trusted: trust.trusted.has(r.orchestratorPub) })) },
-    incompleteRuns, loudRuns, comparableBoxFloor: +baseQuiet.toFixed(3), unsealedStarts, judgedRun: runs[vIdx].seal.sealId,
-    runs: runs.map((c) => ({ sealId: c.seal.sealId, complete: c.complete, quietFraction: +c.quietFraction.toFixed(3), port: c.seal.port, reportStamp: c.seal.reportStamp, startedAt: c.seal.startedAt, endedAt: c.seal.endedAt,
-      load: c.seal.load, gitHead: c.seal.gitHead, build: c.seal.build.atEnd, frames: Object.keys(c.seal.frames || {}).length,
+    incompleteRuns, unsealedStarts, judgedRun: judgedRun.seal.sealId,
+    runs: chrono.map((c) => ({ sealId: c.seal.sealId, partial: c.partial, complete: c.complete, quietFraction: c.quietFraction == null ? null : +c.quietFraction.toFixed(3),
+      louderThanBaseline: c.louderThanBaseline, port: c.seal.port, reportStamp: c.seal.reportStamp, startedAt: c.seal.startedAt, endedAt: c.seal.endedAt,
+      load: c.seal.load, gitHead: c.seal.gitHead, build: c.seal.build.atEnd, carriedRows: c.seal.carriedRows, frames: Object.keys(c.seal.frames || {}).length,
       monitor: c.seal.monitor, concurrentSameTreeRuns: c.seal.concurrentSameTreeRuns })),
     build: { now, gitHead: head }, notGraded,
     // every offender names who fixes it (the §9 absorbing lane); there is NO exemption list here
     offenders: bad.map((r) => ({ id: r.id, cls: r.cls, baseline: r.baseline, perRun: r.perRun, owner: r.owner,
-      ruling: r.cls === 'awaitingJudge' ? `orchestrator: an R29 judge on port ${VISUAL_JUDGE_PORT} (its key registered with --judge-register) grades ${r.shot} and signs the verdict with node tools/gates.r5.gates-perf.mjs --judge --seal ${runs[vIdx].seal.sealId} --id ${r.id} … --judge-key <its key>`
+      ruling: r.cls === 'awaitingJudge' ? `orchestrator: an R29 judge on port ${VISUAL_JUDGE_PORT} (its key registered with --judge-register) grades ${r.shot} and signs the verdict with node tools/gates.r5.gates-perf.mjs --judge --seal ${judgedRun.seal.sealId} --id ${r.id} … --judge-key <its key>`
         : r.cls === 'judgeUnanchored' ? 'grade with CAL_ORCHESTRATOR_PUBKEY set to the orchestrator key that registered the judge (the grader trusts no key by default)'
-        : r.cls === 'judgeInvalid' || r.cls === 'shotInvalid' ? 're-film (fresh sealed runs) and re-judge'
-        : r.cls === 'needsRuns' ? `run the carried suite again on this build until ${FLAKY_PASSES} of the newest ${FLAKY_WINDOW} runs decide it`
+        : r.cls === 'judgeInvalid' || r.cls === 'shotInvalid' ? 're-film (a fresh sealed full run) and re-judge'
+        : r.cls === 'needsRuns' ? `re-run it (node tools/gates.mjs --port ${PORT} --only ${r.id}, sealed as a partial run) until its first ${FLAKY_WINDOW} observations on this build decide`
         : 'fix by ' + r.owner + ', or an orchestrator ruling recorded in the plan (no exemption in this gate)',
       ...(r.round4 ? { inheritedFromRound4: r.round4 } : {}), ...(r.planRulings ? { planRulings: r.planRulings } : {}),
-      ...(r.runs ? { runs: r.runs } : {}), ...(r.shot ? { shot: r.shot } : {}), note: r.note })),
+      runs: r.runs, ...(r.shot ? { shot: r.shot } : {}), note: r.note })),
     listed: rows.filter((r) => r.cls === 'listed').map((r) => ({ id: r.id, owner: r.owner, baseline: r.baseline, now: r.current, perRun: r.perRun })),
+    newlyStaged: rows.filter((r) => r.cls === 'newlyStaged').map((r) => ({ id: r.id, owner: r.owner, baseline: r.baseline, now: r.current, perRun: r.perRun, note: r.note })),
     knownFlaky: rows.filter((r) => r.expect === 'flaky').map((r) => ({ id: r.id, cls: r.cls, perRun: r.perRun, note: r.note })),
+    r30SinceBaseline: rows.filter((r) => r.expect === 'pass' && r.cls === 'skipR30').map((r) => r.id),
     skipReplaced: rows.filter((r) => r.cls === 'skipReplaced').map((r) => r.id + ' -> ' + r.owner),
     skipped: rows.filter((r) => /^skip(?!Replaced)/.test(r.cls)).map((r) => r.id + ' [' + r.cls + ']'),
     judged: rows.filter((r) => r.judge).map((r) => ({ id: r.id, ...r.judge })),
@@ -1979,11 +2061,11 @@ async function judgeCli() {
     try { const bf = JSON.parse(read(BASELINE_FILE)); floor = Math.min(...bf.runs.map((r) => (r.box && r.monitorSamples ? r.box.quietSamples / r.monitorSamples : 1))); } catch { floor = 0; }
     const quiet = (c) => (c.seal.monitor?.samples ? (c.seal.monitor.box?.quietSamples || 0) / c.seal.monitor.samples : null);
     const loud = (c) => !(quiet(c) != null && quiet(c) >= floor - 1e-9);
-    for (const c of all.slice(0, 10)) console.log(`  ${c.why.length ? 'not gradable' : incomplete(c) ? 'INCOMPLETE ' : loud(c) ? 'LOUD       ' : 'FRESH      '} ${c.seal.sealId}  port ${c.seal.port}  ${c.seal.reportStamp}  quiet ${quiet(c) == null ? '?' : (quiet(c) * 100).toFixed(0) + ' %'}  ${c.why.join('; ')}${!c.why.length && incomplete(c) ? incomplete(c) + ' row(s) not observed by the harness: never the judged run' : ''}${!c.why.length && loud(c) ? 'louder than the baseline box: never the judged run' : ''}`);
+    for (const c of all.slice(0, 12)) console.log(`  ${c.why.length ? 'not gradable' : incomplete(c) ? 'INCOMPLETE ' : 'FRESH      '} ${c.seal.partial ? 'partial' : 'FULL   '} ${c.seal.sealId}  port ${c.seal.port}  ${c.seal.reportStamp}  quiet ${quiet(c) == null ? '?' : (quiet(c) * 100).toFixed(0) + ' %'}${!c.why.length && loud(c) ? ' (louder than the baseline box)' : ''}  ${c.why.join('; ')}${!c.why.length && incomplete(c) ? incomplete(c) + ' row(s) not observed by the harness: never the judged run' : ''}`);
     console.log(`judge registrations: ${[...regs.values()].flat().map((r) => `${r.judge}@${r.port} key ${fingerprint(r.judgePub)} by ${fingerprint(r.orchestratorPub)}${r.sigOk ? '' : ' (BAD SIGNATURE)'}`).join('; ') || 'none'}`);
     console.log(`trusted orchestrator keys (CAL_ORCHESTRATOR_PUBKEY): ${[...trusted].map(fingerprint).join(', ') || 'none'}`);
-    const pick = sealArg ? all.find((c) => c.seal.sealId === sealArg) : all.find((c) => !c.why.length && !incomplete(c) && !loud(c));
-    if (!pick || !pick.rep) { console.log('no fresh sealed carried run to judge'); return 0; }
+    const pick = sealArg ? all.find((c) => c.seal.sealId === sealArg) : all.find((c) => !c.why.length && !incomplete(c) && c.seal.partial !== true);
+    if (!pick || !pick.rep) { console.log('no fresh, complete, sealed FULL carried run to judge'); return 0; }
     const verdicts = verdictIndex(L);
     console.log(`\nvisual rows of ${pick.seal.sealId} (judge port must not be ${pick.seal.port}):`);
     const byId = new Map((pick.rep.results || []).map((r) => [r.id, r]));
@@ -2043,9 +2125,11 @@ export const GATES = [
   },
   {
     id: 'A-carried-suite', kind: 'runner', lane: LANE, timeout: 180000,
-    title: "W0a: gates.r5.carried.mjs holds every CARRY + RESTAGE gate of Appendix B (DIES gone), and in EVERY sealed carried run of this tree and port on the current build (at least 3; run ledger outside the tree) every row is PASS, a named SKIP (R18 / R28 / R30) or a Round-4-attributed PENDING; every visual row of the newest run is an R29 judge PASS bound to its sealed frame, or a filmed SKIP card",
+    title: "W0a (R33): gates.r5.carried.mjs holds every CARRY + RESTAGE gate of Appendix B (DIES gone) and is a REGRESSION GUARD against the anchored W0-day1 baseline over every sealed observation of this build (>= 1 complete full run + targeted partial re-runs; run ledger outside the tree): a row that PASSED at baseline PASSes (R30 SKIP allowed), known-flaky rows PASS 3 of their first 5 observations, FAIL/PENDING rows never get worse; the kept visual rows (V1-V4, V12-V14, V21) are signed R29 PASSes on the newest full run's frames, every other visual row SKIP-replaced",
     check: (ctx) => carriedSuite(ctx),
   },
+  // W0b rows (tools/gates/gates-perf.w0b.mjs): the licence-clean reference set and the memory / draw ledgers
+  ...W0B_GATES,
   // LAST in the block (fix round 3): its lsof half grades this invocation's own run monitor from process
   // start to the moment it runs, so every other row of the block (A-chrome-semaphore's child runs too) is inside
   {

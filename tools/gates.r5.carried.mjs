@@ -1874,7 +1874,10 @@ const GATES = [
              say('PENDING').length ? 'PENDING ' + say('PENDING').join(' + ') : '',
              say('PASS').length ? 'PASS ' + say('PASS').join(' + ') : '']
             .filter(Boolean).join('; ')
-          + ' — see detail.terms for the reason on every unjudged term.',
+          // R33 (f): the verdict names the DPR it measured and the box it measured on
+          + ' — measured at tier "' + e.quality + '", pixel ratio ' + applied + ' (= min(device DPR ' + B.deviceDpr + ', tier dprCap ' + e.tier.dprCap
+          + '); draws / triangles / frame / JS also at the uncapped DPR ' + B.deviceDpr + ', graded on the worse) on a ' + (BOX.quiet === true ? 'QUIET' : 'LOUD') + ' box (1-min load '
+          + BOX.load[0] + ', ' + BOX.otherGateChromes + ' other gate Chrome(s)) — see detail.terms for the reason on every unjudged term.',
         terms,
         gradedAt: 'GPU term: the tier pass (' + applied + ') only; draws, triangles, frame and JS: the worse of tier-capped (' + applied + ') and DPR ' + B.deviceDpr,
         box: BOX,
@@ -2166,6 +2169,7 @@ const GATES = [
   {
     id: 'V1-sprint-frame', kind: 'visual', lane: 'animator',
     title: 'Sprint mid-stride reads athletic',
+    reference: 'reference/r5/gates-perf/run-rear, run-side (A-reference-set, W0b)',   // R5 W0b: the licence-clean reference the R29 judge compares against (A-reference-set)
     // R5: staged on gatePlaces.openGround like A3/A12 — from the spawn she sprints into the rest site's
     // tent and the frame shows her standing (filmed in the first W0a carried run)
     // R5 fix round 2: the meadow grass hid her legs and feet in every W0a frame (the subject is the
@@ -2177,12 +2181,14 @@ const GATES = [
   {
     id: 'V2-idle-frame', kind: 'visual', lane: 'animator',
     title: 'Idle stance reads alive and asymmetric',
+    reference: 'reference/r5/gates-perf/idle-stand (A-reference-set, W0b)',   // R5 W0b: the licence-clean reference the R29 judge compares against (A-reference-set)
     settle: 4000,
     criteria: 'Weight settled into one hip (pelvis offset), relaxed asymmetric arms, natural head angle. FAIL if perfectly symmetric A-pose-with-arms-down.',
   },
   {
     id: 'V3-crouch-stalk', kind: 'visual', lane: 'animator',
     title: 'Crouch-walk reads as stalking',
+    reference: 'reference/r5/gates-perf/crouch-stalk (A-reference-set, W0b)',   // R5 W0b: the licence-clean reference the R29 judge compares against (A-reference-set)
     // R5: staged on gatePlaces.openGround (from the spawn the crouch-walk runs into the rest site)
     // R5 fix round 2: the meadow grass hid the crouched silhouette (the subject is the body)
     // R5 fix round 3: crouch is a TOGGLE bound with input.onDown('KeyC') (player.js), which fires
@@ -2196,6 +2202,7 @@ const GATES = [
   {
     id: 'V4-aim-anchor', kind: 'visual', lane: 'animator',
     title: 'Full draw anchored at cheek',
+    reference: 'reference/r5/gates-perf/draw-side, draw-front (A-reference-set, W0b)',   // R5 W0b: the licence-clean reference the R29 judge compares against (A-reference-set)
     setup: `${INPUT_ON} __CTX__.input.mouse.buttons |= 4; setTimeout(() => { __CTX__.input.mouse.buttons |= 1; }, 400);`,
     settle: 2200,
     criteria: 'Draw hand at cheek/jaw, elbow high and level, arrow nocked ON the string line, torso twisted toward target. FAIL if arrow floats detached or draw hand is off the face.',
@@ -2289,6 +2296,7 @@ const GATES = [
   {
     id: 'V13-aim-strafe', kind: 'visual', lane: 'animator',
     title: 'Aim side-step reads as a weighted step, not a splay',
+    reference: 'reference/r5/gates-perf/draw-front (A-reference-set, W0b)',   // R5 W0b: the licence-clean reference the R29 judge compares against (A-reference-set)
     // Deterministic recipe: flat meadow, aim held, strafe to HER left for 2.4s,
     // then lock a front camera 6.5m out and freeze so the judge always sees the
     // same mid-step frame. Vegetation is hidden so the feet are visible.
@@ -2322,6 +2330,7 @@ const GATES = [
   {
     id: 'V14-slope-contour', kind: 'visual', lane: 'animator',
     title: 'Standing across a cross-slope: both soles lie ON the ground, banked with it',
+    reference: 'reference/r5/gates-perf/slope-stand (A-reference-set, W0b)',   // R5 W0b: the licence-clean reference the R29 judge compares against (A-reference-set)
     // Deterministic recipe: scan for the steepest locally-consistent surface in
     // the 20-24 deg band, stand ACROSS its fall line, lock a camera along the
     // contour at boot height so the judge is looking down the slope line, and
@@ -4853,7 +4862,7 @@ const GATES = [
     title: 'Idle chase cam frames her like the licence-clean third-person chase reference: >=55% of frame height, lens at head level',
     // R5: the Round-4 reference was a publisher press still (deleted at W0b, A-reference-clean);
     // the licence-clean one arrives with A-reference-set (gates-perf W0b).
-    reference: 'reference/r5/gates-perf/chase-back (A-reference-set, W0b)',
+    reference: 'reference/r5/gates-perf/run-rear (A-reference-set, W0b: a rear view at head height; the 55 % frame-height bar is this row\'s own number)',
     criteria: 'Side-by-side with the licence-clean chase reference: the hero fills at least 55% of frame height, '
       + 'the lens sits at head height behind her right shoulder, the horizon is near mid-frame and the camera is '
       + 'not looking down at her. FAIL if she is a distant doll, if the camera is above her head looking down, '
@@ -10705,7 +10714,7 @@ const GATES = [
       + 'two tiles are literally one frame of animation seen twice. The second camera sits at '
       + 'the reference still\'s own 3/4-front bearing rather than dead-on; that is the angle '
       + 'the judge is asked to compare against, and the pose is the same one either way. '
-      + 'NOTE ON \u00a74\'s WORDING: \u00a74 asks for a "two-handed low guard as in reference/spear-*". '
+      + 'NOTE ON \u00a74\'s WORDING: \u00a74 asks for a "two-handed low guard as in the Round-4 spear stills" (deleted at W0b). '
       + 'The reference does not show that - docs/research/spear-canon.md finding 2 verified '
       + 'that every Round-4 reference guard/windup/contact/follow frame has the LEFT HAND EMPTY, '
       + 'used as a counterweight, and that is also the only version of the pose that keeps '
@@ -14726,6 +14735,7 @@ const GATES = [
   {
     id: 'V21-camera-cover', kind: 'visual', lane: 'spatial',
     title: 'Camera boom shortens when a trunk sits between camera and the hero',
+    reference: 'reference/r5/gates-perf/chase-camera (A-reference-set, W0b)',   // R5 W0b: the licence-clean reference the R29 judge compares against (A-reference-set)
     setup: `(async () => {
       const m = await import('/src/core/collision.js');
       const sp = m.installSpatial(__CTX__);
