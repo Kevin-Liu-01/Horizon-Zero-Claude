@@ -23336,8 +23336,10 @@ const GATES = [
     settle: 900, timeout: 60000,
     assert: `(async () => {${FRAMES}${STORAGE_GUARD}
       const snap = snapStorage();
+      let fired = null, onTravel = null;
+      const c = __CTX__;
       try {
-        const c = __CTX__, m = c.menus, p = c.player;
+        const m = c.menus, p = c.player;
         if (!m) return { pass: null, detail: 'SKIP: menus not installed' };
         const fire = c.camp?.firePosition;
         if (!fire) return { pass: null, detail: 'SKIP: no campfire in this build' };
@@ -23356,15 +23358,36 @@ const GATES = [
         m.map.fog.reveal(site.x, site.z, 20);
         out.awayFromFire = m.map.canFastTravel(site);
 
-        // 2. at the fire, to somewhere never visited, it is still refused
+        // 2. at the fire, to somewhere never visited, it is still refused.
+        // R5 W0b fix round 1 (gates-perf's staging defect, judge finding): the map fog persists in localStorage
+        // (cal.map.v5) across the suite's pages, so an earlier row can already have revealed ANY fixed point; the
+        // Round-4 "(-300, -300) from the fire" was revealed in the full run and the row trusted it. The "never
+        // visited" point is now the first candidate (the Round-4 offset first, then rings round the fire) that the
+        // live fog reports UNSEEN through FogOfWar.seenAt (the call canFastTravel reads) and that lies on the map
+        // (worldToMap inside the canvas: the map's own extent, not a coordinate). Nothing is revealed or cleared,
+        // so no state is touched; if every candidate is revealed the row FAILs by name.
         p.position.set(fire.x + 1.5, p.position.y, fire.z + 1.5); p._snapToGround?.();
-        const far = { kind: 'landmark', name: 'unvisited', x: fire.x - 300, z: fire.z - 300 };   // R5: relative to the fire, never revealed
+        const mapC = m.map.worldToMap(0, 0), mapPx = 2 * mapC.x;
+        const onMap = (x, z) => { const q = m.map.worldToMap(x, z); return q.x >= 0 && q.y >= 0 && q.x < mapPx && q.y < mapPx; };
+        const cands = [[-300, -300]];
+        for (const d of [300, 240, 180, 120]) for (let k = 0; k < 16; k++) cands.push([Math.cos(k * Math.PI / 8) * d, Math.sin(k * Math.PI / 8) * d]);
+        let revealedCands = 0, offMap = 0, far = null;
+        for (const [dx, dz] of cands) {
+          const x = fire.x + dx, z = fire.z + dz;
+          if (!onMap(x, z)) { offMap++; continue; }
+          if (m.map.fog.seenAt(x, z)) { revealedCands++; continue; }
+          far = { kind: 'landmark', name: 'unvisited', x, z };
+          break;
+        }
+        out.unvisitedPick = far ? { dx: Math.round(far.x - fire.x), dz: Math.round(far.z - fire.z), revealedCandidatesSkipped: revealedCands, offMapSkipped: offMap,
+          seenBefore: m.map.fog.seenAt(far.x, far.z) } : { revealedCandidatesSkipped: revealedCands, offMapSkipped: offMap };
+        if (!far) return { pass: false, detail: { ...out, why: 'FAIL (staging): every candidate "never visited" point on the map is already revealed in the fog (' + revealedCands + ' revealed, ' + offMap + ' off the map); the undiscovered refusal cannot be tested' } };
         out.undiscovered = m.map.canFastTravel(far);
 
         // 3. at the fire, to a discovered site, it travels
         out.allowed = m.map.canFastTravel(site);
-        let fired = null;
-        c.events.on('fast-travel', (e) => { fired = e; });
+        onTravel = (e) => { fired = e; };
+        c.events.on('fast-travel', onTravel);
         const res = m.map.fastTravel(site);
         await frames(6);
         out.result = res;
@@ -23373,14 +23396,19 @@ const GATES = [
                         target: { x: Math.round(site.x), z: Math.round(site.z) } };
         out.hubClosed = !m.hubOpen && c.state === 'playing';
 
+        // the undiscovered refusal is for the RIGHT reason (an unseen point, refused as undiscovered)
         const pass = out.awayFromFire.ok === false && /CAMPFIRE/.test(out.awayFromFire.reason)
-          && out.undiscovered.ok === false
+          && out.unvisitedPick.seenBefore === false
+          && out.undiscovered.ok === false && /UNDISCOVERED/.test(out.undiscovered.reason)
           && out.allowed.ok === true
           && res.ok === true && !!out.event
           && Math.hypot(p.position.x - site.x, p.position.z - site.z) < 2
           && out.hubClosed;
         return { pass, detail: out };
-      } finally { restoreStorage(snap); }
+      } finally {
+        if (onTravel) c.events.off('fast-travel', onTravel);   // W0b fix round 1: the listener is removed (memory rule)
+        restoreStorage(snap);
+      }
     })()`,
   },
 
