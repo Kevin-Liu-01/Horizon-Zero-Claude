@@ -3891,8 +3891,22 @@ export class PlayerAnimator {
     if (Math.abs(dy) < 2e-4) return;
     // the ankles the planted feet stand on, before the pelvis moves
     const planted = this._rbPlanted || (this._rbPlanted = [false, false]);   // allocated once
+    // R5 fix round 2 (A28's flight fraction 0.37-0.45 at a quiet box's 60 Hz,
+    // the lower ball's median 4.2 cm off the ground at a jog): a RAISE also
+    // holds a foot that is ON the ground though its stance weight has not
+    // crossed 0.5 yet (touch-down / toe-off) — riding up with the pelvis it
+    // left the ground in mid-stance. Jog only (the sprint's bounce bar is graded).
+    const T = this.ctx.terrain;
+    const nearOK = dy > 0 && T && speed < 5.6;
     for (let s = 0; s < 2; s++) {
       planted[s] = !this._flight[s] && (s === 0 ? this._stL : this._stR) > 0.5;
+      if (!planted[s] && nearOK) {
+        const ball = s === 0 ? b.ballL : b.ballR;
+        if (ball) {
+          const e = ball.bone.matrixWorld.elements;
+          planted[s] = e[13] - T.getHeight(e[12], e[14]) < 0.05;
+        }
+      }
       if (!planted[s]) continue;
       const th = s === 0 ? b.thighL : b.thighR, ca = s === 0 ? b.calfL : b.calfR, ft = s === 0 ? b.footL : b.footR;
       this._charOf(ft.bone, _rbT[s]);

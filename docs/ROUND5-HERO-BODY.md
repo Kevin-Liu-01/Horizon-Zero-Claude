@@ -62,10 +62,13 @@ lance (Brea's 1.55 m R10 diagonal reaches round her back where Aloy's 1.16 m spe
 0.30. Even when seeded clear (26°, gap 0.94) the release walked the rotation back down into the same cut.
 *Fix* (`src/entities/player.js`, hero-body's W0 grant): (a) a seed clears the swing hysteresis of the previous
 staging (`_swingTgt`); (b) `_groundRotFor` credits a deep-look-up push-in only when the pushed-in lens is
-≥ `SWING_CLR` from her body proxy; (c) **the cut floor** — a boom `cameraBoom` actually cut (≥ 0.08 m under the
-placement) at a deep look-up raises a floor under the rotation (+0.06 rad per cut frame, eased off at 0.08 rad/s
-once free), so the release can never walk back into the cut. *After:* the same replay climbs 7.8° → 26° in four
-frames and holds it, gap 0.94–0.99 m, opacity 1.0, the lance 0.29 m from the lens. Gate rows: §4.3.
+≥ `SWING_CLR` from her body proxy; (c) **the cut floor** — in the pitch-clamp regime (camPitch within 0.15 rad of
+`PITCH_UP`), a boom `cameraBoom` actually cut ≥ 0.08 m under the placement AND to under `DOLLY_GAP` (0.90 m, where
+the fade dithers her) raises a floor under the rotation (+0.06 rad per cut frame, eased off at 0.08 rad/s once free),
+so the release can never walk back into the cut. (Unrestricted, the floor also caught A31b's −0.8 hillside row and
+held its boom at a 1.11 m cut against that gate's 1.20 m bar — measured, then restricted.) *After:* the same replay
+climbs 7.8° → 26° in four frames and holds it, gap 0.94–0.99 m, opacity 1.0, the lance 0.29 m from the lens. The
+remaining misses are §4.3.
 
 ### 0.5 A-draw-elbow-level — the head-plane clause cannot hold with the hand outside the face (RULING NEEDED)
 
@@ -82,7 +85,19 @@ wrist 5 cm further forward. The reference photo's own elbow is ≈ 0.18 m behind
 head's lateral shadow (the draw elbow at full draw is at shoulder height, 0.25 m out to her side), or a 0.20 m bar
 that the reference itself meets. Until then the row reports FAIL by name; nothing was relaxed.
 
-### 0.6 Two hygiene items
+### 0.6 A28's jog "flight" was a floating stance foot (and A-climb-1m's palm sat on the bar)
+
+*Found* (A28 on a quiet box, 60 Hz sampling: flight fraction 0.45 against ≤ 0.40; the Oct 19 report had 0.24, the
+loaded-box runs 0.39–0.40): the fix-round-1 jog bounce compression (`runBob.keepJog` 0.22) RAISES the pelvis at the
+bottom of the bob and re-solves only the feet whose stance weight is over 0.5; a foot ON the ground at touch-down /
+toe-off rode up with the pelvis, so the lower ball's median height was 4.2 cm (probe, 90 samples; 2.9 cm with the
+compression off). *Fix* (`_runBob`): at a jog a raise also holds every foot whose ball is within 5 cm of the ground.
+*After:* flight 0.24–0.27, median 3.0–3.2 cm, the jog pelvis still compressed (0.07 m p-p). The sprint (A-run-arms'
+graded bounce) is untouched.
+A-climb-1m's palm was 0.040–0.076 m off the edge run to run (bar 0.05; the walk-in ledge): the clavicle reach
+allowance during the pull 0.6 → 0.9 rad.
+
+### 0.7 Two hygiene items
 
 - `src/hero/sheets.js` `renderStockFace(ctx, url)` no longer defaults to `/tools/r5-poc/assets/heroine-base.glb`
   (pipeline report §6.4, A-poc-promoted): the face sheet reads the committed `reference/r5/hero/ubc-stock-*.png`

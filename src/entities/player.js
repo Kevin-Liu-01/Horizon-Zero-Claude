@@ -4139,7 +4139,7 @@ void main() {
      * boom runs free, so the release can never fall back into the cut. Not
      * while aiming (the aim rig's own placement rotation owns that case). */
     if (seeding) this._reliefFloor = 0;
-    if (this._reliefFloor > rotWant && !this.aiming) rotWant = Math.min(rotCap, this._reliefFloor);
+    if (this._reliefFloor > rotWant && !this.aiming && pitch <= PITCH_UP + 0.15) rotWant = Math.min(rotCap, this._reliefFloor);
     this._rotCapLast = rotCap;
     if (seeding) this._relief = rotWant;
     else if (this._rotPlace && rotWant > this._relief && this._placeCut(yawB, pitch + this._relief, wantDist, pivotLift)) {
@@ -4324,7 +4324,10 @@ void main() {
     if (C) {
       C.cameraBoom(orbit, desired, this._camPos, 0.3);
       this.boomLength = C.lastBoom ?? askLen;
-      if (this._deepK > 0.5 && !this.aiming) {
+      // the clamp regime only (the look-up within 0.15 rad of PITCH_UP): at
+      // camPitch -0.8 the hillside's own rotation answers, and a floor carried
+      // there held the boom at a 1.11 m cut (A31b's 1.20 m lens-gap bar)
+      if (this._deepK > 0.5 && !this.aiming && pitch <= PITCH_UP + 0.15) {
         const planned = Math.hypot(desired.x - orbit.x, desired.y - orbit.y, desired.z - orbit.z);
         // only a cut that parks the lens inside the dolly's own gap floor (where
         // the fade dithers her): at camPitch -0.8 a 1.1 m cut is the hillside's
