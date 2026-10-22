@@ -1,11 +1,23 @@
 # ROUND 5 — lane `hero-body` report (W0b): Brea on the kept rig
 
-Lane: hero-body · port 5252 · wave W0b · Oct 18–19 2026, fix round 2 Oct 22 2026.
+Lane: hero-body · port 5252 · wave W0b · Oct 18–19 2026, fix round 2 Oct 22 2026, **fix round 3 Oct 22 2026 (evening)**.
 Plan: `docs/ROUND5-PLAN.md` §2 (row), §1.2 (grants), §3.1 (W0b exit), §3.2 (contracts), §4.1 (budgets),
-§6 (aloy.glb), §8 (rulings, incl. §8.3 R33 g), §9 (gate block). Canon: `docs/ROUND5-BIBLE.md` §3 (Brea),
+§6 (aloy.glb), §8 (rulings, incl. §8.3 R33 g, R35–R39), §9 (gate block). Canon: `docs/ROUND5-BIBLE.md` §3 (Brea),
 §3.8 (build order), §5.2 (bow poses), §5.9 (controls).
 
-**Status (Oct 22, fix round 2).** Brea runs the kept stack on the W0 loadout. Final lane run on 5252 (`lane4`, 58 gates): **39 PASS · 5 FAIL · 2 PENDING · 12 NEEDS-JUDGE**, and A-run-arms PASS in the follow-up global batch after a gate-windowing fix (§4.1), so 40 of 46 action rows pass. **The draw hand is now OUTSIDE the jaw** (it had been inside it, §0.1): V24 shows the fist on the jaw corner with the ∴ facing the lens; the loose no longer throws the arm behind the head (§0.2). Open: A-draw-elbow-level's head-plane clause (infeasible with the hand outside the face — proof in the gate, ruling requested, §0.5); camera rows A31d / A31e at the pitch clamp up-slope (one marginal row each in the final run, A31f and A31b passing; the worst cause found and fixed, §0.4, §4.3); A31c (failed at baseline, R33 b). A13 5/5 (R27) in all four full runs of this round. Global list items present: A1, A20b, A9, A90 ×4 PASS; A21 PENDING (timing); the pipeline items fail on other lanes' unmerged rows (§4.5). `public/models/aloy.glb` is deleted; nothing in `src/` loads it.
+**Status (Oct 22, fix round 3).** Lane run `f3lane1` (58 gates): **43 PASS · 3 FAIL · 12 NEEDS-JUDGE**, no PENDING
+(R38). Then three consecutive runs of the camera rows and the draw gate on the final code (`f3run4–6`):
+**A31d, A31e, A31f PASS 3/3** (they had failed in the judge's run), **A-draw-elbow-level PASS 6/6 this round** under
+R35's literal bars plus a new per-sim-step follow-through clause (strafing elbow 0.052–0.062 m under 0.20; the down
+aim's elbow 0.066–0.078 m behind the hand; **through the loose the hand never passes −0.012 m — in front of the back
+of the skull — and the elbow ≤ 0.173 m**). The loose had gone 0.023–0.066 m BEHIND the skull, and my fix-round-2 report
+had the sign wrong (§0.2 corrected; §7.1 asks the orchestrator to re-issue R35's rationale). Still FAILING: **A31b's
+film** (two composition clauses; every A31b staging passes, §00.2) and A31c (baseline fail, R36, listed: unchanged
+head-seen, a higher ratio bar, §00.3). The root cause of the camera rows' run-to-run flips was a post-teleport foot-lock
+lunge that sank her head 0.27 m (§00.2), fixed. Brea's sheets are re-filmed and re-committed with the wrap tail standing
+out left-rear and a 1.5× crescent (§00.6). Global list items present: A1, A20b, A9, A90 ×4 PASS; A21 PENDING (timing);
+A81 / A-ID-ip-assets-gone / A-licence-manifest fail on other lanes' unmerged rows; A-assets-tracked errors on a
+`models-staging/r5-src` symlink this lane did not make (§4.5).
 
 ## 00. Fix round 3 (Oct 22, after judge r0) — what changed, by finding
 
@@ -128,12 +140,38 @@ That is why lane1/2/4 passed and lane3 / the judge's run / this round's first ru
   so not there). Its change shares one per-RENDERED-frame budget with the hijack's slew (`KEEP_STEP_TOTAL` 2.6°):
   with 2–3 sim steps per frame the two had summed to 3.1–3.7° past the input on A31e's pans (bar 3).
 
-⟨TBD runs table⟩
+*After* — three consecutive runs on the final code (`f3run4`, `f3run5`, `f3run6`, port 5252, each its own Chrome
+inside the machine slot), with this round's earlier runs for the record:
+
+| row | f3run4 | f3run5 | f3run6 | earlier this round (f3lane1 / f3run2 / f3run3, older code) | baseline (Aloy) |
+|---|---|---|---|---|---|
+| **A31d** hillside pan −0.8 | **PASS** | **PASS** | **PASS** | PASS / PASS / PASS | pass ×3 |
+| **A31e** hillside pan, clamp | **PASS** | **PASS** | **PASS** | FAIL (1 sample) / FAIL (1) / FAIL (1) | pass ×3 |
+| **A31f** 24-yaw sweep | **PASS** | **PASS** | **PASS** | PASS / FAIL (1 row, 1 sample) / FAIL (1 row, 2) | pass ×3 |
+| **A31b** no ghost without occluder | FAIL (film) | FAIL (film) | FAIL (film) | FAIL (film) ×3 | pass ×3 |
+| A31c clamp framing (R36: listed) | FAIL | FAIL | FAIL | FAIL ×3 | fail ×3 |
+
+Final-code numbers: A31e slow / moderate clamp pans — head in frame 1.0 on all 629 / 315 samples, min opacity 1.0,
+lens ≥ 0.96 m from the pivot (bar 0.85), nearest visible vertex ≥ 0.204 m (bar 0.15), view ≤ 2.19° past the input
+(bar 3), onFrac ≥ 0.369 (bar 0.268–0.279). A31f — 48/48 rows: min head-in 1.0, opacity 1.0, nearest vertex ≥ 0.221 m,
+lens ≥ 1.03 m, onFrac ≥ 1.23× its bar. A31d — opacity 1.0, lens ≥ 1.45 m (un-aimed) / 0.89 (aimed), nearest ≥ 0.67 m.
+**A31b: every staging passes** (16 judged, 0 ghosted / jammed / off-screen / over budget, lens ≥ 1.31 m, the occluder
+fades to < 0.8); **its FILM fails two composition clauses in all three runs**: the −0.8 hillside look-up frame is solid,
+looks up 20.1°, shows sky (40 %) and the skyline (60 %), her head at NDC (−0.05, −0.76) — but her crown under the
+frame's centre (clause "top above centre") and her clavicles at −0.95 … −0.97 (clause ±0.9). The view there is at its
+25.8° look-down budget (A31b grades that budget on the same staging), so the keeper cannot bring her up; a closer lens
+(−0.10 m boom) made it worse (crown lower, measured). Not closed — §6.
 
 ### 00.3 A31c (finding 3) — R36
 
 Listed, not a W0b blocker (R36: failed at the W0-day1 baseline, `carried-baseline.json` fail ×3); it goes to the
-camera backlog (§11) with an owner named at the W1 exit. This round's numbers: ⟨TBD⟩.
+camera backlog (§11) with an owner named at the W1 exit. This round, three final runs vs fix round 2's `lane4` (the
+judge's r0 read pinned 0 / jog-away 0.6 / sprint-away 0.85): **head seen past her shoulders** — pinned 0 (=), jog-away
+0.6 / 0.6 / 0.6 (=), sprint-away 0.85 / 1.0 / 0.85 (= or better); **moving framing in absolute terms** — jog-away
+0.38–0.45, sprint-away 0.41–0.43, left 0.38–0.42, right 0.51–0.55, toward 0.38–0.45 (lane4: 0.41 / 0.43 / 0.41–0.42 /
+0.52–0.55 / 0.39–0.41) — the same; but the row's bar is 0.75 × the PINNED control's onFrac, and the pinned control rose
+0.544 → 0.597–0.614 because her idle wrap tail now stands out into that frame (§00.6), so 6 moving rows now sit under
+a higher bar (lane4: 1). Reported, not hidden: by the gate's own ratio it reads worse; by the frame it does not.
 
 ### 00.4 V12 (finding 4) — R37
 
@@ -551,7 +589,9 @@ W0-day1 baseline: R36, listed). Fix round 2's final run for comparison: 39 PASS 
 
 ### 4.3 Camera rows (hero-body grades them on Brea, R33 g / R36)
 
-⟨TBD camera table⟩
+The runs table and numbers are §00.2: **A31d, A31e, A31f PASS 3/3 consecutive on the final code; A31b FAILS on its
+film's two composition clauses (all its stagings pass); A31c listed (R36), §00.3.** A32-look-up@hero, A32b@hero and
+V22@hero PASS in `f3lane1` (reticle on the 10/16 m targets; 0 ghosted; V22 fill 0.672).
 
 ### 4.4 Visual rows (NEEDS-JUDGE; filmed in `f3lane1`, frames read by this lane — advisory, R29)
 
@@ -607,12 +647,11 @@ exactly these overlays; standalone:
   shoulders at the bottom, sky and the mountain skyline above, solid, lens 1.5 m) but her crown sits at NDC −0.11
   (clause: above the centre) and her clavicles at −0.95 (clause: inside ±0.9) with the view at its 25.8° look-down
   budget. Every staging clause of A31b passes. Not closed.
-- **A31e — one sample** of the slow clamp pan's 629 (§4.3) — ⟨see the runs table⟩.
 - **The camera's answers on the 38.8° face rest on many coupled thresholds** (swing / rotation / dolly / lift / cut
   floor / keeper / hijack): this round found the dominant cause of the run-to-run flips (§00.2: the post-teleport
   lunge) and fixed it, but A31 rows still move by a sample or a few hundredths between runs.
-- **A31c** — failed on the Round-4 baseline (R36: listed, not graded at W0b). This round vs the judge's r0 numbers:
-  ⟨see §00.3⟩.
+- **A31c** — failed on the Round-4 baseline (R36: listed, not graded at W0b). Head-seen unchanged; by its ratio bar
+  six moving rows read worse because the pinned control's onFrac rose with the idle tail (§00.3).
 - **The alidade hangs at her right waist, not at the sternum** (bible §3.1 / §3.5): the v0 kit's cord chain is
   ~0.18 m too long. V23's criteria now say where it is; armory's W1 kit pass should shorten it.
 - **The wrap tail's kicked rest** reads as a pennant at idle (no flutter of its own); in the side silhouettes it is
