@@ -1,4 +1,4 @@
-# ROUND 5 — lane `pipeline` report (W0b, fix round 3; round 2 is Appendix C, round 1 Appendix B, the W0a record Appendix A)
+# ROUND 5 — lane `pipeline` report (W0b, fix round 4; round 3 is Appendix D, round 2 Appendix C, round 1 Appendix B, the W0a record Appendix A)
 
 Lane: pipeline · port 5250 · wave W0b (protagonist on the kept rig) · Oct 22 2026 · branch `r5/w0b-pipeline`
 (worktree `~/.calima-r5/trees/pipeline`; this round started from checkpoint `0aa511c`, and the orchestrator checkpointed
@@ -6,143 +6,11 @@ part of it as `b3e1311` at 10:47Z).
 Plan: `docs/ROUND5-PLAN.md` §2 (row), §1.2 (grants: `src/main.js` removal-only at the W0 exit; donor lists removal-only),
 §3.1–3.3, §4.1, §6 (rows owned), §8.3 (R33, R34, rule 8 amendment), §9 (pipeline block + global list), §10 (licences).
 
-## 0. Status — measured this round on port 5250 (harness run 10:50:03–10:51:24Z, one Chrome)
-
-`R5_SCRATCH=<scratch> node tools/gates.mjs --port 5250 --extra tools/gates.r5.pipeline.mjs --lane pipeline`:
-**13 gates: 7 PASS, 4 FAIL, 2 PENDING** (the same verdicts as round 2; every number below is this run's).
-
-| gate | verdict | measured | what decides it |
-|---|---|---|---|
-| A-sources-staged | **FAIL** | 98 staged files missing (UBC 41, MCO 54, UAL2 3); UAL1 staged 3/3, 3.87 MB; no archive SHA-256 (4 pending); tamper control caught; **archive-identity controls 12/12** (§1 F1) | Kevin's download (§6.1) + the UAL1/UAL2 rulings (§6.2) |
-| A-build-deterministic | **PENDING** `blockedBy: A-sources-staged` | 5 outputs (4 GLB/WebP) byte-identical across two network-denied builds, 391 / 388 ms, 236.1 / 236.8 MB RSS, committed outputs 5/5 equal, missing-source classification control 6/6; `gen-humans-proof` stops on the missing UBC dir (6 outputs not built) | the sources |
-| A-build-only-lane | **PASS** | 20 lanes, slowest pipeline 435 ms (cap 60 s), 0 writes outside, control 2/2 caught | — |
-| A-glb-budget | **PASS** | 4 generated GLBs, 0 over (Tiller 32,960 tris / 24 bones / 309,880 B) | — |
-| A-loader-fixes | **PASS** | dequantised error 0.0198 mm, fold 0 mm, raw-quantised control 120 mm, lamp `castShadow` false | — |
-| A-specs-data-driven | **PASS** | 23.5 s; 578 files cloned, diff exactly `assets.specs.js` + `probe.glb`; A1 PASS; A20b PASS 344 frames; symlink control caught | — |
-| A-specs-data-driven **on main's tree `263ae19`** (first item) | **PASS** | 20.2 s; 590 files cloned; diff exactly the 2 paths; A1 PASS; A20b PASS 250 frames; `/src/main.js` text/javascript 96,482 B transformed; control caught (raw 16,859 B, `text/css`); copy removed | — |
-| A-human-bind | **PENDING** | `SKIP-pending (hero-body W0b)`; `SPECS.hero` = `/models/aloy.glb`, no rig profile | merged tree (§6.2) |
-| A-poc-promoted (W0 exit) | **FAIL** | no ruling recorded; 3 closure files left; 1 problem: `src/instruments/kinds/tiller.js:34` (main's file); `?poc=biome` serves in 5.1 s; projections: `w1-exit` FAIL (1: that reader), `literal` FAIL (6) | the §6.2 ruling + instruments-core's merge |
-| A-ID-ip-assets-gone | **FAIL** | `public/anims-hybrid/aloy-ual.json` EXPIRED (gates-perf's unmerged W0a deletion); 20 GLBs, 221 files read, 0 other hits | gates-perf's merge |
-| A-licence-manifest | **FAIL** | legacy-source FAIL (the same file); third-party PENDING (5 rows); credits PENDING 0/9 README, 0/9 rendered (modal visible, 878×689, 1,645 chars); files 221/221; 34.48 MB ≤ 60 | gates-perf's merge, merge steps 5–6, §6.1 |
-| A-assets-tracked | **PASS** | 225 paths, 0 ignored, control caught | — |
-| A-pipeline-boot-rows / A-pipeline-r30-merge-order | **PASS / PASS** | 6 boot rows loaded, 5 R30 rows `SKIP-legacy-deleted` / consistent | — |
-
-**Global list items present in this tree** (one run, `--only`, 10:51:24–11:01:01Z): A1 **PASS** (state=playing),
-A20b **PASS** (223 frames, 0 system errors), A90 **PASS** (heap −7.6 %, geo +9, tex −28, objects −1,096), A90-expansion
-**PASS** (heap −11.1 %, non-machine growth 0, orphan roots 0), A90b **PASS** (0 offenders, 0 orphaned textures, heap −9.4 %
-after forced GC), A90-rig-reclaim **PASS** (30 cycles, geo +8, tex 0; per live strider 0.13 geo / 0.38 tex), A9
-**PENDING** (309 draws pass; 38.3 fps not attributable: the empty frame costs 3.13 ms of GPU here), A21 **PENDING**
-(draws 309 / 195 / 325 ≤ 350 and 4.12 / 3.67 / 4.23 M tris ≤ 6.5 M pass; the timing terms are not attributable on this
-box). Not in this tree (other lanes' unmerged files): A90-abs, A-alloc-rate, A-vram-ledger, both horizon-terms lints,
-A-reach-all-sites, A-port-guard, A-carried-suite. No runtime file changed this round (`src/**` untouched), so these
-are a regression check, not new evidence.
-
-**Registration:** r5 auto-discovery (gates-perf) is still not on main, so this file goes in through the runner's
-`--extra tools/gates.r5.pipeline.mjs` flag (the same import and `GATES` merge as the `gates.round4.*.mjs` scan; the run
-log lists it as the 28th merged file); `--lane pipeline` selects these 13.
-
-## 1. Fix round 3 — what changed, by finding
-
-### F1 (major, judge-pipeline-w0b-r0): "restore --zip and verify-zip record any zip's hash as the upstream archive's" — **fixed, with 12 controls in the gate**
-The judge zipped `public/anims` into `ual1.zip`, ran `restore --row ual1 --zip ual1.zip`, and the lock and the row
-recorded that zip's SHA-256 (and its name and size) as UAL1's upstream archive. Both commands checked only that the
-zip **contained** the staged files, which a re-zip of the trimmed subset always does. Now (`tools/build/sources.mjs`,
-§2.0):
-- **Identity before anything is written** (`archiveIdentity`, shared by `restore --zip`, `verify-zip` and `stage-zip`
-  on a known source): the file name must equal the lock's `archive.name` = the row's `archive_name`; the size must
-  equal the recorded `archive.bytes` = the row's `archive_bytes` = the plan's §10.1 size for UBC and MCO (pinned in
-  `PLAN_BYTES`); the zip must hold members beyond the staged subset; a recorded member count and listing hash must
-  match. A source with no recorded size (UAL2, UAL1) is refused unless `<!-- r5-ruling archive-size-<row>=first-fetch -->`
-  is in the plan, and UAL2 must then fall inside the 15.5–19 MB window the proof recorded ("zip 17 MB").
-- **Nothing is taken from the zip**: name and size are never overwritten; `expectedBytes` is enforced (it was computed
-  and ignored); `stage-dir` can no longer rewrite a recorded name or size; `stage-zip` refuses `--keep` globs that select
-  every member (a keep-all "trimmed subset" is indistinguishable from a re-zip) and a changed SHA-256 without
-  `<!-- r5-ruling archive-new-version-<row>=accepted -->`.
-- **The record is auditable**: a successful record writes `archive.members`, `archive.listingSha256` and the member
-  listing (`tools/build/sources.listings/<row>.tsv`, size + CRC-32 + name per member).
-- **Both gates check the record** through one function (`archiveAgreement`): A-sources-staged (`status()`) and
-  A-licence-manifest's third-party clause (`tools/licences/check.mjs`) FAIL when the lock and the row disagree on
-  hash, name or size, when UBC/MCO's size is not the plan's, or when a recorded hash has no size, no member count
-  above the staged file count, or no listing file that hashes to `listingSha256`.
-- **Negative controls run inside A-sources-staged on every run** (`tools/build/pipeline/archive-controls.mjs`, scratch
-  only, on the real code path, with zips built from the UAL1 files staged here). This run: **12/12**:
-
-| case | expect | result |
-|---|---|---|
-| A re-zip of the 3 staged files, recorded name, no size, no ruling (the judge's attack, renamed to pass the name check) | refused by restore AND verify-zip; lock + row untouched | refused: "no byte size is recorded … needs the orchestrator ruling", "holds only the 3 staged member(s)" |
-| B the same re-zip after a forger set lock + row size to its 1,066,535 B | refused | refused: "holds only the 3 staged member(s)" |
-| C a full zip (3 staged + 1 extra member) saved as `ual1.zip` | refused | refused: file name ≠ the recorded upstream name |
-| D a full zip with one staged member changed by one byte | refused | refused: `mismatched AnimationLibrary_Godot_Standard.bin` |
-| E a full zip, no recorded size, ruling `archive-size-ual1=first-fetch` | accepted + recorded | recorded hash, 1,066,685 B with `bytesFrom: first fetch`, 4 members, listing file; row equal |
-| E′ the recorded pair, then the listing file edited | agree, then caught | `[]`, then "does not hash to the recorded listingSha256" |
-| F the subset re-zip after E | refused | refused on size, subset, member count, listing hash and archive SHA-256 |
-| G a full zip with the size recorded, `--delete-zip` | accepted, zip deleted | accepted, recorded, zip gone |
-| H `stage-zip` of the subset re-zip keeping every member, size forged | refused | refused: "the --keep globs select all 3 members" |
-| I `stage-zip` of the full zip keeping the staged files | accepted, same files | accepted, 3 files with the lock's SHA-256s, 4 members |
-| J `archiveAgreement` on the real lock and rows, then 5 hand edits | 0 disagreements, 5/5 caught | 0; lock name, row size, a made-up hash in both, a hash in the row only, and UBC's size moved in lock AND row (caught against plan §10.1) |
-| K `record-per-file` without, then with `archive-per-file-ual1=accepted` | refused, then recorded | refused naming the ruling; then the per-file manifest hash `45e8f8fa…` in lock and row with `archive_note` |
-
-A refused case leaves the scratch lock, the scratch LICENSES.json and the scratch r5-src byte-identical (checked by
-hash in every refused case). The real lock and row are unchanged: no archive hash is recorded anywhere, because no
-upstream archive is on this machine (F2).
-
-### F2 (blocker ×2, both judges): no archive SHA-256s; the staged human sources are gone; A-sources-staged FAILs — **still open: needs Kevin's download and two rulings**
-Re-searched this round (Spotlight on the three archive names, `~/Downloads`, every lane tree and main's
-`models-staging/`): no archive and no copy of the UBC, MCO or UAL2 files exists on this machine. Nothing was downloaded:
-the relayed request names no file, and fetching named third-party archives needs Kevin's explicit go-ahead (§6.1 gives
-file, page and size for each). What changed is that the re-fetch is now **one command per archive that refuses
-anything but the named upstream file**, and the two sources whose archive cannot be proven by size have a ruling
-path that the gates read (§6.2):
-- UAL2: no exact size was kept. `<!-- r5-ruling archive-size-ual2-standard=first-fetch -->` lets `restore --zip`
-  record the first fetch's size (inside the 15.5–19 MB window); without it every UAL2 zip is refused.
-- UAL1: v1 can no longer be fetched (itch serves v3.0 since 16 Jun 2026). `<!-- r5-ruling archive-per-file-ual1=accepted -->`
-  lets `node tools/build/sources.mjs record-per-file --row ual1` record the per-file SHA-256 manifest (the stage-files
-  form, with an `archive_note` saying it is not an archive hash); without it the command refuses.
-- The row and lock notes now name these markers and commands.
-A-sources-staged stays **FAIL** (98 staged files missing: UBC 41, MCO 54, UAL2 3), A-build-deterministic stays
-**PENDING `blockedBy: A-sources-staged`** (`gen-humans-proof` stops on the missing UBC dir; the 5 outputs that build are
-byte-identical), and A-licence-manifest's third-party clause stays **PENDING** on 5 rows.
-
-### F3 (blocker / major): A-poc-promoted FAILs; the lane tracks `sounding-ring.glb` in a folder the bar says must go — **gate made ruling-ready; one more leftover removed; the contradiction still needs the orchestrator**
-- The plan's clauses (b) "`tools/r5-poc/` and `public/models/r5-poc/` absent" and (c) "`?poc=biome` still serves
-  A-gpu-tier" cannot both hold while the biome hook exists, and only the orchestrator can choose. The gate now grades
-  the choice the moment it is recorded as `<!-- r5-ruling poc-closure=w1-exit -->` or `=literal` (§6.2), and with no
-  marker keeps the literal bar (at best PENDING, never PASS). Every run also **projects both options** on the tree, so
-  the ruling is made on measured consequences. This run: no ruling recorded → **FAIL** on 1 problem
-  (`src/instruments/kinds/tiller.js:34`, main's file; instruments-core's unmerged re-point removes it); projection
-  `w1-exit` FAIL on that same reader only; projection `literal` FAIL on 6 (the 3 closure files, the reader, and the two
-  suppliers `gen-tiller.mjs:54` / `gen-sounding-ring.mjs:43` that would re-create the folder).
-- **The gate missed a leftover**: it skipped symlinks, so the orchestrator's `tools/r5-poc/assets` link (to main's
-  untracked proof GLBs) kept `tools/r5-poc/` present without being listed. Symlinks now count as left on disk, and the
-  link is removed from this tree (nothing in any lane tree reads `tools/r5-poc/assets/` any more; main's real folder is
-  merge step 9).
-- `sounding-ring.glb` stays tracked, and this is deliberate rather than overlooked. Main has the same file
-  **untracked** (186,348 B, Oct 15 proof output, no provenance), and every lane tree made by `git worktree add` lacks it.
-  engine-gpu had to symlink main's copy into its tree to boot `?poc=biome` for A-gpu-tier. Untracking it cannot be done
-  without a git index write, which lanes may not do; deleting it breaks clause (c) in every fresh tree. Under option 1 the
-  tracked file, its row and its `.gitignore` exception move to world-ground's W1-exit row. Under option 2 they are
-  deleted (merge step 9; the `literal` projection lists both suppliers). Either way the ruling decides it, and the gate
-  names it under `literal`.
-- The `?poc=human` / `?poc=creature` blocks are gone from `src/main.js` (clause (a): `humanPath` false, `creaturePath`
-  false), and `?poc=biome` serves in this tree (5.1 s; landmark 22,120 tris, Tiller 65,920, terrain 80,000).
-
-### F4 (blocker / major): A-licence-manifest and A-ID-ip-assets-gone FAIL in this tree — **unchanged: other lanes' unmerged files**
-Re-measured: A-ID-ip-assets-gone **FAIL** on `public/anims-hybrid/aloy-ual.json` (row `legacy-anims-lab-bake`, `ip: true`,
-EXPIRED at the W0a exit; 20 GLBs and 221 files read, 0 other hits; gates-perf's tree has deleted the folder, unmerged).
-A-licence-manifest **FAIL**: legacy-source on the same file; third-party PENDING (the archive hashes, F2); credits
-PENDING with 0/9 in the README and 0/9 in the rendered modal; files 221/221 matched; 34.48 MB ≤ 60. The filmed modal
-(§3) is still main's Round-4 `menu.js` (brand's file): "HORIZON ZERO CLAUDE", the Guerrilla/Sony line, the Julius /
-Michroma / Orbitron fonts and "Sketchfab fan-art rigs — Aloy, Watcher, Sawtooth, Thunderjaw, Behemoth". This lane
-cannot edit `menu.js`, `README.md` or `public/anims-*`; the fixes are merge steps 5 and 6 and gates-perf's merge.
-
-### F5 (major): A-human-bind PENDING, Brea absent from this tree — **unchanged: graded on the merged tree**
-The gate reports `SKIP-pending (hero-body W0b) … heroUrl /models/aloy.glb`, and the frame (§3) shows the Round-4 body.
-Brea's GLBs and rig profile are hero-body's files. Merge step 3 makes her the hero row; the gate then grades 52/52 with
-no code change. I did not re-run a merge trial: the judges do not accept one as a gate run.
+@@ROUND4@@
 
 ## 2. Contracts published (exact signatures; complete as of this round)
 
-### 2.0 New this round (fix round 3)
+### 2.0 New in fix rounds 3 and 4
 
 ```js
 // tools/build/sources.mjs
@@ -163,11 +31,21 @@ export async function verifyZip({ row, zip, retrieved?, deleteZip?, root? })   /
 ```
 ```
 node tools/build/sources.mjs record-per-file --row <id>      # only under <!-- r5-ruling archive-per-file-<id>=accepted -->
-node tools/build/pipeline/archive-controls.mjs [--scratch <dir>]   # the 12 identity controls, one JSON line
+node tools/build/pipeline/archive-controls.mjs [--scratch <dir>]   # the 14 identity controls on 3 record sets, one JSON line
+                                                                   # { ok, current, postFetch, postFetchUal1Archive }
 ```
 ```js
 // tools/build/pipeline/archive-controls.mjs
-export async function archiveControls({ root?, scratch? }): { ok: true | false | null, row, stagedFiles, cases: [{ case, expect, ok, … }] }
+// fix round 4: the cases run on the synthetic scratch-only row SYNTH; `root` = the records the suite starts from
+// (lock, LICENSES.json, plan, listings), `codeRoot` = the code under test. ok is never null; a throw inside a case is that
+// case's FAIL ({ ok: false, error }), never a throw out of the suite.
+export const SYNTH = 'archive-control-synthetic', N_CASES = 14;
+export async function archiveControls({ root?, codeRoot?, scratch?, label? }):
+  { ok: boolean, records, row: SYNTH, passed, of: N_CASES, error?, cases: [{ case, expect, ok, error?, why?, … }] }
+export async function postFetchRecords({ root?, codeRoot?, out, ual1?: 'per-file' | 'first-fetch' }):
+  { root: out, shaped: { [row]: how }, agree: boolean, disagreements }   // the post-W0b-fetch lock/rows/plan/listings, simulated
+export async function archiveControlsPostFetch({ root?, codeRoot?, scratch?, ual1?: 'per-file' | 'first-fetch' }):
+  { ...archiveControls result, ok: shape.agree && every case, shape }
 // tools/build/pipeline/w0b-checks.mjs
 export const POC_RULING_KEY = 'poc-closure', POC_RULINGS = ['w1-exit', 'literal'];
 export function pocPromotedStatic({ root?, rulingMap? }): { pass, detail: { ruling, recordedRuling, clauseC, leftOnDisk, closureLeft,
@@ -383,6 +261,142 @@ No file outside the §2 row and the W0b grants was edited. Every other lane tree
 - **Downloads:** none.
 
 ---
+
+# Appendix D — W0b fix round 3 (Oct 22 2026 morning, as written then; its §0–§1 only — its contracts, merge steps and requests are superseded by §2, §5 and §6 above)
+
+### 0. Status — measured this round on port 5250 (harness run 10:50:03–10:51:24Z, one Chrome)
+
+`R5_SCRATCH=<scratch> node tools/gates.mjs --port 5250 --extra tools/gates.r5.pipeline.mjs --lane pipeline`:
+**13 gates: 7 PASS, 4 FAIL, 2 PENDING** (the same verdicts as round 2; every number below is this run's).
+
+| gate | verdict | measured | what decides it |
+|---|---|---|---|
+| A-sources-staged | **FAIL** | 98 staged files missing (UBC 41, MCO 54, UAL2 3); UAL1 staged 3/3, 3.87 MB; no archive SHA-256 (4 pending); tamper control caught; **archive-identity controls 12/12** (§1 F1) | Kevin's download (§6.1) + the UAL1/UAL2 rulings (§6.2) |
+| A-build-deterministic | **PENDING** `blockedBy: A-sources-staged` | 5 outputs (4 GLB/WebP) byte-identical across two network-denied builds, 391 / 388 ms, 236.1 / 236.8 MB RSS, committed outputs 5/5 equal, missing-source classification control 6/6; `gen-humans-proof` stops on the missing UBC dir (6 outputs not built) | the sources |
+| A-build-only-lane | **PASS** | 20 lanes, slowest pipeline 435 ms (cap 60 s), 0 writes outside, control 2/2 caught | — |
+| A-glb-budget | **PASS** | 4 generated GLBs, 0 over (Tiller 32,960 tris / 24 bones / 309,880 B) | — |
+| A-loader-fixes | **PASS** | dequantised error 0.0198 mm, fold 0 mm, raw-quantised control 120 mm, lamp `castShadow` false | — |
+| A-specs-data-driven | **PASS** | 23.5 s; 578 files cloned, diff exactly `assets.specs.js` + `probe.glb`; A1 PASS; A20b PASS 344 frames; symlink control caught | — |
+| A-specs-data-driven **on main's tree `263ae19`** (first item) | **PASS** | 20.2 s; 590 files cloned; diff exactly the 2 paths; A1 PASS; A20b PASS 250 frames; `/src/main.js` text/javascript 96,482 B transformed; control caught (raw 16,859 B, `text/css`); copy removed | — |
+| A-human-bind | **PENDING** | `SKIP-pending (hero-body W0b)`; `SPECS.hero` = `/models/aloy.glb`, no rig profile | merged tree (§6.2) |
+| A-poc-promoted (W0 exit) | **FAIL** | no ruling recorded; 3 closure files left; 1 problem: `src/instruments/kinds/tiller.js:34` (main's file); `?poc=biome` serves in 5.1 s; projections: `w1-exit` FAIL (1: that reader), `literal` FAIL (6) | the §6.2 ruling + instruments-core's merge |
+| A-ID-ip-assets-gone | **FAIL** | `public/anims-hybrid/aloy-ual.json` EXPIRED (gates-perf's unmerged W0a deletion); 20 GLBs, 221 files read, 0 other hits | gates-perf's merge |
+| A-licence-manifest | **FAIL** | legacy-source FAIL (the same file); third-party PENDING (5 rows); credits PENDING 0/9 README, 0/9 rendered (modal visible, 878×689, 1,645 chars); files 221/221; 34.48 MB ≤ 60 | gates-perf's merge, merge steps 5–6, §6.1 |
+| A-assets-tracked | **PASS** | 225 paths, 0 ignored, control caught | — |
+| A-pipeline-boot-rows / A-pipeline-r30-merge-order | **PASS / PASS** | 6 boot rows loaded, 5 R30 rows `SKIP-legacy-deleted` / consistent | — |
+
+**Global list items present in this tree** (one run, `--only`, 10:51:24–11:01:01Z): A1 **PASS** (state=playing),
+A20b **PASS** (223 frames, 0 system errors), A90 **PASS** (heap −7.6 %, geo +9, tex −28, objects −1,096), A90-expansion
+**PASS** (heap −11.1 %, non-machine growth 0, orphan roots 0), A90b **PASS** (0 offenders, 0 orphaned textures, heap −9.4 %
+after forced GC), A90-rig-reclaim **PASS** (30 cycles, geo +8, tex 0; per live strider 0.13 geo / 0.38 tex), A9
+**PENDING** (309 draws pass; 38.3 fps not attributable: the empty frame costs 3.13 ms of GPU here), A21 **PENDING**
+(draws 309 / 195 / 325 ≤ 350 and 4.12 / 3.67 / 4.23 M tris ≤ 6.5 M pass; the timing terms are not attributable on this
+box). Not in this tree (other lanes' unmerged files): A90-abs, A-alloc-rate, A-vram-ledger, both horizon-terms lints,
+A-reach-all-sites, A-port-guard, A-carried-suite. No runtime file changed this round (`src/**` untouched), so these
+are a regression check, not new evidence.
+
+**Registration:** r5 auto-discovery (gates-perf) is still not on main, so this file goes in through the runner's
+`--extra tools/gates.r5.pipeline.mjs` flag (the same import and `GATES` merge as the `gates.round4.*.mjs` scan; the run
+log lists it as the 28th merged file); `--lane pipeline` selects these 13.
+
+### 1. Fix round 3 — what changed, by finding
+
+#### F1 (major, judge-pipeline-w0b-r0): "restore --zip and verify-zip record any zip's hash as the upstream archive's" — **fixed, with 12 controls in the gate**
+The judge zipped `public/anims` into `ual1.zip`, ran `restore --row ual1 --zip ual1.zip`, and the lock and the row
+recorded that zip's SHA-256 (and its name and size) as UAL1's upstream archive. Both commands checked only that the
+zip **contained** the staged files, which a re-zip of the trimmed subset always does. Now (`tools/build/sources.mjs`,
+§2.0):
+- **Identity before anything is written** (`archiveIdentity`, shared by `restore --zip`, `verify-zip` and `stage-zip`
+  on a known source): the file name must equal the lock's `archive.name` = the row's `archive_name`; the size must
+  equal the recorded `archive.bytes` = the row's `archive_bytes` = the plan's §10.1 size for UBC and MCO (pinned in
+  `PLAN_BYTES`); the zip must hold members beyond the staged subset; a recorded member count and listing hash must
+  match. A source with no recorded size (UAL2, UAL1) is refused unless `<!-- r5-ruling archive-size-<row>=first-fetch -->`
+  is in the plan, and UAL2 must then fall inside the 15.5–19 MB window the proof recorded ("zip 17 MB").
+- **Nothing is taken from the zip**: name and size are never overwritten; `expectedBytes` is enforced (it was computed
+  and ignored); `stage-dir` can no longer rewrite a recorded name or size; `stage-zip` refuses `--keep` globs that select
+  every member (a keep-all "trimmed subset" is indistinguishable from a re-zip) and a changed SHA-256 without
+  `<!-- r5-ruling archive-new-version-<row>=accepted -->`.
+- **The record is auditable**: a successful record writes `archive.members`, `archive.listingSha256` and the member
+  listing (`tools/build/sources.listings/<row>.tsv`, size + CRC-32 + name per member).
+- **Both gates check the record** through one function (`archiveAgreement`): A-sources-staged (`status()`) and
+  A-licence-manifest's third-party clause (`tools/licences/check.mjs`) FAIL when the lock and the row disagree on
+  hash, name or size, when UBC/MCO's size is not the plan's, or when a recorded hash has no size, no member count
+  above the staged file count, or no listing file that hashes to `listingSha256`.
+- **Negative controls run inside A-sources-staged on every run** (`tools/build/pipeline/archive-controls.mjs`, scratch
+  only, on the real code path, with zips built from the UAL1 files staged here). This run: **12/12**:
+
+| case | expect | result |
+|---|---|---|
+| A re-zip of the 3 staged files, recorded name, no size, no ruling (the judge's attack, renamed to pass the name check) | refused by restore AND verify-zip; lock + row untouched | refused: "no byte size is recorded … needs the orchestrator ruling", "holds only the 3 staged member(s)" |
+| B the same re-zip after a forger set lock + row size to its 1,066,535 B | refused | refused: "holds only the 3 staged member(s)" |
+| C a full zip (3 staged + 1 extra member) saved as `ual1.zip` | refused | refused: file name ≠ the recorded upstream name |
+| D a full zip with one staged member changed by one byte | refused | refused: `mismatched AnimationLibrary_Godot_Standard.bin` |
+| E a full zip, no recorded size, ruling `archive-size-ual1=first-fetch` | accepted + recorded | recorded hash, 1,066,685 B with `bytesFrom: first fetch`, 4 members, listing file; row equal |
+| E′ the recorded pair, then the listing file edited | agree, then caught | `[]`, then "does not hash to the recorded listingSha256" |
+| F the subset re-zip after E | refused | refused on size, subset, member count, listing hash and archive SHA-256 |
+| G a full zip with the size recorded, `--delete-zip` | accepted, zip deleted | accepted, recorded, zip gone |
+| H `stage-zip` of the subset re-zip keeping every member, size forged | refused | refused: "the --keep globs select all 3 members" |
+| I `stage-zip` of the full zip keeping the staged files | accepted, same files | accepted, 3 files with the lock's SHA-256s, 4 members |
+| J `archiveAgreement` on the real lock and rows, then 5 hand edits | 0 disagreements, 5/5 caught | 0; lock name, row size, a made-up hash in both, a hash in the row only, and UBC's size moved in lock AND row (caught against plan §10.1) |
+| K `record-per-file` without, then with `archive-per-file-ual1=accepted` | refused, then recorded | refused naming the ruling; then the per-file manifest hash `45e8f8fa…` in lock and row with `archive_note` |
+
+A refused case leaves the scratch lock, the scratch LICENSES.json and the scratch r5-src byte-identical (checked by
+hash in every refused case). The real lock and row are unchanged: no archive hash is recorded anywhere, because no
+upstream archive is on this machine (F2).
+
+#### F2 (blocker ×2, both judges): no archive SHA-256s; the staged human sources are gone; A-sources-staged FAILs — **still open: needs Kevin's download and two rulings**
+Re-searched this round (Spotlight on the three archive names, `~/Downloads`, every lane tree and main's
+`models-staging/`): no archive and no copy of the UBC, MCO or UAL2 files exists on this machine. Nothing was downloaded:
+the relayed request names no file, and fetching named third-party archives needs Kevin's explicit go-ahead (§6.1 gives
+file, page and size for each). What changed is that the re-fetch is now **one command per archive that refuses
+anything but the named upstream file**, and the two sources whose archive cannot be proven by size have a ruling
+path that the gates read (§6.2):
+- UAL2: no exact size was kept. `<!-- r5-ruling archive-size-ual2-standard=first-fetch -->` lets `restore --zip`
+  record the first fetch's size (inside the 15.5–19 MB window); without it every UAL2 zip is refused.
+- UAL1: v1 can no longer be fetched (itch serves v3.0 since 16 Jun 2026). `<!-- r5-ruling archive-per-file-ual1=accepted -->`
+  lets `node tools/build/sources.mjs record-per-file --row ual1` record the per-file SHA-256 manifest (the stage-files
+  form, with an `archive_note` saying it is not an archive hash); without it the command refuses.
+- The row and lock notes now name these markers and commands.
+A-sources-staged stays **FAIL** (98 staged files missing: UBC 41, MCO 54, UAL2 3), A-build-deterministic stays
+**PENDING `blockedBy: A-sources-staged`** (`gen-humans-proof` stops on the missing UBC dir; the 5 outputs that build are
+byte-identical), and A-licence-manifest's third-party clause stays **PENDING** on 5 rows.
+
+#### F3 (blocker / major): A-poc-promoted FAILs; the lane tracks `sounding-ring.glb` in a folder the bar says must go — **gate made ruling-ready; one more leftover removed; the contradiction still needs the orchestrator**
+- The plan's clauses (b) "`tools/r5-poc/` and `public/models/r5-poc/` absent" and (c) "`?poc=biome` still serves
+  A-gpu-tier" cannot both hold while the biome hook exists, and only the orchestrator can choose. The gate now grades
+  the choice the moment it is recorded as `<!-- r5-ruling poc-closure=w1-exit -->` or `=literal` (§6.2), and with no
+  marker keeps the literal bar (at best PENDING, never PASS). Every run also **projects both options** on the tree, so
+  the ruling is made on measured consequences. This run: no ruling recorded → **FAIL** on 1 problem
+  (`src/instruments/kinds/tiller.js:34`, main's file; instruments-core's unmerged re-point removes it); projection
+  `w1-exit` FAIL on that same reader only; projection `literal` FAIL on 6 (the 3 closure files, the reader, and the two
+  suppliers `gen-tiller.mjs:54` / `gen-sounding-ring.mjs:43` that would re-create the folder).
+- **The gate missed a leftover**: it skipped symlinks, so the orchestrator's `tools/r5-poc/assets` link (to main's
+  untracked proof GLBs) kept `tools/r5-poc/` present without being listed. Symlinks now count as left on disk, and the
+  link is removed from this tree (nothing in any lane tree reads `tools/r5-poc/assets/` any more; main's real folder is
+  merge step 9).
+- `sounding-ring.glb` stays tracked, and this is deliberate rather than overlooked. Main has the same file
+  **untracked** (186,348 B, Oct 15 proof output, no provenance), and every lane tree made by `git worktree add` lacks it.
+  engine-gpu had to symlink main's copy into its tree to boot `?poc=biome` for A-gpu-tier. Untracking it cannot be done
+  without a git index write, which lanes may not do; deleting it breaks clause (c) in every fresh tree. Under option 1 the
+  tracked file, its row and its `.gitignore` exception move to world-ground's W1-exit row. Under option 2 they are
+  deleted (merge step 9; the `literal` projection lists both suppliers). Either way the ruling decides it, and the gate
+  names it under `literal`.
+- The `?poc=human` / `?poc=creature` blocks are gone from `src/main.js` (clause (a): `humanPath` false, `creaturePath`
+  false), and `?poc=biome` serves in this tree (5.1 s; landmark 22,120 tris, Tiller 65,920, terrain 80,000).
+
+#### F4 (blocker / major): A-licence-manifest and A-ID-ip-assets-gone FAIL in this tree — **unchanged: other lanes' unmerged files**
+Re-measured: A-ID-ip-assets-gone **FAIL** on `public/anims-hybrid/aloy-ual.json` (row `legacy-anims-lab-bake`, `ip: true`,
+EXPIRED at the W0a exit; 20 GLBs and 221 files read, 0 other hits; gates-perf's tree has deleted the folder, unmerged).
+A-licence-manifest **FAIL**: legacy-source on the same file; third-party PENDING (the archive hashes, F2); credits
+PENDING with 0/9 in the README and 0/9 in the rendered modal; files 221/221 matched; 34.48 MB ≤ 60. The filmed modal
+(§3) is still main's Round-4 `menu.js` (brand's file): "HORIZON ZERO CLAUDE", the Guerrilla/Sony line, the Julius /
+Michroma / Orbitron fonts and "Sketchfab fan-art rigs — Aloy, Watcher, Sawtooth, Thunderjaw, Behemoth". This lane
+cannot edit `menu.js`, `README.md` or `public/anims-*`; the fixes are merge steps 5 and 6 and gates-perf's merge.
+
+#### F5 (major): A-human-bind PENDING, Brea absent from this tree — **unchanged: graded on the merged tree**
+The gate reports `SKIP-pending (hero-body W0b) … heroUrl /models/aloy.glb`, and the frame (§3) shows the Round-4 body.
+Brea's GLBs and rig profile are hero-body's files. Merge step 3 makes her the hero row; the gate then grades 52/52 with
+no code change. I did not re-run a merge trial: the judges do not accept one as a gate run.
 
 # Appendix C — W0b fix round 2 (Oct 22 2026, as written then; its §0–§1 only — its contracts, merge steps and requests are superseded by §2, §5 and §6 above)
 

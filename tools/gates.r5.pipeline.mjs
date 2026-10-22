@@ -48,7 +48,10 @@
  * FAIL. `tools/build/sources.mjs restore` puts the lock's files back.
  *
  * W0b fix round 3: A-sources-staged also runs the ARCHIVE IDENTITY controls
- * (tools/build/pipeline/archive-controls.mjs, 11 cases in scratch): a re-zip of
+ * (tools/build/pipeline/archive-controls.mjs, 14 cases in scratch since fix
+ * round 4, on a synthetic scratch-only source, against the current records AND
+ * two simulated post-fetch record sets; any of the three not ok === true is a
+ * FAIL): a re-zip of
  * the staged subset, a size-forged re-zip, a renamed zip, a changed member and
  * a keep-all stage-zip are refused with the lock and row untouched; the
  * positive cases record a name- and size-checked hash with its member listing;
@@ -458,16 +461,26 @@ async function sourcesStaged() {
       }
     } finally { rmSync(tamper, { recursive: true, force: true }); }
   }
-  // fix round 3 — ARCHIVE IDENTITY controls (judge: a self-made zip's hash was recorded as the upstream archive's):
-  // 11 cases in scratch on the real restore / verify-zip / stage-zip / archiveAgreement code (refusals leave the lock and
-  // the row untouched; the positive cases record name-checked hash + size + listing). tools/build/pipeline/archive-controls.mjs
-  const { archiveControls } = await imp('tools/build/pipeline/archive-controls.mjs');
-  let archive;
-  try { archive = await archiveControls({ scratch: scratchRoot() }); } catch (e) { archive = { ok: false, error: String(e?.stack || e).slice(0, 400) }; }
-  const archiveSummary = { ok: archive.ok, row: archive.row, error: archive.error, why: archive.why,
-    cases: (archive.cases || []).map((c) => ({ case: c.case, ok: c.ok, ...(c.restore ? { restore: c.restore.ok, problems: (c.restore.problems || []).length } : {}),
-      ...(c.verifyZip ? { verifyZip: c.verifyZip.ok } : {}), ...(c.stageZip ? { stageZip: c.stageZip.ok } : {}), ...(c.tampered ? { tampered: c.tampered } : {}) })) };
-  const pass = control.ok === false || archive.ok === false ? false : r.pass;
+  // fix round 3 — ARCHIVE IDENTITY controls (judge: a self-made zip's hash was recorded as the upstream archive's), in
+  // scratch on the real restore / verify-zip / stage-zip / record-per-file / archiveAgreement code (refusals leave the
+  // lock and the row untouched; the positive cases record name-checked hash + size + listing).
+  // fix round 4 (judge: the suite threw ENOENT, or returned ok:null and was skipped, once the real records were
+  // post-fetch): the cases run on a synthetic scratch-only source, so they do not depend on the real records; the suite
+  // runs on the CURRENT records and on two simulated POST-FETCH record sets (UAL1 per-file / UAL1 first-fetch), and
+  // the gate FAILs unless all three are ok === true (null or a throw is a FAIL, never skipped).
+  const AC = await imp('tools/build/pipeline/archive-controls.mjs');
+  const runSet = async (fn) => { try { return await fn(); } catch (e) { return { ok: false, error: String(e?.stack || e).slice(0, 400), cases: [] }; } };
+  const sets = {
+    current: await runSet(() => AC.archiveControls({ scratch: scratchRoot() })),
+    postFetchUal1PerFile: await runSet(() => AC.archiveControlsPostFetch({ scratch: scratchRoot(), ual1: 'per-file' })),
+    postFetchUal1FirstFetch: await runSet(() => AC.archiveControlsPostFetch({ scratch: scratchRoot(), ual1: 'first-fetch' })),
+  };
+  const summarise = (x) => ({ ok: x.ok, records: x.records, row: x.row, passed: `${x.passed ?? 0}/${x.of ?? AC.N_CASES}`, error: x.error, ...(x.shape ? { shape: x.shape } : {}),
+    cases: (x.cases || []).map((c) => ({ case: c.case, ok: c.ok, ...(c.error ? { error: c.error } : {}), ...(c.why ? { why: c.why } : {}),
+      ...(c.restore ? { restore: c.restore.ok, problems: (c.restore.problems || []).length } : {}),
+      ...(c.verifyZip ? { verifyZip: c.verifyZip.ok } : {}), ...(c.stageZip ? { stageZip: c.stageZip.ok } : {}), ...(c.tampered ? { tampered: c.tampered } : {}) })) });
+  const archiveSummary = { ok: Object.values(sets).every((x) => x.ok === true), ...Object.fromEntries(Object.entries(sets).map(([k, x]) => [k, summarise(x)])) };
+  const pass = control.ok === false || archiveSummary.ok !== true ? false : r.pass;
   return { pass, detail: { ...r.detail, negativeControl: control, archiveIdentityControls: archiveSummary } };
 }
 
