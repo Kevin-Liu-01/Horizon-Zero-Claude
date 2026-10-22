@@ -22,6 +22,13 @@
  *     A-ride-hook, A-input-actions, A-face-delta, A-brea-contrast, A-hero-draws,
  *     A-outfit-merge-dispose, V-brea-one-glance, V-brea-face, V-traversal) and,
  *     fix round 1, A-lance-stow (R10 in motion, the judges' request).
+ *   Fix round 2 (Oct 22): A17's flourish is counted on the SIM clock (R11:
+ *     animator updates inside the beat; rendered frames reported beside it);
+ *     A35's band is graded on the Head JOINT (plan §9 "|hand_r - head|, UBC
+ *     Head sits at the skull base"), the skull-ellipsoid centre Round 4 read
+ *     and the Round-4-equivalent point reported; A-draw-elbow-level reports,
+ *     per row, the failing clause(s) and the least head-plane depth any elbow
+ *     on the arm's roll circle could reach under the two form bars.
  *   Two are PENDING by name while another lane's piece is missing: the
  *   settings-list clause of A-input-actions (shell-ui W2) and the held-weapon
  *   clause of A-hero-draws (armory W1); every hero-body clause of both is

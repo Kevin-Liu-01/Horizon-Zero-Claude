@@ -3700,8 +3700,17 @@ void main() {
        * DOLLY (no aim, no framing, no lift): a rotation is only asked for
        * where even the deepest admissible push-in cannot clear. */
       if (dk > 0.5 && hw) {
-        this._dollyFor(P, P.x + sy * cp * len, P.y + sp * len, P.z + cy * cp * len, 3);
-        if (this._dollyC > clear) clear = this._dollyC;
+        const Lx = P.x + sy * cp * len, Ly = P.y + sp * len, Lz = P.z + cy * cp * len;
+        const t = this._dollyFor(P, Lx, Ly, Lz, 3);
+        /* R5 (A31e / A31f on Brea): the push-in only answers the ground if
+         * the pushed-in lens is clear of HER. On the 38.8 deg face at the
+         * clamp, up-slope, a 5 deg rotation "cleared" on a 0.65 push-in that
+         * parked the lens on her stowed lance (0.001 m from its shaft, the
+         * proxy reading 0.007 m; dithered to 0.31) — Aloy's 1.16 m spear never
+         * reached that far round her back, Brea's 1.55 m R10 diagonal does. */
+        const H = this._hw;
+        if (this._dollyC > clear && (!bodyOn || t >= 1
+          || this._bodyClear(H.x + (Lx - H.x) * t, H.y + (Ly - H.y) * t, H.z + (Lz - H.z) * t) >= SWING_CLR)) clear = this._dollyC;
       }
       const need = clear < 0 ? -clear : 0;
       const lift = liftOK && dk <= 0.5 && need >= LIFT_MICRO
