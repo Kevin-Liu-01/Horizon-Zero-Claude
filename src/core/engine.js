@@ -93,7 +93,7 @@ export const QUALITY_TIERS = {
   /** THE SHIPPED DEFAULT (W0b decision, A-gpu-tier / A-rt-ledger). */
   high: {
     dprCap: 1.25, msaa: 0, gtao: true, gtaoScale: 0.25, smaa: true, smaaHalfFloat: false, csmMapCaps: [2048, 1024],
-    postFold: true, csmFarCadence: 2, maxAnisotropy: 2, maxAnisotropyData: 2,
+    postFold: true, csmFarCadence: 2, maxAnisotropy: 2, maxAnisotropyData: 4,
     bloom: true, sizeCullPx: 7,
     shadowCullDistance: 120, shadowCasterBudget: 150, shadowType: THREE.PCFSoftShadowMap, drs: true, drsFloor: 0.7,
   },

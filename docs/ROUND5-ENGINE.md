@@ -466,9 +466,9 @@ and fails.
 Shipped default tier, as `A-gpu-tier` compares it with the live `QUALITY_TIERS.high` (before/after numbers
 in §3.2–§3.4):
 
-tier-row: `{"dprCap":1.25,"msaa":0,"gtao":true,"gtaoScale":0.25,"smaa":true,"smaaHalfFloat":false,"csmMapCaps":[2048,1024],"postFold":true,"csmFarCadence":2,"maxAnisotropy":2}`
+tier-row: `{"dprCap":1.25,"msaa":0,"gtao":true,"gtaoScale":0.25,"smaa":true,"smaaHalfFloat":false,"csmMapCaps":[2048,1024],"postFold":true,"csmFarCadence":2,"maxAnisotropy":2,"maxAnisotropyData":4}`
 
-Before: Round-4 `high` `{"dprCap":1.5,"msaa":4,"gtao":true,"gtaoScale":0.5,"smaa":true,"smaaHalfFloat":true,"csmMapCaps":null,"postFold":false,"csmFarCadence":1,"maxAnisotropy":null}`.
+Before: Round-4 `high` `{"dprCap":1.5,"msaa":4,"gtao":true,"gtaoScale":0.5,"smaa":true,"smaaHalfFloat":true,"csmMapCaps":null,"postFold":false,"csmFarCadence":1,"maxAnisotropy":null,"maxAnisotropyData":null}`.
 After: the row above.
 <!-- gpu-tier:end -->
 

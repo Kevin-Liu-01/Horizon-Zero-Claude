@@ -1246,9 +1246,10 @@ const V33B_SETUP = `(async () => { const __work = (async () => {
  * pass of each chain:
  *   1  Round 4's `high` (DPR 1.5, anisotropy as authored, 8x)
  *   2  the shipped levers with anisotropy as authored (8x)
- *   3  NOT SHIPPED: the shipped levers with the cap at 4x (the alternative the
- *      orchestrator may rule for; A-gpu-tier's lever record measures it)
- *   4  the shipped `high` (cap 2x)
+ *   3  NOT SHIPPED: the shipped levers with the alternative anisotropy row
+ *      (fix round 1's 2x on every texture, or 4x if 2x / 2x is what ships;
+ *      A-gpu-tier's lever record measures it)
+ *   4  the shipped `high` (fix round 2: colour textures 2x, data textures 4x)
  * Top band: the four full frames at 16:9 (400 x 225), the crop box outlined
  * in red. Below: the four crops of the far ground at their native aspect,
  * nearest-neighbour, 800 x 240 each (x1.07 at DPR 1.5, x1.28 at 1.25), in a
@@ -1798,9 +1799,9 @@ export const GATES = [
   },
   {
     id: 'V-gpu-tier-look', kind: 'visual', lane: 'engine-gpu', wave: 'W0b', timeout: 240000, settle: 90000,
-    title: 'What the shipped tier costs the picture: the Pans POC vista at Round 4\'s `high`, at the shipped levers with anisotropy as authored, at the shipped levers with a 4x cap (not shipped, for the ruling) and at the shipped `high` (full frames + native-aspect nearest-neighbour crops of the far ground)',
+    title: 'What the shipped tier costs the picture: the Pans POC vista at Round 4\'s `high`, at the shipped levers with anisotropy as authored, at the shipped levers with the alternative anisotropy row (not shipped) and at the shipped `high` (full frames + native-aspect nearest-neighbour crops of the far ground)',
     setup: V_LOOK_SETUP,
-    criteria: 'A sheet of the Pans POC vista in four configurations, same camera, numbered 1-4 in every label. Top band, left to right: four full frames — 1 Round 4\'s `high` (DPR 1.5, MSAA x4 + SMAA, anisotropic filtering as authored, 8x); 2 the shipped levers with anisotropic filtering as authored (DPR 1.25, SMAA only, GTAO quarter-res, AO and bloom folded into the grade, far cascades on alternate frames); 3 NOT SHIPPED: the shipped levers with the anisotropy cap at 4x; 4 the SHIPPED `high` (the shipped levers with the cap at 2x) — each with the crop box outlined in red. Below: the far ground in that box (salt pan beyond the dune crest, the basalt shelf foot) at native aspect, nearest-neighbour: crop 1 top-left, crop 2 top-right, crop 3 bottom-left, crop 4 (SHIPPED) bottom-right. PASS: frames 1, 2 and 4 show the same scene with the same light, shadow shapes (the ring\'s ellipse shadow on the pan), contact darkening, bloom and grade, with no shadow missing or blocky, no AO halo, no colour shift and no new banding or aliasing; and in crop 4 the salt pan still reads as pale crusted ground and the dune ripples are still there, as a softer version of crop 2. FAIL if crop 4\'s salt pan reads as flat untextured colour or as horizontal streaks where crop 2 shows crust texture, if the dune ripples are gone in crop 4, or if anything other than softness differs between frames 1, 2 and 4. Configuration 3 is NOT graded: it is the alternative the orchestrator may rule for (cap 4x; its vista GPU is over the 13 ms bar on this POC) — say whether crop 3 keeps the crust.',
+    criteria: 'A sheet of the Pans POC vista in four configurations, same camera, numbered 1-4 in every label. Top band, left to right: four full frames — 1 Round 4\'s `high` (DPR 1.5, MSAA x4 + SMAA, anisotropic filtering as authored, 8x); 2 the shipped levers with anisotropic filtering as authored (DPR 1.25, SMAA only, GTAO quarter-res, AO and bloom folded into the grade, far cascades on alternate frames); 3 NOT SHIPPED: the shipped levers with the alternative anisotropy row named in its label; 4 the SHIPPED `high` (the shipped levers with the anisotropy caps named in its label: colour = sRGB albedo textures, data = normal and roughness/AO maps) — each with the crop box outlined in red. Below: the far ground in that box (salt pan beyond the dune crest, the basalt shelf foot) at native aspect, nearest-neighbour: crop 1 top-left, crop 2 top-right, crop 3 bottom-left, crop 4 (SHIPPED) bottom-right. PASS: frames 1, 2 and 4 show the same scene with the same light, shadow shapes (the ring\'s ellipse shadow on the pan), contact darkening, bloom and grade, with no shadow missing or blocky, no AO halo, no colour shift and no new banding or aliasing; and in crop 4 the salt pan still reads as pale crusted ground (the light polygonal crust pattern) and the dune ripples are still there, as a softer version of crop 2. FAIL if crop 4\'s salt pan reads as flat untextured colour or as horizontal streaks where crop 2 shows crust texture, if the dune ripples are gone in crop 4, or if anything other than softness differs between frames 1, 2 and 4. Configuration 3 is NOT graded: it shows the alternative the decision was taken against.',
   },
 
   // ---------------------------------------------------------------- W0a (kept)
