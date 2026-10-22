@@ -414,7 +414,8 @@ export class PerceptionHooks {
     this.clock = 0;
     this.flag = { active: false, source: null, t0: 0, until: 0, duration: 0, raised: 0, ended: 0 };
     this._clouds = [];
-    this._dustT = 0;
+    this._dustCursor = 0;   // round-robin Dust pass (see update)
+    this._dustBudget = 0;
   }
 
   /** Raise or refresh the Flag on the player. */
@@ -490,18 +491,33 @@ export class PerceptionHooks {
 
   outlined(m) { return !!(this.dustSight && m && m.dustOccluded); }
 
-  _dustPass() {
+  /** Every machine's occlusion flag now (gates / debug); the game runs `_dustSlice` round-robin. */
+  _dustPass() { this._dustSlice(this.machines.list.length, true); }
+
+  /**
+   * The occlusion flag for `k` machines, continuing round-robin from `_dustCursor` (W0b fix round 2: the
+   * whole list every 0.2 s was a function called five times a second, which V8 leaves in its allocating
+   * tiers for minutes; a slice per frame is hot, optimised in seconds, and still refreshes every machine
+   * once per DUST_TICK).
+   */
+  _dustSlice(k, fromStart = false) {
     const p = HOT.player;
     if (!p) return;
+    const list = this.machines.list, n = list.length;
+    if (!n) return;
     const calima = this.weather === 'calima';
     _da.x = p.position.x; _da.y = p.position.y + 1.6; _da.z = p.position.z;   // (no double crosses a call)
     const c2 = this.calimaClear * this.calimaClear;
-    for (const m of this.machines.list) {
+    let i = fromStart ? 0 : this._dustCursor;
+    for (let j = 0; j < k && j < n; j++, i++) {
+      if (i >= n) i = 0;
+      const m = list[i];
       if (m._disposed) continue;
       _db.x = m.position.x; _db.y = m.position.y + (m.height || 2) * 0.6; _db.z = m.position.z;
       const dx = _db.x - _da.x, dz = _db.z - _da.z;
       m.dustOccluded = (calima && dx * dx + dz * dz > c2) || this.dustBetween(_da, _db);
     }
+    if (!fromStart) this._dustCursor = i >= n ? 0 : i;
   }
 
   /** Once per sim step, from `Machines.update`. */
@@ -517,8 +533,12 @@ export class PerceptionHooks {
       if (this.clock >= f.until - 1e-6) this._endFlag();
       else this._applyFlag(false);
     }
-    this._dustT -= dt;
-    if (this._dustT <= 0) { this._dustT = DUST_TICK; this._dustPass(); }
+    // the Dust-sight occlusion flag: every machine once per DUST_TICK, a slice of the list each frame
+    const n = this.machines.list.length;
+    this._dustBudget += n * dt / DUST_TICK;
+    let k = this._dustBudget | 0;
+    if (k > n) { k = n; this._dustBudget = 0; } else this._dustBudget -= k;
+    if (k > 0) this._dustSlice(k);
   }
 
   /** Gate/debug: one line of state. */
