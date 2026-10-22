@@ -20,8 +20,8 @@ re-run on this code, in this tree, on Oct 22.
 | finding | what was done | result now |
 |---|---|---|
 | **Fix round 1's own film failed its own criterion** (`V-gpu-tier-look`: with the anisotropy cap at 2× on every texture, the salt pan's crust became faint horizontal streaks — fix round 1's report said "I would not pass it myself") | Re-filmed per texture ROLE on the gate's crop (`X-role-film`, `X-role2-film`): the crust and the dune ripples are drawn by the DATA textures (the normal + rough/AO packs). **The cap is now split by role** (engine grant, tier table): `maxAnisotropy` caps colour (sRGB) textures, new `maxAnisotropyData` caps data textures. Shipped `high` (and `medium`): **colour 1×, data 4×** — 2× / 4× keeps the crust as well but straddles a GPU clock step (interleaved `X-role2-sim`: 2× / 4× 12.05 ms with a 19.18 burst, 1× / 4× 9.91, 2× / 2× 10.11, 4× / 4× 17.57; `docs/ROUND5-ENGINE.md` §3.4). Mechanism verified on the GL side (`X-role2-check`) | `V-gpu-tier-look` crop 4 (shipped) shows the crust and the ripples as a softer crop 2 (8×); crop 3 (fix round 1's 2× / 2×) shows the streaks (§5.3). A-gpu-tier on the new row: §5.1 |
-| `V-gpu-tier-look` was three columns of squashed tiles | Four configurations (Round-4 `high` / shipped levers at 8× / the alternative NOT shipped / SHIPPED), full frames at 16:9, crops at their native aspect ×1.07–1.28 nearest | filmed in `F4` |
-| The POC did not boot in the re-created tree (`A22`, `A108`, `A109` failed "did not boot within 90 s" in `F3`) | Re-created the two gitignored, untracked, read-only symlinks to main's files (`public/models/r5-poc/sounding-ring.glb`, `models-staging/quaternius-animatedmech/Mike.gltf`), as in round 0 | `P1`, `F4`: PASS |
+| `V-gpu-tier-look` was three columns of squashed tiles | Four configurations (Round-4 `high` / shipped levers at 8× / the alternative NOT shipped / SHIPPED), full frames at 16:9, crops at their native aspect ×1.07–1.28 nearest | filmed on the final row in `G2` |
+| The POC did not boot in the re-created tree (`A22`, `A108`, `A109` failed "did not boot within 90 s" in `F3`) | Re-created the two gitignored, untracked, read-only symlinks to main's files (`public/models/r5-poc/sounding-ring.glb`, `models-staging/quaternius-animatedmech/Mike.gltf`), as in round 0 | `P1`, `F4`, `P2`: PASS |
 | `docs/ROUND5-ENGINE.md` §1.1 said "provisioned, never allocated: 0" | The ledger has always listed `post:pingB` (`postTarget`, 18 MB RGBA16F) as provisioned-not-allocated in the direct topology. Corrected: allocated only while a pass after the grade (the studio pass) needs it, then 145.27 MB, still ≤ 170 | doc fixed |
 | `A-rt-ledger`'s `tools/budgets.mjs` clause (gates-perf's file) | Unchanged situation; the patch and the proof were re-made | PENDING on that clause in this tree; **PASS on every clause with the line** (`L12`) |
 
@@ -30,11 +30,11 @@ re-run on this code, in this tree, on Oct 22.
 | item | file | status |
 |---|---|---|
 | the GPU tier decision: shipped `high` = DPR cap 1.25 + GTAO ¼ + SMAA-only + SMAA RGBA8 + far cascades 1024 (round 0) + direct post topology + post fold + far-cascade cadence 2 (fix round 1) + **anisotropy colour 1× / data 4×** (fix round 2) | `src/core/engine.js` (tier table, `applyTier`, `_applyAnisotropyCap`, `_anisoRoles`, `_anisoMat`, `_anisoTex`, `_anisoSet`; fix round 1's `_applyPostTopology`, `_postFold`, `_bloomFold`, `_gtaoInPlace`, `_csmUpdate`, `ScenePass`, `OutputGradeShader`) | done |
-| `A-gpu-tier` as a measured exit gate, before/after per lever | `tools/gates.r5.engine-gpu.mjs` (`A-gpu-tier-box` + `A-gpu-tier`); the lever record now ends with the shipped split and three NOT-shipped rows (2× / 2×, 2× / 4×, 4× / 4×) | §5.1 |
-| what the tier costs the picture, filmed | `V-gpu-tier-look` (re-laid out, four configurations) | filmed (`F4`), NEEDS-JUDGE; lane reading PASS (§5.3) |
+| `A-gpu-tier` as a measured exit gate, before/after per lever | `tools/gates.r5.engine-gpu.mjs` (`A-gpu-tier-box` + `A-gpu-tier`); the lever record now ends with the shipped split and three NOT-shipped rows (2× / 2×, 2× / 4×, 4× / 4×) | **PASS, 3 judged runs** (`G3`, `G4`, `G7`: vista 11.78 / 12.34 / 12.35 ms) — §5.1 |
+| what the tier costs the picture, filmed | `V-gpu-tier-look` (re-laid out, four configurations) | filmed (`G2`), NEEDS-JUDGE; lane reading PASS (§5.3) |
 | `A-rt-ledger` graded (ruling `rt-ledger-bar=W0b`) | same file; `tools/r5-probes/rt-ledger.mjs` (unchanged: re-verified to the byte) | 127.27 MB ≤ 170, 342.45 MB ≤ 450; PENDING only on gates-perf's `budgets.mjs` line; PASS with it (`L12`) |
 | GTAO lattice fix intact (A108 / A109 / V33b) on the folded chain | `engine.js`; gates unchanged | A108 PASS, A109 PASS, V33b filmed |
-| AA under R25 (A22, V20) | gates unchanged | A22 PASS (0.318 vs 0.197), V20 filmed |
+| AA under R25 (A22, V20) | gates unchanged | A22 PASS (0.312 vs 0.189 off, `P2`), V20 filmed |
 | W0a judge's minor: sweep dead WeakRefs in `registerRenderTarget` | `engine.js` (round 0, unchanged) | done (census registration contract PASS) |
 | `docs/ROUND5-ENGINE.md` W0b section | §1 (ledger), §3 (decision, before/after, the timer calibration, the role split, equivalence, gate table) | done |
 | lane report | this file | done |
@@ -56,7 +56,7 @@ file). Two untracked, gitignored, read-only symlinks to main's files keep the PO
 | anisotropic filtering | as authored (POC ground 8×; the game's terrain detail and grass cards 4×) | **colour (sRGB) textures 1× (trilinear), data textures (normal, rough/AO) 4×** |
 | render targets, DPR 1.25 | 340.74 MB (437.75 at its 1.5 cap) | **127.27 MB** |
 | staged fight, textures + geometry + RTs | 891.87 MB (W0a content) | **342.45 MB** |
-| Pans vista / empty-frame GPU (gate reading) | 21.43 / 13.30 ms (`G3` lever record) | **11.78 / 4.75 (`G3`), 12.34 / 4.80 (`G4`)<!-- G5-D -->**, judged |
+| Pans vista / empty-frame GPU (gate reading) | 21.43 / 13.30 ms (`G3` lever record) | **11.78 / 4.75 (`G3`), 12.34 / 4.80 (`G4`), 12.35 / 4.32 (`G7`)**, judged |
 
 ## 3. Contracts published (exact signatures)
 
@@ -150,15 +150,16 @@ exploration `report.X1.json` / `X2.json` (`explore/role.gates.mjs`, `explore/rol
 role comparison also ran inside `G1` and `G2`). Between `F4` and the final row only the tier table's numbers
 changed (`high` and `medium` colour cap 2 → 1), not the mechanism. Every run went through `run.sh` (the machine-wide
 Chrome slot of PLAN §0 rule 8, disk ≥ 3 GB and memory ≥ 25 % checked after taking it); timed runs through
-`qrun.sh` (waits for load < 3 and 0 headless Chromes, then samples load and headless Chromes every 2 s into
+`qrun.sh` (`G1`, `G2`: waited for load < 3 and 0 headless Chromes, then took the slot; from `G3` on the slot is
+taken only AT such an instant, so the gate's witness samples that box; load and headless Chromes every 2 s into
 `run/<tag>.box`).
 
 ### 5.1 The engine-gpu W0b block
 
 | gate | verdict | numbers |
 |---|---|---|
-| `A-gpu-tier-box` | PASS in `G3`, `G4`<!-- G5-LIST --> | load 1.63 / 2.18<!-- G5-L -->, 0 other headless Chromes at the sample (`run.sh` takes the slot only at such an instant) |
-| `A-gpu-tier` | **PASS** (judged, final row colour 1× / data 4×) | vista **11.78 / 12.34<!-- G5-V --> ms** ≤ 13; empty **4.75 / 4.80<!-- G5-E --> ms** ≤ 7; fps 60.24 / 59.88<!-- G5-F --> ≥ 58; p95 18.7 / 18.9<!-- G5-P --> ≤ 20; null frames 0.16–0.18 ms; instability ≤ 1.09; docs row = live tier; RT 127.27 MB at 1.25. Another lane's gate Chrome appeared during `G3` at ~70 s (after the shipped bursts) and during `G4` at ~37 s (during part of them); `docs/ROUND5-ENGINE.md` §3.3. Unjudged this round: `G1` (the 2× / 4× row, loud from ~20 s), `G2` (final row, started loud after a 2 h wait), `G5` (final row, load 3.23 at the witness sample; every clock under its bar: vista 12.00, empty 4.78). Lever record (`G3`): Round-4 21.43 / 13.30 → … → shipped 9.32 / 4.73; NOT shipped 2× / 2× 10.59, 2× / 4× 13.64, 4× / 4× 15.03 (vista) |
+| `A-gpu-tier-box` | PASS in `G3`, `G4`, `G7` | load 1.63 / 2.18 / 2.34, 0 other headless Chromes at the sample (`run.sh` takes the slot only at such an instant) |
+| `A-gpu-tier` | **PASS** (judged, final row colour 1× / data 4×) | vista **11.78 / 12.34 / 12.35 ms** ≤ 13; empty **4.75 / 4.80 / 4.32 ms** ≤ 7; fps 60.24 / 59.88 / 59.88 ≥ 58; p95 18.7 / 18.9 / 18.6 ≤ 20; null frames 0.16–0.18 ms; instability ≤ 1.32; docs row = live tier; RT 127.27 MB at 1.25. Another lane's gate Chrome appeared during `G3` at ~70 s (after the shipped bursts), during `G4` at ~37 s and during `G7` at ~31 s (during part of them); `docs/ROUND5-ENGINE.md` §3.3. Unjudged this round: `G1` (the 2× / 4× row, loud from ~20 s), `G2` (final row, started loud after a 2 h wait), `G5` (final row, load 3.23 at the witness sample; every clock under its bar: vista 12.00, empty 4.78), `G6` (final row, another lane's Chrome from 9 s, before the witness sample; **vista read 17.70, over the bar**, under that contention). Lever record (`G3`): Round-4 21.43 / 13.30 → … → shipped 9.32 / 4.73; NOT shipped 2× / 2× 10.59, 2× / 4× 13.64, 4× / 4× 15.03 (vista) |
 | `A-gpu-tier` role comparison (exploration, interleaved, `G1`: `X-role2-sim`) | — | colour / data: 1× / 4× **9.91**, 2× / 2× 10.11, 2× / 4× 12.05 (one burst 19.18), 4× / 4× 17.57 |
 | `A-rt-ledger` | **PENDING** (one clause, gates-perf's file) | 127.27 MB ≤ 170 ✓, 342.45 MB ≤ 450 ✓ (textures 100.28, geometry 114.90), docs ✓, levers restored ✓, shipped tier @ 1.25 ✓, `tools/budgets.mjs` record ✗ outstanding (`F4`, `P2`); with the line (`L12`, proof root `scratchpad/r5/engine-gpu/budgets-proof/`): **PASS on every clause** |
 | `A-rt-ledger-census` (W0a row) | **PASS** (`F3`, `F4`, `P2`) | GL 127,271,712 B = ledger, 0 unattributed, 0 mismatches, docs and `RT_LEDGER` match |
@@ -226,8 +227,10 @@ Sheets filmed on the final row: `scratchpad/r5/engine-gpu/run/P2/V20-aa-crop@r5.
    `A-gpu-tier` re-runs there (plan §6). The lever record carries the 4× / 4× row each time so `high` can go
    back to 4× on everything when it fits.
 3. **The GPU timer reads a clock state, not a cost** (`docs/ROUND5-ENGINE.md` §3.4, calibration). One
-   configuration reads several ms apart between 2 s bursts; another process on the GPU raises the clock and
-   LOWERS the reading. Nothing in the gate was changed for this; a capacity instrument would be a ruling.
+   configuration reads several ms apart between 2 s bursts; another process on the GPU can lower the reading
+   (a clock step up) or raise it past the bar (two clients time-slicing: `G6` read the final row's vista at
+   17.70 with another lane's Chrome alive from 9 s). The judged margin is 0.65–1.22 ms (`G3`, `G4`, `G7`). Nothing in
+   the gate was changed for this; a capacity instrument would be a ruling.
 4. **`A-rt-ledger`'s `budgets.mjs` clause stays PENDING in this tree** (gates-perf's file); proved passing
    with the one line (`L12`).
 5. **A21's GPU term** fails at baseline (R33: listed, not graded); this tree reads it unattributable on a loud
@@ -261,4 +264,19 @@ Sheets filmed on the final row: `scratchpad/r5/engine-gpu/run/P2/V20-aa-crop@r5.
 
 ## 8. Process hygiene
 
-<!-- HYGIENE -->
+- Every Chrome came from `tools/gates.mjs` on `--port 5251`, one at a time, through
+  `scratchpad/r5/engine-gpu/run.sh`: the machine-wide Chrome slot of PLAN §0 rule 8 held only for the run,
+  disk ≥ 3 GB and memory ≥ 25 % checked before and after taking it. Timed runs (`qrun.sh` → `run.sh` with
+  `QUIET=1`) take the slot only at an instant with load < 3 (2.5 for `G6`, `G7`) and no headless Chrome alive,
+  never holding a slot while waiting, and sample load and headless Chromes every 2 s (`run/<tag>.box`).
+- Runs this round: `F3`, `P1`, `X1`, `X2`, `L12`, `F4`, `G1`, `G2`, `P2`, `G3`, `G4`, `G5`, `G6`, `G7` (14, one
+  full suite on the split mechanism `F4`; `F3` was the evidence re-run on fix round 1's engine after the reboot).
+- Vite on 5251 was started from the tree with `npx vite --port 5251 --strictPort` and killed at the end. At the
+  end: 0 headless Chromes on 5251, 0 `cal-*-5251-*` profiles, no Chrome slot held, no loop of this lane left
+  running. Port 5173 was never touched. No git write was run (the WIP commits on this branch are the
+  orchestrator's checkpoints).
+- Screenshots: no PNG left in the tree (`shots/gates/` holds only the runner's report files); the final sheets
+  (`run/P2/`, `run/G2/`) and the exploration crops (`run/X1/`, `run/X2/`) are kept in scratch, superseded ones
+  deleted; scratch total ≈ 5 MB (reports, logs, `*.box`, `combo.gates.mjs`, `gx.gates.mjs`, `explore/`,
+  `budgets-proof/`, `budgets-rt-ledger.patch`, `run.sh`, `qrun.sh`, `chain-*.sh`, `gread.py`). The judge scratch
+  was deleted. Free disk 45 GB at the end.

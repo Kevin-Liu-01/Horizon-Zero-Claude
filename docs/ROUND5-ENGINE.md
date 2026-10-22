@@ -9,7 +9,7 @@ ANGLE/Metal, headless, 1600×900 CSS px; fix rounds 2 and 3: Oct 16; W0b and its
 |---|---|
 | 1. Render-target ledger (`A-rt-ledger-census`, `A-rt-ledger`) | **W0b, graded (ruling `rt-ledger-bar=W0b`): 127.27 MB at the shipped tier, DPR 1.25** (bar ≤ 170; round 0: 154.27), recounted from the GL allocation calls and equal to the byte (re-verified Oct 22 on fix round 2's engine, `F4`); staged-fight total **342.45 MB** (bar ≤ 450). `post:pingB` (18 MB) is provisioned-not-allocated in the direct topology (§1.1, corrected). The one clause left is the record in `tools/budgets.mjs` (gates-perf's file, one line; with it the gate passes every clause, `L12`, §3.10). W0a's Round-4 tier ledger (340.74 MB) is §1.3 |
 | 2. 1024 m terrain + nav probe (`A-terrain-1024-probe-box` + `A-terrain-1024-probe`) | **Judged on a quiet box (fix round 3: 4 quiet runs; Q5p and Q6p judged every term).** Single-thread build: 1024 m and 860 m FAIL, 720 m PASS. Pool build (bit-identical, own witness): PASS at every size. GPU delta +0.23 / +0.20 ms PASS; nav 43–44 ms PASS; vertex 20.77 MB PASS. **W1 size by ruling: `pool-terrain-build=accepted` → 1024 m; `=rejected` → 720 m.** The orchestrator ruled `pool-terrain-build=accepted` (PLAN §8.3, W0a exit): **1024 m** (§2.5). Conditions for W1 in §2.6. |
-| 3. GPU tier (`A-gpu-tier`) | **W0b fix round 2: shipped `high` = DPR cap 1.25 + GTAO ¼ + SMAA-only + SMAA RGBA8 + far cascades 1024 + direct post topology + GTAO/bloom folded into the grade + far cascades on alternate frames + anisotropic filtering split by texture role: colour (sRGB) 1×, data (normal, rough/AO) 4×** (§3.1). `A-gpu-tier` **PASS in judged runs** `G3`, `G4`<!-- G5-LIST -->: Pans POC vista 11.78 / 12.34<!-- G5-V --> ms ≤ 13, empty frame 4.75 / 4.80<!-- G5-E --> ms ≤ 7, fps 59.88–60.24, p95 18.7–18.9 ms (§3.3; another lane's Chrome appeared during part of each run). Render targets **PASS** (127.27 MB). The role split keeps the salt-pan crust fix round 1's 2× cap lost (`V-gpu-tier-look`, §3.1, §3.4); the GPU timer reads a clock state on this machine (§3.4). A22 (R25), A108, A109 PASS; V20, V33b, V-gpu-tier-look filmed for the judge |
+| 3. GPU tier (`A-gpu-tier`) | **W0b fix round 2: shipped `high` = DPR cap 1.25 + GTAO ¼ + SMAA-only + SMAA RGBA8 + far cascades 1024 + direct post topology + GTAO/bloom folded into the grade + far cascades on alternate frames + anisotropic filtering split by texture role: colour (sRGB) 1×, data (normal, rough/AO) 4×** (§3.1). `A-gpu-tier` **PASS in judged runs** `G3`, `G4`, `G7`: Pans POC vista 11.78 / 12.34 / 12.35 ms ≤ 13, empty frame 4.75 / 4.80 / 4.32 ms ≤ 7, fps 59.88–60.24, p95 18.6–18.9 ms (§3.3; another lane's Chrome appeared during part of each run). Render targets **PASS** (127.27 MB). The role split keeps the salt-pan crust fix round 1's 2× cap lost (`V-gpu-tier-look`, §3.1, §3.4); the GPU timer reads a clock state on this machine (§3.4). A22 (R25), A108, A109 PASS; V20, V33b, V-gpu-tier-look filmed for the judge |
 ---
 
 ## 1. Render-target ledger
@@ -562,7 +562,7 @@ box; my monitor then samples every 2 s, `run/<tag>.box`; times are seconds after
 |---|---|---|---|---|---|---|---|---|
 | G3 | load 1.63, 0 other Chromes | from ~70 s (after the shipped bursts, during the lever record) | **PASS** | 12.53 / 11.84 / 11.72 / 11.55 → **11.78** | 4.75 | 60.24 | 18.7 | 0.17 / 0.18; 1.085 / 1.037 |
 | G4 | load 2.18, 0 | from ~37 s (during part of the shipped bursts) | **PASS** | 12.28 / 11.44 / 12.47 / 12.41 → **12.34** | 4.80 | 59.88 | 18.9 | 0.17 / 0.16; 1.09 / 1.021 |
-<!-- G5-ROW -->
+| G7 | load 2.34, 0 | ~31–35 s and ~55–92 s (part of the shipped bursts) | **PASS** | 14.21 / 12.48 / 12.21 / 11.76 → **12.35** | 4.32 | 59.88 | 18.6 | 0.17 / 0.17; 1.208 / 1.32 |
 
 Unjudged runs of this round, for the record: `G1` (the 2× / 4× row, before the 1× choice): witness quiet, but
 another lane's Chrome from ~20 s to ~98 s; bursts 9.05 / 17.13 / 15.47 / 18.08 (instability 2.0) → PENDING.
@@ -571,7 +571,12 @@ median 10.83, empty 8.40. `G5` (final row): PENDING only because the 1-min load 
 witness sample (2.87 when the slot was taken 14 s earlier; another Chrome from ~30 s to ~60 s); every clock
 under its bar: vista 12.1 / 11.91 / 11.28 / 12.37 → 12.00, empty 4.78, 60.24 fps, p95 18.7, null 0.17 / 0.17,
 instability 1.097 / 1.178; its lever record (calmer than `G3`'s) reads levers 1–6 at 17.5–18.1, shipped 12.19,
-2× / 2× 12.21, 2× / 4× 12.47, 4× / 4× 13.23.
+2× / 2× 12.21, 2× / 4× 12.47, 4× / 4× 13.23. `G6` (final row): another lane's Chrome started 9 s after the
+slot was taken, before the witness sample (1 other Chrome → PENDING), and stayed for most of the run; the vista
+read **17.71 / 19.05 / 17.69 / 14.18 → 17.70, over the bar**, empty 4.72, null frame 1.79 before / 0.18 after.
+So contention does not only lower this timer's reading (§3.4): two GPU clients time-slicing can raise it past
+the bar. That is why the gate grades only from a quiet start and why the orchestrator should grade it from
+runs with no other gate Chrome for the whole run.
 
 **Fix round 1's judged results** (the 2× / 2× row; reports lost in the Oct 22 reboot, numbers from its
 report): vista 10.28 / 11.62 / 11.23 ms, empty 4.83 / 4.87 / 4.85 ms, fps 59.88–60.24, p95 18.5–18.7.
@@ -756,7 +761,7 @@ cadence 2 against cadence 1, frame by frame: 3–39 channels of 6.75 M differ, m
 
 | gate | verdict | numbers |
 |---|---|---|
-| `A-gpu-tier-box` + `A-gpu-tier` | **PASS** (judged, final row: `G3`, `G4`<!-- G5-LIST -->; §3.3) | vista 11.78 / 12.34<!-- G5-V --> ms ≤ 13; empty 4.75 / 4.80<!-- G5-E --> ms ≤ 7; fps 60.24 / 59.88<!-- G5-F --> ≥ 58; p95 18.7 / 18.9<!-- G5-P --> ≤ 20; null frames 0.16–0.18 ms; instability ≤ 1.09; docs row = live tier |
+| `A-gpu-tier-box` + `A-gpu-tier` | **PASS** (judged, final row: `G3`, `G4`, `G7`; §3.3) | vista 11.78 / 12.34 / 12.35 ms ≤ 13; empty 4.75 / 4.80 / 4.32 ms ≤ 7; fps 60.24 / 59.88 / 59.88 ≥ 58; p95 18.7 / 18.9 / 18.6 ≤ 20; null frames 0.16–0.18 ms; instability ≤ 1.32; docs row = live tier |
 | `A-rt-ledger` | **PENDING** on one clause (`F4`, `P2`) | RT 127.27 MB ≤ 170 PASS; staged fight 342.45 MB ≤ 450 PASS; docs PASS; levers restored PASS; at the shipped tier and DPR 1.25 PASS; **`tools/budgets.mjs` has no `RT_LEDGER`** (gates-perf's file): outstanding. With that one line (run `L12`, against a copy of `budgets.mjs`): **PASS on every clause** |
 | `A-rt-ledger-census` (W0a) | **PASS** (`F3`, `F4`, `P2`) | GL recount 127,271,712 B = ledger, 0 unattributed, 0 mismatches; docs and `RT_LEDGER` match; registration contract and weak hold PASS |
 | `A22-msaa` (R25) | **PASS** (`P1`, `F4`, `P2`) | samples 0 = the tier's, SMAA present and enabled; measured AA on the final row 0.312 vs 0.189 off (1.647 ×) |
