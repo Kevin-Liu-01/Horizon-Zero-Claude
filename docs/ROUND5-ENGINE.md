@@ -430,12 +430,13 @@ nothing, as the rule requires. Their ranges are in §2.2–§2.4.
 
 ## 3. The GPU tier (W0b decision; gates `A-gpu-tier`, `A-rt-ledger`, `A22-msaa`, `V20`, `A108`, `A109`, `V33b`, `V-gpu-tier-look`)
 
-### 3.1 The decision (W0b, fix round 1)
+### 3.1 The decision (W0b, fix rounds 1 and 2)
 
 The shipped default tier is `high` (`DEFAULT_TIER` in `src/core/engine.js`; the game boots it unless
 `?q=` says otherwise, and the Pans POC asks for it by name). Round 0 of W0b put in the plan's three
 levers and two render-target levers; the judges then measured the Pans vista at 16.05 / 17.27 ms against
-the 13 ms bar. Fix round 1 adds four more, all inside the engine grant (post chain, tier table):
+the 13 ms bar. Fix round 1 added four more, all inside the engine grant (post chain, tier table); fix round 2
+(Oct 22) split the anisotropy cap by texture role, because 2× on every texture took the salt pan's crust with it:
 
 | lever | Round-4 `high` | shipped `high` | what it buys (measured, §3.2–§3.4) |
 |---|---|---|---|
@@ -447,10 +448,10 @@ the 13 ms bar. Fix round 1 adds four more, all inside the engine grant (post cha
 | **post topology** (fix round 1; follows MSAA 0) | resolve copy into a HalfFloat `renderTarget2`, ping-pong with `postTarget` | **direct**: the scene target is the composer's read buffer (no copy); `renderTarget2` holds only the grade's output as RGBA8; `postTarget` released until a pass after the grade needs it | −1 full-resolution HalfFloat pass; −27 MB; pixel-identical by itself (§3.8) |
 | **`postFold`** (fix round 1) | GTAO's multiply and bloom's composite are two full-resolution in-place blends | **both done inside the grade pass** (the bright pass applies the AO it used to read) | −2 full-resolution read-modify-write passes; empty frame 6.3 → 4.85 ms |
 | **`csmFarCadence`** (fix round 1) | every cascade every frame | **cascade 0 every frame; cascades 1 and 2 on alternate frames** | one 1024² shadow render per frame fewer; vista 49 → 41 draws |
-| **`maxAnisotropy`** (fix round 1) | as authored (the POC ground asks 8×) | **2×** | the lever that moves the vista: §3.4 |
+| **`maxAnisotropy`** (fix round 1) / **`maxAnisotropyData`** (fix round 2) | as authored (the POC ground asks 8×) | **colour (sRGB) textures 2×, data textures (normal, rough / AO maps) 4×** | the lever that moves the vista, and the role split that keeps the far relief: §3.4 |
 
 `ultra` keeps MSAA ×4 + SMAA HalfFloat, full-res GTAO, DPR cap 2, 3 × 2048, every cascade every frame and
-anisotropy as authored. `medium` (cap 2) and `low` (cap 1) are SMAA-only, folded, cadence 2.
+anisotropy as authored. `medium` (2× / 2×) and `low` (1× / 1×) are SMAA-only, folded, cadence 2.
 
 **What it costs the picture** (filmed for the judge in `V-gpu-tier-look`: Round 4's `high` | the shipped levers
 with anisotropy as authored | the shipped `high`; my reading in the lane report): everything but the far
@@ -479,13 +480,15 @@ QUALITY_TIERS.<tier>.smaaHalfFloat: boolean      // false: SMAA edge + weight ta
 QUALITY_TIERS.<tier>.csmMapCaps: number[] | null // cascade i's map = min(requested, caps[min(i, last)])
 QUALITY_TIERS.<tier>.postFold: boolean           // GTAO multiply + bloom composite inside the grade pass
 QUALITY_TIERS.<tier>.csmFarCadence: number       // cascades >= 1 render when (frame + i) % n === 0; 1 = every frame
-QUALITY_TIERS.<tier>.maxAnisotropy: number|null  // cap on every texture's anisotropic filtering; null = GPU max
+QUALITY_TIERS.<tier>.maxAnisotropy: number|null  // cap on COLOUR (sRGB) textures' anisotropic filtering; null = GPU max
+QUALITY_TIERS.<tier>.maxAnisotropyData: number|null|undefined // cap on DATA textures (normal, rough/AO); undefined = colour cap
 DEFAULT_TIER: 'high'                             // what a fresh boot uses
 ROUND4_HIGH                                      // frozen Round-4 `high` row (before/after measurement only)
 engine.applyTier(row, name = 'custom') → name    // setQuality's body: every lever, targets rebuilt in place
 engine.csmMapSizes: number[] | null              // per-cascade map sizes in force
 engine.postDirect: boolean                       // the direct topology is in force (scene target has no MSAA)
-engine.anisotropyCap: number                     // the anisotropic-filtering cap in force
+engine.anisotropyCap: number                     // the colour-texture cap in force
+engine.anisotropyCapData: number                 // the data-texture cap in force
 engine.tier                                      // a per-engine COPY of the row
 engine.grade.uniforms.{tAO, uAOMix, tBloom, uBloomOn}   // the folded inputs, re-armed every frame by GTAO / bloom
 ```
@@ -504,9 +507,17 @@ How the levers are wired (all on demand or per frame without allocation):
 - **Cadence.** `_csmUpdate()` sets `shadow.autoUpdate = false` on cascades ≥ 1 and `needsUpdate` on their
   frames; a cascade that skips keeps both its map and its shadow matrix from the frame it rendered (three
   updates both only when it renders), so receivers stay registered; a missing map renders at once.
-- **Anisotropy.** three clamps each texture's `anisotropy` by `capabilities.getMaxAnisotropy()` at upload; the
-  engine answers that call with the tier's cap, and on a cap change re-uploads the scene's textures that ask
-  for more than 1× (maps and program uniforms), once.
+- **Anisotropy, by role.** three clamps each texture's `anisotropy` by `capabilities.getMaxAnisotropy()` at
+  upload (one global value). The engine answers that call with the HIGHER role cap (4×) and lowers the other
+  role's textures (at `high`, the sRGB colour textures, to 2×) itself, with one `texParameterf` on the GL texture
+  three made, under the conditions three applies anisotropy (mipmapped linear minification, non-nearest
+  magnification), bound through three's state cache (`_anisoRoles`, top of `render()`): per frame one integer
+  compare (the renderer's texture count) plus a version check of the tracked textures (three re-applies the
+  global cap on every re-upload; the engine re-lowers it the next frame); a scene sweep (materials' texture
+  slots and program uniforms, once per material) only when the texture count moves. On a cap change the scene's
+  textures that ask for more than 1× are re-uploaded once. Verified on the GL side (`X-role2-check`: every POC
+  texture's `TEXTURE_MAX_ANISOTROPY` equals its role cap through 2/4, 4/2, 2/2, 1/4, 4/4, after a forced
+  re-upload, and back). Role rule: colour = `colorSpace === SRGBColorSpace`; data = every other texture.
 
 ### 3.2 Render targets, before → after (`A-rt-ledger`, measured live on the staged fight)
 
