@@ -766,6 +766,57 @@ const countMatching = (token) => {
   const r = spawnSync('ps', ['-axww', '-o', 'command='], { encoding: 'utf8', maxBuffer: 32 * 1024 * 1024 });
   return (r.stdout || '').split('\n').filter((l) => l.includes(token) && !l.includes('acquireChromeSlot') && !l.includes('ps -axww')).length;
 };
+/**
+ * W0b fix round 1 (judge finding: A-chrome-semaphore FAILed once in a lane run because the tree's report files
+ * changed inside its window, then PASSED alone). The fingerprint could not say WHO wrote them, and its restore()
+ * would have overwritten a concurrent same-tree run's legitimate report with a stale copy. R33 (d)'s claim is about
+ * the semaphore's CHILDREN, so the children now run with a write tracer preloaded through NODE_OPTIONS (inherited by
+ * every node descendant, the harness's worker-thread monitor included): every filesystem write call any child makes
+ * (write / append / copy / rename / rm / unlink / utimes / truncate / mkdir / cp / symlink / link / open for writing /
+ * createWriteStream, sync, callback and promise forms) is logged with its pid and resolved path. The gate grades the
+ * log: 0 writes into this tree, and a POSITIVE CONTROL (every real child run's report.p<PORT>.json write is seen in the
+ * sandbox, so the tracer is not blind). The tree's report files are still fingerprinted, now as ATTRIBUTION: a change
+ * the tracer does not trace to a child is another process's run in this tree (named from the new report's own port,
+ * stamp and gate ids) and is reported, never "restored"; a change a child made is restored and FAILs.
+ */
+function writeTracer(dir) {
+  const log = path.join(dir, 'writes.log');
+  const file = path.join(dir, 'write-tracer.mjs');
+  writeFileSync(file, `
+import fs from 'fs'; import path from 'path'; import { syncBuiltinESMExports } from 'module'; import { fileURLToPath } from 'url';
+const L = ${JSON.stringify(log)};
+// one fd opened BEFORE anything is wrapped; fs.writeSync is never wrapped, so the log cannot trace itself
+const FD = fs.openSync(L, 'a');
+let depth = 0;     // a wrapped call made from inside another (appendFileSync -> writeFileSync) is not logged twice
+const P = (p) => { try { if (p instanceof URL) return fileURLToPath(p); if (Buffer.isBuffer(p)) return p.toString(); return typeof p === 'string' ? path.resolve(p) : null; } catch { return null; } };
+const note = (op, p) => { const r = P(p); if (r === null) return; try { fs.writeSync(FD, JSON.stringify({ pid: process.pid, op, path: r }) + '\\n'); } catch {} };
+const TWO = new Set(['copyFileSync', 'renameSync', 'cpSync', 'symlinkSync', 'linkSync', 'copyFile', 'rename', 'cp', 'symlink', 'link']);
+const ONE = ['writeFileSync', 'appendFileSync', 'rmSync', 'rmdirSync', 'unlinkSync', 'utimesSync', 'lutimesSync', 'truncateSync', 'mkdirSync', 'mkdtempSync', 'chmodSync',
+  'writeFile', 'appendFile', 'rm', 'rmdir', 'unlink', 'utimes', 'lutimes', 'truncate', 'mkdir', 'mkdtemp', 'chmod', 'createWriteStream', ...TWO];
+const writeFlag = (f) => (typeof f === 'string' && !/^rs?$/.test(f)) || (typeof f === 'number' && (f & 3) !== 0);
+const wrapIn = (obj, k, isPromise) => { const real = obj[k]; if (typeof real !== 'function') return;
+  obj[k] = function (...a) {
+    if (depth === 0) { note((isPromise ? 'promises.' : '') + k, a[0]); if (TWO.has(k)) note((isPromise ? 'promises.' : '') + k + ':dest', a[1]); }
+    depth++; try { return real.apply(this, a); } finally { depth--; }
+  }; };
+for (const k of ONE) wrapIn(fs, k, false);
+for (const k of ['writeFile', 'appendFile', 'rm', 'rmdir', 'unlink', 'utimes', 'truncate', 'mkdir', 'mkdtemp', 'copyFile', 'rename', 'cp', 'symlink', 'link', 'chmod']) wrapIn(fs.promises, k, true);
+for (const [obj, k, pre] of [[fs, 'openSync', ''], [fs, 'open', ''], [fs.promises, 'open', 'promises.']]) {
+  const real = obj[k]; if (typeof real !== 'function') continue;
+  obj[k] = function (p, flags, ...a) { if (depth === 0 && writeFlag(flags)) note(pre + k + ':' + flags, p); depth++; try { return real.call(this, p, flags, ...a); } finally { depth--; } };
+}
+syncBuiltinESMExports();
+`);
+  return { file, log, nodeOptions: `--import=${pathToFileURL(file).href}` };
+}
+/** every traced write, with its real path (the nearest existing ancestor resolved, so a symlinked tree path matches) */
+function readTrace(log) {
+  const realOf = (q) => { let cur = q; const rest = []; while (!existsSync(cur) && path.dirname(cur) !== cur) { rest.unshift(path.basename(cur)); cur = path.dirname(cur); } try { return path.join(realpathSync(cur), ...rest); } catch { return q; } };
+  let lines = [];
+  try { lines = read(log).split('\n').filter(Boolean); } catch { lines = []; }
+  return lines.map((l) => { try { const e = JSON.parse(l); return { ...e, real: realOf(e.path) }; } catch { return null; } }).filter(Boolean);
+}
+
 function spawnLogged(args, env, cwd = ROOT) {
   const ch = spawn(process.execPath, args, { cwd, env, stdio: ['ignore', 'pipe', 'pipe'] });
   const rec = { out: '', err: '', code: null, done: null };
@@ -791,18 +842,26 @@ function keepTreeReports(PORT) {
   const files = [`report.p${PORT}.json`, `report.p${PORT}.md`, 'report.json', 'report.md', 'A1-boot-clean.png']
     .map((f) => path.join(ROOT, 'shots', 'gates', f));
   const kept = files.map((f) => { try { const st = statSync(f); const buf = readFileSync(f); return { f, buf, sha: sha256(buf), atime: st.atime, mtime: st.mtime, mtimeMs: st.mtimeMs }; } catch { return { f, buf: null }; } });
+  /** who wrote a changed report: its own payload (gates.mjs writes { stamp, port, results }) */
+  const authorOf = (f) => {
+    if (!/\.json$/.test(f)) return null;
+    try { const j = JSON.parse(read(f)); return { port: j.port, stamp: j.stamp, gates: (j.results || []).length, ids: (j.results || []).map((r) => r.id).slice(0, 6) }; } catch { return { unparseable: true }; }
+  };
   return {
+    files,
     unchanged() {
       return kept.map((k) => {
         let now = null;
         try { const st = statSync(k.f); now = { sha: sha256(readFileSync(k.f)), mtimeMs: st.mtimeMs }; } catch { now = null; }
         const same = k.buf ? !!now && now.sha === k.sha && now.mtimeMs === k.mtimeMs : !now;
-        return { file: rel(k.f), unchanged: same };
+        return { file: rel(k.f), abs: k.f, unchanged: same, ...(same ? {} : { nowWrittenBy: authorOf(k.f), mtimeNow: now ? new Date(now.mtimeMs).toISOString() : 'deleted' }) };
       });
     },
-    restore() {
+    /** put back ONLY the files a semaphore child is traced writing (another run's report is never overwritten) */
+    restore(onlyAbs) {
       const out = [];
       for (const k of kept) {
+        if (onlyAbs && !onlyAbs.has(k.f)) continue;
         if (k.buf) { writeFileSync(k.f, k.buf); utimesSync(k.f, k.atime, k.mtime); out.push(rel(k.f) + ' restored'); }
         else if (existsSync(k.f)) { rmSync(k.f, { force: true }); out.push(rel(k.f) + ' removed (did not exist before)'); }
       }
@@ -814,9 +873,12 @@ function keepTreeReports(PORT) {
 async function chromeSemaphore({ PORT }) {
   const sandbox = mkdtempSync(path.join(os.tmpdir(), 'cal-sem-'));
   const profileRoot = path.join(sandbox, 'root');
-  const env = (slots, extra = {}) => ({ ...process.env, CAL_CHROME_PROFILE_ROOT: profileRoot, CAL_CHROME_SLOTS: String(slots), SHOT_PORT: String(PORT), ...extra });
+  const tracer = writeTracer(sandbox);
+  const nodeOptions = [process.env.NODE_OPTIONS, tracer.nodeOptions].filter(Boolean).join(' ');
+  const env = (slots, extra = {}) => ({ ...process.env, NODE_OPTIONS: nodeOptions, CAL_CHROME_PROFILE_ROOT: profileRoot, CAL_CHROME_SLOTS: String(slots), SHOT_PORT: String(PORT), ...extra });
   const out = {};
   const keep = keepTreeReports(PORT);
+  const tree = realpathSync(ROOT);
   const childCwd = path.join(sandbox, 'cwd');   // the child runs' shots/ and reports land here (R33 d)
   // the harness probes 127.0.0.1 only and spawns `npx vite` when it sees nothing (this box's Vite binds ::1); in a
   // directory with no local vite, npx would DOWNLOAD one. A local no-op `vite` makes that spawn exit at once:
@@ -890,12 +952,27 @@ async function chromeSemaphore({ PORT }) {
   } finally {
     spawnSync('pkill', ['-f', `cal-standin-${process.pid}`]);
     out.childRunsWroteTheirReportsIn = existsSync(path.join(childCwd, 'shots', 'gates')) ? readdirSync(path.join(childCwd, 'shots', 'gates')).filter((f) => /^report/.test(f)).length + ' report file(s) in the sandbox' : 'nothing';
+    // the trace, read before the sandbox (and its log) goes
+    const trace = readTrace(tracer.log);
+    const sandboxReal = realpathSync(sandbox);
+    const inTree = trace.filter((e) => e.real === tree || e.real.startsWith(tree + path.sep));
+    const realRunPids = new Set(trace.filter((e) => e.real === path.join(sandboxReal, 'cwd', 'shots', 'gates', `report.p${PORT}.json`)).map((e) => e.pid));
+    out.writeTrace = { calls: trace.length, pids: new Set(trace.map((e) => e.pid)).size, intoThisTree: inTree.length, firstIntoTree: inTree.slice(0, 5).map((e) => ({ pid: e.pid, op: e.op, path: rel(e.real) })),
+      outsideSandboxAndTree: [...new Set(trace.filter((e) => !(e.real === tree || e.real.startsWith(tree + path.sep)) && !e.real.startsWith(sandboxReal + path.sep)).map((e) => e.real.replace(/[^/]+$/, '*')))].slice(0, 8),
+      positiveControl: { realRunsThatWroteTheirReportInTheSandbox: realRunPids.size, realRuns: (out.realRuns?.runs || []).length } };
+    out.tracerSees = realRunPids.size >= Math.max(1, (out.realRuns?.runs || []).filter((r) => r.code === 0).length);
+    out.noChildWroteIntoTheTree = inTree.length === 0;
     rmSync(sandbox, { recursive: true, force: true });
-    out.treeReportFiles = keep.unchanged();
-    out.treeReportsUntouched = out.treeReportFiles.every((x) => x.unchanged);
-    if (!out.treeReportsUntouched) out.treeReportsRestored = keep.restore();
+    // ATTRIBUTION of any change to the tree's report files (reported; a child-made change is restored and FAILs)
+    const realAbs = (f) => { try { return path.join(realpathSync(path.dirname(f)), path.basename(f)); } catch { return f; } };
+    out.treeReportFiles = keep.unchanged().map(({ abs, ...x }) => ({ ...x, writtenByASemaphoreChild: inTree.some((e) => e.real === realAbs(abs)) }));
+    const childMade = new Set(keep.files.filter((f) => inTree.some((e) => e.real === realAbs(f))));
+    out.treeReportsUntouchedByChildren = out.noChildWroteIntoTheTree;
+    const foreign = out.treeReportFiles.filter((x) => !x.unchanged && !x.writtenByASemaphoreChild);
+    if (foreign.length) out.foreignWritesInWindow = foreign.map((x) => ({ file: x.file, writtenBy: x.nowWrittenBy, at: x.mtimeNow, note: 'another process\'s gates run in this tree (not a semaphore child: the trace has no write to it); left as written' }));
+    if (childMade.size) out.treeReportsRestored = keep.restore(childMade);
   }
-  const pass = out.realOk && out.standinOk && out.killOk && out.preflightOk && out.treeReportsUntouched;
+  const pass = out.realOk && out.standinOk && out.killOk && out.preflightOk && out.tracerSees && out.noChildWroteIntoTheTree;
   return { pass, detail: out };
 }
 
@@ -1418,13 +1495,16 @@ const BAD_ACTION = ['override', 'unrun', 'fail', 'pendingUnattributed', 'staging
 const BAD_VISUAL = ['awaitingJudge', 'judgeInvalid', 'judgeUnanchored', 'shotInvalid', 'fail', 'stagingFlaky'];
 
 /** The SKIP card (gate-roster SKIP_CARD: a full-frame #101418 panel): all four corners read (16, 20, 24). */
-async function isSkipCard(file) {
+async function cardCorners(file) {
   const { default: sharp } = await import('sharp');
   const { data, info } = await sharp(file).raw().toBuffer({ resolveWithObject: true });
   const at = (x, y) => { const i = (y * info.width + x) * info.channels; return [data[i], data[i + 1], data[i + 2]]; };
-  const corners = [[4, 4], [info.width - 5, 4], [4, info.height - 5], [info.width - 5, info.height - 5]].map(([x, y]) => at(x, y));
-  return corners.every((c) => Math.abs(c[0] - 16) <= 3 && Math.abs(c[1] - 20) <= 3 && Math.abs(c[2] - 24) <= 3);
+  return [[4, 4], [info.width - 5, 4], [4, info.height - 5], [info.width - 5, info.height - 5]].map(([x, y]) => at(x, y));
 }
+const cornersAre = (corners, rgb) => corners.every((c) => Math.abs(c[0] - rgb[0]) <= 3 && Math.abs(c[1] - rgb[1]) <= 3 && Math.abs(c[2] - rgb[2]) <= 3);
+async function isSkipCard(file) { return cornersAre(await cardCorners(file), [16, 20, 24]); }
+/** W0b fix round 1: the STAGING FAILED card (gate-roster FAIL_CARD, #3a0d12): a row's own staging assertion failed -> FAIL */
+async function isFailCard(file) { return cornersAre(await cardCorners(file), [58, 13, 18]); }
 
 /**
  * FIX ROUND 3 (judge finding: "R29 verdicts accept any self-declared judge port, so the lane itself
@@ -1618,6 +1698,10 @@ async function classifyRow(g, r, run, verdicts, gradeVisual, trust = { regs: new
     const cls = labels.length === 1 ? skipClassOf(labels[0]) : role0 && ROLE_PENDING[role0] ? skipClassOf(ROLE_PENDING[role0].label) : 'skipR18';
     return { ...out, cls, note: 'the filmed frame is the SKIP card (subject not staged in this build)' };
   }
+  if (/__failCard\(/.test(src) && await isFailCard(frame)) {
+    // the row's OWN staging assertion failed (e.g. V13 filmed without the aim, R33 g): a FAIL by name, never a skip
+    return { ...out, cls: 'fail', note: 'the filmed frame is the row\'s STAGING FAILED card (its own staging assertion failed; the reason is printed on the card)' };
+  }
   if (!gradeVisual) return { ...out, cls: 'filmed' };
   const all = verdicts.get(seal.sealId + '|' + g.id) || [];
   if (!all.length) return { ...out, cls: 'awaitingJudge', note: `no R29 verdict for ${seal.sealId} / ${g.id} (frame ${seal.frames[g.id].slice(0, 12)})` };
@@ -1676,6 +1760,25 @@ const BASE_COMMIT = '0b75036';
 const KEPT_VISUAL = ['V1-sprint-frame', 'V2-idle-frame', 'V3-crouch-stalk', 'V4-aim-anchor', 'V12-sprint-vs-reference',
   'V13-aim-strafe', 'V14-slope-contour', 'V21-camera-cover'];
 const R27_FLAKY = ['A13-no-skate'];
+/**
+ * R33 (g) (main PLAN §8.3, Oct 19, commit a3465f1; W0b fix round 1): "A carried row that an active lane shadows by
+ * id (§3.3) is graded by that lane, not by A-carried-suite: the animator rows V1–V4, V12–V14 and the action rows
+ * A2–A19, A28, A31–A33 are graded by hero-body on Brea in W0b (the W0a grading of V2, V4, V12 on the old body is
+ * void). A-carried-suite reports them SKIP-shadowed(hero-body) until hero-body's exit, then grades them on the merged
+ * build." The id ranges are the ruling's; a row in them is hero-body's when its §9 absorbing lane is hero-body (the
+ * §9 table gives A4/A5 to armory, A6–A8 to the per-kind block, A9 to gates-perf + engine-gpu and A10 to shell-ui,
+ * all inside "A2–A19"; those stay graded here). V21-camera-cover stays graded here (R33 c).
+ * After hero-body's exit the orchestrator grades them on the merged build with CAL_SHADOW_EXITED=hero-body.
+ */
+const R33G = Object.freeze({ lane: 'hero-body', ranges: { V: [[1, 4], [12, 14]], A: [[2, 19], [28, 28], [31, 33]] } });
+const R33G_EXITED = new Set(String(process.env.CAL_SHADOW_EXITED || '').split(',').map((x) => x.trim()).filter(Boolean));
+function r33gShadowed(g) {
+  const m = /^([AV])(\d+)(?:[a-z])?(?:-|$)/.exec(g.id);
+  if (!m) return false;
+  const n = Number(m[2]);
+  const inRange = (R33G.ranges[m[1]] || []).some(([a, b]) => n >= a && n <= b);
+  return inRange && ownerOf(g) === R33G.lane && !R33G_EXITED.has(R33G.lane);
+}
 const FLAKY_WINDOW = 5, FLAKY_PASSES = 3;
 const VISUAL_JUDGE_PORT = 5271;
 /** complete FULL carried runs of this build the gate needs (one per round, orchestrator W0b); CAL_CARRIED_RUNS raises it */
@@ -1886,7 +1989,11 @@ async function carriedSuite({ PORT, GATES: ALL }) {
     const row = { id: g.id, kind: g.kind, owner: ownerOf(g), baseline: bRow.verdict, perRun: per.map((p) => p.cls),
       runs: per.map((p) => ({ run: p.run.seal.sealId, partial: p.run.partial || undefined, status: p.status, cls: p.cls, note: p.cls === 'pass' ? undefined : String(p.note || '').slice(0, 120) })) };
     const seen = per.filter((p) => p.cls !== 'infra');    // the observations of this row, oldest first
-    if (g.kind === 'visual') {
+    if (r33gShadowed(g)) {
+      // R33 (g): graded by hero-body on Brea until its exit; observed here, never graded (and never counted as PASS)
+      Object.assign(row, { cls: 'skipShadowed', shadowedBy: R33G.lane, note: `SKIP-shadowed(${R33G.lane}): R33 (g) — graded by ${R33G.lane} on Brea in W0b; A-carried-suite grades it on the merged build after ${R33G.lane}'s exit (CAL_SHADOW_EXITED=${R33G.lane}). Observed here: ${seen.map((p) => p.cls).join(' / ') || 'not run'}`,
+        shot: g.kind === 'visual' ? (per.find((p) => p.run === judgedRun) || {}).shot : undefined });
+    } else if (g.kind === 'visual') {
       const j = per.find((p) => p.run === judgedRun) || { cls: 'unrun', note: 'not in the judged run' };
       if (!KEPT_VISUAL.includes(g.id) && !shadowedIds.has(g.id)) {
         Object.assign(row, { cls: 'skipReplaced', note: `SKIP-replaced (R33 c): its subject is content scheduled for replacement; graded when ${row.owner} re-stages it on new content (shadows this id)`, shot: j.shot });
@@ -1926,16 +2033,14 @@ async function carriedSuite({ PORT, GATES: ALL }) {
       } else {
         const worstNow = classes.slice().sort((a, b) => RANK(a) - RANK(b))[0];
         row.current = worstNow;
-        if (isSkip(bRow.verdict) && classes.some((c) => !isSkip(c))) {
-          // R28: the role now has a live non-legacy kind (the Tiller fixture) — there is no Round-4 verdict on that
-          // content to regress from; listed with its result and owner (the owner's must-stay-green list grades it)
-          row.cls = 'newlyStaged';
-          row.note = `${bRow.verdict} at baseline (not staged), now staged: ${classes.join(' / ')}${worstNow === 'pass' ? '' : ' — ' + firstBad((c) => c === 'pass').slice(0, 140)}`;
-        } else {
-          const worse = RANK(worstNow) < RANK(bRow.verdict);
-          row.cls = mixedStaging && !worse ? 'stagingFlaky' : worse ? 'worseThanBaseline' : 'listed';
-          row.note = `baseline ${bRow.verdict}${bRow.perRun ? ' (' + bRow.perRun.join('/') + ')' : ''}, now ${classes.join(' / ')}${worse ? ' — WORSE' : ''}: ` + String((seen.find((p) => p.cls === worstNow) || {}).note || '').slice(0, 140);
-        }
+        // W0b fix round 1 (judge finding: "self-granted newlyStaged exemption"): a row that was a SKIP at baseline and
+        // now STAGES (R28: the Tiller fixture took the herd role) is graded like every other listed row — never worse
+        // than its baseline. A FAIL or an unattributed PENDING on the newly staged content is WORSE than a named SKIP
+        // (RANK), so it FAILs this gate with its owner named; no §8.3 ruling exempts it. It stays marked newlyStaged.
+        row.newlyStaged = isSkip(bRow.verdict) && classes.some((c) => !isSkip(c));
+        const worse = RANK(worstNow) < RANK(bRow.verdict);
+        row.cls = mixedStaging && !worse ? 'stagingFlaky' : worse ? 'worseThanBaseline' : 'listed';
+        row.note = `baseline ${bRow.verdict}${bRow.perRun ? ' (' + bRow.perRun.join('/') + ')' : ''}${row.newlyStaged ? ' (not staged then; staged now on the R28 fixture)' : ''}, now ${classes.join(' / ')}${worse ? ' — WORSE' : ''}: ` + String((seen.find((p) => p.cls === worstNow) || {}).note || '').slice(0, 140);
       }
     }
     if (r4[g.id]) row.round4 = r4[g.id];
@@ -1983,7 +2088,9 @@ async function carriedSuite({ PORT, GATES: ALL }) {
       ...(r.round4 ? { inheritedFromRound4: r.round4 } : {}), ...(r.planRulings ? { planRulings: r.planRulings } : {}),
       runs: r.runs, ...(r.shot ? { shot: r.shot } : {}), note: r.note })),
     listed: rows.filter((r) => r.cls === 'listed').map((r) => ({ id: r.id, owner: r.owner, baseline: r.baseline, now: r.current, perRun: r.perRun })),
-    newlyStaged: rows.filter((r) => r.cls === 'newlyStaged').map((r) => ({ id: r.id, owner: r.owner, baseline: r.baseline, now: r.current, perRun: r.perRun, note: r.note })),
+    newlyStaged: rows.filter((r) => r.newlyStaged).map((r) => ({ id: r.id, cls: r.cls, owner: r.owner, baseline: r.baseline, now: r.current, perRun: r.perRun, note: r.note })),
+    shadowed: { ruling: 'R33 (g)', lane: R33G.lane, exited: R33G_EXITED.has(R33G.lane), planHasR33g: /R33 \(g\)/.test(read(path.join(ROOT, 'docs', 'ROUND5-PLAN.md'))),
+      rows: rows.filter((r) => r.cls === 'skipShadowed').map((r) => ({ id: r.id, observed: r.perRun, ...(r.shot ? { shot: r.shot } : {}) })) },
     knownFlaky: rows.filter((r) => r.expect === 'flaky').map((r) => ({ id: r.id, cls: r.cls, perRun: r.perRun, note: r.note })),
     r30SinceBaseline: rows.filter((r) => r.expect === 'pass' && r.cls === 'skipR30').map((r) => r.id),
     skipReplaced: rows.filter((r) => r.cls === 'skipReplaced').map((r) => r.id + ' -> ' + r.owner),

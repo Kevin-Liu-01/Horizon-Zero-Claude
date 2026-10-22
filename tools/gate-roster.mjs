@@ -230,6 +230,23 @@ export const SKIP_CARD = `
         document.body.appendChild(d);
       };`;
 
+/**
+ * W0b fix round 1 (R33 g): the shot a visual gate takes when its OWN staging assertion fails (the subject is
+ * there, but not in the state the criteria grade — e.g. V13 filmed without the aim): a dark-red full-frame card
+ * naming the failed assertion. It is NOT a skip: A-carried-suite reads this card as a FAIL of the row (its corners
+ * are (58, 13, 18), never the SKIP card's (16, 20, 24)), and a judge sees the reason instead of a misleading frame.
+ * Also left on `window.__R5_STAGING_FAILED__`.
+ */
+export const FAIL_CARD = `
+      const __failCard = (detail) => {
+        window.__R5_STAGING_FAILED__ = detail;
+        const d = document.createElement('div');
+        d.style.cssText = 'position:fixed;inset:0;z-index:2147483647;background:#3a0d12;color:#f2ead3;'
+          + 'font:600 22px/1.5 ui-monospace,Menlo,monospace;padding:48px;white-space:pre-wrap';
+        d.textContent = 'VISUAL GATE STAGING FAILED — the subject is not in the graded state (FAIL)\\n\\n' + detail;
+        document.body.appendChild(d);
+      };`;
+
 /** Same for a `setup` string: statements, or an IIFE expression (awaited). A skip draws the SKIP card. */
 export function stagedSetup(roles, setup = '') {
   const run = !setup ? '' : isIife(setup) ? `await ${setup.trim()};` : setup;

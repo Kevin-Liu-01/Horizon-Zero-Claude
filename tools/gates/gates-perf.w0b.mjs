@@ -247,9 +247,11 @@ const slope = (pts) => {             // least squares, bytes per second
 /**
  * Attribution from a sampling heap profile (CDP HeapProfiler, objects collected by minor and major GC
  * included, so every allocation in the window counts, not only the survivors):
- *   self    the allocating frame is a src/** function (the profiler's own attribution) — GRADED
- *   caller  the nearest src/** frame on the allocating stack (a three.js or browser allocation made on behalf
- *           of src code) — REPORTED, so a renderer-internal per-frame allocation still names the src call site
+ *   caller  the NEAREST src/** frame on the allocating stack — GRADED (W0b fix round 1, judge finding: grading
+ *           `self` let a src function that allocates through `new THREE.Vector3()`, `.clone()`, `Array.prototype.push`
+ *           or a three.js renderer internal pass both bars; 25-34 % of src-caused allocation was uncounted). Every byte
+ *           with a src frame anywhere on its stack is src's, charged to the nearest one, for the total and per function
+ *   self    the allocating frame itself is a src/** function — REPORTED (the subset of `caller` src allocates directly)
  */
 function attribute(profile, seconds, frames, PORT) {
   const srcRe = new RegExp(`^https?://(localhost|127\\.0\\.0\\.1|\\[::1\\]):${PORT}/src/`);
@@ -277,7 +279,8 @@ function attribute(profile, seconds, frames, PORT) {
   const at = (b) => { const perS = b / 1024 / seconds; const per60 = frames ? (b / 1024 / frames) * W0B_BUDGETS.alloc.refFps : perS; return { measuredKBps: r2(perS), kbPerFrame: frames ? r2(b / 1024 / frames) : null, gradedKBps: r2(Math.max(perS, per60)) }; };
   const top = (m, n = 12) => [...m.entries()].sort((a, b) => b[1] - a[1]).slice(0, n).map(([k, b]) => ({ fn: k, ...at(b) }));
   return { seconds: r2(seconds), frames, fps: r1(fps), total: at(total), srcSelf: at(srcSelf), srcCaller: at(srcCaller),
-    topSrcSelf: top(self), topSrcCaller: top(caller, 8), topOutsideSrc: top(outside, 8), srcFunctionsSeen: self.size };
+    graded: at(srcCaller), topGraded: top(caller, 60), topSrcSelf: top(self, 12), topOutsideSrc: top(outside, 10),
+    srcFunctionsSeen: caller.size };
 }
 
 /** who answers for a src/** file's per-frame allocations (plan §1.1 frozen systems, §2 lane rows) */
@@ -286,6 +289,9 @@ const SRC_OWNERS = [
   [/^\/src\/world\/environment\.js/, 'world-sky (W1)'],
   [/^\/src\/core\/(collision|nav|hitHulls)\.js/, 'FROZEN spatial (plan §1.1): needs an orchestrator grant'],
   [/^\/src\/core\/engine\.js|^\/src\/main\.js/, 'engine-gpu (engine.js grant) / FROZEN frame loop (main.js)'],
+  // W0b fix round 1: the frozen rigging / bone-space files and the machine-rig algorithms are named as frozen (plan §1.1)
+  [/^\/src\/entities\/anim\/(boneSpace|restPose|clipLayer|retargeter|rigDebug|locomotion)\.js/, 'FROZEN rigging (plan §1.1): needs an orchestrator grant (hero-body holds clipLibrary / boneMap / registry / index only)'],
+  [/^\/src\/entities\/machines\/(gait|autorig)\.js|^\/src\/entities\/machines\/rig\//, 'FROZEN machine rig (plan §1.1): instruments-core (autorig RIGS rows) / instruments-d W4 (gait) grants only'],
   [/^\/src\/entities\/(player|playerAnimator)\.js|^\/src\/entities\/anim\//, 'hero-body (W0b; melee from W1)'],
   [/^\/src\/entities\/machines\/|^\/src\/instruments\//, 'instruments-core / the Instruments lanes'],
   [/^\/src\/world\/(props|fauna)|^\/src\/world\/props\/|^\/src\/world\/sites\//, 'world-props'],
@@ -303,7 +309,7 @@ async function allocRate({ PORT }) {
     await cdp.send('HeapProfiler.enable');
     const fight = await page.evaluate(STAGE_FIGHT);
     if (fight.skip) return { pass: null, detail: { verdict: fight.skip.split(':')[0] + ': the staged fight has no cast — ' + fight.skip } };
-    const phase = async (name, drive) => {
+    const phase = async (name, drive, windowS = B.windowS) => {
       await sleep(B.warmupS * 1000);                                     // steady state, not the staging transient
       const heap = [];
       const f0 = await page.evaluate('__CTX__.engine.frames');
@@ -319,18 +325,32 @@ async function allocRate({ PORT }) {
       while (Date.now() - tw < 2000) { saw.push((await cdp.send('Runtime.getHeapUsage')).usedSize); await sleep(100); }
       let rises = 0; for (let k = 1; k < saw.length; k++) if (saw[k] > saw[k - 1]) rises += saw[k] - saw[k - 1];
       const sawtoothKBps = r1(rises / 1024 / ((Date.now() - tw) / 1000));
-      for (let k = 1; k <= 4; k++) { await sleep((B.windowS * 1000 - 2000) / 4 - 150); heap.push([(Date.now() - tS) / 1000, await gcAndHeap(cdp)]); }
+      for (let k = 1; k <= 4; k++) { await sleep((windowS * 1000 - 2000) / 4 - 150); heap.push([(Date.now() - tS) / 1000, await gcAndHeap(cdp)]); }
       const { profile } = await cdp.send('HeapProfiler.stopSampling');
       const seconds = (Date.now() - tS) / 1000;
       const driveWitness = stopDrive ? await stopDrive() : null;
       const frames = (await page.evaluate('__CTX__.engine.frames')) - f0;
       const a = attribute(profile, seconds, frames, PORT);
       const s = slope(heap);
+      for (const x of a.topGraded) x.owner = srcOwner(x.fn);
       for (const x of a.topSrcSelf) x.owner = srcOwner(x.fn);
       return { name, ...a, driveWitness, heapPostGcB: heap.map(([t, b]) => [r2(t), b]), heapSlopeBps: s === null ? null : Math.round(s), wallS: r2((Date.now() - t0) / 1000),
         crossCheck: { usedHeapRisesKBps: sawtoothKBps, note: 'used-heap rises over 2 s, no forced GC: a lower bound on all allocation (src + three + browser)' } };
     };
     const fightPhase = await phase('staged fight', null);
+    // THE EMPTY-FRAME FLOOR (reported, never subtracted): the same page with the scene hidden (scene.visible = false:
+    // three.js projects nothing, so no scene draw and no shadow pass; the post chain and every system update still
+    // run). Its src-caller allocation charged to the engine / frame loop is the renderer floor an allowance would be
+    // sized from; MEMORY_BUDGETS.alloc records none, so the bars grade everything.
+    await page.evaluate('(() => { window.__w0bSceneVis = __CTX__.scene.visible; __CTX__.scene.visible = false; return true; })()');
+    let emptyPhase = null;
+    try { emptyPhase = await phase('empty frame (scene hidden)', null, B.emptyFrameS || 5); }
+    finally { await page.evaluate('(() => { __CTX__.scene.visible = window.__w0bSceneVis !== false; window.__w0bSceneVis = undefined; return true; })()'); }
+    const renderPath = (emptyPhase?.topGraded || []).filter((x) => /\/src\/core\/engine\.js|\/src\/main\.js/.test(x.fn));
+    const emptyFrame = emptyPhase ? { fps: emptyPhase.fps, srcCallerKBps: emptyPhase.graded.measuredKBps, srcCallerGradedKBps: emptyPhase.graded.gradedKBps,
+      engineAndFrameLoopKBps: r2(renderPath.reduce((a, x) => a + x.measuredKBps, 0)), engineAndFrameLoopTop: renderPath.slice(0, 6),
+      topGraded: emptyPhase.topGraded.slice(0, 8), allAllocationKBps: emptyPhase.total.measuredKBps,
+      note: 'reported only: no allowance is recorded in MEMORY_BUDGETS.alloc, so nothing is subtracted' } : null;
     await page.evaluate(UNSTAGE);
     // sprint-and-draw: open ground, W + Shift held; every 2.5 s a full draw (RMB aim + LMB draw, held 1.2 s) and a loose
     await page.evaluate(`(async () => { ${PLACES} const p = __CTX__.player; if (PLACE('openGround')) standAt(p, 'openGround'); __CTX__.input.enabled = true; return true; })()`);
@@ -355,11 +375,12 @@ async function allocRate({ PORT }) {
     const runPhase = await phase('sprint and draw', drive);
     const shots = runPhase.driveWitness || null;
     const phases = [fightPhase, runPhase];
-    const worstSrc = Math.max(...phases.map((p) => p.srcSelf.gradedKBps));
-    const worstFn = phases.flatMap((p) => p.topSrcSelf.map((x) => ({ ...x, phase: p.name }))).sort((a, b) => b.gradedKBps - a.gradedKBps)[0] || null;
+    // GRADED: caller attribution (the nearest src/** frame), total and per function (W0b fix round 1)
+    const worstSrc = Math.max(...phases.map((p) => p.graded.gradedKBps));
+    const worstFn = phases.flatMap((p) => p.topGraded.map((x) => ({ ...x, phase: p.name }))).sort((a, b) => b.gradedKBps - a.gradedKBps)[0] || null;
     // every src function over the per-function bar, merged over both phases (worst phase kept), with its owner
     const overFn = new Map();
-    for (const p of phases) for (const x of p.topSrcSelf) if (x.gradedKBps > B.fnKBps && (!overFn.has(x.fn) || overFn.get(x.fn).gradedKBps < x.gradedKBps)) overFn.set(x.fn, { ...x, phase: p.name });
+    for (const p of phases) for (const x of p.topGraded) if (x.gradedKBps > B.fnKBps && (!overFn.has(x.fn) || overFn.get(x.fn).gradedKBps < x.gradedKBps)) overFn.set(x.fn, { ...x, phase: p.name });
     const byOwner = {};
     for (const x of overFn.values()) (byOwner[x.owner] = byOwner[x.owner] || []).push(x.fn + ' ' + x.gradedKBps + ' KB/s');
     const slopes = phases.map((p) => p.heapSlopeBps);
@@ -372,11 +393,12 @@ async function allocRate({ PORT }) {
     };
     const pass = Object.values(checks).every(Boolean);
     return { pass, detail: {
-      verdict: (pass ? 'PASS' : 'FAIL: ' + Object.keys(checks).filter((k) => !checks[k]).join(', ')) + ` — src/** ${worstSrc} KB/s (bar ${B.srcKBps}), worst src function ${worstFn ? worstFn.fn + ' ' + worstFn.gradedKBps + ' KB/s in ' + worstFn.phase : 'none'} (bar ${B.fnKBps}), post-GC heap slope ${slopes.map((s) => (s === null ? '?' : r1(s / 1024) + ' KB/s')).join(' / ')} (bar <= 0); `
+      verdict: (pass ? 'PASS' : 'FAIL: ' + Object.keys(checks).filter((k) => !checks[k]).join(', ')) + ` — src/** (caller attribution) ${worstSrc} KB/s (bar ${B.srcKBps}; self attribution alone ${Math.max(...phases.map((p) => p.srcSelf.gradedKBps))}), worst src function ${worstFn ? worstFn.fn + ' ' + worstFn.gradedKBps + ' KB/s in ' + worstFn.phase : 'none'} (bar ${B.fnKBps}), post-GC heap slope ${slopes.map((s) => (s === null ? '?' : r1(s / 1024) + ' KB/s')).join(' / ')} (bar <= 0); `
         + phases.map((p) => `${p.name}: ${p.fps} fps, all allocation ${p.total.measuredKBps} KB/s (used-heap rises ${p.crossCheck.usedHeapRisesKBps} KB/s)`).join('; ') + ` — staged fight ${JSON.stringify(fight.cast?.cast || [])} at pixel ratio ${fight.appliedPixelRatio} (tier ${fight.quality})`
+        + (emptyFrame ? ` — empty-frame floor (reported, not subtracted): src ${emptyFrame.srcCallerKBps} KB/s, engine + frame loop ${emptyFrame.engineAndFrameLoopKBps} KB/s` : '')
         + (Object.keys(byOwner).length ? ` — src functions over ${B.fnKBps} KB/s by owner: ` + Object.entries(byOwner).map(([o, l]) => o + ': ' + l.slice(0, 4).join(', ')).join('; ') : ''),
-      checks, budget: B, fight, phases, input: shots, functionsOverBarByOwner: byOwner,
-      method: 'CDP HeapProfiler.startSampling (interval ' + B.samplingIntervalB + ' B, objects collected by minor and major GC included) over ' + B.windowS + ' s per phase after ' + B.warmupS + ' s of warm-up; graded = self attribution to src/** frames, max(measured KB/s, KB/frame x 60); post-GC heap = Runtime.getHeapUsage after two HeapProfiler.collectGarbage, 5 readings per phase, least-squares slope',
+      checks, budget: B, fight, phases, emptyFrame, input: shots, functionsOverBarByOwner: byOwner,
+      method: 'CDP HeapProfiler.startSampling (interval ' + B.samplingIntervalB + ' B, objects collected by minor and major GC included) over ' + B.windowS + ' s per phase after ' + B.warmupS + ' s of warm-up; graded = CALLER attribution (every sampled byte charged to the nearest src/** frame on its allocation stack), max(measured KB/s, KB/frame x 60), for the total and per function; self attribution reported; post-GC heap = Runtime.getHeapUsage after two HeapProfiler.collectGarbage, 5 readings per phase, least-squares slope; empty-frame floor measured with the scene hidden, reported only',
     } };
   });
 }
@@ -627,44 +649,68 @@ const DRAW_PROBE = `(async () => {
   // a light or a light's target (an empty Object3D) draws nothing itself; hiding it would remove OTHER owners' shadow draws
   const isLightish = (c) => c.isLight || (!c.isMesh && c.type === 'Object3D' && !c.children.length);
   const roots = scene.children.map((c, i) => ({ obj: c, label: describe(c, i), owner: ownerOf(c.name)?.id || null, visible: c.visible, light: isLightish(c) }));
-  const rootIndex = new Map(roots.map((r, i) => [r.obj, i]));
   const settle = () => __frames(4);
   await settle();
   const total = await drawsPerFrame();
-  // DIRECT attribution (cross-check): every renderBufferDirect call (main, shadow and post passes) bucketed by
-  // the scene root it belongs to
+  /*
+   * THE GRADED NUMBER (W0b fix round 1): the DIRECT per-draw count. Every renderBufferDirect call (main, shadow and
+   * post passes) over 10 frames is bucketed by the scene root it draws for, keyed by the engine frame it falls in;
+   * the first and last frame (partial: the hook is installed and removed between rAF callbacks) are dropped. A root
+   * that appears during the probe is attributed by its own name like any other. Deterministic: nothing is hidden.
+   */
   const direct = await (async () => {
     const real = R.renderBufferDirect;
-    const perRoot = new Float64Array(roots.length); let post = 0, n = 0, other = 0;
+    const perRoot = new Map(); const perFrameUn = new Map(); const perFrameAll = new Map(); const postByFrame = new Map();
+    const f0 = e.frames;
     R.renderBufferDirect = function (camera, sc, geometry, material, object, group) {
       let o = object, root = null; while (o) { if (o.parent === scene) { root = o; break; } o = o.parent; }
-      if (!root) post++; else { const i = rootIndex.get(root); if (i === undefined) other++; else perRoot[i]++; }
-      n++;
+      const fk = e.frames;
+      perFrameAll.set(fk, (perFrameAll.get(fk) || 0) + 1);
+      if (!root) { postByFrame.set(fk, (postByFrame.get(fk) || 0) + 1); }
+      else {
+        let pr = perRoot.get(root); if (!pr) { pr = new Map(); perRoot.set(root, pr); }
+        pr.set(fk, (pr.get(fk) || 0) + 1);
+        if (!ownerOf(root.name) && !isLightish(root)) perFrameUn.set(fk, (perFrameUn.get(fk) || 0) + 1);
+      }
       return real.call(this, camera, sc, geometry, material, object, group);
     };
-    const f0 = e.frames; await __frames(8); const f = e.frames - f0;
-    R.renderBufferDirect = real;
-    const rows = roots.map((r, i) => ({ root: r.label, owner: r.owner, draws: Math.round((perRoot[i] / f) * 10) / 10 })).filter((x) => x.draws > 0).sort((a, b) => b.draws - a.draws);
+    try { await __frames(10); } finally { R.renderBufferDirect = real; }
+    const keys = [...perFrameAll.keys()].sort((a, b) => a - b).slice(1, -1);      // whole frames only
+    const f = Math.max(1, keys.length);
+    const unPerFrame = keys.map((k) => perFrameUn.get(k) || 0);
+    const allPerFrame = keys.map((k) => perFrameAll.get(k) || 0);
+    const med = (a) => { const s = a.slice().sort((x, y) => x - y); return s.length ? (s.length % 2 ? s[(s.length - 1) / 2] : (s[s.length / 2 - 1] + s[s.length / 2]) / 2) : null; };
+    const whole = (m) => keys.reduce((a, k) => a + (m.get(k) || 0), 0) / f;   // per whole frame
+    const rows = [...perRoot.entries()].map(([root, pr]) => ({ root: root.name || describe(root, scene.children.indexOf(root)), owner: ownerOf(root.name)?.id || null, draws: Math.round(whole(pr) * 10) / 10 }))
+      .filter((x) => x.draws > 0).sort((a, b) => b.draws - a.draws);
     const by = {};
     for (const x of rows) { const k = x.owner || 'UNATTRIBUTED'; by[k] = Math.round(((by[k] || 0) + x.draws) * 10) / 10; }
-    return { perFrame: Math.round((n / f) * 10) / 10, post: Math.round((post / f) * 10) / 10, addedDuringProbe: Math.round((other / f) * 10) / 10, by, rows };
+    return { frames: f, unattributedPerFrame: unPerFrame, unattributedMax: unPerFrame.length ? Math.max(...unPerFrame) : 0, unattributedMedian: med(unPerFrame),
+      drawsPerFrameMedian: med(allPerFrame), post: Math.round(whole(postByFrame) * 10) / 10, perFrame: Math.round(whole(perFrameAll) * 10) / 10, by, rows, firstFrame: f0 };
   })();
-  // HIDE EACH REGISTERED OWNER IN TURN (plan §4.2 / §9): its draws = total - draws with it hidden
+  /*
+   * CROSS-CHECKS (the plan's "hide each registered owner in turn"), as PAIRED readings: each owner's draws are
+   * (with - without) measured back to back, so a draw that comes or goes between readings (a transient effect)
+   * does not land on whichever owner happens to be measured next. Each owner's hide delta must equal its direct
+   * count within +-1, and the unregistered roots hidden together must equal the direct unattributed count within +-1.
+   */
   const hidden = {};
   for (const o of OWNERS) {
     const mine = roots.filter((r) => r.owner === o.id && r.obj.visible);
     if (!mine.length) { hidden[o.id] = { roots: 0, draws: 0 }; continue; }
+    await settle(); const withD = await drawsPerFrame();
     for (const r of mine) r.obj.visible = false;
     await settle(); const without = await drawsPerFrame();
     for (const r of mine) r.obj.visible = r.visible;
-    hidden[o.id] = { row: o.row, roots: mine.length, names: [...new Set(mine.map((r) => r.label))].slice(0, 12), draws: total - without };
+    hidden[o.id] = { row: o.row, roots: mine.length, names: [...new Set(mine.map((r) => r.label))].slice(0, 12), draws: withD - without, with: withD, without };
   }
   // every scene child hidden: what is left is the post chain (+ passes that draw without the scene)
   for (const r of roots) r.obj.visible = false;
   await settle(); const postOnly = await drawsPerFrame();
   for (const r of roots) r.obj.visible = r.visible;
-  // the unregistered roots, hidden together: the direct measure of the unattributed row
+  // the unregistered roots, hidden together (paired)
   const un = roots.filter((r) => !r.owner && !r.light && r.obj.visible);
+  await settle(); const withUn = await drawsPerFrame();
   for (const r of un) r.obj.visible = false;
   await settle(); const withoutUn = await drawsPerFrame();
   for (const r of un) r.obj.visible = r.visible;
@@ -672,7 +718,7 @@ const DRAW_PROBE = `(async () => {
   const ownedSum = Object.values(hidden).reduce((a, h) => a + h.draws, 0);
   return { total, postOnly, owners: hidden, ownedSum,
     unattributedByHidingOwners: total - postOnly - ownedSum,
-    unattributedByHidingUnregistered: total - withoutUn,
+    unattributedByHidingUnregistered: withUn - withoutUn,
     unregisteredRoots: [...new Set(un.map((r) => r.label))], lightsNotHidden: roots.filter((r) => r.light).map((r) => r.label),
     rootsByOwner: roots.reduce((a, r) => { const k = r.owner || 'UNREGISTERED'; (a[k] = a[k] || []).push(r.label); return a; }, {}),
     direct };
@@ -686,20 +732,38 @@ async function unattributedCap({ PORT }) {
     if (fight.skip) return { pass: null, detail: { verdict: fight.skip.split(':')[0] + ': the staged fight has no cast — ' + fight.skip } };
     const m = await page.evaluate(DRAW_PROBE);
     await page.evaluate(UNSTAGE);
-    // graded: the plan's method (hide each registered owner in turn); the direct count is the cross-check
-    const measured = Math.max(0, Math.round(m.unattributedByHidingOwners));
+    // GRADED (W0b fix round 1): the direct per-draw count, the worst whole frame of the window
+    const measured = m.direct.unattributedMax;
     const cap = UNATTRIBUTED_CAP_W0;
+    // the cross-checks must agree within +-1 draw, owner by owner, else the instrument is in doubt -> PENDING, named
+    const TOL = 1;
+    const disagree = [];
+    for (const o of DRAW_OWNERS) {
+      const h = m.owners[o.id];
+      if (!h || !h.roots) continue;
+      const d = m.direct.by[o.id] || 0;
+      if (Math.abs(h.draws - d) > TOL) disagree.push(`${o.id}: hidden ${r1(h.draws)} vs direct ${d}`);
+    }
+    const unDirect = m.direct.by.UNATTRIBUTED || 0;
+    if (Math.abs(m.unattributedByHidingUnregistered - unDirect) > TOL) disagree.push(`unregistered roots: hidden together ${r1(m.unattributedByHidingUnregistered)} vs direct ${unDirect}`);
+    if (Math.abs(m.direct.unattributedMedian - measured) > TOL) disagree.push(`direct per frame: median ${m.direct.unattributedMedian} vs max ${measured} over ${m.direct.frames} frames`);
     const checks = {
       w0CapRecorded: cap !== null,
       notAboveW0Cap: cap === null || measured <= cap,
       ...(fromW2 ? { atMost30FromW2: measured <= W0B_BUDGETS.unattributed.w2Bar } : {}),
     };
-    const pass = cap === null ? null : Object.values(checks).every(Boolean);
+    const crossChecksAgree = disagree.length === 0;
+    const pass = cap === null || !crossChecksAgree ? null : Object.values(checks).every(Boolean);
     return { pass, detail: {
-      verdict: (cap === null ? `PENDING: W0 cap not recorded yet — record ${measured} (this measurement) as UNATTRIBUTED_CAP_W0` : pass ? 'PASS' : 'FAIL: ' + Object.keys(checks).filter((k) => !checks[k]).join(', '))
-        + ` — ${measured} draws/frame from scene children with no registered owner (hide-each-owner method; hiding the unregistered roots directly: ${m.unattributedByHidingUnregistered}; direct per-draw count: ${m.direct.by.UNATTRIBUTED || 0}), `
+      verdict: (cap === null ? `PENDING: W0 cap not recorded yet — record ${measured} (this measurement) as UNATTRIBUTED_CAP_W0`
+        : !crossChecksAgree ? 'PENDING: the hide cross-checks disagree with the direct count by more than ' + TOL + ' draw (' + disagree.join('; ') + '); the direct count (' + measured + ') is not graded on a doubted instrument'
+        : pass ? 'PASS' : 'FAIL: ' + Object.keys(checks).filter((k) => !checks[k]).join(', '))
+        + ` — ${measured} draws/frame from scene children with no registered owner (direct per-draw count, worst of ${m.direct.frames} whole frames, median ${m.direct.unattributedMedian}; cross-checks: unregistered roots hidden together ${r1(m.unattributedByHidingUnregistered)}, hide-each-owner remainder ${r1(m.unattributedByHidingOwners)} (reported only: its error is the sum of every owner's), `
+        + `per-owner hide vs direct within ${TOL}: ${crossChecksAgree ? 'all agree' : disagree.length + ' disagree'}), `
         + `of ${r1(m.total)} total (post chain ${r1(m.postOnly)}); W0 cap ${cap === null ? 'unrecorded' : cap + ' (' + MEMORY_BUDGETS.unattributed.w0Cap.measured + ')'}, W2 bar ${W0B_BUDGETS.unattributed.w2Bar}; wave ${wave}; unregistered roots: ${m.unregisteredRoots.join(', ') || 'none'}`,
-      checks, measured, cap, wave, probe: m, fight,
+      checks, crossChecks: { tolerance: TOL, agree: crossChecksAgree, disagreements: disagree,
+        perOwner: DRAW_OWNERS.map((o) => ({ id: o.id, hidden: m.owners[o.id]?.draws ?? 0, direct: m.direct.by[o.id] || 0, roots: m.owners[o.id]?.roots || 0 })) },
+      measured, cap, wave, probe: m, fight,
       owners: DRAW_OWNERS.map((o) => ({ id: o.id, row: o.row, lanes: o.lanes, pattern: String(o.re) })),
     } };
   });
@@ -863,6 +927,40 @@ function referenceSet({ GATES }) {
 }
 
 /* ------------------------------------------------------------------------------------------------ */
+/* A-perf-scenarios-self-contained (plan §8.3 R34)                                                    */
+/* ------------------------------------------------------------------------------------------------ */
+/**
+ * engine-gpu's gates eval PERF_SCENARIOS with STAGE_PRELUDE ONLY (tools/gates.r5.engine-gpu.mjs: `${GUARD} ${FRAMES}
+ * ${STAGE_PRELUDE}` then `eval(VISTA)` / `eval(FIGHT)`). This row does exactly that in the harness page — a scope
+ * that holds STAGE_PRELUDE and nothing else — and proves that the roster and place helpers are NOT in that scope
+ * (so a pass cannot come from a leaked global), that every scenario stages (an unpin function) or returns a named
+ * R18 / R28 / R30 skip, and that every unpin works.
+ */
+const SELF_CONTAINED = `(async () => {
+  ${STAGE_PRELUDE}
+  const __SC = ${JSON.stringify(PERF_SCENARIOS)};
+  const __probe = ['KIND', 'ROLE_NOTE', 'roleSkip', 'PLACE', 'placeSkip', 'standAt', 'liveOf', 'stageRole'];
+  const __leaked = __probe.filter((n) => { try { eval(n); return true; } catch (e) { return false; } });
+  const __out = {};
+  for (const __k of Object.keys(__SC)) {
+    let __r;
+    try { __r = eval(__SC[__k]); } catch (e) { __out[__k] = { ok: false, error: String((e && e.message) || e).slice(0, 200) }; continue; }
+    if (typeof __r === 'function') {
+      __out[__k] = { ok: true, staged: true, cast: __stage.casts[__k] || null };
+      await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+      try { __r(); } catch (e) { __out[__k].ok = false; __out[__k].unpinError = String((e && e.message) || e).slice(0, 200); }
+    } else if (__r && typeof __r.skip === 'string') __out[__k] = { ok: /^SKIP-(R18|legacy)/.test(__r.skip), skip: __r.skip };
+    else __out[__k] = { ok: false, returned: __r === null ? 'null' : typeof __r };
+  }
+  const __hooksLeft = (__CTX__.engine.onAfterRender || []).length;
+  const ok = __leaked.length === 0 && Object.values(__out).every((x) => x.ok);
+  return { pass: ok, detail: { verdict: (ok ? 'PASS' : 'FAIL') + ': ' + Object.keys(__out).length + ' scenario(s) evaluated in a scope holding STAGE_PRELUDE only — '
+      + Object.entries(__out).map(([k, x]) => k + ' ' + (x.staged ? 'staged' : x.skip ? 'skip (' + x.skip.split(':')[0] + ')' : 'ERROR ' + (x.error || x.unpinError || x.returned))).join(', ')
+      + '; roster / place helpers visible outside __stage: ' + (__leaked.join(', ') || 'none'),
+    scenarios: __out, leakedHelpers: __leaked, placesSource: __stage.placesSource, roles: __stage.KIND, onAfterRenderHooksAfter: __hooksLeft } };
+})()`;
+
+/* ------------------------------------------------------------------------------------------------ */
 /* the rows                                                                                          */
 /* ------------------------------------------------------------------------------------------------ */
 export const GATES = [
@@ -877,8 +975,13 @@ export const GATES = [
     check: (ctx) => referenceSet(ctx),
   },
   {
+    id: 'A-perf-scenarios-self-contained', kind: 'action', lane: LANE, wave: 'W0b', timeout: 120000, settle: 600,
+    title: 'W0b (R34): every PERF_SCENARIOS entry, eval\'d in a page scope holding STAGE_PRELUDE and nothing else (as engine-gpu\'s A-terrain-1024-probe / A-rt-ledger-census / A-rt-ledger do), stages or returns a named R18/R28/R30 skip; no roster or place helper is visible outside __stage; every unpin works',
+    assert: SELF_CONTAINED,
+  },
+  {
     id: 'A-alloc-rate', kind: 'runner', lane: LANE, wave: 'W0b', timeout: 300000,
-    title: 'W0b: CDP sampling heap profiler over 10 s of the staged fight + 10 s of sprint-and-draw: allocation attributed to src/** <= 64 KB/s, no single src function > 4 KB/s, post-GC heap slope <= 0',
+    title: 'W0b: CDP sampling heap profiler over 10 s of the staged fight + 10 s of sprint-and-draw: allocation attributed to src/** (nearest src frame on the stack) <= 64 KB/s, no single src function > 4 KB/s, post-GC heap slope <= 0',
     check: (ctx) => allocRate(ctx),
   },
   {
@@ -893,7 +996,7 @@ export const GATES = [
   },
   {
     id: 'A-unattributed-cap', kind: 'runner', lane: LANE, wave: 'W0b', timeout: 240000,
-    title: 'W0b: staged fight, each registered draw owner hidden in turn: draws from scene children with no registered owner are recorded at W0 (the cap), non-increasing every wave, <= 30 from the W2 exit',
+    title: 'W0b: staged fight: draws from scene children with no registered owner (direct per-draw count; each registered owner hidden in turn as the paired cross-check, within 1 draw) are recorded at W0 (the cap), non-increasing every wave, <= 30 from the W2 exit',
     check: (ctx) => unattributedCap(ctx),
   },
 ];

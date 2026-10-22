@@ -27,7 +27,7 @@
  */
 import { BUDGETS, PERF_SCENARIOS, STAGE_PRELUDE } from './budgets.mjs';
 import { CANON_SPEEDS } from './gate-speeds.mjs';
-import { HERO, ROSTER, staged, stagedSetup } from './gate-roster.mjs';
+import { HERO, ROSTER, FAIL_CARD, staged, stagedSetup } from './gate-roster.mjs';
 import { PLACES, placed, placedSetup } from './gate-places.mjs';
 import { closeSync, existsSync, mkdtempSync, openSync, readFileSync, rmSync } from 'fs';
 import { fileURLToPath } from 'url';
@@ -2315,7 +2315,20 @@ const GATES = [
     // Deterministic recipe: flat meadow, aim held, strafe to HER left for 2.4s,
     // then lock a front camera 6.5m out and freeze so the judge always sees the
     // same mid-step frame. Vegetation is hidden so the feet are visible.
-    setup: placedSetup(['openGround'], `${INPUT_ON}
+    //
+    // R5 W0b fix round 1 (plan §8.3 R33 g: "V13's staging must assert the aim state (player aiming, bow in hand)
+    // before filming, or fail by name"; judge finding: a sealed frame showed her with the bow and lance stowed).
+    // The row now ASSERTS, before the camera lock and again at the freeze: the player is aiming, combat holds the
+    // weapon drawn, the bow is parented under the animator-published left hand (HB('handL'), no bone literal) and
+    // shown (bowVis >= 0.9), the upper-body aim layer is in (animator _aimW >= 0.9), and she is stepping (>= 0.5
+    // m/s). Any miss draws the STAGING FAILED card (gate-roster FAIL_CARD) naming it, which A-carried-suite grades
+    // as a FAIL of the row, and leaves window.__V13_STAGE__. No draw is held: the Round-4 recipe aims (RMB) and
+    // strafes; the criteria grade the bow held up on target, not a drawn string.
+    // Two filming fixes so the frame is the one the recipe describes: the camera lock freezes the aim point where
+    // the strafe left it (the moved lens would otherwise re-aim the bow at the lens's own ray), and the aim zoom
+    // targets the recipe's 24 deg (combat's aim FOV damp pulled the lens back to the weapon's 44 deg every frame,
+    // so the frame was twice as wide as the recipe; measured, W0b fix round 1).
+    setup: placedSetup(['openGround'], `${INPUT_ON}${HERO}${FAIL_CARD}
       (() => {
         const C = __CTX__, p = C.player;
         C.state = 'playing';
@@ -2324,14 +2337,44 @@ const GATES = [
         C.input.mouse.buttons |= 4;
         C.input.keys.add('KeyA');
         const veg = C.scene.getObjectByName('vegetation'); if (veg) veg.visible = false;
+        const handL = HB('handL');
+        const aimState = () => {
+          const cb = C.combat, bow = cb && cb.bow ? cb.bow.group : null;
+          let inLeftHand = false;
+          for (let o = bow ? bow.parent : null; o; o = o.parent) if (o === handL) { inLeftHand = true; break; }
+          const v = p.velocity ? Math.hypot(p.velocity.x, p.velocity.z) : 0;
+          const st = { aiming: !!p.aiming, weaponDrawn: !!(cb && cb.weaponDrawn), bowVis: cb ? +(+cb._bowVis).toFixed(2) : null,
+            bowInLeftHand: inLeftHand, bowVisible: !!(bow && bow.visible), upperBodyAimW: +(+((p.animator && p.animator._aimW) || 0)).toFixed(2),
+            speed: +v.toFixed(2), fov: +C.camera.fov.toFixed(1), timeScale: C.engine.timeScale };
+          const why = [];
+          if (!st.aiming) why.push('the player is not aiming');
+          if (!st.weaponDrawn) why.push('combat does not hold the weapon drawn');
+          if (!handL) why.push('the animator publishes no handL bone');
+          else if (!st.bowInLeftHand) why.push('the bow is not parented under the left hand');
+          if (!(st.bowVis >= 0.9) || !st.bowVisible) why.push('the bow is not shown in hand (bowVis ' + st.bowVis + ')');
+          if (!(st.upperBodyAimW >= 0.9)) why.push('the upper-body aim layer is ' + st.upperBodyAimW + ' (< 0.9)');
+          if (!(st.speed >= 0.5)) why.push('she is not stepping (' + st.speed + ' m/s)');
+          return { ok: why.length === 0, why, st };
+        };
+        const fail = (when, a) => { window.__V13_STAGE__ = { when, ok: false, why: a.why, st: a.st };
+          __failCard('V13-aim-strafe, ' + when + ': ' + a.why.join('; ') + '\\n' + JSON.stringify(a.st)); };
         setTimeout(() => {
+          const a = aimState();
+          if (!a.ok) { fail('before the camera lock', a); return; }
+          try { C.combat._updateAimPoint = function () {}; } catch (e) { /* the aim point stays live */ }
+          try { if (C.combat.activeWeapon) C.combat.activeWeapon.aimFov = 24; } catch (e) { /* the weapon's own zoom */ }
           p._updateCamera = function () {
             const cam = this.ctx.camera;
             cam.position.set(this.position.x, this.position.y + 1.6, this.position.z + 6.5);
             cam.lookAt(this.position.x, this.position.y + 0.85, this.position.z);
           };
           C.camera.fov = 24; C.camera.updateProjectionMatrix();
-          setTimeout(() => { C.engine.timeScale = 0; }, 900);
+          setTimeout(() => {
+            const b = aimState();
+            if (!b.ok) { fail('at the freeze', b); return; }
+            C.engine.timeScale = 0;
+            window.__V13_STAGE__ = { when: 'frozen', ok: true, st: b.st };
+          }, 900);
         }, 2400);
       })();`),
     settle: 4200,
@@ -19916,7 +19959,10 @@ const GATES = [
       ${FREEZE} ${PLACE} ${SIMCLOCK} ${NEWKINDS}
       const ctx = __CTX__, T = ctx.terrain;
       const picks = newFighters().filter(m => m.parts.some(p => p.attached && Number.isFinite(p.tearHp)));
-      if (!picks.length) return noKindsSkip() || { pass: null, detail: 'SKIP: no new kind with a tearable component' };
+      // R5 W0b fix round 1 (judge finding: an unattributed PENDING): the subject is a kind WITH a tearable component;
+      // the W0 roster is the R28 fixture only, which has none, so this is R18's case (no live kind for what the row
+      // stages yet) and says so by name, never PASS
+      if (!picks.length) return noKindsSkip() || { pass: null, detail: 'SKIP-R18: no staged kind has a tearable component (staged kinds: ' + (STAGED_KINDS.join(', ') || 'none') + '; the R28 fixture has none); the first lands with the Instruments lanes from instruments-a W1' };
       const fails = [], report = {};
       for (const m of picks) {
         freezeAll([m]);
@@ -21966,7 +22012,8 @@ const GATES = [
       // R5: the flanker (Round 4 named a species), else any staged kind with parts (R28)
       const withParts = (x) => Array.isArray(x.parts) && x.parts.length;
       const m = (await stageRole('flanker', { filter: withParts })) || stagedPicks(withParts)[0] || null;
-      if (!m) return noKindsSkip() || { pass: null, detail: 'SKIP: no living machine with parts' };
+      // R5 W0b fix round 1 (judge finding: an unattributed PENDING): the R28 fixture has no parts; R18's case, named
+      if (!m) return noKindsSkip() || { pass: null, detail: 'SKIP-R18: no staged kind has named parts (staged kinds: ' + (STAGED_KINDS.join(', ') || 'none') + '; the R28 fixture has none); the first lands with the Instruments lanes from instruments-a W1' };
       if (typeof ctx.sighting?.audit !== 'function') {
         return { pass: null, detail: 'SKIP: focus.audit() missing' };
       }

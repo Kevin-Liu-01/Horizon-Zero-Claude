@@ -90,6 +90,9 @@
  * NOTHING IN THIS FILE MOVES TO MAKE A GATE GREEN.
  */
 
+import { ROSTER } from './gate-roster.mjs';
+import { PLACES } from './gate-places.mjs';
+
 export const BUDGETS = {
   /** Accumulated renderer.info.render.calls for one full frame (all passes). */
   drawCalls: 350,
@@ -144,8 +147,16 @@ export { RT_LEDGER } from './r5-probes/rt-ledger.mjs';
  * for memory (the A-rt-ledger convention).
  */
 export const MEMORY_BUDGETS = Object.freeze({
-  /** A-alloc-rate: steady-state allocation attributed to src/** (sampling heap profiler) */
-  alloc: Object.freeze({ srcKBps: 64, fnKBps: 4, heapSlopeBps: 0, windowS: 10, warmupS: 3, samplingIntervalB: 2048, refFps: 60 }),
+  /**
+   * A-alloc-rate: steady-state allocation attributed to src/** (sampling heap profiler). W0b fix round 1: the
+   * attribution GRADED is the CALLER one — every allocated byte whose stack holds a src/** frame counts against the
+   * NEAREST src/** frame (a `new THREE.Vector3()`, a `.clone()`, an `Array.prototype.push` or a three.js renderer
+   * internal made on src's behalf is src's allocation), for the total and for the per-function bar. No allowance:
+   * the empty-frame renderer floor is measured and REPORTED by the gate (scene hidden, same page); an allowance
+   * for it would be an orchestrator ruling recorded here with its measurement, and none is recorded.
+   */
+  alloc: Object.freeze({ srcKBps: 64, fnKBps: 4, heapSlopeBps: 0, windowS: 10, warmupS: 3, samplingIntervalB: 2048, refFps: 60,
+    attribution: 'caller', emptyFrameS: 5 }),
   /** A-vram-ledger: plan §4.4 — textures <= 160, render targets <= the A-rt-ledger cap 170, geometry <= 120, total <= 450 MB */
   vram: Object.freeze({ texturesB: 160e6, renderTargetsB: 170e6, geometryB: 120e6, totalB: 450e6 }),
   /** A90-abs: post-GC JS heap <= 450 MB, Chrome GPU-process footprint <= 1.5 GB at the staged fight (60 s after the A90 workload) */
@@ -153,10 +164,14 @@ export const MEMORY_BUDGETS = Object.freeze({
   /**
    * A-unattributed-cap: draws from scene children with no registered owner (tools/gates/gates-perf.w0b.mjs
    * DRAW_OWNERS) — the cap is the W0 MEASUREMENT (plan §4.2: "measured at W0, capped <= 30 by W2"); every later
-   * wave must measure <= it, and <= 30 from the W2 exit. Recorded once from the first W0b measurement; the three
-   * methods agreed (hide each owner in turn, hide the unregistered roots, per-draw count): 5 draws, the five
-   * unnamed instanced particle quads of src/combat/particles.js (frozen; named -> registered by whoever holds
-   * its grant). 335 draws in that frame, post chain 22.
+   * wave must measure <= it, and <= 30 from the W2 exit. Recorded once from the first W0b measurement BY THE DIRECT
+   * per-draw count (every renderBufferDirect call of 8 frames bucketed by its scene root): 5 draws, the five unnamed
+   * instanced particle quads of src/combat/particles.js (frozen; named -> registered by whoever holds its grant).
+   * 335 draws in that frame, post chain 22. The two hide methods did NOT agree with it: hide-the-unregistered-roots
+   * read 6, and hide-each-owner read 5 / 3 / 0 on the same build (each owner's hide delta overshot its direct count
+   * by about one draw, so their sum under-counted the remainder; judge finding, W0b fix round 1). The gate grades
+   * the direct count and requires the hide methods, measured as paired with/without readings, to agree with it
+   * within +-1 draw per owner, else PENDING with the disagreement named.
    */
   unattributed: Object.freeze({ w2Bar: 30, w0Cap: Object.freeze({ draws: 5,
     measured: '2026-10-22, gates-perf port 5255, staged fight (8 x herd/Tiller fixture, R18 fallbacks named), tier high, pixel ratio 1.5, 1600x900' }) }),
@@ -173,9 +188,21 @@ export const MEMORY_BUDGETS = Object.freeze({
  * measurement burst, while animation, skinning, the shadow-caster cull and the
  * screen-space cull all keep running at their true cost. It returns an unpin
  * function; every caller must call it.
+ *
+ * SELF-CONTAINED (plan §8.3 R34, W0b fix round 1). engine-gpu's gates (A-terrain-1024-probe, A-rt-ledger-census,
+ * A-rt-ledger) eval PERF_SCENARIOS with STAGE_PRELUDE ALONE, so the prelude now carries its own role and place
+ * resolution: the gate-roster prelude (KIND, ROLE_NOTE, roleSkip) and the gate-places prelude (PLACE, placeSkip,
+ * standAt) are spliced INSIDE the __stage closure and published on it (`__stage.KIND`, `__stage.PLACE(name)`,
+ * `__stage.standAt(p, name)`), and the scenarios read them only from there. Nothing is declared at the caller's top
+ * level except `__stage`, so a gate that also splices ROSTER / PLACES for itself (A21, the W0b rows) does not
+ * collide. Splice it inside an `async` body: it awaits the roster's bounded wait for the deferred Instrument kinds
+ * (<= 25 s) and the places prelude's import of sites.js. Self-test: `A-perf-scenarios-self-contained`
+ * (tools/gates/gates-perf.w0b.mjs) evals every scenario in a scope that holds STAGE_PRELUDE and nothing else.
  */
 export const STAGE_PRELUDE = `
-  const __stage = (() => {
+  const __stage = await (async () => {
+    ${ROSTER}
+    ${PLACES}
     const ctx = __CTX__;
     const machines = () => (ctx.machines?.list || []).filter((m) => m.alive);
     const groundY = (x, z) => {
@@ -233,7 +260,7 @@ export const STAGE_PRELUDE = `
      * R5: turn [[role, n], ...] into a per-role kind plan. A role without a
      * kind borrows, in order, from the roles that have one, and says so.
      * Every role missing -> { skip } carrying the roster's named note.
-     * Needs the gate-roster prelude (KIND, roleSkip) in scope.
+     * KIND, ROLE_NOTE and roleSkip are this closure's own (the roster prelude spliced above, R34).
      */
     const castPlan = (want) => {
       const have = want.map(([r]) => r).filter((r) => KIND[r]);
@@ -264,7 +291,9 @@ export const STAGE_PRELUDE = `
       }
       return out;
     };
-    return { machines, resetAll, pick, place, lookAt, pinAll, groundY, castPlan, fill, casts: {} };
+    return { machines, resetAll, pick, place, lookAt, pinAll, groundY, castPlan, fill, casts: {},
+      // R34: role and place resolution, published so a scenario needs nothing outside STAGE_PRELUDE
+      KIND, ROLE_NOTE, roleSkip, PLACE, placeSkip, standAt, placesSource: PLACES_SOURCE };
   })();
 `;
 
@@ -274,9 +303,10 @@ export const STAGE_PRELUDE = `
  * or, when its cast cannot be staged, to `{ skip: '<SKIP label>: <named note>' }`.
  *
  * ROUND 5 RE-CAST (gates-perf W0a, plan §9 `A21-real-draw-calls`): the cast is
- * by ROLE (`KIND.<role>` from tools/gate-roster.mjs) and the stage by PLACE
- * (`PLACE(name)` / `standAt()` from tools/gate-places.mjs), both spliced into
- * A21's body before these are eval'd. No species, no coordinate.
+ * by ROLE (`__stage.KIND.<role>`, tools/gate-roster.mjs) and the stage by PLACE
+ * (`__stage.PLACE(name)` / `__stage.standAt()`, tools/gate-places.mjs), both
+ * carried by STAGE_PRELUDE itself (R34): eval them in any async scope that holds
+ * STAGE_PRELUDE, nothing else needed. No species, no coordinate.
  *   vista         the spawn vista (gatePlaces.spawnVista), whatever the world has in view
  *   herd          herd x6 + sentry x2 at gatePlaces.herdSite
  *   staged-fight  colossus, heavy, artillery, duelist, sentry, herd, flanker, spotter in a
@@ -291,7 +321,7 @@ export const PERF_SCENARIOS = {
   vista: `(() => {
     __stage.resetAll();
     const p = __CTX__.player;
-    const s = standAt(p, 'spawnVista'); p.camPitch = s.pitch ?? 0.06;
+    const s = __stage.standAt(p, 'spawnVista'); p.camPitch = s.pitch ?? 0.06;
     __stage.casts.vista = { cast: 'world as found', place: s.note || 'spawnVista' };
     return __stage.pinAll();
   })()`,
@@ -303,7 +333,7 @@ export const PERF_SCENARIOS = {
     const plan = __stage.castPlan(want);
     if (plan.skip) return plan;
     __stage.resetAll();
-    const HC = PLACE('herdSite');
+    const HC = __stage.PLACE('herdSite');
     const OFF = [[0, 0], [6.5, 3], [-5, 4.5], [3, -6], [-7.5, -3], [9, -7.5], [-11, 1.5], [12.5, 6]];
     const herd = __stage.fill(plan, HC.x, HC.z);
     herd.forEach((m, i) => {
@@ -331,7 +361,7 @@ export const PERF_SCENARIOS = {
     if (plan.skip) return plan;
     __stage.resetAll();
     const p = __CTX__.player;
-    const s = standAt(p, 'fightGround'); p.camPitch = s.pitch ?? 0.05;
+    const s = __stage.standAt(p, 'fightGround'); p.camPitch = s.pitch ?? 0.05;
     const cast = __stage.fill(plan, p.position.x, p.position.z);
     // camera forward for camYaw: (-sin, -cos) — see player.js _updateCamera
     const fx = -Math.sin(p.camYaw), fz = -Math.cos(p.camYaw);
