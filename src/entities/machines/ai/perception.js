@@ -43,24 +43,25 @@ export class Perception {
     // through the lane seam (`ai/rng.js`) rather than `Math.random`: the tick
     // PHASE decides which sim step a duel's sightline is sampled on, which is
     // enough to change a fight over broken ground (judge-machine-ai-r2-r1 §2).
-    this.acc = aiRandom() * this.cfg.tick;      // stagger the ticks
-    this.scanT = aiRandom() * this.cfg.scanPeriod;
-    this.scanOffset = 0;
+    this.acc = 0.5; this.acc = aiRandom() * this.cfg.tick;      // stagger the ticks
+    this.scanT = 0.5; this.scanT = aiRandom() * this.cfg.scanPeriod;
+    // (double fields stored as 0.5 first: born Double, never generalised mid-session — see machine.js MachineScalars)
+    this.scanOffset = 0.5; this.scanOffset = 0;
     this.visible = false;
-    this.visibleT = 0;          // seconds of continuous sight
-    this.lastSeenAt = -999;
+    this.visibleT = 0.5; this.visibleT = 0;          // seconds of continuous sight
+    this.lastSeenAt = 0.5; this.lastSeenAt = -999;
     this.lastStimulus = null;   // { x, z, kind, t }
     this._stim = { x: 0.5, z: 0.5, kind: null };
     this._tickVisible = false;
     this._tickFill = 0.5;
-    this.hearAcc = 0;
+    this.hearAcc = 0.5; this.hearAcc = 0;
     this._hearPos = new THREE.Vector3();
-    this._hearStrength = 0;
+    this._hearStrength = 0.5; this._hearStrength = 0;
     this._hearKind = null;
     this.omniActive = false;
-    this._losT = 0;
+    this._losT = 0.5; this._losT = 0;
     this._losCached = false;
-    this._scanEmit = 0;
+    this._scanEmit = 0.5; this._scanEmit = 0;
     // the 'machine-scan' payload, ONE per machine and rewritten per emit (listeners read it synchronously
     // and keep nothing: audio's ping is the only one): no object per scan pulse
     this._scanEv = { machine, sweep: 0.5 };
@@ -209,19 +210,20 @@ export class Perception {
     const m = this.m;
     const ms = m.sc;
     const c = this.cfg;
-    const p = HOT.player;                // never through m.ctx (a prototype view: see lib/hot.js)
+    // the player's values from lib/hot.js (copied once per frame): never her own object (see hot.js)
+    const H0 = HOT, pp = H0.ppos;
 
     let visible = false;
     let fill = 0;
     let dist = 999;
 
-    if (p && p.health > 0 && m.alive) {
+    if (H0.pOk === 1 && H0.pHealth > 0 && m.alive) {
       // (the helpers below are written out: a double crossing a call that is not inlined is boxed)
-      const ddx = p.position.x - m.position.x, ddz = p.position.z - m.position.z;
+      const ddx = pp.x - m.position.x, ddz = pp.z - m.position.z;
       dist = Math.sqrt(ddx * ddx + ddz * ddz);
       ms.playerDist = dist;
 
-      const hidden = !!(p.crouching && p.inTallGrass);
+      const hidden = H0.pCrouch === 1 && H0.pTallGrass === 1;
       // _omni(dist)
       let omniW = 0;
       const o = c.omni;
@@ -278,11 +280,11 @@ export class Perception {
           }
         }
         if (omniW > w && !blind) w = omniW;
-        if (w > 0 && this.hasLOS(p.position)) {
+        if (w > 0 && this.hasLOS(pp)) {
           visible = true;
-          const pose = p.crouching ? c.poseCrouch : c.poseStand;
+          const pose = H0.pCrouch === 1 ? c.poseCrouch : c.poseStand;
           const dd = dist / c.d0;
-          const sp = p.moveSpeed ?? 0;                  // _motion(p)
+          const sp = H0.pMoveSpeed;                     // _motion(p)
           const mot = sp < 0.5 ? c.motionStill : sp < 4.2 ? c.motionWalk : c.motionRun;
           fill = (c.gain / (1 + dd * dd)) * w * pose * mot;
           // perk hook `perception.detectMul` (bible §4.7 "Read as true"):
@@ -301,11 +303,10 @@ export class Perception {
     const m = this.m;
     const ms = m.sc;
     const c = this.cfg;
-    const p = HOT.player;
     const visible = this._tickVisible, fill = this._tickFill;
     if (visible) {
       ms.suspicion = Math.min(1.25, ms.suspicion + fill * pd);
-      m.lastKnown.copy(p.position);
+      m.lastKnown.copy(HOT.ppos);          // (her position this frame, lib/hot.js)
       ms._unseenT = 0;
       this.visibleT += pd;
       this.lastSeenAt = ms._stateT;
@@ -442,19 +443,23 @@ export class PerceptionHooks {
 
   /** Every Instrument within the radius searches toward her while the Flag lasts. */
   _applyFlag(raise) {
+    // runs EVERY frame while a Flag lasts: her position from lib/hot.js, the machines' doubles through `m.sc`
+    // (W0b fix round 2: `m._unseenT = Math.min(...)` was a setter call taking a boxed double per machine per frame)
     const f = this.flag;
-    const p = this.ctx.player;
+    const pp = HOT.ppos;
     const src = f.source;
-    const cx = src ? src.position.x : p.position.x;
-    const cz = src ? src.position.z : p.position.z;
+    const cx = src ? src.position.x : pp.x;
+    const cz = src ? src.position.z : pp.z;
     const r2 = this.flagRadius * this.flagRadius;
-    for (const m of this.machines.list) {
+    const list = this.machines.list;
+    for (let i = 0; i < list.length; i++) {
+      const m = list[i];
       if (!m.alive || m._disposed || m.docile) continue;
       const dx = m.position.x - cx, dz = m.position.z - cz;
       if (dx * dx + dz * dz > r2) { if (m.flagMark === f) m.flagMark = null; continue; }
       m.flagMark = f;
-      m.lastKnown.copy(p.position);
-      m._unseenT = Math.min(m._unseenT, 0.001);
+      m.lastKnown.copy(pp);
+      { const sc = m.sc; if (sc._unseenT > 0.001) sc._unseenT = 0.001; }
       if (raise && (m.state === 'patrol' || m.state === 'return' || m.state === 'suspicious')) {
         m.suspicion = Math.max(m.suspicion, m.perceptCfg?.susEnter ?? 0.5);
         m.ai?.beginSearch(true);
@@ -505,12 +510,12 @@ export class PerceptionHooks {
    * once per DUST_TICK).
    */
   _dustSlice(k, fromStart = false) {
-    const p = HOT.player;
-    if (!p) return;
+    if (HOT.pOk !== 1) return;
+    const p = HOT.ppos;
     const list = this.machines.list, n = list.length;
     if (!n) return;
     const calima = this.weather === 'calima';
-    _da.x = p.position.x; _da.y = p.position.y + 1.6; _da.z = p.position.z;   // (no double crosses a call)
+    _da.x = p.x; _da.y = p.y + 1.6; _da.z = p.z;   // (no double crosses a call)
     const c2 = this.calimaClear * this.calimaClear;
     let i = fromStart ? 0 : this._dustCursor;
     for (let j = 0; j < k && j < n; j++, i++) {

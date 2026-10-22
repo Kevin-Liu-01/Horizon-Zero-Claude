@@ -97,10 +97,10 @@ function charge(m, p) {
     cooldown: p.gap ?? 1.6, track: true, needsHit: true, plant: 'windup',
     onWindup: () => { m.aiPose.coil = 1; },
     onStrike: (a) => {
-      const pl = HOT.player;
+      const pl = HOT.pOk === 1 ? HOT.ppos : null;   // her position this frame (lib/hot.js)
       dir.set(Math.sin(m.heading), 0, Math.cos(m.heading));
       if (pl) {
-        dir.set(pl.position.x - m.position.x, 0, pl.position.z - m.position.z);
+        dir.set(pl.x - m.position.x, 0, pl.z - m.position.z);
         if (dir.lengthSq() > 0.01) dir.normalize();
         m.heading = Math.atan2(dir.x, dir.z);
       }
@@ -221,9 +221,9 @@ function flurry(m, p) {
         const side = idx % 2 === 0 ? 1 : -1;
         // run her down: the row is legal out to 10 m but the paws reach 4.6, so
         // a flurry that stood still simply whiffed three times from 8 m
-        const pl = HOT.player;
+        const pl = HOT.pOk === 1 ? HOT.ppos : null;   // her position this frame (lib/hot.js)
         if (p.close && pl) {
-          const dx = pl.position.x - m.position.x, dz = pl.position.z - m.position.z;
+          const dx = pl.x - m.position.x, dz = pl.z - m.position.z;
           const d = Math.sqrt(dx * dx + dz * dz) || 1;   // (Math.hypot is a call: its arguments box)
           const want = reach * 0.7;
           if (d > want) {
@@ -449,7 +449,7 @@ export class AttackPicker {
     this.m = machine;
     this.rows = attackTable(machine.kind);
     /** The picker's clock: the sum of every `tick(dt)` (the hold maps store expiry times on it). */
-    this._now = 0;
+    this._now = 0.5; this._now = 0;   // (born Double: advanced by dt every frame)
     this.cd = new Map();          // row id -> expiry (picker clock); `_held(cd, id)` asks
     this.lastId = null;
     this.streak = 0;

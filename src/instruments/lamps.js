@@ -533,10 +533,12 @@ export class LampSystem {
     this.beamCount = 0;
     /** Gate/debug: draw the frame without the beams (A-lamp-states' paired with/without read). */
     this.hideBeams = false;
-    this.fogK = 1;
-    this.night = 0;
-    this._lastT = -1;
+    // doubles born Double (0.5 first): a field generalised mid-session deoptimises update() (W0b fix round 2)
+    this.fogK = 0.5; this.fogK = 1;
+    this.night = 0.5; this.night = 0;
+    this._lastT = 0.5; this._lastT = -1;
     /** Last-seen output-pass inputs (the per-frame change test, allocation-free in optimized code). */
+    this._pe = 0.5; this._pc = 0.5; this._ps = 0.5; this._pm = 0.5; this._pb = 0.5;
     this._pe = -1; this._pc = -1; this._ps = -1; this._pm = -1; this._pb = -1; this._pt = -1;
     this._sigEvery = 0;
     this._matFrame = -2;
@@ -635,12 +637,13 @@ export class LampSystem {
       machine, anchor,
       radius: opts.radius ?? 0.13,
       phase: ((machine.id ?? this.records.length) * 0.618) % 1,
-      state: 'calm', prev: 'calm', since: 0,
-      aperture: LAMP_STATES.calm.aperture,
+      state: 'calm', prev: 'calm', since: 0.5,
+      aperture: 0.5,                         // (born Double; set just below)
       dir: new THREE.Vector3(0, 0, 1), dirSet: false,
       beamOn: false,
       slot: -1, bslot: -1, bmode: 'lock', bt: 0.5, blen: 30.5,   // written by update(), read by _writeMatrices()
     };
+    rec.aperture = LAMP_STATES.calm.aperture;
     this.records.push(rec);
     machine.lamp = rec;
     return rec;
@@ -809,7 +812,7 @@ export class LampSystem {
     if (f === this._matFrame && f !== -1) return;
     this._matFrame = f;
     const recs = this.records, im = this.lampMesh.instanceMatrix.array, bm = this.beamMesh.instanceMatrix.array;
-    const player = HOT.player;
+    const player = HOT.pOk === 1 ? HOT.ppos : null;   // her position this frame (lib/hot.js)
     let lamps = 0, beams = 0;
     for (let i = 0; i < recs.length; i++) {
       const r = recs[i];
@@ -828,7 +831,7 @@ export class LampSystem {
       const m = r.machine;
       r.anchor.matrixWorld.decompose(_p, _q, _s);
       if (r.bmode === 'lock' && player) {
-        _t.x = player.position.x; _t.y = player.position.y + 1.3; _t.z = player.position.z;
+        _t.x = player.x; _t.y = player.y + 1.3; _t.z = player.z;
       } else if (m.lastKnown) {
         _t.x = m.lastKnown.x; _t.y = (m.lastKnown.y || m.position.y) + 1.0; _t.z = m.lastKnown.z;
       } else {

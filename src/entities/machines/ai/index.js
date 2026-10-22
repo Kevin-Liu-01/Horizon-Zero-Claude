@@ -281,7 +281,7 @@ export class MachineAI {
     this.picker = new AttackPicker(machine);
     this.reactions = new Reactions(machine);
     this.mode = attackMode(machine.kind);
-    this.lureT = 0;
+    this.lureT = 0.5; this.lureT = 0;   // (born Double: see machine.js MachineScalars)
     this.lurePos = new THREE.Vector3();
   }
 
@@ -345,7 +345,7 @@ export class MachineAI {
 
   tick(dt) {
     this.picker.tick(dt);
-    this.lureT = Math.max(0, this.lureT - dt);
+    { const l = this.lureT - dt; this.lureT = l > 0 ? l : 0; }   // (no Math.* call takes a double)
   }
 }
 

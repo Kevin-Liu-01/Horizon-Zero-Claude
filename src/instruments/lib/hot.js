@@ -1,26 +1,30 @@
 /**
- * HOT — the services the machines' per-frame paths read, copied ONCE per frame
- * off the root ctx (instruments-core W0b fix round 2; plan §0 rule 5, the memory
- * rule; gate `A-alloc-machines`).
+ * HOT — the services and player values the machines' per-frame paths read,
+ * copied ONCE per frame off the root ctx (instruments-core W0b fix round 2;
+ * plan §0 rule 5, the memory rule; gate `A-alloc-machines`).
  *
- * WHY NOT `machine.ctx.player`. A machine's `ctx` is a prototype-chained VIEW of
- * the root ctx (`ai/emit.js` `machineCtx`), which makes the root ctx a PROTOTYPE
- * object, and other lanes install and re-assign fields on it after boot. V8
- * treats any change to a prototype object as a change to every prototype chain
- * through it: each one marks EVERY optimised function whose loads go through the
- * view for deoptimisation ("dependent prototype chain changed"), and the code
- * that holds the root ctx itself (perception, the lamp system) takes "wrong
- * map" deopts the same way. A deoptimised per-machine function then runs in
- * V8's interpreter / baseline tiers until it is re-optimised — and there every
- * double is a heap allocation: the W0b judge measured `updateEyesM` at
- * 775–887 KB/s and `Machines._stepMachines` at 443–461 KB/s in such windows,
- * after a 30 s warm-up.
+ * WHY. Optimised code that reads a field of another system's object (the
+ * player, the engine, the terrain ...) depends on that object's SHAPE: when the
+ * object gains a property or a field generalises (the player's `moveSpeed`
+ * going from 0 to 0.37 the first time she is knocked back, her `heading` the
+ * first time she turns, `contact` going from null to an object), V8 throws away
+ * every optimised function that read it ("dependent prototype chain changed",
+ * "wrong map"). Measured on the staged fight (`A-alloc-machines`,
+ * R5_IC_SHAPEWATCH + R5_IC_TRACEDEOPT): such a wave at the first knockback and
+ * another at the first sprint deoptimised this lane's per-machine functions,
+ * which then ran in V8's interpreter / baseline tiers — where every double is a
+ * heap allocation — for up to a whole 10 s window (`updateEyesM` 953 KB/s).
+ * And a machine's `ctx` is a prototype-chained VIEW of the root ctx
+ * (`ai/emit.js` `machineCtx`), so every `machine.ctx.player` load also depended
+ * on the root ctx's shape.
  *
- * So the hot paths never load through ctx. `Machines.update` calls
- * `refreshHot(ctx)` first thing every frame, and the hot paths read `HOT.player`,
- * `HOT.terrain` ...: ONE module object whose shape is fixed here and never
- * changes, and whose fields are re-written only when the root ctx's field
- * actually changed identity (a late-installed `nav`, a new player).
+ * So the per-machine paths never touch another system's object. `Machines.update`
+ * calls `refreshHot(ctx)` first thing every frame: it copies the services
+ * (objects, for the few calls that need them) and the PLAYER VALUES the machines
+ * read (`ppos`, a Vector3 this module owns, `pHealth`, `pCrouch` ...) into ONE
+ * module object whose shape is fixed below and never changes (every double
+ * field is born Double). Only `refreshHot` itself — one call per frame — is
+ * exposed to the other systems' shape changes.
  *
  * `playerX` / `playerZ` are the player's position BOXED once per frame, on the
  * first frame a machine needs them (`playerBoxes()`): frozen APIs take (x, z)
@@ -32,6 +36,8 @@
  * Read-only for everyone but `refreshHot` / `playerBoxes`. Not a contract for
  * other lanes (they keep reading `ctx`).
  */
+import * as THREE from 'three';
+
 export const HOT = {
   root: null,
   player: null,
@@ -46,9 +52,20 @@ export const HOT = {
   boxedFrame: -1,
   playerX: null,
   playerZ: null,
+  /** engine.simTime this frame */
+  simTime: 0.5,
+  /** the player this frame: 1 if there is one */
+  pOk: 0,
+  /** her position (a Vector3 owned here: a stable shape, copied each frame) */
+  ppos: new THREE.Vector3(0.5, 0.5, 0.5),
+  /** her health, ground speed, and the crouch / tall-grass flags (Smi 0/1) */
+  pHealth: 0.5,
+  pMoveSpeed: 0.5,
+  pCrouch: 0,
+  pTallGrass: 0,
 };
 
-/** Once per frame, first thing in `Machines.update`: copy the services off the root ctx. */
+/** Once per frame, first thing in `Machines.update`: copy the services and the player's values off the root ctx. */
 export function refreshHot(ctx) {
   const H = HOT;
   if (H.root !== ctx) H.root = ctx;
@@ -65,6 +82,19 @@ export function refreshHot(ctx) {
   const col = ctx.collision || null;
   if (H.collision !== col) H.collision = col;
   H.frame = (H.frame + 1) & 0x3fffffff;
+  if (e) { const st = e.simTime; if (typeof st === 'number') H.simTime = st; }
+  if (p && p.position) {
+    H.pOk = 1;
+    const pp = p.position, q = H.ppos;
+    q.x = pp.x; q.y = pp.y; q.z = pp.z;
+    const hp = p.health, sp = p.moveSpeed;
+    H.pHealth = typeof hp === 'number' ? hp : 0;
+    H.pMoveSpeed = typeof sp === 'number' ? sp : 0;
+    H.pCrouch = p.crouching ? 1 : 0;
+    H.pTallGrass = p.inTallGrass ? 1 : 0;
+  } else {
+    H.pOk = 0;
+  }
 }
 
 /**
@@ -76,8 +106,7 @@ export function playerBoxes() {
   const H = HOT;
   if (H.boxedFrame === H.frame) return;
   H.boxedFrame = H.frame;
-  const p = H.player;
-  if (!p) { H.playerX = 0; H.playerZ = 0; return; }
-  H.playerX = p.position.x;
-  H.playerZ = p.position.z;
+  const q = H.ppos;
+  H.playerX = q.x;
+  H.playerZ = q.z;
 }

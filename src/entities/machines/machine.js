@@ -266,24 +266,30 @@ export function conformM(m, dt) {
   const t = HOT.terrain;                 // never through m.ctx (a prototype view: see lib/hot.js)
   /* The terrain is sampled only when the root moved since the last sample (a
    * standing machine re-uses it exactly).
-   * W0b FIX ROUND 2: the body sits on the DRAWN ground — `terrain.heightFast`, the published bilinear read
-   * of the render mesh's own grid (terrain.js: "agrees with the DRAWN surface"), which is also what plan
-   * §8.3 binds `getHeight` itself to serve at W1 (bilinear from the baked grid). It is small enough for V8
-   * to inline, so the per-frame sample hands no boxed (x, z) to a call; the analytic `getHeight` is not
-   * (multi-octave noise), and boxing its two arguments for every moving machine every frame was this
-   * function's whole allocation. Off the grid `heightFast` itself falls back to `getHeight`. */
+   * W0b FIX ROUND 2 — the body sits on the DRAWN ground, read through a 1 m lattice:
+   *   - `terrain.heightFast`, the published bilinear read of the render mesh's own grid (terrain.js: "agrees
+   *     with the DRAWN surface"; plan §8.3 binds `getHeight` itself to serve that grid at W1), is sampled
+   *     only at the integer-metre corners of the 1 m cell under the root (`latticeM`), when the root enters a
+   *     new cell — the corners it shares with the last cell are kept — and the height and the ground normal
+   *     are the bilinear patch over those four corners (the analytic gradient of the patch for the normal).
+   *   - integer corners are passed as Smis: a call with them boxes nothing, whatever V8 tier runs this code
+   *     (the analytic `getHeight(x, z)` every frame boxed both doubles for every moving machine, 24 B per
+   *     machine per frame: this function's whole allocation, measured).
+   *   - the patch agrees with `heightFast` to the corner samples; between them, within the curvature of a
+   *     1.94 m mesh cell over 1 m (measured p50 1 cm vs `getHeight` on the play disc). */
   const x = pos.x, z = pos.z;
   if (sc._cgOk === 0 || x !== sc._cgx || z !== sc._cgz) {
-    sc._cgy = t.heightFast(x, z);
-    // the ground NORMAL only steers a tilt eased at 3.5/s: re-sampled every 0.25 m of travel (the terrain
-    // mesh is 1.94 m), not every frame — `getNormal`'s central differences (+-0.75 m), on the same drawn grid
-    const nx = x - sc._cnx, nz = z - sc._cnz;
-    if (m.alignToTerrain && (sc._cgOk === 0 || nx * nx + nz * nz > 0.0625)) {
-      const hL = t.heightFast(x - 0.75, z), hR = t.heightFast(x + 0.75, z);
-      const hD = t.heightFast(x, z - 0.75), hU = t.heightFast(x, z + 0.75);
-      const gx = hL - hR, gz = hD - hU, gl = Math.sqrt(gx * gx + 2.25 + gz * gz);
-      const gN = m._gN; gN.x = gx / gl; gN.y = 1.5 / gl; gN.z = gz / gl;
-      sc._cnx = x; sc._cnz = z;
+    const ni = Math.floor(x) | 0, nj = Math.floor(z) | 0;
+    if (sc._lOk === 0 || ni !== sc._li || nj !== sc._lj) latticeM(m, t, ni, nj);
+    const u = x - ni, v = z - nj;
+    const h00 = sc._h00, h10 = sc._h10, h01 = sc._h01, h11 = sc._h11;
+    const a = h00 + (h10 - h00) * u, b = h01 + (h11 - h01) * u;
+    sc._cgy = a + (b - a) * v;
+    if (m.alignToTerrain) {
+      // the patch's gradient (1 m cells): the ground normal is (-dh/dx, 1, -dh/dz), normalised
+      const gx = (h10 - h00) * (1 - v) + (h11 - h01) * v, gz = b - a;
+      const gl = Math.sqrt(gx * gx + 1 + gz * gz);
+      const gN = m._gN; gN.x = -gx / gl; gN.y = 1 / gl; gN.z = -gz / gl;
     }
     sc._cgx = x; sc._cgz = z; sc._cgOk = 1;
   }
@@ -334,11 +340,52 @@ export function conformM(m, dt) {
   if (dap < 1e-3 && dap > -1e-3 && dap !== 0) sc._accelPitch = sc._speed;
 }
 
+/**
+ * ONE SHAPE FOR EVERY LENS RECORD (W0b fix round 2). `_eyeMats` held object literals of four shapes (and the
+ * frozen shells push a fifth, without `last`), so `updateEyesM`'s loads were polymorphic and its first store of
+ * `last` on a shell record was a map transition mid-session. Every record is now this class, fields in a fixed
+ * order, doubles born Double; a record of any other shape is converted the first time `updateEyesM` meets it.
+ */
+export class EyeRecord {
+  constructor(mat, base, kind, part) {
+    this.mat = mat;
+    this.base = 0.5; this.base = typeof base === 'number' ? base : 1;
+    this.kind = kind;
+    this.last = 0.5; this.last = -1;
+    this.part = part || null;
+  }
+}
+
+/**
+ * The four corner heights of the 1 m lattice cell (ni, nj) under a machine's root (see `conformM`): a corner the
+ * last cell shares is kept, the others are sampled from `terrain.heightFast` at integer metres (Smi arguments:
+ * the call boxes nothing). Each corner is stored straight into its field (no double merges across branches).
+ */
+function latticeM(m, t, ni, nj) {
+  const sc = m.sc;
+  const ok = sc._lOk === 1;
+  const di = ok ? (ni - sc._li) | 0 : 9, dj = ok ? (nj - sc._lj) | 0 : 9;
+  const o00 = sc._h00, o10 = sc._h10, o01 = sc._h01, o11 = sc._h11;
+  // new corner (a, b) at (ni + a, nj + b) is the old corner (a + di, b + dj) when both are 0 or 1
+  if (di === 0 && dj === 0) sc._h00 = o00; else if (di === 1 && dj === 0) sc._h00 = o10;
+  else if (di === 0 && dj === 1) sc._h00 = o01; else if (di === 1 && dj === 1) sc._h00 = o11;
+  else sc._h00 = t.heightFast(ni, nj);
+  if (di === -1 && dj === 0) sc._h10 = o00; else if (di === 0 && dj === 0) sc._h10 = o10;
+  else if (di === -1 && dj === 1) sc._h10 = o01; else if (di === 0 && dj === 1) sc._h10 = o11;
+  else sc._h10 = t.heightFast(ni + 1, nj);
+  if (di === 0 && dj === -1) sc._h01 = o00; else if (di === 1 && dj === -1) sc._h01 = o10;
+  else if (di === 0 && dj === 0) sc._h01 = o01; else if (di === 1 && dj === 0) sc._h01 = o11;
+  else sc._h01 = t.heightFast(ni, nj + 1);
+  if (di === -1 && dj === -1) sc._h11 = o00; else if (di === 0 && dj === -1) sc._h11 = o10;
+  else if (di === -1 && dj === 0) sc._h11 = o01; else if (di === 0 && dj === 0) sc._h11 = o11;
+  else sc._h11 = t.heightFast(ni + 1, nj + 1);
+  sc._li = ni; sc._lj = nj; sc._lOk = 1;
+}
+
 /** `Machine._updateEyes` as a module function (see HOT PATHS, NO PROTOTYPE LOADS). */
 export function updateEyesM(m, dt, t) {
   const sc = m.sc;
-  const E = HOT.engine;                  // never through m.ctx (a prototype view: see lib/hot.js)
-  const tt = E ? E.simTime : t;
+  const tt = HOT.engine !== null ? HOT.simTime : t;   // the engine's sim clock, copied once per frame (lib/hot.js)
   const s = lampStateFor(m);
   if (s !== m._lampState) {
     m._lampPrev = m._lampState || 'calm';
@@ -390,9 +437,10 @@ export function updateEyesM(m, dt, t) {
   sc._ePulse = pulse; sc._eLight = lightK; sc._eN = eyes.length;
 
   for (let i = 0; i < eyes.length; i++) {
-    const e = eyes[i];
+    let e = eyes[i];
+    if (!(e instanceof EyeRecord)) { const o = e; e = eyes[i] = new EyeRecord(o.mat, o.base, o.kind, o.part); }
     if (e.kind === 'sprite' || e.kind === 'basic') {
-      const k = pulse * (e.base ?? 1), c = e.mat.color;
+      const k = pulse * e.base, c = e.mat.color;
       c.r = ec.r * k; c.g = ec.g * k; c.b = ec.b * k;
       // solid eye cores would linger as black balls on a dead machine
       if (e.kind === 'basic') e.mat.opacity = m.state === 'dead' ? 0 : 1;
@@ -527,18 +575,25 @@ export function updateElementalM(m, dt) {
 export const MACHINE_SCALARS = Object.freeze(['heading', '_speed', '_accelPitch', 'strafeK', 'suspicion', '_unseenT', '_stateT', 'playerDist', 'detectFill', 'scanOffset', 'health', 'lampDarkT', 'stunT', 'burnT', '_burnDps', '_flameClock', '_arcClock', 'brittleT', '_frostK', '_iceClock', '_elemHold', '_eyeFlare', '_telegraphT', '_deathT', '_waitT', '_lodAccum', '_lampSince', '_lampPhase', '_alarmCd', '_attackCd']);
 export class MachineScalars {
   constructor() {
+    /* DOUBLE FIELDS ARE BORN DOUBLE (W0b fix round 2). A field first stored as an integer has V8's Smi
+     * representation; its first fractional value then GENERALISES it to Double — a map deprecation that
+     * deoptimises every function that touched this class, mid-session (the first wary pulse, the first
+     * telegraph, the first stun ...). Each double field is therefore stored as 0.5 first, then its value:
+     * the map is final from the constructor on. Flags and counts (`_cgOk`, `_eN`) stay Smi. */
     this._cgOk = 0;     // _conform terrain sample cache: valid?
     this._cgx = 0.5;    //   at x
     this._cgz = 0.5;    //   at z
     this._cgy = 0.5;    //   ground height there
-    this._cnx = 0.5;    //   ...and where the ground normal was last sampled
-    this._cnz = 0.5;
+    this._lOk = 0;      // conformM's 1 m lattice cell: valid?
+    this._li = 0.5; this._li = 0;   //   cell indices (integer metres)
+    this._lj = 0.5; this._lj = 0;
+    this._h00 = 0.5; this._h10 = 0.5; this._h01 = 0.5; this._h11 = 0.5;   //   its corner heights
     this._lkx = 0.5;    // lkBoxes: the lastKnown the boxes below hold
     this._lkz = 0.5;
-    this._ePulse = -1;  // _updateEyes: the pulse, light and lens count last written to the materials
-    this._eLight = -1;
+    this._ePulse = 0.5; this._ePulse = -1;  // _updateEyes: the pulse, light and lens count last written to the materials
+    this._eLight = 0.5; this._eLight = -1;
     this._eN = -1;
-    this._eEmis = -1;   //   ...and the body-strip emissive last written
+    this._eEmis = 0.5; this._eEmis = -1;   //   ...and the body-strip emissive last written
     /*
      * PUBLISHED BOXES for the doubles that frozen files read every frame through
      * the old names (`m.heading` in collision / gait / melee, `m._speed` and
@@ -550,36 +605,36 @@ export class MachineScalars {
     this._pb_speed = null; this._pb_speed = 0; this._pv_speed = 0.5;
     this._pb_accelPitch = null; this._pb_accelPitch = 0; this._pv_accelPitch = 0.5;
     this._pbstrafeK = null; this._pbstrafeK = 0; this._pvstrafeK = 0.5;
-    this.heading = 0;
-    this._speed = 0;
-    this._accelPitch = 0;
-    this.strafeK = 0;
-    this.suspicion = 0;
-    this._unseenT = 99;
-    this._stateT = 0;
-    this.playerDist = 999;
-    this.detectFill = 0;
-    this.scanOffset = 0;
-    this.health = 0;
-    this.lampDarkT = 0;
-    this.stunT = 0;
-    this.burnT = 0;
-    this._burnDps = 0;
-    this._flameClock = 0;
-    this._arcClock = 0;
-    this.brittleT = 0;
-    this._frostK = 0;
-    this._iceClock = 0;
-    this._elemHold = 0;
-    this._eyeFlare = 0;
-    this._telegraphT = 0;
-    this._deathT = 0;
-    this._waitT = 0;
-    this._lodAccum = 0;
-    this._lampSince = 0;
-    this._lampPhase = -1;
-    this._alarmCd = 0;
-    this._attackCd = 0;
+    this.heading = 0.5; this.heading = 0;
+    this._speed = 0.5; this._speed = 0;
+    this._accelPitch = 0.5; this._accelPitch = 0;
+    this.strafeK = 0.5; this.strafeK = 0;
+    this.suspicion = 0.5; this.suspicion = 0;
+    this._unseenT = 0.5; this._unseenT = 99;
+    this._stateT = 0.5; this._stateT = 0;
+    this.playerDist = 0.5; this.playerDist = 999;
+    this.detectFill = 0.5; this.detectFill = 0;
+    this.scanOffset = 0.5; this.scanOffset = 0;
+    this.health = 0.5; this.health = 0;
+    this.lampDarkT = 0.5; this.lampDarkT = 0;
+    this.stunT = 0.5; this.stunT = 0;
+    this.burnT = 0.5; this.burnT = 0;
+    this._burnDps = 0.5; this._burnDps = 0;
+    this._flameClock = 0.5; this._flameClock = 0;
+    this._arcClock = 0.5; this._arcClock = 0;
+    this.brittleT = 0.5; this.brittleT = 0;
+    this._frostK = 0.5; this._frostK = 0;
+    this._iceClock = 0.5; this._iceClock = 0;
+    this._elemHold = 0.5; this._elemHold = 0;
+    this._eyeFlare = 0.5; this._eyeFlare = 0;
+    this._telegraphT = 0.5; this._telegraphT = 0;
+    this._deathT = 0.5; this._deathT = 0;
+    this._waitT = 0.5; this._waitT = 0;
+    this._lodAccum = 0.5; this._lodAccum = 0;
+    this._lampSince = 0.5; this._lampSince = 0;
+    this._lampPhase = 0.5; this._lampPhase = -1;
+    this._alarmCd = 0.5; this._alarmCd = 0;
+    this._attackCd = 0.5; this._attackCd = 0;
   }
 }
 
@@ -994,10 +1049,10 @@ export class Machine {
         // color shows. Body strips keep their map and only pulse intensity.
         const n = (m.name || '').toLowerCase();
         if (!m.emissiveMap) {
-          this._eyeMats.push({ mat: c, base: 1.6, kind: 'emissive', last: -1 });
+          this._eyeMats.push(new EyeRecord(c, 1.6, 'emissive', null));
         } else if (n.includes('lense') || n.includes('lens') || n.includes('light')) {
           c.emissiveMap = null;
-          this._eyeMats.push({ mat: c, base: 2.2, kind: 'emissive', last: -1 });
+          this._eyeMats.push(new EyeRecord(c, 2.2, 'emissive', null));
         } else {
           this._emisMats.push(c);
         }
@@ -1030,7 +1085,7 @@ export class Machine {
     spr.userData.machine = this;
     spr.raycast = () => {}; // glow is FX, not a hitbox (weak hits must hit the model)
     parent.add(spr);
-    this._eyeMats.push({ mat, base: intensity, kind: 'sprite', last: -1 });
+    this._eyeMats.push(new EyeRecord(mat, intensity, 'sprite', null));
     if (core > 0) {
       const cm = new THREE.MeshBasicMaterial({ toneMapped: false, transparent: true });
       const mesh = new THREE.Mesh(_sphereGeo, cm);
@@ -1039,7 +1094,7 @@ export class Machine {
       mesh.userData.machine = this;
       mesh.raycast = () => {};
       parent.add(mesh);
-      this._eyeMats.push({ mat: cm, base: 1, kind: 'basic', last: -1 });
+      this._eyeMats.push(new EyeRecord(cm, 1, 'basic', null));
     }
     return spr;
   }
@@ -1191,7 +1246,7 @@ export class Machine {
           this._partGlows.push({ part, mat: m, sprite: true, base: m.opacity });
         } else if (m.emissive && m.emissive.r + m.emissive.g + m.emissive.b > 0.05) {
           if (m.userData?.sensor) {
-            this._eyeMats.push({ mat: m, base: m.emissiveIntensity, kind: 'emissive', last: -1, part });
+            this._eyeMats.push(new EyeRecord(m, m.emissiveIntensity, 'emissive', part));
           } else {
             this._partGlows.push({ part, mat: m, sprite: false, base: m.emissiveIntensity });
           }
@@ -1997,8 +2052,7 @@ export class Machine {
 
   _stateAlert(dt) {
     const sc = this.sc;
-    const p = HOT.player;
-    const face = this._visible && p ? p.position : this.lastKnown;
+    const face = this._visible && HOT.pOk === 1 ? HOT.ppos : this.lastKnown;   // (her position this frame, lib/hot.js)
     _st.x = face.x; _st.z = face.z;
     faceS(this, dt);
     sc._speed += (0 - sc._speed) * (1 - Math.exp(-6 * dt));
@@ -2026,8 +2080,9 @@ export class Machine {
     const sc = this.sc;
     if (this._attack) { this._updateAttack(dt); return; }
     sc._attackCd -= dt;
-    const p = HOT.player;
-    if (!p) { this.setState('return'); return; }
+    // her position this frame (lib/hot.js): never her own object, whose shape changes deoptimise its readers
+    if (HOT.pOk !== 1) { this.setState('return'); return; }
+    const pp = HOT.ppos;
 
     /**
      * KNIFE-RANGE CONTACT (fix round 1, `A41b-attack-coverage`).
@@ -2048,13 +2103,13 @@ export class Machine {
      * earned), and a machine that has genuinely lost her — stale belief —
      * gets nothing and keeps searching. See PERCEPTION.contactRange notes.
      */
-    const pp = p.position, mp = this.position;
+    const mp = this.position;
     const ddx = pp.x - mp.x, ddz = pp.z - mp.z;
     const distNow = Math.sqrt(ddx * ddx + ddz * ddz);
     const cr = this.perceptCfg.contactRange ?? 0;
     let contact = false;
     if (!this._visible && cr > 0 && distNow <= cr + this.bodyRadius) {
-      const bx = this.lastKnown.x - p.position.x, bz = this.lastKnown.z - p.position.z;
+      const bx = this.lastKnown.x - pp.x, bz = this.lastKnown.z - pp.z;
       const slack = this.perceptCfg.contactSlack ?? 2;
       contact = bx * bx + bz * bz <= slack * slack;
     }
@@ -2071,7 +2126,7 @@ export class Machine {
     if (this._fleeing && typeof this._flee === 'function') { this._flee(dt); return; }
     // a burn-grounded flier flops toward her: pure Critical Hit window
     if (this._downT > 0) {
-      _st.x = p.position.x; _st.z = p.position.z; _st.speed = 1.4;
+      _st.x = pp.x; _st.z = pp.z; _st.speed = 1.4;
       moveTowardS(this, dt);
       return;
     }
@@ -2195,10 +2250,11 @@ export class Machine {
 
   _startAttack(a) {
     const sc = this.sc;
-    a.t = 0;
+    a.t = 0.5; a.t = 0;                  // (born Double: a.t / a.phaseT are written every frame; W0b fix round 2)
     a.struck = false;
     a.phase = 'windup';
     a.hit = false;
+    a.phaseT = 0.5; a.phaseT = 0;
     this._attack = a;
     // canon dodge cue: white-hot eye flash at every attack windup
     sc._telegraphT = TELEGRAPH_T;
@@ -2218,8 +2274,7 @@ export class Machine {
       a.phase = 'windup'; a.phaseT = a.t / w;
       if (a.track !== false) {
         // track the target it can actually see; otherwise commit to lastKnown
-        const p = this._visible ? HOT.player : null;
-        const tgt = p ? p.position : this.lastKnown;
+        const tgt = this._visible && HOT.pOk === 1 ? HOT.ppos : this.lastKnown;
         _st.x = tgt.x; _st.z = tgt.z;
         faceS(this, dt);
       }
