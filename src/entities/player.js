@@ -1198,6 +1198,7 @@ export class Player {
     this._rotPlace = false;
     /** R5: the rotation the ground's last CUT asked for (see `_reliefFloor` below). */
     this._reliefFloor = 0;
+    this._rotCapLast = ROT_MAX;
     this._pitchPrev = 0;
     this._pitchRate = 0;
     /** Deep-look-up dolly (see `DOLLY_HEAD`): fraction of the boom kept (1 = none), and the lens offset it made. */

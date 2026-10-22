@@ -157,9 +157,12 @@ export const UBC_TUNE = {
   // with the shoulder lifted, less retraction keeps the elbow inside the
   // 0.10 m behind-the-skull bar (A-draw-elbow-level) with the forearm in line
   drawRetract: -0.10,
-  // ...and MORE at a steep down aim (Round 4: 0.8), where the elbow has to sit
-  // up-and-back of the hand along the falling arrow (A-draw-elbow-level >= 0.05 m)
-  drawRetractDown: 1.1,
+  // ...and at a steep down aim (Round 4: 0.8; fix round 1: 1.1), where the
+  // elbow has to sit up-and-back of the hand along the falling arrow
+  // (A-draw-elbow-level >= 0.05 m) AND level with the aim frame's shoulder
+  // line: with the hand outside the jaw (fix round 2) 1.1 dropped it to
+  // -0.036..-0.040 there; 0.5 reads -0.009, 0.055 behind the hand (Oct 22 probe)
+  drawRetractDown: 0.5,
   // the string hand's roll at full draw (0..1 of the way to back-of-hand out,
   // palm to the neck): the hooked fingers stand on the vertical string and the
   // ∴ on the back of the right hand faces a side camera (V24)

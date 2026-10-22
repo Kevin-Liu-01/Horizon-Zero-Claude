@@ -3570,11 +3570,6 @@ export class PlayerAnimator {
           this._charOf(b.upArmR.bone, _sg0);
           this._charOf(b.loArmR.bone, _sg1);
           if (_sg1.y > _sg0.y - 0.006) this._rollElbow('r', _sg0.y - 0.006, ew);
-          // ...and BOTH at once where the two frames disagree (a steep down
-          // aim: the character-height cap above dropped the elbow 3.5 cm under
-          // the aim frame's shoulder line, past A-draw-elbow-level's -0.03)
-          this._charOf(b.upArmR.bone, _sg0);
-          this._rollElbowBand('r', ew, _reW, _sg0.dot(_reW) - 0.029, _sg0.y - 0.006, _dA, 0.051);
         } else {
           const ideal = _sg2.y - fore * _v6.y;      // elbow on the arrow line
           const cap = _sg0.y - 0.018;               // never up over the shoulder
@@ -3673,62 +3668,6 @@ export class PlayerAnimator {
    * The roll is undone if it puts a segment (or the fist) inside the skull:
    * form is never worth a bracer through her face.
    */
-  /**
-   * R5: roll a solved arm's elbow (about shoulder -> wrist, wrist fixed) to the
-   * NEAREST cone angle whose height is at least `floorA` along `axA` (unit, char)
-   * and at most `capY` in character height. A scalar scan of 48 angles, no
-   * allocation; it does nothing when the elbow already holds both, or when no
-   * angle on the cone does.
-   */
-  _rollElbowBand(side, w, axA, floorA, capY, dir = null, minBehind = 0) {
-    if (w < 0.02) return;
-    const b = this.b;
-    const upE = side === 'l' ? b.upArmL : b.upArmR;
-    const loE = side === 'l' ? b.loArmL : b.loArmR;
-    const haE = side === 'l' ? b.handL : b.handR;
-    if (!upE || !loE || !haE) return;
-    this._charOf(upE.bone, _sg0); this._charOf(loE.bone, _sg1); this._charOf(haE.bone, _sg2);
-    _reAx.subVectors(_sg2, _sg0);
-    const len = _reAx.length();
-    if (len < 0.08) return;
-    _reAx.divideScalar(len);
-    _reU.subVectors(_sg1, _sg0);
-    const along = _reU.dot(_reAx);
-    _reU.addScaledVector(_reAx, -along);
-    const r = _reU.length();
-    if (r < 0.02) return;
-    _reU.divideScalar(r);
-    _reV.crossVectors(_reAx, _reU);
-    const bA = _sg0.dot(axA) + along * _reAx.dot(axA), uA = r * _reU.dot(axA), vA = r * _reV.dot(axA);
-    const bY = _sg0.y + along * _reAx.y, uY = r * _reU.y, vY = r * _reV.y;
-    // ...and (optionally) at least `minBehind` behind the wrist along `dir`
-    const bD = dir ? _sg2.dot(dir) - _sg0.dot(dir) - along * _reAx.dot(dir) : 1, uD = dir ? -r * _reU.dot(dir) : 0, vD = dir ? -r * _reV.dot(dir) : 0;
-    const ok = (c, sn) => bA + uA * c + vA * sn >= floorA && bY + uY * c + vY * sn <= capY && bD + uD * c + vD * sn >= minBehind;
-    if (ok(1, 0)) return;
-    let th = 0;
-    // the nearest angle on the cone (the IK re-solves every frame, so the
-    // band roll is applied whole, not chased at a rate); none within 1.2 rad
-    // (69 deg of roll) leaves the arm as the IK put it
-    for (let k = 1; k <= 24 && th === 0; k++) {
-      for (let sgn = 1; sgn >= -1; sgn -= 2) {
-        const a = sgn * k * 0.05;
-        if (ok(Math.cos(a), Math.sin(a))) { th = a; break; }
-      }
-    }
-    if (th === 0) return;
-    th *= w;
-    if (Math.abs(th) < 0.004) return;
-    _q3.setFromAxisAngle(_reAx, th);
-    this._rotQL(upE, _q3);
-    this._headFrame();
-    this._charOf(upE.bone, _sg0); this._charOf(loE.bone, _sg1); this._charOf(haE.bone, _sg2);
-    if (this._segInHead(_sg0, _sg1) || this._segInHead(_sg1, _sg2)
-      || this._headUnit(_sg2, _hp1).length() < this.T.handIn) {
-      _q3.setFromAxisAngle(_reAx, -th);
-      this._rotQL(upE, _q3);
-    }
-  }
-
   _rollElbow(side, wantY, w, axis = null) {
     if (w < 0.02) return;
     const ax = axis || Y_AXIS;
