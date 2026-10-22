@@ -224,7 +224,29 @@ TBD:gaps
 
 ## 5. Files changed (this round)
 
-TBD:files
+`git status --short` is empty at the end of the round because the orchestrator's WIP checkpoints (`a2fba7c` 19:29Z,
+`dcd81b7` 19:56Z, `5531dc0` 20:22Z, `4ae6d3f` 21:14Z, `0b62d50` 21:40Z, and any later one) committed the edits as they
+landed. This round's diff is `git diff dcb9e5e -- tools docs/ROUND5-GATES-PERF.md` (7 files, +631 / −502).
+
+### 5.1 Part A (merge first)
+
+| file | change this round |
+|---|---|
+| `tools/gate-roster.mjs` | `ALL_MACHINES_REASONS`; roster helpers `isStaged`, `liveStaged`, `livesStaged`, `liveOfKind`, `stageAny`, `memVictim` (A.1) |
+| `tools/gate-places.mjs` | W0 places `castStage`, `meleeSlope` |
+| `tools/gates.r5.carried.mjs` | R28 re-stages (A90, A90b, A90-expansion, A92, A93, A94, A78, A79, A101, A43, A65, A74b, A77b, A41b, A23b, A103, A106, A64c, `pickMachine`, `docileContract`, the two `SPECIES` preludes, A50b), whole-roster annotations, `ensureKind` deleted; roster-count re-stages (A23b, A75, A45, A46, A48, A45b, A50b), A78b (R17), A23 on the colossus role (R18), A71 staging, A92 staging on `impactGround`, A45c SKIP-legacy (R28); literal coordinates replaced by places (A103, A106, V41, the cast line-up) |
+| `tools/gates.r5.gates-perf.mjs` | A-gate-preludes: machine-pick scan + self-test, declared-pair and hypot-offset coordinate forms + self-test lines; A-carried-suite: `skipR28` + `r28SinceBaseline`; title / rule text |
+| `tools/budgets.mjs` | the scenario `machines()` helper annotated `census` (no behaviour change) |
+
+### 5.2 Part B
+
+| file | change this round |
+|---|---|
+| `tools/gates/gates-perf.w0b.mjs` | A-unattributed-cap: cross-checks on a pinned world (`directCount()` live + pinned, state restored in `finally`); A90-abs workload pick `memVictim` |
+| `docs/ROUND5-GATES-PERF.md` | this report |
+
+No file outside the §2 row and the §1.2 grant was edited; the harness grant files (`gates.mjs`, `screenshot.mjs`,
+`chrome-profile.mjs`) are untouched this round. No asset was added under `public/`, so there is no `LICENSES.json` row.
 
 ## 6. Processes
 
