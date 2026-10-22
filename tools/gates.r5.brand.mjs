@@ -1063,7 +1063,7 @@ const W0B = [
       + 'along the ray through every column of the spark box\'s bottom edge (one per 6 px, at least 9), from the LIVE camera, the terrain '
       + '(marched in 2 m steps over the rendered terrain mesh\'s box) and every other visible mesh in the scene (raycast; the sky dome and the disc excepted) '
       + 'are under the spark: on the press beat (0.3 s, 2.6 s), IN REAL TIME with the menu in every 5 s until the dolly clock passes 105 s (the whole truck), '
-      + 'on the second visit (QUIT TO TITLE) at the press beat, and with the lockup restaged at 2.4x as V-logo-4k films it; the framing chooser reports the spark clear on both visits',
+      + 'on the second visit (QUIT TO TITLE) at the press beat, and with the lockup restaged at 2.4x as V-logo-4k films it; the framing chooser reports the spark clear every time',
     assert: `(async () => {
       const ctx = __CTX__, M = ctx.menus, cam = ctx.camera, scene = ctx.scene, T = ctx.terrain, env = ctx.environment;
       const wait = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -1130,9 +1130,11 @@ const W0B = [
       chooser.push({ visit: 2, ...audit() });
       await wait(300); rows.push(look('visit 2 press 0.3 s'));
       await wait(2300); rows.push(look('visit 2 press 2.6 s'));
-      // V-logo-4k's staging: the lockup at 2.4x over the same framing, the press beat
+      // V-logo-4k's staging: the lockup at 2.4x, re-framed for it without the disc rule (menus._titleReframe({ disc: false })), the press beat
       const L = document.querySelector('#title .cal-logo'), lk = L.style.getPropertyValue('--cal-lk');
       L.style.setProperty('--cal-lk', (92 * 2.4) + 'px');
+      const re = M._titleReframe ? M._titleReframe({ disc: false }) : null;
+      chooser.push({ visit: '2, lockup 2.4x (V-logo-4k staging)', ...(re ? audit() : { why: 'no menus._titleReframe' }) });
       await wait(300); rows.push(look('lockup 2.4x 0.3 s'));
       await wait(2300); rows.push(look('lockup 2.4x 2.6 s'));
       if (lk) L.style.setProperty('--cal-lk', lk); else L.style.removeProperty('--cal-lk');
@@ -1141,7 +1143,7 @@ const W0B = [
         nothingBehindTheSpark: rows.every((r) => r.hits === 0),
         terrainUnderTheSparkEverywhere: rows.every((r) => r.terrainMarginDeg >= 0),
         wholeTruckSampled: menuRows.length >= 15 && Math.max(...menuRows.map((r) => r.dollyT || 0)) > 105,
-        chooserReportsClear: chooser.length === 2 && chooser.every((c) => c.spark && c.spark.measured === true && c.spark.clear === true),
+        chooserReportsClear: chooser.length === 3 && chooser.every((c) => c.spark && c.spark.measured === true && c.spark.clear === true),
       };
       return { pass: Object.values(checks).every(Boolean), detail: {
         failed: Object.keys(checks).filter((k) => !checks[k]), checks,
@@ -1167,10 +1169,11 @@ const W0B = [
   },
   {
     id: 'V-logo-4k', kind: 'visual', lane: 'brand', plain: true, settle: 2600,
-    title: 'The lockup at 2.4x (a 3840x2160-equivalent crop): the same vector construction rendered at 4K pixel density, over the title\'s own framing '
-      + '(A-title-spark-clear checks that nothing stands behind the larger spark in this staging too)',
+    title: 'The lockup at 2.4x (a 3840x2160-equivalent crop): the same vector construction rendered at 4K pixel density; the vista is re-framed '
+      + 'for the lockup as staged (menus._titleReframe({ disc: false }): this shot films the construction, not the disc), so nothing stands behind the larger spark (A-title-spark-clear)',
     setup: `(() => { const L = document.querySelector('#title .cal-logo'); L.style.setProperty('--cal-lk', (92 * 2.4) + 'px');
-      for (const s of ['.mn-title', '#btn-start']) document.querySelectorAll('#title ' + s).forEach((n) => { n.style.visibility = 'hidden'; }); })()`,
+      for (const s of ['.mn-title', '#btn-start']) document.querySelectorAll('#title ' + s).forEach((n) => { n.style.visibility = 'hidden'; });
+      __CTX__.menus._titleReframe({ disc: false }); })()`,
     reference: ['reference/r5/brand/bodoni-manuale-tipografico-1818.jpg', 'reference/r5/brand/os-benchmark-broad-arrow.jpg'],
     criteria: 'The V-logo construction up close. PASS: the spark is whole (ten round-capped rays, none clipped or overlapped), clear of the cap line; '
       + 'the plumb line is a single thin stroke from the cap line to a pointed bob whose tip sits on the baseline; the datum rule is one hairline, '
@@ -1182,7 +1185,8 @@ const W0B = [
     id: 'V38-title', kind: 'visual', lane: 'brand', plain: true, settle: 2200,
     title: 'Title screen after settle (menu in): plan §9 V38-title, criteria verbatim from the plan (shadows the carried V38-title). '
       + 'STAGING NOTE (orchestrator W0b instruction; the criteria are NOT changed by it): the Pans are world-ground W1 and the calima weather world-sky W1, '
-      + 'so this shot is staged over the best available vista (the Round-4 valley) under brand\'s calima stand-in (the CSS wash and the depth-tested coral disc); '
+      + 'so this shot is staged over the best available vista (the Round-4 valley) under brand\'s calima stand-in (the CSS wash and the depth-tested coral disc), '
+      + 'framed so the spark stands in clear sky (A-title-spark-clear; on this valley the chooser takes 15:30 and 8° more tilt); '
       + 'the Pans clause cannot pass before W1',
     setup: `(async () => { ${PRESS} ${UNTIL_MENU} })()`,
     reference: ['reference/r5/brand/calima-dawn-maspalomas.jpg', 'reference/r5/brand/salinas-de-janubio.jpg'],

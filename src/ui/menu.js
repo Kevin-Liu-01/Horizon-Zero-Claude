@@ -175,7 +175,7 @@ const DEG = Math.PI / 180;
  */
 const CALIMA_DISC = {
   dist: 1500, radiusDeg: 12, coreDeg: 1.5, soft: 0.16, clearDeg: 2.3,
-  color: [4.25, 0.023, 0.357],   // fix round 2: x1.15 (the disc stands higher, in the top haze and the vignette; fitted on filmed frames)
+  color: [4.81, 0.026, 0.403],   // fix round 2: x1.3 (the disc stands higher, in the top haze and the vignette; fitted on filmed frames)
   absorb: 0.68, absorbIn: 2, absorbPow: 1.4,     // the broad glow, out to radiusDeg
   corona: 0.26, coronaOutDeg: 3,                 // the tight corona, from the core's edge out to coronaOutDeg
 };
@@ -513,9 +513,9 @@ export class Menus {
    * the hour) and write the bearing line through REST (sx, cz), the view (lx, lz)
    * and the extra tilt into `_titleHead` in place.
    */
-  _titleAim() {
+  _titleAim(opts) {
     const env = this.ctx.environment;
-    const pick = this._titleChooseFrame();
+    const pick = this._titleChooseFrame(opts);
     this._titleHour = pick?.hour ?? TITLE_HOUR;
     if (this._hourHeld != null && typeof env?.setTime === 'function' && env.time !== this._titleHour) env.setTime(this._titleHour);
     const sun = env?.sunDir;
@@ -526,6 +526,20 @@ export class Menus {
     const h = this._titleHead;
     h.sx = Math.sin(pos); h.cz = Math.cos(pos); h.az = pos; h.lx = Math.sin(look); h.lz = Math.cos(look); h.look = look;
     h.tilt = day ? pick.tilt : 0;
+  }
+
+  /**
+   * Re-choose the framing for the lockup as it is laid out NOW, for a gate that
+   * restages the lockup on the press beat: V-logo-4k scales it 2.4x, which no player
+   * layout does, and films the construction, not the disc, so it passes { disc: false }
+   * (the disc's upper-band rule cannot hold beside a lockup that wide). The clock and
+   * the weather stay as `_titleFrame` borrowed them; the hour may move within
+   * TITLE_HOURS. Returns the audit's disc info, or null before a title.
+   */
+  _titleReframe(opts) {
+    if (!this._titleHead) return null;
+    this._titleAim(opts);
+    return this._titleDiscInfo;
   }
 
   /** The chooser's scratch objects, made once and kept until the title is left (no GPU resources). */
@@ -540,16 +554,18 @@ export class Menus {
   }
 
   /**
-   * The chooser. Candidates, in preference order: the hour (TITLE_HOURS), the view
+   * The chooser (`disc: false` only for `_titleReframe`'s construction shot). Candidates, in preference order: the hour (TITLE_HOURS), the view
    * (TITLE_LOOK_OFFSETS) and the bearing (TITLE_POS_OFFSETS whose path keeps the
    * skyline under the disc, best first); each takes the least extra tilt that keeps
    * the spark in clear sky, and the least extra tilt wins (then that order). A
    * candidate must also place the disc in the upper band (`_titleDiscPlaced`) and pass
    * the full spark test at its tilt. None: the Round-4 framing at the first hour, with
-   * the spark reported unclear. Once per title visit; timed in the audit.
+   * the spark reported unclear. Once per title visit; timed in the audit (about 250 ms
+   * for the full search on the Round-4 valley; a later visit with the same layout first
+   * re-checks the last pick, `_titlePickLast`, and keeps it when it still passes).
    * Returns { hour, pos, look, tilt } (offsets in rad from the sun's azimuth), or null at night.
    */
-  _titleChooseFrame() {
+  _titleChooseFrame({ disc = true } = {}) {
     const env = this.ctx.environment, T = this.ctx.terrain, cam = this.ctx.camera;
     const info = { hour: null, posOffset: TITLE_POS_OFFSETS[0], lookOffset: TITLE_LOOK_OFFSET, tiltExtraDeg: 0, clearanceDeg: null, tried: [], ms: 0,
       coreDeg: CALIMA_DISC.coreDeg, edgeDeg: +(CALIMA_DISC.coreDeg * (1 + CALIMA_DISC.soft)).toFixed(3),
@@ -592,13 +608,13 @@ export class Menus {
     /** the full test at a tilt, the disc's placement first (cheap); true = pick it */
     const passes = (c, tilt) => {
       const sun = sunOf(c.hour);
-      if (!this._titleDiscPlaced(sun, c.saz, c.pos, c.look, tilt, spk)) return false;
+      if (!this._titleDiscPlaced(sun, c.saz, c.pos, c.look, tilt, spk) && disc) return false;
       info.spark.verified++;
       return this._titleSparkMargin(c.saz, c.pos, c.look, tilt, spk, need, false) >= need;
     };
     // a later visit with the same layout re-checks the last pick first: pass 1 for its hour
     // (the sky's sun moves with the player) and the full spark test at its tilt
-    const key = [spk.press.x0, spk.press.x1, spk.press.y, spk.menu.y, cam.fov, cam.aspect.toFixed(4)].join('|');
+    const key = [spk.press.x0, spk.press.x1, spk.press.y, spk.menu.y, cam.fov, cam.aspect.toFixed(4), disc].join('|');
     const keep = (pick, tr) => { this._titlePickLast = { key, pick }; return done(pick, tr, true); };
     const last = this._titlePickLast;
     if (last && last.key === key && hours.includes(last.pick.hour)) {
