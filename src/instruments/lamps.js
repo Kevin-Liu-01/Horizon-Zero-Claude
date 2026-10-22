@@ -320,7 +320,12 @@ const BEAM_VERT = /* glsl */`
     vCol = aBeam.rgb;
     vZ = position.z;                       // 0 at the lens, 1 at the far end
     vec4 mv = modelViewMatrix * instanceMatrix * vec4(position, 1.0);
-    vec3 n = normalize(mat3(modelViewMatrix) * mat3(instanceMatrix) * normal);
+    // the instance matrix scales the unit cone NON-uniformly (radius x radius x length): a normal
+    // goes through the inverse scale (R S^-1 n == M (n / s^2)), or a long thin cone's normals all
+    // lean down its axis and the shaft reads as a flat, hard-edged wedge that brightens with length
+    mat3 im = mat3(instanceMatrix);
+    vec3 s2 = vec3(dot(im[0], im[0]), dot(im[1], im[1]), dot(im[2], im[2]));
+    vec3 n = normalize(mat3(modelViewMatrix) * (im * (normal / s2)));
     vec3 v = normalize(-mv.xyz);
     vEdge = abs(dot(n, v));
     gl_Position = projectionMatrix * mv;
