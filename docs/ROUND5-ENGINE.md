@@ -761,7 +761,7 @@ cadence 2 against cadence 1, frame by frame: 3–39 channels of 6.75 M differ, m
 
 | gate | verdict | numbers |
 |---|---|---|
-| `A-gpu-tier-box` + `A-gpu-tier` | **PASS** (judged, final row: `G3`, `G4`, `G7`; §3.3) | vista 11.78 / 12.34 / 12.35 ms ≤ 13; empty 4.75 / 4.80 / 4.32 ms ≤ 7; fps 60.24 / 59.88 / 59.88 ≥ 58; p95 18.7 / 18.9 / 18.6 ≤ 20; null frames 0.16–0.18 ms; instability ≤ 1.32; docs row = live tier |
+| `A-gpu-tier-box` + `A-gpu-tier` | **PASS** (judged, final row: `G3`, `G4`, `G7`; §3.3). Not re-timed in fix round 3: no quiet instant in 92 min, and the code is unchanged | vista 11.78 / 12.34 / 12.35 ms ≤ 13; empty 4.75 / 4.80 / 4.32 ms ≤ 7; fps 60.24 / 59.88 / 59.88 ≥ 58; p95 18.7 / 18.9 / 18.6 ≤ 20; null frames 0.16–0.18 ms; instability ≤ 1.32; docs row = live tier |
 | `A-rt-ledger` | **Merged gate side: PASS on every clause** (fix round 3, `M1`). This tree: PENDING on one clause (`T1`; `F4`, `P2`) | `M1`, gates-perf's committed runner and `budgets.mjs` against this tree's page: RT 127.27 MB ≤ 170 PASS; staged fight 342.46 MB ≤ 450 PASS (R34's role-staged fight: 8 × `tiller`, textures 100.29, geometry 114.90); docs PASS; **`tools/budgets.mjs` record PASS**; levers restored PASS; shipped tier at DPR 1.25 PASS. In this tree `budgets.mjs` has no `RT_LEDGER` yet (gates-perf's file), so that clause reads `null` |
 | `A-vram-ledger` (gates-perf's gate, run as a cross-check) | **PASS** (`M2`) | independent GL census: render targets 127,271,712 B = this ledger, ≤ 170; textures 105.46 MB, geometry 79.52 MB, total 312.25 MB ≤ 450 |
 | `A-rt-ledger-census` (W0a) | **PASS** (`M1`, `T1`; `F3`, `F4`, `P2`) | GL recount 127,271,712 B = ledger, 0 unattributed, 0 mismatches; docs and `RT_LEDGER` match; registration contract and weak hold PASS |
@@ -770,7 +770,7 @@ cadence 2 against cadence 1, frame by frame: 3–39 channels of 6.75 M differ, m
 | `A108-ao-periodicity` | **PASS** (`P1`, `F4`, `P2`) | worst 0.135 (ultra @ 1, control 0.137), 0 fails; witness (`P2`): stock sample 0.240 on the first witness crop, shipped 0.102 (the second crop does not separate, stock 0.127 / shipped 0.124; the gate needs one seeing crop) |
 | `A109-ao-distance-fade` | **PASS** (`P1`, `F4`, `P2`) | high (AO 400 × 225): 4–6 m 0.0682, past 150 m 0, far band 1.000 of GTAO-off; ultra 0.0718, 0, 1.000 |
 | `V33b-no-ao-lattice` | NEEDS-JUDGE | filmed on the final row (`P2`); lane reading in the lane report |
-| `V-gpu-tier-look` | NEEDS-JUDGE | filmed on the final row (`G2`); lane reading in the lane report: crop 4 keeps the crust and the ripples, crop 3 (fix round 1's row) does not |
+| `V-gpu-tier-look` | NEEDS-JUDGE | filmed on the final row (`G2`), re-filmed on the merged gate side in fix round 3 (`M4`). Lane reading in the lane report: crop 4 keeps the crust and the ripples, and crop 3 (fix round 1's row) does not |
 
 Must stay green (`F4`, the split mechanism; only the colour cap's value moved after it): `A20-frame-loop-survives` PASS, `A22b-fov-recompile` PASS, `A56-cascades`
 PASS (near texel 1.38 cm, `shadowMapSize` 2048). Global items present in this tree: A1, A9 (50.9 fps / 18.35 ms in `F4`, 48.0 / 40.98 in `P2`,
