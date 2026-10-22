@@ -102,6 +102,11 @@ export const W0_PLACES = {
   // a station whose camera, looking up at `look`, frames the boundary massif's CREST LINE against
   // open sky across most of the frame width (V7: the skyline must be in frame, not a wall of rock)
   ringSkyline: { x: 0, z: 0, look: { x: 0, z: 330, dy: 105 }, note: 'map centre facing the south massif, crest against sky' },
+  // W0b fix round 2 (literal coordinates the A-gate-preludes scan missed, now names):
+  // open flat ground where a side-on cast line-up stands, framed from 60 m (V26/V27 stageCast, A44c, V26c repairCast)
+  castStage: { x: 0, z: 120, note: 'open flat ground 120 m north of the map centre (cast line-up stage)' },
+  // a ~25 deg grass slope with its uphill heading (A103 melee-on-slope rows: swing uphill / across / downhill)
+  meleeSlope: { x: -264, z: -176, heading: -1.99, note: '25 deg slope west of the river cut; heading = uphill' },
 };
 
 /** Every name a gate may ask for (the gatePlaces contract world-props publishes at W1). */

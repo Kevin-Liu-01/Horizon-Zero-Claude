@@ -546,7 +546,8 @@ const A90_WORKLOAD = (loopS, lifecycleS) => `(async () => {${ROSTER}
   __CTX__.input.enabled = true;
   const t0 = performance.now(); let kills = 0;
   while (performance.now() - t0 < ${loopS * 1000}) {
-    const m = (__CTX__.machines?.list || []).find((x) => x.alive);
+    // W0b fix round 2 (R28 + R34): the carried A90 row's re-staged pick, a STAGED kind's machine (memVictim)
+    const m = await memVictim();
     const killedKind = m ? m.kind : null;
     if (m) { kill(m); kills++; W.kills++; }
     __CTX__.input.keys.add('KeyW'); await new Promise((res) => setTimeout(res, 2500)); __CTX__.input.keys.delete('KeyW');
@@ -658,7 +659,7 @@ const DRAW_PROBE = `(async () => {
    * the first and last frame (partial: the hook is installed and removed between rAF callbacks) are dropped. A root
    * that appears during the probe is attributed by its own name like any other. Deterministic: nothing is hidden.
    */
-  const direct = await (async () => {
+  const directCount = async () => {
     const real = R.renderBufferDirect;
     const perRoot = new Map(); const perFrameUn = new Map(); const perFrameAll = new Map(); const postByFrame = new Map();
     const f0 = e.frames;
@@ -686,14 +687,30 @@ const DRAW_PROBE = `(async () => {
     const by = {};
     for (const x of rows) { const k = x.owner || 'UNATTRIBUTED'; by[k] = Math.round(((by[k] || 0) + x.draws) * 10) / 10; }
     return { frames: f, unattributedPerFrame: unPerFrame, unattributedMax: unPerFrame.length ? Math.max(...unPerFrame) : 0, unattributedMedian: med(unPerFrame),
-      drawsPerFrameMedian: med(allPerFrame), post: Math.round(whole(postByFrame) * 10) / 10, perFrame: Math.round(whole(perFrameAll) * 10) / 10, by, rows, firstFrame: f0 };
-  })();
+      drawsPerFrameMedian: med(allPerFrame), post: Math.round(whole(postByFrame) * 10) / 10, perFrame: Math.round(whole(perFrameAll) * 10) / 10, by, rows, firstFrame: f0,
+      // per owner: the per-frame values, so a reading that varies frame to frame is visible
+      ownerPerFrame: Object.fromEntries([...new Set(rows.map((x) => x.owner || 'UNATTRIBUTED'))].map((k) => [k, keys.map((fk) => {
+        let n = 0; for (const [root, pr] of perRoot) if ((ownerOf(root.name)?.id || 'UNATTRIBUTED') === k && !(k === 'UNATTRIBUTED' && isLightish(root))) n += pr.get(fk) || 0; return n; })])) };
+  };
+  const direct = await directCount();   // GRADED: the live world, the worst whole frame
   /*
-   * CROSS-CHECKS (the plan's "hide each registered owner in turn"), as PAIRED readings: each owner's draws are
-   * (with - without) measured back to back, so a draw that comes or goes between readings (a transient effect)
-   * does not land on whichever owner happens to be measured next. Each owner's hide delta must equal its direct
-   * count within +-1, and the unregistered roots hidden together must equal the direct unattributed count within +-1.
+   * CROSS-CHECKS (the plan's "hide each registered owner in turn"), as PAIRED readings on a PINNED WORLD.
+   * W0b fix round 2 (judge finding: the PASS did not reproduce inside a full suite; the NPC owner's hide delta read 14
+   * against a direct count of 16, because NPC LOD and animation changed the NPC draws between the with and the
+   * without reading). Every reading below is taken with the simulation held: ctx.state is set to a non-live state,
+   * so main.js _simulate() runs no system (no NPC animation or LOD switch, no particle, no AI) while engine.render()
+   * keeps drawing the same world; dynamic resolution is off. The pinned direct count is taken in the same hold, and
+   * each owner's hide delta must equal ITS pinned direct count within +-1 (and the unregistered roots hidden together
+   * the pinned unattributed count). The graded number stays the LIVE direct count above; the pinned unattributed
+   * count must agree with it within +-1 too.
    */
+  const __state0 = ctx.state, __drs0 = e.drsEnabled;
+  ctx.state = 'gate-pinned';
+  try { e.setDynamicResolution?.(false); } catch (err) { /* optional */ }
+  let pinned = null;
+  try {
+  await settle();
+  pinned = await directCount();
   const hidden = {};
   for (const o of OWNERS) {
     const mine = roots.filter((r) => r.owner === o.id && r.obj.visible);
@@ -717,11 +734,16 @@ const DRAW_PROBE = `(async () => {
   await settle();
   const ownedSum = Object.values(hidden).reduce((a, h) => a + h.draws, 0);
   return { total, postOnly, owners: hidden, ownedSum,
-    unattributedByHidingOwners: total - postOnly - ownedSum,
+    unattributedByHidingOwners: pinned.perFrame - postOnly - ownedSum,
     unattributedByHidingUnregistered: withUn - withoutUn,
     unregisteredRoots: [...new Set(un.map((r) => r.label))], lightsNotHidden: roots.filter((r) => r.light).map((r) => r.label),
     rootsByOwner: roots.reduce((a, r) => { const k = r.owner || 'UNREGISTERED'; (a[k] = a[k] || []).push(r.label); return a; }, {}),
-    direct };
+    direct, pinned, pinnedState: { held: ctx.state === 'gate-pinned', framesAdvanced: e.frames - pinned.firstFrame } };
+  } finally {
+    ctx.state = __state0;
+    try { e.setDynamicResolution?.(__drs0); } catch (err) { /* optional */ }
+    for (const r of roots) r.obj.visible = r.visible;
+  }
 })()`;
 
 async function unattributedCap({ PORT }) {
@@ -738,15 +760,18 @@ async function unattributedCap({ PORT }) {
     // the cross-checks must agree within +-1 draw, owner by owner, else the instrument is in doubt -> PENDING, named
     const TOL = 1;
     const disagree = [];
+    // W0b fix round 2: every hide reading is compared with the direct count taken on the SAME pinned world
     for (const o of DRAW_OWNERS) {
       const h = m.owners[o.id];
       if (!h || !h.roots) continue;
-      const d = m.direct.by[o.id] || 0;
-      if (Math.abs(h.draws - d) > TOL) disagree.push(`${o.id}: hidden ${r1(h.draws)} vs direct ${d}`);
+      const d = m.pinned.by[o.id] || 0;
+      if (Math.abs(h.draws - d) > TOL) disagree.push(`${o.id}: hidden ${r1(h.draws)} vs pinned direct ${d}`);
     }
-    const unDirect = m.direct.by.UNATTRIBUTED || 0;
-    if (Math.abs(m.unattributedByHidingUnregistered - unDirect) > TOL) disagree.push(`unregistered roots: hidden together ${r1(m.unattributedByHidingUnregistered)} vs direct ${unDirect}`);
+    const unPinned = m.pinned.by.UNATTRIBUTED || 0;
+    if (Math.abs(m.unattributedByHidingUnregistered - unPinned) > TOL) disagree.push(`unregistered roots: hidden together ${r1(m.unattributedByHidingUnregistered)} vs pinned direct ${unPinned}`);
     if (Math.abs(m.direct.unattributedMedian - measured) > TOL) disagree.push(`direct per frame: median ${m.direct.unattributedMedian} vs max ${measured} over ${m.direct.frames} frames`);
+    if (Math.abs(m.pinned.unattributedMax - measured) > TOL) disagree.push(`pinned unattributed ${m.pinned.unattributedMax} vs live ${measured}`);
+    if (!m.pinnedState.held) disagree.push('the world was not held during the paired readings (ctx.state changed under the probe)');
     const checks = {
       w0CapRecorded: cap !== null,
       notAboveW0Cap: cap === null || measured <= cap,
@@ -762,7 +787,10 @@ async function unattributedCap({ PORT }) {
         + `per-owner hide vs direct within ${TOL}: ${crossChecksAgree ? 'all agree' : disagree.length + ' disagree'}), `
         + `of ${r1(m.total)} total (post chain ${r1(m.postOnly)}); W0 cap ${cap === null ? 'unrecorded' : cap + ' (' + MEMORY_BUDGETS.unattributed.w0Cap.measured + ')'}, W2 bar ${W0B_BUDGETS.unattributed.w2Bar}; wave ${wave}; unregistered roots: ${m.unregisteredRoots.join(', ') || 'none'}`,
       checks, crossChecks: { tolerance: TOL, agree: crossChecksAgree, disagreements: disagree,
-        perOwner: DRAW_OWNERS.map((o) => ({ id: o.id, hidden: m.owners[o.id]?.draws ?? 0, direct: m.direct.by[o.id] || 0, roots: m.owners[o.id]?.roots || 0 })) },
+        perOwner: DRAW_OWNERS.map((o) => ({ id: o.id, hidden: m.owners[o.id]?.draws ?? 0, pinnedDirect: m.pinned.by[o.id] || 0, liveDirect: m.direct.by[o.id] || 0,
+          livePerFrame: m.direct.ownerPerFrame?.[o.id], pinnedPerFrame: m.pinned.ownerPerFrame?.[o.id], roots: m.owners[o.id]?.roots || 0 })),
+        pinnedWorld: { method: 'ctx.state held at a non-live state (main.js _simulate() returns before any system update; engine.render() still draws), dynamic resolution off', ...m.pinnedState,
+          pinnedUnattributedPerFrame: m.pinned.unattributedPerFrame } },
       measured, cap, wave, probe: m, fight,
       owners: DRAW_OWNERS.map((o) => ({ id: o.id, row: o.row, lanes: o.lanes, pattern: String(o.re) })),
     } };

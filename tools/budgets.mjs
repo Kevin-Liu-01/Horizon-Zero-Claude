@@ -204,7 +204,8 @@ export const STAGE_PRELUDE = `
     ${ROSTER}
     ${PLACES}
     const ctx = __CTX__;
-    const machines = () => (ctx.machines?.list || []).filter((m) => m.alive);
+    // every living machine of the WORLD (reset, pin; the scenario casts are role-staged through pick/fill below)
+    const machines = () => (/* r5-all-machines: census */ ctx.machines?.list || []).filter((m) => m.alive);
     const groundY = (x, z) => {
       const y = ctx.terrain?.getHeight?.(x, z);
       return Number.isFinite(y) ? y : 0;

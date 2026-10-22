@@ -17,6 +17,9 @@
  *             named note, never PASS) when a role has no live kind, and runs the
  *             body otherwise with `KIND.<role>` in scope.
  *   stagedSetup()  the same for a `setup` string (a missing role makes it a no-op).
+ *   (W0b fix round 2) isStaged / liveStaged / livesStaged / liveOfKind / stageAny / memVictim: every pick of a
+ *             machine a gate measures or acts on is a STAGED kind's (R28); see ALL_MACHINES_REASONS for the
+ *             only whole-roster uses A-gate-preludes accepts.
  *   HERO      page-context prelude: the protagonist's bones and dyn_ chains read
  *             from the animator (`animator.b.<key>`, `animator.chainOf(cls)`),
  *             so no gate names a rig's bone literal (A-gates-no-hero-literals).
@@ -56,6 +59,22 @@ export const ROLE_PENDING = {
   spotter: { label: 'SKIP-legacy (R28)', until: 'Sonde, instruments-c W3' },
   ambusher: { label: 'SKIP-legacy (R28)', until: 'Dredge, instruments-d W4' },
   support: { label: 'SKIP-R18', until: 'Davit, instruments-c W3' },
+};
+
+/**
+ * W0b fix round 2: the ONLY reasons a re-staged row may touch `ctx.machines.list` without a roster helper
+ * (`liveStaged`, `livesStaged`, `liveOfKind`, `stageAny`, `memVictim`, `stagedPicks`, `liveOf`, `stageRole`) or a
+ * `KIND[...]` / `STAGED_KINDS` filter on the same line. Each use is annotated on its own line as
+ * `/* r5-all-machines: <reason> *\/`; A-gate-preludes rejects any other reason and any unannotated use, and lists
+ * every annotated site so a judge can audit it. None of these selects a machine to measure or act on.
+ */
+export const ALL_MACHINES_REASONS = {
+  freeze: 'stops (or restores) every machine\'s update so nothing interferes; no machine is measured',
+  clear: 'moves every machine out of an area, or picks a spot away from all of them, so none interferes',
+  census: 'reads or counts every live machine as whole-world state (scene nodes, leak attribution, patrol lanes, the frame loop, the save alive-set); no machine is selected as a subject',
+  warm: 'warms a per-machine cache for every machine before the staged subject is measured',
+  mirror: 'a stand-in for a shipped loop of the game that itself visits every machine',
+  cast: 'operates on machines the row already picked through the roster',
 };
 
 let OVERRIDE = null;
@@ -115,6 +134,19 @@ export const ROSTER = `
       /** every live non-legacy kind (R7 / R28: role-staged gates never stage a legacy kind) */
       const STAGED_KINDS = [...new Set(Object.values(KIND).filter(Boolean))];
       const roleOfKind = (k) => Object.keys(KIND).find((r) => KIND[r] === k) || null;
+      /*
+       * W0b fix round 2 (judge finding: rows picked "the first live machine of any kind", R28). Every pick of a
+       * machine a gate MEASURES or ACTS ON goes through these: a staged (role-mapped, non-legacy) kind only.
+       * A-gate-preludes flags any machines.list use in a re-staged row that is neither one of these helpers, a
+       * KIND[...] / STAGED_KINDS filter on the same line, nor annotated as a whole-roster operation.
+       */
+      /** true when m is a living machine of a staged kind (never a legacy kind, R28) */
+      const isStaged = (m) => !!m && m.alive !== false && !m._disposed && STAGED_KINDS.includes(m.kind);
+      /** the first / every living machine of a staged kind passing filter */
+      const liveStaged = (filter) => (__rC.machines?.list || []).find((m) => isStaged(m) && (!filter || filter(m))) || null;
+      const livesStaged = (filter) => (__rC.machines?.list || []).filter((m) => isStaged(m) && (!filter || filter(m)));
+      /** the first living machine of kind k, ONLY when k is a staged kind (null for a legacy kind) */
+      const liveOfKind = (k, filter) => (STAGED_KINDS.includes(k) ? liveStaged((m) => m.kind === k && (!filter || filter(m))) : null);
       /**
        * A kind for a gate whose subject is "any machine" (the A90 family, a respawn):
        * the first role that resolves. Never a legacy kind (R28): with no role
@@ -176,6 +208,28 @@ export const ROSTER = `
         if (m) await new Promise((r) => setTimeout(r, wait));
         return m && m.alive ? m : null;
       };
+      /**
+       * A machine for a gate whose subject is "a machine" (a kill, a hit, a tag, a cast state): a living machine of
+       * a staged kind passing filter, else one spawned for the gate of the first role that resolves (anyKind,
+       * dx/dz from the player). null only when no role resolves (the caller returns noKindsSkip()).
+       */
+      const stageAny = async ({ dx = 18, dz = 18, wait = 700, filter } = {}) => {
+        const m = liveStaged(filter);
+        if (m) return m;
+        const a = anyKind();
+        if (!a.kind) return null;
+        const pp = __rC.player.position;
+        let s = null;
+        try { s = spawnRole(a.role, pp.x + dx, pp.z + dz); } catch (e) { s = null; }
+        if (s) await new Promise((r) => setTimeout(r, wait));
+        return s && isStaged(s) && (!filter || filter(s)) ? s : null;
+      };
+      /**
+       * The A90 family's kill pick (R28 + R34: "the workload respawns the herd role"): a living machine of a staged
+       * kind, else one staged for the loop. The respawn is memRespawnAfter's, so the loop is kill -> respawn of the
+       * first resolving role's kind only; no legacy machine is ever killed by the workload.
+       */
+      const memVictim = (filter) => stageAny({ dx: 30, dz: 30, wait: 400, filter: (m) => !m.docile && (!filter || filter(m)) });
       /** null, or the named SKIP when NO role resolves (an every-kind gate stages Round-5 kinds only, R7/R28). */
       const noKindsSkip = () => STAGED_KINDS.length ? null : { pass: null, detail: 'SKIP-R18: no role resolves to a live non-legacy kind in this tree, and every-kind gates stage Round-5 kinds only (R7, R28): '
         + (__rSrc ? 'ctx.machines.roles maps every role to null' : 'ctx.machines.roles is not published (instruments-core W0a)') };

@@ -60,7 +60,7 @@ import path from 'path';
 import net from 'net';
 import { fileURLToPath, pathToFileURL } from 'url';
 import { W0_PLACES } from './gate-places.mjs';
-import { ROSTER, ROLE_PENDING } from './gate-roster.mjs';
+import { ROSTER, ROLE_PENDING, ALL_MACHINES_REASONS } from './gate-roster.mjs';
 import { GATES as W0B_GATES } from './gates/gates-perf.w0b.mjs';
 
 const TOOLS = path.dirname(fileURLToPath(import.meta.url));
@@ -189,6 +189,8 @@ function oldMapVocabulary() {
     new RegExp(String.raw`\{\s*x\s*:\s*(${NUM})\s*,\s*z\s*:\s*(${NUM})\s*[,}]`, 'g'),
     new RegExp(String.raw`new \w+\(\s*(${NUM})\s*,\s*[^,()]*,\s*(${NUM})\s*\)`, 'g'),
     new RegExp(String.raw`spawn\w*\(\s*['"\x60][^'"\x60]+['"\x60]\s*,\s*(${NUM})\s*,\s*(${NUM})`, 'g'),
+    // W0b fix round 2 (the A103 slope the scan missed): a declared pair, `const SX = -264, SZ = -176`
+    new RegExp(String.raw`\b[\w$]*[xX][\w$]*\s*=\s*(${NUM})\s*,\s*[\w$]*[zZ][\w$]*\s*=\s*(${NUM})\b`, 'g'),
   ];
   const QUAD = String.raw`\[\s*(${NUM})\s*,\s*(${NUM})\s*,\s*(${NUM})\s*,\s*(${NUM})\s*\]`;
   const QUAD_NC = String.raw`\[\s*${NUM}\s*,\s*${NUM}\s*,\s*${NUM}\s*,\s*${NUM}\s*\]`;
@@ -225,10 +227,23 @@ function coordRegexes(x, z) {
 /** literal absolute placements: `x: N, z: N` keys, `.position.set(N, y, N)`, `spawn*(<kind>, N, N`, `px=N&pz=N` */
 const LITERAL_PLACEMENT = [
   new RegExp(String.raw`\bx\s*:\s*(${NUM})\s*,\s*z\s*:\s*(${NUM})\b`),
+  // W0b fix round 2: a declared absolute pair (`const SX = -264, SZ = -176`, `const X0 = -60, Z0 = -45`, `BX = 0, BZ = 120`)
+  new RegExp(String.raw`\b[\w$]*[xX][\w$]*\s*=\s*(${NUM})\s*,\s*[\w$]*[zZ][\w$]*\s*=\s*(${NUM})\b`),
   new RegExp(String.raw`position\.set\(\s*(${NUM})\s*,[^,()]*,\s*(${NUM})\s*\)`),
   new RegExp(String.raw`\.spawn\w*\(\s*[^,()]+,\s*(${NUM})\s*,\s*(${NUM})\s*[,)]`),
   new RegExp(String.raw`px=(${NUM})&pz=(${NUM})`),
 ];
+/**
+ * W0b fix round 2 (A106 measured distance to the openGround spot as `o.position.x + 60, o.position.z + 45`): a vocabulary
+ * pair written as the OFFSETS of a distance, `hypot(o.position.x + 60, o.position.z + 45)` is the distance to the point
+ * (-60, -45). Only pairs of the old-map vocabulary count, and only inside hypot() (an offset placement such as
+ * `p.position.set(fire.x + 80, y, fire.z + 80)` is relative to a live object and names no place).
+ */
+const OFFSET_PAIR = new RegExp(String.raw`hypot\(\s*[^,()]*\.x\s*([+-])\s*(\d+(?:\.\d+)?)\s*,\s*[^,()]*\.z\s*([+-])\s*(\d+(?:\.\d+)?)\s*\)`);
+const offsetPairOf = (l) => {
+  const m = OFFSET_PAIR.exec(l);
+  return m ? { x: (m[1] === '+' ? -1 : 1) * Number(m[2]), z: (m[3] === '+' ? -1 : 1) * Number(m[4]) } : null;
+};
 /** strip comments (keeping line breaks, so hits keep their line numbers) so a sentence ABOUT an old coordinate is not counted as one */
 const stripComments = (s) => String(s).replace(/\/\*[\s\S]*?\*\//g, (m) => m.replace(/[^\n]/g, ' ')).replace(/(^|[^:\\])\/\/[^\n]*/g, '$1 ');
 
@@ -261,6 +276,7 @@ function gatePreludes(GATES) {
   const speciesLiterals = {}, ownedSpeciesWords = {}, coords = {};
   const vocab = oldMapVocabulary();
   const pairs = vocab.pairs;
+  const pairKeys = new Set(pairs.map(({ x, z }) => x + ',' + z));
   for (const f of scan) {
     const text = read(path.join(TOOLS, f));
     const lits = [...text.matchAll(SPECIES_LITERAL_RE)].map((m) => m[0]);
@@ -282,19 +298,27 @@ function gatePreludes(GATES) {
         const m = re.exec(l);
         if (m && Math.max(Math.abs(+m[1]), Math.abs(+m[2])) >= 10) { hits.push(`${f}:${i + 1} (${m[1]}, ${m[2]}) [literal placement]: ${l.trim().slice(0, 90)}`); break; }
       }
+      const o = offsetPairOf(l);
+      if (o && pairKeys.has(o.x + ',' + o.z)) hits.push(`${f}:${i + 1} (${o.x}, ${o.z}) [old-map pair written as distance offsets]: ${l.trim().slice(0, 90)}`);
     });
     if (hits.length) coords[f] = [...new Set(hits)];
   }
   // POSITIVE + NEGATIVE CONTROL: the scanner must see every Round-4 form (the A25b legs the judge
   // found, a set(), a 2-D point, a URL, a spawn) and must not see distance bands or a 3-D probe point
   const lineHit = (l) => pairs.some(({ x, z }) => coordRegexes(x, z).some((re) => re.test(l)))
-    || LITERAL_PLACEMENT.some((re) => { const m = re.exec(l); return !!m && Math.max(Math.abs(+m[1]), Math.abs(+m[2])) >= 10; });
+    || LITERAL_PLACEMENT.some((re) => { const m = re.exec(l); return !!m && Math.max(Math.abs(+m[1]), Math.abs(+m[2])) >= 10; })
+    || (() => { const o = offsetPairOf(l); return !!o && pairKeys.has(o.x + ',' + o.z); })();
   // (built from the W0 table at run time, so this file names no coordinate itself)
   const W = (k) => W0_PLACES[k], [lg0, lg1] = W('navLegs').legs;
   const SHOULD = [`const legs = [[${lg0.join(', ')}], [${lg1.join(', ')}]];`, `p.position.set(${W('rimView').x}, 0, ${W('rimView').z});`,
     `const q = { x: ${W('herdSite').x}, z: ${W('herdSite').z} };`, `params: 'px=${W('waterFeature').x}&pz=${W('waterFeature').z}&yaw=4.7'`,
-    `ctx.machines.spawn(k, ${W('rockShelf').x}, ${W('rockShelf').z});`, `const ends = [[${lg1[2] + 7}, ${lg1[3] + 3}, ${lg1[2]}, ${lg1[3]}]];`];
-  const SHOULD_NOT = ['const BANDS = [[6, 10], [10, 15], [15, 20]];', '{ x: 14.14, y: 1.6, z: -14.14 },', 'for (const band of [10, 20, 30]) {', 'const TOL = [20, 20, 0.12, 0.10];'];
+    `ctx.machines.spawn(k, ${W('rockShelf').x}, ${W('rockShelf').z});`, `const ends = [[${lg1[2] + 7}, ${lg1[3] + 3}, ${lg1[2]}, ${lg1[3]}]];`,
+    // W0b fix round 2: the two forms the scan missed (A103's declared slope pair, A106's offset distance to openGround)
+    `const SX = ${W('meleeSlope').x}, SZ = ${W('meleeSlope').z}, UP = ${W('meleeSlope').heading};`,
+    `if (Math.hypot(o.position.x ${W('openGround').x < 0 ? '+' : '-'} ${Math.abs(W('openGround').x)}, o.position.z ${W('openGround').z < 0 ? '+' : '-'} ${Math.abs(W('openGround').z)}) < 70) {`];
+  const SHOULD_NOT = ['const BANDS = [[6, 10], [10, 15], [15, 20]];', '{ x: 14.14, y: 1.6, z: -14.14 },', 'for (const band of [10, 20, 30]) {', 'const TOL = [20, 20, 0.12, 0.10];',
+    // relative offsets name no place
+    'm = spawn(kind, p.position.x + 14, p.position.z + 14);', 'const dx = 3, dz = 4;', 'p.position.set(fire.x + 80, p.position.y, fire.z + 80);'];
   // and the old-IP scan must see what the judge saw in the Round-4 text (the archived originals)
   let ipControl = null;
   try { ipControl = ['gates.round4.player-melee.mjs', 'gates.round4.progression-expansion.mjs', 'gates.round4.shell-menus.mjs']
@@ -330,7 +354,7 @@ function gatePreludes(GATES) {
   // every carried row that stages by role / place / hero names carries the matching prelude
   const carried = (GATES || []).filter((g) => g.source === 'gates.r5.carried.mjs' || g.lane === 'carried');
   const body = (g) => [g.setup, g.assert].filter((s) => typeof s === 'string').join('\n');
-  const needs = { roster: /\b(KIND\.|stageRole\(|liveOf\(|livesOf\(|stagedPicks\(|STAGED_KINDS|noKindsSkip\(|anyKind\(|spawnRole\()/,
+  const needs = { roster: /\b(KIND\.|stageRole\(|liveOf\(|livesOf\(|stagedPicks\(|STAGED_KINDS|noKindsSkip\(|anyKind\(|spawnRole\(|isStaged\(|liveStaged\(|livesStaged\(|liveOfKind\(|stageAny\(|memVictim\()/,
     places: /\b(PLACE\(|standAt\(|placeSkip\()/, hero: /\b(HBN?\(|chainOf\(|chainLink\(|chainBones\()/ };
   const marker = { roster: '__R5_ROSTER__', places: '__R5_PLACES__', hero: '__R5_HERO__' };
   const unresolved = [], uses = { roster: 0, places: 0, hero: 0 };
@@ -345,6 +369,48 @@ function gatePreludes(GATES) {
     // a species literal compared or spawned is staging by species, whatever the scan above found
     if (SPECIES_STAGING_RE.test(b)) literalStaging.push(g.id);
   }
+  // W0b fix round 2 (judge finding: A92/A93/A94/A78/A79/A90-expansion took "the first live machine of any kind" and
+  // A50b measured every live kind, legacy included, and this scan could not see it): EVERY use of ctx.machines.list in
+  // a re-staged row, and in this lane's own staging sources, must be a roster helper (liveStaged, livesStaged,
+  // liveOfKind, stageAny, memVictim, stagedPicks, liveOf, stageRole: the roster prelude, removed before the scan), a
+  // KIND[...] / STAGED_KINDS filter on the same line, or a whole-roster operation annotated on its own line with one of
+  // the closed reasons of gate-roster ALL_MACHINES_REASONS. Anything else is a pick that can stage a legacy kind (R28).
+  const MLIST = /machines\s*(?:\?\.|\.)\s*list\b|machines\s*&&\s*[\w$.]*machines\s*\.\s*list\b/;
+  const STAGED_FILTER = /STAGED_KINDS|KIND\[|isStaged\(/;
+  const ANNOT = /\/\*\s*r5-all-machines:\s*([a-z-]+)\s*\*\//;
+  const machineUse = { unstagedPicks: [], badReasons: [], filtered: 0, annotated: {}, annotatedSites: new Map() };
+  const scanMachineUse = (text, where) => {
+    const raw = String(text).split(ROSTER).join('\n');
+    const rawLines = raw.split('\n'), lines = stripComments(raw).split('\n');
+    lines.forEach((l, i) => {
+      if (!MLIST.test(l)) return;
+      const a = ANNOT.exec(rawLines[i]);
+      if (a) {
+        if (!ALL_MACHINES_REASONS[a[1]]) { machineUse.badReasons.push(`${where}: unknown reason "${a[1]}": ${l.trim().slice(0, 100)}`); return; }
+        machineUse.annotated[a[1]] = (machineUse.annotated[a[1]] || 0) + 1;
+        const k = a[1] + ' | ' + l.trim().slice(0, 110);
+        if (!machineUse.annotatedSites.has(k)) machineUse.annotatedSites.set(k, new Set());
+        machineUse.annotatedSites.get(k).add(where.split(':')[0]);
+        return;
+      }
+      if (STAGED_FILTER.test(l)) { machineUse.filtered++; return; }
+      machineUse.unstagedPicks.push(`${where}: ${l.trim().slice(0, 120)}`);
+    });
+  };
+  for (const g of carried) scanMachineUse(body(g), g.id);
+  for (const f of ['budgets.mjs', 'gates/gates-perf.w0b.mjs']) scanMachineUse(read(path.join(TOOLS, f)), f);
+  // POSITIVE + NEGATIVE CONTROL for this scan: the W0a re-stage's own A92 pick and A50b list must be flagged; an
+  // annotated freeze, a KIND filter and a roster helper call must not
+  const pickControl = (() => {
+    const before = machineUse.unstagedPicks.length, bad0 = machineUse.badReasons.length, ann0 = { ...machineUse.annotated }, f0 = machineUse.filtered;
+    const sites0 = new Map(machineUse.annotatedSites);
+    scanMachineUse('const fresh = () => C.machines.list.find(x => x.alive !== false && !x._disposed && x.root);\nconst list = (__CTX__.machines?.list || []).filter(m => m.alive);', 'control+');
+    const seen = machineUse.unstagedPicks.length - before;
+    scanMachineUse('for (const m of /* r5-all-machines: freeze */ __CTX__.machines.list) m.update = () => {};\nlet m = (__CTX__.machines?.list || []).find(x => x.alive && x.kind === KIND[r]);\nconst m = await stageAny();', 'control-');
+    const falseHits = machineUse.unstagedPicks.length - before - seen;
+    machineUse.unstagedPicks.length = before; machineUse.badReasons.length = bad0; machineUse.annotated = ann0; machineUse.filtered = f0; machineUse.annotatedSites = sites0;
+    return { positives: 2, seen, negatives: 2, falseHits };
+  })();
   // GRADED (R33 (e), Oct 18): gates-perf's own files and gates.r5.carried.mjs. Every other lane's gate file is
   // scanned the same way and REPORTED with its owning lane (offendersByLane), and is graded at that lane's own
   // exit, because rule 1 means only that lane (or the orchestrator at merge) can clear it.
@@ -368,6 +434,8 @@ function gatePreludes(GATES) {
     diesSetGone: diesPresent.length === 0,
     everyPreludeResolved: unresolved.length === 0,
     noLiteralStagingInCarried: literalStaging.length === 0,
+    noMachinePickWithoutRoster: machineUse.unstagedPicks.length === 0 && machineUse.badReasons.length === 0,
+    machinePickScanSelfTest: pickControl.seen === pickControl.positives && pickControl.falseHits === 0,
     noOldIpTermOrStillInJudgedText: gradedIpText.length === 0,
     noReferenceStillInCarriedCode: ipCode.length === 0,
     carriedLoaded: carried.length > 0,
@@ -391,7 +459,11 @@ function gatePreludes(GATES) {
     referenceStillsKnown: stillRe.stills.length,
     diesInRegistry: diesPresent, diesExpected: dies.length,
     carriedRows: carried.length, preludeUses: uses, unresolvedPreludes: unresolved.slice(0, 12), literalStaging,
-    rule: 'R33 (e): graded over gates-perf\'s own files and gates.r5.carried.mjs; every other tools/gates*.mjs is scanned and reported, graded at its lane\'s exit. A species literal is a quoted string that IS a Round-4 kind id; an old-map coordinate is a W0 table / REST / Round-4 absolute placement or leg pair in code (comments stripped), as a call, array, leg, object or URL; the files gates-perf owns may not even name a kind in prose; no carried or visual row names HZD/HFW/Horizon Zero/Nora/the old hero name or a non-r5 reference still in its title, criteria or reference, and no carried row cites a reference still in its code',
+    machineListUse: { unstagedPicks: machineUse.unstagedPicks.slice(0, 40), unstagedPickCount: machineUse.unstagedPicks.length,
+      unknownReasons: machineUse.badReasons, stagedFilterLines: machineUse.filtered, annotatedByReason: machineUse.annotated,
+      reasons: ALL_MACHINES_REASONS, selfTest: pickControl,
+      annotatedSites: [...machineUse.annotatedSites].map(([k, rows]) => ({ site: k, rows: rows.size, sample: [...rows].slice(0, 4) })) },
+    rule: 'R33 (e): graded over gates-perf\'s own files and gates.r5.carried.mjs; (W0b fix round 2) every machines.list use in a carried row or in budgets.mjs / gates-perf.w0b.mjs is a roster helper (staged kinds only, R28), a KIND[...] / STAGED_KINDS filter on its line, or annotated /* r5-all-machines: <reason> */ with a reason of gate-roster ALL_MACHINES_REASONS; every other tools/gates*.mjs is scanned and reported, graded at its lane\'s exit. A species literal is a quoted string that IS a Round-4 kind id; an old-map coordinate is a W0 table / REST / Round-4 absolute placement or leg pair in code (comments stripped), as a call, array, leg, object or URL; the files gates-perf owns may not even name a kind in prose; no carried or visual row names HZD/HFW/Horizon Zero/Nora/the old hero name or a non-r5 reference still in its title, criteria or reference, and no carried row cites a reference still in its code',
   } };
 }
 
@@ -2026,6 +2098,11 @@ async function carriedSuite({ PORT, GATES: ALL }) {
         if (!measured.length) { row.cls = 'needsQuietBox'; row.note = 'PASSED at baseline; every observation on this build is an attributed PENDING (box not measurable): re-run it on a quiet box — ' + firstBad((c) => c === 'pass'); }
         else if (measured.every((c) => c === 'pass')) { row.cls = 'pass'; if (measured.length < classes.length) row.note = `${classes.length - measured.length} attributed PENDING observation(s) not counted`; }
         else if (classes.every((c) => c === 'skipR30')) { row.cls = 'skipR30'; row.note = 'PASSED at baseline; its subject was deleted at W0a (R30) and it reports SKIP-legacy-deleted until the replacement lands: ' + firstBad((c) => c === 'pass'); }
+        // W0b fix round 2: a row that passed at baseline ON LEGACY CONTENT and, re-staged under R28 ("any gate that would
+        // stage a legacy kind reports SKIP-legacy, never PASS"), now reports SKIP-legacy (R28) in EVERY observation.
+        // Plan §9 lists SKIP-legacy (R28) among the states A-carried-suite accepts; each such row is listed by name
+        // (r28SinceBaseline) with its note, never counted as PASS. A FAIL in any observation is still a regression.
+        else if (classes.every((c) => c === 'skipR28')) { row.cls = 'skipR28'; row.note = 'PASSED at baseline on legacy content; re-staged under R28 it reports SKIP-legacy (R28) until a staged kind can stand in: ' + firstBad((c) => c === 'pass'); }
         else { row.cls = mixedStaging ? 'stagingFlaky' : 'regression'; row.note = 'PASSED at baseline; now ' + classes.join(' / ') + ': ' + firstBad((c) => c === 'pass'); }
       } else if (expect === 'flaky') {
         const win = classes.filter((c) => c !== 'pendingAttributed').slice(0, FLAKY_WINDOW), passes = win.filter((c) => c === 'pass').length, misses = win.length - passes;
@@ -2095,6 +2172,7 @@ async function carriedSuite({ PORT, GATES: ALL }) {
       rows: rows.filter((r) => r.cls === 'skipShadowed').map((r) => ({ id: r.id, observed: r.perRun, ...(r.shot ? { shot: r.shot } : {}) })) },
     knownFlaky: rows.filter((r) => r.expect === 'flaky').map((r) => ({ id: r.id, cls: r.cls, perRun: r.perRun, note: r.note })),
     r30SinceBaseline: rows.filter((r) => r.expect === 'pass' && r.cls === 'skipR30').map((r) => r.id),
+    r28SinceBaseline: rows.filter((r) => r.expect === 'pass' && r.cls === 'skipR28').map((r) => ({ id: r.id, note: String(r.note || '').slice(0, 240) })),
     skipReplaced: rows.filter((r) => r.cls === 'skipReplaced').map((r) => r.id + ' -> ' + r.owner),
     skipped: rows.filter((r) => /^skip(?!Replaced)/.test(r.cls)).map((r) => r.id + ' [' + r.cls + ']'),
     judged: rows.filter((r) => r.judge).map((r) => ({ id: r.id, ...r.judge })),
@@ -2229,7 +2307,7 @@ async function judgeCli() {
 export const GATES = [
   {
     id: 'A-gate-preludes', kind: 'runner', lane: LANE, timeout: 60000,
-    title: 'W0a: 0 Round-4 species literals and 0 old-map coordinates (W0 table, REST, Round-4 placements and legs) in tools/gates*.mjs (+ budgets.mjs); the DIES set is gone; every carried row that stages by role / place / hero bone carries that prelude; no carried or visual row names HZD/HFW/Horizon Zero/Nora/the old hero name or a non-r5 reference still',
+    title: 'W0a: 0 Round-4 species literals and 0 old-map coordinates (W0 table, REST, Round-4 placements and legs; as calls, arrays, objects, URLs, declared pairs or hypot offsets) in tools/gates*.mjs (+ budgets.mjs); the DIES set is gone; every carried row that stages by role / place / hero bone carries that prelude; every machines.list use in a carried row or in this lane\'s staging sources is a roster helper, a KIND/STAGED_KINDS filter or an annotated whole-roster operation (R28); no carried or visual row names HZD/HFW/Horizon Zero/Nora/the old hero name or a non-r5 reference still',
     check: ({ GATES: ALL }) => gatePreludes(ALL),
   },
   {

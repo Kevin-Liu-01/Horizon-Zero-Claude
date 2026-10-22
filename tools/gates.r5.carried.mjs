@@ -125,13 +125,16 @@ const BURST = `
   };
   const median = (a) => { const s = a.slice().sort((x, y) => x - y); return s[Math.floor(s.length / 2)]; };`;
 
-/** Page-context helper: one living machine per species, nearest first. */
+/**
+ * Page-context helper: one living machine per STAGED kind (W0b fix round 2, R7 + R28: a legacy kind is never
+ * measured; Round 4 took one living machine of every kind, legacy included). A staged kind with none standing is
+ * spawned for the gate (stagedPicks). No role resolving -> the named SKIP-R18, never PASS. Splices the roster.
+ */
 const SPECIES = `
+  ${ROSTER}
+  { const __k = noKindsSkip(); if (__k) return __k; }
   const species = new Map();
-  for (const _m of (__CTX__.machines?.list || [])) {
-    if (!_m.alive) continue;
-    if (!species.has(_m.kind)) species.set(_m.kind, _m);
-  }
+  for (const _m of stagedPicks()) species.set(_m.kind, _m);
   const V = __CTX__.player.position.constructor;`;
 
 /**
@@ -205,7 +208,9 @@ const GATES = [
       const a = mem();
       const t0 = performance.now(); let kills = 0;
       while (performance.now() - t0 < 150000) {
-        const m = (__CTX__.machines?.list || []).find(x => x.alive);
+        // W0b fix round 2 (R28 + R34): the victim is a STAGED kind's (memVictim: a living one, else one staged for the
+        // loop); Round 4 killed the first living machine of any kind, i.e. the legacy roster first
+        const m = await memVictim();
         const killedKind = m ? m.kind : null;
         if (m) { kill(m); kills++; W.kills++; }
         __CTX__.input.keys.add('KeyW'); await new Promise(res => setTimeout(res, 2500)); __CTX__.input.keys.delete('KeyW');
@@ -1224,7 +1229,7 @@ const GATES = [
         return { frames: e.frames - f, raf, ms: Math.round(performance.now() - t) };
       };
       const before = g.systemErrors.length;
-      const alive = (ctx.machines?.list || []).filter(m => m.alive);
+      const alive = (/* r5-all-machines: census */ ctx.machines?.list || []).filter(m => m.alive);
       const start = alive.map(m => ({ m, x: m.position.x, z: m.position.z }));
       const f0 = e.frames, s0 = e.simTime;
       const mix0 = ctx.player?.animator?.mixer?.time ?? 0;
@@ -1991,7 +1996,7 @@ const GATES = [
         worstAll = Math.max(worstAll, worst);
         measured++;
       }
-      if (measured < 2) return { pass: null, detail: { note: 'SKIP: fewer than 2 species walked far enough to sample', out } };
+      if (measured < Math.min(2, species.size)) return { pass: null, detail: { note: 'SKIP: fewer than min(2, staged kinds = ' + species.size + ') species walked far enough to sample (R5: the Round-4 count of 2, capped at the staged roster)', out } };
       return { pass: worstAll <= 0.06, detail: { budgetM: 0.06, worstM: worstAll, speciesMeasured: measured, out } };
     })()`,
   },
@@ -2174,7 +2179,7 @@ const GATES = [
         if (ok === false) offenders.push(kind);
         if (ok !== null) measured++;
       }
-      if (measured < 2) return { pass: null, detail: { note: 'SKIP: fewer than 2 species walked far enough to sample', out } };
+      if (measured < Math.min(2, species.size)) return { pass: null, detail: { note: 'SKIP: fewer than min(2, staged kinds = ' + species.size + ') species walked far enough to sample (R5: the Round-4 count of 2, capped at the staged roster)', out } };
       return { pass: offenders.length === 0, detail: { speciesMeasured: measured, offenders,
         rule: 'moving frames only (speed >= 0.5x walkSpeed over sim time; flier takeoff/landing +-1 s excluded); plants = per-foot stance-window counter increments', out } };
     })()`,
@@ -2901,7 +2906,7 @@ const STAGE = `standAt(p, 'openGround');`;
 const RUNWAY = `standAt(p, 'runway'); /* gatePlaces.runway: the open-ground spot facing its flat, fast 50 m bearing */`;
 
 /** Freeze the machine roster: a wandering machine is a different test. */
-const FREEZE = `for (const m of __CTX__.machines.list) m.update = () => {};`;
+const FREEZE = `for (const m of /* r5-all-machines: freeze */ __CTX__.machines.list) m.update = () => {};`;
 
 /**
  * Hide EVERY DOM overlay, not just `#hud`.
@@ -4109,7 +4114,7 @@ const __S_player_control = await (async () => {
 
 
 /** Freeze the machine roster: a wandering machine is a different test (A25). */
-const FREEZE = `const freeze = () => { for (const m of __CTX__.machines.list) m.update = () => {}; };`;
+const FREEZE = `const freeze = () => { for (const m of /* r5-all-machines: freeze */ __CTX__.machines.list) m.update = () => {}; };`;
 
 /** Deterministic flat ground: fixed scan order, first spot under 1.5 deg. */
 const FLAT = `function flatSpot(minR, maxR) {
@@ -6602,7 +6607,7 @@ const __S_player_melee = await (async () => {
 /** Deterministic flat ground the whole suite stages on. */
 const STAGE = `standAt(p, 'openGround'); /* R5: gatePlaces.openGround (was a literal coordinate) */`;
 /** Freeze the roster: a wandering Swarm kind is a different test. */
-const FREEZE = `for (const m of __CTX__.machines.list) m.update = () => {};`;
+const FREEZE = `for (const m of /* r5-all-machines: freeze */ __CTX__.machines.list) m.update = () => {};`;
 /** Hide every DOM overlay (they are siblings of #hud, not children). */
 const NOHUD = `for (const el of Array.from(document.body.children)) {
     if (el.id === 'app' || el.tagName === 'SCRIPT' || el.tagName === 'CANVAS') continue;
@@ -7296,7 +7301,7 @@ const GATES = [
       + 'holstered (real LMB, idle/jog/sprint) lands with the grip at 0.15-0.28, never inside '
       + 'the hand-over; bow and spear never both in hand',
     setup: `__CTX__.input.enabled = true;`,
-    assert: placed(['openGround'], `(async () => {${HERO}
+    assert: placed(['openGround'], `(async () => {${HERO}${ROSTER}
       const C = __CTX__, p = C.player, an = p.animator;
       if (!an?.debugMelee) return { pass: null, detail: 'SKIP: no animator.debugMelee' };
       ${FREEZE} ${STAGE} ${AIMLOCK} ${SWING} ${READY}
@@ -7579,9 +7584,9 @@ const GATES = [
       };
       const bowRows = beats.map((b, i) => bowRow((i < 3 ? 'light-' + (i + 1) : 'heavy') + ' (no threat)', b.samples));
       {
-        const list = C.machines?.list || [];
-        const mt = list.find((x) => x.alive && x.root);
-        if (!mt) bowBad.push('threat row: no machine to set alert');
+        // W0b fix round 2 (R28): the threat is a STAGED kind's machine (stageAny), never the first living one of any kind
+        const mt = await stageAny({ filter: (x) => !!x.root });
+        if (!mt) bowBad.push('threat row: no staged machine to set alert (' + (noKindsSkip()?.detail || 'the staged kind could not be spawned') + ')');
         else {
           const sx = mt.position.x, sz = mt.position.z, st0 = mt.state;
           const h = p.heading ?? 0;
@@ -7708,7 +7713,7 @@ const GATES = [
       if (!an?.debugMelee) return { pass: null, detail: 'SKIP: no animator.debugMelee' };
       ${FREEZE} ${STAGE} ${AIMLOCK} ${SWING} ${READY}
       // open ground: a step-in that runs into a machine measures the machine
-      for (const m of (C.machines?.list || [])) {
+      for (const m of (/* r5-all-machines: clear */ C.machines?.list || [])) {
         if (m.alive && Math.hypot(m.position.x - p.position.x, m.position.z - p.position.z) < 6) {
           m.position.x += 40;
           if (m.root) m.root.position.x = m.position.x;
@@ -8169,7 +8174,7 @@ const GATES = [
       + 'EVERY staged kind (R7; grounded fliers included), and on a 25 deg slope the blade '
       + 'stays out of the ground',
     setup: `__CTX__.input.enabled = true;`,
-    assert: staged([], placed(['openGround'], `(async () => {
+    assert: staged([], placed(['openGround', 'meleeSlope'], `(async () => {
       const C = __CTX__, p = C.player, an = p.animator;
       if (!an?.debugMelee) return { pass: null, detail: 'SKIP: no animator.debugMelee' };
       ${FREEZE} ${STAGE} ${AIMLOCK} ${SWING} ${READY} ${PLACE}
@@ -8491,10 +8496,9 @@ const GATES = [
        * cannot be reached from where the term lets her stand fails BY NAME. */
       const speciesRows = [], speciesSum = {};
       {
-        const list = C.machines?.list || [];
         const kinds = [...STAGED_KINDS].sort();   // R7 + R28: every non-legacy kind, never a legacy one
         const getKind = (kind) => {
-          let mm = list.find((x) => x.alive && x.kind === kind);
+          let mm = liveOfKind(kind);   // W0b fix round 2: a staged kind's machine only (R28)
           if (!mm && C.machines.spawn) { try { mm = C.machines.spawn(kind, p.position.x + 60, p.position.z + 40); } catch { mm = null; } }
           return mm && mm.kind === kind ? mm : null;
         };
@@ -8533,7 +8537,7 @@ const GATES = [
           }
           return best === Infinity ? null : +best.toFixed(3);
         };
-        for (const other of list) {
+        for (const other of /* r5-all-machines: clear */ C.machines.list) {
           if (other.alive && Math.hypot(other.position.x - p.position.x, other.position.z - p.position.z) < 60) {
             other.position.x += 250; if (other.root) other.root.position.x = other.position.x;
           }
@@ -8637,14 +8641,13 @@ const GATES = [
        *     her, and the same input again — which MUST land, tip <= 0.15. */
       const realRows = [];
       {
-        const list = C.machines?.list || [];
         const M = C.combat.melee;
         const prevState = C.state;
         C.state = 'playing';
         M.aimLock = 0;
         const fr = () => new Promise((r) => requestAnimationFrame(r));
         const gk = (kind) => {
-          let mm = list.find((x) => x.alive && x.kind === kind);
+          let mm = liveOfKind(kind);   // W0b fix round 2: a staged kind's machine only (R28)
           if (!mm && C.machines.spawn) { try { mm = C.machines.spawn(kind, p.position.x + 60, p.position.z + 40); } catch { mm = null; } }
           return mm && mm.kind === kind ? mm : null;
         };
@@ -8685,7 +8688,7 @@ const GATES = [
           C.events.off?.('melee-hit', onHit);
           return { hit, swung: seen, heavy };
         };
-        for (const other of list) {
+        for (const other of /* r5-all-machines: clear */ C.machines.list) {
           if (other.alive && Math.hypot(other.position.x - p.position.x, other.position.z - p.position.z) < 70) {
             other.position.x += 250; if (other.root) other.root.position.x = other.position.x;
           }
@@ -8751,7 +8754,7 @@ const GATES = [
       }
 
       /* ---- ROUND 6, RULING R9 (S5): THE BLADE STAYS OUT OF THE GROUND ----
-       * The r5 skeptic's 25 deg slope (x -264, z -176, uphill heading -1.99):
+       * The r5 skeptic's 25 deg slope (gatePlaces.meleeSlope, with its uphill heading):
        * swung uphill, the light-1's tip went 0.16 m and the heavy's 0.57 m
        * into the terrain. Uphill, across and downhill, a light-1 and a heavy
        * each, no machine: the blade tip above the terrain under it at contact
@@ -8759,8 +8762,11 @@ const GATES = [
       const slopeRows = [];
       {
         const T = C.terrain;
-        const SX = -264, SZ = -176, UP = -1.99;
-        const list = C.machines?.list || [];
+        // W0b fix round 2: the slope is a NAMED place (gatePlaces.meleeSlope; the W0 table holds the Round-4 spot),
+        // never a literal coordinate; placed() above guarantees it resolves
+        const __sl = PLACE('meleeSlope');
+        const SX = __sl.x, SZ = __sl.z, UP = __sl.heading;
+        const list = /* r5-all-machines: clear */ C.machines?.list || [];
         for (const o of list) {
           if (o.alive && Math.hypot(o.position.x - SX, o.position.z - SZ) < 70) { o.position.x += 250; if (o.root) o.root.position.x = o.position.x; }
         }
@@ -9098,7 +9104,7 @@ const GATES = [
        * runway the reset now keeps her out of anyway). */
       const toStart = () => {
         standAt(p, 'runway');   // R5: gatePlaces.runway (the open-ground spot facing its flat bearing)
-        for (const m of (C.machines?.list || [])) {
+        for (const m of (/* r5-all-machines: clear */ C.machines?.list || [])) {
           if (m.alive && Math.hypot(m.position.x - p.position.x, m.position.z - p.position.z) < 45) {
             m.position.x += 100;
             if (m.root) m.root.position.x = m.position.x;
@@ -9585,7 +9591,7 @@ const GATES = [
       const C = __CTX__, p = C.player, an = p.animator;
       const M = C.combat?.melee;
       if (!M || typeof M.drawSpear !== 'function') return { pass: null, detail: 'SKIP: no melee' };
-      if (!C.machines?.list?.length) return { pass: null, detail: 'SKIP: no machines' };
+      if (!/* r5-all-machines: census */ C.machines?.list?.length) return { pass: null, detail: 'SKIP: no machines' };
       { const __k = noKindsSkip(); if (__k) return __k; }
       ${FREEZE} ${AIMLOCK} ${FRAME}
       /* WHY THIS GATE EXISTS, AND WHY IT IS THE MELEE LANE'S AND NOT A25'S.
@@ -9604,13 +9610,13 @@ const GATES = [
        * the same walk with the spear on her back, the treatment is the walk
        * that fires the term, and the term has to be LIVE (approachFrames > 0)
        * or the row proves nothing. */
-      const list = C.machines.list;
+      const list = /* r5-all-machines: clear */ C.machines.list;   // only the clear-the-ground loops below use it
       const rows = [], bad = [];
       // R5: the sentry and herd roles (Round 4 named two species); a role with no kind is skipped by name
       const kinds = [...new Set([KIND.sentry, KIND.herd].filter(Boolean))];
       const run = async (kind, drawn) => {
         standAt(p, 'openGround');
-        let m = list.find((x) => x.alive && x.kind === kind);
+        let m = liveOfKind(kind);   // W0b fix round 2: a staged kind's machine only (R28)
         if (!m) { try { m = C.machines.spawn(kind, p.position.x + 40, p.position.z + 30); } catch (e) { m = null; } }
         if (!m) return null;
         // every OTHER machine out of the way: one machine, one measurement
@@ -9700,7 +9706,7 @@ const GATES = [
       const reachRows = [];
       const reach = async (kind, K) => {
         standAt(p, 'openGround');
-        let m = list.find((x) => x.alive && x.kind === kind);
+        let m = liveOfKind(kind);   // W0b fix round 2: a staged kind's machine only (R28)
         if (!m && C.machines.spawn) {
           try { m = C.machines.spawn(kind, p.position.x + 40, p.position.z); } catch { m = null; }
         }
@@ -9812,7 +9818,7 @@ const GATES = [
         return res;
       };
       const getKind = (kind) => {
-        let m = list.find((x) => x.alive && x.kind === kind);
+        let m = liveOfKind(kind);   // W0b fix round 2: a staged kind's machine only (R28)
         if (!m && C.machines.spawn) {
           try { m = C.machines.spawn(kind, p.position.x + 40, p.position.z + 30); } catch { m = null; }
         }
@@ -9826,9 +9832,10 @@ const GATES = [
         standAt(p, 'openGround');
         p.heading = 0; p._faceX = 0; p._faceZ = 1; p._candX = 0; p._candZ = 1; p._latchT = 0;
         if (p.model) p.model.rotation.y = 0;
+        const __og = PLACE('openGround');   // W0b fix round 2: was the openGround coordinate written as a literal offset
         for (const o of list) {
           if (o === m || !o.alive) continue;
-          if (Math.hypot(o.position.x + 60, o.position.z + 45) < 70) {
+          if (Math.hypot(o.position.x - __og.x, o.position.z - __og.z) < 70) {
             o.position.x += 150; if (o.root) o.root.position.x = o.position.x;
           }
         }
@@ -10969,7 +10976,7 @@ const GATES = [
       const h0 = p.heading;
       const jogTo = async (setupFn) => {
         standAt(p, 'runway');   // R5: gatePlaces.runway (the open-ground spot facing its flat bearing)
-        for (const m of (C.machines?.list || [])) {
+        for (const m of (/* r5-all-machines: clear */ C.machines?.list || [])) {
           if (m.alive && Math.hypot(m.position.x - p.position.x, m.position.z - p.position.z) < 45) {
             m.position.x += 100;
             if (m.root) m.root.position.x = m.position.x;
@@ -13016,7 +13023,7 @@ function installMemInstrument() {
   /* ---------- the reachability sweep ---------- */
   function liveMachineRoots() {
     var s = new Set();
-    var list = (C.machines && C.machines.list) || [];
+    var list = (/* r5-all-machines: census */ C.machines && C.machines.list) || [];
     for (var i = 0; i < list.length; i++) if (list[i].root) s.add(list[i].root);
     return s;
   }
@@ -13145,7 +13152,7 @@ function installMemInstrument() {
     } catch (e) {}
     // per-machine rig-owned resources and LOD chains (off-graph by design)
     try {
-      var list = (C.machines && C.machines.list) || [];
+      var list = (/* r5-all-machines: census */ C.machines && C.machines.list) || [];
       for (var li = 0; li < list.length; li++) {
         var m = list[li];
         if (m._rigOwned) m._rigOwned.forEach(function (res) { deep(res, 'machine._rigOwned', 1); });
@@ -13620,7 +13627,8 @@ const GATES = [
 
         let kills = 0;
         for (let i = 0; i < 30; i++) {
-          const m = (ctx.machines.list || []).find((x) => x.alive && !x._disposed && !x.docile);
+          // W0b fix round 2 (R28 + R34): a STAGED kind's machine (memVictim), never the first living one of any kind
+          const m = await memVictim();
           const killedKind = m ? m.kind : null;
           if (m) { kill(m); kills++; W.kills++; }
           ctx.input.keys.add('KeyW');
@@ -13777,23 +13785,26 @@ const GATES = [
   /* ------------------------------------------------------------------ A23 */
   {
     id: 'A23-aim-cost', kind: 'action', lane: 'spatial',
-    title: 'Holding aim on the heaviest staged kind (the colossus) at 25 m stays under 20 ms p95',
+    title: 'Holding aim on the colossus role at 25 m stays under 20 ms p95',
     // up to four paired samples while it waits for a quiet window, plus the
     // 1.4 s skinned-raycast baseline at 100-370 ms a ray
     timeout: 120000,
     setup: UP,
     settle: 900,
-    assert: staged([], `(async () => {
+    assert: staged(['colossus'], `(async () => {
       ${FRAMES}
       ${FACE}
       const ctx = __CTX__;
       const sp = window.__SP__;
-      // R5: the colossus role, else the staged kind with the most triangles (R28: never a legacy kind)
-      const triCount = (m) => { let n = 0; m.root.traverse((o) => { if (o.isMesh && o.geometry) n += (o.geometry.index ? o.geometry.index.count : (o.geometry.attributes.position?.count || 0)) / 3; }); return n; };
-      const tj = (KIND.colossus ? await stageRole('colossus') : null)
-        || stagedPicks().sort((a, b) => triCount(b) - triCount(a))[0] || null;
+      /* R5: the COLOSSUS role only (R18: a role-staged gate whose role has no live kind reports its named SKIP and
+       * "may not be silently re-pointed"). W0b fix round 2: the W0a re-stage fell back to "the staged kind with the
+       * most triangles", i.e. the Tiller fixture, and the row then FAILed only on its Round-4 subject term
+       * bp95 > 60 (the skinned-raycast baseline of the Round-4 colossus; the Tiller's measured 31.6 ms p95) while
+       * every lane-cost term passed. staged(['colossus']) above reports SKIP-legacy-deleted (R30) until the
+       * Transit lands (instruments-d W4). */
+      const tj = await stageRole('colossus');
       const combat = ctx.combat;
-      if (!tj) return noKindsSkip() || { pass: null, detail: 'SKIP: no staged kind could be staged' };
+      if (!tj) return { pass: null, detail: 'SKIP-R18: the colossus role (' + KIND.colossus + ') could not be staged' };
       if (!combat || !combat._updateAimPoint) {
         return { pass: null, detail: 'SKIP: no combat._updateAimPoint' };
       }
@@ -13805,7 +13816,7 @@ const GATES = [
       tj.update = () => {};                       // hold the range steady
       // warm every hull set first: extraction is amortised one machine per
       // frame, and this gate must measure steady-state aim cost, not warm-up
-      for (const m of ctx.machines.list) ctx.hitHulls.build(m);
+      for (const m of /* r5-all-machines: warm */ ctx.machines.list) ctx.hitHulls.build(m);
       ctx.nav.buildNow();
       faceTarget(tj.position, 25, 0.6, -0.11);
       await new Promise((r) => setTimeout(r, 500));
@@ -13955,7 +13966,7 @@ const GATES = [
         const cam = ctx.camera;
         cam.getWorldDirection(dir);
         let best = 220;
-        for (const m of ctx.machines.list) {
+        for (const m of /* r5-all-machines: mirror */ ctx.machines.list) {
           if (m.alive === false || !m.root) continue;
           rc.camera = cam;
           rc.set(cam.position, dir);
@@ -14116,10 +14127,10 @@ const GATES = [
       // walking and animating, the hull hit and the mesh hit it is compared
       // against are from different poses, and the "error" is mostly the
       // machine having moved. Nothing here needs them alive.
-      for (const m of ctx.machines.list) m.update = () => {};
+      for (const m of /* r5-all-machines: freeze */ ctx.machines.list) m.update = () => {};
       await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
       for (const kind of kinds) {
-        const m = ctx.machines.list.find((x) => x.kind === kind && x.alive);
+        const m = liveOfKind(kind);   // W0b fix round 2: a staged kind's machine only (R28)
         if (!m) { per[kind] = 'absent'; continue; }
         sp.hitHulls.build(m);
         /* The fan is built in the MACHINE'S frame, not in world axes. Machines
@@ -14337,7 +14348,9 @@ const GATES = [
         ? allOut[Math.min(allOut.length - 1, Math.floor(0.9 * allOut.length))] : 0;
       const poolDeepFrac = poolHullOnly ? poolDeep / poolHullOnly : 0;
       return {
-        pass: tested === 8 && worstGapRate <= 2 / 41 && worstErr <= 1 && slowest <= 25
+        // W0b fix round 2 (judge finding; inventory Appendix B: '"all 8 species" literal -> kinds'): every STAGED kind
+        // is tested; Round 4's literal 8 was its roster size. Every fidelity term below is unchanged.
+        pass: tested === kinds.length && tested >= 1 && worstGapRate <= 2 / 41 && worstErr <= 1 && slowest <= 25
           && poolP90 <= PROUD_BAR && worstMedProud <= MED_PROUD_BAR
           && outP90 <= OUT_P90_BAR && worstMaxOut <= OUT_MAX_BAR,
         detail: {
@@ -14388,14 +14401,14 @@ const GATES = [
        * getting involved fails the gate loudly instead of silently
        * changing the answer.
        * ------------------------------------------------------------- */
-      for (const m of ctx.machines.list) m.update = () => {};
+      for (const m of /* r5-all-machines: freeze */ ctx.machines.list) m.update = () => {};
       await new Promise((r) => requestAnimationFrame(r));
 
       // pick a trunk with a clear 12 m run-up on flat ground
       const trees = sp.collision.colliders.filter((c) => c.kind === 'tree');
       if (!trees.length) return { pass: null, detail: 'SKIP: no tree colliders' };
       let tree = null, ang = 0;
-      const live = ctx.machines.list.filter((m) => m.alive !== false);
+      const live = /* r5-all-machines: clear */ ctx.machines.list.filter((m) => m.alive !== false);
       outer:
       for (const t of trees) {
         if (Math.hypot(t.ax, t.az) > 200) continue;
@@ -14936,13 +14949,16 @@ const WAIT_VARIETY = `
     await new Promise(r => setTimeout(r, 150));
   }`;
 
-/** One living machine per species, nearest first. */
+/**
+ * One living machine per STAGED kind (W0b fix round 2, R7 + R28: a legacy kind is never measured; Round 4 took
+ * one living machine of every kind, legacy included). A staged kind with none standing is spawned for the gate
+ * (stagedPicks). No role resolving -> the named SKIP-R18, never PASS. Splices the roster.
+ */
 const SPECIES = `
+  ${ROSTER}
+  { const __k = noKindsSkip(); if (__k) return __k; }
   const species = new Map();
-  for (const _m of (__CTX__.machines?.list || [])) {
-    if (!_m.alive) continue;
-    if (!species.has(_m.kind)) species.set(_m.kind, _m);
-  }`;
+  for (const _m of stagedPicks()) species.set(_m.kind, _m);`;
 
 /** Get a species moving: drop the player 14 m away and let it be noticed. */
 /**
@@ -15051,7 +15067,10 @@ const LINEUP = `
     const n = cast.length;
     const fov = O.fov ?? 26;
     const D = O.depth ?? 60;
-    const BX = 0, BZ = 120;
+    // W0b fix round 2: the line-up stands on the NAMED castStage place (was a literal coordinate); the calling row is
+    // wrapped in placed / placedSetup(['castStage'], ...), so PLACE resolves it
+    const __cs = PLACE('castStage');
+    const BX = __cs.x, BZ = __cs.z;
     const ground = T.getHeight(BX, BZ);
     const eyeY = ground + (O.eyeY ?? 6);
 
@@ -15121,8 +15140,8 @@ const LINEUP = `
         pt.mesh.traverse((o) => { if (o.isMesh) o.userData.lodHidden = false; });
       }
       if (O.live) continue;
-      const i = __CTX__.machines.list.indexOf(m);
-      if (i >= 0) __CTX__.machines.list.splice(i, 1);
+      const i = /* r5-all-machines: cast */ __CTX__.machines.list.indexOf(m);
+      if (i >= 0) /* r5-all-machines: cast */ __CTX__.machines.list.splice(i, 1);
       m.update = () => {};
       if (m.gait) { m.gait.update = () => {}; m.gait.updateCheap = () => {}; }
       if (m.animate) m.animate = () => {};
@@ -15486,7 +15505,7 @@ const GATES = [
     id: 'A44c-lineup-staged', kind: 'action', lane: 'machine-rig',
     title: 'STAGING: every role V26/V27 ask for is found, drawn and inside the frame',
     settle: 600, timeout: 150000,
-    assert: staged(['flanker', 'colossus', 'swarm', 'duelist', 'spotter'], `(async () => {
+    assert: staged(['flanker', 'colossus', 'swarm', 'duelist', 'spotter'], placed(['castStage'], `(async () => {
       ${LINEUP}
       const want = ['flanker', 'colossus', 'swarm', 'duelist', 'spotter'];   // R5: roles (Round 4 named five species)
       const r = await stageCast(want);
@@ -15499,7 +15518,7 @@ const GATES = [
         detail: { requested: n.requested, staged: n.staged, missing: n.missing,
                   notDrawn: n.notDrawn, clipped: n.clipped },
       };
-    })()`),
+    })()`)),
   },
   {
     id: 'A46-ground-truth', kind: 'action', lane: 'machine-rig',
@@ -15535,7 +15554,7 @@ const GATES = [
         worstAll = Math.max(worstAll, worst);
         measured++;
       }
-      if (measured < 2) return { pass: null, detail: { note: 'SKIP: fewer than 2 species reported a planted foot', out } };
+      if (measured < Math.min(2, species.size)) return { pass: null, detail: { note: 'SKIP: fewer than min(2, staged kinds = ' + species.size + ') species reported a planted foot (R5: the Round-4 count of 2, capped at the staged roster)', out } };
       return { pass: worstAll <= 0.08,
                detail: { budgetM: 0.08, worstM: +worstAll.toFixed(3), speciesMeasured: measured, out } };
     })()`,
@@ -15962,12 +15981,11 @@ const GATES = [
        * PENDING - on a build where the pool was working perfectly.
        */
       const fx = __CTX__.machineFx
-        || (__CTX__.machines?.list || []).map(m => m.ctx?.machineFx).find(Boolean)
-        || (__CTX__.machines?.list || []).map(m => m._fxPool).find(Boolean)
+        || (/* r5-all-machines: census */ __CTX__.machines?.list || []).map(m => m.ctx?.machineFx).find(Boolean)
+        || (/* r5-all-machines: census */ __CTX__.machines?.list || []).map(m => m._fxPool).find(Boolean)
         || null;
       if (!fx) return { pass: null, detail: 'SKIP: ctx.machineFx not published' };
       const sites = __CTX__.machines?.sites || __CTX__.machines;
-      const list = (__CTX__.machines?.list || []).filter(m => m.alive);
       // R5 (R28): a staged kind only — the colossus first, then the flanker, then any
       const victim = liveOf('colossus') || liveOf('flanker') || stagedPicks()[0] || null;
       if (!victim) return noKindsSkip() || { pass: null, detail: 'SKIP: no disposable machine' };
@@ -16025,10 +16043,10 @@ const GATES = [
     id: 'V26-silhouette', kind: 'visual', lane: 'machine-rig',
     title: 'Every staged Instrument reads as its Round-5 design sheet in side profile against plain sky',
     settle: 2600, timeout: 120000,
-    setup: stagedSetup(['flanker', 'colossus', 'swarm', 'duelist', 'spotter'], `(async () => {
+    setup: stagedSetup(['flanker', 'colossus', 'swarm', 'duelist', 'spotter'], placedSetup(['castStage'], `(async () => {
       ${LINEUP}
       await stageCast(['flanker', 'colossus', 'swarm', 'duelist', 'spotter']);
-    })()`),
+    })()`)),
     criteria: 'The staged Instruments side-on against a flat sky, scale-normalised, left to right in role order: '
       + 'flanker, colossus, swarm, duelist, spotter (a role with no kind yet is absent and named in the gate log, R18). '
       + 'Each faces SCREEN LEFT. PASS requires each silhouette to read as its Round-5 design sheet (docs/ROUND5-BIBLE.md §7.4: '
@@ -16040,7 +16058,7 @@ const GATES = [
     id: 'V27-attack-pose', kind: 'visual', lane: 'machine-rig',
     title: 'Mid-windup, the LIMBS are doing the work — not just the body transform',
     settle: 2600, timeout: 120000,
-    setup: stagedSetup(['flanker', 'colossus', 'swarm', 'duelist'], `(async () => {
+    setup: stagedSetup(['flanker', 'colossus', 'swarm', 'duelist'], placedSetup(['castStage'], `(async () => {
       ${LINEUP}
       await stageCast(['flanker', 'colossus', 'swarm', 'duelist'], {
         state: 'attack',
@@ -16072,7 +16090,7 @@ const GATES = [
           await new Promise(r => setTimeout(r, 700));
         },
       });
-    })()`),
+    })()`)),
     criteria: 'Up to four Instruments frozen mid-attack-windup against a flat sky, scale-normalised, left to right in role order: '
       + 'flanker, colossus, swarm, duelist (a role with no kind yet is absent and named in the gate log, R18). '
       + 'PASS requires visible LIMB work in at least three of them — a raised/cocked front paw, a head dropped and thrust '
@@ -16110,11 +16128,14 @@ const GATES = [
     id: 'A50b-aim-on-drawn-geometry', kind: 'action', lane: 'machine-rig',
     title: '50 arrows per species: >=95% register on geometry that is DRAWN, 0 on the retired donor sculpt',
     settle: 500, timeout: 200000,
-    assert: `(async () => {
+    assert: staged([], `(async () => {
       ${WAIT_VARIETY}
       const HH = __CTX__.hitHulls;
       if (!HH?.raycast || !HH?.referenceRaycast) return { pass: null, detail: 'SKIP: ctx.hitHulls not published' };
-      const list = (__CTX__.machines?.list || []).filter(m => m.alive);
+      { const __k = noKindsSkip(); if (__k) return __k; }
+      // R5 (R7, R28; W0b fix round 2, judge finding): one living machine of every STAGED kind (spawned when none
+      // stands); Round 4 measured every live kind, and this row measured legacy kinds and counted them as PASS
+      const list = stagedPicks();
       const V = __CTX__.player.position.constructor;
       const _v = new V();
       const drawn = (o) => { let n = o; while (n) { if (n.visible === false) return false; n = n.parent; } return true; };
@@ -16183,11 +16204,12 @@ const GATES = [
         if (pct < 95) offenders.push(kind);
         speciesDone++;
       }
-      if (speciesDone < 4) return { pass: null, detail: { note: 'SKIP: fewer than 4 species measured', out } };
+      // R5: Round 4's "4 of its roster", capped at the staged roster (every staged kind when fewer than 4 are staged)
+      if (speciesDone < Math.min(4, kinds.length)) return { pass: null, detail: { note: 'SKIP: fewer than min(4, staged kinds = ' + kinds.length + ') species measured', out } };
       return { pass: offenders.length === 0 && ghosts === 0,
                detail: { budget: '>=95% of confirmed arrows register on DRAWN geometry; 0 on a retired/invisible source',
                          speciesMeasured: speciesDone, belowBudget: offenders, hitsOnGhostGeometry: ghosts, out } };
-    })()`,
+    })()`),
   },
 
   /**
@@ -16263,7 +16285,7 @@ const GATES = [
         merges += merged;
         measured++;
       }
-      if (measured < 2) return { pass: null, detail: { note: 'SKIP: fewer than 2 species walked far enough', out } };
+      if (measured < Math.min(2, species.size)) return { pass: null, detail: { note: 'SKIP: fewer than min(2, staged kinds = ' + species.size + ') species walked far enough (R5: the Round-4 count of 2, capped at the staged roster)', out } };
       return { pass: merges === 0 && worstAll <= 0.06,
                detail: { budget: '0 merged stance reports at 1/3 frame rate, and drift <= 0.06 m',
                          mergedReports: merges, worstM: worstAll, speciesMeasured: measured, out } };
@@ -16388,7 +16410,9 @@ const REPAIR = `
     const cam = __CTX__.camera;
     const V3 = __CTX__.player.position.constructor;
     const n = cast.length;
-    const fov = O.fov ?? 26, D = O.depth ?? 60, BX = 0, BZ = 120;
+    const fov = O.fov ?? 26, D = O.depth ?? 60;
+    const __cs = PLACE('castStage');   // W0b fix round 2: a NAMED place (was a literal coordinate)
+    const BX = __cs.x, BZ = __cs.z;
     const aspect = cam.aspect || (16 / 9);
     const hFov = 2 * Math.atan(Math.tan(fov * Math.PI / 360) * aspect);
     const eyeY = __CTX__.terrain.getHeight(BX, BZ) + (O.eyeY ?? 6);
@@ -16963,7 +16987,7 @@ const GATES = [
      * mean and a species with more lacquer or a darker trim mix legitimately
      * lands lower; 1.9x is still twice the separation the judge failed.
      */
-    assert: staged([], `(async () => {
+    assert: staged([], placed(['castStage'], `(async () => {
       ${WAIT_VARIETY}
       ${LINEUP}
       ${REPAIR}
@@ -17036,7 +17060,7 @@ const GATES = [
       return { pass: bad.length === 0,
                detail: { budget: 'shell plate luminance >= 1.9 x donor hide luminance, same frame, same key',
                          offenders: bad, speciesMeasured: measured, rows } };
-    })()`),
+    })()`)),
   },
 
 
@@ -17075,7 +17099,7 @@ const WAIT_VARIETY = `
 /** Freeze every machine except `keep` (an array) so nothing wanders in. */
 const FREEZE = `function freezeAll(keep) {
   const set = new Set(keep || []);
-  for (const m of __CTX__.machines.list) {
+  for (const m of /* r5-all-machines: freeze */ __CTX__.machines.list) {
     if (set.has(m)) continue;
     if (!m._frozenByGate) { m._frozenByGate = m.update; m.update = () => {}; }
   }
@@ -17482,7 +17506,9 @@ function combatant(m) { return !m.docile; }
 /** Every docile machine must have an empty table, and vice versa. */
 function docileContract() {
   const bad = [];
-  for (const m of __CTX__.machines.list) {
+  // W0b fix round 2 (R28): the staged kinds' machines only (livesStaged, the roster prelude of the calling row);
+  // Round 4 audited every living machine, legacy kinds included
+  for (const m of livesStaged()) {
     if (!m.alive) continue;
     const rows = m.ai?.picker?.rows?.length ?? 0;
     if (m.docile && rows) bad.push(m.kind + ': docile with ' + rows + ' attack row(s)');
@@ -18128,7 +18154,7 @@ const GATES = [
 
       const report = {}, fails = [];
       for (const kind of kinds) {
-        const m = ctx.machines.list.find(x => x.kind === kind && x.alive);
+        const m = liveOfKind(kind);   // W0b fix round 2: a staged kind's machine only (R28)
         if (!m) continue;
         m.update = m._frozenByGate; m._frozenByGate = null;   // wake this one
         const band = m.ai.engage.cfg.band;
@@ -18836,16 +18862,30 @@ const GATES = [
     title: 'Eight wrecks freeze, fade, dispose and schedule a respawn; scene growth <= +40 and nothing of a disposed machine is left in the scene',
     setup: `(async () => { ${INPUT_ON} ${WAIT_VARIETY} })()`,
     settle: 800, timeout: 120000,
-    assert: `(async () => {
+    assert: staged([], `(async () => {
       ${FREEZE} ${PLACE}
       const ctx = __CTX__;
       const count = () => { let n = 0; ctx.scene.traverse(() => n++); return n; };
-      const before = count();
       const p = ctx.player;
-      const live = ctx.machines.list.filter(m => m.alive)
+      /* W0b fix round 2 (R28; plan §9 instruments-core: "A43-corpse-lifecycle (staged on the Tiller fixture, R28)"):
+       * the eight wrecks are STAGED kinds' machines. Round 4 took the eight nearest living machines of any kind,
+       * i.e. legacy kinds. When fewer than nine stand, the first resolving role's kind is spawned round the player
+       * (one more than eight, so the living-update cost below still has a staged machine to time); the scene count
+       * is taken AFTER that staging, as Round 4 took it with its eight already standing. */
+      { const __k = noKindsSkip(); if (__k) return __k; }
+      const __a0 = anyKind();
+      for (let i = 0, have = livesStaged().length; have < 9 && i < 18; i++) {
+        const ang = i * 0.7, pp = p.position;
+        let s = null;
+        try { s = spawnRole(__a0.role, pp.x + Math.cos(ang) * 26, pp.z + Math.sin(ang) * 26); } catch (e) { s = null; }
+        if (s) have++;
+      }
+      await new Promise(r => setTimeout(r, 1200));
+      const before = count();
+      const live = livesStaged()
         .sort((a, b) => a.position.distanceToSquared(p.position) - b.position.distanceToSquared(p.position))
         .slice(0, 8);
-      if (live.length < 8) return { pass: null, detail: 'SKIP: fewer than 8 living machines' };
+      if (live.length < 8) return { pass: null, detail: 'SKIP: fewer than 8 living machines of a staged kind could be staged (' + live.length + ')' };
       const anchor = live[0].position.clone();
       for (const m of live) {
         let mesh = null; m.root.traverse(o => { if (!mesh && o.isMesh) mesh = o; });
@@ -18885,7 +18925,7 @@ const GATES = [
         return (performance.now() - t0) / (n * list.length);
       };
       const deadCostMs = timeIt(live.filter(m => m._frozen), 200);
-      const alive = ctx.machines.list.filter(m => m.alive && !m._frozenByGate).slice(0, 3);
+      const alive = livesStaged(m => !m._frozenByGate).slice(0, 3);   // W0b fix round 2: staged kinds only (R28)
       const aliveCostMs = alive.length ? timeIt(alive, 60) : null;
 
       /**
@@ -18898,7 +18938,7 @@ const GATES = [
       await new Promise(r => setTimeout(r, 300));
       const after = count();
       const disposed = live.filter(m => m._disposed).length;
-      const stillListed = ctx.machines.list.filter(m => live.includes(m)).length;
+      const stillListed = /* r5-all-machines: census */ ctx.machines.list.filter(m => live.includes(m)).length;
 
       /**
        * ORPHAN SWEEP (fix round 1). "growth <= +40" is a NET figure, and the
@@ -18943,7 +18983,7 @@ const GATES = [
             : 'freeze is observed on the wrecks own sim clock (polled, 30 s wall cap); the remaining 130 s window is advanced through SiteManager.update(1) x130',
         },
       };
-    })()`,
+    })()`),
   },
 
   /* ------------------------------------------------------------------ A44 */
@@ -19071,7 +19111,7 @@ const GATES = [
       }
       const sysAfter = (G.systemErrors || []).reduce((n, r) => n + r.count, 0);
       const machinesUpdate = (G.systemErrors || []).filter(r => /Machines/.test(r.key));
-      const stillStepping = ctx.machines.list.filter(x => x.alive).length;
+      const stillStepping = /* r5-all-machines: census */ ctx.machines.list.filter(x => x.alive).length;
 
       const detail = {
         driver: m.kind, realRawSiteDriven: !!tj,
@@ -20047,7 +20087,7 @@ const GATES = [
       ctx.machines.sites.advance(240, 1);
       await new Promise(r => setTimeout(r, 900));
       const after = sceneNodes();
-      const live = new Set(ctx.machines.list.map(m => m.root));
+      const live = new Set(/* r5-all-machines: census */ ctx.machines.list.map(m => m.root));
       const stillInScene = killed.filter(k => {
         let seen = false;
         ctx.scene.traverse(o => { if (o === k.root) seen = true; });
@@ -20112,15 +20152,15 @@ const GATES = [
       const snap = () => {
         let total = 0; ctx.scene.traverse(() => total++);
         let machineNodes = 0;
-        for (const m of ctx.machines.list) machineNodes += count(m.root);
-        const live = new Set(ctx.machines.list.map(m => m.root));
+        for (const m of /* r5-all-machines: census */ ctx.machines.list) machineNodes += count(m.root);
+        const live = new Set(/* r5-all-machines: census */ ctx.machines.list.map(m => m.root));
         let orphanRoots = 0, orphanNodes = 0;
         for (const ch of ctx.scene.children) {
           if (/-machine$/.test(ch.name || '') && !live.has(ch)) { orphanRoots++; orphanNodes += count(ch); }
         }
         return {
           total, machineNodes, nonMachine: total - machineNodes,
-          orphanRoots, orphanNodes, roster: ctx.machines.list.length,
+          orphanRoots, orphanNodes, roster: /* r5-all-machines: census */ ctx.machines.list.length,
           geo: r.info.memory.geometries, tex: r.info.memory.textures,
           heap: performance.memory?.usedJSHeapSize ?? null,
         };
@@ -20135,7 +20175,8 @@ const GATES = [
       const a = snap();
       let kills = 0;
       for (let i = 0; i < 30; i++) {
-        const m = ctx.machines.list.find(x => x.alive && !x._disposed && !x.docile);
+        // W0b fix round 2 (R28 + R34): a STAGED kind's machine (memVictim), never the first living one of any kind
+        const m = await memVictim();
         if (!m) break;
         const killedKind = m.kind;
         kill(m); kills++; W.kills++;
@@ -20223,7 +20264,7 @@ const WAIT_VARIETY = `
 /** Freeze every machine except `keep` so nothing wanders into the scenario. */
 const FREEZE = `function freezeAll(keep) {
   const set = new Set(keep || []);
-  for (const m of __CTX__.machines.list) {
+  for (const m of /* r5-all-machines: freeze */ __CTX__.machines.list) {
     if (set.has(m)) continue;
     if (!m._frozenByGate) { m._frozenByGate = m.update; m.update = () => {}; }
   }
@@ -21015,7 +21056,7 @@ const INPUT_ON = `__CTX__.input.enabled = true;`;
 /** Freeze every machine except `keep` so nothing wanders into the scenario. */
 const FREEZE = `function freezeAll(keep) {
   const set = new Set(keep || []);
-  for (const m of __CTX__.machines.list) {
+  for (const m of /* r5-all-machines: freeze */ __CTX__.machines.list) {
     if (set.has(m)) continue;
     if (!m._frozenByGate) { m._frozenByGate = m.update; m.update = () => {}; }
   }
@@ -21414,12 +21455,14 @@ const GATES = [
       + 'shows the same instrument firing 24 times on the pre-fix shape',
     setup: INPUT_ON,
     settle: 1000,
-    assert: `(async () => {
+    assert: staged([], `(async () => {
       ${FREEZE} ${FACE} ${FIRE} ${SNAP} ${KILL}
       const C = __CTX__, cb = C.combat;
       const r = C.renderer || C.engine?.renderer;
       freezeAll([]);
-      const fresh = () => C.machines.list.find(x => x.alive !== false && !x._disposed && x.root);
+      // W0b fix round 2 (judge finding, R28): each phase's machine is a STAGED kind's (a living one, else one spawned
+      // 16 m out); Round 4 / the W0a re-stage took the first living machine of ANY kind, legacy kinds first
+      const fresh = () => stageAny({ dx: 16, dz: 16, filter: (x) => !!x.root });
 
       /* A rider can only exist on a machine that is TICKING: its per-bone hit
        * hulls are refreshed by its own update, and arrows fly straight through
@@ -21459,8 +21502,8 @@ const GATES = [
       }
 
       /* =============== PHASE C (first): NEGATIVE CONTROL =============== */
-      const mC = fresh();
-      if (!mC) return { pass: null, detail: 'SKIP: empty roster' };
+      const mC = await fresh();
+      if (!mC) return noKindsSkip() || { pass: null, detail: 'SKIP: the staged kind could not be spawned' };
       const ridingC = await plant(mC, 14);
       let reparented = 0;
       for (const a of cb.arrows.list) if (a.stuckTo === mC) { mC.root.attach(a.group); reparented++; }
@@ -21474,7 +21517,7 @@ const GATES = [
       await new Promise(x => setTimeout(x, 2500));
 
       /* =============== PHASE A: THE REAL CORPSE LIFECYCLE =============== */
-      const mA = fresh();
+      const mA = await fresh();
       if (!mA) return { pass: null, detail: { skip: 'roster exhausted after control', control } };
       const ridingA = await plant(mA, 14);
       const insA = instrument();
@@ -21503,7 +21546,7 @@ const GATES = [
       };
 
       /* ===== PHASE B: OUT-OF-BAND EARLY DISPOSE (save.js _applyRoster) ===== */
-      const mB = fresh();
+      const mB = await fresh();
       if (!mB) return { pass: null, detail: { skip: 'roster exhausted before phase B', control, phaseA } };
       let phaseB = null;
       {
@@ -21541,7 +21584,7 @@ const GATES = [
         + 'lifecycle; phaseB = sites.dispose() out of band, the save.js:426 roster-reload '
         + 'route. combatAssetDisposals.sprite is THREE\\'s process-wide Sprite quad and is '
         + 'REPORTED only — the wreck\\'s own eye-glow sprite frees it (see doc §7).' } };
-    })()`,
+    })()`),
   },
 
   /* ------------------------------------------------------------------ A93 */
@@ -21575,7 +21618,7 @@ const GATES = [
       + 'document does gain is attributed to the module that made it',
     setup: INPUT_ON,
     settle: 1200,
-    assert: `(async () => {
+    assert: staged([], `(async () => {
       ${FREEZE} ${FACE} ${FIRE} ${SNAP} ${KILL} ${AMMO_MATRIX} ${DOM_WATCH}
       const C = __CTX__, p = C.player;
       const gy = (x, z) => C.terrain ? C.terrain.getHeight(x, z) : 0;
@@ -21610,7 +21653,8 @@ const GATES = [
       const before = snap();
       let shots = 0, kills = 0;
       for (let i = 0; i < 60; i++) {
-        const m = C.machines.list.find(x => x.alive && !x._disposed);
+        // W0b fix round 2 (judge finding, R28): a STAGED kind's machine (stageAny), never the first living one of any kind
+        const m = await stageAny({ dx: 16, dz: 16 });
         if (!m) break;
         if (i % 6 === 0) await face(m, 14);
         const [w, a] = TYPES[i % TYPES.length];
@@ -21660,7 +21704,7 @@ const GATES = [
         },
         before, after,
       } };
-    })()`,
+    })()`),
   },
 
   /* ------------------------------------------------------------------ A94 */
@@ -21671,13 +21715,14 @@ const GATES = [
       + 'reported and attributed)',
     setup: INPUT_ON,
     settle: 1200,
-    assert: `(async () => {
+    assert: staged([], `(async () => {
       ${FREEZE} ${FACE} ${FIRE} ${SNAP} ${KILL} ${AMMO_MATRIX}
       const C = __CTX__, p = C.player;
       const gy = (x, z) => C.terrain ? C.terrain.getHeight(x, z) : 0;
       /* warm-up so first-render uploads are not read as growth */
-      let mw = C.machines.list.find(x => x.alive && !x._disposed);
-      if (!mw) return { pass: null, detail: 'SKIP: empty roster' };
+      // W0b fix round 2 (judge finding, R28): a STAGED kind's machine (stageAny), never the first living one of any kind
+      let mw = await stageAny({ dx: 16, dz: 16 });
+      if (!mw) return noKindsSkip() || { pass: null, detail: 'SKIP: the staged kind could not be spawned' };
       await face(mw, 14);
       for (const [w, a] of TYPES) {
         mw.health = mw.maxHealth;
@@ -21689,7 +21734,8 @@ const GATES = [
       const before = snap();
       let shots = 0, kills = 0;
       for (let i = 0; i < 60; i++) {
-        const m = C.machines.list.find(x => x.alive && !x._disposed);
+        // W0b fix round 2 (judge finding, R28): a STAGED kind's machine (stageAny), never the first living one of any kind
+        const m = await stageAny({ dx: 16, dz: 16 });
         if (!m) break;
         if (i % 6 === 0) await face(m, 14);
         const [w, a] = TYPES[i % TYPES.length];
@@ -21761,7 +21807,7 @@ const GATES = [
         && combatOwned.dCombatDom === 0 && combatOwned.poolOverCap.length === 0
         && (heapGrowth === null || heapGrowth < 0.25);
       return { pass, detail: { shots, kills, combatOwned, global, before, atBurst, after, drained } };
-    })()`,
+    })()`),
   },
   /* ------------------------------------------------------------------ A95 */
   /**
@@ -22302,12 +22348,12 @@ const FACE_MACHINE = `
    * candidates (R28); with none standing, the first is spawned for the gate.
    */
   const pickMachine = async (kind, dist = 14) => {
-    const list = __CTX__.machines?.list || [];
     const order = kind ? [kind] : ['flanker', 'herd', 'swarm', 'sentry'].map((r) => KIND[r]).filter(Boolean);
     for (const k of STAGED_KINDS) if (!order.includes(k)) order.push(k);
     if (!order.length) return null;
-    if (!list.some(x => x.alive !== false && order.includes(x.kind))) { const r0 = roleOfKind(order[0]); if (r0) await stageRole(r0, { dx: dist, dz: dist }); }
-    const alive = list.filter(x => x.alive !== false && order.includes(x.kind));
+    // W0b fix round 2: candidates through the roster helpers only (staged kinds, R28)
+    if (!livesStaged((x) => order.includes(x.kind)).length) { const r0 = roleOfKind(order[0]); if (r0) await stageRole(r0, { dx: dist, dz: dist }); }
+    const alive = livesStaged((x) => order.includes(x.kind));
     const rank = (x) => { const i = order.indexOf(x.kind); return i < 0 ? order.length : i; };
     const cands = alive.slice().sort((a, b) => rank(a) - rank(b));
     // first candidate with an unobstructed line, else the old first-of-kind
@@ -23837,7 +23883,7 @@ const SIMCLOCK = `
 /** Freeze every machine except the ones in `keep` so nothing wanders into shot. */
 const FREEZE = `function freezeAll(keep) {
   const set = new Set(keep || []);
-  for (const m of __CTX__.machines.list) {
+  for (const m of /* r5-all-machines: freeze */ __CTX__.machines.list) {
     if (set.has(m)) continue;
     if (!m._frozenByGate) { m._frozenByGate = m.update; m.update = () => {}; }
   }
@@ -23880,7 +23926,7 @@ const GATES = [
     title: 'Cast panel Attack button on a CALM machine 80 m from the hero: still `attack` a full sim second later, held by the director',
     setup: `(async () => { __CTX__.input.enabled = true; })()`,
     settle: 600, timeout: 90000,
-    assert: `(async () => {
+    assert: staged([], `(async () => {
       ${SIMCLOCK} ${FREEZE} ${PARK} ${ENTER}
       const ctx = __CTX__;
       const S = ctx.studio;
@@ -23888,8 +23934,9 @@ const GATES = [
 
       // --- stage: one living machine, parked calm, 80 m from the hero so nothing
       //     it can legitimately perceive could put it in attack by itself.
-      const m = ctx.machines.list.find((x) => x.alive && typeof x.forceState === 'function');
-      if (!m) return { pass: null, detail: 'SKIP: no living machine with forceState' };
+      // W0b fix round 2 (judge finding, R28): a STAGED kind's machine (stageAny), never the first living one of any kind
+      const m = await stageAny({ dx: 30, dz: 30, filter: (x) => typeof x.forceState === 'function' });
+      if (!m) return noKindsSkip() || { pass: null, detail: 'SKIP: no living machine of a staged kind with forceState' };
       freezeAll([m]);
       const p = ctx.player;
       m.position.set(p.position.x + 80, ctx.terrain.getHeight(p.position.x + 80, p.position.z), p.position.z);
@@ -23941,7 +23988,7 @@ const GATES = [
       if (!released) return { pass: false, detail: 'Release hold left the hold standing — ' + detail };
 
       return { pass: true, detail };
-    })()`,
+    })()`),
   },
 
   /* ----------------------------------------------------------------- A78b */
@@ -23980,7 +24027,16 @@ const GATES = [
 
       /* ---- 1. every sustained cast state actually sticks -------------- */
       const stateBtns = [...S._ui.querySelectorAll('#st-cast-states button')];
-      if (stateBtns.length < 9) return { pass: false, detail: 'cast panel offers only ' + stateBtns.length + ' states' };
+      /* W0b fix round 2: Round 4 required >= 9 buttons; its ninth state was 'overridden', the Override mechanic R17
+       * removed (instruments-core's W0a removal-only pass deleted it from src/studio/cast.js CAST_STATES). The count is
+       * re-staged as "every state this row exercises AND every state cast.js publishes has its button", which is the
+       * Round-4 count minus the R17 deletion and also fails a panel that drops any published state. */
+      const NEED_STATES = ['patrol', 'suspicious', 'alert', 'search', 'attack', 'stagger', 'downed', 'dead'];
+      let __published = [];
+      try { __published = ((await import('/src/studio/cast.js')).CAST_STATES || []).map((x) => x.id); } catch (e) { __published = []; }
+      const __offered = stateBtns.map((b) => b.dataset.state);
+      const __missing = [...new Set([...NEED_STATES, ...__published])].filter((id) => !__offered.includes(id));
+      if (!__published.length || __missing.length) return { pass: false, detail: 'cast panel offers ' + stateBtns.length + ' states (' + __offered.join(', ') + '); missing: ' + (__missing.join(', ') || '-') + (__published.length ? '' : '; src/studio/cast.js publishes no CAST_STATES') };
       const sustained = ['patrol', 'suspicious', 'alert', 'search', 'attack'];
       const stateLog = [];
       for (const id of sustained) {
@@ -24159,7 +24215,7 @@ const GATES = [
     title: 'Studio freeze while combat is live: engine.timeScale === 0 and simTime is still for 2 s, with hitstop/concentration/legacy all shouting a different number every poll',
     setup: `(async () => { __CTX__.input.enabled = true; })()`,
     settle: 600, timeout: 90000,
-    assert: `(async () => {
+    assert: staged([], `(async () => {
       ${SIMCLOCK} ${FREEZE} ${PARK} ${ENTER}
       const ctx = __CTX__, S = ctx.studio, e = ctx.engine;
       if (!S) return { pass: false, detail: 'no ctx.studio' };
@@ -24167,7 +24223,8 @@ const GATES = [
 
       // --- stage REAL combat: a machine is attacking the hero, and the combat
       //     system has a live hitstop on the books when the studio opens.
-      const m = ctx.machines.list.find((x) => x.alive && typeof x.forceState === 'function');
+      // W0b fix round 2 (judge finding, R28): a STAGED kind's machine (stageAny), never the first living one of any kind
+      const m = await stageAny({ dx: 30, dz: 30, filter: (x) => typeof x.forceState === 'function' });
       if (m) {
         freezeAll([m]);
         const p = ctx.player;
@@ -24230,7 +24287,7 @@ const GATES = [
       if (after !== 1) return { pass: false, detail: 'exit did not hand time back (ts=' + after + ') — ' + detail };
       if ('studio' in afterSources) return { pass: false, detail: 'studio never released its claim — ' + detail };
       return { pass: true, detail };
-    })()`,
+    })()`),
   },
 
   /* ----------------------------------------------------------------- A79b */
@@ -26402,7 +26459,7 @@ const GATES = [
     id: 'V41-npc-closeup', kind: 'action', lane: 'npc',
     title: 'Two different NPC bodies side by side, walking: different builds, natural gait, no T-pose',
     settle: 2500, timeout: 140000,
-    assert: placed(['restSite'], `(async () => {
+    assert: placed(['restSite', 'openGround'], `(async () => {
       ${CROWD}
       ${RUN_SIM}
       ${IN_CAMP}
@@ -26426,7 +26483,9 @@ const GATES = [
         || S.list.find((n) => n !== a && n.routeName);
       if (!a || !b) return { pass: false, detail: { reason: 'fewer than two walkers on the roster' } };
 
-      const X0 = -60, Z0 = -45;
+      // W0b fix round 2: the walk lane is the NAMED openGround place (was its literal coordinate); placed() resolves it
+      const __og = PLACE('openGround');
+      const X0 = __og.x, Z0 = __og.z;
       const pair = [a, b];
       /**
        * PUT ONLY THE WALK ON STAGE.
@@ -26834,7 +26893,7 @@ function slay(m) {
 }
 /** Stable comparable form of an alive-set (mirrors SaveSystem.rosterKey). */
 const rosterKey = (rows) => (rows || []).map((r) => (r.site ?? 'x') + ':' + r.kind).sort().join(',');
-const liveRoster = (ctx) => ctx.machines.list
+const liveRoster = (ctx) => /* r5-all-machines: census */ ctx.machines.list
   .filter((m) => m && m.alive && !m._disposed && m._site)
   .map((m) => ({ site: m._site.id, kind: m.kind }));
 `;
@@ -27003,7 +27062,7 @@ const GATES = [
      * calls Continue. Nothing but the bytes in localStorage crosses over.
      */
     setup: placedSetup(['rest'], `(async () => {
-      ${HELP}
+      ${HELP}${ROSTER}
       // R5: a setup that throws after writing its scratch keys removes them (no later gate sees them)
       try {
       // recorded BEFORE anything of ours runs: main.js has to have built it
@@ -27027,10 +27086,23 @@ const GATES = [
       // FIRST: a kill pays shards into the inventory, so stamping the
       // distinctive counts before them would leave the payout on top and the
       // gate would be asserting a number it had already invalidated.
-      const victims = ctx.machines.list.filter((x) => x.alive && x._site).slice(0, 2);
-      const killedSites = victims.map((v) => v._site.id);
-      for (const v of victims) slay(v);
-      await until(() => victims.every((v) => v.alive === false), 8000);
+      /* W0b fix round 2 (R28): the two victims are machines of a STAGED kind in the AUTHORED roster. The save's
+       * alive-set is keyed by boot site ids (save.js _applyRoster reconciles existing sites only), so a gate-spawned
+       * machine's site does not exist after the reload and killing one would prove nothing; Round 4 killed the first
+       * two site machines of any kind, i.e. legacy kinds. With fewer than two such machines the kill clause (and
+       * restoreWasReal, which rests on it) reports SKIP-legacy (R28) and every other clause is still graded. */
+      const __boot = Number.isFinite(ctx.machines?._bootSiteId) ? ctx.machines._bootSiteId : -1;
+      const __authored = livesStaged((x) => !!x._site && x._site.id < __boot);
+      const victims = __authored.slice(0, 2);
+      const killSkip = victims.length < 2
+        ? 'SKIP-legacy (R28): the kill clause needs two machines of a staged kind in the AUTHORED roster (the save alive-set is keyed by boot site ids; a gate-spawned site does not survive the reload); the authored roster holds '
+          + __authored.length + ' of the staged kinds (' + (STAGED_KINDS.join(', ') || 'none') + '), until an Instrument site lands (instruments-a W1)'
+        : null;
+      const killedSites = killSkip ? [] : victims.map((v) => v._site.id);
+      if (!killSkip) {
+        for (const v of victims) slay(v);
+        await until(() => victims.every((v) => v.alive === false), 8000);
+      }
 
       // Distinctive counts that the pockets can actually HOLD. focus-items caps
       // metal-shards at 500, and SaveSystem.apply clamps a restore to the same
@@ -27074,7 +27146,7 @@ const GATES = [
         wood: ctx.inventory.count('ridge-wood'),
         ammoHunter: ctx.combat && ctx.combat.ammo ? ctx.combat.ammo.hunter : null,
         px: SAVE_AT.x, pz: SAVE_AT.z,
-        killedSites,
+        killedSites, killSkip,
         rosterKey: rosterKey(snap.world.roster),
         aliveAtSave: snap.world.roster.length,
       };
@@ -27163,7 +27235,14 @@ const GATES = [
         awardLedger: reAward === 0,
         discoverLedger: stillDiscovered === true,
       };
+      // W0b fix round 2 (R28): restoreWasReal rests on the kill clause; with that clause SKIP-legacy it is not graded,
+      // and the row can never PASS (a FAIL of any other clause still FAILs it)
+      if (want.killSkip) delete checks.restoreWasReal;
       const failed = Object.keys(checks).filter((k) => !checks[k]);
+      if (want.killSkip && failed.length === 0) {
+        return { pass: null, detail: { verdict: want.killSkip + ' — every other clause PASSED (' + Object.keys(checks).length + ' checks)', failed, checks,
+          got: { ...got, quests: got.quests.length, rosterKey: undefined }, want: { ...want, quests: want.quests.length, rosterKey: undefined }, applied: res.applied, error: res.error } };
+      }
       return {
         pass: failed.length === 0,
         detail: { failed, checks, got: { ...got, quests: got.quests.length, rosterKey: undefined }, want: { ...want, quests: want.quests.length, rosterKey: undefined }, applied: res.applied, error: res.error },
@@ -27366,7 +27445,7 @@ const GATES = [
       await until(() => respawned.length > 0, 4000);
       offA(); offB();
 
-      const fresh = ctx.machines.list.find((m) => m._site && m._site.id === siteId && m.alive && !m._disposed);
+      const fresh = /* r5-all-machines: cast */ ctx.machines.list.find((m) => m._site && m._site.id === siteId && m.alive && !m._disposed);
       const audit = prog.audit();
       const detail = {
         siteId, kind, dist: +dist.toFixed(1),
@@ -27558,10 +27637,9 @@ const GATES = [
       const { SILENT_STRIKE } = await import('/src/core/progression.js');
       const hf = MELEE.silent.heavyFrac;
       const CAP = SILENT_STRIKE.capFrac;
-      const list = C.machines.list;
       // R5: the colossus role (Round 4 named its apex species); get() spawns it when none stands
       const get = (kind) => {
-        let m = list.find((x) => x && x.alive && !x._disposed && x.kind === kind);
+        let m = liveOfKind(kind);   // W0b fix round 2: a staged kind's machine only (R28)
         if (!m && C.machines.spawn) {
           try { m = C.machines.spawn(kind, p.position.x + 220, p.position.z + 220); } catch { m = null; }
         }
@@ -27782,16 +27860,6 @@ async function walkTo(ctx, prog, questId, objId) {
 const entriesOf = (ctx, site) =>
   (ctx.interactables.list || []).filter((e) => e.site === site && !e.consumed && !e.removed);
 const objState = (prog, qid) => prog.quests.byId(qid).objectives.map((o) => o.have + '/' + o.need).join(' ');
-/** Machines of a kind, spawned at the site if the roster is short. */
-function ensureKind(ctx, kind, n, x, z) {
-  const live = ctx.machines.list.filter((m) => m.kind === kind && m.alive);
-  for (let i = live.length; i < n; i++) {
-    const m = ctx.machines.spawn(kind, x + i * 7, z + i * 4);
-    if (!m) break;
-    live.push(m);
-  }
-  return live;
-}
 `;
 
 /**
@@ -28720,7 +28788,7 @@ const GATES = [
       while (!ctx.machines?.varietyReady && performance.now() - t0 < 25000) {
         await new Promise((r) => setTimeout(r, 150));
       }
-      const list = (ctx.machines?.list || []).filter((m) => m.route && m.route.length > 2);
+      const list = (/* r5-all-machines: census */ ctx.machines?.list || []).filter((m) => m.route && m.route.length > 2);
       if (!list.length) return { pass: null, detail: 'SKIP: no machine carries a route' };
 
       const rows = [];
@@ -31475,7 +31543,9 @@ const GATES = [
         && idleMissing.length === 0
         && idleSilent.length === 0
         && idleMin >= 0.02
-        && dispatched.length === 8;
+        // W0b fix round 2 (judge finding; inventory Appendix B: "8 named species -> new roster"): every STAGED kind
+        // dispatches its windup; Round 4's literal 8 was its roster size
+        && dispatched.length === species.length;
       return { pass, detail: {
         missing, inaudible: audible,
         minSpectralDistance: minDist, closestPair: closest,
@@ -31700,7 +31770,7 @@ const GATES = [
       let out;
       try {
         /* -- park away from every living machine (the selector polls 120 m) */
-        const live = (__CTX__.machines && __CTX__.machines.list || []).filter(x => x.alive);
+        const live = (/* r5-all-machines: clear */ __CTX__.machines && __CTX__.machines.list || []).filter(x => x.alive);
         let best = { x: home.x, z: home.z, d: -1 };
         for (let r = 0; r <= 300; r += 20) {
           for (let ang = 0; ang < 360; ang += 15) {
@@ -32126,7 +32196,9 @@ const GATES = [
         };
 
         /* -- 3. a status loop that starts AND stops ----------------------- */
-        const live = (__CTX__.machines && __CTX__.machines.list || []).filter(m => m.alive);
+        // W0b fix round 2 (R28): the burning victim is a STAGED kind's machine (one is spawned when none stands)
+        if (!livesStaged().length) await stageAny({ dx: 20, dz: 20 });
+        const live = livesStaged();
         let nearest = null; let nd = 1e9;
         for (const m of live) {
           const d = Math.hypot(m.position.x - P.position.x, m.position.z - P.position.z);
@@ -32698,7 +32770,7 @@ const GATES = [
     id: 'A74b-ambience-zones', kind: 'action', lane: 'audio',
     title: 'Ambience is a place: one bed per biome, positional fire/river emitters, distant calls',
     settle: 400, timeout: 120000,
-    assert: `(async () => {
+    assert: staged([], `(async () => {
       ${ARM}
       const a = await _arm();
       if (!a.ac) return { pass: null, detail: 'SKIP: no AudioContext' };
@@ -32783,10 +32855,10 @@ const GATES = [
         a.playAt = (id, pos, opts) => { const r = origAt(id, pos, opts); cues.push({ id, r }); return r; };
         let called = false; let callTries = 0;
         try {
-          const list = (__CTX__.machines && __CTX__.machines.list || []).filter(m => m.alive);
-          if (list.length) {
+          // W0b fix round 2 (R28): the machine in the band is a STAGED kind's (stageAny), never the first living one
+          const m0 = await stageAny({ dx: 40, dz: 40 });
+          if (m0) {
             // stand 95 m from a living machine so one is inside the 70..300 m band
-            const m0 = list[0];
             const ang = Math.random() * Math.PI * 2;
             P.position.x = m0.position.x + Math.cos(ang) * 95;
             P.position.z = m0.position.z + Math.sin(ang) * 95;
@@ -32825,7 +32897,7 @@ const GATES = [
         if (P._snapToGround) P._snapToGround();
       }
       return out;
-    })()`,
+    })()`),
   },
 
   /* ===================================================================== */
