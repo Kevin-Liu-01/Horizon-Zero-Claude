@@ -128,8 +128,17 @@ export const UBC_TUNE = {
   restGrip: [0.14, 1.42, 0.03], restReach: 0.40,   // (0.14, 1.42, 0.03), 0.42
   // aim-ray origin before the first achieved grip: forward, height
   rayFwd: 0.42, rayH: 1.42,                        // 0.45, 1.43
-  // string hand behind the nock, loose kick
-  handBehindNock: 0.062, looseKick: 0.075,         // 0.068, 0.075
+  // string hand behind the nock; the loose: the hand slides back along the jaw
+  // from the anchor by looseKick at the kick's peak (bible §5.2: 8-12 cm), not
+  // out along the un-clamped string line (Oct 22: 0.30 m, the arm behind the head)
+  handBehindNock: 0.082, looseKick: 0.10,          // 0.068, 0.075
+  looseOnJaw: true,
+  // the draw hand is placed off the NOCK's anchor, not on it: the wrist
+  // `handBehindNock` back along the arrow (UBC wrist -> middle knuckle 0.084 m:
+  // the knuckles at the jaw corner, inside A16's 0.09 m nock-to-hand bar) and
+  // `handOut` to her right (the back of the hand outside the face; Oct 22 the
+  // knuckles and thumb were inside the jaw mesh)
+  anchorNock: true, handOut: 0.022,
   // bow-arm elbow pole (char space)
   bowPole: [0.3, -0.95, 0.12],                     // same
   // the right eye relative to `Head` at bind (UBC Eyes mesh centre; alidade raise)

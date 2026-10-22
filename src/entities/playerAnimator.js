@@ -143,6 +143,8 @@ const _alX = new THREE.Vector3(1, 0, 0);
 const _twA = new THREE.Vector3();
 const _tp0 = new THREE.Vector3();   // trunk posture: pelvis, then neck (char)
 const _tp1 = new THREE.Vector3();
+const _anW = new THREE.Vector3();   // R5: the WRIST's anchor (the nock's anchor, less the hand), char
+const _rOut = new THREE.Vector3();  // R5: her right of the arrow (the back of the draw hand), char
 
 
 // (ball- and ankle-bone rest heights are MEASURED off the bind pose in the
@@ -479,6 +481,8 @@ export class PlayerAnimator {
       drawRetract: tn?.drawRetract ?? 0.8,
       drawRetractDown: tn?.drawRetractDown ?? 0.8,
       drawHandRoll: tn?.drawHandRoll ?? 0,
+      looseOnJaw: !!tn?.looseOnJaw,
+      anchorNock: !!tn?.anchorNock, handOut: tn?.handOut ?? 0,
     };
     this.bowSolve = prof?.bow || null;
     /* M10 (E3): the spring-side capsule on the DRAW hand + forearm. */
@@ -671,7 +675,7 @@ export class PlayerAnimator {
       idealGripDist: 0, reach: 0, slide: 0, nockToAnchor: 0, anchorDrop: 0, lmax: 0, pull: 0, restZ: 0,
       u: new THREE.Vector3(), d: new THREE.Vector3(), sh: new THREE.Vector3(),
       shoulderX: 0, shoulderZ: 0,
-      anchor: new THREE.Vector3(), nock: new THREE.Vector3(),
+      anchor: new THREE.Vector3(), nock: new THREE.Vector3(), wristT: new THREE.Vector3(),
     };
 
     /* ------------- Round 4 · reactions, traversal, interaction ------------- */
@@ -1048,6 +1052,7 @@ export class PlayerAnimator {
       u: D.u.toArray().map((v) => +v.toFixed(3)), d: D.d.toArray().map((v) => +v.toFixed(3)), shoulder: D.sh.toArray().map((v) => +v.toFixed(3)),
       anchor: { x: D.anchor.x, y: D.anchor.y, z: D.anchor.z },
       nock: { x: D.nock.x, y: D.nock.y, z: D.nock.z },
+      wristT: { x: D.wristT.x, y: D.wristT.y, z: D.wristT.z },
       quiverT: this._quiverT, looseT: this._looseT, drawS: this._drawS,
     };
   }
@@ -3408,6 +3413,27 @@ export class PlayerAnimator {
       ? Math.max(0, (this._looseDraw ?? 0) * (1 - smoothstep(this._looseT, 0.25, 1)) - drawS)
       : 0;
     _v7.copy(_grip).addScaledVector(_dA, -this.T.handBehindNock - this.T.looseKick * lk - pull * hold);
+    /*
+     * R5 THE HAND BEHIND AND OUTSIDE THE NOCK (profile `tune.anchorNock`,
+     * `tune.handOut`; V24 "knuckle at the jaw corner, fletching near the mouth
+     * corner, ∴ visible", Kevin "draw hand at the cheek"). The anchor is where
+     * the NOCK sits at full draw (the grip is `anchor - nockOff`, and Lmax is
+     * solved for it); the clamp below used to hold the WRIST within
+     * `handAnchorR` of that same point, so on Brea the wrist sat 3-5 cm behind
+     * the nock and the fist was wrapped round the string the wrong way: the
+     * middle and index knuckles and the thumb were INSIDE her jaw (ray parity
+     * 6/6 against the posed head mesh, Oct 22) and the fletching lay over the
+     * back of the hand, hiding the ∴. Now the wrist's own anchor is the nock's
+     * less the hand: `handBehindNock` back along the arrow (UBC wrist ->
+     * knuckle row 0.084 m, so the knuckles land at the jaw corner) and
+     * `handOut` out to her right (the back of the hand outside the face).
+     */
+    if (this.T.anchorNock && aimW > 0.001) {
+      _rOut.crossVectors(_dA, Y_AXIS);
+      if (_rOut.lengthSq() > 1e-8) _rOut.normalize(); else _rOut.set(-1, 0, 0);
+      _v7.addScaledVector(_rOut, this.T.handOut);
+      _anW.copy(_anch).addScaledVector(_dA, -this.T.handBehindNock).addScaledVector(_rOut, this.T.handOut);
+    } else _anW.copy(_anch);
     // ANCHOR CLAMP (see HAND_ANCHOR_R). Past ~0.72 of draw the hand belongs on
     // her face, not wherever the reach clamp's residual left the nock; pull it
     // back onto a sphere around the anchor along the direction it already sits
@@ -3416,12 +3442,29 @@ export class PlayerAnimator {
     // rearward on purpose.
     const anchorPull = smoothstep(drawS, this.T.handAnchorFrom, 0.96) * aimW * (1 - lk);
     if (anchorPull > 0.01 && hold <= 0) {
-      _v6.subVectors(_v7, _anch);
+      _v6.subVectors(_v7, _anW);
       const dh = _v6.length();
       if (dh > this.T.handAnchorR) {
-        _v6.multiplyScalar(this.T.handAnchorR / dh).add(_anch);
+        _v6.multiplyScalar(this.T.handAnchorR / dh).add(_anW);
         _v7.lerp(_v6, anchorPull);
       }
+    }
+    /*
+     * R5 THE LOOSE ON THE JAW (profile `tune.looseOnJaw`; bible §5.2 "loose —
+     * hand travels 8–12 cm back along the jaw"; Kevin: never an arm behind the
+     * head). The released string holds nothing, and the target above is the
+     * UN-clamped string line pushed back by the whole pull: on Brea it threw
+     * the arm straight out behind her at shoulder height — the hand 0.20-0.25 m
+     * behind the back of the skull and the elbow 0.21-0.25 m, 0.30 m of travel
+     * (measured Oct 22, idle / jog / sprint). Through the follow-through the
+     * hand now rides the ANCHOR, slid back along the arrow line by `looseKick`
+     * at the kick's peak, and returns to the string as the kick and the hold
+     * decay together.
+     */
+    const lw = this.T.looseOnJaw ? Math.min(1, Math.max(lk, hold)) * aimW : 0;
+    if (lw > 0.001) {
+      _v6.copy(_anW).addScaledVector(_dA, -this.T.looseKick * lk);
+      _v7.lerp(_v6, lw);
     }
     // nock flourish: the string hand dips to the HIP quiver and comes back up
     // to the string. Runs over QUIVER_T (~0.28s) — at the old 0.13s it was
@@ -3457,6 +3500,7 @@ export class PlayerAnimator {
     // enough to allow a cheek anchor lets the wrist sink into the jaw.
     this._headFrame();
     this._pushOutOfHead(_v7, this.T.handIn);
+    D.wristT.copy(_v7);
     /*
      * Archery form: draw elbow straight BACK, level with the ARROW LINE,
      * fractionally below the shoulder (reference/draw-side.jpg).
@@ -3497,7 +3541,8 @@ export class PlayerAnimator {
         this._charOf(b.loArmR.bone, _sg1);
         this._charOf(b.handR.bone, _sg2);
         const fore = _sg1.distanceTo(_sg2);
-        const ew = aimW * (1 - qw) * smoothstep(drawS, 0.05, 0.45);
+        // ...held through the loose too (the hand is on the jaw, the elbow stays level behind it)
+        const ew = aimW * (1 - qw) * Math.max(smoothstep(drawS, 0.05, 0.45), lw);
         if (this.T.pitchLive) {
           // T-form body (Round 5): heights are measured in the AIM frame — up
           // is world up made perpendicular to the arrow — so a draw aimed 43 deg
