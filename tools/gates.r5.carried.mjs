@@ -15487,7 +15487,11 @@ const GATES = [
         if (ok === false) offenders.push(kind);
         if (ok !== null) measured++;
       }
-      if (!measured) return { pass: null, detail: { note: 'SKIP: no species reported a handle-rig plant', out } };
+      // W0b fix round 2 (R28): the handle rig (machine.footContinuity) runs only on legacy kinds; with no STAGED kind
+      // exposing it the subject does not exist in the Round-5 roster, and a legacy kind is never measured
+      if (!measured) return { pass: null, detail: { note: (Object.values(out).every((v) => v === undefined) && [...species.values()].every((m) => typeof m.footContinuity !== 'function'))
+        ? 'SKIP-legacy (R28): no staged kind exposes a handle-rig foot (footContinuity); the handle rig runs only on legacy kinds (staged: ' + [...species.keys()].join(', ') + ')'
+        : 'SKIP: no species reported a handle-rig plant', out } };
       return { pass: offenders.length === 0,
                detail: { budget: 'planted toe <= 0.12 m/frame (primary) and <= 3 m/s (host backstop), lock ramp <= 9 m/s',
                          offenders, speciesMeasured: measured, out } };
@@ -21455,14 +21459,34 @@ const GATES = [
       + 'shows the same instrument firing 24 times on the pre-fix shape',
     setup: INPUT_ON,
     settle: 1000,
-    assert: staged([], `(async () => {
+    assert: staged([], placed(['impactGround'], `(async () => {
       ${FREEZE} ${FACE} ${FIRE} ${SNAP} ${KILL}
       const C = __CTX__, cb = C.combat;
       const r = C.renderer || C.engine?.renderer;
       freezeAll([]);
       // W0b fix round 2 (judge finding, R28): each phase's machine is a STAGED kind's (a living one, else one spawned
       // 16 m out); Round 4 / the W0a re-stage took the first living machine of ANY kind, legacy kinds first
-      const fresh = () => stageAny({ dx: 16, dz: 16, filter: (x) => !!x.root });
+      // ...parked where it stands (the Round-4 PARK: calm, route pinned, no wait-walk), so a just-spawned machine does
+      // not walk off the arrows' aim point; it still TICKS (plant() thaws it), as the riders require
+      const park = (m) => {
+        if (!m) return m;
+        try { m.route = [m.position.clone()]; m._wpIndex = 0; m._waitT = 1e6; m.suspicion = 0; m._unseenT = 99;
+          m.ai?.search?.stop?.(); m.ai?.engage?.reset?.(); m.setState?.('patrol'); } catch (e) { /* machine-ai owns these */ }
+        return m;
+      };
+      // Measured (fix round 2): an AUTHORED staged machine stands wherever its site put it, and phase A's took 0 riders
+      // from the diagonal 12.7 m stand-off twice in three runs (control 7-8, phase B 8). Each phase therefore SPAWNS
+      // its own machine of the first resolving role on the named, flat, clear impactGround (7 m apart per phase).
+      let __phase = 0;
+      const fresh = async () => {
+        const a = anyKind();
+        if (!a.kind) return null;
+        const pl = PLACE('impactGround');
+        let m = null;
+        try { m = spawnRole(a.role, pl.x + 7 * (__phase++), pl.z); } catch (e) { m = null; }
+        if (m) await new Promise((r) => setTimeout(r, 700));
+        return m && isStaged(m) && m.root ? park(m) : null;
+      };
 
       /* A rider can only exist on a machine that is TICKING: its per-bone hit
        * hulls are refreshed by its own update, and arrows fly straight through
@@ -21584,7 +21608,7 @@ const GATES = [
         + 'lifecycle; phaseB = sites.dispose() out of band, the save.js:426 roster-reload '
         + 'route. combatAssetDisposals.sprite is THREE\\'s process-wide Sprite quad and is '
         + 'REPORTED only — the wreck\\'s own eye-glow sprite frees it (see doc §7).' } };
-    })()`),
+    })()`)),
   },
 
   /* ------------------------------------------------------------------ A93 */
@@ -22443,8 +22467,32 @@ const GATES = [
       // Aim at a machine and tag it through the real key path's entry point.
       const m = await pickMachine(null);
       if (!m) return { pass: null, detail: 'SKIP: no living machine to tag' };
+      /* W0b fix round 2 (staging; measured on the Tiller fixture, 2.68 m tall): (1) a machine FIGHTING the player earns
+       * a pip by the very rule under test, and the herd noticed her at 14 m (3 pips, 0 tags), so the tag step holds every
+       * machine calm (update stubbed, state patrol, suspicion 0), as Round 4's patrolling roster was; (2) faceFrom's
+       * 0.1 rad pitch, framed for Round 4's taller flanker, put the Tiller 3.47 m off the crosshair ray against
+       * sighting's 2.42 m pick radius, so the lens is turned until the crosshair passes through the machine's body
+       * (the T key tags the machine under the crosshair). The bar is unchanged. */
+      for (const x of /* r5-all-machines: freeze */ __CTX__.machines.list) {
+        if (x.alive === false) continue;
+        x.update = () => {};
+        try { x.state = 'patrol'; x.suspicion = 0; } catch (e) { /* machine-ai owns these */ }
+      }
+      const __pl = __CTX__.player, __cam = __CTX__.camera, __V = __pl.position.constructor;
+      const __dir = new __V(), __to = new __V();
+      for (let i = 0; i < 5; i++) {
+        __cam.getWorldDirection(__dir);
+        __to.copy(m.position); __to.y += (m.height ?? 2.4) * 0.55; __to.sub(__cam.position).normalize();
+        let __e = Math.atan2(__to.x, __to.z) - Math.atan2(__dir.x, __dir.z);
+        __e = Math.atan2(Math.sin(__e), Math.cos(__e));   // shortest turn
+        __pl.camYaw += __e;
+        __pl.camPitch += Math.asin(Math.max(-1, Math.min(1, __dir.y))) - Math.asin(Math.max(-1, Math.min(1, __to.y)));
+        await frames(4);
+      }
+      const preTag = hud.compass();
       focus.toggle(true);
       await frames(10);
+      const underCrosshair = focus._pickTarget?.() === m;
       focus.tagTarget();
       await frames(8);
       const after = hud.compass();
@@ -22464,6 +22512,7 @@ const GATES = [
                    questPips: before.questPips },
           tagged: { machinePips: after.machinePips, tags: after.tagCount,
                     kind: m.kind },
+          beforeTag: { machinePips: preTag.machinePips, tags: preTag.tagCount, hostile: preTag.hostile }, underCrosshair,
           zeroed, taggedOne: tagged, addsExactlyOne: one,
         },
       };
@@ -24146,7 +24195,15 @@ const GATES = [
 
       /* ---- 5. jump / roll / crouch are not refused -------------------- */
       const refusals = [];
+      /* W0b fix round 2: 'interact' was the hero's Override-node beat (src/studio/pose.js POSES fired 'override-node');
+       * R17 removed the mechanic and instruments-core's removal-only pass deleted the pose. It is skipped ONLY while
+       * pose.js does not publish it (R17_REMOVED); every other Round-4 pose is still played and must be accepted. */
+      const R17_REMOVED = ['interact'];
+      let __poses = [];
+      try { __poses = ((await import('/src/studio/pose.js')).POSES || []).map((x) => x.id); } catch (e) { __poses = []; }
+      const r17Skipped = [];
       for (const id of ['roll', 'jump', 'land', 'pickup', 'interact', 'crouch', 'idle']) {
+        if (R17_REMOVED.includes(id) && !__poses.includes(id)) { r17Skipped.push(id); continue; }
         const r = S.playPose(id);
         if (!r.ok) refusals.push(id + '(' + r.detail + ')');
         await sleep(60);
@@ -24169,7 +24226,8 @@ const GATES = [
         + ' canvasFilterDuringDeath=' + canvasFilter
         + ' cardLeftUpAfterExit=' + cardLeftUp + ' filterLeftOn=' + filterLeftOn
         + ' exitState=' + ctx.state + ' health=' + healthIn + '->' + p.health
-        + (refusals.length ? ' REFUSED=' + refusals.join(',') : ' allPosesAccepted');
+        + (refusals.length ? ' REFUSED=' + refusals.join(',') : ' allPosesAccepted')
+        + (r17Skipped.length ? ' r17Removed=' + r17Skipped.join(',') : '');
 
       if (stateBad.length) return { pass: false, detail: 'cast states did not stick: ' + stateBad.join(',') + ' — ' + detail };
       if (!deathOk) return { pass: false, detail: 'Death button left the machine alive — ' + detail };
