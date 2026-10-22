@@ -109,9 +109,11 @@ That is why lane1/2/4 passed and lane3 / the judge's run / this round's first ru
   at camPitch −0.8 up-slope, the swing carried the lens 90° round to her side at knee height and the view up to 53°
   (all sky, A31b's film); the boom rotation, which keeps the lens behind her, answers there now. The clamp keeps the
   swing (A31e/f).
-- **Dolly floor under the clamp** (`DOLLY_GAP_UNDER` 1.25): under the pitch clamp the deep-look-up push-in keeps
-  1.25 m from the pivot (A31b's bar is 1.20); the clamp keeps `DOLLY_GAP` 0.90. **The applied push-in is the least that
-  clears** (`least`), not the one with most clearance (a 0.031 m-clear boom had been pulled 2.23 → 0.99 m for 4 mm).
+- **The rotation scan credits the deep-look-up dolly only at the pitch clamp**: under it (camPitch −0.8, now that the
+  swing does not answer first) a dolly answer pulled a 1.45 m boom to 0.98 m (A31b's bar 1.20) where the rotation that
+  keeps the boom's length clears. **The applied push-in is the least that clears** (`least`), not the one with most
+  clearance (a 0.031 m-clear boom had been pulled 2.23 → 0.99 m for 4 mm). (A 1.25 m dolly floor under the clamp was
+  tried and dropped: A31d's aimed pans dithered to 0.71.)
 - **Rotated booms keep their length only as far as it clears** (and ≤ the un-rotated boom + 0.05 m): rotated 36°,
   the 2.23 m boom ran back into the hill where 1.45–1.60 m cleared.
 - **`_preCut` — never hand `cameraBoom` a cut it would make 0.4 m deep**: at a deep look-up the planned boom is
@@ -150,9 +152,9 @@ the old frame at all. ⟨TBD reading⟩
 ### 00.6 V-brea-one-glance (finding 6): the wrap tail and the crescent
 
 - **Wrap tail** — `tune.restKick` (new animator feature, `_restKick`): before the springs read the pose each frame,
-  the wrap tail's root is turned so its root → end line points left-rear (`dir` (0.55, −0.62, −0.56), char space,
-  ~50° off the vertical); the springs hang, bounce and collide it about that rest. At idle its end sits 0.25 m to
-  her left and 0.25 m behind its root. It now leaves the outline at 64 px in the front, back and 3/4 black fills.
+  the wrap tail's root is turned so its root → end line points out to her left and back (`dir` (0.68, −0.62, −0.39),
+  char space, ~52° off the vertical — more out than back: kicked straight back it rode into the line from a chase
+  lens to her crown on A31c's run-away rows); the springs hang, bounce and collide it about that rest. ⟨TBD sheet⟩
 - **Crescent bracer** — the bronze fin is 1.5× taller (horns 7.2 → 10.8 cm proud, belly 2.4 → 3.8 cm):
   `kit-v0.mjs` gains `CRESCENT_K` 1.5 for a rebuild, and because the UBC sources are not on this machine,
   `tools/build/recipes/weapons/kit-v0-crescent.mjs` applied exactly that change to the shipped
@@ -375,8 +377,23 @@ Imported by the Player before `new Assets()`: points the `hero` row at `/models/
 `this.T` (every aim constant from `prof.tune`, Round-4 values as defaults), T-form elevation (`pitchLive`),
 the aim-frame elbow roll, `debugAim()` (now also `wristT`, `headAt`), the M10 capsule (`debugHandCollider()`),
 `chainOf(cls)`, the alidade overlay (`debugAlidade()`), native clips (`debugNative()`), climb hands
-(`debugClimb()`), `_runArmClamp`, `_runBob`, `_locoStep`, `_slidePose`, `behindHead(pt)`, and this round:
-`tune.anchorNock / handOut / drawWristExt / gripOut / looseOnJaw` (§0.1, §0.2).
+(`debugClimb()`), `_runArmClamp`, `_runBob`, `_locoStep`, `_slidePose`, `behindHead(pt)`, fix round 2:
+`tune.anchorNock / handOut / drawWristExt / gripOut / looseOnJaw` (§0.1, §0.2), and fix round 3 (§00):
+
+```js
+animator.replant()                     // release both foot locks: her feet re-plant where she stands (Player._die's respawn)
+animator.debugAim()                    // + shYaw0, bladeCorr, looseClamp, elbowScan (the new layers' state)
+// profile tune keys (absent = the Round-4 behaviour):
+tune.bladeLock   { ref, gain }         // closed-loop chest blade (rad): the shoulder line's pre-blade yaw is held at `ref`
+tune.drawProtDown  0..1                // bow-shoulder protraction share at a steep down aim
+tune.drawShrugDown 0..1                // draw-shrug share at a steep down aim
+tune.looseOut / looseDown  0..1        // shares of the loose kick out to her right / down the jaw line
+tune.looseClear  m                     // the wrist target is held this far in front of the back of the skull, every aimed frame
+tune.elbowForm   { up:[lo,hi], behindHand, behindHead, looseDrop }   // the elbow's roll-circle form scan (`_elbowForm`)
+tune.restKick    [{ bone, tip, dir:[x,y,z], w }]   // a dyn_ chain's rest turned so root -> tip points along dir (char space)
+```
+
+`_footLock` now re-captures a lock whose anchor is more than 1 m from its ball (a teleport is not a slip, §00.2).
 
 ### 2.4 Parts — `src/hero/{index,parts,outfit,stowkit,carry,held}.js` (handed to armory at W1 day 1)
 
@@ -427,8 +444,12 @@ and `ACTIONS` (every rebindable action); `input.bind(action, code)` persists ove
 ### 3.1 Lmax
 
 `Lmax = −u·d + sqrt((u·d)² − |u|² + reach²)`, `u` = anchor − bow shoulder, computed live every aim frame
-(`debugAim().lmax`). Final run: Lmax 0.533 / 0.526 / 0.528 / 0.553 m at camPitch −0.55 / −0.4 / 0 / 0.75 (Oct 19: 0.529–0.550). `rigProfile.bow`: `drawLength` 0.548, `restZ` 0.055, `pull` 0.603,
-`arrowLen` 0.803; every combat bow carries `pull` 0.603 (within the gate's ±0.01 of each solution).
+(`debugAim().lmax`). **Fix round 3:** with `drawProtDown` 0.7 the steep down aim no longer stands over the other
+three, so the four agree within ~0.004 m: 0.531 / 0.529 / 0.527 / 0.533 m at camPitch −0.55 / −0.4 / 0 / 0.75 (gate run
+`f3draw1`; fix round 2: 0.533 / 0.526 / 0.528 / 0.553). `rigProfile.bow`: `drawLength` **0.527**, `restZ` 0.055, `pull`
+**0.582**, `arrowLen` **0.782**; every combat bow carries `pull` 0.582 (the live solution 0.588, within ±0.01). The
+standing pitches' draw now slides ≤ 1.4 cm off the anchor (2–4 cm before), which is what puts the wrist 7–9 cm in front
+of the back of the skull at full draw.
 
 ### 3.2 The constants (`UBC_TUNE`; character space, metres)
 
@@ -441,11 +462,16 @@ and `ACTIONS` (every rebindable action); `input.bind(action, code)` persists ove
 | `headOff` / `headR` | (0, 0.05, 0.01) / (0.105, 0.135, 0.115) | (0, 0.114, 0.016) / (0.083, 0.096, 0.113) | Brea_Skin's head-weighted vertex box, inscribed ellipsoid + 5 mm |
 | `handIn` | 0.90 | 0.985 | the hand may rest ON the face, never in it |
 | `bowArmLock` | 0.9945 | 0.9945 | unchanged |
-| `handBehindNock` | 0.068 | **0.076** | wrist behind the nock (UBC wrist → knuckle 0.084), §0.1 |
-| `looseKick` | 0.075 | **0.10** | bible 8–12 cm along the jaw, §0.2 |
-| `anchorNock`, `handOut`, `drawWristExt`, `gripOut` | —, —, —, 0.035 | **true, 0.020, 0.35 rad, −0.008** | §0.1 |
-| `looseOnJaw` | — | **true** | §0.2 |
-| `drawShrug`, `drawRetract`, `drawRetractDown` | 0, 0.8, 0.8 | 0.58, −0.10, **0.5** | forearm in line; down-aim elbow level (§0.5) |
+| `handBehindNock` | 0.068 | **0.060** (f.r.2: 0.076) | wrist behind the nock; knuckles 0/6 inside the head mesh (§00.1) |
+| `looseKick` | 0.075 | **0.11** (f.r.2: 0.10) | bible 8–12 cm along the jaw (§00.1) |
+| `anchorNock`, `handOut`, `drawWristExt`, `gripOut` | —, —, —, 0.035 | true, **0.026** (f.r.2: 0.020), 0.35 rad, −0.008 | §0.1; handOut: A35's floor margin (§00.1) |
+| `looseOnJaw` | — | true | §0.2 |
+| `looseOut`, `looseDown`, `looseClear` | — | **0.6, 0.25, 0.012** | the loose back, out and down; the wrist ≥ 0.012 m in front of the skull's back plane on every aimed frame (§00.1) |
+| `drawShrug`, `drawRetract`, `drawRetractDown` | 0, 0.8, 0.8 | 0.58, −0.10, 0.5 | forearm in line; down-aim elbow level |
+| `drawProtDown`, `drawShrugDown` | — (1, 0) | **0.7, 0.4** | flat Lmax over pitch; the down-aim elbow up-and-back of the hand under the shoulder joint (§00.1) |
+| `bladeLock` | — | **{ ref −0.311, gain 1 }** | closed-loop chest blade while moving (§00.1) |
+| `elbowForm` | — | **up [−0.022, 0.04], behindHand 0.072, behindHead 0.17, looseDrop 0.15** | the elbow's roll-circle form scan (§00.1) |
+| `restKick` | — | **wrapSash: dir (0.68, −0.62, −0.39)** | the wrap tail's rest out to her left-rear (§00.6) |
 | `drawHandRoll` | — | 1.0 | back of the hand to her right (∴ out) |
 | `anchorPitch` | — | level 0, up +0.016, down −0.012 | A35 band at the up-aims |
 | `restGrip`, `restReach`, `rayFwd`, `rayH` | (0.14, 1.42, 0.03), 0.42, 0.45, 1.43 | same, 0.40, 0.42, 1.42 | ready hold, first-frame aim ray |

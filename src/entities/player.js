@@ -573,8 +573,6 @@ const SWING_CLR_HOLD = 0.05;
  */
 const DOLLY_HEAD = 0.55;
 const DOLLY_GAP = 0.90;
-/** R5 fix round 3: the push-in's floor under the pitch clamp (see `_dollyFor`). */
-const DOLLY_GAP_UNDER = 1.25;
 const DOLLY_STEPS = 12;
 const DOLLY_REL = 4;
 const DOLLY_BODY_MIN = 0.16;              // m: never pushed closer to her body than this (near plane 0.10)
@@ -3198,13 +3196,7 @@ void main() {
    */
   _dollyFor(O, Lx, Ly, Lz, steps = DOLLY_STEPS, least = false) {
     const H = this._hw, P = this._pivotPos;
-    /* R5 fix round 3: under the pitch clamp (camPitch -0.8 on the 38.8 deg
-     * face, where the swing no longer answers first — `SWING_UP_ON`) the
-     * push-in keeps `DOLLY_GAP_UNDER` from the pivot, not the clamp's
-     * `DOLLY_GAP`: a dolly there pulled a 1.45 m boom to 0.98 m, under A31b's
-     * 1.20 m bar (measured Oct 22); where it cannot clear above that, the
-     * rotation answers instead. */
-    const gapFloor = (this.camPitch ?? 0) <= PITCH_UP + 0.15 ? DOLLY_GAP : DOLLY_GAP_UNDER;
+    const gapFloor = DOLLY_GAP;
     const tMin = this._dollyMin(Lx, Ly, Lz);
     const body = this._bodyReady();
     let bodyBar = 0, c1 = 9;
@@ -3758,7 +3750,12 @@ void main() {
       /* At a deep look-up the ground's first answer below the swing is the
        * DOLLY (no aim, no framing, no lift): a rotation is only asked for
        * where even the deepest admissible push-in cannot clear. */
-      if (dk > 0.5 && hw) {
+      /* R5 fix round 3: ...at the pitch CLAMP. Under it (camPitch -0.8 on the
+       * 38.8 deg face) the swing no longer answers first (`SWING_UP_ON`), and
+       * a dolly answer there pulled the lens to 0.98 m of a 1.45 m boom —
+       * under A31b's 1.20 m bar — where the rotation that keeps the boom's
+       * length clears (measured Oct 22). */
+      if (dk > 0.5 && hw && pitch <= PITCH_UP + 0.15) {
         const Lx = P.x + sy * cp * len, Ly = P.y + sp * len, Lz = P.z + cy * cp * len;
         const t = this._dollyFor(P, Lx, Ly, Lz, 3);
         /* R5 (A31e / A31f on Brea): the push-in only answers the ground if
