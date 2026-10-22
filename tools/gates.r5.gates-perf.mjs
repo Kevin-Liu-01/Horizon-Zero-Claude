@@ -1593,7 +1593,10 @@ async function classifyRow(g, r, run, verdicts, gradeVisual, trust = { regs: new
   if (r.status === 'PASS') return { ...out, cls: 'pass' };
   if (r.status === 'FAIL' || r.status === 'ERROR') return { ...out, cls: 'fail', note: d.slice(0, 200) };
   if (r.status !== 'NEEDS-JUDGE') {
-    const cls = skipClassOf(d) || (ATTRIBUTION.test(d) ? 'pendingAttributed' : 'pendingUnattributed');
+    // (W0b) the SKIP label is read from the HEAD of the row's verdict, not from anywhere in its detail: A21 reports
+    // its R18 scenario fallbacks (which quote SKIP-legacy-deleted notes) inside a PENDING verdict, and read as skipR30
+    const head = typeof r.detail === 'string' ? r.detail : typeof r.detail?.verdict === 'string' ? r.detail.verdict : d;
+    const cls = skipClassOf(String(head).slice(0, 160)) || (ATTRIBUTION.test(d) ? 'pendingAttributed' : 'pendingUnattributed');
     return { ...out, cls, note: d.slice(0, 200) };
   }
   // a visual row: the frame this run filmed, as the run copied it into the ledger
