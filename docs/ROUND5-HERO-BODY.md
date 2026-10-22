@@ -162,8 +162,8 @@ motion is the smallest and is hidden by her arm in one strip.
   the wrap tail's root is turned so its root → end line points out to her left and back (`dir` (0.68, −0.62, −0.39),
   char space, ~52° off the vertical — more out than back: kicked straight back it rode into the line from a chase
   lens to her crown on A31c's run-away rows); the springs hang, bounce and collide it about that rest. On the move
-  the kick fades by 0.7 of the gait weight (`moveDamp`): running, the springs trail it behind her by themselves, and
-  the kicked rest held it out of a chase lens's frame (A31c's run rows lost 0.02–0.05 of onFrac to it). At idle it
+  the kick fades by 0.4 of the gait weight (`moveDamp`: at 0 a crouch-walk carried it out sideways like a flag, V3;
+  at 0.7 it hid behind her head from V23's front-left lens). At idle it
   reads as a pennant in the island's wind (V3 / V14 show it standing out to her left — a judge may call it stiff;
   the rest kick has no flutter of its own).
 - **Crescent bracer** — the bronze fin is 1.5× taller (horns 7.2 → 10.8 cm proud, belly 2.4 → 3.8 cm):
@@ -487,7 +487,7 @@ of the back of the skull at full draw.
 | `drawProtDown`, `drawShrugDown` | — (1, 0) | **0.7, 0.4** | flat Lmax over pitch; the down-aim elbow up-and-back of the hand under the shoulder joint (§00.1) |
 | `bladeLock` | — | **{ ref −0.311, gain 1 }** | closed-loop chest blade while moving (§00.1) |
 | `elbowForm` | — | **up [−0.022, 0.04], behindHand 0.072, behindHead 0.17, looseDrop 0.15** | the elbow's roll-circle form scan (§00.1) |
-| `restKick` | — | **wrapSash: dir (0.68, −0.62, −0.39), moveDamp 0.7** | the wrap tail's rest out to her left-rear, standing (§00.6) |
+| `restKick` | — | **wrapSash: dir (0.68, −0.62, −0.39), moveDamp 0.4** | the wrap tail's rest out to her left-rear, faded on the move (§00.6) |
 | `drawHandRoll` | — | 1.0 | back of the hand to her right (∴ out) |
 | `anchorPitch` | — | level 0, up +0.016, down −0.012 | A35 band at the up-aims |
 | `restGrip`, `restReach`, `rayFwd`, `rayH` | (0.14, 1.42, 0.03), 0.42, 0.45, 1.43 | same, 0.40, 0.42, 1.42 | ready hold, first-frame aim ray |
@@ -570,9 +570,23 @@ W0-day1 baseline: R36, listed). Fix round 2's final run for comparison: 39 PASS 
 | V-brea-face | salt-line, the pale left-brow scar, dark eyes; the profile visibly not the stock face; the ∴ inset; the tail now visible behind her in the front view |
 | V-traversal | the climb's pull frame (palms on the top, knee up), the slide low with the arms out, standing on the 3 m top step — unchanged from fix round 2 |
 
-### 4.5 Global green list (the items that exist in this tree; one run, `--only`, port 5252)
+### 4.5 Global green list (the items that exist in this tree; one run, `--only`, port 5252, run `f3global`)
 
-⟨TBD global table⟩
+| gate | verdict | numbers |
+|---|---|---|
+| A1-boot-clean | PASS | state = playing |
+| A20b-no-system-errors | PASS | 0 errors, 233 frames |
+| A9-perf-budget | PASS | 282 draws, 58.6 fps (fpsAttributable true) |
+| A21-real-draw-calls | PENDING (timing terms) | draws 286 / 177 / 311 and triangles PASS; GPU / p95 terms not attributable |
+| A90-memory-stability | PASS | heap −7.7 %, geometries +9, textures −28 |
+| A90-memory-stability-expansion | PASS | non-machine growth 0, geometries +3 |
+| A90b-memory-attribution | PASS | 0 offenders, 0 orphaned textures |
+| A90-rig-reclaim | PASS | geometries +5, textures 0 over 30 cycles |
+| A81-canon-speed-bands | FAIL (not this lane) | the one stale literal is npc's `A96-npc-animated` ("travellers >= 4"); none in `tools/gates.r5.hero-body.mjs` |
+| A-ID-ip-assets-gone (pipeline file) | FAIL (not this lane) | the only hit: `public/anims-hybrid/aloy-ual.json` (gates-perf's W0a deletion, not merged) |
+| A-licence-manifest (pipeline file) | FAIL (not this lane) | legacy-source FAIL on the same `aloy-ual.json`; third-party / credits PENDING |
+| A-assets-tracked (pipeline file) | FAIL (environment) | `git check-ignore` exits 128: `models-staging/r5-src` became a SYMLINK to pipeline's tree at 21:28 UTC (not made by this lane) and git refuses a pathspec beyond it; its real miss is unchanged — `SPECS.hero` still names `aloy.glb` (R39) |
+| A90-abs, A-alloc-rate, A-vram-ledger, A-no-horizon-terms-*, A-reach-all-sites, A-port-guard, A-carried-suite | — | not in this tree (gates-perf / brand / instruments-core files not merged) |
 
 ## 5. Brea's sheets for Kevin (§3.1 W0b exit, §11 decision 1)
 

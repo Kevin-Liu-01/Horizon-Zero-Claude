@@ -601,6 +601,8 @@ const KEEP_NDC = 0.74;
 const KEEP_MAX = 0.35;
 /** R5 fix round 3: the keeper's allowance over the hijack's aim budget where the ground rotated the boom (rad, 12.6 deg) — AT THE PITCH CLAMP only: A31b holds every -0.8 staging's look-down to `camAimBudget` (unrestricted, its -0.8 hillside lost 28 deg of a 25.8 deg budget). */
 const KEEP_GROUND_EXTRA = 0.22;
+/** ...and there the lower clavicle is kept this much further inside the frame (NDC). */
+const KEEP_NDC_CLAMP = 0.10;
 /** R5 fix round 3: the keeper's rate (rad/s) ... */
 const KEEP_RATE = 0.6;
 /** ...and the hijack's steps plus the keeper's never more than this in one RENDERED frame (rad, 2.6 deg; A31e's bar is 3 deg past the input). */
@@ -4779,12 +4781,16 @@ void main() {
         const dx = px - this._camPos.x, dy = py - this._camPos.y, dz = pz - this._camPos.z;
         const es = Math.atan2(dy, Math.hypot(dx, dz));
         const ev = Math.asin(THREE.MathUtils.clamp(ly, -1, 1));
-        const room = Math.atan(KEEP_NDC * Math.tan(cam.fov * (Math.PI / 360)));
+        // (at the clamp, where the ROTATION took the shot: a little more room
+        // under her and a little more give-back — A31e / A31f's up-slope clamp
+        // rows lost her head for 1-2 samples with the keeper at KEEP_MAX)
+        const clampK = THREE.MathUtils.smoothstep(-(this.camPitch ?? 0), -PITCH_UP - 0.15, -PITCH_UP - 0.05);
+        const kx = rotK * clampK;
+        const room = Math.atan((KEEP_NDC - KEEP_NDC_CLAMP * kx) * Math.tan(cam.fov * (Math.PI / 360)));
         // ...out of what the AIM BUDGET has left: the ELEVATION the player
         // asked for (`elevReq`) never loses more than the budget in all (the
         // hijack's yaw payback is not elevation and does not count)
-        const clampK = THREE.MathUtils.smoothstep(-(this.camPitch ?? 0), -PITCH_UP - 0.15, -PITCH_UP - 0.05);
-        want = groundK * Math.min(KEEP_MAX, Math.max(0, hijackMax + KEEP_GROUND_EXTRA * rotK * clampK - Math.max(0, elevReq - ev)), Math.max(0, (ev - es) - room));
+        want = groundK * Math.min(KEEP_MAX + KEEP_GROUND_EXTRA * kx, Math.max(0, hijackMax + KEEP_GROUND_EXTRA * kx - Math.max(0, elevReq - ev)), Math.max(0, (ev - es) - room));
       }
       // eased in and out — except on AIM, where the reticle is the shot and
       // the view returns to the request at once (A31c's aim-entry bars) — and
