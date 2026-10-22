@@ -18,6 +18,7 @@ import {
   existsSync, readFileSync, readdirSync, statSync, rmSync, mkdirSync, realpathSync, lstatSync,
 } from 'node:fs';
 import { fileURLToPath } from 'node:url';
+import { rulings as rulingsOf } from '../sources.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 export const ROOT = path.resolve(HERE, '../../..');
@@ -448,7 +449,49 @@ export function pocReferences({ root = ROOT } = {}) {
   return refs;
 }
 
-export function pocPromotedStatic({ root = ROOT } = {}) {
+/**
+ * W0b fix round 3: the gate grades the orchestrator's ruling the moment it is recorded in docs/ROUND5-PLAN.md §8.3 as
+ * `<!-- r5-ruling poc-closure=w1-exit -->` (option 1) or `<!-- r5-ruling poc-closure=literal -->` (option 2), the
+ * marker form engine-gpu's gates already read. With no marker the bar is the literal one above and the verdict is at
+ * best PENDING (unchanged). Each option is also PROJECTED on the current tree (`projections`), so the ruling can be
+ * made on measured consequences:
+ *   w1-exit  (b) holds when nothing but the three closure files is left (symlinks count as left); (c) still graded;
+ *            the closure's suppliers and A-gpu-tier's import stay allowed; every other reference FAILs.
+ *   literal  (b) both folders absent (nothing left, symlinks included); (c) struck, the biome probe is reported only;
+ *            only the main.js hook (world-ground's, W1 exit) may still name the folders: the suppliers that would
+ *            re-create them and A-gpu-tier's import are references that FAIL.
+ */
+export const POC_RULING_KEY = 'poc-closure';
+export const POC_RULINGS = ['w1-exit', 'literal'];
+/** Everything under the two POC folders, files AND symlinks (a symlinked directory keeps a folder present). */
+function pocLeft(root) {
+  const out = [];
+  const rec = (dir, rel = '') => {
+    const abs = path.join(root, dir, rel);
+    if (!existsSync(abs) && !isLink(abs)) return;
+    for (const name of readdirSync(abs).sort()) {
+      if (name === '.DS_Store') continue;
+      const r = rel ? `${rel}/${name}` : name;
+      const st = lstatSync(path.join(abs, name));
+      if (st.isSymbolicLink()) out.push(`${dir}/${r}`);
+      else if (st.isDirectory()) rec(dir, r);
+      else out.push(`${dir}/${r}`);
+    }
+  };
+  for (const d of POC_DIRS) rec(d);
+  return out;
+}
+const isLink = (p) => { try { return lstatSync(p).isSymbolicLink(); } catch { return false; } };
+
+export function pocPromotedStatic({ root = ROOT, rulingMap = null } = {}) {
+  const rmap = rulingMap || rulingsOf(root);
+  const ruling = POC_RULINGS.includes(rmap[POC_RULING_KEY]) ? rmap[POC_RULING_KEY] : null;
+  const graded = gradePoc({ root, ruling });
+  const projections = Object.fromEntries(POC_RULINGS.map((r) => [r, (({ pass, detail }) => ({ pass, problems: detail.problems }))(gradePoc({ root, ruling: r }))]));
+  return { pass: graded.pass, detail: { ...graded.detail, recordedRuling: ruling ? `${POC_RULING_KEY}=${ruling}` : null, projections } };
+}
+
+function gradePoc({ root, ruling }) {
   const problems = [];
   const main = readFileSync(path.join(root, 'src/main.js'), 'utf8');
   const code = stripComments(main);
@@ -458,15 +501,17 @@ export function pocPromotedStatic({ root = ROOT } = {}) {
   if (humanPath) problems.push('src/main.js still has a ?poc=human code path');
   if (creaturePath) problems.push('src/main.js still has a ?poc=creature code path');
   const biomeHook = /['"]biome['"]/.test(code) && /\/tools\/r5-poc\/poc-\$\{POC\}\.js/.test(code);
-  if (!biomeHook) problems.push('the ?poc=biome hook is missing from src/main.js (clause (c): it serves A-gpu-tier until the W1 exit)');
-  // (b) literally: every file on disk under either folder (tracked or not)
-  const left = [];
-  for (const dir of POC_DIRS) for (const rel of walk(path.join(root, dir))) if (!rel.endsWith('.DS_Store')) left.push(`${dir}/${rel}`);
+  if (!biomeHook && ruling !== 'literal') problems.push('the ?poc=biome hook is missing from src/main.js (clause (c): it serves A-gpu-tier until the W1 exit)');
+  // (b) literally: every file AND symlink on disk under either folder (tracked or not)
+  const left = pocLeft(root);
   const closureLeft = left.filter((f) => BIOME_CLOSURE_FILES.includes(f));
   const otherLeft = left.filter((f) => !BIOME_CLOSURE_FILES.includes(f));
   for (const f of otherLeft) problems.push(`${f} is still on disk (clause (b): the folder must be absent; not even the ?poc=biome closure excuses it)`);
-  // every reference to the folders, classified
+  if (ruling === 'literal') for (const f of closureLeft) problems.push(`${f} is still on disk (ruling poc-closure=literal: both folders absent, clause (c) struck)`);
+  // every reference to the folders, classified (under the literal ruling only the main.js hook, world-ground's W1-exit
+  // removal, may still name them: a supplier would re-create the folder, A-gpu-tier's import would 404)
   const refs = pocReferences({ root });
+  if (ruling === 'literal') for (const r of refs) if (r.kind === 'biome-closure' && r.file !== 'src/main.js') { r.kind = 'tool-reference'; r.why = `${r.why}; not allowed under poc-closure=literal`; }
   const outside = refs.filter((r) => r.kind === 'runtime-reader' || r.kind === 'tool-reference');
   for (const r of outside) problems.push(`${r.file}:${r.line} references the POC folders (${r.kind}): ${r.text}`);
   // NEGATIVE CONTROLS: the pre-removal main.js text, and a URL-default reader (the judge's sheets.js case)
@@ -476,17 +521,18 @@ export function pocPromotedStatic({ root = ROOT } = {}) {
   const control = { mainCaught: HUMAN_RE.test(planted) && CREATURE_RE.test(planted),
     urlDefaultCaught: !!readerHit && /['"`]/.test(plantedReader.slice(0, readerHit.index + 1)) };
   const controlOk = control.mainCaught && control.urlDefaultCaught;
-  const ruling = closureLeft.length ? {
+  const blocked = !ruling && closureLeft.length ? {
     blockedBy: 'plan §9 A-poc-promoted clauses (b) and (c) contradict while ?poc=biome exists (main.js imports /tools/r5-poc/poc-${POC}.js; the biome loads /models/r5-poc/{sounding-ring,tiller}.glb)',
     options: [
       '(1) accept the three closure files until world-ground removes ?poc=biome at the W1 exit; their deletion (and the sounding-ring LICENSES row + .gitignore exception) moves to world-ground\'s W1-exit row; A-poc-promoted then grades "nothing but the closure, no reference outside it" at the W0 exit',
       '(2) the literal bar: delete both folders at the W0 exit and strike clause (c); ?poc=biome and A-gpu-tier\'s vista go dark until the W1 Pans',
     ],
   } : null;
-  const pass = problems.length || !controlOk ? false : closureLeft.length ? null : true;
+  const pass = problems.length || !controlOk ? false : blocked ? null : true;
   return { pass, detail: {
+    ruling: ruling ? `${POC_RULING_KEY}=${ruling}` : null, clauseC: ruling === 'literal' ? 'struck (ruling poc-closure=literal): the biome probe is reported, not graded' : 'graded (biome-check.mjs)',
     humanPath, creaturePath, biomeHook, leftOnDisk: left, closureLeft, otherLeft,
     references: { total: refs.length, outside, biomeClosure: refs.filter((r) => r.kind === 'biome-closure'), checkers: refs.filter((r) => r.kind === 'checker').length },
-    problems, ruling, negativeControl: control,
+    problems, blocked, negativeControl: control,
   } };
 }

@@ -46,6 +46,14 @@
  * missing staged source AND A-sources-staged itself reports the files missing
  * (classification has its own negative control); any other recipe failure is
  * FAIL. `tools/build/sources.mjs restore` puts the lock's files back.
+ *
+ * W0b fix round 3: A-sources-staged also runs the ARCHIVE IDENTITY controls
+ * (tools/build/pipeline/archive-controls.mjs, 11 cases in scratch): a re-zip of
+ * the staged subset, a size-forged re-zip, a renamed zip, a changed member and
+ * a keep-all stage-zip are refused with the lock and row untouched; the
+ * positive cases record a name- and size-checked hash with its member listing;
+ * hand-edited lock/row records are caught by the shared `archiveAgreement`
+ * term that status() and tools/licences/check.mjs (third-party) grade.
  */
 import os from 'node:os';
 import path from 'node:path';
@@ -445,8 +453,17 @@ async function sourcesStaged() {
       }
     } finally { rmSync(tamper, { recursive: true, force: true }); }
   }
-  const pass = control.ok === false ? false : r.pass;
-  return { pass, detail: { ...r.detail, negativeControl: control } };
+  // fix round 3 — ARCHIVE IDENTITY controls (judge: a self-made zip's hash was recorded as the upstream archive's):
+  // 11 cases in scratch on the real restore / verify-zip / stage-zip / archiveAgreement code (refusals leave the lock and
+  // the row untouched; the positive cases record name-checked hash + size + listing). tools/build/pipeline/archive-controls.mjs
+  const { archiveControls } = await imp('tools/build/pipeline/archive-controls.mjs');
+  let archive;
+  try { archive = await archiveControls({ scratch: scratchRoot() }); } catch (e) { archive = { ok: false, error: String(e?.stack || e).slice(0, 400) }; }
+  const archiveSummary = { ok: archive.ok, row: archive.row, error: archive.error, why: archive.why,
+    cases: (archive.cases || []).map((c) => ({ case: c.case, ok: c.ok, ...(c.restore ? { restore: c.restore.ok, problems: (c.restore.problems || []).length } : {}),
+      ...(c.verifyZip ? { verifyZip: c.verifyZip.ok } : {}), ...(c.stageZip ? { stageZip: c.stageZip.ok } : {}), ...(c.tampered ? { tampered: c.tampered } : {}) })) };
+  const pass = control.ok === false || archive.ok === false ? false : r.pass;
+  return { pass, detail: { ...r.detail, negativeControl: control, archiveIdentityControls: archiveSummary } };
 }
 
 function childJson(script, args, timeoutMs) {
@@ -469,8 +486,11 @@ async function pocPromoted({ PORT }) {
   const dyn = await childJson('tools/build/pipeline/biome-check.mjs', ['--scratch', scratchRoot(), '--port', String(PORT)], 600000);
   // literal: PASS needs (a) + (b) absent folders + (c) biome serving; the static half is null (ruling) at best while
   // the closure files exist, so the gate cannot PASS with anything left in either folder
-  const pass = st.pass === false || dyn.pass === false ? false : st.pass === true && dyn.pass === true ? true : null;
-  return { pass, detail: { static: st.detail, biome: dyn.detail?.gate ? { pass: dyn.detail.gate.pass, ...dyn.detail.gate.detail, consoleErrors: dyn.detail.gate.consoleErrors, error: dyn.detail.gate.error } : dyn.detail, biomeMs: dyn.detail?.ms } };
+  // fix round 3: under the recorded ruling poc-closure=literal clause (c) is struck (the probe is reported, not graded);
+  // with no ruling or poc-closure=w1-exit it is graded. No ruling = the literal bar, at best PENDING (w0b-checks.mjs)
+  const struck = st.detail.ruling === 'poc-closure=literal';
+  const pass = st.pass === false || (!struck && dyn.pass === false) ? false : st.pass === true && (struck || dyn.pass === true) ? true : null;
+  return { pass, detail: { clauseC: struck ? 'struck by ruling poc-closure=literal (probe reported only)' : 'graded', static: st.detail, biome: dyn.detail?.gate ? { pass: dyn.detail.gate.pass, ...dyn.detail.gate.detail, consoleErrors: dyn.detail.gate.consoleErrors, error: dyn.detail.gate.error } : dyn.detail, biomeMs: dyn.detail?.ms } };
 }
 
 /* ---------------------------------------------------------------- */

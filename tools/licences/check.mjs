@@ -17,7 +17,11 @@
  *                     (add.mjs validateRow, no exemption); no NC/ND
  *   third-party       every non-legacy third-party asset row has source_url,
  *                     archive_sha256 and retrieved (PENDING while the row
- *                     names the W0b re-fetch in `pending`)
+ *                     names the W0b re-fetch in `pending`); a row with a
+ *                     tools/build/sources.lock.json entry must agree with it
+ *                     (archive sha, name, size), and a recorded hash must carry
+ *                     the size + member listing beyond the staged subset —
+ *                     else FAIL (fix round 3: no self-made zip's hash passes)
  *   legacy-source     every legacy row has an established source and a
  *                     CC0 / CC-BY / OFL / project-original licence. A row
  *                     marked `ip: true` (or declaring IP provenance) is NEVER
@@ -53,9 +57,11 @@ import {
   currentWave, loadSpecs, scheduledStatus, rowProvenanceText, SCHEDULED_IP, waveRank,
 } from './lib.mjs';
 import { validateRow } from './add.mjs';
+import { archiveAgreement } from '../build/sources.mjs';
 
 export const PUBLIC_CAP_BYTES = 60 * 1024 * 1024;
 const CODE_ROW_IDS = ['code-three', 'code-three-mesh-bvh', 'code-meshopt-decoder'];
+const LOCK_REL = 'tools/build/sources.lock.json';
 
 /** The README "Credits" section text (from its heading to the next h2), or ''. */
 export function readmeCredits(root = ROOT) {
@@ -149,6 +155,8 @@ export async function check(root = ROOT, { env = process.env, rendered = null } 
   const tp = rows.filter((r) => !r.legacy && r.licence !== 'project-original' && !CODE_LICENCES.includes(r.licence)
     || (r.legacy && r.pending));
   const missing = [], pending = [], derived = [];
+  let lockSources = {};
+  try { lockSources = JSON.parse(readFileSync(path.join(root, LOCK_REL), 'utf8')).sources || {}; } catch { /* no lock: rows graded alone */ }
   for (const r of tp) {
     if (Array.isArray(r.derived_from) && r.derived_from.length) {
       const srcs = r.derived_from.map((id) => rows.find((x) => x.id === id));
@@ -156,6 +164,13 @@ export async function check(root = ROOT, { env = process.env, rendered = null } 
       if (bad.length) missing.push({ id: r.id, missing: [`derived_from source row(s) absent or not a source: ${bad.join(', ')}`] });
       else derived.push({ id: r.id, from: r.derived_from });
       continue;
+    }
+    // fix round 3: the row and the staging lock must name the same upstream archive (sha, name, size), and a recorded
+    // hash must carry the size + member listing that tie it to that archive (a re-zip of the trimmed subset cannot)
+    const ent = lockSources[r.id];
+    if (ent) {
+      const dis = archiveAgreement(r, ent, { root });
+      if (dis.length) { missing.push({ id: r.id, missing: dis.map((d) => `disagrees with ${LOCK_REL}: ${d}`) }); continue; }
     }
     const need = ['source_url', 'archive_sha256', 'retrieved'].filter((k) => !r[k]);
     if (!need.length) continue;

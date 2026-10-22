@@ -260,7 +260,7 @@
         }
       },
       "totalBytes": 4054259,
-      "stagedFrom": "public/anims (the shipped UAL v1 Godot export; restored with restore --from public/anims after the Oct 22 reboot). The v1 archive is superseded upstream: the itch page serves v3.0 since 16 Jun 2026, so recording an archive SHA-256 needs a v1 archive from a backup (or a ruling)"
+      "stagedFrom": "public/anims (the shipped UAL v1 Godot export; restored with restore --from public/anims after the Oct 22 reboot). The v1 archive is superseded upstream: the itch page serves v3.0 since 16 Jun 2026, so its hash needs <!-- r5-ruling archive-per-file-ual1=accepted --> (record-per-file) or a v1 archive from a backup (restore --zip under <!-- r5-ruling archive-size-ual1=first-fetch -->)"
     },
     "ual2-standard": {
       "row": "ual2-standard",
@@ -268,6 +268,11 @@
       "archive": {
         "name": "Universal Animation Library 2[Standard].zip",
         "bytes": null,
+        "approxBytes": {
+          "min": 15500000,
+          "max": 19000000,
+          "from": "docs/research/round5-pipeline-humans.md (Oct 15 proof): \"zip 17 MB\" (itch lists the size rounded; no exact byte count was kept)"
+        },
         "sha256": null,
         "retrieved": "2026-10-15",
         "page": "https://quaternius.itch.io/universal-animation-library-2"

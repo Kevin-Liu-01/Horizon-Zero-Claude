@@ -34,7 +34,7 @@ function writeManifest(manifest, root = ROOT) {
 }
 
 export const FIELD_ORDER = ['id', 'paths', 'title', 'author', 'source_url', 'licence', 'licence_text', 'licence_url',
-  'archive_sha256', 'archive_bytes', 'archive_name', 'derived_from', 'retrieved', 'modified', 'attribution', 'legacy', 'ip', 'delete_at', 'delete_owner', 'pending'];
+  'archive_sha256', 'archive_bytes', 'archive_name', 'archive_note', 'derived_from', 'retrieved', 'modified', 'attribution', 'legacy', 'ip', 'delete_at', 'delete_owner', 'pending'];
 
 export function validateRow(r) {
   const errs = [];

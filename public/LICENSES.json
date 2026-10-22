@@ -588,7 +588,7 @@
       "retrieved": null,
       "modified": null,
       "attribution": null,
-      "pending": "archive_sha256: the shipped files are UAL v1 (DEF-* rig names, R15 keeps it); the itch page has served v3.0 since 16 Jun 2026, so the v1 archive cannot be re-fetched. Staged per-file SHA-256s are in tools/build/sources.lock.json (ual1). Needs an orchestrator/Kevin ruling: accept per-file hashes + the supersession record, or a v1 archive from a backup"
+      "pending": "archive_sha256: the shipped files are UAL v1 (DEF-* rig names, R15 keeps it); the itch page has served v3.0 since 16 Jun 2026, so the v1 archive cannot be re-fetched. Staged per-file SHA-256s are in tools/build/sources.lock.json (ual1). Needs an orchestrator ruling: <!-- r5-ruling archive-per-file-ual1=accepted --> (then `node tools/build/sources.mjs record-per-file --row ual1` records the per-file manifest hash, stage-files form) or a v1 archive from a backup (then `restore --row ual1 --zip <file>` under <!-- r5-ruling archive-size-ual1=first-fetch -->, since no v1 size was kept)"
     },
     {
       "id": "ual2-standard",
@@ -606,7 +606,7 @@
       "retrieved": "2026-10-15",
       "modified": "source archive: staged subset (UAL2_Standard.glb) in models-staging/r5-src/ual2; shipped clip files built from it carry derived_from: [\"ual2-standard\"]",
       "attribution": null,
-      "pending": "archive_sha256: the Oct 15 zip was deleted after the Round-5 proof, and the staged extract was lost with the Oct 22 reboot (models-staging/r5-src is empty for this row). One command records the hash AND re-stages the trimmed files, verified byte for byte against tools/build/sources.lock.json: `node tools/build/sources.mjs restore --row ual2-standard --zip <file> --delete-zip` once the archive is downloaded again (itch.io free download; Kevin's go-ahead)"
+      "pending": "archive_sha256: the Oct 15 zip was deleted after the Round-5 proof, and the staged extract was lost with the Oct 22 reboot (models-staging/r5-src is empty for this row). One command records the hash AND re-stages the trimmed files, verified byte for byte against tools/build/sources.lock.json: `node tools/build/sources.mjs restore --row ual2-standard --zip <file> --delete-zip` once the archive is downloaded again (itch.io free download; Kevin's go-ahead). No exact byte size was kept for this zip (the proof noted \"17 MB\"), so the restore also needs the orchestrator ruling <!-- r5-ruling archive-size-ual2-standard=first-fetch --> and a size inside the lock's 15.5–19 MB window"
     },
     {
       "id": "ubc-standard",
