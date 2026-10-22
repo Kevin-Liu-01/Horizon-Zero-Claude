@@ -149,6 +149,8 @@ const _efC = new THREE.Vector3();   // R5 fix round 3: the draw elbow's circle c
 const _efF = new THREE.Vector3();   // ...the head's live forward
 const _efUp = new THREE.Vector3();  // ...the aim frame's up
 const _efE = new THREE.Vector3();   // ...a candidate elbow
+const _rkA = new THREE.Vector3(), _rkB = new THREE.Vector3();   // R5 fix round 3: rest kicks
+const _rkQ = new THREE.Quaternion();
 
 
 // (ball- and ankle-bone rest heights are MEASURED off the bind pose in the
@@ -546,6 +548,18 @@ export class PlayerAnimator {
     this._chains = [];
     this._buildChains(makeEntry);
     this._initChainSolver();
+    /* R5 fix round 3 — REST KICKS (profile `tune.restKick`, bible §3.2 cue 2
+     * "a 0.40 m cloth tail trailing left-rear", V-brea-one-glance): a chain
+     * whose authored rest hangs flat against her (the wrap tail down the left
+     * of the spine) is turned at its root, every frame before the springs read
+     * the pose, so its root -> end line points along `dir` (character space,
+     * +X her left, -Z back): the springs then hang, bounce and collide it about
+     * that rest. Resolved once here; no allocation per frame. */
+    this._restKick = [];
+    for (const k of (prof?.tune?.restKick || [])) {
+      const e = makeEntry(k.bone), tip = this.bones[k.tip] || null;
+      if (e && tip) this._restKick.push({ e, tip, dir: new THREE.Vector3().fromArray(k.dir).normalize(), w: k.w ?? 1 });
+    }
     // 26 twist joints: swing-twist redistribution targets (player-anim-06)
     this._twists = [];
     this._buildTwists(makeEntry, invModelM, invModelQ);
@@ -1062,7 +1076,7 @@ export class PlayerAnimator {
     return {
       idealGripDist: +D.idealGripDist.toFixed(4), reach: +D.reach.toFixed(4),
       slide: +D.slide.toFixed(4), nockToAnchor: +D.nockToAnchor.toFixed(4),
-      shYaw0: +D.shYaw0.toFixed(4), bladeCorr: +D.bladeCorr.toFixed(4), looseClamp: +D.looseClamp.toFixed(4), elbowScan: D.elbowScan,
+      shYaw0: +D.shYaw0.toFixed(4), bladeCorr: +D.bladeCorr.toFixed(4), looseClamp: +D.looseClamp.toFixed(4), elbowScan: +D.elbowScan.toFixed(4),
       anchorDrop: D.anchorDrop ?? 0,
       lmax: +D.lmax.toFixed(4), pull: D.pull, restZ: D.restZ,
       u: D.u.toArray().map((v) => +v.toFixed(3)), d: D.d.toArray().map((v) => +v.toFixed(3)), shoulder: D.sh.toArray().map((v) => +v.toFixed(3)),
@@ -1848,6 +1862,15 @@ export class PlayerAnimator {
     this._twistLayer();
 
     /* ------------------ secondary motion: dyn_ spring chains --------------- */
+    for (let i = 0; i < this._restKick.length; i++) {
+      const K = this._restKick[i];
+      this._charOf(K.e.bone, _rkA); this._charOf(K.tip, _rkB);
+      _rkB.sub(_rkA);
+      if (_rkB.lengthSq() < 1e-8) continue;
+      _rkQ.setFromUnitVectors(_rkB.normalize(), K.dir);
+      if (K.w < 1) _rkQ.slerp(Q_IDENT, 1 - K.w);
+      this._rotQL(K.e, _rkQ);
+    }
     this._springs(dt, t, ph, speed, moveW, runW);
     if (this._ali) this._alidadePlace();
 
@@ -3075,7 +3098,7 @@ export class PlayerAnimator {
     const tz = f.fz + (_v5.z - f.fz) * e;
     const lift = STEP_LIFT * Math.sin(Math.PI * t);
     const ty = (terr?.getHeight ? terr.getHeight(tx, tz) : 0) + this._ballRest + lift;
-    this._stepDbg.lift = +lift.toFixed(3);
+    this._stepDbg.lift = Math.round(lift * 1e3) / 1e3;   // (no per-frame string)
     // toe down through the lift, heel first on the way in — a flat slab of a
     // foot translating through the air is the thing that reads as a cheat
     const e2 = side === 0 ? this.b.footL : this.b.footR;
@@ -3378,7 +3401,7 @@ export class PlayerAnimator {
         }
         lo = hi;
       }
-      D.anchorDrop = +lo.toFixed(4);
+      D.anchorDrop = Math.round(lo * 1e4) / 1e4;   // (no per-frame string)
       _anch.addScaledVector(_hdDown, lo);
     }
     D.anchor.copy(_anch);
@@ -3798,8 +3821,9 @@ export class PlayerAnimator {
    * shoulder -> wrist axis. `_rollElbow` places it by height alone; at a steep
    * down aim that left it 0.034-0.055 m behind the hand along the falling
    * arrow (bar 0.05, run to run), and nothing kept it off the back of the
-   * head. Here 48 points of the circle are scored against the whole form at
-   * once — the height band about the aim frame's shoulder line (`up`), at
+   * head. Here the circle is scored against the whole form at
+   * once (every 5 deg, then every 0.5 deg about the best) — the height band
+   * about the aim frame's shoulder line (`up`), at
    * least `behindHand` back of the wrist along the arrow, at most `behindHead`
    * past the back of the skull, never over the shoulder joint (A16) — and the
    * arm is turned to the nearest point that holds all of them (or, failing
@@ -3830,23 +3854,24 @@ export class PlayerAnimator {
     _efUp.set(0, 1, 0).addScaledVector(_dA, -_dA.y);
     if (_efUp.lengthSq() < 1e-6) return;
     _efUp.normalize();
-    const shU = _sg0.dot(_efUp), shY = _sg0.y, hR = this.T.headR.z, hdF = _hd.dot(_efF);
-    const hD = _sg2.dot(_dA), lo = EF.up[0], hi = EF.up[1];
-    let bestT = 0, bestC = Infinity, c0 = 0;
-    for (let k = 0; k < 48; k++) {
-      const th = (k < 24 ? k : k - 48) * (Math.PI / 24);
-      const c = Math.cos(th) * r, sn = Math.sin(th) * r;
-      _efE.copy(_efC).addScaledVector(_reU, c).addScaledVector(_reV, sn);
-      const u = _efE.dot(_efUp) - shU;
-      const bhd = hD - _efE.dot(_dA);
-      const dep = hdF - _efE.dot(_efF) - hR;
-      const viol = Math.max(0, lo - u) + Math.max(0, u - hi) + Math.max(0, EF.behindHand - bhd)
-        + Math.max(0, dep - EF.behindHead) + Math.max(0, _efE.y - (shY - 0.006));
-      const cost = viol * 100 + Math.abs(th) * 0.01;
-      if (k === 0) c0 = cost;
-      if (cost < bestC) { bestC = cost; bestT = th; }
+    const S = this._efS || (this._efS = { r: 0, shU: 0, shY: 0, hR: 0, hdF: 0, hD: 0, lo: 0, hi: 0, bh: 0, bd: 0 });   // once
+    S.r = r; S.shU = _sg0.dot(_efUp); S.shY = _sg0.y; S.hR = this.T.headR.z; S.hdF = _hd.dot(_efF);
+    S.hD = _sg2.dot(_dA); S.lo = EF.up[0]; S.hi = EF.up[1]; S.bh = EF.behindHand; S.bd = EF.behindHead;
+    // 5 deg over the whole circle, then 0.5 deg about the best of those
+    const c0 = this._efCost(0);
+    let bestT = 0, bestC = c0;
+    for (let k = 1; k < 72; k++) {
+      const th = (k < 36 ? k : k - 72) * (Math.PI / 36);
+      const cc = this._efCost(th);
+      if (cc < bestC) { bestC = cc; bestT = th; }
     }
-    this._aimDbg.elbowScan = +(bestT * w).toFixed(3);
+    const t0 = bestT;
+    for (let k = -10; k <= 10; k++) {
+      const th = t0 + k * (Math.PI / 360);
+      const cc = this._efCost(th);
+      if (cc < bestC) { bestC = cc; bestT = th; }
+    }
+    this._aimDbg.elbowScan = bestT * w;
     if (Math.abs(bestT) < 1e-3 || c0 - bestC < 1e-4) return;
     const th = bestT * w;
     _q3.setFromAxisAngle(_reAx, th);
@@ -3860,6 +3885,18 @@ export class PlayerAnimator {
       this._rotQL(b.upArmR, _q3);
       this._aimDbg.elbowScan = 0;
     }
+  }
+
+  /** `_elbowForm`'s cost of the elbow at roll `th` off the current one (the circle in _efC/_reU/_reV, the rest in `_efS`). */
+  _efCost(th) {
+    const S = this._efS;
+    _efE.copy(_efC).addScaledVector(_reU, Math.cos(th) * S.r).addScaledVector(_reV, Math.sin(th) * S.r);
+    const u = _efE.dot(_efUp) - S.shU;
+    const bhd = S.hD - _efE.dot(_dA);
+    const dep = S.hdF - _efE.dot(_efF) - S.hR;
+    const viol = Math.max(0, S.lo - u) + Math.max(0, u - S.hi) + Math.max(0, S.bh - bhd)
+      + Math.max(0, dep - S.bd) + Math.max(0, _efE.y - (S.shY - 0.006));
+    return viol * 100 + Math.abs(th) * 0.01;
   }
 
   /**

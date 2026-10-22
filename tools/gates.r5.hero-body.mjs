@@ -30,10 +30,19 @@
  *     per row, the failing clause(s) and the least head-plane depth any elbow
  *     on the arm's roll circle could reach under the two form bars;
  *     A-run-arms' backswing windows span 1.2 stride cycles (the bar unchanged).
- *   Two are PENDING by name while another lane's piece is missing: the
- *   settings-list clause of A-input-actions (shell-ui W2) and the held-weapon
- *   clause of A-hero-draws (armory W1); every hero-body clause of both is
- *   graded and must pass for them to report PENDING rather than FAIL.
+ *   Fix round 3 (Oct 22, rulings R35-R38): A-draw-elbow-level encodes R35
+ *     exactly (the hand never > 0.10 m behind the head plane AND always in
+ *     front of the back of the skull, the elbow <= 0.20 m) and grades the
+ *     LOOSE on every sim step (the hand in front of the back of the skull, the
+ *     elbow <= 0.20 m) at the four pitches, strafing both ways, and from a jog
+ *     and a sprint; V12's criteria are R37's (run-side.jpg, 10-30 deg lean);
+ *     V23 films from her front-left three-quarter, closer; A-hero-draws and
+ *     A-input-actions grade their binding clauses and report the other
+ *     lane's clause DEFERRED by name under R38 (the held Sabina bow: armory
+ *     W1 exit; the settings rebind list: shell-ui W2 exit) — a deferred
+ *     clause is not a W0b failure, and is graded here the moment its piece
+ *     exists. A31c-clamp-framing failed at the W0-day1 baseline: R36 lists it
+ *     (must not get worse), it is not a W0b exit blocker.
  *
  * TWO RUNNERS. Under gates-perf's registry (`gates.config.mjs` auto-discovers
  * `tools/gates.r5.*.mjs`), every row here shadows the carried row of the same
@@ -7514,7 +7523,7 @@ const NEW_GATES = [
   /* -------------------------------------------------- A-draw-elbow-level */
   {
     id: 'A-draw-elbow-level', kind: 'action', lane: 'hero-body', timeout: 120000,
-    title: 'Full draw, four pitches + strafing: draw elbow within [shoulder - 0.03, shoulder + 0.05] m (aim frame), >= 0.05 m behind the hand along the arrow, bow arm >= 0.04 m clear of the chest surface (torso-skinned outfit vertices), no hand/elbow > 0.10 m behind the head plane',
+    title: 'Full draw, four pitches + strafing (and from a jog / a sprint): draw elbow within [shoulder - 0.03, shoulder + 0.05] m (aim frame), >= 0.05 m behind the hand along the arrow, bow arm >= 0.04 m clear of the chest surface (torso-skinned outfit vertices); R35: the draw HAND never > 0.10 m behind the head plane and always in front of the back of the skull, the draw ELBOW <= 0.20 m behind it — and through the LOOSE, on every sim step from the release until 0.3 s after it, the hand still in front of the back of the skull and the elbow <= 0.20 m',
     setup: INPUT_ON, settle: 400,
     assert: placed(['openGround'], `(async () => {${HB}${DRAW}
       freeze(); standAt(p, 'openGround'); await wait(300);
@@ -7539,9 +7548,23 @@ const NEW_GATES = [
       }
       const segD = (P, A, B) => { const ab = B.clone().sub(A), ap = P.clone().sub(A); const t = Math.max(0, Math.min(1, ap.dot(ab) / ab.lengthSq())); return ap.sub(ab.multiplyScalar(t)).length(); };
       const rows = [];
-      const runs = ${JSON.stringify(GATE_PITCHES.map((p) => [p, null]))}.concat([[0, 'KeyD'], [0, 'KeyA']]);
+      /* fix round 3: + a draw from a jog and from a sprint (the follow-through
+       * clause below; the judge's trace found the loose behind the skull from
+       * both). A row re-stands her at the place, runs 1 s first if it moves,
+       * aims, draws and holds; keys are held through the loose. */
+      const runs = ${JSON.stringify(GATE_PITCHES.map((p) => [p, null]))}.concat([[0, 'KeyD'], [0, 'KeyA'], [0, 'KeyW'], [0, 'KeyW+ShiftLeft']]);
+      const LOOSE_TAIL = 0.3;
       for (const [pitch, key] of runs) {
-        await drawAt(pitch, key);
+        release(); await wait(350);
+        standAt(p, 'openGround'); p.velocity.set(0, 0, 0); await simWait(0.3, 4000);
+        p.camPitch = pitch;
+        if (key) for (const k of key.split('+')) keys.add(k);
+        if (key && key.includes('KeyW')) await simWait(1.0, 8000);
+        C.input.mouse.buttons |= 4;
+        await simWait(0.6, 4000);
+        C.input.mouse.buttons |= 1;
+        await simWait(2.0, 15000);
+        p.camPitch = pitch; await frame(); await frame();
         const R = an.debugArm('r'), A = an.debugAim();
         const d = new T3(...A.d).normalize();
         const up = new T3(0, 1, 0).addScaledVector(d, -d.y).normalize();
@@ -7573,15 +7596,58 @@ const NEW_GATES = [
           handBehindHead: +an.behindHead(ha).toFixed(4), elbowBehindHead: +an.behindHead(el).toFixed(4),
           shoulderBehindHead: +an.behindHead(sh).toFixed(4),
           elbowBehindHeadBestFeasible: feasibleMin === null ? null : +feasibleMin.toFixed(4) });
+        /* THE FOLLOW-THROUGH (fix round 3; judge r0: the wrist +0.03..+0.06 m
+         * BEHIND the back of the skull at looseT 0.22-0.44, which no clause
+         * sampled). Every animator update (= one sim step) from the release
+         * until LOOSE_TAIL sim seconds after it: the draw hand (wrist joint,
+         * the rearmost point of the hand through the loose) and the elbow
+         * against the same plane, the same function. */
+        const row = rows[rows.length - 1];
+        let lH = -9, lE = -9, lF = -9, lN = 0, lBack = 0;
+        const h0 = ha.clone();
+        const upd = an.update, sh0 = E.simTime;
+        let tRel = null;
+        an.update = function (dt, t) {
+          const r = upd.call(this, dt, t);
+          if (dt > 0 && tRel !== null && E.simTime - tRel <= LOOSE_TAIL + 1e-6) {
+            const Q = this.debugArm('r');
+            const h = new T3(Q.hand.x, Q.hand.y, Q.hand.z), e = new T3(Q.elbow.x, Q.elbow.y, Q.elbow.z);
+            lH = Math.max(lH, this.behindHead(h)); lE = Math.max(lE, this.behindHead(e)); lF = Math.max(lF, this.behindHead(h.clone().lerp(e, 0.5)));
+            lBack = Math.max(lBack, h0.z - h.z); lN++;
+          }
+          return r;
+        };
+        try {
+          tRel = E.simTime; C.input.mouse.buttons &= ~1;
+          await simWait(LOOSE_TAIL + 0.05, 8000);
+        } finally { an.update = upd; }
+        Object.assign(row, { looseSteps: lN, looseMaxHandBehindHead: +lH.toFixed(4), looseMaxElbowBehindHead: +lE.toFixed(4),
+          looseMaxForearmMidBehindHead: +lF.toFixed(4), looseRearM: +lBack.toFixed(4) });
+        release();
       }
       release();
-      // head plane = the back of the skull (head ellipsoid), along the head's live forward
-      const bad = rows.filter((r) => !(r.drawS > 0.9 && r.elbowUp >= -0.03 && r.elbowUp <= 0.05 && r.elbowBehindHand >= 0.05
-        && r.bowArmChest >= 0.04 && r.handBehindHead <= 0.10 && r.elbowBehindHead <= 0.10));
-      const clauses = (r) => [r.drawS > 0.9 ? null : 'drawS', r.elbowUp >= -0.03 && r.elbowUp <= 0.05 ? null : 'elbowHeight',
+      /* head plane = the back of the skull (the head ellipsoid's back, along
+       * the head's live forward: animator.behindHead). R35 (plan §8.3, §9):
+       * the HAND never more than 0.10 m behind it and always in front of it
+       * (< 0); the ELBOW at most 0.20 m behind it; the other clauses as
+       * before. The follow-through clauses on every row. */
+      const ok = (r) => [r.drawS > 0.9 ? null : 'drawS', r.elbowUp >= -0.03 && r.elbowUp <= 0.05 ? null : 'elbowHeight',
         r.elbowBehindHand >= 0.05 ? null : 'elbowBehindHand', r.bowArmChest >= 0.04 ? null : 'bowArmChest',
-        r.handBehindHead <= 0.10 ? null : 'handBehindHead', r.elbowBehindHead <= 0.10 ? null : 'elbowBehindHead'].filter(Boolean);
-      return { pass: bad.length === 0 && idx.length > 20, detail: { rows, failing: bad.map((r) => r.pitch + (r.key || '') + ':' + clauses(r).join('+')) } };
+        r.handBehindHead <= 0.10 ? null : 'handBehindHeadPlane', r.handBehindHead < 0 ? null : 'handBehindSkull',
+        r.elbowBehindHead <= 0.20 ? null : 'elbowBehindHead',
+        r.looseSteps >= 6 ? null : 'looseSampled', r.looseMaxHandBehindHead < 0 ? null : 'looseHandBehindSkull',
+        r.looseMaxElbowBehindHead <= 0.20 ? null : 'looseElbowBehindHead'].filter(Boolean);
+      const bad = rows.filter((r) => ok(r).length);
+      const margin = {
+        elbowBehindHeadMax: +Math.max(...rows.map((r) => r.elbowBehindHead)).toFixed(4),
+        elbowTo020Min: +(0.20 - Math.max(...rows.map((r) => r.elbowBehindHead))).toFixed(4),
+        strafeElbowTo020: rows.filter((r) => r.key === 'KeyD' || r.key === 'KeyA').map((r) => +(0.20 - r.elbowBehindHead).toFixed(4)),
+        downElbowBehindHand: rows.find((r) => r.pitch === 0.75 && !r.key)?.elbowBehindHand ?? null,
+        handBehindHeadMax: +Math.max(...rows.map((r) => r.handBehindHead)).toFixed(4),
+        looseHandBehindHeadMax: +Math.max(...rows.map((r) => r.looseMaxHandBehindHead)).toFixed(4),
+        looseElbowBehindHeadMax: +Math.max(...rows.map((r) => r.looseMaxElbowBehindHead)).toFixed(4),
+      };
+      return { pass: bad.length === 0 && idx.length > 20, detail: { rule: 'R35', rows, margin, failing: bad.map((r) => r.pitch + (r.key || '') + ':' + ok(r).join('+')) } };
     })()`),
   },
 
@@ -8110,10 +8176,14 @@ const NEW_GATES = [
       const panel = document.querySelector('[data-rebind]');
       const listed = panel ? want.filter((a) => panel.querySelector('[data-rebind="' + a + '"]')).length : null;
       const ownOk = rows.every((r) => r.code && r.pad && r.actionsTable) && reloadOk && keysOk;
-      const pass = !ownOk ? false : panel === null ? null : listed === want.length;
-      return { pass, detail: { rows, fresh1, fresh2, reloadOk, keysOk,
-        settingsRebindList: panel === null ? 'PENDING(shell-ui W2): no settings rebind panel in this tree; ACTIONS / ACTION_PAD are exported for it' : listed + ' of ' + want.length + ' listed',
-        verdict: pass === null ? 'PENDING: every hero-body clause passes; the settings-list clause waits on shell-ui W2' : undefined } };
+      // R38 (plan §8.3): the actions, pad entries and rebind persistence are
+      // binding at W0b; the settings-list clause is graded at shell-ui's W2
+      // exit (reported, deferred by name, not a W0b failure) — and graded
+      // here as soon as a rebind panel exists
+      const pass = !ownOk ? false : panel === null ? true : listed === want.length;
+      return { pass, detail: { rule: 'R38', rows, fresh1, fresh2, reloadOk, keysOk,
+        settingsRebindList: panel === null ? 'DEFERRED(R38: graded at shell-ui W2 exit): no settings rebind panel in this tree; ACTIONS / ACTION_PAD are exported for it' : listed + ' of ' + want.length + ' listed',
+        verdict: panel === null && ownOk ? 'PASS under R38: actions, pad entries and rebind persistence (binding); the settings-list clause deferred to shell-ui W2' : undefined } };
     })()`,
   },
 
@@ -8222,7 +8292,7 @@ const NEW_GATES = [
   /* ---------------------------------------------------------- A-hero-draws */
   {
     id: 'A-hero-draws', kind: 'action', lane: 'hero-body', timeout: 40000,
-    title: 'The real W0 loadout, measured LIVE while she aims (merged outfit, merged stow kit with lance/quiver/bracer/alidade, the bow in hand): <= 5 main draws, <= 2 shadow casters, <= 40 k tris, each §4.1 cap met — the held-weapon clause PENDING(armory W1) while combat still holds its procedural Round-4 bow',
+    title: 'The real W0 loadout, measured LIVE while she aims: her own body + outfit + merged stow kit <= 4 draws, <= 2 shadow casters, <= 20 k tris, each §4.1 cap met (binding, R38); with the Sabina bow in hand <= 5 main draws, <= 2 casters, <= 40 k tris (graded at armory W1 exit, R38, while combat still holds its procedural Round-4 bow)',
     setup: INPUT_ON, settle: 500,
     assert: placed(['openGround'], `(async () => {${HB}
       freeze(); standAt(p, 'openGround'); await wait(300);
@@ -8245,14 +8315,22 @@ const NEW_GATES = [
       const heldIsSabina = held.length > 0 && held.every((m) => m.part === 'held');
       const heldOk = heldIsSabina && held.length <= 1 && tri(held) <= 3000;
       const total = J.tris;
-      const heroOk = heroDraws <= 4 && heroCasters <= 2 && caps.body && caps.outfit && caps.kit && C.combat.drawStrength > 0.9;
+      // R38 (plan §8.3): her own measure is BINDING at W0b — <= 4 draws,
+      // <= 2 casters, <= 20 k tris for body + outfit + kit (and each §4.1 cap)
+      const heroTris = tri(body) + tri(outfit) + tri(kit);
+      const heroOk = heroDraws <= 4 && heroCasters <= 2 && heroTris <= 20000 && caps.body && caps.outfit && caps.kit && C.combat.drawStrength > 0.9;
       const allOk = heroOk && heldOk && J.draws <= 5 && J.casters <= 2 && total <= 40000;
       release();
-      const pass = !heroOk ? false : (heldIsSabina ? allOk : null);
-      return { pass, detail: { live: { aiming: !!p.aiming, drawS: +C.combat.drawStrength.toFixed(2), draws: J.draws, casters: J.casters, tris: total },
-        hero: { draws: heroDraws, casters: heroCasters, tris: { body: tri(body), outfit: tri(outfit), kit: tri(kit) }, caps },
-        held: { meshes: held.length, casters: held.filter((m) => m.cast).length, tris: tri(held), names: held.slice(0, 12).map((m) => m.part + ':' + m.name) },
-        verdict: pass === null ? 'PENDING(armory W1): her own four draws / two casters pass; the held bow is combat\\'s procedural Round-4 bow (' + held.length + ' meshes) until armory loads bow-sabina-v0.glb in src/combat/bow.js' : undefined } };
+      /* R38: the held-weapon clause (<= 5 draws / <= 2 casters with the Sabina
+       * bow in hand) is graded at armory's W1 exit; reported here, deferred by
+       * name, not a W0b failure. Once the Sabina is what she holds it is
+       * graded here too. */
+      const pass = !heroOk ? false : (heldIsSabina ? allOk : true);
+      return { pass, detail: { rule: 'R38', live: { aiming: !!p.aiming, drawS: +C.combat.drawStrength.toFixed(2), draws: J.draws, casters: J.casters, tris: total },
+        hero: { draws: heroDraws, casters: heroCasters, tris: { body: tri(body), outfit: tri(outfit), kit: tri(kit), total: heroTris }, caps, binding: heroOk },
+        held: { meshes: held.length, casters: held.filter((m) => m.cast).length, tris: tri(held), names: held.slice(0, 12).map((m) => m.part + ':' + m.name),
+          clause: heldIsSabina ? (allOk ? 'PASS' : 'FAIL') : 'DEFERRED(R38: graded at armory W1 exit): the held bow is combat procedural Round-4 bow (' + held.length + ' meshes) until armory loads bow-sabina-v0.glb in src/combat/bow.js' },
+        verdict: heldIsSabina ? undefined : 'PASS under R38: her own ' + heroDraws + ' draws / ' + heroCasters + ' casters / ' + heroTris + ' tris (binding); the held-weapon clause deferred to armory W1' } };
     })()`),
   },
 
@@ -8629,9 +8707,25 @@ const byId = (id) => carried.find((g) => g.id === id);
         else { p.position.set(fs.x + fs.dx * 46, 0, fs.z + fs.dz * 46); p.camYaw = fs.yaw + Math.PI; }
         p.velocity.set(0, 0, 0); p._snapToGround();
       } else standAt(p, 'openGround');`;
-  Object.defineProperty(g, 'setup', { value: a.replace(stage, sunStage).replace(cam, 'lockCam(3.5, 1.15, 0, 1.05);'), enumerable: true, configurable: true, writable: true });
-  g.criteria = 'Plan §9: three frames of the SAME sprint, 80 ms apart, left to right, filmed from her LEFT. PASS if the wrap tail (violet, from the knot at the left-rear of the head), the knot tail (behind the head), the sash end (linen, left hip) and the alidade cord (brass tube on its cord at the sternum) are each in visibly DIFFERENT positions across the strips and the hair/cloth trails behind her rather than sticking out forward; FAIL if any of the four reads rigid, or the strips are indistinguishable.';
-  g.title = 'Sprint, side view from her left — three frames 80 ms apart, composited: wrap tail, knot tail, sash end, alidade cord';
+  /* fix round 3 (judge r0: "no brass alidade tube at the sternum appears in
+   * any of the three strips; the sash end is a small dark tab"): a pure side
+   * view hides the sternum behind her own arm swing and shows the sash end
+   * edge-on. Filmed from her FRONT-LEFT three-quarter (35 deg ahead of her
+   * left side), 2.3 m out at chest height: the sternum and the alidade tube,
+   * the sash end at the left hip against the dark trousers, the wrap tail
+   * trailing left-rear past her shoulder and the knot tail behind the head
+   * are all in the lens at once, at twice the old scale. */
+  Object.defineProperty(g, 'setup', { value: a.replace(stage, sunStage).replace(cam, 'lockCam(1.9, 1.3, -1.35, 1.2);'), enumerable: true, configurable: true, writable: true });
+  g.criteria = 'Plan §9: three frames of the SAME sprint, 80 ms apart, left to right, filmed from her FRONT-LEFT three-quarter (the sun on that side). PASS if the wrap tail (violet, from the knot at the left-rear of the head), the knot tail (behind the head), the sash end (linen, left hip) and the alidade cord (brass tube on its cord at the sternum) are each in visibly DIFFERENT positions across the strips and the hair/cloth trails behind her rather than sticking out forward; FAIL if any of the four reads rigid, or the strips are indistinguishable.';
+  g.title = 'Sprint, front-left three-quarter — three frames 80 ms apart, composited: wrap tail, knot tail, sash end, alidade cord';
+}
+{
+  // V12 (R37, plan §8.3, Oct 22): judged side by side against the licence-clean
+  // run-side reference; the Round-4 "25-45 deg lean" and "front thigh toward
+  // horizontal" clauses are replaced by the ruling's text
+  const g = byId('V12-sprint-vs-reference');
+  g.reference = 'reference/r5/gates-perf/run-side.jpg (licence-clean, gates-perf A-reference-set)';
+  g.criteria = 'R37: mid-sprint contact frame, camera on her right side, judged side by side against the licence-clean reference/r5/gates-perf/run-side.jpg. PASS needs ALL of: (1) the stance foot ON the ground line (sole touching, not hovering, not buried); (2) torso lean 10-30 deg (hip to neck) with the chest ahead of the hips; (3) the stance leg near vertical at contact with the swing thigh forward, the rear leg extended behind; (4) arms bent and swinging fore-aft beside the body — never crossing the midline, never T-rex (elbows pinned, hands up at the chest) or prancing (Kevin\'s bar); (5) the hair / wrap tail trailing BEHIND her. FAIL if both feet float, if the legs are near-symmetric, if the arms hang straight or cross the body, or if any limb bends backwards / the knee inverts.';
 }
 {
   // V24 (fix round 1): plan §9's pass list verbatim — the carried criteria

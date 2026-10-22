@@ -306,6 +306,8 @@ function quiverGeo() {
   }
   return g;
 }
+/** The crescent fin's height factor over the fix-round-1 cut (V-brea-one-glance cue 3; fix round 3). */
+export const CRESCENT_K = 1.5;
 /** Archer's crescent bracer, local +X along the forearm (elbow -> wrist), dorsal +Y. */
 function bracerGeo(r = 0.036, len = 0.17) {
   const g = G();
@@ -337,7 +339,10 @@ function bracerGeo(r = 0.036, len = 0.17) {
   const cr = cell('bronze');
   const N = 16, t = 0.002, base = r * 1.04;
   const x0 = len * 0.10, x1 = len * 0.90;
-  const top = (a) => base + 0.024 + 0.048 * a * a;
+  // fix round 3 (judge: "a 1-2 px nub on the front view only"): the fin is
+  // `CRESCENT_K` taller above its base row — horns 10.8 cm, belly 3.8 cm proud
+  // (kit-v0-crescent.mjs applied the same change to the shipped GLBs)
+  const top = (a) => base - 0.004 + CRESCENT_K * (0.028 + 0.048 * a * a);
   for (const f of [1, -1]) {                              // the two faces, normals +-Z
     const o = g.pos.length / 3;
     for (let i = 0; i <= N; i++) {
