@@ -1,0 +1,33 @@
+# reference/r5/hero — Brea's review sheets and references (hero-body, W0b)
+
+Never shipped (not under `public/`). Two kinds of file live here:
+
+1. **Review sheets for Kevin** (plan §3.1 W0b exit, §11 decision 1) — renders of the live build,
+   made by `src/hero/sheets.js` through `tools/screenshot.mjs` on the lane port (tool and
+   command in `docs/ROUND5-HERO-BODY.md` §5). Project-original renders.
+2. **Comparison renders of the stock CC0 base** the face gate compares against.
+
+The carried pose/framing references the hero-body visual rows (V1–V4, V12–V14, V22–V24) are
+graded against are gates-perf's licence-clean Commons set, `reference/r5/gates-perf/` (merged
+with gates-perf W0a; MANIFEST there: author, source URL, licence, retrieved date, sha256).
+
+## Stored
+
+| file | gates | what | source | licence | made | sha256 |
+|---|---|---|---|---|---|---|
+| brea-silhouette-sheet.png | V-brea-one-glance | Brea front / side (her right) / back / side (her left) / 3/4 at 64 px tall black fill (4x nearest + true size) and full colour, default loadout; §9's five cues stated verbatim under the views (fix round 1) | live build render (`silhouetteSheetOverlay`) | project-original | 2026-10-19 | `7606af48e1690c27675ef9dd741bfd1f3e590af5c0f72d792b7f6da67b957c65` |
+| brea-face-sheet.png | V-brea-face | Brea's face at 1.2 m (front, profile, 3/4), the stock UBC face (front, profile), the right hand with the ∴ (fix round 1: 1 cm salt-ink dots) | live build render (`faceSheetOverlay`) | project-original (stock panels: CC0 source) | 2026-10-19 | `f399954421ffb0066a69e528f39eebf2f485db7322391a0ccd3aab362f932596` |
+| ubc-stock-front.png | V-brea-face, A-face-delta (visual) | the stock Quaternius UBC Superhero_Female face, front, same lens and lights | Universal Base Characters [Standard], https://quaternius.itch.io/universal-base-characters | CC0-1.0 (render of a CC0 model) | 2026-10-19 | `6c087129f5579ee5d9ed9e804532bffa71044a450cf410ae3a89fcf5a8d1aabe` |
+| ubc-stock-profile.png | V-brea-face | the same, profile | same | CC0-1.0 | 2026-10-19 | `34ddd344ed9b3a6c65744d9769b9a158b650df1eb4d9aab458a5330a202d0f76` |
+
+## Pointers (files in other lanes' reference folders)
+
+| gate | reference |
+|---|---|
+| V1-sprint-frame, V12-sprint-vs-reference | `reference/r5/gates-perf/run-side.jpg`, `run-rear.jpg` |
+| V2-idle-frame | `reference/r5/gates-perf/idle-stand.jpg` |
+| V3-crouch-stalk | `reference/r5/gates-perf/crouch-stalk.jpg` |
+| V4-aim-anchor, V13-aim-strafe, V24-draw-vs-reference | `reference/r5/gates-perf/draw-side.jpg`, `draw-front.jpg` |
+| V14-slope-contour, V-traversal (slide) | `reference/r5/gates-perf/slope-stand.jpg` |
+| V22-chase-framing | `reference/r5/gates-perf/chase-camera.jpg` |
+| V-traversal (ledge climb) | PENDING: no licence-clean ledge-climb still in the Commons set yet — slot `ledge-climb` requested from gates-perf's `tools/r5-refs/fetch.mjs` |

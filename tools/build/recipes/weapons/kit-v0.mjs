@@ -19,7 +19,8 @@
  * nodes `grip`, `grip2`, `nock`, `string_top`, `string_bottom`, `tip`, `stow`, `butt`.
  *
  * STOW (R10, bible §3.6), authored from the body + outfit surface in bind space:
- *   lance  spine_03, 34° from vertical, butt (the bob) low at the LEFT hip, blade
+ *   lance  `stow_lance` (a socket under spine_02, posed per frame by the carry
+ *          solve), 34° from vertical, butt (the bob) low at the LEFT hip, blade
  *          above the RIGHT shoulder; >= 2.5 cm off the back everywhere
  *   bow    spine_02, the opposite diagonal beneath the lance, <= 3 cm off the back
  *   quiver pelvis, right hip, tilted 20° forward (nocks reachable below the shoulder)
@@ -43,6 +44,23 @@ export const OUTPUTS = [
 ];
 const RECIPE = 'tools/build/recipes/weapons/kit-v0.mjs';
 export const PIECE = { lance: 1, bow: 2, quiver: 4, bracer: 8, alidade: 16 };
+/** The lance's carry socket joint (see `addSocket`); src/hero/stowkit.js creates it on the hero. */
+export const LANCE_SOCKET = 'stow_lance';
+
+/** A socket joint under `parentName` at the identity: same bind, its own index in the skin. */
+function addSocket(doc, name, parentName) {
+  const skin = doc.getRoot().listSkins()[0];
+  const parent = skin.listJoints().find((j) => j.getName() === parentName);
+  if (!parent) throw new Error(`addSocket: no parent joint ${parentName}`);
+  const pi = skin.listJoints().indexOf(parent);
+  const ibmAcc = skin.getInverseBindMatrices();
+  const ibm = Array.from(ibmAcc.getArray());
+  const node = doc.createNode(name);
+  parent.addChild(node);
+  skin.addJoint(node);
+  ibm.push(...ibm.slice(pi * 16, pi * 16 + 16));
+  ibmAcc.setArray(new Float32Array(ibm));
+}
 
 /* ---------------------------------------------------------------- atlas */
 
@@ -171,12 +189,14 @@ function basisY(dir, zHint = [0, 0, 1]) {
 /* -------------------------------------------------------------- pieces */
 
 /** Shepherd's Lance, local +Y from the butt (y 0) to the tip (y 1.55). */
-export const LANCE = { length: 1.55, blade: 0.22, cap: 0.07, grip: 0.20, grip2: 0.55, r: 0.0145 };
+export const LANCE = { length: 1.55, blade: 0.22, cap: 0.11, grip: 0.20, grip2: 0.55, r: 0.0145 };
 function lanceGeo() {
   const g = G();
   const L = LANCE, r = L.r;
-  // bob-shaped bronze butt cap: a plumb bob, point down
-  merge(g, lathe([[0, 0], [0.012, 0.012], [0.024, 0.032], [0.027, 0.048], [0.022, 0.060], [r + 0.002, 0.066], [r + 0.002, L.cap]], { sides: 10, rect: cell('bronze') }));
+  // bob-shaped bronze butt cap: a plumb bob, point down. Fix round 1
+  // (V-brea-one-glance cue 4): Ø 9 cm x 11 cm (was Ø 5.4 x 7 cm, under one
+  // pixel at 64 px) so the bob reads as a weight at the lance's low end
+  merge(g, lathe([[0, 0], [0.018, 0.016], [0.036, 0.040], [0.045, 0.062], [0.040, 0.082], [0.026, 0.096], [r + 0.002, 0.104], [r + 0.002, L.cap]], { sides: 12, rect: cell('bronze') }));
   // haft in segments: pine, esparto wraps at 20 % and 55 %, graduations on the upper third
   const segs = [
     [L.cap, L.grip * L.length - 0.06, 'pine'], [L.grip * L.length - 0.06, L.grip * L.length + 0.06, 'esparto', 0.0025],
@@ -306,19 +326,43 @@ function bracerGeo(r = 0.036, len = 0.17) {
     const a = i * (SEG + 1) + k, b = a + 1, c = a + SEG + 1, d = c + 1;
     g.idx.push(a, b, c, b, d, c);
   }
-  // the bronze crescent plate on the dorsal side
+  // the bronze CRESCENT standing on the dorsal ridge (fix round 1,
+  // V-brea-one-glance cue 3): a crescent moon on its back, 4 mm thick, its two
+  // horns 7.2 cm proud of the leather at the ends of a 13.6 cm span and its
+  // belly 2.4 cm proud in the middle. The first two cuts (a plate lying flat on
+  // the leather, 0.6 then 2.2 cm proud) read at 64 px only as a thicker
+  // forearm; a fin this tall breaks the forearm's outline by 2 px with the arm
+  // hanging (the dorsal side faces out), and the horns make it a crescent
+  // close up. Dorsal = away from the bowstring's path (bible §3.6).
   const cr = cell('bronze');
-  const o = g.pos.length / 3;
-  const N = 12;
-  for (let i = 0; i <= N; i++) {
-    const a = -1 + 2 * (i / N);
-    const xc = len * 0.5 + a * len * 0.36;
-    const wOut = 0.030 * Math.sqrt(1 - a * a) + 0.004, wIn = 0.012 * Math.sqrt(1 - a * a);
-    for (const [zz, rr] of [[wOut, r + 0.006], [-wIn * 0.2, r + 0.009]]) {
-      g.pos.push(xc, rr, zz - 0.004); g.nrm.push(0, 1, 0); g.uv.push(cr[0] + (i / N) * cr[2], cr[1] + (zz > 0 ? 0 : 1) * cr[3]);
+  const N = 16, t = 0.002, base = r * 1.04;
+  const x0 = len * 0.10, x1 = len * 0.90;
+  const top = (a) => base + 0.024 + 0.048 * a * a;
+  for (const f of [1, -1]) {                              // the two faces, normals +-Z
+    const o = g.pos.length / 3;
+    for (let i = 0; i <= N; i++) {
+      const a = -1 + 2 * (i / N), x = x0 + (x1 - x0) * (i / N);
+      g.pos.push(x, base - 0.004, f * t, x, top(a), f * t * (1 - 0.6 * a * a));
+      g.nrm.push(0, 0, f, 0, 0, f);
+      g.uv.push(cr[0] + (i / N) * cr[2], cr[1] + cr[3], cr[0] + (i / N) * cr[2], cr[1]);
+    }
+    for (let i = 0; i < N; i++) {
+      const a = o + i * 2;
+      if (f > 0) g.idx.push(a, a + 2, a + 1, a + 1, a + 2, a + 3); else g.idx.push(a, a + 1, a + 2, a + 1, a + 3, a + 2);
     }
   }
-  for (let i = 0; i < N; i++) { const a = o + i * 2; g.idx.push(a, a + 2, a + 1, a + 1, a + 2, a + 3); }
+  {                                                        // the top edge
+    const o = g.pos.length / 3;
+    for (let i = 0; i <= N; i++) {
+      const a = -1 + 2 * (i / N), x = x0 + (x1 - x0) * (i / N), y = top(a), tt = t * (1 - 0.6 * a * a);
+      const ny = 1, nx = -0.072 * a * (x1 - x0) / 2;        // the slope's normal in x-y
+      const l = Math.hypot(nx, ny);
+      g.pos.push(x, y, tt, x, y, -tt);
+      g.nrm.push(nx / l, ny / l, 0, nx / l, ny / l, 0);
+      g.uv.push(cr[0] + (i / N) * cr[2], cr[1], cr[0] + (i / N) * cr[2], cr[1] + 0.2 * cr[3]);
+    }
+    for (let i = 0; i < N; i++) { const a = o + i * 2; g.idx.push(a, a + 2, a + 1, a + 1, a + 2, a + 3); }
+  }
   return g;
 }
 /** The alidade: 6 cm brass sighting tube, local +X along the tube. */
@@ -398,6 +442,12 @@ export async function build({ out = ROOT } = {}) {
   const tri = await panBindTriangles();
   for (let i = 0; i < tri.length; i += 3) surf.push([tri[i], tri[i + 1], tri[i + 2]]);
   addChain(doc, CHAINS.alidadeCord.names, CHAINS.alidadeCord.points, CHAINS.alidadeCord.parent);
+  // the lance's carry socket (fix round 1, R10 in motion): `stow_lance`, a joint
+  // under spine_02 at the identity (its bind = spine_02's bind), that the
+  // runtime carry solve (src/hero/stowkit.js `solveLance`) poses every frame
+  // so the lance rides the TRUNK LINE in the R10 band instead of spine_03's
+  // curl and twist; with no solve it simply follows spine_02
+  addSocket(doc, LANCE_SOCKET, 'spine_02');
 
   const backZ = (x, y) => { let z = 0; for (const q of surf) if (Math.abs(q[0] - x) < 0.03 && Math.abs(q[1] - y) < 0.03 && q[2] < z) z = q[2]; return z; };
   const pieces = [];
@@ -406,7 +456,9 @@ export async function build({ out = ROOT } = {}) {
   {
     const ang = 34 * Math.PI / 180;
     const d = [-Math.sin(ang), Math.cos(ang), 0];
-    const butt = [0.255, 0.74, 0];
+    // fix round 1: the bob 10 cm lower (below the hanging left hand, so the
+    // 64 px silhouette shows it as its own knob at the end of the diagonal)
+    const butt = [0.262, 0.64, 0];
     const L = LANCE.length;
     // the haft's z: a straight line >= 2.5 cm behind the back at every sample
     let z0 = 0, z1 = 0;
@@ -431,8 +483,8 @@ export async function build({ out = ROOT } = {}) {
     const dir = v3.sub(end, start);
     const [X, Y, Z] = basisY(dir, [0, 0, -1]);
     const g = place(lanceGeo(), X, Y, Z, start);
-    pieces.push({ g, joint: 'spine_03', bit: PIECE.lance });
-    stowInfo.lance = { butt: start, tip: end, degFromVertical: 34, joint: 'spine_03' };
+    pieces.push({ g, joint: LANCE_SOCKET, bit: PIECE.lance });
+    stowInfo.lance = { butt: start, tip: end, degFromVertical: 34, joint: LANCE_SOCKET, parent: 'spine_02' };
   }
   // bow: the opposite diagonal beneath the lance (right hip -> left shoulder), belly to the back
   {

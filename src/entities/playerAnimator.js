@@ -57,6 +57,7 @@ const _v8 = new THREE.Vector3();   // foot lock: ball world read-back (pass 2)
 const _reAx = new THREE.Vector3(); // elbow roll: shoulder -> wrist axis (char)
 const _reU = new THREE.Vector3();  // elbow roll: elbow offset, perpendicular
 const _reV = new THREE.Vector3();  // elbow roll: axis x U, completes the frame
+const _reW = new THREE.Vector3();  // elbow roll: the measured height axis (char Y, or the aim frame's up)
 const _dA = new THREE.Vector3();   // aim direction (char space)
 const _anch = new THREE.Vector3(); // draw anchor (cheek)
 const _hdDown = new THREE.Vector3(); // head-frame "down" (jaw slide axis)
@@ -76,6 +77,10 @@ const _ikQ3 = new THREE.Quaternion();
 const _sh = new THREE.Vector3();   // live shoulder position
 const _el = new THREE.Vector3();   // live elbow position
 const _wr = new THREE.Vector3();   // live wrist position
+// run-bob compression (R5, A-run-arms): hip / knee / ankle and the ankle goal
+const _rbH = new THREE.Vector3(), _rbK = new THREE.Vector3(), _rbA = new THREE.Vector3();
+const _rbT = [new THREE.Vector3(), new THREE.Vector3()];
+const _rbQ = new THREE.Quaternion(), _rbQ2 = new THREE.Quaternion();
 const _grip = new THREE.Vector3(); // bow grip / nock scratch
 const _pole = new THREE.Vector3(); // IK elbow pole
 const _hand = new THREE.Vector3(); // achieved IK hand position
@@ -136,6 +141,8 @@ const _alEye = new THREE.Vector3();
 const _alFwd = new THREE.Vector3();
 const _alX = new THREE.Vector3(1, 0, 0);
 const _twA = new THREE.Vector3();
+const _tp0 = new THREE.Vector3();   // trunk posture: pelvis, then neck (char)
+const _tp1 = new THREE.Vector3();
 
 
 // (ball- and ankle-bone rest heights are MEASURED off the bind pose in the
@@ -186,6 +193,15 @@ const STEP_COOL = 0.06;      // a landed foot stays down at least this long (s)
  * bound on the gate's own reading and not a proxy for one; 0.040 m sits at half
  * of A105's 0.08 m bar, which leaves the frame that detects it room to settle. */
 const STEP_SLIP = 0.040;     // measured ball skate that forces a step (m)
+/* R5 (hero-body, A31g) — THE LOCOMOTION STEP. On an aim-strafe reversal the
+ * mirrored strafe clip keeps the old stance foot down for up to half a second
+ * while the body has already turned round: the lock ran to its 0.30 m cap and
+ * its anchor slid 0.1-0.26 m on the ground (Round 4 left 0.05-0.45 m
+ * ungated). A planted foot whose lock has spent this much of its budget, or
+ * whose ball has really moved this far, is picked up and re-placed under the
+ * clip's own foot on the step arc — a quick re-step, never a slide. */
+const LOCO_STEP_ERR = 0.24;  // lock correction that earns a re-step while moving (m)
+const LOCO_STEP_SLIP = 0.03; // real ball travel that earns one at once (m)
 // nock-reach flourish window (s). HZD's reach-to-quiver beat is ~0.25-0.35s;
 // at the Round-4 value of 0.13s it was 8 frames and never read on film.
 // FIX ROUND (player-anim): 0.34, not 0.28. HZD's reach-to-quiver beat is
@@ -389,6 +405,16 @@ export class PlayerAnimator {
     this.model = model;
     this.bones = {};
     model.traverse((o) => { if (o.isBone) this.bones[o.name] = o; });
+    /* R5 fix round 1: bone ALIASES a rig profile publishes for the kept
+     * systems that still look a bone up by its Round-4 name — combat.js's bow
+     * back-stow reads `bones['spine_03_08']` (Aloy's DEF-spine.002, which is
+     * UBC's spine_02): with no such bone its stow was null and the bow stayed
+     * parented to the hand through every melee swing (A101, ruling R8).
+     * Non-enumerable, so nothing that walks the map sees a bone twice. */
+    {
+      const al = model.userData?.rigProfile?.boneAliases;
+      if (al) for (const k in al) if (!this.bones[k] && this.bones[al[k]]) Object.defineProperty(this.bones, k, { value: this.bones[al[k]], enumerable: false });
+    }
 
     model.updateMatrixWorld(true);
     const invModelQ = model.getWorldQuaternion(new THREE.Quaternion()).invert();
@@ -444,6 +470,15 @@ export class PlayerAnimator {
       bowPole: tv(tn?.bowPole, new THREE.Vector3(0.3, -0.95, 0.12)),
       eyeR: tn?.eyeR ? new THREE.Vector3().fromArray(tn.eyeR) : null,
       pitchShare: tn?.pitchShare ?? [0.14, 0.15, 0.13, 0.2, 0.28],
+      pitchLive: !!tn?.pitchLive,
+      runArms: tn?.runArms ?? null,
+      runBob: tn?.runBob ?? null,
+      trunk: tn?.trunk ?? null,
+      drawShrug: tn?.drawShrug ?? 0,
+      anchorPitch: tn?.anchorPitch ?? null,
+      drawRetract: tn?.drawRetract ?? 0.8,
+      drawRetractDown: tn?.drawRetractDown ?? 0.8,
+      drawHandRoll: tn?.drawHandRoll ?? 0,
     };
     this.bowSolve = prof?.bow || null;
     /* M10 (E3): the spring-side capsule on the DRAW hand + forearm. */
@@ -634,6 +669,7 @@ export class PlayerAnimator {
     // aim diagnostics (written by _aimLayer, read by debugAim()/the gates)
     this._aimDbg = {
       idealGripDist: 0, reach: 0, slide: 0, nockToAnchor: 0, anchorDrop: 0, lmax: 0, pull: 0, restZ: 0,
+      u: new THREE.Vector3(), d: new THREE.Vector3(), sh: new THREE.Vector3(),
       shoulderX: 0, shoulderZ: 0,
       anchor: new THREE.Vector3(), nock: new THREE.Vector3(),
     };
@@ -727,8 +763,14 @@ export class PlayerAnimator {
     // damage she never took would undo the roll she just earned it with.
     if (p?.invulnerable) return;
     const frac = amount / Math.max(1, p?.maxHealth ?? 100);
-    const cls = frac >= HIT_KNOCKDOWN_FRAC ? 'knockdown'
+    let cls = frac >= HIT_KNOCKDOWN_FRAC ? 'knockdown'
       : frac >= HIT_STAGGER_FRAC ? 'stagger' : 'light';
+    // player.mods.knockdownMode caps the react (armor perks): 'stagger' turns a
+    // knockdown into a stagger, 'light' turns everything into a flinch
+    const km = p?.mods?.knockdownMode;
+    if (km === 'stagger' && cls === 'knockdown') cls = 'stagger';
+    else if (km === 'light') cls = 'light';
+    this.lastHitClass = cls;
     // a bigger hit always wins; a smaller one may not cut a stagger short
     const cur = this._hitT < 1 ? HIT_CLASSES[this._hitClass] : null;
     if (cur && HIT_CLASSES[cls].lean < cur.lean * 0.9) return;
@@ -1003,6 +1045,7 @@ export class PlayerAnimator {
       slide: +D.slide.toFixed(4), nockToAnchor: +D.nockToAnchor.toFixed(4),
       anchorDrop: D.anchorDrop ?? 0,
       lmax: +D.lmax.toFixed(4), pull: D.pull, restZ: D.restZ,
+      u: D.u.toArray().map((v) => +v.toFixed(3)), d: D.d.toArray().map((v) => +v.toFixed(3)), shoulder: D.sh.toArray().map((v) => +v.toFixed(3)),
       anchor: { x: D.anchor.x, y: D.anchor.y, z: D.anchor.z },
       nock: { x: D.nock.x, y: D.nock.y, z: D.nock.z },
       quiverT: this._quiverT, looseT: this._looseT, drawS: this._drawS,
@@ -1197,6 +1240,9 @@ export class PlayerAnimator {
 
   // rotate bone about a character-space axis (bind char orientation; cheap)
   _rot(e, axis, angle) { if (e && angle !== 0) this.space.rotChar(e, axis, angle, true); }
+
+  /** The aim pitch rotation: about the LIVE char X (profile `pitchLive`) or the bind frame (Round 4). */
+  _rotPitch = (e, a) => { if (this.T.pitchLive) this._rotL(e, X_AXIS, a); else this._rot(e, X_AXIS, a); };
 
   // apply an arbitrary char-space quaternion rotation (bind char orientation)
   _rotQ(e, q) { if (e) this.space.rotCharQ(e, q, true); }
@@ -1430,6 +1476,7 @@ export class PlayerAnimator {
         air: this._airSlot, airK: this._airK, airW: this._airClipW, airT: this._airTarget,
         act: this._actSlot, actK: this._actK, actW: this._actClipW, actT: this._actTarget,
       });
+      this._nativeLayer(p, dt, dead);
       this.mixer.update(dt);
       this.rest.snapshotClip();
     } else {
@@ -1439,6 +1486,10 @@ export class PlayerAnimator {
 
     // pelvis translation offsets accumulated in char space (meters)
     let pdx = 0, pdy = 0, pdz = 0;
+
+    /* ---- R5: the cinder slide's posture ON the face (A-slide, V-traversal) -- */
+    this._slideW = this._nat?.ok ? (this._nat.by.slide?.w ?? 0) : 0;
+    if (this._slideW > 0.02 && p.groundNormal) this._slidePose(p, this._slideW);
 
     // Roll_RM is a DIVE roll — its hips peak ~0.28m above standing, which reads
     // as a swan dive rather than HZD's low tap-dodge. Flatten the leap (bounded)
@@ -1508,6 +1559,38 @@ export class PlayerAnimator {
         this._rot(b.footR, Z_AXIS, 0.17 * wr);
         pdy += -0.030 * wid;            // a wider track sits lower
       }
+      /* R5 fix round 1 (V13 "both feet point roughly the same way and toward
+       * the travel"): in the aim side-step the strafe loop swings the
+       * trailing foot round to 100-143 deg (toe pointing BACK past the travel
+       * line, measured) while the planted one points along it at 85-90. A
+       * foot in the air is turned about the vertical back to within 20 deg of
+       * the travel direction; a planted foot is never touched (its ball is
+       * the foot lock's). */
+      // LATCHED like the widen: the turn a swing foot lands with is held
+      // through its stance (released into the clip's own yaw would rotate the
+      // planted ball about the ankle — a skate the foot lock then eats)
+      const latK = (this.loco.lateral ?? 0) * this._aimW * moveW * lgate;
+      const fy = this._fyHold || (this._fyHold = [0, 0]);                 // allocated once
+      for (let sd = 0; sd < 2; sd++) {
+        const ft = sd === 0 ? b.footL : b.footR, bl = sd === 0 ? b.ballL : b.ballR;
+        if (!ft || !bl) continue;
+        const st = sd === 0 ? (this.loco.stanceL ?? 1) : (this.loco.stanceR ?? 1);
+        if (st <= 0.5) {
+          let over = 0;
+          if (latK > 0.05) {
+            this._charOf(ft.bone, _sg0); this._charOf(bl.bone, _sg1);
+            const yaw = Math.atan2(_sg1.x - _sg0.x, _sg1.z - _sg0.z);
+            let rel = yaw - moveAngle;
+            while (rel > Math.PI) rel -= 2 * Math.PI;
+            while (rel < -Math.PI) rel += 2 * Math.PI;
+            const lim = 0.35;
+            over = rel > lim ? rel - lim : rel < -lim ? rel + lim : 0;
+          }
+          fy[sd] = -over * latK;
+        }
+        if (Math.abs(fy[sd]) > 1e-3) this._rotL(ft, Y_AXIS, fy[sd] * (latK > 0.05 ? 1 : latK / 0.05));
+        if (latK <= 0.01 && st > 0.5) fy[sd] = 0;
+      }
     }
     if (moveW > 0.01) {
       const midW = smoothstep(speed, 1.4, 4.4);
@@ -1539,6 +1622,51 @@ export class PlayerAnimator {
     } else {
       this._bank = damp(this._bank, 0, 10, dt);
       this._leanAcc = damp(this._leanAcc, 0, 9, dt);
+    }
+
+    /* ---- R5: trunk posture (profile `tune.trunk`; V12, V1, V3, R10) ---------
+     * The UAL1 jog / sprint / crouch-walk clips on Brea's spine (plus the
+     * speed lean above) ran her trunk — the pelvis->neck line, character
+     * space — at 35 / 44 / 47 deg of forward pitch, with the upper spine
+     * curled a further 50-80 deg (head jutting). The licence-clean run-side
+     * reference runs at ~10 deg and the crouch-stalk reference keeps a flat
+     * back at ~35-40 deg. A closed-loop correction: measure the line after
+     * the clip and the lean, and give back only the EXCESS over the gait's
+     * target, spread up the spine (more at the top, where the curl is), with
+     * the neck and head taking the same amount forward so the gaze holds.
+     * Never pushes forward; out while aiming (the aim layer owns the trunk),
+     * rolling, carrying, in a melee stance, dead, or on a native clip. */
+    if (this.T.trunk) {
+      const TR = this.T.trunk;
+      const nat = this._nat?.ok ? Math.max(this._nat.by.climb?.w ?? 0, this._nat.by.sit?.w ?? 0, this._slideW || 0) : 0;
+      const meleeOn = this.melee?.ok && this.ctx.combat?.melee?.stance && this.ctx.combat.melee.stance !== 'holstered' ? 1 : 0;
+      const tw = Math.max(moveW, crouchW) * (1 - aimW) * (1 - dodgeW) * (1 - this._deadW) * (1 - carryW) * (1 - nat) * (1 - meleeOn);
+      this._trunkErr = 0;
+      if (tw > 0.01) {
+        const midW = smoothstep(speed, 1.4, 4.4);
+        let want = TR.walk + (TR.jog - TR.walk) * midW;
+        want += (TR.sprint - want) * runW;
+        want += (TR.crouch - want) * crouchW;
+        // two passes: the spine joints sit above the pelvis, so one pass
+        // turns the pelvis->neck line by less than it rotates the joints
+        let pitch0 = 0;
+        for (let it = 0; it < 2; it++) {
+          this._charOf(b.pelvis.bone, _tp0); this._charOf(b.neck1.bone, _tp1);
+          _tp1.sub(_tp0);
+          const pitch = Math.atan2(_tp1.z, _tp1.y);
+          if (it === 0) pitch0 = pitch;
+          const err = Math.max(0, pitch - want) * tw * TR.gain;
+          if (err < 1e-4) break;
+          const S = crouchW > 0.5 && TR.shareCrouch ? TR.shareCrouch : TR.share;
+          this._rotL(b.spine1, X_AXIS, -err * S[0]);
+          this._rotL(b.spine2, X_AXIS, -err * S[1]);
+          this._rotL(b.spine3, X_AXIS, -err * S[2]);
+          this._rotL(b.neck1, X_AXIS, err * TR.gaze[0]);
+          this._rotL(b.head, X_AXIS, err * TR.gaze[1]);
+          this._trunkErr += err;
+        }
+        this._trunkPitch0 = pitch0;
+      }
     }
 
     // tall grass: sink the stealth crouch a little deeper
@@ -1632,6 +1760,15 @@ export class PlayerAnimator {
       this._ali.w = damp(this._ali.w, want ? 1 : 0, 14, dt);
       if (this._ali.w > 0.004) this._alidadeLayer(this._ali.w * (1 - dodgeW) * (1 - this._deadW) * (1 - aimW));
     }
+    /* ===== OVERLAY 4c: Kevin's running arms (profile `tune.runArms`) ======= */
+    // A clamp, not a style: it does nothing while the clip already keeps the
+    // wrists low and beside the body, and only acts on a frame that would read
+    // as a T-rex (wrist up near the shoulder) or a crossing (wrist at the
+    // midline). Weighted in from a jog; never while aiming, carrying or rolling.
+    if (this.T.runArms) {
+      const rw = smoothstep(speed, 2.5, 4.5) * (1 - aimW) * (1 - carryW) * (1 - dodgeW) * (1 - this._deadW) * (1 - (this._ali?.w ?? 0));
+      if (rw > 0.01) this._runArmClamp(rw);
+    }
 
     /* ============ OVERLAY 4b: the spear — carry, draw, swing ============= */
     // `melee.js` owns the state machine and publishes it; this layer owns the
@@ -1665,6 +1802,12 @@ export class PlayerAnimator {
     _v2.set(pdx, pdy + this._grnd, pdz).applyMatrix3(this._pelvisM3);
     pe.bone.position.add(_v2);
 
+    /* ---- the 1 m climb: both hands planted on the ledge edge (A-climb-1m).
+     * After the pelvis offset (fix round 1): solved before it, the palms
+     * landed on the edge and then dropped 6 cm with the whole body when the
+     * pelvis offset moved it — measured right after the IK vs at frame end. */
+    if (p.mantling && p.mantleClip === 'climb1m' && p.mantleEdge?.valid) this._climbHands(p, 1 - this._deadW);
+
     /* ---- head stabilisation: counter 50-70 % of the pelvis bob (player-anim-16) */
     this._headStabilise(dt, moveW, dodgeW);
 
@@ -1672,6 +1815,10 @@ export class PlayerAnimator {
     // how strongly planted feet are held flat (1 at a standstill, 0 at a jog)
     this._flatW = 1 - smoothstep(speed, 0.5, 2.0);
     this._groundConform(dt, moveW, dodgeW, pdx, pdy, pdz);
+
+    /* ---- R5: the run's pelvis bounce, compressed (A-run-arms, no prance) -- */
+    if (this.T.runBob) this._runBob(dt, speed, dodgeW, aimW);
+    this._lateCapture();
 
     /* --- twist joints: redistribute limb roll across the 26 twist bones ---- */
     // after every solve that can roll a wrist, an ankle or a shoulder (IK, the
@@ -1774,7 +1921,7 @@ export class PlayerAnimator {
     }
 
     /* ---- mantle: reach, pull, plant. No clip in the pack for this ------- */
-    if (this._mantleT < 1) {
+    if (this._mantleT < 1 && p.mantleClip !== 'climb1m') {
       const u = this._mantleT;
       const reach = Math.sin(Math.PI * clamp(u * 1.9, 0, 1));   // arms up first
       const pull = smoothstep(u, 0.25, 0.85);                   // then the body
@@ -1790,13 +1937,13 @@ export class PlayerAnimator {
       this._rot(b.calfR, X_AXIS, 0.85 * pull * (1 - pull) * 4 * w);
     }
 
+
     /* ---- heal: hand to the hip pouch and back (healing-readability) ----- */
     if (this._healT < 1 && aimW < 0.6) {
       const k = Math.sin(Math.PI * this._healT) * live * (1 - aimW) * (1 - carryW);
       if (k > 0.01) {
         // right hand dips to the pouch on her left hip, then up to the chest
-        _grip.copy(this.T.quiverHip);
-        _grip.x = 0.17; _grip.z = -0.02;
+        _grip.set(0.17, 1.02, -0.02);
         _grip.lerp(_v4.set(0.12, 1.30, 0.16), smoothstep(this._healT, 0.45, 0.95));
         _pole.set(-0.55, -0.85, -0.2);
         this._ikArm('r', _grip, _pole, k * 0.9, null);
@@ -1844,10 +1991,9 @@ export class PlayerAnimator {
     this._eyeYaw = damp(this._eyeYaw, clamp(this._lookYaw * 0.55, -0.42, 0.42), 12, dt);
     this._eyePitch = damp(this._eyePitch, clamp(this._lookPitch * 0.5, -0.28, 0.28), 12, dt);
     if (Math.abs(this._eyeYaw) > 1e-3 || Math.abs(this._eyePitch) > 1e-3) {
-      for (const e of [b.eyeL, b.eyeR]) {
-        this._rot(e, Y_AXIS, this._eyeYaw);
-        this._rot(e, X_AXIS, -this._eyePitch);
-      }
+      // (unrolled: a literal array here was a per-frame allocation)
+      this._rot(b.eyeL, Y_AXIS, this._eyeYaw); this._rot(b.eyeL, X_AXIS, -this._eyePitch);
+      this._rot(b.eyeR, Y_AXIS, this._eyeYaw); this._rot(b.eyeR, X_AXIS, -this._eyePitch);
     }
     if (w < 0.01) { this._shift = damp(this._shift, 0, 4, dt); return this._shift; }
 
@@ -1951,7 +2097,14 @@ export class PlayerAnimator {
      */
     const k = (0.50 + 0.20 * this._runW) * moveW * (1 - dodgeW) * (1 - this._deadW)
       * (1 - this._aimW);
-    const want = clamp(-this._pelvBob * k, -0.055, 0.055);
+    // R5: `_runBob` (later this frame) keeps only `keepEff` of the pelvis
+    // bounce. The head's WORLD bob is held where Round 4 designed it — (1 - k)
+    // of the clip's bounce — so it now counters keepEff - (1 - k) of it, not k
+    // (countering k of the clip's bounce on top of the compression flattened
+    // the head and starved the knot tail's footfall beat, A33-hair-bounce)
+    const keepEff = this.T.runBob ? 1 - (1 - (this._bobKeep ?? this.T.runBob.keep)) * (this._bobW || 0) : 1;
+    const kh = Math.max(0, keepEff - 1 + k);
+    const want = clamp(-this._pelvBob * kh, -0.055, 0.055);
     this._headStab = damp(this._headStab, want, 18, dt);
     if (Math.abs(this._headStab) < 1e-4) return;
     this.space.charQ(head.bone.parent, _hdQ);
@@ -1994,7 +2147,10 @@ export class PlayerAnimator {
     const b = this.b;
     if (w < 0.01) return;
     // damp the left arm's own swing by rotating it back toward its bind pose
-    for (const e of [b.upArmL, b.loArmL, b.handL]) {
+    // (the list is built once: no per-frame array, plan §0 rule 5)
+    const arm = this._bowCarryArm || (this._bowCarryArm = [b.upArmL, b.loArmL, b.handL]);
+    for (let i = 0; i < arm.length; i++) {
+      const e = arm[i];
       if (!e) continue;
       _q1.copy(e.bone.quaternion);
       e.bone.quaternion.slerp(e.bindQ, 0.62 * w);
@@ -2132,7 +2288,11 @@ export class PlayerAnimator {
     const b = this.b;
     if (!terr?.getHeight || !b.ballL || !b.ballR || !b.footL || !b.footR) return;
     const pe = b.pelvis;
-    const offW = Math.max(dodgeW, this._deadW);
+    // R5: the climb and the seat are native whole-body clips with the feet off
+    // the ground — the conform would drag the pelvis down to plant them (it
+    // pulled the climbing body 0.33 m down and the hands off the ledge)
+    const N = this._nat?.ok ? this._nat.by : null;
+    const offW = Math.max(dodgeW, this._deadW, N?.climb?.w ?? 0, N?.sit?.w ?? 0);
     const applyPelvis = (g) => {
       _v2.set(0, g - this._grnd, 0).applyMatrix3(this._pelvisM3);
       pe.bone.position.add(_v2);
@@ -2156,8 +2316,11 @@ export class PlayerAnimator {
      * takes it out of the pelvis clamp, and what `debugFeet` (and therefore
      * A13/A105) report. See `_stanceStep`. */
     this._stanceStep(dt, moveW, offW);
-    const sL = this._flight[0] ? 0 : (this.loco ? this.loco.stanceL : 1);
-    const sR = this._flight[1] ? 0 : (this.loco ? this.loco.stanceR : 1);
+    this._locoStep(moveW);
+    // sliding, both soles ride the face (the slide clip is not a gait)
+    const sw = this._slideW || 0;
+    const sL = this._flight[0] ? 0 : Math.max(this.loco ? this.loco.stanceL : 1, sw);
+    const sR = this._flight[1] ? 0 : Math.max(this.loco ? this.loco.stanceR : 1, sw);
     this._stL = sL; this._stR = sR;
     const h = this.ctx.player?.heading ?? 0;
     const shh = Math.sin(h), chh = Math.cos(h);
@@ -2240,7 +2403,7 @@ export class PlayerAnimator {
         this._stepFoot(side, fl, _v1, terr);
         ball.bone.updateWorldMatrix(true, false);
         _v1.setFromMatrixPosition(ball.bone.matrixWorld);
-      } else if (this._footLock(side, ballC < 0.05 ? st : 0, _v1, dt)) {
+      } else if (this._footLock(side, (ballC < 0.05 || (this._locks[side].on && ballC < 0.12)) && !(this._slideW > 0.1) ? st : 0, _v1, dt)) {   // a slide skids: no lock; a CAPTURED lock holds through the pre-clamp read (see _lateCapture)
         ball.bone.updateWorldMatrix(true, false);
         _v1.setFromMatrixPosition(ball.bone.matrixWorld);
       }
@@ -2607,9 +2770,17 @@ export class PlayerAnimator {
     }
     if (!live) {
       // let anything in flight land rather than snapping the leg straight
+      // (a locomotion re-step keeps its arc: it is not this window's)
       if (this._flight[0] || this._flight[1]) {
-        for (let s = 0; s < 2; s++) if (this._flight[s]) this._flight[s].t = 1;
-      } else { this._stepHome[0] = null; this._stepHome[1] = null; return; }
+        for (let s = 0; s < 2; s++) if (this._flight[s] && !this._flight[s].loco) this._flight[s].t = 1;
+        // nothing below is this window's business while it is not live: land
+        // or advance the flights and stop (no home capture, no allocation)
+        if (!(this._mStepT > 0)) { this._advanceFlights(dt); return; }
+      } else {
+        this._stepHome[0] = null; this._stepHome[1] = null;
+        this._advanceFlights(dt);                       // cooldowns run down
+        return;
+      }
     }
 
     /* MEASURE THE BALL WHERE THE LOCK IS HOLDING IT, NOT WHERE THE CLIP PUT IT.
@@ -2640,22 +2811,7 @@ export class PlayerAnimator {
     }
 
     // advance whatever is in flight
-    for (let s = 0; s < 2; s++) {
-      this._stepCd[s] = Math.max(0, (this._stepCd[s] || 0) - dt);
-      const f = this._flight[s];
-      if (!f) continue;
-      f.t = Math.min(1, f.t + dt / f.dur);
-      if (f.t >= 1) {
-        this._flight[s] = null;
-        this._locks[s].on = false;
-        // a landed foot gets a beat on the floor before it may step again.
-        // Without it the overlap rule below turns into chatter on a fast box:
-        // filmed at 40 ms frames, 59 steps across 12 swings (five per swing)
-        // and a 0.25 m drift window where a foot landed and was immediately
-        // picked up again before its lock had authority.
-        this._stepCd[s] = STEP_COOL;
-      }
-    }
+    this._advanceFlights(dt);
     /* ONE FOOT AT A TIME — UNLESS THE OTHER ONE IS ALREADY BEING DRAGGED.
      *
      * A 0.155 s step inside a 0.3 s drive leaves room for two, but only if the
@@ -2718,6 +2874,81 @@ export class PlayerAnimator {
     const lead = Math.max(errs[0], loads[0]) >= Math.max(errs[1], loads[1]) ? 0 : 1;
     this._tryStep(lead, errs[lead], vx, vz);
     this._tryStep(1 - lead, errs[1 - lead], vx, vz);
+  }
+
+  /** Advance the feet in flight; a landed foot drops its lock and cools down. */
+  _advanceFlights(dt) {
+    for (let s = 0; s < 2; s++) {
+      this._stepCd[s] = Math.max(0, (this._stepCd[s] || 0) - dt);
+      const f = this._flight[s];
+      if (!f) continue;
+      f.t = Math.min(1, f.t + dt / f.dur);
+      if (f.t >= 1) {
+        this._flight[s] = null;
+        this._locks[s].on = false;
+        // a landed foot gets a beat on the floor before it may step again.
+        // Without it the overlap rule below turns into chatter on a fast box:
+        // filmed at 40 ms frames, 59 steps across 12 swings (five per swing)
+        // and a 0.25 m drift window where a foot landed and was immediately
+        // picked up again before its lock had authority.
+        this._stepCd[s] = STEP_COOL;
+      }
+    }
+  }
+
+  /** The locomotion re-step trigger (see LOCO_STEP_ERR). Scratch-free. */
+  /**
+   * R5 fix round 1 (R27, A13 "5/5"): capture the foot lock on the frame the
+   * foot is REALLY down. `_footLock` captures from the ball's clearance read
+   * before the conform's height clamps (and before `_runBob`), so on a
+   * sprint's touchdown frame a ball still 5+ cm up at that read could end the
+   * frame on the ground, unlocked — counted as planted by every skate gate, and
+   * the next frame's capture moved it 3-6 cm (measured: the 0.0573 / 0.0609 m
+   * windows, each a 'first frame unlocked' window). After every foot
+   * adjustment of the frame, a stance foot (>= 0.45, no step flight, no slide)
+   * whose ball ends within 3.5 cm of the ground is captured where it is, and
+   * `_footLock` keeps a captured lock through the next pre-clamp read.
+   */
+  _lateCapture() {
+    if (this._slideW > 0.1) return;
+    const terr = this.ctx.terrain;
+    if (!terr?.getHeight) return;
+    for (let s = 0; s < 2; s++) {
+      const L = this._locks[s];
+      if (L.on || this._flight[s] || (s === 0 ? this._stL : this._stR) < 0.45) continue;
+      const ball = s === 0 ? this.b.ballL : this.b.ballR;
+      if (!ball) continue;
+      ball.bone.updateWorldMatrix(true, false);
+      _v1.setFromMatrixPosition(ball.bone.matrixWorld);
+      if (_v1.y - terr.getHeight(_v1.x, _v1.z) > 0.035) continue;
+      L.on = true; L.w = 1; L.x = _v1.x; L.z = _v1.z; L.cx = 0; L.cz = 0;
+      L.sx = _v1.x; L.sz = _v1.z; L.wx = _v1.x; L.wz = _v1.z;
+    }
+  }
+
+  _locoStep(moveW) {
+    if (this._mStepT > 0 || !(moveW > 0.15) || this._slideW > 0.1) return;
+    for (let s = 0; s < 2; s++) {
+      const L = this._locks[s];
+      if (this._flight[s] || !L.on || L.w < 0.99) continue;
+      const err = Math.hypot(L.cx, L.cz), slip = Math.hypot(L.wx - L.sx, L.wz - L.sz);
+      /* R5 fix round 1 (A13 judge replica: a machine 2 m off the sprint line
+       * shoved her at 8.6 m/s; the planted lock hit MAX_LOCK in two frames and
+       * its anchor slid 0.17-0.55 m, because this re-step waited for the
+       * other foot to land). A lock past 80 % of its cap is a SHOVE, not a
+       * gait error: the shoved foot steps at once, other foot airborne or not
+       * (a stumble), cooldown or not. */
+      const shoved = err > MAX_LOCK * 0.8;
+      if (!shoved && (this._flight[1 - s] || this._stepCd[s] > 0)) continue;
+      if (err < LOCO_STEP_ERR && slip < LOCO_STEP_SLIP) continue;
+      const F = this._flightPool[s];
+      F.t = 0; F.dur = STEP_DUR; F.loco = true;
+      F.fx = L.wx; F.fz = L.wz; F.hx = 0; F.hz = 0;
+      this._flight[s] = F;
+      L.on = false; L.w = 0;
+      this._stepDbg.locoSteps = (this._stepDbg.locoSteps || 0) + 1;
+      return;                                          // one foot per frame
+    }
   }
 
   /** One foot's step decision (see `_stanceStep`). */
@@ -2796,7 +3027,7 @@ export class PlayerAnimator {
     const lv = Math.hypot(vx, vz);
     // reused, never allocated: a chained combo starts ~50 of these a second
     const F = this._flightPool[side];
-    F.t = 0; F.dur = STEP_DUR;
+    F.t = 0; F.dur = STEP_DUR; F.loco = false;
     F.fx = w0.x; F.fz = w0.z;
     F.hx = home[0] + (lv > 1e-3 ? vx / lv * lead : 0);
     F.hz = home[1] + (lv > 1e-3 ? vz / lv * lead : 0);
@@ -2814,7 +3045,10 @@ export class PlayerAnimator {
   _stepFoot(side, f, ballW, terr) {
     const t = f.t;
     const e = t * t * (3 - 2 * t);                    // smoothstep
-    _v5.set(f.hx, 0, f.hz).applyMatrix4(this.model.matrixWorld);
+    // a locomotion re-step lands where the CLIP has the foot this frame (the
+    // ball before any lock), so the lock re-captures there with no pop
+    if (f.loco) _v5.copy(ballW);
+    else _v5.set(f.hx, 0, f.hz).applyMatrix4(this.model.matrixWorld);
     const tx = f.fx + (_v5.x - f.fx) * e;
     const tz = f.fz + (_v5.z - f.fz) * e;
     const lift = STEP_LIFT * Math.sin(Math.PI * t);
@@ -2867,10 +3101,16 @@ export class PlayerAnimator {
     // = [spine2, spine3, spine4, neck, head]): an archer elevates from the
     // waist, so the more of it the trunk carries, the less the cheek anchor
     // swings against the bow shoulder and the flatter Lmax is over pitch
+    // `pitchLive`: about the LIVE character X axis. The cheap bind-frame `_rot`
+    // turns about the bladed trunk's own axis once the chest yaw above is in,
+    // which on a 90-degree blade is a sideways ROLL of the bow shoulder, not
+    // an elevation (measured on Brea: the shoulder slid 18 cm sideways over
+    // the gate pitches while rising 5 cm).
     const PS = this.T.pitchShare;
-    this._rot(b.spine2, X_AXIS, pitch * PS[0] * aimW);
-    this._rot(b.spine3, X_AXIS, pitch * PS[1] * aimW);
-    this._rot(b.spine4, X_AXIS, pitch * PS[2] * aimW);
+    const rotP = this._rotPitch;                  // a method, not a per-frame closure
+    rotP(b.spine2, pitch * PS[0] * aimW);
+    rotP(b.spine3, pitch * PS[1] * aimW);
+    rotP(b.spine4, pitch * PS[2] * aimW);
     // slight brace lean into the bow (reference/draw-side.jpg)
     this._rot(b.spine2, Z_AXIS, 0.05 * aimW);
     this._rot(b.spine1, X_AXIS, 0.035 * aimW);
@@ -2879,16 +3119,39 @@ export class PlayerAnimator {
     // draw (bow shoulder pushes forward, string shoulder pulls back) for the
     // last few centimetres of draw length
     const prot = 0.62 * drawS * aimW;
+    // R5: the draw-side shrug / retraction / anchor relief are level- and
+    // up-aim form; a steep DOWN aim keeps the Round-4 girdle (its elbow has
+    // to stay up-and-back of the hand along a falling arrow)
+    const levelK = 1 - smoothstep(pitch, 0.15, 0.6);
     this._rot(b.clavL, Z_AXIS, 0.04 * aimW);
     this._rot(b.clavR, Z_AXIS, -0.06 * aimW);
     this._rotL(b.clavL, Y_AXIS, -prot);
-    this._rotL(b.clavR, Y_AXIS, -prot * 0.8);
+    const rL = this.T.drawRetract ?? 0.8, rD = this.T.drawRetractDown ?? 0.8;
+    this._rotL(b.clavR, Y_AXIS, -prot * (rD + (rL - rD) * levelK));
+    // R5 draw shrug (profile `tune.drawShrug`, V24 "forearm in line with the
+    // arrow"): at full draw the string-side scapula elevates with the arm
+    // abducted past the horizontal. UBC's glenohumeral joint sits 0.17 m under
+    // the jaw-corner anchor, so with the elbow held at or under that joint (A16)
+    // the forearm rose 28 deg to the nock; lifting the joint toward the arrow
+    // line is the anatomical half of the fix. Rotation about (clavicle x up)
+    // turns the clavicle's lateral end straight up, whatever the chest blade.
+    if (this.T.drawShrug) {
+      // (half of it at the -0.55 up-aim: there the string hand already sits
+      // under the aim frame's shoulder line and a full shrug drops the elbow
+      // through A-draw-elbow-level's -0.03 floor)
+      const sh = this.T.drawShrug * drawS * aimW * levelK * (1 - 0.5 * clamp(-pitch / 0.55, 0, 1));
+      if (sh > 1e-4) {
+        this._charOf(b.clavR.bone, _sg0); this._charOf(b.upArmR.bone, _sg1);
+        _v3.subVectors(_sg1, _sg0).cross(Y_AXIS);
+        if (_v3.lengthSq() > 1e-8) { _q3.setFromAxisAngle(_v3.normalize(), sh); this._rotQL(b.clavR, _q3); }
+      }
+    }
 
     // head: face the target (counter the chest blade), carry the aim pitch
     this._rotL(b.neck1, Y_AXIS, -chestYaw * 0.45);
     this._rotL(b.head, Y_AXIS, -chestYaw * 0.6);
-    this._rot(b.neck1, X_AXIS, pitch * PS[3] * aimW);
-    this._rot(b.head, X_AXIS, pitch * PS[4] * aimW);
+    rotP(b.neck1, pitch * PS[3] * aimW);
+    rotP(b.head, pitch * PS[4] * aimW);
 
     const sp = Math.sin(pitch), cp = Math.cos(pitch);
     const cmb = this.ctx.combat;
@@ -2952,6 +3215,17 @@ export class PlayerAnimator {
     // ...and the head's own DOWN axis, captured here while _q2 is still the
     // head delta (the anchor-relief bisection below slides along it)
     _hdDown.set(0, -1, 0).applyQuaternion(_q2).normalize();
+    // R5 pitch-dependent anchor height (profile `tune.anchorPitch`, metres
+    // along the head's UP axis): a touch lower along the jaw at a level and a
+    // down aim (V24: the forearm closer to the arrow line), a touch higher at
+    // the up-aims, where the string hand sits behind-and-BELOW the nock and
+    // drifted to the A35 ceiling (0.158-0.161 m from the skull at -0.55)
+    if (this.T.anchorPitch) {
+      const AP = this.T.anchorPitch;
+      const sh = pitch < 0 ? AP.level + (AP.up - AP.level) * clamp(-pitch / 0.55, 0, 1)
+        : AP.level + ((AP.down ?? 0) - AP.level) * smoothstep(pitch, 0.15, 0.6);
+      _anch.addScaledVector(_hdDown, -sh);
+    }
 
     // nock offset relative to the hand in char space, from the LIVE bow rig
     // (combat may offset/cant the bow model under the grip): the bow group's
@@ -3002,6 +3276,7 @@ export class PlayerAnimator {
       const ud = _v5.dot(_dA), disc = ud * ud - _v5.lengthSq() + reachL * reachL;
       D.lmax = disc > 0 ? -ud + Math.sqrt(disc) : -1;
       D.pull = pull; D.restZ = restZ;
+      D.u.copy(_v5); D.d.copy(_dA); D.sh.copy(_v4);
     }
 
     // ---- ANCHOR RELIEF, before anything is derived from it.
@@ -3222,10 +3497,67 @@ export class PlayerAnimator {
         this._charOf(b.loArmR.bone, _sg1);
         this._charOf(b.handR.bone, _sg2);
         const fore = _sg1.distanceTo(_sg2);
-        const ideal = _sg2.y - fore * _v6.y;      // elbow on the arrow line
-        const cap = _sg0.y - 0.018;               // never up over the shoulder
-        this._rollElbow('r', Math.min(ideal, cap),
-          aimW * (1 - qw) * smoothstep(drawS, 0.05, 0.45));
+        const ew = aimW * (1 - qw) * smoothstep(drawS, 0.05, 0.45);
+        if (this.T.pitchLive) {
+          // T-form body (Round 5): heights are measured in the AIM frame — up
+          // is world up made perpendicular to the arrow — so a draw aimed 43 deg
+          // down keeps its forearm on the arrow and its elbow level with the
+          // shoulder line it pitched with, instead of being capped under a
+          // world-height shoulder (measured: elbow 3 cm IN FRONT of the hand)
+          _reW.set(0, 1, 0).addScaledVector(_v6, -_v6.y).normalize();
+          const ideal = _sg2.dot(_reW);           // elbow on the arrow line
+          // level with the shoulder in THIS frame (A-draw-elbow-level allows
+          // [-0.03, +0.05]); a touch over is the arrow line at a down-aim
+          const cap = _sg0.dot(_reW) + 0.03;
+          // ...and not more than 1.5 cm UNDER it either (the bar's floor is
+          // -0.03): at the up-aims the string hand sits below the shoulder line
+          // of the aim frame and "on the arrow line" alone read -0.030
+          const floor = _sg0.dot(_reW) - 0.015;
+          this._rollElbow('r', Math.max(floor, Math.min(ideal, cap)), ew, _reW);
+          // ...and never over the shoulder JOINT in character height (A16):
+          // at a level aim the two frames agree and this is what binds
+          this._charOf(b.upArmR.bone, _sg0);
+          this._charOf(b.loArmR.bone, _sg1);
+          if (_sg1.y > _sg0.y - 0.006) this._rollElbow('r', _sg0.y - 0.006, ew);
+        } else {
+          const ideal = _sg2.y - fore * _v6.y;      // elbow on the arrow line
+          const cap = _sg0.y - 0.018;               // never up over the shoulder
+          this._rollElbow('r', Math.min(ideal, cap), ew);
+        }
+      }
+    }
+    /*
+     * R5 the string hand's roll (profile `tune.drawHandRoll`; V24 "∴ visible",
+     * bible §5.2). The IK leaves the drawing fist palm-DOWN (its back faced the
+     * sky, measured 171 deg off), so the hooked fingers lay across a vertical
+     * string and the ∴ painted on the back of the right hand faced up, away
+     * from any side camera. A Mediterranean draw holds the hand upright: palm
+     * to the neck, the back of the hand to her right of the arrow. Rolled about
+     * the forearm's own axis (the wrist and the anchor do not move), shared
+     * 55 / 45 between pronation along the forearm and the wrist, so neither
+     * joint twists more than about half of it.
+     */
+    if (this.T.drawHandRoll && aimW > 0.02) {
+      const hw = this.T.drawHandRoll * aimW * smoothstep(drawS, 0.3, 0.9) * (1 - lk) * (1 - qw);
+      if (hw > 0.01) {
+        this._charOf(b.loArmR.bone, _sg1); this._charOf(b.handR.bone, _sg2);
+        _reAx.subVectors(_sg2, _sg1);
+        if (_reAx.lengthSq() > 1e-6) {
+          _reAx.normalize();
+          this._liveW(b.handR.bone, _q3);
+          _reU.set(0, 1, 0).applyQuaternion(_q3.multiply(b.handR.invW));   // the back of the hand (bind: palm down)
+          _reV.crossVectors(_dA, Y_AXIS);                                    // her right of the arrow
+          _reU.addScaledVector(_reAx, -_reU.dot(_reAx));
+          _reV.addScaledVector(_reAx, -_reV.dot(_reAx));
+          if (_reU.lengthSq() > 1e-6 && _reV.lengthSq() > 1e-6) {
+            _reU.normalize(); _reV.normalize();
+            const ang = Math.atan2(_v3.crossVectors(_reU, _reV).dot(_reAx), _reU.dot(_reV)) * hw;
+            _q3.setFromAxisAngle(_reAx, ang * 0.55);
+            this._rotQL(b.loArmR, _q3);
+            _q3.setFromAxisAngle(_reAx, ang * 0.45);
+            this._rotQL(b.handR, _q3);
+          }
+        }
       }
     }
     // remember the achieved grip in WORLD space: next frame's aim ray starts
@@ -3261,8 +3593,9 @@ export class PlayerAnimator {
    * The roll is undone if it puts a segment (or the fist) inside the skull:
    * form is never worth a bracer through her face.
    */
-  _rollElbow(side, wantY, w) {
+  _rollElbow(side, wantY, w, axis = null) {
     if (w < 0.02) return;
+    const ax = axis || Y_AXIS;
     const b = this.b;
     const upE = side === 'l' ? b.upArmL : b.upArmR;
     const loE = side === 'l' ? b.loArmL : b.loArmR;
@@ -3282,10 +3615,10 @@ export class PlayerAnimator {
     if (r < 0.02) return;                        // arm nearly straight: no cone
     _reU.divideScalar(r);
     _reV.crossVectors(_reAx, _reU);
-    const A = r * _reU.y, B = r * _reV.y;
+    const A = r * _reU.dot(ax), B = r * _reV.dot(ax);
     const R = Math.hypot(A, B);
-    if (R < 1e-4) return;                        // the cone is edge-on to Y
-    const C = wantY - _sg0.y - along * _reAx.y;
+    if (R < 1e-4) return;                        // the cone is edge-on to the axis
+    const C = wantY - _sg0.dot(ax) - along * _reAx.dot(ax);
     const phi = Math.atan2(B, A);
     const d = Math.acos(clamp(C / R, -1, 1));
     const wrap = (a) => (a > Math.PI ? a - 2 * Math.PI : (a < -Math.PI ? a + 2 * Math.PI : a));
@@ -3391,9 +3724,375 @@ export class PlayerAnimator {
     };
   }
 
+  /**
+   * How far a CHARACTER-space point sits behind the back of the skull, along
+   * the head's live forward (m; negative = in front of it). R8 / Kevin's "never
+   * an arm behind the head" are graded on this (A-draw-elbow-level).
+   */
+  behindHead(pt) {
+    this._headFrame();
+    _alFwd.set(0, 0, 1).applyQuaternion(_hdQ);
+    return -_alV.subVectors(pt, _hd).dot(_alFwd) - this.T.headR.z;
+  }
+
   /** World point -> character space. */
   _charOfWorld(world, out) {
     return out.copy(world).applyMatrix4(_alM2.copy(this.model.matrixWorld).invert());
+  }
+
+  /**
+   * The slide posture (R5, A-slide / V-traversal): `Slide_Loop` is authored on
+   * flat ground, so on a 30-40 deg face her legs stood plumb and the downhill
+   * sole hung 0.14-0.39 m off the surface. The pelvis is pitched / rolled
+   * toward the face's normal (85 %), and the trunk leans back over it by 60 %
+   * of the pitch — legs along the face, body upright-ish over the feet, which
+   * is the scree-runner's line. The conform then plants both soles.
+   */
+  _slidePose(p, w) {
+    const n = p.groundNormal, h = p.heading ?? 0;
+    const c = Math.cos(h), s = Math.sin(h);
+    const nx = n.x * c - n.z * s, nz = n.x * s + n.z * c, ny = Math.max(0.2, n.y);
+    const pitch = Math.atan2(nz, ny), roll = -Math.atan2(nx, ny);
+    const k = 0.85 * w;
+    if (Math.abs(pitch) > 1e-3) this._rotL(this.b.pelvis, X_AXIS, pitch * k);
+    if (Math.abs(roll) > 1e-3) this._rotL(this.b.pelvis, Z_AXIS, roll * k);
+    if (this.b.spine1 && Math.abs(pitch) > 1e-3) this._rotL(this.b.spine1, X_AXIS, -0.6 * pitch * k);
+    // fix round 1 (V-traversal "arms out for balance"): both arms out to the
+    // side and a little forward, elbows soft — a scree-runner's balance
+    // (closed loop on the upper arm's direction: the slide clip already
+    // carries its own arm pose, and a fixed abduction on top of it threw the
+    // right fist over her head)
+    for (let sd = 0; sd < 2; sd++) {
+      const ua = sd === 0 ? this.b.upArmL : this.b.upArmR, la = sd === 0 ? this.b.loArmL : this.b.loArmR;
+      if (!ua || !la) continue;
+      this._charOf(ua.bone, _sg0); this._charOf(la.bone, _sg1);
+      _v3.subVectors(_sg1, _sg0).normalize();
+      _v4.set(sd === 0 ? 0.86 : -0.86, -0.36, 0.30).normalize();      // out, a little down and forward
+      _q3.setFromUnitVectors(_v3, _v4);
+      _q4.identity().slerp(_q3, w);
+      this._rotQL(ua, _q4);
+      // the forearm carries on outward with a soft elbow (the clip folds it
+      // across her chest)
+      const ha = sd === 0 ? this.b.handL : this.b.handR;
+      if (!ha) continue;
+      this._charOf(la.bone, _sg1); this._charOf(ha.bone, _sg2);
+      _v3.subVectors(_sg2, _sg1).normalize();
+      _v4.set(sd === 0 ? 0.78 : -0.78, -0.42, 0.46).normalize();
+      _q3.setFromUnitVectors(_v3, _v4);
+      _q4.identity().slerp(_q3, w);
+      this._rotQL(la, _q4);
+    }
+  }
+
+  /**
+   * Run-bob compression (R5, A-run-arms "no prancing"; profile `tune.runBob`).
+   * The sprint clip on this rig bounces the pelvis 0.13-0.15 m peak to peak
+   * (Kevin's bar: 0.08). After the ground conform, the pelvis is pulled toward
+   * a slow running mean of its own height (keep `keep` of the excursion), and
+   * every PLANTED foot is put back on the ankle it stood on with a 2-bone leg
+   * solve (knee on its own bend plane) and its sole counter-rotated, so the
+   * foot lock and the conform keep what they solved. Feet in the air ride
+   * with the pelvis. Scratch-only, no allocation.
+   */
+  _runBob(dt, speed, dodgeW, aimW) {
+    const R = this.T.runBob, b = this.b, pe = b.pelvis;
+    const p = this.ctx.player;
+    const w = smoothstep(speed, 3.2, 5.2) * (1 - dodgeW) * (1 - this._deadW) * (1 - aimW)
+      * (p && p.grounded === false ? 0 : 1) * (p?.mantling || p?.riding || p?.sliding ? 0 : 1);
+    pe.bone.updateMatrixWorld(true);
+    this._charOf(pe.bone, _v3);
+    const y = _v3.y;
+    if (!Number.isFinite(y)) return;
+    this._bobMean = this._bobMean == null || !Number.isFinite(this._bobMean) ? y : damp(this._bobMean, y, R.rate ?? 2.5, dt);
+    this._bobW = w;
+    if (w < 0.01) return;
+    // fix round 1 (A28 "flight fraction <= 0.40" sat at 0.24-0.42 run to run):
+    // the plain-W JOG keeps less of its bounce (`keepJog`) than the sprint, so
+    // the double-float phase carries the feet lower; blended to `keep` over
+    // 5.4-6.4 m/s (A-run-arms grades the sprint's bounce at `keep`)
+    const keep = R.keepJog != null ? R.keepJog + (R.keep - R.keepJog) * smoothstep(speed, 5.4, 6.4) : R.keep;
+    this._bobKeep = keep;
+    let dy = clamp(-(1 - keep) * (y - this._bobMean) * w, -0.08, 0.08);
+    if (Math.abs(dy) < 2e-4) return;
+    // the ankles the planted feet stand on, before the pelvis moves
+    const planted = this._rbPlanted || (this._rbPlanted = [false, false]);   // allocated once
+    for (let s = 0; s < 2; s++) {
+      planted[s] = !this._flight[s] && (s === 0 ? this._stL : this._stR) > 0.5;
+      if (!planted[s]) continue;
+      const th = s === 0 ? b.thighL : b.thighR, ca = s === 0 ? b.calfL : b.calfR, ft = s === 0 ? b.footL : b.footR;
+      this._charOf(ft.bone, _rbT[s]);
+      if (dy > 0) {
+        // a RAISE may not ask a planted leg for more than 99 % of its length:
+        // late in stance the leg is already long, and an unreachable goal
+        // drags the ankle (the planted ball) toward the hip
+        this._charOf(th.bone, _rbH); this._charOf(ca.bone, _rbK);
+        const Lmax = 0.99 * (_rbH.distanceTo(_rbK) + _rbK.distanceTo(_rbT[s]));
+        const vx = _rbT[s].x - _rbH.x, vy = _rbT[s].y - _rbH.y, vz = _rbT[s].z - _rbH.z;
+        const h2 = Lmax * Lmax - vx * vx - vz * vz;
+        const dyMax = h2 > 0 ? vy + Math.sqrt(h2) : 0;
+        if (dy > dyMax) dy = Math.max(0, dyMax);
+      }
+    }
+    if (Math.abs(dy) < 2e-4) return;
+    _v2.set(0, dy, 0).applyMatrix3(this._pelvisM3);
+    pe.bone.position.add(_v2);
+    for (let s = 0; s < 2; s++) if (planted[s]) this._legTo(s, _rbT[s], dy);
+    pe.bone.updateMatrixWorld(true);
+  }
+
+  /**
+   * 2-bone leg solve in character space: put the ankle (foot bone) of `side`
+   * on `goal`, knee on the plane it already bends in, then restore the foot's
+   * live orientation so the sole does not tip. `shift` = the char-space Y the
+   * pelvis just moved by (the hip, knee and ankle positions read before the
+   * move are carried by it, which saves a matrix walk).
+   */
+  _legTo(side, goal, shift) {
+    const b = this.b;
+    const th = side === 0 ? b.thighL : b.thighR, ca = side === 0 ? b.calfL : b.calfR, ft = side === 0 ? b.footL : b.footR;
+    if (!th || !ca || !ft) return;
+    this._charOf(th.bone, _rbH); _rbH.y += shift;
+    this._charOf(ca.bone, _rbK); _rbK.y += shift;
+    this._charOf(ft.bone, _rbA); _rbA.y += shift;
+    const L1 = _rbH.distanceTo(_rbK), L2 = _rbK.distanceTo(_rbA);
+    this._liveW(ft.bone, _rbQ2);                       // the sole to keep
+    _ik1.subVectors(goal, _rbH);
+    const dLen = clamp(_ik1.length(), 0.05, (L1 + L2) * 0.995);
+    _ik1.normalize();
+    _ik2.copy(_rbH).addScaledVector(_ik1, dLen);
+    const A = Math.acos(clamp((L1 * L1 + dLen * dLen - L2 * L2) / (2 * L1 * dLen), -1, 1));
+    // the knee's own bend plane; a straight leg bends forward
+    _ik4.subVectors(_rbK, _rbH);
+    _ik4.addScaledVector(_ik1, -_ik4.dot(_ik1));
+    if (_ik4.lengthSq() < 1e-6) _ik4.set(0, 0, 1).addScaledVector(_ik1, -_ik1.z);
+    _ik4.normalize();
+    _ik5.copy(_ik1).multiplyScalar(Math.cos(A)).addScaledVector(_ik4, Math.sin(A));   // thigh dir
+    _ik3.copy(_rbH).addScaledVector(_ik5, L1);
+    _ik3.subVectors(_ik2, _ik3).normalize();                                        // shin dir
+    // thigh
+    _ik1.subVectors(_rbK, _rbH).normalize();
+    _ikQ.setFromUnitVectors(_ik1, _ik5);
+    this._liveW(th.bone, _ikQ2);
+    _ikQ3.copy(_ikQ2).invert().multiply(_ikQ).multiply(_ikQ2);
+    th.bone.quaternion.multiply(_ikQ3);
+    // shin (its live direction was carried by the thigh's rotation)
+    _ik1.subVectors(_rbA, _rbK).normalize().applyQuaternion(_ikQ);
+    _ikQ.setFromUnitVectors(_ik1, _ik3);
+    this._liveW(ca.bone, _ikQ2);
+    _ikQ3.copy(_ikQ2).invert().multiply(_ikQ).multiply(_ikQ2);
+    ca.bone.quaternion.multiply(_ikQ3);
+    // sole back to its live orientation
+    this._liveW(ft.bone, _rbQ);
+    ft.bone.quaternion.multiply(_rbQ.invert().multiply(_rbQ2));
+  }
+
+  /**
+   * Running-arm clamp (A-run-arms): per arm, (1) the wrist may not rise above
+   * `shoulder - wristDrop` — the elbow is OPENED about its own hinge axis by
+   * exactly the excess, so the hand drops forward instead of up (no T-rex);
+   * (2) the wrist keeps `midGap` from the torso midline — the upper arm is
+   * abducted about her forward axis by the deficit (no crossing). Scratch-only.
+   */
+  _runArmClamp(w) {
+    const b = this.b, R = this.T.runArms;
+    this._charOf(b.pelvis.bone, _v1);
+    this._charOf(b.spine3.bone, _v2);
+    const midX = (_v1.x + _v2.x) * 0.5;
+    for (let s = 0; s < 2; s++) {
+      const up = s === 0 ? b.upArmL : b.upArmR, lo = s === 0 ? b.loArmL : b.loArmR, ha = s === 0 ? b.handL : b.handR;
+      const sgn = s === 0 ? 1 : -1;                     // +x is her left
+      // (0) swing centre (fix round 1, V12 "one elbow driven back past the hip
+      // line"): the UAL1 jog/sprint swing is centred forward on this rig —
+      // the wrist reached 0.47 m ahead of the hip and never got behind it, the
+      // elbow only 0.08 m behind. Extend the upper arm a constant `swingBack`
+      // about the character's lateral axis (back for a hanging bone), so the
+      // whole fore-aft arc moves back past the hip; the clamps below still
+      // hold the wrist low and off the midline.
+      if (R.swingBack) this._rotL(up, X_AXIS, R.swingBack * w);
+      this._charOf(up.bone, _sg0); this._charOf(lo.bone, _sg1); this._charOf(ha.bone, _sg2);
+      // (1) height
+      const excess = _sg2.y - (_sg0.y - R.wristDrop);
+      if (excess > 0) {
+        _v3.subVectors(_sg1, _sg0); _v4.subVectors(_sg2, _sg1);
+        const fl = _v4.length();
+        _v5.crossVectors(_v3, _v4);
+        if (_v5.lengthSq() > 1e-8 && fl > 0.05) {
+          _v5.normalize();
+          // opening = rotating the forearm about (upper x fore) by a NEGATIVE angle;
+          // the wrist's height change per radian about the elbow is |(n x f).y|
+          _v6.crossVectors(_v5, _v4);                    // d(wrist)/d(theta) for +theta
+          const dy = -_v6.y;                             // the height change per radian when opening
+          if (dy < -1e-3) {
+            const ang = Math.min(0.7, excess / -dy) * w;
+            _q3.setFromAxisAngle(_v5, -ang);
+            this._rotQL(lo, _q3);
+          }
+        }
+      }
+      // (1b) shoulder: a wrist still over the line after (1) is an arm swung up
+      // FROM THE SHOULDER — on this rig the sprint clip's back swing lifts the
+      // upper arm to the horizontal (elbow 3 cm under the shoulder, wrist 7 cm
+      // over the line). Lower the whole arm about the horizontal axis across
+      // its swing plane by exactly the angle that puts the wrist on the line.
+      this._charOf(ha.bone, _sg2);
+      if (_sg2.y - (_sg0.y - R.wristDrop) > 0) {
+        _v3.subVectors(_sg2, _sg0);
+        const L = _v3.length();
+        if (L > 0.1) {
+          const e0 = Math.asin(clamp(_v3.y / L, -1, 1));
+          const e1 = Math.asin(clamp(-R.wristDrop / L, -1, 1));
+          const ang = Math.min(0.9, e0 - e1) * w;
+          _v4.set(0, 1, 0).cross(_v3);                   // +ang about Y x r lowers r
+          if (ang > 1e-3 && _v4.lengthSq() > 1e-8) {
+            _v4.normalize();
+            _q3.setFromAxisAngle(_v4, ang);
+            this._rotQL(up, _q3);
+          }
+        }
+      }
+      // (2) lateral: re-read the wrist after (1)
+      this._charOf(ha.bone, _sg2);
+      const gap = sgn * (_sg2.x - midX);
+      if (gap < R.midGap) {
+        const arm = Math.max(0.2, Math.hypot(_sg2.x - _sg0.x, _sg2.y - _sg0.y));
+        const ang = Math.min(0.5, (R.midGap - gap) / arm) * w;
+        this._rotL(up, Z_AXIS, sgn * ang);
+      }
+    }
+  }
+
+  /**
+   * NATIVE clips (Round 5, hero-body): UAL2 plays on the UBC skeleton with no
+   * retarget (R15), and the seated pose is the baked UAL1 `Sitting_Idle_Loop`.
+   * These are actions on the SAME mixer as the locomotion tree, weighted
+   * against it: LocomotionBlend normalises its own weights to 1, three's
+   * mixer averages by weight, so an action at W takes W/(1+W) of the pose.
+   *   climb  `ClimbUp_1m`, scrubbed by `player.mantleK` (a ~1 m ledge)
+   *   slide  `Slide_Loop` while `player.sliding`
+   *   ride   `sitIdle` while `player.riding`
+   * One action per clip, created once; nothing allocates per frame.
+   */
+  _nativeLayer(p, dt, dead) {
+    if (!this._nat) {
+      this._nat = { list: [], by: {}, ok: false };
+      const pack = this.ctx.assets?.anims?.heroUal2?.animations || [];
+      const add = (name, clip, loop) => {
+        if (!clip) return;
+        const a = this.mixer.clipAction(clip);
+        a.setLoop(loop ? THREE.LoopRepeat : THREE.LoopOnce, Infinity);
+        a.clampWhenFinished = !loop;
+        a.enabled = true; a.weight = 0; a.timeScale = 0; a.play();
+        const e = { name, a, w: 0, t: 0, dur: clip.duration, loop };
+        this._nat.list.push(e); this._nat.by[name] = e;
+      };
+      add('climb', pack.find((c) => c.name === 'ClimbUp_1m'), false);
+      add('slide', pack.find((c) => c.name === 'Slide_Loop'), true);
+      if (this.lib?.get) { try { add('sit', this.lib.get('sitIdle')?.clip, true); } catch { /* no sit clip */ } }
+      this._nat.ok = this._nat.list.length > 0;
+    }
+    if (!this._nat.ok) return;
+    const want = dead ? null : p.riding ? 'sit'
+      : (p.mantling && p.mantleClip === 'climb1m') ? 'climb'
+        : (p.sliding && p.grounded) ? 'slide' : null;
+    for (let i = 0; i < this._nat.list.length; i++) {
+      const e = this._nat.list[i];
+      const tgt = e.name === want ? (e.name === 'slide' ? 0.9 : 1) : 0;
+      e.w = Math.abs(e.w - tgt) < 0.004 ? tgt : damp(e.w, tgt, e.name === 'climb' ? 22 : 12, dt);
+      if (e.name === 'climb' && want === 'climb') {
+        // the clip's pull-up over the first 86 % of the move, then the step on
+        e.t = clamp((p.mantleK ?? 0) / 0.86, 0, 1) * e.dur;
+      } else if (e.w > 0) {
+        e.t = e.loop ? (e.t + dt) % e.dur : Math.min(e.t + dt, e.dur);
+      } else e.t = 0;
+      e.a.time = e.t;
+      e.a.weight = e.w >= 0.999 ? 60 : e.w / (1 - e.w);
+    }
+  }
+
+  /** Native-layer diagnostics (gates A-climb-1m, A-slide, A-ride-hook). */
+  debugNative() {
+    if (!this._nat) return null;
+    return Object.fromEntries(this._nat.list.map((e) => [e.name, { w: +e.w.toFixed(3), t: +e.t.toFixed(3) }]));
+  }
+
+  /**
+   * The climb's hands: both wrists to the ledge edge (char space), palms on
+   * the top, through the pull. The edge is the wall hit the mantle probe
+   * found (`player.mantleEdge`), so the hands land on THIS ledge whatever its
+   * height within the climb band.
+   */
+  _climbHands(p, live) {
+    const E = p.mantleEdge, k = p.mantleK ?? 0;
+    const w = smoothstep(k, 0.04, 0.16) * (1 - smoothstep(k, 0.66, 0.82)) * live;
+    if (w < 0.01) return;
+    const sx = E.dz, sz = -E.dx;                       // her left, world
+    // the press (fix round 1, V-traversal "body over the hands"): when the
+    // clip's shoulders have risen out of an arm's reach of the edge, the chest
+    // folds forward over the hands — the trunk pitches about her lateral
+    // axis by what the farther arm is short, before the arms solve
+    {
+      let short = 0;
+      for (let s2 = 0; s2 < 2; s2++) {
+        const sg = s2 === 0 ? 1 : -1, ua = s2 === 0 ? this.b.upArmL : this.b.upArmR;
+        if (!ua) continue;
+        _alV.set(E.x + sx * 0.17 * sg - E.dx * 0.035, E.y + 0.022, E.z + sz * 0.17 * sg - E.dz * 0.035);
+        this._charOfWorld(_alV, _ik5);
+        this._charOf(ua.bone, _sg1);
+        const reach = (s2 === 0 ? this._lenUpL + this._lenLoL : this._lenUpR + this._lenLoR) * 0.95;
+        short = Math.max(short, _sg1.distanceTo(_ik5) - reach);
+      }
+      if (short > 0.002) {
+        const a = Math.min(0.65, short / 0.26) * w;
+        this._rotL(this.b.spine2, X_AXIS, a * 0.45);
+        this._rotL(this.b.spine3, X_AXIS, a * 0.55);
+      }
+    }
+    for (let si = 0; si < 2; si++) {
+      const side = si === 0 ? 'l' : 'r', sgn = si === 0 ? 1 : -1;
+      // the wrist sits just back from the edge and a hand's width off the line,
+      // so the palm lies over the lip
+      _alV.set(E.x + sx * 0.17 * sgn - E.dx * 0.035, E.y + 0.022, E.z + sz * 0.17 * sgn - E.dz * 0.035);
+      this._charOfWorld(_alV, _ik5);
+      // fix round 1: the clip's raised shoulder (its right hand rides 0.4 m
+      // over its left) left the right palm 7-17 cm off the edge with the arm
+      // at full stretch; the clavicle gives the arm what it is short of
+      // (A-climb-1m grades the palms' MAX distance through the pull)
+      const clv = side === 'l' ? this.b.clavL : this.b.clavR, ua = side === 'l' ? this.b.upArmL : this.b.upArmR;
+      const reach = (side === 'l' ? this._lenUpL + this._lenLoL : this._lenUpR + this._lenLoR) * 0.97;
+      if (clv && ua) {
+        this._charOf(clv.bone, _sg0); this._charOf(ua.bone, _sg1);
+        const short = _sg1.distanceTo(_ik5) - reach;
+        if (short > 0.002) {
+          const cl = _sg1.distanceTo(_sg0);
+          _v3.subVectors(_sg1, _sg0); _v4.subVectors(_ik5, _sg0);
+          _v5.crossVectors(_v3, _v4);
+          if (cl > 0.03 && _v5.lengthSq() > 1e-8) {
+            _q3.setFromAxisAngle(_v5.normalize(), Math.min(0.6, Math.asin(Math.min(1, short / cl))) * w);
+            this._rotQL(clv, _q3);
+          }
+        }
+      }
+      _pole.set(0.6 * sgn, -0.5, -0.6);
+      this._ikArm(side, _ik5, _pole, w, null);
+      this._curlFingers(side === 'l' ? this._fingerL : this._fingerR, 0.35 * w, 0.2 * w);
+    }
+  }
+
+  /** Climb diagnostics (gate A-climb-1m): each palm's distance to the ledge edge (world, m). */
+  debugClimb() {
+    const p = this.ctx.player, E = p?.mantleEdge;
+    if (!E?.valid) return null;
+    const sx = E.dz, sz = -E.dx;
+    const out = {};
+    for (const [k, hand, mid] of [['l', this.b.handL, this.bones.middle_01_l], ['r', this.b.handR, this.bones.middle_01_r]]) {
+      hand.bone.getWorldPosition(_alV);
+      if (mid) _alV.lerp(mid.getWorldPosition(_alV2), 0.5);           // the palm
+      // distance to the edge LINE (through E along her left), clamped to +-0.4 m
+      const dx = _alV.x - E.x, dz = _alV.z - E.z;
+      const along = clamp(dx * sx + dz * sz, -0.4, 0.4);
+      out[k] = +Math.hypot(_alV.x - (E.x + sx * along), _alV.y - E.y, _alV.z - (E.z + sz * along)).toFixed(4);
+    }
+    return out;
   }
 
   /**
@@ -3414,7 +4113,10 @@ export class PlayerAnimator {
   debugHandCollider() {
     const H = this._handCol;
     if (!H) return null;
-    return { active: H.active, r: H.r, minAxis: +H.minAxis.toFixed(4), pushes: H.pushes };
+    const c = this._chains[H.minCi ?? -1];
+    // the particle closest to the capsule axis this frame: chain root bone + particle index
+    const at = c ? c.links[0].name + '#' + H.minJ : null;
+    return { active: H.active, r: H.r, minAxis: +H.minAxis.toFixed(4), pushes: H.pushes, at };
   }
 
   _clearArmOfHead(upE, loE, haE, target, pole, w) {
@@ -3457,6 +4159,21 @@ export class PlayerAnimator {
     _hdQi.copy(_hdQ).invert();
     _hd.add(_hp1.copy(this.T.headOff).applyQuaternion(_hdQ));
   }
+
+  /**
+   * R5: the skull (head keep-out ellipsoid) centre and the head's live
+   * forward, character space, into `outC` / `outF`; returns the semi-axes.
+   * The stowed lance's carry solve (src/hero/carry.js) and gates read it.
+   */
+  skull(outC, outF = null) {
+    this._headFrame();
+    outC.copy(_hd);
+    if (outF) outF.set(0, 0, 1).applyQuaternion(_hdQ);
+    return this.T.headR;
+  }
+
+  /** R5: the smoothed aim weight (0..1) — the stowed lance's frame follows the chest blade with it. */
+  get aimWeight() { return this._aimW * (1 - this._dodgeW); }
 
   /** Char point -> head bind frame, scaled so the ellipsoid is the unit sphere. */
   _headUnit(p, out) {
@@ -3601,7 +4318,17 @@ export class PlayerAnimator {
       const links = path.map((b) => makeEntry(b.name)).filter(Boolean);
       if (links.length < 1) return;
       const root = path[0].name;
-      const cls = DYN_CLASSES.find((c) => c.re.test(root)) || DYN_FALLBACK;
+      // R5 fix round 1: a rig profile may class its chains by name
+      // (`chainClasses: { gear: '^dyn_alidadeCord' }`) ahead of the Round-4
+      // regexes — Brea's alidade cord is GEAR (A19's gear probe), not cloth
+      const pcc = this.model?.userData?.rigProfile?.chainClasses;
+      let cls0 = null;
+      if (pcc) for (const k in pcc) if (new RegExp(pcc[k]).test(root)) { cls0 = DYN_CLASSES.find((c) => c.name === k) || null; break; }
+      if (!cls0) cls0 = DYN_CLASSES.find((c) => c.re.test(root)) || DYN_FALLBACK;
+      // R5: a body may retune a class (profile `tune.dynClass[name]`), merged
+      // over the Round-4 row once at build time
+      const ov = this.model?.userData?.rigProfile?.tune?.dynClass?.[cls0.name];
+      const cls = ov ? { ...cls0, ...ov } : cls0;
       // deterministic per-chain phase so neighbouring strands never move in
       // lockstep (a hash of the name, not Math.random: shots must repeat)
       let h = 0;
@@ -4064,17 +4791,40 @@ export class PlayerAnimator {
           _spC.set(pos[i0], pos[i0 + 1], pos[i0 + 2]).addScaledVector(_spA, c.seg[j]);
         }
         if (hcN) {
-          let hit = false;
-          for (let q = 0; q < hcN; q++) hit = this._pushOutOfCapsule(_spC, H.caps[q], null) || hit;
-          if (hit) {
-            H.pushes++;
+          // push out, put the particle back at its segment length, and repeat:
+          // one pass re-projected a strand whose parent sits near the capsule
+          // straight back inside it (the sternum cord under a hand crossing
+          // the chest, A-wrap-clear: 0.024 m from the axis). Four passes walk
+          // it round its parent's sphere to the outside.
+          let inside = false;
+          for (let it = 0; it < 4; it++) {
+            let hit = false;
+            for (let q = 0; q < hcN; q++) hit = this._pushOutOfCapsule(_spC, H.caps[q], null) || hit;
+            if (!hit) { inside = false; break; }
+            inside = true;
+            if (it === 0) H.pushes++;
             _spA.set(_spC.x - pos[i0], _spC.y - pos[i0 + 1], _spC.z - pos[i0 + 2]);
             if (_spA.lengthSq() < 1e-12) _spA.copy(_spB); else _spA.normalize();
             _spC.set(pos[i0], pos[i0 + 1], pos[i0 + 2]).addScaledVector(_spA, c.seg[j]);
           }
+          if (inside) {
+            // still in after four passes: hang the particle straight AWAY from
+            // the nearer axis, as far as its parent allows
+            _spE.set(pos[i0], pos[i0 + 1], pos[i0 + 2]);
+            let best = Infinity, bq = 0;
+            for (let q = 0; q < hcN; q++) {
+              const d = this._segDist(_spE, H.caps[q].a, H.caps[q].b);
+              if (d < best) { best = d; bq = q; }
+            }
+            this._segDist(_spE, H.caps[bq].a, H.caps[bq].b);   // leaves parent - axis point in _cp1
+            if (_cp1.lengthSq() > 1e-10) {
+              _spA.copy(_cp1).normalize();
+              _spC.copy(_spE).addScaledVector(_spA, c.seg[j]);
+            }
+          }
           for (let q = 0; q < hcN; q++) {
             const d = this._segDist(_spC, H.caps[q].a, H.caps[q].b);
-            if (d < H.minAxis) H.minAxis = d;
+            if (d < H.minAxis) { H.minAxis = d; H.minCi = ci; H.minJ = j + 1; }
           }
         }
         // Constraint velocity correction (position-based dynamics), CLAMPED.

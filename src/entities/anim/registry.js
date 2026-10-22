@@ -46,12 +46,12 @@ const KNOWN_MODULES = [
   { id: 'anim/restPose', file: 'src/entities/anim/restPose.js', owner: 'anim-core', rig: 'shared', convention: 'BoneSpace', status: 'migrated' },
   { id: 'anim/clipLayer', file: 'src/entities/anim/clipLayer.js', owner: 'anim-core', rig: 'shared', convention: 'ClipLayer', status: 'migrated' },
   { id: 'anim/rigDebug', file: 'src/entities/anim/rigDebug.js', owner: 'anim-core', rig: 'shared', convention: 'BoneSpace', status: 'migrated' },
-  { id: 'anim/retargeter', file: 'src/entities/anim/retargeter.js', owner: 'anim-core', rig: 'aloy', convention: 'BoneSpace', status: 'migrated' },
-  { id: 'anim/clipLibrary', file: 'src/entities/anim/clipLibrary.js', owner: 'anim-core', rig: 'aloy', convention: 'BoneSpace', status: 'migrated' },
-  { id: 'anim/locomotion', file: 'src/entities/anim/locomotion.js', owner: 'anim-core', rig: 'aloy', convention: 'ClipLayer', status: 'migrated' },
+  { id: 'anim/retargeter', file: 'src/entities/anim/retargeter.js', owner: 'anim-core', rig: 'hero', convention: 'BoneSpace', status: 'migrated' },
+  { id: 'anim/clipLibrary', file: 'src/entities/anim/clipLibrary.js', owner: 'anim-core', rig: 'hero', convention: 'BoneSpace', status: 'migrated' },
+  { id: 'anim/locomotion', file: 'src/entities/anim/locomotion.js', owner: 'anim-core', rig: 'hero', convention: 'ClipLayer', status: 'migrated' },
   {
     id: 'playerAnimator', file: 'src/entities/playerAnimator.js', owner: 'player-anim', wave: 2,
-    rig: 'aloy', convention: 'BoneSpace (private _rot/_rotQ/_rotL/_rotQL)',
+    rig: 'hero', convention: 'BoneSpace (private _rot/_rotQ/_rotL/_rotQL)',
     status: 'import-swap', probe: 'playerAnimator',
     recipe: `BoneSpace.adopt(this._entries, model) then _rot->rotCharBind, _rotQ->rotCharBindQ, _rotL->rotChar, _rotQL->rotCharQ (${MIGRATION_DOC} §2)`,
   },
@@ -150,7 +150,11 @@ function compare(bone, legacyFn, boneSpaceFn) {
 function probePlayerAnimator(ctx) {
   const an = ctx?.player?.animator;
   if (!an || !an._entries || !an.model) return { reachable: false, why: 'no ctx.player.animator' };
-  const names = ['spine_01_06', 'head_0104', 'upperarm_r_043', 'thigh_l_0185', 'hand_l_014'];
+  // R5 (hero-body): the probe bones by ANIMATOR KEY, so the probe runs on
+  // whatever rig the profile bound (the Round-4 literals named Aloy's bones and
+  // probed 0 bones on Brea, which read as DIVERGENT)
+  const names = ['spine1', 'head', 'upArmR', 'thighL', 'handL']
+    .map((k) => an.b?.[k]?.name || an.KEY?.[k]).filter(Boolean);
   const bs = BoneSpace.adopt(an._entries, an.model);
   // use the animator's OWN cached frame inverse so the live-space comparison
   // is not a frame off (it refreshes _invModelQ at the top of each update)
@@ -383,7 +387,7 @@ export function audit(ctx) {
   const legacyModules = rows.filter((r) => r.status === 'legacy')
     .map((r) => ({ id: r.id, owner: r.owner, convention: r.convention }));
 
-  const aloyRows = rows.filter((r) => r.rig === 'aloy');
+  const aloyRows = rows.filter((r) => r.rig === 'hero');
   const aloyDivergent = aloyRows.filter((r) => /DIVERGENT/.test(r.convention) || r.status === 'legacy');
   const anProbe = probeCache.playerAnimator ?? runProbe('playerAnimator');
   const aloy = {
@@ -421,7 +425,7 @@ export function audit(ctx) {
         : true),
   };
 
-  return {
+  const out = {
     ok: modulesPresent && algebra.pass && legacyModules.length === 0
       && aloy.ok && machines.ok,
     version: ANIM_VERSION,
@@ -433,10 +437,15 @@ export function audit(ctx) {
     registered: registered().map((r) => ({ id: r.id, owner: r.owner, convention: r.convention, rig: r.rig })),
     legacyModules,
     selfDeclaredForeign,
-    aloy,
+    // R5: the protagonist's section is `hero` (the rig profile id names the
+    // body: `rigProfile`); `aloy` stays readable for Round-4 consumers
+    hero: aloy,
+    rigProfile: c?.player?.model?.userData?.rigProfile?.name ?? null,
     machines,
     pendingMigration,
   };
+  Object.defineProperty(out, 'aloy', { value: aloy, enumerable: false });
+  return out;
 }
 
 /** RestPose + RigDebug smoke test on a throwaway 2-bone rig. */
@@ -510,7 +519,7 @@ const _debuggers = new Map();
 /** Resolve 'aloy' | 'player' | a machine kind | an Object3D | a machine. */
 function resolveRig(target) {
   const c = anim.ctx || (typeof window !== 'undefined' ? window.__CTX__ : null);
-  if (!target || target === 'aloy' || target === 'player') {
+  if (!target || target === 'hero' || target === 'aloy' || target === 'player') {
     const an = c?.player?.animator;
     if (!an?.model) return null;
     // adopt the animator's own entry table so probes carry bind + deltaDeg,

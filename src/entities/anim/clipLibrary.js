@@ -69,6 +69,8 @@ export const CLIPS = {
   swordIdle: 'Sword_Idle',
   punchJab: 'Punch_Jab',
   punchCross: 'Punch_Cross',
+  // Round 5 (hero-body): the seated pose `player.ride()` holds (bake on demand)
+  sitIdle: 'Sitting_Idle_Loop',
 };
 
 /**

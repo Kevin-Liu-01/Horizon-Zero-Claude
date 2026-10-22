@@ -3,6 +3,7 @@ import { clone as skeletonClone } from 'three/examples/jsm/utils/SkeletonUtils.j
 import { PlayerAnimator } from './playerAnimator.js';
 import { attachRigProfile } from './anim/rigs/index.js';
 import { installHero } from '../hero/index.js';
+import { playerNoise } from './machines/ai/perception.js';
 import { installSpatial } from '../core/collision.js';
 import { REST } from '../world/island/sites.js';
 import { PLAY_RADIUS, EXTENT } from '../world/island/extent.js';
@@ -91,6 +92,43 @@ const SLIDE_TERMINAL = 2.6;               // friction-limited slide speed (m/s)
 const FALL_SAFE = 4;                      // m — below this a landing is free
 const FALL_LETHAL = 9;                    // m — above this it kills
 const MANTLE_T = 0.42;                    // s — ledge pull-up duration
+/* Round 5 (hero-body W0b): a ~1 m ledge is the UAL2 `ClimbUp_1m` climb, both
+ * hands planted on the edge (bible §3.7, gate A-climb-1m); lower lips and
+ * taller ones keep the Round-4 pull-up. */
+const CLIMB_1M = [0.82, 1.22];            // m — rise band that plays the climb
+const CLIMB_T = 0.78;                     // s — the climb (clip 0.67 s + the step onto the top)
+/**
+ * The 1 m climb's root path (fix round 1): knots in mantleK, the root's
+ * distance past the wall face `d` (m, negative = in front of it) and the
+ * share of the rise `h`: hop to the edge, pull (palms planted), press (chest
+ * over the hands), step up, walk on. Smoothstep between knots.
+ */
+const CLIMB_PATH = {
+  // derived from the clip itself (A-climb-1m probe, Oct 19): the right foot it
+  // plants on a 1 m ledge stays on the top from k 0.27 to 0.67 only if the
+  // root takes these heights and moves 0.7 m forward under it; the palms it
+  // plants sit 0.72 m over and 0.33 m ahead of the root at k 0.27; the left
+  // foot lands on the top at k 0.86 (the clip's end)
+  k: [0, 0.20, 0.27, 0.35, 0.44, 0.50, 0.556, 0.61, 0.67, 0.86, 1],
+  d: [0, -0.30, -0.27, -0.18, -0.03, 0.07, 0.18, 0.31, 0.40, 0.45, 0.45],
+  h: [0, 0.22, 0.29, 0.41, 0.49, 0.555, 0.62, 0.70, 0.73, 1.0, 1.0],
+};
+/** Smoothstep between the keyed values of a path (no allocation). */
+function _pathAt(k, K, V) {
+  if (k <= K[0]) return V[0];
+  for (let i = 1; i < K.length; i++) {
+    if (k <= K[i]) { const t = (k - K[i - 1]) / (K[i] - K[i - 1]); return V[i - 1] + (V[i] - V[i - 1]) * t * t * (3 - 2 * t); }
+  }
+  return V[V.length - 1];
+}
+/** smoothstep of k over [a, b] */
+const _sstep = (k, a, b) => { const t = Math.min(1, Math.max(0, (k - a) / (b - a))); return t * t * (3 - 2 * t); };
+/* Slides by SURFACE (bible §8.7): cinder faces cannot be held above 28 deg;
+ * every other surface keeps SLIDE_DEG. `player.mods.slideDegBySurface` merges
+ * over this table (armor perks). */
+const SLIDE_BY_SURFACE = Object.freeze({ cinder: 28 });
+const SLIDE_HOP_V = 3.4;                  // m/s — the hop that exits a slide on input
+const SLIDE_SUPPRESS = 0.55;              // s — no re-entry right after the hop
 const MANTLE_MIN = 0.35;
 const MANTLE_MAX = 1.7;
 
@@ -549,6 +587,10 @@ const DOLLY_OUT_CLR = 0.26;
 const HEAD_REST = 1.36;
 const HEAD_DEAD = 0.03;
 const HEAD_FOLLOW_MAX = 0.20;
+/** The head-and-shoulders keeper (fix round 1): the lower clavicle joint stays inside this NDC of the frame on a look-up, ... */
+const KEEP_NDC = 0.74;
+/** ...for at most this much given-back elevation (rad, 20 deg). */
+const KEEP_MAX = 0.35;
 /**
  * The point a swing candidate must keep in the picture: her upper chest,
  * this far under the UN-lifted pivot (1.30 m standing).  Chosen so the flat
@@ -793,6 +835,7 @@ const _CAMRAY = { mode: 'camera' };
 /** Structures whose top surface is standable. Module scope: no per-frame alloc. */
 const STANDABLE = new Set(['ruin', 'tent', 'tower', 'landmark', 'prop']);
 const _STRUCT_OPT = { filter: (c) => STANDABLE.has(c.kind) };
+const _rideV = new THREE.Vector3();
 
 /** Implicit critically-damped spring — unconditionally stable at any dt. */
 function spring(state, target, omega, dt) {
@@ -843,6 +886,51 @@ function noise1(t, seed) {
  * over the terrain heightfield, over-shoulder orbit camera with a swept boom,
  * aim mode, health/stamina/medicine.
  */
+/**
+ * `player.mods` — THE published behaviour surface (hero-body W0b, plan §3.2;
+ * after W0, player behaviour changes only through `player.mods` and
+ * `player.ride`). Every field is null = canon; consumers (armor perks W1/W3,
+ * weapons W2) SET fields and `clear()` them. R16: no field can touch
+ * `player.speeds`, dodge timing or distance, jump, or slide length.
+ *
+ *   fallSafe           m   landings below this cost nothing          (canon 4)
+ *   fallLethal         m   landings above this kill                  (canon 9)
+ *   slideDegBySurface  {surface: deg} merged over SLIDE_BY_SURFACE   (cinder 28, else 50)
+ *   knockdownMode      'stagger' | 'light': the heaviest hit react she takes
+ *   regen              hp/s of passive regeneration while alive
+ *   regenCap           fraction of maxHealth regen stops at (null = 1; Fog-mend: 0.6)
+ *   noiseMul           x footstep noise (published as `player.noiseMul`; applied
+ *                      through `stimulus.addNoiseFilter` when the machines expose it)
+ *   zoom               x camera zoom while aiming (2 = half the field of view)
+ */
+export const MOD_FIELDS = Object.freeze(['fallSafe', 'fallLethal', 'slideDegBySurface', 'knockdownMode', 'regen', 'regenCap', 'noiseMul', 'zoom']);
+export class PlayerMods {
+  constructor() { this.clear(); }
+  /** Back to canon. */
+  clear() { for (const k of MOD_FIELDS) this[k] = null; return this; }
+  /** Plain snapshot of the set fields. */
+  active() { const o = {}; for (const k of MOD_FIELDS) if (this[k] !== null) o[k] = this[k]; return o; }
+}
+
+/**
+ * Surface patches (fixtures, settlement slides, later biomes): a disc that
+ * reports `surface` to `player.surfaceAt` ahead of the terrain's own answer.
+ * `add({ x, z, r, surface }) -> id`, `remove(id)`.
+ */
+class SurfacePatches {
+  constructor() { this.list = []; this._id = 1; }
+  add(p) { const id = this._id++; this.list.push({ id, x: p.x, z: p.z, r: p.r ?? 2, surface: p.surface }); return id; }
+  remove(id) { const i = this.list.findIndex((e) => e.id === id); if (i >= 0) this.list.splice(i, 1); return i >= 0; }
+  at(x, z) {
+    for (let i = this.list.length - 1; i >= 0; i--) {
+      const e = this.list[i];
+      const dx = x - e.x, dz = z - e.z;
+      if (dx * dx + dz * dz <= e.r * e.r) return e.surface;
+    }
+    return null;
+  }
+}
+
 export class Player {
   constructor(ctx) {
     this.ctx = ctx;
@@ -918,6 +1006,20 @@ export class Player {
     this.iFrames = [IFRAME_IN, IFRAME_OUT];
     /** Published canon speeds — the animator retimes its clips against these. */
     this.speeds = SPEEDS;
+    /** The published behaviour surface (see PlayerMods) and surface patches. */
+    this.mods = new PlayerMods();
+    this.surfaces = new SurfacePatches();
+    this.surface = null;          // the surface under her this frame
+    this.noiseMul = 1;            // effective footstep noise multiplier (mods.noiseMul)
+    this.noise = 0;               // the footstep stimulus strength she emits now (x noiseMul)
+    this._noiseHooked = false;
+    this._slideSuppress = 0;
+    /** `ride()` state (null = on foot) and the climb's ledge edge (A-climb-1m). */
+    this._ride = null;
+    this.riding = false;
+    this.mantleClip = null;
+    this.mantleEdge = { x: 0, y: 0, z: 0, dx: 0, dz: 1, valid: false };
+    this._mantleDur = MANTLE_T;
 
     // --- ground / air
     this.groundY = 0;
@@ -1096,6 +1198,13 @@ export class Player {
     this._dollyOff = new THREE.Vector3();
     this._hw = new THREE.Vector3();
     this._headDrop = 0;
+    // R5: the head bone's standing height is the BODY's (Round 4's 1.36 was
+    // Aloy's `head_0104`; Brea's `Head` stands at 1.47) — from the rig profile
+    this._headRest = this.model?.userData?.rigProfile?.tune?.headRest ?? HEAD_REST;
+    // ...and how far the rig may follow her head DOWN a face (profile
+    // `tune.headFollowMax`; Brea keeps Round 4's 0.20 — 0.32 was tried for the
+    // A31b film and put the lens 1.05 m from the pivot)
+    this._headFollowMax = this.model?.userData?.rigProfile?.tune?.headFollowMax ?? HEAD_FOLLOW_MAX;
     this.camHeadDrop = 0;
     this._dollyC = 0;
     this._camTick = 0;
@@ -1147,6 +1256,7 @@ export class Player {
     this.animator = new PlayerAnimator(ctx, this.model);
 
     ctx.input.onDown('Space', () => this.jump());
+    ctx.input.onDown('KeyE', () => { if (this._ride) this.dismount('input'); });
     ctx.input.onDown('ControlLeft', () => this.dodge()); // HZD PC dodge bind
     ctx.input.onDown('KeyC', () => this.toggleCrouch());
 
@@ -1367,6 +1477,7 @@ void main() {
   }
 
   _die() {
+    if (this._ride) this.dismount('death');
     this.ctx.state = 'dead';
     this.ctx.events.emit('player-died');
     setTimeout(() => {
@@ -1402,10 +1513,153 @@ void main() {
   jump() {
     const ctx = this.ctx;
     if (ctx.state !== 'playing' && !ctx.params.has('shot')) return;
+    if (this._ride) { ctx.input.consume('Space'); this.dismount('input'); return; }
+    // a slide is exited on input: a short hop off the face (A-slide: <= 0.3 s)
+    if (this.sliding && this.grounded) { ctx.input.consume('Space'); this._slideHop(); return; }
     // buffered: served by _tryJump on the first frame it becomes legal
     ctx.input.consume('Space');
     this._jumpBuffered = ctx.input.now;
     this._tryJump();
+  }
+
+  /** Hop off a slide (input exit): airborne at once, no re-entry for SLIDE_SUPPRESS. */
+  _slideHop() {
+    this.sliding = false;
+    this.grounded = false;
+    this.velocity.y = SLIDE_HOP_V;
+    this.airTime = 0;
+    this._fallPeak = this.position.y;
+    this._launchY = this.position.y;
+    this._slideSuppress = SLIDE_SUPPRESS;
+    this.ctx.events.emit('player-slide-exit', { cause: 'input' });
+  }
+
+  /** The surface under (x, z): a patch, else the terrain's own `surfaceAt`. */
+  surfaceAt(x, z) {
+    return this.surfaces.at(x, z) ?? this.ctx.terrain?.surfaceAt?.(x, z) ?? null;
+  }
+
+  /** The slide threshold (deg) on `surface` (canon table, then the mods' entries). */
+  slideDegOn(surface) {
+    const m = this.mods.slideDegBySurface;
+    if (m && surface && m[surface] != null) return m[surface];
+    if (m && m.default != null && !(surface in SLIDE_BY_SURFACE)) return m.default;
+    return SLIDE_BY_SURFACE[surface] ?? SLIDE_DEG;
+  }
+
+  /* ------------------------------- ride --------------------------------- */
+
+  /**
+   * `player.ride(path, clip)` — the published ride hook (hero-body W0b; the
+   * cable baskets, settlements W4). She is SEATED: her root sits on the seat
+   * socket every frame (no lag behind a moving seat), locomotion and aiming are
+   * off, the camera stays free, and Space or E dismounts.
+   *
+   *   path   array of {x, y, z} world points (a polyline), walked at `speed`
+   *   clip   'sitIdle' (the seated pose; the default), or an options object
+   *          { clip, speed = 3 m/s, seat = {x,y,z} offset of the socket from the
+   *          path point, loop = false, onExit(cause) }
+   * Returns a handle { socket: Vector3 (live), s (m along), length, cancel(),
+   * done: Promise<cause> } — cause 'input' | 'end' | 'cancel' | 'death'.
+   * Nothing is allocated per frame; the handle is dropped on exit.
+   */
+  ride(path, clipOrOpts = {}) {
+    // the published shape is `ride(path, clip)`; an options object is also taken
+    const opts = typeof clipOrOpts === 'string' ? { clip: clipOrOpts } : (clipOrOpts || {});
+    if (this._ride) this.dismount('cancel');
+    const pts = (path || []).map((q) => new THREE.Vector3(q.x, q.y, q.z));
+    if (pts.length < 2) throw new Error('[player] ride(path): need >= 2 points');
+    const seg = [];
+    let len = 0;
+    for (let i = 0; i < pts.length - 1; i++) { const l = pts[i].distanceTo(pts[i + 1]); seg.push(l); len += l; }
+    let resolve;
+    const done = new Promise((r) => { resolve = r; });
+    const h = {
+      pts, seg, length: len, s: 0, speed: opts.speed ?? 3, loop: !!opts.loop,
+      seat: new THREE.Vector3(opts.seat?.x ?? 0, opts.seat?.y ?? 0, opts.seat?.z ?? 0),
+      clip: opts.clip ?? 'sitIdle', socket: new THREE.Vector3(), dir: new THREE.Vector3(0, 0, 1),
+      // the seated pelvis in her own frame, read off the last posed frame: the
+      // seat socket is where her PELVIS rests, the root goes under it
+      pelvisOff: new THREE.Vector3(), placed: new THREE.Vector3(), placedH: 0,
+      onExit: opts.onExit || null, done, _resolve: resolve,
+      cancel: () => this.dismount('cancel'),
+    };
+    this._ride = h;
+    this.riding = true;
+    this.mantling = false; this.dodging = false; this.aiming = false; this.sprinting = false;
+    this.setCrouch(false);
+    this.velocity.set(0, 0, 0);
+    this._rideSocket(h);
+    this.heading = Math.atan2(h.dir.x, h.dir.z);
+    this._rideSeat(h);
+    this._prevPos.copy(this.position);
+    this.grounded = false;
+    this.ctx.events.emit('player-ride', { length: +len.toFixed(2) });
+    return h;
+  }
+
+  /** End the ride (input, end of path, cancel, death): back on her feet beside the seat. */
+  dismount(cause = 'cancel') {
+    const h = this._ride;
+    if (!h) return false;
+    this._ride = null;
+    this.riding = false;
+    // step off to her side of the seat, onto whatever is there
+    this.position.x = h.socket.x + h.dir.z * 0.55;
+    this.position.z = h.socket.z - h.dir.x * 0.55;
+    this.velocity.set(0, 0, 0);
+    this._prevPos.copy(this.position);
+    this._sampleGround(this.position.x, this.position.z, h.socket.y + 0.6);
+    this.position.y = Math.max(this.groundY, Math.min(h.socket.y, this.groundY + 1.2));
+    this.grounded = this.position.y - this.groundY < 0.05;
+    if (!this.grounded) { this.airTime = 0; this._fallPeak = this.position.y; this._launchY = this.position.y; }
+    this.ctx.events.emit('player-dismount', { cause });
+    h.onExit?.(cause);
+    h._resolve(cause);
+    return true;
+  }
+
+  /** Socket at arc length h.s (writes h.socket, h.dir). */
+  _rideSocket(h) {
+    let s = h.s, i = 0;
+    while (i < h.seg.length - 1 && s > h.seg[i]) { s -= h.seg[i]; i++; }
+    const a = h.pts[i], b = h.pts[i + 1];
+    const f = h.seg[i] > 1e-6 ? Math.min(1, s / h.seg[i]) : 0;
+    h.socket.copy(a).lerp(b, f);
+    h.dir.subVectors(b, a);
+    const l = Math.hypot(h.dir.x, h.dir.z);
+    if (l > 1e-6) { h.dir.x /= l; h.dir.z /= l; h.dir.y = 0; } else h.dir.set(0, 0, 1);
+    h.socket.add(h.seat);
+  }
+
+  _stepRide(dt) {
+    const h = this._ride;
+    h.s += h.speed * dt;
+    if (h.s >= h.length) {
+      if (h.loop) h.s -= h.length;
+      else { h.s = h.length; this._rideSocket(h); this._rideSeat(h); this.dismount('end'); return; }
+    }
+    this._rideSocket(h);
+    // the pelvis offset the last pose put her in (char space), then she faces
+    // along the line and the root goes where that pelvis lands on the socket
+    const pb = this.animator?.b?.pelvis?.bone;
+    if (pb) {
+      _rideV.setFromMatrixPosition(pb.matrixWorld).sub(h.placed);
+      const c = Math.cos(h.placedH), sn = Math.sin(h.placedH);
+      h.pelvisOff.set(_rideV.x * c - _rideV.z * sn, _rideV.y, _rideV.x * sn + _rideV.z * c);
+    }
+    this.heading = Math.atan2(h.dir.x, h.dir.z);
+    this._rideSeat(h);
+    this._prevPos.copy(this.position);
+    this.velocity.set(0, 0, 0);
+    this.moveSpeed = 0;
+  }
+
+  /** Root = socket - (seated pelvis offset, rotated to her heading). */
+  _rideSeat(h) {
+    const o = h.pelvisOff, c = Math.cos(this.heading), sn = Math.sin(this.heading);
+    this.position.set(h.socket.x - (o.x * c + o.z * sn), h.socket.y - o.y, h.socket.z - (-o.x * sn + o.z * c));
+    h.placed.copy(this.position); h.placedH = this.heading;
   }
 
   _tryJump() {
@@ -1501,7 +1755,11 @@ void main() {
     return gy;
   }
 
-  _snapToGround() {
+  /** `fromY`: the height the floor search starts at (default 2 m over her, for a
+   * teleport). A mantle passes the ledge top itself, so a prop's top within the
+   * search band is found (from 2 m over a 1 m ledge it was not, and she dropped
+   * through the block onto the terrain). */
+  _snapToGround(fromY = this.position.y + 2) {
     /**
      * A real TELEPORT (respawn, and anything that stages her elsewhere) must
      * not drag the smoothed boom across the world: for the ~0.3 s the pivot
@@ -1521,7 +1779,7 @@ void main() {
       this._leanX = 0; this._leanZ = 0; this._orbitLive = false;
       this.fade = 1; this._fadeCur = 1; this._fadeApplied = -1;
     }
-    this._sampleGround(this.position.x, this.position.z, this.position.y + 2);
+    this._sampleGround(this.position.x, this.position.z, fromY);
     this.position.y = this.groundY;
     this.velocity.y = 0;
     this.grounded = true;
@@ -1569,9 +1827,13 @@ void main() {
     //    chest height IS the wall.
     const wall = C.raycast(px, py + 0.9, pz, dx, 0, dz, CAP_R + 0.55, null);
     if (!wall || !wall.hit) return false;
+    // `raycast` returns ONE shared record: the top cast below overwrites it,
+    // so the wall distance is kept now (the climb's hand edge read the top
+    // cast's 1.1 m as the wall distance and put the edge 0.2 m past the wall)
+    const wallT = wall.t;
 
     // 2. what is the top surface just past it?
-    const lx = px + dx * (wall.t + 0.45), lz = pz + dz * (wall.t + 0.45);
+    const lx = px + dx * (wallT + 0.45), lz = pz + dz * (wallT + 0.45);
     const from = py + MANTLE_MAX + 0.4;
     const top = C.raycast(lx, from, lz, 0, -1, 0, MANTLE_MAX + 0.8, null);
     let ty = this.ctx.terrain.getHeight(lx, lz);
@@ -1588,6 +1850,12 @@ void main() {
     this._mantleT = 0;
     this._mantleFrom.set(px, py, pz);
     this._mantleTo.set(lx, ty, lz);
+    // a ~1 m ledge is the climb (hands planted on the edge the probe found)
+    this.mantleClip = rise >= CLIMB_1M[0] && rise <= CLIMB_1M[1] ? 'climb1m' : null;
+    this._mantleDur = this.mantleClip ? CLIMB_T : MANTLE_T;
+    this.mantleEdge.x = px + dx * wallT; this.mantleEdge.z = pz + dz * wallT; this.mantleEdge.y = ty;
+    this.mantleEdge.dx = dx; this.mantleEdge.dz = dz; this.mantleEdge.valid = true;
+    this.heading = Math.atan2(dx, dz);
     this.grounded = false;
     this.velocity.set(0, 0, 0);
     this.ctx.events.emit('player-mantle', { rise: +rise.toFixed(2) });
@@ -1611,7 +1879,7 @@ void main() {
 
     if (ctx.state !== 'playing' && !ctx.params.has('shot')) {
       this.animator.update(dt, t);
-      this.hero?.update();
+      this.hero?.update(dt);
       return;
     }
 
@@ -1622,6 +1890,12 @@ void main() {
     // Glinthawk overhead was literally unreachable. 1.15 rad = 66 deg up.
     this.camPitch = THREE.MathUtils.clamp(this.camPitch + _look.y, PITCH_UP, PITCH_DOWN);
 
+    if (this._ride) {
+      this.aiming = false; this.sprinting = false; this.crouchAim = false;
+      this._stepRide(dt);
+      this._finishFrame(dt, t, realDt);
+      return;
+    }
     this.aiming = input.mouseDown(2) && !this.dodging && !this.mantling;
     this.crouchAim = this.crouching && this.aiming;
 
@@ -1715,6 +1989,13 @@ void main() {
         // and nothing she presses can carry her up it
         const up = -(this.velocity.x * sx + this.velocity.z * sz);
         if (up > 0) { this.velocity.x += sx * up; this.velocity.z += sz * up; }
+        // R5 (A-slide): SLIDE_TERMINAL bounds her SPEED, not only its downhill
+        // part — steering across the face trims the sideways share instead of
+        // adding to it (2.67 m/s measured on a 30 deg cinder face)
+        const along = Math.max(0, this.velocity.x * sx + this.velocity.z * sz);
+        const lx = this.velocity.x - sx * along, lz = this.velocity.z - sz * along;
+        const lat = Math.hypot(lx, lz), room = Math.sqrt(Math.max(0, SLIDE_TERMINAL * SLIDE_TERMINAL - along * along));
+        if (lat > room && lat > 1e-6) { const k = room / lat; this.velocity.x = sx * along + lx * k; this.velocity.z = sz * along + lz * k; }
       }
     }
 
@@ -1823,7 +2104,9 @@ void main() {
    */
   _stepVertical(dt) {
     const gy = this._sampleGround(this.position.x, this.position.z, this.position.y);
-    this.sliding = this.grounded && this.slopeDeg > SLIDE_DEG;
+    this.surface = this.surfaceAt(this.position.x, this.position.z);
+    if (this._slideSuppress > 0) this._slideSuppress -= dt;
+    this.sliding = this.grounded && this._slideSuppress <= 0 && this.slopeDeg > this.slideDegOn(this.surface);
 
     if (this.grounded) {
       const drop = this.position.y - gy;
@@ -1876,13 +2159,15 @@ void main() {
     this.velocity.y = 0;
     this.fallHeight = fall;
     this.airTime = 0;
-    this.landImpact = THREE.MathUtils.clamp(fall / FALL_LETHAL, 0, 1);
-    this.ctx.events.emit('player-land', { fall: +fall.toFixed(2), vy: +vy.toFixed(2), hard: fall > FALL_SAFE });
-    if (fall > FALL_LETHAL) {
+    const fSafe = this.mods.fallSafe ?? FALL_SAFE;
+    const fLethal = Math.max(fSafe + 0.01, this.mods.fallLethal ?? FALL_LETHAL);
+    this.landImpact = THREE.MathUtils.clamp(fall / fLethal, 0, 1);
+    this.ctx.events.emit('player-land', { fall: +fall.toFixed(2), vy: +vy.toFixed(2), hard: fall > fSafe });
+    if (fall > fLethal) {
       this.addShake(1);
       this.takeDamage(this.maxHealth + 50, 'fall');
-    } else if (fall > FALL_SAFE) {
-      const dmg = ((fall - FALL_SAFE) / (FALL_LETHAL - FALL_SAFE)) * 62;
+    } else if (fall > fSafe) {
+      const dmg = ((fall - fSafe) / (fLethal - fSafe)) * 62;
       this.addShake(0.25 + 0.5 * this.landImpact);
       this.takeDamage(dmg, 'fall');
       // a hard landing costs momentum
@@ -1894,17 +2179,46 @@ void main() {
 
   _stepMantle(dt) {
     this._mantleT += dt;
-    const k = THREE.MathUtils.clamp(this._mantleT / MANTLE_T, 0, 1);
+    const k = THREE.MathUtils.clamp(this._mantleT / (this._mantleDur || MANTLE_T), 0, 1);
+    /** published for the animator (the climb clip is scrubbed by it) */
+    this.mantleK = k;
     const e = k * k * (3 - 2 * k);
-    // rise first, then forward: a mantle is a pull-up, not a diagonal glide
-    this.position.y = THREE.MathUtils.lerp(this._mantleFrom.y, this._mantleTo.y, Math.min(1, e * 1.6));
-    const f = Math.max(0, (e - 0.35) / 0.65);
-    this.position.x = THREE.MathUtils.lerp(this._mantleFrom.x, this._mantleTo.x, f);
-    this.position.z = THREE.MathUtils.lerp(this._mantleFrom.z, this._mantleTo.z, f);
+    if (this.mantleClip === 'climb1m') {
+      // the 1 m climb (A-climb-1m): close to the wall first so both hands reach
+      // the edge, pull up with the body under the hands, then step over the top
+      const E = this.mantleEdge, F = this._mantleFrom, G = this._mantleTo;
+      /* Fix round 1 (V-traversal "hands on the ledge, body over the hands, no
+       * float"; A-climb-1m's palm clause graded as a MAX over the pull). UAL2
+       * ClimbUp_1m is an in-place clip whose planted left hand sits 0.65-0.77 m
+       * over its root through the pull and 0.3 m ahead of it (measured). The
+       * root now follows the clip's OWN plants, keyed in `CLIMB_PATH`: the
+       * hop that catches the edge, the pull with both palms on the top, the
+       * chest coming over the hands as the root moves forward under the right
+       * foot the clip sets on the top, the step up, and the walk-on. `d` is the root's distance past the wall face along
+       * the climb, `h` the share of the rise. */
+      const d = _pathAt(k, CLIMB_PATH.k, CLIMB_PATH.d), h = _pathAt(k, CLIMB_PATH.k, CLIMB_PATH.h);
+      const a = _sstep(k, 0, CLIMB_PATH.k[1]);
+      // her start distance from the wall face, along the climb
+      const d0 = (F.x - E.x) * E.dx + (F.z - E.z) * E.dz;
+      const dd = k < CLIMB_PATH.k[1] ? d0 + (CLIMB_PATH.d[1] - d0) * a : d;
+      const gEnd = (G.x - E.x) * E.dx + (G.z - E.z) * E.dz;
+      const dWalk = k > CLIMB_PATH.k[CLIMB_PATH.k.length - 2] ? dd + (gEnd - dd) * _sstep(k, CLIMB_PATH.k[CLIMB_PATH.k.length - 2], 1) : dd;
+      this.position.y = THREE.MathUtils.lerp(F.y, G.y, h);
+      this.position.x = E.x + E.dx * dWalk;
+      this.position.z = E.z + E.dz * dWalk;
+    } else {
+      // rise first, then forward: a mantle is a pull-up, not a diagonal glide
+      this.position.y = THREE.MathUtils.lerp(this._mantleFrom.y, this._mantleTo.y, Math.min(1, e * 1.6));
+      const f = Math.max(0, (e - 0.35) / 0.65);
+      this.position.x = THREE.MathUtils.lerp(this._mantleFrom.x, this._mantleTo.x, f);
+      this.position.z = THREE.MathUtils.lerp(this._mantleFrom.z, this._mantleTo.z, f);
+    }
     this._prevPos.copy(this.position);
     if (k >= 1) {
       this.mantling = false;
-      this._snapToGround();
+      this.mantleClip = null;
+      this.mantleEdge.valid = false;
+      this._snapToGround(this.position.y);
     }
   }
 
@@ -1966,9 +2280,39 @@ void main() {
       this.health += amt;
     }
 
+    // player.mods: passive regeneration, the footstep-noise multiplier
+    const regen = this.mods.regen;
+    const regenTo = this.maxHealth * Math.min(1, this.mods.regenCap ?? 1);
+    if (regen > 0 && this.health > 0 && this.health < regenTo) {
+      this.health = Math.min(regenTo, this.health + regen * dt);
+    }
+    this.noiseMul = this.mods.noiseMul ?? 1;
+    const pn = playerNoise(this);
+    this.noise = pn ? pn.strength * this.noiseMul : 0;
+    if (!this._noiseHooked) this._hookNoise();
+
     this._updateCamera(realDt, t);
     this.animator.update(dt, t);
-    this.hero?.update();
+    this.hero?.update(dt);
+  }
+
+  /**
+   * `mods.noiseMul` reaches the machines through instruments-core's published
+   * `stimulus.addNoiseFilter(fn)` (plan §3.2, W0b) when this tree has it; the
+   * multiplier is published as `player.noiseMul` / `player.noise` either way.
+   */
+  _hookNoise() {
+    const st = this.ctx.machines?.stimulus;
+    if (!st) return;
+    this._noiseHooked = true;
+    if (typeof st.addNoiseFilter !== 'function') return;
+    st.addNoiseFilter((ev) => {
+      if (ev && ev.kind === 'footstep' && this.noiseMul !== 1) {
+        ev.strength *= this.noiseMul;
+        ev.radius *= Math.sqrt(Math.max(0, this.noiseMul));
+      }
+      return ev;
+    });
   }
 
   /**
@@ -2969,8 +3313,9 @@ void main() {
     const list = this._orbitMeshes;
     let nVis = 0, nV = 0;
     for (let i = 0; i < list.length; i++) {
-      if (list[i].isSkinnedMesh || !this._onRig(list[i])) continue;
-      nVis++; nV += list[i].geometry.attributes.position.count;
+      const o = list[i];
+      if (!this._onRig(o) || (o.isSkinnedMesh && !o.userData.orbitGear)) continue;
+      nVis++; nV += o.geometry.attributes.position.count + (o.isSkinnedMesh ? o.id * 1e3 : 0);
     }
     const sig = nVis * 1e7 + nV;
     if (sig !== this._orbitVis) {
@@ -3012,6 +3357,32 @@ void main() {
       for (let i = 0; i < list.length; i++) {
         const o = list[i];
         if (!o.isSkinnedMesh || !this._onRig(o) || !o.skeleton) continue;
+        if (o.userData.orbitGear) {
+          /* R5: a SKINNED gear mesh (Brea's merged stow kit: lance, bow,
+           * quiver, bracer, alidade on spine/pelvis/forearm bones) is sampled
+           * like a rigid one — greedy, every vertex within ORBIT_RIGID_GAP of
+           * a sample, in the pose it has now (its pieces are rigid per bone) —
+           * and skinned on refresh. Without it the lens met the stowed lance
+           * and quiver at 0.09-0.12 m at the pitch clamp. */
+          const pa = o.geometry.attributes.position, cnt = pa.count, g2 = ORBIT_RIGID_GAP * ORBIT_RIGID_GAP;
+          o.updateWorldMatrix(true, false);
+          const wp = new Float32Array(cnt * 3), v = _orbV;
+          for (let k = 0; k < cnt; k++) {
+            v.fromBufferAttribute(pa, k); o.applyBoneTransform(k, v); v.applyMatrix4(o.matrixWorld);
+            wp[k * 3] = v.x; wp[k * 3 + 1] = v.y; wp[k * 3 + 2] = v.z;
+          }
+          const picked = [];
+          for (let k = 0; k < cnt; k++) {
+            let near = false;
+            for (let q = 0; q < picked.length; q++) {
+              const pk = picked[q] * 3, dx = wp[pk] - wp[k * 3], dy = wp[pk + 1] - wp[k * 3 + 1], dz = wp[pk + 2] - wp[k * 3 + 2];
+              if (dx * dx + dy * dy + dz * dz < g2) { near = true; break; }
+            }
+            if (!near) picked.push(k);
+          }
+          for (const k of picked) { M.push(o); idx.push(k); }
+          continue;
+        }
         const si = o.geometry.attributes.skinIndex, sw = o.geometry.attributes.skinWeight;
         if (!si || !sw) continue;
         const bones = o.skeleton.bones, gear = [];
@@ -3527,8 +3898,8 @@ void main() {
     // STANCE FOLLOW (see `HEAD_REST`)
     let hd = 0;
     if (this._deepK > 1e-3 && !this.crouching && runF < 1 && this._headWorld()) {
-      const drop = HEAD_REST - HEAD_DEAD - (this._hw.y - this.position.y);
-      hd = (drop < 0 ? 0 : drop > HEAD_FOLLOW_MAX ? HEAD_FOLLOW_MAX : drop) * this._deepK * (1 - runF);
+      const drop = this._headRest - HEAD_DEAD - (this._hw.y - this.position.y);
+      hd = (drop < 0 ? 0 : drop > this._headFollowMax ? this._headFollowMax : drop) * this._deepK * (1 - runF);
     }
     this._headDrop = this._pivotSeeded ? THREE.MathUtils.damp(this._headDrop, hd, 6, dt) : hd;
     this.camHeadDrop = this._headDrop;
@@ -3719,6 +4090,17 @@ void main() {
      * definition: ramping the rotation in from 0 there would hand the first
      * frames of a steep arrival the un-rotated boom, i.e. the lens in her
      * skull and the ground-pocket fade, for as long as the damp takes. */
+    /* R5 fix round 1 (A31f's (0, -1.15) row and A31e's fast clamp pan, run to
+     * run: the rotation up the 38.8 deg face settled at 5-10 deg with the boom
+     * cut to 0.65-0.67 m and the lens 0.04-0.07 m from her, or at its 26 deg
+     * cap with a 0.94 m gap): a SEED prices the rotation as if the orbit lift were there,
+     * but a seed starts with no lift (it arrives through a damp, capped by the
+     * lens gap). At a deep look-up the seed takes the rotation that clears on
+     * its own; the hold below keeps it for as long as it is what clears. */
+    if (seeding && this._deepK > 0.5) {
+      const alone = this._groundRotFor(yawB, pitch, wantDist, pivotLift, rotCap, hijackMax, halfFov, false, yaw);
+      if (alone > rotWant) rotWant = alone;
+    }
     if (seeding) this._relief = rotWant;
     else if (this._rotPlace && rotWant > this._relief && this._placeCut(yawB, pitch + this._relief, wantDist, pivotLift)) {
       /* a placement rotation that has not caught up with a flick leaves the
@@ -4135,11 +4517,22 @@ void main() {
         ry = runF * this._runYaw; rp = runF * this._runPitch;
         this._turnRel = -1;
       } else {
-        const n = Math.hypot(this.camRunYaw, this.camRunPitch);
-        if (this._turnRel < 0) this._turnRel = 0.5 * n;
-        const k = n > this._turnRel + 1e-9 ? (n - this._turnRel) / n : 0;
-        ry = this.camRunYaw * k; rp = this.camRunPitch * k;
-        relLim = n - Math.hypot(ry, rp);
+        /* R5 fix round 1 (A31c "the draw stepped the view 3.46 deg in one
+         * frame"): the two halves are two RENDERED frames, not two updates —
+         * main.js runs up to 3 sim steps per frame, and both halves landed in
+         * one picture whenever it ran two. A second sub-step of the same frame
+         * keeps the half it already has and releases nothing. */
+        const fr = this.ctx.engine?.frames ?? -1;
+        if (fr >= 0 && fr === this._turnFrame) {
+          ry = this.camRunYaw; rp = this.camRunPitch;
+        } else {
+          this._turnFrame = fr;
+          const n = Math.hypot(this.camRunYaw, this.camRunPitch);
+          if (this._turnRel < 0) this._turnRel = 0.5 * n;
+          const k = n > this._turnRel + 1e-9 ? (n - this._turnRel) / n : 0;
+          ry = this.camRunYaw * k; rp = this.camRunPitch * k;
+          relLim = n - Math.hypot(ry, rp);
+        }
       }
       this.camRunYaw = ry; this.camRunPitch = rp;
       if (ry !== 0 || rp !== 0) {
@@ -4163,6 +4556,45 @@ void main() {
         lz = rz0 * co + (rgz * O.x + upz * O.y) * so;
       } else { lx = rx0; ly = ry0; lz = rz0; }
       this.camHijack = on;
+    }
+    /* R5 fix round 1 — HEAD-AND-SHOULDERS KEEPER (A31b's film, A31f's
+     * hillside rows). On Brea a deep look-up from a swung lens on a steep
+     * face (the A31b film: 38.8 deg face, camPitch -0.8, bow carried) left
+     * her head at NDC y -1.05 and both clavicle joints at -1.45 — the shot
+     * was sky with the crown of her head at the bottom edge. While NOT
+     * aiming and looking UP, the delivered view gives back exactly as much
+     * elevation as keeps the lower of her clavicle joints inside `KEEP_NDC`
+     * of the frame (at most `KEEP_MAX`, and never more than the aim budget
+     * the hijack has left), eased so it never steps. Everything
+     * that already frames her is untouched (the drop is zero there). */
+    {
+      const an = this.animator, c0 = an?.b?.clavL?.bone, c1 = an?.b?.clavR?.bone;
+      let want = 0;
+      // only where the GROUND took the shot (the lens swung round her on a
+      // face): on open ground the run framing's own bars hold the view to the
+      // request (A31c: <= 6 deg off the input), and nothing is owed there
+      const swingK = THREE.MathUtils.smoothstep(Math.abs(this.camSwing || 0), 0.09, 0.35);
+      if (!this.aiming && ly > 0.05 && c0 && c1 && swingK > 0) {
+        const e0 = c0.matrixWorld.elements, e1 = c1.matrixWorld.elements;
+        const py = Math.min(e0[13], e1[13]), px = (e0[12] + e1[12]) * 0.5, pz = (e0[14] + e1[14]) * 0.5;
+        const dx = px - this._camPos.x, dy = py - this._camPos.y, dz = pz - this._camPos.z;
+        const es = Math.atan2(dy, Math.hypot(dx, dz));
+        const ev = Math.asin(THREE.MathUtils.clamp(ly, -1, 1));
+        const room = Math.atan(KEEP_NDC * Math.tan(cam.fov * (Math.PI / 360)));
+        // ...out of what the AIM BUDGET has left: the ELEVATION the player
+        // asked for (`elevReq`) never loses more than the budget in all (the
+        // hijack's yaw payback is not elevation and does not count)
+        want = swingK * Math.min(KEEP_MAX, Math.max(0, hijackMax - Math.max(0, elevReq - ev)), Math.max(0, (ev - es) - room));
+      }
+      // eased in and out — except on AIM, where the reticle is the shot and
+      // the view returns to the request at once (A31c's aim-entry bars)
+      this._keepDrop = this.aiming ? 0 : THREE.MathUtils.damp(this._keepDrop || 0, want, 10, dt);
+      if (this._keepDrop > 1e-4) {
+        const ev2 = Math.asin(THREE.MathUtils.clamp(ly, -1, 1)) - this._keepDrop;
+        const hz = Math.hypot(lx, lz), k2 = hz > 1e-6 ? Math.cos(ev2) / hz : 0;
+        lx *= k2; lz *= k2; ly = Math.sin(ev2);
+      }
+      this.camKeepDrop = this._keepDrop;
     }
     /** Delivered forward elevation (rad, + = up): what the gates measure. */
     this.camElev = Math.asin(THREE.MathUtils.clamp(ly, -1, 1));
@@ -4191,6 +4623,11 @@ void main() {
     const sprintK = this.sprinting
       ? THREE.MathUtils.clamp(this.moveSpeed / SPEEDS.jog, 0, 1) : 0;
     this.fovBias = (FOV_SPRINT - FOV_BASE) * sprintK;
+    // player.mods.zoom: a camera ZOOM factor while aiming (combat owns the aim
+    // FOV itself, so the two compose instead of fighting over cam.fov)
+    const zWant = this.aiming && this.mods.zoom > 0 ? this.mods.zoom : 1;
+    const z = Math.abs(cam.zoom - zWant) < 0.002 ? zWant : THREE.MathUtils.damp(cam.zoom, zWant, 9, dt);
+    if (z !== cam.zoom) { cam.zoom = z; cam.updateProjectionMatrix(); }
     if (this.aiming) { this._fov = cam.fov; return; }
     const want = this.fovBase + this.fovBias;
     this._fov = THREE.MathUtils.damp(this._fov, want, 6, dt);

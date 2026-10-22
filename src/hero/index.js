@@ -19,11 +19,14 @@
  *   hero.equip(row) / hero.unequip()      outfit sets (rows in rows.js)
  *   hero.kit.setHidden(bits)              PIECE bits (stowkit.js)
  *   hero.info()                           draws / tris / casters / skeletons
+ *   hero.holdPreview()                    the W0 held bow (Sabina blockout), bound for
+ *                                         measurement until armory wires bow.js (W1)
  *   hero.dispose()                        everything installHero created
  */
 import { HERO_ROWS, DEFAULT_OUTFIT, BREA_URL } from './rows.js';
 import { HeroOutfit } from './outfit.js';
 import { HeroStowKit, PIECE } from './stowkit.js';
+import { holdPreview, SABINA_URL } from './held.js';
 
 export { HERO_ROWS, DEFAULT_OUTFIT, BREA_URL, PIECE };
 
@@ -67,6 +70,9 @@ export class HeroRig {
     return this;
   }
 
+  /** Bind the v0 Sabina blockout as the held bow (measurement only; see held.js). */
+  holdPreview(url = SABINA_URL) { return holdPreview(this.player, url); }
+
   equip(row) { return this.outfit?.equip(row); }
   unequip() { return this.outfit?.unequip(); }
 
@@ -75,7 +81,7 @@ export class HeroRig {
    * hands. The lance is out when melee's stance is not `holstered`; the bow is
    * out when combat has its bow model visible on the hand node.
    */
-  update() {
+  update(dt = 1 / 60) {
     if (!this._pullApplied) this._applyBowSolve();
     if (!this.kit?.attached) return;
     // the procedural spear melee builds (W1 replaces it) is shown only in her
@@ -88,8 +94,31 @@ export class HeroRig {
     this._lanceOut = !!stance && stance !== 'holstered';
     const bow = cmb?.bow?.group;
     this._bowOut = !!bow && bow.visible && bow.parent === cmb._bowNode;
+    // combat's procedural Round-4 bow on her BACK (its stow bone, now found
+    // through the rig profile's alias): the stow kit's Sabina is the stowed
+    // bow she wears, so the procedural one is hidden there (its group keeps
+    // its transform: melee's free-arm clearance reads it); shown again the
+    // moment it is back in her hand. Toggled on change only.
+    const onBack = !!bow && !!cmb._stow && bow.parent === cmb._stow.bone;
+    if (onBack !== this._bowOnBackHidden) {
+      this._bowOnBackHidden = onBack;
+      if (onBack) {
+        // hide what is showing now, and remember exactly that (restored as it was)
+        this._bowHidden = [];
+        for (const m of Object.values(cmb?._models || {})) {
+          const kids = m?.group?.children;
+          if (!kids) continue;
+          for (let i = 0; i < kids.length; i++) if (kids[i].visible) { kids[i].visible = false; this._bowHidden.push(kids[i]); }
+        }
+      } else if (this._bowHidden) {
+        for (const o of this._bowHidden) o.visible = true;
+        this._bowHidden = null;
+      }
+    }
     const bits = (this._lanceOut ? PIECE.lance : 0) | (this._bowOut ? PIECE.bow : 0);
     if (bits !== this.kit.hidden) this.kit.setHidden(bits);
+    // the stowed lance rides the trunk in the R10 band (carry.js)
+    this.kit.solve(this.player.animator, dt);
   }
 
   /**
@@ -138,7 +167,7 @@ export class HeroRig {
   }
 
   dispose() {
-    const r = { outfit: this.outfit?.unequip() ?? null, kit: this.kit?.detach() ?? null };
+    const r = { outfit: this.outfit?.unequip() ?? null, kit: this.kit?.dispose() ?? null };
     this.outfit = null; this.kit = null;
     return r;
   }

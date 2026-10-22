@@ -115,10 +115,14 @@ export const UBC_TUNE = {
   anchorDrop: 0.030,                               // 0.038
   handAnchorR: 0.060,                              // 0.064
   handAnchorFrom: 0.72,                            // 0.72
-  // head keep-out ellipsoid (centre offset + semi-axes) fitted to Brea's skull + wrap
-  headOff: [0, 0.098, 0.004],                      // (0, 0.05, 0.01)
-  headR: [0.098, 0.150, 0.118],                    // (0.105, 0.135, 0.115)
-  handIn: 0.90,                                    // 0.90
+  // head keep-out ellipsoid (centre offset + semi-axes), measured: the box of
+  // Brea_Skin's Head-weighted vertices above the jaw line (1st-99th percentile,
+  // head-bind frame) is x +-0.0778, y 0.023..0.205, z -0.092..0.123 off `Head`;
+  // the ellipsoid is that box's inscribed one plus 5 mm of skin/wrap margin.
+  // The hand may rest at 0.985 of it (the anchor is ON the face, not in it).
+  headOff: [0, 0.114, 0.016],                      // (0, 0.05, 0.01)
+  headR: [0.083, 0.096, 0.113],                    // (0.105, 0.135, 0.115)
+  handIn: 0.985,                                   // 0.90
   bowArmLock: 0.9945,                              // 0.9945
   // rest bow-hold seed and its reach along the aim (char space)
   restGrip: [0.14, 1.42, 0.03], restReach: 0.40,   // (0.14, 1.42, 0.03), 0.42
@@ -130,8 +134,46 @@ export const UBC_TUNE = {
   bowPole: [0.3, -0.95, 0.12],                     // same
   // the right eye relative to `Head` at bind (UBC Eyes mesh centre; alidade raise)
   eyeR: [-0.0334, 0.1030, 0.0717],
+  // the string-side clavicle's elevation at full draw (radians): lifts the
+  // shoulder joint toward the arrow line (V24 forearm-in-line; A16 holds the
+  // elbow at or under that joint)
+  drawShrug: 0.58,
+  // the string-side scapula's retraction share at full draw (Round 4: 0.8):
+  // with the shoulder lifted, less retraction keeps the elbow inside the
+  // 0.10 m behind-the-skull bar (A-draw-elbow-level) with the forearm in line
+  drawRetract: -0.10,
+  // ...and MORE at a steep down aim (Round 4: 0.8), where the elbow has to sit
+  // up-and-back of the hand along the falling arrow (A-draw-elbow-level >= 0.05 m)
+  drawRetractDown: 1.1,
+  // the string hand's roll at full draw (0..1 of the way to back-of-hand out,
+  // palm to the neck): the hooked fingers stand on the vertical string and the
+  // ∴ on the back of the right hand faces a side camera (V24)
+  drawHandRoll: 1.0,
+  // the anchor's height along the head's up axis by aim pitch (metres): level /
+  // down aims 1.2 cm lower along the jaw, the -0.55 up-aim 1.6 cm higher (A35:
+  // the hand 0.148 m from the skull there, under the 0.16 ceiling; 0.12 at the
+  // 0.75 down aim, over the 0.10 floor)
+  anchorPitch: { level: 0.0, up: 0.016, down: -0.012 },
   // aim pitch share [spine2, spine3, spine4(=spine_03 again), neck, head]
-  pitchShare: [0.30, 0.22, 0.20, 0.12, 0.16],     // (0.14, 0.15, 0.13, 0.2, 0.28)
+  pitchShare: [0.36, 0.32, 0.32, 0.0, 0.0],     // (0.14, 0.15, 0.13, 0.2, 0.28)
+  pitchLive: true,                                 // about the live char X axis (bind-frame on Round 4)
+  // Kevin's running arms (A-run-arms): wrists >= 0.27 m under the shoulder, >= 0.11 m off the midline
+  // (+ swingBack: the arc's centre moved back, so an elbow passes >= 0.10 m behind the hip each stride)
+  runArms: { wristDrop: 0.27, midGap: 0.11, swingBack: 0.40 },
+  // A-run-arms "no prancing": the sprint clip bounces Brea's pelvis 0.13-0.15 m
+  // p-p; the animator keeps `keep` of the excursion around a 0.4 s running mean
+  // (planted legs re-solved), so the sprint reads 0.06-0.07 m
+  runBob: { keep: 0.42, keepJog: 0.22, rate: 2.5 },
+  // trunk posture (V12 / V3 / R10): the pelvis->neck line's forward pitch per
+  // gait (radians, character space). The UAL1 clips ran Brea at 35 / 44 / 47
+  // deg (jog / sprint / crouch-walk); the licence-clean run-side reference is
+  // ~10 deg and the crouch-stalk reference a flat back at ~35-40 deg. Only the
+  // excess is given back, spread up the spine (`share`), neck + head forward
+  // by `gaze` of it so the eyes stay on the horizon.
+  trunk: { walk: 0.17, jog: 0.23, sprint: 0.30, crouch: 0.63, gain: 1.15, share: [0.25, 0.35, 0.40], shareCrouch: [0.05, 0.30, 0.65], gaze: [0.5, 0.45] },
+  // the Head bone's standing height over her feet (camera stance follow; Aloy's
+  // head_0104 stood at 1.36, the Round-4 HEAD_REST); measured idle on flat ground
+  headRest: 1.468,
 };
 
 /**
@@ -144,11 +186,19 @@ export const UBC_TUNE = {
  * pull + 0.20 m. Filled from the measured solve (docs/ROUND5-HERO-BODY.md §3).
  */
 export const UBC_BOW = {
-  drawLength: 0.452,
+  // measured Lmax on Brea (T-form elevation, pitchLive; fix round 1 draw form:
+  // drawShrug, pitch-dependent anchor, level retraction), the range over the
+  // fix-round runs (gate A-lmax-solve and probe diag1, Oct 19): 0.529-0.532 /
+  // 0.524-0.530 / 0.526-0.533 / 0.541-0.550 m at camPitch -0.55 / -0.4 / 0 /
+  // 0.75. Cut at the middle of the largest pitch's run-to-run spread, so every
+  // run's solution stays within A-lmax-solve's +-0.01 (the reach clamp takes
+  // the small excess as anchor drop / slide, never as a bent bow arm)
+  drawLength: 0.548,
   pitches: [-0.55, -0.4, 0, 0.75],
+  lmaxMeasured: [[0.529, 0.532], [0.524, 0.530], [0.526, 0.533], [0.541, 0.550]],
   restZ: 0.055,
-  pull: 0.507,
-  arrowLen: 0.707,
+  pull: 0.603,
+  arrowLen: 0.803,
 };
 
 const _a = new THREE.Vector3(), _b = new THREE.Vector3(), _ax = new THREE.Vector3();
@@ -200,6 +250,11 @@ export function ubcProfile(root, name = 'ubc-brea') {
     orbitCaps: UBC_ORBIT_CAPS,
     orbitChains: UBC_ORBIT_CHAINS,
     hairChain: 'dyn_hairKnotTail_01',
+    // chain classes by name ahead of the Round-4 regexes (the alidade on its
+    // cord is gear: A19's gear probe, chainOf('gear'))
+    chainClasses: { gear: '^dyn_alidadeCord' },
+    // Round-4 bone names kept systems still look up (combat.js bow back-stow)
+    boneAliases: { spine_03_08: 'spine_02' },
     handCollider: UBC_HAND_COLLIDER,
     tune: UBC_TUNE,
     bow: UBC_BOW,

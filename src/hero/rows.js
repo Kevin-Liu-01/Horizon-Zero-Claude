@@ -17,12 +17,12 @@
  * their own normalisation does not matter (targetHeight is the body's).
  */
 import { SPECS as CORE_SPECS } from '../core/assets.specs.js';
-import { SPECS } from '../core/assets.js';
+import { SPECS, ANIMS } from '../core/assets.js';
 
 /** Brea's body GLB: `targetHeight` makes the BODY 1.72 m (asset extras r5Hero). */
 export const BREA_URL = '/models/hero/brea.glb';
 export const HERO_ROWS = {
-  hero: { url: BREA_URL, targetHeight: 1.77854, yaw: 0, required: true },
+  hero: { url: BREA_URL, targetHeight: 1.77913, yaw: 0, required: true },
   heroOutfitPan1: { url: '/models/hero/outfit-pan-1.glb', targetHeight: 1.72, yaw: 0 },
   heroStowKit: { url: '/models/hero/kit/stowkit-v0.glb', targetHeight: 1.72, yaw: 0 },
 };
@@ -40,3 +40,11 @@ export function applyHeroRows(specs) {
 // both get the rows, so every reader agrees which body is the hero.
 applyHeroRows(CORE_SPECS);
 applyHeroRows(SPECS);
+
+/**
+ * Brea's NATIVE clip pack (UAL2 on the UBC skeleton, no retarget; R15): the
+ * climb, the slide, consume, knockback. Loaded raw like `ual` (meshes hidden,
+ * never added to the scene) into `ctx.assets.anims.heroUal2`.
+ */
+export const HERO_ANIMS = { heroUal2: { url: '/models/hero/brea-clips-ual2.glb' } };
+for (const [k, v] of Object.entries(HERO_ANIMS)) if (!ANIMS[k]) ANIMS[k] = { ...v };
