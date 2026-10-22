@@ -554,37 +554,49 @@ loop's own `_recordFrame` ring. Judged only with the box witness quiet (load < 3
 null frame < 3 ms before and after, burst instability ≤ 1.4. Bars unchanged: empty ≤ 7 ms, vista ≤ 13 ms,
 median ≥ 58 fps, p95 ≤ 20 ms.
 
-**Judged results, fix round 1 (shipped `high`, DPR 1.25):**
+**Judged results, fix round 2 — the final row (colour 1× / data 4×), DPR 1.25** (`run.sh` takes the Chrome
+slot only at an instant with load < 3 and no headless Chrome alive, so the gate's own witness samples that
+box; my monitor then samples every 2 s, `run/<tag>.box`; times are seconds after the gates started):
 
-| run | box at start: load, other headless Chromes | other gate Chromes seen DURING the run (my 2 s monitor) | verdict | vista GPU, 4 bursts → median (bar 13) | empty median (bar 7) | median fps (≥ 58) | p95 ms (≤ 20) | null frame; instability | A9 in the same run |
-|---|---|---|---|---|---|---|---|---|---|
-| G1 | 1.34, 0 | 1 (load max 2.38) | PASS | 10.1 / 10.04 / 10.46 / 12.8 → **10.28** | 4.83 | 59.88 | 18.5 | 0.22 / 0.21; 1.275 / 1.012 | — |
-| QJ1-0944 | 2.75, 0 | 1 (load max 4.54) | PASS | 10.07 / 12.78 / 13.62 / 10.46 → **11.62** | 4.87 | 60.24 | 18.7 | 0.21 / 0.16; 1.353 / 1.031 | 58 fps / 17.74 ms |
-| QJ2-0946 | 2.85, 0 | 2 (load max 4.31) | PASS | 12.64 / 10.09 / 12.3 / 10.17 → **11.23** | 4.85 | 59.88 | 18.7 | 0.21 / 0.2; 1.253 / 1.008 | 58.8 fps / 18.59 ms |
+| run | box witness at start | other gate Chrome seen during the run | verdict | vista GPU, 4 bursts → median (bar 13) | empty median (bar 7) | median fps (≥ 58) | p95 ms (≤ 20) | null frame; instability |
+|---|---|---|---|---|---|---|---|---|
+| G3 | load 1.63, 0 other Chromes | from ~70 s (after the shipped bursts, during the lever record) | **PASS** | 12.53 / 11.84 / 11.72 / 11.55 → **11.78** | 4.75 | 60.24 | 18.7 | 0.17 / 0.18; 1.085 / 1.037 |
+| G4 | load 2.18, 0 | from ~37 s (during part of the shipped bursts) | **PASS** | 12.28 / 11.44 / 12.47 / 12.41 → **12.34** | 4.80 | 59.88 | 18.9 | 0.17 / 0.16; 1.09 / 1.021 |
+<!-- G5-ROW -->
 
-Every judged run PASSES every term. Honest caveat: my in-run monitor saw another lane's gate Chrome alive at some point in every one of these runs (column 3); the gate's own witness samples the box only at its start. Another process on the GPU tends to raise the GPU clock and LOWER this timer's reading (§3.4), so these are not the strongest possible evidence; the clean exploration runs agree (X-sim9: 10.08–10.22 ms at the shipped levers; X-sim8: 11.91).
+Unjudged runs of this round, for the record: `G1` (the 2× / 4× row, before the 1× choice): witness quiet, but
+another lane's Chrome from ~20 s to ~98 s; bursts 9.05 / 17.13 / 15.47 / 18.08 (instability 2.0) → PENDING.
+`G2` (final row): started on a loud box after a 2 h wait; PENDING (1 other Chrome, instability 1.99), vista
+median 10.83, empty 8.40.
 
-**Before → after, lever by lever** (the same page, 2 rounds of 1.5 s each, vista / empty GPU median ms;
-run G1):
+**Fix round 1's judged results** (the 2× / 2× row; reports lost in the Oct 22 reboot, numbers from its
+report): vista 10.28 / 11.62 / 11.23 ms, empty 4.83 / 4.87 / 4.85 ms, fps 59.88–60.24, p95 18.5–18.7.
 
-| configuration | DPR | RT MB | G1: vista / empty |
+**Before → after, lever by lever** (the same page, 2 rounds of 1.5 s each, vista / empty GPU median ms; run
+`G3`; another lane's Chrome was alive from lever 3 on, so read those rows with §3.4 in mind):
+
+| configuration | DPR | RT MB | G3: vista / empty (vista bursts) |
 |---|---|---|---|
-| Round-4 high (DPR 1.5, MSAA x4, GTAO 1/2, SMAA HalfFloat, CSM 3 x 2048, in-place GTAO + bloom blends, every cascade every frame, anisotropy as authored) | 1.5 | 437.75 | 21.71 / 12.76 (21.64 , 21.78) |
-| lever 1: DPR cap 1.25 | 1.25 | 340.74 | 18.02 / 13.04 (17.9 , 18.14) |
-| lever 2: + GTAO quarter-res | 1.25 | 330.6 | 17.2 / 9.81 (17.85 , 16.55) |
-| lever 3: + SMAA-only (MSAA 0: the scene target is read directly, no resolve copy; grade output RGBA8) | 1.25 | 195.6 | 20.14 / 5.11 (15.65 , 24.62) |
-| lever 4: + SMAA targets RGBA8, far cascades capped at 1024 (W0b fix round 0 = its shipped row) | 1.25 | 127.27 | 19.77 / 4.59 (20.11 , 19.42) |
-| lever 5: + GTAO multiply and bloom composite folded into the grade pass | 1.25 | 127.27 | 17.42 / 4.96 (18.28 , 16.56) |
-| lever 6: + far cascades rendered on alternate frames | 1.25 | 127.27 | 17.33 / 4.83 (16.92 , 17.73) |
-| lever 7: + anisotropic filtering capped at 2 = shipped high | 1.25 | 127.27 | 11.41 / 4.86 (12.85 , 9.96) |
-| NOT shipped: shipped row with the anisotropy cap at 4 | 1.25 | 127.27 | 15.34 / 4.87 (15.83 , 14.85) |
+| Round-4 high (DPR 1.5, MSAA x4, GTAO 1/2, SMAA HalfFloat, CSM 3 x 2048, in-place GTAO + bloom blends, every cascade every frame, anisotropy as authored) | 1.5 | 437.75 | 21.43 / 13.3 (21.3 , 21.56) |
+| lever 1: DPR cap 1.25 | 1.25 | 340.74 | 21.19 / 13.13 (20.76 , 21.62) |
+| lever 2: + GTAO quarter-res | 1.25 | 330.6 | 19.45 / 12.96 (19.66 , 19.24) |
+| lever 3: + SMAA-only (MSAA 0: the scene target is read directly, no resolve copy; grade output RGBA8) | 1.25 | 195.6 | 17.95 / 5.66 (17.93 , 17.97) |
+| lever 4: + SMAA targets RGBA8, far cascades capped at 1024 (W0b fix round 0 = its shipped row) | 1.25 | 127.27 | 18.59 / 5.88 (19.67 , 17.51) |
+| lever 5: + GTAO multiply and bloom composite folded into the grade pass | 1.25 | 127.27 | 14.38 / 4.94 (10.57 , 18.19) |
+| lever 6: + far cascades rendered on alternate frames | 1.25 | 127.27 | 22.43 / 8.89 (22.53 , 22.33) |
+| **lever 7: + anisotropic filtering capped, colour (sRGB) textures 1x / data textures (normal, rough/AO) 4x = shipped high** | 1.25 | 127.27 | **9.32 / 4.73** (12.23 , 6.42) |
+| NOT shipped: anisotropy 2x colour / 2x data (the fix-round-1 row) | 1.25 | 127.27 | 10.59 / 4.5 (11.34 , 9.84) |
+| NOT shipped: anisotropy 2x colour / 4x data | 1.25 | 127.27 | 13.64 / 5.44 (13.15 , 14.14) |
+| NOT shipped: anisotropy 4x colour / 4x data | 1.25 | 127.27 | 15.03 / 8.45 (12.04 , 18.02) |
+
+Fix round 1's chain (its run `G1`, quiet apart from one Chrome): Round-4 21.71 / 12.76 → DPR 1.25 18.02 /
+13.04 → GTAO ¼ 17.20 / 9.81 → SMAA-only 20.14 / 5.11 → round-0 shipped 19.77 / 4.59 → fold 17.42 / 4.96 →
+cadence 17.33 / 4.83 → 2× everywhere 11.41 / 4.86; 4× everywhere 15.34 / 4.87.
 
 The chain is the record the plan asks for, not a grade: each row is two 1.5 s bursts and, as §3.4 shows, the
 timer's reading for one configuration can move by several ms between bursts when the GPU changes clock
-state. Read the rows that matter against the judged runs above: the shipped row reads like the judged runs
-(10.18–11.41 in G1, QJ1, QJ2), and the anisotropy-4 row (NOT shipped) is over the bar in every judged run
-(15.03–16.41; one unjudged run on a loud box read 12.77 — another process on the GPU raises the clock and
-lowers the reading, §3.4).
+state (lever 6 reads 22.43 in `G3` and 17.33 in fix round 1's `G1`; nothing in it changed). Read the rows that
+matter against the judged runs above and the interleaved comparison in §3.4.
 
 ### 3.4 What this GPU timer measures, and why the anisotropy cap (split by role) is the lever
 
