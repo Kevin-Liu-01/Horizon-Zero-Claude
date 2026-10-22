@@ -296,12 +296,28 @@ const UI_WORDS_RE = (() => {
   const m = line && /`\/(.+?)\/i`/.exec(line);
   return m ? m[1] : null;
 })();
-/** V38-title's criteria: the plan §9 bullet, verbatim (read from the plan, never paraphrased here) */
+/**
+ * V38-title's criteria: the plan §9 bullet, verbatim (read from the plan, never paraphrased here).
+ * Fix round 2: when the orchestrator rules on the W0b vista (plan §8.3 marker
+ * `<!-- r5-ruling v38-pans=W1 -->`, the engine-gpu pattern), the §8.3 bullet that rules on
+ * V38-title is appended VERBATIM, so the judge grades with the ruling and brand edits nothing.
+ * No marker (this tree, and main at 6bfae9f): the plan bullet alone. A marker without its
+ * bullet throws, so a half-applied ruling cannot pass silently.
+ */
+const V38_RULING = (() => {
+  const mk = /^[ \t]*<!--\s*r5-ruling\s+v38-pans\s*=\s*(W0b|W1)\s*-->[ \t]*$/m.exec(PLAN);
+  if (!mk) return null;
+  const s83 = PLAN.slice(PLAN.indexOf('### 8.3'), PLAN.indexOf('## 9.'));
+  const bullet = s83.split('\n').find((l) => /^- \*\*R\d+/.test(l) && l.includes('V38-title'));
+  if (!bullet) throw new Error('plan marker r5-ruling v38-pans=' + mk[1] + ' found, but no §8.3 bullet ruling on V38-title');
+  return { value: mk[1], text: bullet.replace(/^- /, '').replace(/\*\*/g, '') };
+})();
 const V38_CRITERIA = (() => {
   const line = PLAN.split('\n').find((l) => l.includes('**V38-title**'));
   const m = line && /shot: (.+)$/.exec(line);
   if (!m) throw new Error('plan §9 V38-title bullet not found');
-  return 'PLAN §9 V38-title, verbatim: shot: ' + m[1].replace(/\*\*/g, '');
+  const base = 'PLAN §9 V38-title, verbatim: shot: ' + m[1].replace(/\*\*/g, '');
+  return V38_RULING ? base + ' || ORCHESTRATOR RULING (plan §8.3, marker v38-pans=' + V38_RULING.value + '), verbatim: ' + V38_RULING.text : base;
 })();
 /** the retired families, read from the A-fonts-licensed bullet ("0 references to A, B, … in CSS/JS") */
 const OLD_FAMILIES = (() => {
@@ -1038,6 +1054,107 @@ const W0B = [
       } };
     })()`,
   },
+  /* --------------------- nothing behind the spark (fix round 2, judge brand-W0b-judge-r1-eng-film) */
+  {
+    // lane 'brand-w1': the W1 re-check the judge asked for (finding "V38-title FAILs its verbatim Pans-in-calima clause", fix:
+    // "At W1, re-check that the chooser's bearing clears the spark of any vertical skyline feature"). Run it by id
+    // (--only A-title-spark-clear) or with --lane brand-w1. Measured at W0b on the Round-4 valley: FAIL (docs/ROUND5-BRAND.md §0).
+    id: 'A-title-spark-clear', kind: 'action', lane: 'brand-w1', plain: true, settle: 1500, timeout: 300000,
+    title: 'W1 re-check (judge brand-W0b-judge-r1-eng-film). Nothing stands behind the spark (the judge saw a needle of rock rising behind it on the plumb axis, "pinned on a stick"): '
+      + 'along the ray through every column of the spark box\'s bottom edge (one per 6 px, at least 9), from the LIVE camera, the terrain '
+      + '(marched in 2 m steps over the rendered terrain mesh\'s box) and every other visible mesh in the scene (raycast; the sky dome and the disc excepted) '
+      + 'are under the spark: on the press beat (0.3 s, 2.6 s), IN REAL TIME with the menu in every 5 s until the dolly clock passes 105 s (the whole truck), '
+      + 'on the second visit (QUIT TO TITLE) at the press beat, and with the lockup restaged at 2.4x as V-logo-4k films it; the chooser reports the spark clear on every visit',
+    assert: `(async () => {
+      const ctx = __CTX__, M = ctx.menus, cam = ctx.camera, scene = ctx.scene, T = ctx.terrain, env = ctx.environment;
+      const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+      const DEG = Math.PI / 180;
+      const url = performance.getEntriesByType('resource').map((e) => e.name).find((n) => /\\/deps\\/three\\.js/.test(n));
+      if (!url || !T?.getHeight || !T.mesh) return { pass: null, detail: { why: 'no three module URL in the page, or no terrain mesh', url: url || null } };
+      const THREE = await import(url);
+      const rc = new THREE.Raycaster(), ndc = new THREE.Vector2(), box = new THREE.Box3();
+      rc.far = cam.far;
+      const meshes = () => { const out = []; scene.traverseVisible((o) => { if ((o.isMesh || o.isInstancedMesh) && o !== T.mesh && o !== env.sky && o.name !== 'cal-title-calima-disc') out.push(o); }); return out; };
+      const chain = (o) => { const n = []; for (let p = o; p && p !== scene && n.length < 3; p = p.parent) n.push(p.name || p.type); return n.join('<'); };
+      /** one reading: every column of the spark box's bottom edge, from the live camera */
+      const look = (label) => {
+        const r = document.querySelector('#title .cal-spark').getBoundingClientRect();
+        box.setFromObject(T.mesh);
+        const list = meshes();
+        const cols = Math.max(9, Math.ceil(r.width / 6) + 1);
+        let marginDeg = Infinity; const hits = [];
+        const t0 = performance.now();
+        for (let i = 0; i < cols; i++) {
+          const x = r.left + r.width * i / (cols - 1), y = r.bottom;
+          ndc.set(x / innerWidth * 2 - 1, -(y / innerHeight) * 2 + 1);
+          rc.setFromCamera(ndc, cam);
+          const o = rc.ray.origin, d = rc.ray.direction, hz = Math.hypot(d.x, d.z), el = Math.atan2(d.y, hz);
+          let crest = -Math.PI / 2, tHit = null;
+          for (let s = 2; s <= cam.far; s += 2) {
+            const px = o.x + d.x * s, pz = o.z + d.z * s;
+            if (px < box.min.x || px > box.max.x || pz < box.min.z || pz > box.max.z) break;
+            const h = T.getHeight(px, pz), e = Math.atan2(h - o.y, s * hz);
+            if (e > crest) crest = e;
+            if (tHit == null && h >= o.y + d.y * s) tHit = s;
+          }
+          marginDeg = Math.min(marginDeg, (el - crest) / DEG);
+          const m = rc.intersectObjects(list, false)[0];
+          if (tHit != null) hits.push({ col: i, what: 'terrain', distM: tHit });
+          if (m) hits.push({ col: i, what: chain(m.object), distM: Math.round(m.distance) });
+        }
+        const a = M.audit().title;
+        return { label, s: +((performance.now() - T0) / 1000).toFixed(1), dollyT: a.dolly?.dollyT ?? null, stage: M.titleStage,
+          spark: [Math.round(r.left), Math.round(r.top), Math.round(r.right), Math.round(r.bottom)], cols, hits: hits.length, hitList: hits.slice(0, 6),
+          terrainMarginDeg: +marginDeg.toFixed(2), objects: list.length, ms: Math.round(performance.now() - t0) };
+      };
+      const T0 = performance.now();
+      const rows = [];
+      const chooser = [];
+      const audit = () => { const s = M.audit().title.disc; return s ? { posOffset: s.posOffset, lookOffset: s.lookOffset, clearanceDeg: s.clearanceDeg, spark: s.spark, ms: s.ms } : null; };
+      // the first visit: the press beat (V-logo films at 2.6 s), then the menu in real time over the whole truck
+      chooser.push({ visit: 1, ...audit() });
+      await wait(300); rows.push(look('press 0.3 s'));
+      await wait(2300); rows.push(look('press 2.6 s'));
+      ${PRESS}
+      ${UNTIL_MENU}
+      await wait(300);
+      while (performance.now() - T0 < 200000) {
+        rows.push(look('menu'));
+        if ((M.audit().title.dolly?.dollyT ?? 0) > 107) break;
+        await wait(5000);
+      }
+      // the second visit: QUIT TO TITLE after a little play, the press beat
+      M.newGame();
+      { const t1 = performance.now(); while (ctx.state !== 'playing' && performance.now() - t1 < 30000) await wait(100); }
+      await wait(2000);
+      M.quitToTitle();
+      chooser.push({ visit: 2, ...audit() });
+      await wait(300); rows.push(look('visit 2 press 0.3 s'));
+      await wait(2300); rows.push(look('visit 2 press 2.6 s'));
+      // V-logo-4k's staging: the lockup at 2.4x, framed for it (menus._titleReframe), the press beat
+      const L = document.querySelector('#title .cal-logo'), lk = L.style.getPropertyValue('--cal-lk');
+      L.style.setProperty('--cal-lk', (92 * 2.4) + 'px');
+      const re = M._titleReframe ? M._titleReframe() : null;
+      chooser.push({ visit: '2 (lockup 2.4x)', ...(re ? audit() : { why: 'no _titleReframe' }) });
+      await wait(300); rows.push(look('lockup 2.4x 0.3 s'));
+      await wait(2300); rows.push(look('lockup 2.4x 2.6 s'));
+      if (lk) L.style.setProperty('--cal-lk', lk); else L.style.removeProperty('--cal-lk');
+      const menuRows = rows.filter((r) => r.label === 'menu');
+      const checks = {
+        nothingBehindTheSpark: rows.every((r) => r.hits === 0),
+        terrainUnderTheSparkEverywhere: rows.every((r) => r.terrainMarginDeg >= 0),
+        wholeTruckSampled: menuRows.length >= 15 && Math.max(...menuRows.map((r) => r.dollyT || 0)) > 105,
+        chooserReportsClear: chooser.length === 3 && chooser.every((c) => c.spark && c.spark.measured === true && c.spark.clear === true),
+      };
+      return { pass: Object.values(checks).every(Boolean), detail: {
+        failed: Object.keys(checks).filter((k) => !checks[k]), checks,
+        minTerrainMarginDeg: Math.min(...rows.map((r) => r.terrainMarginDeg)),
+        chooser,
+        rows: rows.map((r) => r.label + ' t ' + r.s + 's dolly ' + (r.dollyT == null ? '-' : (+r.dollyT).toFixed(1)) + ' spark ' + r.spark.join(',') + ' cols ' + r.cols
+          + ' hits ' + r.hits + (r.hits ? ' ' + JSON.stringify(r.hitList) : '') + ' terrain margin ' + r.terrainMarginDeg + '° (' + r.objects + ' meshes, ' + r.ms + ' ms)'),
+      } };
+    })()`,
+  },
   /* ------------------------------------------------------------- visuals */
   {
     id: 'V-logo', kind: 'visual', lane: 'brand', plain: true, settle: 2600,
@@ -1053,9 +1170,11 @@ const W0B = [
   },
   {
     id: 'V-logo-4k', kind: 'visual', lane: 'brand', plain: true, settle: 2600,
-    title: 'The lockup at 2.4x (a 3840x2160-equivalent crop): the same vector construction rendered at 4K pixel density',
+    title: 'The lockup at 2.4x (a 3840x2160-equivalent crop): the same vector construction rendered at 4K pixel density; '
+      + 'the vista is framed for the lockup as staged (menus._titleReframe, fix round 2), so nothing stands behind the larger spark (A-title-spark-clear)',
     setup: `(() => { const L = document.querySelector('#title .cal-logo'); L.style.setProperty('--cal-lk', (92 * 2.4) + 'px');
-      for (const s of ['.mn-title', '#btn-start']) document.querySelectorAll('#title ' + s).forEach((n) => { n.style.visibility = 'hidden'; }); })()`,
+      for (const s of ['.mn-title', '#btn-start']) document.querySelectorAll('#title ' + s).forEach((n) => { n.style.visibility = 'hidden'; });
+      __CTX__.menus._titleReframe?.(); })()`,
     reference: ['reference/r5/brand/bodoni-manuale-tipografico-1818.jpg', 'reference/r5/brand/os-benchmark-broad-arrow.jpg'],
     criteria: 'The V-logo construction up close. PASS: the spark is whole (ten round-capped rays, none clipped or overlapped), clear of the cap line; '
       + 'the plumb line is a single thin stroke from the cap line to a pointed bob whose tip sits on the baseline; the datum rule is one hairline, '

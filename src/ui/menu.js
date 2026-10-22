@@ -110,6 +110,21 @@ const CAMP = { x: REST.x, z: REST.z };
  */
 const TITLE_LOOK_OFFSET = 0.42;   // rad from the sun's azimuth to the view: the disc ~24° right of centre
 const TITLE_POS_OFFSETS = [0, 0.05, -0.05, 0.1, -0.1, 0.15, -0.15, 0.2, -0.2, 0.3, -0.3, 0.42];   // rad, the camera's bearing from REST, candidates
+/**
+ * Nothing behind the spark (fix round 2 after the W0b judges: "a needle spire rises
+ * straight up behind the spark on the plumb axis, so the spark reads as pinned on a
+ * stick"). The chooser also keeps the spark's whole box in clear sky: along the ray
+ * through every column of the box's bottom edge, the terrain crest stays at least
+ * TITLE_SPARK_MARGIN_DEG under it, from every point of the camera path, in both
+ * layouts (the press beat and the menu). The look offset may move off TITLE_LOOK_OFFSET
+ * for that, in this preference order; the range keeps the disc 20–28° right of centre:
+ * clear of the lockup, inside the engine's vignette (0.55 was measured too far out, round 3).
+ */
+const TITLE_LOOK_OFFSETS = [TITLE_LOOK_OFFSET, 0.39, 0.45, 0.36, 0.48];
+const TITLE_SPARK_MARGIN_DEG = 0.4;
+const TITLE_SPARK_COLS = 7;
+const TITLE_TRUCK_STEPS = [-1, -0.5, 0, 0.5, 1];   // of TITLE_TRUCK_M: the truck's samples
+const TITLE_EASE_STEPS = [0, 0.5, 1];              // the closing move's samples (menu layout; the press beat is ease 0)
 const TITLE_NIGHT_HEADING = 3.6;  // rad, used only when the sun is under the horizon
 const TITLE_TRUCK_M = 24;         // lateral drift amplitude, m
 const TITLE_TRUCK_W = 0.045;      // rad/s of the drift (one sway ≈ 140 s)
@@ -393,8 +408,6 @@ export class Menus {
     if (wall) { wall.remove(); this._manualNode = wall; }
     document.getElementById('btn-start')?.classList.add('mn-hidden');
 
-    this._titleFrame();
-
     this.titleEl = el('div', 'mn-title', host);
     this._pressEl = el('div', 'mn-title-press', this.titleEl, '<span>PRESS ANY KEY</span>');
     this.titleMenu = el('nav', 'mn-title-menu', this.titleEl);
@@ -402,6 +415,9 @@ export class Menus {
     this._titleSave = el('div', 'mn-title-save', this.titleEl);
 
     this._refreshTitle();
+    // framed after the title block exists (fix round 2): the chooser reads where the
+    // spark stands in both layouts, and the menu block moves the lockup
+    this._titleFrame();
     this.titleStage = 'press';
     this._titleT = 0;
     this._dollyT = 0;
@@ -470,11 +486,8 @@ export class Menus {
     }
     const sun = env?.sunDir;
     const day = !!sun && sun.y > 0.02;
-    const saz = day ? Math.atan2(sun.x, sun.z) : 0;
-    const pos = day ? this._titleChooseFrame(sun) : TITLE_NIGHT_HEADING;
-    const look = day ? saz + TITLE_LOOK_OFFSET : TITLE_NIGHT_HEADING;
-    // (sx, cz): the camera's bearing line through REST; (lx, lz): where it looks
-    this._titleHead = { sx: Math.sin(pos), cz: Math.cos(pos), az: pos, lx: Math.sin(look), lz: Math.cos(look), look };
+    this._titleHead = { sx: 0, cz: 0, az: 0, lx: 0, lz: 0, look: 0 };
+    this._titleAim(day ? sun : null);
     this._calimaWeather = null;
     if (env?.setWeather && env.weather !== 'calima') {
       const prev = env.weather;
@@ -483,6 +496,32 @@ export class Menus {
     const live = env?.weather === 'calima';
     document.body.classList.toggle('cal-calima-live', live);
     if (day && !live) this._discMake(); else this._discDrop();
+  }
+
+  /**
+   * Choose the bearing and the view for this visit and write them into `_titleHead`
+   * in place: (sx, cz) the camera's bearing line through REST, (lx, lz) where it looks.
+   * Night (`sun` null): the fixed heading for both.
+   */
+  _titleAim(sun) {
+    const saz = sun ? Math.atan2(sun.x, sun.z) : 0;
+    const pos = sun ? this._titleChooseFrame(sun) : TITLE_NIGHT_HEADING;
+    const look = sun ? saz + (this._titleDiscInfo?.lookOffset ?? TITLE_LOOK_OFFSET) : TITLE_NIGHT_HEADING;
+    const h = this._titleHead;
+    h.sx = Math.sin(pos); h.cz = Math.cos(pos); h.az = pos; h.lx = Math.sin(look); h.lz = Math.cos(look); h.look = look;
+  }
+
+  /**
+   * Re-choose the framing for the lockup as it is laid out NOW (fix round 2), for a gate
+   * that restages the lockup on the press beat (V-logo-4k scales it 2.4x). Only the
+   * bearing and the view change: the clock, the hour, the weather and the disc stay as
+   * `_titleFrame` borrowed them. Day only; returns the audit's disc info, or null.
+   */
+  _titleReframe() {
+    const sun = this.ctx.environment?.sunDir;
+    if (!this._titleHead || !sun || sun.y <= 0.02) return null;
+    this._titleAim(sun);
+    return this._titleDiscInfo;
   }
 
   /**
@@ -532,8 +571,122 @@ export class Menus {
       info.tried.push([off, +(worst / DEG).toFixed(2)]);
       if (worst > best) { best = worst; info.posOffset = off; info.clearanceDeg = +(worst / DEG).toFixed(2); }
     }
+    // pass 2 (fix round 2): nothing behind the spark. Of the bearings whose disc is
+    // clear (best first), and the look offsets in preference order, the first whose
+    // spark box stays in clear sky over the whole path; none: pass 1's choice, reported
+    const spk = this._titleSparkNdc();
+    info.spark = { measured: !!spk, ndc: spk, clear: null, marginDeg: null, need: TITLE_SPARK_MARGIN_DEG, evaluated: 0 };
+    if (spk) {
+      const need = TITLE_SPARK_MARGIN_DEG * DEG;
+      const order = info.tried.filter((r) => r[1] >= 0).sort((a, b) => b[1] - a[1]).map((r) => r[0]);
+      if (!order.length) order.push(info.posOffset);
+      let pick = null;
+      for (const lo of TITLE_LOOK_OFFSETS) {
+        for (const po of order) {
+          info.spark.evaluated++;
+          if (this._titleSparkMargin(saz, po, lo, spk, need) >= need) { pick = [po, lo]; break; }
+        }
+        if (pick) break;
+      }
+      if (pick) {
+        info.posOffset = pick[0];
+        info.lookOffset = pick[1];
+        info.clearanceDeg = info.tried.find((r) => r[0] === pick[0])[1];
+      }
+      const m = this._titleSparkMargin(saz, info.posOffset, info.lookOffset, spk, -Infinity);
+      info.spark.clear = !!pick;
+      info.spark.marginDeg = +(m / DEG).toFixed(2);
+    }
     info.ms = +(performance.now() - t0).toFixed(1);
     return saz + info.posOffset;
+  }
+
+  /**
+   * Where the spark's box stands, in NDC, in both title layouts: the press beat and
+   * the menu (the menu block is taller, so the centred lockup rises). Read once per
+   * visit; the menu layout by adding `lit` for one synchronous layout, then restoring
+   * it, so nothing paints in between. null when the title is not laid out.
+   */
+  _titleSparkNdc() {
+    const s = document.querySelector('#title .cal-spark'), t = this.titleEl;
+    if (!s || !t || !(innerWidth > 0) || !(innerHeight > 0)) return null;
+    const read = () => {
+      const r = s.getBoundingClientRect();
+      return r.width > 0 ? { x0: +(r.left / innerWidth * 2 - 1).toFixed(4), x1: +(r.right / innerWidth * 2 - 1).toFixed(4), y: +(1 - r.bottom / innerHeight * 2).toFixed(4) } : null;
+    };
+    const lit = t.classList.contains('lit');
+    t.classList.remove('lit');
+    const press = read();
+    t.classList.add('lit');
+    const menu = read();
+    if (!lit) t.classList.remove('lit');
+    return press && menu ? { press, menu } : null;
+  }
+
+  /**
+   * The camera on the title path (the one formula `_dolly` uses): ease 0..1 of the
+   * closing move, `lat` m of the truck, `head` = { sx, cz, lx, lz }. Sets the camera's
+   * position and orientation and updates its matrix; returns camY. No allocation.
+   */
+  _titlePlace(cam, head, ease, lat) {
+    const terrain = this.ctx.terrain;
+    const radius = 150 - ease * 34;
+    const cx = CAMP.x - head.sx * radius - head.cz * lat;
+    const cz = CAMP.z - head.cz * radius + head.sx * lat;
+    const ground = terrain?.getHeight ? terrain.getHeight(cx, cz) : 0;
+    const camY = ground + 32 - ease * 7;
+    cam.position.set(cx, camY, cz);
+    // NEGATIVE = TILT UP, opening across the move. 9° → 12° up keeps the calima
+    // sky (and the disc, ~27° high at 17:00) in the upper third over the rim.
+    const pitch = (-TITLE_TILT_DEG - ease * 3) * DEG;
+    const reach = radius * 1.05;
+    cam.lookAt(cx + head.lx * reach, camY - reach * Math.tan(pitch), cz + head.lz * reach);
+    cam.updateMatrixWorld();
+    return camY;
+  }
+
+  /**
+   * One candidate framing (bearing saz + po, view saz + lo): the least angle, over the
+   * path, by which the ray through the spark box's bottom edge clears the terrain crest
+   * under it (rad; < 0 = something stands behind the spark). Returns as soon as it
+   * drops under `need`. The crest is marched only over the rendered terrain mesh (its
+   * world box); beyond it the sky ring's ridges stand far lower. A scratch camera
+   * and two vectors are made once and kept (no GPU resources; dropped on leave).
+   */
+  _titleSparkMargin(saz, po, lo, spk, need) {
+    const T = this.ctx.terrain, cam = this.ctx.camera;
+    if (!T?.getHeight || !cam) return Infinity;
+    if (!this._titleScratch) {
+      this._titleScratch = { cam: new THREE.PerspectiveCamera(), v: new THREE.Vector3(), box: new THREE.Box3(), head: { sx: 0, cz: 0, lx: 0, lz: 0 } };
+    }
+    const S = this._titleScratch, pc = S.cam, v = S.v, head = S.head;
+    if (pc.fov !== cam.fov || pc.aspect !== cam.aspect) { pc.fov = cam.fov; pc.aspect = cam.aspect; pc.near = cam.near; pc.far = cam.far; pc.updateProjectionMatrix(); }
+    const box = T.mesh ? S.box.setFromObject(T.mesh) : null;
+    head.sx = Math.sin(saz + po); head.cz = Math.cos(saz + po); head.lx = Math.sin(saz + lo); head.lz = Math.cos(saz + lo);
+    let worst = Infinity;
+    for (let L = 0; L < 2; L++) {
+      const lay = L === 0 ? spk.press : spk.menu;
+      const eases = L === 0 ? 1 : TITLE_EASE_STEPS.length;
+      for (let e = 0; e < eases; e++) {
+        for (let k = 0; k < TITLE_TRUCK_STEPS.length; k++) {
+          const camY = this._titlePlace(pc, head, L === 0 ? 0 : TITLE_EASE_STEPS[e], TITLE_TRUCK_STEPS[k] * TITLE_TRUCK_M);
+          const px = pc.position.x, pz = pc.position.z;
+          for (let c = 0; c < TITLE_SPARK_COLS; c++) {
+            v.set(lay.x0 + (lay.x1 - lay.x0) * c / (TITLE_SPARK_COLS - 1), lay.y, 0.5).unproject(pc).sub(pc.position);
+            const hz = Math.hypot(v.x, v.z), el = Math.atan2(v.y, hz), sx = v.x / hz, sz = v.z / hz;
+            let crest = -Math.PI / 2;
+            for (let d = 10; d <= 1400; d += 10) {
+              const x = px + sx * d, z = pz + sz * d;
+              if (box && (x < box.min.x || x > box.max.x || z < box.min.z || z > box.max.z)) break;
+              const a = Math.atan2(T.getHeight(x, z) - camY, d);
+              if (a > crest) crest = a;
+            }
+            if (el - crest < worst) { worst = el - crest; if (worst < need) return worst; }
+          }
+        }
+      }
+    }
+    return worst;
   }
 
   /** The Round-4 sky dome (world-sky's `environment.sky`), when it is the kind this title knows how to read. */
@@ -637,6 +790,7 @@ export class Menus {
     this._calimaWeather = null;
     document.body.classList.remove('cal-calima-live');
     this._discDrop();
+    this._titleScratch = null;   // the chooser's scratch camera and vectors (no GPU resources)
   }
 
   /**
@@ -659,7 +813,6 @@ export class Menus {
    */
   _dolly(dt) {
     const cam = this.ctx.camera;
-    const terrain = this.ctx.terrain;
     if (!cam) return;
     if (!this._titleHead) this._titleFrame();
     // a rest still running when the player quit (fix round 1): the environment
@@ -686,20 +839,10 @@ export class Menus {
     const closing = this.titleStage === 'press' ? 0 : clamp(since / 9, 0, 1);
     const ease = closing * closing * (3 - 2 * closing);
     const radius = 150 - ease * 34;
-    const hx = this._titleHead.sx, hz = this._titleHead.cz;
-    // lateral truck along the bearing line's right vector (-hz, hx): a sway, not an orbit
+    // lateral truck along the bearing line's right vector (-hz, hx): a sway, not an orbit;
+    // the placement is `_titlePlace`, the same formula the framing chooser samples
     const lat = TITLE_TRUCK_M * Math.sin(t * TITLE_TRUCK_W);
-    const cx = CAMP.x - hx * radius - hz * lat;
-    const cz = CAMP.z - hz * radius + hx * lat;
-    const ground = terrain?.getHeight ? terrain.getHeight(cx, cz) : 0;
-    const camY = ground + 32 - ease * 7;
-    cam.position.set(cx, camY, cz);
-    // NEGATIVE = TILT UP, opening across the move. 9° → 12° up keeps the calima
-    // sky (and the disc, ~27° high at 17:00) in the upper third over the rim.
-    const pitch = (-TITLE_TILT_DEG - ease * 3) * (Math.PI / 180);
-    const reach = radius * 1.05;
-    cam.lookAt(cx + this._titleHead.lx * reach, camY - reach * Math.tan(pitch), cz + this._titleHead.lz * reach);
-    cam.updateMatrixWorld();
+    const camY = this._titlePlace(cam, this._titleHead, ease, lat);
     // the calima disc sits on the sky's own sun (see _titleSunPoint), faces the camera and
     // keeps its angular size; no allocation
     const disc = this._disc, sun = this.ctx.environment?.sunDir;
