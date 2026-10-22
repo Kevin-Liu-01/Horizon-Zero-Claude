@@ -236,7 +236,9 @@ export const UBC_TUNE = {
   // hang, bounce and collide it about that rest). Character space: +X her
   // left, -Z back; ~50 deg off the vertical, as a stiff wrapped tail in the
   // island's wind stands
-  restKick: [{ bone: 'dyn_wrapSash_01', tip: 'dyn_wrapSash_end', dir: [0.55, -0.62, -0.56] }],
+  // (more out to her left than back: kicked straight back it rode into the
+  // line from a chase lens to her crown — A31c's run-away rows)
+  restKick: [{ bone: 'dyn_wrapSash_01', tip: 'dyn_wrapSash_end', dir: [0.68, -0.62, -0.39] }],
   // the Head bone's standing height over her feet (camera stance follow; Aloy's
   // head_0104 stood at 1.36, the Round-4 HEAD_REST); measured idle on flat ground
   headRest: 1.468,

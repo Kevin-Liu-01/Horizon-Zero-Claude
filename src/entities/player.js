@@ -679,6 +679,13 @@ const ROT_MARGIN = 0.04;                  // m of slack over cameraBoom's own ma
 /* R5 fix round 3: the clearance (m) a deep look-up boom is pre-shortened to
  * before `cameraBoom` sweeps it (see `_preCut` in `_updateCamera`) */
 const PRE_CUT_MARGIN = 0.01;
+/* R5 fix round 3: a rotated deep-look-up boom runs at most this much (m)
+ * past the un-rotated one — negative: a rotated boom sits HIGHER behind her,
+ * and the hijack's look-down budget is spent bringing her into the frame
+ * from there, so it is held a little shorter (A31b's film: at 1.69 / 1.50 m
+ * her crown fell under the frame's centre and her shoulders off the bottom;
+ * at 1.29 m both read) */
+const ROT_LEN_SLACK = -0.10;
 const REL_CUT_SLACK = 0.08;
 const REL_CUT_STEP = 0.06;
 /* fix round 3: the floor eases off with MOTION, not the clock — `REL_CUT_PER_RAD`
@@ -4236,6 +4243,9 @@ void main() {
      * never less than the un-rotated boom. */
     if (this._relief > 0.05 && this._deepK > 0.5 && ctx.terrain) {
       const L0 = this._lenAtElev(pitch, wantFlat0, pivotLift);
+      // (and never past the un-rotated boom plus `ROT_LEN_SLACK`: the frame
+      // the look-up rules chose is the reference)
+      if (wantDist > L0 + ROT_LEN_SLACK) { wantDist = L0 + ROT_LEN_SLACK; wantFlat = Math.min(wantFlat, wantDist); }
       if (wantDist > L0 + 0.02) {
         const P = this._pivotPos, oy = P.y + (this._lift || 0);
         if (this._clearAlong(P.x, oy, P.z, dir.x, dir.y, dir.z, wantDist) < PRE_CUT_MARGIN) {
