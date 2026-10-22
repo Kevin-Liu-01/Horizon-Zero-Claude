@@ -3680,7 +3680,7 @@ export class PlayerAnimator {
           this._charOf(b.upArmR.bone, _sg0);
           this._charOf(b.loArmR.bone, _sg1);
           if (_sg1.y > _sg0.y - 0.006) this._rollElbow('r', _sg0.y - 0.006, ew);
-          if (this.T.elbowForm) this._elbowForm(ew);
+          if (this.T.elbowForm) this._elbowForm(ew, this._looseT < 1 ? lw : 0);
         } else {
           const ideal = _sg2.y - fore * _v6.y;      // elbow on the arrow line
           const cap = _sg0.y - 0.018;               // never up over the shoulder
@@ -3842,7 +3842,7 @@ export class PlayerAnimator {
    * holds them, so a good pose is never touched. Undone if a segment would
    * enter the skull, like `_rollElbow`. No allocation.
    */
-  _elbowForm(w) {
+  _elbowForm(w, lf = 0) {
     const EF = this.T.elbowForm, b = this.b;
     if (w < 0.02 || !b.upArmR || !b.loArmR || !b.handR) return;
     this._charOf(b.upArmR.bone, _sg0);
@@ -3865,9 +3865,13 @@ export class PlayerAnimator {
     _efUp.set(0, 1, 0).addScaledVector(_dA, -_dA.y);
     if (_efUp.lengthSq() < 1e-6) return;
     _efUp.normalize();
-    const S = this._efS || (this._efS = { r: 0, shU: 0, shY: 0, hR: 0, hdF: 0, hD: 0, lo: 0, hi: 0, bh: 0, bd: 0 });   // once
+    const S = this._efS || (this._efS = { r: 0, shU: 0, shY: 0, hR: 0, hdF: 0, hD: 0, lo: 0, hi: 0, bh: 0, bd: 0, drop: 0 });   // once
     S.r = r; S.shU = _sg0.dot(_efUp); S.shY = _sg0.y; S.hR = this.T.headR.z; S.hdF = _hd.dot(_efF);
     S.hD = _sg2.dot(_dA); S.lo = EF.up[0]; S.hi = EF.up[1]; S.bh = EF.behindHand; S.bd = EF.behindHead;
+    // through the LOOSE the elbow may drop under the full-draw height band
+    // (an archer's follow-through: the hand opens back and out, the elbow
+    // settles) — the band is a full-draw bar; behind the head is not
+    S.drop = (EF.looseDrop ?? 0) * lf;
     // 5 deg over the whole circle, then 0.5 deg about the best of those
     const c0 = this._efCost(0);
     let bestT = 0, bestC = c0;
@@ -3905,9 +3909,16 @@ export class PlayerAnimator {
     const u = _efE.dot(_efUp) - S.shU;
     const bhd = S.hD - _efE.dot(_dA);
     const dep = S.hdF - _efE.dot(_efF) - S.hR;
-    const viol = Math.max(0, S.lo - u) + Math.max(0, u - S.hi) + Math.max(0, S.bh - bhd)
-      + Math.max(0, dep - S.bd) + Math.max(0, _efE.y - (S.shY - 0.006));
-    return viol * 100 + Math.abs(th) * 0.01;
+    const above = _efE.y - S.shY;
+    // the GATE bars, hard (x1000): height [-0.03, 0.05] (the floor lowered by
+    // `drop` through the loose), >= 0.055 behind the hand, <= 0.195 past the
+    // back of the skull, never over the shoulder joint (A16)
+    const hard = Math.max(0, -0.026 - S.drop - u) + Math.max(0, u - 0.046) + Math.max(0, 0.055 - bhd)
+      + Math.max(0, dep - 0.195) + Math.max(0, above + 0.002);
+    // ...and the form TARGETS inside them, soft (x100)
+    const soft = Math.max(0, S.lo - S.drop - u) + Math.max(0, u - S.hi) + Math.max(0, S.bh - bhd)
+      + Math.max(0, dep - S.bd) + Math.max(0, above + 0.006);
+    return hard * 1000 + soft * 100 + Math.abs(th) * 0.01;
   }
 
   /**

@@ -195,7 +195,8 @@ export const UBC_TUNE = {
   // inside the aim-frame height band `up` (m about the shoulder line), at
   // least `behindHand` back of the wrist along the arrow and at most
   // `behindHead` past the back of the skull (bars: [-0.03, 0.05], 0.05, 0.20)
-  elbowForm: { up: [-0.022, 0.04], behindHand: 0.072, behindHead: 0.17 },
+  // (`looseDrop`: through the loose the height floor drops this much, m)
+  elbowForm: { up: [-0.022, 0.04], behindHand: 0.072, behindHead: 0.17, looseDrop: 0.15 },
   // the string hand's roll at full draw (0..1 of the way to back-of-hand out,
   // palm to the neck): the hooked fingers stand on the vertical string and the
   // ∴ on the back of the right hand faces a side camera (V24)

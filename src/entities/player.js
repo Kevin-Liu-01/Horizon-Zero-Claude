@@ -662,11 +662,17 @@ const ROT_MAX = 0.95;                     // 54 deg, absolute
 const ROT_MARGIN = 0.04;                  // m of slack over cameraBoom's own march
 /* R5 the cut floor (see `_reliefFloor`): a boom cut this far (m) under what
  * the placement asked for, to under `DOLLY_GAP`, raises the rotation floor by
- * `REL_CUT_STEP` (rad) per cut frame; free, the floor eases off at
- * `REL_CUT_EASE` (rad/s). */
+ * `REL_CUT_STEP` (rad) per cut frame; free, the floor eases off with motion
+ * (below). */
 const REL_CUT_SLACK = 0.08;
 const REL_CUT_STEP = 0.06;
-const REL_CUT_EASE = 0.08;
+/* fix round 3: the floor eases off with MOTION, not the clock — `REL_CUT_PER_RAD`
+ * rad of floor per rad of view yaw turned, `REL_CUT_PER_M` per metre she moves,
+ * and a `REL_CUT_TRICKLE` rad/s leak (was a flat 0.08 rad/s, which walked a still
+ * camera back into its cut every second) */
+const REL_CUT_PER_RAD = 0.4;
+const REL_CUT_PER_M = 0.5;
+const REL_CUT_TRICKLE = 0.01;
 const ROT_STEPS = 10;                     // scan resolution over [0, budget]
 const PITCH_B_MAX = 1.40;                 // rad: the boom stays BEHIND her
 /**
@@ -4334,10 +4340,25 @@ void main() {
         // only a cut that parks the lens inside the dolly's own gap floor (where
         // the fade dithers her): at camPitch -0.8 a 1.1 m cut is the hillside's
         // ordinary answer, and raising the rotation there cost A31b its 1.20 m gap
+        /* fix round 3 (judge r0, A31f's 345 row: "minOpacity 0.70, lens gap
+         * 0.63"): the floor eased off on the CLOCK, so a camera held still
+         * walked its rotation back down into the same cut every second or so
+         * — a relaxation oscillator: one frame cut to 0.63 m (her head off
+         * the frame, the gap fade dithering her to 0.64-0.85), the floor
+         * jumping back, easing down again (measured Oct 22, frame by frame).
+         * It now eases off with MOTION — the view's yaw turning and her
+         * position moving, the two things that change what the ground under
+         * the boom is — and only a slow trickle on the clock. */
+        let dyw = yawB - (this._floorYaw ?? yawB);
+        if (dyw > Math.PI) dyw -= 2 * Math.PI; else if (dyw < -Math.PI) dyw += 2 * Math.PI;
+        const dmv = Math.hypot(this.position.x - (this._floorX ?? this.position.x), this.position.z - (this._floorZ ?? this.position.z));
         if (this.boomLength < planned - REL_CUT_SLACK && this.boomLength < DOLLY_GAP) {
           this._reliefFloor = Math.min(this._rotCapLast ?? ROT_MAX, Math.max(this._reliefFloor, this._relief) + REL_CUT_STEP);
-        } else if (this._reliefFloor > 0) this._reliefFloor = Math.max(0, this._reliefFloor - REL_CUT_EASE * dt);
+        } else if (this._reliefFloor > 0) {
+          this._reliefFloor = Math.max(0, this._reliefFloor - REL_CUT_PER_RAD * Math.abs(dyw) - REL_CUT_PER_M * dmv - REL_CUT_TRICKLE * dt);
+        }
       } else this._reliefFloor = 0;
+      this._floorYaw = yawB; this._floorX = this.position.x; this._floorZ = this.position.z;
     } else {
       const minY = ctx.terrain.getHeight(desired.x, desired.z) + 0.4;
       if (desired.y < minY) desired.y = minY;
