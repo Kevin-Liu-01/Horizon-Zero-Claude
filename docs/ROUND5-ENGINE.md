@@ -752,7 +752,7 @@ cadence 2 against cadence 1, frame by frame: 3–39 channels of 6.75 M differ, m
 
 | gate | verdict | numbers |
 |---|---|---|
-| `A-gpu-tier-box` + `A-gpu-tier` | §3.3 | <!-- G-TABLE --> |
+| `A-gpu-tier-box` + `A-gpu-tier` | **PASS** (judged, final row: `G3`, `G4`<!-- G5-LIST -->; §3.3) | vista 11.78 / 12.34<!-- G5-V --> ms ≤ 13; empty 4.75 / 4.80<!-- G5-E --> ms ≤ 7; fps 60.24 / 59.88<!-- G5-F --> ≥ 58; p95 18.7 / 18.9<!-- G5-P --> ≤ 20; null frames 0.16–0.18 ms; instability ≤ 1.09; docs row = live tier |
 | `A-rt-ledger` | **PENDING** on one clause (`F4`, `P2`) | RT 127.27 MB ≤ 170 PASS; staged fight 342.45 MB ≤ 450 PASS; docs PASS; levers restored PASS; at the shipped tier and DPR 1.25 PASS; **`tools/budgets.mjs` has no `RT_LEDGER`** (gates-perf's file): outstanding. With that one line (run `L12`, against a copy of `budgets.mjs`): **PASS on every clause** |
 | `A-rt-ledger-census` (W0a) | **PASS** (`F3`, `F4`, `P2`) | GL recount 127,271,712 B = ledger, 0 unattributed, 0 mismatches; docs and `RT_LEDGER` match; registration contract and weak hold PASS |
 | `A22-msaa` (R25) | **PASS** (`P1`, `F4`, `P2`) | samples 0 = the tier's, SMAA present and enabled; measured AA on the final row 0.312 vs 0.189 off (1.647 ×) |

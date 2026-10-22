@@ -155,10 +155,11 @@ Chrome slot of PLAN §0 rule 8, disk ≥ 3 GB and memory ≥ 25 % checked after 
 
 ### 5.1 The engine-gpu W0b block
 
-<!-- G-RUNS -->
-
 | gate | verdict | numbers |
 |---|---|---|
+| `A-gpu-tier-box` | PASS in `G3`, `G4`<!-- G5-LIST --> | load 1.63 / 2.18<!-- G5-L -->, 0 other headless Chromes at the sample (`run.sh` takes the slot only at such an instant) |
+| `A-gpu-tier` | **PASS** (judged, final row colour 1× / data 4×) | vista **11.78 / 12.34<!-- G5-V --> ms** ≤ 13; empty **4.75 / 4.80<!-- G5-E --> ms** ≤ 7; fps 60.24 / 59.88<!-- G5-F --> ≥ 58; p95 18.7 / 18.9<!-- G5-P --> ≤ 20; null frames 0.16–0.18 ms; instability ≤ 1.09; docs row = live tier; RT 127.27 MB at 1.25. Another lane's gate Chrome appeared during `G3` at ~70 s (after the shipped bursts) and during `G4` at ~37 s (during part of them); `docs/ROUND5-ENGINE.md` §3.3. Unjudged this round: `G1` (the 2× / 4× row, loud from ~20 s), `G2` (final row, started loud after a 2 h wait). Lever record (`G3`): Round-4 21.43 / 13.30 → … → shipped 9.32 / 4.73; NOT shipped 2× / 2× 10.59, 2× / 4× 13.64, 4× / 4× 15.03 (vista) |
+| `A-gpu-tier` role comparison (exploration, interleaved, `G1`: `X-role2-sim`) | — | colour / data: 1× / 4× **9.91**, 2× / 2× 10.11, 2× / 4× 12.05 (one burst 19.18), 4× / 4× 17.57 |
 | `A-rt-ledger` | **PENDING** (one clause, gates-perf's file) | 127.27 MB ≤ 170 ✓, 342.45 MB ≤ 450 ✓ (textures 100.28, geometry 114.90), docs ✓, levers restored ✓, shipped tier @ 1.25 ✓, `tools/budgets.mjs` record ✗ outstanding (`F4`, `P2`); with the line (`L12`, proof root `scratchpad/r5/engine-gpu/budgets-proof/`): **PASS on every clause** |
 | `A-rt-ledger-census` (W0a row) | **PASS** (`F3`, `F4`, `P2`) | GL 127,271,712 B = ledger, 0 unattributed, 0 mismatches, docs and `RT_LEDGER` match |
 | `A22-msaa` (`@r5`) | **PASS** (`P1`, `F4`, `P2`) | R25 path; final row (`P2`): AA fraction 0.312 (SMAA) / 0.189 (none) / 0.374 (Round-4 MSAA ×4 + SMAA), gain 1.647 ≥ 1.5 (`F4`: 0.318 / 0.197, 1.617) |
