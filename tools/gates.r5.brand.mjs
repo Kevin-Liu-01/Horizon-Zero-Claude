@@ -52,8 +52,12 @@ function walk(r, exts, exclude, out = []) {
 
 function identifiersGrep() {
   const map = JSON.parse(read('tools/lint/rename-map.json'));
-  const files = [];
-  for (const s of map.scope) walk(s, map.extensions, map.exclude, files);
+  const walked = [];
+  for (const s of map.scope) walk(s, map.extensions, map.exclude, walked);
+  // a byte-identical copy of a lexicon file IS the lexicon (excluded by identity, never by a path; plan §8.3 R40)
+  const lexicon = new Set((map.excludeCopiesOf || []).map((f) => read(f)));
+  const lexiconCopies = walked.filter((f) => lexicon.has(read(f)));
+  const files = walked.filter((f) => !lexiconCopies.includes(f));
   const texts = new Map(files.map((f) => [f, read(f)]));
   const scan = (row) => {
     const re = new RegExp(row.re, row.flags.includes('g') ? row.flags : row.flags + 'g');
@@ -82,7 +86,7 @@ function identifiersGrep() {
       rows: rows.map((r) => `${r.from} -> ${r.to}: ${r.hits}`),
       package: { name: pkg.name, description: pkg.description, ok: pkgOk },
       removedEventsInformational: removed,
-      excluded: map.exclude,
+      excluded: map.exclude, excludedLexiconCopies: lexiconCopies,
     },
   };
 }
@@ -391,9 +395,11 @@ function fontsNode() {
     const body = read(PATCH).split('\n');
     const removed = body.filter((l) => l.startsWith('-') && !l.startsWith('---') && OLD_FAMILY_RE.test(l)).length;
     const added = body.filter((l) => l.startsWith('+') && !l.startsWith('+++') && OLD_FAMILY_RE.test(l)).length;
-    let applies = null;
+    let applies = null, alreadyApplied = null;
     try { execFileSync('git', ['apply', '--check', PATCH], { cwd: ROOT, stdio: 'pipe' }); applies = true; } catch { applies = false; }
-    patch = { file: PATCH, applies, refLinesRemoved: removed, refLinesAdded: added, refsAfterPatch: refs.length - removed + added };
+    // on merged main, after the orchestrator applied it: the reverse applies, and the refs counted above are what is left
+    if (!applies) { try { execFileSync('git', ['apply', '--reverse', '--check', PATCH], { cwd: ROOT, stdio: 'pipe' }); alreadyApplied = true; } catch { alreadyApplied = false; } }
+    patch = { file: PATCH, applies, alreadyApplied, refLinesRemoved: removed, refLinesAdded: added, refsAfterPatch: applies ? refs.length - removed + added : refs.length };
   }
   return {
     families: fams, stray, oldFamilies: OLD_FAMILIES,
@@ -667,7 +673,7 @@ const W0B = [
         shippedKB: Math.round(F.shippedBytes / 1024), stray: F.stray,
         oldFamilyRefs: { total: F.refsTotal, inBrandFiles: F.refsBrand.length, inOtherLanesFiles: F.refsForeign, byOwner: F.foreignFilesByOwner, sample: F.sample, patch: F.patch,
           note: 'every remaining reference is in a file brand may not edit at W0b (rule 1). tools/lint/patches/w0b-retired-font-refs.patch renames/removes them and deletes tools/r5-direction; it needs the §1.2 grant line in grantNeeded and is applied by the orchestrator at the brand merge',
-          grantNeeded: ${JSON.stringify(GRANT_LINE)} },
+          grantNeeded: ${JSON.stringify(GRANT_LINE)}, grantRecordedInPlan: ${JSON.stringify(PLAN.split('\n').includes(GRANT_LINE))} },
       } };
     })()`;
     },

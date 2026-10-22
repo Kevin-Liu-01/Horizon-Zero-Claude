@@ -1,10 +1,13 @@
-PROPOSED by lane brand (W0b fix round 2, Oct 22) for the ORCHESTRATOR to review, edit or reject.
+PROPOSED by lane brand (W0b fix round 3, Oct 22) for the ORCHESTRATOR to review, edit or reject.
 Brand does not edit docs/ROUND5-PLAN.md (rule 1); this file only saves the orchestrator typing.
 It adds (1) the §1.2 grant row A-fonts-licensed needs (the exact GRANT_LINE the gate prints),
-(2) the §8.3 marker `<!-- r5-ruling v38-pans=W1 -->` and (3) an R40 bullet (after R39). With the
-marker present, tools/gates.r5.brand.mjs appends that bullet verbatim to V38-title's criteria.
-Built against main ca911e6:   git apply --check tools/lint/patches/w0b-plan-orchestrator.patch
-Then, in the same brand merge: git apply tools/lint/patches/w0b-retired-font-refs.patch
+(2) the §8.3 marker `<!-- r5-ruling v38-pans=W1 -->` and (3) the bullet R43 (the next free number
+after main's R40-R42), placed after R42 in main's marker-then-bullet form. With the marker present,
+tools/gates.r5.brand.mjs appends that bullet verbatim to the V38 rows' criteria.
+Built against main 148f007 (PLAN R40-R42). Checked on a throw-away copy of 148f007's files:
+  git apply --check tools/lint/patches/w0b-plan-orchestrator.patch
+then, stacked on it, in the same brand merge:
+  git apply tools/lint/patches/w0b-retired-font-refs.patch
 
 --- a/docs/ROUND5-PLAN.md
 +++ b/docs/ROUND5-PLAN.md
@@ -16,19 +19,13 @@ Then, in the same brand merge: git apply tools/lint/patches/w0b-retired-font-ref
  | orchestrator | W1–W4 (standing) | `tools/gates.r5.carried.mjs`, `tools/gates.r5.kind-block.mjs`, `tools/gate-roster.mjs`, `tools/gate-places.mjs` | gate-fix passes after gates-perf and instruments-core leave; each pass counts as one agent and runs only in a free slot (≤ 6) |
  
  ---
-@@ -562,6 +563,7 @@
- 
- <!-- r5-ruling pool-terrain-build=accepted -->
- <!-- r5-ruling rt-ledger-bar=W0b -->
+@@ -581,6 +582,9 @@
+ - **R40 — POC closure (Oct 22).** `poc-closure=w1-exit`: at W0b `A-poc-promoted` requires that the `?poc=human` and `?poc=creature` hooks are gone and that nothing outside the `?poc=biome` hook references `r5-poc` paths after the W0b merges (instruments-core re-points the Tiller to `/models/instruments/tiller.glb`; brand drops the `namecheck.mjs` sourceCopies clause). `tools/r5-poc/` and `public/models/r5-poc/` are deleted at world-ground's W1 exit together with the `?poc=biome` hook, as §6 already says.
+ - **R41 — archive identity (Oct 22).** UAL1 is identified per file (it was fetched before archive hashing existed); UAL2's archive size is recorded at its first fetch. `r5-poc-rock-scan` is deferred to world-ground W1, which replaces the POC rock scan with its own ground layers.
+ - **R42 — the human source archives (Oct 22).** The three Quaternius archives (UBC, MCO Fantasy, UAL2; CC0, ≈ 440 MB transient) were lost from `models-staging/r5-src/` when the Mac rebooted on Oct 22. Downloading third-party archives needs Kevin's explicit go-ahead, which the orchestrator has requested. Until then: the shipped derived GLBs carry per-file SHA-256 provenance and remain valid; `A-sources-staged`, the third-party clause of `A-licence-manifest` and the `gen-humans-proof` recipe of `A-build-deterministic` report PENDING-awaiting-download and do not block the W0b exit; they become binding at the W1 exit or when the archives arrive, whichever is first. No agent downloads them without that go-ahead.
 +<!-- r5-ruling v38-pans=W1 -->
- 
- - **pool-terrain-build = accepted.** The worker-pool terrain build is byte-identical to the single-thread build and builds the 1024 m island in 421–451 ms on a quiet box (single-thread 964–969 ms), so the W1 world is **1024 m (`PLAY_RADIUS` ≈ 490)**. Conditions: world-ground ships the pool in `src/world/terrain.js` at W1 (not only in the probe), and `A-world-size` times the **real cold boot** with one competing gate Chrome alive; if that run exceeds the probe bar on 3 of 5 runs, the size falls back to 860 m through `extent.js`.
- - **rt-ledger-bar = W0b.** `A-rt-ledger` (render targets ≤ 170 MB, staged-fight total ≤ 450 MB) is graded at the W0b exit, after engine-gpu chooses the tier levers (DPR cap, GTAO resolution, AA). At W0a it is reported, not graded. W0a measured 340.74 MB of render targets, attributed to the byte.
-@@ -574,6 +576,7 @@
- - **R37 — V12 sprint criteria (Oct 22).** V12 is judged side by side against the licence-clean `reference/r5/gates-perf/run-side.jpg`: torso lean 10–30° (hip to neck), the stance leg near vertical at contact with the swing thigh forward, arms bent and swinging fore-aft beside the body (never crossing the midline, never T-rex or prancing — Kevin's bar). The old "25–45° lean" and "front thigh toward horizontal" clauses are replaced.
- - **R38 — cross-lane PENDING clauses at W0b (Oct 22).** `A-hero-draws`: Brea's own measure (≤ 4 draws, ≤ 2 casters, ≤ 20 k tris for body + outfit + kit) is binding at W0b; the held-weapon clause (≤ 5 draws / ≤ 2 casters with the Sabina bow in hand) is graded at armory's W1 exit. `A-input-actions`: the actions, pad entries and rebind persistence are binding at W0b; the settings-list clause is graded at shell-ui's W2 exit. Reported PENDING clauses under this ruling are not failures.
- - **R39 — merge order for the hero asset swap (Oct 22).** The orchestrator merges pipeline's `SPECS.hero` swap (`/models/hero/brea.glb` and the hero outfit, stow-kit and UAL2 rows) in the same merge window as hero-body's `aloy.glb` deletion, pipeline first; `A-assets-tracked` is graded on main after both.
-+- **R40 — brand at W0b: V38's vista clause and the retired fonts (Oct 22).** (a) The Pans are world-ground's W1 work and the calima weather is world-sky's, so the clause "a live **Pans vista in calima** (salt grid, white surf on black sand …)" of brand's `V38-title` cannot pass at W0b. At the W0b exit the judge grades every other clause of the §9 bullet on the Round-4 vista under brand's calima stand-in: one logo, the vertical menu, the coral disc sun, and the three FAIL clauses (double logo, tall walker on a low-sun skyline, live lava). The vista clause (the Pans, salt grid, white surf on black sand, calima) is graded at the **W1 exit**, re-filmed by brand's rows once `V-biome-vista-pans` passes, together with brand's `A-title-spark-clear` (nothing stands behind the spark); as in R38, the reported PENDING clause is not a failure. (b) `A-fonts-licensed`: the 37 retired-family references sit in other lanes' files, so the orchestrator applies `tools/lint/patches/w0b-retired-font-refs.patch` in the brand merge under the §1.2 row above; the §6 old-font deletion, the five removed `legacy-font-*` rows and the patch land in that one merge, and `A-fonts-licensed` is re-run on merged main (all 12 clauses must PASS).
++
++- **R43 — brand at W0b: V38's vista clause and the retired fonts (Oct 22).** (a) The Pans are world-ground's W1 work and the calima weather is world-sky's, so the clause "a live **Pans vista in calima** (salt grid, white surf on black sand …)" of brand's `V38-title` cannot pass at W0b. At the W0b exit the judge grades every other clause of the §9 bullet on the Round-4 vista under brand's calima stand-in: one logo, the vertical menu, the coral disc sun, and the three FAIL clauses (double logo, tall walker on a low-sun skyline, live lava). The vista clause (the Pans, salt grid, white surf on black sand, calima) is graded at the **W1 exit**, re-filmed by brand's V38 rows once `V-biome-vista-pans` passes, together with brand's `A-title-spark-clear` (nothing stands behind the spark); as in R38, the reported PENDING clause is not a failure. (b) `A-fonts-licensed`: the 37 retired-family references sit in other lanes' files, so the orchestrator applies `tools/lint/patches/w0b-retired-font-refs.patch` in the brand merge under the §1.2 row above (brand, W0b exit). The §6 old-font deletion, the five removed `legacy-font-*` rows and that patch land in this one merge (rule 4: the deletion lands with the change that makes `A-fonts-licensed` pass), and `A-fonts-licensed` is re-run on merged main: all 12 clauses must PASS.
  - **R30 completion.** The orchestrator deleted the four IP machine GLBs (`watcher`, `sawtooth`, `behemoth`, `thunderjaw`) on main after instruments-core's code removal and pipeline's loader rows merged; `aloy.glb` goes at hero-body's W0b exit as planned.
  
  ## 9. GATE SPEC — the literal acceptance bar per lane

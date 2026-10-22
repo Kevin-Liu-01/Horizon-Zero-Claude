@@ -100,10 +100,11 @@ class Game {
 
     // Loading (brand, bible §9.8): the lockup's datum rule fills left to right
     // as progress and the copy stays "Reading the benchmarks…". The step being
-    // loaded is kept on `data-step` for debugging, never rendered.
+    // loaded is kept on `data-step` for debugging, never rendered. `this.setLoad`
+    // is the same function: the V-loading gates freeze the real screen at 40 % / 100 %.
     const loadLogo = document.querySelector('#loading .cal-logo');
     const label = document.getElementById('load-label');
-    const setLoad = (p, step) => {
+    const setLoad = this.setLoad = (p, step) => {
       const k = Math.max(0, Math.min(1, p));
       if (loadLogo) loadLogo.style.setProperty('--cal-load', k.toFixed(3));
       if (label) {
@@ -112,8 +113,7 @@ class Game {
       }
       this.loadProgress = k;
     };
-    this.setLoad = setLoad;   // the V-loading gates freeze the real screen at 40 % / 100 %
-    await ctx.assets.loadAll((p, name) => setLoad(p * 0.86, `asset:${name}`));
+    await ctx.assets.loadAll((p, name) => setLoad(p * 0.86, `Calibrating ${name}…`));
     // Round 5 human-pipeline proof (`?poc=human`): swaps the protagonist body
     // for the CC0 UBC heroine before the Player is built. Dev-only, never
     // bundled (docs/research/round5-pipeline-humans.md); no flag, no change.

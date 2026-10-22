@@ -249,7 +249,7 @@
    {
     "glob": "tools/r5-poc/**",
     "owner": "pipeline",
-    "until": "W0 exit (tools/r5-poc deleted, §6)"
+    "until": "W1 exit (world-ground deletes tools/r5-poc with the ?poc=biome hook, plan §8.3 R40)"
    },
    {
     "glob": "tools/r5-direction/**",
@@ -1105,7 +1105,7 @@
    "id": "scheduled:pipeline:tools/r5-poc/**",
    "kind": "scheduled",
    "owner": "pipeline",
-   "until": "W0 exit (tools/r5-poc deleted, §6)",
+   "until": "W1 exit (world-ground deletes tools/r5-poc with the ?poc=biome hook, plan §8.3 R40)",
    "terms": [
     "Horizon",
     "Metal Shards",

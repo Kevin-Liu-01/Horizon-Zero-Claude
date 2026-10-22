@@ -1,17 +1,80 @@
 # ROUND 5 — lane `brand`
 
 Port 5253 · tree `scratchpad/r5/brand/tree` (branch `r5/w0b-brand`, base `a953355`; the orchestrator's backup
-checkpoints sit on it, and `a2bf79c` among them synced main's PLAN at `ca911e6`) · plan §2 brand row, §6,
-§7.4, §9 "brand" · bible §9.7–9.8, §10, §11.2.
+checkpoints sit on it, and `b465105` among them synced main's PLAN at `148f007`, R40–R42) · plan §2 brand row, §6,
+§7.4, §8.3 R40, §9 "brand" · bible §9.7–9.8, §10, §11.2.
 
-This file holds the **W0b report as of fix round 2 after the W0b judges (Oct 22)** (sections 0–7), the earlier
+This file holds the **W0b report as of fix round 3 after the W0b judges (Oct 22)** (sections 0–7), the earlier
 rounds' notes under §0b, and, unchanged at the end, the **W0-day1 report** (Appendix A). Every number in §4 was
 measured this round on port 5253 in this tree, in ONE full run of the brand block plus the global list
-(`fix2/full.log` in brand's scratch). My reading of the V gates is advisory (R29); the independent judge grades them.
+(`fix3/full.log` in brand's scratch). My reading of the V gates is advisory (R29); the independent judge grades them.
 
 ---
 
-## 0. Fix round 2 after the W0b judges (Oct 22)
+## 0. Fix round 3 after the W0b judges (Oct 22)
+
+Eight findings from two judges (`brand-W0b-judge-r3`, `brand-W0b-judge-r2-eng-film`) cover five issues. Main is
+at `148f007` (R40–R42), and the orchestrator's checkpoint `b465105` synced the tree's PLAN to it. **Brand fixed three
+of the five itself:**
+- R40's sourceCopies clause is out of `namecheck.mjs`;
+- the stale PLAN proposal is rebuilt as **R43** and checked against `148f007`;
+- both orchestrator options for the retired fonts are now one command each, measured on scratch copies.
+
+**The other two still need the orchestrator** under rule 1, because main has no §1.2 grant and no V38 ruling:
+`A-fonts-licensed` (`zeroRefsAnywhere`) and V38's Pans clause. No bar moved, no clause was loosened, nothing was
+stubbed.
+
+### 0.1 By finding
+
+| finding(s) | what I did | measured |
+|---|---|---|
+| **3 and 8 (major): R40 says brand drops the `namecheck.mjs` sourceCopies clause; it was still there** | **Fixed.** `tools/lint/namecheck.mjs` no longer names the POC folder anywhere, in code or in comments:<br>- `sourceCopies.directionA` is now the SHA-256 of brand's copy `tools/lint/lexicon/direction-a.txt` checked against `DIRECTION_A_SHA256`. That hash was pinned this round after the copy was checked byte-identical to Direction A's original, in the tree and in `148f007`. The `same()` helper is gone.<br>- The comment at :12 is reworded.<br>Also cleared in brand's other files:<br>- **`tools/lint/rename-map.json`**: A-identifiers-renamed used to exclude three POC paths. It now excludes a lexicon copy **by identity**: a new `excludeCopiesOf` field skips any file byte-identical to `tools/lint/lexicon/direction-a.txt`. That is stricter than before, because an edited copy would be scanned and the POC `out/` JSON files are now scanned.<br>- **`tools/lint/engine-allow.json`**: the two `tools/r5-poc/**` entries stay, with `until` corrected to the W1 exit (R40). They declare the code lint's plan §9 scope (`tools/**`) over POC code that exists until W1. They read nothing, `A-poc-promoted` does not count JSON, and they match nothing once the folder goes | **`lexicon.json` rebuilt byte-identical** (`sourceCopies.directionA` true, 410 entries).<br>**Pipeline's own `pocReferences`** (`trees/pipeline/tools/build/pipeline/w0b-checks.mjs`) on this tree: 4 references, **0 in brand's lint or gate files** (was: `tools/lint/namecheck.mjs:199`, tool-reference). The 4 left are the biome closure (the `main.js` hook and `gen-tiller.mjs`), `src/instruments/kinds/tiller.js:34` (instruments-core re-points it, R40) and the `?poc=human` block in `src/main.js`. That block belongs to pipeline's removal-only grant; pipeline's tree has already removed it, and brand's `main.js` now merges with that removal with no conflict (§7 item 19).<br>**`grep r5-poc`** over brand's `tools/lint/*.{mjs,json}` and `tools/gates.r5.brand.mjs`: only the two `engine-allow.json` scope globs.<br>**A-no-horizon-terms-code 1,435 ≤ 1,435** (unchanged); **A-identifiers-renamed** 0 hits over 246 files (241 before; the 5 added are the POC `out/` JSONs), 1 lexicon copy excluded by identity |
+| **7 (major): the PLAN proposal no longer applied, and its "R40" collided with main's R40** | **Rebuilt against `148f007`.** `tools/lint/patches/w0b-plan-orchestrator.patch` now has:<br>- the §1.2 row, exactly the gate's `GRANT_LINE`;<br>- the marker `<!-- r5-ruling v38-pans=W1 -->`;<br>- the bullet **R43**, the next free number, after R42 in main's marker-then-bullet form.<br>R43 (a) is the V38 vista clause graded at the W1 exit, in the R38 form. R43 (b) ties the §6 deletion, the 5 rows and the font patch into one merge.<br>The claims about `ca911e6` in fix round 2's notes are corrected in place (§0b.1).<br>**A-fonts-licensed's detail** now also reports `grantRecordedInPlan` and `patch.alreadyApplied`. On merged main it no longer prints a negative `refsAfterPatch`. No clause changed | **On a throw-away copy of `148f007`** (`git archive 148f007`): the PLAN patch passes `git apply --check` and applies, and **the font patch then passes `--check` stacked on it** and applies (it also deletes `tools/r5-direction/`).<br>**On a copy of this tree with both patches** (the brand merge, simulated): the gate's node half reads **0 retired-family references** (0 brand, 0 foreign), 0 stray files, 136 KB, `grantRecordedInPlan: true`, `patch.alreadyApplied: true`. **All 7 V38 rows** carry the §9 text plus R43 verbatim (1,653 characters).<br>On this tree as it stands: 37 references, 0 in brand's files, the patch applies, `grantRecordedInPlan: false`, and the V38 criteria are the §9 text alone (272 characters) |
+| **1 and 5 (blocker), A-fonts-licensed FAILs `zeroRefsAnywhere`; 4 (major) and 5, the 8 `.ttf` deleted before the gate that unlocks it** | **Still the orchestrator's call: rule 1 for the 11 files, and rule 4 for the timing.** Main `148f007` has no grant; R40–R42 are POC and archive rulings. What I did is make each judge's two options **one verified command**:<br>**(a) with the grant:** `git apply` the PLAN patch on main, then `git apply` the font patch in the brand merge. The deletion lands in the same merge as the change that makes the gate pass, which is the order rule 4 asks for.<br>**(b) without the grant:** new `tools/lint/patches/w0b-restore-retired-fonts.mjs` (`--check` for a dry run). It restores the 8 files byte for byte from `148f007`, each checked against the commit's blob id. It restores the 5 rows through pipeline's own `tools/licences/add.mjs` (`upsert`). Read-only git; nothing is staged.<br>**Why the branch keeps the deletion** (unchanged reasoning, re-measured): restoring in the branch makes brand's gates worse with no gain. A-fonts-licensed would fail `onlyTheThreeFamilies` too, and the player lint would go to 1513 > 1508 (see "measured"). The package is either applied whole (a) or reverted whole (b) at the merge | **(b) tested on a scratch copy** of this tree's `public/`, `tools/licences/` and `tools/lint/`:<br>- `--check` lists 8 files and 5 rows missing;<br>- a real run restores all 13, and a second `--check` finds all 13 present;<br>- the rows are identical to `148f007`'s; the manifest's ids then differ from main's only by brand's own rows.<br>**Measured consequence of (b):** the static player lint goes **182 → 187**. All 5 extra hits are the word `legacy` (in the five `legacy-font-*` ids), matched to "Legacy's" by substring. So under (b) the W0b ratchet must be re-recorded on merged main (1513), and A-fonts-licensed FAILs `zeroRefsAnywhere` and `onlyTheThreeFamilies`; fix round 1 measured `noOldFaceLoaded` failing too.<br>**This run, the tree as it stands (§4): A-fonts-licensed FAIL**, 1 of 12 clauses |
+| **2 and 6 (blocker): V38-title FAILs "a live Pans vista in calima" in every frame** | **Still the orchestrator's call, or W1.** The Pans are world-ground's W1 work and calima is world-sky's. The criteria are still the plan's text, word for word. With R43 applied, the rows append it verbatim with no brand edit (shown above). Re-filmed this round: all six V38 rows, including the four angles judge r2 cited (press beat, menu, quit at 12:00, 105 s drift) | **My reading: FAIL on the Pans clause only**, in all six frames (§5). Holding in all six: one logo, the vertical menu 01–05, the coral disc upper right, the spark in clear sky, no walker, no lava |
+
+### 0.2 Orchestrator actions (exact)
+
+**Option (a), recommended: grant + package.**
+1. On main: review `tools/lint/patches/w0b-plan-orchestrator.patch` (edit R43 as you rule), then
+   `git apply tools/lint/patches/w0b-plan-orchestrator.patch`.
+2. In the brand merge: `git apply tools/lint/patches/w0b-retired-font-refs.patch`.
+3. On merged main: re-run `A-fonts-licensed`, which must pass 12/12. Its detail must read `grantRecordedInPlan: true`,
+   `patch.alreadyApplied: true` and `oldFamilyRefs.total: 0`. Then re-run the V38 rows; their criteria carry R43
+   verbatim.
+
+**Option (b): no grant.**
+1. In the brand merge: `node tools/lint/patches/w0b-restore-retired-fonts.mjs`.
+2. Re-record the player ratchet on merged main. A-fonts-licensed stays FAIL until a grant exists.
+
+**V38 without R43:** V38 stays FAIL at W0b on its Pans clause and is re-graded at W1. Either way, `A-title-spark-clear`
+on the Pans is the W1 re-check.
+
+### 0.3 Files changed this round
+- `tools/lint/namecheck.mjs`: the R40 change.
+- `tools/lint/rename-map.json`: exclusion by identity.
+- `tools/lint/engine-allow.json`: two `until` texts.
+- `tools/gates.r5.brand.mjs`:
+  - A-identifiers-renamed reads `excludeCopiesOf`;
+  - A-fonts-licensed's detail gains `grantRecordedInPlan` and `patch.alreadyApplied`;
+  - no clause or bar changed.
+- `src/main.js`: `setLoad` is assigned to `this.setLoad` in its declaration, and the `loadAll` line is main's again. Behaviour is identical: the step text goes to `data-step` and is never rendered. This lets brand's loading hunk merge with pipeline's `?poc=human` removal; before, it conflicted (§7 item 19).
+- `tools/lint/patches/w0b-plan-orchestrator.patch`: rebuilt.
+- `tools/lint/patches/w0b-restore-retired-fonts.mjs`: new.
+- `docs/ROUND5-BRAND.md`.
+
+---
+
+## 0b. Earlier rounds (kept for the record)
+
+### 0b.1 Fix round 2 after the W0b judges (Oct 22)
+
+> **Correction (fix round 3).** Where this block says the PLAN patch "applies to main `ca911e6`" and "both also
+> apply to the tree", that was true when written, against `ca911e6`. It stopped being true when main moved to
+> `148f007` (R40–R42) and the orchestrator synced the tree to it (checkpoint `b465105`): the patch failed at
+> `docs/ROUND5-PLAN.md:574`, and its bullet number R40 collided with main's R40 (POC closure). Fix round 3 rebuilt
+> it against `148f007` with the ruling as **R43** (§0.2). The font patch was not affected; it applies to `148f007`.
+
 
 The four findings are fix round 1's two pairs again: **A-fonts-licensed** (findings 1 and 3) and **V38's Pans
 clause** (findings 2 and 4). Main moved from `263ae19` to `6bfae9f` (R35) and `ca911e6` (R36–R39). None of the new
@@ -25,15 +88,15 @@ clause was loosened, nothing was stubbed. What changed:
 3. **The needle behind the spark** (the evidence of finding 4, deferred to W1 by its judge) **is fixed now and
    gated**: the spark stands in clear sky in every title frame, measured over the whole title.
 
-### 0.1 By finding
+#### 0b.1.1 By finding
 
 | finding | what I did | measured (port 5253, `fix2/full.log`) |
 |---|---|---|
-| **1 (blocker) and 3 (blocker): A-fonts-licensed FAILs `zeroRefsAnywhere`; no §1.2 grant; the 8 `.ttf` deleted before the gate that unlocks it** | **Not closable by brand (rule 1); made one command for the orchestrator.** New `tools/lint/patches/w0b-plan-orchestrator.patch` (a proposal, for the orchestrator to review): the §1.2 row, exactly the `GRANT_LINE` the gate prints, and an R40 (b) that ties the §6 deletion, the 5 removed `legacy-font-*` rows and the font patch into one merge. Checked with `git apply --check` against a throw-away index of main `ca911e6`: it applies, and `w0b-retired-font-refs.patch` still applies on top of it. Both also apply to this tree. On the §6 timing (finding 3): unchanged from fix round 1, measured then: restoring the 8 files in the branch needs their 5 rows back, which adds 5 player-lint hits (1513 > 1508) and fails two more font clauses, so the deletion and the patch land together or not at all (§7 item 1) | **FAIL, 1 of 12 clauses** (`zeroRefsAnywhere`: 37 lines in 11 other-lane files, 0 in brand's). The other **11 PASS**: 3 families, 5 woff2, 136 KB; in play with the studio visited, 4 font requests, all woff2, 0 retired, 0 retired-led stacks. The patch removes all 37 lines and adds 0 |
+| **1 (blocker) and 3 (blocker): A-fonts-licensed FAILs `zeroRefsAnywhere`; no §1.2 grant; the 8 `.ttf` deleted before the gate that unlocks it** | **Not closable by brand (rule 1); made one command for the orchestrator.** New `tools/lint/patches/w0b-plan-orchestrator.patch` (a proposal, for the orchestrator to review): the §1.2 row, exactly the `GRANT_LINE` the gate prints, and an R40 (b) that ties the §6 deletion, the 5 removed `legacy-font-*` rows and the font patch into one merge. Checked with `git apply --check` against a throw-away index of main `ca911e6`: it applies, and `w0b-retired-font-refs.patch` still applies on top of it. Both also apply to this tree. On the §6 timing (finding 3): unchanged from fix round 1, measured then: restoring the 8 files in the branch needs their 5 rows back, which adds 5 player-lint hits (1513 > 1508) and fails two more font clauses, so the deletion and the patch land together or not at all (then §7 item 1) | **FAIL, 1 of 12 clauses** (`zeroRefsAnywhere`: 37 lines in 11 other-lane files, 0 in brand's). The other **11 PASS**: 3 families, 5 woff2, 136 KB; in play with the studio visited, 4 font requests, all woff2, 0 retired, 0 retired-led stacks. The patch removes all 37 lines and adds 0 |
 | **2 (blocker) and 4 (major): V38-title FAILs the Pans-in-calima clause** | **The Pans clause still cannot pass before W1** (world-ground builds the Pans, world-sky the calima weather); the criteria stay the plan text, verbatim. **New:** the V38 row reads the plan for a §8.3 marker `<!-- r5-ruling v38-pans=W1 -->` (engine-gpu's marker pattern); when it is there, the §8.3 bullet that rules on V38-title is appended to the criteria **verbatim**, and a marker without its bullet throws. The proposed bullet is R40 (a) in the patch above. Checked offline: with this tree's PLAN the criteria are the §9 text alone; with the patched PLAN they are the §9 text + R40 verbatim | **My reading: FAIL on the Pans clause only**, in all 6 V38 frames (no salt grid, no surf, no black sand). Holding in all: one logo, the vertical menu 01–05, the coral disc upper right, no walker, no lava, and now the spark in clear sky |
-| **4 (evidence): "a needle spire rises straight up behind the spark on the plumb axis, so the spark reads as pinned on a stick"** (judge's fix: re-check at W1) | **Fixed now** (§0.2): the framing chooser keeps the spark in clear sky over the whole title, the title block stands 10vh higher, and the new gate **`A-title-spark-clear`** grades it on the live camera | **A-title-spark-clear PASS**: 0 meshes behind the spark in 28 samples; terrain under it by 5.90–6.04° on the press beats, **4.98–13.17°** over 22 real-time menu samples (dolly 4.9 → 110.6 s), 0.99–1.37° in V-logo-4k's 2.4x staging (bar 0.4°). The old framing had the crest 12.4° OVER the spark. The disc gates still pass at the new hour (§4) |
+| **4 (evidence): "a needle spire rises straight up behind the spark on the plumb axis, so the spark reads as pinned on a stick"** (judge's fix: re-check at W1) | **Fixed now** (§0b.1.2): the framing chooser keeps the spark in clear sky over the whole title, the title block stands 10vh higher, and the new gate **`A-title-spark-clear`** grades it on the live camera | **A-title-spark-clear PASS**: 0 meshes behind the spark in 28 samples; terrain under it by 5.90–6.04° on the press beats, **4.98–13.17°** over 22 real-time menu samples (dolly 4.9 → 110.6 s), 0.99–1.37° in V-logo-4k's 2.4x staging (bar 0.4°). The old framing had the crest 12.4° OVER the spark. The disc gates still pass at the new hour (§4) |
 
-### 0.2 The needle: what it was, what changed, what it costs
+#### 0b.1.2 The needle: what it was, what changed, what it costs
 
 **What it was (probe on the cited poses, `fix2/probe1.log`).** Every ray behind the spark hit the analytic
 heightfield 556–712 m out, the Round-4 rim's teeth; no prop, far ridge or far range was in the band. On the old
@@ -78,7 +141,7 @@ and are dropped on leave.
 the first hour that keeps the disc in the upper band (with the block lifted, the 17:00 disc stands under the spark's
 centre, so likely 16:30). `A-title-spark-clear` is the re-check the judge asked for.
 
-### 0.3 Orchestrator actions
+#### 0b.1.3 Orchestrator actions
 
 1. Review `tools/lint/patches/w0b-plan-orchestrator.patch` (edit R40 as you rule), then
    `git apply tools/lint/patches/w0b-plan-orchestrator.patch` on main.
@@ -87,13 +150,10 @@ centre, so likely 16:30). `A-title-spark-clear` is the re-check the judge asked 
    R40 verbatim.
 
 Without 1 and 2: A-fonts-licensed stays FAIL on one clause and the 8 `.ttf` plus their 5 rows must be restored in the
-merge (§7 item 1); V38 stays FAIL on its Pans clause until W1.
+merge (then §7 item 1); V38 stays FAIL on its Pans clause until W1.
 
----
 
-## 0b. Earlier rounds (kept for the record)
-
-### 0b.1 Fix round 1 after the W0b judges (Oct 22, earlier)
+### 0b.2 Fix round 1 after the W0b judges (Oct 22, earlier)
 
 Two judges (`brand-W0b-judge`, `brand-W0b-judge-r0`) sent five findings. One of them, the quit-to-title
 hour, was a real bug in brand's code, and it is fixed and gated. The other four are two pairs of findings
@@ -110,7 +170,7 @@ not move any bar, loosen any clause or add any stub.
 | **1 (blocker) / 3 (major): A-fonts-licensed FAILs `zeroRefsAnywhere`; no §1.2 grant; the 8 `.ttf` already deleted** | **Not closable by brand (rule 1).** The 37 lines sit in 11 files of shell-ui, combat-kit, progression, the frozen `dialogue.js`, brand-W4's `studio.css`, and `tools/r5-direction` (no lane). Re-verified this round:<br>- the patch applies to this tree (`git apply --check`);<br>- it **also applies to main's HEAD `263ae19`** (checked against a throw-away index; main changed nothing under `src/`, `tools/`, `public/` or `index.html` since this branch's base `a953355`).<br>**The `Julius Sans One:error` in `oldFaces`** is the gate's own probe, after it has measured play: it asks the browser to load every retired face still declared, and `hud.css:19-21` still declares Julius against the deleted file, so the probe errors. The game never requests it.<br>**On restoring the `.ttf` now (rule 4, judge r0):** I measured it, and restoring makes things worse:<br>- the 8 files need their 5 `legacy-font-*` rows back in `public/LICENSES.json`, or `A-licence-manifest files-matched` fails;<br>- those rows add **5** player-lint hits (62 → 67 on that file), so `A-no-horizon-terms-player` would go to **1513 > 1508**;<br>- `onlyTheThreeFamilies` and `noOldFaceLoaded` would fail as well.<br>So the deletion, the 5 rows and the patch land as one merge package (§7.1). If there is no grant, all three are reverted at the merge | **FAIL, 1 of 12 clauses** (`zeroRefsAnywhere`, 37 lines in 11 files; 0 in brand's files). The patch removes 37 reference lines and adds 0, leaving 0.<br>The other **11 clauses PASS**: 3 families, 5 woff2, 136 KB. In play, with the studio visited: 4 requests, all woff2, **0 retired**, 0 stacks leading with a retired family.<br>**Orchestrator: the grant row in §7.1, then `git apply` at the merge** |
 | **2 (blocker) / 4 (major): V38-title FAILs the Pans-in-calima clause** | **Not closable by brand:**<br>- the Pans are world-ground's W1 work and calima is world-sky's;<br>- the Round-4 world has a river and a marsh, but no sea, surf or black sand;<br>- `?poc=biome` replaces the whole boot, so the title cannot stand on it.<br>The criteria stay the plan text, verbatim. Re-filmed: `V38-title-r5`, `-drift35`, `-drift105`, `-quit`, and the new `-quit-12` and `-quit-21` | **My reading: FAIL on the Pans clause** in all 6 frames: no salt grid, no white surf, no black sand.<br>Holding in all 6:<br>- one logo;<br>- the vertical menu 01–05;<br>- the coral disc upper right, clear of the skyline;<br>- the ochre haze;<br>- no walker, no lava.<br>**Orchestrator: a §8.3 ruling, or V38 stays FAIL until W1** (§7.2) |
 
-### 0b.2 Round 3 (Oct 22, before the judges): resumed after the machine restart
+### 0b.3 Round 3 (Oct 22, before the judges): resumed after the machine restart
 
 The box restarted shortly before this session (uptime 14 min at its start). The tree was intact at the
 orchestrator's checkpoint `3af2aba`; brand's old scratch (the round-2 combiner and logs) was gone. No new
@@ -123,7 +183,7 @@ that exist, re-read every frame, and closed the three things that reading and th
 | **On main, the lane command films no V38.** Main's runner keeps the first row of a duplicated id, the Round-4 `V38-title` of lane `shell-menus`, so `--extra tools/gates.r5.brand.mjs --lane brand` dropped brand's `V38-title` and ran no title shot at all. Round 2 filmed it only through a scratch combiner the orchestrator could not reproduce | `tools/gates.r5.brand.mjs` now also publishes the row as **`V38-title-r5`** while `tools/gates.config.mjs` has no `LANE_FILE_RE` (gates-perf's registry), plus three variants in the lane file itself: **`V38-title-drift35`**, **`V38-title-drift105`** (real time) and **`V38-title-quit`** (the second title visit). Same plan-verbatim criteria and staging note | the lane command now lists 23 brand rows; the four title shots are in the lane run (§4) |
 | **`tools/lint/hzd-verbs.json` did not exist.** Plan §2 puts it in brand's W0 files; `A-distinct-verbs` (progression, W3) reads it | created: 26 Horizon verbs with ids, what Horizon calls them and the CALIMA rename where bible §11.2 keeps the loop. By the bible's own reading, 7 of the 8 first-hour beats teach a verb absent from it; 0:05 (Sighting) is the `scan` entry | JSON valid; outside every lint scope (`tools/lint/**`), code lint unchanged at 1,435 |
 
-### 0b.3 Fix round 2 (Oct 19): what changed, finding by finding
+### 0b.4 Fix round 2 (Oct 19): what changed, finding by finding
 
 | judge finding | what I did | measured now |
 |---|---|---|
@@ -143,16 +203,17 @@ that exist, re-read every frame, and closed the three things that reading and th
 | **Fonts** (bible §9.7) | `public/fonts/` | `BodoniModa-Variable.woff2`, `BodoniModa-Italic-Variable.woff2`, `IBMPlexSansCondensed-{Medium,SemiBold}.woff2`, `IBMPlexMono-Medium.woff2`: Google Fonts latin subsets, unmodified, **136 KB**, one `*-OFL.txt` per family. The 8 Round-4 `.ttf` files (1.4 MB) are deleted in this tree (plan §6). No screen can request them any more (§0) |
 | **Licence rows** | `public/LICENSES.json` via `tools/licences/add.mjs` | `font-bodoni-moda`, `font-ibm-plex-sans-condensed`, `font-ibm-plex-mono`: OFL-1.1, with `licence_text`, `source_url`, `retrieved`, `archive_sha256` and per-file SHA-256s |
 | **`--cal-*` tokens** | `src/style.css` `:root` | The bible §9.1 palette plus `--cal-font-display` / `-ui` / `-mono`; the legacy `--font*` names point at them. Two bridges stay until the retired-font patch lands: `body #hud`, and (new) `body #studio-ui .studio-title, .studio-head` |
-| **Title screen** (V38) | `index.html`, `src/style.css`, `src/ui/menu.js` (title block) | One lockup; a vertical Plex Mono menu, `01 CONTINUE` … `05 CREDITS`; the title's own field line, rotated per visit.<br>**Framing (fix round 2):** the chooser `_titleChooseFrame` picks, once per visit, the title's **hour** (17:00 first; TITLE_HOURS), the **view** (sun azimuth + 0.42 rad first; TITLE_LOOK_OFFSETS), the camera's **bearing** from REST (the 12 Round-4 candidates whose path keeps the skyline under the disc) and the **least extra tilt** (0–8°) that keeps the **spark in clear sky** over the whole path with the disc in the upper band (§0.2). On the Round-4 valley: 15:30, 0.48 rad, −0.30 rad, +8°. The Round-4 dolly clocks and ease are unchanged (A70c).<br>**Held while the title is up:** the world clock (round 2) and the hour (fix round 1); both are handed back on leave.<br>**Calima stand-in:** the CSS wash `#cal-calima` (a true colour blend: ochre at 0.55, luminance kept) plus a top-weighted ochre haze, and the **coral disc** (CALIMA_DISC: depth-tested, on the sky's sun, with the dust's absorption round it; core colour x1.3 in fix round 2).<br>**Forward hook:** the title calls `environment.setWeather('calima', 0)`. Once world-sky ships `calima`, `body.cal-calima-live` switches the wash off, no disc is made, and the start restores the weather |
+| **Title screen** (V38) | `index.html`, `src/style.css`, `src/ui/menu.js` (title block) | One lockup; a vertical Plex Mono menu, `01 CONTINUE` … `05 CREDITS`; the title's own field line, rotated per visit.<br>**Framing (fix round 2):** the chooser `_titleChooseFrame` picks, once per visit, the title's **hour** (17:00 first; TITLE_HOURS), the **view** (sun azimuth + 0.42 rad first; TITLE_LOOK_OFFSETS), the camera's **bearing** from REST (the 12 Round-4 candidates whose path keeps the skyline under the disc) and the **least extra tilt** (0–8°) that keeps the **spark in clear sky** over the whole path with the disc in the upper band (§0b.1.2). On the Round-4 valley: 15:30, 0.48 rad, −0.30 rad, +8°. The Round-4 dolly clocks and ease are unchanged (A70c).<br>**Held while the title is up:** the world clock (round 2) and the hour (fix round 1); both are handed back on leave.<br>**Calima stand-in:** the CSS wash `#cal-calima` (a true colour blend: ochre at 0.55, luminance kept) plus a top-weighted ochre haze, and the **coral disc** (CALIMA_DISC: depth-tested, on the sky's sun, with the dust's absorption round it; core colour x1.3 in fix round 2).<br>**Forward hook:** the title calls `environment.setWeather('calima', 0)`. Once world-sky ships `calima`, `body.cal-calima-live` switches the wash off, no disc is made, and the start restores the weather |
 | **Title scrim** | `src/style.css` (`body.cal-title-live #title.overlay`) | **Round 2:** an ellipse behind the lockup only; clear across the sky; darker at the foot, behind the menu column, the tip and the save line. **Fix round 2:** `#title { --cal-title-lift: 10vh }` lifts the whole title block, and both ellipses move up with it |
 | **Loading screen** (V-loading) | `index.html`, `src/style.css`, `src/main.js` | Field-book paper. **The lockup's own datum rule is the progress bar** (`--cal-load` 0..1). The copy is **"Reading the benchmarks…"**. Unchanged |
 | **Credits** | `src/ui/menu.js` (`CREDITS_LICENSED`, generated block), `README.md` "## Credits" | Generated from pipeline's `tools/licences/credits.mjs` by `tools/lint/credits-sync.mjs` (`--check` passes): 6 sections, 24 rows. Unchanged |
 | **Field Manual, README, favicon** | `index.html`, `README.md`, `public/favicon.svg` | Unchanged; the Field Manual has 17 rows in bible §10 words |
-| **Union lexicon + lints** | `tools/lint/{lexicon.json, lexicon/*, namecheck.mjs, engine-allow.json, ratchet.json}` | See §3. **Round 2:** the player gate's harvest now covers dialogue and every table string, and the W0b player ratchet is re-recorded at 1508 |
+| **Union lexicon + lints** | `tools/lint/{lexicon.json, lexicon/*, namecheck.mjs, engine-allow.json, ratchet.json}` | See §3. **Round 2:** the player gate's harvest now covers dialogue and every table string, and the W0b player ratchet is re-recorded at 1508. **Fix round 3 (R40):** `namecheck.mjs` checks Direction A's copy by a pinned SHA-256 instead of reading the POC folder; `rename-map.json` excludes the lexicon copy by identity (`excludeCopiesOf`) |
 | **Horizon verb list** (new, round 3) | `tools/lint/hzd-verbs.json` | 26 verbs (`id`, `horizon`, `calima`) for progression's `A-distinct-verbs` (W3). §2 has the schema |
 | **Title shadow** (round 3) | `src/style.css` (`#title .cal-word > span:not(.cal-i)`, `.cal-plumb`, `.cal-datum` / `.cal-spark`, `.cal-arrow`) | the heavy legibility shadow on the ink parts only; the spark and the arrow keep a 1.5 px one, so the spark's open centre is the sky again |
-| **Retired-font patch** | `tools/lint/patches/w0b-retired-font-refs.patch` | Unchanged; for the orchestrator (§0.3, §7 item 1) |
-| **PLAN patch (proposal, new)** | `tools/lint/patches/w0b-plan-orchestrator.patch` | For the orchestrator to review: the §1.2 grant row (the gate's `GRANT_LINE`), the §8.3 marker `<!-- r5-ruling v38-pans=W1 -->` and an R40 bullet; applies to main `ca911e6` and stacks with the font patch |
+| **Retired-font patch** | `tools/lint/patches/w0b-retired-font-refs.patch` | Unchanged; for the orchestrator (§0.2 option (a), §7 item 1). Applies to main `148f007`, alone and stacked on the PLAN patch |
+| **Retired-font restore (option (b), new in fix round 3)** | `tools/lint/patches/w0b-restore-retired-fonts.mjs` | For the orchestrator only if the grant is refused: restores the 8 `.ttf` byte for byte from `148f007` (blob-checked) and the 5 `legacy-font-*` rows through `tools/licences/add.mjs`; `--check` is a dry run. Tested on a scratch copy (§0.1) |
+| **PLAN patch (proposal; rebuilt in fix round 3)** | `tools/lint/patches/w0b-plan-orchestrator.patch` | For the orchestrator to review: the §1.2 grant row (the gate's `GRANT_LINE`), the §8.3 marker `<!-- r5-ruling v38-pans=W1 -->` and the bullet **R43** (after main's R40–R42). Built against main `148f007`; on a throw-away copy of `148f007` it applies, and the font patch applies stacked on it (§0.1). Fix round 2's version (with an "R40") no longer applied after main moved to `148f007`
 | **`docs/archive/` moves** (§6) | `docs/archive/` | `docs/ROUND3.md`, 25 `docs/ROUND4-*.md`, 8 `docs/research/*.md`, plus a README |
 | **References** | `reference/r5/brand/` + `MANIFEST.md` | Bodoni 1818 (PD), the OS bench-mark arrow (PD), "Calima al amanecer, Maspalomas" (CC BY 3.0), "Salinas de Janubio" (CC BY 2.0) |
 | **Gates** | `tools/gates.r5.brand.mjs` | The W0b block, the five W0-day1 rows, A-logo-construction, A-loading-fill, A-title-disc-depth (in real time), A-title-disc-sun + A-title-disc-sun-pixels; **round 3**, `V38-title-r5` (only while main's runner is in the tree), `V38-title-drift35`, `V38-title-drift105`, `V38-title-quit`; **fix round 1**, `A-title-any-hour`, `A-title-disc-sun-quit12` + `-quit12-pixels`, `V38-title-quit-12`, `V38-title-quit-21`; **fix round 2**, `A-title-spark-clear`, and the V38 criteria read an orchestrator ruling marker: 29 rows (the lane command on main runs 28; brand's `V38-title` is the duplicate it drops, see §6) |
@@ -270,6 +331,16 @@ sync({ write = true }) -> { readme: drifted, menu: drifted }   // CLI: (no flag)
 ## 3. The lints
 
 **The union lexicon** (`lexicon.json` → `plan`, 410 distinct entries; bible §10.4, plan §9) is unchanged: A's 331 (through A's own tokenizer), B's 235 (189 single names + 46 phrases) and the plan's 15 additions.
+
+**Source identity after R40 (fix round 3).** The build used to byte-compare `tools/lint/lexicon/direction-a.txt`
+with Direction A's original inside the POC folder, which R40 says no code outside the `?poc=biome` hook may name.
+It now compares the copy's SHA-256 with `DIRECTION_A_SHA256` (`b58b5a22…c5e92b4a`). That hash was pinned after the
+copy was checked byte-identical to the original in this tree and in main `148f007`. `sourceCopies.directionA` is still
+`true`, and `lexicon.json` rebuilds byte-identical. Direction B is still compared with its source while that file
+exists; the font patch deletes `tools/r5-direction/`, after which a rebuild reports `directionB: null`. The rename
+grep (A-identifiers-renamed) excludes the lexicon copy by identity (`rename-map.json` `excludeCopiesOf`), so neither
+file names a POC path. The two `tools/r5-poc/**` entries of `engine-allow.json` stay until W1 as the code lint's
+scope over POC code that still exists (R40 deletes it at world-ground's W1 exit).
 
 **A-no-horizon-terms-player**, graded on the plan §9 reading:
 - **Matching:** exact, substring ≥ 5, or edit ≤ 1 when both words are at least 5 letters.
@@ -396,6 +467,7 @@ then deleted.
 - **After gates-perf's registry merges:** the file name matches gates-perf's `LANE_FILE_RE`, so `node tools/gates.mjs --port 5253 --lane brand` will run the same rows.
 - **Order matters for two pairs.** `A-title-disc-sun-pixels` and (fix round 1) `A-title-disc-sun-quit12-pixels` are node `runner` gates. Each reads the screenshot its partner (`A-title-disc-sun`, `A-title-disc-sun-quit12`, named by the row's `srcShot`) just wrote, so it must run in the same run, after that gate. Each pair sits together in the file, and the runner keeps file order. Run alone, a pixels row reports PENDING with the reason.
 - **Transitional (fixed in round 3):** main's runner keeps the **first** row of a duplicated id, so brand's `V38-title` is dropped in favour of the Round-4 row, whose lane is `shell-menus`; round 2 filmed it only through a scratch combiner. The lane file now detects the runner it is loaded by: while `tools/gates.config.mjs` exports no `LANE_FILE_RE` (no r5 registry in the tree), it also publishes the same row as **`V38-title-r5`**, so the lane command films it. The three variants (`V38-title-drift35`, `-drift105`, `-quit`) are ordinary brand rows. Under gates-perf's registry, `V38-title-r5` disappears by itself and brand's `V38-title` shadows the carried row (plan §3.3).
+- **Fix round 3's run** (`fix3/full.log`): the same shape as fix round 2's: ONE run, the scratch combiner `fix3/full.gates.mjs` (identical to fix round 2's: brand's GATES as shipped plus pipeline's three licence gates) as the single `--extra`, `--only` naming the same 42 ids, through `fix3/run-gates.sh` (disk and memory preflight, a machine-wide Chrome slot, released on exit). The lane selection is unchanged: `--lane brand` keeps 28 of the file's 29 rows.
 - **Fix round 2's run** (`fix2/full.log`): ONE run, the scratch combiner `fix2/full.gates.mjs` (brand's GATES as shipped plus pipeline's three licence gates) as the single `--extra`, `--only` naming 42 ids: the 28 brand rows the lane command runs (now with `A-title-spark-clear`), the 11 global and must-stay-green rows, the 3 licence rows. Before it, targeted runs of the title rows only (`fix2/t2…t6.log`) while the framing was built. The lane selection was checked in node: `--lane brand` keeps 28 of the file's 29 rows (the dropped one is the duplicate `V38-title`).
 - **Fix round 1's full run** used one scratch combiner (`fix1/full.gates.mjs`: brand's GATES as shipped plus pipeline's three licence gates; no aliases are needed any more) with `--only` naming the 41 ids. **Round 3's full run** used one scratch combiner (`work3/full.gates.mjs`) as the single `--extra` file, to add pipeline's three licence gates to brand's rows in one Chrome. Its `X-V38-title`, `X-V38-drift35`, `X-V38-drift105`, `X-V38-quit-to-title` rows have the same setups, settles and criteria as the rows the lane file now ships as `V38-title-r5`, `-drift35`, `-drift105`, `-quit` (only the titles differ). The lane file gained them while the full run was queued for a Chrome slot, so a second, targeted run of the lane file's own rows (§4) filmed them under their shipped ids.
 
@@ -407,7 +479,7 @@ then deleted.
 
    ``| brand | W0b exit (orchestrator applies) | `src/ui/{hud.css,focus.css,focus.js,inventory.css,wheel.css,map.js,quests.js,skills.js,dialogue.js}`, `src/combat/feedback.css`, `src/studio/studio.css`, `tools/r5-direction/**` | rename/remove only: the retired family names (Julius, Rajdhani, Chakra Petch, Michroma, Orbitron) in fallback stacks, comments and one canvas font string, as `tools/lint/patches/w0b-retired-font-refs.patch`; delete `tools/r5-direction/` (its lexicon lives in `tools/lint/lexicon/direction-b.json`). No selector, property, value or logic change |``
 
-   **Fix round 2:** this row (exactly the gate's `GRANT_LINE`) and R40 (b) are in `tools/lint/patches/w0b-plan-orchestrator.patch`, which applies to main `ca911e6`; the font patch applies on top of it (both checked on a throw-away index of `ca911e6`).
+   **Fix round 3:** this row (exactly the gate's `GRANT_LINE`) and **R43** (b) are in `tools/lint/patches/w0b-plan-orchestrator.patch`, rebuilt against main `148f007`. On a throw-away copy of `148f007` it applies, and the font patch applies stacked on it. (Fix round 2's version, built on `ca911e6` with an "R40", stopped applying when main moved to `148f007`; its number collided with main's R40.)
 
    **About the patch:**
    - It touches 12 source files: the 11 the gate counts, plus `focus.js`. There, "Chakra / Petch" is split across two comment lines, which is why the per-line gate does not count it.
@@ -421,9 +493,9 @@ then deleted.
    - one map canvas string names a family that has no `@font-face`.
 
    **Why the files are not restored in the branch** (judge r0, fix round 1, measured). Restoring the 8 files means also restoring their 5 `legacy-font-*` rows in `public/LICENSES.json`; without the rows, `A-licence-manifest files-matched` fails. Those rows add **5** player-lint hits (62 → 67 on that file), so `A-no-horizon-terms-player` would read **1513 > 1508**, and A-fonts-licensed would fail `onlyTheThreeFamilies` and `noOldFaceLoaded` as well. So the deletion, the rows and the patch are **one merge package**:
-   - **with the grant:** `git apply tools/lint/patches/w0b-retired-font-refs.patch` in the merge commit (it applies to this tree and to main's `ca911e6`), then re-run A-fonts-licensed on merged main; all 12 clauses must PASS;
-   - **without the grant:** in the merge, restore `public/fonts/{ChakraPetch-Regular,ChakraPetch-SemiBold,JuliusSansOne-Regular,Michroma-Regular,Orbitron-Variable,Rajdhani-Bold,Rajdhani-Medium,Rajdhani-SemiBold}.ttf` and the five `legacy-font-*` rows from `a953355`. A-fonts-licensed then fails `onlyTheThreeFamilies`, `noOldFaceLoaded` and `zeroRefsAnywhere`, and the player lint needs its ratchet re-recorded on merged main (item 3).
-2. **Ruling needed: V38 at W0b.** V38 FAILs its Pans clause until world-ground (the Pans) and world-sky (`calima`) land at W1. The proposed ruling is R40 (a) in `tools/lint/patches/w0b-plan-orchestrator.patch` (in the R38 form: the vista clause graded at the W1 exit, every other clause at W0b), with the marker `<!-- r5-ruling v38-pans=W1 -->`; the V38 rows then append the bullet to their criteria verbatim, with no brand edit. Without a ruling, V38 is FAIL at W0b.
+   - **with the grant (option (a)):** `git apply tools/lint/patches/w0b-retired-font-refs.patch` in the merge commit (it applies to this tree and to main's `148f007`), then re-run A-fonts-licensed on merged main; all 12 clauses must PASS (detail: `grantRecordedInPlan: true`, `patch.alreadyApplied: true`, 0 references);
+   - **without the grant (option (b), one command since fix round 3):** in the merge, `node tools/lint/patches/w0b-restore-retired-fonts.mjs` restores `public/fonts/{ChakraPetch-Regular,ChakraPetch-SemiBold,JuliusSansOne-Regular,Michroma-Regular,Orbitron-Variable,Rajdhani-Bold,Rajdhani-Medium,Rajdhani-SemiBold}.ttf` byte for byte from `148f007` and the five `legacy-font-*` rows through `tools/licences/add.mjs` (tested on a scratch copy). A-fonts-licensed then fails `onlyTheThreeFamilies`, `noOldFaceLoaded` and `zeroRefsAnywhere`, and the player lint reads 5 more (the word `legacy` in the five row ids, 182 → 187 static, measured), so its ratchet must be re-recorded on merged main (item 3).
+2. **Ruling needed: V38 at W0b.** V38 FAILs its Pans clause until world-ground (the Pans) and world-sky (`calima`) land at W1. The proposed ruling is **R43** (a) in `tools/lint/patches/w0b-plan-orchestrator.patch` (in the R38 form: the vista clause graded at the W1 exit, every other clause at W0b), with the marker `<!-- r5-ruling v38-pans=W1 -->`; the V38 rows then append the bullet to their criteria verbatim, with no brand edit. Without a ruling, V38 is FAIL at W0b.
 3. **Ruling needed: the player lint's W4 target.** On the literal §9 reading, 0 at W4 cannot be reached. The count includes "of", "title" and "light", near-misses such as Speak→Spear, and 61 hits in licence texts that no lane may edit. The ratchet is now 1508. I recommend two things:
    - grade the ratchet on this reading;
    - set the W4 target on the named reading (718 today), with the licence texts exempt.
@@ -442,19 +514,21 @@ then deleted.
 10. **A-extent-refactor** is graded against the W0b-start hashes, because W0a changed one collider.
 11. **Other lanes' surfaces still use Round-4 words** (shell-ui W2, combat-kit W2, progression W3). Dialogue now counts too. All of it is inside the 1508.
 12. **Latin subsets only.** ∴ ■ ● ▲ ◆ fall back to a system font.
-13. **`docs/ROUND5-PLAN.md`** in this tree is main's `ca911e6` (synced by the orchestrator's checkpoint `a2bf79c`). Brand followed rule 8: every Chrome run this round took a slot under `scratchpad/r5/chrome-slots/` with an `owner.txt` and released it on exit; never more than one brand Chrome at a time.
+13. **`docs/ROUND5-PLAN.md`** in this tree is main's `148f007` (synced by the orchestrator's checkpoint `b465105`; byte-identical, checked). Brand followed rule 8: every Chrome run this round took a slot under `scratchpad/r5/chrome-slots/` with an `owner.txt` and released it on exit; never more than one brand Chrome at a time.
 14. **Downloads this round:** none. No new asset, so no new `LICENSES.json` row.
-15. **The needle spire behind the spark: fixed in fix round 2** (§0.2), graded by `A-title-spark-clear`. Thin spires still rise behind the wordmark's letters (the lockup's ink has its own shadow); the spark, the dot of the I, has ≥ 0.4° of sky under it in every sample. The chooser costs 292 ms on the first title visit (the full search) and 99 ms on a later one.
+15. **The needle spire behind the spark: fixed in fix round 2** (§0b.1.2), graded by `A-title-spark-clear`. Thin spires still rise behind the wordmark's letters (the lockup's ink has its own shadow); the spark, the dot of the I, has ≥ 0.4° of sky under it in every sample. The chooser costs 292 ms on the first title visit (the full search) and 99 ms on a later one.
 16. **`tools/lint/hzd-verbs.json` is new data with no gate of brand's.** Its consumer is progression's `A-distinct-verbs` (W3). The bible's own count holds on it: 7 of the 8 beats are absent, and the 0:05 Sighting beat is the `scan` row. Progression should declare each beat's verb by `id`.
 17. **The title's hour.** The title stands at the chooser's hour whatever hour the world is in (15:30 on the Round-4 valley), and hands the player's hour back on leave. If the Pans' calima vista wants another hour range (the bible's reference is a calima dawn), edit `TITLE_HOURS` in `src/ui/menu.js` and re-run `A-title-spark-clear`, `A-title-any-hour`, `A-title-disc-depth` and `A-title-disc-sun(-quit12)`.
 18. **One edge, measured but not filmed:** when a rest is still running at the quit, the environment drives the hour for up to its 2 s. During that time the disc follows the rest's moving sun, and then the title snaps back to its own hour. `A-title-any-hour` grades the landed state (the title's hour, disc in frame, hand-back 6.2), not the 2 s in between.
+19. **Merge of `src/main.js` with pipeline (fix round 3).** Pipeline's tree removes the `?poc=human` block (its removal-only grant). Brand's loading hunk used to end on the line just above that block, so a three-way merge conflicted: `git merge-file` on scratch copies of main `148f007`, brand and pipeline gave 1 conflict. Brand now assigns `this.setLoad` in `setLoad`'s own declaration and leaves main's `loadAll` line unchanged; the step text still goes only to `data-step`. The same trial merge now gives **0 conflicts**. No other lane tree (engine-gpu, gates-perf, hero-body, instruments-core) changes `src/main.js`, `index.html`, `src/style.css`, `src/ui/menu.js`, `README.md` or `package.json`.
+20. **Merge of `public/LICENSES.json` (pipeline's file).** Brand's row changes (adds `calima-favicon` and the 3 font rows; removes `legacy-favicon` and the 5 `legacy-font-*` rows) share **no row** with pipeline's or hero-body's (row-level diff against `148f007`). But a text merge of brand with hero-body still conflicts (3 hunks, adjacent rows), as pipeline's does with hero-body. Resolve by row: take the union of each lane's row changes, then run `node tools/licences/add.mjs --format`. The only row changed by two lanes is between pipeline and hero-body (`ubc-standard`, `mco-fantasy-standard`, `ual2-standard`); brand is not involved.
 
 **For other lanes.**
 - **world-sky:** `setWeather('calima', 0)` should return `'calima'`. The title also borrows `timeFrozen` and the hour through `time` / `setTime`, reads `resting`, the sky dome's position and radius, and the static `Environment.direction(hour, out)`, read-only. Keep that static (or tell brand) if you rework the sun.
 - **world-ground:** the title reads `REST`, `terrain.getHeight` and `terrain.mesh`'s world box. At your W1 exit, run `A-title-spark-clear` and the V38 rows on the Pans: that is the judge's W1 re-check.
 - **shell-ui (W2):** use `--cal-font-*` and the palette. When you restyle `hud.css`, drop the retired face, and brand removes its bridge.
 - **gates-perf:** brand's `V38-title` shadows the carried row. `A-title-disc-sun-pixels` and `A-title-disc-sun-quit12-pixels` need their partner's screenshot from the same run.
-- **orchestrator:** see §0.3 and items 1–3, and §6 for the lane command on main (`V38-title-r5`).
+- **orchestrator:** see §0.2 and items 1–3, 19, 20, and §6 for the lane command on main (`V38-title-r5`).
 - **progression (W3):** `tools/lint/hzd-verbs.json` (schema in §2) is the list `A-distinct-verbs` reads.
 
 ---

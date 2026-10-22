@@ -9,7 +9,7 @@
  * THE UNION LEXICON (`lexicon.json` → `plan`, built from tools/lint/lexicon/*),
  * exactly as bible §10.4 and plan §9 define it — 410 distinct entries:
  *   A  Direction A's `horizon-lexicon.txt` (355 lines) through A's own tokenizer
- *      (tools/r5-poc/direction-a/namecheck.py: every line lower-cased, plus every
+ *      (Direction A's own namecheck.py: every line lower-cased, plus every
  *      part >= 4 characters after splitting on space / slash / brackets /
  *      hyphen): 331 entries — "A's 331"
  *   B  Direction B's names (`names-check.mjs` HORIZON, >= 3 characters, B's own
@@ -21,7 +21,10 @@
  *      Stalker, Watcher, Grazer, Charger, Burrower, Rollerback, Saltbite,
  *      Call of the Mountain, Camp.
  * (The bible prints "417 tokens"; the files reproduce 410 after lower-case
- * de-duplication. Both direction sources are byte-copies, checked at build.)
+ * de-duplication. Both direction sources are byte-copies, checked at build:
+ * A by its SHA-256, pinned when it was verified byte-identical to Direction A's
+ * file (W0b; plan §8.3 R40 retires the POC folder, so the lint names no path
+ * in it), B against its source while that file exists.)
  *
  * THE GRADED READING (`plan`, plan §9 / bible §10.4 "A's rules"): every DOM
  * word, id part or table key is compared with EVERY union entry —
@@ -57,6 +60,7 @@
  *           coining a new Horizon-named identifier does.
  */
 import { readFileSync, writeFileSync, readdirSync, lstatSync, existsSync } from 'node:fs';
+import { createHash } from 'node:crypto';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -69,6 +73,12 @@ export const GENERIC = ['lance', 'cliff', 'shelf', 'salt', 'glaze', 'arrow'];
 /** plan §9 A-no-horizon-terms-player additions */
 export const PLAN_ADDITIONS = ['Brittle', 'Impact', 'Tear', 'Frost', 'Lens', 'Shards', 'Stalker', 'Watcher', 'Grazer',
   'Charger', 'Burrower', 'Rollerback', 'Saltbite', 'Call of the Mountain', 'Camp'];
+/**
+ * SHA-256 of `tools/lint/lexicon/direction-a.txt`, pinned at W0b fix round 3 after the copy was checked
+ * byte-identical to Direction A's horizon-lexicon.txt (main 148f007). The lexicon build compares the copy with
+ * this hash instead of reading the POC folder (plan §8.3 R40).
+ */
+export const DIRECTION_A_SHA256 = 'b58b5a22d7214f4eeede5a3b6c3ebca4457890a229cab9ea23e3f4f9c5e92b4a';
 /** plan §9 A-ui-words terms (always matched alone) */
 export const UI_WORDS = ['tear', 'impact', 'brittle', 'focus', 'override', 'concentration', 'datapoint', 'datapoints',
   'shard', 'shards', 'medicine', 'tallneck', 'cauldron', 'machine', 'machines', 'camp'];
@@ -178,8 +188,8 @@ export function buildLexicon({ dictionary = '/usr/share/dict/web2' } = {}) {
   for (const w of PLAN_ADDITIONS) addPlan(w, 'plan');
   const plan = [...planMap.entries()].map(([l, e]) => ({ n: norm(l), len: l.length, t: e.t, src: [...e.src].sort() }))
     .sort((a, b) => a.n.localeCompare(b.n) || a.len - b.len);
-  // byte-copy checks of the two direction sources (only while the originals exist)
-  const same = (copy, orig) => (existsSync(path.join(ROOT, orig)) ? rd(copy) === rd(orig) : null);
+  // byte-copy checks of the two direction sources: A against its pinned SHA-256, B while its original exists
+  const aSha = createHash('sha256').update(readFileSync(path.join(LINT, 'lexicon/direction-a.txt'))).digest('hex');
   let bSame = null;
   if (existsSync(path.join(ROOT, 'tools/r5-direction/names-check.mjs'))) {
     const src = rd('tools/r5-direction/names-check.mjs');
@@ -197,7 +207,7 @@ export function buildLexicon({ dictionary = '/usr/share/dict/web2' } = {}) {
       phrase: 'contiguous normalised word sequence', short: 'advisory named reading: entries under 3 characters not matched alone',
       line: "advisory named reading: A's whole lines with spaces / slashes / notes, matched through their expanded phrases" },
     union: { plan: plan.length, planSources: { A: aEntries, B: bSingles.length + B.phrases.length, bSingles: bSingles.length, bPhrases: B.phrases.length, additions: PLAN_ADDITIONS.length },
-      sourceCopies: { directionA: same('tools/lint/lexicon/direction-a.txt', 'tools/r5-poc/direction-a/horizon-lexicon.txt'), directionB: bSame },
+      sourceCopies: { directionA: aSha === DIRECTION_A_SHA256, directionB: bSame },
       entries: tokens.length + ph.length, tokens: tokens.length, phrases: ph.length,
       name: count('name'), common: count('common'), line: count('line'), short: count('short') },
     generic: GENERIC,

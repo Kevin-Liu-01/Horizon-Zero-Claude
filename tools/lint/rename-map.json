@@ -1,7 +1,8 @@
 {
-  "about": "Plan §7.1 W0-day1 rename table as grep data. Read by A-identifiers-renamed (tools/gates.r5.brand.mjs); W0b's namecheck.mjs folds it into the union lexicon. Every 'from' must have 0 hits in scope. tools/lint/** is excluded because it IS the lexicon (§7.4); the r5-poc horizon-lexicon.txt is excluded for the same reason (pipeline promotes it at W0b).",
+  "about": "Plan §7.1 W0-day1 rename table as grep data. Read by A-identifiers-renamed (tools/gates.r5.brand.mjs); W0b's namecheck.mjs folds it into the union lexicon. Every 'from' must have 0 hits in scope. tools/lint/** is excluded because it IS the lexicon (§7.4); so is any file in scope that is byte-identical to a file in excludeCopiesOf (Direction A's original lexicon, until world-ground deletes the POC folder at the W1 exit, plan §8.3 R40): excluded by identity, not by path, so this map names no POC path and an edited copy would be scanned.",
   "scope": ["src", "tools", "index.html"],
-  "exclude": ["tools/lint/", "tools/r5-poc/direction-a/horizon-lexicon.txt", "tools/r5-poc/assets/", "tools/r5-poc/out/"],
+  "exclude": ["tools/lint/"],
+  "excludeCopiesOf": ["tools/lint/lexicon/direction-a.txt"],
   "extensions": [".js", ".mjs", ".cjs", ".css", ".html", ".json", ".txt", ".md", ".py", ".glsl"],
   "rows": [
     { "class": "project prefix", "from": "hzc / .hzc-* / --hzc-* / #hzc-prog / [HZC]", "to": "cal / .cal-* / --cal-* / #cal-prog / [CAL]", "re": "hzc", "flags": "gi" },
