@@ -130,18 +130,22 @@ const ACES_IN = [[0.59719, 0.35458, 0.04823], [0.07600, 0.90834, 0.01566], [0.02
 const ACES_OUT = [[1.60475, -0.53108, -0.07367], [-0.10208, 1.10813, -0.00605], [-0.00327, -0.07276, 1.07602]];
 const LUMA = [0.2126, 0.7152, 0.0722];
 
-function inv3(m) {
-  const [a, b, c] = m[0], [d, e, f] = m[1], [g, h, i] = m[2];
+/** 3 x 3 inverse into `o` (rows); false when singular. Allocation-free. */
+function inv3Into(m, o) {
+  const a = m[0][0], b = m[0][1], c = m[0][2], d = m[1][0], e = m[1][1], f = m[1][2], g = m[2][0], h = m[2][1], i = m[2][2];
   const A = e * i - f * h, B = -(d * i - f * g), C = d * h - e * g;
   const det = a * A + b * B + c * C;
-  return [
-    [A / det, -(b * i - c * h) / det, (b * f - c * e) / det],
-    [B / det, (a * i - c * g) / det, -(a * f - c * d) / det],
-    [C / det, -(a * h - b * g) / det, (a * e - b * d) / det],
-  ];
+  if (!det || !Number.isFinite(det)) return false;
+  o[0][0] = A / det; o[0][1] = -(b * i - c * h) / det; o[0][2] = (b * f - c * e) / det;
+  o[1][0] = B / det; o[1][1] = (a * i - c * g) / det; o[1][2] = -(a * f - c * d) / det;
+  o[2][0] = C / det; o[2][1] = -(a * h - b * g) / det; o[2][2] = (a * e - b * d) / det;
+  return true;
 }
-const ACES_IN_INV = inv3(ACES_IN);
-const ACES_OUT_INV = inv3(ACES_OUT);
+const mat3 = () => [[0, 0, 0], [0, 0, 0], [0, 0, 0]];
+const ACES_IN_INV = mat3();
+const ACES_OUT_INV = mat3();
+inv3Into(ACES_IN, ACES_IN_INV);
+inv3Into(ACES_OUT, ACES_OUT_INV);
 const mul3 = (M, v, out) => {
   const x = v[0], y = v[1], z = v[2];
   out[0] = M[0][0] * x + M[0][1] * y + M[0][2] * z;
@@ -158,14 +162,20 @@ const sat01 = (v) => (v < 0 ? 0 : v > 1 ? 1 : v);
 const oetf = (c) => (c <= 0.0031308 ? c * 12.92 : Math.pow(c, 0.41666) * 1.055 - 0.055);
 const smooth = (e0, e1, x) => { const t = sat01((x - e0) / (e1 - e0)); return t * t * (3 - 2 * t); };
 
+/* Scratch for the transforms: a re-solve (an exposure or grade change, which
+ * world-sky may animate per frame from W1) allocates nothing. */
+const _F = { t: [0, 0, 0], v: [0, 0, 0], s: [0, 0, 0], c: [0, 0, 0] };
+const _I = { c2: [0, 0, 0], s: [0, 0, 0], y: [0, 0, 0], f: [0, 0, 0], fx: [0, 0, 0], fh: [0, 0, 0],
+  r: [0, 0, 0], xs: [0, 0, 0], d: [0, 0, 0], J: mat3(), Ji: mat3() };
+
 /**
  * Exact forward copy of the engine's output pass at the screen centre
- * (no vignette): HDR linear -> display sRGB (0..1).
+ * (no vignette): HDR linear -> display sRGB (0..1). Allocation-free when `out` is passed.
  */
 export function outputForward(x, P, out = [0, 0, 0]) {
-  const t = [0, 0, 0];
+  const t = _F.t, v = _F.v, s = _F.s, c = _F.c;
   const k = P.exposure / 0.6;
-  const v = [x[0] * k, x[1] * k, x[2] * k];
+  v[0] = x[0] * k; v[1] = x[1] * k; v[2] = x[2] * k;
   if (P.aces) {
     mul3(ACES_IN, v, t);
     t[0] = acesFit(t[0]); t[1] = acesFit(t[1]); t[2] = acesFit(t[2]);
@@ -173,8 +183,7 @@ export function outputForward(x, P, out = [0, 0, 0]) {
   } else {
     v[0] = x[0] * P.exposure; v[1] = x[1] * P.exposure; v[2] = x[2] * P.exposure;
   }
-  const s = [oetf(sat01(v[0])), oetf(sat01(v[1])), oetf(sat01(v[2]))];
-  const c = [0, 0, 0];
+  s[0] = oetf(sat01(v[0])); s[1] = oetf(sat01(v[1])); s[2] = oetf(sat01(v[2]));
   for (let i = 0; i < 3; i++) c[i] = (s[i] - 0.5) * P.contrast + 0.5 + P.lift[i];
   const l = LUMA[0] * c[0] + LUMA[1] * c[1] + LUMA[2] * c[2];
   const w = smooth(0.12, 0.86, l);
@@ -186,31 +195,25 @@ export function outputForward(x, P, out = [0, 0, 0]) {
   return out;
 }
 
-/** HDR linear value whose output-pass image is the sRGB triple `t` (0..1). */
-export function outputInverse(t, P) {
+/** HDR linear value whose output-pass image is the sRGB triple `t` (0..1). Allocation-free when `x` is passed. */
+export function outputInverse(t, P, x = [0, 0, 0]) {
+  const { c2, s, y, f, fx, fh, r, xs, d, J, Ji } = _I;
   // 1. ungrade (gradeMix = 1 analytically; Newton below absorbs any other mix)
   let l = LUMA[0] * t[0] + LUMA[1] * t[1] + LUMA[2] * t[2];
-  const c2 = [0, 0, 0];
   for (let it = 0; it < 24; it++) {
     const w = smooth(0.12, 0.86, l);
     for (let i = 0; i < 3; i++) c2[i] = t[i] / (P.shadow[i] + (P.highlight[i] - P.shadow[i]) * w);
     l = LUMA[0] * c2[0] + LUMA[1] * c2[1] + LUMA[2] * c2[2];
   }
-  const s = [0, 0, 0];
   for (let i = 0; i < 3; i++) {
     const c1 = l + (c2[i] - l) / P.saturation;
     s[i] = P.mix > 0.999 ? (c1 - 0.5 - P.lift[i]) / P.contrast + 0.5 : t[i];
   }
   // 2. un-encode; a channel at the clip aims a hair past it so it stays clipped
-  const y = [0, 0, 0];
-  for (let i = 0; i < 3; i++) {
-    const lin = srgbToLinear(sat01(s[i]));
-    y[i] = t[i] >= 0.999 ? 1.004 : lin;
-  }
+  for (let i = 0; i < 3; i++) y[i] = t[i] >= 0.999 ? 1.004 : srgbToLinear(sat01(s[i]));
   // 3. un-tonemap
-  const x = [0, 0, 0];
   if (P.aces) {
-    const f = mul3(ACES_OUT_INV, y, [0, 0, 0]);
+    mul3(ACES_OUT_INV, y, f);
     for (let i = 0; i < 3; i++) f[i] = acesFitInv(Math.min(1.0164, f[i]));
     mul3(ACES_IN_INV, f, x);
     const k = 0.6 / P.exposure;
@@ -219,24 +222,25 @@ export function outputInverse(t, P) {
     x[0] = y[0] / P.exposure; x[1] = y[1] / P.exposure; x[2] = y[2] / P.exposure;
   }
   // 4. Newton on the exact forward (finite-difference Jacobian, clipped channels left alone)
-  const fx = [0, 0, 0], fh = [0, 0, 0], J = [[0, 0, 0], [0, 0, 0], [0, 0, 0]];
   for (let it = 0; it < 8; it++) {
     outputForward(x, P, fx);
-    const r = [fx[0] - t[0], fx[1] - t[1], fx[2] - t[2]];
-    for (let i = 0; i < 3; i++) if (t[i] >= 0.999 && fx[i] >= 0.9995) r[i] = 0;
+    for (let i = 0; i < 3; i++) r[i] = (t[i] >= 0.999 && fx[i] >= 0.9995) ? 0 : fx[i] - t[i];
     if (Math.abs(r[0]) + Math.abs(r[1]) + Math.abs(r[2]) < 1e-6) break;
     for (let j = 0; j < 3; j++) {
       const h = 1e-4 * Math.max(0.05, Math.abs(x[j]));
-      const xs = [x[0], x[1], x[2]];
+      xs[0] = x[0]; xs[1] = x[1]; xs[2] = x[2];
       xs[j] += h;
       outputForward(xs, P, fh);
       for (let i = 0; i < 3; i++) J[i][j] = (fh[i] - fx[i]) / h;
     }
-    for (let i = 0; i < 3; i++) if (t[i] >= 0.999 && fx[i] >= 0.9995) { J[i] = [i === 0 ? 1 : 0, i === 1 ? 1 : 0, i === 2 ? 1 : 0]; }
-    let Ji;
-    try { Ji = inv3(J); } catch (e) { break; }
-    if (!Ji.every((row) => row.every(Number.isFinite))) break;
-    const d = mul3(Ji, r, [0, 0, 0]);
+    for (let i = 0; i < 3; i++) {
+      if (t[i] >= 0.999 && fx[i] >= 0.9995) { J[i][0] = i === 0 ? 1 : 0; J[i][1] = i === 1 ? 1 : 0; J[i][2] = i === 2 ? 1 : 0; }
+    }
+    if (!inv3Into(J, Ji)) break;
+    let finite = true;
+    for (let i = 0; i < 3 && finite; i++) for (let j = 0; j < 3; j++) if (!Number.isFinite(Ji[i][j])) { finite = false; break; }
+    if (!finite) break;
+    mul3(Ji, r, d);
     x[0] -= d[0]; x[1] -= d[1]; x[2] -= d[2];
   }
   return x;
@@ -365,6 +369,10 @@ export class LampSystem {
       lift: [0, 0, 0], shadow: [1, 1, 1], highlight: [1, 1, 1] };
     this._sig = NaN;
     this.solves = 0;
+    /** The tokens as sRGB triples, and the solver's output scratch (a re-solve allocates nothing). */
+    this._tokRgb = {};
+    for (const id of LAMP_ORDER) this._tokRgb[id] = hexToRgb(LAMP_STATES[id].token);
+    this._x = [0, 0, 0];
     /** Solved lens HDR per state, and the blade colour (the dark token). */
     this.hdr = {};
     for (const id of LAMP_ORDER) this.hdr[id] = { r: 0, g: 0, b: 0 };
@@ -469,8 +477,10 @@ export class LampSystem {
     const sig = paramSig(P);
     if (!force && sig === this._sig) return false;
     this._sig = sig;
-    for (const id of LAMP_ORDER) {
-      const x = outputInverse(hexToRgb(LAMP_STATES[id].token), P);
+    const x = this._x;
+    for (let i = 0; i < LAMP_ORDER.length; i++) {
+      const id = LAMP_ORDER[i];
+      outputInverse(this._tokRgb[id], P, x);
       const h = this.hdr[id];
       h.r = x[0]; h.g = x[1]; h.b = x[2];
     }
