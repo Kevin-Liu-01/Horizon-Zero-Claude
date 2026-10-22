@@ -498,7 +498,7 @@ export function tailTipMesh() {
   g.add(foldedPart({
     metal: geos,
     accent: [new THREE.SphereGeometry(0.09, 8, 6).translate(0, 0, -1.35)],
-    color: 0x8f97a2, rough: 0.38, emissive: 0xff5a3c, intensity: 2, sensor: true,
+    color: 0x8f97a2, rough: 0.38, emissive: LAMP_CALM, intensity: 2, sensor: true,   // the lamp grammar drives it (was red 0xff5a3c)
   }));
   return noShadows(g);
 }

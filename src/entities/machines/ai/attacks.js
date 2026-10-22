@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { VFX_COLORS } from '../../../instruments/lib/vfx.js';
 import { attackTable, SCORING } from './tables.js';
 import { aiRandom } from './rng.js';
 
@@ -404,7 +405,7 @@ function volley(m, p) {
             a.hit = true;
             if (p.knock) m.knockbackPlayer(p.knock);
           }
-          m._arcFlash?.(p.color ?? 0xbfe8ff);
+          m._arcFlash?.(p.color ?? VFX_COLORS.bronzeChip);
         }
         if (pose) {
           // recoil: one kick per pulse, decaying across the burst

@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { installInstruments } from '../../instruments/registry.js';
+import { LampSystem } from '../../instruments/lamps.js';
 import { installMachineAI } from './ai/index.js';
 import { ECOSYSTEM } from './ai/tables.js';
 import { setAiRng, seededRng, aiRngSeeded } from './ai/rng.js';
@@ -52,13 +53,39 @@ const _frustum = new THREE.Frustum();
 const _projScreen = new THREE.Matrix4();
 const _sph = new THREE.Sphere(new THREE.Vector3(), 1);
 
+/**
+ * R34 (instruments-core W0b, `A90b-memory-attribution` with the role-based
+ * workload). `autorig.buildRig` leaves ONE closure on the machine,
+ * `machine._rot = (bone, axis, angle) => rig.space.rotLocal(...)`, and a V8
+ * closure keeps its whole enclosing scope alive: buildRig's `meshes` list (the
+ * cloned Meshes it REPLACED with SkinnedMeshes, now detached), its capsule
+ * segments and spec. Measured: 2 detached Meshes held per live auto-rigged
+ * machine (45 off-scene objects with 20 live Tillers). The same forward is
+ * rebuilt here over the rig alone, so buildRig's scope can be collected; the
+ * behaviour is identical (`_rot` is the anim registry's probe surface).
+ * A free function, so the new closure captures nothing but `rig`.
+ */
+function releaseBuildScope(m) {
+  const rig = m.rig;
+  if (!rig || !rig.space || typeof m._rot !== 'function') return;
+  m._rot = (bone, axis, angle) => rig.space.rotLocal(bone, axis, angle);
+}
+
 export class Machines {
   constructor(ctx) {
     this.ctx = ctx;
     this.list = [];
 
-    // AI services: stimulus bus, site lifecycle, squad doctrine
+    // AI services: stimulus bus, site lifecycle, squad doctrine, perception hooks
     installMachineAI(this);
+    /**
+     * THE LAMP GRAMMAR (instruments-core W0b, bible §7.2): every Instrument's
+     * iris lens and every beam are TWO instanced draws owned here
+     * (`src/instruments/lamps.js`). A kind registers its lens with
+     * `machine.addLamp(anchor, opts)`; `interpolate()` writes the instances once
+     * per rendered frame; `dispose()` frees both draws.
+     */
+    this.lamps = new LampSystem(ctx);
     // ...and the Round-4 expansion doctrine (one manager-side listener)
     installExpansionDoctrine(this);
     this._shots = [];      // recent shot origins (see shotOrigin())
@@ -180,6 +207,7 @@ export class Machines {
 
   _spawnCls(Cls, x, z, opts = {}) {
     const m = new Cls(this.ctx, this, { spawn: { x, z }, ...opts });
+    releaseBuildScope(m);
     this.list.push(m);
     // expansion kinds get their components + doctrine here, so a SITE RESPAWN
     // gets them back too (the site replays the same opts through `spawn`)
@@ -530,10 +558,25 @@ export class Machines {
     return this.stimulus.alarm(source, radius);
   }
 
+  /**
+   * Once per RENDERED frame (main.js calls every system's `interpolate` after
+   * the sim steps): the lamp instances follow their lenses. Allocation-free.
+   */
+  interpolate() {
+    this.lamps?.update();
+  }
+
+  /** Free the manager-owned GPU resources (the two lamp draws). */
+  dispose() {
+    this.lamps?.dispose();
+    this.lamps = null;
+  }
+
   update(dt, t) {
     const p = this.ctx.player;
-    // world stimuli (player footsteps), corpse lifecycle, squad doctrine
+    // world stimuli (player footsteps), perk/weather/Flag hooks, corpse lifecycle, squad doctrine
     this.stimulus.update(dt);
+    this.perception.update(dt);
     this.sites.update(dt);
     this.squads.update(dt);
 

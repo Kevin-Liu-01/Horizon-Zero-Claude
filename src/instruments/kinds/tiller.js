@@ -25,13 +25,22 @@ import { liftExtras, seedAuthoredWeights, weightAudit } from '../lib/generated.j
  * fidelity-only clauses (A-sil40 pair set, V26/V27 judging) report
  * SKIP-fixture. It is NEVER a legacy kind.
  *
- * MODEL LOCATION. W0a: `public/models/r5-poc/tiller.glb`, the proof's
- * generator output (untracked; present in the main tree). When pipeline
- * promotes the generator (`tools/build/instruments/gen-tiller.mjs`, W0b) this
- * row is re-pointed to its output in the same merge — one line, `spec.url`.
+ * MODEL LOCATION. `public/models/instruments/tiller.glb`, the output of
+ * pipeline's promoted generator (`tools/build/instruments/gen-tiller.mjs`,
+ * licence row `instrument-tiller`; byte-identical to the W0a POC copy under
+ * `public/models/r5-poc/`, which pipeline deletes at the W0 exit).
+ *
+ * THE LAMP (W0b, bible §7.2 / §7.4 "Weak point: drum lamp"). The lens dome sits
+ * in the theodolite drum at the front (generator socket `lens`, dome front at
+ * z 2.07 m, radius 0.185 m); its iris disc is registered with `addLamp` just in
+ * front of the dome and rides the head bone. The drum lamp is also the weak
+ * point: a precise hit darkens it for 6 s (`machine.lampDarkT`).
  */
 
-const URL = '/models/r5-poc/tiller.glb';
+const URL = '/models/instruments/tiller.glb';
+/** The iris disc: just in front of the lens dome (body space), and its radius. */
+const LAMP_AT = [0, 2.28, 2.085];
+const LAMP_R = 0.18;
 /** The generator's design height (`asset.extras.r5Size[1]`): scale 1, body space == generator space. */
 const HEIGHT = 2.6755;
 
@@ -51,15 +60,15 @@ export class Tiller extends ExpansionMachine {
       walkSpeed: 1.5, runSpeed: 6.0, turnRate: 1.5,
       sightRange: 34, hearRange: 24, eyeHeight: 1.7,
       attackRange: 3.2, bodyRadius: 1.15,
-      eyeCalm: '#F2EAD3',        // bible §7.2 calm "bone lamp" (LAMP_STATES lands in W0b)
       ...opts,
     });
     const entry = ctx.assets.models[this.modelKind];
     const S = entry.r5Sockets;
     this._seeded = seedAuthoredWeights(this);
 
-    this.addEye(this.body, S.lens[0], S.lens[1], S.lens[2] + 0.02, 0.26, 0.05, 0.5);
-    this.addWeakPoint('lamp', this.body, S.lantern[0], S.lantern[1], S.lantern[2], 0.28, 2.2);
+    // the drum lamp: iris + beam drawn by `machines.lamps` (one instanced draw each)
+    this.addLamp(LAMP_AT, { radius: LAMP_R });
+    this.addWeakPoint('lamp', this.body, S.lens[0], S.lens[1], S.lens[2], 0.26, 2.2);
     this.lootTable = rollLoot([{ id: 'metal-shards', min: 8, max: 14 }, { id: 'wire', min: 1, max: 2 }]);
 
     attachRigRuntime(this, { quantise: false });   // keep the generated palette

@@ -100,6 +100,7 @@ export const PERCEPTION = {
     targetEyeY: 1.2,     // LOS aims at the player's chest, not her feet
     tick: 0.1,           // perception tick (s)
     omni: null,          // { radius, part, weight, ignoreStealth } — TJ radar
+    flags: false,        // Round 5: going hostile BY SIGHT raises a Flag (bible §7.4 Sightline; `machines.perception`)
   },
 };
 

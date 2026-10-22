@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { LAMP_HEX } from '../../instruments/lamps.js';
 import { rollLoot } from './machine.js';
 import { coreMesh, pulseGlow } from './parts.js';
 import { buildRig, RIGS } from './autorig.js';
@@ -104,7 +105,7 @@ export class Corruptor extends ExpansionMachine {
 
     // the ONE species that opts out of the white-grey plate (roster §4)
     buildShell(this, CORRUPTOR_SHELL, {
-      rig: RIGS.corruptor, tint: 0x3a3c40, sensorColor: 0xff4a2a,
+      rig: RIGS.corruptor, tint: 0x3a3c40, sensorColor: LAMP_HEX.calm,   // the lamp grammar drives it (was 0xff4a2a)
     });
     attachRigRuntime(this);
     buildRig(this, RIGS.corruptor);

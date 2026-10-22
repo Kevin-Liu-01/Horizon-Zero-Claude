@@ -502,7 +502,7 @@ const LEGACY_PROBE_KINDS = ['scrapper', 'snapmaw'];
 /** Wall clock for one nested probe run (two page gates; ~60 s when healthy). */
 const PROBE_DEADLINE = 240000;
 
-export const GATES = [
+const W0A_GATES = [
   /* ---------------------------------------------------------------- */
   /* A-legacy-collapse (runner: node only, then probes in a copy)      */
   /* ---------------------------------------------------------------- */
@@ -793,13 +793,6 @@ export const GATES = [
   },
 ];
 
-/**
- * RUNNER GATES FIRST. The harness launches its own headless Chrome lazily, at
- * the first page gate; the two probes launch a Chrome of their own inside the
- * copy. Running every probe before any page gate keeps this lane at ONE live
- * Chrome at a time (plan §0 rule 8). Array.prototype.sort is stable.
- */
-GATES.sort((a, b) => (a.kind === 'runner' ? 0 : 1) - (b.kind === 'runner' ? 0 : 1));
 
 /* -------------------------------------------------------------------- */
 /* the drop-in probe: a throwaway kind module + its page assert          */
@@ -859,3 +852,1127 @@ const PROBE_GATES_SRC = `export const GATES = [{
   })()\`,
 }];
 `;
+
+/* ===================================================================== */
+/* ===================================================================== */
+/*  WAVE W0b — the lamp grammar, the perk + weather hooks, uv1, the VFX   */
+/*  palette, the memory bars on the role-based workload, the kind block   */
+/* ===================================================================== */
+/* ===================================================================== */
+/**
+ * W0b rows (plan §9 instruments-core):
+ *   A-lamp-states            rendered lamp pixels at 15 m, per state (kind-block builder)
+ *   A-lamp-canon-distance    every lamp / beam / scanner / compass-pip token >= 20 from canon (runner, static)
+ *   A-beams-one-draw         8 wary Tillers in fog: 1 beam draw; spawn/kill x3 + dispose to baseline
+ *   A-perception-weather     calima sight x0.5 ±5 %, trade 1.0, detectMul x0.5 probe
+ *   A-perk-hooks             detectMul / flagDuration / noise filter, each with its negative control (R31)
+ *   A-uv1-survives-fold      a generated GLB with a decal uv1 through rig/lod.js's fold
+ *   A-vfx-palette            every machine particle / glint emitter >= 15 from #38c6ff and #19ffd0
+ *   A90-rig-reclaim          (shadow, staged kinds) and A90-rig-reclaim-5of5 (5 fresh-page runs)
+ *   A90b-memory-attribution  (shadow, role-based herd workload, R34) and -3of3 (3 fresh-page runs)
+ *   A-kind-block-file        tools/gates.r5.kind-block.mjs exports the block; it runs green on the fixture
+ *   A37 / A39 / A43          must-stay-green rows re-staged on the Tiller fixture (herd role, R28)
+ *
+ * SHADOW IDS. Under gates-perf's registry (`gates.config.mjs` auto-discovers
+ * `tools/gates.r5.*.mjs`, `LANE_FILE_RE`) a row here shadows the carried row of
+ * the same id (plan §3.3). Under the Round-4 runner (this tree until gates-perf
+ * merges) the round4 lane files are merged BEFORE `--extra` and a duplicate id
+ * keeps the FIRST row, so the shadowed rows are exported as `<id>@ic` (the
+ * hero-body convention, `@hero`) and `--lane instruments-core` runs them.
+ */
+import { pathToFileURL } from 'url';
+
+const IS_REGISTRY = (() => {
+  try { return read('tools/gates.config.mjs').includes('LANE_FILE_RE'); } catch { return true; }
+})();
+export const shadowId = (id) => (IS_REGISTRY ? id : `${id}@ic`);
+
+/** Import the first module of `rels` that exists (round4 files move to tools/gates/archive/ at gates-perf's merge). */
+async function importFirst(rels) {
+  for (const r of rels) {
+    const abs = path.join(ROOT, r);
+    if (existsSync(abs)) {
+      try { return await import(pathToFileURL(abs).href); } catch { /* try the next */ }
+    }
+  }
+  return null;
+}
+
+const MEM = await importFirst(['tools/gates.round4.memory.mjs', 'tools/gates/archive/gates.round4.memory.mjs']);
+const MAI = await importFirst(['tools/gates.round4.machine-ai.mjs', 'tools/gates/archive/gates.round4.machine-ai.mjs']);
+const KB = await import(pathToFileURL(path.join(ROOT, 'tools/gates.r5.kind-block.mjs')).href);
+const COL = await import(pathToFileURL(path.join(ROOT, 'src/instruments/lib/color.js')).href);
+
+/** Where nested runs keep their reports (outside the tree, deleted afterwards). */
+function runsRoot() {
+  if (process.env.R5_SCRATCH) return path.join(process.env.R5_SCRATCH, 'ic-runs');
+  if (path.basename(ROOT) === 'tree') return path.join(path.dirname(ROOT), 'runs');
+  return path.join(os.tmpdir(), 'r5-ic-runs');
+}
+
+/**
+ * N FRESH-PAGE RUNS of one gate, in sequence, each its own runner process with
+ * its own browser (one Chrome at a time: runner rows run before this file's
+ * page rows, so the parent has not launched its own). Reports land in scratch,
+ * never over the tree's shots/gates/report.json, and are summarised here.
+ */
+async function nRuns(PORT, ids, n, tag, { lane = null, timeoutMs = 600000 } = {}) {
+  const runs = [];
+  const me = fileURLToPath(import.meta.url);
+  for (let k = 0; k < n; k++) {
+    const dir = path.join(runsRoot(), `${tag}-${process.pid}-${k}`);
+    rmSync(dir, { recursive: true, force: true });
+    mkdirSync(dir, { recursive: true });
+    const args = [path.join(ROOT, 'tools/gates.mjs'), '--port', String(PORT), '--extra', me];
+    if (lane) args.push('--lane', lane); else args.push('--only', ids.join(','));
+    const out = await new Promise((resolve) => {
+      const child = spawn(process.execPath, args, { cwd: dir, stdio: ['ignore', 'pipe', 'pipe'] });
+      const kill = () => { try { child.kill('SIGKILL'); } catch { /* */ } };
+      process.on('exit', kill);
+      let buf = '';
+      let timedOut = false;
+      const timer = setTimeout(() => { timedOut = true; try { child.kill('SIGTERM'); } catch { /* */ } }, timeoutMs);
+      child.stdout.on('data', (d) => { buf += d; });
+      child.stderr.on('data', (d) => { buf += d; });
+      child.on('close', (code) => { clearTimeout(timer); process.removeListener('exit', kill); resolve({ code, buf, timedOut }); });
+    });
+    let report = null;
+    try { report = JSON.parse(readFileSync(path.join(dir, 'shots/gates/report.json'), 'utf8')); } catch { /* */ }
+    const results = (report?.results || report?.gates || []).map((r) => ({
+      id: r.id, status: r.status, ms: r.ms, error: r.error, consoleErrors: r.consoleErrors,
+      detail: r.detail,
+    }));
+    runs.push({ run: k + 1, exit: out.code, timedOut: out.timedOut || undefined, results,
+      tail: out.buf.split('\n').filter((l) => /^\[(PASS|FAIL|PENDING|ERROR|retry)/.test(l)).map((l) => l.slice(0, 300)) });
+    rmSync(dir, { recursive: true, force: true });
+  }
+  return runs;
+}
+
+/* ------------------------------------------------------------------ */
+/* A-lamp-canon-distance — static (node)                               */
+/* ------------------------------------------------------------------ */
+const CANON = ['#38c6ff', '#ffb31f', '#ff2413', '#19ffd0', '#9B6BFF'];
+const LAMP_WORDS = /lamp|beam|sensor|\beye|scanner|sighting|alidade|compass|\bpip|iris|\blens/i;
+
+/** Hex / rgb() colour literals on a line, as '#rrggbb'. */
+function colourLiterals(line) {
+  const out = [];
+  for (const m of line.matchAll(/(?:#|0x)([0-9a-fA-F]{6})\b/g)) out.push('#' + m[1].toLowerCase());
+  for (const m of line.matchAll(/rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/g)) {
+    out.push('#' + [m[1], m[2], m[3]].map((v) => (+v).toString(16).padStart(2, '0')).join(''));
+  }
+  return out;
+}
+
+/** Code lines with comments removed, line numbers kept (JS and CSS). */
+function codeLines(text, css) {
+  const lines = text.split('\n');
+  let inBlock = false;
+  return lines.map((l) => {
+    let s = l;
+    if (inBlock) {
+      const e = s.indexOf('*/');
+      if (e < 0) return '';
+      s = s.slice(e + 2); inBlock = false;
+    }
+    s = s.replace(/\/\*.*?\*\//g, '');
+    const b = s.indexOf('/*');
+    if (b >= 0) { s = s.slice(0, b); inBlock = true; }
+    if (!css) {
+      const c = s.search(/(^|[^:'"\\])\/\//);
+      if (c >= 0) s = s.slice(0, c + (s[c] === '/' ? 0 : 1));
+    }
+    return s;
+  });
+}
+
+const ownerOf = (f) => (/^src\/(instruments|entities\/machines)\//.test(f) ? 'instruments-core'
+  : /^src\/ui\//.test(f) ? 'shell-ui (W2)' : /^src\/style\.css$|^index\.html$/.test(f) ? 'brand / shell-ui'
+    : /^src\/combat\//.test(f) ? 'combat-kit (W2)' : 'other');
+
+async function canonDistanceStatic() {
+  const L = await import(pathToFileURL(path.join(ROOT, 'src/instruments/lamps.js')).href);
+  const rows = [];
+  const grade = (source, name, hex, graded = true, note = undefined) => {
+    const ds = CANON.map((c) => +COL.deltaE(hex, c).toFixed(1));
+    const min = Math.min(...ds);
+    rows.push({ source, name, hex, minDE: min, nearest: CANON[ds.indexOf(min)], graded, ok: min >= 20, note });
+  };
+  // 1. the published tokens (instruments-core's contract surface)
+  for (const s of L.LAMP_ORDER) grade('lamps.js LAMP_STATES', s, L.LAMP_STATES[s].token);
+  for (const s of L.LAMP_ORDER) grade('lamps.js COMPASS_PIP', s, L.COMPASS_PIP[s].color);
+  for (const [k, v] of Object.entries(L.SCANNER_TOKENS)) grade('lamps.js SCANNER_TOKENS', k, v);
+  const lampsSrc = read('src/instruments/lamps.js');
+  const beamFromTokens = /this\.lin\[id\][\s\S]{0,40}|const c = hexToRgb\(LAMP_STATES\[id\]\.token\)/.test(lampsSrc)
+    && /const lc = this\.lin\[s\]/.test(lampsSrc);
+  for (const s of L.LAMP_ORDER) grade('lamps.js beam tint (LampSystem.lin <- LAMP_STATES)', s, L.LAMP_STATES[s].token);
+  // 2. every colour literal in a lamp / beam / sensor / eye / scanner / sighting / compass / pip context
+  const files = walkAll('src').filter((f) => /\.(js|css)$/.test(f)).concat(existsSync(path.join(ROOT, 'index.html')) ? ['index.html'] : []);
+  const scanned = [];
+  for (const f of files) {
+    const css = /\.css$/.test(f);
+    const lines = codeLines(read(f), css);
+    let selector = '';
+    lines.forEach((l, i) => {
+      if (css && /\{/.test(l)) selector = l;
+      const ctx = css ? selector + ' ' + l : l;
+      const fileCtx = /focus\.(js|css)$|sighting/.test(f);
+      if (!LAMP_WORDS.test(ctx) && !fileCtx) return;
+      if (/LAMP_CANON\s*=/.test(l)) return;               // the canon reference list itself
+      if (/shellMaterials\(sensorColor = /.test(l)) return;  // the frozen shells.js default: rule 3 below
+      for (const m of l.matchAll(/(?:#|0x)([0-9a-fA-F]{6})\b|rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/g)) {
+        const hex = m[1] ? '#' + m[1].toLowerCase() : '#' + [m[2], m[3], m[4]].map((v) => (+v).toString(16).padStart(2, '0')).join('');
+        const owner = ownerOf(f);
+        const calimaToken = /--cal-(lamp|beam|scanner|sighting|pip|compass)|LAMP_|SCANNER_|COMPASS_PIP/.test(l);
+        // the key the literal is bound to: a sensor PART's body colour is not its lamp colour
+        const key = (/(\w+)\s*[:=]\s*$/.exec(l.slice(0, m.index)) || [])[1] || '';
+        const bodyOfSensorPart = /^(color|metal|shell|trim|base|tint)$/.test(key) && /emissive|\btip\b|accent/.test(l);
+        const graded = !bodyOfSensorPart && (owner === 'instruments-core' || calimaToken);
+        scanned.push({ f, line: i + 1, hex, key });
+        grade(`${f}:${i + 1}`, l.trim().slice(0, 80), hex, graded,
+          graded ? undefined : bodyOfSensorPart ? `body colour (${key}) of a sensor part; its lamp colour is the emissive on the same line, graded`
+            : `${owner}: Round-4 UI colour listed, not graded — replaced by its owner (shell-ui W2 compass pips in COMPASS_PIP + iris shape; Sighting replaces Focus)`);
+      }
+    });
+  }
+  // 3. the frozen rig/shells.js sensor default: graded unless it is dead code
+  const shellsDefault = /shellMaterials\(sensorColor = 0x([0-9a-f]{6})\)/i.exec(read('src/entities/machines/rig/shells.js'));
+  const callers = [];
+  for (const f of walk('src')) {
+    const lines = codeLines(read(f), false);
+    lines.forEach((l, i) => { if (/\bbuildShell\(/.test(l) && !/export function buildShell/.test(l)) callers.push({ f, line: i + 1, passes: /sensorColor/.test(lines.slice(i, i + 3).join(' ')) }); });
+  }
+  const shellMatCalls = walk('src').flatMap((f) => codeLines(read(f), false).map((l, i) => ({ f, line: i + 1, l }))
+    .filter((x) => /\bshellMaterials\(/.test(x.l) && !/export function shellMaterials/.test(x.l)));
+  const dead = callers.length > 0 && callers.every((c) => c.passes)
+    && shellMatCalls.every((x) => /shellMaterials\(opts\.sensorColor\)/.test(x.l));
+  if (shellsDefault) {
+    grade('src/entities/machines/rig/shells.js shellMaterials(sensorColor = ...) default', 'sensorColor default', '#' + shellsDefault[1], !dead,
+      dead ? `frozen file outside the W0b grant; DEAD default — every buildShell caller (${callers.length}) passes sensorColor (the calm lamp token) and shellMaterials is only called with opts.sensorColor` : undefined);
+  }
+  // 4. no lamp-state token within ΔE 10 of a scanner highlight token
+  const highlight = [];
+  for (const s of L.LAMP_ORDER) for (const h of L.SCANNER_HIGHLIGHTS) {
+    highlight.push({ lamp: s, highlight: h, dE: +COL.deltaE(L.LAMP_STATES[s].token, h).toFixed(1) });
+  }
+  return {
+    sharmaMaxErr: COL.sharmaCheck(), beamFromTokens,
+    graded: rows.filter((r) => r.graded), listed: rows.filter((r) => !r.graded),
+    highlight, shellsCallers: callers, filesScanned: files.length, literalsInContext: scanned.length,
+  };
+}
+
+/* ------------------------------------------------------------------ */
+/* A-vfx-palette — static (node)                                       */
+/* ------------------------------------------------------------------ */
+const BLUES = ['#38c6ff', '#19ffd0'];
+async function vfxPaletteStatic() {
+  const files = [...walk('src/entities/machines'), ...walk('src/instruments')];
+  const hits = [];
+  const deadDefaults = [];
+  let n = 0;
+  for (const f of files) {
+    const lines = codeLines(read(f), false);
+    lines.forEach((l, i) => {
+      if (/LAMP_CANON\s*=/.test(l)) return;
+      if (/shellMaterials\(sensorColor = /.test(l)) { deadDefaults.push({ f, line: i + 1, text: l.trim() }); return; }
+      for (const hex of colourLiterals(l)) {
+        n++;
+        const d = Math.min(...BLUES.map((b) => COL.deltaE(hex, b)));
+        if (d < 15) hits.push({ f, line: i + 1, hex, minDE: +d.toFixed(1), text: l.trim().slice(0, 90) });
+      }
+    });
+  }
+  const fx = read('src/entities/machines/rig/fx.js');
+  const sparkDefault = /\n\s*spark\(x, y, z, scale = [\d.]+, color = ([^,]+),/.exec(fx)?.[1] || null;
+  const arcDefault = /machine\._arcFlash = function \(color = ([^)]+)\)/.exec(fx)?.[1] || null;
+  // out of lane, listed (combat-kit W2 recolours the elemental arrows)
+  const listed = [];
+  for (const f of walk('src/combat')) {
+    codeLines(read(f), false).forEach((l, i) => {
+      for (const hex of colourLiterals(l)) {
+        const d = Math.min(...BLUES.map((b) => COL.deltaE(hex, b)));
+        if (d < 15) listed.push({ f, line: i + 1, hex, minDE: +d.toFixed(1), owner: 'combat-kit (W2)' });
+      }
+    });
+  }
+  // the frozen rig/shells.js sensor default (a lamp colour, not an emitter): it must be DEAD code
+  const canon = await canonDistanceStatic();
+  const shellsRow = canon.listed.find((r) => /shells\.js shellMaterials/.test(r.source));
+  const deadOk = deadDefaults.length <= 1 && !!shellsRow && /DEAD default/.test(shellsRow.note || '');
+  return { filesScanned: files.length, literals: n, hits, sparkDefault, arcDefault, listedOutOfLane: listed,
+    deadDefaults: deadDefaults.map((d) => ({ ...d, dead: deadOk, note: shellsRow?.note })), deadDefaultsOk: deadOk };
+}
+
+/* ------------------------------------------------------------------ */
+/* A-uv1-survives-fold — the generated GLB (node)                       */
+/* ------------------------------------------------------------------ */
+/**
+ * A tiny generated GLB: two meshes share a DECAL material whose base-colour map
+ * reads TEXCOORD_1 (three: `texture.channel === 1`, i.e. the group WANTS uv1),
+ * two more share a PLAIN material that samples nothing on uv1 (the group does
+ * not want it). Every mesh carries TEXCOORD_0 and TEXCOORD_1 with distinct,
+ * non-round values. Built with gltf-transform, unquantised, base64 to the page.
+ */
+async function uv1Glb() {
+  const { Document, NodeIO } = await import('@gltf-transform/core');
+  const doc = new Document();
+  const buf = doc.createBuffer();
+  // a 1 x 1 PNG (the decal atlas stand-in)
+  const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=', 'base64');
+  const tex = doc.createTexture('decal').setImage(png).setMimeType('image/png');
+  const decal = doc.createMaterial('uv1-decal').setBaseColorTexture(tex);
+  decal.getBaseColorTextureInfo().setTexCoord(1);
+  const plain = doc.createMaterial('uv1-plain').setBaseColorFactor([0.66, 0.6, 0.5, 1]);
+  const scene = doc.createScene('probe');
+  const src = {};
+  const mk = (name, mat, ox, seed) => {
+    const P = [], N = [], U0 = [], U1 = [], I = [];
+    // a 4 x 4 quad grid (25 verts, 32 tris)
+    for (let j = 0; j <= 4; j++) for (let i = 0; i <= 4; i++) {
+      P.push(ox + i * 0.1, j * 0.1, 0); N.push(0, 0, 1);
+      U0.push(i / 4, j / 4);
+      U1.push(+(0.123456 + seed * 0.071 + i * 0.0371 + j * 0.0013).toFixed(6), +(0.654321 - seed * 0.031 + j * 0.0419 - i * 0.0007).toFixed(6));
+    }
+    for (let j = 0; j < 4; j++) for (let i = 0; i < 4; i++) { const a = j * 5 + i; I.push(a, a + 1, a + 6, a, a + 6, a + 5); }
+    const acc = (arr, type, T) => doc.createAccessor().setArray(new T(arr)).setType(type).setBuffer(buf);
+    const prim = doc.createPrimitive()
+      .setAttribute('POSITION', acc(P, 'VEC3', Float32Array)).setAttribute('NORMAL', acc(N, 'VEC3', Float32Array))
+      .setAttribute('TEXCOORD_0', acc(U0, 'VEC2', Float32Array)).setAttribute('TEXCOORD_1', acc(U1, 'VEC2', Float32Array))
+      .setIndices(acc(I, 'SCALAR', Uint16Array)).setMaterial(mat);
+    const mesh = doc.createMesh(name).addPrimitive(prim);
+    scene.addChild(doc.createNode(name).setMesh(mesh));
+    // the de-indexed uv1 the fold must reproduce (merge de-indexes)
+    const de = [];
+    for (const k of I) de.push(U1[k * 2], U1[k * 2 + 1]);
+    src[name] = de;
+  };
+  mk('decal-a', decal, 0, 1); mk('decal-b', decal, 0.6, 2); mk('plain-a', plain, 1.2, 3); mk('plain-b', plain, 1.8, 4);
+  const glb = await new NodeIO().writeBinary(doc);
+  return { b64: Buffer.from(glb).toString('base64'), bytes: glb.byteLength, src };
+}
+
+/* the W0b static halves, computed only when one of their rows runs */
+const STATIC_B = {
+  vfx: wanted('A-vfx-palette') ? await vfxPaletteStatic() : null,
+  uv1: wanted('A-uv1-survives-fold') ? await uv1Glb() : null,
+};
+export { canonDistanceStatic, vfxPaletteStatic, uv1Glb };
+
+/* ------------------------------------------------------------------ */
+/* page asserts                                                        */
+/* ------------------------------------------------------------------ */
+const HERD = { role: 'herd', fixture: true };
+const KP = KB.KIND_PRELUDE(HERD);
+
+/** A machine of KIND whose body holds still while its OWN perception tick runs (staging). */
+const PERCEPTION_ONLY = `
+  function perceptionOnly(m) {
+    if (!m._frozenByGate) m._frozenByGate = m.update;
+    m.update = (dt) => { if (m._disposed || !m.alive) return; m._stateT += dt; m._perceive(dt); };
+  }
+  /** A heading from m with clear sight (terrain + props) out to d metres. */
+  function clearHeading(m, d) {
+    const T = __C.terrain, P = m.ai.perception;
+    for (let k = 0; k < 24; k++) {
+      const h = k * Math.PI / 12 + 0.11;
+      let ok = true;
+      for (let s = 2; s <= d && ok; s += 1) {
+        const x = m.position.x + Math.sin(h) * s, z = m.position.z + Math.cos(h) * s;
+        if (!P.hasLOS({ x, y: T.getHeight(x, z), z })) ok = false;
+      }
+      if (ok) return h;
+    }
+    return null;
+  }
+  function placeAt(m, h, d) {
+    const p = __C.player, T = __C.terrain;
+    const x = m.position.x + Math.sin(h) * d, z = m.position.z + Math.cos(h) * d;
+    p.position.set(x, T.getHeight(x, z), z);
+    p.velocity?.set(0, 0, 0);
+    p._snapToGround?.();
+    p.moveSpeed = 0;
+    if (p.crouching) p.setCrouch(false);
+    return p;
+  }
+  const key = (code, down) => window.dispatchEvent(new KeyboardEvent(down ? 'keydown' : 'keyup', { code, key: code.replace('Key', '').toLowerCase(), bubbles: true }));
+  /** Did the EMITTER chain run through gate code? Frame 0 is the gate's own listener: skip it. */
+  const fromTools = (st) => (st || '').split('\\n').slice(2).some((l) => /pptr:|__puppeteer|tools\\/gates|evaluation_script/.test(l));
+`;
+
+const A_BEAMS_ONE_DRAW = `(async () => {
+  ${KP}
+  if (!KIND) return skipNoKind();
+  const E = __C.engine, R = E.renderer, env = __C.environment, cam = __C.camera, p = __C.player;
+  const L = __M.lamps;
+  if (!L) return { pass: false, detail: 'machines.lamps is not installed' };
+  E.setDynamicResolution?.(false);
+  const matCensus = () => { const s = new Set(); __C.scene.traverse(o => { const m = o.material; if (Array.isArray(m)) m.forEach(x => s.add(x)); else if (m) s.add(m); }); return s.size; };
+  // calm everything that is not ours, and let the deferred uploads settle
+  for (const o of __M.list) { if (o.alive && o.state !== 'patrol') { try { park(o); } catch (e) { /* */ } } }
+  freezeAll([]);
+  env.setWeather('rain', 0.05);                        // aerial-fog density x2.55 > 1.2
+  await wait(1800);
+  const spot = flatSpot(30, 60);
+  let base = null;
+  p._updateCamera = () => {}; if (p.model) p.model.visible = false;
+  const frame = { beamDraws: [], beamCount: [], calls: [] };
+  const hook = () => { frame.beamDraws.push(L.beamDraws); frame.beamCount.push(L.beamCount); frame.calls.push(R.info.render.calls); };
+  const grabFrames = async (n) => { frame.beamDraws.length = 0; frame.beamCount.length = 0; frame.calls.length = 0;
+    E.onAfterRender.push(hook); const f0 = E.frames; while (E.frames - f0 < n) await wait(16);
+    const i = E.onAfterRender.indexOf(hook); if (i >= 0) E.onAfterRender.splice(i, 1);
+    return { beamDraws: frame.beamDraws.slice(), beamCount: frame.beamCount.slice(), calls: frame.calls.slice() }; };
+  const med = (a) => { const s = a.slice().sort((x, y) => x - y); return s[s.length >> 1]; };
+  const cycles = [];
+  let measure = null;
+  // cycle 0 is the WARM cycle (first draw of the kind at this spot, the rain's own buffers, the
+  // measurement); the baseline is taken after it, then three spawn/kill/dispose cycles are graded
+  for (let c = 0; c < 4; c++) {
+    if (c === 1) { await wait(1200); base = { geo: R.info.memory.geometries, tex: R.info.memory.textures, mats: matCensus(), records: L.records.length,
+      lampMesh: L.lampMesh.uuid, beamMesh: L.beamMesh.uuid, lampGeo: L.lampMesh.geometry.uuid, beamGeo: L.beamMesh.geometry.uuid }; }
+    const ms = [];
+    for (let i = 0; i < 8; i++) {
+      const a = i / 8 * Math.PI * 2;
+      const m = stageKind(spot.x + Math.sin(a) * 7, spot.z + Math.cos(a) * 7, { route: [new V(spot.x + Math.sin(a) * 7, 0, spot.z + Math.cos(a) * 7)] });
+      if (m) ms.push(m);
+    }
+    await wait(1600);
+    for (const m of ms) {
+      thaw(m);
+      const a = Math.atan2(m.position.x - spot.x, m.position.z - spot.z);
+      park(m, a);
+      m.forceState('search');                          // wary: the beam sweeps toward the stimulus
+      m.lastKnown.set(m.position.x + Math.sin(a) * 9, m.position.y, m.position.z + Math.cos(a) * 9);
+      freezeOne(m);
+    }
+    if (c === 0) {
+      cam.position.set(spot.x, __C.terrain.getHeight(spot.x, spot.z) + 9, spot.z + 26);
+      cam.lookAt(spot.x, __C.terrain.getHeight(spot.x, spot.z) + 1.5, spot.z);
+      cam.updateMatrixWorld();
+      await wait(800);
+      const wary = await grabFrames(40);
+      // the same frozen frame with the eight in calm: the beam owner's draws are the difference
+      for (const m of ms) { thaw(m); park(m, m.heading); freezeOne(m); }
+      await wait(600);
+      const calm = await grabFrames(40);
+      measure = {
+        lampsWary: ms.filter(m => m.lamp && m.lamp.state === 'wary').length,
+        beamDrawsPerFrame: { min: Math.min(...wary.beamDraws), max: Math.max(...wary.beamDraws), median: med(wary.beamDraws) },
+        beamInstancesPerFrame: { min: Math.min(...wary.beamCount), max: Math.max(...wary.beamCount) },
+        callsWaryMedian: med(wary.calls), callsCalmMedian: med(calm.calls),
+        attributedBeamDraws: med(wary.calls) - med(calm.calls),
+        calmBeamDraws: Math.max(...calm.beamDraws), calmBeamInstances: Math.max(...calm.beamCount),
+        fogK: L.fogK, frames: wary.beamDraws.length,
+      };
+    }
+    // kill, run the corpse lifecycle, dispose
+    for (const m of ms) {
+      thaw(m);
+      let mesh = null; m.root.traverse(o => { if (!mesh && o.isMesh) mesh = o; });
+      try { m.takeDamage({ point: m.position.clone(), object: mesh, impact: 1e6, tear: 0, element: 'none', elementAmount: 0, dir: { x: 0, y: 0, z: 1 }, type: 'hunter', baseDamage: 1e6 }); } catch (e) { /* */ }
+      if (m.alive) { try { m._die(); } catch (e) { /* */ } }
+    }
+    await wait(800);
+    for (const m of ms) __M.sites.dispose(m);
+    await wait(500);
+    cycles.push({ cycle: c === 0 ? 'warm' : c, spawned: ms.length, recordsAfter: L.records.length, geo: R.info.memory.geometries, tex: R.info.memory.textures, mats: matCensus() });
+  }
+  await wait(1500);
+  const after = { geo: R.info.memory.geometries, tex: R.info.memory.textures, mats: matCensus(), records: L.records.length,
+    lampMesh: L.lampMesh.uuid, beamMesh: L.beamMesh.uuid, lampGeo: L.lampMesh.geometry.uuid, beamGeo: L.beamMesh.geometry.uuid };
+  env.setWeather('clear', 0.05);
+  const checks = {
+    eightWaryInFog: !!measure && measure.beamInstancesPerFrame.min === 8 && measure.fogK > 1.2,
+    beamDrawsExactlyOne: !!measure && measure.beamDrawsPerFrame.min === 1 && measure.beamDrawsPerFrame.max === 1,
+    attributedDrawsOne: !!measure && measure.attributedBeamDraws === 1,
+    noBeamsInCalm: !!measure && measure.calmBeamInstances === 0 && measure.calmBeamDraws === 0,
+    threeCycles: cycles.length === 4 && cycles.every(c => c.spawned === 8),
+    geometriesBaseline: after.geo <= base.geo,
+    materialsBaseline: after.mats <= base.mats,
+    texturesBaseline: after.tex <= base.tex,
+    lampRecordsBaseline: after.records === base.records,
+    sameTwoDraws: after.lampMesh === base.lampMesh && after.beamMesh === base.beamMesh && after.lampGeo === base.lampGeo && after.beamGeo === base.beamGeo,
+  };
+  return { pass: Object.values(checks).every(Boolean), detail: { kind: KIND, checks, measure, base, after, cycles } };
+})()`;
+
+const A_PERCEPTION_WEATHER = `(async () => {
+  ${KP}
+  ${PERCEPTION_ONLY}
+  if (!KIND) return skipNoKind();
+  const env = __C.environment, H = __M.perception, T = __C.terrain;
+  if (!H) return { pass: false, detail: 'machines.perception is not installed' };
+  const w0 = env.weather;
+  freezeAll([]);
+  let m = null, h = null;
+  for (let tries = 0; tries < 6 && h === null; tries++) {
+    const spot = flatSpot(30 + tries * 15, 90);
+    if (m) __M.sites.dispose(m);
+    m = stageKind(spot.x, spot.z, { route: [new V(spot.x, 0, spot.z)] });
+    if (!m) return { pass: null, detail: 'SKIP: could not spawn ' + KIND };
+    await wait(1200);
+    thaw(m); park(m); perceptionOnly(m);
+    h = clearHeading(m, 46);
+  }
+  if (h === null) return { pass: null, detail: 'SKIP: no 46 m clear sightline found for the staged ' + KIND };
+  m.heading = h; m.root.rotation.y = h; m.scanOffset = 0;
+  m.ai.perception.cfg = { ...m.ai.perception.cfg };     // (a per-machine view; the shared row is not edited)
+  m.ai.perception.cfg.scanSweep = 0;                      // the cone holds dead ahead while it is measured
+  const stage = (name) => {
+    if ((env.weatherStates || []).includes(name)) { env.setWeather(name, 0.05); return 'setWeather(' + name + ')'; }
+    env.weather = name;
+    return 'environment.weather = ' + name + ' (the environment has no ' + name + ' state until world-sky W1, E12; the perception hook reads the weather NAME per bible §2.3)';
+  };
+  async function seesAt(d) {
+    placeAt(m, h, d);
+    m.suspicion = 0;
+    await simSleep(0.4);
+    const v = m.ai.perception.visible;
+    m.suspicion = 0;
+    return v;
+  }
+  async function range() {
+    if (!(await seesAt(3))) return null;
+    let lo = 3, hi = 46;
+    if (await seesAt(hi)) return hi;
+    for (let i = 0; i < 9; i++) { const mid = (lo + hi) / 2; if (await seesAt(mid)) lo = mid; else hi = mid; }
+    return +((lo + hi) / 2).toFixed(2);
+  }
+  env.setTime?.(13);
+  const how = {};
+  how.trade = stage('trade'); await wait(400);
+  const scaleTrade = H.sightScale;
+  const rTrade = await range();
+  how.calima = stage('calima'); await wait(400);
+  const scaleCalima = H.sightScale;
+  const rCalima = await range();
+  how.fogbank = stage('fogbank'); await wait(300);
+  const rFog = await range();
+  how.back = stage('trade'); await wait(300);
+  const rTrade2 = await range();
+  env.setTime?.(23); await wait(600);
+  const rNight = await range();
+  const nightScale = H.sightScale;
+  env.setTime?.(13); await wait(400);
+  // the detectMul hook scales the fill rate (x0.5 probe), calm, 20 m dead ahead
+  async function fillAt20(mul) {
+    H.detectMul = mul;
+    placeAt(m, h, 20);
+    const xs = [];
+    await simSleep(1.6, () => { if (m.detectFill > 0) xs.push(m.detectFill); m.suspicion = 0; });
+    H.detectMul = 1;
+    return xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : 0;
+  }
+  const f1 = await fillAt20(1), fH = await fillAt20(0.5), f1b = await fillAt20(1);
+  if ((env.weatherStates || []).includes(w0)) env.setWeather(w0, 0.05); else env.weather = w0;
+  const ratio = rTrade && rCalima ? rCalima / rTrade : null;
+  const checks = {
+    tradeIsSightRange: rTrade !== null && Math.abs(rTrade / m.sightRange - 1) <= 0.05,
+    calimaHalf: ratio !== null && Math.abs(ratio - 0.5) <= 0.025,
+    fogbankHalf: rTrade && rFog ? Math.abs(rFog / rTrade - 0.5) <= 0.025 : false,
+    tradeRestored: rTrade2 !== null && Math.abs(rTrade2 / rTrade - 1) <= 0.03,
+    scaleReadout: scaleTrade === 1 && scaleCalima === 0.5,
+    detectMulHalvesFill: f1 > 0 && Math.abs(fH / ((f1 + f1b) / 2) - 0.5) <= 0.025,
+  };
+  return { pass: Object.values(checks).every(Boolean), detail: {
+    kind: KIND, checks, sightRangeM: m.sightRange,
+    measuredRangeM: { trade: rTrade, calima: rCalima, fogbank: rFog, tradeAgain: rTrade2, night: rNight },
+    calimaOverTrade: ratio === null ? null : +ratio.toFixed(3), nightOverTrade: rTrade && rNight ? +(rNight / rTrade).toFixed(3) : null,
+    sightScale: { trade: scaleTrade, calima: scaleCalima, night: +nightScale.toFixed(3) },
+    staging: how,
+    detectMulProbe: { fill1: +f1.toFixed(4), fillHalf: +fH.toFixed(4), fill1again: +f1b.toFixed(4), ratio: f1 ? +(fH / ((f1 + f1b) / 2)).toFixed(3) : null },
+    clock: 'SIM seconds; range found by bisection to 0.08 m, the player standing dead ahead in the open, the machine perception-only (its own tick, body still)',
+  } };
+})()`;
+
+const A_PERK_HOOKS = `(async () => {
+  ${KP}
+  ${PERCEPTION_ONLY}
+  if (!KIND) return skipNoKind();
+  const H = __M.perception, S = __M.stimulus, ev = __C.events, p = __C.player, T = __C.terrain;
+  if (!H || typeof S.addNoiseFilter !== 'function') return { pass: false, detail: { verdict: 'hooks not published', perception: !!H, addNoiseFilter: typeof S.addNoiseFilter } };
+  const shape = {
+    detectMul: H.detectMul, flagDuration: H.flagDuration, dustSight: H.dustSight,
+    flagPlayer: typeof H.flagPlayer, addDustCloud: typeof H.addDustCloud, outlined: typeof H.outlined,
+    addNoiseFilter: typeof S.addNoiseFilter, dustOccludedField: __M.list.every(m => 'dustOccluded' in m),
+  };
+  freezeAll([]);
+  // ---------- 1. detectMul: the calm fill rate at 20 m (and hostile unchanged)
+  let m = null, h = null;
+  for (let tries = 0; tries < 6 && h === null; tries++) {
+    const spot = flatSpot(30 + tries * 15, 90);
+    if (m) __M.sites.dispose(m);
+    m = stageKind(spot.x, spot.z, { route: [new V(spot.x, 0, spot.z)] });
+    if (!m) return { pass: null, detail: 'SKIP: could not spawn ' + KIND };
+    await wait(1200);
+    thaw(m); park(m); perceptionOnly(m);
+    h = clearHeading(m, 32);
+  }
+  if (h === null) return { pass: null, detail: 'SKIP: no clear 32 m sightline for the staged ' + KIND };
+  m.heading = h; m.root.rotation.y = h;
+  m.ai.perception.cfg = { ...m.ai.perception.cfg, scanSweep: 0 };
+  async function fill(mul, hostile) {
+    H.detectMul = mul;
+    if (hostile) { m.state = 'attack'; } else { m.state = 'patrol'; }
+    placeAt(m, h, 20);
+    const xs = [];
+    await simSleep(1.6, () => { if (m.detectFill > 0) xs.push(m.detectFill); m.suspicion = hostile ? 1 : 0; });
+    H.detectMul = 1;
+    return xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : 0;
+  }
+  const calm1 = await fill(1, false), calmHalf = await fill(0.5, false), calm1b = await fill(1, false);
+  const host1 = await fill(1, true), hostHalf = await fill(0.5, true);
+  const dm = {
+    calm: { without: +((calm1 + calm1b) / 2).toFixed(4), with: +calmHalf.toFixed(4), ratio: +(calmHalf / ((calm1 + calm1b) / 2)).toFixed(3) },
+    hostile: { without: +host1.toFixed(4), with: +hostHalf.toFixed(4), ratio: host1 ? +(hostHalf / host1).toFixed(3) : null },
+  };
+  m.state = 'patrol';
+  __M.sites.dispose(m);
+  // ---------- 2. flagDuration: a flag-capable machine sees her and goes hostile; the Flag lasts flagDuration
+  const spot2 = flatSpot(40, 90);
+  const flagger = stageKind(spot2.x, spot2.z, { route: [new V(spot2.x, 0, spot2.z)] });
+  const others = [];
+  for (let i = 0; i < 3; i++) others.push(stageKind(spot2.x + 18 + i * 6, spot2.z - 12, { route: [new V(spot2.x + 18 + i * 6, 0, spot2.z - 12)] }));
+  await wait(1500);
+  if (!flagger || others.some(o => !o)) return { pass: null, detail: 'SKIP: could not stage the flag set' };
+  const set = [flagger, ...others];
+  flagger.flagsOnSight = true;           // staging: the sentry role (Plumb, W1) carries this in its table row
+  for (const o of set) { thaw(o); park(o); }
+  const fh = clearHeading(flagger, 16);
+  // the three recipients face AWAY from where she will stand, so only the Flag can send them
+  const herX = () => flagger.position.x + Math.sin(fh) * 12, herZ = () => flagger.position.z + Math.cos(fh) * 12;
+  if (fh === null) return { pass: null, detail: 'SKIP: no clear sightline for the flagging machine' };
+  const flagRun = async (dur) => {
+    for (const o of set) { thaw(o); park(o, o === flagger ? fh : Math.atan2(o.position.x - herX(), o.position.z - herZ())); o.flagMark = null; }
+    if (dur !== null) H.flagDuration = dur;
+    const rec = { raised: null, ended: null, stacks: [], recipients: null, after: null };
+    const onF = (e) => { rec.raised = H.clock; rec.stacks.push(new Error().stack); };
+    const onE = (e) => { rec.ended = H.clock; rec.lasted = e.lasted; };
+    ev.on('flagged', onF); ev.on('flag-ended', onE);
+    // she stands in the open 12 m in front of it: its own senses raise the Flag
+    placeAt(flagger, fh, 12);
+    p.health = p.maxHealth;
+    const w0 = performance.now();
+    while (rec.raised === null && performance.now() - w0 < 15000) { await wait(50); p.health = p.maxHealth; }
+    // she leaves (input: jog away for 0.6 s, so the mark is a mark, not a sightline)
+    p.camYaw = fh + Math.PI;
+    key('KeyW', true); await wait(600); key('KeyW', false);
+    await simSleep(0.4, () => { p.health = p.maxHealth; });
+    rec.recipients = others.map(o => ({ state: o.state, marked: o.flagMark === H.flag, lkToHer: +Math.hypot(o.lastKnown.x - p.position.x, o.lastKnown.z - p.position.z).toFixed(1) }));
+    const w1 = performance.now();
+    while (rec.ended === null && performance.now() - w1 < 30000) { await wait(40); p.health = p.maxHealth; }
+    rec.after = others.map(o => ({ state: o.state, marked: o.flagMark === H.flag }));
+    if (ev.off) { ev.off('flagged', onF); ev.off('flag-ended', onE); }
+    H.flagDuration = 8;
+    return { lastedS: rec.raised !== null && rec.ended !== null ? +(rec.ended - rec.raised).toFixed(3) : null,
+      raisedBy: rec.stacks.length ? (rec.stacks[0].match(/flagPlayer|setState/g) || []).slice(0, 4) : [],
+      stackFromTools: rec.stacks.some(fromTools), recipients: rec.recipients, after: rec.after };
+  };
+  const flagShrug = await flagRun(3);
+  for (const o of set) { thaw(o); park(o); }
+  await wait(600);
+  const flagBase = await flagRun(null);
+  for (const o of set) __M.sites.dispose(o);
+  // ---------- 3. noise filter: a 10 s jog, footstep stimuli counted (input-driven, R31)
+  const jog = async (withFilter) => {
+    const spot3 = flatSpot(20, 60);
+    p.position.set(spot3.x, T.getHeight(spot3.x, spot3.z), spot3.z); p._snapToGround?.();
+    let n = 0, fromToolsN = 0, kinds = {};
+    const onS = (e) => { kinds[e.kind] = (kinds[e.kind] || 0) + 1; if (e.kind === 'footstep') { n++; if (fromTools(new Error().stack)) fromToolsN++; } };
+    ev.on('stimulus', onS);
+    const remove = withFilter ? S.addNoiseFilter((e) => (e.kind === 'footstep' ? false : undefined)) : null;
+    let speeds = [];
+    key('KeyW', true);
+    await simSleep(10, () => { speeds.push(p.moveSpeed || 0); if (Math.random() < 0.05) p.camYaw += 0.6; });
+    key('KeyW', false);
+    if (remove) remove();
+    if (ev.off) ev.off('stimulus', onS);
+    speeds.sort((a, b) => a - b);
+    return { footstepEvents: n, eventsFromTools: fromToolsN, kinds, medianSpeed: +(speeds[speeds.length >> 1] || 0).toFixed(2) };
+  };
+  const noiseWithout = await jog(false);
+  const noiseWith = await jog(true);
+  const filtersLeft = (S._filters || []).length;
+  // ---------- 4. the Dust-sight occlusion flag (shape + behaviour; the outline is shell-ui's, W2)
+  const spot4 = flatSpot(35, 80);
+  const dm2 = stageKind(spot4.x, spot4.z, { route: [new V(spot4.x, 0, spot4.z)] });
+  await wait(1200);
+  thaw(dm2); park(dm2); perceptionOnly(dm2);
+  const dh = clearHeading(dm2, 32) ?? 0;
+  placeAt(dm2, dh, 30);
+  await simSleep(0.5);
+  const clearOcc = dm2.dustOccluded, clearOut = H.outlined(dm2);
+  const mid = new V((p.position.x + dm2.position.x) / 2, 0, (p.position.z + dm2.position.z) / 2);
+  mid.y = T.getHeight(mid.x, mid.z) + 1.6;
+  const removeCloud = H.addDustCloud({ x: mid.x, y: mid.y, z: mid.z, r: 3, seconds: 10 });
+  await simSleep(0.5);
+  const cloudOcc = dm2.dustOccluded, cloudOutNoPerk = H.outlined(dm2);
+  H.dustSight = true;
+  const cloudOutPerk = H.outlined(dm2);
+  H.dustSight = false;
+  const machineSees = dm2.ai.perception.hasLOS(p.position);
+  removeCloud();
+  await simSleep(0.5);
+  const afterOcc = dm2.dustOccluded;
+  __M.sites.dispose(dm2);
+  const dust = { noCloud: { occluded: clearOcc, outlined: clearOut }, cloud: { occluded: cloudOcc, outlinedWithoutPerk: cloudOutNoPerk, outlinedWithPerk: cloudOutPerk, instrumentSeesThroughIt: machineSees }, cloudRemoved: { occluded: afterOcc } };
+  const near = (v, want, tol) => v !== null && Math.abs(v - want) <= tol;
+  const checks = {
+    shapePublished: shape.detectMul === 1 && shape.flagDuration === 8 && shape.flagPlayer === 'function' && shape.addNoiseFilter === 'function' && shape.dustOccludedField && shape.outlined === 'function',
+    detectMulHalvesCalm: near(dm.calm.ratio, 0.5, 0.025),
+    detectMulControl: dm.calm.without > 0 && near(dm.calm.without / Math.max(1e-9, calm1), 1, 0.05),
+    detectMulHostileUnchanged: near(dm.hostile.ratio, 1, 0.03),
+    flagShrug3s: near(flagShrug.lastedS, 3, 0.1),
+    flagControl8s: near(flagBase.lastedS, 8, 0.1),
+    flagRecipientsSearched: (flagShrug.recipients || []).every(r => r.state === 'search' && r.marked) && (flagBase.recipients || []).every(r => r.state === 'search' && r.marked),
+    flagMarkCleared: (flagShrug.after || []).every(r => !r.marked) && (flagBase.after || []).every(r => !r.marked),
+    flagRaisedByTheGame: !flagShrug.stackFromTools && !flagBase.stackFromTools && flagShrug.raisedBy.includes('flagPlayer'),
+    noiseFilterDropsFootsteps: noiseWith.footstepEvents === 0 && noiseWith.medianSpeed > 3,
+    noiseControl: noiseWithout.footstepEvents > 0 && noiseWithout.eventsFromTools === 0 && noiseWithout.medianSpeed > 3,
+    filterRemoved: filtersLeft === 0,
+    dustOcclusionFlag: !clearOcc && cloudOcc && !afterOcc && !cloudOutNoPerk && cloudOutPerk && !machineSees && !clearOut,
+  };
+  return { pass: Object.values(checks).every(Boolean), detail: { kind: KIND, checks, shape, detectMul: dm,
+    flag: { shrug: flagShrug, control: flagBase }, noise: { withFilter: noiseWith, without: noiseWithout }, dust,
+    r31: 'player movement by synthesized KeyboardEvents into input.js; the Flag is raised by the flagging machine\\'s own setState(alert) from its own sight; footstep stimuli come from StimulusBus.update in the frame loop (stacks checked)' } };
+})()`;
+
+const A_UV1 = (S) => `(async () => {
+  const S = ${JSON.stringify(S ? { b64: S.b64, src: S.src, bytes: S.bytes } : null)};
+  if (!S) return { pass: null, detail: 'static half not computed in this invocation' };
+  const C = __CTX__;
+  const LOD = await import('/src/entities/machines/rig/lod.js');
+  const bin = Uint8Array.from(atob(S.b64), c => c.charCodeAt(0));
+  const gltf = await C.assets.loader.parseAsync(bin.buffer, '');
+  const model = gltf.scene;
+  const Group = model.constructor;
+  const root = new Group(); const body = new Group(); root.add(body); body.add(model);
+  const before = {};
+  model.traverse(o => { if (o.isMesh) before[o.name] = { uv1: !!o.geometry.attributes.uv1, channel: o.material.map ? o.material.map.channel : null, mat: o.material.name }; });
+  const stub = { ctx: C, kind: 'uv1-probe', modelKind: 'uv1-probe', model, root, body, _eyeMats: [], _emisMats: [], parts: [] };
+  const res = LOD.foldMachineMeshes(stub, { pool: false });
+  const merged = [];
+  model.traverse(o => { if (o.isMesh) merged.push(o); });
+  const decal = merged.find(o => o.material.name === 'uv1-decal');
+  const plain = merged.find(o => o.material.name === 'uv1-plain');
+  let maxErr = null, nDecal = 0;
+  if (decal && decal.geometry.attributes.uv1) {
+    const want = [...S.src['decal-a'], ...S.src['decal-b']];
+    const a = decal.geometry.attributes.uv1;
+    nDecal = a.count;
+    maxErr = 0;
+    if (a.count * 2 !== want.length) maxErr = Infinity;
+    else for (let i = 0; i < a.count; i++) { maxErr = Math.max(maxErr, Math.abs(a.getX(i) - want[i * 2]), Math.abs(a.getY(i) - want[i * 2 + 1])); }
+  }
+  const out = {
+    sourceMeshes: before, foldStats: res,
+    mergedMeshes: merged.map(o => ({ name: o.name, mat: o.material.name, attrs: Object.keys(o.geometry.attributes), verts: o.geometry.attributes.position.count })),
+    decal: decal ? { merged: o2(decal), uv1: !!decal.geometry.attributes.uv1, uv1MaxErr: maxErr, verts: nDecal } : null,
+    plain: plain ? { merged: o2(plain), uv1: !!plain.geometry.attributes.uv1, uv: !!plain.geometry.attributes.uv } : null,
+  };
+  function o2(o) { return o.userData?.merged || 1; }
+  for (const o of merged) { o.geometry.dispose(); o.material.map?.dispose(); o.material.dispose(); }
+  const checks = {
+    loaderSawUv1: Object.values(before).every(b => b.uv1) && before['decal-a']?.channel === 1,
+    decalGroupMerged: !!decal && o2(decal) === 2,
+    plainGroupMerged: !!plain && o2(plain) === 2,
+    uv1SurvivesInDecalGroup: !!decal && !!decal.geometry.attributes.uv1,
+    uv1Within1e4: maxErr !== null && maxErr <= 1e-4,
+    plainGroupDropsUv1: !!plain && !plain.geometry.attributes.uv1,
+  };
+  return { pass: Object.values(checks).every(Boolean), detail: { checks, ...out, glbBytes: S.bytes } };
+})()`;
+
+const A_VFX = (S) => `(async () => {
+  const S = ${JSON.stringify(S)};
+  if (!S) return { pass: null, detail: 'static half not computed in this invocation' };
+  const C = __CTX__, M = C.machines;
+  { const t0 = performance.now(); while (!M.expansionReady && performance.now() - t0 < 90000) await new Promise(r => setTimeout(r, 200)); }
+  const Col = await import('/src/instruments/lib/color.js');
+  const T = await import('/src/entities/machines/ai/tables.js');
+  const BLUE = ['#38c6ff', '#19ffd0'];
+  const seen = new Map();          // hex -> { n, via:Set }
+  const note = (hex, via) => { if (!hex) return; let r = seen.get(hex); if (!r) { r = { n: 0, via: new Set() }; seen.set(hex, r); } r.n++; r.via.add(via); };
+  const hexOf = (c) => (c && c.isColor) ? '#' + c.getHexString() : (typeof c === 'number' ? '#' + c.toString(16).padStart(6, '0') : null);
+  // 1. every pooled particle (rig/fx.js MachineFx: sparks, arcs, flames, smoke, dust, bursts)
+  const pool = C.machineFx || (M.list.find(m => m._fxPool) || {})._fxPool || null;   // published on the machine ctx view
+  const undo = [];
+  if (pool) for (const which of ['hot', 'cold']) {
+    const P = pool[which]; if (!P) continue;
+    const real = P.spawn;
+    P.spawn = function (x, y, z, opts) { const c = opts && opts.color !== undefined ? opts.color : 0xffffff; note(typeof c === 'string' ? c.toLowerCase() : hexOf(c), 'pool.' + which); return real.call(this, x, y, z, opts); };
+    undo.push(() => { P.spawn = real; });
+  }
+  // 2. every FX object a machine adds to the scene (sprites, rings, fireballs, beacon, spit)
+  const realAdd = C.scene.add;
+  C.scene.add = function (...objs) {
+    for (const o of objs) {
+      if (o && !(o.userData?.machine && o.userData.machine.root === o)) {   // every FX object; not a machine root
+        const mats = Array.isArray(o?.material) ? o.material : (o?.material ? [o.material] : []);
+        for (const m of mats) { if (m.color) note('#' + m.color.getHexString(), 'scene.' + (o.type || 'obj')); if (m.emissive && (m.emissive.r + m.emissive.g + m.emissive.b) > 0.05) note('#' + m.emissive.getHexString(), 'scene.emissive'); }
+      }
+    }
+    return realAdd.apply(this, objs);
+  };
+  undo.push(() => { C.scene.add = realAdd; });
+  // 3. the fx.js default spark (no colour argument)
+  if (pool) pool.spark(0, -50, 0);
+  // 4. drive every emitter on one machine of every spawnable kind
+  const p = C.player;
+  const kinds = M.kinds.filter(k => M.canSpawn(k));
+  const exercised = {};
+  let i = 0;
+  for (const k of kinds) {
+    const x = p.position.x + 25 + (i % 4) * 9, z = p.position.z + 25 + Math.floor(i / 4) * 9; i++;
+    const m = M.spawn(k, x, z);
+    if (!m) continue;
+    m.lowLOD = false;
+    const ex = exercised[k] = [];
+    await new Promise(r => setTimeout(r, 250));
+    const pt = m.position.clone(); pt.y += m.height * 0.5;
+    let mesh = null; m.root.traverse(o => { if (!mesh && o.isMesh) mesh = o; });
+    const hit = (o) => { try { m.takeDamage(Object.assign({ point: pt.clone(), object: mesh, impact: 5, tear: 0, element: 'none', elementAmount: 0, dir: { x: 0, y: 0, z: 1 }, type: 'hunter', baseDamage: 5 }, o)); } catch (e) { ex.push('ERR ' + e.message); } };
+    hit({}); ex.push('hit');
+    hit({ tear: 400 }); ex.push('tear');
+    for (const el of ['fire', 'freeze', 'shock']) { hit({ element: el, elementAmount: 400 }); ex.push(el); }
+    try { m._explosionFX(pt.clone(), 'fire'); m._explosionFX(pt.clone(), 'freeze'); m._explosionFX(pt.clone(), 'shock'); ex.push('explosions'); } catch (e) { ex.push('ERR explosion ' + e.message); }
+    try { m._arcFlash(); ex.push('arc default'); } catch (e) { /* */ }
+    try { m._sparkBurst(pt.clone(), 6); ex.push('spark default'); } catch (e) { /* */ }
+    // every attack row that carries its own projectile / flash colour fires its flash
+    for (const row of T.attackTable(k)) if (row.params && row.params.color !== undefined) { try { m._arcFlash(row.params.color); ex.push('flash ' + row.id); } catch (e) { /* */ } }
+    for (const fn of ['_pingRing', '_freezeSpit', '_spit', '_shatterBurst']) if (typeof m[fn] === 'function') { try { m[fn](); ex.push(fn); } catch (e) { /* needs a target */ } }
+    // run the statuses for a beat (burn flames + smoke, seized-crust glints, Clouded arcs)
+    m.burnT = Math.max(m.burnT, 1); m._burnDps = 0.01; m.brittleT = Math.max(m.brittleT, 1); m.stunT = Math.max(m.stunT, 0.6);
+    await new Promise(r => setTimeout(r, 900));
+    // death sparks + smoke, then the loot beacon
+    hit({ impact: 1e6, baseDamage: 1e6 }); ex.push('death');
+    await new Promise(r => setTimeout(r, 400));
+    try { if (m._spawnBeacon && !m._beaconMesh) m._spawnBeacon(); ex.push('beacon'); } catch (e) { /* */ }
+    await new Promise(r => setTimeout(r, 300));
+    M.sites.dispose(m);
+  }
+  for (const u of undo) u();
+  const rows = [...seen.entries()].map(([hex, r]) => {
+    const c = Col.hexToRgb(hex); const mx = Math.max(c[0], c[1], c[2], 1e-6);
+    const norm = Col.rgbToHex(c.map(v => v / mx));
+    const d = Math.min(...BLUE.map(b => Col.deltaE(hex, b)));
+    const dn = Math.min(...BLUE.map(b => Col.deltaE(norm, b)));
+    return { hex, normalised: norm, minDE: +d.toFixed(1), minDEnormalised: +dn.toFixed(1), n: r.n, via: [...r.via] };
+  }).sort((a, b) => Math.min(a.minDE, a.minDEnormalised) - Math.min(b.minDE, b.minDEnormalised));
+  const blue = rows.filter(r => r.minDE < 15 || r.minDEnormalised < 15);
+  const checks = {
+    sharma: Col.sharmaCheck() < 1e-4,
+    staticNoBlueLiteral: S.hits.length === 0 && S.deadDefaultsOk,
+    fxDefaultSparkNotBlue: !!S.sparkDefault && /VFX_COLORS\\.bronzeChip/.test(S.sparkDefault) && !!S.arcDefault && /VFX_COLORS\\.bronzeChip/.test(S.arcDefault),
+    noLiveParticleNearBlue: blue.length === 0,
+    emittersExercised: Object.keys(exercised).length >= 2 && rows.length >= 8,
+  };
+  return { pass: Object.values(checks).every(Boolean), detail: { checks, blueOffenders: blue, coloursSeen: rows.length, closest: rows.slice(0, 12),
+    kindsExercised: exercised, static: { filesScanned: S.filesScanned, literals: S.literals, hits: S.hits, sparkDefault: S.sparkDefault, arcDefault: S.arcDefault, deadDefaults: S.deadDefaults, listedOutOfLane: S.listedOutOfLane } } };
+})()`;
+
+/* ------------------------------------------------------------------ */
+/* shadowed Round-4 rows, re-staged on the herd role (R28, R34)        */
+/* ------------------------------------------------------------------ */
+/**
+ * Text surgery on the Round-4 row (read from its file, wherever gates-perf has
+ * archived it): every edit is asserted, and a row whose source text moved
+ * reports PENDING with the reason instead of running a half-edited gate.
+ */
+function restage(srcRow, edits, fields) {
+  if (!srcRow) return { ...fields, kind: 'action', assert: '(async () => ({ pass: null, detail: "the Round-4 source row is not available in this tree" }))()' };
+  let a = srcRow.assert;
+  const missing = [];
+  for (const [from, to] of edits) {
+    if (!a.includes(from)) { missing.push(from.slice(0, 80)); continue; }
+    a = a.split(from).join(to);
+  }
+  if (missing.length) {
+    return { ...srcRow, ...fields, assert: `(async () => ({ pass: null, detail: ${JSON.stringify({ note: 'Round-4 source text moved; re-stage edits not applied', missing })} }))()` };
+  }
+  return { ...srcRow, ...fields, assert: a };
+}
+const rowOf = (mod, id) => (mod?.GATES || []).find((g) => g.id === id) || null;
+
+const HERD_STAGE = `
+      const __herd = ctx.machines.roles ? ctx.machines.roles.herd : null;
+      if (!__herd) return { pass: null, detail: 'SKIP-R18: role herd has no live kind (' + (ctx.machines.roleNotes ? ctx.machines.roleNotes.herd : 'roles not published') + ')' };
+      let w = ctx.machines.list.find(m => m.kind === __herd && m.alive && !m._disposed);
+      if (!w) { const pp = ctx.player.position; w = ctx.machines.spawn(__herd, pp.x + 24, pp.z + 24); await new Promise(r => setTimeout(r, 900)); }
+      if (!w || !w.alive) return { pass: null, detail: 'SKIP: no living ' + __herd + ' (herd role) could be staged' };`;
+const WATCHER_STAGE = `const w = ctx.machines.list.find(m => m.kind === 'watcher' && m.alive);
+      if (!w) return { pass: null, detail: 'SKIP: no living watcher' };`;
+
+const A37_HERD = restage(rowOf(MAI, 'A37-stealth-approach'), [[WATCHER_STAGE, HERD_STAGE]], {
+  id: shadowId('A37-stealth-approach'), lane: LANE, shadowOf: 'A37-stealth-approach',
+  title: 'Crouched in tall grass, 20 m -> 3 m behind the herd-role Instrument (the Tiller fixture, R28): never leaves patrol/suspicious, suspicion < 0.3',
+});
+const A39_HERD = restage(rowOf(MAI, 'A39-detection-curve'), [[WATCHER_STAGE, HERD_STAGE]], {
+  id: shadowId('A39-detection-curve'), lane: LANE, shadowOf: 'A39-detection-curve',
+  title: 'Standing still in the herd-role Instrument\'s cone (the Tiller fixture, R28): 30 m suspicious >= 1.5 s / alert 3.0-4.6 s; 10 m alert <= 1.5 s',
+});
+const A43_HERD = restage(rowOf(MAI, 'A43-corpse-lifecycle'), [
+  ['const count = () => { let n = 0; ctx.scene.traverse(() => n++); return n; };',
+    `const __herd = ctx.machines.roles ? ctx.machines.roles.herd : null;
+      if (!__herd) return { pass: null, detail: 'SKIP-R18: role herd has no live kind' };
+      { const pp = ctx.player.position; const have = ctx.machines.list.filter(m => m.alive && m.kind === __herd).length;
+        for (let i = have; i < 8; i++) ctx.machines.spawn(__herd, pp.x + 22 + (i % 4) * 6, pp.z + 22 + Math.floor(i / 4) * 6);
+        await new Promise(r => setTimeout(r, 1500)); }
+      const count = () => { let n = 0; ctx.scene.traverse(() => n++); return n; };`],
+  ['const live = ctx.machines.list.filter(m => m.alive)', 'const live = ctx.machines.list.filter(m => m.alive && m.kind === __herd)'],
+], {
+  id: shadowId('A43-corpse-lifecycle'), lane: LANE, shadowOf: 'A43-corpse-lifecycle',
+  title: 'Eight herd-role wrecks (the Tiller fixture, R28) freeze, fade, dispose and schedule a respawn; scene growth <= +40 and nothing of a disposed machine is left in the scene',
+});
+
+/** A90-rig-reclaim on the staged (role) kinds, as gates-perf's carried row re-stages it (R28: never a legacy kind). */
+const A90_RIG = restage(rowOf(await importFirst(['tools/gates.round4.machines-expansion.mjs', 'tools/gates/archive/gates.round4.machines-expansion.mjs']), 'A90-rig-reclaim'), [
+  [`const roster = M.kinds.filter(k => M.canSpawn ? M.canSpawn(k) : true);
+      if (roster.length < 4) return { pass: null, detail: { note: 'SKIP: roster not loaded', roster } };`,
+  `// R5 (R28): the staged role kinds only, never a legacy kind
+      const roster = [...new Set(Object.values(M.roles || {}).filter(Boolean))].filter(k => M.canSpawn(k));
+      if (!roster.length) return { pass: null, detail: { note: 'SKIP-R18: no role resolves to a live kind', roles: M.roles } };`],
+  [`const liveKind = roster.includes('watcher') ? 'watcher' : roster[0];`, 'const liveKind = roster[0];'],
+], {
+  id: shadowId('A90-rig-reclaim'), lane: LANE, shadowOf: 'A90-rig-reclaim',
+  title: 'RIG-SIDE RECLAIM on the staged role kinds (the Tiller fixture, R28): 30 spawn/kill/dispose cycles grow geometries <= +40 and textures <= +30, and a LIVE machine costs <= 1 of each',
+});
+
+/** A90b with the role-based workload (R34): every kill is followed by a respawn of the herd role's kind. */
+const A90B = restage(rowOf(MEM, 'A90b-memory-attribution'), [
+  ['const ctx = __CTX__;', `const ctx = __CTX__;
+      const HERD = ctx.machines.roles ? ctx.machines.roles.herd : null;
+      const W = { kills: 0, respawned: 0, respawnFailed: 0, kind: HERD };
+      { const t0 = performance.now(); while (!ctx.machines.expansionReady && performance.now() - t0 < 45000) await new Promise(r => setTimeout(r, 200)); }
+      if (!HERD) return { pass: null, detail: 'SKIP-R18: role herd has no live kind — the R34 workload cannot run' };`],
+  [`          if (m) { kill(m); kills++; }`, `          const killedKind = m ? m.kind : null;
+          if (m) { kill(m); kills++; W.kills++; }`],
+  [`          try { ctx.machines.spawn('watcher', ctx.player.position.x + 30, ctx.player.position.z + 30); } catch (e) {}`,
+    `          if (killedKind) { let s = null; try { s = ctx.machines.spawn(HERD, ctx.player.position.x + 30, ctx.player.position.z + 30); } catch (e) { s = null; } if (s) W.respawned++; else W.respawnFailed++; }`],
+  ['        return {\n          pass: offenders.length === 0,\n          detail: {\n            kills, selfTest: self, offenders,', `        const R34_LOC = /machine\\.js|autorig\\.js/;
+        const r34Offenders = offenders.filter((o) => R34_LOC.test(JSON.stringify(o.at || '')));
+        const r34Held = [];
+        for (const kind of ['objects', 'geometries']) for (const owner in whole[kind]) {
+          const r = whole[kind][owner];
+          if (!R34_LOC.test(JSON.stringify(r.locs || '') + owner)) continue;
+          r34Held.push({ kind, owner, attached: r.attached, detachedRetained: r.detachedRetained, heldUnreachable: r.heldUnreachable, created: r.created, disposed: r.disposed });
+        }
+        const workloadOk = W.kills >= 25 && W.respawned === W.kills;
+        return {
+          pass: offenders.length === 0 && r34Offenders.length === 0 && workloadOk,
+          detail: {
+            kills, selfTest: self, offenders, r34: { offenders: r34Offenders.length, held: r34Held, workload: W, workloadOk },`],
+], {
+  id: shadowId('A90b-memory-attribution'), lane: LANE, shadowOf: 'A90b-memory-attribution',
+  title: 'A90b with the ROLE-BASED workload (R34): 30 kills, each followed by a respawn of the herd role\'s kind (the Tiller fixture); zero unreachable GPU textures, no module holding > 4 textures / > 20 geometries / > 20 objects after the corpse lifecycle, 0 offenders at the machine.js model clone or the autorig.js bones',
+});
+/* ------------------------------------------------------------------ */
+/* the lamp film (frames for the lane and the R29 judge)               */
+/* ------------------------------------------------------------------ */
+const FILM = (state, { fov = 4, both = false } = {}) => `(async () => {
+  ${KP}
+  if (!KIND) return;
+  const E = __C.engine, cam = __C.camera, p = __C.player, env = __C.environment, T = __C.terrain;
+  E.setDynamicResolution?.(false);
+  env.setTime?.(13);
+  env.setWeather(${JSON.stringify(state === 'beams' ? 'rain' : 'clear')}, 0.05);
+  const hud = document.getElementById('hud'); if (hud) hud.style.display = 'none';
+  for (const o of __M.list) if (o.alive && o.state !== 'patrol') { try { park(o); } catch (e) { /* */ } }
+  freezeAll([]);
+  const spot = flatSpot(30, 60);
+  const m = stageKind(spot.x, spot.z, { route: [new V(spot.x, 0, spot.z)] });
+  const m2 = ${both ? 'stageKind(spot.x + 7, spot.z, { route: [new V(spot.x + 7, 0, spot.z)] })' : 'null'};
+  await wait(1600);
+  for (const r of __M.lamps.records.slice()) if (r.machine !== m && r.machine !== m2) __M.lamps.detach(r.machine);
+  p._updateCamera = () => {}; if (p.model) p.model.visible = false;
+  park(m, 0.2); if (m2) park(m2, 0.2);
+  const rec = m.lamp;
+  const lampPos = new V(), axis = new V();
+  let ok = false;
+  for (let k = 0; k < 12 && !ok; k++) {
+    m.heading = 0.2 + k * Math.PI / 6; m.root.rotation.y = m.heading; m.root.updateMatrixWorld(true);
+    rec.anchor.updateWorldMatrix(true, false);
+    lampPos.setFromMatrixPosition(rec.anchor.matrixWorld);
+    axis.set(0, 0, 1).transformDirection(rec.anchor.matrixWorld); axis.y = 0; axis.normalize();
+    cam.position.copy(lampPos).addScaledVector(axis, 15);
+    ok = true;
+    for (let s = 1; s < 30; s++) { const q = lampPos.clone().lerp(cam.position, s / 30); if (T.getHeight(q.x, q.z) > q.y - 0.4) { ok = false; break; } }
+    if (ok && __C.collision?.occluded?.(cam.position, lampPos)) ok = false;   // walls, rocks, props
+  }
+  const st = ${JSON.stringify(state)};
+  const side = new V(axis.z, 0, -axis.x);
+  if (st === 'wary') m.forceState('search');
+  if (st === 'hostile') m.forceState('attack');
+  if (st === 'dark') { const wp = m.weakPoints.find(w => w.name === 'lamp'); let mesh = null; m.root.traverse(o => { if (!mesh && o.isMesh) mesh = o; });
+    m.takeDamage({ point: wp.obj.getWorldPosition(new V()), object: mesh, impact: 1, tear: 0, element: 'none', elementAmount: 0, dir: { x: -axis.x, y: 0, z: -axis.z }, type: 'hunter', baseDamage: 1 }); }
+  if (st === 'beams') {
+    m.forceState('search'); m.lastKnown.copy(lampPos).addScaledVector(axis, 9).addScaledVector(side, -4);
+    if (m2) { m2.heading = m.heading; m2.root.rotation.y = m.heading; m2.forceState('attack'); }
+    const tgt = lampPos.clone().addScaledVector(axis, 10).addScaledVector(side, 6);
+    p.position.set(tgt.x, T.getHeight(tgt.x, tgt.z), tgt.z); if (p.model) p.model.visible = true;
+  } else m.lastKnown.copy(lampPos).addScaledVector(axis, 6);
+  holdStill(m); if (m2) holdStill(m2);   // body still, glows live
+  // the lens: camera.zoom (player.js and combat.js damp camera.fov every frame; nothing writes zoom)
+  if (st === 'beams') {
+    cam.zoom = 1; cam.updateProjectionMatrix();
+    cam.position.copy(lampPos).addScaledVector(axis, 4).addScaledVector(side, -16); cam.position.y = Math.max(cam.position.y, T.getHeight(cam.position.x, cam.position.z) + 1.8);
+    cam.lookAt(lampPos.clone().addScaledVector(axis, 5));
+  } else {
+    cam.zoom = cam.fov / ${fov}; cam.updateProjectionMatrix();
+    cam.position.copy(lampPos).addScaledVector(axis, 15);
+    cam.lookAt(lampPos);
+  }
+  cam.updateMatrixWorld();
+  window.__IC_FILM__ = { state: st, camDistM: +cam.position.distanceTo(lampPos).toFixed(2), fov: cam.fov, zoom: cam.zoom, clearLine: ok, lampState: m.lamp ? m.lamp.state : null, aperture: m.lamp ? +m.lamp.aperture.toFixed(2) : null };
+})()`;
+const FILM_ROWS = [
+  ['calm', 'calm: the iris fully open (100 %), bone lamp #F2EAD3, steady; a bronze bezel ring; no beam'],
+  ['wary', 'wary: the iris at HALF area (50 %), level-vial chartreuse #B5E61D; the closed half reads as dark blades'],
+  ['hostile', 'hostile: a PINHOLE (20 % area), cochineal magenta #FF2D8C; blades dark around it'],
+  ['dark', 'dark (a precise hit on the lamp): the iris CLOSED and cracked, #3B3A36 blades; no lit glass'],
+].map(([st, crit]) => ({
+  id: `V-lamp-${st}-15m`, kind: 'visual', lane: 'instruments-core-film', timeout: 120000,
+  title: `Lamp grammar, ${st}: the herd-role Instrument's drum lamp filmed from 15.0 m on its lens axis (camera.zoom to a 4 deg lens so the iris can be read)`,
+  setup: FILM(st), settle: st === 'dark' ? 1600 : 1200,
+  criteria: `${crit}. The lens is a disc behind an iris (shape first), not a glow ball. FAIL if the lens is a soft glow sphere, if the aperture does not match the state, or if any Horizon sensor colour (blue #38c6ff, amber #ffb31f, red #ff2413) appears.`,
+}));
+FILM_ROWS.push({
+  id: 'V-lamp-hostile-15m-wide', kind: 'visual', lane: 'instruments-core-film', timeout: 120000,
+  title: 'Lamp grammar, hostile, at the game lens (55 deg) from 15.0 m: the scale a player sees it at',
+  setup: FILM('hostile', { fov: 55 }), settle: 1200,
+  criteria: 'At play scale the drum lamp reads as a small magenta point in a dark bezel on the front drum of the Tiller; the hull is not blown out. FAIL if the lamp blooms into a glow ball larger than the drum.',
+});
+FILM_ROWS.push({
+  id: 'V-lamp-beams-fog', kind: 'visual', lane: 'instruments-core-film', timeout: 120000,
+  title: 'Beams in fog (rain weather, aerial density x2.55): a wary Tiller sweeping toward its stimulus, a hostile Tiller locked on Brea; side view',
+  setup: FILM('beams', { both: true }), settle: 1500,
+  criteria: 'Two thin additive cones from the drum lamps: the wary one chartreuse, the hostile one magenta pointing at the player. Cones are narrow (5 deg half-angle) and fade with length; no cone in a calm machine. FAIL if a beam is opaque, if it renders as a solid block, or if no beam is visible.',
+});
+
+/* ------------------------------------------------------------------ */
+/* the W0b rows                                                        */
+/* ------------------------------------------------------------------ */
+const KIND_LANE = 'instruments-core-kind';
+const BLOCK_IDS = ['A44-socket-integrity', 'A44b-socket-vertex-integrity', 'A45-no-skate-per-species', 'A45c-foot-continuity',
+  'A46-ground-truth', 'A47-corpse-grounded', 'A47b-corpse-posed', 'A47c-corpse-mass', 'A48-cadence', 'A-weights-authored',
+  'A-sil40', 'A-weak40', 'A-lamp-states', 'A41b-attack-coverage', 'A41d-attack-coverage', 'A41c-sustained-variety', 'A42-stagger',
+  'A-linked-attack', 'A-glb-budget', 'A21-with-kind', 'A90-expansion-with-kind', 'A90-rig-reclaim-with-kind',
+  'V26-silhouette', 'V27-attack-pose', 'V-lineup'];
+
+const W0B_GATES = [
+  {
+    id: 'A-lamp-states', kind: 'action', lane: LANE, timeout: 300000, settle: 600,
+    setup: '__CTX__.input.enabled = true;',
+    title: 'Lamp grammar on the herd-role Instrument (the Tiller fixture), rendered pixels at 15.0 m: colour dE2000 <= 3 of the state token, iris area 100/50/20 % (consecutive ratio >= 2, dark closed), rhythm 0/1/4 Hz +-15 % and sputter-then-out, consecutive tokens dE >= 25, beam in wary/hostile when fog density > 1.2 or night and never in calm',
+    assert: KB.lampStatesAssert(HERD),
+  },
+  {
+    id: 'A-lamp-canon-distance', kind: 'runner', lane: LANE, timeout: 120000,
+    title: 'Every lamp, beam, scanner and compass-pip colour token (JS + CSS) is dE2000 >= 20 from #38c6ff #ffb31f #ff2413 #19ffd0 #9B6BFF; no lamp-state token within dE 10 of a scanner highlight token; CIEDE2000 checked against the Sharma pairs first',
+    check: async () => {
+      const s = await canonDistanceStatic();
+      const bad = s.graded.filter((r) => !r.ok);
+      const hl = s.highlight.filter((h) => h.dE < 10);
+      const pass = s.sharmaMaxErr < 1e-4 && bad.length === 0 && hl.length === 0 && s.beamFromTokens && s.graded.length >= 16;
+      return { pass, detail: { sharmaMaxErr: s.sharmaMaxErr, gradedTokens: s.graded.length, offenders: bad,
+        graded: s.graded.map((r) => `${r.source} ${r.name} ${r.hex} min dE ${r.minDE} (vs ${r.nearest})`),
+        listedNotGraded: (() => { const g = {}; for (const r of s.listed) { const k = r.note && r.note.startsWith('body colour') ? 'sensor-part body colours (instruments-core; emissive graded)' : r.note && r.note.startsWith('frozen') ? 'rig/shells.js dead default' : r.source.split(':')[0];
+          const e = g[k] || (g[k] = { n: 0, worstDE: 99, worstHex: null, note: r.note }); e.n++; if (r.minDE < e.worstDE) { e.worstDE = r.minDE; e.worstHex = r.hex; } } return g; })(),
+        lampVsScannerHighlight: s.highlight, beamTintFromTokens: s.beamFromTokens,
+        buildShellCallers: s.shellsCallers.length, filesScanned: s.filesScanned, literalsInLampContext: s.literalsInContext } };
+    },
+  },
+  {
+    id: 'A-beams-one-draw', kind: 'action', lane: LANE, timeout: 240000, settle: 600,
+    title: 'Eight wary herd-role Instruments in fog: the beams are ONE draw per frame (8 instances), attributed on the same frozen frame (wary vs calm); after a warm cycle, spawn/kill x3 then dispose returns GPU geometries, textures, scene materials and lamp records to the baseline',
+    assert: A_BEAMS_ONE_DRAW,
+  },
+  {
+    id: 'A-perception-weather', kind: 'action', lane: LANE, timeout: 300000, settle: 600,
+    title: "setWeather('calima') then a sight test on the herd-role Instrument: sight range x0.5 +-5 % in sim; trade 1.0; the detectMul hook scales the fill rate (x0.5 probe)",
+    assert: A_PERCEPTION_WEATHER,
+  },
+  {
+    id: 'A-perk-hooks', kind: 'action', lane: LANE, timeout: 300000, settle: 600,
+    setup: '__CTX__.input.enabled = true;',
+    title: 'Perk hooks (R31), each with its negative control: perception.detectMul = 0.5 halves the calm fill rate at 20 m (x1.0 without; hostile unchanged); perception.flagDuration = 3 ends a Flag at 3 +-0.1 s (8 +-0.1 s without); a noise filter that drops footsteps yields 0 footstep stimuli over a 10 s jog (> 0 without); the Dust-sight occlusion flag',
+    assert: A_PERK_HOOKS,
+  },
+  {
+    id: 'A-uv1-survives-fold', kind: 'action', lane: LANE, timeout: 90000, settle: 400,
+    title: 'A generated GLB with a decal uv1 folded through rig/lod.js: uv1 present after the fold and within 1e-4 of the source; a merge group that does not sample uv1 drops it',
+    assert: A_UV1(STATIC_B.uv1),
+  },
+  {
+    id: 'A-vfx-palette', kind: 'action', lane: LANE, timeout: 240000, settle: 600,
+    title: 'Every machine particle and glint emitter (hits, tears, sparks, arcs, elements, explosions, deaths, beacons, attack flashes) on every spawnable kind: no colour within dE2000 15 of #38c6ff or #19ffd0; the rig/fx.js default spark is not blue',
+    assert: A_VFX(STATIC_B.vfx),
+  },
+  {
+    id: 'A90-rig-reclaim-5of5', kind: 'runner', lane: LANE, timeout: 1800000,
+    title: 'A90-rig-reclaim on the staged kinds, bars unchanged, 5 of 5 fresh-page runs',
+    check: async ({ PORT }) => {
+      const id = shadowId('A90-rig-reclaim');
+      const runs = await nRuns(PORT, [id], 5, 'rig5', { timeoutMs: 420000 });
+      const v = runs.map((r) => r.results.find((x) => x.id === id) || { status: 'NOT-RUN' });
+      return { pass: v.every((x) => x.status === 'PASS'), detail: { verdicts: v.map((x) => x.status),
+        runs: v.map((x, i) => ({ run: i + 1, status: x.status, ms: x.ms, error: x.error, afterCycles: x.detail?.afterCycles, perLiveMachine: x.detail?.perLiveMachine, heldThenReleased: x.detail?.heldThenReleased, cycles: x.detail?.cycles, roster: x.detail?.roster })) } };
+    },
+  },
+  {
+    id: 'A90b-memory-attribution-3of3', kind: 'runner', lane: LANE, timeout: 1500000,
+    title: 'A90b with the role-based workload (R34), 3 of 3 fresh-page runs; 0 offenders at the machine.js model clone or the autorig.js bones',
+    check: async ({ PORT }) => {
+      const id = shadowId('A90b-memory-attribution');
+      const runs = await nRuns(PORT, [id], 3, 'a90b3', { timeoutMs: 420000 });
+      const v = runs.map((r) => r.results.find((x) => x.id === id) || { status: 'NOT-RUN' });
+      return { pass: v.every((x) => x.status === 'PASS'), detail: { verdicts: v.map((x) => x.status),
+        runs: v.map((x, i) => ({ run: i + 1, status: x.status, ms: x.ms, error: x.error, offenders: x.detail?.offenders, r34: x.detail?.r34, kills: x.detail?.kills, heap: x.detail?.heap, counters: x.detail?.counters })) } };
+    },
+  },
+  {
+    id: 'A-kind-block-file', kind: 'runner', lane: LANE, timeout: 3600000,
+    title: 'tools/gates.r5.kind-block.mjs exports the per-kind block parameterised by kind, and it runs green on the Tiller fixture (fidelity-only clauses report SKIP-fixture)',
+    check: async ({ PORT }) => {
+      const rows = typeof KB.kindBlock === 'function' ? KB.kindBlock({ role: 'herd', fixture: true, lane: 'probe', class: 'medium' }) : [];
+      const rowsByKind = typeof KB.kindBlock === 'function' ? KB.kindBlock({ kind: 'plumb', lane: 'probe', class: 'small' }) : [];
+      const ids = rows.map((r) => r.id.split(':')[0]);
+      const shape = {
+        exportsFunction: typeof KB.kindBlock === 'function', exportsEmptyGates: Array.isArray(KB.GATES) && KB.GATES.length === 0,
+        everySection9Row: BLOCK_IDS.filter((x) => !ids.includes(x)),
+        parameterisedByKind: rowsByKind.length === rows.length && rowsByKind.every((r) => r.id.endsWith(':plumb')),
+        laneHonoured: rows.every((r) => r.lane === 'probe'),
+      };
+      const runs = await nRuns(PORT, null, 1, 'kindblock', { lane: KIND_LANE, timeoutMs: 3300000 });
+      const res = runs[0].results;
+      // A41c-sustained-variety: 5/5 clean runs (plan §9) — four more fresh-page runs of that row
+      const a41cRow = res.find((x) => x.id.startsWith('A41c-sustained-variety'));
+      const more = a41cRow ? await nRuns(PORT, [a41cRow.id], 4, 'a41c', { timeoutMs: 600000 }) : [];
+      const a41c = [a41cRow?.status ?? 'NOT-RUN', ...more.map((r) => (r.results.find((x) => x.id === a41cRow.id) || { status: 'NOT-RUN' }).status)];
+      const skipFixture = (x) => x.status === 'PENDING' && /SKIP-fixture/.test(JSON.stringify(x.detail || ''));
+      const judged = (x) => x.status === 'NEEDS-JUDGE';
+      const bad = res.filter((x) => !(x.status === 'PASS' || skipFixture(x) || judged(x)));
+      const pass = shape.exportsFunction && shape.exportsEmptyGates && shape.everySection9Row.length === 0 && shape.parameterisedByKind
+        && shape.laneHonoured && res.length === rows.length && bad.length === 0 && res.filter((x) => x.status === 'PASS').length >= 15
+        && a41c.length === 5 && a41c.every((v) => v === 'PASS');
+      return { pass, detail: { shape, a41cFiveRuns: a41c, rows: res.map((x) => ({ id: x.id, status: x.status, ms: x.ms,
+        note: x.status === 'PASS' ? undefined : (x.error || JSON.stringify(x.detail || '').slice(0, 400)) })), notGreen: bad.map((x) => x.id),
+        details: Object.fromEntries(res.map((x) => [x.id, x.detail])), a41cRuns: more.map((r) => r.results.map((x) => ({ id: x.id, status: x.status, detail: x.detail }))) } };
+    },
+  },
+  A37_HERD, A39_HERD, A43_HERD, A90_RIG, A90B,
+  ...FILM_ROWS,
+  ...KB.kindBlock({ role: 'herd', fixture: true, lane: KIND_LANE, class: 'medium' }),
+];
+
+/**
+ * RUNNER GATES FIRST. The harness launches its own headless Chrome lazily, at
+ * the first page gate; the probes and the n-run rows launch a Chrome of their
+ * own in a child runner. Running every runner before any page gate keeps this
+ * lane at ONE live Chrome at a time (plan §0 rule 8). Array.prototype.sort is
+ * stable.
+ */
+export const GATES = [...W0A_GATES, ...W0B_GATES]
+  .sort((a, b) => (a.kind === 'runner' ? 0 : 1) - (b.kind === 'runner' ? 0 : 1));
+export const INSTRUMENTS_CORE_W0B_IDS = W0B_GATES.map((g) => g.id);

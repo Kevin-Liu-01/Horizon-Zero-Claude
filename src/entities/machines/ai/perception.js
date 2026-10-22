@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { perceptionCfg, NOISE } from './tables.js';
 import { safeEmit } from './emit.js';
 import { aiRandom } from './rng.js';
+import { perceptionScale, weatherName } from '../../../instruments/lib/weather.js';
 
 /**
  * Perception — the honest senses of a machine.
@@ -29,6 +30,8 @@ import { aiRandom } from './rng.js';
 const _eye = new THREE.Vector3();
 const _tgt = new THREE.Vector3();
 const _d = new THREE.Vector3();
+/** States whose detection build-up a perk may NOT touch (bible §4.7: "hostile unchanged"). */
+const HOSTILE_STATES = new Set(['alert', 'attack', 'stagger', 'downed']);
 
 export class Perception {
   constructor(machine) {
@@ -96,11 +99,12 @@ export class Perception {
     }
     // machine-ai-04: trunks, big rocks, ruins and tents break the sightline
     const C = ctx.collision;
-    if (C && C.occluded) {
-      _eye.set(m.position.x, y0, m.position.z);
-      _tgt.set(target.x, y1, target.z);
-      if (C.occluded(_eye, _tgt)) return false;
-    }
+    _eye.set(m.position.x, y0, m.position.z);
+    _tgt.set(target.x, y1, target.z);
+    if (C && C.occluded && C.occluded(_eye, _tgt)) return false;
+    // a Dust cloud (a Dust Pot, W2) blinds the line as well (bible §5.8 Clouded)
+    const H = m.manager?.perception;
+    if (H && H.dustBetween(_eye, _tgt)) return false;
     return true;
   }
 
@@ -190,7 +194,16 @@ export class Perception {
       const hidden = !!(p.crouching && p.inTallGrass);
       const omniW = this._omni(dist);
       const ignoreStealth = omniW > 0 && c.omni && c.omni.ignoreStealth;
-      const maxSee = (hidden && !ignoreStealth) ? c.hiddenRange : m.sightRange;
+      /**
+       * WEATHER (instruments-core W0b, bible §2.3, `A-perception-weather`):
+       * calima and fog banks halve an Instrument's sight range, night is
+       * x0.7 — `machines.perception.sightScale`, read once per frame from
+       * `environment` (`src/instruments/lib/weather.js`). A darkened lamp
+       * (`lampDarkT`, a precise hit on the lamp, bible §7.3) sees nothing.
+       */
+      const H = m.manager?.perception;
+      const blind = (m.lampDarkT || 0) > 0;
+      const maxSee = blind ? 0 : (hidden && !ignoreStealth) ? c.hiddenRange : m.sightRange * (H ? H.sightScale : 1);
 
       if (dist < maxSee || omniW > 0) {
         let w = 0;
@@ -213,12 +226,15 @@ export class Perception {
             if (gw > w) w = gw;
           }
         }
-        if (omniW > w) w = omniW;
+        if (omniW > w && !blind) w = omniW;
         if (w > 0 && this.hasLOS(p.position)) {
           visible = true;
           const pose = p.crouching ? c.poseCrouch : c.poseStand;
           const dd = dist / c.d0;
           fill = (c.gain / (1 + dd * dd)) * w * pose * this._motion(p);
+          // perk hook `perception.detectMul` (bible §4.7 "Read as true"):
+          // the build-up of a machine that has not yet found her; hostile is unchanged
+          if (H && !HOSTILE_STATES.has(m.state)) fill *= H.detectMul;
         }
       }
     }
@@ -265,4 +281,193 @@ export function playerNoise(p) {
   if (s > 7) return n.sprint;
   if (s > 4.2) return n.jog;
   return n.walk;
+}
+
+/* ======================================================================= */
+/* PERCEPTION HOOKS — the perk + weather + Flag + Dust-sight contract       */
+/* ======================================================================= */
+
+/**
+ * `ctx.machines.perception` (instruments-core W0b; plan §3.2 "perception.detectMul,
+ * perception.flagDuration, stimulus.addNoiseFilter, the perception occlusion flag
+ * for Dust-sight outlines"; gates `A-perk-hooks`, `A-perception-weather`).
+ *
+ * Perks act ONLY through these fields (bible §4.1: armory never edits another
+ * system). Consumers: armory W1/W3 (the perks), shell-ui W2 (draws the outline),
+ * world-sky W1 (publishes `environment.perceptionScale`), combat-kit W2 (Dust Pots).
+ *
+ *   perception.detectMul      number, default 1. Multiplies the sight FILL RATE of
+ *                             every Instrument that has not yet found her (calm and
+ *                             wary states); hostile (alert/attack/stagger/downed)
+ *                             is unchanged. "Read as true": 0.5.
+ *   perception.flagDuration   seconds, default 8. How long a Flag (a sentry's
+ *                             Sightline, bible §7.4) marks her. Read when the Flag
+ *                             is raised. "Shrug": 3.
+ *   perception.flagRadius     metres, default 60: every Instrument this close to
+ *                             the flagging machine searches toward the mark.
+ *   perception.flagPlayer(source) -> flag | null
+ *                             raise (or refresh) the Flag. Called by `Machine`
+ *                             when a machine whose perception row has
+ *                             `flags: true` (or `machine.flagsOnSight`) goes alert
+ *                             by SIGHT with a lit lamp; a darkened lamp cannot.
+ *   perception.flag           { active, source, t0, until, duration, raised, ended }
+ *                             (sim seconds on `perception.clock`)
+ *   perception.sightScale     the weather x night multiplier on sight range this
+ *                             frame (`lib/weather.js` perceptionScale)
+ *   perception.weather        the weather name it was read from
+ *   perception.addDustCloud({ x, y, z, r, seconds }) -> remover
+ *                             a sphere of Dust (a Dust Pot): it blocks every
+ *                             Instrument's line of sight through it and marks
+ *                             Instruments behind it as dust-occluded
+ *   perception.dustBetween(a, b) -> boolean   segment vs every live cloud
+ *   perception.dustSight      boolean, default false: the "Dust-sight" perk
+ *   machine.dustOccluded      THE OCCLUSION FLAG: true when Dust (a cloud on the
+ *                             line from her eye, or calima beyond `calimaClear`
+ *                             metres) hides this Instrument from the player.
+ *                             Updated at 5 Hz.
+ *   perception.outlined(m) -> boolean   dustSight && m.dustOccluded — what the
+ *                             Sighting overlay (shell-ui W2) outlines
+ *
+ * Events: 'flagged' { source, duration } when a Flag is raised, 'flag-ended'
+ * { duration, lasted } when it runs out. All per-frame work is allocation-free.
+ */
+export const FLAG = Object.freeze({ duration: 8, radius: 60 });
+/** In calima, Instruments farther than this are behind the dust for the Dust-sight outline. */
+export const CALIMA_CLEAR_M = 24;
+const DUST_TICK = 0.2;
+const _da = new THREE.Vector3();
+const _db = new THREE.Vector3();
+
+export class PerceptionHooks {
+  constructor(machines) {
+    this.machines = machines;
+    this.ctx = machines.ctx;
+    this.detectMul = 1;
+    this.flagDuration = FLAG.duration;
+    this.flagRadius = FLAG.radius;
+    this.dustSight = false;
+    this.calimaClear = CALIMA_CLEAR_M;
+    this.sightScale = 1;
+    this.weather = 'trade';
+    this.clock = 0;
+    this.flag = { active: false, source: null, t0: 0, until: 0, duration: 0, raised: 0, ended: 0 };
+    this._clouds = [];
+    this._dustT = 0;
+  }
+
+  /** Raise or refresh the Flag on the player. */
+  flagPlayer(source) {
+    const p = this.ctx.player;
+    if (!p || p.health <= 0) return null;
+    if (source && (source.lampDarkT || 0) > 0) return null;   // a dark lamp cannot Flag
+    const f = this.flag;
+    const d = Math.max(0, +this.flagDuration || 0);
+    f.active = d > 0;
+    f.source = source || null;
+    f.t0 = this.clock;
+    f.duration = d;
+    f.until = this.clock + d;
+    f.raised++;
+    this._applyFlag(true);
+    safeEmit(this.ctx, 'flagged', { source: f.source, duration: d });
+    return f;
+  }
+
+  /** Every Instrument within the radius searches toward her while the Flag lasts. */
+  _applyFlag(raise) {
+    const f = this.flag;
+    const p = this.ctx.player;
+    const src = f.source;
+    const cx = src ? src.position.x : p.position.x;
+    const cz = src ? src.position.z : p.position.z;
+    const r2 = this.flagRadius * this.flagRadius;
+    for (const m of this.machines.list) {
+      if (!m.alive || m._disposed || m.docile) continue;
+      const dx = m.position.x - cx, dz = m.position.z - cz;
+      if (dx * dx + dz * dz > r2) { if (m.flagMark === f) m.flagMark = null; continue; }
+      m.flagMark = f;
+      m.lastKnown.copy(p.position);
+      m._unseenT = Math.min(m._unseenT, 0.001);
+      if (raise && (m.state === 'patrol' || m.state === 'return' || m.state === 'suspicious')) {
+        m.suspicion = Math.max(m.suspicion, m.perceptCfg?.susEnter ?? 0.5);
+        m.ai?.beginSearch(true);
+        m.setState('search');
+      }
+    }
+  }
+
+  _endFlag() {
+    const f = this.flag;
+    f.active = false;
+    f.ended++;
+    for (const m of this.machines.list) if (m.flagMark === f) m.flagMark = null;
+    safeEmit(this.ctx, 'flag-ended', { duration: f.duration, lasted: +(this.clock - f.t0).toFixed(3) });
+  }
+
+  addDustCloud({ x = 0, y = 0, z = 0, r = 3, seconds = 10 } = {}) {
+    const c = { x, y, z, r, until: this.clock + seconds };
+    this._clouds.push(c);
+    return () => { const i = this._clouds.indexOf(c); if (i >= 0) this._clouds.splice(i, 1); };
+  }
+
+  /** Does the segment a -> b pass through a live Dust cloud? */
+  dustBetween(a, b) {
+    const cl = this._clouds;
+    if (!cl.length) return false;
+    const abx = b.x - a.x, aby = b.y - a.y, abz = b.z - a.z;
+    const L2 = abx * abx + aby * aby + abz * abz || 1e-9;
+    for (let i = 0; i < cl.length; i++) {
+      const c = cl[i];
+      let t = ((c.x - a.x) * abx + (c.y - a.y) * aby + (c.z - a.z) * abz) / L2;
+      t = t < 0 ? 0 : t > 1 ? 1 : t;
+      const dx = a.x + abx * t - c.x, dy = a.y + aby * t - c.y, dz = a.z + abz * t - c.z;
+      if (dx * dx + dy * dy + dz * dz < c.r * c.r) return true;
+    }
+    return false;
+  }
+
+  outlined(m) { return !!(this.dustSight && m && m.dustOccluded); }
+
+  _dustPass() {
+    const p = this.ctx.player;
+    if (!p) return;
+    const calima = this.weather === 'calima';
+    _da.set(p.position.x, p.position.y + 1.6, p.position.z);
+    const c2 = this.calimaClear * this.calimaClear;
+    for (const m of this.machines.list) {
+      if (m._disposed) continue;
+      _db.set(m.position.x, m.position.y + (m.height || 2) * 0.6, m.position.z);
+      const dx = _db.x - _da.x, dz = _db.z - _da.z;
+      m.dustOccluded = (calima && dx * dx + dz * dz > c2) || this.dustBetween(_da, _db);
+    }
+  }
+
+  /** Once per sim step, from `Machines.update`. */
+  update(dt) {
+    this.clock += dt;
+    const env = this.ctx.environment;
+    this.sightScale = perceptionScale(env);
+    this.weather = weatherName(env);
+    const cl = this._clouds;
+    for (let i = cl.length - 1; i >= 0; i--) if (cl[i].until <= this.clock) cl.splice(i, 1);
+    const f = this.flag;
+    if (f.active) {
+      if (this.clock >= f.until - 1e-6) this._endFlag();
+      else this._applyFlag(false);
+    }
+    this._dustT -= dt;
+    if (this._dustT <= 0) { this._dustT = DUST_TICK; this._dustPass(); }
+  }
+
+  /** Gate/debug: one line of state. */
+  audit() {
+    const f = this.flag;
+    return {
+      detectMul: this.detectMul, flagDuration: this.flagDuration, dustSight: this.dustSight,
+      sightScale: +this.sightScale.toFixed(3), weather: this.weather, clouds: this._clouds.length,
+      flag: { active: f.active, raised: f.raised, ended: f.ended, duration: f.duration,
+        age: f.active ? +(this.clock - f.t0).toFixed(3) : null },
+      flagged: this.machines.list.filter((m) => m.flagMark === f).length,
+    };
+  }
 }

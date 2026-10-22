@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { hexToRgb, srgbToLinear } from './lib/color.js';
+import { perceptionScale } from './lib/weather.js';
 
 /**
  * LAMP STATES — the Instruments' lamp grammar (instruments-core W0b; bible §7.2,
@@ -60,6 +61,15 @@ export const LAMP_STATES = Object.freeze({
   dark: Object.freeze({ id: 'dark', token: '#3B3A36', aperture: 0.0, beam: false, rhythm: 'sputter', hz: 0 }),
 });
 export const LAMP_ORDER = Object.freeze(['calm', 'wary', 'hostile', 'dark']);
+/** The tokens as numbers (three.js colour ints), for materials that take a hex. */
+export const LAMP_HEX = Object.freeze(Object.fromEntries(LAMP_ORDER.map((s) => [s, parseInt(LAMP_STATES[s].token.slice(1), 16)])));
+/**
+ * Compass pips (bible §9.7: "Instrument ◆ in its lamp-state colour and iris
+ * shape"): the lamp tokens and apertures, published for shell-ui (W2) so the
+ * HUD never re-types a lamp colour. Graded by `A-lamp-canon-distance`.
+ */
+export const COMPASS_PIP = Object.freeze(Object.fromEntries(LAMP_ORDER.map((s) => [s,
+  Object.freeze({ color: LAMP_STATES[s].token, aperture: LAMP_STATES[s].aperture })])));
 
 /** Beam rules (bible §7.2 + plan §4.1 "64 per cone, instanced, 1 draw"). */
 export const BEAM = Object.freeze({
@@ -80,33 +90,20 @@ const SPUTTER_S = 0.55;
 /** Iris speed (1/s): the aperture closes most of the way in ~0.2 s. */
 const IRIS_RATE = 14;
 
-/** Instrument perception, by weather name, until world-sky publishes `environment.perceptionScale` (bible §2.3). */
-export const WEATHER_PERCEPTION = Object.freeze({
-  trade: 1.0, clear: 1.0, calima: 0.5, fogbank: 0.5, squall: 0.8,
-  overcast: 1.0, rain: 0.8, storm: 0.8,
-});
-export const NIGHT_PERCEPTION = 0.7;
+/** Instrument perception by weather (bible §2.3): `lib/weather.js`, re-exported for older imports. */
+export { WEATHER_PERCEPTION, NIGHT_PERCEPTION, perceptionScale } from './lib/weather.js';
 
 /**
- * Instrument perception scale for the current weather and hour. world-sky's
- * `environment.perceptionScale` (W1) is authoritative when it is a number;
- * until then the bible §2.3 table by weather name, with night at 0.7 (the
- * smaller of the two applies).
+ * Map a machine to its lamp state (bible §7.2 + §7.3).
+ *   dark     dead, or blinded: a precise hit on the lamp (`lampDarkT`, 6 s) or
+ *            Clouded (the Dust status, engine channel `shock`: `stunT`)
+ *   hostile  alert, attack, stagger, downed
+ *   wary     suspicious, search
+ *   calm     patrol, return
  */
-export function perceptionScale(env) {
-  if (!env) return 1;
-  const own = env.perceptionScale;
-  if (typeof own === 'number' && Number.isFinite(own)) return Math.max(0, own);
-  const w = WEATHER_PERCEPTION[env.weather] ?? 1;
-  const nf = Math.min(1, Math.max(0, env.nightFactor || 0));
-  const n = 1 + (NIGHT_PERCEPTION - 1) * nf;
-  return Math.min(w, n);
-}
-
-/** Map a machine to its lamp state (bible §7.2 + §7.3: a darkened lamp is `dark`). */
 export function lampStateFor(m) {
   if (!m || !m.alive || m.state === 'dead') return 'dark';
-  if ((m.lampDarkT || 0) > 0) return 'dark';
+  if ((m.lampDarkT || 0) > 0 || (m.stunT || 0) > 0) return 'dark';
   switch (m.state) {
     case 'suspicious': case 'search': return 'wary';
     case 'alert': case 'attack': case 'stagger': case 'downed': return 'hostile';
@@ -423,17 +420,12 @@ export class LampSystem {
     this.beamDraws = 0;
     this.lampDraws = 0;
     this._frame = -1;
-    this.beamMesh.onBeforeRender = (renderer) => {
-      const f = renderer.info.render.frame;
-      if (f !== this._beamFrame) { this._beamFrame = f; this.beamDraws = 0; }
-      this.beamDraws++;
-    };
-    this.lampMesh.onBeforeRender = (renderer) => {
-      const f = renderer.info.render.frame;
-      if (f !== this._lampFrame) { this._lampFrame = f; this.lampDraws = 0; }
-      this.lampDraws++;
-    };
+    // per-frame draw counters: zeroed in update() (before the frame renders), counted per draw
+    this.beamMesh.onBeforeRender = () => { this.beamDraws++; };
+    this.lampMesh.onBeforeRender = () => { this.lampDraws++; };
     this.beamCount = 0;
+    /** Gate/debug: draw the frame without the beams (A-lamp-states' paired with/without read). */
+    this.hideBeams = false;
     this.fogK = 1;
     this.night = 0;
 
@@ -441,6 +433,27 @@ export class LampSystem {
     this.group.name = 'instrument-lamps-root';
     this.group.add(this.lampMesh, this.beamMesh);
     ctx.scene?.add(this.group);
+    /**
+     * ONE DRAW MEANS ONE DRAW (A-beams-one-draw). The GTAO pass re-renders the
+     * scene with an override material to build its normal/depth G-buffer; an
+     * additive light cone written into that buffer is a second beam draw per
+     * frame AND false ambient occlusion along the beam. A render with
+     * `scene.overrideMaterial` set (G-buffer, never the beauty pass) skips both
+     * lamp draws; the pass restores visibility itself afterwards
+     * (GTAOPass.restoreVisibility). Chained, allocation-free.
+     */
+    const scene = ctx.scene;
+    if (scene) {
+      const prev = scene.onBeforeRender;
+      this._sceneHook = prev;
+      const self = this;
+      scene.onBeforeRender = function lampsOverrideSkip(r, sc, cam, target) {
+        if (prev) prev.call(this, r, sc, cam, target);
+        if (sc.overrideMaterial) { self.beamMesh.visible = false; self.lampMesh.visible = false; }
+        else { self.beamMesh.visible = self.beamCount > 0 && !self.hideBeams; self.lampMesh.visible = self.lampMesh.count > 0; }
+      };
+      this._scene = scene;
+    }
     this._solve(true);
   }
 
@@ -510,6 +523,8 @@ export class LampSystem {
 
   /** Once per rendered frame (Machines.interpolate). Allocation-free. */
   update() {
+    this.beamDraws = 0;
+    this.lampDraws = 0;
     this._solve(false);
     this._airUpdate();
     const t = this.ctx.engine?.simTime ?? (performance.now() / 1000);
@@ -628,6 +643,8 @@ export class LampSystem {
   }
 
   dispose() {
+    if (this._scene && this._scene.onBeforeRender?.name === 'lampsOverrideSkip') this._scene.onBeforeRender = this._sceneHook || (() => {});
+    this._scene = null;
     this.group.parent?.remove(this.group);
     this.lampMesh.geometry.dispose();
     this.beamMesh.geometry.dispose();

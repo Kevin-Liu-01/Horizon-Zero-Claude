@@ -9,6 +9,7 @@ import {
   perceptionCfg, engageCfg, elemThreshold, alarmRadius,
 } from './ai/tables.js';
 import { LAMP_STATES, lampStateFor, lampGain } from '../../instruments/lamps.js';
+import { VFX_COLORS } from '../../instruments/lib/vfx.js';
 
 /**
  * Base Machine: state machine, perception, terrain-conforming steering,
@@ -24,8 +25,9 @@ const WORLD_LIMIT = PLAY_RADIUS + EXTENT.machineRim;
  * lamps.js` LAMP_STATES; Round 5 W0b). The Round-4 values were Horizon's own
  * sensor canon; every machine (legacy kinds included, until they go at W2)
  * now glows in the CALIMA lamp tokens, and `_updateEyes` runs the lamp
- * rhythm (steady / 1 Hz pulse / 4 Hz flicker). Instrument kinds also carry
- * an iris lens + beam drawn by `machines.lamps` (see `addLamp`).
+ * rhythm from `lampStateFor` / `lampGain` (calm steady, wary 1 Hz pulse,
+ * hostile 4 Hz flicker, dark sputter-then-out). An Instrument kind also
+ * registers an iris lens + beam with `addLamp()`, drawn by `machines.lamps`.
  */
 export const EYE_COLORS = {
   calm: new THREE.Color(LAMP_STATES.calm.token),
@@ -35,21 +37,8 @@ export const EYE_COLORS = {
   flash: new THREE.Color(3.0, 3.0, 2.55), // white-hot attack telegraph
 };
 
-/**
- * VFX palette (A-vfx-palette): no particle or glint within ΔE2000 15 of the
- * Horizon sensor blue / override teal. Elements per bible §5.8: `fire` =
- * Cinder, `freeze` = Brine, `shock` = Dust. Glints are salt / bronze chips.
- */
-export const VFX_COLORS = Object.freeze({
-  cinderHot: 0xfff1d8, cinderMid: 0xff7a1e, cinderLate: 0xc23a10,
-  brineHot: 0xf1eee6, brineMid: 0xbde6e3, brineLate: 0x6f9e98,
-  dustHot: 0xfff3d8, dustMid: 0xc98b4e, dustLate: 0x6e4a28,
-  saltGlint: 0xf3efe4,      // seized-joint crust shatter / crawl glints
-  bronzeChip: 0xe8c48a,     // shock arcs and generic sparks (was ice blue)
-  beacon: 0xe9c77b,         // loot beacon column (was cyan)
-  brineFrost: 0xd6ece6,     // seized tint on plates
-  flameLate: 0xc23a10,      // flame licks cool toward cinder, not toward the hostile lamp
-});
+/** VFX palette (A-vfx-palette): `src/instruments/lib/vfx.js`, re-exported here for older imports. */
+export { VFX_COLORS };
 
 /**
  * THE MACHINE FSM, CLOSED (Round 5, R17). These nine are every state the
@@ -66,7 +55,11 @@ const STATE_SET = new Set(MACHINE_STATES);
 const FROST_COLOR = new THREE.Color(VFX_COLORS.brineFrost);
 const _flameLate = new THREE.Color(VFX_COLORS.flameLate);
 const ELEM_DECAY = 7;      // buildup meter decay per second
-const TELEGRAPH_T = 0.4;   // eye-flash duration at attack windup (canon dodge cue)
+const TELEGRAPH_T = 0.4;   // eye-flash duration at attack windup (legacy kinds' dodge cue)
+/** Dark: the last colour sputters this long, then the lamp is out (bible §7.2). */
+const LAMP_SPUTTER_S = 0.55;
+/** A precise hit on the lamp darkens it this long (bible §7.3). */
+const LAMP_DARK_S = 6;
 
 /** Roll a loot spec [{id, n | min/max, chance?}] into concrete [{id, n}]. */
 export function rollLoot(spec) {
@@ -313,6 +306,10 @@ export class Machine {
     this._burnAnchorSet = false;
     this._arcClock = 0;
     this._eyeFlare = 0; // one-frame sensor flare (attack telegraphs)
+    this.lampDarkT = 0; // a hit lamp is dark this long (bible §7.3)
+    this.lamp = null;   // the iris lamp record (`addLamp`, `machines.lamps`)
+    this.flagMark = null; // the Flag this machine is searching toward (`machines.perception`)
+    this.dustOccluded = false; // Dust hides it from the player (Dust-sight outline flag)
     this._attack = null;
     this._attackCd = 1 + Math.random() * 2;
     this._speed = 0;
@@ -450,6 +447,35 @@ export class Machine {
       this._eyeMats.push({ mat: cm, base: 1, kind: 'basic' });
     }
     return spr;
+  }
+
+  /**
+   * THE IRIS LAMP (bible §7.2, instruments-core W0b; gates `A-lamp-states`,
+   * `A-beams-one-draw`). Registers this machine's lens with `machines.lamps`,
+   * which draws every lamp of every Instrument in ONE instanced draw (iris
+   * aperture 100/50/20 %, closed when dark) and every beam in one more.
+   *
+   *   at    an Object3D whose origin is the lens centre and whose +Z is the
+   *         lens axis, or a BODY-space [x, y, z] (an anchor facing +Z is made
+   *         under `this.body`, so `buildRig` carries it on the nearest bone —
+   *         call this BEFORE `buildRig`)
+   *   opts  { radius = 0.13 } lens radius in metres
+   * Returns the lamp record (`machine.lamp`), or null when no lamp system is
+   * installed (a studio cast, a probe). The record is released on dispose.
+   */
+  addLamp(at, opts = {}) {
+    let anchor = at;
+    if (Array.isArray(at)) {
+      const s = this._worldScale(this.body);
+      anchor = new THREE.Object3D();
+      anchor.name = 'lamp-anchor';
+      anchor.position.set(at[0] / s, at[1] / s, at[2] / s);
+      anchor.userData.machine = this;
+      anchor.userData.lampAnchor = true;
+      this.body.add(anchor);
+    }
+    this._lampAnchor = anchor;
+    return this.manager?.lamps?.attach(this, anchor, opts) ?? null;
   }
 
   /** Weak-point sphere. Offset in meters; radius is in world meters.
@@ -787,6 +813,8 @@ export class Machine {
           const wm = wp.mult ?? 3;
           mult = Math.max(mult, wm);
           if (wm >= 2) weak = true;
+          // bible §7.3: a precise hit on the LAMP darkens it for 6 s (sight off)
+          if (wp.name === 'lamp' && this.alive) this.lampDarkT = LAMP_DARK_S;
         }
       }
     }
@@ -1143,6 +1171,15 @@ export class Machine {
       this._alertEpisode = true;
       this.emit('machine-alerted', { machine: this });
       this.onAlerted?.(wasCalm);
+      /**
+       * THE FLAG (bible §7.4 Sightline, §4.7 "Shrug"; instruments-core W0b):
+       * a machine whose perception row says `flags: true` (or one staged with
+       * `flagsOnSight`) that goes hostile BY SIGHT with a lit lamp marks her
+       * for `machines.perception.flagDuration` seconds.
+       */
+      if (this._visible && (this.flagsOnSight ?? this.perceptCfg?.flags) && !(this.lampDarkT > 0)) {
+        this.manager?.perception?.flagPlayer(this);
+      }
     }
     if (name === 'patrol' || name === 'return') {
       this._alertEpisode = false;
@@ -1184,6 +1221,7 @@ export class Machine {
 
     this.ai.tick(dt);
     this._alarmCd = Math.max(0, this._alarmCd - dt);
+    if (this.lampDarkT > 0) this.lampDarkT = Math.max(0, this.lampDarkT - dt);
 
     // attack-timer cooldowns tick unconditionally (lowLOD coarse steps and
     // stun must not freeze them — subclasses implement tickCooldowns)
@@ -2227,6 +2265,80 @@ export class Machine {
       for (const rec of [...this._tornRecs]) this._removeTornPart(rec);
       this._tornRecs.length = 0;
     }
+    if (this._disposed) this._releaseOnDispose();
+  }
+
+  /**
+   * THE LAST STEP OF A DISPOSED MACHINE (R34, instruments-core W0b;
+   * `A90b-memory-attribution` with the role-based workload).
+   *
+   * `ai/sites.js` dispose frees the geometries and materials it can see and
+   * `rig/lod.js` `disposeRig` the skeletons. What was left held after the
+   * corpse lifecycle was the MODEL CLONE (this constructor's
+   * `src.root.clone()`) and the AUTO-RIG BONES (`autorig.js` `makeBone`):
+   * anything still pointing at the Machine reached both through `model`,
+   * `body`, `rig` and `gait`. So the machine lets go of its own body:
+   *   - its lamp record and any Flag mark are released;
+   *   - every SkinnedMesh's skeleton is disposed (idempotent with `disposeRig`)
+   *     and unbound; every bone array is emptied;
+   *   - the subtree is cut from `root` and the body-side fields are nulled, so
+   *     a stale reference to the Machine retains a shell, not a sculpt.
+   * Geometries shared with the species' source asset are never touched here.
+   * Idempotent.
+   */
+  _releaseOnDispose() {
+    if (this._released) return;
+    this._released = true;
+    try { this.disposeRig?.(); } catch (e) { /* rig never built */ }
+    this.manager?.lamps?.detach(this);
+    this.lamp = null;
+    this._lampAnchor = null;
+    this.flagMark = null;
+    const bones = [];
+    const drop = (sk) => {
+      if (!sk) return;
+      try { sk.dispose(); } catch (e) { /* already gone */ }
+      for (const b of sk.bones) bones.push(b);
+      sk.bones.length = 0;
+      sk.boneInverses.length = 0;
+    };
+    this.root?.traverse((o) => {
+      if (o.isSkinnedMesh) { drop(o.skeleton); o.skeleton = null; }
+    });
+    drop(this.rig?.skeleton);
+    for (const b of bones) { b.parent?.remove(b); b.userData = {}; }
+    if (this.rig) {
+      for (const k of Object.keys(this.rig)) this.rig[k] = null;
+    }
+    this.root?.clear();
+    this.model = null;
+    this.holder = null;
+    this.body = null;
+    this.rig = null;
+    this.gait = null;
+    // the rig's other handles on the bones and the clone: the rest-pose Map
+    // (Bone -> Quaternion), the bone-space rotator, the socket proxy (it keeps
+    // `model`), the shared FX pool handle
+    this._rest = null;
+    this._rot = null;
+    this.hullProxy = null;
+    this._hullProxy = null;
+    this._fxPool = null;
+    // ...and any other field still pointing INTO the released subtree (a node,
+    // a skeleton, a Map keyed by nodes): measured, not assumed — a disposed
+    // machine that something still holds must hold a shell, not a sculpt
+    for (const k of Object.keys(this)) {
+      const v = this[k];
+      if (!v || typeof v !== 'object' || v === this.root || k === 'ctx' || k === 'rootCtx' || k === 'manager') continue;
+      if (v.isObject3D || v.isSkeleton || (v instanceof Map && v.size && [...v.keys()][0]?.isObject3D)) this[k] = null;
+    }
+    this.parts.length = 0;
+    this.weakPoints.length = 0;
+    this._eyeMats.length = 0;
+    this._emisMats.length = 0;
+    this._partGlows.length = 0;
+    this._frostMats = null;
+    this._fadeMats = null;
   }
 
   /**
@@ -2261,31 +2373,54 @@ export class Machine {
 
   /* ------------------------- sensor glow ------------------------- */
 
+  /**
+   * THE LAMP RHYTHM (bible §7.2, instruments-core W0b): `lampStateFor(this)`
+   * names the state, `lampGain` the brightness on the SIM clock — calm steady,
+   * wary a 1 Hz pulse, hostile a 4 Hz flicker, dark (dead, a lamp hit, Clouded)
+   * a 0.55 s sputter of the last colour and then out. Every glow this machine
+   * owns follows it: eye sprites, flat emissive lens materials, shell sensor
+   * strips. An Instrument's iris + beam (`addLamp`) are drawn by
+   * `machines.lamps` from the same two functions. The white-hot windup flash
+   * (`_telegraphT`) is the Round-4 dodge cue and stays on machines WITHOUT an
+   * iris lamp only (the legacy kinds, gone at W2): an Instrument's lamp never
+   * leaves the grammar.
+   */
   _updateEyes(dt, t) {
+    const tt = this.ctx.engine?.simTime ?? t;
+    const s = lampStateFor(this);
+    if (s !== this._lampState) {
+      this._lampPrev = this._lampState || 'calm';
+      this._lampState = s;
+      this._lampSince = tt;
+    }
+    const phase = this._lampPhase ?? (this._lampPhase = Math.random());
     let target;
-    let pulse = 1;
-    switch (this.state) {
-      case 'dead': target = EYE_COLORS.dead; pulse = Math.max(0, 1 - this._deathT * 1.5) * (Math.random() < 0.3 ? 1 : 0.15); break;
-      case 'suspicious':
-      case 'search': target = EYE_COLORS.wary; pulse = 0.85 + 0.3 * Math.sin(t * 7); break;
-      case 'alert':
-      case 'stagger':
-      case 'attack': target = EYE_COLORS.hostile; pulse = 1.1 + 0.15 * Math.sin(t * 11); break;
-      // downed: the sensor guts out and stutters — the Critical Hit window
-      case 'downed': target = EYE_COLORS.hostile; pulse = Math.random() < 0.4 ? 1.5 : 0.25; break;
-      default: target = this._eyeCalm || EYE_COLORS.calm; pulse = 0.85 + 0.2 * Math.sin(t * 2.1);
-    }
-    if (this.stunT > 0) pulse = Math.random() < 0.5 ? 1.6 : 0.2;
-    if (this._eyeFlare > 0) { pulse *= 1 + this._eyeFlare; this._eyeFlare = 0; }
-    if (this._telegraphT > 0 && this.alive) {
-      // attack-windup telegraph: eye burns white-hot for ~0.4s
-      this._telegraphT -= dt;
-      target = EYE_COLORS.flash;
-      pulse = Math.max(pulse, 2.6);
-      this._eyeColor.lerp(target, Math.min(1, dt * 25));
+    let pulse;
+    if (s === 'dark') {
+      const age = tt - this._lampSince;
+      if (age < LAMP_SPUTTER_S && this._lampPrev !== 'dark') {
+        target = this._lampPrev === 'calm' ? (this._eyeCalm || EYE_COLORS.calm) : EYE_COLORS[this._lampPrev];
+        pulse = Math.sin(tt * 97 + phase * 13) > 0.1 ? 0.9 : 0.15;
+      } else {
+        target = EYE_COLORS.dead;
+        pulse = 0;
+      }
     } else {
-      this._eyeColor.lerp(target, Math.min(1, dt * 7));
+      target = s === 'calm' ? (this._eyeCalm || EYE_COLORS.calm) : EYE_COLORS[s];
+      pulse = lampGain(s, tt, phase);
     }
+    const legacyCue = !this.lamp;
+    if (legacyCue && this._eyeFlare > 0) pulse *= 1 + this._eyeFlare;
+    this._eyeFlare = 0;
+    if (this._telegraphT > 0 && this.alive) {
+      this._telegraphT -= dt;
+      if (legacyCue) {
+        // attack-windup telegraph (legacy kinds): eye burns white-hot for ~0.4 s
+        target = EYE_COLORS.flash;
+        pulse = Math.max(pulse, 2.6);
+      }
+    }
+    this._eyeColor.lerp(target, Math.min(1, dt * (target === EYE_COLORS.flash ? 25 : 12)));
 
     for (const e of this._eyeMats) {
       if (e.kind === 'sprite' || e.kind === 'basic') {
@@ -2294,7 +2429,9 @@ export class Machine {
         if (e.kind === 'basic') e.mat.opacity = this.state === 'dead' ? 0 : 1;
       } else {
         e.mat.emissive.copy(this._eyeColor);
-        e.mat.emissiveIntensity = e.base * pulse;
+        // an Instrument's glass reads in its lamp COLOUR (bible §7.2: colour is the third read):
+        // capped at the token's own value so the tone map cannot wash chartreuse or magenta to white
+        e.mat.emissiveIntensity = this.lamp ? Math.min(1, e.base * pulse) : e.base * pulse;
       }
     }
     // death: EVERY light dies out (research 0.4) — body strips fade with the

@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { Perception } from './perception.js';
+import { Perception, PerceptionHooks } from './perception.js';
 import { Engage } from './engage.js';
 import { Search } from './search.js';
 import { AttackPicker } from './attacks.js';
@@ -10,7 +10,7 @@ import { Squads } from './squad.js';
 import { perceptionCfg, attackMode, NOISE } from './tables.js';
 import { listenerErrors, clearListenerErrors } from './emit.js';
 
-export { Perception, Engage, Search, AttackPicker, Reactions, StimulusBus, SiteManager, Squads };
+export { Perception, PerceptionHooks, Engage, Search, AttackPicker, Reactions, StimulusBus, SiteManager, Squads };
 
 /**
  * ============================ LANE CONTRACT ============================
@@ -357,6 +357,15 @@ export function installMachineAI(machines) {
   machines.stimulus = new StimulusBus(machines);
   machines.sites = new SiteManager(machines);
   machines.squads = new Squads(machines);
+  /**
+   * ROUND 5 PERK + WEATHER CONTRACT (instruments-core W0b, plan §3.2):
+   *   machines.perception.detectMul / .flagDuration / .flagPlayer(source) /
+   *   .addDustCloud(...) / .outlined(m) / .sightScale, machine.dustOccluded,
+   *   machines.stimulus.addNoiseFilter(fn) -> remover.
+   * Full shape in `ai/perception.js` PerceptionHooks; stepped from
+   * `Machines.update` once per sim step.
+   */
+  machines.perception = new PerceptionHooks(machines);
 
   /* ---------------------------- public API ---------------------------- */
 
