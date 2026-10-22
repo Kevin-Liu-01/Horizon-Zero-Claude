@@ -346,23 +346,38 @@ const GATES = [
     id: 'A6-machine-foot-plant', kind: 'action', lane: 'machines',
     title: 'Walking machine stance feet sit on terrain (|footY - ground| ≤ 0.15m, slip < 0.2m)',
     settle: 500,
-    assert: `(async () => {
-      const list = __CTX__.machines?.list || [];
-      const m = list.find(x => x.alive && x.debugFeet);
-      if (!m) return { pass: null, detail: 'SKIP: no machine exposes debugFeet() yet (Round 3 machines contract)' };
+    /**
+     * R5 (gates-perf W0b): staged by ROLE (R28), not on whichever machine is first in the list. Round 4 read the
+     * first live machine for 1.4 s; after the W0a merge that machine was a standing one ("no planted samples"), so
+     * the row measured nothing. Now: the herd role's kind (the Tiller fixture at W0), the live one nearest the
+     * player, with the player stood 11.7 m from it so its rig runs at full LOD (a far machine runs the cheap gait,
+     * which plants no feet), sampled until 12 planted-foot samples are banked or 8 s pass. The bar is Round 4's:
+     * |footY - ground| <= 0.15 m.
+     */
+    assert: staged(['herd'], `(async () => {
+      const __p = __CTX__.player;
+      let pool = livesOf('herd').filter((x) => typeof x.debugFeet === 'function')
+        .sort((a, b) => Math.hypot(a.position.x - __p.position.x, a.position.z - __p.position.z) - Math.hypot(b.position.x - __p.position.x, b.position.z - __p.position.z)).slice(0, 1);
+      if (!pool.length) { const m0 = await stageRole('herd'); if (m0 && typeof m0.debugFeet === 'function') pool = [m0]; }
+      if (!pool.length) return { pass: null, detail: 'SKIP-R18: no live ' + KIND.herd + ' (herd) exposes debugFeet()' };
+      __p.position.set(pool[0].position.x + 10, 0, pool[0].position.z + 6); __p._snapToGround?.();
+      await new Promise((r) => setTimeout(r, 1500));
       const samples = [];
-      for (let i = 0; i < 12; i++) {
-        const feet = m.debugFeet();
-        for (const f of feet) if (f.planted) samples.push({
-          err: Math.abs(f.world.y - __CTX__.terrain.getHeight(f.world.x, f.world.z)),
-          x: f.world.x, z: f.world.z, name: f.name,
-        });
+      const t0 = performance.now();
+      while (samples.length < 12 && performance.now() - t0 < 8000) {
+        for (const m of pool) {
+          if (!m.alive) continue;
+          for (const f of m.debugFeet()) if (f.planted) samples.push({
+            err: Math.abs(f.world.y - __CTX__.terrain.getHeight(f.world.x, f.world.z)),
+            x: f.world.x, z: f.world.z, name: f.name, kind: m.kind,
+          });
+        }
         await new Promise(r => setTimeout(r, 120));
       }
-      if (!samples.length) return { pass: null, detail: 'SKIP: no planted samples (machine idle?)' };
+      if (!samples.length) return { pass: null, detail: 'SKIP-R18: no planted-foot sample from ' + pool.length + ' live ' + KIND.herd + ' (herd) in 8 s (none walking)' };
       const maxErr = Math.max(...samples.map(s => s.err));
-      return { pass: maxErr <= 0.15, detail: { maxGroundErr: +maxErr.toFixed(3), samples: samples.length, kind: m.kind } };
-    })()`,
+      return { pass: maxErr <= 0.15, detail: { maxGroundErr: +maxErr.toFixed(3), samples: samples.length, kind: KIND.herd, role: 'herd', machines: pool.length } };
+    })()`),
   },
   {
     id: 'A7-alert-fsm', kind: 'action', lane: 'machines',

@@ -572,6 +572,17 @@ async function a90Abs({ PORT }) {
     const heapPostGc = await gcAndHeap(cdp);
     const perfMem = await page.evaluate('performance.memory ? { used: performance.memory.usedJSHeapSize, total: performance.memory.totalJSHeapSize, limit: performance.memory.jsHeapSizeLimit } : null');
     gpuSamples.push(await gpuProcess(browser));
+    // WHAT-IF (reported, never graded): the same fight at pixel ratio 1.25, the DPR cap engine-gpu measures its
+    // render-target ledger at (its W0b tier decision). The driver may keep freed surfaces cached, so a smaller
+    // number here is a lower bound on the saving, not a prediction of the shipped tier.
+    let whatIfDpr125 = null;
+    try {
+      const was = await page.evaluate(`(async () => { ${FRAMES} const e = __CTX__.engine; const was = e.basePixelRatio; e.basePixelRatio = 1.25; e.renderScale = 1; e.resize(); await __frames(180); return was; })()`);
+      await sleep(4000);
+      const g = await gpuProcess(browser);
+      whatIfDpr125 = { pixelRatio: 1.25, from: was, footprintMB: g.footprintB == null ? null : MB(g.footprintB), rssMB: g.rssB == null ? null : MB(g.rssB) };
+      await page.evaluate(`(() => { const e = __CTX__.engine; e.basePixelRatio = ${JSON.stringify(was)}; e.renderScale = 1; e.resize(); return true; })()`);
+    } catch (err) { whatIfDpr125 = { error: String(err.message || err).slice(0, 160) }; }
     await page.evaluate(UNSTAGE);
     const gpu = gpuSamples.filter((g) => g.found && g.footprintB != null);
     const gpuMax = gpu.length ? Math.max(...gpu.map((g) => g.footprintB)) : null;
@@ -590,7 +601,7 @@ async function a90Abs({ PORT }) {
       ceilings: { heapMB: 450, gpuProcessMB: 1500 },
       heapMB: { atBoot: MB(heapAtBoot), afterA90: MB(heapAfterA90), afterFightPostGc: MB(heapPostGc) }, performanceMemory: perfMem,
       gpuProcess: gpuSamples.map((g) => ({ ...g, footprintMB: g.footprintB == null ? null : MB(g.footprintB), rssMB: g.rssB == null ? null : MB(g.rssB) })),
-      a90, durationsS: { a90Loop: loopS, a90Lifecycle: lifeS, fight: fightS, shortened }, fight,
+      whatIfDpr125, a90, durationsS: { a90Loop: loopS, a90Lifecycle: lifeS, fight: fightS, shortened }, fight,
       method: 'A90-memory-stability\'s kill -> respawn workload (gate-roster memWorkload / memRespawnAfter, same loop and lifecycle times), two forced GCs (CDP HeapProfiler.collectGarbage), then the A21 staged fight for ' + fightS + ' s; JS heap = Runtime.getHeapUsage().usedSize after two forced GCs; GPU process = SystemInfo.getProcessInfo type GPU, macOS `footprint -p <pid> -f bytes` (phys_footprint, includes IOSurface / Metal memory), sampled every 15 s through the fight, max graded',
     } };
   });
