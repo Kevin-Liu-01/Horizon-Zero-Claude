@@ -1,7 +1,7 @@
 # ROUND 5 — lane `brand`
 
 Port 5253 · tree `scratchpad/r5/brand/tree` (branch `r5/w0b-brand`, base `a953355`; the orchestrator's backup
-checkpoints sit on it, the latest `a2bf79c`, which also synced main's PLAN at `ca911e6`) · plan §2 brand row, §6,
+checkpoints sit on it, and `a2bf79c` among them synced main's PLAN at `ca911e6`) · plan §2 brand row, §6,
 §7.4, §9 "brand" · bible §9.7–9.8, §10, §11.2.
 
 This file holds the **W0b report as of fix round 2 after the W0b judges (Oct 22)** (sections 0–7), the earlier
@@ -29,9 +29,9 @@ clause was loosened, nothing was stubbed. What changed:
 
 | finding | what I did | measured (port 5253, `fix2/full.log`) |
 |---|---|---|
-| **1 (blocker) and 3 (blocker): A-fonts-licensed FAILs `zeroRefsAnywhere`; no §1.2 grant; the 8 `.ttf` deleted before the gate that unlocks it** | **Not closable by brand (rule 1); made one command for the orchestrator.** New `tools/lint/patches/w0b-plan-orchestrator.patch` (a proposal, for the orchestrator to review): the §1.2 row, exactly the `GRANT_LINE` the gate prints, and an R40 (b) that ties the §6 deletion, the 5 removed `legacy-font-*` rows and the font patch into one merge. Checked with `git apply --check` against a throw-away index of main `ca911e6`: it applies, and `w0b-retired-font-refs.patch` still applies on top of it. Both also apply to this tree. On the §6 timing (finding 3): unchanged from fix round 1, measured then: restoring the 8 files in the branch needs their 5 rows back, which adds 5 player-lint hits (1513 > 1508) and fails two more font clauses, so the deletion and the patch land together or not at all (§7 item 1) | ⟨FONTS⟩ |
-| **2 (blocker) and 4 (major): V38-title FAILs the Pans-in-calima clause** | **The Pans clause still cannot pass before W1** (world-ground builds the Pans, world-sky the calima weather); the criteria stay the plan text, verbatim. **New:** the V38 row reads the plan for a §8.3 marker `<!-- r5-ruling v38-pans=W1 -->` (engine-gpu's marker pattern); when it is there, the §8.3 bullet that rules on V38-title is appended to the criteria **verbatim**, and a marker without its bullet throws. The proposed bullet is R40 (a) in the patch above. Checked offline: with this tree's PLAN the criteria are the §9 text alone; with the patched PLAN they are the §9 text + R40 verbatim | **My reading: FAIL on the Pans clause only**, in all 8 title frames (no salt grid, no surf, no black sand). Holding in all: one logo, the vertical menu 01–05, the coral disc upper right, no walker, no lava, and now the spark in clear sky |
-| **4 (evidence): "a needle spire rises straight up behind the spark on the plumb axis, so the spark reads as pinned on a stick"** (judge's fix: re-check at W1) | **Fixed now** (§0.2): the framing chooser keeps the spark in clear sky over the whole title, the title block stands 10vh higher, and the new gate **`A-title-spark-clear`** grades it on the live camera | ⟨SPARK⟩ |
+| **1 (blocker) and 3 (blocker): A-fonts-licensed FAILs `zeroRefsAnywhere`; no §1.2 grant; the 8 `.ttf` deleted before the gate that unlocks it** | **Not closable by brand (rule 1); made one command for the orchestrator.** New `tools/lint/patches/w0b-plan-orchestrator.patch` (a proposal, for the orchestrator to review): the §1.2 row, exactly the `GRANT_LINE` the gate prints, and an R40 (b) that ties the §6 deletion, the 5 removed `legacy-font-*` rows and the font patch into one merge. Checked with `git apply --check` against a throw-away index of main `ca911e6`: it applies, and `w0b-retired-font-refs.patch` still applies on top of it. Both also apply to this tree. On the §6 timing (finding 3): unchanged from fix round 1, measured then: restoring the 8 files in the branch needs their 5 rows back, which adds 5 player-lint hits (1513 > 1508) and fails two more font clauses, so the deletion and the patch land together or not at all (§7 item 1) | **FAIL, 1 of 12 clauses** (`zeroRefsAnywhere`: 37 lines in 11 other-lane files, 0 in brand's). The other **11 PASS**: 3 families, 5 woff2, 136 KB; in play with the studio visited, 4 font requests, all woff2, 0 retired, 0 retired-led stacks. The patch removes all 37 lines and adds 0 |
+| **2 (blocker) and 4 (major): V38-title FAILs the Pans-in-calima clause** | **The Pans clause still cannot pass before W1** (world-ground builds the Pans, world-sky the calima weather); the criteria stay the plan text, verbatim. **New:** the V38 row reads the plan for a §8.3 marker `<!-- r5-ruling v38-pans=W1 -->` (engine-gpu's marker pattern); when it is there, the §8.3 bullet that rules on V38-title is appended to the criteria **verbatim**, and a marker without its bullet throws. The proposed bullet is R40 (a) in the patch above. Checked offline: with this tree's PLAN the criteria are the §9 text alone; with the patched PLAN they are the §9 text + R40 verbatim | **My reading: FAIL on the Pans clause only**, in all 6 V38 frames (no salt grid, no surf, no black sand). Holding in all: one logo, the vertical menu 01–05, the coral disc upper right, no walker, no lava, and now the spark in clear sky |
+| **4 (evidence): "a needle spire rises straight up behind the spark on the plumb axis, so the spark reads as pinned on a stick"** (judge's fix: re-check at W1) | **Fixed now** (§0.2): the framing chooser keeps the spark in clear sky over the whole title, the title block stands 10vh higher, and the new gate **`A-title-spark-clear`** grades it on the live camera | **A-title-spark-clear PASS**: 0 meshes behind the spark in 28 samples; terrain under it by 5.90–6.04° on the press beats, **4.98–13.17°** over 22 real-time menu samples (dolly 4.9 → 110.6 s), 0.99–1.37° in V-logo-4k's 2.4x staging (bar 0.4°). The old framing had the crest 12.4° OVER the spark. The disc gates still pass at the new hour (§4) |
 
 ### 0.2 The needle: what it was, what changed, what it costs
 
@@ -53,13 +53,14 @@ haze with the rim below it, in the press beat, the menu and the 105 s pose.
 - `src/ui/menu.js` (title block), the framing chooser: per visit it picks the **hour** (17:00 first, then 16:30,
   17:30, 16:00, 15:30, 15:00), the **view** (0.42 rad first, then 0.39, 0.45, 0.36, 0.48), the **bearing** (the
   Round-4 candidates whose path keeps the skyline under the disc) and the **least extra tilt** (0–8°) for which the
-  spark box, widened by a quarter of its width each side, stays 0.8° under clear sky from 20 points of the path in
-  both layouts, with the disc in the upper band (centre at or above the spark's centre, 100 px right of the lockup,
+  terrain crest stays at least 0.8° under the rays through the spark box's bottom edge (widened by a quarter of its
+  width each side) from 20 points of the path in both layouts, with the disc in the upper band (centre at or above the spark's centre, 100 px right of the lockup,
   whole in the frame with 40 px to spare). Nothing found: the Round-4 framing, reported unclear.
   On the Round-4 valley it picks **15:30, view 0.48, bearing −0.30, +8°** (pitch 17° → 20°). A later visit with
   the same layout re-checks the last pick first.
 - The disc's core colour x1.3: at 15:30 it stands higher, in the CSS top haze and further into the engine's
-  vignette; at x1.0 its centre led the sky ring by 0.1 luminance, at x1.15 by 2.4, at x1.3 by 5.9.
+  vignette; at x1.0 its centre led the sky ring by 0.1 luminance, at x1.15 by 2.4, at x1.3 by 5.9 (5.4 in the full
+  run), with ΔE 3.68 → 3.78 → 4.90 to #F2A27E (bar 10).
 - `tools/gates.r5.brand.mjs`: **`A-title-spark-clear`** (brand lane): the live camera, a ray every 6 px across the
   spark box's bottom edge, the terrain marched in 2 m steps over the rendered mesh's box and every other visible
   mesh raycast; bar: no mesh behind the spark and the terrain **≥ 0.4°** (about 6 px) under it, on the press beat,
@@ -68,8 +69,8 @@ haze with the rim below it, in the press beat, the menu and the 105 s pose.
   (`menus._titleReframe({ disc: false })`: that shot films the construction, not the disc).
 - The criteria and the bars of every other gate are unchanged. The disc gates pass at the new hour (§4).
 
-**What it costs.** The first title visit runs the full search: ⟨MS1⟩ ms once (150 candidates, about 6 full
-verifications); a second visit with the same layout re-checks the cached pick: ⟨MS2⟩ ms. The per-frame path is
+**What it costs.** The first title visit runs the full search: 292 ms once (150 quick reads, 1 full
+verification); a second visit with the same layout re-checks the cached pick: 99 ms. The per-frame path is
 unchanged (one `_titlePlace` call, no allocation). The chooser's scratch camera and vectors carry no GPU resources
 and are dropped on leave.
 
@@ -302,108 +303,90 @@ By rule: exact 881, substring 484, edit-1 78, phrase 65. The advisory named read
 ## 4. Gates (W0b block + the day-1 rows; port 5253)
 
 Lane rows: `node tools/gates.mjs --port 5253 --extra tools/gates.r5.brand.mjs --lane brand` (§6). The file has
-28 rows; on main the lane command runs 27, because brand's `V38-title` is the duplicate main's runner drops.
+29 rows; on main the lane command runs 28, because brand's `V38-title` is the duplicate main's runner drops.
 
-**Two runs this round.** Each took a machine-wide Chrome slot, and each left 0 Chrome profiles.
+**One full run this round** (`fix2/full.log`; Oct 22 17:34–17:56 UTC; slot 1; disk 45 GB free; memory 77 % free;
+load 3.4 / 3.0 / 3.3): the scratch combiner `fix2/full.gates.mjs` (brand's GATES as shipped plus pipeline's three
+licence gates) as the single `--extra`, `--only` naming 42 ids (28 brand rows, 11 global and must-stay-green rows,
+3 licence rows). **Result: 42 gates: 29 PASS, 2 FAIL (A-fonts-licensed, A21), 1 PENDING (A-licence-manifest),
+10 NEEDS-JUDGE.** It left 0 Chrome profiles of its own. Every number below is from that run, on the final code.
+Before it, the title rows alone were run while the framing was built (`fix2/t2…t6.log`); those numbers are
+superseded.
 
-**1. The full run** (`fix1/full.log`; Oct 22 11:2x–11:5x UTC):
-- Box: slot 1; disk 49 GB free; memory 58 % free; load 3.7 / 3.7 / 3.7.
-- One scratch combiner, `fix1/full.gates.mjs`, was the single `--extra` file. It held brand's GATES and pipeline's three licence gates. The 11 global and must-stay-green rows were picked by id from the main registry.
-- Result: **41 gates: 26 PASS, 2 FAIL, 3 PENDING, 10 NEEDS-JUDGE.**
-- **The player lint read 1509 > 1508 in this run.** The cause was the first version of the rest fix, which registered a `rest-end` listener; the lint counts event-bus keys as content ids. I replaced it with a per-frame `environment.resting` read **while this run was still going**. So the brand rows after A-title-disc-sun-pixels ran on the final code, and the rows before it did not.
-- The only difference between the two versions is that bus key and the rest case. Neither is touched by the global rows, which run in shot mode.
-
-**2. The lane command on the final code** (`fix1/lane.log`; Oct 22 11:5x–12:0x UTC):
-- Box: slot 1; disk 49 GB free; memory 70 % free; load 4.7 / 4.4 / 4.0.
-- Result: **27 gates: 16 PASS, 1 FAIL (A-fonts-licensed), 10 NEEDS-JUDGE.**
-- Every brand number below comes from this run. The global rows come from run 1.
-
-| gate | verdict | measured (fix round 1) |
+| gate | verdict | measured (fix round 2) |
 |---|---|---|
-| **A-no-horizon-terms-player** | **PASS** | **1508 ≤ 1508**: static 182 (61 in verbatim licence texts) + page 1,326; 171 surfaces, 78 tables, 4,788 strings, 9,199 keys, 0 truncated; dialogue 13 people / 53 cards / 40 topics, 0 missing; named reading 718. (Run 1, with the discarded listener: 1509, the extra hit in `ids:events` 29 → 30) |
+| **A-no-horizon-terms-player** | **PASS** | **1508 ≤ 1508**: static 182 (61 in verbatim licence texts) + page 1,326; 171 surfaces, 78 tables, 4,788 strings, 9,199 keys, 0 truncated; dialogue 13 people / 53 cards / 40 topics, 0 missing; named reading 718 |
 | **A-no-horizon-terms-code** | **PASS** | 1,435 ≤ 1,435; 246 files, 929 pairs, 8,215 occurrences, 0 uncovered, 0 over cap |
-| **A-fonts-licensed** | **FAIL (1 clause, other lanes' files)** | **FAIL:** `zeroRefsAnywhere`, 37 lines in 11 files (shell-ui 4, combat-kit 2, progression 2, studio 1, frozen `dialogue.js` 1, `tools/r5-direction` 1; 0 in brand's files). The patch applies to this tree and to main's `263ae19` and leaves 0 (37 removed, 0 added).<br>**PASS, the other 11 clauses:** 3 families, 5 woff2, 136 KB, one OFL text and one row each. Wordmark: Bodoni Moda 500. HUD label: Bodoni Moda. All 47 HUD texts resolve to licensed families (41 Plex Sans Condensed, 6 Bodoni). Numeral: Plex Mono 500.<br>**In play, studio visited:** 4 font requests, 0 retired, 0 stacks leading with a retired face. `oldFaces` `Julius Sans One:error` is the gate's own post-measurement probe of `hud.css`'s dangling `@font-face` (§0.1) |
-| **A-storage-keys** / **-reload** | PASS / PASS | 7 keys, all `/^cal\..*\.v5$/`, 0 bad, 0 missing; the planted pre-Round-5 keys → no save, defaults (sensitivity 1, music 0.8), fog 284 / 5,184, tips fresh, old keys untouched, 0 stray keys, 0 console errors |
+| **A-fonts-licensed** | **FAIL (1 clause, other lanes' files)** | **FAIL:** `zeroRefsAnywhere`, 37 lines in 11 files (0 in brand's). The patch applies and leaves 0 (37 removed, 0 added).<br>**PASS, the other 11 clauses:** 3 families, 5 woff2, 136 KB, one OFL text and one row each. Wordmark Bodoni Moda; HUD label Bodoni Moda; all 47 HUD texts licensed (41 Plex Sans Condensed, 6 Bodoni); numeral Plex Mono.<br>**In play, studio visited:** 4 font requests, all woff2, 0 retired, 0 stacks leading with a retired face. `oldFaces` `Julius Sans One:error` is the gate's own post-measurement probe of `hud.css`'s dangling `@font-face` |
+| **A-storage-keys** / **-reload** | PASS / PASS | 7 keys, all `/^cal\..*\.v5$/`, 0 bad, 0 missing; the planted pre-Round-5 keys → no save, defaults, fog 284 / 5,184, tips fresh, old keys untouched, 0 stray keys |
 | **A-ui-words** | PASS | 0 hits on 10 brand surfaces; regex read from the plan |
-| A-logo-construction | PASS | 17/17; Bodoni Moda 500 at 92 px, tracking 0.18 em; spark 58.9 px, 10.6 px above the cap line, on the plumb axis (x 827.4); rule 442.3 × 1.1 px spanning the glyphs 579–1021; arrow 3.9 px under the rule |
+| A-logo-construction | PASS | 17/17; unchanged geometry: Bodoni Moda 500 at 92 px, tracking 0.18 em; spark 58.9 px, 10.6 px above the cap line, on the plumb axis (x 827.4); rule 442.3 × 1.1 px; arrow 3.9 px under the rule |
 | A-loading-fill | PASS | 0.400 / 1.000 of a 366 px rule; "Reading the benchmarks…"; paper rgb(226, 211, 176); one logo |
-| **A-title-disc-depth** (real time) | **PASS** | 18/18.<br>**Placement:** 0.000° off the sky's sun (3.08° under `sunDir`); 1,859.6 m out; bearing offset −0.05 rad (clearance 0.11°, 12 candidates in 25.2 ms).<br>**Real time:** 22 samples over 105.1 s, dolly clock 2.3 → 106.7 s, hour 17 → 17; core bottom ≥ **1.37°** over the crest.<br>**Leaving:** on `game-start` the disc is removed, geometry and material are disposed, and the clock runs again (17.0035 → 17.0299). The audit now also shows `hour 17, titleHour 17, hourHandBack 17` |
-| **A-title-disc-sun** + **-pixels** | **PASS / PASS** | disc (1161, 193); centre (234,163,126), **ΔE 3.77** to #F2A27E; core 100 % whole; centre L **175.2** > sky-ring max 165.9 (7,699 patches, 1.9–5°) > band below 140.2 |
-| **A-title-any-hour** (new) | **PASS** | 9/9. **Cases:** quit at 12.0198, 21.0198 and 3.0201, plus 12.3174 with a rest to 6.2 still running.<br>**On the title, every case:** hour 17 and clock held, 1 disc. With the menu in, the core is at (1164–1165, 182–184), r 22.6 px, inside the frame, 3.83–3.91° above the skyline. 3 s later it is at (1159–1160, 197–200), 3.51–3.52° above.<br>**Leaving:** the hour handed back is 12.0198 / 21.0198 / 3.0201 / **6.2** (expected 12.0198 / 21.0198 / 3.0201 / 6.2). 0 discs left, both dispose events fired, the clock runs. The first visit is at 17, 1 disc, 3.89° clear |
-| **A-title-disc-sun-quit12** + **-pixels** (new) | **PASS / PASS** | hour on the title 17; disc (1161, 193); centre (234,163,126), **ΔE 3.77**; 100 % whole; L 175.2 > sky ring 164.3 > band 139.9 |
-| **V-logo**, **V-logo-4k** | NEEDS-JUDGE | filmed and read (§5); unchanged since round 3 |
-| **V38-title** (`V38-title-r5`, `-drift35`, `-drift105`, `-quit`, **`-quit-12`**, **`-quit-21`**) | NEEDS-JUDGE; **my reading: FAIL** on the Pans clause | criteria verbatim from the plan; the staging note is in the title. The two new frames hold every non-Pans clause (§5) |
+| **A-title-spark-clear** (new) | **PASS** | 28 samples, **0 meshes behind the spark**. Terrain under the spark box's bottom edge: **5.96° / 6.04°** on the press beat (0.3 s, 2.6 s), **4.98–13.17°** over 22 real-time menu samples (dolly 4.9 → 110.6 s), **5.90° / 6.02°** on the second visit's press beat, **1.37° / 0.99°** in V-logo-4k's 2.4x staging (bar 0.4°). Chooser clear on all 3 picks: visit 1 **15:30, view 0.48, bearing −0.30, +8°**, margin 1.83°, 292 ms (150 candidates, 1 full check); visit 2 the cached pick, 99 ms; the 2.4x staging 17:00, 0.48, 0.05, +6°, 1.31°, 336 ms. (The old framing: the crest stood 12.4° OVER the spark's bottom edge on the press beat) |
+| **A-title-disc-depth** (real time) | **PASS** | 18/18. 22 samples over 105 s, dolly clock 2.3 → 107.3 s, hour 15.5 throughout; core bottom ≥ **1.23°** over the crest; the disc on the sky's sun (0.000°), 3.51° under `sunDir`. On `game-start` the disc is removed, geometry and material disposed, the clock runs again (17.0022 → 17.0290 in play) |
+| **A-title-disc-sun** + **-pixels** | **PASS / PASS** | disc (1191, 90); centre (235,166,126), **ΔE 4.90** to #F2A27E; core 99.8 % whole; centre L **177.9** > sky-ring max 172.5 > band below 132.0 |
+| **A-title-any-hour** | **PASS** | 9/9. Quit at 12.0202, 21.0204, 3.02 and 12.3809 with a rest to 6.2 running: every title stands at **h 15.5** (the chooser's hour), clock held, 1 disc, core in frame at (1196–1197, 77–79), 2.89–3.01° over the skyline, 4.02–4.29° 3 s later; hand-back exactly 12.0202 / 21.0204 / 3.02 / 6.2; disc removed and disposed, the clock runs |
+| **A-title-disc-sun-quit12** + **-pixels** | **PASS / PASS** | after a quit at noon: hour 15.5; disc (1191, 89); centre (235,166,126), ΔE 4.91; 100 % whole; L 177.9 > 170.8 > 131.4 |
+| **V-logo**, **V-logo-4k** | NEEDS-JUDGE | filmed and read (§5) |
+| **V38-title** (`V38-title-r5`, `-drift35`, `-drift105`, `-quit`, `-quit-12`, `-quit-21`) | NEEDS-JUDGE; **my reading: FAIL** on the Pans clause only | criteria verbatim from the plan (no ruling marker on main yet); every other clause holds, and the spark is in clear sky in all six (§5) |
 | **V-loading** / V-loading-100 | NEEDS-JUDGE | filmed and read; unchanged |
 | A-identifiers-renamed / A-extent-refactor / A-single-rest (day-1) | PASS / PASS / PASS | 0 hits over 241 files; all 10 extents identical; spawn and respawn 0.00 m from REST |
-| *global:* A1-boot-clean, A20b-no-system-errors | PASS, PASS | `state=playing`; 0 system or hook errors over 306 frames |
-| *global:* A9-perf-budget | **PENDING** (not attributable) | 309 draws < 350 PASS. 37.3 fps, but the null frame alone took 3.22 ms of GPU with nothing drawn (59.9 fps), so the row reports contention, not the scene. Round 3 measured 53 fps on this row. Grade it in the orchestrator's quiet-box run. Brand changed nothing drawn in play |
-| *global:* A21-real-draw-calls | **PENDING** on the timing terms (engine-gpu) | Draws 309 / 195 / 323 and triangles 4.12 / 3.67 / 4.23 M PASS. Median GPU 116.8 / 147.8 / 130.7 ms against 20 ms is PENDING this time, not attributable: null-frame GPU 4.36 ms, which needs < 3 ms. The p95 terms are PENDING too. On a quiet box the GPU term FAILs as at the Round-4 baseline; engine-gpu's tier decision owns it |
-| *global:* A90-memory-stability | PASS | 28 kills; heap **−8.8 %**, geometries **+8**, textures **−28**, objects **−1096** |
-| *global:* A90-memory-stability-expansion | PASS | objects −1059, nonMachineGrowth 0, orphan roots 0, geo +3, tex −28, heap −3.7 % |
-| *global:* A90b-memory-attribution | PASS | 0 offenders, 0 orphaned textures, heap −13.6 % after forced GC (self-test ok) |
-| *global:* A90-rig-reclaim | PASS | 30 cycles: geo +6, tex 0; per live machine geo 0 / tex 0.38; held-then-released 0 / 0 |
+| *global:* A1-boot-clean, A20b-no-system-errors | PASS, PASS | `state=playing`; 0 system or hook errors over 284 frames |
+| *global:* A9-perf-budget | **PASS** | 309 draws, **48.1 fps** (attributable this run) |
+| *global:* A21-real-draw-calls | **FAIL** on the GPU term (engine-gpu) | Draws 309 / 195 / 325 and triangles 4.12 / 3.67 / 4.24 M PASS. Median GPU **108.3 / 131.3 / 93.3 ms** against 20 ms: FAIL, attributable this time (null frame 2.11 ms). p95 frame and p95 JS PENDING (not attributable: frame-burst instability 1.52x). This is the Round-4 baseline's FAIL (fix round 1 measured 117–148 ms, unjudged); nothing brand changed draws in play (the wash, the disc and the chooser exist only on the title). engine-gpu's tier decision owns it |
+| *global:* A90-memory-stability | PASS | 28 kills; heap **−8.0 %**, geometries **+7**, textures **−28**, objects −1,096 |
+| *global:* A90-memory-stability-expansion | PASS | objects −1,059, nonMachineGrowth 0, orphan roots 0, geo +3, tex −28, heap −8.6 % |
+| *global:* A90b-memory-attribution | PASS | 0 offenders, 0 orphaned textures, heap −12.6 % after forced GC (self-test ok) |
+| *global:* A90-rig-reclaim | PASS | 30 cycles: geo +7, tex 0; per live machine geo 0.13 / tex 0.38; held-then-released +1 / 0 |
 | *global:* A-ID-ip-assets-gone, A-assets-tracked | PASS, PASS | 19 GLBs, 0 IP hits (scheduled exceptions: `aloy.glb`, hero-body; `anims-hybrid/aloy-ual.json`, gates-perf); 221 referenced, 0 wrongly ignored |
 | *global:* A-licence-manifest | PENDING (pipeline) | files-matched (217 files, 0 unmatched), row-schema, code-rows, licence-texts, credits, size PASS; third-party and legacy-source PENDING on pipeline's W0b re-fetch |
 | *global, not in this tree:* A90-abs, A-alloc-rate, A-vram-ledger, A-port-guard, A-carried-suite (gates-perf), A-reach-all-sites | — | not run |
-| must-stay-green: A70c-title-flow | PASS | one logo at press and menu; easeAtPress 0.0003, endEase 0.514, radiusDrop 17.49 m, dolly 18.99 m, maxStep 0.323 m; Field Manual 17 rows; credits 6 sections, 24 rows |
+| must-stay-green: A70c-title-flow | PASS | one logo at press and menu; easeAtPress 0.0001, endEase 0.5095, radiusDrop 17.32 m, dolly 18.52 m, maxStep 0.161 m; Field Manual 17 rows; credits 6 sections, 24 rows |
 | must-stay-green: A72-settings-persist / A72b-accessibility | PASS / PASS | settings restored after reload; HUD scale 1.3, palette swap, reduced motion, hold/toggle persist and reset |
 
-**A-gate-preludes** on `tools/gates.r5.brand.mjs` (re-run in fix round 1 after the new rows: `fix1/preludes-check.mjs`, 11 visual rows; same result), run through a scratch port of gates-perf's own scan functions (`work3/preludes-check.mjs`: `specVocabulary`, `oldMapVocabulary`, `coordRegexes`, `LITERAL_PLACEMENT`, the judged-text IP scan, copied from gates-perf's tree and pointed at brand's file): 23 species names from bible §10.2 and 42 old-map pairs (W0 table, `sites.js`, 28 archived Round-4 gate files) → **0 species literals, 0 species words, 0 staging by species, 0 old-map coordinates or literal placements, 0 rig literals (A-gates-no-hero-literals regex read from the plan), 0 old-IP terms or non-r5 stills in the title / criteria / reference of brand's 9 visual rows.** PASS.
+**A-gate-preludes** on `tools/gates.r5.brand.mjs` (re-run after this round's rows: `fix2/preludes-check.mjs`, the
+scratch port of gates-perf's scan; 11 visual rows): **0 species literals or words, 0 staging by species, 0 old-map
+coordinates or literal placements, 0 rig literals, 0 old-IP terms or non-r5 stills in judged text. PASS.** The new
+row `A-title-spark-clear` stages through the title's own state and the live camera only.
 
 **Memory rule.** No new per-frame allocation:
-- `_dolly` places, turns and sizes the disc in place.
-- `_titleSunPoint` writes into the vector it is given.
-- The chooser makes 2 vectors, once per visit.
-- The disc is one geometry and one material per title visit, disposed on leave and on `game-start`. A-title-disc-depth checks the dispose events, and A-title-any-hour checks them on four more leaves.
-- Fix round 1 adds one `setTime` per title visit and one per leave. The rest check is one boolean read per frame and allocates nothing.
+- `_dolly` places the camera through `_titlePlace` (no allocation) and places, turns and sizes the disc in place.
+- The chooser runs once per title visit; its scratch camera, vectors and box are made once and dropped on leave
+  (no GPU resources). Its per-visit garbage is small (about 150 candidate records and a Map).
+- The disc is one geometry and one material per title visit, disposed on leave and on `game-start`
+  (A-title-disc-depth and A-title-any-hour check the dispose events).
 
 ---
 
 ## 5. Frames read (advisory; the judge grades)
 
-Fix round 1's frames (the lane run on the final code, all 10 visual rows) were read against their criteria and
-`reference/r5/brand/`. Pixel values are taken from the PNGs. The frames were deleted after reading.
+This round's frames (`fix2/full.log`, all 10 visual rows) were read against their criteria and `reference/r5/brand/`,
+then deleted.
 
-- **`V38-title-quit-12` / `V38-title-quit-21` (new; judge r0's cited angles: play at 12:00 and at 21:00, then QUIT TO
-  TITLE and a key).** Both frames are the 17:00 title, and they match each other:
-  - one lockup and the vertical menu 01–05;
-  - the field line has rotated to the Steady line;
-  - **one coral disc upper right**, at the same spot as the first visit, in the gap between two spires. It is whole, with no white sun under it;
-  - no walker, no lava.
-
-  At 21:00 the judge saw no disc at all; now the disc is there. The disc centre measures (234,163,126) in `-quit`, `-quit-12` and `-quit-21`. Mean absolute difference from `V38-title-quit`: 0.17 (quit-12) and 0.22 (quit-21) of 255. Against the first visit (`V38-title-r5`): 1.35, the field line and the truck phase.
-
-  **The Pans clause FAILs here as in every V38 frame.**
-- **Unchanged since round 3, re-read this round:**
-  - `V38-title-r5`, `-drift35`, `-drift105`, `-quit`;
-  - V-logo and V-logo-4k: the ten-ray spark is whole and its centre open; one rule; the arrow under the plumb;
-  - V-loading (the rule filled from the left to 40 %) and V-loading-100 (the rule complete), both with "Reading the benchmarks…".
-
-  The round-3 reading below still holds word for word, including the needle spire behind the spark in the menu-in, quit and 105 s frames.
-
-Round 3's reading:
-
-- **The spark's centre (round-3 fix).** Before: on the 1600×900 title the spark's open centre read as a dark hub;
-  measured on the press-beat frame, the 5×5 centre was **10.9 luminance darker** than a ring just outside the
-  rays (94.0 against 104.9). After: **+0.8** (107.9 against 107.1). The centre is the sky again, and the spark
-  reads as ten rays round an open centre, as in the favicon. At 4K the centre is clear as well.
-- **V38 (`X-V38-title` / `V38-title-r5`, menu in):** one lockup; the vertical menu `01 CONTINUE` (greyed) to `05 CREDITS`; the field line; the save line.
-  - The vista is an **ochre haze that keeps its depth**: spires, ridges and the valley floor all read.
-  - **One coral disc**, upper right, in a clear gap between two spires. It is the brightest thing in the sky, with a soft edge, no white sun under it and no dark ring round it.
-  - Sunlit spire rims next to it are about as light as the disc. That is rock lit by the Round-4 clear-weather sun; world-sky's calima will dim it.
-  - No long-necked tower and no lava.
-  - **Against the verbatim criteria it FAILS**: no salt grid, no surf, no black sand. The jagged Round-4 spires dominate, unlike the flat sea horizon of the calima reference.
-- **`X-V38-drift35` / `-drift105`** (real time; the truck near +24 m and −24 m): the disc is whole and clear of the skyline in both, in the same gap.
-- **A thin needle spire behind the spark.** In the menu-in, quit and 105 s frames, a distant needle spire of the Round-4 valley stands behind the spark (in the 105 s frame its tip rises about 90 px above the spark, on the plumb axis). The spark is in front, whole and coral. It is still backdrop rock, not a rule. I tried panning the view 0.13 rad (`TITLE_LOOK_OFFSET` 0.42 → 0.55; `work3/exp055.log`): the needle cleared the spark in all four frames, but the engine's vignette at the frame edge took the disc's margin over the sky ring from 9.3 to 0.8 luminance (ΔE 4.06). That is too close to flip A-title-disc-sun-pixels, so I reverted to 0.42. The Pans' flat horizon (W1) removes the needle anyway.
-- **`X-V38-quit-to-title` / `V38-title-quit`**: one title block, so the round-1 fix holds. The disc is clear, and the field line has rotated to the Steady line.
-- **V-logo** (press beat): CALIMA in Bodoni caps with real thick/thin contrast, against the 1818 Bodoni caps.
-  - The I is a plumb line with a pointed bob.
-  - The full ten-ray spark floats above it.
-  - One hairline rule, with the coral broad-arrow under the I pointing up, as in the bench-mark diagram.
-  - No second line, no tagline, no HORIZON or ZERO.
-  - The disc sits upper right, away from the lockup.
-- **V-logo-4k**: every part is whole at 4K density: round-capped rays, an open centre, one straight rule, the arrow centred under the plumb, hairline serifs and vertical stress on the caps.
-- **V-loading / V-loading-100**: the lockup in ink on field-book paper. The rule fills from the left to 40 %, then is complete. The copy reads "Reading the benchmarks…". Unchanged.
+- **`V38-title-r5`, `-drift35`, `-drift105`, `-quit`, `-quit-12`, `-quit-21`** (the frames both judges cited, at the
+  same angles): one lockup, 10vh higher than before; the vertical menu `01 CONTINUE` (greyed) to `05 CREDITS`; the
+  field line (rotated per visit); the save line.
+  - **The spark is in clear ochre haze in all six**, with sky under it and to both sides; A-title-spark-clear
+    measures the terrain at least 4.98° (about 75 px) under its bottom edge with the menu in. **No needle rises
+    behind it** (the judge's 105 s needle is gone: that frame now has the spark over open sky).
+  - The coral disc stands upper right at about (1170–1195, 85–120), whole, the brightest thing in the sky, with
+    the dust's glow round it; birds cross near it in the quit frames.
+  - The rim's pale pinnacles fill the lower half, flanking the menu; thin spires rise behind the wordmark's
+    letters (L and M), below the cap line's top, not behind the spark.
+  - No walker silhouette, no lava.
+  - **Against the verbatim criteria it FAILS**: no salt grid, no surf, no black sand; the Round-4 rim, not a flat
+    sea or pan horizon like the Maspalomas and Janubio references.
+- **`V-logo`** (press beat): CALIMA in Bodoni caps with real thick/thin contrast against the 1818 Bodoni caps; the
+  I a plumb line with a pointed bob; the full ten-ray spark above it, **in clear haze**; one hairline rule; the
+  coral broad-arrow under the I pointing up; no second line, no tagline, no HORIZON or ZERO. A thin spire between
+  the A and the L rises about 50 px over the cap line, about 50 px left of the spark box: beside it, not behind it
+  (the terrain stands 5.96–6.04° under the spark's bottom edge on the press beat).
+- **`V-logo-4k`**: every part whole at 4K density: round-capped rays, an open centre, one straight rule, the arrow
+  centred under the plumb, hairline serifs and vertical stress. The 2.4x spark is in clear haze (judge r1 saw a
+  needle behind it on the plumb axis; now the nearest spire tips stand at the cap line, left of the stem, ~30 px
+  under the lowest ray).
+- **V-loading / V-loading-100**: the lockup in ink on field-book paper; the rule filled from the left to 40 %, then
+  complete; "Reading the benchmarks…". Unchanged.
 
 ---
 
@@ -452,16 +435,16 @@ Round 3's reading:
    - when `setWeather('calima')` returns `'calima'`, the wash and the disc switch off.
 
    **For world-sky:** your calima sun should be the brightest point of the sky. The title's disc shows one way to get there: the core, plus the dust absorbing the clear-sky glow, fitted on filmed frames. Also note that **the dome is centred on the player**: from any camera away from the player, the dome's sun is not on `sunDir`.
-6. **The disc's colour.** At 15:30 the disc stands at about (1191, 90), in the CSS top haze and further into the engine's vignette; its core colour is x1.3 to stay the brightest point of the sky (⟨DISC⟩). Changing the engine's vignette on the title is engine-gpu's call, so I left it.
+6. **The disc's colour.** At 15:30 the disc stands at about (1191, 90), in the CSS top haze and further into the engine's vignette; its core colour is x1.3 to stay the brightest point of the sky (centre (235,166,126), ΔE 4.90 to #F2A27E, 99.8 % whole, centre L 177.9 > sky ring 172.5 > band below 132.0). Changing the engine's vignette on the title is engine-gpu's call, so I left it.
 7. **The judge should re-grade every title frame**: the framing changed this round (hour 15:30, +8° tilt, the block 10vh higher), the lockup itself did not (A-logo-construction 17/17). New gate: `A-title-spark-clear`.
-8. **A9 and A21.** This round both report PENDING, not attributable on this box. A9: 309 draws PASS, but 37.3 fps against a null frame that already costs 3.22 ms of GPU; round 3 measured 53 fps on the same row. A21: draws and triangles PASS, and the GPU term (117–148 ms median) is PENDING because the null frame took 4.36 ms. Grade both in the orchestrator's quiet-box global run. Nothing brand changed draws in play: the wash and the disc exist only on the title. On a quiet box A21's GPU term fails as at the Round-4 baseline; engine-gpu's tier decision owns it.
+8. **A9 and A21.** This round A9 PASSES (309 draws, 48.1 fps, attributable). A21 FAILS its median-GPU term (108 / 131 / 93 ms against 20 ms), now attributable (null frame 2.11 ms); draws and triangles PASS; the p95 terms are PENDING (frame-burst instability 1.52x). That is the Round-4 baseline's FAIL, which fix round 1 measured at 117–148 ms but could not attribute; nothing brand changed draws in play (the wash, the disc and the chooser exist only on the title). engine-gpu's tier decision owns it.
 9. **Two strings outside menu.js's title and credits blocks** are unchanged since the first W0b pass: the hub kicker "CALIMA" and the new-game modal's "Instruments". Revert them if they are out of scope.
 10. **A-extent-refactor** is graded against the W0b-start hashes, because W0a changed one collider.
 11. **Other lanes' surfaces still use Round-4 words** (shell-ui W2, combat-kit W2, progression W3). Dialogue now counts too. All of it is inside the 1508.
 12. **Latin subsets only.** ∴ ■ ● ▲ ◆ fall back to a system font.
 13. **`docs/ROUND5-PLAN.md`** in this tree is main's `ca911e6` (synced by the orchestrator's checkpoint `a2bf79c`). Brand followed rule 8: every Chrome run this round took a slot under `scratchpad/r5/chrome-slots/` with an `owner.txt` and released it on exit; never more than one brand Chrome at a time.
 14. **Downloads this round:** none. No new asset, so no new `LICENSES.json` row.
-15. **The needle spire behind the spark: fixed in fix round 2** (§0.2), graded by `A-title-spark-clear`. Thin spires still rise behind the wordmark's letters (the lockup's ink has its own shadow); the spark, the dot of the I, has ≥ 0.4° of sky under it in every sample. The chooser costs ⟨MS1⟩ ms on the first title visit (the full search) and ⟨MS2⟩ ms on a later one.
+15. **The needle spire behind the spark: fixed in fix round 2** (§0.2), graded by `A-title-spark-clear`. Thin spires still rise behind the wordmark's letters (the lockup's ink has its own shadow); the spark, the dot of the I, has ≥ 0.4° of sky under it in every sample. The chooser costs 292 ms on the first title visit (the full search) and 99 ms on a later one.
 16. **`tools/lint/hzd-verbs.json` is new data with no gate of brand's.** Its consumer is progression's `A-distinct-verbs` (W3). The bible's own count holds on it: 7 of the 8 beats are absent, and the 0:05 Sighting beat is the `scan` row. Progression should declare each beat's verb by `id`.
 17. **The title's hour.** The title stands at the chooser's hour whatever hour the world is in (15:30 on the Round-4 valley), and hands the player's hour back on leave. If the Pans' calima vista wants another hour range (the bible's reference is a calima dawn), edit `TITLE_HOURS` in `src/ui/menu.js` and re-run `A-title-spark-clear`, `A-title-any-hour`, `A-title-disc-depth` and `A-title-disc-sun(-quit12)`.
 18. **One edge, measured but not filmed:** when a rest is still running at the quit, the environment drives the hour for up to its 2 s. During that time the disc follows the rest's moving sun, and then the title snaps back to its own hour. `A-title-any-hour` grades the landed state (the title's hour, disc in frame, hand-back 6.2), not the 2 s in between.
