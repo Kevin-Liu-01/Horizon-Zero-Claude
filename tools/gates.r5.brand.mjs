@@ -885,11 +885,13 @@ const W0B = [
   {
     id: 'A-title-disc-sun-pixels', kind: 'runner', lane: 'brand', timeout: 60000,
     title: 'on the composited title frame (the screenshot of A-title-disc-sun, same run): the calima disc core reads as the bible §9.4 coral (#F2A27E, CIE76 dE <= 10 at its centre), it is whole (>= 97 % of its core within dE 12 of its centre colour), and it is the brightest point of the sky round it: its luminance beats every 3x3 patch of the sky ring from just outside its feathered edge (edge + 2.5 px) to 5° from its centre, at or above the level of its centre, and the mean of the band 40-80 px under it (where judge r1 measured a brighter glow)',
-    check: async () => {
-      const shot = path.join(ROOT, 'shots/gates/A-title-disc-sun.png');
-      if (!existsSync(shot)) return { pass: null, detail: { why: 'no shots/gates/A-title-disc-sun.png: run A-title-disc-sun first, in the same run' } };
+    srcShot: 'A-title-disc-sun',
+    async check() {
+      const SRC = this.srcShot;
+      const shot = path.join(ROOT, 'shots/gates/' + SRC + '.png');
+      if (!existsSync(shot)) return { pass: null, detail: { why: 'no shots/gates/' + SRC + '.png: run ' + SRC + ' first, in the same run' } };
       const ageS = Math.round((Date.now() - statSync(shot).mtimeMs) / 1000);
-      if (ageS > 900) return { pass: null, detail: { why: 'the A-title-disc-sun screenshot is ' + ageS + ' s old: run both gates in the same run', ageS } };
+      if (ageS > 900) return { pass: null, detail: { why: 'the ' + SRC + ' screenshot is ' + ageS + ' s old: run both gates in the same run', ageS } };
       const { default: sharp } = await import('sharp');
       const { data, info } = await sharp(shot).removeAlpha().raw().toBuffer({ resolveWithObject: true });
       const W = info.width, H = info.height;
@@ -1302,18 +1304,34 @@ const DAY1 = [
 const REGISTRY_LIVE = /export const LANE_FILE_RE/.test(read('tools/gates.config.mjs'));
 const V38_ROW = W0B.find((g) => g.id === 'V38-title');
 /** NEW GAME, play (at `hour` when given), QUIT TO TITLE, a key: the title a player who quits actually sees */
-const QUIT_SETUP = (hour) => `(async () => {
-      const M = __CTX__.menus;
+const QUIT_STEPS = (hour) => `
       ${PRESS} ${UNTIL_MENU}
-      M.newGame();
-      const t0 = performance.now();
-      while (__CTX__.state !== 'playing' && performance.now() - t0 < 30000) await new Promise((r) => setTimeout(r, 100));
+      __CTX__.menus.newGame();
+      { const t0 = performance.now();
+        while (__CTX__.state !== 'playing' && performance.now() - t0 < 30000) await new Promise((r) => setTimeout(r, 100)); }
       ${hour == null ? '' : `__CTX__.environment.setTime(${hour});`}
       await new Promise((r) => setTimeout(r, 4000));
-      M.quitToTitle();
+      __CTX__.menus.quitToTitle();
       await new Promise((r) => setTimeout(r, 400));
-      ${PRESS} ${UNTIL_MENU}
+      ${PRESS} ${UNTIL_MENU}`;
+const QUIT_SETUP = (hour) => `(async () => {${QUIT_STEPS(hour)}
     })()`;
+/**
+ * The disc reads as the sun on the title a player who quit at NOON sees (fix round 1, judge r0): the
+ * A-title-disc-sun pair again, staged after NEW GAME, play at 12:00 and QUIT TO TITLE. The pixels row
+ * reads THIS row's screenshot (srcShot) and must run after it, in the same run (file order).
+ */
+const DISC_SUN = W0B.find((g) => g.id === 'A-title-disc-sun');
+const DISC_PIX = W0B.find((g) => g.id === 'A-title-disc-sun-pixels');
+const FIRST_VISIT = `${PRESS}\n      ${UNTIL_MENU}`;
+if (!DISC_SUN.assert.includes(FIRST_VISIT)) throw new Error('A-title-disc-sun: first-visit prelude not found');
+const DISC_SUN_QUIT = [
+  { ...DISC_SUN, id: 'A-title-disc-sun-quit12', assert: DISC_SUN.assert.replace(FIRST_VISIT, QUIT_STEPS(12)),
+    title: DISC_SUN.title.replace('the title frame as filmed for V38', 'the title frame a player sees after QUIT TO TITLE at 12:00 (NEW GAME, the clock set to 12:00, 4 s of play, QUIT TO TITLE, a key)')
+      .replace('for A-title-disc-sun-pixels', 'for A-title-disc-sun-quit12-pixels') },
+  { ...DISC_PIX, id: 'A-title-disc-sun-quit12-pixels', srcShot: 'A-title-disc-sun-quit12',
+    title: DISC_PIX.title.replace('the screenshot of A-title-disc-sun, same run', 'the screenshot of A-title-disc-sun-quit12, same run: the title after QUIT TO TITLE at 12:00') },
+];
 const V38_VARIANTS = [
   ...(REGISTRY_LIVE ? [] : [{ ...V38_ROW, id: 'V38-title-r5',
     title: V38_ROW.title + ' [published under this id while main\'s runner keeps the Round-4 V38-title row]' }]),
@@ -1333,4 +1351,4 @@ const V38_VARIANTS = [
     setup: QUIT_SETUP(21) },
 ];
 
-export const GATES = [...DAY1, ...W0B, ...V38_VARIANTS];
+export const GATES = [...DAY1, ...W0B, ...DISC_SUN_QUIT, ...V38_VARIANTS];

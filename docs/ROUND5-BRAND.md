@@ -66,8 +66,10 @@ __GAME__.setLoad(p /* 0..1 */, step /* string, kept on #load-label[data-step] */
 __GAME__.loadProgress                                                             // last value, 0..1
 
 // src/ui/menu.js — the title block
-ctx.menus._titleFrame()          // once per title visit: holds the clock (environment.timeFrozen = true, the old value
-                                 // kept), view = sun azimuth + TITLE_LOOK_OFFSET (0.42 rad), camera bearing from
+ctx.menus._titleFrame()          // once per title visit: FIRST holds the clock (environment.timeFrozen = true, the old value
+                                 // kept) and the hour (fix round 1: _hourHeld = environment.time, then
+                                 // environment.setTime(TITLE_HOUR = 17), the boot hour); then view = sun azimuth +
+                                 // TITLE_LOOK_OFFSET (0.42 rad), camera bearing from
                                  // _titleChooseFrame(sun); calima hook setWeather('calima', 0) === 'calima'
                                  // -> body.cal-calima-live; makes the disc unless night or real calima
 ctx.menus._titleChooseFrame(sun /* THREE.Vector3, unit, toward the sun */) // -> bearing (rad); fills _titleDiscInfo;
@@ -78,12 +80,16 @@ ctx.menus._titleSunPoint(out /* Vector3 */, from /* Vector3 */) // -> out: where
 ctx.menus._discMake() / ._discDrop()  // the CALIMA_DISC quad: one PlaneGeometry + one ShaderMaterial (custom blend
                                  // out = src.rgb + dst * src.a), name 'cal-title-calima-disc', in ctx.scene;
                                  // drop = remove + dispose both
-ctx.menus._titleLeave()          // idempotent; on the menu's start AND on 'game-start': hands back the clock and the
-                                 // weather, drops the disc
+ctx.menus._titleLeave()          // idempotent; on the menu's start AND on 'game-start': hands back the clock, the hour
+                                 // (only while the world still stands at TITLE_HOUR; CONTINUE then loads the save's
+                                 // own hour) and the weather, drops the disc
+// 'rest-end' (fix round 1)      // while the title holds the hour, a rest that was still running at the quit lands:
+                                 // its end hour becomes the hour to hand back and the title snaps back to TITLE_HOUR
 ctx.menus.audit().title          // A70c shape unchanged +
   .disc   // null | { visible, posOffset, lookOffset, clearanceDeg, tried: [[offset, deg], ...], ms,
           //          coreDeg, edgeDeg, radiusDeg, skySun }
-  .clock  // { held, frozen, handBack /* the value _titleLeave restores, or null */ }
+  .clock  // { held, frozen, handBack /* the timeFrozen value _titleLeave restores, or null */,
+          //   hour /* environment.time now */, titleHour /* 17 */, hourHandBack /* the hour _titleLeave restores, or null */ }
 ```
 
 **Consumed:**
@@ -91,6 +97,7 @@ ctx.menus.audit().title          // A70c shape unchanged +
   - `environment.setWeather(name, fade)`, which must return `name` once it knows `'calima'`;
   - `environment.sunDir`;
   - `environment.timeFrozen`: the title sets it while it is up and restores it on leave;
+  - **fix round 1:** `environment.time` / `environment.setTime(h)`: the title stands at 17:00 and hands the player's hour back on leave; the `rest-end` event `{ hour }`;
   - **new:** `environment.sky.position` and `environment.sky.geometry.parameters.radius`, to put the disc on the sun the dome draws.
 
   If world-sky replaces the dome, `_skyDome()` returns null and the disc falls back to `sunDir`. Once world-sky draws calima itself, no disc is made.
