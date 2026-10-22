@@ -229,10 +229,17 @@ html, body {
 }
 
 /* =================================================================== title */
-#title .cal-logo {
-  --cal-lk: 92px;
-  filter: drop-shadow(0 2px 14px rgba(28, 27, 30, 0.42));
-}
+#title .cal-logo { --cal-lk: 92px; }
+/* The legibility shadow is cast by the INK parts only (the letters, the plumb
+   line, the rule). Cast by the whole lockup, its 14 px blur pooled inside the
+   spark's open centre from all ten rays and filled it with a dark hub (read on
+   the round-3 frames). The coral parts keep a tight shadow that cannot reach
+   the centre (rays start 0.09 em out). */
+#title .cal-word > span:not(.cal-i),
+#title .cal-plumb,
+#title .cal-datum { filter: drop-shadow(0 2px 14px rgba(28, 27, 30, 0.42)); }
+#title .cal-spark,
+#title .cal-arrow { filter: drop-shadow(0 1px 1.5px rgba(28, 27, 30, 0.32)); }
 #title .title-inner { padding-top: 2vh; }
 
 /* The calima wash over the live vista (title only). A STAND-IN until world-sky's

@@ -3,14 +3,27 @@
 Port 5253 · tree `scratchpad/r5/brand/tree` (branch `r5/w0b-brand`, base `a953355`; the orchestrator's backup
 checkpoint `c4675b3` sits on it) · plan §2 brand row, §6, §7.4, §9 "brand" · bible §9.7–9.8, §10.
 
-This file holds the **W0b report after fix round 2** (sections 0–7) and, unchanged below it, the **W0-day1
-report** (Appendix A). Every number here was measured on port 5253 in this tree. They come from one full run
-(36 gates, `work2/full.log` in brand's scratch) and from the targeted runs named where they are used. My
-reading of the V gates is advisory (R29); the independent judge grades them.
+This file holds the **W0b report as of round 3 (Oct 22)** (sections 0–7) and, unchanged below it, the
+**W0-day1 report** (Appendix A). Every number in §4 was measured this round on port 5253 in this tree, in one
+full run (`work3/full.log` in brand's scratch) plus the targeted runs named where they are used. My reading
+of the V gates is advisory (R29); the independent judge grades them.
 
 ---
 
-## 0. Fix round 2: what changed, finding by finding
+## 0. Round 3 (Oct 22): resumed after the machine restart
+
+The box restarted shortly before this session (uptime 14 min at its start). The tree was intact at the
+orchestrator's checkpoint `3af2aba`; brand's old scratch (the round-2 combiner and logs) was gone. No new
+judge finding reached this lane. So this round re-measured every gate of the block and the global items
+that exist, re-read every frame, and closed the three things that reading and the plan re-read found:
+
+| found this round | what I did | measured now |
+|---|---|---|
+| **A dark hub in the spark on the title.** The lockup's legibility shadow (`drop-shadow(0 2px 14px)`) was cast by the WHOLE lockup, so its 14 px blur pooled in the spark's open centre from all ten rays. At 1600×900 the centre read as a dark disc ("a gear with a hub"), worst where the spark stood over a spire. The 4K crop hid it (same blur, larger spark) | `src/style.css`: the heavy shadow is now cast only by the ink parts (the letters, the plumb line, the rule). The spark and the arrow get a tight 1.5 px shadow, which cannot reach the centre (the rays start 0.09 em out). Nothing else in the lockup moved | see §5: the spark's centre is the sky's colour again; A-logo-construction still 17/17 |
+| **On main, the lane command films no V38.** Main's runner keeps the first row of a duplicated id, the Round-4 `V38-title` of lane `shell-menus`, so `--extra tools/gates.r5.brand.mjs --lane brand` dropped brand's `V38-title` and ran no title shot at all. Round 2 filmed it only through a scratch combiner the orchestrator could not reproduce | `tools/gates.r5.brand.mjs` now also publishes the row as **`V38-title-r5`** while `tools/gates.config.mjs` has no `LANE_FILE_RE` (gates-perf's registry), plus three variants in the lane file itself: **`V38-title-drift35`**, **`V38-title-drift105`** (real time) and **`V38-title-quit`** (the second title visit). Same plan-verbatim criteria and staging note | the lane command now lists 23 brand rows; the four title shots are in the lane run (§4) |
+| **`tools/lint/hzd-verbs.json` did not exist.** Plan §2 puts it in brand's W0 files; `A-distinct-verbs` (progression, W3) reads it | created: 26 Horizon verbs with ids, what Horizon calls them and the CALIMA rename where bible §11.2 keeps the loop. By the bible's own reading, 7 of the 8 first-hour beats teach a verb absent from it; 0:05 (Sighting) is the `scan` entry | JSON valid; outside every lint scope (`tools/lint/**`), code lint unchanged at 1,435 |
+
+### 0.1 Fix round 2 (Oct 19): what changed, finding by finding
 
 | judge finding | what I did | measured now |
 |---|---|---|
@@ -36,10 +49,12 @@ reading of the V gates is advisory (R29); the independent judge grades them.
 | **Credits** | `src/ui/menu.js` (`CREDITS_LICENSED`, generated block), `README.md` "## Credits" | Generated from pipeline's `tools/licences/credits.mjs` by `tools/lint/credits-sync.mjs` (`--check` passes): 6 sections, 24 rows. Unchanged |
 | **Field Manual, README, favicon** | `index.html`, `README.md`, `public/favicon.svg` | Unchanged; the Field Manual has 17 rows in bible §10 words |
 | **Union lexicon + lints** | `tools/lint/{lexicon.json, lexicon/*, namecheck.mjs, engine-allow.json, ratchet.json}` | See §3. **Round 2:** the player gate's harvest now covers dialogue and every table string, and the W0b player ratchet is re-recorded at 1508 |
+| **Horizon verb list** (new, round 3) | `tools/lint/hzd-verbs.json` | 26 verbs (`id`, `horizon`, `calima`) for progression's `A-distinct-verbs` (W3). §2 has the schema |
+| **Title shadow** (round 3) | `src/style.css` (`#title .cal-word > span:not(.cal-i)`, `.cal-plumb`, `.cal-datum` / `.cal-spark`, `.cal-arrow`) | the heavy legibility shadow on the ink parts only; the spark and the arrow keep a 1.5 px one, so the spark's open centre is the sky again |
 | **Retired-font patch** | `tools/lint/patches/w0b-retired-font-refs.patch` | Unchanged; for the orchestrator (§7.1) |
 | **`docs/archive/` moves** (§6) | `docs/archive/` | `docs/ROUND3.md`, 25 `docs/ROUND4-*.md`, 8 `docs/research/*.md`, plus a README |
 | **References** | `reference/r5/brand/` + `MANIFEST.md` | Bodoni 1818 (PD), the OS bench-mark arrow (PD), "Calima al amanecer, Maspalomas" (CC BY 3.0), "Salinas de Janubio" (CC BY 2.0) |
-| **Gates** | `tools/gates.r5.brand.mjs` | The W0b block, the five W0-day1 rows, A-logo-construction, A-loading-fill, A-title-disc-depth (now in real time) and, **new**, A-title-disc-sun + A-title-disc-sun-pixels |
+| **Gates** | `tools/gates.r5.brand.mjs` | The W0b block, the five W0-day1 rows, A-logo-construction, A-loading-fill, A-title-disc-depth (in real time), A-title-disc-sun + A-title-disc-sun-pixels and, **new in round 3**, `V38-title-r5` (only while main's runner is in the tree), `V38-title-drift35`, `V38-title-drift105`, `V38-title-quit`: 23 rows |
 
 ---
 
@@ -109,6 +124,15 @@ recordAllow({ initial = false })                              // lowers engine-a
 
 // credits-sync.mjs
 sync({ write = true }) -> { readme: drifted, menu: drifted }   // CLI: (no flag) rewrite | --check (exit 1 on drift)
+```
+
+`tools/lint/hzd-verbs.json` (new, round 3; consumer: progression's `A-distinct-verbs`, W3):
+
+```js
+{ schema: 1, about, owner: 'brand', recorded: '2026-10-22 (W0b)',
+  match: 'by id: a beat declares the id of the verb it teaches; a beat whose verb is a CALIMA rename of a listed verb (the calima field) teaches that listed verb',
+  verbs: [ { id /* e.g. 'scan', 'stealth-kill', 'climb-colossus-reveal-map' */, horizon /* what Horizon teaches */,
+             calima /* string[]: CALIMA's rename where bible §11.2 keeps the loop, else [] */ }, ... ] }   // 26 rows
 ```
 
 ---
@@ -223,7 +247,8 @@ Read against their criteria and `reference/r5/brand/`. Pixel values are taken fr
 - **Today, on main:** `tools/gates.mjs` scans `gates.round4.*.mjs` only. Its `--extra <file>` imports one more module and merges its `GATES` with the same loader and the same duplicate-id rule; `--lane brand` then selects its rows. So `node tools/gates.mjs --port 5253 --extra tools/gates.r5.brand.mjs --lane brand` runs every brand row now.
 - **After gates-perf's registry merges:** the file name matches gates-perf's `LANE_FILE_RE`, so `node tools/gates.mjs --port 5253 --lane brand` will run the same rows.
 - **Order matters for two gates.** `A-title-disc-sun-pixels` is a node `runner` gate. It reads the screenshot that `A-title-disc-sun` just wrote, so it must run in the same run, after that gate. The two sit next to each other in the file, and the runner keeps file order. Run alone, it reports PENDING with the reason.
-- **Transitional:** main's runner keeps the **first** row of a duplicated id, so brand's `V38-title` is dropped in favour of the Round-4 row. It is filmed through the `X-V38-*` aliases, which carry the same criteria. Under gates-perf's registry, a lane row shadows the carried row (plan §3.3).
+- **Transitional (fixed in round 3):** main's runner keeps the **first** row of a duplicated id, so brand's `V38-title` is dropped in favour of the Round-4 row, whose lane is `shell-menus`; round 2 filmed it only through a scratch combiner. The lane file now detects the runner it is loaded by: while `tools/gates.config.mjs` exports no `LANE_FILE_RE` (no r5 registry in the tree), it also publishes the same row as **`V38-title-r5`**, so the lane command films it. The three variants (`V38-title-drift35`, `-drift105`, `-quit`) are ordinary brand rows. Under gates-perf's registry, `V38-title-r5` disappears by itself and brand's `V38-title` shadows the carried row (plan §3.3).
+- **This round's full run** used one scratch combiner (`work3/full.gates.mjs`) as the single `--extra` file, to add pipeline's three licence gates to brand's rows in one Chrome. Its `X-V38-title`, `X-V38-drift35`, `X-V38-drift105`, `X-V38-quit-to-title` rows have the same setups, settles and criteria as the rows the lane file now ships as `V38-title-r5`, `-drift35`, `-drift105`, `-quit` (only the titles differ). The lane file gained them while the full run was queued for a Chrome slot, so a second, targeted run of the lane file's own rows (§4) filmed them under their shipped ids.
 
 ---
 

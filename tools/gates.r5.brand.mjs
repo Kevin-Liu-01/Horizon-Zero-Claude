@@ -1192,4 +1192,40 @@ const DAY1 = [
   },
 ];
 
-export const GATES = [...DAY1, ...W0B];
+/**
+ * V38 over the title's whole life (round 3). The same plan-verbatim criteria, filmed three more ways,
+ * so the judge can grade the title the player actually sits on and not one lucky frame:
+ *   V38-title-drift35 / -drift105  real time (the title holds the world clock; no clock or dolly jump),
+ *                                  near the two extremes of the lateral truck;
+ *   V38-title-quit                 the SECOND title visit: NEW GAME, 4 s of play, QUIT TO TITLE, a key.
+ * REGISTRATION ON MAIN TODAY. Main's runner merges `--extra` files after the Round-4 lane files and keeps
+ * the FIRST row of a duplicated id, i.e. shell-menus' Round-4 `V38-title`, whose lane is not `brand`, so
+ * `--extra tools/gates.r5.brand.mjs --lane brand` would film no V38 at all. Until gates-perf's registry
+ * (gates.config.mjs exporting LANE_FILE_RE, under which brand's `V38-title` shadows the carried row) is
+ * in this tree, the same row is also published as `V38-title-r5`.
+ */
+const REGISTRY_LIVE = /export const LANE_FILE_RE/.test(read('tools/gates.config.mjs'));
+const V38_ROW = W0B.find((g) => g.id === 'V38-title');
+const V38_VARIANTS = [
+  ...(REGISTRY_LIVE ? [] : [{ ...V38_ROW, id: 'V38-title-r5',
+    title: V38_ROW.title + ' [published under this id while main\'s runner keeps the Round-4 V38-title row]' }]),
+  { ...V38_ROW, id: 'V38-title-drift35', settle: 32500,
+    title: V38_ROW.title + ' [real time, about 35 s after the title appeared: one end of the lateral truck]' },
+  { ...V38_ROW, id: 'V38-title-drift105', settle: 102500,
+    title: V38_ROW.title + ' [real time, about 105 s after the title appeared: the other end of the truck]' },
+  { ...V38_ROW, id: 'V38-title-quit', settle: 2200,
+    title: V38_ROW.title + ' [the second title visit: NEW GAME, 4 s of play, QUIT TO TITLE, a key press]',
+    setup: `(async () => {
+      const M = __CTX__.menus;
+      ${PRESS} ${UNTIL_MENU}
+      M.newGame();
+      const t0 = performance.now();
+      while (__CTX__.state !== 'playing' && performance.now() - t0 < 30000) await new Promise((r) => setTimeout(r, 100));
+      await new Promise((r) => setTimeout(r, 4000));
+      M.quitToTitle();
+      await new Promise((r) => setTimeout(r, 400));
+      ${PRESS} ${UNTIL_MENU}
+    })()` },
+];
+
+export const GATES = [...DAY1, ...W0B, ...V38_VARIANTS];
