@@ -3911,7 +3911,14 @@ void main() {
     // camera-feel-08: damp the pivot so a step, a landing or a slope crease is
     // not transmitted 1:1 to the lens. Y is damped harder than XZ.
     const seeding = !this._pivotSeeded;
-    if (seeding) { this._pivotPos.copy(pivot); this._pivotSeeded = true; }
+    /* R5 (A31e / A31f on Brea, the up-slope bearing at the pitch clamp): a
+     * seed is a NEW place — the swing side held by the last staging (its
+     * hysteresis, `_swingTgt`) is not this one's. Carried across a teleport it
+     * flipped the seed of the same staging between a 90 deg swing (gap 1.31 m,
+     * solid) and no swing at all (rotation 5 deg, the boom dollied to 0.65 m,
+     * the lens 0.05 m from her stowed gear, dithered to 0.31), depending only
+     * on where the previous row had been filmed (measured Oct 22). */
+    if (seeding) { this._pivotPos.copy(pivot); this._pivotSeeded = true; this._swingTgt = 0; }
     const kxz = smooth ? 18 : 1e6;
     const ky = smooth ? (this.grounded ? 11 : 15) : 1e6;
     /**
