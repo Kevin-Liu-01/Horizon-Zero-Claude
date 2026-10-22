@@ -1,7 +1,7 @@
 # ROUND 5 — lane `brand`
 
 Port 5253 · tree `scratchpad/r5/brand/tree` (branch `r5/w0b-brand`, base `a953355`; the orchestrator's backup
-checkpoint `c4675b3` sits on it) · plan §2 brand row, §6, §7.4, §9 "brand" · bible §9.7–9.8, §10.
+checkpoints `c4675b3`, `3af2aba` and `9a0d3ee` sit on it) · plan §2 brand row, §6, §7.4, §9 "brand" · bible §9.7–9.8, §10, §11.2.
 
 This file holds the **W0b report as of round 3 (Oct 22)** (sections 0–7) and, unchanged below it, the
 **W0-day1 report** (Appendix A). Every number in §4 was measured this round on port 5253 in this tree, in one
@@ -152,7 +152,7 @@ sync({ write = true }) -> { readme: drifted, menu: drifted }   // CLI: (no flag)
   - **every key and every string value** of the 78 exported content tables;
   - all of `public/**/*.{json,md,txt}`.
 
-**W0b ratchet: 1508.** Round 1 recorded 1278 with the blind spot. The same count came out in both runs.
+**W0b ratchet: 1508.** Round 1 recorded 1278 with the blind spot. The same count came out in both round-2 runs and again in round 3's full run, with an identical breakdown.
 
 | part | hits |
 |---|---|
@@ -166,50 +166,53 @@ sync({ write = true }) -> { readme: drifted, menu: drifted }   // CLI: (no flag)
 
 By rule: exact 881, substring 484, edit-1 78, phrase 65. The advisory named reading is 718.
 
-**A-no-horizon-terms-code: PASS 1,435 ≤ 1,435.** 246 files, 929 (term, token) pairs, 8,215 occurrences, 0 uncovered, 0 over cap. One new string in my own gate file ("horizontal") briefly took `guard:brand-gates` to 7 against its cap of 6. I reworded the string rather than raising the cap. After the retired-font patch the total is **1,246**, re-measured this round in a scratch copy.
+**A-no-horizon-terms-code: PASS 1,435 ≤ 1,435.** 246 files, 929 (term, token) pairs, 8,215 occurrences, 0 uncovered, 0 over cap. In round 2 one new string in my own gate file ("horizontal") briefly took `guard:brand-gates` to 7 against its cap of 6; I reworded the string rather than raising the cap. Round 3's new gate rows and `hzd-verbs.json` leave the total at 1,435 (re-run after each edit). After the retired-font patch the total is **1,246** (measured in round 2 in a scratch copy).
 
 ---
 
 ## 4. Gates (W0b block + the day-1 rows; port 5253)
 
-Lane rows: `node tools/gates.mjs --port 5253 --extra tools/gates.r5.brand.mjs --lane brand` (§6).
+Lane rows: `node tools/gates.mjs --port 5253 --extra tools/gates.r5.brand.mjs --lane brand` (§6): 23 rows.
 
-This round's one full run used a scratch combiner, `work2/full.gates.mjs`, as the single `--extra` file. It holds:
-- brand's GATES;
-- the four V38 aliases (the main runner keeps the Round-4 `V38-title` first; the two drift aliases wait in real time);
-- pipeline's three licence gates.
+**Round 3's full run** (Oct 22 00:39–00:58, one Chrome, slot 1 of the machine-wide lock; disk 46 GB free, memory
+56 % free, load 5.0 / 5.5 / 8.0 at launch, hero-body's and engine-gpu's lanes alive) used one scratch combiner,
+`work3/full.gates.mjs`, as the single `--extra` file: brand's GATES, the four `X-V38-*` rows (§6) and pipeline's
+three licence gates, plus, by id from the main registry, the global items that exist in this tree and the three
+must-stay-green rows. Result: **36 gates: 25 PASS, 2 FAIL, 1 PENDING, 8 NEEDS-JUDGE.** The two FAILs are
+A-fonts-licensed (one clause, other lanes' files) and A21 (the GPU term, engine-gpu's).
+**Targeted run of the lane file itself** (`--extra tools/gates.r5.brand.mjs --lane brand --only …`, after the
+full run): A-title-disc-sun PASS, -pixels PASS (identical numbers), `V38-title-r5` and `V38-title-quit` filmed
+under their shipped ids. Mean absolute difference from the combiner's frames: 0.41 and 0.81 (of 255).
 
-Result: **36 gates, 24 PASS, 1 FAIL, 3 PENDING, 8 NEEDS-JUDGE**. Two other lanes' Chromes were alive during the run: gates-perf's 67-minute carried run and instruments-core.
-
-| gate | verdict | measured |
+| gate | verdict | measured (round 3) |
 |---|---|---|
-| **A-no-horizon-terms-player** | **PASS** | **1508 ≤ 1508**, identical in 2 runs; dialogue 13 people / 53 cards / 40 topics |
-| **A-no-horizon-terms-code** | **PASS** | 1,435 ≤ 1,435; 1,246 after the font patch |
-| **A-fonts-licensed** | **FAIL (1 clause, other lanes' files)** | **FAIL:** `zeroRefsAnywhere`, 37 lines in 11 files: shell-ui 4 files, combat-kit 2, progression 2, studio 1, frozen `dialogue.js` 1, `tools/r5-direction` 1. The patch applies and leaves 0 references.<br>**PASS, every other clause:** 3 families, 5 woff2 files, 136 KB, one OFL text and one row each. The wordmark resolves to Bodoni 500, the HUD label to Bodoni, all 47 HUD texts to licensed families (41 Plex Sans Condensed, 6 Bodoni), the numeral to Plex Mono.<br>**In play, studio visited:** 4 font requests, 0 retired, 0 stacks leading with a retired face |
-| **A-storage-keys** / **-reload** | PASS / PASS | 7 keys, all `/^cal\..*\.v5$/`; old keys only → fresh start |
-| **A-ui-words** | PASS | 0 hits on 10 brand surfaces |
-| A-logo-construction | PASS | 17/17 |
-| A-loading-fill | PASS | 0.400 / 1.000; "Reading the benchmarks…"; paper rgb(226, 211, 176) |
-| **A-title-disc-depth** (real time) | **PASS** | 18/18 checks.<br>**Placement:** depth-tested, no depth write, no fog; **0.000° off the sky's sun** (3.09° below `sunDir`); constant 12° quad; 1,860 m from the camera (far plane 2,400 m); bearing −0.05 rad (chooser clearance 0.11°).<br>**Real time:** 22 samples over 105 s, dolly clock 2.3 → 107.2 s, hour held at 17.000; the core bottom stays ≥ **1.36°** above the crest.<br>**Leaving:** removed and disposed on `game-start`; the clock runs again in play |
-| **A-title-disc-sun** + **-pixels** (new) | **PASS / PASS** | centre (234,163,126), ΔE 3.77 to #F2A27E; core 100 % whole; centre L 175.2 > sky ring max 165.9 > band below 140.2 |
-| **V-logo**, **V-logo-4k** | NEEDS-JUDGE | filmed (§5) |
-| **V38-title** (as `X-V38-title`, `-drift35`, `-drift105`, `-quit-to-title`) | NEEDS-JUDGE; **my reading: FAIL** on the Pans clause | criteria verbatim from the plan; staging note in the title (§0) |
+| **A-no-horizon-terms-player** | **PASS** | **1508 ≤ 1508**: static 182 (61 in verbatim licence texts) + page 1,326; exact 881 / substring 484 / edit-1 78 / phrase 65; 171 surfaces, 78 tables, 4,788 strings, 9,199 keys, 0 truncated; dialogue 13 people / 53 cards / 40 topics, 0 missing; named reading 718. Brand surfaces: 3, all in generated credit attributions |
+| **A-no-horizon-terms-code** | **PASS** | 1,435 ≤ 1,435; 246 files, 929 pairs, 8,215 occurrences, 0 uncovered, 0 over cap |
+| **A-fonts-licensed** | **FAIL (1 clause, other lanes' files)** | **FAIL:** `zeroRefsAnywhere`, 37 lines in 11 files: shell-ui 4 files, combat-kit 2, progression 2, studio 1, frozen `dialogue.js` 1, `tools/r5-direction` 1; 0 in brand's files. The patch applies (`git apply --check`) and leaves 0 (37 lines removed, 0 added).<br>**PASS, every other clause (11 of 12):** 3 families, 5 woff2 files, 136 KB, one OFL text and one row each. The wordmark resolves to Bodoni Moda 500, the HUD label to Bodoni Moda, all 47 HUD texts to licensed families (41 Plex Sans Condensed, 6 Bodoni), the numeral to Plex Mono 500.<br>**In play, studio visited:** 4 font requests (the 4 woff2 the screens use), 0 retired, 0 stacks leading with a retired face |
+| **A-storage-keys** / **-reload** | PASS / PASS | 7 keys, all `/^cal\..*\.v5$/`, 0 bad, 0 missing; the 7 planted pre-Round-5 keys → no save, defaults (sensitivity 1, music 0.8), fog 284 / 5,184, tips fresh, old keys untouched, 0 stray keys, 0 console errors |
+| **A-ui-words** | PASS | 0 hits on 10 brand surfaces (title press and menu, loading, credits, Field Manual, new-game, the 3 field lines, document title); regex read from the plan |
+| A-logo-construction | PASS | 17/17; Bodoni Moda 500 at 92 px, tracking 0.18 em; spark 58.9 px, 10.6 px above the cap line, on the plumb axis (x 827.4); rule 442.3 × 1.1 px spanning the glyphs 579–1021; arrow 3.9 px under the rule |
+| A-loading-fill | PASS | 0.400 / 1.000 of a 366 px rule; "Reading the benchmarks…"; paper rgb(226, 211, 176); one logo |
+| **A-title-disc-depth** (real time) | **PASS** | 18/18 checks.<br>**Placement:** depth-tested, no depth write, no fog; **0.000° off the sky's sun** (3.08° below `sunDir`); constant 12° quad; 1,859.6 m from the camera (far plane 2,400 m); bearing −0.05 rad (chooser clearance 0.11°, 12 candidates in 24.6 ms).<br>**Real time:** 22 samples over 105.1 s, dolly clock 2.3 → 107.2 s, hour held at 17.000; the core bottom stays ≥ **1.37°** above the crest.<br>**Leaving:** removed, geometry and material disposed on `game-start`; in play the clock runs again (17.0034 → 17.0300), `timeFrozen` false |
+| **A-title-disc-sun** + **-pixels** | **PASS / PASS** | disc at (1161, 194); centre (234,163,126), **ΔE 3.77** to #F2A27E; core 100 % whole; centre L **175.2** > sky-ring max 166.7 (7,699 patches, 1.9–5°) > band below 140.3 |
+| **V-logo**, **V-logo-4k** | NEEDS-JUDGE | filmed (§5); the spark's centre now measures the sky's luminance (hub − surround **+0.8**, was −10.9) |
+| **V38-title** (lane file: `V38-title-r5`, `-drift35`, `-drift105`, `-quit`; full run: the `X-V38-*` rows) | NEEDS-JUDGE; **my reading: FAIL** on the Pans clause | criteria verbatim from the plan; staging note in the title (§0.1) |
 | **V-loading** / V-loading-100 | NEEDS-JUDGE | filmed |
-| A-identifiers-renamed / A-extent-refactor / A-single-rest (day-1) | PASS / PASS / PASS | 0 hits over 241 files; every extent identical; spawn and respawn 0.00 m from REST |
-| *global:* A1-boot-clean, A20b-no-system-errors | PASS, PASS | `state=playing`; 0 system or hook errors over 284 frames |
-| *global:* A9-perf-budget | **PENDING (contention)** | 309 draws < 350, but 35.6 fps that the gate cannot attribute: the null frame alone took 3.52 ms of GPU with two other Chromes alive. Round 1 measured PASS (309 draws, 47.4 fps). Brand's round-2 changes do not draw in play: the wash and the disc exist only on the title. Both Chrome slots stayed taken after the run, so I did not re-run it |
-| *global:* A21-real-draw-calls | PENDING (draws and triangles PASS) | Draws 309 / 195 / 323; triangles 4.12 / 3.67 / 4.25 M. The GPU and frame terms cannot be attributed on this box (null-frame GPU 4.77 ms, burst 1.52×). Medians 125 / 117 / 98 ms against 20 ms; the Round-4 baseline also fails this term. Engine-gpu's W0b tier decision owns it |
-| *global:* A90-memory-stability | PASS | 28 kills; heap **−8.9 %**, geometries **+7**, textures **−28**, objects **−1096** |
-| *global:* A90-memory-stability-expansion | PASS | objects −1059, nonMachineGrowth 0, orphan roots 0, heap −12.7 % |
-| *global:* A90b-memory-attribution | PASS | 0 offenders, 0 orphaned textures, heap −4.2 % after forced GC |
-| *global:* A90-rig-reclaim | PASS | 30 cycles: geo +6, tex 0; per live machine geo 0 / tex 0.38 |
-| *global:* A-ID-ip-assets-gone, A-assets-tracked | PASS, PASS | 19 GLBs, 0 IP hits (`aloy.glb` is a scheduled hero-body exception); 221 referenced, 0 wrongly ignored |
-| *global:* A-licence-manifest | PENDING | every clause PASSes except third-party and legacy-source (pipeline's W0b re-fetch; `aloy.glb`) |
+| A-identifiers-renamed / A-extent-refactor / A-single-rest (day-1) | PASS / PASS / PASS | 0 hits over 241 files, package OK; all 10 extents identical (nav N 333, path hash `66a0055d`, 0 nulls, terrain `88b3916f`); spawn and respawn 0.00 m from REST, 0 grep hits over 139 files |
+| *global:* A1-boot-clean, A20b-no-system-errors | PASS, PASS | `state=playing`; 0 system or hook errors over 329 frames |
+| *global:* A9-perf-budget | **PASS on this tree's (Round-4) row**; R26 not graded | 309 draws < 350, 53 fps median. Plan R26's bar is 58 fps on a quiet box (load < 3); load was about 5, so under R26 this run is PENDING, not a FAIL. The R26 row is gates-perf's carried row (not in this tree). Nothing brand changed draws in play |
+| *global:* A21-real-draw-calls | **FAIL on the GPU term only** (engine-gpu) | Draws 309 / 195 / 325 and triangles 4.12 / 3.67 / 4.25 M PASS. Median GPU at the shipped DPR 108.9 / 136.2 / 114.3 ms against 20 ms (null frame 2.02 ms, instability 1.04): FAIL, as the Round-4 baseline did; engine-gpu's W0b tier decision owns it. p95 frame and p95 JS PENDING (not attributable: null-frame p95 20.2 ms, burst instability 2.67×) |
+| *global:* A90-memory-stability | PASS | 28 kills; heap **−7.8 %**, geometries **+9**, textures **−28**, objects **−1096** |
+| *global:* A90-memory-stability-expansion | PASS | objects −1059, nonMachineGrowth 0, orphan roots 0, geo +3, tex −28, heap −6.5 % |
+| *global:* A90b-memory-attribution | PASS | 0 offenders, 0 orphaned textures, heap −9.2 % after forced GC (self-test ok) |
+| *global:* A90-rig-reclaim | PASS | 30 cycles: geo +9, tex 0; per live machine geo 0 / tex 0.38; held-then-released 0 / 0 |
+| *global:* A-ID-ip-assets-gone, A-assets-tracked | PASS, PASS | 19 GLBs, 0 IP hits (`aloy.glb` a scheduled hero-body exception, `anims-hybrid/aloy-ual.json` gates-perf's); 221 referenced, 0 wrongly ignored |
+| *global:* A-licence-manifest | PENDING (pipeline) | files-matched, row-schema, code-rows, licence-texts, credits, size PASS; third-party and legacy-source PENDING on pipeline's W0b re-fetch (`archive_sha256` + `retrieved` for the rock scan and UAL1) |
 | *global, not in this tree:* A90-abs, A-alloc-rate, A-vram-ledger, A-port-guard, A-carried-suite (gates-perf), A-reach-all-sites (no gate file has it yet) | — | not run |
-| must-stay-green: A70c-title-flow | PASS | one logo at press and menu; easeAtPress 0.0002, endEase 0.509, radiusDrop 17.32 m, dolly 18.8 m, maxStep 0.24 m; manual 17 rows; credits 6 sections / 24 rows |
-| must-stay-green: A72-settings-persist / A72b-accessibility | PASS / PASS | |
+| must-stay-green: A70c-title-flow | PASS | one logo at press and menu; easeAtPress 0.0003, endEase 0.517, radiusDrop 17.57 m, dolly 19.07 m, maxStep 0.246 m; Field Manual 17 rows; credits 6 sections |
+| must-stay-green: A72-settings-persist / A72b-accessibility | PASS / PASS | settings restored after reload; HUD scale 1.3, palette swap, reduced motion, hold/toggle all persist and reset |
 
-**A-gate-preludes** on `tools/gates.r5.brand.mjs`, run through my port of gates-perf's scans (`work/preludes-check.mjs`): 0 species literals, 0 coordinates, 0 IP terms in judged text, no rig literals.
+**A-gate-preludes** on `tools/gates.r5.brand.mjs` (round 3, after the new rows), run through a scratch port of gates-perf's own scan functions (`work3/preludes-check.mjs`: `specVocabulary`, `oldMapVocabulary`, `coordRegexes`, `LITERAL_PLACEMENT`, the judged-text IP scan, copied from gates-perf's tree and pointed at brand's file): 23 species names from bible §10.2 and 42 old-map pairs (W0 table, `sites.js`, 28 archived Round-4 gate files) → **0 species literals, 0 species words, 0 staging by species, 0 old-map coordinates or literal placements, 0 rig literals (A-gates-no-hero-literals regex read from the plan), 0 old-IP terms or non-r5 stills in the title / criteria / reference of brand's 9 visual rows.** PASS.
 
 **Memory rule.** No new per-frame allocation:
 - `_dolly` places, turns and sizes the disc in place.
@@ -221,24 +224,29 @@ Result: **36 gates, 24 PASS, 1 FAIL, 3 PENDING, 8 NEEDS-JUDGE**. Two other lanes
 
 ## 5. Frames read (advisory; the judge grades)
 
-Read against their criteria and `reference/r5/brand/`. Pixel values are taken from the PNGs.
+Round 3's frames, read against their criteria and `reference/r5/brand/`. Pixel values are taken from the PNGs.
 
-- **X-V38-title** (menu in): one lockup, the vertical menu `01 CONTINUE` (greyed) to `05 CREDITS`, the field line and the save line.
-  - The vista is an **ochre haze that keeps its depth**: spires, ridges and the valley floor all read, which they did not under the old flat veil.
-  - **One coral disc**, upper right, sits in a clear gap between two spires. It is clearly the brightest thing in the sky, with a crisp, soft edge, no white sun under it and no dark ring round it.
-  - Sunlit spire rims next to it are as light as the disc. That is rock lit by the Round-4 clear-weather sun at full strength; world-sky's calima will dim it.
+- **The spark's centre (round-3 fix).** Before: on the 1600×900 title the spark's open centre read as a dark hub;
+  measured on the press-beat frame, the 5×5 centre was **10.9 luminance darker** than a ring just outside the
+  rays (94.0 against 104.9). After: **+0.8** (107.9 against 107.1). The centre is the sky again, and the spark
+  reads as ten rays round an open centre, as in the favicon. At 4K the centre is clear as well.
+- **V38 (`X-V38-title` / `V38-title-r5`, menu in):** one lockup; the vertical menu `01 CONTINUE` (greyed) to `05 CREDITS`; the field line; the save line.
+  - The vista is an **ochre haze that keeps its depth**: spires, ridges and the valley floor all read.
+  - **One coral disc**, upper right, in a clear gap between two spires. It is the brightest thing in the sky, with a soft edge, no white sun under it and no dark ring round it.
+  - Sunlit spire rims next to it are about as light as the disc. That is rock lit by the Round-4 clear-weather sun; world-sky's calima will dim it.
   - No long-necked tower and no lava.
-  - **Against the verbatim criteria it FAILS**: no salt grid, no surf, no black sand. The jagged Round-4 spires still dominate, unlike the flat sea horizon of the calima reference.
-- **X-V38-drift35 / -drift105** (real time, about 35 s and 105 s; truck near +24 m and −24 m): the disc is whole and clear of the skyline in both, in the same gap. At 105 s a thin needle spire stands behind the logo's spark. It is backdrop rock; the spark is in front of it and whole.
-- **X-V38-quit-to-title**: one title block, so the round-1 fix holds. The disc is clear, and the field line has rotated to the Steady line.
-- **V-logo** (press beat): CALIMA in Bodoni caps with real thick/thin contrast.
+  - **Against the verbatim criteria it FAILS**: no salt grid, no surf, no black sand. The jagged Round-4 spires dominate, unlike the flat sea horizon of the calima reference.
+- **`X-V38-drift35` / `-drift105`** (real time; the truck near +24 m and −24 m): the disc is whole and clear of the skyline in both, in the same gap.
+- **A thin needle spire behind the spark.** In the menu-in, quit and 105 s frames, a distant needle spire of the Round-4 valley stands behind the spark (in the 105 s frame its tip rises about 90 px above the spark, on the plumb axis). The spark is in front, whole and coral. It is still backdrop rock, not a rule. I tried panning the view 0.13 rad (`TITLE_LOOK_OFFSET` 0.42 → 0.55; `work3/exp055.log`): the needle cleared the spark in all four frames, but the engine's vignette at the frame edge took the disc's margin over the sky ring from 9.3 to 0.8 luminance (ΔE 4.06). That is too close to flip A-title-disc-sun-pixels, so I reverted to 0.42. The Pans' flat horizon (W1) removes the needle anyway.
+- **`X-V38-quit-to-title` / `V38-title-quit`**: one title block, so the round-1 fix holds. The disc is clear, and the field line has rotated to the Steady line.
+- **V-logo** (press beat): CALIMA in Bodoni caps with real thick/thin contrast, against the 1818 Bodoni caps.
   - The I is a plumb line with a pointed bob.
   - The full ten-ray spark floats above it.
-  - One hairline rule, with the coral broad-arrow under the I pointing up.
+  - One hairline rule, with the coral broad-arrow under the I pointing up, as in the bench-mark diagram.
   - No second line, no tagline, no HORIZON or ZERO.
-  - The disc sits upper right, away from the lockup. The scrim ellipse keeps the lockup on a slightly darker field than the open sky.
-- **V-logo-4k**: every part of the lockup is whole at 4K density: the rays have round caps, the rule is one straight line, and the arrow is centred under the plumb. The spark sits over rock texture, not over a line.
-- **V-loading / V-loading-100**: the lockup in ink on field-book paper. The rule is filled from the left to about 40 %, then complete. The copy reads "Reading the benchmarks…". Unchanged.
+  - The disc sits upper right, away from the lockup.
+- **V-logo-4k**: every part is whole at 4K density: round-capped rays, an open centre, one straight rule, the arrow centred under the plumb, hairline serifs and vertical stress on the caps.
+- **V-loading / V-loading-100**: the lockup in ink on field-book paper. The rule fills from the left to 40 %, then is complete. The copy reads "Reading the benchmarks…". Unchanged.
 
 ---
 
@@ -283,21 +291,24 @@ Read against their criteria and `reference/r5/brand/`. Pixel values are taken fr
 
    **For world-sky:** your calima sun should be the brightest point of the sky. The title's disc shows one way to get there: the core, plus the dust absorbing the clear-sky glow, fitted on filmed frames. Also note that **the dome is centred on the player**: from any camera away from the player, the dome's sun is not on `sunDir`.
 6. **The disc's R channel lands at 234, not 242.** The engine's own vignette (×0.936 at that spot, part of engine-gpu's grade) and the CSS haze cap it. G and B are on target, and ΔE is 3.77. Changing the engine's vignette on the title is engine-gpu's call, so I left it.
-7. **The look of the vista changed** with the colour-blend fix: more depth, less flat. The judge should re-grade V38 and V-logo on the new frames.
-8. **A9 and A21 are PENDING on contention in this run.** Run A9 on a quiet box: it measured PASS in round 1, and nothing brand changed draws in play. A21's GPU term is engine-gpu's.
+7. **The judge should re-grade V-logo and V38 on round 3's frames**: the spark's centre changed (§0, §5); nothing else in the lockup or the vista moved.
+8. **A9 and A21.** A9 PASSes this tree's Round-4 row (309 draws, 53 fps); under R26 (58 fps, quiet box, load < 3) a load-5 run is PENDING, so grade it in the orchestrator's quiet-box global run. Nothing brand changed draws in play: the wash and the disc exist only on the title. A21 FAILs only its GPU term (109–136 ms median at the shipped DPR, the Round-4 baseline fails it too); engine-gpu's tier decision owns it.
 9. **Two strings outside menu.js's title and credits blocks** are unchanged since the first W0b pass: the hub kicker "CALIMA" and the new-game modal's "Instruments". Revert them if they are out of scope.
 10. **A-extent-refactor** is graded against the W0b-start hashes, because W0a changed one collider.
 11. **Other lanes' surfaces still use Round-4 words** (shell-ui W2, combat-kit W2, progression W3). Dialogue now counts too. All of it is inside the 1508.
 12. **Latin subsets only.** ∴ ■ ● ▲ ◆ fall back to a system font.
-13. **`docs/ROUND5-PLAN.md`** shows as modified in this tree. That is the orchestrator's sync of R33(g)/R34 from main (`a3465f1`), not a brand edit.
-14. **Downloads this round:** none.
+13. **`docs/ROUND5-PLAN.md`** in this tree is the orchestrator's sync of R33(g)/R34 (`a3465f1`); main's later §0 rule 8 amendment (`263ae19`, the two-slot Chrome lock) is not in this tree's copy, but brand followed it: every Chrome run this round took a slot under `scratchpad/r5/chrome-slots/` with an `owner.txt` and released it on exit.
+14. **Downloads this round:** none. No new asset, so no new `LICENSES.json` row.
+15. **The needle spire behind the spark** in three V38 frames (§5) is a coincidence of the Round-4 valley at this sun azimuth. The one framing change that cleared it cost the disc its brightness margin, so it is reverted and documented, not fixed. The Pans replace the valley at W1, and the chooser re-frames every visit.
+16. **`tools/lint/hzd-verbs.json` is new data with no gate of brand's.** Its consumer is progression's `A-distinct-verbs` (W3). The bible's own count holds on it: 7 of the 8 beats are absent, and the 0:05 Sighting beat is the `scan` row. Progression should declare each beat's verb by `id`.
 
 **For other lanes.**
 - **world-sky:** `setWeather('calima', 0)` should return `'calima'`. The title also reads `timeFrozen`, and the sky dome's position and radius, read-only.
 - **world-ground:** the title reads `REST`, the sky's sun point and `terrain.getHeight`.
 - **shell-ui (W2):** use `--cal-font-*` and the palette. When you restyle `hud.css`, drop the retired face, and brand removes its bridge.
 - **gates-perf:** brand's `V38-title` shadows the carried row. `A-title-disc-sun-pixels` needs `A-title-disc-sun`'s screenshot from the same run.
-- **orchestrator:** see items 1–3.
+- **orchestrator:** see items 1–3, and §6 for the lane command on main (`V38-title-r5`).
+- **progression (W3):** `tools/lint/hzd-verbs.json` (schema in §2) is the list `A-distinct-verbs` reads.
 
 ---
 
