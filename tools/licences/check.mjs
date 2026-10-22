@@ -44,8 +44,10 @@
  *                     (tools/gates.r5.pipeline.mjs) grades it in page context
  *                     with the same `gradeCredits` function. A surface that
  *                     shows NONE of the attributions is "not wired yet"
- *                     (brand, W0b): PENDING before the W0 exit, FAIL from it;
- *                     a surface that shows some but not all is FAIL (drift)
+ *                     (brand, W0b): PENDING before the W0 exit, FAIL from it
+ *                     (`w0ExitReached`: the wave, the R39 hero swap, or
+ *                     aloy.glb gone — fix round 5); a surface that shows
+ *                     some but not all is FAIL (drift)
  *   size              du public/ <= 60 MB
  */
 import { readFileSync, existsSync } from 'node:fs';
@@ -101,6 +103,45 @@ export function gradeCredits({ need, readmeText, rendered, atOrPastW0Exit }) {
     status, attributions: need.length, readme, inGame,
     ...(status === 'PENDING' ? { owner: 'brand W0b: node tools/lint/credits-sync.mjs (README "## Credits" + menu.js CREDITS from tools/licences/credits.mjs)' } : {}),
   };
+}
+
+/**
+ * Is the repository at or past the W0 exit, where a credits surface that shows NONE of the attributions is a
+ * FAIL (not "not wired yet")? W0b fix round 5 (judge: on main, with no lane branch and no R5_WAVE, the wave is
+ * only a lane-report lower bound, so the exit run would have printed PENDING on 0/9). Any ONE signal is enough:
+ *   - the wave (R5_WAVE, the lane branch, OR the lane-report lower bound: a lower bound at or past the exit is
+ *     sound, since the true wave can only be later);
+ *   - SPECS.hero no longer names the Round-4 body: the R39 hero swap merges in the W0-exit window;
+ *   - public/models/aloy.glb is gone: hero-body deletes it at the W0 exit (plan §6).
+ * Returns { reached, signals: [why...] }.
+ */
+export function w0ExitReached({ wave, specs, root = ROOT }) {
+  const signals = [];
+  if (wave?.wave && waveRank(wave.wave) >= waveRank('W0 exit')) signals.push(`wave ${wave.wave} (${wave.source})`);
+  const hero = specs?.hero?.url ?? null;
+  if (hero && hero !== '/models/aloy.glb') signals.push(`SPECS.hero is ${hero}: the R39 hero swap merges in the W0-exit window`);
+  if (!existsSync(path.join(root, 'public/models/aloy.glb'))) signals.push('public/models/aloy.glb is gone: hero-body deletes it at the W0 exit (plan §6)');
+  return { reached: signals.length > 0, signals };
+}
+
+/**
+ * NEGATIVE CONTROL of the exit rule (no files read): a README and a rendered modal that show none of the
+ * attributions must grade FAIL once the exit is signalled by the hero swap alone (wave W0b, aloy.glb present),
+ * and PENDING before it. A credits clause whose control fails is a FAIL.
+ */
+export function creditsExitControl(need) {
+  const n = need?.length ? need : [{ id: 'control', licence: 'CC-BY-4.0', attribution: 'control attribution' }];
+  const wave = { wave: 'W0b', source: 'control', exact: true };
+  const here = { root: ROOT };
+  const swapped = w0ExitReached({ wave, specs: { hero: { url: '/models/hero/brea.glb' } }, ...here });
+  const notYet = w0ExitReached({ wave, specs: { hero: { url: '/models/aloy.glb' } }, ...here });
+  const aloyOnDisk = existsSync(path.join(ROOT, 'public/models/aloy.glb'));
+  const empty = { visible: true, how: 'control', text: '' };
+  const atExit = gradeCredits({ need: n, readmeText: '', rendered: empty, atOrPastW0Exit: swapped.reached }).status;
+  const before = gradeCredits({ need: n, readmeText: '', rendered: empty, atOrPastW0Exit: notYet.reached }).status;
+  // with aloy.glb gone from this tree the "before" case is itself past the exit (FAIL is then correct too)
+  const ok = swapped.reached && atExit === 'FAIL' && (aloyOnDisk ? before === 'PENDING' : before === 'FAIL');
+  return { ok, heroSwappedAtW0b: atExit, heroNotSwappedAtW0b: before, aloyOnDisk };
 }
 
 export async function check(root = ROOT, { env = process.env, rendered = null } = {}) {
@@ -224,9 +265,10 @@ export async function check(root = ROOT, { env = process.env, rendered = null } 
   // credits: README text + the RENDERED in-game credits (graded in page context; `rendered` null in the CLI)
   const { requiredAttributions } = await import('./credits.mjs');
   const need = requiredAttributions(manifest);
-  const atOrPastW0Exit = !!wave.wave && wave.exact && waveRank(wave.wave) >= waveRank('W0 exit');
-  creditsInput = { need, readmeText: readmeCredits(root), atOrPastW0Exit };
-  clauses.credits = gradeCredits({ ...creditsInput, rendered });
+  const exit = w0ExitReached({ wave, specs, root });
+  creditsInput = { need, readmeText: readmeCredits(root), atOrPastW0Exit: exit.reached };
+  clauses.credits = { ...gradeCredits({ ...creditsInput, rendered }), w0Exit: exit, exitControl: creditsExitControl(need) };
+  if (!clauses.credits.exitControl.ok) clauses.credits.status = 'FAIL';
 
   // size
   const bytes = duBytes('public', root);

@@ -25,7 +25,7 @@
  * instruments-core's §6 deletion of the four machine GLBs is in;
  * docs/ROUND5-PIPELINE.md §4.1).
  *
- * ORDER MATTERS: A-specs-data-driven and A-poc-promoted launch their own
+ * ORDER MATTERS: A-specs-data-driven, A-poc-promoted and A-pipeline-hero-swap launch their own
  * headless Chrome (in a child process), so they run before any page gate of
  * this file (the harness launches its browser lazily, on the first page
  * gate) — one Chrome alive at a time. A-build-deterministic runs two full
@@ -62,6 +62,13 @@
  * engine-gpu's gates read); with no marker the literal bar stands (at best
  * PENDING) and both options are projected on the current tree. Symlinks inside
  * the POC folders now count as left on disk (a symlinked dir kept the folder).
+ *
+ * W0b fix round 5: new lane guard A-pipeline-hero-swap (R39: the SPECS.hero swap with the outfit, stow-kit and
+ * UAL2 rows is a data patch, tools/build/pipeline/hero-swap.mjs, applied in the R39 merge window; the gate
+ * proves it on a scratch merge trial with hero-body's branch and boots the copy in its own Chrome, in a child,
+ * before any page gate). A-licence-manifest's credits clause FAILs a surface showing none of the attributions
+ * once ANY W0-exit signal holds (the wave, incl. a lane-report lower bound at or past it; SPECS.hero no longer
+ * aloy.glb; aloy.glb gone), with a negative control (check.mjs creditsExitControl) that must hold.
  */
 import os from 'node:os';
 import path from 'node:path';
@@ -497,6 +504,26 @@ function childJson(script, args, timeoutMs) {
   });
 }
 
+/**
+ * Lane guard (fix round 5, judges: "R39 hero swap incomplete"): the R39 data patch
+ * (tools/build/pipeline/hero-swap.mjs) applied to a merge trial in scratch = this tree + hero-body's branch
+ * (git show, read-only) + the LICENSES.json fold. PASS needs: no overlay conflict, fold ok, the patch applies
+ * once and is idempotent, --verify ok (four files, one non-IP licence row each, aloy.glb gone, none ignored,
+ * hero-body's rows.js a proven no-op with its negative control), and A1, A20b, A-pipeline-boot-rows and the
+ * hero-rows check PASS on the booted copy (one Chrome, in a child; filmed). A-human-bind on the copy is
+ * reported as advisory only (unsealed). Never PASS in place of the plan's gates on main after the R39 window.
+ */
+async function heroSwap({ PORT }) {
+  const res = await childJson('tools/build/pipeline/hero-swap.mjs', ['--trial', '--scratch', scratchRoot(), '--port', String(PORT),
+    '--shot', path.join(ROOT, 'shots/gates/A-pipeline-hero-swap.png')], 840000);
+  const d = res.detail || {};
+  const boot = (d.boot || []).map((g) => ({ id: g.id, pass: g.pass, error: g.error, consoleErrors: g.consoleErrors, shot: g.shot ? path.relative(ROOT, g.shot) : undefined,
+    ...(g.id === 'hero-swap-rows' || g.id === 'A-pipeline-boot-rows' ? { detail: g.detail } : {}) }));
+  return { pass: res.pass, detail: { trial: d.trial, patch: d.patch && { ok: d.patch.ok, changed: d.patch.changed, specs: d.patch.specs, lib: d.patch.lib, problems: d.patch.problems },
+    idempotent: d.patchAgain ? { ok: d.patchAgain.ok, changed: d.patchAgain.changed } : null, verify: d.verify, viteProbe: d.viteProbe, boot,
+    humanBindAdvisory: d.humanBindAdvisory, error: d.error, pending: d.pending, ms: d.ms, copyRemoved: d.copyRemoved } };
+}
+
 async function pocPromoted({ PORT }) {
   const W = await imp('tools/build/pipeline/w0b-checks.mjs');
   const st = W.pocPromotedStatic();
@@ -568,7 +595,10 @@ function licenceAssert() {
     && (!M || M.modal === 'credits'));
   const text = body ? body.textContent : '';
   const rendered = { how, visible, text, error };
-  const credits = gradeCredits({ ...NODE.creditsInput, rendered });
+  const nodeCredits = NODE.clauses.credits || {};
+  const credits = { ...gradeCredits({ ...NODE.creditsInput, rendered }), w0Exit: nodeCredits.w0Exit ?? null, exitControl: nodeCredits.exitControl ?? null };
+  // fix round 5: the exit rule's negative control (check.mjs creditsExitControl) must hold, or the clause FAILs
+  if (!credits.exitControl || credits.exitControl.ok !== true) credits.status = 'FAIL';
   const clauses = { ...NODE.clauses, credits };
   const st = Object.values(clauses).map((c) => c.status);
   const pass = st.includes('FAIL') ? false : st.includes('PENDING') ? null : true;
@@ -641,6 +671,11 @@ export const GATES = [
     id: 'A-poc-promoted', kind: 'runner', lane: 'pipeline', timeout: 900000,
     title: 'W0 exit (literal): no ?poc=human|creature path in src/main.js; tools/r5-poc/ and public/models/r5-poc/ absent; ?poc=biome still serves A-gpu-tier. Never PASS with a file left in either folder; no reference to them outside the biome hook',
     check: pocPromoted,
+  },
+  {
+    id: 'A-pipeline-hero-swap', kind: 'runner', lane: 'pipeline', timeout: 900000,
+    title: 'Lane guard (R39): the SPECS.hero swap data patch (hero, outfit, stow-kit, UAL2 rows; aloy.glb out of SCHEDULED_IP) applies to a scratch merge trial with hero-body\'s branch, verifies, and the copy boots clean with every hero row loaded',
+    check: heroSwap,
   },
   {
     id: 'A-loader-fixes', kind: 'action', lane: 'pipeline', timeout: 90000, settle: 1500,
