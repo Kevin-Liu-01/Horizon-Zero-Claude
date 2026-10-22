@@ -9,7 +9,7 @@ ANGLE/Metal, headless, 1600×900 CSS px; fix rounds 2 and 3: Oct 16; W0b and its
 |---|---|
 | 1. Render-target ledger (`A-rt-ledger-census`, `A-rt-ledger`) | **W0b, graded (ruling `rt-ledger-bar=W0b`): 127.27 MB at the shipped tier, DPR 1.25** (bar ≤ 170; round 0: 154.27), recounted from the GL allocation calls and equal to the byte (re-verified Oct 22 on fix round 2's engine, `F4`); staged-fight total **342.45 MB** (bar ≤ 450). `post:pingB` (18 MB) is provisioned-not-allocated in the direct topology (§1.1, corrected). The one clause left is the record in `tools/budgets.mjs` (gates-perf's file, one line; with it the gate passes every clause, `L12`, §3.10). W0a's Round-4 tier ledger (340.74 MB) is §1.3 |
 | 2. 1024 m terrain + nav probe (`A-terrain-1024-probe-box` + `A-terrain-1024-probe`) | **Judged on a quiet box (fix round 3: 4 quiet runs; Q5p and Q6p judged every term).** Single-thread build: 1024 m and 860 m FAIL, 720 m PASS. Pool build (bit-identical, own witness): PASS at every size. GPU delta +0.23 / +0.20 ms PASS; nav 43–44 ms PASS; vertex 20.77 MB PASS. **W1 size by ruling: `pool-terrain-build=accepted` → 1024 m; `=rejected` → 720 m.** The orchestrator ruled `pool-terrain-build=accepted` (PLAN §8.3, W0a exit): **1024 m** (§2.5). Conditions for W1 in §2.6. |
-| 3. GPU tier (`A-gpu-tier`) | **W0b fix round 1: shipped `high` = DPR cap 1.25 + GTAO ¼ + SMAA-only + SMAA RGBA8 + far cascades 1024 + direct post topology + GTAO/bloom folded into the grade + far cascades on alternate frames + anisotropic filtering capped at 2×** (§3.1). `A-gpu-tier` **PASS in 3 judged runs**: Pans POC vista 10.28 / 11.62 / 11.23 ms ≤ 13, empty frame 4.83 / 4.87 / 4.85 ms ≤ 7, fps 59.88–60.24, p95 18.5–18.7 ms (§3.3; another lane's gate Chrome was alive during part of each run, §3.3). Render targets **PASS** (127.27 MB). The cap costs far-ground texture detail (filmed, `V-gpu-tier-look`, §3.1); the GPU timer reads a clock state on this machine (§3.4). A22 (R25), A108, A109 PASS; V20, V33b, V-gpu-tier-look filmed for the judge |
+| 3. GPU tier (`A-gpu-tier`) | **W0b fix round 2: shipped `high` = DPR cap 1.25 + GTAO ¼ + SMAA-only + SMAA RGBA8 + far cascades 1024 + direct post topology + GTAO/bloom folded into the grade + far cascades on alternate frames + anisotropic filtering split by texture role: colour (sRGB) 1×, data (normal, rough/AO) 4×** (§3.1). `A-gpu-tier` **PASS in judged runs** `G3`, `G4`<!-- G5-LIST -->: Pans POC vista 11.78 / 12.34<!-- G5-V --> ms ≤ 13, empty frame 4.75 / 4.80<!-- G5-E --> ms ≤ 7, fps 59.88–60.24, p95 18.7–18.9 ms (§3.3; another lane's Chrome appeared during part of each run). Render targets **PASS** (127.27 MB). The role split keeps the salt-pan crust fix round 1's 2× cap lost (`V-gpu-tier-look`, §3.1, §3.4); the GPU timer reads a clock state on this machine (§3.4). A22 (R25), A108, A109 PASS; V20, V33b, V-gpu-tier-look filmed for the judge |
 ---
 
 ## 1. Render-target ledger
@@ -567,7 +567,11 @@ box; my monitor then samples every 2 s, `run/<tag>.box`; times are seconds after
 Unjudged runs of this round, for the record: `G1` (the 2× / 4× row, before the 1× choice): witness quiet, but
 another lane's Chrome from ~20 s to ~98 s; bursts 9.05 / 17.13 / 15.47 / 18.08 (instability 2.0) → PENDING.
 `G2` (final row): started on a loud box after a 2 h wait; PENDING (1 other Chrome, instability 1.99), vista
-median 10.83, empty 8.40.
+median 10.83, empty 8.40. `G5` (final row): PENDING only because the 1-min load had risen to 3.23 by the
+witness sample (2.87 when the slot was taken 14 s earlier; another Chrome from ~30 s to ~60 s); every clock
+under its bar: vista 12.1 / 11.91 / 11.28 / 12.37 → 12.00, empty 4.78, 60.24 fps, p95 18.7, null 0.17 / 0.17,
+instability 1.097 / 1.178; its lever record (calmer than `G3`'s) reads levers 1–6 at 17.5–18.1, shipped 12.19,
+2× / 2× 12.21, 2× / 4× 12.47, 4× / 4× 13.23.
 
 **Fix round 1's judged results** (the 2× / 2× row; reports lost in the Oct 22 reboot, numbers from its
 report): vista 10.28 / 11.62 / 11.23 ms, empty 4.83 / 4.87 / 4.85 ms, fps 59.88–60.24, p95 18.5–18.7.
@@ -600,7 +604,7 @@ matter against the judged runs above and the interleaved comparison in §3.4.
 
 ### 3.4 What this GPU timer measures, and why the anisotropy cap (split by role) is the lever
 
-**Calibration (`X-cal`, quiet box apart from one late Chrome).** An extra full-screen ALU pass of n loop
+**Calibration (fix round 1's `X-cal`, quiet box apart from one late Chrome).** An extra full-screen ALU pass of n loop
 iterations inserted into the timed composer on the empty frame (2000 × 1125, RGBA8 target):
 
 | n (ascending) | 0 | 2 | 4 | 8 | 14 | 18 | **22** | 27 | 33 | **40** | 48 | **58** | 70 | 85 |
@@ -620,14 +624,14 @@ gate's own measurement, interleaved, on quiet boxes, never on one reading.
 
 **The vista's cost is the POC ground's anisotropic texture fetches.** The ground material samples 11
 textures per pixel (sand, salt and a triplanar rock evaluated everywhere, each with a normal map), all at 8×
-anisotropic filtering, across a frame whose lower half is ground at grazing angles. Clean interleaved run
-(`X-sim8`, 0 other Chromes, load ≤ 2.0, 4 bursts of 2 s each, all post-chain levers in):
+anisotropic filtering, across a frame whose lower half is ground at grazing angles. Fix round 1's clean
+interleaved run (`X-sim8`, 0 other Chromes, load ≤ 2.0, 4 bursts of 2 s each, all post-chain levers in):
 
 | anisotropy (colour / normal maps) | 8 / 8 (as authored) | 4 / 4 | 3 / 3 | **2 / 2** | 4 / 2 | 8 / 2 | 4 / 1 |
 |---|---|---|---|---|---|---|---|
 | vista GPU median ms | 16.73 | 15.16 | 14.67 | **11.91** | 10.96 | 15.04 | 12.89 |
 
-`X-sim9` (clean) read the shipped 2× vista at 10.08–10.22 in four bursts. With the post chain alone (fold,
+Fix round 1's `X-sim9` (clean) read its shipped 2× vista at 10.08–10.22 in four bursts. With the post chain alone (fold,
 direct topology, cadence) and 8× the vista stays at 16.2–17.8 ms in every run; nothing else the engine owns
 reaches it (measured at 2×, same run: shadows off −0.3 ms, SMAA off +0.2, GTAO off −0.8).
 
