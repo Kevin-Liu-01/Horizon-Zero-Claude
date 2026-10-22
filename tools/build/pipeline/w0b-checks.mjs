@@ -121,17 +121,50 @@ export async function buildDeterministic({ root = ROOT } = {}) {
     const rss = runs.map((r) => r.result?.peakRssMb ?? null);
     const loaded = runs.some((r) => Math.max(r.load1Before, r.load1After) >= 3);
     const wallOk = wall.every((w) => w !== null && w <= BUILD_WALL_MS);
-    const ok = runs.every((r) => r.code === 0 && r.result) && !differ.length && onDisk.every((x) => x.same) && typed.length > 0
+    // W0b fix round 2 (the Oct 22 reboot emptied models-staging/r5-src): a recipe that failed ONLY because its staged
+    // sources are missing is "blocked on A-sources-staged" — never PASS. It is PENDING only when (a) every failed
+    // recipe in BOTH runs is a missing-source failure, (b) the same recipes failed in both runs, and (c)
+    // A-sources-staged itself reports staged files missing (a recipe cannot hide a bug behind it). Every recipe that
+    // did build is still graded for byte-identity, committed equality, RSS and the network sandbox.
+    const failedOf = (run) => run.result?.failed || [];
+    const failedSets = runs.map((r) => failedOf(r).map((f) => f.recipe).sort().join('|'));
+    const anyFailed = runs.some((r) => failedOf(r).length || r.code !== 0);
+    let sourcesReport = null;
+    if (anyFailed) {
+      const { status } = await import('../sources.mjs');
+      const st = await status({ root });
+      sourcesReport = { pass: st.pass, problems: st.detail.problems.slice(0, 8) };
+    }
+    const sourcesMissing = !!sourcesReport && sourcesReport.problems.some((p) => /staged file\(s\) missing|is missing|not staged/.test(p));
+    // NEGATIVE CONTROL of the classification: only a missing-source error may be read as "blocked"
+    const { isMissingSource } = await import('../build-assets.mjs');
+    const enoent = (p) => Object.assign(new Error(`ENOENT: no such file or directory, open '${p}'`), { code: 'ENOENT', path: p });
+    const classCases = [
+      [Object.assign(new Error('humans.mjs: source dir missing (ubc)'), { code: 'R5_SRC_MISSING' }), true],
+      [new Error('[recipes] no human sources: stage UBC + MCO under models-staging/r5-src/ (pipeline W0b) or set R5_SRC'), true],
+      [enoent(path.join(root, 'models-staging/r5-src/ubc/x.gltf')), true],
+      [enoent(path.join(root, 'public/models/hero/brea.glb')), false],
+      [new TypeError("Cannot read properties of undefined (reading 'getArray')"), false],
+      [new Error('sharp: unsupported image format'), false],
+    ];
+    const classControl = { cases: classCases.length, wrong: classCases.filter(([e, want]) => isMissingSource(e) !== want).map(([e]) => e.message.slice(0, 60)) };
+    const blocked = anyFailed && runs.every((r) => r.result && failedOf(r).length && failedOf(r).every((f) => f.missingSource))
+      && failedSets[0] === failedSets[1] && sourcesMissing;
+    const ok = !classControl.wrong.length && runs.every((r) => r.result && (r.code === 0 || blocked)) && !differ.length && onDisk.every((x) => x.same) && typed.length > 0
       && committed.every((c) => c.equal) && rss.every((m) => m !== null && m <= BUILD_RSS_MB) && !!sandbox;
     // R26-style attribution: the wall-time bar grades on a quiet box (load1 < 3); over the bar on a loaded box = PENDING
-    const pass = !ok ? false : wallOk ? true : loaded ? null : false;
+    const pass = !ok ? false : blocked ? null : wallOk ? true : loaded ? null : false;
     return { pass, detail: {
       outputs: paths.length, glbWebp: typed.length, differ, onDiskCompared: onDisk.length, onDiskDiffer: onDisk.filter((x) => !x.same).map((x) => x.p),
       wallMs: wall, capMs: BUILD_WALL_MS, peakRssMb: rss, capRssMb: BUILD_RSS_MB,
       load1: runs.map((r) => [r.load1Before, r.load1After]), wallAttributable: !loaded,
-      ...(pass === null ? { pending: `wall time over ${BUILD_WALL_MS / 1000} s on a loaded box (load1 >= 3): not attributable (R26 rule); determinism, RSS and network terms graded` } : {}),
+      failedRecipes: failedOf(runs[0]).map((f) => ({ recipe: f.recipe, lane: f.lane, missingSource: f.missingSource, outputsNotBuilt: f.outputs.length, error: f.error.slice(0, 200) })),
+      ...(sourcesReport ? { sourcesStaged: sourcesReport } : {}),
+      ...(blocked && ok ? { blockedBy: 'A-sources-staged', pending: `${failedOf(runs[0]).length} recipe(s) could not run: their staged sources are missing from models-staging/r5-src (A-sources-staged FAILs). The ${paths.length} outputs that did build are graded (byte-identical, committed equal, RSS, network denied); the gate cannot PASS until the sources are re-staged` } : {}),
+      ...(pass === null && !blocked ? { pending: `wall time over ${BUILD_WALL_MS / 1000} s on a loaded box (load1 >= 3): not attributable (R26 rule); determinism, RSS and network terms graded` } : {}),
       network: sandbox ? 'denied (sandbox-exec deny network*)' : 'NOT ENFORCED (no sandbox-exec)', deniedProofExtracts: sandbox?.deniedReads ?? 0,
       committedOutputs: committed, recipes: runs[0].result?.results?.map((r) => ({ recipe: r.recipe, lane: r.lane, files: r.files.length })),
+      missingSourceClassControl: classControl,
       runs: runs.map(({ result, ...r }) => r),
     } };
   } finally {
@@ -209,8 +242,12 @@ export async function buildOnlyLane({ root = ROOT } = {}) {
     const written = writtenBetween(before, snapshot(root));
     const outside = auditLane(lane, written, declared);
     const changedBytes = declared.filter((p) => shaBefore[p] && existsSync(path.join(root, p)) && sha(path.join(root, p)) !== shaBefore[p]);
+    const failed = r.json?.failed || [];
     runs.push({ lane, recipes: recipes.filter((x) => x.lane === lane).length, code: r.code, ms: r.ms, wallMs: r.json?.wallMs ?? null, load1: [l0, load1()],
-      written: written.length, outside, committedBytesChanged: changedBytes, skipped: r.json?.skipped?.length ?? 0 });
+      written: written.length, outside, committedBytesChanged: changedBytes, skipped: r.json?.skipped?.length ?? 0,
+      ...(failed.length ? { failed: failed.map((f) => ({ recipe: f.recipe, missingSource: f.missingSource, error: f.error.slice(0, 160) })) } : {}),
+      // fix round 2: a lane whose recipes failed ONLY on missing staged sources (and wrote nothing outside its paths)
+      blockedOnSources: r.code !== 0 && !!r.json && failed.length > 0 && failed.every((f) => f.missingSource) });
   }
   // NEGATIVE CONTROL: a pipeline run that wrote into a hero-body path and into an undeclared path of its own
   const plantedWritten = [{ path: 'public/models/hero/brea-body.glb', change: 'written' }, { path: 'public/models/pipeline/undeclared.glb', change: 'created' }];
@@ -218,12 +255,14 @@ export async function buildOnlyLane({ root = ROOT } = {}) {
   const controlCaught = control.length === 2;
   const slow = runs.filter((r) => r.ms > 60000);
   const loaded = runs.some((r) => Math.max(...r.load1) >= 3);
-  const bad = runs.filter((r) => r.code !== 0 || r.outside.length || r.committedBytesChanged.length);
-  const pass = bad.length || strays.length || unknownLanes.length || !controlCaught ? false : slow.length ? (loaded ? null : false) : true;
+  const bad = runs.filter((r) => (r.code !== 0 && !r.blockedOnSources) || r.outside.length || r.committedBytesChanged.length);
+  const blocked = runs.filter((r) => r.blockedOnSources).map((r) => r.lane);
+  const pass = bad.length || strays.length || unknownLanes.length || !controlCaught ? false : blocked.length ? null : slow.length ? (loaded ? null : false) : true;
   return { pass, detail: {
     lanes: runs.length, withRecipes: runs.filter((r) => r.recipes).map((r) => r.lane), staticStrays: strays, unknownLanes,
     slowest: runs.reduce((m, r) => (r.ms > (m?.ms ?? -1) ? { lane: r.lane, ms: r.ms } : m), null), capMs: 60000,
-    ...(pass === null ? { pending: 'a lane run exceeded 60 s on a loaded box (load1 >= 3): not attributable' } : {}),
+    ...(blocked.length ? { blockedBy: 'A-sources-staged', pending: `lane(s) ${blocked.join(', ')} could not build: staged sources missing from models-staging/r5-src; their write audit is graded, their outputs are not` } : {}),
+    ...(pass === null && !blocked.length ? { pending: 'a lane run exceeded 60 s on a loaded box (load1 >= 3): not attributable' } : {}),
     negativeControl: { planted: plantedWritten.map((w) => w.path), caught: control.map((c) => c.path), ok: controlCaught },
     runs,
   } };

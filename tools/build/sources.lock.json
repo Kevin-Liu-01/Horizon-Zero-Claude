@@ -232,7 +232,7 @@
         }
       },
       "totalBytes": 81815336,
-      "stagedFrom": "Round-5 proof extract (Oct 15 download; the zip was deleted after the proof). verify-zip with the re-downloaded archive records its SHA-256"
+      "stagedFrom": "Round-5 proof extract (Oct 15 download; the zip was deleted after the proof; the staged copy was lost with the Oct 22 reboot). restore --zip with the re-downloaded archive re-stages these files (verified against the SHA-256s below) and records its SHA-256"
     },
     "ual1": {
       "row": "ual1",
@@ -260,7 +260,7 @@
         }
       },
       "totalBytes": 4054259,
-      "stagedFrom": "public/anims (the shipped UAL v1 Godot export). The v1 archive is superseded upstream: the itch page serves v3.0 since 16 Jun 2026, so verify-zip needs a v1 archive from a backup"
+      "stagedFrom": "public/anims (the shipped UAL v1 Godot export; restored with restore --from public/anims after the Oct 22 reboot). The v1 archive is superseded upstream: the itch page serves v3.0 since 16 Jun 2026, so recording an archive SHA-256 needs a v1 archive from a backup (or a ruling)"
     },
     "ual2-standard": {
       "row": "ual2-standard",
@@ -288,7 +288,7 @@
         }
       },
       "totalBytes": 8092478,
-      "stagedFrom": "Round-5 proof extract (Oct 15 download; the zip was deleted after the proof). verify-zip with the re-downloaded archive records its SHA-256"
+      "stagedFrom": "Round-5 proof extract (Oct 15 download; the zip was deleted after the proof; the staged copy was lost with the Oct 22 reboot). restore --zip with the re-downloaded archive re-stages these files (verified against the SHA-256s below) and records its SHA-256"
     },
     "ubc-standard": {
       "row": "ubc-standard",
@@ -468,7 +468,7 @@
         }
       },
       "totalBytes": 50710492,
-      "stagedFrom": "Round-5 proof extract (Oct 15 download; the zip was deleted after the proof). verify-zip with the re-downloaded archive records its SHA-256"
+      "stagedFrom": "Round-5 proof extract (Oct 15 download; the zip was deleted after the proof; the staged copy was lost with the Oct 22 reboot). restore --zip with the re-downloaded archive re-stages these files (verified against the SHA-256s below) and records its SHA-256"
     }
   }
 }

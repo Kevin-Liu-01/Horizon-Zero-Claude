@@ -50,6 +50,11 @@
  *       sorted `sha256sum` manifest of those files (`<sha256>  <basename>\n` lines; brand's font rows).
  *       Each listed file (shipped unmodified under public/) is verified against its sha256 and cloned
  *       into r5-src/<dir>/; the manifest hash must equal the row's archive_sha256, and is recorded
+ *   node tools/build/sources.mjs restore --row <id> (--from <dir> | --zip <archive.zip>) [--retrieved YYYY-MM-DD] [--delete-zip]
+ *       put the lock's files back byte for byte after r5-src was lost (fresh worktree, reboot): every lock file is
+ *       found in the dir / archive and verified against its lock SHA-256 before anything is written (all or
+ *       nothing; the lock's file list never changes). --zip also checks (or, when none is recorded yet, records)
+ *       the archive SHA-256 — the W0b re-fetch in one command per archive
  *   node tools/build/sources.mjs status [--json]      the A-sources-staged report
  *   node tools/build/sources.mjs layout               row id -> directory, one JSON line (the published layout)
  *
@@ -277,6 +282,74 @@ export async function verifyZip({ row, zip, retrieved = null, deleteZip = false,
   return out;
 }
 
+/**
+ * restore (W0b fix round 2): put a source's staged files back EXACTLY as the lock records them, after r5-src was lost
+ * (a fresh worktree; the Oct 22 reboot cleared the scratch the W0b copies were cloned from). From a local directory
+ * (`--from`) or from the archive (`--zip`). Every lock file must be found (exact relative path, else a unique member /
+ * file whose path ends in `/<rel>`) and equal its lock bytes + SHA-256 before anything is written: the files go into a
+ * temporary sibling directory that replaces `r5-src/<dir>` only when all of them verified (all or nothing). The lock's
+ * file list is never changed. With `--zip`, a recorded archive SHA-256 must equal the archive's; an unrecorded one is
+ * recorded (lock + LICENSES.json row), so `restore --zip … --delete-zip` is the whole W0b re-fetch for one archive:
+ * hash recorded, trimmed sources staged, zip deleted.
+ */
+export async function restore({ row, from = null, zip = null, deleteZip = false, retrieved = null, root = ROOT }) {
+  if (!row || (!from && !zip) || (from && zip)) throw new Error('restore needs --row and exactly one of --from <dir> | --zip <archive.zip>');
+  const lock = loadLock(root);
+  const ent = lock.sources[row];
+  if (!ent) throw new Error(`no lock entry "${row}" in ${LOCK}: nothing to restore (use stage-zip / stage-dir)`);
+  const dirName = ent.dir || DIRS[row] || row;
+  const dst = path.join(srcDir(root), dirName);
+  const tmp = path.join(srcDir(root), `.${dirName}.restore-${process.pid}`);
+  const out = { row, dir: `${SRC_REL}/${dirName}`, from: from || null, zip: zip ? path.basename(zip) : null, files: Object.keys(ent.files).length, written: 0, missing: [], mismatched: [], ambiguous: [] };
+  let z = null, members = null, archive = null;
+  if (zip) {
+    archive = await sha256File(zip);
+    out.archiveSha256 = archive.sha256; out.archiveBytes = archive.bytes;
+    if (ent.archive.sha256 && ent.archive.sha256 !== archive.sha256) {
+      return { ...out, ok: false, problems: [`archive SHA-256 ${archive.sha256.slice(0, 12)}… != recorded ${ent.archive.sha256.slice(0, 12)}… (a different archive; re-stage with stage-zip if the pack changed)`] };
+    }
+    z = await openZip(zip);
+    members = z.entries.filter((e) => !e.dir);
+  }
+  const fromFiles = from ? walkFiles(path.resolve(from)) : null;
+  rmSync(tmp, { recursive: true, force: true });
+  mkdirSync(tmp, { recursive: true });
+  try {
+    for (const [rel, rec] of Object.entries(ent.files)) {
+      let buf = null, src = null;
+      if (z) {
+        const hits = members.filter((e) => e.name === rel || e.name.endsWith(`/${rel}`));
+        if (hits.length !== 1) { (hits.length ? out.ambiguous : out.missing).push(rel); continue; }
+        buf = await z.read(hits[0]);
+      } else {
+        const hits = fromFiles.includes(rel) ? [rel] : fromFiles.filter((f) => f.endsWith(`/${rel}`));
+        if (hits.length !== 1) { (hits.length ? out.ambiguous : out.missing).push(rel); continue; }
+        src = path.join(path.resolve(from), hits[0]);
+        buf = readFileSync(src);
+      }
+      if (buf.length !== rec.bytes || sha(buf) !== rec.sha256) { out.mismatched.push({ rel, bytes: buf.length, lockBytes: rec.bytes }); continue; }
+      const to = path.join(tmp, rel);
+      mkdirSync(path.dirname(to), { recursive: true });
+      if (src) cloneFile(src, to); else writeFileSync(to, buf);   // copy-on-write from a local copy: ~0 bytes
+      out.written++;
+    }
+  } finally { if (z) await z.close(); }
+  out.ok = !out.missing.length && !out.mismatched.length && !out.ambiguous.length && out.written === out.files;
+  if (!out.ok) { rmSync(tmp, { recursive: true, force: true }); out.written = 0; return out; }
+  rmSync(dst, { recursive: true, force: true });
+  renameSync(tmp, dst);
+  if (zip && !ent.archive.sha256) {
+    ent.archive = { ...ent.archive, name: path.basename(zip), bytes: archive.bytes, sha256: archive.sha256, retrieved: retrieved || ent.archive.retrieved };
+    delete ent.stagedFrom;
+    ent.verifiedAgainstArchive = true;
+    saveLock(lock, root);
+    await updateRow(row, { archive_sha256: archive.sha256, archive_bytes: archive.bytes, retrieved: ent.archive.retrieved, pending: undefined }, root);
+    out.recorded = true;
+  }
+  if (zip && deleteZip) { rmSync(zip, { force: true }); out.zipDeleted = true; }
+  return out;
+}
+
 function gitIgnored(rel, root) {
   try { execFileSync('git', ['check-ignore', '-q', '--no-index', rel], { cwd: root, stdio: 'ignore' }); return true; } catch (e) { if (e.status === 1) return false; throw e; }
 }
@@ -330,10 +403,10 @@ export async function status({ root = ROOT, env = process.env } = {}) {
       archive: { name: ent.archive.name, bytes: ent.archive.bytes, sha256: ent.archive.sha256, retrieved: ent.archive.retrieved }, rowSha256: row.archive_sha256 ?? null,
       verifiedAgainstArchive: !!ent.verifiedAgainstArchive || (!!ent.archive.sha256 && !ent.stagedFrom) });
     lockBytes += ent.totalBytes;
-    if (miss.length) problems.push(`${id}: ${miss.length} staged file(s) missing`);
+    if (miss.length) problems.push(`${id}: ${miss.length} staged file(s) missing — restore them with tools/build/sources.mjs restore --row ${id} --zip <archive> --delete-zip (or --from <extracted dir>)`);
     if (bad.length) problems.push(`${id}: ${bad.length} staged file(s) differ from the lock`);
     if (extra.length) problems.push(`${id}: ${extra.length} file(s) on disk not in the lock`);
-    if (!ent.archive.sha256) pending.push(`${id}: archive SHA-256 not recorded yet (${ent.archive.name ?? 'archive name not recorded'}, ${ent.archive.bytes ?? '?'} B, retrieved ${ent.archive.retrieved}) — needs the archive: tools/build/sources.mjs verify-zip --row ${id} --zip <file> --delete-zip`);
+    if (!ent.archive.sha256) pending.push(`${id}: archive SHA-256 not recorded yet (${ent.archive.name ?? 'archive name not recorded'}, ${ent.archive.bytes ?? '?'} B, retrieved ${ent.archive.retrieved}) — needs the archive: tools/build/sources.mjs restore --row ${id} --zip <file> --delete-zip (verify-zip when the staged files are present)`);
     else if (row.archive_sha256 !== ent.archive.sha256) problems.push(`${id}: lock archive SHA-256 ${ent.archive.sha256.slice(0, 12)}… != LICENSES.json ${String(row.archive_sha256).slice(0, 12)}…`);
   }
   const strays = Object.keys(lock.sources).filter((k) => !required.includes(k));
@@ -362,9 +435,10 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
   else if (cmd === 'layout') res = layout();
   else if (cmd === 'stage-files') res = await stageFiles({ row: val('--row'), dir: val('--dir') });
   else if (cmd === 'verify-zip') res = await verifyZip({ row: val('--row'), zip: val('--zip'), retrieved: val('--retrieved'), deleteZip: a.includes('--delete-zip') });
+  else if (cmd === 'restore') res = await restore({ row: val('--row'), from: val('--from'), zip: val('--zip'), retrieved: val('--retrieved'), deleteZip: a.includes('--delete-zip') });
   else if (cmd === 'status') res = await status();
-  else { console.error('usage: sources.mjs stage-zip | stage-dir | stage-files | verify-zip | status | layout  (see the header)'); process.exit(2); }
+  else { console.error('usage: sources.mjs stage-zip | stage-dir | stage-files | verify-zip | restore | status | layout  (see the header)'); process.exit(2); }
   console.log(JSON.stringify(res, null, a.includes('--json') || cmd === 'status' ? 2 : 0));
-  if ((cmd === 'verify-zip' || cmd === 'stage-files') && !res.ok) process.exitCode = 1;
+  if ((cmd === 'verify-zip' || cmd === 'stage-files' || cmd === 'restore') && !res.ok) process.exitCode = 1;
   if (cmd === 'status' && res.pass === false) process.exitCode = 1;
 }

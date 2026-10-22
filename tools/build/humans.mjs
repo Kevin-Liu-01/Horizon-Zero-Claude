@@ -73,7 +73,12 @@ export function sourcePaths(src = srcDir(ROOT)) {
     mco: path.join(sourceDir('mco-fantasy-standard', { root: ROOT, env }), 'Modular Parts'),
     ual2: sourceDir('ual2-standard', { root: ROOT, env }),
   };
-  for (const [k, d] of Object.entries(S)) if (!existsSync(d)) throw new Error(`humans.mjs: source dir missing (${k}): ${d} — stage it with tools/build/sources.mjs`);
+  for (const [k, d] of Object.entries(S)) {
+    if (existsSync(d)) continue;
+    const err = new Error(`humans.mjs: source dir missing (${k}): ${d} — stage it with tools/build/sources.mjs`);
+    err.code = 'R5_SRC_MISSING';   // build-assets.mjs isMissingSource(): "blocked on A-sources-staged", not a broken recipe
+    throw err;
+  }
   return S;
 }
 

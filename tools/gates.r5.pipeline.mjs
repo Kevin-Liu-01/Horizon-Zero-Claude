@@ -38,6 +38,14 @@
  * them is classified); the licence gates grade against the TRUE wave (lane
  * branch r5/<wave>-<lane>, R5_WAVE, or the lane-report lower bound with the
  * §2-named report files counted).
+ *
+ * W0b fix round 2 (after the Oct 22 reboot emptied models-staging/r5-src):
+ * build:assets keeps going past a failing recipe and lists it with
+ * `missingSource`; A-build-deterministic / A-build-only-lane report PENDING
+ * `blockedBy: 'A-sources-staged'` (never PASS) only when every failure is a
+ * missing staged source AND A-sources-staged itself reports the files missing
+ * (classification has its own negative control); any other recipe failure is
+ * FAIL. `tools/build/sources.mjs restore` puts the lock's files back.
  */
 import os from 'node:os';
 import path from 'node:path';

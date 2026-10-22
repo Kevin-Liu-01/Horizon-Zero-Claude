@@ -518,7 +518,7 @@
       "retrieved": "2026-10-15",
       "modified": "source archive: staged subset (Modular Parts) in models-staging/r5-src/mco; shipped GLBs built from it carry derived_from: [\"mco-fantasy-standard\"]",
       "attribution": null,
-      "pending": "archive_sha256: the Oct 15 zip was deleted after the Round-5 proof; recorded by `node tools/build/sources.mjs verify-zip --row mco-fantasy-standard --zip <file> --delete-zip` once the archive is downloaded again (itch.io free download; Kevin's go-ahead)"
+      "pending": "archive_sha256: the Oct 15 zip was deleted after the Round-5 proof, and the staged extract was lost with the Oct 22 reboot (models-staging/r5-src is empty for this row). One command records the hash AND re-stages the trimmed files, verified byte for byte against tools/build/sources.lock.json: `node tools/build/sources.mjs restore --row mco-fantasy-standard --zip <file> --delete-zip` once the archive is downloaded again (itch.io free download; Kevin's go-ahead)"
     },
     {
       "id": "pipeline-probe",
@@ -606,7 +606,7 @@
       "retrieved": "2026-10-15",
       "modified": "source archive: staged subset (UAL2_Standard.glb) in models-staging/r5-src/ual2; shipped clip files built from it carry derived_from: [\"ual2-standard\"]",
       "attribution": null,
-      "pending": "archive_sha256 + archive_bytes (zip ~17 MB): recorded by `node tools/build/sources.mjs verify-zip --row ual2-standard --zip <file> --delete-zip` once the archive is downloaded again (itch.io free download; Kevin's go-ahead)"
+      "pending": "archive_sha256: the Oct 15 zip was deleted after the Round-5 proof, and the staged extract was lost with the Oct 22 reboot (models-staging/r5-src is empty for this row). One command records the hash AND re-stages the trimmed files, verified byte for byte against tools/build/sources.lock.json: `node tools/build/sources.mjs restore --row ual2-standard --zip <file> --delete-zip` once the archive is downloaded again (itch.io free download; Kevin's go-ahead)"
     },
     {
       "id": "ubc-standard",
@@ -624,7 +624,7 @@
       "retrieved": "2026-10-15",
       "modified": "source archive: staged subset (Base Characters/Godot - UE, Base Characters/Textures, Hairstyles/Rigged to Head Bone/glTF) in models-staging/r5-src/ubc; shipped GLBs built from it carry derived_from: [\"ubc-standard\"]",
       "attribution": null,
-      "pending": "archive_sha256: the Oct 15 zip was deleted after the Round-5 proof; the staged files are its extracted subset (per-file SHA-256 in tools/build/sources.lock.json). Recorded by `node tools/build/sources.mjs verify-zip --row ubc-standard --zip <file> --delete-zip` once the archive is downloaded again (itch.io free download; Kevin's go-ahead)"
+      "pending": "archive_sha256: the Oct 15 zip was deleted after the Round-5 proof, and the staged extract was lost with the Oct 22 reboot (models-staging/r5-src is empty for this row). One command records the hash AND re-stages the trimmed files, verified byte for byte against tools/build/sources.lock.json: `node tools/build/sources.mjs restore --row ubc-standard --zip <file> --delete-zip` once the archive is downloaded again (itch.io free download; Kevin's go-ahead)"
     }
   ]
 }
