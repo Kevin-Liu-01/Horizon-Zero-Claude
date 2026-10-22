@@ -7698,7 +7698,12 @@ const NEW_GATES = [
       const speed = spdSum / Math.max(1, frames);
       // the backswing: in EVERY full stride cycle each elbow passes >= 0.10 m
       // behind the hip (pelvis joint), char space
-      const backCycles = (arr) => { const out = []; for (let i = 0; i + cyc <= arr.length; i += cyc) out.push(Math.min(...arr.slice(i, i + cyc))); return out; };
+      // (fix round 2: each window spans 1.2 cycles, stepped by one — the frames
+      // per cycle come from the MEAN gait rate, and on a jittery frame clock an
+      // exact-length window could fall between two backswing peaks: one window
+      // in eight read -0.083 m while every stride measured -0.126..-0.136 m)
+      const cycW = Math.ceil(cyc * 1.2);
+      const backCycles = (arr) => { const out = []; for (let i = 0; i + cycW <= arr.length; i += cyc) out.push(Math.min(...arr.slice(i, i + cycW))); return out; };
       const bl = backCycles(eb.l), br = backCycles(eb.r);
       const backswingOk = bl.length > 0 && bl.every((v) => v <= -0.10) && br.every((v) => v <= -0.10);
       const pass = frames > 60 && minLat >= 0.10 && maxRel < 0 && foreAft >= 0.25 && bob <= 0.08 && kneeOver === 0 && backswingOk && speed > 0.9 * p.speeds.sprint;

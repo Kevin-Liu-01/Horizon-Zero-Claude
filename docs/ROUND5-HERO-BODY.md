@@ -44,14 +44,14 @@ hand 0.195–0.255 m and the elbow 0.21–0.25 m behind the back of the skull, 0
 *Fix:* `tune.looseOnJaw` — through the follow-through the hand rides the wrist's anchor slid back along the arrow
 by `looseKick` (UBC 0.10, bible 8–12 cm), the elbow roll held; it returns to the string as the kick and the hold
 decay together. *After:* the loose hand stays 0.031–0.041 m IN FRONT of the skull's back plane (idle / jog /
-sprint), A17's rearward follow-through __A17LOOSE__ m (bar ≥ 0.05).
+sprint), A17's rearward follow-through 0.064–0.078 m (bar ≥ 0.05).
 
 ### 0.3 The A17 flourish was counted on rendered frames (R11 says sim frames)
 
 The carried A17 counted rAF frames while `_quiverT < 1`; on the loaded box (≈ 20 fps, up to 3 sim steps per
 render) a 20-sim-frame beat rendered as 7 frames and the row failed. R11 (plan §8.2): "counted on the sim clock
 (≥ 8 sim frames at 60 Hz)". The gate now counts animator updates inside the beat (each is one sim step) and
-reports rendered frames beside it: __A17FRAMES__.
+reports rendered frames beside it: 20–23 sim frames (rendered 6–10) across this round's runs.
 
 ### 0.4 A31e / A31f — the camera parked the lens on her stowed lance (up-slope bearing, pitch clamp)
 
@@ -76,7 +76,7 @@ With the hand on the jaw and the forearm in line with the arrow (V24, Kevin "elb
 `draw-side.jpg` reference), the draw elbow sits 0.12–0.19 m behind the back of the skull. The gate now reports, per
 row, the least head-plane depth ANY elbow on the arm's roll circle (shoulder → wrist fixed, both segment lengths
 fixed) can reach while holding the other two form bars (height in [−0.03, +0.05], ≥ 0.05 m behind the hand):
-__ELBOWFEAS__ — every row over the 0.10 m bar. A scapula sweep (`drawRetract` −0.10 / −0.4 / −0.7) moved the level
+−0.55: 0.114 m · −0.4: 0.123 · 0: 0.164 · strafing right / left: 0.195 / 0.195 (final run; the delivered elbow 0.129 / 0.134 / 0.172 / 0.196 / 0.196) — every row over the 0.10 m bar. A scapula sweep (`drawRetract` −0.10 / −0.4 / −0.7) moved the level
 row only 0.165 → 0.146. The Oct 19 PASS of this clause (elbow 0.07 m) came from the fist inside the jaw (§0.1): the
 wrist 5 cm further forward. The reference photo's own elbow is ≈ 0.18 m behind the back of the archer's head
 (estimated from `draw-side.jpg`). Every other clause passes; the down-aim height clause was fixed this round
@@ -254,7 +254,7 @@ and `ACTIONS` (every rebindable action); `input.bind(action, code)` persists ove
 ### 3.1 Lmax
 
 `Lmax = −u·d + sqrt((u·d)² − |u|² + reach²)`, `u` = anchor − bow shoulder, computed live every aim frame
-(`debugAim().lmax`). Final run: __LMAX__. `rigProfile.bow`: `drawLength` 0.548, `restZ` 0.055, `pull` 0.603,
+(`debugAim().lmax`). Final run: Lmax 0.533 / 0.526 / 0.528 / 0.553 m at camPitch −0.55 / −0.4 / 0 / 0.75 (Oct 19: 0.529–0.550). `rigProfile.bow`: `drawLength` 0.548, `restZ` 0.055, `pull` 0.603,
 `arrowLen` 0.803; every combat bow carries `pull` 0.603 (within the gate's ±0.01 of each solution).
 
 ### 3.2 The constants (`UBC_TUNE`; character space, metres)
@@ -283,7 +283,7 @@ and `ACTIONS` (every rebindable action); `input.bind(action, code)` persists ove
 ## 4. Gates (plan §9 hero-body; `tools/gates.r5.hero-body.mjs`, port 5252)
 
 Final lane run `node tools/gates.mjs --port 5252 --extra tools/gates.r5.hero-body.mjs --lane hero-body`
-(__RUNTIME__, 58 gates): __TALLY__.
+(Oct 22 ≈ 13:50 UTC, run `lane4`, 58 gates): **39 PASS · 5 FAIL · 2 PENDING · 12 NEEDS-JUDGE**; the FAILs: A-draw-elbow-level (the head-plane clause only, §0.5, ruling requested), A31c (failed at the Round-4 baseline too, R33 b), A31d / A31e (one marginal row each, §4.3), and A-run-arms (one window of eight in the backswing clause — a gate windowing artefact, fixed and re-run in the global batch: §4.1).
 
 __GATETABLES__
 
