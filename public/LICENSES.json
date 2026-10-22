@@ -23,9 +23,9 @@
       "paths": [
         "public/licences/*"
       ],
-      "title": "Licence texts of shipped third-party code",
+      "title": "Licence texts of shipped third-party code and of the staged CC0 packs",
       "author": "the respective authors (see each file)",
-      "source_url": "node_modules/{three,three-mesh-bvh,meshoptimizer}/LICENSE*",
+      "source_url": "node_modules/{three,three-mesh-bvh,meshoptimizer}/LICENSE*; models-staging/r5-src/{ubc,mco,ual2}/License*.txt",
       "licence": "project-original",
       "licence_text": null,
       "archive_sha256": null,
@@ -503,9 +503,9 @@
       "ip_note": "The uploader's CC-BY licence cannot cover a Sony/Guerrilla character in an Epic rig: IP whatever the licence says (docs/ROUND5-INVENTORY.md section 0.2). Recorded here as provenance of a file that must go; never credited (plan section 10.2)."
     },
     {
-      "id": "mco-fantasy",
+      "id": "mco-fantasy-standard",
       "paths": [
-        "models-staging/r5-src/mco-fantasy/**"
+        "models-staging/r5-src/mco/**"
       ],
       "title": "Modular Character Outfits - Fantasy [Standard]",
       "author": "Quaternius",
@@ -516,9 +516,9 @@
       "archive_bytes": 294347394,
       "archive_name": "Modular Character Outfits - Fantasy[Standard].zip",
       "retrieved": "2026-10-15",
-      "modified": "source archive: staged subset (Modular Parts) in models-staging/r5-src/mco-fantasy; shipped GLBs built from it carry derived_from: [\"mco-fantasy\"]",
+      "modified": "source archive: staged subset (Modular Parts) in models-staging/r5-src/mco; shipped GLBs built from it carry derived_from: [\"mco-fantasy-standard\"]",
       "attribution": null,
-      "pending": "archive_sha256: the Oct 15 zip was deleted after the Round-5 proof; recorded by `node tools/build/sources.mjs verify-zip --row mco-fantasy --zip <file> --delete-zip` once the archive is downloaded again (itch.io free download; Kevin's go-ahead)"
+      "pending": "archive_sha256: the Oct 15 zip was deleted after the Round-5 proof; recorded by `node tools/build/sources.mjs verify-zip --row mco-fantasy-standard --zip <file> --delete-zip` once the archive is downloaded again (itch.io free download; Kevin's go-ahead)"
     },
     {
       "id": "pipeline-probe",
@@ -593,7 +593,7 @@
     {
       "id": "ual2-standard",
       "paths": [
-        "models-staging/r5-src/ual2-standard/**"
+        "models-staging/r5-src/ual2/**"
       ],
       "title": "Universal Animation Library 2 [Standard]",
       "author": "Quaternius",
@@ -604,14 +604,14 @@
       "archive_bytes": null,
       "archive_name": "Universal Animation Library 2[Standard].zip",
       "retrieved": "2026-10-15",
-      "modified": "source archive: staged subset (UAL2_Standard.glb) in models-staging/r5-src/ual2-standard; shipped clip files built from it carry derived_from: [\"ual2-standard\"]",
+      "modified": "source archive: staged subset (UAL2_Standard.glb) in models-staging/r5-src/ual2; shipped clip files built from it carry derived_from: [\"ual2-standard\"]",
       "attribution": null,
       "pending": "archive_sha256 + archive_bytes (zip ~17 MB): recorded by `node tools/build/sources.mjs verify-zip --row ual2-standard --zip <file> --delete-zip` once the archive is downloaded again (itch.io free download; Kevin's go-ahead)"
     },
     {
       "id": "ubc-standard",
       "paths": [
-        "models-staging/r5-src/ubc-standard/**"
+        "models-staging/r5-src/ubc/**"
       ],
       "title": "Universal Base Characters [Standard]",
       "author": "Quaternius",
@@ -622,7 +622,7 @@
       "archive_bytes": 128968391,
       "archive_name": "Universal Base Characters[Standard].zip",
       "retrieved": "2026-10-15",
-      "modified": "source archive: staged subset (Base Characters/Godot - UE, Base Characters/Textures, Hairstyles/Rigged to Head Bone/glTF) in models-staging/r5-src/ubc-standard; shipped GLBs built from it carry derived_from: [\"ubc-standard\"]",
+      "modified": "source archive: staged subset (Base Characters/Godot - UE, Base Characters/Textures, Hairstyles/Rigged to Head Bone/glTF) in models-staging/r5-src/ubc; shipped GLBs built from it carry derived_from: [\"ubc-standard\"]",
       "attribution": null,
       "pending": "archive_sha256: the Oct 15 zip was deleted after the Round-5 proof; the staged files are its extracted subset (per-file SHA-256 in tools/build/sources.lock.json). Recorded by `node tools/build/sources.mjs verify-zip --row ubc-standard --zip <file> --delete-zip` once the archive is downloaded again (itch.io free download; Kevin's go-ahead)"
     }

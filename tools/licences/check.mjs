@@ -30,9 +30,18 @@
  *   code-rows         MIT rows for three, three-mesh-bvh, the meshopt decoder
  *   licence-texts     every licence_text path exists
  *   credits           every CC-BY / MIT attribution appears verbatim in the
- *                     README "Credits" section and in the in-game credits
- *                     (src/ui/menu.js). Both surfaces are brand's (W0b), so
- *                     this clause is PENDING until brand wires credits.mjs
+ *                     README "Credits" section and in the RENDERED in-game
+ *                     credits: the text of the credits modal as the page
+ *                     shows it after its CREDITS button is clicked (W0b fix
+ *                     round 1 — the source text of menu.js is never read, so
+ *                     a comment cannot satisfy it). The node CLI cannot see a
+ *                     page: there the in-game half is "not graded" and the
+ *                     clause is at best PENDING; the A-licence-manifest gate
+ *                     (tools/gates.r5.pipeline.mjs) grades it in page context
+ *                     with the same `gradeCredits` function. A surface that
+ *                     shows NONE of the attributions is "not wired yet"
+ *                     (brand, W0b): PENDING before the W0 exit, FAIL from it;
+ *                     a surface that shows some but not all is FAIL (drift)
  *   size              du public/ <= 60 MB
  */
 import { readFileSync, existsSync } from 'node:fs';
@@ -41,7 +50,7 @@ import { fileURLToPath } from 'node:url';
 import {
   ROOT, ASSET_LICENCES, CODE_LICENCES, NEEDS_ATTRIBUTION, FORBIDDEN_LICENCE, IP_PATTERN,
   loadManifest, listShipped, listIgnored, matchRows, duBytes,
-  currentWave, loadSpecs, scheduledStatus, rowProvenanceText, SCHEDULED_IP,
+  currentWave, loadSpecs, scheduledStatus, rowProvenanceText, SCHEDULED_IP, waveRank,
 } from './lib.mjs';
 import { validateRow } from './add.mjs';
 
@@ -57,8 +66,40 @@ export function readmeCredits(root = ROOT) {
   return m ? m[1] : '';
 }
 
-export async function check(root = ROOT, { env = process.env } = {}) {
+/**
+ * The credits clause, as ONE pure function (no imports, no closure): check.mjs
+ * calls it in node and the A-licence-manifest page gate embeds its source
+ * (`gradeCredits.toString()`) and calls it on the rendered modal text.
+ *   need          [{ id, licence, attribution }] (credits.mjs requiredAttributions)
+ *   readmeText    the README "## Credits" section text ('' if absent)
+ *   rendered      null (not graded here) | { visible, how, text, error? }
+ *   atOrPastW0Exit  true when the wave is the W0 exit or later (a surface showing none is then FAIL)
+ */
+export function gradeCredits({ need, readmeText, rendered, atOrPastW0Exit }) {
+  const norm = (t) => String(t ?? '').replace(/\s+/g, ' ');
+  const surface = (text) => {
+    const t = norm(text);
+    const missing = need.filter((r) => !t.includes(norm(r.attribution))).map((r) => r.id);
+    const shown = need.length - missing.length;
+    const status = !missing.length ? 'PASS' : shown === 0 ? (atOrPastW0Exit ? 'FAIL' : 'PENDING') : 'FAIL';
+    return { status, shown, of: need.length, missing };
+  };
+  const readme = surface(readmeText);
+  let inGame;
+  if (!rendered) inGame = { status: 'PENDING', graded: false, why: 'not graded here: the in-game half is graded only on the rendered credits modal (A-licence-manifest page gate)' };
+  else if (rendered.error || !rendered.visible) inGame = { status: 'FAIL', graded: true, why: `the credits modal did not render: ${rendered.error || 'not visible'}`, how: rendered.how ?? null };
+  else inGame = { graded: true, how: rendered.how, chars: norm(rendered.text).length, ...surface(rendered.text) };
+  const all = [readme.status, inGame.status];
+  const status = all.includes('FAIL') ? 'FAIL' : all.includes('PENDING') ? 'PENDING' : 'PASS';
+  return {
+    status, attributions: need.length, readme, inGame,
+    ...(status === 'PENDING' ? { owner: 'brand W0b: node tools/lint/credits-sync.mjs (README "## Credits" + menu.js CREDITS from tools/licences/credits.mjs)' } : {}),
+  };
+}
+
+export async function check(root = ROOT, { env = process.env, rendered = null } = {}) {
   const clauses = {};
+  let creditsInput = null;
   const put = (id, status, detail) => { clauses[id] = { status, ...detail }; };
   const manifest = loadManifest(root);
   if (!manifest) {
@@ -165,29 +206,12 @@ export async function check(root = ROOT, { env = process.env } = {}) {
   const texts = rows.filter((r) => r.licence_text).map((r) => ({ id: r.id, file: r.licence_text, ok: existsSync(path.join(root, r.licence_text)) }));
   put('licence-texts', texts.every((t) => t.ok) ? 'PASS' : 'FAIL', { missing: texts.filter((t) => !t.ok) });
 
-  // credits (brand surfaces). In-game: either menu.js carries the attribution verbatim, or it renders the generated
-  // `public/licences/credits.json` (tools/licences/credits.mjs --write), which must then equal the generator output
-  const credits = readmeCredits(root);
-  let menu = '';
-  try { menu = readFileSync(path.join(root, 'src/ui/menu.js'), 'utf8'); } catch { /* absent */ }
-  const { creditsJson } = await import('./credits.mjs');
-  const dataFile = path.join(root, 'public/licences/credits.json');
-  const dataText = existsSync(dataFile) ? readFileSync(dataFile, 'utf8') : null;
-  const dataInSync = dataText !== null && dataText === creditsJson(manifest);
-  const menuRendersData = /licences\/credits\.json/.test(menu);
-  const gameText = menu + (menuRendersData && dataInSync ? dataText : '');
-  // ip rows are never credited (plan §10.2: no fan-art rows in the credits;
-  // credits.mjs skips them). That is not a bypass: legacy-source above keeps
-  // this gate from passing while any ip file ships.
-  const needCredit = rows.filter((r) => r.attribution && r.ip !== true);
-  const notInReadme = needCredit.filter((r) => !credits.includes(r.attribution)).map((r) => r.id);
-  const notInGame = needCredit.filter((r) => !gameText.includes(JSON.stringify(r.attribution).slice(1, -1)) && !gameText.includes(r.attribution)).map((r) => r.id);
-  const staleData = dataText !== null && !dataInSync;
-  put('credits', staleData ? 'FAIL' : notInReadme.length || notInGame.length ? 'PENDING' : 'PASS', {
-    attributions: needCredit.length, notInReadme, notInGame, creditsJson: { present: dataText !== null, inSync: dataInSync, renderedByMenu: menuRendersData },
-    ...(staleData ? { stale: 'public/licences/credits.json differs from the manifest: run node tools/licences/credits.mjs --write' } : {}),
-    owner: 'brand W0b: paste `node tools/licences/credits.mjs --md` into README "Credits"; src/ui/menu.js renders /licences/credits.json (or carries the rows verbatim)',
-  });
+  // credits: README text + the RENDERED in-game credits (graded in page context; `rendered` null in the CLI)
+  const { requiredAttributions } = await import('./credits.mjs');
+  const need = requiredAttributions(manifest);
+  const atOrPastW0Exit = !!wave.wave && wave.exact && waveRank(wave.wave) >= waveRank('W0 exit');
+  creditsInput = { need, readmeText: readmeCredits(root), atOrPastW0Exit };
+  clauses.credits = gradeCredits({ ...creditsInput, rendered });
 
   // size
   const bytes = duBytes('public', root);
@@ -195,11 +219,12 @@ export async function check(root = ROOT, { env = process.env } = {}) {
 
   const statuses = Object.values(clauses).map((c) => c.status);
   const pass = statuses.includes('FAIL') ? false : statuses.includes('PENDING') ? null : true;
-  return { pass, clauses };
+  return { pass, clauses, creditsInput, wave };
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const r = await check();
-  console.log(JSON.stringify(r, null, 2));
+  // --json-line: one JSON line (the A-licence-manifest gate reads it); default: the pretty report
+  console.log(process.argv.includes('--json-line') ? JSON.stringify(r) : JSON.stringify(r, null, 2));
   if (r.pass === false) process.exitCode = 1;
 }

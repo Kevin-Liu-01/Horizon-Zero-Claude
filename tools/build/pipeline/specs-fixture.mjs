@@ -82,7 +82,9 @@ export function preflight(root) {
 
 function treeFiles(root) {
   const out = execFileSync('git', ['ls-files', '-co', '--exclude-standard', '-z'], { cwd: root, encoding: 'utf8', maxBuffer: 64 * 2 ** 20 });
-  return out.split('\0').filter((f) => f && !f.startsWith('node_modules/') && !f.startsWith('shots/')
+  // `node_modules` itself is excluded too: a symlinked node_modules is not matched by `node_modules/` in .gitignore
+  // (a worktree relies on .git/info/exclude for it; a fresh checkout has none)
+  return out.split('\0').filter((f) => f && f !== 'node_modules' && !f.startsWith('node_modules/') && !f.startsWith('shots/')
     && existsSync(path.join(root, f)));
 }
 
@@ -281,6 +283,8 @@ export async function runGate(browser, gate, socketPath) {
     const budget = gate.timeout ?? 30000;
     const out = await Promise.race([page.evaluate(gate.assert), sleep(budget).then(() => { throw new Error(`assert timeout ${budget} ms`); })]);
     res.pass = out?.pass; res.detail = out?.detail;
+    // optional frame of the asserted state (integration checks of a merged copy film what they grade)
+    if (gate.shot) { await page.screenshot({ path: gate.shot }); res.shot = gate.shot; }
     const ledger = await page.evaluate(`(() => ({
       systemErrors: (window.__GAME__?.systemErrors || []).map(r => r.key),
       hookErrors: window.__CTX__?.engine?.hookErrorCount || 0,

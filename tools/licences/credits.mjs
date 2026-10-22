@@ -2,25 +2,25 @@
  * Credits generator (pipeline lane; plan §10.2). One source, two surfaces:
  *
  *   node tools/licences/credits.mjs --md     README "Credits" section body
- *   node tools/licences/credits.mjs --json   rows for src/ui/menu.js CREDITS
- *   node tools/licences/credits.mjs --write  writes public/licences/credits.json (W0b): the in-game surface's
- *                                            data file; menu.js fetches `/licences/credits.json` and renders
- *                                            `groups[].head` + `groups[].lines[].text` (check.mjs requires the
- *                                            file to equal this output byte for byte)
- *   node tools/licences/credits.mjs --check  exit 1 if public/licences/credits.json is missing or stale
+ *   node tools/licences/credits.mjs --json   the grouped rows (what src/ui/menu.js CREDITS is built from)
  *
- * Every CC-BY and MIT `attribution` string is emitted VERBATIM (A-licence-
- * manifest checks both surfaces for it); CC0 sources are thanked; OFL fonts
- * are listed with their licence. Rows marked `ip: true` are never credited
- * (they are deleted at their R30 wave, not licensed). Output is sorted and
- * deterministic, so brand can diff it (A-credits, W4).
+ * Brand's `tools/lint/credits-sync.mjs` pastes `creditsMarkdown()` into README
+ * "## Credits" and `creditRows()` into menu.js between its
+ * `// <credits:generated>` markers, so both surfaces carry the strings
+ * verbatim at build time (plan §10.2 item 2). A-licence-manifest grades the
+ * README text and the RENDERED in-game credits modal (page DOM), never the
+ * menu.js source. W0b fix round 1: the `--write` data file
+ * (public/licences/credits.json) is gone — it shipped with no reader.
+ *
+ * Every CC-BY and MIT `attribution` string is emitted VERBATIM; CC0 sources
+ * are thanked; OFL fonts are listed with their licence. Rows marked
+ * `ip: true` are never credited (they are deleted at their R30 wave, not
+ * licensed). Output is sorted and deterministic, so brand can diff it
+ * (A-credits, W4).
  */
 import path from 'node:path';
-import { readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { loadManifest, ROOT } from './lib.mjs';
-
-export const CREDITS_JSON = 'public/licences/credits.json';
 
 const GROUPS = [
   { key: 'cc-by', head: 'Attribution required (CC BY)', test: (r) => /^CC-BY-/.test(r.licence) },
@@ -30,7 +30,9 @@ const GROUPS = [
 ];
 
 export function creditRows(manifest = loadManifest()) {
-  const rows = (manifest?.rows || []).filter((r) => !r.ip);
+  // a row built FROM staged sources (`derived_from`) is thanked through its source rows; it is listed itself only
+  // when its own licence needs an attribution (CC-BY / MIT), so a CC0 source is never thanked twice
+  const rows = (manifest?.rows || []).filter((r) => !r.ip && !(Array.isArray(r.derived_from) && r.derived_from.length && !r.attribution));
   const out = [];
   for (const g of GROUPS) {
     const lines = [];
@@ -58,18 +60,13 @@ export function creditsMarkdown(manifest = loadManifest()) {
   return `${parts.join('\n')}\n`;
 }
 
-/** The in-game data file: deterministic JSON (sorted groups and lines, no timestamps). */
-export function creditsJson(manifest = loadManifest()) {
-  return `${JSON.stringify({ generated_by: 'tools/licences/credits.mjs from public/LICENSES.json', groups: creditRows(manifest) }, null, 2)}\n`;
+/** The rows every credits surface must show verbatim: each CC-BY and MIT attribution (ip rows are never credited). */
+export function requiredAttributions(manifest = loadManifest()) {
+  return (manifest?.rows || []).filter((r) => r.attribution && r.ip !== true)
+    .map((r) => ({ id: r.id, licence: r.licence, attribution: r.attribution }));
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  const file = path.join(ROOT, CREDITS_JSON);
-  if (process.argv.includes('--write')) { writeFileSync(file, creditsJson()); console.log(`[credits] wrote ${CREDITS_JSON}`); }
-  else if (process.argv.includes('--check')) {
-    const ok = existsSync(file) && readFileSync(file, 'utf8') === creditsJson();
-    console.log(ok ? '[credits] in sync' : `[credits] ${CREDITS_JSON} missing or stale: run --write`);
-    if (!ok) process.exitCode = 1;
-  } else if (process.argv.includes('--json')) console.log(JSON.stringify(creditRows(), null, 2));
+  if (process.argv.includes('--json')) console.log(JSON.stringify(creditRows(), null, 2));
   else process.stdout.write(creditsMarkdown());
 }

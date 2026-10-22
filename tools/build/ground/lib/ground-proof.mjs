@@ -9,12 +9,17 @@
  * public/textures/r5-poc/* (world-ground's, deleted at the W1 exit). world-ground's W1
  * layer recipes start from it: stage the scan with tools/build/sources.mjs stage-zip,
  * read it from r5-src, drop the timing stats, write public/textures/ground/**.
+ *
+ * W0b fix round 1 (envelope only, no layer code changed): ROOT is the repository
+ * root again (the verbatim move left it at tools/build/), the timing stats go to
+ * stdout only (the proof wrote tools/r5-poc/out/, a folder deleted at the W0 exit),
+ * and the provenance strings name this file instead of the deleted proof script.
  */
 /**
  * ROUND 5 PIPELINE PROOF — ground materials for the biome patch.
  *
- *   node tools/r5-poc/gen-ground.mjs            (procedural layers + CC0 rock)
- *   node tools/r5-poc/gen-ground.mjs --no-fetch (procedural only)
+ *   node tools/build/ground/lib/ground-proof.mjs            (procedural layers + CC0 rock)
+ *   node tools/build/ground/lib/ground-proof.mjs --no-fetch (procedural only)
  *
  * Every layer ships as TWO RGBA WebP files, so a 3-layer splat costs 6
  * texture units and every channel is used:
@@ -29,22 +34,22 @@
  *                     repacked into the same two-texture layout (and a procedural
  *                     basalt fallback, `rockp`, so the two routes can be compared)
  *
- * Writes public/textures/r5-poc/*.webp + MANIFEST.json, and
- * tools/r5-poc/out/ground.stats.json (ms + bytes per layer).
+ * Writes public/textures/r5-poc/*.webp + MANIFEST.json, and prints the
+ * timing stats (ms + bytes per layer) on stdout.
  */
 import { performance } from 'node:perf_hooks';
 import { mkdirSync, writeFileSync, existsSync, statSync, rmSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import sharp from 'sharp';
 
-const ROOT = fileURLToPath(new URL('../../', import.meta.url));
+const ROOT = fileURLToPath(new URL('../../../../', import.meta.url));
+const GENERATOR = 'tools/build/ground/lib/ground-proof.mjs';
 const OUT = `${ROOT}public/textures/r5-poc/`;
 const SCRATCH = process.env.R5_SCRATCH
   || '/private/tmp/claude-501/-Users-kevinliu-Horizon-Zero-Claude/db31a0fa-9701-46f4-8234-5158425c1e49/scratchpad/r5/cc0';
 const N = 1024;
 const FETCH = !process.argv.includes('--no-fetch');
 mkdirSync(OUT, { recursive: true });
-mkdirSync(`${ROOT}tools/r5-poc/out`, { recursive: true });
 
 /* ----------------------------- tileable noise ---------------------------- */
 function hash2(ix, iy, seed) {
@@ -272,7 +277,6 @@ if (FETCH) {
 if (existsSync(SCRATCH)) rmSync(SCRATCH, { recursive: true, force: true });
 
 const manifest = stats.map((s) => ({ files: [`${s.layer}_a.webp`, `${s.layer}_n.webp`], route: s.route,
-  source: s.source || 'tools/r5-poc/gen-ground.mjs', licence: s.licence }));
-writeFileSync(`${OUT}MANIFEST.json`, JSON.stringify({ generatedBy: 'tools/r5-poc/gen-ground.mjs', layers: manifest }, null, 2));
-writeFileSync(`${ROOT}tools/r5-poc/out/ground.stats.json`, JSON.stringify(stats, null, 2));
+  source: s.source || GENERATOR, licence: s.licence }));
+writeFileSync(`${OUT}MANIFEST.json`, JSON.stringify({ generatedBy: GENERATOR, layers: manifest }, null, 2));
 console.log(JSON.stringify(stats, null, 1));

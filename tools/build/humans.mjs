@@ -6,8 +6,9 @@
  * Every function below is the proof's, statement for statement; the promotion
  * changes the ENVELOPE only:
  *   - sources come from `models-staging/r5-src/` (or R5_SRC), never from a
- *     scratch path, and are resolved by LICENSES.json row id
- *     (`sourcePaths()`), so the build is offline and reproducible
+ *     scratch path, and are resolved through the source lock
+ *     (`sourcePaths()` -> tools/build/sources.mjs `sourceDir(rowId)`), so the
+ *     build is offline and reproducible
  *     (A-build-deterministic, A-sources-staged);
  *   - every written GLB carries `asset.extras.provenance` (generator, recipe,
  *     sources = row ids, licence) and `asset.extras.r5Stats`
@@ -21,7 +22,7 @@
  * `recipes/npc/**`, armory `recipes/armor/**`):
  *
  *   import * as H from '../humans.mjs';          // from tools/build/recipes/
- *   const S = H.sourcePaths();                   // { src, ubc, hair, mco } absolute dirs
+ *   const S = H.sourcePaths();                   // { src, ubc, hair, mco, ual2 } absolute dirs
  *   const doc = await H.readGltf(path.join(S.ubc, 'Superhero_Female_FullBody.gltf'));
  *   H.cleanDoc(doc);                             // drop TEXCOORD_1+/COLOR_n, fold 8 -> 4 influences
  *   H.headCut(doc, bodyNode, ['Head', 'neck_01'], 'Body_Head');
@@ -29,7 +30,7 @@
  *   H.addBraid(doc, { color, rootRadius })       // dyn_hairBraid_01..06 + _07_end under Head
  *   H.joinByMaterial(doc, nodes, name, keepSeparate: RegExp[])
  *   await H.writeHuman(doc, outFile, { texSize: 1024, hairTexSize: 512,
- *     provenance: { recipe: 'tools/build/recipes/brea.mjs', sources: ['ubc-standard', 'mco-fantasy'], licence: 'CC0-1.0' } })
+ *     provenance: { recipe: 'tools/build/recipes/brea.mjs', sources: ['ubc-standard', 'mco-fantasy-standard'], licence: 'CC0-1.0' } })
  *     -> { kb, tris, prims, stats }
  *   H.buildHeroineBase(file, opts) / H.buildMaleBase(file, opts) / H.buildOutfit(name, file, opts), H.OUTFITS
  *     the proof's three builders (opts.provenance required), used by tools/build/pipeline/gen-humans-proof.mjs
@@ -45,6 +46,7 @@ import { readFileSync, existsSync, statSync, mkdirSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { checkProvenance } from './lib/glb.mjs';
+import { sourceDir, srcDir } from './sources.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const log = (...a) => { if (process.env.R5_BUILD_VERBOSE) console.error(...a); };
@@ -54,17 +56,22 @@ export const io = new NodeIO().registerExtensions(ALL_EXTENSIONS)
   .registerDependencies({ 'meshopt.encoder': MeshoptEncoder, 'meshopt.decoder': MeshoptDecoder });
 
 /**
- * Source directories inside r5-src, by LICENSES.json row id (tools/build/sources.mjs layout):
- *   ubc  = <src>/ubc-standard/Base Characters/Godot - UE
- *   hair = <src>/ubc-standard/Hairstyles/Rigged to Head Bone/glTF (Godot -Unreal)
- *   mco  = <src>/mco-fantasy/Modular Parts
+ * Source directories inside r5-src (tools/build/sources.mjs layout; each row's
+ * directory comes from the lock, `sourceDir(rowId)`):
+ *   ubc  = <src>/ubc/Base Characters/Godot - UE                         row ubc-standard
+ *   hair = <src>/ubc/Hairstyles/Rigged to Head Bone/glTF (Godot -Unreal) row ubc-standard
+ *   mco  = <src>/mco/Modular Parts                                       row mco-fantasy-standard
+ *   ual2 = <src>/ual2                                                    row ual2-standard (UAL2_Standard.glb)
  */
-export function sourcePaths(src = process.env.R5_SRC || path.join(ROOT, 'models-staging/r5-src')) {
+export function sourcePaths(src = srcDir(ROOT)) {
+  const env = { R5_SRC: src };
+  const ubc = sourceDir('ubc-standard', { root: ROOT, env });
   const S = {
     src,
-    ubc: path.join(src, 'ubc-standard/Base Characters/Godot - UE'),
-    hair: path.join(src, 'ubc-standard/Hairstyles/Rigged to Head Bone/glTF (Godot -Unreal)'),
-    mco: path.join(src, 'mco-fantasy/Modular Parts'),
+    ubc: path.join(ubc, 'Base Characters/Godot - UE'),
+    hair: path.join(ubc, 'Hairstyles/Rigged to Head Bone/glTF (Godot -Unreal)'),
+    mco: path.join(sourceDir('mco-fantasy-standard', { root: ROOT, env }), 'Modular Parts'),
+    ual2: sourceDir('ual2-standard', { root: ROOT, env }),
   };
   for (const [k, d] of Object.entries(S)) if (!existsSync(d)) throw new Error(`humans.mjs: source dir missing (${k}): ${d} — stage it with tools/build/sources.mjs`);
   return S;

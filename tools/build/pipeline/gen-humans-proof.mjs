@@ -3,8 +3,8 @@
  *
  * Builds the Round-5 proof's six human GLBs (heroine base, male NPC base, four
  * outfits) through the promoted library `tools/build/humans.mjs`, reading the
- * CC0 Quaternius sources ONLY from `models-staging/r5-src/` (ubc-standard,
- * mco-fantasy). Nothing in the game loads these files: they exist so that
+ * CC0 Quaternius sources ONLY from `models-staging/r5-src/` (rows ubc-standard,
+ * mco-fantasy-standard). Nothing in the game loads these files: they exist so that
  * A-build-deterministic exercises the human path (gltf-transform merge, LBS
  * re-bind, sharp WebP, meshopt) that Brea (hero-body) and the NPCs
  * (settlements) are built on, before those recipes land.
@@ -31,9 +31,9 @@ export async function build({ out }) {
   const prov = (sources) => ({ recipe: RECIPE, sources, licence: 'CC0-1.0' });
   const stats = {};
   stats['heroine-base'] = await H.buildHeroineBase(path.join(out, OUTPUTS[0]), { provenance: prov(['ubc-standard']) });
-  stats['npc-male-base'] = await H.buildMaleBase(path.join(out, OUTPUTS[1]), { provenance: prov(['ubc-standard', 'mco-fantasy']) });
+  stats['npc-male-base'] = await H.buildMaleBase(path.join(out, OUTPUTS[1]), { provenance: prov(['ubc-standard', 'mco-fantasy-standard']) });
   for (const [i, n] of OUTFIT_NAMES.entries()) {
-    stats[`outfit-${n}`] = await H.buildOutfit(n, path.join(out, OUTPUTS[2 + i]), { provenance: prov(n.startsWith('male') ? ['mco-fantasy'] : ['ubc-standard', 'mco-fantasy']) });
+    stats[`outfit-${n}`] = await H.buildOutfit(n, path.join(out, OUTPUTS[2 + i]), { provenance: prov(n.startsWith('male') ? ['mco-fantasy-standard'] : ['ubc-standard', 'mco-fantasy-standard']) });
   }
   return stats;
 }

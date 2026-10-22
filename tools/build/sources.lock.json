@@ -1,9 +1,10 @@
 {
   "schema": 1,
-  "about": "Third-party sources staged in models-staging/r5-src/<row-id>/ (git-ignored). Written by tools/build/sources.mjs; A-sources-staged checks every file against these SHA-256s and each archive SHA-256 against public/LICENSES.json.",
+  "about": "Third-party sources staged in models-staging/r5-src/<dir>/ (git-ignored); <dir> is each entry's `dir` (ubc, mco, ual1, ual2 for the four human sources: the Round-5 proof's layout, which hero-body's recipes read). Written by tools/build/sources.mjs; A-sources-staged checks every file against these SHA-256s and each archive SHA-256 against public/LICENSES.json.",
   "sources": {
-    "mco-fantasy": {
-      "row": "mco-fantasy",
+    "mco-fantasy-standard": {
+      "row": "mco-fantasy-standard",
+      "dir": "mco",
       "archive": {
         "name": "Modular Character Outfits - Fantasy[Standard].zip",
         "bytes": 294347394,
@@ -235,6 +236,7 @@
     },
     "ual1": {
       "row": "ual1",
+      "dir": "ual1",
       "archive": {
         "name": "Universal Animation Library[Standard].zip",
         "bytes": null,
@@ -262,6 +264,7 @@
     },
     "ual2-standard": {
       "row": "ual2-standard",
+      "dir": "ual2",
       "archive": {
         "name": "Universal Animation Library 2[Standard].zip",
         "bytes": null,
@@ -289,6 +292,7 @@
     },
     "ubc-standard": {
       "row": "ubc-standard",
+      "dir": "ubc",
       "archive": {
         "name": "Universal Base Characters[Standard].zip",
         "bytes": 128968391,

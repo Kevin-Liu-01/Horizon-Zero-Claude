@@ -6,6 +6,8 @@
  *   node tools/licences/add.mjs --json '{"id": ...}'
  *   node tools/licences/add.mjs --remove <id>
  *   node tools/licences/add.mjs --format               (rewrite in canonical form)
+ *   node tools/licences/add.mjs --prune-landed         (remove legacy rows whose scheduled deletion has landed:
+ *                                                       `legacy` + `delete_at`, and no file under public/ matches)
  *
  * A row is validated before anything is written: id, non-empty `paths`, an
  * allowed SPDX licence (MIT only for code rows), `attribution` on CC-BY and
@@ -19,13 +21,16 @@
 import { readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { ROOT, MANIFEST, ASSET_LICENCES, CODE_LICENCES, NEEDS_ATTRIBUTION, FORBIDDEN_LICENCE, loadManifest } from './lib.mjs';
-import { creditsJson, CREDITS_JSON } from './credits.mjs';
+import { ROOT, MANIFEST, ASSET_LICENCES, CODE_LICENCES, NEEDS_ATTRIBUTION, FORBIDDEN_LICENCE, loadManifest, listFiles, matchRows } from './lib.mjs';
 
-/** Every manifest write regenerates the in-game credits data file (W0b), so the two never drift. */
+/**
+ * W0b fix round 1: the manifest is the only file written. The generated
+ * `public/licences/credits.json` is gone: nothing read it (brand pastes
+ * `credits.mjs` output into README and menu.js at build time, plan §10.2), and
+ * A-licence-manifest now grades the RENDERED in-game credits instead.
+ */
 function writeManifest(manifest, root = ROOT) {
   writeFileSync(path.join(root, MANIFEST), serialise(manifest));
-  writeFileSync(path.join(root, CREDITS_JSON), creditsJson(manifest));
 }
 
 export const FIELD_ORDER = ['id', 'paths', 'title', 'author', 'source_url', 'licence', 'licence_text', 'licence_url',
@@ -81,6 +86,15 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
     for (const r of m.rows) { const e = validateRow(r); if (e.length) console.error(`[licences] ${r.id}: ${e.join('; ')}`); }
     writeManifest(m);
     console.log(`[licences] formatted ${m.rows.length} rows`);
+  } else if (a.includes('--prune-landed')) {
+    // a legacy row exists only to cover files until their deletion wave; once those files are gone it is a stale
+    // claim (and credits.mjs would still thank it)
+    const m = loadManifest();
+    const { hits } = matchRows(m, listFiles('public'));
+    const landed = m.rows.filter((r) => r.legacy && r.delete_at && r.paths.some((p) => p.startsWith('public/')) && !hits.get(r.id)).map((r) => r.id);
+    m.rows = m.rows.filter((r) => !landed.includes(r.id));
+    writeManifest(m);
+    console.log(JSON.stringify({ pruned: landed }));
   } else if (val('--remove')) {
     const m = loadManifest();
     const before = m.rows.length;
@@ -89,7 +103,7 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
     console.log(`[licences] removed ${before - m.rows.length} row(s)`);
   } else {
     const src = val('--file') ? readFileSync(val('--file'), 'utf8') : val('--json');
-    if (!src) { console.error('usage: add.mjs --file row.json | --json <row> | --remove <id> | --format'); process.exit(2); }
+    if (!src) { console.error('usage: add.mjs --file row.json | --json <row> | --remove <id> | --format | --prune-landed'); process.exit(2); }
     const parsed = JSON.parse(src);
     const n = upsert(Array.isArray(parsed) ? parsed : [parsed]);
     console.log(`[licences] ${n} rows`);

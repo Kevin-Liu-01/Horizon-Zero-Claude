@@ -1,25 +1,239 @@
-# ROUND 5 — lane `pipeline` report (W0b; the W0a record is Appendix A)
+# ROUND 5 — lane `pipeline` report (W0b, fix round 1; the W0a record is Appendix A)
 
 Lane: pipeline · port 5250 · wave W0b (protagonist on the kept rig) · Oct 18–19 2026 · branch `r5/w0b-pipeline`.
 Plan: `docs/ROUND5-PLAN.md` §2 (row), §1.2 (grants: `src/main.js` removal-only at the W0 exit; donor lists removal-only),
-§3.1–3.2, §4.5–4.6, §6 (rows owned), §8.3, §9 (pipeline block + global list), §10 (licences).
+§3.1–3.3, §4.1, §6 (rows owned), §8.3 (incl. R33(g), R34), §9 (pipeline block + global list), §10 (licences).
 
-## 0. Status by deliverable
+## 0. Status — what this tree passes, and what the merged W0b tree passes
 
-| deliverable | state |
-|---|---|
-| **First item — `A-specs-data-driven` failing on main inside its temp copy** | **root cause found and fixed; proven on main** (§1). With `R5_SCRATCH` unset the scratch is `os.tmpdir()` = `/var/folders/…`, a path through the `/var → /private/var` symlink. Vite resolves module ids to real paths, so its fs-allow check (built from the un-real root) refused every source file, the transform was skipped and the static fallback served raw files — a CSS file imported from JS came back as `text/css` ("Failed to load module script … text/css"), no `__READY__`, A1/A20b timed out. Lane runs had passed only because `R5_SCRATCH` pointed at `/private/tmp` (already real). The fixture now realpaths scratch, copy and served root, and `viteProbe` fails in < 1 s, before any Chrome, if a module is served untransformed. **Measured: the fixed fixture on main's tree with the default TMPDIR scratch PASS in 25.0 s (A1 PASS, A20b PASS 377 frames, 00:06 Oct 19)**; its negative control (the same copy served through a symlink, un-realpath'd) reproduces the exact `text/css` failure |
-| Re-fetch that records archive SHA-256s | **tooling done; no archive downloaded** (gap 1). `node tools/build/sources.mjs verify-zip --row <id> --zip <file> --delete-zip` hashes an archive (streamed) and proves every staged file equals its member byte for byte, then writes `archive_sha256` + `archive_bytes` into the lock and the row and deletes the zip. The download needs Kevin's explicit go-ahead (plan §11; W0a report §6) and this run carried only "continue all". Archive names and sizes confirmed on the itch pages: UBC `Universal Base Characters[Standard].zip` 122 MB (= the recorded 128,968,391 B), MCO `Modular Character Outfits - Fantasy[Standard].zip` 280 MB (= 294,347,394 B), UAL2 `Universal Animation Library 2[Standard].zip` 17 MB. **UAL1 can no longer be re-fetched as v1**: the itch page has served v3.0 since 16 Jun 2026 (ruling needed, §6) |
-| Trimmed sources in `models-staging/r5-src/` | **done** — 4 sources, 101 files, **137.97 MB** (cap 150): `ubc-standard` 41 files / 50.7 MB, `mco-fantasy` 54 / 81.8 MB, `ual2-standard` 3 / 8.1 MB, `ual1` 3 / 4.1 MB. Per-file SHA-256 in the tracked lock `tools/build/sources.lock.json`. Copy-on-write clones of the Oct 15 proof extracts and of `public/anims` (≈ 5 MB of real disk). **Git-ignored and inside this worktree: the orchestrator must move it into main before removing the worktree** (§6) |
-| Licence manifest complete (MIT code rows, legacy-r4 rows) | **complete except the archive hashes** — 35 rows: new source rows `ubc-standard`, `mco-fantasy`, `ual2-standard` (and `ual1` updated) with page URL, archive name, byte size, retrieved date and the pack licence texts in `public/licences/`; MIT rows for three, three-mesh-bvh and the meshopt decoder; 22 legacy rows; the Sounding Ring row. New row fields `archive_name` and `derived_from` (a row built from staged sources inherits its sources' archive record). `A-licence-manifest` is PENDING on exactly three clauses: third-party (5 archive SHA-256s: the 4 sources + the legacy rock scan), legacy-source (`aloy.glb`, `aloy-ual.json` still ship under scheduled exceptions), credits (brand's README and menu surfaces) |
-| Credits generator | **done** — `tools/licences/credits.mjs --md` (README "Credits" body) and `--write` → `public/licences/credits.json` (the in-game data file). Every manifest write through `add.mjs` regenerates it; `check.mjs` FAILs a stale one. 9 attributions (6 CC-BY donors + 3 MIT) wait for brand's two surfaces |
-| Deterministic `build:assets` with `--only <lane>` | **done** — the human library promoted (`tools/build/humans.mjs`) with a PROOF recipe that builds the six proof humans from `r5-src` only; the Sounding Ring generator promoted. `A-build-deterministic` and `A-build-only-lane` **PASS** (§3) |
-| `?poc=human` and `?poc=creature` removal (W0 exit, removal-only) | **done** — `src/main.js` −9 / +1 (the `+1` is the same line minus `'creature', `); 18 promoted or dead proof files deleted from `tools/r5-poc/`. `tools/r5-poc/` keeps `poc-biome.js` (main.js still imports it for A-gpu-tier until world-ground's W1 exit) and `direction-a/` (brand's lexicon input, world-ground's `sites.json`): a named PENDING handover in `A-poc-promoted` |
-| HZD donor lists (removal-only) | **done** — `tools/optimize.mjs` −24 (the six Sketchfab/HZD jobs), `tools/bake-rigs.mjs` −14 (Tallneck / redeye notes); `tools/measure-machines.mjs` holds no donor list (0 lines changed) |
-| `models-staging/**` HZD-cast cleanup | tracked part **done** (6 files deleted, Round-5 header in `models-staging/MANIFEST.md`); the untracked bulk exists only in main: `node tools/build/staging-cleanup.mjs --root <main> --apply` deletes **133.79 MB in 49 entries** (dry run measured on main) — orchestrator |
-| `?poc=biome` in clean checkouts (found on the way) | **fixed** — its Sounding Ring was a git-ignored proof output, so every lane worktree and fresh clone failed the biome vista (`Promise.all` rejects; engine-gpu's A-gpu-tier vista). The promoted generator writes it tracked (186,584 B, provenance-stamped). Measured: `?poc=biome` serves in this worktree (landmark 22,120 tris, both GLBs loaded, 0 console errors) |
+Gates run on port 5250 in this tree, at the TRUE wave (W0b, read from the branch; §2.4). The same 13 gates were also
+run on a **W0b merge trial**: a clonefile copy of this tree plus every other W0b lane's current changes (hero-body,
+brand, gates-perf, instruments-core, engine-gpu), with `public/LICENSES.json` folded by `tools/licences/fold.mjs` and
+the orchestrator's merge steps applied (§5). The trial is evidence for the merge, not a substitute for it.
 
-## 1. The `A-specs-data-driven` fix
+| gate (§9 pipeline + global items owned) | this tree (5250) | W0b merge trial | what decides it |
+|---|---|---|---|
+| A-sources-staged | **PENDING** | **PENDING** (fonts staged, PASS) | the 4 archive SHA-256s: needs Kevin's download go-ahead (§6.1) |
+| A-build-deterministic | **PASS** 11 outputs, 5.7 / 5.7 s, 1,442 / 1,397 MB, 3 proof extracts denied | **PASS** 19 outputs incl. hero-body's 8, 7.8 / 7.7 s, 1,422 / 1,379 MB, 3 denied | — |
+| A-build-only-lane | **PASS** (20 lanes, slowest 0.5 s) | **PASS** (hero-body 3 recipes, 2.7 s, 8 files, all in its row) | — |
+| A-glb-budget | **PASS** (4 GLBs) | **PASS** (12; Brea 9,848 tris after the Pan Whites I cull ≤ 10 k) | — |
+| A-loader-fixes | **PASS** 0.0198 mm (control 120 mm) | **PASS** | — |
+| A-specs-data-driven | **PASS** 26.3 s, A20b 196 frames | **PASS** 21.1 s, A20b 324 frames | — |
+| A-human-bind | **PENDING** (no Brea here) | **PASS** 52/52, map 52, missing keys = neck2 + eyes + 4 lids | merged tree / ruling (§6.2) |
+| A-poc-promoted (literal) | **FAIL** | **FAIL** | readers outside the biome hook: instruments-core `tiller.js`, hero-body `sheets.js`; then a ruling (§6.3) |
+| A-ID-ip-assets-gone | **FAIL** (W0b) | **PASS** (24 GLBs, 0 hits) | gates-perf's unmerged W0a deletion of `public/anims-hybrid/aloy-ual.json` |
+| A-licence-manifest (page gate) | **FAIL** (legacy-source: the same file) | **PENDING** (every clause PASS but third-party: the archive hashes; credits README 9/9, rendered 9/9) | §6.1 |
+| A-assets-tracked | **PASS** 225 paths | **PASS** | — |
+| A-pipeline-boot-rows, A-pipeline-r30-merge-order (lane guards) | **PASS**, **PASS** | **PASS** (hero row = Brea), **PASS** | — |
+
+Global list items present in this tree (one run, `--only`): A1 **PASS**, A20b **PASS** (246 frames), A90 **PASS**
+(heap −7.1 %, geo +8, tex −28), A90-expansion **PASS** (heap −5.2 %, non-machine growth 0, orphan roots 0), A90b **PASS**
+(0 offenders, 0 orphaned textures), A90-rig-reclaim **PASS** (geo +5, tex 0; per live strider 0.13 geo / 0.38 tex),
+A9 **PENDING** (309 draws pass; 41.2 fps not attributable: the empty frame costs 3.31 ms GPU here), A21 **PENDING**
+(draws 309 / 195 / 322 and 4.12 / 3.67 / 4.21 M tris pass; timing terms not attributable). Not in this tree (other
+lanes' unmerged files): A90-abs, A-alloc-rate, A-vram-ledger, both horizon-terms lints, A-reach-all-sites,
+A-port-guard, A-carried-suite.
+
+## 1. Fix round 1 — what changed, by finding
+
+### F1 + F5 (blocker / major): no archive SHA-256 recorded — **still open, needs Kevin**
+Nothing was downloaded. No source archive exists anywhere on this machine (searched `~/Downloads`, `/Users/kevinliu`,
+`/private/tmp`, `/private/var/folders` and Spotlight for the three archive names). The request relayed for this run is
+"continue all", which is not consent to a ≈ 420 MB download, so the fetch stays Kevin's (§6.1). Everything else around
+it is done: the tool verifies every staged file against the archive before it records anything, and on the merge trial
+A-sources-staged and A-licence-manifest are PENDING on **only** these hashes (every other clause PASS). Rulings still
+needed: UAL1 (v1 is no longer downloadable; itch serves v3.0 since 16 Jun 2026) and the Poly Haven rock scan (a
+`r5-poc` texture that dies at world-ground's W1 exit) — §6.1.
+
+### F2 (blocker): A-human-bind PENDING — **graded on the W0b merge trial: PASS**
+On the trial (Brea as the hero row) the gate reads: rig `ubc-brea`, `/models/hero/brea.glb`, **52 / 52 pairs, map 52,
+missingSource [], missingTarget []**, missing animator keys exactly `neck2, eyeL, eyeR, lidUL, lidLL, lidUR, lidLR`
+(all allowed), 52 animated bones, hipScale 0.9938. In this tree it stays PENDING (Brea is hero-body's file) and is not
+counted as PASS; the orchestrator grades it on the merged tree (or rules to defer it to the hero-body merge, §6.2). The
+assert reads only names hero-body publishes (`model.userData.rigProfile`, `animator.lib.retargeter.{pairs,
+missingSource, missingTarget, hipScale}`, `animator.KEY`, `animator.b`), checked against their tree.
+
+### F3 (major): A-poc-promoted bar reinterpreted — **the gate now grades the literal bar**
+`pocPromotedStatic` (tools/build/pipeline/w0b-checks.mjs) has no closure allowance for PASS any more. PASS needs
+(a) no `?poc=human|creature` path, (b) `tools/r5-poc/` and `public/models/r5-poc/` **absent**, (c) `?poc=biome` serving.
+While the three files the biome needs exist (`tools/r5-poc/poc-biome.js`, `public/models/r5-poc/{sounding-ring,
+tiller}.glb`) the result is at best PENDING with a named `ruling` block; anything else in either folder, or any
+reference outside the biome hook, is FAIL. The title is the plan's text again. `tools/r5-poc/direction-a/` is deleted
+(brand copied its lexicon to `tools/lint/lexicon/direction-a.txt` in its tree; no code in any W0b tree reads the folder;
+world-ground recovers `sites.json` with `git show a953355:tools/r5-poc/direction-a/sites.json`). The ruling the plan
+contradiction needs is §6.3 — the tracked `sounding-ring.glb` is named there, not excused.
+
+### F4 (major): wave inference lagged the real wave — **fixed; the licence gates grade at W0b**
+`tools/licences/lib.mjs currentWave` now takes the LATEST of three sources: `R5_WAVE`; the lane branch `r5/<wave>-<lane>`
+(this tree: `r5/w0b-pipeline` → W0b, exact); the lane-report lower bound, which now counts BOTH the default
+`docs/ROUND5-<LANE>.md` and every report file the lane's §2 row names (hero-body: `ROUND5-HERO.md` per §2,
+`ROUND5-HERO-BODY.md` as written in its tree; engine-gpu: `ROUND5-ENGINE.md` / `ROUND5-ENGINE-GPU.md`). `exact: false`
+marks a lower-bound-only reading (main between merges): exit runs set R5_WAVE. New negative control `waveSources`
+(ip-scan self-test): both hero report names reach W0b, the branch parser maps `r5/w0b-pipeline` → W0b / `main` → none,
+and a W0a-deadline exception is valid at W0a and EXPIRED at W0b. **Graded at W0b, this tree FAILs A-ID-ip-assets-gone
+and A-licence-manifest's legacy-source clause** on `public/anims-hybrid/aloy-ual.json` ("EXPIRED: deadline W0a exit …;
+gates-perf deletes it (plan §6)"). That file is gates-perf's W0a deletion, done in their tree, not yet merged; on the
+merge trial both clauses PASS.
+
+### F6 (major): source contracts never published; the hero-body merge would break — **reconciled and proven on a merge trial**
+- **Layout aligned to what hero-body reads.** `models-staging/r5-src/` now uses the Round-5 proof's directories, which
+  hero-body's `recipes/lib/face.mjs srcRoot()` and `brea.mjs` read verbatim: `ubc/`, `mco/`, `ual2/`, `ual1/`. Each
+  lock entry carries `dir`; consumers resolve with `sourceDir(rowId)` / `humans.mjs sourcePaths()` (now also `.ual2`).
+  `status` FAILs a directory that belongs to no lock entry.
+- **One MCO id.** Row `mco-fantasy` → **`mco-fantasy-standard`**, the id hero-body baked into
+  `outfit-pan-1.glb`'s provenance (the GLB is not rebuilt; nothing to reconcile).
+- **`tools/licences/fold.mjs` (new)** folds another lane's `LICENSES.json` into this one row by row (three-way with the
+  merge base). Their rows that ship files under one of our SOURCE rows (same id, or same `source_url`) become
+  `derived_from` rows named after the shipped file, with `derived_from` taken from the GLB's own provenance and
+  `source_url` = its recipe. On the trial: hero-body → `brea`, `brea-clips-ual2`, `outfit-pan-1` derived, `brea-kit-v0`
+  added, `legacy-hero-body` deleted with `aloy.glb`; brand → 3 font rows + favicon added, 6 legacy rows deleted;
+  0 conflicts.
+- **Multi-file sources** (brand's Google Fonts rows: no archive; `archive_sha256` = SHA-256 of the sorted `sha256sum`
+  manifest of the downloaded files, which `manifestSha256()` reproduces exactly): `sources.mjs stage-files --row <id>`
+  verifies each shipped file and the manifest hash and stages them. On the trial the three font rows stage and pass.
+- **The merge trial passes the build** (§0): A-build-deterministic and A-build-only-lane with hero-body's three recipes
+  reading only `r5-src` (the proof extracts denied by the sandbox), every committed hero GLB byte-identical to the build.
+- **The stub for main** is §2.0: a 10-file set + 5 rows, proven on a clonefile copy of main (A-sources-staged there:
+  PENDING on the 4 archive hashes only; `humans.mjs sourcePaths()` resolves).
+- Found on the way, fixed: the promoted ground builder (`tools/build/ground/lib/ground-proof.mjs`) resolved its ROOT to
+  `tools/build/` and wrote stats into `tools/r5-poc/out/`; A-build-deterministic's sandbox only denied proof extracts
+  next to a lane folder (now any ancestor, by signature) and let an inherited `R5_SRC` through (now dropped);
+  specs-fixture copied a symlinked `node_modules` in a fresh checkout (now excluded).
+
+### F7 (major): the importer check missed URL readers — **every string-literal reference is now found and classified**
+`pocReferences()` scans comment-stripped `src/**` and `tools/**` for `tools/r5-poc` / `models/r5-poc` inside string
+literals and classifies each hit: `biome-closure` (main.js's hook, engine-gpu's A-gpu-tier import, the two recipes that
+write the closure GLBs), `checker` (this lane's own gate and licence files), `runtime-reader` (src) or `tool-reference`.
+The last two FAIL the gate with file:line. Negative control: the judge's URL-default case (`renderStockFace(ctx, url =
+'/tools/r5-poc/assets/heroine-base.glb')`) is caught. Readers found: `src/instruments/kinds/tiller.js:34`
+(instruments-core; `/models/r5-poc/tiller.glb`, in every tree) and, on the merge trial,
+`src/hero/sheets.js:336` (hero-body). **The request to delete `tools/r5-poc/assets/` is withdrawn** until hero-body
+re-points `renderStockFace` (§6.4); note that folder is untracked and exists only in main's working directory, so the
+stock-face render already 404s in any clean checkout.
+
+### F8 (major): the in-game credits clause could be satisfied by a comment — **graded on the rendered modal**
+`A-licence-manifest` is a page gate now. Its node half is `check.mjs` (run once per process, embedded in the assert);
+its page half clicks the **CREDITS** button, waits 400 ms, requires the modal to be displayed (non-zero box,
+`menus.modal === 'credits'`) and grades each CC-BY and MIT attribution against the modal's DOM text with the same pure
+`gradeCredits()` check.mjs exports. menu.js source is never read. A surface showing none of the attributions is "not
+wired" (PENDING before the W0 exit, FAIL from it); a partial one is FAIL. `public/licences/credits.json` is deleted
+(nothing read it: brand pastes the generator output into README and menu.js at build time), with its writer in
+`add.mjs` and the `--write/--check` modes. Measured: this tree (main's menu) renders the Round-4 credits, 0 / 9 → PENDING
+(brand); merge trial (brand's menu + `credits-sync`) README 9 / 9, rendered 9 / 9 → PASS. Frames read for both (§3).
+
+## 2. Contracts published (exact signatures)
+
+### 2.0 The stub for main (sync before more W0b merges; plan §3.3 practice)
+
+Files (all pipeline-owned, self-contained on main's W0a code; proven on a clonefile copy of main):
+`tools/build/sources.mjs`, `tools/build/sources.lock.json`, `tools/build/lib/zip.mjs`, `tools/build/lib/clone.mjs`,
+`tools/build/humans.mjs`, `tools/licences/{lib,add,check,credits,fold}.mjs`; plus 5 rows of this branch's
+`public/LICENSES.json` (`ubc-standard`, `mco-fantasy-standard`, `ual2-standard`, `ual1`, `calima-licence-texts`) added
+with `add.mjs --file`, and the 3 Quaternius licence texts in `public/licences/`. With `models-staging/r5-src` moved
+into main, `node tools/build/sources.mjs status` there reads PENDING (archive hashes only) and `sourcePaths()` resolves.
+
+### 2.1 Third-party sources — `tools/build/sources.mjs`
+
+```
+node tools/build/sources.mjs stage-zip   --row <id> --zip <archive.zip> --keep '<glob>' [--keep …] [--dir <name>]
+                                         [--strip <member prefix>] [--retrieved YYYY-MM-DD] [--page <url>] [--delete-zip]
+node tools/build/sources.mjs stage-dir   --row <id> --from <dir> [--keep '<glob>' …] [--move] [--dir <name>] --retrieved YYYY-MM-DD
+                                         [--archive-name <file>] [--archive-bytes <n>] [--page <url>]
+node tools/build/sources.mjs stage-files --row <id> [--dir <name>]       # multi-file download, no archive (row.files[])
+node tools/build/sources.mjs verify-zip  --row <id> --zip <archive.zip> [--retrieved YYYY-MM-DD] [--delete-zip]
+node tools/build/sources.mjs status                                      # = A-sources-staged
+node tools/build/sources.mjs layout                                      # row id -> directory
+```
+```js
+export const LOCK = 'tools/build/sources.lock.json', SRC_REL = 'models-staging/r5-src', CAP_BYTES = 150 MiB;
+export const REQUIRED = ['ubc-standard', 'mco-fantasy-standard', 'ual1', 'ual2-standard'];  // + every non-legacy third-party source row
+export const DIRS = { 'ubc-standard': 'ubc', 'mco-fantasy-standard': 'mco', ual1: 'ual1', 'ual2-standard': 'ual2' };
+export function srcDir(root?, env?): string                               // R5_SRC or <root>/models-staging/r5-src
+export function sourceDir(rowId, { root?, env?, lock? } = {}): string      // <srcDir>/<lock dir | DIRS | rowId>
+export function layout(root?): { [rowId]: 'models-staging/r5-src/<dir>' }
+export function manifestSha256(files: [{ path, sha256 }]): string          // sha256 of sorted "<sha256>  <basename>\n" lines
+export async function stageFiles({ row, dir?, root? }): { row, ok, sha256?, files?, totalBytes?, problems? }
+export function loadLock(root?); stageDir(…); stageZip(…); verifyZip(…); status({ root?, env? })   // as before, + `dir`
+// LockEntry = { row, dir, archive: { name, bytes, sha256 | null, retrieved, page, kind? }, strip, files: { <rel>: { bytes, sha256 } }, totalBytes, stagedFrom? }
+```
+Layout: `models-staging/r5-src/{ubc,mco,ual2,ual1}/<path inside the archive>` — the proof's layout; hero-body's recipes
+read it unchanged. New sources default to `r5-src/<row id>/`.
+
+### 2.2 Licence rows (`tools/licences/add.mjs` FIELD_ORDER) and the fold
+
+- `archive_name`; `derived_from: [source row ids]` — a shipped row built FROM staged sources names them; check.mjs then
+  requires the archive record on the sources, not on the derived row. Source row ids: `ubc-standard`,
+  `mco-fantasy-standard`, `ual2-standard`, `ual1` (and a GLB's `asset.extras.provenance.sources` uses the same ids).
+- `node tools/licences/add.mjs --prune-landed` removes legacy rows whose files are gone (another lane's deletion landed).
+- `node tools/licences/fold.mjs --theirs <LICENSES.json> [--base <LICENSES.json>] [--root <tree>] [--write]` →
+  one JSON line `{ ok, written, rows, added, derived: [{ id, from, paths, fromTheirRow, unknownProvenanceSources }],
+  deletedByTheirs, takenFromTheirs, conflicts, invalid, unchanged }`; exit 1 on a conflict; `export function fold({ ours,
+  theirs, base, root }) → { manifest, summary }`, `export const isSourceRow`.
+
+### 2.3 Credits — `tools/licences/credits.mjs` (brand's `tools/lint/credits-sync.mjs` consumes it)
+
+```
+node tools/licences/credits.mjs --md      # README "## Credits" body;   --json  the grouped rows
+export function creditRows(manifest?): [{ group: 'cc-by'|'code'|'ofl'|'cc0', head, lines: [{ id, text }] }]
+export function creditsMarkdown(manifest?): string
+export function requiredAttributions(manifest?): [{ id, licence, attribution }]   // what both surfaces must show verbatim
+```
+Rows with `derived_from` and no attribution are thanked through their sources (no double CC0 thanks). Removed:
+`creditsJson`, `CREDITS_JSON`, `--write`, `--check`, `public/licences/credits.json`.
+
+### 2.4 Licence checks — `tools/licences/{lib,check}.mjs`
+
+```js
+export function currentWave(root?, env?): { wave, source, exact, env, envWave, branch, branchWave, inferred, reports }
+export function parseBranchWave(branch): wave | null;  export function branchWave(root?): { branch, wave }
+export function laneReportNames(lane, ownsCell): string[]                  // default + §2-named report files
+export function gradeCredits({ need, readmeText, rendered: null | { visible, how, text, error? }, atOrPastW0Exit })
+export async function check(root?, { env?, rendered? }): { pass, clauses, creditsInput, wave }
+node tools/licences/check.mjs [--json-line]
+```
+
+### 2.5 Human build library — `tools/build/humans.mjs`
+
+`sourcePaths(src = srcDir()) → { src, ubc, hair, mco, ual2 }` (through `sourceDir`), the rest unchanged from the W0b
+first pass: `io`, `readGltf`, `cleanDoc`, `cleanPrimitive`, `graft`, `rebindPrimitive`, `headCut`, `addBraid`,
+`joinByMaterial`, `docStats`, `writeHuman(doc, file, { texSize, hairTexSize, provenance, extras })`,
+`buildHeroineBase`, `buildMaleBase`, `buildOutfit`, `OUTFITS`.
+
+### 2.6 Gate bodies — `tools/build/pipeline/w0b-checks.mjs`
+
+```js
+export async function buildDeterministic({ root }); export async function buildOnlyLane({ root }); export async function glbBudget({ root })
+export function pocPromotedStatic({ root }); export function pocReferences({ root }): [{ file, line, kind, text, why? }]
+export const POC_DIRS, BIOME_CLOSURE_FILES, BIOME_REFS, LANE_OUTPUTS, CLASSES
+export function classOf(path, r5Size); export function overBudget(cls, stats); export function auditLane(lane, written, declared)
+```
+`glbBudget` grades a Brea body after its outfit cull: a GLB with `_HIDEMASK` + `extras.r5Hero.hideBits` loses, per
+outfit bit, every triangle whose three vertices carry the bit (hero-body's published rule); the worst outfit is graded
+against §4.1's "≤ 10 k (faces hidden under the outfit culled at merge)". New class `clip-pack` (mesh-less: 0 tris, 0
+draws). `tools/build/pipeline/specs-fixture.mjs runGate` takes an optional `gate.shot` (a frame of the asserted state).
+
+### 2.7 Unchanged
+
+`src/core/assets.specs.js` (`SPECS`, `ANIMS`, `DELETED`), `src/core/assets.js`, `tools/build/lib/{glb,hs}.mjs`,
+`tools/build/build-assets.mjs` (`PROOF` recipes), `tools/licences/{ip-scan,stamp-legacy}.mjs` (+ the `waveSources`
+control). `SPECS.hero` still names `/models/aloy.glb` in this tree; the swap is merge step 1 (§5).
+
+## 3. Frames read (pipeline owns no V gates; these film what two action gates grade)
+
+- **A-licence-manifest, this tree** (`shots/gates/A-licence-manifest.png`, 1600×900, read then deleted): the CREDITS
+  modal is open over the game (title "CREDITS", 878×689 box) and shows main's Round-4 credits — "HORIZON ZERO CLAUDE",
+  ENGINE, MACHINE MODELS · CC-BY 3.0 with short "“Mechanical Horse” — jake young" rows, TYPEFACES Julius/Michroma/…, and
+  the "Sketchfab fan-art rigs — Aloy, …" row. None of the 9 verbatim attributions → 0 / 9, PENDING on brand, which is
+  what the frame shows.
+- **A-licence-manifest, merge trial** (read then deleted): the modal shows brand's generated block — CALIMA,
+  ATTRIBUTION REQUIRED (CC BY) with the six full strings ("Black Caiman" by Poly by Google (https://poly.pizza/m/…),
+  CC-BY 3.0 …), CODE (MIT) with the three MIT strings, TYPEFACES with the three OFL families, THANKS (CC0) scrolling
+  below — 9 / 9 rendered.
+- **A-human-bind, merge trial** (read then deleted): Brea at boot in the camp, standing, wrap and topknot on, the outfit
+  and stow kit worn, arms down at idle — the body the 52 / 52 bind is measured on.
+
+## 4. First item (unchanged since the first pass) — `A-specs-data-driven` on main
+
 
 `tools/build/pipeline/specs-fixture.mjs`:
 - `runSpecsFixture` realpaths the scratch dir and the root before building the copy path (and compares real paths for the
@@ -38,216 +252,111 @@ Plan: `docs/ROUND5-PLAN.md` §2 (row), §1.2 (grants: `src/main.js` removal-only
 
 Measured: the fixed fixture with the TMPDIR default scratch — this tree 00:04 **PASS** 25.4 s (A1 PASS, A20b PASS 377
 frames); **main's tree 00:06 PASS 25.0 s** (A1 PASS, A20b PASS 377 frames, diff exactly `assets.specs.js` +
-`probe.glb`, copy removed). The lane run later in the night FAILed on A20b's own frame bar — see §3, the same failure
-reproduces on main's unmodified tree at the same minute.
+`probe.glb`, copy removed). The lane run's first attempt (00:57) FAILed on A20b's own frame bar during a GPU slump that
+failed main's unmodified tree the same way (47 frames at 01:00); after the GPU recovered the gate PASSed in the lane
+harness (01:13, 22.1 s, A20b 348 frames) and on main's tree again (01:14, 24.2 s, A20b 174 frames).
 
-## 2. Contracts published (exact signatures)
+In this round: PASS in this tree (26.3 s, A1 PASS, A20b 196 frames, diff exactly `assets.specs.js` + `probe.glb`,
+`viteProbe` 2/2 JS, symlink control caught) and on the merge trial (21.1 s, A20b 324 frames).
 
-### 2.1 Third-party sources — `tools/build/sources.mjs` (any lane stages sources through it, as rows go through `add.mjs`)
+## 5. Merge steps for the orchestrator (each one was run on the merge trial; scripts in `scratchpad/r5/pipeline/w0b-r1/`)
 
-```
-node tools/build/sources.mjs stage-zip  --row <id> --zip <archive.zip> --keep '<glob>' [--keep …] [--strip <member prefix>]
-                                        [--retrieved YYYY-MM-DD] [--page <url>] [--delete-zip]
-node tools/build/sources.mjs stage-dir  --row <id> --from <dir> [--keep '<glob>' …] [--move] --retrieved YYYY-MM-DD
-                                        [--archive-name <file>] [--archive-bytes <n>] [--page <url>]
-node tools/build/sources.mjs verify-zip --row <id> --zip <archive.zip> [--retrieved YYYY-MM-DD] [--delete-zip]
-node tools/build/sources.mjs status                 # = A-sources-staged
-```
-```js
-export const LOCK = 'tools/build/sources.lock.json', SRC_REL = 'models-staging/r5-src', CAP_BYTES = 150 MiB;
-export const REQUIRED = ['ubc-standard', 'mco-fantasy', 'ual1', 'ual2-standard'];   // + every non-legacy third-party source row
-export function srcDir(root?, env?): string                       // R5_SRC or <root>/models-staging/r5-src
-export function loadLock(root?): { schema: 1, about, sources: { [rowId]: LockEntry } }
-export async function stageDir({ row, from, keeps, move, archiveName, archiveBytes, retrieved, page }): { row, files, totalBytes }
-export async function stageZip({ row, zip, keeps, strip, retrieved, page, deleteZip }): { row, sha256, bytes, files, totalBytes, zipDeleted }
-export async function verifyZip({ row, zip, retrieved, deleteZip }): { ok, sha256, bytes, checked, mismatched, missing, ambiguous }
-export async function status({ root?, env? }): { pass: true|null|false, detail }
-// LockEntry = { row, archive: { name, bytes, sha256 | null, retrieved, page }, strip, files: { <rel>: { bytes, sha256 } }, totalBytes, stagedFrom? }
-```
-Layout: `models-staging/r5-src/<LICENSES row id>/<path inside the archive>`. `tools/build/lib/zip.mjs` (read-only zip:
-`openZip(file) → { entries, read(entry), close() }`, `sha256File(file) → { sha256, bytes }`, Zip64-aware, node built-ins
-only) and `tools/build/lib/clone.mjs` (`cloneFiles([[src, dst]…]) → 'clone' | 'copy'`, `cloneFile(src, dst)`).
+1. **`src/main.js` conflicts with brand** (1 hunk: brand edited the two lines just above the removed `?poc=human`
+   block). Resolution = brand's file with pipeline's removal-only hunks re-applied: delete the 7-line `?poc=human`
+   block and the `?poc=creature` comment line, and `['creature', 'biome']` → `['biome']`. On the trial the resolved
+   file differs from brand's by exactly those deletions + that one line.
+2. **`public/LICENSES.json`**: take pipeline's side, then for each of hero-body and brand:
+   `git show a953355:public/LICENSES.json > base.json; git show r5/w0b-<lane>:public/LICENSES.json > theirs.json;
+   node tools/licences/fold.mjs --theirs theirs.json --base base.json --write` (0 conflicts on the trial).
+3. **`SPECS.hero` → Brea** (pipeline's one-row data edit in `src/core/assets.specs.js`, with hero-body's values from
+   `src/hero/rows.js`): `hero: { url: '/models/hero/brea.glb', targetHeight: 1.77913, yaw: 0, required: true },` (the
+   comment above it says Brea). Then drop the `public/models/aloy.glb` entry from `SCHEDULED_IP` in
+   `tools/licences/lib.mjs` (inert once the file is gone).
+4. `node tools/build/sources.mjs stage-files --row <id>` for each of brand's three `font-*` rows.
+5. `node tools/licences/add.mjs --prune-landed` (after gates-perf's anims deletion: removes `legacy-anims-duplicates`
+   and `legacy-anims-lab-bake`).
+6. `node tools/lint/credits-sync.mjs` (brand's tool) — the folded manifest adds three CC0 sources to the thanks, so the
+   README and menu.js blocks must be regenerated (`--check` reported DRIFT before, in sync after).
+7. **Move `models-staging/r5-src` into main** (git-ignored, so no merge carries it): `mv <this tree>/models-staging/r5-src
+   "<main>/models-staging/r5-src"` — directories `ubc mco ual2 ual1`, 101 files, 137.97 MB (clones of the proof extracts;
+   ≈ 5 MB of real disk). Later worktrees symlink it (plan rule 10). Then `node tools/build/staging-cleanup.mjs --root
+   "<main>" --apply` (133.79 MB, 49 entries) and delete `scratchpad/r5/{ubc,mco,ual2}`. **Do not** delete main's
+   `tools/r5-poc/assets/` yet (§6.4).
 
-### 2.2 Licence rows — two new fields (`tools/licences/add.mjs` FIELD_ORDER)
+## 6. Rulings and requests
 
-- `archive_name`: the archive's file name (itch.io has no stable file URL; page URL + name + bytes + hash identify it).
-- `derived_from: [row ids]`: a shipped row built FROM staged sources (Brea, NPC bodies, UAL2 clip files) names its source
-  rows; `check.mjs` third-party then requires the sources (not the derived row) to carry `source_url` / `archive_sha256` /
-  `retrieved`. Example for hero-body: `{ "id": "brea", "paths": ["public/models/hero/brea-*.glb"], "licence": "CC0-1.0",
-  "source_url": "tools/build/recipes/brea.mjs", "derived_from": ["ubc-standard", "mco-fantasy"], … }` via `add.mjs`.
+### 6.1 Kevin — the archive re-fetch (W0b exit item "licence manifest complete with SHA-256s")
+Approve the download or fetch these three free archives by hand from the itch pages in the rows' `source_url`
+(≈ 420 MB together): `Universal Base Characters[Standard].zip` (122 MB, expected 128,968,391 B),
+`Modular Character Outfits - Fantasy[Standard].zip` (280 MB, 294,347,394 B), `Universal Animation Library
+2[Standard].zip` (17 MB). Then, per archive: `node tools/build/sources.mjs verify-zip --row ubc-standard --zip <file>
+--delete-zip` (rows `mco-fantasy-standard`, `ual2-standard` the same). Each verifies all staged files against the
+archive before recording the hash; a mismatch means the pack changed since Oct 15 (re-stage with `stage-zip`).
+Rulings needed with it: **UAL1** — (a) accept the staged v1 files' per-file SHA-256s plus the upstream-supersession
+record (itch serves v3.0 since 16 Jun 2026), or (b) a v1 archive from a backup; **r5-poc-rock-scan** — fetch the Poly
+Haven scan now, or defer its hash to world-ground's W1 recipe (the file it covers dies at the W1 exit).
 
-### 2.3 Credits — for brand (`tools/licences/credits.mjs`)
+### 6.2 Orchestrator — A-human-bind
+Grade it on the merged W0b tree (trial: PASS 52/52), or record a §8.3 ruling that defers it to the hero-body merge.
+It is PENDING in this tree and is not counted as PASS.
 
-```
-node tools/licences/credits.mjs --md      # README "## Credits" section body (verbatim CC-BY + MIT attributions)
-node tools/licences/credits.mjs --write   # public/licences/credits.json  (regenerated by every add.mjs write)
-node tools/licences/credits.mjs --check   # exit 1 if credits.json is missing or stale
-export function creditRows(manifest?): [{ group: 'cc-by'|'code'|'ofl'|'cc0', head, lines: [{ id, text }] }]
-export function creditsMarkdown(manifest?): string;  export function creditsJson(manifest?): string;  export const CREDITS_JSON
-```
-`src/ui/menu.js` (brand) either fetches `/licences/credits.json` and renders `groups[].head` + `groups[].lines[].text`
-(the `credits` clause accepts this when menu.js names `licences/credits.json` and the file is in sync), or carries the
-strings verbatim.
+### 6.3 Orchestrator — A-poc-promoted (plan §9 clauses (b) and (c) contradict until `?poc=biome` goes)
+`src/main.js` (removal-only for pipeline) imports `/tools/r5-poc/poc-${POC}.js`, and the biome loads
+`/models/r5-poc/{sounding-ring,tiller}.glb`. Options: **(1)** accept exactly the three closure files until world-ground
+removes `?poc=biome` at the W1 exit, moving their deletion — and the tracked `public/models/r5-poc/sounding-ring.glb`
+with its LICENSES row and `.gitignore` exception — to world-ground's W1-exit row; A-poc-promoted then grades "nothing
+but the closure, no reference outside it" at the W0 exit. **(2)** the literal bar: delete both folders at the W0 exit and
+strike clause (c); `?poc=biome` and A-gpu-tier's vista go dark until the W1 Pans. Until a ruling, the gate cannot PASS.
 
-### 2.4 Human build library — `tools/build/humans.mjs` (for hero-body `recipes/brea.mjs`, settlements `recipes/npc/**`, armory `recipes/armor/**`)
-
-```js
-export const io;                                             // NodeIO + ALL_EXTENSIONS + meshopt encoder/decoder
-export function sourcePaths(src = R5_SRC || 'models-staging/r5-src'): { src, ubc, hair, mco }   // throws if a dir is missing
-export async function readGltf(file): Document               // repairs the packs' `*_png.png` image URIs
-export function cleanDoc(doc); export function cleanPrimitive(prim)   // drop TEXCOORD_1+/COLOR_n, fold 8 -> 4 influences
-export function graft(base, part, label): Node[]             // re-point a part at the base skin by joint name (LBS re-bind if binds differ)
-export function rebindPrimitive(prim, delta)
-export function headCut(doc, srcNode, keepNames, name): Node
-export function addBraid(doc, { color, rootRadius }): Node   // dyn_hairBraid_01..06 + _07_end under Head
-export function joinByMaterial(doc, nodes, name, keepSeparate: RegExp[])
-export function docStats(doc): { tris, verts, materials, meshes, textures, bones }
-export async function writeHuman(doc, file, { texSize = 1024, hairTexSize = 512, provenance, extras }): { kb, tris, prims, stats }
-   // provenance = { recipe, sources: [row ids], licence } (checked by lib/glb.mjs checkProvenance); writes asset.extras.{provenance, r5Stats}
-export async function buildHeroineBase(file, { hair, src, provenance }); export async function buildMaleBase(file, { src, provenance });
-export async function buildOutfit(name, file, { src, provenance }); export const OUTFITS
-```
-Every function body is the proof's (`tools/r5-poc/build-human.mjs`), statement for statement; logs go to stderr only with
-`R5_BUILD_VERBOSE=1`.
-
-### 2.5 Recipe contract additions (`tools/build/build-assets.mjs`)
-
-`export const PROOF = true` marks a recipe whose outputs are build evidence: the driver runs it only with an explicit
-`--out <dir>` and reports it in `skipped` otherwise (`tools/build/pipeline/gen-humans-proof.mjs` → `proof/humans/*.glb`).
-The JSON line gained `skipped: [{ recipe, why }]`. Recipes now: `instruments/gen-tiller.mjs`,
-`landmarks/gen-sounding-ring.mjs` (new; → `public/models/r5-poc/sounding-ring.glb`, world-props' landmark recipes
-replace it at W1), `pipeline/gen-humans-proof.mjs` (new, PROOF), `pipeline/gen-probe.mjs`. `tools/build/ground/lib/
-ground-proof.mjs` is the proof's ground-layer builder moved verbatim for world-ground's W1 layer recipes (not a recipe; it
-needs the Poly Haven rock scan staged first).
-
-### 2.6 Gate bodies — `tools/build/pipeline/w0b-checks.mjs`, `biome-check.mjs`
-
-```js
-export async function buildDeterministic({ root }) ; export async function buildOnlyLane({ root }) ; export async function glbBudget({ root })
-export function pocPromotedStatic({ root }) ; export const LANE_OUTPUTS, CLASSES, BIOME_CLOSURE, HANDOVER
-export function classOf(path, r5Size): string | null ; export function overBudget(cls, stats): string[] ; export function auditLane(lane, written, declared)
-// biome-check.mjs: export async function biomeCheck({ root, scratch, port }) ; CLI prints one JSON line
-```
-`LANE_OUTPUTS` is the output-path ownership table `A-build-only-lane` audits against (plan §2); `CLASSES` is plan §4.1 as
-data (plus a `fixture` class for the loader probe). A new lane recipe whose outputs fall outside its lane's row FAILs.
-
-### 2.7 Unchanged from W0a (still the contracts)
-
-`src/core/assets.specs.js` (`SPECS`, `ANIMS`, `DELETED`), `src/core/assets.js` (loader, `legacyDeleted()`, `unload()`),
-`tools/build/lib/{glb,hs}.mjs`, `tools/licences/{add,check,ip-scan,lib,stamp-legacy}.mjs` — Appendix A §2. **`SPECS.hero`
-still points at `/models/aloy.glb`**: the swap to Brea is a one-row data edit in a pipeline file, made on hero-body's
-request or by the orchestrator in the W0-exit merge (it also expires the `aloy.glb` IP exception).
-
-## 3. Gates — this lane's W0b block
-
-Registered in `tools/gates.r5.pipeline.mjs` (13 gates). Main's `tools/gates.mjs` still scans only
-`tools/gates.round4.*.mjs`, so until gates-perf's auto-discovery merges (their `gates.config.mjs` imports every
-`tools/gates.r5.*.mjs` that exports `GATES`; this file does) the lane runs with the harness's own merge flag:
-
-```
-R5_SCRATCH=<scratch outside the repo> node tools/gates.mjs --port 5250 --extra tools/gates.r5.pipeline.mjs --lane pipeline
-```
-(`--lane pipeline` filters exactly this file's 13 gates.) Run 1 of this round (Oct 19, port 5250, this tree): the runner
-block 00:54–00:57 and the page block «PAGE-TIME», one invocation each (the harness's own Chrome never overlaps the
-gates' child Chromes); reports in `scratchpad/r5/pipeline/w0b/run1/`.
-
-| gate | result on 5250 | measured |
-|---|---|---|
-| **A-sources-staged** | **PENDING** (named) | `r5-src` 137.97 MB ≤ 150, git-ignored; 4 required sources staged, 101 files, 0 missing / 0 changed / 0 extra against the lock; no transient zip. PENDING only on the 4 archive SHA-256s (needs the archives). Negative control (a copy-on-write clone with one staged byte changed and a stray file) FAILs with both problems named |
-| **A-build-deterministic** | **PASS** | 2 builds under `sandbox-exec (deny network*)`, the 3 proof-extract dirs made unreadable (so sources can only come from `r5-src`): 11 outputs (10 GLB + `probe.ref.json`) byte-identical by the driver's hashes and re-hashed on disk; wall **23.7 s / 13.1 s** (≤ 180), peak RSS **1,132 / 1,237 MB** (≤ 2,048); every committed output (5) equals the build. Earlier hand pair at load 75–98: 158.6 / 181.1 s, still byte-identical — the gate grades wall time by the R26 rule (over the bar on a loaded box = PENDING, not PASS) |
-| **A-build-only-lane** | **PASS** | `--only <lane>` for all 20 lanes into the real tree, mtime audit of `public/` + `tools/build/`: only pipeline has recipes (4); it wrote 5 files, all its own, committed bytes unchanged; every other lane wrote 0; slowest lane 3.0 s (≤ 60); 0 recipe outputs outside their lane's row. Negative control (a pipeline run "writing" a hero-body path and an undeclared path) caught 2/2 |
-| **A-glb-budget** | **PASS** | 4 generated GLBs: `instruments/tiller.glb` + `r5-poc/tiller.glb` (instrument-medium, 4.5 m: 32,960 tris ≤ 35 k, 2 draws, 24 bones, 309,880 B ≤ 400 KB), `pipeline/probe.glb` (fixture: 340 tris, 3 draws, 11,092 B), `r5-poc/sounding-ring.glb` (landmark: 22,120 tris ≤ 40 k, 2 draws, 186,584 B ≤ 300 KB); `r5Stats` agree with the file for all 4; 11 legacy GLBs not graded (no CALIMA provenance). Controls: a 12 k-tri / 0.9 MB Brea body and an unclassified path both caught |
-| **A-human-bind** | «HB» | Calibration before the removal (the gate's assert on the `?poc=human` heroine, a pre-removal copy, 00:52): **52 / 52 pairs, map 52, missingSource [], missingTarget [], missing keys = neck2 + eyeL/R + 4 lids (all allowed), 52 animated bones, hipScale 0.9938** — PASS. On this tree the hero row is the Round-4 body (no rig profile) → named PENDING until Brea is the hero row (hero-body W0b; graded on the merged tree) |
-| **A-poc-promoted** (W0 exit) | **PENDING** (named handover) | static: no `?poc=human|creature` path in `src/main.js`, `?poc=biome` hook present, `public/models/r5-poc/` = exactly `{sounding-ring, tiller}.glb`, 0 importers of `tools/r5-poc/`, negative control (the pre-removal main.js text) caught. Biome: `?poc=biome` serves — landmark 22,120 tris, Tillers 65,920, terrain 80,000, both r5-poc GLBs loaded, 0 console errors. PENDING only on `tools/r5-poc/direction-a/` (brand / world-ground handover) |
-| **A-specs-data-driven** | **FAIL** (environment; §1 PASS earlier) | static PASS (0 row names, 0 URL literals in `assets.js`, specs pure data); dynamic: copy 582 files by `cp -c`, diff exactly `assets.specs.js` + `probe.glb`, `viteProbe` 2/2 JS, symlink control caught, A1 PASS, fixture row absent in the copy; **A20b 34 / 32 / 42 frames advanced vs its > 120 bar** (0 system errors, 0 hook errors) in three runs 00:57–00:59. **The same fixture on main's unmodified tree at 01:00: 47 frames, FAIL** — the shared GPU's throughput collapsed after 00:52 (rAF 22/s on an idle box, Metal renderer, an animated Aerials wallpaper drawing). At 00:04 / 00:06 the identical path PASSed with 377 frames on both trees |
-| **A-loader-fixes** | «LF» | |
-| **A-ID-ip-assets-gone** (global) | **PASS** | 20 GLBs read with gltf-transform, 222 shipped files through their rows: 0 IP hits, 0 without provenance, 0 unreadable, 0 NC/ND; 2 named scheduled exceptions (`aloy.glb` → W0 exit, hero-body; `anims-hybrid/aloy-ual.json` → W0a exit, gates-perf's unmerged deletion); negative controls 7/7 |
-| **A-assets-tracked** (global) | **PASS** | 226 referenced paths: 0 ignored, 0 missing; rules 6/6 must-track (incl. `r5-poc/sounding-ring.glb`), 10/10 must-ignore (`r5-src`, bake artefacts, other proof outputs); negative control caught |
-| **A-licence-manifest** (global) | **PENDING** | PASS: files-matched (222 files, each exactly one row), row-schema (35), code-rows (3 MIT), licence-texts, size 34.48 MB ≤ 60. PENDING: third-party (5 archive SHA-256s), legacy-source (2 IP files under scheduled exceptions), credits (9 attributions not yet on brand's surfaces; `credits.json` present and in sync). 0 FAIL clauses |
-| A-pipeline-r30-merge-order (lane guard) | **PASS** | every R30 file and reader gone together (watcher, sawtooth, behemoth, thunderjaw, npc) |
-| A-pipeline-boot-rows (lane guard) | «BR» | |
-
-## 4. Global green list — the items that exist in this tree
-
-«GLOBAL»
-
-Not in this tree (other lanes' W0a/W0b gates, not merged): `A90-abs`, `A-alloc-rate`, `A-vram-ledger`,
-`A-no-horizon-terms-player`, `A-no-horizon-terms-code`, `A-reach-all-sites`, `A-port-guard`, `A-carried-suite`.
-
-Visual gates: pipeline owns none (plan §9: 11 action, 0 visual), so there is no frame for a judge in this block. The one
-visual consequence of this lane's W0b work is that `?poc=biome` now renders its landmark in a clean checkout (measured
-above by scene content, not by a shot).
-
-## 5. Honest gaps
-
-1. **No archive SHA-256 is recorded.** The 4 sources are staged and hashed per file, but `archive_sha256` stays null
-   (`A-sources-staged` and `A-licence-manifest` PENDING) until the archives exist on this machine again. The re-fetch is
-   a ≈ 420 MB download (UBC 122 MB, MCO 280 MB, UAL2 17 MB) that the plan puts behind Kevin's explicit approval; it was
-   not done. With the zips in hand it is three commands (§6), each verifying all staged files before recording.
-2. **UAL1's archive cannot be reproduced.** The shipped clips are UAL v1 (`DEF-*` names; R15 keeps them) and the itch
-   page has served v3.0 since 16 Jun 2026. Without a v1 archive from a backup, `ual1` can carry per-file hashes only.
-3. **`A-specs-data-driven` FAILs in this round's lane run** on A20b's frame bar, with main's unmodified tree failing the
-   same way at the same minute; it PASSed on both trees at 00:04–00:06. It needs a re-run when the GPU is back to normal.
-4. **`A-human-bind` cannot PASS in this tree**: Brea is hero-body's, in another worktree. The assert is calibrated
-   (52/52 on the proof heroine) and grades on the merged tree once `SPECS.hero` names Brea.
-5. **`A-poc-promoted` cannot PASS literally**: the plan wants `tools/r5-poc/` and `public/models/r5-poc/` gone while
-   `?poc=biome` keeps serving A-gpu-tier, but main.js (removal-only) imports `/tools/r5-poc/poc-${POC}.js` and the biome
-   loads `/models/r5-poc/{sounding-ring,tiller}.glb`. The gate enforces the reachable bar (only the biome closure stays) and
-   names the `direction-a/` handover; both folders go with the `?poc=biome` block at world-ground's W1 exit.
-6. `A-build-deterministic`'s wall-time term is not attributable on this box most of the night (load 60–110): the gate
-   PASSed at 13–24 s, a hand pair at load ~90 took 159 / 181 s (identical bytes). The R26-style PENDING rule is this
-   lane's reading of "≤ 180 s"; the orchestrator may prefer a strict bar.
-7. `npm run build:assets` still needs its script line in `package.json` (brand's file); the gates call
-   `node tools/build/build-assets.mjs` directly.
-8. The four rowless `SCHEDULED_IP` entries for the deleted machine GLBs stay in `tools/licences/lib.mjs`: inert (files and
-   readers gone) but they are the fixture of `A-ID-ip-assets-gone`'s 7th negative control.
-9. `tools/measure-machines.mjs` keeps a hard-coded `cwd: '/Users/kevinliu/horizon-zero-claude'` (not a donor list; out of
-   the removal-only grant's scope) — a hit for brand's code lint.
-10. Round-4 gates on the machine rows still stage legacy kinds (gates-perf's carried suite owns them); not run here.
-
-## 6. Requests
-
+### 6.4 Other lanes
 | to | what |
 |---|---|
-| **Kevin** | approve the archive re-fetch, or download the three free archives by hand (UBC `Universal Base Characters[Standard].zip`, MCO `Modular Character Outfits - Fantasy[Standard].zip`, UAL2 `Universal Animation Library 2[Standard].zip`, ≈ 420 MB together, from the itch pages in the rows' `source_url`); then `node tools/build/sources.mjs verify-zip --row ubc-standard --zip <file> --delete-zip` (same for `mco-fantasy`, `ual2-standard`). A mismatch means the pack changed since Oct 15: re-stage with `stage-zip` and rebuild |
-| **orchestrator / Kevin** | rule on UAL1: per-file SHA-256s + the upstream-supersession record, or a v1 archive from a backup |
-| **orchestrator** | **before removing this worktree, move `models-staging/r5-src` into main** (`mv <tree>/models-staging/r5-src "<main>/models-staging/r5-src"`, same volume, instant) and symlink it into later worktrees (plan rule 10); it is git-ignored, so the merge does not carry it |
-| orchestrator | run `node tools/build/staging-cleanup.mjs --root "<main>"` (dry run: 133.79 MB in 49 entries), then `--apply`; delete main's untracked `tools/r5-poc/assets/` (3.0 MB, nothing loads it after the `?poc=human` removal) and the proof scratch `scratchpad/r5/{ubc,mco,ual2}` once `r5-src` is in main |
-| orchestrator | re-run `A-specs-data-driven` when the GPU is back (A20b frame bar; main fails identically right now). Keep `R5_SCRATCH` optional: the fixture is now correct with the TMPDIR default |
-| orchestrator | merge order with hero-body: their rig profile must not import `tools/r5-poc/ubcRig.js` (deleted here); `A-poc-promoted` names any importer |
-| **brand (W0b)** | add `"build:assets": "node tools/build/build-assets.mjs"` to `package.json`; paste `node tools/licences/credits.mjs --md` into README "## Credits"; make `src/ui/menu.js` render `/licences/credits.json` (or the strings verbatim); move `tools/r5-poc/direction-a/horizon-lexicon.txt` (and the logo/palette generators if kept) into `tools/lint/` |
-| **hero-body (W0b)** | build Brea through `tools/build/humans.mjs` from `r5-src` (provenance `sources: ['ubc-standard', 'mco-fantasy']`), add her row with `derived_from` through `add.mjs`, ask for (or take in the merge) the `SPECS.hero` swap. `A-glb-budget` grades `public/models/hero/**` (body ≤ 10 k tris / 2 draws / 0.7 MB; outfit ≤ 17.5 k / 1 draw / 0.8 MB; stow kit ≤ 9 k / 1 draw) and `A-human-bind` grades the bind |
-| world-ground (W1) | `sites.json` from `tools/r5-poc/direction-a/`; the ground proof in `tools/build/ground/lib/ground-proof.mjs`; stage the Poly Haven rock scan with `sources.mjs stage-zip` (row `r5-poc-rock-scan`); remove `?poc=biome` + `tools/r5-poc/` + `public/models/r5-poc/sounding-ring.glb` (+ its row and `.gitignore` exception) together at the W1 exit |
-| instruments-core / instruments-a | the Tiller fixture may keep `/models/r5-poc/tiller.glb` until W1 (it is in the biome closure); when it moves, drop the second output of `gen-tiller.mjs` |
+| **instruments-core (W0b)** | `src/instruments/kinds/tiller.js:34`: `const URL = '/models/r5-poc/tiller.glb'` → `'/models/instruments/tiller.glb'` (byte-identical file, already built by `gen-tiller.mjs`). Until then A-poc-promoted FAILs on it |
+| **hero-body (W0b)** | `src/hero/sheets.js:336` `renderStockFace(ctx, url = '/tools/r5-poc/assets/heroine-base.glb')`: that file is untracked, main-only, inside a folder the plan deletes. Build the stock heroine from `r5-src` instead — `humans.mjs buildHeroineBase(file, { provenance })` (what `node tools/build/build-assets.mjs --only pipeline --out <dir>` writes as `proof/humans/heroine-base.glb`) — into your `reference/r5/hero/`, and point the default there. Your `face.mjs` / `brea.mjs` / `outfit-pan-1.mjs` need no change for the new layout (merge trial: byte-identical rebuilds). Your rows `ubc-standard`, `ual2-standard`, `mco-fantasy-standard` (which path shipped files) become derived rows `brea`, `brea-clips-ual2`, `outfit-pan-1` in the fold — or add them yourself that way with `add.mjs`; the provenance id `brea-generated` (brea.glb, the kit GLBs) names no row anywhere |
+| **brand (W0b)** | `"build:assets": "node tools/build/build-assets.mjs"` in `package.json`; run `credits-sync.mjs` after the fold (§5 step 6). `public/licences/credits.json` is gone: nothing to read |
+| **gates-perf** | the W0a deletion of `public/anims-{hybrid,reskin,retarget}/**` must merge: until it does, `A-ID-ip-assets-gone` and `A-licence-manifest` FAIL at W0b on `aloy-ual.json` in every W0b tree |
+| **world-ground (W1)** | `sites.json`: `git show a953355:tools/r5-poc/direction-a/sites.json`; the ground proof is `tools/build/ground/lib/ground-proof.mjs` (now writes nothing under `tools/r5-poc/`) |
 
-## 7. Files changed (this tree)
+## 7. Honest gaps
 
-New: `tools/build/{sources.mjs, sources.lock.json, humans.mjs, staging-cleanup.mjs}`, `tools/build/lib/{zip,clone}.mjs`,
-`tools/build/pipeline/{w0b-checks,biome-check,gen-humans-proof}.mjs`, `tools/build/landmarks/gen-sounding-ring.mjs`,
-`tools/build/ground/lib/ground-proof.mjs`, `public/models/r5-poc/sounding-ring.glb`,
-`public/licences/{credits.json, quaternius-ubc-License_Standard.txt, quaternius-mco-fantasy-License_Standard.txt,
-quaternius-ual2-License.txt}`; git-ignored: `models-staging/r5-src/**` (101 files).
-Modified: `tools/build/pipeline/specs-fixture.mjs` (§1), `tools/build/build-assets.mjs` (PROOF), `tools/gates.r5.pipeline.mjs`
-(6 new gates), `tools/licences/{add,check,credits}.mjs`, `public/LICENSES.json` (+4 rows, `ual1`), `.gitignore` (+5: the
-Sounding Ring exception), `models-staging/MANIFEST.md` (Round-5 header), `src/main.js` (−9 / +1, removal-only),
-`tools/optimize.mjs` (−24), `tools/bake-rigs.mjs` (−14), `docs/ROUND5-PIPELINE.md`.
-Deleted: 18 files under `tools/r5-poc/` (`build-human.mjs`, `film-{creature-world,human}.mjs`, `gates.r5-poc-human.mjs`,
-`gen-{creature,ground,landmark}.mjs`, `lib/{glb,hs}.mjs`, `out/*.json` ×5, `poc-creature.js`, `pocHuman.js`, `tiller.js`,
-`ubcRig.js`); 6 under `models-staging/` (`npc/MANIFEST.md`, `anims-{hybrid,reskin,retarget}/quaternius-ual/LICENSE`,
-`quaternius-{animatedmech,ultimatemonsters}/License.txt`). No file outside the §2 row and the §1.2 W0b grants was edited.
+1. **No archive SHA-256** (F1/F5): A-sources-staged and A-licence-manifest cannot PASS before Kevin's go-ahead; UAL1 and
+   the rock scan need rulings (§6.1).
+2. **This tree FAILs three gates** at the true wave: A-ID-ip-assets-gone and A-licence-manifest (gates-perf's unmerged
+   file) and A-poc-promoted (instruments-core's reader + the plan contradiction). The merge trial removes the first two;
+   A-poc-promoted needs §6.3 and §6.4.
+3. **The merge trial is a projection**: it uses each lane's worktree as it was at ~05:40, and step 1's main.js
+   resolution, step 3's SPECS edit and the fold were applied by script to a copy — the orchestrator's merge must repeat
+   them (§5). The trial's repository is a fresh `git init` in scratch (no commit, no index), so ls-files / check-ignore
+   read the merged `.gitignore`.
+4. `A-build-deterministic`'s wall term is graded by the R26-style rule (over the bar on a loaded box = PENDING); both
+   runs here were 5.7–7.8 s, far under 180 s.
+5. `tools/measure-machines.mjs` keeps a hard-coded `cwd: '/Users/kevinliu/horizon-zero-claude'` (out of the
+   removal-only grant's scope; a hit for brand's code lint).
+6. One process slip this round: a `git rm --cached` on `public/licences/credits.json` wrote the index; it was restored
+   at once with `git add` of the unchanged file (`git diff --cached` empty), and the deletion was redone in the working
+   tree only. No commit, no other index write in this tree.
 
-## 8. Process hygiene
+## 8. Files changed (this tree)
 
-Vite only through the harness (`npx vite --port 5250 --strictPort` from this tree, killed by the harness) and in
-middleware mode on unix sockets for the fixtures (no TCP port, dep cache in scratch). Chrome only through
-`tools/gates.mjs` and the gates' own child runners (`specs-fixture.mjs`, `biome-check.mjs`, both calling the preflight:
-disk ≥ 3 GB, memory free ≥ 25 %, < 2 headless Chromes); at most one Chrome of this lane alive at any time. One calibration
-attempt launched while 2 other headless Chromes were alive (a script of mine skipped the preflight; Chrome failed to
-start, nothing ran) — fixed and re-run behind the preflight. Port 5173 never touched. Disk 4.0–4.6 GB free throughout;
-`r5-src` cost ≈ 5 MB of real disk (clones); shots deleted after reading. Scratch: `scratchpad/r5/pipeline/w0b/` (logs and
-reports kept, copies removed). «END-HYGIENE»
+`git status --short`: ` M` docs/ROUND5-PIPELINE.md, models-staging/MANIFEST.md, public/LICENSES.json,
+tools/build/{sources.mjs, sources.lock.json, humans.mjs}, tools/build/pipeline/{w0b-checks, specs-fixture,
+gen-humans-proof}.mjs, tools/build/ground/lib/ground-proof.mjs, tools/gates.r5.pipeline.mjs,
+tools/licences/{lib, check, credits, add, ip-scan}.mjs; ` D` public/licences/credits.json and the 5 files of
+tools/r5-poc/direction-a/; `??` tools/licences/fold.mjs. ` M` docs/ROUND5-PLAN.md is the orchestrator's R33(g)/R34 sync,
+not this lane's edit. Git-ignored: `models-staging/r5-src/{ubc,mco,ual2,ual1}` (renamed from the row-id directories).
+No file outside the §2 row and the W0b grants was edited.
+
+## 9. Process hygiene
+
+Vite only through the harness (`npx vite --port 5250 --strictPort` from this tree, two runs: the lane block and the
+global items once) and in middleware mode on unix sockets for the fixtures and the merge trial (no TCP port). Chrome only
+through `tools/gates.mjs` and the gates' own child runners behind the preflight (≥ 3 GB free, ≥ 25 % memory, < 2
+headless Chromes); one Chrome of this lane at a time. Port 5173 never touched. Disk 35.6–36.1 GB free. Shots deleted
+after reading; the merge trial and stub copies are clonefile copies in `scratchpad/r5/pipeline/w0b-r1/` (removed at the
+end of the turn; reports and logs kept).
 
 ---
+
 
 # Appendix A — W0a report (Oct 15–16 2026, as written then)
 

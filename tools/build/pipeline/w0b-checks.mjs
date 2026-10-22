@@ -47,7 +47,10 @@ function runChild(args, { cwd = ROOT, timeoutMs = 600000, wrap = null } = {}) {
     const t0 = Date.now();
     const cmd = wrap ? wrap[0] : process.execPath;
     const argv = wrap ? [...wrap.slice(1), process.execPath, ...args] : args;
-    const child = spawn(cmd, argv, { cwd, stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, R5_BUILD_VERBOSE: '' } });
+    // sources come from the tree's models-staging/r5-src only: an inherited R5_SRC override is dropped
+    const env = { ...process.env, R5_BUILD_VERBOSE: '' };
+    delete env.R5_SRC;
+    const child = spawn(cmd, argv, { cwd, stdio: ['ignore', 'pipe', 'pipe'], env });
     let stdout = '', stderr = '', timedOut = false;
     child.stdout.on('data', (d) => { stdout += d; });
     child.stderr.on('data', (d) => { stderr += d; if (stderr.length > 20000) stderr = stderr.slice(-20000); });
@@ -67,20 +70,28 @@ function runChild(args, { cwd = ROOT, timeoutMs = 600000, wrap = null } = {}) {
 export const BUILD_WALL_MS = 180000;
 export const BUILD_RSS_MB = 2048;
 
-/** macOS sandbox profile: no network at all; the Round-5 proof's scratch extracts are unreadable (sources = r5-src only). */
-function sandboxProfile() {
-  const deny = [];
-  for (const d of ['ubc', 'mco', 'ual2']) {
-    const p = path.join(path.dirname(path.dirname(ROOT)), d);         // scratchpad/r5/<d> next to the lane folder
-    if (existsSync(p)) deny.push(`(deny file-read* (subpath "${realpathSync(p)}"))`);
+/**
+ * macOS sandbox profile: no network at all; the Round-5 proof's scratch extracts are unreadable (sources = r5-src
+ * only). The extracts are found by their signature (ubc/Base Characters, mco/Modular Parts, ual2/UAL2_Standard.glb)
+ * in any ancestor of the tree up to 5 levels (scratchpad/r5/<d> next to a lane folder, or above a merge-trial copy).
+ */
+const PROOF_EXTRACTS = { ubc: 'Base Characters', mco: 'Modular Parts', ual2: 'UAL2_Standard.glb' };
+function sandboxProfile(root = ROOT) {
+  const deny = new Set();
+  let a = path.dirname(root);
+  for (let up = 0; up < 5 && a !== path.dirname(a); up++, a = path.dirname(a)) {
+    for (const [d, sig] of Object.entries(PROOF_EXTRACTS)) {
+      const p = path.join(a, d);
+      if (existsSync(path.join(p, sig))) deny.add(realpathSync(p));
+    }
   }
-  return { profile: `(version 1)(allow default)(deny network*)${deny.join('')}`, deniedReads: deny.length };
+  return { profile: `(version 1)(allow default)(deny network*)${[...deny].map((p) => `(deny file-read* (subpath "${p}"))`).join('')}`, deniedReads: deny.size, denied: [...deny] };
 }
 
 export async function buildDeterministic({ root = ROOT } = {}) {
   const scratch = scratchDir();
   const outs = [1, 2].map((i) => path.join(scratch, `build-det-${process.pid}-${i}`));
-  const sandbox = process.platform === 'darwin' && existsSync('/usr/bin/sandbox-exec') ? sandboxProfile() : null;
+  const sandbox = process.platform === 'darwin' && existsSync('/usr/bin/sandbox-exec') ? sandboxProfile(root) : null;
   const runs = [];
   try {
     for (const out of outs) {
@@ -244,6 +255,8 @@ export const CLASSES = {
   transit: { tris: 120000, draws: 4, bones: 64, bytes: 1.2 * 1024 * KB },
   landmark: { tris: 40000, draws: 3, bytes: 300 * KB },
   fauna: { tris: 1500, draws: 1, bones: 12, bytes: 60 * KB },
+  // not a §4.1 class: an animation-only pack (Brea's native UAL2 clips) carries NO mesh
+  'clip-pack': { tris: 0, draws: 0, materials: 0 },
   // not a §4.1 class: the loader fixture (pipeline), held to a fixture-sized bar
   fixture: { tris: 1000, draws: 3, materials: 2, bytes: 16 * KB },
 };
@@ -251,6 +264,7 @@ export const CLASSES = {
 export function classOf(p, size) {
   const n = p.split('/').pop();
   if (/^public\/models\/pipeline\//.test(p)) return 'fixture';
+  if (/-clips[-.]/.test(n)) return 'clip-pack';
   if (/^public\/models\/hero\//.test(p)) return /outfit/.test(n) ? 'brea-outfit' : /stow/.test(n) ? 'stowkit' : /^kit-v0|bow|lance|bracer|quiver/.test(n) ? 'held-weapon' : 'brea-body';
   if (/^public\/models\/armory\//.test(p)) {
     if (/^armor-/.test(n)) return 'armor-piece';
@@ -294,18 +308,38 @@ export async function glbBudget({ root = ROOT } = {}) {
     if (!String(ex.provenance?.generator || '').startsWith('CALIMA tools/build')) { skippedLegacy.push(p); continue; }
     let tris = 0, draws = 0;
     const labels = new Set();
+    // §4.1 Brea body row: "body faces hidden under the outfit culled at merge". A body that ships a
+    // `_HIDEMASK` (uint8 per vertex) + `extras.r5Hero.hideBits` loses, per outfit bit, every triangle
+    // whose three vertices carry that bit (hero-body's published rule, recipes/brea.mjs header). The
+    // budget is graded on the WORST outfit's post-cull count, computed here from the file itself.
+    const hideBits = ex.r5Hero?.hideBits && typeof ex.r5Hero.hideBits === 'object' ? ex.r5Hero.hideBits : null;
+    const culledBy = hideBits ? Object.fromEntries(Object.keys(hideBits).map((k) => [k, 0])) : null;
     for (const m of r.listMeshes()) for (const prim of m.listPrimitives()) {
       draws++;
-      tris += (prim.getIndices()?.getCount() ?? prim.getAttribute('POSITION').getCount()) / 3;
+      const idx = prim.getIndices();
+      tris += (idx?.getCount() ?? prim.getAttribute('POSITION').getCount()) / 3;
       const L = prim.getAttribute('_BONE');
       if (L) { const e = [0]; for (let i = 0; i < L.getCount(); i++) { L.getElement(i, e); labels.add(Math.round(e[0])); } }
+      const H = hideBits ? prim.getAttribute('_HIDEMASK') : null;
+      if (H && idx) {
+        const mask = new Uint8Array(H.getCount()); const e = [0];
+        for (let i = 0; i < mask.length; i++) { H.getElement(i, e); mask[i] = Math.round(e[0]); }
+        const I = idx.getArray();
+        for (const [k, bit] of Object.entries(hideBits)) {
+          let n = 0;
+          for (let t = 0; t < I.length; t += 3) if (mask[I[t]] & bit && mask[I[t + 1]] & bit && mask[I[t + 2]] & bit) n++;
+          culledBy[k] += n;
+        }
+      }
     }
     const skinBones = r.listSkins().reduce((n, s) => Math.max(n, s.listJoints().length), 0);
     const s = { tris, draws, materials: r.listMaterials().length, bones: Math.max(skinBones, labels.size), bytes: statSync(path.join(root, p)).size };
     const cls = classOf(p, ex.r5Size);
-    const over = cls ? overBudget(cls, s) : ['unclassified: no plan §4.1 class for this path'];
+    const afterCull = culledBy && Object.keys(culledBy).length ? Object.fromEntries(Object.entries(culledBy).map(([k, n]) => [k, tris - n])) : null;
+    const graded = cls === 'brea-body' && afterCull ? { ...s, tris: Math.max(...Object.values(afterCull)) } : s;
+    const over = cls ? overBudget(cls, graded) : ['unclassified: no plan §4.1 class for this path'];
     const statsAgree = !ex.r5Stats || (ex.r5Stats.tris === tris && ex.r5Stats.materials === s.materials);
-    assets.push({ path: p, class: cls, ...s, recipe: ex.provenance.recipe, statsAgree, over });
+    assets.push({ path: p, class: cls, ...s, ...(afterCull ? { trisAfterOutfitCull: afterCull, gradedTris: graded.tris } : {}), recipe: ex.provenance.recipe, statsAgree, over });
   }
   // NEGATIVE CONTROL: a Brea body at 12 k tris / 0.9 MB and an unclassified path must be caught
   const control = [overBudget('brea-body', { tris: 12000, draws: 2, materials: 3, bones: 70, bytes: 900 * KB }).length > 0, classOf('public/models/misc/x.glb') === null];
@@ -320,60 +354,100 @@ export async function glbBudget({ root = ROOT } = {}) {
 /* A-poc-promoted (static half)                                         */
 /* ------------------------------------------------------------------ */
 /**
- * Plan §6 / §9 (W0 exit): the ?poc=human and ?poc=creature paths are gone from src/main.js; tools/r5-poc/ and
- * public/models/r5-poc/ are gone. The plan also requires `?poc=biome` to keep serving A-gpu-tier until the W1
- * exit, and main.js imports `/tools/r5-poc/poc-${POC}.js` and the biome loads `/models/r5-poc/{sounding-ring,
- * tiller}.glb` — a removal-only grant cannot re-point those URLs. So the bar applied here: nothing remains in
- * either folder except the ?poc=biome closure (BIOME_CLOSURE), which leaves with the ?poc=biome block (world-ground, W1 exit).
+ * Plan §9, LITERAL (W0b fix round 1; the W0b first pass graded a "biome
+ * closure" instead, which the judge rejected):
+ *   (a) no ?poc=human|creature code path in src/main.js;
+ *   (b) `tools/r5-poc/` and `public/models/r5-poc/` ABSENT;
+ *   (c) `?poc=biome` still serves A-gpu-tier (dynamic half, biome-check.mjs).
+ * PASS only when all three hold. While ?poc=biome exists, (b) and (c) cannot
+ * both hold: main.js (removal-only) imports `/tools/r5-poc/poc-${POC}.js` and
+ * the biome loads `/models/r5-poc/{sounding-ring,tiller}.glb`. So the gate
+ * NEVER passes with anything left in either folder; it reports:
+ *   FAIL     (a) or (c) broken; a file in either folder that is not one of the
+ *            three biome-closure files; any REFERENCE to either folder (a
+ *            string literal in comment-stripped src/** or tools/**) that is
+ *            not the biome hook, A-gpu-tier's import, a closure supplier
+ *            (the two recipes that write those GLBs) or this lane's own
+ *            checkers — a runtime reader such as a URL default would break
+ *            the day the folders go (the first pass only matched `import`s);
+ *   PENDING  only the three closure files remain and nothing else references
+ *            the folders: the literal bar is blocked by the plan itself until
+ *            an orchestrator ruling (accept the closure until world-ground's
+ *            W1 exit, or strike clause (c)) — named in `ruling`.
  */
-export const BIOME_CLOSURE = {
-  'tools/r5-poc': ['poc-biome.js'],
-  'public/models/r5-poc': ['sounding-ring.glb', 'tiller.glb'],
-};
-/**
- * Not pipeline-proof code: Creative Direction A's research tools. Other lanes read them this wave or next
- * (brand's union lexicon is built from `horizon-lexicon.txt`, plan §9 brand / bible §10.4; `sites.json` is the
- * Direction-A site layout). Reported as a named PENDING handover, never PASS, until the owners have moved
- * what they keep (then: delete `tools/r5-poc/direction-a/`).
- */
-export const HANDOVER = {
-  'tools/r5-poc/direction-a': 'brand (horizon-lexicon.txt -> tools/lint/, W0b; logo/palette art.py) and world-ground (sites.json, W1): move what you keep, then delete the folder',
-};
+export const POC_DIRS = ['tools/r5-poc', 'public/models/r5-poc'];
+export const BIOME_CLOSURE_FILES = ['tools/r5-poc/poc-biome.js', 'public/models/r5-poc/sounding-ring.glb', 'public/models/r5-poc/tiller.glb'];
+/** References that ARE the biome closure: file -> the literal it may hold. */
+export const BIOME_REFS = [
+  { file: 'src/main.js', re: /\/tools\/r5-poc\/poc-\$\{POC\}\.js/, why: 'the ?poc=biome hook (removal-only grant; world-ground removes it at the W1 exit)' },
+  { file: 'tools/gates.r5.engine-gpu.mjs', re: /\/tools\/r5-poc\/poc-biome\.js/, why: "engine-gpu's A-gpu-tier vista (plan §9: ?poc=biome serves A-gpu-tier until W1)" },
+  { file: 'tools/build/instruments/gen-tiller.mjs', re: /public\/models\/r5-poc\/tiller\.glb/, why: 'closure supplier (second output, same bytes as public/models/instruments/tiller.glb)' },
+  { file: 'tools/build/landmarks/gen-sounding-ring.mjs', re: /public\/models\/r5-poc\/sounding-ring\.glb/, why: 'closure supplier (the biome landmark)' },
+];
+/** This lane's own checkers name the paths in order to check them. */
+const CHECKERS = /^tools\/(gates\.r5\.pipeline\.mjs|build\/pipeline\/(w0b-checks|biome-check|specs-fixture)\.mjs|licences\/[^/]+\.mjs)$/;
+const POC_REF = /(?:^|[^a-z0-9_-])(tools\/r5-poc|models\/r5-poc)(?=\/|['"`]|$)/i;
+const stripComments = (t) => t.replace(/\/\*[\s\S]*?\*\//g, (m) => m.replace(/[^\n]/g, ' ')).replace(/^\s*\/\/.*$/gm, '');
+
+/** Every string-literal reference to the two POC folders in src/** and tools/** (code only; file:line). */
+export function pocReferences({ root = ROOT } = {}) {
+  const refs = [];
+  for (const d of ['src', 'tools']) for (const rel of walk(path.join(root, d))) {
+    if (!/\.(m?js|cjs)$/.test(rel)) continue;
+    const f = `${d}/${rel}`;
+    if (f.startsWith('tools/r5-poc/')) continue;                         // inside the folder: a leftover, listed below
+    const lines = stripComments(readFileSync(path.join(root, f), 'utf8')).split('\n');
+    lines.forEach((line, i) => {
+      const m = POC_REF.exec(line);
+      if (!m || !/['"`]/.test(line.slice(0, m.index + 1))) return;      // a path inside a string literal
+      const text = line.trim().slice(0, 160);
+      const closure = BIOME_REFS.find((b) => b.file === f && b.re.test(line));
+      const kind = closure ? 'biome-closure' : CHECKERS.test(f) ? 'checker' : f.startsWith('src/') ? 'runtime-reader' : 'tool-reference';
+      refs.push({ file: f, line: i + 1, kind, text, ...(closure ? { why: closure.why } : {}) });
+    });
+  }
+  return refs;
+}
+
 export function pocPromotedStatic({ root = ROOT } = {}) {
   const problems = [];
   const main = readFileSync(path.join(root, 'src/main.js'), 'utf8');
-  const code = main.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
-  const humanPath = /poc['"]?\)\s*===\s*['"]human['"]|pocHuman|installPocHuman/.test(code);
-  const creaturePath = /['"]creature['"]/.test(code) || /poc-creature/.test(code);
+  const code = stripComments(main);
+  const HUMAN_RE = /poc['"]?\)\s*===\s*['"]human['"]|pocHuman|installPocHuman/;
+  const CREATURE_RE = /['"]creature['"]|poc-creature/;
+  const humanPath = HUMAN_RE.test(code), creaturePath = CREATURE_RE.test(code);
   if (humanPath) problems.push('src/main.js still has a ?poc=human code path');
   if (creaturePath) problems.push('src/main.js still has a ?poc=creature code path');
   const biomeHook = /['"]biome['"]/.test(code) && /\/tools\/r5-poc\/poc-\$\{POC\}\.js/.test(code);
-  const folders = {};
-  const pending = [];
-  for (const [dir, keep] of Object.entries(BIOME_CLOSURE)) {
-    const abs = path.join(root, dir);
-    const entries = existsSync(abs) ? readdirSync(abs).filter((n) => n !== '.DS_Store') : [];
-    const extra = entries.filter((n) => !keep.includes(n));
-    folders[dir] = { present: entries, extra };
-    for (const n of extra) {
-      if (HANDOVER[`${dir}/${n}`]) pending.push(`${dir}/${n}: handover pending — ${HANDOVER[`${dir}/${n}`]}`);
-      else problems.push(`${dir}/${n} is still on disk (promoted into tools/build/** or deleted at the W0 exit; only the ?poc=biome closure stays)`);
-    }
-  }
-  // nothing outside main.js's biome line imports tools/r5-poc (code, not comments)
-  const importers = [];
-  for (const d of ['src', 'tools']) for (const rel of walk(path.join(root, d))) {
-    if (!/\.(m?js)$/.test(rel)) continue;
-    const f = `${d}/${rel}`;
-    if (f.startsWith('tools/r5-poc/') || f === 'src/main.js' || f === 'tools/build/pipeline/w0b-checks.mjs') continue;
-    const t = readFileSync(path.join(root, f), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
-    if (/(from\s+|import\s*\()\s*['"`][^'"`]*r5-poc\//.test(t)) importers.push(f);
-  }
-  for (const f of importers) problems.push(`${f} imports from tools/r5-poc/`);
-  // NEGATIVE CONTROL: the pre-removal main.js text must be caught by the same detector
+  if (!biomeHook) problems.push('the ?poc=biome hook is missing from src/main.js (clause (c): it serves A-gpu-tier until the W1 exit)');
+  // (b) literally: every file on disk under either folder (tracked or not)
+  const left = [];
+  for (const dir of POC_DIRS) for (const rel of walk(path.join(root, dir))) if (!rel.endsWith('.DS_Store')) left.push(`${dir}/${rel}`);
+  const closureLeft = left.filter((f) => BIOME_CLOSURE_FILES.includes(f));
+  const otherLeft = left.filter((f) => !BIOME_CLOSURE_FILES.includes(f));
+  for (const f of otherLeft) problems.push(`${f} is still on disk (clause (b): the folder must be absent; not even the ?poc=biome closure excuses it)`);
+  // every reference to the folders, classified
+  const refs = pocReferences({ root });
+  const outside = refs.filter((r) => r.kind === 'runtime-reader' || r.kind === 'tool-reference');
+  for (const r of outside) problems.push(`${r.file}:${r.line} references the POC folders (${r.kind}): ${r.text}`);
+  // NEGATIVE CONTROLS: the pre-removal main.js text, and a URL-default reader (the judge's sheets.js case)
   const planted = "if (params.get('poc') === 'human') { const { installPocHuman } = await import('/tools/r5-poc/pocHuman.js'); }\nconst POC = ['creature', 'biome'].includes(x);";
-  const controlCaught = /poc['"]?\)\s*===\s*['"]human['"]|pocHuman|installPocHuman/.test(planted) && /['"]creature['"]/.test(planted);
-  if (!biomeHook) problems.push('the ?poc=biome hook is missing from src/main.js (it serves A-gpu-tier until the W1 exit)');
-  const pass = problems.length || !controlCaught ? false : pending.length ? null : true;
-  return { pass, detail: { humanPath, creaturePath, biomeHook, folders, importers, problems, pending, negativeControl: { caught: controlCaught } } };
+  const plantedReader = "export async function renderStockFace(ctx, url = '/tools/r5-poc/assets/heroine-base.glb') {";
+  const readerHit = POC_REF.exec(plantedReader);
+  const control = { mainCaught: HUMAN_RE.test(planted) && CREATURE_RE.test(planted),
+    urlDefaultCaught: !!readerHit && /['"`]/.test(plantedReader.slice(0, readerHit.index + 1)) };
+  const controlOk = control.mainCaught && control.urlDefaultCaught;
+  const ruling = closureLeft.length ? {
+    blockedBy: 'plan §9 A-poc-promoted clauses (b) and (c) contradict while ?poc=biome exists (main.js imports /tools/r5-poc/poc-${POC}.js; the biome loads /models/r5-poc/{sounding-ring,tiller}.glb)',
+    options: [
+      '(1) accept the three closure files until world-ground removes ?poc=biome at the W1 exit; their deletion (and the sounding-ring LICENSES row + .gitignore exception) moves to world-ground\'s W1-exit row; A-poc-promoted then grades "nothing but the closure, no reference outside it" at the W0 exit',
+      '(2) the literal bar: delete both folders at the W0 exit and strike clause (c); ?poc=biome and A-gpu-tier\'s vista go dark until the W1 Pans',
+    ],
+  } : null;
+  const pass = problems.length || !controlOk ? false : closureLeft.length ? null : true;
+  return { pass, detail: {
+    humanPath, creaturePath, biomeHook, leftOnDisk: left, closureLeft, otherLeft,
+    references: { total: refs.length, outside, biomeClosure: refs.filter((r) => r.kind === 'biome-closure'), checkers: refs.filter((r) => r.kind === 'checker').length },
+    problems, ruling, negativeControl: control,
+  } };
 }

@@ -3,12 +3,15 @@
 ## Round 5 (pipeline lane, W0b) — read this first
 
 - **`models-staging/r5-src/`** (git-ignored; the orchestrator symlinks it into lane worktrees) holds the
-  third-party sources the deterministic asset build reads, one directory per `public/LICENSES.json` row id:
-  `ubc-standard/` (Universal Base Characters [Standard]), `mco-fantasy/` (Modular Character Outfits –
-  Fantasy [Standard]), `ual2-standard/` (Universal Animation Library 2 [Standard]), `ual1/` (the shipped UAL
-  v1 Godot export). Every staged file's SHA-256 is in the tracked lock `tools/build/sources.lock.json`;
+  third-party sources the deterministic asset build reads, one directory per source; the directory of a
+  `public/LICENSES.json` row is the lock entry's `dir` (`node tools/build/sources.mjs layout`): `ubc/` (row
+  `ubc-standard`, Universal Base Characters [Standard]), `mco/` (row `mco-fantasy-standard`, Modular Character
+  Outfits – Fantasy [Standard]), `ual2/` (row `ual2-standard`, Universal Animation Library 2 [Standard]),
+  `ual1/` (row `ual1`, the shipped UAL v1 Godot export) — the Round-5 proof's layout, which hero-body's recipes
+  read. Every staged file's SHA-256 is in the tracked lock `tools/build/sources.lock.json`;
   `node tools/build/sources.mjs status` is gate `A-sources-staged`. Sources are added with
-  `tools/build/sources.mjs stage-zip` (and an extracted copy is tied to its archive with `verify-zip`).
+  `tools/build/sources.mjs stage-zip` (an extracted copy is tied to its archive with `verify-zip`; a
+  multi-file download with no archive, e.g. a Google Fonts family, with `stage-files`).
 - **The Round-4 staging below is legacy.** Its bulk (originals, bake backups, donor caches, CC0 packs no
   Round-5 lane names) is untracked and lives only in the main tree; `node tools/build/staging-cleanup.mjs`
   lists it (133.8 MB measured on main, Oct 19) and `--apply` deletes it (orchestrator). The tracked licence

@@ -4,14 +4,26 @@
  *
  * The deterministic asset build reads third-party material ONLY from
  * `models-staging/r5-src/` (git-ignored; the orchestrator symlinks it into
- * each lane worktree). Each source archive gets one directory named after its
- * LICENSES.json row id, holding only the files a recipe reads:
+ * each lane worktree). Each source archive gets one directory, holding only the
+ * files a recipe reads:
  *
- *   models-staging/r5-src/<row-id>/<path inside the archive, prefix stripped>
+ *   models-staging/r5-src/<dir>/<path inside the archive, prefix stripped>
  *
- * and one entry in the TRACKED lock `tools/build/sources.lock.json`:
+ * `<dir>` is the lock entry's `dir` (default: the LICENSES.json row id). The
+ * four human sources keep the Round-5 proof's short layout, which hero-body's
+ * recipes (`tools/build/recipes/lib/face.mjs` srcRoot) read verbatim (W0b fix
+ * round 1; the row-id layout broke them):
  *
- *   { row, archive: { name, bytes, sha256, retrieved, page }, strip, files: { <rel>: { bytes, sha256 } }, totalBytes }
+ *   row ubc-standard          -> r5-src/ubc/   (Base Characters/…, Hairstyles/…)
+ *   row mco-fantasy-standard  -> r5-src/mco/   (Modular Parts/…)
+ *   row ual2-standard         -> r5-src/ual2/  (UAL2_Standard.glb, …)
+ *   row ual1                  -> r5-src/ual1/  (the shipped UAL v1 Godot export)
+ *
+ * Consumers resolve a directory with `sourceDir(rowId)` (never by joining a row
+ * id), and one entry per source sits in the TRACKED lock
+ * `tools/build/sources.lock.json`:
+ *
+ *   { row, dir, archive: { name, bytes, sha256, retrieved, page }, strip, files: { <rel>: { bytes, sha256 } }, totalBytes }
  *
  * The archive SHA-256 is recorded in BOTH the lock and the row's
  * `archive_sha256` (public/LICENSES.json); A-sources-staged requires them equal.
@@ -19,11 +31,11 @@
  * COMMANDS (any lane stages its sources through this tool, as rows go through
  * tools/licences/add.mjs):
  *
- *   node tools/build/sources.mjs stage-zip  --row <id> --zip <archive.zip> --keep '<glob>' [--keep ...]
+ *   node tools/build/sources.mjs stage-zip  --row <id> --zip <archive.zip> --keep '<glob>' [--keep ...] [--dir <name>]
  *                                          [--strip <member prefix>] [--retrieved YYYY-MM-DD] [--page <url>] [--delete-zip]
- *       hash the archive (streamed), extract only the kept members into r5-src/<id>/, write the lock
+ *       hash the archive (streamed), extract only the kept members into r5-src/<dir>/, write the lock
  *       entry and the row's archive_sha256 / archive_bytes / retrieved; --delete-zip removes the archive
- *   node tools/build/sources.mjs stage-dir  --row <id> --from <dir> [--keep '<glob>' ...] [--move]
+ *   node tools/build/sources.mjs stage-dir  --row <id> --from <dir> [--keep '<glob>' ...] [--move] [--dir <name>]
  *                                          --archive-name <file> --archive-bytes <n> --retrieved YYYY-MM-DD [--page <url>]
  *       stage files already extracted (e.g. the Round-5 proof's scratch copies) WITHOUT the archive:
  *       the lock records per-file SHA-256s and `archive.sha256: null` until `verify-zip`
@@ -32,7 +44,14 @@
  *       byte (inflated and SHA-256-compared; the member is found by path suffix). On success the archive
  *       SHA-256 is recorded in the lock and the row; on any mismatch nothing is recorded (the pack changed:
  *       re-stage with stage-zip)
+ *   node tools/build/sources.mjs stage-files --row <id> [--dir <name>]
+ *       a source with NO archive (Google Fonts serves one file per subset): the row lists its downloads in
+ *       `files: [{ path, source_url, sha256, bytes }]` and records `archive_sha256` = SHA-256 of the
+ *       sorted `sha256sum` manifest of those files (`<sha256>  <basename>\n` lines; brand's font rows).
+ *       Each listed file (shipped unmodified under public/) is verified against its sha256 and cloned
+ *       into r5-src/<dir>/; the manifest hash must equal the row's archive_sha256, and is recorded
  *   node tools/build/sources.mjs status [--json]      the A-sources-staged report
+ *   node tools/build/sources.mjs layout               row id -> directory, one JSON line (the published layout)
  *
  * No network access anywhere in this file: archives are downloaded by a
  * person (itch.io's free "No thanks, just take me to the downloads" flow has
@@ -55,9 +74,21 @@ export const LOCK = 'tools/build/sources.lock.json';
 export const SRC_REL = 'models-staging/r5-src';
 export const CAP_BYTES = 150 * 1024 * 1024;          // plan §9 A-sources-staged: <= 150 MB
 /** The sources the plan names for the W0b exit (§9 A-sources-staged): UBC, MCO, UAL1, UAL2 (+ scan and font rows, below). */
-export const REQUIRED = ['ubc-standard', 'mco-fantasy', 'ual1', 'ual2-standard'];
+export const REQUIRED = ['ubc-standard', 'mco-fantasy-standard', 'ual1', 'ual2-standard'];
+/** The published directory of each required source (the lock's `dir`; a new row defaults to its id). */
+export const DIRS = { 'ubc-standard': 'ubc', 'mco-fantasy-standard': 'mco', ual1: 'ual1', 'ual2-standard': 'ual2' };
 
 export const srcDir = (root = ROOT, env = process.env) => (env.R5_SRC ? path.resolve(env.R5_SRC) : path.join(root, SRC_REL));
+/** The directory of one staged source row: `<srcDir>/<lock dir | DIRS | row id>`. */
+export function sourceDir(row, { root = ROOT, env = process.env, lock = null } = {}) {
+  const ent = (lock || loadLock(root)).sources?.[row];
+  return path.join(srcDir(root, env), ent?.dir || DIRS[row] || row);
+}
+/** row id -> directory name for every lock entry (the `layout` command). */
+export function layout(root = ROOT) {
+  const lock = loadLock(root);
+  return Object.fromEntries(Object.entries(lock.sources).map(([id, e]) => [id, `${SRC_REL}/${e.dir || DIRS[id] || id}`]));
+}
 const sha = (buf) => createHash('sha256').update(buf).digest('hex');
 const posix = (p) => p.split(path.sep).join('/');
 
@@ -117,9 +148,10 @@ async function updateRow(rowId, patch, root = ROOT) {
 }
 
 /** stage-dir: files already extracted; archive hash unknown until verify-zip. */
-export async function stageDir({ row, from, keeps = [], move = false, archiveName, archiveBytes, retrieved, page = null, root = ROOT }) {
+export async function stageDir({ row, from, keeps = [], move = false, archiveName, archiveBytes, retrieved, page = null, dir = null, root = ROOT }) {
   if (!row || !from || !retrieved) throw new Error('stage-dir needs --row --from --retrieved (and --archive-name / --archive-bytes when known)');
-  const dst = path.join(srcDir(root), row);
+  const dirName = dir || loadLock(root).sources[row]?.dir || DIRS[row] || row;
+  const dst = path.join(srcDir(root), dirName);
   mkdirSync(dst, { recursive: true });
   const files = {};
   let total = 0;
@@ -133,17 +165,59 @@ export async function stageDir({ row, from, keeps = [], move = false, archiveNam
     total += buf.length;
   }
   const lock = loadLock(root);
-  lock.sources[row] = { row, archive: { name: archiveName || null, bytes: archiveBytes ? Number(archiveBytes) : null, sha256: null, retrieved, page }, strip: null, files, totalBytes: total, stagedFrom: 'extracted copy (archive not on disk): run verify-zip with the archive to record its SHA-256' };
+  lock.sources[row] = { row, dir: dirName, archive: { name: archiveName || null, bytes: archiveBytes ? Number(archiveBytes) : null, sha256: null, retrieved, page }, strip: null, files, totalBytes: total, stagedFrom: 'extracted copy (archive not on disk): run verify-zip with the archive to record its SHA-256' };
   saveLock(lock, root);
   return { row, files: Object.keys(files).length, totalBytes: total };
 }
 
+/** The sha256sum-manifest hash of a multi-file source: sorted `<sha256>  <basename>\n` lines. */
+export function manifestSha256(files) {
+  const lines = files.map((f) => `${f.sha256}  ${path.basename(f.path)}`).sort();
+  return sha(Buffer.from(`${lines.join('\n')}\n`));
+}
+
+/** stage-files: a multi-file source with no archive (row.files[] + row.archive_sha256 = manifest hash). */
+export async function stageFiles({ row, dir = null, root = ROOT }) {
+  const { loadManifest } = await import('../licences/lib.mjs');
+  const r = loadManifest(root)?.rows.find((x) => x.id === row);
+  if (!r) throw new Error(`no LICENSES.json row "${row}"`);
+  if (!Array.isArray(r.files) || !r.files.length) throw new Error(`row "${row}" lists no files[] (use stage-zip / stage-dir)`);
+  const bad = [];
+  for (const f of r.files) {
+    const abs = path.join(root, f.path);
+    if (!existsSync(abs)) { bad.push(`${f.path}: missing`); continue; }
+    const buf = readFileSync(abs);
+    if (sha(buf) !== f.sha256 || (f.bytes != null && buf.length !== f.bytes)) bad.push(`${f.path}: differs from the row's sha256/bytes`);
+  }
+  const manifest = manifestSha256(r.files);
+  if (manifest !== r.archive_sha256) bad.push(`manifest SHA-256 ${manifest.slice(0, 12)}… != row archive_sha256 ${String(r.archive_sha256).slice(0, 12)}…`);
+  if (bad.length) return { row, ok: false, problems: bad };
+  const dirName = dir || loadLock(root).sources[row]?.dir || DIRS[row] || row;
+  const dst = path.join(srcDir(root), dirName);
+  rmSync(dst, { recursive: true, force: true });
+  mkdirSync(dst, { recursive: true });
+  const files = {};
+  let total = 0;
+  for (const f of r.files) {
+    const rel = path.basename(f.path);
+    cloneFile(path.join(root, f.path), path.join(dst, rel));
+    files[rel] = { bytes: f.bytes ?? statSync(path.join(dst, rel)).size, sha256: f.sha256 };
+    total += files[rel].bytes;
+  }
+  const lock = loadLock(root);
+  lock.sources[row] = { row, dir: dirName, archive: { name: 'sha256sum manifest of the downloaded files (no single archive)', kind: 'file-manifest',
+    bytes: total, sha256: manifest, retrieved: r.retrieved ?? null, page: r.source_url ?? null }, strip: null, files, totalBytes: total };
+  saveLock(lock, root);
+  return { row, ok: true, sha256: manifest, files: Object.keys(files).length, totalBytes: total };
+}
+
 /** stage-zip: extract kept members from an archive and record its SHA-256. */
-export async function stageZip({ row, zip, keeps = [], strip = null, retrieved, page = null, deleteZip = false, root = ROOT }) {
+export async function stageZip({ row, zip, keeps = [], strip = null, retrieved, page = null, deleteZip = false, dir = null, root = ROOT }) {
   if (!row || !zip) throw new Error('stage-zip needs --row --zip');
   const { sha256, bytes } = await sha256File(zip);
   const z = await openZip(zip);
-  const dst = path.join(srcDir(root), row);
+  const dirName = dir || loadLock(root).sources[row]?.dir || DIRS[row] || row;
+  const dst = path.join(srcDir(root), dirName);
   rmSync(dst, { recursive: true, force: true });
   mkdirSync(dst, { recursive: true });
   const files = {};
@@ -165,7 +239,7 @@ export async function stageZip({ row, zip, keeps = [], strip = null, retrieved, 
   } finally { await z.close(); }
   const day = retrieved || new Date().toISOString().slice(0, 10);
   const lock = loadLock(root);
-  lock.sources[row] = { row, archive: { name: path.basename(zip), bytes, sha256, retrieved: day, page }, strip, files, totalBytes: total };
+  lock.sources[row] = { row, dir: dirName, archive: { name: path.basename(zip), bytes, sha256, retrieved: day, page }, strip, files, totalBytes: total };
   saveLock(lock, root);
   await updateRow(row, { archive_sha256: sha256, archive_bytes: bytes, retrieved: day, pending: undefined }, root);
   if (deleteZip) rmSync(zip, { force: true });
@@ -227,7 +301,7 @@ export async function status({ root = ROOT, env = process.env } = {}) {
   const present = existsSync(dir);
   const real = present ? realpathSync(dir) : null;
   if (!present) problems.push(`${SRC_REL} is missing`);
-  const ignored = gitIgnored(SRC_REL, root) && gitIgnored(`${SRC_REL}/ubc-standard/x.gltf`, root);
+  const ignored = gitIgnored(SRC_REL, root) && gitIgnored(`${SRC_REL}/ubc/x.gltf`, root);
   if (!ignored) problems.push(`${SRC_REL} is not git-ignored`);
   // every non-legacy third-party ASSET row (a downloaded source) must be staged; rows built from sources say `derived_from`
   const rows = manifest?.rows || [];
@@ -242,7 +316,7 @@ export async function status({ root = ROOT, env = process.env } = {}) {
     sources[id] = s;
     if (!row) { problems.push(`${id}: no LICENSES.json row`); continue; }
     if (!ent) { problems.push(`${id}: not staged in ${SRC_REL} (stage it with tools/build/sources.mjs)`); continue; }
-    const base = path.join(dir, id);
+    const base = path.join(dir, ent.dir || DIRS[id] || id);
     const bad = [], miss = [];
     for (const [rel, rec] of Object.entries(ent.files)) {
       const f = path.join(base, rel);
@@ -252,7 +326,7 @@ export async function status({ root = ROOT, env = process.env } = {}) {
     }
     const onDisk = existsSync(base) ? walkFiles(base) : [];
     const extra = onDisk.filter((f) => !(f in ent.files));
-    Object.assign(s, { files: Object.keys(ent.files).length, bytes: ent.totalBytes, missing: miss.slice(0, 6), changed: bad.slice(0, 6), extra: extra.slice(0, 6),
+    Object.assign(s, { dir: `${SRC_REL}/${ent.dir || DIRS[id] || id}`, files: Object.keys(ent.files).length, bytes: ent.totalBytes, missing: miss.slice(0, 6), changed: bad.slice(0, 6), extra: extra.slice(0, 6),
       archive: { name: ent.archive.name, bytes: ent.archive.bytes, sha256: ent.archive.sha256, retrieved: ent.archive.retrieved }, rowSha256: row.archive_sha256 ?? null,
       verifiedAgainstArchive: !!ent.verifiedAgainstArchive || (!!ent.archive.sha256 && !ent.stagedFrom) });
     lockBytes += ent.totalBytes;
@@ -263,13 +337,17 @@ export async function status({ root = ROOT, env = process.env } = {}) {
     else if (row.archive_sha256 !== ent.archive.sha256) problems.push(`${id}: lock archive SHA-256 ${ent.archive.sha256.slice(0, 12)}… != LICENSES.json ${String(row.archive_sha256).slice(0, 12)}…`);
   }
   const strays = Object.keys(lock.sources).filter((k) => !required.includes(k));
+  // every directory under r5-src belongs to exactly one lock entry (a renamed or abandoned source dir is not "staged")
+  const lockDirs = new Set(Object.entries(lock.sources).map(([id, e]) => e.dir || DIRS[id] || id));
+  const strayDirs = present ? readdirSync(dir).filter((n) => n !== '.DS_Store' && !lockDirs.has(n)) : [];
+  for (const n of strayDirs) problems.push(`${SRC_REL}/${n} belongs to no lock entry`);
   const totalBytes = duBytes(dir);
   if (totalBytes > CAP_BYTES) problems.push(`${SRC_REL} is ${(totalBytes / 1048576).toFixed(1)} MB > 150 MB`);
   // transient archives: none left under models-staging/ or this lane's scratch
   const zips = findZips(path.join(root, 'models-staging'));
   if (zips.length) problems.push(`transient archive(s) still on disk: ${zips.map((z) => path.relative(root, z)).join(', ')}`);
   const pass = problems.length ? false : pending.length ? null : true;
-  return { pass, detail: { dir: SRC_REL, realPath: real, gitIgnored: ignored, required, sources, unrequiredLockEntries: strays,
+  return { pass, detail: { dir: SRC_REL, realPath: real, gitIgnored: ignored, required, layout: layout(root), sources, unrequiredLockEntries: strays, strayDirs,
     mb: +(totalBytes / 1048576).toFixed(2), lockMb: +(lockBytes / 1048576).toFixed(2), capMb: 150, transientZips: zips, problems, pending } };
 }
 
@@ -279,12 +357,14 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
   const val = (f, d = null) => { const i = a.indexOf(f); return i >= 0 ? a[i + 1] : d; };
   const all = (f) => a.flatMap((x, i) => (x === f ? [a[i + 1]] : []));
   let res;
-  if (cmd === 'stage-dir') res = await stageDir({ row: val('--row'), from: val('--from'), keeps: all('--keep'), move: a.includes('--move'), archiveName: val('--archive-name'), archiveBytes: val('--archive-bytes'), retrieved: val('--retrieved'), page: val('--page') });
-  else if (cmd === 'stage-zip') res = await stageZip({ row: val('--row'), zip: val('--zip'), keeps: all('--keep'), strip: val('--strip'), retrieved: val('--retrieved'), page: val('--page'), deleteZip: a.includes('--delete-zip') });
+  if (cmd === 'stage-dir') res = await stageDir({ row: val('--row'), from: val('--from'), keeps: all('--keep'), move: a.includes('--move'), archiveName: val('--archive-name'), archiveBytes: val('--archive-bytes'), retrieved: val('--retrieved'), page: val('--page'), dir: val('--dir') });
+  else if (cmd === 'stage-zip') res = await stageZip({ row: val('--row'), zip: val('--zip'), keeps: all('--keep'), strip: val('--strip'), retrieved: val('--retrieved'), page: val('--page'), deleteZip: a.includes('--delete-zip'), dir: val('--dir') });
+  else if (cmd === 'layout') res = layout();
+  else if (cmd === 'stage-files') res = await stageFiles({ row: val('--row'), dir: val('--dir') });
   else if (cmd === 'verify-zip') res = await verifyZip({ row: val('--row'), zip: val('--zip'), retrieved: val('--retrieved'), deleteZip: a.includes('--delete-zip') });
   else if (cmd === 'status') res = await status();
-  else { console.error('usage: sources.mjs stage-zip | stage-dir | verify-zip | status  (see the header)'); process.exit(2); }
+  else { console.error('usage: sources.mjs stage-zip | stage-dir | stage-files | verify-zip | status | layout  (see the header)'); process.exit(2); }
   console.log(JSON.stringify(res, null, a.includes('--json') || cmd === 'status' ? 2 : 0));
-  if (cmd === 'verify-zip' && !res.ok) process.exitCode = 1;
+  if ((cmd === 'verify-zip' || cmd === 'stage-files') && !res.ok) process.exitCode = 1;
   if (cmd === 'status' && res.pass === false) process.exitCode = 1;
 }

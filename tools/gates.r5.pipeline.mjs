@@ -30,6 +30,14 @@
  * this file (the harness launches its browser lazily, on the first page
  * gate) — one Chrome alive at a time. A-build-deterministic runs two full
  * builds (~1 min CPU each; minutes of wall on a loaded box).
+ *
+ * W0b fix round 1: A-licence-manifest is a PAGE gate (its in-game credits
+ * clause is graded on the rendered credits modal, never on menu.js source);
+ * A-poc-promoted grades the literal bar (never PASS with a file left in
+ * tools/r5-poc/ or public/models/r5-poc/; every string-literal reference to
+ * them is classified); the licence gates grade against the TRUE wave (lane
+ * branch r5/<wave>-<lane>, R5_WAVE, or the lane-report lower bound with the
+ * §2-named report files counted).
  */
 import os from 'node:os';
 import path from 'node:path';
@@ -98,9 +106,9 @@ async function assetsTracked() {
   };
   const ignoredRefs = ignore(live);
   // 3. the rules themselves, on synthetic paths (they need not exist). The
-  //    Tiller fixture's URL (/models/r5-poc/tiller.glb, read by
-  //    src/instruments/kinds/tiller.js once instruments-core merges) is the one
-  //    tracked file under r5-poc/; every other proof output stays ignored.
+  //    two ?poc=biome closure GLBs under r5-poc/ are tracked (the Tiller copy is
+  //    also what src/instruments/kinds/tiller.js reads until instruments-core
+  //    re-points it); every other proof output stays ignored.
   const mustTrack = ['public/models/hero/brea-body.glb', 'public/models/instruments/tiller.glb', 'public/models/a/b/c.glb', 'public/models/pipeline/probe.glb',
     'public/models/r5-poc/tiller.glb', 'public/models/r5-poc/sounding-ring.glb'];
   const mustIgnore = ['public/models/x.baked.glb', 'public/models/hero/x.baked.glb', 'public/models/x.orig', 'public/models/a/b/x.orig',
@@ -114,10 +122,15 @@ async function assetsTracked() {
   //    reference pipeline — a fresh clone would not have that file
   const CONTROL = 'public/models/r5-poc/proof-output.glb';
   const controlCaught = ignore([...live, CONTROL]).includes(CONTROL);
-  const fixtureUrl = 'public/models/r5-poc/tiller.glb';
-  const fixture = { exists: existsSync(path.join(ROOT, fixtureUrl)), ignored: ignore([fixtureUrl]).length > 0, referencedBy: refs.get(fixtureUrl) ?? null };
+  // the Tiller fixture's model, wherever instruments-core's kind file points it (W0a: /models/r5-poc/tiller.glb;
+  // after the W0-exit re-point: /models/instruments/tiller.glb) — read from the file, not assumed
+  const tillerSrc = path.join(ROOT, 'src/instruments/kinds/tiller.js');
+  const tillerUrl = existsSync(tillerSrc) ? (/['"`](\/models\/[^'"`]+\.glb)['"`]/.exec(readFileSync(tillerSrc, 'utf8'))?.[1] ?? null) : null;
+  const fixtureUrl = tillerUrl ? `public${tillerUrl}` : null;
+  const fixture = fixtureUrl ? { url: tillerUrl, exists: existsSync(path.join(ROOT, fixtureUrl)), ignored: ignore([fixtureUrl]).length > 0, referencedBy: refs.get(fixtureUrl) ?? null }
+    : { url: null, note: 'no Tiller kind file in this tree' };
   const pass = !ignoredRefs.length && !missing.length && !wronglyIgnored.length && !notIgnored.length && controlCaught
-    && fixture.exists && !fixture.ignored;
+    && (!fixtureUrl || (fixture.exists && !fixture.ignored));
   return {
     pass,
     detail: {
@@ -412,8 +425,8 @@ async function sourcesStaged() {
       const lock = S.loadLock();
       const [row, ent] = Object.entries(lock.sources)[0];
       const victim = Object.keys(ent.files).sort()[0];
-      appendFileSync(path.join(tamper, row, victim), 'x');
-      writeFileSync(path.join(tamper, row, 'stray.bin'), 'stray');
+      appendFileSync(path.join(tamper, ent.dir || row, victim), 'x');
+      writeFileSync(path.join(tamper, ent.dir || row, 'stray.bin'), 'stray');
       const c = await S.status({ env: { ...process.env, R5_SRC: tamper } });
       const caught = c.pass === false && c.detail.problems.some((x) => x.includes('differ')) && c.detail.problems.some((x) => x.includes('not in the lock'));
       control = { ok: caught, tampered: `${row}/${victim}`, problems: c.detail.problems.slice(0, 3) };
@@ -441,8 +454,75 @@ async function pocPromoted({ PORT }) {
   const st = W.pocPromotedStatic();
   // dynamic: ?poc=biome still serves (its own Chrome, in a child, before any page gate)
   const dyn = await childJson('tools/build/pipeline/biome-check.mjs', ['--scratch', scratchRoot(), '--port', String(PORT)], 600000);
-  const pass = st.pass === false || dyn.pass === false ? false : st.pass && dyn.pass ? true : null;
+  // literal: PASS needs (a) + (b) absent folders + (c) biome serving; the static half is null (ruling) at best while
+  // the closure files exist, so the gate cannot PASS with anything left in either folder
+  const pass = st.pass === false || dyn.pass === false ? false : st.pass === true && dyn.pass === true ? true : null;
   return { pass, detail: { static: st.detail, biome: dyn.detail?.gate ? { pass: dyn.detail.gate.pass, ...dyn.detail.gate.detail, consoleErrors: dyn.detail.gate.consoleErrors, error: dyn.detail.gate.error } : dyn.detail, biomeMs: dyn.detail?.ms } };
+}
+
+/* ---------------------------------------------------------------- */
+/* A-licence-manifest: node clauses + the RENDERED in-game credits     */
+/* ---------------------------------------------------------------- */
+/**
+ * W0b fix round 1 (judge: "the in-game credits clause can be satisfied by a
+ * comment"). The gate is a PAGE gate now. Its node half — every clause of
+ * `tools/licences/check.mjs` — runs once per process in a child
+ * (`check.mjs --json-line`, synchronous, ~1 s) when the harness first reads
+ * `assert`; the page half clicks the CREDITS button, waits for the modal and
+ * grades the modal's DOM text with the SAME `gradeCredits` function check.mjs
+ * uses (its source is embedded). menu.js's source text is never read. The
+ * harness then films the open credits modal (shots/gates/A-licence-manifest.png).
+ * A getter (not a value) so the node half is computed when the gate runs:
+ * gates-perf's registry keeps accessors (withProps); main's harness spreads
+ * rows at import, which evaluates it once at import — also correct.
+ */
+let licenceNodeHalf = null;
+function licenceNode() {
+  if (licenceNodeHalf) return licenceNodeHalf;
+  try {
+    const out = execFileSync(process.execPath, [path.join(ROOT, 'tools/licences/check.mjs'), '--json-line'],
+      { cwd: ROOT, encoding: 'utf8', timeout: 180000, maxBuffer: 64 * 2 ** 20, stdio: ['ignore', 'pipe', 'pipe'] });
+    licenceNodeHalf = JSON.parse(out.trim().split('\n').pop());
+  } catch (e) {
+    // check.mjs exits 1 on a FAIL verdict and still prints its report
+    try { licenceNodeHalf = JSON.parse(String(e.stdout || '').trim().split('\n').pop()); } catch { licenceNodeHalf = { error: `check.mjs did not report: ${String(e.stderr || e.message).slice(0, 300)}` }; }
+  }
+  return licenceNodeHalf;
+}
+let gradeCreditsSrc = null;
+async function loadGradeCredits() { gradeCreditsSrc = (await imp('tools/licences/check.mjs')).gradeCredits.toString(); }
+await loadGradeCredits();
+function licenceAssert() {
+  const node = licenceNode();
+  return `(async () => {
+  const NODE = ${JSON.stringify(node)};
+  if (NODE.error || !NODE.clauses) return { pass: false, detail: { error: NODE.error || 'no clauses from check.mjs' } };
+  const gradeCredits = ${gradeCreditsSrc};
+  const M = __CTX__.menus;
+  let how = null, error = null;
+  try {
+    // the player's path: the CREDITS button of the menus (hub footer / title); the menus API only if no button exists
+    const btn = [...document.querySelectorAll('button')].find((b) => b.textContent.trim().toUpperCase() === 'CREDITS');
+    if (btn) { btn.click(); how = 'CREDITS button'; } else if (M && M.openModal) { M.openModal('credits'); how = 'menus.openModal (no CREDITS button in the DOM)'; }
+    else error = 'no CREDITS button and no menus.openModal';
+  } catch (e) { error = String(e && e.message || e); }
+  await new Promise((r) => setTimeout(r, 400));
+  const body = (M && M.modalBody) || document.querySelector('.mn-modal-body');
+  const modal = (M && M.modalEl) || (body && body.closest('.mn-modal'));
+  const cs = modal ? getComputedStyle(modal) : null;
+  const rect = body ? body.getBoundingClientRect() : null;
+  const title = (M && M._modalTitle && M._modalTitle.textContent) || '';
+  const visible = !!(cs && cs.display !== 'none' && cs.visibility !== 'hidden' && +cs.opacity > 0 && rect && rect.width > 0 && rect.height > 0
+    && (!M || M.modal === 'credits'));
+  const text = body ? body.textContent : '';
+  const rendered = { how, visible, text, error };
+  const credits = gradeCredits({ ...NODE.creditsInput, rendered });
+  const clauses = { ...NODE.clauses, credits };
+  const st = Object.values(clauses).map((c) => c.status);
+  const pass = st.includes('FAIL') ? false : st.includes('PENDING') ? null : true;
+  return { pass, detail: { summary: Object.fromEntries(Object.entries(clauses).map(([k, c]) => [k, c.status])), wave: NODE.wave,
+    renderedCredits: { how, visible, modalTitle: title, chars: text.length, box: rect ? [Math.round(rect.width), Math.round(rect.height)] : null }, clauses } };
+})()`;
 }
 
 /** A-human-bind: the hero body's rig profile binds every UAL clip bone (plan §9: 52/52, no missing source/target). */
@@ -481,16 +561,6 @@ export const GATES = [
     check: assetsTracked,
   },
   {
-    id: 'A-licence-manifest', kind: 'runner', lane: 'pipeline', timeout: 60000,
-    title: 'public/LICENSES.json covers every public file exactly once; rows valid; MIT code rows; CC-BY attributions in README + in-game credits; public/ <= 60 MB',
-    check: async () => {
-      const { check } = await imp('tools/licences/check.mjs');
-      const r = await check();
-      const summary = Object.fromEntries(Object.entries(r.clauses).map(([k, c]) => [k, c.status]));
-      return { pass: r.pass, detail: { summary, clauses: r.clauses } };
-    },
-  },
-  {
     id: 'A-sources-staged', kind: 'runner', lane: 'pipeline', timeout: 120000,
     title: 'models-staging/r5-src holds the trimmed UBC, MCO, UAL1, UAL2 (+ any scan/font source row) <= 150 MB, every file equal to the lock, archive SHA-256s equal to LICENSES.json, no transient zip',
     check: sourcesStaged,
@@ -517,13 +587,18 @@ export const GATES = [
   },
   {
     id: 'A-poc-promoted', kind: 'runner', lane: 'pipeline', timeout: 900000,
-    title: 'W0 exit: no ?poc=human|creature path in src/main.js; tools/r5-poc and public/models/r5-poc reduced to the ?poc=biome closure; ?poc=biome still serves its vista',
+    title: 'W0 exit (literal): no ?poc=human|creature path in src/main.js; tools/r5-poc/ and public/models/r5-poc/ absent; ?poc=biome still serves A-gpu-tier. Never PASS with a file left in either folder; no reference to them outside the biome hook',
     check: pocPromoted,
   },
   {
     id: 'A-loader-fixes', kind: 'action', lane: 'pipeline', timeout: 90000, settle: 1500,
     title: 'Shared loader on a quantised generated GLB: dequantised error <= 1 mm, fold through rig/lod.js moves no vertex > 1 mm, labels via getX, lamp casts no shadow, entry disposes',
     assert: LOADER_FIXES,
+  },
+  {
+    id: 'A-licence-manifest', kind: 'action', lane: 'pipeline', timeout: 60000, settle: 3000,
+    title: 'public/LICENSES.json covers every public file exactly once; rows valid; archive SHA-256s; legacy rows sourced; MIT code rows; every CC-BY/MIT attribution verbatim in README Credits AND in the rendered in-game credits modal; public/ <= 60 MB',
+    get assert() { return licenceAssert(); },
   },
   {
     id: 'A-pipeline-boot-rows', kind: 'action', lane: 'pipeline', timeout: 60000, settle: 6000,
