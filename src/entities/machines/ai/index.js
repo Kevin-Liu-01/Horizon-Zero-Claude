@@ -337,6 +337,8 @@ export class MachineAI {
       if (typeof m[k] !== 'number') continue;
       if (/^_cd[A-Z]/.test(k) || /^_[a-zA-Z]+Cd$/.test(k)) out.push(k);
     }
+    // the base cooldowns live on `m.sc` (machine.js MachineScalars) behind accessors: same names, same snapshot
+    if (m.sc) for (const k of Object.keys(m.sc)) if ((/^_cd[A-Z]/.test(k) || /^_[a-zA-Z]+Cd$/.test(k)) && !out.includes(k)) out.push(k);
     return out;
   }
 

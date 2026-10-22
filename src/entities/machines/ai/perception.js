@@ -73,6 +73,7 @@ export class Perception {
   _coneWeight(dot, dist, hidden) {
     const c = this.cfg;
     const m = this.m;
+    const ms = m.sc;
     // focus cone: the machine's authored sight half-angle, plus the sweep
     const focus = Math.cos(Math.min(Math.PI, m.sightHalf + c.focusPad));
     if (dot >= focus) return 1;
@@ -87,6 +88,7 @@ export class Perception {
   /** True when the machine's own sensors have an unobstructed line. */
   hasLOS(target) {
     const m = this.m;
+    const ms = m.sc;
     const ctx = m.ctx;
     const t = ctx.terrain;
     const y0 = m.position.y + m.eyeHeight;
@@ -132,14 +134,15 @@ export class Perception {
   unseenHit(ox, oz, strengthScale = 1) {
     const c = this.cfg;
     const m = this.m;
+    const ms = m.sc;
     const j = c.unseenJitter;
     m.lastKnown.set(
       ox + (aiRandom() - 0.5) * 2 * j, 0,
       oz + (aiRandom() - 0.5) * 2 * j,
     );
     m.lastKnown.y = m.ctx.terrain.getHeight(m.lastKnown.x, m.lastKnown.z);
-    m.suspicion = Math.max(m.suspicion, c.unseenHit * strengthScale);
-    m._unseenT = 0.001;
+    ms.suspicion = Math.max(ms.suspicion, c.unseenHit * strengthScale);
+    ms._unseenT = 0.001;
     this.lastStimulus = { x: m.lastKnown.x, z: m.lastKnown.z, kind: 'hit' };
   }
 
@@ -159,6 +162,7 @@ export class Perception {
 
   update(dt) {
     const m = this.m;
+    const ms = m.sc;
     const c = this.cfg;
     const p = m.ctx.player;
 
@@ -168,7 +172,7 @@ export class Perception {
     this.scanT += dt;
     const want = calm ? Math.sin((this.scanT / c.scanPeriod) * Math.PI * 2) * c.scanSweep : 0;
     this.scanOffset = THREE.MathUtils.damp(this.scanOffset, want, 4, dt);
-    m.scanOffset = this.scanOffset;
+    ms.scanOffset = this.scanOffset;
     if (calm && !m.lowLOD) {
       this._scanEmit -= dt;
       if (this._scanEmit <= 0) {
@@ -188,8 +192,8 @@ export class Perception {
 
     if (p && p.health > 0 && m.alive) {
       _d.set(p.position.x - m.position.x, 0, p.position.z - m.position.z);
-      dist = Math.hypot(_d.x, _d.z);
-      m.playerDist = dist;
+      dist = Math.sqrt(_d.x * _d.x + _d.z * _d.z);
+      ms.playerDist = dist;
 
       const hidden = !!(p.crouching && p.inTallGrass);
       const omniW = this._omni(dist);
@@ -202,13 +206,13 @@ export class Perception {
        * (`lampDarkT`, a precise hit on the lamp, bible §7.3) sees nothing.
        */
       const H = m.manager?.perception;
-      const blind = (m.lampDarkT || 0) > 0;
+      const blind = (ms.lampDarkT || 0) > 0;
       const maxSee = blind ? 0 : (hidden && !ignoreStealth) ? c.hiddenRange : m.sightRange * (H ? H.sightScale : 1);
 
       if (dist < maxSee || omniW > 0) {
         let w = 0;
         if (dist < maxSee) {
-          const dir = m.heading + this.scanOffset * this._sweepScale();
+          const dir = ms.heading + this.scanOffset * this._sweepScale();
           const fx = Math.sin(dir), fz = Math.cos(dir);
           const dot = dist > 0.01 ? (_d.x * fx + _d.z * fz) / dist : 1;
           w = this._coneWeight(dot, dist, hidden && !ignoreStealth);
@@ -240,35 +244,35 @@ export class Perception {
     }
 
     if (visible) {
-      m.suspicion = Math.min(1.25, m.suspicion + fill * pd);
+      ms.suspicion = Math.min(1.25, ms.suspicion + fill * pd);
       m.lastKnown.copy(p.position);
-      m._unseenT = 0;
+      ms._unseenT = 0;
       this.visibleT += pd;
-      this.lastSeenAt = m._stateT;
+      this.lastSeenAt = ms._stateT;
       this.lastStimulus = null;
     } else {
       this.visibleT = 0;
-      m._unseenT += pd;
+      ms._unseenT += pd;
       if (this._hearStrength > 0) {
         // hearing raises suspicion toward — but never past — the alert line
         const cap = m.state === 'attack' ? 1.25 : c.hearCap;
-        m.suspicion = Math.min(cap, m.suspicion + c.hearGain * this._hearStrength * pd);
-        if (m.suspicion < c.alertAt || this._hearKind === 'lure') {
+        ms.suspicion = Math.min(cap, ms.suspicion + c.hearGain * this._hearStrength * pd);
+        if (ms.suspicion < c.alertAt || this._hearKind === 'lure') {
           m.lastKnown.copy(this._hearPos);
           m.lastKnown.y = m.ctx.terrain.getHeight(m.lastKnown.x, m.lastKnown.z);
         }
         this.lastStimulus = { x: this._hearPos.x, z: this._hearPos.z, kind: this._hearKind };
-        if (m.state === 'attack') m._unseenT = Math.min(m._unseenT, 1.5);
+        if (m.state === 'attack') ms._unseenT = Math.min(ms._unseenT, 1.5);
       } else {
         const rate = m.state === 'search' || m.state === 'suspicious' ? c.decay : c.decayCalm;
-        m.suspicion = Math.max(0, m.suspicion - rate * pd);
+        ms.suspicion = Math.max(0, ms.suspicion - rate * pd);
       }
     }
     this._hearStrength = 0;
     this._hearKind = null;
     this.visible = visible;
     m._visible = visible;
-    m.detectFill = fill;
+    ms.detectFill = fill;
   }
 }
 

@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { hexToRgb, srgbToLinear } from './lib/color.js';
 import { perceptionScale } from './lib/weather.js';
 
@@ -19,22 +20,38 @@ import { perceptionScale } from './lib/weather.js';
  * "1 draw"). A kind registers a lamp with `machine.addLamp(...)` (machine.js);
  * nothing else is per machine: no geometry, no material, no texture.
  *
- * THE COLOUR ON SCREEN IS THE TOKEN. The engine tone-maps (ACES), sRGB-encodes
- * and grades every pixel in one output pass (`engine.js` OutputGradeShader), so
- * a lens filled with the token's linear value would land on screen as a
- * different colour. The lens instead carries the HDR value that the output
- * pass maps BACK onto the token: `OutputInverse` inverts the grade, the sRGB
- * transfer and the ACES fit analytically, then refines against an exact copy of
- * the forward transform. It re-solves only when the exposure or a grade
- * uniform changes (a signature compare per frame, no allocation). Every token's
- * HDR luminance stays under the bloom threshold (calm 0.98 < 1.08), so a lens
- * never blooms onto itself; lamps never cast shadows and are not fogged.
+ * THE RING ON SCREEN IS THE TOKEN; THE CORE BLOOMS. The engine tone-maps
+ * (ACES), sRGB-encodes and grades every pixel in one output pass (`engine.js`
+ * OutputGradeShader), so a lens filled with the token's linear value would land
+ * on screen as a different colour. The lens RING instead carries the HDR value
+ * that the output pass maps BACK onto the token: `OutputInverse` inverts the
+ * grade, the sRGB transfer and the ACES fit analytically, then refines against
+ * an exact copy of the forward transform. It re-solves only when the exposure,
+ * a grade uniform or the bloom threshold changes (a signature compare per
+ * frame, no allocation). Inside the ring sits the CORE (bible §7.2 "lamp
+ * emissive x2.5 with a core above the bloom threshold so lenses read at noon";
+ * §10 "lamp glass ... emissive x2.5"): CORE_FRAC of the open aperture's radius,
+ * x2.5 the ring's HDR, raised further where x2.5 still sits under the bloom
+ * threshold (the hostile magenta is a dark colour: x4.8), so every lit state
+ * puts a hot centre into the bloom chain and the glass reads as a lit lens in
+ * full sun; the token ring around it is what `A-lamp-states` grades.
+ *
+ * THE LAMP DRUM. Each lamp is a short graphite barrel (the "lamp drum" of bible
+ * §7.1 rule 2) whose face carries the iris: the lit glass sits in a dark face
+ * (the retracted blades and the housing ring, the closed-iris token `#3B3A36`)
+ * the way a signal lamp sits in its black backplate, so a bone-white lens still
+ * separates from a sunlit bone-glaze hull (bible §7.3: >= 3:1 at noon, graded
+ * by `A-weak40` against that face). The barrel wall is lit by the sun and the
+ * sky (`environment.sunDir`, `sun`, `hemi`) so it reads as metal from the side
+ * and sinks into the hull instead of floating as a flat disc. Lamps never cast
+ * shadows and are not fogged.
  *
  * Published on the manager as `machines.lamps`:
  *   lamps.attach(machine, anchor, { radius }) -> record    (machine.addLamp)
  *   lamps.detach(machine)
  *   lamps.stateOf(machine) -> 'calm' | 'wary' | 'hostile' | 'dark'
- *   lamps.lampHdr(stateId) -> { r, g, b }   the solved lens value (gates)
+ *   lamps.lampHdr(stateId) -> { r, g, b }   the solved ring value (gates)
+ *   lamps.coreHdr(stateId) -> { r, g, b, k, lum }   the core value, its gain over the ring, its HDR luminance
  *   lamps.beamsOn() -> boolean              fog density > 1.2 or night
  *   lamps.audit() -> { lamps, beams, capacity, beamDraws, lampDraws, solves, fogK, night }
  *   lamps.lampMesh / lamps.beamMesh         the two instanced draws
@@ -81,11 +98,24 @@ export const BEAM = Object.freeze({
   capacity: 128,
 });
 
-/** Fraction of the disc radius the fully open aperture reaches (the rim is outside it). */
-export const APERTURE_MAX = 0.86;
+/** Fraction of the face radius the fully open aperture reaches (the dark drum face is outside it). */
+export const APERTURE_MAX = 0.66;
+/** Core radius as a fraction of the CURRENT aperture radius (the hot centre of the glass). */
+export const CORE_FRAC = 0.4;
+/** Core HDR = ring HDR x CORE_GAIN, raised until its luminance clears the bloom threshold by CORE_OVER. */
+export const CORE_GAIN = 2.5;
+const CORE_OVER = 1.25;
+/** Face radius where the blades end and the housing bezel starts. */
+export const BEZEL_IN = 0.93;
+/** Barrel depth behind the face, in face radii (sinks the drum into the hull). */
+export const BARREL_DEPTH = 0.85;
+/** Graphite (bible §7.1 rule 4 `#2B2C30`), linear, for the lit barrel wall. */
+const GRAPHITE_LIN = [0.0242, 0.0252, 0.0296];
 /** Rhythm troughs: the lens never goes fully dark while it is alive. */
 const PULSE_LOW = 0.55;
 const FLICKER_LOW = 0.3;
+/** The rhythm constants, for hot paths that write `lampGain` out (machine.js `_updateEyes`). */
+export const LAMP_RHYTHM = Object.freeze({ pulseLow: PULSE_LOW, flickerLow: FLICKER_LOW });
 const SPUTTER_S = 0.55;
 /** Iris speed (1/s): the aperture closes most of the way in ~0.2 s. */
 const IRIS_RATE = 14;
@@ -103,7 +133,9 @@ export { WEATHER_PERCEPTION, NIGHT_PERCEPTION, perceptionScale } from './lib/wea
  */
 export function lampStateFor(m) {
   if (!m || !m.alive || m.state === 'dead') return 'dark';
-  if ((m.lampDarkT || 0) > 0 || (m.stunT || 0) > 0) return 'dark';
+  // the machine's doubles through its monomorphic `sc` (machine.js MachineScalars): no boxing
+  const sc = m.sc;
+  if (sc ? (sc.lampDarkT > 0 || sc.stunT > 0) : ((m.lampDarkT || 0) > 0 || (m.stunT || 0) > 0)) return 'dark';
   switch (m.state) {
     case 'suspicious': case 'search': return 'wary';
     case 'alert': case 'attack': case 'stagger': case 'downed': return 'hostile';
@@ -259,13 +291,14 @@ function readOutputParams(engine, P) {
   P.lift[0] = L?.x ?? 0; P.lift[1] = L?.y ?? 0; P.lift[2] = L?.z ?? 0;
   P.shadow[0] = S?.r ?? 1; P.shadow[1] = S?.g ?? 1; P.shadow[2] = S?.b ?? 1;
   P.highlight[0] = H?.r ?? 1; P.highlight[1] = H?.g ?? 1; P.highlight[2] = H?.b ?? 1;
+  P.bloomThr = engine?.bloom?.threshold ?? 1.08;
   return P;
 }
 
 function paramSig(P) {
   return P.exposure + P.contrast * 3 + P.saturation * 7 + P.mix * 11 + (P.aces ? 13 : 0)
     + P.lift[0] * 17 + P.lift[1] * 19 + P.lift[2] * 23 + P.shadow[0] * 29 + P.shadow[1] * 31
-    + P.shadow[2] * 37 + P.highlight[0] * 41 + P.highlight[1] * 43 + P.highlight[2] * 47;
+    + P.shadow[2] * 37 + P.highlight[0] * 41 + P.highlight[1] * 43 + P.highlight[2] * 47 + P.bloomThr * 53;
 }
 
 /* ------------------------------------------------------------------ */
@@ -273,42 +306,73 @@ function paramSig(P) {
 /* ------------------------------------------------------------------ */
 
 const IRIS_VERT = /* glsl */`
-  attribute vec4 aLamp;   // rgb: lens HDR (already x rhythm gain), a: aperture radius 0..1
-  attribute vec4 aIris;   // rgb: blade HDR, a: 1 = cracked (dark)
+  attribute vec4 aLamp;   // rgb: ring HDR (already x rhythm gain), a: aperture radius 0..1 of the face
+  attribute vec4 aIris;   // rgb: blade HDR (the closed-iris token), a: 1 = cracked (dark)
+  attribute vec4 aCore;   // rgb: core HDR (x rhythm gain), a: unused
   varying vec2 vP;
+  varying float vWall;
+  varying vec3 vN;
+  varying vec3 vV;
   varying vec4 vLamp;
   varying vec4 vIris;
+  varying vec3 vCore;
   void main() {
     vP = position.xy;
+    vWall = 1.0 - step(0.5, normal.z);   // the face has normal +Z; the barrel wall is radial
     vLamp = aLamp;
     vIris = aIris;
-    gl_Position = projectionMatrix * modelViewMatrix * instanceMatrix * vec4(position, 1.0);
+    vCore = aCore.rgb;
+    vec4 wp = modelMatrix * instanceMatrix * vec4(position, 1.0);
+    vN = normalize(mat3(modelMatrix) * mat3(instanceMatrix) * normal);
+    vV = cameraPosition - wp.xyz;
+    gl_Position = projectionMatrix * viewMatrix * wp;
   }
 `;
 const IRIS_FRAG = /* glsl */`
+  uniform vec3 uSunDir;     // world, toward the sun
+  uniform vec3 uSunRad;     // sun colour x intensity / pi (three's Lambert)
+  uniform vec3 uSkyRad;     // hemisphere sky colour x intensity / pi
+  uniform vec3 uGraphite;   // barrel albedo (linear)
   varying vec2 vP;
+  varying float vWall;
+  varying vec3 vN;
+  varying vec3 vV;
   varying vec4 vLamp;
   varying vec4 vIris;
+  varying vec3 vCore;
   void main() {
+    if (vWall > 0.5) {
+      // the barrel: graphite lit by sun + sky, a faint grazing sheen so it reads as metal
+      vec3 n = normalize(vN);
+      float nl = max(dot(n, uSunDir), 0.0);
+      float sky = 0.5 + 0.5 * n.y;
+      float fr = pow(1.0 - abs(dot(n, normalize(vV))), 4.0);
+      gl_FragColor = vec4(uGraphite * (uSunRad * nl + uSkyRad * sky) + uSkyRad * 0.12 * fr, 1.0);
+      return;
+    }
     float r = length(vP);
     if (r > 1.0) discard;
     vec3 c;
-    if (r < vLamp.a) {
-      c = vLamp.rgb;
-    } else if (r > 0.93) {
-      c = vIris.rgb * 1.9;                 // bronze bezel
+    float a = vLamp.a;
+    if (r < a) {
+      // the lit glass: a hot core above the bloom threshold inside the token ring
+      float rc = a * ${CORE_FRAC.toFixed(3)};
+      c = mix(vCore, vLamp.rgb, smoothstep(rc * 0.85, rc * 1.15, r));
+    } else if (r > ${BEZEL_IN.toFixed(3)}) {
+      c = vIris.rgb * 1.9;                 // housing bezel (darkened bronze)
     } else {
-      // six blades: a hairline seam per blade, swept with the radius
-      float a = atan(vP.y, vP.x) / 6.2831853 + 0.5;
-      float s = abs(fract(a * 6.0 + r * 0.55) - 0.5);
+      // the iris blades / drum face: six blades, a hairline seam per blade, swept with the radius
+      float ang = atan(vP.y, vP.x) / 6.2831853 + 0.5;
+      float s = abs(fract(ang * 6.0 + r * 0.55) - 0.5);
       float seam = 1.0 - smoothstep(0.0, 0.03, 0.5 - s);
       c = vIris.rgb * (1.0 - 0.45 * (1.0 - seam) * step(0.5, 1.0 - vIris.a));
       // a cracked (dark) iris: one wavering fracture across the closed blades and a branch
       // running off it below (never a symmetric cross: it must not read as a reticle)
       if (vIris.a > 0.5) {
-        float k1 = abs(vP.y - 0.35 * vP.x - 0.08 + 0.05 * sin(vP.x * 23.0));
-        float k2 = abs(vP.x + 0.6 * vP.y + 0.22 + 0.04 * sin(vP.y * 31.0)) + step(0.003, vP.y) * 10.0;
-        c *= 1.0 - 0.5 * (1.0 - smoothstep(0.0, 0.025, min(k1, k2)));
+        vec2 q = vP / ${APERTURE_MAX.toFixed(3)};
+        float k1 = abs(q.y - 0.35 * q.x - 0.08 + 0.05 * sin(q.x * 23.0));
+        float k2 = abs(q.x + 0.6 * q.y + 0.22 + 0.04 * sin(q.y * 31.0)) + step(0.003, q.y) * 10.0;
+        c *= 1.0 - 0.5 * (1.0 - smoothstep(0.0, 0.025, min(k1, k2))) * step(length(q), 1.08);
       }
     }
     gl_FragColor = vec4(c, 1.0);
@@ -366,7 +430,7 @@ export class LampSystem {
     this.capacity = opts.capacity ?? BEAM.capacity;
     this.records = [];
     this._P = { exposure: 1, aces: true, contrast: 1, saturation: 1, mix: 1,
-      lift: [0, 0, 0], shadow: [1, 1, 1], highlight: [1, 1, 1] };
+      lift: [0, 0, 0], shadow: [1, 1, 1], highlight: [1, 1, 1], bloomThr: 1.08 };
     this._sig = NaN;
     this.solves = 0;
     /** The tokens as sRGB triples, and the solver's output scratch (a re-solve allocates nothing). */
@@ -376,6 +440,9 @@ export class LampSystem {
     /** Solved lens HDR per state, and the blade colour (the dark token). */
     this.hdr = {};
     for (const id of LAMP_ORDER) this.hdr[id] = { r: 0, g: 0, b: 0 };
+    /** Solved core HDR per state (ring x CORE_GAIN, raised to clear the bloom threshold) and its gain. */
+    this.core = {};
+    for (const id of LAMP_ORDER) this.core[id] = { r: 0, g: 0, b: 0, k: CORE_GAIN };
     /** Linear token colour per state (beam tint). */
     this.lin = {};
     for (const id of LAMP_ORDER) {
@@ -384,13 +451,27 @@ export class LampSystem {
     }
 
     // ---- the iris discs: ONE instanced draw for every lamp ----
-    const disc = new THREE.CircleGeometry(1, 40);
+    // the face (iris + drum face, z = 0, normal +Z) and the barrel wall behind it (z in [-depth, 0])
+    const face = new THREE.CircleGeometry(1, 40);
+    const wall = new THREE.CylinderGeometry(1, 1, BARREL_DEPTH, 40, 1, true);
+    wall.rotateX(Math.PI / 2);
+    wall.translate(0, 0, -BARREL_DEPTH / 2);
+    const disc = mergeGeometries([face, wall], false);
+    face.dispose(); wall.dispose();
     this._aLamp = new THREE.InstancedBufferAttribute(new Float32Array(this.capacity * 4), 4).setUsage(THREE.DynamicDrawUsage);
     this._aIris = new THREE.InstancedBufferAttribute(new Float32Array(this.capacity * 4), 4).setUsage(THREE.DynamicDrawUsage);
+    this._aCore = new THREE.InstancedBufferAttribute(new Float32Array(this.capacity * 4), 4).setUsage(THREE.DynamicDrawUsage);
     disc.setAttribute('aLamp', this._aLamp);
     disc.setAttribute('aIris', this._aIris);
+    disc.setAttribute('aCore', this._aCore);
+    this._uLight = {
+      uSunDir: { value: new THREE.Vector3(0, 1, 0) },
+      uSunRad: { value: new THREE.Vector3(0, 0, 0) },
+      uSkyRad: { value: new THREE.Vector3(0, 0, 0) },
+      uGraphite: { value: new THREE.Vector3(GRAPHITE_LIN[0], GRAPHITE_LIN[1], GRAPHITE_LIN[2]) },
+    };
     this._lampMat = new THREE.ShaderMaterial({
-      vertexShader: IRIS_VERT, fragmentShader: IRIS_FRAG,
+      vertexShader: IRIS_VERT, fragmentShader: IRIS_FRAG, uniforms: this._uLight,
       depthWrite: true, depthTest: true, fog: false, toneMapped: false,
       polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2,
     });
@@ -442,6 +523,10 @@ export class LampSystem {
     this.hideBeams = false;
     this.fogK = 1;
     this.night = 0;
+    this._lastT = -1;
+    /** Last-seen output-pass inputs (the per-frame change test, allocation-free in optimized code). */
+    this._pe = -1; this._pc = -1; this._ps = -1; this._pm = -1; this._pb = -1; this._pt = -1;
+    this._sigEvery = 0;
 
     this.group = new THREE.Group();
     this.group.name = 'instrument-lamps-root';
@@ -483,6 +568,12 @@ export class LampSystem {
       outputInverse(this._tokRgb[id], P, x);
       const h = this.hdr[id];
       h.r = x[0]; h.g = x[1]; h.b = x[2];
+      // the core: x2.5, raised until its HDR luminance clears the bloom threshold by CORE_OVER
+      const lum = LUMA[0] * x[0] + LUMA[1] * x[1] + LUMA[2] * x[2];
+      // (dark has no glass: its aperture is closed; its 'core' is the ring value)
+      const k = id === 'dark' ? 1 : Math.max(CORE_GAIN, lum > 1e-4 ? CORE_OVER * P.bloomThr / lum : CORE_GAIN);
+      const c = this.core[id];
+      c.k = k; c.r = x[0] * k; c.g = x[1] * k; c.b = x[2] * k;
     }
     this.solves++;
     return true;
@@ -490,6 +581,20 @@ export class LampSystem {
 
   /** The solved lens HDR for a state (gates; a copy). */
   lampHdr(id) { const h = this.hdr[id]; return h ? { r: h.r, g: h.g, b: h.b } : null; }
+
+  /** The solved core HDR for a state, its gain over the ring and its luminance (gates; a copy). */
+  coreHdr(id) { const c = this.core[id]; return c ? { r: c.r, g: c.g, b: c.b, k: c.k, lum: LUMA[0] * c.r + LUMA[1] * c.g + LUMA[2] * c.b } : null; }
+
+  /** The barrel's light: sun + sky from the environment (allocation-free). */
+  _lightUpdate() {
+    const env = this.ctx.environment, u = this._uLight;
+    const sd = env?.sunDir, sun = env?.sun, hemi = env?.hemi;
+    if (sd) u.uSunDir.value.set(sd.x, sd.y, sd.z);
+    const ks = sun ? sun.intensity / Math.PI : 0;
+    if (sun) u.uSunRad.value.set(sun.color.r * ks, sun.color.g * ks, sun.color.b * ks);
+    const kh = hemi ? hemi.intensity / Math.PI : 0;
+    if (hemi) u.uSkyRad.value.set(hemi.color.r * kh, hemi.color.g * kh, hemi.color.b * kh);
+  }
 
   /**
    * Register a lamp. `anchor` is an Object3D riding the lamp's bone whose +Z is
@@ -537,21 +642,51 @@ export class LampSystem {
     this.night = env?.nightFactor ?? 0;
   }
 
-  /** Once per rendered frame (Machines.interpolate). Allocation-free. */
+  /**
+   * Once per rendered frame (Machines.interpolate). Allocation-free: the
+   * output-pass change test, the air and the barrel light are written out here
+   * (not helper calls) so they run in this function's optimized code, and every
+   * machine double is read through `machine.sc` (monomorphic). A re-solve runs
+   * only when an output-pass input changed (rare; `_solve` is allocation-free too).
+   */
   update() {
     this.beamDraws = 0;
     this.lampDraws = 0;
-    this._solve(false);
-    this._airUpdate();
-    const t = this.ctx.engine?.simTime ?? (performance.now() / 1000);
-    const dt = Math.min(0.25, Math.max(0, t - (this._lastT ?? t)));
+    const E = this.ctx.engine;
+    const rr = E ? E.renderer : null, gu = E && E.grade ? E.grade.uniforms : null;
+    if (rr && gu) {
+      const e = rr.toneMappingExposure, c = gu.uContrast.value, sa = gu.uSaturation.value, mx = gu.uGradeMix.value;
+      const bt = E.bloom ? E.bloom.threshold : 1.08, tm = rr.toneMapping;
+      if (e !== this._pe || c !== this._pc || sa !== this._ps || mx !== this._pm || bt !== this._pb || tm !== this._pt) {
+        this._pe = e; this._pc = c; this._ps = sa; this._pm = mx; this._pb = bt; this._pt = tm;
+        this._solve(false);
+      }
+      // the lift / tint vectors change in place: the full signature is checked every 64 frames
+      this._sigEvery = (this._sigEvery + 1) & 63;
+      if (this._sigEvery === 0) this._solve(false);
+    } else if (this._pe === -1) { this._pe = 0; this._solve(false); }
+    const env = this.ctx.environment;
+    // the air (fog density > 1.2 or night) and the barrel's sun + sky
+    const wp = env ? env.weatherParams : null;
+    const dm = wp ? wp.densMul : 1;
+    this.fogK = (typeof dm === 'number' && dm === dm) ? dm : 1;
+    const nf = env ? env.nightFactor : 0;
+    this.night = typeof nf === 'number' ? nf : 0;
+    if (env) {
+      const u = this._uLight, sd = env.sunDir, sun = env.sun, hemi = env.hemi;
+      if (sd) u.uSunDir.value.set(sd.x, sd.y, sd.z);
+      if (sun) { const ks = sun.intensity / Math.PI; u.uSunRad.value.set(sun.color.r * ks, sun.color.g * ks, sun.color.b * ks); }
+      if (hemi) { const kh = hemi.intensity / Math.PI; u.uSkyRad.value.set(hemi.color.r * kh, hemi.color.g * kh, hemi.color.b * kh); }
+    }
+    const t = E ? E.simTime : performance.now() / 1000;
+    const dt = this._lastT < 0 ? 0 : Math.min(0.25, Math.max(0, t - this._lastT));
     this._lastT = t;
     const ease = 1 - Math.exp(-IRIS_RATE * dt);
     const recs = this.records;
-    const L = this._aLamp.array, I = this._aIris.array, B = this._aBeam.array;
+    const L = this._aLamp.array, I = this._aIris.array, K = this._aCore.array, B = this._aBeam.array;
     const dark = this.hdr.dark;
-    const air = this.beamsOn();
-    const scale = perceptionScale(this.ctx.environment);
+    const air = this.fogK > BEAM.fogK || this.night > BEAM.night;
+    let scale = -1;                         // perceptionScale, read only if a beam is drawn
     const fogBoost = Math.min(2.5, 0.6 + 0.8 * Math.max(0, this.fogK - 1) + 0.9 * this.night);
     const player = this.ctx.player;
     let n = 0, nb = 0;
@@ -573,7 +708,11 @@ export class LampSystem {
       let target = spec.aperture;
       const age = t - r.since;
       let colourId = s;
-      let gain = lampGain(s, t, r.phase);
+      // lampGain(s, t, phase), written out (a double return from a call would box)
+      const tp = t + r.phase;
+      const stateGain = s === 'wary' ? PULSE_LOW + (1 - PULSE_LOW) * (0.5 + 0.5 * Math.cos(2 * Math.PI * tp))
+        : s === 'hostile' ? ((tp * 4) % 1 < 0.5 ? 1 : FLICKER_LOW) : 1;
+      let gain = stateGain;
       if (s === 'dark' && age < SPUTTER_S && r.prev !== 'dark') {
         // sputter, then out: the previous colour stutters through a closing iris
         const on = Math.sin(t * 97.0 + r.phase * 13.0) > 0.1;
@@ -593,6 +732,8 @@ export class LampSystem {
       const o = n * 4;
       L[o] = h.r * gain; L[o + 1] = h.g * gain; L[o + 2] = h.b * gain;
       L[o + 3] = APERTURE_MAX * Math.sqrt(Math.max(0, r.aperture));
+      const kc = this.core[colourId];
+      K[o] = kc.r * gain; K[o + 1] = kc.g * gain; K[o + 2] = kc.b * gain; K[o + 3] = 0;
       I[o] = dark.r; I[o + 1] = dark.g; I[o + 2] = dark.b;
       I[o + 3] = s === 'dark' ? 1 : 0;
       n++;
@@ -617,14 +758,16 @@ export class LampSystem {
         }
         if (!r.dirSet) { r.dir.copy(_d); r.dirSet = true; }
         r.dir.lerp(_d, 0.2).normalize();
-        const len = Math.max(2, (m.sightRange || 30) * scale);
+        if (scale < 0) scale = perceptionScale(this.ctx.environment);
+        const sr = m.sightRange;
+        const len = Math.max(2, (sr || 30) * scale);
         const rad = len * Math.tan(BEAM.halfAngleDeg * Math.PI / 180);
         _qs.setFromUnitVectors(_z, r.dir);
         _s.set(rad, rad, len);
         _m.compose(_p, _qs, _s);
         _m.toArray(this.beamMesh.instanceMatrix.array, nb * 16);
         const lc = this.lin[s];
-        const k = 0.22 * fogBoost * lampGain(s, t, r.phase);
+        const k = 0.22 * fogBoost * stateGain;
         const ob = nb * 4;
         B[ob] = lc.r * k; B[ob + 1] = lc.g * k; B[ob + 2] = lc.b * k; B[ob + 3] = 1;
         r.beamOn = true;
@@ -642,6 +785,7 @@ export class LampSystem {
       this.lampMesh.instanceMatrix.needsUpdate = true;
       this._aLamp.needsUpdate = true;
       this._aIris.needsUpdate = true;
+      this._aCore.needsUpdate = true;
     }
     if (nb) {
       this.beamMesh.instanceMatrix.needsUpdate = true;

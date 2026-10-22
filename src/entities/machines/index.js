@@ -6,6 +6,7 @@ import { ECOSYSTEM } from './ai/tables.js';
 import { setAiRng, seededRng, aiRngSeeded } from './ai/rng.js';
 import { REST_SITE } from '../../world/island/sites.js';
 import { PLAY_RADIUS, EXTENT } from '../../world/island/extent.js';
+import { stepRoot } from './machine.js';
 import {
   BODY as EXPANSION_BODY, CHASSIS, installDoctrine, installExpansionDoctrine,
   spawnExpansion, doctrineAudit,
@@ -192,13 +193,13 @@ export class Machines {
       let z = cz + Math.cos(a) * rr;
       // keep waypoints out of the hunter camp
       const dx = x - CAMP.x, dz = z - CAMP.z;
-      const d = Math.hypot(dx, dz);
+      const d = Math.sqrt(dx * dx + dz * dz);
       if (d < CAMP.r + 6) {
         x = CAMP.x + (dx / (d || 1)) * (CAMP.r + 6);
         z = CAMP.z + (dz / (d || 1)) * (CAMP.r + 6);
       }
       // ... and inside the playable valley
-      const wr = Math.hypot(x, z);
+      const wr = Math.sqrt(x * x + z * z);
       if (wr > ROUTE_RIM) { x *= ROUTE_RIM / wr; z *= ROUTE_RIM / wr; }
       pts.push(new THREE.Vector3(x, 0, z));
     }
@@ -288,7 +289,7 @@ export class Machines {
     for (let i = this._shots.length - 1; i >= 0; i--) {
       const s = this._shots[i];
       const dx = hit.point.x - s.x, dz = hit.point.z - s.z;
-      const l = Math.hypot(dx, dz);
+      const l = Math.sqrt(dx * dx + dz * dz);
       if (l < 0.5) { best = s; break; }
       const dl = Math.hypot(hit.dir.x, hit.dir.z) || 1;
       const dot = (dx / l) * (hit.dir.x / dl) + (dz / l) * (hit.dir.z / dl);
@@ -616,31 +617,45 @@ export class Machines {
       this._recycleForBudget(null, true);
     }
 
-    for (let i = this.list.length - 1; i >= 0; i--) {
-      const m = this.list[i];
+    const list = this.list;
+    const pp = p ? p.position : null;
+    for (let i = list.length - 1; i >= 0; i--) {
+      const m = list[i];
       if (m._disposed) continue;
-      if (p) {
-        const far = m.position.distanceToSquared(p.position) > LOD_DIST * LOD_DIST;
+      if (pp) {
+        const mp = m.position;
+        const ddx = mp.x - pp.x, ddy = mp.y - pp.y, ddz = mp.z - pp.z;
+        const far = ddx * ddx + ddy * ddy + ddz * ddz > LOD_DIST * LOD_DIST;
         m.lowLOD = far;
         // part meshes are sub-pixel beyond LOD range — drop their draw calls
         if (far !== m._partsHidden) {
           m._partsHidden = far;
-          for (const part of m.parts) {
+          for (let k = 0; k < m.parts.length; k++) {
+            const part = m.parts[k];
             if (part.attached) part.mesh.visible = !far;
           }
         }
         if (far) {
           // coarse tick: batch time and step a few times per second
-          m._lodAccum = (m._lodAccum ?? 0) + dt;
-          if (m._lodAccum < LOD_TICK) continue;
-          m.update(Math.min(m._lodAccum, 0.4), t);
-          m._lodAccum = 0;
+          const ms = m.sc;
+          ms._lodAccum += dt;
+          if (ms._lodAccum < LOD_TICK) continue;
+          m.update(Math.min(ms._lodAccum, 0.4), t);
+          ms._lodAccum = 0;
           continue;
         }
       }
       m.update(dt, t);
     }
 
+    /**
+     * ALLOCATION-FREE (memory rule; W0b fix round 1). Both loops below read every
+     * machine's doubles through `m.sc` (machine.js MachineScalars): a dozen
+     * machine classes make `m.heading` / `m.bodyRadius` megamorphic, and a
+     * megamorphic double load boxes a HeapNumber — 2 per pair of the O(n^2)
+     * separation pass, 1.8 MB/s on the staged fight. `moveRoot` is replaced by the
+     * same clamp written out (`Machine.applyStepXZ`, monomorphic on `sc`).
+     */
     // hard standoff: machines never interpenetrate the player — in EVERY
     // state (patrol/return wander included: a behemoth must not stroll
     // through an idle Aloy) and along the whole BODY, not just the center:
@@ -656,23 +671,23 @@ export class Machines {
      * drawn-spear case A25 cannot see). Everything that reads the machine's
      * GEOMETRY — strider/behemoth charge reach, the Silent Strike prompt —
      * keeps `standoffHalfLen` itself, which this term never writes. */
-    if (p) {
-      for (const m of this.list) {
+    if (pp) {
+      for (let i = 0; i < list.length; i++) {
+        const m = list[i];
         if (!m.alive || m._disposed) continue;
+        const ms = m.sc, mp = m.position;
         const min = m.bodyRadius + 0.6;
-        const L = m.meleeStandoffHalfLen ?? m.standoffHalfLen ?? 0;
-        const fx = Math.sin(m.heading), fz = Math.cos(m.heading);
+        const mel = m.meleeStandoffHalfLen;
+        const L = (mel !== null && mel !== undefined) ? +mel : m.standoffHalfLen;
+        const fx = Math.sin(ms.heading), fz = Math.cos(ms.heading);
         for (let s = -1; s <= 1; s++) {
           const off = s * L;
-          _v.set(
-            m.position.x + fx * off - p.position.x, 0,
-            m.position.z + fz * off - p.position.z,
-          );
-          const d2 = _v.lengthSq();
+          const vx = mp.x + fx * off - pp.x, vz = mp.z + fz * off - pp.z;
+          const d2 = vx * vx + vz * vz;
           if (d2 < min * min && d2 > 1e-6) {
             const d = Math.sqrt(d2);
-            _v.multiplyScalar((min - d) / d);
-            m.moveRoot(_v.x, _v.z);
+            const k = (min - d) / d;
+            stepRoot(m, vx * k, vz * k);
           }
           if (L === 0) break;
         }
@@ -680,22 +695,23 @@ export class Machines {
     }
 
     // soft separation so machines don't interpenetrate
-    const n = this.list.length;
+    const n = list.length;
     for (let i = 0; i < n; i++) {
-      const a = this.list[i];
+      const a = list[i];
       if (!a.alive) continue;
+      const ap = a.position;
       for (let j = i + 1; j < n; j++) {
-        const b = this.list[j];
+        const b = list[j];
         if (!b.alive) continue;
-        _v.subVectors(b.position, a.position);
-        _v.y = 0;
+        const bp = b.position;
+        const vx = bp.x - ap.x, vz = bp.z - ap.z;
         const min = a.bodyRadius + b.bodyRadius;
-        const d2 = _v.lengthSq();
+        const d2 = vx * vx + vz * vz;
         if (d2 > min * min || d2 < 1e-6) continue;
         const d = Math.sqrt(d2);
-        _v.multiplyScalar(((min - d) / d) * 0.5);
-        b.moveRoot(_v.x, _v.z);
-        a.moveRoot(-_v.x, -_v.z);
+        const k = ((min - d) / d) * 0.5;
+        stepRoot(b, vx * k, vz * k);
+        stepRoot(a, -vx * k, -vz * k);
       }
     }
   }

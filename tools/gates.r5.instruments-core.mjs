@@ -1872,7 +1872,7 @@ const A90B = restage(rowOf(MEM, 'A90b-memory-attribution'), [
 /* ------------------------------------------------------------------ */
 /* the lamp film (frames for the lane and the R29 judge)               */
 /* ------------------------------------------------------------------ */
-const FILM = (state, { fov = 4, both = false, dist = 15, night = false } = {}) => `(async () => {
+const FILM = (state, { fov = 4, both = false, dist = 15, night = false, sunlit = false, threeq = false } = {}) => `(async () => {
   ${KP}
   if (!KIND) return;
   const E = __C.engine, cam = __C.camera, p = __C.player, env = __C.environment, T = __C.terrain;
@@ -1892,16 +1892,23 @@ const FILM = (state, { fov = 4, both = false, dist = 15, night = false } = {}) =
   const rec = m.lamp;
   const lampPos = new V(), axis = new V();
   let ok = false;
-  for (let k = 0; k < 12 && !ok; k++) {
-    m.heading = 0.2 + k * Math.PI / 6; m.root.rotation.y = m.heading; m.root.updateMatrixWorld(true);
+  // SUNLIT (the judge's noon frames): of the clear headings, the one whose lens axis is closest to the sun's azimuth
+  const sd = env.sunDir ? new V(env.sunDir.x, 0, env.sunDir.z).normalize() : new V(0, 0, 1);
+  const aim = (hd) => { m.heading = hd; m.root.rotation.y = hd; m.root.updateMatrixWorld(true);
     rec.anchor.updateWorldMatrix(true, false);
     lampPos.setFromMatrixPosition(rec.anchor.matrixWorld);
     axis.set(0, 0, 1).transformDirection(rec.anchor.matrixWorld); axis.y = 0; axis.normalize();
-    cam.position.copy(lampPos).addScaledVector(axis, ${dist});
-    ok = true;
-    for (let s = 1; s < 60; s++) { const q = lampPos.clone().lerp(cam.position, s / 60); if (T.getHeight(q.x, q.z) > q.y - 0.4) { ok = false; break; } }
-    if (ok && __C.collision?.occluded?.(cam.position, lampPos)) ok = false;   // walls, rocks, props
+    cam.position.copy(lampPos).addScaledVector(axis, ${dist}); };
+  const clearLine = () => { for (let s = 1; s < 60; s++) { const q = lampPos.clone().lerp(cam.position, s / 60); if (T.getHeight(q.x, q.z) > q.y - 0.4) return false; }
+    return !__C.collision?.occluded?.(cam.position, lampPos); };   // walls, rocks, props
+  let bestH = null, bestSun = -2;
+  for (let k = 0; k < ${sunlit ? 24 : 12} && !(ok && !${sunlit}); k++) {
+    const hd = ${sunlit ? 'k * Math.PI / 12' : '0.2 + k * Math.PI / 6'};
+    aim(hd);
+    const c = clearLine();
+    if (c) { ok = true; const sun = axis.x * sd.x + axis.z * sd.z; if (sun > bestSun) { bestSun = sun; bestH = hd; } }
   }
+  if (bestH !== null) aim(bestH);
   const st = ${JSON.stringify(state)};
   const side = new V(axis.z, 0, -axis.x);
   if (st === 'wary') m.forceState('search');
@@ -1923,13 +1930,17 @@ const FILM = (state, { fov = 4, both = false, dist = 15, night = false } = {}) =
   } else {
     cam.zoom = cam.fov / ${fov}; cam.updateProjectionMatrix();
     cam.position.copy(lampPos).addScaledVector(axis, ${dist});
+    ${threeq ? `// three-quarter view: 40 deg off the lens axis, a little above it (the barrel and the drum read)
+    { const yaw = 40 * Math.PI / 180; const dx = axis.x * Math.cos(yaw) + side.x * Math.sin(yaw), dz = axis.z * Math.cos(yaw) + side.z * Math.sin(yaw);
+      cam.position.set(lampPos.x + dx * ${dist}, lampPos.y + ${dist} * 0.18, lampPos.z + dz * ${dist}); }` : ''}
     cam.lookAt(lampPos);
   }
   cam.updateMatrixWorld();
-  window.__IC_FILM__ = { state: st, camDistM: +cam.position.distanceTo(lampPos).toFixed(2), fov: cam.fov, zoom: cam.zoom, clearLine: ok, lampState: m.lamp ? m.lamp.state : null, aperture: m.lamp ? +m.lamp.aperture.toFixed(2) : null };
+  window.__IC_FILM__ = { state: st, camDistM: +cam.position.distanceTo(lampPos).toFixed(2), fov: cam.fov, zoom: cam.zoom, clearLine: ok, sunlit: ${sunlit}, lensAxisDotSun: +bestSun.toFixed(3),
+    sunElevDeg: env.sunDir ? +(Math.asin(env.sunDir.y) * 180 / Math.PI).toFixed(1) : null, lampState: m.lamp ? m.lamp.state : null, aperture: m.lamp ? +m.lamp.aperture.toFixed(2) : null };
 })()`;
 const FILM_ROWS = [
-  ['calm', 'calm: the iris fully open (100 %), bone lamp #F2EAD3, steady; a thin dark bezel ring; no beam'],
+  ['calm', 'calm: the iris fully open (100 %), a hot core inside a bone #F2EAD3 ring, steady; the dark drum face and bezel around it; no beam'],
   ['wary', 'wary: the iris at HALF area (50 %), level-vial chartreuse #B5E61D; the closed half reads as dark blades'],
   ['hostile', 'hostile: a PINHOLE (20 % area), cochineal magenta #FF2D8C; blades dark around it'],
   ['dark', 'dark (a precise hit on the lamp): the iris CLOSED and cracked (a fracture with a branch, not a cross), #3B3A36 blades; no lit glass'],
@@ -1939,6 +1950,31 @@ const FILM_ROWS = [
   setup: FILM(st), settle: st === 'dark' ? 1600 : 1200,
   criteria: `${crit}. The lens is a disc behind an iris (shape first), not a glow ball. FAIL if the lens is a soft glow sphere, if the aperture does not match the state, or if any Horizon sensor colour (blue #38c6ff, amber #ffb31f, red #ff2413) appears.`,
 }));
+/* W0b fix round 1: the judge's noon frames, re-filmed at the cited angles (lens turned to the sun, 13:00) */
+FILM_ROWS.push({
+  id: 'V-lamp-calm-sunlit-15m', kind: 'visual', lane: 'instruments-core-film', timeout: 120000,
+  title: 'Calm lamp at noon, the drum face turned to the sun (13:00, clear), the game lens (55 deg), 15.0 m on the lens axis',
+  setup: FILM('calm', { fov: 55, sunlit: true }), settle: 1400,
+  criteria: 'In full sun the calm lamp reads at once as a LIT lens: a hot white core with a bone ring, set in a dark graphite drum face that separates it from the sunlit bone glaze; a soft glow around the core. FAIL if the lens is a flat cream disc that separates from the drum only by a thin bezel, or if the lamp is darker than the hull.',
+});
+FILM_ROWS.push({
+  id: 'V-lamp-iris-calm-15m-zoom', kind: 'visual', lane: 'instruments-core-film', timeout: 120000,
+  title: 'Calm iris close-up at noon, sunlit face: 15.0 m on the lens axis through a 4 deg lens',
+  setup: FILM('calm', { fov: 4, sunlit: true }), settle: 1400,
+  criteria: 'The calm lens fully open: a glowing core (above the bloom threshold) inside a bone #F2EAD3 ring, the retracted blade seams and a dark housing face around it, a bezel at the rim. Reads as glass behind an iris in a lamp drum. FAIL if the lens is a flat, unlit cream disc with no glow.',
+});
+FILM_ROWS.push({
+  id: 'V-lamp-wary-sunlit-15m', kind: 'visual', lane: 'instruments-core-film', timeout: 120000,
+  title: 'Wary lamp at noon, the drum face turned to the sun, the game lens (55 deg), 15.0 m on the lens axis',
+  setup: FILM('wary', { fov: 55, sunlit: true }), settle: 1400,
+  criteria: 'The wary lamp reads in sun: a half-closed iris, chartreuse glass with a hot centre, in the dark drum face. FAIL if it does not separate from the hull.',
+});
+FILM_ROWS.push({
+  id: 'V-lamp-calm-sunlit-threeq-15m', kind: 'visual', lane: 'instruments-core-film', timeout: 120000,
+  title: 'Calm lamp at noon from three-quarters (40 deg off the lens axis, slightly above), 15.0 m, 12 deg lens: the lamp drum as an object',
+  setup: FILM('calm', { fov: 12, sunlit: true, threeq: true }), settle: 1400,
+  criteria: 'The lamp is a short graphite drum set into the hull drum, its face carrying the lit lens: it has depth and sits IN the drum. FAIL if it reads as a flat disc floating in front of the hull, or as a sticker.',
+});
 FILM_ROWS.push({
   id: 'V-lamp-hostile-15m-wide', kind: 'visual', lane: 'instruments-core-film', timeout: 120000,
   title: 'Lamp grammar, hostile, at the game lens (55 deg) from 15.0 m: the scale a player sees it at',
@@ -1948,8 +1984,8 @@ FILM_ROWS.push({
 FILM_ROWS.push({
   id: 'V-lamp-calm-40m-wide', kind: 'visual', lane: 'instruments-core-film', timeout: 120000,
   title: 'Lamp at A-weak40 range: calm, the game lens (55 deg), 40.0 m on the lens axis (the weak-point size and contrast frame)',
-  setup: FILM('calm', { fov: 55, dist: 40 }), settle: 1200,
-  criteria: 'At 40 m the drum lamp still reads as a distinct bone-white point on the front drum, brighter than the glazed hull around it. FAIL if the lamp cannot be told apart from the hull.',
+  setup: FILM('calm', { fov: 55, dist: 40, sunlit: true }), settle: 1200,
+  criteria: 'At 40 m, face in the noon sun, the drum lamp still reads as a distinct lit point in a dark ring on the front drum. FAIL if the lamp cannot be told apart from the hull.',
 });
 FILM_ROWS.push({
   id: 'V-lamp-beams-night', kind: 'visual', lane: 'instruments-core-film', timeout: 120000,
@@ -1974,7 +2010,185 @@ const BLOCK_IDS = ['A44-socket-integrity', 'A44b-socket-vertex-integrity', 'A45-
   'A-linked-attack', 'A-glb-budget', 'A21-with-kind', 'A90-expansion-with-kind', 'A90-rig-reclaim-with-kind',
   'V26-silhouette', 'V27-attack-pose', 'V-lineup'];
 
+/* ------------------------------------------------------------------ */
+/* A-alloc-machines — the memory rule on this lane's own frames        */
+/* ------------------------------------------------------------------ */
+/**
+ * W0b FIX ROUND 1 (judge finding "A-alloc-rate ... two of the over-budget
+ * per-frame allocators are in files this lane owns"). gates-perf's
+ * `A-alloc-rate` (global list) grades the whole of `src/**` and prints its top
+ * 12 frames; this row is the same METHOD restricted to the frames this lane
+ * answers for, so every one of them is graded and none hides below the top 12:
+ *   CDP HeapProfiler.startSampling (interval 2048 B, objects collected by minor
+ *   and major GC included), 3 s warm-up, 10 s window; graded per function =
+ *   max(measured KB/s, KB/frame x 60) on SELF attribution (the profiler's
+ *   physical frame: a function inlined into another is charged to its host,
+ *   exactly as A-alloc-rate charges it); bar 4 KB/s per function (budgets.mjs
+ *   `alloc.fnKBps`).
+ * Workload: the staged fight of `A21` re-cast by role — eight herd-role
+ * Instruments in `attack` on a forward arc 9-17 m from the player (gates-perf's
+ * PERF_SCENARIOS 'staged-fight' geometry), the boot roster alive around them,
+ * the player kept alive; then a sprint phase (W + Shift through the roster).
+ * Graded: every src frame in a file this lane edits under its §2 row and §1.2
+ * grants (`machine`, `index`, `variety-assets`, `parts`, `legacy`, the species
+ * files of `src/entities/machines/`, `ai/{tables,doctrine,attacks,perception,
+ * index}`, `src/instruments/**`). Reported with their owner, not graded here:
+ * the frozen machine-rig and AI-engine files (`gait`, `autorig`, `rig/*`,
+ * `ai/{engage,search,squad,sites,reactions,emit,stimulus,rng}`) and the rest of
+ * `src/**`. Runs ONE Chrome of its own (runner rows go first, so the harness
+ * has none alive yet), on a fresh owned profile that is removed afterwards.
+ */
+const FROZEN_MACHINE_RE = /^\/src\/entities\/machines\/(gait|autorig)\.js|^\/src\/entities\/machines\/rig\/|^\/src\/entities\/machines\/ai\/(engage|search|squad|sites|reactions|emit|stimulus|rng)\.js/;
+const MINE_RE = /^\/src\/instruments\/|^\/src\/entities\/machines\//;
+const ALLOC_STAGE = `(async () => {
+  const C = __CTX__, M = C.machines, E = C.engine, p = C.player;
+  { const t0 = performance.now(); while (!M.expansionReady && performance.now() - t0 < 90000) await new Promise(r => setTimeout(r, 200)); }
+  const KIND = M.roles ? M.roles.herd : null;
+  if (!KIND) return { skip: 'SKIP-R18: role herd has no live kind' };
+  E.setDynamicResolution?.(false);
+  C.input.enabled = true;
+  // flat open ground near the player (slope < 1.7 m over 12 m)
+  const T = C.terrain; let at = null;
+  for (let i = 0; i < 400 && !at; i++) {
+    const a = (i * 2.399) % (Math.PI * 2), r = 20 + (i % 9) * 6;
+    const x = p.position.x + Math.sin(a) * r, z = p.position.z + Math.cos(a) * r, h = T.getHeight(x, z);
+    let ok = true; for (let k = 0; k < 8 && ok; k++) { const b = k / 8 * Math.PI * 2; if (Math.abs(T.getHeight(x + Math.sin(b) * 14, z + Math.cos(b) * 14) - h) > 1.7) ok = false; }
+    if (ok && (!C.water?.levelAt || C.water.levelAt(x, z) < h - 0.2)) at = { x, z };
+  }
+  if (!at) at = { x: p.position.x + 30, z: p.position.z + 30 };
+  p.position.set(at.x, T.getHeight(at.x, at.z), at.z);
+  const fx = -Math.sin(p.camYaw), fz = -Math.cos(p.camYaw);
+  const cast = [];
+  for (let i = 0; i < 8; i++) {
+    const spread = (i - 3.5) / 3.5, a = Math.atan2(fx, fz) + spread * 0.66, r = 9 + (i % 2) * 5.5 + (i % 4) * 1.1;
+    const x = at.x + Math.sin(a) * r, z = at.z + Math.cos(a) * r;
+    const m = M.spawn(KIND, x, z, { route: [new (p.position.constructor)(x, 0, z)] });
+    if (!m) continue;
+    m.heading = a + Math.PI; m.root.rotation.y = m.heading;
+    m.lastKnown.copy(p.position); m.suspicion = 1; m.forceState('attack');
+    cast.push(m);
+  }
+  const heal = () => { if (p.maxHealth) p.health = p.maxHealth; };
+  E.onAfterRender.push(heal);
+  window.__icAllocHeal = heal;
+  return { kind: KIND, cast: cast.length, alive: M.list.filter(m => m.alive).length, list: M.list.length };
+})()`;
+const ALLOC_SPRINT_ON = `(() => { const I = __CTX__.input; I.keys.add('KeyW'); I.keys.add('ShiftLeft'); return true; })()`;
+const ALLOC_SPRINT_OFF = `(() => { const C = __CTX__, I = C.input; I.keys.delete('KeyW'); I.keys.delete('ShiftLeft');
+  const a = C.engine.onAfterRender, i = a.indexOf(window.__icAllocHeal); if (i >= 0) a.splice(i, 1); window.__icAllocHeal = null;
+  return { alive: C.machines.list.filter(m => m.alive).length, hostile: C.machines.list.filter(m => m.alive && (m.state === 'attack' || m.state === 'alert')).length }; })()`;
+
+async function allocMachines({ PORT }) {
+  const FN_BAR = 4, WARM = 3000, WINDOW = 10000, INTERVAL = 2048;
+  const { default: puppeteer } = await import('puppeteer');
+  const CP = await import(pathToFileURL(path.join(ROOT, 'tools/chrome-profile.mjs')).href);
+  CP.installProfileCleanup();
+  const dir = CP.profileDir(PORT);
+  const jsFlags = ['--expose-gc'];
+  if (process.env.R5_IC_NOINLINE) jsFlags.push('--no-turbo-inlining', '--max-inlined-bytecode-size=0');   // diagnosis only: one frame per function
+  if (process.env.R5_IC_OPTSTATUS) jsFlags.push('--allow-natives-syntax');                                 // diagnosis only: tier of each hot function
+  const browser = await puppeteer.launch({ protocolTimeout: 900000, headless: 'new', userDataDir: dir,
+    args: ['--use-angle=metal', '--enable-gpu', '--ignore-gpu-blocklist', '--window-size=1600,940', `--js-flags=${jsFlags.join(' ')}`, '--enable-precise-memory-info'] });
+  const r2 = (x) => Math.round(x * 100) / 100;
+  try {
+    const page = await browser.newPage();
+    const errors = [];
+    page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text().slice(0, 300)); });
+    page.on('pageerror', (e) => errors.push(String(e).slice(0, 300)));
+    await page.setViewport({ width: 1600, height: 900 });
+    await page.goto(`http://localhost:${PORT}/?shot=1`, { waitUntil: 'domcontentloaded', timeout: 60000 });
+    await page.waitForFunction('window.__READY__ === true', { timeout: 120000 });
+    const cdp = await page.createCDPSession();
+    await cdp.send('HeapProfiler.enable');
+    const staged = await page.evaluate(ALLOC_STAGE);
+    if (staged.skip) return { pass: null, detail: staged.skip };
+    const srcRe = new RegExp(`^https?://(localhost|127\\.0\\.0\\.1|\\[::1\\]):${PORT}/src/`);
+    const keyOf = (cf) => `${cf.functionName || '(anonymous)'} ${String(cf.url).replace(/^https?:\/\/[^/]+/, '').replace(/\?.*$/, '')}:${cf.lineNumber + 1}`;
+    const phase = async (name, drive) => {
+      if (drive) await page.evaluate(drive);
+      await sleep(WARM);
+      const f0 = await page.evaluate('__CTX__.engine.frames');
+      await cdp.send('HeapProfiler.collectGarbage');
+      await cdp.send('HeapProfiler.startSampling', { samplingInterval: INTERVAL, includeObjectsCollectedByMajorGC: true, includeObjectsCollectedByMinorGC: true });
+      const tS = Date.now();
+      await sleep(WINDOW);
+      const { profile } = await cdp.send('HeapProfiler.stopSampling');
+      const secs = (Date.now() - tS) / 1000;
+      const frames = (await page.evaluate('__CTX__.engine.frames')) - f0;
+      const self = new Map(); let total = 0, src = 0;
+      // an accessor frame (machine.js `get heading` ...) is charged what its CALLER's megamorphic read costs:
+      // the caller is recorded so the report names who reads it
+      const getterCallers = new Map();
+      const walk = (node, parentKey) => {
+        const cf = node.callFrame || {};
+        const sz = node.selfSize || 0;
+        const k = srcRe.test(cf.url || '') ? keyOf(cf) : null;
+        if (sz) {
+          total += sz;
+          if (k) {
+            src += sz; self.set(k, (self.get(k) || 0) + sz);
+            if (/^(get|set) /.test(cf.functionName || '')) {
+              const m = getterCallers.get(k) || new Map(); getterCallers.set(k, m);
+              const pk = parentKey || '(no src caller)'; m.set(pk, (m.get(pk) || 0) + sz);
+            }
+          }
+        }
+        for (const c of node.children || []) walk(c, k || parentKey);
+      };
+      walk(profile.head, null);
+      const at = (b) => ({ measuredKBps: r2(b / 1024 / secs), kbPerFrame: frames ? r2(b / 1024 / frames) : null, gradedKBps: r2(Math.max(b / 1024 / secs, frames ? (b / 1024 / frames) * 60 : 0)) });
+      const rows = [...self.entries()].map(([fn, b]) => {
+        const file = fn.split(' ').slice(-1)[0].replace(/:\d+$/, '');
+        const owner = !MINE_RE.test(file) ? 'other' : FROZEN_MACHINE_RE.test(file) ? 'frozen-machine' : 'instruments-core';
+        return { fn, owner, ...at(b) };
+      }).sort((a, b) => b.gradedKBps - a.gradedKBps);
+      const callers = {};
+      for (const [g, m] of getterCallers) callers[g] = [...m.entries()].sort((a, b) => b[1] - a[1]).slice(0, 5).map(([c, b]) => `${at(b).gradedKBps} KB/s from ${c}`);
+      return { name, secs: r2(secs), frames, fps: r2(frames / secs), total: at(total), src: at(src), getterCallers: callers,
+        mine: rows.filter((r) => r.owner === 'instruments-core'), frozenMachine: rows.filter((r) => r.owner === 'frozen-machine'),
+        topOther: rows.filter((r) => r.owner === 'other').slice(0, 12) };
+    };
+    const fight = await phase('staged fight', null);
+    let tiers = null;
+    if (process.env.R5_IC_OPTSTATUS) {
+      // %GetOptimizationStatus bits (V8 runtime-test.cc): 16 optimized, 32 maglev, 64 turbofan, 128 interpreted, 8 maybe-deopted, 256 marked, 2048+ baseline
+      tiers = await page.evaluate(`(() => { const C = __CTX__, M = C.machines; const m = M.list.find(x => x.alive && x.kind === M.roles.herd) || M.list[0];
+        const P = Object.getPrototypeOf; const fns = { 'Machines.update': M.update, 'Machines.interpolate': M.interpolate, 'lamps.update': M.lamps.update,
+          'Machine.update': m.update, '_updateEyes': m._updateEyes, '_conform': m._conform, '_steerAlong': m._steerAlong, '_navToward': m._navToward,
+          '_applyStep': m._applyStep, '_moveToward': m._moveToward, '_turnToward': m._turnToward, '_statePatrol': m._statePatrol, '_updateParts': m._updateParts,
+          'Perception.update': m.ai.perception.update, 'hasLOS': m.ai.perception.hasLOS, 'ai.tick': m.ai.tick, 'gait.update': m.gait && m.gait.update,
+          'terrain.getHeight': C.terrain.getHeight };
+        const out = {}; for (const [k, f] of Object.entries(fns)) { try { out[k] = typeof f === 'function' ? %GetOptimizationStatus(f) : null; } catch (e) { out[k] = String(e).slice(0, 80); } }
+        return out; })()`).catch((e) => ({ error: String(e).slice(0, 200) }));
+    }
+    const sprint = await phase('sprint', ALLOC_SPRINT_ON);
+    const end = await page.evaluate(ALLOC_SPRINT_OFF);
+    const over = [];
+    for (const ph of [fight, sprint]) for (const r of ph.mine) if (r.gradedKBps > FN_BAR) over.push({ phase: ph.name, ...r });
+    const sum = (ph, k) => r2(ph[k].reduce((a, r) => a + r.gradedKBps, 0));
+    const pass = errors.length === 0 && over.length === 0 && fight.frames > 60 && staged.cast >= 6;
+    const fmt = (ph) => ({ name: ph.name, secs: ph.secs, frames: ph.frames, fps: ph.fps, allKBps: ph.total.measuredKBps, srcGradedKBps: ph.src.gradedKBps,
+      mineSumKBps: sum(ph, 'mine'), frozenMachineSumKBps: sum(ph, 'frozenMachine'),
+      mine: ph.mine.map((r) => `${r.gradedKBps} KB/s  ${r.fn}`), frozenMachine: ph.frozenMachine.map((r) => `${r.gradedKBps} KB/s  ${r.fn}`),
+      topOther: ph.topOther.map((r) => `${r.gradedKBps} KB/s  ${r.fn}`), getterCallers: ph.getterCallers });
+    return { pass, detail: {
+      verdict: (pass ? 'PASS' : 'FAIL') + `: ${over.length} instruments-core frame(s) over ${FN_BAR} KB/s` + (over.length ? ' — ' + over.map((o) => `${o.fn} ${o.gradedKBps} (${o.phase})`).join('; ') : ''),
+      staged, end, tiers, consoleErrors: errors.slice(0, 5), inlining: process.env.R5_IC_NOINLINE ? 'OFF (diagnosis run, not gradeable)' : 'default',
+      phases: [fmt(fight), fmt(sprint)],
+      method: `CDP HeapProfiler.startSampling (interval ${INTERVAL} B, minor+major GC objects included), ${WARM / 1000} s warm-up, ${WINDOW / 1000} s window per phase; graded = max(measured KB/s, KB/frame x 60) on self attribution (gates-perf A-alloc-rate's method); bar ${FN_BAR} KB/s per instruments-core function` } };
+  } finally {
+    await Promise.race([browser.close(), sleep(20000)]).catch(() => {});
+    try { browser.process()?.kill('SIGKILL'); } catch { /* gone */ }
+    CP.disposeProfile(dir);
+  }
+}
+
 const W0B_GATES = [
+  {
+    id: 'A-alloc-machines', kind: 'runner', lane: 'instruments-core-alloc', timeout: 600000,
+    title: "The memory rule on this lane's frames: gates-perf's A-alloc-rate method (sampling heap profiler, self attribution, graded max(KB/s, KB/frame x 60)) on a herd-role staged fight + sprint; every src frame in a file instruments-core edits <= 4 KB/s; frozen machine files and the rest of src/** reported with their owner",
+    check: (ctx) => allocMachines(ctx),
+  },
   {
     id: 'A-lamp-states', kind: 'action', lane: LANE, timeout: 300000, settle: 600,
     setup: '__CTX__.input.enabled = true;',

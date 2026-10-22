@@ -32,15 +32,20 @@ import { liftExtras, seedAuthoredWeights, weightAudit } from '../lib/generated.j
  *
  * THE LAMP (W0b, bible §7.2 / §7.4 "Weak point: drum lamp"). The lens dome sits
  * in the theodolite drum at the front (generator socket `lens`, dome front at
- * z 2.07 m, radius 0.185 m); its iris disc is registered with `addLamp` just in
- * front of the dome and rides the head bone. The drum lamp is also the weak
+ * z 2.07 m, radius 0.185 m); its lamp (iris face + graphite barrel) is registered
+ * with `addLamp` just in front of the dome and rides the head bone. The drum lamp is also the weak
  * point: a precise hit darkens it for 6 s (`machine.lampDarkT`).
  */
 
 const URL = '/models/instruments/tiller.glb';
-/** The iris disc: just in front of the lens dome (body space), and its radius. */
+/**
+ * The lamp drum face: just in front of the lens dome (body space), and its radius. The face
+ * (0.20 m) fills the drum front (drum radius 0.228 m); the lit glass is `APERTURE_MAX` of it
+ * (0.132 m, 0.26 m across: bible §7.3 >= 0.25 m, >= 5 px at 40 m) and the barrel behind it
+ * sinks into the drum.
+ */
 const LAMP_AT = [0, 2.28, 2.085];
-const LAMP_R = 0.18;
+const LAMP_R = 0.20;
 /** The generator's design height (`asset.extras.r5Size[1]`): scale 1, body space == generator space. */
 const HEIGHT = 2.6755;
 

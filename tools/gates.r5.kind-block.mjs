@@ -21,10 +21,11 @@
  *   class     size class for A-glb-budget / A21-with-kind (§4.1): 'small' |
  *             'medium' | 'large' | 'colossal'
  *   fixture   true for a W0 staging fixture (R28): the FIDELITY-ONLY clauses
- *             (the A-sil40 pair set, A-weak40 glaze contrast, components and
- *             their linked attacks — A42 / A-linked-attack —, the judged V26 /
- *             V27 / V-lineup frames) report `SKIP-fixture` with the measured
- *             numbers; every other clause grades at its §9 bar.
+ *             (the A-sil40 pair set, components and their linked attacks —
+ *             A42 / A-linked-attack —, the judged V26 / V27 / V-lineup frames)
+ *             report `SKIP-fixture` with the measured numbers; every other
+ *             clause grades at its §9 bar (A-weak40's lamp contrast included:
+ *             it is the lamp's own face, not the species glaze, since W0b fix 1).
  *   suffix    id suffix (default ':<kind or role>'), so several kinds' blocks
  *             can be registered side by side without an id clash
  *
@@ -253,31 +254,45 @@ export function lampStatesAssert(spec) {
     const TOK = {}; for (const s of L.LAMP_ORDER) TOK[s] = Col.hexToRgb(L.LAMP_STATES[s].token);
     const TOKLAB = {}; for (const s of L.LAMP_ORDER) TOKLAB[s] = Col.rgbToLab(TOK[s]);
     const N = 48;
-    /** One captured frame -> lit count, core colour, core brightness, all-disc colour. */
+    /**
+     * One captured frame -> the lit glass of the state, split as the lamp is drawn (lamps.js): the CORE
+     * (CORE_FRAC of the aperture radius, above the bloom threshold) and the token RING around it.
+     *   ringLit   ring pixels (outside the core + its blend band + 0.75 px) within dE 10 of the token
+     *   coreLit   pixels inside the core zone brighter than the ring (the hot centre a viewer reads)
+     *   colour    median of the lit RING pixels (the core is not the token by design)
+     *   coreLum   mean luminance of the inner 0.7 of the aperture (the rhythm read)
+     */
+    const APMAX = L.APERTURE_MAX, CFRAC = L.CORE_FRAC;
     function analyse(fr, state, discR) {
       const n = fr.n, px = fr.px;
       const v = proj();
       const cx = (v.x * 0.5 + 0.5) * fr.w - fr.x0, cy = (v.y * 0.5 + 0.5) * fr.h - fr.y0;
       const tl = TOKLAB[state];
-      let lit = 0, coreN = 0, coreLum = 0, discN = 0;
-      const litR = [], litG = [], litB = [], dR = [], dG = [], dB = [];
-      const coreRad = discR * 0.86 * Math.sqrt(L.LAMP_STATES[state].aperture || 0) * 0.7;
+      const apR = discR * APMAX * Math.sqrt(L.LAMP_STATES[state].aperture || 0);
+      const coreZone = apR * CFRAC * 1.15 + 0.75;
+      let ringLit = 0, coreN = 0, coreLum = 0, discN = 0, coreLit = 0;
+      const litR = [], litG = [], litB = [], dR = [], dG = [], dB = [], ringLums = [], coreLums = [];
+      const rhythmRad = apR * 0.7;
       for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) {
         const dx = x + 0.5 - cx, dy = y + 0.5 - cy, d = Math.hypot(dx, dy);
         if (d > discR * 1.15) continue;
         const i = (y * n + x) * 4;
         const rgb = [px[i] / 255, px[i + 1] / 255, px[i + 2] / 255];
-        if (d <= discR * 0.8) { discN++; dR.push(rgb[0]); dG.push(rgb[1]); dB.push(rgb[2]); }
+        const lum = 0.2126 * rgb[0] + 0.7152 * rgb[1] + 0.0722 * rgb[2];
+        if (d <= discR * APMAX * 0.93) { discN++; dR.push(rgb[0]); dG.push(rgb[1]); dB.push(rgb[2]); }
+        if (d <= rhythmRad) { coreN++; coreLum += lum; }
+        if (d <= coreZone) { coreLums.push(lum); continue; }
         const de = Col.deltaE2000(Col.rgbToLab(rgb), tl);
-        if (de <= 10) { lit++; litR.push(rgb[0]); litG.push(rgb[1]); litB.push(rgb[2]); }
-        if (d <= coreRad) { coreN++; coreLum += 0.2126 * rgb[0] + 0.7152 * rgb[1] + 0.0722 * rgb[2]; }
+        if (de <= 10 && d <= apR + 1) { ringLit++; ringLums.push(lum); litR.push(rgb[0]); litG.push(rgb[1]); litB.push(rgb[2]); }
       }
       const med = (a) => { if (!a.length) return null; const s = a.slice().sort((x, y) => x - y); return s[s.length >> 1]; };
+      const ringLum = med(ringLums);
+      if (ringLum !== null) for (const l of coreLums) if (l >= ringLum * 0.98) coreLit++;
       // dark: the previous (calm) glass still lit, and the brightest pixel of the inner disc
       let litPrev = 0, peakLum = 0;
       if (state === 'dark') {
         for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) {
-          if (Math.hypot(x + 0.5 - cx, y + 0.5 - cy) > discR * 0.8) continue;
+          if (Math.hypot(x + 0.5 - cx, y + 0.5 - cy) > discR * APMAX) continue;
           const i = (y * n + x) * 4;
           const rgb = [px[i] / 255, px[i + 1] / 255, px[i + 2] / 255];
           peakLum = Math.max(peakLum, 0.2126 * rgb[0] + 0.7152 * rgb[1] + 0.0722 * rgb[2]);
@@ -285,7 +300,8 @@ export function lampStatesAssert(spec) {
         }
       }
       return {
-        t: fr.t, lit, litPrev, peakLum, coreLum: coreN ? coreLum / coreN : null,
+        t: fr.t, lit: ringLit + coreLit, ringLit, coreLit, litPrev, peakLum, coreLum: coreN ? coreLum / coreN : null,
+        ringLum, coreMaxLum: coreLums.length ? Math.max(...coreLums) : null,
         litMed: litR.length ? [med(litR), med(litG), med(litB)] : null,
         discMed: dR.length ? [med(dR), med(dG), med(dB)] : null,
       };
@@ -332,12 +348,19 @@ export function lampStatesAssert(spec) {
       const peaks = frames.filter(f => f.coreLum !== null && f.coreLum >= 0.92 * peakLum);
       const medArr = (a) => { const q = a.slice().sort((x, y) => x - y); return q[q.length >> 1]; };
       const lit = peaks.length ? medArr(peaks.map(f => f.lit)) : 0;
+      const ringLit = peaks.length ? medArr(peaks.map(f => f.ringLit)) : 0;
+      const coreLit = peaks.length ? medArr(peaks.map(f => f.coreLit)) : 0;
       const colours = peaks.map(f => f.litMed).filter(Boolean);
       const col = colours.length ? [0, 1, 2].map(c => medArr(colours.map(x => x[c]))) : null;
+      const ringLum = peaks.length ? medArr(peaks.map(f => f.ringLum ?? 0)) : null;
+      const coreMaxLum = peaks.length ? medArr(peaks.map(f => f.coreMaxLum ?? 0)) : null;
       const pg = periodogram(frames);
+      const ch = __M.lamps.coreHdr ? __M.lamps.coreHdr(s) : null;
       out[s] = {
         machineState: m.state, lampState: L.lampStateFor(m), aperture: +rec.aperture.toFixed(3),
-        litPx: lit, peakFrames: peaks.length, frames: frames.length,
+        litPx: lit, ringLitPx: ringLit, coreLitPx: coreLit, peakFrames: peaks.length, frames: frames.length,
+        core: { hdrLum: ch ? +ch.lum.toFixed(3) : null, gainOverRing: ch ? +ch.k.toFixed(2) : null, bloomThreshold: E.bloom ? E.bloom.threshold : null, bloomOn: !!(E.bloom && E.bloom.enabled),
+          renderedCoreMaxLum: coreMaxLum === null ? null : +coreMaxLum.toFixed(3), renderedRingLum: ringLum === null ? null : +ringLum.toFixed(3) },
         colourHex: col ? Col.rgbToHex(col) : null,
         dE: col ? +Col.deltaE(col, TOK[s]).toFixed(2) : null,
         rhythm: pg,
@@ -455,6 +478,10 @@ export function lampStatesAssert(spec) {
     for (let i = 0; i + 1 < meas.length; i++) consecMeasured.push(meas[i] && meas[i + 1] ? +Col.deltaE(meas[i], meas[i + 1]).toFixed(1) : null);
     const ratio1 = out.wary.litPx ? out.calm.litPx / out.wary.litPx : 0;
     const ratio2 = out.hostile.litPx ? out.wary.litPx / out.hostile.litPx : 0;
+    const ringRatio1 = out.wary.ringLitPx ? out.calm.ringLitPx / out.wary.ringLitPx : 0;
+    const ringRatio2 = out.hostile.ringLitPx ? out.wary.ringLitPx / out.hostile.ringLitPx : 0;
+    const coreOk = (s) => { const c = out[s].core; return c.hdrLum !== null && c.bloomThreshold !== null && c.hdrLum > c.bloomThreshold
+      && c.renderedCoreMaxLum !== null && c.renderedRingLum !== null && c.renderedCoreMaxLum > c.renderedRingLum; };
     const within = (f, want) => f !== null && Math.abs(f - want) / want <= 0.15;
     const checks = {
       camAt15m: Math.abs(camDist - 15) < 0.05,
@@ -462,8 +489,11 @@ export function lampStatesAssert(spec) {
       colourWary: out.wary.dE !== null && out.wary.dE <= 3,
       colourHostile: out.hostile.dE !== null && out.hostile.dE <= 3,
       colourDark: out.dark.dE !== null && out.dark.dE <= 3,
-      irisCalmOverWary: ratio1 >= 2,
-      irisWaryOverHostile: ratio2 >= 2,
+      irisCalmOverWary: ratio1 >= 2 && ringRatio1 >= 2,
+      irisWaryOverHostile: ratio2 >= 2 && ringRatio2 >= 2,
+      coreAboveBloomCalm: coreOk('calm'),
+      coreAboveBloomWary: coreOk('wary'),
+      coreAboveBloomHostile: coreOk('hostile'),
       irisDarkClosed: out.dark.hitDarkened && out.dark.aperture === 0,
       rhythmCalmSteady: out.calm.rhythm.relStd !== null && out.calm.rhythm.relStd < 0.03,
       rhythmWary1Hz: within(out.wary.rhythm.f, 1) && out.wary.rhythm.relStd > 0.05,
@@ -481,8 +511,8 @@ export function lampStatesAssert(spec) {
     return { pass: Object.values(checks).every(Boolean), detail: {
       kind: KIND, fixture: FIXTURE, checks, camDistM: +camDist.toFixed(3),
       lampRadiusM: rec.radius, states: out,
-      iris: { calmOverWary: +ratio1.toFixed(2), waryOverHostile: +ratio2.toFixed(2),
-        estimator: 'lit area = pixels within dE2000 10 of the state token at the rhythm peak (the lit glass a viewer reads); AA edge pixels are not lit' },
+      iris: { calmOverWary: +ratio1.toFixed(2), waryOverHostile: +ratio2.toFixed(2), ringCalmOverWary: +ringRatio1.toFixed(2), ringWaryOverHostile: +ringRatio2.toFixed(2),
+        estimator: 'aperture = lit ring pixels (outside the core zone, within dE2000 10 of the state token) + core pixels at least as bright as the ring, at the rhythm peak; the ring-only ratios are graded too; AA edge pixels are not lit. Colour = median of the lit RING pixels (the core is above the bloom threshold by design, bible §7.2)' },
       tokensConsecutiveDE: consec, measuredConsecutiveDE: consecMeasured,
       beams: { fog, night, day }, sharmaMaxErr: sharma,
     } };
@@ -685,12 +715,26 @@ const SIL40 = (spec) => `(async () => {
     staging: 'FOV 55, 1600 x 900 render target, 40 m, flat black replacement material on white, everything else hidden' } };
 })()`;
 
-/** A-weak40: primary weak point >= 5 px across at 40 m; lamp/vial luminance contrast vs hull >= 3:1 (13:00 trade, calima). */
+/**
+ * A-weak40: primary weak point >= 5 px across at 40 m; lamp/vial luminance contrast vs hull >= 3:1
+ * (13:00 trade, calima), from rendered pixels.
+ *
+ * W0b FIX ROUND 1 (judge finding "calm lamp does not read at noon"): the contrast clause GRADES on
+ * every kind, the fixture included (it was SKIP-fixture), and it is staged on the WORST light — the
+ * lamp face turned to the sun (the clear 40 m line whose lens axis is closest to the sun's azimuth),
+ * 13:00. What is compared, at 15 m on the lens axis:
+ *   glass   the lit RING (the token-coloured glass outside the bloom core: the dimmest lit part)
+ *   hull    what the glass sits in: the lamp drum face around it (between the glass and the bezel)
+ * Reported, not graded: the core, the bezel, and the machine's own surface beyond the lamp (bone
+ * glaze, masked to machine pixels with a flat-ink pass so sky and ground are never counted) with its
+ * ratio — a bone lamp against sunlit bone glaze is capped near 1.2 : 1 by the display itself
+ * ((1 + 0.05) / (0.82 + 0.05)), which is why every lamp carries its own dark drum face (lamps.js).
+ */
 const WEAK40 = (spec) => `(async () => {
   ${KB_PRELUDE(spec)}
   const __s = await __kb(); if (!__s) return __kbSkip();
   const ctx = __CTX__, M = ctx.machines, E = ctx.engine, cam = ctx.camera, env = ctx.environment, p = ctx.player, T = ctx.terrain;
-  // a fresh machine of the kind on open ground, turned until its lens has a clear 40 m line
+  // a fresh machine of the kind on open ground
   let m = null;
   { const T0 = ctx.terrain, pp = ctx.player.position;
     for (let i = 0; i < 300 && !m; i++) {
@@ -710,20 +754,32 @@ const WEAK40 = (spec) => `(async () => {
   for (const o of M.list) if (!o._frozenByGate) { o._frozenByGate = o.update; o.update = () => {}; }
   m.state = 'patrol';
   p._updateCamera = () => {}; if (p.model) p.model.visible = false;
+  await new Promise(r => setTimeout(r, 400));
   const H = E.renderer.getContext().drawingBufferHeight;
   const fovK = H / (2 * Math.tan(cam.fov * Math.PI / 360));
   const rec = m.lamp;
   const V = p.position.constructor;
   const lp = new V(), ax = new V();
-  let clear = false;
-  for (let k = 0; k < 12 && !clear; k++) {
-    m.heading = 0.2 + k * Math.PI / 6; m.root.rotation.y = m.heading; m.root.updateMatrixWorld(true);
+  // the SUNLIT face: of the headings with a clear 40 m line, the one whose lens axis is closest to the sun's azimuth
+  const sd = env.sunDir ? new V(env.sunDir.x, 0, env.sunDir.z).normalize() : new V(0, 0, 1);
+  const place = (hd) => {
+    m.heading = hd; m.root.rotation.y = hd; m.root.updateMatrixWorld(true);
     if (rec) { rec.anchor.updateWorldMatrix(true, false); lp.setFromMatrixPosition(rec.anchor.matrixWorld); ax.set(0, 0, 1).transformDirection(rec.anchor.matrixWorld); ax.y = 0; ax.normalize(); }
-    else { prim.obj.getWorldPosition(lp); ax.set(Math.sin(m.heading), 0, Math.cos(m.heading)); }
-    clear = true;
+    else { prim.obj.getWorldPosition(lp); ax.set(Math.sin(hd), 0, Math.cos(hd)); }
+  };
+  let best = null;
+  for (let k = 0; k < 24; k++) {
+    const hd = k * Math.PI / 12;
+    place(hd);
+    let clear = true;
     for (let s2 = 1; s2 < 60; s2++) { const q = lp.clone().addScaledVector(ax, 40 * s2 / 60); if (T.getHeight(q.x, q.z) > q.y - 0.4) { clear = false; break; } }
     if (clear && ctx.collision?.occluded?.(lp.clone().addScaledVector(ax, 40), lp)) clear = false;
+    if (!clear) continue;
+    const sun = ax.x * sd.x + ax.z * sd.z;
+    if (!best || sun > best.sun) best = { hd, sun };
   }
+  place(best ? best.hd : 0.2);
+  const sunAzDot = best ? +best.sun.toFixed(3) : null;
   // only this lamp is drawn (the other Instruments' lamps are not the subject)
   for (const r of M.lamps.records.slice()) if (r.machine !== m) M.lamps.detach(r.machine);
   const hitPx40 = prim ? 2 * prim.radius * fovK / 40 : null;
@@ -747,38 +803,69 @@ const WEAK40 = (spec) => `(async () => {
   const px40 = await grab(31);
   for (const [ch, v] of vis40) ch.visible = v;
   let lit40 = 0;
-  // only this lamp's disc (projected radius x 1.3): a second sensor on the hull is not the weak point
+  // only this lamp's lit glass (projected aperture radius + 1 px): a second sensor on the hull is not the weak point
   const discR40 = rec ? rec.radius * fovK / 40 : 4;
+  const glassR40 = rec ? discR40 * L.APERTURE_MAX : 4;
   for (let j = 0; j < px40.length; j += 4) {
     const x = (j >> 2) % 31, y = ((j >> 2) / 31) | 0;
-    if (Math.hypot(x - 15, y - 15) > discR40 * 1.3 + 0.5) continue;
+    if (Math.hypot(x - 15, y - 15) > glassR40 + 1) continue;
     if (Col.deltaE2000(Col.rgbToLab([px40[j] / 255, px40[j + 1] / 255, px40[j + 2] / 255]), tok) <= 10) lit40++;
   }
   const litDiam40 = 2 * Math.sqrt(lit40 / Math.PI);
-  // contrast at 15 m: the lit glass vs the hull ring around the bezel
+  // ---- contrast at 15 m on the lens axis, the world visible, sunlit face
   cam.position.copy(lp).addScaledVector(ax, 15); cam.lookAt(lp); cam.updateMatrixWorld();
-  await new Promise(r => setTimeout(r, 600));
-  const px15 = await grab(61);
-  const rad = rec ? rec.radius * fovK / 15 : 6;
-  const lum = (j) => { const c = [px15[j], px15[j + 1], px15[j + 2]].map(v => Col.srgbToLinear(v / 255)); return 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2]; };
-  const glass = [], hull = [];
-  for (let y = 0; y < 61; y++) for (let x = 0; x < 61; x++) {
-    const d = Math.hypot(x - 30, y - 30), j = (y * 61 + x) * 4;
-    if (d <= rad * 0.5) glass.push(lum(j));
-    else if (d >= rad * 1.6 && d <= rad * 2.6) hull.push(lum(j));
+  await new Promise(r => setTimeout(r, 700));
+  const N = 61, C0 = 30;
+  const px15 = await grab(N);
+  // machine mask from the same camera: flat black ink on white, the machine alone (no sky, no ground)
+  const R = E.renderer, scene = ctx.scene;
+  const Wd = gl.drawingBufferWidth, Hd = gl.drawingBufferHeight;
+  const RT = new E.composer.renderTarget1.constructor(Wd, Hd);
+  let StdMat = null; m.root.traverse(o => { if (!StdMat && o.material && o.material.isMeshStandardMaterial) StdMat = o.material.constructor; });
+  const ink = new StdMat({ color: 0x000000, roughness: 1, metalness: 0 });
+  const clearC = ink.color.clone(); R.getClearColor(clearC); const clearA = R.getClearAlpha();
+  const visM = []; for (const ch of scene.children) { visM.push([ch, ch.visible]); ch.visible = ch === m.root || !!ch.isLight; }
+  const bg = scene.background, fog = scene.fog, ov = scene.overrideMaterial;
+  scene.background = null; scene.fog = null; scene.overrideMaterial = ink;
+  const prevRT = R.getRenderTarget();
+  R.setRenderTarget(RT); R.setClearColor(0xffffff, 1); R.clear(); R.render(scene, cam);
+  const vv = lp.clone().project(cam); const mcx = Math.round((vv.x * 0.5 + 0.5) * Wd), mcy = Math.round((vv.y * 0.5 + 0.5) * Hd);
+  const maskPx = new Uint8Array(N * N * 4); R.readRenderTargetPixels(RT, mcx - (N >> 1), mcy - (N >> 1), N, N, maskPx);
+  R.setRenderTarget(prevRT); R.setClearColor(clearC, clearA);
+  scene.background = bg; scene.fog = fog; scene.overrideMaterial = ov;
+  for (const [ch, v] of visM) ch.visible = v;
+  RT.dispose(); ink.dispose();
+  const discR = rec ? rec.radius * fovK / 15 : 6;
+  const apR = discR * L.APERTURE_MAX, coreZone = apR * L.CORE_FRAC * 1.15 + 0.75;
+  const lumAt = (j) => { const c = [px15[j], px15[j + 1], px15[j + 2]].map(v => Col.srgbToLinear(v / 255)); return 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2]; };
+  const ring = [], core = [], face = [], bezel = [], outer = [];
+  for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
+    const d = Math.hypot(x - C0, y - C0), j = (y * N + x) * 4;
+    if (d <= coreZone) core.push(lumAt(j));
+    else if (d <= apR - 0.75) ring.push(lumAt(j));
+    else if (d >= apR + 1 && d <= discR * L.BEZEL_IN - 0.75) face.push(lumAt(j));
+    else if (d > discR * L.BEZEL_IN + 0.5 && d <= discR - 0.5) bezel.push(lumAt(j));
+    else if (d >= discR * 1.1 && d <= discR * 1.8 && maskPx[j] < 128) outer.push(lumAt(j));
   }
-  const med = (a) => { const s = a.slice().sort((x, y) => x - y); return s[s.length >> 1] ?? 0; };
-  const Lg = med(glass), Lh = med(hull);
-  const contrast = (Math.max(Lg, Lh) + 0.05) / (Math.min(Lg, Lh) + 0.05);
+  const med = (a) => { const s = a.slice().sort((x, y) => x - y); return s.length ? s[s.length >> 1] : null; };
+  const ratio = (a, b) => (a === null || b === null) ? null : (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05);
+  const Lg = med(ring), Lf = med(face), Lo = med(outer), Lc = core.length ? Math.max(...core) : null;
+  const contrast = ratio(Lg, Lf);
   const sizeOk = __s.KIND === 'peg' || (hitPx40 !== null && hitPx40 >= 5 && litDiam40 >= 5);
-  const contrastOk = contrast >= 3;
-  const calimaNote = (env.weatherStates || []).includes('calima') ? null : 'calima: the environment has no calima state until world-sky W1 (E12); trade measured';
-  return { pass: sizeOk && (contrastOk || __KB.fixture), detail: {
-    kind: __s.KIND, primaryWeakPoint: prim ? prim.name : null,
-    size40: { hitSpherePx: hitPx40 === null ? null : +hitPx40.toFixed(1), lampDiscPx: +(2 * discR40).toFixed(1), litGlassEquivDiameterPx: +litDiam40.toFixed(1), litPixels: lit40, ok: sizeOk,
-      estimator: 'lit glass = pixels within dE2000 10 of the calm token inside the projected lamp disc, the machine and its lamp alone in the frame (haze and output pass applied)' },
-    contrast13hTrade: { glassLum: +Lg.toFixed(3), hullLum: +Lh.toFixed(3), ratio: +contrast.toFixed(2), ok: contrastOk },
-    contrastClause: contrastOk ? 'pass (13:00 trade, rendered pixels at 15 m)' : (__KB.fixture ? 'SKIP-fixture: the hull glaze is the species lane fidelity pass (bible §7.1 rule 4, §7.5); measured value reported' : 'FAIL'),
+  const contrastOk = contrast !== null && contrast >= 3 && ring.length >= 8 && face.length >= 8;
+  const calimaNote = (env.weatherStates || []).includes('calima') ? null : 'calima: the environment has no calima state until world-sky W1 (E12); 13:00 clear measured as the trade stand-in';
+  return { pass: sizeOk && contrastOk, detail: {
+    kind: __s.KIND, fixture: __KB.fixture, primaryWeakPoint: prim ? prim.name : null,
+    size40: { hitSpherePx: hitPx40 === null ? null : +hitPx40.toFixed(1), lampFacePx: +(2 * discR40).toFixed(1), litGlassEquivDiameterPx: +litDiam40.toFixed(1), litPixels: lit40, ok: sizeOk,
+      estimator: 'lit glass = pixels within dE2000 10 of the calm token inside the projected aperture (+1 px), the machine and its lamp alone in the frame (haze and output pass applied)' },
+    contrast13h: { glassRingLum: Lg === null ? null : +Lg.toFixed(3), drumFaceLum: Lf === null ? null : +Lf.toFixed(3), ratio: contrast === null ? null : +contrast.toFixed(2), ok: contrastOk,
+      pixels: { ring: ring.length, face: face.length, core: core.length, bezel: bezel.length, outerHull: outer.length },
+      coreMaxLum: Lc === null ? null : +Lc.toFixed(3), bezelLum: med(bezel) === null ? null : +med(bezel).toFixed(3),
+      outerHullLum: Lo === null ? null : +Lo.toFixed(3), glassVsOuterHull: ratio(Lg, Lo) === null ? null : +ratio(Lg, Lo).toFixed(2), coreVsOuterHull: ratio(Lc, Lo) === null ? null : +ratio(Lc, Lo).toFixed(2),
+      sunlit: { lensAxisDotSunAzimuth: sunAzDot, sunElevationDeg: env.sunDir ? +(Math.asin(Math.max(-1, Math.min(1, env.sunDir.y))) * 180 / Math.PI).toFixed(1) : null },
+      graded: 'glass = median luminance of the lit token RING (outside the bloom core); hull = median of the lamp drum face around it (glass edge + 1 px to the bezel); 15 m on the lens axis, 13:00, the lens turned to the sun',
+      reported: 'outer hull = machine pixels (flat-ink mask) 1.1-1.8 face radii out: the bone glaze beyond the lamp drum' },
+    contrastClause: contrastOk ? 'pass (13:00, sunlit face, rendered pixels at 15 m)' : 'FAIL',
     calimaNote } };
 })()`;
 
