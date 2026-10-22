@@ -28,7 +28,8 @@
  *     Head sits at the skull base"), the skull-ellipsoid centre Round 4 read
  *     and the Round-4-equivalent point reported; A-draw-elbow-level reports,
  *     per row, the failing clause(s) and the least head-plane depth any elbow
- *     on the arm's roll circle could reach under the two form bars.
+ *     on the arm's roll circle could reach under the two form bars;
+ *     A-run-arms' backswing windows span 1.2 stride cycles (the bar unchanged).
  *   Two are PENDING by name while another lane's piece is missing: the
  *   settings-list clause of A-input-actions (shell-ui W2) and the held-weapon
  *   clause of A-hero-draws (armory W1); every hero-body clause of both is
