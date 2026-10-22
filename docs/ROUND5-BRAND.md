@@ -1,17 +1,98 @@
 # ROUND 5 — lane `brand`
 
 Port 5253 · tree `scratchpad/r5/brand/tree` (branch `r5/w0b-brand`, base `a953355`; the orchestrator's backup
-checkpoints `c4675b3`, `3af2aba` and `9a0d3ee` sit on it) · plan §2 brand row, §6, §7.4, §9 "brand" · bible §9.7–9.8, §10, §11.2.
+checkpoints sit on it, the latest `a2bf79c`, which also synced main's PLAN at `ca911e6`) · plan §2 brand row, §6,
+§7.4, §9 "brand" · bible §9.7–9.8, §10, §11.2.
 
-This file holds the **W0b report as of fix round 1 after the W0b judges (Oct 22)** (sections 0–7) and,
-unchanged below it, the **W0-day1 report** (Appendix A). Every number in §4 was measured this round on port
-5253 in this tree: the lane command on the final code (`fix1/lane.log` in brand's scratch) and one full run of
-the brand block plus the global list (`fix1/full.log`). My reading of the V gates is advisory (R29); the
-independent judge grades them.
+This file holds the **W0b report as of fix round 2 after the W0b judges (Oct 22)** (sections 0–7), the earlier
+rounds' notes under §0b, and, unchanged at the end, the **W0-day1 report** (Appendix A). Every number in §4 was
+measured this round on port 5253 in this tree, in ONE full run of the brand block plus the global list
+(`fix2/full.log` in brand's scratch). My reading of the V gates is advisory (R29); the independent judge grades them.
 
 ---
 
-## 0. Fix round 1 after the W0b judges (Oct 22)
+## 0. Fix round 2 after the W0b judges (Oct 22)
+
+The four findings are fix round 1's two pairs again: **A-fonts-licensed** (findings 1 and 3) and **V38's Pans
+clause** (findings 2 and 4). Main moved from `263ae19` to `6bfae9f` (R35) and `ca911e6` (R36–R39). None of the new
+rulings is the §1.2 grant A-fonts-licensed needs or a ruling on V38 (R38 is the same kind of ruling, cross-lane
+PENDING clauses at W0b, for hero-body's `A-hero-draws` and `A-input-actions`). So under rule 1 brand still may not
+edit the 11 files that hold the retired-font references, and may not rule on its own clause. No bar moved, no
+clause was loosened, nothing was stubbed. What changed:
+
+1. **The orchestrator's two actions are now two `git apply`s**, both checked against main `ca911e6`.
+2. **V38's criteria read the ruling by themselves** once the orchestrator makes it (no further brand edit).
+3. **The needle behind the spark** (the evidence of finding 4, deferred to W1 by its judge) **is fixed now and
+   gated**: the spark stands in clear sky in every title frame, measured over the whole title.
+
+### 0.1 By finding
+
+| finding | what I did | measured (port 5253, `fix2/full.log`) |
+|---|---|---|
+| **1 (blocker) and 3 (blocker): A-fonts-licensed FAILs `zeroRefsAnywhere`; no §1.2 grant; the 8 `.ttf` deleted before the gate that unlocks it** | **Not closable by brand (rule 1); made one command for the orchestrator.** New `tools/lint/patches/w0b-plan-orchestrator.patch` (a proposal, for the orchestrator to review): the §1.2 row, exactly the `GRANT_LINE` the gate prints, and an R40 (b) that ties the §6 deletion, the 5 removed `legacy-font-*` rows and the font patch into one merge. Checked with `git apply --check` against a throw-away index of main `ca911e6`: it applies, and `w0b-retired-font-refs.patch` still applies on top of it. Both also apply to this tree. On the §6 timing (finding 3): unchanged from fix round 1, measured then: restoring the 8 files in the branch needs their 5 rows back, which adds 5 player-lint hits (1513 > 1508) and fails two more font clauses, so the deletion and the patch land together or not at all (§7 item 1) | ⟨FONTS⟩ |
+| **2 (blocker) and 4 (major): V38-title FAILs the Pans-in-calima clause** | **The Pans clause still cannot pass before W1** (world-ground builds the Pans, world-sky the calima weather); the criteria stay the plan text, verbatim. **New:** the V38 row reads the plan for a §8.3 marker `<!-- r5-ruling v38-pans=W1 -->` (engine-gpu's marker pattern); when it is there, the §8.3 bullet that rules on V38-title is appended to the criteria **verbatim**, and a marker without its bullet throws. The proposed bullet is R40 (a) in the patch above. Checked offline: with this tree's PLAN the criteria are the §9 text alone; with the patched PLAN they are the §9 text + R40 verbatim | **My reading: FAIL on the Pans clause only**, in all 8 title frames (no salt grid, no surf, no black sand). Holding in all: one logo, the vertical menu 01–05, the coral disc upper right, no walker, no lava, and now the spark in clear sky |
+| **4 (evidence): "a needle spire rises straight up behind the spark on the plumb axis, so the spark reads as pinned on a stick"** (judge's fix: re-check at W1) | **Fixed now** (§0.2): the framing chooser keeps the spark in clear sky over the whole title, the title block stands 10vh higher, and the new gate **`A-title-spark-clear`** grades it on the live camera | ⟨SPARK⟩ |
+
+### 0.2 The needle: what it was, what changed, what it costs
+
+**What it was (probe on the cited poses, `fix2/probe1.log`).** Every ray behind the spark hit the analytic
+heightfield 556–712 m out, the Round-4 rim's teeth; no prop, far ridge or far range was in the band. On the old
+framing (17:00, 9° tilt, view 0.42 rad) the crest stood **12.4°** over the spark box's bottom edge on the press beat
+(the spark in front of the rim) and **0.4–5.0°** over it with the menu in, so a tooth crossed the spark in most of
+the title's life; in the 105 s frame its tip rose 90 px above the spark.
+
+**What a search found (`fix2/grid*.log`).** No bearing or view clears the spark at the old tilt (30 candidates). A
+grid of 12 bearings x 5–8 views x 0–10° more tilt x 0–110 px lockup lift x 6 hours (15:00–17:30), with the disc kept
+in the upper band right of the lockup, found clear framings only with more tilt AND a higher lockup; the best kept
+the disc upper right at 15:30. The film of that framing (`fix2/comp1.log`, read, deleted) showed the spark in the
+haze with the rim below it, in the press beat, the menu and the 105 s pose.
+
+**What was built.**
+- `src/style.css`: `#title { --cal-title-lift: 10vh }`; the whole title block (lockup + menu) stands that much
+  higher, and the scrim's two ellipses move with it.
+- `src/ui/menu.js` (title block), the framing chooser: per visit it picks the **hour** (17:00 first, then 16:30,
+  17:30, 16:00, 15:30, 15:00), the **view** (0.42 rad first, then 0.39, 0.45, 0.36, 0.48), the **bearing** (the
+  Round-4 candidates whose path keeps the skyline under the disc) and the **least extra tilt** (0–8°) for which the
+  spark box, widened by a quarter of its width each side, stays 0.8° under clear sky from 20 points of the path in
+  both layouts, with the disc in the upper band (centre at or above the spark's centre, 100 px right of the lockup,
+  whole in the frame with 40 px to spare). Nothing found: the Round-4 framing, reported unclear.
+  On the Round-4 valley it picks **15:30, view 0.48, bearing −0.30, +8°** (pitch 17° → 20°). A later visit with
+  the same layout re-checks the last pick first.
+- The disc's core colour x1.3: at 15:30 it stands higher, in the CSS top haze and further into the engine's
+  vignette; at x1.0 its centre led the sky ring by 0.1 luminance, at x1.15 by 2.4, at x1.3 by 5.9.
+- `tools/gates.r5.brand.mjs`: **`A-title-spark-clear`** (brand lane): the live camera, a ray every 6 px across the
+  spark box's bottom edge, the terrain marched in 2 m steps over the rendered mesh's box and every other visible
+  mesh raycast; bar: no mesh behind the spark and the terrain **≥ 0.4°** (about 6 px) under it, on the press beat,
+  in real time with the menu in over the whole truck (105 s), on the second visit, and in V-logo-4k's 2.4x staging;
+  the chooser must report clear each time. V-logo-4k's staging now re-frames for its 2.4x lockup
+  (`menus._titleReframe({ disc: false })`: that shot films the construction, not the disc).
+- The criteria and the bars of every other gate are unchanged. The disc gates pass at the new hour (§4).
+
+**What it costs.** The first title visit runs the full search: ⟨MS1⟩ ms once (150 candidates, about 6 full
+verifications); a second visit with the same layout re-checks the cached pick: ⟨MS2⟩ ms. The per-frame path is
+unchanged (one `_titlePlace` call, no allocation). The chooser's scratch camera and vectors carry no GPU resources
+and are dropped on leave.
+
+**At W1.** The chooser runs unchanged on the Pans: least tilt first, so on a flat horizon it takes no extra tilt and
+the first hour that keeps the disc in the upper band (with the block lifted, the 17:00 disc stands under the spark's
+centre, so likely 16:30). `A-title-spark-clear` is the re-check the judge asked for.
+
+### 0.3 Orchestrator actions
+
+1. Review `tools/lint/patches/w0b-plan-orchestrator.patch` (edit R40 as you rule), then
+   `git apply tools/lint/patches/w0b-plan-orchestrator.patch` on main.
+2. In the brand merge: `git apply tools/lint/patches/w0b-retired-font-refs.patch`.
+3. Re-run `A-fonts-licensed` (all 12 clauses must PASS) and the V38 rows on merged main; the V38 criteria then carry
+   R40 verbatim.
+
+Without 1 and 2: A-fonts-licensed stays FAIL on one clause and the 8 `.ttf` plus their 5 rows must be restored in the
+merge (§7 item 1); V38 stays FAIL on its Pans clause until W1.
+
+---
+
+## 0b. Earlier rounds (kept for the record)
+
+### 0b.1 Fix round 1 after the W0b judges (Oct 22, earlier)
 
 Two judges (`brand-W0b-judge`, `brand-W0b-judge-r0`) sent five findings. One of them, the quit-to-title
 hour, was a real bug in brand's code, and it is fixed and gated. The other four are two pairs of findings
@@ -20,7 +101,7 @@ orchestrator action: a §1.2 grant plus the merge patch, and a §8.3 ruling. Nei
 `263ae19`, which I re-read this round. Brand cannot close these two under rule 1, so they stay FAIL. I did
 not move any bar, loosen any clause or add any stub.
 
-### 0.1 Finding by finding
+#### Finding by finding (fix round 1)
 
 | judge finding | what I did | measured now (port 5253) |
 |---|---|---|
@@ -28,7 +109,7 @@ not move any bar, loosen any clause or add any stub.
 | **1 (blocker) / 3 (major): A-fonts-licensed FAILs `zeroRefsAnywhere`; no §1.2 grant; the 8 `.ttf` already deleted** | **Not closable by brand (rule 1).** The 37 lines sit in 11 files of shell-ui, combat-kit, progression, the frozen `dialogue.js`, brand-W4's `studio.css`, and `tools/r5-direction` (no lane). Re-verified this round:<br>- the patch applies to this tree (`git apply --check`);<br>- it **also applies to main's HEAD `263ae19`** (checked against a throw-away index; main changed nothing under `src/`, `tools/`, `public/` or `index.html` since this branch's base `a953355`).<br>**The `Julius Sans One:error` in `oldFaces`** is the gate's own probe, after it has measured play: it asks the browser to load every retired face still declared, and `hud.css:19-21` still declares Julius against the deleted file, so the probe errors. The game never requests it.<br>**On restoring the `.ttf` now (rule 4, judge r0):** I measured it, and restoring makes things worse:<br>- the 8 files need their 5 `legacy-font-*` rows back in `public/LICENSES.json`, or `A-licence-manifest files-matched` fails;<br>- those rows add **5** player-lint hits (62 → 67 on that file), so `A-no-horizon-terms-player` would go to **1513 > 1508**;<br>- `onlyTheThreeFamilies` and `noOldFaceLoaded` would fail as well.<br>So the deletion, the 5 rows and the patch land as one merge package (§7.1). If there is no grant, all three are reverted at the merge | **FAIL, 1 of 12 clauses** (`zeroRefsAnywhere`, 37 lines in 11 files; 0 in brand's files). The patch removes 37 reference lines and adds 0, leaving 0.<br>The other **11 clauses PASS**: 3 families, 5 woff2, 136 KB. In play, with the studio visited: 4 requests, all woff2, **0 retired**, 0 stacks leading with a retired family.<br>**Orchestrator: the grant row in §7.1, then `git apply` at the merge** |
 | **2 (blocker) / 4 (major): V38-title FAILs the Pans-in-calima clause** | **Not closable by brand:**<br>- the Pans are world-ground's W1 work and calima is world-sky's;<br>- the Round-4 world has a river and a marsh, but no sea, surf or black sand;<br>- `?poc=biome` replaces the whole boot, so the title cannot stand on it.<br>The criteria stay the plan text, verbatim. Re-filmed: `V38-title-r5`, `-drift35`, `-drift105`, `-quit`, and the new `-quit-12` and `-quit-21` | **My reading: FAIL on the Pans clause** in all 6 frames: no salt grid, no white surf, no black sand.<br>Holding in all 6:<br>- one logo;<br>- the vertical menu 01–05;<br>- the coral disc upper right, clear of the skyline;<br>- the ochre haze;<br>- no walker, no lava.<br>**Orchestrator: a §8.3 ruling, or V38 stays FAIL until W1** (§7.2) |
 
-### 0.2 Round 3 (Oct 22, before the judges): resumed after the machine restart
+### 0b.2 Round 3 (Oct 22, before the judges): resumed after the machine restart
 
 The box restarted shortly before this session (uptime 14 min at its start). The tree was intact at the
 orchestrator's checkpoint `3af2aba`; brand's old scratch (the round-2 combiner and logs) was gone. No new
@@ -41,7 +122,7 @@ that exist, re-read every frame, and closed the three things that reading and th
 | **On main, the lane command films no V38.** Main's runner keeps the first row of a duplicated id, the Round-4 `V38-title` of lane `shell-menus`, so `--extra tools/gates.r5.brand.mjs --lane brand` dropped brand's `V38-title` and ran no title shot at all. Round 2 filmed it only through a scratch combiner the orchestrator could not reproduce | `tools/gates.r5.brand.mjs` now also publishes the row as **`V38-title-r5`** while `tools/gates.config.mjs` has no `LANE_FILE_RE` (gates-perf's registry), plus three variants in the lane file itself: **`V38-title-drift35`**, **`V38-title-drift105`** (real time) and **`V38-title-quit`** (the second title visit). Same plan-verbatim criteria and staging note | the lane command now lists 23 brand rows; the four title shots are in the lane run (§4) |
 | **`tools/lint/hzd-verbs.json` did not exist.** Plan §2 puts it in brand's W0 files; `A-distinct-verbs` (progression, W3) reads it | created: 26 Horizon verbs with ids, what Horizon calls them and the CALIMA rename where bible §11.2 keeps the loop. By the bible's own reading, 7 of the 8 first-hour beats teach a verb absent from it; 0:05 (Sighting) is the `scan` entry | JSON valid; outside every lint scope (`tools/lint/**`), code lint unchanged at 1,435 |
 
-### 0.3 Fix round 2 (Oct 19): what changed, finding by finding
+### 0b.3 Fix round 2 (Oct 19): what changed, finding by finding
 
 | judge finding | what I did | measured now |
 |---|---|---|
@@ -61,18 +142,19 @@ that exist, re-read every frame, and closed the three things that reading and th
 | **Fonts** (bible §9.7) | `public/fonts/` | `BodoniModa-Variable.woff2`, `BodoniModa-Italic-Variable.woff2`, `IBMPlexSansCondensed-{Medium,SemiBold}.woff2`, `IBMPlexMono-Medium.woff2`: Google Fonts latin subsets, unmodified, **136 KB**, one `*-OFL.txt` per family. The 8 Round-4 `.ttf` files (1.4 MB) are deleted in this tree (plan §6). No screen can request them any more (§0) |
 | **Licence rows** | `public/LICENSES.json` via `tools/licences/add.mjs` | `font-bodoni-moda`, `font-ibm-plex-sans-condensed`, `font-ibm-plex-mono`: OFL-1.1, with `licence_text`, `source_url`, `retrieved`, `archive_sha256` and per-file SHA-256s |
 | **`--cal-*` tokens** | `src/style.css` `:root` | The bible §9.1 palette plus `--cal-font-display` / `-ui` / `-mono`; the legacy `--font*` names point at them. Two bridges stay until the retired-font patch lands: `body #hud`, and (new) `body #studio-ui .studio-title, .studio-head` |
-| **Title screen** (V38) | `index.html`, `src/style.css`, `src/ui/menu.js` (title block) | One lockup; a vertical Plex Mono menu, `01 CONTINUE` … `05 CREDITS`; the title's own field line, rotated per visit.<br>**Framing:** the view looks along the sun's azimuth + 0.42 rad. The camera stands on the bearing from REST whose whole path keeps the skyline under **the sun as the sky draws it** (`_titleChooseFrame`: 12 candidates, 25 ms, once per visit). The Round-4 dolly clocks and ease are unchanged (A70c).<br>**New in round 2:** the **world clock is held** while the title is up. **Fix round 1:** the **hour** is held too: the title stands at 17:00 (`TITLE_HOUR`, the boot hour) whatever hour the player quit at, and hands that hour back on leave.<br>**Calima stand-in:** the CSS wash `#cal-calima` (now a true colour blend: ochre at 0.55, luminance kept) plus a top-weighted ochre haze, and the **coral disc** (CALIMA_DISC: depth-tested, on the sky's sun, with the dust's absorption round it).<br>**Forward hook:** the title calls `environment.setWeather('calima', 0)`. Once world-sky ships `calima`, `body.cal-calima-live` switches the wash off, no disc is made, and the start restores the weather |
-| **Title scrim** | `src/style.css` (`body.cal-title-live #title.overlay`) | **Round 2:** an ellipse behind the lockup only; clear across the sky; darker at the foot, behind the menu column, the tip and the save line |
+| **Title screen** (V38) | `index.html`, `src/style.css`, `src/ui/menu.js` (title block) | One lockup; a vertical Plex Mono menu, `01 CONTINUE` … `05 CREDITS`; the title's own field line, rotated per visit.<br>**Framing (fix round 2):** the chooser `_titleChooseFrame` picks, once per visit, the title's **hour** (17:00 first; TITLE_HOURS), the **view** (sun azimuth + 0.42 rad first; TITLE_LOOK_OFFSETS), the camera's **bearing** from REST (the 12 Round-4 candidates whose path keeps the skyline under the disc) and the **least extra tilt** (0–8°) that keeps the **spark in clear sky** over the whole path with the disc in the upper band (§0.2). On the Round-4 valley: 15:30, 0.48 rad, −0.30 rad, +8°. The Round-4 dolly clocks and ease are unchanged (A70c).<br>**Held while the title is up:** the world clock (round 2) and the hour (fix round 1); both are handed back on leave.<br>**Calima stand-in:** the CSS wash `#cal-calima` (a true colour blend: ochre at 0.55, luminance kept) plus a top-weighted ochre haze, and the **coral disc** (CALIMA_DISC: depth-tested, on the sky's sun, with the dust's absorption round it; core colour x1.3 in fix round 2).<br>**Forward hook:** the title calls `environment.setWeather('calima', 0)`. Once world-sky ships `calima`, `body.cal-calima-live` switches the wash off, no disc is made, and the start restores the weather |
+| **Title scrim** | `src/style.css` (`body.cal-title-live #title.overlay`) | **Round 2:** an ellipse behind the lockup only; clear across the sky; darker at the foot, behind the menu column, the tip and the save line. **Fix round 2:** `#title { --cal-title-lift: 10vh }` lifts the whole title block, and both ellipses move up with it |
 | **Loading screen** (V-loading) | `index.html`, `src/style.css`, `src/main.js` | Field-book paper. **The lockup's own datum rule is the progress bar** (`--cal-load` 0..1). The copy is **"Reading the benchmarks…"**. Unchanged |
 | **Credits** | `src/ui/menu.js` (`CREDITS_LICENSED`, generated block), `README.md` "## Credits" | Generated from pipeline's `tools/licences/credits.mjs` by `tools/lint/credits-sync.mjs` (`--check` passes): 6 sections, 24 rows. Unchanged |
 | **Field Manual, README, favicon** | `index.html`, `README.md`, `public/favicon.svg` | Unchanged; the Field Manual has 17 rows in bible §10 words |
 | **Union lexicon + lints** | `tools/lint/{lexicon.json, lexicon/*, namecheck.mjs, engine-allow.json, ratchet.json}` | See §3. **Round 2:** the player gate's harvest now covers dialogue and every table string, and the W0b player ratchet is re-recorded at 1508 |
 | **Horizon verb list** (new, round 3) | `tools/lint/hzd-verbs.json` | 26 verbs (`id`, `horizon`, `calima`) for progression's `A-distinct-verbs` (W3). §2 has the schema |
 | **Title shadow** (round 3) | `src/style.css` (`#title .cal-word > span:not(.cal-i)`, `.cal-plumb`, `.cal-datum` / `.cal-spark`, `.cal-arrow`) | the heavy legibility shadow on the ink parts only; the spark and the arrow keep a 1.5 px one, so the spark's open centre is the sky again |
-| **Retired-font patch** | `tools/lint/patches/w0b-retired-font-refs.patch` | Unchanged; for the orchestrator (§7.1) |
+| **Retired-font patch** | `tools/lint/patches/w0b-retired-font-refs.patch` | Unchanged; for the orchestrator (§0.3, §7 item 1) |
+| **PLAN patch (proposal, new)** | `tools/lint/patches/w0b-plan-orchestrator.patch` | For the orchestrator to review: the §1.2 grant row (the gate's `GRANT_LINE`), the §8.3 marker `<!-- r5-ruling v38-pans=W1 -->` and an R40 bullet; applies to main `ca911e6` and stacks with the font patch |
 | **`docs/archive/` moves** (§6) | `docs/archive/` | `docs/ROUND3.md`, 25 `docs/ROUND4-*.md`, 8 `docs/research/*.md`, plus a README |
 | **References** | `reference/r5/brand/` + `MANIFEST.md` | Bodoni 1818 (PD), the OS bench-mark arrow (PD), "Calima al amanecer, Maspalomas" (CC BY 3.0), "Salinas de Janubio" (CC BY 2.0) |
-| **Gates** | `tools/gates.r5.brand.mjs` | The W0b block, the five W0-day1 rows, A-logo-construction, A-loading-fill, A-title-disc-depth (in real time), A-title-disc-sun + A-title-disc-sun-pixels; **new in round 3**, `V38-title-r5` (only while main's runner is in the tree), `V38-title-drift35`, `V38-title-drift105`, `V38-title-quit`; **new in fix round 1**, `A-title-any-hour`, `A-title-disc-sun-quit12` + `-quit12-pixels`, `V38-title-quit-12`, `V38-title-quit-21`: 28 rows (the lane command on main runs 27; brand's `V38-title` is the duplicate it drops, see §6) |
+| **Gates** | `tools/gates.r5.brand.mjs` | The W0b block, the five W0-day1 rows, A-logo-construction, A-loading-fill, A-title-disc-depth (in real time), A-title-disc-sun + A-title-disc-sun-pixels; **round 3**, `V38-title-r5` (only while main's runner is in the tree), `V38-title-drift35`, `V38-title-drift105`, `V38-title-quit`; **fix round 1**, `A-title-any-hour`, `A-title-disc-sun-quit12` + `-quit12-pixels`, `V38-title-quit-12`, `V38-title-quit-21`; **fix round 2**, `A-title-spark-clear`, and the V38 criteria read an orchestrator ruling marker: 29 rows (the lane command on main runs 28; brand's `V38-title` is the duplicate it drops, see §6) |
 
 ---
 
@@ -83,32 +165,51 @@ that exist, re-read every frame, and closed the three things that reading and th
 __GAME__.setLoad(p /* 0..1 */, step /* string, kept on #load-label[data-step] */)  // sets --cal-load on #loading .cal-logo
 __GAME__.loadProgress                                                             // last value, 0..1
 
-// src/ui/menu.js — the title block
-ctx.menus._titleFrame()          // once per title visit: FIRST holds the clock (environment.timeFrozen = true, the old value
-                                 // kept) and the hour (fix round 1: _hourHeld = environment.time, then
-                                 // environment.setTime(TITLE_HOUR = 17), the boot hour); then view = sun azimuth +
-                                 // TITLE_LOOK_OFFSET (0.42 rad), camera bearing from
-                                 // _titleChooseFrame(sun); calima hook setWeather('calima', 0) === 'calima'
+// src/ui/menu.js — the title block (fix round 2 signatures)
+ctx.menus._titleFrame()          // once per title visit, after the title block is built: FIRST holds the clock
+                                 // (environment.timeFrozen = true, the old value kept) and the hour (_hourHeld =
+                                 // environment.time); then _titleAim(); calima hook setWeather('calima', 0) === 'calima'
                                  // -> body.cal-calima-live; makes the disc unless night or real calima
-ctx.menus._titleChooseFrame(sun /* THREE.Vector3, unit, toward the sun */) // -> bearing (rad); fills _titleDiscInfo;
-                                 // judges the sun where the sky draws it, from every point of the camera path
+ctx.menus._titleAim(opts?)       // runs _titleChooseFrame(opts), sets environment.setTime(pick.hour) while the hour is
+                                 // held, writes _titleHead = { sx, cz, az, lx, lz, look, tilt } in place
+ctx.menus._titleReframe(opts?)   // re-runs _titleAim for the lockup as laid out now (a gate's restaging);
+                                 // -> audit disc info | null. V-logo-4k passes { disc: false }
+ctx.menus._titleChooseFrame({ disc = true } = {})
+                                 // -> { hour, pos, look, tilt } (pos/look in rad from the sun's azimuth, tilt in deg)
+                                 //    | null (night, only when the hour cannot be borrowed); fills _titleDiscInfo.
+                                 // Candidates: TITLE_HOURS x TITLE_LOOK_OFFSETS x the bearings pass 1 keeps clear,
+                                 // ranked by the least extra tilt (TITLE_TILT_EXTRA 0..8°) whose spark margin >=
+                                 // TITLE_SPARK_MARGIN_DEG (0.8°) and (disc) whose disc is in the upper band; fallback
+                                 // { hour: 17, pass 1's best bearing, look 0.42, tilt 0 }. _titlePickLast caches the
+                                 // pick for later visits with the same layout (re-checked before it is kept)
+ctx.menus._titleDiscClearance(sun /* unit Vector3 */) // pass 1 -> [[posOffset, deg], ...] (the old chooser body)
+ctx.menus._titleSparkNdc()       // -> { press: { x0, x1, y, cy }, menu: { x0, x1, y, cy }, px: { sparkCy, lockRight } } | null
+                                 // (NDC of the spark box's edges in both layouts; one synchronous 'lit' toggle)
+ctx.menus._titlePlace(cam, head, ease /* 0..1 */, lat /* m */) // -> camY; THE title camera formula (_dolly and the
+                                 // chooser both use it); pitch = -(9 + head.tilt + 3 * ease)°. No allocation
+ctx.menus._titleSparkMargin(saz, po, lo, tilt, spk, need, quick) // -> rad (min over the path of the spark rays'
+                                 // elevation minus the terrain crest; early out under need). No allocation
+ctx.menus._titleDiscPlaced(sun, saz, po, lo, tilt, spk) // -> boolean (upper band at ease 0 and 1); writes discPx
+ctx.menus._titleScratchGet()     // the chooser's scratch PerspectiveCamera, Vector3s, Box3 (no GPU resources;
+                                 // _titleLeave drops them)
 ctx.menus._skyDome()             // -> environment.sky when it is a dome with geometry.parameters.radius, else null
-ctx.menus._titleSunPoint(out /* Vector3 */, from /* Vector3 */) // -> out: where the sky draws the sun
-                                 // (sunDir * R * 0.98 + sky.position); fallback from + sunDir * 1500. No allocation
+ctx.menus._titleSunPoint(out, from, sun = environment.sunDir) // -> out: where the sky draws that sun
+                                 // (sun * R * 0.98 + sky.position); fallback from + sun * 1500. No allocation
 ctx.menus._discMake() / ._discDrop()  // the CALIMA_DISC quad: one PlaneGeometry + one ShaderMaterial (custom blend
                                  // out = src.rgb + dst * src.a), name 'cal-title-calima-disc', in ctx.scene;
                                  // drop = remove + dispose both
 ctx.menus._titleLeave()          // idempotent; on the menu's start AND on 'game-start': hands back the clock, the hour
-                                 // (only while the world still stands at TITLE_HOUR; CONTINUE then loads the save's
-                                 // own hour) and the weather, drops the disc
-ctx.menus._dolly(dt)             // (fix round 1) while the title holds the hour and a rest that was still running at
-                                 // the quit lands (environment.resting true -> false), the landed hour becomes the hour
-                                 // to hand back and the title snaps back to TITLE_HOUR; one boolean read per frame
+                                 // (only while the world still stands at the title's hour; CONTINUE then loads the
+                                 // save's own hour) and the weather, drops the disc and the chooser's scratch
+ctx.menus._dolly(dt)             // per frame: _titlePlace(cam, _titleHead, ease, lat) + the disc; a rest still running
+                                 // at the quit: its landed hour becomes the hand-back, the title snaps back to its own
+                                 // hour; one boolean read per frame, no allocation
 ctx.menus.audit().title          // A70c shape unchanged +
-  .disc   // null | { visible, posOffset, lookOffset, clearanceDeg, tried: [[offset, deg], ...], ms,
-          //          coreDeg, edgeDeg, radiusDeg, skySun }
+  .disc   // null | { visible, hour, posOffset, lookOffset, tiltExtraDeg, clearanceDeg, tried: [[offset, deg], ...], ms,
+          //          coreDeg, edgeDeg, radiusDeg, skySun, discPx: [x, y],
+          //          spark: { measured, ndc, clear, marginDeg, need, candidates, verified, cached } }
   .clock  // { held, frozen, handBack /* the timeFrozen value _titleLeave restores, or null */,
-          //   hour /* environment.time now */, titleHour /* 17 */, hourHandBack /* the hour _titleLeave restores, or null */ }
+          //   hour /* environment.time now */, titleHour /* the chooser's hour */, hourHandBack /* or null */ }
 ```
 
 **Consumed:**
@@ -118,9 +219,10 @@ ctx.menus.audit().title          // A70c shape unchanged +
   - `environment.timeFrozen`: the title sets it while it is up and restores it on leave;
   - **fix round 1:** `environment.time` / `environment.setTime(h)` / `environment.resting`: the title stands at 17:00, hands the player's hour back on leave, and takes a still-running rest's landed hour as the one to hand back;
   - **new:** `environment.sky.position` and `environment.sky.geometry.parameters.radius`, to put the disc on the sun the dome draws.
+  - **fix round 2:** the static `Environment.direction(hour, out)`, read through `environment.constructor`, so the chooser can judge candidate hours without moving the world's clock.
 
   If world-sky replaces the dome, `_skyDome()` returns null and the disc falls back to `sunDir`. Once world-sky draws calima itself, no disc is made.
-- **world-ground** (frozen API): `terrain.getHeight(x, z)`.
+- **world-ground** (frozen API): `terrain.getHeight(x, z)`; **fix round 2:** `terrain.mesh` (only its world box, so the spark's crest is marched over rendered terrain).
 
 CSS contract (any lane may use; brand owns the values):
 
@@ -131,6 +233,7 @@ CSS contract (any lane may use; brand owns the values):
 | `--cal-display` inside `#hud`; `#studio-ui .studio-title/.studio-head` | pinned by brand to the display family (bridges until the retired-font patch lands) |
 | `--cal-spark` … `--cal-scrim-dust` | bible §9.1 palette (spark coral = logo + calima sun only) |
 | `.cal-logo` + `--cal-lk`, `--cal-load`, `--cal-word-ink`, `--cal-rule-ink`, `--cal-rule-track` | the lockup; markup in `index.html` |
+| `--cal-title-lift` on `#title` (10vh) | how far the title block stands above centre; the scrim follows it; the chooser reads the laid-out result |
 | `#cal-calima` (a box-less wrapper; each `<i>` is a fixed sheet in the root stacking context), `body.cal-calima-live` | the title's calima wash. **A blend layer must not sit inside a stacking context**, or its blend mode stops reaching the canvas. Set `cal-calima-live` when the renderer draws calima |
 
 Lint tools (`tools/lint/`), unchanged signatures:
@@ -310,6 +413,7 @@ Round 3's reading:
 - **After gates-perf's registry merges:** the file name matches gates-perf's `LANE_FILE_RE`, so `node tools/gates.mjs --port 5253 --lane brand` will run the same rows.
 - **Order matters for two pairs.** `A-title-disc-sun-pixels` and (fix round 1) `A-title-disc-sun-quit12-pixels` are node `runner` gates. Each reads the screenshot its partner (`A-title-disc-sun`, `A-title-disc-sun-quit12`, named by the row's `srcShot`) just wrote, so it must run in the same run, after that gate. Each pair sits together in the file, and the runner keeps file order. Run alone, a pixels row reports PENDING with the reason.
 - **Transitional (fixed in round 3):** main's runner keeps the **first** row of a duplicated id, so brand's `V38-title` is dropped in favour of the Round-4 row, whose lane is `shell-menus`; round 2 filmed it only through a scratch combiner. The lane file now detects the runner it is loaded by: while `tools/gates.config.mjs` exports no `LANE_FILE_RE` (no r5 registry in the tree), it also publishes the same row as **`V38-title-r5`**, so the lane command films it. The three variants (`V38-title-drift35`, `-drift105`, `-quit`) are ordinary brand rows. Under gates-perf's registry, `V38-title-r5` disappears by itself and brand's `V38-title` shadows the carried row (plan §3.3).
+- **Fix round 2's run** (`fix2/full.log`): ONE run, the scratch combiner `fix2/full.gates.mjs` (brand's GATES as shipped plus pipeline's three licence gates) as the single `--extra`, `--only` naming 42 ids: the 28 brand rows the lane command runs (now with `A-title-spark-clear`), the 11 global and must-stay-green rows, the 3 licence rows. Before it, targeted runs of the title rows only (`fix2/t2…t6.log`) while the framing was built. The lane selection was checked in node: `--lane brand` keeps 28 of the file's 29 rows (the dropped one is the duplicate `V38-title`).
 - **Fix round 1's full run** used one scratch combiner (`fix1/full.gates.mjs`: brand's GATES as shipped plus pipeline's three licence gates; no aliases are needed any more) with `--only` naming the 41 ids. **Round 3's full run** used one scratch combiner (`work3/full.gates.mjs`) as the single `--extra` file, to add pipeline's three licence gates to brand's rows in one Chrome. Its `X-V38-title`, `X-V38-drift35`, `X-V38-drift105`, `X-V38-quit-to-title` rows have the same setups, settles and criteria as the rows the lane file now ships as `V38-title-r5`, `-drift35`, `-drift105`, `-quit` (only the titles differ). The lane file gained them while the full run was queued for a Chrome slot, so a second, targeted run of the lane file's own rows (§4) filmed them under their shipped ids.
 
 ---
@@ -318,7 +422,9 @@ Round 3's reading:
 
 1. **A-fonts-licensed: orchestrator action needed (rule 1).** Brand may not edit the 11 files at W0b. Apply `tools/lint/patches/w0b-retired-font-refs.patch` at the brand merge (`git apply --check` passes). Afterwards there are **0 references** and the code lint total is 1,246. Then re-run A-fonts-licensed on merged main: `zeroRefsAnywhere`, `noStackLeadsWithRetired` and `noRetiredFontFileRequested` must all be true. Brand's two bridges in `src/style.css` (`body #hud`, `body #studio-ui …`) become redundant and can go in the same merge. **The §1.2 grant row** to add:
 
-   `| brand | W0b exit (orchestrator applies) | src/ui/{hud.css,focus.css,focus.js,inventory.css,wheel.css,map.js,quests.js,skills.js,dialogue.js}, src/combat/feedback.css, src/studio/studio.css, tools/r5-direction/** | rename/remove only: the retired family names (Julius Sans One, Rajdhani, Chakra Petch, Michroma, Orbitron) in fallback stacks, comments and one canvas font string, as tools/lint/patches/w0b-retired-font-refs.patch; delete tools/r5-direction/ (its lexicon lives in tools/lint/lexicon/direction-b.json). No selector, property, value or logic change |`
+   ``| brand | W0b exit (orchestrator applies) | `src/ui/{hud.css,focus.css,focus.js,inventory.css,wheel.css,map.js,quests.js,skills.js,dialogue.js}`, `src/combat/feedback.css`, `src/studio/studio.css`, `tools/r5-direction/**` | rename/remove only: the retired family names (Julius, Rajdhani, Chakra Petch, Michroma, Orbitron) in fallback stacks, comments and one canvas font string, as `tools/lint/patches/w0b-retired-font-refs.patch`; delete `tools/r5-direction/` (its lexicon lives in `tools/lint/lexicon/direction-b.json`). No selector, property, value or logic change |``
+
+   **Fix round 2:** this row (exactly the gate's `GRANT_LINE`) and R40 (b) are in `tools/lint/patches/w0b-plan-orchestrator.patch`, which applies to main `ca911e6`; the font patch applies on top of it (both checked on a throw-away index of `ca911e6`).
 
    **About the patch:**
    - It touches 12 source files: the 11 the gate counts, plus `focus.js`. There, "Chakra / Petch" is split across two comment lines, which is why the per-line gate does not count it.
@@ -332,40 +438,40 @@ Round 3's reading:
    - one map canvas string names a family that has no `@font-face`.
 
    **Why the files are not restored in the branch** (judge r0, fix round 1, measured). Restoring the 8 files means also restoring their 5 `legacy-font-*` rows in `public/LICENSES.json`; without the rows, `A-licence-manifest files-matched` fails. Those rows add **5** player-lint hits (62 → 67 on that file), so `A-no-horizon-terms-player` would read **1513 > 1508**, and A-fonts-licensed would fail `onlyTheThreeFamilies` and `noOldFaceLoaded` as well. So the deletion, the rows and the patch are **one merge package**:
-   - **with the grant:** `git apply tools/lint/patches/w0b-retired-font-refs.patch` in the merge commit (it applies to this tree and to main's `263ae19`), then re-run A-fonts-licensed on merged main; all 12 clauses must PASS;
+   - **with the grant:** `git apply tools/lint/patches/w0b-retired-font-refs.patch` in the merge commit (it applies to this tree and to main's `ca911e6`), then re-run A-fonts-licensed on merged main; all 12 clauses must PASS;
    - **without the grant:** in the merge, restore `public/fonts/{ChakraPetch-Regular,ChakraPetch-SemiBold,JuliusSansOne-Regular,Michroma-Regular,Orbitron-Variable,Rajdhani-Bold,Rajdhani-Medium,Rajdhani-SemiBold}.ttf` and the five `legacy-font-*` rows from `a953355`. A-fonts-licensed then fails `onlyTheThreeFamilies`, `noOldFaceLoaded` and `zeroRefsAnywhere`, and the player lint needs its ratchet re-recorded on merged main (item 3).
-2. **Ruling needed: V38 at W0b.** V38 FAILs its Pans clause until world-ground (the Pans) and world-sky (`calima`) land at W1. I recommend a §8.3 ruling. At the W0b exit, grade only one logo, the vertical menu, no walker and no lava; all of these hold. Move the Pans/calima clause to the W1 exit as PENDING-dependency and re-film then. Without that ruling, V38 is FAIL at W0b.
+2. **Ruling needed: V38 at W0b.** V38 FAILs its Pans clause until world-ground (the Pans) and world-sky (`calima`) land at W1. The proposed ruling is R40 (a) in `tools/lint/patches/w0b-plan-orchestrator.patch` (in the R38 form: the vista clause graded at the W1 exit, every other clause at W0b), with the marker `<!-- r5-ruling v38-pans=W1 -->`; the V38 rows then append the bullet to their criteria verbatim, with no brand edit. Without a ruling, V38 is FAIL at W0b.
 3. **Ruling needed: the player lint's W4 target.** On the literal §9 reading, 0 at W4 cannot be reached. The count includes "of", "title" and "light", near-misses such as Speak→Spear, and 61 hits in licence texts that no lane may edit. The ratchet is now 1508. I recommend two things:
    - grade the ratchet on this reading;
    - set the W4 target on the named reading (718 today), with the licence texts exempt.
 
    Either way, **re-record once on merged main** at the W0b exit.
 4. **The code lint's reading** stays the named reading. §9 gives it no matching rule, and the §7.4 allowlist lists names.
-5. **The title vista is still the Round-4 valley** under the stand-in, and the spires still dominate. Some of the title's behaviour carries over to W1 automatically:
-   - the chooser re-picks the bearing on every visit;
+5. **The title vista is still the Round-4 valley** under the stand-in, and its spires still fill the lower half. Some of the title's behaviour carries over to W1 automatically:
+   - the chooser re-picks the hour, view, bearing and tilt on every visit (least tilt first, so on the Pans' flat horizon it drops the extra tilt by itself);
    - when `setWeather('calima')` returns `'calima'`, the wash and the disc switch off.
 
    **For world-sky:** your calima sun should be the brightest point of the sky. The title's disc shows one way to get there: the core, plus the dust absorbing the clear-sky glow, fitted on filmed frames. Also note that **the dome is centred on the player**: from any camera away from the player, the dome's sun is not on `sunDir`.
-6. **The disc's R channel lands at 234, not 242.** The engine's own vignette (×0.936 at that spot, part of engine-gpu's grade) and the CSS haze cap it. G and B are on target, and ΔE is 3.77. Changing the engine's vignette on the title is engine-gpu's call, so I left it.
-7. **The judge should grade the two new frames** `V38-title-quit-12` and `V38-title-quit-21` (judge r0's angles), and `A-title-any-hour` + `A-title-disc-sun-quit12(-pixels)`. Nothing in the lockup or the first-visit vista moved this round.
+6. **The disc's colour.** At 15:30 the disc stands at about (1191, 90), in the CSS top haze and further into the engine's vignette; its core colour is x1.3 to stay the brightest point of the sky (⟨DISC⟩). Changing the engine's vignette on the title is engine-gpu's call, so I left it.
+7. **The judge should re-grade every title frame**: the framing changed this round (hour 15:30, +8° tilt, the block 10vh higher), the lockup itself did not (A-logo-construction 17/17). New gate: `A-title-spark-clear`.
 8. **A9 and A21.** This round both report PENDING, not attributable on this box. A9: 309 draws PASS, but 37.3 fps against a null frame that already costs 3.22 ms of GPU; round 3 measured 53 fps on the same row. A21: draws and triangles PASS, and the GPU term (117–148 ms median) is PENDING because the null frame took 4.36 ms. Grade both in the orchestrator's quiet-box global run. Nothing brand changed draws in play: the wash and the disc exist only on the title. On a quiet box A21's GPU term fails as at the Round-4 baseline; engine-gpu's tier decision owns it.
 9. **Two strings outside menu.js's title and credits blocks** are unchanged since the first W0b pass: the hub kicker "CALIMA" and the new-game modal's "Instruments". Revert them if they are out of scope.
 10. **A-extent-refactor** is graded against the W0b-start hashes, because W0a changed one collider.
 11. **Other lanes' surfaces still use Round-4 words** (shell-ui W2, combat-kit W2, progression W3). Dialogue now counts too. All of it is inside the 1508.
 12. **Latin subsets only.** ∴ ■ ● ▲ ◆ fall back to a system font.
-13. **`docs/ROUND5-PLAN.md`** in this tree is the orchestrator's sync of R33(g)/R34 (`a3465f1`); main's later §0 rule 8 amendment (`263ae19`, the two-slot Chrome lock) is not in this tree's copy, but brand followed it: every Chrome run this round took a slot under `scratchpad/r5/chrome-slots/` with an `owner.txt` and released it on exit.
+13. **`docs/ROUND5-PLAN.md`** in this tree is main's `ca911e6` (synced by the orchestrator's checkpoint `a2bf79c`). Brand followed rule 8: every Chrome run this round took a slot under `scratchpad/r5/chrome-slots/` with an `owner.txt` and released it on exit; never more than one brand Chrome at a time.
 14. **Downloads this round:** none. No new asset, so no new `LICENSES.json` row.
-15. **The needle spire behind the spark** in three V38 frames (§5) is a coincidence of the Round-4 valley at this sun azimuth. The one framing change that cleared it cost the disc its brightness margin, so it is reverted and documented, not fixed. The Pans replace the valley at W1, and the chooser re-frames every visit.
+15. **The needle spire behind the spark: fixed in fix round 2** (§0.2), graded by `A-title-spark-clear`. Thin spires still rise behind the wordmark's letters (the lockup's ink has its own shadow); the spark, the dot of the I, has ≥ 0.4° of sky under it in every sample. The chooser costs ⟨MS1⟩ ms on the first title visit (the full search) and ⟨MS2⟩ ms on a later one.
 16. **`tools/lint/hzd-verbs.json` is new data with no gate of brand's.** Its consumer is progression's `A-distinct-verbs` (W3). The bible's own count holds on it: 7 of the 8 beats are absent, and the 0:05 Sighting beat is the `scan` row. Progression should declare each beat's verb by `id`.
-17. **The title's hour (fix round 1).** The title stands at 17:00 whatever hour the world is in, and hands the player's hour back on leave. When world-sky ships `calima` (W1) and a calima sun of its own, the title hour is still `TITLE_HOUR` in `src/ui/menu.js`. If the Pans' calima vista wants another hour (the bible's reference is a calima dawn), change that one constant and re-run `A-title-any-hour`, `A-title-disc-depth` and `A-title-disc-sun(-quit12)`.
-18. **One edge, measured but not filmed:** when a rest is still running at the quit, the environment drives the hour for up to its 2 s. During that time the disc follows the rest's moving sun, and then the title snaps back to 17:00. `A-title-any-hour` grades the landed state (17:00, disc in frame, hand-back 6.2), not the 2 s in between.
+17. **The title's hour.** The title stands at the chooser's hour whatever hour the world is in (15:30 on the Round-4 valley), and hands the player's hour back on leave. If the Pans' calima vista wants another hour range (the bible's reference is a calima dawn), edit `TITLE_HOURS` in `src/ui/menu.js` and re-run `A-title-spark-clear`, `A-title-any-hour`, `A-title-disc-depth` and `A-title-disc-sun(-quit12)`.
+18. **One edge, measured but not filmed:** when a rest is still running at the quit, the environment drives the hour for up to its 2 s. During that time the disc follows the rest's moving sun, and then the title snaps back to its own hour. `A-title-any-hour` grades the landed state (the title's hour, disc in frame, hand-back 6.2), not the 2 s in between.
 
 **For other lanes.**
-- **world-sky:** `setWeather('calima', 0)` should return `'calima'`. The title also borrows `timeFrozen` and (fix round 1) the hour through `time` / `setTime`, reads `resting`, and reads the sky dome's position and radius, read-only.
-- **world-ground:** the title reads `REST`, the sky's sun point and `terrain.getHeight`.
+- **world-sky:** `setWeather('calima', 0)` should return `'calima'`. The title also borrows `timeFrozen` and the hour through `time` / `setTime`, reads `resting`, the sky dome's position and radius, and the static `Environment.direction(hour, out)`, read-only. Keep that static (or tell brand) if you rework the sun.
+- **world-ground:** the title reads `REST`, `terrain.getHeight` and `terrain.mesh`'s world box. At your W1 exit, run `A-title-spark-clear` and the V38 rows on the Pans: that is the judge's W1 re-check.
 - **shell-ui (W2):** use `--cal-font-*` and the palette. When you restyle `hud.css`, drop the retired face, and brand removes its bridge.
 - **gates-perf:** brand's `V38-title` shadows the carried row. `A-title-disc-sun-pixels` and `A-title-disc-sun-quit12-pixels` need their partner's screenshot from the same run.
-- **orchestrator:** see items 1–3, and §6 for the lane command on main (`V38-title-r5`).
+- **orchestrator:** see §0.3 and items 1–3, and §6 for the lane command on main (`V38-title-r5`).
 - **progression (W3):** `tools/lint/hzd-verbs.json` (schema in §2) is the list `A-distinct-verbs` reads.
 
 ---
