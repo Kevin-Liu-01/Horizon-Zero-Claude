@@ -7,10 +7,64 @@ Plan sections this report follows: `docs/ROUND5-PLAN.md` §2 (row engine-gpu), �
 grant: post chain / tier table / DPR; render-target measurement hooks), §3.1 (W0b exit: "GPU tier
 chosen and render targets measured"), §4.3–§4.4, §8.3 (`rt-ledger-bar=W0b`) and §9 (the engine-gpu block
 and the global green list). The measured numbers live in **`docs/ROUND5-ENGINE.md`** (§1 the ledger at
-the shipped tier, §3 the tier decision); this file is the lane report. Fix round 1's report is in git at
-`59e0b48` (the orchestrator's checkpoint), round 0's at `9921470`, W0a's at `5fd2849`.
+the shipped tier, §3 the tier decision); this file is the lane report. Fix round 2's report is in git at
+`6e75e7c`, fix round 1's at `59e0b48` (the orchestrator's checkpoints), round 0's at `9921470`, W0a's at
+`5fd2849`.
 
-## 0. What fix round 2 changed, and why
+## 0. Fix round 3: the `A-rt-ledger` blocker, run on the merged gate side
+
+**The finding.** `A-rt-ledger` was PENDING at the W0b exit: every lane clause passed, but
+`recordedInBudgets` read `null` because `tools/budgets.mjs` (gates-perf's file, plan §2) had no
+`RT_LEDGER`. The judge offered two fixes: merge gates-perf's `budgets.mjs` and re-run
+`--only A-rt-ledger-census,A-rt-ledger` on the merged tree, or an R38-style ruling.
+
+**What this lane can and cannot do.** Both fixes belong to the orchestrator. `tools/budgets.mjs` is
+gates-perf's file, no §1.2 grant lets engine-gpu touch it (rule 1), and lanes run no git merge (rule 7).
+Editing that file in this tree, even for one run, would be the cross-lane edit rule 1 forbids. The gate is
+not loosened either. In this tree the clause still reads `null` (PENDING) until the line is really there
+(run `T1` below).
+
+**What was done.** The orchestrator would grade on the merged tree, so I rebuilt that tree's gate side and ran the
+lane on it, on port 5251, against this tree's Vite:
+
+1. **The line exists and is committed.** `r5/w0a-gates-perf` at `a2fba7c`, `tools/budgets.mjs:141`:
+   `export { RT_LEDGER } from './r5-probes/rt-ledger.mjs';` (with R34's self-contained `STAGE_PRELUDE`).
+2. **The merge is clean for this lane.** Since the merge base `a953355`, the two branches share one changed file,
+   `docs/ROUND5-PLAN.md`, which is the orchestrator's own and synced from main on both. This lane changed
+   `src/core/engine.js`, `tools/gates.r5.engine-gpu.mjs`, `tools/r5-probes/rt-ledger.mjs` and the two docs.
+   gates-perf changed nothing under `src/`.
+3. **The merged gate side, built read-only.** `scratchpad/r5/engine-gpu/merged/` = `git archive
+   r5/w0a-gates-perf` (a read of the branch; no ref, index or worktree touched) plus this lane's five files
+   and main's `docs/ROUND5-PLAN.md` copied over. `node_modules` is a symlink to main's, as in the tree. It has
+   no `.git`, so only this lane's rows and `A-vram-ledger` were run there; pipeline's git-reading rows were
+   not. The page under test is this tree's, served by
+   `npx vite --port 5251 --strictPort` from the tree. gates-perf changes nothing the game page loads
+   (it deletes labs, spike pages, `public/anims-*` and HZD reference stills), so the page is the merged page.
+4. **Registration is proven on the real registry.** With no `--extra`, gates-perf's `gates.config.mjs`
+   discovers `tools/gates.r5.engine-gpu.mjs` by pattern (lane files: brand, engine-gpu, gates-perf,
+   instruments-core, pipeline). `--lane engine-gpu` yields this lane's 12 rows. The five re-staged rows take their real
+   ids (`A22-msaa`, `V20-aa-crop`, `A108-ao-periodicity`, `A109-ao-distance-fade`, `V33b-no-ao-lattice`) and
+   shadow the carried rows.
+5. **The runs, merged gate side** (`run-merged.sh`/`qrun-merged.sh`, the same slot and preflight discipline
+   as `run.sh`):
+   - **`M1`**: `node tools/gates.mjs --port 5251 --lane engine-gpu --only A-rt-ledger-census,A-rt-ledger`.
+     **Both PASS.** `A-rt-ledger` passes all six clauses: `atShippedTier`, `rtTotal` (127.27 MB ≤ 170),
+     `sumAtStagedFight` (342.46 MB ≤ 450), `recordedInDocs`, **`recordedInBudgets: true`** and `leversRestored`.
+     The staged fight is gates-perf's R34 role-staged `staged-fight`: 8 × `tiller` (herd), with the seven R28/R30
+     fallbacks named; textures 100.29 MB (92), geometry 114.90 MB, RTs 127.27 MB. The census recounts
+     127,271,712 B from the GL calls, equal to the ledger to the byte.
+   - **`M2`**: the rest of the non-timed block plus gates-perf's own `A-vram-ledger` as an independent
+     cross-check. All PASS or filmed (§5.1). **`A-vram-ledger` PASS:** its own GL census counts render targets
+     at **127,271,712 B (127.27 MB, 39 GL objects), the same byte count as this lane's ledger**, under the
+     ≤ 170 cap. Textures 105.46 MB, geometry 79.52 MB, total 312.25 MB ≤ 450.
+   - **`M3`**: `A-gpu-tier-box` + `A-gpu-tier` + `V-gpu-tier-look` on a quiet box (§5.1).
+
+**What the orchestrator does to close it.** Either merge `r5/w0a-gates-perf` (with or before this lane)
+and run `node tools/gates.mjs --port 5270 --lane engine-gpu --only A-rt-ledger-census,A-rt-ledger` on main,
+which reproduces `M1`, or rule that `recordedInBudgets` is a cross-lane PENDING graded at gates-perf's
+exit. There is no third route inside this lane's files that does not loosen the gate.
+
+### 0.1 What fix round 2 changed, and why
 
 The machine rebooted between fix round 1 and this session: every scratch file of fix round 1 (reports,
 films, the budgets patch, the run scripts, the exploration gates) was gone, and so were the two untracked
@@ -32,7 +86,7 @@ re-run on this code, in this tree, on Oct 22.
 | the GPU tier decision: shipped `high` = DPR cap 1.25 + GTAO ¼ + SMAA-only + SMAA RGBA8 + far cascades 1024 (round 0) + direct post topology + post fold + far-cascade cadence 2 (fix round 1) + **anisotropy colour 1× / data 4×** (fix round 2) | `src/core/engine.js` (tier table, `applyTier`, `_applyAnisotropyCap`, `_anisoRoles`, `_anisoMat`, `_anisoTex`, `_anisoSet`; fix round 1's `_applyPostTopology`, `_postFold`, `_bloomFold`, `_gtaoInPlace`, `_csmUpdate`, `ScenePass`, `OutputGradeShader`) | done |
 | `A-gpu-tier` as a measured exit gate, before/after per lever | `tools/gates.r5.engine-gpu.mjs` (`A-gpu-tier-box` + `A-gpu-tier`); the lever record now ends with the shipped split and three NOT-shipped rows (2× / 2×, 2× / 4×, 4× / 4×) | **PASS, 3 judged runs** (`G3`, `G4`, `G7`: vista 11.78 / 12.34 / 12.35 ms) — §5.1 |
 | what the tier costs the picture, filmed | `V-gpu-tier-look` (re-laid out, four configurations) | filmed (`G2`), NEEDS-JUDGE; lane reading PASS (§5.3) |
-| `A-rt-ledger` graded (ruling `rt-ledger-bar=W0b`) | same file; `tools/r5-probes/rt-ledger.mjs` (unchanged: re-verified to the byte) | 127.27 MB ≤ 170, 342.45 MB ≤ 450; PENDING only on gates-perf's `budgets.mjs` line; PASS with it (`L12`) |
+| `A-rt-ledger` graded (ruling `rt-ledger-bar=W0b`) | same file; `tools/r5-probes/rt-ledger.mjs` (unchanged: re-verified to the byte) | 127.27 MB ≤ 170, 342.45 MB ≤ 450. In this tree it is PENDING only on gates-perf's `budgets.mjs` line (`T1`). **On the merged gate side, with gates-perf's committed line, it passes every clause** (`M1`: 342.46 MB at R34's role-staged fight). It closes at the gates-perf merge or by ruling (§0) |
 | GTAO lattice fix intact (A108 / A109 / V33b) on the folded chain | `engine.js`; gates unchanged | A108 PASS, A109 PASS, V33b filmed |
 | AA under R25 (A22, V20) | gates unchanged | A22 PASS (0.312 vs 0.189 off, `P2`), V20 filmed |
 | W0a judge's minor: sweep dead WeakRefs in `registerRenderTarget` | `engine.js` (round 0, unchanged) | done (census registration contract PASS) |
@@ -122,13 +176,20 @@ Exports `GATES` (12 rows, each with `lane: 'engine-gpu'` and a `wave`), `RT_LEDG
 
 ## 4. How the gates run
 
-Until gates-perf's registry is merged, `tools/gates.mjs` merges only `gates.round4.*.mjs`, so the file goes
-in through `--extra` (one file per run — the runner pushes it onto the same list it imports and merges the
-`gates.round4.*` files from, so the rows get the same `GATES` merge, `--lane` and `--only` handling):
+Until gates-perf's registry is merged, `tools/gates.mjs` in this tree merges only `gates.round4.*.mjs`. The file
+goes in through `--extra`, one file per run. The runner pushes it onto the same list it imports the
+`gates.round4.*` files from, so the rows get the same `GATES` merge and the same `--lane` and `--only` handling:
 
 ```
 node tools/gates.mjs --port 5251 --extra tools/gates.r5.engine-gpu.mjs --lane engine-gpu
 node tools/gates.mjs --port 5251 --extra tools/gates.r5.engine-gpu.mjs --only A-gpu-tier-box,A-gpu-tier
+```
+
+After gates-perf merges, no flag is needed. The registry finds the file by pattern, and that was proven on its
+committed runner in fix round 3 (`M1`–`M3`, §0):
+
+```
+node tools/gates.mjs --port 5251 --lane engine-gpu
 ```
 
 For a run that also needs another lane's rows, one combiner module re-exports both `GATES` arrays
@@ -138,9 +199,17 @@ with no edit. On a tree without the registry the Round-4 `A22-msaa` (samples ≥
 SMAA-only (R25's row is `A22-msaa@r5`). The box witness must run in the same invocation, before its target.
 The POC needs the two read-only symlinks of §0 in a fresh tree.
 
-## 5. Gate results (port 5251, this tree, Oct 22)
+## 5. Gate results (port 5251, this tree's page, Oct 22)
 
-Reports in `scratchpad/r5/engine-gpu/run/`: `report.F3.json` (lane block + global items, on fix round 1's
+**Fix round 3 runs** (no engine or gate code changed since fix round 2's checkpoint `acdff2c`, only these
+docs):
+- `report.M1.json`: the merged gate side, `A-rt-ledger-census` + `A-rt-ledger`.
+- `report.M2.json`: merged, the non-timed rows plus `A-vram-ledger`; films `V20` and `V33b`.
+- `report.M3.json`: merged, quiet box, `A-gpu-tier-box` + `A-gpu-tier` + `V-gpu-tier-look`.
+- `report.T1.json`: this tree with `--extra combo.gates.mjs`. The round's one global-list run, plus
+  must-stay-green and the ledger pair as this tree reads it.
+
+Fix round 2's reports, also in `scratchpad/r5/engine-gpu/run/`: `report.F3.json` (lane block + global items, on fix round 1's
 engine; the POC rows failed to boot, see §0), `report.P1.json` (the POC rows re-run, fix round 1's engine),
 `report.F4.json` (**the round's full run on the split mechanism**: lane block without the timed pair + every
 global item present + must-stay-green, 22 gates; the colour cap was 2× then), `report.P2.json` (**the lane's
@@ -161,37 +230,39 @@ taken only AT such an instant, so the gate's witness samples that box; load and 
 | `A-gpu-tier-box` | PASS in `G3`, `G4`, `G7` | load 1.63 / 2.18 / 2.34, 0 other headless Chromes at the sample (`run.sh` takes the slot only at such an instant) |
 | `A-gpu-tier` | **PASS** (judged, final row colour 1× / data 4×) | vista **11.78 / 12.34 / 12.35 ms** ≤ 13; empty **4.75 / 4.80 / 4.32 ms** ≤ 7; fps 60.24 / 59.88 / 59.88 ≥ 58; p95 18.7 / 18.9 / 18.6 ≤ 20; null frames 0.16–0.18 ms; instability ≤ 1.32; docs row = live tier; RT 127.27 MB at 1.25. Another lane's gate Chrome appeared during `G3` at ~70 s (after the shipped bursts), during `G4` at ~37 s and during `G7` at ~31 s (during part of them); `docs/ROUND5-ENGINE.md` §3.3. Unjudged this round: `G1` (the 2× / 4× row, loud from ~20 s), `G2` (final row, started loud after a 2 h wait), `G5` (final row, load 3.23 at the witness sample; every clock under its bar: vista 12.00, empty 4.78), `G6` (final row, another lane's Chrome from 9 s, before the witness sample; **vista read 17.70, over the bar**, under that contention). Lever record (`G3`): Round-4 21.43 / 13.30 → … → shipped 9.32 / 4.73; NOT shipped 2× / 2× 10.59, 2× / 4× 13.64, 4× / 4× 15.03 (vista) |
 | `A-gpu-tier` role comparison (exploration, interleaved, `G1`: `X-role2-sim`) | — | colour / data: 1× / 4× **9.91**, 2× / 2× 10.11, 2× / 4× 12.05 (one burst 19.18), 4× / 4× 17.57 |
-| `A-rt-ledger` | **PENDING** (one clause, gates-perf's file) | 127.27 MB ≤ 170 ✓, 342.45 MB ≤ 450 ✓ (textures 100.28, geometry 114.90), docs ✓, levers restored ✓, shipped tier @ 1.25 ✓, `tools/budgets.mjs` record ✗ outstanding (`F4`, `P2`); with the line (`L12`, proof root `scratchpad/r5/engine-gpu/budgets-proof/`): **PASS on every clause** |
-| `A-rt-ledger-census` (W0a row) | **PASS** (`F3`, `F4`, `P2`) | GL 127,271,712 B = ledger, 0 unattributed, 0 mismatches, docs and `RT_LEDGER` match |
-| `A22-msaa` (`@r5`) | **PASS** (`P1`, `F4`, `P2`) | R25 path; final row (`P2`): AA fraction 0.312 (SMAA) / 0.189 (none) / 0.374 (Round-4 MSAA ×4 + SMAA), gain 1.647 ≥ 1.5 (`F4`: 0.318 / 0.197, 1.617) |
-| `V20-aa-crop` (`@r5`) | NEEDS-JUDGE | §5.3 |
-| `A108-ao-periodicity` (`@r5`) | **PASS** (`P1`, `F4`, `P2`) | worst 0.135 (ultra @ 1, far 128 m, control 0.137); 0 fails; witness crop 1 (`P2`): stock 0.240 ≥ 0.15, shipped 0.102 (crop 2 does not separate: stock 0.126, shipped 0.124; the gate needs one seeing crop) |
-| `A109-ao-distance-fade` (`@r5`) | **PASS** (`P1`, `F4`, `P2`) | high: 4–6 m 0.0682 (n 3,037), past 150 m 0 (n 2,421), far band ratio 1.000; ultra: 0.0718, 0, 1.000 |
-| `V33b-no-ao-lattice` (`@r5`) | NEEDS-JUDGE | §5.3 |
+| `A-rt-ledger` | **merged gate side: PASS on every clause (`M1`)**. This tree: PENDING on the one clause in gates-perf's file (`T1`) | `M1`: 127.27 MB ≤ 170 ✓; staged fight 342.46 MB ≤ 450 ✓ (R34's role-staged fight, 8 × `tiller` with the R28/R30 fallbacks named; textures 100.29, geometry 114.90); docs ✓; **`tools/budgets.mjs` record ✓** (gates-perf's committed line); levers restored ✓; shipped tier @ 1.25 ✓. `T1`: the same terms with `recordedInBudgets: null`. Fix round 2: `F4`, `P2` PENDING, `L12` PASS against a patched copy |
+| `A-rt-ledger-census` (W0a row) | **PASS** (`M1`, `T1`; `F3`, `F4`, `P2`) | GL 127,271,712 B = ledger, 0 unattributed, 0 mismatches, docs and `RT_LEDGER` match |
+| `A-vram-ledger` (gates-perf's gate, run as a cross-check) | **PASS** (`M2`) | its own GL census: render targets **127,271,712 B**, the ledger's byte count, under the ≤ 170 MB cap; textures 105.46 MB ≤ 160, geometry 79.52 MB ≤ 120, total 312.25 MB ≤ 450 at DPR 1.25, tier `high` |
+| `A22-msaa` | **PASS** (`M2`; `P1`, `F4`, `P2` as `@r5`) | R25 path; `M2`: AA fraction 0.310 (SMAA) / 0.189 (none) / 0.378 (Round-4 MSAA ×4 + SMAA), gain 1.64 ≥ 1.5 (`P2`: 0.312 / 0.189, 1.647) |
+| `V20-aa-crop` | NEEDS-JUDGE (`M2`) | §5.3 |
+| `A108-ao-periodicity` | **PASS** (`M2`; `P1`, `F4`, `P2`) | worst 0.135 (ultra @ 1, far 128 m, control 0.137); 0 fails; witness crop 1 (`M2`): stock 0.239 ≥ 0.15, shipped 0.102 (crop 2 does not separate: stock 0.128, shipped 0.126; the gate needs one seeing crop) |
+| `A109-ao-distance-fade` | **PASS** (`M2`; `P1`, `F4`, `P2`) | high: 4–6 m 0.0682 (n 3,037), past 150 m 0 (n 2,421), far band ratio 1.000; ultra: 0.0718, 0, 1.000 |
+| `V33b-no-ao-lattice` | NEEDS-JUDGE (`M2`) | §5.3 |
 | `V-gpu-tier-look` | NEEDS-JUDGE | §5.3 |
 
-### 5.2 Global green list (the items that exist in this tree) and must-stay-green — `F4` (split mechanism), A1 / A9 / A20b again in `P2` (final row)
+### 5.2 Global green list (the items that exist in this tree) and must-stay-green: `T1` (fix round 3, the round's one suite run; 16 gates: 13 pass, 1 fail, 2 pending), fix round 2's `F4` / `P2` for comparison
 
 | gate | verdict | numbers |
 |---|---|---|
-| `A1-boot-clean` | PASS (`F4`, `P2`) | `state=playing` |
-| `A9-perf-budget` | PASS (Round-4 bar ≥ 45 fps) | 262 draws; 50.9 fps / scene GPU 18.35 ms (`F4`), 48.0 fps / 40.98 ms (`P2`) — loud boxes (other lanes' Chromes alive), so R26's 58-fps quiet-box bar is not attributable here (`F3`: 54.3 fps) |
-| `A20b-no-system-errors` | PASS (`F4`, `P2`) | 0 / 0, 353 / 290 frames |
-| `A21-real-draw-calls` | PENDING (its baseline verdict is FAIL, R33: listed, not graded) | draws 266 / 171 / 279 ≤ 350 PASS; triangles 3.70 / 3.34 / 3.82 M PASS; GPU 96.6 / 129.7 / 83.4 ms at raw DPR 2, p95, JS: unattributable on this box (`F3`: GPU term FAIL at 102 / 134 / 106 ms) |
-| `A90-memory-stability` | PASS | heap −6.5 %, geometries +9, textures −28, objects −1,096 |
-| `A90-memory-stability-expansion` | PASS | objects −1,059, non-machine growth 0 |
-| `A90b-memory-attribution` | PASS | 0 offenders, 0 orphaned textures (this tree's Round-4 workload; R34's Tiller workload is instruments-core's) |
-| `A90-rig-reclaim` | PASS | 30 cycles: geometries +5, textures 0; per live machine 0.13 / 0.38 |
-| `A-ID-ip-assets-gone` | PASS | 19 GLBs, 0 IP hits (`aloy.glb` scheduled for hero-body's exit) |
-| `A-assets-tracked` | PASS | 221 referenced, 0 ignored |
-| `A-licence-manifest` | PENDING (pipeline's clauses: third-party SHA-256s, legacy sources, credits) | files-matched PASS |
-| `A20-frame-loop-survives` | PASS | 44 frames after 3 throws |
-| `A22b-fov-recompile` | PASS | 3 FOVs composited |
-| `A56-cascades` (carried, CSM check) | PASS | near texel 1.38 cm ≤ 2, `shadowMapSize` 2048, 3 cascades |
+| `A1-boot-clean` | PASS (`T1`; `F4`, `P2`) | `state=playing` |
+| `A9-perf-budget` | PASS (`T1`; `F4`, `P2`) | 262 draws; **55.7 fps** / scene GPU 34.26 ms, `fpsAttributable: true` (`T1`). Fix round 2: 50.9 fps (`F4`), 48.0 fps (`P2`). The box was loud (other lanes' Chromes alive), so R26's 58-fps quiet-box bar is not attributable here |
+| `A20b-no-system-errors` | PASS (`T1`; `F4`, `P2`) | 0 system errors, 0 hook errors, 310 frames |
+| `A21-real-draw-calls` | **FAIL on its GPU term (`T1`), its W0-day1 baseline verdict (R33: listed, not graded, must not get worse)** | draws 266 / 171 / 280 ≤ 350 PASS; triangles 3.70 / 3.34 / 3.80 M PASS; median GPU at raw DPR 2 **88.4 / 119.2 / 94.5 ms** (`F4`: 96.6 / 129.7 / 83.4; `F3`: 102 / 134 / 106), not worse; at the capped 1.25: 52.0 / 63.7 / 55.3; p95 frame and p95 JS PENDING (loud box) |
+| `A90-memory-stability` | PASS (`T1`) | heap −8 %, geometries +8, textures −28, objects −1,096 (`F4`: −6.5 %, +9, −28, −1,096) |
+| `A90-memory-stability-expansion` | PASS (`T1`) | objects −1,059, non-machine growth 0 |
+| `A90b-memory-attribution` | PASS (`T1`) | 0 offenders, 0 orphaned textures, heap −7.5 % after forced GC. This is this tree's Round-4 workload; R34's Tiller workload is instruments-core's |
+| `A90-rig-reclaim` | PASS (`T1`) | 30 cycles: geometries +5, textures 0; per live machine 0 / 0.38 |
+| `A-ID-ip-assets-gone` | PASS (`T1`) | 19 GLBs, 0 IP hits (`aloy.glb` scheduled for hero-body's exit) |
+| `A-assets-tracked` | PASS (`T1`) | 221 referenced, 0 ignored |
+| `A-licence-manifest` | PENDING (`T1`; pipeline's clauses: third-party, legacy source, credits; R42) | files-matched PASS (217 files) |
+| `A20-frame-loop-survives` | PASS (`T1`) | 44 frames after 3 throws |
+| `A22b-fov-recompile` | PASS (`T1`) | 3 FOVs composited |
+| `A56-cascades` (carried, CSM check) | PASS (`T1`) | near texel 1.38 cm ≤ 2, `shadowMapSize` 2048, 3 cascades, 0 casters beyond the cull |
 
 Not in this tree (other lanes' files): `A90-abs`, `A-alloc-rate`, `A-vram-ledger`, `A-no-horizon-terms-*`,
-`A-reach-all-sites`, `A-port-guard`, `A-carried-suite`. The W0a probe pair was not re-run (W0a gate, judged
-and ruled at W0a; nothing here touches the terrain build or nav).
+`A-reach-all-sites`, `A-port-guard`, `A-carried-suite`. Of these, `A-vram-ledger` was run on the merged gate
+side as a cross-check (`M2`, §5.1). The W0a probe pair was not re-run: it is a W0a gate, judged and ruled at W0a,
+and nothing here touches the terrain build or nav.
 
 ### 5.3 Film, read by the lane against the criteria (advisory; R29 judges grade)
 
@@ -206,6 +277,15 @@ Sheets filmed on the final row: `scratchpad/r5/engine-gpu/run/P2/V20-aa-crop@r5.
   the polygonal crust across the pan and the ripples on the dune — a softer crop 2, no streaks**; crop 3 (NOT
   shipped: fix round 1's 2× / 2×) shows what fix round 1 shipped: the crust gone into faint horizontal
   streaks, the ripples nearly gone. My reading: PASS (fix round 1's shipped row would have failed it).
+- **Fix round 3, `M2`** (merged gate side, real ids): **V20**: same reading as below. The shipped tile
+  (top-left) has 1–2 px intermediate tones along the column tops' diagonals and the shelf edges. The no-AA tile
+  (top-right) has hard two-tone stair-steps on the same edges, plainest on the column tops and the tall column's
+  left side. Round 4 (bottom-left) is the softest, and the locator (bottom-right) puts the crop box on the
+  column crown against the sky. Reading: PASS. **V33b**: rows 1–2 (high ¼-res, ultra) at N/E/S/W show no
+  bars, bands, checker or dither, including the bright S bearing over the water. In row 3, on and OFF are
+  indistinguishable at both tiers on the shelf wall. In row 4, the ×8 darkening maps show soft contact darkening
+  under the shelf lip and at the grass bases (high broader and grainier), white open sand, no blocks.
+  Reading: PASS. Sheets: `run/M2/V20-aa-crop.png`, `run/M2/V33b-no-ao-lattice.png`.
 - **V20** (`P2`; `P1`, `F4` the same): top-left (shipped, SMAA-only at 1.25, 4× nearest): the column tops and sides carry 1–2 px
   ramps between rock and sky; top-right (no AA): hard two-colour stair-steps on the same edges, clearest on the
   tall column's left side; bottom-left (Round-4 MSAA ×4 + SMAA at 1.5): the softest, and the shipped tile keeps
@@ -231,8 +311,10 @@ Sheets filmed on the final row: `scratchpad/r5/engine-gpu/run/P2/V20-aa-crop@r5.
    (a clock step up) or raise it past the bar (two clients time-slicing: `G6` read the final row's vista at
    17.70 with another lane's Chrome alive from 9 s). The judged margin is 0.65–1.22 ms (`G3`, `G4`, `G7`). Nothing in
    the gate was changed for this; a capacity instrument would be a ruling.
-4. **`A-rt-ledger`'s `budgets.mjs` clause stays PENDING in this tree** (gates-perf's file); proved passing
-   with the one line (`L12`).
+4. **`A-rt-ledger`'s `budgets.mjs` clause stays PENDING in this tree** (`T1`), because the line lives in
+   gates-perf's file. On the merged gate side, with gates-perf's committed line and R34 staging, the gate
+   passes every clause (`M1`), and gates-perf's own `A-vram-ledger` counts the same 127,271,712 B (`M2`).
+   It turns green on the tree that has both lanes, which only the orchestrator can make (§0).
 5. **A21's GPU term** fails at baseline (R33: listed, not graded); this tree reads it unattributable on a loud
    box (`F4`) or FAIL (`F3`, 83–134 ms at raw DPR 2); draws and triangles PASS.
 6. **Box quietness.** Six lanes and their judges share one GPU; other lanes' gate Chromes start between the
@@ -247,12 +329,16 @@ Sheets filmed on the final row: `scratchpad/r5/engine-gpu/run/P2/V20-aa-crop@r5.
 ## 7. For other lanes and the orchestrator
 
 - **Orchestrator:** (a) fix round 1 left you a trade (2× and a soft salt pan, or 4× and a red vista); fix
-  round 2 replaces it with the role split — read §5.1 and `V-gpu-tier-look` crops 3 vs 4; (b) apply or route
-  gates-perf's one line (`scratchpad/r5/engine-gpu/budgets-rt-ledger.patch`); (c) when grading A-gpu-tier,
+  round 2 replaces it with the role split — read §5.1 and `V-gpu-tier-look` crops 3 vs 4; (b) **close
+  `A-rt-ledger`** in one of two ways. Merge `r5/w0a-gates-perf` (its `tools/budgets.mjs:141` carries the line),
+  then on main run `node tools/gates.mjs --port 5270 --lane engine-gpu --only A-rt-ledger-census,A-rt-ledger`,
+  which reproduces `M1`. Or rule `recordedInBudgets` a cross-lane PENDING graded at gates-perf's exit. Merge
+  order does not matter for this lane: the only file both branches changed is `docs/ROUND5-PLAN.md`; (c) when grading A-gpu-tier,
   read `docs/ROUND5-ENGINE.md` §3.4: run it ≥ 3 times on a box with no other gate Chrome alive for the whole
   run; (d) a fresh tree needs the two POC symlinks of §0 (gitignored, untracked) or the POC rows fail to boot.
-- **gates-perf:** add `export { RT_LEDGER } from './r5-probes/rt-ledger.mjs';` to `tools/budgets.mjs` (leaf
-  module, no cycle); `A-vram-ledger` can reuse `VRAM_CENSUS`.
+- **gates-perf:** the `RT_LEDGER` re-export is already committed on your branch (`budgets.mjs:141`, verified
+  in `M1` with no import cycle). Keep it through your exit. Your `A-vram-ledger` already agrees with the ledger
+  to the byte (`M2`).
 - **world-ground (W1):** the ground shader is the vista's cost; keep relief in the normal maps (data textures
   get 4× at `high`) and expect albedo at 1× (trilinear) on the POC's evidence; the W1 re-grade can raise it. §4.3's limits are what let `high` return to 4× everywhere.
 - **world-sky (W1):** cascades ≥ 1 render on alternate frames at `high` (`csmFarCadence`); ask `enableCSM`
@@ -269,8 +355,13 @@ Sheets filmed on the final row: `scratchpad/r5/engine-gpu/run/P2/V20-aa-crop@r5.
   disk ≥ 3 GB and memory ≥ 25 % checked before and after taking it. Timed runs (`qrun.sh` → `run.sh` with
   `QUIET=1`) take the slot only at an instant with load < 3 (2.5 for `G6`, `G7`) and no headless Chrome alive,
   never holding a slot while waiting, and sample load and headless Chromes every 2 s (`run/<tag>.box`).
-- Runs this round: `F3`, `P1`, `X1`, `X2`, `L12`, `F4`, `G1`, `G2`, `P2`, `G3`, `G4`, `G5`, `G6`, `G7` (14, one
-  full suite on the split mechanism `F4`; `F3` was the evidence re-run on fix round 1's engine after the reboot).
+- Runs in fix round 3: `M1`, `M2`, `M3` and `T1`. `T1` is the one suite run. The `M` runs used
+  `run-merged.sh`/`qrun-merged.sh`: the same slot, preflight and quiet rules as `run.sh`/`qrun.sh`, with gates-perf's
+  committed runner from the read-only merged gate side (§0) against this tree's Vite on 5251. That runner also took its
+  own semaphore ticket.
+- Runs in fix round 2: `F3`, `P1`, `X1`, `X2`, `L12`, `F4`, `G1`, `G2`, `P2`, `G3`, `G4`, `G5`, `G6`, `G7` (14).
+  `F4` was the one full suite on the split mechanism. `F3` re-ran the evidence on fix round 1's engine after the
+  reboot.
 - Vite on 5251 was started from the tree with `npx vite --port 5251 --strictPort` and killed at the end. At the
   end: 0 headless Chromes on 5251, 0 `cal-*-5251-*` profiles, no Chrome slot held, no loop of this lane left
   running. Port 5173 was never touched. No git write was run (the WIP commits on this branch are the
