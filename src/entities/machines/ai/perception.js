@@ -62,6 +62,7 @@ export class Perception {
     this._losT = 0.5; this._losT = 0;
     this._losCached = false;
     this._scanEmit = 0.5; this._scanEmit = 0;
+    this._pd = 0.5;           // the perception tick's seconds (update -> _beliefTick)
     // the 'machine-scan' payload, ONE per machine and rewritten per emit (listeners read it synchronously
     // and keep nothing: audio's ping is the only one): no object per scan pulse
     this._scanEv = { machine, sweep: 0.5 };
@@ -105,9 +106,12 @@ export class Perception {
       const k = i / 4;
       const x = m.position.x + (target.x - m.position.x) * k;
       const z = m.position.z + (target.z - m.position.z) * k;
-      // the DRAWN surface (heightFast: bilinear off the render grid, small enough to inline, so the
-      // sample costs no boxed arguments) is what hides her; getHeight where there is no grid
-      const gh = t.heightFast ? t.heightFast(x, z) : t.getHeight(x, z);
+      // the DRAWN surface (heightFast: bilinear off the render grid) is what hides her; getHeight where there
+      // is no grid. Sampled at the nearest integer metre (W0b fix round 2): whole-metre arguments are Smis, so
+      // the call boxes nothing in any V8 tier (two boxed doubles per sample, three samples per sight check,
+      // was this function's allocation); the test keeps its 1.2 m clearance over the drawn surface
+      const xi = Math.round(x) | 0, zi = Math.round(z) | 0;
+      const gh = t.heightFast ? t.heightFast(xi, zi) : t.getHeight(xi, zi);
       if (gh > y0 + (y1 - y0) * k + 1.2) return false;
     }
     // machine-ai-04: trunks, big rocks, ruins and tents break the sightline
@@ -175,10 +179,12 @@ export class Perception {
     this._scan(dt);
     this.acc += dt;
     if (this.acc < this.cfg.tick) return;
-    const pd = this.acc;
+    // the tick's seconds travel in a field, not as an argument (a double handed to a call V8 does not inline is
+    // boxed: once per machine per perception tick; W0b fix round 2)
+    this._pd = this.acc;
     this.acc = 0;
     this._sight();
-    this._belief(pd);
+    this._beliefTick();
   }
 
   /** Per frame: the calm sensor sweep (the cone itself scans). */
@@ -299,13 +305,17 @@ export class Perception {
   }
 
   /** Per perception tick: suspicion, belief and hearing from this tick's sight (`pd` = the tick's seconds). */
-  _belief(pd) {
+  _belief(pd) { this._pd = pd; this._beliefTick(); }
+
+  /** `_belief` with the tick's seconds in `this._pd` (see update). */
+  _beliefTick() {
+    const pd = this._pd;
     const m = this.m;
     const ms = m.sc;
     const c = this.cfg;
     const visible = this._tickVisible, fill = this._tickFill;
     if (visible) {
-      ms.suspicion = Math.min(1.25, ms.suspicion + fill * pd);
+      { const sv = ms.suspicion + fill * pd; ms.suspicion = sv < 1.25 ? sv : 1.25; }   // (no Math.* call takes a double)
       m.lastKnown.copy(HOT.ppos);          // (her position this frame, lib/hot.js)
       ms._unseenT = 0;
       this.visibleT += pd;
@@ -317,7 +327,7 @@ export class Perception {
       if (this._hearStrength > 0) {
         // hearing raises suspicion toward — but never past — the alert line
         const cap = m.state === 'attack' ? 1.25 : c.hearCap;
-        ms.suspicion = Math.min(cap, ms.suspicion + c.hearGain * this._hearStrength * pd);
+        { const sv = ms.suspicion + c.hearGain * this._hearStrength * pd; ms.suspicion = sv < cap ? sv : cap; }
         if (ms.suspicion < c.alertAt || this._hearKind === 'lure') {
           m.lastKnown.copy(this._hearPos);
           m.lastKnown.y = HOT.terrain.getHeight(m.lastKnown.x, m.lastKnown.z);
@@ -325,10 +335,10 @@ export class Perception {
         // one record per machine, rewritten (read only here and by debug views): no object per tick
         const st = this._stim; st.x = this._hearPos.x; st.z = this._hearPos.z; st.kind = this._hearKind;
         this.lastStimulus = st;
-        if (m.state === 'attack') ms._unseenT = Math.min(ms._unseenT, 1.5);
+        if (m.state === 'attack' && ms._unseenT > 1.5) ms._unseenT = 1.5;
       } else {
         const rate = m.state === 'search' || m.state === 'suspicious' ? c.decay : c.decayCalm;
-        ms.suspicion = Math.max(0, ms.suspicion - rate * pd);
+        { const sv = ms.suspicion - rate * pd; ms.suspicion = sv > 0 ? sv : 0; }
       }
     }
     this._hearStrength = 0;

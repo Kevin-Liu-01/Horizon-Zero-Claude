@@ -709,14 +709,15 @@ export class LampSystem {
       if (hemi) { const kh = hemi.intensity / Math.PI, v = u.uSkyRad.value, c = hemi.color; v.x = c.r * kh; v.y = c.g * kh; v.z = c.b * kh; }
     }
     const t = E ? E.simTime : performance.now() / 1000;
-    const dt = this._lastT < 0 ? 0 : Math.min(0.25, Math.max(0, t - this._lastT));
+    // (no Math.* call takes a double: written out)
+    const dt0 = t - this._lastT, dt = this._lastT < 0 || dt0 < 0 ? 0 : dt0 > 0.25 ? 0.25 : dt0;
     this._lastT = t;
     const ease = 1 - Math.exp(-IRIS_RATE * dt);
     const recs = this.records;
     const L = this._aLamp.array, I = this._aIris.array, K = this._aCore.array, B = this._aBeam.array;
     const air = this.fogK > BEAM.fogK || this.night > BEAM.night;
     let scale = -1;                         // perceptionScale, read only if a beam is drawn
-    const fogBoost = Math.min(2.5, 0.6 + 0.8 * Math.max(0, this.fogK - 1) + 0.9 * this.night);
+    const fk = this.fogK - 1, fb0 = 0.6 + 0.8 * (fk > 0 ? fk : 0) + 0.9 * this.night, fogBoost = fb0 < 2.5 ? fb0 : 2.5;
     let n = 0, nb = 0;
     for (let i = 0; i < recs.length; i++) {
       const r = recs[i];
@@ -759,7 +760,7 @@ export class LampSystem {
       const HA = this._hdrA, CA = this._coreA, c3 = ci * 3;
       const o = n * 4;
       L[o] = HA[c3] * gain; L[o + 1] = HA[c3 + 1] * gain; L[o + 2] = HA[c3 + 2] * gain;
-      L[o + 3] = APERTURE_MAX * Math.sqrt(Math.max(0, r.aperture));
+      L[o + 3] = APERTURE_MAX * Math.sqrt(r.aperture > 0 ? r.aperture : 0);
       K[o] = CA[c3] * gain; K[o + 1] = CA[c3 + 1] * gain; K[o + 2] = CA[c3 + 2] * gain; K[o + 3] = CORE_FRAC_A[ci];
       I[o] = HA[9]; I[o + 1] = HA[10]; I[o + 2] = HA[11];
       I[o + 3] = s === 'dark' ? 1 : 0;
@@ -771,7 +772,7 @@ export class LampSystem {
       if (air && beamKind !== null && nb < this.capacity && !m.lowLOD) {
         if (scale < 0) scale = perceptionScale(env);
         const sr = m.sightRange;
-        r.blen = Math.max(2, (sr || 30) * scale);
+        { const bl = (sr || 30) * scale; r.blen = bl > 2 ? bl : 2; }
         r.bmode = beamKind;
         r.bt = t;
         r.bslot = nb;

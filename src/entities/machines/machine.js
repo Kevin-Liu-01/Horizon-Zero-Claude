@@ -385,7 +385,9 @@ function latticeM(m, t, ni, nj) {
 /** `Machine._updateEyes` as a module function (see HOT PATHS, NO PROTOTYPE LOADS). */
 export function updateEyesM(m, dt, t) {
   const sc = m.sc;
-  const tt = HOT.engine !== null ? HOT.simTime : t;   // the engine's sim clock, copied once per frame (lib/hot.js)
+  // the engine's sim clock, copied once per frame (lib/hot.js). Read unconditionally: a value merged from a double
+  // (the clock) and a tagged parameter (`t`) is boxed on every call in V8's optimised code
+  const tt = HOT.simTime;
   const s = lampStateFor(m);
   if (s !== m._lampState) {
     m._lampPrev = m._lampState || 'calm';
@@ -605,6 +607,35 @@ export class MachineScalars {
     this._pb_speed = null; this._pb_speed = 0; this._pv_speed = 0.5;
     this._pb_accelPitch = null; this._pb_accelPitch = 0; this._pv_accelPitch = 0.5;
     this._pbstrafeK = null; this._pbstrafeK = 0; this._pvstrafeK = 0.5;
+    /* ...and the same one-box-per-change publication for every other scalar (W0b fix round 2): frozen engage /
+     * squad / HUD code reads `m.suspicion`, `m._unseenT`, `m.health` ... every frame, and a plain getter
+     * returned a fresh HeapNumber per READ; now a read of an unchanged value allocates nothing. */
+    this._pbsuspicion = null; this._pbsuspicion = 0; this._pvsuspicion = 0.5;
+    this._pb_unseenT = null; this._pb_unseenT = 0; this._pv_unseenT = 0.5;
+    this._pb_stateT = null; this._pb_stateT = 0; this._pv_stateT = 0.5;
+    this._pbplayerDist = null; this._pbplayerDist = 0; this._pvplayerDist = 0.5;
+    this._pbdetectFill = null; this._pbdetectFill = 0; this._pvdetectFill = 0.5;
+    this._pbscanOffset = null; this._pbscanOffset = 0; this._pvscanOffset = 0.5;
+    this._pbhealth = null; this._pbhealth = 0; this._pvhealth = 0.5;
+    this._pblampDarkT = null; this._pblampDarkT = 0; this._pvlampDarkT = 0.5;
+    this._pbstunT = null; this._pbstunT = 0; this._pvstunT = 0.5;
+    this._pbburnT = null; this._pbburnT = 0; this._pvburnT = 0.5;
+    this._pb_burnDps = null; this._pb_burnDps = 0; this._pv_burnDps = 0.5;
+    this._pb_flameClock = null; this._pb_flameClock = 0; this._pv_flameClock = 0.5;
+    this._pb_arcClock = null; this._pb_arcClock = 0; this._pv_arcClock = 0.5;
+    this._pbbrittleT = null; this._pbbrittleT = 0; this._pvbrittleT = 0.5;
+    this._pb_frostK = null; this._pb_frostK = 0; this._pv_frostK = 0.5;
+    this._pb_iceClock = null; this._pb_iceClock = 0; this._pv_iceClock = 0.5;
+    this._pb_elemHold = null; this._pb_elemHold = 0; this._pv_elemHold = 0.5;
+    this._pb_eyeFlare = null; this._pb_eyeFlare = 0; this._pv_eyeFlare = 0.5;
+    this._pb_telegraphT = null; this._pb_telegraphT = 0; this._pv_telegraphT = 0.5;
+    this._pb_deathT = null; this._pb_deathT = 0; this._pv_deathT = 0.5;
+    this._pb_waitT = null; this._pb_waitT = 0; this._pv_waitT = 0.5;
+    this._pb_lodAccum = null; this._pb_lodAccum = 0; this._pv_lodAccum = 0.5;
+    this._pb_lampSince = null; this._pb_lampSince = 0; this._pv_lampSince = 0.5;
+    this._pb_lampPhase = null; this._pb_lampPhase = 0; this._pv_lampPhase = 0.5;
+    this._pb_alarmCd = null; this._pb_alarmCd = 0; this._pv_alarmCd = 0.5;
+    this._pb_attackCd = null; this._pb_attackCd = 0; this._pv_attackCd = 0.5;
     this.heading = 0.5; this.heading = 0;
     this._speed = 0.5; this._speed = 0;
     this._accelPitch = 0.5; this._accelPitch = 0;
@@ -980,57 +1011,57 @@ export class Machine {
   set _accelPitch(v) { this.sc._accelPitch = v; }
   get strafeK() { const sc = this.sc; if (sc.strafeK !== sc._pvstrafeK) { sc._pbstrafeK = sc.strafeK; sc._pvstrafeK = sc.strafeK; } return sc._pbstrafeK; }
   set strafeK(v) { this.sc.strafeK = v; }
-  get suspicion() { return this.sc.suspicion; }
+  get suspicion() { const sc = this.sc; if (sc.suspicion !== sc._pvsuspicion) { sc._pbsuspicion = sc.suspicion; sc._pvsuspicion = sc.suspicion; } return sc._pbsuspicion; }
   set suspicion(v) { this.sc.suspicion = v; }
-  get _unseenT() { return this.sc._unseenT; }
+  get _unseenT() { const sc = this.sc; if (sc._unseenT !== sc._pv_unseenT) { sc._pb_unseenT = sc._unseenT; sc._pv_unseenT = sc._unseenT; } return sc._pb_unseenT; }
   set _unseenT(v) { this.sc._unseenT = v; }
-  get _stateT() { return this.sc._stateT; }
+  get _stateT() { const sc = this.sc; if (sc._stateT !== sc._pv_stateT) { sc._pb_stateT = sc._stateT; sc._pv_stateT = sc._stateT; } return sc._pb_stateT; }
   set _stateT(v) { this.sc._stateT = v; }
-  get playerDist() { return this.sc.playerDist; }
+  get playerDist() { const sc = this.sc; if (sc.playerDist !== sc._pvplayerDist) { sc._pbplayerDist = sc.playerDist; sc._pvplayerDist = sc.playerDist; } return sc._pbplayerDist; }
   set playerDist(v) { this.sc.playerDist = v; }
-  get detectFill() { return this.sc.detectFill; }
+  get detectFill() { const sc = this.sc; if (sc.detectFill !== sc._pvdetectFill) { sc._pbdetectFill = sc.detectFill; sc._pvdetectFill = sc.detectFill; } return sc._pbdetectFill; }
   set detectFill(v) { this.sc.detectFill = v; }
-  get scanOffset() { return this.sc.scanOffset; }
+  get scanOffset() { const sc = this.sc; if (sc.scanOffset !== sc._pvscanOffset) { sc._pbscanOffset = sc.scanOffset; sc._pvscanOffset = sc.scanOffset; } return sc._pbscanOffset; }
   set scanOffset(v) { this.sc.scanOffset = v; }
-  get health() { return this.sc.health; }
+  get health() { const sc = this.sc; if (sc.health !== sc._pvhealth) { sc._pbhealth = sc.health; sc._pvhealth = sc.health; } return sc._pbhealth; }
   set health(v) { this.sc.health = v; }
-  get lampDarkT() { return this.sc.lampDarkT; }
+  get lampDarkT() { const sc = this.sc; if (sc.lampDarkT !== sc._pvlampDarkT) { sc._pblampDarkT = sc.lampDarkT; sc._pvlampDarkT = sc.lampDarkT; } return sc._pblampDarkT; }
   set lampDarkT(v) { this.sc.lampDarkT = v; }
-  get stunT() { return this.sc.stunT; }
+  get stunT() { const sc = this.sc; if (sc.stunT !== sc._pvstunT) { sc._pbstunT = sc.stunT; sc._pvstunT = sc.stunT; } return sc._pbstunT; }
   set stunT(v) { this.sc.stunT = v; }
-  get burnT() { return this.sc.burnT; }
+  get burnT() { const sc = this.sc; if (sc.burnT !== sc._pvburnT) { sc._pbburnT = sc.burnT; sc._pvburnT = sc.burnT; } return sc._pbburnT; }
   set burnT(v) { this.sc.burnT = v; }
-  get _burnDps() { return this.sc._burnDps; }
+  get _burnDps() { const sc = this.sc; if (sc._burnDps !== sc._pv_burnDps) { sc._pb_burnDps = sc._burnDps; sc._pv_burnDps = sc._burnDps; } return sc._pb_burnDps; }
   set _burnDps(v) { this.sc._burnDps = v; }
-  get _flameClock() { return this.sc._flameClock; }
+  get _flameClock() { const sc = this.sc; if (sc._flameClock !== sc._pv_flameClock) { sc._pb_flameClock = sc._flameClock; sc._pv_flameClock = sc._flameClock; } return sc._pb_flameClock; }
   set _flameClock(v) { this.sc._flameClock = v; }
-  get _arcClock() { return this.sc._arcClock; }
+  get _arcClock() { const sc = this.sc; if (sc._arcClock !== sc._pv_arcClock) { sc._pb_arcClock = sc._arcClock; sc._pv_arcClock = sc._arcClock; } return sc._pb_arcClock; }
   set _arcClock(v) { this.sc._arcClock = v; }
-  get brittleT() { return this.sc.brittleT; }
+  get brittleT() { const sc = this.sc; if (sc.brittleT !== sc._pvbrittleT) { sc._pbbrittleT = sc.brittleT; sc._pvbrittleT = sc.brittleT; } return sc._pbbrittleT; }
   set brittleT(v) { this.sc.brittleT = v; }
-  get _frostK() { return this.sc._frostK; }
+  get _frostK() { const sc = this.sc; if (sc._frostK !== sc._pv_frostK) { sc._pb_frostK = sc._frostK; sc._pv_frostK = sc._frostK; } return sc._pb_frostK; }
   set _frostK(v) { this.sc._frostK = v; }
-  get _iceClock() { return this.sc._iceClock; }
+  get _iceClock() { const sc = this.sc; if (sc._iceClock !== sc._pv_iceClock) { sc._pb_iceClock = sc._iceClock; sc._pv_iceClock = sc._iceClock; } return sc._pb_iceClock; }
   set _iceClock(v) { this.sc._iceClock = v; }
-  get _elemHold() { return this.sc._elemHold; }
+  get _elemHold() { const sc = this.sc; if (sc._elemHold !== sc._pv_elemHold) { sc._pb_elemHold = sc._elemHold; sc._pv_elemHold = sc._elemHold; } return sc._pb_elemHold; }
   set _elemHold(v) { this.sc._elemHold = v; }
-  get _eyeFlare() { return this.sc._eyeFlare; }
+  get _eyeFlare() { const sc = this.sc; if (sc._eyeFlare !== sc._pv_eyeFlare) { sc._pb_eyeFlare = sc._eyeFlare; sc._pv_eyeFlare = sc._eyeFlare; } return sc._pb_eyeFlare; }
   set _eyeFlare(v) { this.sc._eyeFlare = v; }
-  get _telegraphT() { return this.sc._telegraphT; }
+  get _telegraphT() { const sc = this.sc; if (sc._telegraphT !== sc._pv_telegraphT) { sc._pb_telegraphT = sc._telegraphT; sc._pv_telegraphT = sc._telegraphT; } return sc._pb_telegraphT; }
   set _telegraphT(v) { this.sc._telegraphT = v; }
-  get _deathT() { return this.sc._deathT; }
+  get _deathT() { const sc = this.sc; if (sc._deathT !== sc._pv_deathT) { sc._pb_deathT = sc._deathT; sc._pv_deathT = sc._deathT; } return sc._pb_deathT; }
   set _deathT(v) { this.sc._deathT = v; }
-  get _waitT() { return this.sc._waitT; }
+  get _waitT() { const sc = this.sc; if (sc._waitT !== sc._pv_waitT) { sc._pb_waitT = sc._waitT; sc._pv_waitT = sc._waitT; } return sc._pb_waitT; }
   set _waitT(v) { this.sc._waitT = v; }
-  get _lodAccum() { return this.sc._lodAccum; }
+  get _lodAccum() { const sc = this.sc; if (sc._lodAccum !== sc._pv_lodAccum) { sc._pb_lodAccum = sc._lodAccum; sc._pv_lodAccum = sc._lodAccum; } return sc._pb_lodAccum; }
   set _lodAccum(v) { this.sc._lodAccum = v; }
-  get _lampSince() { return this.sc._lampSince; }
+  get _lampSince() { const sc = this.sc; if (sc._lampSince !== sc._pv_lampSince) { sc._pb_lampSince = sc._lampSince; sc._pv_lampSince = sc._lampSince; } return sc._pb_lampSince; }
   set _lampSince(v) { this.sc._lampSince = v; }
-  get _lampPhase() { return this.sc._lampPhase; }
+  get _lampPhase() { const sc = this.sc; if (sc._lampPhase !== sc._pv_lampPhase) { sc._pb_lampPhase = sc._lampPhase; sc._pv_lampPhase = sc._lampPhase; } return sc._pb_lampPhase; }
   set _lampPhase(v) { this.sc._lampPhase = v; }
-  get _alarmCd() { return this.sc._alarmCd; }
+  get _alarmCd() { const sc = this.sc; if (sc._alarmCd !== sc._pv_alarmCd) { sc._pb_alarmCd = sc._alarmCd; sc._pv_alarmCd = sc._alarmCd; } return sc._pb_alarmCd; }
   set _alarmCd(v) { this.sc._alarmCd = v; }
-  get _attackCd() { return this.sc._attackCd; }
+  get _attackCd() { const sc = this.sc; if (sc._attackCd !== sc._pv_attackCd) { sc._pb_attackCd = sc._attackCd; sc._pv_attackCd = sc._attackCd; } return sc._pb_attackCd; }
   set _attackCd(v) { this.sc._attackCd = v; }
 
   /* ------------------------- setup helpers ------------------------- */
@@ -2041,7 +2072,7 @@ export class Machine {
     if (d < 2.5) {
       sc._speed += (0 - sc._speed) * (1 - Math.exp(-6 * dt));
       sc.heading += Math.sin(sc._stateT * 1.6) * dt * 0.9;
-      if (this.ai.lureT <= 0) sc.suspicion = Math.max(0, sc.suspicion - dt * 0.3);
+      if (this.ai.lureT <= 0) { const sv = sc.suspicion - dt * 0.3; sc.suspicion = sv > 0 ? sv : 0; }
     }
     // nothing found where the noise was: sweep the area properly
     if (sc._stateT > 6 && this.ai.lureT <= 0) {
@@ -2114,7 +2145,7 @@ export class Machine {
       contact = bx * bx + bz * bz <= slack * slack;
     }
     // in contact it has NOT lost her: the search countdown cannot mature
-    if (contact) sc._unseenT = Math.min(sc._unseenT, 1.5);
+    if (contact && sc._unseenT > 1.5) sc._unseenT = 1.5;   // (no Math.* call takes a double)
     const engaged = this._visible || contact;
 
     if (sc._unseenT > 4.5) { this.ai.beginSearch(); this.setState('search'); return; }

@@ -2110,7 +2110,7 @@ async function allocMachines({ PORT }) {
   CP.installProfileCleanup();
   const dir = CP.profileDir(PORT);
   const jsFlags = ['--expose-gc'];
-  if (process.env.R5_IC_NOINLINE) jsFlags.push('--no-turbo-inlining', '--max-inlined-bytecode-size=0');   // diagnosis only: one frame per function
+  if (process.env.R5_IC_NOINLINE) jsFlags.push('--no-turbo-inlining', '--max-inlined-bytecode-size=0', '--no-maglev-inlining');   // diagnosis only: one frame per function
   if (process.env.R5_IC_OPTSTATUS) jsFlags.push('--allow-natives-syntax');                                 // diagnosis only: tier of each hot function
   if (process.env.R5_IC_TRACEDEOPT) jsFlags.push('--trace-deopt');                                         // diagnosis only: deopts per function, timed
   if (process.env.R5_IC_PROTOTRACE) jsFlags.push('--trace-prototype-users', '--allow-natives-syntax');      // diagnosis only: which prototype map is invalidated
