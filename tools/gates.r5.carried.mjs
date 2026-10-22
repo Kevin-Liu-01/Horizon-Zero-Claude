@@ -21505,6 +21505,10 @@ const GATES = [
         await face(m, 9);
         for (let i = 0; i < n; i++) {
           m.health = m.maxHealth;
+          // W0b fix round 2 (measured): the staged herd kind is 'skittish' with a 14 m engage band and a 9 m/s Hopper
+          // Burst; once it noticed her at the 12.7 m stand-off it left the aim point and a whole phase took 0 riders.
+          // Held calm before every shot (park: patrol, suspicion 0, route pinned); it still ticks, as riders require.
+          park(m);
           await fire('hunter-bow', 'hunter', m.position.x, m.position.y + (m.height || 2) * 0.5, m.position.z);
         }
         await new Promise(x => setTimeout(x, 600));
