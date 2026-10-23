@@ -16,7 +16,7 @@ A-draw-elbow-level and A16, filmed in the new **V24-draw-down** (§000.9). V13's
 and is filmed at 3.3 m (§000.5). The alidade hangs at the sternum on a modelled neck cord and swings (A19 gear 36°;
 §000.6). The wrap tail is cloth in the world wind (the NE trade wind by default; fix round 3's posed rest kick is
 gone), and both sheets are re-filmed and re-committed (§000.10). Global list (`f4global`): A1, A20b, A90 ×4,
-A-no-override PASS; A21 PENDING (R45); A9's fps term failed on a busy box (⟨A9S⟩); A81 / A-ID-ip-assets-gone /
+A-no-override PASS; A21 PENDING (R45); A9's draw calls PASS and its fps term is PENDING-quiet-box (R45: the box never got quiet in 25 min; §4.5); A81 / A-ID-ip-assets-gone /
 A-licence-manifest / A-assets-tracked fail on other lanes' unmerged rows (R39, R47; §4.5).
 
 ## 000. Fix round 4 (Oct 22–23, after judge r1) — what changed, by finding
@@ -843,7 +843,7 @@ Run `f4global` (Oct 23, 05:35–05:52 UTC; one Chrome, the hero-body + pipeline 
 |---|---|---|
 | A1-boot-clean | PASS | state = playing |
 | A20b-no-system-errors | PASS | 0 errors, 220 frames |
-| A9-perf-budget | ⟨A9⟩ | 282 draw calls (PASS); fps 38.5 with the scene GPU at 57.8 ms while two other lanes' Chromes rendered on the same GPU (fix round 3, quieter: 58.6 fps); R45: the fps term is the orchestrator's quiet run |
+| A9-perf-budget | draw calls PASS; fps **PENDING-quiet-box (R45)** | 282 draw calls. `f4global`: fps 38.5, scene GPU 57.8 ms (the runner called it attributable: the empty frame then took 0.57 ms) with two other lanes' Chromes rendering; re-timed alone (`f4a9`, after waiting 25 min for load < 3 with no other Chrome — it never came; load 8, four other headless Chromes): fps 28.8, and the empty frame itself took 4.39 ms of GPU → PENDING, "the deficit is contention, not the scene". Fix round 3 on a quieter box: 58.6 fps. This round's render change is +88 tris on the stow kit (the neck cord); its per-frame CPU additions are the cord/wind terms in the spring solve, the knuckle turn (one `getNockWorld` while aiming) and the hillside boom's 6 bisections (only on a steep look-up). The fps term is the orchestrator's quiet global run (R45) |
 | A21-real-draw-calls | PENDING (R45) | draws 286 / 177 / 311 and triangles PASS; GPU / p95 terms not attributable |
 | A90-memory-stability | PASS | heap −10.6 %, geometries +9, textures −28 |
 | A90-memory-stability-expansion | PASS | non-machine growth 0, geometries +3, heap −6.3 % |
