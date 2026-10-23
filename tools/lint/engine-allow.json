@@ -70,6 +70,16 @@
      "src/ui/focus.js"
     ],
     "reason": "the English words: the sky horizon / zenith, a jump apex, a math beta, horizontal (not the title or the characters)"
+   },
+   {
+    "id": "engine:three-bloom",
+    "terms": [
+     "Horizon"
+    ],
+    "paths": [
+     "src/core/engine.js"
+    ],
+    "reason": "three.js UnrealBloomPass API property renderTargetsHorizontal, read by engine-gpu's bloom render in src/core/engine.js (\"Horizon\" is a substring of \"Horizontal\"; not the IP). Added by the orchestrator at the engine-gpu merge (W0b)."
    }
   ],
   "guard": [
@@ -389,6 +399,20 @@
    ],
    "reason": "the English words: the sky horizon / zenith, a jump apex, a math beta, horizontal (not the title or the characters)",
    "cap": 13
+  },
+  {
+   "id": "engine:three-bloom",
+   "kind": "engine",
+   "owner": "engine",
+   "until": "permanent (capped)",
+   "terms": [
+    "Horizon"
+   ],
+   "paths": [
+    "src/core/engine.js"
+   ],
+   "reason": "three.js UnrealBloomPass API property renderTargetsHorizontal, read by engine-gpu's bloom render in src/core/engine.js (\"Horizon\" is a substring of \"Horizontal\"; not the IP). Added by the orchestrator at the engine-gpu merge (W0b).",
+   "cap": 1
   },
   {
    "id": "guard:instruments-core",
