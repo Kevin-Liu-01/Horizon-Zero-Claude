@@ -8811,7 +8811,7 @@ const NEW_VISUALS = [
       const tgt = head.clone().add(elW).add(bhW).multiplyScalar(1 / 3);
       const foreDeg = Math.acos(Math.max(-1, Math.min(1, wrW.clone().sub(elW).normalize().dot(bhW.clone().sub(nk).normalize())))) * 180 / Math.PI;
       const S = await import('/src/hero/sheets.js');
-      const W = 780, H = 860;
+      const W = 780, H = 830;
       const live = (pos) => S.liveView(C, [pos.x, pos.y, pos.z], [tgt.x, tgt.y, tgt.z], { width: W, height: H, fov: 34 });
       const side = new T3(tgt.x + rx * 1.9, tgt.y + 0.08, tgt.z + rz * 1.9);
       const d34x = (fx + rx) / Math.SQRT2, d34z = (fz + rz) / Math.SQRT2;

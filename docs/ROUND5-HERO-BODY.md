@@ -653,6 +653,22 @@ chainClasses.wrap  '^dyn_wrapSash'     // the wrap tail is class 'wrap': cloth i
 
 `_footLock` now re-captures a lock whose anchor is more than 1 m from its ball (a teleport is not a slip, §00.2).
 
+Fix round 5 (§0000):
+
+```js
+animator.debugAim()                    // + tBend (rad): the pitched aim's rigid turn of the upper body
+animator.debugClimb()                  // + caught (the climb's catch latch), dbg { short, press, clvShortL/R, clvL/R, missL/R }
+// profile tune keys (absent = the Round-4 behaviour):
+tune.downT   bool                      // a down aim is the LEVEL draw's form turned rigidly onto the aim ray at spine_01 (tS 0..1 over 0.1..0.5 rad)
+tune.upT     0..1                      // ...and an up aim the same way
+tune.downTRoll 0..1                    // the turn's share of the shortest arc's roll about the arrow (Brea 0.5)
+// the wrap class now: wind 3.5 /s, rootK 8 (was 2.3 / 5)
+// internal: _footHdg(side) (heading by the lateral axis), _palmEdge(side, edge), the T turn's frame _qT / _upT / _fwdT / _latT / _restGripT
+```
+
+The swing-foot pass (`_strafeSwingFeet`) and the yaw latch read `_footHdg`; constants `SWING_TOE_PITCH` 0.43,
+`SWING_YAW_BAND` 0.14, `CLIMB_CATCH` 0.07.
+
 ### 2.4 Parts — `src/hero/{index,parts,outfit,stowkit,carry,held}.js` (handed to armory at W1 day 1)
 
 ```js
@@ -670,6 +686,11 @@ releasePart(meshes, player) -> { skeletons }   // removeFromParent + skeleton.di
 class HideMask { apply(bit) -> hiddenTris; visibleTris() }   // index reorder + drawRange, no new GPU buffer
 installPieceMask(material) -> { value }    // the `_piece` vertex mask, composed by the player's fade clone
 class LanceCarry                           // carry.js: the stowed lance on its socket in the R10 band (A-lance-stow)
+LanceCarry.debugViol() -> { total, deg, blade, mid, plane, head, arm, cam, tail, ground, groundGapM }   // fix round 5: the last pose's violation, term by term (cold path)
+LanceCarry.bounds                          // the live R10 bounds (fix round 5 adds degW, slLo / slHi, slCost); carryInfo().slide = the lance's slide in its sling (m)
+// src/hero/sheets.js (dev/gate module), fix round 5:
+poseIdle(ctx, settleS = 1.5) -> model      // the sheets' staging: idle, facing N in the world wind
+tailLegibility(ctx, rootName = 'dyn_wrapSash_01') -> [{ view, tailPx, clear2, clear3, reach }]   // cue 2 measured at the sheet's 64 px (A-tail-legible)
 ```
 
 ### 2.5 The published behaviour surface (contracts §3.2, owner hero-body, real at W0b)
@@ -882,14 +903,18 @@ exactly these overlays; standalone:
   long-boom pricing, and the rows still move by a sample or a few hundredths between runs.
 - **A31c** — failed at the Round-4 baseline (R36: listed). Against the Aloy runs (§000.4): better on head-seen,
   view-off, aim entry and the turns; worse on moving framing (onFrac ratio). Not retuned this round.
-- **The down-aim draw sits ~3 cm further back than the level draw** in the head's frame (the reach clamp's radial
-  fallback at 0.75); the hand is on the string (knuckle 0.052 m) and at the jaw line, the forearm along the arrow.
-  **The animator's own nock estimate (`D.nock`) is 0.07–0.09 m off the bow's rendered nock** (the bow node's offset
+- **A16's 0.75 row fails by its character-height reading** (+0.095 m) since the T bends with the arrow — the
+  conflict and the ruling request are in §0000.2 / §7.0. **The pitched aims' loose** (the re-nock reach to the hip
+  quiver from a bent T) carries the hand ~0.28 m back in character space and the elbow to 0.19 m behind the head
+  plane (R35's 0.20): within the bar, with ~1 cm of room. **The T turn's ray is low-passed (0.35 s)**: the trunk
+  follows a fast camera pitch with that lag while the arms follow at once.
+- **The animator's own nock estimate (`D.nock`) is 0.07–0.09 m off the bow's rendered nock** (the bow node's offset
   in the palm; probe `dh3`): the knuckle turn now targets the rendered nock, but the arm solve's anchor and Lmax are
   still expressed about the estimate — armory's W1 bow (Sabina in `bow.js`) should publish its grip node so the
   solve can use the real one.
-- **The wrap tail is thin edge-on** (a 0.10 m strip): it streams and flutters now, but seen edge-on (V23's strips)
-  it reads as a ribbon; a wider tail is a W1 art question (bible: 0.40 × 0.07 m).
+- **The wrap tail in still air stands only 3 px off the silhouette at 64 px** (A-tail-legible grades still air at a
+  lower "distinct shape" bar, §0000.3): the sheet — the plan's bar — is staged in the trade wind, where it reads at
+  ≥ 7 px clear / reach ≥ 4 in every view. It is 0.49 × 0.10 m (the bible says 0.40 × 0.07); W1's art pass owns it.
 - **R47 handover (melee W1):** A100's visible-spear clause, A101's back-socket bone (`spine_02` vs
   `animator.b.spine3`) and A105's planted-ball literal (0.012 m, Aloy's ball joint) are written up in §000.3.
 - **W0 bridge — `SPECS.hero`**: `src/hero/rows.js` points the `hero` row at Brea at runtime; `assets.specs.js`
@@ -909,6 +934,14 @@ exactly these overlays; standalone:
 
 ## 7. Requests to other lanes and the orchestrator
 
+0. **orchestrator (fix round 5, A16's down row):** rule how A16's "elbow not above the shoulder" reads at a
+   PITCHED aim. The judge-r2 fix of V24-draw-down (the whole T bent with the arrow, the forearm on the arrow line)
+   puts the draw elbow +0.095 m over the draw shoulder joint in character height at camPitch 0.75 (A16 FAILS that
+   one row by its world reading) and +0.005 m in the aim frame (the frame A-draw-elbow-level's height band already
+   uses in R5; reported in every A16 row as `elbowAboveShoulderAimFrame`). §0000.2 proves no pose holds A16's world
+   reading, A-draw-elbow-level's floor and the judge's forearm-within-20° clause together. Requested: A16's elbow
+   clause measured in the aim frame (world up made perpendicular to the arrow), identical to today's at a level aim;
+   or a ruling which of the two bars yields at the down aim.
 1. **orchestrator (R36):** rule whether "must not get worse" for A31c is per clause or per failing-clause count;
    the comparison against the Aloy baseline is in §000.4.
 2. **pipeline (R39):** set `SPECS.hero` in `src/core/assets.specs.js` to
