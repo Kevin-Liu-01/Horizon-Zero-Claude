@@ -663,6 +663,11 @@ const DRAW_PROBE = `(async () => {
     const real = R.renderBufferDirect;
     const perRoot = new Map(); const perFrameUn = new Map(); const perFrameAll = new Map(); const postByFrame = new Map();
     const f0 = e.frames;
+    // the renderer's own counter on the SAME frames: renderer.info is reset at the top of engine.render(), so at
+    // onAfterRender it holds that frame's calls (fix round 2: both instruments over identical frames)
+    const infoByFrame = new Map();
+    const recInfo = () => { infoByFrame.set(e.frames, R.info.render.calls); };
+    e.onAfterRender.push(recInfo);
     R.renderBufferDirect = function (camera, sc, geometry, material, object, group) {
       let o = object, root = null; while (o) { if (o.parent === scene) { root = o; break; } o = o.parent; }
       const fk = e.frames;
@@ -675,8 +680,8 @@ const DRAW_PROBE = `(async () => {
       }
       return real.call(this, camera, sc, geometry, material, object, group);
     };
-    try { await __frames(10); } finally { R.renderBufferDirect = real; }
-    const keys = [...perFrameAll.keys()].sort((a, b) => a - b).slice(1, -1);      // whole frames only
+    try { await __frames(10); } finally { R.renderBufferDirect = real; const ii = e.onAfterRender.indexOf(recInfo); if (ii >= 0) e.onAfterRender.splice(ii, 1); }
+    const keys = [...perFrameAll.keys()].sort((a, b) => a - b).slice(1, -1).filter((k) => infoByFrame.has(k));   // whole frames only
     const f = Math.max(1, keys.length);
     const unPerFrame = keys.map((k) => perFrameUn.get(k) || 0);
     const allPerFrame = keys.map((k) => perFrameAll.get(k) || 0);
@@ -688,6 +693,8 @@ const DRAW_PROBE = `(async () => {
     for (const x of rows) { const k = x.owner || 'UNATTRIBUTED'; by[k] = Math.round(((by[k] || 0) + x.draws) * 10) / 10; }
     return { frames: f, unattributedPerFrame: unPerFrame, unattributedMax: unPerFrame.length ? Math.max(...unPerFrame) : 0, unattributedMedian: med(unPerFrame),
       drawsPerFrameMedian: med(allPerFrame), post: Math.round(whole(postByFrame) * 10) / 10, perFrame: Math.round(whole(perFrameAll) * 10) / 10, by, rows, firstFrame: f0,
+      infoPerFrame: keys.map((k) => infoByFrame.get(k)), infoMedian: med(keys.map((k) => infoByFrame.get(k))), allPerFrame,
+      infoVsDirectMax: keys.reduce((a, k) => Math.max(a, Math.abs((infoByFrame.get(k) || 0) - (perFrameAll.get(k) || 0))), 0),
       // per owner: the per-frame values, so a reading that varies frame to frame is visible
       ownerPerFrame: Object.fromEntries([...new Set(rows.map((x) => x.owner || 'UNATTRIBUTED'))].map((k) => [k, keys.map((fk) => {
         let n = 0; for (const [root, pr] of perRoot) if ((ownerOf(root.name)?.id || 'UNATTRIBUTED') === k && !(k === 'UNATTRIBUTED' && isLightish(root))) n += pr.get(fk) || 0; return n; })])) };
@@ -719,29 +726,27 @@ const DRAW_PROBE = `(async () => {
    * the 'with' state, and every root's direct count in the 'without' state. The cross-check is then exact accounting:
    * the renderer's (with - without) must equal the owner's own direct draws minus what the other roots and the post
    * passes gained while it was hidden (substitution), within +-1; and the owner must draw 0 while hidden. */
-  const subOf = (w, h, own) => {
-    let n = 0; const by = {};
-    for (const k of new Set([...Object.keys(w.by), ...Object.keys(h.by)])) {
-      if (k === own) continue;
-      const d = Math.round(((h.by[k] || 0) - (w.by[k] || 0)) * 10) / 10;
-      if (d) { by[k] = d; n += d; }
-    }
-    const postD = Math.round((h.post - w.post) * 10) / 10;
-    if (postD) { by.post = postD; n += postD; }
-    return { n: Math.round(n * 10) / 10, by };
+  const medOf = (a) => { const s = (a || []).slice().sort((x, y) => x - y); return s.length ? (s.length % 2 ? s[(s.length - 1) / 2] : (s[s.length / 2 - 1] + s[s.length / 2]) / 2) : 0; };
+  /* One pair = two windows of whole frames (with, without), each read by BOTH instruments on the same frames: the
+   * renderer's counter (renderer.info.render.calls at onAfterRender) and the direct per-draw hook. The plan's hide
+   * reading is the renderer's (with - without); it must equal the direct hook's (with - without) within +-1, and the
+   * owner must draw 0 while hidden. The owner's own direct draws and the substitution (own - total delta: what other
+   * roots and passes gained while it was hidden) are reported; medians of the same frames throughout. */
+  const pair = async (objs, key) => {
+    await settle(); const w = await directCount();
+    for (const r of objs) r.obj.visible = false;
+    await settle(); const h = await directCount();
+    for (const r of objs) r.obj.visible = r.visible;
+    const own = medOf(w.ownerPerFrame[key]), ownHidden = Math.max(0, ...((h.ownerPerFrame[key]) || [0]));
+    const rDelta = w.infoMedian - h.infoMedian, dDelta = w.drawsPerFrameMedian - h.drawsPerFrameMedian;
+    return { draws: rDelta, directDelta: dDelta, with: w.infoMedian, without: h.infoMedian, ownDirectWith: own, ownDirectHidden: ownHidden,
+      substitution: own - dDelta, infoVsDirectMaxPerFrame: Math.max(w.infoVsDirectMax, h.infoVsDirectMax), framesWith: w.frames, framesWithout: h.frames };
   };
   const hidden = {};
   for (const o of OWNERS) {
     const mine = roots.filter((r) => r.owner === o.id && r.obj.visible);
     if (!mine.length) { hidden[o.id] = { roots: 0, draws: 0 }; continue; }
-    await settle(); const withD = await drawsPerFrame(); const withDirect = await directCount();
-    for (const r of mine) r.obj.visible = false;
-    await settle(); const without = await drawsPerFrame(); const withoutDirect = await directCount();
-    for (const r of mine) r.obj.visible = r.visible;
-    const sub = subOf(withDirect, withoutDirect, o.id);
-    hidden[o.id] = { row: o.row, roots: mine.length, names: [...new Set(mine.map((r) => r.label))].slice(0, 12), draws: withD - without, with: withD, without,
-      ownDirectWith: withDirect.by[o.id] || 0, ownDirectHidden: withoutDirect.by[o.id] || 0, substitution: sub.n, substitutionBy: sub.by,
-      directWithTotal: withDirect.perFrame, directWithoutTotal: withoutDirect.perFrame };
+    hidden[o.id] = { row: o.row, roots: mine.length, names: [...new Set(mine.map((r) => r.label))].slice(0, 12), ...(await pair(mine, o.id)) };
   }
   // every scene child hidden: what is left is the post chain (+ passes that draw without the scene)
   for (const r of roots) r.obj.visible = false;
@@ -749,17 +754,13 @@ const DRAW_PROBE = `(async () => {
   for (const r of roots) r.obj.visible = r.visible;
   // the unregistered roots, hidden together (paired)
   const un = roots.filter((r) => !r.owner && !r.light && r.obj.visible);
-  await settle(); const withUn = await drawsPerFrame(); const withUnDirect = await directCount();
-  for (const r of un) r.obj.visible = false;
-  await settle(); const withoutUn = await drawsPerFrame(); const withoutUnDirect = await directCount();
-  for (const r of un) r.obj.visible = r.visible;
-  const unSub = subOf(withUnDirect, withoutUnDirect, 'UNATTRIBUTED');
+  const unPair = un.length ? await pair(un, 'UNATTRIBUTED') : { draws: 0, directDelta: 0, ownDirectWith: 0, ownDirectHidden: 0, substitution: 0 };
   await settle();
   const ownedSum = Object.values(hidden).reduce((a, h) => a + h.draws, 0);
   return { total, postOnly, owners: hidden, ownedSum,
     unattributedByHidingOwners: pinned.perFrame - postOnly - ownedSum,
-    unattributedByHidingUnregistered: withUn - withoutUn,
-    unregisteredPair: { ownDirectWith: withUnDirect.by.UNATTRIBUTED || 0, ownDirectHidden: withoutUnDirect.by.UNATTRIBUTED || 0, substitution: unSub.n, substitutionBy: unSub.by },
+    unattributedByHidingUnregistered: unPair.draws,
+    unregisteredPair: unPair,
     unregisteredRoots: [...new Set(un.map((r) => r.label))], lightsNotHidden: roots.filter((r) => r.light).map((r) => r.label),
     rootsByOwner: roots.reduce((a, r) => { const k = r.owner || 'UNREGISTERED'; (a[k] = a[k] || []).push(r.label); return a; }, {}),
     direct, pinned, pinnedState: { held: ctx.state === 'gate-pinned', framesAdvanced: e.frames - pinned.firstFrame } };
@@ -789,12 +790,11 @@ async function unattributedCap({ PORT }) {
     for (const o of DRAW_OWNERS) {
       const h = m.owners[o.id];
       if (!h || !h.roots) continue;
-      const expected = h.ownDirectWith - h.substitution;
-      if (Math.abs(h.draws - expected) > TOL) disagree.push(`${o.id}: hidden ${r1(h.draws)} vs own direct ${h.ownDirectWith} - substitution ${h.substitution}`);
+      if (Math.abs(h.draws - h.directDelta) > TOL) disagree.push(`${o.id}: hide delta ${r1(h.draws)} (renderer) vs ${r1(h.directDelta)} (direct hook), same frames`);
       if (h.ownDirectHidden > 0) disagree.push(`${o.id}: still drew ${h.ownDirectHidden} while hidden`);
     }
     const up = m.unregisteredPair;
-    if (Math.abs(m.unattributedByHidingUnregistered - (up.ownDirectWith - up.substitution)) > TOL) disagree.push(`unregistered roots: hidden together ${r1(m.unattributedByHidingUnregistered)} vs own direct ${up.ownDirectWith} - substitution ${up.substitution}`);
+    if (Math.abs(up.draws - up.directDelta) > TOL) disagree.push(`unregistered roots: hide delta ${r1(up.draws)} (renderer) vs ${r1(up.directDelta)} (direct hook), same frames`);
     if (up.ownDirectHidden > 0) disagree.push(`unregistered roots: still drew ${up.ownDirectHidden} while hidden`);
     if (Math.abs(m.direct.unattributedMedian - measured) > TOL) disagree.push(`direct per frame: median ${m.direct.unattributedMedian} vs max ${measured} over ${m.direct.frames} frames`);
     if (Math.abs(m.pinned.unattributedMax - measured) > TOL) disagree.push(`pinned unattributed ${m.pinned.unattributedMax} vs live ${measured}`);
@@ -814,8 +814,8 @@ async function unattributedCap({ PORT }) {
         + `per-owner hide vs direct within ${TOL}: ${crossChecksAgree ? 'all agree' : disagree.length + ' disagree'}), `
         + `of ${r1(m.total)} total (post chain ${r1(m.postOnly)}); W0 cap ${cap === null ? 'unrecorded' : cap + ' (' + MEMORY_BUDGETS.unattributed.w0Cap.measured + ')'}, W2 bar ${W0B_BUDGETS.unattributed.w2Bar}; wave ${wave}; unregistered roots: ${m.unregisteredRoots.join(', ') || 'none'}`,
       checks, crossChecks: { tolerance: TOL, agree: crossChecksAgree, disagreements: disagree,
-        perOwner: DRAW_OWNERS.map((o) => ({ id: o.id, hidden: m.owners[o.id]?.draws ?? 0, ownDirectSameFrames: m.owners[o.id]?.ownDirectWith ?? 0,
-          substitution: m.owners[o.id]?.substitution ?? 0, substitutionBy: m.owners[o.id]?.substitutionBy, pinnedDirect: m.pinned.by[o.id] || 0, liveDirect: m.direct.by[o.id] || 0,
+        perOwner: DRAW_OWNERS.map((o) => ({ id: o.id, hidden: m.owners[o.id]?.draws ?? 0, hiddenDirectHook: m.owners[o.id]?.directDelta ?? 0, ownDirectSameFrames: m.owners[o.id]?.ownDirectWith ?? 0,
+          substitution: m.owners[o.id]?.substitution ?? 0, infoVsDirectMaxPerFrame: m.owners[o.id]?.infoVsDirectMaxPerFrame, pinnedDirect: m.pinned.by[o.id] || 0, liveDirect: m.direct.by[o.id] || 0,
           livePerFrame: m.direct.ownerPerFrame?.[o.id], pinnedPerFrame: m.pinned.ownerPerFrame?.[o.id], roots: m.owners[o.id]?.roots || 0 })),
         pinnedWorld: { method: 'ctx.state held at a non-live state (main.js _simulate() returns before any system update; engine.render() still draws), dynamic resolution off', ...m.pinnedState,
           pinnedUnattributedPerFrame: m.pinned.unattributedPerFrame } },
