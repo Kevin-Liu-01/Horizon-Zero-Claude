@@ -6,7 +6,7 @@ import { ECOSYSTEM } from './ai/tables.js';
 import { setAiRng, seededRng, aiRngSeeded } from './ai/rng.js';
 import { REST_SITE } from '../../world/island/sites.js';
 import { PLAY_RADIUS, EXTENT } from '../../world/island/extent.js';
-import { _st, stepRootS, normalizeEyeRecords } from './machine.js';
+import { _st, stepRootS, normalizeEyeRecords, warmSteering } from './machine.js';
 import { HOT, refreshHot, mutableFromBirth } from '../../instruments/lib/hot.js';
 const REFRESH_ARGS = [null];
 /** The node count `Object3D.traverse` would visit (the object and every descendant), with no callback. */
@@ -85,6 +85,8 @@ export class Machines {
   constructor(ctx) {
     this.ctx = ctx;
     this.list = [];
+    /** 0 until the navgrid's first ready frame has warmed every live machine's nav steering (update, `_warmNav`) */
+    this._navWarm = 0;
     refreshHot(ctx);   // lib/hot.js: valid before the first update (re-copied every frame)
 
     // AI services: stimulus bus, site lifecycle, squad doctrine, perception hooks
@@ -260,6 +262,9 @@ export class Machines {
     mutableFromBirth(m);
     if (m.sc) mutableFromBirth(m.sc);
     if (m.ai) mutableFromBirth(m.ai);
+    // every steering helper through every branch once with THIS machine (its class's map at every load site, at
+    // spawn, never first in a fight: machine.js `warmSteering`, W0b targeted fix); state restored exactly
+    warmSteering(m);
     return m;
   }
 
@@ -591,6 +596,12 @@ export class Machines {
     this.lamps?.update();
   }
 
+  /** Once, on the navgrid's first ready frame: `navTowardS`'s whisker branch for every live machine (machine.js `warmSteering`). */
+  _warmNav() {
+    const L = this.list;
+    for (let i = 0; i < L.length; i++) { const m = L[i]; if (m && m.alive && !m._disposed) warmSteering(m, true); }
+  }
+
   /** Free the manager-owned GPU resources (the two lamp draws). */
   dispose() {
     this.lamps?.dispose();
@@ -605,6 +616,9 @@ export class Machines {
      * first sprint dropped `update` into the baseline tier for 8 s). Her position comes from HOT, not `ctx.player`. */
     REFRESH_ARGS[0] = this.ctx;
     Reflect.apply(refreshHot, null, REFRESH_ARGS);
+    // the navgrid's first ready frame: every live machine runs `navTowardS`'s whisker branch once (warmSteering;
+    // machines spawned after this frame run it at spawn). A Smi flag: one compare per frame afterwards
+    if (this._navWarm === 0) { const nv = HOT.nav; if (nv && nv.ready) { this._navWarm = 1; this._warmNav(); } }
     // world stimuli (player footsteps), perk/weather/Flag hooks, corpse lifecycle, squad doctrine
     this.stimulus.update(dt);
     this.perception.update(dt);

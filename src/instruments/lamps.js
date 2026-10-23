@@ -95,26 +95,48 @@ export const COMPASS_PIP = Object.freeze(Object.fromEntries(LAMP_ORDER.map((s) =
 export const BEAM = Object.freeze({
   fogK: 1.2,            // weather fog-density multiplier above which beams draw
   night: 0.5,           // environment.nightFactor above which beams draw
-  halfAngleDeg: 5,      // cone half-angle
+  halfAngleDeg: 5,      // cone half-angle of the wary sweep
+  /** TARGETED FIX (judge: "a dense widening magenta wedge"): a lock is a narrower shaft than a sweep. */
+  lockHalfAngleDeg: 3,
   segments: 64,         // triangles per cone
   sweepDeg: 14,         // wary sweep amplitude about the stimulus bearing
   capacity: 128,
   /* FIX ROUND 3 (judge-r3: the magenta lock shaft did not read in the beam films). Per state, the beam's
    * additive gain over the lens token. The wary chartreuse carries 2.7x the luminance of the cochineal magenta at
-   * the same gain (linear Y 0.665 vs 0.250). Measured in the films' own frames (A-film-beams-*-probe): over dark
-   * ground at night the magenta reads at 1.6x (2.7x saturates it into a solid cone); over the bright, warm ground of
-   * a dense fog an additive shaft loses its contrast, and it needs the full luminance match, 2.7x (0.665 / 0.250).
-   * The hostile gain runs from `gainHostile` in clear air to `gainHostileFog` at fog density `fogFull`. */
+   * the same gain (linear Y 0.665 vs 0.250). The hostile gain runs from `gainHostile` in clear air to
+   * `gainHostileFog` at fog density `fogFull`.
+   * TARGETED FIX (judge: "brightest at Brea's end with a hard edge"; "side-lock frames wash a third of the frame
+   * pink"): the round-3 gains (1.6 / 2.7) clipped the shaft's red and blue over its whole length, so the wider far
+   * end read as the brightest, solid part. The gains are capped at 1.3 (night) and 2.0 (fog) and the lock fades as
+   * along^2 like the sweep (`fadeLock`), so the per-pixel light falls monotonically from the lens outward. */
   gainWary: 1.0,
-  gainHostile: 1.6,
-  gainHostileFog: 2.7,
+  gainHostile: 1.3,
+  gainHostileFog: 2.0,
   fogFull: 2.55,
   /** The beam keeps the lens's 4 Hz flicker, but its trough is 0.65 (the lens dips to 0.3): a lock is never gone. */
   flickerLowHostile: 0.65,
+  /** The fade exponent along the cone (light x along^p, along = 1 at the lens, 0 at the far end). */
+  fadeSweep: 2,
+  fadeLock: 2,
+  /**
+   * THE LENS CONE (targeted fix; judge: "the hostile lock beam leaves the back of the lens and crosses the Tiller's
+   * own hull"). A beam leaves its lens forward. Its drawn direction never leaves a cone of `coneOffDeg` about the
+   * lens axis (the anchor's +Z), and its light fades out between `coneFullDeg` and `coneOffDeg`: a lock whose
+   * target is flanking or behind the lens goes dark until the body turns to it, instead of being routed back
+   * through the hull.
+   */
+  coneFullDeg: 55,
+  coneOffDeg: 70,
+  /** Fragments nearer the camera than `nearFadeM[0]` are gone, full by `nearFadeM[1]` (a chase camera inside the cone). */
+  nearFadeM: Object.freeze([1.0, 4.0]),
 });
 
 BEAM_GAIN_WARY = BEAM.gainWary; BEAM_GAIN_HOSTILE = BEAM.gainHostile; BEAM_FLICKER_LOW = BEAM.flickerLowHostile;
 const BEAM_GAIN_HOSTILE_FOG = BEAM.gainHostileFog, BEAM_FOG_SPAN = BEAM.fogFull - BEAM.fogK;
+const TAN_SWEEP = Math.tan(BEAM.halfAngleDeg * Math.PI / 180), TAN_LOCK = Math.tan(BEAM.lockHalfAngleDeg * Math.PI / 180);
+const CONE_COS_FULL = Math.cos(BEAM.coneFullDeg * Math.PI / 180);
+const CONE_COS_OFF = Math.cos(BEAM.coneOffDeg * Math.PI / 180), CONE_SIN_OFF = Math.sin(BEAM.coneOffDeg * Math.PI / 180);
+const FADE_SWEEP = BEAM.fadeSweep, FADE_LOCK = BEAM.fadeLock;
 
 /** Fraction of the face radius the fully open aperture reaches (the dark drum face is outside it). */
 export const APERTURE_MAX = 0.66;
@@ -405,16 +427,20 @@ const IRIS_FRAG = /* glsl */`
 `;
 
 const BEAM_VERT = /* glsl */`
-  attribute vec4 aBeam;   // rgb: colour x intensity; a: the fade exponent along the cone (2 sweep, 0.5 lock)
+  attribute vec4 aBeam;   // rgb: colour x intensity; a: the fade exponent along the cone (BEAM.fadeSweep / fadeLock)
   varying vec3 vCol;
   varying float vZ;
   varying float vEdge;
   varying float vFadeP;
+  varying float vNear;
   void main() {
     vCol = aBeam.rgb;
     vFadeP = aBeam.a;
     vZ = position.z;                       // 0 at the lens, 1 at the far end
     vec4 mv = modelViewMatrix * instanceMatrix * vec4(position, 1.0);
+    // a camera inside or beside the cone (her chase camera under a lock) sees no wash: fragments within
+    // BEAM.nearFadeM of the eye fade out (targeted fix)
+    vNear = smoothstep(${BEAM.nearFadeM[0].toFixed(2)}, ${BEAM.nearFadeM[1].toFixed(2)}, -mv.z);
     // the instance matrix scales the unit cone NON-uniformly (radius x radius x length): a normal
     // goes through the inverse scale (R S^-1 n == M (n / s^2)), or a long thin cone's normals all
     // lean down its axis and the shaft reads as a flat, hard-edged wedge that brightens with length
@@ -431,9 +457,10 @@ const BEAM_FRAG = /* glsl */`
   varying float vZ;
   varying float vEdge;
   varying float vFadeP;
+  varying float vNear;
   void main() {
     float along = (1.0 - vZ);
-    float a = pow(max(along, 0.0), vFadeP) * vEdge * vEdge;   // bright on the axis, gone at the silhouette: a shaft, not a wedge
+    float a = pow(max(along, 0.0), vFadeP) * vEdge * vEdge * vNear;   // bright on the axis, gone at the silhouette: a shaft, not a wedge
     gl_FragColor = vec4(vCol * a, 1.0);
   }
 `;
@@ -552,6 +579,8 @@ export class LampSystem {
     this.beamCount = 0;
     /** Gate/debug: draw the frame without the beams (A-lamp-states' paired with/without read). */
     this.hideBeams = false;
+    /** Gate/debug: draw the frame without the lamps (the films' paired "is the lamp on screen, unoccluded" read). */
+    this.hideLamps = false;
     // doubles born Double (0.5 first): a field generalised mid-session deoptimises update() (W0b fix round 2)
     this.fogK = 0.5; this.fogK = 1;
     this.night = 0.5; this.night = 0;
@@ -584,7 +613,7 @@ export class LampSystem {
         if (prev) prev.call(this, r, sc, cam, target);
         if (sc.overrideMaterial) { self.beamMesh.visible = false; self.lampMesh.visible = false; }
         else {
-          self.beamMesh.visible = self.beamCount > 0 && !self.hideBeams; self.lampMesh.visible = self.lampMesh.count > 0;
+          self.beamMesh.visible = self.beamCount > 0 && !self.hideBeams; self.lampMesh.visible = self.lampMesh.count > 0 && !self.hideLamps;
           if (self.lampMesh.count > 0) self._writeMatrices();
         }
       };
@@ -659,8 +688,11 @@ export class LampSystem {
       state: 'calm', prev: 'calm', since: 0.5,
       aperture: 0.5,                         // (born Double; set just below)
       dir: new THREE.Vector3(0, 0, 1), dirSet: false,
+      /** the DRAWN beam direction: `dir` kept inside the lens cone (targeted fix), and the cone's light fade */
+      ddir: new THREE.Vector3(0, 0, 1), bfade: 0.5,
       beamOn: false,
       slot: -1, bslot: -1, bmode: 'lock', bt: 0.5, blen: 30.5,   // written by update(), read by _writeMatrices()
+      bk: 0.5, bsi: 2,                       // the beam's gain and state index (update) -> its colour (_writeMatrices)
     };
     rec.aperture = LAMP_STATES.calm.aperture;
     mutableFromBirth(rec);   // no field const by the time update() is optimised (lib/hot.js; fix round 3)
@@ -734,7 +766,7 @@ export class LampSystem {
     this._lastT = t;
     const ease = 1 - Math.exp(-IRIS_RATE * dt);
     const recs = this.records;
-    const L = this._aLamp.array, I = this._aIris.array, K = this._aCore.array, B = this._aBeam.array;
+    const L = this._aLamp.array, I = this._aIris.array, K = this._aCore.array;
     const air = this.fogK > BEAM.fogK || this.night > BEAM.night;
     let scale = -1;                         // perceptionScale, read only if a beam is drawn
     // the air carries more light the denser it is (fix round 3: fog term 0.8 -> 1.0 per unit of density over 1, so a
@@ -800,15 +832,12 @@ export class LampSystem {
         r.bmode = beamKind;
         r.bt = t;
         r.bslot = nb;
-        // the beam's own gain: the state's (luminance-matched) gain x the rhythm, the hostile trough raised.
-        // .w = the fade exponent along the cone: a sweep fades as along^2; a lock, which ends on her, as along^0.5 —
-        // to nothing where it meets her, but carrying its colour most of the way (measured in the fog film: with a
-        // linear fade the half nearest her lost its magenta over the warm ground; see _writeMatrices)
+        // the beam's own gain: the state's (luminance-matched) gain x the rhythm, the hostile trough raised. The colour
+        // itself (token x gain x the lens-cone fade) and the fade exponent along the cone are written in
+        // `_writeMatrices`, after the cone test on this frame's anchor (targeted fix)
         const bRhythm = si === 2 ? (stateGain >= 1 ? 1 : BEAM_FLICKER_LOW) : stateGain;
-        const fadeP = si === 2 ? 0.5 : 2;
-        const LA = this._linA, k = 0.22 * fogBoost * bRhythm * (si === 2 ? gainH : BEAM_GAIN_WARY);
-        const ob = nb * 4;
-        B[ob] = LA[si * 3] * k; B[ob + 1] = LA[si * 3 + 1] * k; B[ob + 2] = LA[si * 3 + 2] * k; B[ob + 3] = fadeP;
+        r.bk = 0.22 * fogBoost * bRhythm * (si === 2 ? gainH : BEAM_GAIN_WARY);
+        r.bsi = si;
         r.beamOn = true;
         nb++;
       } else {
@@ -843,6 +872,7 @@ export class LampSystem {
     if (f === this._matFrame && f !== -1) return;
     this._matFrame = f;
     const recs = this.records, im = this.lampMesh.instanceMatrix.array, bm = this.beamMesh.instanceMatrix.array;
+    const B = this._aBeam.array;
     const player = HOT.pOk === 1 ? HOT.ppos : null;   // her position this frame (lib/hot.js)
     let lamps = 0, beams = 0;
     for (let i = 0; i < recs.length; i++) {
@@ -850,13 +880,13 @@ export class LampSystem {
       if (r.slot < 0) continue;
       // the anchor's world matrix with its basis rescaled to the lamp radius, element by element
       // (Matrix4.decompose + compose box doubles: 16 B per lamp measured)
-      const te = r.anchor.matrixWorld.elements, ob = r.slot * 16, rad = r.radius;
+      const te = r.anchor.matrixWorld.elements, om = r.slot * 16, rad = r.radius;
       for (let c = 0; c < 12; c += 4) {
         const a = te[c], b = te[c + 1], d = te[c + 2];
         const k = rad / (Math.sqrt(a * a + b * b + d * d) || 1);
-        im[ob + c] = a * k; im[ob + c + 1] = b * k; im[ob + c + 2] = d * k; im[ob + c + 3] = 0;
+        im[om + c] = a * k; im[om + c + 1] = b * k; im[om + c + 2] = d * k; im[om + c + 3] = 0;
       }
-      im[ob + 12] = te[12]; im[ob + 13] = te[13]; im[ob + 14] = te[14]; im[ob + 15] = 1;
+      im[om + 12] = te[12]; im[om + 13] = te[13]; im[om + 14] = te[14]; im[om + 15] = 1;
       lamps++;
       if (r.bslot < 0) continue;
       const m = r.machine;
@@ -869,7 +899,6 @@ export class LampSystem {
         _t.copy(_z).applyQuaternion(_q).multiplyScalar(10).add(_p);
       }
       _d.subVectors(_t, _p);
-      const tgtLen = _d.length();
       if (_d.lengthSq() < 1e-6) _d.copy(_z).applyQuaternion(_q);
       _d.normalize();
       if (r.bmode === 'sweep') {
@@ -879,19 +908,45 @@ export class LampSystem {
       }
       if (!r.dirSet) { r.dir.copy(_d); r.dirSet = true; }
       r.dir.lerp(_d, 0.2).normalize();
-      /* A LOCK ENDS ON HER (fix round 3; bible §7.2 "on, locked on the target"). Its length is the sight range x
-       * the weather scale, cut where the beam meets her (her body takes the light): the cone covers min(length,
-       * distance to her chest), brightest at the lens and fading to nothing on her (along^0.5: `aBeam.w`, update). */
-      const full = r.blen, cut = r.bmode === 'lock' && player && tgtLen > 0.5 && tgtLen < full ? tgtLen : full;
-      const len = cut, brad = len * Math.tan(BEAM.halfAngleDeg * Math.PI / 180);
-      _qs.setFromUnitVectors(_z, r.dir);
+      /* THE LENS CONE (targeted fix; judge: "the hostile lock beam leaves the back of the lens and crosses the
+       * Tiller's own hull"). The lens axis is the anchor's +Z (this frame's world matrix). The beam is DRAWN along
+       * `ddir`: the wanted direction `dir` while it lies within BEAM.coneOffDeg of the axis, else `dir` clamped onto
+       * the cone's edge; its light is full within BEAM.coneFullDeg and fades to nothing at coneOffDeg. A Tiller that
+       * is flanked, staggered or downed with its lens turned away keeps its hostile lamp but throws no lock until
+       * the body turns: the beam never leaves the lens backwards or crosses its own hull. */
+      const ax0 = te[8], ay0 = te[9], az0 = te[10], al = Math.sqrt(ax0 * ax0 + ay0 * ay0 + az0 * az0) || 1;
+      const lx = ax0 / al, ly = ay0 / al, lz = az0 / al;
+      const dv = r.dir, dd = r.ddir;
+      const cA = dv.x * lx + dv.y * ly + dv.z * lz;
+      if (cA >= CONE_COS_OFF) { dd.x = dv.x; dd.y = dv.y; dd.z = dv.z; }
+      else {
+        // onto the cone edge, on the side of the wanted direction (straight behind: any side, here the lens's right)
+        let px = dv.x - lx * cA, py = dv.y - ly * cA, pz = dv.z - lz * cA;
+        let pl = Math.sqrt(px * px + py * py + pz * pz);
+        if (pl < 1e-6) { px = lz; py = 0; pz = -lx; pl = Math.sqrt(px * px + pz * pz); if (pl < 1e-6) { px = 1; pz = 0; pl = 1; } }
+        dd.x = lx * CONE_COS_OFF + (px / pl) * CONE_SIN_OFF;
+        dd.y = ly * CONE_COS_OFF + (py / pl) * CONE_SIN_OFF;
+        dd.z = lz * CONE_COS_OFF + (pz / pl) * CONE_SIN_OFF;
+      }
+      const ct = (cA - CONE_COS_OFF) / (CONE_COS_FULL - CONE_COS_OFF), cs = ct < 0 ? 0 : ct > 1 ? 1 : ct;
+      const fade = cs * cs * (3 - 2 * cs);
+      r.bfade = fade;
+      /* LENGTH (bible §7.2: "Length = current sight range x weather scale"; targeted fix, judge: "lock-beam length
+       * departs from bible §7.2"). A lock is NOT cut at her: the shaft carries past her and fades (along^2) to
+       * nothing at the sight range. A lock is a narrower cone than a sweep (BEAM.lockHalfAngleDeg). */
+      const lock = r.bmode === 'lock';
+      const len = r.blen, brad = len * (lock ? TAN_LOCK : TAN_SWEEP);
+      _qs.setFromUnitVectors(_z, dd);
       _s.x = brad; _s.y = brad; _s.z = len;
       _m.compose(_p, _qs, _s);
       _m.toArray(bm, r.bslot * 16);
+      // the colour: the token's linear value x the beam's gain (update) x the cone fade; .w = the fade exponent
+      const LA = this._linA, si = r.bsi, ob = r.bslot * 4, k = r.bk * fade;
+      B[ob] = LA[si * 3] * k; B[ob + 1] = LA[si * 3 + 1] * k; B[ob + 2] = LA[si * 3 + 2] * k; B[ob + 3] = lock ? FADE_LOCK : FADE_SWEEP;
       beams++;
     }
     if (lamps) this.lampMesh.instanceMatrix.needsUpdate = true;
-    if (beams) this.beamMesh.instanceMatrix.needsUpdate = true;
+    if (beams) { this.beamMesh.instanceMatrix.needsUpdate = true; this._aBeam.needsUpdate = true; }
   }
 
   audit() {

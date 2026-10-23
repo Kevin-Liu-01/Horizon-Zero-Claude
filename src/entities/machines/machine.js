@@ -273,6 +273,70 @@ export function navTowardS(m, dt) {
   moveTowardS(m, dt);
 }
 
+/**
+ * STEERING, WARMED AT SPAWN (W0b targeted fix; judge: "fight-start allocation transient in the steering helpers":
+ * gates-perf's A-alloc-rate staged fight charged `steerAlongS` 133.6 KB/s after its 3 s warm-up).
+ *
+ * MEASURED (R5_IC_GPSEQ + R5_IC_DEOPTMARK, gates-perf's sequence): `steerAlongS` and `navTowardS` deoptimised in the
+ * fight window on "wrong map" at their first load from the machine (`m.sc`, bytecode 0; `m.bodyRadius`, bytecode
+ * 165): the steering helpers are shared by every machine class (the Instrument kinds and, until W2, eleven legacy
+ * classes), and a class whose machines reached a helper for the first time only when the staged fight reset the
+ * world to patrol threw the optimised code away; each time the helpers then ran 0.2-0.6 s in the baseline tier,
+ * where every double is a heap allocation (24-60 B per operation measured, R5_IC_MATHTEST).
+ *
+ * So every machine runs every steering helper through every branch ONCE, at spawn (and every live machine once more
+ * when the navgrid first reports ready, for the nav branch of `navTowardS`): each class's map reaches every load
+ * site at boot, where the sites go megamorphic (> 4 classes) before any fight, and every compare and arithmetic
+ * operation has type feedback before the first optimisation. The machine's state is saved first and restored
+ * exactly after (position, heading, speed, strafe, travel direction, the steering scratch), so the warm-up moves
+ * nothing. Allocation-free after the first call (locals only); called once per spawn, never per frame.
+ */
+export function warmSteering(m, navOnly = false) {
+  const sc = m.sc, p = m.position, md = m.moveDir;
+  if (!sc || !p || !md) return false;
+  const px = p.x, py = p.y, pz = p.z, h0 = sc.heading, sp0 = sc._speed, sk0 = sc.strafeK, mx = md.x, my = md.y, mz = md.z;
+  const s0 = _st.want, s1 = _st.d, s2 = _st.x, s3 = _st.z, s4 = _st.fx, s5 = _st.fz, s6 = _st.speed, s7 = _st.out, s8 = _st.sx, s9 = _st.sz;
+  const dt = 0.016, nav = HOT.nav;
+  const reset = () => { p.x = px; p.y = py; p.z = pz; sc.heading = h0; sc._speed = sp0; sc.strafeK = sk0; md.x = mx; md.y = my; md.z = mz; };
+  try {
+    if (!navOnly) {
+      // turnS: wrap both ways (the while bodies), clamp both ways, inside the step, and the "already facing" case
+      const wants = [h0 + 4.1, h0 - 4.1, h0 + 1.3, h0 - 1.3, h0 + 0.01, h0 - 0.01, h0];
+      for (let i = 0; i < wants.length; i++) { _st.want = wants[i]; turnS(m, dt); reset(); }
+      // faceS
+      _st.x = px + 3.5; _st.z = pz - 2.5; faceS(m, dt); reset();
+      // moveTowardS: arrived, ahead (aligned), behind (align <= 0.25), a step longer than the distance
+      _st.speed = 1.5;
+      _st.x = px; _st.z = pz; moveTowardS(m, dt); reset();
+      _st.x = px + Math.sin(h0) * 6.5; _st.z = pz + Math.cos(h0) * 6.5; moveTowardS(m, dt); reset();
+      _st.x = px - Math.sin(h0) * 6.5; _st.z = pz - Math.cos(h0) * 6.5; moveTowardS(m, dt); reset();
+      sc._speed = 900.5; _st.x = px + Math.sin(h0) * 0.5; _st.z = pz + Math.cos(h0) * 0.5; moveTowardS(m, dt); reset();
+      // steerAlongS: no direction; forward; backward (align < -0.25); sideways
+      _st.x = 0; _st.z = 0; _st.fx = px + 1.5; _st.fz = pz + 1.5; _st.speed = 2.5; steerAlongS(m, dt); reset();
+      const fx = Math.sin(h0), fz = Math.cos(h0);
+      _st.x = fx; _st.z = fz; _st.fx = px + fx * 4.5; _st.fz = pz + fz * 4.5; _st.speed = 2.5; steerAlongS(m, dt); reset();
+      _st.x = -fx; _st.z = -fz; _st.fx = px + fx * 4.5; _st.fz = pz + fz * 4.5; _st.speed = 2.5; steerAlongS(m, dt); reset();
+      _st.x = fz; _st.z = -fx; _st.fx = px + fx * 4.5; _st.fz = pz + fz * 4.5; _st.speed = 2.5; steerAlongS(m, dt); reset();
+      // stepRootS: open ground, inside the camp ring, past the world rim
+      _st.sx = 0.05; _st.sz = -0.05; stepRootS(m); reset();
+      p.x = CAMP.x + 0.75; p.z = CAMP.z - 0.5; _st.sx = 0.05; _st.sz = 0.05; stepRootS(m); reset();
+      p.x = WORLD_LIMIT + 3.5; p.z = 0.5; _st.sx = 0.05; _st.sz = 0.05; stepRootS(m); reset();
+      // navTowardS without a navgrid (the plain chase) and arrived
+      HOT.nav = null;
+      _st.x = px + 5.5; _st.z = pz + 5.5; _st.speed = 1.5; navTowardS(m, dt); reset();
+      _st.x = px; _st.z = pz; _st.speed = 1.5; navTowardS(m, dt); reset();
+      HOT.nav = nav;
+    }
+    // navTowardS through the navgrid's whiskers (once it is ready)
+    if (nav && nav.ready && nav.steer) { _st.x = px + 5.5; _st.z = pz - 4.5; _st.speed = 1.5; navTowardS(m, dt); reset(); }
+  } finally {
+    HOT.nav = nav;
+    reset();
+    _st.want = s0; _st.d = s1; _st.x = s2; _st.z = s3; _st.fx = s4; _st.fz = s5; _st.speed = s6; _st.out = s7; _st.sx = s8; _st.sz = s9;
+  }
+  return true;
+}
+
 /** `Machine._conform` as a module function (see HOT PATHS, NO PROTOTYPE LOADS). */
 export function conformM(m, dt) {
   const sc = m.sc, pos = m.position;
