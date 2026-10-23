@@ -461,16 +461,17 @@ export function updateEyesM(m, dt, t) {
    * written through the THREE.Color each record caches (`EyeRecord.col`: one class, no material load), and the
    * two rare material writes (a basic eye's opacity, an emissive lens's intensity) go through `eyeMatSetM`, only
    * when they change. Values are identical to the branchy form (same expressions, same order). */
-  const ls = m._lampState, lp = m._lampPrev, since0 = sc._lampSince, lp0 = sc._lampPhase;
+  const ls = m._lampState, lp = m._lampPrev, since0 = sc._lampSince;
   const chg = s !== ls;
   const prev = chg ? (ls || 'calm') : lp;
   m._lampPrev = prev;
   m._lampState = s;
   const since = chg ? tt : since0;
   sc._lampSince = since;
-  // the rhythm phase, drawn once per machine on its first frame (a builtin call: kept off the per-frame path —
-  // Math.random() boxes its result in V8's mid tier, one HeapNumber per call, measured 42 KB/s)
-  if (lp0 < 0) sc._lampPhase = Math.random();
+  // the rhythm phase, drawn once per machine when its scalars are built (MachineScalars): no branch here. Drawing it
+  // on a machine's first frame was a `lp0 < 0` test whose taken side ran only for a NEW machine, and a respawn
+  // mid-session deoptimised this function there ("lost precision or NaN" at that load, measured in gates-perf's
+  // sprint-and-draw sequence); Math.random() also boxes its result in every tier of this Chrome (12 B per call)
   const phase = sc._lampPhase;
   // the target colour as an index into EYE_RGB (0 calm, 3 wary, 6 hostile, 9 dark, 12 flash) and the rhythm
   const isDark = s === 'dark', isCalm = s === 'calm', isWary = s === 'wary', isHost = s === 'hostile';
@@ -762,7 +763,7 @@ export class MachineScalars {
     this._waitT = 0.5; this._waitT = 0;
     this._lodAccum = 0.5; this._lodAccum = 0;
     this._lampSince = 0.5; this._lampSince = 0;
-    this._lampPhase = 0.5; this._lampPhase = -1;
+    this._lampPhase = 0.5; this._lampPhase = Math.random();   // the lamp rhythm's phase, drawn here (fix round 3: not on a first frame)
     this._alarmCd = 0.5; this._alarmCd = 0;
     this._attackCd = 0.5; this._attackCd = 0;
   }
