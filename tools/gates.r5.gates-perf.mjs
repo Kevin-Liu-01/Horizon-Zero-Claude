@@ -1063,7 +1063,8 @@ const CARRIED_IDS = new Set(CARRIED.map((g) => g.id));
 /** R48 (b): the W0b instruments, graded from sealed runs (tools/gates/gates-perf.w0b.mjs INSTRUMENT_ROWS) */
 const INSTRUMENT_IDS = new Set(['A-alloc-rate', 'A-vram-ledger', 'A90-abs']);
 const INSTRUMENT_SOURCES = ['gates/gates-perf.w0b.mjs', 'budgets.mjs', 'gates.r5.gates-perf.mjs'];
-const instrumentSha = (f) => { try { return sha256(readFileSync(path.join(TOOLS, f))); } catch { return null; } };
+// (createHash directly: this runs at module load, before the ledger section's `sha256` helper is initialised)
+const instrumentSha = (f) => { try { return createHash('sha256').update(readFileSync(path.join(TOOLS, f))).digest('hex'); } catch { return null; } };
 const INSTRUMENT_SHA_AT_LOAD = INSTRUMENT_SOURCES.map(instrumentSha);
 
 /**
