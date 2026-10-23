@@ -1997,6 +1997,79 @@ FILM_ROWS.push({
   setup: FILM('beams', { both: true, night: true }), settle: 1500,
   criteria: 'At night the lamps rule the frame: two narrow additive shafts from the drum lamps, chartreuse (wary) and magenta (hostile, ending on the player), brightest at the lens and fading with length. FAIL if a beam is opaque, a solid block, or missing.',
 });
+/**
+ * FIX ROUND 3 (judge instruments-core/W0b/judge-r3: "the hostile lock beam does not appear in either beam film").
+ * THE FILM STAGING ASSERTS ITS OWN BEAMS. Each beam film has a companion action row with the SAME setup (the same
+ * staging function, the same settle) that measures, in that frame, the hostile beam along the line from the hostile
+ * Tiller's lamp to the point it locks on (Brea's chest, 1.3 m up), and the wary beam along its own axis:
+ *   at 8 points from 10 % to 80 % of the lamp-to-target segment (the beam ENDS on her: the lock shaft stops where her
+ *   body takes the light), the paired (on - off) read — 6 consecutive frame pairs with and without the beam draw,
+ *   7 x 7 px — and the on-frame pixel's hue;
+ *   PASS when the hostile shaft adds >= 24 to R+G+B with dR > dG and dB > dG (a magenta addition) at >= 6 of the
+ *   8 points, AND the on-frame pixel passes the judge's own magenta scan (R and B each > G + 25) at >= 6 of 8; the
+ *   wary shaft adds >= 24 at >= 6 of 8 with dG > dB (chartreuse); and no point beyond her (110-140 % of the
+ *   segment) carries the hostile beam (mean delta < 6: it ends on the player).
+ * The screenshot the harness takes after the assert is the frame the numbers were read on.
+ */
+const FILM_BEAM_PROBE = (night) => `(async () => {
+  ${KB.PIX}
+  const C = __CTX__, M = C.machines, E = C.engine, cam = C.camera, p = C.player;
+  const recs = M.lamps.records;
+  const rh = recs.find(r => r.state === 'hostile'), rw = recs.find(r => r.state === 'wary');
+  if (!rh || !rw) return { pass: false, detail: { error: 'staging: expected one hostile and one wary lamp', states: recs.map(r => r.state) } };
+  const V = p.position.constructor;
+  const lampOf = (r) => new V().setFromMatrixPosition(r.anchor.matrixWorld);
+  const settle = () => new Promise(res => { let n = 0; const f = () => (++n >= 3 ? res() : requestAnimationFrame(f)); requestAnimationFrame(f); });
+  await settle();
+  const pairRead = async (q) => {
+    const v = q.clone().project(cam);
+    if (Math.abs(v.x) > 0.97 || Math.abs(v.y) > 0.97 || v.z > 1) return null;
+    const fx = (W) => (v.x * 0.5 + 0.5) * W, fy = (H) => (v.y * 0.5 + 0.5) * H;
+    let dR = 0, dG = 0, dB = 0, oR = 0, oG = 0, oB = 0; const K = 6;
+    for (let k = 0; k < K; k++) {
+      M.lamps.hideBeams = false; const on = await PIX.grab(fx, fy, 7);
+      M.lamps.hideBeams = true; const off = await PIX.grab(fx, fy, 7);
+      M.lamps.hideBeams = false;
+      const n = on.px.length / 4;
+      for (let i = 0; i < on.px.length; i += 4) { dR += on.px[i] - off.px[i]; dG += on.px[i + 1] - off.px[i + 1]; dB += on.px[i + 2] - off.px[i + 2]; oR += on.px[i]; oG += on.px[i + 1]; oB += on.px[i + 2]; }
+      dR /= 1; // (sums; divided below)
+      if (k === K - 1) { const d = n * K; return { sx: Math.round((v.x * 0.5 + 0.5) * 1600), sy: Math.round((0.5 - v.y * 0.5) * 900),
+        dR: +(dR / d).toFixed(1), dG: +(dG / d).toFixed(1), dB: +(dB / d).toFixed(1), d: +((dR + dG + dB) / d).toFixed(1),
+        on: [Math.round(oR / d), Math.round(oG / d), Math.round(oB / d)] }; }
+    }
+  };
+  const hl = lampOf(rh), tgt = new V(p.position.x, p.position.y + 1.3, p.position.z);
+  const segLen = hl.distanceTo(tgt);
+  const host = [], beyond = [];
+  for (const f of [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8]) { const r = await pairRead(hl.clone().lerp(tgt, f)); host.push(r ? { f, ...r } : { f, offscreen: true }); }
+  for (const f of [1.1, 1.25, 1.4]) { const r = await pairRead(hl.clone().lerp(tgt, f)); beyond.push(r ? { f, ...r } : { f, offscreen: true }); }
+  const wl = lampOf(rw), wdir = rw.dir.clone(), wary = [];
+  for (const d of [1.5, 3, 4.5, 6, 7.5, 9, 10.5, 12]) { const r = await pairRead(wl.clone().addScaledVector(wdir, d)); wary.push(r ? { d, ...r } : { d, offscreen: true }); }
+  PIX.stop();
+  const hostOk = host.filter(x => !x.offscreen && x.d >= 24 && x.dR > x.dG && x.dB > x.dG).length;
+  const hostScan = host.filter(x => !x.offscreen && x.on[0] > x.on[1] + 25 && x.on[2] > x.on[1] + 25).length;
+  const waryOk = wary.filter(x => !x.offscreen && x.d >= 24 && x.dG > x.dB).length;
+  const beyondMax = Math.max(0, ...beyond.filter(x => !x.offscreen).map(x => x.d));
+  const pass = hostOk >= 6 && hostScan >= 6 && waryOk >= 6 && beyondMax < 6;
+  return { pass, detail: {
+    verdict: (pass ? 'PASS' : 'FAIL') + ': hostile shaft read at ' + hostOk + '/8 points (bar 6), judge magenta scan ' + hostScan + '/8 (bar 6), wary shaft ' + waryOk + '/8 (bar 6), beyond the player max delta ' + beyondMax + ' (bar < 6)',
+    night: ${night}, segmentM: +segLen.toFixed(2), hostileBeamLenM: +rh.blen.toFixed(2), hostileBeamOn: !!rh.beamOn, waryBeamOn: !!rw.beamOn,
+    lockAngleToTargetDeg: +(Math.acos(Math.min(1, rh.dir.dot(tgt.clone().sub(hl).normalize()))) * 180 / Math.PI).toFixed(2),
+    hostile: host, beyondPlayer: beyond, wary, film: window.__IC_FILM__ || null,
+    metric: 'mean (on - off) per channel and R+G+B (0-765) over 7x7 px, 6 consecutive frame pairs with / without the beam draw; on = the mean on-frame pixel (0-255); screen px in a 1600x900 frame' } };
+})()`;
+FILM_ROWS.push({
+  id: 'A-film-beams-night-probe', kind: 'action', lane: 'instruments-core-film', timeout: 180000,
+  title: 'The night beam film, measured in its own frame: the hostile shaft reads magenta from the lamp to Brea and stops on her; the wary shaft reads chartreuse',
+  setup: FILM('beams', { both: true, night: true }), settle: 1500,
+  assert: FILM_BEAM_PROBE(true),
+});
+FILM_ROWS.push({
+  id: 'A-film-beams-fog-probe', kind: 'action', lane: 'instruments-core-film', timeout: 180000,
+  title: 'The fog beam film, measured in its own frame: the hostile shaft reads magenta from the lamp to Brea and stops on her; the wary shaft reads chartreuse',
+  setup: FILM('beams', { both: true }), settle: 1500,
+  assert: FILM_BEAM_PROBE(false),
+});
 FILM_ROWS.push({
   id: 'V-lamp-beams-fog', kind: 'visual', lane: 'instruments-core-film', timeout: 120000,
   title: 'Beams in fog (rain weather, aerial density x2.55): a wary Tiller sweeping toward its stimulus, a hostile Tiller locked on Brea; side view',
@@ -2113,25 +2186,35 @@ async function allocMachines({ PORT }, opts = {}) {
   const noInline = !!(process.env.R5_IC_NOINLINE || opts.noInline);
   if (noInline) jsFlags.push('--no-turbo-inlining', '--max-inlined-bytecode-size=0', '--no-maglev-inlining');   // one frame per function (the paired attribution run, or diagnosis)
   if (process.env.R5_IC_OPTSTATUS) jsFlags.push('--allow-natives-syntax');                                 // diagnosis only: tier of each hot function
-  if (process.env.R5_IC_TRACEDEOPT) jsFlags.push('--trace-deopt');                                         // diagnosis only: deopts per function, timed
+  const deoptMark = !!process.env.R5_IC_DEOPTMARK;   // diagnosis only (fix round 3): --trace-deopt timed by in-stream markers + tier sampling
+  if (process.env.R5_IC_TRACEDEOPT || deoptMark) jsFlags.push('--trace-deopt');                             // diagnosis only: deopts per function, timed
+  if (deoptMark && !process.env.R5_IC_OPTSTATUS) jsFlags.push('--allow-natives-syntax');
   if (process.env.R5_IC_PROTOTRACE) jsFlags.push('--trace-prototype-users', '--allow-natives-syntax');      // diagnosis only: which prototype map is invalidated
-  const diag = !!(process.env.R5_IC_SHAPEWATCH || process.env.R5_IC_PROTOTRACE || process.env.R5_IC_NOINLINE || process.env.R5_IC_OPTSTATUS || process.env.R5_IC_TRACEDEOPT || process.env.R5_IC_PROTOWATCH || process.env.R5_IC_MICRO || process.env.R5_IC_INGAME);
+  const diag = !!(deoptMark || process.env.R5_IC_SHAPEWATCH || process.env.R5_IC_PROTOTRACE || process.env.R5_IC_NOINLINE || process.env.R5_IC_OPTSTATUS || process.env.R5_IC_TRACEDEOPT || process.env.R5_IC_PROTOWATCH || process.env.R5_IC_MICRO || process.env.R5_IC_INGAME);
   let protoLock = null;
   const browser = await puppeteer.launch({ protocolTimeout: 900000, headless: 'new', userDataDir: dir, dumpio: false,
     args: ['--use-angle=metal', '--enable-gpu', '--ignore-gpu-blocklist', '--window-size=1600,940', `--js-flags=${jsFlags.join(' ')}`, '--enable-precise-memory-info'] });
   const r2 = (x) => Math.round(x * 100) / 100;
   // --trace-deopt lines, each stamped with the wall clock on arrival (diagnosis only)
   const deoptLog = [];
-  if (process.env.R5_IC_TRACEDEOPT) {
+  const sfiNames = new Map(); let sfiCur = null;   // R5_IC_DEOPTMARK: SharedFunctionInfo address -> index of the named lane function
+  if (process.env.R5_IC_TRACEDEOPT || deoptMark) {
     let tail = '';
     const onData = (buf) => {
       const s = tail + String(buf); const lines = s.split('\n'); tail = lines.pop();
       const now = Date.now();
       for (const line of lines) {
+        if (deoptMark) {
+          let mm;
+          if ((mm = /^DebugPrint: Smi: 0x[0-9a-f]+ \((-?\d+)\)/.exec(line))) { const i = +mm[1]; sfiCur = i <= -1000 ? -1000 - i : null; continue; }
+          if (sfiCur !== null && (mm = /^ - shared_info: (0x[0-9a-f]+)/.exec(line))) { sfiNames.set(mm[1], sfiCur); sfiCur = null; continue; }
+        }
         if (!/deoptimiz/.test(line)) continue;
         const fn = (/<JSFunction ([^ >]+)/.exec(line) || /<SharedFunctionInfo ([^>]*)>/.exec(line) || [])[1] || '?';
         const why = (/reason: ([^)\],]+)/.exec(line) || [])[1] || '?';
-        deoptLog.push({ t: now, fn: fn || '(anonymous)', why, lazy: /marking dependent code/.test(line), tier: (/<Code (\w+)>/.exec(line) || [])[1] || '' });
+        deoptLog.push({ t: now, fn: fn || '(anonymous)', why, lazy: /marking dependent code/.test(line), tier: (/<Code (\w+)>/.exec(line) || [])[1] || '',
+          sfi: (/\(sfi = (0x[0-9a-f]+)\)/.exec(line) || /\((0x[0-9a-f]+) <SharedFunctionInfo/.exec(line) || [])[1],
+          off: (/bytecode offset (\d+)/.exec(line) || [])[1], kind: (/kind: ([\w-]+)/.exec(line) || [])[1] });
       }
     };
     browser.process()?.stdout?.on('data', onData);
@@ -2165,6 +2248,7 @@ async function allocMachines({ PORT }, opts = {}) {
     await cdp.send('HeapProfiler.enable');
     const staged = await page.evaluate(ALLOC_STAGE);
     if (staged.skip) return { pass: null, detail: staged.skip };
+    if (deoptMark) await page.evaluate(DEOPTMARK_ON);
     if (process.env.R5_IC_PROTOWATCH) await page.evaluate(PROTOWATCH_ON);
     if (process.env.R5_IC_SHAPEWATCH) await page.evaluate(SHAPEWATCH_ON);
     let ptLabels = null;
@@ -2179,9 +2263,11 @@ async function allocMachines({ PORT }, opts = {}) {
       const f0 = await page.evaluate('__CTX__.engine.frames');
       await cdp.send('HeapProfiler.startSampling', { samplingInterval: INTERVAL, includeObjectsCollectedByMajorGC: true, includeObjectsCollectedByMinorGC: true });
       const tS = Date.now();
+      const pS = deoptMark ? await page.evaluate('performance.now()') : 0;
       await sleep(WINDOW);
       const { profile } = await cdp.send('HeapProfiler.stopSampling');
       const tE = Date.now();
+      const pE = deoptMark ? await page.evaluate('performance.now()') : 0;
       const secs = (tE - tS) / 1000;
       const frames = (await page.evaluate('__CTX__.engine.frames')) - f0;
       const wit = await page.evaluate('(() => { const W = window.__icWit; const r = W && W.samples ? +(W.hostile / W.samples).toFixed(3) : null; if (W) { W.samples = 0; W.hostile = 0; } return r; })()');
@@ -2217,7 +2303,7 @@ async function allocMachines({ PORT }, opts = {}) {
         .sort((a, b) => b.gradedKBps - a.gradedKBps);
       const callers = {};
       for (const [g, m] of getterCallers) callers[g] = [...m.entries()].sort((a, b) => b[1] - a[1]).slice(0, 5).map(([c, b]) => `${at(b).gradedKBps} KB/s from ${c}`);
-      const w = { name, tS, tE, secs: r2(secs), frames, fps: r2(frames / secs), castHostile: wit, parents, total: at(total), srcCaller: at(srcCaller), srcSelf: at(srcSelf), getterCallers: callers, getterCallersRaw: getterCallers,
+      const w = { name, tS, tE, pS, pE, secs: r2(secs), frames, fps: r2(frames / secs), castHostile: wit, parents, total: at(total), srcCaller: at(srcCaller), srcSelf: at(srcSelf), getterCallers: callers, getterCallersRaw: getterCallers,
         mine: rows.filter((r) => r.owner === 'instruments-core'), frozenMachine: rows.filter((r) => r.owner === 'frozen-machine'), allRows: rows,
         topOther: rows.filter((r) => r.owner === 'other').slice(0, 12) };
       windows.push(w);
@@ -2259,6 +2345,12 @@ async function allocMachines({ PORT }, opts = {}) {
     await sleep(SPRINT_WARM);
     for (let i = 0; i < SPRINT_WINDOWS; i++) await window1(`sprint ${i + 1}/${SPRINT_WINDOWS}`);
     const end = await page.evaluate(ALLOC_SPRINT_OFF);
+    let deoptTimed = null;
+    if (deoptMark) {
+      const mk = await page.evaluate(DEOPTMARK_OFF).catch((e) => ({ error: String(e).slice(0, 200) }));
+      await sleep(1500);   // let the renderer's stdout drain
+      deoptTimed = timeDeopts(deoptLog, mk, windows, sfiNames);
+    }
     const shapeLog = process.env.R5_IC_SHAPEWATCH ? await page.evaluate(SHAPEWATCH_OFF).catch((e) => ({ error: String(e).slice(0, 200) })) : null;
     const protoLog = process.env.R5_IC_PROTOWATCH ? await page.evaluate(PROTOWATCH_OFF).catch((e) => ({ error: String(e).slice(0, 200) })) : null;
     let protoTrace = null;
@@ -2382,7 +2474,7 @@ async function allocMachines({ PORT }, opts = {}) {
         + ` | ruling ic-alloc-residual=carried: ${residualRuling ? 'RECORDED' : 'NOT recorded (the residual fails the gate)'}`
         + ` | lane sum per window (KB/s): ${windows.map((w) => sum(w, 'mine')).join(' / ')} | fps ${windows.map((w) => w.fps).join(' / ')} | cast hostile per window ${windows.map((w) => w.castHostile).join(' / ')}${fought ? '' : ' (STAGING FAILED: the cast did not fight through every window)'}` + (diag ? ' | DIAGNOSIS FLAGS ON (not gradeable)' : ''),
       staged, end, residualRuling, functions: fnRows.slice(0, 60).map((e) => `${e.worst} KB/s worst [${e.perWindow.join(', ')}] self [${e.self.join(', ')}] [${e.cls}${e.frozenReaderShare !== undefined ? ' frozen-reader share ' + e.frozenReaderShare : ''}]  ${e.fn}`),
-      tiers, micro, inGame, protoLog, shapeLog, protoLockLog, protoTrace, deopts, consoleErrors: errors.slice(0, process.env.R5_IC_PROTOLOCK ? 40 : 5),
+      deoptTimed, tiers, micro, inGame, protoLog, shapeLog, protoLockLog, protoTrace, deopts, consoleErrors: errors.slice(0, process.env.R5_IC_PROTOLOCK ? 40 : 5),
       inlining: process.env.R5_IC_NOINLINE ? 'OFF (diagnosis run, not gradeable)' : 'default',
       windows: windows.map(fmtW),
       method: `CDP HeapProfiler.startSampling (interval ${INTERVAL} B, minor+major GC objects included); ${WARM / 1000} s warm-up after staging, then ${FIGHT_WINDOWS} x ${WINDOW / 1000} s windows of the staged fight and ${SPRINT_WINDOWS} x ${WINDOW / 1000} s of sprint (after ${SPRINT_WARM / 1000} s); graded per window = max(measured KB/s, KB/frame x 60) on CALLER attribution (nearest src/** frame, gates-perf budgets.mjs alloc.attribution); a function fails if ANY window is over ${FN_BAR} KB/s; graded set = every src frame in a file instruments-core edits (incl. the legacy species files until their W2 deletion)` } };
@@ -2391,6 +2483,65 @@ async function allocMachines({ PORT }, opts = {}) {
     try { browser.process()?.kill('SIGKILL'); } catch { /* gone */ }
     CP.disposeProfile(dir);
   }
+}
+
+/* DIAGNOSIS ONLY (R5_IC_DEOPTMARK, fix round 3): the renderer's --trace-deopt lines reach the gate in buffered
+ * blocks, so their arrival time says nothing. Every 200 ms the page compiles a fresh uniquely named function
+ * (`__icMark<k>`), optimises it and deopts it on a wrong map: its trace line sits IN THE STREAM at page time t_k, so
+ * every other deopt line is timed by the markers around it (the stream keeps its order). The same tick samples
+ * %GetOptimizationStatus of this lane's hot functions and records every change of tier. */
+const DEOPTMARK_ON = `(async () => {
+  const C = __CTX__, M = C.machines;
+  // the module instance the GAME runs (Vite adds ?t= to a re-served module: a bare import would load a second copy)
+  const urlOf = (re) => { const es = performance.getEntriesByType('resource').map(e => e.name).filter(n => re.test(n)); return es.length ? es[es.length - 1].replace(new RegExp('^https?://[^/]+'), '') : null; };
+  const mUrl = urlOf(new RegExp('/src/entities/machines/machine[.]js([?]|$)')), pUrl = urlOf(new RegExp('/src/entities/machines/ai/perception[.]js([?]|$)'));
+  const MM = await import(mUrl || '/src/entities/machines/machine.js');
+  const PP = pUrl ? await import(pUrl) : null;
+  const m = M.list.find(x => x.alive && x.kind === M.roles.herd) || M.list[0];
+  const fns = { hasLOS: m.ai.perception.hasLOS, updateEyesM: MM.updateEyesM, conformM: MM.conformM, navTowardS: MM.navTowardS, steerAlongS: MM.steerAlongS, turnS: MM.turnS,
+    'Machine.update': m.update, _statePatrol: m._statePatrol, _engageFrame: m._engageFrame, animate: m.animate,
+    _sight: m.ai.perception._sight, _scan: m.ai.perception._scan, _beliefTick: m.ai.perception._beliefTick, 'perception.update': m.ai.perception.update,
+    'lamps.update': M.lamps.update, _writeMatrices: M.lamps._writeMatrices, _stepMachines: M._stepMachines, 'Machines.update': M.update, lampStateFor: MM.lampStateFor };
+  // name every function's SharedFunctionInfo in the trace stream: %DebugPrint(Smi -1000 - i) then %DebugPrint(fn)
+  const names = Object.keys(fns);
+  names.forEach((n, i) => { if (typeof fns[n] === 'function') { %DebugPrint(-1000 - i); %DebugPrint(fns[n]); } });
+  const T0 = performance.now();
+  const W = window.__icDM = { k: 0, marks: [], tiers: {}, last: {}, T0, fns, names, mUrl, pUrl };
+  const tick = () => {
+    const k = W.k++;
+    const t = (performance.now() - T0) / 1000;
+    try {
+      const f = (0, eval)('(function __icMark' + k + '(o) { return o.a + 1; })');
+      %PrepareFunctionForOptimization(f); f({ a: 1 }); f({ a: 2 }); %OptimizeFunctionOnNextCall(f); f({ a: 3 }); f({ b: 0, a: 1 });
+    } catch (e) { /* */ }
+    W.marks.push([k, +t.toFixed(3)]);
+    for (const [name, fn] of Object.entries(fns)) { if (typeof fn !== 'function') continue; const st = %GetOptimizationStatus(fn);
+      // V8 15 (Chrome 151) status bits, measured: 16384 baseline (Sparkplug), +16 Maglev, +32 TurboFan, 131072 lazy
+      const tier = (st & 32) ? 'TF' : (st & 16) ? 'MAGLEV' : (st & 16384) ? 'SPARKPLUG' : (st & 131072) ? 'LAZY' : (st & 64) ? 'IGNITION' : 'st' + st;
+      if (W.last[name] !== tier) { (W.tiers[name] = W.tiers[name] || []).push([+t.toFixed(2), tier]); W.last[name] = tier; } }
+  };
+  W.timer = setInterval(tick, 200); tick();
+  return true;
+})()`;
+const DEOPTMARK_OFF = `(() => { const W = window.__icDM; if (!W) return null; clearInterval(W.timer); const out = { marks: W.marks, tiers: W.tiers, T0: W.T0, names: W.names, mUrl: W.mUrl, pUrl: W.pUrl }; window.__icDM = null; return out; })()`;
+const LANE_FN_RE = /^(updateEyesM|conformM|latticeM|navTowardS|steerAlongS|turnS|faceS|moveTowardS|stepRootS|update|_statePatrol|_stateReturn|_stateSuspicious|_stateSearch|_stateAlert|_stateAttack|_engageFrame|animate|_sight|_scan|_beliefTick|_belief|hasLOS|tickCooldowns|_writeMatrices|_stepMachines|_standoffPass|_separationPass|lampStateFor|refreshHot|playerBoxes|_steerAlong|updatePartsM|updateFxM|updateElementalM|tick|pickAttack|_far|_tickFar)$/;
+function timeDeopts(log, mk, windows, sfiNames) {
+  if (!mk || !mk.marks) return { error: 'no marks', mk };
+  const markT = new Map(mk.marks.map(([k, t]) => [k, t]));
+  // page time of window starts, relative to the marker clock: windows carry wall-clock tS; the first marker was at
+  // T0 (page clock). Map wall clock -> marker clock by the first and last marker's arrival is unreliable, so the
+  // windows are placed by their own page-side order: fight 1 starts WARM after staging; markers started at staging.
+  let lastT = null; const out = [];
+  for (const d of log) {
+    const mm = /^__icMark(\d+)$/.exec(d.fn);
+    if (mm) { const t = markT.get(+mm[1]); if (t !== undefined) lastT = t; continue; }
+    const named = d.sfi && sfiNames && sfiNames.has(d.sfi) ? mk.names[sfiNames.get(d.sfi)] : null;
+    if (!named && !LANE_FN_RE.test(d.fn)) continue;
+    out.push({ afterMarkS: lastT, fn: named ? '*' + named : d.fn, why: d.why, lazy: d.lazy, kind: d.kind || (d.lazy ? 'mark-lazy' : ''), off: d.off, tier: d.tier });
+  }
+  return { sfiNamed: sfiNames ? sfiNames.size : 0, moduleUrls: [mk.mUrl, mk.pUrl], marks: mk.marks.length, firstMark: mk.marks[0], lastMark: mk.marks[mk.marks.length - 1], tiers: mk.tiers,
+    windowsOnMarkerClock: windows.map((w) => `${w.name}: ${((w.pS - mk.T0) / 1000).toFixed(1)}-${((w.pE - mk.T0) / 1000).toFixed(1)} s`),
+    laneDeopts: out.map((x) => `${x.afterMarkS === null ? '<first mark' : x.afterMarkS.toFixed(1) + ' s'}  ${x.lazy ? 'LAZY' : (x.kind || 'eager')}  ${x.fn}  — ${x.why}${x.off ? ' @bc ' + x.off : ''}${x.tier ? ' [' + x.tier + ']' : ''}`).slice(0, 600) };
 }
 
 const PROTO_COLLECT = `
@@ -2546,6 +2697,40 @@ const W0B_GATES = [
     id: 'A-alloc-machines', kind: 'runner', lane: 'instruments-core-alloc', timeout: 900000,
     title: "The memory rule on this lane's frames: gates-perf's A-alloc-rate method (sampling heap profiler, CALLER attribution, graded max(KB/s, KB/frame x 60)) on a herd-role staged fight + sprint, 30 s warm-up, six 10 s windows each graded; every src frame in a file instruments-core edits <= 4 KB/s in every window; frozen machine files and the rest of src/** reported with their owner",
     check: (ctx) => allocMachinesPaired(ctx),
+  },
+  {
+    /* FIX ROUND 3 (judge instruments-core/W0b/fix-round-2: "publish-on-change accessors return a stale 0 when the
+     * first read sees a value of exactly 0.5"). Every name in MACHINE_SCALARS is written through its setter and read
+     * back through its getter: (a) the FIRST read on a fresh scalar record, for each of 0.5, 0, -1, 1e-7, 99 (one fresh
+     * record per name per value, so no earlier read can hide a stale seed); (b) on a freshly spawned herd-role
+     * machine, the same values in sequence. NEGATIVE CONTROL: the round-2 seed (box 0, sentinel 0.5) built by hand
+     * must make the same probe fail, so the probe can see the bug it guards against. */
+    id: 'A-published-scalars', kind: 'action', lane: LANE, timeout: 120000, settle: 400,
+    title: 'Every MACHINE_SCALARS name round-trips setter -> getter: the first read of a fresh record and a fresh herd-role machine return exactly 0.5, 0, -1, 1e-7 and 99; the round-2 seed (box 0, sentinel 0.5) fails the same probe (negative control)',
+    assert: `(async () => {
+      ${WAIT_BOOT}
+      const MM = await import('/src/entities/machines/machine.js');
+      const NAMES = MM.MACHINE_SCALARS, P = MM.Machine.prototype, VALS = [0.5, 0, -1, 1e-7, 99];
+      const missing = NAMES.filter(n => { const d = Object.getOwnPropertyDescriptor(P, n); return !d || typeof d.get !== 'function' || typeof d.set !== 'function'; });
+      const firstRead = [];
+      for (const n of NAMES) { const d = Object.getOwnPropertyDescriptor(P, n); if (!d) continue;
+        for (const v of VALS) { const host = { sc: new MM.MachineScalars() }; d.set.call(host, v); const got = d.get.call(host); if (!Object.is(got, v)) firstRead.push(n + ' wrote ' + v + ' read ' + got); } }
+      const p = __CTX__.player, KIND = M.roles && M.roles.herd;
+      let onMachine = null;
+      if (KIND) {
+        const m = M.spawn(KIND, p.position.x + 40, p.position.z + 40);
+        if (m) { const bad = [];
+          for (const n of NAMES) for (const v of [...VALS, 0.5]) { m[n] = v; const got = m[n]; if (!Object.is(got, v)) bad.push(n + ' wrote ' + v + ' read ' + got); }
+          onMachine = { kind: m.kind, bad }; M.sites.dispose(m); }
+      }
+      // negative control: the round-2 seed by hand (box 0, sentinel 0.5) -> the first 0.5 read must come back 0
+      const ctl = [];
+      for (const n of NAMES) { const d = Object.getOwnPropertyDescriptor(P, n); if (!d) continue; const sc = new MM.MachineScalars(); sc['_pb' + n] = 0; sc['_pv' + n] = 0.5; const host = { sc }; d.set.call(host, 0.5); if (d.get.call(host) !== 0.5) ctl.push(n); }
+      const pass = NAMES.length === 30 && missing.length === 0 && firstRead.length === 0 && !!onMachine && onMachine.bad.length === 0 && ctl.length === NAMES.length;
+      return { pass, detail: { names: NAMES.length, missingAccessor: missing, firstReadWrong: firstRead.slice(0, 40), firstReadChecks: NAMES.length * VALS.length,
+        onMachine: onMachine ? { kind: onMachine.kind, wrong: onMachine.bad.slice(0, 40), checks: NAMES.length * (VALS.length + 1) } : 'no herd-role machine spawned',
+        negativeControl: ctl.length + ' / ' + NAMES.length + ' names caught with the round-2 seed (box 0, sentinel 0.5)' } };
+    })()`,
   },
   {
     id: 'A-lamp-states', kind: 'action', lane: LANE, timeout: 300000, settle: 600,

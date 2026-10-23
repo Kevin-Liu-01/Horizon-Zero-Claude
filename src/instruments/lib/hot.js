@@ -65,6 +65,33 @@ export const HOT = {
   pTallGrass: 0,
 };
 
+/**
+ * MUTABLE FROM BIRTH (W0b fix round 3). V8 tracks, per field of a map, whether the field has ever been written
+ * with a different value ("const" until then). Optimised code that read a const field depends on it staying
+ * const — above all for a module object like `HOT`, whose field loads TurboFan folds to constants — and the
+ * FIRST store of a different value throws that code away ("dependent field type constness changed"). `pTallGrass`
+ * stayed 0 until her first run through grass and `pCrouch` until her first crouch, so the first sprint deoptimised
+ * every machine function that read them (`_sight`: measured 7-14 KB/s in that window, every run). Each field is
+ * therefore written with a different value of the same kind and back, once, at construction: no field of the
+ * object is const by the time any machine code is optimised, so no first value mid-session can deoptimise it.
+ * Numbers keep their representation (an integer is bumped by 1, a double by 0.25); an object or null field takes
+ * null / undefined and back (its tracked field type becomes "any" at boot, never mid-session).
+ */
+export function mutableFromBirth(o) {
+  const keys = Object.keys(o);
+  for (let i = 0; i < keys.length; i++) {
+    const k = keys[i], v = o[k];
+    if (typeof v === 'number') o[k] = v === Math.trunc(v) && Math.abs(v) < 0x3fffffff ? v + 1 : v + 0.25;
+    else if (typeof v === 'boolean') o[k] = !v;
+    else if (typeof v === 'string') o[k] = v + '\u0001';
+    else if (typeof v === 'function') continue;   // methods copied onto an instance never change
+    else o[k] = v === null ? undefined : null;
+    o[k] = v;
+  }
+  return o;
+}
+mutableFromBirth(HOT);
+
 /** Once per frame, first thing in `Machines.update`: copy the services and the player's values off the root ctx. */
 export function refreshHot(ctx) {
   const H = HOT;
