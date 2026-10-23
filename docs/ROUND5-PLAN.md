@@ -618,6 +618,7 @@ Blunt, Charred, Seized, Clouded, Field Book, Gourd, Kit Rack, salt, certificatio
   - a second `A108` witness crop on the real Pans;
   - the colour anisotropy cap raised to 2× if the W1 budget allows.
   Any change to `GTAO_NOISE_SEED`, the Poisson denoise or the witness crops re-runs `A108`.
+- **R50 — `A-weak40`'s hull term (Oct 22).** "Glass vs hull ≥ 3:1" is graded against the median luminance of the machine-masked annulus 1.1–1.8 face radii out. That is the surface a player's eye reads the lens against at 40 m. The brightest quarter of the hull (P75) is reported, not graded. If a later generator's P75 contrast falls below 1.5:1, the judge flags it for the art pass (the lens must not vanish against sunlit glaze).
 - **R30 completion.** The orchestrator deleted the four IP machine GLBs (`watcher`, `sawtooth`, `behemoth`, `thunderjaw`) on main after instruments-core's code removal and pipeline's loader rows merged; `aloy.glb` goes at hero-body's W0b exit as planned.
 
 ## 9. GATE SPEC — the literal acceptance bar per lane
