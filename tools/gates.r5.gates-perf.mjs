@@ -1216,6 +1216,7 @@ const RUN_ACTIVE = IS_GATES_RUN && portAllowed(RUN_PORT_RAW);     // a refused p
 const RUN_PORT = RUN_ACTIVE ? Number(RUN_PORT_RAW) : null;
 const PROCESS_START_MS = Date.now() - Math.round(process.uptime() * 1000);
 const RUN_ID = RUN_ACTIVE ? `p${RUN_PORT}-${process.pid}-${PROCESS_START_MS}` : null;   // the run id: in the report, the seal and every sealed frame's path
+if (RUN_ID && !process.env.CAL_RUN_ID) process.env.CAL_RUN_ID = RUN_ID;   // W0b fix round 3: the R48 (b) instrument rows quote it (children inherit the parent's, never seal it)
 const CARRIED_VISUAL = new Set(CARRIED.filter((g) => g.kind === 'visual').map((g) => g.id));
 const MONITOR_EVERY_MS = 2000, MONITOR_MAX_GAP_MS = 10000, SEAL_VERSION = 3;
 const LEDGER_STAGING = path.join(LEDGER_DIR, 'staging');
@@ -2173,12 +2174,32 @@ async function carriedSuite({ PORT, GATES: ALL }) {
     noActionRowRegressed: !bad.some((r) => r.kind !== 'visual'),
     keptVisualRowsJudgedPassOrSkipCard: !bad.some((r) => r.kind === 'visual'),
   };
-  const pass = Object.values(checks).every(Boolean);
+  /*
+   * W0b fix round 3 (R48 d): A-carried-suite is GRADED by the orchestrator on port 5270 after the W0b merges. In
+   * gates-perf's lane run it reports PENDING-orchestrator and lists its offenders when every offender belongs to another
+   * lane (RULED_OWNER: A90b -> instruments-core, R34) or is ruled (RULED_CLASS_OWNER: A9's quiet-box term, R45; V21's
+   * R29 judge, R48 d) and every structural check holds; an offender this lane owns (a staging defect, a flaky staging,
+   * a row that needs more runs, an unrun row, anything not named as another lane's) makes it FAIL.
+   */
+  const orchestratorRun = Number(PORT) === ORCHESTRATOR_PORT;
+  const offenderOwner = (r) => RULED_CLASS_OWNER[r.cls] || ((r.cls === 'regression' || r.cls === 'worseThanBaseline') && RULED_OWNER[r.id] ? RULED_OWNER[r.id] : null);
+  const othersOffenders = bad.filter((r) => offenderOwner(r)), mineOffenders = bad.filter((r) => !offenderOwner(r));
+  const structural = ['composition', 'ledgerIntact', 'baselineAnchored', 'enoughCompleteFullRuns', 'everyRunLoadedEveryFile', 'notAnOverrideRun'].every((k) => checks[k]);
+  const allGreen = Object.values(checks).every(Boolean);
+  const pass = allGreen ? true : (!orchestratorRun && structural && mineOffenders.length === 0) ? null : false;
   const count = (list) => Object.entries(list.reduce((a, r) => { a[r.cls] = (a[r.cls] || 0) + 1; return a; }, {})).map(([k, n]) => n + ' ' + k).join(', ');
   return { pass, detail: {
-    verdict: (pass ? 'PASS' : 'FAIL: ' + Object.keys(checks).filter((k) => !checks[k]).join(', ')
-      + (bad.length ? ` — ${bad.length} row(s): ${count(bad)} (${bad.map((r) => r.id).slice(0, 14).join(', ')}${bad.length > 14 ? ', …' : ''})` : ''))
+    verdict: (pass ? 'PASS' : pass === null
+      ? `PENDING-orchestrator (R48 d): graded by the orchestrator on port ${ORCHESTRATOR_PORT} after the W0b merges; every offender here belongs to another lane or is ruled — ${othersOffenders.map((r) => r.id + ' [' + r.cls + '] -> ' + offenderOwner(r)).join('; ')}`
+      : 'FAIL: ' + Object.keys(checks).filter((k) => !checks[k]).join(', ')
+        + (bad.length ? ` — ${bad.length} row(s): ${count(bad)} (${bad.map((r) => r.id).slice(0, 14).join(', ')}${bad.length > 14 ? ', …' : ''})` : '')
+        + (mineOffenders.length ? ` — this lane's: ${mineOffenders.map((r) => r.id + ' [' + r.cls + ']').join(', ')}` : ''))
       + ` — R33 regression guard vs the ${base.file.base} baseline (${base.anchor.split(':')[0]} anchor); observations: ${runsLine}`,
+    mode: orchestratorRun ? `orchestrator run (port ${ORCHESTRATOR_PORT}): graded` : `lane run: PENDING-orchestrator when every offender is another lane's or ruled (R48 d)`,
+    offendersThisLane: mineOffenders.map((r) => ({ id: r.id, cls: r.cls, note: String(r.note || '').slice(0, 200) })),
+    offendersOtherLaneOrRuled: othersOffenders.map((r) => ({ id: r.id, cls: r.cls, owner: offenderOwner(r) })),
+    r47SkipReplaced: rows.filter((r) => r.ruling === 'R47').map((r) => ({ id: r.id, owner: r.owner, observed: r.perRun })),
+    r48aClauses: rows.filter((r) => r.id === 'A73-sample-bank').map((r) => ({ id: r.id, cls: r.cls, ruling: 'R48 (a): the per-kind machine-voice seed clause reports SKIP-replaced (audio W3, Instrument voices) inside the row; every other clause is graded', perRun: r.perRun })),
     checks, tally, composition: comp, ledger: ledgerInfo, baseline: baselineInfo,
     judgeTrust: { visualJudgePort: VISUAL_JUDGE_PORT, trustedOrchestratorKeys: [...trust.trusted].map(fingerprint),
       registrations: [...trust.regs.values()].flat().map((r) => ({ judge: r.judge, port: r.port, judgeKey: fingerprint(r.judgePub), by: fingerprint(r.orchestratorPub), sigOk: r.sigOk, trusted: trust.trusted.has(r.orchestratorPub) })) },
@@ -2374,6 +2395,52 @@ export const GATES = [
 ];
 
 /* ------------------------------------------------------------------------ */
+/* R48 (b): the sealed W0b instrument observations, verified                  */
+/* ------------------------------------------------------------------------ */
+/**
+ * node tools/gates.r5.gates-perf.mjs --instruments [--port <run port>] [--json]
+ * Every seal of THIS tree (and port) that executed an R48 (b) instrument row, newest first, each VERIFIED: the ledger
+ * chain intact, the report copy hashing to the seal, the monitor copy hashing to the seal, the report carrying the
+ * seal's run id, the build unchanged during the run and whether it is the current build; then each instrument row's
+ * status, its instrument verdict (detail.instrument), its bars (detail.bars, with `binding`) and its run id. Exit 0
+ * when the newest fresh seal holds all three rows with every instrument check true; 1 otherwise.
+ */
+async function instrumentsCli() {
+  const port = argFlag('--port', null);
+  const L = readLedger();
+  if (!L.ok) { console.error(`[instruments] ledger ${L.file} broken at line ${L.brokenAt}: ${L.why}`); return 1; }
+  const cfg = await import('./gates.config.mjs');
+  const now = buildFingerprint(shadowFilesOf(cfg));
+  const all = sealsOfTree(L, { port: port == null ? null : Number(port) }, now, gitHead()).filter((c) => (c.seal.instrumentRows || []).length);
+  const out = all.map((c) => {
+    const rows = {};
+    for (const id of c.seal.instrumentRows) {
+      const r = (c.rep?.results || []).find((x) => x.id === id);
+      const d = r?.detail || {};
+      rows[id] = { status: r?.status ?? null, instrument: d.instrument || null, instrumentOk: d.instrument ? Object.values(d.instrument).every(Boolean) : false,
+        bars: d.bars ? Object.fromEntries(Object.entries(d.bars).map(([k, b]) => [k, { binding: b.binding, pass: b.pass }])) : null, runId: d.runId || null,
+        runIdMatchesSeal: d.runId ? d.runId === c.seal.runId || d.runId === c.seal.sealId : null, verdict: String(d.verdict || r?.error || '').slice(0, 220) };
+    }
+    return { sealId: c.seal.sealId, startedAt: c.seal.startedAt, endedAt: c.seal.endedAt, scope: c.seal.scope || null, port: c.seal.port, argv: c.seal.argv,
+      fresh: c.why.length === 0, why: c.why, tampered: c.tampered || null, reportRunId: c.rep?.runId || null, reportSha256: c.seal.reportSha256,
+      monitor: c.seal.monitor ? { samples: c.seal.monitor.samples, maxGapMs: c.seal.monitor.maxGapMs, box: c.seal.monitor.box } : null, load: c.seal.load, gitHead: c.seal.gitHead, rows };
+  });
+  const newest = out.find((x) => x.fresh && !x.tampered);
+  const ok = !!newest && INSTRUMENT_IDS.size === Object.keys(newest.rows).filter((id) => INSTRUMENT_IDS.has(id)).length
+    && Object.values(newest.rows).every((r) => r.instrumentOk && r.runIdMatchesSeal !== false);
+  if (process.argv.includes('--json')) console.log(JSON.stringify({ ledger: L.file, ok, newestFresh: newest?.sealId || null, seals: out }, null, 1));
+  else {
+    console.log(`[instruments] ledger ${L.file} (chain intact, ${L.entries.length} entries); ${out.length} sealed instrument run(s) of this tree${port ? ' on port ' + port : ''}`);
+    for (const x of out) {
+      console.log(`  ${x.sealId}  ${x.startedAt} -> ${x.endedAt}  ${x.fresh ? 'FRESH (current build)' : 'stale: ' + x.why.join('; ').slice(0, 120)}${x.tampered ? '  TAMPERED: ' + x.tampered : ''}  report runId ${x.reportRunId}  box load max ${x.monitor?.box?.loadMax}, other gate Chromes max ${x.monitor?.box?.otherGateChromesMax}`);
+      for (const [id, r] of Object.entries(x.rows)) console.log(`    ${id.padEnd(14)} ${String(r.status).padEnd(8)} instrument ${r.instrumentOk ? 'PASS' : 'FAIL'}  bars ${r.bars ? Object.entries(r.bars).map(([k, b]) => k + (b.binding ? '' : '*') + '=' + (b.pass === null ? 'PENDING' : b.pass ? 'pass' : 'FAIL')).join(' ') : '-'}  runId ${r.runIdMatchesSeal === false ? 'MISMATCH' : 'bound'}`);
+    }
+    console.log(`[instruments] ${ok ? 'OK' : 'NOT OK'}: newest fresh seal ${newest?.sealId || 'none'} (* = bar not binding in that run, R48 b)`);
+  }
+  return ok ? 0 : 1;
+}
+
+/* ------------------------------------------------------------------------ */
 /* CLI                                                                       */
 /* ------------------------------------------------------------------------ */
 /* Run AFTER this module has finished evaluating: the --judge CLI imports gates.config.mjs, which
@@ -2381,11 +2448,13 @@ export const GATES = [
 if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) {
   setImmediate(async () => {
     if (process.argv.includes('--carried-baseline')) process.exit(await baselineCli());
+    if (process.argv.includes('--instruments')) process.exit(await instrumentsCli());
     if (process.argv.includes('--judge') || process.argv.includes('--judge-keygen') || process.argv.includes('--judge-register')) process.exit(await judgeCli());
     const i = process.argv.indexOf('--watch-5173');
     if (i < 0) {
       console.error('usage: node tools/gates.r5.gates-perf.mjs --watch-5173 <out.json> [--seconds N]\n'
         + '       node tools/gates.r5.gates-perf.mjs --judge --list [--port <run port>] [--seal <sealId>]\n'
+        + '       node tools/gates.r5.gates-perf.mjs --instruments [--port <run port>] [--json]   (R48 b: the sealed W0b instrument runs, verified)\n'
         + '       node tools/gates.r5.gates-perf.mjs --judge-keygen --out <file.pem outside every tree>\n'
         + '       node tools/gates.r5.gates-perf.mjs --judge-register --judge-name <who> --port <5271|5280-5299> --judge-pub <base64> --orchestrator-key <orchestrator.pem>\n'
         + '       node tools/gates.r5.gates-perf.mjs --judge --seal <sealId> --id <V id> --pass true|false --rationale <text> --judge-name <who> --port <5271|5280-5299> --judge-key <judge.pem> [--reference <file>]');

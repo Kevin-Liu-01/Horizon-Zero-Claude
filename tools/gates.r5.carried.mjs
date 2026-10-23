@@ -2237,6 +2237,7 @@ const GATES = [
   },
   {
     id: 'V5-machine-stride', kind: 'visual', lane: 'machines',
+    reference: 'reference/r5/gates-perf/quadruped-trot (A-reference-set, W0b fix round 3: the real-world subject its absorbing lane re-stages against)',
     title: 'The flanker mid-stride: lifted swing leg + planted stance leg',
     setup: stagedSetup([], `(async () => {
       // R5: the flanker role, else any other staged (non-legacy) role kind, named in the shot log
@@ -2252,6 +2253,7 @@ const GATES = [
   },
   {
     id: 'V6-machine-death', kind: 'visual', lane: 'machines',
+    reference: 'reference/r5/gates-perf/collapsed-tower (A-reference-set, W0b fix round 3: the real-world subject its absorbing lane re-stages against)',
     title: 'Machine wreck reads as collapsed, not sunk',
     setup: stagedSetup(['sentry'], `(async () => { const w = await stageRole('sentry'); if (w) { let mesh = null; w.root.traverse(o => { if (!mesh && o.isMesh) mesh = o; }); const p = __CTX__.player; p.position.set(w.position.x + 7, 0, w.position.z + 5); p.camYaw = Math.atan2(w.position.x - p.position.x, w.position.z - p.position.z) + Math.PI; p.camPitch = 0.2; p._snapToGround?.(); w.takeDamage({ point: w.position.clone(), object: mesh, impact: 99999, tear: 0, element: 'none', elementAmount: 0, dir: { x: 0, y: 0, z: 1 }, type: 'hunter', baseDamage: 99999 }); } })();`),
     settle: 3500,
@@ -2259,6 +2261,7 @@ const GATES = [
   },
   {
     id: 'V7-vista-mountains', kind: 'visual', lane: 'environment',
+    reference: 'reference/r5/gates-perf/ridge-skyline (A-reference-set, W0b fix round 3: the real-world subject its absorbing lane re-stages against)',
     title: 'Mountain ring silhouettes varied, no wallpaper banding',
     // R5: from gatePlaces.ringSkyline, a fixed lens looking UP at the ring's crest on the Round-4
     // bearing (yaw 3.1, facing +Z). Fix round 2: the chase camera at the Round-4 pitch, from the
@@ -2286,6 +2289,7 @@ const GATES = [
   },
   {
     id: 'V8-riverbed', kind: 'visual', lane: 'environment',
+    reference: 'reference/r5/gates-perf/dry-riverbed (A-reference-set, W0b fix round 3: the real-world subject its absorbing lane re-stages against)',
     title: 'Riverbed is a place, not a void',
     setup: placedSetup([], `(() => {
       const w = __CTX__.environment?.water;
@@ -2298,6 +2302,7 @@ const GATES = [
   },
   {
     id: 'V9-sky-golden', kind: 'visual', lane: 'environment',
+    reference: 'reference/r5/gates-perf/golden-clouds (A-reference-set, W0b fix round 3: the real-world subject its absorbing lane re-stages against)',
     title: 'Sky has golden-hour drama',
     params: 'yaw=0.2&pitch=-0.15',
     settle: 1800,
@@ -2305,6 +2310,7 @@ const GATES = [
   },
   {
     id: 'V10-hud-language', kind: 'visual', lane: 'hud',
+    reference: 'reference/r5/gates-perf/field-book (A-reference-set, W0b fix round 3: the real-world subject its absorbing lane re-stages against)',
     title: 'HUD combat state reads as one designed system (Round-4 HUD criteria until shell-ui\'s field-book HUD, W2)',
     setup: stagedSetup(['sentry'], `${INPUT_ON}
       await (async () => {
@@ -2488,6 +2494,7 @@ const GATES = [
   },
   {
     id: 'V20-aa-crop', kind: 'visual', lane: 'core-platform',
+    reference: 'reference/r5/gates-perf/pine-ridge (A-reference-set, W0b fix round 3: the real-world subject its absorbing lane re-stages against)',
     title: 'Anti-aliasing: 4x nearest-neighbour crop of a pine ridge against sky',
     // The crop is done in-page from the WebGL canvas inside engine.onAfterRender
     // (same task as the render, so the drawing buffer is still intact without
@@ -3954,6 +3961,7 @@ const GATES = [
   /* ---------------------------------------------------- V23-secondary-motion */
   {
     id: 'V23-secondary-motion', kind: 'visual', lane: 'player-anim',
+    reference: 'reference/r5/gates-perf/hair-trail-run (A-reference-set, W0b fix round 3: the real-world subject its absorbing lane re-stages against)',
     title: 'Sprint, side view — three frames 80 ms apart, composited',
     criteria: 'Three vertical strips of the SAME sprint, 80 ms apart, left to right. '
       + 'PASS if the ponytail, the braids, the quiver, the belt pouches and the '
@@ -12669,6 +12677,7 @@ const V33B_SETUP = `(() => {
 const GATES = [
   {
     id: 'V33b-no-ao-lattice', kind: 'visual', lane: 'core-platform-gtao',
+    reference: 'reference/r5/gates-perf/wall-contact (A-reference-set, W0b fix round 3: the real-world subject its absorbing lane re-stages against)',
     title: 'GTAO on (high + ultra): no screen-locked lattice on the rim vista at four '
       + 'bearings, and contact AO still reads in a 2 m close-up',
     settle: 2600,
@@ -16053,6 +16062,7 @@ const GATES = [
   /* ----------------------------- visual ----------------------------- */
   {
     id: 'V26-silhouette', kind: 'visual', lane: 'machine-rig',
+    reference: 'reference/r5/gates-perf/survey-tripod (A-reference-set, W0b fix round 3: the real-world subject its absorbing lane re-stages against)',
     title: 'Every staged Instrument reads as its Round-5 design sheet in side profile against plain sky',
     settle: 2600, timeout: 120000,
     setup: stagedSetup(['flanker', 'colossus', 'swarm', 'duelist', 'spotter'], placedSetup(['castStage'], `(async () => {
@@ -16068,6 +16078,7 @@ const GATES = [
   },
   {
     id: 'V27-attack-pose', kind: 'visual', lane: 'machine-rig',
+    reference: 'reference/r5/gates-perf/gathered-limbs (A-reference-set, W0b fix round 3: the real-world subject its absorbing lane re-stages against)',
     title: 'Mid-windup, the LIMBS are doing the work — not just the body transform',
     settle: 2600, timeout: 120000,
     setup: stagedSetup(['flanker', 'colossus', 'swarm', 'duelist'], placedSetup(['castStage'], `(async () => {
@@ -19228,6 +19239,7 @@ const GATES = [
   /* ------------------------------------------------------------------ V25 */
   {
     id: 'V25-alarm-converge', kind: 'visual', lane: 'machine-ai',
+    reference: 'reference/r5/gates-perf/herd-file (A-reference-set, W0b fix round 3: the real-world subject its absorbing lane re-stages against)',
     title: 'The sentry alarms with the player hidden 50 m away; recipients converge on the CALLER, lamps wary',
     settle: 1600,
     setup: stagedSetup(['sentry'], `(async () => {
@@ -20822,6 +20834,7 @@ const GATES = [
   /* ------------------------------------------------------------------ V28 */
   {
     id: 'V28-impact', kind: 'visual', lane: 'combat',
+    reference: 'reference/r5/gates-perf/spark-burst (A-reference-set, W0b fix round 3: the real-world subject its absorbing lane re-stages against)',
     title: 'A full-draw hit on the flanker at 8 m reads as an IMPACT, frozen 60 ms after the hit',
     settle: 900, timeout: 150000,
     setup: stagedSetup(['flanker'], placedSetup(['impactGround'], `(async () => {
@@ -20961,6 +20974,7 @@ const GATES = [
   /* ------------------------------------------------------------------ V29 */
   {
     id: 'V29-wielded-carry', kind: 'visual', lane: 'combat',
+    reference: 'reference/r5/gates-perf/bow-in-hand (A-reference-set, W0b fix round 3: the real-world subject its absorbing lane re-stages against)',
     title: 'Jogging toward the alert flanker, the bow is LOW IN THE LEFT HAND — never on her back',
     settle: 900, timeout: 150000,
     setup: stagedSetup(['flanker'], placedSetup(['impactGround'], `(async () => {
@@ -22274,6 +22288,7 @@ const GATES = [
   /* ------------------------------------------------------------------ V36 */
   {
     id: 'V36-focus-scan', kind: 'visual', lane: 'focus-items',
+    reference: 'reference/r5/gates-perf/surveyor-sighting (A-reference-set, W0b fix round 3: the real-world subject its absorbing lane re-stages against)',
     title: 'Sighting active on the flanker at 15 m',
     criteria: 'The world keeps its colour and readable detail: Focus is a violet VIGNETTE '
       + '(clear through the middle, at most ~20% at the corners), never a full-screen wash. '
@@ -23142,6 +23157,7 @@ const GATES = [
   /* ------------------------------------------------------------------- V37 */
   {
     id: 'V37-hud-language',
+    reference: 'reference/r5/gates-perf/field-book (A-reference-set, W0b fix round 3: the real-world subject its absorbing lane re-stages against)',
     kind: 'visual',
     lane: 'shell-hud',
     title: 'HUD language at 40 % HP, aiming, machine engaged, tool slot populated',
@@ -23916,6 +23932,7 @@ const GATES = [
   /* ===================================================================== */
   {
     id: 'V38-title', kind: 'visual', lane: 'shell-menus',
+    reference: 'reference/r5/gates-perf/salt-pans (A-reference-set, W0b fix round 3: the real-world subject its absorbing lane re-stages against)',
     title: 'Title screen: one wordmark, a moving aerial vista, a vertical menu',
     plain: true, settle: 3400,
     /** Press a key so the PNG is the MENU, not the "press any key" beat. */
@@ -24769,6 +24786,7 @@ const GATES = [
    */
   {
     id: 'V79-photo-portrait', kind: 'visual', lane: 'studio',
+    reference: 'reference/r5/gates-perf/portrait-bokeh (A-reference-set, W0b fix round 3: the real-world subject its absorbing lane re-stages against)',
     title: 'Photo mode portrait: the hero meeting the lens, shallow depth of field, 2.39 bars, warm grade, no HUD and no panels',
     settle: 1400,
     setup: `(async () => {
@@ -28292,6 +28310,7 @@ const GATES = [
   /* ---------------------------------------------------------- V45 */
   {
     id: 'V45-dialogue-panel', kind: 'visual', lane: 'progression-expansion',
+    reference: 'reference/r5/gates-perf/conversation (A-reference-set, W0b fix round 3: the real-world subject its absorbing lane re-stages against)',
     title: 'Conversation card open in front of a rest-site NPC',
     /**
      * Framing: stand where a player would, three and a half metres out, camera
@@ -28929,6 +28948,7 @@ const GATES = [
   /* --------------------------------------------------------------------- */
   {
     id: 'V32-ground-detail', kind: 'visual', lane: 'world-ground',
+    reference: 'reference/r5/gates-perf/ground-grain (A-reference-set, W0b fix round 3: the real-world subject its absorbing lane re-stages against)',
     title: 'Crouched on the trail-and-channel ground, 1.5 m up: the terrain is a '
       + 'material, not a vertex colour',
     settle: 2400,
@@ -28981,6 +29001,7 @@ const GATES = [
   /* --------------------------------------------------------------------- */
   {
     id: 'V33-rim', kind: 'visual', lane: 'world-ground',
+    reference: 'reference/r5/gates-perf/strata-talus (A-reference-set, W0b fix round 3: the real-world subject its absorbing lane re-stages against)',
     title: 'From the rest site toward the rim (gatePlaces.rimView): an alpine wall with strata and '
       + 'talus, hazed, with 150 m+ of relief',
     settle: 2600,
@@ -29029,6 +29050,7 @@ const GATES = [
   /* --------------------------------------------------------------------- */
   {
     id: 'V44-biomes', kind: 'visual', lane: 'world-ground',
+    reference: 'reference/r5/gates-perf/biome-scrub, biome-ravine (A-reference-set, W0b fix round 3: the real-world subject its absorbing lane re-stages against)',
     title: 'Four-bearing vista from the valley floor: the 330 m disc carries '
       + 'visibly different biomes, not one meadow',
     settle: 2600,
@@ -30083,6 +30105,7 @@ const GATES = [
   /* ------------------------------------------------------------------ V30 */
   {
     id: 'V30-golden-hour', kind: 'visual', lane: 'world-light',
+    reference: 'reference/r5/gates-perf/long-shadows (A-reference-set, W0b fix round 3: the real-world subject its absorbing lane re-stages against)',
     title: 'Golden hour at 17:30 — all four yaws from the spawn vista',
     settle: 2200,
     timeout: 60000,
@@ -30148,6 +30171,7 @@ const GATES = [
   /* ------------------------------------------------------------------ V31 */
   {
     id: 'V31-night', kind: 'visual', lane: 'world-light',
+    reference: 'reference/r5/gates-perf/night-stars (A-reference-set, W0b fix round 3: the real-world subject its absorbing lane re-stages against)',
     title: 'Night at 23:00 — moonlit, readable, the rest-site fire and Instrument lamps are the light',
     settle: 2600,
     timeout: 60000,

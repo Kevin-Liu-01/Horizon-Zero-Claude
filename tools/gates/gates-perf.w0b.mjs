@@ -263,7 +263,7 @@ const WAVE_NOW = () => String(process.env.CAL_WAVE || 'W0b');
 const barsBinding = (PORT) => Number(PORT) === 5270 || process.env.CAL_BARS_BINDING === '1';
 const PROCESS_START_MS = Date.now() - Math.round(process.uptime() * 1000);
 /** the harness run id (tools/gates.r5.gates-perf.mjs RUN_ID: same formula), which the seal binds the report to */
-const runIdOf = (PORT) => `p${PORT}-${process.pid}-${PROCESS_START_MS}`;
+const runIdOf = (PORT) => process.env.CAL_RUN_ID || `p${PORT}-${process.pid}-${PROCESS_START_MS}`;
 
 /* ------------------------------------------------------------------------------------------------ */
 /* A-alloc-rate                                                                                      */
@@ -1534,39 +1534,40 @@ function referenceSet({ GATES }) {
     selfTest: classifierSelfTest() };
   // (b) the set verifies offline (every pinned slot fetched, every file a complete row, sha256 intact)
   const v = verifyReferenceSet(ROOT);
-  // (c) every V gate in every lane file names >= 1 reference file under reference/r5/** with a MANIFEST row
+  // (c) every V gate in every lane file names >= 1 reference file under reference/r5/** with a MANIFEST row.
+  // W0b fix round 3 (judge finding: the gate graded 8 of the 37 visual rows of gates-perf's own carried.mjs): §9 says
+  // EVERY V gate in EVERY lane file, and no ruling narrows it, so every registered visual row is graded here, the
+  // SKIP-replaced carried rows included (each names the licence-clean reference its absorbing lane re-stages against);
+  // a row of another lane's file that names none is an offender named with its lane.
   const vis = (GATES || []).filter((g) => g.kind === 'visual');
   const rows = vis.map((g) => {
     const t = referenceTokens(g);
     const res = t.refs.map(resolveRef);
     const good = res.filter((x) => x.ok);
     const lane = laneOfGate(g);
-    // R33 (c): a carried visual row that is not a kept system and that no lane shadows is SKIP-replaced; its
-    // absorbing lane re-stages it with its own reference, so it is reported here, not graded
     const replaced = lane === 'carried' && !g.shadows && !KEPT_VISUAL.includes(g.id);
-    return { id: g.id, lane, source: g.source, graded: lane === 'carried' ? !replaced : lane === LANE, replaced, absorbedBy: g.absorbedBy || null,
-      ok: good.length > 0, refs: good.map((x) => x.file), problems: res.filter((x) => !x.ok).map((x) => x.why), nonR5: t.nonR5 };
+    return { id: g.id, lane, source: g.source, graded: true, replaced, absorbedBy: g.absorbedBy || null,
+      ok: good.length > 0 && res.every((x) => x.ok) && t.nonR5.length === 0, refs: good.map((x) => x.file), problems: res.filter((x) => !x.ok).map((x) => x.why), nonR5: t.nonR5 };
   });
-  const graded = rows.filter((r) => r.graded), missing = graded.filter((r) => !r.ok);
-  const reported = rows.filter((r) => !r.graded && !r.ok);
-  const byLane = reported.reduce((a, r) => { (a[r.replaced ? `carried, SKIP-replaced -> ${r.absorbedBy}` : r.lane] = a[r.replaced ? `carried, SKIP-replaced -> ${r.absorbedBy}` : r.lane] || []).push(r.id); return a; }, {});
+  const missing = rows.filter((r) => !r.ok);
+  const byLane = missing.reduce((a, r) => { const k = r.lane === 'carried' ? 'carried (gates-perf)' : r.lane; (a[k] = a[k] || []).push(r.id); return a; }, {});
   const checks = {
     fetcherQueriesCommonsApi: fetcher.commonsApi,
     fetcherStoresOnlyPdCc0CcBy: fetcher.filtersOnClassifier && fetcher.selfTest.ok,
     referenceSetVerifies: v.ok,
-    everyGradedVisualGateNamesAReference: missing.length === 0 && graded.length > 0,
+    everyVisualGateInEveryLaneFileNamesAReference: missing.length === 0 && rows.length > 0,
   };
   const pass = Object.values(checks).every(Boolean);
+  const lanesSeen = [...new Set(rows.map((r) => r.lane))];
   return { pass, detail: {
     verdict: (pass ? 'PASS' : 'FAIL: ' + Object.keys(checks).filter((k) => !checks[k]).join(', '))
       + ` — reference set: ${v.stored} stored + ${v.urlOnly} URL-only rows, ${v.files} files${v.ok ? '' : ', problems: ' + v.problems.slice(0, 4).join('; ')}; classifier controls ${fetcher.selfTest.cases.filter((c) => c.ok).length}/${fetcher.selfTest.cases.length}; `
-      + `graded visual gates (gates-perf's files: carried kept-system rows + this lane's): ${graded.length - missing.length}/${graded.length} name a reference`
-      + (missing.length ? ` (missing: ${missing.map((r) => r.id + (r.problems.length ? ' [' + r.problems.join('; ') + ']' : '')).join(', ')})` : '')
-      + (Object.keys(byLane).length ? ` — reported, graded at their own lane's exit: ${Object.entries(byLane).map(([l, ids]) => l + ' (' + ids.join(', ') + ')').join('; ')}` : ''),
+      + `every visual gate of every lane file (${lanesSeen.join(', ')}): ${rows.length - missing.length}/${rows.length} name a licence-clean reference under reference/r5/** with a complete MANIFEST row`
+      + (missing.length ? ` — missing, by lane: ${Object.entries(byLane).map(([l, ids]) => l + ' (' + ids.join(', ') + ')').join('; ')}` + ` [${missing.slice(0, 6).map((r) => r.id + ': ' + (r.problems.join('; ') || (r.nonR5.length ? 'non-r5 ' + r.nonR5.join(' ') : 'names none'))).join(' | ')}]` : ''),
     checks, fetcher: { ...fetcher, selfTest: fetcher.selfTest.cases }, verify: v,
     slots: SLOTS.map((s) => ({ lane: s.lane, slot: s.slot, gates: s.gates, pinned: !!s.file })),
-    visualGates: rows,
-    rule: 'graded over gates-perf\'s own files (the carried kept-system rows R33 (c) grades, V1-V4 / V12-V14 / V21, and any visual row of this lane); every other visual row is reported with its owner and graded at that lane\'s exit (the R33 (e) rule A-gate-preludes uses)',
+    visualGates: rows, missingByLane: byLane,
+    rule: 'plan §9: every V gate in every lane file names >= 1 reference file under reference/r5/** with a MANIFEST row (author, source URL, licence, retrieved date); graded over every registered visual row, SKIP-replaced carried rows included',
   } };
 }
 
@@ -1615,7 +1616,7 @@ export const GATES = [
   },
   {
     id: 'A-reference-set', kind: 'runner', lane: LANE, wave: 'W0b', timeout: 60000,
-    title: 'W0b: tools/r5-refs/fetch.mjs pulls from the Wikimedia Commons API filtered to PD / CC0 / CC BY (classifier controls), the set verifies offline, and every graded V gate names >= 1 reference file under reference/r5/** with a MANIFEST row (author, source URL, licence, retrieved date)',
+    title: 'W0b: tools/r5-refs/fetch.mjs pulls from the Wikimedia Commons API filtered to PD / CC0 / CC BY (classifier controls), the set verifies offline, and every V gate in every lane file names >= 1 reference file under reference/r5/** with a MANIFEST row (author, source URL, licence, retrieved date)',
     check: (ctx) => referenceSet(ctx),
   },
   {
