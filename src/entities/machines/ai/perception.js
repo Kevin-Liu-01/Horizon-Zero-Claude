@@ -39,8 +39,9 @@ const _d = new THREE.Vector3();
  * first peripheral-arc weight (0.35) at her first sprint was a "not a Smi" deopt (measured). Loaded from a Double
  * field they are doubles from the first tick, so the compares are typed "number" from the start.
  */
-/** While a machine keeps her in sight, its occluder ray is re-tested this often (s; `hasLOS`). */
+/** `hasLOS`: an occluder result stands this long (s) while both ends stay within OCCL_MOVE (m) of where it was tested. */
 const OCCL_TTL = 0.25;
+const OCCL_MOVE2 = 0.5 * 0.5;
 const WK = { one: 0.5, zero: 0.5 };
 WK.one = 1; WK.zero = 0;
 
@@ -73,6 +74,8 @@ export class Perception {
     this.omniActive = false;
     this._losT = 0.5; this._losT = 0;
     this._losCached = false;
+    this._losValid = false;   // hasLOS: the occluder result below was tested with both ends where they are now
+    this._losMX = 0.5; this._losMZ = 0.5; this._losPX = 0.5; this._losPZ = 0.5;
     this._scanEmit = 0.5; this._scanEmit = 0;
     this._pd = 0.5;           // the perception tick's seconds (update -> _beliefTick)
     // the 'machine-scan' payload, ONE per machine and rewritten per emit (listeners read it synchronously
@@ -136,21 +139,25 @@ export class Perception {
     const C = HOT.collision;
     _eye.x = m.position.x; _eye.y = y0; _eye.z = m.position.z;
     _tgt.x = target.x; _tgt.y = y1; _tgt.z = target.z;
-    /* THE OCCLUDER RAY, RE-TESTED AT 4 HZ WHILE SHE STAYS IN SIGHT (W0b fix round 3). `collision.occluded` (kept
-     * code) hands its broad-phase and ray helpers a dozen doubles per call; inlined into this function by the
-     * optimiser, those boxes landed in `_sight`'s frame (3-5 KB/s with the cast watching her, measured; 0 with
-     * inlining off). While the machine saw her last tick through a clear line, the last clear result stands for
-     * OCCL_TTL (0.25 s); a machine that does not see her yet tests every tick, so detection onset, stealth
-     * approaches and every first sighting are exactly as before; breaking line of sight behind cover is noticed
-     * within 0.25 s instead of 0.1 s. The terrain samples above still run every tick. */
+    /* THE OCCLUDER RAY, RE-TESTED AT MOST 4 TIMES A SECOND WHILE NEITHER END MOVES (W0b fix round 3).
+     * `collision.occluded` (kept code) runs a broad-phase and, for mesh occluders (the palisades, the ruins), a BVH
+     * raycast that allocates its hit records; inlined into this function by the optimiser, those allocations were
+     * charged to `_sight` (3-5 KB/s in the staged fight, measured; 0 with inlining off). Its result is kept for
+     * OCCL_TTL (0.25 s) while the machine's eye and her body each stay within OCCL_MOVE (0.5 m) of where it was
+     * tested; any larger move re-tests at once. So a still scene is re-tested at 4 Hz instead of 10 Hz, and a moving
+     * one (her sprint, a chase) every tick as before. The terrain samples above still run every tick. */
     const clock = HOT.simTime;
-    const reuse = this._losCached && this.visible && clock - this._losT < OCCL_TTL && clock >= this._losT;
-    if (!reuse) {
+    const ex = m.position.x - this._losMX, ez = m.position.z - this._losMZ, tx = target.x - this._losPX, tz = target.z - this._losPZ;
+    const still = ex * ex + ez * ez < OCCL_MOVE2 && tx * tx + tz * tz < OCCL_MOVE2;
+    const fresh = clock - this._losT < OCCL_TTL && clock >= this._losT;
+    if (!(this._losValid && still && fresh)) {
       const occl = !!(C && C.occluded && C.occluded(_eye, _tgt));
       this._losT = clock;
+      this._losValid = true;
       this._losCached = !occl;
-      if (occl) return false;
+      this._losMX = m.position.x; this._losMZ = m.position.z; this._losPX = target.x; this._losPZ = target.z;
     }
+    if (!this._losCached) return false;
     // a Dust cloud (a Dust Pot, W2) blinds the line as well (bible §5.8 Clouded)
     const H = m.manager?.perception;
     if (H && H.dustBetween(_eye, _tgt)) return false;
