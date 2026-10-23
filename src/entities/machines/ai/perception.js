@@ -186,7 +186,8 @@ export class Perception {
     // the per-tick belief no longer calls the terrain on its hearing branch only (fix round 3)
     const T = HOT.terrain;
     this._hearPos.set(x, T ? T.getHeight(x, z) : 0, z);
-    this._hearStrength = Math.max(this._hearStrength, strength);
+    const hs0 = this._hearStrength;
+    this._hearStrength = strength > hs0 ? strength : hs0;   // (no Math.max on a tagged argument: see `_sight`)
     this._hearKind = kind;
     this._hearLure = kind === 'lure' ? 1 : 0;   // (a Smi for `_beliefTick`: no string compare against null per tick)
   }
@@ -332,7 +333,11 @@ export class Perception {
     const inSee = distR < maxSee;
 
     // ---- the cone (_sweepScale, _coneWeight), the peripheral arc and the engaged contact
-    const cap = mSightHalf * 0.5, sa0 = Math.abs(cScanSweep), sa = sa0 > 0 ? sa0 : 1e-6;
+    // |scanSweep| written out: a cfg value is a Smi in one kind's row and a double in another's, and V8's mid tier
+    // hands such a TAGGED argument to the Math.abs builtin, which boxes a double result (measured: 1.7-4.7 KB/s
+    // charged to `_sight` from `abs (native)`, R5_IC_CALLEES)
+    const negSweep = cScanSweep < 0, nSweep = -cScanSweep;
+    const cap = mSightHalf * 0.5, sa0 = negSweep ? nSweep : cScanSweep, sa = sa0 > 0 ? sa0 : 1e-6;
     const ratio = cap / sa, sws = ratio < 1 ? ratio : 1;
     const dir = msHeading + scanOffset * sws;
     const fx = Math.sin(dir), fz = Math.cos(dir);

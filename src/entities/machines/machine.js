@@ -141,17 +141,19 @@ export function stepRootS(m) {
   let nx = p.x + _st.sx;
   let nz = p.z + _st.sz;
   // hunter camp is a safe zone
+  // the camp push-out and the world rim, every operation run on every call (a machine first reaching the camp
+  // edge or the rim mid-session must not deoptimise this: fix round 3); same values as the branchy form
   const cx = nx - CAMP.x, cz = nz - CAMP.z;
   const cd = Math.sqrt(cx * cx + cz * cz);
   const minR = CAMP.r + m.bodyRadius;
-  if (cd < minR && cd > 0.001) {
-    nx = CAMP.x + (cx / cd) * minR;
-    nz = CAMP.z + (cz / cd) * minR;
-  }
+  const inCamp = cd < minR && cd > 0.001, cdS = cd > 0.001 ? cd : 1;
+  const pcx = CAMP.x + (cx / cdS) * minR, pcz = CAMP.z + (cz / cdS) * minR;
+  nx = inCamp ? pcx : nx; nz = inCamp ? pcz : nz;
   const r = Math.sqrt(nx * nx + nz * nz);
-  if (r > WORLD_LIMIT) { nx *= WORLD_LIMIT / r; nz *= WORLD_LIMIT / r; }
-  p.x = nx;
-  p.z = nz;
+  const over = r > WORLD_LIMIT, kw = WORLD_LIMIT / (r > 0 ? r : 1);
+  const rx = nx * kw, rz = nz * kw;
+  p.x = over ? rx : nx;
+  p.z = over ? rz : nz;
 }
 /** The same step with arguments (kept for callers outside the hot paths). */
 export function stepRoot(m, dx, dz) { _st.sx = dx; _st.sz = dz; stepRootS(m); }
@@ -206,7 +208,8 @@ export function moveTowardS(m, dt) {
   const sc = m.sc, p = m.position;
   const dx = _st.x - p.x, dz = _st.z - p.z, speed = _st.speed;
   const dist = Math.sqrt(dx * dx + dz * dz);
-  if (dist < 0.01) { _st.out = dist; return; }
+  _st.out = dist;                 // (stored before the arrival test: one store site, run on every call)
+  if (dist < 0.01) return;
   _st.want = Math.atan2(dx, dz);
   turnS(m, dt);
   const align = Math.cos(_st.d);
@@ -225,11 +228,12 @@ export function steerAlongS(m, dt) {
   let dx = _st.x, dz = _st.z;
   const faceX = _st.fx, faceZ = _st.fz, speed = _st.speed;
   const l = Math.sqrt(dx * dx + dz * dz);
-  if (l < 1e-5) {
-    sc._speed += (0 - sc._speed) * (1 - Math.exp(-6 * dt));
-    _st.out = 0;
-    return;
-  }
+  // no direction: ease to a stop. Its loads, arithmetic and stores run on every call (a store site never run has no
+  // feedback either: fix round 3); a direction carries on below
+  const zero = l < 1e-5, sp0 = sc._speed, e6 = 1 - Math.exp(-6 * dt);
+  sc._speed = zero ? sp0 + (0 - sp0) * e6 : sp0;
+  _st.out = 0;
+  if (zero) return;
   dx /= l; dz /= l;
   _st.want = Math.atan2(faceX - p.x, faceZ - p.z);
   turnS(m, dt);
@@ -255,7 +259,8 @@ export function navTowardS(m, dt) {
   const x = _st.x, z = _st.z, speed = _st.speed;
   const dx = x - p.x, dz = z - p.z;
   const dist = Math.sqrt(dx * dx + dz * dz);
-  if (dist < 0.01) { _st.out = dist; return; }
+  _st.out = dist;                 // (stored before the arrival test: one store site, run on every call)
+  if (dist < 0.01) return;
   if (nav && nav.ready && nav.steer) {
     _v3.x = dx / dist; _v3.y = 0; _v3.z = dz / dist;
     _steerOpts.radius = m.bodyRadius;               // reused: nav.steer reads it and keeps nothing
@@ -341,8 +346,13 @@ export function conformM(m, dt) {
     const xx = x * x2, xy = x * y2, xz = x * z2, yy = y * y2, yz = y * z2, zz = z * z2, wx = w * x2, wy = w * y2, wz = w * z2;
     const m11 = 1 - (yy + zz), m12 = xy - wz, m13 = xz + wy, m22 = 1 - (xx + zz), m23 = yz - wx, m32 = yz + wx, m33 = 1 - (xx + yy);
     re._y = Math.asin(m13 < -1 ? -1 : m13 > 1 ? 1 : m13);
-    if (m13 < 0.9999999 && m13 > -0.9999999) { re._x = Math.atan2(-m23, m33); re._z = Math.atan2(-m12, m11); }
-    else { re._x = Math.atan2(m32, m22); re._z = 0; }
+    /* three's XYZ extraction has a gimbal case (|m13| ~ 1), which a pure yaw meets whenever a machine faces within
+     * 0.03 deg of +-90 deg: its call ran for the first time mid-session and deoptimised this function ("Insufficient
+     * type feedback for call", measured; 94 KB/s in that window). Both cases are computed on every frame and the
+     * result selected (fix round 3). */
+    const gimbal = !(m13 < 0.9999999 && m13 > -0.9999999);
+    const exN = Math.atan2(-m23, m33), ezN = Math.atan2(-m12, m11), exG = Math.atan2(m32, m22);
+    re._x = gimbal ? exG : exN; re._z = gimbal ? 0 : ezN;
   } else {
     _q1.setFromUnitVectors(_UP, n);
     _q2._x = 0; _q2._y = sy; _q2._z = 0; _q2._w = cy;   // setFromAxisAngle(UP, heading)
@@ -1467,7 +1477,9 @@ export class Machine {
    */
   attackDisabled(id) {
     let linked = false;
-    for (const p of this.parts) {
+    const parts = this.parts;   // (indexed: a for-of builds an array iterator in V8's mid tier; per frame per row)
+    for (let i = 0; i < parts.length; i++) {
+      const p = parts[i];
       if (p.linkedAttack !== id) continue;
       linked = true;
       if (p.attached) return false;

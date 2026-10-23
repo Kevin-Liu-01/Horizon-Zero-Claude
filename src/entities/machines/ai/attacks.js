@@ -921,7 +921,9 @@ export class AttackPicker {
 
   /** Is there any move at all for this range? (`A41b-attack-coverage`) */
   coveredAt(dist) {
-    for (const row of this.rows) if (this._covers(row, dist)) return true;
+    // (indexed loops on the per-frame picker paths: a for-of builds an array iterator in V8's mid tier; fix round 3)
+    const rows = this.rows;
+    for (let i = 0; i < rows.length; i++) if (this._covers(rows[i], dist)) return true;
     return false;
   }
 
@@ -932,7 +934,9 @@ export class AttackPicker {
    */
   nearestCovered(dist) {
     let best = null, bestGap = Infinity;
-    for (const row of this.rows) {
+    const rows = this.rows;
+    for (let i = 0; i < rows.length; i++) {
+      const row = rows[i];
       if (row.arc === 'rear' || this.phantom.has(row.id)) continue;
       if (!this._needPartOk(row.needPart)) continue;
       if (this.m.attackDisabled(row.id)) continue;
@@ -1066,7 +1070,9 @@ export class AttackPicker {
    */
   bandBlocked(lo = null, hi = null) {
     let n = 0;
-    for (const row of this.rows) {
+    const rows = this.rows;
+    for (let i = 0; i < rows.length; i++) {
+      const row = rows[i];
       if (!this._bandEligible(row)) continue;
       if (this._reachable(row, lo, hi) == null) n++;
     }
@@ -1150,7 +1156,9 @@ export class AttackPicker {
    *  pass in `_bestArrangeable`). */
   _bestArrangeablePass(lo, hi, skipBlind) {
     let best = null, bs = -1;
-    for (const row of this.rows) {
+    const rows = this.rows;
+    for (let i = 0; i < rows.length; i++) {
+      const row = rows[i];
       if (skipBlind && (this._held(this.blind, row.id) || this._held(this.unreach, row.id))) continue;
       if (!this._arrangeable(row, lo, hi)) continue;
       let s = row.score;
@@ -1219,7 +1227,9 @@ export class AttackPicker {
    * (that was half of what kept the Strider pinned to one radius).
    */
   hasFresh(lo = null, hi = null) {
-    for (const row of this.rows) {
+    const rows = this.rows;
+    for (let i = 0; i < rows.length; i++) {
+      const row = rows[i];
       if (this.used.has(row.id)) continue;
       if (this._arrangeable(row, lo, hi)) return true;
     }

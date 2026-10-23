@@ -9,6 +9,13 @@ import { PLAY_RADIUS, EXTENT } from '../../world/island/extent.js';
 import { _st, stepRootS, normalizeEyeRecords } from './machine.js';
 import { HOT, refreshHot, mutableFromBirth } from '../../instruments/lib/hot.js';
 const REFRESH_ARGS = [null];
+/** The node count `Object3D.traverse` would visit (the object and every descendant), with no callback. */
+function countNodes(o) {
+  let n = 1;
+  const ch = o.children;
+  for (let i = 0; i < ch.length; i++) n += countNodes(ch[i]);
+  return n;
+}
 import {
   BODY as EXPANSION_BODY, CHASSIS, installDoctrine, installExpansionDoctrine,
   spawnExpansion, doctrineAudit,
@@ -447,10 +454,13 @@ export class Machines {
 
   /** Scene nodes the whole live machine population currently occupies. */
   _machineNodes() {
+    // (no closure per machine, no array iterator: counted by `countNodes`, the same walk as `traverse`; fix round 3)
     let n = 0;
-    for (const m of this.list) {
+    const list = this.list;
+    for (let i = 0; i < list.length; i++) {
+      const m = list[i];
       if (m._disposed) continue;
-      m.root.traverse(() => n++);
+      n += countNodes(m.root);
     }
     return n;
   }

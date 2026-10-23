@@ -2528,7 +2528,11 @@ async function allocMachines({ PORT }, opts = {}) {
 const MATH_TEST = `(async () => {
   const o = { x: 0.5, r: 0.5 }; const S = new Set(['attack', 'alert']); const st = { s: 'patrol' }; const A = [null, null];
   const C = { n: 0, occl(a, b) { this.n++; return a.x > b.r; } };
+  const V3 = new (__CTX__.player.position.constructor)(), Q = __CTX__.player.model ? __CTX__.player.model.quaternion.clone() : null;
+  const M0 = __CTX__.machines.list.find(m => m.alive && m.sc), SC = M0 ? M0.sc : null, LK = M0 ? M0.lastKnown : null, EC = M0 ? M0._eyeColor : null;
   const mk = () => ({
+    vecStore: () => { V3.x = o.x * 1.5; }, lkStore: () => { LK.x = o.x * 1.5; }, quatStore: () => { if (Q) Q._x = o.x * 0.5; },
+    scStore: () => { SC._unseenT = o.x * 1.5; }, colorStore: () => { EC.r = o.x * 0.5; }, vecLoad: () => { o.r = LK.x + V3.x; },
     sqrt: () => { o.r = Math.sqrt(o.x * o.x + 1.5); }, sin: () => { o.r = Math.sin(o.x); }, cos: () => { o.r = Math.cos(o.x); },
     abs: () => { o.r = Math.abs(o.x - 3.3); }, round: () => { o.r = Math.round(o.x * 3.7); }, floor: () => { o.r = Math.floor(o.x * 3.7); },
     exp: () => { o.r = Math.exp(-o.x); }, asin: () => { o.r = Math.asin(o.x * 0.1); }, atan2: () => { o.r = Math.atan2(o.x, 1.5); },
