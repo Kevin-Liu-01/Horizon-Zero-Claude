@@ -149,6 +149,7 @@ const _rOut = new THREE.Vector3();  // R5: her right of the arrow (the back of t
 const _dBN = new THREE.Vector3();   // R5 fix round 4: the wrist's "behind the nock" direction, char
 const _knK = new THREE.Vector3(), _knW = new THREE.Vector3(), _knA = new THREE.Vector3(), _knB = new THREE.Vector3();   // R5 fix round 4: knuckle-on-string
 const _knQ = new THREE.Quaternion();
+const _knN = new THREE.Vector3();   // R5 fix round 4: the bow's rendered nock, char
 const _efC = new THREE.Vector3();   // R5 fix round 3: the draw elbow's circle centre (form scan), char
 const _efF = new THREE.Vector3();   // ...the head's live forward
 const _efUp = new THREE.Vector3();  // ...the aim frame's up
@@ -1122,6 +1123,7 @@ export class PlayerAnimator {
       wristT: { x: D.wristT.x, y: D.wristT.y, z: D.wristT.z },
       headAt: { x: D.headAt.x, y: D.headAt.y, z: D.headAt.z },
       quiverT: this._quiverT, looseT: this._looseT, drawS: this._drawS,
+      knuckleNock: D.knuckleNock ?? null, knuckleTurn: D.knuckleTurn ?? null,
     };
   }
 
@@ -1671,10 +1673,10 @@ export class PlayerAnimator {
             let rel = yaw - moveAngle;
             while (rel > Math.PI) rel -= 2 * Math.PI;
             while (rel < -Math.PI) rel += 2 * Math.PI;
-            // fix round 4 (judge r1, V13: "the feet about 90 deg apart"): the
-            // swing foot within 0.15 rad (8.6 deg) of the travel line, was 0.35
-            // (20 deg — the swing foot read 70-112 deg against the planted 85-90)
-            const lim = 0.15;
+            // (fix round 4 tried 0.15 here for V13: a turn about the pitched
+            // swing foot's LOCAL up twisted it to 0-20 deg mid-swing, measured;
+            // the toe pitch / clearance pass after grounding answers V13 instead)
+            const lim = 0.35;
             over = rel > lim ? rel - lim : rel < -lim ? rel + lim : 0;
           }
           fy[sd] = -over * latK;
@@ -3904,7 +3906,17 @@ export class PlayerAnimator {
         this._charOf(b.handR.bone, _knW);
         this._charOf(this._knuckleR.bone, _knK);
         const tgt = this.T.knuckleNock;
-        const N = D.nock;
+        // the bow's OWN string nock as it will render this frame (its group
+        // hangs off the left hand just posed; `getNockWorld` walks the parents)
+        // — `D.nock` is the arm solve's estimate, measured 0.07-0.09 m off it
+        // (the bow node's offset in the palm), so the turn is aimed at the real one
+        let N = D.nock;
+        const bowO = this.ctx.combat?.bow;
+        if (bowO?.getNockWorld && bowO.group?.visible !== false) {
+          bowO.getNockWorld(drawS, _knN);
+          this.model.worldToLocal(_knN);
+          if (Number.isFinite(_knN.x)) N = _knN;
+        }
         const dKN = _knK.distanceTo(N);
         if (dKN > tgt) {
           _knA.subVectors(_knK, _knW); _knB.subVectors(N, _knW);
@@ -3914,6 +3926,7 @@ export class PlayerAnimator {
             const cw0 = clamp((a * a + bb * bb - tgt * tgt) / (2 * a * bb), -1, 1);
             const phiT = Math.acos(cw0);
             const turn = (phi - phiT) * kw;
+            D.knuckleTurn = Math.round(turn * 1e4) / 1e4;
             if (turn > 1e-4) {
               _knA.cross(_knB);
               if (_knA.lengthSq() > 1e-10) {

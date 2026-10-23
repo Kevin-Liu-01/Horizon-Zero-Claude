@@ -236,6 +236,11 @@ export const UBC_TUNE = {
   // excess is given back, spread up the spine (`share`), neck + head forward
   // by `gaze` of it so the eyes stay on the horizon.
   trunk: { walk: 0.17, jog: 0.23, sprint: 0.30, crouch: 0.63, gain: 1.15, share: [0.25, 0.35, 0.40], shareCrouch: [0.05, 0.30, 0.65], gaze: [0.5, 0.45] },
+  // fix round 4 (judge r1, V23: "the alidade reads static"): the 'gear' class
+  // carries only the alidade's neck cord on Brea (profile chainClasses); a 6 cm
+  // brass tube on an 8 cm cord is a short pendulum (w = sqrt(g/L) ~ 11 rad/s,
+  // w^2 ~ 120), not a stiff quiver: it bounces with each footfall and swings
+  dynClass: { gear: { stiff: 115, drag: 6.5, grav: 0.25, maxAng: 0.42, strike: 1.1, base: 0.36 } },
   // the Head bone's standing height over her feet (camera stance follow; Aloy's
   // head_0104 stood at 1.36, the Round-4 HEAD_REST); measured idle on flat ground
   headRest: 1.468,

@@ -3226,13 +3226,13 @@ const GATES = [
         const veg = C.scene.getObjectByName('vegetation'); if (veg) veg.visible = false;
         setTimeout(() => {
           /* fix round 4 (judge r1: "Brea is only about 370 px tall in the frame,
-           * which makes the legs hard to read"): 5.6 m out at 22 deg (was 6.5 m at
-           * 24 deg), the lens at hip-to-chest height — she fills ~65 % of the
-           * frame's height */
+           * which makes the legs hard to read"): 4.0 m out (was 6.5 m), the lens
+           * at hip height (combat's aim zoom owns the FOV while she aims, so the
+           * distance is the lever) — she fills ~60 % of the frame's height */
           p._updateCamera = function () {
             const cam = this.ctx.camera;
-            cam.position.set(this.position.x, this.position.y + 1.25, this.position.z + 5.6);
-            cam.lookAt(this.position.x, this.position.y + 0.86, this.position.z);
+            cam.position.set(this.position.x, this.position.y + 1.05, this.position.z + 4.0);
+            cam.lookAt(this.position.x, this.position.y + 0.82, this.position.z);
           };
           C.camera.fov = 22; C.camera.updateProjectionMatrix();
           setTimeout(() => {
@@ -7661,8 +7661,8 @@ const NEW_GATES = [
         r.elbowBehindHand >= 0.05 ? null : 'elbowBehindHand', r.bowArmChest >= 0.04 ? null : 'bowArmChest',
         r.handBehindHead <= 0.10 ? null : 'handBehindHeadPlane', r.handBehindHead < 0 ? null : 'handBehindSkull',
         r.elbowBehindHead <= 0.20 ? null : 'elbowBehindHead',
-        r.knuckleToNock != null && r.knuckleToNock <= KNUCKLE_NOCK ? null : 'knuckleOffString',
-        r.fingertipToNock != null && r.fingertipToNock <= FINGERTIP_NOCK ? null : 'fingertipOffString',
+        r.knuckleToNock != null && r.knuckleToNock <= ${KNUCKLE_NOCK} ? null : 'knuckleOffString',
+        r.fingertipToNock != null && r.fingertipToNock <= ${FINGERTIP_NOCK} ? null : 'fingertipOffString',
         r.looseSteps >= 6 ? null : 'looseSampled', r.looseMaxHandBehindHead < 0 ? null : 'looseHandBehindSkull',
         r.looseMaxElbowBehindHead <= 0.20 ? null : 'looseElbowBehindHead'].filter(Boolean);
       const bad = rows.filter((r) => ok(r).length);
@@ -8550,8 +8550,14 @@ const NEW_GATES = [
     id: 'A-melee-floor', kind: 'action', lane: 'hero-body', timeout: 120000,
     title: 'R47 floor: on Brea, light x3, a heavy (held LMB), the melee-ready key and a block press (RMB) throw nothing (no error event, rejection or console error) and leave her in a valid locomotion state — not aiming, no swing active, bones finite, and she then walks, jogs and sprints at canon speed with her feet alternating',
     setup: INPUT_ON, settle: 400,
-    assert: placed(['openGround'], `(async () => {${HB}${CANON_SPEEDS}
-      freeze(); release(); standAt(p, 'openGround'); await simWait(0.6, 5000);
+    assert: placed(['openGround'], `(async () => {${HB}${CANON_SPEEDS}${FLAT_STRIP}
+      freeze(); release();
+      // a flat, clear, dry 46 m strip (the W0 openGround climbs a rise 28 m out,
+      // inside a sprint's window); the combo is thrown at its start
+      const fs = flatStrip(46);
+      if (!fs) return { pass: null, detail: 'SKIP-R18 (place): no flat, clear 46 m strip' };
+      const toStart = () => { p.position.set(fs.x, 0, fs.z); p.velocity.set(0, 0, 0); p._snapToGround(); p.camYaw = fs.yaw; p.camPitch = 0; p.heading = fs.yaw + Math.PI; };
+      toStart(); await simWait(0.6, 5000);
       const M = cmb.melee;
       if (!M || typeof M.swing !== 'function') return { pass: null, detail: 'SKIP: no combat.melee' };
       const errs = [];
@@ -8579,20 +8585,25 @@ const NEW_GATES = [
         release();
       }
       // the locomotion state afterwards: walk (Alt), jog, sprint from a standstill
+      // each gait from a standstill at the strip's start: the speed is the MEDIAN
+      // over its last second (sim), not one sampled frame
       const gait = async (ks, sec) => {
-        release(); await simWait(0.4, 4000);
+        release(); await simWait(0.3, 4000); toStart(); await simWait(0.4, 4000);
         for (const k of ks) keys.add(k);
         let top = 0, plants = 0, prev = null;
+        const late = [];
         const s0 = E.simTime;
         while (E.simTime - s0 < sec) {
           await frame();
           top = Math.max(top, p.moveSpeed);
+          if (E.simTime - s0 > sec - 1) late.push(p.moveSpeed);
           const f = an.debugFeet(); const pl = f.map((x) => x.planted ? 1 : 0).join('');
           if (prev !== null && pl !== prev) plants++;
           prev = pl;
         }
+        late.sort((a, b) => a - b);
         const dom = an.dominantAction?.();
-        const r = { keys: ks.join('+'), speed: +p.moveSpeed.toFixed(2), top: +top.toFixed(2), footChanges: plants, dominant: dom ? dom.clip : null };
+        const r = { keys: ks.join('+'), speed: +(late.length ? late[late.length >> 1] : p.moveSpeed).toFixed(2), top: +top.toFixed(2), footChanges: plants, dominant: dom ? dom.clip : null };
         release();
         return r;
       };
@@ -8664,13 +8675,15 @@ const NEW_VISUALS = [
       const kn = new T3(), ft = new T3(); an.debugDrawHand(kn, ft);
       const head = an.b.head.bone.getWorldPosition(new T3());
       const h = p.heading, fx = Math.sin(h), fz = Math.cos(h), rx = -Math.cos(h), rz = Math.sin(h);
-      const tgt = new T3(head.x + fx * 0.10, head.y - 0.02, head.z + fz * 0.10);
+      // the look-at: forward of the face and down toward the bow grip, so the
+      // anchor, the arrow, the bow and the draw elbow are all in the frame
+      const tgt = new T3(head.x + fx * 0.28, head.y - 0.22, head.z + fz * 0.28);
       const S = await import('/src/hero/sheets.js');
       const W = 780, H = 860;
       const live = (pos) => S.liveView(C, [pos.x, pos.y, pos.z], [tgt.x, tgt.y, tgt.z], { width: W, height: H, fov: 34 });
-      const side = new T3(head.x + rx * 1.15 - fx * 0.05, head.y + 0.02, head.z + rz * 1.15 - fz * 0.05);
+      const side = new T3(head.x + rx * 1.75 + fx * 0.15, head.y - 0.05, head.z + rz * 1.75 + fz * 0.15);
       const d34x = (fx + rx) / Math.SQRT2, d34z = (fz + rz) / Math.SQRT2;
-      const q34 = new T3(head.x + d34x * 1.15, head.y + 0.06, head.z + d34z * 1.15);
+      const q34 = new T3(head.x + d34x * 1.6, head.y + 0.02, head.z + d34z * 1.6);
       const a = live(side), b = live(q34);
       const cv = document.createElement('canvas'); cv.width = 1600; cv.height = 900;
       cv.style.cssText = 'position:fixed;left:0;top:0;width:1600px;height:900px;z-index:2147483646;background:#f4f1ea';

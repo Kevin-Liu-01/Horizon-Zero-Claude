@@ -702,17 +702,20 @@ const ROT_LEN_SLACK = 0.05;
  * good lens: CLOSER and LOWER — ~1.25 m out at ~1.25 m over her feet — where
  * her crown is above the centre and her clavicles well inside the frame.
  * So in this regime a rotated candidate is priced, and the applied rotated
- * boom is held, at `HILL_BOOM` (A31b's 1.20 m lens bar + 0.16 m), and the
+ * boom is held, at `HILL_BOOM` (A31b's 1.20 m lens bar + 0.20 m), and the
  * smallest clearing rotation at that length is found to `ROT_REFINE` steps,
  * not the scan's 5.2 deg grid (which overshot by up to a whole step, i.e.
  * ~0.12 m of lens height). The pitch clamp (A31c / A31e / A31f), aiming and
  * crouching keep their own rules untouched. */
-const HILL_BOOM = 1.36;
+const HILL_BOOM = 1.40;
 const ROT_REFINE = 6;
 /* …and the refined rotation clears by this much more than `ROT_MARGIN` (m):
  * refined to the bare margin, the damped relief arrived a hair short of it and
- * the deep look-up dolly pulled the 1.32 m boom in to 1.25 (probe `film2`) */
-const HILL_EXTRA = 0.02;
+ * the deep look-up dolly pulled a 1.32 m boom in to 1.25 (probe `film2`); at
+ * +0.02 a staging's settling pivot (the stance follow, a few cm over its first
+ * frames) still walked the planned boom into `cameraBoom`'s march and `_preCut`
+ * shortened it to 1.16 m (A31b's hillside80 row, run f4a) */
+const HILL_EXTRA = 0.08;
 const REL_CUT_SLACK = 0.08;
 const REL_CUT_STEP = 0.06;
 /* fix round 3: the floor eases off with MOTION, not the clock — `REL_CUT_PER_RAD`
