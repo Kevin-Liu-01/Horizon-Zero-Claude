@@ -49,10 +49,16 @@ Three findings. No bar moved; the allocation gate got stricter.
 - **Finding 3 (`A-weak40`) is fixed in the gate.** It grades min(glass vs face, glass vs hull) = 5.15 : 1,
   and calima is PENDING, never PASS.
 - **Findings 1 and 2 (the memory rule on this lane's frames): `A-alloc-machines` still FAILS.**
-  - In steady state every frame this lane's own code allocates in is now ≤ 4 KB/s, in five of the six
-    windows of every final run.
-  - **One or two windows of the sprint phase still fail, in every final run.** After a GC deopts
-    `updateEyesM` it reaches 165–1,006 KB/s, and I did not find what ties it to that GC.
+  - **In the final run (F12)** two of this lane's frames are over 4 KB/s, each in one window:
+    - `_sight`, 13.8 KB/s in the first-sprint window;
+    - `_steerAlong`, 13.9 KB/s in the first fight window. It is the wrapper that frozen `engage` calls
+      for a number.
+
+    Every other frame this lane's own code allocates in is ≤ 4 KB/s in all six windows. The judges' run
+    had this lane's frames at 1,029 / 420 KB/s.
+  - **In three earlier runs on nearly the final code** (F5, F7, F9), a GC-timed deopt also sent
+    `updateEyesM` to 165–1,006 KB/s for one or two sprint windows. It did not recur in F11 / F12, and I did
+    not find what tied it to that GC.
   - **The rest over the bar is code this lane may not edit** (legacy species files, frozen readers of the
     accessors, frozen code V8 inlines into this lane's frames). The gate names it, proves it with a paired
     no-inline run, and fails on it until the orchestrator records a ruling (below).
@@ -183,14 +189,31 @@ frame is ≤ 4 KB/s in every window except:
 `_engageFrame` (21.7) and `Tiller.animate` (10.2) are `inlined-frozen`: with inlining off their own bytes
 are 0, and frozen `engage.pursue` (166 KB/s) and `gait.update` (6,149) carry the allocation.
 
+**F11 and F12, with the corrected rule in the gate** (F12 is the final source):
+
+| run | lane frames over 4 KB/s (window) | `inlined-frozen` (evidence: with inlining off) | sums per window |
+|---|---|---|---|
+| F11 | `_steerAlong` 12.7 (fight 1/3), `_sight` 7.2 (sprint 1/3) | `Tiller.animate` 48.1 (own 0; `gait.update` 1,723, `updateCheap` 429, `updateRigLOD` 126), `_engageFrame` 42.6 (own 0; `engage.pursue` 135) | 73–205 |
+| **F12** | **`_steerAlong` 13.9 (fight 1/3), `_sight` 13.8 (sprint 1/3)** | `Tiller.animate` 72.3 (own 0; `gait.update` 2,180, `updateCheap` 400, `updateRigLOD` 180), `_engageFrame` 42.4 (own 0; `engage.pursue` 166) | 207–298 at 32–35 fps |
+
+No `updateEyesM`, `_statePatrol` or `Machine.update` spike in F11 or F12; every other lane frame is ≤ 4 KB/s
+in all six windows of both.
+
+Two lane frames are over the bar in a single window each:
+- **`_sight`, the first-sprint window, every run** (7–14 KB/s; it also allocates there with inlining off).
+- **`_steerAlong`, the first fight window** (13.9 KB/s). It is the wrapper frozen `engage` calls
+  (`this.travelled += m._steerAlong(...)`); it must hand back a fresh number per call until V8 inlines it
+  into `engage`, which it does in later windows (0 there).
+
 **Correction to the paired-run rule after F9.** F9's paired run re-classed `updateEyesM` and `_statePatrol`
 as `inlined-frozen`. Their spike did not recur with inlining off, and the first rule asked only for clean
 own bytes. That was wrong: `updateEyesM` calls no code outside this lane. The rule now also requires that
 the frozen callees measured with inlining off allocate at least the frame's graded excess. The F9 line
 above is classed by that rule (from its evidence strings); F11 runs it in the gate.
 
-**Verdict: FAIL**, on two things:
-- **Spikes in the sprint phase**, in every final run (F5, F7, F9 and the diagnosis run `s9`), each in one
+**Verdict: FAIL**, on three things:
+- **F12's two single-window lane frames**, `_sight` and `_steerAlong` (above).
+- **Spikes in the sprint phase** in F5, F7, F9 and the diagnosis run `s9` (none in F11 / F12), each in one
   or two windows. The diagnosis run puts a GC's "embedded weak objects cleared" deopt (44 functions,
   `updateEyesM`, `navTowardS` and `_statePatrol` among them) and a 77-function "dependent prototype chain
   changed" wave (the player's readers: camera, HUD, vignette, `refreshHot`) at her first sprint. At the
@@ -713,7 +736,11 @@ R45's: PENDING-quiet-box). Reports and logs: `scratchpad/r5/instruments-core/rep
   construction), and `A1`, `A20b`, `A-lamp-states`, `A-beams-one-draw`, `A-perk-hooks`, `A-vfx-palette`,
   `A37`, `A39`, `A43` re-run on it: **all PASS** (A39: 30 m suspicious 1.81 s / alert 3.48 s, 10 m alert
   0.86 s; A43: scene objects −279, 0 orphans).
-- **F11**: `A-alloc-machines` with the corrected paired-run rule (below). {{F11}}
+- **F11** (01:32): `A-alloc-machines` with the corrected paired-run rule (below).
+- **F12 / F13** (01:37–01:45): the final source, with `PerceptionHooks` fields born Double too. It ran
+  `A-alloc-machines`, then `A1`, `A20b`, `A-lamp-states`, `A-perception-weather`, `A-beams-one-draw`,
+  `A-perk-hooks`, `A-vfx-palette`, `A37`, `A39`, `A43`: **all PASS** except `A-alloc-machines`.
+  Numbers: A39 30 m suspicious 1.77 s, alert 3.51 s; A43 scene objects −280, 0 orphans.
 
 | gate | verdict | run | measured |
 |---|---|---|---|
@@ -730,7 +757,7 @@ R45's: PENDING-quiet-box). Reports and logs: `scratchpad/r5/instruments-core/rep
 | `A37` / `A39` / `A43` (`@ic`, on the fixture) | **PASS** ×3 | F2, F8 | peak suspicion 0 while hidden / 30 m: suspicious 1.74 s, alert 3.55 s; 10 m: alert 0.85 s / scene objects −278, 0 orphans |
 | `A-kind-block-file` | **PENDING** (calima only) | F2 | 19 PASS + 5 SKIP-fixture + `A-weak40:herd` PENDING; `A41c` 5 / 5; A44 / A45 / A45c / A46 / A47 / A48 PASS on the lattice-conformed root |
 | `A-weak40:herd` | **PENDING** (calima) | F2 | size 5.5 px (≥ 5); contrast min(9.46, 5.15) = **5.15 : 1** (≥ 3); calima PENDING (world-sky W1) |
-| `A-alloc-machines` | **FAIL** | F7 | see the fix-round-2 section: steady state clean, the first-sprint window and the residual classes fail |
+| `A-alloc-machines` | **FAIL** | F12 | lane frames over the bar: `_sight` 13.8 (first-sprint window), `_steerAlong` 13.9 (first fight window); every other lane frame ≤ 4 KB/s in all six windows; residual (legacy, accessor, inlined-frozen) awaits the ruling; see the fix-round-2 section |
 
 **Global list items present in this tree (F3, F6):**
 
@@ -927,15 +954,17 @@ lens (55°). Centre-pixel colours read from the PNGs.
 ## Honest gaps
 
 **Fix round 2 (first):**
-- **A. `A-alloc-machines` FAILS.** Steady state is clean: in five of six windows no `lane` frame is over
-  4 KB/s. Two things still fail it:
-  - One or two windows of the sprint phase, every final run: `updateEyesM` 165–1,006 KB/s, plus
-    `_statePatrol`, `Machine.update` and `_sight`. A GC's "embedded weak objects cleared" deopt and the
-    player-shape wave land there, and the deoptimised function then runs in V8's baseline tier for much of
-    a window. What ties `updateEyesM` to that GC is not identified. The last attempt (lens records
-    normalised at construction, F9) moved the spike from sprint 1/3 to sprints 2/3 and 3/3; it did not
-    remove it.
-  - The residual classes: legacy, accessor, inlined-frozen. They pass only under the ruling.
+- **A. `A-alloc-machines` FAILS.**
+  - **In the final run (F12)** only two lane frames are over the bar, each in one window: `_sight` 13.8 at
+    the first sprint and `_steerAlong` 13.9 in the first fight window.
+  - **In F5, F7 and F9** (none in F11 / F12), one or two windows of the sprint phase also failed:
+    `updateEyesM` 165–1,006 KB/s, plus `_statePatrol`, `Machine.update` and `_sight`.
+    - A GC's "embedded weak objects cleared" deopt and the player-shape wave land there, and the
+      deoptimised function then runs in V8's baseline tier for much of a window.
+    - What ties `updateEyesM` to that GC is not identified. Normalising the lens records at construction
+      (F9) moved the spike from sprint 1/3 to sprints 2/3 and 3/3; it is absent in F11 (the same source as F9)
+      and in F12. Two clean runs do not prove it gone.
+  - **The residual classes** (legacy, accessor, inlined-frozen) pass only under the ruling.
 - **B. The paired attribution run is the gate's own method.** It decides `inlined-frozen` from a second
   run with inlining off. It is stricter than doing nothing, since a frame qualifies only if its own bytes
   and every lane callee are clean there. Still, it is a classification the judges should check: the
