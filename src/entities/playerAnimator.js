@@ -107,6 +107,7 @@ const _sgD = new THREE.Vector3();
 const _ftQ = new THREE.Quaternion();  // R5 fix round 5: a foot's live char orientation (heading by its lateral axis)
 const _tq = new THREE.Quaternion();   // R5 fix round 5: the down aim's turn (form arrow -> ray)
 const _tq2 = new THREE.Quaternion();
+const _dT = new THREE.Vector3();    // R5 fix round 5: the T turn's ray (char space, from a fixed point on her)
 const _ik5W = new THREE.Vector3();  // R5 fix round 5: the climb's wrist target, world (diagnostics)
 const _ftL = new THREE.Vector3();     // ...and its live lateral axis
 // _groundConform's PRIVATE roll scratch (never borrow _q1/_v6 here: _rot and
@@ -558,7 +559,7 @@ export class PlayerAnimator {
       knuckleNock: tn?.knuckleNock ?? null,
       // R5 fix round 5 (false = the Round-4 behaviour): a down aim is the level
       // draw's form turned rigidly onto the ray at spine_01 (see `_aimLayer`)
-      downT: !!tn?.downT, downTRoll: tn?.downTRoll ?? 0,
+      downT: !!tn?.downT, downTRoll: tn?.downTRoll ?? 0, upT: tn?.upT ?? 0,
     };
     this.bowSolve = prof?.bow || null;
     /* M10 (E3): the spring-side capsule on the DRAW hand + forearm. */
@@ -3401,7 +3402,7 @@ export class PlayerAnimator {
      * level draw's relations to the arrow. The arms then solve in that turned
      * frame (`_qT`; their poles and the elbow-height rules read `_upT` /
      * `_fwdT`, the turned up and forward). tS = 0 (no profile key) = Round 4. */
-    const tS = this.T.downT ? smoothstep(pitch, 0.1, 0.5) : 0;
+    const tS = (this.T.downT ? smoothstep(pitch, 0.1, 0.5) : 0) + (this.T.upT ?? 0) * smoothstep(-pitch, 0.1, 0.5);
     const fp = pitch * (1 - tS);
     this._qT.identity(); this._upT.copy(Y_AXIS); this._fwdT.copy(Z_AXIS);
     rotP(b.spine2, fp * PS[0] * aimW);
@@ -3506,14 +3507,32 @@ export class PlayerAnimator {
       // the T about the arrow (the shoulder-arc from the form's arrow to the
       // ray would cant it when the ray also turns — a near ground hit pulls
       // the ray ~17 deg to her right at the 0.75 aim)
-      const yawR = Math.atan2(_dA.x, _dA.z), pitR = Math.asin(clamp(-_dA.y, -1, 1));
+      // The T follows the arms' own aim ray (`_dA`: last frame's grip to the
+      // aim point) — the ray the bow and the string are solved on — capped at
+      // 0.95 rad down / 0.6 up and 0.45 rad of yaw. A FIXED origin on her
+      // instead was tried (run f5c10): it turned the T 5-10 deg off the arrow
+      // the bow is actually on (Lmax 0.550 against the 0.527 the bows are cut
+      // to; the wrist 0.035 m off the level anchor in the head's frame). The
+      // cap is what stops the grip ray's feedback at a near ground hit
+      // (camPitch 1.05: the crosshair ~1 m in front of her; every degree of
+      // bend steepened the ray — A32-draw-ramp `down105` ran away to a fold
+      // with the hand 0.69 m off the nock, run f5t1); past it the arms take
+      // the rest of the pitch, as they did before.
+      const yawR = clamp(Math.atan2(_dA.x, _dA.z), -0.45, 0.45), pitR = clamp(Math.asin(clamp(-_dA.y, -1, 1)), -0.6, 0.95);
+      _dT.set(Math.sin(yawR) * Math.cos(pitR), -Math.sin(pitR), Math.cos(yawR) * Math.cos(pitR));
       _tq.setFromAxisAngle(Y_AXIS, yawR);
       _tq2.setFromAxisAngle(X_AXIS, pitR - fp);
       _tq.multiply(_tq2);
-      // (`downTRoll` blends toward the shortest arc form-arrow -> ray, which
-      // carries a roll about the arrow when the ray also turns; probe tuning)
+      // `downTRoll` blends toward the shortest arc form-arrow -> ray, which
+      // carries a roll about the arrow when the ray also turns. Measured at the
+      // 0.75 aim (probe `tform`, runs f5c8 / f5c9): the pure yaw-then-pitch
+      // (0) left the drawing hand 0.08-0.24 m off the bow's rendered nock (the
+      // bow rides its own roll off the aim ray); the full arc (1) holds the
+      // hand on the string but lifts the wrist 0.030 m over the level draw's
+      // height at the Head joint; 0.5 holds both (knuckle 0.052 m, wrist
+      // +0.025 m, forearm 16 deg off the arrow, Lmax 0.529)
       const rk = this.T.downTRoll ?? 0;
-      if (rk > 0) { _v7.set(0, -Math.sin(fp), Math.cos(fp)); _tq2.setFromUnitVectors(_v7, _dA); _tq.slerp(_tq2, rk); }
+      if (rk > 0) { _v7.set(0, -Math.sin(fp), Math.cos(fp)); _tq2.setFromUnitVectors(_v7, _dT); _tq.slerp(_tq2, rk); }
       this._qT.slerpQuaternions(Q_IDENT, _tq, tS * aimW);
       this._rotQL(b.spine1, this._qT);
       this._upT.copy(Y_AXIS).applyQuaternion(this._qT);
@@ -4673,12 +4692,7 @@ export class PlayerAnimator {
       const CD = this._climbDbg || (this._climbDbg = { short: 0, press: 0, clvShortL: 0, clvShortR: 0, clvL: 0, clvR: 0, missL: 0, missR: 0 });
       CD.short = short; CD.press = 0;
       if (short > 0.002) {
-        // fix round 5 (judge r2, A-climb-1m at 0.052-0.054 m): the press ran
-        // out (0.65 rad, saturated from k 0.31 on, the farther shoulder still
-        // 0.13 m out of reach, the right palm lifting 4-6 cm off the lip as the
-        // chest went over — probe `climbgate`); it folds the chest further
-        // over the hands now, as a climber's press does
-        const a = Math.min(0.95, short / 0.2) * w;
+        const a = Math.min(0.65, short / 0.26) * w;
         this._rotL(this.b.spine2, X_AXIS, a * 0.45);
         this._rotL(this.b.spine3, X_AXIS, a * 0.55);
         CD.press = a;
@@ -4715,6 +4729,36 @@ export class PlayerAnimator {
       }
       _pole.set(0.6 * sgn, -0.5, -0.6);
       this._ikArm(side, _ik5, _pole, w, null);
+      /* R5 fix round 5 (judge r2, A-climb-1m: "jog palm 0.0516 / 0.054 m vs
+       * the 0.05 bar"). The wrist lands on its target (within 3 mm, probe
+       * `climbgate`), but the hand kept the forearm's line: as the chest went
+       * over the hands the forearm stood up and the hand pointed DOWN the
+       * wall, so the palm (wrist -> middle knuckle midpoint) sat 4-6 cm off
+       * the lip on the frames the gate's max lands on. The hand is laid flat
+       * on the top instead — wrist extended, fingers pointing into the ledge
+       * (the mantle edge's inward horizontal), the way a climber's press
+       * plants the palm — so the palm sits a hand's half-length past the lip
+       * at the wrist's 2 cm, whatever the forearm does. */
+      {
+        const hE = side === 'l' ? this.b.handL : this.b.handR;
+        const mid = side === 'l' ? this.bones.middle_01_l : this.bones.middle_01_r;
+        if (hE && mid) {
+          this._charOf(hE.bone, _sg0); this._charOf(mid, _sg1);
+          _sg2.subVectors(_sg1, _sg0);
+          if (_sg2.lengthSq() > 1e-6) {
+            _sg2.normalize();
+            _alV.set(E.x + E.dx, E.y, E.z + E.dz); this._charOfWorld(_alV, _sg3);
+            _alV.set(E.x, E.y, E.z); this._charOfWorld(_alV, _sgD);
+            _sg3.sub(_sgD); _sg3.y = 0;
+            if (_sg3.lengthSq() > 1e-6) {
+              _sg3.normalize();
+              _q3.setFromUnitVectors(_sg2, _sg3);
+              _q4.copy(Q_IDENT).slerp(_q3, w);
+              this._rotQL(hE, _q4);
+            }
+          }
+        }
+      }
       this._curlFingers(side === 'l' ? this._fingerL : this._fingerR, 0.35 * w, 0.2 * w);
       (side === 'l' ? this.b.handL : this.b.handR).bone.getWorldPosition(_alV);
       this._climbDbg[si === 0 ? 'missL' : 'missR'] = _alV.distanceTo(_ik5W.set(E.x + sx * 0.17 * sgn - E.dx * 0.035, E.y + 0.022, E.z + sz * 0.17 * sgn - E.dz * 0.035));

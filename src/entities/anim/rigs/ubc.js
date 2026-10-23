@@ -170,6 +170,11 @@ export const UBC_TUNE = {
   // form turned rigidly onto the aim ray at spine_01 — the archer bending at
   // the hips (playerAnimator `_aimLayer`, `tS`)
   downT: true,
+  downTRoll: 0.5,                                  // (the turn's share of the arrow-roll; see `_aimLayer`)
+  // ...and an UP aim the same way (judge r2's clauses at all four pitches: at
+  // -0.55 the old form put the wrist 0.035 m under the level draw's height at
+  // the Head joint): the level form, leaned back rigidly onto the ray
+  upT: 1,
   // the bow's lateral offset off the anchor line (char +X = her left; Round 4
   // 0.035): Brea's string touches the jaw corner, a hair outside it
   gripOut: -0.008,
