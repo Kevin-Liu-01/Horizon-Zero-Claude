@@ -396,7 +396,7 @@ async function servePlanted(cdp, PORT) {
   await cdp.send('Fetch.enable', { patterns: [{ urlPattern: '*__gates-perf-control*', requestStage: 'Request' }] });
   return async () => { cdp.off('Fetch.requestPaused', onPaused); await cdp.send('Fetch.disable').catch(() => {}); };
 }
-async function plantedControl(page, cdp, PORT, B, profileWindow) {
+async function plantedControl(page, cdp, PORT, B) {
   const unserve = await servePlanted(cdp, PORT);
   try {
     await page.evaluate(`(async () => {
@@ -412,13 +412,19 @@ async function plantedControl(page, cdp, PORT, B, profileWindow) {
     const h2 = await gcAndHeap(cdp);
     const holder = 16 + 8 + K * 4;                             // the JSArray + its FixedArray of K tagged (compressed) slots
     const perCallB = (h1 - h0 - holder) / K;
-    // the profiled window, the graded phases' exact settings: both copies allocate once per frame
+    // the profiled window, the graded phases' exact sampling settings: both copies allocate once per frame, and their
+    // call counters run INSIDE the sampled window only (started after startSampling, read before stopSampling)
+    const f0 = await page.evaluate('__CTX__.engine.frames');
+    await cdp.send('HeapProfiler.startSampling', { samplingInterval: B.samplingIntervalB, includeObjectsCollectedByMajorGC: true, includeObjectsCollectedByMinorGC: true });
+    const tS = Date.now();
     await page.evaluate('(() => { window.__w0bCtlSrc.start(); window.__w0bCtlOut.start(); return true; })()');
-    let prof;
-    try { prof = await profileWindow(B.controlWindowS); }
-    finally { /* stop is read after the window */ }
+    await sleep(B.controlWindowS * 1000);
     const calls = await page.evaluate('(() => ({ src: window.__w0bCtlSrc.stop(), out: window.__w0bCtlOut.stop() }))()');
+    const { profile } = await cdp.send('HeapProfiler.stopSampling');
+    const seconds = (Date.now() - tS) / 1000;
+    const frames = (await page.evaluate('__CTX__.engine.frames')) - f0;
     await page.evaluate('(() => { window.__w0bCtlSrc = null; window.__w0bCtlOut = null; return true; })()');
+    const prof = { attribution: attribute(profile, seconds, frames, PORT) };
     const a = prof.attribution;
     const srcRecovered = a.allFunctions.filter((x) => fileOfKey(x.fn) === CONTROL_FILE).reduce((s, x) => s + x.bytes, 0);
     const srcFns = a.allFunctions.filter((x) => fileOfKey(x.fn) === CONTROL_FILE).map((x) => x.fn + ' ' + x.bytes + ' B');
@@ -475,7 +481,10 @@ function guardSelfTest(owners, factor) {
 async function allocRate({ PORT }) {
   const B = W0B_BUDGETS.alloc;
   const wave = WAVE_NOW(), binding = barsBinding(PORT);
-  const recordBaseline = process.env.CAL_ALLOC_RECORD_BASELINE === '1';
+  // CAL_ALLOC_RECORD_BASELINE=1 records the baseline from this run; =merge adds this run to an existing baseline file (per owner
+  // the larger of the recorded numbers, every run listed): the orchestrator's global run may record over several runs
+  const recordMode = process.env.CAL_ALLOC_RECORD_BASELINE === 'merge' ? 'merge' : process.env.CAL_ALLOC_RECORD_BASELINE === '1' ? 'new' : null;
+  const recordBaseline = !!recordMode;
   const baselinePath = path.resolve(ROOT, process.env.CAL_ALLOC_BASELINE_FILE || B.baselineFile);
   return onPage(PORT, async ({ page, cdp }) => {
     await cdp.send('HeapProfiler.enable');
@@ -553,7 +562,7 @@ async function allocRate({ PORT }) {
     const phases = [fightPhase, runPhase];
     // THE SELF-TEST (planted allocator), after the graded phases, on the same page with the same profiler settings
     let control = null;
-    try { control = await plantedControl(page, cdp, PORT, B, (s) => profileWindow(s)); }
+    try { control = await plantedControl(page, cdp, PORT, B); }
     catch (err) { control = { ok: false, error: String(err.message || err).slice(0, 200) }; }
     const controlInGraded = phases.some((p) => p.allFunctions.some((x) => fileOfKey(x.fn) === CONTROL_FILE || /__gates-perf-control/.test(x.fn)));
 
@@ -605,15 +614,25 @@ async function allocRate({ PORT }) {
       if (!instrumentOk) recorded = { written: false, why: 'the instrument did not pass: a baseline is recorded only from a passing instrument' };
       else {
         const box = { loadAverage: os.loadavg().map((x) => +x.toFixed(2)), fps: phases.map((p) => ({ phase: p.name, fps: p.fps })) };
+        let prev = null;
+        if (recordMode === 'merge' && existsSync(baselinePath)) { try { prev = JSON.parse(readFileSync(baselinePath, 'utf8')); } catch { prev = null; } }
         const rec = { rule: 'R48 (c): the per-owner allocation of the W0b global run; no owner may exceed it by more than 10 % at a later wave exit (both KB/frame and KB/s)',
           recordedAt: new Date().toISOString(), port: Number(PORT), runId: runIdOf(PORT), wave, box,
+          runs: [...(prev?.runs || (prev ? [{ runId: prev.runId, recordedAt: prev.recordedAt, box: prev.box }] : [])), { runId: runIdOf(PORT), recordedAt: new Date().toISOString(), box }],
           gitHead: (spawnSync('git', ['-C', ROOT, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).stdout || '').trim() || null,
           owners: Object.fromEntries(owners.filter((o) => o.id !== 'planted-control').map((o) => [o.id, { lane: o.lane, barsFrom: o.barsFrom, phase: o.phase, kbPerFrame: o.kbPerFrame, measuredKBps: o.measuredKBps, gradedKBps: o.gradedKBps }])),
           functions: Object.fromEntries([...overFn.values()].map((x) => [x.fn, { owner: x.ownerRow, kbPerFrame: x.kbPerFrame, measuredKBps: x.measuredKBps, gradedKBps: x.gradedKBps }])),
           noSrcBuckets: Object.fromEntries(runPhase.noSrc.buckets.map((b) => [b.id, { measuredKBps: b.measuredKBps, kbPerFrame: b.kbPerFrame }])) };
+        if (prev?.owners) {                                           // merge: per owner, the larger of each recorded number
+          for (const [id, o] of Object.entries(prev.owners)) {
+            const n = rec.owners[id];
+            if (!n) { rec.owners[id] = o; continue; }
+            n.kbPerFrame = Math.max(n.kbPerFrame, o.kbPerFrame); n.measuredKBps = Math.max(n.measuredKBps, o.measuredKBps); n.gradedKBps = Math.max(n.gradedKBps, o.gradedKBps);
+          }
+        }
         mkdirSync(path.dirname(baselinePath), { recursive: true });
         writeFileSync(baselinePath, JSON.stringify(rec, null, 1) + '\n');
-        recorded = { written: true, file: path.relative(ROOT, baselinePath), owners: Object.keys(rec.owners).length };
+        recorded = { written: true, mode: recordMode, runs: rec.runs.length, file: path.relative(ROOT, baselinePath), owners: Object.keys(rec.owners).length };
       }
     }
     const pass = instrumentOk && bindingBarsOk && (!recordBaseline || recorded?.written === true);
@@ -822,7 +841,7 @@ const GL_CENSUS = String.raw`(() => {
         const key = reg ? 'scene ' + reg.id : 'unregistered scene root ' + (root.name || '(unnamed ' + root.type + ')');
         const lane = reg ? reg.lanes : 'UNREGISTERED (name the root for its §4.2 row)';
         root.traverse((o) => claimObject(o, key, lane, 'scene root'));
-        sceneRoots.push({ root: root.name || '(unnamed ' + root.type + ')', owner: key });
+        sceneRoots.push({ root: root.name || '(unnamed ' + root.type + ')', owner: key, obj: reg ? null : root });
       }
       for (const k of ['background', 'environment']) if (scene[k]?.isTexture) claimTexture(scene[k], 'scene.' + k, 'world-sky', 'scene.' + k);
       // (3) the context graph (bounded): what is held off-scene
@@ -842,6 +861,8 @@ const GL_CENSUS = String.raw`(() => {
         const lane = LANE_OF_KEY[k0] || (k0.startsWith('(system)') ? 'system ' + k0.slice(8) : 'orchestrator (ctx.' + k0 + ')');
         const key = 'held by ' + p.split('.').slice(0, 2).join('.');
         if (v === scene) continue;
+        // an UNREGISTERED scene root reached from the context graph: who holds it names its lane (the root still has to be named)
+        if (v.isObject3D && v.parent === scene) { const sr = sceneRoots.find((x) => x.obj === v); if (sr && !sr.heldBy) { sr.heldBy = p; sr.heldByLane = lane; } }
         if (v.isTexture) { claimTexture(v, key, lane, 'context graph: ' + p); continue; }
         if (v.isRenderTarget) { claimTarget(v, key, lane, 'context graph: ' + p); continue; }
         if (v.isBufferGeometry) { claimGeometry(v, key, lane, 'context graph: ' + p); continue; }
@@ -853,6 +874,12 @@ const GL_CENSUS = String.raw`(() => {
         if (Array.isArray(v)) { const n = Math.min(v.length, 20000); for (let i = 0; i < n; i++) { const x = v[i]; if (x && typeof x === 'object') q.push([x, p + '[]', k0, d + 1]); } continue; }
         let keys; try { keys = Object.keys(v); } catch (err) { continue; }
         for (const kk of keys) { if (SKIP_KEYS.has(kk)) continue; let x; try { x = v[kk]; } catch (err) { continue; } if (x && typeof x === 'object') q.push([x, p + '.' + kk, k0, d + 1]); }
+      }
+      for (const sr of sceneRoots) {
+        if (!sr.obj) continue;
+        const o = owners.get(sr.owner);
+        if (o && sr.heldBy && !/held by/.test(o.lane)) o.lane = 'UNREGISTERED scene root, held by ' + sr.heldBy + ' (' + sr.heldByLane + '): name the root for its §4.2 row';
+        sr.obj = undefined;
       }
       // (4) the remainder
       const un = { textures: { count: 0, bytes: 0, rows: [] }, renderTargets: { count: 0, bytes: 0, rows: [] }, buffers: { count: 0, bytes: 0, rows: [] } };
@@ -1066,8 +1093,9 @@ async function footprintMedian(browser, n = 5, gapMs = 700) {
 
 /**
  * POSITIVE CONTROLS (R48 b "self-tests passing") for A90-abs's two instruments, each a KNOWN delta on the live page:
- *   - JS heap: 32 distinct 1 MiB one-byte strings are retained -> the post-GC used heap (Runtime.getHeapUsage after two
- *     forced GCs) must rise by 32 x (1 MiB + header) within 5 %, and fall back when they are released;
+ *   - JS heap: 128 arrays of 65,536 small integers are retained (33.56 MB: JSArray + FixedArray of compressed tagged
+ *     slots, computed exactly) -> the post-GC used heap (Runtime.getHeapUsage after two forced GCs) must rise by that
+ *     within 5 %, and fall back when they are released;
  *   - GPU process: with the world held (ctx.state pinned: nothing streams), a 4096 x 4096 RGBA8 render target
  *     (67,108,864 B, one level, no depth) is allocated through three and cleared; the GPU process's macOS footprint
  *     (median of 5 readings) must rise by that size within the tolerance below, and fall back by most of it after
@@ -1075,7 +1103,10 @@ async function footprintMedian(browser, n = 5, gapMs = 700) {
  * Tolerance for the GPU control: 0.75-1.6 x the allocation (a Metal surface is page-aligned and the driver may keep a
  * resolve or clear copy; the footprint is a process-wide reading).
  */
-const HEAP_CONTROL_HOLD = `(() => { const keep = new Array(32); for (let k = 0; k < 32; k++) keep[k] = String.fromCharCode(65 + (k % 26)).repeat(1048576); window.__w0bHeapCtl = keep; return keep.length; })()`;
+// 128 arrays of 65,536 small integers: each a JSArray (16 B) + a FixedArray of 65,536 compressed tagged slots (8 + 4 x 65,536 B);
+// String.prototype.repeat is NOT used: V8 builds it as a rope of cons cells (the first dev run read a 0.001 x rise)
+const HEAP_CONTROL_N = 128, HEAP_CONTROL_LEN = 65536, HEAP_CONTROL_BYTES = HEAP_CONTROL_N * (16 + 8 + 4 * HEAP_CONTROL_LEN);
+const HEAP_CONTROL_HOLD = `(() => { const keep = new Array(${HEAP_CONTROL_N}); for (let k = 0; k < ${HEAP_CONTROL_N}; k++) { const a = new Array(${HEAP_CONTROL_LEN}); for (let i = 0; i < ${HEAP_CONTROL_LEN}; i++) a[i] = i; keep[k] = a; } window.__w0bHeapCtl = keep; return keep.length; })()`;
 const GPU_CONTROL = (phase) => `(async () => {
   ${FRAMES}
   const ctx = __CTX__, e = ctx.engine, r = e.renderer;
@@ -1124,7 +1155,7 @@ async function a90Abs({ PORT }) {
     // ATTRIBUTION of the GPU process footprint at the fight: the GL census (A-vram-ledger's, installed before the
     // context) by owner lane, the canvas drawing buffers, and the remainder: the browser's GPU process itself
     const attrCfg = { drawOwners: DRAW_OWNERS.map((o) => ({ id: o.id, lanes: o.lanes, re: o.re.source, flags: o.re.flags })), ctxLanes: CTX_LANES };
-    const glAttr = await page.evaluate(`(() => { const a = window.__glCensus.attribute(${JSON.stringify(attrCfg)}); const e = __CTX__.engine; let canvasBytes = null; try { canvasBytes = e.renderTargetLedger().canvasBytes ?? null; } catch (err) { canvasBytes = null; }
+    const glAttr = await page.evaluate(`(() => { const a = window.__glCensus.attribute(${JSON.stringify(attrCfg)}); const e = __CTX__.engine; let canvasBytes = null; try { canvasBytes = e.renderTargetLedger().canvas?.bytes ?? null; } catch (err) { canvasBytes = null; }
       const lanes = {}; for (const o of a.owners) { const l = /^unregistered/.test(o.owner) ? 'UNREGISTERED scene roots' : o.lane; lanes[l] = (lanes[l] || 0) + o.textures + o.renderTargets + o.buffers; }
       const un = a.unattributed.textures.bytes + a.unattributed.renderTargets.bytes + a.unattributed.buffers.bytes;
       return { lanes, unattributedGlBytes: un, totals: a.totals, accountingExact: a.accountingExact, canvasBytes }; })()`);
@@ -1145,7 +1176,7 @@ async function a90Abs({ PORT }) {
       const h1 = await gcAndHeap(cdp);
       await page.evaluate('(() => { window.__w0bHeapCtl = null; return true; })()');
       const h2 = await gcAndHeap(cdp);
-      const exp = 32 * (1048576 + 16), rise = h1 - h0, ratio = rise / exp;
+      const exp = HEAP_CONTROL_BYTES + 16 + 8 + 4 * HEAP_CONTROL_N, rise = h1 - h0, ratio = rise / exp;   // + the holding array
       heapControl = { ok: Math.abs(ratio - 1) <= 0.05 && (h1 - h2) / exp >= 0.95, expectedB: exp, riseB: rise, ratio: +ratio.toFixed(4), fallB: h1 - h2, tolerance: 0.05 };
     } catch (err) { heapControl = { ok: false, error: String(err.message || err).slice(0, 160) }; }
     try {
@@ -1546,6 +1577,11 @@ function referenceSet({ GATES }) {
     const good = res.filter((x) => x.ok);
     const lane = laneOfGate(g);
     const replaced = lane === 'carried' && !g.shadows && !KEPT_VISUAL.includes(g.id);
+    // R49 (plan §8.3, Oct 22): engine-gpu's V gates (V20, V33b, V-gpu-tier-look) are graded at W0b against their
+    // IN-SHEET controls (shipped vs no-AA, stock shader, 2x/2x), which serve as the R29 reference; such a row of
+    // engine-gpu's file that names no reference/r5 file is accepted by that ruling, and says so
+    const r49 = lane === 'engine-gpu' && /^(V20|V33b|V-gpu-tier-look)(-|$)/.test(g.id) && t.refs.length === 0;
+    if (r49) return { id: g.id, lane, source: g.source, graded: true, replaced: false, ok: true, refs: ['in-sheet control (R49)'], problems: [], nonR5: t.nonR5, ruling: 'R49' };
     return { id: g.id, lane, source: g.source, graded: true, replaced, absorbedBy: g.absorbedBy || null,
       ok: good.length > 0 && res.every((x) => x.ok) && t.nonR5.length === 0, refs: good.map((x) => x.file), problems: res.filter((x) => !x.ok).map((x) => x.why), nonR5: t.nonR5 };
   });
@@ -1567,7 +1603,7 @@ function referenceSet({ GATES }) {
     checks, fetcher: { ...fetcher, selfTest: fetcher.selfTest.cases }, verify: v,
     slots: SLOTS.map((s) => ({ lane: s.lane, slot: s.slot, gates: s.gates, pinned: !!s.file })),
     visualGates: rows, missingByLane: byLane,
-    rule: 'plan §9: every V gate in every lane file names >= 1 reference file under reference/r5/** with a MANIFEST row (author, source URL, licence, retrieved date); graded over every registered visual row, SKIP-replaced carried rows included',
+    rule: 'plan §9: every V gate in every lane file names >= 1 reference file under reference/r5/** with a MANIFEST row (author, source URL, licence, retrieved date); graded over every registered visual row, SKIP-replaced carried rows included; R49: engine-gpu\'s V20 / V33b / V-gpu-tier-look use their in-sheet controls as the R29 reference',
   } };
 }
 

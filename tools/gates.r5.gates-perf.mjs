@@ -1055,6 +1055,7 @@ const { GATES: CARRIED } = await import('./gates.r5.carried.mjs');
 const CARRIED_IDS = new Set(CARRIED.map((g) => g.id));
 /** R48 (b): the W0b instruments, graded from sealed runs (tools/gates/gates-perf.w0b.mjs INSTRUMENT_ROWS) */
 const INSTRUMENT_IDS = new Set(['A-alloc-rate', 'A-vram-ledger', 'A90-abs']);
+const INSTRUMENT_SOURCES = ['gates/gates-perf.w0b.mjs', 'budgets.mjs', 'gates.r5.gates-perf.mjs'];
 
 /**
  * Judge findings (Oct 16, fix round 2): a carried report kept in the lane tree could be STALE
@@ -1486,7 +1487,9 @@ function sealRun(startedAtMs, atStart, cfg, loadStart, sealer) {
   const monBuf = Buffer.from(JSON.stringify(MON));
   writeFileSync(path.join(dir, 'monitor.json'), monBuf);
   const endedAt = new Date().toISOString();
-  appendLedger({ kind: 'seal', sealVersion: SEAL_VERSION, sealId, partial, instrumentRows, scope: instrumentRows.length ? (carried ? 'carried+instruments' : 'instruments') : 'carried',
+  // the instrument rows' own source is bound to the seal too (it is not part of the carried build fingerprint)
+  const instrumentSource = instrumentRows.length ? INSTRUMENT_SOURCES.map((f) => ({ file: 'tools/' + f, sha256: (() => { try { return sha256(readFileSync(path.join(TOOLS, f))); } catch { return null; } })() })) : undefined;
+  appendLedger({ kind: 'seal', sealVersion: SEAL_VERSION, sealId, partial, instrumentRows, instrumentSource, scope: instrumentRows.length ? (carried ? 'carried+instruments' : 'instruments') : 'carried',
     runId: runStarted ? RUN_ID : null, at: endedAt, tree: realpathSync(ROOT), port, pid: process.pid,
     argv: process.argv.slice(2), startedAt: isoOf(startedAtMs), endedAt,
     load: { start: loadStart, end: os.loadavg().map((x) => +x.toFixed(2)) },
@@ -2182,7 +2185,10 @@ async function carriedSuite({ PORT, GATES: ALL }) {
    * a row that needs more runs, an unrun row, anything not named as another lane's) makes it FAIL.
    */
   const orchestratorRun = Number(PORT) === ORCHESTRATOR_PORT;
-  const offenderOwner = (r) => RULED_CLASS_OWNER[r.cls] || ((r.cls === 'regression' || r.cls === 'worseThanBaseline') && RULED_OWNER[r.id] ? RULED_OWNER[r.id] : null);
+  // needsQuietBox is ruled (R45) only for a row whose observations carry the R45 label (A9's fps term); a row PENDING
+  // for any other box reason stays this lane's (re-run it on a quiet box)
+  const offenderOwner = (r) => (r.cls === 'needsQuietBox' ? ((r.perRun || []).includes('pendingQuietBox') ? RULED_CLASS_OWNER.needsQuietBox : null)
+    : RULED_CLASS_OWNER[r.cls] || ((r.cls === 'regression' || r.cls === 'worseThanBaseline') && RULED_OWNER[r.id] ? RULED_OWNER[r.id] : null));
   const othersOffenders = bad.filter((r) => offenderOwner(r)), mineOffenders = bad.filter((r) => !offenderOwner(r));
   const structural = ['composition', 'ledgerIntact', 'baselineAnchored', 'enoughCompleteFullRuns', 'everyRunLoadedEveryFile', 'notAnOverrideRun'].every((k) => checks[k]);
   const allGreen = Object.values(checks).every(Boolean);
@@ -2421,8 +2427,12 @@ async function instrumentsCli() {
         bars: d.bars ? Object.fromEntries(Object.entries(d.bars).map(([k, b]) => [k, { binding: b.binding, pass: b.pass }])) : null, runId: d.runId || null,
         runIdMatchesSeal: d.runId ? d.runId === c.seal.runId || d.runId === c.seal.sealId : null, verdict: String(d.verdict || r?.error || '').slice(0, 220) };
     }
+    const srcNow = INSTRUMENT_SOURCES.map((f) => { try { return sha256(readFileSync(path.join(TOOLS, f))); } catch { return null; } });
+    const srcWhy = !c.seal.instrumentSource ? ['the seal records no instrument source (sealed before fix round 3)']
+      : c.seal.instrumentSource.map((x, i) => (x.sha256 === srcNow[i] ? null : x.file + ' changed since the run')).filter(Boolean);
+    const why = [...c.why, ...srcWhy];
     return { sealId: c.seal.sealId, startedAt: c.seal.startedAt, endedAt: c.seal.endedAt, scope: c.seal.scope || null, port: c.seal.port, argv: c.seal.argv,
-      fresh: c.why.length === 0, why: c.why, tampered: c.tampered || null, reportRunId: c.rep?.runId || null, reportSha256: c.seal.reportSha256,
+      fresh: why.length === 0, why, tampered: c.tampered || null, reportRunId: c.rep?.runId || null, reportSha256: c.seal.reportSha256,
       monitor: c.seal.monitor ? { samples: c.seal.monitor.samples, maxGapMs: c.seal.monitor.maxGapMs, box: c.seal.monitor.box } : null, load: c.seal.load, gitHead: c.seal.gitHead, rows };
   });
   const newest = out.find((x) => x.fresh && !x.tampered);

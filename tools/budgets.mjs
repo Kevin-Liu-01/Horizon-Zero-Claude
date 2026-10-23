@@ -161,7 +161,8 @@ export const MEMORY_BUDGETS = Object.freeze({
      * W0b fix round 3 (plan §8.3 R46, R48 (b) and (c)). A-alloc-rate is graded at gates-perf's exit as an INSTRUMENT
      * (sealed run, every byte attributed to a named owner, planted-allocator self-test, over-bar owners routed with
      * file:line). At the orchestrator's W0b global run (port 5270) its per-owner numbers are RECORDED as the baseline
-     * (`CAL_ALLOC_RECORD_BASELINE=1` writes `baselineFile`, which the orchestrator commits); from then on no owner may
+     * (`CAL_ALLOC_RECORD_BASELINE=1` writes `baselineFile` from one run, `=merge` adds a further run, keeping per owner
+     * the larger number; the orchestrator commits the file); from then on no owner may
      * exceed its baseline by more than `baselineGuard` (x 1.10) at a wave exit. An owner exceeds it only when BOTH its
      * KB per frame and its KB/s exceed 1.10 x the baseline's (a louder box raises one of the two for frame-driven or
      * time-driven code; a real regression raises both). The absolute bars (srcKBps for all of src/**, fnKBps per
