@@ -1927,14 +1927,17 @@ const FILM = (state, { fov = 4, both = false, dist = 15, night = false, sunlit =
      * hostile Tiller now stands 6 m to the side of the wary one, facing the same way, with Brea 10 m straight ahead
      * of its lamp, on the camera's side (the wary Tiller's stimulus lies away from the camera): both shafts cross the
      * frame side-on, one below the other, as in a normal side view of a lock. */
+    // Brea first, then the lock (forceState aims lastKnown at where she stands), then the heading: the hostile
+    // Tiller faces her down its lens axis whatever forceState did to its facing
+    const tgt = lampPos.clone().addScaledVector(axis, 10).addScaledVector(side, -6);
+    p.position.set(tgt.x, T.getHeight(tgt.x, tgt.z), tgt.z); if (p.model) p.model.visible = true;
     if (m2) {
       const hx = m.position.x - side.x * 6, hz = m.position.z - side.z * 6;
       m2.position.set(hx, T.getHeight(hx, hz), hz);
-      m2.heading = m.heading; m2.root.rotation.y = m.heading; m2.root.updateMatrixWorld(true);
       m2.forceState('attack');
+      m2.lastKnown.copy(p.position);
+      m2.heading = m.heading; m2.root.rotation.y = m.heading; m2.root.updateMatrixWorld(true);
     }
-    const tgt = lampPos.clone().addScaledVector(axis, 10).addScaledVector(side, -6);
-    p.position.set(tgt.x, T.getHeight(tgt.x, tgt.z), tgt.z); if (p.model) p.model.visible = true;
   } else m.lastKnown.copy(lampPos).addScaledVector(axis, 6);
   holdStill(m); if (m2) holdStill(m2);   // body still, glows live
   // the lens: camera.zoom (player.js and combat.js damp camera.fov every frame; nothing writes zoom)
@@ -1953,7 +1956,8 @@ const FILM = (state, { fov = 4, both = false, dist = 15, night = false, sunlit =
     cam.lookAt(lampPos);
   }
   cam.updateMatrixWorld();
-  window.__IC_FILM__ = { state: st, camDistM: +cam.position.distanceTo(lampPos).toFixed(2), fov: cam.fov, zoom: cam.zoom, clearLine: ok, sunlit: ${sunlit}, lensAxisDotSun: +bestSun.toFixed(3),
+  window.__IC_FILM__ = { state: st, hostileFacesHer: m2 && m2.lamp ? (() => { const hp = new V().setFromMatrixPosition(m2.lamp.anchor.matrixWorld), ax = new V(0, 0, 1).transformDirection(m2.lamp.anchor.matrixWorld); const to = p.position.clone().sub(hp); to.y = 0; ax.y = 0; return +(ax.normalize().dot(to.normalize())).toFixed(3); })() : null,
+    camDistM: +cam.position.distanceTo(lampPos).toFixed(2), fov: cam.fov, zoom: cam.zoom, clearLine: ok, sunlit: ${sunlit}, lensAxisDotSun: +bestSun.toFixed(3),
     sunElevDeg: env.sunDir ? +(Math.asin(env.sunDir.y) * 180 / Math.PI).toFixed(1) : null, lampState: m.lamp ? m.lamp.state : null, aperture: m.lamp ? +m.lamp.aperture.toFixed(2) : null };
 })()`;
 const FILM_ROWS = [
@@ -2021,7 +2025,8 @@ FILM_ROWS.push({
  *   PASS when the hostile shaft adds >= 24 to R+G+B with dR > dG and dB > dG (a magenta addition) at >= 6 of the
  *   8 points, AND the on-frame pixel passes the judge's own magenta scan (R and B each > G + 25) at >= 6 of 8; the
  *   wary shaft adds >= 24 at >= 6 of 8 with dG > dB (chartreuse); and no point beyond her (110-140 % of the
- *   segment) carries magenta beam light (min(dR - dG, dB - dG) < 6: it ends on the player).
+ *   segment) carries magenta beam light (min(dR - dG, dB - dG) < 6: it ends on the player); and the hostile Tiller
+ *   faces her (its lens axis . the bearing to her > 0.9: the lock leaves the drum forward, not back over its hull).
  * The screenshot the harness takes after the assert is the frame the numbers were read on.
  */
 const FILM_BEAM_PROBE = (night) => `(async () => {
@@ -2065,9 +2070,10 @@ const FILM_BEAM_PROBE = (night) => `(async () => {
   // beyond her: no MAGENTA light (the added red and blue over the added green), whatever else moves there (rain, her
   // own silhouette, the other shaft): the lock ends on her
   const beyondMax = Math.max(0, ...beyond.filter(x => !x.offscreen).map(x => Math.min(x.dR - x.dG, x.dB - x.dG)));
-  const pass = hostOk >= 6 && hostScan >= 6 && waryOk >= 6 && beyondMax < 6;
+  const faces = window.__IC_FILM__ ? window.__IC_FILM__.hostileFacesHer : null;   // staging: the hostile Tiller's lens axis points at her
+  const pass = hostOk >= 6 && hostScan >= 6 && waryOk >= 6 && beyondMax < 6 && faces !== null && faces > 0.9;
   return { pass, detail: {
-    verdict: (pass ? 'PASS' : 'FAIL') + ': hostile shaft read at ' + hostOk + '/8 points (bar 6), judge magenta scan ' + hostScan + '/8 (bar 6), wary shaft ' + waryOk + '/8 (bar 6), beyond the player max magenta excess ' + beyondMax + ' (min(dR - dG, dB - dG); bar < 6)',
+    verdict: (pass ? 'PASS' : 'FAIL') + ': hostile shaft read at ' + hostOk + '/8 points (bar 6), judge magenta scan ' + hostScan + '/8 (bar 6), wary shaft ' + waryOk + '/8 (bar 6), beyond the player max magenta excess ' + beyondMax + ' (min(dR - dG, dB - dG); bar < 6), hostile lens axis . bearing to her ' + faces + ' (bar > 0.9)',
     night: ${night}, segmentM: +segLen.toFixed(2), hostileBeamLenM: +rh.blen.toFixed(2), hostileBeamOn: !!rh.beamOn, waryBeamOn: !!rw.beamOn,
     lockAngleToTargetDeg: +(Math.acos(Math.min(1, rh.dir.dot(tgt.clone().sub(hl).normalize()))) * 180 / Math.PI).toFixed(2),
     hostile: host, beyondPlayer: beyond, wary, film: window.__IC_FILM__ || null,
@@ -2445,9 +2451,15 @@ async function allocMachines({ PORT }, opts = {}) {
     const notLaneCaller = (k) => { const f = String(k).split(' ').slice(-1)[0].replace(/:\d+$/, ''); return !MINE_RE.test(f) || FROZEN_MACHINE_RE.test(f) || legacyFiles.has(f); };
     const accessorShare = new Map();
     for (const w of windows) for (const [g, m] of w.getterCallersRaw) { const e = accessorShare.get(g) || [0, 0]; for (const [c, b] of m) { e[1] += b; if (notLaneCaller(c)) e[0] += b; } accessorShare.set(g, e); }
+    /* R46 (c), RECORDED (plan §8.3): the `_steerAlong` return value that frozen `engage` consumes
+     * (`this.travelled += m._steerAlong(...)`). The wrapper stores its arguments, calls `steerAlongS` and returns
+     * `_st.out` — a double, boxed whenever engage is not optimised with it inlined. Named by the ruling, this one
+     * frame and no other; it passes only with the ruling marker, like the other carried classes. */
+    const FROZEN_RETURN = /^_steerAlong \/src\/entities\/machines\/machine\.js:\d+$/;
     const classOf = (fn) => {
       const file = fn.split(' ').slice(-1)[0].replace(/:\d+$/, '');
       if (legacyFiles.has(file)) return 'legacy';
+      if (FROZEN_RETURN.test(fn)) return 'frozen-return';
       const sh = accessorShare.get(fn);
       if (/^(get|set) /.test(fn) && sh && sh[1] > 0 && sh[0] / sh[1] >= 0.9) return 'accessor';
       return 'lane';
