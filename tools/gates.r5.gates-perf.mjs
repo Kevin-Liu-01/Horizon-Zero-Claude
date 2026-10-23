@@ -973,9 +973,14 @@ async function chromeSemaphore({ PORT }) {
     const realSlots = Math.min(2, Math.max(1, Number(process.env.CAL_SEMAPHORE_REAL_SLOTS) || 1));
     const runs = [0, 1, 2, 3].map(() => spawnLogged([path.join(TOOLS, 'gates.mjs'), '--port', String(PORT), '--only', 'A1-boot-clean'], env(realSlots), childCwd));
     const a = await sampleWhile(runs.map((r) => r.done), () => chromeMains(profileRoot));
-    out.realRuns = { slots: realSlots, runs: runs.map((r) => ({ code: r.code, pass: /\[PASS\] A1-boot-clean/.test(r.out), waited: /\[semaphore\] waiting/.test(r.out) })),
+    // W0b fix round 3: every failed child says why (the fix-round-3 lane block lost three waiting runs with no trace)
+    const whyOf = (r) => (r.code === 0 && /\[PASS\] A1-boot-clean/.test(r.out) ? null : (/(infra:[^\n]{0,220})|(\[(FAIL|ERROR|PENDING)\][^\n]{0,220})|((Error|refused)[^\n]{0,220})/.exec(r.out + '\n' + r.err) || [`exit ${r.code}${r.signal ? ' ' + r.signal : ''}`])[0]);
+    out.realRuns = { slots: realSlots, runs: runs.map((r) => ({ code: r.code, pass: /\[PASS\] A1-boot-clean/.test(r.out), waited: /\[semaphore\] waiting/.test(r.out), why: whyOf(r) || undefined })),
       maxChromeAlive: a.max, samples: a.samples };
     out.realOk = a.max >= 1 && a.max <= realSlots && runs.every((r) => r.code === 0 && /\[PASS\] A1-boot-clean/.test(r.out));
+    // a child the BOX refused (the real preflight reading fell below 3 GB / 25 % while it waited: plan §0 rule 8) was not
+    // measured; the phase is then reported, not graded (the harness's infra rule), and every other phase still grades
+    out.realRunsRefusedByTheBox = !out.realOk && a.max <= realSlots && runs.every((r) => (r.code === 0 && /\[PASS\] A1-boot-clean/.test(r.out)) || /infra: preflight refused/.test(r.out + r.err));
 
     /* (b) the default 2 slots with stand-ins: 4 holders through the real acquire path; at most 2 alive, and 2 at once */
     const token = `cal-standin-${process.pid}`;
@@ -1044,7 +1049,9 @@ async function chromeSemaphore({ PORT }) {
     if (foreign.length) out.foreignWritesInWindow = foreign.map((x) => ({ file: x.file, writtenBy: x.nowWrittenBy, at: x.mtimeNow, note: 'another process\'s gates run in this tree (not a semaphore child: the trace has no write to it); left as written' }));
     if (childMade.size) out.treeReportsRestored = keep.restore(childMade);
   }
-  const pass = out.realOk && out.standinOk && out.killOk && out.preflightOk && out.tracerSees && out.noChildWroteIntoTheTree;
+  const others = out.standinOk && out.killOk && out.preflightOk && out.noChildWroteIntoTheTree;
+  const pass = out.realOk && others && out.tracerSees ? true : (out.realRunsRefusedByTheBox && others && out.tracerSees) ? null : false;
+  if (pass === null) out.verdict = 'PENDING: the box refused a real child run its Chrome while it waited (the real preflight reading: ' + out.realRuns.runs.filter((r) => r.why).map((r) => r.why).join(' | ') + '); re-run --only A-chrome-semaphore on a box with >= 3 GB free and >= 25 % memory free; every other phase passed';
   return { pass, detail: out };
 }
 
@@ -1056,6 +1063,8 @@ const CARRIED_IDS = new Set(CARRIED.map((g) => g.id));
 /** R48 (b): the W0b instruments, graded from sealed runs (tools/gates/gates-perf.w0b.mjs INSTRUMENT_ROWS) */
 const INSTRUMENT_IDS = new Set(['A-alloc-rate', 'A-vram-ledger', 'A90-abs']);
 const INSTRUMENT_SOURCES = ['gates/gates-perf.w0b.mjs', 'budgets.mjs', 'gates.r5.gates-perf.mjs'];
+const instrumentSha = (f) => { try { return sha256(readFileSync(path.join(TOOLS, f))); } catch { return null; } };
+const INSTRUMENT_SHA_AT_LOAD = INSTRUMENT_SOURCES.map(instrumentSha);
 
 /**
  * Judge findings (Oct 16, fix round 2): a carried report kept in the lane tree could be STALE
@@ -1487,8 +1496,9 @@ function sealRun(startedAtMs, atStart, cfg, loadStart, sealer) {
   const monBuf = Buffer.from(JSON.stringify(MON));
   writeFileSync(path.join(dir, 'monitor.json'), monBuf);
   const endedAt = new Date().toISOString();
-  // the instrument rows' own source is bound to the seal too (it is not part of the carried build fingerprint)
-  const instrumentSource = instrumentRows.length ? INSTRUMENT_SOURCES.map((f) => ({ file: 'tools/' + f, sha256: (() => { try { return sha256(readFileSync(path.join(TOOLS, f))); } catch { return null; } })() })) : undefined;
+  // the instrument rows' own source is bound to the seal too (it is not part of the carried build fingerprint): hashed when
+  // this process loaded it and again now; a file edited during the run is recorded with both hashes (never fresh)
+  const instrumentSource = instrumentRows.length ? INSTRUMENT_SOURCES.map((f, i) => { const now = instrumentSha(f); return { file: 'tools/' + f, sha256: INSTRUMENT_SHA_AT_LOAD[i], ...(now !== INSTRUMENT_SHA_AT_LOAD[i] ? { changedDuringRun: now } : {}) }; }) : undefined;
   appendLedger({ kind: 'seal', sealVersion: SEAL_VERSION, sealId, partial, instrumentRows, instrumentSource, scope: instrumentRows.length ? (carried ? 'carried+instruments' : 'instruments') : 'carried',
     runId: runStarted ? RUN_ID : null, at: endedAt, tree: realpathSync(ROOT), port, pid: process.pid,
     argv: process.argv.slice(2), startedAt: isoOf(startedAtMs), endedAt,
@@ -2429,7 +2439,7 @@ async function instrumentsCli() {
     }
     const srcNow = INSTRUMENT_SOURCES.map((f) => { try { return sha256(readFileSync(path.join(TOOLS, f))); } catch { return null; } });
     const srcWhy = !c.seal.instrumentSource ? ['the seal records no instrument source (sealed before fix round 3)']
-      : c.seal.instrumentSource.map((x, i) => (x.sha256 === srcNow[i] ? null : x.file + ' changed since the run')).filter(Boolean);
+      : c.seal.instrumentSource.map((x, i) => (x.changedDuringRun ? x.file + ' changed during the run' : x.sha256 === srcNow[i] ? null : x.file + ' changed since the run')).filter(Boolean);
     const why = [...c.why, ...srcWhy];
     return { sealId: c.seal.sealId, startedAt: c.seal.startedAt, endedAt: c.seal.endedAt, scope: c.seal.scope || null, port: c.seal.port, argv: c.seal.argv,
       fresh: why.length === 0, why, tampered: c.tampered || null, reportRunId: c.rep?.runId || null, reportSha256: c.seal.reportSha256,

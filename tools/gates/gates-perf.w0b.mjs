@@ -367,16 +367,19 @@ const srcOwner = (fnKey) => { const file = fileOfKey(fnKey); return (SRC_OWNERS.
 /**
  * THE PLANTED ALLOCATOR (positive control, R48 b "self-tests passing"). A module of known allocation behaviour is served
  * at a src/** URL (CDP Fetch fulfils the request in this page only; nothing is written under src/) and the same source
- * at a URL outside src/. Each calls `__w0bControlAlloc()` once per animation frame (192 three-field objects in a
- * 192-slot array). Its true size per call is measured INDEPENDENTLY of the profiler: K = 1500 results are retained and
+ * at a URL outside src/. Each calls `__w0bControlAlloc()` once per animation frame (one 1,900-slot array of small
+ * integers: 7,624 B in every tier). Its true size per call is measured INDEPENDENTLY of the profiler: K = 1500 results are retained and
  * the post-GC used heap (Runtime.getHeapUsage after two forced GCs) is read before and after, minus the holding
  * array. The profiler, run with the graded phases' exact settings over a separate window, must then charge
  * calls x size to `__w0bControlAlloc /src/__gates-perf-control__.js` (caller attribution) within
  * MEMORY_BUDGETS.alloc.controlTolerance, and the same bytes from the out-of-src copy to the "page script outside src"
  * bucket (the no-src path). The control runs after the graded phases and never appears in them (checked).
  */
-const CONTROL_SRC = `export const N = 192;
-export function __w0bControlAlloc() { const a = new Array(N); for (let i = 0; i < N; i++) a[i] = { i: i, v: i + 0.5, w: i * 3 }; return a; }
+// W0b fix round 3 (second pass): the allocation is one 1,900-slot array of small integers per call (a JSArray + a FixedArray of
+// compressed tagged slots, 7,624 B), whatever tier runs it. The first version (192 three-field objects with a double field)
+// allocated a different amount in optimised and unoptimised code (heap-number temporaries), and the suite read 1.34 x once.
+const CONTROL_SRC = `export const N = 1900;
+export function __w0bControlAlloc() { const a = new Array(N); for (let i = 0; i < N; i++) a[i] = i; return a; }
 let raf = 0, calls = 0, sink = null;
 function tick() { sink = __w0bControlAlloc(); calls++; raf = requestAnimationFrame(tick); }
 export function start() { calls = 0; raf = requestAnimationFrame(tick); return true; }

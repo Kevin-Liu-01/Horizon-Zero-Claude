@@ -29,7 +29,7 @@ import { BUDGETS, PERF_SCENARIOS, STAGE_PRELUDE } from './budgets.mjs';
 import { CANON_SPEEDS } from './gate-speeds.mjs';
 import { HERO, ROSTER, FAIL_CARD, staged, stagedSetup } from './gate-roster.mjs';
 import { PLACES, placed, placedSetup } from './gate-places.mjs';
-import { closeSync, existsSync, mkdtempSync, openSync, readFileSync, rmSync } from 'fs';
+import { closeSync, existsSync, fstatSync, mkdtempSync, openSync, readFileSync, rmSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { formatVerdict, writeLine } from './gate-verdict.mjs';
 import { spawnSync } from 'child_process';
@@ -11587,8 +11587,15 @@ const GATES = [
         wl.wrote = writeLine(sample, fd);
         closeSync(fd);
         wl.roundTrip = readFileSync(tmpf, 'utf8') === sample + '\n';
-        // the fd is closed now: EBADF is unrecoverable and must come back false
-        wl.reportsLoss = writeLine('nowhere', fd) === false;
+        // the fd is closed now: EBADF is unrecoverable and must come back false.
+        // W0b fix round 3: a closed descriptor NUMBER can be reissued at once by another thread of this process (the
+        // harness's run-monitor worker spawns lsof/ps every 2 s, and their pipes take the lowest free fds); then the write
+        // lands in that pipe and returns true. Observed once in the fix-round-3 suite. The contract is unchanged (an
+        // unwritable fd must be REPORTED); it is exercised on the closed fd when it is still closed, and always on a
+        // descriptor number no process can hold (beyond OPEN_MAX), so the result never depends on another thread.
+        let reused = false; try { fstatSync(fd); reused = true; } catch { reused = false; }
+        wl.closedFdReusedByAnotherThread = reused;
+        wl.reportsLoss = (reused || writeLine('nowhere', fd) === false) && writeLine('nowhere', 2 ** 30 - 1) === false;
       } catch (err) {
         wl.threw = String(err && err.message);
       } finally {
