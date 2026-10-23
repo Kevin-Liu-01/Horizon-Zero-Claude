@@ -35,7 +35,7 @@
  * Units: 1 KB = 1024 B for allocation rates; 1 MB = 1e6 B and 1 GB = 1e9 B for memory (the A-rt-ledger convention).
  */
 import puppeteer from 'puppeteer';
-import { readFileSync, readdirSync, existsSync, statSync } from 'fs';
+import { readFileSync, readdirSync, existsSync, statSync, writeFileSync, mkdirSync } from 'fs';
 import { createHash } from 'crypto';
 import { spawnSync } from 'child_process';
 import path from 'path';
@@ -242,106 +242,284 @@ const slope = (pts) => {             // least squares, bytes per second
 };
 
 /* ------------------------------------------------------------------------------------------------ */
+/* R48 (b) / (c): instruments versus bars                                                            */
+/* ------------------------------------------------------------------------------------------------ */
+/**
+ * W0b fix round 3 (plan §8.3 R48 b). At gates-perf's exit A-alloc-rate, A-vram-ledger and A90-abs are graded AS
+ * INSTRUMENTS: a sealed run (the harness seals every run that executes one of these rows: tools/gates.r5.gates-perf.mjs
+ * `INSTRUMENT_IDS`; the row carries the run id the seal binds), every byte and target attributed to a named owner,
+ * positive-control self-tests passing, and each over-bar owner routed with file:line. Their BARS are graded on merged
+ * main at the orchestrator's W0b global run on port 5270 (A-vram-ledger and A90-abs after the engine-gpu merge, and
+ * binding there: rule 5). So a row's verdict is the instrument's everywhere, AND its bars wherever they bind:
+ *   - port 5270 (the orchestrator's global run), or CAL_BARS_BINDING=1 (a re-grade on main on another port);
+ *   - A-alloc-rate: the R48 (c) per-owner baseline guard whenever a baseline file exists, and each owner's absolute
+ *     bars from the wave in MEMORY_BUDGETS.alloc.owners[].barsFrom (CAL_WAVE, default W0b).
+ * Bars that do not bind in this run are measured and REPORTED in full (`bars`), never hidden.
+ */
+export const INSTRUMENT_ROWS = Object.freeze(['A-alloc-rate', 'A-vram-ledger', 'A90-abs']);
+const WAVES = ['W0a', 'W0b', 'W1', 'W2', 'W3', 'W4'];
+const waveIdx = (w) => { const i = WAVES.indexOf(String(w)); return i < 0 ? 1 : i; };
+const WAVE_NOW = () => String(process.env.CAL_WAVE || 'W0b');
+const barsBinding = (PORT) => Number(PORT) === 5270 || process.env.CAL_BARS_BINDING === '1';
+const PROCESS_START_MS = Date.now() - Math.round(process.uptime() * 1000);
+/** the harness run id (tools/gates.r5.gates-perf.mjs RUN_ID: same formula), which the seal binds the report to */
+const runIdOf = (PORT) => `p${PORT}-${process.pid}-${PROCESS_START_MS}`;
+
+/* ------------------------------------------------------------------------------------------------ */
 /* A-alloc-rate                                                                                      */
 /* ------------------------------------------------------------------------------------------------ */
 /**
  * Attribution from a sampling heap profile (CDP HeapProfiler, objects collected by minor and major GC
- * included, so every allocation in the window counts, not only the survivors):
- *   caller  the NEAREST src/** frame on the allocating stack — GRADED (W0b fix round 1, judge finding: grading
- *           `self` let a src function that allocates through `new THREE.Vector3()`, `.clone()`, `Array.prototype.push`
- *           or a three.js renderer internal pass both bars; 25-34 % of src-caused allocation was uncounted). Every byte
- *           with a src frame anywhere on its stack is src's, charged to the nearest one, for the total and per function
- *   self    the allocating frame itself is a src/** function — REPORTED (the subset of `caller` src allocates directly)
+ * included, so every allocation in the window counts, not only the survivors). EVERY sampled byte is charged to
+ * exactly one named owner (W0b fix round 3, R48 b: "every byte attributed to an owner"):
+ *   src     the NEAREST src/** frame on the allocating stack (caller attribution, graded since fix round 1), per
+ *           function and per owner row (MEMORY_BUDGETS.alloc.owners, first match; else `other-src`)
+ *   no src  a byte with no src/** frame anywhere on its stack goes to a NO_SRC bucket chosen by the nearest script
+ *           frame on its stack: three.js (renderer), other vendor deps, the Vite dev client, this gate's own
+ *           page-side code (puppeteer evaluate), other page script; and a stack with no script frame at all is the
+ *           browser / V8 runtime. The buckets and src sum to the profile's total to the byte (checked).
  */
+const NO_SRC_BUCKETS = [
+  { id: 'renderer (three.js)', owner: 'engine-gpu: three.js reached with no src frame on the stack (its own callbacks)', re: /\/node_modules\/(\.vite\/deps\/)?three(\.|\/|_)/ },
+  { id: 'vendor deps', owner: 'orchestrator: node_modules code other than three.js with no src frame on the stack', re: /\/node_modules\// },
+  { id: 'vite dev client', owner: 'the Vite dev client (dev server only, never shipped)', re: /\/@vite\/|\/@id\/|\/@fs\/|\/@react-refresh/ },
+  { id: 'gate harness', owner: 'gates-perf: this gate\'s own page-side drive and probes (puppeteer evaluate)', re: /^pptr:|__puppeteer_evaluation_script__/ },
+  { id: 'page script outside src', owner: 'orchestrator: a page script outside src/** (index.html, public/)', re: /^https?:|^blob:|^data:/ },
+];
+const NO_SCRIPT = { id: 'browser / V8 runtime', owner: 'the browser: no script frame on the stack ((program), (garbage collector), (V8 API), natives)' };
+const CONTROL_FILE = '/src/__gates-perf-control__.js', CONTROL_NOSRC_FILE = '/__gates-perf-control-nosrc__.js';
+const ALLOC_OWNER_ROWS = W0B_BUDGETS.alloc.owners.map((o) => ({ ...o, re: new RegExp(o.files) }));
+const allocOwnerOfFile = (file) => (file === CONTROL_FILE ? { id: 'planted-control', lane: 'gates-perf self-test (planted)', barsFrom: null }
+  : ALLOC_OWNER_ROWS.find((o) => o.re.test(file)) || { id: 'other-src', lane: 'orchestrator (src file no owner row names)', barsFrom: null, ruling: '—' });
+const fileOfKey = (fnKey) => String(fnKey).split(' ').slice(-1)[0].replace(/:\d+$/, '');
+
 function attribute(profile, seconds, frames, PORT) {
   const srcRe = new RegExp(`^https?://(localhost|127\\.0\\.0\\.1|\\[::1\\]):${PORT}/src/`);
   const key = (cf) => `${cf.functionName || '(anonymous)'} ${String(cf.url).replace(/^https?:\/\/[^/]+/, '').replace(/\?.*$/, '')}:${cf.lineNumber + 1}`;
-  let total = 0, srcSelf = 0, srcCaller = 0;
-  const self = new Map(), caller = new Map(), outside = new Map();
+  let total = 0, srcSelf = 0, srcCaller = 0, noSrcTotal = 0;
+  const self = new Map(), caller = new Map(), outside = new Map(), noSrc = new Map(), noSrcTop = new Map();
   const add = (m, k, v) => m.set(k, (m.get(k) || 0) + v);
-  const walk = (node, nearest) => {
+  const bucketOf = (url) => { if (!url) return NO_SCRIPT; return NO_SRC_BUCKETS.find((b) => b.re.test(url)) || NO_SRC_BUCKETS[NO_SRC_BUCKETS.length - 1]; };
+  const walk = (node, nearest, nearestScript) => {
     const cf = node.callFrame || {};
-    const isSrc = srcRe.test(cf.url || '');
+    const url = cf.url || '';
+    const isSrc = srcRe.test(url);
     const here = isSrc ? key(cf) : nearest;
+    const script = url ? url : nearestScript;
     const sz = node.selfSize || 0;
     if (sz) {
       total += sz;
       if (isSrc) { srcSelf += sz; add(self, here, sz); }
       if (here) { srcCaller += sz; add(caller, here, sz); }
+      else {
+        const b = bucketOf(script);
+        noSrcTotal += sz; add(noSrc, b.id, sz);
+        add(noSrcTop, `${b.id}  |  ${key(cf)}`, sz);
+      }
       if (!isSrc) add(outside, `${key(cf)}  <-  ${here || '(no src frame on the stack)'}`, sz);
     }
-    for (const c of node.children || []) walk(c, here);
+    for (const c of node.children || []) walk(c, here, script);
   };
-  walk(profile.head, null);
+  walk(profile.head, null, null);
   const fps = frames / seconds;
   // graded rate: the measured rate, or the per-frame bytes at 60 fps when the box ran slower (a starved
   // box allocates less per second; per frame it does not)
-  const at = (b) => { const perS = b / 1024 / seconds; const per60 = frames ? (b / 1024 / frames) * W0B_BUDGETS.alloc.refFps : perS; return { measuredKBps: r2(perS), kbPerFrame: frames ? r2(b / 1024 / frames) : null, gradedKBps: r2(Math.max(perS, per60)) }; };
+  const at = (b) => { const perS = b / 1024 / seconds; const per60 = frames ? (b / 1024 / frames) * W0B_BUDGETS.alloc.refFps : perS; return { bytes: b, measuredKBps: r2(perS), kbPerFrame: frames ? r2(b / 1024 / frames) : null, gradedKBps: r2(Math.max(perS, per60)) }; };
   const top = (m, n = 12) => [...m.entries()].sort((a, b) => b[1] - a[1]).slice(0, n).map(([k, b]) => ({ fn: k, ...at(b) }));
+  // per OWNER (src): every caller function's bytes summed into its owner row
+  const ownerBytes = new Map();
+  for (const [fn, b] of caller) { const o = allocOwnerOfFile(fileOfKey(fn)); add(ownerBytes, o.id, b); }
+  const owners = [...ownerBytes.entries()].sort((a, b) => b[1] - a[1]).map(([id, b]) => {
+    const row = id === 'planted-control' ? allocOwnerOfFile(CONTROL_FILE) : ALLOC_OWNER_ROWS.find((o) => o.id === id) || allocOwnerOfFile('');
+    return { id, lane: row.lane, barsFrom: row.barsFrom ?? null, ruling: row.ruling || null, ...at(b) };
+  });
+  const buckets = [...noSrc.entries()].sort((a, b) => b[1] - a[1]).map(([id, b]) => ({ id, owner: (NO_SRC_BUCKETS.find((x) => x.id === id) || NO_SCRIPT).owner, ...at(b) }));
   return { seconds: r2(seconds), frames, fps: r1(fps), total: at(total), srcSelf: at(srcSelf), srcCaller: at(srcCaller),
-    graded: at(srcCaller), topGraded: top(caller, 60), topSrcSelf: top(self, 12), topOutsideSrc: top(outside, 10),
-    srcFunctionsSeen: caller.size };
+    graded: at(srcCaller), topGraded: top(caller, 80), topSrcSelf: top(self, 12), topOutsideSrc: top(outside, 10),
+    srcFunctionsSeen: caller.size, owners, noSrc: { ...at(noSrcTotal), buckets, top: top(noSrcTop, 8) },
+    accounting: { totalBytes: total, srcBytes: srcCaller, noSrcBytes: noSrcTotal, exact: srcCaller + noSrcTotal === total,
+      unnamedBytes: 0 },
+    allFunctions: [...caller.entries()].map(([fn, b]) => ({ fn, ...at(b) })) };
 }
 
-/** who answers for a src/** file's per-frame allocations (plan §1.1 frozen systems, §2 lane rows) */
+/** who answers for a src/** file's per-frame allocations (plan §1.1 frozen systems, §2 lane rows): the routing text */
 const SRC_OWNERS = [
   [/^\/src\/world\/(terrain|vegetation|water)\.js|^\/src\/world\/island\//, 'world-ground (W1)'],
   [/^\/src\/world\/environment\.js/, 'world-sky (W1)'],
-  [/^\/src\/core\/(collision|nav|hitHulls)\.js/, 'FROZEN spatial (plan §1.1): needs an orchestrator grant'],
-  [/^\/src\/core\/engine\.js|^\/src\/main\.js/, 'engine-gpu (engine.js grant) / FROZEN frame loop (main.js)'],
-  // W0b fix round 1: the frozen rigging / bone-space files and the machine-rig algorithms are named as frozen (plan §1.1)
-  [/^\/src\/entities\/anim\/(boneSpace|restPose|clipLayer|retargeter|rigDebug|locomotion)\.js/, 'FROZEN rigging (plan §1.1): needs an orchestrator grant (hero-body holds clipLibrary / boneMap / registry / index only)'],
-  [/^\/src\/entities\/machines\/(gait|autorig)\.js|^\/src\/entities\/machines\/rig\//, 'FROZEN machine rig (plan §1.1): instruments-core (autorig RIGS rows) / instruments-d W4 (gait) grants only'],
-  [/^\/src\/entities\/(player|playerAnimator)\.js|^\/src\/entities\/anim\//, 'hero-body (W0b; melee from W1)'],
-  [/^\/src\/entities\/machines\/|^\/src\/instruments\//, 'instruments-core / the Instruments lanes'],
-  [/^\/src\/world\/(props|fauna)|^\/src\/world\/props\/|^\/src\/world\/sites\//, 'world-props'],
-  [/^\/src\/world\/(camp|npc|settlements)/, 'settlements (W2)'],
+  [/^\/src\/core\/(collision|nav|hitHulls)\.js/, 'FROZEN kept movement (plan §1.1): §11 W1 perf-hygiene grant, outputs bit-identical (R48 c)'],
+  [/^\/src\/core\/engine\.js/, 'engine (no lane after W0b): §11 engine follow-up grant assigned at W1 launch (R48 c)'],
+  [/^\/src\/main\.js/, 'FROZEN frame loop (main.js): orchestrator'],
+  [/^\/src\/entities\/anim\/(boneSpace|restPose|clipLayer|retargeter|rigDebug|locomotion)\.js/, 'FROZEN kept rigging (plan §1.1): §11 W1 perf-hygiene grant, outputs bit-identical (R48 c)'],
+  [/^\/src\/entities\/machines\/(gait|autorig)\.js|^\/src\/entities\/machines\/rig\//, 'FROZEN kept machine rig (plan §1.1): §11 W1 perf-hygiene grant, outputs bit-identical (R48 c)'],
+  [/^\/src\/entities\/playerAnimator\.js/, 'melee W1 (R48 c; hero-body holds it at W0b)'],
+  [/^\/src\/entities\/(player)\.js|^\/src\/entities\/anim\//, 'hero-body (W0b; melee from W1)'],
+  [/^\/src\/entities\/machines\/|^\/src\/instruments\//, 'instruments-core / the Instruments lanes (A-alloc-machines, R46)'],
+  [/^\/src\/world\/fauna/, 'world-props W1 (R48 c)'],
+  [/^\/src\/world\/(props)|^\/src\/world\/props\/|^\/src\/world\/sites\//, 'world-props'],
+  [/^\/src\/world\/(camp|npc|settlements)/, 'settlements (W2, R48 c)'],
   [/^\/src\/combat\/|^\/src\/items\//, 'combat-kit (W2) / armory'],
-  [/^\/src\/audio\//, 'audio (W3)'],
-  [/^\/src\/ui\//, 'shell-ui (W2)'],
+  [/^\/src\/audio\//, 'audio (W3, R48 c)'],
+  [/^\/src\/ui\//, 'shell-ui (W2, R48 c)'],
   [/^\/src\/core\/(progression|save)\.js/, 'progression (W3)'],
 ];
-const srcOwner = (fnKey) => { const file = String(fnKey).split(' ').slice(-1)[0].replace(/:\d+$/, ''); return (SRC_OWNERS.find(([re]) => re.test(file)) || [null, 'orchestrator'])[1]; };
+const srcOwner = (fnKey) => { const file = fileOfKey(fnKey); return (SRC_OWNERS.find(([re]) => re.test(file)) || [null, 'orchestrator'])[1]; };
+
+/**
+ * THE PLANTED ALLOCATOR (positive control, R48 b "self-tests passing"). A module of known allocation behaviour is served
+ * at a src/** URL (CDP Fetch fulfils the request in this page only; nothing is written under src/) and the same source
+ * at a URL outside src/. Each calls `__w0bControlAlloc()` once per animation frame (192 three-field objects in a
+ * 192-slot array). Its true size per call is measured INDEPENDENTLY of the profiler: K = 1500 results are retained and
+ * the post-GC used heap (Runtime.getHeapUsage after two forced GCs) is read before and after, minus the holding
+ * array. The profiler, run with the graded phases' exact settings over a separate window, must then charge
+ * calls x size to `__w0bControlAlloc /src/__gates-perf-control__.js` (caller attribution) within
+ * MEMORY_BUDGETS.alloc.controlTolerance, and the same bytes from the out-of-src copy to the "page script outside src"
+ * bucket (the no-src path). The control runs after the graded phases and never appears in them (checked).
+ */
+const CONTROL_SRC = `export const N = 192;
+export function __w0bControlAlloc() { const a = new Array(N); for (let i = 0; i < N; i++) a[i] = { i: i, v: i + 0.5, w: i * 3 }; return a; }
+let raf = 0, calls = 0, sink = null;
+function tick() { sink = __w0bControlAlloc(); calls++; raf = requestAnimationFrame(tick); }
+export function start() { calls = 0; raf = requestAnimationFrame(tick); return true; }
+export function stop() { cancelAnimationFrame(raf); raf = 0; sink = null; return calls; }
+export function hold(K) { const keep = new Array(K); for (let k = 0; k < K; k++) keep[k] = __w0bControlAlloc(); return keep; }
+`;
+async function servePlanted(cdp, PORT) {
+  const body = Buffer.from(CONTROL_SRC).toString('base64');
+  const onPaused = (ev) => {
+    const u = new URL(ev.request.url);
+    if (u.pathname === CONTROL_FILE || u.pathname === CONTROL_NOSRC_FILE) {
+      cdp.send('Fetch.fulfillRequest', { requestId: ev.requestId, responseCode: 200, body,
+        responseHeaders: [{ name: 'Content-Type', value: 'text/javascript' }, { name: 'Cache-Control', value: 'no-store' }] }).catch(() => {});
+    } else cdp.send('Fetch.continueRequest', { requestId: ev.requestId }).catch(() => {});
+  };
+  cdp.on('Fetch.requestPaused', onPaused);
+  await cdp.send('Fetch.enable', { patterns: [{ urlPattern: '*__gates-perf-control*', requestStage: 'Request' }] });
+  return async () => { cdp.off('Fetch.requestPaused', onPaused); await cdp.send('Fetch.disable').catch(() => {}); };
+}
+async function plantedControl(page, cdp, PORT, B, profileWindow) {
+  const unserve = await servePlanted(cdp, PORT);
+  try {
+    await page.evaluate(`(async () => {
+      window.__w0bCtlSrc = await import('${CONTROL_FILE}?w0b=${process.pid}');
+      window.__w0bCtlOut = await import('${CONTROL_NOSRC_FILE}?w0b=${process.pid}');
+      return true; })()`);
+    // the true size per call, independent of the profiler: K results retained, post-GC used heap before and after
+    const K = 1500;
+    const h0 = await gcAndHeap(cdp);
+    await page.evaluate(`(() => { window.__w0bHold = window.__w0bCtlSrc.hold(${K}); return true; })()`);
+    const h1 = await gcAndHeap(cdp);
+    await page.evaluate('(() => { window.__w0bHold = null; return true; })()');
+    const h2 = await gcAndHeap(cdp);
+    const holder = 16 + 8 + K * 4;                             // the JSArray + its FixedArray of K tagged (compressed) slots
+    const perCallB = (h1 - h0 - holder) / K;
+    // the profiled window, the graded phases' exact settings: both copies allocate once per frame
+    await page.evaluate('(() => { window.__w0bCtlSrc.start(); window.__w0bCtlOut.start(); return true; })()');
+    let prof;
+    try { prof = await profileWindow(B.controlWindowS); }
+    finally { /* stop is read after the window */ }
+    const calls = await page.evaluate('(() => ({ src: window.__w0bCtlSrc.stop(), out: window.__w0bCtlOut.stop() }))()');
+    await page.evaluate('(() => { window.__w0bCtlSrc = null; window.__w0bCtlOut = null; return true; })()');
+    const a = prof.attribution;
+    const srcRecovered = a.allFunctions.filter((x) => fileOfKey(x.fn) === CONTROL_FILE).reduce((s, x) => s + x.bytes, 0);
+    const srcFns = a.allFunctions.filter((x) => fileOfKey(x.fn) === CONTROL_FILE).map((x) => x.fn + ' ' + x.bytes + ' B');
+    const outBucket = a.noSrc.buckets.find((b) => b.id === 'page script outside src');
+    const outRecovered = outBucket ? outBucket.bytes : 0;
+    const expSrc = calls.src * perCallB, expOut = calls.out * perCallB;
+    const tol = B.controlTolerance;
+    const srcRatio = expSrc ? srcRecovered / expSrc : null, outRatio = expOut ? outRecovered / expOut : null;
+    const okSrc = srcRatio !== null && Math.abs(srcRatio - 1) <= tol;
+    // the out-of-src bucket also holds any other page script outside src: it must hold AT LEAST the control's bytes
+    // (within tolerance) and the control's no-src bytes must not leak into src
+    const okOut = outRatio !== null && outRatio >= 1 - tol;
+    const ownerRow = a.owners.find((o) => o.id === 'planted-control');
+    return { ok: okSrc && okOut && perCallB > 1000, perCallBytes: r1(perCallB), retainedK: K, heapBefore: h0, heapHeld: h1, heapReleased: h2,
+      releasedBackWithin: r1((h2 - h0) / 1024) + ' KB', calls, windowS: r2(prof.attribution.seconds), fps: prof.attribution.fps,
+      src: { expectedBytes: Math.round(expSrc), recoveredBytes: srcRecovered, ratio: srcRatio === null ? null : +srcRatio.toFixed(3), functions: srcFns, owner: ownerRow ? ownerRow.id : null, ok: okSrc },
+      outsideSrc: { expectedBytes: Math.round(expOut), bucketBytes: outRecovered, ratio: outRatio === null ? null : +outRatio.toFixed(3), ok: okOut },
+      tolerance: tol, method: 'size per call = (post-GC used heap with K results retained - before - the holding array) / K; recovered = caller-attributed bytes of the control function in a profiled window with the graded settings' };
+  } finally { await unserve(); }
+}
+
+/** the R48 (c) baseline guard: an owner exceeds its baseline only when BOTH its KB/frame and its KB/s exceed factor x baseline */
+function guardOwners(baseline, current, factor) {
+  const out = [];
+  for (const o of current) {
+    if (o.id === 'planted-control') continue;
+    const b = baseline.owners?.[o.id];
+    if (!b) { out.push({ id: o.id, lane: o.lane, now: o.gradedKBps, base: null, newOwner: true, exceeds: o.gradedKBps > W0B_BUDGETS.alloc.fnKBps }); continue; }
+    const rF = b.kbPerFrame ? o.kbPerFrame / b.kbPerFrame : (o.kbPerFrame > 0 ? Infinity : 0);
+    const rS = b.measuredKBps ? o.measuredKBps / b.measuredKBps : (o.measuredKBps > 0 ? Infinity : 0);
+    out.push({ id: o.id, lane: o.lane, nowKbPerFrame: o.kbPerFrame, baseKbPerFrame: b.kbPerFrame, nowKBps: o.measuredKBps, baseKBps: b.measuredKBps,
+      ratioPerFrame: Number.isFinite(rF) ? +rF.toFixed(3) : rF, ratioPerSecond: Number.isFinite(rS) ? +rS.toFixed(3) : rS, exceeds: rF > factor && rS > factor });
+  }
+  return { factor, rows: out, offenders: out.filter((x) => x.exceeds) };
+}
+/** owners merged over the graded phases: the worst phase per owner (by graded KB/s), with that phase's numbers */
+function worstOwners(phases) {
+  const m = new Map();
+  for (const p of phases) for (const o of p.owners) if (!m.has(o.id) || m.get(o.id).gradedKBps < o.gradedKBps) m.set(o.id, { ...o, phase: p.name });
+  return [...m.values()].sort((a, b) => b.gradedKBps - a.gradedKBps);
+}
+/** the guard's own positive and negative controls (pure: run on this run's owner table) */
+function guardSelfTest(owners, factor) {
+  const asBase = (scaleId, sF, sS) => ({ owners: Object.fromEntries(owners.map((o) => [o.id, { kbPerFrame: o.id === scaleId ? o.kbPerFrame * sF : o.kbPerFrame, measuredKBps: o.id === scaleId ? o.measuredKBps * sS : o.measuredKBps }])) });
+  const big = owners.find((o) => o.id !== 'planted-control' && o.kbPerFrame > 0 && o.measuredKBps > 0);
+  if (!big) return { ok: false, why: 'no owner to test with' };
+  const same = guardOwners(asBase(null, 1, 1), owners, factor);
+  const grown = guardOwners(asBase(big.id, 1 / 1.25, 1 / 1.25), owners, factor);
+  const boxOnly = guardOwners(asBase(big.id, 1 / 1.25, 1), owners, factor);
+  const ok = same.offenders.length === 0 && grown.offenders.length === 1 && grown.offenders[0].id === big.id && boxOnly.offenders.length === 0;
+  return { ok, owner: big.id, unchangedOffenders: same.offenders.length, grown25PercentFlags: grown.offenders.map((x) => x.id), perFrameOnlyGrowthFlags: boxOnly.offenders.map((x) => x.id) };
+}
 
 async function allocRate({ PORT }) {
   const B = W0B_BUDGETS.alloc;
+  const wave = WAVE_NOW(), binding = barsBinding(PORT);
+  const recordBaseline = process.env.CAL_ALLOC_RECORD_BASELINE === '1';
+  const baselinePath = path.resolve(ROOT, process.env.CAL_ALLOC_BASELINE_FILE || B.baselineFile);
   return onPage(PORT, async ({ page, cdp }) => {
     await cdp.send('HeapProfiler.enable');
     const fight = await page.evaluate(STAGE_FIGHT);
     if (fight.skip) return { pass: null, detail: { verdict: fight.skip.split(':')[0] + ': the staged fight has no cast — ' + fight.skip } };
-    const phase = async (name, drive, windowS = B.windowS) => {
-      await sleep(B.warmupS * 1000);                                     // steady state, not the staging transient
+    /** one profiled window with the graded settings -> { attribution, heap points } */
+    const profileWindow = async (windowS, onStart) => {
       const heap = [];
       const f0 = await page.evaluate('__CTX__.engine.frames');
-      const t0 = Date.now();
       heap.push([0, await gcAndHeap(cdp)]);
       await cdp.send('HeapProfiler.startSampling', { samplingInterval: B.samplingIntervalB, includeObjectsCollectedByMajorGC: true, includeObjectsCollectedByMinorGC: true });
       const tS = Date.now();
-      const stopDrive = drive ? await drive() : null;
-      // CROSS-CHECK (independent of the profiler's attribution): the used heap read every 100 ms for 2 s with no
-      // forced GC; the sum of its rises is a LOWER bound on everything allocated in that time (a minor GC in
-      // between hides what it reclaimed)
-      const saw = []; const tw = Date.now();
-      while (Date.now() - tw < 2000) { saw.push((await cdp.send('Runtime.getHeapUsage')).usedSize); await sleep(100); }
-      let rises = 0; for (let k = 1; k < saw.length; k++) if (saw[k] > saw[k - 1]) rises += saw[k] - saw[k - 1];
-      const sawtoothKBps = r1(rises / 1024 / ((Date.now() - tw) / 1000));
-      for (let k = 1; k <= 4; k++) { await sleep((windowS * 1000 - 2000) / 4 - 150); heap.push([(Date.now() - tS) / 1000, await gcAndHeap(cdp)]); }
+      const extra = onStart ? await onStart() : null;
+      const pts = windowS >= 6 ? 4 : 2;
+      for (let k = 1; k <= pts; k++) { await sleep((windowS * 1000 - (extra?.busyMs || 0)) / pts - 150); heap.push([(Date.now() - tS) / 1000, await gcAndHeap(cdp)]); }
       const { profile } = await cdp.send('HeapProfiler.stopSampling');
       const seconds = (Date.now() - tS) / 1000;
-      const driveWitness = stopDrive ? await stopDrive() : null;
       const frames = (await page.evaluate('__CTX__.engine.frames')) - f0;
-      const a = attribute(profile, seconds, frames, PORT);
-      const s = slope(heap);
-      for (const x of a.topGraded) x.owner = srcOwner(x.fn);
+      return { attribution: attribute(profile, seconds, frames, PORT), heap, extra };
+    };
+    const phase = async (name, drive, windowS = B.windowS) => {
+      await sleep(B.warmupS * 1000);                                     // steady state, not the staging transient
+      const t0 = Date.now();
+      let stopDrive = null, sawtoothKBps = null;
+      const w = await profileWindow(windowS, async () => {
+        stopDrive = drive ? await drive() : null;
+        // CROSS-CHECK (independent of the profiler's attribution): the used heap read every 100 ms for 2 s with no
+        // forced GC; the sum of its rises is a LOWER bound on everything allocated in that time
+        const saw = []; const tw = Date.now();
+        while (Date.now() - tw < 2000) { saw.push((await cdp.send('Runtime.getHeapUsage')).usedSize); await sleep(100); }
+        let rises = 0; for (let k = 1; k < saw.length; k++) if (saw[k] > saw[k - 1]) rises += saw[k] - saw[k - 1];
+        sawtoothKBps = r1(rises / 1024 / ((Date.now() - tw) / 1000));
+        return { busyMs: Date.now() - tw };
+      });
+      const driveWitness = stopDrive ? await stopDrive() : null;
+      const a = w.attribution;
+      const s = slope(w.heap);
+      for (const x of a.topGraded) { x.owner = srcOwner(x.fn); x.ownerRow = allocOwnerOfFile(fileOfKey(x.fn)).id; }
       for (const x of a.topSrcSelf) x.owner = srcOwner(x.fn);
-      return { name, ...a, driveWitness, heapPostGcB: heap.map(([t, b]) => [r2(t), b]), heapSlopeBps: s === null ? null : Math.round(s), wallS: r2((Date.now() - t0) / 1000),
+      return { name, ...a, driveWitness, heapPostGcB: w.heap.map(([t, b]) => [r2(t), b]), heapSlopeBps: s === null ? null : Math.round(s), wallS: r2((Date.now() - t0) / 1000),
         crossCheck: { usedHeapRisesKBps: sawtoothKBps, note: 'used-heap rises over 2 s, no forced GC: a lower bound on all allocation (src + three + browser)' } };
     };
     const fightPhase = await phase('staged fight', null);
-    // THE EMPTY-FRAME FLOOR (reported, never subtracted): the same page with the scene hidden (scene.visible = false:
-    // three.js projects nothing, so no scene draw and no shadow pass; the post chain and every system update still
-    // run). Its src-caller allocation charged to the engine / frame loop is the renderer floor an allowance would be
-    // sized from; MEMORY_BUDGETS.alloc records none, so the bars grade everything.
+    // THE EMPTY-FRAME FLOOR (reported, never subtracted): the same page with the scene hidden
     await page.evaluate('(() => { window.__w0bSceneVis = __CTX__.scene.visible; __CTX__.scene.visible = false; return true; })()');
     let emptyPhase = null;
     try { emptyPhase = await phase('empty frame (scene hidden)', null, B.emptyFrameS || 5); }
@@ -349,13 +527,11 @@ async function allocRate({ PORT }) {
     const renderPath = (emptyPhase?.topGraded || []).filter((x) => /\/src\/core\/engine\.js|\/src\/main\.js/.test(x.fn));
     const emptyFrame = emptyPhase ? { fps: emptyPhase.fps, srcCallerKBps: emptyPhase.graded.measuredKBps, srcCallerGradedKBps: emptyPhase.graded.gradedKBps,
       engineAndFrameLoopKBps: r2(renderPath.reduce((a, x) => a + x.measuredKBps, 0)), engineAndFrameLoopTop: renderPath.slice(0, 6),
-      topGraded: emptyPhase.topGraded.slice(0, 8), allAllocationKBps: emptyPhase.total.measuredKBps,
+      topGraded: emptyPhase.topGraded.slice(0, 8), allAllocationKBps: emptyPhase.total.measuredKBps, noSrcBuckets: emptyPhase.noSrc.buckets,
       note: 'reported only: no allowance is recorded in MEMORY_BUDGETS.alloc, so nothing is subtracted' } : null;
     await page.evaluate(UNSTAGE);
     // sprint-and-draw: open ground, W + Shift held; every 2.5 s a full draw (RMB aim + LMB draw, held 1.2 s) and a loose
     await page.evaluate(`(async () => { ${PLACES} const p = __CTX__.player; if (PLACE('openGround')) standAt(p, 'openGround'); __CTX__.input.enabled = true; return true; })()`);
-    // the drive is WITNESSED: every 100 ms the page records whether she is sprinting / aiming and her speed, and it
-    // counts the 'arrow-fired' events, so the phase is known to be the sprint-and-draw it is named for
     const drive = async () => {
       await page.evaluate(`(() => { const C = __CTX__, I = C.input, p = C.player;
         const W = window.__w0bDrive = { samples: 0, sprinting: 0, aiming: 0, maxSpeed: 0, fired: 0, maxDraw: 0 };
@@ -375,30 +551,89 @@ async function allocRate({ PORT }) {
     const runPhase = await phase('sprint and draw', drive);
     const shots = runPhase.driveWitness || null;
     const phases = [fightPhase, runPhase];
-    // GRADED: caller attribution (the nearest src/** frame), total and per function (W0b fix round 1)
+    // THE SELF-TEST (planted allocator), after the graded phases, on the same page with the same profiler settings
+    let control = null;
+    try { control = await plantedControl(page, cdp, PORT, B, (s) => profileWindow(s)); }
+    catch (err) { control = { ok: false, error: String(err.message || err).slice(0, 200) }; }
+    const controlInGraded = phases.some((p) => p.allFunctions.some((x) => fileOfKey(x.fn) === CONTROL_FILE || /__gates-perf-control/.test(x.fn)));
+
+    // ---- measured numbers (every one reported) ----
     const worstSrc = Math.max(...phases.map((p) => p.graded.gradedKBps));
     const worstFn = phases.flatMap((p) => p.topGraded.map((x) => ({ ...x, phase: p.name }))).sort((a, b) => b.gradedKBps - a.gradedKBps)[0] || null;
-    // every src function over the per-function bar, merged over both phases (worst phase kept), with its owner
     const overFn = new Map();
-    for (const p of phases) for (const x of p.topGraded) if (x.gradedKBps > B.fnKBps && (!overFn.has(x.fn) || overFn.get(x.fn).gradedKBps < x.gradedKBps)) overFn.set(x.fn, { ...x, phase: p.name });
+    for (const p of phases) for (const x of p.allFunctions) if (x.gradedKBps > B.fnKBps && (!overFn.has(x.fn) || overFn.get(x.fn).gradedKBps < x.gradedKBps)) overFn.set(x.fn, { ...x, phase: p.name, owner: srcOwner(x.fn), ownerRow: allocOwnerOfFile(fileOfKey(x.fn)).id });
     const byOwner = {};
-    for (const x of overFn.values()) (byOwner[x.owner] = byOwner[x.owner] || []).push(x.fn + ' ' + x.gradedKBps + ' KB/s');
+    for (const x of [...overFn.values()].sort((a, b) => b.gradedKBps - a.gradedKBps)) (byOwner[x.owner] = byOwner[x.owner] || []).push(x.fn + ' ' + x.gradedKBps + ' KB/s');
     const slopes = phases.map((p) => p.heapSlopeBps);
-    const checks = {
-      srcAllocationWithinBudget: worstSrc <= B.srcKBps,
-      noSrcFunctionOverBudget: !worstFn || worstFn.gradedKBps <= B.fnKBps,
-      postGcHeapSlopeNotPositive: slopes.every((s) => s !== null && s <= B.heapSlopeBps),
+    const owners = worstOwners(phases);
+    // ROUTED: every over-bar function carries an owner and a file:line (its key is "<fn> /src/<file>:<line>")
+    const unrouted = [...overFn.values()].filter((x) => !/ \/src\/[^ ]+:\d+$/.test(x.fn) || !x.owner);
+    // ---- the R48 (c) baseline guard ----
+    let baseline = null, baselineState;
+    if (recordBaseline) baselineState = 'recording';
+    else if (existsSync(baselinePath)) { try { baseline = JSON.parse(readFileSync(baselinePath, 'utf8')); baselineState = 'loaded'; } catch (err) { baselineState = 'unreadable: ' + String(err.message).slice(0, 80); } }
+    else baselineState = 'absent';
+    const guardTest = guardSelfTest(owners, B.baselineGuard);
+    const guard = baseline ? guardOwners(baseline, owners, B.baselineGuard) : null;
+    // ---- the scheduled absolute bars (R48 c): each owner from its barsFrom wave ----
+    const active = ALLOC_OWNER_ROWS.filter((o) => o.barsFrom && waveIdx(o.barsFrom) <= waveIdx(wave)).map((o) => o.id);
+    const scheduledOver = [...overFn.values()].filter((x) => active.includes(x.ownerRow));
+    const unscheduledOwners = owners.filter((o) => o.id !== 'planted-control' && !(o.barsFrom && waveIdx(o.barsFrom) <= waveIdx(wave)) && o.bytes > 0).map((o) => o.id);
+    const totalBinds = unscheduledOwners.length === 0;
+    const accountingOk = phases.every((p) => p.accounting.exact) && (!control?.ok || true);
+    const instrument = {
       profilerSawAllocations: phases.every((p) => p.total.measuredKBps > 0),
       sprintAndDrawHappened: !!shots && shots.sprintingFraction > 0.2 && shots.arrowsFired >= 2,
+      everyByteAttributedToANamedOwner: accountingOk,
+      selfTestPlantedAllocatorRecovered: !!control?.ok,
+      selfTestControlAbsentFromGradedPhases: !controlInGraded,
+      selfTestBaselineGuard: !!guardTest.ok,
+      everyOverBarFunctionRoutedWithFileLine: unrouted.length === 0,
     };
-    const pass = Object.values(checks).every(Boolean);
+    const bars = {
+      scheduledAbsoluteBars: { binding: true, wave, activeOwners: active, pass: scheduledOver.length === 0, over: scheduledOver.map((x) => x.fn + ' ' + x.gradedKBps + ' KB/s') },
+      baselineGuard: { binding: !!baseline || recordBaseline, state: baselineState, file: path.relative(ROOT, baselinePath), pass: guard ? guard.offenders.length === 0 : (recordBaseline ? true : null), offenders: guard ? guard.offenders : [], rows: guard ? guard.rows : null },
+      srcTotal: { binding: totalBinds, barKBps: B.srcKBps, measuredKBps: worstSrc, pass: worstSrc <= B.srcKBps, unscheduledOwners },
+      perFunctionAllOwners: { binding: false, barKBps: B.fnKBps, worst: worstFn ? worstFn.fn + ' ' + worstFn.gradedKBps + ' KB/s' : null, pass: !worstFn || worstFn.gradedKBps <= B.fnKBps, note: 'binds per owner from its barsFrom wave (scheduledAbsoluteBars)' },
+      postGcHeapSlope: { binding, barBps: B.heapSlopeBps, slopesBps: slopes, pass: slopes.every((s) => s !== null && s <= B.heapSlopeBps), note: 'graded at the orchestrator\'s global run (R48 b)' },
+    };
+    const instrumentOk = Object.values(instrument).every(Boolean);
+    const bindingBarsOk = Object.values(bars).filter((b) => b.binding).every((b) => b.pass !== false);
+    // RECORD (the orchestrator's W0b global run): only from a run whose instrument passed
+    let recorded = null;
+    if (recordBaseline) {
+      if (!instrumentOk) recorded = { written: false, why: 'the instrument did not pass: a baseline is recorded only from a passing instrument' };
+      else {
+        const box = { loadAverage: os.loadavg().map((x) => +x.toFixed(2)), fps: phases.map((p) => ({ phase: p.name, fps: p.fps })) };
+        const rec = { rule: 'R48 (c): the per-owner allocation of the W0b global run; no owner may exceed it by more than 10 % at a later wave exit (both KB/frame and KB/s)',
+          recordedAt: new Date().toISOString(), port: Number(PORT), runId: runIdOf(PORT), wave, box,
+          gitHead: (spawnSync('git', ['-C', ROOT, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).stdout || '').trim() || null,
+          owners: Object.fromEntries(owners.filter((o) => o.id !== 'planted-control').map((o) => [o.id, { lane: o.lane, barsFrom: o.barsFrom, phase: o.phase, kbPerFrame: o.kbPerFrame, measuredKBps: o.measuredKBps, gradedKBps: o.gradedKBps }])),
+          functions: Object.fromEntries([...overFn.values()].map((x) => [x.fn, { owner: x.ownerRow, kbPerFrame: x.kbPerFrame, measuredKBps: x.measuredKBps, gradedKBps: x.gradedKBps }])),
+          noSrcBuckets: Object.fromEntries(runPhase.noSrc.buckets.map((b) => [b.id, { measuredKBps: b.measuredKBps, kbPerFrame: b.kbPerFrame }])) };
+        mkdirSync(path.dirname(baselinePath), { recursive: true });
+        writeFileSync(baselinePath, JSON.stringify(rec, null, 1) + '\n');
+        recorded = { written: true, file: path.relative(ROOT, baselinePath), owners: Object.keys(rec.owners).length };
+      }
+    }
+    const pass = instrumentOk && bindingBarsOk && (!recordBaseline || recorded?.written === true);
+    const barLine = Object.entries(bars).map(([k, b]) => `${k} ${b.pass === null ? 'PENDING' : b.pass ? 'pass' : 'FAIL'}${b.binding ? '' : ' (not binding)'}`).join(', ');
     return { pass, detail: {
-      verdict: (pass ? 'PASS' : 'FAIL: ' + Object.keys(checks).filter((k) => !checks[k]).join(', ')) + ` — src/** (caller attribution) ${worstSrc} KB/s (bar ${B.srcKBps}; self attribution alone ${Math.max(...phases.map((p) => p.srcSelf.gradedKBps))}), worst src function ${worstFn ? worstFn.fn + ' ' + worstFn.gradedKBps + ' KB/s in ' + worstFn.phase : 'none'} (bar ${B.fnKBps}), post-GC heap slope ${slopes.map((s) => (s === null ? '?' : r1(s / 1024) + ' KB/s')).join(' / ')} (bar <= 0); `
-        + phases.map((p) => `${p.name}: ${p.fps} fps, all allocation ${p.total.measuredKBps} KB/s (used-heap rises ${p.crossCheck.usedHeapRisesKBps} KB/s)`).join('; ') + ` — staged fight ${JSON.stringify(fight.cast?.cast || [])} at pixel ratio ${fight.appliedPixelRatio} (tier ${fight.quality})`
-        + (emptyFrame ? ` — empty-frame floor (reported, not subtracted): src ${emptyFrame.srcCallerKBps} KB/s, engine + frame loop ${emptyFrame.engineAndFrameLoopKBps} KB/s` : '')
+      verdict: (pass ? 'PASS' : 'FAIL: ' + [...Object.keys(instrument).filter((k) => !instrument[k]), ...Object.entries(bars).filter(([, b]) => b.binding && b.pass === false).map(([k]) => 'bar ' + k)].join(', '))
+        + ` — INSTRUMENT (R48 b): ${instrumentOk ? 'PASS' : 'FAIL'} (planted allocator ${control?.src?.ratio ?? '?'}x of ${control?.perCallBytes ?? '?'} B/call in src, ${control?.outsideSrc?.ratio ?? '?'}x outside src; every byte in a named owner: ${accountingOk}; baseline-guard self-test ${guardTest.ok}); `
+        + `BARS (${binding ? 'binding: global run' : 'lane run: graded at the orchestrator\'s 5270 global run, R48 b/c'}; wave ${wave}): ${barLine}; baseline ${baselineState}${recorded ? (recorded.written ? ' -> RECORDED ' + recorded.file : ' -> NOT recorded: ' + recorded.why) : ''} — `
+        + `measured: src/** (caller attribution) ${worstSrc} KB/s (bar ${B.srcKBps}), worst src function ${worstFn ? worstFn.fn + ' ' + worstFn.gradedKBps + ' KB/s in ' + worstFn.phase : 'none'} (bar ${B.fnKBps}), post-GC heap slope ${slopes.map((s) => (s === null ? '?' : r1(s / 1024) + ' KB/s')).join(' / ')} (bar <= 0); `
+        + phases.map((p) => `${p.name}: ${p.fps} fps, all allocation ${p.total.measuredKBps} KB/s = src ${p.srcCaller.measuredKBps} + no-src ${p.noSrc.measuredKBps} (${p.noSrc.buckets.map((b) => b.id + ' ' + b.measuredKBps).join(', ')})`).join('; ')
+        + ` — staged fight ${JSON.stringify(fight.cast?.cast || [])} at pixel ratio ${fight.appliedPixelRatio} (tier ${fight.quality})`
         + (Object.keys(byOwner).length ? ` — src functions over ${B.fnKBps} KB/s by owner: ` + Object.entries(byOwner).map(([o, l]) => o + ': ' + l.slice(0, 4).join(', ')).join('; ') : ''),
-      checks, budget: B, fight, phases, emptyFrame, input: shots, functionsOverBarByOwner: byOwner,
-      method: 'CDP HeapProfiler.startSampling (interval ' + B.samplingIntervalB + ' B, objects collected by minor and major GC included) over ' + B.windowS + ' s per phase after ' + B.warmupS + ' s of warm-up; graded = CALLER attribution (every sampled byte charged to the nearest src/** frame on its allocation stack), max(measured KB/s, KB/frame x 60), for the total and per function; self attribution reported; post-GC heap = Runtime.getHeapUsage after two HeapProfiler.collectGarbage, 5 readings per phase, least-squares slope; empty-frame floor measured with the scene hidden, reported only',
+      instrument, bars, runId: runIdOf(PORT), barsBinding: binding, wave,
+      sealing: 'R48 (b): the harness seals every run that executes this row (tools/gates.r5.gates-perf.mjs INSTRUMENT_IDS): report bytes, run monitor and box sample bound to runId in the ledger; verify with node tools/gates.r5.gates-perf.mjs --instruments --port <port>',
+      selfTest: { plantedAllocator: control, controlAbsentFromGradedPhases: !controlInGraded, baselineGuard: guardTest },
+      owners, functionsOverBar: [...overFn.values()].map((x) => ({ fn: x.fn, gradedKBps: x.gradedKBps, kbPerFrame: x.kbPerFrame, measuredKBps: x.measuredKBps, phase: x.phase, owner: x.owner, ownerRow: x.ownerRow })),
+      checks: { ...instrument, ...Object.fromEntries(Object.entries(bars).map(([k, b]) => ['bar:' + k, b.pass])) },
+      budget: { srcKBps: B.srcKBps, fnKBps: B.fnKBps, heapSlopeBps: B.heapSlopeBps, baselineGuard: B.baselineGuard, controlTolerance: B.controlTolerance },
+      fight, phases: phases.map((p) => ({ ...p, allFunctions: undefined, functionsSeen: p.allFunctions.length })), emptyFrame, input: shots, functionsOverBarByOwner: byOwner, recorded,
+      method: 'CDP HeapProfiler.startSampling (interval ' + B.samplingIntervalB + ' B, objects collected by minor and major GC included) over ' + B.windowS + ' s per phase after ' + B.warmupS + ' s of warm-up; every sampled byte charged to exactly one named owner: the nearest src/** frame on its stack (per function and per owner row, MEMORY_BUDGETS.alloc.owners), else the no-src bucket of the nearest script frame (three.js, vendor deps, Vite client, this gate\'s page code, other page script) or the browser / V8 runtime when no script frame is on the stack; graded rate = max(measured KB/s, KB/frame x 60); post-GC heap = Runtime.getHeapUsage after two HeapProfiler.collectGarbage, least-squares slope; the planted allocator self-test after the graded phases; empty-frame floor with the scene hidden, reported only',
     } };
   });
 }
@@ -423,12 +658,16 @@ const GL_CENSUS = String.raw`(() => {
     if (CH[ifmt] && TY[type]) return CH[ifmt] * TY[type]; unknown.add('0x' + (ifmt || 0).toString(16)); return 4; };
   const CUBE = 0x8513, FACE0 = 0x8515, FACE5 = 0x851A, FB = 0x8D40, DRAW_FB = 0x8CA9, READ_FB = 0x8CA8;
   const objs = new Map();                    // GL object -> record (deleted objects are removed)
+  const fbAtt = new Map();                   // framebuffer -> Map(attachment point -> GL texture / renderbuffer)
+  const arrBuf = new WeakMap();              // the typed array a buffer was filled from -> GL buffer (owner resolution)
   const st = new WeakMap();
   const S = (gl) => { let s = st.get(gl); if (!s) { s = { unit: 0, tex: new Map(), rb: null, buf: new Map(), fb: new Map() }; st.set(gl, s); } return s; };
   const bindTarget = (t) => (t >= FACE0 && t <= FACE5 ? CUBE : t);
   const boundTex = (gl, target) => S(gl).tex.get(S(gl).unit + ':' + bindTarget(target)) || null;
-  const texRec = (t) => { let r = objs.get(t); if (!r) { r = { kind: 'tex', levels: new Map(), rt: false, created: performance.now() }; objs.set(t, r); } return r; };
-  const setLevel = (gl, target, level, w, h, d, bytes) => { const t = boundTex(gl, target); if (!t) return; texRec(t).levels.set(target + ':' + level, { w, h, d, bytes }); };
+  // the first upload's src frames (reported for an object no owner claims; captured once per object, never per frame)
+  const hintOf = () => { const s = String(new Error().stack || '').split('\n').filter((l) => /\/src\//.test(l) && !/__glCensus/.test(l)).slice(0, 3).map((l) => l.trim().replace(/^at /, '').replace(/https?:\/\/[^/]+/, '').replace(/\?[^:)]*/, '')); return s; };
+  const texRec = (t) => { let r = objs.get(t); if (!r) { r = { kind: 'tex', levels: new Map(), rt: false, created: performance.now(), hint: null }; objs.set(t, r); } return r; };
+  const setLevel = (gl, target, level, w, h, d, bytes) => { const t = boundTex(gl, target); if (!t) return; const r = texRec(t); if (!r.hint) r.hint = hintOf(); r.levels.set(target + ':' + level, { w, h, d, bytes }); };
   const dims = (src) => src ? [src.videoWidth || src.naturalWidth || src.displayWidth || src.width || 0, src.videoHeight || src.naturalHeight || src.displayHeight || src.height || 0] : [0, 0];
   const P = WebGL2RenderingContext.prototype;
   const wrap = (name, after) => { const real = P[name]; if (!real) return; P[name] = function (...a) { const out = real.apply(this, a); try { after(this, a, out); } catch (e) { /* census only */ } return out; }; };
@@ -461,13 +700,17 @@ const GL_CENSUS = String.raw`(() => {
   });
   wrap('bindRenderbuffer', (gl, [, rb]) => { S(gl).rb = rb; });
   wrap('deleteRenderbuffer', (gl, [rb]) => { objs.delete(rb); });
-  const rbStore = (gl, samples, ifmt, w, h) => { const rb = S(gl).rb; if (rb) objs.set(rb, { kind: 'rb', w, h, samples, bytes: w * h * Math.max(1, samples) * bpp(ifmt, 0, 0), rt: true }); };
+  const rbStore = (gl, samples, ifmt, w, h) => { const rb = S(gl).rb; if (rb) { const old = objs.get(rb); objs.set(rb, { kind: 'rb', w, h, samples, bytes: w * h * Math.max(1, samples) * bpp(ifmt, 0, 0), rt: true, hint: old?.hint || hintOf() }); } };
   wrap('renderbufferStorage', (gl, [, ifmt, w, h]) => rbStore(gl, 0, ifmt, w, h));
   wrap('renderbufferStorageMultisample', (gl, [, samples, ifmt, w, h]) => rbStore(gl, samples, ifmt, w, h));
   wrap('bindFramebuffer', (gl, [target, fb]) => { const s = S(gl); if (target === FB) { s.fb.set(DRAW_FB, fb); s.fb.set(READ_FB, fb); } else s.fb.set(target, fb); });
+  wrap('deleteFramebuffer', (gl, [fb]) => { fbAtt.delete(fb); });
+  const boundFb = (gl, target) => S(gl).fb.get(target === FB ? DRAW_FB : target) || null;
+  const attachTo = (gl, target, point, obj) => { const fb = boundFb(gl, target); if (!fb) return; let m = fbAtt.get(fb); if (!m) fbAtt.set(fb, (m = new Map())); if (obj) m.set(point, obj); else m.delete(point); };
   const attach = (t) => { if (t) texRec(t).rt = true; };
-  wrap('framebufferTexture2D', (gl, a) => attach(a[3]));
-  wrap('framebufferTextureLayer', (gl, a) => attach(a[2]));
+  wrap('framebufferTexture2D', (gl, a) => { attach(a[3]); attachTo(gl, a[0], a[1], a[3]); });
+  wrap('framebufferTextureLayer', (gl, a) => { attach(a[2]); attachTo(gl, a[0], a[1], a[2]); });
+  wrap('framebufferRenderbuffer', (gl, a) => { attachTo(gl, a[0], a[1], a[3]); });
   wrap('bindBuffer', (gl, [target, b]) => { S(gl).buf.set(target, b); });
   wrap('bindBufferBase', (gl, [target, , b]) => { S(gl).buf.set(target, b); });
   wrap('bindBufferRange', (gl, [target, , b]) => { S(gl).buf.set(target, b); });
@@ -476,62 +719,300 @@ const GL_CENSUS = String.raw`(() => {
     const b = S(gl).buf.get(target); if (!b) return;
     const el = (src && src.BYTES_PER_ELEMENT) || 1;
     const bytes = typeof src === 'number' ? src : len !== undefined ? len * el : (src ? src.byteLength - (off || 0) * el : 0);
-    objs.set(b, { kind: 'buf', target, bytes });
+    const old = objs.get(b);
+    objs.set(b, { kind: 'buf', target, bytes, hint: old?.hint || hintOf() });
+    if (src && typeof src === 'object' && ArrayBuffer.isView(src)) arrBuf.set(src, b);
   });
   const texBytes = (r) => { let b = 0; for (const v of r.levels.values()) b += v.bytes; return b; };
+  const bytesOf = (r) => (r.kind === 'tex' ? texBytes(r) : r.bytes);
+  const catOf = (r) => (r.kind === 'buf' ? 'buffers' : r.rt ? 'renderTargets' : 'textures');
+  const rowOf = (r) => { const lv0 = r.kind === 'tex' ? ([...r.levels.values()][0] || { w: 0, h: 0 }) : r; return { kind: r.kind, bytes: bytesOf(r), w: lv0.w || 0, h: lv0.h || 0, levels: r.kind === 'tex' ? r.levels.size : 0, samples: r.samples || 0, target: r.kind === 'buf' ? '0x' + r.target.toString(16) : undefined }; };
   window.__glCensus = {
+    /** totals per category, exact integers */
+    totals() { const t = { textures: 0, renderTargets: 0, buffers: 0, objects: objs.size }; for (const [, r] of objs) t[catOf(r)] += bytesOf(r); return t; },
     summary() {
       const out = { textures: { count: 0, bytes: 0, largest: [] }, renderTargets: { count: 0, bytes: 0, textures: 0, renderbuffers: 0, largest: [] },
         buffers: { count: 0, bytes: 0, byTarget: {} }, unknownFormats: [...unknown] };
       const tl = [], rl = [];
       for (const [, r] of objs) {
         if (r.kind === 'buf') { out.buffers.count++; out.buffers.bytes += r.bytes; out.buffers.byTarget['0x' + r.target.toString(16)] = (out.buffers.byTarget['0x' + r.target.toString(16)] || 0) + r.bytes; continue; }
-        const bytes = r.kind === 'rb' ? r.bytes : texBytes(r);
-        const lv0 = r.kind === 'rb' ? r : [...r.levels.values()][0] || { w: 0, h: 0 };
-        const row = { kind: r.kind, bytes, w: lv0.w, h: lv0.h, levels: r.kind === 'tex' ? r.levels.size : 0, samples: r.samples || 0 };
-        if (r.rt) { out.renderTargets.count++; out.renderTargets.bytes += bytes; if (r.kind === 'rb') out.renderTargets.renderbuffers++; else out.renderTargets.textures++; rl.push(row); }
-        else { out.textures.count++; out.textures.bytes += bytes; tl.push(row); }
+        const row = rowOf(r);
+        if (r.rt) { out.renderTargets.count++; out.renderTargets.bytes += row.bytes; if (r.kind === 'rb') out.renderTargets.renderbuffers++; else out.renderTargets.textures++; rl.push(row); }
+        else { out.textures.count++; out.textures.bytes += row.bytes; tl.push(row); }
       }
       out.textures.largest = tl.sort((a, b) => b.bytes - a.bytes).slice(0, 10);
       out.renderTargets.largest = rl.sort((a, b) => b.bytes - a.bytes).slice(0, 14);
       return out;
     },
+    /**
+     * W0b fix round 3 (R48 b: "every byte and target attributed to an owner"). Every live GL object is resolved to ONE
+     * owner, in this order, and every byte lands in a named owner or in the explicit "unattributed" row:
+     *  (1) render targets: each engine.renderTargetLedger() row (engine-gpu's ledger: post chain, CSM, environment
+     *      PMREM, registered lane targets) claims its framebuffers' attachments, renderbuffers and textures;
+     *  (2) scene roots: every top-level scene child claims its subtree's material textures (every texture-valued
+     *      property and uniform), skeleton bone textures and geometry buffers (attributes, morph attributes, index,
+     *      instance attributes), named by the §4.2 draw-owner row its name registers to (else "unregistered scene root");
+     *      scene.background / scene.environment go to world-sky;
+     *  (3) the context graph: a bounded walk of __CTX__ (and the game's systems) claims textures, render targets and
+     *      geometries held off-scene (pass quads, pools, templates, caches), owner = the ctx key's lane;
+     *  (4) anything left is listed in "unattributed" with its size and its first upload's src frames.
+     */
+    attribute(cfg) {
+      const ctx = __CTX__, e = ctx.engine, r = e.renderer, scene = ctx.scene;
+      const props = r.properties;
+      const OWN = cfg.drawOwners.map((o) => ({ ...o, re: new RegExp(o.re, o.flags) }));
+      const ownerOfName = (n) => (n ? OWN.find((o) => o.re.test(n)) || null : null);
+      const claimed = new Map();               // GL object -> owner key
+      const owners = new Map();                // owner key -> { lane, how, textures, renderTargets, buffers, objects }
+      const ensure = (key, lane, how) => { let o = owners.get(key); if (!o) owners.set(key, (o = { owner: key, lane, how, textures: 0, renderTargets: 0, buffers: 0, objects: 0 })); return o; };
+      const claim = (glObj, key, lane, how) => { if (!glObj || claimed.has(glObj)) return; const rec = objs.get(glObj); if (!rec) return; claimed.set(glObj, key); const o = ensure(key, lane, how); o[catOf(rec)] += bytesOf(rec); o.objects++; };
+      const each = (v, f) => { if (Array.isArray(v)) { for (const x of v) each(x, f); } else if (v) f(v); };
+      const fbAll = (fb, key, lane, how) => { const m = fbAtt.get(fb); if (m) for (const o of m.values()) claim(o, key, lane, how); };
+      const claimTarget = (rt, key, lane, how) => {
+        if (!rt || !props.has(rt)) return;
+        const p = props.get(rt);
+        each(p.__webglFramebuffer, (fb) => fbAll(fb, key, lane, how)); each(p.__webglMultisampledFramebuffer, (fb) => fbAll(fb, key, lane, how));
+        each(p.__webglDepthbuffer, (o) => claim(o, key, lane, how)); each(p.__webglColorRenderbuffer, (o) => claim(o, key, lane, how)); each(p.__webglDepthRenderbuffer, (o) => claim(o, key, lane, how));
+        for (const t of rt.textures || [rt.texture]) if (t && props.has(t)) claim(props.get(t).__webglTexture, key, lane, how);
+        if (rt.depthTexture && props.has(rt.depthTexture)) claim(props.get(rt.depthTexture).__webglTexture, key, lane, how);
+      };
+      const claimTexture = (t, key, lane, how) => {
+        if (!t || !t.isTexture || !props.has(t)) return;
+        const gt = props.get(t).__webglTexture;
+        claim(gt, key, lane, how);
+        // a render-target texture held without its target (environment PMREM): its framebuffers' other attachments
+        if (gt && objs.get(gt)?.rt) for (const [fb, m] of fbAtt) { let has = false; for (const o of m.values()) if (o === gt) has = true; if (has) fbAll(fb, key, lane, how); }
+      };
+      const claimAttr = (a, key, lane, how) => { if (!a) return; const arr = a.isInterleavedBufferAttribute ? a.data?.array : a.array; if (arr) claim(arrBuf.get(arr), key, lane, how); };
+      const claimGeometry = (g, key, lane, how) => {
+        if (!g || !g.isBufferGeometry) return;
+        for (const k in g.attributes) claimAttr(g.attributes[k], key, lane, how);
+        for (const k in g.morphAttributes) each(g.morphAttributes[k], (a) => claimAttr(a, key, lane, how));
+        claimAttr(g.index, key, lane, how);
+      };
+      const TEX_SCAN = (m, f) => {
+        for (const k in m) { const v = m[k]; if (v && v.isTexture) f(v); }
+        if (m.uniforms) for (const k in m.uniforms) { const v = m.uniforms[k]?.value; if (v && v.isTexture) f(v); else if (Array.isArray(v)) for (const x of v) if (x && x.isTexture) f(x); }
+      };
+      const claimObject = (o, key, lane, how) => {
+        for (const m of Array.isArray(o.material) ? o.material : [o.material]) if (m) TEX_SCAN(m, (t) => claimTexture(t, key, lane, how));
+        for (const m of [o.customDepthMaterial, o.customDistanceMaterial]) if (m) TEX_SCAN(m, (t) => claimTexture(t, key, lane, how));
+        claimGeometry(o.geometry, key, lane, how);
+        if (o.isInstancedMesh) { claimAttr(o.instanceMatrix, key, lane, how); claimAttr(o.instanceColor, key, lane, how); if (o.morphTexture) claimTexture(o.morphTexture, key, lane, how); }
+        if (o.isBatchedMesh) for (const k of ['_matricesTexture', '_indirectTexture', '_colorsTexture']) claimTexture(o[k], key, lane, how);
+        if (o.skeleton?.boneTexture) claimTexture(o.skeleton.boneTexture, key, lane, how);
+        if (o.isLight && o.shadow?.map) claimTarget(o.shadow.map, key, lane, how);
+      };
+      // (1) the engine's render-target ledger
+      const L = e.renderTargetLedger ? e.renderTargetLedger() : { rows: [] };
+      const laneOfRt = (owner) => (/^post:/.test(owner) ? 'engine-gpu (post chain)' : /^shadow:/.test(owner) ? 'engine-gpu (shadow maps / CSM)' : /^env:/.test(owner) ? 'world-sky (environment PMREM)' : owner === 'unregistered' ? 'unregistered render target' : 'registered by its lane: ' + owner);
+      const ledgerRows = [];
+      for (const row of L.rows || []) {
+        const key = 'rt ' + row.owner;
+        const before = owners.get(key)?.renderTargets || 0;
+        if (row.target) claimTarget(row.target, key, laneOfRt(row.owner), 'engine.renderTargetLedger()');
+        else if (row.texture) claimTexture(row.texture, key, laneOfRt(row.owner), 'engine.renderTargetLedger()');
+        const o = owners.get(key);
+        ledgerRows.push({ owner: row.owner, allocated: row.allocated, ledgerBytes: row.allocated ? row.bytes : 0, glBytes: (o ? o.renderTargets + o.textures : 0) - before });
+      }
+      // (2) scene roots
+      const sceneRoots = [];
+      for (const root of scene.children) {
+        const reg = ownerOfName(root.name);
+        const key = reg ? 'scene ' + reg.id : 'unregistered scene root ' + (root.name || '(unnamed ' + root.type + ')');
+        const lane = reg ? reg.lanes : 'UNREGISTERED (name the root for its §4.2 row)';
+        root.traverse((o) => claimObject(o, key, lane, 'scene root'));
+        sceneRoots.push({ root: root.name || '(unnamed ' + root.type + ')', owner: key });
+      }
+      for (const k of ['background', 'environment']) if (scene[k]?.isTexture) claimTexture(scene[k], 'scene.' + k, 'world-sky', 'scene.' + k);
+      // (3) the context graph (bounded): what is held off-scene
+      const LANE_OF_KEY = cfg.ctxLanes;
+      const seen = new Set(), q = []; let qi = 0, visited = 0;
+      const SKIP_KEYS = new Set(['game', 'renderer', 'events', 'input', 'settings', 'parent', 'children', '_listeners', 'domElement', 'matrixWorld', 'matrix']);
+      for (const k of Object.keys(ctx)) if (!SKIP_KEYS.has(k) && ctx[k] && typeof ctx[k] === 'object' && ctx[k] !== scene) q.push([ctx[k], 'ctx.' + k, k, 0]);
+      const sys = ctx.game?.systems || ctx.game?._systems || [];
+      if (Array.isArray(sys)) sys.forEach((s, i) => { if (s && typeof s === 'object') q.push([s, 'system ' + (s.constructor?.name || i), '(system)' + (s.constructor?.name || i), 0]); });
+      const isSkippable = (v) => v instanceof Node || v instanceof Window || ArrayBuffer.isView(v) || v instanceof ArrayBuffer || v instanceof WebGL2RenderingContext
+        || (typeof AudioNode !== 'undefined' && (v instanceof AudioNode || v instanceof AudioBuffer || v instanceof BaseAudioContext)) || v instanceof Promise || v instanceof WeakMap || v instanceof WeakSet
+        || (typeof WebGLTexture !== 'undefined' && (v instanceof WebGLTexture || v instanceof WebGLBuffer || v instanceof WebGLFramebuffer || v instanceof WebGLRenderbuffer || v instanceof WebGLProgram || v instanceof WebGLShader || v instanceof WebGLVertexArrayObject));
+      while (qi < q.length && visited < 400000) {
+        const [v, p, k0, d] = q[qi++];
+        if (!v || typeof v !== 'object' || seen.has(v) || isSkippable(v)) continue;
+        seen.add(v); visited++;
+        const lane = LANE_OF_KEY[k0] || (k0.startsWith('(system)') ? 'system ' + k0.slice(8) : 'orchestrator (ctx.' + k0 + ')');
+        const key = 'held by ' + p.split('.').slice(0, 2).join('.');
+        if (v === scene) continue;
+        if (v.isTexture) { claimTexture(v, key, lane, 'context graph: ' + p); continue; }
+        if (v.isRenderTarget) { claimTarget(v, key, lane, 'context graph: ' + p); continue; }
+        if (v.isBufferGeometry) { claimGeometry(v, key, lane, 'context graph: ' + p); continue; }
+        if (v.isObject3D) { v.traverse((o) => claimObject(o, key, lane, 'context graph (off-scene object): ' + p)); }
+        if (v.isMaterial) { TEX_SCAN(v, (t) => claimTexture(t, key, lane, 'context graph: ' + p)); continue; }
+        if (d >= 7) continue;
+        if (v instanceof Map) { let n = 0; for (const x of v.values()) { if (n++ > 20000) break; if (x && typeof x === 'object') q.push([x, p + '.get()', k0, d + 1]); } continue; }
+        if (v instanceof Set) { let n = 0; for (const x of v) { if (n++ > 20000) break; if (x && typeof x === 'object') q.push([x, p + '[set]', k0, d + 1]); } continue; }
+        if (Array.isArray(v)) { const n = Math.min(v.length, 20000); for (let i = 0; i < n; i++) { const x = v[i]; if (x && typeof x === 'object') q.push([x, p + '[]', k0, d + 1]); } continue; }
+        let keys; try { keys = Object.keys(v); } catch (err) { continue; }
+        for (const kk of keys) { if (SKIP_KEYS.has(kk)) continue; let x; try { x = v[kk]; } catch (err) { continue; } if (x && typeof x === 'object') q.push([x, p + '.' + kk, k0, d + 1]); }
+      }
+      // (4) the remainder
+      const un = { textures: { count: 0, bytes: 0, rows: [] }, renderTargets: { count: 0, bytes: 0, rows: [] }, buffers: { count: 0, bytes: 0, rows: [] } };
+      const totals = { textures: 0, renderTargets: 0, buffers: 0 };
+      for (const [g, rec] of objs) {
+        const c = catOf(rec), b = bytesOf(rec);
+        totals[c] += b;
+        if (claimed.has(g)) continue;
+        un[c].count++; un[c].bytes += b; un[c].rows.push({ ...rowOf(rec), hint: rec.hint || [] });
+      }
+      for (const c of Object.keys(un)) un[c].rows = un[c].rows.sort((a, b) => b.bytes - a.bytes).slice(0, 12);
+      const list = [...owners.values()].map((o) => ({ ...o, total: o.textures + o.renderTargets + o.buffers })).sort((a, b) => b.total - a.total);
+      const attributed = { textures: 0, renderTargets: 0, buffers: 0 };
+      for (const o of list) { attributed.textures += o.textures; attributed.renderTargets += o.renderTargets; attributed.buffers += o.buffers; }
+      const exact = ['textures', 'renderTargets', 'buffers'].every((c) => attributed[c] + un[c].bytes === totals[c]);
+      const ledgerTotal = ledgerRows.reduce((a, x) => a + x.ledgerBytes, 0), ledgerGl = ledgerRows.reduce((a, x) => a + x.glBytes, 0);
+      return { owners: list, unattributed: un, totals, attributed, accountingExact: exact, ledgerRows, ledgerTotalBytes: ledgerTotal, ledgerClaimedGlBytes: ledgerGl,
+        rtMismatches: ledgerRows.filter((x) => x.ledgerBytes !== x.glBytes), sceneRoots, graphVisited: visited };
+    },
   };
+})()`;
+
+/** ctx keys -> the lane that answers for what they hold off-scene (plan §2 rows) */
+const CTX_LANES = { engine: 'engine-gpu', camera: 'engine-gpu', assets: 'pipeline (loaded templates)', terrain: 'world-ground', vegetation: 'world-ground', water: 'world-ground',
+  environment: 'world-sky', sky: 'world-sky', weather: 'world-sky', camp: 'settlements', npcs: 'settlements', settlements: 'settlements', player: 'hero-body', animator: 'hero-body',
+  inventory: 'armory', machines: 'instruments-core', instruments: 'instruments-core', combat: 'combat-kit', vfx: 'combat-kit', particles: 'combat-kit', arrows: 'combat-kit',
+  wheel: 'shell-ui', sighting: 'shell-ui', hud: 'shell-ui', menus: 'shell-ui', ui: 'shell-ui', interactables: 'world-props', props: 'world-props', sites: 'world-props', fauna: 'world-props',
+  audio: 'audio', progression: 'progression', save: 'progression', studio: 'brand' };
+
+/**
+ * POSITIVE CONTROLS (R48 b "self-tests passing"): objects of exactly known GPU size are created through three.js on the
+ * live page, the census must see their exact bytes, the attribution must give them to the right owner, and disposing
+ * them must return every census total to its value before, to the byte:
+ *   - a 333 x 211 HalfFloat RGBA render target with a depth renderbuffer, registered as `gates-perf:control`:
+ *     562,104 B colour (RGBA16F, 8 B) + 281,052 B depth (DEPTH_COMPONENT24, 4 B) = 843,156 B of render targets,
+ *     claimed by the ledger row `rt gates-perf:control`;
+ *   - a 64 x 32 RGBA8 DataTexture (8,192 B, one level) and a 100-vertex Float32 position + 150-index Uint16 geometry
+ *     (1,200 + 300 = 1,500 B of buffers) on a scene root named `gates-perf-control`, claimed by that root.
+ */
+const VRAM_CONTROL = `(async () => {
+  ${FRAMES}
+  const ctx = __CTX__, e = ctx.engine, r = e.renderer, scene = ctx.scene, C = window.__glCensus;
+  const url = performance.getEntriesByType('resource').map((x) => x.name).find((n) => /\\/node_modules\\/\\.vite\\/deps\\/three\\.js/.test(n));
+  if (!url) return { ok: false, why: 'the page did not load three from the Vite dependency bundle (no resource entry): the control cannot use the page\\'s own three module' };
+  const T = await import(url);                                            // the SAME module instance the game uses (same URL)
+  const cfg = window.__w0bAttrCfg;
+  const t0 = C.totals();
+  const W = 333, H = 211;
+  const rt = new T.WebGLRenderTarget(W, H, { type: T.HalfFloatType, depthBuffer: true, stencilBuffer: false, samples: 0 });
+  rt.texture.name = 'gates-perf-control-rt';
+  e.registerRenderTarget('gates-perf:control', rt);
+  const prev = r.getRenderTarget(); r.setRenderTarget(rt); r.clear(); r.setRenderTarget(prev);
+  const data = new Uint8Array(64 * 32 * 4);
+  const tex = new T.DataTexture(data, 64, 32, T.RGBAFormat, T.UnsignedByteType); tex.generateMipmaps = false; tex.needsUpdate = true;
+  const p = ctx.player.position, pos = new Float32Array(300), idx = new Uint16Array(150);
+  for (let i = 0; i < 100; i++) { pos[i * 3] = p.x + (i % 10) - 4.5; pos[i * 3 + 1] = p.y + 1.2; pos[i * 3 + 2] = p.z + Math.floor(i / 10) - 4.5; }
+  for (let i = 0; i < 150; i++) idx[i] = (i * 7) % 100;
+  const geo = new T.BufferGeometry(); geo.setAttribute('position', new T.BufferAttribute(pos, 3)); geo.setIndex(new T.BufferAttribute(idx, 1));
+  const mat = new T.MeshBasicMaterial({ map: tex, colorWrite: false, depthWrite: false, depthTest: false });
+  const mesh = new T.Mesh(geo, mat); mesh.name = 'gates-perf-control'; mesh.frustumCulled = false; mesh.renderOrder = 9999;
+  r.initTexture(tex);
+  scene.add(mesh);
+  await __frames(4);
+  const t1 = C.totals();
+  const a = C.attribute(cfg);
+  const rtRow = a.owners.find((o) => o.owner === 'rt gates-perf:control') || null;
+  const ctlRoot = a.owners.find((o) => o.owner === 'unregistered scene root gates-perf-control') || null;
+  const ledgerRow = (e.renderTargetLedger().rows || []).find((x) => x.owner === 'gates-perf:control') || null;
+  // dispose everything: the census must return to t0 to the byte
+  scene.remove(mesh); geo.dispose(); mat.dispose(); tex.dispose(); e.unregisterRenderTarget(rt); rt.dispose();
+  await __frames(3);
+  const t2 = C.totals();
+  const exp = { renderTargets: W * H * 8 + W * H * 4, textures: 64 * 32 * 4, buffers: 300 * 4 + 150 * 2 };
+  const d1 = { renderTargets: t1.renderTargets - t0.renderTargets, textures: t1.textures - t0.textures, buffers: t1.buffers - t0.buffers };
+  const back = { renderTargets: t2.renderTargets - t0.renderTargets, textures: t2.textures - t0.textures, buffers: t2.buffers - t0.buffers };
+  const checks = {
+    censusSawTheTargetExactly: d1.renderTargets === exp.renderTargets,
+    censusSawTheTextureExactly: d1.textures === exp.textures,
+    censusSawTheBuffersExactly: d1.buffers === exp.buffers,
+    ledgerRowClaimedTheTarget: !!rtRow && rtRow.renderTargets + rtRow.textures === exp.renderTargets,
+    engineLedgerAgrees: !!ledgerRow && ledgerRow.bytes === exp.renderTargets,
+    sceneRootClaimedTextureAndBuffers: !!ctlRoot && ctlRoot.textures === exp.textures && ctlRoot.buffers === exp.buffers,
+    disposeReturnedEveryTotal: back.renderTargets === 0 && back.textures === 0 && back.buffers === 0,
+  };
+  return { ok: Object.values(checks).every(Boolean), checks, expectedBytes: exp, censusDelta: d1, afterDispose: back,
+    attributedTo: { target: rtRow, root: ctlRoot }, engineLedgerRowBytes: ledgerRow ? ledgerRow.bytes : null };
 })()`;
 
 async function vramLedger({ PORT }) {
   const B = W0B_BUDGETS.vram;
+  const binding = barsBinding(PORT);
   return onPage(PORT, async ({ page }) => {
     const installed = await page.evaluate('!!window.__glCensus');
     if (!installed) return { pass: false, detail: { verdict: 'FAIL: the GL census did not install before the game made its context' } };
     const fight = await page.evaluate(STAGE_FIGHT);
     if (fight.skip) return { pass: null, detail: { verdict: fight.skip.split(':')[0] + ': the staged fight has no cast — ' + fight.skip } };
     await page.evaluate(`(async () => { ${FRAMES} await __frames(90); return true; })()`);
+    const attrCfg = { drawOwners: DRAW_OWNERS.map((o) => ({ id: o.id, lanes: o.lanes, re: o.re.source, flags: o.re.flags })), ctxLanes: CTX_LANES };
+    await page.evaluate(`(() => { window.__w0bAttrCfg = ${JSON.stringify(attrCfg)}; return true; })()`);
     const census = await page.evaluate('window.__glCensus.summary()');
+    const attr = await page.evaluate('window.__glCensus.attribute(window.__w0bAttrCfg)');
     const cross = await page.evaluate(`(() => { const e = __CTX__.engine, r = e.renderer;
-      let ledger = null; try { const L = e.renderTargetLedger ? e.renderTargetLedger() : null; ledger = L ? { totalBytes: L.totalBytes ?? (L.rows || []).reduce((a, x) => a + (x.bytes || 0), 0), rows: (L.rows || []).length } : null; } catch (err) { ledger = { error: String(err).slice(0, 120) }; }
+      let ledger = null; try { const L = e.renderTargetLedger ? e.renderTargetLedger() : null; ledger = L ? { totalBytes: L.totalBytes ?? (L.rows || []).reduce((a, x) => a + (x.allocated ? (x.bytes || 0) : 0), 0), rows: (L.rows || []).length } : null; } catch (err) { ledger = { error: String(err).slice(0, 120) }; }
       return { infoTextures: r.info.memory.textures, infoGeometries: r.info.memory.geometries, engineRtLedger: ledger }; })()`);
+    // THE SELF-TEST: known objects in, exact bytes seen and attributed, disposed back to the byte
+    let control;
+    try { control = await page.evaluate(VRAM_CONTROL); } catch (err) { control = { ok: false, error: String(err.message || err).slice(0, 200) }; }
+    await page.evaluate('(() => { window.__w0bAttrCfg = null; return true; })()');
     await page.evaluate(UNSTAGE);
     const tex = census.textures.bytes, rt = census.renderTargets.bytes, geo = census.buffers.bytes, sum = tex + rt + geo;
     const rtLedgerTotal = Object.values(RT_LEDGER.rows).reduce((a, b) => a + b, 0);
-    const checks = {
-      texturesWithinBudget: tex <= B.texturesB,
-      renderTargetsWithinRtLedgerCap: rt <= B.renderTargetsB,
-      geometryWithinBudget: geo <= B.geometryB,
-      totalWithinBudget: sum <= B.totalB,
+    const un = attr.unattributed;
+    const unTotal = un.textures.bytes + un.renderTargets.bytes + un.buffers.bytes;
+    // the unregistered scene roots: attributed to a named root, but to no lane (counted with the unattributed for the lane split)
+    const unregistered = attr.owners.filter((o) => /^unregistered scene root/.test(o.owner));
+    const instrument = {
       censusSawTheScene: census.textures.count > 0 && census.buffers.count > 0 && census.renderTargets.count > 0,
+      censusAgreesWithItsAttribution: attr.accountingExact && attr.totals.textures === tex && attr.totals.renderTargets === rt && attr.totals.buffers === geo,
+      everyRenderTargetAttributed: un.renderTargets.bytes === 0 && attr.rtMismatches.length === 0,
+      everyByteInANamedOwnerOrTheUnattributedRow: attr.accountingExact,
+      selfTestKnownObjectsSeenAttributedAndDisposed: !!control?.ok,
     };
-    const pass = Object.values(checks).every(Boolean);
+    const bars = {
+      texturesWithinBudget: { binding, barMB: 160, MB: MB(tex), pass: tex <= B.texturesB },
+      renderTargetsWithinRtLedgerCap: { binding, barMB: 170, MB: MB(rt), pass: rt <= B.renderTargetsB },
+      geometryWithinBudget: { binding, barMB: 120, MB: MB(geo), pass: geo <= B.geometryB },
+      totalWithinBudget: { binding, barMB: 450, MB: MB(sum), pass: sum <= B.totalB },
+    };
+    const instrumentOk = Object.values(instrument).every(Boolean);
+    const barsOk = Object.values(bars).every((b) => !b.binding || b.pass);
+    const pass = instrumentOk && barsOk;
+    // ROUTING: each over-bar category, its owners by bytes (the R48 b "each over-bar owner routed")
+    const route = (cat) => attr.owners.filter((o) => o[cat] > 0).sort((a, b) => b[cat] - a[cat]).slice(0, 12).map((o) => ({ owner: o.owner, lane: o.lane, MB: MB(o[cat]) }));
+    const overBar = Object.entries(bars).filter(([, b]) => !b.pass).map(([k]) => k);
+    const routing = {
+      renderTargets: route('renderTargets'), textures: route('textures'), buffers: route('buffers'),
+      fileLine: rt > B.renderTargetsB ? 'src/core/engine.js renderTargetLedger() rows (post chain sized by the tier DPR cap and GTAO resolution: engine-gpu\'s W0b tier, docs/ROUND5-ENGINE.md; CSM cascades: engine.js csm setup)' : null,
+    };
+    const lanes = {};
+    for (const o of attr.owners) { const l = /^unregistered/.test(o.owner) ? 'UNREGISTERED scene roots' : o.lane; lanes[l] = r2((lanes[l] || 0) + o.total / 1e6); }
+    lanes.UNATTRIBUTED = MB(unTotal);
     return { pass, detail: {
-      verdict: (pass ? 'PASS' : 'FAIL: ' + Object.keys(checks).filter((k) => !checks[k]).join(', '))
-        + ` — textures ${MB(tex)} MB (bar 160), render targets ${MB(rt)} MB (bar 170), geometry ${MB(geo)} MB (bar 120), total ${MB(sum)} MB (bar 450)`
-        + ` at pixel ratio ${fight.appliedPixelRatio} (tier ${fight.quality}, drawing buffer ${fight.drawingBuffer.join('x')}); engine-gpu's recorded RT ledger (${RT_LEDGER.measured}) totals ${MB(rtLedgerTotal)} MB`,
-      checks, budgetMB: { textures: 160, renderTargets: 170, geometry: 120, total: 450 },
+      verdict: (pass ? 'PASS' : 'FAIL: ' + [...Object.keys(instrument).filter((k) => !instrument[k]), ...Object.entries(bars).filter(([, b]) => b.binding && !b.pass).map(([k]) => 'bar ' + k)].join(', '))
+        + ` — INSTRUMENT (R48 b): ${instrumentOk ? 'PASS' : 'FAIL'} (control: target ${control?.censusDelta?.renderTargets ?? '?'} B of ${control?.expectedBytes?.renderTargets ?? '?'}, texture ${control?.censusDelta?.textures ?? '?'} of ${control?.expectedBytes?.textures ?? '?'}, buffers ${control?.censusDelta?.buffers ?? '?'} of ${control?.expectedBytes?.buffers ?? '?'}, disposed back ${JSON.stringify(control?.afterDispose || null)}; render targets attributed ${MB(attr.attributed.renderTargets)} of ${MB(rt)} MB to ${attr.ledgerRows.length} ledger rows; unattributed ${MB(un.textures.bytes)} MB textures, ${MB(un.buffers.bytes)} MB buffers, ${MB(un.renderTargets.bytes)} MB targets; unregistered scene roots ${MB(unregistered.reduce((a, o) => a + o.total, 0))} MB) — `
+        + `BARS (${binding ? 'binding: global run' : 'lane run: graded at the orchestrator\'s 5270 global run after the engine-gpu merge, R48 b'}): `
+        + `textures ${MB(tex)} MB (bar 160) ${bars.texturesWithinBudget.pass ? 'pass' : 'FAIL'}, render targets ${MB(rt)} MB (bar 170) ${bars.renderTargetsWithinRtLedgerCap.pass ? 'pass' : 'FAIL'}, geometry ${MB(geo)} MB (bar 120) ${bars.geometryWithinBudget.pass ? 'pass' : 'FAIL'}, total ${MB(sum)} MB (bar 450) ${bars.totalWithinBudget.pass ? 'pass' : 'FAIL'}`
+        + ` at pixel ratio ${fight.appliedPixelRatio} (tier ${fight.quality}, drawing buffer ${fight.drawingBuffer.join('x')}); engine-gpu's recorded RT ledger (${RT_LEDGER.measured}) totals ${MB(rtLedgerTotal)} MB`
+        + (overBar.length ? ' — over-bar routing: ' + overBar.map((k) => k + ' -> ' + (k.startsWith('render') ? routing.renderTargets.slice(0, 4).map((x) => x.owner + ' ' + x.MB) .join(', ') : k.startsWith('total') ? 'render targets (above)' : '')).join('; ') : ''),
+      instrument, bars, runId: runIdOf(PORT), barsBinding: binding, overBar, routing, byLaneMB: lanes,
+      sealing: 'R48 (b): the harness seals every run that executes this row (tools/gates.r5.gates-perf.mjs INSTRUMENT_IDS); verify with node tools/gates.r5.gates-perf.mjs --instruments --port <port>',
+      checks: { ...instrument, ...Object.fromEntries(Object.entries(bars).map(([k, b]) => ['bar:' + k, b.pass])) }, budgetMB: { textures: 160, renderTargets: 170, geometry: 120, total: 450 },
       measuredMB: { textures: MB(tex), renderTargets: MB(rt), geometry: MB(geo), total: MB(sum) },
+      attribution: { owners: attr.owners.map((o) => ({ owner: o.owner, lane: o.lane, how: o.how, objects: o.objects, texturesMB: MB(o.textures), renderTargetsMB: MB(o.renderTargets), buffersMB: MB(o.buffers), totalB: o.total })),
+        unattributed: { textures: { ...un.textures, MB: MB(un.textures.bytes) }, renderTargets: { ...un.renderTargets, MB: MB(un.renderTargets.bytes) }, buffers: { ...un.buffers, MB: MB(un.buffers.bytes) } },
+        accountingExact: attr.accountingExact, totals: attr.totals, attributed: attr.attributed, ledgerRows: attr.ledgerRows, rtMismatches: attr.rtMismatches, sceneRoots: attr.sceneRoots, graphVisited: attr.graphVisited },
+      selfTest: control,
       census: { ...census, textures: { ...census.textures, MB: MB(tex) }, renderTargets: { ...census.renderTargets, MB: MB(rt) }, buffers: { ...census.buffers, MB: MB(geo) } },
       crossCheck: { ...cross, censusTextureObjects: census.textures.count + census.renderTargets.textures, rtLedgerRecordedMB: MB(rtLedgerTotal), rtLedgerRecordedAt: RT_LEDGER.measured },
       fight,
-      method: 'every texImage2D/3D, texStorage2D/3D, compressedTexImage, copyTexImage2D, generateMipmap, renderbufferStorage(Multisample) and bufferData call on WebGL2 since before the game made its context, minus deleteTexture/Renderbuffer/Buffer; a texture ever attached to a framebuffer (and every renderbuffer) is a render target; bytes = width x height x depth x bytes-per-texel of the sized internal format (engine-gpu A-rt-ledger-census table: RGB as 4 channels, DEPTH_COMPONENT24 = 4 B) x samples, every level and face; buffers = their bufferData size',
+      method: 'every texImage2D/3D, texStorage2D/3D, compressedTexImage, copyTexImage2D, generateMipmap, renderbufferStorage(Multisample) and bufferData call on WebGL2 since before the game made its context, minus deleteTexture/Renderbuffer/Buffer; a texture ever attached to a framebuffer (and every renderbuffer) is a render target; bytes = width x height x depth x bytes-per-texel of the sized internal format (engine-gpu A-rt-ledger-census table: RGB as 4 channels, DEPTH_COMPONENT24 = 4 B) x samples, every level and face; buffers = their bufferData size. Attribution: engine.renderTargetLedger() rows claim their framebuffer attachments; scene roots claim their subtrees\' textures and buffers (a buffer is matched by the typed array it was filled from); a bounded walk of the context graph claims what is held off-scene; the rest is listed unattributed with its first upload\'s src frames',
     } };
   }, { initScripts: [GL_CENSUS] });
 }
@@ -575,9 +1056,50 @@ async function gpuProcess(browser) {
       footprintError: m ? null : String(fp.stderr || fp.stdout || '').slice(0, 160) };
   } finally { await s.detach().catch(() => {}); }
 }
+/** the median of n footprint readings `gapMs` apart (the fight keeps drawing; one reading is noisy) */
+async function footprintMedian(browser, n = 5, gapMs = 700) {
+  const v = [];
+  for (let i = 0; i < n; i++) { const g = await gpuProcess(browser); if (g.found && g.footprintB != null) v.push(g.footprintB); if (i < n - 1) await sleep(gapMs); }
+  v.sort((a, b) => a - b);
+  return { medianB: v.length ? v[(v.length - 1) >> 1] : null, readings: v.map(MB), spreadMB: v.length ? MB(v[v.length - 1] - v[0]) : null };
+}
+
+/**
+ * POSITIVE CONTROLS (R48 b "self-tests passing") for A90-abs's two instruments, each a KNOWN delta on the live page:
+ *   - JS heap: 32 distinct 1 MiB one-byte strings are retained -> the post-GC used heap (Runtime.getHeapUsage after two
+ *     forced GCs) must rise by 32 x (1 MiB + header) within 5 %, and fall back when they are released;
+ *   - GPU process: with the world held (ctx.state pinned: nothing streams), a 4096 x 4096 RGBA8 render target
+ *     (67,108,864 B, one level, no depth) is allocated through three and cleared; the GPU process's macOS footprint
+ *     (median of 5 readings) must rise by that size within the tolerance below, and fall back by most of it after
+ *     dispose (the driver may cache a freed surface; the fall is reported, the rise is graded).
+ * Tolerance for the GPU control: 0.75-1.6 x the allocation (a Metal surface is page-aligned and the driver may keep a
+ * resolve or clear copy; the footprint is a process-wide reading).
+ */
+const HEAP_CONTROL_HOLD = `(() => { const keep = new Array(32); for (let k = 0; k < 32; k++) keep[k] = String.fromCharCode(65 + (k % 26)).repeat(1048576); window.__w0bHeapCtl = keep; return keep.length; })()`;
+const GPU_CONTROL = (phase) => `(async () => {
+  ${FRAMES}
+  const ctx = __CTX__, e = ctx.engine, r = e.renderer;
+  if (${JSON.stringify(phase)} === 'pin') { window.__w0bState0 = ctx.state; ctx.state = 'gate-pinned'; await __frames(30); return { held: ctx.state === 'gate-pinned' }; }
+  if (${JSON.stringify(phase)} === 'alloc') {
+    const url = performance.getEntriesByType('resource').map((x) => x.name).find((n) => /\\/node_modules\\/\\.vite\\/deps\\/three\\.js/.test(n));
+    if (!url) return { ok: false, why: 'three dependency bundle not found among the page resources' };
+    const T = await import(url);
+    const rt = new T.WebGLRenderTarget(4096, 4096, { type: T.UnsignedByteType, depthBuffer: false, stencilBuffer: false, samples: 0 });
+    e.registerRenderTarget('gates-perf:a90abs-control', rt);
+    const prev = r.getRenderTarget(); r.setRenderTarget(rt); r.clear(); r.setRenderTarget(prev);
+    const gl = r.getContext(); const px = new Uint8Array(4);
+    r.setRenderTarget(rt); gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px); r.setRenderTarget(prev);   // forces the allocation to complete
+    window.__w0bGpuCtl = rt; await __frames(10);
+    return { ok: true, bytes: 4096 * 4096 * 4 };
+  }
+  if (${JSON.stringify(phase)} === 'free') { const rt = window.__w0bGpuCtl; if (rt) { e.unregisterRenderTarget(rt); rt.dispose(); } window.__w0bGpuCtl = null; await __frames(10); return { ok: true }; }
+  if (${JSON.stringify(phase)} === 'unpin') { ctx.state = window.__w0bState0; window.__w0bState0 = undefined; return { ok: true }; }
+  return null;
+})()`;
 
 async function a90Abs({ PORT }) {
   const B = W0B_BUDGETS.abs;
+  const binding = barsBinding(PORT);
   const loopS = Number(process.env.CAL_A90ABS_LOOP_S) || B.a90LoopS;
   const lifeS = Number(process.env.CAL_A90ABS_LIFECYCLE_S) || B.a90LifecycleS;
   const fightS = Number(process.env.CAL_A90ABS_FIGHT_S) || B.fightS;
@@ -585,19 +1107,28 @@ async function a90Abs({ PORT }) {
   return onPage(PORT, async ({ page, cdp, browser }) => {
     await cdp.send('HeapProfiler.enable');
     const heapAtBoot = await gcAndHeap(cdp);
+    // the post-boot heap GROWTH is attributed by a sampling profile of what is still live at the end (objects
+    // collected by GC are NOT included here, unlike A-alloc-rate: this one names what is RETAINED)
+    await cdp.send('HeapProfiler.startSampling', { samplingInterval: 32768 });
     const a90 = await page.evaluate(A90_WORKLOAD(loopS, lifeS));
     const heapAfterA90 = await gcAndHeap(cdp);
     const fight = await page.evaluate(STAGE_FIGHT);
-    if (fight.skip) return { pass: null, detail: { verdict: fight.skip.split(':')[0] + ': the staged fight has no cast — ' + fight.skip, a90 } };
+    if (fight.skip) { await cdp.send('HeapProfiler.stopSampling').catch(() => {}); return { pass: null, detail: { verdict: fight.skip.split(':')[0] + ': the staged fight has no cast — ' + fight.skip, a90 } }; }
     const gpuSamples = [];
     const t0 = Date.now();
     while (Date.now() - t0 < fightS * 1000) { await sleep(Math.min(15000, fightS * 1000 - (Date.now() - t0) + 10)); gpuSamples.push(await gpuProcess(browser)); }
     const heapPostGc = await gcAndHeap(cdp);
+    const { profile: liveProfile } = await cdp.send('HeapProfiler.stopSampling');
     const perfMem = await page.evaluate('performance.memory ? { used: performance.memory.usedJSHeapSize, total: performance.memory.totalJSHeapSize, limit: performance.memory.jsHeapSizeLimit } : null');
     gpuSamples.push(await gpuProcess(browser));
-    // WHAT-IF (reported, never graded): the same fight at pixel ratio 1.25, the DPR cap engine-gpu measures its
-    // render-target ledger at (its W0b tier decision). The driver may keep freed surfaces cached, so a smaller
-    // number here is a lower bound on the saving, not a prediction of the shipped tier.
+    // ATTRIBUTION of the GPU process footprint at the fight: the GL census (A-vram-ledger's, installed before the
+    // context) by owner lane, the canvas drawing buffers, and the remainder: the browser's GPU process itself
+    const attrCfg = { drawOwners: DRAW_OWNERS.map((o) => ({ id: o.id, lanes: o.lanes, re: o.re.source, flags: o.re.flags })), ctxLanes: CTX_LANES };
+    const glAttr = await page.evaluate(`(() => { const a = window.__glCensus.attribute(${JSON.stringify(attrCfg)}); const e = __CTX__.engine; let canvasBytes = null; try { canvasBytes = e.renderTargetLedger().canvasBytes ?? null; } catch (err) { canvasBytes = null; }
+      const lanes = {}; for (const o of a.owners) { const l = /^unregistered/.test(o.owner) ? 'UNREGISTERED scene roots' : o.lane; lanes[l] = (lanes[l] || 0) + o.textures + o.renderTargets + o.buffers; }
+      const un = a.unattributed.textures.bytes + a.unattributed.renderTargets.bytes + a.unattributed.buffers.bytes;
+      return { lanes, unattributedGlBytes: un, totals: a.totals, accountingExact: a.accountingExact, canvasBytes }; })()`);
+    // WHAT-IF (reported, never graded): the same fight at pixel ratio 1.25 (engine-gpu's W0b tier DPR cap)
     let whatIfDpr125 = null;
     try {
       const was = await page.evaluate(`(async () => { ${FRAMES} const e = __CTX__.engine; const was = e.basePixelRatio; e.basePixelRatio = 1.25; e.renderScale = 1; e.resize(); await __frames(180); return was; })()`);
@@ -606,28 +1137,85 @@ async function a90Abs({ PORT }) {
       whatIfDpr125 = { pixelRatio: 1.25, from: was, footprintMB: g.footprintB == null ? null : MB(g.footprintB), rssMB: g.rssB == null ? null : MB(g.rssB) };
       await page.evaluate(`(() => { const e = __CTX__.engine; e.basePixelRatio = ${JSON.stringify(was)}; e.renderScale = 1; e.resize(); return true; })()`);
     } catch (err) { whatIfDpr125 = { error: String(err.message || err).slice(0, 160) }; }
+    // THE SELF-TESTS (known deltas), after the graded readings
+    let heapControl = null, gpuControl = null;
+    try {
+      const h0 = await gcAndHeap(cdp);
+      await page.evaluate(HEAP_CONTROL_HOLD);
+      const h1 = await gcAndHeap(cdp);
+      await page.evaluate('(() => { window.__w0bHeapCtl = null; return true; })()');
+      const h2 = await gcAndHeap(cdp);
+      const exp = 32 * (1048576 + 16), rise = h1 - h0, ratio = rise / exp;
+      heapControl = { ok: Math.abs(ratio - 1) <= 0.05 && (h1 - h2) / exp >= 0.95, expectedB: exp, riseB: rise, ratio: +ratio.toFixed(4), fallB: h1 - h2, tolerance: 0.05 };
+    } catch (err) { heapControl = { ok: false, error: String(err.message || err).slice(0, 160) }; }
+    try {
+      const pin = await page.evaluate(GPU_CONTROL('pin'));
+      await sleep(1500);
+      const f0 = await footprintMedian(browser);
+      const al = await page.evaluate(GPU_CONTROL('alloc'));
+      await sleep(1500);
+      const f1 = await footprintMedian(browser);
+      await page.evaluate(GPU_CONTROL('free'));
+      await sleep(2500);
+      const f2 = await footprintMedian(browser);
+      await page.evaluate(GPU_CONTROL('unpin'));
+      const exp = al?.bytes || 0, rise = f1.medianB != null && f0.medianB != null ? f1.medianB - f0.medianB : null;
+      const ratio = rise != null && exp ? rise / exp : null;
+      gpuControl = { ok: !!al?.ok && pin?.held && ratio != null && ratio >= 0.75 && ratio <= 1.6, held: !!pin?.held, expectedB: exp, riseB: rise, ratio: ratio == null ? null : +ratio.toFixed(3),
+        fallB: f1.medianB != null && f2.medianB != null ? f1.medianB - f2.medianB : null, before: f0, held1: f1, after: f2, tolerance: '0.75-1.6 x' };
+    } catch (err) { gpuControl = { ok: false, error: String(err.message || err).slice(0, 160) }; try { await page.evaluate(GPU_CONTROL('free')); await page.evaluate(GPU_CONTROL('unpin')); } catch { /* */ } }
     await page.evaluate(UNSTAGE);
     const gpu = gpuSamples.filter((g) => g.found && g.footprintB != null);
     const gpuMax = gpu.length ? Math.max(...gpu.map((g) => g.footprintB)) : null;
-    const checks = {
+    const gpuAt = gpu.length ? gpu[gpu.length - 1].footprintB : null;
+    // the footprint split (at the last fight reading): GL objects by lane + canvas + the GPU process itself (remainder)
+    const glBytes = glAttr ? glAttr.totals.textures + glAttr.totals.renderTargets + glAttr.totals.buffers : null;
+    const footprintSplit = glAttr && gpuAt != null ? {
+      footprintMB: MB(gpuAt), glObjectsMB: MB(glBytes), byLaneMB: Object.fromEntries(Object.entries(glAttr.lanes).sort((a, b) => b[1] - a[1]).map(([k, v]) => [k, MB(v)])),
+      unattributedGlMB: MB(glAttr.unattributedGlBytes), canvasDrawingBuffersMB: glAttr.canvasBytes == null ? null : MB(glAttr.canvasBytes),
+      chromeGpuProcessRemainderMB: MB(gpuAt - glBytes - (glAttr.canvasBytes || 0)),
+      remainderOwner: 'the browser: Chrome GPU process + ANGLE/Metal runtime (shader and pipeline caches, command buffers, compositor surfaces); not a GL object of the game',
+      exact: true } : null;
+    // the heap growth after boot, by owner: what is still live at the end, from the sampling profile
+    let heapGrowth = null;
+    try {
+      const a = attribute(liveProfile, 1, 0, PORT);
+      heapGrowth = { liveSampledMB: MB(a.total.bytes), bySrcOwnerMB: Object.fromEntries(a.owners.slice(0, 12).map((o) => [o.id, MB(o.bytes)])), noSrcMB: Object.fromEntries(a.noSrc.buckets.map((b) => [b.id, MB(b.bytes)])),
+        topFunctions: a.topGraded.slice(0, 8).map((x) => ({ fn: x.fn, MB: MB(x.bytes), owner: srcOwner(x.fn) })), accountingExact: a.accounting.exact,
+        note: 'sampled live objects at the end of the fight (interval 32 KB, objects collected by GC excluded): who holds the heap the workload and the fight added; the boot heap (' + MB(heapAtBoot) + ' MB post-GC) is the boot\'s' };
+    } catch (err) { heapGrowth = { error: String(err.message || err).slice(0, 160) }; }
+    const instrument = {
       a90WorkloadRan: a90.workloadPass === true,
-      postGcHeapWithinCeiling: heapPostGc <= B.heapB,
       gpuProcessMeasured: gpuMax !== null,
-      gpuProcessWithinCeiling: gpuMax !== null && gpuMax <= B.gpuProcessB,
+      footprintSplitByOwner: !!footprintSplit && !!glAttr?.accountingExact,
+      heapGrowthAttributed: !!heapGrowth && heapGrowth.accountingExact === true,
+      selfTestHeapKnownDelta: !!heapControl?.ok,
+      selfTestGpuKnownDelta: !!gpuControl?.ok,
     };
-    const measuredPass = Object.values(checks).every(Boolean);
+    const bars = {
+      postGcHeapWithinCeiling: { binding, ceilingMB: 450, MB: MB(heapPostGc), pass: heapPostGc <= B.heapB },
+      gpuProcessWithinCeiling: { binding, ceilingMB: 1500, MB: gpuMax === null ? null : MB(gpuMax), pass: gpuMax !== null && gpuMax <= B.gpuProcessB },
+    };
+    const instrumentOk = Object.values(instrument).every(Boolean);
+    const barsOk = Object.values(bars).every((b) => !b.binding || b.pass);
+    const measuredPass = instrumentOk && barsOk;
     const pass = shortened ? (measuredPass ? null : false) : measuredPass;
     return { pass, detail: {
-      verdict: (shortened ? 'DEV RUN (shortened workload, never a PASS): ' : '') + (measuredPass ? 'PASS' : 'FAIL: ' + Object.keys(checks).filter((k) => !checks[k]).join(', '))
-        + ` — post-GC JS heap ${MB(heapPostGc)} MB (ceiling 450), Chrome GPU process footprint ${gpuMax === null ? 'not measured' : MB(gpuMax) + ' MB'} (ceiling 1500) at the staged fight, after the A90 workload (${a90.kills} kills, ${a90.workload?.respawned} respawned)`,
-      checks, report: { postGcJsHeapMB: MB(heapPostGc), gpuProcessFootprintMB: gpuMax === null ? null : MB(gpuMax) },
-      ceilings: { heapMB: 450, gpuProcessMB: 1500 },
+      verdict: (shortened ? 'DEV RUN (shortened workload, never a PASS): ' : '') + (measuredPass ? 'PASS' : 'FAIL: ' + [...Object.keys(instrument).filter((k) => !instrument[k]), ...Object.entries(bars).filter(([, b]) => b.binding && !b.pass).map(([k]) => 'bar ' + k)].join(', '))
+        + ` — INSTRUMENT (R48 b): ${instrumentOk ? 'PASS' : 'FAIL'} (heap control ${heapControl?.ratio ?? '?'}x of ${heapControl?.expectedB ? MB(heapControl.expectedB) : '?'} MB, GPU control ${gpuControl?.ratio ?? '?'}x of ${gpuControl?.expectedB ? MB(gpuControl.expectedB) : '?'} MB (fell back ${gpuControl?.fallB != null ? MB(gpuControl.fallB) : '?'} MB); footprint split: GL objects ${footprintSplit?.glObjectsMB ?? '?'} MB, canvas ${footprintSplit?.canvasDrawingBuffersMB ?? '?'} MB, Chrome GPU process remainder ${footprintSplit?.chromeGpuProcessRemainderMB ?? '?'} MB) — `
+        + `BARS (${binding ? 'binding: global run' : 'lane run: graded at the orchestrator\'s 5270 global run after the engine-gpu merge, R48 b'}): post-GC JS heap ${MB(heapPostGc)} MB (ceiling 450) ${bars.postGcHeapWithinCeiling.pass ? 'pass' : 'FAIL'}, Chrome GPU process footprint ${gpuMax === null ? 'not measured' : MB(gpuMax) + ' MB'} (ceiling 1500) ${bars.gpuProcessWithinCeiling.pass ? 'pass' : 'FAIL'} at the staged fight, after the A90 workload (${a90.kills} kills, ${a90.workload?.respawned} respawned)`
+        + (bars.gpuProcessWithinCeiling.pass ? '' : ` — over-bar routing: GPU process -> ${footprintSplit ? Object.entries(footprintSplit.byLaneMB).slice(0, 3).map(([k, v]) => k + ' ' + v + ' MB').join(', ') + '; render targets: engine-gpu W0b tier (src/core/engine.js renderTargetLedger rows; DPR cap / GTAO resolution / AA), what-if at pixel ratio 1.25 ' + (whatIfDpr125?.footprintMB ?? '?') + ' MB' : '?'}`),
+      instrument, bars, runId: runIdOf(PORT), barsBinding: binding,
+      sealing: 'R48 (b): the harness seals every run that executes this row (tools/gates.r5.gates-perf.mjs INSTRUMENT_IDS); verify with node tools/gates.r5.gates-perf.mjs --instruments --port <port>',
+      checks: { ...instrument, ...Object.fromEntries(Object.entries(bars).map(([k, b]) => ['bar:' + k, b.pass])) },
+      report: { postGcJsHeapMB: MB(heapPostGc), gpuProcessFootprintMB: gpuMax === null ? null : MB(gpuMax) },
+      ceilings: { heapMB: 450, gpuProcessMB: 1500 }, footprintSplit, heapGrowth, selfTest: { heap: heapControl, gpu: gpuControl },
       heapMB: { atBoot: MB(heapAtBoot), afterA90: MB(heapAfterA90), afterFightPostGc: MB(heapPostGc) }, performanceMemory: perfMem,
       gpuProcess: gpuSamples.map((g) => ({ ...g, footprintMB: g.footprintB == null ? null : MB(g.footprintB), rssMB: g.rssB == null ? null : MB(g.rssB) })),
       whatIfDpr125, a90, durationsS: { a90Loop: loopS, a90Lifecycle: lifeS, fight: fightS, shortened }, fight,
-      method: 'A90-memory-stability\'s kill -> respawn workload (gate-roster memWorkload / memRespawnAfter, same loop and lifecycle times), two forced GCs (CDP HeapProfiler.collectGarbage), then the A21 staged fight for ' + fightS + ' s; JS heap = Runtime.getHeapUsage().usedSize after two forced GCs; GPU process = SystemInfo.getProcessInfo type GPU, macOS `footprint -p <pid> -f bytes` (phys_footprint, includes IOSurface / Metal memory), sampled every 15 s through the fight, max graded',
+      method: 'A90-memory-stability\'s kill -> respawn workload (gate-roster memWorkload / memRespawnAfter, same loop and lifecycle times), two forced GCs (CDP HeapProfiler.collectGarbage), then the A21 staged fight for ' + fightS + ' s; JS heap = Runtime.getHeapUsage().usedSize after two forced GCs; GPU process = SystemInfo.getProcessInfo type GPU, macOS `footprint -p <pid> -f bytes` (phys_footprint, includes IOSurface / Metal memory), sampled every 15 s through the fight, max graded; footprint split by the GL census (A-vram-ledger\'s) at the last reading; heap growth by a live-object sampling profile; known-delta self-tests after the graded readings',
     } };
-  });
+  }, { initScripts: [GL_CENSUS] });
 }
 
 /* ------------------------------------------------------------------------------------------------ */

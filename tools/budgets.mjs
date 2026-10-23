@@ -156,7 +156,43 @@ export const MEMORY_BUDGETS = Object.freeze({
    * for it would be an orchestrator ruling recorded here with its measurement, and none is recorded.
    */
   alloc: Object.freeze({ srcKBps: 64, fnKBps: 4, heapSlopeBps: 0, windowS: 10, warmupS: 3, samplingIntervalB: 2048, refFps: 60,
-    attribution: 'caller', emptyFrameS: 5 }),
+    attribution: 'caller', emptyFrameS: 5,
+    /**
+     * W0b fix round 3 (plan §8.3 R46, R48 (b) and (c)). A-alloc-rate is graded at gates-perf's exit as an INSTRUMENT
+     * (sealed run, every byte attributed to a named owner, planted-allocator self-test, over-bar owners routed with
+     * file:line). At the orchestrator's W0b global run (port 5270) its per-owner numbers are RECORDED as the baseline
+     * (`CAL_ALLOC_RECORD_BASELINE=1` writes `baselineFile`, which the orchestrator commits); from then on no owner may
+     * exceed its baseline by more than `baselineGuard` (x 1.10) at a wave exit. An owner exceeds it only when BOTH its
+     * KB per frame and its KB/s exceed 1.10 x the baseline's (a louder box raises one of the two for frame-driven or
+     * time-driven code; a real regression raises both). The absolute bars (srcKBps for all of src/**, fnKBps per
+     * function) bind each owner from the wave in `owners[].barsFrom` (R48 c's schedule, verbatim); an owner with
+     * `barsFrom: null` has no lane holding its files yet (engine.js -> §11 engine follow-up grant at W1 launch; the
+     * frozen movement and rigging -> §11 W1 perf-hygiene grant) and is graded by the baseline guard only, which also
+     * covers R46's carried classes (a)-(c). The srcKBps total binds once no src owner is left with barsFrom null.
+     * Owners are matched in order (first match wins); a src file no row matches is owner `other-src` (orchestrator).
+     */
+    baselineGuard: 1.10,
+    baselineFile: 'tools/gates/alloc-baseline.json',
+    /** the planted allocator (self-test): bytes it must recover within this fraction of the independent heap-delta size */
+    controlTolerance: 0.15, controlWindowS: 6,
+    owners: Object.freeze([
+      { id: 'terrain', files: '^/src/world/terrain\\.js$', lane: 'world-ground', barsFrom: 'W1', ruling: 'R48 (c): noise2D / getHeight' },
+      { id: 'playerAnimator', files: '^/src/entities/playerAnimator\\.js$', lane: 'melee (hero-body until W1)', barsFrom: 'W1', ruling: 'R48 (c): _springs' },
+      { id: 'fauna', files: '^/src/world/fauna\\.js$', lane: 'world-props', barsFrom: 'W1', ruling: 'R48 (c)' },
+      { id: 'shell-ui', files: '^/src/ui/', lane: 'shell-ui', barsFrom: 'W2', ruling: 'R48 (c)' },
+      { id: 'settlements', files: '^/src/world/(camp|npc|settlements)', lane: 'settlements', barsFrom: 'W2', ruling: 'R48 (c)' },
+      { id: 'audio', files: '^/src/audio/', lane: 'audio', barsFrom: 'W3', ruling: 'R48 (c)' },
+      { id: 'engine', files: '^/src/core/engine\\.js$', lane: 'engine (no lane after W0b): §11 engine follow-up grant, assigned at W1 launch', barsFrom: null, ruling: 'R48 (c)' },
+      { id: 'frozen-spatial', files: '^/src/core/(collision|nav|hitHulls)\\.js$', lane: 'FROZEN kept movement: §11 W1 perf-hygiene grant (bit-identical outputs)', barsFrom: null, ruling: 'R48 (c), R46 (a)-(c)' },
+      { id: 'frozen-rigging', files: '^/src/entities/anim/(boneSpace|restPose|clipLayer|retargeter|rigDebug|locomotion)\\.js$', lane: 'FROZEN kept rigging: §11 W1 perf-hygiene grant (bit-identical outputs)', barsFrom: null, ruling: 'R48 (c), R46 (a)-(c)' },
+      { id: 'frozen-machine-rig', files: '^/src/entities/machines/(gait|autorig)\\.js$|^/src/entities/machines/rig/', lane: 'FROZEN kept machine rig: §11 W1 perf-hygiene grant (bit-identical outputs)', barsFrom: null, ruling: 'R48 (c), R46 (a)-(c)' },
+      { id: 'frame-loop', files: '^/src/main\\.js$', lane: 'FROZEN frame loop (main.js): orchestrator', barsFrom: null, ruling: 'plan §1.1' },
+      { id: 'hero-body', files: '^/src/entities/(player)\\.js$|^/src/entities/anim/', lane: 'hero-body (melee from W1)', barsFrom: null, ruling: 'no R48 (c) date: baseline guard' },
+      { id: 'instruments', files: '^/src/entities/machines/|^/src/instruments/', lane: 'instruments-core / the Instruments lanes (A-alloc-machines grades per frame owner, R46)', barsFrom: null, ruling: 'R46' },
+      { id: 'world-other', files: '^/src/world/', lane: 'world-ground / world-props / world-sky (W1)', barsFrom: null, ruling: 'no R48 (c) date: baseline guard' },
+      { id: 'combat', files: '^/src/combat/|^/src/items/', lane: 'combat-kit (W2) / armory', barsFrom: null, ruling: 'no R48 (c) date: baseline guard' },
+      { id: 'progression', files: '^/src/core/(progression|save)\\.js$', lane: 'progression (W3)', barsFrom: null, ruling: 'no R48 (c) date: baseline guard' },
+    ].map(Object.freeze)) }),
   /** A-vram-ledger: plan §4.4 — textures <= 160, render targets <= the A-rt-ledger cap 170, geometry <= 120, total <= 450 MB */
   vram: Object.freeze({ texturesB: 160e6, renderTargetsB: 170e6, geometryB: 120e6, totalB: 450e6 }),
   /** A90-abs: post-GC JS heap <= 450 MB, Chrome GPU-process footprint <= 1.5 GB at the staged fight (60 s after the A90 workload) */

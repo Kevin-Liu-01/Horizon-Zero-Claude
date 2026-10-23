@@ -1053,6 +1053,8 @@ async function chromeSemaphore({ PORT }) {
 /* ------------------------------------------------------------------------ */
 const { GATES: CARRIED } = await import('./gates.r5.carried.mjs');
 const CARRIED_IDS = new Set(CARRIED.map((g) => g.id));
+/** R48 (b): the W0b instruments, graded from sealed runs (tools/gates/gates-perf.w0b.mjs INSTRUMENT_ROWS) */
+const INSTRUMENT_IDS = new Set(['A-alloc-rate', 'A-vram-ledger', 'A90-abs']);
 
 /**
  * Judge findings (Oct 16, fix round 2): a carried report kept in the lane tree could be STALE
@@ -1448,7 +1450,12 @@ function sealRun(startedAtMs, atStart, cfg, loadStart, sealer) {
   // known-flaky row gets its first-5 window, R33 b). Anything else under 80 % of the carried rows is not sealed.
   const partial = carried < 0.8 * CARRIED_IDS.size;
   const targeted = partial && carried > 0 && carried === results.length && argFlag('--only', null) != null;
-  if (partial && !targeted) {                                        // only carried runs are sealed; say what was observed
+  // W0b fix round 3 (R48 b: the W0b instruments are graded from SEALED runs): any run that executed one of the
+  // instrument rows is sealed too, whatever else it ran (the lane block, a targeted --only, a suite), as one more
+  // observation of exactly the rows it ran; `instrumentRows` names them, `carriedRows` says whether it also observed
+  // carried rows (A-carried-suite reads only seals with carried rows)
+  const instrumentRows = results.filter((r) => INSTRUMENT_IDS.has(r.id)).map((r) => r.id);
+  if (partial && !targeted && !instrumentRows.length) {              // only carried and instrument runs are sealed; say what was observed
     if (carried) writeSync(1, `[ledger] not sealed (${carried} of ${CARRIED_IDS.size} carried rows < 80 %): report captured at ${isoOf(CAP.report.at)}, `
       + `${Object.keys(CAP.frames).length} carried frame(s) capture-bound (${Object.entries(CAP.frames).map(([k, v]) => k + ' ' + v.sha256.slice(0, 12)).join(', ') || 'none'}), `
       + `monitor: ${monSummary(readMonitor())}\n`);
@@ -1478,7 +1485,8 @@ function sealRun(startedAtMs, atStart, cfg, loadStart, sealer) {
   const monBuf = Buffer.from(JSON.stringify(MON));
   writeFileSync(path.join(dir, 'monitor.json'), monBuf);
   const endedAt = new Date().toISOString();
-  appendLedger({ kind: 'seal', sealVersion: SEAL_VERSION, sealId, partial, runId: runStarted ? RUN_ID : null, at: endedAt, tree: realpathSync(ROOT), port, pid: process.pid,
+  appendLedger({ kind: 'seal', sealVersion: SEAL_VERSION, sealId, partial, instrumentRows, scope: instrumentRows.length ? (carried ? 'carried+instruments' : 'instruments') : 'carried',
+    runId: runStarted ? RUN_ID : null, at: endedAt, tree: realpathSync(ROOT), port, pid: process.pid,
     argv: process.argv.slice(2), startedAt: isoOf(startedAtMs), endedAt,
     load: { start: loadStart, end: os.loadavg().map((x) => +x.toFixed(2)) },
     reportStamp: rep.stamp, reportSha256: sha256(buf), reportCapturedAt: isoOf(CAP.report.at), results: results.length, carriedRows: carried,
@@ -1489,7 +1497,7 @@ function sealRun(startedAtMs, atStart, cfg, loadStart, sealer) {
       gateConnections: MON.gateConnectionCount, mainCacheRewrites: (MON.mainViteCache?.changes || []).length, box: MON.box, coveredByAncestor: MON.coveredByAncestor || null },
     concurrentSameTreeRuns: Object.values(MON.sameTreeRuns || {}) });
   pruneRuns(realpathSync(ROOT), port);
-  writeSync(1, `[ledger] sealed ${partial ? 'PARTIAL (targeted re-run of ' + carried + ' carried row(s))' : 'FULL'} carried run ${sealId}: report + ${Object.keys(frames).length} capture-bound frames + run monitor (${MON.samples} samples) copied to ${dir}; seal appended to ${LEDGER_FILE}\n`);
+  writeSync(1, `[ledger] sealed ${partial ? 'PARTIAL (' + carried + ' carried row(s)' + (instrumentRows.length ? ', instrument rows ' + instrumentRows.join(' ') : '') + ')' : 'FULL'} run ${sealId}: report + ${Object.keys(frames).length} capture-bound frames + run monitor (${MON.samples} samples) copied to ${dir}; seal appended to ${LEDGER_FILE}\n`);
 }
 
 let runStarted = false;
@@ -1511,9 +1519,10 @@ if (RUN_ACTIVE && !globalThis.__CAL_SEAL_HOOK__) {
       const all = selectedThisInvocation(m.GATES);
       const targeted = sel.length > 0 && sel.length === all.length && argFlag('--only', null) != null;
       // a child gates.mjs of a monitored run (A-chrome-semaphore's harness exercises) is never an observation
-      if (!monCoveredBy && (sel.length >= 0.8 * CARRIED_IDS.size || targeted) && ledgerOutsideTrees().ok) {
+      const instr = all.filter((id) => INSTRUMENT_IDS.has(id));
+      if (!monCoveredBy && (sel.length >= 0.8 * CARRIED_IDS.size || targeted || instr.length) && ledgerOutsideTrees().ok) {
         appendLedger({ kind: 'run-start', runId: RUN_ID, at: isoOf(startedAtMs), tree: realpathSync(ROOT), port: RUN_PORT, pid: process.pid,
-          argv: process.argv.slice(2), carriedRowsSelected: sel.length, partial: sel.length < 0.8 * CARRIED_IDS.size, build: atStart.digest, gitHead: gitHead() });
+          argv: process.argv.slice(2), carriedRowsSelected: sel.length, instrumentRowsSelected: instr, partial: sel.length < 0.8 * CARRIED_IDS.size, build: atStart.digest, gitHead: gitHead() });
         runStarted = true;
       }
     } catch (e) { try { writeSync(2, `[ledger] run-start not recorded: ${e.message}\n`); } catch { /* */ } }
@@ -1750,7 +1759,8 @@ async function classifyRow(g, r, run, verdicts, gradeVisual, trust = { regs: new
     // (W0b) the SKIP label is read from the HEAD of the row's verdict, not from anywhere in its detail: A21 reports
     // its R18 scenario fallbacks (which quote SKIP-legacy-deleted notes) inside a PENDING verdict, and read as skipR30
     const head = typeof r.detail === 'string' ? r.detail : typeof r.detail?.verdict === 'string' ? r.detail.verdict : d;
-    const cls = skipClassOf(String(head).slice(0, 160)) || (ATTRIBUTION.test(d) ? 'pendingAttributed' : 'pendingUnattributed');
+    // W0b fix round 3 (R45): a quiet-box term reported PENDING-quiet-box is graded at the orchestrator's quiet 5270 run
+    const cls = skipClassOf(String(head).slice(0, 160)) || (/^PENDING-quiet-box \(R45\)/.test(String(head)) ? 'pendingQuietBox' : ATTRIBUTION.test(d) ? 'pendingAttributed' : 'pendingUnattributed');
     return { ...out, cls, note: d.slice(0, 200) };
   }
   // a visual row: the frame this run filmed, as the run copied it into the ledger
@@ -1857,7 +1867,25 @@ const FLAKY_WINDOW = 5, FLAKY_PASSES = 3;
 const VISUAL_JUDGE_PORT = 5271;
 /** complete FULL carried runs of this build the gate needs (one per round, orchestrator W0b); CAL_CARRIED_RUNS raises it */
 const MIN_FULL_RUNS = Math.max(1, Math.floor(Number(process.env.CAL_CARRIED_RUNS) || 1));
-const RANK = (c) => (c === 'pass' ? 4 : /^skip/.test(c) || c === 'pendingAttributed' ? 3 : c === 'pendingUnattributed' ? 2 : c === 'fail' ? 1 : 0);
+const RANK = (c) => (c === 'pass' ? 4 : /^skip/.test(c) || c === 'pendingAttributed' || c === 'pendingQuietBox' ? 3 : c === 'pendingUnattributed' ? 2 : c === 'fail' ? 1 : 0);
+/**
+ * R47 (plan §8.3, Oct 22): the carried player-melee rows A100-A107 are staged on the Round-4 spear, which CALIMA replaces
+ * with the lance; melee's W1 row owns "lance tables on Brea, A100-A107". At the W0b exit A-carried-suite reports them
+ * SKIP-replaced (melee W1), each listed by name, never counted as PASS; they are graded on Brea with the lance at
+ * melee's W1 exit (CAL_SHADOW_EXITED is not involved: melee re-stages them by shadowing the ids).
+ */
+const R47_ROWS = Object.freeze(['A100-spear-holster', 'A101-spear-grip', 'A102-melee-body-motion', 'A103-melee-contact-sync', 'A104-melee-self-clear',
+  'A105-melee-while-moving', 'A106-melee-approach-immovable', 'A107-draw-arm-path']);
+/**
+ * R48 (a) / (d) and R45: offenders that belong to ANOTHER lane or are RULED, so that A-carried-suite in gates-perf's lane
+ * run reports PENDING-orchestrator (R48 d) instead of FAIL. Anything not named here (or in RULED_OWNER) is this lane's.
+ *   - a baseline-PASS row whose every observation is a quiet-box PENDING (A9's fps term, R45) -> the orchestrator's
+ *     quiet 5270 run;
+ *   - a kept visual row awaiting its R29 judge (V21) -> the orchestrator's judge (R48 d).
+ */
+const RULED_CLASS_OWNER = Object.freeze({ needsQuietBox: 'orchestrator (R45: quiet-box terms are graded at the quiet 5270 global run)',
+  awaitingJudge: 'orchestrator (R48 d: V21 is judged by the orchestrator\'s R29 judge on port 5271)' });
+const ORCHESTRATOR_PORT = 5270;
 const BAD_ACTION_R33 = ['override', 'unrun', 'regression', 'needsRuns', 'needsQuietBox', 'worseThanBaseline', 'stagingFlaky'];
 
 /** a row's baseline verdict from its classes in the baseline runs (infra = not observed) */
@@ -2010,7 +2038,8 @@ async function carriedSuite({ PORT, GATES: ALL }) {
   // 1-minute load < 3 and no other gate Chrome), compared with the baseline runs' lowest.
   const quietFrac = (box, n) => (box && n ? (box.quietSamples || 0) / n : null);
   const baseQuiet = Math.min(...base.file.runs.map((r) => quietFrac(r.box, r.monitorSamples) ?? 1));
-  const fresh = considered.filter((c) => c.why.length === 0);
+  // W0b fix round 3: a seal of a run that executed no carried row (an R48 b instrument run) is no carried observation
+  const fresh = considered.filter((c) => c.why.length === 0 && (c.seal.carriedRows ?? 1) > 0);
   for (const c of fresh) {
     c.partial = c.seal.partial === true;
     c.infraRows = (c.rep?.results || []).filter((r) => CARRIED_IDS.has(r.id) && isInfraResult(r)).map((r) => r.id);
@@ -2027,7 +2056,7 @@ async function carriedSuite({ PORT, GATES: ALL }) {
   const tree0 = realpathSync(ROOT);
   const sealedRunIds = new Set(L.entries.map((e) => e.entry).filter((e) => e.kind === 'seal' && e.runId).map((e) => e.runId));
   const unsealedStarts = L.entries.map((e) => e.entry).filter((e) => e.kind === 'run-start' && e.tree === tree0 && Number(e.port) === Number(PORT)
-      && e.build === now.digest && !sealedRunIds.has(e.runId))
+      && e.build === now.digest && !sealedRunIds.has(e.runId) && (e.carriedRowsSelected ?? 1) > 0)
     .map((e) => ({ runId: e.runId, at: e.at, partial: !!e.partial, state: e.pid !== process.pid && pidAliveP(e.pid) ? 'running now' : 'never sealed (aborted or crashed)' }));
   const boxOf = (c) => `quiet ${c.quietFraction == null ? '?' : (c.quietFraction * 100).toFixed(0) + ' %'}${c.louderThanBaseline ? ' (LOUDER than the baseline\'s ' + (baseQuiet * 100).toFixed(0) + ' %)' : ''}, load max ${c.seal.monitor?.box?.loadMax}, other gate Chromes max ${c.seal.monitor?.box?.otherGateChromesMax}`;
   const runsLine = `${fullRuns.length} full: ` + (fullRuns.map((c) => `${c.seal.sealId} (${c.seal.reportStamp}, ${boxOf(c)}${c.complete ? '' : `, INCOMPLETE: ${c.infraRows.length} row(s) not observed by the harness`})`).join('; ') || 'none')
@@ -2063,7 +2092,10 @@ async function carriedSuite({ PORT, GATES: ALL }) {
     const row = { id: g.id, kind: g.kind, owner: ownerOf(g), baseline: bRow.verdict, perRun: per.map((p) => p.cls),
       runs: per.map((p) => ({ run: p.run.seal.sealId, partial: p.run.partial || undefined, status: p.status, cls: p.cls, note: p.cls === 'pass' ? undefined : String(p.note || '').slice(0, 120) })) };
     const seen = per.filter((p) => p.cls !== 'infra');    // the observations of this row, oldest first
-    if (r33gShadowed(g)) {
+    if (R47_ROWS.includes(g.id) && !shadowedIds.has(g.id)) {
+      // R47: staged on the Round-4 spear (replaced by the lance); graded on Brea with the lance at melee's W1 exit
+      Object.assign(row, { cls: 'skipReplaced', owner: 'melee W1', ruling: 'R47', note: `SKIP-replaced (melee W1), R47: staged on the Round-4 spear, which CALIMA replaces with the lance; melee grades it on Brea with the lance at its W1 exit. Observed here: ${seen.map((p) => p.cls).join(' / ') || 'not run'}` });
+    } else if (r33gShadowed(g)) {
       // R33 (g): graded by hero-body on Brea until its exit; observed here, never graded (and never counted as PASS)
       Object.assign(row, { cls: 'skipShadowed', shadowedBy: R33G.lane, note: `SKIP-shadowed(${R33G.lane}): R33 (g) — graded by ${R33G.lane} on Brea in W0b; A-carried-suite grades it on the merged build after ${R33G.lane}'s exit (CAL_SHADOW_EXITED=${R33G.lane}). Observed here: ${seen.map((p) => p.cls).join(' / ') || 'not run'}`,
         shot: g.kind === 'visual' ? (per.find((p) => p.run === judgedRun) || {}).shot : undefined });
@@ -2094,8 +2126,8 @@ async function carriedSuite({ PORT, GATES: ALL }) {
       else if (expect === 'pass') {
         // a Round-4-ATTRIBUTED PENDING (the box could not be measured: R26's loud box, a contended GPU) is not a
         // measurement of the row: it neither passes nor fails it; the row needs one measured PASS and no other result
-        const measured = classes.filter((c) => c !== 'pendingAttributed');
-        if (!measured.length) { row.cls = 'needsQuietBox'; row.note = 'PASSED at baseline; every observation on this build is an attributed PENDING (box not measurable): re-run it on a quiet box — ' + firstBad((c) => c === 'pass'); }
+        const measured = classes.filter((c) => c !== 'pendingAttributed' && c !== 'pendingQuietBox');
+        if (!measured.length) { row.cls = 'needsQuietBox'; row.note = (classes.includes('pendingQuietBox') ? 'PASSED at baseline; every observation on this build reports PENDING-quiet-box (R45: its quiet-box term is graded at the orchestrator\'s quiet 5270 run) — ' : 'PASSED at baseline; every observation on this build is an attributed PENDING (box not measurable): re-run it on a quiet box — ') + firstBad((c) => c === 'pass'); }
         else if (measured.every((c) => c === 'pass')) { row.cls = 'pass'; if (measured.length < classes.length) row.note = `${classes.length - measured.length} attributed PENDING observation(s) not counted`; }
         else if (classes.every((c) => c === 'skipR30')) { row.cls = 'skipR30'; row.note = 'PASSED at baseline; its subject was deleted at W0a (R30) and it reports SKIP-legacy-deleted until the replacement lands: ' + firstBad((c) => c === 'pass'); }
         // W0b fix round 2: a row that passed at baseline ON LEGACY CONTENT and, re-staged under R28 ("any gate that would
@@ -2105,7 +2137,7 @@ async function carriedSuite({ PORT, GATES: ALL }) {
         else if (classes.every((c) => c === 'skipR28')) { row.cls = 'skipR28'; row.note = 'PASSED at baseline on legacy content; re-staged under R28 it reports SKIP-legacy (R28) until a staged kind can stand in: ' + firstBad((c) => c === 'pass'); }
         else { row.cls = mixedStaging ? 'stagingFlaky' : 'regression'; row.note = 'PASSED at baseline; now ' + classes.join(' / ') + ': ' + firstBad((c) => c === 'pass'); }
       } else if (expect === 'flaky') {
-        const win = classes.filter((c) => c !== 'pendingAttributed').slice(0, FLAKY_WINDOW), passes = win.filter((c) => c === 'pass').length, misses = win.length - passes;
+        const win = classes.filter((c) => c !== 'pendingAttributed' && c !== 'pendingQuietBox').slice(0, FLAKY_WINDOW), passes = win.filter((c) => c === 'pass').length, misses = win.length - passes;
         row.cls = passes >= FLAKY_PASSES ? 'pass' : misses > FLAKY_WINDOW - FLAKY_PASSES ? 'regression' : 'needsRuns';
         row.note = `known-flaky (${R27_FLAKY.includes(g.id) ? 'R27' : 'baseline ' + bRow.perRun.join('/')}): ${passes} pass of the first ${win.length} observation(s) on this build (${win.join(' / ')}); needs ${FLAKY_PASSES} of the first ${FLAKY_WINDOW}`
           + (row.cls === 'pass' ? '' : ': ' + firstBad((c) => c === 'pass').slice(0, 140));

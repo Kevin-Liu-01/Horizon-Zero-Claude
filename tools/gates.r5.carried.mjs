@@ -422,7 +422,7 @@ const GATES = [
   },
   {
     id: 'A9-perf-budget', kind: 'action', lane: 'core',
-    title: 'R26 at the spawn vista: draw calls < 350, always graded; MEDIAN fps >= 58 over 3 s on a quiet box (1-minute load average < 3), else the fps half is PENDING',
+    title: 'R26 + R45 at the spawn vista: draw calls < 350, always graded; MEDIAN fps >= 58 over 3 s, graded only on a quiet box (1-minute load average < 3 AND no other gate Chrome alive, R45), else the fps term is PENDING-quiet-box',
     settle: 2000, timeout: 60000,
     /**
      * R5 (gates-perf W0a) — R26 replaces Round 4's "avg FPS >= 45": the bar is the MEDIAN
@@ -433,12 +433,18 @@ const GATES = [
      * PENDING; a median >= 58 passes on any box; the draw-call bar grades on every box.
      * Round 4's empty-frame witness is still measured and reported, but it no longer turns a
      * quiet-box FAIL into a PENDING (R26 names load average as the quiet test).
+     * W0b fix round 3 (R45, judge finding): the fps term is a quiet-box term graded at the
+     * orchestrator's quiet global run on 5270 (load < 3, no lane Chrome alive, exactly one
+     * Chrome). "Quiet" is now that two-part test, the one A21 uses: 1-minute load < 3 AND no
+     * other gate Chrome alive. On any other box the fps term reports PENDING-quiet-box (R45),
+     * whatever the median read (it is reported, never graded, in either direction); the
+     * draw-call bar grades on every box.
      */
     get assert() {
       const { load, otherGateChromes } = boxContention();   // a puppeteer Chrome's MAIN process carries --remote-debugging; ours is a child of this runner
       return `(async () => {
       const LOAD = ${JSON.stringify(load)}, OTHER_CHROMES = ${JSON.stringify(otherGateChromes)};
-      const QUIET = LOAD[0] < 3;                                    // R26
+      const QUIET = LOAD[0] < 3 && OTHER_CHROMES === 0;             // R26 + R45: the two-part quiet test (A21's)
       const ctx = __CTX__, e = ctx.engine;
       const r = ctx.renderer || e?.renderer;
       if (e?.enableGpuTimer) e.enableGpuTimer(true);
@@ -502,18 +508,20 @@ const GATES = [
         }
       }
       const contentionWitnessed = (nullFps != null && nullFps < 55) || (nullGpuMs != null && nullGpuMs > 3);
-      const pass = !callsOk ? false : fpsOk ? true : QUIET ? false : null;
+      // R45: the fps term is graded only on a quiet box; elsewhere it is PENDING-quiet-box in BOTH directions
+      const pass = !callsOk ? false : !QUIET ? null : fpsOk;
       const med = run.medianFps.toFixed(1);
+      const why = [LOAD[0] >= 3 ? '1-min load ' + LOAD[0] + ' >= 3' : null, OTHER_CHROMES !== 0 ? (OTHER_CHROMES === null ? 'other gate Chromes unknown' : OTHER_CHROMES + ' other gate Chrome(s) alive') : null].filter(Boolean).join(', ');
       return { pass, detail: {
         drawCalls: calls, medianFps: +med, avgFps: +run.avgFps.toFixed(1), p95FrameMs: run.p95FrameMs, frames: run.frames,
         sceneGpuMs, callsOk, fpsOk, loadAverage: LOAD, quietBox: QUIET, otherGateChromes: OTHER_CHROMES,
         nullFrameFps: nullFps, nullFrameGpuMs: nullGpuMs, contentionWitnessed,
-        bars: { drawCalls: '< 350 (always graded)', medianFps: '>= 58 on a quiet box (R26: 1-min load average < 3)' },
+        bars: { drawCalls: '< 350 (always graded)', medianFps: '>= 58, graded only on a quiet box (R26 + R45: 1-min load average < 3 and no other gate Chrome alive)' },
         verdict: !callsOk ? 'FAIL: drawCalls ' + calls + ' >= 350'
-          : pass ? 'PASS: median ' + med + ' fps, ' + calls + ' draw calls'
-          : pass === false ? 'FAIL: median ' + med + ' fps < 58 on a quiet box (load average ' + LOAD[0] + ' < 3, R26); scene GPU ' + sceneGpuMs + ' ms'
-            + (contentionWitnessed ? '; the empty-frame witness also read ' + nullGpuMs + ' ms GPU / ' + nullFps + ' fps with nothing drawn (reported, not graded under R26)' : '')
-          : 'PENDING: not a quiet box (R26): load average ' + LOAD[0] + ' >= 3, so the median ' + med + ' fps is not graded; draw calls ' + calls + ' inside budget',
+          : !QUIET ? 'PENDING-quiet-box (R45): ' + why + ', so the fps term is graded at the quiet 5270 global run of the orchestrator; measured median ' + med + ' fps (' + (fpsOk ? '>=' : '<') + ' 58, reported only), scene GPU ' + sceneGpuMs + ' ms; draw calls ' + calls + ' < 350 (graded: PASS)'
+          : pass ? 'PASS: median ' + med + ' fps on a quiet box (load ' + LOAD[0] + ', 0 other gate Chromes), ' + calls + ' draw calls'
+          : 'FAIL: median ' + med + ' fps < 58 on a quiet box (load average ' + LOAD[0] + ' < 3, 0 other gate Chromes; R26 + R45); scene GPU ' + sceneGpuMs + ' ms'
+            + (contentionWitnessed ? '; the empty-frame witness also read ' + nullGpuMs + ' ms GPU / ' + nullFps + ' fps with nothing drawn (reported, not graded under R26)' : ''),
       } };
     })()`;
     },
@@ -31352,37 +31360,52 @@ const GATES = [
   /* ===================================================================== */
   {
     id: 'A73-sample-bank', kind: 'action', lane: 'audio',
-    title: 'Sample bank: >60 decoded buffers, every one with an allowed licence, seed sets complete',
+    title: 'Sample bank: >60 decoded buffers, every one with an allowed licence, seed sets complete (the Round-4 machine-voice seed clause reports SKIP-replaced on staged kinds: audio W3, R48 a)',
     settle: 300,
+    /**
+     * W0b fix round 3 (R48 a, judge finding): "A73's voice seeds belong to the Round-4 machine voices, so on the
+     * Tiller it reports SKIP-replaced (audio W3, Instrument voices)". ONLY that clause moves: the per-kind
+     * `voice/<kind>/windup|strike` sets of the staged kinds are checked and listed, never graded; every other
+     * clause (> 60 buffers, licences, no failed / rejected / unlicensed buffer, the foot / bow / hit / ambience seed
+     * sets, the audible crit, <= 40 MB) is graded exactly as before.
+     */
     assert: staged([], `(async () => {
       ${ARM}
       const a = await _arm();
       if (!a.ac) return { pass: null, detail: 'SKIP: no AudioContext in this browser' };
       const b = a.bankAudit();
+      const voiceNeed = ${SPECIES}.flatMap(s => ['voice/' + s + '/windup', 'voice/' + s + '/strike']);
       const need = [
         ['foot/grass', 'foot/dirt', 'foot/rock'],
-        ${SPECIES}.flatMap(s => ['voice/' + s + '/windup', 'voice/' + s + '/strike']),
         ['hunter', 'sharpshot', 'war'].flatMap(w => ['nock','draw','release','flyby','empty'].map(k => 'bow/' + w + '/' + k)),
         ['hit/plink', 'hit/thunk', 'hit/crunch', 'hit/crit'],
         ['amb/meadow', 'amb/river', 'amb/campfire'],
       ].flat();
       const missing = need.filter(s => !a.bank.has(s));
+      const voiceMissing = voiceNeed.filter(s => !a.bank.has(s));
       // a licence row is not enough — the file must actually make sound
       const probe = await a.probeSet('hit/crit');
       const audible = !!probe && probe.peak > 0.05;
-      const pass = b.size > 60
-        && b.unlicensed === 0
-        && b.failedCount === 0
-        && b.rejectedCount === 0
-        && Object.keys(b.licenses).every(l => ['CC0-1.0', 'CC-PD', 'Unlicense', 'PD'].includes(l))
-        && missing.length === 0
-        && b.megabytes <= 40
-        && audible;
+      const clauses = {
+        moreThan60Buffers: b.size > 60,
+        noUnlicensed: b.unlicensed === 0,
+        noFailed: b.failedCount === 0,
+        noRejected: b.rejectedCount === 0,
+        allowedLicences: Object.keys(b.licenses).every(l => ['CC0-1.0', 'CC-PD', 'Unlicense', 'PD'].includes(l)),
+        footBowHitAmbienceSeedsComplete: missing.length === 0,
+        atMost40MB: b.megabytes <= 40,
+        critAudible: audible,
+      };
+      const pass = Object.values(clauses).every(Boolean);
+      const skipNote = 'voice seeds SKIP-replaced (R48 a: the Round-4 machine voices; audio W3, Instrument voices): '
+        + (voiceMissing.length ? 'missing ' + voiceMissing.join(', ') : 'all ' + voiceNeed.length + ' present') + ' over the staged kinds ' + JSON.stringify(${SPECIES});
       return { pass, detail: {
-        buffers: b.size, sets: b.sets, megabytes: b.megabytes,
+        verdict: (pass ? 'PASS' : 'FAIL: ' + Object.keys(clauses).filter(k => !clauses[k]).join(', ')) + ' (graded clauses: buffers ' + b.size + ', ' + b.megabytes + ' MB, licences ' + JSON.stringify(b.licenses) + ', foot/bow/hit/ambience seeds ' + (need.length - missing.length) + '/' + need.length + ', crit peak ' + (probe && probe.peak) + '); ' + skipNote,
+        clauses, buffers: b.size, sets: b.sets, megabytes: b.megabytes,
         licenses: b.licenses, unlicensed: b.unlicensed,
         failed: b.failedCount, rejected: b.rejectedCount,
         missingSeedSets: missing, probeCritPeak: probe && probe.peak,
+        skipReplacedClauses: [{ clause: 'per-kind machine voice seeds (voice/<kind>/windup|strike)', ruling: 'R48 (a)', owner: 'audio W3 (Instrument voices)', kinds: ${SPECIES}, missing: voiceMissing }],
       } };
     })()`),
   },
