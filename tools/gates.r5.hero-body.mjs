@@ -8626,6 +8626,78 @@ const NEW_GATES = [
       return { pass: bad.length === 0, detail: { rule: 'R47', bad, beats, after, errors: errs.length, walk, jog, sprint } };
     })()`),
   },
+
+  /* ------------------------------------------------------- A-strafe-feet */
+  {
+    id: 'A-strafe-feet', kind: 'action', lane: 'hero-body', timeout: 120000,
+    title: 'V13 action twin (fix round 5, judge r2: "the right swing foot snaps ~90 deg in yaw at the top of every aim side-step swing"): the aim side-step, on EVERY frame with one foot planted and the other in the air, 3 s to her LEFT and 3 s to her RIGHT — the swing foot\'s heading (read off its lateral axis, so a toe-down foot still has one) within 20 deg of the planted foot\'s, both feet within 30 deg of the travel line, the swing foot\'s ankle -> toe-tip line <= 0.45 rad below the horizontal and its toe tip not under the ground; and the same on V13\'s own filmed frame (strafing left, the right swing foot at the top of its swing)',
+    setup: INPUT_ON, settle: 400,
+    assert: placed(['openGround'], `(async () => {${HB}
+      freeze();
+      const T = C.terrain, Qc = p.model.quaternion.constructor, D = 180 / Math.PI;
+      const tip = (e) => (e.bone.children || []).find((o) => o.isBone) || e.bone;
+      const F = [[an.b.footL, tip(an.b.ballL)], [an.b.footR, tip(an.b.ballR)]];
+      // each foot's lateral axis in its own frame: the local axis that is char +X at its BIND orientation
+      const latLoc = F.map(([f]) => new T3(1, 0, 0).applyQuaternion(f.W.clone().invert()));
+      const wrapD = (a) => { while (a > 180) a -= 360; while (a < -180) a += 360; return a; };
+      const meas = (sd) => {
+        const [f, tp] = F[sd];
+        const inv = p.model.getWorldQuaternion(new Qc()).invert();
+        const lat = latLoc[sd].clone().applyQuaternion(f.bone.getWorldQuaternion(new Qc()).premultiply(inv));
+        const aw = WP(f.bone), tw = WP(tp);
+        const d = CH(tw).sub(CH(aw)), dl = d.length();
+        return { hdg: Math.atan2(-lat.z, lat.x) * D, pitch: Math.asin(-d.y / dl), toeH: tw.y - T.getHeight(tw.x, tw.z), ankH: aw.y - T.getHeight(aw.x, aw.z) };
+      };
+      const travel = () => { const lv = CH(p.position.clone().add(p.velocity)).sub(CH(p.position.clone())); return Math.atan2(lv.x, lv.z) * D; };
+      const row = (sw) => { const S = meas(sw), P = meas(1 - sw), tr = travel();
+        return { sw, dYaw: Math.abs(wrapD(S.hdg - P.hdg)), offS: Math.abs(wrapD(S.hdg - tr)), offP: Math.abs(wrapD(P.hdg - tr)), pitch: S.pitch, toeH: S.toeH, ankH: S.ankH }; };
+      const run = async (key, sec) => {
+        release(); standAt(p, 'openGround'); p.camPitch = 0; p.velocity.set(0, 0, 0); await simWait(0.5, 4000);
+        const rows = []; const t0 = E.simTime; let aimF = 0;
+        while (E.simTime - t0 < sec + 0.9) {
+          C.input.mouse.buttons |= 4; keys.add(key);
+          await frame();
+          if (E.simTime - t0 < 0.9) continue;
+          if (!p.aiming) continue;
+          aimF++;
+          const pl = an.debugFeet().map((x) => x.planted);
+          if (pl[0] === pl[1]) continue;
+          rows.push(row(pl[0] ? 1 : 0));
+        }
+        release();
+        return { rows, aimF };
+      };
+      const L = await run('KeyA', 3.0), R = await run('KeyD', 3.0);
+      // V13's own frame: standAt, aim + strafe left for 2.4 + 0.9 s, then the first
+      // frame the RIGHT (trailing) foot stops rising in the air — V13 freezes there
+      const filmed = await (async () => {
+        release(); standAt(p, 'openGround'); p.camPitch = 0; p.velocity.set(0, 0, 0); await simWait(0.4, 3000);
+        const t0 = E.simTime; let hPrev = -1, got = null;
+        while (E.simTime - t0 < 8 && !got) {
+          C.input.mouse.buttons |= 4; keys.add('KeyA');
+          await frame();
+          if (E.simTime - t0 < 3.3) continue;
+          const fs = an.debugFeet(), h = meas(1).ankH;
+          if (!fs[1].planted && fs[0].planted && hPrev > 0.12 && h <= hPrev) got = row(1);
+          hPrev = fs[1].planted ? -1 : h;
+        }
+        release();
+        return got;
+      })();
+      const summ = (rows) => rows.length ? { lifted: rows.length, dYawMax: +Math.max(...rows.map((r) => r.dYaw)).toFixed(1), offTravelMax: +Math.max(...rows.map((r) => Math.max(r.offS, r.offP))).toFixed(1),
+        pitchMax: +Math.max(...rows.map((r) => r.pitch)).toFixed(3), toeMin: +Math.min(...rows.map((r) => r.toeH)).toFixed(3), ankMax: +Math.max(...rows.map((r) => r.ankH)).toFixed(3) } : { lifted: 0 };
+      const ok = (r) => r.dYaw <= 20 && r.offS <= 30 && r.offP <= 30 && r.pitch <= 0.45 && r.toeH >= 0;
+      const bad = [];
+      for (const [tag, X] of [['left', L], ['right', R]]) {
+        if (X.rows.length < 20) bad.push(tag + ': ' + X.rows.length + ' lifted frames (< 20; aiming ' + X.aimF + ')');
+        const b = X.rows.filter((r) => !ok(r));
+        if (b.length) bad.push(tag + ': ' + b.length + ' frames off (worst dYaw ' + Math.max(...b.map((r) => r.dYaw)).toFixed(1) + ', pitch ' + Math.max(...b.map((r) => r.pitch)).toFixed(3) + ')');
+      }
+      if (!filmed) bad.push('V13 frame: the right swing foot never peaked'); else if (!ok(filmed)) bad.push('V13 frame off: ' + JSON.stringify(filmed));
+      const r3 = (o) => o && Object.fromEntries(Object.entries(o).map(([k, v]) => [k, typeof v === 'number' ? +v.toFixed(3) : v]));
+      return { pass: bad.length === 0, detail: { bad, left: summ(L.rows), right: summ(R.rows), filmed: r3(filmed) } };
+    })()`),
+  },
 ];
 
 /* --------------------------------------------------------------- visual gates */
@@ -8847,8 +8919,20 @@ const byId = (id) => carried.find((g) => g.id === id);
   // her square to the camera with the bow down (V24 carries the same stub)
   const relocate = 'p._updateCamera = function () {';
   if (!a.includes(relocate)) throw new Error('V13 relocate shape changed');
-  const a2 = a.replace(press, hold).replace(relocate, 'C.combat._updateAimPoint = () => {};\n          ' + relocate);
+  let a2 = a.replace(press, hold).replace(relocate, 'C.combat._updateAimPoint = () => {};\n          ' + relocate);
+  /* fix round 5 (judge r2: "the film is phase-dependent: the freeze is a
+   * 2.4 s + 0.9 s timer"): the freeze waits for a DETERMINISTIC gait phase —
+   * the first frame the RIGHT (trailing) foot stops rising in the air, i.e.
+   * the top of its swing, the phase the judge caught snapping 90 deg — so
+   * the film always shows the worst case. A-strafe-feet grades the same frame
+   * numerically (and every lifted frame of a full strafe each way). */
+  const freezeAt = 'setTimeout(() => {\n            C.engine.timeScale = 0;';
+  if (!a2.includes(freezeAt) || !a2.includes('}, 900);')) throw new Error('V13 freeze shape changed');
+  const peak = "setTimeout(() => { const __an = p.animator, __T = C.terrain, __V = p.position.constructor; let __hp = -1, __n = 0; const __poll = () => { __n++; const __fs = __an.debugFeet(); const __w = __an.b.footR.bone.getWorldPosition(new __V()); const __h = __w.y - __T.getHeight(__w.x, __w.z); const __pk = !__fs[1].planted && __fs[0].planted && __hp > 0.12 && __h <= __hp; __hp = __fs[1].planted ? -1 : __h; if (!__pk && __n < 600) { requestAnimationFrame(__poll); return; } __frz(); }; const __frz = () => {\n            C.engine.timeScale = 0;";
+  a2 = a2.replace(freezeAt, peak).replace('}, 900);', '}; __poll(); }, 900);');
   Object.defineProperty(g, 'setup', { value: a2, enumerable: true, configurable: true, writable: true });
+  g.settle = 6500;
+  g.criteria = g.criteria.replace('Locked front view of an aiming side-step', 'Locked front view of an aiming side-step, frozen at the top of the trailing (right) foot\'s swing');
 }
 {
   // V23 (fix round 1, plan §9: "wrap tail, knot tail, sash end and alidade
