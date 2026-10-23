@@ -1034,10 +1034,15 @@ const A108_FRAMES = [
   { name: 'the shelf from 6 m', cam: [-30, -20, 6, 60, -6, 46], crops: { mid68m: [0.6, 0.5], near23m: [0.5, 0.75] }, far: [] },
 ];
 /**
- * Witness crops for A108's sensitivity self-test (survey 2, docs/ROUND5-ENGINE.md §3.5): at the shipped
- * tier, DPR 1, the stock three centre sample raised the peak to 0.238 / 0.225 here while the shipped
- * shader read 0.100 / 0.122 and GTAO-off 0.111 / 0.102. They hold grass, which is why they are a
- * witness and not a graded crop (Round 4 excluded grass from the graded crops).
+ * Witness crops for A108's sensitivity self-test (survey 2, docs/ROUND5-ENGINE.md §3.6). They hold grass,
+ * which is why they are a witness and not a graded crop (Round 4 excluded grass from the graded crops).
+ * Crop 1 is the one that sees: at the shipped tier, DPR 1, with the engine's seeded denoise noise
+ * (GTAO_NOISE_SEED) the stock three centre sample reads 0.239 at lag 5,-29 against the shipped shader's
+ * 0.102 and GTAO-off 0.114, on every boot (fix round 4). Whether the stock lattice survives the Poisson
+ * denoise depends on the denoise's noise texture (fix round 4's survey: blind for 7 of 30 Math.random draws
+ * and 5 of 40 seeds, re-installed bytes reproduce each verdict exactly), which is why the engine seeds that
+ * texture and A108 asserts the seed. Crop 2 has never separated on this content (stock 0.127-0.130,
+ * shipped 0.124-0.127 in fix rounds 2-4); it stays as a reported row.
  */
 const A108_WITNESS = [
   { name: 'sand + grass below the shelf, 2 m up', cam: [50, 18, 2, 330, 3, 46], crop: [0.2, 0.8] },
