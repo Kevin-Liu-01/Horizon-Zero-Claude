@@ -1,7 +1,7 @@
 # ROUND 5 — lane `gates-perf`: W0a exit (R33) and W0b — fix round 3
 
 Port 5255. Tree `scratchpad/r5/gates-perf/tree` → `~/.calima-r5/trees/gates-perf`, branch `r5/w0a-gates-perf`.
-Oct 22–23 2026, 04:35Z–⟪END⟫Z.
+Oct 22–23 2026, 04:35Z–11:10Z.
 - Plan rows: §2 gates-perf, §1.2 harness grant, §3.1 W0a + W0b exits, §3.2 `gates.r5.carried.mjs`, §4.2 / §4.4,
   §6 (`reference/*.jpg`), §8.3 R33, R33 (g), R34, R44–R49, §9 gates-perf.
 - The orchestrator's WIP checkpoints committed earlier edits as they landed. This round's diff is the working tree against
@@ -27,12 +27,12 @@ block on the final seal code) is what §0 reports.
 
 | # | finding (severity) | what changed | measured on the final build |
 |---|---|---|---|
-| 1 | **R48 (b) instrument criteria not met for A-alloc-rate, A-vram-ledger, A90-abs: no sealed run, no self-tests, textures and buffers unattributed, no-src bytes unowned** (blocker + major) | <ul><li>**Sealed:** the harness now seals every run that executes one of the three rows, binding the report, the monitor (box sample), the run id (`CAL_RUN_ID`, quoted by each row) and the sha256 of the instrument code at load and at exit. `--instruments` verifies them.</li><li>**Self-tests:** A-alloc-rate plants a known allocator at a src URL and outside src (CDP Fetch; nothing written under `src/`), and tests its own baseline guard. A-vram-ledger creates a render target, a texture and a geometry of exactly known bytes and disposes them. A90-abs makes a known JS-heap delta and a known GPU allocation.</li><li>**Attribution:** A-alloc-rate charges every no-src byte to a named bucket, and src + buckets sum to the byte. A-vram-ledger resolves every GL object to a ledger row, a scene root or a context-graph holder, and anything left goes to an explicit `unattributed` row. A90-abs splits the GPU footprint by lane, canvas and the browser's GPU-process remainder, and attributes heap growth by a live-object profile.</li><li>**Bars** are reported in full with `binding`; they bind at 5270 (R48 b/c). B.1 has the details.</li></ul> | All three rows report **instrument PASS** in every run of the final build (lane blocks `p5255-92940-…` and ⟪LANESEAL⟫, suite `p5255-22029-…`). <ul><li>A-alloc-rate: planted allocator 1.002 / 1.007 x in src and 0.997 / 1.017 x outside src.</li><li>A-vram-ledger: control 843,156 / 8,192 / 1,500 B seen and attributed exactly, disposed back to 0; 0 B unattributed; render targets fully claimed by 23 ledger rows.</li><li>A90-abs: heap control 1.008 / 1.001 x; GPU control 1.485 / 1.058 x.</li></ul>`--instruments` on the final source: ⟪CLI⟫. The bars still fail on other lanes' code and are graded at 5270 (§0, B.2). |
+| 1 | **R48 (b) instrument criteria not met for A-alloc-rate, A-vram-ledger, A90-abs: no sealed run, no self-tests, textures and buffers unattributed, no-src bytes unowned** (blocker + major) | <ul><li>**Sealed:** the harness now seals every run that executes one of the three rows, binding the report, the monitor (box sample), the run id (`CAL_RUN_ID`, quoted by each row) and the sha256 of the instrument code at load and at exit. `--instruments` verifies them.</li><li>**Self-tests:** A-alloc-rate plants a known allocator at a src URL and outside src (CDP Fetch; nothing written under `src/`), and tests its own baseline guard. A-vram-ledger creates a render target, a texture and a geometry of exactly known bytes and disposes them. A90-abs makes a known JS-heap delta and a known GPU allocation.</li><li>**Attribution:** A-alloc-rate charges every no-src byte to a named bucket, and src + buckets sum to the byte. A-vram-ledger resolves every GL object to a ledger row, a scene root or a context-graph holder, and anything left goes to an explicit `unattributed` row. A90-abs splits the GPU footprint by lane, canvas and the browser's GPU-process remainder, and attributes heap growth by a live-object profile.</li><li>**Bars** are reported in full with `binding`; they bind at 5270 (R48 b/c). B.1 has the details.</li></ul> | All three rows report **instrument PASS** in every run of the final build (lane blocks `p5255-92940-…` and `p5255-62658-1792752906245`, suite `p5255-22029-…`). <ul><li>A-alloc-rate: planted allocator 1.015 / 1.002 / 1.007 x in src and 1.027 / 0.997 / 1.017 x outside src (final lane block / 09:45Z lane block / suite).</li><li>A-vram-ledger: control 843,156 / 8,192 / 1,500 B seen and attributed exactly, disposed back to 0; 0 B unattributed; render targets fully claimed by 23 ledger rows.</li><li>A90-abs: heap control 0.997 / 1.008 / 1.001 x; GPU control 1.011 / 1.485 / 1.058 x.</li></ul>`--instruments` on the final source: `OK: newest fresh seal p5255-62658-1792752906245`, all three rows instrument PASS, run id bound, build and instrument source unchanged. The bars still fail on other lanes' code and are graded at 5270 (§0, B.2). |
 | 2 | **A-reference-set graded only 8 of 37 visual rows** (major) | <ul><li>The gate now grades every visual row of every lane file, SKIP-replaced rows included; R49's in-sheet controls are accepted for engine-gpu's V20, V33b and V-gpu-tier-look only.</li><li>24 new licence-clean references were fetched by the Commons fetcher (37 in all; B.3), and the 24 rows that named none now name theirs.</li></ul> | **PASS**: 37/37 visual rows of every lane file name a licence-clean reference (was 8 graded). A-reference-clean **PASS** (37 images, every one with a row). |
 | 3 | **A9 FAILed on a contended GPU that R45 does not count as quiet** (major) | <ul><li>The fps term is graded only when the 1-min load is < 3 **and** no other gate Chrome is alive (A21's two-part test).</li><li>Otherwise the row reports `PENDING-quiet-box (R45)` whatever the median read, which is reported only.</li><li>Draws < 350 are graded on every box.</li><li>A-carried-suite reads that label as R45's: the offender is the orchestrator's 5270 run.</li></ul> | <ul><li>Full run: `PENDING-quiet-box (R45)` at load 4.12 with 1 other gate Chrome.</li><li>Suite: `PENDING-quiet-box` at load 3.60 with 0 other Chromes; it measured 59.9 fps and 309 draws, reported only.</li><li>Draws 309 < 350 in every run.</li><li>A-carried-suite lists A9 as `needsQuietBox` → orchestrator (R45).</li></ul> |
 | 4 | **A-alloc-rate has no per-owner baseline + 10 % guard (R46, R48 c); report §4 asked for refused grants** (major) | <ul><li>Per-owner rows (`MEMORY_BUDGETS.alloc.owners`, R48 (c)'s schedule verbatim).</li><li>`CAL_ALLOC_RECORD_BASELINE=1` (or `=merge`) writes `tools/gates/alloc-baseline.json`, with the box sample, from a run whose instrument passed.</li><li>With a baseline present, an owner fails when both its KB/frame and its KB/s exceed 1.10 x.</li><li>The absolute 4 KB/s per-function bar binds per owner from its `barsFrom` wave, and the 64 KB/s total once every owner has a date.</li><li>The guard's own controls run every time.</li><li>§4 now requests no grant: the frozen hot spots go to the §11 W1 perf-hygiene grant.</li></ul> | <ul><li>Lane runs: baseline absent, so the guard term is PENDING (recorded at 5270); no owner's scheduled bar is active at W0b, so it passes.</li><li>Guard self-test passes in every run.</li><li>Record → grade, tested end to end on an unchanged build: 15 of 17 owners within 1.10 x; two exceed it (B.4).</li></ul> |
 | 5 | **A-carried-suite ignored R47 and R48 (a, d)** (major) | <ul><li>A100–A107 are `skipReplaced` (melee W1, R47), listed by name.</li><li>A73's per-kind voice-seed clause is reported SKIP-replaced (audio W3, R48 a); every other clause is graded.</li><li>On any port but 5270 the gate returns **PENDING-orchestrator** with its offenders when every structural check holds and every offender is another lane's or ruled (A90b → instruments-core, R34; A9 with the R45 label → orchestrator; V21 → the orchestrator's judge). It FAILs on an offender this lane owns.</li></ul> | **PENDING-orchestrator** (lane block and alone). <ul><li>Offenders: A90b → instruments-core; A9 → orchestrator (R45); V21 → orchestrator's judge.</li><li>A100–A107: SKIP-replaced (melee W1).</li><li>A73: PASS on its graded clauses (167 buffers, 2.41 MB, CC0, 25/25 seeds, crit audible), voice seeds listed.</li><li>Tally: 97 pass, 35 skipShadowed, 61 listed (25 newly staged, none worse), 37 skipReplaced (29 visual + 8 R47), 1 skipR28, 2 skipR30, 1 regression (A90b), 1 needsQuietBox (A9), 1 awaitingJudge (V21).</li></ul> |
-| 6 | (found by this round's own first chain) | <ul><li>**A79-runner-verdict-line** FAILed once in the first suite. Its closed-fd self-test raced the harness's run-monitor worker, whose lsof/ps pipes can take a just-closed fd number. The contract is now exercised on a descriptor no process can hold, plus the closed fd when it is still closed.</li><li>**A-alloc-rate's planted allocator** read 1.341 x once. Its three-field objects allocated a different amount in optimised and unoptimised code; it is now one array of small integers (7,624 B per call in every tier).</li><li>**A-chrome-semaphore** FAILed once in the first lane block: three waiting child runs exited 1 with no trace. A diagnostic re-run passed 4 of 4. Each failed child now reports why, and a real preflight refusal while waiting (plan §0 rule 8) reports PENDING with the reading instead of FAIL. Any other failure still FAILs.</li></ul> | <ul><li>A79 PASS in the final full run and the suite (closed fd not reused, invalid fd reported).</li><li>A-alloc-rate controls 0.987–1.007 x in the five runs after the change.</li><li>A-chrome-semaphore PASS 4/4 real runs in both final lane blocks.</li><li>A71c (item 7) PASS in the final full run.</li></ul> |
+| 6 | (found by this round's own first chain) | <ul><li>**A79-runner-verdict-line** FAILed once in the first suite. Its closed-fd self-test raced the harness's run-monitor worker, whose lsof/ps pipes can take a just-closed fd number. The contract is now exercised on a descriptor no process can hold, plus the closed fd when it is still closed.</li><li>**A-alloc-rate's planted allocator** read 1.341 x once. Its three-field objects allocated a different amount in optimised and unoptimised code; it is now one array of small integers (7,624 B per call in every tier).</li><li>**A-chrome-semaphore** FAILed once in the first lane block: three waiting child runs exited 1 with no trace. A diagnostic re-run passed 4 of 4. Each failed child now reports why, and a real preflight refusal while waiting (plan §0 rule 8) reports PENDING with the reading instead of FAIL. Any other failure still FAILs.</li></ul> | <ul><li>A79 PASS in the final full run and the suite (closed fd not reused, invalid fd reported).</li><li>A-alloc-rate controls 0.987–1.027 x in the six runs after the change.</li><li>A-chrome-semaphore PASS 4/4 real runs in both final lane blocks.</li><li>A71c (item 7) PASS in the final full run.</li></ul> |
 | 7 | (found by this round's own second chain) | **A71c-hud-surfaces**, newly staged on the Tiller (R28), FAILed `plateOnMachine` once: from 26 m the Tiller's plate anchor sat on the ui-06 clamp floor at HUD scale 1.6, so every plate clamped. The row's own intent is a plate "comfortably clear of the melee clamp", so the stand-off is now the first of 26 / 34 / 44 m at which the staged machine's own plate is unclamped at 1.6, measured before anything is graded; the checks are unchanged. | 3/3 PASS in dev runs (stand-off 44 m; off-axis 0–1 px at both scales); PASS in the final full run. |
 
 ---
@@ -45,7 +45,7 @@ Final runs on port 5255 (every one on a loud box):
 |---|---|---|---|---|
 | sealed full carried run | `p5255-17628-1792745070068` | 08:44–09:44 | 236 rows: 153 pass, 6 fail, 40 pending, 37 frames | load max 6.65, quiet 2.9 % |
 | three sealed A50b partials | — | 09:44–09:45 | pass ×3 | — |
-| lane block | ⟪LANESEAL⟫ | ⟪LANETIME⟫ | ⟪LANESUM⟫ | ⟪LANEBOX⟫ |
+| lane block | `p5255-62658-1792752906245` | 10:55–11:06 | 13 rows: 12 pass, 1 PENDING (A-carried-suite, PENDING-orchestrator); instruments sealed and verified (`--instruments` OK) | load max 4.82, quiet 0 %, 1 other gate Chrome |
 | suite (24 rows; A-carried-suite apart), sealed | `p5255-22029-1792749334363` | 09:55–10:16 | 20 pass, 1 fail (A90b), 3 pending (A9, A21, A-licence-manifest) | load max 5.59, quiet 9 % |
 | A-carried-suite, in an invocation of its own | — | 10:16 | PENDING-orchestrator | — |
 
@@ -54,7 +54,7 @@ The 6 failing rows of the full run:
 - A90b (instruments-core).
 
 The suite and the first lane block of the final build (`p5255-92940-1792748710941`, 09:45Z) carry the same instrument
-results. After them I fixed one line in the seal code (§3 gap 9), so their instrument seals read as built from an older
+results. After them I fixed one line in the seal code (§3 gap 8), so their instrument seals read as built from an older
 source; the lane block above re-ran on the final source.
 
 | gate | result | measured |
@@ -62,14 +62,14 @@ source; the lane block above re-ran on the final source.
 | `A-gate-preludes` | **PASS** | 14/14 checks; 0 unstaged machine picks; annotated sites freeze 75, census 22, clear 9, cast 9, warm 1, mirror 1. Brand's and instruments-core's files are reported and graded at their own exits (R33 e). |
 | `A-gates-no-hero-literals` | **PASS** | 12 `tools/gate*.mjs` files, 0 hits |
 | `A-gates-autodiscover` | **PASS** | 8/8 checks |
-| `A-chrome-semaphore` | **PASS** | <ul><li>4 real runs at 1 slot: 4 PASS, 3 waited, at most 1 Chrome.</li><li>Stand-ins at 2 slots: at most 2 alive, 0 tickets left.</li><li>`kill -9` released in ⟪KILLMS⟫ ms.</li><li>4/4 preflight refusals at a simulated 2.5 GB / 20 %.</li><li>Write trace: 0 writes into the tree; positive control 6 ≥ 4.</li></ul> |
+| `A-chrome-semaphore` | **PASS** | <ul><li>4 real runs at 1 slot: 4 PASS, 3 waited, at most 1 Chrome.</li><li>Stand-ins at 2 slots: at most 2 alive, 0 tickets left.</li><li>`kill -9` released in 703 ms.</li><li>4/4 preflight refusals at a simulated 2.5 GB / 20 %.</li><li>Write trace: 0 writes into the tree; positive control 6 ≥ 4.</li></ul> |
 | `A-carried-suite` | **PENDING-orchestrator (R48 d)** | Offenders: A90b → instruments-core (R34); A9 → orchestrator (R45); V21 → the orchestrator's R29 judge. None is this lane's (A.3). |
 | `A-reference-clean` | **PASS** | 37 images, all with rows (22 PD, 5 CC0, 8 CC BY 2.0, 1 CC BY 3.0, 1 CC BY 4.0); the 19 deleted stills present 0 times by name and 0 by content |
 | `A-reference-set` | **PASS** | every visual row of every lane file names a reference: **37/37** (was 8 graded); classifier controls 10/10; the set verifies offline |
 | `A-perf-scenarios-self-contained` | **PASS** | vista, herd and staged-fight stage in a STAGE_PRELUDE-only scope; 0 helpers leaked |
-| `A-alloc-rate` | **instrument PASS** (R48 b); bars at 5270 | Planted allocator 1.002 x in src and 0.997 x outside src (lane), 1.007 / 1.017 x (suite). Every byte in a named owner. Baseline-guard self-test passed. Bars (not binding here): src total 121,775 KB/s vs 64; `noise2D` 18,173 KB/s vs 4; slope +145 / +20 KB/s. Scheduled bars at W0b: none active, pass. Baseline: absent until the 5270 run (B.2). |
+| `A-alloc-rate` | **instrument PASS** (R48 b); bars at 5270 | Planted allocator 1.015 x in src and 1.027 x outside src (final lane block), 1.002 / 0.997 x (09:45Z lane block), 1.007 / 1.017 x (suite). Every byte in a named owner. Baseline-guard self-test passed. Bars (not binding here): src total 131,114 KB/s in the final lane block (121,775 at 09:45Z, 105,841 in the suite) vs 64; `noise2D` 18,173 KB/s vs 4; slope +145 / +20 KB/s. Scheduled bars at W0b: none active, pass. Baseline: absent until the 5270 run (B.2). |
 | `A-vram-ledger` | **instrument PASS**; bars at 5270 | The control objects are seen and attributed to the byte (843,156 / 8,192 / 1,500 B) and dispose back to 0. Render targets: 437.75 MB attributed to 23 ledger rows, 0 mismatches. 0 B unattributed. 0.22 MB in two unnamed roots held by `ctx.combat` (B.2). Bars: render targets 437.75 MB > 170 and total 622.75 MB > 450, both failing; textures 105.46 MB and geometry 79.54 MB, both passing. |
-| `A90-abs` | **instrument PASS**; bars at 5270 | Heap control 1.008 x; GPU control 1.485 x, fell back 74.9 MB (lane); 1.001 x and 1.058 x (suite). Footprint split: GL 638.37 MB, canvas 25.92 MB, browser GPU process 863.11 MB. Bars: post-GC JS heap 79.85 MB (≤ 450) passes; GPU process 1,527.4 MB (> 1,500) fails, 1,384.3 MB at pixel ratio 1.25. |
+| `A90-abs` | **instrument PASS**; bars at 5270 | Heap control 0.997 x; GPU control 1.011 x, fell back 69.1 MB (final lane block). At 09:45Z 1.008 x and 1.485 x; in the suite 1.001 x and 1.058 x. Footprint split: GL 638.37 MB, canvas 25.92 MB, browser GPU process 863.11 MB. Bars: post-GC JS heap 79.77 MB (≤ 450) passes; GPU process 1,525.0 MB (> 1,500) fails (1,527.4 at 09:45Z, 1,524.1 in the suite); 1,384–1,389 MB at pixel ratio 1.25. |
 | `A-unattributed-cap` | **PASS** | 5 draws/frame (cap 5); hide cross-checks agree within 1 for every owner; 335 draws, post chain 22 |
 | `A-port-guard` | **PASS** | 16 refusals; the lsof control saw its own connection; 0 connections to :5173 over the lane block's monitor and every fresh sealed run's |
 
@@ -97,12 +97,13 @@ reads 0 unstaged picks; its annotated sites are freeze 75, census 22, clear 9, c
 
 | frame | read against | reading (advisory; R29 judges decide) |
 |---|---|---|
-| `V21-camera-cover.png` | criteria (1)–(4) and `reference/r5/gates-perf/chase-camera.jpg` (a walker seen from behind among tall trunks, nothing covering the figure) | <ol><li>The readout reads `boom requested 4.20 m -> 1.50 m | trunk r 0.35 m, 0.15 m off the boom axis | line of sight to the hero: CLEAR`.</li><li>Her head and braids, shoulders and upper back, the bow on her back (screen left) and the lance on her back (screen right) are readable, and nothing in the world is in front of her. The frame bottom crops her at mid-back, which the criteria allow.</li><li>No bark or leaf mass is in the centre: the nearest pine stands mid-ground, left of centre. The lens is in neither a trunk nor the ground.</li><li>The meadow under her and the valley floor below the massif are visible and level.</li></ol>Compared with `chase-camera.jpg`, it is the same read: a figure from behind and above, among trunks, uncovered. I read it as a PASS. The frame is the same composition as in every full run of this round (the row is deterministic; sha256 `244d711f…`). |
+| `V21-camera-cover.png` | criteria (1)–(4) and `reference/r5/gates-perf/chase-camera.jpg` (a walker seen from behind among tall trunks, nothing covering the figure) | <ol><li>The readout reads: boom requested 4.20 m -> 1.50 m; trunk r 0.35 m, 0.15 m off the boom axis; line of sight to the hero: CLEAR.</li><li>Her head and braids, shoulders and upper back, the bow on her back (screen left) and the lance on her back (screen right) are readable, and nothing in the world is in front of her. The frame bottom crops her at mid-back, which the criteria allow.</li><li>No bark or leaf mass is in the centre: the nearest pine stands mid-ground, left of centre. The lens is in neither a trunk nor the ground.</li><li>The meadow under her and the valley floor below the massif are visible and level.</li></ol>Compared with `chase-camera.jpg`, it is the same read: a figure from behind and above, among trunks, uncovered. I read it as a PASS. The frame is the same composition as in every full run of this round (the row is deterministic; sha256 `244d711f…`). |
 | `V13-aim-strafe.png` (SKIP-shadowed; hero-body grades it) | the row's own staging assertion (R33 g) | Front lens. She holds the bow upright in her left hand (screen right) in front of the shoulder; the lance is stowed diagonally on her back. She is mid side-step: the left foot is planted, the right one is lifted, heel up. No STAGING FAILED card. Whether the feet point toward the travel direction is for hero-body's judge to grade on Brea. |
 
 The other 35 frames are SKIP-replaced (29) or SKIP-shadowed (6 besides V13) and are not graded here. Each run's PNGs were
-deleted from `shots/` within 15 s of being written; the sealed copies are in the ledger (`ledger/runs/<run>/`), and
-`shots/` stayed ≤ a few MB (2.5–2.9 MB at every check; the first chain's cleaner did not start, and `shots/` reached 162 MB there, under the 200 MB cap) during the final chain.
+deleted from `shots/` within 15 s of being written, and the sealed copies are in the ledger (`ledger/runs/<run>/`).
+`shots/` read 2.5–2.9 MB at every check during the final chain. In the first chain the cleaner did not start, and `shots/`
+reached 162 MB, under the 200 MB cap.
 
 ## A.3 The carried suite, graded (R33, R47, R48)
 
@@ -515,8 +516,8 @@ Unchanged: `tools/gates.config.mjs` imports every `tools/gates.r5.*.mjs` by patt
    - V21 (awaiting the orchestrator's R29 judge; my advisory reading is a PASS, A.2).
 4. **The box.** Every run of this round was loud. The monitors read 1-min load up to 6.65, another lane's gate Chrome
    alive most of the time, and a quiet fraction of 3–20 % (against the baseline's 39 %). A-unattributed-cap, the instruments' self-tests and the
-   reference gates are box-independent by construction. The GPU control is the noisiest self-test, because the footprint is a process-wide reading. Over the 7 runs of
-   this round it read 0.946, 1.027, 1.058, 1.089, 1.292, 1.357 and 1.485 x against its 0.75–1.6 band, and the fall after dispose
+   reference gates are box-independent by construction. The GPU control is the noisiest self-test, because the footprint is a process-wide reading. Over the 8 runs of
+   this round it read 0.946, 1.011, 1.027, 1.058, 1.089, 1.292, 1.357 and 1.485 x against its 0.75–1.6 band, and the fall after dispose
    read 0.80–1.12 x. A run above 1.6 x would fail the instrument. On a quiet box it should be tighter; if it is not, grading the
    fall instead of the rise is the fix (§4).
 5. **Weak references.** `gathered-limbs.jpg` is a whole Muybridge plate (24 small frames on a margin). `ridge-skyline.jpg`
@@ -529,7 +530,7 @@ Unchanged: `tools/gates.config.mjs` imports every `tools/gates.r5.*.mjs` by patt
 8. **Instrument seals from before the final source.** The seal hook hashed the instrument code at module load before its
    hash helper was initialised, so it recorded null. Fixed with `createHash`, one line. As a result, the instrument seals of
    the final full suite (`p5255-22029-…`) and the first final lane block (`p5255-92940-…`) read "changed during the run" in
-   `--instruments`, although their rows passed. The lane block ⟪LANESEAL⟫ re-ran on the final source and is the verified seal.
+   `--instruments`, although their rows passed. The lane block `p5255-62658-1792752906245` re-ran on the final source and is the verified seal.
 9. **Carried over from earlier rounds:**
    - the semaphore write tracer does not see worker threads;
    - A-gates-autodiscover writes two probe lane files into `tools/` for about 1.5 s;
@@ -560,7 +561,7 @@ engine follow-up grant.
 
 ## 5. Files changed (this round)
 
-`git status --short` at the end of the round shows ⟪STATUS⟫. The orchestrator's WIP checkpoints (`46ab9ab` 04:55Z through
+`git status --short` at the end of the round shows only this report (the orchestrator's checkpoint `fa49b4d` at 11:06Z committed every code and reference change). The orchestrator's WIP checkpoints (`46ab9ab` 04:55Z through
 `09a016d` 08:55Z) committed the rest as it landed. This round's diff is `git diff fbb2a04 -- tools reference
 docs/ROUND5-GATES-PERF.md`: 30 files, about +1,124 / −157 (24 new JPEGs).
 
@@ -587,3 +588,29 @@ mine.
 No file outside the §2 row was edited. The harness grant files (`gates.mjs`, `screenshot.mjs`, `chrome-profile.mjs`) are
 untouched; their 40-line budget is spent. No asset was added under `public/`, so there is no `LICENSES.json` row: the
 references are tooling, never shipped, and their provenance is in their MANIFEST.
+
+## 6. Processes
+
+At the end of the turn (11:10Z):
+- this lane's Vite on 5255 is stopped (no listener on 5255);
+- no `gates.mjs`, `run-gates.sh`, chain, cleaner or diagnostic process of this lane is alive;
+- no Chrome of this lane, and 0 Chrome profiles of this lane under `$TMPDIR/cal-chrome-profiles`. The two there,
+  `cal-72750-5254-0` and `cal-92573-5252-0`, are instruments-core's and hero-body's; `chrome-semaphore` is the shared
+  semaphore root;
+- no machine slot held by gates-perf;
+- `shots/` holds the 4 report files (1.0 MB). Every PNG was deleted within 15 s of being written (the sealed copies are in
+  the ledger).
+- Disk: 44 GB free.
+
+Kept for the orchestrator and the judges, outside the tree:
+- the run ledger `scratchpad/r5/gates-perf/ledger/` (213 MB: `ledger.jsonl`, every sealed run's report copy and monitor, the
+  frames of the newest full runs including the final one's 37);
+- the run reports `scratchpad/r5/gates-perf/work/fr3*-*.report.json` (the final chain is `fr3c-*`, the final lane block
+  `fr3d-lane`);
+- the logs `scratchpad/r5/gates-perf/logs/fr3*`.
+
+Deleted:
+- the dev ledger (`ledger-dev/`, the dev seals of this round's diagnostic runs);
+- the reference-candidate thumbnails;
+- the judge scratch `judge-fr3/`;
+- the scratch baseline file of the B.4 test.
