@@ -80,6 +80,7 @@ export const LAMP_STATES = Object.freeze({
 });
 export const LAMP_ORDER = Object.freeze(['calm', 'wary', 'hostile', 'dark']);
 const AP_CALM = LAMP_STATES.calm.aperture, AP_WARY = LAMP_STATES.wary.aperture, AP_HOSTILE = LAMP_STATES.hostile.aperture;
+let BEAM_GAIN_WARY = 1, BEAM_GAIN_HOSTILE = 1, BEAM_FLICKER_LOW = 0.65;   // set from BEAM below
 /** The tokens as numbers (three.js colour ints), for materials that take a hex. */
 export const LAMP_HEX = Object.freeze(Object.fromEntries(LAMP_ORDER.map((s) => [s, parseInt(LAMP_STATES[s].token.slice(1), 16)])));
 /**
@@ -98,7 +99,17 @@ export const BEAM = Object.freeze({
   segments: 64,         // triangles per cone
   sweepDeg: 14,         // wary sweep amplitude about the stimulus bearing
   capacity: 128,
+  /* FIX ROUND 3 (judge-r3: the magenta lock shaft did not read in the beam films). Per state, the beam's
+   * additive gain over the lens token: the wary chartreuse carries 2.7x the luminance of the cochineal magenta at
+   * the same gain (linear Y 0.665 vs 0.250), so the hostile shaft gets 2.2x to read beside it — measured in its own
+   * film frame (A-film-beams-*-probe): magenta over the dark night ground and over the warm ground of a bright fog. */
+  gainWary: 1.0,
+  gainHostile: 2.2,
+  /** The beam keeps the lens's 4 Hz flicker, but its trough is 0.65 (the lens dips to 0.3): a lock is never gone. */
+  flickerLowHostile: 0.65,
 });
+
+BEAM_GAIN_WARY = BEAM.gainWary; BEAM_GAIN_HOSTILE = BEAM.gainHostile; BEAM_FLICKER_LOW = BEAM.flickerLowHostile;
 
 /** Fraction of the face radius the fully open aperture reaches (the dark drum face is outside it). */
 export const APERTURE_MAX = 0.66;
@@ -389,13 +400,13 @@ const IRIS_FRAG = /* glsl */`
 `;
 
 const BEAM_VERT = /* glsl */`
-  attribute vec4 aBeam;   // rgb: colour x intensity
+  attribute vec4 aBeam;   // rgb: colour x intensity; a: the fraction of the full beam length this cone covers
   varying vec3 vCol;
   varying float vZ;
   varying float vEdge;
   void main() {
     vCol = aBeam.rgb;
-    vZ = position.z;                       // 0 at the lens, 1 at the far end
+    vZ = position.z * aBeam.a;             // 0 at the lens, 1 at the full beam's far end (a cut lock stops short of it)
     vec4 mv = modelViewMatrix * instanceMatrix * vec4(position, 1.0);
     // the instance matrix scales the unit cone NON-uniformly (radius x radius x length): a normal
     // goes through the inverse scale (R S^-1 n == M (n / s^2)), or a long thin cone's normals all
@@ -718,7 +729,9 @@ export class LampSystem {
     const L = this._aLamp.array, I = this._aIris.array, K = this._aCore.array, B = this._aBeam.array;
     const air = this.fogK > BEAM.fogK || this.night > BEAM.night;
     let scale = -1;                         // perceptionScale, read only if a beam is drawn
-    const fk = this.fogK - 1, fb0 = 0.6 + 0.8 * (fk > 0 ? fk : 0) + 0.9 * this.night, fogBoost = fb0 < 2.5 ? fb0 : 2.5;
+    // the air carries more light the denser it is (fix round 3: fog term 0.8 -> 1.0 per unit of density over 1, so a
+    // shaft still reads over a bright fogged ground; night unchanged)
+    const fk = this.fogK - 1, fb0 = 0.6 + 1.0 * (fk > 0 ? fk : 0) + 0.9 * this.night, fogBoost = fb0 < 2.5 ? fb0 : 2.5;
     let n = 0, nb = 0;
     for (let i = 0; i < recs.length; i++) {
       const r = recs[i];
@@ -777,8 +790,11 @@ export class LampSystem {
         r.bmode = beamKind;
         r.bt = t;
         r.bslot = nb;
-        const LA = this._linA, k = 0.22 * fogBoost * stateGain;
+        // the beam's own gain: the state's (luminance-matched) gain x the rhythm, the hostile trough raised
+        const bRhythm = si === 2 ? (stateGain >= 1 ? 1 : BEAM_FLICKER_LOW) : stateGain;
+        const LA = this._linA, k = 0.22 * fogBoost * bRhythm * (si === 2 ? BEAM_GAIN_HOSTILE : BEAM_GAIN_WARY);
         const ob = nb * 4;
+        // .w = the fraction of the full beam length this cone covers (a lock is cut where it meets her: see _writeMatrices)
         B[ob] = LA[si * 3] * k; B[ob + 1] = LA[si * 3 + 1] * k; B[ob + 2] = LA[si * 3 + 2] * k; B[ob + 3] = 1;
         r.beamOn = true;
         nb++;
@@ -813,7 +829,7 @@ export class LampSystem {
     const f = E ? E.frames : -1;
     if (f === this._matFrame && f !== -1) return;
     this._matFrame = f;
-    const recs = this.records, im = this.lampMesh.instanceMatrix.array, bm = this.beamMesh.instanceMatrix.array;
+    const recs = this.records, im = this.lampMesh.instanceMatrix.array, bm = this.beamMesh.instanceMatrix.array, Bw = this._aBeam.array;
     const player = HOT.pOk === 1 ? HOT.ppos : null;   // her position this frame (lib/hot.js)
     let lamps = 0, beams = 0;
     for (let i = 0; i < recs.length; i++) {
@@ -840,6 +856,7 @@ export class LampSystem {
         _t.copy(_z).applyQuaternion(_q).multiplyScalar(10).add(_p);
       }
       _d.subVectors(_t, _p);
+      const tgtLen = _d.length();
       if (_d.lengthSq() < 1e-6) _d.copy(_z).applyQuaternion(_q);
       _d.normalize();
       if (r.bmode === 'sweep') {
@@ -849,7 +866,13 @@ export class LampSystem {
       }
       if (!r.dirSet) { r.dir.copy(_d); r.dirSet = true; }
       r.dir.lerp(_d, 0.2).normalize();
-      const len = r.blen, brad = len * Math.tan(BEAM.halfAngleDeg * Math.PI / 180);
+      /* A LOCK ENDS ON HER (fix round 3; bible §7.2 "on, locked on the target"). Its length is the sight range x
+       * the weather scale, cut where the beam meets her (her body takes the light): the cone covers min(length,
+       * distance to her chest), and `aBeam.w` carries the covered fraction so the fade along it is the full beam's
+       * (brightest at the lens, as bright where it reaches her as the uncut beam would be there). */
+      const full = r.blen, cut = r.bmode === 'lock' && player && tgtLen > 0.5 && tgtLen < full ? tgtLen : full;
+      Bw[r.bslot * 4 + 3] = cut / full;
+      const len = cut, brad = len * Math.tan(BEAM.halfAngleDeg * Math.PI / 180);
       _qs.setFromUnitVectors(_z, r.dir);
       _s.x = brad; _s.y = brad; _s.z = len;
       _m.compose(_p, _qs, _s);
@@ -857,7 +880,7 @@ export class LampSystem {
       beams++;
     }
     if (lamps) this.lampMesh.instanceMatrix.needsUpdate = true;
-    if (beams) this.beamMesh.instanceMatrix.needsUpdate = true;
+    if (beams) { this.beamMesh.instanceMatrix.needsUpdate = true; this._aBeam.needsUpdate = true; }
   }
 
   audit() {
