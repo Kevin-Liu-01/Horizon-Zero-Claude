@@ -89,8 +89,17 @@ export const CHAINS = {
     // left shoulder blade (the cloth's own stiffness, kept by the spring rest),
     // so it fills the left neck notch from behind and trails behind the nape
     // from the side
-    points: [[0.052, 1.678, -0.116], [0.085, 1.615, -0.175], [0.110, 1.548, -0.222], [0.128, 1.478, -0.258],
-      [0.140, 1.405, -0.282], [0.148, 1.330, -0.296], [0.152, 1.255, -0.302]],
+    // Fix round 5 (judge r2, V-brea-one-glance cue 2: "the tail cannot be
+    // separated from the stowed bow's upper limb" in the 64 px black fill): the
+    // WRAPPED ROOT — the knotted first 0.17 m — leaves the knot out to the
+    // LEFT-REAR and nearly level (the old line, rotated 0.55 rad out and 0.35
+    // rad back about the knot), stiff in the solver (class 'wrap', rootK 8),
+    // and the free strip hangs from it (the lower four links turned 0.40 /
+    // 0.25 rad back toward the vertical): in calm air the tail now stands
+    // 0.12 m off the side of the head and 0.23 m behind it, outside the bow's
+    // limb line, and the trade wind streams the free end out from there
+    points: [[0.052, 1.678, -0.116], [0.113, 1.664, -0.184], [0.169, 1.639, -0.243], [0.201, 1.577, -0.284],
+      [0.226, 1.510, -0.314], [0.246, 1.439, -0.336], [0.260, 1.366, -0.350]],
   },
   sashEnd: {
     parent: 'pelvis',
@@ -318,9 +327,13 @@ export async function build({ out = ROOT } = {}) {
   // the wrap knot the tail leaves from, back-left
   const k0 = CHAINS.wrapSash.points[0];
   appendGeo(geo, bun([k0[0] - 0.006, k0[1] + 0.012, k0[2] + 0.014], { rx: 0.026, ry: 0.022, rz: 0.020, seg: 8, rings: 5, joint: head, uvRect: R.violetDeep, ridges: 2 }));
-  // the wrap tail: 0.53 x 0.10 m cloth strip, violet out, carmine lining in
+  // the wrap tail: 0.49 x 0.10 m cloth strip, violet out, carmine lining in.
+  // Fix round 5: the width leans UP across the level root (side vector half
+  // vertical) so the knotted root shows its face, not its edge, to a front or
+  // a side lens; down the hanging strip it spans left-rear (the vertical share
+  // drops out against a vertical tangent)
   appendGeo(geo, stripAlong(CHAINS.wrapSash.points, chainIdx.wrapSash.slice(0, -1), {
-    along: 16, width: (u) => 0.100 * (1 - 0.2 * u), side: [0.92, 0, 0.39], uvFront: R.violet, uvBack: R.carmine, thick: 0.004, curl: 0.06,
+    along: 16, width: (u) => 0.100 * (1 - 0.2 * u), side: [0.55, 0.65, 0.5], uvFront: R.violet, uvBack: R.carmine, thick: 0.004, curl: 0.06,
   }));
   // the knot tail: a short tuft of coils out of the topknot, lofted tube 0.22 m
   appendGeo(geo, tubeAlong(CHAINS.hairKnotTail.points, chainIdx.hairKnotTail.slice(0, -1), {

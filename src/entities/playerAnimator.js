@@ -404,7 +404,14 @@ const CLIMB_CATCH = 0.07;
  * `wrap` is reachable only through a rig profile's `chainClasses` (no Round-4
  * regex names it). Brea: `{ wrap: '^dyn_wrapSash' }`.
  */
-DYN_CLASSES.push({ name: 'wrap', re: /(?!)/, stiff: 42, drag: 4.2, grav: 0.42, maxAng: 0.62, strike: 0.7, base: 0.30, collide: 2, wind: 2.3, rootK: 5 });
+/* fix round 5 (judge r2, V-brea-one-glance cue 2): the strip couples to the
+ * air about twice as hard (`wind` 2.3 -> 4.5 1/s: at the trade wind's 5.5 m/s
+ * the free end stands ~70 deg off the vertical, where a cloth tail in a
+ * moderate breeze flies — it hung at 41-62 and lay along the stowed bow's
+ * limb in the 64 px black fill), and the wrapped root is stiffer (`rootK`
+ * 5 -> 8) so the knotted section holds the recipe's new left-rear line (brea.mjs
+ * CHAINS.wrapSash) while the free end moves. */
+DYN_CLASSES.push({ name: 'wrap', re: /(?!)/, stiff: 42, drag: 4.2, grav: 0.42, maxAng: 0.62, strike: 0.7, base: 0.30, collide: 2, wind: 4.5, rootK: 8 });
 /** Air coupling per Round-4 class (1/s; 0 = none). Hair a little, cloth some, gear none. */
 const DYN_WIND = { hair: 0.22, necklace: 0, dangle: 0.15, cloth: 0.55, gear: 0, shirt: 0 };
 /** The default world wind (bible §2.2: the NE trade wind from bearing 045; north = -Z, east = +X). */
@@ -545,6 +552,10 @@ export class PlayerAnimator {
       // its middle knuckle is within `knuckleNock` m of the nock (see `_aimLayer`)
       behindNockDownY: tn?.behindNockDownY ?? null,
       knuckleNock: tn?.knuckleNock ?? null,
+      // R5 fix round 5 (0 = the Round-4 behaviour): the down aim bends the
+      // whole T — head and neck turned before the trunk pitch, extra hip fold
+      // and the head's give-back of it (see `_aimLayer`)
+      downHeadT: tn?.downHeadT ?? 0, downBend: tn?.downBend ?? 0, downBendHead: tn?.downBendHead ?? 0,
     };
     this.bowSolve = prof?.bow || null;
     /* M10 (E3): the spring-side capsule on the DRAW hand + forearm. */
@@ -3363,6 +3374,25 @@ export class PlayerAnimator {
     // the gate pitches while rising 5 cm).
     const PS = this.T.pitchShare;
     const rotP = this._rotPitch;                  // a method, not a per-frame closure
+    /* R5 fix round 5 — THE DOWN AIM BENDS THE WHOLE T (judge r2, V24-draw-down:
+     * "the draw forearm is 64 deg off the arrow and the fist sits over the
+     * ear"). The trunk took the aim pitch about the character's lateral axis,
+     * but the neck and head turned back to face the target AFTER it, about the
+     * vertical — which unwinds most of the pitch out of the head: at the 0.75
+     * down aim the shoulder line tilted 45 deg while the head looked only ~20
+     * deg down, so the head-glued anchor rode 0.05 m OVER the draw shoulder and
+     * the forearm climbed to it (probe `tform`). `downHeadT` (0..1) turns the
+     * neck and head to the target BEFORE the pitch at down aims, so the pitch
+     * carries the head, the anchor and both arms together — an archer bending
+     * at the hips; `downBend` (rad per rad of down pitch) folds the hips a
+     * little further than the arrow, and the neck / head give that much back
+     * so the eyes stay on the arrow (`downBendHead`). Both 0 = Round 4. */
+    const dnK = smoothstep(pitch, 0.1, 0.5) * aimW;
+    const dHT = (this.T.downHeadT ?? 0) * dnK;
+    const nYaw = -chestYaw * 0.45 - bladeCorr, hYaw = -chestYaw * 0.6;
+    if (dHT > 1e-4) { this._rotL(b.neck1, Y_AXIS, nYaw * dHT); this._rotL(b.head, Y_AXIS, hYaw * dHT); }
+    const dBend = (this.T.downBend ?? 0) * Math.max(0, pitch) * dnK;
+    if (dBend > 1e-4) rotP(b.spine1, dBend);
     rotP(b.spine2, pitch * PS[0] * aimW);
     rotP(b.spine3, pitch * PS[1] * aimW);
     rotP(b.spine4, pitch * PS[2] * aimW);
@@ -3412,10 +3442,10 @@ export class PlayerAnimator {
     }
 
     // head: face the target (counter the chest blade), carry the aim pitch
-    this._rotL(b.neck1, Y_AXIS, -chestYaw * 0.45 - bladeCorr);
-    this._rotL(b.head, Y_AXIS, -chestYaw * 0.6);
-    rotP(b.neck1, pitch * PS[3] * aimW);
-    rotP(b.head, pitch * PS[4] * aimW);
+    this._rotL(b.neck1, Y_AXIS, nYaw * (1 - dHT));
+    this._rotL(b.head, Y_AXIS, hYaw * (1 - dHT));
+    rotP(b.neck1, pitch * PS[3] * aimW - dBend * (this.T.downBendHead ?? 0) * 0.45);
+    rotP(b.head, pitch * PS[4] * aimW - dBend * (this.T.downBendHead ?? 0) * 0.55);
 
     const sp = Math.sin(pitch), cp = Math.cos(pitch);
     const cmb = this.ctx.combat;

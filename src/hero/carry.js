@@ -61,6 +61,7 @@ const R10 = {
   camGap: 0.42,                     // while aiming: the upper shaft >= this far (NDC, aspect-true) from the head + anchor on screen (V4)
   planeGap: 0.03,                   // blade behind the head's frontal plane
   rate: 14,                         // ease toward the chosen (alpha, beta), 1/s
+  degW: 4,                          // weight of the R10 band's upper-edge violation (fix round 5: its 1.3 deg of margin costs what the blade's 3-5 cm do)
   torsoA: 0.19, torsoB: 0.15,       // the torso's elliptic section round the pelvis->neck line (side, front/back) + 2 cm
   legGap: 0.10,                     // thigh / shin axes (free search)
   armGapFree: 0.07,                 // both arms' axes (free search: they are on the ledge)
@@ -193,6 +194,7 @@ export class LanceCarry {
     this.dF0 = dF;
     this.alpha = this.alpha0; this.beta = 0;
     this.k3 = 0.25;                       // spine_03's share of the lateral axis (run)
+    this.bounds = R10;                    // (probes / gates read the live bounds)
     this.out = { deg: 0, alpha: 0, beta: 0, tipBehindHeadPlane: 0, headGap: 0, armGap: null, feasible: true, active: false, mode: 'strap' };
     this._freeT = Infinity;               // s since the free (climb) search last ran
     this.butt = new THREE.Vector3(); this.tip = new THREE.Vector3();   // last solved (char space)
@@ -244,6 +246,7 @@ export class LanceCarry {
     // keep-outs: the skull and its frontal plane; the draw arm while aiming
     const R = an.skull(_hc, _hf);
     const headR = Math.max(R.x, R.y, R.z);
+    this._headR = headR; this._armOn = armOn;
     if (armOn) { _cp(an.b.upArmR.bone, _a0); _cp(an.b.loArmR.bone, _a1); _cp(an.b.handR.bone, _a2); }
     // V4: while aiming, the over-the-shoulder camera looks past her head at the
     // anchor; the upper shaft keeps out of that part of the screen
@@ -292,6 +295,31 @@ export class LanceCarry {
         const viol = this._viol(_b, _t, headR, armOn);
         const cost = viol * 100 + Math.abs(alpha - this.alpha0) + 1.5 * beta;
         if (cost < best) { best = cost; bA = alpha; bB = beta; bFeas = viol === 0; }
+      }
+    }
+    /* R5 fix round 5 (judge r2, A-lance-stow: crouch-walk 40.011 deg against
+     * R10's 40 on one run in three). The 16 x 14 grid steps alpha by 4.0 deg
+     * and beta by 4.6; crouched (the trunk pitched 35-40 deg forward) no grid
+     * point held every bound, and the nearest one paid for the blade's height
+     * over the shoulder with the band's 1.3 deg of margin — 38.8-39.8 deg
+     * crouch-walking, 42 crouch-strafing (probe `lance2`). A PATTERN SEARCH
+     * from the best grid point (step halving, <= 12 rounds of 4 trial poses)
+     * finds the feasible pose between the grid points where one exists, and
+     * the band's upper edge is weighted (`degW`) like the blade's margins, so
+     * where none does the trade no longer spends the R10 band first. */
+    {
+      let sa = (R10.alphaMax - R10.alphaMin) / 30, sb = R10.betaMax / 26;
+      for (let it = 0; it < 12 && best > 0; it++) {
+        let moved = false;
+        for (let k = 0; k < 4; k++) {
+          const a = bA + (k === 0 ? sa : k === 1 ? -sa : 0), bb = bB + (k === 2 ? sb : k === 3 ? -sb : 0);
+          if (a < R10.alphaMin || a > R10.alphaMax || bb < 0 || bb > R10.betaMax) continue;
+          this._place(a, bb, _b, _t);
+          const viol = this._viol(_b, _t, headR, armOn);
+          const cost = viol * 100 + Math.abs(a - this.alpha0) + 1.5 * bb;
+          if (cost < best - 1e-9) { best = cost; bA = a; bB = bb; bFeas = viol === 0; moved = true; }
+        }
+        if (!moved) { sa *= 0.5; sb *= 0.5; if (sa < 0.002) break; }
       }
     }
     // ease (first frame: snap)
@@ -500,45 +528,70 @@ export class LanceCarry {
    * character's: a head pitched down tilts its plane back at the top), the
    * skull clearance along the upper shaft, the draw arm while aiming.
    */
-  _viol(b, t, headR, armOn) {
+  _viol(b, t, headR, armOn, parts = null) {
     _s.copy(t).sub(b).normalize();
     const deg = Math.acos(Math.min(1, Math.max(-1, _s.y)));
-    let viol = 0;
+    let viol = 0, v;
     if (deg < R10.degLo) viol += R10.degLo - deg;
-    if (deg > R10.degHi) viol += deg - R10.degHi;
+    if (deg > R10.degHi) viol += (deg - R10.degHi) * R10.degW;
+    if (parts) parts.deg = viol;
     // the blade over the right shoulder and right of the spine (A100)
     const bh = t.y - _shR.y;
+    v = viol;
     if (bh < R10.bladeLo) viol += (R10.bladeLo - bh) * 2; else if (bh > R10.bladeHi) viol += (bh - R10.bladeHi) * 2;
     const tr = -((t.x - _O.x) * _X.x + (t.y - _O.y) * _X.y + (t.z - _O.z) * _X.z);
     if (tr < R10.tipRight) viol += (R10.tipRight - tr) * 2;
+    if (parts) parts.blade = viol - v;
     // the midpoint on the upper back (A100's surface centre: spine_03 pushed 0.13 m back)
     const mx = (b.x + t.x) * 0.5 - _back.x, my = (b.y + t.y) * 0.5 - _back.y, mz = (b.z + t.z) * 0.5 - _back.z;
     const md = Math.sqrt(mx * mx + my * my + mz * mz);
+    v = viol;
     if (md > R10.midBall) viol += (md - R10.midBall) * 3;
+    if (parts) parts.mid = viol - v;
     _tmp.copy(t).sub(_hc);
     const plane = Math.max(_tmp.dot(_hf), _tmp.z) + R10.planeGap;
+    v = viol;
     if (plane > 0) viol += plane * 3;
+    if (parts) parts.plane = viol - v;
     _tmp2.copy(b).lerp(t, 0.45);
     const hg = ptSeg(_hc, _tmp2, t) - headR;
+    v = viol;
     if (hg < R10.headGap) viol += (R10.headGap - hg) * 3;
+    if (parts) parts.head = viol - v;
+    v = viol;
     if (armOn) {
       const ag = Math.min(segSeg(b, t, _a0, _a1), segSeg(b, t, _a1, _a2)) - 0.05;
       if (ag < R10.armGap) viol += (R10.armGap - ag) * 3;
     }
+    if (parts) parts.arm = viol - v;
+    v = viol;
     if (this._camOn) {
       const cg = this._camGap(b, t);
       if (cg < R10.camGap) viol += (R10.camGap - cg) * 0.5;
     }
+    if (parts) parts.cam = viol - v;
+    v = viol;
     if (this._nTail > 0) {
       const tg = this._tailGap(b, t);
       if (tg < R10.tailGap) viol += (R10.tailGap - tg) * 3;
     }
+    if (parts) parts.tail = viol - v;
+    v = viol;
     if (this._terr) {
       _w0.copy(b).applyMatrix4(this.player.model.matrixWorld);
       const gg = _w0.y - this._terr.getHeight(_w0.x, _w0.z) - 0.05;
       if (gg < R10.groundGap) viol += (R10.groundGap - gg) * 3;
+      if (parts) parts.groundGapM = gg;
     }
+    if (parts) parts.ground = viol - v;
     return viol;
+  }
+
+  /** Cold path (probes / gates): the last solved pose's violation, term by term. */
+  debugViol() {
+    const parts = {};
+    parts.total = this._viol(this.butt, this.tip, this._headR ?? 0.1, !!this._armOn, parts);
+    return parts;
   }
 
   /** Smallest distance from the shaft to the knot-tail / wrap-tail segments (char), less the shaft's radius. */
