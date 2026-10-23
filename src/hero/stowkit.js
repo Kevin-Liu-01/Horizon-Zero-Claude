@@ -124,10 +124,20 @@ export class HeroStowKit {
    * the carry solve. Off while the stowed lance is collapsed (drawn).
    */
   solve(an, dt) {
+    const SC = an?._stowCap;
+    if (SC) SC.on = false;
     if (!this.carry || !this.attached || !an?.skull) return;
     if (this.hidden & PIECE.lance) { if (this.carry.out.active) this.carry.reset(); return; }
     const aimW = an.aimWeight ?? 0;
     this.carry.update(an, aimW, aimW > 0.05, dt, this.player.ctx?.camera || null);
+    // fix round 5: hand the solved shaft to the spring solver (world), so no
+    // dyn_ chain — the wrap tail, the knot tail — passes through the lance
+    if (SC) {
+      const m = this.player.model.matrixWorld;
+      SC.a.copy(this.carry.butt).applyMatrix4(m);
+      SC.b.copy(this.carry.tip).applyMatrix4(m);
+      SC.on = true;
+    }
   }
 
   /** The carry solve's last report (gate A-lance-stow), or null. */
@@ -152,6 +162,8 @@ export class HeroStowKit {
   }
 
   detach() {
+    const SC = this.player?.animator?._stowCap;
+    if (SC) SC.on = false;                    // fix round 5: no stale lance capsule in the spring solver
     if (!this.attached) return { skeletons: 0 };
     const r = releasePart(this.meshes, this.player);
     this.meshes = [];

@@ -56,7 +56,7 @@ const R10 = {
   pivot: 0.30,                      // beta's pivot, fraction of the lance from the butt
   headGap: 0.07,                    // skull (ellipsoid's largest semi-axis) clearance
   armGap: 0.07,                     // draw-arm clearance while aiming
-  tailGap: 0.07,                    // the knot tail / wrap tail segments vs the shaft (A100's "ponytail clearance")
+  tailGap: 0.085,                   // the knot tail / wrap tail segments vs the shaft (A100's "ponytail clearance", 0.06; fix round 5: 0.07 -> 0.085, the leaned-back up aim sat on it)
   groundGap: 0.06,                  // the bob over the terrain (A-stow-clearance: crouched)
   camGap: 0.42,                     // while aiming: the upper shaft >= this far (NDC, aspect-true) from the head + anchor on screen (V4)
   planeGap: 0.03,                   // blade behind the head's frontal plane
