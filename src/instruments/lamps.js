@@ -800,14 +800,15 @@ export class LampSystem {
         r.bmode = beamKind;
         r.bt = t;
         r.bslot = nb;
-        // the beam's own gain: the state's (luminance-matched) gain x the rhythm, the hostile trough raised
-        const bRhythm = si === 2 ? (stateGain >= 1 ? 1 : BEAM_FLICKER_LOW) : stateGain;
-        const LA = this._linA, k = 0.22 * fogBoost * bRhythm * (si === 2 ? gainH : BEAM_GAIN_WARY);
-        const ob = nb * 4;
+        // the beam's own gain: the state's (luminance-matched) gain x the rhythm, the hostile trough raised.
         // .w = the fade exponent along the cone: a sweep fades as along^2; a lock, which ends on her, as along^0.5 —
         // to nothing where it meets her, but carrying its colour most of the way (measured in the fog film: with a
         // linear fade the half nearest her lost its magenta over the warm ground; see _writeMatrices)
-        B[ob] = LA[si * 3] * k; B[ob + 1] = LA[si * 3 + 1] * k; B[ob + 2] = LA[si * 3 + 2] * k; B[ob + 3] = si === 2 ? 0.5 : 2;
+        const bRhythm = si === 2 ? (stateGain >= 1 ? 1 : BEAM_FLICKER_LOW) : stateGain;
+        const fadeP = si === 2 ? 0.5 : 2;
+        const LA = this._linA, k = 0.22 * fogBoost * bRhythm * (si === 2 ? gainH : BEAM_GAIN_WARY);
+        const ob = nb * 4;
+        B[ob] = LA[si * 3] * k; B[ob + 1] = LA[si * 3 + 1] * k; B[ob + 2] = LA[si * 3 + 2] * k; B[ob + 3] = fadeP;
         r.beamOn = true;
         nb++;
       } else {
