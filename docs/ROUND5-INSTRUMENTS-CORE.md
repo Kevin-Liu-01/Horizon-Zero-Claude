@@ -45,10 +45,17 @@ shadow rows change id from `<id>@ic` to `<id>` by themselves (`shadowId()` reads
 
 ## W0b FIX ROUND 2 (Oct 22 2026) — what changed, by judge finding, with numbers
 
-Three findings. Finding 3 (`A-weak40`) is fixed in the gate. Findings 1 and 2 (the memory rule on this
-lane's frames) are fixed in the code for every frame whose allocation this lane causes; what is left
-over the 4 KB/s bar is code this lane may not edit, and the gate now names it, proves it and fails on it
-until the orchestrator records a ruling (below). No bar moved; the allocation gate got stricter.
+Three findings. No bar moved; the allocation gate got stricter.
+- **Finding 3 (`A-weak40`) is fixed in the gate.** It grades min(glass vs face, glass vs hull) = 5.15 : 1,
+  and calima is PENDING, never PASS.
+- **Findings 1 and 2 (the memory rule on this lane's frames): `A-alloc-machines` still FAILS.**
+  - In steady state every frame this lane's own code allocates in is now ≤ 4 KB/s, in five of the six
+    windows of every final run.
+  - **One window still fails, every time:** the one where the player first sprints. `updateEyesM`
+    reaches 737–1,006 KB/s there after a GC deopts it, and I did not find what ties it to that GC.
+  - **The rest over the bar is code this lane may not edit** (legacy species files, frozen readers of the
+    accessors, frozen code V8 inlines into this lane's frames). The gate names it, proves it with a paired
+    no-inline run, and fails on it until the orchestrator records a ruling (below).
 
 ### Finding 3 — `A-weak40` graded two shader constants; calima was folded into PASS
 
