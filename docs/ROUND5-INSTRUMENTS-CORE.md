@@ -51,8 +51,8 @@ Three findings. No bar moved; the allocation gate got stricter.
 - **Findings 1 and 2 (the memory rule on this lane's frames): `A-alloc-machines` still FAILS.**
   - In steady state every frame this lane's own code allocates in is now ≤ 4 KB/s, in five of the six
     windows of every final run.
-  - **One window still fails, every time:** the one where the player first sprints. `updateEyesM`
-    reaches 737–1,006 KB/s there after a GC deopts it, and I did not find what ties it to that GC.
+  - **One or two windows of the sprint phase still fail, in every final run.** After a GC deopts
+    `updateEyesM` it reaches 165–1,006 KB/s, and I did not find what ties it to that GC.
   - **The rest over the bar is code this lane may not edit** (legacy species files, frozen readers of the
     accessors, frozen code V8 inlines into this lane's frames). The gate names it, proves it with a paired
     no-inline run, and fails on it until the orchestrator records a ruling (below).
@@ -149,11 +149,11 @@ I instrumented the gate (diagnosis modes, never graded) and found the cause:
 
 **Measured** (`A-alloc-machines`, port 5254, KB/s graded = max(KB/s, KB/frame × 60), caller attribution,
 worst of six 10 s windows after a 30 s warm-up; cast hostile 0.88–0.98 of samples in every window). Runs
-F1 (23:07 UTC, before the `_sight` hoist), F5 (00:04) and **F7 (00:11, the final code)**. The "before"
+F1 (23:07 UTC, before the `_sight` hoist), F5 (00:04), F7 (00:11) and **F9 (01:21, the final source)**. The "before"
 column is the judge's run on the fix-round-1 code (3 s warm-up, one window per phase, self attribution —
 a weaker method than today's).
 
-| frame (class) | judge, fix round 1 | F1 | F5 | **F7 (final code)** |
+| frame (class) | judge, fix round 1 | F1 | F5 | F7 |
 |---|---|---|---|---|
 | this lane's frames, sum per window | 1,029 fight / 420 sprint | 160–279 | 139–1,391 | **102–175**, and 986 in the first-sprint window |
 | `updateEyesM` (lane) | 80.6; 775–887 in a 30 s-warm-up window | ≤ 4 | 965 in the first-sprint window, 0 elsewhere | **737 in the first-sprint window, 0 in the other five** |
@@ -162,28 +162,44 @@ a weaker method than today's).
 | `steerAlongS` / `navTowardS` (lane) | 111–135 / 46 | ≤ 4 | ≤ 4 | **≤ 4** |
 | `_scan` / `_sight` / `hasLOS` (lane) | 46–66 / – / – | ≤ 4 / 7.3 / ≤ 4 | 27.8 (one window) / 12.9 (first sprint) / ≤ 4 | **≤ 4 / 8.7 (first sprint) / ≤ 4** |
 | `Machines._stepMachines` / `_standoffPass` (lane) | 443–461 in a window / – | ≤ 4 | ≤ 4 | **≤ 4** |
-| `Machine.update` (lane) | – | 3.1–5.1 | 13.2 (one window) | **93 (first sprint; with inlining off its own bytes are 0, the bytes are `updateEyesM` / `conformM` inlined into it in that window)** |
+| `Machine.update` (lane) | – | ≤ 4 | 13.2 (one window) | **93 (first sprint; with inlining off its own bytes are 0, the bytes are `updateEyesM` / `conformM` inlined into it in that window)** |
 | `_engageFrame` (inlined-frozen) | – | 41.4 | 38.9 | **36.4** — with inlining off its own bytes are 0; frozen `engage.pursue` carries 101–165 |
-| `_statePatrol` (inlined-frozen) | 87.6 | ≤ 4 | 169 (first sprint) | **14.2** — with inlining off 0; frozen `squad.stepConvoy` / `nav.steer` |
+| `_statePatrol` (lane under the corrected rule) | 87.6 | ≤ 4 | 169 (first sprint) | **14.2** — with inlining off 0, but its frozen callee `squad.stepConvoy` carries only 4.6 |
 | `Tiller.animate` (inlined-frozen) | – | 47.1 | 70.6 | ≤ 4 in F7; in F5 with inlining off 0, frozen `gait.update` 1,278, `updateCheap` 298, `rig/lod.js updateRigLOD` 94 |
 | `get _speed` / `get heading` / `get _accelPitch` (accessor, frozen-reader share 1.00) | 42 / 22 / – | 31.0 / 18.7 / 13.3 | 21.6 / 19.1 / 10.9 | **15.7 / 11.9 / 11.6** |
 | `get suspicion` (accessor) | – | 1.8 | ≤ 4 | **3.0** (one box per change now) |
 | legacy species (`longleg`, `glinthawk`, `stormbird`, `scrapper`) | 4–22 each | 5–46 | 4–33 | **4–29** |
 
-**Verdict (F7): FAIL.** Steady state is inside the bar for every lane frame: in five of the six windows
-no `lane`-class frame is over 4 KB/s. The failures are:
-- **The first-sprint window.** `updateEyesM` 737, `Machine.update` 93 and `_sight` 8.7 KB/s, every time
-  (F5 and F7 both, and the no-inline runs). The diagnosis run `s9` (`R5_IC_TRACEDEOPT`) puts a GC's
-  "embedded weak objects cleared" deopt (44 functions, `updateEyesM`, `navTowardS` and `_statePatrol` among
-  them) and a 77-function "dependent prototype chain changed" wave (the player's readers: camera, HUD,
-  vignette, `refreshHot`) at the moment she first sprints (61.2 s), when `R5_IC_SHAPEWATCH` shows
-  `player.heading`, `fovBias`, `_fov`, `_faceX`, `velocity`, eleven animator fields and `engine.camera.fov`
-  generalising Smi → double. The deoptimised function then runs in V8's baseline tier for most of the
-  window. I removed every dependency of this lane's code on those objects that I could find (HOT,
-  `EYE_RGB`, born-Double fields); what still ties `updateEyesM` to that GC I did not identify.
+**F9, the final source** (cast hostile 0.93–0.98 in every window, 49–59 fps): this lane's frames sum to
+108–124 KB/s per window in four windows and 816 / 284 KB/s in the last two sprint windows. Every `lane`
+frame is ≤ 4 KB/s in every window except:
+- `updateEyesM`: 628 KB/s in sprint 2/3 and 165 in sprint 3/3;
+- `_statePatrol`: 92 in sprint 2/3;
+- `Machine.update`: 10.9 in sprint 1/3;
+- `_sight`: 7.1 in sprint 1/3;
+- `_steerAlong`: 8.1 in fight 1/3. This is the wrapper frozen `engage` calls; it must return the metres
+  moved, a fresh double per call.
+
+`_engageFrame` (21.7) and `Tiller.animate` (10.2) are `inlined-frozen`: with inlining off their own bytes
+are 0, and frozen `engage.pursue` (166 KB/s) and `gait.update` (6,149) carry the allocation.
+
+**Correction to the paired-run rule after F9.** F9's paired run re-classed `updateEyesM` and `_statePatrol`
+as `inlined-frozen`. Their spike did not recur with inlining off, and the first rule asked only for clean
+own bytes. That was wrong: `updateEyesM` calls no code outside this lane. The rule now also requires that
+the frozen callees measured with inlining off allocate at least the frame's graded excess. The F9 line
+above is classed by that rule (from its evidence strings); F11 runs it in the gate.
+
+**Verdict: FAIL**, on two things:
+- **Spikes in the sprint phase**, in every final run (F5, F7, F9 and the diagnosis run `s9`), each in one
+  or two windows. The diagnosis run puts a GC's "embedded weak objects cleared" deopt (44 functions,
+  `updateEyesM`, `navTowardS` and `_statePatrol` among them) and a 77-function "dependent prototype chain
+  changed" wave (the player's readers: camera, HUD, vignette, `refreshHot`) at her first sprint. At the
+  same moment `R5_IC_SHAPEWATCH` shows `player.heading`, `fovBias`, `_fov`, `_faceX`, `velocity`, eleven
+  animator fields and `engine.camera.fov` generalising Smi → double. A deoptimised function then runs in
+  V8's baseline tier for much of a window. I removed every dependency of this lane's per-machine code on
+  those objects that I could find (HOT, `EYE_RGB`, born-Double fields, lens records normalised at
+  construction); what still ties `updateEyesM` to that GC I did not identify.
 - **The residual classes** (legacy, accessor, inlined-frozen), which pass only under the ruling below.
-`_steerAlong` (the wrapper frozen `engage` calls; it must return the metres moved, a fresh double per
-call) read 5.6 KB/s in F5 and ≤ 4 in F7: it is classed `lane`.
 
 **What only the orchestrator (or another lane) can remove — the request for the ruling.** Record
 `<!-- r5-ruling ic-alloc-residual=carried -->` with these owners and dates, or deny it and the gate stays
@@ -197,8 +213,8 @@ FAIL on them:
 
 The gate reads the ruling from the plan with the same pattern as engine-gpu's rulings
 (`/^<!-- r5-ruling ic-alloc-residual=carried -->$/m`). With it recorded, F7 would still FAIL on the
-first-sprint window above; that one needs the other owners' fix below, or a second ruling on a warm-up
-that includes her first sprint (gates-perf's call: it is the same question for `A-alloc-rate`).
+sprint-phase spikes above. Those need the other owners' fix below, or a second ruling on a warm-up that
+includes her first sprint (gates-perf's call: it is the same question for `A-alloc-rate`).
 
 **The other lanes' share of the waves** (attribution for gates-perf and the owners; not this lane's to
 edit): hero-body — `player.js` / `playerAnimator.js` fields born as integers (`moveSpeed`, `heading`,
@@ -693,7 +709,11 @@ R45's: PENDING-quiet-box). Reports and logs: `scratchpad/r5/instruments-core/rep
 - **F5 / F6** (00:04): `A-alloc-machines` and gates-perf's `A-alloc-rate` retried.
 - **F7 / F8** (00:11): `A-alloc-machines` on the code after the `EYE_RGB` change, and a re-run of the rows
   that code touches (`A1`, `A20b`, `A-lamp-states`, `A-vfx-palette`, `A-perk-hooks`, `A39`).
-- **F9 / F10**: {{F9}}
+- **F9 / F10** (01:21–01:29): `A-alloc-machines` on the final source (lens records normalised at
+  construction), and `A1`, `A20b`, `A-lamp-states`, `A-beams-one-draw`, `A-perk-hooks`, `A-vfx-palette`,
+  `A37`, `A39`, `A43` re-run on it: **all PASS** (A39: 30 m suspicious 1.81 s / alert 3.48 s, 10 m alert
+  0.86 s; A43: scene objects −279, 0 orphans).
+- **F11**: `A-alloc-machines` with the corrected paired-run rule (below). {{F11}}
 
 | gate | verdict | run | measured |
 |---|---|---|---|
@@ -909,15 +929,19 @@ lens (55°). Centre-pixel colours read from the PNGs.
 **Fix round 2 (first):**
 - **A. `A-alloc-machines` FAILS.** Steady state is clean: in five of six windows no `lane` frame is over
   4 KB/s. Two things still fail it:
-  - The first-sprint window, every run: `updateEyesM` 737–1,006 KB/s, plus `Machine.update` and `_sight`.
-    A GC's "embedded weak objects cleared" deopt and the player-shape wave land in it, and this lane's
-    function then runs in V8's baseline tier for most of the window. What ties `updateEyesM` to that GC
-    is not identified. The last attempt (lens records normalised at construction) was measured in F9.
+  - One or two windows of the sprint phase, every final run: `updateEyesM` 165–1,006 KB/s, plus
+    `_statePatrol`, `Machine.update` and `_sight`. A GC's "embedded weak objects cleared" deopt and the
+    player-shape wave land there, and the deoptimised function then runs in V8's baseline tier for much of
+    a window. What ties `updateEyesM` to that GC is not identified. The last attempt (lens records
+    normalised at construction, F9) moved the spike from sprint 1/3 to sprints 2/3 and 3/3; it did not
+    remove it.
   - The residual classes: legacy, accessor, inlined-frozen. They pass only under the ruling.
 - **B. The paired attribution run is the gate's own method.** It decides `inlined-frozen` from a second
   run with inlining off. It is stricter than doing nothing, since a frame qualifies only if its own bytes
   and every lane callee are clean there. Still, it is a classification the judges should check: the
-  evidence strings are in the report (`detail.pairedRun.evidence`).
+  evidence strings are in the report (`detail.pairedRun.evidence`). Its first version had a hole:
+  in F9 it re-classed a one-window spike that simply did not recur with inlining off. The fix now also
+  requires the frozen callees to carry the excess, and F9 is re-classed by hand above.
 - **C. The fight is re-armed every second.** A herd cast left alone goes back to patrol before a 30 s
   warm-up ends. The re-arm (lastKnown, suspicion 1, `forceState('attack')`) keeps it fighting, and every
   window reports the hostile share (0.88–0.98).

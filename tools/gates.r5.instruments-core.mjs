@@ -2440,8 +2440,11 @@ const PROTOWATCH_ON = `(() => {
  * frozen code's allocation is reported as the lane function's. When the graded run leaves lane frames over the
  * bar, the gate runs the same staging, warm-up and six windows again with inlining OFF (TurboFan and Maglev) and
  * re-classes a lane frame F as `inlined-frozen` ONLY if, in that run,
- *   - F's own bytes are <= the bar in every window, and
- *   - every lane function F calls directly (from the profile tree) is <= the bar in every window,
+ *   - F's own bytes are <= the bar in every window,
+ *   - every lane function F calls directly (from the profile tree) is <= the bar in every window, and
+ *   - the code outside this lane that F calls directly allocates at least F's graded excess over the bar
+ *     (so a one-window spike that simply did not recur in the second run is NOT re-classed: it has to be
+ *     carried by frozen callees that are measured doing the allocating),
  * so the excess the graded run charged to F can only have come from code this lane does not own. Everything
  * else stays a lane failure. `inlined-frozen` joins the residual: it passes only under the plan ruling
  * `<!-- r5-ruling ic-alloc-residual=carried -->`, exactly like the legacy and accessor classes.
@@ -2463,10 +2466,12 @@ async function allocMachinesPaired(ctx) {
     const callees = [...A.parents.entries()].filter(([, ps]) => ps.has(F.fn)).map(([c]) => c);
     const laneCallees = callees.filter((c) => isLaneFn(c));
     const badCallees = laneCallees.filter((c) => laneWorst(c) > FN_BAR);
-    const otherCallees = callees.filter((c) => !isLaneFn(c) && !legacyOrResidual.has(c)).map((c) => `${c} ${A.allWorst.get(c) ?? 0} KB/s`).slice(0, 8);
-    const ok = own <= FN_BAR && badCallees.length === 0;
+    const others = callees.filter((c) => !isLaneFn(c) && !legacyOrResidual.has(c));
+    const otherCallees = others.map((c) => `${c} ${A.allWorst.get(c) ?? 0} KB/s`).slice(0, 8);
+    const otherBytes = others.reduce((sum, c) => sum + (A.allWorst.get(c) ?? 0), 0);
+    const ok = own <= FN_BAR && badCallees.length === 0 && otherBytes >= F.worst - FN_BAR;
     if (ok) F.cls = 'inlined-frozen';
-    evidence.push(`${ok ? 'INLINED-FROZEN' : 'LANE'}: ${F.fn} graded ${F.worst} KB/s; with inlining off its own bytes ${own} KB/s, lane callees over the bar ${badCallees.length ? badCallees.map((c) => c + ' ' + laneWorst(c)).join(', ') : 'none'}; callees outside this lane: ${otherCallees.join(', ') || 'none recorded'}`);
+    evidence.push(`${ok ? 'INLINED-FROZEN' : 'LANE'}: ${F.fn} graded ${F.worst} KB/s; with inlining off its own bytes ${own} KB/s, lane callees over the bar ${badCallees.length ? badCallees.map((c) => c + ' ' + laneWorst(c)).join(', ') : 'none'}; callees outside this lane ${Math.round(otherBytes * 100) / 100} KB/s in all (needs >= ${Math.round((F.worst - FN_BAR) * 100) / 100}): ${otherCallees.join(', ') || 'none recorded'}`);
   }
   const overLane = R.overLane.filter((e) => e.cls === 'lane');
   const residual = [...R.overResidual, ...R.overLane.filter((e) => e.cls === 'inlined-frozen')];

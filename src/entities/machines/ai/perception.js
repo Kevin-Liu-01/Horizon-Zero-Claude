@@ -436,18 +436,22 @@ export class PerceptionHooks {
   constructor(machines) {
     this.machines = machines;
     this.ctx = machines.ctx;
-    this.detectMul = 1;
-    this.flagDuration = FLAG.duration;
-    this.flagRadius = FLAG.radius;
+    // every number a perk, the weather or the clock can make fractional is born Double (0.5 first): the
+    // first dusk (`sightScale` 1 -> 0.97) or perk (`detectMul` 0.5) must not be a map transition that
+    // deoptimises `_sight`, which reads them on every tick (W0b fix round 2)
+    this.detectMul = 0.5; this.detectMul = 1;
+    this.flagDuration = 0.5; this.flagDuration = FLAG.duration;
+    this.flagRadius = 0.5; this.flagRadius = FLAG.radius;
     this.dustSight = false;
-    this.calimaClear = CALIMA_CLEAR_M;
-    this.sightScale = 1;
+    this.calimaClear = 0.5; this.calimaClear = CALIMA_CLEAR_M;
+    this.sightScale = 0.5; this.sightScale = 1;
     this.weather = 'trade';
-    this.clock = 0;
-    this.flag = { active: false, source: null, t0: 0, until: 0, duration: 0, raised: 0, ended: 0 };
+    this.clock = 0.5; this.clock = 0;
+    this.flag = { active: false, source: null, t0: 0.5, until: 0.5, duration: 0.5, raised: 0, ended: 0 };
+    this.flag.t0 = 0; this.flag.until = 0; this.flag.duration = 0;
     this._clouds = [];
     this._dustCursor = 0;   // round-robin Dust pass (see update)
-    this._dustBudget = 0;
+    this._dustBudget = 0.5; this._dustBudget = 0;
   }
 
   /** Raise or refresh the Flag on the player. */
