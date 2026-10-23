@@ -410,13 +410,16 @@ Earlier sheets, filmed on the final row: `scratchpad/r5/engine-gpu/run/P2/V20-aa
 ## 7. For other lanes and the orchestrator
 
 - **Orchestrator:** (a) fix round 1 left you a trade (2× and a soft salt pan, or 4× and a red vista); fix
-  round 2 replaces it with the role split — read §5.1 and `V-gpu-tier-look` crops 3 vs 4; (b) **close
-  `A-rt-ledger`** in one of two ways. Merge `r5/w0a-gates-perf` (its `tools/budgets.mjs:141` carries the line),
-  then on main run `node tools/gates.mjs --port 5270 --lane engine-gpu --only A-rt-ledger-census,A-rt-ledger`,
-  which reproduces `M1`. Or rule `recordedInBudgets` a cross-lane PENDING graded at gates-perf's exit. Merge
-  order does not matter for this lane: the only file both branches changed is `docs/ROUND5-PLAN.md`; (c) when grading A-gpu-tier,
-  read `docs/ROUND5-ENGINE.md` §3.4: run it ≥ 3 times on a box with no other gate Chrome alive for the whole
-  run; (d) a fresh tree needs the two POC symlinks of §0.2 (gitignored, untracked) or the POC rows fail to boot.
+  round 2 replaces it with the role split — read §5.1 and `V-gpu-tier-look` crops 3 vs 4; (b) **`A-rt-ledger`
+  under R44:** after merging `r5/w0a-gates-perf` (its `tools/budgets.mjs:141` carries the line), run
+  `node tools/gates.mjs --port 5270 --lane engine-gpu --only A-rt-ledger-census,A-rt-ledger` on main, which
+  reproduces `M1`. Merge order does not matter for this lane: the only file both branches changed is
+  `docs/ROUND5-PLAN.md`; (c) **`A-gpu-tier` under R45:** run it 3 times on a box with no other gate Chrome alive
+  for the whole run (`docs/ROUND5-ENGINE.md` §3.4). This round changed `engine.js` (the denoise noise only), so
+  the R45 proviso rests on this round's timed runs, `Q*` in §0; (d) a fresh tree needs the two POC symlinks of
+  §0.2 (gitignored, untracked) or the POC rows fail to boot; (e) **A108 is now deterministic:** expect the
+  byte-identical detail of §5.1 on main (worst 0.135, witness 0.239 / 0.102 / 0.114, noise hash `a698df06`).
+  A different reading means the noise or the denoise changed (§6 item 0).
 - **gates-perf:** the `RT_LEDGER` re-export is already committed on your branch (`budgets.mjs:141`, verified
   in `M1` with no import cycle). Keep it through your exit. Your `A-vram-ledger` already agrees with the ledger
   to the byte (`M2`).
@@ -426,6 +429,9 @@ Earlier sheets, filmed on the final row: `scratchpad/r5/engine-gpu/run/P2/V20-aa
   for what you want, `engine.csmMapSizes` says what you got. A camera cut shows one frame of the previous
   far-cascade map.
 - **shell-ui (W2):** tier names unchanged; `high` is the default.
+- **any lane touching GTAO** (`engine.gtao`): the denoise noise is the engine's seeded texture; replacing
+  `gtao.pdNoiseTexture`, calling three's `generateNoise()`, or changing `updatePdMaterial` makes A108 fail its
+  determinism clause or can blind its witness. Use `engine.setGtaoNoiseSeed(GTAO_NOISE_SEED)` to restore.
 - **any lane appending a post pass:** append after SMAA as the studio pass does; the scene target is never a
   write target and `postTarget` (18 MB) is allocated when a pass needs it.
 
@@ -436,6 +442,10 @@ Earlier sheets, filmed on the final row: `scratchpad/r5/engine-gpu/run/P2/V20-aa
   disk ≥ 3 GB and memory ≥ 25 % checked before and after taking it. Timed runs (`qrun.sh` → `run.sh` with
   `QUIET=1`) take the slot only at an instant with load < 3 (2.5 for `G6`, `G7`) and no headless Chrome alive,
   never holding a slot while waiting, and sample load and headless Chromes every 2 s (`run/<tag>.box`).
+- Runs in fix round 4: `S1` (exploration), `W1` (A108 + diagnostic), `W2`–`W5` (A108 alone), `T2` (the one
+  suite run) and the timed attempts `Q*` (`chain-q.sh`; §0). `run.sh` now polls for a free slot every 4 s
+  (was 30 s), and it has a `QSTRICT` mode in which a quiet-only attempt gives up at its deadline and does not run
+  on a loud box.
 - Runs in fix round 3: `M1`, `M2`, `M4` and `T1`. `T1` is the one suite run. `M3` and `M5`, the quiet-only
   attempts at the timed pair, never started a Chrome (§0.1). The `M` runs used
   `run-merged.sh`/`qrun-merged.sh`: the same slot, preflight and quiet rules as `run.sh`/`qrun.sh`, with gates-perf's

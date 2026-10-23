@@ -356,8 +356,9 @@ function patchGtaoShader(material) {
  * W0b judge's probe: 5 of 8 noise draws). The engine replaces that texture at
  * construction with one built the SAME way (same simplex, same four
  * channels, same size, format, wrap and filter) from a seeded RNG, so its cost
- * is the stock one and only its texel values are fixed. The seed and the
- * survey that chose it: docs/ROUND5-ENGINE.md §3.6.
+ * is the stock one and only its texel values are fixed. The seed was set
+ * before any measurement; what the noise does to A108 (a survey of 70
+ * textures) is in docs/ROUND5-ENGINE.md §3.6.
  */
 export const GTAO_NOISE_SEED = 0xCA11A;
 
