@@ -22743,10 +22743,29 @@ const GATES = [
        * comfortably clear of the melee clamp, which moves it on purpose.
        */
       const axis = [];
+      let stageDistM = null;
       if (m) {
         m.update = () => {};
-        faceFrom(m, 26);
-        await frames(6);
+        /*
+         * W0b fix round 3 (R28 re-stage): the Tiller is the subject now, and from 26 m its plate's anchor sat on the
+         * ui-06 clamp floor at HUD scale 1.6 in one full run of three (every bar clamped -> no free bar -> off null):
+         * which Tiller, and the ground under it, decide where its head projects. The row's own intent is a plate
+         * "comfortably clear of the melee clamp", so the stand-off is chosen, before anything is measured, as the first
+         * of 26 / 34 / 44 m at which ITS plate (bars[0], the one axis reads) is free (unclamped) at scale 1.6; the
+         * checks below are unchanged.
+         */
+        for (const d of [26, 34, 44]) {
+          faceFrom(m, d);
+          await frames(6);
+          __CTX__.hud.setHudScale(1.6);
+          await frames(5);
+          const b0 = hud.surfaces().machineBars.bars[0];          // the staged machine's own plate (axis reads bars[0])
+          const free = !!b0 && !b0.clamped;
+          __CTX__.hud.setHudScale(1);
+          await frames(3);
+          stageDistM = d;
+          if (free) break;
+        }
         for (const mult of [1, 1.6]) {
           __CTX__.hud.setHudScale(mult);
           await frames(5);
@@ -22794,7 +22813,7 @@ const GATES = [
           health: s.health, pouch: s.pouch, bars: s.machineBars, eye: s.eye,
           tools: s.tools, xp: s.xp, weapon: s.weapon, reticle: s.reticle,
           damageNumbers: s.damageNumbers, killFeed: s.killFeed, minFontPx: s.scale.minFontPx,
-          axis,
+          axis, stageDistM,
         },
       };
     })()`),
