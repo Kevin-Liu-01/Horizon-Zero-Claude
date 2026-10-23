@@ -10,7 +10,7 @@ import {
 } from './ai/tables.js';
 import { LAMP_STATES, lampStateFor, LAMP_RHYTHM } from '../../instruments/lamps.js';
 import { VFX_COLORS } from '../../instruments/lib/vfx.js';
-import { HOT, playerBoxes, refreshHot } from '../../instruments/lib/hot.js';
+import { HOT, playerBoxes, refreshHot, mutableFromBirth } from '../../instruments/lib/hot.js';
 
 /**
  * Base Machine: state machine, perception, terrain-conforming steering,
@@ -285,27 +285,39 @@ export function conformM(m, dt) {
    *     machine per frame: this function's whole allocation, measured).
    *   - the patch agrees with `heightFast` to the corner samples; between them, within the curvature of a
    *     1.94 m mesh cell over 1 m (measured p50 1 cm vs `getHeight` on the play disc). */
+  /* EVERY OPERATION RUNS ON EVERY FRAME (W0b fix round 3; judge: a conformM spike in one window, own bytes with
+   * inlining off 0 — a deopt, not an allocator). The terrain read stays conditional (a new lattice cell only); every
+   * compare and every arithmetic operation of the patch, the normal and the ground ease runs whether or not the root
+   * moved, and the stores select between the new value and the held one. Values identical to the branchy form. */
   const x = pos.x, z = pos.z;
-  if (sc._cgOk === 0 || x !== sc._cgx || z !== sc._cgz) {
-    const ni = Math.floor(x) | 0, nj = Math.floor(z) | 0;
-    if (sc._lOk === 0 || ni !== sc._li || nj !== sc._lj) latticeM(m, t, ni, nj);
-    const u = x - ni, v = z - nj;
-    const h00 = sc._h00, h10 = sc._h10, h01 = sc._h01, h11 = sc._h11;
-    const a = h00 + (h10 - h00) * u, b = h01 + (h11 - h01) * u;
-    sc._cgy = a + (b - a) * v;
-    if (m.alignToTerrain) {
-      // the patch's gradient (1 m cells): the ground normal is (-dh/dx, 1, -dh/dz), normalised
-      const gx = (h10 - h00) * (1 - v) + (h11 - h01) * v, gz = b - a;
-      const gl = Math.sqrt(gx * gx + 1 + gz * gz);
-      const gN = m._gN; gN.x = -gx / gl; gN.y = 1 / gl; gN.z = -gz / gl;
-    }
-    sc._cgx = x; sc._cgz = z; sc._cgOk = 1;
-  }
-  const gy = sc._cgy;
-  if (!m._airborne) {
-    const dy = pos.y - gy;
-    pos.y = (dy > 4 || dy < -4) ? gy : pos.y + (gy - pos.y) * (1 - Math.exp(-12 * dt));
-  }
+  const cgOk = sc._cgOk, cgx = sc._cgx, cgz = sc._cgz, cgy = sc._cgy;
+  const c0 = cgOk === 0, cxm = x !== cgx, czm = z !== cgz;
+  const moved = c0 || cxm || czm;
+  const ni = Math.floor(x) | 0, nj = Math.floor(z) | 0;
+  const lOk = sc._lOk, li = sc._li, lj = sc._lj;
+  const l0 = lOk === 0, lni = ni !== li, lnj = nj !== lj;
+  if (moved && (l0 || lni || lnj)) latticeM(m, t, ni, nj);
+  const u = x - ni, v = z - nj;
+  const h00 = sc._h00, h10 = sc._h10, h01 = sc._h01, h11 = sc._h11;
+  const a = h00 + (h10 - h00) * u, b = h01 + (h11 - h01) * u;
+  const gyNew = a + (b - a) * v;
+  const gy = moved ? gyNew : cgy;
+  sc._cgy = gy;
+  // the patch's gradient (1 m cells): the ground normal is (-dh/dx, 1, -dh/dz), normalised
+  const align = !!m.alignToTerrain;
+  const gx = (h10 - h00) * (1 - v) + (h11 - h01) * v, gz = b - a;
+  const gl = Math.sqrt(gx * gx + 1 + gz * gz);
+  const ngx = -gx / gl, ngy = 1 / gl, ngz = -gz / gl;
+  const gN = m._gN, setN = moved && align;
+  const gnx = gN.x, gny = gN.y, gnz = gN.z;
+  gN.x = setN ? ngx : gnx; gN.y = setN ? ngy : gny; gN.z = setN ? ngz : gnz;
+  sc._cgx = x; sc._cgz = z; sc._cgOk = 1;
+  // the ground ease (an airborne root is left to its own arc)
+  const air = !!m._airborne;
+  const py = pos.y, dy = py - gy, big = dy > 4, small = dy < -4;
+  const k12 = 1 - Math.exp(-12 * dt);
+  const pyEase = py + (gy - py) * k12;
+  pos.y = air ? py : (big || small) ? gy : pyEase;
   // the body normal eases toward the ground normal (or up), written out: no Vector3 call takes a double
   const n = m._normal, g = m.alignToTerrain ? m._gN : _UP;
   const k = dt * 3.5 < 1 ? dt * 3.5 : 1;
@@ -337,16 +349,32 @@ export function conformM(m, dt) {
     rq.copy(_q1).multiply(_q2);
   }
   // smoothed acceleration → pitch cue for subclass body motion
-  sc._accelPitch += (sc._speed - sc._accelPitch) * (1 - Math.exp(-4 * dt));
   /* SETTLED VALUES SETTLE (W0b fix round 2): every ease above is exponential, so a machine standing still
    * kept changing `_speed` and `_accelPitch` in the last bits for ever — and frozen gait / collision read both
    * through the published boxes every frame (`get _speed`: one HeapNumber per change). Inside 1 mm/s they
-   * snap to their target, which nothing can see. */
-  const sp = sc._speed;
-  if (sp < 1e-3 && sp > -1e-3 && sp !== 0) sc._speed = 0;
-  const dap = sc._speed - sc._accelPitch;
-  if (dap < 1e-3 && dap > -1e-3 && dap !== 0) sc._accelPitch = sc._speed;
+   * snap to their target, which nothing can see. (Every compare runs every frame: fix round 3.) */
+  const ap = sc._accelPitch, spd = sc._speed;
+  const ap2 = ap + (spd - ap) * (1 - Math.exp(-4 * dt));
+  const sLo = spd < 1e-3, sHi = spd > -1e-3, sNz = spd !== 0;
+  const spd2 = sLo && sHi && sNz ? 0 : spd;
+  sc._speed = spd2;
+  const dap = spd2 - ap2, dLo = dap < 1e-3, dHi = dap > -1e-3, dNz = dap !== 0;
+  sc._accelPitch = dLo && dHi && dNz ? spd2 : ap2;
 }
+
+/**
+ * `Machine.update`'s own arithmetic, in two leaves (W0b fix round 3). `update` is the per-machine dispatcher: a
+ * rare path it meets for the first time (a stun, a burn, a reaction) can deoptimise it, and in the tier it then
+ * runs in every double it computes is a heap allocation (measured: 238 KB/s in one window). With its arithmetic
+ * here, a deoptimised `update` only makes calls; these leaves stay optimised on their own. Branch-free.
+ */
+export function tickTimersM(sc, dt) {
+  const a = sc._alarmCd - dt, aPos = a > 0;
+  sc._alarmCd = aPos ? a : 0;
+  const ld = sc.lampDarkT, ldOn = ld > 0, d = ld - dt, dPos = d > 0;
+  sc.lampDarkT = ldOn ? (dPos ? d : 0) : ld;
+}
+export function stateClockM(sc, dt) { sc._stateT += dt; }
 
 /**
  * ONE SHAPE FOR EVERY LENS RECORD (W0b fix round 2). `_eyeMats` held object literals of four shapes (and the
@@ -361,6 +389,14 @@ export class EyeRecord {
     this.kind = kind;
     this.last = 0.5; this.last = -1;
     this.part = part || null;
+    /* fix round 3: the colour this record writes, cached (the material's `emissive` for a lens, its `color` for a
+     * sprite / basic eye) so `updateEyesM` touches only THREE.Color objects per frame, never a material of one of a
+     * dozen classes; `mode` 0 sprite, 1 basic (opacity follows death), 2 emissive (intensity held at 1); `op` the
+     * opacity / intensity last written (-1: never) */
+    this.mode = kind === 'emissive' ? 2 : kind === 'basic' ? 1 : 0;
+    this.col = (this.mode === 2 ? mat && mat.emissive : mat && mat.color) || new THREE.Color();
+    this.op = -1;
+    mutableFromBirth(this);
   }
 }
 
@@ -407,102 +443,126 @@ export function updateEyesM(m, dt, t) {
   // (the clock) and a tagged parameter (`t`) is boxed on every call in V8's optimised code
   const tt = HOT.simTime;
   const s = lampStateFor(m);
-  if (s !== m._lampState) {
-    m._lampPrev = m._lampState || 'calm';
-    m._lampState = s;
-    sc._lampSince = tt;
-  }
-  if (sc._lampPhase < 0) sc._lampPhase = Math.random();
+  /* EVERY OPERATION RUNS ON EVERY FRAME (W0b fix round 3). An operation V8 has never run has no type feedback,
+   * and optimised code that reaches one deoptimises there; this function runs ~2,400 times a second, so after a
+   * deopt it allocated hundreds of KB/s until it was optimised again (`A-alloc-machines`: 609-1,187 KB/s in one
+   * window, three runs of five). So every load, compare and arithmetic operation below executes whatever the lamp
+   * state, the rhythm phase or the machine's kind; branches only select between locals. The lens colours are
+   * written through the THREE.Color each record caches (`EyeRecord.col`: one class, no material load), and the
+   * two rare material writes (a basic eye's opacity, an emissive lens's intensity) go through `eyeMatSetM`, only
+   * when they change. Values are identical to the branchy form (same expressions, same order). */
+  const ls = m._lampState, lp = m._lampPrev, since0 = sc._lampSince, lp0 = sc._lampPhase;
+  const chg = s !== ls;
+  const prev = chg ? (ls || 'calm') : lp;
+  m._lampPrev = prev;
+  m._lampState = s;
+  const since = chg ? tt : since0;
+  sc._lampSince = since;
+  // the rhythm phase, drawn once per machine on its first frame (a builtin call: kept off the per-frame path —
+  // Math.random() boxes its result in V8's mid tier, one HeapNumber per call, measured 42 KB/s)
+  if (lp0 < 0) sc._lampPhase = Math.random();
   const phase = sc._lampPhase;
-  // the target colour as an index into EYE_RGB (0 calm, 3 wary, 6 hostile, 9 dark, 12 flash); calm may be the
-  // machine's own variety tint (`_eyeCalm`), read below
-  let ti;
-  let pulse;
-  const ecm = m._eyeCalm;
-  if (s === 'dark') {
-    const age = tt - sc._lampSince;
-    if (age < LAMP_SPUTTER_S && m._lampPrev !== 'dark') {
-      const pv = m._lampPrev;   // (no keyed load by a varying string: see lamps.js update())
-      ti = pv === 'calm' ? 0 : pv === 'wary' ? 3 : pv === 'hostile' ? 6 : 9;
-      pulse = Math.sin(tt * 97 + phase * 13) > 0.1 ? 0.9 : 0.15;
-    } else {
-      ti = 9;
-      pulse = 0;
-    }
-  } else {
-    ti = s === 'calm' ? 0 : s === 'wary' ? 3 : 6;
-    // lampGain(s, tt, phase) written out: a double returned from a call is boxed
-    const tp = tt + phase;
-    pulse = s === 'wary' ? RHY_PULSE + (1 - RHY_PULSE) * (0.5 + 0.5 * Math.cos(2 * Math.PI * tp))
-      : s === 'hostile' ? ((tp * 4) - Math.floor(tp * 4) < 0.5 ? 1 : RHY_FLICKER) : 1;
-  }
-  const legacyCue = !m.lamp;
-  if (legacyCue && sc._eyeFlare > 0) pulse *= 1 + sc._eyeFlare;
+  // the target colour as an index into EYE_RGB (0 calm, 3 wary, 6 hostile, 9 dark, 12 flash) and the rhythm
+  const isDark = s === 'dark', isCalm = s === 'calm', isWary = s === 'wary', isHost = s === 'hostile';
+  const pvDark = prev === 'dark', pvCalm = prev === 'calm', pvWary = prev === 'wary', pvHost = prev === 'hostile';
+  const age = tt - since, young = age < LAMP_SPUTTER_S;
+  const sputter = isDark && young && !pvDark;          // dark: the previous colour sputters, then out
+  const tiPrev = pvCalm ? 0 : pvWary ? 3 : pvHost ? 6 : 9;
+  const sputOn = Math.sin(tt * 97 + phase * 13) > 0.1;
+  // lampGain(s, tt, phase) written out: a double returned from a call is boxed
+  const tp = tt + phase;
+  const wave = RHY_PULSE + (1 - RHY_PULSE) * (0.5 + 0.5 * Math.cos(2 * Math.PI * tp));
+  const tp4 = tp * 4, flickOn = tp4 - Math.floor(tp4) < 0.5;
+  let ti = isDark ? (sputter ? tiPrev : 9) : isCalm ? 0 : isWary ? 3 : 6;
+  let pulse = isDark ? (sputter ? (sputOn ? 0.9 : 0.15) : 0) : isWary ? wave : isHost ? (flickOn ? 1 : RHY_FLICKER) : 1;
+  // legacy kinds' cues: the eye flare and the attack-windup telegraph (eye burns white-hot for ~0.4 s)
+  const lampRec = m.lamp, legacyCue = !lampRec;
+  const flare = sc._eyeFlare, flareOn = flare > 0, pulseFl = pulse * (1 + flare);
+  pulse = legacyCue && flareOn ? pulseFl : pulse;
   sc._eyeFlare = 0;
-  if (sc._telegraphT > 0 && m.alive) {
-    sc._telegraphT -= dt;
-    if (legacyCue) {
-      // attack-windup telegraph (legacy kinds): eye burns white-hot for ~0.4 s
-      ti = 12;
-      if (pulse < 2.6) pulse = 2.6;
-    }
-  }
-  // the colour eases toward the target (written out: no call takes a double)
-  const ec = m._eyeColor;
+  const tel = sc._telegraphT, telOn = tel > 0, alive = !!m.alive, telDec = tel - dt, telAct = telOn && alive;
+  sc._telegraphT = telAct ? telDec : tel;
+  const telCue = telAct && legacyCue, pLow = pulse < 2.6;
+  ti = telCue ? 12 : ti;
+  pulse = telCue && pLow ? 2.6 : pulse;
+  // the colour eases toward the target (calm may be the machine's own variety tint, `_eyeCalm`)
+  const ec = m._eyeColor, ecm = m._eyeCalm;
   const useTint = ti === 0 && !!ecm;
-  const tr = useTint ? ecm.r : EYE_RGB[ti], tg = useTint ? ecm.g : EYE_RGB[ti + 1], tb = useTint ? ecm.b : EYE_RGB[ti + 2];
-  const ea0 = dt * (ti === 12 ? 25 : 12), ea = ea0 < 1 ? ea0 : 1;   // (no Math.* call takes a double)
-  const dr = tr - ec.r, dg = tg - ec.g, db = tb - ec.b;
+  const er = EYE_RGB[ti], eg = EYE_RGB[ti + 1], eb = EYE_RGB[ti + 2];
+  const cr = ecm ? ecm.r : 0, cg = ecm ? ecm.g : 0, cb = ecm ? ecm.b : 0;
+  const tr = useTint ? cr : er, tg = useTint ? cg : eg, tb = useTint ? cb : eb;
+  const flash = ti === 12, ea0 = dt * (flash ? 25 : 12), eaLo = ea0 < 1, ea = eaLo ? ea0 : 1;
+  const ecr = ec.r, ecg = ec.g, ecb = ec.b;
+  const dr = tr - ecr, dg = tg - ecg, db = tb - ecb;
   const easing = dr * dr + dg * dg + db * db > 1e-12;
-  if (easing) { ec.r += dr * ea; ec.g += dg * ea; ec.b += db * ea; }
-  const lk0 = 1 - sc._deathT * 0.55, lightK = m.state === 'dead' ? (lk0 > 0 ? lk0 : 0) : 1;
-  const eyes = m._eyeMats;
-  // nothing a lens shows changed (steady calm, a settled colour): no material is touched
-  if (!easing && pulse === sc._ePulse && lightK === sc._eLight && eyes.length === sc._eN) return;
-  sc._ePulse = pulse; sc._eLight = lightK; sc._eN = eyes.length;
-
-  for (let i = 0; i < eyes.length; i++) {
-    let e = eyes[i];
-    if (!(e instanceof EyeRecord)) { const o = e; e = eyes[i] = new EyeRecord(o.mat, o.base, o.kind, o.part); }
-    if (e.kind === 'sprite' || e.kind === 'basic') {
-      const k = pulse * e.base, c = e.mat.color;
-      c.r = ec.r * k; c.g = ec.g * k; c.b = ec.b * k;
+  const nr = ecr + dr * ea, ng = ecg + dg * ea, nb = ecb + db * ea;
+  const rr = easing ? nr : ecr, gg = easing ? ng : ecg, bb = easing ? nb : ecb;
+  ec.r = rr; ec.g = gg; ec.b = bb;
+  const dT = sc._deathT, lk0 = 1 - dT * 0.55, lkPos = lk0 > 0, isDeadS = m.state === 'dead';
+  const lightK = isDeadS ? (lkPos ? lk0 : 0) : 1;
+  const eyes = m._eyeMats, nE = eyes.length;
+  const ePulse = sc._ePulse, eLight = sc._eLight, eN = sc._eN;
+  const samePulse = pulse === ePulse, sameLight = lightK === eLight, sameN = nE === eN;
+  if (!sameN) normEyesM(eyes);           // a record was added (a shell's lens): one class for every record
+  // nothing a lens shows changed (steady calm, a settled colour): no lens is touched
+  const unchanged = !easing && samePulse && sameLight && sameN;
+  sc._ePulse = pulse; sc._eLight = lightK; sc._eN = nE;
+  const ek = (0.6 + pulse * 0.7) * lightK;
+  const eEm = sc._eEmis, sameEk = ek === eEm;
+  if (!unchanged) {
+    // an Instrument's lamp glass is the state colour at emissive x2.5 (bible §7.2 / §10 "lamp glass ... emissive
+    // x2.5"): it clears the bloom threshold, so a lens reads at noon. The pulse is folded into the colour and the
+    // intensity held at 1 (three uploads emissive x intensity: lit exactly as before)
+    const gainL = LAMP_GLASS_GAIN * pulse;
+    for (let i = 0; i < nE; i++) {
+      const e = eyes[i];
+      const mode = e.mode, base = e.base, col = e.col, op = e.op;
+      const kC = pulse * base, kE = legacyCue ? base * pulse : gainL;
+      const k = mode === 2 ? kE : kC;
+      col.r = rr * k; col.g = gg * k; col.b = bb * k;
       // solid eye cores would linger as black balls on a dead machine
-      if (e.kind === 'basic') e.mat.opacity = m.state === 'dead' ? 0 : 1;
-    } else {
-      // an Instrument's lamp glass is the state colour at emissive x2.5 (bible §7.2 / §10 "lamp
-      // glass ... emissive x2.5"): it clears the bloom threshold, so a lens reads at noon.
-      const v = m.lamp ? LAMP_GLASS_GAIN * pulse : e.base * pulse;
-      /* W0b FIX ROUND 2: the pulse is folded into the emissive COLOUR and the intensity held at 1.
-       * three.js uploads emissive x emissiveIntensity, so the lens is lit exactly as before, but a
-       * per-frame write is now three stores into a THREE.Color (one class: no box) instead of a double
-       * stored into a material (a dozen material shapes: a megamorphic store boxes the value) — a wary
-       * lamp's 1 Hz pulse changes it every frame. */
-      const em = e.mat.emissive;
-      em.r = ec.r * v; em.g = ec.g * v; em.b = ec.b * v;
-      if (e.last !== 1) { e.mat.emissiveIntensity = 1; e.last = 1; }
+      const want = mode === 1 ? (isDeadS ? 0 : 1) : 1;
+      if (want !== op) eyeMatSetM(e, want);
     }
+    // death: EVERY light dies out (research 0.4) — body strips fade with the eyes, and identity-colored part glows
+    // (canisters/loaders/vents) gutter (lightK above)
+    if (!sameEk) {
+      sc._eEmis = ek;
+      // the same fold for the body strips: their own emissive colour (`_emisBase`, captured when first pulsed) x the
+      // pulse, intensity 1 — three stores into the THREE.Color each strip caches (`_emisCols`)
+      const emis = m._emisMats;
+      let base = m._emisBase, cols = m._emisCols;
+      if (base === null || base.length !== emis.length * 3) { base = emisBaseOf(m); cols = m._emisCols; }
+      for (let i = 0; i < cols.length; i++) {
+        const c = cols[i], j = i * 3;
+        c.r = base[j] * ek; c.g = base[j + 1] * ek; c.b = base[j + 2] * ek;
+      }
+    }
+    if (lightK < 1) dimPartGlowsM(m, lightK);
   }
-  // death: EVERY light dies out (research 0.4) — body strips fade with the
-  // eyes, and identity-colored part glows (canisters/loaders/vents) gutter (lightK above)
-  const emis = m._emisMats, ek = (0.6 + pulse * 0.7) * lightK;
-  if (ek !== sc._eEmis) {
-    sc._eEmis = ek;
-    // the same fold for the body strips: their own emissive colour (kept in `_emisBase` when first
-    // pulsed) x the pulse, intensity 1 — three stores into a THREE.Color, never a boxed material store
-    let base = m._emisBase;
-    if (base === null || base.length !== emis.length * 3) base = emisBaseOf(m);
-    for (let i = 0; i < emis.length; i++) {
-      const c = emis[i].emissive, j = i * 3;
-      c.r = base[j] * ek; c.g = base[j + 1] * ek; c.b = base[j + 2] * ek;
-    }
+}
+
+/** A lens record's material write, only when it changes (`updateEyesM`): a basic eye's opacity, an emissive lens's intensity 1. */
+function eyeMatSetM(e, want) {
+  e.op = want;
+  if (e.mode === 1) e.mat.opacity = want;
+  else if (e.mode === 2) { e.mat.emissiveIntensity = 1; e.last = 1; }
+}
+
+/** Every lens record as an `EyeRecord` (frozen rig/shells.js pushes plain `{ mat, base, kind }`): run when the count changes. */
+function normEyesM(eyes) {
+  for (let i = 0; i < eyes.length; i++) {
+    const o = eyes[i];
+    if (!(o instanceof EyeRecord)) eyes[i] = new EyeRecord(o.mat, o.base, o.kind, o.part);
   }
-  if (lightK < 1) {
-    for (let i = 0; i < m._partGlows.length; i++) {
-      const g = m._partGlows[i];
-      if (g.sprite) g.mat.opacity = g.base * lightK;
-      else g.mat.emissiveIntensity = g.base * lightK;
-    }
+}
+
+/** A dying machine's part glows gutter with its lamp (`updateEyesM`, lightK < 1). */
+function dimPartGlowsM(m, lightK) {
+  for (let i = 0; i < m._partGlows.length; i++) {
+    const g = m._partGlows[i];
+    if (g.sprite) g.mat.opacity = g.base * lightK;
+    else g.mat.emissiveIntensity = g.base * lightK;
   }
 }
 
@@ -510,17 +570,19 @@ export function updateEyesM(m, dt, t) {
  * The body strips' own emissive colours, captured ONCE per material (`userData.emisBase`, the colour
  * the model carried) when the strip is first pulsed, with its intensity set to 1: from then on
  * `updateEyesM` pulses the colour, not the intensity (see there). The per-machine table is rebuilt only
- * if the strip list changed size (dispose).
+ * if the strip list changed size (dispose). `_emisCols` caches each strip's emissive THREE.Color (fix round 3).
  */
 function emisBaseOf(m) {
-  const emis = m._emisMats, base = new Float32Array(emis.length * 3);
+  const emis = m._emisMats, base = new Float32Array(emis.length * 3), cols = new Array(emis.length);
   for (let i = 0; i < emis.length; i++) {
     const mat = emis[i], ud = mat.userData;
     let b = ud.emisBase;
     if (!b) { const c = mat.emissive; b = ud.emisBase = [c.r, c.g, c.b]; mat.emissiveIntensity = 1; }
     base[i * 3] = b[0]; base[i * 3 + 1] = b[1]; base[i * 3 + 2] = b[2];
+    cols[i] = mat.emissive;
   }
   m._emisBase = base;
+  m._emisCols = cols;
   return base;
 }
 
@@ -952,6 +1014,7 @@ export class Machine {
     this._eyeMats = [];   // sprite/basic materials fully colored by state
     this._emisMats = [];  // model emissive materials tinted by state
     this._emisBase = null; // their own emissive colours (emisBaseOf), built when first pulsed
+    this._emisCols = null; // ...and each strip's emissive THREE.Color (emisBaseOf)
     this._collectEmissive();
 
     this.weakPoints = [];
@@ -995,6 +1058,19 @@ export class Machine {
     this._partsHidden = false;
     this._fleeing = false;
     this._downT = null; this._downT = 0;       // (Tagged: a flier's crit window, read on every machine)
+    /* FIELDS OTHER CODE ADDS LATER, DECLARED HERE (W0b fix round 3; R5_IC_DEOPTMARK shape report: live machines
+     * carried keys a fresh one lacks, so a machine's map CHANGED mid-session and the per-machine code that had seen
+     * the old map deoptimised on "wrong map" — `_statePatrol` 33 KB/s in one window). Declared undefined / null, the
+     * values every reader already treats as "not set yet" (`?? 0`, `||`, `??=`, `typeof === 'function'`):
+     *   `_doctrineSnapped`   rig/expansion-base.js, set in a microtask after construction
+     *   `onAlerted`, `_flee` ai/doctrine.js, herd kinds
+     * and the legacy species' own lazily-added fields (deleted with the legacy kinds at W2, plan §6):
+     *   glinthawk `_soar`; longleg `_pingClock` `_cadBand` `_cadLoop` `_cadence`; stormbird `_groundHold` `_perchPhase` */
+    this._doctrineSnapped = undefined;
+    this.onAlerted = null;
+    this._flee = null;
+    this._soar = undefined; this._pingClock = undefined; this._cadBand = undefined; this._cadLoop = undefined;
+    this._cadence = undefined; this._groundHold = undefined; this._perchPhase = undefined;
     this._hasTickCd = typeof this.tickCooldowns === 'function';
     this._hasAnimate = typeof this.animate === 'function';
     /*
@@ -1926,8 +2002,7 @@ export class Machine {
     }
 
     this.ai.tick(dt);
-    { const a = sc._alarmCd - dt; sc._alarmCd = a > 0 ? a : 0; }      // (no Math.* call takes a double)
-    if (sc.lampDarkT > 0) { const d = sc.lampDarkT - dt; sc.lampDarkT = d > 0 ? d : 0; }
+    tickTimersM(sc, dt);   // the alarm cooldown and the darkened-lamp clock (a leaf: see tickTimersM)
 
     // attack-timer cooldowns tick unconditionally (lowLOD coarse steps and
     // stun must not freeze them — subclasses implement tickCooldowns)
@@ -1977,7 +2052,7 @@ export class Machine {
     }
     this.body.position.x = 0;
 
-    sc._stateT += dt;
+    stateClockM(sc, dt);
     this.ai.perception.update(dt);       // (`_perceive`, without the prototype load)
 
     // hit reactions own the frame while a stagger / downed window runs

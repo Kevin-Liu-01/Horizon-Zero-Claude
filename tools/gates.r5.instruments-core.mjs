@@ -2348,8 +2348,10 @@ async function allocMachines({ PORT }, opts = {}) {
     let deoptTimed = null;
     if (deoptMark) {
       const mk = await page.evaluate(DEOPTMARK_OFF).catch((e) => ({ error: String(e).slice(0, 200) }));
+      const shapes = await page.evaluate(SHAPES_REPORT).catch((e) => ({ error: String(e).slice(0, 300) }));
       await sleep(1500);   // let the renderer's stdout drain
       deoptTimed = timeDeopts(deoptLog, mk, windows, sfiNames);
+      deoptTimed.shapes = shapes;
     }
     const shapeLog = process.env.R5_IC_SHAPEWATCH ? await page.evaluate(SHAPEWATCH_OFF).catch((e) => ({ error: String(e).slice(0, 200) })) : null;
     const protoLog = process.env.R5_IC_PROTOWATCH ? await page.evaluate(PROTOWATCH_OFF).catch((e) => ({ error: String(e).slice(0, 200) })) : null;
@@ -2522,6 +2524,37 @@ const DEOPTMARK_ON = `(async () => {
   };
   W.timer = setInterval(tick, 200); tick();
   return true;
+})()`;
+/* DIAGNOSIS ONLY (R5_IC_DEOPTMARK): after the windows, every live machine and its per-frame records are compared
+ * (%HaveSameMap) with a FRESHLY spawned machine of the same kind: a map that differs means a property was added after
+ * construction (a map transition mid-session; its map can die with its last holder -> "embedded weak objects
+ * cleared"). Reports, per object path, the number of distinct maps among live machines and the keys that differ. */
+const SHAPES_REPORT = `(async () => {
+  const C = __CTX__, M = C.machines, p = C.player;
+  const live = M.list.filter(m => m.alive && !m._disposed);
+  const paths = { m: (m) => m, sc: (m) => m.sc, ai: (m) => m.ai, per: (m) => m.ai && m.ai.perception, lamp: (m) => m.lamp, eye0: (m) => m._eyeMats && m._eyeMats[0],
+    eyeMat0: (m) => m._eyeMats && m._eyeMats[0] && m._eyeMats[0].mat, emisMat0: (m) => m._emisMats && m._emisMats[0], root: (m) => m.root, eyeColor: (m) => m._eyeColor, eyeCalm: (m) => m._eyeCalm,
+    gait: (m) => m.gait, lastKnown: (m) => m.lastKnown, parts0: (m) => m.parts && m.parts[0], reactions: (m) => m.ai && m.ai.reactions, cfg: (m) => m.ai && m.ai.perception && m.ai.perception.cfg };
+  const out = { live: live.length, kinds: {} };
+  const byKind = new Map(); for (const m of live) { const k = m.kind; if (!byKind.has(k)) byKind.set(k, []); byKind.get(k).push(m); }
+  for (const [kind, ms] of byKind) {
+    let fresh = null;
+    try { fresh = M.spawn(kind, p.position.x + 300, p.position.z + 300); } catch (e) { /* */ }
+    const row = { n: ms.length };
+    for (const [pn, get] of Object.entries(paths)) {
+      const objs = ms.map(get).filter(o => o && typeof o === 'object');
+      if (!objs.length) continue;
+      const reps = []; for (const o of objs) if (!reps.some(r => %HaveSameMap(r, o))) reps.push(o);
+      const f = fresh ? get(fresh) : null;
+      const diffs = [];
+      if (f && typeof f === 'object') for (const o of reps) if (!%HaveSameMap(o, f)) { const a = Object.keys(f), b = Object.keys(o);
+        diffs.push({ added: b.filter(k => !a.includes(k)).slice(0, 12), missing: a.filter(k => !b.includes(k)).slice(0, 12), orderDiff: a.join() !== b.join() && a.length === b.length }); }
+      if (reps.length > 1 || diffs.length) row[pn] = { maps: reps.length, vsFresh: diffs.slice(0, 4) };
+    }
+    out.kinds[kind] = row;
+    if (fresh) { try { M.sites.dispose(fresh); } catch (e) { /* */ } }
+  }
+  return out;
 })()`;
 const DEOPTMARK_OFF = `(() => { const W = window.__icDM; if (!W) return null; clearInterval(W.timer); const out = { marks: W.marks, tiers: W.tiers, T0: W.T0, names: W.names, mUrl: W.mUrl, pUrl: W.pUrl }; window.__icDM = null; return out; })()`;
 const LANE_FN_RE = /^(updateEyesM|conformM|latticeM|navTowardS|steerAlongS|turnS|faceS|moveTowardS|stepRootS|update|_statePatrol|_stateReturn|_stateSuspicious|_stateSearch|_stateAlert|_stateAttack|_engageFrame|animate|_sight|_scan|_beliefTick|_belief|hasLOS|tickCooldowns|_writeMatrices|_stepMachines|_standoffPass|_separationPass|lampStateFor|refreshHot|playerBoxes|_steerAlong|updatePartsM|updateFxM|updateElementalM|tick|pickAttack|_far|_tickFar)$/;

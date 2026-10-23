@@ -5,7 +5,7 @@ import { aiRandom } from './rng.js';
 
 const DEG = Math.PI / 180;
 import { perceptionScale, weatherName } from '../../../instruments/lib/weather.js';
-import { HOT } from '../../../instruments/lib/hot.js';
+import { HOT, mutableFromBirth } from '../../../instruments/lib/hot.js';
 
 /**
  * Perception — the honest senses of a machine.
@@ -33,6 +33,15 @@ import { HOT } from '../../../instruments/lib/hot.js';
 const _eye = new THREE.Vector3();
 const _tgt = new THREE.Vector3();
 const _d = new THREE.Vector3();
+/**
+ * The cone weights 1 and 0 as DOUBLES (fix round 3). Written as literals they are Smis, and while she stood in a
+ * fight every weight `_sight` compared was 1 or 0: V8 recorded "small integers only" for those compares, and the
+ * first peripheral-arc weight (0.35) at her first sprint was a "not a Smi" deopt (measured). Loaded from a Double
+ * field they are doubles from the first tick, so the compares are typed "number" from the start.
+ */
+const WK = { one: 0.5, zero: 0.5 };
+WK.one = 1; WK.zero = 0;
+
 /** States whose detection build-up a perk may NOT touch (bible §4.7: "hostile unchanged"). */
 const HOSTILE_STATES = new Set(['alert', 'attack', 'stagger', 'downed']);
 
@@ -58,6 +67,7 @@ export class Perception {
     this._hearPos = new THREE.Vector3();
     this._hearStrength = 0.5; this._hearStrength = 0;
     this._hearKind = null;
+    this._hearLure = 0;
     this.omniActive = false;
     this._losT = 0.5; this._losT = 0;
     this._losCached = false;
@@ -66,6 +76,12 @@ export class Perception {
     // the 'machine-scan' payload, ONE per machine and rewritten per emit (listeners read it synchronously
     // and keep nothing: audio's ping is the only one): no object per scan pulse
     this._scanEv = { machine, sweep: 0.5 };
+    // every field written with a different value and back, once (lib/hot.js mutableFromBirth, fix round 3): the
+    // first `visible`, the first heard `lure`, the first stimulus record mid-session is never a constness change
+    // that throws away the optimised `_sight` / `_beliefTick`
+    mutableFromBirth(this);
+    mutableFromBirth(this._scanEv);
+    mutableFromBirth(this._stim);
   }
 
   /**
@@ -137,9 +153,13 @@ export class Perception {
   /** A stimulus reached this machine (footstep, impact, lure, alarm). */
   hear(x, z, strength, kind) {
     if (strength <= this._hearStrength && this._hearKind !== 'lure') return;
-    this._hearPos.set(x, 0, z);
+    // grounded here, when the stimulus arrives (it was grounded in `_beliefTick`, with the same getHeight(x, z)):
+    // the per-tick belief no longer calls the terrain on its hearing branch only (fix round 3)
+    const T = HOT.terrain;
+    this._hearPos.set(x, T ? T.getHeight(x, z) : 0, z);
     this._hearStrength = Math.max(this._hearStrength, strength);
     this._hearKind = kind;
+    this._hearLure = kind === 'lure' ? 1 : 0;   // (a Smi for `_beliefTick`: no string compare against null per tick)
   }
 
   /**
@@ -192,23 +212,32 @@ export class Perception {
     const m = this.m;
     const ms = m.sc;
     const c = this.cfg;
-
+    /* Every operation on every frame, as in `_sight` (W0b fix round 3), and the scan event goes out through
+     * `HOT` (a plain object holding the bus) instead of `m.ctx`: a machine's ctx is a prototype-chained VIEW of the
+     * root ctx (ai/emit.js `machineCtx`), so a load through it depended on the root ctx's map, and another
+     * system changing the root ctx deoptimised this function ("dependent prototype chain changed", measured). */
+    const s = m.state, lowL = !!m.lowLOD;
+    const isPatrol = s === 'patrol', isReturn = s === 'return', isSus = s === 'suspicious';
+    const calm = isPatrol || isReturn || isSus;
+    const cPeriod = c.scanPeriod, cSweep = c.scanSweep;
     // sensor sweep: the cone itself scans while the machine is calm, which is
     // what stops the peripheral arc from being a static bubble
-    const calm = m.state === 'patrol' || m.state === 'return' || m.state === 'suspicious';
-    this.scanT += dt;
-    const want = calm ? Math.sin((this.scanT / c.scanPeriod) * Math.PI * 2) * c.scanSweep : 0;
-    this.scanOffset += (want - this.scanOffset) * (1 - Math.exp(-4 * dt));
-    ms.scanOffset = this.scanOffset;
-    if (calm && !m.lowLOD) {
-      this._scanEmit -= dt;
-      if (this._scanEmit <= 0) {
-        this._scanEmit = c.scanPeriod * 0.5;
-        const ev = this._scanEv; ev.sweep = this.scanOffset;
-        safeEmit(m.ctx, 'machine-scan', ev);
-      }
+    const scanT = this.scanT + dt;
+    this.scanT = scanT;
+    const wantCalm = Math.sin((scanT / cPeriod) * Math.PI * 2) * cSweep;
+    const want = calm ? wantCalm : 0;
+    const so = this.scanOffset;
+    const so2 = so + (want - so) * (1 - Math.exp(-4 * dt));
+    this.scanOffset = so2;
+    ms.scanOffset = so2;
+    const emitOn = calm && !lowL;
+    const se0 = this._scanEmit, se = se0 - dt, due = se <= 0, reset = cPeriod * 0.5;
+    const fire = emitOn && due;
+    this._scanEmit = fire ? reset : emitOn ? se : se0;
+    if (fire) {
+      const ev = this._scanEv; ev.sweep = so2;
+      safeEmit(HOT, 'machine-scan', ev);
     }
-
   }
 
   /** Per perception tick: can it see her, and how fast does the sight fill? -> `_tickVisible`, `_tickFill`. */
@@ -218,12 +247,16 @@ export class Perception {
     const c = this.cfg;
     // the player's values from lib/hot.js (copied once per frame): never her own object (see hot.js)
     const H0 = HOT, pp = H0.ppos;
-    /* EVERY INPUT IS READ ON EVERY TICK (W0b fix round 2). A property load that optimised code reaches for the
-     * first time mid-session — `c.motionRun` the first time she sprints, `c.poseCrouch` the first time she
-     * crouches, `c.hiddenRange` in grass — has no type feedback, so V8 deoptimises the function there and runs
-     * it in an allocating tier until it is re-optimised (measured: 7 KB/s in the window of her first sprint).
-     * The cfg row, the machine and the hooks are therefore read up front, unconditionally, and the branches
-     * below only pick among locals. */
+    /* EVERY OPERATION RUNS ON EVERY TICK (W0b fix round 3; judges instruments-core/W0b r3). V8 gives an
+     * operation type feedback only once it has run; optimised code that reaches an operation with none
+     * deoptimises right there ("Insufficient type feedback for binary operation", measured at her first sprint:
+     * the peripheral-arc compare and the perk multiply had never run while she stood in the fight), and the
+     * function then runs in an allocating tier until it is re-optimised — `_sight` is called only a few hundred
+     * times a second, so that took 4 s (7-14 KB/s in that window, every run). So every load, compare and
+     * arithmetic operation below executes on every tick, whatever the branch; the branches only SELECT between
+     * locals (a select of two locals has no feedback to miss). The one call that stays conditional is the
+     * line-of-sight test (it runs every tick for every machine that sees her, from the first frame of a fight).
+     * Values are identical to the branchy form (same expressions, same order of operations). */
     const cOmni = c.omni, cHiddenRange = c.hiddenRange, cScanSweep = c.scanSweep, cFocusPad = c.focusPad;
     const cHiddenPeriph = c.hiddenPeriph, cPeriphRange = c.periphRange, cPeriphDeg = c.periphDeg, cPeriphWeight = c.periphWeight;
     const cEngagedRange = c.engagedRange, cEngagedWeight0 = c.engagedWeight, cPoseCrouch = c.poseCrouch, cPoseStand = c.poseStand;
@@ -232,87 +265,86 @@ export class Perception {
     const H = m.manager?.perception;
     const hSightScale = H ? H.sightScale : 1, hDetectMul = H ? H.detectMul : 1;
     const mSightHalf = m.sightHalf, mSightRange = m.sightRange, mAlive = m.alive, mState = m.state;
-    const msHeading = ms.heading, msLampDarkT = ms.lampDarkT, scanOffset = this.scanOffset;
+    const msHeading = ms.heading, msLampDarkT = ms.lampDarkT, scanOffset = this.scanOffset, msPlayerDist = ms.playerDist;
     const pOk = H0.pOk, pHealth = H0.pHealth, pCrouch = H0.pCrouch, pTallGrass = H0.pTallGrass, sp = H0.pMoveSpeed;
     const hostileNow = HOSTILE_STATES.has(mState);
+    const mp = m.position;
 
-    let visible = false;
-    let fill = 0;
-    let dist = 999;
+    // ---- presence and distance
+    const okP = pOk === 1, okH = pHealth > 0;
+    const present = okP && okH && !!mAlive;
+    const ddx = pp.x - mp.x, ddz = pp.z - mp.z;
+    const distR = Math.sqrt(ddx * ddx + ddz * ddz);
+    ms.playerDist = present ? distR : msPlayerDist;
 
-    if (pOk === 1 && pHealth > 0 && mAlive) {
-      // (the helpers below are written out: a double crossing a call that is not inlined is boxed)
-      const ddx = pp.x - m.position.x, ddz = pp.z - m.position.z;
-      dist = Math.sqrt(ddx * ddx + ddz * ddz);
-      ms.playerDist = dist;
-
-      const hidden = pCrouch === 1 && pTallGrass === 1;
-      // _omni(dist)
-      let omniW = 0;
-      const o = cOmni;
-      if (o) {
-        let ok = true;
-        if (o.part) {
-          ok = false;
-          const parts = m.parts;
-          for (let i = 0; i < parts.length; i++) if (parts[i].name === o.part) { ok = parts[i].attached; break; }
-        }
-        if (ok && dist <= o.radius) omniW = o.weight;
+    const W1 = WK.one, W0 = WK.zero;
+    // ---- _omni(dist): no kind carries an omni sensor today (tables.js `omni: null`); kept for the row's shape
+    let omniW = W0;
+    const o = cOmni;
+    if (o) {
+      let ok = true;
+      if (o.part) {
+        ok = false;
+        const parts = m.parts;
+        for (let i = 0; i < parts.length; i++) if (parts[i].name === o.part) { ok = parts[i].attached; break; }
       }
-      const ignoreStealth = omniW > 0 && cOmni && cOmni.ignoreStealth;
-      /**
-       * WEATHER (instruments-core W0b, bible §2.3, `A-perception-weather`):
-       * calima and fog banks halve an Instrument's sight range, night is
-       * x0.7 — `machines.perception.sightScale`, read once per frame from
-       * `environment` (`src/instruments/lib/weather.js`). A darkened lamp
-       * (`lampDarkT`, a precise hit on the lamp, bible §7.3) sees nothing.
-       */
-      const blind = (msLampDarkT || 0) > 0;
-      const maxSee = blind ? 0 : (hidden && !ignoreStealth) ? cHiddenRange : mSightRange * hSightScale;
-
-      if (dist < maxSee || omniW > 0) {
-        let w = 0;
-        if (dist < maxSee) {
-          // _sweepScale()
-          const cap = mSightHalf * 0.5, sa = Math.abs(cScanSweep) || 1e-6;
-          const sws = cap / sa < 1 ? cap / sa : 1;
-          const dir = msHeading + scanOffset * sws;
-          const fx = Math.sin(dir), fz = Math.cos(dir);
-          const dot = dist > 0.01 ? (ddx * fx + ddz * fz) / dist : 1;
-          // _coneWeight(dot, dist, hidden && !ignoreStealth)
-          const hid = hidden && !ignoreStealth;
-          const fa = mSightHalf + cFocusPad;
-          if (dot >= Math.cos(fa < Math.PI ? fa : Math.PI)) w = 1;
-          else if (!(hid && !cHiddenPeriph)) {
-            const range = hid ? cHiddenPeriph : cPeriphRange;
-            if (dist <= range && dot >= Math.cos(cPeriphDeg * DEG)) w = cPeriphWeight;
-          }
-          /**
-           * Engaged contact (see PERCEPTION.engagedRange in ai/tables.js): a
-           * machine that is ALREADY in the fight does not lose a player it is
-           * grappling with just because its body swung past her. Gated on
-           * `attack` state, so it can never START a detection, and still LOS-
-           * gated below — the stealth pillar (cone + build-up + occluders +
-           * grass) is exactly as it was for every machine that has not yet
-           * found her.
-           */
-          if (mState === 'attack' && dist <= cEngagedRange) {
-            if (cEngagedWeight > w) w = cEngagedWeight;
-          }
-        }
-        if (omniW > w && !blind) w = omniW;
-        if (w > 0 && this.hasLOS(pp)) {
-          visible = true;
-          const pose = pCrouch === 1 ? cPoseCrouch : cPoseStand;
-          const dd = dist / cD0;
-          const mot = sp < 0.5 ? cMotionStill : sp < 4.2 ? cMotionWalk : cMotionRun;   // _motion(p)
-          fill = (cGain / (1 + dd * dd)) * w * pose * mot;
-          // perk hook `perception.detectMul` (bible §4.7 "Read as true"):
-          // the build-up of a machine that has not yet found her; hostile is unchanged
-          if (H && !hostileNow) fill *= hDetectMul;
-        }
-      }
+      if (ok && distR <= o.radius) omniW = o.weight;
     }
+    const omniPos = omniW > 0;
+    const ignoreStealth = omniPos && !!cOmni && !!cOmni.ignoreStealth;
+
+    // ---- the reach (WEATHER: `machines.perception.sightScale`, bible §2.3; a darkened lamp sees nothing, §7.3)
+    const crouch = pCrouch === 1, grass = pTallGrass === 1;
+    const hidden = crouch && grass;
+    const hid = hidden && !ignoreStealth;
+    const blind = msLampDarkT > 0;
+    const reach = mSightRange * hSightScale;
+    const maxSee = blind ? 0 : hid ? cHiddenRange : reach;
+    const inSee = distR < maxSee;
+
+    // ---- the cone (_sweepScale, _coneWeight), the peripheral arc and the engaged contact
+    const cap = mSightHalf * 0.5, sa0 = Math.abs(cScanSweep), sa = sa0 > 0 ? sa0 : 1e-6;
+    const ratio = cap / sa, sws = ratio < 1 ? ratio : 1;
+    const dir = msHeading + scanOffset * sws;
+    const fx = Math.sin(dir), fz = Math.cos(dir);
+    const far = distR > 0.01;
+    const dotR = (ddx * fx + ddz * fz) / (far ? distR : 1);
+    const dot = far ? dotR : 1;
+    const fa = mSightHalf + cFocusPad, faOk = fa < Math.PI, cosFa = Math.cos(faOk ? fa : Math.PI);
+    const inCone = dot >= cosFa;
+    const hpOn = cHiddenPeriph > 0;
+    const perAllowed = hid ? hpOn : true;            // `!(hid && !hiddenPeriph)`
+    const perRange = hid ? cHiddenPeriph : cPeriphRange;
+    const inPerRange = distR <= perRange;
+    const cosPer = Math.cos(cPeriphDeg * DEG);
+    const inPerDot = dot >= cosPer;
+    const wCone = inCone ? W1 : (perAllowed && inPerRange && inPerDot) ? cPeriphWeight : W0;
+    /**
+     * Engaged contact (see PERCEPTION.engagedRange in ai/tables.js): a machine that is ALREADY in the fight does
+     * not lose a player it is grappling with just because its body swung past her. Gated on `attack` state, so
+     * it can never START a detection, and still LOS-gated below — the stealth pillar (cone + build-up +
+     * occluders + grass) is exactly as it was for every machine that has not yet found her.
+     */
+    const attackS = mState === 'attack', inEng = distR <= cEngagedRange, engHi = cEngagedWeight > wCone;
+    const wEng = attackS && inEng && engHi ? cEngagedWeight : wCone;
+    const w0 = inSee ? wEng : W0;
+    const omniHi = omniW > w0;
+    const w1 = omniHi && !blind ? omniW : w0;
+    const w = present && (inSee || omniPos) ? w1 : W0;
+
+    // ---- line of sight, then the fill: f(1/d^2) * cone * pose * motion
+    const wPos = w > 0;
+    const los = wPos ? this.hasLOS(pp) : false;
+    const visible = wPos && los;
+    const pose = crouch ? cPoseCrouch : cPoseStand;
+    const dd = distR / cD0;
+    const still = sp < 0.5, walk = sp < 4.2;
+    const mot = still ? cMotionStill : walk ? cMotionWalk : cMotionRun;   // _motion(p)
+    const fillRaw = (cGain / (1 + dd * dd)) * w * pose * mot;
+    // perk hook `perception.detectMul` (bible §4.7 "Read as true"): the build-up of a machine that has not yet
+    // found her; hostile is unchanged
+    const fillDet = fillRaw * hDetectMul;
+    const fill = visible ? (H && !hostileNow ? fillDet : fillRaw) : W0;
 
     this._tickVisible = visible;
     this._tickFill = fill;
@@ -328,38 +360,47 @@ export class Perception {
     const ms = m.sc;
     const c = this.cfg;
     const visible = this._tickVisible, fill = this._tickFill;
-    // every cfg input read on every tick, as in _sight (no load reached for the first time mid-session)
+    /* EVERY OPERATION RUNS ON EVERY TICK, as in `_sight` (W0b fix round 3): the hearing branch first ran at her
+     * first sprint (footsteps) and deoptimised this function there ("Insufficient type feedback for compare
+     * operation", measured). Each of the three outcomes (seen / heard / neither) is computed, then selected.
+     * The heard position already carries its ground height (`hear` grounds it when the stimulus arrives, with the
+     * same `terrain.getHeight(x, z)` this tick used to call). Values are identical to the branchy form. */
     const cHearCap = c.hearCap, cHearGain = c.hearGain, cAlertAt = c.alertAt, cDecay = c.decay, cDecayCalm = c.decayCalm;
-    const mState = m.state, hearStrength = this._hearStrength;
-    if (visible) {
-      { const sv = ms.suspicion + fill * pd; ms.suspicion = sv < 1.25 ? sv : 1.25; }   // (no Math.* call takes a double)
-      m.lastKnown.copy(HOT.ppos);          // (her position this frame, lib/hot.js)
-      ms._unseenT = 0;
-      this.visibleT += pd;
-      this.lastSeenAt = ms._stateT;
-      this.lastStimulus = null;
-    } else {
-      this.visibleT = 0;
-      ms._unseenT += pd;
-      if (hearStrength > 0) {
-        // hearing raises suspicion toward — but never past — the alert line
-        const cap = mState === 'attack' ? 1.25 : cHearCap;
-        { const sv = ms.suspicion + cHearGain * hearStrength * pd; ms.suspicion = sv < cap ? sv : cap; }
-        if (ms.suspicion < cAlertAt || this._hearKind === 'lure') {
-          m.lastKnown.copy(this._hearPos);
-          m.lastKnown.y = HOT.terrain.getHeight(m.lastKnown.x, m.lastKnown.z);
-        }
-        // one record per machine, rewritten (read only here and by debug views): no object per tick
-        const st = this._stim; st.x = this._hearPos.x; st.z = this._hearPos.z; st.kind = this._hearKind;
-        this.lastStimulus = st;
-        if (mState === 'attack' && ms._unseenT > 1.5) ms._unseenT = 1.5;
-      } else {
-        const rate = mState === 'search' || mState === 'suspicious' ? cDecay : cDecayCalm;
-        { const sv = ms.suspicion - rate * pd; ms.suspicion = sv > 0 ? sv : 0; }
-      }
-    }
+    const mState = m.state, hearStrength = this._hearStrength, hearKind = this._hearKind;
+    const susp = ms.suspicion, unseen = ms._unseenT, stT = ms._stateT, vT = this.visibleT, lastSeen = this.lastSeenAt, lastStim = this.lastStimulus;
+    const hearing = hearStrength > 0;
+    const attackS = mState === 'attack', searchS = mState === 'search', suspS = mState === 'suspicious', lure = this._hearLure === 1;
+    // seen: the fill builds suspicion (no Math.* call takes a double)
+    const svSeen0 = susp + fill * pd, seenUnder = svSeen0 < 1.25, svSeen = seenUnder ? svSeen0 : 1.25;
+    // heard: hearing raises suspicion toward — but never past — the alert line
+    const capH = attackS ? 1.25 : cHearCap;
+    const svHeard0 = susp + cHearGain * hearStrength * pd, heardUnder = svHeard0 < capH, svHeard = heardUnder ? svHeard0 : capH;
+    // neither: decay
+    const rate = searchS || suspS ? cDecay : cDecayCalm;
+    const svDecay0 = susp - rate * pd, decayPos = svDecay0 > 0, svDecay = decayPos ? svDecay0 : 0;
+    const svNew = visible ? svSeen : hearing ? svHeard : svDecay;
+    ms.suspicion = svNew;
+    const belowAlert = svNew < cAlertAt;
+    const heard = !visible && hearing;
+    const toHear = heard && (belowAlert || lure);
+    // lastKnown: her position this frame when seen (lib/hot.js), the noise when heard below the alert line (or a lure)
+    const lk = m.lastKnown, P = HOT.ppos, hp = this._hearPos;
+    const lx = lk.x, ly = lk.y, lz = lk.z, px = P.x, py = P.y, pz = P.z, hx = hp.x, hy = hp.y, hz = hp.z;
+    lk.x = visible ? px : toHear ? hx : lx;
+    lk.y = visible ? py : toHear ? hy : ly;
+    lk.z = visible ? pz : toHear ? hz : lz;
+    // unseen time: 0 while seen; while heard in attack it is held at 1.5 s at most
+    const unseenAdd = unseen + pd, overHold = unseenAdd > 1.5;
+    ms._unseenT = visible ? 0 : heard && attackS && overHold ? 1.5 : unseenAdd;
+    this.visibleT = visible ? vT + pd : 0;
+    this.lastSeenAt = visible ? stT : lastSeen;
+    // one record per machine, rewritten (read only here and by debug views): no object per tick
+    const st = this._stim, sx = st.x, sz = st.z, sk = st.kind;
+    st.x = heard ? hx : sx; st.z = heard ? hz : sz; st.kind = heard ? hearKind : sk;
+    this.lastStimulus = visible ? null : heard ? st : lastStim;
     this._hearStrength = 0;
     this._hearKind = null;
+    this._hearLure = 0;
     this.visible = visible;
     m._visible = visible;
     ms.detectFill = fill;

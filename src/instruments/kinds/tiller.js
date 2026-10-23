@@ -100,10 +100,16 @@ export class Tiller extends ExpansionMachine {
   onDeathPose(k, deathT) { this.gait.deathPose(k, deathT, 'quad'); }
 
   animate(dt, t) {
-    if (this.state === 'dead') return;
+    /* Both gait entry points are loaded on every call (W0b fix round 3): the cheap path ran for the first time when
+     * she sprinted away from the fight (rig LOD 3), and its property load, never run before, deoptimised this
+     * function there ("Insufficient type feedback for generic named access", measured). The call stays on its
+     * branch; the loads it needs have feedback from the first frame. */
+    const gait = this.gait, cheap = gait.updateCheap, dead = this.state === 'dead';
+    if (dead) return;
     this._snapDoctrineSockets();
-    if (updateRigLOD(this) >= 3) { this.gait.updateCheap(dt, t); return; }
-    this.gait.update(dt, t);
+    const lod = updateRigLOD(this);
+    if (lod >= 3) { cheap.call(gait, dt, t); return; }
+    gait.update(dt, t);
   }
 }
 

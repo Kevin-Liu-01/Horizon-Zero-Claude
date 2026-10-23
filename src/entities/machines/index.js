@@ -7,7 +7,7 @@ import { setAiRng, seededRng, aiRngSeeded } from './ai/rng.js';
 import { REST_SITE } from '../../world/island/sites.js';
 import { PLAY_RADIUS, EXTENT } from '../../world/island/extent.js';
 import { _st, stepRootS, normalizeEyeRecords } from './machine.js';
-import { refreshHot } from '../../instruments/lib/hot.js';
+import { refreshHot, mutableFromBirth } from '../../instruments/lib/hot.js';
 import {
   BODY as EXPANSION_BODY, CHASSIS, installDoctrine, installExpansionDoctrine,
   spawnExpansion, doctrineAudit,
@@ -245,6 +245,13 @@ export class Machines {
      * die permanently on the first respawn; see `ai/squad.js:_remember`.
      */
     this.squads?.adopt?.(m);
+    /* MUTABLE FROM BIRTH (W0b fix round 3; lib/hot.js): every own field of the machine, its scalars and its AI is
+     * written with a different value and back, once, here — after the site, doctrine and squad wiring above added
+     * theirs — so the first fractional value, the first `alive = false`, the first state string or the first lamp
+     * record mid-session is never a constness change that throws away the per-machine code that read it. */
+    mutableFromBirth(m);
+    if (m.sc) mutableFromBirth(m.sc);
+    if (m.ai) mutableFromBirth(m.ai);
     return m;
   }
 

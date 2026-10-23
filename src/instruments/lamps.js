@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { hexToRgb, srgbToLinear } from './lib/color.js';
 import { perceptionScale } from './lib/weather.js';
-import { HOT } from './lib/hot.js';
+import { HOT, mutableFromBirth } from './lib/hot.js';
 
 /**
  * LAMP STATES — the Instruments' lamp grammar (instruments-core W0b; bible §7.2,
@@ -644,6 +644,7 @@ export class LampSystem {
       slot: -1, bslot: -1, bmode: 'lock', bt: 0.5, blen: 30.5,   // written by update(), read by _writeMatrices()
     };
     rec.aperture = LAMP_STATES.calm.aperture;
+    mutableFromBirth(rec);   // no field const by the time update() is optimised (lib/hot.js; fix round 3)
     this.records.push(rec);
     machine.lamp = rec;
     return rec;

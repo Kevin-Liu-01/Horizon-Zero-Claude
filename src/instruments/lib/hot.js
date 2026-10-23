@@ -46,6 +46,8 @@ export const HOT = {
   engine: null,
   environment: null,
   collision: null,
+  /** the event bus (`ctx.events`): per-machine code emits through `safeEmit(HOT, ...)`, never through `m.ctx` */
+  events: null,
   /** Smi frame counter (wraps at 2^30), bumped by every refreshHot */
   frame: 0,
   /** the frame whose player position `playerX` / `playerZ` box */
@@ -80,8 +82,11 @@ export const HOT = {
 export function mutableFromBirth(o) {
   const keys = Object.keys(o);
   for (let i = 0; i < keys.length; i++) {
-    const k = keys[i], v = o[k];
-    if (typeof v === 'number') o[k] = v === Math.trunc(v) && Math.abs(v) < 0x3fffffff ? v + 1 : v + 0.25;
+    const k = keys[i];
+    const d = Object.getOwnPropertyDescriptor(o, k);
+    if (!d || !('value' in d) || !d.writable) continue;   // an own accessor or a frozen field is left alone
+    const v = d.value;
+    if (typeof v === 'number') o[k] = !Number.isFinite(v) ? 0.25 : v === Math.trunc(v) && Math.abs(v) < 0x3fffffff ? v + 1 : v + 0.25;   // (NaN, ±Infinity: 0.25)
     else if (typeof v === 'boolean') o[k] = !v;
     else if (typeof v === 'string') o[k] = v + '\u0001';
     else if (typeof v === 'function') continue;   // methods copied onto an instance never change
@@ -108,6 +113,8 @@ export function refreshHot(ctx) {
   if (H.environment !== env) H.environment = env;
   const col = ctx.collision || null;
   if (H.collision !== col) H.collision = col;
+  const ev = ctx.events || null;
+  if (H.events !== ev) H.events = ev;
   H.frame = (H.frame + 1) & 0x3fffffff;
   if (e) { const st = e.simTime; if (typeof st === 'number') H.simTime = st; }
   if (p && p.position) {
