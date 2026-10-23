@@ -3226,12 +3226,13 @@ const GATES = [
         const veg = C.scene.getObjectByName('vegetation'); if (veg) veg.visible = false;
         setTimeout(() => {
           /* fix round 4 (judge r1: "Brea is only about 370 px tall in the frame,
-           * which makes the legs hard to read"): 4.0 m out (was 6.5 m), the lens
-           * at hip height (combat's aim zoom owns the FOV while she aims, so the
-           * distance is the lever) — she fills ~60 % of the frame's height */
+           * which makes the legs hard to read"): 3.3 m out (was 6.5 m), the lens
+           * at hip height (combat's aim zoom owns the FOV while she aims — it
+           * reads ~44 deg here — so the distance is the lever): she fills ~63 %
+           * of the frame's height */
           p._updateCamera = function () {
             const cam = this.ctx.camera;
-            cam.position.set(this.position.x, this.position.y + 1.05, this.position.z + 4.0);
+            cam.position.set(this.position.x, this.position.y + 1.0, this.position.z + 3.3);
             cam.lookAt(this.position.x, this.position.y + 0.82, this.position.z);
           };
           C.camera.fov = 22; C.camera.updateProjectionMatrix();

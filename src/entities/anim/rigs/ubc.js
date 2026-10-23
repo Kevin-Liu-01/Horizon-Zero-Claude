@@ -162,7 +162,7 @@ export const UBC_TUNE = {
   // its downward share limited to 0.25 (level / up-aims untouched), and the
   // hand turned about the wrist until the middle knuckle is within 0.052 m of
   // the nock (level / up-aims measured 0.060-0.062)
-  behindNockDownY: 0.25,
+  behindNockDownY: null,
   knuckleNock: 0.052,
   // the bow's lateral offset off the anchor line (char +X = her left; Round 4
   // 0.035): Brea's string touches the jaw corner, a hair outside it
