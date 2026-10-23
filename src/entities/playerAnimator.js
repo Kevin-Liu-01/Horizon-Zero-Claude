@@ -759,6 +759,8 @@ export class PlayerAnimator {
     // R5 fix round 5: the down aim's rigid turn of the upper body and the
     // turned frame's up / forward (identity / char Y / char Z otherwise)
     this._qT = new THREE.Quaternion(); this._upT = new THREE.Vector3(0, 1, 0); this._fwdT = new THREE.Vector3(0, 0, 1);
+    this._latT = new THREE.Vector3(1, 0, 0); this._restGripT = new THREE.Vector3();
+    this._dTs = new THREE.Vector3(0, 0, 1); this._tOff = true;   // the T ray, low-passed (snapped when the turn starts)
     this._gripValid = false;
     // aim diagnostics (written by _aimLayer, read by debugAim()/the gates)
     this._aimDbg = {
@@ -1381,6 +1383,7 @@ export class PlayerAnimator {
     const p = this.ctx.player;
     if (!p || dt <= 0) return;
     dt = Math.min(dt, 0.05);
+    this._dtA = dt;                  // R5 fix round 5: the aim layer's T-ray smoothing reads it
     this.space.syncFrame();          // anim-core: was _invModelQ.copy(...).invert()
 
     /* ---- read state, smooth layer weights ---- */
@@ -1862,6 +1865,7 @@ export class PlayerAnimator {
     // the crouch toggle through an aim now, so there has to be a pose for it.
     this._crouchAimW = damp(this._crouchAimW, p.crouchAim && !dead ? 1 : 0, 9, dt);
     if (aimW > 0.01) this._aimLayer(aimW, this._drawS, p, moveW, t);
+    else this._tOff = true;          // fix round 5: the next aim's T ray starts from its own ray
     if (this._crouchAimW > 0.01) this._crouchAimLayer(this._crouchAimW * aimW, p);
     if (carryW > 0.01) this._carryLayer(carryW, p, t);
     // wielded-but-not-aiming: the bow rides LOW in the LEFT hand and the left
@@ -3405,6 +3409,7 @@ export class PlayerAnimator {
     const tS = (this.T.downT ? smoothstep(pitch, 0.1, 0.5) : 0) + (this.T.upT ?? 0) * smoothstep(-pitch, 0.1, 0.5);
     const fp = pitch * (1 - tS);
     this._qT.identity(); this._upT.copy(Y_AXIS); this._fwdT.copy(Z_AXIS);
+    this._latT.set(1, 0, 0); this._restGripT.copy(this.T.restGrip);
     rotP(b.spine2, fp * PS[0] * aimW);
     rotP(b.spine3, fp * PS[1] * aimW);
     rotP(b.spine4, fp * PS[2] * aimW);
@@ -3518,7 +3523,33 @@ export class PlayerAnimator {
       // bend steepened the ray — A32-draw-ramp `down105` ran away to a fold
       // with the hand 0.69 m off the nock, run f5t1); past it the arms take
       // the rest of the pitch, as they did before.
-      const yawR = clamp(Math.atan2(_dA.x, _dA.z), -0.45, 0.45), pitR = clamp(Math.asin(clamp(-_dA.y, -1, 1)), -0.6, 0.95);
+      // ...and past a 0.8 rad camera pitch the turn's ray blends (by 1.0) to
+      // one from a FIXED point on her (`rayFwd` ahead, `rayH` up) to the aim
+      // point, which has no feedback (the 1.05 aim: hand 0.07 m from the nock
+      // on the fixed ray, run f5c10; 0.53 on the capped grip ray, run f5t2)
+      _dT.copy(_dA);
+      const kFix = smoothstep(pitch, 0.8, 1.0);
+      if (kFix > 0 && p.aiming && cmb?.aimPoint && p.position) {
+        const hy = p.heading ?? 0, sy = Math.sin(hy), cy = Math.cos(hy);
+        _v7.copy(cmb.aimPoint);
+        _v7.x -= p.position.x + sy * this.T.rayFwd;
+        _v7.y -= p.position.y + this.T.rayH;
+        _v7.z -= p.position.z + cy * this.T.rayFwd;
+        if (_v7.lengthSq() > 0.25) {
+          _v7.normalize();
+          _v7.set(_v7.x * cy - _v7.z * sy, _v7.y, _v7.x * sy + _v7.z * cy);
+          _dT.lerp(_v7, kFix).normalize();
+        }
+      }
+      // ...low-passed (0.35 s): the grip ray moves whenever the bow arm does —
+      // through the loose the relaxing bow arm swung it and the whole bent T
+      // with it (the hand 0.30 m back in 0.3 s at the 0.75 aim, the loose
+      // elbow 0.19 m behind the head plane against R35's 0.20, run f5t2); the
+      // arms still solve on the live ray
+      if (this._tOff) this._dTs.copy(_dT);
+      else this._dTs.lerp(_dT, 1 - Math.exp(-(this._dtA || 0.016) / 0.35)).normalize();
+      _dT.copy(this._dTs);
+      const yawR = clamp(Math.atan2(_dT.x, _dT.z), -0.45, 0.45), pitR = clamp(Math.asin(clamp(-_dT.y, -1, 1)), -0.6, 0.95);
       _dT.set(Math.sin(yawR) * Math.cos(pitR), -Math.sin(pitR), Math.cos(yawR) * Math.cos(pitR));
       _tq.setFromAxisAngle(Y_AXIS, yawR);
       _tq2.setFromAxisAngle(X_AXIS, pitR - fp);
@@ -3534,10 +3565,14 @@ export class PlayerAnimator {
       const rk = this.T.downTRoll ?? 0;
       if (rk > 0) { _v7.set(0, -Math.sin(fp), Math.cos(fp)); _tq2.setFromUnitVectors(_v7, _dT); _tq.slerp(_tq2, rk); }
       this._qT.slerpQuaternions(Q_IDENT, _tq, tS * aimW);
+      this._charOf(b.spine1.bone, _v7);            // the turn's pivot (spine_01 does not move)
       this._rotQL(b.spine1, this._qT);
       this._upT.copy(Y_AXIS).applyQuaternion(this._qT);
       this._fwdT.copy(Z_AXIS).applyQuaternion(this._qT);
-    }
+      this._latT.set(1, 0, 0).applyQuaternion(this._qT);
+      this._restGripT.copy(this.T.restGrip).sub(_v7).applyQuaternion(this._qT).add(_v7);
+      this._tOff = false;
+    } else this._tOff = true;
     this._aimDbg.tBend = 2 * Math.acos(Math.min(1, Math.abs(this._qT.w)));
 
     // breathing sway (steadier under Concentration) + draw-hold tremble
@@ -3643,13 +3678,16 @@ export class PlayerAnimator {
     // above the shoulder.
     // the grip this anchor implies, written into _grip; returns its overreach
     const gripFor = (a) => {
-      _grip.copy(this.T.restGrip).addScaledVector(_dA, this.T.restReach);
+      // (fix round 5: the rest hold and the lateral offset ride the down /
+      // up aim's turned T, `_restGripT` / `_latT`, so the draw ramp crosses the
+      // chest as the level draw's does)
+      _grip.copy(this._restGripT).addScaledVector(_dA, this.T.restReach);
       _v5.copy(a).sub(_nockOff);
       _grip.lerp(_v5, dEase);
       // Round 4 slid the whole bow 3.5 cm to her left (char +X) of the anchor
       // line; on Brea that ran the string 3.5 cm INSIDE the jaw-corner anchor,
       // i.e. through her face, and the fist with it (profile `tune.gripOut`)
-      _grip.x += this.T.gripOut * dEase;
+      _grip.addScaledVector(this._latT, this.T.gripOut * dEase);
       // (the old code also pushed the grip a further 0.05m out along the aim,
       // 5cm of pure draw-length cost the reach clamp then paid back as slide.
       // The correct grip is exactly anchor - nockOffset.)
@@ -3868,6 +3906,14 @@ export class PlayerAnimator {
       qw = reach * aimW * (1 - smoothstep(drawS, 0.02, 0.14));
       _v6.copy(this.T.quiverHip);
       _v7.lerp(_v6, qw * 0.92);
+      /* R5 fix round 5 (A-wrap-clear on the judges' re-runs: the alidade
+       * cord's root 0.029-0.042 m from the forearm, 0.35 s after a loose, probe
+       * `cord`): the reach to the hip quiver ran a straight line from the
+       * string down across the sternum, where the cord hangs. It bows out to
+       * her RIGHT (character -X, in the aim's turned frame) on the way, 0.09 m
+       * at the middle of the reach and none at the quiver (A17's hand-to-quiver
+       * is untouched). */
+      _v7.addScaledVector(this._latT, -0.09 * 4 * qw * (1 - qw));
       qOpen = 0.45 + 0.55 * Math.max(this._quiverT, smoothstep(drawS, 0.02, 0.14));
     }
     // Hard guard: the string hand may never enter the head. The keep-out is an

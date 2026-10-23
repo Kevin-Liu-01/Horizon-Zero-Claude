@@ -8802,18 +8802,20 @@ const NEW_VISUALS = [
       const kn = new T3(), ft = new T3(); an.debugDrawHand(kn, ft);
       const head = an.b.head.bone.getWorldPosition(new T3());
       const h = p.heading, fx = Math.sin(h), fz = Math.cos(h), rx = -Math.cos(h), rz = Math.sin(h);
-      // the look-at: forward of the face and down toward the bow grip, so the
-      // anchor, the arrow, the bow and the draw elbow are all in the frame
-      const tgt = new T3(head.x + fx * 0.28, head.y - 0.22, head.z + fz * 0.28);
+      /* fix round 5: she now bends at the hips with the whole T (judge r2), so
+       * the frame is centred on the T itself — the head, the draw elbow and the
+       * bow grip — and the side lens is LEVEL with it, square to the draw's
+       * vertical plane (the old raised lens, aimed forward of an upright face,
+       * cut the bent head into a corner); the measured form is printed */
+      const elW = an.b.loArmR.bone.getWorldPosition(new T3()), wrW = an.b.handR.bone.getWorldPosition(new T3()), bhW = an.b.handL.bone.getWorldPosition(new T3());
+      const tgt = head.clone().add(elW).add(bhW).multiplyScalar(1 / 3);
+      const foreDeg = Math.acos(Math.max(-1, Math.min(1, wrW.clone().sub(elW).normalize().dot(bhW.clone().sub(nk).normalize())))) * 180 / Math.PI;
       const S = await import('/src/hero/sheets.js');
       const W = 780, H = 860;
       const live = (pos) => S.liveView(C, [pos.x, pos.y, pos.z], [tgt.x, tgt.y, tgt.z], { width: W, height: H, fov: 34 });
-      // the side view is raised ~20 deg so it looks across the draw roughly
-      // square to its plane (the whole T-form — trunk, arms, head — is pitched
-      // down with the aim; a level lens looks UP under the bowed face)
-      const side = new T3(head.x + rx * 1.55 + fx * 0.20, head.y + 0.55, head.z + rz * 1.55 + fz * 0.20);
+      const side = new T3(tgt.x + rx * 1.9, tgt.y + 0.08, tgt.z + rz * 1.9);
       const d34x = (fx + rx) / Math.SQRT2, d34z = (fz + rz) / Math.SQRT2;
-      const q34 = new T3(head.x + d34x * 1.5, head.y + 0.45, head.z + d34z * 1.5);
+      const q34 = new T3(tgt.x + d34x * 1.9, tgt.y + 0.30, tgt.z + d34z * 1.9);
       const a = live(side), b = live(q34);
       const cv = document.createElement('canvas'); cv.width = 1600; cv.height = 900;
       cv.style.cssText = 'position:fixed;left:0;top:0;width:1600px;height:900px;z-index:2147483646;background:#f4f1ea';
@@ -8822,10 +8824,10 @@ const NEW_VISUALS = [
       const put = (img, x) => { const t = document.createElement('canvas'); t.width = W; t.height = H; t.getContext('2d').putImageData(img, 0, 0); g.drawImage(t, x, 34); };
       put(a, 14); put(b, 806);
       g.fillStyle = '#2a2420'; g.font = '600 15px ui-monospace, Menlo, monospace';
-      g.fillText('FULL DRAW, AIM 43 deg DOWN — from her RIGHT (lens raised 20 deg, square to the draw)', 18, 24);
+      g.fillText('FULL DRAW, AIM 43 deg DOWN — from her RIGHT (lens level, square to the draw)', 18, 24);
       g.fillText('— from her FRONT-RIGHT 3/4 (raised)', 810, 24);
-      g.fillText('middle knuckle -> nock ' + kn.distanceTo(nk).toFixed(3) + ' m   fingertip -> nock ' + ft.distanceTo(nk).toFixed(3) + ' m   drawStrength ' + C.combat.drawStrength.toFixed(2), 18, 892);
-      return { drawS: C.combat.drawStrength, knuckleToNock: +kn.distanceTo(nk).toFixed(4), fingertipToNock: +ft.distanceTo(nk).toFixed(4) };
+      g.fillText('middle knuckle -> nock ' + kn.distanceTo(nk).toFixed(3) + ' m   fingertip -> nock ' + ft.distanceTo(nk).toFixed(3) + ' m   forearm vs arrow ' + foreDeg.toFixed(1) + ' deg   drawStrength ' + C.combat.drawStrength.toFixed(2), 18, 892);
+      return { drawS: C.combat.drawStrength, knuckleToNock: +kn.distanceTo(nk).toFixed(4), fingertipToNock: +ft.distanceTo(nk).toFixed(4), forearmToArrowDeg: +foreDeg.toFixed(2) };
     })()`),
     criteria: 'Full draw aimed steeply DOWN (camPitch 0.75, 43 deg), two views: from her right, and from her front-right three-quarter. Judge against the licence-clean archery side reference: the hand must hold the same relation to the face as a level draw. PASS requires ALL of: the drawing hand is ON the string at the nock — the hooked fingers on the string and the knuckles at her jaw / cheek beside the mouth corner, not up on the headwrap, at the temple or above the ear; the nock and the string meet the fingers at the jaw corner (not at the chin away from the hand); the drawing forearm runs back from the hand roughly along the arrow with the elbow level or back; the bow arm straight; no part of the hand inside the face. FAIL if the fist sits above the cheekbone (on the wrap or the temple), if the string runs through the back of the hand or the wrist instead of into the fingers, or if the forearm crosses her face.',
   },
