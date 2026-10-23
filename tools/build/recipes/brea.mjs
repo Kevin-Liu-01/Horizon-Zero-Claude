@@ -101,8 +101,15 @@ export const CHAINS = {
   alidadeCord: {
     parent: 'spine_03',
     names: ['dyn_alidadeCord_01', 'dyn_alidadeCord_02', 'dyn_alidadeCord_end'],
-    // neck cord to the sternum, outside the smock
-    points: [[0, 1.452, 0.080], [0, 1.385, 0.142], [0, 1.322, 0.163]],
+    // neck cord to the sternum, outside the smock. Fix round 4 (judge r1, V23:
+    // "the alidade reads static … a brass fleck at the buckle"; bible §3.1 /
+    // §3.5 "at the sternum"): the cord hung the tube 0.157 m under its root,
+    // i.e. at the bottom of her ribs once the idle posture settles the chest
+    // (tube 1.17 m over her feet, the clavicles at 1.33). It is 0.078 m now,
+    // so the tube hangs at mid-sternum (~1.26 m at idle), 2-3 cm proud of the
+    // smock (surface z 0.074 / 0.092 at y 1.40 / 1.38, measured on the bind
+    // body + Pan Whites I), where the arm swing does not cover it
+    points: [[0, 1.452, 0.080], [0, 1.412, 0.106], [0, 1.384, 0.118]],
   },
 };
 

@@ -119,6 +119,23 @@ export function screenPixels(R, buf, width, height, float, { background = null, 
   return out;
 }
 
+/**
+ * Fix round 4: one view of the LIVE scene (its lights, its shading) from `pos`
+ * looking at `target` (world [x, y, z]) into an ImageData, through the screen's
+ * own tone map (gate V24-draw-down). The render target is disposed before it
+ * returns.
+ */
+export function liveView(ctx, pos, target, { width = 780, height = 860, fov = 34, background = '#000000' } = {}) {
+  const R = ctx.renderer, c = ctx.camera.clone();
+  c.fov = fov; c.aspect = width / height; c.position.set(...pos); c.lookAt(...target); c.updateProjectionMatrix(); c.updateMatrixWorld();
+  const float = !!R.extensions?.has?.('EXT_color_buffer_float');
+  const rt = new THREE.WebGLRenderTarget(width, height, { samples: 4, type: float ? THREE.FloatType : THREE.UnsignedByteType });
+  const prev = R.getRenderTarget(); R.setRenderTarget(rt); R.render(ctx.scene, c);
+  const buf = float ? new Float32Array(width * height * 4) : new Uint8Array(width * height * 4);
+  R.readRenderTargetPixels(rt, 0, 0, width, height, buf); R.setRenderTarget(prev); rt.dispose();
+  return new ImageData(screenPixels(R, buf, width, height, float, { background }), width, height);
+}
+
 /** ImageData -> canvas. */
 function canvasOf(img) {
   const c = document.createElement('canvas'); c.width = img.width; c.height = img.height;
@@ -138,12 +155,25 @@ function overlay(w, h, bg = '#f4f1ea') {
 }
 const label = (g, text, x, y, size = 15, color = '#2a2420') => { g.fillStyle = color; g.font = `600 ${size}px ui-monospace, Menlo, monospace`; g.fillText(text, x, y); };
 
-/** Pose the hero for a sheet: idle, nothing in hand, the clock frozen. */
-async function poseIdle(ctx) {
-  const p = ctx.player;
+/**
+ * Pose the hero for a sheet: idle, nothing in hand. Fix round 4: she stands
+ * facing NORTH in the island's NE trade wind (the animator's default world
+ * wind, bible §2.2: from bearing 045, "flags stream SW"), i.e. the wind on her
+ * front-right, for 1.5 s of sim so the wrap tail has settled into it — the
+ * cloth streams to her left-rear by physics, not by a posed rest (fix round
+ * 3's `restKick`, retired). The views are rendered in one frame, so they all
+ * show the same instant of the gusting tail.
+ */
+async function poseIdle(ctx, settle = 1.5) {
+  const p = ctx.player, E = ctx.engine;
   ctx.input.keys.clear(); ctx.input.mouse.buttons = 0;
   if (ctx.sighting?.on) ctx.sighting.toggle?.(false);
-  for (let i = 0; i < 20; i++) await new Promise((r) => requestAnimationFrame(r));
+  p.heading = Math.PI;                       // facing north (-Z)
+  const s0 = E?.simTime ?? 0, w0 = performance.now();
+  for (let i = 0; i < 20 || ((E?.simTime ?? 1e9) - s0 < settle && performance.now() - w0 < 8000); i++) {
+    await new Promise((r) => requestAnimationFrame(r));
+    p.heading = Math.PI;
+  }
   return p.model;
 }
 
@@ -164,6 +194,7 @@ export async function silhouetteSheetOverlay(ctx) {
   const W = 1600, H = 900;
   const { c, g } = overlay(W, H);
   label(g, 'BREA — silhouette at 64 px (black fill), default loadout: Pan Whites I, Shepherd\'s Lance, cane quiver, crescent bracer, alidade', 24, 30, 16);
+  label(g, 'idle, facing N in the NE trade wind (bible §2.2, 5.5 m/s from 045: on her front-right) — the wrap tail is cloth in that wind', 24, 50, 12, '#6b6058');
   views.forEach(([name, yaw], i) => {
     const cam = { ...around(yaw, 6, 0.95, 0.95), ortho: { h: 2.3 } };
     // 64 px tall: the 2.3 m frame at 64/1.80*2.3 px = the body at ~64 px

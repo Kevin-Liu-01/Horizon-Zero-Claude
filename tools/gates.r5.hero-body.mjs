@@ -3225,18 +3225,33 @@ const GATES = [
         C.input.keys.add('KeyA');
         const veg = C.scene.getObjectByName('vegetation'); if (veg) veg.visible = false;
         setTimeout(() => {
+          /* fix round 4 (judge r1: "Brea is only about 370 px tall in the frame,
+           * which makes the legs hard to read"): 5.6 m out at 22 deg (was 6.5 m at
+           * 24 deg), the lens at hip-to-chest height — she fills ~65 % of the
+           * frame's height */
           p._updateCamera = function () {
             const cam = this.ctx.camera;
-            cam.position.set(this.position.x, this.position.y + 1.6, this.position.z + 6.5);
-            cam.lookAt(this.position.x, this.position.y + 0.85, this.position.z);
+            cam.position.set(this.position.x, this.position.y + 1.25, this.position.z + 5.6);
+            cam.lookAt(this.position.x, this.position.y + 0.86, this.position.z);
           };
-          C.camera.fov = 24; C.camera.updateProjectionMatrix();
-          setTimeout(() => { C.engine.timeScale = 0; }, 900);
+          C.camera.fov = 22; C.camera.updateProjectionMatrix();
+          setTimeout(() => {
+            C.engine.timeScale = 0;
+            /* R33 (g): the staging asserts the aim state (aiming, the bow in her
+             * hand) before it is filmed, or the frame says it failed by name */
+            const bowIn = !!C.combat?.bow?.group && C.combat.bow.group.visible !== false && C.combat.bow.group.parent === C.combat._bowNode;
+            if (!p.aiming || !bowIn) {
+              const d = document.createElement('div');
+              d.style.cssText = 'position:fixed;left:0;top:0;right:0;z-index:2147483647;background:#7a1010;color:#fff;font:600 22px/1.4 ui-monospace,Menlo,monospace;padding:18px';
+              d.textContent = 'V13 STAGING FAILED: aiming=' + !!p.aiming + ' bowInHand=' + bowIn + ' — this frame is not an aim side-step';
+              document.body.appendChild(d);
+            }
+          }, 900);
         }, 2400);
       })();`),
     settle: 4200,
     criteria: 'Locked front view of an aiming side-step (she is travelling to HER left, i.e. '
-      + 'screen right). PASS if both feet point roughly the same way (within ~20 deg of each '
+      + 'screen right; a red banner across the top means the staging was not aiming = FAIL). PASS if both feet point roughly the same way (within ~20 deg of each '
       + 'other) and toward the travel direction, the stance reads as a weighted step, and the '
       + 'upper body still holds the bow up on target. FAIL on a duck-footed A-stance (feet '
       + 'splayed away from each other), on a foot dragging on its toe tip, on the legs reading '
@@ -7445,6 +7460,8 @@ const DRAW = `
       };`;
 
 const GATE_PITCHES = [-0.55, -0.4, 0, 0.75];
+/** Fix round 4 (judge r1: knuckle 0.109 m from the nock at the 0.75 down aim): the hand ON the string, at every pitch. */
+const KNUCKLE_NOCK = 0.06, FINGERTIP_NOCK = 0.06;
 
 /** Page prelude: flatStrip(len) — a flat, clear, dry straight run (see the comment inside). */
 const FLAT_STRIP = `
@@ -7524,7 +7541,7 @@ const NEW_GATES = [
   /* -------------------------------------------------- A-draw-elbow-level */
   {
     id: 'A-draw-elbow-level', kind: 'action', lane: 'hero-body', timeout: 120000,
-    title: 'Full draw, four pitches + strafing (and from a jog / a sprint): draw elbow within [shoulder - 0.03, shoulder + 0.05] m (aim frame), >= 0.05 m behind the hand along the arrow, bow arm >= 0.04 m clear of the chest surface (torso-skinned outfit vertices); R35: the draw HAND never > 0.10 m behind the head plane and always in front of the back of the skull, the draw ELBOW <= 0.20 m behind it — and through the LOOSE, on every sim step from the release until 0.3 s after it, the hand still in front of the back of the skull and the elbow <= 0.20 m',
+    title: 'Full draw, four pitches + strafing (and from a jog / a sprint): draw elbow within [shoulder - 0.03, shoulder + 0.05] m (aim frame), >= 0.05 m behind the hand along the arrow, bow arm >= 0.04 m clear of the chest surface (torso-skinned outfit vertices); R35: the draw HAND never > 0.10 m behind the head plane and always in front of the back of the skull, the draw ELBOW <= 0.20 m behind it; the hand ON the string: middle knuckle <= 0.06 m and middle fingertip <= 0.06 m from the bow nock (fix round 4) — and through the LOOSE, on every sim step from the release until 0.3 s after it, the hand still in front of the back of the skull and the elbow <= 0.20 m',
     setup: INPUT_ON, settle: 400,
     assert: placed(['openGround'], `(async () => {${HB}${DRAW}
       freeze(); standAt(p, 'openGround'); await wait(300);
@@ -7590,7 +7607,15 @@ const NEW_GATES = [
           const u2 = e2.clone().sub(sh).dot(up), bh = ha.clone().sub(e2).dot(d);
           if (u2 >= -0.03 && u2 <= 0.05 && bh >= 0.05) { const b2 = an.behindHead(e2); if (feasibleMin === null || b2 < feasibleMin) feasibleMin = b2; }
         }
+        // fix round 4 (judge r1, the 0.75 down aim: "the draw hand is not on the
+        // string"): the middle knuckle and the middle fingertip to the bow's own
+        // nock (combat.bow.getNockWorld), world metres, every row
+        const nkW = new T3(); cmb.bow.getNockWorld(cmb.drawStrength, nkW);
+        const knW = new T3(), ftW = new T3();
+        const hasHand = an.debugDrawHand ? an.debugDrawHand(knW, ftW) : false;
         rows.push({ pitch, key, drawS: +cmb.drawStrength.toFixed(2),
+          knuckleToNock: hasHand ? +knW.distanceTo(nkW).toFixed(4) : null,
+          fingertipToNock: hasHand ? +ftW.distanceTo(nkW).toFixed(4) : null,
           elbowUp: +el.clone().sub(sh).dot(up).toFixed(4),
           elbowBehindHand: +ha.clone().sub(el).dot(d).toFixed(4),
           bowArmChest: +chest.toFixed(4), chestPoints: idx.length,
@@ -7636,6 +7661,8 @@ const NEW_GATES = [
         r.elbowBehindHand >= 0.05 ? null : 'elbowBehindHand', r.bowArmChest >= 0.04 ? null : 'bowArmChest',
         r.handBehindHead <= 0.10 ? null : 'handBehindHeadPlane', r.handBehindHead < 0 ? null : 'handBehindSkull',
         r.elbowBehindHead <= 0.20 ? null : 'elbowBehindHead',
+        r.knuckleToNock != null && r.knuckleToNock <= KNUCKLE_NOCK ? null : 'knuckleOffString',
+        r.fingertipToNock != null && r.fingertipToNock <= FINGERTIP_NOCK ? null : 'fingertipOffString',
         r.looseSteps >= 6 ? null : 'looseSampled', r.looseMaxHandBehindHead < 0 ? null : 'looseHandBehindSkull',
         r.looseMaxElbowBehindHead <= 0.20 ? null : 'looseElbowBehindHead'].filter(Boolean);
       const bad = rows.filter((r) => ok(r).length);
@@ -7647,6 +7674,8 @@ const NEW_GATES = [
         handBehindHeadMax: +Math.max(...rows.map((r) => r.handBehindHead)).toFixed(4),
         looseHandBehindHeadMax: +Math.max(...rows.map((r) => r.looseMaxHandBehindHead)).toFixed(4),
         looseElbowBehindHeadMax: +Math.max(...rows.map((r) => r.looseMaxElbowBehindHead)).toFixed(4),
+        knuckleToNockMax: +Math.max(...rows.map((r) => r.knuckleToNock ?? 9)).toFixed(4),
+        fingertipToNockMax: +Math.max(...rows.map((r) => r.fingertipToNock ?? 9)).toFixed(4),
       };
       return { pass: bad.length === 0 && idx.length > 20, detail: { rule: 'R35', rows, margin, failing: bad.map((r) => r.pitch + (r.key || '') + ':' + ok(r).join('+')) } };
     })()`),
@@ -8515,6 +8544,76 @@ const NEW_GATES = [
       return { pass, detail: { base, end, trace: trace.slice(0, 2), bodyHiddenTris: H.outfit.info().bodyHiddenTris } };
     })()`,
   },
+
+  /* ------------------------------------------------------ A-melee-floor (R47) */
+  {
+    id: 'A-melee-floor', kind: 'action', lane: 'hero-body', timeout: 120000,
+    title: 'R47 floor: on Brea, light x3, a heavy (held LMB), the melee-ready key and a block press (RMB) throw nothing (no error event, rejection or console error) and leave her in a valid locomotion state — not aiming, no swing active, bones finite, and she then walks, jogs and sprints at canon speed with her feet alternating',
+    setup: INPUT_ON, settle: 400,
+    assert: placed(['openGround'], `(async () => {${HB}${CANON_SPEEDS}
+      freeze(); release(); standAt(p, 'openGround'); await simWait(0.6, 5000);
+      const M = cmb.melee;
+      if (!M || typeof M.swing !== 'function') return { pass: null, detail: 'SKIP: no combat.melee' };
+      const errs = [];
+      const onErr = (e) => errs.push('error: ' + String(e.message || e.reason || e));
+      window.addEventListener('error', onErr); window.addEventListener('unhandledrejection', onErr);
+      const ce = console.error; console.error = (...a) => { errs.push('console: ' + a.map(String).join(' ').slice(0, 200)); ce.apply(console, a); };
+      const finite = () => { let bad = 0; p.model.traverse((o) => { if (o.isBone) { const q = o.quaternion, v = o.position; if (![q.x, q.y, q.z, q.w, v.x, v.y, v.z].every(Number.isFinite)) bad++; } }); return bad; };
+      const beats = [];
+      const click = async (ms) => { C.input.mouse.buttons |= 1; await wait(ms); C.input.mouse.buttons &= ~1; };
+      let after = null;
+      try {
+        // light x3 (a combo), each click then its swing's time
+        for (let i = 0; i < 3; i++) { await click(90); await simWait(0.5, 6000); beats.push({ beat: 'light' + (i + 1), stance: M.stance, active: !!M.active }); }
+        await simWait(0.9, 8000);
+        // heavy: LMB held past the charge
+        await click(700); await simWait(1.5, 12000); beats.push({ beat: 'heavy', stance: M.stance, active: !!M.active });
+        // the melee-ready key (draw / holster the lance)
+        keys.add('KeyB'); await frame(); await frame(); keys.delete('KeyB'); await simWait(0.6, 6000); beats.push({ beat: 'readyKey', stance: M.stance });
+        // block: RMB (the guard press; with the Round-4 kit it raises the bow)
+        C.input.mouse.buttons |= 4; await simWait(0.8, 8000); beats.push({ beat: 'block', aiming: !!p.aiming, stance: M.stance });
+        C.input.mouse.buttons &= ~4; await simWait(0.8, 8000);
+        after = { aiming: !!p.aiming, swinging: !!M.active, stance: M.stance, dodging: !!p.dodging, health: p.health, nonFinite: finite() };
+      } finally {
+        console.error = ce; window.removeEventListener('error', onErr); window.removeEventListener('unhandledrejection', onErr);
+        release();
+      }
+      // the locomotion state afterwards: walk (Alt), jog, sprint from a standstill
+      const gait = async (ks, sec) => {
+        release(); await simWait(0.4, 4000);
+        for (const k of ks) keys.add(k);
+        let top = 0, plants = 0, prev = null;
+        const s0 = E.simTime;
+        while (E.simTime - s0 < sec) {
+          await frame();
+          top = Math.max(top, p.moveSpeed);
+          const f = an.debugFeet(); const pl = f.map((x) => x.planted ? 1 : 0).join('');
+          if (prev !== null && pl !== prev) plants++;
+          prev = pl;
+        }
+        const dom = an.dominantAction?.();
+        const r = { keys: ks.join('+'), speed: +p.moveSpeed.toFixed(2), top: +top.toFixed(2), footChanges: plants, dominant: dom ? dom.clip : null };
+        release();
+        return r;
+      };
+      const walk = await gait(['KeyW', 'AltLeft'], 1.6);
+      const jog = await gait(['KeyW'], 1.8);
+      const sprint = await gait(['KeyW', 'ShiftLeft'], 2.4);
+      const bad = [];
+      if (errs.length) bad.push('threw: ' + errs.slice(0, 3).join(' | '));
+      if (!after) bad.push('the combo did not complete');
+      else {
+        if (after.aiming) bad.push('still aiming after the block was released');
+        if (after.swinging) bad.push('a swing is still active');
+        if (after.nonFinite) bad.push(after.nonFinite + ' non-finite bones');
+        if (!(after.health > 0)) bad.push('dead');
+      }
+      if (!(walk.speed >= 0.8 * (SPD.walk || 1.5) && walk.footChanges >= 2)) bad.push('walk ' + walk.speed + ' m/s, ' + walk.footChanges + ' foot changes');
+      if (!(jog.speed >= JOG_MIN && jog.footChanges >= 2)) bad.push('jog ' + jog.speed + ' m/s (floor ' + JOG_MIN.toFixed(2) + '), ' + jog.footChanges + ' foot changes');
+      if (!(sprint.speed >= SPRINT_MIN && sprint.footChanges >= 2)) bad.push('sprint ' + sprint.speed + ' m/s (floor ' + SPRINT_MIN.toFixed(2) + '), ' + sprint.footChanges + ' foot changes');
+      return { pass: bad.length === 0, detail: { rule: 'R47', bad, beats, after, errors: errs.length, walk, jog, sprint } };
+    })()`),
+  },
 ];
 
 /* --------------------------------------------------------------- visual gates */
@@ -8545,6 +8644,47 @@ const NEW_VISUALS = [
       await s.faceSheetOverlay(C);
     })()`,
     criteria: 'Pass: the salt-line (pale paste across the nose bridge and both cheeks, below the eyes), the scar through the LEFT brow and the dark-brown eyes read in the front view; the ∴ shows on the back of the right hand in the hand inset; the profile is visibly not the stock UBC face (stronger nose bridge and chin); the expression reads around the salt-line. FAIL if the face is the stock face, if the paint smears off the face, or if the scar is on the right brow.',
+  },
+  {
+    id: 'V24-draw-down', kind: 'visual', lane: 'hero-body', settle: 600, timeout: 60000,
+    title: 'Full draw aimed 43 deg DOWN (camPitch 0.75): from her right, and from her front-right three-quarter — the drawing hand on the string at the jaw corner',
+    reference: 'reference/r5/gates-perf/draw-side (licence-clean archery side reference, the level draw this pose must keep relative to the head)',
+    setup: placedSetup(['openGround'], `(async () => {${FILM_PRE}
+      C.input.enabled = true; C.state = 'playing';
+      const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+      const frame = () => new Promise((r) => requestAnimationFrame(r));
+      standAt(p, 'openGround'); p.camPitch = 0.75;
+      C.input.mouse.buttons |= 4; await wait(800);
+      C.input.mouse.buttons |= 1; await wait(2600);
+      p.camPitch = 0.75; await frame();
+      C.combat._updateAimPoint = () => {};           // hold the aim point (see V24)
+      C.engine.timeScale = 0; await frame(); await frame();
+      const an = p.animator, T3 = p.position.constructor;
+      const nk = new T3(); C.combat.bow.getNockWorld(C.combat.drawStrength, nk);
+      const kn = new T3(), ft = new T3(); an.debugDrawHand(kn, ft);
+      const head = an.b.head.bone.getWorldPosition(new T3());
+      const h = p.heading, fx = Math.sin(h), fz = Math.cos(h), rx = -Math.cos(h), rz = Math.sin(h);
+      const tgt = new T3(head.x + fx * 0.10, head.y - 0.02, head.z + fz * 0.10);
+      const S = await import('/src/hero/sheets.js');
+      const W = 780, H = 860;
+      const live = (pos) => S.liveView(C, [pos.x, pos.y, pos.z], [tgt.x, tgt.y, tgt.z], { width: W, height: H, fov: 34 });
+      const side = new T3(head.x + rx * 1.15 - fx * 0.05, head.y + 0.02, head.z + rz * 1.15 - fz * 0.05);
+      const d34x = (fx + rx) / Math.SQRT2, d34z = (fz + rz) / Math.SQRT2;
+      const q34 = new T3(head.x + d34x * 1.15, head.y + 0.06, head.z + d34z * 1.15);
+      const a = live(side), b = live(q34);
+      const cv = document.createElement('canvas'); cv.width = 1600; cv.height = 900;
+      cv.style.cssText = 'position:fixed;left:0;top:0;width:1600px;height:900px;z-index:2147483646;background:#f4f1ea';
+      document.body.appendChild(cv);
+      const g = cv.getContext('2d'); g.fillStyle = '#f4f1ea'; g.fillRect(0, 0, 1600, 900);
+      const put = (img, x) => { const t = document.createElement('canvas'); t.width = W; t.height = H; t.getContext('2d').putImageData(img, 0, 0); g.drawImage(t, x, 34); };
+      put(a, 14); put(b, 806);
+      g.fillStyle = '#2a2420'; g.font = '600 15px ui-monospace, Menlo, monospace';
+      g.fillText('FULL DRAW, AIM 43 deg DOWN — from her RIGHT', 18, 24);
+      g.fillText('— from her FRONT-RIGHT 3/4', 810, 24);
+      g.fillText('middle knuckle -> nock ' + kn.distanceTo(nk).toFixed(3) + ' m   fingertip -> nock ' + ft.distanceTo(nk).toFixed(3) + ' m   drawStrength ' + C.combat.drawStrength.toFixed(2), 18, 892);
+      return { drawS: C.combat.drawStrength, knuckleToNock: +kn.distanceTo(nk).toFixed(4), fingertipToNock: +ft.distanceTo(nk).toFixed(4) };
+    })()`),
+    criteria: 'Full draw aimed steeply DOWN (camPitch 0.75, 43 deg), two views: from her right, and from her front-right three-quarter. Judge against the licence-clean archery side reference: the hand must hold the same relation to the face as a level draw. PASS requires ALL of: the drawing hand is ON the string at the nock — the hooked fingers on the string and the knuckles at her jaw / cheek beside the mouth corner, not up on the headwrap, at the temple or above the ear; the nock and the string meet the fingers at the jaw corner (not at the chin away from the hand); the drawing forearm runs back from the hand roughly along the arrow with the elbow level or back; the bow arm straight; no part of the hand inside the face. FAIL if the fist sits above the cheekbone (on the wrap or the temple), if the string runs through the back of the hand or the wrist instead of into the fingers, or if the forearm crosses her face.',
   },
   {
     id: 'V-traversal', kind: 'visual', lane: 'hero-body', settle: 400, timeout: 60000,
@@ -8724,8 +8864,14 @@ const byId = (id) => carried.find((g) => g.id === id);
    * the sash end at the left hip against the dark trousers, the wrap tail
    * trailing left-rear past her shoulder and the knot tail behind the head
    * are all in the lens at once, at twice the old scale. */
-  Object.defineProperty(g, 'setup', { value: a.replace(stage, sunStage).replace(cam, 'lockCam(1.9, 1.3, -1.35, 1.2);'), enumerable: true, configurable: true, writable: true });
-  g.criteria = 'Plan §9: three frames of the SAME sprint, 80 ms apart, left to right, filmed from her FRONT-LEFT three-quarter (the sun on that side). PASS if the wrap tail (violet, from the knot at the left-rear of the head), the knot tail (behind the head), the sash end (the strip hanging at her left hip/thigh) and the alidade (the small brass tube on its neck cord: on the v0 kit the cord hangs it in front of her RIGHT waist, by the girdle buckle, not at the sternum — fix round 3, measured y 1.12 m) are each in visibly DIFFERENT positions across the strips and the hair/cloth trails behind her rather than sticking out forward; FAIL if any of the four reads rigid, or the strips are indistinguishable.';
+  /* fix round 4 (judge r1: "the alidade reads static … a brass fleck of about
+   * 6 px at the buckle … no cord is visible"): the cord is shortened to the
+   * bible's sternum (the tube at mid-sternum, ~1.26 m at idle, clear of the
+   * arm swing) and the neck cord itself is now modelled (a cream cord round
+   * the neck, down to the tube); the lens comes in to ~1.9 m (was 2.3), the
+   * look-at at the sternum. */
+  Object.defineProperty(g, 'setup', { value: a.replace(stage, sunStage).replace(cam, 'lockCam(1.55, 1.28, -1.1, 1.22);'), enumerable: true, configurable: true, writable: true });
+  g.criteria = 'Plan §9: three frames of the SAME sprint, 80 ms apart, left to right, filmed from her FRONT-LEFT three-quarter (the sun on that side). PASS if the wrap tail (violet, from the knot at the left-rear of the head), the knot tail (behind the head), the sash end (the strip hanging at her left hip/thigh) and the alidade (the brass tube hanging on a cream neck cord at her STERNUM, mid-chest) are each in visibly DIFFERENT positions across the strips and the hair/cloth trails behind her rather than sticking out forward; FAIL if any of the four reads rigid, or the strips are indistinguishable.';
   g.title = 'Sprint, front-left three-quarter — three frames 80 ms apart, composited: wrap tail, knot tail, sash end, alidade cord';
 }
 {
@@ -8745,7 +8891,8 @@ const byId = (id) => carried.find((g) => g.id === id);
 {
   // A19 (R33 g: graded by hero-body on Brea): staged on the flat strip with
   // the machines frozen; the probes are animator.chainOf(): hair = the knot
-  // tail, cloth = the longest cloth chain (the wrap tail), gear = the alidade
+  // tail, cloth = the longest cloth chain (fix round 4: the sash end — the wrap
+  // tail is its own class, 'wrap', cloth in the world wind), gear = the alidade
   // cord (profile chainClasses)
   const g = byId('A19-secondary-motion');
   const a = Object.getOwnPropertyDescriptor(g, 'assert').value;
@@ -8791,7 +8938,10 @@ const byId = (id) => carried.find((g) => g.id === id);
   const a = Object.getOwnPropertyDescriptor(g, 'assert').value;
   const hook = 'headClear: arm.headClear });';
   if (!a.includes(hook) || !a.includes('&& r.headClear >= 0.98')) throw new Error('A16 shape changed');
-  const loose = `headClear: arm.headClear, launchOffDeg: await (async () => {
+  const loose = `headClear: arm.headClear,
+        knuckleToNock: (() => { const k = V(), t = V(); return an.debugDrawHand && an.debugDrawHand(k, t) ? +k.distanceTo(nk).toFixed(4) : null; })(),
+        fingertipToNock: (() => { const k = V(), t = V(); return an.debugDrawHand && an.debugDrawHand(k, t) ? +t.distanceTo(nk).toFixed(4) : null; })(),
+        launchOffDeg: await (async () => {
           let fired = null; const h = (e) => { fired = e; }; C.events.on('arrow-fired', h);
           C.input.mouse.buttons &= ~1;
           const t0 = performance.now();
@@ -8804,9 +8954,12 @@ const byId = (id) => carried.find((g) => g.id === id);
           const gd = new V3(fired.dir.x, fired.dir.y, fired.dir.z).normalize();
           return +(Math.acos(Math.max(-1, Math.min(1, w.dot(gd)))) * 180 / Math.PI).toFixed(3);
         })() });`;
-  Object.defineProperty(g, 'assert', { value: a.replace(hook, loose).replace('&& r.headClear >= 0.98', '&& r.headClear >= 0.98 && r.launchOffDeg !== null && r.launchOffDeg <= 0.3'), enumerable: true, configurable: true, writable: true });
+  // fix round 4 (judge r1): + the hand ON the string at every row — middle knuckle and
+  // middle fingertip within 0.06 m of the bow's own nock (the wrist-to-nock bar alone
+  // passed a fist on the headwrap at the 0.75 down aim, knuckle 0.109 m)
+  Object.defineProperty(g, 'assert', { value: a.replace(hook, loose).replace('&& r.headClear >= 0.98', '&& r.headClear >= 0.98 && r.launchOffDeg !== null && r.launchOffDeg <= 0.3 && r.knuckleToNock !== null && r.knuckleToNock <= ' + KNUCKLE_NOCK + ' && r.fingertipToNock !== null && r.fingertipToNock <= ' + FINGERTIP_NOCK), enumerable: true, configurable: true, writable: true });
   g.timeout = 120000;
-  g.title = 'Full draw at -0.55 / -0.4 / 0 / 0.75 and strafing: string hand on the nock (<= 0.09 m), draw elbow not above the shoulder, arm clear of the head (>= 0.98), and the loosed arrow leaves within 0.3 deg of the crosshair ray';
+  g.title = 'Full draw at -0.55 / -0.4 / 0 / 0.75 and strafing: string hand on the nock (wrist <= 0.09 m; middle knuckle and fingertip <= 0.06 m), draw elbow not above the shoulder, arm clear of the head (>= 0.98), and the loosed arrow leaves within 0.3 deg of the crosshair ray';
 }
 
 /* ---- the lane's own gates ---- */
