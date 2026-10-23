@@ -405,7 +405,7 @@ const IRIS_FRAG = /* glsl */`
 `;
 
 const BEAM_VERT = /* glsl */`
-  attribute vec4 aBeam;   // rgb: colour x intensity; a: the fade exponent along the cone (2 sweep, 1 lock)
+  attribute vec4 aBeam;   // rgb: colour x intensity; a: the fade exponent along the cone (2 sweep, 0.5 lock)
   varying vec3 vCol;
   varying float vZ;
   varying float vEdge;
@@ -804,9 +804,10 @@ export class LampSystem {
         const bRhythm = si === 2 ? (stateGain >= 1 ? 1 : BEAM_FLICKER_LOW) : stateGain;
         const LA = this._linA, k = 0.22 * fogBoost * bRhythm * (si === 2 ? gainH : BEAM_GAIN_WARY);
         const ob = nb * 4;
-        // .w = the fade exponent along the cone: a sweep fades as along^2; a lock, which ends on her, fades linearly
-        // to nothing where it meets her (see _writeMatrices)
-        B[ob] = LA[si * 3] * k; B[ob + 1] = LA[si * 3 + 1] * k; B[ob + 2] = LA[si * 3 + 2] * k; B[ob + 3] = si === 2 ? 1 : 2;
+        // .w = the fade exponent along the cone: a sweep fades as along^2; a lock, which ends on her, as along^0.5 —
+        // to nothing where it meets her, but carrying its colour most of the way (measured in the fog film: with a
+        // linear fade the half nearest her lost its magenta over the warm ground; see _writeMatrices)
+        B[ob] = LA[si * 3] * k; B[ob + 1] = LA[si * 3 + 1] * k; B[ob + 2] = LA[si * 3 + 2] * k; B[ob + 3] = si === 2 ? 0.5 : 2;
         r.beamOn = true;
         nb++;
       } else {
@@ -879,7 +880,7 @@ export class LampSystem {
       r.dir.lerp(_d, 0.2).normalize();
       /* A LOCK ENDS ON HER (fix round 3; bible §7.2 "on, locked on the target"). Its length is the sight range x
        * the weather scale, cut where the beam meets her (her body takes the light): the cone covers min(length,
-       * distance to her chest), brightest at the lens and fading linearly to nothing on her (`aBeam.w`, update). */
+       * distance to her chest), brightest at the lens and fading to nothing on her (along^0.5: `aBeam.w`, update). */
       const full = r.blen, cut = r.bmode === 'lock' && player && tgtLen > 0.5 && tgtLen < full ? tgtLen : full;
       const len = cut, brad = len * Math.tan(BEAM.halfAngleDeg * Math.PI / 180);
       _qs.setFromUnitVectors(_z, r.dir);

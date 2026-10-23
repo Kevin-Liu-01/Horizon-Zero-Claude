@@ -1937,16 +1937,26 @@ const FILM = (state, { fov = 4, both = false, dist = 15, night = false, sunlit =
       m2.forceState('attack');
       m2.lastKnown.copy(p.position);
       m2.heading = m.heading; m2.root.rotation.y = m.heading; m2.root.updateMatrixWorld(true);
+      // the lamp rides the head bone, which the gait may have left turned: yaw the body until the LENS axis (not
+      // the hull) points at her, so the lock leaves the drum forward (two corrections; the probe asserts > 0.9)
+      if (m2.lamp) for (let it = 0; it < 3; it++) {
+        const hp = new V().setFromMatrixPosition(m2.lamp.anchor.matrixWorld), ax = new V(0, 0, 1).transformDirection(m2.lamp.anchor.matrixWorld);
+        const want = Math.atan2(p.position.x - hp.x, p.position.z - hp.z), have = Math.atan2(ax.x, ax.z);
+        let d = want - have; while (d > Math.PI) d -= 2 * Math.PI; while (d < -Math.PI) d += 2 * Math.PI;
+        if (Math.abs(d) < 0.01) break;
+        m2.heading = m2.heading + d; m2.root.rotation.y = m2.heading; m2.root.updateMatrixWorld(true);
+      }
     }
   } else m.lastKnown.copy(lampPos).addScaledVector(axis, 6);
   holdStill(m); if (m2) holdStill(m2);   // body still, glows live
   // the lens: camera.zoom (player.js and combat.js damp camera.fov every frame; nothing writes zoom)
   if (st === 'beams') {
     cam.zoom = 1; cam.updateProjectionMatrix();
-    // a side view from the game camera's height (4.5 m over the ground, looking a little down), so the shafts
-    // cross ground and bodies rather than the fog-white horizon an additive beam cannot read against (fix round 3)
-    cam.position.copy(lampPos).addScaledVector(axis, 4).addScaledVector(side, -18); cam.position.y = Math.max(cam.position.y, T.getHeight(cam.position.x, cam.position.z) + 4.5);
-    cam.lookAt(lampPos.clone().addScaledVector(axis, 5).addScaledVector(side, -2).add(new V(0, -1.0, 0)));
+    // a raised side view (6.5 m over the ground, looking down), so the shafts cross ground and bodies rather than the
+    // fog-white horizon an additive beam cannot read against, and the nearer (hostile) shaft sits below the farther
+    // (wary) one in the frame instead of across it (fix round 3)
+    cam.position.copy(lampPos).addScaledVector(axis, 4).addScaledVector(side, -18); cam.position.y = Math.max(cam.position.y, T.getHeight(cam.position.x, cam.position.z) + 6.5);
+    cam.lookAt(lampPos.clone().addScaledVector(axis, 5).addScaledVector(side, -2).add(new V(0, -1.5, 0)));
   } else {
     cam.zoom = cam.fov / ${fov}; cam.updateProjectionMatrix();
     cam.position.copy(lampPos).addScaledVector(axis, ${dist});
