@@ -382,8 +382,8 @@ const DYN_FALLBACK = DYN_CLASSES[3];
 const SWING_TOE_PITCH = 0.43, SWING_TOE_CLR = 0.015;
 /** R5 fix round 5: the swing foot's heading band about the planted foot's (rad; V13's bar is ~20 deg). */
 const SWING_YAW_BAND = 0.14;
-/** R5 fix round 5: the climb's catch — both palms this close to the edge latch the hands on at full weight (m; past the gate's 0.05, so the gate's catch frame is already a full-weight frame). */
-const CLIMB_CATCH = 0.10;
+/** R5 fix round 5: the climb's catch — both SOLVED palms this close to the edge re-solve the arms at full weight that frame and latch them there (m). */
+const CLIMB_CATCH = 0.08;
 /*
  * R5 fix round 4 — THE WRAP TAIL IS CLOTH IN THE WIND, NOT A PENNANT (judge r1:
  * fix round 3's `restKick` turned its rest out ~50 deg in CHARACTER space every
@@ -4721,7 +4721,7 @@ export class PlayerAnimator {
      * after the catch. */
     if (k < 0.02) this._climbCaught = false;
     const wIn = this._climbCaught ? 1 : smoothstep(k, 0.04, 0.16);
-    const w = wIn * (1 - smoothstep(k, 0.66, 0.82)) * live;
+    let w = wIn * (1 - smoothstep(k, 0.66, 0.82)) * live;
     if (w < 0.01) return;
     const sx = E.dz, sz = -E.dx;                       // her left, world
     // the press (fix round 1, V-traversal "body over the hands"): when the
@@ -4748,6 +4748,25 @@ export class PlayerAnimator {
         CD.press = a;
       }
     }
+    this._climbArms(E, sx, sz, w);
+    /* fix round 5: the catch latch, checked on the frame's SOLVED palms. If
+     * the ramp's partial weight has brought both palms within `CLIMB_CATCH`,
+     * the arms are solved again this frame at full weight — so the first frame
+     * A-climb-1m counts as the catch (palms <= 0.05) is always a full-weight
+     * frame, whatever the frame time (at 18 fps one step of the ramp carried
+     * the palms from > 0.10 to 0.049 at partial weight, run f5lane2). */
+    if (!this._climbCaught && k >= 0.04 && k < 0.66
+        && (wIn >= 0.999 || Math.max(this._palmEdge(0, E), this._palmEdge(1, E)) <= CLIMB_CATCH)) {
+      this._climbCaught = true;
+      const wF = (1 - smoothstep(k, 0.66, 0.82)) * live;
+      if (wF - w > 0.01) { w = wF; this._climbArms(E, sx, sz, w); }
+    }
+    this._curlFingers(this._fingerL, 0.35 * w, 0.2 * w);
+    this._curlFingers(this._fingerR, 0.35 * w, 0.2 * w);
+  }
+
+  /** fix round 5: the climb's two arms at weight `wA` (`_climbHands`; re-run at full weight on the catch frame). */
+  _climbArms(E, sx, sz, wA) {
     for (let si = 0; si < 2; si++) {
       const side = si === 0 ? 'l' : 'r', sgn = si === 0 ? 1 : -1;
       // the wrist sits just back from the edge and a hand's width off the line,
@@ -4770,7 +4789,7 @@ export class PlayerAnimator {
           _v3.subVectors(_sg1, _sg0); _v4.subVectors(_ik5, _sg0);
           _v5.crossVectors(_v3, _v4);
           if (cl > 0.03 && _v5.lengthSq() > 1e-8) {
-            const ca = Math.min(0.9, Math.asin(Math.min(1, short / cl))) * w;
+            const ca = Math.min(0.9, Math.asin(Math.min(1, short / cl))) * wA;
             _q3.setFromAxisAngle(_v5.normalize(), ca);   // R5 fix round 2: 0.6 left the walk-in palm 2-3 cm past A-climb-1m's 0.05 m on some runs
             this._rotQL(clv, _q3);
             this._climbDbg[si === 0 ? 'clvL' : 'clvR'] = ca;
@@ -4778,7 +4797,7 @@ export class PlayerAnimator {
         }
       }
       _pole.set(0.6 * sgn, -0.5, -0.6);
-      this._ikArm(side, _ik5, _pole, w, null);
+      this._ikArm(side, _ik5, _pole, wA, null);
       /* R5 fix round 5 (judge r2, A-climb-1m: "jog palm 0.0516 / 0.054 m vs
        * the 0.05 bar"). The hand kept the forearm's line: as the chest went
        * over the hands the forearm stood up and the hand pointed down the
@@ -4804,18 +4823,15 @@ export class PlayerAnimator {
             if (_sg3.lengthSq() > 1e-6) {
               _sg3.normalize();
               _q3.setFromUnitVectors(_sg2, _sg3);
-              _q4.copy(Q_IDENT).slerp(_q3, w);
+              _q4.copy(Q_IDENT).slerp(_q3, wA);
               this._rotQL(hE, _q4);
             }
           }
         }
       }
-      this._curlFingers(side === 'l' ? this._fingerL : this._fingerR, 0.35 * w, 0.2 * w);
       (side === 'l' ? this.b.handL : this.b.handR).bone.getWorldPosition(_alV);
       this._climbDbg[si === 0 ? 'missL' : 'missR'] = _alV.distanceTo(_ik5W.set(E.x + sx * 0.17 * sgn - E.dx * 0.035, E.y + 0.022, E.z + sz * 0.17 * sgn - E.dz * 0.035));
     }
-    if (!this._climbCaught && k >= 0.04 && k < 0.66
-        && (wIn >= 0.999 || Math.max(this._palmEdge(0, E), this._palmEdge(1, E)) <= CLIMB_CATCH)) this._climbCaught = true;
   }
 
   /**
