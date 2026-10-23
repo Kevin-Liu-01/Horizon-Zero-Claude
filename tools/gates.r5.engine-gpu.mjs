@@ -1023,7 +1023,7 @@ const V20_SETUP = `(async () => { const __work = (async () => {
  * crop in a configuration fails it as unmeasured. Every tier with GTAO on, at
  * DPR 1 and 2 (= min(2, dprCap)); the AO buffer must follow the tier's scale.
  * Crops chosen by a survey of 135 positions x 4 frames x 4 configurations
- * (docs/ROUND5-ENGINE.md §3.5): the far crops are the NE mesas and the haze
+ * (docs/ROUND5-ENGINE.md §3.6): the far crops are the NE mesas and the haze
  * band (>= 150 m), the mid crops the open pan and the shelf top, with no
  * grass in them (grass blades darkened by real contact AO read as vertical
  * structure at ultra@2, content not lattice; the survey records it).
