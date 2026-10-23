@@ -833,6 +833,11 @@ global run — lane report §5.2.
 
 ### 3.10 For the orchestrator
 
+- **Fix round 4 changed the engine in one place:** GTAO's denoise noise texture is now built from a fixed seed
+  instead of `Math.random` (§3.6). It has the same size, format, filter and cost; only its texel values are
+  fixed. A108 now reads the same on every boot (5 of 5 fresh boots plus `T2`, byte-identical), and its
+  witness sees the stock lattice at 0.239 every time. On main expect worst 0.135, witness 0.239 / 0.102 /
+  0.114 and noise hash `a698df06`; any other reading means something changed the noise or the denoise.
 - No bar moved and no gate was loosened: the vista and empty-frame terms are measured exactly as in round 0;
   the lever record gained fix round 1's four levers, fix round 2's role split and three NOT-shipped anisotropy
   rows; `V-gpu-tier-look` shows four configurations so the judge sees what the tier costs the picture and what
