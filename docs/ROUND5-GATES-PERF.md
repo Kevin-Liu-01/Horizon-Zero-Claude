@@ -66,7 +66,13 @@ stand in the authored roster, so it stages on them (full run: PASS with `restore
 
 ## A.2 Frames read this round
 
-TBD:frames
+| frame (final sealed full run `p5255-30826-1792714911107`) | read against | reading (advisory; R29 judges decide) |
+|---|---|---|
+| `V21-camera-cover.png` | criteria (1)–(4) + `reference/r5/gates-perf/chase-camera.jpg` (a walker seen from behind on a forest path, tall trunks either side) | (1) readout `boom requested 4.20 m -> 1.50 m`, trunk 0.15 m off the boom axis (< 0.8), `line of sight to the hero: CLEAR`; (2) head and braids, shoulders, upper back, the bow on her back (left) and the lance (right) are all readable and nothing in the world is in front of her; the frame bottom crops her at mid-back, which the criteria allow; (3) no bark or leaf mass in the centre: the nearest pine stands mid-ground left of centre, its foliage clear of the middle, and the lens is not inside a trunk or under the ground; (4) the meadow under her and the distant ground line under the massif are visible and level. Reads as a PASS to me. The frame is byte-for-byte the same composition as the first full run's of this round (the row is deterministic). |
+| `V13-aim-strafe.png` (SKIP-shadowed, hero-body grades it) | the row's own staging assertion (R33 g) | front lens at 24°: she is aiming, the bow upright **in her left hand** (screen right), lance stowed diagonally on her back, mid-step with the left heel lifted; no STAGING FAILED card. Whether the feet point toward the travel direction is hero-body's judge's, on Brea. |
+
+The run's other 35 frames are SKIP-replaced (29) or SKIP-shadowed (6 besides V13): not graded here. Every PNG was deleted from
+the tree after the sealed copies were in the ledger (`scratchpad/r5/gates-perf/ledger/runs/<run>/`).
 
 ## A.3 The carried suite, graded (R33)
 
