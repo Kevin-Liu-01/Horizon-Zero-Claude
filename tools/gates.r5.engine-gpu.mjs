@@ -1113,7 +1113,19 @@ const A108_ASSERT = `(async () => {
   for (const r of witness.rows) if (r.stockSeesDefect && !r.shippedClean) fails.push('witness ' + r.name + ': shipped shader peaks too (' + r.shipped + ')');
   setTierDpr(QUALITY_TIERS[DEFAULT_TIER], DEFAULT_TIER, 2);
   if (E.gtaoPatched !== true) fails.push('engine.gtaoPatched is ' + E.gtaoPatched + ': the depth-consistent GTAO shader is not installed');
-  return { pass: fails.length === 0, detail: { bar: BAR, worstMeasured: worst, fails: fails.slice(0, 10), sensitivityWitness: witness, configs, frames: FRAMES } };
+  // ---- DETERMINISM (W0b fix round 4): the denoise noise is the engine's seeded texture, not three r169's ----
+  // Math.random one (which made every boot denoise differently and this witness see the defect on some boots
+  // only). The installed texture must be the one the denoise samples, carry GTAO_NOISE_SEED, and hash equal to
+  // a fresh build from that seed; the hash is reported so runs on different boots can be compared.
+  const fnv = (u8) => { let h = 0x811c9dc5; for (let i = 0; i < u8.length; i++) { h ^= u8[i]; h = Math.imul(h, 16777619); } return (h >>> 0).toString(16); };
+  const nz = E.gtao.pdNoiseTexture, ref = __EM.makeGtaoDenoiseNoise ? __EM.makeGtaoDenoiseNoise(__EM.GTAO_NOISE_SEED) : null;
+  const noise = { seed: E.gtaoNoiseSeed, shippedSeed: __EM.GTAO_NOISE_SEED, sampled: E.gtao.pdMaterial.uniforms.tNoise.value === nz,
+    hash: nz && nz.image && nz.image.data ? fnv(nz.image.data) : null, refHash: ref ? fnv(ref.image.data) : null };
+  if (ref) ref.dispose();
+  if (noise.seed == null || noise.seed !== noise.shippedSeed || !noise.sampled || !noise.hash || noise.hash !== noise.refHash) {
+    fails.push('denoise noise is not the seeded texture (seed ' + noise.seed + ' vs ' + noise.shippedSeed + ', sampled ' + noise.sampled + ', hash ' + noise.hash + ' vs ' + noise.refHash + '): gate frames are not deterministic per boot');
+  }
+  return { pass: fails.length === 0, detail: { bar: BAR, worstMeasured: worst, fails: fails.slice(0, 10), sensitivityWitness: witness, denoiseNoise: noise, configs, frames: FRAMES } };
 })()`;
 
 /**
@@ -1783,7 +1795,7 @@ export const GATES = [
   },
   {
     id: sid('A108-ao-periodicity'), kind: 'action', lane: 'engine-gpu', wave: 'W0b', timeout: 420000, settle: 1500, shadows: 'A108-ao-periodicity',
-    title: 'Re-staged on the Pans POC: no periodic luminance peak above 0.15 at lags 2-32 px on the far mesas, the haze band or the mid-ground with GTAO on, at every GTAO tier (shipped quarter-res `high` included) and DPR 1 and 2 (GTAO-off control peak-free on the same crops); the AO buffer follows the tier\'s scale; the depth-consistent GTAO shader is installed',
+    title: 'Re-staged on the Pans POC: no periodic luminance peak above 0.15 at lags 2-32 px on the far mesas, the haze band or the mid-ground with GTAO on, at every GTAO tier (shipped quarter-res `high` included) and DPR 1 and 2 (GTAO-off control peak-free on the same crops); the AO buffer follows the tier\'s scale; the depth-consistent GTAO shader is installed; a sensitivity witness proves the instrument sees the stock-shader lattice on this content; the GTAO denoise noise is the engine\'s seeded texture (the same pixels on every boot)',
     assert: A108_ASSERT,
   },
   {
