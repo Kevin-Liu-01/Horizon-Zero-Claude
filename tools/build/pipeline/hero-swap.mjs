@@ -376,6 +376,13 @@ export async function heroSwapTrial({ root = ROOT, scratch = null, heroRef = HER
   let copy = null;
   try {
     const { preflight, serveAndRun } = await import('./specs-fixture.mjs');
+    // State-aware: after the R39 window the swap is on HEAD itself, and the patch then rightly changes nothing.
+    let swappedOnHead = false;
+    try {
+      swappedOnHead = !patchSpecsText(readFileSync(path.join(root, SPECS_FILE), 'utf8')).changed
+        && !patchLibText(readFileSync(path.join(root, LIB_FILE), 'utf8')).changed;
+    } catch { swappedOnHead = false; }   // an unexpected file: the patch below reports it
+    detail.swappedOnHead = swappedOnHead;
     const tr = await buildTrial({ root, scratch: sc, refs: [heroRef] });
     copy = tr.copy;
     detail.trial = { filesCopied: tr.filesCopied, overlay: tr.overlay };
@@ -384,7 +391,7 @@ export async function heroSwapTrial({ root = ROOT, scratch = null, heroRef = HER
     detail.patchAgain = await applyHeroSwap({ root: copy, write: true, scratch: sc });   // idempotent: changes nothing
     detail.verify = await verifyHeroSwap({ root: copy, scratch: sc, rulesRoot: root });
     detail.licence = licenceSummary(copy);   // advisory: what A-licence-manifest's node half reads after the window
-    const staticOk = detail.patch.ok && detail.patch.changed.length === 2 && detail.patchAgain.ok && !detail.patchAgain.changed.length && detail.verify.ok;
+    const staticOk = detail.patch.ok && detail.patch.changed.length === (swappedOnHead ? 0 : 2) && detail.patchAgain.ok && !detail.patchAgain.changed.length && detail.verify.ok;
     if (!staticOk || !boot) return { pass: staticOk ? null : false, detail };
     let pf = preflight(root);
     for (let i = 0; !pf.ok && i < 18; i++) { await new Promise((r) => setTimeout(r, 10000)); pf = preflight(root); }
