@@ -18,7 +18,7 @@ R5_SCRATCH=<scratchpad>/r5/instruments-core \
 R5_GATE_ROSTER=<gates-perf tree>/tools/gate-roster.mjs \      # only until gate-roster.mjs is in the tree
 node tools/gates.mjs --port 5254 --extra tools/gates.r5.instruments-core.mjs --lane instruments-core
 node tools/gates.mjs --port 5254 --extra tools/gates.r5.instruments-core.mjs --lane instruments-core-kind   # the per-kind block on the fixture
-R5_IC_FILM=1 node tools/gates.mjs --port 5254 --extra tools/gates.r5.instruments-core.mjs --lane instruments-core-film   # the lamp films (advisory)
+R5_IC_FILM=1 node tools/gates.mjs --port 5254 --extra tools/gates.r5.instruments-core.mjs --lane instruments-core-film   # the lamp films (advisory) + the beam films' in-frame probes
 ```
 
 R5_IC_* diagnostics only (a report made with any of them says "DIAGNOSIS FLAGS ON (not gradeable)"):
@@ -27,7 +27,11 @@ lazy-invalidation waves clustered), `R5_IC_SHAPEWATCH` (every object reachable f
 fingerprinted every 200 ms: added/removed keys and value-representation changes, timed),
 `R5_IC_PROTOWATCH` (281 prototypes: key and value diffs), `R5_IC_PROTOLOCK` (prototypes made
 non-extensible; the stack of whoever adds to one), `R5_IC_PROTOTRACE` (`--trace-prototype-users`),
-`R5_IC_MICRO`, `R5_IC_INGAME`. The allocation gate has its own lane:
+`R5_IC_MICRO`, `R5_IC_INGAME`, and three added in fix round 3: `R5_IC_DEOPTMARK` (every deopt of this lane's
+functions timed by markers compiled into the trace stream, the tier timeline of each hot function, and a
+shape report of live machines against a fresh spawn), `R5_IC_CALLEES` (the non-src frames a lane frame's callee
+bytes sit in) and `R5_IC_MATHTEST` (bytes per call of each builtin in each V8 tier of this Chrome). The
+allocation gate has its own lane:
 ```
 node tools/gates.mjs --port 5254 --extra tools/gates.r5.instruments-core.mjs --lane instruments-core-alloc   # A-alloc-machines (+ its paired attribution run)
 ```
@@ -39,6 +43,172 @@ Once auto-discovery merges, drop `--extra` (the file exports `GATES` in the regi
 shadow rows change id from `<id>@ic` to `<id>` by themselves (`shadowId()` reads
 `gates.config.mjs` for `LANE_FILE_RE`), so they shadow the carried rows of the same id (§3.3).
 `R5_GATE_ROSTER` is read only when `tools/gate-roster.mjs` is absent.
+
+
+---
+
+## W0b FIX ROUND 3 (Oct 23 2026) — what changed, by judge finding, with numbers
+
+Four findings: two blockers on the memory rule, the hostile beam missing from the films, and the published
+accessors returning a stale 0. No bar moved. `A-alloc-machines` keeps every term of round 2: caller attribution,
+a 30 s warm-up, six graded 10 s windows, the re-armed fight, and the paired no-inline run. R46 is recorded, so
+the four carried classes pass only under its marker. Class (c), `_steerAlong`, now has its own label
+(`frozen-return`), so the gate no longer lumps it in with lane code. Every other lane frame still has to be
+≤ 4 KB/s in every window.
+
+| finding | status | the number |
+|---|---|---|
+| 1 + 3 — memory rule on lane frames (`_sight`, `conformM`, `updateEyesM`) | **fixed** | `A-alloc-machines` **PASS in 6 consecutive runs (R8–R13), the last 3 (R11–R13) on the final source**: 0 lane frames over 4 KB/s in any window. Across those six runs: `_sight` ≤ 1.5 KB/s, `conformM` ≤ 0.36, `updateEyesM` ≤ 0.7, `Machine.update` 0 |
+| 2 — the hostile lock beam is missing from the beam films | **fixed**, and asserted in the film frame | magenta shaft read at **8/8** points (night) and **8/8** (fog) along the lamp-to-Brea line |
+| 4 — the published accessors return a stale 0 for 0.5 | **fixed**, and a new gate | `A-published-scalars` PASS: 330 round-trips, 0 wrong; the round-2 seed fails 30/30 (negative control) |
+
+### Findings 1 and 3 — the memory rule on this lane's frames
+
+**How the causes were found.** I added a new diagnosis mode, `R5_IC_DEOPTMARK`, which times each V8
+deoptimisation:
+- **Markers in the trace.** `--trace-deopt` lines reach the gate in buffered blocks, so the time they arrive
+  says nothing. Instead, every 200 ms the page compiles a fresh, uniquely named function, optimises it, and
+  deopts it. Its trace line sits in the stream at a known page time, and every other line is timed by the
+  markers around it.
+- **Tiers.** The same tick samples `%GetOptimizationStatus` of this lane's hot functions, from the module
+  instance the game really runs (Vite serves it as `machine.js?t=…`).
+- **Shapes.** After the windows, every live machine and its per-frame records are compared, with
+  `%HaveSameMap`, against a freshly spawned machine of the same kind.
+
+Three companion modes were also added: `R5_IC_CALLEES` (which non-src frames a lane frame's callee bytes sit
+in), `R5_IC_MATHTEST` (bytes per call of each builtin in each tier of this Chrome), and `R5_IC_MICRO`.
+
+Diagnosis runs G1–G12 (port 5254) found eight separate causes. Each one is a mid-session event that either
+deoptimises a lane function or makes its optimised code allocate:
+
+| # | lane frame | what happened (measured) | fix |
+|---|---|---|---|
+| 1 | `_sight` | At her first sprint (61.7 s): `Insufficient type feedback for binary operation`. The peripheral-arc compare and the perk multiply had never run while she stood in the fight. The function then spent 3.8 s in Sparkplug. At 62.5 s (G6) came a second deopt, `not a Smi`: in the fight every cone weight was 1 or 0, so V8 had recorded "small integers" for the weight compares. | Every load, compare and arithmetic operation runs on every tick; branches only select between locals. The cone weights 1 and 0 are loaded from Double fields (`WK`), so the compares are typed "number" from the first tick. |
+| 2 | `_beliefTick` | At her first sprint: `Insufficient type feedback for compare operation`, from the hearing branch. | The same treatment. The heard position is grounded in `hear()`, when the stimulus arrives, with the same `terrain.getHeight(x, z)`. `lure` is a Smi flag. |
+| 3 | `updateEyesM` | G3 at 60.9 s: `embedded weak objects cleared` (a GC), then 609 KB/s for the next window. G1: 1,188 KB/s in one window. | The function is branch-free. The colours are written through the `THREE.Color` each lens record caches (`EyeRecord.col`). There is no per-frame `instanceof`; records are normalised when the count changes. The two rare material writes go through `eyeMatSetM`. |
+| 4 | `conformM` | R5: 93.6 KB/s in one window. `Insufficient type feedback for call` in three's XYZ Euler extraction. A pure yaw within 0.03° of ±90° is that extraction's gimbal case, so its `atan2` call first ran whenever a machine happened to face due east or west. | Both cases are computed every frame and the result is selected. The ground patch, the normal and the ground ease are branch-free too. |
+| 5 | `_statePatrol`, Tiller `animate` | G6: `wrong map` at 47.2 s and 48.8 s; 32.9 KB/s. The shape report showed live machines carrying keys a fresh one lacks, so their maps changed mid-session: `_doctrineSnapped` (set in a microtask by frozen `rig/expansion-base.js`), `onAlerted` and `_flee` (herd kinds), and the legacy species' own fields. The Tiller had 2 maps among 11 live machines. | Those fields are declared in the `Machine` constructor (undefined or null, the values every reader already treats as "not set yet"). Every own field of the machine, its scalars, its AI, its perception and its lamp record is written with a different value and back, once, at spawn (`mutableFromBirth`). No field is still "const" when per-machine code is optimised. |
+| 6 | everything that read `HOT` | `HOT.pTallGrass` and `pCrouch` stayed 0 until her first run through grass or first crouch. A module object's fields are folded as constants, so the first new value was a constness deopt. | `mutableFromBirth(HOT)`. |
+| 7 | `Machines.update` | A `dependent prototype chain changed` wave at her first sprint (the root ctx is a prototype, of every machine's ctx view). `refreshHot` was inlined, so `update` spent 8 s in Sparkplug. | `refreshHot` is called through `Reflect.apply`, which the optimiser does not inline, and her position comes from `HOT`. `HOT.ppos` is her own `Vector3`, held by reference: nothing is copied, so nothing is boxed even in the baseline tier. |
+| 8 | `_sight` | 2–5 KB/s in the fight windows. `R5_IC_CALLEES` showed it was `abs (native)`: `Math.abs(cScanSweep)` receives a tagged cfg value (a Smi in one kind's row, a double in another's), and the mid tier then calls the builtin, which boxes a double result. Separately, `collision.occluded` (kept code: the BVH raycast allocates its hit records) was inlined into `_sight`. | `abs` is written out (also `Math.max` in `hear`). The occluder ray is called through `Reflect.apply`, so it keeps its own frame; its bytes are now charged to `collision.js`, where they are made. The ray is also re-tested at most every 0.25 s while neither end moves 0.5 m (details below). |
+
+Smaller changes in the same files:
+- **Steering helpers.** `steerAlongS`, `moveTowardS`, `navTowardS` and `stepRootS` have the same treatment: the
+  zero-direction stop, the arrival test, the camp push-out and the world rim are now selects, not branches with
+  their own operations.
+- **Tiller `animate`.** It loads both gait entry points on every call.
+- **Indexed loops.** `attackDisabled`, `coveredAt`, `nearestCovered`, `bandBlocked`, `_bestArrangeablePass`
+  and `hasFresh` loop by index, not with `for…of`.
+- **`_machineNodes`.** It counts nodes without a closure per machine.
+
+**A regression of my own, found and removed this round.** My first branch-free `updateEyesM` called
+`Math.random()` on every frame. In this Chrome that builtin boxes its result in every tier: 12 B per call
+(`R5_IC_MATHTEST`), 42 KB/s in G6. It is now drawn once per machine.
+
+**The occluder cache in `hasLOS` (a behaviour change, stated plainly).**
+- **When the ray is re-tested.** The occluder result (trunks, rocks, ruins, palisades) is kept for 0.25 s, as
+  long as the machine's eye and her body each stay within 0.5 m of where it was tested. Any larger move
+  re-tests at once.
+- **What does not change.** The terrain samples still run every tick.
+- **The effect.** In a still scene the ray runs at 4 Hz instead of 10 Hz. A moving scene (her sprint, a chase)
+  is re-tested every tick as before.
+- **The gates.** `A39` reads 1.83 s / 3.51 s at 30 m (round 2: 1.77 s / 3.51 s; a different staging seed), and
+  `A37` passes with 0 seen samples while hidden.
+
+**The gate.** The only change is the R46 (c) label: `_steerAlong`, the one frame that ruling names, is classed
+`frozen-return` and passes only with the marker. Nothing else changed.
+
+**Runs** (`A-alloc-machines`, port 5254, the graded run plus its paired no-inline run; KB/s graded = max(KB/s,
+KB/frame × 60)):
+
+| run | code | verdict | lane frames over 4 KB/s | highest lane frame | fps per window | cast hostile per window |
+|---|---|---|---|---|---|---|
+| R1 | occluder cache v1, before `Reflect.apply` | FAIL | `_steerAlong` 13.5 (R46 c, not yet labelled), `_beliefTick` 5.35, `_sight` 4.5 | — | 20 / 21 / 23 / 20 / 23 / 21 (loaded box) | 0.96 / 0.86 / 0.98 / 0.97 / 0.91 / 1.00 |
+| R2 | + `Reflect.apply` (occluder, `refreshHot`), label (c) | PASS | 0 | `_sight` 3.34 | 38 / 38 / 38 / 53 / 47 / 35 | 0.97 / 0.93 / 0.93 / 0.95 / 0.94 / 0.93 |
+| R3 | same | FAIL | `_sight` 4.35 (the `abs (native)` box, #8) | — | 38 / 35 / 31 / 35 / 35 / 38 | 0.95 / 0.98 / 0.95 / 0.93 / 0.93 / 0.95 |
+| R4 | same | PASS | 0 | `_beliefTick` 2.93 | 44 / 49 / 50 / 51 / 36 / 35 | 0.95 / 0.95 / 0.91 / 0.95 / 0.93 / 0.93 |
+| R5 | + `abs` written out, indexed loops | FAIL | `conformM` 93.6 (the gimbal call, #4) | — | 38 / 43 / 43 / 45 / 37 / 44 | 0.95 / 0.98 / 0.91 / 0.93 / 0.95 / 0.93 |
+| R6 | same | PASS | 0 | `_beliefTick` 2.43 | 36 / 34 / 45 / 37 / 38 / 38 | 0.95 / 0.98 / 0.93 / 0.93 / 0.93 / 0.95 |
+| R7 | same | PASS | 0 | `_moveToward` 2.74 | 39 / 38 / 34 / 46 / 35 / 46 | 0.93 / 0.95 / 0.95 / 0.97 / 0.93 / 0.93 |
+| **R8** | **+ gimbal and steering helpers** | **PASS** | **0** | `_moveToward` 3.05 | 33 / 35 / 31 / 35 / 34 / 46 | 0.93 / 0.93 / 0.98 / 0.95 / 0.91 / 0.93 |
+| **R9** | same | **PASS** | **0** | `_beliefTick` 2.32 | 49 / 55 / 45 / 54 / 37 / 35 | 0.93 / 0.93 / 0.93 / 0.94 / 0.92 / 0.95 |
+| **R10** | same | **PASS** | **0** | `_moveToward` 3.17 | 42 / 48 / 36 / 44 / 37 / 37 | 0.95 / 0.95 / 0.95 / 0.90 / 0.95 / 0.93 |
+| **R11** | **final source** | **PASS** | **0** | `_moveToward` 1.69 | 40 / 43 / 48 / 55 / 47 / 52 | 0.95 / 0.95 / 0.90 / 0.93 / 0.93 / 0.95 |
+| **R12** | **final source** | **PASS** | **0** | `_beliefTick` 2.38 | 44 / 46 / 36 / 42 / 38 / 49 | 0.95 / 0.93 / 0.98 / 0.97 / 0.93 / 0.91 |
+| **R13** | **final source** | **PASS** | **0** | `_moveToward` 2.58 | 34 / 40 / 36 / 44 / 43 / 38 | 0.95 / 0.98 / 0.95 / 0.95 / 0.95 / 0.95 |
+
+Runs R1, R3 and R5 each failed on one lane frame. Each failure led to one fix above (#8 `abs`, #8 occluder,
+#4 gimbal). From R8 on, every run passed: R8–R10, then R11–R13 on the final source. Between them came two edits with identical values: the lock fade constant, and a comment moved so `A-lamp-canon-distance`'s structural check finds the beam tint. Over those six runs, the highest lane frame by name is: `_moveToward` 3.17 KB/s, `_beliefTick` 2.52, `lamps.update` 1.92, `_sight` 1.5, `updateEyesM` 0.7, `conformM` 0.36, `_statePatrol` 0.35, `refreshHot` 0.36, `Machine.update` 0. These runs were not quiet: other lanes' Chromes ran alongside, at 31–55 fps. In every passing run the residual is the R46 classes only:
+- inlined-frozen: Tiller `animate` (`gait.update` and `updateCheap`, 1.7–2.9 MB/s with inlining off) and
+  `_engageFrame` (`engage.pursue`, 150–210 KB/s);
+- the legacy species files;
+- the three accessors;
+- `_steerAlong` (frozen-return).
+
+### Finding 2 — the hostile lock beam (the films)
+
+**Why it was missing.** I measured the old staging with a new probe (`A-film-beams-*-probe`, below):
+- **End-on.** The hostile Tiller stood 7 m along world x, so its lock line to Brea ran almost along the camera's
+  view axis. A 10.35 m shaft covered 62 px of the frame, end-on behind its own lamp.
+- **Dim.** The beam was also weak. It added 9–21 to R+G+B, and 0 of 8 points read. The cochineal magenta carries
+  2.7× less luminance than the chartreuse at the same gain (linear Y 0.250 vs 0.665), and the 4 Hz flicker
+  dropped the beam to 0.3.
+- **Facing.** In one staging, `forceState('attack')` turned the hostile Tiller toward where Brea had been, so
+  its lock left the drum backwards over its own hull.
+
+**Fixes:**
+- **Staging.** The hostile Tiller stands 6 m to the camera's side of the wary one. Brea is placed first, then
+  the lock, then the facing. Brea stands 10 m straight ahead of its lamp. The view is from the side at 4.5 m
+  above the ground, looking a little down: the shafts cross ground and bodies, not the fog-white horizon.
+- **Beam colour** (`lamps.js` `BEAM`):
+  - the hostile gain is 1.6× in clear air and rises to 2.7× at fog density 2.55 (`gainHostileFog`, the
+    luminance match). 2.7× at night saturated the shaft into a solid cone (I read that frame);
+  - the beam's flicker trough is 0.65 (the lens keeps 0.3);
+  - the fog term of the air boost is 1.0 per unit of density, up from 0.8.
+- **Beam length** (bible §7.2 "locked on the target"). A lock is cut where it meets her: min(sight range × weather
+  scale, distance to her chest). It fades linearly to nothing on her (`aBeam.w` = 1). A sweep keeps along².
+- **Staging assertion.** Each beam film has an action twin with the same setup, which measures in its own frame.
+  It samples 8 points from 10 % to 80 % of the lamp-to-Brea segment, taking 6 paired frames with and without
+  the beam draw. It requires:
+  - the shaft adds ≥ 24 to R+G+B with dR > dG and dB > dG at ≥ 6 of 8 points;
+  - the judge's own magenta scan (R and B each > G + 25) on the frame at ≥ 6 of 8;
+  - the wary shaft reads at ≥ 6 of 8;
+  - no magenta light beyond her;
+  - the hostile Tiller's lens axis points at her (dot > 0.9).
+
+| probe | hostile shaft (≥ 24, magenta) | judge scan | wary | beyond her | lens axis · bearing |
+|---|---|---|---|---|---|
+| night (clear, 23:00) | **8/8**: +188 to +380 R+G+B; on-frame (195,25,103) at the lens to (139,9,62) at 80 % | **8/8** | 6/8 | 0.1 | 1.00 |
+| fog (rain, density ×2.55) | **8/8**: +254 to +392; on-frame (252,115,169) to (232,99,133) | **8/8** | 8/8 | 0 | 1.00 |
+
+**The frames, read by me** (no licence-clean reference exists, so no judge has graded them):
+- **`V-lamp-beams-night`.** Two narrow additive shafts, clearly apart. The chartreuse one leaves the rear
+  Tiller's drum lamp, sweeping up and to the right, and fades out. The magenta one leaves the front Tiller's drum
+  lamp, hair-thin at the lens; it widens to its 5° cone and dies on Brea, a dark figure about 10 m away at the
+  right end of the shaft. Both are translucent (the grass reads through them); neither is opaque or a block. At
+  night Brea herself is barely visible.
+- **`V-lamp-beams-fog`.** The same pair, with rain streaks and a grey sky. The chartreuse shaft runs toward the
+  palisade. The magenta shaft reads pink-magenta over the warm grass, fading toward Brea, who stands at its end
+  tinted by it. The cones are narrow, and there is no cone on a calm machine.
+- **The ten other lamp films** (same run). The lens films (`calm`, `wary`, `hostile`, `dark` at 15 m, with
+  `calm` also zoomed and three-quarter) read as in rounds 1 and 2. Calm is a full iris, a bone ring and a hot
+  core. Wary is a half iris in chartreuse. Hostile is a magenta pinhole. Dark is a closed iris with a branched
+  crack and no lit glass. No Horizon blue, amber or red appears. The 40 m and noon frames show the lit lens as a
+  point on the drum. The PNGs were deleted once read.
+
+### Finding 4 — the publish-on-change accessors (fixed; new gate `A-published-scalars`)
+
+- **Cause.** Every box was born `_pb = 0` beside a sentinel `_pv = 0.5`. A first read of a value of exactly 0.5
+  matched the sentinel and returned the box's 0. 27 of the 30 names are not read at spawn, so all 27 were
+  exposed: for example `forceState('search')` writes `suspicion = 0.5`, and the herd's "hot" test then read 0.
+- **Fix.** The sentinel is born NaN, which no value equals, so the first read of every name re-boxes the real
+  value.
+- **Gate** (`A-published-scalars`, lane block). Every name in `MACHINE_SCALARS` is written through its setter
+  and read back through its getter:
+  - on a fresh record, the first read for each of 0.5, 0, −1, 1e-7 and 99 (150 checks);
+  - on a freshly spawned herd-role machine (180 checks).
+  - **Negative control:** the round-2 seed, built by hand, must make the probe fail. It does, on 30 of 30 names.
+- **Result:** PASS, 0 wrong.
 
 
 ---
@@ -599,6 +769,57 @@ instruments-a/-b/-c/-d call it for their kinds.
 
 ## Contracts published (exact signatures; W0b additions — the W0a contract follows in the W0a report)
 
+### Fix round 3 changes (exact; internal to this lane unless marked CONTRACT)
+
+- **`src/instruments/lib/hot.js`:**
+  - `HOT.ppos` is now the player's own `THREE.Vector3`, held by reference. It is read-only to lane code, and
+    no lane code writes it.
+  - `HOT.events` is the event bus: per-machine code emits with `safeEmit(HOT, name, payload)`.
+  - New export: `mutableFromBirth(o: object): object`. It writes every own, writable data field once with a
+    different value of the same kind and then back. Accessors, frozen fields and functions are skipped.
+  - `HOT` itself is passed through `mutableFromBirth` at load.
+- **`machine.js`:**
+  - The `MACHINE_SCALARS` accessors keep their names and values. The sentinel is born NaN, so the first read
+    always re-boxes the real value. This is graded by `A-published-scalars`.
+  - `EyeRecord(mat, base, kind, part)` gains three fields:
+    - `mode`: 0 sprite, 1 basic, 2 emissive;
+    - `col`: the `THREE.Color` it writes, which is `mat.emissive` or `mat.color`;
+    - `op`: the last opacity or intensity written (−1 = never).
+  - New exports: `tickTimersM(sc, dt): void` and `stateClockM(sc, dt): void`, which hold `Machine.update`'s
+    own arithmetic.
+  - The `Machine` constructor declares these fields up front, undefined or null:
+    - `_doctrineSnapped`, `onAlerted`, `_flee`;
+    - the legacy species' `_soar`, `_pingClock`, `_cadBand`, `_cadLoop`, `_cadence`, `_groundHold`,
+      `_perchPhase`.
+  - `_emisCols` holds the strips' emissive `THREE.Color`s.
+- **`index.js`:**
+  - `Machines.update` calls `refreshHot` through `Reflect.apply` and reads her position from `HOT`.
+  - `_spawnCls` runs `mutableFromBirth` on the machine, its `sc` and its `ai`.
+  - `_machineNodes()` returns the same count, without closures.
+- **`ai/perception.js`:**
+  - **CONTRACT behaviour:** `hasLOS(target)` keeps an occluder result for `OCCL_TTL` = 0.25 s, as long as the
+    machine's eye and her body each stay within `OCCL_MOVE` = 0.5 m. It calls `collision.occluded` through
+    `Reflect.apply`.
+  - `hear(x, z, strength, kind)` grounds `_hearPos.y` with `terrain.getHeight(x, z)` and sets `_hearLure`
+    (a Smi).
+  - `PerceptionHooks` is unchanged.
+- **`lamps.js`, CONTRACT:**
+  - `BEAM` adds `gainWary: 1.0`, `gainHostile: 1.6`, `gainHostileFog: 2.7`, `fogFull: 2.55` and
+    `flickerLowHostile: 0.65`.
+  - The beam's air boost is `0.6 + 1.0 × max(0, fogK − 1) + 0.9 × night`, capped at 2.5. The fog term was 0.8.
+  - A lock beam's cone is min(sight range × weather scale, distance to her chest), fading as along^0.5 to
+    nothing on her. A sweep keeps along².
+  - The `aBeam.w` attribute is that fade exponent.
+  - `lamps.audit()` and the record shape are unchanged.
+- **`ai/attacks.js`, `kinds/tiller.js`:** no API change (indexed loops; both gait entry points loaded every
+  call).
+- **Gates** (`tools/gates.r5.instruments-core.mjs`):
+  - new `A-published-scalars` (lane `instruments-core`);
+  - new `A-film-beams-night-probe` and `A-film-beams-fog-probe` (film lane, `R5_IC_FILM=1`);
+  - `A-alloc-machines`: the R46 (c) label `frozen-return`, for `_steerAlong` only, plus the three new
+    diagnosis modes;
+  - the beam films' staging.
+
 ### Fix round 2 additions (internal to this lane; not contracts for other lanes)
 
 - `src/instruments/lib/hot.js`: `HOT` (fields `root, player, terrain, nav, engine, environment, collision,
@@ -953,6 +1174,38 @@ lens (55°). Centre-pixel colours read from the PNGs.
 
 ## Honest gaps
 
+**Fix round 3 (first):**
+- **A. Two lane frames run within 1 KB/s of the bar.**
+  - `_moveToward` reaches 3.17 KB/s and `_beliefTick` 2.93. Both are under 4 KB/s in every window of every run
+    since R4.
+  - `_moveToward` is the same pattern as R46 (c). It is a wrapper that legacy species and frozen `squad.js`
+    call, and it returns `_st.out`; the boxed return is its whole allocation. Should it ever cross the bar, it
+    needs R46 (c) widened to it, or the callers gone (the legacy kinds at W2; squad by grant).
+- **B. Three of the graded runs failed (R1, R3, R5), each on one lane frame.** Each led to a fix (listed
+  with the run table). After R8–R10 came two edits with identical values: the lock beam's fade constant, and a
+  comment moved for `A-lamp-canon-distance`. So R11–R13 re-ran on the final source (in the table).
+- **C. Robustness, not proof against every event.** The fixes remove every deopt and every allocation that the
+  diagnosis runs found in this staging (a fight, then a sprint).
+  - Some rare events are not exercised by any profiled gate: a stun, a burn, a machine death, a torn part, a
+    flipped machine. One of them can still meet a never-run operation in a lane function once per session.
+  - What limits the damage: the per-frame leaves are branch-free; `Machine.update`'s own arithmetic lives in
+    leaves; and no per-machine path reads another system's object or the root ctx.
+- **D. Behaviour changes, stated plainly:**
+  - the occluder cache (0.25 s / 0.5 m; `A37` and `A39` pass);
+  - `hear()` grounds the noise when it arrives (the same `getHeight(x, z)` as before, called earlier);
+  - the beam look: gains, the lock cut at her, the along^0.5 fade and the 0.65 flicker trough.
+
+  The steering helpers, `conformM` and `updateEyesM` compute the same values as before.
+- **E. `collision.occluded`'s allocation is not removed, it is attributed.** Its BVH raycast still allocates
+  its hit records. The `Reflect.apply` call charges those bytes to `collision.js`, where they are made; the
+  cache makes fewer of them. That file is kept code (R48 c, W1 perf-hygiene grant).
+- **F. Something reshapes the root ctx at her first sprint.** A `dependent prototype chain changed` wave hits
+  the root ctx's readers (`refreshHot`, and hero, camera and HUD functions). This lane's per-machine code is
+  no longer exposed to it. I did not find who does it.
+- **G. The beam films' staging varies with the random flat spot.** In the final films (FILM6) every probe
+  clause passes, but earlier stagings in this round read the fog scan at 4–8 of 8. The facing and the raised
+  camera are now asserted. At night Brea is barely visible (nothing lights her but the end of the shaft).
+
 **Fix round 2 (first):**
 - **A. `A-alloc-machines` FAILS.**
   - **In the final run (F12)** only two lane frames are over the bar, each in one window: `_sight` 13.8 at
@@ -1045,6 +1298,25 @@ lens (55°). Centre-pixel colours read from the PNGs.
 ---
 
 ## What another lane or the orchestrator must do
+
+**Fix round 3 additions (first):**
+- **Orchestrator:**
+  1. R46 is recorded and the gate uses it. Consider widening (c) to `_moveToward` (gap A): it is the same
+     wrapper, frozen and legacy callers consume its return, and it is under the bar today.
+  2. **Merge order.** `machine.js`, `index.js`, `ai/perception.js`, `ai/attacks.js`, `lamps.js`, `lib/hot.js`
+     and `kinds/tiller.js` changed again this round; merge them before any lane touches them.
+  3. Gap F: find the system that adds to or reshapes the root ctx at her first sprint. It deoptimises every
+     reader of the root ctx (hero, camera, HUD).
+- **gates-perf (for `A-alloc-rate`'s owners), measured in this Chrome (151):**
+  - `Math.random()` boxes its result in every tier (12 B per call), so no per-frame `Math.random()`.
+  - `Math.abs`, `Math.max` and `Math.min` on a TAGGED argument (a field load that is sometimes a Smi) call the
+    boxing builtin in Maglev; arithmetic arguments do not.
+  - A for-of builds an array iterator in Maglev.
+  - The `R5_IC_DEOPTMARK` timing method (trace markers compiled into the stream) may be useful to them.
+- **hero-body, engine-gpu, melee:** unchanged from fix round 2 (fields born as integers deoptimise their
+  readers on their first fractional value; `mutableFromBirth` in `lib/hot.js` is one way to fix it).
+- **world-sky:** publish the calima weather state at W1 (`A-weak40:herd`, and so `A-kind-block-file`, are
+  PENDING on it under R46).
 
 **Fix round 2 additions (first):**
 - **Orchestrator:**
