@@ -1,23 +1,23 @@
 # ROUND 5 — lane `hero-body` report (W0b): Brea on the kept rig
 
-Lane: hero-body · port 5252 · wave W0b · Oct 18–19 2026, fix round 2 Oct 22 2026, **fix round 3 Oct 22 2026 (evening)**.
-Plan: `docs/ROUND5-PLAN.md` §2 (row), §1.2 (grants), §3.1 (W0b exit), §3.2 (contracts), §4.1 (budgets),
-§6 (aloy.glb), §8 (rulings, incl. §8.3 R33 g, R35–R39), §9 (gate block). Canon: `docs/ROUND5-BIBLE.md` §3 (Brea),
-§3.8 (build order), §5.2 (bow poses), §5.9 (controls).
+Lane: hero-body · port 5252 · wave W0b · Oct 18–19 2026, fix round 2 Oct 22, fix round 3 Oct 22 (evening),
+**fix round 4 Oct 22–23 (night)**. Plan: `docs/ROUND5-PLAN.md` §2 (row), §1.2 (grants), §3.1 (W0b exit), §3.2
+(contracts), §4.1 (budgets), §6 (aloy.glb), §8 (rulings, incl. §8.3 R33 g, R35–R39, R46, R47), §9 (gate block).
+Canon: `docs/ROUND5-BIBLE.md` §2.2 (the trade wind), §3 (Brea), §3.8 (build order), §5.2 (bow poses), §5.9 (controls).
 
-**Status (Oct 22, fix round 3).** Lane run `f3lane1` (58 gates): **43 PASS · 3 FAIL · 12 NEEDS-JUDGE**, no PENDING
-(R38). Then three consecutive runs of the camera rows and the draw gate on the final code (`f3run4–6`):
-**A31d, A31e, A31f PASS 3/3** (they had failed in the judge's run), **A-draw-elbow-level PASS 6/6 this round** under
-R35's literal bars plus a new per-sim-step follow-through clause (strafing elbow 0.052–0.062 m under 0.20; the down
-aim's elbow 0.066–0.078 m behind the hand; **through the loose the hand never passes −0.012 m — in front of the back
-of the skull — and the elbow ≤ 0.173 m**). The loose had gone 0.023–0.066 m BEHIND the skull, and my fix-round-2 report
-had the sign wrong (§0.2 corrected; §7.1 asks the orchestrator to re-issue R35's rationale). Still FAILING: **A31b's
-film** (two composition clauses; every A31b staging passes, §00.2) and A31c (baseline fail, R36, listed: unchanged
-head-seen, a higher ratio bar, §00.3). The root cause of the camera rows' run-to-run flips was a post-teleport foot-lock
-lunge that sank her head 0.27 m (§00.2), fixed. Brea's sheets are re-filmed and re-committed with the wrap tail standing
-out left-rear and a 1.5× crescent (§00.6). Global list items present: A1, A20b, A9, A90 ×4 PASS; A21 PENDING (timing);
-A81 / A-ID-ip-assets-gone / A-licence-manifest fail on other lanes' unmerged rows; A-assets-tracked errors on a
-`models-staging/r5-src` symlink this lane did not make (§4.5).
+**Status (Oct 23, fix round 4).** Lane run `f4lane1` (60 gates): **46 PASS · 1 FAIL · 13 NEEDS-JUDGE**, no PENDING;
+the FAIL is A31c (R36, listed: failed at the baseline; compared against the Aloy runs clause by clause, §000.4).
+**A31b PASS 3/3** (its film now has her head and both shoulders in frame: clavicles −0.81, top +0.10), with
+**A31d / A31e / A31f PASS 3/3** in the same three runs (§000.1, §4.3). **A-no-override PASS** (the ride's exit is
+`endRide` / `player-ride-end`, §000.2). R47 rules the carried spear rows SKIP-replaced(melee W1); its floor is the
+new **A-melee-floor PASS** (§000.3). The down aim's draw hand is on the string: **knuckle ≤ 0.055 m and fingertip
+≤ 0.050 m from the bow's nock at every row** (was 0.109 / 0.088 at the 0.75 aim), graded now in
+A-draw-elbow-level and A16, filmed in the new **V24-draw-down** (§000.9). V13's swing foot no longer drags its toe
+and is filmed at 3.3 m (§000.5). The alidade hangs at the sternum on a modelled neck cord and swings (A19 gear 36°;
+§000.6). The wrap tail is cloth in the world wind (the NE trade wind by default; fix round 3's posed rest kick is
+gone), and both sheets are re-filmed and re-committed (§000.10). Global list (`f4global`): A1, A20b, A90 ×4,
+A-no-override PASS; A21 PENDING (R45); A9's fps term failed on a busy box (⟨A9S⟩); A81 / A-ID-ip-assets-gone /
+A-licence-manifest / A-assets-tracked fail on other lanes' unmerged rows (R39, R47; §4.5).
 
 ## 000. Fix round 4 (Oct 22–23, after judge r1) — what changed, by finding
 
@@ -48,8 +48,8 @@ their rules untouched. (Two settings were measured and dropped: 1.32 m / +0.02 m
 +0.34, clavicles −0.73 — but A31b's `hillside80` staging then had `cameraBoom` back its planned boom off 0.40 m
 and `_preCut` shorten it to 1.16 m, under the 1.20 m bar, run `f4a`.)
 
-*After* (`f4lane1`, `f4run2`, `f4run3` — **PASS 3/3**, with A31d / A31e / A31f PASS 3/3 in the same runs; §4.3): the film — boom 1.40 m, lens gap 1.40, look-up 20.1° (> 15), opacity 1, her head at
-NDC y −0.61, clavicles −0.81 / −0.82 (±0.9), her top +0.08 (> 0), sky: top row 0.89, all rays 0.40, skyline 0.60,
+*After* (`f4lane1`, `f4run2`, `f4run3` — **PASS 3/3**, with A31d / A31e / A31f PASS 3/3 in the same runs; §4.3): the film in each run — boom 1.40 m, lens gap 1.40, look-up 20.1° (> 15), opacity 1, her head at
+NDC y −0.60 / −0.61, clavicles −0.81 / −0.82 (±0.9), the silhouette's top +0.09 … +0.12 (> 0), sky: top row 0.89, all rays 0.40, skyline 0.60,
 near ground 0 → `filmSolid` true; all 16 stagings clean (0 ghosted / jammed / hijacked / off-screen, lens ≥ 1.31 m,
 `hillside80` 1.40 m with no cut, the trunk still fades her to 0.48). Film read: her head, the headwrap and knot,
 both shoulders and the upper back with the stowed bow and lance, in the lower half; the mountains and blue sky
@@ -81,7 +81,7 @@ gates-perf's re-stage own those (§7).
 key and a block press (RMB) on Brea throw nothing (error events, rejections, console errors: **0**), and leave
 her in a valid locomotion state — not aiming, no swing active, holstered, **0 non-finite bones** — after which,
 from a standstill on a flat 46 m strip, she **walks 1.46, jogs 5.02, sprints 6.86 m/s** (median of the last sim
-second; floors 1.2 / 4.35 / 6.12) with her feet alternating (9 / 11 / 18 plant changes). PASS (`f4b`).
+second; floors 1.2 / 4.35 / 6.12) with her feet alternating (9 / 11 / 18 plant changes). PASS (`f4b`, `f4lane1`).
 
 ### 000.4 A31c against the Aloy baseline (finding 4) — R36
 
@@ -138,7 +138,7 @@ notch; skinned neck_01 → spine_03) and the hanging strand down to the tube (bl
 `_02`, so the raise draws it taut instead of tearing it), ≥ 8 mm off the measured neck/smock surface; 112 tris
 (the tube 10 → 8 sides pays 24 of them) — A-hero-draws 19,920 ≤ 20 k. The cord is a short pendulum now, not
 gear: profile `tune.dynClass.gear` stiff 115, maxAng 0.42, strike 1.1 (the 'gear' class carries only this cord on
-Brea). A19's gear probe: **37.5° range at a sprint** (was 13.8°). The sources were back (pipeline's staged
+Brea). A19's gear probe: **36–37.5° range at a sprint** (`f4lane1`, `f4b`; was 13.8°). The sources were back (pipeline's staged
 `r5-src`, read-only, `$R5_SRC`), so `brea.glb` (byte-identical to the shipped one before the chain change —
 checked) and the stow kit were **rebuilt from the recipes**; the in-place crescent patch script of fix round 3
 (`kit-v0-crescent.mjs`) is deleted, its change lives in `kit-v0.mjs` (`CRESCENT_K`).
@@ -151,6 +151,8 @@ angled, kicked; the knot tail behind the head — all four move, none rigid.
 
 Graded on main after the gates-perf merge (R47). The one literal this lane carried, A33-hair-bounce's
 `speed > 6.1`, now reads the build's canon band (`SPRINT_MIN`, the CANON_SPEEDS prelude).
+
+### 000.8 — finding 8 is finding 1 (A31b's film): §000.1
 
 ### 000.9 The 0.75 down aim: the hand was not on the string (finding 9)
 
@@ -172,9 +174,9 @@ the −0.03 bar, `f4b`.)
 middle fingertip ≤ 0.06 m from the bow's nock at every row**. New visual **`V24-draw-down`**: full draw at 0.75,
 from her right and her front-right three-quarter (raised ~20°, square to the bowed draw).
 
-*After* (`f4c`): A-draw-elbow-level PASS — knuckle 0.0516–0.0549, fingertip 0.0459–0.0502 at all 8 rows (the 0.75
-row: 0.052 / 0.049; it was 0.109 / 0.088); A16 PASS (knuckle 0.0517–0.0536 / fingertip 0.0457–0.0493 on its 6
-rows); A35, A32, A17, A-wrap-clear PASS. V24-draw-down read: the fist with the ∴ on the cheek under the ear, the
+*After* (`f4lane1`; `f4c` the same within 2 mm): A-draw-elbow-level PASS — knuckle 0.047–0.055, fingertip
+0.042–0.050 m at all 8 rows (the 0.75 row: 0.051 / 0.049; it was 0.109 / 0.088), every R35 clause as before (§4.1);
+A16 PASS (knuckle 0.051–0.055 / fingertip 0.046–0.050 on its 6 rows); A35, A32, A17, A-wrap-clear PASS. V24-draw-down read: the fist with the ∴ on the cheek under the ear, the
 fingers on the string at the nock at the jaw line, the arrow from there down to the grip, the forearm along it,
 the bow arm straight; the upper string runs forward across the lower face to the tip. V24 (level) unchanged.
 
@@ -834,7 +836,25 @@ in `f4lane1` (reticle on the 10 / 16 m targets; 0 ghosted; V22 fill 0.68).
 
 ### 4.5 Global green list (the items that exist in this tree; one run, `--only`, port 5252, run `f4global`)
 
-⟨GLOBAL-TABLE⟩
+Run `f4global` (Oct 23, 05:35–05:52 UTC; one Chrome, the hero-body + pipeline + instruments-core combiner
+`bin/combo-global.mjs`; the box was busy: load 4.2–4.5, two other lanes' Chromes alive):
+
+| gate | verdict | numbers |
+|---|---|---|
+| A1-boot-clean | PASS | state = playing |
+| A20b-no-system-errors | PASS | 0 errors, 220 frames |
+| A9-perf-budget | ⟨A9⟩ | 282 draw calls (PASS); fps 38.5 with the scene GPU at 57.8 ms while two other lanes' Chromes rendered on the same GPU (fix round 3, quieter: 58.6 fps); R45: the fps term is the orchestrator's quiet run |
+| A21-real-draw-calls | PENDING (R45) | draws 286 / 177 / 311 and triangles PASS; GPU / p95 terms not attributable |
+| A90-memory-stability | PASS | heap −10.6 %, geometries +9, textures −28 |
+| A90-memory-stability-expansion | PASS | non-machine growth 0, geometries +3, heap −6.3 % |
+| A90b-memory-attribution | PASS | 0 offenders, 0 orphaned textures, heap −7.2 % after forced GC |
+| A90-rig-reclaim | PASS | geometries +9, textures 0 over 30 cycles |
+| **A-no-override** (instruments-core file) | **PASS** | static: raw 0, code 0, **identifier hits 0** (was 8 — `dismount`), removal-only true; live half clean (one runner retry on a 90 s page wait) |
+| A81-canon-speed-bands | FAIL (not this lane; R47: graded on main) | the one stale literal is npc's `A96-npc-animated` ("travellers >= 4"); the Round-4 player-anim file's own A33 `speed > 6.1` is listed frozen-but-satisfied (this lane's `@hero` copy reads `SPRINT_MIN`) |
+| A-ID-ip-assets-gone (pipeline file) | FAIL (not this lane) | the only hit: `public/anims-hybrid/aloy-ual.json` (gates-perf's W0a deletion, not merged) |
+| A-licence-manifest (pipeline file) | FAIL (not this lane) | legacy-source FAIL on the same `aloy-ual.json`; third-party / credits PENDING (R42) |
+| A-assets-tracked (pipeline file) | FAIL (R39) | the one miss: `public/models/aloy.glb` — deleted from this branch (checkpoint `ae95d9a`), still named by `SPECS.hero` in pipeline's `assets.specs.js` (and `tools/optimize.mjs`, `spike-hybrid-bake.mjs`, `licences/{lib,ip-scan}.mjs`); R39: pipeline's swap merges first. The fix-round-3 symlink error is gone |
+| A90-abs, A-alloc-rate, A-vram-ledger, A-no-horizon-terms-*, A-reach-all-sites, A-port-guard, A-carried-suite | — | not in this tree (gates-perf / brand files not merged) |
 
 ## 5. Brea's sheets for Kevin (§3.1 W0b exit, §11 decision 1)
 
@@ -842,7 +862,7 @@ in `f4lane1` (reticle on the 10 / 16 m targets; 0 ghosted; V22 fill 0.68).
 nearest and true size — and full colour, default loadout) and `reference/r5/hero/brea-face-sheet.png` (front /
 profile / 3/4 at 1.2 m beside the stock UBC front / profile, and the right-hand ∴ inset); the stock comparison
 renders `ubc-stock-front.png` / `ubc-stock-profile.png`; rows and SHA-256s in `reference/r5/hero/MANIFEST.md`.
-**Re-committed in fix round 3** from the `f3lane1` gate films (the kicked wrap tail and the taller crescent). Made by
+**Re-committed in fix round 4** from run `f4sheets` (staged idle facing north in the NE trade wind: the wrap tail is cloth in the wind; the neck cord and the sternum tube; the taller crescent). Made by
 `src/hero/sheets.js` (`silhouetteSheetOverlay`, `faceSheetOverlay`) — the gates V-brea-one-glance / V-brea-face film
 exactly these overlays; standalone:
 
