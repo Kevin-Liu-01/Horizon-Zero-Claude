@@ -258,7 +258,8 @@ export class LanceCarry {
     // the tails' segments this frame (char space), into a buffer sized once
     this._nTail = 0;
     if (!this._tailChains) {
-      this._tailChains = [an.chainOf?.('hair') || [], an.chainOf?.('cloth') || []];
+      // (fix round 4: the wrap tail is its own class, 'wrap'; 'cloth' is the sash end)
+      this._tailChains = [an.chainOf?.('hair') || [], an.chainOf?.('wrap') || an.chainOf?.('cloth') || []];
       let n = 0; for (const c of this._tailChains) n += Math.max(0, c.length - 1);
       this._tailPts = new Float32Array(n * 6);
     }

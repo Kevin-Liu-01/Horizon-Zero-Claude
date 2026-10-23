@@ -8392,7 +8392,7 @@ const NEW_GATES = [
         // shaft (their segments vs the lance axis, less the shaft's radius)
         const mid = b.clone().lerp(t, 0.5).distanceTo(backC);
         let tailGap = 9;
-        for (const cls of ['hair', 'cloth']) {
+        for (const cls of ['hair', 'cloth', 'wrap']) {     // fix round 4: the wrap tail is class 'wrap'
           const ch = an.chainOf?.(cls) || [];
           for (let i = 0; i + 1 < ch.length; i++) { an._charOf(ch[i], a0); an._charOf(ch[i + 1], a1); tailGap = Math.min(tailGap, segSeg(a0, a1, b, t) - 0.0145); }
         }

@@ -157,6 +157,13 @@ export const UBC_TUNE = {
   // ...and the wrist bent back this much (radians) at full draw, so the
   // knuckles ride outside the jaw and the hooked fingers curl in to the string
   drawWristExt: 0.35,
+  // fix round 4 (judge r1, the 0.75 down aim: knuckle 0.109 m from the nock,
+  // the fist on the headwrap): the wrist behind the nock along the arrow with
+  // its downward share limited to 0.25 (level / up-aims untouched), and the
+  // hand turned about the wrist until the middle knuckle is within 0.052 m of
+  // the nock (level / up-aims measured 0.060-0.062)
+  behindNockDownY: 0.25,
+  knuckleNock: 0.052,
   // the bow's lateral offset off the anchor line (char +X = her left; Round 4
   // 0.035): Brea's string touches the jaw corner, a hair outside it
   gripOut: -0.008,
@@ -229,20 +236,6 @@ export const UBC_TUNE = {
   // excess is given back, spread up the spine (`share`), neck + head forward
   // by `gaze` of it so the eyes stay on the horizon.
   trunk: { walk: 0.17, jog: 0.23, sprint: 0.30, crouch: 0.63, gain: 1.15, share: [0.25, 0.35, 0.40], shareCrouch: [0.05, 0.30, 0.65], gaze: [0.5, 0.45] },
-  // fix round 3 (V-brea-one-glance cue 2, bible §3.2 "a 0.40 m cloth tail
-  // trailing left-rear"): the wrap tail's authored rest hangs flat down the
-  // left of her spine and never left her outline at 64 px; its root -> end
-  // line is turned out to her LEFT-REAR every frame before the springs (which
-  // hang, bounce and collide it about that rest). Character space: +X her
-  // left, -Z back; ~50 deg off the vertical, as a stiff wrapped tail in the
-  // island's wind stands
-  // (more out to her left than back: kicked straight back it rode into the
-  // line from a chase lens to her crown — A31c's run-away rows)
-  // `moveDamp`: on the move the kick fades by this share of the gait weight —
-  // the springs trail the tail behind her running (at 0.7 it hid behind her
-  // head from V23's front-left lens; at 0 a crouch-walk carried it out
-  // sideways like a flag, V3)
-  restKick: [{ bone: 'dyn_wrapSash_01', tip: 'dyn_wrapSash_end', dir: [0.68, -0.62, -0.39], moveDamp: 0.4 }],
   // the Head bone's standing height over her feet (camera stance follow; Aloy's
   // head_0104 stood at 1.36, the Round-4 HEAD_REST); measured idle on flat ground
   headRest: 1.468,
@@ -329,7 +322,10 @@ export function ubcProfile(root, name = 'ubc-brea') {
     hairChain: 'dyn_hairKnotTail_01',
     // chain classes by name ahead of the Round-4 regexes (the alidade on its
     // cord is gear: A19's gear probe, chainOf('gear'))
-    chainClasses: { gear: '^dyn_alidadeCord' },
+    // fix round 4: the wrap tail is its own class, 'wrap' — cloth in the world
+    // wind with a wrapped (stiff) root (playerAnimator DYN_CLASSES); it replaced
+    // fix round 3's character-space `restKick`
+    chainClasses: { gear: '^dyn_alidadeCord', wrap: '^dyn_wrapSash' },
     // Round-4 bone names kept systems still look up (combat.js bow back-stow)
     boneAliases: { spine_03_08: 'spine_02' },
     handCollider: UBC_HAND_COLLIDER,

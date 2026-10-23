@@ -685,6 +685,30 @@ const PRE_CUT_MARGIN = 0.01;
  * past the un-rotated one (the frame the look-up rules chose is the
  * reference; at 1.69 m A31b's film read her crown under the frame's centre) */
 const ROT_LEN_SLACK = 0.05;
+/* R5 fix round 4 — THE HILLSIDE BOOM (A31b's film, judge r1: "the −0.8 hillside
+ * look-up cuts her off at the shoulders": her head at NDC y −0.75, both
+ * clavicles at −0.95 / −0.96 against the film's ±0.9, the top of her under the
+ * frame's centre). Below the pitch clamp, on a face the ground answers with a
+ * ROTATION, the scan used to price every rotated candidate at the long
+ * look-up boom (2.23 m at camPitch −0.8) and the applied boom was then cut
+ * back to the un-rotated 1.45-1.50 m — so the rotation it kept (36.3 deg) was
+ * the one a 2.2 m boom needed, and it carried a 1.5 m lens 0.25 m higher than
+ * that length needs (lens 1.40 m over her feet, 1.51 m out; measured Oct 22,
+ * probe `filmdbg`). Her head and shoulders sit at the bottom of the frame
+ * because the LENS is high, and the view is already at its look-up budget,
+ * so only the lens can bring her up. The geometry of that 38 deg face
+ * (ground 0.72 m up at 1.25 m out, 0.79 m at 1.5 m; a 0.45 m march clearance;
+ * A31b's 1.20 m lens bar; the 20 deg the budget leaves the view) admits one
+ * good lens: CLOSER and LOWER — ~1.25 m out at ~1.25 m over her feet — where
+ * her crown is above the centre and her clavicles well inside the frame.
+ * So in this regime a rotated candidate is priced, and the applied rotated
+ * boom is held, at `HILL_BOOM` (A31b's 1.20 m lens bar + 0.12 m), and the
+ * smallest clearing rotation at that length is found to `ROT_REFINE` steps,
+ * not the scan's 5.2 deg grid (which overshot by up to a whole step, i.e.
+ * ~0.12 m of lens height). The pitch clamp (A31c / A31e / A31f), aiming and
+ * crouching keep their own rules untouched. */
+const HILL_BOOM = 1.32;
+const ROT_REFINE = 6;
 const REL_CUT_SLACK = 0.08;
 const REL_CUT_STEP = 0.06;
 /* fix round 3: the floor eases off with MOTION, not the clock — `REL_CUT_PER_RAD`
@@ -3737,6 +3761,8 @@ void main() {
       const pb = Math.min(pitch + rot, PITCH_B_MAX);
       const cp = Math.cos(pb), sp = Math.sin(pb);
       let len = this._lenAtElev(pb, want, pivotUp);
+      // fix round 4: a ROTATED candidate is priced at the hillside boom (`HILL_BOOM`)
+      if (i > 0 && len > this._rotLenCap) len = this._rotLenCap;
       /* a PLACEMENT rotation is priced at the boom the lens is actually on:
        * the length spring lags a flick (1.36 m at 37 deg for a 0.9 m target),
        * and priced at the target the longer real boom was left in the grass */
@@ -3792,10 +3818,31 @@ void main() {
           continue;
         }
       }
-      if (c >= ROT_MARGIN) return rot;                 // smallest that clears
+      if (c >= ROT_MARGIN) {                           // smallest that clears
+        // fix round 4: at the hillside boom, the smallest to ROT_REFINE bisections
+        // inside the grid step (clearance is monotonic over one 5 deg step there)
+        if (i > 0 && this._rotLenCap < Infinity) {
+          let lo = ((i - 1) / ROT_STEPS) * cap, hi = rot;
+          for (let k = 0; k < ROT_REFINE; k++) {
+            const mid = (lo + hi) * 0.5;
+            if (this._hillClear(P, sy, cy, pitch, mid, want, pivotUp) >= ROT_MARGIN) hi = mid; else lo = mid;
+          }
+          return hi;
+        }
+        return rot;
+      }
       if (c > bestClear) { bestClear = c; bestRot = rot; }
     }
     return bestBodyRot >= 0 ? bestBodyRot : bestRot;
+  }
+
+  /** Fix round 4: the clearance of the hillside boom rotated by `rot` (see `HILL_BOOM`). */
+  _hillClear(P, sy, cy, pitch, rot, want, pivotUp) {
+    const pb = Math.min(pitch + rot, PITCH_B_MAX);
+    const cp = Math.cos(pb), sp = Math.sin(pb);
+    let len = this._lenAtElev(pb, want, pivotUp);
+    if (len > this._rotLenCap) len = this._rotLenCap;
+    return this._clearAlong(P.x, P.y, P.z, sy * cp, sp, cy * cp, len);
   }
 
   /**
@@ -4063,6 +4110,10 @@ void main() {
     /* PLACEMENT ROTATION (residue fix round 3, see `ROT_PLACE_LEAD`): aiming
      * or crouched with no room for the dolly — the boom the look-up rules give
      * is already at `DOLLY_GAP` (`BOOM_MIN` from A31's 1.2 m crouch pivot). */
+    // fix round 4: the hillside boom (see `HILL_BOOM`) — deep look-up under
+    // the clamp, standing or moving, not aiming, not crouched
+    this._rotLenCap = (this._deepK > 0.5 && !this.aiming && !this.crouching
+      && pitch > PITCH_UP + 0.15 && ctx.terrain) ? HILL_BOOM : Infinity;
     this._rotPlace = (this.aiming || this.crouching) && this._deepK > 1e-3
       && this._lenAtElev(pitch, wantDist, pivotLift) <= DOLLY_GAP + ROT_PLACE_ROOM;
     /* the look-up rate (rad/s, - = looking further up), for its lead */
@@ -4246,6 +4297,12 @@ void main() {
       // (and never past the un-rotated boom plus `ROT_LEN_SLACK`: the frame
       // the look-up rules chose is the reference)
       if (wantDist > L0 + ROT_LEN_SLACK) { wantDist = L0 + ROT_LEN_SLACK; wantFlat = Math.min(wantFlat, wantDist); }
+      // fix round 4: ...and below the clamp, the hillside boom the rotation was
+      // priced at (`HILL_BOOM`), blended in as the rotation arrives
+      if (wantDist > this._rotLenCap) {
+        const hk = THREE.MathUtils.smoothstep(this._relief, 0.05, 0.15);
+        wantDist += (this._rotLenCap - wantDist) * hk; wantFlat = Math.min(wantFlat, wantDist);
+      }
       if (wantDist > L0 + 0.02) {
         const P = this._pivotPos, oy = P.y + (this._lift || 0);
         if (this._clearAlong(P.x, oy, P.z, dir.x, dir.y, dir.z, wantDist) < PRE_CUT_MARGIN) {
