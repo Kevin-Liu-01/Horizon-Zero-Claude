@@ -1295,7 +1295,7 @@ export class Player {
     this.animator = new PlayerAnimator(ctx, this.model);
 
     ctx.input.onDown('Space', () => this.jump());
-    ctx.input.onDown('KeyE', () => { if (this._ride) this.dismount('input'); });
+    ctx.input.onDown('KeyE', () => { if (this._ride) this.endRide('input'); });
     ctx.input.onDown('ControlLeft', () => this.dodge()); // HZD PC dodge bind
     ctx.input.onDown('KeyC', () => this.toggleCrouch());
 
@@ -1516,7 +1516,7 @@ void main() {
   }
 
   _die() {
-    if (this._ride) this.dismount('death');
+    if (this._ride) this.endRide('death');
     this.ctx.state = 'dead';
     this.ctx.events.emit('player-died');
     setTimeout(() => {
@@ -1553,7 +1553,7 @@ void main() {
   jump() {
     const ctx = this.ctx;
     if (ctx.state !== 'playing' && !ctx.params.has('shot')) return;
-    if (this._ride) { ctx.input.consume('Space'); this.dismount('input'); return; }
+    if (this._ride) { ctx.input.consume('Space'); this.endRide('input'); return; }
     // a slide is exited on input: a short hop off the face (A-slide: <= 0.3 s)
     if (this.sliding && this.grounded) { ctx.input.consume('Space'); this._slideHop(); return; }
     // buffered: served by _tryJump on the first frame it becomes legal
@@ -1593,7 +1593,7 @@ void main() {
    * `player.ride(path, clip)` — the published ride hook (hero-body W0b; the
    * cable baskets, settlements W4). She is SEATED: her root sits on the seat
    * socket every frame (no lag behind a moving seat), locomotion and aiming are
-   * off, the camera stays free, and Space or E dismounts.
+   * off, the camera stays free, and Space or E ends the ride (`endRide`).
    *
    *   path   array of {x, y, z} world points (a polyline), walked at `speed`
    *   clip   'sitIdle' (the seated pose; the default), or an options object
@@ -1606,7 +1606,7 @@ void main() {
   ride(path, clipOrOpts = {}) {
     // the published shape is `ride(path, clip)`; an options object is also taken
     const opts = typeof clipOrOpts === 'string' ? { clip: clipOrOpts } : (clipOrOpts || {});
-    if (this._ride) this.dismount('cancel');
+    if (this._ride) this.endRide('cancel');
     const pts = (path || []).map((q) => new THREE.Vector3(q.x, q.y, q.z));
     if (pts.length < 2) throw new Error('[player] ride(path): need >= 2 points');
     const seg = [];
@@ -1622,7 +1622,7 @@ void main() {
       // seat socket is where her PELVIS rests, the root goes under it
       pelvisOff: new THREE.Vector3(), placed: new THREE.Vector3(), placedH: 0,
       onExit: opts.onExit || null, done, _resolve: resolve,
-      cancel: () => this.dismount('cancel'),
+      cancel: () => this.endRide('cancel'),
     };
     this._ride = h;
     this.riding = true;
@@ -1639,7 +1639,7 @@ void main() {
   }
 
   /** End the ride (input, end of path, cancel, death): back on her feet beside the seat. */
-  dismount(cause = 'cancel') {
+  endRide(cause = 'cancel') {
     const h = this._ride;
     if (!h) return false;
     this._ride = null;
@@ -1653,7 +1653,7 @@ void main() {
     this.position.y = Math.max(this.groundY, Math.min(h.socket.y, this.groundY + 1.2));
     this.grounded = this.position.y - this.groundY < 0.05;
     if (!this.grounded) { this.airTime = 0; this._fallPeak = this.position.y; this._launchY = this.position.y; }
-    this.ctx.events.emit('player-dismount', { cause });
+    this.ctx.events.emit('player-ride-end', { cause });
     h.onExit?.(cause);
     h._resolve(cause);
     return true;
@@ -1677,7 +1677,7 @@ void main() {
     h.s += h.speed * dt;
     if (h.s >= h.length) {
       if (h.loop) h.s -= h.length;
-      else { h.s = h.length; this._rideSocket(h); this._rideSeat(h); this.dismount('end'); return; }
+      else { h.s = h.length; this._rideSocket(h); this._rideSeat(h); this.endRide('end'); return; }
     }
     this._rideSocket(h);
     // the pelvis offset the last pose put her in (char space), then she faces

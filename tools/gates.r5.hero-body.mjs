@@ -3833,7 +3833,7 @@ const GATES = [
     settle: 500,
     assert: placed(['runway'], `(async () => {
      try {
-      const C = __CTX__, p = C.player, an = p.animator;${HERO}
+      const C = __CTX__, p = C.player, an = p.animator;${CANON_SPEEDS}${HERO}
       ${FREEZE}
       ${RUNWAY}
       // where the runway starts: the window's stop condition is a DISTANCE
@@ -4101,7 +4101,8 @@ const GATES = [
        * sampler managed. */
       const canResolve = footCycles >= 16 && perCycle >= 4 && contrast >= 4
         && ys.length >= 40 && signif >= 0.15 && rMax >= 1.5;
-      const physical = speed > 6.1 && p2p >= 0.04 && oscP2P >= 0.03
+      // (fix round 4: the sprint floor is the build's canon band, SPRINT_MIN, not a hand-frozen 6.1 — A81)
+      const physical = speed > SPRINT_MIN && p2p >= 0.04 && oscP2P >= 0.03
         && devP2P >= 0.012 && devMax <= 0.35;
       const pass = !physical ? false : (canResolve ? locked : null);
       // R5 (gates-perf W0a, fix round 3): name the floor(s) actually missed. Round 4's note listed
@@ -8095,17 +8096,22 @@ const NEW_GATES = [
   /* ------------------------------------------------------- A-ride-hook */
   {
     id: 'A-ride-hook', kind: 'action', lane: 'hero-body', timeout: 90000,
-    title: 'player.ride on a fixture 40 m path: seated (pelvis) <= 0.05 m from the seat socket on every seated frame; dismount on input; geometries, textures and input listeners back to baseline',
+    title: 'player.ride on a fixture 40 m path: seated (pelvis) <= 0.05 m from the seat socket on every seated frame; the ride ends on input (player.endRide, event player-ride-end with cause input); geometries, textures and input listeners back to baseline',
     setup: INPUT_ON, settle: 400,
     assert: placed(['openGround'], `(async () => {${HB}
       freeze(); release(); standAt(p, 'openGround'); await simWait(0.4, 3000);
       if (typeof p.ride !== 'function') return { pass: false, detail: 'player.ride not published' };
+      // fix round 4: the exit is \`endRide\` / 'player-ride-end' (A-no-override's
+      // mechanic lexicon reserves the mount words for the removed Override)
+      if (typeof p.endRide !== 'function') return { pass: false, detail: 'player.endRide not published' };
+      const ends = []; const onEnd = (e) => ends.push(e && e.cause);
+      C.events.on('player-ride-end', onEnd);
       const R = C.renderer.info.memory;
       const count = (m) => { let n = 0; for (const s of m.values()) n += s.size; return n; };
       const snap = () => ({ geo: R.geometries, tex: R.textures, down: count(C.input._downHandlers), up: count(C.input._upHandlers) });
       const o = PLACE('openGround'), y = C.terrain.getHeight(o.x, o.z) + 3;
       const path = [{ x: o.x, y, z: o.z }, { x: o.x, y: y + 4, z: o.z + 20 }, { x: o.x + 4, y: y + 2, z: o.z + 40 }];
-      // warm-up: the SAME ride once, dismounted the same way, so first-use
+      // warm-up: the SAME ride once, ended the same way, so first-use
       // allocations (the seated clip's action) and the ground the ride streams
       // in along its 20 m are not booked as a leak; then the baseline once the
       // counters have held still for 30 frames
@@ -8125,15 +8131,18 @@ const NEW_GATES = [
         pelvisWorst = Math.max(pelvisWorst, WP(an.b.pelvis.bone).distanceTo(h.socket));
       }
       const seated = an.debugNative?.()?.sit?.w ?? null;
-      // dismount on input (Space)
+      // end the ride on input (Space)
       C.input._press?.('Space', { code: 'Space' }); keys.delete('Space');
       const cause = await Promise.race([h.done, wait(1500).then(() => 'timeout')]);
       await simWait(0.5, 3000);
       standAt(p, 'openGround');
       const after = await settle();
+      C.events.off('player-ride-end', onEnd);
+      const endEvents = ends.slice();
       const pass = frames > 20 && seatedFrames > 20 && pelvisWorst <= 0.05 && cause === 'input' && !p.riding
+        && endEvents.length === 2 && endEvents[1] === 'input' && typeof p.dismount === 'undefined'
         && after.geo === base.geo && after.tex === base.tex && after.down === base.down && after.up === base.up;
-      return { pass, detail: { frames, seatedFrames, pelvisFromSocketMaxM: +pelvisWorst.toFixed(4), seatedW: seated, cause, base, after } };
+      return { pass, detail: { frames, seatedFrames, pelvisFromSocketMaxM: +pelvisWorst.toFixed(4), seatedW: seated, cause, endEvents, noDismountName: typeof p.dismount === 'undefined', base, after } };
     })()`),
   },
 
