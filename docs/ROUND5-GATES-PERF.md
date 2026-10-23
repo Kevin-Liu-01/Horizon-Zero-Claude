@@ -29,7 +29,28 @@ invocation, `TBD:suiterun`), and sealed partial re-runs for the known-flaky rows
 
 ## 0. Result
 
-TBD:result
+Runs on the final build, port 5255 (every one on a loud box: load 2.8–7.8, another lane's gate Chrome alive most of
+the time): the sealed full carried run `p5255-30826-1792714911107` (00:28–01:21Z), the lane block
+`node tools/gates.mjs --port 5255 --lane gates-perf` (01:34–01:44Z, report `scratchpad/r5/gates-perf/work/lane-fix2.report.json`),
+the full suite (the 13 lane rows + every global-list row in this tree, 01:46–02:07Z, `work/suite-fix2b.report.json`), sealed
+partial re-runs of the known-flaky rows and A9, separate A-unattributed-cap runs, and A-carried-suite graded last in an
+invocation of its own (TBD:acsTime).
+
+| gate | result | measured |
+|---|---|---|
+| `A-gate-preludes` | **PASS** (lane block and full suite) | 14/14 checks: 0 kind literals, 0 old-map coordinates (now also declared pairs and `hypot()` offsets) and **0 unstaged machine picks** in the graded files; 33 annotated whole-roster sites listed; every prelude resolved; scanner self-tests 8/8 + 7/7 and 2/2 + 0 false hits. Brand's (`'strider'`, one REST pair) and instruments-core's (5 old kind names, one placement) files reported, graded at their exits (R33 e). |
+| `A-gates-no-hero-literals` | **PASS** | 12 `tools/gate*.mjs` files, 0 hits; 17 carried rows read bones through the animator. |
+| `A-gates-autodiscover` | **PASS** | 8/8 checks in child processes; 273 rows with the probes. |
+| `A-chrome-semaphore` | **PASS** (lane block) | 4 real runs at 1 slot: at most 1 Chrome over 345 samples, 3 waited; stand-ins at 2 slots: at most 2, 0 tickets left; `kill -9` released in 0.71 s; preflight refusals at simulated 2.5 GB / 20 %; write trace 555 calls from 22 pids, **0 into the tree**, positive control 6 ≥ 4. (In the mixed full suite it reports PENDING by design: it needs a runner-only invocation.) |
+| `A-carried-suite` | TBD:acsRow |
+| `A-reference-clean` | **PASS** | 13 images, all with rows (11 PD, 1 CC0, 1 CC BY 2.0); the 19 deleted stills recorded by sha256, 0 present. |
+| `A-reference-set` | **PASS** | classifier controls 10/10; 8/8 graded visual rows name a reference. |
+| `A-perf-scenarios-self-contained` | **PASS** | vista, herd and staged-fight staged in a scope holding `STAGE_PRELUDE` only; 0 helpers leaked. |
+| `A-alloc-rate` | **FAIL**, real (§4) | caller-attributed src/** **91,718 KB/s** (lane block, 42.5 fps) / **101,305 KB/s** (full suite) / 124,699 KB/s (first suite) against 64; worst function `noise2D` terrain.js:78 13,905–19,091 KB/s against 4; post-GC slope +12.8 … +166 KB/s against ≤ 0. |
+| `A-vram-ledger` | **FAIL**, real (engine-gpu tier) | textures 105.46 MB ✓, **render targets 437.75 MB ✗ (170)**, geometry 79.54 MB ✓, total 622.75 MB ✗ (450), tier high, pixel ratio 1.5. Same to the byte in every run. |
+| `A90-abs` | **FAIL**, real (engine-gpu tier) | JS heap 79.25 / 80.10 MB ✓ (450); GPU process **1,520.9 / 1,525.8 MB** ✗ (1,500); at pixel ratio 1.25: 1,377 MB. |
+| `A-unattributed-cap` | TBD:uacRow |
+| `A-port-guard` | **PASS** (lane block) | 16 refusals (8 cases × 2 harnesses); lsof control saw its own connection; 0 connections to :5173 over 301 samples of the lane block and over the sealed full run's monitor (1,792 samples, max gap 2.12 s). |
 
 ---
 
@@ -150,7 +171,27 @@ every other owner equal.
 
 ## 1. Gate table — the global green list (the items that exist in this tree)
 
-TBD:global
+| gate (owner) | result | measured (final build) |
+|---|---|---|
+| `A1-boot-clean` | **PASS** | full run, both suites |
+| `A9-perf-budget` (R26) | TBD:a9row |
+| `A20b-no-system-errors` | **PASS** | 0 system errors, 0 hook errors |
+| `A21-real-draw-calls` | **PENDING** (box) | draws 309 / 232 / 337 ✓, triangles 4.12 / 4.40 / 4.40 M ✓; GPU median 72.1 / 93.6 / 61.9 ms, p95 frame 51.1 / 61.6 / 62.5 ms, JS PENDING: another gate Chrome alive and load ≥ 3 at every start. Expected FAIL on the GPU term until engine-gpu's tier merges (A9's own scene GPU on the vista: 19.6–21.6 ms). |
+| `A90-memory-stability` | **PASS** | 30 Tiller kills → 30 respawns (the re-staged workload kills a staged kind only): geometries 157 → 174 (+17 ≤ 40), textures −3 (≤ 8), heap +1.7 % (< 25 %), scene objects −37 (≤ 60) |
+| `A90-memory-stability-expansion` | **PASS** | objects +37 (≤ 600), non-machine growth 0, orphan roots 0, heap +4.4 % (< 25 %) |
+| `A90b-memory-attribution` | **FAIL** (instruments-core, R34) | 24 Bones from `autorig.js:75` held after 30 Tiller kills; instruments-core's unmerged W0b fix records 0, 3/3 |
+| `A90-rig-reclaim` | **PASS** | 30 cycles on the Tiller: geometries +0, textures 0; per live machine 0 / 0.63 (≤ 1) |
+| `A90-abs` | **FAIL** | above |
+| `A-alloc-rate` | **FAIL** | above |
+| `A-vram-ledger` | **FAIL** | above |
+| `A-ID-ip-assets-gone` (pipeline) | **PASS** | 16 GLBs, 0 IP hits; `aloy.glb` a scheduled exception (hero-body, R39) |
+| `A-licence-manifest` (pipeline) | **PENDING** | third-party / legacy-source / credits clauses PENDING (R42: awaiting Kevin's download go-ahead, not blocking W0b); the rest PASS |
+| `A-assets-tracked` (pipeline) | **PASS** | 212 referenced paths, 0 ignored, 0 missing |
+| `A-no-horizon-terms-player` / `-code` (brand) | not in this tree | brand's W0b |
+| `A-reach-all-sites` | not in this tree | no lane file defines it yet |
+| `A-port-guard` | **PASS** | lane block |
+| `A-carried-suite` | TBD:acsShort |
+| `A79-runner-verdict-line`, `A80-chrome-profile-hygiene` (carried) | **PASS** | full run and suites |
 
 ## 2. Contracts and APIs published (exact signatures; changes this round in bold)
 
