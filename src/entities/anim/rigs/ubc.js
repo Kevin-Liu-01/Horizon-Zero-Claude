@@ -166,6 +166,10 @@ export const UBC_TUNE = {
   // -0.03 floor (run f4b)
   behindNockDownY: null,
   knuckleNock: 0.052,
+  // R5 fix round 5 (judge r2, V24-draw-down): a down aim is the LEVEL draw's
+  // form turned rigidly onto the aim ray at spine_01 — the archer bending at
+  // the hips (playerAnimator `_aimLayer`, `tS`)
+  downT: true,
   // the bow's lateral offset off the anchor line (char +X = her left; Round 4
   // 0.035): Brea's string touches the jaw corner, a hair outside it
   gripOut: -0.008,

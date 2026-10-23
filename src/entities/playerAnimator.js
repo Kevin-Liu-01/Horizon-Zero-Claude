@@ -105,6 +105,7 @@ const _sg2 = new THREE.Vector3();
 const _sg3 = new THREE.Vector3();  // R5 fix round 4: the swing foot's lateral axis
 const _sgD = new THREE.Vector3();
 const _ftQ = new THREE.Quaternion();  // R5 fix round 5: a foot's live char orientation (heading by its lateral axis)
+const _tq = new THREE.Quaternion();   // R5 fix round 5: the down aim's turn (form arrow -> ray)
 const _ftL = new THREE.Vector3();     // ...and its live lateral axis
 // _groundConform's PRIVATE roll scratch (never borrow _q1/_v6 here: _rot and
 // _rotL both clobber _q1 mid-call, which silently zeroed the bank)
@@ -552,10 +553,9 @@ export class PlayerAnimator {
       // its middle knuckle is within `knuckleNock` m of the nock (see `_aimLayer`)
       behindNockDownY: tn?.behindNockDownY ?? null,
       knuckleNock: tn?.knuckleNock ?? null,
-      // R5 fix round 5 (0 = the Round-4 behaviour): the down aim bends the
-      // whole T — head and neck turned before the trunk pitch, extra hip fold
-      // and the head's give-back of it (see `_aimLayer`)
-      downHeadT: tn?.downHeadT ?? 0, downBend: tn?.downBend ?? 0, downBendHead: tn?.downBendHead ?? 0,
+      // R5 fix round 5 (false = the Round-4 behaviour): a down aim is the level
+      // draw's form turned rigidly onto the ray at spine_01 (see `_aimLayer`)
+      downT: !!tn?.downT,
     };
     this.bowSolve = prof?.bow || null;
     /* M10 (E3): the spring-side capsule on the DRAW hand + forearm. */
@@ -752,6 +752,9 @@ export class PlayerAnimator {
     this._lookYaw = 0; this._lookPitch = 0;  // damped head look-at angles
     this._lookW = 0;
     this._gripW = new THREE.Vector3();       // last achieved bow grip (world)
+    // R5 fix round 5: the down aim's rigid turn of the upper body and the
+    // turned frame's up / forward (identity / char Y / char Z otherwise)
+    this._qT = new THREE.Quaternion(); this._upT = new THREE.Vector3(0, 1, 0); this._fwdT = new THREE.Vector3(0, 0, 1);
     this._gripValid = false;
     // aim diagnostics (written by _aimLayer, read by debugAim()/the gates)
     this._aimDbg = {
@@ -1140,7 +1143,7 @@ export class PlayerAnimator {
       wristT: { x: D.wristT.x, y: D.wristT.y, z: D.wristT.z },
       headAt: { x: D.headAt.x, y: D.headAt.y, z: D.headAt.z },
       quiverT: this._quiverT, looseT: this._looseT, drawS: this._drawS,
-      knuckleNock: D.knuckleNock ?? null, knuckleTurn: D.knuckleTurn ?? null,
+      knuckleNock: D.knuckleNock ?? null, knuckleTurn: D.knuckleTurn ?? null, tBend: +(D.tBend ?? 0).toFixed(4),
     };
   }
 
@@ -3374,28 +3377,33 @@ export class PlayerAnimator {
     // the gate pitches while rising 5 cm).
     const PS = this.T.pitchShare;
     const rotP = this._rotPitch;                  // a method, not a per-frame closure
-    /* R5 fix round 5 — THE DOWN AIM BENDS THE WHOLE T (judge r2, V24-draw-down:
-     * "the draw forearm is 64 deg off the arrow and the fist sits over the
-     * ear"). The trunk took the aim pitch about the character's lateral axis,
-     * but the neck and head turned back to face the target AFTER it, about the
-     * vertical — which unwinds most of the pitch out of the head: at the 0.75
-     * down aim the shoulder line tilted 45 deg while the head looked only ~20
-     * deg down, so the head-glued anchor rode 0.05 m OVER the draw shoulder and
-     * the forearm climbed to it (probe `tform`). `downHeadT` (0..1) turns the
-     * neck and head to the target BEFORE the pitch at down aims, so the pitch
-     * carries the head, the anchor and both arms together — an archer bending
-     * at the hips; `downBend` (rad per rad of down pitch) folds the hips a
-     * little further than the arrow, and the neck / head give that much back
-     * so the eyes stay on the arrow (`downBendHead`). Both 0 = Round 4. */
-    const dnK = smoothstep(pitch, 0.1, 0.5) * aimW;
-    const dHT = (this.T.downHeadT ?? 0) * dnK;
-    const nYaw = -chestYaw * 0.45 - bladeCorr, hYaw = -chestYaw * 0.6;
-    if (dHT > 1e-4) { this._rotL(b.neck1, Y_AXIS, nYaw * dHT); this._rotL(b.head, Y_AXIS, hYaw * dHT); }
-    const dBend = (this.T.downBend ?? 0) * Math.max(0, pitch) * dnK;
-    if (dBend > 1e-4) rotP(b.spine1, dBend);
-    rotP(b.spine2, pitch * PS[0] * aimW);
-    rotP(b.spine3, pitch * PS[1] * aimW);
-    rotP(b.spine4, pitch * PS[2] * aimW);
+    /* R5 fix round 5 — THE DOWN AIM IS THE LEVEL DRAW, BENT AT THE HIPS
+     * (profile `tune.downT`; judge r2, V24-draw-down: "at the 0.75 down aim the
+     * draw forearm is 64 deg off the arrow and the fist sits over the ear";
+     * fix: "pitch the T-form with the arrow ... how a real archer bends at the
+     * hips"). The aim pitch went into the trunk about the character's lateral
+     * axis, but the neck and head turned back to face the target AFTER it,
+     * about the vertical, which unwound most of the pitch out of the head (the
+     * shoulder line tilted 45 deg, the head looked ~20 deg down), and every
+     * down-aim form term (anchor drop, girdle, shrug) was its own patch: the
+     * head-glued anchor rode 0.05 m over the draw shoulder and the forearm
+     * climbed to it (probe `tform`: forearm 65 deg off the arrow, the wrist
+     * 3 cm further back in the head's frame than the level draw's). Now, by
+     * `tS` (0 up to a 0.1 rad down aim, 1 past 0.5): the trunk, girdle, neck
+     * and head take the form of the aim pitch `fp` = pitch * (1 - tS) — the
+     * LEVEL draw at a steep down aim — and then the whole upper body is turned
+     * rigidly at spine_01 by the rotation that carries that form's arrow onto
+     * the actual aim ray (pitch AND yaw: a near ground hit pulls the ray to her
+     * right), so the anchor, both shoulders, the head and both arms keep the
+     * level draw's relations to the arrow. The arms then solve in that turned
+     * frame (`_qT`; their poles and the elbow-height rules read `_upT` /
+     * `_fwdT`, the turned up and forward). tS = 0 (no profile key) = Round 4. */
+    const tS = this.T.downT ? smoothstep(pitch, 0.1, 0.5) : 0;
+    const fp = pitch * (1 - tS);
+    this._qT.identity(); this._upT.copy(Y_AXIS); this._fwdT.copy(Z_AXIS);
+    rotP(b.spine2, fp * PS[0] * aimW);
+    rotP(b.spine3, fp * PS[1] * aimW);
+    rotP(b.spine4, fp * PS[2] * aimW);
     // slight brace lean into the bow (reference/draw-side.jpg)
     this._rot(b.spine2, Z_AXIS, 0.05 * aimW);
     this._rot(b.spine1, X_AXIS, 0.035 * aimW);
@@ -3407,7 +3415,7 @@ export class PlayerAnimator {
     // R5: the draw-side shrug / retraction / anchor relief are level- and
     // up-aim form; a steep DOWN aim keeps the Round-4 girdle (its elbow has
     // to stay up-and-back of the hand along a falling arrow)
-    const levelK = 1 - smoothstep(pitch, 0.15, 0.6);
+    const levelK = 1 - smoothstep(fp, 0.15, 0.6);
     this._rot(b.clavL, Z_AXIS, 0.04 * aimW);
     this._rot(b.clavR, Z_AXIS, -0.06 * aimW);
     // R5 fix round 3 (profile `tune.drawProtDown`): the bow shoulder pushes
@@ -3433,7 +3441,7 @@ export class PlayerAnimator {
       // DOWN aim too, where A16 holds the elbow under the shoulder joint and
       // A-draw-elbow-level wants it >= 0.05 m up-and-back of the hand along
       // the falling arrow — the joint has to rise for both to hold)
-      const sh = this.T.drawShrug * drawS * aimW * (levelK + (this.T.drawShrugDown ?? 0) * (1 - levelK)) * (1 - 0.5 * clamp(-pitch / 0.55, 0, 1));
+      const sh = this.T.drawShrug * drawS * aimW * (levelK + (this.T.drawShrugDown ?? 0) * (1 - levelK)) * (1 - 0.5 * clamp(-fp / 0.55, 0, 1));
       if (sh > 1e-4) {
         this._charOf(b.clavR.bone, _sg0); this._charOf(b.upArmR.bone, _sg1);
         _v3.subVectors(_sg1, _sg0).cross(Y_AXIS);
@@ -3442,10 +3450,10 @@ export class PlayerAnimator {
     }
 
     // head: face the target (counter the chest blade), carry the aim pitch
-    this._rotL(b.neck1, Y_AXIS, nYaw * (1 - dHT));
-    this._rotL(b.head, Y_AXIS, hYaw * (1 - dHT));
-    rotP(b.neck1, pitch * PS[3] * aimW - dBend * (this.T.downBendHead ?? 0) * 0.45);
-    rotP(b.head, pitch * PS[4] * aimW - dBend * (this.T.downBendHead ?? 0) * 0.55);
+    this._rotL(b.neck1, Y_AXIS, -chestYaw * 0.45 - bladeCorr);
+    this._rotL(b.head, Y_AXIS, -chestYaw * 0.6);
+    rotP(b.neck1, fp * PS[3] * aimW);
+    rotP(b.head, fp * PS[4] * aimW);
 
     const sp = Math.sin(pitch), cp = Math.cos(pitch);
     const cmb = this.ctx.combat;
@@ -3487,6 +3495,19 @@ export class PlayerAnimator {
       }
     }
 
+    // fix round 5: the down aim's rigid turn of the whole upper body (see `tS`
+    // above) — the form's arrow onto the ray, at spine_01, before anything is
+    // derived from the anchor or the shoulders
+    if (tS > 1e-4) {
+      _v7.set(0, -Math.sin(fp), Math.cos(fp));
+      _tq.setFromUnitVectors(_v7, _dA);
+      this._qT.slerpQuaternions(Q_IDENT, _tq, tS * aimW);
+      this._rotQL(b.spine1, this._qT);
+      this._upT.copy(Y_AXIS).applyQuaternion(this._qT);
+      this._fwdT.copy(Z_AXIS).applyQuaternion(this._qT);
+    }
+    this._aimDbg.tBend = 2 * Math.acos(Math.min(1, Math.abs(this._qT.w)));
+
     // breathing sway (steadier under Concentration) + draw-hold tremble
     const conc = this.ctx.combat?.steady?.active ? 0.35 : 1;
     const trem = smoothstep(this._holdT, 3, 4.6) * aimW;
@@ -3516,8 +3537,8 @@ export class PlayerAnimator {
     // drifted to the A35 ceiling (0.158-0.161 m from the skull at -0.55)
     if (this.T.anchorPitch) {
       const AP = this.T.anchorPitch;
-      const sh = pitch < 0 ? AP.level + (AP.up - AP.level) * clamp(-pitch / 0.55, 0, 1)
-        : AP.level + ((AP.down ?? 0) - AP.level) * smoothstep(pitch, 0.15, 0.6);
+      const sh = fp < 0 ? AP.level + (AP.up - AP.level) * clamp(-fp / 0.55, 0, 1)
+        : AP.level + ((AP.down ?? 0) - AP.level) * smoothstep(fp, 0.15, 0.6);
       _anch.addScaledVector(_hdDown, -sh);
     }
 
@@ -3681,7 +3702,7 @@ export class PlayerAnimator {
     // soft elbow bend points at the ground (reference/draw-front.jpg). The
     // bow arm alone is allowed to lock out (see BOW_ARM_LOCK) — the DRAW arm
     // must not, or the string hand cannot reach the cheek at all.
-    _pole.copy(this.T.bowPole);
+    _pole.copy(this.T.bowPole).applyQuaternion(this._qT);
     this._ikMaxK = this.T.bowArmLock;
     this._ikArm('l', _grip, _pole, aimW, _hand);
     this._ikMaxK = 0.985;
@@ -3863,6 +3884,7 @@ export class PlayerAnimator {
      */
     _pole.set(-0.45, -0.75 + 0.2 * drawS, -0.9);
     if (qw > 0.001) _pole.lerp(_v5.set(-0.5, -0.95, -0.3), qw);
+    _pole.applyQuaternion(this._qT);              // fix round 5: in the down aim's turned frame
     this._ikArm('r', _v7, _pole, aimW, null);
     // ---- draw-arm head clearance. The hand target is already pushed out of
     // the skull sphere, but the upper arm and FOREARM are segments: aiming
@@ -3906,9 +3928,12 @@ export class PlayerAnimator {
           this._rollElbow('r', Math.max(floor, Math.min(ideal, cap)), ew, _reW);
           // ...and never over the shoulder JOINT in character height (A16):
           // at a level aim the two frames agree and this is what binds
+          // (fix round 5: "over" in the turned frame `_upT` — character up at
+          // a level or up-aim, the bent T's own up at a down aim)
           this._charOf(b.upArmR.bone, _sg0);
           this._charOf(b.loArmR.bone, _sg1);
-          if (_sg1.y > _sg0.y - 0.006) this._rollElbow('r', _sg0.y - 0.006, ew);
+          const uS = _sg0.dot(this._upT);
+          if (_sg1.dot(this._upT) > uS - 0.006) this._rollElbow('r', uS - 0.006, ew, this._upT);
           if (this.T.elbowForm) this._elbowForm(ew, this._looseT < 1 ? lw : 0);
         } else {
           const ideal = _sg2.y - fore * _v6.y;      // elbow on the arrow line
@@ -4150,7 +4175,7 @@ export class PlayerAnimator {
     if (_efUp.lengthSq() < 1e-6) return;
     _efUp.normalize();
     const S = this._efS || (this._efS = { r: 0, shU: 0, shY: 0, hR: 0, hdF: 0, hD: 0, lo: 0, hi: 0, bh: 0, bd: 0, drop: 0 });   // once
-    S.r = r; S.shU = _sg0.dot(_efUp); S.shY = _sg0.y; S.hR = this.T.headR.z; S.hdF = _hd.dot(_efF);
+    S.r = r; S.shU = _sg0.dot(_efUp); S.shY = _sg0.dot(this._upT); S.hR = this.T.headR.z; S.hdF = _hd.dot(_efF);
     S.hD = _sg2.dot(_dA); S.lo = EF.up[0]; S.hi = EF.up[1]; S.bh = EF.behindHand; S.bd = EF.behindHead;
     // through the LOOSE the elbow may drop under the full-draw height band
     // (an archer's follow-through: the hand opens back and out, the elbow
@@ -4193,7 +4218,7 @@ export class PlayerAnimator {
     const u = _efE.dot(_efUp) - S.shU;
     const bhd = S.hD - _efE.dot(_dA);
     const dep = S.hdF - _efE.dot(_efF) - S.hR;
-    const above = _efE.y - S.shY;
+    const above = _efE.dot(this._upT) - S.shY;
     // the GATE bars, hard (x1000): height [-0.03, 0.05] (the floor lowered by
     // `drop` through the loose), >= 0.055 behind the hand, <= 0.195 past the
     // back of the skull, never over the shoulder joint (A16)
@@ -4746,7 +4771,7 @@ export class PlayerAnimator {
       this._charOf(haE.bone, _sg2);
       // (a) archery form: the draw elbow is level with, or fractionally below,
       // the shoulder — never lifted over it (reference/draw-side.jpg)
-      const high = _sg1.y > _sg0.y - 0.012;
+      const high = _sg1.dot(this._upT) > _sg0.dot(this._upT) - 0.012;   // (fix round 5: the turned frame's up)
       // (b) neither arm SEGMENT may cross the head — and neither may the HAND
       // itself. FIX ROUND 2: only the segments were tested, so the gate passed
       // (headClear 1.16) while hand_r sat at 0.94 of the ellipsoid radius, i.e.
@@ -4758,8 +4783,8 @@ export class PlayerAnimator {
       if (!high && !inHead) return;
       // pole further down (drops the elbow) and back (swings the forearm
       // behind the jaw line instead of across the eyes)
-      pole.y -= high ? 0.55 : 0.3;
-      if (inHead) pole.z -= 0.45;
+      pole.addScaledVector(this._upT, high ? -0.55 : -0.3);
+      if (inHead) pole.addScaledVector(this._fwdT, -0.45);
       pole.normalize();
       this._ikArm(side, target, pole, w, null);
     }

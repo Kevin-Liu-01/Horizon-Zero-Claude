@@ -7542,7 +7542,7 @@ const NEW_GATES = [
   /* -------------------------------------------------- A-draw-elbow-level */
   {
     id: 'A-draw-elbow-level', kind: 'action', lane: 'hero-body', timeout: 120000,
-    title: 'Full draw, four pitches + strafing (and from a jog / a sprint): draw elbow within [shoulder - 0.03, shoulder + 0.05] m (aim frame), >= 0.05 m behind the hand along the arrow, bow arm >= 0.04 m clear of the chest surface (torso-skinned outfit vertices); R35: the draw HAND never > 0.10 m behind the head plane and always in front of the back of the skull, the draw ELBOW <= 0.20 m behind it; the hand ON the string: middle knuckle <= 0.06 m and middle fingertip <= 0.06 m from the bow nock (fix round 4) — and through the LOOSE, on every sim step from the release until 0.3 s after it, the hand still in front of the back of the skull and the elbow <= 0.20 m',
+    title: 'Full draw, four pitches + strafing (and from a jog / a sprint): draw elbow within [shoulder - 0.03, shoulder + 0.05] m (aim frame), >= 0.05 m behind the hand along the arrow, bow arm >= 0.04 m clear of the chest surface (torso-skinned outfit vertices); R35: the draw HAND never > 0.10 m behind the head plane and always in front of the back of the skull, the draw ELBOW <= 0.20 m behind it; the hand ON the string: middle knuckle <= 0.06 m and middle fingertip <= 0.06 m from the bow nock (fix round 4); at the four pitches the forearm within 20 deg of the arrow and the wrist within 0.03 m of the level draw\'s height over the Head joint and of its place in the head\'s frame (fix round 5) — and through the LOOSE, on every sim step from the release until 0.3 s after it, the hand still in front of the back of the skull and the elbow <= 0.20 m',
     setup: INPUT_ON, settle: 400,
     assert: placed(['openGround'], `(async () => {${HB}${DRAW}
       freeze(); standAt(p, 'openGround'); await wait(300);
@@ -7614,7 +7614,18 @@ const NEW_GATES = [
         const nkW = new T3(); cmb.bow.getNockWorld(cmb.drawStrength, nkW);
         const knW = new T3(), ftW = new T3();
         const hasHand = an.debugDrawHand ? an.debugDrawHand(knW, ftW) : false;
+        /* fix round 5 (judge r2, the 0.75 down aim: "the draw forearm is 64 deg
+         * off the arrow and the fist sits over the ear"): the forearm (elbow ->
+         * wrist) against the arrow (the bow's nock -> the bow hand), world; the
+         * wrist against the Head joint — its height, and its position in the
+         * head's own frame — compared with the level draw's below */
+        const wrW = WP(an.b.handR.bone), elW = WP(an.b.loArmR.bone), bhW = WP(an.b.handL.bone), hdW = WP(an.b.head.bone);
+        const foreDir = wrW.clone().sub(elW).normalize(), arrowDir = bhW.clone().sub(nkW).normalize();
+        const wrHead = wrW.clone().applyMatrix4(an.b.head.bone.matrixWorld.clone().invert());
         rows.push({ pitch, key, drawS: +cmb.drawStrength.toFixed(2),
+          forearmToArrowDeg: +(Math.acos(Math.max(-1, Math.min(1, foreDir.dot(arrowDir)))) * 180 / Math.PI).toFixed(2),
+          wristOverHeadJointM: +(wrW.y - hdW.y).toFixed(4), wristInHead: wrHead.toArray().map((v) => +v.toFixed(4)),
+          elbowAboveShoulderWorld: +(elW.y - WP(an.b.upArmR.bone).y).toFixed(4),
           knuckleToNock: hasHand ? +knW.distanceTo(nkW).toFixed(4) : null,
           fingertipToNock: hasHand ? +ftW.distanceTo(nkW).toFixed(4) : null,
           elbowUp: +el.clone().sub(sh).dot(up).toFixed(4),
@@ -7666,7 +7677,21 @@ const NEW_GATES = [
         r.fingertipToNock != null && r.fingertipToNock <= ${FINGERTIP_NOCK} ? null : 'fingertipOffString',
         r.looseSteps >= 6 ? null : 'looseSampled', r.looseMaxHandBehindHead < 0 ? null : 'looseHandBehindSkull',
         r.looseMaxElbowBehindHead <= 0.20 ? null : 'looseElbowBehindHead'].filter(Boolean);
-      const bad = rows.filter((r) => ok(r).length);
+      // fix round 5: at each of the four gate pitches (no strafe key) the forearm
+      // within 20 deg of the arrow, and the wrist held where the LEVEL draw holds
+      // it on the head: its height over the Head joint within 0.03 m of the
+      // level row's, and its position in the head's own frame within 0.03 m
+      const lvl = rows.find((r) => r.pitch === 0 && !r.key);
+      for (const r of rows) {
+        if (r.key || !lvl) continue;
+        r.wristHeadYOffLevelM = +Math.abs(r.wristOverHeadJointM - lvl.wristOverHeadJointM).toFixed(4);
+        r.wristHeadFrameOffLevelM = +Math.hypot(...r.wristInHead.map((v, i) => v - lvl.wristInHead[i])).toFixed(4);
+      }
+      const okT = (r) => r.key ? [] : [r.forearmToArrowDeg <= 20 ? null : 'forearmOffArrow',
+        r.wristHeadYOffLevelM <= 0.03 ? null : 'wristHeightOffLevel', r.wristHeadFrameOffLevelM <= 0.03 ? null : 'wristOffLevelAnchor'].filter(Boolean);
+      const ok0 = ok;
+      const okAll = (r) => [...ok0(r), ...okT(r)];
+      const bad = rows.filter((r) => okAll(r).length);
       const margin = {
         elbowBehindHeadMax: +Math.max(...rows.map((r) => r.elbowBehindHead)).toFixed(4),
         elbowTo020Min: +(0.20 - Math.max(...rows.map((r) => r.elbowBehindHead))).toFixed(4),
@@ -7678,7 +7703,10 @@ const NEW_GATES = [
         knuckleToNockMax: +Math.max(...rows.map((r) => r.knuckleToNock ?? 9)).toFixed(4),
         fingertipToNockMax: +Math.max(...rows.map((r) => r.fingertipToNock ?? 9)).toFixed(4),
       };
-      return { pass: bad.length === 0 && idx.length > 20, detail: { rule: 'R35', rows, margin, failing: bad.map((r) => r.pitch + (r.key || '') + ':' + ok(r).join('+')) } };
+      margin.forearmToArrowMaxDeg = +Math.max(...rows.filter((r) => !r.key).map((r) => r.forearmToArrowDeg)).toFixed(2);
+      margin.wristHeadYOffLevelMax = +Math.max(...rows.filter((r) => !r.key).map((r) => r.wristHeadYOffLevelM)).toFixed(4);
+      margin.wristHeadFrameOffLevelMax = +Math.max(...rows.filter((r) => !r.key).map((r) => r.wristHeadFrameOffLevelM)).toFixed(4);
+      return { pass: bad.length === 0 && idx.length > 20, detail: { rule: 'R35 + fix round 5 (forearm on the arrow, wrist at the level anchor)', rows, margin, failing: bad.map((r) => r.pitch + (r.key || '') + ':' + okAll(r).join('+')) } };
     })()`),
   },
 

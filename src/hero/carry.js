@@ -62,6 +62,8 @@ const R10 = {
   planeGap: 0.03,                   // blade behind the head's frontal plane
   rate: 14,                         // ease toward the chosen (alpha, beta), 1/s
   degW: 4,                          // weight of the R10 band's upper-edge violation (fix round 5: its 1.3 deg of margin costs what the blade's 3-5 cm do)
+  slLo: -0.12, slHi: 0.04,          // fix round 5: the lance's slide along itself through the strap (m)
+  slCost: 2,                        // ...and its cost per metre off the authored strap position
   torsoA: 0.19, torsoB: 0.15,       // the torso's elliptic section round the pelvis->neck line (side, front/back) + 2 cm
   legGap: 0.10,                     // thigh / shin axes (free search)
   armGapFree: 0.07,                 // both arms' axes (free search: they are on the ledge)
@@ -192,7 +194,7 @@ export class LanceCarry {
     const dU = d.dot(U), dX = d.dot(X), dF = d.dot(F);
     this.alpha0 = Math.atan2(-dX, dU);
     this.dF0 = dF;
-    this.alpha = this.alpha0; this.beta = 0;
+    this.alpha = this.alpha0; this.beta = 0; this.sl = 0;
     this.k3 = 0.25;                       // spine_03's share of the lateral axis (run)
     this.bounds = R10;                    // (probes / gates read the live bounds)
     this.out = { deg: 0, alpha: 0, beta: 0, tipBehindHeadPlane: 0, headGap: 0, armGap: null, feasible: true, active: false, mode: 'strap' };
@@ -209,13 +211,14 @@ export class LanceCarry {
   }
 
   /** Butt / tip (char) for (alpha, beta): alpha about the strap point, beta about the pivot. */
-  _place(alpha, beta, butt, tip) {
+  _place(alpha, beta, butt, tip, sl = 0) {
     this._dir(alpha, 0, _d);
     // alpha only: the line through the strap point
     _piv.copy(_strap).addScaledVector(_d, (this.pivotS() - this.strapS) * this.len);
     this._dir(alpha, beta, _d);
-    butt.copy(_piv).addScaledVector(_d, -this.pivotS() * this.len);
-    tip.copy(_piv).addScaledVector(_d, (1 - this.pivotS()) * this.len);
+    // fix round 5: `sl` slides the lance along itself through the strap (m, + = up)
+    butt.copy(_piv).addScaledVector(_d, -this.pivotS() * this.len + sl);
+    tip.copy(_piv).addScaledVector(_d, (1 - this.pivotS()) * this.len + sl);
   }
 
   pivotS() { return R10.pivot; }
@@ -286,14 +289,14 @@ export class LanceCarry {
     }
     this._fpOn = false;
     // the search: the feasible (alpha, beta) nearest the authored pose
-    let best = Infinity, bA = this.alpha0, bB = 0, bFeas = false;
+    let best = Infinity, bA = this.alpha0, bB = 0, bS = this.sl, bFeas = false;
     for (let ia = 0; ia <= 15; ia++) {
       const alpha = R10.alphaMin + (R10.alphaMax - R10.alphaMin) * ia / 15;
       for (let ib = 0; ib <= 13; ib++) {
         const beta = R10.betaMax * ib / 13;
-        this._place(alpha, beta, _b, _t);
+        this._place(alpha, beta, _b, _t, this.sl);
         const viol = this._viol(_b, _t, headR, armOn);
-        const cost = viol * 100 + Math.abs(alpha - this.alpha0) + 1.5 * beta;
+        const cost = viol * 100 + Math.abs(alpha - this.alpha0) + 1.5 * beta + R10.slCost * Math.abs(this.sl);
         if (cost < best) { best = cost; bA = alpha; bB = beta; bFeas = viol === 0; }
       }
     }
@@ -308,31 +311,38 @@ export class LanceCarry {
      * the band's upper edge is weighted (`degW`) like the blade's margins, so
      * where none does the trade no longer spends the R10 band first. */
     {
-      let sa = (R10.alphaMax - R10.alphaMin) / 30, sb = R10.betaMax / 26;
-      for (let it = 0; it < 12 && best > 0; it++) {
+      // ...over (alpha, beta) and `sl`, the lance's slide along itself through
+      // the strap: crouched, the blade stood 0.64-0.69 m over the right
+      // shoulder against the solve's 0.65 (A100: 0.70) and only a steeper
+      // lance could lower it — sliding it down its sling lowers the blade at
+      // the same angle (the bob still clears the ground: `groundGap`)
+      let sa = (R10.alphaMax - R10.alphaMin) / 30, sb = R10.betaMax / 26, ss = 0.02;
+      for (let it = 0; it < 14 && best > 0; it++) {
         let moved = false;
-        for (let k = 0; k < 4; k++) {
+        for (let k = 0; k < 6; k++) {
           const a = bA + (k === 0 ? sa : k === 1 ? -sa : 0), bb = bB + (k === 2 ? sb : k === 3 ? -sb : 0);
-          if (a < R10.alphaMin || a > R10.alphaMax || bb < 0 || bb > R10.betaMax) continue;
-          this._place(a, bb, _b, _t);
+          const sl = bS + (k === 4 ? ss : k === 5 ? -ss : 0);
+          if (a < R10.alphaMin || a > R10.alphaMax || bb < 0 || bb > R10.betaMax || sl < R10.slLo || sl > R10.slHi) continue;
+          this._place(a, bb, _b, _t, sl);
           const viol = this._viol(_b, _t, headR, armOn);
-          const cost = viol * 100 + Math.abs(a - this.alpha0) + 1.5 * bb;
-          if (cost < best - 1e-9) { best = cost; bA = a; bB = bb; bFeas = viol === 0; moved = true; }
+          const cost = viol * 100 + Math.abs(a - this.alpha0) + 1.5 * bb + R10.slCost * Math.abs(sl);
+          if (cost < best - 1e-9) { best = cost; bA = a; bB = bb; bS = sl; bFeas = viol === 0; moved = true; }
         }
-        if (!moved) { sa *= 0.5; sb *= 0.5; if (sa < 0.002) break; }
+        if (!moved) { sa *= 0.5; sb *= 0.5; ss *= 0.5; if (sa < 0.002) break; }
       }
     }
     // ease (first frame: snap)
     const e = this.out.active ? 1 - Math.exp(-R10.rate * Math.min(dt, 0.05)) : 1;
     this.alpha += (bA - this.alpha) * e;
     this.beta += (bB - this.beta) * e;
-    this._place(this.alpha, this.beta, _bT, _tT);
+    this.sl += (bS - this.sl) * e;
+    this._place(this.alpha, this.beta, _bT, _tT, this.sl);
     // the ease never carries the pose out of a bound the target holds: if the
     // eased pose breaks one (the frame moved faster than the ease), take the
     // target this frame
     if (bFeas && this._viol(_bT, _tT, headR, armOn) > 0) {
-      this.alpha = bA; this.beta = bB;
-      this._place(this.alpha, this.beta, _bT, _tT);
+      this.alpha = bA; this.beta = bB; this.sl = bS;
+      this._place(this.alpha, this.beta, _bT, _tT, this.sl);
     }
     if (this._freeT < FREE.blendOut) {
       // just off the climb: the lance eases (character space) from where the
@@ -352,7 +362,7 @@ export class LanceCarry {
     const o = this.out;
     o.active = true; o.feasible = feas; o.mode = mode;
     o.deg = Math.acos(Math.min(1, Math.max(-1, _s.y))) * 180 / Math.PI;
-    o.alpha = this.alpha * 180 / Math.PI; o.beta = this.beta * 180 / Math.PI;
+    o.alpha = this.alpha * 180 / Math.PI; o.beta = this.beta * 180 / Math.PI; o.slide = this.sl;
     _tmp.copy(this.tip).sub(_hc);
     o.tipBehindHeadPlane = -Math.max(_tmp.dot(_hf), _tmp.z);
     _tmp2.copy(this.butt).lerp(this.tip, 0.45);
@@ -654,7 +664,7 @@ export class LanceCarry {
   /** Back to the identity (the lance rides spine_02). */
   reset() {
     this.socket.position.set(0, 0, 0); this.socket.quaternion.identity(); this.socket.scale.set(1, 1, 1);
-    this.out.active = false; this._freeT = Infinity; this._fpOn = false;
+    this.out.active = false; this._freeT = Infinity; this._fpOn = false; this.sl = 0;
   }
 }
 

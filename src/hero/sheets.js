@@ -181,6 +181,50 @@ async function poseIdle(ctx, settle = 1.5) {
 const around = (yaw, dist, h, ty = h) => ({ pos: [Math.sin(yaw) * dist, h, Math.cos(yaw) * dist], target: [0, ty, 0] });
 
 /**
+ * Fix round 5 — cue 2 MEASURED (gate A-tail-legible, V-brea-one-glance's
+ * numeric twin; judge r2: "the wrap tail cannot be separated from the stowed
+ * bow's upper limb at 64 px"). For each sheet view, the black fill at the
+ * sheet's own 64 px (56 x 82, ortho 2.3 m, the same lens) is rendered twice —
+ * as is, and with the wrap tail collapsed into its knot (its root joint scaled
+ * to ~0 for that one render) — and the pixels only the tail covers are
+ * counted, with each one's distance (Chebyshev, px) to the nearest pixel of
+ * EVERYTHING ELSE: `clear2` / `clear3` = tail pixels standing >= 2 / >= 3 px
+ * off the rest of the silhouette, `reach` = the farthest. Poses nothing: the
+ * caller stages her (`poseIdle`). Allocates (a gate / sheet path only).
+ */
+export function tailLegibility(ctx, rootName = 'dyn_wrapSash_01') {
+  const p = ctx.player, model = p.model;
+  let root = null; model.traverse((o) => { if (!root && o.isBone && o.name === rootName) root = o; });
+  if (!root) return null;
+  const W = 56, H = 82;
+  const views = [['FRONT', 0], ['SIDE (her right)', -Math.PI / 2], ['BACK', Math.PI], ['SIDE (her left)', Math.PI / 2], ['3/4', Math.PI / 4]];
+  const mask = (img) => { const m = new Uint8Array(W * H); for (let i = 0; i < W * H; i++) m[i] = img.data[i * 4] < 128 ? 1 : 0; return m; };
+  const out = [];
+  for (const [name, yaw] of views) {
+    const cam = { ...around(yaw, 6, 0.95, 0.95), ortho: { h: 2.3 } };
+    const a = mask(renderIsolated(ctx, model, { width: W, height: H, cam, background: '#ffffff', fill: '#000000' }));
+    const sc = root.scale.clone();
+    root.scale.setScalar(1e-4); model.updateMatrixWorld(true);
+    const b = mask(renderIsolated(ctx, model, { width: W, height: H, cam, background: '#ffffff', fill: '#000000' }));
+    root.scale.copy(sc); model.updateMatrixWorld(true);
+    let tail = 0, clear2 = 0, clear3 = 0, reach = 0;
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+      const i = y * W + x;
+      if (!a[i] || b[i]) continue;
+      tail++;
+      let d = 99;
+      for (let yy = Math.max(0, y - 9); yy <= Math.min(H - 1, y + 9); yy++) for (let xx = Math.max(0, x - 9); xx <= Math.min(W - 1, x + 9); xx++) if (b[yy * W + xx]) d = Math.min(d, Math.max(Math.abs(xx - x), Math.abs(yy - y)));
+      if (d >= 2) clear2++; if (d >= 3) clear3++; if (d > reach) reach = d;
+    }
+    out.push({ view: name, tailPx: tail, clear2, clear3, reach });
+  }
+  return out;
+}
+
+/** Fix round 5: the sheets' staging, for gates that measure what the sheet shows. */
+export { poseIdle };
+
+/**
  * The SILHOUETTE sheet (bible §3.2, gate V-brea-one-glance): front, side,
  * back, three-quarter at 64 px tall in black fill (each also shown 4x,
  * nearest-neighbour, so the cues are judged at the real read size), and the
