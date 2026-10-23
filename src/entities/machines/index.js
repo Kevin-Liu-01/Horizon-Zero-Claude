@@ -7,7 +7,8 @@ import { setAiRng, seededRng, aiRngSeeded } from './ai/rng.js';
 import { REST_SITE } from '../../world/island/sites.js';
 import { PLAY_RADIUS, EXTENT } from '../../world/island/extent.js';
 import { _st, stepRootS, normalizeEyeRecords } from './machine.js';
-import { refreshHot, mutableFromBirth } from '../../instruments/lib/hot.js';
+import { HOT, refreshHot, mutableFromBirth } from '../../instruments/lib/hot.js';
+const REFRESH_ARGS = [null];
 import {
   BODY as EXPANSION_BODY, CHASSIS, installDoctrine, installExpansionDoctrine,
   spawnExpansion, doctrineAudit,
@@ -587,9 +588,13 @@ export class Machines {
   }
 
   update(dt, t) {
-    // the services every per-frame machine path reads, copied off the root ctx once (lib/hot.js)
-    refreshHot(this.ctx);
-    const p = this.ctx.player;
+    /* the services every per-frame machine path reads, copied off the root ctx once (lib/hot.js). Called through
+     * Reflect.apply (fix round 3): the optimiser does not inline it, so its loads off the root ctx — a PROTOTYPE
+     * object (every machine's ctx view inherits from it), whose map other systems change mid-session — stay in
+     * `refreshHot` and never deoptimise this function (measured: a "dependent prototype chain changed" wave at her
+     * first sprint dropped `update` into the baseline tier for 8 s). Her position comes from HOT, not `ctx.player`. */
+    REFRESH_ARGS[0] = this.ctx;
+    Reflect.apply(refreshHot, null, REFRESH_ARGS);
     // world stimuli (player footsteps), perk/weather/Flag hooks, corpse lifecycle, squad doctrine
     this.stimulus.update(dt);
     this.perception.update(dt);
@@ -632,7 +637,7 @@ export class Machines {
       this._recycleForBudget(null, true);
     }
 
-    const pp = p ? p.position : null;
+    const pp = HOT.pOk === 1 ? HOT.ppos : null;
     this._stepMachines(dt, t, pp);
     if (pp) this._standoffPass(pp);
     this._separationPass();

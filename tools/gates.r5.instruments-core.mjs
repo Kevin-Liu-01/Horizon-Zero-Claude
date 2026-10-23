@@ -2210,10 +2210,13 @@ async function allocMachines({ PORT }, opts = {}) {
   if (noInline) jsFlags.push('--no-turbo-inlining', '--max-inlined-bytecode-size=0', '--no-maglev-inlining');   // one frame per function (the paired attribution run, or diagnosis)
   if (process.env.R5_IC_OPTSTATUS) jsFlags.push('--allow-natives-syntax');                                 // diagnosis only: tier of each hot function
   const deoptMark = !!process.env.R5_IC_DEOPTMARK;   // diagnosis only (fix round 3): --trace-deopt timed by in-stream markers + tier sampling
+  const calleeDiag = !!process.env.R5_IC_CALLEES;    // diagnosis only (fix round 3): which non-src frames a lane frame's callee bytes are in
+  const mathTest = !!process.env.R5_IC_MATHTEST;      // diagnosis only (fix round 3): bytes per call of builtins in each V8 tier of THIS Chrome
+  if (mathTest) jsFlags.push('--allow-natives-syntax');
   if (process.env.R5_IC_TRACEDEOPT || deoptMark) jsFlags.push('--trace-deopt');                             // diagnosis only: deopts per function, timed
   if (deoptMark && !process.env.R5_IC_OPTSTATUS) jsFlags.push('--allow-natives-syntax');
   if (process.env.R5_IC_PROTOTRACE) jsFlags.push('--trace-prototype-users', '--allow-natives-syntax');      // diagnosis only: which prototype map is invalidated
-  const diag = !!(deoptMark || process.env.R5_IC_SHAPEWATCH || process.env.R5_IC_PROTOTRACE || process.env.R5_IC_NOINLINE || process.env.R5_IC_OPTSTATUS || process.env.R5_IC_TRACEDEOPT || process.env.R5_IC_PROTOWATCH || process.env.R5_IC_MICRO || process.env.R5_IC_INGAME);
+  const diag = !!(deoptMark || mathTest || calleeDiag || process.env.R5_IC_SHAPEWATCH || process.env.R5_IC_PROTOTRACE || process.env.R5_IC_NOINLINE || process.env.R5_IC_OPTSTATUS || process.env.R5_IC_TRACEDEOPT || process.env.R5_IC_PROTOWATCH || process.env.R5_IC_MICRO || process.env.R5_IC_INGAME);
   let protoLock = null;
   const browser = await puppeteer.launch({ protocolTimeout: 900000, headless: 'new', userDataDir: dir, dumpio: false,
     args: ['--use-angle=metal', '--enable-gpu', '--ignore-gpu-blocklist', '--window-size=1600,940', `--js-flags=${jsFlags.join(' ')}`, '--enable-precise-memory-info'] });
@@ -2269,6 +2272,7 @@ async function allocMachines({ PORT }, opts = {}) {
     await page.waitForFunction('window.__READY__ === true', { timeout: 120000 });
     const cdp = await page.createCDPSession();
     await cdp.send('HeapProfiler.enable');
+    if (mathTest) return { pass: null, detail: { mathTest: await page.evaluate(MATH_TEST).catch((e) => ({ error: String(e).slice(0, 300) })) } };
     const staged = await page.evaluate(ALLOC_STAGE);
     if (staged.skip) return { pass: null, detail: staged.skip };
     if (deoptMark) await page.evaluate(DEOPTMARK_ON);
@@ -2295,6 +2299,7 @@ async function allocMachines({ PORT }, opts = {}) {
       const frames = (await page.evaluate('__CTX__.engine.frames')) - f0;
       const wit = await page.evaluate('(() => { const W = window.__icWit; const r = W && W.samples ? +(W.hostile / W.samples).toFixed(3) : null; if (W) { W.samples = 0; W.hostile = 0; } return r; })()');
       const self = new Map(), caller = new Map(); let total = 0, srcSelf = 0, srcCaller = 0;
+      const nonSrc = new Map();   // R5_IC_CALLEES: a lane frame's bytes allocated in non-src frames under it, by frame
       const parents = new Map();   // src frame -> the src frames that called it directly (for the paired attribution run)
       // an accessor frame (machine.js `get heading` ...) is charged what its CALLER's megamorphic read costs: the
       // caller is recorded so the report names who reads it
@@ -2310,6 +2315,7 @@ async function allocMachines({ PORT }, opts = {}) {
         if (sz) {
           total += sz;
           if (isSrc) { srcSelf += sz; add(self, k, sz); }
+          else if (calleeDiag && here && MINE_RE.test(String(here).split(' ').slice(-1)[0].replace(/:\d+$/, ''))) add(nonSrc, `${here}  <-  ${cf.functionName || '(anonymous)'} ${cf.url ? String(cf.url).replace(/^https?:\/\/[^/]+/, '').replace(/\?.*$/, '') : '(native)'}`, sz);
           if (here) {
             srcCaller += sz; add(caller, here, sz);
             if (/^(get|set) /.test(here)) {
@@ -2328,7 +2334,8 @@ async function allocMachines({ PORT }, opts = {}) {
       for (const [g, m] of getterCallers) callers[g] = [...m.entries()].sort((a, b) => b[1] - a[1]).slice(0, 5).map(([c, b]) => `${at(b).gradedKBps} KB/s from ${c}`);
       const w = { name, tS, tE, pS, pE, secs: r2(secs), frames, fps: r2(frames / secs), castHostile: wit, parents, total: at(total), srcCaller: at(srcCaller), srcSelf: at(srcSelf), getterCallers: callers, getterCallersRaw: getterCallers,
         mine: rows.filter((r) => r.owner === 'instruments-core'), frozenMachine: rows.filter((r) => r.owner === 'frozen-machine'), allRows: rows,
-        topOther: rows.filter((r) => r.owner === 'other').slice(0, 12) };
+        topOther: rows.filter((r) => r.owner === 'other').slice(0, 12),
+        nonSrcUnderLane: calleeDiag ? [...nonSrc.entries()].sort((x, y) => y[1] - x[1]).slice(0, 25).map(([k2, b2]) => `${at(b2).gradedKBps} KB/s  ${k2}`) : undefined };
       windows.push(w);
       return w;
     };
@@ -2474,7 +2481,7 @@ async function allocMachines({ PORT }, opts = {}) {
     const fmtW = (w) => ({ name: w.name, secs: w.secs, frames: w.frames, fps: w.fps, castHostile: w.castHostile, allKBps: w.total.measuredKBps, srcCallerKBps: w.srcCaller.gradedKBps, srcSelfKBps: w.srcSelf.gradedKBps,
       mineSumKBps: sum(w, 'mine'), frozenMachineSumKBps: sum(w, 'frozenMachine'),
       mine: w.mine.slice(0, 40).map((r) => `${r.gradedKBps} KB/s (self ${r.selfKBps})  ${r.fn}`), frozenMachine: w.frozenMachine.slice(0, 25).map((r) => `${r.gradedKBps} KB/s  ${r.fn}`),
-      topOther: w.topOther.map((r) => `${r.gradedKBps} KB/s  ${r.fn}`), getterCallers: w.getterCallers });
+      topOther: w.topOther.map((r) => `${r.gradedKBps} KB/s  ${r.fn}`), getterCallers: w.getterCallers, nonSrcUnderLane: w.nonSrcUnderLane });
     let deopts;
     if (process.env.R5_IC_TRACEDEOPT) {
       const t0 = windows.length ? windows[0].tS - WARM : 0;
@@ -2515,6 +2522,37 @@ async function allocMachines({ PORT }, opts = {}) {
     CP.disposeProfile(dir);
   }
 }
+
+/* DIAGNOSIS ONLY (R5_IC_MATHTEST, fix round 3): bytes per call of each builtin a hot path uses, in each tier of the
+ * V8 this Chrome runs (Maglev, TurboFan, Sparkplug), measured with gc() before and performance.memory after. */
+const MATH_TEST = `(async () => {
+  const o = { x: 0.5, r: 0.5 }; const S = new Set(['attack', 'alert']); const st = { s: 'patrol' }; const A = [null, null];
+  const C = { n: 0, occl(a, b) { this.n++; return a.x > b.r; } };
+  const mk = () => ({
+    sqrt: () => { o.r = Math.sqrt(o.x * o.x + 1.5); }, sin: () => { o.r = Math.sin(o.x); }, cos: () => { o.r = Math.cos(o.x); },
+    abs: () => { o.r = Math.abs(o.x - 3.3); }, round: () => { o.r = Math.round(o.x * 3.7); }, floor: () => { o.r = Math.floor(o.x * 3.7); },
+    exp: () => { o.r = Math.exp(-o.x); }, asin: () => { o.r = Math.asin(o.x * 0.1); }, atan2: () => { o.r = Math.atan2(o.x, 1.5); },
+    random: () => { o.r = Math.random(); }, setHas: () => { o.r = S.has(st.s) ? 1.5 : 2.5; },
+    reflect: () => { A[0] = o; A[1] = o; o.r = Reflect.apply(C.occl, C, A) ? 1.5 : 2.5; }, plain: () => { o.r = o.x * 1.5 + 0.25; },
+  });
+  o.x = 0.37;   // (constant during a measurement: the driver, kept in the interpreter so f is never inlined into it, allocates nothing)
+  const drive = (f, n) => { for (let i = 0; i < n; i++) f(); };
+  const mem = () => performance.memory.usedJSHeapSize;
+  const out = {};
+  for (const tier of ['maglev', 'turbofan', 'sparkplug']) {
+    const F = mk(); const row = {};
+    for (const [k, f] of Object.entries(F)) {
+      %PrepareFunctionForOptimization(f); f(); f();
+      if (tier === 'maglev') %OptimizeMaglevOnNextCall(f); else if (tier === 'turbofan') %OptimizeFunctionOnNextCall(f); else %CompileBaseline(f);
+      f(); %NeverOptimizeFunction(drive);
+      drive(f, 2000); gc(); gc();
+      const h0 = mem(); drive(f, 200000); const h1 = mem();
+      row[k] = +((h1 - h0) / 200000).toFixed(2) + ' B/call [' + %GetOptimizationStatus(f) + ']';
+    }
+    out[tier] = row;
+  }
+  return out;
+})()`;
 
 /* DIAGNOSIS ONLY (R5_IC_DEOPTMARK, fix round 3): the renderer's --trace-deopt lines reach the gate in buffered
  * blocks, so their arrival time says nothing. Every 200 ms the page compiles a fresh uniquely named function

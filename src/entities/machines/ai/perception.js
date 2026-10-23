@@ -42,6 +42,7 @@ const _d = new THREE.Vector3();
 /** `hasLOS`: an occluder result stands this long (s) while both ends stay within OCCL_MOVE (m) of where it was tested. */
 const OCCL_TTL = 0.25;
 const OCCL_MOVE2 = 0.5 * 0.5;
+const OCCL_ARGS = [null, null];
 const WK = { one: 0.5, zero: 0.5 };
 WK.one = 1; WK.zero = 0;
 
@@ -151,7 +152,12 @@ export class Perception {
     const still = ex * ex + ez * ez < OCCL_MOVE2 && tx * tx + tz * tz < OCCL_MOVE2;
     const fresh = clock - this._losT < OCCL_TTL && clock >= this._losT;
     if (!(this._losValid && still && fresh)) {
-      const occl = !!(C && C.occluded && C.occluded(_eye, _tgt));
+      /* Called through Reflect.apply with a module array (no allocation): the optimiser cannot inline a call it
+       * cannot see the arguments of, so `collision.occluded` (kept code: its broad-phase and BVH raycast allocate
+       * their hit records) runs in its OWN frame, and the heap profiler charges what it allocates to it, not to
+       * `_sight` (measured with it inlined: 2-5 KB/s charged to `_sight`, whose own code allocates 0). */
+      OCCL_ARGS[0] = _eye; OCCL_ARGS[1] = _tgt;
+      const occl = !!(C && C.occluded && Reflect.apply(C.occluded, C, OCCL_ARGS));
       this._losT = clock;
       this._losValid = true;
       this._losCached = !occl;

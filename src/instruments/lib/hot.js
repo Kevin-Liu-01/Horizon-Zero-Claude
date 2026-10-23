@@ -58,7 +58,7 @@ export const HOT = {
   simTime: 0.5,
   /** the player this frame: 1 if there is one */
   pOk: 0,
-  /** her position (a Vector3 owned here: a stable shape, copied each frame) */
+  /** her position: the player's own THREE.Vector3, by reference (one class: a stable shape); a placeholder until she exists */
   ppos: new THREE.Vector3(0.5, 0.5, 0.5),
   /** her health, ground speed, and the crouch / tall-grass flags (Smi 0/1) */
   pHealth: 0.5,
@@ -119,8 +119,10 @@ export function refreshHot(ctx) {
   if (e) { const st = e.simTime; if (typeof st === 'number') H.simTime = st; }
   if (p && p.position) {
     H.pOk = 1;
-    const pp = p.position, q = H.ppos;
-    q.x = pp.x; q.y = pp.y; q.z = pp.z;
+    // her own position Vector3, by reference (fix round 3): no double is copied here, so this function allocates
+    // nothing even in the baseline tier it runs in for a few seconds after another system reshapes the root ctx
+    const pp = p.position;
+    if (H.ppos !== pp) H.ppos = pp;
     const hp = p.health, sp = p.moveSpeed;
     H.pHealth = typeof hp === 'number' ? hp : 0;
     H.pMoveSpeed = typeof sp === 'number' ? sp : 0;
