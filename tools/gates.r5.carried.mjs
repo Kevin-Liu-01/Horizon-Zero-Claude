@@ -21485,14 +21485,7 @@ const GATES = [
         let m = null;
         try { m = spawnRole(a.role, pl.x + 7 * (__phase++), pl.z); } catch (e) { m = null; }
         if (m) await new Promise((r) => setTimeout(r, 700));
-        if (!(m && isStaged(m) && m.root)) return null;
-        park(m);
-        // settle the shooter at the stand-off BEFORE plant() fires: measured, the control phase (the first teleport
-        // from wherever the previous row left her) took 1 / 5 / 7 riders of 14 while phases A and B, already beside
-        // the impact ground, took 8; the first arrows left from the old spot or a lens still swinging round
-        await face(m, 9);
-        await new Promise((r) => setTimeout(r, 600));
-        return m;
+        return m && isStaged(m) && m.root ? park(m) : null;
       };
 
       /* A rider can only exist on a machine that is TICKING: its per-bone hit
@@ -21500,16 +21493,50 @@ const GATES = [
        * a frozen one (measured: 14 shots, 0 riding). */
       const thaw = (m) => { if (m._frozenByGate) { m.update = m._frozenByGate; m._frozenByGate = null; } };
 
+      /* W0b fix round 2 (measured with a probe, 7 diagnostic variants): an arrow sticks only where the game's own
+       * sweep hits, and that sweep is hitHulls.raycast(..., { exact: true }), which accepts a hull of an unskinned
+       * node only if the ray meets a TRIANGLE of it. The Round-4 aim point, the machine's position + 55 % of its height,
+       * is open air inside the Tiller fixture's frame for many headings: 0-8 riders of 14 per phase, whole phases at 0
+       * under every staging variant tried, arrows ending 80-120 m beyond it while a straight HULL probe (not exact) hit it at 11-12 m. The aim point is now a posed vertex of the
+       * machine's DRAWN geometry, nearest that centre, whose exact probe from the nock hits this machine (and still
+       * hits 0.3 m lower, the arrow's drop over the stand-off), as A50b aims; the centre when none does. */
+      const aimOn = (m) => {
+        const Vc = __CTX__.player.position.constructor;
+        const nock = new Vc(); cb.bow.getNockWorld(1, nock);
+        const c = new Vc(m.position.x, m.position.y + (m.height || 2) * 0.5, m.position.z);
+        const drawn = (o) => { for (let q = o; q; q = q.parent) if (q.visible === false) return false; return true; };
+        const pts = [];
+        m.root.updateMatrixWorld(true);
+        m.root.traverse((o) => {
+          if (!o.isMesh || !o.geometry?.attributes?.position || !drawn(o)) return;
+          const P = o.geometry.attributes.position, step = Math.max(1, Math.floor(P.count / 80));
+          for (let i = 0; i < P.count; i += step) {
+            const v = new Vc().fromBufferAttribute(P, i);
+            if (o.isSkinnedMesh) o.applyBoneTransform(i, v);
+            pts.push(v.applyMatrix4(o.matrixWorld));
+          }
+        });
+        pts.sort((a, b) => a.distanceToSquared(c) - b.distanceToSquared(c));
+        const hits = (q) => {
+          const d = q.clone().sub(nock), len = d.length();
+          if (len < 1e-3) return false;
+          const h = __CTX__.hitHulls?.raycastMachine?.(m, { origin: nock, direction: d.multiplyScalar(1 / len) }, len + 1.5, { exact: true });
+          return !!(h && h.hit && h.machine === m);
+        };
+        for (const q of pts.slice(0, 120)) {
+          if (hits(q) && hits(q.clone().setY(q.y - 0.3))) return { point: q, onGeometry: true };
+        }
+        return { point: c, onGeometry: false };
+      };
+      const aims = [];
       async function plant(m, n) {
         thaw(m);
         await face(m, 9);
+        const T = aimOn(m);
+        aims.push({ onGeometry: T.onGeometry, offCentreM: +T.point.distanceTo(new (__CTX__.player.position.constructor)(m.position.x, m.position.y + (m.height || 2) * 0.5, m.position.z)).toFixed(2) });
         for (let i = 0; i < n; i++) {
           m.health = m.maxHealth;
-          // W0b fix round 2 (measured): the staged herd kind is 'skittish' with a 14 m engage band and a 9 m/s Hopper
-          // Burst; once it noticed her at the 12.7 m stand-off it left the aim point and a whole phase took 0 riders.
-          // Held calm before every shot (park: patrol, suspicion 0, route pinned); it still ticks, as riders require.
-          park(m);
-          await fire('hunter-bow', 'hunter', m.position.x, m.position.y + (m.height || 2) * 0.5, m.position.z);
+          await fire('hunter-bow', 'hunter', T.point.x, T.point.y, T.point.z);
         }
         await new Promise(x => setTimeout(x, 600));
         return cb.arrows.audit().riding;
@@ -21613,7 +21640,7 @@ const GATES = [
         && phaseA.dFingerprint.geometries === 0 && phaseA.dFingerprint.textures === 0
         && phaseB !== null && phaseB.wreckDisposed && clean(phaseB);
 
-      return { pass, detail: { control, phaseA, phaseB, note:
+      return { pass, detail: { control, phaseA, phaseB, aims, note:
         'control = the pre-fix shape (riders re-parented into m.root) proving the listeners '
         + 'are on the right objects; phaseA = kill + sites.advance(95,1), the shipped '
         + 'lifecycle; phaseB = sites.dispose() out of band, the save.js:426 roster-reload '
