@@ -1,392 +1,480 @@
-# ROUND 5 — lane engine-gpu, W0a report (probes), after fix round 3
+# ROUND 5 — lane engine-gpu, W0b report (the GPU tier decision) — fix round 4
 
-Port 5251, worktree `scratchpad/r5/engine-gpu/tree`, Oct 16 2026.
+Port 5251, worktree `~/.calima-r5/trees/engine-gpu` (the orchestrator moved it there on Oct 22; the
+scratchpad path `scratchpad/r5/engine-gpu/tree` is a symlink to it), Oct 22 2026.
 
 Plan sections this report follows: `docs/ROUND5-PLAN.md` §2 (row engine-gpu), §1.2 (the engine.js
-grant: "render-target measurement hooks"), §3.1, §4.3–§4.4 and §9 (the engine-gpu block). The
-measured numbers live in **`docs/ROUND5-ENGINE.md`**, the plan's engine document; this file is the
-lane report.
+grant: post chain / tier table / DPR; render-target measurement hooks), §3.1 (W0b exit: "GPU tier
+chosen and render targets measured"), §4.3–§4.4, §8.3 (`rt-ledger-bar=W0b`) and §9 (the engine-gpu block
+and the global green list). The measured numbers live in **`docs/ROUND5-ENGINE.md`** (§1 the ledger at
+the shipped tier, §3 the tier decision); this file is the lane report. Fix round 2's report is in git at
+`6e75e7c`, fix round 1's at `59e0b48` (the orchestrator's checkpoints), round 0's at `9921470`, W0a's at
+`5fd2849`.
 
-W0a is **probes only** (orchestrator ruling): the 1024 m terrain + nav probe and the render-target
-ledger measurements. The GPU tier decision (`A-gpu-tier`, `A22-msaa`, `A108`, `A109`, `V20`, `V33b`)
-is the W0b exit and was not started.
+## 0. Fix round 4: A108's random witness, and A-gpu-tier's quiet-box timing
 
-## 0. Summary
+Port 5251, this tree, Oct 22–23 (local evening of Oct 22; run stamps are UTC Oct 23). The two judge
+findings, what was done and what came of it:
 
-1. **The render-target ledger now matches the GPU's allocation calls to the byte, and it was 3.15 MB
-   short.** `PMREMGenerator.fromScene()` gives the environment target a 768 × 1024 DEPTH_COMPONENT24
-   renderbuffer, and `environment.js` drops the target. The ledger now counts that target with its
-   depth: **340.74 MB**, not 337.6. `A-rt-ledger-census` no longer re-derives bytes with the ledger's
-   own arithmetic. It boots the page with `?rtTally=1`, records every GL allocation since the
-   context's first call, and requires every live render-target allocation to belong to a ledger row
-   with equal bytes. Two negative controls prove it: the fix-round-2 ledger FAILs it, and so does a
-   ledger missing one cascade.
-2. **The cheapest lever set no longer fits.** SMAA-only + CSM 3 × 1536² + RGBA8 SMAA is now
-   **170.70 MB, 0.70 MB over** the 170 MB bar. The sets that fit are + GTAO ¼ (160.56 MB), CSM 1024²
-   (157.25 MB) and 1024² + RGBA8 (139.25 MB). These are W0b decisions.
-3. **The probe no longer grades the worker pool on its own authority.** Whether the 600 ms bar may grade
-   a build path that is not in `src/` is now the orchestrator's ruling, `pool-terrain-build`. The gate
-   reads it from a marker in the plan. Unruled, only the single-thread build can pass, and a
-   pool-only pass is PENDING. Every decision is computed under both rulings, so one quiet run answers
-   either way.
-4. **A pool verdict now needs its own witness.** That witness is today's mesh built on a cold pool 3×
-   before and 3× after the candidates, within 10 %. It caught two loud runs whose single-thread
-   bracket read "stable" (1.32× and 1.285×).
-5. **`RT_LEDGER` moved to a leaf module** (`tools/r5-probes/rt-ledger.mjs`, no imports). The
-   fix-round-2 advice to re-export it from the lane gate file was wrong: it closed an import cycle that
-   stops the gate runner loading any gate. That advice is withdrawn, the new path loads in both import
-   orders, and the old one still fails as a control. "Recorded in budgets.mjs" now compares rows, not
-   presence.
-6. **A quiet box came, and the probe judged every term.** It came at 10:13, with load 1.49–2.67 and
-   0 other headless Chromes; Q5p and Q6p judged every term.
-   - Single-thread build: 1024 m and 860 m FAIL, 720 m PASS.
-   - Cold pool (bit-identical, witness 1.02× / 1.03×): PASS at every size, 1024 m in 430.6–544.1 ms.
-   - GPU delta: **+0.23 / +0.20 ms** PASS. Nav 43–44 ms PASS. Vertex buffers 20.77 MB PASS.
-   - **The W1 size is therefore 1024 m if the orchestrator accepts `pool-terrain-build`, and 720 m if
-     it rejects it.** Until it rules, the gate is PENDING and writes no size, as finding 3 asked.
-7. **A9 has valid grades on the quiet box.** It PASSed 5 of 6 runs on its Round-4 bar of 45 fps:
-   51.8 / 51.8 fps with this lane's `engine.js` and 52.2 / 52.1 fps with HEAD's (scene GPU 19.5–19.7 ms
-   in all four), then 48.6. The one FAIL (41.4 fps, GPU 34.4 ms) came in a GPU slow state; the probe
-   saw the same state in Q3p and Q4p. A21 FAILs on the quiet box on its own 20 ms GPU bar (§4.2).
+| finding | what was done | result |
+|---|---|---|
+| **A108 failed 2 of 4 runs on unchanged code** (major). The witness clause failed: the stock sample on witness crop 1 read 0.103, the shipped shader's value, instead of 0.24. three r169's `GTAOPass` builds its denoise noise with `new SimplexNoise()` on `Math.random` | **The engine seeds that texture** (engine grant, post chain). Right after `new GTAOPass(...)`, `engine.setGtaoNoiseSeed(GTAO_NOISE_SEED)` disposes three's texture and installs `makeGtaoDenoiseNoise(0xCA11A)`. That is three's generator with a mulberry32 RNG: the same bytes as `generateNoise` when it gets the same RNG (node check, 4 seeds, 0 differing bytes), and the same size, format, wrap and filter. It is assigned to both `gtao.pdNoiseTexture` and `pdMaterial.uniforms.tNoise`. **A108 gained a determinism clause:** the installed texture must carry the shipped seed, must be the one the denoise samples, and must hash equal to a fresh build. No bar moved, no crop or witness was changed, and witness crop 2 (which never separates) was not dropped | **A108 PASS 5 of 5 runs, each a fresh Chrome and a fresh page load** (`W1`–`W5`), plus the suite run `T2` and the final-files check `F1` (7 of 7). Every run's detail is **byte-identical**: worst graded 0.135, witness crop 1 stock **0.239@5,-29** / shipped 0.102 / off 0.114, noise hash `a698df06` (`docs/ROUND5-ENGINE.md` §3.6) |
+| (cause, shown) | Surveys `S1` (`explore/seeds.gates.mjs`) and `W1` (`explore/why.gates.mjs`, run with A108 in one invocation) | The witness verdict follows the texture's content. Of three's own `Math.random` textures, the witness saw 23 of 30 (the judge's probe: 5 of 8). Of seeded textures it saw 35 of 40, including 0xCA11A, which was set before any measurement. 9 captured textures re-installed from their bytes repeated their verdict exactly. The graded crops do not depend on the noise: across 16 seeds each configuration's worst peak moved by ≤ 0.001. No other candidate of 64 crops separates by a usable margin (one dune crop clears the bar by 0.000–0.004), so none was added (`docs/ROUND5-ENGINE.md` §3.6) |
+| **A-gpu-tier PENDING: the judge never got a quiet box** (blocker; now ruled by **R45**: graded at the orchestrator's quiet global run, provided the lane's code is unchanged since its builder's timed runs) | This round changed `engine.js` (the noise texture), so the R45 proviso needed new timed runs on this code. `chain-q.sh` → `qrun.sh` → `run.sh` with `QUIET=1`: the slot is taken only at an instant with load < 3 and 0 headless Chromes. The first attempt waits up to 60 min and then runs anyway (loud, unjudged, for the numbers); later attempts run only if quiet (`QSTRICT`) | **PENDING-quiet-box under R45.** `Q1` took the slot at a quiet instant (02:06:55Z: load 2.13, 0 headless Chromes). Another lane's judge then launched a Chrome before the gate's own witness sample (1 other Chrome), and the vista instability was 1.51 > 1.4, so `Q1` is unjudged. Its readings on this code are all under their bars: vista bursts 10.52 / 12.33 / 15.89 / 13.30 → **12.82 ms** ≤ 13; empty **4.80** ≤ 7; **60.24 fps**; p95 **18.7 ms**; null frame 0.18 / 0.17 ms; RT 127.27 MB. The shipped row of its lever record reads 12.55 / 4.81. `Q2` (40 min, 1,167 samples, 9 quiet) and `Q3` (45 min, 1,313 samples, 0 quiet) never got a quiet instant with a free slot, so neither ran. **The change costs nothing measurable** (`N1`, `X-noise-ab`: interleaved on one page, 6 rounds × 2 s, loud box). Vista GPU median: 22.15 ms with the shipped seeded texture, 22.39 with three's `Math.random` texture, 22.49 with another seed; the three arms move together burst by burst. The orchestrator's three quiet runs (R45) are the grade |
 
-## 1. Fix round 3, finding by finding
+What the noise change costs: nothing measurable by construction. The texture is the same 64 × 64 RGBA8
+`DataTexture` (16 KB, not a render target, so the ledger is unchanged: `A-rt-ledger-census` `T2` 127,271,712 B
+= ledger). It is sampled the same way, once per AO texel, and only its texel values differ. The constructor
+builds it once; nothing runs per frame. three's original is disposed before its first upload, and the new
+one is disposed by `GTAOPass.dispose()` like the stock one.
 
-| # | finding (judge) | what changed | evidence now |
-|---|---|---|---|
-| 1 | **blocker** — `A-terrain-1024-probe` PENDING in both judge runs; no W1 size written | No bar or rule moved. The probe now computes the decision under **both** `pool-terrain-build` rulings (`decision.byRuling`, finding 3). The lane's quiet waiter caught a window (10:13–10:27: 0 other headless Chromes, load 1.49–2.67) and ran the probe four times on the final files. | **Q5p and Q6p judged every term** (§4.1). `decision.byRuling` was identical in both: **accepted → 1024 m** (PLAY_RADIUS 490, MESH_SEGS 686, nav R 492); **rejected → 720 m** (PLAY_RADIUS 343, MESH_SEGS 482, nav R 345). The gate stays **PENDING** with `rulingNeeded: "pool-terrain-build: accepted -> 1024 m; rejected -> 720 m"`: unruled, a size is written only where both rulings agree. Q3p and Q4p agree on every term they judged. |
-| 2 | **blocker** — `A-rt-ledger` FAILs its bar; which wave grades it is unruled | The lane still does not pick the wave. The gate now reads the ruling from the plan: a line `<!-- r5-ruling rt-ledger-bar=W0a -->` or `=W0b` sets its `wave`. With no marker it stays **W0a** (the W0a brief), reads FAIL as measured, and carries `rulingRequested`. The bar did not move. | L4 / L6: **FAIL** — RT **340.74 MB** (bar 170); staged fight **891.87 MB** (textures 422.12 + geometry 129.01 + RT 340.74; bar 450); docs ✓; `budgets.mjs` ✗ (gates-perf's file has no `RT_LEDGER`); levers restored ✓. Marker test (scratch copies of the plan): none → W0a; marker quoted inline in prose → W0a (ignored); marker on its own line → W0b. |
-| 3 | **major** — the build term is graded on a 4-worker pool that does not exist in `src/`, binding W1 | **The gate no longer grades the pool unless the orchestrator accepts it.** The ruling is read from `<!-- r5-ruling pool-terrain-build=accepted -->` (or `=rejected`) on its own line in `docs/ROUND5-PLAN.md`. If accepted, the pool is graded when bit-identical. If rejected, the single-thread build is graded. **Unruled (today)**, the single-thread build can pass, a pool-only pass is PENDING (ruling), and red on both is red. Each size carries `serialTerm`, `poolTerm`, `termIfAccepted` and `termIfRejected`. The decision carries `byRuling` for both rulings, and writes a size unruled only where both agree. The `pool-terrain-build` condition binds a decision only when its build path is the pool. Proposed W1 text for each ruling is in `ROUND5-ENGINE.md` §2.6, including "timed cold inside the real boot". | L6: 1024 m single-thread 961.6–978.8 ms (`serialTerm` false, surviving drift); pool 440.4–562.2 ms (bit-identical, unjudged); build term **PENDING** with reasons: loud box, *"grading the pool build needs the orchestrator ruling pool-terrain-build"*. |
-| 4 | **major** — the ledger misses the PMREM target's depth renderbuffer, and the census still passes | (1) `engine.js` remembers every `PMREMGenerator` output (`fromScene` / `fromEquirectangular` / `fromCubemap`) by its texture, holding the target only through a WeakRef. The ledger counts `scene.environment` as the producing **target**, colour + depth, while that object lives, and from the texture plus the recorded depth after its owner drops it. A texture a registered target owns is counted once, on the registered row (for when world-sky registers `env:pmrem`). (2) The env row is now 9,437,184 B in `docs/ROUND5-ENGINE.md` and `RT_LEDGER`; the total is 340.74 MB; the levers were re-measured live. (3) **The census recounts from the GL calls.** `?rtTally=1` makes `engine.js` wrap the WebGL2 prototype before the context exists. The census sizes every live attachment and renderbuffer with its own GL-format table and attributes each to a ledger row. It requires 0 unattributed bytes and every row equal to the byte. (4) A world-sky handoff is in `ROUND5-ENGINE.md` §1.5. | c1, L4, L6: census **PASS** — GL 340,743,360 B = ledger 340,743,360 B; 23 live framebuffers, 42 GL objects; 0 unattributed; 0 row mismatches; 0 unknown formats; 0 orphan calls. Env row: texture 6,291,456 + renderbuffer 3,145,728. Both env paths were exercised: c1 with the target alive, L6 after GC collected it. **Negative controls** (scratch, `controls/gates.control.mjs`): the fix-round-2 ledger (env = texture only) → **FAIL**, `env:environment` ledger 6,291,456 vs GL 9,437,184; a ledger omitting `shadow:csm[2]` → **FAIL**, 33,554,432 B unattributed (RGBA8 2048² texture + DEPTH24 2048² renderbuffer). |
-| 5 | **major** — the probe still writes no W1 size; the pool straddles the bar; the CPU bracket does not witness the pool's cores | **Pool witness added**, and exercised on the quiet box (finding 1). Today's mesh is built on a cold pool 3× before and 3× after the candidates. A pool verdict needs the two medians within 10 %, on top of the quiet box and the single-thread bracket. Both witnesses now warm up until two consecutive builds agree within 10 % (at most 9 builds; recorded in `warmUp`). After one warm-up, both loud runs read their *before* builds slower than their *after* builds, and on a loud box warm-up and load cannot be told apart. | L4: single-thread bracket 1.058× "stable", **pool witness 1.32× → pool PENDING**. L5: 1.058× / **1.285×** → PENDING. L6, final files (steady warm-up): 1.047× / 1.01×, both stable; the terms are still PENDING on load 3.77 and 1 other Chrome. **Quiet box:** Q3p 1.029× / 1.099×, Q5p 1.03× / 1.02×, Q6p 1.028× / 1.03× (pool terms judged); **Q4p 1.028× / 1.125× → pool terms PENDING** while the single-thread terms were judged. That is the witness doing its job on a quiet box. |
-| 6 | **major** — the recommended `RT_LEDGER` re-export in `budgets.mjs` creates an import cycle | `RT_LEDGER` lives in **`tools/r5-probes/rt-ledger.mjs`**, which has no imports. The lane file imports and re-exports it. The top-level `await import('./budgets.mjs')` is gone; the lane file reads `BUDGETS_MOD.RT_LEDGER` from its existing static import. The recommendation is corrected (§7) to `export { RT_LEDGER } from './r5-probes/rt-ledger.mjs';`. `recordedInBudgets` now compares `budgets.mjs`'s rows with the live ledger, owner by owner, within 1 %, as the docs clause does. | Scratch copies with that line appended (`cycle3/`), with my tree's `budgets.mjs` and with gates-perf's current one: budgets first → loads, 12 rows, 4 gates, the same frozen object. Lane file first → loads. Control: the old line (`from './gates.r5.engine-gpu.mjs'`) still throws `ReferenceError: Cannot access 'PERF_SCENARIOS' before initialization`. |
+Re-filmed on this engine (`T2`): `V20-aa-crop`, `V33b-no-ao-lattice`, `V-gpu-tier-look`. My reading is in
+§5.3: all three PASS, as before.
 
-## 2. Deliverables
+## 0.1 Fix round 3: the `A-rt-ledger` blocker, run on the merged gate side
+
+**The finding.** `A-rt-ledger` was PENDING at the W0b exit: every lane clause passed, but
+`recordedInBudgets` read `null` because `tools/budgets.mjs` (gates-perf's file, plan §2) had no
+`RT_LEDGER`. The judge offered two fixes: merge gates-perf's `budgets.mjs` and re-run
+`--only A-rt-ledger-census,A-rt-ledger` on the merged tree, or an R38-style ruling.
+
+**What this lane can and cannot do.** Both fixes belong to the orchestrator. `tools/budgets.mjs` is
+gates-perf's file, no §1.2 grant lets engine-gpu touch it (rule 1), and lanes run no git merge (rule 7).
+Editing that file in this tree, even for one run, would be the cross-lane edit rule 1 forbids. The gate is
+not loosened either. In this tree the clause still reads `null` (PENDING) until the line is really there
+(run `T1` below).
+
+**What was done.** The orchestrator would grade on the merged tree, so I rebuilt that tree's gate side and ran the
+lane on it, on port 5251, against this tree's Vite:
+
+1. **The line exists and is committed.** `r5/w0a-gates-perf` at `a2fba7c`, `tools/budgets.mjs:141`:
+   `export { RT_LEDGER } from './r5-probes/rt-ledger.mjs';` (with R34's self-contained `STAGE_PRELUDE`).
+2. **The merge is clean for this lane.** Since the merge base `a953355`, the two branches share one changed file,
+   `docs/ROUND5-PLAN.md`, which is the orchestrator's own and synced from main on both. This lane changed
+   `src/core/engine.js`, `tools/gates.r5.engine-gpu.mjs`, `tools/r5-probes/rt-ledger.mjs` and the two docs.
+   gates-perf changed nothing under `src/`.
+3. **The merged gate side, built read-only.** `scratchpad/r5/engine-gpu/merged/` = `git archive
+   r5/w0a-gates-perf` (a read of the branch; no ref, index or worktree touched) plus this lane's five files
+   and main's `docs/ROUND5-PLAN.md` copied over. `node_modules` is a symlink to main's, as in the tree. It has
+   no `.git`, so only this lane's rows and `A-vram-ledger` were run there; pipeline's git-reading rows were
+   not. The page under test is this tree's, served by
+   `npx vite --port 5251 --strictPort` from the tree. gates-perf changes nothing the game page loads
+   (it deletes labs, spike pages, `public/anims-*` and HZD reference stills), so the page is the merged page.
+4. **Registration is proven on the real registry.** With no `--extra`, gates-perf's `gates.config.mjs`
+   discovers `tools/gates.r5.engine-gpu.mjs` by pattern (lane files: brand, engine-gpu, gates-perf,
+   instruments-core, pipeline). `--lane engine-gpu` yields this lane's 12 rows. The five re-staged rows take their real
+   ids (`A22-msaa`, `V20-aa-crop`, `A108-ao-periodicity`, `A109-ao-distance-fade`, `V33b-no-ao-lattice`) and
+   shadow the carried rows.
+5. **The runs, merged gate side** (`run-merged.sh`/`qrun-merged.sh`, the same slot and preflight discipline
+   as `run.sh`):
+   - **`M1`**: `node tools/gates.mjs --port 5251 --lane engine-gpu --only A-rt-ledger-census,A-rt-ledger`.
+     **Both PASS.** `A-rt-ledger` passes all six clauses: `atShippedTier`, `rtTotal` (127.27 MB ≤ 170),
+     `sumAtStagedFight` (342.46 MB ≤ 450), `recordedInDocs`, **`recordedInBudgets: true`** and `leversRestored`.
+     The staged fight is gates-perf's R34 role-staged `staged-fight`: 8 × `tiller` (herd), with the seven R28/R30
+     fallbacks named; textures 100.29 MB (92), geometry 114.90 MB, RTs 127.27 MB. The census recounts
+     127,271,712 B from the GL calls, equal to the ledger to the byte.
+   - **`M2`**: the rest of the non-timed block plus gates-perf's own `A-vram-ledger` as an independent
+     cross-check. All PASS or filmed (§5.1). **`A-vram-ledger` PASS:** its own GL census counts render targets
+     at **127,271,712 B (127.27 MB, 39 GL objects), the same byte count as this lane's ledger**, under the
+     ≤ 170 cap. Textures 105.46 MB, geometry 79.52 MB, total 312.25 MB ≤ 450.
+   - **`M3`, `M5`**: the timed pair `A-gpu-tier-box` + `A-gpu-tier`, set to start only at a quiet instant
+     (load < 3, 0 headless Chromes). **Neither started.** In 52 + 40 min of 2-s samples (`run/M3-wait.box`,
+     `run/M5-wait.box`), another lane's gate Chrome was alive at every sample. gates-perf ran its carried suite
+     twice and hero-body and brand ran their gates. I stopped both rather than time the GPU on a loud box
+     (fix round 2's `G6` shows what that does). `A-gpu-tier` stands on fix round 2's three judged runs, on the same
+     engine and gate code (§5.1).
+   - **`M4`**: `V-gpu-tier-look` alone, re-filmed on the merged gate side (no timing term).
+
+**What the orchestrator does to close it.** Either merge `r5/w0a-gates-perf` (with or before this lane)
+and run `node tools/gates.mjs --port 5270 --lane engine-gpu --only A-rt-ledger-census,A-rt-ledger` on main,
+which reproduces `M1`, or rule that `recordedInBudgets` is a cross-lane PENDING graded at gates-perf's
+exit. There is no third route inside this lane's files that does not loosen the gate.
+
+### 0.2 What fix round 2 changed, and why
+
+The machine rebooted between fix round 1 and this session: every scratch file of fix round 1 (reports,
+films, the budgets patch, the run scripts, the exploration gates) was gone, and so were the two untracked
+read-only symlinks the Pans POC boots from. Fix round 1's numbers stay in git; everything graded below was
+re-run on this code, in this tree, on Oct 22.
+
+| finding | what was done | result now |
+|---|---|---|
+| **Fix round 1's own film failed its own criterion** (`V-gpu-tier-look`: with the anisotropy cap at 2× on every texture, the salt pan's crust became faint horizontal streaks — fix round 1's report said "I would not pass it myself") | Re-filmed per texture ROLE on the gate's crop (`X-role-film`, `X-role2-film`): the crust and the dune ripples are drawn by the DATA textures (the normal + rough/AO packs). **The cap is now split by role** (engine grant, tier table): `maxAnisotropy` caps colour (sRGB) textures, new `maxAnisotropyData` caps data textures. Shipped `high` (and `medium`): **colour 1×, data 4×** — 2× / 4× keeps the crust as well but straddles a GPU clock step (interleaved `X-role2-sim`: 2× / 4× 12.05 ms with a 19.18 burst, 1× / 4× 9.91, 2× / 2× 10.11, 4× / 4× 17.57; `docs/ROUND5-ENGINE.md` §3.4). Mechanism verified on the GL side (`X-role2-check`) | `V-gpu-tier-look` crop 4 (shipped) shows the crust and the ripples as a softer crop 2 (8×); crop 3 (fix round 1's 2× / 2×) shows the streaks (§5.3). A-gpu-tier on the new row: §5.1 |
+| `V-gpu-tier-look` was three columns of squashed tiles | Four configurations (Round-4 `high` / shipped levers at 8× / the alternative NOT shipped / SHIPPED), full frames at 16:9, crops at their native aspect ×1.07–1.28 nearest | filmed on the final row in `G2` |
+| The POC did not boot in the re-created tree (`A22`, `A108`, `A109` failed "did not boot within 90 s" in `F3`) | Re-created the two gitignored, untracked, read-only symlinks to main's files (`public/models/r5-poc/sounding-ring.glb`, `models-staging/quaternius-animatedmech/Mike.gltf`), as in round 0 | `P1`, `F4`, `P2`: PASS |
+| `docs/ROUND5-ENGINE.md` §1.1 said "provisioned, never allocated: 0" | The ledger has always listed `post:pingB` (`postTarget`, 18 MB RGBA16F) as provisioned-not-allocated in the direct topology. Corrected: allocated only while a pass after the grade (the studio pass) needs it, then 145.27 MB, still ≤ 170 | doc fixed |
+| `A-rt-ledger`'s `tools/budgets.mjs` clause (gates-perf's file) | Unchanged situation; the patch and the proof were re-made | PENDING on that clause in this tree; **PASS on every clause with the line** (`L12`) |
+
+## 1. Deliverables
 
 | item | file | status |
 |---|---|---|
-| render-target measurement hooks (grant: "render-target measurement hooks") | `src/core/engine.js` (+398 lines vs HEAD, additions only: fix round 1's ledger/registry/tracking + fix round 3's PMREM capture, env-with-depth row, row `target`/`texture`, `?rtTally=1` GL tally) | done |
-| 1024 m terrain + nav probe: today's real build single-thread and on a cold worker pool, with a bit-exact equivalence check | `tools/r5-probes/terrain1024.js` (unchanged this round) | done |
-| the measured ledger as a dependency-free module | `tools/r5-probes/rt-ledger.mjs` (new) | done |
-| gate block, registered for `--lane engine-gpu` | `tools/gates.r5.engine-gpu.mjs` (4 rows: box witness, probe, census, ledger) | done |
-| engine numbers (RT ledger, live levers, probe, GPU baseline) | `docs/ROUND5-ENGINE.md` | §1 and §2 updated |
-| lane report | `docs/ROUND5-ENGINE-GPU.md` (this file) | done |
-| RT bytes "recorded in tools/budgets.mjs" | gates-perf's file, not edited; the one-line re-export is in §7 | handoff |
+| the GPU tier decision: shipped `high` = DPR cap 1.25 + GTAO ¼ + SMAA-only + SMAA RGBA8 + far cascades 1024 (round 0) + direct post topology + post fold + far-cascade cadence 2 (fix round 1) + **anisotropy colour 1× / data 4×** (fix round 2) | `src/core/engine.js` (tier table, `applyTier`, `_applyAnisotropyCap`, `_anisoRoles`, `_anisoMat`, `_anisoTex`, `_anisoSet`; fix round 1's `_applyPostTopology`, `_postFold`, `_bloomFold`, `_gtaoInPlace`, `_csmUpdate`, `ScenePass`, `OutputGradeShader`) | done |
+| `A-gpu-tier` as a measured exit gate, before/after per lever | `tools/gates.r5.engine-gpu.mjs` (`A-gpu-tier-box` + `A-gpu-tier`); the lever record now ends with the shipped split and three NOT-shipped rows (2× / 2×, 2× / 4×, 4× / 4×) | **PASS, 3 judged runs** on fix round 2's engine (`G3`, `G4`, `G7`: vista 11.78 / 12.34 / 12.35 ms). On this round's engine: **PENDING-quiet-box (R45)**. `Q1` read every clock under its bar (vista 12.82 ms) but was unjudged, and no quiet instant came in 85 more minutes — §0, §5.1 |
+| what the tier costs the picture, filmed | `V-gpu-tier-look` (re-laid out, four configurations) | re-filmed on this engine (`T2`), NEEDS-JUDGE; lane reading PASS (§5.3) |
+| `A-rt-ledger` graded (ruling `rt-ledger-bar=W0b`) | same file; `tools/r5-probes/rt-ledger.mjs` (unchanged: re-verified to the byte) | 127.27 MB ≤ 170, 342.45 MB ≤ 450. In this tree it is PENDING only on gates-perf's `budgets.mjs` line, which **R44** rules cross-lane (`T2`, `T1`). **On the merged gate side, with gates-perf's committed line, it passes every clause** (`M1`: 342.46 MB at R34's role-staged fight). The orchestrator re-runs it on main after both merges (R44, §0.1) |
+| GTAO lattice fix intact (A108 / A109 / V33b) on the folded chain; **A108 reproducible (fix round 4): GTAO's denoise noise seeded** | `engine.js` (`GTAO_NOISE_SEED`, `makeGtaoDenoiseNoise`, `setGtaoNoiseSeed`); A108 gained the determinism clause | **A108 PASS 5 of 5 fresh boots** (`W1`–`W5`, + `T2`), byte-identical detail; A109 PASS (`T2`); V33b re-filmed (`T2`) |
+| AA under R25 (A22, V20) | gates unchanged | A22 PASS (`T2`: 0.310 vs 0.189 off, 1.639 ×), V20 re-filmed (`T2`) |
+| W0a judge's minor: sweep dead WeakRefs in `registerRenderTarget` | `engine.js` (round 0, unchanged) | done (census registration contract PASS) |
+| `docs/ROUND5-ENGINE.md` W0b section | §1 (ledger), §3 (decision, before/after, the timer calibration, the role split, equivalence, gate table) | done |
+| lane report | this file | done |
 
-No asset was created, so no provenance or `LICENSES.json` row is needed. No file outside the §2 row
-and the §1.2 grant was edited. `tools/r5-probes/` holds only this lane's probe files.
+No asset was created (no provenance or `LICENSES.json` row needed). Files edited in fix round 4: only this lane's
+§2 row (`src/core/engine.js` under its grant — the denoise-noise seed; `tools/gates.r5.engine-gpu.mjs` — A108's
+determinism clause, its title and comments; `docs/ROUND5-ENGINE.md`; this file). Two untracked, gitignored, read-only symlinks to main's files keep the POC booting (see §0.2).
+
+## 2. The decision in one table (details: `docs/ROUND5-ENGINE.md` §3.1)
+
+| | Round-4 `high` | shipped `high` (W0b fix round 2) |
+|---|---|---|
+| DPR cap | 1.5 | **1.25** |
+| AA | MSAA ×4 + SMAA (HalfFloat targets) | **SMAA only, RGBA8 targets** (R25) |
+| GTAO | ½ res, in-place blend | **¼ res, multiplied in the grade pass** |
+| bloom composite | full-res additive blend | **added in the grade pass** |
+| post topology | resolve copy, HalfFloat ping-pong | **direct; `renderTarget2` RGBA8; `postTarget` released** |
+| CSM | 3 × 2048, every frame | **2048 + 2 × 1024; cascades 1/2 alternate frames** |
+| anisotropic filtering | as authored (POC ground 8×; the game's terrain detail and grass cards 4×) | **colour (sRGB) textures 1× (trilinear), data textures (normal, rough/AO) 4×** |
+| render targets, DPR 1.25 | 340.74 MB (437.75 at its 1.5 cap) | **127.27 MB** |
+| staged fight, textures + geometry + RTs | 891.87 MB (W0a content) | **342.45 MB** |
+| Pans vista / empty-frame GPU (gate reading) | 21.43 / 13.30 ms (`G3` lever record) | **11.78 / 4.75 (`G3`), 12.34 / 4.80 (`G4`), 12.35 / 4.32 (`G7`)**, judged |
 
 ## 3. Contracts published (exact signatures)
 
-### 3.1 `src/core/engine.js` (on demand only; nothing runs per frame)
+### 3.1 `src/core/engine.js`
 
 ```js
-engine.renderTargetLedger()
-  // → { rows: Array<{ owner: string, name: string, width: number, height: number, samples: number,
-  //        type: number, format: number, depth: 'texture'|'renderbuffer'|'none'|string,
-  //        parts: { color: number, msaaColor: number, msaaDepth: number, depth: number },
-  //        bytes: number, mb: number, allocated: boolean,
-  //        target: THREE.RenderTarget|null, texture: THREE.Texture|null,     (new: for the census)
-  //        pmrem?: 'fromScene'|'fromEquirectangular'|'fromCubemap'|null }>,  (new: env rows)
-  //     bytes: number, mb: number, provisionedBytes: number,
-  //     canvas: { width: number, height: number, bytes: number, mb: number },
-  //     pixelRatio: number, quality: string, msaa: number, gtao: boolean, gtaoScale: number,
-  //     bloom: boolean, smaa: boolean, tracking: boolean }
-engine.registerRenderTarget(owner: string, rt: THREE.RenderTarget) → rt
-  // held WEAKLY (WeakMap owner + WeakRef enumeration); survives setSize(); a disposed target reads
-  // allocated:false (bytes not summed) until re-bound; never keeps a target alive; a texture a
-  // registered target owns is never counted again as scene.environment / scene.background
-engine.unregisterRenderTarget(rt: THREE.RenderTarget) → boolean        // the explicit exit
-engine.trackRenderTargets(on: boolean) → boolean                       // measurement mode; off restores renderer.setRenderTarget
-engine.glTally                                                         // (new) null, or with ?rtTally=1 the GL allocation tally
-  // { tex: Set<info>, rb: Set<info>, fb: Set<info>, info: WeakMap<WebGLObject, info>, orphanCalls: number, since: number }
-  // info = { kind: 'tex', obj, lv: Array<{ face, level, ifmt, fmt, type, w, h, d, bytes /* -1 = from format */ }>, deleted }
-  //      | { kind: 'rb', obj, ifmt, w, h, samples, deleted } | { kind: 'fb', obj, att: { [attachmentEnum]: info|null }, deleted }
-  // also window.__rtTally. Installed on WebGL2RenderingContext.prototype before THREE.WebGLRenderer is built.
+export const QUALITY_TIERS            // rows carry, besides Round 4's fields:
+  // smaaHalfFloat: boolean           false → SMAA edge + weight targets RGBA8 (UnsignedByteType)
+  // csmMapCaps: number[] | null      cascade i map = min(requested, caps[min(i, caps.length - 1)]); null = uncapped
+  // postFold: boolean                GTAO multiply + bloom composite inside the grade pass (false = Round 4's in-place blends)
+  // csmFarCadence: number            cascade i >= 1 renders when (frame + i) % n === 0; 1 = every frame
+  // maxAnisotropy: number | null     cap on COLOUR textures' anisotropic filtering (colorSpace === SRGBColorSpace); null = GPU max
+  // maxAnisotropyData: number | null | undefined   cap on DATA textures (every other colorSpace: normal, rough/AO, masks);
+  //                                  undefined = the colour cap; null = GPU max          (fix round 2)
+export const DEFAULT_TIER = 'high'
+export const ROUND4_HIGH              // frozen Round-4 `high` row (postFold false, cadence 1, anisotropy uncapped)
+engine.applyTier(row: object, name = 'custom') → string   // every lever, incl. topology and anisotropy re-apply
+engine.setQuality(name) → string      // unchanged signature
+engine.tier                           // per-engine COPY of the row
+engine.csmMapSizes: number[] | null
+engine.postDirect: boolean            // direct topology in force (scene target has no MSAA samples)
+engine.anisotropyCap: number          // the colour-texture cap in force
+engine.anisotropyCapData: number      // the data-texture cap in force (fix round 2)
+engine.grade.uniforms.tAO / uAOMix / tBloom / uBloomOn   // folded inputs; zeroed each frame, re-armed by GTAO / bloom
+engine.enableCSM(opts)                // unchanged; tier caps applied after the cascades are built
+engine._csmUpdate()                   // per frame, no allocation: texel snapping per cascade + the far-cascade cadence
+engine.registerRenderTarget(owner, rt) → rt   // unchanged; sweeps dead WeakRefs before adding
+// fix round 4 (A108 determinism):
+export const GTAO_NOISE_SEED = 0xCA11A                     // the shipped seed of GTAO's denoise noise
+export function makeGtaoDenoiseNoise(seed: number, size = 64) → THREE.DataTexture
+                                      // three r169 GTAOPass.generateNoise(size) with a mulberry32-seeded simplex:
+                                      // same bytes for the same RNG, same size / RGBA8 / repeat / nearest;
+                                      // name 'CAL.gtaoDenoiseNoise', userData.seed
+engine.setGtaoNoiseSeed(seed: number) → void   // installs makeGtaoDenoiseNoise(seed) as gtao.pdNoiseTexture and the
+                                      // denoise's tNoise, disposes the texture it replaces; the constructor calls it
+                                      // with GTAO_NOISE_SEED; a probe that tries other seeds restores it. Not per frame
+engine.gtaoNoiseSeed: number | null   // the seed installed (null only while a probe has installed an unseeded texture)
 ```
 
-Module side effect (engine.js import, once): `THREE.PMREMGenerator.prototype.fromScene /
-fromEquirectangular / fromCubemap` are wrapped to remember their output target by texture (a WeakRef
-plus `{ width, height, depthBuffer }`); return values and arguments are untouched.
+Behaviour other lanes rely on: `composer.renderTarget1 === engine.sceneTarget`; `engine.depthTexture` is
+never bound as a write target; the studio pass appended after SMAA still gets a write target (`postTarget`,
+allocated on demand); `setGrade(false)` keeps the tonemap and the folded AO/bloom; disabling the grade pass
+brings back Round 4's in-place blends. **New in fix round 2:** `renderer.capabilities.getMaxAnisotropy()`
+answers the HIGHER of the two role caps (4 at `high`); a lane that sets `texture.anisotropy` from it gets 4,
+and the engine lowers that texture to its role's cap after three uploads it (colour textures: 1). A lane that
+swaps a material's texture to one already uploaded elsewhere is swept on the next texture-count change.
 
-Owners: `post:scene`, `post:pingA`, `post:pingB`, `post:<PassClass>.<prop>[i]` (found by scanning
-every composer pass), `shadow:csm[i]`, `shadow:<light name|type>`, `env:environment` /
-`env:background` (the PMREM target **with its depth**), registered owners, and `unregistered` (bound
-while tracking but otherwise unknown; the census requires 0). **Any lane that owns a render target
-outside the post chain and the lights calls `registerRenderTarget`**: world-sky's `CAL.lightShafts`
-(`environment.js:1141`) and, once kept, its PMREM target (`env:pmrem`).
+### 3.2 `tools/r5-probes/rt-ledger.mjs`
 
-### 3.2 `tools/r5-probes/terrain1024.js` (dev-only, Vite-served, never bundled)
+`export const RT_LEDGER` — frozen `{ measured, unit: 'bytes (1 MB = 1e6)', rows: { [owner]: bytes } }`,
+12 rows (`post:pingB` = 0: released), 127,271,712 B, equal to the GL recount (`A-rt-ledger-census`, `F3`,
+`F4`). Unchanged this round. gates-perf records it with
+`export { RT_LEDGER } from './r5-probes/rt-ledger.mjs';` in `tools/budgets.mjs`.
 
-```js
-PROBE      // { worldSize: 1024, spanFactor: 1.3, meshSegs: 686, playRadius: 490, navSpan: 2, maskN: 512, controlN: 64 }
-FALLBACKS  // [{ worldSize: 860, playRadius: 412, meshSegs: 576 }, { worldSize: 720, playRadius: 343, meshSegs: 482 }]
-SIZES      // [PROBE-as-size, ...FALLBACKS] in decision order
-TODAY      // { worldSize: 720, span: 972, meshSegs: 500 } — the calibration mesh
-SITES      // bible §8.4 land sites, { name, x: E, z: −N }
-PARALLEL   // { workers: 4, rowsPerJob: 24, maskRowsPerJob: 64, inflightPerWorker: 2 }
-loadTerrainAt() → Promise<{ mod, sink, patched: string, detailCfgs: object[], source: string }>
-  // today's src/world/terrain.js as Vite serves it; MESH_SPAN/MESH_SEGS settable (mod.__probeMesh(span, segs));
-  // _smoothField/_bakeDetail + 5 build methods timed on this copy only;
-  // mod.__probeInternals = { THREE, Terrain, SS, RIM_IN, RIM_OUT, MASK_N, WORLD_SIZE, WORLD_HALF,
-  //   smoothField, bakeDetail, bareTerrain() /* today's constructor minus its three build calls */ };
-  // detailCfgs = the three `_bakeDetail(256, {...})` literals parsed from today's _buildMesh; throws if an anchor moved
-realBuild(TL, { span: number, segs: number })
-  // → { ms: { constructor, buildMesh, heights, smooth, vertexColors, normalsAndGeometry, masks, detail, cliffs, farRanges },
-  //     vertices, span, segs, nodeSpacing, perSampleUs, perVertexUs, bytes, geometry, heightAt(x, z),
-  //     outputs() → { geometry, H, HS, masks: DataTexture[3], detail: DataTexture[3] }, dispose() }
-parallelBuild(TL, { span: number, segs: number, workers?: number = PARALLEL.workers }) → Promise<{
-  //   ms: { geometryArrays, heights, smooth, colorsNormals, bakesWait, total, afterTerminate },
-  //   vertices, span, segs, workers, workerBusyMs, jobs, geometry, outputs() (as realBuild), dispose() }>
-  // the same passes on a COLD module-worker pool: spawned, imported and terminated inside the call
-compareBuilds(a, b) → { equal: boolean, buffers: { [name]: { length, diffs, first } }, params: object[6], differing: string[] }
-  // bit for bit (32-bit views) over position/normal/uv/color/index/H/HS/mask1-3/detail0-2 + 11 sampling params per texture
-biomeWeights(x, z, out: Float32Array(6)) → out
-islandHeight(x, z) → number                       // stand-in island (nav slopes/blockers only; NOT graded)
-buildTerrain1024({ heightFn = islandHeight, worldSize = 1024, segs = 686, masks = true, sampleFrom = null } = {})
-  // lean pass model, ungraded; → { geometry, maskTex, controlTex, grid, heightAt(x, z), ms, bytes, shape, dispose() }
-loadNavAt(playRadius = 490) → Promise<{ Nav, R, N, source }>   // the frozen nav.js, 2 imports rebound
-buildNav(Nav, { getHeight, collision, pools = [] }) → { nav, N, ms: { height, cost, stamp, total }, open, blocked, ready, dispose() }
-```
+### 3.3 `tools/gates.r5.engine-gpu.mjs`
 
-Memory: `parallelBuild` keeps no worker past its return. The pool is terminated and both blob URLs
-are revoked on the success path and on every failure path, every returned object has `dispose()`,
-and nothing runs per frame. The worker source is a string inside this file (no new file).
+Exports `GATES` (12 rows, each with `lane: 'engine-gpu'` and a `wave`), `RT_LEDGER`, `RULINGS`, `QUIET`,
+`sampleBox()`, `VRAM_CENSUS`, `POC_KIT` (its sheet helper gained `putRect` and `box`), `GPU_TIER_BAR`,
+`AA_BAR`, `LOOK_CROP`, `SHADOWED_IDS`, `SHADOW_ID_SUFFIX`.
 
-### 3.3 `tools/r5-probes/rt-ledger.mjs` (new; no imports)
+| id (pre-merge id) | wave | kind |
+|---|---|---|
+| `A-terrain-1024-probe-box`, `A-terrain-1024-probe` | W0a | runner, action (unchanged, not re-run) |
+| `A-rt-ledger-census` | W0a | action (`?rtTally=1`) |
+| `A-rt-ledger` | **W0b** (ruling) | action |
+| `A-gpu-tier-box`, `A-gpu-tier` | W0b | runner, action (`levers()` now records `maxAnisotropyData`) |
+| `A22-msaa` (`A22-msaa@r5`) | W0b | action |
+| `V20-aa-crop` (`V20-aa-crop@r5`) | W0b | visual |
+| `A108-ao-periodicity` (`…@r5`) | W0b | action |
+| `A109-ao-distance-fade` (`…@r5`) | W0b | action |
+| `V33b-no-ao-lattice` (`…@r5`) | W0b | visual |
+| `V-gpu-tier-look` | W0b | visual (re-laid out) |
 
-```js
-export const RT_LEDGER  // frozen { measured: string, unit: 'bytes (1 MB = 1e6)', rows: { [owner]: bytes } }
-```
-The 12 owners of `ROUND5-ENGINE.md` §1.1, 340,743,360 B in total; the bloom chain is one row.
-Import it from here only (it is the leaf that breaks the cycle).
+## 4. How the gates run
 
-### 3.4 `tools/gates.r5.engine-gpu.mjs`
-
-Exports `GATES` (4 rows, `lane: 'engine-gpu'`, each with a `wave`), `RT_LEDGER` (re-exported from the
-leaf), `RULINGS` (new: `{ poolTerrainBuild: 'accepted'|'rejected'|null, rtLedgerBar: 'W0a'|'W0b'|null,
-source }`, read from plan markers), `VRAM_CENSUS`, `QUIET` and `sampleBox()`. No top-level `await`.
-
-**Plan markers it reads** (one per ruling, on a line of its own, anywhere in `docs/ROUND5-PLAN.md`):
-```
-<!-- r5-ruling pool-terrain-build=accepted -->      (or =rejected)
-<!-- r5-ruling rt-ledger-bar=W0b -->                (or =W0a)
-```
-
-**How it runs.** Until gates-perf's `A-gates-autodiscover` lands, `tools/gates.mjs` merges only
-`gates.round4.*.mjs`, so the file goes in through the runner's existing `--extra` flag:
+Until gates-perf's registry is merged, `tools/gates.mjs` in this tree merges only `gates.round4.*.mjs`. The file
+goes in through `--extra`, one file per run. The runner pushes it onto the same list it imports the
+`gates.round4.*` files from, so the rows get the same `GATES` merge and the same `--lane` and `--only` handling:
 
 ```
 node tools/gates.mjs --port 5251 --extra tools/gates.r5.engine-gpu.mjs --lane engine-gpu
+node tools/gates.mjs --port 5251 --extra tools/gates.r5.engine-gpu.mjs --only A-gpu-tier-box,A-gpu-tier
 ```
 
-After discovery is merged, drop `--extra`: `node tools/gates.mjs --port 5251 --lane engine-gpu`. A
-leftover `--extra` only logs "duplicate gate id … keeping the first". The census row carries
-`params: 'rtTally=1'`, which the runner appends to the page URL.
+After gates-perf merges, no flag is needed. The registry finds the file by pattern, and that was proven on its
+committed runner in fix round 3 (`M1`–`M3`, §0.1):
 
-**The box witness must run in the same invocation, before the probe.** `--lane engine-gpu` does
-that; with `--only`, list both: `--only A-terrain-1024-probe-box,A-terrain-1024-probe`. The witness
-rewrites the probe's `assert` on the gate object the runner passes to `check({ GATES })`. If a future
-runner copied the objects, the probe would read "box not sampled" and every clock would stay
-PENDING — never a false PASS.
+```
+node tools/gates.mjs --port 5251 --lane engine-gpu
+```
 
-## 4. Gate results (port 5251, this tree)
+For a run that also needs another lane's rows, one combiner module re-exports both `GATES` arrays
+(`scratchpad/r5/engine-gpu/combo.gates.mjs`: this file + `gates.r5.pipeline.mjs`). The five re-staged rows
+run as `<id>@r5` until `tools/gates.r5.carried.mjs` is in the tree; after the merge they take their real ids
+with no edit. On a tree without the registry the Round-4 `A22-msaa` (samples ≥ 4) FAILS by design under
+SMAA-only (R25's row is `A22-msaa@r5`). The box witness must run in the same invocation, before its target.
+The POC needs the two read-only symlinks of §0.2 in a fresh tree.
 
-### 4.1 The engine-gpu block
+## 5. Gate results (port 5251, this tree's page, Oct 22–23)
 
-Reports: `scratchpad/r5/engine-gpu/run/report.{c1,ctrl,L4,L5,L6,Q3p,Q4p,Q5p,Q6p}.json`. L4 used one
-warm-up and L5 three. **L6 and Q3p–Q6p ran the final files.** The one exception is the 10:33 edit to
-the `?rtTally=1` wrappers (§6.2), code those probe runs never execute. L4–L6 ran on a loud box;
-Q3p–Q6p ran on a quiet one (0 other headless Chromes, load < 3).
+**Fix round 4 runs** (on the seeded-noise engine; reports in `scratchpad/r5/engine-gpu/run/`):
+- `report.S1.json`: exploration `X-seed-witness` + `X-seed-graded` (`explore/seeds.gates.mjs`): 64 witness candidates
+  × 22 noise textures, and A108's graded crops × 16 seeds at every GTAO configuration.
+- `report.W1.json`: `A108-ao-periodicity@r5` (its own fresh page, first in the run), then the diagnostic `X-seed-why`
+  (`explore/why.gates.mjs`, through the combiner `explore/a108why.gates.mjs`).
+- `report.W2.json`–`report.W5.json`: `A108-ao-periodicity@r5` alone, each in a fresh Chrome
+  (`--extra tools/gates.r5.engine-gpu.mjs --only A108-ao-periodicity@r5`).
+- `report.T2.json`: **the round's one suite run** (`--extra combo.gates.mjs`, 22 gates): the global items present
+  in this tree, must-stay-green, and the lane's non-timed block. It films `V20`, `V33b` and `V-gpu-tier-look`.
+- `report.Q1.json`: the timed pair `A-gpu-tier-box` + `A-gpu-tier` (`chain-q.sh`; box samples in `run/Q1.box`). `Q2`
+  and `Q3` (`chain-q.sh`, `chain-q2.sh`, quiet-only) never ran; their samples are in `run/Q2.box` and `run/Q3.box`.
+- `report.N1.json`: exploration `X-noise-ab` (`explore/noiseab.gates.mjs`), the interleaved GPU cost of the noise texture.
+- `report.F1.json`: the final files (after comment-only edits): `A108` (byte-identical to `W1`), `A-rt-ledger-census`
+  PASS, `A-rt-ledger` every binding clause PASS (R44 clause PENDING).
 
-| gate | wave | c1 / ctrl | L4 (load 4.86, 2 other Chromes) | L5 (5.11, 1) | **L6, final files (3.77, 1)** |
-|---|---|---|---|---|---|
-| `A-terrain-1024-probe-box` | W0a | — | **PENDING**: load, 2 other Chromes | **PENDING**: load, 1 | **PENDING**: load 3.77, 1 other Chrome |
-| `A-terrain-1024-probe` | W0a | — | **PENDING**. 1024 m: single-thread 1019.7 (FAIL on any box); pool 616.1 (592.7 / 616.1 / 647.4), bit-identical, pool witness 1.32× (unstable). Vertex 20.77 MB PASS. Nav 38.0. GPU PENDING (+4.54, IQR 5.63). No size. | **PENDING**. Single-thread 1014.2; pool 536.9 (526.7 / 594.6 / 536.9); witness 1.285×. Nav 42.4. GPU PENDING (null frame 5.36 / 5.08). No size. | **PENDING**. Single-thread **976.7** (961.6–978.8, FAIL on any box); pool **464.5** (562.2 / 464.5 / 440.4), bit-identical over 12,891,333 values; brackets 1.047× / 1.01× (stable). Vertex 20.77 MB PASS. Nav **38.9** (62.7 / 38.9 / 33.7). GPU PENDING (+9.33, IQR 14.73, instability 1.71 / 2.67). Decision: no size; `byRuling` accepted → pending at 1024 m, rejected → pending at 860 m. |
-| `A-rt-ledger-census` | W0a | c1 **PASS** (GL = ledger = 340,743,360 B; env target alive). ctrl: both controls **FAIL** as required | **PASS** | — | **PASS**: 23 targets, 22 allocated, 0 unregistered; GL recount 340,743,360 B, 0 unattributed, 0 mismatches; env 9,437,184 B via the dropped-target path (the target had been collected); docs + `RT_LEDGER` match; registration contract OK |
-| `A-rt-ledger` | **W0a** (unruled) | — | **FAIL**: RT 340.74 > 170; staged fight 891.87 > 450; docs ✓; budgets ✗; restored ✓ | — | **FAIL**: same numbers; `rulingRequested` carried |
+**Fix round 3 runs** (no engine or gate code changed since fix round 2's checkpoint `acdff2c`, only these
+docs):
+- `report.M1.json`: the merged gate side, `A-rt-ledger-census` + `A-rt-ledger`.
+- `report.M2.json`: merged, the non-timed rows plus `A-vram-ledger`; films `V20` and `V33b`.
+- `report.M4.json`: merged, `V-gpu-tier-look` re-filmed.
+- `M3` and `M5`: quiet-only attempts at the timed pair. Neither started, because the box was never quiet (§0.1).
+- `report.T1.json`: this tree with `--extra combo.gates.mjs`. The round's one global-list run, plus
+  must-stay-green and the ledger pair as this tree reads it.
 
-**The probe on the quiet box (final files):**
+Fix round 2's reports, also in `scratchpad/r5/engine-gpu/run/`: `report.F3.json` (lane block + global items, on fix round 1's
+engine; the POC rows failed to boot, see §0.2), `report.P1.json` (the POC rows re-run, fix round 1's engine),
+`report.F4.json` (**the round's full run on the split mechanism**: lane block without the timed pair + every
+global item present + must-stay-green, 22 gates; the colour cap was 2× then), `report.P2.json` (**the lane's
+non-timed block + A1, A9, A20b on the final row, colour 1× / data 4×**), `report.L12.json` (A-rt-ledger with
+the `budgets.mjs` line), `report.G*.json` (A-gpu-tier; `G2` also films `V-gpu-tier-look` on the final row),
+exploration `report.X1.json` / `X2.json` (`explore/role.gates.mjs`, `explore/role2.gates.mjs`; the interleaved
+role comparison also ran inside `G1` and `G2`). Between `F4` and the final row only the tier table's numbers
+changed (`high` and `medium` colour cap 2 → 1), not the mechanism. Every run went through `run.sh` (the machine-wide
+Chrome slot of PLAN §0 rule 8, disk ≥ 3 GB and memory ≥ 25 % checked after taking it); timed runs through
+`qrun.sh` (`G1`, `G2`: waited for load < 3 and 0 headless Chromes, then took the slot; from `G3` on the slot is
+taken only AT such an instant, so the gate's witness samples that box; load and headless Chromes every 2 s into
+`run/<tag>.box`).
 
-| run | box | brackets (single / pool) | 1024 m build: single · pool | GPU Δ (IQR) | nav 1024 | `A-terrain-1024-probe-box` / probe | `decision.byRuling` |
-|---|---|---|---|---|---|---|---|
-| Q3p | 2.33 / 0 | 1.029× / 1.099× | **FAIL** 960.9–968.7 · **PASS** 431.5–460.2 | unjudged (instability 2.72) | 41.9 PASS | **PASS** / PENDING | accepted → pending 1024 (GPU); rejected → pending 720 (GPU) |
-| Q4p | 2.59 / 0 | 1.028× / **1.125×** | **FAIL** 979.2–986.7 · PENDING (witness) | unjudged (null frame 10.06) | 42.2 PASS | **PASS** / PENDING | accepted → pending 1024; rejected → pending 720 (GPU) |
-| **Q5p** | 2.67 / 0 | 1.03× / 1.02× | **FAIL** 968.6–978.6 · **PASS** 430.6–461.1 | **+0.23 (0.77) PASS** | 44.1 PASS | **PASS** / PENDING (ruling) | **accepted → 1024 m; rejected → 720 m** |
-| **Q6p** | 1.49 / 0 | 1.028× / 1.03× | **FAIL** 966.7–981.1 · **PASS** 510.3–544.1 | **+0.20 (0.57) PASS** | 43.2 PASS | **PASS** / PENDING (ruling) | **accepted → 1024 m; rejected → 720 m** |
-
-860 m in Q5p/Q6p: single FAIL (714.7–736.9), pool PASS (342.8–579.1). 720 m: single PASS (533–538.7),
-pool PASS (269.8–292). Vertex buffers 20.77 / 14.65 / 10.26 MB PASS. The probe's verdict stays
-PENDING for one reason only, the unruled `pool-terrain-build`.
-
-### 4.2 Global green list (the items that exist in this tree)
-
-G2 ran after the `engine.js` change, on a loud box (load 4–5, 1 other lane's headless Chrome).
-Report: `run/report.G2.json`. A1, A9 and A21 were then re-run on the quiet box (Q3a, Q5a), and A9 as
-an attribution control with this lane's `engine.js` and with HEAD's, alternated (A9mine1/2,
-A9head1/2).
+### 5.1 The engine-gpu W0b block
 
 | gate | verdict | numbers |
 |---|---|---|
-| `A1-boot-clean` | **PASS** (G2 and quiet Q3a) | `state=playing` |
-| `A20b-no-system-errors` | **PASS** | 0 system errors, 0 hook errors, 206 frames |
-| `A20-frame-loop-survives` | **PASS** | 44 frames after 3 throws; the system is called 100× after the throw |
-| `A22b-fov-recompile` | **PASS** | 3 FOVs composited, 0 errors |
-| `A90-memory-stability` | **PASS** | heap −2.4 %, geometries +10, textures −19, objects −527 |
-| `A90-memory-stability-expansion` | **PASS** | objects −305, nonMachineGrowth 0, heap −6.2 % |
-| `A90b-memory-attribution` | **PASS** | 0 offenders, 0 orphaned textures, heap −2.8 % after a forced GC |
-| `A90-rig-reclaim` | **PASS** | 30 cycles: geometries +8, textures 0; per live machine 0 / 0.38; held-then-released 0 / 0 |
-| `A21-real-draw-calls` | G2 (loud) **PENDING**; quiet Q3a **PENDING**; quiet Q5a **FAIL** | draws 319 / 211 / 340 (≤ 350) PASS; triangles 4.24 / 3.92 / 4.37 M PASS. Q5a: **medianGpuMs 78.7 / 100.45 / 83.23 ms against A21's 20 ms bar**, null frame 0.96 ms, burst instability 1.01–1.02, so A21 reads it as "the frame itself" → FAIL; p95 frame PENDING (null-frame p95 18.4 ms). A21 grades the worse of DPR 1.5 (today's `high` cap) and DPR 2. The spawn vista costs 50.06 ms of GPU at 1.5 and 78.7 at 2, against 19.4 ms at DPR 1 (A9, same minute). That is pixel count, the W0b DPR / tier decision. Attribution control: not run — after 10:28 free disk sat at 2.90 GiB, under the 3 GB launch floor. A9's alternated control (same vista, same `engine.js` pair, 0.1 ms apart) stands for it: outside `?rtTally=1` the only new `engine.js` code that runs is the PMREM wrap, once at boot. |
-| `A9-perf-budget` | **quiet: PASS 5 of 6** (G2 loud: PENDING) | Quiet, Round-4 bar ≥ 45 fps, 319 draws in every run. **This lane's `engine.js`: 51.8 / 51.8 fps (scene GPU 19.53 / 19.63 ms); HEAD's `engine.js`: 52.2 / 52.1 fps (19.47 / 19.67 ms)**, alternated, so the change costs nothing measurable. Q5a 48.6 fps PASS. Q3a 41.4 fps (GPU 34.4 ms, null frame 0.55) **FAIL**, in the GPU slow state the probe also saw in Q3p and Q4p. Note: R26's re-cast bar is 58 fps; at 52 fps today's tier would not meet it. That is the W0b tier decision (DPR 1.25 measured 60 fps, `ROUND5-ENGINE.md` §3), and gates-perf's re-cast is not in this tree. |
+| `A-gpu-tier-box` | PASS in `G3`, `G4`, `G7` (fix round 2's engine); fix round 4: PENDING in `Q1` (1 other headless Chrome at the sample) | load 1.63 / 2.18 / 2.34, 0 other headless Chromes at the sample (`run.sh` takes the slot only at such an instant); `Q1`: load 2.03, 1 other Chrome |
+| `A-gpu-tier` | **Fix round 4: PENDING-quiet-box under R45** (`Q1` unjudged, every clock under its bar: vista 12.82, empty 4.80, 60.24 fps, p95 18.7; `Q2`, `Q3` found no quiet instant in 85 min; §0). The engine changed only in the denoise noise's texel values, and `X-noise-ab` shows no GPU difference. Before that: **PASS** (judged, final row colour 1× / data 4×; fix round 2's `G3`, `G4`, `G7`) | vista **11.78 / 12.34 / 12.35 ms** ≤ 13; empty **4.75 / 4.80 / 4.32 ms** ≤ 7; fps 60.24 / 59.88 / 59.88 ≥ 58; p95 18.7 / 18.9 / 18.6 ≤ 20; null frames 0.16–0.18 ms; instability ≤ 1.32; docs row = live tier; RT 127.27 MB at 1.25. Another lane's gate Chrome appeared during `G3` at ~70 s (after the shipped bursts), during `G4` at ~37 s and during `G7` at ~31 s (during part of them); `docs/ROUND5-ENGINE.md` §3.3. Unjudged this round: `G1` (the 2× / 4× row, loud from ~20 s), `G2` (final row, started loud after a 2 h wait), `G5` (final row, load 3.23 at the witness sample; every clock under its bar: vista 12.00, empty 4.78), `G6` (final row, another lane's Chrome from 9 s, before the witness sample; **vista read 17.70, over the bar**, under that contention). Lever record (`G3`): Round-4 21.43 / 13.30 → … → shipped 9.32 / 4.73; NOT shipped 2× / 2× 10.59, 2× / 4× 13.64, 4× / 4× 15.03 (vista) |
+| `A-gpu-tier` role comparison (exploration, interleaved, `G1`: `X-role2-sim`) | — | colour / data: 1× / 4× **9.91**, 2× / 2× 10.11, 2× / 4× 12.05 (one burst 19.18), 4× / 4× 17.57 |
+| `A-rt-ledger` | **merged gate side: PASS on every clause (`M1`)**. This tree: every binding clause PASS; the one clause in gates-perf's file PENDING, cross-lane under **R44** (`T2`, `T1`) | `M1`: 127.27 MB ≤ 170 ✓; staged fight 342.46 MB ≤ 450 ✓ (R34's role-staged fight, 8 × `tiller` with the R28/R30 fallbacks named; textures 100.29, geometry 114.90); docs ✓; **`tools/budgets.mjs` record ✓** (gates-perf's committed line); levers restored ✓; shipped tier @ 1.25 ✓. `T1`: the same terms with `recordedInBudgets: null`. Fix round 2: `F4`, `P2` PENDING, `L12` PASS against a patched copy |
+| `A-rt-ledger-census` (W0a row) | **PASS** (`T2`; `M1`, `T1`, `F3`, `F4`, `P2`) | GL 127,271,712 B = ledger, 0 unattributed, 0 mismatches, docs and `RT_LEDGER` match |
+| `A-vram-ledger` (gates-perf's gate, run as a cross-check) | **PASS** (`M2`) | its own GL census: render targets **127,271,712 B**, the ledger's byte count, under the ≤ 170 MB cap; textures 105.46 MB ≤ 160, geometry 79.52 MB ≤ 120, total 312.25 MB ≤ 450 at DPR 1.25, tier `high` |
+| `A22-msaa` | **PASS** (`T2`; `M2`, `P1`, `F4`, `P2`) | R25 path; `T2`: 0.310 / 0.189 / 0.377, gain 1.639; `M2`: AA fraction 0.310 (SMAA) / 0.189 (none) / 0.378 (Round-4 MSAA ×4 + SMAA), gain 1.64 ≥ 1.5 (`P2`: 0.312 / 0.189, 1.647) |
+| `V20-aa-crop` | NEEDS-JUDGE (`T2`; `M2`) | §5.3 |
+| `A108-ao-periodicity` | **PASS 5 of 5 fresh boots** (fix round 4: `W1`–`W5`; also `T2`; before: `M2`, `P1`, `F4`, `P2`) | worst 0.135 (ultra @ 1, far 128 m, control 0.137); 0 fails; witness crop 1: stock **0.239@5,-29** ≥ 0.15, shipped 0.102, off 0.114 (crop 2 does not separate: 0.128 / 0.126 / 0.103); denoise noise: seed 0xCA11A, sampled, hash `a698df06` = fresh build. The six runs' details are byte-identical (`docs/ROUND5-ENGINE.md` §3.6) |
+| `A109-ao-distance-fade` | **PASS** (`T2`; `M2`, `P1`, `F4`, `P2`) | high: 4–6 m 0.0682 (n 3,037), past 150 m 0 (n 2,421), far band ratio 1.000; ultra: 0.0718, 0, 1.000 |
+| `V33b-no-ao-lattice` | NEEDS-JUDGE (`T2`; `M2`) | §5.3 |
+| `V-gpu-tier-look` | NEEDS-JUDGE (`T2`; `M4`, `G2`) | §5.3 |
 
-Not in this tree yet (other lanes' W0a/W0b gates): `A90-abs`, `A-alloc-rate`, `A-vram-ledger`,
-`A-ID-ip-assets-gone`, `A-licence-manifest`, `A-assets-tracked`, `A-no-horizon-terms-*`,
-`A-reach-all-sites`, `A-port-guard`, `A-carried-suite`.
+### 5.2 Global green list (the items that exist in this tree) and must-stay-green: `T2` (fix round 4, the round's one suite run on the seeded-noise engine; 22 gates with the lane block: 15 pass, 4 pending, 3 need judging), fix round 3's `T1` for comparison
 
-### 4.3 Film (read by the lane; this block has no V gate at W0a)
+| gate | verdict | numbers |
+|---|---|---|
+| `A1-boot-clean` | PASS (`T2`; `T1`) | `state=playing` |
+| `A9-perf-budget` | **PENDING on a loud box (`T2`)**; PASS in `T1` | 262 draws PASS; 37.5 fps / scene GPU 57.08 ms NOT attributable: the null frame (nothing drawn) took 7.69 ms of GPU, i.e. another GPU client. `T1` read 55.7 fps and passed; fix round 2: 50.9 (`F4`), 48.0 (`P2`). Under **R45** the fps term is graded at the orchestrator's quiet global run |
+| `A20b-no-system-errors` | PASS (`T2`; `T1`) | 0 system errors, 0 hook errors, 358 frames |
+| `A21-real-draw-calls` | **PENDING on a loud box (`T2`)**; its W0-day1 baseline verdict is FAIL on the Round-4 GPU term (R33 b: listed, not graded, must not get worse) | draws 266 / 171 / 279 ≤ 350 PASS; triangles 3.70 / 3.34 / 3.80 M PASS; GPU and p95 terms unattributable (null frame 3.06 ms, GPU instability 2.86 ×). Readings for the record: median GPU at raw DPR 2 91.5 / 121.5 / 64.4 ms (`T1`: 88.4 / 119.2 / 94.5; `F4`: 96.6 / 129.7 / 83.4), at the capped 1.25 33.3 / 68.6 / 20.9 (`T1`: 52.0 / 63.7 / 55.3). Under R45 its GPU and p95 terms are graded at the quiet global run |
+| `A90-memory-stability` | PASS (`T2`; `T1`) | heap −11.7 %, geometries +9, textures −28, objects −1,096 (`T1`: −8 %, +8, −28, −1,096) |
+| `A90-memory-stability-expansion` | PASS (`T2`; `T1`) | objects −1,059, non-machine growth 0, 0 orphan roots |
+| `A90b-memory-attribution` | PASS (`T2`; `T1`) | 0 offenders, 0 orphaned textures, heap −6.9 % after forced GC; 0 late or new texture uploads. This is this tree's Round-4 workload; R34's Tiller workload is instruments-core's |
+| `A90-rig-reclaim` | PASS (`T2`; `T1`) | 30 cycles: geometries +5, textures 0; per live machine 0 / 0.5 |
+| `A-ID-ip-assets-gone` | PASS (`T2`; `T1`) | 19 GLBs, 217 files through rows, 0 IP hits (`aloy.glb` scheduled for hero-body's exit) |
+| `A-assets-tracked` | PASS (`T2`; `T1`) | 221 referenced, 0 ignored, 0 missing |
+| `A-licence-manifest` | PENDING (`T2`, `T1`; pipeline's clauses: third-party, legacy source, credits; R42) | files-matched PASS (217 files), row schema, code rows, licence texts, size PASS |
+| `A20-frame-loop-survives` | PASS (`T2`; `T1`) | 44 frames after 3 throws |
+| `A22b-fov-recompile` | PASS (`T2`; `T1`) | every FOV composited a real frame, 0 errors |
+| `A56-cascades` (carried, CSM check) | PASS (`T2`; `T1`) | near texel 1.38 cm ≤ 2, `shadowMapSize` 2048, 3 cascades |
 
-The judges cited no shot this round. The one change that could alter a frame is the PMREM wrap in
-`engine.js`, so the lane re-filmed the fix-round-1 spawn vista with the same eval
-(`film/evalA.js`): `film/shots/eg-vista-720-r3.png` against `eg-vista-720.png` (Oct 15).
-- I read both. The camera, rim, sky band, camp, watchtower, palisade, HUD and player all match, and
-  the environment lighting reads the same on the rim and the wall.
-- Mean |Δ|: 2.83 on the sky/rim band, 7.5 on the camp, 32.8 on the ground right. The differences are
-  the wind-animated grass (its sway phase and the tufts on the right slope) and the player's idle
-  pose.
-- For scale, fix round 1's 720 m vs 1024 m pair read 3.16 on the sky/rim.
-- No frame shows a lighting or IBL change.
+Not in this tree (other lanes' files): `A90-abs`, `A-alloc-rate`, `A-vram-ledger`, `A-no-horizon-terms-*`,
+`A-reach-all-sites`, `A-port-guard`, `A-carried-suite`. Of these, `A-vram-ledger` was run on the merged gate
+side as a cross-check (`M2`, §5.1). The W0a probe pair was not re-run: it is a W0a gate, judged and ruled at W0a,
+and nothing here touches the terrain build or nav.
 
-Fix rounds 1–2's shots (`eg-vista-720`, `eg-vista-1024real`, `eg-vista-1024pool`, the aerials) stand as filmed.
+### 5.3 Film, read by the lane against the criteria (advisory; R29 judges grade)
 
-## 5. What the measurements mean
+**Fix round 4 (`T2`, the seeded-noise engine; sheets `scratchpad/r5/engine-gpu/run/T2/V20-aa-crop@r5.png`,
+`run/T2/V33b-no-ao-lattice@r5.png`, `run/T2/V-gpu-tier-look.png`).** I read each sheet whole, then the cited
+parts magnified ×2 nearest (V33b row 4 and row 1, V-gpu-tier-look crops 2 / 3 / 4 on the pan):
+- **V33b**: rows 1–2 (high at ¼ res, ultra) at N / E / S / W show no bars, bands, checker or dither on the
+  shelf walls, the hills, the haze band, the sky edge or the bright S bearing over the water; the sand ripples
+  are the dune normal map and run with the dunes, not with the screen. Row 3: the far shelf wall's columns
+  on and OFF are indistinguishable at both tiers. Row 4: the ×8 darkening maps show soft contact darkening
+  under the boulder's lower edge and at the grass bases, open sand white. The high tile is broader and
+  carries the fine grain of the denoise at ¼ resolution; there are no blocks, no stair-stepped halo and no
+  outline against the sky. The ultra tile is sharper. Reading: **PASS**, the same as `P2` and `M2`.
+- **V20**: the shipped tile (top-left) has 1–2 px intermediate tones along the column tops' diagonals and
+  the shelf edges. The no-AA tile (top-right) has hard two-tone stair-steps on the same edges, plainest on
+  the tall column's left side, where the shipped tile keeps two or three softened steps. Round 4
+  (bottom-left) is the softest. The locator puts the crop on the column crown against the sky. A22 measures
+  the same frame at 0.310 vs 0.189. Reading: **PASS**.
+- **V-gpu-tier-look**: the four full frames are the same scene, light and grade. At ×2 on the pan: crop 2
+  (shipped levers, 8×) shows the polygonal crust cell by cell; **crop 4 (SHIPPED, colour 1× / data 4×)
+  shows the same cells, a shade softer, plus the dune ripples**; crop 3 (NOT shipped, 2× / 2×) turns the
+  pan into horizontal streaks with no cells and weakens the ripples. Reading: **PASS**, unchanged from `M4`.
 
-### 5.1 Render targets (W0b input)
+Earlier sheets, filmed on the final row: `scratchpad/r5/engine-gpu/run/P2/V20-aa-crop@r5.png`,
+`run/P2/V33b-no-ao-lattice@r5.png`, `run/G2/V-gpu-tier-look.png`; the exploration crops in `run/X1/`,
+`run/X2/`. (`F4` filmed all three on the 2× / 4× row and read the same; superseded sheets were deleted.)
 
-**340.74 MB today.** MSAA costs 108 MB (72 MB colour plus 36 MB depth renderbuffers), the three 2048²
-cascades 100.66 MB, the full-res HalfFloat SMAA targets 36 MB, and the environment 9.44 MB, of which
-3.15 MB is a depth buffer needed only while PMREM renders. The bar is reachable only with SMAA-only
-**and** smaller cascades, and the 1536² + RGBA8 set is now 0.70 MB over it. The sets that fit are
-+ GTAO ¼ (+9.44 MB of margin), 1024² (+12.75) and 1024² + RGBA8 (+30.75). If world-sky drops the PMREM
-depth (§7), every row gains 3.15 MB. CSM size is world-sky's argument to `engine.enableCSM`, and W0b
-can cap it from the tier table inside `enableCSM` (engine grant).
-
-### 5.2 The world size
-
-- **Judged on a quiet box, twice:** today's single-thread terrain build is red at 1024 m (≈ 975 ms)
-  and 860 m (≈ 720 ms) and green at 720 m (≈ 536 ms). The same passes on a cold 4-worker pool,
-  bit-identical, are green at every size: 1024 m in 430.6–544.1 ms (on today's own mesh the cold
-  pool ran 1.57–1.75× faster than the single thread). The 1024 m mesh costs +0.2 ms of GPU at the
-  vista, and the navgrid takes 43–44 ms.
-- So the W1 size is a policy question, and the gate leaves it to the orchestrator.
-  - **Accept the pool:** world-ground ships a pool build, timed cold inside the real boot by
-    `A-world-size`, and the world is 1024 m.
-  - **Reject it:** the world is 720 m on today's single-thread code.
-- 860 m is not an answer under either ruling: the pool passes at 1024 m, and the single thread fails
-  at 860 m.
+- **V-gpu-tier-look** (`G2`): top band, frames 1, 2 and 4 are the same scene — same light, the ring's ellipse
+  shadow on the pan, grade, bloom on the sky; 2 and 4 are a little softer than 1 (DPR 1.25 against 1.5).
+  Crops, magnified: crop 1 (Round 4) shows the salt pan's light polygonal crust crisply and the dune ripples
+  in front; crop 2 (shipped levers, 8×) the same, softer; **crop 4 (SHIPPED, colour 1× / data 4×) still shows
+  the polygonal crust across the pan and the ripples on the dune — a softer crop 2, no streaks**; crop 3 (NOT
+  shipped: fix round 1's 2× / 2×) shows what fix round 1 shipped: the crust gone into faint horizontal
+  streaks, the ripples nearly gone. My reading: PASS (fix round 1's shipped row would have failed it).
+- **Fix round 3, `M2`** (merged gate side, real ids): **V20**: same reading as below. The shipped tile
+  (top-left) has 1–2 px intermediate tones along the column tops' diagonals and the shelf edges. The no-AA tile
+  (top-right) has hard two-tone stair-steps on the same edges, plainest on the column tops and the tall column's
+  left side. Round 4 (bottom-left) is the softest, and the locator (bottom-right) puts the crop box on the
+  column crown against the sky. Reading: PASS. **V33b**: rows 1–2 (high ¼-res, ultra) at N/E/S/W show no
+  bars, bands, checker or dither, including the bright S bearing over the water. In row 3, on and OFF are
+  indistinguishable at both tiers on the shelf wall. In row 4, the ×8 darkening maps show soft contact darkening
+  under the shelf lip and at the grass bases (high broader and grainier), white open sand, no blocks.
+  Reading: PASS. **V-gpu-tier-look** (`M4`, re-filmed on its own because the box was never quiet for the
+  timed pair; the film has no timing term): the four full frames are the same scene, light and grade. I also
+  compared crops 2, 3 and 4 at a further ×2 nearest. Crop 2 (shipped levers, 8×) and **crop 4 (SHIPPED,
+  colour 1× / data 4×) both show the salt pan's polygonal crust cell by cell** across the lower half of the
+  crop, crop 4 a shade softer toward the far edge. **Crop 3 (NOT shipped, 2× / 2×) turns the same ground into
+  horizontal streaks with no cells.** Reading: PASS. Sheet: `run/M4/V-gpu-tier-look.png`.
+- **V20** (`P2`; `P1`, `F4` the same): top-left (shipped, SMAA-only at 1.25, 4× nearest): the column tops and sides carry 1–2 px
+  ramps between rock and sky; top-right (no AA): hard two-colour stair-steps on the same edges, clearest on the
+  tall column's left side; bottom-left (Round-4 MSAA ×4 + SMAA at 1.5): the softest, and the shipped tile keeps
+  two or three visible steps on that near-vertical edge where Round 4 has none. My reading: PASS.
+- **V33b** (`P2`; `P1`, `F4` the same): rows 1–2 (high at quarter-res, ultra) at four bearings: no bars, bands, checker or
+  dither; row 3 (1:1 shelf wall across the pan): on and OFF indistinguishable at both tiers; row 4: the ×8
+  darkening maps show soft darkening along the boulder's contact with the sand and at the grass bases (high
+  broader and grainier, ultra sharper), white open ground, no blocks, no outline against the sky. My reading:
+  PASS.
 
 ## 6. Honest gaps
 
-1. **The quiet window was short and shared.** The waiter (10 s samples, `run/quiet.log`) saw 0 other
-   headless Chromes with load < 3 from 10:13 to about 10:28. Other lanes' runs had held the box from
-   09:28, and the window closed when free disk fell under 3 GiB. In it the lane ran 4 probes, 6 A9s
-   and 2 A21s. Two probes (Q5p, Q6p) judged every term; Q3p and Q4p left the GPU or the pool
-   unjudged. A second orchestrator run on 5270 would confirm the table; the lane cannot make it
-   PASS without the ruling.
-   **Even on a quiet CPU the GPU has slow states.** In Q3p the 1.5 s burst medians of an unchanged
-   mesh swung between ≈ 19 and ≈ 51 ms; in Q4p they sat near 66 ms, after a 10.06 ms null frame. A9's
-   one quiet FAIL (Q3a) fell in that state. The probe's GPU witnesses refuse such runs. A9's
-   single-burst design does not, which is gates-perf's R26 re-cast to weigh.
-2. **One last edit has no Chrome run.** At 10:33 the measurement-mode wrappers in `_installGlTally`
-   were changed to take named parameters instead of handing `arguments` on, so a `?rtTally=1` page
-   allocates nothing per GL call once warm. The GL calls still go through the same
-   `orig.apply(this, arguments)` as in every Chrome-verified census (c1, L4, L6). The edit was
-   verified by `scratchpad/r5/engine-gpu/node-lab/tally-test.mjs`, which extracts the function from
-   `engine.js` and drives it with a fake WebGL2 prototype: PASS. It checks arity passthrough (9 / 6),
-   the texImage2D, texStorage2D-cube and generateMipmap levels, the MSAA and depth renderbuffers, the
-   attachments, deletes and 0 orphan calls. It was **not** re-run in Chrome: from 10:28 to 11:13
-   free disk stayed at 2.84–2.90 GiB, under the launch floor. Outside `?rtTally=1` this code never
-   runs. The first census on the final file is the judges' or the orchestrator's.
-3. **The pool's advantage is wall clock, not CPU, and it needs free cores.** The 4 workers burned
-   1.48–1.98 s of CPU for a 0.46–0.62 s 1024 m build (L4–L6), against ≈ 1.0 s on one thread. A boot
-   doing other heavy work at the same time shares those cores; `A-world-size` must time the shipped
-   path cold, inside the real boot (in the proposed W1 text).
-4. **The census proves the ledger against the GL calls, not against the driver.** WebGL cannot query
-   VRAM. The convention shared by ledger and census (RGB stored as 4 channels, DEPTH_COMPONENT24 = 4 B)
-   is stated, not measured. The GPU-process footprint is `A90-abs` (gates-perf). The census's
-   `?rtTally=1` mode holds every GL object that was not explicitly deleted, so in that page a dropped
-   object is never reclaimed by GC. That makes it the conservative reading, and it is why the ledger
-   counts the dropped PMREM depth too.
-5. **The PMREM capture wraps a three prototype from `engine.js`.** It runs once per PMREM call at boot
-   and changes no argument or return value; A1, A20b and the A90 family stayed green after it (G2). If
-   world-sky keeps and registers the target, the wrap becomes redundant but harmless.
-6. **`A-rt-ledger` is FAIL** on three clauses: render targets 340.74 > 170 MB; the staged-fight total
-   891.87 > 450 MB, of which 422 MB is Round-4 textures that W0a–W2 delete; and no record in
-   `tools/budgets.mjs`. Which wave grades it awaits the orchestrator's ruling.
-7. **The graded build is today's code at the R5 vertex count**, not world-ground's R5 build;
-   `A-world-size` grades that at W1. The nav stamp load uses today's 4,917 Round-4 colliders; the
-   stand-in island puts 5 of 18 sites on > 45° cells.
-8. **`loadNavAt`, `loadTerrainAt` and `parallelBuild` are dev-only.** They need Vite's transformed
-   sources and refuse to run if an anchor moved.
+0. **A108's witness depends on the denoise noise, and the seed pins it (fix round 4).** For about one noise
+   texture in five to eight (seeded: 5 of 40; three's `Math.random`: 7 of 30), the Poisson denoise hides the
+   stock-shader lattice on witness crop 1 completely, and no other crop on the POC replaces it. The shipped
+   seed is one of the seeing ones. The witness is therefore a proof for the pipeline the engine ships, not
+   for every possible noise texture. Anything that changes that texture or the denoise has to re-run A108:
+   `GTAO_NOISE_SEED`, `makeGtaoDenoiseNoise`, `updatePdMaterial`'s radius / rings / samples, or the GTAO
+   resolution. If the witness goes blind, the gate fails by name and does not pass silently. The W1 Pans,
+   which re-stage A108 on real content, should pick witness crops that see the defect for any seed.
+1. **Colour textures get no anisotropic filtering at `high` (1×, trilinear).** On the POC that is invisible
+   at the gate's crop because the far relief is in the normal maps, but any albedo-borne detail seen at a
+   grazing angle (painted lines, text, the Round-4 grass cards' sRGB atlas, 4× in Round 4) is blurrier along
+   the view direction than in Round 4. 2× / 4× was the better picture and the riskier bar (§0.2).
+2. **The split is tuned on the POC.** The crust lives in the POC ground's normal maps; the real Pans at W1
+   (world-ground, plan §4.3: ≤ 3 layers, triplanar on slopes only) are about half the POC's fetches, and
+   `A-gpu-tier` re-runs there (plan §6). The lever record carries the 4× / 4× row each time so `high` can go
+   back to 4× on everything when it fits.
+3. **The GPU timer reads a clock state, not a cost** (`docs/ROUND5-ENGINE.md` §3.4, calibration). One
+   configuration reads several ms apart between 2 s bursts; another process on the GPU can lower the reading
+   (a clock step up) or raise it past the bar (two clients time-slicing: `G6` read the final row's vista at
+   17.70 with another lane's Chrome alive from 9 s). The judged margin is 0.65–1.22 ms (`G3`, `G4`, `G7`). Nothing in
+   the gate was changed for this; a capacity instrument would be a ruling.
+4. **`A-rt-ledger`'s `budgets.mjs` clause stays PENDING in this tree** (`T1`), because the line lives in
+   gates-perf's file. On the merged gate side, with gates-perf's committed line and R34 staging, the gate
+   passes every clause (`M1`), and gates-perf's own `A-vram-ledger` counts the same 127,271,712 B (`M2`).
+   It turns green on the tree that has both lanes, which only the orchestrator can make (§0.1).
+5. **A21's GPU term** fails at baseline (R33: listed, not graded); this tree reads it unattributable on a loud
+   box (`F4`) or FAIL (`F3`, 83–134 ms at raw DPR 2); draws and triangles PASS.
+6. **Box quietness.** Six lanes and their judges share one GPU; other lanes' gate Chromes start between the
+   slot holders. The gate's own witness samples the box only at its start; `run/<tag>.box` says what my
+   monitor saw during each timed run.
+7. **The role rule is the colour space.** A colour texture authored in a linear colour space (a float/HDR
+   albedo) is treated as data (gets the 4× cap). None exists today. A texture swapped onto a material without
+   any texture being uploaded or disposed that frame is lowered at the next texture-count change.
+8. **The POC is not shipped content** and the re-staged gates need `?poc=biome`, `window.__R5BIOME__` and the two
+   symlinks of §0.2 until `A-gpu-tier` re-stages on the W1 Pans (round 0 gap, unchanged).
+9. **No judged `A-gpu-tier` run on this round's engine (fix round 4).** The only timed run on the
+   seeded-noise engine (`Q1`) is unjudged. Every clock read under its bar, but the vista read 12.82 ms
+   against the 13 ms bar, closer than fix round 2's judged 11.78–12.35. Its third burst (15.89) overlapped
+   another lane's Chrome. R45's proviso ("code unchanged since the builder's timed runs") is met by `Q1`
+   only as an unjudged run. The interleaved `X-noise-ab` shows the texel-value change costs nothing, but it
+   ran on a loud box. If the orchestrator's quiet runs read the vista over 13 ms, R45 gives this lane a
+   targeted fix round.
 
 ## 7. For other lanes and the orchestrator
 
-- **Orchestrator:**
-  1. **Rule `pool-terrain-build`.** Put `<!-- r5-ruling pool-terrain-build=accepted -->` (or
-     `=rejected`) on its own line in `docs/ROUND5-PLAN.md`. On the quiet-box measurements:
-     - *accepted* → **1024 m** (PLAY_RADIUS 490, MESH_SEGS 686, nav R 492), and the gate PASSes. This
-       binds world-ground to a pool build bit-identical to the single-thread one, timed cold inside
-       the real boot (proposed W1 text in `ROUND5-ENGINE.md` §2.6).
-     - *rejected* → **720 m** (PLAY_RADIUS 343, MESH_SEGS 482, nav R 345), and the gate reads FAIL at
-       1024 m with the fallback written, which is the plan's "else" clause.
-  2. **Confirm with one quiet run:** `node tools/gates.mjs --port 5270 --extra
-     tools/gates.r5.engine-gpu.mjs --only A-terrain-1024-probe-box,A-terrain-1024-probe`, one Chrome
-     on the box. The gate then writes the ruled size.
-  3. **Rule which wave grades `A-rt-ledger`'s bar** (`<!-- r5-ruling rt-ledger-bar=W0b -->` or
-     `=W0a`). Unruled, it is graded at W0a and reads FAIL.
-  4. A9 (Round-4 bar) has valid quiet grades: 5 of 6 PASS. A21 FAILs on the quiet box on its 20 ms GPU
-     bar. Both belong to the W0b tier decision and gates-perf's R26 re-cast.
-  5. Rule how `A-reach-all-sites`' "nav build ≤ 150 ms" is graded at the W0 exits. Today's nav is
-     220–237 ms at N 333.
-  6. Put the binding W1 conditions of the ruled size (`ROUND5-ENGINE.md` §2.6) into the W1 brief,
-     `A-world-size` and `A-reach-all-sites`.
-- **gates-perf:**
-  - record the ledger with one line in `tools/budgets.mjs`: **`export { RT_LEDGER } from
-    './r5-probes/rt-ledger.mjs';`** (a leaf module, so no cycle). **Never** re-export it from
-    `./gates.r5.engine-gpu.mjs`: that closes a cycle and the runner loads no gate. A-rt-ledger then
-    compares the rows with the live ledger;
-  - give A9's R26 re-cast the quiet-box witness (`QUIET`, `sampleBox`);
-  - keep the runner passing the same gate objects to runner `check({ GATES })`, and keep honouring
-    a gate's `params`;
-  - `A-vram-ledger` can reuse `engine.renderTargetLedger()`, `VRAM_CENSUS` and the `?rtTally=1` tally.
-- **world-sky (W1):** `environment.js:446–449` drops the PMREM target, so its 3.15 MB depth
-  renderbuffer (and the 6.29 MB texture) can never be disposed. Either keep the target, register it
-  (`engine.registerRenderTarget('env:pmrem', rt)`) and dispose it on rebuild or teardown; or render
-  the room into a cube target, run `fromCubemap` (its output has no depth) and dispose the cube target,
-  which saves the 3.15 MB for good. Also dispose the `RoomEnvironment` (it has `dispose()`), and
-  register `CAL.lightShafts` (`sky:lightShafts`).
-- **world-ground (W1):** the per-vertex budget of the chosen size; `getHeight` from the baked grid;
-  `{ maxExpansions }` on long paths; drop `uv`; `riverFactor` → 0. The pool build is required only if
-  the orchestrator accepts it, with `parallelBuild` / `compareBuilds` as the reference.
-- My files do not overlap the other three W0a lanes' files (`engine.js` and `tools/r5-probes/` are
-  mine alone), so the four branches merge in any order. The only shared read is `tools/budgets.mjs`,
-  read tolerantly, now with no top-level await.
+- **Orchestrator:** (a) fix round 1 left you a trade (2× and a soft salt pan, or 4× and a red vista); fix
+  round 2 replaces it with the role split — read §5.1 and `V-gpu-tier-look` crops 3 vs 4; (b) **`A-rt-ledger`
+  under R44:** after merging `r5/w0a-gates-perf` (its `tools/budgets.mjs:141` carries the line), run
+  `node tools/gates.mjs --port 5270 --lane engine-gpu --only A-rt-ledger-census,A-rt-ledger` on main, which
+  reproduces `M1`. Merge order does not matter for this lane: the only file both branches changed is
+  `docs/ROUND5-PLAN.md`; (c) **`A-gpu-tier` under R45:** run it 3 times on a box with no other gate Chrome alive
+  for the whole run (`docs/ROUND5-ENGINE.md` §3.4). This round changed `engine.js` (the denoise noise only), so
+  the R45 proviso rests on this round's timed runs, `Q*` in §0; (d) a fresh tree needs the two POC symlinks of
+  §0.2 (gitignored, untracked) or the POC rows fail to boot; (e) **A108 is now deterministic:** expect the
+  byte-identical detail of §5.1 on main (worst 0.135, witness 0.239 / 0.102 / 0.114, noise hash `a698df06`).
+  A different reading means the noise or the denoise changed (§6 item 0).
+- **gates-perf:** the `RT_LEDGER` re-export is already committed on your branch (`budgets.mjs:141`, verified
+  in `M1` with no import cycle). Keep it through your exit. Your `A-vram-ledger` already agrees with the ledger
+  to the byte (`M2`).
+- **world-ground (W1):** the ground shader is the vista's cost; keep relief in the normal maps (data textures
+  get 4× at `high`) and expect albedo at 1× (trilinear) on the POC's evidence; the W1 re-grade can raise it. §4.3's limits are what let `high` return to 4× everywhere.
+- **world-sky (W1):** cascades ≥ 1 render on alternate frames at `high` (`csmFarCadence`); ask `enableCSM`
+  for what you want, `engine.csmMapSizes` says what you got. A camera cut shows one frame of the previous
+  far-cascade map.
+- **shell-ui (W2):** tier names unchanged; `high` is the default.
+- **any lane touching GTAO** (`engine.gtao`): the denoise noise is the engine's seeded texture; replacing
+  `gtao.pdNoiseTexture`, calling three's `generateNoise()`, or changing `updatePdMaterial` makes A108 fail its
+  determinism clause or can blind its witness. Use `engine.setGtaoNoiseSeed(GTAO_NOISE_SEED)` to restore.
+- **any lane appending a post pass:** append after SMAA as the studio pass does; the scene target is never a
+  write target and `postTarget` (18 MB) is allocated when a pass needs it.
 
 ## 8. Process hygiene
 
-- Every Chrome came from `tools/gates.mjs` or `tools/screenshot.mjs` on `--port 5251`, one at a time,
-  each after a preflight:
-  - ≥ 3 GiB disk free, read by `df -k`, stricter than 3 GB;
-  - ≥ 25 % memory free;
-  - < 2 headless Chromes machine-wide, the semaphore's limit, kept by hand until gates-perf's lands.
-
-  The quiet runs also required 0 other headless Chromes and load < 3. After 10:28 the disk floor
-  held every launch.
-- The A9 attribution control swapped `src/core/engine.js` for HEAD's for the two HEAD runs only, from
-  a script whose exit trap restored the lane's copy. The SHA-1 was checked after every swap and at
-  the end: `57b3ba28…` is the final file.
-- Vite on 5251 was started from the tree with `npx vite --port 5251 --strictPort` and killed at the
-  end. Every gate run reported "this run leaves 0 of its own" profiles.
-- Scratch is `scratchpad/r5/engine-gpu/{run,film,controls,cycle3,node-lab}`. The tree's ignored
-  `shots/gates/` holds 508 MB of gate screenshots: 31.6 MB from this lane's runs and ≈ 470 MB from
-  another agent's full-suite run in this tree at 07:43. The lane did not delete them. The
-  orchestrator may clear them to give the disk back.
-- Port 5173 was never touched.
+- Every Chrome came from `tools/gates.mjs` on `--port 5251`, one at a time, through
+  `scratchpad/r5/engine-gpu/run.sh`: the machine-wide Chrome slot of PLAN §0 rule 8 held only for the run,
+  disk ≥ 3 GB and memory ≥ 25 % checked before and after taking it. Timed runs (`qrun.sh` → `run.sh` with
+  `QUIET=1`) take the slot only at an instant with load < 3 (2.5 for `G6`, `G7`) and no headless Chrome alive,
+  never holding a slot while waiting, and sample load and headless Chromes every 2 s (`run/<tag>.box`).
+- Runs in fix round 4: `S1` (exploration), `W1` (A108 + diagnostic), `W2`–`W5` (A108 alone), `T2` (the one
+  suite run), `Q1` (timed), `N1` (exploration) and `F1` (final check). `Q2` and `Q3` were quiet-only attempts
+  that never started a Chrome (§0). `run.sh` now polls for a free slot every 4 s
+  (was 30 s), and it has a `QSTRICT` mode in which a quiet-only attempt gives up at its deadline and does not run
+  on a loud box.
+- Runs in fix round 3: `M1`, `M2`, `M4` and `T1`. `T1` is the one suite run. `M3` and `M5`, the quiet-only
+  attempts at the timed pair, never started a Chrome (§0.1). The `M` runs used
+  `run-merged.sh`/`qrun-merged.sh`: the same slot, preflight and quiet rules as `run.sh`/`qrun.sh`, with gates-perf's
+  committed runner from the read-only merged gate side (§0.1) against this tree's Vite on 5251. That runner also took its
+  own semaphore ticket.
+- Runs in fix round 2: `F3`, `P1`, `X1`, `X2`, `L12`, `F4`, `G1`, `G2`, `P2`, `G3`, `G4`, `G5`, `G6`, `G7` (14).
+  `F4` was the one full suite on the split mechanism. `F3` re-ran the evidence on fix round 1's engine after the
+  reboot.
+- Vite on 5251 was started from the tree with `npx vite --port 5251 --strictPort` and killed at the end. At the
+  end: 0 headless Chromes on 5251, 0 `cal-*-5251-*` profiles, no Chrome slot held, no loop of this lane left
+  running. Port 5173 was never touched. No git write was run (the WIP commits on this branch are the
+  orchestrator's checkpoints).
+- Screenshots: no PNG is left in the tree (`shots/gates/` holds only the runner's report files). Kept in scratch:
+  fix round 3's sheets (`run/M2/`, `run/M4/`), fix round 2's (`run/P2/`, `run/G2/`) and the exploration crops
+  (`run/X1/`, `run/X2/`). The action-gate frames were deleted once read.
+- Scratch is ≈ 57 MB. `merged/` (48 MB, the read-only merged gate side of §0.1, kept so `M1` can be reproduced:
+  `cd merged && node tools/gates.mjs --port 5251 --lane engine-gpu --only A-rt-ledger-census,A-rt-ledger` with
+  the tree's Vite on 5251) can be deleted after the gates-perf merge. The rest is reports, logs, `*.box`, the run
+  scripts, `combo.gates.mjs`, `explore/` and fix round 2's superseded `budgets-proof/` and
+  `budgets-rt-ledger.patch`. The judge scratch was deleted. Free disk ≈ 45 GB at the end.
