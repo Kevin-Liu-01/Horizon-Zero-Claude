@@ -8682,9 +8682,12 @@ const NEW_VISUALS = [
       const S = await import('/src/hero/sheets.js');
       const W = 780, H = 860;
       const live = (pos) => S.liveView(C, [pos.x, pos.y, pos.z], [tgt.x, tgt.y, tgt.z], { width: W, height: H, fov: 34 });
-      const side = new T3(head.x + rx * 1.75 + fx * 0.15, head.y - 0.05, head.z + rz * 1.75 + fz * 0.15);
+      // the side view is raised ~20 deg so it looks across the draw roughly
+      // square to its plane (the whole T-form — trunk, arms, head — is pitched
+      // down with the aim; a level lens looks UP under the bowed face)
+      const side = new T3(head.x + rx * 1.55 + fx * 0.20, head.y + 0.55, head.z + rz * 1.55 + fz * 0.20);
       const d34x = (fx + rx) / Math.SQRT2, d34z = (fz + rz) / Math.SQRT2;
-      const q34 = new T3(head.x + d34x * 1.6, head.y + 0.02, head.z + d34z * 1.6);
+      const q34 = new T3(head.x + d34x * 1.5, head.y + 0.45, head.z + d34z * 1.5);
       const a = live(side), b = live(q34);
       const cv = document.createElement('canvas'); cv.width = 1600; cv.height = 900;
       cv.style.cssText = 'position:fixed;left:0;top:0;width:1600px;height:900px;z-index:2147483646;background:#f4f1ea';
@@ -8693,8 +8696,8 @@ const NEW_VISUALS = [
       const put = (img, x) => { const t = document.createElement('canvas'); t.width = W; t.height = H; t.getContext('2d').putImageData(img, 0, 0); g.drawImage(t, x, 34); };
       put(a, 14); put(b, 806);
       g.fillStyle = '#2a2420'; g.font = '600 15px ui-monospace, Menlo, monospace';
-      g.fillText('FULL DRAW, AIM 43 deg DOWN — from her RIGHT', 18, 24);
-      g.fillText('— from her FRONT-RIGHT 3/4', 810, 24);
+      g.fillText('FULL DRAW, AIM 43 deg DOWN — from her RIGHT (lens raised 20 deg, square to the draw)', 18, 24);
+      g.fillText('— from her FRONT-RIGHT 3/4 (raised)', 810, 24);
       g.fillText('middle knuckle -> nock ' + kn.distanceTo(nk).toFixed(3) + ' m   fingertip -> nock ' + ft.distanceTo(nk).toFixed(3) + ' m   drawStrength ' + C.combat.drawStrength.toFixed(2), 18, 892);
       return { drawS: C.combat.drawStrength, knuckleToNock: +kn.distanceTo(nk).toFixed(4), fingertipToNock: +ft.distanceTo(nk).toFixed(4) };
     })()`),

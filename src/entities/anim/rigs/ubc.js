@@ -158,10 +158,12 @@ export const UBC_TUNE = {
   // knuckles ride outside the jaw and the hooked fingers curl in to the string
   drawWristExt: 0.35,
   // fix round 4 (judge r1, the 0.75 down aim: knuckle 0.109 m from the nock,
-  // the fist on the headwrap): the wrist behind the nock along the arrow with
-  // its downward share limited to 0.25 (level / up-aims untouched), and the
-  // hand turned about the wrist until the middle knuckle is within 0.052 m of
-  // the nock (level / up-aims measured 0.060-0.062)
+  // the fist on the headwrap): the hand is turned about the wrist until its
+  // middle knuckle is within 0.052 m of the bow's RENDERED nock (level / up-aims
+  // measured 0.060-0.062 before). `behindNockDownY` (a limit on the wrist's
+  // behind-the-nock offset at down aims) was measured at 0.25 and left OFF: it
+  // dropped the down-aim draw elbow to -0.0307 m against A-draw-elbow-level's
+  // -0.03 floor (run f4b)
   behindNockDownY: null,
   knuckleNock: 0.052,
   // the bow's lateral offset off the anchor line (char +X = her left; Round 4

@@ -19,6 +19,164 @@ out left-rear and a 1.5× crescent (§00.6). Global list items present: A1, A20b
 A81 / A-ID-ip-assets-gone / A-licence-manifest fail on other lanes' unmerged rows; A-assets-tracked errors on a
 `models-staging/r5-src` symlink this lane did not make (§4.5).
 
+## 000. Fix round 4 (Oct 22–23, after judge r1) — what changed, by finding
+
+Rulings read first (plan §8.3, new since fix round 3): **R46** (instruments-core's allocation residual; nothing
+for this lane) and **R47** (the Round-4 spear rows on Brea are SKIP-replaced(melee W1) at the W0b exit, with one
+floor binding on hero-body; A81 graded on main after the gates-perf merge). Every number below is from this tree
+on port 5252 (gate runs `f4a`, `f4b`, `f4c`, `f4lane1`, ⟨RUNS⟩; probes `filmdbg`, `combo-b`, `dh3`, `aimf`, `hf`
+under `scratchpad/r5/hero-body/bin/`); every film cited was read.
+
+### 000.1 A31b's film cut her off at the shoulders (findings 1 and 8, blocker)
+
+*Found* (probe `filmdbg`, the gate's own −0.8 film staging on the 38.8° face): the lens stood 1.40 m over her
+feet, 1.51 m out, with the boom rotated 36.3° and the view already at its 25.8° look-up budget — her head at NDC
+y −0.75, both clavicles at −0.95 / −0.96, the top of her under the centre. The camera could not bring her up by
+turning the view (that is the budget A31b grades), so only the LENS could move. Cause: below the pitch clamp the
+rotation scan priced every rotated candidate at the long look-up boom (2.23 m at camPitch −0.8), and the boom
+actually applied was then cut back to the un-rotated 1.45–1.50 m (fix round 3's length cap) — so the rotation
+kept was the one a 2.2 m boom needs, carrying a 1.5 m lens ~0.25 m higher than that length needs. On that face
+(ground 0.72 m up at 1.25 m out, 0.79 m at 1.5 m; the march's 0.45 m clearance; A31b's 1.20 m lens bar; the
+20° the budget leaves the view) the one good lens is closer and lower: ~1.25–1.4 m out at ~1.2–1.3 m over her feet.
+
+*Fix* (`src/entities/player.js`, hero-body's W0 grant): **the hillside boom** — in the deep look-up regime under
+the clamp (`_deepK` > 0.5, not aiming, not crouched, camPitch > clamp + 0.15), a rotated candidate is priced,
+and the applied rotated boom is held, at `HILL_BOOM` 1.40 m (A31b's 1.20 m bar + 0.20); the smallest clearing
+rotation at that length is refined by `ROT_REFINE` 6 bisections inside the 5.2° scan step, to clear the march by
+`ROT_MARGIN` + `HILL_EXTRA` (0.04 + 0.08 m). The pitch clamp (A31c / A31e / A31f), aiming and crouching keep
+their rules untouched. (Two settings were measured and dropped: 1.32 m / +0.02 m filmed the frame best — top
++0.34, clavicles −0.73 — but A31b's `hillside80` staging then had `cameraBoom` back its planned boom off 0.40 m
+and `_preCut` shorten it to 1.16 m, under the 1.20 m bar, run `f4a`.)
+
+*After* (⟨A31B-RUNS⟩): the film — boom 1.40 m, lens gap 1.40, look-up 20.1° (> 15), opacity 1, her head at
+NDC y −0.61, clavicles −0.81 / −0.82 (±0.9), her top +0.08 (> 0), sky: top row 0.89, all rays 0.40, skyline 0.60,
+near ground 0 → `filmSolid` true; all 16 stagings clean (0 ghosted / jammed / hijacked / off-screen, lens ≥ 1.31 m,
+`hillside80` 1.40 m with no cut, the trunk still fades her to 0.48). Film read: her head, the headwrap and knot,
+both shoulders and the upper back with the stowed bow and lance, in the lower half; the mountains and blue sky
+above — a look-up over her shoulder, not a frame of dirt.
+
+### 000.2 A-no-override failed on this lane's `dismount` (finding 2)
+
+`player.dismount(cause)` → **`player.endRide(cause)`**, event `'player-dismount'` → **`'player-ride-end'`**
+(`src/entities/player.js`; the §3.2 contract is `player.ride(path, clip)`, the exit name is not part of it).
+A-no-override's static half on this tree: raw 0, code 0, **identifier hits 0** (was 8), removal-only true.
+A-ride-hook now also asserts `endRide`, the two `player-ride-end` events with cause `input`, and that no
+`player.dismount` exists: PASS (pelvis ≤ 0.0072 m from the seat on 100 seated frames; geometries 162→162,
+textures 116→116, listeners 34/2→34/2).
+
+### 000.3 The carried player-melee rows on Brea (finding 3) — R47
+
+R47 (Oct 22): A100–A107 report SKIP-replaced(melee W1) at the W0b exit; melee grades them on Brea with the lance.
+What this lane measured before the ruling, for melee's W1 start (gates-perf's re-staged rows from `carried.mjs`,
+renamed `@carried`, on Brea): **A102 PASS** (the Round-4 file's FAIL is its literal `'hand_r_045'`); **A100**:
+every geometric clause passes, the only miss is "the spear is invisible" (the Round-4 procedural spear is
+hidden while the stow kit's Shepherd's Lance is the one she wears — two lances on her back is the alternative);
+**A101**: the bow's back socket is `spine_02` (the rig profile's alias of Aloy's `spine_03_08`) where the row
+expects `animator.b.spine3`; **A105**: the standing row's planted-ball test `(ball.y − ground) ≤ 0.012` is Aloy's
+ball-joint height — Brea's planted ball joint sits 0.0227 m over the ground with the sole on it (probe `feeth`:
+idle 0.0193–0.0288; `animator._ballRest`, which the re-staged A18 already subtracts). Melee's re-table and
+gates-perf's re-stage own those (§7).
+
+**The R47 floor, binding here — new gate `A-melee-floor`:** light ×3, a heavy (LMB held 0.7 s), the melee-ready
+key and a block press (RMB) on Brea throw nothing (error events, rejections, console errors: **0**), and leave
+her in a valid locomotion state — not aiming, no swing active, holstered, **0 non-finite bones** — after which,
+from a standstill on a flat 46 m strip, she **walks 1.46, jogs 5.02, sprints 6.86 m/s** (median of the last sim
+second; floors 1.2 / 4.35 / 6.12) with her feet alternating (9 / 11 / 18 plant changes). PASS (`f4b`).
+
+### 000.4 A31c against the Aloy baseline (finding 4) — R36
+
+⟨A31C⟩
+
+### 000.5 V13: the trailing foot toe-down and dragging (finding 5)
+
+*Found* (probe `v13feet`, a 2.4 s aim side-step to her left, every frame): both feet already point along the
+travel line (planted 85–90°, swing 70–112° in her frame; the yaw was not the fault), but the swing foot carried
+the walk clip's plantar flexion — the ankle up to 0.28 m with the toe at 0.03–0.07 m, the foot near vertical,
+which from the front lens reads as a foot pointing at the camera — and the toe tip dug **0.6–1.8 cm under the
+ground** for the first frames of every swing (a toe drag).
+
+*Fix* (`src/entities/playerAnimator.js` `_strafeSwingFeet`, after grounding): while aim-strafing, a foot in the
+air is turned about its ankle (the leg does not move) so its toe pitch is ≤ 0.45 rad below the horizontal and its
+toe tip ≥ 0.015 m over the ground; a planted foot is never touched. (Tightening the swing-foot yaw latch to 0.15
+rad was tried and reverted: a turn about a pitched foot's local up twisted it to 0–20° mid-swing, measured.)
+*After:* no toe under 0.017 m in any swing frame (probe `combo-b`). The film is re-staged closer (3.3 m out, lens
+at hip height: she fills ~64 % of the frame, was ~41 %) and asserts the aim state before it films (R33 g: a red
+banner names a staging that was not aiming). Read (`f4c`, cropped to the feet): mid-step, the planted left boot
+flat and pointing along the travel (screen right), the lifted right boot also pointing along the travel, slightly
+plantar-flexed, clear of the ground — the same way within ~15°.
+
+### 000.6 V23: the alidade read static (finding 6)
+
+The bible fix, now: **the cord is shortened to the sternum and the cord itself is modelled.** `brea.mjs`
+`CHAINS.alidadeCord` 0.157 m → **0.078 m** of hanging cord (root at the sternal notch, the tube at mid-sternum:
+idle 1.258 m over her feet, the clavicles at 1.339; it hung at 1.166 before); `kit-v0.mjs` adds the **neck cord**
+— a 4.4 mm cream cord looping round the neck (behind the nape, round both sides, over the collarbones to the
+notch; skinned neck_01 → spine_03) and the hanging strand down to the tube (blended `dyn_alidadeCord_01` →
+`_02`, so the raise draws it taut instead of tearing it), ≥ 8 mm off the measured neck/smock surface; 112 tris
+(the tube 10 → 8 sides pays 24 of them) — A-hero-draws 19,920 ≤ 20 k. The cord is a short pendulum now, not
+gear: profile `tune.dynClass.gear` stiff 115, maxAng 0.42, strike 1.1 (the 'gear' class carries only this cord on
+Brea). A19's gear probe: **37.5° range at a sprint** (was 13.8°). The sources were back (pipeline's staged
+`r5-src`, read-only, `$R5_SRC`), so `brea.glb` (byte-identical to the shipped one before the chain change —
+checked) and the stow kit were **rebuilt from the recipes**; the in-place crescent patch script of fix round 3
+(`kit-v0-crescent.mjs`) is deleted, its change lives in `kit-v0.mjs` (`CRESCENT_K`).
+V23 is filmed a little closer (~1.9 m, look-at the sternum). Read (`f4b`): the brass tube on its cream cord at
+mid-chest in all three strips, horizontal / tilted / swung against the breast — three positions; the wrap tail a
+streamer trailing back from the head, then a twisting band, then a flag straight back; the sash end hanging,
+angled, kicked; the knot tail behind the head — all four move, none rigid.
+
+### 000.7 A81 (finding 7)
+
+Graded on main after the gates-perf merge (R47). The one literal this lane carried, A33-hair-bounce's
+`speed > 6.1`, now reads the build's canon band (`SPRINT_MIN`, the CANON_SPEEDS prelude).
+
+### 000.9 The 0.75 down aim: the hand was not on the string (finding 9)
+
+*Found* (probe `dh3`): the animator aimed the draw hand at its OWN estimate of the nock (`D.nock`, the arm
+solve's `grip + nockOff`), and that estimate is **0.07–0.09 m off the bow's rendered nock** (`combat.bow.
+getNockWorld` — the bow node's offset in the palm), so at the steep down aim the knuckle stood 0.066–0.070 m from
+the real nock while the solve thought it was 0.032. In the head's own frame (probe `hf`) the down-aim draw also
+sits ~3 cm further back than the level draw (the reach clamp's radial fallback at 0.75).
+
+*Fix* (`playerAnimator.js`, profile `tune.knuckleNock` 0.052): after the arm solve and the wrist roll /
+extension, the draw hand is turned about the WRIST (which does not move — A35's anchor and the head guards hold)
+by the least angle that brings the middle knuckle within 0.052 m of the **bow's rendered nock** (closed form on
+the knuckle's sphere round the wrist). `animator.debugDrawHand(knuckle, fingertip)` publishes the two points by
+the rig's own finger entries (no bone literal in a gate). (`tune.behindNockDownY`, a limit on the wrist's
+"behind the nock" offset at down aims, was built and left OFF: it dropped the down-aim elbow to −0.0307 m against
+the −0.03 bar, `f4b`.)
+
+*Gates tightened:* A-draw-elbow-level and the re-staged A16 now require **the middle knuckle ≤ 0.06 m and the
+middle fingertip ≤ 0.06 m from the bow's nock at every row**. New visual **`V24-draw-down`**: full draw at 0.75,
+from her right and her front-right three-quarter (raised ~20°, square to the bowed draw).
+
+*After* (`f4c`): A-draw-elbow-level PASS — knuckle 0.0516–0.0549, fingertip 0.0459–0.0502 at all 8 rows (the 0.75
+row: 0.052 / 0.049; it was 0.109 / 0.088); A16 PASS (knuckle 0.0517–0.0536 / fingertip 0.0457–0.0493 on its 6
+rows); A35, A32, A17, A-wrap-clear PASS. V24-draw-down read: the fist with the ∴ on the cheek under the ear, the
+fingers on the string at the nock at the jaw line, the arrow from there down to the grip, the forearm along it,
+the bow arm straight; the upper string runs forward across the lower face to the tip. V24 (level) unchanged.
+
+### 000.10 The wrap tail: cloth in the wind, not a pennant (finding 10)
+
+*Removed:* fix round 3's `restKick` (profile key and animator code). *Added* (`playerAnimator.js`, profile
+`chainClasses.wrap`): the wrap tail is its own class **`wrap`** — cloth with a **wrapped root** (per-particle
+stiffness rising toward the knot, `rootK` 5) and **air**: every particle of a class with `wind` > 0 is dragged
+toward the air's velocity, `a += wind · depth · (U_air − v)` horizontally, where `U_air` is the **world wind**
+`animator.wind` — default the bible's NE trade wind (§2.2: from bearing 045, "flags stream SW"), 5.5 m/s, with
+slow gusts and a per-chain flutter wave running down the strand; `animator.setWind(fromBearing, speed, gust,
+flutter)` is the hook world-sky drives from its weather. Standing in still air it hangs; standing in the trade
+wind it streams downwind whatever her facing; running she meets her own speed of air and it trails (probe
+`combo-b`, root→end off vertical: idle facing N 41–62° (median 47°, the tip moving 0.10 m over 2 s), idle facing
+S 12–19° (the wind into her back), jog N 40–58°, sprint N 28–63°, jog S 18–43°). Small air terms on the knot tail
+(0.22) and the sash end (0.55). No allocation per frame.
+The sheets are re-staged — she stands facing north in the trade wind (on her front-right) for 1.5 s before the
+views are rendered in one frame — and re-filmed: ⟨SHEETS⟩
+
+### 000.11 Gate-file and contract changes this round
+
+A-ride-hook (`endRide`), A-melee-floor (new, R47), V24-draw-down (new), A-draw-elbow-level and A16 (knuckle /
+fingertip on the string), V13 (closer, aim asserted), V23 (closer, sternum criteria), A33-hair-bounce
+(`SPRINT_MIN`), A-lance-stow (the tails' clearance reads the `wrap` class too). 60 gates in the lane.
+
 ## 00. Fix round 3 (Oct 22, after judge r0) — what changed, by finding
 
 Rulings applied (plan §8.3): **R35** (A-draw-elbow-level: the hand ≤ 0.10 m behind the head plane and always in
@@ -351,9 +509,9 @@ dyn_ chains (the kept spring solver discovers them by name; class by regex):
 | chain | parent | class | what |
 |---|---|---|---|
 | `dyn_hairKnotTail_01..04` + `_end` | `Head` | hair | the knot tail — `chainOf('hair')`, the A33-hair-bounce target |
-| `dyn_wrapSash_01..06` + `_end` | `Head` | cloth | the wrap tail, down the LEFT of the spine (never the draw side) |
+| `dyn_wrapSash_01..06` + `_end` | `Head` | **wrap** (fix round 4; was cloth) | the wrap tail, down the LEFT of the spine (never the draw side); cloth in the world wind with a wrapped root |
 | `dyn_sashEnd_01..03` + `_end` | `pelvis` | cloth | the outfit's linen sash end at the left hip |
-| `dyn_alidadeCord_01..02` + `_end` | `spine_03` | (fallback cloth) | the alidade on its neck cord at the sternum |
+| `dyn_alidadeCord_01..02` + `_end` | `spine_03` | gear (profile `chainClasses`; retuned a short pendulum, fix round 4) | the alidade on its neck cord at the sternum — 0.078 m of hanging cord since fix round 4 (was 0.157: the tube hung at the bottom of the ribs) |
 
 **Face, no Blender** (`tools/build/recipes/lib/face.mjs`, which the NPC recipes reuse — `archetypeDeltas(seed, base)`
 is their hook): the seven landmarks are FOUND on the mesh (`findLandmarks`), a sum of Gaussian bumps moves head,
@@ -381,7 +539,7 @@ the set on one source texture and cost 2.6 k tris against 9.2 k.
 
 | GLB | tris | sockets / notes |
 |---|---|---|
-| `kit/stowkit-v0.glb` | 2,092 (live) | ALL stowed gear as ONE skinned mesh, ONE draw, `_PIECE` bits 1 lance · 2 bow · 4 quiver+arrows · 8 bracer · 16 alidade; the lance on the `stow_lance` socket the carry solve poses (§2.4) |
+| `kit/stowkit-v0.glb` | 2,180 (live; 2,092 before fix round 4) | ALL stowed gear as ONE skinned mesh, ONE draw, `_PIECE` bits 1 lance · 2 bow · 4 quiver+arrows · 8 bracer · 16 alidade **+ its neck cord** (fix round 4: 112 tris, cream, round the neck and down to the tube); the lance on the `stow_lance` socket the carry solve poses (§2.4) |
 | `kit/lance-shepherd-v0.glb` | 338 | 1.55 m pine, 22 cm bronze leaf blade, **7 cm bob-shaped bronze butt cap**, esparto wraps at 20 % and 55 %, vermilion/white graduations on the upper third; `butt grip grip2 stow tip` |
 | `kit/bow-sabina-v0.glb` | 404 | 1.45 m juniper self-bow blockout, esparto grip, horn nocks; `grip nock string_top string_bottom stow` |
 | `kit/quiver-cane-v0.glb` | 964 | rigid cane tube, palm-weave cap over the back half, 12 arrows; `stow mouth` |
@@ -396,9 +554,11 @@ crouched / crouch-walking (A-stow-clearance's 0.05 m holds); the tube 10–12° 
 UAL2 (CC0) plays on the UBC skeleton with no retarget (R15): `ClimbUp_1m`, `Slide_Start/Loop/Exit`, `Consume`,
 `Hit_Knockback`. The seated pose for `ride()` is the UAL1 `Sitting_Idle_Loop`, baked on demand (`CLIPS.sitIdle`).
 
-**Sources.** The recipes read `models-staging/r5-src/` (pipeline W0b) or `$R5_SRC`. Neither exists on this machine
-since the Oct 22 restart (`/private/tmp` was cleared; pipeline's report: no source archive on disk), so this round
-changed no GLB: every change is runtime code, gates and reference text.
+**Sources.** The recipes read `models-staging/r5-src/` (pipeline W0b) or `$R5_SRC`. Fix round 4: pipeline's staged
+sources are back (`trees/pipeline/models-staging/r5-src`, read-only through `$R5_SRC`); `brea.mjs` rebuilt the
+shipped `brea.glb` and `brea-clips-ual2.glb` **byte-identically** before any change (determinism checked), then
+`brea.glb` and the kit (`stowkit-v0.glb`, `bracer-crescent-v0.glb`; the other three kit GLBs byte-identical) were
+rebuilt with the shortened alidade cord, the neck cord and the 8-sided tube (§000.6).
 
 ## 2. Runtime: Brea on the kept stack — the published surfaces (exact signatures)
 
@@ -444,7 +604,21 @@ tune.drawShrugDown 0..1                // draw-shrug share at a steep down aim
 tune.looseOut / looseDown  0..1        // shares of the loose kick out to her right / down the jaw line
 tune.looseClear  m                     // the wrist target is held this far in front of the back of the skull, every aimed frame
 tune.elbowForm   { up:[lo,hi], behindHand, behindHead, looseDrop }   // the elbow's roll-circle form scan (`_elbowForm`)
-tune.restKick    [{ bone, tip, dir:[x,y,z], w, moveDamp }]   // a dyn_ chain's rest turned so root -> tip points along dir (char space), faded on the move
+// (fix round 3's tune.restKick is RETIRED in fix round 4 — see the wind below)
+```
+
+Fix round 4 (§000):
+
+```js
+animator.wind                          // { x, z, gust, flutter } world air velocity (m/s, north = -Z, east = +X); default the NE trade wind
+animator.setWind(fromBearing, speed, gust?, flutter?) -> wind   // world-sky drives it from its weather; no allocation
+animator.debugDrawHand(outKnuckle, outFingertip) -> boolean     // the draw hand's middle knuckle / fingertip, world (gates A16, A-draw-elbow-level)
+animator.debugAim()                    // + knuckleNock (before the turn), knuckleTurn (rad)
+// profile keys (absent = Round-4 behaviour):
+tune.knuckleNock   m                   // the draw hand turns about the wrist until its middle knuckle is this close to the bow's rendered nock
+tune.behindNockDownY  0..1 | null      // (built, OFF on Brea) limit on the wrist's behind-the-nock offset at down aims
+tune.dynClass.gear { stiff, drag, grav, maxAng, strike, base }   // Brea: the alidade's neck cord as a short pendulum
+chainClasses.wrap  '^dyn_wrapSash'     // the wrap tail is class 'wrap': cloth in the world wind (wind 2.3 /s), wrapped root (rootK 5)
 ```
 
 `_footLock` now re-captures a lock whose anchor is more than 1 m from its ball (a teleport is not a slip, §00.2).
@@ -480,11 +654,11 @@ player.mods                          // PlayerMods: fields null = canon; .clear(
   .zoom                              // x camera zoom while aiming
 player.ride(path, clip = 'sitIdle')  // or ride(path, { clip, speed, seat, loop, onExit })
   -> { socket, s, length, cancel(), done: Promise<'input'|'end'|'cancel'|'death'> }
-player.dismount(cause) -> boolean    player.riding
+player.endRide(cause) -> boolean     player.riding   // fix round 4: was dismount() (A-no-override's mechanic lexicon)
 player.surfaces.add({ x, z, r, surface }) -> id ; .remove(id) -> boolean
 player.surfaceAt(x, z)  player.slideDegOn(surface)  player.surface
 player.mantleClip ('climb1m' on a 0.82–1.22 m ledge)  player.mantleK  player.mantleEdge
-events: 'player-ride' {length}, 'player-dismount' {cause}, 'player-slide-exit' {cause}
+events: 'player-ride' {length}, 'player-ride-end' {cause}, 'player-slide-exit' {cause}
 ```
 
 ### 2.6 Input (`src/core/input.js`, grant: 12 added lines)
@@ -525,7 +699,10 @@ of the back of the skull at full draw.
 | `drawProtDown`, `drawShrugDown` | — (1, 0) | **0.7, 0.4** | flat Lmax over pitch; the down-aim elbow up-and-back of the hand under the shoulder joint (§00.1) |
 | `bladeLock` | — | **{ ref −0.311, gain 1 }** | closed-loop chest blade while moving (§00.1) |
 | `elbowForm` | — | **up [−0.022, 0.04], behindHand 0.072, behindHead 0.17, looseDrop 0.15** | the elbow's roll-circle form scan (§00.1) |
-| `restKick` | — | **wrapSash: dir (0.68, −0.62, −0.39), moveDamp 0.4** | the wrap tail's rest out to her left-rear, faded on the move (§00.6) |
+| `restKick` | — | **retired (fix round 4)** | replaced by the `wrap` chain class in the world wind (§000.10) |
+| `knuckleNock` | — | **0.052** | the middle knuckle on the string at the bow's rendered nock, every pitch (§000.9) |
+| `behindNockDownY` | — | null (off) | built and measured; dropped the down-aim elbow under its bar (§000.9) |
+| `dynClass.gear` | — | stiff 115, maxAng 0.42, strike 1.1 | the alidade cord as a short pendulum (§000.6) |
 | `drawHandRoll` | — | 1.0 | back of the hand to her right (∴ out) |
 | `anchorPitch` | — | level 0, up +0.016, down −0.012 | A35 band at the up-aims |
 | `restGrip`, `restReach`, `rayFwd`, `rayH` | (0.14, 1.42, 0.03), 0.42, 0.45, 1.43 | same, 0.40, 0.42, 1.42 | ready hold, first-frame aim ray |
@@ -643,19 +820,23 @@ exactly these overlays; standalone:
 
 ## 6. Honest gaps and W0 bridges
 
-- **A31b — its FILM's composition clauses** (§4.3): the −0.8 hillside film is a good look-up frame (her head and
-  shoulders at the bottom, sky and the mountain skyline above, solid, lens 1.5 m) but her crown sits at NDC −0.11
-  (clause: above the centre) and her clavicles at −0.95 (clause: inside ±0.9) with the view at its 25.8° look-down
-  budget. Every staging clause of A31b passes. Not closed.
+- **A31b's film is solid but its margins are a few hundredths** (§000.1): her top at NDC +0.08 (> 0) and the
+  clavicles at −0.81 / −0.82 (±0.9) in `f4b`; the clearance margin that keeps `cameraBoom` from cutting the
+  `hillside80` boom costs framing. ⟨A31B-GAP⟩
 - **The camera's answers on the 38.8° face rest on many coupled thresholds** (swing / rotation / dolly / lift / cut
-  floor / keeper / hijack): this round found the dominant cause of the run-to-run flips (§00.2: the post-teleport
-  lunge) and fixed it, but A31 rows still move by a sample or a few hundredths between runs.
-- **A31c** — failed on the Round-4 baseline (R36: listed, not graded at W0b). Head-seen unchanged; by its ratio bar
-  six moving rows read worse because the pinned control's onFrac rose with the idle tail (§00.3).
-- **The alidade hangs at her right waist, not at the sternum** (bible §3.1 / §3.5): the v0 kit's cord chain is
-  ~0.18 m too long. V23's criteria now say where it is; armory's W1 kit pass should shorten it.
-- **The wrap tail's kicked rest** reads as a pennant at idle (no flutter of its own); in the side silhouettes it is
-  still mostly behind her head.
+  floor / keeper / hijack / now the hillside boom); fix round 3 removed the post-teleport lunge, fix round 4 the
+  long-boom pricing, and the rows still move by a sample or a few hundredths between runs.
+- **A31c** — ⟨A31C-GAP⟩
+- **The down-aim draw sits ~3 cm further back than the level draw** in the head's frame (the reach clamp's radial
+  fallback at 0.75); the hand is on the string (knuckle 0.052 m) and at the jaw line, the forearm along the arrow.
+  **The animator's own nock estimate (`D.nock`) is 0.07–0.09 m off the bow's rendered nock** (the bow node's offset
+  in the palm; probe `dh3`): the knuckle turn now targets the rendered nock, but the arm solve's anchor and Lmax are
+  still expressed about the estimate — armory's W1 bow (Sabina in `bow.js`) should publish its grip node so the
+  solve can use the real one.
+- **The wrap tail is thin edge-on** (a 0.10 m strip): it streams and flutters now, but seen edge-on (V23's strips)
+  it reads as a ribbon; a wider tail is a W1 art question (bible: 0.40 × 0.07 m).
+- **R47 handover (melee W1):** A100's visible-spear clause, A101's back-socket bone (`spine_02` vs
+  `animator.b.spine3`) and A105's planted-ball literal (0.012 m, Aloy's ball joint) are written up in §000.3.
 - **W0 bridge — `SPECS.hero`**: `src/hero/rows.js` points the `hero` row at Brea at runtime; `assets.specs.js`
   (pipeline) still names `/models/aloy.glb` (A-assets-tracked's miss) — R39: the orchestrator merges pipeline's swap
   in the same window, pipeline first.
@@ -663,40 +844,37 @@ exactly these overlays; standalone:
   armory loads `bow-sabina-v0.glb` in `src/combat/bow.js` (the W0 bridge `HeroRig._applyBowSolve` writes `pull`
   **0.582** onto combat's bows; `holdPreview()` binds the Sabina for measurement). **A-input-actions' settings-list
   clause** (R38, shell-ui W2).
-- **No GLB was rebuilt from source this round**: the recipes need `models-staging/r5-src/` (or `$R5_SRC`). The one
-  asset change — the crescent fin — was applied to the shipped GLBs in place by `kit-v0-crescent.mjs` and mirrored in
-  `kit-v0.mjs` (`CRESCENT_K`) for the next rebuild.
 - **Stow kit, for armory's W1 art pass**: the quiver tilts with the pelvis (10–12° from vertical at idle, 39–42° at a
   sprint; bible 20°); during a full draw the carry solve stands the stowed lance up beside her left side.
 - **No licence-clean ledge-climb still** in `reference/r5/**` yet (V-traversal's climb panel is graded on the
   written criteria).
-- **`public/LICENSES.json`**: unchanged this round (the crescent patch is project-original work under the
-  `brea-kit-v0` row); pipeline's fold turns `ubc-standard`, `mco-fantasy-standard`, `ual2-standard` into derived rows
-  at the merge.
+- **`public/LICENSES.json`**: unchanged (the neck cord is project-original geometry under the `brea-kit-v0` row's
+  `kit/*.glb`; `brea.glb` stays under `ubc-standard`); pipeline's fold turns `ubc-standard`, `mco-fantasy-standard`,
+  `ual2-standard` into derived rows at the merge. No asset record carries a per-file hash of the rebuilt GLBs.
 
 ## 7. Requests to other lanes and the orchestrator
 
-1. **orchestrator — R35 was issued on my wrong number**: R35 quotes "hand 0.03–0.04 m in front of the back of the
-   skull through the loose", which was my fix-round-2 claim with the sign flipped (§0.2 correction). Please re-issue
-   R35's rationale on the corrected numbers: the loose went 0.023–0.066 m BEHIND the back of the skull before this
-   round; it now holds the hand ≥ 0.012 m in front of it on every sim step (§00.1). The bars as ruled are unchanged
-   and encoded literally.
+1. **orchestrator (R36):** rule whether "must not get worse" for A31c is per clause or per failing-clause count;
+   the comparison against the Aloy baseline is in §000.4.
 2. **pipeline (R39):** set `SPECS.hero` in `src/core/assets.specs.js` to
    `{ url: '/models/hero/brea.glb', targetHeight: 1.77913, yaw: 0, required: true }` and add `heroOutfitPan1`,
    `heroStowKit` and `ANIMS.heroUal2` as data; drop the `aloy.glb` entries in `tools/optimize.mjs`,
    `tools/spike-hybrid-bake.mjs` and `tools/licences/{lib,ip-scan}.mjs`; record `archive_sha256` for `ubc-standard`,
-   `mco-fantasy-standard`, `ual2-standard`, and restage `models-staging/r5-src/` so the hero recipes can rebuild.
+   `mco-fantasy-standard`, `ual2-standard`.
 3. **armory (W1):** load `public/models/hero/kit/bow-sabina-v0.glb` in `src/combat/bow.js`, read `rigProfile.bow`
-   (**drawLength 0.527 / restZ 0.055 / pull 0.582 / arrowLen 0.782**) there, and retire `HeroRig._applyBowSolve`;
-   shorten the alidade cord chain (~0.18 m) so the tube sits at the sternum; pin the quiver's tilt to the trunk.
-4. **orchestrator / player-control owner at W1 (R36 backlog):** A31c and A31b's film composition (§6), and the
-   camera's coupled thresholds on steep faces (§00.2) — this lane's §00.2 notes and probes (`scratchpad/r5/hero-body/
-   bin/{swingdiag,hill*,film,a31e-probe2}.js`) are the starting point.
-5. **world-props (W1):** publish `gatePlaces.sprintStrip` (≥ 50 m flat, clear, dry, straight).
-6. **gates-perf:** a licence-clean ledge-climb still; merge the W0a deletion of `public/anims-hybrid/aloy-ual.json`
-   (A-ID-ip-assets-gone, A-licence-manifest); and note for every camera row's staging: a raw `position.set` teleport
-   now re-plants her feet (§00.2) — stagings are no longer seeded with the lunge.
-7. **settlements (W2, absorbing npc):** `A96-npc-animated`'s stale `travellers >= 4` literal is A81's only failure.
+   (**drawLength 0.527 / restZ 0.055 / pull 0.582 / arrowLen 0.782**) there, publish the bow's grip node (the
+   animator's nock estimate is 0.07–0.09 m off the rendered nock today, §6), and retire `HeroRig._applyBowSolve`;
+   pin the quiver's tilt to the trunk. (The alidade cord is already at the sternum — fix round 4.)
+4. **melee (W1, R47):** the lance tables on Brea; §000.3 lists what the carried rows measure on Brea today.
+   **gates-perf:** A105's standing row should subtract `animator._ballRest` as the re-staged A18 already does (Brea's
+   planted ball joint sits 0.0227 m over the ground with the sole on it).
+5. **orchestrator / player-control owner at W1 (R36 backlog):** A31c, and the camera's coupled thresholds on steep
+   faces (§00.2, §000.1) — probes `scratchpad/r5/hero-body/bin/{filmdbg,hill*,film,a31e-probe2}.js`.
+6. **world-sky (W1):** drive `player.animator.setWind(fromBearing, speed, gust, flutter)` from the weather; the
+   default is the bible's NE trade wind.
+7. **world-props (W1):** publish `gatePlaces.sprintStrip` (≥ 50 m flat, clear, dry, straight).
+8. **gates-perf:** a licence-clean ledge-climb still; merge the W0a deletion of `public/anims-hybrid/aloy-ual.json`
+   (A-ID-ip-assets-gone, A-licence-manifest).
 
 ## 8. The gate file and how it merges
 
@@ -707,31 +885,28 @@ exactly these overlays; standalone:
 - the Round-4 runner on main and in this tree: load it with `--extra tools/gates.r5.hero-body.mjs`; base
   `gates.config.mjs` rows of the same id (A2–A19, A28, A31, A32-draw-ramp, A33-rig-finite, V1–V4, V12–V14) are
   replaced IN PLACE (the runner shares those objects), and rows that live in a `gates.round4.*` file are exported
-  as `<id>@hero` (`shadowOf` names the row), so `--lane hero-body` runs exactly this lane's 58.
+  as `<id>@hero` (`shadowOf` names the row), so `--lane hero-body` runs exactly this lane's 60.
 
-`--extra` takes ONE file; to add another lane's file in the same run, a combiner module that re-exports both
-`GATES` arrays works (this lane's global-list run used one in scratch: hero-body + pipeline).
+`--extra` takes ONE file; to add another lane's file in the same run, a combiner module that re-exports the
+`GATES` arrays works (this lane's global-list run used one in scratch: hero-body + pipeline + instruments-core,
+`bin/combo-global.mjs`).
 
-Fix round 3 changes in the file: A-draw-elbow-level (R35 encoded literally + the per-sim-step follow-through clause,
-8 rows, a `margin` block), A-hero-draws / A-input-actions (R38: binding clauses graded, the other lane's clause
-DEFERRED by name; A-hero-draws gains the ≤ 20 k tris clause), V12 (R37 criteria + `run-side.jpg`), V23 (front-left
-three-quarter staging; the alidade's real place in the criteria), the header.
+Fix round 4 changes in the file: §000.11.
 
 ## 9. Files changed
 
-Fix round 3 (vs this round's base checkpoint `8544703`): `src/entities/playerAnimator.js` (closed-loop blade,
-`drawProtDown` / `drawShrugDown`, the loose: out/down shares, start offset, `looseClear` guard; `_elbowForm` +
-`_efCost`; `restKick`; `_footLock` teleport re-capture; `replant()`; two per-frame `toFixed` strings removed; debug
-fields), `src/entities/anim/rigs/ubc.js` (tune values, `UBC_BOW` re-derived), `src/entities/player.js` (camera: keeper
-on rotation/dolly + clamp-only extra budget + per-rendered-frame step budget, `_preCut`, cut floor easing with motion,
-least applied dolly, dolly credit at the clamp only, rotated-boom length cap, `SWING_UP_ON`; `replant()` on respawn),
-`public/models/hero/kit/{stowkit-v0,bracer-crescent-v0}.glb` (crescent ×1.5, in place),
-`tools/build/recipes/weapons/kit-v0.mjs` (`CRESCENT_K`), `tools/build/recipes/weapons/kit-v0-crescent.mjs` (new),
-`tools/gates.r5.hero-body.mjs`, `reference/r5/hero/{brea-silhouette-sheet,brea-face-sheet}.png` +
-`reference/r5/hero/MANIFEST.md`, `docs/ROUND5-HERO-BODY.md`. (The orchestrator's checkpoints committed parts of this
-as they went; `git -C <tree> diff --stat 8544703` lists the whole set.)
-
-Whole branch vs `a953355`: as fix round 2's list plus the above.
+Fix round 4 (vs fix round 3's final state, checkpoint `d019db8`): `src/entities/player.js` (the hillside boom:
+`HILL_BOOM`, `ROT_REFINE`, `HILL_EXTRA`, `_rotLenCap`, `_hillClear`; `dismount` → `endRide`, `player-ride-end`),
+`src/entities/playerAnimator.js` (world wind + `wrap` class + `DYN_WIND` + `setWind`; `restKick` removed; the
+knuckle turn at the rendered nock + `debugDrawHand` + `debugAim` fields; `behindNockDownY`; `_strafeSwingFeet`),
+`src/entities/anim/rigs/ubc.js` (`restKick` out; `knuckleNock`, `behindNockDownY`, `dynClass.gear`,
+`chainClasses.wrap`), `src/hero/carry.js` (the tails' clearance reads `wrap`), `src/hero/sheets.js` (`liveView`;
+the sheets staged in the trade wind), `tools/build/recipes/brea.mjs` (the alidade cord chain),
+`tools/build/recipes/weapons/kit-v0.mjs` (the neck cord, `cordGeo`, blended pieces, the 8-sided tube),
+`tools/build/recipes/weapons/kit-v0-crescent.mjs` (deleted), `public/models/hero/brea.glb`,
+`public/models/hero/kit/{stowkit-v0,bracer-crescent-v0}.glb` (rebuilt), `tools/gates.r5.hero-body.mjs`,
+`reference/r5/hero/{brea-silhouette-sheet,brea-face-sheet}.png` + `MANIFEST.md`, `docs/ROUND5-HERO-BODY.md`.
+The orchestrator's checkpoints committed parts as they went; `git -C <tree> diff --stat d019db8` lists the set.
 
 ## 10. Process hygiene
 
