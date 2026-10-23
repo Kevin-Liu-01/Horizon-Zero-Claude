@@ -6,7 +6,7 @@ import { ECOSYSTEM } from './ai/tables.js';
 import { setAiRng, seededRng, aiRngSeeded } from './ai/rng.js';
 import { REST_SITE } from '../../world/island/sites.js';
 import { PLAY_RADIUS, EXTENT } from '../../world/island/extent.js';
-import { _st, stepRootS } from './machine.js';
+import { _st, stepRootS, normalizeEyeRecords } from './machine.js';
 import { refreshHot } from '../../instruments/lib/hot.js';
 import {
   BODY as EXPANSION_BODY, CHASSIS, installDoctrine, installExpansionDoctrine,
@@ -211,6 +211,10 @@ export class Machines {
   _spawnCls(Cls, x, z, opts = {}) {
     const m = new Cls(this.ctx, this, { spawn: { x, z }, ...opts });
     releaseBuildScope(m);
+    // the lens records the species shells pushed as plain literals become EyeRecords HERE, at construction:
+    // `updateEyesM` then never meets their shape, so its optimised code embeds no map that dies when the
+    // shell builder's code is flushed (a GC "embedded weak objects cleared" deopt; W0b fix round 2)
+    normalizeEyeRecords(m);
     this.list.push(m);
     // expansion kinds get their components + doctrine here, so a SITE RESPAWN
     // gets them back too (the site replays the same opts through `spawn`)

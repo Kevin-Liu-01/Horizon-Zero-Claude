@@ -38,6 +38,14 @@ export const EYE_COLORS = {
   flash: new THREE.Color(3.0, 3.0, 2.55), // white-hot attack telegraph
 };
 
+/**
+ * The same five colours as plain numbers (calm 0, wary 3, hostile 6, dark 9, flash 12), for `updateEyesM`: a
+ * function that reads module-constant THREE.Color objects depends on the Color class's map staying stable, so
+ * any Color anywhere in the game gaining a property deoptimises it (W0b fix round 2).
+ */
+const EYE_RGB = new Float64Array(15);
+['calm', 'wary', 'hostile', 'dead', 'flash'].forEach((k, i) => { const c = EYE_COLORS[k]; EYE_RGB[i * 3] = c.r; EYE_RGB[i * 3 + 1] = c.g; EYE_RGB[i * 3 + 2] = c.b; });
+
 /** VFX palette (A-vfx-palette): `src/instruments/lib/vfx.js`, re-exported here for older imports. */
 export { VFX_COLORS };
 
@@ -382,6 +390,16 @@ function latticeM(m, t, ni, nj) {
   sc._li = ni; sc._lj = nj; sc._lOk = 1;
 }
 
+/** Every lens record of `m` as an EyeRecord (called by the manager right after a machine is constructed). */
+export function normalizeEyeRecords(m) {
+  const eyes = m._eyeMats;
+  if (!eyes) return;
+  for (let i = 0; i < eyes.length; i++) {
+    const o = eyes[i];
+    if (!(o instanceof EyeRecord)) eyes[i] = new EyeRecord(o.mat, o.base, o.kind, o.part);
+  }
+}
+
 /** `Machine._updateEyes` as a module function (see HOT PATHS, NO PROTOTYPE LOADS). */
 export function updateEyesM(m, dt, t) {
   const sc = m.sc;
@@ -396,20 +414,23 @@ export function updateEyesM(m, dt, t) {
   }
   if (sc._lampPhase < 0) sc._lampPhase = Math.random();
   const phase = sc._lampPhase;
-  let target;
+  // the target colour as an index into EYE_RGB (0 calm, 3 wary, 6 hostile, 9 dark, 12 flash); calm may be the
+  // machine's own variety tint (`_eyeCalm`), read below
+  let ti;
   let pulse;
+  const ecm = m._eyeCalm;
   if (s === 'dark') {
     const age = tt - sc._lampSince;
     if (age < LAMP_SPUTTER_S && m._lampPrev !== 'dark') {
       const pv = m._lampPrev;   // (no keyed load by a varying string: see lamps.js update())
-      target = pv === 'calm' ? (m._eyeCalm || EYE_COLORS.calm) : pv === 'wary' ? EYE_COLORS.wary : pv === 'hostile' ? EYE_COLORS.hostile : EYE_COLORS.dead;
+      ti = pv === 'calm' ? 0 : pv === 'wary' ? 3 : pv === 'hostile' ? 6 : 9;
       pulse = Math.sin(tt * 97 + phase * 13) > 0.1 ? 0.9 : 0.15;
     } else {
-      target = EYE_COLORS.dead;
+      ti = 9;
       pulse = 0;
     }
   } else {
-    target = s === 'calm' ? (m._eyeCalm || EYE_COLORS.calm) : s === 'wary' ? EYE_COLORS.wary : EYE_COLORS.hostile;
+    ti = s === 'calm' ? 0 : s === 'wary' ? 3 : 6;
     // lampGain(s, tt, phase) written out: a double returned from a call is boxed
     const tp = tt + phase;
     pulse = s === 'wary' ? RHY_PULSE + (1 - RHY_PULSE) * (0.5 + 0.5 * Math.cos(2 * Math.PI * tp))
@@ -422,14 +443,16 @@ export function updateEyesM(m, dt, t) {
     sc._telegraphT -= dt;
     if (legacyCue) {
       // attack-windup telegraph (legacy kinds): eye burns white-hot for ~0.4 s
-      target = EYE_COLORS.flash;
+      ti = 12;
       if (pulse < 2.6) pulse = 2.6;
     }
   }
   // the colour eases toward the target (written out: no call takes a double)
   const ec = m._eyeColor;
-  const ea0 = dt * (target === EYE_COLORS.flash ? 25 : 12), ea = ea0 < 1 ? ea0 : 1;   // (no Math.* call takes a double)
-  const dr = target.r - ec.r, dg = target.g - ec.g, db = target.b - ec.b;
+  const useTint = ti === 0 && !!ecm;
+  const tr = useTint ? ecm.r : EYE_RGB[ti], tg = useTint ? ecm.g : EYE_RGB[ti + 1], tb = useTint ? ecm.b : EYE_RGB[ti + 2];
+  const ea0 = dt * (ti === 12 ? 25 : 12), ea = ea0 < 1 ? ea0 : 1;   // (no Math.* call takes a double)
+  const dr = tr - ec.r, dg = tg - ec.g, db = tb - ec.b;
   const easing = dr * dr + dg * dg + db * db > 1e-12;
   if (easing) { ec.r += dr * ea; ec.g += dg * ea; ec.b += db * ea; }
   const lk0 = 1 - sc._deathT * 0.55, lightK = m.state === 'dead' ? (lk0 > 0 ? lk0 : 0) : 1;

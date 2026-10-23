@@ -140,13 +140,58 @@ I instrumented the gate (diagnosis modes, never graded) and found the cause:
     frame qualifies only if its own bytes AND every lane function it calls are ≤ 4 KB/s in every window
     of that run.
 
-{{ALLOC}}
+**Measured** (`A-alloc-machines`, port 5254, KB/s graded = max(KB/s, KB/frame × 60), caller attribution,
+worst of six 10 s windows after a 30 s warm-up; cast hostile 0.88–0.98 of samples in every window). Runs
+F1 (23:07 UTC, before the `_sight` hoist), F5 (00:04) and **F7 (00:11, the final code)**. The "before"
+column is the judge's run on the fix-round-1 code (3 s warm-up, one window per phase, self attribution —
+a weaker method than today's).
+
+| frame (class) | judge, fix round 1 | F1 | F5 | **F7 (final code)** |
+|---|---|---|---|---|
+| this lane's frames, sum per window | 1,029 fight / 420 sprint | 160–279 | 139–1,391 | **102–175**, and 986 in the first-sprint window |
+| `updateEyesM` (lane) | 80.6; 775–887 in a 30 s-warm-up window | ≤ 4 | 965 in the first-sprint window, 0 elsewhere | **737 in the first-sprint window, 0 in the other five** |
+| `conformM` (lane) | 122–126 | ≤ 4 | ≤ 4 | **≤ 4** |
+| `lamps.update` (lane) | 134–136 | 1.5 | ≤ 4 | **≤ 4** |
+| `steerAlongS` / `navTowardS` (lane) | 111–135 / 46 | ≤ 4 | ≤ 4 | **≤ 4** |
+| `_scan` / `_sight` / `hasLOS` (lane) | 46–66 / – / – | ≤ 4 / 7.3 / ≤ 4 | 27.8 (one window) / 12.9 (first sprint) / ≤ 4 | **≤ 4 / 8.7 (first sprint) / ≤ 4** |
+| `Machines._stepMachines` / `_standoffPass` (lane) | 443–461 in a window / – | ≤ 4 | ≤ 4 | **≤ 4** |
+| `Machine.update` (lane) | – | 3.1–5.1 | 13.2 (one window) | **93 (first sprint; with inlining off its own bytes are 0, the bytes are `updateEyesM` / `conformM` inlined into it in that window)** |
+| `_engageFrame` (inlined-frozen) | – | 41.4 | 38.9 | **36.4** — with inlining off its own bytes are 0; frozen `engage.pursue` carries 101–165 |
+| `_statePatrol` (inlined-frozen) | 87.6 | ≤ 4 | 169 (first sprint) | **14.2** — with inlining off 0; frozen `squad.stepConvoy` / `nav.steer` |
+| `Tiller.animate` (inlined-frozen) | – | 47.1 | 70.6 | ≤ 4 in F7; in F5 with inlining off 0, frozen `gait.update` 1,278, `updateCheap` 298, `rig/lod.js updateRigLOD` 94 |
+| `get _speed` / `get heading` / `get _accelPitch` (accessor, frozen-reader share 1.00) | 42 / 22 / – | 31.0 / 18.7 / 13.3 | 21.6 / 19.1 / 10.9 | **15.7 / 11.9 / 11.6** |
+| `get suspicion` (accessor) | – | 1.8 | ≤ 4 | **3.0** (one box per change now) |
+| legacy species (`longleg`, `glinthawk`, `stormbird`, `scrapper`) | 4–22 each | 5–46 | 4–33 | **4–29** |
+
+**Verdict (F7): FAIL.** Steady state is inside the bar for every lane frame: in five of the six windows
+no `lane`-class frame is over 4 KB/s. The failures are:
+- **The first-sprint window.** `updateEyesM` 737, `Machine.update` 93 and `_sight` 8.7 KB/s, every time
+  (F5 and F7 both, and the no-inline runs). The diagnosis run `s9` (`R5_IC_TRACEDEOPT`) puts a GC's
+  "embedded weak objects cleared" deopt (44 functions, `updateEyesM`, `navTowardS` and `_statePatrol` among
+  them) and a 77-function "dependent prototype chain changed" wave (the player's readers: camera, HUD,
+  vignette, `refreshHot`) at the moment she first sprints (61.2 s), when `R5_IC_SHAPEWATCH` shows
+  `player.heading`, `fovBias`, `_fov`, `_faceX`, `velocity`, eleven animator fields and `engine.camera.fov`
+  generalising Smi → double. The deoptimised function then runs in V8's baseline tier for most of the
+  window. I removed every dependency of this lane's code on those objects that I could find (HOT,
+  `EYE_RGB`, born-Double fields); what still ties `updateEyesM` to that GC I did not identify.
+- **The residual classes** (legacy, accessor, inlined-frozen), which pass only under the ruling below.
+`_steerAlong` (the wrapper frozen `engage` calls; it must return the metres moved, a fresh double per
+call) read 5.6 KB/s in F5 and ≤ 4 in F7: it is classed `lane`.
 
 **What only the orchestrator (or another lane) can remove — the request for the ruling.** Record
 `<!-- r5-ruling ic-alloc-residual=carried -->` with these owners and dates, or deny it and the gate stays
 FAIL on them:
 
-{{RESIDUAL}}
+| residual | measured (F7) | who removes it | when |
+|---|---|---|---|
+| **accessor** — `get _speed`, `get heading`, `get _accelPitch` (one HeapNumber per changed value: the readers need a number) | 15.7, 11.9, 11.6 KB/s; 100 % charged by frozen readers | the orchestrator, by grant: the readers read `m.sc.<name>` (identical values) — `gait.js` 754, 871, 925, 928, 931, 1112, 1328, 1882, 1894, 1896, 1904, 1958; `rig/footlock.js` 317, 413, 414; `rig/ground.js` 1147; `rig/footfall.js` 33; `collision.js` 1410, 1651, 1771, 1834, 2058, 2090, 2094, 2127, 2205; `melee.js` 152, 2152 (melee lane) | W1 day 1 |
+| **legacy** — the legacy species files' own frames (`longleg.animate` 29, `glinthawk._fly` 18, `glinthawk.animate` 14, `glinthawk/longleg._statePatrol` 9, `scrapper.update` 7.6, `stormbird.animate` 5.5, …) | 4–29 KB/s | instruments-b deletes them (plan §6) | W2 exit |
+| **inlined-frozen** — `_engageFrame` (36.4), `_statePatrol` (14.2); in other runs `Tiller.animate` (47–71) | their own bytes 0 with inlining off | frozen `engage.pursue` (101–165 KB/s), `nav.steer` (a 7-element `ANG` array per call), `squad.stepConvoy`, `gait.update` (1,278), `rig/lod.js` `updateRigLOD` (94): the orchestrator, by grant (hoist `ANG` in `nav.js`; the frozen machine rig and engage are outside every W0b grant) | W1 or carried |
+
+The gate reads the ruling from the plan with the same pattern as engine-gpu's rulings
+(`/^<!-- r5-ruling ic-alloc-residual=carried -->$/m`). With it recorded, F7 would still FAIL on the
+first-sprint window above; that one needs the other owners' fix below, or a second ruling on a warm-up
+that includes her first sprint (gates-perf's call: it is the same question for `A-alloc-rate`).
 
 **The other lanes' share of the waves** (attribution for gates-perf and the owners; not this lane's to
 edit): hero-body — `player.js` / `playerAnimator.js` fields born as integers (`moveSpeed`, `heading`,
@@ -158,6 +203,30 @@ function in the game that read the object (store 0.5 first, as `MachineScalars` 
 `A-alloc-rate`'s 3 s warm-up measures exactly these waves (the player has not moved yet when its windows
 open); a warm-up that includes a knockback and a sprint, or the owners' fix, is needed before its
 per-function bar can grade steady state.
+
+### The lamp films, re-filmed on this round's code (F4, 00:02 UTC; advisory, read by me, then deleted)
+
+No judge finding cited a film this round; the eye-material change (the pulse folded into the emissive
+colour) and the lamp-system edits touch what they show, so all twelve were re-filmed at last round's
+angles and read:
+- **calm 15 m (4°)** — a white-hot core in a bone ring, set in the graphite drum face with the iris seams
+  and the bezel; the white sensor-sprite halos on the shoulder plates glow in the calm colour.
+- **calm 15 m zoom, face to the sun** — the same lens, still glowing and ringed dark against sunlit
+  grass.
+- **wary 15 m** — a half-closed iris, chartreuse glass with a yellow-white core; the top sensor
+  chartreuse.
+- **hostile 15 m** — a magenta pinhole with a pink core, the blades closed around it; the top sensor
+  pink.
+- **dark 15 m** — the closed grey iris with the fracture and its branch; no lit glass.
+- **three-quarter 15 m** — the lamp is a short barrel with the lit glass at its face.
+- **calm 40 m wide** — the Tiller is a small figure mid-frame; the lamp is a white point.
+- **beams at night / in fog** — a chartreuse sweep and a magenta lock shaft at night; a chartreuse shaft
+  in the rain.
+- **calm sunlit 15 m** — at play scale beside the palisade, a lit point on the drum.
+
+Nothing here differs from last round's readings. The views are unchanged because three.js lights the
+lens with emissive × intensity, and that product is unchanged. There is still no licence-clean reference
+for an R29 judge (gap 2).
 
 ---
 
@@ -484,6 +553,18 @@ instruments-a/-b/-c/-d call it for their kinds.
 
 ## Contracts published (exact signatures; W0b additions — the W0a contract follows in the W0a report)
 
+### Fix round 2 additions (internal to this lane; not contracts for other lanes)
+
+- `src/instruments/lib/hot.js`: `HOT` (fields `root, player, terrain, nav, engine, environment, collision,
+  frame, boxedFrame, playerX, playerZ, simTime, pOk, ppos, pHealth, pMoveSpeed, pCrouch, pTallGrass`),
+  `refreshHot(ctx): void` (once per frame, first thing in `Machines.update`), `playerBoxes(): void`.
+- `machine.js`: `class EyeRecord(mat, base, kind, part)`, `normalizeEyeRecords(m): void`,
+  `lkBoxes(m): void`; `Machine.prototype` accessors unchanged in name and value (each now returns one box
+  per changed value).
+- `ai/perception.js`: `Perception._belief(pd)` keeps its signature (gates); the game calls
+  `_beliefTick()` with the seconds in `this._pd`. `PerceptionHooks._dustPass()` still refreshes every
+  machine; the game runs `_dustSlice(k)` round-robin (each machine once per 0.2 s).
+
 ### `ctx.machines.lamps` — `LampSystem` (`src/instruments/lamps.js`)
 ```
 lamps.attach(machine, anchor: Object3D, { radius = 0.13 } = {}) -> record | null   (one lamp per machine; null at capacity, with one console.warn)
@@ -589,6 +670,56 @@ SIZE_CLASS                        §4.1 classes;   GATES = []
 ---
 
 ## Gates (port 5254, this tree, Oct 22 2026)
+
+### Fix round 2 — the runs that grade this round (supersede every table below wherever they differ)
+
+All on port 5254 in this tree, one machine-wide Chrome slot per batch (plan §0 rule 8), at most one Chrome
+of this lane alive, load average 2.5–5.4 with other lanes' judges running (so A9 / A21's timing terms are
+R45's: PENDING-quiet-box). Reports and logs: `scratchpad/r5/instruments-core/report-F*.json`,
+`run-F*.log`.
+- **Batch 1** (23:07–00:04 UTC): F0 boot check, F1 `A-alloc-machines`, F2 the lane block
+  (`--lane instruments-core`, every row incl. the nested 5/5, 3/3 and per-kind-block runs), F3 the global
+  list items in this tree, F4 the lamp films. Two behaviour-neutral edits landed while F2 ran (23:16 and
+  23:20: `_sight` / `_beliefTick` read their inputs up front; same arithmetic): its first three runner rows
+  (`A-legacy-collapse`, `A-kind-registration`, `A90-rig-reclaim-5of5`) started before them, every later
+  row ran on the edited code.
+- **F5 / F6** (00:04): `A-alloc-machines` and gates-perf's `A-alloc-rate` retried.
+- **F7 / F8** (00:11): `A-alloc-machines` on the code after the `EYE_RGB` change, and a re-run of the rows
+  that code touches (`A1`, `A20b`, `A-lamp-states`, `A-vfx-palette`, `A-perk-hooks`, `A39`).
+- **F9 / F10**: {{F9}}
+
+| gate | verdict | run | measured |
+|---|---|---|---|
+| `A-lamp-states` | **PASS** | F2, F8 | ring ΔE calm 0.58 / wary 0.18 / hostile 0.39 / dark 0.98 (≤ 3); core HDR 2.44 / 1.65 / 1.35 over bloom 1.08; iris lit px 180 / 80 / 32 (ratios 2.25 / 2.50); wary 0.98 Hz, hostile 4.04 Hz, calm rel. std 0; dark sputters then out; beams in fog and at night only |
+| `A-lamp-canon-distance` | **PASS** | F2 | 28 graded tokens, 0 offenders |
+| `A-beams-one-draw` | **PASS** | F2 | 1 beam draw per frame for 8 instances (321 vs 320 calls); geometries, materials, textures, lamp records back to baseline after 3 cycles |
+| `A-perception-weather` | **PASS** | F2 | trade 34.03 m, calima 16.98 m (×0.499), night 24.04 m (×0.706), `detectMul` halves the fill |
+| `A-perk-hooks` | **PASS** | F2, F8 | `detectMul` 0.2779 / 0.5559 = ×0.500 calm, ×1.000 hostile; Flag 3.004 s with Shrug (control 8 s); footstep filter 0 vs > 0; Dust-sight occlusion flag |
+| `A-uv1-survives-fold` / `A-vfx-palette` | **PASS** / **PASS** | F2, F8 | uv1 kept within 1e-4 in the decal group, dropped elsewhere / 19 live colours, closest ΔE 18.7 (bar 15) |
+| `A-roles-published` / `A-kind-registration` / `A-legacy-collapse` / `A-boot-roster` | **PASS** ×4 | F2 | herd → tiller, 11 R18 nulls / a dropped module registers in a scratch copy / 11 legacy kinds behind `legacy.js` / READY 3.4 s |
+| `A-no-override` / `A-no-corruption` | **PASS** / **PASS** | F2 | 0 hits, removal-only / 600 s, 2,366 samples, 0 corrupted |
+| `A90-rig-reclaim` **5 / 5** | **PASS** | F2 | geometry growth 0 / +1 / 0 / +1 / 0, textures 0 |
+| `A90b-memory-attribution` **3 / 3** (R34) | **PASS** | F2 | 0 offenders in each run |
+| `A37` / `A39` / `A43` (`@ic`, on the fixture) | **PASS** ×3 | F2, F8 | peak suspicion 0 while hidden / 30 m: suspicious 1.74 s, alert 3.55 s; 10 m: alert 0.85 s / scene objects −278, 0 orphans |
+| `A-kind-block-file` | **PENDING** (calima only) | F2 | 19 PASS + 5 SKIP-fixture + `A-weak40:herd` PENDING; `A41c` 5 / 5; A44 / A45 / A45c / A46 / A47 / A48 PASS on the lattice-conformed root |
+| `A-weak40:herd` | **PENDING** (calima) | F2 | size 5.5 px (≥ 5); contrast min(9.46, 5.15) = **5.15 : 1** (≥ 3); calima PENDING (world-sky W1) |
+| `A-alloc-machines` | **FAIL** | F7 | see the fix-round-2 section: steady state clean, the first-sprint window and the residual classes fail |
+
+**Global list items present in this tree (F3, F6):**
+
+| gate | verdict | measured |
+|---|---|---|
+| `A1-boot-clean` / `A20b-no-system-errors` | **PASS** / **PASS** | playing / 0 system and hook errors, 356 frames |
+| `A90-memory-stability` | **PASS** | 28 kills, heap −5.4 %, geometries +9, textures −28, objects −1,092 |
+| `A90-memory-stability-expansion` | **PASS** | objects −1,057, non-machine growth 0, orphans 0, geometries +3 |
+| `A90-rig-reclaim` (Round-4 row) / `A90b-memory-attribution` | **PASS** / **PASS** | geometries +7, textures 0 / 0 offenders |
+| `A9-perf-budget` | **PENDING** (R26 / R45) | draws 310 (< 350 PASS); fps 38.8 not attributable (null frame 6.0 ms GPU) |
+| `A21-real-draw-calls` | **PENDING** (R45 timing terms) | draws 310 / 196 / 324 (≤ 350 PASS), triangles 4.12 / 3.67 / 4.23 M (≤ 6.5 M PASS) |
+| `A-ID-ip-assets-gone` / `A-assets-tracked` | **PASS** / **PASS** | 19 GLBs, 0 IP hits / 221 referenced, 0 missing |
+| `A-licence-manifest` (pipeline) | **PENDING** | pipeline's third-party / legacy-source / credits clauses (R42); this lane added no asset |
+| `A-alloc-rate` (gates-perf's unmerged W0b module) | **FAIL** build-wide | F6: `src/**` 93,163 KB/s caller-attributed (bar 64), worst `collision._meshPush` 13,171 KB/s; F3's attempt timed out waiting for `__READY__` in its own Chrome on a loaded box |
+
+Not in this tree: `A90-abs`, `A-vram-ledger`, `A-port-guard`, `A-carried-suite` (gates-perf), the brand lints.
 
 ### Fix round 1 — the runs that grade this round (supersede the first-round tables below wherever they differ)
 
@@ -768,6 +899,32 @@ lens (55°). Centre-pixel colours read from the PNGs.
 
 ## Honest gaps
 
+**Fix round 2 (first):**
+- **A. `A-alloc-machines` FAILS.** Steady state is clean: in five of six windows no `lane` frame is over
+  4 KB/s. Two things still fail it:
+  - The first-sprint window, every run: `updateEyesM` 737–1,006 KB/s, plus `Machine.update` and `_sight`.
+    A GC's "embedded weak objects cleared" deopt and the player-shape wave land in it, and this lane's
+    function then runs in V8's baseline tier for most of the window. What ties `updateEyesM` to that GC
+    is not identified. The last attempt (lens records normalised at construction) was measured in F9.
+  - The residual classes: legacy, accessor, inlined-frozen. They pass only under the ruling.
+- **B. The paired attribution run is the gate's own method.** It decides `inlined-frozen` from a second
+  run with inlining off. It is stricter than doing nothing, since a frame qualifies only if its own bytes
+  and every lane callee are clean there. Still, it is a classification the judges should check: the
+  evidence strings are in the report (`detail.pairedRun.evidence`).
+- **C. The fight is re-armed every second.** A herd cast left alone goes back to patrol before a 30 s
+  warm-up ends. The re-arm (lastKnown, suspicion 1, `forceState('attack')`) keeps it fighting, and every
+  window reports the hostile share (0.88–0.98).
+- **D. The terrain under a machine's root is now the drawn grid read through a 1 m lattice.** Behaviour
+  changes by the lattice error (`heightFast` exact at the integer corners, bilinear between them; the
+  drawn grid vs the analytic `getHeight` is p50 1 cm, p99 19 cm, and 11 cm at most at the machines
+  probed). `hasLOS` samples the drawn ground at the nearest integer metre, with its 1.2 m clearance. A45,
+  A45c, A46, A47 and A48 pass on the fixture; A37 / A39 pass.
+- **E. `A-weak40` is PENDING until world-sky publishes calima**, and so is `A-kind-block-file`. Under R38's
+  logic a cross-lane PENDING clause is not a lane failure, but no ruling names this one: the orchestrator
+  should say so.
+- **F. gates-perf's `A-alloc-rate` timed out in F3** (its own Chrome never saw `__READY__` in 90 s on a
+  loaded box). It ran in F6 and FAILS build-wide on other owners' frames, as before.
+
 1. **The lamp core and the 3 : 1 contrast: resolved in fix round 1, with one judgement call.**
    - **Built:** the bible's core above the bloom threshold, inside a token ring that `A-lamp-states`
      grades. `A-weak40`'s contrast clause grades the fixture with the face turned to the sun: **9.85 : 1**.
@@ -829,7 +986,37 @@ lens (55°). Centre-pixel colours read from the PNGs.
 
 ## What another lane or the orchestrator must do
 
-**Fix round 1 additions (first):**
+**Fix round 2 additions (first):**
+- **Orchestrator:**
+  1. **Rule on the allocation residual.** Record `<!-- r5-ruling ic-alloc-residual=carried -->` with the
+     owners and dates in the residual table (fix-round-2 section), or deny it. The gate reads it and
+     passes the `legacy`, `accessor` and `inlined-frozen` classes only under it.
+  2. **Grant the frozen readers `m.sc.<name>`.** The list of lines is in the residual table (gait,
+     footlock, ground, footfall, collision; melee's two at W1). This removes the accessor class.
+  3. **`nav.js`: hoist `ANG` to module scope.** One line; part of what frozen `engage.pursue` / `nav.steer`
+     allocate.
+  4. **Rule that `A-weak40`'s calima clause (and so `A-kind-block-file`) PENDING is not a W0b failure**,
+     as R38 did for other cross-lane clauses (gap E).
+  5. **Merge order.** `machine.js`, `perception.js` and the new `src/instruments/lib/hot.js` changed a lot
+     this round; merge them before any lane touches them.
+- **hero-body:** the player's and the animator's fields born as integers or null deoptimise the whole
+  game the first time they change: `moveSpeed`, `heading`, `fovBias`, `_fov`, `_faceX`, `velocity.x/z`,
+  `_bobK`, `_bobPhase`, `contact`, `contactKind`, the animator's `_prevHeading`, `_yawRate`, `_lvx`,
+  `_lvz`, `_prevLvx`, `_prevLvz`, `_jerkX`, `_jerkZ`, `_leanAcc`, `_bank`, `_mx`, `_moveW`, `_flatW`,
+  `_puff`, `_prevSpd`, `_recentSpd`, `_headStab`. The measured times are the first knockback (12.6 s) and
+  the first sprint (61.2 s). Store 0.5 first (a placeholder object for the object fields); see
+  `MachineScalars` in `machine.js`.
+- **engine-gpu:** `engine.camera.fov` is born an integer (same fix).
+- **melee:** `combat.melee._aimYaw` is born an integer (same fix).
+- **gates-perf:**
+  - `A-alloc-rate`'s 3 s warm-up measures these first-change waves.
+  - Decide the method question with the orchestrator: a warm-up that includes a knockback and a sprint,
+    or wait for the owners' fix.
+  - Consider adopting `A-alloc-machines`' paired no-inline run and its residual classes for
+    `A-alloc-rate`'s per-function list.
+- **world-sky (W1):** publish a `calima` weather state; `A-weak40` grades it with no edit.
+
+**Fix round 1 additions:**
 - **Orchestrator:**
   1. **Rule on the lamp-contrast reference.** The drum face around the glass (built and graded) or the
      glaze beyond it (needs a dark hull behind every lamp in every generator); see gap 1.
@@ -896,6 +1083,23 @@ and `nightFactor` (> 0.5).
 ---
 
 ## Files changed this wave (against main `a953355`, the W0a merge)
+
+**Fix round 2** (against the round's base `2fd2ac6`; the orchestrator's WIP checkpoints `bda9b48` …
+`ff99173` hold most of it). All of it is in this lane's §2 row and §1.2 W0 grants, and no frozen file is
+touched. `ai/stimulus.js` and `rig/*` are unchanged; `docs/ROUND5-PLAN.md` differs only by the
+orchestrator's own R43–R45 sync.
+
+| file | change |
+|---|---|
+| `src/instruments/lib/hot.js` (new) | `HOT`, `refreshHot(ctx)`, `playerBoxes()`: the per-frame services and player values, one fixed-shape record |
+| `src/entities/machines/machine.js` | hot paths read `HOT`; doubles born Double (`MachineScalars`); `EyeRecord` + `normalizeEyeRecords`; own-field method slots; publish-on-change boxes for every scalar accessor; `conformM` lattice (`latticeM`) and written-out orientation; emissive fold (`emisBaseOf`); `EYE_RGB`; `lkBoxes`; `updateFxM` compaction; settle snaps, heading deadband; Math.* written out |
+| `src/entities/machines/index.js` | `refreshHot` per frame (and at construction); fixed-step far-LOD tick; `normalizeEyeRecords` after construction |
+| `src/entities/machines/ai/perception.js` | `HOT` reads; inputs read up front in `_sight` / `_beliefTick`; the tick's seconds in a field; integer-metre LOS samples; reused scan payload; round-robin Dust pass; Flag pass on `m.sc`; born-Double fields |
+| `src/entities/machines/ai/attacks.js` | generic moves write `m.sc` and step through `_st`; `HOT` player; born-Double picker clock |
+| `src/entities/machines/ai/index.js` | born-Double `lureT`, written-out decay |
+| `src/instruments/lamps.js` | `HOT` reads, born-Double fields, Math.* written out |
+| `tools/gates.r5.instruments-core.mjs` | `A-alloc-machines`: caller attribution, 30 s warm-up, six graded windows, fight re-arm and witness, residual classes + plan ruling, the paired no-inline attribution run; diagnosis modes SHAPEWATCH / PROTOWATCH / PROTOLOCK / PROTOTRACE; `A-kind-block-file` PENDING on a cross-lane clause |
+| `tools/gates.r5.kind-block.mjs` | `A-weak40`: min(glass vs face, glass vs hull) graded; calima measured when published, else PENDING |
 
 **Fix round 1** (against the last pre-round checkpoint `f7c3ec2`; 11 files, +1,651 / −543). All are in this
 lane's §2 row and §1.2 W0 grants, and no frozen file was touched (`gait`, `autorig`, `rig/*`,
