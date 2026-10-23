@@ -9,7 +9,7 @@ ANGLE/Metal, headless, 1600×900 CSS px; fix rounds 2 and 3: Oct 16; W0b and its
 |---|---|
 | 1. Render-target ledger (`A-rt-ledger-census`, `A-rt-ledger`) | **W0b, graded (ruling `rt-ledger-bar=W0b`): 127.27 MB at the shipped tier, DPR 1.25** (bar ≤ 170; round 0: 154.27), recounted from the GL allocation calls and equal to the byte (re-verified Oct 22 on fix round 2's engine, `F4`); staged-fight total **342.45 MB** (bar ≤ 450). `post:pingB` (18 MB) is provisioned-not-allocated in the direct topology (§1.1, corrected). In this tree, the record in `tools/budgets.mjs` (gates-perf's file) is the one clause still open. **On the merged gate side, with gates-perf's committed `budgets.mjs:141` line, `A-rt-ledger` passes every clause** (fix round 3, `M1`: 342.46 MB at R34's role-staged fight). gates-perf's own `A-vram-ledger` counts the same 127,271,712 B (`M2`) (§3.9, §3.10). W0a's Round-4 tier ledger (340.74 MB) is §1.3 |
 | 2. 1024 m terrain + nav probe (`A-terrain-1024-probe-box` + `A-terrain-1024-probe`) | **Judged on a quiet box (fix round 3: 4 quiet runs; Q5p and Q6p judged every term).** Single-thread build: 1024 m and 860 m FAIL, 720 m PASS. Pool build (bit-identical, own witness): PASS at every size. GPU delta +0.23 / +0.20 ms PASS; nav 43–44 ms PASS; vertex 20.77 MB PASS. **W1 size by ruling: `pool-terrain-build=accepted` → 1024 m; `=rejected` → 720 m.** The orchestrator ruled `pool-terrain-build=accepted` (PLAN §8.3, W0a exit): **1024 m** (§2.5). Conditions for W1 in §2.6. |
-| 3. GPU tier (`A-gpu-tier`) | **W0b fix round 2: shipped `high` = DPR cap 1.25 + GTAO ¼ + SMAA-only + SMAA RGBA8 + far cascades 1024 + direct post topology + GTAO/bloom folded into the grade + far cascades on alternate frames + anisotropic filtering split by texture role: colour (sRGB) 1×, data (normal, rough/AO) 4×** (§3.1). `A-gpu-tier` **PASS in judged runs** `G3`, `G4`, `G7`: Pans POC vista 11.78 / 12.34 / 12.35 ms ≤ 13, empty frame 4.75 / 4.80 / 4.32 ms ≤ 7, fps 59.88–60.24, p95 18.6–18.9 ms (§3.3; another lane's Chrome appeared during part of each run). Render targets **PASS** (127.27 MB). The role split keeps the salt-pan crust fix round 1's 2× cap lost (`V-gpu-tier-look`, §3.1, §3.4); the GPU timer reads a clock state on this machine (§3.4). A22 (R25), A108, A109 PASS; V20, V33b, V-gpu-tier-look filmed for the judge. **Fix round 4:** GTAO's denoise noise is seeded (`GTAO_NOISE_SEED`), so every boot renders the same pixels and A108 passes 5 of 5 fresh boots with byte-identical readings (§3.6) |
+| 3. GPU tier (`A-gpu-tier`) | **W0b fix round 2: shipped `high` = DPR cap 1.25 + GTAO ¼ + SMAA-only + SMAA RGBA8 + far cascades 1024 + direct post topology + GTAO/bloom folded into the grade + far cascades on alternate frames + anisotropic filtering split by texture role: colour (sRGB) 1×, data (normal, rough/AO) 4×** (§3.1). `A-gpu-tier` **PASS in judged runs** `G3`, `G4`, `G7`: Pans POC vista 11.78 / 12.34 / 12.35 ms ≤ 13, empty frame 4.75 / 4.80 / 4.32 ms ≤ 7, fps 59.88–60.24, p95 18.6–18.9 ms (§3.3; another lane's Chrome appeared during part of each run). On fix round 4's engine (seeded denoise noise): PENDING-quiet-box under R45, with one unjudged run (`Q1`: vista 12.82, empty 4.80) and no measurable cost from the change (`X-noise-ab`). Render targets **PASS** (127.27 MB). The role split keeps the salt-pan crust fix round 1's 2× cap lost (`V-gpu-tier-look`, §3.1, §3.4); the GPU timer reads a clock state on this machine (§3.4). A22 (R25), A108, A109 PASS; V20, V33b, V-gpu-tier-look filmed for the judge. **Fix round 4:** GTAO's denoise noise is seeded (`GTAO_NOISE_SEED`), so every boot renders the same pixels and A108 passes 5 of 5 fresh boots with byte-identical readings (§3.6) |
 ---
 
 ## 1. Render-target ledger
@@ -578,6 +578,21 @@ So contention does not only lower this timer's reading (§3.4): two GPU clients 
 the bar. That is why the gate grades only from a quiet start and why the orchestrator should grade it from
 runs with no other gate Chrome for the whole run.
 
+**Fix round 4 (the seeded denoise noise; the only engine change since `G3`–`G7`).** One timed run, unjudged:
+
+| run | box witness at start | other gate Chrome seen during the run | verdict | vista GPU, 4 bursts → median (bar 13) | empty median (bar 7) | median fps (≥ 58) | p95 ms (≤ 20) | null frame; instability |
+|---|---|---|---|---|---|---|---|---|
+| Q1 | load 2.03, **1 other Chrome** (slot taken at load 2.13 / 0 Chromes 16 s earlier) | ~17–21 s, ~60–76 s, ~113–118 s (15 of 59 samples) | PENDING | 10.52 / 12.33 / 15.89 / 13.30 → **12.82** | 4.80 | 60.24 | 18.7 | 0.18 / 0.17; **1.51** / 1.017 |
+
+Its lever record reads Round-4 21.35 / 15.29 → shipped (lever 7) 12.55 / 4.81; NOT shipped 2× / 2× 12.54,
+2× / 4× 12.50, 4× / 4× 13.57. `Q2` (40 min) and `Q3` (45 min) waited only for a quiet instant with a free slot
+and never got one (1,167 samples with 9 quiet; 1,313 with 0), so they did not run. What the change costs
+(`X-noise-ab`, `N1`, interleaved on one page, shipped tier, DPR 1.25, vista, 6 rounds × 2 s, loud box):
+median vista GPU 22.15 ms with the shipped seeded texture, 22.39 with three's `Math.random` texture, 22.49
+with seed 0x5EED. The arms move together burst by burst (all three drop to 7–12 ms in the last round, a clock
+step), so the texel values cost nothing measurable. Under R45 the orchestrator's three quiet runs are the
+grade.
+
 **Fix round 1's judged results** (the 2× / 2× row; reports lost in the Oct 22 reboot, numbers from its
 report): vista 10.28 / 11.62 / 11.23 ms, empty 4.83 / 4.87 / 4.85 ms, fps 59.88–60.24, p95 18.5–18.7.
 
@@ -739,7 +754,7 @@ one page and nothing else changes:
 |---|---|---|---|
 | three's own (`Math.random`) | 23 of 30 draws (`S1` 5/6, `W1` 18/24); the judge's probe: 5 of 8 | 0.238–0.242 at lag 5,-29 | 0.102–0.106 at lag 15,-2, the content's own peak, the same as the shipped shader |
 | mulberry32 seeds | 35 of 40 (`S1`: 0xCA11A and 1–15, all; `W1`: 16–39 except 22, 30, 32, 33, 35) | 0.238–0.242 at 5,-29 | 0.102–0.104 at 15,-2 |
-| **shipped seed 0xCA11A** | **sees, in every run** (`S1`, `W1`–`W5`, `T2`) | **0.239 at 5,-29** | — |
+| **shipped seed 0xCA11A** | **sees, in every run** (`S1`, `W1`–`W5`, `T2`, `F1`) | **0.239 at 5,-29** | — |
 
 - **The verdict follows the texture's content.** In `W1` I re-installed 9 captured textures from their
   bytes, both blind and seeing ones. Each read exactly what it read the first time. Five and then ten more
@@ -754,8 +769,8 @@ one page and nothing else changes:
   for a witness, so it was not added.
 
 The witness therefore proves sensitivity for the pipeline the engine ships, and the pipeline is now the
-same on every boot. **A108 PASSES 5 of 5 runs, each on a fresh Chrome and a fresh page load** (`W1`–`W5`,
-plus `T2`). The detail (every configuration, every crop and both witness rows) is byte-identical across
+same on every boot. **A108 PASSES 5 of 5 runs, each on a fresh Chrome and a fresh page load** (`W1`–`W5`;
+also `T2` and the final-files check `F1`, 7 of 7). The detail (every configuration, every crop and both witness rows) is byte-identical across
 the runs:
 
 | run (UTC, Oct 23) | worst graded peak | witness crop 1: off / shipped / stock | witness crop 2: off / shipped / stock | noise seed, hash |
@@ -765,6 +780,7 @@ the runs:
 | `W3` 01:45:27 | 0.135 | 0.114 / 0.102 / **0.239** | 0.103 / 0.126 / 0.128 | same |
 | `W4` 01:45:56 | 0.135 | 0.114 / 0.102 / **0.239** | 0.103 / 0.126 / 0.128 | same |
 | `W5` 01:46:25 | 0.135 | 0.114 / 0.102 / **0.239** | 0.103 / 0.126 / 0.128 | same |
+| `T2` 01:58 (suite) and `F1` 03:47 (final files) | 0.135 | 0.114 / 0.102 / **0.239** | 0.103 / 0.126 / 0.128 | same (`F1` detail byte-identical to `W1`) |
 
 `A109` on the POC (Round 4's instrument: view distance in the AO target's alpha for the read, occlusion =
 mean(1 − ao) per distance bin, ≥ 500 texels per bin, 4–6 m occlusion ≥ 0.05): near bins from a 2 m-high
@@ -809,7 +825,7 @@ cadence 2 against cadence 1, frame by frame: 3–39 channels of 6.75 M differ, m
 
 | gate | verdict | numbers |
 |---|---|---|
-| `A-gpu-tier-box` + `A-gpu-tier` | **PASS** (judged, final row: `G3`, `G4`, `G7`; §3.3). Not re-timed in fix round 3: no quiet instant in 92 min, and the code is unchanged | vista 11.78 / 12.34 / 12.35 ms ≤ 13; empty 4.75 / 4.80 / 4.32 ms ≤ 7; fps 60.24 / 59.88 / 59.88 ≥ 58; p95 18.7 / 18.9 / 18.6 ≤ 20; null frames 0.16–0.18 ms; instability ≤ 1.32; docs row = live tier |
+| `A-gpu-tier-box` + `A-gpu-tier` | **Fix round 4: PENDING-quiet-box (R45).** The engine changed (denoise noise texel values only). `Q1` was timed on it, unjudged (1 other Chrome at the witness sample, vista instability 1.51), and every clock read under its bar: vista 12.82, empty 4.80, 60.24 fps, p95 18.7. `Q2` and `Q3` got no quiet instant in 85 min (§3.3). Before: **PASS** (judged, final row: `G3`, `G4`, `G7`) | vista 11.78 / 12.34 / 12.35 ms ≤ 13; empty 4.75 / 4.80 / 4.32 ms ≤ 7; fps 60.24 / 59.88 / 59.88 ≥ 58; p95 18.7 / 18.9 / 18.6 ≤ 20; null frames 0.16–0.18 ms; instability ≤ 1.32; docs row = live tier |
 | `A-rt-ledger` | **Merged gate side: PASS on every clause** (fix round 3, `M1`). This tree: every binding clause PASS, the `budgets.mjs` clause PENDING, which **R44** rules cross-lane, not a failure (`T2`, fix round 4; `T1`, `F4`, `P2`) | `M1`, gates-perf's committed runner and `budgets.mjs` against this tree's page: RT 127.27 MB ≤ 170 PASS; staged fight 342.46 MB ≤ 450 PASS (R34's role-staged fight: 8 × `tiller`, textures 100.29, geometry 114.90); docs PASS; **`tools/budgets.mjs` record PASS**; levers restored PASS; shipped tier at DPR 1.25 PASS. In this tree `budgets.mjs` has no `RT_LEDGER` yet (gates-perf's file), so that clause reads `null`. `T2` (seeded-noise engine): RT 127.27 MB, staged fight 342.45 MB (textures 100.28, geometry 114.90), docs ✓, levers restored ✓ |
 | `A-vram-ledger` (gates-perf's gate, run as a cross-check) | **PASS** (`M2`) | independent GL census: render targets 127,271,712 B = this ledger, ≤ 170; textures 105.46 MB, geometry 79.52 MB, total 312.25 MB ≤ 450 |
 | `A-rt-ledger-census` (W0a) | **PASS** (`T2`; `M1`, `T1`, `F3`, `F4`, `P2`) | GL recount 127,271,712 B = ledger, 0 unattributed, 0 mismatches; docs and `RT_LEDGER` match; registration contract and weak hold PASS |
@@ -835,7 +851,7 @@ global run — lane report §5.2.
 
 - **Fix round 4 changed the engine in one place:** GTAO's denoise noise texture is now built from a fixed seed
   instead of `Math.random` (§3.6). It has the same size, format, filter and cost; only its texel values are
-  fixed. A108 now reads the same on every boot (5 of 5 fresh boots plus `T2`, byte-identical), and its
+  fixed. A108 now reads the same on every boot (5 of 5 fresh boots, plus `T2` and `F1`, byte-identical), and its
   witness sees the stock lattice at 0.239 every time. On main expect worst 0.135, witness 0.239 / 0.102 /
   0.114 and noise hash `a698df06`; any other reading means something changed the noise or the denoise.
 - No bar moved and no gate was loosened: the vista and empty-frame terms are measured exactly as in round 0;
