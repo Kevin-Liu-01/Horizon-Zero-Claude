@@ -331,9 +331,12 @@ export async function build({ out = ROOT } = {}) {
   // Fix round 5: the width leans UP across the level root (side vector half
   // vertical) so the knotted root shows its face, not its edge, to a front or
   // a side lens; down the hanging strip it spans left-rear (the vertical share
-  // drops out against a vertical tangent)
+  // drops out against a vertical tangent); and the strip TWISTS a quarter turn
+  // root to tip, with a deeper cup (curl 0.10), so whichever way the wind lays
+  // it no lens sees the whole tail edge-on (a 4 mm edge is under one pixel at
+  // the sheet's 64 px: judge r2 found it "a hairline")
   appendGeo(geo, stripAlong(CHAINS.wrapSash.points, chainIdx.wrapSash.slice(0, -1), {
-    along: 16, width: (u) => 0.100 * (1 - 0.2 * u), side: [0.55, 0.65, 0.5], uvFront: R.violet, uvBack: R.carmine, thick: 0.004, curl: 0.06,
+    along: 16, width: (u) => 0.100 * (1 - 0.2 * u), side: [0.55, 0.65, 0.5], uvFront: R.violet, uvBack: R.carmine, thick: 0.004, curl: 0.10, twist: Math.PI / 2,
   }));
   // the knot tail: a short tuft of coils out of the topknot, lofted tube 0.22 m
   appendGeo(geo, tubeAlong(CHAINS.hairKnotTail.points, chainIdx.hairKnotTail.slice(0, -1), {

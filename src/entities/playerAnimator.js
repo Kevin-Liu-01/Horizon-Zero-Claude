@@ -106,6 +106,8 @@ const _sg3 = new THREE.Vector3();  // R5 fix round 4: the swing foot's lateral a
 const _sgD = new THREE.Vector3();
 const _ftQ = new THREE.Quaternion();  // R5 fix round 5: a foot's live char orientation (heading by its lateral axis)
 const _tq = new THREE.Quaternion();   // R5 fix round 5: the down aim's turn (form arrow -> ray)
+const _tq2 = new THREE.Quaternion();
+const _ik5W = new THREE.Vector3();  // R5 fix round 5: the climb's wrist target, world (diagnostics)
 const _ftL = new THREE.Vector3();     // ...and its live lateral axis
 // _groundConform's PRIVATE roll scratch (never borrow _q1/_v6 here: _rot and
 // _rotL both clobber _q1 mid-call, which silently zeroed the bank)
@@ -406,13 +408,14 @@ const CLIMB_CATCH = 0.07;
  * regex names it). Brea: `{ wrap: '^dyn_wrapSash' }`.
  */
 /* fix round 5 (judge r2, V-brea-one-glance cue 2): the strip couples to the
- * air about twice as hard (`wind` 2.3 -> 4.5 1/s: at the trade wind's 5.5 m/s
- * the free end stands ~70 deg off the vertical, where a cloth tail in a
- * moderate breeze flies — it hung at 41-62 and lay along the stowed bow's
- * limb in the 64 px black fill), and the wrapped root is stiffer (`rootK`
- * 5 -> 8) so the knotted section holds the recipe's new left-rear line (brea.mjs
+ * air harder (`wind` 2.3 -> 3.5 1/s: at the trade wind's 5.5 m/s the tail
+ * stands 70-75 deg off the vertical, where a cloth tail in a moderate breeze
+ * flies — it hung at 41-62 and lay along the stowed bow's limb in the 64 px
+ * black fill; 4.5 laid it flat and edge-on to the front lens, probe
+ * `tailproto`), and the wrapped root is stiffer (`rootK` 5 -> 8) so the
+ * knotted section holds the recipe's new left-rear line (brea.mjs
  * CHAINS.wrapSash) while the free end moves. */
-DYN_CLASSES.push({ name: 'wrap', re: /(?!)/, stiff: 42, drag: 4.2, grav: 0.42, maxAng: 0.62, strike: 0.7, base: 0.30, collide: 2, wind: 4.5, rootK: 8 });
+DYN_CLASSES.push({ name: 'wrap', re: /(?!)/, stiff: 42, drag: 4.2, grav: 0.42, maxAng: 0.62, strike: 0.7, base: 0.30, collide: 2, wind: 3.5, rootK: 8 });
 /** Air coupling per Round-4 class (1/s; 0 = none). Hair a little, cloth some, gear none. */
 const DYN_WIND = { hair: 0.22, necklace: 0, dangle: 0.15, cloth: 0.55, gear: 0, shirt: 0 };
 /** The default world wind (bible §2.2: the NE trade wind from bearing 045; north = -Z, east = +X). */
@@ -555,7 +558,7 @@ export class PlayerAnimator {
       knuckleNock: tn?.knuckleNock ?? null,
       // R5 fix round 5 (false = the Round-4 behaviour): a down aim is the level
       // draw's form turned rigidly onto the ray at spine_01 (see `_aimLayer`)
-      downT: !!tn?.downT,
+      downT: !!tn?.downT, downTRoll: tn?.downTRoll ?? 0,
     };
     this.bowSolve = prof?.bow || null;
     /* M10 (E3): the spring-side capsule on the DRAW hand + forearm. */
@@ -3499,8 +3502,18 @@ export class PlayerAnimator {
     // above) — the form's arrow onto the ray, at spine_01, before anything is
     // derived from the anchor or the shoulders
     if (tS > 1e-4) {
-      _v7.set(0, -Math.sin(fp), Math.cos(fp));
-      _tq.setFromUnitVectors(_v7, _dA);
+      // yaw about the vertical, then pitch about her lateral axis: no roll of
+      // the T about the arrow (the shoulder-arc from the form's arrow to the
+      // ray would cant it when the ray also turns — a near ground hit pulls
+      // the ray ~17 deg to her right at the 0.75 aim)
+      const yawR = Math.atan2(_dA.x, _dA.z), pitR = Math.asin(clamp(-_dA.y, -1, 1));
+      _tq.setFromAxisAngle(Y_AXIS, yawR);
+      _tq2.setFromAxisAngle(X_AXIS, pitR - fp);
+      _tq.multiply(_tq2);
+      // (`downTRoll` blends toward the shortest arc form-arrow -> ray, which
+      // carries a roll about the arrow when the ray also turns; probe tuning)
+      const rk = this.T.downTRoll ?? 0;
+      if (rk > 0) { _v7.set(0, -Math.sin(fp), Math.cos(fp)); _tq2.setFromUnitVectors(_v7, _dA); _tq.slerp(_tq2, rk); }
       this._qT.slerpQuaternions(Q_IDENT, _tq, tS * aimW);
       this._rotQL(b.spine1, this._qT);
       this._upT.copy(Y_AXIS).applyQuaternion(this._qT);
@@ -4657,10 +4670,18 @@ export class PlayerAnimator {
         const reach = (s2 === 0 ? this._lenUpL + this._lenLoL : this._lenUpR + this._lenLoR) * 0.95;
         short = Math.max(short, _sg1.distanceTo(_ik5) - reach);
       }
+      const CD = this._climbDbg || (this._climbDbg = { short: 0, press: 0, clvShortL: 0, clvShortR: 0, clvL: 0, clvR: 0, missL: 0, missR: 0 });
+      CD.short = short; CD.press = 0;
       if (short > 0.002) {
-        const a = Math.min(0.65, short / 0.26) * w;
+        // fix round 5 (judge r2, A-climb-1m at 0.052-0.054 m): the press ran
+        // out (0.65 rad, saturated from k 0.31 on, the farther shoulder still
+        // 0.13 m out of reach, the right palm lifting 4-6 cm off the lip as the
+        // chest went over — probe `climbgate`); it folds the chest further
+        // over the hands now, as a climber's press does
+        const a = Math.min(0.95, short / 0.2) * w;
         this._rotL(this.b.spine2, X_AXIS, a * 0.45);
         this._rotL(this.b.spine3, X_AXIS, a * 0.55);
+        CD.press = a;
       }
     }
     for (let si = 0; si < 2; si++) {
@@ -4678,19 +4699,25 @@ export class PlayerAnimator {
       if (clv && ua) {
         this._charOf(clv.bone, _sg0); this._charOf(ua.bone, _sg1);
         const short = _sg1.distanceTo(_ik5) - reach;
+        this._climbDbg[si === 0 ? 'clvShortL' : 'clvShortR'] = short;
+        this._climbDbg[si === 0 ? 'clvL' : 'clvR'] = 0;
         if (short > 0.002) {
           const cl = _sg1.distanceTo(_sg0);
           _v3.subVectors(_sg1, _sg0); _v4.subVectors(_ik5, _sg0);
           _v5.crossVectors(_v3, _v4);
           if (cl > 0.03 && _v5.lengthSq() > 1e-8) {
-            _q3.setFromAxisAngle(_v5.normalize(), Math.min(0.9, Math.asin(Math.min(1, short / cl))) * w);   // R5 fix round 2: 0.6 left the walk-in palm 2-3 cm past A-climb-1m's 0.05 m on some runs
+            const ca = Math.min(0.9, Math.asin(Math.min(1, short / cl))) * w;
+            _q3.setFromAxisAngle(_v5.normalize(), ca);   // R5 fix round 2: 0.6 left the walk-in palm 2-3 cm past A-climb-1m's 0.05 m on some runs
             this._rotQL(clv, _q3);
+            this._climbDbg[si === 0 ? 'clvL' : 'clvR'] = ca;
           }
         }
       }
       _pole.set(0.6 * sgn, -0.5, -0.6);
       this._ikArm(side, _ik5, _pole, w, null);
       this._curlFingers(side === 'l' ? this._fingerL : this._fingerR, 0.35 * w, 0.2 * w);
+      (side === 'l' ? this.b.handL : this.b.handR).bone.getWorldPosition(_alV);
+      this._climbDbg[si === 0 ? 'missL' : 'missR'] = _alV.distanceTo(_ik5W.set(E.x + sx * 0.17 * sgn - E.dx * 0.035, E.y + 0.022, E.z + sz * 0.17 * sgn - E.dz * 0.035));
     }
     if (!this._climbCaught && k >= 0.04 && k < 0.66
         && (wIn >= 0.999 || Math.max(this._palmEdge(0, E), this._palmEdge(1, E)) <= CLIMB_CATCH)) this._climbCaught = true;
@@ -4717,7 +4744,7 @@ export class PlayerAnimator {
   debugClimb() {
     const p = this.ctx.player, E = p?.mantleEdge;
     if (!E?.valid) return null;
-    return { l: +this._palmEdge(0, E).toFixed(4), r: +this._palmEdge(1, E).toFixed(4), caught: !!this._climbCaught };
+    return { l: +this._palmEdge(0, E).toFixed(4), r: +this._palmEdge(1, E).toFixed(4), caught: !!this._climbCaught, dbg: this._climbDbg ? { ...this._climbDbg } : null };
   }
 
   /**

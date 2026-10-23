@@ -472,7 +472,7 @@ export function tubeAlong(P, joints, { ring = 8, along = 10, radius = () => 0.02
  * Cloth strip lofted along `P`: width `width(u)`, lying across `side`,
  * double-faced (front uses `uvFront`, back `uvBack`) so the lining reads.
  */
-export function stripAlong(P, joints, { along = 12, width = () => 0.07, side = [1, 0, 0], uvFront = [0, 0, 1, 1], uvBack = null, thick = 0.003, curl = 0 } = {}) {
+export function stripAlong(P, joints, { along = 12, width = () => 0.07, side = [1, 0, 0], uvFront = [0, 0, 1, 1], uvBack = null, thick = 0.003, curl = 0, twist = 0 } = {}) {
   const g = newGeo();
   const pl = polyline(P);
   const faces = uvBack ? [[uvFront, 1], [uvBack, -1]] : [[uvFront, 1]];
@@ -481,7 +481,11 @@ export function stripAlong(P, joints, { along = 12, width = () => 0.07, side = [
     for (let a = 0; a <= along; a++) {
       const u = a / along;
       const { p, t, seg, f } = pl.at(u);
-      const sd = norm(sub(side, mul(t, dot(side, t))));
+      let sd = norm(sub(side, mul(t, dot(side, t))));
+      // `twist` (rad over the strip, fix round 5): the width turns about the
+      // tangent along the length, so a strip seen edge-on at one end shows its
+      // face at the other (0 = the flat strip every earlier recipe builds)
+      if (twist) { const n0 = norm(cross(sd, t)), a2 = twist * u; sd = norm(add(mul(sd, Math.cos(a2)), mul(n0, Math.sin(a2)))); }
       const nrm = mul(norm(cross(sd, t)), sgn);
       const hw = width(u) * 0.5;
       const { j, w } = chainWeights(joints, seg, f);
