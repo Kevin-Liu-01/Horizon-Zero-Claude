@@ -2061,6 +2061,26 @@ FILM_ROWS.push({
   setup: FILM('calm', { fov: 55, sunlit: true }), settle: 1400,
   criteria: 'In full sun the calm lamp reads at once as a LIT lens: a hot white core with a bone ring, set in a dark graphite drum face that separates it from the sunlit bone glaze; a soft glow around the core. FAIL if the lens is a flat cream disc that separates from the drum only by a thin bezel, or if the lamp is darker than the hull.',
 });
+/* TARGETED FIX (judge: "V-lamp-calm-sunlit-15m staging is nondeterministic (Tiller behind the palisade in 1 of 2
+ * runs)"). The sunlit staging (FILM, `sunlit`) asserts in rendered pixels that the lamp is on screen and unoccluded
+ * before it films, tries the next heading, and fails the staging by name when none passes. These action twins run
+ * the SAME staging and report the probe that picked the heading, so each run's choice is on record: pass = the
+ * heading filmed shows >= minPx lamp pixels within dE2000 10 of the state's token at the projected lamp AND the same
+ * block changes when the lamp draw is hidden for one frame. */
+const SUNLIT_PROBE = `(async () => {
+  const F = window.__IC_FILM__, P = F && F.pixelProbe, last = P && P.tries && P.tries[P.tries.length - 1];
+  const pass = !!(F && F.sunlit && P && last && last.ok && F.heading === last.hd && F.clearLine);
+  return { pass, detail: { verdict: (pass ? 'PASS' : 'FAIL') + ': heading ' + (F && F.heading) + ' filmed after ' + (P ? P.tries.length : 0) + ' tr' + (P && P.tries.length === 1 ? 'y' : 'ies') + '; at it ' + (last ? last.tokenPx + ' lamp px within dE 10 of the ' + P.token + ' token and ' + last.changedPx + ' px that change with the lamp draw hidden (bar ' + last.minPx + ' each, lens radius ' + last.rpx + ' px)' : 'no probe'),
+    film: F || null } };
+})()`;
+for (const [st, fov, dist] of [['calm', 55, 15], ['wary', 55, 15], ['calm', 55, 40]]) {
+  FILM_ROWS.push({
+    id: `A-film-${st}-sunlit-${dist}m-staging`, kind: 'action', lane: 'instruments-core-film', timeout: 120000,
+    title: `The ${st} sunlit staging at ${dist} m (55 deg lens), checked in rendered pixels before it films: the lamp on screen, lit in its token and unoccluded (else the next heading; none: the staging fails by name)`,
+    setup: FILM(st, { fov, sunlit: true, dist }), settle: 400,
+    assert: SUNLIT_PROBE,
+  });
+}
 FILM_ROWS.push({
   id: 'V-lamp-iris-calm-15m-zoom', kind: 'visual', lane: 'instruments-core-film', timeout: 120000,
   title: 'Calm iris close-up at noon, sunlit face: 15.0 m on the lens axis through a 4 deg lens',
@@ -2217,7 +2237,7 @@ FILM_ROWS.push({
   id: 'V-lamp-beams-fog', kind: 'visual', lane: 'instruments-core-film', timeout: 120000,
   title: 'Beams in fog (rain weather, aerial density x2.55): a wary Tiller sweeping toward its stimulus, a hostile Tiller locked on Brea; side view',
   setup: FILM('beams', { both: true }), settle: 1500,
-  criteria: 'Two thin additive cones from the drum lamps: the wary one chartreuse, the hostile one magenta locked on the player and carrying past her (bible §7.2). Cones are narrow (5 deg sweep, 3 deg lock half-angle), brightest at the lens and fade with length; no cone in a calm machine. FAIL if a beam is opaque, if it renders as a solid block, if no beam is visible, or if the far end is brighter than the lens end.',
+  criteria: 'Two thin additive cones from the drum lamps: the wary one chartreuse, the hostile one magenta locked on the player and carrying past her (bible §7.2). Cones are narrow (5 deg sweep, 1.5 deg lock half-angle), brightest at the lens and fade with length; no cone in a calm machine. FAIL if a beam is opaque, if it renders as a solid block, if no beam is visible, or if the far end is brighter than the lens end.',
 });
 FILM_ROWS.push({
   id: 'V-lamp-beams-fog-gameplay', kind: 'visual', lane: 'instruments-core-film', timeout: 120000,

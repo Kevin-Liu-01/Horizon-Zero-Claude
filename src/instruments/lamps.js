@@ -96,8 +96,13 @@ export const BEAM = Object.freeze({
   fogK: 1.2,            // weather fog-density multiplier above which beams draw
   night: 0.5,           // environment.nightFactor above which beams draw
   halfAngleDeg: 5,      // cone half-angle of the wary sweep
-  /** TARGETED FIX (judge: "a dense widening magenta wedge"): a lock is a narrower shaft than a sweep. */
-  lockHalfAngleDeg: 3,
+  /**
+   * TARGETED FIX (judge: "a dense widening magenta wedge"): a lock is a narrow shaft, not a wedge. The round-3 lock
+   * shared the sweep's 5 deg (0.87 m across at 10 m); 1.5 deg is 0.52 m across at 10 m, her torso, so from her chase
+   * camera the lock is a line from the drum lamp to her and not a cone around her (beam lab, Oct 30: 3 deg filled
+   * 5.0 % of the fog gameplay frame pink, 1.5 deg 2.1 %).
+   */
+  lockHalfAngleDeg: 1.5,
   segments: 64,         // triangles per cone
   sweepDeg: 14,         // wary sweep amplitude about the stimulus bearing
   capacity: 128,
@@ -106,26 +111,39 @@ export const BEAM = Object.freeze({
    * the same gain (linear Y 0.665 vs 0.250). The hostile gain runs from `gainHostile` in clear air to
    * `gainHostileFog` at fog density `fogFull`.
    * TARGETED FIX (judge: "brightest at Brea's end with a hard edge"; "side-lock frames wash a third of the frame
-   * pink"): the round-3 gains (1.6 / 2.7) clipped the shaft's red and blue over its whole length, so the wider far
-   * end read as the brightest, solid part. The gains are capped at 1.3 (night) and 2.4 (fog: below 2.4 the far half
-   * of the shaft no longer passed the judge's own magenta scan over the warm fogged grass, measured) and the lock
-   * fades as along^2 like the sweep (`fade`), so the per-pixel light falls monotonically from the lens outward
-   * (A-film-beams-*-probe grades it: mean addition over 10-30 % of the way to her >= over 60-80 %). */
+   * pink"): the round-3 lock had one gain over its whole length (1.6 / 2.7) and the along^0.5 fade, so its red and
+   * blue clipped from the lens to her and the wider far end read as the brightest, solid part. The lock's light now
+   * FALLS WITH DISTANCE from the lens: gain x along^2 / (1 + d / `lockFalloffM`), d in metres. `gainHostile` and
+   * `gainHostileFog` are the light AT THE LENS; 8 m out (where she stands in the gameplay films) the distance factor
+   * is 0.385, so the gain there is 0.8 at night and 2.4 in fog: at or under the round-3 cap of the old flat gain
+   * (1.3 / 2.4, the same along^2 on top; below 2.4 at 8 m the far part of the shaft no longer passes the judge's own
+   * magenta scan over warm fogged grass, measured). So the far end is never brighter than the lens end
+   * (A-film-beams-*-probe: mean addition over 10-30 % of the way to her >= over 60-80 %). */
   gainWary: 1.0,
-  gainHostile: 1.3,
-  gainHostileFog: 2.4,
+  gainHostile: 2.1,
+  gainHostileFog: 6.2,
   fogFull: 2.55,
+  /** The lock's distance falloff (metres): its light x 1 / (1 + d / lockFalloffM) d metres from the lens. */
+  lockFalloffM: 5,
   /** The beam keeps the lens's 4 Hz flicker, but its trough is 0.65 (the lens dips to 0.3): a lock is never gone. */
   flickerLowHostile: 0.65,
   /** The fade exponent along the cone, sweep and lock alike (light x along^p, along = 1 at the lens, 0 at the far end). */
   fade: 2,
   /**
+   * THE CROSS-SECTION. The light a view ray gathers is the cone's chord term `edge` (1 on the axis, 0 at the
+   * silhouette) to this power: the sweep keeps edge^2; the lock is edge^3, a hot line with soft sides, so it reads as
+   * a shaft of light and not a flat band of paint (beam lab, Oct 30).
+   */
+  profileSweep: 2,
+  profileLock: 3,
+  /**
    * PAST HER (targeted fix). A lock's cone runs the full sight range x weather scale (bible §7.2) and its light
    * carries past her, but her body takes part of it: beyond the point it locks on, the light also halves every
    * `pastTargetHalfM` metres. Measured from her own chase camera, the full-strength tail of the cone that runs past
-   * her and under the camera washed the lower third of the frame pink (V-lamp-beams-*-gameplay).
+   * her and under the camera washed the lower third of the frame pink (V-lamp-beams-*-gameplay); 2 m keeps the
+   * side view's shaft visibly carrying past her and fading (1 m read as a cut).
    */
-  pastTargetHalfM: 1.0,
+  pastTargetHalfM: 2.0,
   /**
    * THE LENS CONE (targeted fix; judge: "the hostile lock beam leaves the back of the lens and crosses the Tiller's
    * own hull"). A beam leaves its lens forward. Its drawn direction never leaves a cone of `coneOffDeg` about the
@@ -434,7 +452,7 @@ const IRIS_FRAG = /* glsl */`
 `;
 
 const BEAM_VERT = /* glsl */`
-  attribute vec4 aBeam;   // rgb: colour x intensity; a: the fraction of the cone's length where its target stands (1: none)
+  attribute vec4 aBeam;   // rgb: colour x intensity; a: a lock: the fraction of the cone's length where its target stands (1: none); a sweep: 2
   varying vec3 vCol;
   varying float vZ;
   varying float vTgt;
@@ -483,9 +501,15 @@ const BEAM_FRAG = /* glsl */`
     // BEAM.nearFadeM of the eye fade out
     float near = smoothstep(${BEAM.nearFadeM[0].toFixed(2)}, ${BEAM.nearFadeM[1].toFixed(2)}, -vMv.z);
     float along = (1.0 - vZ);
+    float isLock = step(vTgt, 1.5);        // aBeam.a: a lock's target fraction (<= 1), a sweep's 2
+    float tgt = min(vTgt, 1.0);
     // past the target (a lock: her chest) the light also halves every BEAM.pastTargetHalfM metres
-    float past = exp2(-max(vZ - vTgt, 0.0) * vLen / ${BEAM.pastTargetHalfM.toFixed(2)});
-    float a = pow(max(along, 0.0), ${BEAM.fade.toFixed(1)}) * past * edge * edge * near;   // bright on the axis, gone at the silhouette: a shaft, not a wedge
+    float past = exp2(-max(vZ - tgt, 0.0) * vLen / ${BEAM.pastTargetHalfM.toFixed(2)});
+    // a lock's light falls with distance from the lens (BEAM.lockFalloffM): brightest at the lens, never at her end
+    float fall = mix(1.0, 1.0 / (1.0 + vZ * vLen / ${BEAM.lockFalloffM.toFixed(2)}), isLock);
+    // the cross-section: edge^2 (sweep), edge^3 (lock: a hot line with soft sides) — bright on the axis, gone at the silhouette
+    float prof = pow(edge, mix(${BEAM.profileSweep.toFixed(1)}, ${BEAM.profileLock.toFixed(1)}, isLock));
+    float a = pow(max(along, 0.0), ${BEAM.fade.toFixed(1)}) * fall * past * prof * near;
     gl_FragColor = vec4(vCol * a, 1.0);
   }
 `;
@@ -966,12 +990,12 @@ export class LampSystem {
       _s.x = brad; _s.y = brad; _s.z = len;
       _m.compose(_p, _qs, _s);
       _m.toArray(bm, r.bslot * 16);
-      // the colour: the token's linear value x the beam's gain (update) x the cone fade; .w = where her chest stands
-      // along the cone (0-1; 1 for a sweep, or a lock with no target in reach): past it the light halves per
-      // BEAM.pastTargetHalfM
+      // the colour: the token's linear value x the beam's gain (update) x the cone fade; .w = a lock: where her chest
+      // stands along the cone (0-1; 1 with no target in reach: past it the light halves per BEAM.pastTargetHalfM); a
+      // sweep: 2 (the shader's lock flag: the lock's distance falloff and cross-section)
       const tf0 = tgtLen > 0.5 && tgtLen < len ? tgtLen / len : 1;
       const LA = this._linA, si = r.bsi, ob = r.bslot * 4, k = r.bk * fade;
-      B[ob] = LA[si * 3] * k; B[ob + 1] = LA[si * 3 + 1] * k; B[ob + 2] = LA[si * 3 + 2] * k; B[ob + 3] = tf0;
+      B[ob] = LA[si * 3] * k; B[ob + 1] = LA[si * 3 + 1] * k; B[ob + 2] = LA[si * 3 + 2] * k; B[ob + 3] = lock ? tf0 : 2;
       beams++;
     }
     if (lamps) this.lampMesh.instanceMatrix.needsUpdate = true;
