@@ -1223,7 +1223,8 @@ const RT_ROUTES = [
   [/^post:UnrealBloomPass\./, [[ENGINE, /this\.bloom\s*=\s*new UnrealBloomPass\(/]], 'the bloom mip chain (capped at BLOOM_MAX_WIDTH)', true],
   [/^post:/, [[ENGINE, /this\.composer\.addPass\(/]], 'a post pass target', true],
   [/^shadow:csm\[\d+\]$/, [[ENGINE, /this\.csm\s*=\s*new CSM\(/], [ENGINE, /Math\.min\(csm\.shadowMapSize, cap\)/], [ENVIRONMENT, /engine\.enableCSM\(/]], 'a CSM cascade shadow map: shadowMapSize from world-sky\'s enableCSM call (and the tier csmMapCaps where the engine has them)', false],
-  [/^shadow:/, [[ENGINE, /shadow\.mapSize/], [ENVIRONMENT, /shadow\.mapSize/], [ENVIRONMENT, /castShadow\s*=\s*true/]], 'a light shadow map (its light\'s shadow.mapSize)', false],
+  // the line that SIZES the light's map (a mapSize write), never a line that only reads it
+  [/^shadow:/, [[ENGINE, /shadow\.mapSize\.set\(|shadow\.mapSize\.(x|y|width|height)\s*=[^=]/], [ENVIRONMENT, /shadow\.mapSize\.set\(|shadow\.mapSize\.(x|y|width|height)\s*=[^=]/], [ENVIRONMENT, /castShadow\s*=\s*true/]], 'a light shadow map (its light\'s shadow.mapSize)', false],
   [/^env:/, [[ENVIRONMENT, /PMREMGenerator\(/], [ENVIRONMENT, /fromScene\(/]], 'the environment PMREM (world-sky)', false],
 ];
 /** the default tier's dprCap line (every drawing-buffer-sized target scales with it) */
