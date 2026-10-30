@@ -1587,9 +1587,12 @@ const heapControlGrade = (riseB, fallB, expectedB) => ({ ok: Math.abs(riseB / ex
 /**
  * THE GPU-PROCESS BASELINE (targeted fix round 1; engineering judge: A90-abs filed ~57 % of the footprint under an
  * unmeasured "browser" remainder hard-coded exact). Read in THIS Chrome before the game page exists:
- *   blank   a page of the game's origin with no game and no canvas (CDP Fetch serves an empty document at
- *           GPU_BASELINE_PATH): the GPU process with no WebGL context of this row = the browser's own share (plus
- *           whatever earlier pages of this Chrome left cached in it);
+ *   blank0  a page of the game's origin with no game and no canvas (CDP Fetch serves an empty document at
+ *           GPU_BASELINE_PATH), before any context of this probe: in a fresh Chrome (the row's normal case: it runs before
+ *           the block's first page row) the browser's own share;
+ *   blank   the same, after one throwaway context of the game's attributes was made, drawn, lost and removed (the
+ *           prime): in the harness's shared Chrome the baseline (the prime purges what a new context purges of the earlier
+ *           rows' residue); in a fresh Chrome, blank - blank0 is the device state a first context leaves (reported);
  *   tiny    the same page with ONE bare WebGL2 canvas at 16 x 9, the game's context attributes, drawn 30 frames: the
  *           context's fixed cost (ANGLE / Metal device, command buffers, the first context's runtime);
  *   full    that canvas resized to the staged fight's drawing buffer (the engine module's own tier table, as STAGE_FIGHT
@@ -1615,6 +1618,11 @@ async function gpuBaseline(browser, PORT) {
     await page.setViewport({ width: 1600, height: 900 });
     await page.goto(`http://localhost:${PORT}${GPU_BASELINE_PATH}`, { waitUntil: 'load', timeout: 30000 });
     cdp.off('Fetch.requestPaused', onPaused); await cdp.send('Fetch.disable').catch(() => {});
+    // BLANK BEFORE ANY CONTEXT of this probe (targeted fix round 1, second pass): in a FRESH Chrome this is the browser's own
+    // share (the judge's about:blank probe: 52.7 MB); the prime below then leaves the ANGLE / Metal device state a first context
+    // creates in the GPU process, which belongs to the WebGL context bucket, not to the browser
+    await sleep(1500);
+    const blank0 = await settledFootprint(browser);
     // PRIME (lane block, Oct 30 07:05Z: in the harness's shared Chrome the GPU process dropped 37 MB of the earlier rows'
     // residue the moment a new context was made, so the context's fixed cost read -36.7 MB): one throwaway WebGL2 context of
     // the game's attributes is made, drawn, lost and removed BEFORE the blank reading, so what a new context purges is purged
@@ -1645,9 +1653,10 @@ async function gpuBaseline(browser, PORT) {
     await withTimeout(page.close(), 15000, 'baseline page.close').catch(() => {}); closed = true;
     await sleep(2000);
     const afterClose = await footprintMedian(browser, 3, 600);
-    return { ok: blank.medianB != null && tiny.medianB != null && full.medianB != null, blank, tiny, full, afterClose, plan, bareSize: size, tinySize: [16, 9], attrs,
+    return { ok: blank0.medianB != null && blank.medianB != null && tiny.medianB != null && full.medianB != null, blank0, blank, tiny, full, afterClose, plan, bareSize: size, tinySize: [16, 9], attrs,
+      deviceStateAfterPrimeMB: blank0.medianB != null && blank.medianB != null ? MB(blank.medianB - blank0.medianB) : null,
       probeResidueMB: afterClose.medianB != null && blank.medianB != null ? MB(afterClose.medianB - blank.medianB) : null,
-      method: 'GPU-process footprint (settled, then the median of 5 macOS footprint readings) on an empty page of the game origin after one throwaway context was made and lost (the prime), then with one bare WebGL2 canvas of the game\'s context attributes at 16 x 9 and at the fight\'s drawing-buffer size, 30 frames drawn each; read before the game page exists; the reading after the probe page closed is reported' };
+      method: 'GPU-process footprint (settled, then the median of 5 macOS footprint readings) on an empty page of the game origin before any context (blank0) and after one throwaway context was made and lost (the prime: blank), then with one bare WebGL2 canvas of the game\'s context attributes at 16 x 9 and at the fight\'s drawing-buffer size, 30 frames drawn each; read before the game page exists; the reading after the probe page closed is reported' };
   } catch (err) { return { ok: false, error: String(err.message || err).slice(0, 200) }; }
   finally { if (!closed) await withTimeout(page.close(), 15000, 'baseline page.close').catch(() => {}); }
 }
@@ -1667,8 +1676,9 @@ function routeRemainder(files) {
 const SPLIT_TOLERANCE_B = 32e6;   // a negative remainder beyond this means the buckets do not add up: the split fails
 /**
  * THE FOOTPRINT SPLIT, graded against MEASURED buckets only (pure: its negative controls feed it inputs it must reject):
- *   browser baseline      = blank (measured)
- *   WebGL context + swap  = full - blank (measured: context fixed cost tiny - blank, default framebuffer full - tiny)
+ *   browser baseline      = blank0 in a fresh Chrome, blank in a shared one (measured; labelled with the Chrome it came from)
+ *   WebGL context + swap  = full - baseline (measured: context fixed cost tiny - baseline, incl. the first context's device
+ *                           state in a fresh Chrome; default framebuffer full - tiny)
  *   GL census             = the census bytes by owner lane (A-vram-ledger's census, installed before the context)
  *   game-driven, outside the census = footprint - the three above, routed to engine-gpu with engine.js file:line
  * Checks: every bucket measured; the bare context was the game's drawing-buffer size; no bucket negative and the
@@ -1676,7 +1686,11 @@ const SPLIT_TOLERANCE_B = 32e6;   // a negative remainder beyond this means the 
  */
 const ATTR_KEYS = ['alpha', 'depth', 'stencil', 'antialias', 'premultipliedAlpha', 'preserveDrawingBuffer'];
 function splitFootprint({ footprintB, base, gameSize, gameAttrs, glBytes, routing }) {
-  const blankB = base?.blank?.medianB ?? null, tinyB = base?.tiny?.medianB ?? null, fullB = base?.full?.medianB ?? null;
+  // the browser baseline: in a FRESH Chrome the reading before any context (blank0; the first context's device state then
+  // falls in the context bucket); in the harness's SHARED Chrome the reading after the prime (blank), which has purged what a
+  // new context purges of the earlier rows' residue (labelled shared: the browser + that residue)
+  const fresh = base?.shared === false;
+  const blankB = (fresh ? base?.blank0?.medianB : base?.blank?.medianB) ?? null, tinyB = base?.tiny?.medianB ?? null, fullB = base?.full?.medianB ?? null;
   const measured = [footprintB, blankB, tinyB, fullB, glBytes].every((x) => x != null && Number.isFinite(x));
   const sameSize = !!base?.bareSize && !!gameSize && base.bareSize[0] === gameSize[0] && base.bareSize[1] === gameSize[1];
   const contextB = measured ? fullB - blankB : null, contextFixedB = measured ? tinyB - blankB : null, defaultFbB = measured ? fullB - tinyB : null;
@@ -1686,7 +1700,7 @@ function splitFootprint({ footprintB, base, gameSize, gameAttrs, glBytes, routin
   const remainderB = measured ? footprintB - blankB - contextB - glBytes : null;
   const checks = {
     everyBucketMeasured: measured && blankB > 0,
-    baselineReadingsSettled: [base?.blank, base?.tiny, base?.full].every((x) => x?.settled === true),
+    baselineReadingsSettled: [...(fresh ? [base?.blank0] : []), base?.blank, base?.tiny, base?.full].every((x) => x?.settled === true),
     bareContextWasTheGameDrawingBufferSize: sameSize,
     bareContextHadTheGameAttributes: !!gameAttrs && !!base?.attrs && ATTR_KEYS.every((k) => gameAttrs[k] === base.attrs[k]),
     noBucketNegative: measured && contextB >= -SPLIT_TOLERANCE_B && contextFixedB >= -SPLIT_TOLERANCE_B && defaultFbB >= -SPLIT_TOLERANCE_B,
@@ -1696,9 +1710,11 @@ function splitFootprint({ footprintB, base, gameSize, gameAttrs, glBytes, routin
   return { ok: Object.values(checks).every(Boolean), checks,
     buckets: measured ? { footprintMB: MB(footprintB), browserBaselineMB: MB(blankB), webglContextAndSwapChainMB: MB(contextB), glCensusMB: MB(glBytes), gameDrivenOutsideCensusMB: MB(remainderB) } : null,
     context: measured ? { fixedCostMB: MB(contextFixedB), defaultFramebufferMB: MB(defaultFbB), drawingBuffer: gameSize, bytesPerPixel: bytesPerPixel == null ? null : +bytesPerPixel.toFixed(2),
-      impliedColourBuffers: bytesPerPixel == null ? null : +((bytesPerPixel / samples - depthBpp) / 4).toFixed(2), samples, depthBytesPerPixel: depthBpp, attrs: base?.attrs || null } : null,
+      impliedColourBuffers: bytesPerPixel == null ? null : +((bytesPerPixel / samples - depthBpp) / 4).toFixed(2), samples, depthBytesPerPixel: depthBpp, attrs: base?.attrs || null,
+      deviceStateAfterPrimeMB: base?.deviceStateAfterPrimeMB ?? null, baselineReading: fresh ? 'blank0 (before any context)' : 'blank (after the prime)' } : null,
     shares: measured && footprintB ? { browserBaseline: +(blankB / footprintB).toFixed(3), webglContextAndSwapChain: +(contextB / footprintB).toFixed(3), glCensus: +(glBytes / footprintB).toFixed(3), gameDrivenOutsideCensus: +(remainderB / footprintB).toFixed(3) } : null,
-    remainderOwner: 'engine-gpu: game-driven GPU memory outside the census (ANGLE / Metal per-resource and per-program overhead the GL calls cause but do not size)', routing };
+    remainderOwner: 'engine-gpu: game-driven GPU memory outside the census (ANGLE / Metal per-resource and per-program overhead the GL calls cause but do not size)', routing,
+    baselineChrome: base?.chrome || null };
 }
 
 async function a90Abs({ PORT }) {
@@ -1708,7 +1724,13 @@ async function a90Abs({ PORT }) {
   const lifeS = Number(process.env.CAL_A90ABS_LIFECYCLE_S) || B.a90LifecycleS;
   const fightS = Number(process.env.CAL_A90ABS_FIGHT_S) || B.fightS;
   const shortened = loopS < B.a90LoopS || lifeS < B.a90LifecycleS || fightS < B.fightS;
-  return onPage(PORT, async ({ page, cdp, browser, pre }) => {
+  return onPage(PORT, async ({ page, cdp, browser, pre, shared }) => {
+    // WHICH CHROME the baseline was read in (lane block, Oct 30 07:47Z: in the harness's shared Chrome the "blank" reading was
+    // 526.7 MB, the browser plus what the earlier rows' pages left in its GPU process; the judge's fresh Chrome read 52.7 MB).
+    // This row is registered BEFORE the first page row of the block (GATES below), so in the lane block and in any --only set
+    // of the three instruments it opens its own fresh Chrome and the baseline is the browser's own; a shared reading is labelled
+    if (pre) pre.shared = !!shared;
+    if (pre) pre.chrome = shared ? 'shared harness Chrome: the browser + the residue earlier rows of this run left in its GPU process' : 'fresh Chrome launched for this row: the browser\'s own share';
     await cdp.send('HeapProfiler.enable');
     const heapAtBoot = await gcAndHeap(cdp);
     // the post-boot heap GROWTH is attributed by a sampling profile of what is still live at the end (objects
@@ -1819,7 +1841,7 @@ async function a90Abs({ PORT }) {
       neg('gpuProcessMeasured', 'this run\'s GPU-process samples with the footprint reading missing (footprint tool failed)', gpuMeasured(gpuSamples.map((g) => ({ ...g, footprintB: null })))),
       neg('gpuProcessMeasured', 'this run\'s GPU-process samples with the GPU process not found', gpuMeasured(gpuSamples.map((g) => ({ ...g, found: false })))),
       neg('footprintSplitIntoMeasuredBuckets', 'the split with a blank reading taken while the GPU process was still moving (not settled)', splitFootprint({ footprintB: gpuAt, base: { ...pre, blank: { ...(pre?.blank || {}), settled: false } }, gameSize: glAttr?.drawingBuffer, gameAttrs: glAttr?.gameAttrs, glBytes, routing: remainderRouting }).ok),
-      neg('footprintSplitIntoMeasuredBuckets', 'the split with no browser baseline', splitFootprint({ footprintB: gpuAt, base: { ...pre, blank: { medianB: null } }, gameSize: glAttr?.drawingBuffer, gameAttrs: glAttr?.gameAttrs, glBytes, routing: remainderRouting }).ok),
+      neg('footprintSplitIntoMeasuredBuckets', 'the split with no browser baseline', splitFootprint({ footprintB: gpuAt, base: { ...pre, blank0: { medianB: null }, blank: { medianB: null } }, gameSize: glAttr?.drawingBuffer, gameAttrs: glAttr?.gameAttrs, glBytes, routing: remainderRouting }).ok),
       neg('footprintSplitIntoMeasuredBuckets', 'the split with a bare context of another size', splitFootprint({ footprintB: gpuAt, base: { ...pre, bareSize: [16, 9] }, gameSize: glAttr?.drawingBuffer, gameAttrs: glAttr?.gameAttrs, glBytes, routing: remainderRouting }).ok),
       neg('footprintSplitIntoMeasuredBuckets', 'the split with a bare context made with antialias on (attributes not the game\'s)', splitFootprint({ footprintB: gpuAt, base: { ...pre, attrs: { ...(pre?.attrs || {}), antialias: !(glAttr?.gameAttrs?.antialias) } }, gameSize: glAttr?.drawingBuffer, gameAttrs: glAttr?.gameAttrs, glBytes, routing: remainderRouting }).ok),
       neg('footprintSplitIntoMeasuredBuckets', 'the split with 200 MB more census than the footprint holds', splitFootprint({ footprintB: gpuAt, base: pre, gameSize: glAttr?.drawingBuffer, gameAttrs: glAttr?.gameAttrs, glBytes: (gpuAt ?? 0) - (pre?.full?.medianB ?? 0) + 200e6, routing: remainderRouting }).ok),
@@ -1851,7 +1873,7 @@ async function a90Abs({ PORT }) {
     return { pass, detail: {
       verdict: (shortened ? 'DEV RUN (shortened workload, never a PASS): ' : '') + (measuredPass ? 'PASS' : 'FAIL: ' + [...Object.keys(instrument).filter((k) => !instrument[k]), ...Object.entries(bars).filter(([, b]) => b.binding && !b.pass).map(([k]) => 'bar ' + k)].join(', '))
         + ` — INSTRUMENT (R48 b): ${instrumentOk ? 'PASS' : 'FAIL'} (heap control ${heapControl?.ratio ?? '?'}x of ${heapControl?.expectedB ? MB(heapControl.expectedB) : '?'} MB; GPU control ${gpuControl?.ratio ?? '?'}x of ${gpuControl?.expectedB ? MB(gpuControl.expectedB) : '?'} MB, fall ${gpuControl?.fallOverRise ?? '?'}x of the rise (median of ${GPU_CONTROL_CYCLES} cycles); `
-        + `footprint split into MEASURED buckets ${footprintSplit.ok ? 'holds' : 'FAILS ' + Object.keys(footprintSplit.checks).filter((k) => !footprintSplit.checks[k]).join(', ')}: ${bk ? `browser baseline ${bk.browserBaselineMB} MB, WebGL context + swap chain ${bk.webglContextAndSwapChainMB} MB (default framebuffer ${footprintSplit.context?.defaultFramebufferMB} MB = ${footprintSplit.context?.bytesPerPixel} B/px at ${(footprintSplit.context?.drawingBuffer || []).join('x')}), GL census ${bk.glCensusMB} MB, game-driven outside the census ${bk.gameDrivenOutsideCensusMB} MB -> engine-gpu @ ${remainderRouting.map((x) => x.fileLine).join(' + ')}` : 'not measured'}; `
+        + `footprint split into MEASURED buckets ${footprintSplit.ok ? 'holds' : 'FAILS ' + Object.keys(footprintSplit.checks).filter((k) => !footprintSplit.checks[k]).join(', ')}: ${bk ? `browser baseline ${bk.browserBaselineMB} MB (${shared ? 'SHARED harness Chrome: includes earlier rows\' residue' : 'fresh Chrome'}), WebGL context + swap chain ${bk.webglContextAndSwapChainMB} MB (default framebuffer ${footprintSplit.context?.defaultFramebufferMB} MB = ${footprintSplit.context?.bytesPerPixel} B/px at ${(footprintSplit.context?.drawingBuffer || []).join('x')}), GL census ${bk.glCensusMB} MB, game-driven outside the census ${bk.gameDrivenOutsideCensusMB} MB -> engine-gpu @ ${remainderRouting.map((x) => x.fileLine).join(' + ')}` : 'not measured'}; `
         + `negative controls ${negatives.filter((n) => n.ok).length}/${negatives.length} fail as they must) — `
         + `BARS (${binding ? 'binding: global run' : 'lane run: graded at the orchestrator\'s 5270 global run after the engine-gpu merge, R48 b'}): post-GC JS heap ${MB(heapPostGc)} MB (ceiling 450) ${bars.postGcHeapWithinCeiling.pass ? 'pass' : 'FAIL'}, Chrome GPU process footprint ${gpuMax === null ? 'not measured' : MB(gpuMax) + ' MB'} (ceiling 1500) ${bars.gpuProcessWithinCeiling.pass ? 'pass' : 'FAIL'} at the staged fight, after the A90 workload (${a90.kills} kills, ${a90.workload?.respawned} respawned)`
         + (bars.gpuProcessWithinCeiling.pass ? '' : ` — over-bar routing: GL census -> ${footprintSplit.glTopRenderTargets ? footprintSplit.glTopRenderTargets.slice(0, 3).map((x) => x.owner + ' ' + x.MB + ' MB @ ' + x.fileLines.join(' + ')).join('; ') : '?'}; game-driven outside the census ${bk ? bk.gameDrivenOutsideCensusMB : '?'} MB -> engine-gpu @ ${remainderRouting.map((x) => x.fileLine).join(' + ')}; what-if at pixel ratio 1.25 ${whatIfDpr125?.footprintMB ?? '?'} MB (drop ${whatIfDpr125?.footprintDropMB ?? '?'} MB, of which outside the census ${whatIfDpr125?.outsideCensusDropMB ?? '?'} MB)`),
@@ -2283,6 +2305,13 @@ export const GATES = [
     title: 'W0b: tools/r5-refs/fetch.mjs pulls from the Wikimedia Commons API filtered to PD / CC0 / CC BY (classifier controls), the set verifies offline, and every V gate in every lane file names >= 1 reference file under reference/r5/** with a MANIFEST row (author, source URL, licence, retrieved date)',
     check: (ctx) => referenceSet(ctx),
   },
+  // A90-abs BEFORE the first page row (targeted fix round 1): it then opens its own fresh Chrome, so its GPU-process baseline is
+  // the browser's own (no earlier page's residue) and its footprint bar reads this row's game only
+  {
+    id: 'A90-abs', kind: 'runner', lane: LANE, wave: 'W0b', timeout: 900000,
+    title: 'W0b (global list): after the A90 kill -> respawn workload, forced GC, then the staged fight for 60 s: post-GC JS heap <= 450 MB and the Chrome GPU process footprint <= 1.5 GB, both reported',
+    check: (ctx) => a90Abs(ctx),
+  },
   {
     id: 'A-perf-scenarios-self-contained', kind: 'action', lane: LANE, wave: 'W0b', timeout: 120000, settle: 600,
     title: 'W0b (R34): every PERF_SCENARIOS entry, eval\'d in a page scope holding STAGE_PRELUDE and nothing else (as engine-gpu\'s A-terrain-1024-probe / A-rt-ledger-census / A-rt-ledger do), stages or returns a named R18/R28/R30 skip; no roster or place helper is visible outside __stage; every unpin works',
@@ -2297,11 +2326,6 @@ export const GATES = [
     id: 'A-vram-ledger', kind: 'runner', lane: LANE, wave: 'W0b', timeout: 240000,
     title: 'W0b: staged fight, GL allocation census: textures <= 160 MB, render targets <= 170 MB (A-rt-ledger cap), geometry buffers <= 120 MB, sum <= 450 MB',
     check: (ctx) => vramLedger(ctx),
-  },
-  {
-    id: 'A90-abs', kind: 'runner', lane: LANE, wave: 'W0b', timeout: 900000,
-    title: 'W0b (global list): after the A90 kill -> respawn workload, forced GC, then the staged fight for 60 s: post-GC JS heap <= 450 MB and the Chrome GPU process footprint <= 1.5 GB, both reported',
-    check: (ctx) => a90Abs(ctx),
   },
   {
     id: 'A-unattributed-cap', kind: 'runner', lane: LANE, wave: 'W0b', timeout: 240000,
