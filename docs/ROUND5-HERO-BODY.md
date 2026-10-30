@@ -1120,8 +1120,8 @@ exactly these overlays; standalone:
   long-boom pricing, and the rows still move by a sample or a few hundredths between runs.
 - **A31c** — failed at the Round-4 baseline (R36: listed). Against the Aloy runs (§000.4): better on head-seen,
   view-off, aim entry and the turns; worse on moving framing (onFrac ratio). Not retuned this round.
-- **A16's 0.75 row fails by its character-height reading** (+0.093 m) since the T bends with the arrow — the
-  conflict and the ruling request are in §0000.2 / §7.0. **The pitched aims' loose** (the re-nock reach to the hip
+- **A16 at pitched aims is graded under R52** (targeted fix, §T.1): perpendicular to the arrow, every row PASSES; the
+  character-height reading at 0.75 (+0.09 m, the bent T) is reported, not graded. **The pitched aims' loose** (the re-nock reach to the hip
   quiver from a bent T) carries the hand ~0.28 m back in character space and the elbow to 0.19 m behind the head
   plane (R35's 0.20): within the bar, with ~1 cm of room. **The T turn's ray is low-passed (0.35 s)**: the trunk
   follows a fast camera pitch with that lag while the arms follow at once.
@@ -1151,8 +1151,8 @@ exactly these overlays; standalone:
 
 ## 7. Requests to other lanes and the orchestrator
 
-0. **orchestrator (fix round 5, A16's down row):** rule how A16's "elbow not above the shoulder" reads at a
-   PITCHED aim. The judge-r2 fix of V24-draw-down (the whole T bent with the arrow, the forearm on the arrow line)
+0. **orchestrator (fix round 5, A16's down row) — RULED (R52, Oct 30), encoded in the targeted fix (§T.1).** Kept for
+   the record: rule how A16's "elbow not above the shoulder" reads at a PITCHED aim. The judge-r2 fix of V24-draw-down (the whole T bent with the arrow, the forearm on the arrow line)
    puts the draw elbow +0.093 m over the draw shoulder joint in character height at camPitch 0.75 (A16 FAILS that
    one row by its world reading) and +0.006 m in the aim frame (the frame A-draw-elbow-level's height band already
    uses in R5; reported in every A16 row as `elbowAboveShoulderAimFrame`). §0000.2 proves no pose holds A16's world
