@@ -419,18 +419,19 @@ const CLIMB_CATCH = 0.08;
  * CHAINS.wrapSash) while the free end moves. */
 /* W0b targeted fix (A-tail-legible graded at EVERY gust moment, not only the
  * sheet's — the draft bar restored): with the bend limit at 0.62 rad per link
- * the free strip could not swing far enough off its hanging rest to follow the
- * air, and at some gust phases it folded down along the stowed bow (2-10 of
- * 24-60 moments under the bar, side views 0-2 px clear, reach 1-3: probes
- * t1-t7, scratchpad r5/hero-body/bin/probe-tail.mjs). A cloth strip has next
- * to no bending stiffness: `maxAng` 0.62 -> 1.3 rad (the wrapped root still
- * holds its line through `rootK`), the air coupling 3.0 -> 3.6 1/s and the
- * lighter fall `grav` 0.42 -> 0.30 (the strip's drag against its weight in a
- * 5.5 m/s wind): 0 of 60 trade-wind moments under the bar (clear >= 5 px, reach
- * >= 4 px in every view; probe t7 `c4`) where the old row had 6 of 60. Softer
- * strips (stiff 6-20 with the root stiffness confined to the knot) flapped and
- * folded down more, not less (probe t4). */
-DYN_CLASSES.push({ name: 'wrap', re: /(?!)/, stiff: 42, drag: 4.2, grav: 0.30, maxAng: 1.3, strike: 0.7, base: 0.30, collide: 2, wind: 3.6, rootK: 8 });
+ * and the air coupling at 3.0 1/s the free strip could not swing far enough
+ * off its hanging rest to follow the air, and at some gust phases it folded
+ * down along the stowed bow's limb (the side lenses 0-3 px clear, reach 1-3:
+ * 6-10 of 60 trade-wind moments under the bar, probes t2-t7, scratchpad
+ * r5/hero-body/bin/probe-tail.mjs). A cloth strip has next to no bending
+ * stiffness and a light strip's drag dwarfs its weight in a 5.5 m/s wind:
+ * `maxAng` 0.62 -> 1.3 rad (the wrapped root still holds its line through
+ * `rootK`), the air coupling `wind` 3.0 -> 5.0 1/s and the fall `grav` 0.42 ->
+ * 0.30. Measured over 120 trade-wind moments each (probes t8-t10): 3.6 /s 7 of
+ * 60 under the bar, 4.5 /s 10 of 120, 5.0 /s 1 of 120 (a side lens at 3 px).
+ * Softer strips (stiff 6-20 with the root stiffness confined to the knot)
+ * flapped and folded down more, not less (probe t4). */
+DYN_CLASSES.push({ name: 'wrap', re: /(?!)/, stiff: 42, drag: 4.2, grav: 0.30, maxAng: 1.3, strike: 0.7, base: 0.30, collide: 2, wind: 5.0, rootK: 8 });
 /** Air coupling per Round-4 class (1/s; 0 = none). Hair a little, cloth some, gear none. */
 const DYN_WIND = { hair: 0.22, necklace: 0, dangle: 0.15, cloth: 0.55, gear: 0, shirt: 0 };
 /** The default world wind (bible §2.2: the NE trade wind from bearing 045; north = -Z, east = +X). */
@@ -5571,7 +5572,7 @@ export class PlayerAnimator {
       const k = cls.stiff, dmp = cls.drag, gy = -9.81 * cls.grav, bg = cls.base;
       // fix round 4: the air (see `DYN_CLASSES` 'wrap'): this chain's flutter
       // across the gusting wind, and the wrapped root's stiffness profile
-      const cw = cls.wind ?? DYN_WIND[cls.name] ?? 0, rk = cls.rootK ?? 0;
+      const cw = cls.wind ?? DYN_WIND[cls.name] ?? 0, rk = cls.rootK ?? 0, airY = cls.airY ? 1 : 0;
       const flA = cw > 0 ? (this.wind.flutter || 0) * windS : 0, sd = c.seed;
       for (let s = 0; s < steps; s++) {
         for (let j = 1; j < n; j++) {
@@ -5592,7 +5593,7 @@ export class PlayerAnimator {
             if (wj > 0) {
               if (a === 0) acc += wj * (windX - wuz * fl - vel[i]);
               else if (a === 2) acc += wj * (windZ + wux * fl - vel[i]);
-              else acc += wj * fv;
+              else acc += wj * (fv - airY * vel[i]);   // airY: the air resists the strip's vertical flap too
             }
             vel[i] += acc * sdt;
             pos[i] += vel[i] * sdt;
