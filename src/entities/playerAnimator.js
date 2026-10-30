@@ -434,7 +434,7 @@ const CLIMB_CATCH = 0.08;
  * of 120, 5.0 /s 1 of 240, 5.0 /s + airY 0 of 120 (every view >= 6 px clear,
  * reach >= 4). Softer strips (stiff 6-20 with the root stiffness confined to
  * the knot) flapped and folded down more, not less (probe t4). */
-DYN_CLASSES.push({ name: 'wrap', re: /(?!)/, stiff: 42, drag: 4.2, grav: 0.30, maxAng: 1.3, strike: 0.7, base: 0.30, collide: 2, wind: 5.0, rootK: 8, airY: true });
+DYN_CLASSES.push({ name: 'wrap', re: /(?!)/, stiff: 42, drag: 4.2, grav: 0.30, maxAng: 1.3, strike: 0.7, base: 0.30, collide: 2, wind: 5.0, rootK: 8, airY: true, runFl: 1.5 });
 /** Air coupling per Round-4 class (1/s; 0 = none). Hair a little, cloth some, gear none. */
 const DYN_WIND = { hair: 0.22, necklace: 0, dangle: 0.15, cloth: 0.55, gear: 0, shirt: 0 };
 /** The default world wind (bible §2.2: the NE trade wind from bearing 045; north = -Z, east = +X). */
@@ -5142,7 +5142,7 @@ export class PlayerAnimator {
       // right-side chains get the opposite lateral kick from a foot plant
       const side = /_r_|_r$|_r[0-9]/.test(root) ? -1 : 1;
       this._chains.push({
-        cls, links, side, seed: (h % 1000) / 1000 * Math.PI * 2,
+        cls, links, side, seed: (h % 1000) / 1000 * Math.PI * 2, flX: 0,
         // published summary scalars (gate A33-rig-finite reads these): the
         // tip's world-plane offset from its animated rest and its velocity.
         ax: 0, az: 0, vx: 0, vz: 0,
@@ -5576,7 +5576,16 @@ export class PlayerAnimator {
       // fix round 4: the air (see `DYN_CLASSES` 'wrap'): this chain's flutter
       // across the gusting wind, and the wrapped root's stiffness profile
       const cw = cls.wind ?? DYN_WIND[cls.name] ?? 0, rk = cls.rootK ?? 0, airY = cls.airY ? 1 : 0;
-      const flA = cw > 0 ? (this.wind.flutter || 0) * windS : 0, sd = c.seed;
+      // W0b targeted fix (`runFl`, the wrap only): running, she meets her own
+      // air, and a cloth strip in a faster flow flaps harder AND faster — the
+      // flutter's amplitude and its phase rate grow with her speed (x1 at a
+      // walk, x(1 + runFl) at a sprint). The extra phase is accumulated per
+      // chain (`flX`), so the wave never jumps; standing it adds nothing and
+      // the idle's tail is the trade wind's alone
+      const rf = cls.runFl > 0 ? cls.runFl * clamp((speed - 1) / 5.8, 0, 1) : 0;
+      if (rf > 0) c.flX += dt * rf;
+      const tf = t + c.flX;
+      const flA = cw > 0 ? (this.wind.flutter || 0) * windS * (cls.flK ?? 1) * (1 + rf) : 0, sd = c.seed;
       for (let s = 0; s < steps; s++) {
         for (let j = 1; j < n; j++) {
           const i0 = j * 3;
@@ -5586,8 +5595,8 @@ export class PlayerAnimator {
           // across the wind horizontally and a little vertically
           let fl = 0, fv = 0;
           if (flA > 0) {
-            fl = flA * (0.65 * Math.sin(5.3 * t + sd - 0.9 * j) + 0.35 * Math.sin(8.7 * t + 2.1 * sd - 1.4 * j));
-            fv = 0.35 * flA * Math.sin(6.1 * t + 1.7 * sd - 0.9 * j);
+            fl = flA * (0.65 * Math.sin(5.3 * tf + sd - 0.9 * j) + 0.35 * Math.sin(8.7 * tf + 2.1 * sd - 1.4 * j));
+            fv = 0.35 * flA * Math.sin(6.1 * tf + 1.7 * sd - 0.9 * j);
           }
           for (let a = 0; a < 3; a++) {
             const i = i0 + a;
