@@ -348,16 +348,28 @@ function attribute(profile, seconds, frames, PORT, opts = {}) {
   //     scale differently: the tree per (node, size) bucket, the list per sample);
   //   - the walk's bytes are >= samples x the sampling interval: a sample stands for at least one interval of allocation
   //     (V8 scales a sample of size s by 1 / (1 - exp(-s / interval)), and s / (1 - exp(-s / interval)) >= interval).
+  //   - a sample on a node the tree does not hold is accepted ONLY when it is LATER (by its ordinal, V8's sample id) than
+  //     every sample the tree holds: V8 builds the tree first and the sample list after (GetAllocationProfile ->
+  //     TranslateAllocationNode, then BuildSamples), and what it allocates in between (script line-end tables for the
+  //     frames it resolves) is sampled onto nodes created after the tree was taken. Those bytes are the profiler's own
+  //     retrieval, charged to "V8 profile retrieval" (the browser / V8 runtime); a node-less sample anywhere earlier fails
+  //     the check (the lane-block run of Oct 30 06:50Z read 4 such samples, 12,284 B of 461.9 MB, in one window; a probe of
+  //     V8's profiler in node, scratchpad bin/orphan-probe.mjs, found 4-9 node-less samples per profile, every one newer than
+  //     every sample on a tree node).
   const samples = profile.samples || [];
   const every = opts.foreignSampleEvery || 0;
-  let sampleBytes = 0, unnamedSampleBytes = 0, unnamedSamples = 0;
-  const sampleOwnerBytes = new Map();
+  let sampleBytes = 0, unnamedSampleBytes = 0, unnamedSamples = 0, retrievalBytes = 0, retrievalSamples = 0, maxNamedOrdinal = -Infinity;
+  const sampleOwnerBytes = new Map(), orphans = [];
   for (let i = 0; i < samples.length; i++) {
     const sm = samples[i];
     sampleBytes += sm.size;
     const o = every && i % every === 0 ? undefined : nodeOwner.get(sm.nodeId);
-    if (!o) { unnamedSampleBytes += sm.size; unnamedSamples++; } else add(sampleOwnerBytes, o, sm.size);
+    if (!o) orphans.push(sm); else { add(sampleOwnerBytes, o, sm.size); if (sm.ordinal > maxNamedOrdinal) maxNamedOrdinal = sm.ordinal; }
   }
+  for (const sm of orphans) {
+    if (sm.ordinal > maxNamedOrdinal) { retrievalBytes += sm.size; retrievalSamples++; } else { unnamedSampleBytes += sm.size; unnamedSamples++; }
+  }
+  const orphanDetail = orphans.slice(0, 8).map((sm) => ({ nodeId: sm.nodeId, ordinal: sm.ordinal, size: sm.size, afterTheTree: sm.ordinal > maxNamedOrdinal }));
   const interval = opts.interval || W0B_BUDGETS.alloc.samplingIntervalB;
   const attributedBytes = srcCaller + noSrcTotal;
   const fps = frames / seconds;
@@ -377,6 +389,8 @@ function attribute(profile, seconds, frames, PORT, opts = {}) {
     graded: at(srcCaller), topGraded: top(caller, 80), topSrcSelf: top(self, 12), topOutsideSrc: top(outside, 10),
     srcFunctionsSeen: caller.size, owners, noSrc: { ...at(noSrcTotal), buckets, top: top(noSrcTop, 8) },
     accounting: accountingOf({ attributedBytes, srcBytes: srcCaller, noSrcBytes: noSrcTotal, samples: samples.length, sampleBytes, unnamedSampleBytes, unnamedSamples, interval,
+      v8ProfileRetrieval: { samples: retrievalSamples, bytes: retrievalBytes, owner: 'the browser / V8 runtime: allocated by V8 while it built this profile, after the tree was taken' },
+      maxNamedOrdinal: Number.isFinite(maxNamedOrdinal) ? maxNamedOrdinal : null, orphanSamples: orphanDetail,
       structural: 'src + no-src = the tree total by construction (walk() charges each byte to exactly one): a structural note, not graded' }),
     allFunctions: [...caller.entries()].map(([fn, b]) => ({ fn, ...at(b) })) };
 }
@@ -555,7 +569,8 @@ const SCHEDULE_CONTROLS = [
   ['/src/combat/traps.js', 'combat-kit', 'W2'], ['/src/combat/kit/pots.js', 'combat-kit', 'W2'], ['/src/items/items.js', 'combat-kit', 'W2'], ['/src/items/crafting.js', 'combat-kit', 'W2'],
   ['/src/entities/anim/meleeLayer.js', 'melee', 'W1'], ['/src/entities/anim/clipMelee.js', 'melee', 'W1'], ['/src/entities/anim/castLayer.js', 'melee', 'W1'], ['/src/combat/melee.js', 'melee', 'W1'], ['/src/entities/playerAnimator.js', 'melee', 'W1'],
   ['/src/core/progression.js', 'progression', 'W3'], ['/src/core/save.js', 'progression', 'W3'], ['/src/items/fieldbooks.js', 'progression', 'W3'],
-  ['/src/ui/hud.js', 'shell-ui', 'W2'], ['/src/audio/audio.js', 'audio', 'W3'], ['/src/instruments/kinds/plumb.js', 'instruments-a', 'W1'], ['/src/entities/machines/grazer.js', 'instruments-b', 'W2'],
+  ['/src/ui/hud.js', 'shell-ui', 'W2'], ['/src/audio/audio.js', 'audio', 'W3'], ['/src/instruments/kinds/plumb.js', 'instruments-a', 'W1'], ['/src/entities/machines/legacy.js', 'instruments-b', 'W2'], ['/src/entities/machines/rig/shells-expansion.js', 'instruments-b', 'W2'],
+  ['/src/entities/machines/machine.js', null, null], ['/src/entities/machines/rig/lod.js', null, null],
   ['/src/core/engine.js', null, null], ['/src/core/collision.js', null, null], ['/src/entities/anim/clipLayer.js', null, null],
 ];
 const FIX_ROUND3_OWNER_ROWS = [
@@ -1486,6 +1501,26 @@ async function gpuProcess(browser) {
       footprintError: m ? null : String(fp.stderr || fp.stdout || '').slice(0, 160) };
   } finally { await s.detach().catch(() => {}); }
 }
+/**
+ * Wait until the GPU process's footprint stops moving (the last `n` readings within `tolMB`), at most `maxS` seconds, then
+ * return the median of 5 readings (targeted fix round 1: in the lane block the row shares the harness's Chrome, whose GPU
+ * process was still releasing the earlier rows' pages while the baseline was read: 244 -> 225 -> 253 -> 180 MB). The trace
+ * is reported.
+ */
+async function settledFootprint(browser, { n = 3, tolMB = 4, maxS = 45 } = {}) {
+  const t0 = Date.now(), trace = [];
+  for (;;) {
+    const g = await gpuProcess(browser);
+    if (g.found && g.footprintB != null) trace.push(MB(g.footprintB));
+    const last = trace.slice(-n);
+    const settled = last.length === n && Math.max(...last) - Math.min(...last) <= tolMB;
+    if (settled || Date.now() - t0 > maxS * 1000) {
+      const m = await footprintMedian(browser);
+      return { ...m, settled, settleS: r1((Date.now() - t0) / 1000), settleTraceMB: trace.slice(-12) };
+    }
+    await sleep(1000);
+  }
+}
 /** the median of n footprint readings `gapMs` apart (the fight keeps drawing; one reading is noisy) */
 async function footprintMedian(browser, n = 5, gapMs = 700) {
   const v = [];
@@ -1574,8 +1609,8 @@ async function gpuBaseline(browser, PORT) {
     await page.setViewport({ width: 1600, height: 900 });
     await page.goto(`http://localhost:${PORT}${GPU_BASELINE_PATH}`, { waitUntil: 'load', timeout: 30000 });
     cdp.off('Fetch.requestPaused', onPaused); await cdp.send('Fetch.disable').catch(() => {});
-    await sleep(2500);
-    const blank = await footprintMedian(browser);
+    await sleep(1500);
+    const blank = await settledFootprint(browser);
     const plan = await page.evaluate(`(async () => { const m = await import('/src/core/engine.js'); const q = m.DEFAULT_TIER || 'high'; const t = m.QUALITY_TIERS && m.QUALITY_TIERS[q];
       const pr = Math.min(${BUDGETS.deviceDpr}, t ? t.dprCap : 1); return { quality: q, dprCap: t ? t.dprCap : null, pixelRatio: pr, width: Math.floor(1600 * pr), height: Math.floor(900 * pr) }; })()`);
     const attrs = await page.evaluate(`(async () => {
@@ -1584,11 +1619,11 @@ async function gpuBaseline(browser, PORT) {
       const draw = (n) => new Promise((res) => { let k = 0; const f = () => { gl.viewport(0, 0, gl.drawingBufferWidth, gl.drawingBufferHeight); gl.clearColor(0.2, 0.3, 0.4, 1); gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT); if (++k >= n) res(); else requestAnimationFrame(f); }; requestAnimationFrame(f); });
       window.__w0bBare = { c, gl, draw }; await draw(30); return gl.getContextAttributes(); })()`);
     if (!attrs) return { ok: false, why: 'no bare WebGL2 context', blank };
-    await sleep(1500);
-    const tiny = await footprintMedian(browser);
+    await sleep(1000);
+    const tiny = await settledFootprint(browser);
     const size = await page.evaluate(`(async () => { const b = window.__w0bBare; b.c.width = ${plan.width}; b.c.height = ${plan.height}; await b.draw(30); return [b.gl.drawingBufferWidth, b.gl.drawingBufferHeight]; })()`);
-    await sleep(1500);
-    const full = await footprintMedian(browser);
+    await sleep(1000);
+    const full = await settledFootprint(browser);
     await page.evaluate(`(() => { const b = window.__w0bBare; const x = b.gl.getExtension('WEBGL_lose_context'); if (x) x.loseContext(); b.c.remove(); window.__w0bBare = null; return true; })()`);
     // after the probe's page is gone (diagnostic, not a bucket): what the GPU process still holds of the probe. The ANGLE /
     // Metal device state a first context creates is kept by the GPU process and SHARED by the game's context, so this is
@@ -1637,6 +1672,7 @@ function splitFootprint({ footprintB, base, gameSize, gameAttrs, glBytes, routin
   const remainderB = measured ? footprintB - blankB - contextB - glBytes : null;
   const checks = {
     everyBucketMeasured: measured && blankB > 0,
+    baselineReadingsSettled: [base?.blank, base?.tiny, base?.full].every((x) => x?.settled === true),
     bareContextWasTheGameDrawingBufferSize: sameSize,
     bareContextHadTheGameAttributes: !!gameAttrs && !!base?.attrs && ATTR_KEYS.every((k) => gameAttrs[k] === base.attrs[k]),
     noBucketNegative: measured && contextB >= -SPLIT_TOLERANCE_B && contextFixedB >= -SPLIT_TOLERANCE_B && defaultFbB >= -SPLIT_TOLERANCE_B,
@@ -1768,6 +1804,7 @@ async function a90Abs({ PORT }) {
       neg('a90WorkloadRan', 'this run\'s workload result with its verdict failed', workloadRan({ ...a90, workloadPass: false })),
       neg('gpuProcessMeasured', 'this run\'s GPU-process samples with the footprint reading missing (footprint tool failed)', gpuMeasured(gpuSamples.map((g) => ({ ...g, footprintB: null })))),
       neg('gpuProcessMeasured', 'this run\'s GPU-process samples with the GPU process not found', gpuMeasured(gpuSamples.map((g) => ({ ...g, found: false })))),
+      neg('footprintSplitIntoMeasuredBuckets', 'the split with a blank reading taken while the GPU process was still moving (not settled)', splitFootprint({ footprintB: gpuAt, base: { ...pre, blank: { ...(pre?.blank || {}), settled: false } }, gameSize: glAttr?.drawingBuffer, gameAttrs: glAttr?.gameAttrs, glBytes, routing: remainderRouting }).ok),
       neg('footprintSplitIntoMeasuredBuckets', 'the split with no browser baseline', splitFootprint({ footprintB: gpuAt, base: { ...pre, blank: { medianB: null } }, gameSize: glAttr?.drawingBuffer, gameAttrs: glAttr?.gameAttrs, glBytes, routing: remainderRouting }).ok),
       neg('footprintSplitIntoMeasuredBuckets', 'the split with a bare context of another size', splitFootprint({ footprintB: gpuAt, base: { ...pre, bareSize: [16, 9] }, gameSize: glAttr?.drawingBuffer, gameAttrs: glAttr?.gameAttrs, glBytes, routing: remainderRouting }).ok),
       neg('footprintSplitIntoMeasuredBuckets', 'the split with a bare context made with antialias on (attributes not the game\'s)', splitFootprint({ footprintB: gpuAt, base: { ...pre, attrs: { ...(pre?.attrs || {}), antialias: !(glAttr?.gameAttrs?.antialias) } }, gameSize: glAttr?.drawingBuffer, gameAttrs: glAttr?.gameAttrs, glBytes, routing: remainderRouting }).ok),
