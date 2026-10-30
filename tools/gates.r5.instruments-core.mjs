@@ -1946,7 +1946,9 @@ const FILM = (state, { fov = 4, both = false, dist = 15, night = false, sunlit =
   const yawBy = (mm, d) => { mm.root.quaternion.premultiply(qd.setFromAxisAngle(UPV, d)); mm.root.updateMatrixWorld(true); mm.heading = mm.heading + d; };
   const faceLens = (mm, tx, tz, iters) => { for (let it = 0; it < iters; it++) { const d = lensYawErr(mm, tx, tz); if (Math.abs(d) < 0.003) break; yawBy(mm, d); } };
   if (st === 'beams') {
-    m.forceState('search'); m.lastKnown.copy(lampPos).addScaledVector(axis, 9).addScaledVector(side, 4);
+    // (a range twin: the wary Tiller's stimulus lies BEHIND it, so its sweep never crosses the lock line whichever
+    // side the clear-view test below films from; beam lab, Oct 30: from the wary side its sweep added dG 60-80 there)
+    m.forceState('search'); m.lastKnown.copy(lampPos).addScaledVector(axis, ${herDist} > 0 ? -9 : 9).addScaledVector(side, 4);
     /* FIX ROUND 3: the hostile Tiller stands 6 m to the side of the wary one, facing the same way, with Brea straight
      * ahead of its lamp on the camera's side (the wary Tiller's stimulus lies away from the camera): both shafts cross
      * the frame side-on, one below the other. GAMEPLAY (targeted fix): Brea 8 m ahead of the hostile lamp and her own
@@ -1980,6 +1982,7 @@ const FILM = (state, { fov = 4, both = false, dist = 15, night = false, sunlit =
       if (Math.abs(d) > 0.003) yawBy(m2, d); };
     E.onAfterRender.push(H.fn);
   }
+  let camPick = { s: 1, sh: 0 };
   // the lens: camera.zoom (player.js and combat.js damp camera.fov every frame; nothing writes zoom)
   const placeCam = () => {
     if (st === 'beams') {
@@ -1993,13 +1996,15 @@ const FILM = (state, { fov = 4, both = false, dist = 15, night = false, sunlit =
       if (${herDist} > 0) {
         /* a range twin (targeted fix round 2): the judge's side framing — the camera square to the hostile lamp's line
          * to her, max(16 m, 1.15 x the span) out from its midpoint, 6.5 m over the ground, looking 1 m below the
-         * midpoint — on the hostile Tiller's side, so the wary Tiller and its sweep stand behind the lock */
+         * midpoint. camPick (the clear-view test below) chooses the side (+1: away from the wary Tiller, so it and its
+         * sweep stand behind the lock) and a shift of the camera along the line (a fraction of the span). */
         const hm = m2 || m; hm.lamp.anchor.updateWorldMatrix(true, false);
         const hl = new V().setFromMatrixPosition(hm.lamp.anchor.matrixWorld), her = p.position.clone();
         const ln = her.clone().sub(hl); ln.y = 0; ln.normalize();
         const nrm = new V(ln.z, 0, -ln.x);
         if (m2 && nrm.dot(m.position.clone().sub(m2.position)) > 0) nrm.negate();
-        const span = hl.distanceTo(her), mid = hl.clone().lerp(her, 0.5);
+        if (camPick.s < 0) nrm.negate();
+        const span = hl.distanceTo(her), mid = hl.clone().lerp(her, 0.5).addScaledVector(ln, camPick.sh * span);
         cam.position.copy(mid).addScaledVector(nrm, Math.max(16, span * 1.15));
         cam.position.y = Math.max(cam.position.y, T.getHeight(cam.position.x, cam.position.z) + 6.5);
         cam.lookAt(mid.clone().add(new V(0, -1.0, 0)));
@@ -2022,6 +2027,52 @@ const FILM = (state, { fov = 4, both = false, dist = 15, night = false, sunlit =
     cam.updateMatrixWorld();
   };
   placeCam();
+  /* RANGE TWINS: THE CAMERA SEES THE WHOLE LOCK LINE (targeted fix round 2). At bow range the side framing can put a
+   * tree between the camera and the line from the hostile lamp to her (beam lab, Oct 30: a pine on the hostile
+   * Tiller's side of this spot hid 30-70 % of the way to her in every variant, the round-1 shader included). Before
+   * anything is filmed or measured, a temporary opaque white rod (0.2 m thick) is laid along that line with every
+   * beam hidden, and drawn and hidden on consecutive frames: the line is SEEN at a point where the 7x7 px block there
+   * changes (mean R+G+B) by >= 60 % of the largest change of the 8 points and by > 40 (a pine's needles over part of
+   * the rod pass a bare > 40: lab, 14 m). Camera candidates are tried in order — the side away from the wary Tiller, shifted
+   * 0 / +20 % / -20 % of the span along the line, then the other side the same way — and the first that sees all 8
+   * points (10-90 % of the way) is filmed. None: the staging fails by name. The test never draws a beam, so it cannot
+   * pick a camera for how the beam it stages looks. */
+  let viewProbe = null;
+  if (${herDist} > 0 && !GAMEPLAY && st === 'beams') {
+    const { THREE } = await import('/src/core/collision.js');
+    const hm = m2 || m; hm.lamp.anchor.updateWorldMatrix(true, false);
+    const hl = new V().setFromMatrixPosition(hm.lamp.anchor.matrixWorld), chest = new V(p.position.x, p.position.y + 1.3, p.position.z);
+    const rl = hl.distanceTo(chest);
+    const rodGeo = new THREE.CylinderGeometry(0.1, 0.1, rl, 8, 1, false), rodMat = new THREE.MeshBasicMaterial({ color: 0xffffff, fog: false, toneMapped: false });
+    const rod = new THREE.Mesh(rodGeo, rodMat);
+    rod.position.copy(hl).lerp(chest, 0.5); rod.quaternion.setFromUnitVectors(new V(0, 1, 0), chest.clone().sub(hl).normalize());
+    rod.frustumCulled = false; rod.visible = false; rod.updateMatrixWorld(true);
+    __C.scene.add(rod);
+    const tries = [];
+    let good = null;
+    try {
+      for (const c of [{ s: 1, sh: 0 }, { s: 1, sh: 0.2 }, { s: 1, sh: -0.2 }, { s: -1, sh: 0 }, { s: -1, sh: 0.2 }, { s: -1, sh: -0.2 }]) {
+        camPick = c; placeCam(); await frames(3);
+        __M.lamps.hideBeams = true;
+        const seen = [];
+        for (let k = 0; k < 8; k++) {
+          const f = 0.1 + k * 0.8 / 7, v = hl.clone().lerp(chest, f).project(cam);
+          if (v.z > 1 || Math.abs(v.x) > 0.97 || Math.abs(v.y) > 0.97) { seen.push(-1); continue; }
+          const fx = (w) => (v.x * 0.5 + 0.5) * w, fy = (h) => (v.y * 0.5 + 0.5) * h;
+          rod.visible = true; const on = await PIX.grab(fx, fy, 7); rod.visible = false; const off = await PIX.grab(fx, fy, 7);
+          let dsum = 0; for (let i = 0; i < on.px.length; i += 4) dsum += Math.abs(on.px[i] - off.px[i]) + Math.abs(on.px[i + 1] - off.px[i + 1]) + Math.abs(on.px[i + 2] - off.px[i + 2]);
+          seen.push(Math.round(dsum / (on.px.length / 4)));
+        }
+        __M.lamps.hideBeams = false;
+        const mx = Math.max(...seen), n = seen.filter(x => x > 40 && x >= 0.6 * mx).length;
+        tries.push({ side: c.s, shift: c.sh, seen: n, change: seen });
+        if (n === 8) { good = c; break; }
+      }
+    } finally { rod.visible = false; __C.scene.remove(rod); rodGeo.dispose(); rodMat.dispose(); __M.lamps.hideBeams = false; }
+    viewProbe = { tries, pick: good };
+    if (!good) { PIX.stop(); throw new Error('STAGING FAILED (beams, Brea ${herDist} m): no side camera sees the whole lamp-to-Brea line (a 0.2 m rod drawn along it, beams hidden): ' + JSON.stringify(tries).slice(0, 1500)); }
+    camPick = good; placeCam(); await frames(3);
+  }
   /* THE LAMP IS ON SCREEN AND UNOCCLUDED, IN RENDERED PIXELS (targeted fix; judge: "V-lamp-calm-sunlit-15m staging is
    * nondeterministic (Tiller behind the palisade in 1 of 2 runs)": collision.occluded misses the palisade on some
    * headings). Before any sunlit frame is filmed, the staged heading must show, in the canvas after the output pass,
@@ -2067,7 +2118,7 @@ const FILM = (state, { fov = 4, both = false, dist = 15, night = false, sunlit =
   }
   PIX.stop();
   window.__IC_FILM__ = { state: st, gameplay: GAMEPLAY, hostileFacesHerAtSetup: m2 && m2.lamp ? (() => { const hp = new V().setFromMatrixPosition(m2.lamp.anchor.matrixWorld), ax = new V(0, 0, 1).transformDirection(m2.lamp.anchor.matrixWorld); const to = p.position.clone().sub(hp); to.y = 0; ax.y = 0; return +(ax.normalize().dot(to.normalize())).toFixed(3); })() : null,
-    camDistM: +cam.position.distanceTo(lampPos).toFixed(2), fov: cam.fov, zoom: cam.zoom, clearLine: ok, sunlit: ${sunlit}, lensAxisDotSun: +bestSun.toFixed(3), heading: pick.hd, pixelProbe,
+    herDist: ${herDist} || null, viewProbe, camDistM: +cam.position.distanceTo(lampPos).toFixed(2), fov: cam.fov, zoom: cam.zoom, clearLine: ok, sunlit: ${sunlit}, lensAxisDotSun: +bestSun.toFixed(3), heading: pick.hd, pixelProbe,
     sunElevDeg: env.sunDir ? +(Math.asin(env.sunDir.y) * 180 / Math.PI).toFixed(1) : null, lampState: m.lamp ? m.lamp.state : null, aperture: m.lamp ? +m.lamp.aperture.toFixed(2) : null };
 })()`;
 const FILM_ROWS = [

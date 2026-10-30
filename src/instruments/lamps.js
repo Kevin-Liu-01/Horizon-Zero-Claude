@@ -103,6 +103,9 @@ export const BEAM = Object.freeze({
    * 5.0 % of the fog gameplay frame pink, 1.5 deg 2.1 %).
    */
   lockHalfAngleDeg: 1.5,
+  /** (targeted fix round 2) A lock is focused on her: its radius where it meets her chest is at most this (metres),
+   * so beyond ~11 m the half-angle narrows below lockHalfAngleDeg (18 m: 0.95 deg, 22 m: 0.78 deg). */
+  lockTargetRadiusM: 0.3,
   segments: 64,         // triangles per cone
   sweepDeg: 14,         // wary sweep amplitude about the stimulus bearing
   capacity: 128,
@@ -645,6 +648,8 @@ export class LampSystem {
     this.hideBeams = false;
     /** Gate/debug: draw the frame without the lamps (the films' paired "is the lamp on screen, unoccluded" read). */
     this.hideLamps = false;
+    /** The lock's radius at her chest (BEAM.lockTargetRadiusM; an instance field so the beam lab can vary it). */
+    this._lockTgtR = BEAM.lockTargetRadiusM;
     // doubles born Double (0.5 first): a field generalised mid-session deoptimises update() (W0b fix round 2)
     this.fogK = 0.5; this.fogK = 1;
     this.night = 0.5; this.night = 0;
@@ -1000,7 +1005,10 @@ export class LampSystem {
        * departs from bible §7.2"). A lock is NOT cut at her: the shaft carries past her and fades (along^2) to
        * nothing at the sight range. A lock is a narrower cone than a sweep (BEAM.lockHalfAngleDeg). */
       const lock = r.bmode === 'lock';
-      const len = r.blen, brad = len * (lock ? TAN_LOCK : TAN_SWEEP);
+      const len = r.blen;
+      let tanA = lock ? TAN_LOCK : TAN_SWEEP;
+      if (lock && tgtLen > 0.5 && tgtLen < len) { const tf = this._lockTgtR / tgtLen; if (tf < tanA) tanA = tf; }
+      const brad = len * tanA;
       _qs.setFromUnitVectors(_z, dd);
       _s.x = brad; _s.y = brad; _s.z = len;
       _m.compose(_p, _qs, _s);
