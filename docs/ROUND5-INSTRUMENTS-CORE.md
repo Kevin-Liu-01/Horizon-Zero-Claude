@@ -99,7 +99,32 @@ pink census and the frame. I chose the variant from those numbers and frames, th
 - **The 4 lens films, the noon, three-quarter and 40 m frames**: unchanged from round 3. The sunlit frames show the
   Tiller in the open, its lit lens in the dark drum face. PASS.
 
-**Global and lane gates on the final source** (G1-G3): see "Targeted fix — the runs" below.
+**Targeted fix — the runs on the final source** (port 5254, `nice -n 10`, one Chrome machine-wide):
+- **Lane block** (`--lane instruments-core`, run G2): **23 gates, 22 PASS, 1 PENDING**. The PENDING row is
+  `A-kind-block-file`, on the calima clause only, as in round 3 (R46). Its other rows: 19 PASS, 5 SKIP-fixture, and
+  `A41c` 5/5. Every gate that passed before still passes:
+  - `A-legacy-collapse`, `A-kind-registration`, `A-no-override`, `A-no-corruption` (600 s), `A-roles-published`,
+    `A-boot-roster`;
+  - `A-published-scalars` (negative control 30/30);
+  - `A-lamp-states`: every clause, including the four beam clauses;
+  - `A-lamp-canon-distance`: 28 tokens, 0 offenders;
+  - `A-beams-one-draw`;
+  - `A-beam-lens-cone` (new);
+  - `A-perception-weather`: calima ×0.499, 34.03 → 16.98 m;
+  - `A-perk-hooks`, `A-uv1-survives-fold`, `A-vfx-palette`;
+  - `A90-rig-reclaim` 5/5, `A90b` 3/3 (0 offenders);
+  - A37: peak suspicion 0. A39 at 30 m: suspicious 1.83 s, alert 3.45 s. A43: scene objects −279;
+  - `A90-rig-reclaim@ic`, `A90b@ic`.
+- **`A-alloc-machines`** (G1 ×2): PASS, PASS. `_moveToward` allocated 0 B in both paired no-inline runs.
+- **The beam and staging probes** (F1-F3, 3 independent harness runs): `A-film-beams-night-probe` 3/3,
+  `A-film-beams-fog-probe` 3/3, and the three sunlit staging rows 3/3.
+- **Global items** (run H1): **A1 PASS**; **A20b PASS** (356 frames, 0 system errors); **A90-memory-stability PASS**
+  (28 kills, heap −5.9 %, textures −28, objects −1,092); **A90b-memory-attribution PASS** (28 kills, 0 offenders).
+- **A harness note.** A first global run after the lane block (G3) failed A1 and A90 at boot: "Waiting failed:
+  90000ms". The cause was not the build. `A-legacy-collapse` and `A-kind-registration` stop the lane's Vite to run
+  their copies on the same port, then start an un-niced replacement. That replacement was gone after the lane run,
+  and the harness started its own Vite in its scratch working directory, which served 404. I stopped both, and my
+  batch script now restarts the tree's Vite before every job. H1 is the re-run.
 
 **Honest gaps.**
 - gates-perf's row passes for the three helpers in 5 of 5 runs, but my stricter emulation of its sequence is not
