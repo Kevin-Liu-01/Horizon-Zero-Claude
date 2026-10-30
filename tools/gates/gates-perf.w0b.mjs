@@ -1268,7 +1268,7 @@ export function routeRt(owner, files) {
  *      sampled window over 'n' more iterations; the bytes under __glCensusWrapped / calls. POSITIVE CONTROL: the same
  *      calls through a wrapper written the round-3 way (a rest array and a string key per call), under its own name.
  */
-const CENSUS_PROBE = (phase, warm = 4000, n = 20000) => `(async () => {
+const CENSUS_PROBE = (phase, warm = 12000, n = 20000) => `(async () => {
   const C = window.__glCensus, cfg = window.__w0bAttrCfg;
   if (${JSON.stringify(phase)} === 'orphans') {
     const cv = new OffscreenCanvas(8, 8);
@@ -1336,12 +1336,17 @@ async function censusPerCallAllocation(page, cdp) {
     return { calls, bytes, bytesPerCall: calls ? +(bytes / calls).toFixed(3) : null };
   };
   try {
-    const census = await measure('census', '__glCensusWrapped');
-    const control = await measure('control', '__glCensusRound3Shape');
-    // graded: < 1 B per wrapped call once warm; the probe's positive control must see >= 8 B per call in the round-3 shape
-    const ok = census.bytesPerCall !== null && census.bytesPerCall < 1 && control.bytesPerCall !== null && control.bytesPerCall >= 8;
-    return { ok, warmIterations: setup.warmIterations, census, round3ShapeControl: control, samplingIntervalB: 256,
-      note: 'bytes under the wrapper frame (sampling heap profiler, objects collected by GC included) / wrapped calls, after the wrappers ran warm; a wrapper running unoptimised (its first calls) still materialises an arguments object' };
+    // three measured windows each (the median graded): one window can catch a tier-up or deopt of the wrapper in a page that
+    // shares its renderer with the harness's other pages (the lane block's first run read 1.4 B per call in one window, the
+    // fresh-Chrome dev run 0 B)
+    const windows = async (phase, fn) => { const w = []; for (let i = 0; i < 3; i++) w.push(await measure(phase, fn)); const med = w.map((x) => x.bytesPerCall).sort((x, y) => x - y)[1]; return { windows: w, medianBytesPerCall: med }; };
+    const census = await windows('census', '__glCensusWrapped');
+    const control = await windows('control', '__glCensusRound3Shape');
+    // graded: < 1 B per wrapped call once warm (median of 3 windows); the probe's positive control must see >= 8 B per call
+    // in the round-3 shape
+    const ok = census.medianBytesPerCall != null && census.medianBytesPerCall < 1 && control.medianBytesPerCall != null && control.medianBytesPerCall >= 8;
+    return { ok, warmIterations: setup.warmIterations, census: { ...census, bytesPerCall: census.medianBytesPerCall }, round3ShapeControl: { ...control, bytesPerCall: control.medianBytesPerCall }, samplingIntervalB: 256,
+      note: 'bytes under the wrapper frame (sampling heap profiler, objects collected by GC included) / wrapped calls, after the wrappers ran warm, median of 3 windows; a wrapper running unoptimised (its first calls) still materialises an arguments object, which is why the per-frame number in the fight (censusInTheFight) is the memory-rule reading' };
   } finally { await page.evaluate(CENSUS_PROBE('dispose')).catch(() => {}); }
 }
 
@@ -1609,6 +1614,14 @@ async function gpuBaseline(browser, PORT) {
     await page.setViewport({ width: 1600, height: 900 });
     await page.goto(`http://localhost:${PORT}${GPU_BASELINE_PATH}`, { waitUntil: 'load', timeout: 30000 });
     cdp.off('Fetch.requestPaused', onPaused); await cdp.send('Fetch.disable').catch(() => {});
+    // PRIME (lane block, Oct 30 07:05Z: in the harness's shared Chrome the GPU process dropped 37 MB of the earlier rows'
+    // residue the moment a new context was made, so the context's fixed cost read -36.7 MB): one throwaway WebGL2 context of
+    // the game's attributes is made, drawn, lost and removed BEFORE the blank reading, so what a new context purges is purged
+    // before the baseline is read
+    await page.evaluate(`(async () => { const c = document.createElement('canvas'); c.width = 16; c.height = 9; document.body.appendChild(c);
+      const gl = c.getContext('webgl2', ${JSON.stringify(GAME_CONTEXT_ATTRS)}); if (!gl) return false;
+      await new Promise((res) => { let k = 0; const f = () => { gl.clear(gl.COLOR_BUFFER_BIT); if (++k >= 10) res(); else requestAnimationFrame(f); }; requestAnimationFrame(f); });
+      const x = gl.getExtension('WEBGL_lose_context'); if (x) x.loseContext(); c.remove(); return true; })()`);
     await sleep(1500);
     const blank = await settledFootprint(browser);
     const plan = await page.evaluate(`(async () => { const m = await import('/src/core/engine.js'); const q = m.DEFAULT_TIER || 'high'; const t = m.QUALITY_TIERS && m.QUALITY_TIERS[q];
@@ -1633,7 +1646,7 @@ async function gpuBaseline(browser, PORT) {
     const afterClose = await footprintMedian(browser, 3, 600);
     return { ok: blank.medianB != null && tiny.medianB != null && full.medianB != null, blank, tiny, full, afterClose, plan, bareSize: size, tinySize: [16, 9], attrs,
       probeResidueMB: afterClose.medianB != null && blank.medianB != null ? MB(afterClose.medianB - blank.medianB) : null,
-      method: 'GPU-process footprint (median of 5 macOS footprint readings) on an empty page of the game origin, then with one bare WebGL2 canvas of the game\'s context attributes at 16 x 9 and at the fight\'s drawing-buffer size, 30 frames drawn each; read before the game page exists; the reading after the probe page closed is reported' };
+      method: 'GPU-process footprint (settled, then the median of 5 macOS footprint readings) on an empty page of the game origin after one throwaway context was made and lost (the prime), then with one bare WebGL2 canvas of the game\'s context attributes at 16 x 9 and at the fight\'s drawing-buffer size, 30 frames drawn each; read before the game page exists; the reading after the probe page closed is reported' };
   } catch (err) { return { ok: false, error: String(err.message || err).slice(0, 200) }; }
   finally { if (!closed) await withTimeout(page.close(), 15000, 'baseline page.close').catch(() => {}); }
 }
