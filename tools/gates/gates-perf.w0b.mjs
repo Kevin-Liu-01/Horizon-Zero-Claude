@@ -1477,20 +1477,26 @@ const A90_WORKLOAD = (loopS, lifecycleS) => `(async () => {${ROSTER}
   const kill = (m) => { let mesh = null; m.root.traverse((o) => { if (!mesh && o.isMesh) mesh = o; }); m.takeDamage({ point: m.position.clone(), object: mesh, impact: 99999, tear: 0, element: 'none', elementAmount: 0, dir: { x: 0, y: 0, z: 1 }, type: 'hunter', baseDamage: 99999 }); };
   __CTX__.input.enabled = true;
   const t0 = performance.now(); let kills = 0;
+  const iterMs = [], victimMs = [];                 // per-iteration wall time and the memVictim share (reported only)
   while (performance.now() - t0 < ${loopS * 1000}) {
+    const ti = performance.now();
     // W0b fix round 2 (R28 + R34): the carried A90 row's re-staged pick, a STAGED kind's machine (memVictim)
     const m = await memVictim();
+    victimMs.push(Math.round(performance.now() - ti));
     const killedKind = m ? m.kind : null;
     if (m) { kill(m); kills++; W.kills++; }
     __CTX__.input.keys.add('KeyW'); await new Promise((res) => setTimeout(res, 2500)); __CTX__.input.keys.delete('KeyW');
     memRespawnAfter(W, killedKind, __CTX__.player.position.x + 30, __CTX__.player.position.z + 30);
     await new Promise((res) => setTimeout(res, 2500));
+    iterMs.push(Math.round(performance.now() - ti));
   }
   const p0 = __CTX__.player.position.clone();
   __CTX__.player.position.set(p0.x + 130, 0, p0.z + 130); __CTX__.player._snapToGround?.();
   await new Promise((res) => setTimeout(res, ${lifecycleS * 1000}));
   const wv = memWorkloadVerdict(W, ${W0B_BUDGETS.abs.minKills});
-  return { kills, workload: W, workloadVerdict: wv ? wv.detail.verdict : null, workloadPass: wv ? wv.pass : true };
+  const med = (a) => { const b = a.slice().sort((x, y) => x - y); return b.length ? b[(b.length - 1) >> 1] : null; };
+  return { kills, workload: W, workloadVerdict: wv ? wv.detail.verdict : null, workloadPass: wv ? wv.pass : true,
+    iterations: { n: iterMs.length, medianMs: med(iterMs), maxMs: iterMs.length ? Math.max(...iterMs) : null, firstMs: iterMs.slice(0, 4), victimMedianMs: med(victimMs), victimMaxMs: victimMs.length ? Math.max(...victimMs) : null } };
 })()`;
 
 /** the GPU process of a Chrome: CDP SystemInfo.getProcessInfo (browser target), its macOS footprint and RSS */
@@ -1732,6 +1738,14 @@ async function a90Abs({ PORT }) {
     if (pre) pre.shared = !!shared;
     if (pre) pre.chrome = shared ? 'shared harness Chrome: the browser + the residue earlier rows of this run left in its GPU process' : 'fresh Chrome launched for this row: the browser\'s own share';
     await cdp.send('HeapProfiler.enable');
+    // SETTLE before the timed workload (targeted fix round 1, lane block Oct 30 08:06Z: run first in its own fresh Chrome, the
+    // row started its 150 s loop the moment the page was ready, with the GPU process's program caches cold, and made 24 kills
+    // where the shared-Chrome run made 29; the carried A90 row settles 2 s + 1.5 s before its loop): the frame loop runs until
+    // the compiled-program count has not changed for 5 s (at least 3.5 s, at most 45 s). Reported; nothing is graded on it
+    const settle = await page.evaluate(`(async () => { const r = __CTX__.engine.renderer, prog = () => (r.info.programs || []).length;
+      const t0 = performance.now(), p0 = prog(); let last = p0, since = t0;
+      while (performance.now() - t0 < 45000) { await new Promise((res) => setTimeout(res, 500)); const n = prog(); if (n !== last) { last = n; since = performance.now(); } else if (performance.now() - since >= 5000 && performance.now() - t0 >= 3500) break; }
+      return { programsAtReady: p0, programs: last, settleS: +((performance.now() - t0) / 1000).toFixed(1), settled: performance.now() - since >= 5000 }; })()`);
     const heapAtBoot = await gcAndHeap(cdp);
     // the post-boot heap GROWTH is attributed by a sampling profile of what is still live at the end (objects
     // collected by GC are NOT included here, unlike A-alloc-rate: this one names what is RETAINED)
@@ -1875,7 +1889,7 @@ async function a90Abs({ PORT }) {
         + ` — INSTRUMENT (R48 b): ${instrumentOk ? 'PASS' : 'FAIL'} (heap control ${heapControl?.ratio ?? '?'}x of ${heapControl?.expectedB ? MB(heapControl.expectedB) : '?'} MB; GPU control ${gpuControl?.ratio ?? '?'}x of ${gpuControl?.expectedB ? MB(gpuControl.expectedB) : '?'} MB, fall ${gpuControl?.fallOverRise ?? '?'}x of the rise (median of ${GPU_CONTROL_CYCLES} cycles); `
         + `footprint split into MEASURED buckets ${footprintSplit.ok ? 'holds' : 'FAILS ' + Object.keys(footprintSplit.checks).filter((k) => !footprintSplit.checks[k]).join(', ')}: ${bk ? `browser baseline ${bk.browserBaselineMB} MB (${shared ? 'SHARED harness Chrome: includes earlier rows\' residue' : 'fresh Chrome'}), WebGL context + swap chain ${bk.webglContextAndSwapChainMB} MB (default framebuffer ${footprintSplit.context?.defaultFramebufferMB} MB = ${footprintSplit.context?.bytesPerPixel} B/px at ${(footprintSplit.context?.drawingBuffer || []).join('x')}), GL census ${bk.glCensusMB} MB, game-driven outside the census ${bk.gameDrivenOutsideCensusMB} MB -> engine-gpu @ ${remainderRouting.map((x) => x.fileLine).join(' + ')}` : 'not measured'}; `
         + `negative controls ${negatives.filter((n) => n.ok).length}/${negatives.length} fail as they must) — `
-        + `BARS (${binding ? 'binding: global run' : 'lane run: graded at the orchestrator\'s 5270 global run after the engine-gpu merge, R48 b'}): post-GC JS heap ${MB(heapPostGc)} MB (ceiling 450) ${bars.postGcHeapWithinCeiling.pass ? 'pass' : 'FAIL'}, Chrome GPU process footprint ${gpuMax === null ? 'not measured' : MB(gpuMax) + ' MB'} (ceiling 1500) ${bars.gpuProcessWithinCeiling.pass ? 'pass' : 'FAIL'} at the staged fight, after the A90 workload (${a90.kills} kills, ${a90.workload?.respawned} respawned)`
+        + `BARS (${binding ? 'binding: global run' : 'lane run: graded at the orchestrator\'s 5270 global run after the engine-gpu merge, R48 b'}): post-GC JS heap ${MB(heapPostGc)} MB (ceiling 450) ${bars.postGcHeapWithinCeiling.pass ? 'pass' : 'FAIL'}, Chrome GPU process footprint ${gpuMax === null ? 'not measured' : MB(gpuMax) + ' MB'} (ceiling 1500) ${bars.gpuProcessWithinCeiling.pass ? 'pass' : 'FAIL'} at the staged fight, after the A90 workload (${a90.kills} kills, ${a90.workload?.respawned} respawned; iteration median ${a90.iterations?.medianMs ?? '?'} ms, first ${JSON.stringify(a90.iterations?.firstMs || [])} ms; settled ${settle?.settleS ?? '?'} s before it, ${settle?.programs ?? '?'} programs)`
         + (bars.gpuProcessWithinCeiling.pass ? '' : ` — over-bar routing: GL census -> ${footprintSplit.glTopRenderTargets ? footprintSplit.glTopRenderTargets.slice(0, 3).map((x) => x.owner + ' ' + x.MB + ' MB @ ' + x.fileLines.join(' + ')).join('; ') : '?'}; game-driven outside the census ${bk ? bk.gameDrivenOutsideCensusMB : '?'} MB -> engine-gpu @ ${remainderRouting.map((x) => x.fileLine).join(' + ')}; what-if at pixel ratio 1.25 ${whatIfDpr125?.footprintMB ?? '?'} MB (drop ${whatIfDpr125?.footprintDropMB ?? '?'} MB, of which outside the census ${whatIfDpr125?.outsideCensusDropMB ?? '?'} MB)`),
       instrument, bars, runId: runIdOf(PORT), barsBinding: binding,
       sealing: 'R48 (b): the harness seals every run that executes this row (tools/gates.r5.gates-perf.mjs INSTRUMENT_IDS); verify with node tools/gates.r5.gates-perf.mjs --instruments --port <port>',
@@ -1884,7 +1898,7 @@ async function a90Abs({ PORT }) {
       ceilings: { heapMB: 450, gpuProcessMB: 1500 }, footprintSplit, heapGrowth, selfTest: { heap: heapControl, gpu: gpuControl, negatives },
       heapMB: { atBoot: MB(heapAtBoot), afterA90: MB(heapAfterA90), afterFightPostGc: MB(heapPostGc) }, performanceMemory: perfMem,
       gpuProcess: gpuSamples.map((g) => ({ ...g, footprintMB: g.footprintB == null ? null : MB(g.footprintB), rssMB: g.rssB == null ? null : MB(g.rssB) })),
-      whatIfDpr125, a90, durationsS: { a90Loop: loopS, a90Lifecycle: lifeS, fight: fightS, shortened }, fight,
+      whatIfDpr125, a90, settleBeforeWorkload: settle, durationsS: { a90Loop: loopS, a90Lifecycle: lifeS, fight: fightS, shortened }, fight,
       method: 'A90-memory-stability\'s kill -> respawn workload (gate-roster memWorkload / memRespawnAfter, same loop and lifecycle times), two forced GCs (CDP HeapProfiler.collectGarbage), then the A21 staged fight for ' + fightS + ' s; JS heap = Runtime.getHeapUsage().usedSize after two forced GCs; GPU process = SystemInfo.getProcessInfo type GPU, macOS `footprint -p <pid> -f bytes` (phys_footprint, includes IOSurface / Metal memory), sampled every 15 s through the fight, max graded; the footprint split at the last reading into measured buckets: the browser baseline and a bare same-size WebGL2 context read in this Chrome before the game booted, the GL census by lane, and the game-driven remainder outside the census routed with engine.js file:line; heap growth by a live-object sampling profile, checked against V8\'s sample list; known-delta self-tests after the graded readings; negative controls',
     } };
   }, { initScripts: [GL_CENSUS], preBoot: (browser) => gpuBaseline(browser, PORT) });
