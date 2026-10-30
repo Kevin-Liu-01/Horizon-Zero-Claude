@@ -5585,7 +5585,7 @@ export class PlayerAnimator {
       const rf = cls.runFl > 0 ? cls.runFl * clamp((speed - 1) / 5.8, 0, 1) : 0;
       if (rf > 0) c.flX += dt * rf;
       const tf = t + c.flX;
-      const flA = cw > 0 ? (this.wind.flutter || 0) * windS * (cls.flK ?? 1) * (1 + rf) : 0, sd = c.seed;
+      const flA = cw > 0 ? (this.wind.flutter || 0) * windS * (1 + rf) : 0, sd = c.seed;
       for (let s = 0; s < steps; s++) {
         for (let j = 1; j < n; j++) {
           const i0 = j * 3;

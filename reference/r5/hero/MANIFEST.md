@@ -22,12 +22,19 @@ with gates-perf W0a; MANIFEST there: author, source URL, licence, retrieved date
 
 ## Pointers (files in other lanes' reference folders)
 
+W0b targeted fix: every hero-body visual row (and V22) now names its reference in its own `reference` field
+(`tools/gates.r5.hero-body.mjs`), which is what gates-perf's `A-reference-set` reads; this table is a summary.
+
 | gate | reference |
 |---|---|
-| V1-sprint-frame, V12-sprint-vs-reference | `reference/r5/gates-perf/run-side.jpg`, `run-rear.jpg` |
+| V1-sprint-frame | `reference/r5/gates-perf/run-rear.jpg`, `run-side.jpg` |
+| V12-sprint-vs-reference | `reference/r5/gates-perf/run-side.jpg` |
 | V2-idle-frame | `reference/r5/gates-perf/idle-stand.jpg` |
 | V3-crouch-stalk | `reference/r5/gates-perf/crouch-stalk.jpg` |
-| V4-aim-anchor, V13-aim-strafe, V24-draw-vs-reference | `reference/r5/gates-perf/draw-side.jpg`, `draw-front.jpg` |
-| V14-slope-contour, V-traversal (slide) | `reference/r5/gates-perf/slope-stand.jpg` |
+| V4-aim-anchor | `reference/r5/gates-perf/draw-front.jpg`, `draw-side.jpg` |
+| V13-aim-strafe | `reference/r5/gates-perf/draw-front.jpg` |
+| V24-draw-vs-reference, V24-draw-down | `reference/r5/gates-perf/draw-side.jpg` |
+| V23-secondary-motion | `reference/r5/gates-perf/hair-trail-run.jpg` |
+| V14-slope-contour, V-traversal (slide, stair) | `reference/r5/gates-perf/slope-stand.jpg` |
 | V22-chase-framing | `reference/r5/gates-perf/chase-camera.jpg` |
-| V-traversal (ledge climb) | PENDING: no licence-clean ledge-climb still in the Commons set yet — slot `ledge-climb` requested from gates-perf's `tools/r5-refs/fetch.mjs` |
+| V-traversal (ledge climb) | PENDING: no licence-clean ledge-climb still in the Commons set yet — slot `ledge-climb` requested from gates-perf's `tools/r5-refs/fetch.mjs`; the climb panel is graded on the written criteria |
