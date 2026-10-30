@@ -1,0 +1,2051 @@
+{
+ "rule": "R33 (a): each carried row's verdict on the W0-day1 base, recorded once, with the runs' box samples. Action rows: pass | flaky | fail | pendingAttributed | pendingUnattributed | skipR18/R28/R30 (the worst observed). Visual rows are graded under R33 (c), not from this file.",
+ "base": "0b75036",
+ "recordedAt": "2026-10-19T07:04:42.077Z",
+ "evidence": {
+  "servedBy": "bbf7c97",
+  "runtimeDiffVsBase": [
+   "D\tpublic/anims-hybrid/aloy-ual.json",
+   "D\tpublic/anims-hybrid/ual/AnimationLibrary_Godot_Standard.bin",
+   "D\tpublic/anims-hybrid/ual/AnimationLibrary_Godot_Standard.gltf",
+   "D\tpublic/anims-hybrid/ual/LICENSE",
+   "D\tpublic/anims-reskin/AnimationLibrary_Godot_Standard.bin",
+   "D\tpublic/anims-reskin/AnimationLibrary_Godot_Standard.gltf",
+   "D\tpublic/anims-retarget/AnimationLibrary_Godot_Standard.bin",
+   "D\tpublic/anims-retarget/AnimationLibrary_Godot_Standard.gltf",
+   "D\tpublic/anims-retarget/LICENSE"
+  ],
+  "runtimeDiffIsDeletionsOnly": true,
+  "carriedSha256AtRuns": "da3c43b036a929f92b2d01864ced1c0d6327b2a895e350f555a5429058c9752c",
+  "carriedRows": 236
+ },
+ "runs": [
+  {
+   "sealId": "p5255-20261018075224105-72613",
+   "reportSha256": "db5ccc20468a9c082df993881ebffc7a218d159a430a580ade928b5f1ef7d2a9",
+   "startedAt": "2026-10-18T06:47:02.380Z",
+   "endedAt": "2026-10-18T07:52:25.357Z",
+   "load": {
+    "start": [
+     2.72,
+     3.59,
+     4.77
+    ],
+    "end": [
+     2.52,
+     2.93,
+     3.03
+    ]
+   },
+   "box": {
+    "loadMax": 5.6,
+    "otherGateChromesMax": 0,
+    "quietSamples": 770
+   },
+   "monitorSamples": 1960,
+   "buildDigest": "824c94ca87c46ab606e15a5b774f8c102e19932ad081aa9fd4c0188be9ab254d",
+   "infraRows": 0
+  },
+  {
+   "sealId": "p5255-20261019052807004-63063",
+   "reportSha256": "f4a5a81bde0cca29c5505cbb4e11fb6fd7afd1daa0511372bd85825ed2a3e523",
+   "startedAt": "2026-10-19T04:56:55.245Z",
+   "endedAt": "2026-10-19T05:28:08.137Z",
+   "load": {
+    "start": [
+     18.82,
+     11.12,
+     6.39
+    ],
+    "end": [
+     1.82,
+     2.59,
+     3.36
+    ]
+   },
+   "box": {
+    "loadMax": 18.82,
+    "otherGateChromesMax": 0,
+    "quietSamples": 362
+   },
+   "monitorSamples": 936,
+   "buildDigest": "824c94ca87c46ab606e15a5b774f8c102e19932ad081aa9fd4c0188be9ab254d",
+   "infraRows": 148
+  },
+  {
+   "sealId": "p5255-20261019063657289-87017",
+   "reportSha256": "3a772dc28477f9fc821db5e6c14421058dba28449b267518977c861f6af684e2",
+   "startedAt": "2026-10-19T05:28:08.554Z",
+   "endedAt": "2026-10-19T06:36:58.597Z",
+   "load": {
+    "start": [
+     1.82,
+     2.59,
+     3.36
+    ],
+    "end": [
+     3.69,
+     3.48,
+     3.01
+    ]
+   },
+   "box": {
+    "loadMax": 4.89,
+    "otherGateChromesMax": 0,
+    "quietSamples": 1353
+   },
+   "monitorSamples": 2064,
+   "buildDigest": "824c94ca87c46ab606e15a5b774f8c102e19932ad081aa9fd4c0188be9ab254d",
+   "infraRows": 0
+  }
+ ],
+ "verdictTally": {
+  "pass": 131,
+  "skipR30": 26,
+  "flaky": 3,
+  "fail": 3,
+  "n/a (R33 c)": 37,
+  "skipR18": 36
+ },
+ "rows": {
+  "A90-memory-stability": {
+   "kind": "action",
+   "perRun": [
+    "pass",
+    "pass",
+    "pass"
+   ],
+   "verdict": "pass"
+  },
+  "A1-boot-clean": {
+   "kind": "action",
+   "perRun": [
+    "pass",
+    "pass",
+    "pass"
+   ],
+   "verdict": "pass"
+  },
+  "A2-dodge-displacement": {
+   "kind": "action",
+   "perRun": [
+    "pass",
+    "pass",
+    "pass"
+   ],
+   "verdict": "pass"
+  },
+  "A3-sprint-speed": {
+   "kind": "action",
+   "perRun": [
+    "pass",
+    "pass",
+    "pass"
+   ],
+   "verdict": "pass"
+  },
+  "A4-draw-strength": {
+   "kind": "action",
+   "perRun": [
+    "pass",
+    "pass",
+    "pass"
+   ],
+   "verdict": "pass"
+  },
+  "A5-arrow-fired-event": {
+   "kind": "action",
+   "perRun": [
+    "pass",
+    "pass",
+    "pass"
+   ],
+   "verdict": "pass"
+  },
+  "A6-machine-foot-plant": {
+   "kind": "action",
+   "perRun": [
+    "pass",
+    "pass",
+    "pass"
+   ],
+   "verdict": "pass"
+  },
+  "A7-alert-fsm": {
+   "kind": "action",
+   "perRun": [
+    "skipR30",
+    "skipR30",
+    "skipR30"
+   ],
+   "verdict": "skipR30"
+  },
+  "A8-death-collapse": {
+   "kind": "action",
+   "perRun": [
+    "skipR30",
+    "skipR30",
+    "skipR30"
+   ],
+   "verdict": "skipR30"
+  },
+  "A9-perf-budget": {
+   "kind": "action",
+   "perRun": [
+    "pass",
+    "pass",
+    "pass"
+   ],
+   "verdict": "pass"
+  },
+  "A10-loot-single-render": {
+   "kind": "action",
+   "perRun": [
+    "skipR30",
+    "skipR30",
+    "skipR30"
+   ],
+   "verdict": "skipR30"
+  },
+  "A11-idle-alive": {
+   "kind": "action",
+   "perRun": [
+    "pass",
+    "pass",
+    "pass"
+   ],
+   "verdict": "pass"
+  },
+  "A12-clip-driven": {
+   "kind": "action",
+   "perRun": [
+    "pass",
+    "pass",
+    "pass"
+   ],
+   "verdict": "pass"
+  },
+  "A13-no-skate": {
+   "kind": "action",
+   "perRun": [
+    "fail",
+    "fail",
+    "pass"
+   ],
+   "verdict": "flaky"
+  },
+  "A14-dodge-zero-dt": {
+   "kind": "action",
+   "perRun": [
+    "pass",
+    "pass",
+    "pass"
+   ],
+   "verdict": "pass"
+  },
+  "A15-foot-flat": {
+   "kind": "action",
+   "perRun": [
+    "pass",
+    "pass",
+    "pass"
+   ],
+   "verdict": "pass"
+  },
+  "A16-draw-anchor": {
+   "kind": "action",
+   "perRun": [
+    "pass",
+    "pass",
+    "pass"
+   ],
+   "verdict": "pass"
+  },
+  "A17-draw-beats": {
+   "kind": "action",
+   "perRun": [
+    "pass",
+    "pass",
+    "pass"
+   ],
+   "verdict": "pass"
+  },
+  "A18-slope-conform": {
+   "kind": "action",
+   "perRun": [
+    "pass",
+    "pass",
+    "pass"
+   ],
+   "verdict": "pass"
+  },
+  "A19-secondary-motion": {
+   "kind": "action",
+   "perRun": [
+    "fail",
+    "fail",
+    "fail"
+   ],
+   "verdict": "fail"
+  },
+  "A33-rig-finite": {
+   "kind": "action",
+   "perRun": [
+    "pass",
+    "pass",
+    "pass"
+   ],
+   "verdict": "pass"
+  },
+  "A28-run-cadence": {
+   "kind": "action",
+   "perRun": [
+    "pass",
+    "pass",
+    "pass"
+   ],
+   "verdict": "pass"
+  },
+  "A31-aim-strafe-skate": {
+   "kind": "action",
+   "perRun": [
+    "pass",
+    "pass",
+    "pass"
+   ],
+   "verdict": "pass"
+  },
+  "A32-draw-ramp": {
+   "kind": "action",
+   "perRun": [
+    "pass",
+    "pass",
+    "pass"
+   ],
+   "verdict": "pass"
+  },
+  "A20-frame-loop-survives": {
+   "kind": "action",
+   "perRun": [
+    "pass",
+    "pass",
+    "pass"
+   ],
+   "verdict": "pass"
+  },
+  "A21-real-draw-calls": {
+   "kind": "action",
+   "perRun": [
+    "skipR30",
+    "fail",
+    "fail"
+   ],
+   "verdict": "fail"
+  },
+  "A22-msaa": {
+   "kind": "action",
+   "perRun": [
+    "pass",
+    "pass",
+    "pass"
+   ],
+   "verdict": "pass"
+  },
+  "A20b-no-system-errors": {
+   "kind": "action",
+   "perRun": [
+    "pass",
+    "pass",
+    "pass"
+   ],
+   "verdict": "pass"
+  },
+  "A45-no-skate-per-species": {
+   "kind": "action",
+   "perRun": [
+    "pass",
+    "pass",
+    "pass"
+   ],
+   "verdict": "pass"
+  },
+  "A44-socket-integrity": {
+   "kind": "action",
+   "perRun": [
+    "pass",
+    "pass",
+    "pass"
+   ],
+   "verdict": "pass"
+  },
+  "A47-corpse-grounded": {
+   "kind": "action",
+   "perRun": [
+    "pass",
+    "pass",
+    "pass"
+   ],
+   "verdict": "pass"
+  },
+  "A48-cadence": {
+   "kind": "action",
+   "perRun": [
+    "pass",
+    "pass",
+    "pass"
+   ],
+   "verdict": "pass"
+  },
+  "V1-sprint-frame": {
+   "kind": "visual",
+   "verdict": "n/a (R33 c)"
+  },
+  "V2-idle-frame": {
+   "kind": "visual",
+   "verdict": "n/a (R33 c)"
+  },
+  "V3-crouch-stalk": {
+   "kind": "visual",
+   "verdict": "n/a (R33 c)"
+  },
+  "V4-aim-anchor": {
+   "kind": "visual",
+   "verdict": "n/a (R33 c)"
+  },
+  "V5-machine-stride": {
+   "kind": "visual",
+   "verdict": "n/a (R33 c)"
+  },
+  "V6-machine-death": {
+   "kind": "visual",
+   "verdict": "n/a (R33 c)"
+  },
+  "V7-vista-mountains": {
+   "kind": "visual",
+   "verdict": "n/a (R33 c)"
+  },
+  "V8-riverbed": {
+   "kind": "visual",
+   "verdict": "n/a (R33 c)"
+  },
+  "V9-sky-golden": {
+   "kind": "visual",
+   "verdict": "n/a (R33 c)"
+  },
+  "V10-hud-language": {
+   "kind": "visual",
+   "verdict": "n/a (R33 c)"
+  },
+  "V13-aim-strafe": {
+   "kind": "visual",
+   "verdict": "n/a (R33 c)"
+  },
+  "V14-slope-contour": {
+   "kind": "visual",
+   "verdict": "n/a (R33 c)"
+  },
+  "V12-sprint-vs-reference": {
+   "kind": "visual",
+   "verdict": "n/a (R33 c)"
+  },
+  "V20-aa-crop": {
+   "kind": "visual",
+   "verdict": "n/a (R33 c)"
+  },
+  "A26-one-convention": {
+   "kind": "action",
+   "perRun": [
+    "pass",
+    "pass",
+    "pass"
+   ],
+   "verdict": "pass"
+  },
+  "A27-timescale-safe": {
+   "kind": "action",
+   "perRun": [
+    "pass",
+    "pass",
+    "pass"
+   ],
+   "verdict": "pass"
+  },
+  "A33-hair-bounce": {
+   "kind": "action",
+   "perRun": [
+    "pass",
+    "pass",
+    "pass"
+   ],
+   "verdict": "pass"
+  },
+  "A34-chains-driven": {
+   "kind": "action",
+   "perRun": [
+    "pass",
+    "pass",
+    "pass"
+   ],
+   "verdict": "pass"
+  },
+  "A35-cheek-anchor": {
+   "kind": "action",
+   "perRun": [
+    "pass",
+    "pass",
+    "pass"
+   ],
+   "verdict": "pass"
+  },
+  "A36-hit-react-visible": {
+   "kind": "action",
+   "perRun": [
+    "pass",
+    "pass",
+    "pass"
+   ],
+   "verdict": "pass"
+  },
+  "A31b-aim-strafe-skate-player-anim": {
+   "kind": "action",
+   "perRun": [
+    "pass",
+    "pass",
+    "pass"
+   ],
+   "verdict": "pass"
+  },
+  "A18b-slope-conform-moving": {
+   "kind": "action",
+   "perRun": [
+    "pass",
+    "pass",
+    "pass"
+   ],
+   "verdict": "pass"
+  },
+  "V23-secondary-motion": {
+   "kind": "visual",
+   "verdict": "n/a (R33 c)"
+  },
+  "V24-draw-vs-reference": {
+   "kind": "visual",
+   "verdict": "n/a (R33 c)"
+  },
+  "A28-jump-arc": {
+   "kind": "action",
+   "perRun": [
+    "pass",
+    "pass",
+    "pass"
+   ],
+   "verdict": "pass"
+  },
+  "A28b-canon-speeds": {
+   "kind": "action",
+   "perRun": [
+    "pass",
+    "pass",
+    "pass"
+   ],
+   "verdict": "pass"
+  },
+  "A29-slope-limit": {
+   "kind": "action",
+   "perRun": [
+    "pass",
+    "pass",
+    "pass"
+   ],
+   "verdict": "pass"
+  },
+  "A30-dodge-window": {
+   "kind": "action",
+   "perRun": [
+    "pass",
+    "pass",
+    "pass"
+   ],
+   "verdict": "pass"
+  },
+  "A30b-fall-wade-edge": {
+   "kind": "action",
+   "perRun": [
+    "pass",
+    "pass",
+    "pass"
+   ],
+   "verdict": "pass"
+  },
+  "A31-crouch-aim": {
+   "kind": "action",
+   "perRun": [
+    "pass",
+    "pass",
+    "pass"
+   ],
+   "verdict": "pass"
+  },
+  "A32-look-up": {
+   "kind": "action",
+   "perRun": [
+    "pass",
+    "pass",
+    "pass"
+   ],
+   "verdict": "pass"
+  },
+  "V22-chase-framing": {
+   "kind": "action",
+   "perRun": [
+    "pass",
+    "pass",
+    "pass"
+   ],
+   "verdict": "pass"
+  },
+  "A29b-slope-no-ghost": {
+   "kind": "action",
+   "perRun": [
+    "pass",
+    "pass",
+    "pass"
+   ],
+   "verdict": "pass"
+  },
+  "A32b-lookup-no-ghost": {
+   "kind": "action",
+   "perRun": [
+    "pass",
+    "pass",
+    "pass"
+   ],
+   "verdict": "pass"
+  },
+  "A31b-no-ghost-without-occluder": {
+   "kind": "action",
+   "perRun": [
+    "pass",
+    "pass",
+    "pass"
+   ],
+   "verdict": "pass"
+  },
+  "A31d-hillside-pan-0.8": {
+   "kind": "action",
+   "perRun": [
+    "pass",
+    "pass",
+    "pass"
+   ],
+   "verdict": "pass"
+  },
+  "A31e-hillside-pan-clamp": {
+   "kind": "action",
+   "perRun": [
+    "pass",
+    "pass",
+    "pass"
+   ],
+   "verdict": "pass"
+  },
+  "A31f-hillside-yaw-sweep": {
+   "kind": "action",
+   "perRun": [
+    "pass",
+    "pass",
+    "pass"
+   ],
+   "verdict": "pass"
+  },
+  "A31c-clamp-framing": {
+   "kind": "action",
+   "perRun": [
+    "fail",
+    "fail",
+    "fail"
+   ],
+   "verdict": "fail"
+  },
+  "A100-spear-holster": {
+   "kind": "action",
+   "perRun": [
+    "pass",
+    "pass",
+    "fail"
+   ],
+   "verdict": "flaky"
+  },
+  "A101-spear-grip": {
+   "kind": "action",
+   "perRun": [
+    "pass",
+    "pass",
+    "pass"
+   ],
+   "verdict": "pass"
+  },
+  "A102-melee-body-motion": {
+   "kind": "action",
+   "perRun": [
+    "pass",
+    "pass",
+    "pass"
+   ],
+   "verdict": "pass"
+  },
+  "A103-melee-contact-sync": {
+   "kind": "action",
+   "perRun": [
+    "skipR18",
+    "skipR18",
+    "skipR18"
+   ],
+   "verdict": "skipR18"
+  },
+  "A104-melee-self-clear": {
+   "kind": "action",
+   "perRun": [
+    "pass",
+    "pass",
+    "pass"
+   ],
+   "verdict": "pass"
+  },
+  "A105-melee-while-moving": {
+   "kind": "action",
+   "perRun": [
+    "pass",
+    "pass",
+    "pass"
+   ],
+   "verdict": "pass"
+  },
+  "A106-melee-approach-immovable": {
+   "kind": "action",
+   "perRun": [
+    "skipR18",
+    "skipR18",
+    "skipR18"
+   ],
+   "verdict": "skipR18"
+  },
+  "A107-draw-arm-path": {
+   "kind": "action",
+   "perRun": [
+    "pass",
+    "pass",
+    "pass"
+   ],
+   "verdict": "pass"
+  },
+  "V46-spear-ready": {
+   "kind": "visual",
+   "verdict": "n/a (R33 c)"
+  },
+  "V47-melee-swing": {
+   "kind": "visual",
+   "verdict": "n/a (R33 c)"
+  },
+  "V48-spear-holster": {
+   "kind": "visual",
+   "verdict": "n/a (R33 c)"
+  },
+  "V49-draw-from-jog": {
+   "kind": "visual",
+   "verdict": "n/a (R33 c)"
+  },
+  "A22b-fov-recompile": {
+   "kind": "action",
+   "perRun": [
+    "pass",
+    "pass",
+    "pass"
+   ],
+   "verdict": "pass"
+  },
+  "A79-runner-verdict-line": {
+   "kind": "runner",
+   "perRun": [
+    "pass",
+    "pass",
+    "pass"
+   ],
+   "verdict": "pass"
+  },
+  "A80-chrome-profile-hygiene": {
+   "kind": "runner",
+   "perRun": [
+    "pass",
+    "pass",
+    "pass"
+   ],
+   "verdict": "pass"
+  },
+  "A81-canon-speed-bands": {
+   "kind": "runner",
+   "perRun": [
+    "pass",
+    "pass",
+    "pass"
+   ],
+   "verdict": "pass"
+  },
+  "V33b-no-ao-lattice": {
+   "kind": "visual",
+   "verdict": "n/a (R33 c)"
+  },
+  "A108-ao-periodicity": {
+   "kind": "action",
+   "perRun": [
+    "pass",
+    "infra",
+    "pass"
+   ],
+   "verdict": "pass"
+  },
+  "A109-ao-distance-fade": {
+   "kind": "action",
+   "perRun": [
+    "pass",
+    "infra",
+    "pass"
+   ],
+   "verdict": "pass"
+  },
+  "A90b-memory-attribution": {
+   "kind": "action",
+   "perRun": [
+    "pass",
+    "infra",
+    "pass"
+   ],
+   "verdict": "pass"
+  },
+  "A23-aim-cost": {
+   "kind": "action",
+   "perRun": [
+    "skipR18",
+    "infra",
+    "skipR18"
+   ],
+   "verdict": "skipR18"
+  },
+  "A23b-hull-fidelity": {
+   "kind": "action",
+   "perRun": [
+    "skipR18",
+    "infra",
+    "skipR18"
+   ],
+   "verdict": "skipR18"
+  },
+  "A24-player-blocked": {
+   "kind": "action",
+   "perRun": [
+    "pass",
+    "infra",
+    "pass"
+   ],
+   "verdict": "pass"
+  },
+  "A25-machine-immovable": {
+   "kind": "action",
+   "perRun": [
+    "skipR30",
+    "infra",
+    "skipR30"
+   ],
+   "verdict": "skipR30"
+  },
+  "A25b-nav-and-occlusion": {
+   "kind": "action",
+   "perRun": [
+    "pass",
+    "infra",
+    "pass"
+   ],
+   "verdict": "pass"
+  },
+  "A25c-camera-vs-machine": {
+   "kind": "action",
+   "perRun": [
+    "skipR18",
+    "infra",
+    "skipR18"
+   ],
+   "verdict": "skipR18"
+  },
+  "V21-camera-cover": {
+   "kind": "visual",
+   "verdict": "n/a (R33 c)"
+  },
+  "A45c-foot-continuity": {
+   "kind": "action",
+   "perRun": [
+    "pass",
+    "infra",
+    "pass"
+   ],
+   "verdict": "pass"
+  },
+  "A44c-lineup-staged": {
+   "kind": "action",
+   "perRun": [
+    "skipR30",
+    "infra",
+    "skipR30"
+   ],
+   "verdict": "skipR30"
+  },
+  "A46-ground-truth": {
+   "kind": "action",
+   "perRun": [
+    "pass",
+    "infra",
+    "pass"
+   ],
+   "verdict": "pass"
+  },
+  "A44b-socket-vertex-integrity": {
+   "kind": "action",
+   "perRun": [
+    "pass",
+    "infra",
+    "pass"
+   ],
+   "verdict": "pass"
+  },
+  "A47b-corpse-posed": {
+   "kind": "action",
+   "perRun": [
+    "pass",
+    "infra",
+    "pass"
+   ],
+   "verdict": "pass"
+  },
+  "A47c-corpse-mass": {
+   "kind": "action",
+   "perRun": [
+    "skipR18",
+    "infra",
+    "skipR18"
+   ],
+   "verdict": "skipR18"
+  },
+  "A50-hulls-visible": {
+   "kind": "action",
+   "perRun": [
+    "pass",
+    "infra",
+    "pass"
+   ],
+   "verdict": "pass"
+  },
+  "A49-fx-pool-clean": {
+   "kind": "action",
+   "perRun": [
+    "skipR18",
+    "infra",
+    "skipR18"
+   ],
+   "verdict": "skipR18"
+  },
+  "A76b-footfall-species": {
+   "kind": "action",
+   "perRun": [
+    "skipR18",
+    "infra",
+    "skipR18"
+   ],
+   "verdict": "skipR18"
+  },
+  "V26-silhouette": {
+   "kind": "visual",
+   "verdict": "n/a (R33 c)"
+  },
+  "V27-attack-pose": {
+   "kind": "visual",
+   "verdict": "n/a (R33 c)"
+  },
+  "A50b-aim-on-drawn-geometry": {
+   "kind": "action",
+   "perRun": [
+    "pass",
+    "infra",
+    "fail"
+   ],
+   "verdict": "flaky"
+  },
+  "A45b-stance-report-integrity": {
+   "kind": "action",
+   "perRun": [
+    "pass",
+    "infra",
+    "pass"
+   ],
+   "verdict": "pass"
+  },
+  "A90-rig-reclaim": {
+   "kind": "action",
+   "perRun": [
+    "skipR18",
+    "infra",
+    "skipR18"
+   ],
+   "verdict": "skipR18"
+  },
+  "A48b-cadence-headroom-expansion": {
+   "kind": "action",
+   "perRun": [
+    "skipR18",
+    "infra",
+    "skipR18"
+   ],
+   "verdict": "skipR18"
+  },
+  "V26c-plate-contrast-expansion": {
+   "kind": "action",
+   "perRun": [
+    "skipR18",
+    "infra",
+    "skipR18"
+   ],
+   "verdict": "skipR18"
+  },
+  "A37-stealth-approach": {
+   "kind": "action",
+   "perRun": [
+    "skipR30",
+    "infra",
+    "skipR30"
+   ],
+   "verdict": "skipR30"
+  },
+  "A38-unseen-shot": {
+   "kind": "action",
+   "perRun": [
+    "skipR30",
+    "infra",
+    "skipR30"
+   ],
+   "verdict": "skipR30"
+  },
+  "A39-detection-curve": {
+   "kind": "action",
+   "perRun": [
+    "skipR30",
+    "infra",
+    "skipR30"
+   ],
+   "verdict": "skipR30"
+  },
+  "A40-lost-contact": {
+   "kind": "action",
+   "perRun": [
+    "skipR30",
+    "infra",
+    "skipR30"
+   ],
+   "verdict": "skipR30"
+  },
+  "A41-combat-motion": {
+   "kind": "action",
+   "perRun": [
+    "skipR30",
+    "infra",
+    "skipR30"
+   ],
+   "verdict": "skipR30"
+  },
+  "A41b-attack-coverage": {
+   "kind": "action",
+   "perRun": [
+    "skipR18",
+    "infra",
+    "skipR18"
+   ],
+   "verdict": "skipR18"
+  },
+  "A41c-sustained-variety": {
+   "kind": "action",
+   "perRun": [
+    "skipR18",
+    "infra",
+    "skipR18"
+   ],
+   "verdict": "skipR18"
+  },
+  "A41d-held-radius-coverage": {
+   "kind": "action",
+   "perRun": [
+    "skipR18",
+    "infra",
+    "skipR18"
+   ],
+   "verdict": "skipR18"
+  },
+  "A42-stagger": {
+   "kind": "action",
+   "perRun": [
+    "skipR30",
+    "infra",
+    "skipR30"
+   ],
+   "verdict": "skipR30"
+  },
+  "A43-corpse-lifecycle": {
+   "kind": "action",
+   "perRun": [
+    "pass",
+    "infra",
+    "pass"
+   ],
+   "verdict": "pass"
+  },
+  "A44-listener-isolation-machine-ai": {
+   "kind": "action",
+   "perRun": [
+    "skipR18",
+    "infra",
+    "skipR18"
+   ],
+   "verdict": "skipR18"
+  },
+  "V25n-alarm-converge-numbers": {
+   "kind": "action",
+   "perRun": [
+    "skipR30",
+    "infra",
+    "skipR30"
+   ],
+   "verdict": "skipR30"
+  },
+  "V25-alarm-converge": {
+   "kind": "visual",
+   "verdict": "n/a (R33 c)"
+  },
+  "A37-expansion": {
+   "kind": "action",
+   "perRun": [
+    "skipR18",
+    "infra",
+    "skipR18"
+   ],
+   "verdict": "skipR18"
+  },
+  "A38-expansion": {
+   "kind": "action",
+   "perRun": [
+    "skipR18",
+    "infra",
+    "skipR18"
+   ],
+   "verdict": "skipR18"
+  },
+  "A39-expansion": {
+   "kind": "action",
+   "perRun": [
+    "skipR18",
+    "infra",
+    "skipR18"
+   ],
+   "verdict": "skipR18"
+  },
+  "A40-expansion": {
+   "kind": "action",
+   "perRun": [
+    "skipR18",
+    "infra",
+    "skipR18"
+   ],
+   "verdict": "skipR18"
+  },
+  "A41-expansion": {
+   "kind": "action",
+   "perRun": [
+    "skipR18",
+    "infra",
+    "skipR18"
+   ],
+   "verdict": "skipR18"
+  },
+  "A41b-expansion": {
+   "kind": "action",
+   "perRun": [
+    "skipR18",
+    "infra",
+    "skipR18"
+   ],
+   "verdict": "skipR18"
+  },
+  "A41c-expansion": {
+   "kind": "action",
+   "perRun": [
+    "skipR18",
+    "infra",
+    "skipR18"
+   ],
+   "verdict": "skipR18"
+  },
+  "A41d-must-fire": {
+   "kind": "action",
+   "perRun": [
+    "skipR18",
+    "infra",
+    "skipR18"
+   ],
+   "verdict": "skipR18"
+  },
+  "A42-expansion": {
+   "kind": "action",
+   "perRun": [
+    "skipR18",
+    "infra",
+    "skipR18"
+   ],
+   "verdict": "skipR18"
+  },
+  "A43-expansion": {
+   "kind": "action",
+   "perRun": [
+    "skipR18",
+    "infra",
+    "skipR18"
+   ],
+   "verdict": "skipR18"
+  },
+  "A90-memory-stability-expansion": {
+   "kind": "action",
+   "perRun": [
+    "pass",
+    "infra",
+    "pass"
+   ],
+   "verdict": "pass"
+  },
+  "A49-melee-exists": {
+   "kind": "action",
+   "perRun": [
+    "skipR30",
+    "infra",
+    "skipR30"
+   ],
+   "verdict": "skipR30"
+  },
+  "A50-silent-strike": {
+   "kind": "action",
+   "perRun": [
+    "skipR30",
+    "infra",
+    "skipR30"
+   ],
+   "verdict": "skipR30"
+  },
+  "A51-nock-gap": {
+   "kind": "action",
+   "perRun": [
+    "pass",
+    "infra",
+    "pass"
+   ],
+   "verdict": "pass"
+  },
+  "A52-arrow-drop": {
+   "kind": "action",
+   "perRun": [
+    "skipR30",
+    "infra",
+    "skipR30"
+   ],
+   "verdict": "skipR30"
+  },
+  "A53-conc-not-on-sprint": {
+   "kind": "action",
+   "perRun": [
+    "pass",
+    "infra",
+    "pass"
+   ],
+   "verdict": "pass"
+  },
+  "A54-elemental-tiers": {
+   "kind": "action",
+   "perRun": [
+    "skipR18",
+    "infra",
+    "skipR18"
+   ],
+   "verdict": "skipR18"
+  },
+  "V28-impact": {
+   "kind": "visual",
+   "verdict": "n/a (R33 c)"
+  },
+  "V29-wielded-carry": {
+   "kind": "visual",
+   "verdict": "n/a (R33 c)"
+  },
+  "A91-combat-fx-bounded": {
+   "kind": "action",
+   "perRun": [
+    "pass",
+    "infra",
+    "pass"
+   ],
+   "verdict": "pass"
+  },
+  "A92-arrow-corpse-release": {
+   "kind": "action",
+   "perRun": [
+    "pass",
+    "infra",
+    "pass"
+   ],
+   "verdict": "pass"
+  },
+  "A93-combat-dom-bounded": {
+   "kind": "action",
+   "perRun": [
+    "pass",
+    "infra",
+    "pass"
+   ],
+   "verdict": "pass"
+  },
+  "A94-combat-memory-return": {
+   "kind": "action",
+   "perRun": [
+    "pass",
+    "infra",
+    "pass"
+   ],
+   "verdict": "pass"
+  },
+  "A95-combat-teardown": {
+   "kind": "action",
+   "perRun": [
+    "pass",
+    "infra",
+    "pass"
+   ],
+   "verdict": "pass"
+  },
+  "A62-focus-components": {
+   "kind": "action",
+   "perRun": [
+    "skipR18",
+    "infra",
+    "skipR18"
+   ],
+   "verdict": "skipR18"
+  },
+  "A63-loot-reveals": {
+   "kind": "action",
+   "perRun": [
+    "skipR18",
+    "infra",
+    "skipR18"
+   ],
+   "verdict": "skipR18"
+  },
+  "V36-focus-scan": {
+   "kind": "visual",
+   "verdict": "n/a (R33 c)"
+  },
+  "A71-compass-truth": {
+   "kind": "action",
+   "perRun": [
+    "skipR18",
+    "infra",
+    "skipR18"
+   ],
+   "verdict": "skipR18"
+  },
+  "A71b-hud-scale-floor": {
+   "kind": "action",
+   "perRun": [
+    "skipR18",
+    "infra",
+    "skipR18"
+   ],
+   "verdict": "skipR18"
+  },
+  "A71c-hud-surfaces": {
+   "kind": "action",
+   "perRun": [
+    "skipR18",
+    "infra",
+    "skipR18"
+   ],
+   "verdict": "skipR18"
+  },
+  "A71d-conc-veil": {
+   "kind": "action",
+   "perRun": [
+    "pass",
+    "infra",
+    "pass"
+   ],
+   "verdict": "pass"
+  },
+  "A71e-tutorial-cards": {
+   "kind": "action",
+   "perRun": [
+    "pass",
+    "infra",
+    "pass"
+   ],
+   "verdict": "pass"
+  },
+  "A71f-interact-anchor": {
+   "kind": "action",
+   "perRun": [
+    "pass",
+    "infra",
+    "pass"
+   ],
+   "verdict": "pass"
+  },
+  "A71g-tracker-live": {
+   "kind": "action",
+   "perRun": [
+    "pass",
+    "infra",
+    "pass"
+   ],
+   "verdict": "pass"
+  },
+  "A71h-mhb-melee-clear": {
+   "kind": "action",
+   "perRun": [
+    "skipR18",
+    "infra",
+    "skipR18"
+   ],
+   "verdict": "skipR18"
+  },
+  "V37-hud-language": {
+   "kind": "visual",
+   "verdict": "n/a (R33 c)"
+  },
+  "A68-no-softlock": {
+   "kind": "action",
+   "perRun": [
+    "pass",
+    "infra",
+    "pass"
+   ],
+   "verdict": "pass"
+  },
+  "A69-death-choice": {
+   "kind": "action",
+   "perRun": [
+    "pass",
+    "infra",
+    "pass"
+   ],
+   "verdict": "pass"
+  },
+  "A70-hub-tabs": {
+   "kind": "action",
+   "perRun": [
+    "pass",
+    "infra",
+    "pass"
+   ],
+   "verdict": "pass"
+  },
+  "A70b-fast-travel": {
+   "kind": "action",
+   "perRun": [
+    "pass",
+    "infra",
+    "pass"
+   ],
+   "verdict": "pass"
+  },
+  "A70c-title-flow": {
+   "kind": "action",
+   "perRun": [
+    "pass",
+    "infra",
+    "pass"
+   ],
+   "verdict": "pass"
+  },
+  "A72-settings-persist": {
+   "kind": "action",
+   "perRun": [
+    "pass",
+    "infra",
+    "pass"
+   ],
+   "verdict": "pass"
+  },
+  "A72b-accessibility": {
+   "kind": "action",
+   "perRun": [
+    "pass",
+    "infra",
+    "pass"
+   ],
+   "verdict": "pass"
+  },
+  "V38-title": {
+   "kind": "visual",
+   "verdict": "n/a (R33 c)"
+  },
+  "A78-cast-states": {
+   "kind": "action",
+   "perRun": [
+    "pass",
+    "infra",
+    "pass"
+   ],
+   "verdict": "pass"
+  },
+  "A78b-cast-pose-set": {
+   "kind": "action",
+   "perRun": [
+    "skipR18",
+    "infra",
+    "skipR18"
+   ],
+   "verdict": "skipR18"
+  },
+  "A79-time-authority": {
+   "kind": "action",
+   "perRun": [
+    "pass",
+    "infra",
+    "pass"
+   ],
+   "verdict": "pass"
+  },
+  "A79b-studio-shell": {
+   "kind": "action",
+   "perRun": [
+    "pass",
+    "infra",
+    "pass"
+   ],
+   "verdict": "pass"
+  },
+  "A79c-lens-stack": {
+   "kind": "action",
+   "perRun": [
+    "pass",
+    "infra",
+    "pass"
+   ],
+   "verdict": "pass"
+  },
+  "A79e-pose-overlay-frozen": {
+   "kind": "action",
+   "perRun": [
+    "pass",
+    "infra",
+    "pass"
+   ],
+   "verdict": "pass"
+  },
+  "V79-photo-portrait": {
+   "kind": "visual",
+   "verdict": "n/a (R33 c)"
+  },
+  "A79f-photo-entry": {
+   "kind": "action",
+   "perRun": [
+    "pass",
+    "infra",
+    "pass"
+   ],
+   "verdict": "pass"
+  },
+  "A79g-death-menu-live": {
+   "kind": "action",
+   "perRun": [
+    "pass",
+    "infra",
+    "pass"
+   ],
+   "verdict": "pass"
+  },
+  "A79d-studio-gate-shape": {
+   "kind": "runner",
+   "perRun": [
+    "pass",
+    "pass",
+    "pass"
+   ],
+   "verdict": "pass"
+  },
+  "A95-npc-roster": {
+   "kind": "action",
+   "perRun": [
+    "pass",
+    "infra",
+    "pass"
+   ],
+   "verdict": "pass"
+  },
+  "A96-npc-animated": {
+   "kind": "action",
+   "perRun": [
+    "pass",
+    "infra",
+    "pass"
+   ],
+   "verdict": "pass"
+  },
+  "A97-npc-no-skate": {
+   "kind": "action",
+   "perRun": [
+    "pass",
+    "infra",
+    "pass"
+   ],
+   "verdict": "pass"
+  },
+  "A97b-npc-talk-freeze": {
+   "kind": "action",
+   "perRun": [
+    "pass",
+    "infra",
+    "pass"
+   ],
+   "verdict": "pass"
+  },
+  "V40-settlement-life": {
+   "kind": "action",
+   "perRun": [
+    "pass",
+    "infra",
+    "pass"
+   ],
+   "verdict": "pass"
+  },
+  "V41-npc-closeup": {
+   "kind": "action",
+   "perRun": [
+    "pass",
+    "infra",
+    "pass"
+   ],
+   "verdict": "pass"
+  },
+  "A64-xp-loop": {
+   "kind": "action",
+   "perRun": [
+    "skipR30",
+    "infra",
+    "skipR30"
+   ],
+   "verdict": "skipR30"
+  },
+  "A65-save-restore": {
+   "kind": "action",
+   "perRun": [
+    "pass",
+    "infra",
+    "pass"
+   ],
+   "verdict": "pass"
+  },
+  "A66-quest-objectives": {
+   "kind": "action",
+   "perRun": [
+    "skipR30",
+    "infra",
+    "skipR30"
+   ],
+   "verdict": "skipR30"
+  },
+  "A67-machine-respawn": {
+   "kind": "action",
+   "perRun": [
+    "skipR30",
+    "infra",
+    "skipR30"
+   ],
+   "verdict": "skipR30"
+  },
+  "A64b-damage-channels": {
+   "kind": "action",
+   "perRun": [
+    "skipR18",
+    "infra",
+    "skipR18"
+   ],
+   "verdict": "skipR18"
+  },
+  "A64c-silent-apex": {
+   "kind": "action",
+   "perRun": [
+    "skipR30",
+    "infra",
+    "skipR30"
+   ],
+   "verdict": "skipR30"
+  },
+  "A65-save-restore-expansion": {
+   "kind": "action",
+   "perRun": [
+    "pass",
+    "infra",
+    "pass"
+   ],
+   "verdict": "pass"
+  },
+  "A99-dialogue": {
+   "kind": "action",
+   "perRun": [
+    "pass",
+    "infra",
+    "pass"
+   ],
+   "verdict": "pass"
+  },
+  "V45-dialogue-panel": {
+   "kind": "visual",
+   "verdict": "n/a (R33 c)"
+  },
+  "A67b-site-ledgers-expansion": {
+   "kind": "action",
+   "perRun": [
+    "pass",
+    "infra",
+    "pass"
+   ],
+   "verdict": "pass"
+  },
+  "A58-surface-api": {
+   "kind": "action",
+   "perRun": [
+    "pass",
+    "infra",
+    "pass"
+   ],
+   "verdict": "pass"
+  },
+  "A59-grass-coverage": {
+   "kind": "action",
+   "perRun": [
+    "pass",
+    "infra",
+    "pass"
+   ],
+   "verdict": "pass"
+  },
+  "A60-stealth-lanes": {
+   "kind": "action",
+   "perRun": [
+    "pass",
+    "infra",
+    "pass"
+   ],
+   "verdict": "pass"
+  },
+  "V32-ground-detail": {
+   "kind": "visual",
+   "verdict": "n/a (R33 c)"
+  },
+  "V33-rim": {
+   "kind": "visual",
+   "verdict": "n/a (R33 c)"
+  },
+  "V44-biomes": {
+   "kind": "visual",
+   "verdict": "n/a (R33 c)"
+  },
+  "A61-scree-seated-world-ground": {
+   "kind": "action",
+   "perRun": [
+    "pass",
+    "infra",
+    "pass"
+   ],
+   "verdict": "pass"
+  },
+  "A62-rim-face-lit-world-ground": {
+   "kind": "action",
+   "perRun": [
+    "pass",
+    "infra",
+    "pass"
+   ],
+   "verdict": "pass"
+  },
+  "A63-bedding-planar-world-ground": {
+   "kind": "action",
+   "perRun": [
+    "pass",
+    "infra",
+    "pass"
+   ],
+   "verdict": "pass"
+  },
+  "A58b-surface-audio-world-ground": {
+   "kind": "action",
+   "perRun": [
+    "pass",
+    "infra",
+    "pass"
+   ],
+   "verdict": "pass"
+  },
+  "A59b-cover-honesty-world-ground": {
+   "kind": "action",
+   "perRun": [
+    "pass",
+    "infra",
+    "pass"
+   ],
+   "verdict": "pass"
+  },
+  "A59c-mask-coherence-world-ground": {
+   "kind": "action",
+   "perRun": [
+    "pass",
+    "infra",
+    "pass"
+   ],
+   "verdict": "pass"
+  },
+  "A55-light-ratio": {
+   "kind": "action",
+   "perRun": [
+    "pass",
+    "infra",
+    "pass"
+   ],
+   "verdict": "pass"
+  },
+  "A56-cascades": {
+   "kind": "action",
+   "perRun": [
+    "pass",
+    "infra",
+    "pass"
+   ],
+   "verdict": "pass"
+  },
+  "A57-aerial": {
+   "kind": "action",
+   "perRun": [
+    "pass",
+    "infra",
+    "pass"
+   ],
+   "verdict": "pass"
+  },
+  "V30-golden-hour": {
+   "kind": "visual",
+   "verdict": "n/a (R33 c)"
+  },
+  "V31-night": {
+   "kind": "visual",
+   "verdict": "n/a (R33 c)"
+  },
+  "A61-colliders-registered": {
+   "kind": "action",
+   "perRun": [
+    "pass",
+    "infra",
+    "pass"
+   ],
+   "verdict": "pass"
+  },
+  "V34-midground": {
+   "kind": "action",
+   "perRun": [
+    "pass",
+    "infra",
+    "pass"
+   ],
+   "verdict": "pass"
+  },
+  "V35-settlement": {
+   "kind": "action",
+   "perRun": [
+    "pass",
+    "infra",
+    "pass"
+   ],
+   "verdict": "pass"
+  },
+  "A61b-camp-rest-event": {
+   "kind": "action",
+   "perRun": [
+    "pass",
+    "infra",
+    "pass"
+   ],
+   "verdict": "pass"
+  },
+  "A61c-datapoints-unified": {
+   "kind": "action",
+   "perRun": [
+    "pass",
+    "infra",
+    "pass"
+   ],
+   "verdict": "pass"
+  },
+  "A98-sites": {
+   "kind": "action",
+   "perRun": [
+    "pass",
+    "infra",
+    "pass"
+   ],
+   "verdict": "pass"
+  },
+  "A98b-clearings": {
+   "kind": "action",
+   "perRun": [
+    "pass",
+    "infra",
+    "pass"
+   ],
+   "verdict": "pass"
+  },
+  "A73-sample-bank": {
+   "kind": "action",
+   "perRun": [
+    "pass",
+    "infra",
+    "pass"
+   ],
+   "verdict": "pass"
+  },
+  "A78-loop-reclaim": {
+   "kind": "action",
+   "perRun": [
+    "skipR30",
+    "infra",
+    "skipR30"
+   ],
+   "verdict": "skipR30"
+  },
+  "A74-3d": {
+   "kind": "action",
+   "perRun": [
+    "pass",
+    "infra",
+    "pass"
+   ],
+   "verdict": "pass"
+  },
+  "A75-species-voices": {
+   "kind": "action",
+   "perRun": [
+    "skipR18",
+    "infra",
+    "skipR18"
+   ],
+   "verdict": "skipR18"
+  },
+  "A76-footfalls": {
+   "kind": "action",
+   "perRun": [
+    "skipR18",
+    "infra",
+    "skipR18"
+   ],
+   "verdict": "skipR18"
+  },
+  "A77-music-states": {
+   "kind": "action",
+   "perRun": [
+    "skipR30",
+    "infra",
+    "skipR30"
+   ],
+   "verdict": "skipR30"
+  },
+  "A73b-hero-effort": {
+   "kind": "action",
+   "perRun": [
+    "pass",
+    "infra",
+    "pass"
+   ],
+   "verdict": "pass"
+  },
+  "A75b-death-ladder": {
+   "kind": "action",
+   "perRun": [
+    "skipR30",
+    "infra",
+    "skipR30"
+   ],
+   "verdict": "skipR30"
+  },
+  "A77b-hit-ladder": {
+   "kind": "action",
+   "perRun": [
+    "skipR30",
+    "infra",
+    "skipR30"
+   ],
+   "verdict": "skipR30"
+  },
+  "A73c-bow-sets": {
+   "kind": "action",
+   "perRun": [
+    "pass",
+    "infra",
+    "pass"
+   ],
+   "verdict": "pass"
+  },
+  "A75c-suspicion-scan": {
+   "kind": "action",
+   "perRun": [
+    "skipR30",
+    "infra",
+    "skipR30"
+   ],
+   "verdict": "skipR30"
+  },
+  "A78c-machine-retention-audio": {
+   "kind": "action",
+   "perRun": [
+    "skipR30",
+    "infra",
+    "skipR30"
+   ],
+   "verdict": "skipR30"
+  },
+  "A73d-ui-bus": {
+   "kind": "action",
+   "perRun": [
+    "pass",
+    "infra",
+    "pass"
+   ],
+   "verdict": "pass"
+  },
+  "A74b-ambience-zones": {
+   "kind": "action",
+   "perRun": [
+    "pass",
+    "infra",
+    "pass"
+   ],
+   "verdict": "pass"
+  },
+  "A73e-melee-traps": {
+   "kind": "action",
+   "perRun": [
+    "skipR30",
+    "infra",
+    "skipR30"
+   ],
+   "verdict": "skipR30"
+  }
+ }
+}
