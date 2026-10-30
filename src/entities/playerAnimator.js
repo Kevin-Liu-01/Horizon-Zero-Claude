@@ -426,12 +426,15 @@ const CLIMB_CATCH = 0.08;
  * r5/hero-body/bin/probe-tail.mjs). A cloth strip has next to no bending
  * stiffness and a light strip's drag dwarfs its weight in a 5.5 m/s wind:
  * `maxAng` 0.62 -> 1.3 rad (the wrapped root still holds its line through
- * `rootK`), the air coupling `wind` 3.0 -> 5.0 1/s and the fall `grav` 0.42 ->
- * 0.30. Measured over 120 trade-wind moments each (probes t8-t10): 3.6 /s 7 of
- * 60 under the bar, 4.5 /s 10 of 120, 5.0 /s 1 of 120 (a side lens at 3 px).
- * Softer strips (stiff 6-20 with the root stiffness confined to the knot)
- * flapped and folded down more, not less (probe t4). */
-DYN_CLASSES.push({ name: 'wrap', re: /(?!)/, stiff: 42, drag: 4.2, grav: 0.30, maxAng: 1.3, strike: 0.7, base: 0.30, collide: 2, wind: 5.0, rootK: 8 });
+ * `rootK`), the air coupling `wind` 3.0 -> 5.0 1/s, the fall `grav` 0.42 ->
+ * 0.30, and `airY`: the air now resists the strip's VERTICAL flap as well (the
+ * Round-4 classes drag only horizontally, for the knot tail's bounce, A33; the
+ * downward flutter phase, unresisted, is what folded the strip onto the bow).
+ * Trade-wind moments under the bar (probes t8-t11): 3.6 /s 7 of 60, 4.5 /s 10
+ * of 120, 5.0 /s 1 of 240, 5.0 /s + airY 0 of 120 (every view >= 6 px clear,
+ * reach >= 4). Softer strips (stiff 6-20 with the root stiffness confined to
+ * the knot) flapped and folded down more, not less (probe t4). */
+DYN_CLASSES.push({ name: 'wrap', re: /(?!)/, stiff: 42, drag: 4.2, grav: 0.30, maxAng: 1.3, strike: 0.7, base: 0.30, collide: 2, wind: 5.0, rootK: 8, airY: true });
 /** Air coupling per Round-4 class (1/s; 0 = none). Hair a little, cloth some, gear none. */
 const DYN_WIND = { hair: 0.22, necklace: 0, dangle: 0.15, cloth: 0.55, gear: 0, shirt: 0 };
 /** The default world wind (bible §2.2: the NE trade wind from bearing 045; north = -Z, east = +X). */
