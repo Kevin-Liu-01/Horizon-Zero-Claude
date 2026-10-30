@@ -1,4 +1,6 @@
 import * as THREE from 'three';
+import { LAMP_HEX } from '../../instruments/lamps.js';
+import { VFX_COLORS } from '../../instruments/lib/vfx.js';
 import { Machine, rollLoot, glowTexture } from './machine.js';
 import { antennaMesh, canisterMesh, powerCellMesh, lensMesh, pulseGlow } from './parts.js';
 import { ClipLayerSet, BoneSpace } from '../anim/index.js';
@@ -226,7 +228,7 @@ export class Longleg extends Machine {
     // compact high keel, folded stub wings, crested skull — and the donor
     // `Birb` sculpt underneath it is retired (fix round 2: a judge graded the
     // donor, not the shell, because this species never called hideSculpt).
-    buildShell(this, LONGLEG_SHELL);
+    buildShell(this, LONGLEG_SHELL, { sensorColor: LAMP_HEX.calm });
     hideSculpt(this);
     attachRigRuntime(this);
     // --- RESIDUE ROUND (A21-real-draw-calls): the draw-call fold. One
@@ -399,7 +401,7 @@ export class Longleg extends Machine {
       this.addPart({
         name: side > 0 ? 'concussion-sac-r' : 'concussion-sac-l',
         displayName: 'Concussion Sac',
-        mesh: canisterMesh({ color: 0xd8f4ff, r: 0.11, h: 0.3 }),
+        mesh: canisterMesh({ color: VFX_COLORS.saltGlint, r: 0.11, h: 0.3 }),
         pos: [side * 0.3, 1.95, 0.52], snap: true,
         snapTarget: [side * 0.08, 1.9, 0],
         tearHp: 30, settleY: 0.18,
@@ -481,7 +483,7 @@ export class Longleg extends Machine {
   /** Expanding echolocation ring from the head. */
   _pingRing() {
     const mat = new THREE.SpriteMaterial({
-      map: glowTexture(), color: 0xa8e8ff, transparent: true, opacity: 0.5,
+      map: glowTexture(), color: VFX_COLORS.sensorPing, transparent: true, opacity: 0.5,
       blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false,
     });
     const s = new THREE.Sprite(mat);

@@ -443,7 +443,8 @@
    ],
    "paths": [
     "src/instruments/**",
-    "tools/gates.r5.instruments-core.mjs"
+    "tools/gates.r5.instruments-core.mjs",
+    "tools/gates.r5.kind-block.mjs"
    ],
    "reason": "A-roles-published / A-no-override / A-no-corruption regexes name the forbidden words",
    "cap": 49

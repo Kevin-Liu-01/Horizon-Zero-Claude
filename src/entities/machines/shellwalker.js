@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { LAMP_HEX } from '../../instruments/lamps.js';
 import { rollLoot } from './machine.js';
 import { lensMesh } from './parts.js';
 import { buildRig, RIGS } from './autorig.js';
@@ -87,7 +88,7 @@ export class ShellWalker extends ExpansionMachine {
       { id: 'machine-heart', n: 1, chance: 0.14 },
     ]);
 
-    buildShell(this, SHELLWALKER_SHELL, { rig: RIGS.shellwalker });
+    buildShell(this, SHELLWALKER_SHELL, { rig: RIGS.shellwalker, sensorColor: LAMP_HEX.calm });
     attachRigRuntime(this);
     buildRig(this, RIGS.shellwalker);
 

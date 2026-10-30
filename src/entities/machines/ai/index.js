@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { Perception } from './perception.js';
+import { Perception, PerceptionHooks } from './perception.js';
 import { Engage } from './engage.js';
 import { Search } from './search.js';
 import { AttackPicker } from './attacks.js';
@@ -10,7 +10,7 @@ import { Squads } from './squad.js';
 import { perceptionCfg, attackMode, NOISE } from './tables.js';
 import { listenerErrors, clearListenerErrors } from './emit.js';
 
-export { Perception, Engage, Search, AttackPicker, Reactions, StimulusBus, SiteManager, Squads };
+export { Perception, PerceptionHooks, Engage, Search, AttackPicker, Reactions, StimulusBus, SiteManager, Squads };
 
 /**
  * ============================ LANE CONTRACT ============================
@@ -162,8 +162,9 @@ export { Perception, Engage, Search, AttackPicker, Reactions, StimulusBus, SiteM
  *                       reading falls by one at the same instant a regression
  *                       pushes a row out of the fight.
  *   machine.ai.picker.movesetRows()   ...and the ids behind it
- *   machine.ai.picker.stalled        Map(id -> s) moves given up on because
- *                       they held the ring without firing (SCORING.arrangeGiveUp)
+ *   machine.ai.picker.stalled        Map(id -> expiry on picker._now) moves given up on
+ *                       because they held the ring without firing (SCORING.arrangeGiveUp);
+ *                       ask `picker._held(picker.stalled, id)` (W0b: no per-frame countdown)
  *   machine.ai.picker.arrangedId     the move the ring is set up for, or null
  *   machine.ai.picker.blindRings()   [[id, s], ...] moves whose ring the
  *                       machine could not SEE from — set by
@@ -280,7 +281,7 @@ export class MachineAI {
     this.picker = new AttackPicker(machine);
     this.reactions = new Reactions(machine);
     this.mode = attackMode(machine.kind);
-    this.lureT = 0;
+    this.lureT = 0.5; this.lureT = 0;   // (born Double: see machine.js MachineScalars)
     this.lurePos = new THREE.Vector3();
   }
 
@@ -337,12 +338,14 @@ export class MachineAI {
       if (typeof m[k] !== 'number') continue;
       if (/^_cd[A-Z]/.test(k) || /^_[a-zA-Z]+Cd$/.test(k)) out.push(k);
     }
+    // the base cooldowns live on `m.sc` (machine.js MachineScalars) behind accessors: same names, same snapshot
+    if (m.sc) for (const k of Object.keys(m.sc)) if ((/^_cd[A-Z]/.test(k) || /^_[a-zA-Z]+Cd$/.test(k)) && !out.includes(k)) out.push(k);
     return out;
   }
 
   tick(dt) {
     this.picker.tick(dt);
-    this.lureT = Math.max(0, this.lureT - dt);
+    { const l = this.lureT - dt; this.lureT = l > 0 ? l : 0; }   // (no Math.* call takes a double)
   }
 }
 
@@ -357,6 +360,15 @@ export function installMachineAI(machines) {
   machines.stimulus = new StimulusBus(machines);
   machines.sites = new SiteManager(machines);
   machines.squads = new Squads(machines);
+  /**
+   * ROUND 5 PERK + WEATHER CONTRACT (instruments-core W0b, plan §3.2):
+   *   machines.perception.detectMul / .flagDuration / .flagPlayer(source) /
+   *   .addDustCloud(...) / .outlined(m) / .sightScale, machine.dustOccluded,
+   *   machines.stimulus.addNoiseFilter(fn) -> remover.
+   * Full shape in `ai/perception.js` PerceptionHooks; stepped from
+   * `Machines.update` once per sim step.
+   */
+  machines.perception = new PerceptionHooks(machines);
 
   /* ---------------------------- public API ---------------------------- */
 
