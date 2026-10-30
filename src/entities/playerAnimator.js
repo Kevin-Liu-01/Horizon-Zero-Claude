@@ -136,8 +136,6 @@ const _cp1 = new THREE.Vector3();
 const _cp2 = new THREE.Vector3();
 // twist-joint scratch
 const _twQ = new THREE.Quaternion();
-// W0b targeted fix: the wrap tail's head-yaw counter-turn (`_yawCounter`), allocation-free
-const _ywQ = new THREE.Quaternion(), _ywQ2 = new THREE.Quaternion(), _ywQ3 = new THREE.Quaternion(), _ywV = new THREE.Vector3();
 // alidade overlay (E5) scratch: never reallocated
 const _alM = new THREE.Matrix4();
 const _alM2 = new THREE.Matrix4();
@@ -5388,37 +5386,6 @@ export class PlayerAnimator {
   }
 
   /**
-   * W0b targeted fix — THE WRAP TAIL'S KNOT DOES NOT CARRY THE HEAD'S SCAN
-   * (gate A-tail-legible, V-brea-one-glance cue 2). The wrap tail is parented
-   * to the Head, so its spring REST — the wrapped root held stiff, the free
-   * strip hanging from it — swung round with every head yaw: the idle scan
-   * (`_idleLife` fidget 0, the neck and head turned 0.5 rad) carried the tail
-   * ~20 deg round with it, flat to her left (lost to a side lens behind the
-   * stowed bow) or straight back (lost to a front lens behind her head),
-   * however soft the free strip was made (the wrapped root alone turns it).
-   * A cloth tail tied on a head wrap does not do that: the knot turns, the
-   * tail keeps trailing. Here the root link (and with it the chain's rest) is
-   * turned back about the CHEST's up axis by `k` of the head's yaw relative to
-   * the chest, before the solver reads the rest; the knot point itself (the
-   * root's pivot) still rides the head. The dyn_ bones are reset to bind every
-   * frame (RestPose), so the turn never accumulates. No allocation.
-   */
-  _yawCounter(e0, k) {
-    const hd = this.b.head, ch = this.b.spine3;
-    if (!e0 || !hd?.invW || !ch?.invW || !(k > 0)) return;
-    this._liveW(hd.bone, _ywQ).multiply(hd.invW);     // the head's char-space turn from bind
-    this._liveW(ch.bone, _ywQ2).multiply(ch.invW);    // the chest's
-    _ywQ3.copy(_ywQ2).invert().multiply(_ywQ);         // the head, relative to the chest
-    _ywV.set(0, 0, 1).applyQuaternion(_ywQ3);
-    const yaw = Math.atan2(_ywV.x, _ywV.z);
-    if (!(Math.abs(yaw) > 1e-4)) return;
-    _ywQ3.setFromAxisAngle(Y_AXIS, -yaw * k);           // about the chest's own up...
-    _ywQ3.premultiply(_ywQ2); _ywQ2.invert(); _ywQ3.multiply(_ywQ2);   // ...in char space
-    this._rotQL(e0, _ywQ3);
-    e0.bone.updateMatrixWorld(true);
-  }
-
-  /**
    * R5 fix round 4 — set the world wind the cloth chains feel (published for
    * world-sky's weather; default the NE trade wind, bible §2.2).
    *   fromBearing  rad, the compass bearing the wind blows FROM (0 = north,
@@ -5537,11 +5504,6 @@ export class PlayerAnimator {
       const N = c.N, n = c.n, cls = c.cls;
       const pos = c.pos, vel = c.vel, anim = c.anim, aPrev = c.animPrev, aVel = c.animVel;
 
-      // W0b targeted fix (A-tail-legible at the idle head scan): a class with
-      // `yawFollow` < 1 lets its rest take only that share of the head's YAW
-      // relative to the chest (see `_yawCounter`)
-      if (cls.yawFollow != null && cls.yawFollow < 1) this._yawCounter(c.links[0], 1 - cls.yawFollow);
-
       /* ---- 1. animated rest pose: positions (matrices) + world quats ---- */
       const rootBone = c.links[0].bone;
       if (rootBone.parent) rootBone.parent.getWorldQuaternion(_spQ); else _spQ.identity();
@@ -5597,16 +5559,11 @@ export class PlayerAnimator {
       // fix round 4: the air (see `DYN_CLASSES` 'wrap'): this chain's flutter
       // across the gusting wind, and the wrapped root's stiffness profile
       const cw = cls.wind ?? DYN_WIND[cls.name] ?? 0, rk = cls.rootK ?? 0;
-      // W0b targeted fix: `rootSpan` (0..1 of the chain) confines the wrapped
-      // root's extra stiffness to the knotted links; absent (1) the profile is
-      // the old whole-chain (1 - dj)^2, bit for bit
-      const rs = cls.rootSpan ?? 1;
       const flA = cw > 0 ? (this.wind.flutter || 0) * windS : 0, sd = c.seed;
       for (let s = 0; s < steps; s++) {
         for (let j = 1; j < n; j++) {
           const i0 = j * 3;
-          const dj = j / N, ru = rs < 1 ? (dj < rs ? 1 - dj / rs : 0) : 1 - dj;
-          const kj = rk > 0 ? k * (1 + rk * ru * ru) : k;
+          const dj = j / N, kj = rk > 0 ? k * (1 + rk * (1 - dj) * (1 - dj)) : k;
           const wj = cw * dj;
           // the flutter: a wave running DOWN the strand (phase lags with depth),
           // across the wind horizontally and a little vertically

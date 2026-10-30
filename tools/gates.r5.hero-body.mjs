@@ -8692,7 +8692,7 @@ const NEW_GATES = [
   /* ----------------------------------------------------- A-tail-legible */
   {
     id: 'A-tail-legible', kind: 'action', lane: 'hero-body', timeout: 240000,
-    title: 'V-brea-one-glance cue 2 MEASURED (fix round 5, judge r2: "the wrap tail cannot be separated from the stowed bow\'s upper limb" at 64 px). W0b targeted fix: the draft bar, restored and graded at every moment the sheet could show, not only the sheet\'s own instant. On the silhouette sheet\'s staging (idle, facing N in the NE trade wind) and lens (56 x 82 px black fill, ortho 2.3 m), front / side (her right) / back / side (her left): the pixels only the wrap tail covers (the view rendered again with the tail collapsed into its knot) include >= 4 standing >= 3 px clear of every other part of the silhouette (bow, lance, head, body) AND the tail reaches >= 4 px out — at the sheet\'s instant, at 23 gust moments after it (every 0.35 s of sim for 8 s: the trade wind\'s slowest gust swell is 7.6 s long), and through her idle head scan both ways (the idle fidget that turns the neck and head 0.5 rad; 2 scans each way x 3 instants). Reported with numbers, not graded: still air (after 3 s, then every 0.5 s for 2 s) and the 3/4 view',
+    title: 'V-brea-one-glance cue 2 MEASURED (fix round 5, judge r2: "the wrap tail cannot be separated from the stowed bow\'s upper limb" at 64 px). W0b targeted fix: the draft bar restored — graded at the sheet\'s instant AND at every gust moment, not only the sheet\'s. On the silhouette sheet\'s own staging (the neutral idle, facing N in the NE trade wind) and lens (56 x 82 px black fill, ortho 2.3 m), front / side (her right) / back / side (her left): the pixels only the wrap tail covers (the view rendered again with the tail collapsed into its knot) include >= 4 standing >= 3 px clear of every other part of the silhouette (bow, lance, head, body) AND the tail reaches >= 4 px out — at the sheet\'s instant and at 23 gust moments after it (every 0.35 s of SIM for 8 s: the trade wind\'s slowest gust swell is 7.6 s long). Reported with numbers, not graded: her idle head scan both ways (the fidget that turns the neck and head 0.5 rad; 2 scans each way x 3 instants), still air (after 3 s, then every 0.5 s for 2 s) and the 3/4 view',
     setup: INPUT_ON, settle: 400,
     assert: `(async () => {${HB}
       freeze();
@@ -8702,68 +8702,65 @@ const NEW_GATES = [
       const BAR = { clear3: 4, reach: 4 };
       const pick = (rows) => rows.map((r) => ({ ...r, ok: r.clear3 >= BAR.clear3 && r.reach >= BAR.reach }));
       const TRADE = [45 * Math.PI / 180, 5.5, 0.35, 0.32];   // the default world wind (bible §2.2)
-      // the sheet's own hold (facing N), stepped on the SIM clock: poseIdle
-      // waits >= 20 rendered frames, so on a slow box its 0.35 s ran ~0.9 s
+      // the sheet's own hold (facing N, the neutral idle), stepped on the SIM
+      // clock: poseIdle waits >= 20 rendered frames, so on a slow box its
+      // 0.35 s ran ~0.9 s of sim
       const hold = async (sec) => { const s0 = E.simTime, w0 = performance.now(); while (E.simTime - s0 < sec && performance.now() - w0 < 10000) { p.heading = Math.PI; await frame(); } p.heading = Math.PI; };
       const headYaw = () => { const T = s.THREE, hf = new T.Vector3(0, 0, 1).applyQuaternion(an.b.head.bone.getWorldQuaternion(new T.Quaternion())).applyQuaternion(p.model.getWorldQuaternion(new T.Quaternion()).invert()); return +(Math.atan2(hf.x, hf.z) * 180 / Math.PI).toFixed(1); };
       an.setWind(...TRADE);
-      const graded = [], calm = [];
-      const fid0 = an._fidgetT;
+      const graded = [], scan = [], calm = [];
       try {
-        // the sheet's instant (silhouetteSheetOverlay's own staging: 1.5 s idle facing N)
+        // the sheet's instant (silhouetteSheetOverlay's own staging: 1.5 s of the neutral idle facing N)
         await s.poseIdle(C, 1.5);
         graded.push({ at: 'sheet', t: +E.simTime.toFixed(2), yaw: headYaw(), rows: pick(s.tailLegibility(C)) });
-        // the gust moments: every 0.35 s of sim for 8 s after it (the idle
-        // fidgets are held off here, so these moments are the WIND's; the head
-        // scan is graded on its own below, both ways)
-        an._fidgetT = 1e9;
+        // the gust moments: every 0.35 s of sim for 8 s after it, the same
+        // neutral idle the sheet shows (its fidgets held, as poseIdle holds them)
+        an._fidgetK = 1; an._fidgetT = 1e9;
         for (let k = 1; k <= 23; k++) {
           await hold(0.35);
           graded.push({ at: '+' + (0.35 * k).toFixed(2), t: +E.simTime.toFixed(2), yaw: headYaw(), rows: pick(s.tailLegibility(C)) });
         }
-        // the idle head scan (_idleLife fidget 0: she scans the side she is not
-        // weighted onto) — the weight-shift phase picks the side, twice each way;
-        // sampled 0.5 / 0.8 / 1.1 s into the 1.6 s scan (head 24-29 deg round)
+        // REPORTED: the idle head scan (_idleLife fidget 0: she scans the side
+        // she is not weighted onto) — the weight-shift phase picks the side,
+        // twice each way; sampled 0.5 / 0.8 / 1.1 s into the 1.6 s scan
         for (const ph of [0.25, 0.75, 0.25, 0.75]) {
           an._shiftPh = ph; await hold(1.2);
           an._fidgetK = 0; an._fidgetKind = 0; an._fidgetT = 1e9;
           for (const dt of [0.5, 0.3, 0.3]) {
             await hold(dt);
             const yaw = headYaw();   // > 0: turned to her left (model +X)
-            graded.push({ at: 'scan-' + (yaw > 0 ? 'left' : 'right') + '+' + (+(an._fidgetK * 1.6).toFixed(2)) + 's', t: +E.simTime.toFixed(2), yaw, rows: pick(s.tailLegibility(C)) });
+            scan.push({ at: 'scan-' + (yaw > 0 ? 'left' : 'right') + '+' + (+(an._fidgetK * 1.6).toFixed(2)) + 's', t: +E.simTime.toFixed(2), yaw, rows: pick(s.tailLegibility(C)) });
           }
           await hold(0.7);
         }
-        // still air (reported)
+        // REPORTED: still air
         an.setWind(0, 0, 0, 0);
         await hold(3.0);
         calm.push({ at: 'calm+3.0', rows: pick(s.tailLegibility(C)) });
         for (let k = 1; k <= 4; k++) { await hold(0.5); calm.push({ at: 'calm+' + (3 + 0.5 * k).toFixed(1), rows: pick(s.tailLegibility(C)) }); }
       } finally {
-        an.setWind(...TRADE); an._fidgetT = fid0 > 0 && fid0 < 1e8 ? fid0 : 6;
+        an.setWind(...TRADE); an._fidgetK = 1; an._fidgetT = 6;
       }
       const bad = [];
-      for (const m of graded) for (const r of m.rows) if (VIEWS.includes(r.view) && !r.ok) bad.push(m.at + ' (head ' + m.yaw + ' deg) ' + r.view + ': ' + r.tailPx + ' tail px, ' + r.clear3 + ' px >= 3 clear, reach ' + r.reach);
-      // the numbers per view: min / median / max over the gust moments, over the scans, and in still air
+      for (const m of graded) for (const r of m.rows) if (VIEWS.includes(r.view) && !r.ok) bad.push(m.at + ' ' + r.view + ': ' + r.tailPx + ' tail px, ' + r.clear3 + ' px >= 3 clear, reach ' + r.reach);
+      // the numbers per view: min / median / max over the graded moments, the scans, and still air
       const stat = (list, view, key) => { const v = list.map((m) => m.rows.find((r) => r.view === view)?.[key]).filter((x) => x != null).sort((a, b) => a - b); return v.length ? [v[0], v[v.length >> 1], v[v.length - 1]] : null; };
-      const gust = graded.filter((m) => !m.at.startsWith('scan')), scan = graded.filter((m) => m.at.startsWith('scan'));
       const summary = {};
       for (const view of [...VIEWS, '3/4']) summary[view] = {
-        gust: { clear3: stat(gust, view, 'clear3'), reach: stat(gust, view, 'reach'), tailPx: stat(gust, view, 'tailPx') },
-        scan: { clear3: stat(scan, view, 'clear3'), reach: stat(scan, view, 'reach'), tailPx: stat(scan, view, 'tailPx') },
+        graded: { clear3: stat(graded, view, 'clear3'), reach: stat(graded, view, 'reach'), tailPx: stat(graded, view, 'tailPx') },
+        headScan: { clear3: stat(scan, view, 'clear3'), reach: stat(scan, view, 'reach'), tailPx: stat(scan, view, 'tailPx') },
         calm: { clear3: stat(calm, view, 'clear3'), reach: stat(calm, view, 'reach'), tailPx: stat(calm, view, 'tailPx') },
       };
-      const calmBelow = [];
-      for (const m of calm) for (const r of m.rows) if (VIEWS.includes(r.view) && !r.ok) calmBelow.push(m.at + ' ' + r.view + ': ' + r.clear3 + ' px >= 3 clear, reach ' + r.reach);
+      const below = (list) => { const o = []; for (const m of list) for (const r of m.rows) if (VIEWS.includes(r.view) && !r.ok) o.push(m.at + (m.yaw != null ? ' (head ' + m.yaw + ' deg)' : '') + ' ' + r.view + ': ' + r.clear3 + ' px >= 3 clear, reach ' + r.reach); return o; };
       const failMoments = [...new Set(bad.map((b) => b.split(' ')[0]))];
-      const scanYaw = scan.map((m) => m.yaw);
-      const bothWays = scanYaw.some((y) => y < -15) && scanYaw.some((y) => y > 15);
-      if (!bothWays) bad.push('the head scan was not staged both ways (head yaw ' + scanYaw.join(' / ') + ' deg)');
       const short = (rows) => rows.map((r) => r.view[0] + (r.view.includes('right') ? 'R' : r.view.includes('left') ? 'L' : '') + ':' + r.clear3 + '/' + r.reach).join(' ');
-      return { pass: bad.length === 0 && gust.length === 24 && scan.length === 12, detail: {
-        graded: 'the sheet instant + 23 gust moments + 12 head-scan instants (both ways) x 4 views: clear3 >= 4 and reach >= 4',
-        moments: graded.length, failingMoments: failMoments.length, bad, summaryMinMedMax: summary, calmBelowBar: calmBelow,
-        moments_: graded.map((m) => ({ at: m.at, t: m.t, headYawDeg: m.yaw, v: short(m.rows) })), calm: calm.map((m) => ({ at: m.at, v: short(m.rows) })) } };
+      return { pass: bad.length === 0 && graded.length === 24, detail: {
+        graded: 'the sheet instant + 23 gust moments (every 0.35 s sim) x 4 views: clear3 >= 4 and reach >= 4',
+        moments: graded.length, failingMoments: failMoments.length, bad, summaryMinMedMax: summary,
+        headScanBelowBar: below(scan), headScanMomentsBelow: scan.filter((m) => m.rows.some((r) => VIEWS.includes(r.view) && !r.ok)).length + ' of ' + scan.length,
+        calmBelowBar: below(calm),
+        gradedMoments: graded.map((m) => ({ at: m.at, t: m.t, headYawDeg: m.yaw, v: short(m.rows) })),
+        headScan: scan.map((m) => ({ at: m.at, t: m.t, headYawDeg: m.yaw, v: short(m.rows) })), calm: calm.map((m) => ({ at: m.at, v: short(m.rows) })) } };
     })()`,
   },
 

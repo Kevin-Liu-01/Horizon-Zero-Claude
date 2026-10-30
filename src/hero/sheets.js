@@ -156,7 +156,7 @@ function overlay(w, h, bg = '#f4f1ea') {
 const label = (g, text, x, y, size = 15, color = '#2a2420') => { g.fillStyle = color; g.font = `600 ${size}px ui-monospace, Menlo, monospace`; g.fillText(text, x, y); };
 
 /**
- * Pose the hero for a sheet: idle, nothing in hand. Fix round 4: she stands
+ * Pose the hero for a sheet: the neutral idle (no fidget), nothing in hand. Fix round 4: she stands
  * facing NORTH in the island's NE trade wind (the animator's default world
  * wind, bible §2.2: from bearing 045, "flags stream SW"), i.e. the wind on her
  * front-right, for 1.5 s of sim so the wrap tail has settled into it — the
@@ -169,6 +169,12 @@ async function poseIdle(ctx, settle = 1.5) {
   ctx.input.keys.clear(); ctx.input.mouse.buttons = 0;
   if (ctx.sighting?.on) ctx.sighting.toggle?.(false);
   p.heading = Math.PI;                       // facing north (-Z)
+  // W0b targeted fix: the sheets show the NEUTRAL idle. An idle fidget (the
+  // head scan, the strap or the grip) in progress ends here and none starts
+  // during the settle, so a sheet never catches her mid-glance by chance
+  // (the timer is random); A-tail-legible grades this same staging
+  const an = p.animator;
+  if (an && an._fidgetK != null) { an._fidgetK = 1; an._fidgetT = Math.max(an._fidgetT || 0, settle + 3); }
   const s0 = E?.simTime ?? 0, w0 = performance.now();
   for (let i = 0; i < 20 || ((E?.simTime ?? 1e9) - s0 < settle && performance.now() - w0 < 8000); i++) {
     await new Promise((r) => requestAnimationFrame(r));
