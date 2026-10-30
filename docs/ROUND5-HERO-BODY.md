@@ -99,9 +99,9 @@ the same — the hand on the face, never across it. It reads as an archer shooti
 
 **The bar conflict this exposes — A16's down row (ruling request, §7).** A16 reads "elbow not above the shoulder"
 in CHARACTER height. With the T bent along the falling ray, the draw elbow sits on the arrow line behind the hand and
-so ABOVE the draw shoulder joint in world height — **+0.095 m at 0.75** — as a real archer's does shooting down; A16's
-0.75 row FAILS by its world reading (its aim-frame reading, now reported in each row as `elbowAboveShoulderAimFrame`:
-**+0.005 m**; every other row of A16 PASSES). No pose holds A16's world reading together with A-draw-elbow-level and
+so ABOVE the draw shoulder joint in world height — **+0.093 m at 0.75** (`f5lane2`; 0.091–0.095 over the round's
+runs) — as a real archer's does shooting down; A16's 0.75 row FAILS by its world reading (its aim-frame reading, now
+reported in each row as `elbowAboveShoulderAimFrame`: **+0.006 m**; every other row of A16 PASSES). No pose holds A16's world reading together with A-draw-elbow-level and
 the judge's forearm clause. With e = elbow − shoulder in the aim frame (a along the arrow, b along the aim frame's
 up) and φ the arrow's fall (≈ 50° at camPitch 0.75), A16(world) is −a·sinφ + b·cosφ ≤ 0 and A-draw-elbow-level's floor
 is b ≥ −0.03, so a ≥ −0.03·cotφ ≈ −0.025 m: the elbow at most 2.5 cm behind the draw shoulder along the arrow. A
@@ -983,7 +983,7 @@ comparison: 46 PASS · 1 FAIL (A31c) · 13 NEEDS-JUDGE of 60.
 | A3-sprint-speed | PASS | 6.73 m/s (band 6.12–7.82) |
 | A11-idle-alive | PASS | 85.1 mm path |
 | A12-clip-driven | PASS | `Sprint_Loop` weight 1.0 at 6.71 m/s |
-| **A13-no-skate (R27)** | **PASS 5/5** | worst stance windows 0.0071 / 0.0039 / 0.0031 / 0.0067 / … m (bar 0.06), 6.8 m/s |
+| **A13-no-skate (R27)** | **PASS 5/5** | worst stance windows 0.0071 / 0.0039 / 0.0031 / 0.0067 / 0.0024 m (bar 0.06), 6.8 m/s |
 | A15-foot-flat | PASS | 1.91° idle, 1.90° aim |
 | **A16-draw-anchor** | **FAIL — the 0.75 row only (§0000.2, ruling request §7.0)** | 6 rows: nock-to-wrist 0.064–0.069 m (bar 0.09); knuckle 0.052–0.054, fingertip 0.044–0.050 m from the bow's nock; headClear 1.83–1.95; launch 0.0°; elbow over the shoulder joint (character height) −0.006 / −0.064 / −0.067 / −0.007 / −0.008 m at level / −0.4 / −0.55 / strafing — and **+0.093 m at 0.75** (aim frame: **+0.006**, reported as `elbowAboveShoulderAimFrame`) |
 | A17-draw-beats (R11) | PASS | hand-to-quiver 0.080 m, flourish 22 SIM frames (9 rendered), loose 0.054 m rearward |
@@ -1023,12 +1023,14 @@ comparison: 46 PASS · 1 FAIL (A31c) · 13 NEEDS-JUDGE of 60.
 | A-brea-contrast | PASS | salt 5.95:1; black sand ΔE2000 21.6, 23 % of pixels ≥ 3:1 |
 | A-hero-draws | PASS (R38) | her own 4 draws / 2 casters / 19,920 tris (body 9,864 · outfit 7,876 · kit 2,180); the twisted tail strip is the same 128 tris |
 | A-outfit-merge-dispose | PASS | ×6 equip/unequip + bracer swap: geometries 151→151, textures 116→116, skeletons 3→3 |
-| A-melee-floor (R47) | PASS | light ×3 / heavy / melee key / block: 0 errors; after: not aiming, no swing, holstered, 0 non-finite bones; walk / jog / sprint at speed with the feet alternating |
+| A-melee-floor (R47) | PASS | light ×3 / heavy / melee key / block: 0 errors; after: not aiming, no swing, holstered, 0 non-finite bones; then walk 1.46, jog 5.02, sprint 6.86 m/s, feet alternating (8 / 11 / 19 plant changes) |
 
 ### 4.3 Camera rows (hero-body grades them on Brea, R33 g / R36)
 
-Three consecutive runs on the final code (`f4lane1`, `f4run2`, `f4run3`, port 5252, each its own Chrome inside the
-machine slot):
+Fix round 5 changed no camera code; the rows ran once in `f5lane2`: **A31b PASS** (film solid, boom / lens 1.40 m,
+look-up 20.1°, silhouette top +0.09, head −0.62, clavicles −0.82 / −0.82), **A31d / A31e / A31f PASS** (A31f 48/48,
+onFrac ≥ 1.47× its bar), A31c FAIL (R36, listed), A32-look-up / A32b / V22 PASS (V22 fill 0.68). Fix round 4's three
+consecutive runs (`f4lane1`, `f4run2`, `f4run3`, port 5252, each its own Chrome inside the machine slot):
 
 | row | f4lane1 | f4run2 | f4run3 | baseline (Aloy) |
 |---|---|---|---|---|
@@ -1046,45 +1048,48 @@ in frame 1.0, view ≤ 2.0° past the input (bar 3), nearest vertex ≥ 0.214 m 
 0.36–0.55 against bars 0.448–0.457; head seen running away 0.4–1.0). A32-look-up@hero, A32b@hero and V22@hero PASS
 in `f4lane1` (reticle on the 10 / 16 m targets; 0 ghosted; V22 fill 0.68).
 
-### 4.4 Visual rows (NEEDS-JUDGE; filmed in `f4lane1`, frames read by this lane — advisory, R29)
+### 4.4 Visual rows (NEEDS-JUDGE; filmed in `f5lane2`, frames read by this lane — advisory, R29)
 
 | gate | my reading of the frame |
 |---|---|
-| V1-sprint-frame | back view: arms fore-aft beside the body, no crossing; the lance (bob low-left) and bow on opposite diagonals; the wrap tail trailing behind the head |
-| V2-idle-frame | hands relaxed at the thighs, feet planted; the wrap tail hanging down her left back |
-| V3-crouch-stalk | low stalk, arms hanging, feet planted; the wrap tail now hangs down her left back (no pennant) |
-| V4-aim-anchor | over the shoulder: bow up, string hand at the jaw, draw elbow back; the wrap tail a broad band blowing out to her left, clear of the hand |
-| V12-sprint-vs-reference (R37) | side, contact frame: trunk ~15° forward, the stance leg under her, the rear leg extended, both arms bent fore-aft beside the body; the wrap tail streaming back from the head |
-| **V13-aim-strafe** | **3.3 m, she fills ~64 % of the frame**: aiming (the bow up, no failure banner), mid side-step; zoomed on the feet: the planted boot flat and pointing along the travel (screen right), the lifted boot also pointing along the travel, slightly plantar-flexed, clear of the ground — the same way within ~15°, no toe drag, no splay |
+| V1-sprint-frame | back view: arms fore-aft beside the body, no crossing; the lance (bob low-left) and bow on opposite diagonals; the wrap tail out behind the head to her left |
+| V2-idle-frame | hands relaxed at the thighs, feet planted; the tail out to her left-rear in the trade wind |
+| V3-crouch-stalk | low stalk, arms hanging, feet planted; the tail out to her left-rear |
+| V4-aim-anchor | over the shoulder: bow up, string hand at the jaw, draw elbow back; the tail a dark band curling out to her left, clear of the hand |
+| V12-sprint-vs-reference (R37) | side, contact frame: trunk forward of the hips, the stance leg under her, the rear leg extended, both arms bent fore-aft beside the body; the tail streaming back from the head |
+| **V13-aim-strafe** | **frozen at the top of the trailing foot's swing** (new staging): aiming (the bow up, no failure banner), 3.3 m out; zoomed on the feet: both boots in profile pointing the same way along the travel (screen right) within a few degrees, the trailing one lifted, no toe drag, no splay, no twist toward the lens |
 | V14-slope-contour | across the slope, soles on the ground |
-| **V23-secondary-motion@hero** | front-left three-quarter, ~1.9 m: **the brass tube on its cream neck cord at mid-sternum** in all three strips (three positions/angles); the wrap tail a streamer, then a twisting band, then a flag straight back; the sash end hanging / angled / kicked at the left thigh; the knot tail behind the head |
-| V24-draw-vs-reference@hero | the fist on the jaw/cheek with the ∴ facing the lens, the fletching at the mouth corner, the forearm on the arrow line, elbow level and back, bow arm straight, the wrap tail behind her clear of the hand, the alidade at the sternum |
-| **V24-draw-down (new)** | raised side and front-right 3/4: the fist on the cheek under the ear, the fingers on the string at the nock at the jaw line, the arrow down to the grip, forearm along it, bow arm straight; knuckle 0.052 / fingertip 0.050 m from the nock printed on the frame |
-| V-brea-one-glance | the committed sheet: colour row — the violet tail streaming to her left-rear (front, back, 3/4; behind the head in the right side view); black fill — topknot, the lance/bow X with the bob, the quiver at the right hip, the crescent notch at the left forearm, the tail as a thin stroke beside the head (clearest in the 3/4) |
-| V-brea-face | salt-line, the pale scar through her LEFT brow, dark eyes, the profile not the stock face, the ∴ inset; the cream neck cord at the collar |
-| V-traversal | the climb's pull frame (palms on the top, chest over), the slide low with arms out, standing on the 3 m top step |
+| V23-secondary-motion@hero | front-left three-quarter: the brass tube on its cream cord at mid-sternum in three positions; the wrap tail flying back from the knot, its end curling / straight / lifted across the strips; the sash end at the left thigh in three positions; the knot tail behind the head |
+| V24-draw-vs-reference@hero | the fist on the jaw / cheek with the ∴ to the lens, the fletching at the mouth corner, the forearm on the arrow line, elbow level and back, bow arm straight, the tail behind her head clear of the hand, the alidade at the sternum |
+| **V24-draw-down** | **re-framed on the bent T** (§0000.2): from her right, bent forward at the hips, the head down along the arrow; the fist with the ∴ at the jaw / lower cheek, the fletching just under it, the forearm running back up to the elbow behind and above the head in line with the arrow (printed 18.3°), the bow arm straight to the grip; the front-right 3/4 the same, the hand on the face, never across it |
+| **V-brea-one-glance** | **the re-committed sheet**: in black fill the tail is its own stroke in every view — out right of the head under the bow's limb (front), behind the head (both sides), out left (back), long (3/4) — with the topknot bump, the X of lance and bow with the bob low-left, the crescent notch and the cane quiver: five of five, no braid, no mane; in colour the violet tail flies out to her left-rear, carmine where it twists |
+| V-brea-face | salt-line, the scar through her LEFT brow, dark eyes, the profile not the stock face, the ∴ inset; the tail's knotted root at the side of the head |
+| V-traversal | the climb's last pull frame from her left (folded over the edge, the chest past it, the right knee coming onto the ledge; the hands hidden behind that knee from this lens — A-climb-1m measures them on the lip); the slide low with the arms out; on the 3 m top step |
 
-### 4.5 Global green list (the items that exist in this tree; one run, `--only`, port 5252, run `f4global`)
+### 4.5 Global green list (the items that exist in this tree; one run, `--only`, port 5252, run `f5final`)
 
-Run `f4global` (Oct 23, 05:35–05:52 UTC; one Chrome, the hero-body + pipeline + instruments-core combiner
-`bin/combo-global.mjs`; the box was busy: load 4.2–4.5, two other lanes' Chromes alive):
+Run `f5final` (Oct 23, 04:45–04:58 PDT; one Chrome; `bin5/final.mjs` = the hero-body file + repeats + pipeline's and
+instruments-core's files; load 1.6–3.6, one other lane's Chrome alive):
 
 | gate | verdict | numbers |
 |---|---|---|
 | A1-boot-clean | PASS | state = playing |
-| A20b-no-system-errors | PASS | 0 errors, 220 frames |
-| A9-perf-budget | draw calls PASS; fps **PENDING-quiet-box (R45)** | 282 draw calls. `f4global`: fps 38.5, scene GPU 57.8 ms (the runner called it attributable: the empty frame then took 0.57 ms) with two other lanes' Chromes rendering; re-timed alone (`f4a9`, after waiting 25 min for load < 3 with no other Chrome — it never came; load 8, four other headless Chromes): fps 28.8, and the empty frame itself took 4.39 ms of GPU → PENDING, "the deficit is contention, not the scene". Fix round 3 on a quieter box: 58.6 fps. This round's render change is +88 tris on the stow kit (the neck cord); its per-frame CPU additions are the cord/wind terms in the spring solve, the knuckle turn (one `getNockWorld` while aiming) and the hillside boom's 6 bisections (only on a steep look-up). The fps term is the orchestrator's quiet global run (R45) |
-| A21-real-draw-calls | PENDING (R45) | draws 286 / 177 / 311 and triangles PASS; GPU / p95 terms not attributable |
-| A90-memory-stability | PASS | heap −10.6 %, geometries +9, textures −28 |
-| A90-memory-stability-expansion | PASS | non-machine growth 0, geometries +3, heap −6.3 % |
-| A90b-memory-attribution | PASS | 0 offenders, 0 orphaned textures, heap −7.2 % after forced GC |
-| A90-rig-reclaim | PASS | geometries +9, textures 0 over 30 cycles |
-| **A-no-override** (instruments-core file) | **PASS** | static: raw 0, code 0, **identifier hits 0** (was 8 — `dismount`), removal-only true; live half clean (one runner retry on a 90 s page wait) |
-| A81-canon-speed-bands | FAIL (not this lane; R47: graded on main) | the one stale literal is npc's `A96-npc-animated` ("travellers >= 4"); the Round-4 player-anim file's own A33 `speed > 6.1` is listed frozen-but-satisfied (this lane's `@hero` copy reads `SPRINT_MIN`) |
+| A20b-no-system-errors | PASS | 0 errors, 359 frames |
+| **A9-perf-budget** | **PASS** | 282 draw calls; **fps 59.3**, scene GPU 19.9 ms, attributable (fix round 4: fps PENDING-quiet-box) |
+| A21-real-draw-calls | FAIL on median GPU (listed under R33 b; R45: the orchestrator's quiet run) | draws 286 / 177 / 314 and triangles 4.07 / 3.59 / 4.22 M PASS; median GPU 77 / 96 / 81 ms against 20 at the graded DPR (the null frame 0.94 ms: attributable to the scene, which hero-body adds ≤ 20 k tris to); p95 frame / JS PENDING (not attributable) |
+| A90-memory-stability | PASS | heap −7.6 %, geometries +9, textures −28 |
+| A90-memory-stability-expansion | PASS | non-machine growth 0, geometries +3, heap −9.5 % |
+| A90b-memory-attribution | PASS | 0 offenders, 0 orphaned textures, heap −3.1 % after forced GC |
+| A90-rig-reclaim | PASS | geometries +11, textures 0 over 30 cycles |
+| A-no-override (instruments-core file) | PASS | static: raw 0, code 0, identifier hits 0, removal-only true; live half clean |
+| A81-canon-speed-bands | FAIL (not this lane; R47: graded on main) | the one stale literal is npc's `A96-npc-animated` ("travellers >= 4") |
 | A-ID-ip-assets-gone (pipeline file) | FAIL (not this lane) | the only hit: `public/anims-hybrid/aloy-ual.json` (gates-perf's W0a deletion, not merged) |
 | A-licence-manifest (pipeline file) | FAIL (not this lane) | legacy-source FAIL on the same `aloy-ual.json`; third-party / credits PENDING (R42) |
-| A-assets-tracked (pipeline file) | FAIL (R39) | the one miss: `public/models/aloy.glb` — deleted from this branch (checkpoint `ae95d9a`), still named by `SPECS.hero` in pipeline's `assets.specs.js` (and `tools/optimize.mjs`, `spike-hybrid-bake.mjs`, `licences/{lib,ip-scan}.mjs`); R39: pipeline's swap merges first. The fix-round-3 symlink error is gone |
+| A-assets-tracked (pipeline file) | FAIL (R39) | the one miss: `public/models/aloy.glb` — deleted from this branch, still named by `SPECS.hero` in pipeline's `assets.specs.js`; R39: pipeline's swap merges first |
 | A90-abs, A-alloc-rate, A-vram-ledger, A-no-horizon-terms-*, A-reach-all-sites, A-port-guard, A-carried-suite | — | not in this tree (gates-perf / brand files not merged) |
+
+Fix round 4's global run (`f4global`, a busier box) for comparison: the same verdicts but A9's fps PENDING (38.5) and
+A21 PENDING.
 
 ## 5. Brea's sheets for Kevin (§3.1 W0b exit, §11 decision 1)
 
@@ -1092,7 +1097,10 @@ Run `f4global` (Oct 23, 05:35–05:52 UTC; one Chrome, the hero-body + pipeline 
 nearest and true size — and full colour, default loadout) and `reference/r5/hero/brea-face-sheet.png` (front /
 profile / 3/4 at 1.2 m beside the stock UBC front / profile, and the right-hand ∴ inset); the stock comparison
 renders `ubc-stock-front.png` / `ubc-stock-profile.png`; rows and SHA-256s in `reference/r5/hero/MANIFEST.md`.
-**Re-committed in fix round 4** from run `f4sheets` (staged idle facing north in the NE trade wind: the wrap tail is cloth in the wind; the neck cord and the sternum tube; the taller crescent). Made by
+**Re-committed in fix round 5** from `f5lane2`'s V-brea-one-glance / V-brea-face films (the new wrap-tail root line,
+twist and wind coupling; SHA-256 `054dcafb…87af70` and `133aa579…e77934`, MANIFEST rows updated). Fix round 4 had
+re-committed them from run `f4sheets` (staged idle facing north in the NE trade wind; the neck cord and the sternum
+tube; the taller crescent). Made by
 `src/hero/sheets.js` (`silhouetteSheetOverlay`, `faceSheetOverlay`) — the gates V-brea-one-glance / V-brea-face film
 exactly these overlays; standalone:
 
@@ -1112,7 +1120,7 @@ exactly these overlays; standalone:
   long-boom pricing, and the rows still move by a sample or a few hundredths between runs.
 - **A31c** — failed at the Round-4 baseline (R36: listed). Against the Aloy runs (§000.4): better on head-seen,
   view-off, aim entry and the turns; worse on moving framing (onFrac ratio). Not retuned this round.
-- **A16's 0.75 row fails by its character-height reading** (+0.095 m) since the T bends with the arrow — the
+- **A16's 0.75 row fails by its character-height reading** (+0.093 m) since the T bends with the arrow — the
   conflict and the ruling request are in §0000.2 / §7.0. **The pitched aims' loose** (the re-nock reach to the hip
   quiver from a bent T) carries the hand ~0.28 m back in character space and the elbow to 0.19 m behind the head
   plane (R35's 0.20): within the bar, with ~1 cm of room. **The T turn's ray is low-passed (0.35 s)**: the trunk
@@ -1145,8 +1153,8 @@ exactly these overlays; standalone:
 
 0. **orchestrator (fix round 5, A16's down row):** rule how A16's "elbow not above the shoulder" reads at a
    PITCHED aim. The judge-r2 fix of V24-draw-down (the whole T bent with the arrow, the forearm on the arrow line)
-   puts the draw elbow +0.095 m over the draw shoulder joint in character height at camPitch 0.75 (A16 FAILS that
-   one row by its world reading) and +0.005 m in the aim frame (the frame A-draw-elbow-level's height band already
+   puts the draw elbow +0.093 m over the draw shoulder joint in character height at camPitch 0.75 (A16 FAILS that
+   one row by its world reading) and +0.006 m in the aim frame (the frame A-draw-elbow-level's height band already
    uses in R5; reported in every A16 row as `elbowAboveShoulderAimFrame`). §0000.2 proves no pose holds A16's world
    reading, A-draw-elbow-level's floor and the judge's forearm-within-20° clause together. Requested: A16's elbow
    clause measured in the aim frame (world up made perpendicular to the arrow), identical to today's at a level aim;
@@ -1182,15 +1190,32 @@ exactly these overlays; standalone:
 - the Round-4 runner on main and in this tree: load it with `--extra tools/gates.r5.hero-body.mjs`; base
   `gates.config.mjs` rows of the same id (A2–A19, A28, A31, A32-draw-ramp, A33-rig-finite, V1–V4, V12–V14) are
   replaced IN PLACE (the runner shares those objects), and rows that live in a `gates.round4.*` file are exported
-  as `<id>@hero` (`shadowOf` names the row), so `--lane hero-body` runs exactly this lane's 60.
+  as `<id>@hero` (`shadowOf` names the row), so `--lane hero-body` runs exactly this lane's 62 (fix round 5 added
+  A-strafe-feet and A-tail-legible).
 
 `--extra` takes ONE file; to add another lane's file in the same run, a combiner module that re-exports the
 `GATES` arrays works (this lane's global-list run used one in scratch: hero-body + pipeline + instruments-core,
 `bin/combo-global.mjs`).
 
-Fix round 4 changes in the file: §000.11.
+Fix round 4 changes in the file: §000.11. Fix round 5: §0000.6.
 
 ## 9. Files changed
+
+Fix round 5 (vs the tree at the start of the round, the orchestrator's checkpoint `86d3250`; its later checkpoints
+committed parts as they went): `src/entities/playerAnimator.js` (`_footHdg`, the latch on the lateral axis,
+`_strafeSwingFeet` rewritten, `SWING_YAW_BAND`; the pitched aim's rigid turn — `tS` / `fp`, `_qT` / `_upT` / `_fwdT` /
+`_latT` / `_restGripT`, the low-passed ray `_dTs`, the fixed-origin blend past 0.8, the turned elbow / pole / head
+rules, `tune.downT` / `upT` / `downTRoll`, `debugAim().tBend`; the quiver reach bowed out; the climb's catch latch
+re-solved at full weight, `_climbArms`, `_palmEdge`, the hand aimed at its palm's place, `debugClimb()` `caught` /
+`dbg`; the `wrap` class wind 3.0 / rootK 8; the stowed lance as a spring capsule `_stowCap`; `_dtA`),
+`src/entities/anim/rigs/ubc.js` (`downT`, `downTRoll`, `upT`), `src/hero/carry.js` (the pattern search, the slide
+`sl`, `degW`, `tailGap` 0.085, `debugViol`, `bounds`), `src/hero/stowkit.js` (writes / clears `_stowCap`),
+`src/hero/sheets.js` (`tailLegibility`, `poseIdle` exported), `tools/build/recipes/brea.mjs` (the wrap tail's root
+line, side vector, twist, curl), `tools/build/recipes/lib/face.mjs` (`stripAlong` `twist`, default 0),
+`public/models/hero/brea.glb` (rebuilt; `outfit-pan-1.glb` and the kit rebuild byte-identical),
+`tools/gates.r5.hero-body.mjs` (§0000.6), `reference/r5/hero/{brea-silhouette-sheet,brea-face-sheet}.png` +
+`MANIFEST.md`, `docs/ROUND5-HERO-BODY.md`.
+
 
 Fix round 4 (vs fix round 3's final state, checkpoint `d019db8`): `src/entities/player.js` (the hillside boom:
 `HILL_BOOM`, `ROT_REFINE`, `HILL_EXTRA`, `_rotLenCap`, `_hillClear`; `dismount` → `endRide`, `player-ride-end`),
@@ -1210,4 +1235,7 @@ The orchestrator's checkpoints committed parts as they went; `git -C <tree> diff
 Vite only as `npx vite --port 5252 --strictPort` from this tree; Chrome only through `tools/gates.mjs` /
 `tools/screenshot.mjs` on 5252, one at a time, each run inside the machine-wide slot (`chrome-slots/slot{1,2}`, plan
 §0 rule 8) and the disk / memory preflight; probes' scripts and logs under `scratchpad/r5/hero-body/`, never in the
-tree. At the end: Vite stopped, 0 Chromes of this lane alive, `shots/` removed.
+tree. At the end: Vite stopped, 0 Chromes of this lane alive, `shots/` removed. Fix round 5: Chrome slots taken with a
+2 s poll (the slot README's protocol; other lanes' judges held both slots for long stretches); the "busy box" runs
+load only the gate's own page (a busy-wait on its render hook), never the machine; the judge and rebuild scratch
+(`judge-f5/`, `rb*/`) deleted at the end.
