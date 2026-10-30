@@ -125,8 +125,12 @@ export const BEAM = Object.freeze({
   gainHostile: 5.5,
   gainHostileFog: 16,
   fogFull: 2.55,
-  /** The lock's distance falloff (metres): its light x 1 / (1 + d / lockFalloffM)^2 d metres from the lens. */
+  /** The lock's distance falloff (metres): its light x 1 / (1 + d / F)^2 d metres from the lens, F = max(lockFalloffM,
+   * lockFalloffFrac x her distance) (targeted fix round 2, below). */
   lockFalloffM: 5,
+  lockFalloffFrac: 0.5,
+  /** Past her, the cone's last `lockTailM` metres fade to nothing (the drawn cone ends at sight range x weather scale). */
+  lockTailM: 2.0,
   /** The beam keeps the lens's 4 Hz flicker, but its trough is 0.65 (the lens dips to 0.3): a lock is never gone. */
   flickerLowHostile: 0.65,
   /** The fade exponent along the cone, sweep and lock alike (light x along^p, along = 1 at the lens, 0 at the far end). */
@@ -505,14 +509,22 @@ const BEAM_FRAG = /* glsl */`
     float along = (1.0 - vZ);
     float isLock = step(vTgt, 1.5);        // aBeam.a: a lock's target fraction (<= 1), a sweep's 2
     float tgt = min(vTgt, 1.0);
-    // past the target (a lock: her chest) the light also halves every BEAM.pastTargetHalfM metres
-    float past = exp2(-max(vZ - tgt, 0.0) * vLen / ${BEAM.pastTargetHalfM.toFixed(2)});
-    // a lock's light falls with distance from the lens (BEAM.lockFalloffM): brightest at the lens, never at her end
-    float fd = 1.0 + vZ * vLen / ${BEAM.lockFalloffM.toFixed(2)};
-    float fall = mix(1.0, 1.0 / (fd * fd), isLock);
+    float d = vZ * vLen;                   // metres from the lens
+    float dT = tgt * vLen;                 // a lock: metres to her chest (the cone's length when she is out of reach)
+    // past her chest the light also halves every BEAM.pastTargetHalfM metres (her body takes part of it)
+    float pastH = exp2(-max(d - dT, 0.0) / ${BEAM.pastTargetHalfM.toFixed(2)});
+    // the cone's end: the last BEAM.lockTailM metres past her (or what is left of the cone past her) fade to nothing;
+    // with her out of reach the whole cone is the tail (the round-3 along^2)
+    float tw = tgt < 1.0 ? max(min(vLen - dT, ${BEAM.lockTailM.toFixed(2)}), 0.05) : vLen;
+    float tail = clamp((vLen - d) / tw, 0.0, 1.0);
+    tail *= tail;
+    // the lock's light falls with distance from the lens over a length tied to HER distance (BEAM.lockFalloffM,
+    // lockFalloffFrac): brightest at the lens, never at her end, and still a lit shaft at her chest at any range
+    float lockA = 1.0 / pow(1.0 + d / max(${BEAM.lockFalloffM.toFixed(2)}, ${BEAM.lockFalloffFrac.toFixed(3)} * dT), 2.0) * pastH * tail;
+    float sweepA = pow(max(along, 0.0), ${BEAM.fade.toFixed(1)});
     // the cross-section: edge^2 (sweep), edge^3 (lock: a hot line with soft sides) — bright on the axis, gone at the silhouette
     float prof = pow(edge, mix(${BEAM.profileSweep.toFixed(1)}, ${BEAM.profileLock.toFixed(1)}, isLock));
-    float a = pow(max(along, 0.0), ${BEAM.fade.toFixed(1)}) * fall * past * prof * near;
+    float a = mix(sweepA, lockA, isLock) * prof * near;
     gl_FragColor = vec4(vCol * a, 1.0);
   }
 `;
