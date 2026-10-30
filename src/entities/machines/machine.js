@@ -1046,6 +1046,8 @@ export class Machine {
     /** Never leaves `patrol` — see `setState` (casting-v4 §2.8, Tallneck). */
     this.docile = !!opts.docile;
     this.scavenge = null;
+    /** 1 on a legacy kind (machines/index.js `spawn`): `_moveToward` returns the distance only while scavenging. */
+    this._mtOnDemand = 0;
     this._site = opts._site ?? null;
     this._frozen = false;
     this._disposed = false;
@@ -2642,7 +2644,24 @@ export class Machine {
 
   _face(x, z, dt) { _st.x = x; _st.z = z; faceS(this, dt); return _st.d; }
 
-  _moveToward(x, z, speed, dt) { _st.x = x; _st.z = z; _st.speed = speed; moveTowardS(this, dt); return _st.out; }
+  /**
+   * Plain heading chase to (x, z) at `speed`. @returns the distance to the point — on an Instrument always; on a
+   * legacy kind (`_mtOnDemand` 1) only while it is scavenging (W0b targeted fix; judge: "`_moveToward` reached 4.38
+   * KB/s in A-alloc-machines' paired no-inline run"). MEASURED (a census of every call in A-alloc-machines' staging,
+   * 405 frames): 4.89 calls per frame, all on legacy kinds — 3.67 from `Glinthawk._orbit` (glinthawk.js:144), 1.22
+   * from the frozen convoy step (`Squads.stepConvoy`, squad.js:289) walking the ShellWalkers — and every one DISCARDS
+   * the result. A double returned from a call that is not inlined is a fresh HeapNumber (12 B), so those calls cost
+   * 3.35 / 3.43 / 4.26 / 2.42 / 3.02 / 2.95 KB/s with inlining off: not a deopt, the return. The only caller that reads
+   * the value is the frozen scavenger step (`Squads.stepScavenge`, squad.js:501, `d < cfg.arrive`), which calls it
+   * only while `m.scavenge` is set, so it reads the same value as before. Legacy kinds go at the W2 exit, and the flag
+   * with them.
+   */
+  _moveToward(x, z, speed, dt) {
+    _st.x = x; _st.z = z; _st.speed = speed;
+    moveTowardS(this, dt);
+    if (this._mtOnDemand === 0 || this.scavenge) return _st.out;
+    return undefined;
+  }
 
   /** See `_steerAlongS`. @returns metres actually covered this frame. */
   _steerAlong(dx, dz, faceX, faceZ, speed, dt) {

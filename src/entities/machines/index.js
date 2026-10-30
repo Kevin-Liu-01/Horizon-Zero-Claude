@@ -51,6 +51,8 @@ import {
  */
 const LEGACY_MODULE = import.meta.glob('./legacy.js', { eager: true })['./legacy.js'] || null;
 const NO_LEGACY = { kinds: [], boot: [], ready: Promise.resolve({ loaded: [], failed: [] }) };
+/** The legacy kind ids (empty once `legacy.js` is gone): their `_moveToward` returns on demand (machine.js). */
+const LEGACY_KIND_SET = new Set(LEGACY_MODULE?.LEGACY_KINDS || []);
 
 const CAMP = REST_SITE;            // { x, z, r }: the Instrument no-spawn ring
 const ROUTE_RIM = PLAY_RADIUS + EXTENT.routeRim;
@@ -259,6 +261,8 @@ export class Machines {
      * written with a different value and back, once, here — after the site, doctrine and squad wiring above added
      * theirs — so the first fractional value, the first `alive = false`, the first state string or the first lamp
      * record mid-session is never a constness change that throws away the per-machine code that read it. */
+    // a legacy kind's `_moveToward` returns the distance only while it scavenges (machine.js `_moveToward`)
+    if (LEGACY_KIND_SET.has(m.kind)) m._mtOnDemand = 1;
     mutableFromBirth(m);
     if (m.sc) mutableFromBirth(m.sc);
     if (m.ai) mutableFromBirth(m.ai);

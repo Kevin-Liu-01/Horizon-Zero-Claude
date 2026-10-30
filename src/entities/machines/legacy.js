@@ -18,7 +18,6 @@ import { registerKindTables } from './ai/tables.js';
 import { registerDoctrine, rebandMachine } from './ai/doctrine.js';
 import { loadKindModels, MACHINE_SHADOWS } from './variety-assets.js';
 import { Assets } from '../../core/assets.js';
-import { _st, moveTowardS } from './machine.js';
 
 /**
  * ===================== LEGACY KINDS — the whole of them =====================
@@ -892,30 +891,6 @@ export const LEGACY_SPECS = Object.fromEntries(LEGACY_KINDS
 let _installed = null;
 
 /**
- * THE STEERING RETURN, ON DEMAND, FOR THE LEGACY KINDS (W0b targeted fix; judge: "`_moveToward` reached 4.38 KB/s
- * in A-alloc-machines' paired no-inline run").
- *
- * MEASURED (census of every `_moveToward` call in A-alloc-machines' staging, 405 frames): 4.89 calls per frame, all
- * from legacy kinds — 3.67 from `Glinthawk._orbit` (glinthawk.js:144) and 1.22 from the frozen convoy step
- * (`Squads.stepConvoy`, squad.js:289) walking the ShellWalkers — and every one of those callers DISCARDS the result.
- * The bytes were not a deopt: `Machine._moveToward` returns `_st.out`, a double, and a double returned from a call
- * that is not inlined is a fresh HeapNumber (12 B), in every window (3.35 / 3.43 / 4.26 / 2.42 / 3.02 / 2.95 KB/s
- * with inlining off).
- *
- * Of all `_moveToward` callers only ONE reads the result: the frozen scavenger step (`Squads.stepScavenge`,
- * squad.js:501, `d < cfg.arrive`), which calls it only while `m.scavenge` is set. So on the legacy classes the
- * method returns the distance exactly when its machine is scavenging and nothing otherwise: the same motion, the
- * same value wherever a value is read, no number boxed for the callers that drop it. The base `Machine._moveToward`
- * keeps its contract (the distance, always) for every Instrument kind. Deleted with this file at the W2 exit.
- */
-function legacyMoveToward(x, z, speed, dt) {
-  _st.x = x; _st.z = z; _st.speed = speed;
-  moveTowardS(this, dt);
-  if (this.scavenge) return _st.out;
-  return undefined;
-}
-
-/**
  * Register every legacy kind with the manager and load its model.
  *
  *   installLegacy(machines) -> { kinds, boot, ready: Promise<{ loaded, failed }> }
@@ -936,8 +911,6 @@ export function installLegacy(machines) {
       registerKindTables(kind, row.tables || {});
       if (row.rig) registerRig(kind, row.rig);
       if (row.doctrine) registerDoctrine(kind, row.doctrine);
-      // the legacy steering return (above): set once, before any legacy machine exists
-      if (row.Cls && row.Cls.prototype._moveToward !== legacyMoveToward) row.Cls.prototype._moveToward = legacyMoveToward;
     }
     _installed = true;
   }

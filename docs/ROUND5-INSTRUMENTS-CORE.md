@@ -51,6 +51,68 @@ shadow rows change id from `<id>@ic` to `<id>` by themselves (`shadowId()` reads
 
 ---
 
+## W0b TARGETED FIX ROUND 1 (Oct 30 2026) — the five open findings, with numbers
+
+The cut-off attempts' WIP (Oct 23 and Oct 29; orchestrator checkpoints) held the lens cone, the bible length, the
+gameplay films, `warmSteering` and the sunlit pixel probe. I verified each against the finding and finished what was
+missing. Every number below was measured on port 5254 under `nice -n 10`, with one gate Chrome machine-wide. No result
+recorded under `taskpolicy -b` is used here (the round-3 runs above predate the rule and are superseded where they
+differ). No bar moved and no gate was loosened.
+
+| # | finding | what changed (file:line) | measured |
+|---|---|---|---|
+| 1 | blocker: the hostile lock leaves the back of the lens | `lamps.js:150-157` `coneFullDeg` 55 / `coneOffDeg` 70; `lamps.js:964-985` the drawn direction is clamped into the lens cone and the light fades to 0 between 55° and 70°; the film's yaw is set level and corrected about world up, and is held after every frame (`gates…:1909`, `:1946`, `:1968`); new lane row `A-beam-lens-cone` (`gates…:2262-2394`) | `A-beam-lens-cone` PASS 3/3 (B1b, B3, lane run G2). Lens 150° from Brea, no yaw correction, 90 frames: drawn lock ≤ 70.0° off the axis, cone light 0, magenta at 0 of 12 points. Positive control (lens facing her): cone light 1, shaft at 8/8, then 7/8 after the narrowing. The two beam probes read lens·bearing **1 / 1** live in every run |
+| 2 | major: the lock is a dense widening magenta wedge | lock half-angle 3° → **1.5°** (`lamps.js:105`); the lock's light falls as along² / (1 + d/5 m)² (`:125-129`, shader `:509-512`); cross-section edge³ for the lock, edge² kept for the sweep (`:140`, `:514`); `gainHostile` / `gainHostileFog` are now the light at the lens (5.5 / 16). At 8 m they are 0.8 / 2.4, at or under the old flat cap (1.3 / 2.4) | fog gameplay frame pink: 5.0 % (3°) → 2.1 % (1.5°). Probes' fade clause (mean addition 10-30 % vs 60-80 % of the way to her), 3 runs on the final code: night 269.5 / 152.9, 266.4 / 159.1, 271.2 / 157.9; fog 368.3 / 306.3, 358.2 / 289.9, 353.8 / 300.1. The flat 1/(1+d/5) falloff failed this clause in 2 of 3 fog runs (291.3 / 291.5, 274.4 / 288.1), which is why the squared falloff was chosen |
+| 3 | major: the lock length departs from bible §7.2 | the lock is not cut at her: `r.blen` = sight range × `perceptionScale` (`lamps.js:883`). Past her chest the light halves every 2 m (`pastTargetHalfM`, `:148`): her body takes part of it. The probe clause is the bible's: drawn length = sight × weather within 2 % and > segment + 1 m; beyond her (110-140 %) still magenta at ≥ 1 point, fading (`gates…:2203-2207`) | drawn lock **24.07 m = 24.07 m** (night) and **27.20 m = 27.20 m** (fog), against a 10.02 m segment. Beyond her: magenta at 1/3 (night) and 3/3 (fog) points, mean 22-24 (night) and 66-78 (fog), below the near mean |
+| 4 | major: the sunlit staging is nondeterministic | `FILM` asserts in rendered pixels that the lamp is on screen and unoccluded before it films (`gates…:1998-2040`): ≥ minPx lamp pixels within ΔE2000 10 of the token, AND the same block changes when the lamp draw is hidden. Else it tries the next heading; if none passes, it fails the staging by name. New action twins `A-film-{calm,wary}-sunlit-15m-staging`, `A-film-calm-sunlit-40m-staging` report the choice (`gates…:2070-2090`) | 6 runs (B3 ×3, F ×3): the same heading every time, after 1 try. Calm 15 m: 211 token px and 341 changed px (bar 15). Wary 15 m: 112 token px, 369-402 changed. Calm 40 m: 31 token px, 48-50 changed (bar 3). The frames show the Tiller unoccluded, the palisade to the side |
+| 5 | major: fight-start allocation transient in the steering helpers | `warmSteering` runs every helper through every branch at spawn and once at navgrid-ready (`machine.js:298`, `index.js:271`, `:604-625`; WIP, kept). `_steerOpts` and `_st` are born mutable (`machine.js:99`, `:137`): DEOPTMARK caught navTowardS lazily deoptimised on "dependent field type constness changed" 3.4 s after staging. `_moveToward` returns the distance on demand on legacy kinds (`machine.js:1050`, `:2659-2664`; `index.js:55`, `:265`); see below | gates-perf's own `A-alloc-rate` row on this tree, 5 runs: **steerAlongS, navTowardS and `_moveToward` are not among its over-4 KB/s functions in either phase of any run**. `A-alloc-machines` PASS 4 consecutive (B3 ×2, F4 ×2) plus G1 ×2 on the final source; in every paired no-inline run `_moveToward` **0 B**, against 3.35 / 3.43 / **4.26** / 2.42 / 3.02 / 2.95 KB/s before (B1b) |
+
+**`_moveToward`, measured.** A census of every call in `A-alloc-machines`' staging (405 frames) found 4.89 calls per
+frame, all on legacy kinds. 3.67 come from `Glinthawk._orbit` (glinthawk.js:144) and 1.22 from the frozen convoy step
+walking the ShellWalkers (`Squads.stepConvoy`, squad.js:289). Every one of these callers discards the result. The bytes
+were not a deopt. They were the return: a double returned from a call that is not inlined is a fresh HeapNumber, in
+every window. The only caller that reads the value is the frozen scavenger step (`Squads.stepScavenge`, squad.js:501,
+`d < cfg.arrive`), and it calls only while `m.scavenge` is set. So a legacy machine (`_mtOnDemand` 1, set at spawn
+from `LEGACY_KINDS`) returns the distance while it scavenges and nothing otherwise. Every Instrument keeps the
+contract (the distance, always). No frozen file was touched.
+
+A first version installed this as a prototype method on the legacy classes. I replaced it the same day: four runs of
+gates-perf's row after it listed `updateEyesM` at 36.6-43.6 KB/s, against none in the run before it, and a class
+prototype changed after definition is a known source of prototype-chain deopts. The per-instance flag mutates no
+prototype.
+
+**The beam lab** (scratch diagnosis, `bin/beamlab*.mjs`). The four beam stagings are filmed once, and the lock shader
+is swapped at runtime through 6 + 5 variants. For each variant the lab records the probe's own reads, a frame-wide
+pink census and the frame. I chose the variant from those numbers and frames, then re-filmed it with the real code.
+
+**The films, re-filmed at the cited angles on the final code (F1) and read by me against their written criteria**
+(advisory; no licence-clean reference exists):
+- **`V-lamp-beams-night`** (side): a narrow magenta shaft, hot at the drum lamp, dimming toward Brea. It carries past
+  her and fades out with no cut. It is translucent (the grass reads through it). The wary chartreuse sweep is separate.
+  No beam leaves the back of a lamp. PASS.
+- **`V-lamp-beams-fog`** (side): white-hot magenta at the lens, deepening and dimming toward her, then fading about
+  3 m past her. Narrow, not a wedge, not brightest at her end. PASS.
+- **`V-lamp-beams-{night,fog}-gameplay`** (her chase camera, the hostile Tiller 8 m ahead): a thin shaft from the lamp
+  to her head, brightest at the lens, opening into a faint fan over her shoulders. The frame is not washed (2.1 % of
+  the frame pink in fog by the lab census). PASS.
+- **The 4 lens films, the noon, three-quarter and 40 m frames**: unchanged from round 3. The sunlit frames show the
+  Tiller in the open, its lit lens in the dark drum face. PASS.
+
+**Global and lane gates on the final source** (G1-G3): see "Targeted fix — the runs" below.
+
+**Honest gaps.**
+- gates-perf's row passes for the three helpers in 5 of 5 runs, but my stricter emulation of its sequence is not
+  clean. `R5_IC_GPSEQ` stages its own 8-Tiller fight and opens one window 3 s after staging. There, steerAlongS read
+  0.5-58 KB/s and navTowardS 16-21 KB/s in 4 diagnosis runs. The cause is lazy "dependent prototype chain changed"
+  deopts 8-12 s after staging, from a source I did not find: `R5_IC_PROTOWATCH` saw none of 283 watched prototypes
+  change.
+- The same 3 s method also lists other lane frames that are not in this finding: `_statePatrol` (83-101 KB/s),
+  `_engageFrame`, `_updateAttack`, the accessors, and in four of five runs `updateEyesM`. I did not change them (scope).
+  They become the R48 (c) baseline as measured. With `A-alloc-machines`' 30 s warm-up, none of them is a lane frame
+  over 4 KB/s.
+
+---
+
 ## W0b FIX ROUND 3 (Oct 23 2026) — what changed, by judge finding, with numbers
 
 Four findings: two blockers on the memory rule, the hostile beam missing from the films, and the published
