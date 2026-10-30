@@ -32,7 +32,7 @@ import os from 'os';
 import path from 'path';
 import { fileURLToPath, pathToFileURL } from 'url';
 import { SLOTS } from './slots.mjs';
-import { classifyCommons, authorOf, classifierSelfTest, FORBIDDEN_SOURCE_RE, STORED_LICENCES } from './licence.mjs';
+import { classifyCommons, authorOf, classifierSelfTest, FORBIDDEN_SOURCE_RE, STORED_LICENCES, normaliseLicence } from './licence.mjs';
 import { readManifest, renderManifest, laneFolders, IMAGE_RE, parserSelfTest } from './manifest.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -173,6 +173,33 @@ export function storedRowProblems(lane, dir, r) {
   return out;
 }
 
+/**
+ * The row rules' own controls (targeted fix round 1: the header-driven parser accepts more layouts, so the rules that judge a
+ * row must still REJECT a bad one). On one real stored file of the set (its bytes, a copy of its row): the complete row must
+ * pass, and each negative (an NC licence, CC BY without its attribution, no author, a PD file whose source is neither a
+ * Commons page nor the project's own work, a forbidden source, a wrong sha256, a missing file) must give >= 1 problem.
+ */
+export function rowRulesSelfTest(root = ROOT) {
+  const lane = 'gates-perf', dir = path.join(root, 'reference', 'r5', lane);
+  const m = readManifest(dir);
+  const base = m.stored.find((r) => /^CC-BY/.test(r.licence) && r.attribution && existsSync(path.join(dir, r.file)));
+  if (!base) return { ok: false, why: 'no CC BY row with its file in reference/r5/gates-perf to test with' };
+  const cases = [
+    ['positive: the complete row', {}, 0],
+    ['negative: NC licence', { licence: normaliseLicence('CC BY-NC 2.0').code, licenceText: 'CC BY-NC 2.0' }, 1],
+    ['negative: CC BY without its attribution', { attribution: '' }, 1],
+    ['negative: no author', { author: '' }, 1],
+    ['negative: PD from a non-Commons page', { licence: 'PD', source: 'https://www.example.org/photo.jpg' }, 1],
+    ['negative: forbidden source', { source: 'https://commons.wikimedia.org/wiki/File:Horizon_Zero_Dawn_still.jpg' }, 1],
+    ['negative: wrong sha256', { sha256: '0'.repeat(64) }, 1],
+    ['negative: missing file', { file: 'no-such-file.jpg' }, 1],
+  ].map(([name, patch, wantMin]) => {
+    const problems = storedRowProblems(lane, dir, { ...base, ...patch });
+    return { name, problems: problems.length, ok: wantMin === 0 ? problems.length === 0 : problems.length >= wantMin, first: problems[0] || null };
+  });
+  return { ok: cases.every((c) => c.ok), row: `${lane}/${base.file}`, cases };
+}
+
 /** Offline verification -> { ok, problems[], stored, urlOnly, notes, files, hashedAtVerify[], byLane } (A-reference-set runs it) */
 export function verify(root = ROOT) {
   const problems = [];
@@ -206,7 +233,7 @@ export function verify(root = ROOT) {
 
 if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) {
   const run = async () => {
-    if (argv.includes('--selftest')) { const t = { classifier: classifierSelfTest(), parser: parserSelfTest() }; console.log(JSON.stringify(t, null, 1)); return t.classifier.ok && t.parser.ok ? 0 : 1; }
+    if (argv.includes('--selftest')) { const t = { classifier: classifierSelfTest(), parser: parserSelfTest(), rowRules: rowRulesSelfTest() }; console.log(JSON.stringify(t, null, 1)); return t.classifier.ok && t.parser.ok && t.rowRules.ok ? 0 : 1; }
     if (argv.includes('--verify')) { const v = verify(); console.log(JSON.stringify(v, null, 1)); return v.ok ? 0 : 1; }
     const q = flag('--search') || flag('--preview');
     if (q) {

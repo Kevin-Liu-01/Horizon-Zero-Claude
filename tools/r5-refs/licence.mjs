@@ -8,8 +8,12 @@
  *   refused     NC / ND, or any Horizon / Sony / Guerrilla / Epic / Fortnite / ripped source
  */
 
-/** Sources that may never appear in reference/ (plan §0 rule 9; the deleted Round-4 stills came from these). */
-export const FORBIDDEN_SOURCE_RE = /guerrilla|sony|playstation|horizon ?zero|horizon ?forbidden|\bhzd\b|\bhfw\b|\baloy\b|fortnite|epic ?games|steamstatic|gematsu|ytimg|youtube|sketchfab/i;
+/**
+ * Sources that may never appear in reference/ (plan §0 rule 9; the deleted Round-4 stills came from these). Targeted fix
+ * round 1: separators are a space, `_`, `-`, `+` or `%20` (Commons file names use underscores: "Horizon_Zero_Dawn" passed the
+ * old `horizon ?zero`, and `\bhzd\b` missed "_HZD_"; rowRulesSelfTest in fetch.mjs caught it).
+ */
+export const FORBIDDEN_SOURCE_RE = /guerrilla|sony|playstation|horizon(?:[\s_+-]|%20)*(?:zero|forbidden)|(?:^|[^a-z])(?:hzd|hfw|aloy)(?:[^a-z]|$)|fortnite|epic(?:[\s_+-]|%20)*games|steamstatic|gematsu|ytimg|youtube|sketchfab/i;
 
 /**
  * licence codes a STORED row may carry (after normaliseLicence). `own-photo` and `project-original` are the project's

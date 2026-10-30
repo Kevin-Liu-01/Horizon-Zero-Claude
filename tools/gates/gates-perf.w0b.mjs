@@ -45,7 +45,7 @@ import { PROFILE_ROOT, profileDir, disposeProfile, acquireChromeSlot, installPro
 import { BUDGETS, STAGE_PRELUDE, PERF_SCENARIOS, MEMORY_BUDGETS, RT_LEDGER } from '../budgets.mjs';
 import { ROSTER } from '../gate-roster.mjs';
 import { PLACES } from '../gate-places.mjs';
-import { verify as verifyReferenceSet, storedRowProblems } from '../r5-refs/fetch.mjs';
+import { verify as verifyReferenceSet, storedRowProblems, rowRulesSelfTest } from '../r5-refs/fetch.mjs';
 import { classifierSelfTest } from '../r5-refs/licence.mjs';
 import { readManifest, laneFolders, parserSelfTest } from '../r5-refs/manifest.mjs';
 import { SLOTS } from '../r5-refs/slots.mjs';
@@ -538,6 +538,57 @@ function guardSelfTest(owners, factor) {
     grown25PercentFlags: grown.offenders.map((x) => x.id), perFrameOnlyGrowthFlags: perFrameOnly.offenders.map((x) => x.id), perSecondOnlyGrowthFlags: perSecondOnly.offenders.map((x) => x.id) };
 }
 
+/**
+ * THE BAR SCHEDULE SELF-TEST (targeted fix round 1; engineering-judge finding: whole directories that lanes hold from W1-W3
+ * had barsFrom null, so the 4 KB/s per-function bar never bound there). Pure, on the owner rows:
+ *   - SCHEDULE_CONTROLS: a file of each set the finding names, with the lane and wave whose exit first binds its bars
+ *     (plan §2 rows; §6 for the legacy species), resolved through the rows exactly as an over-bar function is;
+ *   - every barsFrom-null row is cls 'frozen' or 'no-lane-after-W0b' (budgets.mjs), every dated row cls 'held' with a wave.
+ * NEGATIVE CONTROL: the fix-round-3 rows (FIX_ROUND3_OWNER_ROWS, verbatim from git bccc39b:tools/budgets.mjs) must FAIL it.
+ */
+const SCHEDULE_CONTROLS = [
+  ['/src/world/terrain.js', 'world-ground', 'W1'], ['/src/world/vegetation.js', 'world-ground', 'W1'], ['/src/world/water.js', 'world-ground', 'W1'],
+  ['/src/world/island/sites.js', 'world-ground', 'W1'], ['/src/world/environment.js', 'world-sky', 'W1'],
+  ['/src/world/props.js', 'world-props', 'W1'], ['/src/world/props/kit.js', 'world-props', 'W1'], ['/src/world/sites/ring.js', 'world-props', 'W1'], ['/src/world/fauna.js', 'world-props', 'W1'],
+  ['/src/world/props/settlement.js', 'settlements', 'W2'], ['/src/world/npc/npc.js', 'settlements', 'W2'],
+  ['/src/combat/bow.js', 'armory', 'W1'], ['/src/combat/weapons.js', 'armory', 'W1'], ['/src/combat/arrows.js', 'armory', 'W1'], ['/src/combat/combat.js', 'armory', 'W1'], ['/src/hero/loadout.js', 'armory', 'W1'],
+  ['/src/combat/traps.js', 'combat-kit', 'W2'], ['/src/combat/kit/pots.js', 'combat-kit', 'W2'], ['/src/items/items.js', 'combat-kit', 'W2'], ['/src/items/crafting.js', 'combat-kit', 'W2'],
+  ['/src/entities/anim/meleeLayer.js', 'melee', 'W1'], ['/src/entities/anim/clipMelee.js', 'melee', 'W1'], ['/src/entities/anim/castLayer.js', 'melee', 'W1'], ['/src/combat/melee.js', 'melee', 'W1'], ['/src/entities/playerAnimator.js', 'melee', 'W1'],
+  ['/src/core/progression.js', 'progression', 'W3'], ['/src/core/save.js', 'progression', 'W3'], ['/src/items/fieldbooks.js', 'progression', 'W3'],
+  ['/src/ui/hud.js', 'shell-ui', 'W2'], ['/src/audio/audio.js', 'audio', 'W3'], ['/src/instruments/kinds/plumb.js', 'instruments-a', 'W1'], ['/src/entities/machines/grazer.js', 'instruments-b', 'W2'],
+  ['/src/core/engine.js', null, null], ['/src/core/collision.js', null, null], ['/src/entities/anim/clipLayer.js', null, null],
+];
+const FIX_ROUND3_OWNER_ROWS = [
+  ['terrain', '^/src/world/terrain\\.js$', 'world-ground', 'W1'], ['playerAnimator', '^/src/entities/playerAnimator\\.js$', 'melee (hero-body until W1)', 'W1'],
+  ['fauna', '^/src/world/fauna\\.js$', 'world-props', 'W1'], ['shell-ui', '^/src/ui/', 'shell-ui', 'W2'], ['settlements', '^/src/world/(camp|npc|settlements)', 'settlements', 'W2'],
+  ['audio', '^/src/audio/', 'audio', 'W3'], ['engine', '^/src/core/engine\\.js$', 'engine', null], ['frozen-spatial', '^/src/core/(collision|nav|hitHulls)\\.js$', 'FROZEN', null],
+  ['frozen-rigging', '^/src/entities/anim/(boneSpace|restPose|clipLayer|retargeter|rigDebug|locomotion)\\.js$', 'FROZEN', null],
+  ['frozen-machine-rig', '^/src/entities/machines/(gait|autorig)\\.js$|^/src/entities/machines/rig/', 'FROZEN', null], ['frame-loop', '^/src/main\\.js$', 'FROZEN', null],
+  ['hero-body', '^/src/entities/(player)\\.js$|^/src/entities/anim/', 'hero-body (melee from W1)', null], ['instruments', '^/src/entities/machines/|^/src/instruments/', 'instruments-core', null],
+  ['world-other', '^/src/world/', 'world-ground / world-props / world-sky (W1)', null], ['combat', '^/src/combat/|^/src/items/', 'combat-kit (W2) / armory', null],
+  ['progression', '^/src/core/(progression|save)\\.js$', 'progression (W3)', null],
+].map(([id, files, lane, barsFrom]) => ({ id, files, lane, barsFrom, re: new RegExp(files) }));
+function scheduleSelfTest(rows) {
+  const ownerOf = (f) => rows.find((o) => o.re.test(f)) || null;
+  const cases = SCHEDULE_CONTROLS.map(([file, lane, wave]) => {
+    const o = ownerOf(file);
+    const ok = !!o && (wave === null ? o.barsFrom == null : o.barsFrom === wave && String(o.lane).startsWith(lane));
+    return { file, want: wave === null ? 'barsFrom null (frozen / engine)' : `${lane} ${wave}`, got: o ? `${o.id}: ${o.lane} ${o.barsFrom}` : 'no row', ok };
+  });
+  const badClass = rows.filter((o) => (o.barsFrom ? !(o.cls === 'held' && WAVES.includes(o.barsFrom)) : !(o.cls === 'frozen' || o.cls === 'no-lane-after-W0b'))).map((o) => o.id);
+  return { ok: cases.every((c) => c.ok) && badClass.length === 0, failed: cases.filter((c) => !c.ok), badClass, cases: cases.length,
+    nullRows: rows.filter((o) => !o.barsFrom).map((o) => `${o.id} (${o.cls || 'no class'})`) };
+}
+/** offline check of the schedule (node -e import): the live rows, the fix-round-3 rows (must fail), src coverage */
+export const allocScheduleCheck = () => ({ now: scheduleSelfTest(ALLOC_OWNER_ROWS), fixRound3: scheduleSelfTest(FIX_ROUND3_OWNER_ROWS), coverage: srcCoverage() });
+/** every src/**\/*.js file of this tree -> its owner row (reported: a file no row names routes to the orchestrator) */
+function srcCoverage() {
+  const out = {}, unowned = [];
+  const walk = (d) => { let es = []; try { es = readdirSync(d, { withFileTypes: true }); } catch { return; } for (const e of es) { const p = path.join(d, e.name); if (e.isDirectory()) walk(p); else if (/\.js$/.test(e.name)) { const f = '/' + relRoot(p); const o = allocOwnerOfFile(f); out[o.id] = (out[o.id] || 0) + 1; if (o.id === 'other-src') unowned.push(f); } } };
+  walk(path.join(ROOT, 'src'));
+  return { files: Object.values(out).reduce((a, b) => a + b, 0), byOwner: out, unowned };
+}
+
 async function allocRate({ PORT }) {
   const B = W0B_BUDGETS.alloc;
   const wave = WAVE_NOW(), binding = barsBinding(PORT);
@@ -651,6 +702,8 @@ async function allocRate({ PORT }) {
     else baselineState = 'absent';
     const guardTest = guardSelfTest(owners, B.baselineGuard);
     const guard = baseline ? guardOwners(baseline, owners, B.baselineGuard) : null;
+    // the bar schedule (targeted fix round 1): the owner rows against the finding's file sets; the fix-round-3 rows must fail it
+    const schedule = scheduleSelfTest(ALLOC_OWNER_ROWS), scheduleRound3 = scheduleSelfTest(FIX_ROUND3_OWNER_ROWS), coverage = srcCoverage();
     // ---- the scheduled absolute bars (R48 c): each owner from its barsFrom wave ----
     const active = ALLOC_OWNER_ROWS.filter((o) => o.barsFrom && waveIdx(o.barsFrom) <= waveIdx(wave)).map((o) => o.id);
     const scheduledOver = [...overFn.values()].filter((x) => active.includes(x.ownerRow));
@@ -671,6 +724,7 @@ async function allocRate({ PORT }) {
       neg('selfTestControlAbsentFromGradedPhases', 'the detector on the control window, where the control IS present', control?.negative?.detectorSeesTheControl !== true),
       neg('selfTestBaselineGuard', 'the largest owner grown 25 % on one metric only (KB/frame, then KB/s)', !(guardTest.perFrameOnlyGrowthFlags?.length && guardTest.perSecondOnlyGrowthFlags?.length)),
       neg('everyOverBarFunctionRoutedWithFileLine', 'an over-bar function with no file:line and no owner', unroutedOf([{ fn: '(anonymous) (program)', owner: null }]).length === 0),
+      neg('selfTestBarSchedule', 'the fix-round-3 owner rows (world/, combat/, items/, anim/ and progression with barsFrom null)', scheduleRound3.ok),
     ];
     const instrument = {
       profilerSawAllocations: sawAlloc(phases),
@@ -679,6 +733,7 @@ async function allocRate({ PORT }) {
       selfTestPlantedAllocatorRecovered: !!control?.ok,
       selfTestControlAbsentFromGradedPhases: !controlInGraded,
       selfTestBaselineGuard: !!guardTest.ok,
+      selfTestBarSchedule: schedule.ok,
       everyOverBarFunctionRoutedWithFileLine: unrouted.length === 0,
       negativeControlsEachFail: negatives.every((n) => n.ok),
     };
@@ -699,7 +754,7 @@ async function allocRate({ PORT }) {
         const box = { loadAverage: os.loadavg().map((x) => +x.toFixed(2)), fps: phases.map((p) => ({ phase: p.name, fps: p.fps })) };
         let prev = null;
         if (recordMode === 'merge' && existsSync(baselinePath)) { try { prev = JSON.parse(readFileSync(baselinePath, 'utf8')); } catch { prev = null; } }
-        const rec = { rule: 'R48 (c): the per-owner allocation of the W0b global run; no owner may exceed it by more than 10 % at a later wave exit (both KB/frame and KB/s)',
+        const rec = { rule: 'R48 (c): the per-owner allocation of the W0b global run; no owner may exceed it by more than 10 % at a later wave exit (an owner exceeds it when EITHER its KB/frame OR its KB/s is > 1.10 x)',
           recordedAt: new Date().toISOString(), port: Number(PORT), runId: runIdOf(PORT), wave, box,
           runs: [...(prev?.runs || (prev ? [{ runId: prev.runId, recordedAt: prev.recordedAt, box: prev.box }] : [])), { runId: runIdOf(PORT), recordedAt: new Date().toISOString(), box }],
           gitHead: (spawnSync('git', ['-C', ROOT, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).stdout || '').trim() || null,
@@ -722,7 +777,7 @@ async function allocRate({ PORT }) {
     const barLine = Object.entries(bars).map(([k, b]) => `${k} ${b.pass === null ? 'PENDING' : b.pass ? 'pass' : 'FAIL'}${b.binding ? '' : ' (not binding)'}`).join(', ');
     return { pass, detail: {
       verdict: (pass ? 'PASS' : 'FAIL: ' + [...Object.keys(instrument).filter((k) => !instrument[k]), ...Object.entries(bars).filter(([, b]) => b.binding && b.pass === false).map(([k]) => 'bar ' + k)].join(', '))
-        + ` — INSTRUMENT (R48 b): ${instrumentOk ? 'PASS' : 'FAIL'} (planted allocator ${control?.src?.ratio ?? '?'}x of ${control?.perCallBytes ?? '?'} B/call in src, ${control?.outsideSrc?.ratio ?? '?'}x outside src; every byte in a named owner: ${accountingOk} (walk / V8 sample list ${phases.map((p) => p.accounting.vsSamples).join(' / ')}, unnamed sample bytes ${phases.map((p) => p.accounting.unnamedSampleBytes).join(' / ')}, walk / (samples x interval) ${phases.map((p) => p.accounting.vsLowerBound).join(' / ')}); baseline-guard self-test ${guardTest.ok} (${guardTest.rule || ''}); negative controls ${negatives.filter((n) => n.ok).length}/${negatives.length} fail as they must); `
+        + ` — INSTRUMENT (R48 b): ${instrumentOk ? 'PASS' : 'FAIL'} (planted allocator ${control?.src?.ratio ?? '?'}x of ${control?.perCallBytes ?? '?'} B/call in src, ${control?.outsideSrc?.ratio ?? '?'}x outside src; every byte in a named owner: ${accountingOk} (walk / V8 sample list ${phases.map((p) => p.accounting.vsSamples).join(' / ')}, unnamed sample bytes ${phases.map((p) => p.accounting.unnamedSampleBytes).join(' / ')}, walk / (samples x interval) ${phases.map((p) => p.accounting.vsLowerBound).join(' / ')}); baseline-guard self-test ${guardTest.ok} (${guardTest.rule || ''}); bar schedule ${schedule.ok ? 'holds' : 'FAILS ' + JSON.stringify(schedule.failed.slice(0, 3)) + ' ' + schedule.badClass.join(',')} (${schedule.cases} file controls; the fix-round-3 rows fail ${scheduleRound3.failed.length} of them); negative controls ${negatives.filter((n) => n.ok).length}/${negatives.length} fail as they must); `
         + `BARS (${binding ? 'binding: global run' : 'lane run: graded at the orchestrator\'s 5270 global run, R48 b/c'}; wave ${wave}): ${barLine}; baseline ${baselineState}${recorded ? (recorded.written ? ' -> RECORDED ' + recorded.file : ' -> NOT recorded: ' + recorded.why) : ''} — `
         + `measured: src/** (caller attribution) ${worstSrc} KB/s (bar ${B.srcKBps}), worst src function ${worstFn ? worstFn.fn + ' ' + worstFn.gradedKBps + ' KB/s in ' + worstFn.phase : 'none'} (bar ${B.fnKBps}), post-GC heap slope ${slopes.map((s) => (s === null ? '?' : r1(s / 1024) + ' KB/s')).join(' / ')} (bar <= 0); `
         + phases.map((p) => `${p.name}: ${p.fps} fps, all allocation ${p.total.measuredKBps} KB/s = src ${p.srcCaller.measuredKBps} + no-src ${p.noSrc.measuredKBps} (${p.noSrc.buckets.map((b) => b.id + ' ' + b.measuredKBps).join(', ')})`).join('; ')
@@ -730,7 +785,8 @@ async function allocRate({ PORT }) {
         + (Object.keys(byOwner).length ? ` — src functions over ${B.fnKBps} KB/s by owner: ` + Object.entries(byOwner).map(([o, l]) => o + ': ' + l.slice(0, 4).join(', ')).join('; ') : ''),
       instrument, bars, runId: runIdOf(PORT), barsBinding: binding, wave,
       sealing: 'R48 (b): the harness seals every run that executes this row (tools/gates.r5.gates-perf.mjs INSTRUMENT_IDS): report bytes, run monitor and box sample bound to runId in the ledger; verify with node tools/gates.r5.gates-perf.mjs --instruments --port <port>',
-      selfTest: { plantedAllocator: control, controlAbsentFromGradedPhases: !controlInGraded, baselineGuard: guardTest, negatives,
+      selfTest: { plantedAllocator: control, controlAbsentFromGradedPhases: !controlInGraded, baselineGuard: guardTest, negatives, barSchedule: schedule,
+        barScheduleFixRound3: { ok: scheduleRound3.ok, failed: scheduleRound3.failed, badClass: scheduleRound3.badClass }, srcCoverage: coverage,
         accounting: phases.map((p) => ({ phase: p.name, ...p.accounting })) },
       owners, functionsOverBar: [...overFn.values()].map((x) => ({ fn: x.fn, gradedKBps: x.gradedKBps, kbPerFrame: x.kbPerFrame, measuredKBps: x.measuredKBps, phase: x.phase, owner: x.owner, ownerRow: x.ownerRow })),
       checks: { ...instrument, ...Object.fromEntries(Object.entries(bars).map(([k, b]) => ['bar:' + k, b.pass])) },
@@ -791,7 +847,9 @@ const GL_CENSUS = String.raw`(() => {
   };
   const faceOf = (target) => (target >= FACE0 && target <= FACE5 ? target - FACE0 : 0);
   // the first upload's src frames (reported for an object no owner claims; captured once per object, never per call)
-  const hintOf = () => { const s = String(new Error().stack || '').split('\n').filter((l) => /\/src\//.test(l) && !/__glCensus/.test(l)).slice(0, 3).map((l) => l.trim().replace(/^at /, '').replace(/https?:\/\/[^/]+/, '').replace(/\?[^:)]*/, '')); return s; };
+  // Error.stackTraceLimit raised for this one capture: three's lazily built internals (WebGLBackground's box, the
+  // state's empty textures) are uploaded more than 10 frames below the src frame that caused them
+  const hintOf = () => { const lim = Error.stackTraceLimit; Error.stackTraceLimit = 80; const st = new Error().stack; Error.stackTraceLimit = lim; const s = String(st || '').split('\n').filter((l) => /\/src\//.test(l) && !/__glCensus/.test(l)).slice(0, 3).map((l) => l.trim().replace(/^at /, '').replace(/https?:\/\/[^/]+/, '').replace(/\?[^:)]*/, '')); return s; };
   const texRec = (t) => { let r = objs.get(t); if (!r) { r = { kind: 'tex', lv: [], rt: false, hint: null }; objs.set(t, r); } return r; };
   const setLevel = (gl, target, face, level, w, h, d, bytes) => {
     const t = boundTex(gl, target); if (!t) return;
@@ -804,11 +862,15 @@ const GL_CENSUS = String.raw`(() => {
   const srcH = (src) => (src ? src.videoHeight || src.naturalHeight || src.displayHeight || src.height || 0 : 0);
   const P = WebGL2RenderingContext.prototype;
   const wrapped = [];
+  let calls = 0;                             // wrapped calls made (a small-integer increment: no allocation)
   // ONE fixed-arity wrapper per method: the original gets exactly the caller's arguments (WebGL overloads resolve by
   // argument count), 'after' gets the count and the first nine by name; nothing is built per call
   const wrap = (name, after) => {
     const real = P[name]; if (typeof real !== 'function') return;
     P[name] = function __glCensusWrapped(a0, a1, a2, a3, a4, a5, a6, a7, a8) {
+      'use strict';   // an UNMAPPED arguments object: TurboFan forwards real.apply(this, arguments) and reads arguments.length without
+                      // materialising it (a sloppy, mapped one with formals is not elided: 23 B per call in the first probe run)
+      calls++;
       const out = real.apply(this, arguments);
       try { after(this, arguments.length, a0, a1, a2, a3, a4, a5, a6, a7, a8); } catch (e) { /* census only */ }
       return out;
@@ -883,6 +945,8 @@ const GL_CENSUS = String.raw`(() => {
   const catOf = (r) => (r.kind === 'buf' ? 'buffers' : r.rt ? 'renderTargets' : 'textures');
   const rowOf = (r) => { const lv0 = r.kind === 'tex' ? texLv0(r) : r; return { kind: r.kind, bytes: bytesOf(r), w: lv0.w || 0, h: lv0.h || 0, levels: r.kind === 'tex' ? texLevels(r) : 0, samples: r.samples || 0, target: r.kind === 'buf' ? '0x' + r.target.toString(16) : undefined }; };
   window.__glCensus = {
+    /** wrapped calls made since install (A-vram-ledger reads it over a window of the fight: the census's per-frame work) */
+    calls() { return calls; },
     /** totals per category, exact integers */
     totals() { const t = { textures: 0, renderTargets: 0, buffers: 0, objects: objs.size }; for (const [, r] of objs) t[catOf(r)] += bytesOf(r); return t; },
     summary() {
@@ -1017,6 +1081,18 @@ const GL_CENSUS = String.raw`(() => {
         if (o && sr.heldBy && !/held by/.test(o.lane)) o.lane = 'UNREGISTERED scene root, held by ' + sr.heldBy + ' (' + sr.heldByLane + '): name the root for its §4.2 row';
         sr.obj = undefined;
       }
+      // (3b) what no graph reaches (three's renderer internals live in closures: WebGLState's empty textures, WebGLBackground's
+      // box) is attributed by the census's own record of the src frame that FIRST uploaded it (its call site), owner = that
+      // file's owner row (cfg.srcOwners, MEMORY_BUDGETS.alloc.owners); an object with no src frame on its first upload stays
+      // unattributed
+      const SRC_OWN = (cfg.srcOwners || []).map((o) => ({ ...o, re: new RegExp(o.re) }));
+      for (const [g, rec] of objs) {
+        if (claimed.has(g) || !rec.hint || !rec.hint.length) continue;
+        const site = rec.hint[0], file = (/(\/src\/[^:)\s]+):\d+/.exec(site) || [])[1] || '';
+        const row = SRC_OWN.find((o) => o.re.test(file));
+        const key = 'first upload under ' + site.replace(/^.*?\((.*)\)$/, '$1').replace(/:\d+$/, '');
+        claim(g, key, row ? row.lane : 'orchestrator (a src file no owner row names)', 'census first-upload call site');
+      }
       // (4) the remainder
       const un = { textures: { count: 0, bytes: 0, rows: [] }, renderTargets: { count: 0, bytes: 0, rows: [] }, buffers: { count: 0, bytes: 0, rows: [] } };
       const totals = { textures: 0, renderTargets: 0, buffers: 0 };
@@ -1038,6 +1114,9 @@ const GL_CENSUS = String.raw`(() => {
   };
 })()`;
 
+/** the page-side attribution config: draw-owner rows, ctx-key lanes, and the src owner rows for the first-upload step (3b) */
+const ATTR_CFG = () => ({ drawOwners: DRAW_OWNERS.map((o) => ({ id: o.id, lanes: o.lanes, re: o.re.source, flags: o.re.flags })), ctxLanes: CTX_LANES,
+  srcOwners: ALLOC_OWNER_ROWS.map((o) => ({ id: o.id, re: o.files, lane: o.lane })) });
 /** ctx keys -> the lane that answers for what they hold off-scene (plan §2 rows) */
 const CTX_LANES = { engine: 'engine-gpu', camera: 'engine-gpu', assets: 'pipeline (loaded templates)', terrain: 'world-ground', vegetation: 'world-ground', water: 'world-ground',
   environment: 'world-sky', sky: 'world-sky', weather: 'world-sky', camp: 'settlements', npcs: 'settlements', settlements: 'settlements', player: 'hero-body', animator: 'hero-body',
@@ -1129,7 +1208,7 @@ const RT_ROUTES = [
   [/^post:UnrealBloomPass\./, [[ENGINE, /this\.bloom\s*=\s*new UnrealBloomPass\(/]], 'the bloom mip chain (capped at BLOOM_MAX_WIDTH)', true],
   [/^post:/, [[ENGINE, /this\.composer\.addPass\(/]], 'a post pass target', true],
   [/^shadow:csm\[\d+\]$/, [[ENGINE, /this\.csm\s*=\s*new CSM\(/], [ENGINE, /Math\.min\(csm\.shadowMapSize, cap\)/], [ENVIRONMENT, /engine\.enableCSM\(/]], 'a CSM cascade shadow map: shadowMapSize from world-sky\'s enableCSM call (and the tier csmMapCaps where the engine has them)', false],
-  [/^shadow:/, [[ENGINE, /shadow\.mapSize/]], 'a light shadow map', false],
+  [/^shadow:/, [[ENGINE, /shadow\.mapSize/], [ENVIRONMENT, /shadow\.mapSize/], [ENVIRONMENT, /castShadow\s*=\s*true/]], 'a light shadow map (its light\'s shadow.mapSize)', false],
   [/^env:/, [[ENVIRONMENT, /PMREMGenerator\(/], [ENVIRONMENT, /fromScene\(/]], 'the environment PMREM (world-sky)', false],
 ];
 /** the default tier's dprCap line (every drawing-buffer-sized target scales with it) */
@@ -1189,13 +1268,14 @@ const CENSUS_PROBE = (phase, warm = 4000, n = 20000) => `(async () => {
     const a1 = C.attribute(cfg), u1 = un(a1);
     const seen = { textures: u1.textures - u0.textures, renderTargets: u1.renderTargets - u0.renderTargets, buffers: u1.buffers - u0.buffers };
     const everyRenderTargetAttributedWouldPass = a1.unattributed.renderTargets.bytes === 0 && a1.rtMismatches.length === 0;
+    const everyByteAttributedWouldPass = a1.unattributed.textures.bytes + a1.unattributed.renderTargets.bytes + a1.unattributed.buffers.bytes === 0;
     gl.deleteFramebuffer(fb); gl.deleteTexture(tex); gl.deleteTexture(rtTex); gl.deleteBuffer(buf);
     const u2 = un(C.attribute(cfg));
     const back = { textures: u2.textures - u0.textures, renderTargets: u2.renderTargets - u0.renderTargets, buffers: u2.buffers - u0.buffers };
     const exp = { textures: 128 * 64 * 4, renderTargets: 96 * 32 * 4, buffers: 250 * 4 };
     const lose = gl.getExtension('WEBGL_lose_context'); if (lose) lose.loseContext();
-    const ok = seen.textures === exp.textures && seen.renderTargets === exp.renderTargets && seen.buffers === exp.buffers && back.textures === 0 && back.renderTargets === 0 && back.buffers === 0 && !everyRenderTargetAttributedWouldPass;
-    return { ok, expectedUnattributedBytes: exp, unattributedDelta: seen, afterDelete: back, everyRenderTargetAttributedWouldPass };
+    const ok = seen.textures === exp.textures && seen.renderTargets === exp.renderTargets && seen.buffers === exp.buffers && back.textures === 0 && back.renderTargets === 0 && back.buffers === 0 && !everyRenderTargetAttributedWouldPass && !everyByteAttributedWouldPass;
+    return { ok, expectedUnattributedBytes: exp, unattributedDelta: seen, afterDelete: back, everyRenderTargetAttributedWouldPass, everyByteAttributedWouldPass };
   }
   if (${JSON.stringify(phase)} === 'setup') {
     const cv = new OffscreenCanvas(8, 8);
@@ -1259,7 +1339,22 @@ async function vramLedger({ PORT }) {
     const fight = await page.evaluate(STAGE_FIGHT);
     if (fight.skip) return { pass: null, detail: { verdict: fight.skip.split(':')[0] + ': the staged fight has no cast — ' + fight.skip } };
     await page.evaluate(`(async () => { ${FRAMES} await __frames(90); return true; })()`);
-    const attrCfg = { drawOwners: DRAW_OWNERS.map((o) => ({ id: o.id, lanes: o.lanes, re: o.re.source, flags: o.re.flags })), ctxLanes: CTX_LANES };
+    // THE CENSUS IN THE FIGHT (targeted fix round 1; engineering judge: the wrappers allocated on every WebGL call): over
+    // 180 frames of the staged fight, the wrapped calls the game makes and the bytes the sampling profiler (256 B interval,
+    // collected objects included) finds under the wrapper frames: the census's own per-frame work and allocation in the
+    // measured scene
+    let inFight = null;
+    try {
+      const c0 = await page.evaluate('[window.__glCensus.calls(), __CTX__.engine.frames]');
+      await cdp.send('HeapProfiler.collectGarbage');
+      await cdp.send('HeapProfiler.startSampling', { samplingInterval: 256, includeObjectsCollectedByMajorGC: true, includeObjectsCollectedByMinorGC: true });
+      await page.evaluate(`(async () => { ${FRAMES} await __frames(180); return true; })()`);
+      const { profile: fp } = await cdp.send('HeapProfiler.stopSampling');
+      const c1 = await page.evaluate('[window.__glCensus.calls(), __CTX__.engine.frames]');
+      const frames = c1[1] - c0[1], wrappedCalls = c1[0] - c0[0], bytes = bytesUnder(fp, '__glCensusWrapped');
+      inFight = { frames, wrappedCalls, callsPerFrame: frames ? +(wrappedCalls / frames).toFixed(3) : null, bytesUnderWrapper: bytes, bytesPerFrame: frames ? +(bytes / frames).toFixed(2) : null, samplingIntervalB: 256 };
+    } catch (err) { inFight = { error: String(err.message || err).slice(0, 160) }; }
+    const attrCfg = ATTR_CFG();
     await page.evaluate(`(() => { window.__w0bAttrCfg = ${JSON.stringify(attrCfg)}; return true; })()`);
     const census = await page.evaluate('window.__glCensus.summary()');
     const attr = await page.evaluate('window.__glCensus.attribute(window.__w0bAttrCfg)');
@@ -1290,6 +1385,7 @@ async function vramLedger({ PORT }) {
     const negatives = [
       neg('censusSawTheScene', 'an empty census', sawScene({ textures: { count: 0 }, buffers: { count: 0 }, renderTargets: { count: 0 } })),
       neg('everyRenderTargetAttributed', 'live orphan GL objects of known size on a scratch context (seen to the byte in the unattributed row)', orphans?.ok !== true || orphans.everyRenderTargetAttributedWouldPass),
+      neg('everyByteAttributed', 'the same live orphans (texture, render target, buffer)', orphans?.ok !== true || orphans.everyByteAttributedWouldPass),
       neg('selfTestKnownObjectsSeenAttributedAndDisposed', 'the control readings against a target 1 B larger than created', knownOk({ checks: { ...(control?.checks || {}), censusSawTheTargetExactly: control?.censusDelta?.renderTargets === (control?.expectedBytes?.renderTargets ?? 0) + 1 } })),
       neg('everyOverBarRowRoutedWithFileLine', 'the ledger rows resolved against an engine.js without the creating lines', routedOk(attr.ledgerRows.filter((x) => x.glBytes > 0).map((x) => ({ fileLines: routeRt(x.owner, { [ENGINE]: ['// no anchors'], [ENVIRONMENT]: ['// no anchors'] }).fileLines })))),
       neg('censusAllocatesNothingPerCall', 'the round-3 wrapper shape (rest array + string key per call)', !!perCall?.round3ShapeControl && perCall.round3ShapeControl.bytesPerCall < 1),
@@ -1297,6 +1393,7 @@ async function vramLedger({ PORT }) {
     const instrument = {
       censusSawTheScene: sawScene(census),
       everyRenderTargetAttributed: un.renderTargets.bytes === 0 && attr.rtMismatches.length === 0,
+      everyByteAttributed: unTotal === 0,
       selfTestKnownObjectsSeenAttributedAndDisposed: !!control?.ok,
       selfTestOrphansLandInTheUnattributedRow: !!orphans?.ok,
       censusAllocatesNothingPerCall: !!perCall?.ok,
@@ -1333,7 +1430,7 @@ async function vramLedger({ PORT }) {
         + `textures ${MB(tex)} MB (bar 160) ${bars.texturesWithinBudget.pass ? 'pass' : 'FAIL'}, render targets ${MB(rt)} MB (bar 170) ${bars.renderTargetsWithinRtLedgerCap.pass ? 'pass' : 'FAIL'}, geometry ${MB(geo)} MB (bar 120) ${bars.geometryWithinBudget.pass ? 'pass' : 'FAIL'}, total ${MB(sum)} MB (bar 450) ${bars.totalWithinBudget.pass ? 'pass' : 'FAIL'}`
         + ` at pixel ratio ${fight.appliedPixelRatio} (tier ${fight.quality}, drawing buffer ${fight.drawingBuffer.join('x')}); engine-gpu's recorded RT ledger (${RT_LEDGER.measured}) totals ${MB(rtLedgerTotal)} MB`
         + (overBar.length ? ' — over-bar routing: ' + overBar.map((k) => k + ' -> ' + (k.startsWith('render') || k.startsWith('total') ? rtRouting.slice(0, 5).map((x) => x.owner + ' ' + x.MB + ' MB @ ' + x.fileLines.join(' + ')).join('; ') : k.startsWith('textures') ? routing.textureOwnersFirstUpload.slice(0, 3).map((x) => x.owner + ' ' + x.MB + ' @ ' + x.firstUploadFrame).join('; ') : routing.bufferOwnersFirstUpload.slice(0, 3).map((x) => x.owner + ' ' + x.MB + ' @ ' + x.firstUploadFrame).join('; '))).join(' | ') : '')
-        + ` — census per wrapped call ${perCall?.census?.bytesPerCall ?? '?'} B (round-3 shape ${perCall?.round3ShapeControl?.bytesPerCall ?? '?'} B); orphan control ${orphans?.ok ? 'seen to the byte in unattributed and gone after delete' : 'FAILED ' + JSON.stringify(orphans || null).slice(0, 160)}; negative controls ${negatives.filter((n) => n.ok).length}/${negatives.length} fail as they must`,
+        + ` — census per wrapped call ${perCall?.census?.bytesPerCall ?? '?'} B (round-3 shape ${perCall?.round3ShapeControl?.bytesPerCall ?? '?'} B); in the fight ${inFight?.callsPerFrame ?? '?'} wrapped calls/frame and ${inFight?.bytesPerFrame ?? '?'} B/frame under the wrappers over ${inFight?.frames ?? '?'} frames; unattributed ${unTotal} B; attributed by first-upload call site ${attr.owners.filter((o) => /^first upload under/.test(o.owner)).map((o) => o.owner.slice(19) + ' ' + o.total + ' B').join(', ') || 'none'}; orphan control ${orphans?.ok ? 'seen to the byte in unattributed and gone after delete' : 'FAILED ' + JSON.stringify(orphans || null).slice(0, 160)}; negative controls ${negatives.filter((n) => n.ok).length}/${negatives.length} fail as they must`,
       instrument, structural, bars, runId: runIdOf(PORT), barsBinding: binding, overBar, routing, byLaneMB: lanes,
       sealing: 'R48 (b): the harness seals every run that executes this row (tools/gates.r5.gates-perf.mjs INSTRUMENT_IDS); verify with node tools/gates.r5.gates-perf.mjs --instruments --port <port>',
       checks: { ...instrument, ...Object.fromEntries(Object.entries(bars).map(([k, b]) => ['bar:' + k, b.pass])) }, budgetMB: { textures: 160, renderTargets: 170, geometry: 120, total: 450 },
@@ -1341,7 +1438,7 @@ async function vramLedger({ PORT }) {
       attribution: { owners: attr.owners.map((o) => ({ owner: o.owner, lane: o.lane, how: o.how, objects: o.objects, texturesMB: MB(o.textures), renderTargetsMB: MB(o.renderTargets), buffersMB: MB(o.buffers), totalB: o.total })),
         unattributed: { textures: { ...un.textures, MB: MB(un.textures.bytes) }, renderTargets: { ...un.renderTargets, MB: MB(un.renderTargets.bytes) }, buffers: { ...un.buffers, MB: MB(un.buffers.bytes) } },
         accountingExact: attr.accountingExact, totals: attr.totals, attributed: attr.attributed, ledgerRows: attr.ledgerRows, rtMismatches: attr.rtMismatches, sceneRoots: attr.sceneRoots, graphVisited: attr.graphVisited },
-      selfTest: { ...control, orphans, censusPerCallAllocation: perCall, negatives },
+      selfTest: { ...control, orphans, censusPerCallAllocation: perCall, censusInTheFight: inFight, negatives },
       census: { ...census, textures: { ...census.textures, MB: MB(tex) }, renderTargets: { ...census.renderTargets, MB: MB(rt) }, buffers: { ...census.buffers, MB: MB(geo) } },
       crossCheck: { ...cross, censusTextureObjects: census.textures.count + census.renderTargets.textures, rtLedgerRecordedMB: MB(rtLedgerTotal), rtLedgerRecordedAt: RT_LEDGER.measured },
       fight,
@@ -1460,9 +1557,14 @@ const heapControlGrade = (riseB, fallB, expectedB) => ({ ok: Math.abs(riseB / ex
  * The canvas's context is then lost and the page closed, and the game boots.
  */
 const GPU_BASELINE_PATH = '/__gates-perf-gpu-baseline__.html';
-const GAME_CONTEXT_ATTRS = { alpha: false, depth: true, stencil: false, antialias: false, premultipliedAlpha: true, preserveDrawingBuffer: false, powerPreference: 'high-performance' };
+// the game's context as getContextAttributes() reports it: engine.js asks three for antialias false, stencil false and
+// high-performance; three's WebGLRenderer creates every context with alpha: true (its `alpha` option only sets the clear
+// alpha). The split's bareContextHadTheGameAttributes check compares the two, so a drift fails the split (the first dev run
+// had alpha: false here, and it did)
+const GAME_CONTEXT_ATTRS = { alpha: true, depth: true, stencil: false, antialias: false, premultipliedAlpha: true, preserveDrawingBuffer: false, powerPreference: 'high-performance' };
 async function gpuBaseline(browser, PORT) {
   const page = await browser.newPage();
+  let closed = false;
   try {
     const cdp = await page.createCDPSession();
     const body = Buffer.from('<!doctype html><meta charset="utf-8"><title>gates-perf GPU baseline</title><body style="margin:0;background:#000"></body>').toString('base64');
@@ -1488,10 +1590,17 @@ async function gpuBaseline(browser, PORT) {
     await sleep(1500);
     const full = await footprintMedian(browser);
     await page.evaluate(`(() => { const b = window.__w0bBare; const x = b.gl.getExtension('WEBGL_lose_context'); if (x) x.loseContext(); b.c.remove(); window.__w0bBare = null; return true; })()`);
-    return { ok: blank.medianB != null && tiny.medianB != null && full.medianB != null, blank, tiny, full, plan, bareSize: size, tinySize: [16, 9], attrs,
-      method: 'GPU-process footprint (median of 5 macOS footprint readings) on an empty page of the game origin, then with one bare WebGL2 canvas of the game\'s context attributes at 16 x 9 and at the fight\'s drawing-buffer size, 30 frames drawn each; read before the game page exists' };
+    // after the probe's page is gone (diagnostic, not a bucket): what the GPU process still holds of the probe. The ANGLE /
+    // Metal device state a first context creates is kept by the GPU process and SHARED by the game's context, so this is
+    // reported, never subtracted a second time
+    await withTimeout(page.close(), 15000, 'baseline page.close').catch(() => {}); closed = true;
+    await sleep(2000);
+    const afterClose = await footprintMedian(browser, 3, 600);
+    return { ok: blank.medianB != null && tiny.medianB != null && full.medianB != null, blank, tiny, full, afterClose, plan, bareSize: size, tinySize: [16, 9], attrs,
+      probeResidueMB: afterClose.medianB != null && blank.medianB != null ? MB(afterClose.medianB - blank.medianB) : null,
+      method: 'GPU-process footprint (median of 5 macOS footprint readings) on an empty page of the game origin, then with one bare WebGL2 canvas of the game\'s context attributes at 16 x 9 and at the fight\'s drawing-buffer size, 30 frames drawn each; read before the game page exists; the reading after the probe page closed is reported' };
   } catch (err) { return { ok: false, error: String(err.message || err).slice(0, 200) }; }
-  finally { await withTimeout(page.close(), 15000, 'baseline page.close').catch(() => {}); }
+  finally { if (!closed) await withTimeout(page.close(), 15000, 'baseline page.close').catch(() => {}); }
 }
 
 /** routing for the game-driven GPU memory outside the census (engine-gpu): the engine.js lines that drive it */
@@ -1516,7 +1625,8 @@ const SPLIT_TOLERANCE_B = 32e6;   // a negative remainder beyond this means the 
  * Checks: every bucket measured; the bare context was the game's drawing-buffer size; no bucket negative and the
  * remainder not below -SPLIT_TOLERANCE_B; the remainder routed with file:line.
  */
-function splitFootprint({ footprintB, base, gameSize, glBytes, routing }) {
+const ATTR_KEYS = ['alpha', 'depth', 'stencil', 'antialias', 'premultipliedAlpha', 'preserveDrawingBuffer'];
+function splitFootprint({ footprintB, base, gameSize, gameAttrs, glBytes, routing }) {
   const blankB = base?.blank?.medianB ?? null, tinyB = base?.tiny?.medianB ?? null, fullB = base?.full?.medianB ?? null;
   const measured = [footprintB, blankB, tinyB, fullB, glBytes].every((x) => x != null && Number.isFinite(x));
   const sameSize = !!base?.bareSize && !!gameSize && base.bareSize[0] === gameSize[0] && base.bareSize[1] === gameSize[1];
@@ -1528,6 +1638,7 @@ function splitFootprint({ footprintB, base, gameSize, glBytes, routing }) {
   const checks = {
     everyBucketMeasured: measured && blankB > 0,
     bareContextWasTheGameDrawingBufferSize: sameSize,
+    bareContextHadTheGameAttributes: !!gameAttrs && !!base?.attrs && ATTR_KEYS.every((k) => gameAttrs[k] === base.attrs[k]),
     noBucketNegative: measured && contextB >= -SPLIT_TOLERANCE_B && contextFixedB >= -SPLIT_TOLERANCE_B && defaultFbB >= -SPLIT_TOLERANCE_B,
     remainderNotBelowTolerance: remainderB != null && remainderB >= -SPLIT_TOLERANCE_B,
     remainderRoutedWithFileLine: Array.isArray(routing) && routing.length > 0 && routing.every((x) => !!x.fileLine),
@@ -1565,7 +1676,7 @@ async function a90Abs({ PORT }) {
     const perfMem = await page.evaluate('performance.memory ? { used: performance.memory.usedJSHeapSize, total: performance.memory.totalJSHeapSize, limit: performance.memory.jsHeapSizeLimit } : null');
     gpuSamples.push(await gpuProcess(browser));
     // the census at the last fight reading (A-vram-ledger's, installed before the context), by owner lane
-    const attrCfg = { drawOwners: DRAW_OWNERS.map((o) => ({ id: o.id, lanes: o.lanes, re: o.re.source, flags: o.re.flags })), ctxLanes: CTX_LANES };
+    const attrCfg = ATTR_CFG();
     const glAttr = await page.evaluate(`(() => { const a = window.__glCensus.attribute(${JSON.stringify(attrCfg)}); const e = __CTX__.engine, gl = e.renderer.getContext(); let canvas = null; try { canvas = e.renderTargetLedger().canvas || null; } catch (err) { canvas = null; }
       const lanes = {}; for (const o of a.owners) { const l = /^unregistered/.test(o.owner) ? 'UNREGISTERED scene roots' : o.lane; lanes[l] = (lanes[l] || 0) + o.textures + o.renderTargets + o.buffers; }
       const un = a.unattributed.textures.bytes + a.unattributed.renderTargets.bytes + a.unattributed.buffers.bytes;
@@ -1623,13 +1734,17 @@ async function a90Abs({ PORT }) {
       gpuControl = { ...g, ok: g.ok && allocOk && !!pin?.held, held: !!pin?.held, expectedB: exp, cycles, riseBand: GPU_RISE_BAND, fallOverRiseBand: GPU_FALL_BAND };
     } catch (err) { gpuControl = { ok: false, error: String(err.message || err).slice(0, 160) }; try { await page.evaluate(GPU_CONTROL('free')); await page.evaluate(GPU_CONTROL('unpin')); } catch { /* */ } }
     await page.evaluate(UNSTAGE);
-    const gpu = gpuSamples.filter((g) => g.found && g.footprintB != null);
+    // the graded readings, through the same predicates the negative controls feed (no literal stands in for a criterion)
+    const gpuReadings = (samples) => samples.filter((g) => g.found && g.footprintB != null && g.footprintB > 0);
+    const gpuMeasured = (samples) => gpuReadings(samples).length >= Math.max(2, Math.floor(fightS / 15));
+    const workloadRan = (w) => !!w && w.workloadPass === true && w.kills >= B.minKills;
+    const gpu = gpuReadings(gpuSamples);
     const gpuMax = gpu.length ? Math.max(...gpu.map((g) => g.footprintB)) : null;
     const gpuAt = gpu.length ? gpu[gpu.length - 1].footprintB : null;
     // the footprint split (at the last fight reading), against MEASURED buckets (targeted fix round 1)
     const glBytes = glAttr ? glAttr.totals.textures + glAttr.totals.renderTargets + glAttr.totals.buffers : null;
     const remainderRouting = routeRemainder();
-    const footprintSplit = { ...splitFootprint({ footprintB: gpuAt, base: pre, gameSize: glAttr?.drawingBuffer, glBytes, routing: remainderRouting }),
+    const footprintSplit = { ...splitFootprint({ footprintB: gpuAt, base: pre, gameSize: glAttr?.drawingBuffer, gameAttrs: glAttr?.gameAttrs, glBytes, routing: remainderRouting }),
       glCensusByLaneMB: glAttr ? Object.fromEntries(Object.entries(glAttr.lanes).sort((a, b) => b[1] - a[1]).map(([k, v]) => [k, MB(v)])) : null,
       unattributedGlMB: glAttr ? MB(glAttr.unattributedGlBytes) : null,
       glTopRenderTargets: glAttr ? glAttr.topRenderTargets.map((x) => ({ owner: x.owner, MB: MB(x.bytes), fileLines: routeRt(x.owner).fileLines })) : null,
@@ -1649,11 +1764,14 @@ async function a90Abs({ PORT }) {
     } catch (err) { heapGrowth = { error: String(err.message || err).slice(0, 160) }; }
     // NEGATIVE CONTROLS: each instrument criterion fed an input it must reject
     const negatives = [
-      neg('a90WorkloadRan', 'a workload that reports no pass', ({ workloadPass: false }).workloadPass === true),
-      neg('gpuProcessMeasured', 'no GPU-process reading', null !== null),
-      neg('footprintSplitIntoMeasuredBuckets', 'the split with no browser baseline', splitFootprint({ footprintB: gpuAt, base: { ...pre, blank: { medianB: null } }, gameSize: glAttr?.drawingBuffer, glBytes, routing: remainderRouting }).ok),
-      neg('footprintSplitIntoMeasuredBuckets', 'the split with a bare context of another size', splitFootprint({ footprintB: gpuAt, base: { ...pre, bareSize: [16, 9] }, gameSize: glAttr?.drawingBuffer, glBytes, routing: remainderRouting }).ok),
-      neg('footprintSplitIntoMeasuredBuckets', 'the split with 200 MB more census than the footprint holds', splitFootprint({ footprintB: gpuAt, base: pre, gameSize: glAttr?.drawingBuffer, glBytes: (gpuAt ?? 0) - (pre?.full?.medianB ?? 0) + 200e6, routing: remainderRouting }).ok),
+      neg('a90WorkloadRan', 'this run\'s workload result with one kill fewer than the floor', workloadRan({ ...a90, kills: B.minKills - 1 })),
+      neg('a90WorkloadRan', 'this run\'s workload result with its verdict failed', workloadRan({ ...a90, workloadPass: false })),
+      neg('gpuProcessMeasured', 'this run\'s GPU-process samples with the footprint reading missing (footprint tool failed)', gpuMeasured(gpuSamples.map((g) => ({ ...g, footprintB: null })))),
+      neg('gpuProcessMeasured', 'this run\'s GPU-process samples with the GPU process not found', gpuMeasured(gpuSamples.map((g) => ({ ...g, found: false })))),
+      neg('footprintSplitIntoMeasuredBuckets', 'the split with no browser baseline', splitFootprint({ footprintB: gpuAt, base: { ...pre, blank: { medianB: null } }, gameSize: glAttr?.drawingBuffer, gameAttrs: glAttr?.gameAttrs, glBytes, routing: remainderRouting }).ok),
+      neg('footprintSplitIntoMeasuredBuckets', 'the split with a bare context of another size', splitFootprint({ footprintB: gpuAt, base: { ...pre, bareSize: [16, 9] }, gameSize: glAttr?.drawingBuffer, gameAttrs: glAttr?.gameAttrs, glBytes, routing: remainderRouting }).ok),
+      neg('footprintSplitIntoMeasuredBuckets', 'the split with a bare context made with antialias on (attributes not the game\'s)', splitFootprint({ footprintB: gpuAt, base: { ...pre, attrs: { ...(pre?.attrs || {}), antialias: !(glAttr?.gameAttrs?.antialias) } }, gameSize: glAttr?.drawingBuffer, gameAttrs: glAttr?.gameAttrs, glBytes, routing: remainderRouting }).ok),
+      neg('footprintSplitIntoMeasuredBuckets', 'the split with 200 MB more census than the footprint holds', splitFootprint({ footprintB: gpuAt, base: pre, gameSize: glAttr?.drawingBuffer, gameAttrs: glAttr?.gameAttrs, glBytes: (gpuAt ?? 0) - (pre?.full?.medianB ?? 0) + 200e6, routing: remainderRouting }).ok),
       neg('remainderRoutedWithFileLine', 'the remainder resolved against an engine.js without the anchors', routeRemainder({ [ENGINE]: ['// no anchors'] }).length > 0),
       neg('heapGrowthAttributed', 'the live profile walked without its heaviest subtree', liveNeg?.lossyWalkWouldPass !== false),
       neg('heapGrowthAttributed', 'the live profile with every 50th sample on a node no owner holds', liveNeg?.foreignSamplesWouldPass !== false),
@@ -1662,8 +1780,8 @@ async function a90Abs({ PORT }) {
       neg('selfTestGpuKnownDelta', 'the GPU readings against twice the allocation', gpuControl?.cycles ? gpuControlGrade(gpuControl.cycles, gpuControl.expectedB * 2).ok : true),
     ];
     const instrument = {
-      a90WorkloadRan: a90.workloadPass === true,
-      gpuProcessMeasured: gpuMax !== null,
+      a90WorkloadRan: workloadRan(a90),
+      gpuProcessMeasured: gpuMeasured(gpuSamples),
       footprintSplitIntoMeasuredBuckets: !!footprintSplit.ok,
       heapGrowthAttributed: !!heapGrowth?.accounting?.ok,
       selfTestHeapKnownDelta: !!heapControl?.ok,
@@ -1981,6 +2099,8 @@ function referenceClean({ GATES }) {
     }
     for (const r of m.urlOnly) if (r.slot && readdirSync(dir).some((f) => f.replace(/\.[a-z]+$/i, '') === r.slot)) rowsProblems.push(`${relRoot(dir)}/${r.slot}: URL-only (${r.licence}) but stored`);
   }
+  // the row rules can fail (targeted fix round 1): a complete row passes, each bad variant of it is refused
+  const rules = rowRulesSelfTest(ROOT);
   // V12 / V22 / V24 / V46 / V48 point at reference/r5/**
   const NAMED = ['V12', 'V22', 'V24', 'V46', 'V48'];
   const pointing = NAMED.map((short) => {
@@ -2000,14 +2120,15 @@ function referenceClean({ GATES }) {
     everyFileHasAnAllowedRow: rowsProblems.length === 0,
     namedRowsPointAtR5: pointing.filter((x) => x.present).every((x) => x.ok),
     referenceSetPresent: storedRows > 0,
+    rowRulesRejectBadRows: rules.ok,
   };
   const pass = Object.values(checks).every(Boolean);
   return { pass, detail: {
     verdict: (pass ? 'PASS' : 'FAIL: ' + Object.keys(checks).filter((k) => !checks[k]).join(', '))
-      + ` — ${files.length} image(s) under reference/ (${storedRows} stored rows, ${urlOnlyRows} URL-only rows; licences ${JSON.stringify(licences)}); ${stills.rows.length} deleted Round-4 stills recorded with sha256, ${stillNamesPresent.length} present by name, ${reappeared.length} by content; `
+      + ` — ${files.length} image(s) under reference/ (${storedRows} stored rows, ${urlOnlyRows} URL-only rows; licences ${JSON.stringify(licences)}; MANIFEST layouts read by column name: ${Object.entries(byLaneLayout).map(([l, x]) => l + ' ' + x.stored + ' stored').join(', ')}); row-rule controls ${rules.cases ? rules.cases.filter((c) => c.ok).length + '/' + rules.cases.length : 'FAILED ' + rules.why}; ${stills.rows.length} deleted Round-4 stills recorded with sha256, ${stillNamesPresent.length} present by name, ${reappeared.length} by content; `
       + pointing.map((x) => (x.present ? `${x.gate} -> ${x.ok ? x.refs.join(' + ') : 'NOT r5: ' + JSON.stringify(x.refs) + ' ' + x.nonR5.join(' ')}` : `${x.gate}: not registered in this tree`)).join('; '),
     checks, topLevelImages: topLevel, deletedStills: stills.rows.length, deletedStillsPresentByName: stillNamesPresent, reappearedByContent: reappeared,
-    manifestProblems: rowsProblems, namedRows: pointing, manifestsByLane: byLaneLayout,
+    manifestProblems: rowsProblems, namedRows: pointing, manifestsByLane: byLaneLayout, rowRulesSelfTest: rules,
   } };
 }
 

@@ -168,10 +168,15 @@ export const MEMORY_BUDGETS = Object.freeze({
      * time-driven code; a real regression raises both). TARGETED FIX ROUND 1 (engineering + gate judges: requiring both
      * is looser than R48 c's "no owner may exceed its baseline by more than 10 %"): an owner now exceeds it when EITHER its
      * KB per frame OR its KB/s exceeds 1.10 x the baseline's. The absolute bars (srcKBps for all of src/**, fnKBps per
-     * function) bind each owner from the wave in `owners[].barsFrom` (R48 c's schedule, verbatim); an owner with
-     * `barsFrom: null` has no lane holding its files yet (engine.js -> §11 engine follow-up grant at W1 launch; the
-     * frozen movement and rigging -> §11 W1 perf-hygiene grant) and is graded by the baseline guard only, which also
-     * covers R46's carried classes (a)-(c). The srcKBps total binds once no src owner is left with barsFrom null.
+     * function) bind each owner from the wave in `owners[].barsFrom`: R48 c's schedule ("the first exit at which a lane
+     * holds that file"), one row per holding lane and wave (plan §2 rows, §6, §1.2 grants), `cls: 'held'`. An owner with
+     * `barsFrom: null` is ONLY one of two classes (targeted fix round 1; A-alloc-rate's schedule self-test checks it):
+     *   cls 'frozen'             plan §1.1 frozen files, and the kept files a W0 lane touched only through a §1.2 grant
+     *                            (-> §11 W1 perf-hygiene grant; R46's carried classes (a)-(c));
+     *   cls 'no-lane-after-W0b'  engine.js (-> §11 engine follow-up grant at W1 launch, R48 c) and the other files that,
+     *                            like engine.js, no §2 row holds after W0b (pipeline's assets.js, hero-body's anim/rigs/**,
+     *                            instruments-core's instruments/{lamps,roles,registry}.js and lib/**).
+     * Both are graded by the baseline guard only. The srcKBps total binds once no src owner is left with barsFrom null.
      * Owners are matched in order (first match wins); a src file no row matches is owner `other-src` (orchestrator).
      */
     baselineGuard: 1.10,
@@ -183,52 +188,60 @@ export const MEMORY_BUDGETS = Object.freeze({
        * W0b targeted fix round 1 (engineering-judge finding: whole directories that lanes hold from W1-W3 had
        * barsFrom null, so the 4 KB/s bar never bound there). Each row is ONE holding lane and the first wave exit after the
        * W0b baseline at which that lane holds the files (plan §2 rows, §1.2 grants; R48 c "the first exit at which a lane
-       * holds that file"). barsFrom null is kept ONLY for (a) the frozen kept systems of plan §1.1 and (b) files no lane
-       * holds after W0b (engine.js and the other W0-only files: R48 c routes engine.js to the §11 engine follow-up grant);
-       * both are graded by the baseline guard. First match wins, so the narrower rows come first.
+       * holds that file"). barsFrom null is kept ONLY for (a) the frozen kept files (plan §1.1, and kept files touched at W0
+       * only through a §1.2 grant: cls 'frozen') and (b) engine.js and the other files no lane holds after W0b (cls
+       * 'no-lane-after-W0b': R48 c routes engine.js to the §11 engine follow-up grant); both are graded by the baseline
+       * guard. First match wins, so the narrower rows come first.
        */
       // world-ground W1 (plan §2: world/{terrain,vegetation,water}.js, world/island/**, world/datum/**)
-      { id: 'terrain', files: '^/src/world/terrain\\.js$', lane: 'world-ground', barsFrom: 'W1', ruling: 'R48 (c): noise2D / getHeight' },
-      { id: 'world-ground', files: '^/src/world/(vegetation|water)\\.js$|^/src/world/(island|datum)/', lane: 'world-ground', barsFrom: 'W1', ruling: 'plan §2 world-ground (W1-W4)' },
+      { id: 'terrain', files: '^/src/world/terrain\\.js$', lane: 'world-ground', cls: 'held', barsFrom: 'W1', ruling: 'R48 (c): noise2D / getHeight' },
+      { id: 'world-ground', files: '^/src/world/(vegetation|water)\\.js$|^/src/world/(island|datum)/', lane: 'world-ground', cls: 'held', barsFrom: 'W1', ruling: 'plan §2 world-ground (W1-W4)' },
       // world-sky W1 (environment.js)
-      { id: 'world-sky', files: '^/src/world/environment\\.js$', lane: 'world-sky', barsFrom: 'W1', ruling: 'plan §2 world-sky (W1, W4)' },
+      { id: 'world-sky', files: '^/src/world/environment\\.js$', lane: 'world-sky', cls: 'held', barsFrom: 'W1', ruling: 'plan §2 world-sky (W1, W4)' },
       // melee W1: playerAnimator.js (R48 c), anim/{meleeLayer,clipMelee,castLayer}.js, combat/{melee,lanceStow}.js
-      { id: 'playerAnimator', files: '^/src/entities/playerAnimator\\.js$', lane: 'melee (hero-body until W1)', barsFrom: 'W1', ruling: 'R48 (c): _springs' },
-      { id: 'melee', files: '^/src/entities/anim/(meleeLayer|clipMelee|castLayer)\\.js$|^/src/combat/(melee|lanceStow)\\.js$', lane: 'melee', barsFrom: 'W1', ruling: 'plan §2 melee (W1, W2)' },
+      { id: 'playerAnimator', files: '^/src/entities/playerAnimator\\.js$', lane: 'melee (hero-body until W1)', cls: 'held', barsFrom: 'W1', ruling: 'R48 (c): _springs' },
+      { id: 'melee', files: '^/src/entities/anim/(meleeLayer|clipMelee|castLayer)\\.js$|^/src/combat/(melee|lanceStow)\\.js$', lane: 'melee', cls: 'held', barsFrom: 'W1', ruling: 'plan §2 melee (W1, W2)' },
       // world-props W1: fauna.js (R48 c), props.js, props/** except settlement.js / npcs.js (settlements'), sites/**
-      { id: 'fauna', files: '^/src/world/fauna\\.js$', lane: 'world-props', barsFrom: 'W1', ruling: 'R48 (c)' },
-      { id: 'settlements', files: '^/src/world/(camp\\.js$|npc/|settlements/)|^/src/world/props/(settlement|npcs)\\.js$', lane: 'settlements', barsFrom: 'W2', ruling: 'R48 (c); plan §2 settlements (W2, W4)' },
-      { id: 'world-props', files: '^/src/world/props\\.js$|^/src/world/props/|^/src/world/sites/', lane: 'world-props', barsFrom: 'W1', ruling: 'plan §2 world-props (W1, W3, W4)' },
+      { id: 'fauna', files: '^/src/world/fauna\\.js$', lane: 'world-props', cls: 'held', barsFrom: 'W1', ruling: 'R48 (c)' },
+      { id: 'settlements', files: '^/src/world/(camp\\.js$|npc/|settlements/)|^/src/world/props/(settlement|npcs)\\.js$', lane: 'settlements', cls: 'held', barsFrom: 'W2', ruling: 'R48 (c); plan §2 settlements (W2, W4)' },
+      { id: 'world-props', files: '^/src/world/props\\.js$|^/src/world/props/|^/src/world/sites/', lane: 'world-props', cls: 'held', barsFrom: 'W1', ruling: 'plan §2 world-props (W1, W3, W4)' },
       // frozen UI engines (plan §1.1): no lane holds them
-      { id: 'frozen-ui-engines', files: '^/src/ui/dialogue\\.js$|^/src/items/(interactables|inventory)\\.js$|^/src/audio/(bank|buses|clock|music|probe|spatial|zones)\\.js$|^/src/combat/particles\\.js$', lane: 'FROZEN UI engines (plan §1.1): §11 W1 perf-hygiene grant', barsFrom: null, ruling: 'plan §1.1 (frozen)' },
+      { id: 'frozen-ui-engines', files: '^/src/ui/dialogue\\.js$|^/src/items/(interactables|inventory)\\.js$|^/src/audio/(bank|buses|clock|music|probe|spatial|zones)\\.js$|^/src/combat/particles\\.js$', lane: 'FROZEN UI engines (plan §1.1): §11 W1 perf-hygiene grant', barsFrom: null, cls: 'frozen', ruling: 'plan §1.1 (frozen)' },
       // armory W1: combat/{bow,weapons,arrows,combat}.js, src/hero/** (from W1 day 1)
-      { id: 'armory', files: '^/src/combat/(bow|weapons|arrows|combat)\\.js$|^/src/hero/', lane: 'armory', barsFrom: 'W1', ruling: 'plan §2 armory (W1, W3)' },
+      { id: 'armory', files: '^/src/combat/(bow|weapons|arrows|combat)\\.js$|^/src/hero/', lane: 'armory', cls: 'held', barsFrom: 'W1', ruling: 'plan §2 armory (W1, W3)' },
       // progression W3: core/{progression,save}.js, ui/{quests,skills}.js, items/{datapoints,fieldbooks}.js
-      { id: 'progression', files: '^/src/core/(progression|save)\\.js$|^/src/ui/(quests|skills)\\.js$|^/src/items/(datapoints|fieldbooks)\\.js$', lane: 'progression', barsFrom: 'W3', ruling: 'plan §2 progression (W3)' },
+      { id: 'progression', files: '^/src/core/(progression|save)\\.js$|^/src/ui/(quests|skills)\\.js$|^/src/items/(datapoints|fieldbooks)\\.js$', lane: 'progression', cls: 'held', barsFrom: 'W3', ruling: 'plan §2 progression (W3)' },
       // combat-kit W2: the rest of combat/** and items/**, ui/wheel.js
-      { id: 'combat-kit', files: '^/src/combat/|^/src/items/|^/src/ui/wheel\\.js$', lane: 'combat-kit', barsFrom: 'W2', ruling: 'plan §2 combat-kit (W2)' },
+      { id: 'combat-kit', files: '^/src/combat/|^/src/items/|^/src/ui/wheel\\.js$', lane: 'combat-kit', cls: 'held', barsFrom: 'W2', ruling: 'plan §2 combat-kit (W2)' },
       // shell-ui W2 (R48 c): the rest of ui/**
-      { id: 'shell-ui', files: '^/src/ui/', lane: 'shell-ui', barsFrom: 'W2', ruling: 'R48 (c)' },
+      { id: 'shell-ui', files: '^/src/ui/', lane: 'shell-ui', cls: 'held', barsFrom: 'W2', ruling: 'R48 (c)' },
       // audio W3 (R48 c): the rest of audio/** (audio.js, manifest.js)
-      { id: 'audio', files: '^/src/audio/', lane: 'audio', barsFrom: 'W3', ruling: 'R48 (c)' },
+      { id: 'audio', files: '^/src/audio/', lane: 'audio', cls: 'held', barsFrom: 'W3', ruling: 'R48 (c)' },
       // the Instrument kinds, by the lane that builds each (plan §2 instruments-a..d); src/instruments/lib/{tether,followLeader}.js with theirs
-      { id: 'instruments-a', files: '^/src/instruments/kinds/(tiller|plumb|peg)', lane: 'instruments-a', barsFrom: 'W1', ruling: 'plan §2 instruments-a (W1); A-alloc-machines grades per frame owner (R46)' },
-      { id: 'instruments-b', files: '^/src/instruments/kinds/(sickle|screed|gauge)', lane: 'instruments-b', barsFrom: 'W2', ruling: 'plan §2 instruments-b (W2)' },
-      { id: 'instruments-c', files: '^/src/instruments/kinds/(spindle|kiln|davit|sonde)|^/src/instruments/lib/tether\\.js$', lane: 'instruments-c', barsFrom: 'W3', ruling: 'plan §2 instruments-c (W3)' },
-      { id: 'instruments-d', files: '^/src/instruments/kinds/(dredge|transit)|^/src/instruments/lib/followLeader\\.js$', lane: 'instruments-d', barsFrom: 'W4', ruling: 'plan §2 instruments-d (W4)' },
+      { id: 'instruments-a', files: '^/src/instruments/kinds/(tiller|plumb|peg)', lane: 'instruments-a', cls: 'held', barsFrom: 'W1', ruling: 'plan §2 instruments-a (W1); A-alloc-machines grades per frame owner (R46)' },
+      { id: 'instruments-b', files: '^/src/instruments/kinds/(sickle|screed|gauge)', lane: 'instruments-b', cls: 'held', barsFrom: 'W2', ruling: 'plan §2 instruments-b (W2)' },
+      { id: 'instruments-c', files: '^/src/instruments/kinds/(spindle|kiln|davit|sonde)|^/src/instruments/lib/tether\\.js$', lane: 'instruments-c', cls: 'held', barsFrom: 'W3', ruling: 'plan §2 instruments-c (W3)' },
+      { id: 'instruments-d', files: '^/src/instruments/kinds/(dredge|transit)|^/src/instruments/lib/followLeader\\.js$', lane: 'instruments-d', cls: 'held', barsFrom: 'W4', ruling: 'plan §2 instruments-d (W4)' },
       // brand W4: src/studio/**
-      { id: 'studio', files: '^/src/studio/', lane: 'brand', barsFrom: 'W4', ruling: 'plan §2 brand (W4: src/studio/**)' },
-      // ---- barsFrom null: frozen (plan §1.1) or no lane after W0b ----
-      { id: 'engine', files: '^/src/core/engine\\.js$', lane: 'engine (no lane after W0b): §11 engine follow-up grant, assigned at W1 launch', barsFrom: null, ruling: 'R48 (c)' },
-      { id: 'frozen-spatial', files: '^/src/core/(collision|nav|hitHulls)\\.js$', lane: 'FROZEN kept movement: §11 W1 perf-hygiene grant (bit-identical outputs)', barsFrom: null, ruling: 'R48 (c), R46 (a)-(c)' },
-      { id: 'frozen-control', files: '^/src/core/(input|events)\\.js$', lane: 'FROZEN control (plan §1.1): §11 W1 perf-hygiene grant', barsFrom: null, ruling: 'plan §1.1 (frozen)' },
-      { id: 'frozen-rigging', files: '^/src/entities/anim/(boneSpace|restPose|clipLayer|retargeter|rigDebug|locomotion)\\.js$', lane: 'FROZEN kept rigging: §11 W1 perf-hygiene grant (bit-identical outputs)', barsFrom: null, ruling: 'R48 (c), R46 (a)-(c)' },
-      { id: 'frozen-machine-rig', files: '^/src/entities/machines/(gait|autorig)\\.js$|^/src/entities/machines/rig/', lane: 'FROZEN kept machine rig: §11 W1 perf-hygiene grant (bit-identical outputs)', barsFrom: null, ruling: 'R48 (c), R46 (a)-(c)' },
-      { id: 'frozen-machine-ai', files: '^/src/entities/machines/ai/(index|emit|engage|reactions|rng|search|sites|squad|stimulus)\\.js$', lane: 'FROZEN machine AI engine (plan §1.1, after instruments-core W0)', barsFrom: null, ruling: 'plan §1.1; R46 (a)-(c)' },
-      { id: 'frame-loop', files: '^/src/main\\.js$', lane: 'FROZEN frame loop (main.js): orchestrator', barsFrom: null, ruling: 'plan §1.1' },
-      { id: 'hero-body', files: '^/src/entities/player\\.js$|^/src/entities/anim/', lane: 'hero-body (W0b only; player.js frozen outside its grant, plan §1.1): no lane after W0b', barsFrom: null, ruling: 'no lane holds these after W0b: baseline guard' },
-      { id: 'instruments-core', files: '^/src/entities/machines/|^/src/instruments/', lane: 'instruments-core (W0a, W0b): no lane after W0b; A-alloc-machines grades per frame owner (R46); the legacy kinds go at the W2 exit (R46 d)', barsFrom: null, ruling: 'R46' },
-      { id: 'pipeline', files: '^/src/core/assets(\\.specs)?\\.js$', lane: 'pipeline (W0a, W0b): no lane after W0b', barsFrom: null, ruling: 'no lane holds these after W0b: baseline guard' },
+      { id: 'studio', files: '^/src/studio/', lane: 'brand', cls: 'held', barsFrom: 'W4', ruling: 'plan §2 brand (W4: src/studio/**)' },
+      // instruments-b W2 exit (plan §6, §1.2 deletion grant; R46 d): the legacy species files and the expansion shells it deletes
+      // there. A bar binding at that exit grades any of them that survives it.
+      { id: 'legacy-species', files: '^/src/entities/machines/(strider|scrapper|snapmaw|ravager|corruptor|stormbird|glinthawk|broadhead|grazer|shellwalker|longleg|legacy)\\.js$|^/src/entities/machines/rig/(shells|rigs)-expansion\\.js$', lane: 'instruments-b (deletes them at the W2 exit, plan §6; R46 d)', barsFrom: 'W2', cls: 'held', ruling: 'plan §6 W2-exit row; R46 (d)' },
+      // ---- barsFrom null: ONLY (1) frozen / kept files (plan §1.1, and the kept files a W0 lane touched only through a §1.2
+      // grant) and (2) engine.js and the other files that, like engine.js, no lane holds after W0b (R48 c's own reason for
+      // engine.js). Both are graded by the baseline guard; scheduleSelfTest() checks every null row carries one of the two. ----
+      { id: 'engine', files: '^/src/core/engine\\.js$', lane: 'engine (no lane after W0b): §11 engine follow-up grant, assigned at W1 launch', barsFrom: null, cls: 'no-lane-after-W0b', ruling: 'R48 (c)' },
+      { id: 'frame-loop', files: '^/src/main\\.js$', lane: 'FROZEN frame loop (main.js, plan §1.1 engine row): orchestrator', barsFrom: null, cls: 'frozen', ruling: 'plan §1.1' },
+      { id: 'frozen-spatial', files: '^/src/core/(collision|nav|hitHulls)\\.js$', lane: 'FROZEN kept movement: §11 W1 perf-hygiene grant (bit-identical outputs)', barsFrom: null, cls: 'frozen', ruling: 'plan §1.1; R48 (c), R46 (a)-(c)' },
+      { id: 'frozen-control', files: '^/src/core/(input|events)\\.js$|^/src/entities/player\\.js$', lane: 'FROZEN control (plan §1.1: input.js, events.js, player.js outside the hero-body W0 grant; melee\'s W1 <= 15-line player.js grant re-grades it, R46): §11 W1 perf-hygiene grant', barsFrom: null, cls: 'frozen', ruling: 'plan §1.1, §1.2' },
+      { id: 'frozen-rigging', files: '^/src/entities/anim/(boneSpace|restPose|clipLayer|retargeter|rigDebug|locomotion)\\.js$', lane: 'FROZEN kept rigging: §11 W1 perf-hygiene grant (bit-identical outputs)', barsFrom: null, cls: 'frozen', ruling: 'plan §1.1; R48 (c), R46 (a)-(c)' },
+      { id: 'kept-anim', files: '^/src/entities/anim/(clipLibrary|boneMap|registry|index)\\.js$', lane: 'KEPT animation plumbing (hero-body edited it at W0b only through its §1.2 grant; no lane after W0b)', barsFrom: null, cls: 'frozen', ruling: 'plan §1.2 hero-body W0 grant' },
+      { id: 'frozen-machine-rig', files: '^/src/entities/machines/(gait|autorig)\\.js$|^/src/entities/machines/rig/', lane: 'FROZEN kept machine rig: §11 W1 perf-hygiene grant (bit-identical outputs)', barsFrom: null, cls: 'frozen', ruling: 'plan §1.1; R48 (c), R46 (a)-(c)' },
+      { id: 'frozen-machine-ai', files: '^/src/entities/machines/ai/(index|emit|engage|reactions|rng|search|sites|squad|stimulus)\\.js$', lane: 'FROZEN machine AI engine (plan §1.1, after instruments-core W0)', barsFrom: null, cls: 'frozen', ruling: 'plan §1.1; R46 (a)-(c)' },
+      { id: 'kept-machines', files: '^/src/entities/machines/(machine|index|variety-assets|parts)\\.js$|^/src/entities/machines/ai/(tables|doctrine|attacks|perception)\\.js$', lane: 'KEPT machine plumbing (instruments-core edited it at W0 only through its §1.2 grants; no lane after W0b; A-alloc-machines grades per frame owner, R46)', barsFrom: null, cls: 'frozen', ruling: 'plan §1.2 instruments-core W0 grants; R46' },
+      { id: 'hero-rigs', files: '^/src/entities/anim/', lane: 'hero-body (W0b only: anim/rigs/** and any other anim file it created): no lane after W0b', barsFrom: null, cls: 'no-lane-after-W0b', ruling: 'plan §2 hero-body (W0b)' },
+      { id: 'instruments-core', files: '^/src/entities/machines/|^/src/instruments/', lane: 'instruments-core (W0a, W0b: instruments/{lamps,roles,registry}.js, instruments/lib/**, legacy-free machine files): no lane after W0b; A-alloc-machines grades per frame owner (R46)', barsFrom: null, cls: 'no-lane-after-W0b', ruling: 'plan §2 instruments-core (W0a, W0b); R46' },
+      { id: 'pipeline', files: '^/src/core/assets(\\.specs)?\\.js$', lane: 'pipeline (W0a, W0b): no lane after W0b', barsFrom: null, cls: 'no-lane-after-W0b', ruling: 'plan §2 pipeline (W0a, W0b)' },
     ].map(Object.freeze)) }),
   /** A-vram-ledger: plan §4.4 — textures <= 160, render targets <= the A-rt-ledger cap 170, geometry <= 120, total <= 450 MB */
   vram: Object.freeze({ texturesB: 160e6, renderTargetsB: 170e6, geometryB: 120e6, totalB: 450e6 }),

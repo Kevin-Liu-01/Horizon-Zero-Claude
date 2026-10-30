@@ -3,21 +3,35 @@
 Owner: gates-perf (plan §2; top-level file). Every visual gate is judged by an R29 judge against a licence-clean
 reference that a lane keeps under `reference/r5/<lane>/` with its own `MANIFEST.md` (plan §10.2 item 4):
 
-- **stored** rows: PD, CC0-1.0, CC-BY-x.y (with the exact attribution string) or own photo; each row names the
-  file, the gates it serves, the author, the licence, the source URL, the retrieved date and the file's sha256;
+- **stored** rows: PD, CC0-1.0, CC-BY-x.y (with the exact attribution string, in an `attribution` column or as a
+  `(attribution: …)` note in the licence cell), own photo, or a project-original render of the live build; plan §10.2
+  item 4 requires the **source URL, author, licence and retrieved date** of each (a project-original render names what made
+  it instead of a URL; a CC0 source off Commons gives its URL); `slot`, `gates`, `subject`, `sha256` and `attribution`
+  columns are optional, and a row without a `sha256` is hashed at verify time and the hash reported;
 - **URL-only** rows: share-alike or unclear sources, recorded as a link and never stored;
 - nothing from Horizon / Sony / Guerrilla / Epic / Fortnite, no ripped or fan material (plan §0 rule 9).
 
+Each lane keeps its own table layout. `tools/r5-refs/manifest.mjs` reads every Markdown table of a lane's `MANIFEST.md` **by
+column name** (author; source / source URL; licence; retrieved / made; file; gates / used by; …) and normalises the
+licence cell (`Public domain` → PD, `CC BY 3.0 (attribution: …)` → CC-BY-3.0 + its attribution, `project-original`, …);
+`tools/r5-refs/fetch.mjs` holds every stored row to one rule set (`storedRowProblems`), whose own negative controls
+(`rowRulesSelfTest`) must reject a bad row.
+
 Fetch and verify with `tools/r5-refs/fetch.mjs` (Wikimedia Commons API, filtered to PD / CC0 / CC BY; `--verify` is
-offline). Gates: `A-reference-clean`, `A-reference-set` (`tools/gates/gates-perf.w0b.mjs`).
+offline and prints the per-folder counts; `--selftest` runs the classifier, parser and row-rule controls). Gates:
+`A-reference-clean`, `A-reference-set` (`tools/gates/gates-perf.w0b.mjs`).
 
 ## Lane folders
 
-| folder | rows | serves |
-|---|---|---|
-| `reference/r5/gates-perf/` | 13 stored (11 PD, 1 CC0, 1 CC BY 2.0) | the carried Round-4 visual rows gates-perf re-staged: V1–V4, V12–V14, V21 (R33 c), the framing row V22 (`run-rear`), V24, and the lance slots V46–V49 name |
+Counts as `tools/r5-refs/fetch.mjs --verify` reads them (Oct 30, W0b targeted fix round 1).
 
-Other lanes add `reference/r5/<lane>/` (e.g. hero-body's `reference/r5/hero/`) with the same MANIFEST format.
+| folder | lane | where it lives | layout (header) | rows | serves |
+|---|---|---|---|---|---|
+| `reference/r5/gates-perf/` | gates-perf | this branch | `file \| slot \| gates \| subject \| author \| licence \| source \| retrieved \| sha256 \| attribution` + URL-only `slot \| gates \| source \| licence \| why` | 37 stored (22 PD, 5 CC0, 8 CC BY 2.0, 1 CC BY 3.0, 1 CC BY 4.0), 0 URL-only | every visual row of the carried suite (38 gate ids: V1–V14, V20–V33b, V36–V38, V44–V49, V79), incl. the kept animator rows V1–V4, V12–V14, V21 (R33 c), V22 (`run-rear`), V24, the lance slots V46–V49 |
+| `reference/r5/brand/` | brand | main (`d0f583b`) | `file \| used by \| what to compare \| author \| source URL \| licence \| retrieved` | 4 stored (2 PD, 1 CC BY 3.0, 1 CC BY 2.0; attributions in the licence cell), 1 URL-only (CC BY-SA 4.0), 1 spec note | V-logo, V-logo-4k, V38-title |
+| `reference/r5/hero/` | hero-body | `r5/w0b-hero-body` | `file \| gates \| what \| source \| licence \| made \| sha256` (+ a `gate \| reference` pointer table, not rows) | 4 stored (2 project-original renders, 2 CC0 renders of the Quaternius UBC base, itch.io source) | V-brea-one-glance, V-brea-face, A-face-delta |
+
+Other lanes add `reference/r5/<lane>/` with any table layout that carries those columns.
 
 ## Deleted at W0b (R30): the Round-4 stills
 

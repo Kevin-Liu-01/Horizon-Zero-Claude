@@ -165,7 +165,10 @@ sample: load, other gate Chromes, 5173 connections) and the run id, plus the sha
   - otherwise a no-src bucket named by the nearest script frame: three.js (engine-gpu), other vendor deps, the Vite dev
     client, this gate's own page code, page script outside `src/`;
   - otherwise "browser / V8 runtime" (no script frame on the stack).
-  The src bytes and the buckets must sum to the profile's total to the byte (`accounting.exact`).
+  **TF1:** `src + no-src = total` is true by construction and is now an ungraded structural note. Graded instead, against
+  V8's second record of the same window (`profile.samples`): every sample's node is a node the walk named (0 unnamed sample
+  bytes), the walk's bytes equal the sample list's within 5 %, and the walk holds at least samples x the sampling interval
+  (`accountingOf`).
 - *Self-test: a planted allocator.* A module of known allocation is served at `/src/__gates-perf-control__.js` by CDP
   `Fetch.fulfillRequest` in that page only. Nothing is written under `src/`. The same source is also served outside `src/`.
   - Each copy calls `__w0bControlAlloc()` once per frame.
@@ -178,16 +181,21 @@ sample: load, other gate Chromes, 5173 connections) and the run id, plus the sha
 - *Self-test: the baseline guard.* On the run's own owner table:
   - an unchanged baseline flags 0 owners;
   - the largest owner grown 25 % on both metrics is flagged, alone;
-  - grown on KB/frame only, it is not flagged.
+  - grown 5 % on both, it is not flagged; grown 25 % on KB/frame only, or on KB/s only, it is flagged, alone (TF1).
 - *The R48 (c) bars.*
   - Baseline: `CAL_ALLOC_RECORD_BASELINE=1` writes `tools/gates/alloc-baseline.json` (per owner and per over-bar function
     KB/frame and KB/s, the box sample, git HEAD and run id) from a run whose instrument passed. `=merge` adds a further run,
     keeping per owner the larger number.
-  - Guard: with a baseline present, an owner fails when **both** its KB/frame and its KB/s exceed 1.10 x the baseline's.
-  - Schedule: each owner's 4 KB/s per-function bar binds from its `barsFrom` wave (R48 c verbatim: terrain W1,
-    playerAnimator W1, fauna W1, shell-ui W2, settlements W2, audio W3). engine.js, the frozen movement and rigging, the
-    frame loop, hero-body's other files, the Instruments (graded by `A-alloc-machines`, R46) and the rest have no date:
-    baseline guard only. The 64 KB/s src total binds once no owner is left without a date.
+  - Guard: with a baseline present, an owner fails when **either** its KB/frame or its KB/s exceeds 1.10 x the baseline's
+    (TF1; fix round 3 required both).
+  - Schedule (TF1): one owner row per holding lane and wave (plan §2, §6): world-ground W1 (terrain, vegetation, water,
+    island/**, datum/**), world-sky W1, world-props W1 (props.js, props/**, sites/**, fauna), melee W1 (playerAnimator,
+    anim/{meleeLayer,clipMelee,castLayer}, combat/{melee,lanceStow}), armory W1 (combat/{bow,weapons,arrows,combat}, hero/**),
+    instruments-a W1, settlements W2, combat-kit W2 (the rest of combat/** and items/**, ui/wheel), shell-ui W2, the legacy
+    species W2 (instruments-b deletes them at that exit), progression W3, audio W3, instruments-c W3, instruments-d W4,
+    studio W4. `barsFrom: null` only for `cls: 'frozen'` (plan §1.1, and kept files touched at W0 only through §1.2 grants)
+    and `cls: 'no-lane-after-W0b'` (engine.js and the other files no lane holds after W0b): baseline guard only. The 64 KB/s
+    src total binds once no owner is left without a date.
   - The post-GC slope binds at the global run.
 
 **A-vram-ledger**
@@ -210,16 +218,20 @@ sample: load, other gate Chromes, 5173 connections) and the run id, plus the sha
   engine's own ledger row must agree, and disposing them must return every census total to its value before, to the byte.
 
 **A90-abs**
-- *Attribution.* The footprint is split at the last fight reading, with the GL census installed in this page too:
-  - GL objects by owner lane;
-  - the canvas drawing buffers;
-  - the remainder, the Chrome GPU process and ANGLE/Metal runtime itself.
+- *Attribution (TF1: measured buckets).* The footprint is split at the last fight reading into buckets that are each measured:
+  - the browser baseline: the GPU process with an empty page of the game origin, read in the same Chrome before the game boots;
+  - the WebGL context + swap chain: the same page with one bare WebGL2 canvas of the game's context attributes at 16 x 9 and
+    then at the fight's drawing-buffer size (the default framebuffer = the difference, with its bytes per pixel);
+  - the GL census by owner lane (installed before the game's context);
+  - the rest: game-driven GPU memory outside the census, routed to engine-gpu with `engine.js` file:line.
+  The fix-round-3 "browser remainder" with `exact: true` is gone.
   The heap the workload and the fight add is attributed by a live-object sampling profile (src owner, no-src buckets).
 - *Self-tests: known deltas.*
   - Heap: 128 arrays of 65,536 small integers (33.56 MB, computed exactly) are retained. The post-GC heap must rise by that
     within 5 % and fall back when they are released.
-  - GPU: with the world held, a 4096 x 4096 RGBA8 render target (67.11 MB) is allocated and cleared. The GPU process
-    footprint (median of 5 readings) must rise by 0.75–1.6 x of that. The fall after dispose is reported.
+  - GPU: with the world held, a 4096 x 4096 RGBA8 render target (67.11 MB) is allocated, cleared and disposed, 3 times. On
+    the medians over the cycles the rise must be 0.75–1.6 x the allocation **and** the fall after dispose 0.75–1.25 x the
+    rise (TF1).
 
 ## B.2 Measured numbers (final build; lane block `p5255-92940-1792748710941`, 09:45Z, unless named)
 
@@ -420,10 +432,10 @@ export const BUDGETS, STAGE_PRELUDE, PERF_SCENARIOS, MEMORY_BUDGETS   // unchang
 export { RT_LEDGER } from './r5-probes/rt-ledger.mjs'               // unchanged (R44)
 MEMORY_BUDGETS.alloc = { srcKBps: 64, fnKBps: 4, heapSlopeBps: 0, windowS: 10, warmupS: 3, samplingIntervalB: 2048, refFps: 60,
   attribution: 'caller', emptyFrameS: 5,
-  baselineGuard: 1.10,                                  // NEW (R48 c): no owner > 1.10 x its baseline (KB/frame AND KB/s)
+  baselineGuard: 1.10,                                  // NEW (R48 c): no owner > 1.10 x its baseline (KB/frame OR KB/s, TF1)
   baselineFile: 'tools/gates/alloc-baseline.json',      // NEW: recorded at the orchestrator's W0b global run, then committed
   controlTolerance: 0.15, controlWindowS: 6,            // NEW: the planted-allocator self-test
-  owners: [{ id, files /* RegExp source over /src/... */, lane, barsFrom /* 'W1' | 'W2' | 'W3' | null */, ruling }] }   // NEW, R48 (c)'s schedule
+  owners: [{ id, files /* RegExp source over /src/... */, lane, barsFrom /* 'W1'..'W4' | null */, cls /* TF1: 'held' | 'frozen' | 'no-lane-after-W0b' */, ruling }] }
 ```
 
 ### 2.3 `tools/gates/gates-perf.w0b.mjs`
@@ -549,7 +561,7 @@ engine follow-up grant.
 | **orchestrator: merge** | Part A (§5.1) can merge first; Part B (§5.2) is additive. Then merge engine-gpu's W0b tier and instruments-core's W0b A90b fix. |
 | **orchestrator: W0b global run, port 5270** (quiet box, one Chrome) | <ol><li>`CAL_GATE_LEDGER=<a ledger you hold> CAL_ALLOC_RECORD_BASELINE=1 node tools/gates.mjs --port 5270 --only A-alloc-rate,A-vram-ledger,A90-abs` records the R48 (c) baseline and grades the binding bars. Add `CAL_ALLOC_RECORD_BASELINE=merge` runs if you record over several runs (B.4).</li><li>Commit `tools/gates/alloc-baseline.json`.</li><li>`node tools/gates.r5.gates-perf.mjs --instruments --port 5270` verifies the seals.</li><li>`--lane carried` once, then `--only A50b-aim-on-drawn-geometry` until its first 5 observations decide.</li><li>The V21 judge (next row).</li><li>`CAL_ORCHESTRATOR_PUBKEY=<your key> node tools/gates.mjs --port 5270 --only A-carried-suite` in an invocation of its own (graded on 5270, not PENDING).</li><li>After hero-body's exit, add `CAL_SHADOW_EXITED=hero-body`.</li></ol> |
 | **orchestrator: R29 judge for V21** | Keygen and register are unchanged: `--judge-keygen`, `--judge-register --port 5271`. The judge: `--judge --list --port 5270`, then `--judge --seal <id> --id V21-camera-cover --pass true\|false --rationale "…" --judge-name <who> --port 5271 --judge-key judge.pem --reference reference/r5/gates-perf/chase-camera.jpg`. |
-| **orchestrator: decisions** | <ol><li>The baseline-guard metric: both KB/frame and KB/s over 1.10 x (B.4).</li><li>Whether the W0b baseline is recorded from one global run or from the larger of several (`merge`). On an unchanged build, two consecutive runs flagged 2 of 17 owners (B.4).</li><li>If A90-abs's GPU control leaves its 0.75–1.6 x band on the quiet box: grade the fall after dispose instead (§3 gap 4).</li></ol> |
+| **orchestrator: decisions** | <ol><li>The baseline-guard metric is now EITHER KB/frame OR KB/s over 1.10 x (TF1, the judges' reading of R48 c); B.4's two-run test was made under the old rule.</li><li>Whether the W0b baseline is recorded from one global run or from the larger of several (`merge`). On an unchanged build, two consecutive runs flagged 2 of 17 owners (B.4).</li><li>If A90-abs's GPU control leaves its 0.75–1.6 x band on the quiet box: grade the fall after dispose instead (§3 gap 4).</li></ol> |
 | **engine-gpu** | **A-vram-ledger / A90-abs / A21.** Merge the W0b tier: your report gives render targets 127.27 MB at DPR 1.25. Here, at the shipped `high` (DPR 1.5), the census attributes 437.75 MB of render targets to the 23 ledger rows, including `post:scene` (194.40 MB; 2400 x 1350 x 4-sample MSAA colour + depth), the CSM cascades (3 x 33.55 MB), `post:pingA`/`pingB` and SMAA `edgesRT`/`weightsRT` (4 x 25.92 MB). File:line: `src/core/engine.js` `renderTargetLedger()` rows (the tier's DPR cap, GTAO resolution and AA). **A-alloc-rate** (no lane after W0b; §11 engine follow-up grant at W1 launch): `engine.js:273` `ScenePass.render` → `renderer.render`, three re-deriving a program key every frame (a material whose `version` changes per frame, or a light or shadow toggled per frame); `engine.js:1352`, the cull pass's `scene.traverse((o) => …)` closure. |
 | **instruments-core** | **A90b** (R34): 24 Bones from `autorig.js:75` held after 30 Tiller kills in this tree; your unmerged W0b fix records 0, 3 of 3. **A73**: the voice-seed clause is SKIP-replaced (audio W3, R48 a). Allocation (graded by your `A-alloc-machines`, R46): `machines/index.js:533`, `ai/attacks.js:529`, `machine.js:2237` `_updateEyes`, `:1771`. |
 | **world-ground (W1; terrain.js bars bind at W1)** | `terrain.js:87`: `const [i1, j1] = x0 > y0 ? [1, 0] : [0, 1];` allocates an array and an iterator on every `noise2D` call; `const i1 = x0 > y0 ? 1 : 0, j1 = 1 - i1;` removes it. `getHeight` (`terrain.js:1860`) has no allocation of its own: its share is most likely `noise2D` inlined into it (re-measure after the fix). `vegetation.js:117` and `:889` `_fillChunk`. |
