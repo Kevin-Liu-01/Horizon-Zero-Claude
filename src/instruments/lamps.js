@@ -113,17 +113,19 @@ export const BEAM = Object.freeze({
    * TARGETED FIX (judge: "brightest at Brea's end with a hard edge"; "side-lock frames wash a third of the frame
    * pink"): the round-3 lock had one gain over its whole length (1.6 / 2.7) and the along^0.5 fade, so its red and
    * blue clipped from the lens to her and the wider far end read as the brightest, solid part. The lock's light now
-   * FALLS WITH DISTANCE from the lens: gain x along^2 / (1 + d / `lockFalloffM`), d in metres. `gainHostile` and
+   * FALLS WITH DISTANCE from the lens: gain x along^2 / (1 + d / `lockFalloffM`)^2, d in metres. `gainHostile` and
    * `gainHostileFog` are the light AT THE LENS; 8 m out (where she stands in the gameplay films) the distance factor
-   * is 0.385, so the gain there is 0.8 at night and 2.4 in fog: at or under the round-3 cap of the old flat gain
-   * (1.3 / 2.4, the same along^2 on top; below 2.4 at 8 m the far part of the shaft no longer passes the judge's own
-   * magenta scan over warm fogged grass, measured). So the far end is never brighter than the lens end
-   * (A-film-beams-*-probe: mean addition over 10-30 % of the way to her >= over 60-80 %). */
+   * is 1 / 2.6^2 = 0.148, so the gain there is 0.8 at night and 2.4 in fog: at or under the round-3 cap of the old
+   * flat gain (1.3 / 2.4, the same along^2 on top; below 2.4 at 8 m the far part of the shaft no longer passes the
+   * judge's own magenta scan over warm fogged grass, measured). Near the lens the shaft is white-hot magenta and it
+   * deepens and dims toward her, so the far end is never brighter than the lens end (A-film-beams-*-probe: mean
+   * addition over 10-30 % of the way to her >= over 60-80 %). Beam lab, Oct 30 (fog, side view, that clause's
+   * margin): flat 1/(1 + d/5) +13 (and 2 of 3 probe runs failed it), squared +45. */
   gainWary: 1.0,
-  gainHostile: 2.1,
-  gainHostileFog: 6.2,
+  gainHostile: 5.5,
+  gainHostileFog: 16,
   fogFull: 2.55,
-  /** The lock's distance falloff (metres): its light x 1 / (1 + d / lockFalloffM) d metres from the lens. */
+  /** The lock's distance falloff (metres): its light x 1 / (1 + d / lockFalloffM)^2 d metres from the lens. */
   lockFalloffM: 5,
   /** The beam keeps the lens's 4 Hz flicker, but its trough is 0.65 (the lens dips to 0.3): a lock is never gone. */
   flickerLowHostile: 0.65,
@@ -506,7 +508,8 @@ const BEAM_FRAG = /* glsl */`
     // past the target (a lock: her chest) the light also halves every BEAM.pastTargetHalfM metres
     float past = exp2(-max(vZ - tgt, 0.0) * vLen / ${BEAM.pastTargetHalfM.toFixed(2)});
     // a lock's light falls with distance from the lens (BEAM.lockFalloffM): brightest at the lens, never at her end
-    float fall = mix(1.0, 1.0 / (1.0 + vZ * vLen / ${BEAM.lockFalloffM.toFixed(2)}), isLock);
+    float fd = 1.0 + vZ * vLen / ${BEAM.lockFalloffM.toFixed(2)};
+    float fall = mix(1.0, 1.0 / (fd * fd), isLock);
     // the cross-section: edge^2 (sweep), edge^3 (lock: a hot line with soft sides) — bright on the axis, gone at the silhouette
     float prof = pow(edge, mix(${BEAM.profileSweep.toFixed(1)}, ${BEAM.profileLock.toFixed(1)}, isLock));
     float a = pow(max(along, 0.0), ${BEAM.fade.toFixed(1)}) * fall * past * prof * near;

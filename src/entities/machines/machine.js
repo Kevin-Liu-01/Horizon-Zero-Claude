@@ -92,7 +92,11 @@ const _v3 = new THREE.Vector3();
 const _q1 = new THREE.Quaternion();
 const _q2 = new THREE.Quaternion();
 const _UP = new THREE.Vector3(0, 1, 0);
-const _steerOpts = { radius: 1.2, look: 5 };
+/* `navTowardS` writes `radius` with each machine's body radius. Born 1.2, the field stayed CONSTANT until the first
+ * machine with another radius steered through the navgrid, and that write lazily deoptimised every function that had
+ * folded it (`dependent field type constness changed`: navTowardS 3.4 s after the staging, R5_IC_DEOPTMARK, W0b
+ * targeted fix). Written with a different value and back once, here, so it is never a constant. */
+const _steerOpts = mutableFromBirth({ radius: 1.2, look: 5 });
 const _snapRay = new THREE.Raycaster();
 
 let _glowTex = null;
@@ -130,7 +134,7 @@ const _sphereGeo = new THREE.SphereGeometry(1, 10, 8);
  *   x, z, fx, fz, speed -> out _steerAlongS (direction, face point, speed -> metres)
  *   sx, sz             stepRootS  (the root step)
  */
-export const _st = { want: 0.5, d: 0.5, x: 0.5, z: 0.5, fx: 0.5, fz: 0.5, speed: 0.5, out: 0.5, sx: 0.5, sz: 0.5 };
+export const _st = mutableFromBirth({ want: 0.5, d: 0.5, x: 0.5, z: 0.5, fx: 0.5, fz: 0.5, speed: 0.5, out: 0.5, sx: 0.5, sz: 0.5 });   // (never a folded constant: see _steerOpts)
 
 /**
  * The root step every mover shares — hunter-camp safe ring and world rim —
