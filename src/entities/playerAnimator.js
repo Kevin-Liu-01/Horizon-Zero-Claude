@@ -417,7 +417,20 @@ const CLIMB_CATCH = 0.08;
  * run f5lane1), and the wrapped root is stiffer (`rootK` 5 -> 8) so the
  * knotted section holds the recipe's new left-rear line (brea.mjs
  * CHAINS.wrapSash) while the free end moves. */
-DYN_CLASSES.push({ name: 'wrap', re: /(?!)/, stiff: 42, drag: 4.2, grav: 0.42, maxAng: 0.62, strike: 0.7, base: 0.30, collide: 2, wind: 3.0, rootK: 8 });
+/* W0b targeted fix (A-tail-legible graded at EVERY gust moment, not only the
+ * sheet's — the draft bar restored): with the bend limit at 0.62 rad per link
+ * the free strip could not swing far enough off its hanging rest to follow the
+ * air, and at some gust phases it folded down along the stowed bow (2-10 of
+ * 24-60 moments under the bar, side views 0-2 px clear, reach 1-3: probes
+ * t1-t7, scratchpad r5/hero-body/bin/probe-tail.mjs). A cloth strip has next
+ * to no bending stiffness: `maxAng` 0.62 -> 1.3 rad (the wrapped root still
+ * holds its line through `rootK`), the air coupling 3.0 -> 3.6 1/s and the
+ * lighter fall `grav` 0.42 -> 0.30 (the strip's drag against its weight in a
+ * 5.5 m/s wind): 0 of 60 trade-wind moments under the bar (clear >= 5 px, reach
+ * >= 4 px in every view; probe t7 `c4`) where the old row had 6 of 60. Softer
+ * strips (stiff 6-20 with the root stiffness confined to the knot) flapped and
+ * folded down more, not less (probe t4). */
+DYN_CLASSES.push({ name: 'wrap', re: /(?!)/, stiff: 42, drag: 4.2, grav: 0.30, maxAng: 1.3, strike: 0.7, base: 0.30, collide: 2, wind: 3.6, rootK: 8 });
 /** Air coupling per Round-4 class (1/s; 0 = none). Hair a little, cloth some, gear none. */
 const DYN_WIND = { hair: 0.22, necklace: 0, dangle: 0.15, cloth: 0.55, gear: 0, shirt: 0 };
 /** The default world wind (bible §2.2: the NE trade wind from bearing 045; north = -Z, east = +X). */
