@@ -1477,9 +1477,10 @@ const A90_WORKLOAD = (loopS, lifecycleS) => `(async () => {${ROSTER}
   const kill = (m) => { let mesh = null; m.root.traverse((o) => { if (!mesh && o.isMesh) mesh = o; }); m.takeDamage({ point: m.position.clone(), object: mesh, impact: 99999, tear: 0, element: 'none', elementAmount: 0, dir: { x: 0, y: 0, z: 1 }, type: 'hunter', baseDamage: 99999 }); };
   __CTX__.input.enabled = true;
   const t0 = performance.now(); let kills = 0;
-  const iterMs = [], victimMs = [];                 // per-iteration wall time and the memVictim share (reported only)
+  const iterMs = [], victimMs = [], iterFrames = [], iterPrograms = [], iterAlive = [];   // per iteration, reported only
+  const __r = __CTX__.engine.renderer;
   while (performance.now() - t0 < ${loopS * 1000}) {
-    const ti = performance.now();
+    const ti = performance.now(), fi = __CTX__.engine.frames;
     // W0b fix round 2 (R28 + R34): the carried A90 row's re-staged pick, a STAGED kind's machine (memVictim)
     const m = await memVictim();
     victimMs.push(Math.round(performance.now() - ti));
@@ -1488,7 +1489,8 @@ const A90_WORKLOAD = (loopS, lifecycleS) => `(async () => {${ROSTER}
     __CTX__.input.keys.add('KeyW'); await new Promise((res) => setTimeout(res, 2500)); __CTX__.input.keys.delete('KeyW');
     memRespawnAfter(W, killedKind, __CTX__.player.position.x + 30, __CTX__.player.position.z + 30);
     await new Promise((res) => setTimeout(res, 2500));
-    iterMs.push(Math.round(performance.now() - ti));
+    iterMs.push(Math.round(performance.now() - ti)); iterFrames.push(__CTX__.engine.frames - fi);
+    iterPrograms.push((__r.info.programs || []).length); iterAlive.push((__CTX__.machines?.list || []).filter((x) => x.alive).length);
   }
   const p0 = __CTX__.player.position.clone();
   __CTX__.player.position.set(p0.x + 130, 0, p0.z + 130); __CTX__.player._snapToGround?.();
@@ -1496,7 +1498,8 @@ const A90_WORKLOAD = (loopS, lifecycleS) => `(async () => {${ROSTER}
   const wv = memWorkloadVerdict(W, ${W0B_BUDGETS.abs.minKills});
   const med = (a) => { const b = a.slice().sort((x, y) => x - y); return b.length ? b[(b.length - 1) >> 1] : null; };
   return { kills, workload: W, workloadVerdict: wv ? wv.detail.verdict : null, workloadPass: wv ? wv.pass : true,
-    iterations: { n: iterMs.length, medianMs: med(iterMs), maxMs: iterMs.length ? Math.max(...iterMs) : null, firstMs: iterMs.slice(0, 4), victimMedianMs: med(victimMs), victimMaxMs: victimMs.length ? Math.max(...victimMs) : null } };
+    iterations: { n: iterMs.length, medianMs: med(iterMs), maxMs: iterMs.length ? Math.max(...iterMs) : null, firstMs: iterMs.slice(0, 4), victimMedianMs: med(victimMs), victimMaxMs: victimMs.length ? Math.max(...victimMs) : null,
+      perIteration: iterMs.map((ms, i) => [ms, iterFrames[i], iterPrograms[i], iterAlive[i]]), perIterationColumns: ['ms', 'frames', 'programs', 'machinesAlive'] } };
 })()`;
 
 /** the GPU process of a Chrome: CDP SystemInfo.getProcessInfo (browser target), its macOS footprint and RSS */
