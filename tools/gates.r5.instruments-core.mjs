@@ -1946,9 +1946,10 @@ const FILM = (state, { fov = 4, both = false, dist = 15, night = false, sunlit =
   const yawBy = (mm, d) => { mm.root.quaternion.premultiply(qd.setFromAxisAngle(UPV, d)); mm.root.updateMatrixWorld(true); mm.heading = mm.heading + d; };
   const faceLens = (mm, tx, tz, iters) => { for (let it = 0; it < iters; it++) { const d = lensYawErr(mm, tx, tz); if (Math.abs(d) < 0.003) break; yawBy(mm, d); } };
   if (st === 'beams') {
-    // (a range twin: the wary Tiller's stimulus lies BEHIND it, so its sweep never crosses the lock line whichever
-    // side the clear-view test below films from; beam lab, Oct 30: from the wary side its sweep added dG 60-80 there)
-    m.forceState('search'); m.lastKnown.copy(lampPos).addScaledVector(axis, ${herDist} > 0 ? -9 : 9).addScaledVector(side, 4);
+    /* A RANGE TWIN films the lock alone: the second Tiller stays calm (no sweep). Beam lab, Oct 30: when the
+     * clear-view test below had to film from the wary Tiller's side, its sweep crossed the lock line (dG 60-80 added
+     * there) or, turned away, left the frame; the wary sweep is graded in the 10 m films and probes. */
+    if (!(${herDist} > 0)) { m.forceState('search'); m.lastKnown.copy(lampPos).addScaledVector(axis, 9).addScaledVector(side, 4); }
     /* FIX ROUND 3: the hostile Tiller stands 6 m to the side of the wary one, facing the same way, with Brea straight
      * ahead of its lamp on the camera's side (the wary Tiller's stimulus lies away from the camera): both shafts cross
      * the frame side-on, one below the other. GAMEPLAY (targeted fix): Brea 8 m ahead of the hostile lamp and her own
@@ -2222,7 +2223,8 @@ FILM_ROWS.push({
  *            at >= 2 of 3, with a mean addition <= the 10-30 % mean (it carries past her and fades). A range twin
  *            whose 140 % point lies past the drawn cone's end (her beyond sight range / 1.4: the bible's cone ends
  *            before it) reports these points and is graded on reach instead;
- *   wary     at 8 points 1.5-12 m along the wary beam AS DRAWN in each sampled frame (its instance matrix: the sweep
+ *   wary     (not in a range twin, where the second Tiller stays calm and the clause is that it is calm with no beam)
+ *            at 8 points 1.5-12 m along the wary beam AS DRAWN in each sampled frame (its instance matrix: the sweep
  *            moves the beam +-14 deg at 0.5 Hz, so a fixed line sampled over ~2 s missed it — the round-3 probe's
  *            5/8 in the judges' runs), the shaft adds >= 24 with dG > dB (chartreuse) at >= 6 of 8;
  *   facing   the hostile Tiller's lens axis . the bearing to her > 0.9, measured LIVE on the anchor at the start and
@@ -2236,8 +2238,9 @@ const FILM_BEAM_PROBE = (night, herDist = 0) => `(async () => {
   const LS = await import('/src/instruments/lamps.js');
   const WX = await import('/src/instruments/lib/weather.js');
   const recs = M.lamps.records;
+  const HERD = ${herDist};   // a range twin (targeted fix round 2): Brea HERD m from the hostile lamp, the second Tiller calm
   const rh = recs.find(r => r.state === 'hostile'), rw = recs.find(r => r.state === 'wary');
-  if (!rh || !rw) return { pass: false, detail: { error: 'staging: expected one hostile and one wary lamp', states: recs.map(r => r.state) } };
+  if (!rh || (!HERD && !rw)) return { pass: false, detail: { error: 'staging: expected one hostile' + (HERD ? '' : ' and one wary') + ' lamp', states: recs.map(r => r.state) } };
   const V = p.position.constructor;
   const lampOf = (r) => new V().setFromMatrixPosition(r.anchor.matrixWorld);
   const settle = () => new Promise(res => { let n = 0; const f = () => (++n >= 3 ? res() : requestAnimationFrame(f)); requestAnimationFrame(f); });
@@ -2276,7 +2279,7 @@ const FILM_BEAM_PROBE = (night, herDist = 0) => `(async () => {
   for (const f of [0.1, 0.2, 0.3, 0.6, 0.7, 0.8]) { if (f === 0.1) { fadeAt.push(host[0]); continue; } await readAt(f, fadeAt); }
   for (const f of [1.1, 1.25, 1.4]) await readAt(f, beyond);
   const wary = [];
-  for (const d of [1.5, 3, 4.5, 6, 7.5, 9, 10.5, 12]) { const r = await pairRead(() => { const a = beamAxis(rw); return a.origin.addScaledVector(a.dir, d); }); wary.push(r ? { d, ...r } : { d, offscreen: true }); }
+  if (rw) for (const d of [1.5, 3, 4.5, 6, 7.5, 9, 10.5, 12]) { const r = await pairRead(() => { const a = beamAxis(rw); return a.origin.addScaledVector(a.dir, d); }); wary.push(r ? { d, ...r } : { d, offscreen: true }); }
   PIX.stop();
   const faces1 = facesLive();
   const shaft = (x) => !x.offscreen && x.d >= 24 && x.dR > x.dG && x.dB > x.dG;
@@ -2297,19 +2300,19 @@ const FILM_BEAM_PROBE = (night, herDist = 0) => `(async () => {
   const beyondOk = !lightLenGraded || (beyondMagenta >= 2 && beyondMean !== null && nearMean !== null && beyondMean <= nearMean);
   const coneDeg = +(Math.acos(Math.max(-1, Math.min(1, ha.dir.dot(lensAxis(rh))))) * 180 / Math.PI).toFixed(2);
   const facingOk = faces0 > 0.9 && faces1 > 0.9 && coneDeg <= LS.BEAM.coneFullDeg && rh.bfade >= 0.999;
-  const HERD = ${herDist};
   const herOk = !HERD || Math.abs(Math.hypot(tgt.x - hl.x, tgt.z - hl.z) - HERD) <= 0.25;
-  const pass = hostOk >= 6 && hostScan >= 6 && reachOk && waryOk >= 6 && fades && lenOk && beyondOk && facingOk && herOk;
+  const waryGraded = !HERD, calmTwin = !!HERD && !rw && recs.filter(r => r !== rh).every(r => r.state === 'calm' && !r.beamOn);
+  const pass = hostOk >= 6 && hostScan >= 6 && reachOk && (waryGraded ? waryOk >= 6 : calmTwin) && fades && lenOk && beyondOk && facingOk && herOk;
   return { pass, detail: {
     verdict: (pass ? 'PASS' : 'FAIL') + ': Brea ' + segLen.toFixed(2) + ' m from the hostile lamp (chest)' + (HERD ? ' (staged ' + HERD + ' m horizontal: ' + (herOk ? 'yes' : 'NO') + ')' : '')
       + '; hostile shaft over 10-90 % read at ' + hostOk + '/8 points (bar 6), judge magenta scan ' + hostScan + '/8 (bar 6), reach: the 79 % and 90 % points ' + reachPts.map(x => x.offscreen ? 'offscreen' : x.d.toFixed(1)).join(' / ') + ' ' + (reachOk ? 'both read' : 'NOT both read')
-      + '; wary shaft (sampled on its drawn axis) ' + waryOk + '/8 (bar 6)'
+      + (waryGraded ? '; wary shaft (sampled on its drawn axis) ' + waryOk + '/8 (bar 6)' : '; the second Tiller calm, no sweep (range twin; the sweep is graded in the 10 m probes): ' + (calmTwin ? 'yes' : 'NO'))
       + '; fades: mean addition 10-30 % ' + (nearMean === null ? null : nearMean.toFixed(1)) + ' >= 60-80 % ' + (farMean === null ? null : farMean.toFixed(1)) + ' ' + (fades ? 'yes' : 'NO')
       + '; drawn lock length ' + ha.len.toFixed(2) + ' m vs sight x weather ' + expectLen.toFixed(2) + ' m (2 %) and > segment ' + segLen.toFixed(2) + ' + 1 m: ' + (lenOk ? 'yes' : 'NO')
       + '; length in light, beyond her (110-140 %): magenta at ' + beyondMagenta + '/' + bOn.length + ' points, mean ' + (beyondMean === null ? null : beyondMean.toFixed(1))
       + (lightLenGraded ? ' (bar 2 of 3, mean <= near mean): ' + (beyondOk ? 'yes' : 'NO') : ' (reported: the 140 % point, ' + (1.4 * segLen).toFixed(1) + ' m, lies past the bible cone\\'s end at ' + ha.len.toFixed(2) + ' m)')
       + '; lens axis . bearing to her (live) ' + faces0 + ' / ' + faces1 + ' (bar > 0.9), drawn lock ' + coneDeg + ' deg off the lens axis (bar <= ' + LS.BEAM.coneFullDeg + '), cone light ' + (+rh.bfade.toFixed(3)),
-    night: ${night}, herDist: HERD || null, segmentM: +segLen.toFixed(2), hostileBeamLenM: +ha.len.toFixed(2), expectedLenM: +expectLen.toFixed(2), hostileBeamOn: !!rh.beamOn, waryBeamOn: !!rw.beamOn,
+    night: ${night}, herDist: HERD || null, segmentM: +segLen.toFixed(2), hostileBeamLenM: +ha.len.toFixed(2), expectedLenM: +expectLen.toFixed(2), hostileBeamOn: !!rh.beamOn, waryBeamOn: rw ? !!rw.beamOn : null,
     lockAngleToTargetDeg: +(Math.acos(Math.min(1, ha.dir.dot(tgt.clone().sub(hl).normalize()))) * 180 / Math.PI).toFixed(2),
     hostile: host, fadePoints: fadeAt, beyondPlayer: beyond, lightLengthGraded: lightLenGraded, wary, film: window.__IC_FILM__ || null, hold: window.__IC_FILM_HOLD__ ? { frames: window.__IC_FILM_HOLD__.n, maxCorrectionRad: +window.__IC_FILM_HOLD__.maxErr.toFixed(4) } : null,
     beamDraw: (() => { const L = M.lamps, bm = L.beamMesh, B = L._aBeam.array, im = bm.instanceMatrix.array; const row = (r) => r && r.bslot >= 0 ? { slot: r.bslot, rgbw: [0, 1, 2, 3].map(i => +B[r.bslot * 4 + i].toFixed(3)), pos: [12, 13, 14].map(i => +im[r.bslot * 16 + i].toFixed(2)), zAxisLen: +Math.hypot(im[r.bslot * 16 + 8], im[r.bslot * 16 + 9], im[r.bslot * 16 + 10]).toFixed(2), coneFade: +r.bfade.toFixed(3), lowLOD: !!r.machine.lowLOD } : null;
@@ -2335,22 +2338,22 @@ FILM_ROWS.push({
 for (const hd of [18, 22]) {
   FILM_ROWS.push({
     id: `A-film-beams-night-${hd}m-probe`, kind: 'action', lane: 'instruments-core-film', timeout: 180000,
-    title: `Range twin: Brea ${hd} m from the hostile lamp at night (clear, 23:00), side view, measured in its own frame: the magenta lock reaches her (8 points over 10-90 % of the way, the two nearest her both lit), brightest at the lens and fading; the wary shaft reads chartreuse; the lock leaves the lens forward`,
+    title: `Range twin: Brea ${hd} m from the hostile lamp at night (clear, 23:00), side view, measured in its own frame: the magenta lock reaches her (8 points over 10-90 % of the way, the two nearest her both lit), brightest at the lens and fading; the lock leaves the lens forward; the second Tiller calm`,
     setup: FILM('beams', { both: true, night: true, herDist: hd }), settle: 1500,
     assert: FILM_BEAM_PROBE(true, hd),
   });
   FILM_ROWS.push({
     id: `V-lamp-beams-night-${hd}m`, kind: 'visual', lane: 'instruments-core-film', timeout: 120000,
-    title: `Beams at night (clear, 23:00), Brea at bow range: ${hd} m from a hostile Tiller locked on her, a wary Tiller sweeping behind it; side view square to the lock`,
+    title: `Beams at night (clear, 23:00), Brea at bow range: ${hd} m from a hostile Tiller locked on her (a calm Tiller beside it); side view square to the lock`,
     setup: FILM('beams', { both: true, night: true, herDist: hd }), settle: 1500,
     criteria: `At bow range (${hd} m) the hostile lock is one narrow magenta shaft that runs from the drum lamp ALL THE WAY TO BREA: brightest at the lens, dimming toward her, still a lit magenta line where it meets her figure, then a short fading tail past her (the cone ends at sight range x weather scale, bible §7.2). FAIL if the visible shaft ends before her figure, if it is brightest at her end, if it reads as a solid wedge or block, or if a beam leaves the back of a lamp.`,
   });
 }
 FILM_ROWS.push({
   id: 'V-lamp-beams-night-gameplay-18m', kind: 'visual', lane: 'instruments-core-film', timeout: 120000,
-  title: 'Beams at night (clear, 23:00) from Brea\'s chase camera, a hostile Tiller 18 m ahead (bow range) locked on her, a wary Tiller sweeping beside it',
+  title: 'Beams at night (clear, 23:00) from Brea\'s chase camera, a hostile Tiller 18 m ahead (bow range) locked on her, a calm Tiller beside it',
   setup: FILM('beams', { both: true, night: true, gameplay: true, herDist: 18 }), settle: 1800,
-  criteria: 'From the gameplay camera at bow range the hostile lock reads as a narrow magenta line from the Tiller\'s drum lamp that reaches Brea, brightest at the lens and dimming toward her; the wary shaft is a separate chartreuse beam. FAIL if the line visibly ends short of her, if the frame is washed pink, if the lock reads as a solid wedge or block, or if it is brightest at Brea\'s end.',
+  criteria: 'From the gameplay camera at bow range the hostile lock reads as a narrow magenta line from the Tiller\'s drum lamp that reaches Brea, brightest at the lens and dimming toward her. FAIL if the line visibly ends short of her, if the frame is washed pink, if the lock reads as a solid wedge or block, or if it is brightest at Brea\'s end.',
 });
 FILM_ROWS.push({
   id: 'V-lamp-beams-fog', kind: 'visual', lane: 'instruments-core-film', timeout: 120000,

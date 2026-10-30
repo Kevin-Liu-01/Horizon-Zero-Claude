@@ -103,9 +103,14 @@ export const BEAM = Object.freeze({
    * 5.0 % of the fog gameplay frame pink, 1.5 deg 2.1 %).
    */
   lockHalfAngleDeg: 1.5,
-  /** (targeted fix round 2) A lock is focused on her: its radius where it meets her chest is at most this (metres),
-   * so beyond ~11 m the half-angle narrows below lockHalfAngleDeg (18 m: 0.95 deg, 22 m: 0.78 deg). */
-  lockTargetRadiusM: 0.3,
+  /**
+   * TARGETED FIX ROUND 2 (judge: "at night the hostile lock fades out about 13 m from the lens, so at bow range it
+   * never reaches Brea"). A lock is focused on her: where it meets her chest its radius is at most this (metres), so
+   * past 15.3 m the half-angle narrows below lockHalfAngleDeg (18 m: 1.27 deg, 22 m: 1.04 deg). Beam lab, Oct 30,
+   * her chase camera at 18 m: the full 1.5 deg cone (0.47 m radius at her) wrapped her in a pink fan (2.7 % of the
+   * frame pink), 0.4 m 2.2 %; 0.3 m thinned the shaft near the lens until the side view's fade clause had no margin.
+   */
+  lockTargetRadiusM: 0.4,
   segments: 64,         // triangles per cone
   sweepDeg: 14,         // wary sweep amplitude about the stimulus bearing
   capacity: 128,
@@ -123,16 +128,32 @@ export const BEAM = Object.freeze({
    * judge's own magenta scan over warm fogged grass, measured). Near the lens the shaft is white-hot magenta and it
    * deepens and dims toward her, so the far end is never brighter than the lens end (A-film-beams-*-probe: mean
    * addition over 10-30 % of the way to her >= over 60-80 %). Beam lab, Oct 30 (fog, side view, that clause's
-   * margin): flat 1/(1 + d/5) +13 (and 2 of 3 probe runs failed it), squared +45. */
+   * margin): flat 1/(1 + d/5) +13 (and 2 of 3 probe runs failed it), squared +45. (Round 2 keeps the gains and the
+   * squared falloff but ties the falloff to her distance: THE LOCK'S LIGHT ALONG ITS LENGTH, below.) */
   gainWary: 1.0,
   gainHostile: 5.5,
   gainHostileFog: 16,
   fogFull: 2.55,
-  /** The lock's distance falloff (metres): its light x 1 / (1 + d / F)^2 d metres from the lens, F = max(lockFalloffM,
-   * lockFalloffFrac x her distance) (targeted fix round 2, below). */
+  /**
+   * THE LOCK'S LIGHT ALONG ITS LENGTH (targeted fix round 2). Round 1 lit the lock as along^2 / (1 + d / 5 m)^2 over
+   * the whole cone: a falloff in absolute metres, so at night 15 m out it carried ~1 % of the lens light whatever her
+   * range, and at 18-22 m the visible shaft ended 4-8 m short of her (judge's frames; the drawn cone was 24.07 m all
+   * the same). The lock now falls over a length tied to HER distance D (the lens to her chest):
+   *   light(d) = gain x (1 - lockFadeToTarget x min(d / D, 1))^2 / (1 + d / F)^2 x past x tail,
+   *   F = max(lockFalloffM, lockFalloffFrac x D),
+   * so from 10 m out the shaft has one shape in units of her distance: full at the lens, 0.45 a fifth of the way,
+   * 0.11 at 70 %, 0.054 at her chest — brightest at the lens, never at her end, and a lit magenta line where it meets
+   * her at any range up to sight range x weather scale (bible §7.2). Under 10 m (F = 5 m) it is the round-1 shaft
+   * less its along^2 (8 m: 0.073 at her chest against 0.066-0.074). Past her the light halves every
+   * `pastTargetHalfM` metres, and the cone's last `lockTailM` metres beyond her fade to nothing (the drawn cone ends at
+   * sight range x weather scale; with her out of reach the whole cone is that tail, i.e. along^2).
+   * Beam lab, Oct 30 (7 + 7 + 6 variants on 9 stagings, the probe's own reads): 0.3 keeps the night 10 m shaft
+   * readable 4 m past her (magenta at 3/3 of 110-140 %) and the 22 m shaft's fade clause +39; 0.5 lost the 10 m
+   * shaft 2.5 m past her, 0.0 lit the 22 m shaft as a flat bar (far mean above near mean).
+   */
+  lockFadeToTarget: 0.3,
   lockFalloffM: 5,
   lockFalloffFrac: 0.5,
-  /** Past her, the cone's last `lockTailM` metres fade to nothing (the drawn cone ends at sight range x weather scale). */
   lockTailM: 2.0,
   /** The beam keeps the lens's 4 Hz flicker, but its trough is 0.65 (the lens dips to 0.3): a lock is never gone. */
   flickerLowHostile: 0.65,
@@ -150,9 +171,11 @@ export const BEAM = Object.freeze({
    * carries past her, but her body takes part of it: beyond the point it locks on, the light also halves every
    * `pastTargetHalfM` metres. Measured from her own chase camera, the full-strength tail of the cone that runs past
    * her and under the camera washed the lower third of the frame pink (V-lamp-beams-*-gameplay); 2 m keeps the
-   * side view's shaft visibly carrying past her and fading (1 m read as a cut).
+   * side view's shaft visibly carrying past her and fading (1 m read as a cut). Round 2: 3 m (the shaft must read
+   * 2.5 m past her at night, A-film-beams-night-probe's light-based length clause; the chase-camera pink census
+   * moved 0.74 -> 0.74 % at night and 2.25 -> 2.30 % in fog).
    */
-  pastTargetHalfM: 2.0,
+  pastTargetHalfM: 3.0,
   /**
    * THE LENS CONE (targeted fix; judge: "the hostile lock beam leaves the back of the lens and crosses the Tiller's
    * own hull"). A beam leaves its lens forward. Its drawn direction never leaves a cone of `coneOffDeg` about the
@@ -169,7 +192,7 @@ export const BEAM = Object.freeze({
 BEAM_GAIN_WARY = BEAM.gainWary; BEAM_GAIN_HOSTILE = BEAM.gainHostile; BEAM_FLICKER_LOW = BEAM.flickerLowHostile;
 const BEAM_GAIN_HOSTILE_FOG = BEAM.gainHostileFog, BEAM_FOG_SPAN = BEAM.fogFull - BEAM.fogK;
 const TAN_SWEEP = Math.tan(BEAM.halfAngleDeg * Math.PI / 180), TAN_LOCK = Math.tan(BEAM.lockHalfAngleDeg * Math.PI / 180);
-const CONE_COS_FULL = Math.cos(BEAM.coneFullDeg * Math.PI / 180);
+const CONE_COS_FULL = Math.cos(BEAM.coneFullDeg * Math.PI / 180), LOCK_TGT_R = BEAM.lockTargetRadiusM;
 const CONE_COS_OFF = Math.cos(BEAM.coneOffDeg * Math.PI / 180), CONE_SIN_OFF = Math.sin(BEAM.coneOffDeg * Math.PI / 180);
 
 /** Fraction of the face radius the fully open aperture reaches (the dark drum face is outside it). */
@@ -521,9 +544,9 @@ const BEAM_FRAG = /* glsl */`
     float tw = tgt < 1.0 ? max(min(vLen - dT, ${BEAM.lockTailM.toFixed(2)}), 0.05) : vLen;
     float tail = clamp((vLen - d) / tw, 0.0, 1.0);
     tail *= tail;
-    // the lock's light falls with distance from the lens over a length tied to HER distance (BEAM.lockFalloffM,
-    // lockFalloffFrac): brightest at the lens, never at her end, and still a lit shaft at her chest at any range
-    float lockA = 1.0 / pow(1.0 + d / max(${BEAM.lockFalloffM.toFixed(2)}, ${BEAM.lockFalloffFrac.toFixed(3)} * dT), 2.0) * pastH * tail;
+    // the lock's light falls with distance from the lens over a length tied to HER distance (BEAM.lockFadeToTarget,
+    // lockFalloffM, lockFalloffFrac): brightest at the lens, never at her end, and a lit shaft at her chest at any range
+    float lockA = pow(1.0 - ${BEAM.lockFadeToTarget.toFixed(3)} * min(d / max(dT, 0.001), 1.0), 2.0) / pow(1.0 + d / max(${BEAM.lockFalloffM.toFixed(2)}, ${BEAM.lockFalloffFrac.toFixed(3)} * dT), 2.0) * pastH * tail;
     float sweepA = pow(max(along, 0.0), ${BEAM.fade.toFixed(1)});
     // the cross-section: edge^2 (sweep), edge^3 (lock: a hot line with soft sides) — bright on the axis, gone at the silhouette
     float prof = pow(edge, mix(${BEAM.profileSweep.toFixed(1)}, ${BEAM.profileLock.toFixed(1)}, isLock));
@@ -648,8 +671,6 @@ export class LampSystem {
     this.hideBeams = false;
     /** Gate/debug: draw the frame without the lamps (the films' paired "is the lamp on screen, unoccluded" read). */
     this.hideLamps = false;
-    /** The lock's radius at her chest (BEAM.lockTargetRadiusM; an instance field so the beam lab can vary it). */
-    this._lockTgtR = BEAM.lockTargetRadiusM;
     // doubles born Double (0.5 first): a field generalised mid-session deoptimises update() (W0b fix round 2)
     this.fogK = 0.5; this.fogK = 1;
     this.night = 0.5; this.night = 0;
@@ -1002,12 +1023,14 @@ export class LampSystem {
       const fade = cs * cs * (3 - 2 * cs);
       r.bfade = fade;
       /* LENGTH (bible §7.2: "Length = current sight range x weather scale"; targeted fix, judge: "lock-beam length
-       * departs from bible §7.2"). A lock is NOT cut at her: the shaft carries past her and fades (along^2) to
-       * nothing at the sight range. A lock is a narrower cone than a sweep (BEAM.lockHalfAngleDeg). */
+       * departs from bible §7.2"). A lock is NOT cut at her: the shaft carries past her, halving every
+       * BEAM.pastTargetHalfM, and its last BEAM.lockTailM fade to nothing at the sight range. A lock is a narrower
+       * cone than a sweep (BEAM.lockHalfAngleDeg), focused to BEAM.lockTargetRadiusM at her chest (round 2). */
       const lock = r.bmode === 'lock';
       const len = r.blen;
       let tanA = lock ? TAN_LOCK : TAN_SWEEP;
-      if (lock && tgtLen > 0.5 && tgtLen < len) { const tf = this._lockTgtR / tgtLen; if (tf < tanA) tanA = tf; }
+      // a lock is focused on her: its radius at her chest is at most BEAM.lockTargetRadiusM (targeted fix round 2)
+      if (lock && tgtLen > 0.5 && tgtLen < len) { const tf = LOCK_TGT_R / tgtLen; if (tf < tanA) tanA = tf; }
       const brad = len * tanA;
       _qs.setFromUnitVectors(_z, dd);
       _s.x = brad; _s.y = brad; _s.z = len;
