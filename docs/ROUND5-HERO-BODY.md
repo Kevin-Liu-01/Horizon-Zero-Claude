@@ -1,9 +1,17 @@
 # ROUND 5 — lane `hero-body` report (W0b): Brea on the kept rig
 
 Lane: hero-body · port 5252 · wave W0b · Oct 18–19 2026, fix round 2 Oct 22, fix round 3 Oct 22 (evening),
-fix round 4 Oct 22–23 (night), fix round 5 Oct 23, **W0b targeted fix round 1 Oct 30 (§T)**. Plan: `docs/ROUND5-PLAN.md` §2 (row), §1.2 (grants), §3.1 (W0b exit), §3.2
+fix round 4 Oct 22–23 (night), fix round 5 Oct 23, **W0b targeted fix round 1 Oct 30 (§T)**, **targeted fix round 2 Oct 30 (§T2)**. Plan: `docs/ROUND5-PLAN.md` §2 (row), §1.2 (grants), §3.1 (W0b exit), §3.2
 (contracts), §4.1 (budgets), §6 (aloy.glb), §8 (rulings, incl. §8.3 R33 g, R35–R39, R46, R47), §9 (gate block).
 Canon: `docs/ROUND5-BIBLE.md` §2.2 (the trade wind), §3 (Brea), §3.8 (build order), §5.2 (bow poses), §5.9 (controls).
+
+**Status (Oct 30, targeted fix round 2, §T2).** A-wrap-clear's 0.75 loose: the draw arm now keeps off the alidade
+cord's knot, so the cord can always be pushed clear. **16 / 16 A-wrap-clear runs PASS in 6 independent harness runs,
+every row ≥ 0.0550 m** (0.75 loose minimum 0.0550–0.0555). Lane run `w6/L1` (the 62 rows, the global items, A-wrap-clear
+×6, one Chrome): **58 PASS · 1 FAIL (A31c, R36/R51 listed) · 14 NEEDS-JUDGE**, row-for-row the verdicts of round 1's
+`F1`. Two things seen and not fixed, because they are outside this round's findings (§T2, §6): A-draw-elbow-level's
+0.75 loose elbow sits at the 0.20 bar (4 of 8 probe samples over it, the lane runs 0.185–0.193), and the draw elbow
+snaps 0.2–0.4 m per frame at the start of every re-nock.
 
 **Status (Oct 30, targeted fix round 1, §T).** Final run `w5/F1` (port 5252, `nice -n 10`, one Chrome): the 62 lane rows,
 the global items and six repeats — **59 PASS · 1 FAIL (A31c, R36/R51 listed) · 13 NEEDS-JUDGE**; A16 passes every row
@@ -27,6 +35,109 @@ clock, max 0.044 m); **A-lance-stow** — a pattern search with the lance slidin
 4 / 4 PASS, one on a loaded clock). Global list (`f5final`): A1, A20b, **A9 (fps 59.3, PASS)**, A90 ×4,
 A-no-override PASS; A21 FAIL on median GPU (77–96 ms against 20; listed under R33 b, R45's quiet run); A81 /
 A-ID-ip-assets-gone / A-licence-manifest / A-assets-tracked fail on other lanes' unmerged rows (R39, R47; §4.5).
+
+## T2. W0b targeted fix round 2 (Oct 30) — A-wrap-clear at the 0.75 loose
+
+Two findings, one defect: A-wrap-clear's 0.75 row on round 1's code read **0.0494 m (J1, FAIL)**, 0.0512 (J2) and
+0.0514 (G1) against the 0.05 bar, nearest `dyn_alidadeCord_01#1` at 2.78 s, 0.18 s after the loose; the builder's 8
+runs had read ≥ 0.055 and §T.4 said so. Every number below is from this tree on port 5252, everything under
+`nice -n 10` (R53), one Chrome at a time inside a machine slot (`scratchpad/r5/hero-body/w6/`): probes `p1` (the cord
+through A-wrap-clear's own staging), `p2` (A-draw-elbow-level's loose, see the end), films `F2`/`F3`, the lane run
+**`L1`** (the 62 rows + the global items + A-wrap-clear ×6 + the film, one Chrome) and five independent A-wrap-clear
+runs **`i1`–`i5`** (each its own Vite, harness and Chrome, A-wrap-clear ×2).
+
+*Found* (`p1`: A-wrap-clear's own sprint-stop / draw / loose at 0.75, every frame of the loose, round 1's behaviour ×4).
+The push was not failing. Each low reading was the best the cord could physically reach. The cord's first particle
+hangs on a fixed knot at her throat (`dyn_alidadeCord_01`, first link **0.046 m**), so it can never be further from
+the hand / forearm capsule axis than the knot's own distance plus 0.046 m. At 0.75, the hand first follows the
+slackening string forward across her chest, then is pulled back out to her right for the re-nock. About 0.17 s after
+the loose, that return carries the forearm and fist across the knot. The knot-to-axis distance at that frame was
+**0.041 / 0.045 / 0.050 / 0.056 m** in the four runs. The best clearance any placement of the cord could reach there
+(400 directions on the link's sphere) was **0.052 / 0.056 / 0.061 / 0.067 m**, and the push read 0.0521 m in the
+worst run, i.e. the bound. The spread between runs is the frame clock sampling different points of a hand moving
+~1.4 m/s. More passes, sub-steps or a swept capsule cannot beat a fixed root.
+
+*Fix.*
+- **The draw arm keeps off the knot** (`src/entities/playerAnimator.js` `_clearArmOfRoots`, l. 4230, called last in
+  the draw arm's solve, l. 4203; the keep-outs are built at bind, l. 656; profile `handCollider.rootMargin` 0.015,
+  `src/entities/anim/rigs/ubc.js` l. 108). Every chain whose first link is shorter than the capsule radius gets a
+  keep-out round its root: keep = r − link + 0.015. That is **0.0588 m** for the cord knot, 0.054 for the knot tail,
+  0.027 for the sash end and 0.015 for the wrap. When the capsule (elbow → wrist → middle fingertip, the collider's
+  own bones) comes inside a keep, its nearest point is carried straight out from the root across her up axis (`_upT`:
+  forward or out, never up into the jaw). The whole arm turns at the shoulder, so the elbow bend, the wrist and the
+  fist keep their solved pose. Up to 3 passes; a turn that would put a clear arm into the skull is undone (0 undos
+  measured). It acts only on frames where the arm is inside a keep: 1–4 frames per draw cycle, the deficit ≤ 0.0215 m,
+  always at draw strength ≤ 0.093 (the aim raise from the sprint-stop and the re-nock). It never acts at full draw,
+  so A16 / A35 / A-draw-elbow-level's full-draw rows and V24 / V24-draw-down / V4 are untouched. No allocation
+  (module scratch).
+- **M10's last resort** (`_springs`, l. 5815): when four passes leave a particle inside, the candidates are straight
+  away from each segment's nearest point and from their mean, and the one farthest from both axes wins. The old
+  fallback used the nearer segment only, which could lay the cord against the other one at the wrist.
+- **Gate** (`tools/gates.r5.hero-body.mjs` A-wrap-clear, l. 7752): each row also reports `looseMinClearM` /
+  `looseClosest` (the minimum over every frame after the release at 2.6 s), `looseFrames` and `rootKeepFrames`, and
+  the detail carries the collider's `rootKeep` diagnostics. The pass test is unchanged (≥ 0.05 m, every row, every
+  frame, capsule active, a full draw).
+
+*Measured.*
+- **Probe `p1`, keep-out on ×5 at 0.75:** knot-to-axis ≥ **0.059–0.061 m**, reachable bound ≥ **0.070–0.072 m**,
+  loose minimum 0.0550–0.0553 m. The same run at 0 / −0.4 / −0.55: knot-to-axis ≥ 0.072 / 0.082 / 0.094 m, no turn.
+- **A-wrap-clear: 16 runs in 6 independent harness runs, 64 rows, all PASS, every row ≥ 0.0550 m.** The 0.75 loose
+  minimum per run:
+  - `L1` (×6, one run): 0.0553 / 0.0550 / 0.0553 / 0.0552 / 0.0550 / 0.0555
+  - `i1`: 0.0552 / 0.0550 · `i2`: 0.0550 / 0.0550 · `i3`: 0.0550 / 0.0550 · `i4`: 0.0550 / 0.0553 · `i5`: 0.0550 / 0.0550
+  - Every row's whole-cycle minimum is 0.0550–0.0553 m. 0.055 is the collider's own surface: 0.09 − the 0.035
+    half-thickness.
+- **Correction to §T.4 and §4.1.** "A-wrap-clear ×2 (≥ 0.055 m)" held on the builder's runs only. On round 1's code
+  the 0.75 loose read 0.0494 / 0.0512 / 0.0514 m on the judges' runs and 0.0521–0.0551 m in `p1` (bound 0.052–0.067).
+  The distribution above is this round's code.
+
+*The lane* (`L1`): **73 rows — 58 PASS · 1 FAIL (A31c, R36/R51 listed) · 14 NEEDS-JUDGE** (the 13 lane films + the
+`F-cord-release` film). The verdicts are identical to `w5/F1` row for row, the repeats aside.
+- **Global items:** A1-boot-clean PASS. **A20b PASS** (0 system errors, 364 frames). **A90 PASS** (heap −14.1 %,
+  geometries 151 → 158, textures 116 → 88, 28 kills). **A90b PASS** (0 offenders, 0 orphaned textures, heap −6.0 %
+  after a forced GC). A9 PASS (59.9 fps, 282 draw calls).
+- **The draw rows:**
+  - A16: 6 / 6 (R52 elbow −0.0065…−0.0131 m, nock-to-hand 0.065–0.070 m)
+  - A-draw-elbow-level: 8 rows (forearm ≤ 15.6° off the arrow, wrist 0.0265 m off the level anchor height, loose
+    elbow ≤ 0.193 m)
+  - A35 (hand → Head joint 0.108–0.110 m)
+  - A17 (hand → quiver 0.079 m)
+  - A32-draw-ramp, A-lmax-solve
+  - A-alidade-pose, A19, A34, A33-rig-finite
+
+*Films read.*
+- **`F-cord-release`** (`w6/runs/F3`; scratch, not a lane row): the judges' moment at 0.75, keep-out off over on, three
+  lenses on the knot (her right, front, front-right 3/4). The AFTER row is frozen on the first frame the keep-out
+  turned the arm, 0.167 s after the loose: knot to axis 0.0621 m, the cord's joints ≥ 0.073 m off the capsule surface.
+  - Bent over the down aim, the right forearm runs across the front of her chest with the fist (∴ showing) in front
+    of the sternum.
+  - The neck cord's V and the alidade tube hang just above and behind the knuckles. Nothing passes through the hand or
+    the forearm.
+  - The bow arm is down at the grip, clear of the chest. No arm is behind the head.
+  - In this run's BEFORE row the arm never came inside the keep: frozen at the 0.416 s cap, the hand back at the
+    string by the grip. In `F2`, frozen 0.166 s after the loose with the knot 0.0502 m off the axis, the cord's V
+    hangs on the top of the forearm.
+- **V24, V24-draw-down, V4** (`L1`) are unchanged:
+  - V24: the fist with the ∴ at the jaw / cheek, outside the hair, fletching at the mouth corner, forearm on the arrow
+    line, elbow level and back, bow arm straight and clear of the chest. The cord runs from her neck to the brass tube
+    at mid-sternum, well clear of the draw hand.
+  - V24-draw-down: bent at the hips, the fist on the jaw under the wrap, forearm 17.0° off the arrow, knuckle 0.052 /
+    fingertip 0.048 m from the nock. The upper arm still rises above and behind the crown from her right (§T.1).
+  - V4: bow up, string hand at the jaw, elbow back, wrap tail out to her left.
+
+*Seen this round, not in this round's findings (§6, §7).*
+- **(a) A-draw-elbow-level's loose clause at 0.75 is marginal.** In `p2` (the gate's own staging at 0.75, keep-out
+  off and on, interleaved ×4) the loose elbow read **0.1915 / 0.1992 / 0.2034 / 0.2017 m** off and **0.1852 / 0.1966
+  / 0.2006 / 0.2014 m** on: 4 of 8 over R35's 0.20 bar. The lane runs read 0.1847 / 0.1872 / 0.1887 (round 1) and
+  0.1933 (`L1`).
+  - The maximum falls 0.25–0.28 s after the loose, while the hand is held at the hip quiver.
+  - The keep-out does not raise it: on ≤ off in 4 / 4 pairs. Its turn comes earlier, at 0.17 s.
+- **(b) The draw elbow snaps at the start of every re-nock**, at all four pitches (`p1`). On the first frame the reach
+  restarts (~0.1 s after the loose), the elbow moves 0.23–0.38 m, and 0.25–0.43 m on the next frame. It crosses in
+  front of her chest to her left of the midline and back within ~0.1 s, while the wrist follows the slack string
+  forward (−0.55 / −0.4 / 0 / 0.75: 0.243 + 0.417, 0.231 + 0.422, 0.227 + 0.430, 0.375 + 0.254 m).
+  - The cause is not traced. The likely candidate is `_elbowForm`'s whole-circle argmin jumping as the loose weights
+    change.
 
 ## T. W0b targeted fix round 1 (Oct 30) — what changed, by finding
 
@@ -147,7 +258,8 @@ textures −28; 28 kills); **A90b PASS** (0 offenders, 0 orphaned textures, heap
 59.8, 282 draw calls; R45's quiet run grades it). Every lane row that passed in fix round 5 passes: A13 5 / 5 (worst
 0.0071 m), A-strafe-feet (≤ 7.6°, toe ≤ 0.431 rad), A-run-arms (wrists ≥ 0.23 m off the midline, pelvis 0.071 m),
 A-climb-1m (palms ≤ 0.022 m, on top 0.78 s), A-lance-stow ×2 (every state but the climb ≤ 38.8°, tails ≥ 0.085 m from
-the shaft), A-wrap-clear ×2 (≥ 0.055 m), A19 / A33-hair / A34 / A33-rig-finite, the camera rows A31b / d / e / f
+the shaft), A-wrap-clear ×2 (≥ 0.055 m on these runs only; the judges read 0.0494–0.0514 m at the 0.75 loose on this
+code — corrected in §T2), A19 / A33-hair / A34 / A33-rig-finite, the camera rows A31b / d / e / f
 (A31f 0 / 48), A32-look-up / A32b, V22 (fill 0.67). A31c fails the clauses R51 lists (moving framing 0.377–0.408 against
 0.412; head seen running away 0.6 / 0.85, Aloy's runs 0–0.15); camera code unchanged.
 
@@ -1133,7 +1245,7 @@ comparison: 46 PASS · 1 FAIL (A31c) · 13 NEEDS-JUDGE of 60.
 | A26-one-convention@hero | PASS | identical to BoneSpace |
 | A-lmax-solve | PASS | Lmax 0.527 / 0.520 / 0.530 / 0.527 m; bows 0.582 vs solution 0.585 (±0.01) |
 | **A-draw-elbow-level (R35 + on-the-string + fix round 5)** | **PASS** | 8 rows; **forearm 17.5 / 15.2 / 18.3 / 17.7° off the arrow at −0.55 / −0.4 / 0 / 0.75 (bar 20)**; **the wrist ≤ 0.021 m from the level row's height over the Head joint and ≤ 0.010 m from its place in the head's frame (bars 0.03)**; elbow aim-frame height −0.013…+0.005 m, 0.226–0.232 m behind the hand; hand ≤ −0.061 m; elbow ≤ 0.149 m behind the head plane; loose hand ≤ −0.012, loose elbow ≤ 0.189 m; knuckle ≤ 0.056 / fingertip ≤ 0.050 m from the nock |
-| A-wrap-clear (M10) | PASS | every chain ≥ 0.055 m from the draw hand/forearm (bar 0.05), 4 pitches; hand capsule active |
+| **A-wrap-clear (M10)** | **targeted fix round 2 (§T2): PASS 16 / 16** (`w6/L1` ×6, `i1`–`i5` ×2) | every chain ≥ 0.0550 m from the draw hand/forearm at every row of every run (bar 0.05); the 0.75 loose minimum 0.0550–0.0555 m; the draw arm keeps off the cord knot (keep 0.0588 m, 1–4 frames per cycle, draw strength ≤ 0.093); hand capsule active. Round 1's "≥ 0.055" held on the builder's runs only (judges 0.0494 / 0.0512 / 0.0514) |
 | A-alidade-pose | PASS | tube 0.015 m from the right eye (idle / jog / crouch), elbow under and ahead, lowered in 0.20–0.21 s |
 | A-run-arms | PASS | wrists ≥ 0.229 m off the midline, ≥ 0.27 m under the shoulder, fore-aft 0.488 m/cycle, pelvis 0.072 m p-p, knee never above hip, 6.80 m/s |
 | **A-lance-stow** | **PASS 4/4** (`f5lane2`: plain ×3, a loaded 19 fps clock ×1) | crouch-walk ≤ 38.82°; every state but the climb ≤ 39.14° (R10 32–40); the climb 36.6–58.1° (A100 in motion 30–60); midpoint ≤ 0.281 m (0.30); tails ≥ 0.086 m from the shaft (0.06); blade ≤ 0.651 m over the shoulder (0.70) |
@@ -1240,6 +1352,16 @@ exactly these overlays; standalone:
 
 ## 6. Honest gaps and W0 bridges
 
+- **Targeted fix round 2 (Oct 30): two things seen, not in this round's findings** (§T2, numbers there).
+  - (a) A-draw-elbow-level's loose clause at 0.75 sits at R35's 0.20 bar: 4 of 8 samples in probe `w6/p2` read
+    0.2006–0.2034 m, and the lane runs read 0.185–0.193 m. The peak comes 0.25–0.28 s after the loose, while the hand
+    is held at the hip quiver from the bent T. The cord keep-out does not raise it (on ≤ off in 4 / 4 pairs).
+  - (b) At the start of every re-nock the draw elbow snaps 0.2–0.4 m in a frame across the front of her chest and
+    back, at every pitch. The cause is not traced; the likely candidate is `_elbowForm`'s whole-circle argmin.
+  - Both are left as they were. This round was scoped to A-wrap-clear (§7).
+- **The re-nock reach still sweeps the fist across her sternum after a loose** at the down aims (the hand follows the
+  slack string forward first). The cord keep-out turns the arm off the knot by ≤ 0.0215 m when it comes inside 0.0588 m.
+  It does not re-route the path.
 - **Targeted fix (Oct 30) — the wrap tail's residuals, measured, not graded away.** (a) On the final cloth 1 trade-wind
   moment in 680 fell under A-tail-legible's bar (`c1`: front reach 3) — ≈ 3.5 % per 24-moment run; the front / back
   reach is 4–6 px because the tail's end crosses the stowed bow's upper limb, and no cloth knob moved it (§T.2); the
@@ -1263,7 +1385,8 @@ exactly these overlays; standalone:
 - **A16 at pitched aims is graded under R52** (targeted fix, §T.1): perpendicular to the arrow, every row PASSES; the
   character-height reading at 0.75 (+0.09 m, the bent T) is reported, not graded. **The pitched aims' loose** (the re-nock reach to the hip
   quiver from a bent T) carries the hand ~0.28 m back in character space and the elbow to 0.19 m behind the head
-  plane (R35's 0.20): within the bar, with ~1 cm of room. **The T turn's ray is low-passed (0.35 s)**: the trunk
+  plane (R35's 0.20): round 1 read that as ~1 cm of room; targeted fix round 2 measured 0.185–0.203 m
+  (4 of 8 probe samples over the bar, §T2). **The T turn's ray is low-passed (0.35 s)**: the trunk
   follows a fast camera pitch with that lag while the arms follow at once.
 - **The animator's own nock estimate (`D.nock`) is 0.07–0.09 m off the bow's rendered nock** (the bow node's offset
   in the palm; probe `dh3`): the knuckle turn now targets the rendered nock, but the arm solve's anchor and Lmax are
@@ -1291,6 +1414,11 @@ exactly these overlays; standalone:
 
 ## 7. Requests to other lanes and the orchestrator
 
+- **Targeted fix round 2 (Oct 30), for the orchestrator.** Two follow-through defects this round measured but did not
+  fix, because they were outside its two A-wrap-clear findings (§T2, §6). (a) A-draw-elbow-level's 0.75 loose elbow
+  sits at the 0.20 bar (probe 0.185–0.203 m, 4 / 8 over). (b) The draw elbow snaps 0.2–0.4 m per frame at the start
+  of every re-nock. A judge re-running A-draw-elbow-level may see (a) fail; a scoped follow-up on the loose / re-nock
+  elbow would close both.
 0. **orchestrator (fix round 5, A16's down row) — RULED (R52, Oct 30), encoded in the targeted fix (§T.1).** Kept for
    the record: rule how A16's "elbow not above the shoulder" reads at a PITCHED aim. The judge-r2 fix of V24-draw-down (the whole T bent with the arrow, the forearm on the arrow line)
    puts the draw elbow +0.093 m over the draw shoulder joint in character height at camPitch 0.75 (A16 FAILS that
@@ -1341,6 +1469,12 @@ Fix round 4 changes in the file: §000.11. Fix round 5: §0000.6.
 
 ## 9. Files changed
 
+Targeted fix round 2 (Oct 30; vs checkpoint `e00b5e9`): `src/entities/playerAnimator.js` (`_clearArmOfRoots`,
+`_hcRoots` / `_hcFix*` at bind, `_hcMinAxis`, the M10 last-resort candidates, `debugHandCollider().rootKeep`, module
+scratch `_hc*` / `_cr*`), `src/entities/anim/rigs/ubc.js` (`UBC_HAND_COLLIDER.rootMargin` 0.015),
+`tools/gates.r5.hero-body.mjs` (A-wrap-clear reports `looseMinClearM` / `looseClosest` / `looseFrames` /
+`rootKeepFrames`; the pass test unchanged), `docs/ROUND5-HERO-BODY.md` (§T2, status, §4.1, §6, §7, §9, §10).
+
 Targeted fix round 1 (Oct 30; vs the start of this session, checkpoint `8caf334`, plus the WIP edits of `c1e1510`…`8caf334`
 that this round verified and kept): `tools/gates.r5.hero-body.mjs` (the visual rows' `reference` block and V-traversal's
 reference — new; A16's R52 clause, A-melee-floor's swing asserts, A31g's 20 / 20, A-tail-legible's restored bar and
@@ -1390,6 +1524,12 @@ tree. At the end: Vite stopped, 0 Chromes of this lane alive, `shots/` removed. 
 2 s poll (the slot README's protocol; other lanes' judges held both slots for long stretches); the "busy box" runs
 load only the gate's own page (a busy-wait on its render hook), never the machine; the judge and rebuild scratch
 (`judge-f5/`, `rb*/`) deleted at the end.
+
+Targeted fix round 2 (Oct 30): the same care (`w6/run6.sh`). Every Vite and gate run under `nice -n 10`, never
+`taskpolicy -b`. Each Chrome run took one machine slot after the memory, pressure, load and disk checks and released
+it at the end. One Chrome at a time; ten runs (`p1`, `L1`, `i1`–`i5`, `F2`, `p2`, `F3`), each leaving 0 Chrome
+profiles. Vite and the lane's Chromes were stopped after each run. Probes, films and logs live under
+`scratchpad/r5/hero-body/w6/`, never in the tree.
 
 Targeted fix round 1 (Oct 30): every Vite and gate run under `nice -n 10` (R53; never `taskpolicy -b`), each Chrome
 run inside a machine slot after the memory (free ≥ 40 %, pressure level 1), load (< 12) and disk checks
