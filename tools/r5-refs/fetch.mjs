@@ -17,10 +17,12 @@
  *       reference/r5/<lane>/<slot>.jpg and rewrite that folder's MANIFEST.md; share-alike or unclear
  *       pins are written as URL-only rows, never as files; the scratch dir is deleted
  *   node tools/r5-refs/fetch.mjs --verify
- *       offline: every pinned slot has its file and a complete MANIFEST row whose sha256 matches; every
- *       file under reference/r5 has a row; exit 1 otherwise (A-reference-set runs this)
+ *       offline: every pinned slot has its file and a complete MANIFEST row (author, source, licence, retrieved;
+ *       its sha256 matches when the row records one, else the file is hashed and reported); every file under
+ *       reference/r5 has a row, whatever the lane's MANIFEST layout (manifest.mjs reads tables by column name);
+ *       exit 1 otherwise (A-reference-set runs this)
  *   node tools/r5-refs/fetch.mjs --selftest
- *       the licence classifier's positive / negative controls
+ *       the licence classifier's and the MANIFEST parser's positive / negative controls
  *
  * Network: api + upload.wikimedia.org only, with a descriptive User-Agent (Wikimedia's API policy).
  */
@@ -31,7 +33,7 @@ import path from 'path';
 import { fileURLToPath, pathToFileURL } from 'url';
 import { SLOTS } from './slots.mjs';
 import { classifyCommons, authorOf, classifierSelfTest, FORBIDDEN_SOURCE_RE, STORED_LICENCES } from './licence.mjs';
-import { readManifest, renderManifest, laneFolders } from './manifest.mjs';
+import { readManifest, renderManifest, laneFolders, IMAGE_RE, parserSelfTest } from './manifest.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 export const ROOT = path.resolve(HERE, '..', '..');
@@ -143,39 +145,68 @@ async function fetchAll({ lane, slot }) {
   }
 }
 
-/** Offline verification -> { ok, problems[], stored, urlOnly, files } (A-reference-set runs it) */
+const OWN_WORK = new Set(['own-photo', 'project-original']);
+/**
+ * The plan's rules for one STORED MANIFEST row (plan §0 rule 9, §10.2 item 4, §9 A-reference-clean / -set), shared by
+ * verify() and the gates so they read one rule set. -> problems[] (empty = the row is complete and allowed).
+ *   - the file exists; when the row records a sha256 it matches the bytes (a row without one is hashed at verify time);
+ *   - author, source, licence and retrieved date are present (plan §10.2 item 4);
+ *   - the licence is PD / CC0 / CC BY x.y / own work (own photo, project-original render); CC BY carries its attribution;
+ *   - no forbidden source (Guerrilla / Sony / HZD / HFW / …);
+ *   - the source is a Wikimedia Commons page (any allowed licence), a URL for a CC0 row from elsewhere, or, for the
+ *     project's own work, what made it (no URL needed).
+ */
+export function storedRowProblems(lane, dir, r) {
+  const at = `${lane}/${r.file}`;
+  const out = [];
+  const p = path.join(dir, r.file);
+  if (!existsSync(p)) return [`${at}: row without a file`];
+  if (r.sha256 && sha256(readFileSync(p)) !== r.sha256) out.push(`${at}: sha256 differs from its row`);
+  for (const k of ['author', 'licence', 'source', 'retrieved']) if (!r[k] || r[k] === 'unknown') out.push(`${at}: ${k} missing`);
+  if (!STORED_LICENCES.test(r.licence)) out.push(`${at}: licence "${r.licenceText ?? r.licence}" is not PD / CC0 / CC BY / own work`);
+  if (/^CC-BY/.test(r.licence) && !r.attribution) out.push(`${at}: CC BY without its attribution string`);
+  if (FORBIDDEN_SOURCE_RE.test(`${r.source} ${r.author} ${r.subject}`)) out.push(`${at}: forbidden source`);
+  const commons = /^https:\/\/commons\.wikimedia\.org\//.test(r.source);
+  const url = /^https?:\/\//.test(r.source);
+  if (!commons && !OWN_WORK.has(r.licence) && !(r.licence === 'CC0-1.0' && url))
+    out.push(`${at}: source ${String(r.source).slice(0, 60)} is neither a Commons page, a URL of a CC0 source, nor the project's own work`);
+  return out;
+}
+
+/** Offline verification -> { ok, problems[], stored, urlOnly, notes, files, hashedAtVerify[], byLane } (A-reference-set runs it) */
 export function verify(root = ROOT) {
   const problems = [];
-  let stored = 0, urlOnly = 0, files = 0;
+  const hashedAtVerify = [];
+  const byLane = {};
+  let stored = 0, urlOnly = 0, notes = 0, files = 0;
   for (const { lane, dir } of laneFolders(root)) {
     const m = readManifest(dir);
-    const imgs = readdirSync(dir).filter((f) => /\.(jpe?g|png|webp|gif|tiff?)$/i.test(f));
+    const imgs = readdirSync(dir).filter((f) => IMAGE_RE.test(f));
     files += imgs.length;
+    byLane[lane] = { images: imgs.length, stored: m.stored.length, urlOnly: m.urlOnly.length, notes: m.notes.length, tables: m.tables.map((t) => t.kind + ' @' + t.line) };
     if (!m.exists) { if (imgs.length) problems.push(`${lane}: ${imgs.length} image(s) and no MANIFEST.md`); continue; }
-    stored += m.stored.length; urlOnly += m.urlOnly.length;
+    stored += m.stored.length; urlOnly += m.urlOnly.length; notes += m.notes.length;
     for (const f of imgs) if (!m.stored.some((r) => r.file === f)) problems.push(`${lane}/${f}: no MANIFEST row`);
     for (const r of m.stored) {
-      const p = path.join(dir, r.file);
-      if (!existsSync(p)) { problems.push(`${lane}/${r.file}: row without a file`); continue; }
-      if (sha256(readFileSync(p)) !== r.sha256) problems.push(`${lane}/${r.file}: sha256 differs from its row`);
-      for (const k of ['author', 'licence', 'source', 'retrieved']) if (!r[k] || r[k] === 'unknown') problems.push(`${lane}/${r.file}: ${k} missing`);
-      if (!STORED_LICENCES.test(r.licence)) problems.push(`${lane}/${r.file}: licence ${r.licence} is not PD / CC0 / CC BY / own photo`);
-      if (/^CC-BY/.test(r.licence) && !r.attribution) problems.push(`${lane}/${r.file}: CC BY without its attribution string`);
-      if (FORBIDDEN_SOURCE_RE.test(`${r.source} ${r.author} ${r.subject}`)) problems.push(`${lane}/${r.file}: forbidden source`);
-      if (!/^https:\/\/commons\.wikimedia\.org\/|^own-photo/.test(r.source) && r.licence !== 'own-photo') problems.push(`${lane}/${r.file}: source is not a Commons page`);
+      problems.push(...storedRowProblems(lane, dir, r));
+      // no sha256 column (plan §10.2 asks for none): the bytes are hashed now, and the hash is reported with the row
+      if (!r.sha256 && existsSync(path.join(dir, r.file))) hashedAtVerify.push({ file: `${lane}/${r.file}`, sha256: sha256(readFileSync(path.join(dir, r.file))) });
     }
-    for (const r of m.urlOnly) if (imgs.some((f) => f.startsWith(r.slot + '.'))) problems.push(`${lane}/${r.slot}: URL-only row but a file is stored`);
+    for (const r of m.urlOnly) {
+      const name = r.slot || '';
+      if (name && imgs.some((f) => f.replace(IMAGE_RE, '') === name)) problems.push(`${lane}/${name}: URL-only row but a file is stored`);
+    }
   }
   for (const s of SLOTS.filter((x) => x.file)) {
     const m = readManifest(path.join(root, 'reference', 'r5', s.lane));
     if (!m.stored.some((r) => r.slot === s.slot) && !m.urlOnly.some((r) => r.slot === s.slot)) problems.push(`${s.lane}/${s.slot}: pinned in slots.mjs but not fetched`);
   }
-  return { ok: problems.length === 0, problems, stored, urlOnly, files };
+  return { ok: problems.length === 0, problems, stored, urlOnly, notes, files, hashedAtVerify, byLane };
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) {
   const run = async () => {
-    if (argv.includes('--selftest')) { const t = classifierSelfTest(); console.log(JSON.stringify(t, null, 1)); return t.ok ? 0 : 1; }
+    if (argv.includes('--selftest')) { const t = { classifier: classifierSelfTest(), parser: parserSelfTest() }; console.log(JSON.stringify(t, null, 1)); return t.classifier.ok && t.parser.ok ? 0 : 1; }
     if (argv.includes('--verify')) { const v = verify(); console.log(JSON.stringify(v, null, 1)); return v.ok ? 0 : 1; }
     const q = flag('--search') || flag('--preview');
     if (q) {

@@ -11,10 +11,43 @@
 /** Sources that may never appear in reference/ (plan §0 rule 9; the deleted Round-4 stills came from these). */
 export const FORBIDDEN_SOURCE_RE = /guerrilla|sony|playstation|horizon ?zero|horizon ?forbidden|\bhzd\b|\bhfw\b|\baloy\b|fortnite|epic ?games|steamstatic|gematsu|ytimg|youtube|sketchfab/i;
 
-/** licence column values a STORED row may carry */
-export const STORED_LICENCES = /^(PD|CC0-1\.0|CC-BY-[1-4]\.0|CC-BY-2\.5|own-photo)$/;
+/**
+ * licence codes a STORED row may carry (after normaliseLicence). `own-photo` and `project-original` are the project's
+ * own work (plan §10.2 "own photos"; hero-body's review sheets are renders of the live build).
+ */
+export const STORED_LICENCES = /^(PD|CC0-1\.0|CC-BY-[1-4]\.0|CC-BY-2\.5|own-photo|project-original)$/;
 
-const strip = (s) => String(s ?? '').replace(/<[^>]*>/g, ' ').replace(/&amp;/g, '&').replace(/&quot;/g, '"').replace(/&#0?39;/g, "'")
+/**
+ * A MANIFEST licence cell, as any lane writes it, -> { code, cls, attribution } (W0b targeted fix round 1).
+ *   'Public domain' | 'PD'                                   -> PD
+ *   'CC0' | 'CC0-1.0 (render of a CC0 model)'                -> CC0-1.0
+ *   'CC BY 3.0 (attribution: "X" by Y, CC BY 3.0)' | 'CC-BY-2.0' -> CC-BY-3.0 (+ the attribution string)
+ *   'project-original (…)' | 'own photo'                     -> project-original | own-photo
+ *   'CC BY-SA 4.0 — not stored' | GFDL                       -> cls url-only
+ *   NC / ND                                                  -> cls refused
+ *   'project text' / '—'                                     -> cls note (a spec row, no image)
+ * The NC / ND / SA tests read the licence part only, never the attribution note (a title may hold any word).
+ */
+export function normaliseLicence(cell) {
+  const raw = String(cell ?? '').replace(/`/g, '').trim();
+  const am = /\(\s*attribution\s*:\s*([\s\S]*)\)\s*$/i.exec(raw);
+  const attribution = am ? am[1].trim() : '';
+  const lic = (am ? raw.slice(0, am.index) : raw).trim();
+  const low = lic.toLowerCase();
+  const out = (code, cls) => ({ code, cls, attribution, text: raw });
+  if (!low || /^(—|-|–|n\/a)$/.test(low) || /^project text\b/.test(low)) return out('', 'note');
+  if (/^project[- ]original\b/.test(low)) return out('project-original', 'stored');
+  if (/^own[- ](photo|render|work)\b/.test(low)) return out('own-photo', 'stored');
+  if (/(^|[^a-z])(nc|nd)([^a-z]|$)|non-?commercial|no-?deriv/.test(low)) return out(lic, 'refused');
+  if (/not stored|url[- ]only/.test(low) || /(^|[^a-z])sa([^a-z]|$)|share ?-?alike|gfdl|free art|\bfal\b/.test(low)) return out(lic, 'url-only');
+  if (/^cc0\b|cc-zero|public domain dedication/.test(low)) return out('CC0-1.0', 'stored');
+  if (/^public domain\b|^pd([^a-z]|$)/.test(low)) return out('PD', 'stored');
+  const by = /^cc[- ]?by[- ]?(\d\.\d)\b/.exec(low);
+  if (by) return out(`CC-BY-${by[1]}`, 'stored');
+  return out(lic, 'unclear');
+}
+
+const strip =(s) => String(s ?? '').replace(/<[^>]*>/g, ' ').replace(/&amp;/g, '&').replace(/&quot;/g, '"').replace(/&#0?39;/g, "'")
   .replace(/&nbsp;/g, ' ').replace(/\s+/g, ' ').trim();
 
 /**

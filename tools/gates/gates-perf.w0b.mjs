@@ -45,9 +45,9 @@ import { PROFILE_ROOT, profileDir, disposeProfile, acquireChromeSlot, installPro
 import { BUDGETS, STAGE_PRELUDE, PERF_SCENARIOS, MEMORY_BUDGETS, RT_LEDGER } from '../budgets.mjs';
 import { ROSTER } from '../gate-roster.mjs';
 import { PLACES } from '../gate-places.mjs';
-import { verify as verifyReferenceSet } from '../r5-refs/fetch.mjs';
-import { classifierSelfTest, FORBIDDEN_SOURCE_RE, STORED_LICENCES } from '../r5-refs/licence.mjs';
-import { readManifest, laneFolders } from '../r5-refs/manifest.mjs';
+import { verify as verifyReferenceSet, storedRowProblems } from '../r5-refs/fetch.mjs';
+import { classifierSelfTest } from '../r5-refs/licence.mjs';
+import { readManifest, laneFolders, parserSelfTest } from '../r5-refs/manifest.mjs';
 import { SLOTS } from '../r5-refs/slots.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -166,14 +166,16 @@ async function systemLedger(page) {
  * Run fn({ page, cdp, browser, errors }) on a fresh page; console errors and system/hook errors FAIL the row
  * (the harness's rule for action rows), the page is closed and our Chrome (if we launched it) is closed.
  */
-async function onPage(PORT, fn, { initScripts = [] } = {}) {
+async function onPage(PORT, fn, { initScripts = [], preBoot = null } = {}) {
   let h = null, page = null;
   try {
     h = await openBrowser(PORT);
+    // preBoot(browser): readings in THIS Chrome before the game page exists (A90-abs's GPU-process baseline)
+    const pre = preBoot ? await preBoot(h.browser) : null;
     const booted = await bootPage(h.browser, PORT, initScripts);
     page = booted.page;
     const cdp = await page.createCDPSession();
-    const out = await fn({ page, cdp, browser: h.browser, errors: booted.errors, shared: h.shared });
+    const out = await fn({ page, cdp, browser: h.browser, errors: booted.errors, shared: h.shared, pre });
     const sys = await systemLedger(page);
     const bad = sys ? sys.systemErrors : [];
     if (booted.errors.length || bad.length || (sys && sys.hookErrors)) {
@@ -257,6 +259,11 @@ const slope = (pts) => {             // least squares, bytes per second
  * Bars that do not bind in this run are measured and REPORTED in full (`bars`), never hidden.
  */
 export const INSTRUMENT_ROWS = Object.freeze(['A-alloc-rate', 'A-vram-ledger', 'A90-abs']);
+/**
+ * A NEGATIVE CONTROL (targeted fix round 1, engineering judge: "an instrument a fake could pass"): an instrument criterion
+ * evaluated on an input it must reject. `wouldPass` is what the criterion answered; the control holds when it is false.
+ */
+const neg = (criterion, how, wouldPass) => ({ criterion, how, wouldPass: !!wouldPass, ok: !wouldPass });
 const WAVES = ['W0a', 'W0b', 'W1', 'W2', 'W3', 'W4'];
 const waveIdx = (w) => { const i = WAVES.indexOf(String(w)); return i < 0 ? 1 : i; };
 const WAVE_NOW = () => String(process.env.CAL_WAVE || 'W0b');
@@ -293,20 +300,31 @@ const allocOwnerOfFile = (file) => (file === CONTROL_FILE ? { id: 'planted-contr
   : ALLOC_OWNER_ROWS.find((o) => o.re.test(file)) || { id: 'other-src', lane: 'orchestrator (src file no owner row names)', barsFrom: null, ruling: '—' });
 const fileOfKey = (fnKey) => String(fnKey).split(' ').slice(-1)[0].replace(/:\d+$/, '');
 
-function attribute(profile, seconds, frames, PORT) {
+/**
+ * opts (the negative controls only): `dropHeaviestHeadChild` walks the tree WITHOUT the head's heaviest child subtree (an
+ * attribution that loses a subtree); `foreignSampleEvery` re-points every Nth sample at a node id the tree does not hold
+ * (a sample no named owner can claim). The graded calls pass no opts.
+ */
+function attribute(profile, seconds, frames, PORT, opts = {}) {
   const srcRe = new RegExp(`^https?://(localhost|127\\.0\\.0\\.1|\\[::1\\]):${PORT}/src/`);
   const key = (cf) => `${cf.functionName || '(anonymous)'} ${String(cf.url).replace(/^https?:\/\/[^/]+/, '').replace(/\?.*$/, '')}:${cf.lineNumber + 1}`;
   let total = 0, srcSelf = 0, srcCaller = 0, noSrcTotal = 0;
   const self = new Map(), caller = new Map(), outside = new Map(), noSrc = new Map(), noSrcTop = new Map();
   const add = (m, k, v) => m.set(k, (m.get(k) || 0) + v);
   const bucketOf = (url) => { if (!url) return NO_SCRIPT; return NO_SRC_BUCKETS.find((b) => b.re.test(url)) || NO_SRC_BUCKETS[NO_SRC_BUCKETS.length - 1]; };
+  const nodeOwner = new Map();                 // node id -> the named owner its bytes were charged to
+  const head = profile.head || { children: [] };
+  const skip = opts.dropHeaviestHeadChild ? (() => { const sub = (n) => (n.selfSize || 0) + (n.children || []).reduce((a, c) => a + sub(c), 0);
+    let best = null, bb = -1; for (const c of head.children || []) { const b = sub(c); if (b > bb) { bb = b; best = c; } } return best; })() : null;
   const walk = (node, nearest, nearestScript) => {
+    if (node === skip) return;
     const cf = node.callFrame || {};
     const url = cf.url || '';
     const isSrc = srcRe.test(url);
     const here = isSrc ? key(cf) : nearest;
     const script = url ? url : nearestScript;
     const sz = node.selfSize || 0;
+    nodeOwner.set(node.id, here ? 'src ' + here : 'no-src ' + bucketOf(script).id);
     if (sz) {
       total += sz;
       if (isSrc) { srcSelf += sz; add(self, here, sz); }
@@ -320,7 +338,28 @@ function attribute(profile, seconds, frames, PORT) {
     }
     for (const c of node.children || []) walk(c, here, script);
   };
-  walk(profile.head, null, null);
+  walk(head, null, null);
+  // INDEPENDENT ACCOUNTING (targeted fix round 1; engineering judge: `srcCaller + noSrcTotal === total` was a tautology, walk()
+  // charges every byte to exactly one of the two). V8 keeps a SECOND record of the same allocations: the sample list
+  // (profile.samples, one entry per sample with its scaled size and its node id), apart from the node tree whose selfSize
+  // sums the walk reads. The bytes the walk charged to named owners are checked against it:
+  //   - every sample's node is a node the walk named (unnamedSampleBytes, computed, must be 0);
+  //   - the walk's bytes equal the sample list's bytes within ACCOUNTING_TOLERANCE (the two records round each sample's
+  //     scale differently: the tree per (node, size) bucket, the list per sample);
+  //   - the walk's bytes are >= samples x the sampling interval: a sample stands for at least one interval of allocation
+  //     (V8 scales a sample of size s by 1 / (1 - exp(-s / interval)), and s / (1 - exp(-s / interval)) >= interval).
+  const samples = profile.samples || [];
+  const every = opts.foreignSampleEvery || 0;
+  let sampleBytes = 0, unnamedSampleBytes = 0, unnamedSamples = 0;
+  const sampleOwnerBytes = new Map();
+  for (let i = 0; i < samples.length; i++) {
+    const sm = samples[i];
+    sampleBytes += sm.size;
+    const o = every && i % every === 0 ? undefined : nodeOwner.get(sm.nodeId);
+    if (!o) { unnamedSampleBytes += sm.size; unnamedSamples++; } else add(sampleOwnerBytes, o, sm.size);
+  }
+  const interval = opts.interval || W0B_BUDGETS.alloc.samplingIntervalB;
+  const attributedBytes = srcCaller + noSrcTotal;
   const fps = frames / seconds;
   // graded rate: the measured rate, or the per-frame bytes at 60 fps when the box ran slower (a starved
   // box allocates less per second; per frame it does not)
@@ -337,32 +376,32 @@ function attribute(profile, seconds, frames, PORT) {
   return { seconds: r2(seconds), frames, fps: r1(fps), total: at(total), srcSelf: at(srcSelf), srcCaller: at(srcCaller),
     graded: at(srcCaller), topGraded: top(caller, 80), topSrcSelf: top(self, 12), topOutsideSrc: top(outside, 10),
     srcFunctionsSeen: caller.size, owners, noSrc: { ...at(noSrcTotal), buckets, top: top(noSrcTop, 8) },
-    accounting: { totalBytes: total, srcBytes: srcCaller, noSrcBytes: noSrcTotal, exact: srcCaller + noSrcTotal === total,
-      unnamedBytes: 0 },
+    accounting: accountingOf({ attributedBytes, srcBytes: srcCaller, noSrcBytes: noSrcTotal, samples: samples.length, sampleBytes, unnamedSampleBytes, unnamedSamples, interval,
+      structural: 'src + no-src = the tree total by construction (walk() charges each byte to exactly one): a structural note, not graded' }),
     allFunctions: [...caller.entries()].map(([fn, b]) => ({ fn, ...at(b) })) };
 }
 
-/** who answers for a src/** file's per-frame allocations (plan §1.1 frozen systems, §2 lane rows): the routing text */
-const SRC_OWNERS = [
-  [/^\/src\/world\/(terrain|vegetation|water)\.js|^\/src\/world\/island\//, 'world-ground (W1)'],
-  [/^\/src\/world\/environment\.js/, 'world-sky (W1)'],
-  [/^\/src\/core\/(collision|nav|hitHulls)\.js/, 'FROZEN kept movement (plan §1.1): §11 W1 perf-hygiene grant, outputs bit-identical (R48 c)'],
-  [/^\/src\/core\/engine\.js/, 'engine (no lane after W0b): §11 engine follow-up grant assigned at W1 launch (R48 c)'],
-  [/^\/src\/main\.js/, 'FROZEN frame loop (main.js): orchestrator'],
-  [/^\/src\/entities\/anim\/(boneSpace|restPose|clipLayer|retargeter|rigDebug|locomotion)\.js/, 'FROZEN kept rigging (plan §1.1): §11 W1 perf-hygiene grant, outputs bit-identical (R48 c)'],
-  [/^\/src\/entities\/machines\/(gait|autorig)\.js|^\/src\/entities\/machines\/rig\//, 'FROZEN kept machine rig (plan §1.1): §11 W1 perf-hygiene grant, outputs bit-identical (R48 c)'],
-  [/^\/src\/entities\/playerAnimator\.js/, 'melee W1 (R48 c; hero-body holds it at W0b)'],
-  [/^\/src\/entities\/(player)\.js|^\/src\/entities\/anim\//, 'hero-body (W0b; melee from W1)'],
-  [/^\/src\/entities\/machines\/|^\/src\/instruments\//, 'instruments-core / the Instruments lanes (A-alloc-machines, R46)'],
-  [/^\/src\/world\/fauna/, 'world-props W1 (R48 c)'],
-  [/^\/src\/world\/(props)|^\/src\/world\/props\/|^\/src\/world\/sites\//, 'world-props'],
-  [/^\/src\/world\/(camp|npc|settlements)/, 'settlements (W2, R48 c)'],
-  [/^\/src\/combat\/|^\/src\/items\//, 'combat-kit (W2) / armory'],
-  [/^\/src\/audio\//, 'audio (W3, R48 c)'],
-  [/^\/src\/ui\//, 'shell-ui (W2, R48 c)'],
-  [/^\/src\/core\/(progression|save)\.js/, 'progression (W3)'],
-];
-const srcOwner = (fnKey) => { const file = fileOfKey(fnKey); return (SRC_OWNERS.find(([re]) => re.test(file)) || [null, 'orchestrator'])[1]; };
+/** the attribution check against V8's independent sample list (see attribute()): pure, so its negative controls can run it */
+const ACCOUNTING_TOLERANCE = 0.05;
+function accountingOf(a) {
+  const vsSamples = a.sampleBytes ? a.attributedBytes / a.sampleBytes : null;
+  const lowerBound = a.samples * a.interval;
+  const checks = {
+    sampleListPresent: a.samples > 0,
+    everySampleOnANamedOwner: a.samples > 0 && a.unnamedSampleBytes === 0,
+    walkMatchesSampleList: vsSamples !== null && Math.abs(vsSamples - 1) <= ACCOUNTING_TOLERANCE,
+    walkAtLeastSamplesTimesInterval: a.samples > 0 && a.attributedBytes >= 0.99 * lowerBound,
+  };
+  return { ...a, vsSamples: vsSamples === null ? null : +vsSamples.toFixed(4), samplesTimesIntervalBytes: lowerBound,
+    vsLowerBound: lowerBound ? +(a.attributedBytes / lowerBound).toFixed(4) : null, tolerance: ACCOUNTING_TOLERANCE, checks, ok: Object.values(checks).every(Boolean) };
+}
+
+/**
+ * Who answers for a src/** file's per-frame allocations: the routing text, DERIVED from the owner rows of
+ * MEMORY_BUDGETS.alloc.owners (targeted fix round 1: one table, so the routing and the bar schedule cannot disagree).
+ */
+const routeOfRow = (o) => (o.id === 'other-src' ? 'orchestrator (a src file no owner row names)' : `${o.lane}${o.barsFrom ? ` — bars from the ${o.barsFrom} exit` : ' — baseline guard only (frozen / no lane after W0b)'}`);
+const srcOwner = (fnKey) => routeOfRow(allocOwnerOfFile(fileOfKey(fnKey)));
 
 /**
  * THE PLANTED ALLOCATOR (positive control, R48 b "self-tests passing"). A module of known allocation behaviour is served
@@ -399,6 +438,8 @@ async function servePlanted(cdp, PORT) {
   await cdp.send('Fetch.enable', { patterns: [{ urlPattern: '*__gates-perf-control*', requestStage: 'Request' }] });
   return async () => { cdp.off('Fetch.requestPaused', onPaused); await cdp.send('Fetch.disable').catch(() => {}); };
 }
+/** does a profile's attribution hold the planted allocator (the "absent from the graded phases" detector) */
+const hasControl = (a) => a.allFunctions.some((x) => fileOfKey(x.fn) === CONTROL_FILE || /__gates-perf-control/.test(x.fn));
 async function plantedControl(page, cdp, PORT, B) {
   const unserve = await servePlanted(cdp, PORT);
   try {
@@ -441,7 +482,13 @@ async function plantedControl(page, cdp, PORT, B) {
     // (within tolerance) and the control's no-src bytes must not leak into src
     const okOut = outRatio !== null && outRatio >= 1 - tol;
     const ownerRow = a.owners.find((o) => o.id === 'planted-control');
-    return { ok: okSrc && okOut && perCallB > 1000, perCallBytes: r1(perCallB), retainedK: K, heapBefore: h0, heapHeld: h1, heapReleased: h2,
+    // NEGATIVE controls (targeted fix round 1): the same comparison must REJECT a 1.5 x size error and a run in which the
+    // out-of-src copy's bytes had been charged to src; and the detector that grades "the control is absent from the graded
+    // phases" must SEE the control in this window, where it is present
+    const within = (got, exp) => exp > 0 && Math.abs(got / exp - 1) <= tol;
+    const negative = { wrongSizeWouldPass: within(srcRecovered, expSrc * 1.5), outOfSrcLeakIntoSrcWouldPass: within(srcRecovered + outRecovered, expSrc),
+      detectorSeesTheControl: hasControl(a) };
+    return { ok: okSrc && okOut && perCallB > 1000, perCallBytes: r1(perCallB), negative, retainedK: K, heapBefore: h0, heapHeld: h1, heapReleased: h2,
       releasedBackWithin: r1((h2 - h0) / 1024) + ' KB', calls, windowS: r2(prof.attribution.seconds), fps: prof.attribution.fps,
       src: { expectedBytes: Math.round(expSrc), recoveredBytes: srcRecovered, ratio: srcRatio === null ? null : +srcRatio.toFixed(3), functions: srcFns, owner: ownerRow ? ownerRow.id : null, ok: okSrc },
       outsideSrc: { expectedBytes: Math.round(expOut), bucketBytes: outRecovered, ratio: outRatio === null ? null : +outRatio.toFixed(3), ok: okOut },
@@ -449,7 +496,11 @@ async function plantedControl(page, cdp, PORT, B) {
   } finally { await unserve(); }
 }
 
-/** the R48 (c) baseline guard: an owner exceeds its baseline only when BOTH its KB/frame and its KB/s exceed factor x baseline */
+/**
+ * the R48 (c) baseline guard: an owner exceeds its baseline when EITHER its KB/frame OR its KB/s exceeds factor x baseline
+ * (targeted fix round 1: fix round 3 required both, which is looser than R48 c's "no owner may exceed its baseline by more
+ * than 10 %"; the gate judge and the engineering judge both found it)
+ */
 function guardOwners(baseline, current, factor) {
   const out = [];
   for (const o of current) {
@@ -459,7 +510,8 @@ function guardOwners(baseline, current, factor) {
     const rF = b.kbPerFrame ? o.kbPerFrame / b.kbPerFrame : (o.kbPerFrame > 0 ? Infinity : 0);
     const rS = b.measuredKBps ? o.measuredKBps / b.measuredKBps : (o.measuredKBps > 0 ? Infinity : 0);
     out.push({ id: o.id, lane: o.lane, nowKbPerFrame: o.kbPerFrame, baseKbPerFrame: b.kbPerFrame, nowKBps: o.measuredKBps, baseKBps: b.measuredKBps,
-      ratioPerFrame: Number.isFinite(rF) ? +rF.toFixed(3) : rF, ratioPerSecond: Number.isFinite(rS) ? +rS.toFixed(3) : rS, exceeds: rF > factor && rS > factor });
+      ratioPerFrame: Number.isFinite(rF) ? +rF.toFixed(3) : rF, ratioPerSecond: Number.isFinite(rS) ? +rS.toFixed(3) : rS, exceeds: rF > factor || rS > factor,
+      on: [rF > factor ? 'KB/frame' : null, rS > factor ? 'KB/s' : null].filter(Boolean) });
   }
   return { factor, rows: out, offenders: out.filter((x) => x.exceeds) };
 }
@@ -476,9 +528,14 @@ function guardSelfTest(owners, factor) {
   if (!big) return { ok: false, why: 'no owner to test with' };
   const same = guardOwners(asBase(null, 1, 1), owners, factor);
   const grown = guardOwners(asBase(big.id, 1 / 1.25, 1 / 1.25), owners, factor);
-  const boxOnly = guardOwners(asBase(big.id, 1 / 1.25, 1), owners, factor);
-  const ok = same.offenders.length === 0 && grown.offenders.length === 1 && grown.offenders[0].id === big.id && boxOnly.offenders.length === 0;
-  return { ok, owner: big.id, unchangedOffenders: same.offenders.length, grown25PercentFlags: grown.offenders.map((x) => x.id), perFrameOnlyGrowthFlags: boxOnly.offenders.map((x) => x.id) };
+  const perFrameOnly = guardOwners(asBase(big.id, 1 / 1.25, 1), owners, factor);
+  const perSecondOnly = guardOwners(asBase(big.id, 1, 1 / 1.25), owners, factor);
+  const within = guardOwners(asBase(big.id, 1 / 1.05, 1 / 1.05), owners, factor);
+  const alone = (g) => g.offenders.length === 1 && g.offenders[0].id === big.id;
+  // positive: 0 flags unchanged and at +5 %; NEGATIVE (the guard can fail an owner): +25 % on both, on KB/frame only, on KB/s only
+  const ok = same.offenders.length === 0 && within.offenders.length === 0 && alone(grown) && alone(perFrameOnly) && alone(perSecondOnly);
+  return { ok, owner: big.id, rule: 'EITHER KB/frame OR KB/s > ' + factor + ' x baseline', unchangedOffenders: same.offenders.length, grown5PercentFlags: within.offenders.map((x) => x.id),
+    grown25PercentFlags: grown.offenders.map((x) => x.id), perFrameOnlyGrowthFlags: perFrameOnly.offenders.map((x) => x.id), perSecondOnlyGrowthFlags: perSecondOnly.offenders.map((x) => x.id) };
 }
 
 async function allocRate({ PORT }) {
@@ -506,7 +563,13 @@ async function allocRate({ PORT }) {
       const { profile } = await cdp.send('HeapProfiler.stopSampling');
       const seconds = (Date.now() - tS) / 1000;
       const frames = (await page.evaluate('__CTX__.engine.frames')) - f0;
-      return { attribution: attribute(profile, seconds, frames, PORT), heap, extra };
+      // NEGATIVE controls on this window's own profile: an attribution that loses a subtree, and samples no owner holds,
+      // must each FAIL the accounting check
+      const lossy = attribute(profile, seconds, frames, PORT, { dropHeaviestHeadChild: true }).accounting;
+      const foreign = attribute(profile, seconds, frames, PORT, { foreignSampleEvery: 50 }).accounting;
+      const negatives = { lossyWalkWouldPass: lossy.ok, lossyVsSamples: lossy.vsSamples, lossyUnnamedSampleBytes: lossy.unnamedSampleBytes,
+        foreignSamplesWouldPass: foreign.ok, foreignUnnamedSampleBytes: foreign.unnamedSampleBytes };
+      return { attribution: attribute(profile, seconds, frames, PORT), heap, extra, negatives };
     };
     const phase = async (name, drive, windowS = B.windowS) => {
       await sleep(B.warmupS * 1000);                                     // steady state, not the staging transient
@@ -527,7 +590,7 @@ async function allocRate({ PORT }) {
       const s = slope(w.heap);
       for (const x of a.topGraded) { x.owner = srcOwner(x.fn); x.ownerRow = allocOwnerOfFile(fileOfKey(x.fn)).id; }
       for (const x of a.topSrcSelf) x.owner = srcOwner(x.fn);
-      return { name, ...a, driveWitness, heapPostGcB: w.heap.map(([t, b]) => [r2(t), b]), heapSlopeBps: s === null ? null : Math.round(s), wallS: r2((Date.now() - t0) / 1000),
+      return { name, ...a, driveWitness, negatives: w.negatives, heapPostGcB: w.heap.map(([t, b]) => [r2(t), b]), heapSlopeBps: s === null ? null : Math.round(s), wallS: r2((Date.now() - t0) / 1000),
         crossCheck: { usedHeapRisesKBps: sawtoothKBps, note: 'used-heap rises over 2 s, no forced GC: a lower bound on all allocation (src + three + browser)' } };
     };
     const fightPhase = await phase('staged fight', null);
@@ -567,7 +630,7 @@ async function allocRate({ PORT }) {
     let control = null;
     try { control = await plantedControl(page, cdp, PORT, B); }
     catch (err) { control = { ok: false, error: String(err.message || err).slice(0, 200) }; }
-    const controlInGraded = phases.some((p) => p.allFunctions.some((x) => fileOfKey(x.fn) === CONTROL_FILE || /__gates-perf-control/.test(x.fn)));
+    const controlInGraded = phases.some(hasControl);
 
     // ---- measured numbers (every one reported) ----
     const worstSrc = Math.max(...phases.map((p) => p.graded.gradedKBps));
@@ -579,7 +642,8 @@ async function allocRate({ PORT }) {
     const slopes = phases.map((p) => p.heapSlopeBps);
     const owners = worstOwners(phases);
     // ROUTED: every over-bar function carries an owner and a file:line (its key is "<fn> /src/<file>:<line>")
-    const unrouted = [...overFn.values()].filter((x) => !/ \/src\/[^ ]+:\d+$/.test(x.fn) || !x.owner);
+    const unroutedOf = (list) => list.filter((x) => !/ \/src\/[^ ]+:\d+$/.test(x.fn) || !x.owner);
+    const unrouted = unroutedOf([...overFn.values()]);
     // ---- the R48 (c) baseline guard ----
     let baseline = null, baselineState;
     if (recordBaseline) baselineState = 'recording';
@@ -592,15 +656,31 @@ async function allocRate({ PORT }) {
     const scheduledOver = [...overFn.values()].filter((x) => active.includes(x.ownerRow));
     const unscheduledOwners = owners.filter((o) => o.id !== 'planted-control' && !(o.barsFrom && waveIdx(o.barsFrom) <= waveIdx(wave)) && o.bytes > 0).map((o) => o.id);
     const totalBinds = unscheduledOwners.length === 0;
-    const accountingOk = phases.every((p) => p.accounting.exact) && (!control?.ok || true);
+    // targeted fix round 1: graded against V8's independent sample list (attribute(): accountingOf), not src + no-src = total
+    const accountingOk = phases.every((p) => p.accounting.ok);
+    const sawAlloc = (ps) => ps.every((p) => p.total.measuredKBps > 0);
+    const drove = (w) => !!w && w.sprintingFraction > 0.2 && w.arrowsFired >= 2;
+    // NEGATIVE CONTROLS: each instrument criterion, fed an input it must reject, has to come out false
+    const negatives = [
+      neg('profilerSawAllocations', 'a phase whose profile saw 0 KB/s', sawAlloc([{ total: { measuredKBps: 0 } }])),
+      neg('sprintAndDrawHappened', 'a drive witness with no sprint and no arrow', drove({ sprintingFraction: 0, arrowsFired: 0 })),
+      neg('everyByteAttributedToANamedOwner', 'each graded profile walked without its heaviest subtree', phases.some((p) => p.negatives?.lossyWalkWouldPass !== false)),
+      neg('everyByteAttributedToANamedOwner', 'each graded profile with every 50th sample on a node no owner holds', phases.some((p) => p.negatives?.foreignSamplesWouldPass !== false)),
+      neg('selfTestPlantedAllocatorRecovered', 'the recovered bytes against a 1.5 x expected size', control?.negative?.wrongSizeWouldPass !== false),
+      neg('selfTestPlantedAllocatorRecovered', 'the out-of-src copy\'s bytes charged to src', control?.negative?.outOfSrcLeakIntoSrcWouldPass !== false),
+      neg('selfTestControlAbsentFromGradedPhases', 'the detector on the control window, where the control IS present', control?.negative?.detectorSeesTheControl !== true),
+      neg('selfTestBaselineGuard', 'the largest owner grown 25 % on one metric only (KB/frame, then KB/s)', !(guardTest.perFrameOnlyGrowthFlags?.length && guardTest.perSecondOnlyGrowthFlags?.length)),
+      neg('everyOverBarFunctionRoutedWithFileLine', 'an over-bar function with no file:line and no owner', unroutedOf([{ fn: '(anonymous) (program)', owner: null }]).length === 0),
+    ];
     const instrument = {
-      profilerSawAllocations: phases.every((p) => p.total.measuredKBps > 0),
-      sprintAndDrawHappened: !!shots && shots.sprintingFraction > 0.2 && shots.arrowsFired >= 2,
+      profilerSawAllocations: sawAlloc(phases),
+      sprintAndDrawHappened: drove(shots),
       everyByteAttributedToANamedOwner: accountingOk,
       selfTestPlantedAllocatorRecovered: !!control?.ok,
       selfTestControlAbsentFromGradedPhases: !controlInGraded,
       selfTestBaselineGuard: !!guardTest.ok,
       everyOverBarFunctionRoutedWithFileLine: unrouted.length === 0,
+      negativeControlsEachFail: negatives.every((n) => n.ok),
     };
     const bars = {
       scheduledAbsoluteBars: { binding: true, wave, activeOwners: active, pass: scheduledOver.length === 0, over: scheduledOver.map((x) => x.fn + ' ' + x.gradedKBps + ' KB/s') },
@@ -642,7 +722,7 @@ async function allocRate({ PORT }) {
     const barLine = Object.entries(bars).map(([k, b]) => `${k} ${b.pass === null ? 'PENDING' : b.pass ? 'pass' : 'FAIL'}${b.binding ? '' : ' (not binding)'}`).join(', ');
     return { pass, detail: {
       verdict: (pass ? 'PASS' : 'FAIL: ' + [...Object.keys(instrument).filter((k) => !instrument[k]), ...Object.entries(bars).filter(([, b]) => b.binding && b.pass === false).map(([k]) => 'bar ' + k)].join(', '))
-        + ` — INSTRUMENT (R48 b): ${instrumentOk ? 'PASS' : 'FAIL'} (planted allocator ${control?.src?.ratio ?? '?'}x of ${control?.perCallBytes ?? '?'} B/call in src, ${control?.outsideSrc?.ratio ?? '?'}x outside src; every byte in a named owner: ${accountingOk}; baseline-guard self-test ${guardTest.ok}); `
+        + ` — INSTRUMENT (R48 b): ${instrumentOk ? 'PASS' : 'FAIL'} (planted allocator ${control?.src?.ratio ?? '?'}x of ${control?.perCallBytes ?? '?'} B/call in src, ${control?.outsideSrc?.ratio ?? '?'}x outside src; every byte in a named owner: ${accountingOk} (walk / V8 sample list ${phases.map((p) => p.accounting.vsSamples).join(' / ')}, unnamed sample bytes ${phases.map((p) => p.accounting.unnamedSampleBytes).join(' / ')}, walk / (samples x interval) ${phases.map((p) => p.accounting.vsLowerBound).join(' / ')}); baseline-guard self-test ${guardTest.ok} (${guardTest.rule || ''}); negative controls ${negatives.filter((n) => n.ok).length}/${negatives.length} fail as they must); `
         + `BARS (${binding ? 'binding: global run' : 'lane run: graded at the orchestrator\'s 5270 global run, R48 b/c'}; wave ${wave}): ${barLine}; baseline ${baselineState}${recorded ? (recorded.written ? ' -> RECORDED ' + recorded.file : ' -> NOT recorded: ' + recorded.why) : ''} — `
         + `measured: src/** (caller attribution) ${worstSrc} KB/s (bar ${B.srcKBps}), worst src function ${worstFn ? worstFn.fn + ' ' + worstFn.gradedKBps + ' KB/s in ' + worstFn.phase : 'none'} (bar ${B.fnKBps}), post-GC heap slope ${slopes.map((s) => (s === null ? '?' : r1(s / 1024) + ' KB/s')).join(' / ')} (bar <= 0); `
         + phases.map((p) => `${p.name}: ${p.fps} fps, all allocation ${p.total.measuredKBps} KB/s = src ${p.srcCaller.measuredKBps} + no-src ${p.noSrc.measuredKBps} (${p.noSrc.buckets.map((b) => b.id + ' ' + b.measuredKBps).join(', ')})`).join('; ')
@@ -650,7 +730,8 @@ async function allocRate({ PORT }) {
         + (Object.keys(byOwner).length ? ` — src functions over ${B.fnKBps} KB/s by owner: ` + Object.entries(byOwner).map(([o, l]) => o + ': ' + l.slice(0, 4).join(', ')).join('; ') : ''),
       instrument, bars, runId: runIdOf(PORT), barsBinding: binding, wave,
       sealing: 'R48 (b): the harness seals every run that executes this row (tools/gates.r5.gates-perf.mjs INSTRUMENT_IDS): report bytes, run monitor and box sample bound to runId in the ledger; verify with node tools/gates.r5.gates-perf.mjs --instruments --port <port>',
-      selfTest: { plantedAllocator: control, controlAbsentFromGradedPhases: !controlInGraded, baselineGuard: guardTest },
+      selfTest: { plantedAllocator: control, controlAbsentFromGradedPhases: !controlInGraded, baselineGuard: guardTest, negatives,
+        accounting: phases.map((p) => ({ phase: p.name, ...p.accounting })) },
       owners, functionsOverBar: [...overFn.values()].map((x) => ({ fn: x.fn, gradedKBps: x.gradedKBps, kbPerFrame: x.kbPerFrame, measuredKBps: x.measuredKBps, phase: x.phase, owner: x.owner, ownerRow: x.ownerRow })),
       checks: { ...instrument, ...Object.fromEntries(Object.entries(bars).map(([k, b]) => ['bar:' + k, b.pass])) },
       budget: { srcKBps: B.srcKBps, fnKBps: B.fnKBps, heapSlopeBps: B.heapSlopeBps, baselineGuard: B.baselineGuard, controlTolerance: B.controlTolerance },
@@ -664,6 +745,24 @@ async function allocRate({ PORT }) {
 /* A-vram-ledger: a census of the GL allocation calls, installed before the game makes its context       */
 /* ------------------------------------------------------------------------------------------------ */
 /* the same sized-format table engine-gpu's A-rt-ledger-census uses (RGB stored as 4 channels, DEPTH_COMPONENT24 = 4 B) */
+/*
+ * TARGETED FIX ROUND 1 (engineering judge: the wrappers allocated on every WebGL call: a rest array per call through
+ * `function (...a)` on every WebGL2 method wrapped, and a string key per bindTexture, against this file's own memory rule,
+ * adding GC churn to the measured fight). Now:
+ *   - NO bind call is wrapped (activeTexture, bindTexture, bindBuffer*, bindFramebuffer, bindRenderbuffer run native): the
+ *     binding a size-changing call acts on is read from the context at that call (gl.getParameter of the *_BINDING enum,
+ *     which hands back the existing WebGL object: no allocation), so the census does no work at all on the per-frame
+ *     bind traffic (a numeric key in a preallocated table would still run JS on every bind);
+ *   - only the size- and attachment-changing calls are wrapped (tex*Image*, texStorage*, copyTexImage2D, generateMipmap,
+ *     renderbufferStorage*, framebufferTexture2D / -Layer / -Renderbuffer, bufferData, delete*), each with ONE fixed-arity
+ *     wrapper (named parameters, `real.apply(this, arguments)`, which V8 forwards without building an array once the
+ *     wrapper is optimised) and no closure or array per call;
+ *   - records are keyed numerically and updated IN PLACE: texture levels in an array indexed face * 32 + level, one record
+ *     object per level created on its first upload and rewritten after; renderbuffer and buffer records rewritten in place;
+ *     the first-upload src frames are captured once per object, never per call.
+ * A-vram-ledger measures it: B per wrapped call on a scratch context (selfTest.censusPerCallAllocation), with a positive
+ * control that the probe sees a wrapper that does allocate.
+ */
 const GL_CENSUS = String.raw`(() => {
   if (window.__glCensus) return;
   const SIZED = { 0x8058: 4, 0x8C43: 4, 0x8051: 4, 0x8C41: 4, 0x881A: 8, 0x881B: 8, 0x8814: 16, 0x8815: 16,
@@ -675,86 +774,120 @@ const GL_CENSUS = String.raw`(() => {
   const CH = { 0x1908: 4, 0x1907: 4, 0x190A: 2, 0x1909: 1, 0x1906: 1, 0x1902: 1, 0x84F9: 1, 0x1903: 1 };
   const TY = { 0x1401: 1, 0x1400: 1, 0x1403: 2, 0x1402: 2, 0x140B: 2, 0x8D61: 2, 0x1406: 4, 0x1405: 4, 0x1404: 4 };
   const PACKED = { 0x8033: 2, 0x8034: 2, 0x8363: 2, 0x84FA: 4, 0x8C3B: 4, 0x8C3E: 4, 0x8368: 4, 0x8DAD: 8 };
-  const unknown = new Set();
+  const unknown = new Set();                 // numeric internal formats with no size entry (reported)
   const bpp = (ifmt, fmt, type) => { if (SIZED[ifmt]) return SIZED[ifmt]; if (PACKED[type]) return PACKED[type];
-    if (CH[ifmt] && TY[type]) return CH[ifmt] * TY[type]; unknown.add('0x' + (ifmt || 0).toString(16)); return 4; };
-  const CUBE = 0x8513, FACE0 = 0x8515, FACE5 = 0x851A, FB = 0x8D40, DRAW_FB = 0x8CA9, READ_FB = 0x8CA8;
+    if (CH[ifmt] && TY[type]) return CH[ifmt] * TY[type]; unknown.add(ifmt | 0); return 4; };
+  const TEX_2D = 0x0DE1, CUBE = 0x8513, FACE0 = 0x8515, FACE5 = 0x851A, TEX_3D = 0x806F, TEX_2DA = 0x8C1A;
+  const BIND_2D = 0x8069, BIND_CUBE = 0x8514, BIND_3D = 0x806A, BIND_2DA = 0x8C1D;
+  const READ_FB = 0x8CA8, BIND_DRAW_FB = 0x8CA6, BIND_READ_FB = 0x8CAA, BIND_RB = 0x8CA7;
+  // buffer target -> its *_BINDING enum (ARRAY, ELEMENT_ARRAY, UNIFORM, COPY_READ, COPY_WRITE, PIXEL_PACK, PIXEL_UNPACK, TRANSFORM_FEEDBACK)
+  const BUF_BIND = { 0x8892: 0x8894, 0x8893: 0x8895, 0x8A11: 0x8A28, 0x8F36: 0x8F36, 0x8F37: 0x8F37, 0x88EB: 0x88ED, 0x88EC: 0x88EF, 0x8C8E: 0x8C8F };
   const objs = new Map();                    // GL object -> record (deleted objects are removed)
-  const fbAtt = new Map();                   // framebuffer -> Map(attachment point -> GL texture / renderbuffer)
+  const fbAtt = new Map();                   // framebuffer -> Map(attachment enum -> GL texture / renderbuffer)
   const arrBuf = new WeakMap();              // the typed array a buffer was filled from -> GL buffer (owner resolution)
-  const st = new WeakMap();
-  const S = (gl) => { let s = st.get(gl); if (!s) { s = { unit: 0, tex: new Map(), rb: null, buf: new Map(), fb: new Map() }; st.set(gl, s); } return s; };
-  const bindTarget = (t) => (t >= FACE0 && t <= FACE5 ? CUBE : t);
-  const boundTex = (gl, target) => S(gl).tex.get(S(gl).unit + ':' + bindTarget(target)) || null;
-  // the first upload's src frames (reported for an object no owner claims; captured once per object, never per frame)
+  const boundTex = (gl, target) => {
+    const b = target === TEX_2D ? BIND_2D : (target === CUBE || (target >= FACE0 && target <= FACE5)) ? BIND_CUBE : target === TEX_3D ? BIND_3D : target === TEX_2DA ? BIND_2DA : 0;
+    return b ? gl.getParameter(b) : null;
+  };
+  const faceOf = (target) => (target >= FACE0 && target <= FACE5 ? target - FACE0 : 0);
+  // the first upload's src frames (reported for an object no owner claims; captured once per object, never per call)
   const hintOf = () => { const s = String(new Error().stack || '').split('\n').filter((l) => /\/src\//.test(l) && !/__glCensus/.test(l)).slice(0, 3).map((l) => l.trim().replace(/^at /, '').replace(/https?:\/\/[^/]+/, '').replace(/\?[^:)]*/, '')); return s; };
-  const texRec = (t) => { let r = objs.get(t); if (!r) { r = { kind: 'tex', levels: new Map(), rt: false, created: performance.now(), hint: null }; objs.set(t, r); } return r; };
-  const setLevel = (gl, target, level, w, h, d, bytes) => { const t = boundTex(gl, target); if (!t) return; const r = texRec(t); if (!r.hint) r.hint = hintOf(); r.levels.set(target + ':' + level, { w, h, d, bytes }); };
-  const dims = (src) => src ? [src.videoWidth || src.naturalWidth || src.displayWidth || src.width || 0, src.videoHeight || src.naturalHeight || src.displayHeight || src.height || 0] : [0, 0];
+  const texRec = (t) => { let r = objs.get(t); if (!r) { r = { kind: 'tex', lv: [], rt: false, hint: null }; objs.set(t, r); } return r; };
+  const setLevel = (gl, target, face, level, w, h, d, bytes) => {
+    const t = boundTex(gl, target); if (!t) return;
+    const r = texRec(t); if (!r.hint) r.hint = hintOf();
+    const k = face * 32 + level;
+    const v = r.lv[k];
+    if (v) { v.w = w; v.h = h; v.d = d; v.bytes = bytes; } else r.lv[k] = { w, h, d, bytes };
+  };
+  const srcW = (src) => (src ? src.videoWidth || src.naturalWidth || src.displayWidth || src.width || 0 : 0);
+  const srcH = (src) => (src ? src.videoHeight || src.naturalHeight || src.displayHeight || src.height || 0 : 0);
   const P = WebGL2RenderingContext.prototype;
-  const wrap = (name, after) => { const real = P[name]; if (!real) return; P[name] = function (...a) { const out = real.apply(this, a); try { after(this, a, out); } catch (e) { /* census only */ } return out; }; };
-  wrap('activeTexture', (gl, [u]) => { S(gl).unit = u - 0x84C0; });
-  wrap('bindTexture', (gl, [target, t]) => { S(gl).tex.set(S(gl).unit + ':' + target, t); });
-  wrap('deleteTexture', (gl, [t]) => { objs.delete(t); });
-  wrap('texImage2D', (gl, a) => {
-    if (a.length >= 9) setLevel(gl, a[0], a[1], a[3], a[4], 1, a[3] * a[4] * bpp(a[2], a[6], a[7]));
-    else { const [w, h] = dims(a[5]); setLevel(gl, a[0], a[1], w, h, 1, w * h * bpp(a[2], a[3], a[4])); }
+  const wrapped = [];
+  // ONE fixed-arity wrapper per method: the original gets exactly the caller's arguments (WebGL overloads resolve by
+  // argument count), 'after' gets the count and the first nine by name; nothing is built per call
+  const wrap = (name, after) => {
+    const real = P[name]; if (typeof real !== 'function') return;
+    P[name] = function __glCensusWrapped(a0, a1, a2, a3, a4, a5, a6, a7, a8) {
+      const out = real.apply(this, arguments);
+      try { after(this, arguments.length, a0, a1, a2, a3, a4, a5, a6, a7, a8); } catch (e) { /* census only */ }
+      return out;
+    };
+    wrapped.push(name);
+  };
+  wrap('deleteTexture', (gl, n, t) => { objs.delete(t); });
+  // texImage2D(target, level, ifmt, w, h, border, format, type, ...) | (target, level, ifmt, format, type, source)
+  wrap('texImage2D', (gl, n, t, l, ifmt, a3, a4, a5, a6, a7) => {
+    if (n >= 8) setLevel(gl, t, faceOf(t), l, a3, a4, 1, a3 * a4 * bpp(ifmt, a6, a7));
+    else { const w = srcW(a5), h = srcH(a5); setLevel(gl, t, faceOf(t), l, w, h, 1, w * h * bpp(ifmt, a3, a4)); }
   });
-  wrap('texImage3D', (gl, a) => { setLevel(gl, a[0], a[1], a[3], a[4], a[5], a[3] * a[4] * a[5] * bpp(a[2], a[7], a[8])); });
-  wrap('copyTexImage2D', (gl, a) => { setLevel(gl, a[0], a[1], a[5], a[6], 1, a[5] * a[6] * bpp(a[2], 0, 0)); });
-  wrap('compressedTexImage2D', (gl, a) => { const d = a[6]; setLevel(gl, a[0], a[1], a[3], a[4], 1, typeof d === 'number' ? d : (d && d.byteLength) || 0); });
-  wrap('compressedTexImage3D', (gl, a) => { const d = a[7]; setLevel(gl, a[0], a[1], a[3], a[4], a[5], typeof d === 'number' ? d : (d && d.byteLength) || 0); });
-  wrap('texStorage2D', (gl, [target, levels, ifmt, w, h]) => {
-    const faces = target === CUBE ? [FACE0, FACE0 + 1, FACE0 + 2, FACE0 + 3, FACE0 + 4, FACE5] : [target];
-    for (const f of faces) for (let l = 0; l < levels; l++) { const lw = Math.max(1, w >> l), lh = Math.max(1, h >> l); setLevel(gl, target, f + '/' + l, lw, lh, 1, lw * lh * bpp(ifmt, 0, 0)); }
+  wrap('texImage3D', (gl, n, t, l, ifmt, w, h, d, border, fmt, type) => { setLevel(gl, t, 0, l, w, h, d, w * h * d * bpp(ifmt, fmt, type)); });
+  wrap('copyTexImage2D', (gl, n, t, l, ifmt, x, y, w, h) => { setLevel(gl, t, faceOf(t), l, w, h, 1, w * h * bpp(ifmt, 0, 0)); });
+  wrap('compressedTexImage2D', (gl, n, t, l, ifmt, w, h, border, data) => { setLevel(gl, t, faceOf(t), l, w, h, 1, typeof data === 'number' ? data : (data && data.byteLength) || 0); });
+  wrap('compressedTexImage3D', (gl, n, t, l, ifmt, w, h, d, border, data) => { setLevel(gl, t, 0, l, w, h, d, typeof data === 'number' ? data : (data && data.byteLength) || 0); });
+  wrap('texStorage2D', (gl, n, target, levels, ifmt, w, h) => {
+    const faces = target === CUBE ? 6 : 1, per = bpp(ifmt, 0, 0);
+    for (let f = 0; f < faces; f++) for (let l = 0; l < levels; l++) { const lw = Math.max(1, w >> l), lh = Math.max(1, h >> l); setLevel(gl, target, f, l, lw, lh, 1, lw * lh * per); }
   });
-  wrap('texStorage3D', (gl, [target, levels, ifmt, w, h, d]) => {
-    for (let l = 0; l < levels; l++) { const lw = Math.max(1, w >> l), lh = Math.max(1, h >> l), ld = target === 0x806F ? Math.max(1, d >> l) : d; setLevel(gl, target, 's' + l, lw, lh, ld, lw * lh * ld * bpp(ifmt, 0, 0)); }
+  wrap('texStorage3D', (gl, n, target, levels, ifmt, w, h, d) => {
+    const per = bpp(ifmt, 0, 0);
+    for (let l = 0; l < levels; l++) { const lw = Math.max(1, w >> l), lh = Math.max(1, h >> l), ld = target === TEX_3D ? Math.max(1, d >> l) : d; setLevel(gl, target, 0, l, lw, lh, ld, lw * lh * ld * per); }
   });
-  wrap('generateMipmap', (gl, [target]) => {
+  wrap('generateMipmap', (gl, n, target) => {
     const t = boundTex(gl, target); if (!t) return; const r = texRec(t);
-    const base = [...r.levels.entries()].filter(([k]) => /:0$/.test(k));
-    for (const [k, v] of base) {
-      const face = k.split(':')[0]; let w = v.w, h = v.h, l = 0;
+    for (let f = 0; f < 6; f++) {
+      const v = r.lv[f * 32]; if (!v) continue;
       const per = v.w * v.h * v.d ? v.bytes / (v.w * v.h * v.d) : 0;
-      while (w > 1 || h > 1) { w = Math.max(1, w >> 1); h = Math.max(1, h >> 1); l++; r.levels.set(face + ':' + l, { w, h, d: v.d, bytes: w * h * v.d * per }); }
+      let w = v.w, h = v.h, l = 0;
+      while ((w > 1 || h > 1) && l < 31) {
+        w = Math.max(1, w >> 1); h = Math.max(1, h >> 1); l++;
+        const k = f * 32 + l, x = r.lv[k];
+        if (x) { x.w = w; x.h = h; x.d = v.d; x.bytes = w * h * v.d * per; } else r.lv[k] = { w, h, d: v.d, bytes: w * h * v.d * per };
+      }
     }
   });
-  wrap('bindRenderbuffer', (gl, [, rb]) => { S(gl).rb = rb; });
-  wrap('deleteRenderbuffer', (gl, [rb]) => { objs.delete(rb); });
-  const rbStore = (gl, samples, ifmt, w, h) => { const rb = S(gl).rb; if (rb) { const old = objs.get(rb); objs.set(rb, { kind: 'rb', w, h, samples, bytes: w * h * Math.max(1, samples) * bpp(ifmt, 0, 0), rt: true, hint: old?.hint || hintOf() }); } };
-  wrap('renderbufferStorage', (gl, [, ifmt, w, h]) => rbStore(gl, 0, ifmt, w, h));
-  wrap('renderbufferStorageMultisample', (gl, [, samples, ifmt, w, h]) => rbStore(gl, samples, ifmt, w, h));
-  wrap('bindFramebuffer', (gl, [target, fb]) => { const s = S(gl); if (target === FB) { s.fb.set(DRAW_FB, fb); s.fb.set(READ_FB, fb); } else s.fb.set(target, fb); });
-  wrap('deleteFramebuffer', (gl, [fb]) => { fbAtt.delete(fb); });
-  const boundFb = (gl, target) => S(gl).fb.get(target === FB ? DRAW_FB : target) || null;
-  const attachTo = (gl, target, point, obj) => { const fb = boundFb(gl, target); if (!fb) return; let m = fbAtt.get(fb); if (!m) fbAtt.set(fb, (m = new Map())); if (obj) m.set(point, obj); else m.delete(point); };
-  const attach = (t) => { if (t) texRec(t).rt = true; };
-  wrap('framebufferTexture2D', (gl, a) => { attach(a[3]); attachTo(gl, a[0], a[1], a[3]); });
-  wrap('framebufferTextureLayer', (gl, a) => { attach(a[2]); attachTo(gl, a[0], a[1], a[2]); });
-  wrap('framebufferRenderbuffer', (gl, a) => { attachTo(gl, a[0], a[1], a[3]); });
-  wrap('bindBuffer', (gl, [target, b]) => { S(gl).buf.set(target, b); });
-  wrap('bindBufferBase', (gl, [target, , b]) => { S(gl).buf.set(target, b); });
-  wrap('bindBufferRange', (gl, [target, , b]) => { S(gl).buf.set(target, b); });
-  wrap('deleteBuffer', (gl, [b]) => { objs.delete(b); });
-  wrap('bufferData', (gl, [target, src, , off, len]) => {
-    const b = S(gl).buf.get(target); if (!b) return;
+  wrap('deleteRenderbuffer', (gl, n, rb) => { objs.delete(rb); });
+  const rbStore = (gl, samples, ifmt, w, h) => {
+    const rb = gl.getParameter(BIND_RB); if (!rb) return;
+    let r = objs.get(rb);
+    if (!r) { r = { kind: 'rb', w: 0, h: 0, samples: 0, bytes: 0, rt: true, hint: hintOf() }; objs.set(rb, r); }
+    r.w = w; r.h = h; r.samples = samples; r.bytes = w * h * Math.max(1, samples) * bpp(ifmt, 0, 0);
+  };
+  wrap('renderbufferStorage', (gl, n, t, ifmt, w, h) => rbStore(gl, 0, ifmt, w, h));
+  wrap('renderbufferStorageMultisample', (gl, n, t, samples, ifmt, w, h) => rbStore(gl, samples, ifmt, w, h));
+  wrap('deleteFramebuffer', (gl, n, fb) => { fbAtt.delete(fb); });
+  const attachTo = (gl, target, point, obj) => {
+    const fb = gl.getParameter(target === READ_FB ? BIND_READ_FB : BIND_DRAW_FB); if (!fb) return;
+    let m = fbAtt.get(fb);
+    if (!obj) { if (m) m.delete(point); return; }
+    if (!m) { m = new Map(); fbAtt.set(fb, m); }
+    m.set(point, obj);
+  };
+  wrap('framebufferTexture2D', (gl, n, target, point, textarget, tex) => { if (tex) texRec(tex).rt = true; attachTo(gl, target, point, tex); });
+  wrap('framebufferTextureLayer', (gl, n, target, point, tex) => { if (tex) texRec(tex).rt = true; attachTo(gl, target, point, tex); });
+  wrap('framebufferRenderbuffer', (gl, n, target, point, rbt, rb) => { attachTo(gl, target, point, rb); });
+  wrap('deleteBuffer', (gl, n, b) => { objs.delete(b); });
+  wrap('bufferData', (gl, n, target, src, usage, off, len) => {
+    const bind = BUF_BIND[target]; if (!bind) return;
+    const b = gl.getParameter(bind); if (!b) return;
     const el = (src && src.BYTES_PER_ELEMENT) || 1;
-    const bytes = typeof src === 'number' ? src : len !== undefined ? len * el : (src ? src.byteLength - (off || 0) * el : 0);
-    const old = objs.get(b);
-    objs.set(b, { kind: 'buf', target, bytes, hint: old?.hint || hintOf() });
+    const bytes = typeof src === 'number' ? src : len !== undefined && len > 0 ? len * el : (src ? src.byteLength - (off || 0) * el : 0);
+    let r = objs.get(b);
+    if (!r) { r = { kind: 'buf', target, bytes, hint: hintOf() }; objs.set(b, r); } else { r.target = target; r.bytes = bytes; }
     if (src && typeof src === 'object' && ArrayBuffer.isView(src)) arrBuf.set(src, b);
   });
-  const texBytes = (r) => { let b = 0; for (const v of r.levels.values()) b += v.bytes; return b; };
+  const texBytes = (r) => { let b = 0; for (const v of r.lv) if (v) b += v.bytes; return b; };
+  const texLevels = (r) => { let n = 0; for (const v of r.lv) if (v) n++; return n; };
+  const texLv0 = (r) => { for (const v of r.lv) if (v) return v; return { w: 0, h: 0 }; };
   const bytesOf = (r) => (r.kind === 'tex' ? texBytes(r) : r.bytes);
   const catOf = (r) => (r.kind === 'buf' ? 'buffers' : r.rt ? 'renderTargets' : 'textures');
-  const rowOf = (r) => { const lv0 = r.kind === 'tex' ? ([...r.levels.values()][0] || { w: 0, h: 0 }) : r; return { kind: r.kind, bytes: bytesOf(r), w: lv0.w || 0, h: lv0.h || 0, levels: r.kind === 'tex' ? r.levels.size : 0, samples: r.samples || 0, target: r.kind === 'buf' ? '0x' + r.target.toString(16) : undefined }; };
+  const rowOf = (r) => { const lv0 = r.kind === 'tex' ? texLv0(r) : r; return { kind: r.kind, bytes: bytesOf(r), w: lv0.w || 0, h: lv0.h || 0, levels: r.kind === 'tex' ? texLevels(r) : 0, samples: r.samples || 0, target: r.kind === 'buf' ? '0x' + r.target.toString(16) : undefined }; };
   window.__glCensus = {
     /** totals per category, exact integers */
     totals() { const t = { textures: 0, renderTargets: 0, buffers: 0, objects: objs.size }; for (const [, r] of objs) t[catOf(r)] += bytesOf(r); return t; },
     summary() {
       const out = { textures: { count: 0, bytes: 0, largest: [] }, renderTargets: { count: 0, bytes: 0, textures: 0, renderbuffers: 0, largest: [] },
-        buffers: { count: 0, bytes: 0, byTarget: {} }, unknownFormats: [...unknown] };
+        buffers: { count: 0, bytes: 0, byTarget: {} }, unknownFormats: [...unknown].map((f) => '0x' + f.toString(16)), wrappedMethods: wrapped.slice() };
       const tl = [], rl = [];
       for (const [, r] of objs) {
         if (r.kind === 'buf') { out.buffers.count++; out.buffers.bytes += r.bytes; out.buffers.byTarget['0x' + r.target.toString(16)] = (out.buffers.byTarget['0x' + r.target.toString(16)] || 0) + r.bytes; continue; }
@@ -787,7 +920,7 @@ const GL_CENSUS = String.raw`(() => {
       const claimed = new Map();               // GL object -> owner key
       const owners = new Map();                // owner key -> { lane, how, textures, renderTargets, buffers, objects }
       const ensure = (key, lane, how) => { let o = owners.get(key); if (!o) owners.set(key, (o = { owner: key, lane, how, textures: 0, renderTargets: 0, buffers: 0, objects: 0 })); return o; };
-      const claim = (glObj, key, lane, how) => { if (!glObj || claimed.has(glObj)) return; const rec = objs.get(glObj); if (!rec) return; claimed.set(glObj, key); const o = ensure(key, lane, how); o[catOf(rec)] += bytesOf(rec); o.objects++; };
+      const claim = (glObj, key, lane, how) => { if (!glObj || claimed.has(glObj)) return; const rec = objs.get(glObj); if (!rec) return; claimed.set(glObj, key); const o = ensure(key, lane, how); o[catOf(rec)] += bytesOf(rec); o.objects++; if (!o.hint && rec.hint && rec.hint.length) o.hint = rec.hint[0]; };
       const each = (v, f) => { if (Array.isArray(v)) { for (const x of v) each(x, f); } else if (v) f(v); };
       const fbAll = (fb, key, lane, how) => { const m = fbAtt.get(fb); if (m) for (const o of m.values()) claim(o, key, lane, how); };
       const claimTarget = (rt, key, lane, how) => {
@@ -971,10 +1104,156 @@ const VRAM_CONTROL = `(async () => {
     attributedTo: { target: rtRow, root: ctlRoot }, engineLedgerRowBytes: ledgerRow ? ledgerRow.bytes : null };
 })()`;
 
+/**
+ * ROUTING WITH FILE:LINE (targeted fix round 1; R48 b "each over-bar owner routed with file:line"; engineering judge:
+ * A-vram-ledger and A90-abs routed "src/core/engine.js renderTargetLedger() rows" with no line). Each ledger row is
+ * resolved to the line(s) that CREATE its target, read from this tree's own source at run time (so the routing follows
+ * whatever engine.js holds: this tree's, or merged main's after engine-gpu's tier), plus the default tier's dprCap line for
+ * every target sized by the drawing buffer. A lane's registered target resolves to its registerRenderTarget('<owner>', …)
+ * call. `files` overrides the source text (the negative control resolves against a text without the anchors).
+ */
+const SRC_TEXT = new Map();
+const srcLinesOf = (rel, files) => {
+  if (files) return Object.prototype.hasOwnProperty.call(files, rel) ? files[rel] : null;
+  if (!SRC_TEXT.has(rel)) { let t = null; try { t = readFileSync(path.join(ROOT, rel), 'utf8').split('\n'); } catch { t = null; } SRC_TEXT.set(rel, t); }
+  return SRC_TEXT.get(rel);
+};
+const lineOf = (rel, re, files) => { const lines = srcLinesOf(rel, files); if (!lines) return null; const i = lines.findIndex((l) => !/^\s*(\*|\/\/|\/\*)/.test(l) && re.test(l)); return i < 0 ? null : `${rel}:${i + 1}`; };   // code lines, never a comment
+const ENGINE = 'src/core/engine.js', ENVIRONMENT = 'src/world/environment.js';
+const RT_ROUTES = [
+  [/^post:scene$/, [[ENGINE, /sceneRT\s*=\s*new THREE\.WebGLRenderTarget\(/], [ENGINE, /samples:\s*this\.tier\.msaa/]], 'the HalfFloat scene target at the drawing-buffer size, MSAA x tier.msaa, with its depth texture', true],
+  [/^post:pingA$/, [[ENGINE, /'CAL\.postA'/], [ENGINE, /^\s*_makePostTarget\(w, h, name\)/]], 'post ping-pong target A (HalfFloat, drawing-buffer size)', true],
+  [/^post:pingB$/, [[ENGINE, /'CAL\.postB'/], [ENGINE, /^\s*_makePostTarget\(w, h, name\)/]], 'post ping-pong target B (HalfFloat, drawing-buffer size)', true],
+  [/^post:SMAAPass\./, [[ENGINE, /this\.smaa\s*=\s*new SMAAPass\(/]], 'SMAA edges / weights targets (drawing-buffer size)', true],
+  [/^post:GTAOPass\./, [[ENGINE, /this\.gtao\s*=\s*new GTAOPass\(/], [ENGINE, /this\.tier\.gtaoScale/]], 'GTAO targets at tier.gtaoScale of the drawing buffer', true],
+  [/^post:UnrealBloomPass\./, [[ENGINE, /this\.bloom\s*=\s*new UnrealBloomPass\(/]], 'the bloom mip chain (capped at BLOOM_MAX_WIDTH)', true],
+  [/^post:/, [[ENGINE, /this\.composer\.addPass\(/]], 'a post pass target', true],
+  [/^shadow:csm\[\d+\]$/, [[ENGINE, /this\.csm\s*=\s*new CSM\(/], [ENGINE, /Math\.min\(csm\.shadowMapSize, cap\)/], [ENVIRONMENT, /engine\.enableCSM\(/]], 'a CSM cascade shadow map: shadowMapSize from world-sky\'s enableCSM call (and the tier csmMapCaps where the engine has them)', false],
+  [/^shadow:/, [[ENGINE, /shadow\.mapSize/]], 'a light shadow map', false],
+  [/^env:/, [[ENVIRONMENT, /PMREMGenerator\(/], [ENVIRONMENT, /fromScene\(/]], 'the environment PMREM (world-sky)', false],
+];
+/** the default tier's dprCap line (every drawing-buffer-sized target scales with it) */
+function tierLine(files) {
+  const lines = srcLinesOf(ENGINE, files); if (!lines) return null;
+  const def = (/DEFAULT_TIER\s*=\s*'([a-z]+)'/.exec(lines.join('\n')) || [])[1] || 'high';
+  const at = lines.findIndex((l) => new RegExp('^\\s*' + def + ':\\s*\\{').test(l)); if (at < 0) return null;
+  const k = lines.slice(at, at + 4).findIndex((l) => /dprCap/.test(l));
+  return k < 0 ? null : `${ENGINE}:${at + k + 1} (default tier '${def}' dprCap)`;
+}
+let REGISTER_SITES = null;
+function registerSite(owner) {
+  if (!REGISTER_SITES) {
+    REGISTER_SITES = [];
+    const walkSrc = (d) => { let es = []; try { es = readdirSync(d, { withFileTypes: true }); } catch { return; } for (const e of es) { const p = path.join(d, e.name); if (e.isDirectory()) walkSrc(p); else if (/\.js$/.test(e.name)) { let t = ''; try { t = readFileSync(p, 'utf8'); } catch { t = ''; } t.split('\n').forEach((l, i) => { const m = /registerRenderTarget\(\s*['"`]([^'"`]+)['"`]/.exec(l); if (m) REGISTER_SITES.push({ owner: m[1], at: relRoot(p) + ':' + (i + 1) }); }); } } };
+    walkSrc(path.join(ROOT, 'src'));
+  }
+  return REGISTER_SITES.filter((x) => x.owner === owner).map((x) => x.at);
+}
+/** a ledger row owner -> { fileLines[], what, scalesWithDrawingBuffer } */
+export function routeRt(owner, files) {
+  const r = RT_ROUTES.find(([re]) => re.test(owner));
+  if (r) {
+    const fileLines = r[1].map(([f, re]) => lineOf(f, re, files)).filter(Boolean);
+    const t = r[3] ? tierLine(files) : null;
+    return { fileLines: t && fileLines.length ? [...fileLines, t] : fileLines, what: r[2], scalesWithDrawingBuffer: r[3] };
+  }
+  const reg = files ? [] : registerSite(owner);
+  return { fileLines: reg, what: reg.length ? 'a target its lane registered (engine.registerRenderTarget)' : 'unresolved', scalesWithDrawingBuffer: null };
+}
+
+/**
+ * THE CENSUS PROBE (targeted fix round 1), on a SCRATCH WebGL2 context (an OffscreenCanvas of this page; the game's context
+ * and three's state are never touched):
+ *  (1) NEGATIVE CONTROL for the attribution criteria: GL objects of exactly known size that no owner can claim (not in the
+ *      scene, the context graph or the ledger): a 128 x 64 RGBA8 texture (32,768 B), a 96 x 32 RGBA8 texture attached to a
+ *      framebuffer (12,288 B of render target) and a 250-float buffer (1,000 B). The attribution must put exactly those
+ *      bytes in its unattributed row, so "every render target attributed" reads FALSE while they live, then back to its
+ *      value before when they are deleted;
+ *  (2) the census's own per-call allocation: 'warm' x 3 wrapped calls (framebufferTexture2D, texImage2D 4 x 4,
+ *      generateMipmap; plus the native activeTexture / bindTexture between them) to let V8 optimise the wrappers, then a
+ *      sampled window over 'n' more iterations; the bytes under __glCensusWrapped / calls. POSITIVE CONTROL: the same
+ *      calls through a wrapper written the round-3 way (a rest array and a string key per call), under its own name.
+ */
+const CENSUS_PROBE = (phase, warm = 4000, n = 20000) => `(async () => {
+  const C = window.__glCensus, cfg = window.__w0bAttrCfg;
+  if (${JSON.stringify(phase)} === 'orphans') {
+    const cv = new OffscreenCanvas(8, 8);
+    const gl = cv.getContext('webgl2', { antialias: false, depth: false, stencil: false });
+    if (!gl) return { ok: false, why: 'no scratch WebGL2 context' };
+    const un = (a) => ({ textures: a.unattributed.textures.bytes, renderTargets: a.unattributed.renderTargets.bytes, buffers: a.unattributed.buffers.bytes });
+    const u0 = un(C.attribute(cfg));
+    const tex = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, tex); gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, 128, 64, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+    const rtTex = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, rtTex); gl.texStorage2D(gl.TEXTURE_2D, 1, gl.RGBA8, 96, 32);
+    const fb = gl.createFramebuffer(); gl.bindFramebuffer(gl.FRAMEBUFFER, fb); gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, rtTex, 0);
+    const buf = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, buf); gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(250), gl.STATIC_DRAW);
+    const a1 = C.attribute(cfg), u1 = un(a1);
+    const seen = { textures: u1.textures - u0.textures, renderTargets: u1.renderTargets - u0.renderTargets, buffers: u1.buffers - u0.buffers };
+    const everyRenderTargetAttributedWouldPass = a1.unattributed.renderTargets.bytes === 0 && a1.rtMismatches.length === 0;
+    gl.deleteFramebuffer(fb); gl.deleteTexture(tex); gl.deleteTexture(rtTex); gl.deleteBuffer(buf);
+    const u2 = un(C.attribute(cfg));
+    const back = { textures: u2.textures - u0.textures, renderTargets: u2.renderTargets - u0.renderTargets, buffers: u2.buffers - u0.buffers };
+    const exp = { textures: 128 * 64 * 4, renderTargets: 96 * 32 * 4, buffers: 250 * 4 };
+    const lose = gl.getExtension('WEBGL_lose_context'); if (lose) lose.loseContext();
+    const ok = seen.textures === exp.textures && seen.renderTargets === exp.renderTargets && seen.buffers === exp.buffers && back.textures === 0 && back.renderTargets === 0 && back.buffers === 0 && !everyRenderTargetAttributedWouldPass;
+    return { ok, expectedUnattributedBytes: exp, unattributedDelta: seen, afterDelete: back, everyRenderTargetAttributedWouldPass };
+  }
+  if (${JSON.stringify(phase)} === 'setup') {
+    const cv = new OffscreenCanvas(8, 8);
+    const gl = cv.getContext('webgl2', { antialias: false, depth: false, stencil: false });
+    if (!gl) return { ok: false, why: 'no scratch WebGL2 context' };
+    const T = gl.TEXTURE_2D, FBT = gl.FRAMEBUFFER, CA0 = gl.COLOR_ATTACHMENT0, RGBA8 = gl.RGBA8, RGBA = gl.RGBA, UB = gl.UNSIGNED_BYTE, U0 = gl.TEXTURE0;
+    const px = new Uint8Array(64);
+    const rtTex = gl.createTexture(); gl.bindTexture(T, rtTex); gl.texStorage2D(T, 1, RGBA8, 4, 4);
+    const tex = gl.createTexture();
+    const fb = gl.createFramebuffer(); gl.bindFramebuffer(FBT, fb);
+    // the round-3 wrapper shape (positive control of the probe): a rest array and a string key per call, on THIS context only
+    const keys = new Map();
+    const round3 = (real) => function __glCensusRound3Shape(...a) { const out = real.apply(this, a); keys.set(a[0] + ':' + a[1], a); return out; };
+    const r3 = { fbt: round3(gl.framebufferTexture2D), tex: round3(gl.texImage2D), mip: round3(gl.generateMipmap) };
+    const census = (k) => { for (let i = 0; i < k; i++) { gl.activeTexture(U0); gl.bindTexture(T, tex); gl.framebufferTexture2D(FBT, CA0, T, rtTex, 0); gl.texImage2D(T, 0, RGBA8, 4, 4, 0, RGBA, UB, px); gl.generateMipmap(T); } return k * 3; };
+    const control = (k) => { for (let i = 0; i < k; i++) { gl.activeTexture(U0); gl.bindTexture(T, tex); r3.fbt.call(gl, FBT, CA0, T, rtTex, 0); r3.tex.call(gl, T, 0, RGBA8, 4, 4, 0, RGBA, UB, px); r3.mip.call(gl, T); } return k * 3; };
+    window.__w0bProbe = { gl, census, control, dispose: () => { keys.clear(); gl.deleteFramebuffer(fb); gl.deleteTexture(tex); gl.deleteTexture(rtTex); const x = gl.getExtension('WEBGL_lose_context'); if (x) x.loseContext(); } };
+    census(${warm}); control(${warm}); gl.finish();
+    return { ok: true, warmIterations: ${warm} };
+  }
+  if (${JSON.stringify(phase)} === 'census') { const c = window.__w0bProbe.census(${n}); window.__w0bProbe.gl.finish(); return c; }
+  if (${JSON.stringify(phase)} === 'control') { const c = window.__w0bProbe.control(${n}); window.__w0bProbe.gl.finish(); return c; }
+  if (${JSON.stringify(phase)} === 'dispose') { if (window.__w0bProbe) window.__w0bProbe.dispose(); window.__w0bProbe = null; return true; }
+  return null;
+})()`;
+/** bytes a sampling heap profile holds under every frame named `fnName` (the frame and everything it called) */
+function bytesUnder(profile, fnName) {
+  let total = 0;
+  const sub = (n) => (n.selfSize || 0) + (n.children || []).reduce((a, c) => a + sub(c), 0);
+  const walk = (n) => { if ((n.callFrame || {}).functionName === fnName) { total += sub(n); return; } for (const c of n.children || []) walk(c); };
+  walk(profile.head);
+  return total;
+}
+async function censusPerCallAllocation(page, cdp) {
+  const setup = await page.evaluate(CENSUS_PROBE('setup'));
+  if (!setup?.ok) return { ok: false, setup };
+  const measure = async (phase, fnName) => {
+    await cdp.send('HeapProfiler.collectGarbage');
+    await cdp.send('HeapProfiler.startSampling', { samplingInterval: 256, includeObjectsCollectedByMajorGC: true, includeObjectsCollectedByMinorGC: true });
+    const calls = await page.evaluate(CENSUS_PROBE(phase));
+    const { profile } = await cdp.send('HeapProfiler.stopSampling');
+    const bytes = bytesUnder(profile, fnName);
+    return { calls, bytes, bytesPerCall: calls ? +(bytes / calls).toFixed(3) : null };
+  };
+  try {
+    const census = await measure('census', '__glCensusWrapped');
+    const control = await measure('control', '__glCensusRound3Shape');
+    // graded: < 1 B per wrapped call once warm; the probe's positive control must see >= 8 B per call in the round-3 shape
+    const ok = census.bytesPerCall !== null && census.bytesPerCall < 1 && control.bytesPerCall !== null && control.bytesPerCall >= 8;
+    return { ok, warmIterations: setup.warmIterations, census, round3ShapeControl: control, samplingIntervalB: 256,
+      note: 'bytes under the wrapper frame (sampling heap profiler, objects collected by GC included) / wrapped calls, after the wrappers ran warm; a wrapper running unoptimised (its first calls) still materialises an arguments object' };
+  } finally { await page.evaluate(CENSUS_PROBE('dispose')).catch(() => {}); }
+}
+
 async function vramLedger({ PORT }) {
   const B = W0B_BUDGETS.vram;
   const binding = barsBinding(PORT);
-  return onPage(PORT, async ({ page }) => {
+  return onPage(PORT, async ({ page, cdp }) => {
     const installed = await page.evaluate('!!window.__glCensus');
     if (!installed) return { pass: false, detail: { verdict: 'FAIL: the GL census did not install before the game made its context' } };
     const fight = await page.evaluate(STAGE_FIGHT);
@@ -990,6 +1269,10 @@ async function vramLedger({ PORT }) {
     // THE SELF-TEST: known objects in, exact bytes seen and attributed, disposed back to the byte
     let control;
     try { control = await page.evaluate(VRAM_CONTROL); } catch (err) { control = { ok: false, error: String(err.message || err).slice(0, 200) }; }
+    // targeted fix round 1: the orphan NEGATIVE control and the census's per-call allocation, on a scratch context
+    let orphans, perCall;
+    try { orphans = await page.evaluate(CENSUS_PROBE('orphans')); } catch (err) { orphans = { ok: false, error: String(err.message || err).slice(0, 200) }; }
+    try { perCall = await censusPerCallAllocation(page, cdp); } catch (err) { perCall = { ok: false, error: String(err.message || err).slice(0, 200) }; }
     await page.evaluate('(() => { window.__w0bAttrCfg = null; return true; })()');
     await page.evaluate(UNSTAGE);
     const tex = census.textures.bytes, rt = census.renderTargets.bytes, geo = census.buffers.bytes, sum = tex + rt + geo;
@@ -998,13 +1281,30 @@ async function vramLedger({ PORT }) {
     const unTotal = un.textures.bytes + un.renderTargets.bytes + un.buffers.bytes;
     // the unregistered scene roots: attributed to a named root, but to no lane (counted with the unattributed for the lane split)
     const unregistered = attr.owners.filter((o) => /^unregistered scene root/.test(o.owner));
+    // ROUTING (R48 b): every ledger row that holds bytes, with the source line(s) that create its target
+    const rtRouting = attr.ledgerRows.filter((x) => x.glBytes > 0).sort((a, b) => b.glBytes - a.glBytes).map((x) => ({ owner: x.owner, MB: MB(x.glBytes), ...routeRt(x.owner) }));
+    const routedOk = (rows) => rows.length > 0 && rows.every((x) => x.fileLines.length > 0);
+    const sawScene = (c) => c.textures.count > 0 && c.buffers.count > 0 && c.renderTargets.count > 0;
+    const knownOk = (c) => !!c && c.checks && Object.values(c.checks).every(Boolean);
+    // NEGATIVE CONTROLS: each criterion fed an input it must reject
+    const negatives = [
+      neg('censusSawTheScene', 'an empty census', sawScene({ textures: { count: 0 }, buffers: { count: 0 }, renderTargets: { count: 0 } })),
+      neg('everyRenderTargetAttributed', 'live orphan GL objects of known size on a scratch context (seen to the byte in the unattributed row)', orphans?.ok !== true || orphans.everyRenderTargetAttributedWouldPass),
+      neg('selfTestKnownObjectsSeenAttributedAndDisposed', 'the control readings against a target 1 B larger than created', knownOk({ checks: { ...(control?.checks || {}), censusSawTheTargetExactly: control?.censusDelta?.renderTargets === (control?.expectedBytes?.renderTargets ?? 0) + 1 } })),
+      neg('everyOverBarRowRoutedWithFileLine', 'the ledger rows resolved against an engine.js without the creating lines', routedOk(attr.ledgerRows.filter((x) => x.glBytes > 0).map((x) => ({ fileLines: routeRt(x.owner, { [ENGINE]: ['// no anchors'], [ENVIRONMENT]: ['// no anchors'] }).fileLines })))),
+      neg('censusAllocatesNothingPerCall', 'the round-3 wrapper shape (rest array + string key per call)', !!perCall?.round3ShapeControl && perCall.round3ShapeControl.bytesPerCall < 1),
+    ];
     const instrument = {
-      censusSawTheScene: census.textures.count > 0 && census.buffers.count > 0 && census.renderTargets.count > 0,
-      censusAgreesWithItsAttribution: attr.accountingExact && attr.totals.textures === tex && attr.totals.renderTargets === rt && attr.totals.buffers === geo,
+      censusSawTheScene: sawScene(census),
       everyRenderTargetAttributed: un.renderTargets.bytes === 0 && attr.rtMismatches.length === 0,
-      everyByteInANamedOwnerOrTheUnattributedRow: attr.accountingExact,
       selfTestKnownObjectsSeenAttributedAndDisposed: !!control?.ok,
+      selfTestOrphansLandInTheUnattributedRow: !!orphans?.ok,
+      censusAllocatesNothingPerCall: !!perCall?.ok,
+      everyOverBarRowRoutedWithFileLine: rt <= B.renderTargetsB || routedOk(rtRouting),
+      negativeControlsEachFail: negatives.every((n) => n.ok),
     };
+    // structural notes (not graded: true by construction of attribute(), each object claimed once or listed unattributed)
+    const structural = { attributedPlusUnattributedEqualsCensus: attr.accountingExact, censusTotalsEqualSummary: attr.totals.textures === tex && attr.totals.renderTargets === rt && attr.totals.buffers === geo };
     const bars = {
       texturesWithinBudget: { binding, barMB: 160, MB: MB(tex), pass: tex <= B.texturesB },
       renderTargetsWithinRtLedgerCap: { binding, barMB: 170, MB: MB(rt), pass: rt <= B.renderTargetsB },
@@ -1019,7 +1319,9 @@ async function vramLedger({ PORT }) {
     const overBar = Object.entries(bars).filter(([, b]) => !b.pass).map(([k]) => k);
     const routing = {
       renderTargets: route('renderTargets'), textures: route('textures'), buffers: route('buffers'),
-      fileLine: rt > B.renderTargetsB ? 'src/core/engine.js renderTargetLedger() rows (post chain sized by the tier DPR cap and GTAO resolution: engine-gpu\'s W0b tier, docs/ROUND5-ENGINE.md; CSM cascades: engine.js csm setup)' : null,
+      renderTargetRows: rtRouting,
+      textureOwnersFirstUpload: attr.owners.filter((o) => o.textures > 0).sort((a, b) => b.textures - a.textures).slice(0, 8).map((o) => ({ owner: o.owner, MB: MB(o.textures), firstUploadFrame: o.hint || null })),
+      bufferOwnersFirstUpload: attr.owners.filter((o) => o.buffers > 0).sort((a, b) => b.buffers - a.buffers).slice(0, 8).map((o) => ({ owner: o.owner, MB: MB(o.buffers), firstUploadFrame: o.hint || null })),
     };
     const lanes = {};
     for (const o of attr.owners) { const l = /^unregistered/.test(o.owner) ? 'UNREGISTERED scene roots' : o.lane; lanes[l] = r2((lanes[l] || 0) + o.total / 1e6); }
@@ -1030,15 +1332,16 @@ async function vramLedger({ PORT }) {
         + `BARS (${binding ? 'binding: global run' : 'lane run: graded at the orchestrator\'s 5270 global run after the engine-gpu merge, R48 b'}): `
         + `textures ${MB(tex)} MB (bar 160) ${bars.texturesWithinBudget.pass ? 'pass' : 'FAIL'}, render targets ${MB(rt)} MB (bar 170) ${bars.renderTargetsWithinRtLedgerCap.pass ? 'pass' : 'FAIL'}, geometry ${MB(geo)} MB (bar 120) ${bars.geometryWithinBudget.pass ? 'pass' : 'FAIL'}, total ${MB(sum)} MB (bar 450) ${bars.totalWithinBudget.pass ? 'pass' : 'FAIL'}`
         + ` at pixel ratio ${fight.appliedPixelRatio} (tier ${fight.quality}, drawing buffer ${fight.drawingBuffer.join('x')}); engine-gpu's recorded RT ledger (${RT_LEDGER.measured}) totals ${MB(rtLedgerTotal)} MB`
-        + (overBar.length ? ' — over-bar routing: ' + overBar.map((k) => k + ' -> ' + (k.startsWith('render') ? routing.renderTargets.slice(0, 4).map((x) => x.owner + ' ' + x.MB) .join(', ') : k.startsWith('total') ? 'render targets (above)' : '')).join('; ') : ''),
-      instrument, bars, runId: runIdOf(PORT), barsBinding: binding, overBar, routing, byLaneMB: lanes,
+        + (overBar.length ? ' — over-bar routing: ' + overBar.map((k) => k + ' -> ' + (k.startsWith('render') || k.startsWith('total') ? rtRouting.slice(0, 5).map((x) => x.owner + ' ' + x.MB + ' MB @ ' + x.fileLines.join(' + ')).join('; ') : k.startsWith('textures') ? routing.textureOwnersFirstUpload.slice(0, 3).map((x) => x.owner + ' ' + x.MB + ' @ ' + x.firstUploadFrame).join('; ') : routing.bufferOwnersFirstUpload.slice(0, 3).map((x) => x.owner + ' ' + x.MB + ' @ ' + x.firstUploadFrame).join('; '))).join(' | ') : '')
+        + ` — census per wrapped call ${perCall?.census?.bytesPerCall ?? '?'} B (round-3 shape ${perCall?.round3ShapeControl?.bytesPerCall ?? '?'} B); orphan control ${orphans?.ok ? 'seen to the byte in unattributed and gone after delete' : 'FAILED ' + JSON.stringify(orphans || null).slice(0, 160)}; negative controls ${negatives.filter((n) => n.ok).length}/${negatives.length} fail as they must`,
+      instrument, structural, bars, runId: runIdOf(PORT), barsBinding: binding, overBar, routing, byLaneMB: lanes,
       sealing: 'R48 (b): the harness seals every run that executes this row (tools/gates.r5.gates-perf.mjs INSTRUMENT_IDS); verify with node tools/gates.r5.gates-perf.mjs --instruments --port <port>',
       checks: { ...instrument, ...Object.fromEntries(Object.entries(bars).map(([k, b]) => ['bar:' + k, b.pass])) }, budgetMB: { textures: 160, renderTargets: 170, geometry: 120, total: 450 },
       measuredMB: { textures: MB(tex), renderTargets: MB(rt), geometry: MB(geo), total: MB(sum) },
       attribution: { owners: attr.owners.map((o) => ({ owner: o.owner, lane: o.lane, how: o.how, objects: o.objects, texturesMB: MB(o.textures), renderTargetsMB: MB(o.renderTargets), buffersMB: MB(o.buffers), totalB: o.total })),
         unattributed: { textures: { ...un.textures, MB: MB(un.textures.bytes) }, renderTargets: { ...un.renderTargets, MB: MB(un.renderTargets.bytes) }, buffers: { ...un.buffers, MB: MB(un.buffers.bytes) } },
         accountingExact: attr.accountingExact, totals: attr.totals, attributed: attr.attributed, ledgerRows: attr.ledgerRows, rtMismatches: attr.rtMismatches, sceneRoots: attr.sceneRoots, graphVisited: attr.graphVisited },
-      selfTest: control,
+      selfTest: { ...control, orphans, censusPerCallAllocation: perCall, negatives },
       census: { ...census, textures: { ...census.textures, MB: MB(tex) }, renderTargets: { ...census.renderTargets, MB: MB(rt) }, buffers: { ...census.buffers, MB: MB(geo) } },
       crossCheck: { ...cross, censusTextureObjects: census.textures.count + census.renderTargets.textures, rtLedgerRecordedMB: MB(rtLedgerTotal), rtLedgerRecordedAt: RT_LEDGER.measured },
       fight,
@@ -1100,16 +1403,18 @@ async function footprintMedian(browser, n = 5, gapMs = 700) {
  *     slots, computed exactly) -> the post-GC used heap (Runtime.getHeapUsage after two forced GCs) must rise by that
  *     within 5 %, and fall back when they are released;
  *   - GPU process: with the world held (ctx.state pinned: nothing streams), a 4096 x 4096 RGBA8 render target
- *     (67,108,864 B, one level, no depth) is allocated through three and cleared; the GPU process's macOS footprint
- *     (median of 5 readings) must rise by that size within the tolerance below, and fall back by most of it after
- *     dispose (the driver may cache a freed surface; the fall is reported, the rise is graded).
- * Tolerance for the GPU control: 0.75-1.6 x the allocation (a Metal surface is page-aligned and the driver may keep a
- * resolve or clear copy; the footprint is a process-wide reading).
+ *     (67,108,864 B, one level, no depth) is allocated through three and cleared, then disposed, GPU_CONTROL_CYCLES times;
+ *     the GPU process's macOS footprint (median of 5 readings at each step) is read before, held and after each cycle.
+ *     Graded on the medians over the cycles: the rise is 0.75-1.6 x the allocation (a Metal surface is page-aligned and the
+ *     driver may keep a resolve or clear copy; the footprint is a process-wide reading) AND (targeted fix round 1,
+ *     engineering judge: one reading of 1.485 x passed) the fall after dispose is 0.75-1.25 x the rise, so a reading that
+ *     rose for some other reason than the control, or a driver that never frees it, fails.
  */
 // 128 arrays of 65,536 small integers: each a JSArray (16 B) + a FixedArray of 65,536 compressed tagged slots (8 + 4 x 65,536 B);
 // String.prototype.repeat is NOT used: V8 builds it as a rope of cons cells (the first dev run read a 0.001 x rise)
 const HEAP_CONTROL_N = 128, HEAP_CONTROL_LEN = 65536, HEAP_CONTROL_BYTES = HEAP_CONTROL_N * (16 + 8 + 4 * HEAP_CONTROL_LEN);
 const HEAP_CONTROL_HOLD = `(() => { const keep = new Array(${HEAP_CONTROL_N}); for (let k = 0; k < ${HEAP_CONTROL_N}; k++) { const a = new Array(${HEAP_CONTROL_LEN}); for (let i = 0; i < ${HEAP_CONTROL_LEN}; i++) a[i] = i; keep[k] = a; } window.__w0bHeapCtl = keep; return keep.length; })()`;
+const GPU_CONTROL_CYCLES = 3, GPU_RISE_BAND = [0.75, 1.6], GPU_FALL_BAND = [0.75, 1.25];
 const GPU_CONTROL = (phase) => `(async () => {
   ${FRAMES}
   const ctx = __CTX__, e = ctx.engine, r = e.renderer;
@@ -1130,6 +1435,110 @@ const GPU_CONTROL = (phase) => `(async () => {
   if (${JSON.stringify(phase)} === 'unpin') { ctx.state = window.__w0bState0; window.__w0bState0 = undefined; return { ok: true }; }
   return null;
 })()`;
+const median = (v) => { const a = v.filter((x) => x != null && Number.isFinite(x)).sort((x, y) => x - y); return a.length ? a[(a.length - 1) >> 1] : null; };
+/** the GPU control's grading, pure (its negative controls feed it readings it must reject) */
+function gpuControlGrade(cycles, expectedB) {
+  const rise = median(cycles.map((c) => c.riseB)), fall = median(cycles.map((c) => c.fallB));
+  const riseRatio = rise != null && expectedB ? rise / expectedB : null;
+  const fallOverRise = rise ? (fall != null ? fall / rise : null) : null;
+  const ok = riseRatio != null && riseRatio >= GPU_RISE_BAND[0] && riseRatio <= GPU_RISE_BAND[1] && fallOverRise != null && fallOverRise >= GPU_FALL_BAND[0] && fallOverRise <= GPU_FALL_BAND[1];
+  return { ok, riseB: rise, fallB: fall, ratio: riseRatio == null ? null : +riseRatio.toFixed(3), fallOverRise: fallOverRise == null ? null : +fallOverRise.toFixed(3) };
+}
+const heapControlGrade = (riseB, fallB, expectedB) => ({ ok: Math.abs(riseB / expectedB - 1) <= 0.05 && fallB / expectedB >= 0.95, ratio: +(riseB / expectedB).toFixed(4) });
+
+/**
+ * THE GPU-PROCESS BASELINE (targeted fix round 1; engineering judge: A90-abs filed ~57 % of the footprint under an
+ * unmeasured "browser" remainder hard-coded exact). Read in THIS Chrome before the game page exists:
+ *   blank   a page of the game's origin with no game and no canvas (CDP Fetch serves an empty document at
+ *           GPU_BASELINE_PATH): the GPU process with no WebGL context of this row = the browser's own share (plus
+ *           whatever earlier pages of this Chrome left cached in it);
+ *   tiny    the same page with ONE bare WebGL2 canvas at 16 x 9, the game's context attributes, drawn 30 frames: the
+ *           context's fixed cost (ANGLE / Metal device, command buffers, the first context's runtime);
+ *   full    that canvas resized to the staged fight's drawing buffer (the engine module's own tier table, as STAGE_FIGHT
+ *           applies it: min(BUDGETS.deviceDpr, tier.dprCap) x 1600 x 900), drawn 30 frames: + the default framebuffer at
+ *           its REAL size, buffer count, samples and depth (full - tiny, per pixel).
+ * The canvas's context is then lost and the page closed, and the game boots.
+ */
+const GPU_BASELINE_PATH = '/__gates-perf-gpu-baseline__.html';
+const GAME_CONTEXT_ATTRS = { alpha: false, depth: true, stencil: false, antialias: false, premultipliedAlpha: true, preserveDrawingBuffer: false, powerPreference: 'high-performance' };
+async function gpuBaseline(browser, PORT) {
+  const page = await browser.newPage();
+  try {
+    const cdp = await page.createCDPSession();
+    const body = Buffer.from('<!doctype html><meta charset="utf-8"><title>gates-perf GPU baseline</title><body style="margin:0;background:#000"></body>').toString('base64');
+    const onPaused = (ev) => { cdp.send('Fetch.fulfillRequest', { requestId: ev.requestId, responseCode: 200, body, responseHeaders: [{ name: 'Content-Type', value: 'text/html' }, { name: 'Cache-Control', value: 'no-store' }] }).catch(() => {}); };
+    cdp.on('Fetch.requestPaused', onPaused);
+    await cdp.send('Fetch.enable', { patterns: [{ urlPattern: '*__gates-perf-gpu-baseline__*', requestStage: 'Request' }] });
+    await page.setViewport({ width: 1600, height: 900 });
+    await page.goto(`http://localhost:${PORT}${GPU_BASELINE_PATH}`, { waitUntil: 'load', timeout: 30000 });
+    cdp.off('Fetch.requestPaused', onPaused); await cdp.send('Fetch.disable').catch(() => {});
+    await sleep(2500);
+    const blank = await footprintMedian(browser);
+    const plan = await page.evaluate(`(async () => { const m = await import('/src/core/engine.js'); const q = m.DEFAULT_TIER || 'high'; const t = m.QUALITY_TIERS && m.QUALITY_TIERS[q];
+      const pr = Math.min(${BUDGETS.deviceDpr}, t ? t.dprCap : 1); return { quality: q, dprCap: t ? t.dprCap : null, pixelRatio: pr, width: Math.floor(1600 * pr), height: Math.floor(900 * pr) }; })()`);
+    const attrs = await page.evaluate(`(async () => {
+      const c = document.createElement('canvas'); c.style.cssText = 'position:fixed;left:0;top:0;width:1600px;height:900px;display:block'; c.width = 16; c.height = 9; document.body.appendChild(c);
+      const gl = c.getContext('webgl2', ${JSON.stringify(GAME_CONTEXT_ATTRS)}); if (!gl) return null;
+      const draw = (n) => new Promise((res) => { let k = 0; const f = () => { gl.viewport(0, 0, gl.drawingBufferWidth, gl.drawingBufferHeight); gl.clearColor(0.2, 0.3, 0.4, 1); gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT); if (++k >= n) res(); else requestAnimationFrame(f); }; requestAnimationFrame(f); });
+      window.__w0bBare = { c, gl, draw }; await draw(30); return gl.getContextAttributes(); })()`);
+    if (!attrs) return { ok: false, why: 'no bare WebGL2 context', blank };
+    await sleep(1500);
+    const tiny = await footprintMedian(browser);
+    const size = await page.evaluate(`(async () => { const b = window.__w0bBare; b.c.width = ${plan.width}; b.c.height = ${plan.height}; await b.draw(30); return [b.gl.drawingBufferWidth, b.gl.drawingBufferHeight]; })()`);
+    await sleep(1500);
+    const full = await footprintMedian(browser);
+    await page.evaluate(`(() => { const b = window.__w0bBare; const x = b.gl.getExtension('WEBGL_lose_context'); if (x) x.loseContext(); b.c.remove(); window.__w0bBare = null; return true; })()`);
+    return { ok: blank.medianB != null && tiny.medianB != null && full.medianB != null, blank, tiny, full, plan, bareSize: size, tinySize: [16, 9], attrs,
+      method: 'GPU-process footprint (median of 5 macOS footprint readings) on an empty page of the game origin, then with one bare WebGL2 canvas of the game\'s context attributes at 16 x 9 and at the fight\'s drawing-buffer size, 30 frames drawn each; read before the game page exists' };
+  } catch (err) { return { ok: false, error: String(err.message || err).slice(0, 200) }; }
+  finally { await withTimeout(page.close(), 15000, 'baseline page.close').catch(() => {}); }
+}
+
+/** routing for the game-driven GPU memory outside the census (engine-gpu): the engine.js lines that drive it */
+const REMAINDER_ROUTES = [
+  [ENGINE, /new THREE\.WebGLRenderer\(/, 'the game\'s WebGL context (ANGLE / Metal resources per context: command buffers, staging and conversion copies)'],
+  [ENGINE, /this\.renderer\.compile\(/, 'the programs compiled at warm-up (Metal pipeline states and shader caches, per program x render-pass format)'],
+  [ENGINE, /samples:\s*this\.tier\.msaa/, 'the MSAA scene target (Metal MSAA textures and their implicit resolve)'],
+];
+function routeRemainder(files) {
+  const rows = REMAINDER_ROUTES.map(([f, re, what]) => ({ fileLine: lineOf(f, re, files), what })).filter((x) => x.fileLine);
+  const t = tierLine(files);
+  if (t && rows.length) rows.push({ fileLine: t, what: 'the drawing-buffer size every render-target-proportional cost scales with' });
+  return rows;
+}
+const SPLIT_TOLERANCE_B = 32e6;   // a negative remainder beyond this means the buckets do not add up: the split fails
+/**
+ * THE FOOTPRINT SPLIT, graded against MEASURED buckets only (pure: its negative controls feed it inputs it must reject):
+ *   browser baseline      = blank (measured)
+ *   WebGL context + swap  = full - blank (measured: context fixed cost tiny - blank, default framebuffer full - tiny)
+ *   GL census             = the census bytes by owner lane (A-vram-ledger's census, installed before the context)
+ *   game-driven, outside the census = footprint - the three above, routed to engine-gpu with engine.js file:line
+ * Checks: every bucket measured; the bare context was the game's drawing-buffer size; no bucket negative and the
+ * remainder not below -SPLIT_TOLERANCE_B; the remainder routed with file:line.
+ */
+function splitFootprint({ footprintB, base, gameSize, glBytes, routing }) {
+  const blankB = base?.blank?.medianB ?? null, tinyB = base?.tiny?.medianB ?? null, fullB = base?.full?.medianB ?? null;
+  const measured = [footprintB, blankB, tinyB, fullB, glBytes].every((x) => x != null && Number.isFinite(x));
+  const sameSize = !!base?.bareSize && !!gameSize && base.bareSize[0] === gameSize[0] && base.bareSize[1] === gameSize[1];
+  const contextB = measured ? fullB - blankB : null, contextFixedB = measured ? tinyB - blankB : null, defaultFbB = measured ? fullB - tinyB : null;
+  const px = sameSize ? gameSize[0] * gameSize[1] - 16 * 9 : null;
+  const bytesPerPixel = px && defaultFbB != null ? defaultFbB / px : null;
+  const depthBpp = base?.attrs?.depth ? 4 : 0, samples = base?.attrs?.antialias ? 4 : 1;
+  const remainderB = measured ? footprintB - blankB - contextB - glBytes : null;
+  const checks = {
+    everyBucketMeasured: measured && blankB > 0,
+    bareContextWasTheGameDrawingBufferSize: sameSize,
+    noBucketNegative: measured && contextB >= -SPLIT_TOLERANCE_B && contextFixedB >= -SPLIT_TOLERANCE_B && defaultFbB >= -SPLIT_TOLERANCE_B,
+    remainderNotBelowTolerance: remainderB != null && remainderB >= -SPLIT_TOLERANCE_B,
+    remainderRoutedWithFileLine: Array.isArray(routing) && routing.length > 0 && routing.every((x) => !!x.fileLine),
+  };
+  return { ok: Object.values(checks).every(Boolean), checks,
+    buckets: measured ? { footprintMB: MB(footprintB), browserBaselineMB: MB(blankB), webglContextAndSwapChainMB: MB(contextB), glCensusMB: MB(glBytes), gameDrivenOutsideCensusMB: MB(remainderB) } : null,
+    context: measured ? { fixedCostMB: MB(contextFixedB), defaultFramebufferMB: MB(defaultFbB), drawingBuffer: gameSize, bytesPerPixel: bytesPerPixel == null ? null : +bytesPerPixel.toFixed(2),
+      impliedColourBuffers: bytesPerPixel == null ? null : +((bytesPerPixel / samples - depthBpp) / 4).toFixed(2), samples, depthBytesPerPixel: depthBpp, attrs: base?.attrs || null } : null,
+    shares: measured && footprintB ? { browserBaseline: +(blankB / footprintB).toFixed(3), webglContextAndSwapChain: +(contextB / footprintB).toFixed(3), glCensus: +(glBytes / footprintB).toFixed(3), gameDrivenOutsideCensus: +(remainderB / footprintB).toFixed(3) } : null,
+    remainderOwner: 'engine-gpu: game-driven GPU memory outside the census (ANGLE / Metal per-resource and per-program overhead the GL calls cause but do not size)', routing };
+}
 
 async function a90Abs({ PORT }) {
   const B = W0B_BUDGETS.abs;
@@ -1138,7 +1547,7 @@ async function a90Abs({ PORT }) {
   const lifeS = Number(process.env.CAL_A90ABS_LIFECYCLE_S) || B.a90LifecycleS;
   const fightS = Number(process.env.CAL_A90ABS_FIGHT_S) || B.fightS;
   const shortened = loopS < B.a90LoopS || lifeS < B.a90LifecycleS || fightS < B.fightS;
-  return onPage(PORT, async ({ page, cdp, browser }) => {
+  return onPage(PORT, async ({ page, cdp, browser, pre }) => {
     await cdp.send('HeapProfiler.enable');
     const heapAtBoot = await gcAndHeap(cdp);
     // the post-boot heap GROWTH is attributed by a sampling profile of what is still live at the end (objects
@@ -1155,20 +1564,28 @@ async function a90Abs({ PORT }) {
     const { profile: liveProfile } = await cdp.send('HeapProfiler.stopSampling');
     const perfMem = await page.evaluate('performance.memory ? { used: performance.memory.usedJSHeapSize, total: performance.memory.totalJSHeapSize, limit: performance.memory.jsHeapSizeLimit } : null');
     gpuSamples.push(await gpuProcess(browser));
-    // ATTRIBUTION of the GPU process footprint at the fight: the GL census (A-vram-ledger's, installed before the
-    // context) by owner lane, the canvas drawing buffers, and the remainder: the browser's GPU process itself
+    // the census at the last fight reading (A-vram-ledger's, installed before the context), by owner lane
     const attrCfg = { drawOwners: DRAW_OWNERS.map((o) => ({ id: o.id, lanes: o.lanes, re: o.re.source, flags: o.re.flags })), ctxLanes: CTX_LANES };
-    const glAttr = await page.evaluate(`(() => { const a = window.__glCensus.attribute(${JSON.stringify(attrCfg)}); const e = __CTX__.engine; let canvasBytes = null; try { canvasBytes = e.renderTargetLedger().canvas?.bytes ?? null; } catch (err) { canvasBytes = null; }
+    const glAttr = await page.evaluate(`(() => { const a = window.__glCensus.attribute(${JSON.stringify(attrCfg)}); const e = __CTX__.engine, gl = e.renderer.getContext(); let canvas = null; try { canvas = e.renderTargetLedger().canvas || null; } catch (err) { canvas = null; }
       const lanes = {}; for (const o of a.owners) { const l = /^unregistered/.test(o.owner) ? 'UNREGISTERED scene roots' : o.lane; lanes[l] = (lanes[l] || 0) + o.textures + o.renderTargets + o.buffers; }
       const un = a.unattributed.textures.bytes + a.unattributed.renderTargets.bytes + a.unattributed.buffers.bytes;
-      return { lanes, unattributedGlBytes: un, totals: a.totals, accountingExact: a.accountingExact, canvasBytes }; })()`);
-    // WHAT-IF (reported, never graded): the same fight at pixel ratio 1.25 (engine-gpu's W0b tier DPR cap)
+      const rt = a.ledgerRows.filter((x) => x.glBytes > 0).sort((x, y) => y.glBytes - x.glBytes).slice(0, 6).map((x) => ({ owner: x.owner, bytes: x.glBytes }));
+      return { lanes, unattributedGlBytes: un, totals: a.totals, canvasLedger: canvas, topRenderTargets: rt, drawingBuffer: [gl.drawingBufferWidth, gl.drawingBufferHeight],
+        gameAttrs: gl.getContextAttributes(), programs: (e.renderer.info.programs || []).length }; })()`);
+    // WHAT-IF (reported, never graded): the same fight at pixel ratio 1.25 (engine-gpu's W0b tier DPR cap), the census read
+    // at both, so the footprint drop that is NOT the census's names how much of the outside-census memory scales with resolution
     let whatIfDpr125 = null;
     try {
+      const f0 = await footprintMedian(browser, 3, 600);
+      const c0 = await page.evaluate('window.__glCensus.totals()');
       const was = await page.evaluate(`(async () => { ${FRAMES} const e = __CTX__.engine; const was = e.basePixelRatio; e.basePixelRatio = 1.25; e.renderScale = 1; e.resize(); await __frames(180); return was; })()`);
       await sleep(4000);
-      const g = await gpuProcess(browser);
-      whatIfDpr125 = { pixelRatio: 1.25, from: was, footprintMB: g.footprintB == null ? null : MB(g.footprintB), rssMB: g.rssB == null ? null : MB(g.rssB) };
+      const f1 = await footprintMedian(browser, 3, 600);
+      const c1 = await page.evaluate('window.__glCensus.totals()');
+      const cB = (c) => c.textures + c.renderTargets + c.buffers;
+      whatIfDpr125 = { pixelRatio: 1.25, from: was, footprintMB: f1.medianB == null ? null : MB(f1.medianB), footprintAtFromMB: f0.medianB == null ? null : MB(f0.medianB),
+        footprintDropMB: f0.medianB != null && f1.medianB != null ? MB(f0.medianB - f1.medianB) : null, censusDropMB: MB(cB(c0) - cB(c1)),
+        outsideCensusDropMB: f0.medianB != null && f1.medianB != null ? MB(f0.medianB - f1.medianB - (cB(c0) - cB(c1))) : null };
       await page.evaluate(`(() => { const e = __CTX__.engine; e.basePixelRatio = ${JSON.stringify(was)}; e.renderScale = 1; e.resize(); return true; })()`);
     } catch (err) { whatIfDpr125 = { error: String(err.message || err).slice(0, 160) }; }
     // THE SELF-TESTS (known deltas), after the graded readings
@@ -1179,52 +1596,79 @@ async function a90Abs({ PORT }) {
       const h1 = await gcAndHeap(cdp);
       await page.evaluate('(() => { window.__w0bHeapCtl = null; return true; })()');
       const h2 = await gcAndHeap(cdp);
-      const exp = HEAP_CONTROL_BYTES + 16 + 8 + 4 * HEAP_CONTROL_N, rise = h1 - h0, ratio = rise / exp;   // + the holding array
-      heapControl = { ok: Math.abs(ratio - 1) <= 0.05 && (h1 - h2) / exp >= 0.95, expectedB: exp, riseB: rise, ratio: +ratio.toFixed(4), fallB: h1 - h2, tolerance: 0.05 };
+      const exp = HEAP_CONTROL_BYTES + 16 + 8 + 4 * HEAP_CONTROL_N, rise = h1 - h0;   // + the holding array
+      heapControl = { ...heapControlGrade(rise, h1 - h2, exp), expectedB: exp, riseB: rise, fallB: h1 - h2, tolerance: 0.05 };
     } catch (err) { heapControl = { ok: false, error: String(err.message || err).slice(0, 160) }; }
     try {
       const pin = await page.evaluate(GPU_CONTROL('pin'));
       await sleep(1500);
-      const f0 = await footprintMedian(browser);
-      const al = await page.evaluate(GPU_CONTROL('alloc'));
-      await sleep(1500);
-      const f1 = await footprintMedian(browser);
-      await page.evaluate(GPU_CONTROL('free'));
-      await sleep(2500);
-      const f2 = await footprintMedian(browser);
+      const cycles = [];
+      let before = await footprintMedian(browser);
+      let exp = 0, allocOk = true;
+      for (let c = 0; c < GPU_CONTROL_CYCLES; c++) {
+        const al = await page.evaluate(GPU_CONTROL('alloc'));
+        allocOk = allocOk && !!al?.ok; exp = al?.bytes || exp;
+        await sleep(1500);
+        const held = await footprintMedian(browser);
+        await page.evaluate(GPU_CONTROL('free'));
+        await sleep(2500);
+        const after = await footprintMedian(browser);
+        cycles.push({ beforeMB: before.medianB == null ? null : MB(before.medianB), heldMB: held.medianB == null ? null : MB(held.medianB), afterMB: after.medianB == null ? null : MB(after.medianB),
+          riseB: held.medianB != null && before.medianB != null ? held.medianB - before.medianB : null, fallB: held.medianB != null && after.medianB != null ? held.medianB - after.medianB : null,
+          spreadMB: [before.spreadMB, held.spreadMB, after.spreadMB] });
+        before = after;
+      }
       await page.evaluate(GPU_CONTROL('unpin'));
-      const exp = al?.bytes || 0, rise = f1.medianB != null && f0.medianB != null ? f1.medianB - f0.medianB : null;
-      const ratio = rise != null && exp ? rise / exp : null;
-      gpuControl = { ok: !!al?.ok && pin?.held && ratio != null && ratio >= 0.75 && ratio <= 1.6, held: !!pin?.held, expectedB: exp, riseB: rise, ratio: ratio == null ? null : +ratio.toFixed(3),
-        fallB: f1.medianB != null && f2.medianB != null ? f1.medianB - f2.medianB : null, before: f0, held1: f1, after: f2, tolerance: '0.75-1.6 x' };
+      const g = gpuControlGrade(cycles, exp);
+      gpuControl = { ...g, ok: g.ok && allocOk && !!pin?.held, held: !!pin?.held, expectedB: exp, cycles, riseBand: GPU_RISE_BAND, fallOverRiseBand: GPU_FALL_BAND };
     } catch (err) { gpuControl = { ok: false, error: String(err.message || err).slice(0, 160) }; try { await page.evaluate(GPU_CONTROL('free')); await page.evaluate(GPU_CONTROL('unpin')); } catch { /* */ } }
     await page.evaluate(UNSTAGE);
     const gpu = gpuSamples.filter((g) => g.found && g.footprintB != null);
     const gpuMax = gpu.length ? Math.max(...gpu.map((g) => g.footprintB)) : null;
     const gpuAt = gpu.length ? gpu[gpu.length - 1].footprintB : null;
-    // the footprint split (at the last fight reading): GL objects by lane + canvas + the GPU process itself (remainder)
+    // the footprint split (at the last fight reading), against MEASURED buckets (targeted fix round 1)
     const glBytes = glAttr ? glAttr.totals.textures + glAttr.totals.renderTargets + glAttr.totals.buffers : null;
-    const footprintSplit = glAttr && gpuAt != null ? {
-      footprintMB: MB(gpuAt), glObjectsMB: MB(glBytes), byLaneMB: Object.fromEntries(Object.entries(glAttr.lanes).sort((a, b) => b[1] - a[1]).map(([k, v]) => [k, MB(v)])),
-      unattributedGlMB: MB(glAttr.unattributedGlBytes), canvasDrawingBuffersMB: glAttr.canvasBytes == null ? null : MB(glAttr.canvasBytes),
-      chromeGpuProcessRemainderMB: MB(gpuAt - glBytes - (glAttr.canvasBytes || 0)),
-      remainderOwner: 'the browser: Chrome GPU process + ANGLE/Metal runtime (shader and pipeline caches, command buffers, compositor surfaces); not a GL object of the game',
-      exact: true } : null;
+    const remainderRouting = routeRemainder();
+    const footprintSplit = { ...splitFootprint({ footprintB: gpuAt, base: pre, gameSize: glAttr?.drawingBuffer, glBytes, routing: remainderRouting }),
+      glCensusByLaneMB: glAttr ? Object.fromEntries(Object.entries(glAttr.lanes).sort((a, b) => b[1] - a[1]).map(([k, v]) => [k, MB(v)])) : null,
+      unattributedGlMB: glAttr ? MB(glAttr.unattributedGlBytes) : null,
+      glTopRenderTargets: glAttr ? glAttr.topRenderTargets.map((x) => ({ owner: x.owner, MB: MB(x.bytes), fileLines: routeRt(x.owner).fileLines })) : null,
+      engineLedgerCanvas: glAttr?.canvasLedger || null, gameContextAttrs: glAttr?.gameAttrs || null, bareContextAttrs: pre?.attrs || null,
+      attrsMatch: !!glAttr && !!pre?.attrs && ['alpha', 'depth', 'stencil', 'antialias', 'preserveDrawingBuffer'].every((k) => glAttr.gameAttrs?.[k] === pre.attrs[k]),
+      programs: glAttr?.programs ?? null, baseline: pre };
     // the heap growth after boot, by owner: what is still live at the end, from the sampling profile
-    let heapGrowth = null;
+    let heapGrowth = null, liveNeg = null;
     try {
-      const a = attribute(liveProfile, 1, 0, PORT);
+      const a = attribute(liveProfile, 1, 0, PORT, { interval: 32768 });
+      const lossy = attribute(liveProfile, 1, 0, PORT, { interval: 32768, dropHeaviestHeadChild: true }).accounting;
+      const foreign = attribute(liveProfile, 1, 0, PORT, { interval: 32768, foreignSampleEvery: 50 }).accounting;
+      liveNeg = { lossyWalkWouldPass: lossy.ok, foreignSamplesWouldPass: foreign.ok };
       heapGrowth = { liveSampledMB: MB(a.total.bytes), bySrcOwnerMB: Object.fromEntries(a.owners.slice(0, 12).map((o) => [o.id, MB(o.bytes)])), noSrcMB: Object.fromEntries(a.noSrc.buckets.map((b) => [b.id, MB(b.bytes)])),
-        topFunctions: a.topGraded.slice(0, 8).map((x) => ({ fn: x.fn, MB: MB(x.bytes), owner: srcOwner(x.fn) })), accountingExact: a.accounting.exact,
-        note: 'sampled live objects at the end of the fight (interval 32 KB, objects collected by GC excluded): who holds the heap the workload and the fight added; the boot heap (' + MB(heapAtBoot) + ' MB post-GC) is the boot\'s' };
+        topFunctions: a.topGraded.slice(0, 8).map((x) => ({ fn: x.fn, MB: MB(x.bytes), owner: srcOwner(x.fn) })), accounting: a.accounting,
+        note: 'sampled live objects at the end of the fight (interval 32 KB, objects collected by GC excluded): who holds the heap the workload and the fight added; the boot heap (' + MB(heapAtBoot) + ' MB post-GC) is the boot\'s; attribution checked against V8\'s sample list and samples x interval' };
     } catch (err) { heapGrowth = { error: String(err.message || err).slice(0, 160) }; }
+    // NEGATIVE CONTROLS: each instrument criterion fed an input it must reject
+    const negatives = [
+      neg('a90WorkloadRan', 'a workload that reports no pass', ({ workloadPass: false }).workloadPass === true),
+      neg('gpuProcessMeasured', 'no GPU-process reading', null !== null),
+      neg('footprintSplitIntoMeasuredBuckets', 'the split with no browser baseline', splitFootprint({ footprintB: gpuAt, base: { ...pre, blank: { medianB: null } }, gameSize: glAttr?.drawingBuffer, glBytes, routing: remainderRouting }).ok),
+      neg('footprintSplitIntoMeasuredBuckets', 'the split with a bare context of another size', splitFootprint({ footprintB: gpuAt, base: { ...pre, bareSize: [16, 9] }, gameSize: glAttr?.drawingBuffer, glBytes, routing: remainderRouting }).ok),
+      neg('footprintSplitIntoMeasuredBuckets', 'the split with 200 MB more census than the footprint holds', splitFootprint({ footprintB: gpuAt, base: pre, gameSize: glAttr?.drawingBuffer, glBytes: (gpuAt ?? 0) - (pre?.full?.medianB ?? 0) + 200e6, routing: remainderRouting }).ok),
+      neg('remainderRoutedWithFileLine', 'the remainder resolved against an engine.js without the anchors', routeRemainder({ [ENGINE]: ['// no anchors'] }).length > 0),
+      neg('heapGrowthAttributed', 'the live profile walked without its heaviest subtree', liveNeg?.lossyWalkWouldPass !== false),
+      neg('heapGrowthAttributed', 'the live profile with every 50th sample on a node no owner holds', liveNeg?.foreignSamplesWouldPass !== false),
+      neg('selfTestHeapKnownDelta', 'the heap readings against twice the retained size', heapControl?.riseB != null ? heapControlGrade(heapControl.riseB, heapControl.fallB, heapControl.expectedB * 2).ok : true),
+      neg('selfTestGpuKnownDelta', 'the GPU readings of a driver that never frees (fall 0)', gpuControl?.cycles ? gpuControlGrade(gpuControl.cycles.map((c) => ({ ...c, fallB: 0 })), gpuControl.expectedB).ok : true),
+      neg('selfTestGpuKnownDelta', 'the GPU readings against twice the allocation', gpuControl?.cycles ? gpuControlGrade(gpuControl.cycles, gpuControl.expectedB * 2).ok : true),
+    ];
     const instrument = {
       a90WorkloadRan: a90.workloadPass === true,
       gpuProcessMeasured: gpuMax !== null,
-      footprintSplitByOwner: !!footprintSplit && !!glAttr?.accountingExact,
-      heapGrowthAttributed: !!heapGrowth && heapGrowth.accountingExact === true,
+      footprintSplitIntoMeasuredBuckets: !!footprintSplit.ok,
+      heapGrowthAttributed: !!heapGrowth?.accounting?.ok,
       selfTestHeapKnownDelta: !!heapControl?.ok,
       selfTestGpuKnownDelta: !!gpuControl?.ok,
+      negativeControlsEachFail: negatives.every((n) => n.ok),
     };
     const bars = {
       postGcHeapWithinCeiling: { binding, ceilingMB: 450, MB: MB(heapPostGc), pass: heapPostGc <= B.heapB },
@@ -1234,22 +1678,25 @@ async function a90Abs({ PORT }) {
     const barsOk = Object.values(bars).every((b) => !b.binding || b.pass);
     const measuredPass = instrumentOk && barsOk;
     const pass = shortened ? (measuredPass ? null : false) : measuredPass;
+    const bk = footprintSplit.buckets;
     return { pass, detail: {
       verdict: (shortened ? 'DEV RUN (shortened workload, never a PASS): ' : '') + (measuredPass ? 'PASS' : 'FAIL: ' + [...Object.keys(instrument).filter((k) => !instrument[k]), ...Object.entries(bars).filter(([, b]) => b.binding && !b.pass).map(([k]) => 'bar ' + k)].join(', '))
-        + ` — INSTRUMENT (R48 b): ${instrumentOk ? 'PASS' : 'FAIL'} (heap control ${heapControl?.ratio ?? '?'}x of ${heapControl?.expectedB ? MB(heapControl.expectedB) : '?'} MB, GPU control ${gpuControl?.ratio ?? '?'}x of ${gpuControl?.expectedB ? MB(gpuControl.expectedB) : '?'} MB (fell back ${gpuControl?.fallB != null ? MB(gpuControl.fallB) : '?'} MB); footprint split: GL objects ${footprintSplit?.glObjectsMB ?? '?'} MB, canvas ${footprintSplit?.canvasDrawingBuffersMB ?? '?'} MB, Chrome GPU process remainder ${footprintSplit?.chromeGpuProcessRemainderMB ?? '?'} MB) — `
+        + ` — INSTRUMENT (R48 b): ${instrumentOk ? 'PASS' : 'FAIL'} (heap control ${heapControl?.ratio ?? '?'}x of ${heapControl?.expectedB ? MB(heapControl.expectedB) : '?'} MB; GPU control ${gpuControl?.ratio ?? '?'}x of ${gpuControl?.expectedB ? MB(gpuControl.expectedB) : '?'} MB, fall ${gpuControl?.fallOverRise ?? '?'}x of the rise (median of ${GPU_CONTROL_CYCLES} cycles); `
+        + `footprint split into MEASURED buckets ${footprintSplit.ok ? 'holds' : 'FAILS ' + Object.keys(footprintSplit.checks).filter((k) => !footprintSplit.checks[k]).join(', ')}: ${bk ? `browser baseline ${bk.browserBaselineMB} MB, WebGL context + swap chain ${bk.webglContextAndSwapChainMB} MB (default framebuffer ${footprintSplit.context?.defaultFramebufferMB} MB = ${footprintSplit.context?.bytesPerPixel} B/px at ${(footprintSplit.context?.drawingBuffer || []).join('x')}), GL census ${bk.glCensusMB} MB, game-driven outside the census ${bk.gameDrivenOutsideCensusMB} MB -> engine-gpu @ ${remainderRouting.map((x) => x.fileLine).join(' + ')}` : 'not measured'}; `
+        + `negative controls ${negatives.filter((n) => n.ok).length}/${negatives.length} fail as they must) — `
         + `BARS (${binding ? 'binding: global run' : 'lane run: graded at the orchestrator\'s 5270 global run after the engine-gpu merge, R48 b'}): post-GC JS heap ${MB(heapPostGc)} MB (ceiling 450) ${bars.postGcHeapWithinCeiling.pass ? 'pass' : 'FAIL'}, Chrome GPU process footprint ${gpuMax === null ? 'not measured' : MB(gpuMax) + ' MB'} (ceiling 1500) ${bars.gpuProcessWithinCeiling.pass ? 'pass' : 'FAIL'} at the staged fight, after the A90 workload (${a90.kills} kills, ${a90.workload?.respawned} respawned)`
-        + (bars.gpuProcessWithinCeiling.pass ? '' : ` — over-bar routing: GPU process -> ${footprintSplit ? Object.entries(footprintSplit.byLaneMB).slice(0, 3).map(([k, v]) => k + ' ' + v + ' MB').join(', ') + '; render targets: engine-gpu W0b tier (src/core/engine.js renderTargetLedger rows; DPR cap / GTAO resolution / AA), what-if at pixel ratio 1.25 ' + (whatIfDpr125?.footprintMB ?? '?') + ' MB' : '?'}`),
+        + (bars.gpuProcessWithinCeiling.pass ? '' : ` — over-bar routing: GL census -> ${footprintSplit.glTopRenderTargets ? footprintSplit.glTopRenderTargets.slice(0, 3).map((x) => x.owner + ' ' + x.MB + ' MB @ ' + x.fileLines.join(' + ')).join('; ') : '?'}; game-driven outside the census ${bk ? bk.gameDrivenOutsideCensusMB : '?'} MB -> engine-gpu @ ${remainderRouting.map((x) => x.fileLine).join(' + ')}; what-if at pixel ratio 1.25 ${whatIfDpr125?.footprintMB ?? '?'} MB (drop ${whatIfDpr125?.footprintDropMB ?? '?'} MB, of which outside the census ${whatIfDpr125?.outsideCensusDropMB ?? '?'} MB)`),
       instrument, bars, runId: runIdOf(PORT), barsBinding: binding,
       sealing: 'R48 (b): the harness seals every run that executes this row (tools/gates.r5.gates-perf.mjs INSTRUMENT_IDS); verify with node tools/gates.r5.gates-perf.mjs --instruments --port <port>',
       checks: { ...instrument, ...Object.fromEntries(Object.entries(bars).map(([k, b]) => ['bar:' + k, b.pass])) },
       report: { postGcJsHeapMB: MB(heapPostGc), gpuProcessFootprintMB: gpuMax === null ? null : MB(gpuMax) },
-      ceilings: { heapMB: 450, gpuProcessMB: 1500 }, footprintSplit, heapGrowth, selfTest: { heap: heapControl, gpu: gpuControl },
+      ceilings: { heapMB: 450, gpuProcessMB: 1500 }, footprintSplit, heapGrowth, selfTest: { heap: heapControl, gpu: gpuControl, negatives },
       heapMB: { atBoot: MB(heapAtBoot), afterA90: MB(heapAfterA90), afterFightPostGc: MB(heapPostGc) }, performanceMemory: perfMem,
       gpuProcess: gpuSamples.map((g) => ({ ...g, footprintMB: g.footprintB == null ? null : MB(g.footprintB), rssMB: g.rssB == null ? null : MB(g.rssB) })),
       whatIfDpr125, a90, durationsS: { a90Loop: loopS, a90Lifecycle: lifeS, fight: fightS, shortened }, fight,
-      method: 'A90-memory-stability\'s kill -> respawn workload (gate-roster memWorkload / memRespawnAfter, same loop and lifecycle times), two forced GCs (CDP HeapProfiler.collectGarbage), then the A21 staged fight for ' + fightS + ' s; JS heap = Runtime.getHeapUsage().usedSize after two forced GCs; GPU process = SystemInfo.getProcessInfo type GPU, macOS `footprint -p <pid> -f bytes` (phys_footprint, includes IOSurface / Metal memory), sampled every 15 s through the fight, max graded; footprint split by the GL census (A-vram-ledger\'s) at the last reading; heap growth by a live-object sampling profile; known-delta self-tests after the graded readings',
+      method: 'A90-memory-stability\'s kill -> respawn workload (gate-roster memWorkload / memRespawnAfter, same loop and lifecycle times), two forced GCs (CDP HeapProfiler.collectGarbage), then the A21 staged fight for ' + fightS + ' s; JS heap = Runtime.getHeapUsage().usedSize after two forced GCs; GPU process = SystemInfo.getProcessInfo type GPU, macOS `footprint -p <pid> -f bytes` (phys_footprint, includes IOSurface / Metal memory), sampled every 15 s through the fight, max graded; the footprint split at the last reading into measured buckets: the browser baseline and a bare same-size WebGL2 context read in this Chrome before the game booted, the GL census by lane, and the game-driven remainder outside the census routed with engine.js file:line; heap growth by a live-object sampling profile, checked against V8\'s sample list; known-delta self-tests after the graded readings; negative controls',
     } };
-  }, { initScripts: [GL_CENSUS] });
+  }, { initScripts: [GL_CENSUS], preBoot: (browser) => gpuBaseline(browser, PORT) });
 }
 
 /* ------------------------------------------------------------------------------------------------ */
@@ -1520,16 +1967,19 @@ function referenceClean({ GATES }) {
     if (!m.exists) { rowsProblems.push(`${relRoot(d)}: ${list.length} image(s), no MANIFEST.md`); continue; }
     for (const f of list) if (!m.stored.some((r) => r.file === f)) rowsProblems.push(`${relRoot(path.join(d, f))}: no MANIFEST row`);
   }
-  for (const { dir } of laneFolders(ROOT)) {
+  // targeted fix round 1: every lane's MANIFEST is read by column name (tools/r5-refs/manifest.mjs), and each stored row is
+  // held to the one rule set verify() uses (tools/r5-refs/fetch.mjs storedRowProblems: licence, attribution, author, source,
+  // retrieved, forbidden sources, sha256 when recorded)
+  const byLaneLayout = {};
+  for (const { lane, dir } of laneFolders(ROOT)) {
     const m = readManifest(dir);
     storedRows += m.stored.length; urlOnlyRows += m.urlOnly.length;
+    byLaneLayout[lane] = { stored: m.stored.length, urlOnly: m.urlOnly.length, notes: m.notes.length, headers: m.tables.filter((t) => t.kind !== 'other').map((t) => t.header.join(' | ')) };
     for (const r of m.stored) {
       licences[r.licence] = (licences[r.licence] || 0) + 1;
-      if (!STORED_LICENCES.test(r.licence)) rowsProblems.push(`${relRoot(path.join(dir, r.file))}: licence ${r.licence} is not PD / CC0 / CC BY / own photo`);
-      if (/^CC-BY/.test(r.licence) && !r.attribution) rowsProblems.push(`${relRoot(path.join(dir, r.file))}: CC BY without its attribution string`);
-      if (FORBIDDEN_SOURCE_RE.test(`${r.source} ${r.author} ${r.subject}`)) rowsProblems.push(`${relRoot(path.join(dir, r.file))}: forbidden source (${r.source})`);
+      for (const pr of storedRowProblems(lane, dir, r)) rowsProblems.push('reference/r5/' + pr);
     }
-    for (const r of m.urlOnly) if (readdirSync(dir).some((f) => f.replace(/\.[a-z]+$/i, '') === r.slot)) rowsProblems.push(`${relRoot(dir)}/${r.slot}: URL-only (${r.licence}) but stored`);
+    for (const r of m.urlOnly) if (r.slot && readdirSync(dir).some((f) => f.replace(/\.[a-z]+$/i, '') === r.slot)) rowsProblems.push(`${relRoot(dir)}/${r.slot}: URL-only (${r.licence}) but stored`);
   }
   // V12 / V22 / V24 / V46 / V48 point at reference/r5/**
   const NAMED = ['V12', 'V22', 'V24', 'V46', 'V48'];
@@ -1557,7 +2007,7 @@ function referenceClean({ GATES }) {
       + ` — ${files.length} image(s) under reference/ (${storedRows} stored rows, ${urlOnlyRows} URL-only rows; licences ${JSON.stringify(licences)}); ${stills.rows.length} deleted Round-4 stills recorded with sha256, ${stillNamesPresent.length} present by name, ${reappeared.length} by content; `
       + pointing.map((x) => (x.present ? `${x.gate} -> ${x.ok ? x.refs.join(' + ') : 'NOT r5: ' + JSON.stringify(x.refs) + ' ' + x.nonR5.join(' ')}` : `${x.gate}: not registered in this tree`)).join('; '),
     checks, topLevelImages: topLevel, deletedStills: stills.rows.length, deletedStillsPresentByName: stillNamesPresent, reappearedByContent: reappeared,
-    manifestProblems: rowsProblems, namedRows: pointing,
+    manifestProblems: rowsProblems, namedRows: pointing, manifestsByLane: byLaneLayout,
   } };
 }
 
@@ -1566,6 +2016,8 @@ function referenceSet({ GATES }) {
   const src = readFileSync(path.join(TOOLS, 'r5-refs', 'fetch.mjs'), 'utf8');
   const fetcher = { commonsApi: /https:\/\/commons\.wikimedia\.org\/w\/api\.php/.test(src), filtersOnClassifier: /classifyCommons\(/.test(src) && /info\.c\.cls !== 'stored'/.test(src),
     selfTest: classifierSelfTest() };
+  // targeted fix round 1: the MANIFEST parser reads every lane's layout (gates-perf's, brand's, hero-body's), with a negative case
+  const parser = parserSelfTest();
   // (b) the set verifies offline (every pinned slot fetched, every file a complete row, sha256 intact)
   const v = verifyReferenceSet(ROOT);
   // (c) every V gate in every lane file names >= 1 reference file under reference/r5/** with a MANIFEST row.
@@ -1594,16 +2046,17 @@ function referenceSet({ GATES }) {
     fetcherQueriesCommonsApi: fetcher.commonsApi,
     fetcherStoresOnlyPdCc0CcBy: fetcher.filtersOnClassifier && fetcher.selfTest.ok,
     referenceSetVerifies: v.ok,
+    manifestParserReadsEveryLaneLayout: parser.ok,
     everyVisualGateInEveryLaneFileNamesAReference: missing.length === 0 && rows.length > 0,
   };
   const pass = Object.values(checks).every(Boolean);
   const lanesSeen = [...new Set(rows.map((r) => r.lane))];
   return { pass, detail: {
     verdict: (pass ? 'PASS' : 'FAIL: ' + Object.keys(checks).filter((k) => !checks[k]).join(', '))
-      + ` — reference set: ${v.stored} stored + ${v.urlOnly} URL-only rows, ${v.files} files${v.ok ? '' : ', problems: ' + v.problems.slice(0, 4).join('; ')}; classifier controls ${fetcher.selfTest.cases.filter((c) => c.ok).length}/${fetcher.selfTest.cases.length}; `
+      + ` — reference set: ${v.stored} stored + ${v.urlOnly} URL-only + ${v.notes} note rows, ${v.files} files in ${Object.keys(v.byLane || {}).length} lane folder(s) (${Object.entries(v.byLane || {}).map(([l, x]) => l + ' ' + x.stored + '/' + x.images).join(', ')})${v.hashedAtVerify?.length ? ', ' + v.hashedAtVerify.length + ' row(s) without a sha256 hashed at verify' : ''}${v.ok ? '' : ', problems: ' + v.problems.slice(0, 4).join('; ')}; classifier controls ${fetcher.selfTest.cases.filter((c) => c.ok).length}/${fetcher.selfTest.cases.length}; MANIFEST parser controls ${parser.cases.filter((c) => c.ok).length}/${parser.cases.length}; `
       + `every visual gate of every lane file (${lanesSeen.join(', ')}): ${rows.length - missing.length}/${rows.length} name a licence-clean reference under reference/r5/** with a complete MANIFEST row`
       + (missing.length ? ` — missing, by lane: ${Object.entries(byLane).map(([l, ids]) => l + ' (' + ids.join(', ') + ')').join('; ')}` + ` [${missing.slice(0, 6).map((r) => r.id + ': ' + (r.problems.join('; ') || (r.nonR5.length ? 'non-r5 ' + r.nonR5.join(' ') : 'names none'))).join(' | ')}]` : ''),
-    checks, fetcher: { ...fetcher, selfTest: fetcher.selfTest.cases }, verify: v,
+    checks, fetcher: { ...fetcher, selfTest: fetcher.selfTest.cases }, parser: parser.cases, verify: v,
     slots: SLOTS.map((s) => ({ lane: s.lane, slot: s.slot, gates: s.gates, pinned: !!s.file })),
     visualGates: rows, missingByLane: byLane,
     rule: 'plan §9: every V gate in every lane file names >= 1 reference file under reference/r5/** with a MANIFEST row (author, source URL, licence, retrieved date); graded over every registered visual row, SKIP-replaced carried rows included; R49: engine-gpu\'s V20 / V33b / V-gpu-tier-look use their in-sheet controls as the R29 reference',
