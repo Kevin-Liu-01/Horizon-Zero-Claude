@@ -2082,7 +2082,17 @@ async function carriedSuite({ PORT, GATES: ALL }) {
   const baselineInfo = { file: rel(BASELINE_FILE), base: base.file.base, runs: base.file.runs.map((r) => r.sealId), recordedAt: base.file.recordedAt, verdictTally: base.file.verdictTally,
     anchor: base.anchor, lowestQuietFraction: +baseQuiet.toFixed(3),
     carriedChangedSinceBaseline: base.file.evidence?.carriedSha256AtRuns !== sha256(readFileSync(path.join(TOOLS, 'gates.r5.carried.mjs'))) };
-  if (completeFull.length < MIN_FULL_RUNS) {
+  const orchestratorRun = Number(PORT) === ORCHESTRATOR_PORT;
+  /*
+   * W0b targeted fix (R53 b, Oct 30): the run ledger lived in scratch and was wiped by the forced restarts; the full
+   * carried run is the orchestrator's, on port 5270, with the ledger it holds (R48 d). In a LANE run whose ledger holds
+   * no complete sealed full carried run of this build, the rows it never observed are `awaitingFullRun` (no offender,
+   * never counted as PASS); every row a sealed partial run did observe is graded exactly as below, and the gate reports
+   * PENDING-orchestrator only when every structural check but the full-run count holds and every offender is another
+   * lane's or ruled. On port 5270 a missing full run still FAILs.
+   */
+  const awaitingFullRun = completeFull.length < MIN_FULL_RUNS && !orchestratorRun;
+  if (completeFull.length < MIN_FULL_RUNS && !awaitingFullRun) {
     return { pass: false, detail: {
       verdict: `FAIL: ${completeFull.length} complete fresh sealed FULL carried run(s) of this tree on port ${PORT}${explicit.length ? ' (CAL_CARRIED_SEALS)' : ''}${incompleteRuns.length ? ` (+${incompleteRuns.length} incomplete)` : ''}; the gate needs ${MIN_FULL_RUNS}. Run node tools/gates.mjs --port ${PORT} --lane carried on an unchanged build, then re-run the known-flaky rows with --only until their first ${FLAKY_WINDOW} observations decide, then judge the newest complete full run's kept visual rows — ${runsLine}`,
       composition: comp, ledger: ledgerInfo, baseline: baselineInfo, build: { now, gitHead: head }, freshRuns: fresh.map((c) => c.seal.sealId), incompleteRuns, unsealedStarts, notGraded } };
@@ -2092,7 +2102,8 @@ async function carriedSuite({ PORT, GATES: ALL }) {
   const r4 = round4Fails();
   const rulings = planRulings();
   const byRun = new Map(chrono.map((c) => [c.seal.sealId, new Map((c.rep.results || []).map((r) => [r.id, r]))]));
-  const judgedRun = completeFull[0];                     // the judged frames: the newest COMPLETE full run
+  const judgedRun = completeFull[0] || null;             // the judged frames: the newest COMPLETE full run (none: R53 b)
+  const AWAITING_NOTE = `not observed: the ledger holds no complete sealed full carried run of this build on port ${PORT} (R53 b: observed by the orchestrator's full run on port ${ORCHESTRATOR_PORT}, R48 d)`;
   const rows = [];
   for (const g of CARRIED) {
     // one observation per run that ran this row: every full run (a missing row there is `unrun`), and the
@@ -2118,6 +2129,9 @@ async function carriedSuite({ PORT, GATES: ALL }) {
       const j = per.find((p) => p.run === judgedRun) || { cls: 'unrun', note: 'not in the judged run' };
       if (!KEPT_VISUAL.includes(g.id) && !shadowedIds.has(g.id)) {
         Object.assign(row, { cls: 'skipReplaced', note: `SKIP-replaced (R33 c): its subject is content scheduled for replacement; graded when ${row.owner} re-stages it on new content (shadows this id)`, shot: j.shot });
+      } else if (!judgedRun) {
+        // R53 (b): a kept visual row is judged on the newest complete full run's frame, and there is none in this ledger
+        Object.assign(row, { cls: 'awaitingFullRun', note: AWAITING_NOTE });
       } else {
         // graded on the newest complete full run's frame (the judges' frame); every other full run must have filmed it too
         Object.assign(row, { cls: j.cls, note: j.note, shot: j.shot, judge: j.judge });
@@ -2137,6 +2151,7 @@ async function carriedSuite({ PORT, GATES: ALL }) {
       const mixedStaging = classes.some(isSkip) && classes.some((c) => !isSkip(c));
       const firstBad = (ok) => String((seen.find((p) => !ok(p.cls)) || {}).note || '').slice(0, 160);
       if (hard) { row.cls = hard; row.note = (seen.find((p) => p.cls === hard) || {}).note; }
+      else if (!classes.length && awaitingFullRun && !per.length) { row.cls = 'awaitingFullRun'; row.note = AWAITING_NOTE; }
       else if (!classes.length) { row.cls = 'unrun'; row.note = 'never observed on this build (every run that held it lost it to the harness)'; }
       else if (expect === 'pass') {
         // a Round-4-ATTRIBUTED PENDING (the box could not be measured: R26's loud box, a contended GPU) is not a
@@ -2193,26 +2208,31 @@ async function carriedSuite({ PORT, GATES: ALL }) {
    * gates-perf's lane run it reports PENDING-orchestrator and lists its offenders when every offender belongs to another
    * lane (RULED_OWNER: A90b -> instruments-core, R34) or is ruled (RULED_CLASS_OWNER: A9's quiet-box term, R45; V21's
    * R29 judge, R48 d) and every structural check holds; an offender this lane owns (a staging defect, a flaky staging,
-   * a row that needs more runs, an unrun row, anything not named as another lane's) makes it FAIL.
+   * a row that needs more runs, an unrun row, anything not named as another lane's) makes it FAIL. (`orchestratorRun`
+   * is set above, before the full-run count: R53 b.)
    */
-  const orchestratorRun = Number(PORT) === ORCHESTRATOR_PORT;
   // needsQuietBox is ruled (R45) only for a row whose observations carry the R45 label (A9's fps term); a row PENDING
   // for any other box reason stays this lane's (re-run it on a quiet box)
   const offenderOwner = (r) => (r.cls === 'needsQuietBox' ? ((r.perRun || []).includes('pendingQuietBox') ? RULED_CLASS_OWNER.needsQuietBox : null)
     : RULED_CLASS_OWNER[r.cls] || ((r.cls === 'regression' || r.cls === 'worseThanBaseline') && RULED_OWNER[r.id] ? RULED_OWNER[r.id] : null));
   const othersOffenders = bad.filter((r) => offenderOwner(r)), mineOffenders = bad.filter((r) => !offenderOwner(r));
-  const structural = ['composition', 'ledgerIntact', 'baselineAnchored', 'enoughCompleteFullRuns', 'everyRunLoadedEveryFile', 'notAnOverrideRun'].every((k) => checks[k]);
+  // R53 (b): in a lane run, the full-run count is the one structural check the orchestrator's 5270 run settles
+  const structural = ['composition', 'ledgerIntact', 'baselineAnchored', 'enoughCompleteFullRuns', 'everyRunLoadedEveryFile', 'notAnOverrideRun']
+    .every((k) => checks[k] || (k === 'enoughCompleteFullRuns' && awaitingFullRun));
+  const awaiting = rows.filter((r) => r.cls === 'awaitingFullRun');
   const allGreen = Object.values(checks).every(Boolean);
   const pass = allGreen ? true : (!orchestratorRun && structural && mineOffenders.length === 0) ? null : false;
   const count = (list) => Object.entries(list.reduce((a, r) => { a[r.cls] = (a[r.cls] || 0) + 1; return a; }, {})).map(([k, n]) => n + ' ' + k).join(', ');
   return { pass, detail: {
     verdict: (pass ? 'PASS' : pass === null
-      ? `PENDING-orchestrator (R48 d): graded by the orchestrator on port ${ORCHESTRATOR_PORT} after the W0b merges; every offender here belongs to another lane or is ruled — ${othersOffenders.map((r) => r.id + ' [' + r.cls + '] -> ' + offenderOwner(r)).join('; ')}`
+      ? `PENDING-orchestrator (R48 d): graded by the orchestrator on port ${ORCHESTRATOR_PORT} after the W0b merges; every offender here belongs to another lane or is ruled — ${othersOffenders.map((r) => r.id + ' [' + r.cls + '] -> ' + offenderOwner(r)).join('; ') || 'none'}`
+        + (awaitingFullRun ? ` — R53 (b): ${completeFull.length} complete sealed FULL carried run(s) of this build on port ${PORT} in ${L.file} (the full run is the orchestrator's on ${ORCHESTRATOR_PORT}); ${awaiting.length} row(s) awaiting it, ${rows.length - awaiting.length} graded or SKIP-labelled from ${fresh.length} sealed partial run(s)` : '')
       : 'FAIL: ' + Object.keys(checks).filter((k) => !checks[k]).join(', ')
         + (bad.length ? ` — ${bad.length} row(s): ${count(bad)} (${bad.map((r) => r.id).slice(0, 14).join(', ')}${bad.length > 14 ? ', …' : ''})` : '')
         + (mineOffenders.length ? ` — this lane's: ${mineOffenders.map((r) => r.id + ' [' + r.cls + ']').join(', ')}` : ''))
       + ` — R33 regression guard vs the ${base.file.base} baseline (${base.anchor.split(':')[0]} anchor); observations: ${runsLine}`,
-    mode: orchestratorRun ? `orchestrator run (port ${ORCHESTRATOR_PORT}): graded` : `lane run: PENDING-orchestrator when every offender is another lane's or ruled (R48 d)`,
+    mode: orchestratorRun ? `orchestrator run (port ${ORCHESTRATOR_PORT}): graded` : `lane run: PENDING-orchestrator when every offender is another lane's or ruled (R48 d)${awaitingFullRun ? '; no complete sealed full carried run in this ledger (R53 b)' : ''}`,
+    awaitingFullRun: awaitingFullRun ? { count: awaiting.length, ids: awaiting.map((r) => r.id), ruling: 'R53 (b)' } : null,
     offendersThisLane: mineOffenders.map((r) => ({ id: r.id, cls: r.cls, note: String(r.note || '').slice(0, 200) })),
     offendersOtherLaneOrRuled: othersOffenders.map((r) => ({ id: r.id, cls: r.cls, owner: offenderOwner(r) })),
     r47SkipReplaced: rows.filter((r) => r.ruling === 'R47').map((r) => ({ id: r.id, owner: r.owner, observed: r.perRun })),
@@ -2220,7 +2240,7 @@ async function carriedSuite({ PORT, GATES: ALL }) {
     checks, tally, composition: comp, ledger: ledgerInfo, baseline: baselineInfo,
     judgeTrust: { visualJudgePort: VISUAL_JUDGE_PORT, trustedOrchestratorKeys: [...trust.trusted].map(fingerprint),
       registrations: [...trust.regs.values()].flat().map((r) => ({ judge: r.judge, port: r.port, judgeKey: fingerprint(r.judgePub), by: fingerprint(r.orchestratorPub), sigOk: r.sigOk, trusted: trust.trusted.has(r.orchestratorPub) })) },
-    incompleteRuns, unsealedStarts, judgedRun: judgedRun.seal.sealId,
+    incompleteRuns, unsealedStarts, judgedRun: judgedRun ? judgedRun.seal.sealId : null,
     runs: chrono.map((c) => ({ sealId: c.seal.sealId, partial: c.partial, complete: c.complete, quietFraction: c.quietFraction == null ? null : +c.quietFraction.toFixed(3),
       louderThanBaseline: c.louderThanBaseline, port: c.seal.port, reportStamp: c.seal.reportStamp, startedAt: c.seal.startedAt, endedAt: c.seal.endedAt,
       load: c.seal.load, gitHead: c.seal.gitHead, build: c.seal.build.atEnd, carriedRows: c.seal.carriedRows, frames: Object.keys(c.seal.frames || {}).length,
@@ -2228,7 +2248,7 @@ async function carriedSuite({ PORT, GATES: ALL }) {
     build: { now, gitHead: head }, notGraded,
     // every offender names who fixes it (the §9 absorbing lane); there is NO exemption list here
     offenders: bad.map((r) => ({ id: r.id, cls: r.cls, baseline: r.baseline, perRun: r.perRun, owner: r.owner,
-      ruling: r.cls === 'awaitingJudge' ? `orchestrator: an R29 judge on port ${VISUAL_JUDGE_PORT} (its key registered with --judge-register) grades ${r.shot} and signs the verdict with node tools/gates.r5.gates-perf.mjs --judge --seal ${judgedRun.seal.sealId} --id ${r.id} … --judge-key <its key>`
+      ruling: r.cls === 'awaitingJudge' ? `orchestrator: an R29 judge on port ${VISUAL_JUDGE_PORT} (its key registered with --judge-register) grades ${r.shot} and signs the verdict with node tools/gates.r5.gates-perf.mjs --judge --seal ${judgedRun?.seal.sealId} --id ${r.id} … --judge-key <its key>`
         : r.cls === 'judgeUnanchored' ? 'grade with CAL_ORCHESTRATOR_PUBKEY set to the orchestrator key that registered the judge (the grader trusts no key by default)'
         : r.cls === 'judgeInvalid' || r.cls === 'shotInvalid' ? 're-film (a fresh sealed full run) and re-judge'
         : r.cls === 'needsQuietBox' ? `re-run it on a quiet box (1-min load < 3, 0 other gate Chromes): node tools/gates.mjs --port ${PORT} --only ${r.id} (a sealed partial run), or the orchestrator's 5270 run`
@@ -2397,7 +2417,7 @@ export const GATES = [
   },
   {
     id: 'A-carried-suite', kind: 'runner', lane: LANE, timeout: 180000,
-    title: "W0a (R33): gates.r5.carried.mjs holds every CARRY + RESTAGE gate of Appendix B (DIES gone) and is a REGRESSION GUARD against the anchored W0-day1 baseline over every sealed observation of this build (>= 1 complete full run + targeted partial re-runs; run ledger outside the tree): a row that PASSED at baseline PASSes (R30 SKIP allowed), known-flaky rows PASS 3 of their first 5 observations, FAIL/PENDING rows never get worse; the kept visual rows (V1-V4, V12-V14, V21) are signed R29 PASSes on the newest full run's frames, every other visual row SKIP-replaced",
+    title: "W0a (R33): gates.r5.carried.mjs holds every CARRY + RESTAGE gate of Appendix B (DIES gone) and is a REGRESSION GUARD against the anchored W0-day1 baseline over every sealed observation of this build (>= 1 complete full run + targeted partial re-runs; run ledger outside the tree): a row that PASSED at baseline PASSes (R30 SKIP allowed), known-flaky rows PASS 3 of their first 5 observations, FAIL/PENDING rows never get worse; the kept visual rows (V1-V4, V12-V14, V21) are signed R29 PASSes on the newest full run's frames, every other visual row SKIP-replaced; a lane run (not port 5270) with no complete sealed full run reports PENDING-orchestrator when every observed offender is another lane's or ruled (R48 d, R53 b)",
     check: (ctx) => carriedSuite(ctx),
   },
   // W0b rows (tools/gates/gates-perf.w0b.mjs): the licence-clean reference set and the memory / draw ledgers
