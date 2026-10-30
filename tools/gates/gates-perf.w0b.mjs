@@ -1498,7 +1498,7 @@ const A90_WORKLOAD = (loopS, lifecycleS) => `(async () => {${ROSTER}
     memRespawnAfter(W, killedKind, __CTX__.player.position.x + 30, __CTX__.player.position.z + 30);
     await new Promise((res) => setTimeout(res, 2500));
     iterMs.push(Math.round(performance.now() - ti)); iterFrames.push(__CTX__.engine.frames - fi);
-    iterPrograms.push((__r.info.programs || []).length); iterAlive.push((__CTX__.machines?.list || []).filter((x) => x.alive).length);
+    iterPrograms.push((__r.info.programs || []).length); iterAlive.push((/* r5-all-machines: census */ __CTX__.machines?.list || []).filter((x) => x.alive).length);
   }
   const loopWallS = +((performance.now() - t0) / 1000).toFixed(1);
   const p0 = __CTX__.player.position.clone();
