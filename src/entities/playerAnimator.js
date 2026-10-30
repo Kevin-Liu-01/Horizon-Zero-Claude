@@ -134,6 +134,19 @@ const _spAcc = new THREE.Quaternion();
 const _cp0 = new THREE.Vector3();
 const _cp1 = new THREE.Vector3();
 const _cp2 = new THREE.Vector3();
+// W0b targeted fix 2: the M10 fallback's candidates (`_springs`) and the draw
+// arm's root keep-out (`_clearArmOfRoots`) — private, never borrowed
+const _hcU = new THREE.Vector3();
+const _hcC = new THREE.Vector3();
+const _hcB = new THREE.Vector3();
+const _crR = new THREE.Vector3();   // a chain root, char
+const _crS = new THREE.Vector3();   // the draw shoulder joint
+const _crE = new THREE.Vector3();   // the capsule's three points: elbow, wrist, fingertip
+const _crW = new THREE.Vector3();
+const _crF = new THREE.Vector3();
+const _crP = new THREE.Vector3();   // the capsule point nearest the root
+const _crN = new THREE.Vector3();
+const _crQ = new THREE.Quaternion();
 // twist-joint scratch
 const _twQ = new THREE.Quaternion();
 // alidade overlay (E5) scratch: never reallocated
@@ -636,6 +649,20 @@ export class PlayerAnimator {
     this._chains = [];
     this._buildChains(makeEntry);
     this._initChainSolver();
+    /* W0b targeted fix 2 (A-wrap-clear, the 0.75 loose): the M10 root keep-outs
+     * (`_clearArmOfRoots`). A chain whose first link is shorter than the
+     * capsule radius gets a keep-out round its root: keep = r - link + margin,
+     * in character metres (the links were measured in world units). */
+    this._hcRoots = [];
+    this._hcFixN = 0; this._hcFixMax = 0; this._hcFixDraw = 0; this._hcFixHead = 0;
+    const hcM = this._handCol ? prof?.handCollider?.rootMargin : null;
+    if (hcM != null && Number.isFinite(hcM)) {
+      const ws = this.model.matrixWorld.getMaxScaleOnAxis() || 1;
+      for (const c of this._chains) {
+        const keep = (this._handCol.r - c.seg[0] + hcM) / ws;
+        if (keep > 0) this._hcRoots.push({ bone: c.links[0].bone, name: c.links[0].name, keep });
+      }
+    }
     /* R5 fix round 4 — THE WORLD WIND the cloth chains feel (see `DYN_CLASSES`
      * 'wrap' / `DYN_WIND`): air velocity in WORLD m/s (x, z), `gust` (0..1,
      * slow swell of the speed) and `flutter` (0..1, the fast cross-wind shake
@@ -4172,6 +4199,103 @@ export class PlayerAnimator {
     this._curlFingers(this._fingerR,
       (0.45 + 0.3 * drawS) * aimW * qOpen * (1 - 0.9 * lk),
       0.25 * aimW * (1 - 0.7 * lk));
+    // W0b targeted fix 2: last, on the arm's final pose this frame
+    this._clearArmOfRoots(drawS);
+  }
+
+  /**
+   * W0b targeted fix 2 — THE DRAW ARM CLEARS THE CORD'S KNOT (A-wrap-clear at
+   * the 0.75 down aim; plan §9 "every dyn_ chain >= 0.05 m from the draw
+   * hand/forearm, every frame"). M10 pushes every dyn_ particle out of the hand
+   * / forearm capsule (r 0.09), but a chain's first particle hangs on a FIXED
+   * root and can get no further than its first link from it: the alidade
+   * cord is tied at her throat with a 0.046 m link, so once the capsule axis
+   * came within 0.044 m of that knot nothing could clear the cord. At the 0.75
+   * down aim the hand, after the loose, follows the slackening string forward
+   * across her chest and is then pulled back out to her right for the re-nock
+   * — and that return passes the knot ~0.17 s after the loose with the forearm
+   * and fist axes 0.041-0.056 m from it (probe `w6/p1`, 4 runs: the best any
+   * cord placement could do was 0.052-0.067 m of clearance, against the bar's
+   * 0.05; judges 0.0494 / 0.0512 / 0.0514 m at +0.18 s).
+   *
+   * So, on the arm's final pose, the capsule (elbow -> wrist -> middle
+   * fingertip, the collider's own bones) is held `keep` (r - link + margin,
+   * `_hcRoots`) off every such root: the nearest capsule point is carried
+   * straight out from the root across her body's up axis (forward / out, never
+   * up into the jaw) by turning the whole arm at the shoulder — the elbow bend,
+   * the wrist and the fist stay as solved. Nothing moves while the arm is clear
+   * (every full-draw frame at every gate pitch), and a turn that would put the
+   * arm into the skull is undone. No allocation (module scratch).
+   */
+  _clearArmOfRoots(drawS) {
+    const R = this._hcRoots, H = this._handCol, b = this.b;
+    if (!R || R.length === 0 || !H || !H.a || !H.b || !b.upArmR) return;
+    let headIn = -1;
+    for (let it = 0; it < 3; it++) {
+      this._charOf(b.upArmR.bone, _crS);
+      this._charOf(H.a, _crE);
+      this._charOf(H.b, _crW);
+      if (H.c) this._charOf(H.c, _crF); else _crF.copy(_crW);
+      // the worst root: the most deficit against its keep
+      let need = 0;
+      for (let k = 0; k < R.length; k++) {
+        const K = R[k];
+        this._charOf(K.bone, _crR);
+        const d0 = this._segDist(_crR, _crE, _crW);
+        _hcB.subVectors(_crR, _cp1);                     // the forearm axis point nearest the root
+        const d1 = this._segDist(_crR, _crW, _crF);
+        const useHand = d1 < d0;
+        const d = useHand ? d1 : d0;
+        if (K.keep - d <= need) continue;
+        if (useHand) _crP.subVectors(_crR, _cp1); else _crP.copy(_hcB);
+        // straight out from the root, across her up axis (`_upT`, the bent T's at a down aim)
+        _crN.subVectors(_crP, _crR);
+        const v = _crN.dot(this._upT);
+        _crN.addScaledVector(this._upT, -v);
+        const h = _crN.length();
+        if (h > 1e-4) _crN.divideScalar(h); else _crN.copy(this._fwdT);
+        const out = Math.sqrt(Math.max(0, K.keep * K.keep - v * v)) - h;
+        if (out <= 0) continue;
+        need = K.keep - d;
+        _hcC.copy(_crN).multiplyScalar(out + 0.001);       // the move wanted, held in _hcC
+        _hcU.copy(_crP);                                   // ...of this capsule point
+      }
+      if (need <= 0) break;
+      if (it === 0) {
+        this._hcFixN++;
+        if (need > this._hcFixMax) this._hcFixMax = need;
+        if (drawS > this._hcFixDraw) this._hcFixDraw = drawS;
+      }
+      // turn the arm at the shoulder: the point P moves along n by `out`
+      _crP.subVectors(_hcU, _crS);                         // lever
+      const outLen = _hcC.length();
+      _crN.copy(_hcC).divideScalar(outLen);
+      _hcB.crossVectors(_crP, _crN);                       // axis; |axis| = lever's reach across n
+      const L = _hcB.length();
+      if (L < 0.02) break;
+      _hcB.divideScalar(L);
+      const ang = Math.min(0.35, outLen / L);
+      if (headIn < 0) { this._headFrame(); headIn = this._armInHead() ? 1 : 0; }
+      _crQ.setFromAxisAngle(_hcB, ang);
+      this._rotQL(b.upArmR, _crQ);
+      // a turn that puts a clear arm into the skull is undone
+      if (headIn === 0 && this._armInHead()) {
+        _crQ.setFromAxisAngle(_hcB, -ang);
+        this._rotQL(b.upArmR, _crQ);
+        this._hcFixHead++;
+        break;
+      }
+    }
+  }
+
+  /** The draw arm's upper arm / forearm segment or its wrist inside the skull (`_headFrame` current). */
+  _armInHead() {
+    const b = this.b;
+    this._charOf(b.upArmR.bone, _sg0);
+    this._charOf(b.loArmR.bone, _sg1);
+    this._charOf(b.handR.bone, _sg2);
+    return this._segInHead(_sg0, _sg1) || this._segInHead(_sg1, _sg2)
+      || this._headUnit(_sg2, _hp1).length() < this.T.handIn;
   }
 
   /**
@@ -4930,7 +5054,12 @@ export class PlayerAnimator {
     const c = this._chains[H.minCi ?? -1];
     // the particle closest to the capsule axis this frame: chain root bone + particle index
     const at = c ? c.links[0].name + '#' + H.minJ : null;
-    return { active: H.active, r: H.r, minAxis: +H.minAxis.toFixed(4), pushes: H.pushes, at };
+    // W0b targeted fix 2: the draw arm's root keep-outs (`_clearArmOfRoots`) —
+    // the roots and their keep, and since boot: frames the arm was turned
+    // clear, the largest deficit, the highest draw it ever fired at, head undos
+    const roots = (this._hcRoots || []).map((k) => ({ root: k.name, keep: +k.keep.toFixed(4) }));
+    return { active: H.active, r: H.r, minAxis: +H.minAxis.toFixed(4), pushes: H.pushes, at,
+      rootKeep: { roots, fixFrames: this._hcFixN, maxDeficitM: +this._hcFixMax.toFixed(4), maxDrawS: +this._hcFixDraw.toFixed(3), headUndo: this._hcFixHead } };
   }
 
   _clearArmOfHead(upE, loE, haE, target, pole, w) {
@@ -5380,6 +5509,13 @@ export class PlayerAnimator {
     return _cp1.addScaledVector(_cp0, -t).length();
   }
 
+  /** W0b targeted fix 2: a point's distance to the nearer of the M10 capsule's `n` axis segments (clobbers _cp0 / _cp1). */
+  _hcMinAxis(p, H, n) {
+    let d = Infinity;
+    for (let q = 0; q < n; q++) { const e = this._segDist(p, H.caps[q].a, H.caps[q].b); if (e < d) d = e; }
+    return d;
+  }
+
   _pushOutOfCapsule(p, cap, rest) {
     // PRIVATE scratch only. The caller passes `_spC` as `p`, and the first
     // drop of this method wrote its working vectors into `_spC` — so `p` and
@@ -5676,19 +5812,34 @@ export class PlayerAnimator {
             _spC.set(pos[i0], pos[i0 + 1], pos[i0 + 2]).addScaledVector(_spA, c.seg[j]);
           }
           if (inside) {
-            // still in after four passes: hang the particle straight AWAY from
-            // the nearer axis, as far as its parent allows
+            // still in after four passes: the best place on the parent's
+            // sphere. W0b targeted fix 2: the old fallback hung the particle
+            // straight away from the NEARER segment only, which can lay it
+            // against the other one where forearm and hand meet at the wrist;
+            // the candidates are now straight away from each segment's
+            // nearest point and from their mean, and the one farthest from
+            // BOTH axes wins (where the passes left it, if that is farther)
             _spE.set(pos[i0], pos[i0 + 1], pos[i0 + 2]);
-            let best = Infinity, bq = 0;
-            for (let q = 0; q < hcN; q++) {
-              const d = this._segDist(_spE, H.caps[q].a, H.caps[q].b);
-              if (d < best) { best = d; bq = q; }
+            let bestD = this._hcMinAxis(_spC, H, hcN);
+            _hcB.copy(_spC);
+            _spD.set(0, 0, 0);
+            for (let q = 0; q <= hcN; q++) {
+              if (q < hcN) {
+                this._segDist(_spE, H.caps[q].a, H.caps[q].b);   // leaves parent - axis point in _cp1
+                if (_cp1.lengthSq() < 1e-10) continue;
+                _hcU.copy(_cp1).normalize();
+                _spD.add(_hcU);
+              } else {
+                if (_spD.lengthSq() < 1e-10) continue;
+                _hcU.copy(_spD).normalize();
+              }
+              _hcC.copy(_spE).addScaledVector(_hcU, c.seg[j]);
+              const dc = this._hcMinAxis(_hcC, H, hcN);
+              if (dc > bestD) { bestD = dc; _hcB.copy(_hcC); }
             }
-            this._segDist(_spE, H.caps[bq].a, H.caps[bq].b);   // leaves parent - axis point in _cp1
-            if (_cp1.lengthSq() > 1e-10) {
-              _spA.copy(_cp1).normalize();
-              _spC.copy(_spE).addScaledVector(_spA, c.seg[j]);
-            }
+            _spC.copy(_hcB);
+            _spA.subVectors(_spC, _spE);
+            if (_spA.lengthSq() < 1e-12) _spA.copy(_spB); else _spA.normalize();
           }
           for (let q = 0; q < hcN; q++) {
             const d = this._segDist(_spC, H.caps[q].a, H.caps[q].b);

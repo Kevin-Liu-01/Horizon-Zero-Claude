@@ -97,8 +97,15 @@ export const UBC_ORBIT_CHAINS = { cloth: '^dyn_(wrapSash|sashEnd)', hair: '^dyn_
  * replaces the Round-4 braid guard (which matched `dyn_hairBack*` by name and
  * was inert on any other rig). Every dyn_ particle is pushed out of it every
  * substep; `A-wrap-clear` reads `animator.debugHandCollider()`.
+ *
+ * `rootMargin` (W0b targeted fix 2): a chain's FIRST particle can only move on a
+ * sphere of its first link's length round its fixed root, so no push can clear
+ * it once the capsule axis passes within (r - link) of that root — the alidade
+ * cord's root at her throat, 0.046 m link. While aiming, the draw arm keeps its
+ * capsule axis (r - link + rootMargin) off every such root (the animator's
+ * `_clearArmOfRoots`); null turns that guard off.
  */
-export const UBC_HAND_COLLIDER = { from: 'lowerarm_r', to: 'hand_r', tip: 'middle_04_leaf_r', r: 0.09 };
+export const UBC_HAND_COLLIDER = { from: 'lowerarm_r', to: 'hand_r', tip: 'middle_04_leaf_r', r: 0.09, rootMargin: 0.015 };
 /** The hand/forearm's own half-thickness: A-wrap-clear's clearance is axis distance minus this. */
 export const UBC_HAND_HALF = 0.035;
 

@@ -7727,21 +7727,30 @@ const NEW_GATES = [
         keys.clear();                                       // sprint-stop
         p.camPitch = pitch; C.input.mouse.buttons |= 4;
         let minAxis = 9, frames = 0, inactive = 0, drawMax = 0, at = null, fullFrames = 0;
+        // W0b targeted fix 2 (reported, not graded separately): the same minimum
+        // over the loose and the re-nock reach alone (every frame after the
+        // release at 2.6 s), where the judges' low readings fell
+        let looseMin = 9, looseAt = null, looseFrames = 0;
+        const fix0 = an.debugHandCollider().rootKeep?.fixFrames ?? 0;
         const t0 = E.simTime;
-        let drew = false;
+        let drew = false, loosed = false;
         while (E.simTime - t0 < 3.4) {
           if (!drew && E.simTime - t0 > 0.5) { C.input.mouse.buttons |= 1; drew = true; }
-          if (drew && E.simTime - t0 > 2.6) C.input.mouse.buttons &= ~1;   // loose
+          if (drew && E.simTime - t0 > 2.6) { C.input.mouse.buttons &= ~1; loosed = true; }   // loose
           p.camPitch = pitch;
           await frame();
           const H = an.debugHandCollider();
           if (!H.active) inactive++;
           if (H.minAxis < minAxis) { minAxis = H.minAxis; at = H.at + ' @' + (E.simTime - t0).toFixed(2) + 's'; }
+          if (loosed) { looseFrames++; if (H.minAxis < looseMin) { looseMin = H.minAxis; looseAt = H.at + ' @' + (E.simTime - t0).toFixed(2) + 's'; } }
           frames++;
           drawMax = Math.max(drawMax, cmb.drawStrength);
           if (cmb.drawStrength > 0.9) fullFrames++;
         }
-        rows.push({ pitch, frames, minClearM: +(minAxis - half).toFixed(4), closest: at, inactiveFrames: inactive, drawMax: +drawMax.toFixed(2), fullDrawFrames: fullFrames });
+        const fix1 = an.debugHandCollider().rootKeep?.fixFrames ?? 0;
+        rows.push({ pitch, frames, minClearM: +(minAxis - half).toFixed(4), closest: at,
+          looseMinClearM: +(looseMin - half).toFixed(4), looseClosest: looseAt, looseFrames,
+          rootKeepFrames: fix1 - fix0, inactiveFrames: inactive, drawMax: +drawMax.toFixed(2), fullDrawFrames: fullFrames });
       }
       release();
       const pass = rows.every((r) => r.minClearM >= 0.05 && r.inactiveFrames === 0 && r.frames > 30 && r.drawMax > 0.9 && r.fullDrawFrames > 10);
