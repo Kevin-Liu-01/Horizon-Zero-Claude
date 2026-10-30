@@ -52,7 +52,7 @@ import {
 const LEGACY_MODULE = import.meta.glob('./legacy.js', { eager: true })['./legacy.js'] || null;
 const NO_LEGACY = { kinds: [], boot: [], ready: Promise.resolve({ loaded: [], failed: [] }) };
 /** The legacy kind ids (empty once `legacy.js` is gone): their `_moveToward` returns on demand (machine.js). */
-const LEGACY_KIND_SET = new Set([]);   // TEMP DIAG
+const LEGACY_KIND_SET = new Set(LEGACY_MODULE?.LEGACY_KINDS || []);
 
 const CAMP = REST_SITE;            // { x, z, r }: the Instrument no-spawn ring
 const ROUTE_RIM = PLAY_RADIUS + EXTENT.routeRim;

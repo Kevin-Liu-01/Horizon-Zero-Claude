@@ -65,7 +65,7 @@ differ). No bar moved and no gate was loosened.
 | 2 | major: the lock is a dense widening magenta wedge | lock half-angle 3° → **1.5°** (`lamps.js:105`); the lock's light falls as along² / (1 + d/5 m)² (`:125-129`, shader `:509-512`); cross-section edge³ for the lock, edge² kept for the sweep (`:140`, `:514`); `gainHostile` / `gainHostileFog` are now the light at the lens (5.5 / 16). At 8 m they are 0.8 / 2.4, at or under the old flat cap (1.3 / 2.4) | fog gameplay frame pink: 5.0 % (3°) → 2.1 % (1.5°). Probes' fade clause (mean addition 10-30 % vs 60-80 % of the way to her), 3 runs on the final code: night 269.5 / 152.9, 266.4 / 159.1, 271.2 / 157.9; fog 368.3 / 306.3, 358.2 / 289.9, 353.8 / 300.1. The flat 1/(1+d/5) falloff failed this clause in 2 of 3 fog runs (291.3 / 291.5, 274.4 / 288.1), which is why the squared falloff was chosen |
 | 3 | major: the lock length departs from bible §7.2 | the lock is not cut at her: `r.blen` = sight range × `perceptionScale` (`lamps.js:883`). Past her chest the light halves every 2 m (`pastTargetHalfM`, `:148`): her body takes part of it. The probe clause is the bible's: drawn length = sight × weather within 2 % and > segment + 1 m; beyond her (110-140 %) still magenta at ≥ 1 point, fading (`gates…:2203-2207`) | drawn lock **24.07 m = 24.07 m** (night) and **27.20 m = 27.20 m** (fog), against a 10.02 m segment. Beyond her: magenta at 1/3 (night) and 3/3 (fog) points, mean 22-24 (night) and 66-78 (fog), below the near mean |
 | 4 | major: the sunlit staging is nondeterministic | `FILM` asserts in rendered pixels that the lamp is on screen and unoccluded before it films (`gates…:1998-2040`): ≥ minPx lamp pixels within ΔE2000 10 of the token, AND the same block changes when the lamp draw is hidden. Else it tries the next heading; if none passes, it fails the staging by name. New action twins `A-film-{calm,wary}-sunlit-15m-staging`, `A-film-calm-sunlit-40m-staging` report the choice (`gates…:2070-2090`) | 6 runs (B3 ×3, F ×3): the same heading every time, after 1 try. Calm 15 m: 211 token px and 341 changed px (bar 15). Wary 15 m: 112 token px, 369-402 changed. Calm 40 m: 31 token px, 48-50 changed (bar 3). The frames show the Tiller unoccluded, the palisade to the side |
-| 5 | major: fight-start allocation transient in the steering helpers | `warmSteering` runs every helper through every branch at spawn and once at navgrid-ready (`machine.js:298`, `index.js:271`, `:604-625`; WIP, kept). `_steerOpts` and `_st` are born mutable (`machine.js:99`, `:137`): DEOPTMARK caught navTowardS lazily deoptimised on "dependent field type constness changed" 3.4 s after staging. `_moveToward` returns the distance on demand on legacy kinds (`machine.js:1050`, `:2659-2664`; `index.js:55`, `:265`); see below | gates-perf's own `A-alloc-rate` row on this tree, 7 runs (2 of them, G1, on the final source): **steerAlongS, navTowardS and `_moveToward` are not among its over-4 KB/s functions in either phase of any run**. `A-alloc-machines`: PASS in 6 consecutive runs (B3 ×2 and F4 ×2 with the first form of the fix, G1 ×2 on the final source). In every paired no-inline run `_moveToward` allocated **0 B**: it is absent from a list that reaches down to 0.2 KB/s. Before (B1b) it was 3.35 / 3.43 / **4.26** / 2.42 / 3.02 / 2.95 KB/s |
+| 5 | major: fight-start allocation transient in the steering helpers | `warmSteering` runs every helper through every branch at spawn and once at navgrid-ready (`machine.js:298`, `index.js:271`, `:604-625`; WIP, kept). `_steerOpts` and `_st` are born mutable (`machine.js:99`, `:137`): DEOPTMARK caught navTowardS lazily deoptimised on "dependent field type constness changed" 3.4 s after staging. `_moveToward` returns the distance on demand on legacy kinds (`machine.js:1050`, `:2659-2664`; `index.js:55`, `:265`); see below | gates-perf's own `A-alloc-rate` row on this tree, 9 runs (2 of them, G1, on the final source): **steerAlongS, navTowardS and `_moveToward` are not among its over-4 KB/s functions in either phase of any run**. `A-alloc-machines`: PASS in 6 consecutive runs (B3 ×2 and F4 ×2 with the first form of the fix, G1 ×2 on the final source). In every paired no-inline run `_moveToward` allocated **0 B**: it is absent from a list that reaches down to 0.2 KB/s. Before (B1b) it was 3.35 / 3.43 / **4.26** / 2.42 / 3.02 / 2.95 KB/s |
 
 **`_moveToward`, measured.** A census of every call in `A-alloc-machines`' staging (405 frames) found 4.89 calls per
 frame, all on legacy kinds. 3.67 come from `Glinthawk._orbit` (glinthawk.js:144) and 1.22 from the frozen convoy step
@@ -79,8 +79,9 @@ contract (the distance, always). No frozen file was touched.
 A first version installed this as a prototype method on the legacy classes. I replaced it the same day, because a
 class prototype changed after its definition is a known source of prototype-chain deopts. The per-instance flag
 mutates no prototype. Four runs of gates-perf's row taken after the first version listed `updateEyesM` (36.6-43.6
-KB/s), against none in the one run before it. With the flag it is still listed (37.4, 36.7 KB/s), so the prototype
-method was not the cause; see the honest gaps.
+KB/s), against none in the one run before it. So I checked whether this change was the cause: with the flag (37.4,
+36.7 KB/s) and with the flag switched off for a diagnosis run (40.3, 40.2 KB/s; reverted), it is listed all the same.
+The `_moveToward` change is not the cause; see the honest gaps.
 
 **The beam lab** (scratch diagnosis, `bin/beamlab*.mjs`). The four beam stagings are filmed once, and the lock shader
 is swapped at runtime through 6 + 5 variants. For each variant the lab records the probe's own reads, a frame-wide
@@ -133,9 +134,20 @@ pink census and the frame. I chose the variant from those numbers and frames, th
   deopts 8-12 s after staging, from a source I did not find: `R5_IC_PROTOWATCH` saw none of 283 watched prototypes
   change.
 - The same 3 s method also lists other lane frames that are not in this finding: `_statePatrol` (83-101 KB/s),
-  `_engageFrame`, `_updateAttack`, the accessors, and in four of five runs `updateEyesM`. I did not change them (scope).
+  `_engageFrame`, `_updateAttack`, the accessors, and `updateEyesM` (36.6-43.6 KB/s, in 8 of the 9 runs this
+  session, including both runs with the `_moveToward` flag off). I did not change them (scope).
   They become the R48 (c) baseline as measured. With `A-alloc-machines`' 30 s warm-up, none of them is a lane frame
   over 4 KB/s.
+
+**Files changed this round** (against the Oct 30 11:38Z checkpoint `46514a9`):
+- `src/instruments/lamps.js`: the lock's angle, falloff, cross-section, gains and past-her half-distance;
+- `src/entities/machines/machine.js`: `_steerOpts` and `_st` born mutable, `_moveToward` on demand, `_mtOnDemand`;
+- `src/entities/machines/index.js`: the legacy flag at spawn;
+- `tools/gates.r5.instruments-core.mjs`: the sunlit staging twins, and the fog film's criteria text (1.5° lock);
+- this report.
+
+The cone, length, film-hold, lens-cone-row, pixel-probe and `warmSteering` work came from the Oct 23 and Oct 29 WIP,
+which this round verified. No frozen file was touched and no asset was added.
 
 ---
 
