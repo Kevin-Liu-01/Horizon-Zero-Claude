@@ -8917,7 +8917,11 @@ const NEW_VISUALS = [
   {
     id: 'V-traversal', kind: 'visual', lane: 'hero-body', settle: 400, timeout: 60000,
     title: 'Ledge climb (pull frame), a cinder slide and a stepped climb, side views',
-    reference: 'reference/r5/hero/MANIFEST.md (licence-clean climbing and scree-running references)',
+    // W0b targeted fix: the row names its licence-clean reference itself (gates-perf's A-reference-set
+    // reads the row, not this lane's MANIFEST pointer table): the slide / stair posture on a steep
+    // slope; no licence-clean ledge-climb still is in the Commons set yet (gates-perf slot
+    // `ledge-climb` requested), so the climb panel is graded on the written criteria
+    reference: 'reference/r5/gates-perf/slope-stand.jpg (licence-clean, a figure on a steep slope: the slide and stair panels; the ledge-climb still is pending in gates-perf\'s fetcher)',
     setup: `(async () => {${FILM_PRE}
       const s = await import('/src/hero/sheets.js');
       await s.traversalOverlay(C);
@@ -9127,6 +9131,31 @@ const byId = (id) => carried.find((g) => g.id === id);
   // text predates it and did not ask for the ∴ or the wrap tail
   const g = byId('V24-draw-vs-reference');
   g.criteria = 'Plan §9: the hero at full draw, from her right, close, judged against the licence-clean archery side reference. PASS requires ALL of: the knuckle at the jaw corner; the fletching near the mouth corner; the drawing forearm in line with the arrow; the draw elbow level with the arrow or back; the ∴ (three pale dots on the back of the right hand) VISIBLE; the wrap tail clear of the hand; the bow arm straight. FAIL if the hand is out in front of her face, below her chin or behind her ear, if the bracer lies across her eyes, or if the bow arm is bent like a curl.';
+}
+{
+  /* W0b targeted fix (gates-perf judge: 8 visual rows named their reference
+   * only in reference/r5/hero/MANIFEST.md's pointer table, so A-reference-set
+   * listed them missing on a merged overlay): each row names its licence-clean
+   * reference in its own `reference` field (A-reference-set reads a row's
+   * reference / criteria / title for reference/r5/<lane>/<file> with a stored
+   * MANIFEST row). The files are gates-perf's Commons set (PD / CC0 / CC BY,
+   * reference/r5/gates-perf/MANIFEST.md); V22's old 'chase-back' named no
+   * stored row (the slot is chase-camera). */
+  const REF = {
+    'V1-sprint-frame': 'reference/r5/gates-perf/run-rear.jpg and reference/r5/gates-perf/run-side.jpg (licence-clean sprint from the rear and the side: arms swing fore-aft beside the body, forward lean)',
+    'V2-idle-frame': 'reference/r5/gates-perf/idle-stand.jpg (licence-clean relaxed stand: weight on one hip, asymmetric relaxed arms)',
+    'V3-crouch-stalk': 'reference/r5/gates-perf/crouch-stalk.jpg (licence-clean crouched stalking walk: low silhouette, torso pitched forward)',
+    'V4-aim-anchor': 'reference/r5/gates-perf/draw-front.jpg and reference/r5/gates-perf/draw-side.jpg (licence-clean archer at full draw: draw hand at the face, elbow level, straight bow arm)',
+    'V13-aim-strafe': 'reference/r5/gates-perf/draw-front.jpg (licence-clean archer at full draw, front quarter: the upper body holding the draw on target)',
+    'V14-slope-contour': 'reference/r5/gates-perf/slope-stand.jpg (licence-clean figure across a steep cross-slope: soles banked with the ground, uphill leg shorter)',
+    'V23-secondary-motion': 'reference/r5/gates-perf/hair-trail-run.jpg (licence-clean sprinting runner: the hair trails behind the head and lags the body)',
+    'V22-chase-framing': 'reference/r5/gates-perf/chase-camera.jpg (licence-clean third-person framing: a walker from behind and above at a few metres)',
+  };
+  for (const [id, ref] of Object.entries(REF)) {
+    const g = byId(id);
+    if (!g) throw new Error('reference row missing: ' + id);
+    g.reference = ref;
+  }
 }
 {
   // A19 (R33 g: graded by hero-body on Brea): staged on the flat strip with
