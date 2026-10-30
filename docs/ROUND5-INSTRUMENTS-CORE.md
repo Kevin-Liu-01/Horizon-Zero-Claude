@@ -65,9 +65,10 @@ and no gate was loosened; the probe clauses were made stricter.
     (`BEAM` `:136-157`, shader `:536-552`): light(d) = gain x (1 - 0.3 min(d/D, 1))^2 / (1 + d/F)^2 x past x tail,
     F = max(5 m, 0.5 D). From 10 m out the shaft has one shape in units of her distance (1 at the lens, 0.45 at a
     fifth, 0.11 at 70 %, 0.054 at her chest); under 10 m it is round 1's shaft less its along^2 (8 m: 0.073 at her
-    chest vs 0.066-0.074). The finding's two options were both tried in the lab: tying the falloff alone to her
-    distance (option 1) still left the shaft dark near her at 22 m because the along^2 over the 24.07 m cone is
-    0.007 there; dropping the falloff (option 2) needed the lens gain cut in half and lit the 22 m shaft as a flat bar.
+    chest vs 0.066-0.074). The finding's two options, as written, do not reach her at 22 m on their own (computed):
+    both keep along^2 over the 24.07 m cone, which is 0.0074 at her chest (the judge's night reads turned red below
+    ~0.015 of the lens light); option 2 would also light her chest at 10 m 9x brighter than round 1 (0.34 vs 0.038).
+    So the along^2 now applies only past her (the tail), and the falloff is option 1's, plus the fade-to-target term.
   - Past her the light halves every 3 m (was 2 m, `:178`), and the cone's last 2 m beyond her fade to nothing
     (`lockTailM`, `:157`); the drawn length is still sight range x weather scale.
   - The lock is focused on her: its radius at her chest is at most 0.4 m (`lockTargetRadiusM`, `:107-113`;
@@ -95,10 +96,12 @@ and no gate was loosened; the probe clauses were made stricter.
   - Films `V-lamp-beams-night-18m`, `V-lamp-beams-night-22m`, `V-lamp-beams-night-gameplay-18m` (`:2345-2357`).
 
 **The beam lab** (scratch `bin/beamlab3.mjs`, 3 runs, 20 variants on 9 stagings: night side 10/14/18/22 m, fog side
-10/20 m, chase 8 m night/fog and 18 m night). The round-1 lock at 18 m read 4/8 points, at 22 m 5/8; option 1 alone
-(falloff tied to D, no along^2) 6-7/8 but far mean > near mean at 22 m; fade-to-target 0.5 lost the 10 m shaft
-2.5 m past her (beyond 1/3); radius 0.3 m at her made the 22 m fade clause a tie (186 / 186). Chosen: 0.3 / 0.4 m /
-3 m: every staging 8/8, fade margin +39 to +95, beyond 3/3 at 10 m.
+10/20 m, chase 8 m night/fog and 18 m night; the probe's own reads, a frame-wide pink census and the frame). The first
+run's 18 / 22 m frames had a pine in front of the line (hence the clear-view staging). The falloff tied to D with no
+fade-to-target term lit the 22 m shaft as a flat bar (far mean above near mean: 298 / 218, 253 / 198);
+fade-to-target 0.5 lost the 10 m shaft 2.5 m past her (beyond 1/3); radius 0.3 m at her made the 22 m fade clause a
+tie (186 / 186). Chosen: fade-to-target 0.3, radius 0.4 m, past-her half 3 m: 8/8 at every side staging, fade
+margin +39 to +99, beyond 3/3 at 10 m.
 
 **Measured on the final code.**
 
@@ -142,9 +145,43 @@ re-shot with the judge's scripts, and the lane films F1):
   before fading. PASS.
 
 **Gates on the final code** (port 5254, `nice -n 10`):
-LANE_RESULTS
+- **Lane block** (`--lane instruments-core`, run R2-G): **23 gates, 22 PASS, 1 PENDING**, the same as round 1. The
+  PENDING row is `A-kind-block-file`, on the calima clause of `A-weak40:herd` only (world-sky W1, R46); its other
+  rows are 19 PASS and 5 SKIP-fixture, `A41c` 5/5. Every gate that passed before still passes:
+  - `A-beam-lens-cone`: lens 150° from her, drawn lock max 70° off the axis over 90 frames, cone light 0, magenta
+    at 0 of 12 points; positive control (lens facing her) shaft 7/8;
+  - `A-lamp-states` (its beam clauses read the lock at 3/5/7 m: hostile +84.6 in fog, +97.6 at night, bar 6; calm
+    none), `A-beams-one-draw` (1 draw, 8 instances, baselines restored), `A-lamp-canon-distance` (28 tokens, 0
+    offenders);
+  - `A-legacy-collapse`, `A-kind-registration`, `A-no-override`, `A-no-corruption` (600 s, 2,384 samples, 0
+    corrupted), `A-roles-published`, `A-boot-roster`, `A-published-scalars` (negative control 30/30),
+    `A-perception-weather` (calima ×0.499, 34.03 → 16.98 m), `A-perk-hooks`, `A-uv1-survives-fold`, `A-vfx-palette`;
+  - `A90-rig-reclaim` 5/5, `A90b` 3/3, and the `@ic` shadows: A37 peak suspicion 0; A39 at 30 m suspicious 1.79 s,
+    alert 3.47 s; A43 scene objects −280; `A90-rig-reclaim@ic` geo +1 / tex 0 over 30 cycles; `A90b@ic` 0 offenders.
 
-GLOBAL_RESULTS
+- **Global items** (run R2-H, no `--extra`): **4 / 4 PASS**. A1-boot-clean PASS; A20b-no-system-errors PASS (356
+  frames, 0 system errors); A90-memory-stability PASS (28 kills, heap −4.3 %, textures −28, objects −1,091);
+  A90b-memory-attribution PASS (28 kills, 0 offenders, heap after forced GC −14 %).
+- **`A-alloc-machines`** (`--lane instruments-core-alloc`, run R2-A, not required by the brief, run because it
+  passed before): PASS, 0 lane frames over 4 KB/s after the paired attribution run; the residual is the R46 carried
+  classes only (legacy / accessor / frozen-return / inlined-frozen). This round adds two float locals per beam per
+  frame in `_writeMatrices` and no allocation.
+- Frames: `runs/R2-F1/shots/gates/V-lamp-beams-*.png` and `r2/shots-run/shots/r2-{01,02,03,14,15,16}-*.png` in the
+  lane scratch (`scratchpad/r5/instruments-core`).
+
+**Honest gaps.**
+- From her chase camera the lock's last metres open into a translucent pink fan over her shoulders (the cone seen
+  nearly end-on). At 18 m it covers her upper body; the 0.4 m focus keeps it to that (the full 1.5° cone wrapped her).
+  It is the same shape round 1's 8 m chase frame had; a narrower focus (0.3 m) left the side view's fade clause no
+  margin at 22 m, so I did not take it.
+- The light-based length clause (2 of 3 at 110-140 %) is graded where the bible cone reaches the 140 % point (her at
+  10 m). At 18 / 22 m the cone ends 6 / 2 m past her, so those points lie past it; the twins are graded on reach
+  (79 % and 90 %) and report the beyond points (18 m: 80 at 19.9 m past her, then 17 at 22.6 m).
+- Near the lens the shaft is thinner than the 7x7 block at bow range, so the block means there (156-205) read below
+  the 20-40 % points; the per-pixel light is highest at the lens. Round 1 had the same profile (judge: 125.6 at 5 %,
+  267 at 20 %).
+- At this spot the twins film from the second Tiller's side: on the hostile side a pine stands between the camera and
+  the line (the clear-view test picks the side; the second Tiller stands clear of the line in every run).
 
 **Files changed this round** (against the round-1 checkpoint `e709e65`): `src/instruments/lamps.js`,
 `tools/gates.r5.instruments-core.mjs`, this report. No frozen file, no asset.
