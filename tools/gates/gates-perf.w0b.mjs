@@ -1477,9 +1477,17 @@ const A90_WORKLOAD = (loopS, lifecycleS) => `(async () => {${ROSTER}
   const kill = (m) => { let mesh = null; m.root.traverse((o) => { if (!mesh && o.isMesh) mesh = o; }); m.takeDamage({ point: m.position.clone(), object: mesh, impact: 99999, tear: 0, element: 'none', elementAmount: 0, dir: { x: 0, y: 0, z: 1 }, type: 'hunter', baseDamage: 99999 }); };
   __CTX__.input.enabled = true;
   const t0 = performance.now(); let kills = 0;
+  // THE KILL FLOOR (targeted fix round 1). The loop runs its ${loopS} s, as the carried A90 row's does, and then keeps going
+  // until the Round-4 floor of ${W0B_BUDGETS.abs.minKills} kills is met, at most ${2 * loopS} s in all: the workload is never
+  // lighter than the floor, and the floor is unchanged. Measured (lane blocks of Oct 30 08:03Z and 08:41Z, and three scratch
+  // diagnostics): run under the orchestrator's mandated background priority (taskpolicy -b: every Chrome process at priority 4),
+  // in this row's own fresh Chrome, the renderer is CPU-bound at ~150 % and the frame rate falls from ~5 to ~1.5 fps as the
+  // wrecks accumulate (28 machines alive throughout, programs constant), so each iteration's timers fire late and the fixed
+  // 150 s made 23-24 kills. The extension and the iterations are reported
+  const MIN_KILLS = ${W0B_BUDGETS.abs.minKills}, CAP_MS = ${2 * loopS * 1000};
   const iterMs = [], victimMs = [], iterFrames = [], iterPrograms = [], iterAlive = [];   // per iteration, reported only
   const __r = __CTX__.engine.renderer;
-  while (performance.now() - t0 < ${loopS * 1000}) {
+  while (performance.now() - t0 < ${loopS * 1000} || (W.kills < MIN_KILLS && performance.now() - t0 < CAP_MS)) {
     const ti = performance.now(), fi = __CTX__.engine.frames;
     // W0b fix round 2 (R28 + R34): the carried A90 row's re-staged pick, a STAGED kind's machine (memVictim)
     const m = await memVictim();
@@ -1492,12 +1500,14 @@ const A90_WORKLOAD = (loopS, lifecycleS) => `(async () => {${ROSTER}
     iterMs.push(Math.round(performance.now() - ti)); iterFrames.push(__CTX__.engine.frames - fi);
     iterPrograms.push((__r.info.programs || []).length); iterAlive.push((__CTX__.machines?.list || []).filter((x) => x.alive).length);
   }
+  const loopWallS = +((performance.now() - t0) / 1000).toFixed(1);
   const p0 = __CTX__.player.position.clone();
   __CTX__.player.position.set(p0.x + 130, 0, p0.z + 130); __CTX__.player._snapToGround?.();
   await new Promise((res) => setTimeout(res, ${lifecycleS * 1000}));
   const wv = memWorkloadVerdict(W, ${W0B_BUDGETS.abs.minKills});
   const med = (a) => { const b = a.slice().sort((x, y) => x - y); return b.length ? b[(b.length - 1) >> 1] : null; };
   return { kills, workload: W, workloadVerdict: wv ? wv.detail.verdict : null, workloadPass: wv ? wv.pass : true,
+    loop: { plannedS: ${loopS}, wallS: loopWallS, extendedS: +Math.max(0, loopWallS - ${loopS}).toFixed(1), capS: ${2 * loopS}, minKills: MIN_KILLS },
     iterations: { n: iterMs.length, medianMs: med(iterMs), maxMs: iterMs.length ? Math.max(...iterMs) : null, firstMs: iterMs.slice(0, 4), victimMedianMs: med(victimMs), victimMaxMs: victimMs.length ? Math.max(...victimMs) : null,
       perIteration: iterMs.map((ms, i) => [ms, iterFrames[i], iterPrograms[i], iterAlive[i]]), perIterationColumns: ['ms', 'frames', 'programs', 'machinesAlive'] } };
 })()`;
@@ -1610,6 +1620,7 @@ const heapControlGrade = (riseB, fallB, expectedB) => ({ ok: Math.abs(riseB / ex
  * The canvas's context is then lost and the page closed, and the game boots.
  */
 const GPU_BASELINE_PATH = '/__gates-perf-gpu-baseline__.html';
+const PROBE_STEP_MS = 60000;
 // the game's context as getContextAttributes() reports it: engine.js asks three for antialias false, stencil false and
 // high-performance; three's WebGLRenderer creates every context with alpha: true (its `alpha` option only sets the clear
 // alpha). The split's bareContextHadTheGameAttributes check compares the two, so a drift fails the split (the first dev run
@@ -1636,23 +1647,25 @@ async function gpuBaseline(browser, PORT) {
     // residue the moment a new context was made, so the context's fixed cost read -36.7 MB): one throwaway WebGL2 context of
     // the game's attributes is made, drawn, lost and removed BEFORE the blank reading, so what a new context purges is purged
     // before the baseline is read
-    await page.evaluate(`(async () => { const c = document.createElement('canvas'); c.width = 16; c.height = 9; document.body.appendChild(c);
+    // every probe step is bounded (PROBE_STEP_MS): a probe page whose frames stall fails the baseline with that reason instead of
+    // holding the row to its 900 s timeout (a scratch diagnostic run of this row in the shared position timed out silently)
+    await withTimeout(page.evaluate(`(async () => { const c = document.createElement('canvas'); c.width = 16; c.height = 9; document.body.appendChild(c);
       const gl = c.getContext('webgl2', ${JSON.stringify(GAME_CONTEXT_ATTRS)}); if (!gl) return false;
       await new Promise((res) => { let k = 0; const f = () => { gl.clear(gl.COLOR_BUFFER_BIT); if (++k >= 10) res(); else requestAnimationFrame(f); }; requestAnimationFrame(f); });
-      const x = gl.getExtension('WEBGL_lose_context'); if (x) x.loseContext(); c.remove(); return true; })()`);
+      const x = gl.getExtension('WEBGL_lose_context'); if (x) x.loseContext(); c.remove(); return true; })()`), PROBE_STEP_MS, 'GPU baseline: the prime context');
     await sleep(1500);
     const blank = await settledFootprint(browser);
-    const plan = await page.evaluate(`(async () => { const m = await import('/src/core/engine.js'); const q = m.DEFAULT_TIER || 'high'; const t = m.QUALITY_TIERS && m.QUALITY_TIERS[q];
-      const pr = Math.min(${BUDGETS.deviceDpr}, t ? t.dprCap : 1); return { quality: q, dprCap: t ? t.dprCap : null, pixelRatio: pr, width: Math.floor(1600 * pr), height: Math.floor(900 * pr) }; })()`);
-    const attrs = await page.evaluate(`(async () => {
+    const plan = await withTimeout(page.evaluate(`(async () => { const m = await import('/src/core/engine.js'); const q = m.DEFAULT_TIER || 'high'; const t = m.QUALITY_TIERS && m.QUALITY_TIERS[q];
+      const pr = Math.min(${BUDGETS.deviceDpr}, t ? t.dprCap : 1); return { quality: q, dprCap: t ? t.dprCap : null, pixelRatio: pr, width: Math.floor(1600 * pr), height: Math.floor(900 * pr) }; })()`), PROBE_STEP_MS, 'GPU baseline: the tier plan');
+    const attrs = await withTimeout(page.evaluate(`(async () => {
       const c = document.createElement('canvas'); c.style.cssText = 'position:fixed;left:0;top:0;width:1600px;height:900px;display:block'; c.width = 16; c.height = 9; document.body.appendChild(c);
       const gl = c.getContext('webgl2', ${JSON.stringify(GAME_CONTEXT_ATTRS)}); if (!gl) return null;
       const draw = (n) => new Promise((res) => { let k = 0; const f = () => { gl.viewport(0, 0, gl.drawingBufferWidth, gl.drawingBufferHeight); gl.clearColor(0.2, 0.3, 0.4, 1); gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT); if (++k >= n) res(); else requestAnimationFrame(f); }; requestAnimationFrame(f); });
-      window.__w0bBare = { c, gl, draw }; await draw(30); return gl.getContextAttributes(); })()`);
+      window.__w0bBare = { c, gl, draw }; await draw(30); return gl.getContextAttributes(); })()`), PROBE_STEP_MS, 'GPU baseline: the bare 16 x 9 context');
     if (!attrs) return { ok: false, why: 'no bare WebGL2 context', blank };
     await sleep(1000);
     const tiny = await settledFootprint(browser);
-    const size = await page.evaluate(`(async () => { const b = window.__w0bBare; b.c.width = ${plan.width}; b.c.height = ${plan.height}; await b.draw(30); return [b.gl.drawingBufferWidth, b.gl.drawingBufferHeight]; })()`);
+    const size = await withTimeout(page.evaluate(`(async () => { const b = window.__w0bBare; b.c.width = ${plan.width}; b.c.height = ${plan.height}; await b.draw(30); return [b.gl.drawingBufferWidth, b.gl.drawingBufferHeight]; })()`), PROBE_STEP_MS, 'GPU baseline: the full-size context');
     await sleep(1000);
     const full = await settledFootprint(browser);
     await page.evaluate(`(() => { const b = window.__w0bBare; const x = b.gl.getExtension('WEBGL_lose_context'); if (x) x.loseContext(); b.c.remove(); window.__w0bBare = null; return true; })()`);
@@ -1745,10 +1758,10 @@ async function a90Abs({ PORT }) {
     // row started its 150 s loop the moment the page was ready, with the GPU process's program caches cold, and made 24 kills
     // where the shared-Chrome run made 29; the carried A90 row settles 2 s + 1.5 s before its loop): the frame loop runs until
     // the compiled-program count has not changed for 5 s (at least 3.5 s, at most 45 s). Reported; nothing is graded on it
-    const settle = await page.evaluate(`(async () => { const r = __CTX__.engine.renderer, prog = () => (r.info.programs || []).length;
+    const settle = await withTimeout(page.evaluate(`(async () => { const r = __CTX__.engine.renderer, prog = () => (r.info.programs || []).length;
       const t0 = performance.now(), p0 = prog(); let last = p0, since = t0;
       while (performance.now() - t0 < 45000) { await new Promise((res) => setTimeout(res, 500)); const n = prog(); if (n !== last) { last = n; since = performance.now(); } else if (performance.now() - since >= 5000 && performance.now() - t0 >= 3500) break; }
-      return { programsAtReady: p0, programs: last, settleS: +((performance.now() - t0) / 1000).toFixed(1), settled: performance.now() - since >= 5000 }; })()`);
+      return { programsAtReady: p0, programs: last, settleS: +((performance.now() - t0) / 1000).toFixed(1), settled: performance.now() - since >= 5000 }; })()`), 90000, 'A90-abs settle').catch((err) => ({ error: String(err.message || err).slice(0, 120) }));
     const heapAtBoot = await gcAndHeap(cdp);
     // the post-boot heap GROWTH is attributed by a sampling profile of what is still live at the end (objects
     // collected by GC are NOT included here, unlike A-alloc-rate: this one names what is RETAINED)
@@ -1892,7 +1905,7 @@ async function a90Abs({ PORT }) {
         + ` — INSTRUMENT (R48 b): ${instrumentOk ? 'PASS' : 'FAIL'} (heap control ${heapControl?.ratio ?? '?'}x of ${heapControl?.expectedB ? MB(heapControl.expectedB) : '?'} MB; GPU control ${gpuControl?.ratio ?? '?'}x of ${gpuControl?.expectedB ? MB(gpuControl.expectedB) : '?'} MB, fall ${gpuControl?.fallOverRise ?? '?'}x of the rise (median of ${GPU_CONTROL_CYCLES} cycles); `
         + `footprint split into MEASURED buckets ${footprintSplit.ok ? 'holds' : 'FAILS ' + Object.keys(footprintSplit.checks).filter((k) => !footprintSplit.checks[k]).join(', ')}: ${bk ? `browser baseline ${bk.browserBaselineMB} MB (${shared ? 'SHARED harness Chrome: includes earlier rows\' residue' : 'fresh Chrome'}), WebGL context + swap chain ${bk.webglContextAndSwapChainMB} MB (default framebuffer ${footprintSplit.context?.defaultFramebufferMB} MB = ${footprintSplit.context?.bytesPerPixel} B/px at ${(footprintSplit.context?.drawingBuffer || []).join('x')}), GL census ${bk.glCensusMB} MB, game-driven outside the census ${bk.gameDrivenOutsideCensusMB} MB -> engine-gpu @ ${remainderRouting.map((x) => x.fileLine).join(' + ')}` : 'not measured'}; `
         + `negative controls ${negatives.filter((n) => n.ok).length}/${negatives.length} fail as they must) — `
-        + `BARS (${binding ? 'binding: global run' : 'lane run: graded at the orchestrator\'s 5270 global run after the engine-gpu merge, R48 b'}): post-GC JS heap ${MB(heapPostGc)} MB (ceiling 450) ${bars.postGcHeapWithinCeiling.pass ? 'pass' : 'FAIL'}, Chrome GPU process footprint ${gpuMax === null ? 'not measured' : MB(gpuMax) + ' MB'} (ceiling 1500) ${bars.gpuProcessWithinCeiling.pass ? 'pass' : 'FAIL'} at the staged fight, after the A90 workload (${a90.kills} kills, ${a90.workload?.respawned} respawned; iteration median ${a90.iterations?.medianMs ?? '?'} ms, first ${JSON.stringify(a90.iterations?.firstMs || [])} ms; settled ${settle?.settleS ?? '?'} s before it, ${settle?.programs ?? '?'} programs)`
+        + `BARS (${binding ? 'binding: global run' : 'lane run: graded at the orchestrator\'s 5270 global run after the engine-gpu merge, R48 b'}): post-GC JS heap ${MB(heapPostGc)} MB (ceiling 450) ${bars.postGcHeapWithinCeiling.pass ? 'pass' : 'FAIL'}, Chrome GPU process footprint ${gpuMax === null ? 'not measured' : MB(gpuMax) + ' MB'} (ceiling 1500) ${bars.gpuProcessWithinCeiling.pass ? 'pass' : 'FAIL'} at the staged fight, after the A90 workload (${a90.kills} kills, ${a90.workload?.respawned} respawned in ${a90.loop?.wallS ?? '?'} s, ${a90.loop?.extendedS ? 'extended ' + a90.loop.extendedS + ' s past the planned ' + a90.loop.plannedS + ' s to reach the ' + a90.loop.minKills + '-kill floor' : 'no extension'}; iteration median ${a90.iterations?.medianMs ?? '?'} ms, first ${JSON.stringify(a90.iterations?.firstMs || [])} ms; settled ${settle?.settleS ?? '?'} s before it, ${settle?.programs ?? '?'} programs)`
         + (bars.gpuProcessWithinCeiling.pass ? '' : ` — over-bar routing: GL census -> ${footprintSplit.glTopRenderTargets ? footprintSplit.glTopRenderTargets.slice(0, 3).map((x) => x.owner + ' ' + x.MB + ' MB @ ' + x.fileLines.join(' + ')).join('; ') : '?'}; game-driven outside the census ${bk ? bk.gameDrivenOutsideCensusMB : '?'} MB -> engine-gpu @ ${remainderRouting.map((x) => x.fileLine).join(' + ')}; what-if at pixel ratio 1.25 ${whatIfDpr125?.footprintMB ?? '?'} MB (drop ${whatIfDpr125?.footprintDropMB ?? '?'} MB, of which outside the census ${whatIfDpr125?.outsideCensusDropMB ?? '?'} MB)`),
       instrument, bars, runId: runIdOf(PORT), barsBinding: binding,
       sealing: 'R48 (b): the harness seals every run that executes this row (tools/gates.r5.gates-perf.mjs INSTRUMENT_IDS); verify with node tools/gates.r5.gates-perf.mjs --instruments --port <port>',
