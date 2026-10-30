@@ -5559,11 +5559,16 @@ export class PlayerAnimator {
       // fix round 4: the air (see `DYN_CLASSES` 'wrap'): this chain's flutter
       // across the gusting wind, and the wrapped root's stiffness profile
       const cw = cls.wind ?? DYN_WIND[cls.name] ?? 0, rk = cls.rootK ?? 0;
+      // W0b targeted fix: `rootSpan` (0..1 of the chain) confines the wrapped
+      // root's extra stiffness to the knotted links; absent (1) the profile is
+      // the old whole-chain (1 - dj)^2, bit for bit
+      const rs = cls.rootSpan ?? 1;
       const flA = cw > 0 ? (this.wind.flutter || 0) * windS : 0, sd = c.seed;
       for (let s = 0; s < steps; s++) {
         for (let j = 1; j < n; j++) {
           const i0 = j * 3;
-          const dj = j / N, kj = rk > 0 ? k * (1 + rk * (1 - dj) * (1 - dj)) : k;
+          const dj = j / N, ru = rs < 1 ? (dj < rs ? 1 - dj / rs : 0) : 1 - dj;
+          const kj = rk > 0 ? k * (1 + rk * ru * ru) : k;
           const wj = cw * dj;
           // the flutter: a wave running DOWN the strand (phase lags with depth),
           // across the wind horizontally and a little vertically
