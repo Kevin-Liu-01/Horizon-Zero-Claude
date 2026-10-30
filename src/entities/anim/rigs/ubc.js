@@ -228,6 +228,20 @@ export const UBC_TUNE = {
   // `behindHead` past the back of the skull (bars: [-0.03, 0.05], 0.05, 0.20)
   // (`looseDrop`: through the loose the height floor drops this much, m)
   elbowForm: { up: [-0.022, 0.04], behindHand: 0.072, behindHead: 0.17, looseDrop: 0.15 },
+  // W0b targeted fix 3 (judges: the draw elbow jumped 0.36-0.47 m in one sim
+  // step at the draw onset and every re-nock, the fist went to the back of her
+  // neck after the 0.75 loose, the loose elbow read 0.2012 m behind the head
+  // plane; crouched, the rest hold sat over her head). While she aims the draw
+  // arm is solved in full from the first step: the wrist target moves at most
+  // `wristV` m/s, the elbow at most `elbowStep` m per 1/60 s step on its
+  // shoulder -> wrist circle and at most `elbowBack` m behind the back of the
+  // skull (R35's bar 0.20); the form scan looks only `formWin` rad either side
+  // of the solved elbow (it took the far side of the circle mid-draw); after a
+  // loose the hand goes from where the kick leaves it straight to the quiver
+  // (`renock`), the elbow pointing out and down there (`quiverPole`, turned
+  // frame); crouched, the crouch-aim pose is applied before the arms solve and
+  // the rest hold / quiver ride the chest / pelvis (`crouchBody`)
+  armFlow: { wristV: 2.7, elbowStep: 0.05, elbowBack: 0.17, formWin: 0.6, renock: true, quiverPole: [-0.75, -0.65, -0.05], crouchBody: true },
   // the string hand's roll at full draw (0..1 of the way to back-of-hand out,
   // palm to the neck): the hooked fingers stand on the vertical string and the
   // ∴ on the back of the right hand faces a side camera (V24)
