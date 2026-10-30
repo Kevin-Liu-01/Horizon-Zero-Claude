@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { clone as skeletonClone } from 'three/examples/jsm/utils/SkeletonUtils.js';
 import { Retargeter } from './retargeter.js';
-import { UAL_TO_ALOY, UAL_HIP, AIM_RULES, CONTACT_BONES } from './boneMap.js';
+import { UAL_TO_HERO, UAL_HIP, AIM_RULES, CONTACT_BONES } from './boneMap.js';
 import { register } from './registry.js';
 
 const { clamp } = THREE.MathUtils;
@@ -306,12 +306,12 @@ let _shared = null;
 
 export class ClipLibrary {
   /**
-   * @param {{root: THREE.Object3D}} aloyModel  assets.models.hero
+   * @param {{root: THREE.Object3D}} heroModel  assets.models.hero
    * @param {{scene: THREE.Object3D, animations: THREE.AnimationClip[]}} ualGltf  assets.anims.ual
    */
-  constructor(aloyModel, ualGltf, speeds) {
+  constructor(heroModel, ualGltf, speeds) {
     this.speeds = { ...CANON_SPEEDS, ...(speeds || {}) };
-    this.rig = skeletonClone(aloyModel.root);
+    this.rig = skeletonClone(heroModel.root);
     this.rig.position.set(0, 0, 0);
     this.rig.rotation.set(0, 0, 0);
     this.rig.updateMatrixWorld(true);
@@ -321,12 +321,12 @@ export class ClipLibrary {
     /* Round 5 rig seam: a body other than Aloy carries its own bone map on
      * `root.userData.rigProfile` ({ name, map, aim, contacts, feet }); with no
      * profile this is byte-for-byte the Aloy setup. */
-    const prof = aloyModel.root.userData?.rigProfile || null;
-    this.rigName = prof?.name || 'aloy';
+    const prof = heroModel.root.userData?.rigProfile || null;
+    this.rigName = prof?.name || 'hero';
     this.feet = prof?.feet || null;
     this.retargeter = new Retargeter({
       targetRoot: this.rig, sourceRoot: this.source,
-      map: prof?.map || UAL_TO_ALOY, hip: UAL_HIP, aim: prof?.aim || AIM_RULES,
+      map: prof?.map || UAL_TO_HERO, hip: UAL_HIP, aim: prof?.aim || AIM_RULES,
       contacts: prof?.contacts || CONTACT_BONES,
       correct: 'all', rootMotion: 'strip',
     });
@@ -343,10 +343,10 @@ export class ClipLibrary {
   /** One library per boot: the bake is deterministic and the clips bind by name. */
   static shared(assets, speeds) {
     if (_shared) return _shared;
-    const aloy = assets?.models?.hero;
+    const hero = assets?.models?.hero;
     const ual = assets?.anims?.ual;
-    if (!aloy || !ual) return null;
-    _shared = new ClipLibrary(aloy, ual, speeds);
+    if (!hero || !ual) return null;
+    _shared = new ClipLibrary(hero, ual, speeds);
     return _shared;
   }
 

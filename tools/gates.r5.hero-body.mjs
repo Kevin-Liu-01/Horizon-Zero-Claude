@@ -7842,7 +7842,7 @@ const NEW_GATES = [
   /* ----------------------------------------------- A31g-direction-change-skate */
   {
     id: 'A31g-direction-change-skate', kind: 'action', lane: 'hero-body', timeout: 150000,
-    title: 'Aim-strafe reversals L->R and R->L, 10 each: the first stance after every reversal drifts <= 0.08 m',
+    title: 'Aim-strafe reversals L->R and R->L, 10 each: the first stance after EVERY reversal (20 of 20 measured) drifts <= 0.08 m',
     setup: INPUT_ON, settle: 400,
     assert: placed(['openGround'], `(async () => {${HB}
       freeze(); standAt(p, 'openGround'); await wait(300);
@@ -7869,10 +7869,13 @@ const NEW_GATES = [
         await simWait(0.5, 4000);
       }
       release();
+      // plan §9: the first stance after EVERY reversal (targeted fix: 20 of 20
+      // measured, was >= 16 — an unmeasured reversal is a FAIL, named below)
       const measured = firsts.filter((f) => f.drift !== null);
       const worst = measured.length ? Math.max(...measured.map((f) => f.drift)) : null;
-      const pass = measured.length >= 16 && worst <= 0.08;
-      return { pass, detail: { reversals: firsts.length, measured: measured.length, worstFirstStanceDriftM: worst, firsts } };
+      const unmeasured = firsts.map((f, i) => f.drift === null ? '#' + (i + 1) + ' ' + f.dir : null).filter(Boolean);
+      const pass = firsts.length === 20 && measured.length === 20 && worst <= 0.08;
+      return { pass, detail: { reversals: firsts.length, measured: measured.length, unmeasured, worstFirstStanceDriftM: worst, firsts } };
     })()`),
   },
 
@@ -8577,7 +8580,7 @@ const NEW_GATES = [
   /* ------------------------------------------------------ A-melee-floor (R47) */
   {
     id: 'A-melee-floor', kind: 'action', lane: 'hero-body', timeout: 120000,
-    title: 'R47 floor: on Brea, light x3, a heavy (held LMB), the melee-ready key and a block press (RMB) throw nothing (no error event, rejection or console error) and leave her in a valid locomotion state — not aiming, no swing active, bones finite, and she then walks, jogs and sprints at canon speed with her feet alternating',
+    title: 'R47 floor: on Brea, light x3, a heavy (held LMB), the melee-ready key and a block press (RMB) throw nothing (no error event, rejection or console error); light1-3 each reach stance swing with a swing active (the combo count >= i by the end of light i) and the heavy fires a new swing that is a heavy (targeted fix: the swings asserted, not only reported); afterwards a valid locomotion state — not aiming, no swing active, bones finite, and she then walks, jogs and sprints at canon speed with her feet alternating',
     setup: INPUT_ON, settle: 400,
     assert: placed(['openGround'], `(async () => {${HB}${CANON_SPEEDS}${FLAT_STRIP}
       freeze(); release();
@@ -8596,13 +8599,29 @@ const NEW_GATES = [
       const finite = () => { let bad = 0; p.model.traverse((o) => { if (o.isBone) { const q = o.quaternion, v = o.position; if (![q.x, q.y, q.z, q.w, v.x, v.y, v.z].every(Number.isFinite)) bad++; } }); return bad; };
       const beats = [];
       const click = async (ms) => { C.input.mouse.buttons |= 1; await wait(ms); C.input.mouse.buttons &= ~1; };
-      let after = null;
+      /* targeted fix (judge r2: "A-melee-floor never asserts a swing happened"):
+       * every rendered frame of each beat's window is sampled — the frames in
+       * stance 'swing' with a swing active (and of those, heavy), and the
+       * swing counter (combat.melee.audit().swings, +1 per fired swing) at the
+       * window's start and end. Graded below: light1-3 each reach 'swing'
+       * with the combo's count at >= i by the end of light i; the heavy fires
+       * a NEW swing that is a heavy. */
+      const swings = () => (typeof M.audit === 'function' ? M.audit().swings : (M._stats?.swings ?? 0));
+      let cur = null, samp = true;
+      const tick = () => { if (!samp) return; if (cur && M.stance === 'swing' && M.active) { cur.swingFrames++; if (M.heavy) cur.heavyFrames++; } if (cur) cur.frames++; requestAnimationFrame(tick); };
+      requestAnimationFrame(tick);
+      const beat = async (name, fn) => {
+        cur = { beat: name, frames: 0, swingFrames: 0, heavyFrames: 0, swings0: swings() };
+        try { await fn(); } finally { const b = cur; cur = null; b.swings1 = swings(); b.newSwings = b.swings1 - b.swings0; b.stance = M.stance; b.active = !!M.active; beats.push(b); }
+      };
+      let after = null, combo0 = 0;
       try {
         // light x3 (a combo), each click then its swing's time
-        for (let i = 0; i < 3; i++) { await click(90); await simWait(0.5, 6000); beats.push({ beat: 'light' + (i + 1), stance: M.stance, active: !!M.active }); }
+        combo0 = swings();
+        for (let i = 0; i < 3; i++) await beat('light' + (i + 1), async () => { await click(90); await simWait(0.5, 6000); });
         await simWait(0.9, 8000);
         // heavy: LMB held past the charge
-        await click(700); await simWait(1.5, 12000); beats.push({ beat: 'heavy', stance: M.stance, active: !!M.active });
+        await beat('heavy', async () => { await click(700); await simWait(1.5, 12000); });
         // the melee-ready key (draw / holster the lance)
         keys.add('KeyB'); await frame(); await frame(); keys.delete('KeyB'); await simWait(0.6, 6000); beats.push({ beat: 'readyKey', stance: M.stance });
         // block: RMB (the guard press; with the Round-4 kit it raises the bow)
@@ -8610,6 +8629,7 @@ const NEW_GATES = [
         C.input.mouse.buttons &= ~4; await simWait(0.8, 8000);
         after = { aiming: !!p.aiming, swinging: !!M.active, stance: M.stance, dodging: !!p.dodging, health: p.health, nonFinite: finite() };
       } finally {
+        samp = false;
         console.error = ce; window.removeEventListener('error', onErr); window.removeEventListener('unhandledrejection', onErr);
         release();
       }
@@ -8642,7 +8662,21 @@ const NEW_GATES = [
       const bad = [];
       if (errs.length) bad.push('threw: ' + errs.slice(0, 3).join(' | '));
       if (!after) bad.push('the combo did not complete');
-      else {
+      for (let i = 1; i <= 3; i++) {
+        const b = beats.find((x) => x.beat === 'light' + i);
+        if (!b) { bad.push('light' + i + ': no beat'); continue; }
+        if (!(b.swingFrames > 0)) bad.push('light' + i + ': never reached stance swing with a swing active (' + b.frames + ' frames sampled)');
+        if (!(b.swings1 - combo0 >= i)) bad.push('light' + i + ': ' + (b.swings1 - combo0) + ' swing(s) fired by the end of its window (want >= ' + i + ')');
+      }
+      {
+        const h = beats.find((x) => x.beat === 'heavy');
+        if (!h) bad.push('heavy: no beat');
+        else {
+          if (!(h.newSwings >= 1)) bad.push('heavy: no new swing activation (' + h.newSwings + ' fired in its window)');
+          if (!(h.heavyFrames > 0)) bad.push('heavy: no frame with a HEAVY swing active');
+        }
+      }
+      if (after) {
         if (after.aiming) bad.push('still aiming after the block was released');
         if (after.swinging) bad.push('a swing is still active');
         if (after.nonFinite) bad.push(after.nonFinite + ' non-finite bones');
@@ -8657,29 +8691,46 @@ const NEW_GATES = [
 
   /* ----------------------------------------------------- A-tail-legible */
   {
-    id: 'A-tail-legible', kind: 'action', lane: 'hero-body', timeout: 90000,
-    title: 'V-brea-one-glance cue 2 MEASURED (fix round 5, judge r2: "the wrap tail cannot be separated from the stowed bow\'s upper limb" at 64 px): on the silhouette sheet\'s own staging (idle, facing N in the NE trade wind) and lens (56 x 82 px black fill, ortho 2.3 m), front / side (her right) / back / side (her left) — the pixels only the wrap tail covers (the view rendered again with the tail collapsed into its knot) include >= 4 standing >= 3 px clear of every other part of the silhouette (bow, lance, head, body), at the sheet\'s instant (what the sheet shows: graded). Reported, not graded: how far out it reaches, and the same 0.7 s and 1.4 s later (the gusts — the fluttering tail lies along the bow in a side view at some instants) and after 3 s of still air',
+    id: 'A-tail-legible', kind: 'action', lane: 'hero-body', timeout: 150000,
+    title: 'V-brea-one-glance cue 2 MEASURED (fix round 5, judge r2: "the wrap tail cannot be separated from the stowed bow\'s upper limb" at 64 px; targeted fix: the draft bar restored and graded at every gust moment, not only the sheet\'s): on the silhouette sheet\'s own staging (idle, facing N in the NE trade wind) and lens (56 x 82 px black fill, ortho 2.3 m), front / side (her right) / back / side (her left) — the pixels only the wrap tail covers (the view rendered again with the tail collapsed into its knot) include >= 4 standing >= 3 px clear of every other part of the silhouette (bow, lance, head, body) AND the tail reaches >= 4 px out, at the sheet\'s instant AND at every one of 23 gust moments after it (every 0.35 s sim for 8 s: the trade wind\'s slowest gust swell is 7.6 s long). Reported with numbers, not graded: the same views in still air (after 3 s, then every 0.5 s for 2 s) and the 3/4 view',
     setup: INPUT_ON, settle: 400,
     assert: `(async () => {${HB}
       freeze();
       release(); p.position.set(-157, 0, 81); p.velocity.set(0, 0, 0); p._snapToGround?.();
       const s = await import('/src/hero/sheets.js');
       const VIEWS = ['FRONT', 'SIDE (her right)', 'BACK', 'SIDE (her left)'];
-      // the sheet's instant: the stand-off bar (graded); any other instant (the
-      // gusts) and still air: reported against a distinct-shape bar
-      const grade = (rows, sheet = false) => rows.filter((r) => VIEWS.includes(r.view)).map((r) => ({ ...r, ok: sheet ? r.clear3 >= 4 : r.tailPx >= 20 && r.clear2 >= 8 }));
-      const runs = {};
-      an.setWind(45 * Math.PI / 180, 5.5, 0.35, 0.32);       // the default world wind (bible §2.2)
+      const BAR = { clear3: 4, reach: 4 };
+      const pick = (rows) => rows.map((r) => ({ ...r, ok: r.clear3 >= BAR.clear3 && r.reach >= BAR.reach }));
+      const TRADE = [45 * Math.PI / 180, 5.5, 0.35, 0.32];   // the default world wind (bible §2.2)
+      an.setWind(...TRADE);
+      const trade = [], calm = [];
+      // the sheet's instant (silhouetteSheetOverlay's own staging: 1.5 s idle facing N)
       await s.poseIdle(C, 1.5);
-      runs.trade = grade(s.tailLegibility(C), true);
-      await s.poseIdle(C, 0.7); runs.tradePlus07 = grade(s.tailLegibility(C));
-      await s.poseIdle(C, 0.7); runs.tradePlus14 = grade(s.tailLegibility(C));
+      trade.push({ at: 'sheet', t: +E.simTime.toFixed(2), rows: pick(s.tailLegibility(C)) });
+      // the gust moments: every 0.35 s of sim for 8 s after it
+      for (let k = 1; k <= 23; k++) {
+        await s.poseIdle(C, 0.35);
+        trade.push({ at: '+' + (0.35 * k).toFixed(2), t: +E.simTime.toFixed(2), rows: pick(s.tailLegibility(C)) });
+      }
+      // still air (reported)
       an.setWind(0, 0, 0, 0);
-      await s.poseIdle(C, 3.0); runs.calm = grade(s.tailLegibility(C));
-      an.setWind(45 * Math.PI / 180, 5.5, 0.35, 0.32);
-      const bad = [], notes = [];
-      for (const [k, rows] of Object.entries(runs)) for (const r of rows) if (!r.ok) (k === 'trade' ? bad : notes).push(k + ' ' + r.view + ': ' + r.tailPx + ' tail px, ' + r.clear2 + ' / ' + r.clear3 + ' px >= 2 / 3 clear, reach ' + r.reach);
-      return { pass: bad.length === 0, detail: { graded: 'trade (the sheet instant)', bad, reportedBelowDistinct: notes, runs } };
+      await s.poseIdle(C, 3.0);
+      calm.push({ at: 'calm+3.0', rows: pick(s.tailLegibility(C)) });
+      for (let k = 1; k <= 4; k++) { await s.poseIdle(C, 0.5); calm.push({ at: 'calm+' + (3 + 0.5 * k).toFixed(1), rows: pick(s.tailLegibility(C)) }); }
+      an.setWind(...TRADE);
+      const bad = [];
+      for (const m of trade) for (const r of m.rows) if (VIEWS.includes(r.view) && !r.ok) bad.push(m.at + ' ' + r.view + ': ' + r.tailPx + ' tail px, ' + r.clear3 + ' px >= 3 clear, reach ' + r.reach);
+      // the numbers per view: min / median / max over the trade-wind moments, and in still air
+      const stat = (list, view, key) => { const v = list.map((m) => m.rows.find((r) => r.view === view)?.[key]).filter((x) => x != null).sort((a, b) => a - b); return v.length ? [v[0], v[v.length >> 1], v[v.length - 1]] : null; };
+      const summary = {};
+      for (const view of [...VIEWS, '3/4']) summary[view] = {
+        trade: { clear3: stat(trade, view, 'clear3'), reach: stat(trade, view, 'reach'), tailPx: stat(trade, view, 'tailPx'), clear2: stat(trade, view, 'clear2') },
+        calm: { clear3: stat(calm, view, 'clear3'), reach: stat(calm, view, 'reach'), tailPx: stat(calm, view, 'tailPx'), clear2: stat(calm, view, 'clear2') },
+      };
+      const calmBelow = [];
+      for (const m of calm) for (const r of m.rows) if (VIEWS.includes(r.view) && !r.ok) calmBelow.push(m.at + ' ' + r.view + ': ' + r.clear3 + ' px >= 3 clear, reach ' + r.reach);
+      const failMoments = [...new Set(bad.map((b) => b.split(' ')[0]))];
+      return { pass: bad.length === 0 && trade.length === 24, detail: { graded: 'trade wind: the sheet instant + 23 gust moments x 4 views, clear3 >= 4 and reach >= 4', moments: trade.length, failingMoments: failMoments.length, bad, summaryMinMedMax: summary, calmBelowBar: calmBelow, trade: trade.map((m) => ({ at: m.at, t: m.t, v: m.rows.map((r) => r.view[0] + (r.view.includes('right') ? 'R' : r.view.includes('left') ? 'L' : '') + ':' + r.clear3 + '/' + r.reach).join(' ') })), calm: calm.map((m) => ({ at: m.at, v: m.rows.map((r) => r.view[0] + (r.view.includes('right') ? 'R' : r.view.includes('left') ? 'L' : '') + ':' + r.clear3 + '/' + r.reach).join(' ') })) } };
     })()`,
   },
 
@@ -9097,7 +9148,7 @@ const byId = (id) => carried.find((g) => g.id === id);
   const a = Object.getOwnPropertyDescriptor(g, 'assert').value;
   const hook = 'headClear: arm.headClear });';
   if (!a.includes(hook) || !a.includes('&& r.headClear >= 0.98')) throw new Error('A16 shape changed');
-  const loose = `headClear: arm.headClear,
+  const loose = `headClear: arm.headClear, aimPitch: pitch,
         elbowAboveShoulderAimFrame: (() => { const A = an.debugAim(), d = V().set(A.d[0], A.d[1], A.d[2]).normalize(), up = V().set(0, 1, 0).addScaledVector(d, -d.y).normalize();
           return +V().set(arm.elbow.x, arm.elbow.y, arm.elbow.z).sub(V().set(arm.shoulder.x, arm.shoulder.y, arm.shoulder.z)).dot(up).toFixed(4); })(),
         knuckleToNock: (() => { const k = V(), t = V(); return an.debugDrawHand && an.debugDrawHand(k, t) ? +k.distanceTo(nk).toFixed(4) : null; })(),
@@ -9118,9 +9169,23 @@ const byId = (id) => carried.find((g) => g.id === id);
   // fix round 4 (judge r1): + the hand ON the string at every row — middle knuckle and
   // middle fingertip within 0.06 m of the bow's own nock (the wrist-to-nock bar alone
   // passed a fist on the headwrap at the 0.75 down aim, knuckle 0.109 m)
-  Object.defineProperty(g, 'assert', { value: a.replace(hook, loose).replace('&& r.headClear >= 0.98', '&& r.headClear >= 0.98 && r.launchOffDeg !== null && r.launchOffDeg <= 0.3 && r.knuckleToNock !== null && r.knuckleToNock <= ' + KNUCKLE_NOCK + ' && r.fingertipToNock !== null && r.fingertipToNock <= ' + FINGERTIP_NOCK), enumerable: true, configurable: true, writable: true });
+  /* R52 (plan §8.3, Oct 30): "elbow not above the shoulder" is measured
+   * PERPENDICULAR TO THE ARROW in the draw plane at every aim pitch — the
+   * elbow - shoulder vector (character space) on world up made perpendicular
+   * to the aim direction (debugAim().d), exactly A-draw-elbow-level's
+   * `elbowUp` — so a pitched shot is graded as the level draw rotated at the
+   * hips. At camPitch 0 (level and both strafes) the character-height reading
+   * stays graded too, unchanged (the two coincide there); at the pitched rows
+   * it is reported (`elbowAboveShoulder`), not graded. */
+  const ELBOW_OLD = '&& r.elbowAboveShoulder <= 0';
+  const ELBOW_R52 = '&& r.elbowAboveShoulderAimFrame !== null && r.elbowAboveShoulderAimFrame <= 0 && (r.aimPitch !== 0 || r.elbowAboveShoulder <= 0)';
+  if (!a.includes(ELBOW_OLD)) throw new Error('A16 elbow clause changed');
+  const DET_OLD = 'detail: { rows, failing: bad.map(r => r.tag) }';
+  if (!a.includes(DET_OLD)) throw new Error('A16 detail shape changed');
+  const DET_R52 = "detail: { rule: 'R52: elbow height perpendicular to the arrow at every pitch (character height also graded at camPitch 0)', rows, failing: bad.map(r => r.tag + ':' + [r.drawS > 0.9 ? null : 'drawS', r.nockToHand <= 0.09 ? null : 'nockToHand', r.elbowAboveShoulderAimFrame !== null && r.elbowAboveShoulderAimFrame <= 0 ? null : 'elbowAboveShoulderAimFrame', r.aimPitch !== 0 || r.elbowAboveShoulder <= 0 ? null : 'elbowAboveShoulderLevel', r.headClear >= 0.98 ? null : 'headClear', r.launchOffDeg !== null && r.launchOffDeg <= 0.3 ? null : 'launch', r.knuckleToNock !== null && r.knuckleToNock <= " + KNUCKLE_NOCK + " ? null : 'knuckle', r.fingertipToNock !== null && r.fingertipToNock <= " + FINGERTIP_NOCK + " ? null : 'fingertip'].filter(Boolean).join('+')) }";
+  Object.defineProperty(g, 'assert', { value: a.replace(hook, loose).replace(ELBOW_OLD, ELBOW_R52).replace(DET_OLD, DET_R52).replace('&& r.headClear >= 0.98', '&& r.headClear >= 0.98 && r.launchOffDeg !== null && r.launchOffDeg <= 0.3 && r.knuckleToNock !== null && r.knuckleToNock <= ' + KNUCKLE_NOCK + ' && r.fingertipToNock !== null && r.fingertipToNock <= ' + FINGERTIP_NOCK), enumerable: true, configurable: true, writable: true });
   g.timeout = 120000;
-  g.title = 'Full draw at -0.55 / -0.4 / 0 / 0.75 and strafing: string hand on the nock (wrist <= 0.09 m; middle knuckle and fingertip <= 0.06 m), draw elbow not above the shoulder, arm clear of the head (>= 0.98), and the loosed arrow leaves within 0.3 deg of the crosshair ray';
+  g.title = 'Full draw at -0.55 / -0.4 / 0 / 0.75 and strafing: string hand on the nock (wrist <= 0.09 m; middle knuckle and fingertip <= 0.06 m), draw elbow not above the shoulder measured perpendicular to the arrow in the draw plane at every pitch (R52; character height also at camPitch 0), arm clear of the head (>= 0.98), and the loosed arrow leaves within 0.3 deg of the crosshair ray';
 }
 
 /* ---- the lane's own gates ---- */

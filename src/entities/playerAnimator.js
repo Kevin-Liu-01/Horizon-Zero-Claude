@@ -508,7 +508,7 @@ export class PlayerAnimator {
      * `model.userData.rigProfile.key` (same short keys; null = absent). With no
      * profile `this.KEY === KEY` and nothing below changes. */
     const prof = model.userData?.rigProfile || null;
-    this.rigName = prof?.name || 'aloy';
+    this.rigName = prof?.name || 'hero';
     this.KEY = prof?.key
       ? Object.assign(Object.fromEntries(Object.keys(KEY).map((k) => [k, null])), prof.key)
       : KEY;
@@ -4256,13 +4256,18 @@ export class PlayerAnimator {
     _efUp.set(0, 1, 0).addScaledVector(_dA, -_dA.y);
     if (_efUp.lengthSq() < 1e-6) return;
     _efUp.normalize();
-    const S = this._efS || (this._efS = { r: 0, shU: 0, shY: 0, hR: 0, hdF: 0, hD: 0, lo: 0, hi: 0, bh: 0, bd: 0, drop: 0 });   // once
+    const S = this._efS || (this._efS = { r: 0, shU: 0, shY: 0, hR: 0, hdF: 0, hD: 0, lo: 0, hi: 0, bh: 0, bd: 0, drop: 0, r52: 1 });   // once
     S.r = r; S.shU = _sg0.dot(_efUp); S.shY = _sg0.dot(this._upT); S.hR = this.T.headR.z; S.hdF = _hd.dot(_efF);
     S.hD = _sg2.dot(_dA); S.lo = EF.up[0]; S.hi = EF.up[1]; S.bh = EF.behindHand; S.bd = EF.behindHead;
     // through the LOOSE the elbow may drop under the full-draw height band
     // (an archer's follow-through: the hand opens back and out, the elbow
     // settles) — the band is a full-draw bar; behind the head is not
     S.drop = (EF.looseDrop ?? 0) * lf;
+    // R52's elbow height (A16 at full draw) fades out through the loose: the
+    // follow-through is graded by R35's behind-the-head bars, and holding the
+    // elbow under the arrow-frame shoulder line there rolled it 1.3 cm further
+    // behind the head at the 0.75 down aim (0.203 m against 0.20, run t1)
+    S.r52 = 1 - lf;
     // 5 deg over the whole circle, then 0.5 deg about the best of those
     const c0 = this._efCost(0);
     let bestT = 0, bestC = c0;
@@ -4303,12 +4308,15 @@ export class PlayerAnimator {
     const above = _efE.dot(this._upT) - S.shY;
     // the GATE bars, hard (x1000): height [-0.03, 0.05] (the floor lowered by
     // `drop` through the loose), >= 0.055 behind the hand, <= 0.195 past the
-    // back of the skull, never over the shoulder joint (A16)
+    // back of the skull, never over the shoulder joint (A16) — in the turned
+    // T's up AND, per R52 (plan §8.3), perpendicular to the arrow in the draw
+    // plane (`u`, the frame A16 and A-draw-elbow-level read; at a level aim the
+    // two coincide, at a pitched aim the T's half arrow-roll parts them)
     const hard = Math.max(0, -0.026 - S.drop - u) + Math.max(0, u - 0.046) + Math.max(0, 0.055 - bhd)
-      + Math.max(0, dep - 0.195) + Math.max(0, above + 0.002);
+      + Math.max(0, dep - 0.195) + Math.max(0, above + 0.002) + S.r52 * Math.max(0, u + 0.002);
     // ...and the form TARGETS inside them, soft (x100)
     const soft = Math.max(0, S.lo - S.drop - u) + Math.max(0, u - S.hi) + Math.max(0, S.bh - bhd)
-      + Math.max(0, dep - S.bd) + Math.max(0, above + 0.006);
+      + Math.max(0, dep - S.bd) + Math.max(0, above + 0.006) + S.r52 * Math.max(0, u + 0.006);
     return hard * 1000 + soft * 100 + Math.abs(th) * 0.01;
   }
 

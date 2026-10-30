@@ -18,8 +18,8 @@ import { RigDebug } from './rigDebug.js';
  * module whose private helper is proved bit-identical to BoneSpace is
  * `BoneSpace/verified` — the migration is a pure import swap and cannot change
  * a single frame. A module that DIVERGES is `legacy` and fails the audit —
- * for the ALOY rig and for the MACHINE rigs alike (`audit().ok` carries an
- * `aloy.ok` term and a `machines.ok` term, and `legacyModules` is derived from
+ * for the HERO rig and for the MACHINE rigs alike (`audit().ok` carries an
+ * `hero.ok` term and a `machines.ok` term, and `legacyModules` is derived from
  * the KNOWN_MODULES table below rather than from who volunteered to register).
  * That is the regression detector the two animation lanes need while they
  * migrate in Waves 1 and 2.
@@ -387,15 +387,15 @@ export function audit(ctx) {
   const legacyModules = rows.filter((r) => r.status === 'legacy')
     .map((r) => ({ id: r.id, owner: r.owner, convention: r.convention }));
 
-  const aloyRows = rows.filter((r) => r.rig === 'hero');
-  const aloyDivergent = aloyRows.filter((r) => /DIVERGENT/.test(r.convention) || r.status === 'legacy');
+  const heroRows = rows.filter((r) => r.rig === 'hero');
+  const heroDivergent = heroRows.filter((r) => /DIVERGENT/.test(r.convention) || r.status === 'legacy');
   const anProbe = probeCache.playerAnimator ?? runProbe('playerAnimator');
-  const aloy = {
-    rows: aloyRows.map((r) => `${r.id}: ${r.convention}`),
-    boneSpaceRouted: aloyRows.length - aloyDivergent.length,
-    divergent: aloyDivergent.map((r) => r.id),
+  const hero = {
+    rows: heroRows.map((r) => `${r.id}: ${r.convention}`),
+    boneSpaceRouted: heroRows.length - heroDivergent.length,
+    divergent: heroDivergent.map((r) => r.id),
     animatorProbe: anProbe,
-    ok: aloyDivergent.length === 0 && (!anProbe?.reachable || anProbe.identical === true),
+    ok: heroDivergent.length === 0 && (!anProbe?.reachable || anProbe.identical === true),
   };
 
   const pendingMigration = rows
@@ -415,7 +415,7 @@ export function audit(ctx) {
   const machines = {
     local: machineLocal,
     mixer: machineMixer,
-    // Health, on the same footing as `aloy.ok`. A machine rig that is still
+    // Health, on the same footing as `hero.ok`. A machine rig that is still
     // pending is fine (its lane has not started); one that is reachable and
     // DIVERGENT is not, and neither is one claiming ClipLayerSet while a
     // wall-clock restore is still in its source.
@@ -427,7 +427,7 @@ export function audit(ctx) {
 
   const out = {
     ok: modulesPresent && algebra.pass && legacyModules.length === 0
-      && aloy.ok && machines.ok,
+      && hero.ok && machines.ok,
     version: ANIM_VERSION,
     doc: MIGRATION_DOC,
     modules, modulesPresent,
@@ -438,13 +438,13 @@ export function audit(ctx) {
     legacyModules,
     selfDeclaredForeign,
     // R5: the protagonist's section is `hero` (the rig profile id names the
-    // body: `rigProfile`); `aloy` stays readable for Round-4 consumers
-    hero: aloy,
+    // body: `rigProfile`). The Round-4 `aloy` alias is gone (W0b targeted
+    // fix): A26-one-convention@hero finds the section by shape, not by name.
+    hero,
     rigProfile: c?.player?.model?.userData?.rigProfile?.name ?? null,
     machines,
     pendingMigration,
   };
-  Object.defineProperty(out, 'aloy', { value: aloy, enumerable: false });
   return out;
 }
 
@@ -507,26 +507,26 @@ export function selftest(timeScale = 0.02) {
  * cache its debugger, so the skeleton overlay, the per-bone probes and
  * `debugFeet()` are one call away for every lane:
  *
- *   __CTX__.anim.overlay('aloy')            // skeleton on, on the live scene
+ *   __CTX__.anim.overlay('hero')            // skeleton on, on the live scene
  *   __CTX__.anim.debug('watcher').probe('hipsBone_03')
- *   __CTX__.anim.overlay('aloy', false)
+ *   __CTX__.anim.overlay('hero', false)
  *
  * Cold path: it allocates, walks the scene graph and refreshes the char frame
  * on every call. Never call it from a hot loop.
  */
 const _debuggers = new Map();
 
-/** Resolve 'aloy' | 'player' | a machine kind | an Object3D | a machine. */
+/** Resolve 'hero' | 'player' | a machine kind | an Object3D | a machine. */
 function resolveRig(target) {
   const c = anim.ctx || (typeof window !== 'undefined' ? window.__CTX__ : null);
-  if (!target || target === 'hero' || target === 'aloy' || target === 'player') {
+  if (!target || target === 'hero' || target === 'player') {
     const an = c?.player?.animator;
     if (!an?.model) return null;
     // adopt the animator's own entry table so probes carry bind + deltaDeg,
     // and its own cached frame inverse so char values are not a frame stale
     const space = BoneSpace.adopt(an._entries || {}, an.model);
     if (an._invModelQ) space.setFrameInv(an._invModelQ); else space.syncFrame();
-    return { key: 'aloy', space, root: an.model };
+    return { key: 'hero', space, root: an.model };
   }
   if (typeof target === 'string') {
     const m = (c?.machines?.list || []).find((x) => x?.kind === target && x?.root);
@@ -546,11 +546,11 @@ function resolveRig(target) {
  * Cached `RigDebug` for a rig (see resolveRig for what `target` accepts).
  * Returns null when the rig is not in the scene yet.
  */
-export function debug(target = 'aloy') {
+export function debug(target = 'hero') {
   const r = resolveRig(target);
   if (!r) return null;
   const had = _debuggers.get(r.key);
-  // an Aloy debugger caches a stale frame inverse between frames; refresh it
+  // the hero's debugger caches a stale frame inverse between frames; refresh it
   if (had) { had.space.syncFrame?.(); return had; }
   const d = new RigDebug({ space: r.space, root: r.root, label: String(r.key) });
   _debuggers.set(r.key, d);
@@ -561,7 +561,7 @@ export function debug(target = 'aloy') {
  * Toggle a rig's skeleton overlay on the live scene (`ctx.scene`).
  * @returns {boolean|null} the resulting visibility, or null if unreachable
  */
-export function overlay(target = 'aloy', on = true) {
+export function overlay(target = 'hero', on = true) {
   const c = anim.ctx || (typeof window !== 'undefined' ? window.__CTX__ : null);
   const d = debug(target);
   if (!d || !c?.scene) return null;

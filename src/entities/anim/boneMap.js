@@ -9,7 +9,7 @@
  * *_01, Rigify does not — the retargeter assigns ABSOLUTE char-space
  * orientations per bone, so the extra metacarpal just rides along.
  */
-export const UAL_TO_ALOY = {
+export const UAL_TO_HERO = {
   'DEF-hips': 'pelvis_05',
   'DEF-spine.001': 'spine_01_06',
   'DEF-spine.002': 'spine_03_08',
