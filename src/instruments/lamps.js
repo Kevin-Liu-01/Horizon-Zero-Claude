@@ -540,7 +540,7 @@ const BEAM_FRAG = /* glsl */`
     // past her chest the light also halves every BEAM.pastTargetHalfM metres (her body takes part of it)
     float pastH = exp2(-max(d - dT, 0.0) / ${BEAM.pastTargetHalfM.toFixed(2)});
     // the cone's end: the last BEAM.lockTailM metres past her (or what is left of the cone past her) fade to nothing;
-    // with her out of reach the whole cone is the tail (the round-3 along^2)
+    // with her out of reach the whole cone is the tail (along^2, as the sweep)
     float tw = tgt < 1.0 ? max(min(vLen - dT, ${BEAM.lockTailM.toFixed(2)}), 0.05) : vLen;
     float tail = clamp((vLen - d) / tw, 0.0, 1.0);
     tail *= tail;

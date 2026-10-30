@@ -51,6 +51,106 @@ shadow rows change id from `<id>@ic` to `<id>` by themselves (`shadowId()` reads
 
 ---
 
+## W0b TARGETED FIX ROUND 2 (Oct 30 2026) — the lock reaches Brea at bow range
+
+One open finding (major, engineering-film judge): at night the hostile lock faded out about 13 m from the lens, so at
+18-22 m the visible shaft ended 4-8 m short of her; the probes only staged her at 10 m (side) and 8 m (chase), the
+length clause read the instance matrix, and the beyond-her clause needed 1 of 3 points. Every number below was
+measured on port 5254 under `nice -n 10`, one gate Chrome machine-wide; nothing under `taskpolicy -b`. No bar moved
+and no gate was loosened; the probe clauses were made stricter.
+
+**What changed.**
+- `src/instruments/lamps.js`
+  - The lock's light falls over a length tied to HER distance D (lens to chest) instead of 5 m flat
+    (`BEAM` `:136-157`, shader `:536-552`): light(d) = gain x (1 - 0.3 min(d/D, 1))^2 / (1 + d/F)^2 x past x tail,
+    F = max(5 m, 0.5 D). From 10 m out the shaft has one shape in units of her distance (1 at the lens, 0.45 at a
+    fifth, 0.11 at 70 %, 0.054 at her chest); under 10 m it is round 1's shaft less its along^2 (8 m: 0.073 at her
+    chest vs 0.066-0.074). The finding's two options were both tried in the lab: tying the falloff alone to her
+    distance (option 1) still left the shaft dark near her at 22 m because the along^2 over the 24.07 m cone is
+    0.007 there; dropping the falloff (option 2) needed the lens gain cut in half and lit the 22 m shaft as a flat bar.
+  - Past her the light halves every 3 m (was 2 m, `:178`), and the cone's last 2 m beyond her fade to nothing
+    (`lockTailM`, `:157`); the drawn length is still sight range x weather scale.
+  - The lock is focused on her: its radius at her chest is at most 0.4 m (`lockTargetRadiusM`, `:107-113`;
+    `_writeMatrices` `:1033`), so past 15.3 m its half-angle narrows below 1.5 deg (18 m: 1.27 deg, 22 m: 1.04 deg).
+    Without it her chase camera at 18 m sat in a 0.47 m-radius pink fan (lab: 2.7 % of the frame pink; 0.4 m: 2.2 %).
+  - No allocation added: two float locals per beam per frame in `_writeMatrices`; the rest is shader.
+- `tools/gates.r5.instruments-core.mjs`
+  - Range twins `A-film-beams-night-18m-probe` and `A-film-beams-night-22m-probe` (`:2334-2350`): the same FILM
+    staging and the same probe, with Brea placed exactly 18 / 22 m (horizontal) from the hostile lamp on its lens
+    axis (`FILM` `herDist`, `:1957-1975`), the second Tiller calm (no sweep, `:1949-1953`), side view in the judge's
+    framing (camera square to the line, max(16 m, 1.15 x span) out, 6.5 m up).
+  - Clear-view staging for the twins (`:2031-2076`): a 0.2 m white rod is laid along the lamp-to-chest line with all
+    beams hidden; the first of six camera candidates where all 8 line points change by >= 60 % of the largest change
+    is filmed, else the staging fails by name. (The lab's first 18 / 22 m frames had a pine in front of the line;
+    a bare > 40 threshold passed pine needles over the rod.)
+  - Probe clauses (`FILM_BEAM_PROBE`, `:2235-2320`), for all four beam probes:
+    - shaft: 8 points evenly over **10-90 %** of the way to her chest (was 10-80 %), >= 6 with R+G+B >= 24, dR > dG,
+      dB > dG; judge's on-frame scan >= 6 of 8 (kept);
+    - **reach** (new): the 79 % and 90 % points both read the shaft;
+    - fade (kept, read at exactly 10/20/30 % vs 60/70/80 %);
+    - **length in light** (new, replaces the matrix-only clause as the graded light clause; the matrix clause is
+      kept as well): beyond her at 110/125/140 %, magenta (>= 24 and min(dR - dG, dB - dG) >= 6) at **>= 2 of 3**
+      (was >= 1, and min >= 6 only), mean <= the near mean. Graded where the 140 % point lies inside the bible cone;
+      for the 18 / 22 m twins (25.3 / 30.8 m vs a 24.07 m cone) the points are reported and reach grades the twin.
+  - Films `V-lamp-beams-night-18m`, `V-lamp-beams-night-22m`, `V-lamp-beams-night-gameplay-18m` (`:2345-2357`).
+
+**The beam lab** (scratch `bin/beamlab3.mjs`, 3 runs, 20 variants on 9 stagings: night side 10/14/18/22 m, fog side
+10/20 m, chase 8 m night/fog and 18 m night). The round-1 lock at 18 m read 4/8 points, at 22 m 5/8; option 1 alone
+(falloff tied to D, no along^2) 6-7/8 but far mean > near mean at 22 m; fade-to-target 0.5 lost the 10 m shaft
+2.5 m past her (beyond 1/3); radius 0.3 m at her made the 22 m fade clause a tie (186 / 186). Chosen: 0.3 / 0.4 m /
+3 m: every staging 8/8, fade margin +39 to +95, beyond 3/3 at 10 m.
+
+**Measured on the final code.**
+
+The judge's own method and staging (the judge's eval scripts, re-run unchanged on port 5254; paired frames with and
+without the beam, R+G+B addition, 7x7 px):
+
+| staging | round 1 (judge) | round 2 |
+|---|---|---|
+| night side, Brea 18 m | 51 at 12.6 m (last magenta), 27 at 14.4 m (red), 14 at 16.2 m, 2 at her chest | 218 at 12.6 m, 180 at 14.4 m, 155 at 16.2 m, **86 at her chest, 61 at 20.7 m past her**; magenta at 12 / 12 points |
+| night side, Brea 22 m | 39 at 13.2 m (last magenta), 3.5 at 19.8 m, 0.2 at her | 244 at 13.2 m, **156 at 19.8 m, 101 at her chest**; magenta at 11 / 11 points up to her |
+| night side, Brea 14 m | 43 at 12.6 m, 15 at her chest | 145 at 12.6 m, **114 at her chest**, 68 at 16.1 m |
+| fog side, Brea 20 m | 60 at 18 m (fog already reached her) | 227 at 18 m, 154 at her chest, 118 at 23 m past her |
+| night chase camera, 18 m | 35 at 12.6 m, 15 at 16.2 m (not magenta): no lock visible at her | 124 at 12.6 m, 149 at 14.4 m, **107 at 16.2 m**; magenta at 10 / 10 points to 16.2 m; her body hides her chest from behind (as in round 1) |
+
+The drawn cone is 24.07 m (night) / 27.20 m (fog) in every case, as before.
+
+The lane's probes (`R5_IC_FILM=1`, three independent harness runs, P1-P3; all PASS in all three):
+
+| probe | shaft 10-90 % | scan | reach 79 / 90 % | fade 10-30 vs 60-80 % | length in light (110-140 %) |
+|---|---|---|---|---|---|
+| `A-film-beams-night-probe` (10 m) | 8/8 ×3 | 8/8 ×3 | 155 / 154, 157 / 154, 147 / 155 | 268.5 / 182.8, 277.9 / 184.7, 275.0 / 192.9 | 3/3 ×3 (mean 55.3, 51.1, 51.4) |
+| `A-film-beams-fog-probe` (10 m) | 8/8 ×3 | 8/8 ×3 | 276 / 257, 294 / 269, 281 / 278 | 364.0 / 313.7, 358.1 / 319.8, 372.5 / 299.0 | 3/3 ×3 (129.4, 113.5, 126.8) |
+| `A-film-beams-night-18m-probe` (new) | 8/8 ×3 | 8/8 ×3 | 180 / 160, 180 / 159, 184 / 148 | 262.7 / 195.0, 263.1 / 188.1, 268.6 / 186.9 | reported: 1/3 ×3 (the 140 % point, 25.3 m, is past the 24.07 m cone) |
+| `A-film-beams-night-22m-probe` (new) | 8/8 ×3 | 8/8 ×3 | 159 / 126, 159 / 118, 158 / 122 | 247.6 / 195.6, 245.4 / 192.6, 243.6 / 199.9 | reported: 0/3 ×3 (all three past the cone) |
+
+In every run: drawn length = sight x weather (24.07 / 27.20 m), lens . bearing to her 1 / 1, cone light 1, wary
+sweep 8/8 in the 10 m probes, the twins' second Tiller calm. The three sunlit staging twins still pass (P2: 211 / 112 /
+31 token px, first heading).
+
+**The films, re-filmed at the cited angles and read against their criteria** (the judge's frames 01, 02, 14, 15, 16
+re-shot with the judge's scripts, and the lane films F1):
+- **18 m night side** (`r2-01`, `V-lamp-beams-night-18m`): one narrow magenta shaft from the drum lamp to Brea and a
+  few metres past her, fading out; a thin hot line at the lens widening and dimming toward her; no wedge; nothing
+  leaves the back of a lamp. Round 1's frame ended 4 m short of her. PASS.
+- **22 m night side** (`r2-15`, `V-lamp-beams-night-22m`): the shaft reaches her figure and ends in a short fade 2 m
+  past her (where the bible cone ends). PASS.
+- **18 m chase camera** (`r2-02`, `V-lamp-beams-night-gameplay-18m`): a magenta line from the lamp to her head that
+  opens into a translucent fan over her shoulders (the last metres of the cone seen nearly end-on, as at 8 m in
+  round 1); the grass reads through it; the frame is not washed. Round 1: no lock visible. PASS, with the fan noted.
+- **10 m night / fog side, 8 m chase** (F1): unchanged in shape; the 10 m night shaft now visibly carries past her
+  before fading. PASS.
+
+**Gates on the final code** (port 5254, `nice -n 10`):
+LANE_RESULTS
+
+GLOBAL_RESULTS
+
+**Files changed this round** (against the round-1 checkpoint `e709e65`): `src/instruments/lamps.js`,
+`tools/gates.r5.instruments-core.mjs`, this report. No frozen file, no asset.
+
+---
+
 ## W0b TARGETED FIX ROUND 1 (Oct 30 2026) — the five open findings, with numbers
 
 The cut-off attempts' WIP (Oct 23 and Oct 29; orchestrator checkpoints) held the lens cone, the bible length, the
