@@ -1,9 +1,15 @@
 # ROUND 5 — lane `hero-body` report (W0b): Brea on the kept rig
 
 Lane: hero-body · port 5252 · wave W0b · Oct 18–19 2026, fix round 2 Oct 22, fix round 3 Oct 22 (evening),
-fix round 4 Oct 22–23 (night), **fix round 5 Oct 23**. Plan: `docs/ROUND5-PLAN.md` §2 (row), §1.2 (grants), §3.1 (W0b exit), §3.2
+fix round 4 Oct 22–23 (night), fix round 5 Oct 23, **W0b targeted fix round 1 Oct 30 (§T)**. Plan: `docs/ROUND5-PLAN.md` §2 (row), §1.2 (grants), §3.1 (W0b exit), §3.2
 (contracts), §4.1 (budgets), §6 (aloy.glb), §8 (rulings, incl. §8.3 R33 g, R35–R39, R46, R47), §9 (gate block).
 Canon: `docs/ROUND5-BIBLE.md` §2.2 (the trade wind), §3 (Brea), §3.8 (build order), §5.2 (bow poses), §5.9 (controls).
+
+**Status (Oct 30, targeted fix round 1, §T).** Final run `w5/F1` (port 5252, `nice -n 10`, one Chrome): the 62 lane rows,
+the global items and six repeats — **59 PASS · 1 FAIL (A31c, R36/R51 listed) · 13 NEEDS-JUDGE**; A16 passes every row
+under R52; A-tail-legible grades the restored draft bar (sheet instant + 23 gust moments, 72 / 72 in `F1`);
+A-melee-floor asserts the swings; A31g 20 / 20; no Aloy identifier in lane code; every visual row names its
+reference; the sheets re-committed. The fix-round-5 status below is kept for the record.
 
 **Status (Oct 23, fix round 5).** Lane run `f5lane2` (the 62 rows plus 10 repeats in one Chrome): **56 PASS ·
 3 FAIL · 13 NEEDS-JUDGE**. The FAILs: **A16's 0.75 row** (the bar conflict the V24-draw-down fix exposes — a ruling
@@ -21,6 +27,129 @@ clock, max 0.044 m); **A-lance-stow** — a pattern search with the lance slidin
 4 / 4 PASS, one on a loaded clock). Global list (`f5final`): A1, A20b, **A9 (fps 59.3, PASS)**, A90 ×4,
 A-no-override PASS; A21 FAIL on median GPU (77–96 ms against 20; listed under R33 b, R45's quiet run); A81 /
 A-ID-ip-assets-gone / A-licence-manifest / A-assets-tracked fail on other lanes' unmerged rows (R39, R47; §4.5).
+
+## T. W0b targeted fix round 1 (Oct 30) — what changed, by finding
+
+The wave's final judges never ran on fix round 5 (usage limit, Oct 23), and two targeted attempts were cut off (forced
+restarts Oct 29 23:19 and Oct 30 00:12; the Oct 30 04:40 run was stopped because it gated under `taskpolicy -b`).
+Their edits are in the orchestrator's checkpoints `c1e1510`…`8caf334`; each was read, kept only where it re-measured
+right, and finished. **Every number below was measured this round on port 5252 under `nice -n 10` (R53)** — runs
+`w5/r1` (targeted), `w5/L1` and **`w5/F1` (the final code: the 62 lane rows + the global items + six repeats, one
+Chrome)**, `w5/c1`, probes `w5/p1`–`p7` (scratch `r5/hero-body/w5/`). Nothing recorded under `taskpolicy -b`
+(the WIP's runs `t1`–`t11`, `L1`) is quoted. `F1`: **73 rows — 59 PASS, 1 FAIL (A31c, R36/R51 listed), 13
+NEEDS-JUDGE**; `L1` (before this round's cloth change) the same 59 / 1 / 13.
+
+### T.1 Finding 1 — R52 in A16; the judges' rows re-run; the films re-read
+
+*Gate* (`tools/gates.r5.hero-body.mjs`, A16 re-stage, `ELBOW_R52` ≈ l. 9240; the WIP's edit, kept): "elbow not above
+the shoulder" is `elbowAboveShoulderAimFrame ≤ 0` at **every** pitch — elbow − shoulder (character space) on world up
+made perpendicular to the arrow (`debugAim().d`), i.e. A-draw-elbow-level's `elbowUp` (R52). At camPitch 0 (level and
+both strafes) the character-height reading stays graded too, so the level aim is unchanged; at the pitched rows it is
+reported. A failing row now names its clause; every row reports `aimPitch` and both readings.
+*Animator* (`src/entities/playerAnimator.js` `_elbowForm` / `_efCost`, l. 4287 and 4333; WIP, kept): the elbow
+solve holds R52's reading itself — hard ≤ −0.002 m, target ≤ −0.006 m under the arrow-frame shoulder line at full
+draw — faded out through the loose (`r52 = 1 − lf`; R35's behind-the-head bars grade the follow-through). Fix round 5
+read +0.006 m at 0.75 without it.
+
+*Measured* (`F1`; `r1` the same within 1 mm): **A16 PASS, 6 / 6 rows** — R52 reading level −0.0069, 0.75 **−0.0075**,
+−0.4 −0.0172, −0.55 −0.0062, strafing −0.0085 / −0.0082 m; character height at camPitch 0 −0.006 / −0.0077 / −0.007
+m (graded), at 0.75 +0.083 m (reported: the bent T); nock-to-wrist 0.064–0.069 m (0.09), knuckle 0.052–0.055,
+fingertip 0.046–0.049 m (0.06), headClear 1.83–1.94 (0.98), launch 0.0° (0.3). **A-draw-elbow-level PASS** (8 rows):
+forearm 16.6 / 14.0 / 16.1 / 14.9° off the arrow at −0.55 / −0.4 / 0 / 0.75 (20), 13.4–17.4° strafing / jogging /
+sprinting; `elbowUp` −0.018…−0.006 m (band −0.03…+0.05; now ≤ 0 at every row); elbow 0.228–0.232 m behind the hand;
+bow arm 0.207–0.220 m clear of the chest (0.04); hand 0.062–0.084 m in front of the back of the skull; elbow
+0.124–0.149 m behind the head plane (0.20), through the loose ≤ 0.187 m; wrist at the level anchor — height ≤
+**0.026 m** (the 0.75 row; bar 0.03, fix round 5 0.021) and ≤ 0.006 m in the head's frame. A35 PASS (hand → Head
+joint 0.108–0.111 m, bow elbow 168°), A32-draw-ramp PASS, A-lmax-solve PASS, A17 PASS (loose 0.063 m rearward).
+
+*Films read* (`F1`, at the gates' own angles, against Kevin's bars): **V24** (side, level) — the fist with the ∴ at the
+jaw / cheek, beside the face and clear of the hair and knot tail, the fletching at the mouth corner, the forearm on the
+arrow line, the elbow level and back, the bow arm straight and well off the chest, the wrap tail on the far side of the
+head; **V24-draw-down** (her right, level lens; front-right 3/4) — bent at the hips onto the 43° fall, the fist on the
+jaw under the wrap, the forearm running back up the arrow line to the elbow (printed 14.9°, knuckle 0.052 /
+fingertip 0.048 m from the nock), the bow arm straight down to the grip clear of the chest; from her right the
+upper arm and elbow rise above and behind the crown in the frame, as the bent T puts them (elbow 0.126 m behind the
+head plane, R35's bar 0.20; the hand 0.08 m in front of the back of the skull) — the orchestrator's R52 reading;
+**V13** (frozen at the top of the trailing foot's swing) — aiming, no banner, both boots in profile pointing along the
+travel, no splay, no toe drag; **V1** (sprint, back) — arms swing fore-aft beside the body, never crossing, hands well
+under the shoulders, no prance; **V2** — hands relaxed at the thighs, feet planted; **V3** — low stalk, hands low,
+feet planted; **V4** (over the shoulder) — the bow up, the string hand at the jaw, the draw elbow back, the wrap tail
+out to her left clear of the hand; **V-brea-one-glance** — §T.2.
+
+### T.2 Finding 2 — A-tail-legible: the draft bar restored, the readings reported, the cloth fixed
+
+*Gate* (`A-tail-legible`, l. 8694; the WIP's rewrite, kept): **graded** — the sheet's own staging and lens, at the
+sheet's instant AND at 23 gust moments after it (every 0.35 s of sim for 8 s, the trade wind's slowest swell is
+7.6 s): in each of front / side R / back / side L, ≥ 4 tail-only px ≥ 3 px clear of everything else **and** a reach
+≥ 4 px — the draft bar fix round 5 had relaxed. **Reported with numbers, not graded**: still air (3.0–5.0 s), the
+idle head scan both ways, and the 3/4 view; per view min / median / max of each. `sheets.js` `poseIdle` (l. 177; WIP,
+kept) stages the neutral idle — a fidget in progress ends and none starts during the settle — so the committed sheet
+and the gate show the same deterministic pose (it was random before).
+
+*The cloth* (`DYN_CLASSES` 'wrap', l. 437). Fix round 5's strip cannot hold the restored bar (probe `p1`, 24
+trade-wind moments: 3 failing, the side views 0 px clear, reach 2; `p2` 2 of 24). The WIP's retune is kept after
+re-measuring it: bend limit 0.62 → 1.3 rad, air coupling 3.0 → 5.0 /s, gravity 0.42 → 0.30, and `airY` (the air
+resists the strip's vertical flap; the downward flutter phase folded it onto the bow). It left the strip taut at a
+sprint — V23's three frames showed one flat strip (tip 0.058 m per 80 ms, `p2`; fix round 5's 0.153). **New this
+round: `runFl` 1.5** (l. 5585–5587; chains carry `flX`, l. 5145): the flutter's amplitude and its phase rate grow
+with her speed (×1 at a walk, ×2.5 at a sprint), as a cloth strip in a faster flow flaps harder and faster; the extra
+phase is accumulated, so the wave never jumps; standing it adds nothing; other classes are bit-identical. Sprint tip
+travel per 80 ms: median 0.080–0.095 m, p90 0.14–0.18 m (`p2`–`p5`).
+
+*Measured* (`F1`: A-tail-legible and two repeats): **72 graded moments, 0 failing** — per view min (median) of
+clear3 / reach: front 6 (10) / 4 (5), side R 6 (12) / 4 (5), back 5 (11) / 4 (5), side L 5 (10) / 4 (5); 3/4 11 / 5.
+Still air (reported): clear3 1–8, reach 3–4 — below the bar in 15–16 of 20 view-moments (the free strip hangs against
+her back; the sheet is in the trade wind). Head scan (reported): in **12 of 12** scan moments one view pair loses the
+tail (0 px clear: front / back while she looks left, the sides while she looks right — the strip then points along
+that lens); the 3/4 keeps 1–19 px clear. **Across this round, on the final cloth: 1 failing moment in 680**
+(`c1`, +7.00 s: front 3 px clear / reach 3, back reach 3; `p2`–`p5` 560, `F1` 72 without one) — about 3.5 % per
+24-moment run. The front / back reach sits at 4–6 px because the tail's end crosses the stowed bow's upper limb; no
+cloth knob moved that distribution (200 moments each, `p5` / `p7`: gravity 0.2 / 0.36 / 0.42 / 0.5, `rootK` 12, air
+coupling 6, flutter ×0.7 — 4 px in 16–24 %, 5 in ~70 %, gravity 0.2 and 0.5 each one failure); the next lever is the
+tail's length or the bow's stow line (recipe; §6).
+
+*Films read* (`F1`): **V-brea-one-glance** — in black fill the tail is its own stroke in every view: out to the right
+of the head across the bow's limb (front), a horizontal stroke behind the head across the vertical bow (both sides),
+out to the left (back), long in the 3/4; with the topknot bump, the X of lance and bow with the bob, the crescent
+notch and the cane quiver — 5 of 5, no braid, no mane. **V23** — the wrap tail is a flag with a wave running down it:
+the end curling down, kinked up, then straight and lifted across the three frames; the knot tail, the sash end at the
+left thigh and the alidade on its cord in three different places. **Sheets re-committed** from `F1`'s
+V-brea-one-glance / V-brea-face films (§5; MANIFEST rows and SHA-256 updated).
+
+### T.3 Finding 3 — the r2 minors
+
+- **A-melee-floor** (l. 8582; WIP, kept): every rendered frame of each beat is sampled; light 1–3 must each reach
+  stance `swing` with a swing active and the combo count must reach i by the end of light i, and the heavy must fire a
+  new swing that is a heavy — failing by name otherwise. `F1` (×2): light 20 / 36 / 36 swing frames, swings 1 / 2 / 3;
+  heavy 71 heavy frames, 1 new swing; 0 errors; after: not aiming, no swing, holstered, 0 non-finite bones; walk 1.46,
+  jog 5.02, sprint 6.86 m/s, 7 / 10 / 20–21 plant changes. PASS 2 / 2.
+- **aloy → hero** (WIP, kept and checked): `playerAnimator.js` `rigName` fallback 'hero' (l. 528); `registry.js`
+  `heroRows` / the `hero` section (l. 390–443), the non-enumerable `aloy` alias deleted, `resolveRig` / `debug` /
+  `overlay` take 'hero' | 'player' only (l. 522); `boneMap.js` `UAL_TO_HERO` (+ `clipLibrary.js`, `index.js`);
+  `locomotion.js` label strings `hero-locomotion`, `rig: 'hero'` (its row now joins the hero section, A26 PASS).
+  Nothing outside these files imports the old names; carried A26 finds the section by shape. **Main's
+  `tools/lint/namecheck.mjs --code` on a copy of this tree: 0 Aloy pairs in any hero-body-owned file** (26 remain, all
+  in other lanes' files); the tree-wide FAIL (1452 vs ratchet 1435) is other lanes' unmerged rows and caps — this
+  round's diff adds no lexicon token.
+- **A31g** (l. 7844; WIP, kept): 20 of 20 reversals measured (an unmeasured one fails, named). `F1` ×2: 20 / 20,
+  worst first stance 0.0164 / 0.0119 m (0.08).
+- **References in the rows** (new, l. 9144 and V-traversal l. 8924): V1 (run-rear, run-side), V2 (idle-stand), V3
+  (crouch-stalk), V4 (draw-front, draw-side), V13 (draw-front), V14 (slope-stand), V23 (hair-trail-run), V-traversal
+  (slope-stand; the ledge-climb still is pending in gates-perf's fetcher) and V22 (chase-camera — 'chase-back' named
+  no stored row) name `reference/r5/gates-perf/<file>` in their own `reference` field. gates-perf's A-reference-set
+  row check, run over this lane's rows with its own MANIFEST parser on the merged overlay (gates-perf's
+  `reference/r5/gates-perf/` + this `reference/r5/hero/`): **14 / 14 resolve** (was 6 / 14).
+
+### T.4 Global items and the rest of the block (`F1`, final code)
+
+A1-boot-clean PASS; **A20b PASS** (0 errors, 362 frames); **A90-memory-stability PASS** (heap −14.5 %, geometries +7,
+textures −28; 28 kills); **A90b PASS** (0 offenders, 0 orphaned textures, heap −5.2 % after forced GC); A9 PASS (fps
+59.8, 282 draw calls; R45's quiet run grades it). Every lane row that passed in fix round 5 passes: A13 5 / 5 (worst
+0.0071 m), A-strafe-feet (≤ 7.6°, toe ≤ 0.431 rad), A-run-arms (wrists ≥ 0.23 m off the midline, pelvis 0.071 m),
+A-climb-1m (palms ≤ 0.022 m, on top 0.78 s), A-lance-stow ×2 (every state but the climb ≤ 38.8°, tails ≥ 0.085 m from
+the shaft), A-wrap-clear ×2 (≥ 0.055 m), A19 / A33-hair / A34 / A33-rig-finite, the camera rows A31b / d / e / f
+(A31f 0 / 48), A32-look-up / A32b, V22 (fill 0.67). A31c fails the clauses R51 lists (moving framing 0.377–0.408 against
+0.412; head seen running away 0.6 / 0.85, Aloy's runs 0–0.15); camera code unchanged.
 
 ## 0000. Fix round 5 (Oct 23, after judge r2) — what changed, by finding
 
@@ -985,7 +1114,7 @@ comparison: 46 PASS · 1 FAIL (A31c) · 13 NEEDS-JUDGE of 60.
 | A12-clip-driven | PASS | `Sprint_Loop` weight 1.0 at 6.71 m/s |
 | **A13-no-skate (R27)** | **PASS 5/5** | worst stance windows 0.0071 / 0.0039 / 0.0031 / 0.0067 / 0.0024 m (bar 0.06), 6.8 m/s |
 | A15-foot-flat | PASS | 1.91° idle, 1.90° aim |
-| **A16-draw-anchor** | **FAIL — the 0.75 row only (§0000.2, ruling request §7.0)** | 6 rows: nock-to-wrist 0.064–0.069 m (bar 0.09); knuckle 0.052–0.054, fingertip 0.044–0.050 m from the bow's nock; headClear 1.83–1.95; launch 0.0°; elbow over the shoulder joint (character height) −0.006 / −0.064 / −0.067 / −0.007 / −0.008 m at level / −0.4 / −0.55 / strafing — and **+0.093 m at 0.75** (aim frame: **+0.006**, reported as `elbowAboveShoulderAimFrame`) |
+| **A16-draw-anchor** | **PASS under R52 (targeted fix §T.1: `F1` 6 / 6, the R52 reading −0.017…−0.006 m; the row below is fix round 5's)** — fix round 5: FAIL, the 0.75 row only | 6 rows: nock-to-wrist 0.064–0.069 m (bar 0.09); knuckle 0.052–0.054, fingertip 0.044–0.050 m from the bow's nock; headClear 1.83–1.95; launch 0.0°; elbow over the shoulder joint (character height) −0.006 / −0.064 / −0.067 / −0.007 / −0.008 m at level / −0.4 / −0.55 / strafing — and **+0.093 m at 0.75** (aim frame: **+0.006**, reported as `elbowAboveShoulderAimFrame`) |
 | A17-draw-beats (R11) | PASS | hand-to-quiver 0.080 m, flourish 22 SIM frames (9 rendered), loose 0.054 m rearward |
 | A18-slope-conform / A18b@hero | PASS / PASS | ball clear ≤ 0.0001 m at 10/20/30°; moving p90 0.0023 m |
 | A19-secondary-motion | PASS | hair 48°, cloth 43°, gear 42° range at a sprint |
@@ -993,7 +1122,7 @@ comparison: 46 PASS · 1 FAIL (A31c) · 13 NEEDS-JUDGE of 60.
 | A28b-canon-speeds@hero | PASS | walk 1.47, crouch 1.37, jog 4.93, sprint 6.38 (sim) |
 | A31-aim-strafe-skate | PASS | 0.0118 m |
 | A31b-aim-strafe-skate-player-anim@hero | PASS | ≤ 0.012 m, legs never cross (min sep 0.19 m) |
-| A31g-direction-change-skate | PASS | worst first stance after 20 reversals 0.027 m (bar 0.08) |
+| A31g-direction-change-skate | PASS | worst first stance after 20 reversals 0.027 m (bar 0.08); targeted fix: 20 / 20 measured required, `F1` 0.0164 / 0.0119 m |
 | **A-strafe-feet (new, V13's twin)** | **PASS** | 94 / 96 lifted frames left / right: swing heading ≤ 7.0° / 7.2° off the planted foot's (bar 20), ≤ 7.3° off the travel (30), toe pitch ≤ 0.431 rad (0.45), toe ≥ 0.015 m; V13's frame 3.4° / 0.43 rad |
 | A32-draw-ramp | PASS | nock-to-hand ≤ 0.043 m through the ramp, ≤ 0.070 at full draw (1.05 down: 0.070), hand ≥ 1.51 of the skull |
 | A33-rig-finite | PASS | 0 non-finite bones (85), 4 chains |
@@ -1008,7 +1137,7 @@ comparison: 46 PASS · 1 FAIL (A31c) · 13 NEEDS-JUDGE of 60.
 | A-alidade-pose | PASS | tube 0.015 m from the right eye (idle / jog / crouch), elbow under and ahead, lowered in 0.20–0.21 s |
 | A-run-arms | PASS | wrists ≥ 0.229 m off the midline, ≥ 0.27 m under the shoulder, fore-aft 0.488 m/cycle, pelvis 0.072 m p-p, knee never above hip, 6.80 m/s |
 | **A-lance-stow** | **PASS 4/4** (`f5lane2`: plain ×3, a loaded 19 fps clock ×1) | crouch-walk ≤ 38.82°; every state but the climb ≤ 39.14° (R10 32–40); the climb 36.6–58.1° (A100 in motion 30–60); midpoint ≤ 0.281 m (0.30); tails ≥ 0.086 m from the shaft (0.06); blade ≤ 0.651 m over the shoulder (0.70) |
-| **A-tail-legible (new, cue 2's twin)** | **PASS 3/3** (`f5tail`) | at the sheet's instant ≥ 7 tail-only px ≥ 3 px clear in each of front / side R / back / side L (bar 4); 12 runs in all: ≥ 5. Gust and still-air rows reported (§0000.3) |
+| **A-tail-legible (new, cue 2's twin)** | **targeted fix §T.2: the draft bar restored (sheet instant + 23 gust moments, clear3 ≥ 4 and reach ≥ 4) — PASS 3 / 3 in `F1` (72 / 72 moments)**; fix round 5: PASS 3/3 (`f5tail`) under the relaxed bar | at the sheet's instant ≥ 7 tail-only px ≥ 3 px clear in each of front / side R / back / side L (bar 4); 12 runs in all: ≥ 5. Gust and still-air rows reported (§0000.3) |
 
 ### 4.2 Traversal, surface, identity, R47
 
@@ -1023,7 +1152,7 @@ comparison: 46 PASS · 1 FAIL (A31c) · 13 NEEDS-JUDGE of 60.
 | A-brea-contrast | PASS | salt 5.95:1; black sand ΔE2000 21.6, 23 % of pixels ≥ 3:1 |
 | A-hero-draws | PASS (R38) | her own 4 draws / 2 casters / 19,920 tris (body 9,864 · outfit 7,876 · kit 2,180); the twisted tail strip is the same 128 tris |
 | A-outfit-merge-dispose | PASS | ×6 equip/unequip + bracer swap: geometries 151→151, textures 116→116, skeletons 3→3 |
-| A-melee-floor (R47) | PASS | light ×3 / heavy / melee key / block: 0 errors; after: not aiming, no swing, holstered, 0 non-finite bones; then walk 1.46, jog 5.02, sprint 6.86 m/s, feet alternating (8 / 11 / 19 plant changes) |
+| A-melee-floor (R47) | PASS (targeted fix §T.3: now asserts light 1–3 reach `swing` and the heavy fires a new heavy swing; `F1` 2 / 2) | light ×3 / heavy / melee key / block: 0 errors; after: not aiming, no swing, holstered, 0 non-finite bones; then walk 1.46, jog 5.02, sprint 6.86 m/s, feet alternating (8 / 11 / 19 plant changes) |
 
 ### 4.3 Camera rows (hero-body grades them on Brea, R33 g / R36)
 
@@ -1097,7 +1226,9 @@ A21 PENDING.
 nearest and true size — and full colour, default loadout) and `reference/r5/hero/brea-face-sheet.png` (front /
 profile / 3/4 at 1.2 m beside the stock UBC front / profile, and the right-hand ∴ inset); the stock comparison
 renders `ubc-stock-front.png` / `ubc-stock-profile.png`; rows and SHA-256s in `reference/r5/hero/MANIFEST.md`.
-**Re-committed in fix round 5** from `f5lane2`'s V-brea-one-glance / V-brea-face films (the new wrap-tail root line,
+**Re-committed in the targeted fix (Oct 30)** from `w5/F1`'s V-brea-one-glance / V-brea-face films (the neutral idle,
+the retuned wrap cloth; SHA-256 `00756951…62b976` and `3e71a513…59472d`, MANIFEST rows updated). Fix round 5 had
+re-committed them from `f5lane2`'s V-brea-one-glance / V-brea-face films (the new wrap-tail root line,
 twist and wind coupling; SHA-256 `054dcafb…87af70` and `133aa579…e77934`, MANIFEST rows updated). Fix round 4 had
 re-committed them from run `f4sheets` (staged idle facing north in the NE trade wind; the neck cord and the sternum
 tube; the taller crescent). Made by
@@ -1108,6 +1239,15 @@ exactly these overlays; standalone:
       return { sil: await S.silhouetteSheetOverlay(__CTX__) }; })()"
 
 ## 6. Honest gaps and W0 bridges
+
+- **Targeted fix (Oct 30) — the wrap tail's residuals, measured, not graded away.** (a) On the final cloth 1 trade-wind
+  moment in 680 fell under A-tail-legible's bar (`c1`: front reach 3) — ≈ 3.5 % per 24-moment run; the front / back
+  reach is 4–6 px because the tail's end crosses the stowed bow's upper limb, and no cloth knob moved it (§T.2); the
+  levers left are the tail's length or the bow's stow line (`brea.mjs` / the stow kit: the armory stow-kit art pass at
+  W1). (b) During the idle head scan (±25–34° for 1.6 s every 6–12 s of idle) one cardinal view pair loses the tail
+  (12 / 12 scan moments, reported in the gate); the sheet shows the neutral idle. (c) In still air the free strip hangs
+  against her back (reach 3, reported). (d) A-draw-elbow-level's 0.75 row holds the wrist 0.026 m from the level
+  anchor's height (bar 0.03; fix round 5 0.021): 4 mm of room since R52's elbow hold.
 
 - **A31b's film passes 3/3 with margins of about a tenth** (§000.1): the silhouette's top at NDC +0.09 … +0.12
   (> 0) and the clavicles at −0.81 / −0.82 (±0.9). The clearance margin that keeps `cameraBoom` from cutting the
@@ -1201,6 +1341,17 @@ Fix round 4 changes in the file: §000.11. Fix round 5: §0000.6.
 
 ## 9. Files changed
 
+Targeted fix round 1 (Oct 30; vs the start of this session, checkpoint `8caf334`, plus the WIP edits of `c1e1510`…`8caf334`
+that this round verified and kept): `tools/gates.r5.hero-body.mjs` (the visual rows' `reference` block and V-traversal's
+reference — new; A16's R52 clause, A-melee-floor's swing asserts, A31g's 20 / 20, A-tail-legible's restored bar and
+reported readings — WIP, kept), `src/entities/playerAnimator.js` (`runFl` and the chains' `flX` — new; the wrap class
+retune, R52's elbow hold in `_elbowForm` / `_efCost`, `rigName` 'hero' — WIP, kept), `src/entities/anim/{registry,
+boneMap,clipLibrary,index,locomotion}.js` (aloy → hero, WIP, kept), `src/hero/sheets.js` (`poseIdle` neutral idle,
+WIP, kept), `reference/r5/hero/{brea-silhouette-sheet,brea-face-sheet}.png` + `MANIFEST.md` (re-committed, pointer
+table), `docs/ROUND5-HERO-BODY.md` (§T, status, §4.1, §5, §6, §7.0, §9, §10). `docs/ROUND5-PLAN.md` carries R52 / R53
+from the orchestrator (identical to main).
+
+
 Fix round 5 (vs the tree at the start of the round, the orchestrator's checkpoint `86d3250`; its later checkpoints
 committed parts as they went): `src/entities/playerAnimator.js` (`_footHdg`, the latch on the lateral axis,
 `_strafeSwingFeet` rewritten, `SWING_YAW_BAND`; the pitched aim's rigid turn — `tS` / `fp`, `_qT` / `_upT` / `_fwdT` /
@@ -1239,3 +1390,8 @@ tree. At the end: Vite stopped, 0 Chromes of this lane alive, `shots/` removed. 
 2 s poll (the slot README's protocol; other lanes' judges held both slots for long stretches); the "busy box" runs
 load only the gate's own page (a busy-wait on its render hook), never the machine; the judge and rebuild scratch
 (`judge-f5/`, `rb*/`) deleted at the end.
+
+Targeted fix round 1 (Oct 30): every Vite and gate run under `nice -n 10` (R53; never `taskpolicy -b`), each Chrome
+run inside a machine slot after the memory (free ≥ 40 %, pressure level 1), load (< 12) and disk checks
+(`w5/run5.sh`); one Chrome at a time; Vite and this lane's Chrome killed at the end of every run; 0 Chrome profiles
+left; probes and films under `scratchpad/r5/hero-body/w5/`, never in the tree.

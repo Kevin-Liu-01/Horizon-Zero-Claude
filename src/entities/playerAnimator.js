@@ -422,7 +422,8 @@ const CLIMB_CATCH = 0.08;
  * and the air coupling at 3.0 1/s the free strip could not swing far enough
  * off its hanging rest to follow the air, and at some gust phases it folded
  * down along the stowed bow's limb (the side lenses 0-3 px clear, reach 1-3:
- * 6-10 of 60 trade-wind moments under the bar, probes t2-t7, scratchpad
+ * 6-10 of 60 trade-wind moments under the bar, probes t2-t7 under taskpolicy -b;
+ * re-measured under nice, probe w5/p1: 3 of 24 and w5/p2: 2 of 24; scratchpad
  * r5/hero-body/bin/probe-tail.mjs). A cloth strip has next to no bending
  * stiffness and a light strip's drag dwarfs its weight in a 5.5 m/s wind:
  * `maxAng` 0.62 -> 1.3 rad (the wrapped root still holds its line through
@@ -430,10 +431,16 @@ const CLIMB_CATCH = 0.08;
  * 0.30, and `airY`: the air now resists the strip's VERTICAL flap as well (the
  * Round-4 classes drag only horizontally, for the knot tail's bounce, A33; the
  * downward flutter phase, unresisted, is what folded the strip onto the bow).
- * Trade-wind moments under the bar (probes t8-t11): 3.6 /s 7 of 60, 4.5 /s 10
+ * Trade-wind moments under the bar (probes t8-t11, run under taskpolicy -b,
+ * superseded by the re-measure below): 3.6 /s 7 of 60, 4.5 /s 10
  * of 120, 5.0 /s 1 of 240, 5.0 /s + airY 0 of 120 (every view >= 6 px clear,
  * reach >= 4). Softer strips (stiff 6-20 with the root stiffness confined to
- * the knot) flapped and folded down more, not less (probe t4). */
+ * the knot) flapped and folded down more, not less (probe t4).
+ * Re-measured under `nice -n 10` (targeted fix round 1, Oct 30): 1 of 680
+ * trade-wind moments under the bar (front reach 3, run w5/c1). That
+ * coupling held the strip taut at a sprint (V23: one flat strip in all three
+ * frames, tip 0.058 m per 80 ms), so `runFl` 1.5 scales the flutter with her
+ * speed (see `_springs`): 0.08-0.095 m per 80 ms at a sprint, idle unchanged. */
 DYN_CLASSES.push({ name: 'wrap', re: /(?!)/, stiff: 42, drag: 4.2, grav: 0.30, maxAng: 1.3, strike: 0.7, base: 0.30, collide: 2, wind: 5.0, rootK: 8, airY: true, runFl: 1.5 });
 /** Air coupling per Round-4 class (1/s; 0 = none). Hair a little, cloth some, gear none. */
 const DYN_WIND = { hair: 0.22, necklace: 0, dangle: 0.15, cloth: 0.55, gear: 0, shirt: 0 };
@@ -4283,7 +4290,8 @@ export class PlayerAnimator {
     // R52's elbow height (A16 at full draw) fades out through the loose: the
     // follow-through is graded by R35's behind-the-head bars, and holding the
     // elbow under the arrow-frame shoulder line there rolled it 1.3 cm further
-    // behind the head at the 0.75 down aim (0.203 m against 0.20, run t1)
+    // behind the head at the 0.75 down aim (0.203 m against 0.20, run t1 under
+    // taskpolicy -b; re-measured under nice, run w5/F1: the loose elbow <= 0.187 m)
     S.r52 = 1 - lf;
     // 5 deg over the whole circle, then 0.5 deg about the best of those
     const c0 = this._efCost(0);
