@@ -1903,7 +1903,10 @@ const FILM = (state, { fov = 4, both = false, dist = 15, night = false, sunlit =
   const frames = (n) => new Promise(res => { let k = 0; const f = () => (++k >= n ? res() : requestAnimationFrame(f)); requestAnimationFrame(f); });
   // SUNLIT (the judge's noon frames): of the clear headings, the one whose lens axis is closest to the sun's azimuth
   const sd = env.sunDir ? new V(env.sunDir.x, 0, env.sunDir.z).normalize() : new V(0, 0, 1);
-  const aim = (hd) => { m.heading = hd; m.root.rotation.y = hd; m.root.updateMatrixWorld(true);
+  /* (targeted fix) the body's yaw is SET, level: rotation.set(0, hd, 0). Writing rotation.y alone keeps the Euler x
+   * and z the conformed quaternion left, and an XYZ Euler of a yaw beyond +-90 deg carries x = z = pi, where
+   * rotation.y = h means a yaw of pi - h (measured: rotation.y + 0.5 turned the lens by -0.5) */
+  const aim = (hd) => { m.heading = hd; m.root.rotation.set(0, hd, 0); m.root.updateMatrixWorld(true);
     rec.anchor.updateWorldMatrix(true, false);
     lampPos.setFromMatrixPosition(rec.anchor.matrixWorld);
     axis.set(0, 0, 1).transformDirection(rec.anchor.matrixWorld); axis.y = 0; axis.normalize();
@@ -1938,8 +1941,10 @@ const FILM = (state, { fov = 4, both = false, dist = 15, night = false, sunlit =
   const lensYawErr = (mm, tx, tz) => { mm.lamp.anchor.updateWorldMatrix(true, false);
     const hp = new V().setFromMatrixPosition(mm.lamp.anchor.matrixWorld), ax = new V(0, 0, 1).transformDirection(mm.lamp.anchor.matrixWorld);
     let d = Math.atan2(tx - hp.x, tz - hp.z) - Math.atan2(ax.x, ax.z); while (d > Math.PI) d -= 2 * Math.PI; while (d < -Math.PI) d += 2 * Math.PI; return d; };
-  const faceLens = (mm, tx, tz, iters) => { for (let it = 0; it < iters; it++) { const d = lensYawErr(mm, tx, tz); if (Math.abs(d) < 0.003) break;
-    mm.heading = mm.heading + d; mm.root.rotation.y = mm.heading; mm.root.updateMatrixWorld(true); } };
+  // a yaw correction is a rotation about WORLD up, whatever Euler the root carries
+  const UPV = new V(0, 1, 0), qd = m.root.quaternion.clone();
+  const yawBy = (mm, d) => { mm.root.quaternion.premultiply(qd.setFromAxisAngle(UPV, d)); mm.root.updateMatrixWorld(true); mm.heading = mm.heading + d; };
+  const faceLens = (mm, tx, tz, iters) => { for (let it = 0; it < iters; it++) { const d = lensYawErr(mm, tx, tz); if (Math.abs(d) < 0.003) break; yawBy(mm, d); } };
   if (st === 'beams') {
     m.forceState('search'); m.lastKnown.copy(lampPos).addScaledVector(axis, 9).addScaledVector(side, 4);
     /* FIX ROUND 3: the hostile Tiller stands 6 m to the side of the wary one, facing the same way, with Brea straight
@@ -1953,7 +1958,7 @@ const FILM = (state, { fov = 4, both = false, dist = 15, night = false, sunlit =
       m2.position.set(hx, T.getHeight(hx, hz), hz);
       m2.forceState('attack');
       m2.lastKnown.copy(p.position);
-      m2.heading = m.heading; m2.root.rotation.y = m.heading; m2.root.updateMatrixWorld(true);
+      m2.heading = m.heading; m2.root.rotation.set(0, m.heading, 0); m2.root.updateMatrixWorld(true);
       if (m2.lamp) faceLens(m2, p.position.x, p.position.z, 6);
     }
   } else m.lastKnown.copy(lampPos).addScaledVector(axis, 6);
@@ -1961,7 +1966,7 @@ const FILM = (state, { fov = 4, both = false, dist = 15, night = false, sunlit =
   if (st === 'beams' && m2 && m2.lamp) {
     const H = window.__IC_FILM_HOLD__ = { n: 0, maxErr: 0, fn: null };
     H.fn = () => { if (m2._disposed || !m2.lamp) return; const d = lensYawErr(m2, p.position.x, p.position.z); H.n++; if (Math.abs(d) > H.maxErr) H.maxErr = Math.abs(d);
-      if (Math.abs(d) > 0.003) { m2.heading = m2.heading + d; m2.root.rotation.y = m2.heading; m2.root.updateMatrixWorld(true); } };
+      if (Math.abs(d) > 0.003) yawBy(m2, d); };
     E.onAfterRender.push(H.fn);
   }
   // the lens: camera.zoom (player.js and combat.js damp camera.fov every frame; nothing writes zoom)
@@ -1971,6 +1976,7 @@ const FILM = (state, { fov = 4, both = false, dist = 15, night = false, sunlit =
       if (GAMEPLAY) {
         // her chase camera (player.js), turned to look past her at the hostile Tiller (the gates' lookAt convention)
         const hm = m2 || m; p.camYaw = Math.atan2(hm.position.x - p.position.x, hm.position.z - p.position.z) + Math.PI;
+        p.heading = p.camYaw + Math.PI;   // she faces the Tiller (standing, player.js keeps it)
         return;
       }
       // a raised side view (6.5 m over the ground, looking down), so the shafts cross ground and bodies rather than the
@@ -2145,7 +2151,7 @@ const FILM_BEAM_PROBE = (night) => `(async () => {
     for (let k = 0; k < K; k++) {
       let v = null;
       M.lamps.hideBeams = false;
-      const on = await PIX.grab((W) => { v = qf().project(cam); return (v.x * 0.5 + 0.5) * W; }, (H) => (v.y * 0.5 + 0.5) * H, 7);
+      const on = await PIX.grab((W) => { v = qf().clone().project(cam); return (v.x * 0.5 + 0.5) * W; }, (H) => (v.y * 0.5 + 0.5) * H, 7);
       if (!v || Math.abs(v.x) > 0.97 || Math.abs(v.y) > 0.97 || v.z > 1) continue;
       const vx = v.x, vy = v.y;
       M.lamps.hideBeams = true;
@@ -2249,7 +2255,7 @@ const LENS_CONE_STAGE = `(async () => {
   for (const r of __M.lamps.records.slice()) if (r.machine !== m) __M.lamps.detach(r.machine);
   p._updateCamera = () => {};
   park(m, 0.4);
-  m.root.rotation.y = m.heading = 0.4; m.root.updateMatrixWorld(true);
+  m.heading = 0.4; m.root.rotation.set(0, 0.4, 0); m.root.updateMatrixWorld(true);   // a level yaw (see FILM aim())
   m.lamp.anchor.updateWorldMatrix(true, false);
   const lampPos = new V().setFromMatrixPosition(m.lamp.anchor.matrixWorld);
   const axis = new V(0, 0, 1).transformDirection(m.lamp.anchor.matrixWorld); axis.y = 0; axis.normalize();
@@ -2260,16 +2266,19 @@ const LENS_CONE_STAGE = `(async () => {
   m.forceState('attack');
   m.lastKnown.copy(p.position);
   // NO yaw correction: the heading forceState left is put back to the staged one and the body frozen
-  m.heading = 0.4; m.root.rotation.y = 0.4; m.root.updateMatrixWorld(true);
+  m.heading = 0.4; m.root.rotation.set(0, 0.4, 0); m.root.updateMatrixWorld(true);
   holdStill(m);
-  // a raised view across the Tiller from the side opposite her bearing's lateral offset: the lamp, the hull behind it
-  // and the line from the lamp to her are all in frame
-  const mid = lampPos.clone().addScaledVector(dir, 3);
-  const n = new V(dir.z, 0, -dir.x);
-  cam.zoom = 1; cam.updateProjectionMatrix();
-  cam.position.copy(mid).addScaledVector(n, 16); cam.position.y = Math.max(cam.position.y, T.getHeight(cam.position.x, cam.position.z) + 7);
-  cam.lookAt(mid.clone().add(new V(0, -1, 0)));
-  cam.updateMatrixWorld();
+  // a raised side view of the line from the lamp to her: the lamp, the hull behind it and the line are all in frame
+  // (re-placed by the assert for its positive control, when the body has turned)
+  window.__IC_CONE_CAM__ = (from, to) => {
+    const d = to.clone().sub(from); d.y = 0; d.normalize();
+    const mid = from.clone().addScaledVector(d, 3), n = new V(d.z, 0, -d.x);
+    cam.zoom = 1; cam.updateProjectionMatrix();
+    cam.position.copy(mid).addScaledVector(n, 16); cam.position.y = Math.max(cam.position.y, T.getHeight(cam.position.x, cam.position.z) + 7);
+    cam.lookAt(mid.clone().add(new V(0, -1, 0)));
+    cam.updateMatrixWorld();
+  };
+  window.__IC_CONE_CAM__(lampPos, p.position);
   window.__IC_CONE__ = { lensToHerDeg: 150, heading: 0.4 };
 })()`;
 const LENS_CONE_ASSERT = `(async () => {
@@ -2335,13 +2344,14 @@ const LENS_CONE_ASSERT = `(async () => {
       const want = Math.atan2(p.position.x - hp.x, p.position.z - hp.z) - deg * Math.PI / 180, have = Math.atan2(ax.x, ax.z);
       let d = want - have; while (d > Math.PI) d -= 2 * Math.PI; while (d < -Math.PI) d += 2 * Math.PI;
       if (Math.abs(d) < 0.003) break;
-      m.heading = m.heading + d; m.root.rotation.y = m.heading; m.root.updateMatrixWorld(true);
+      m.root.quaternion.premultiply(qd.setFromAxisAngle(UPV, d)); m.root.updateMatrixWorld(true); m.heading = m.heading + d;   // about WORLD up
     }
   };
+  const UPV = new V(0, 1, 0), qd = m.root.quaternion.clone();
   yawLens(62); await frames(40);
   const midBearing = bearingDeg(), midWatch = await watch(20);
-  // POSITIVE: the lens faces her
-  yawLens(0); await frames(40);
+  // POSITIVE: the lens faces her (the side view re-placed on the new lamp-to-her line: the body turned ~150 deg)
+  yawLens(0); rec.anchor.updateWorldMatrix(true, false); if (window.__IC_CONE_CAM__) window.__IC_CONE_CAM__(lampOf(), p.position); await frames(40);
   const posBearing = bearingDeg(), posWatch = await watch(20);
   const posPix = await lineReads();
   const posMagenta = posPix.line.filter(magenta).length;
