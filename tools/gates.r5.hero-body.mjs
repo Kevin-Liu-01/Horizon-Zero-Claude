@@ -9023,7 +9023,7 @@ const NEW_VISUALS = [
       const S = await import('/src/hero/sheets.js');
       const WP = (b) => b.getWorldPosition(new T3());
       const CH = (v) => p.model.worldToLocal(v.clone());
-      const W = 392, H = 400;
+      const W = 392, H = 388;
       const view = (kind) => {
         if (kind === 'GAME') {
           const cp = C.camera.getWorldPosition(new T3()), cd = C.camera.getWorldDirection(new T3());
@@ -9047,25 +9047,39 @@ const NEW_VISUALS = [
         release(); p.setCrouch?.(false); standAt(p, 'openGround'); p.velocity?.set?.(0, 0, 0); await simWait(0.4, 4000);
         if (sc.crouch) { p.setCrouch(true); await simWait(0.5, 4000); }
         p.camPitch = sc.pitch; C.input.mouse.buttons |= 4;
-        const t0 = E.simTime; let tL = null, drew = false, ePrev = null, eJump = 0, eMax = 0;
+        const t0 = E.simTime; let tL = null, drew = false, ePrev = null, wPrev = null, eJump = 0, eMax = 0, wMax = 0;
+        // the elbow's and the wrist's travel on every SIM step (character space), as A-draw-elbow-level measures it
+        // (a rendered frame can carry up to three sim steps)
+        const updV = an.update;
+        an.update = function (dt, tt) {
+          const r = updV.call(this, dt, tt);
+          if (dt > 0) {
+            const Q = this.debugArm('r');
+            const e = new T3(Q.elbow.x, Q.elbow.y, Q.elbow.z), w = new T3(Q.hand.x, Q.hand.y, Q.hand.z);
+            if (ePrev) { eJump = e.distanceTo(ePrev); eMax = Math.max(eMax, eJump); wMax = Math.max(wMax, w.distanceTo(wPrev)); }
+            ePrev = e; wPrev = w;
+          }
+          return r;
+        };
+        try {
         while (E.simTime - t0 < sc.T) {
           const t = E.simTime - t0;
           if (sc.draw && !drew && t > 0.6) { C.input.mouse.buttons |= 1; drew = true; }
           if (drew && tL === null && t > 2.6) { C.input.mouse.buttons &= ~1; tL = E.simTime; }
           p.camPitch = sc.pitch;
           await frame();
-          const e = CH(WP(an.b.loArmR.bone)); eJump = ePrev ? e.distanceTo(ePrev) : 0; ePrev = e; eMax = Math.max(eMax, eJump);
           for (const m of sc.moments) {
             if (m.imgs) continue;
             const ref = m.ref === 'loose' ? tL : t0;
             if (ref === null || E.simTime - ref < m.at) continue;
             E.requestTimeScale('studio', 0);
-            m.dt = E.simTime - ref; m.jump = eJump; m.eMax = eMax; m.st = handStats(); m.crouching = !!p.crouching; m.drawS = C.combat.drawStrength;
+            m.dt = E.simTime - ref; m.jump = eJump; m.eMax = eMax; m.wMax = wMax; m.st = handStats(); m.crouching = !!p.crouching; m.drawS = C.combat.drawStrength;
             m.imgs = m.views.map((k) => view(k));
             await frame();                                  // the render's wall time is spent frozen
             E.requestTimeScale('studio', null);
           }
         }
+        } finally { an.update = updV; }
         release(); p.setCrouch?.(false);
       };
       const A = { pitch: 0.75, draw: true, T: 3.15, moments: [
@@ -9088,13 +9102,13 @@ const NEW_VISUALS = [
       g.font = '600 14px ui-monospace, Menlo, monospace'; g.fillStyle = '#2a2420';
       g.fillText('THE LOOSE, THE RE-NOCK, THE CROUCHED RAISE (W0b targeted fix 3) - each panel frozen at its moment; behind = m behind the back of the skull (< 0 in front), fist unit y > 1 = over the skull', 10, 18);
       panels.slice(0, 8).forEach((P, k) => {
-        const col = k % 4, row = (k / 4) | 0, x = 8 + col * 398, y = 28 + row * 436;
+        const col = k % 4, row = (k / 4) | 0, x = 8 + col * 398, y = 26 + row * 436;
         const t = document.createElement('canvas'); t.width = W; t.height = H; t.getContext('2d').putImageData(P.img, 0, 0); g.drawImage(t, x, y);
-        txt(P.m.tag + ' (' + P.lens + ')' + (P.m.crouching ? ' crouching' : ''), x, y + H + 14);
-        txt('elbow step ' + P.m.jump.toFixed(3) + ' m (max so far ' + P.m.eMax.toFixed(3) + ')  drawS ' + P.m.drawS.toFixed(2), x, y + H + 27);
-        txt('behind: wrist ' + P.m.st.wrist + ' tip ' + P.m.st.fingertip + ' elbow ' + P.m.st.elbow + ' | fist y ' + P.m.st.fistUnitY, x, y + H + 40);
+        txt(P.m.tag + ' (' + P.lens + ')' + (P.m.crouching ? ' crouching' : '') + '  drawS ' + P.m.drawS.toFixed(2), x, y + H + 13);
+        txt('per sim step: elbow ' + P.m.jump.toFixed(3) + ' m; max so far elbow ' + P.m.eMax.toFixed(3) + ' wrist ' + P.m.wMax.toFixed(3), x, y + H + 26);
+        txt('behind skull: wrist ' + P.m.st.wrist + ' tip ' + P.m.st.fingertip + ' elbow ' + P.m.st.elbow + ' | fist y ' + P.m.st.fistUnitY, x, y + H + 39);
       });
-      return { panels: panels.map((P) => ({ tag: P.m.tag, lens: P.lens, dt: +P.m.dt.toFixed(3), elbowStep: +P.m.jump.toFixed(4), elbowStepMax: +P.m.eMax.toFixed(4), crouching: P.m.crouching, ...P.m.st })) };
+      return { panels: panels.map((P) => ({ tag: P.m.tag, lens: P.lens, dt: +P.m.dt.toFixed(3), elbowStep: +P.m.jump.toFixed(4), elbowStepMax: +P.m.eMax.toFixed(4), wristStepMax: +P.m.wMax.toFixed(4), crouching: P.m.crouching, ...P.m.st })) };
     })()`),
     criteria: 'Eight panels (judge against the licence-clean draw-side reference and Kevin\'s bar "never an arm behind the head"). PASS requires ALL of: (1) 0.75 loose +0.10 s, from her RIGHT and in the game camera: the draw hand is at or below her jaw beside the face, or moving down her right side — NOT raised over the shoulder, NOT at the nape or the side / back of the head, NOT above the head; the forearm does not cross her face or throat; the elbow is back or out beside her, not swung up behind the head; (2) the re-nock panels in the game camera (0.75 at +0.25 / +0.45 s, 0 at +0.10 / +0.30 s): the hand travels down her right side to the hip quiver or back up in front of her to the string; no hand at the side or back of the head, no forearm across the face; (3) the crouched raise panels (0.75 and 0, game camera): the draw hand is in front of and below the head — at the hip quiver, on its way, or at the string in front — never over the top or the back of the head; the bow is held in front. The printed numbers must agree (behind < 0 for the wrist and the fingertip, fist y <= 1). FAIL if any panel shows a hand at the side, back or top of the head, an arm behind the head, or a forearm across the face.',
   },

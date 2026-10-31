@@ -192,6 +192,15 @@ const _afT = new THREE.Vector3();   // ...the fingertip off the wrist
 const _afJ = new THREE.Vector3();   // ...a candidate elbow, wrist, fingertip
 const _afK = new THREE.Vector3();
 const _afL = new THREE.Vector3();
+/** W0b targeted fix 3: slerp of two unit directions a -> c at `al` into `out` (no allocation). */
+function afSlerpDir(a, c, al, out) {
+  const om = Math.acos(clamp(a.dot(c), -1, 1));
+  if (om < 1e-4) return out.copy(c);
+  const so = Math.sin(om);
+  return out.copy(a).multiplyScalar(Math.sin((1 - al) * om) / so).addScaledVector(c, Math.sin(al * om) / so);
+}
+/** W0b targeted fix 3: an angle wrapped to [-pi, pi]. */
+const afWrap = (a) => (a > Math.PI ? a - 2 * Math.PI : (a < -Math.PI ? a + 2 * Math.PI : a));
 
 
 // (ball- and ankle-bone rest heights are MEASURED off the bind pose in the
@@ -4447,49 +4456,22 @@ export class PlayerAnimator {
     const L1 = _afU.length(), L2 = _afV.length(), l1 = _afA.length(), l2 = _afC.length();
     if (L1 < 1e-3 || L2 < 1e-3 || l1 < 1e-3 || l2 < 1e-3) return;
     _afU.divideScalar(L1); _afV.divideScalar(L2); _afA.divideScalar(l1); _afC.divideScalar(l2);
-    const dirAt = (a, c, al, out) => {            // slerp of two unit directions (then a -> now c)
-      const cw = clamp(a.dot(c), -1, 1), om = Math.acos(cw);
-      if (om < 1e-4) return out.copy(c);
-      const so = Math.sin(om);
-      return out.copy(a).multiplyScalar(Math.sin((1 - al) * om) / so).addScaledVector(c, Math.sin(al * om) / so);
-    };
     // the roots and the fingertip's offset off the wrist, for the root guard
     const R = this._hcRoots, Hc = this._handCol, give = AF.rootGive ?? 0.012;
     const nR = R && Hc?.c ? R.length : 0;
     if (nR) { for (let k = 0; k < nR; k++) this._charOf(R[k].bone, this._afRootP[k]); this._charOf(Hc.c, _afT).sub(_afW); }
-    const ok = (al) => {
-      dirAt(_afA, _afU, al, _afP); dirAt(_afC, _afV, al, _afG);
-      // positions relative to the shoulder: elbow L1*u, wrist L1*u + L2*f
-      const eE = _afH.copy(_afP).multiplyScalar(L1).addScaledVector(_afA, -l1).length();
-      const eW = _afH.copy(_afP).multiplyScalar(L1).addScaledVector(_afG, L2)
-        .addScaledVector(_afA, -l1).addScaledVector(_afC, -l2).length();
-      return eE <= lim && eW <= lim;
-    };
-    const rootsOk = (al) => {
-      if (!nR || al >= 1) return true;
-      dirAt(_afA, _afU, al, _afP); dirAt(_afC, _afV, al, _afG);
-      _afJ.copy(_afS).addScaledVector(_afP, L1);                 // elbow
-      _afK.copy(_afJ).addScaledVector(_afG, L2);                 // wrist
-      _afL.copy(_afK).add(_afT);                                 // fingertip (the hand carried as it is)
-      for (let k = 0; k < nR; k++) {
-        const P = this._afRootP[k];
-        const d = Math.min(this._segDist(P, _afJ, _afK), this._segDist(P, _afK, _afL));
-        if (d < R[k].keep - give) return false;
-      }
-      return true;
-    };
     let lo = 0, hi = 1;
-    if (!ok(0)) return;                            // the arm's length changed under it: leave the solve alone
-    for (let i = 0; i < 10; i++) { const m = (lo + hi) * 0.5; if (ok(m)) lo = m; else hi = m; }
+    if (!this._armRateOk(0, L1, L2, l1, l2, lim)) return;   // the arm's length changed under it: leave the solve alone
+    for (let i = 0; i < 10; i++) { const m = (lo + hi) * 0.5; if (this._armRateOk(m, L1, L2, l1, l2, lim)) lo = m; else hi = m; }
     // ...and no nearer a root than the guard allows (back toward the solve's pose until it holds)
-    if (!rootsOk(lo)) {
+    if (nR && !this._armRateRoots(lo, L1, L2, nR, give)) {
       let a = lo, b2 = 1;
-      for (let i = 0; i < 10; i++) { const m = (a + b2) * 0.5; if (rootsOk(m)) b2 = m; else a = m; }
+      for (let i = 0; i < 10; i++) { const m = (a + b2) * 0.5; if (this._armRateRoots(m, L1, L2, nR, give)) b2 = m; else a = m; }
       lo = b2;
       if (lo >= 1 - 1e-4) return;
     }
     // apply: upper arm onto u(lo), then the forearm (carried) onto f(lo)
-    dirAt(_afA, _afU, lo, _afP); dirAt(_afC, _afV, lo, _afG);
+    afSlerpDir(_afA, _afU, lo, _afP); afSlerpDir(_afC, _afV, lo, _afG);
     _afQ.setFromUnitVectors(_afU, _afP);
     this._rotQL(b.upArmR, _afQ);
     _afH.copy(_afV).applyQuaternion(_afQ);
@@ -4502,6 +4484,31 @@ export class PlayerAnimator {
       return;
     }
     D.afArmRate = Math.round(lo * 1e4) / 1e4;
+  }
+
+  /** `_armRate`: the arm at fraction `al` back toward last step's moves <= lim relative to the shoulder (module scratch). */
+  _armRateOk(al, L1, L2, l1, l2, lim) {
+    afSlerpDir(_afA, _afU, al, _afP); afSlerpDir(_afC, _afV, al, _afG);
+    // positions relative to the shoulder: elbow L1*u, wrist L1*u + L2*f
+    const eE = _afH.copy(_afP).multiplyScalar(L1).addScaledVector(_afA, -l1).length();
+    const eW = _afH.copy(_afP).multiplyScalar(L1).addScaledVector(_afG, L2)
+      .addScaledVector(_afA, -l1).addScaledVector(_afC, -l2).length();
+    return eE <= lim && eW <= lim;
+  }
+
+  /** `_armRate`: the arm at fraction `al` keeps every chain root no more than `give` inside its keep (module scratch). */
+  _armRateRoots(al, L1, L2, nR, give) {
+    if (al >= 1) return true;
+    afSlerpDir(_afA, _afU, al, _afP); afSlerpDir(_afC, _afV, al, _afG);
+    _afJ.copy(_afS).addScaledVector(_afP, L1);                 // elbow
+    _afK.copy(_afJ).addScaledVector(_afG, L2);                 // wrist
+    _afL.copy(_afK).add(_afT);                                 // fingertip (the hand carried as it is)
+    for (let k = 0; k < nR; k++) {
+      const P = this._afRootP[k];
+      const d = Math.min(this._segDist(P, _afJ, _afK), this._segDist(P, _afK, _afL));
+      if (d < this._hcRoots[k].keep - give) return false;
+    }
+    return true;
   }
 
   /** W0b targeted fix 3: hold a char-space wrist target `looseClear` in front of the back of the skull (`_headFrame` current); returns the push (m). */
@@ -4576,7 +4583,7 @@ export class PlayerAnimator {
     const h = _afP.dot(_afA), px = _afP.dot(_afU), py = _afP.dot(_afV);
     const rho = Math.hypot(px, py);
     const tc = rho > 1e-4 ? Math.atan2(py, px) : 0;
-    const wrapA = (a) => (a > Math.PI ? a - 2 * Math.PI : (a < -Math.PI ? a + 2 * Math.PI : a));
+    const wrapA = afWrap;
     let half = Math.PI;                            // the feasible arc's half-width about tc
     if (rho > 1e-4) {
       const k = (h * h + rho * rho + r * r - step * step) / (2 * r * rho);
