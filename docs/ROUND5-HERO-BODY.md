@@ -5,6 +5,15 @@ fix round 4 Oct 22–23 (night), fix round 5 Oct 23, **W0b targeted fix round 1 
 (contracts), §4.1 (budgets), §6 (aloy.glb), §8 (rulings, incl. §8.3 R33 g, R35–R39, R46, R47), §9 (gate block).
 Canon: `docs/ROUND5-BIBLE.md` §2.2 (the trade wind), §3 (Brea), §3.8 (build order), §5.2 (bow poses), §5.9 (controls).
 
+**Status (Oct 31, targeted fix round 3, §T3).** The draw arm is continuous and the loose goes straight to the quiver:
+**A-draw-elbow-level 10 / 10 PASS, the 0.75 loose elbow 0.158–0.176 m behind the head plane** (R35 0.20; round 2
+0.185–0.203); the elbow and wrist move ≤ 0.056 m per sim step at the four pitches through the raise, draw, loose and
+re-nock (new graded clause; round 2 snapped 0.36–0.47 m); crouched rows added to A-draw-elbow-level (the raise and
+R35) and A-wrap-clear (7 / 7, ≥ 0.0550 m); new film `V-loose-renock`. Lane run `w7/L1`: **60 PASS · 1 FAIL (A31c,
+listed) · 14 NEEDS-JUDGE**, verdicts row for row round 2's; A1 / A20b / A90 / A90b PASS (again on the final code,
+`i1`). Gaps (§6): crouched at 0.75 the full draw is off the string (pre-existing, reported); the crouch-aim body
+sink.
+
 **Status (Oct 30, targeted fix round 2, §T2).** A-wrap-clear's 0.75 loose: the draw arm now keeps off the alidade
 cord's knot, so the cord can always be pushed clear. **16 / 16 A-wrap-clear runs PASS in 6 independent harness runs,
 every row ≥ 0.0550 m** (0.75 loose minimum 0.0550–0.0555). Lane run `w6/L1` (the 62 rows, the global items, A-wrap-clear
@@ -67,37 +76,38 @@ Chrome at a time inside a machine slot after the memory / pressure / load / disk
   up, the fist over the top and back of the head and through the topknot / wrap-knot roots, as the judge filmed.
 
 *Fix* — `src/entities/playerAnimator.js`, profile `tune.armFlow` (`src/entities/anim/rigs/ubc.js` l. 245):
-- **The draw arm is solved in full from the first aimed step** (`afFull`, l. 4006): its wrist target starts where the
-  clip left the wrist and moves at most **`wristV` 2.7 m/s** (0.045 m per 1/60 s step; l. 4180; both head guards run
-  again on a limited step, `_wristClear` l. 4508). The aim weight's 13/s blend toward the IK had moved the wrist
+- **The draw arm is solved in full from the first aimed step** (`afFull`, l. 4015): its wrist target starts where the
+  clip left the wrist and moves at most **`wristV` 2.7 m/s** (0.045 m per 1/60 s step; l. 4189; both head guards run
+  again on a limited step, `_wristClear` l. 4515). The aim weight's 13/s blend toward the IK had moved the wrist
   0.13–0.19 m in a step at the raise. Lowering the bow still blends out by the aim weight.
-- **`_elbowFlow`** (l. 4540, called l. 4277): the elbow is turned on its circle to the point nearest the solve's that
+- **`_elbowFlow`** (l. 4547, called l. 4286): the elbow is turned on its circle to the point nearest the solve's that
   lies within **`elbowStep` 0.05 m** of last step's elbow (closed-form arc), held no more than **`elbowBack` 0.16 m**
   behind the back of the skull (R35's bar is 0.20 — this is the clamp the judge asked for, the hand's 0.012 guard's
   twin), never into the skull. The solve's own pick wins whenever it is allowed: a still pose is never touched.
-- **`_armRate`** (l. 4435, called l. 4406 after the M10 root keep-out): the whole arm moves at most **`armStep`
+- **`_armRate`** (l. 4444, called l. 4415 after the M10 root keep-out): the whole arm moves at most **`armStep`
   0.05 m** per step relative to the draw shoulder (bisection back toward last step's arm), never into the skull and
   never more than 0.012 m inside a chain root's keep (the cord can still be pushed ≥ 0.05 m clear up to 0.0198 m
   inside). It catches the arm's own geometry (a 0.045 m wrist step along the forearm carried the elbow 0.10 m in a
   rapid re-fire) and the root keep-out's own turn (0.02–0.04 m on the step it began, the −0.55 raise ending at the
   cord's knot).
-- **The form scan looks ±0.6 rad either side of the solve** (`formWin`, l. 4854; at full draw its pick is within
+- **The form scan looks ±0.6 rad either side of the solve** (`formWin`, l. 4861; at full draw its pick is within
   0.06 rad standing, 0.19 crouched, so the full-draw form is unchanged), **never inboard of the draw shoulder joint**
-  (`outside`, a hard term in `_efCost` l. 4903), and `_rollElbow` takes the roll that leaves the elbow further to her
-  right (l. 4770): the elbow lifts on the OUTSIDE of the arm through the draw.
+  (`outside`, a hard term in `_efCost` l. 4910), and `_rollElbow` takes the roll that leaves the elbow further to her
+  right (l. 4777): the elbow lifts on the OUTSIDE of the arm through the draw.
 - **The loose goes straight to the quiver** (`renock`): from the release until the reach holds the quiver the target's
-  base is the hand's own last target (`_rnHold`, l. 4027 — the kick still reaches its full length at its peak), the
-  reach is gated on the raw draw (the string is slack the instant the arrow leaves; l. 4104) and lets in only as the
+  base is the hand's own last target (`_rnHold`, l. 4036 — the kick still reaches its full length at its peak), the
+  reach is gated on the raw draw (the string is slack the instant the arrow leaves; l. 4113) and lets in only as the
   kick lets go (× (1 − lk)); at the quiver the elbow points out and down (`quiverPole` −0.9, −0.3, 0.15); the nock beat
   is 0.5 s (`quiverT`; down over the first 0.34, back from 0.5) and its bow — out to her right 0.09, down the trunk
-  0.08, out in front of the chest 0.06 — follows the HAND's progress, not the beat's (`bowHand`, l. 4136), so the
+  0.08, out in front of the chest 0.06 — follows the HAND's progress, not the beat's (`bowHand`, l. 4145), so the
   limited hand does not cut across the cord's knot. The kick rises over 0.45 of the follow-through (`kickIn`,
-  smoothstep, l. 3908) and the chest blade holds through it before opening with the draw (`holdBlade`, l. 3489; it
+  smoothstep, l. 3917) and the chest blade holds through it before opening with the draw (`holdBlade`, l. 3498; it
   unwound from the release and carried the skull's back plane 0.02 m forward — A17's rearward fell to 0.045 m).
-- **Crouched**: the crouch-aim pose is applied before the arm solve (`crouchBody`, l. 1976), and by the crouch weight
-  the rest hold rides the chest (spine_03) and the quiver the pelvis (l. 3544).
-- The running-arm clamp leaves the draw arm to the aim solve while it is solved in full (l. 5186).
-- No allocation per frame: module scratch `_af*`; per-animator state `_wrT` / `_elbP` / `_wrP` / `_shP` / `_qbS` /
+- **Crouched**: the crouch-aim pose is applied before the arm solve (`crouchBody`, l. 1985), and by the crouch weight
+  the rest hold rides the chest (spine_03) and the quiver the pelvis (l. 3553).
+- The running-arm clamp leaves the draw arm to the aim solve while it is solved in full (l. 5193).
+- No allocation per frame (no per-call closures either: module helpers `afSlerpDir` / `afWrap`, methods
+  `_armRateOk` / `_armRateRoots`): module scratch `_af*`; per-animator state `_wrT` / `_elbP` / `_wrP` / `_shP` / `_qbS` /
   `_qbQ` / `_rgOff` / `_quivT` and the roots' `_afRootP` allocated once at bind.
 
 *Gate* (`tools/gates.r5.hero-body.mjs`):
@@ -115,7 +125,70 @@ Chrome at a time inside a machine slot after the memory / pressure / load / disk
   in the game camera at 0.75 (+0.25 / +0.45 s) and 0 (+0.10 / +0.30 s); the crouched 0.75 and 0 raise (+0.28 s) in
   the game camera; each panel frozen at its moment with the arm's numbers printed under it.
 
-@@MEASURED@@
+*Measured* (lane run **`L1`**: the 63 lane rows, the global items, A-draw-elbow-level ×6 and A-wrap-clear ×3 in one
+Chrome; then **`i1`–`i4`**, each its own Vite, harness, Chrome and slot, on the final code — `i1` with the global items,
+A16 and A17 again; the closure-free refactor of `_armRate` landed between `L1` and `i1`, behaviour unchanged):
+- **`L1`: 75 rows — 60 PASS · 1 FAIL (A31c, R36/R51 listed) · 14 NEEDS-JUDGE** (the 13 lane films + `V-loose-renock`).
+  Every verdict is round 2's `w6/L1`'s, row for row (its scratch `F-cord-release` film aside).
+- **Global items.** `L1`: A1-boot-clean PASS; **A20b PASS** (0 system errors, 360 frames); **A90 PASS** (heap −10.0 %,
+  geometries 151 → 159, textures 116 → 88, 28 kills); **A90b PASS** (0 offenders, 0 orphaned textures, heap −1.9 %
+  after a forced GC); A9 PASS (59.6 fps, 282 draw calls). `i1` (final code): A1 PASS; A20b PASS (0 errors, 364
+  frames); A90 PASS (heap −7.1 %, geometries 151 → 158, textures 116 → 88, 28 kills); A90b PASS (0 offenders, 0
+  orphaned, heap −0.5 % after GC).
+- **A-draw-elbow-level: 10 / 10 PASS** (`L1` ×6, `i1`–`i4`; and `G7` ×3 before the refactor). **The 0.75 loose elbow
+  behind the head plane: 0.1604 / 0.1681 / 0.1631 / 0.1677 / 0.1700 / 0.1651 (`L1`), 0.1710 / 0.1621 / 0.1578 /
+  0.1760 (`i1`–`i4`)** — every run ≤ 0.176 m against R35's 0.20 (round 2: 0.185–0.203, 2 of 9 judge runs over). The
+  loose elbow over all ten rows: 0.158–0.176 m. The full-draw form is round 2's: forearm ≤ 18.6° off the arrow, wrist
+  ≤ 0.025 m / ≤ 0.011 m off the level anchor, elbow ≤ 0.153 m behind the head plane, hand ≤ −0.058 m.
+  - **The arm's step at the four pitches** (character space, every sim step from the aim to 0.65 s after the release):
+    **0.0521–0.0549 m (`L1`), 0.0521–0.0558 (`i1`–`i4`)** against 0.06 (round 2: 0.36–0.47 m snaps).
+  - The other rows (reported): the arm's own step (relative to the draw shoulder) ≤ 0.055 m on every row of
+    `i1`–`i4`; in `L1` the crouched rows read 0.060–0.068 in 4 of 6 repeats (the crouched re-nock's return, §6).
+    Character space, with the body's motion in it: strafes 0.053–0.066, jog 0.063–0.078, sprint 0.052–0.074, crouched
+    0.056–0.068 m.
+  - **The raise** (every row): the hand never behind the back of the skull at its height — standing rows' hands
+    stay under the skull through the raise; crouched −0.025…−0.030 (0) and −0.066…−0.069 m (0.75); the fist ≤ 0.66 of
+    the skull's height (≤ 1 = under its top). **Crouched loose elbow 0.159–0.169 m; crouched rows really crouched.**
+- **A-wrap-clear: 7 / 7 PASS** (`L1` ×3, `i1`–`i4`), **every row of every run ≥ 0.0550 m incl. the crouched rows**
+  (0 and 0.75 crouched: 0.0550–0.0554). The root keep-out acts 8–20 frames per standing cycle and 30–31 crouched at
+  0.75 (draw strength ≤ 0.565, deficit ≤ 0.039 m, one skull undo per run): the outside elbow carries the forearm past
+  the cord's knot during the draw ramp; `_armRate` keeps its turn continuous.
+- **A17 PASS** (`L1`: hand → quiver 0.053 m, 36 sim frames, loose 0.0705 m rearward; `i1` 0.058 / 0.0652). A16 6 / 6
+  (nock-to-wrist 0.064–0.070, knuckle 0.052–0.054 m, R52 elbow −0.006…−0.013 m), A35 (0.107–0.110 m), A32-draw-ramp
+  (ramp ≤ 0.061, full ≤ 0.069 m) and the rest of the draw block unchanged; A13 5 / 5, A-run-arms (wrists ≥ 0.229 m off
+  the midline) and every other lane row as in round 2.
+- Probe `T1b` → final (`G7` trace, 17 states incl. rapid re-fire, early loose, crouched, strafes, jog, sprint): the
+  arm's own step ≤ 0.052 m in every state (was up to 0.45); the draw onset's across-the-chest elbow is gone (the
+  elbow lifts outboard of the shoulder joint).
+
+*Films read* (at the judges' angles, the frames against their criteria):
+- **`V-loose-renock`** (`V3`, the lane row): 0.75 loose +0.10 s from her right — the fist at the side of her neck
+  under the jaw (the wrist under the skull), the elbow up behind the bent T 0.153 m behind the head plane (R35's 0.20),
+  nothing at the nape or the back of the head; game camera — the arm out to her right, the hand at her face. Re-nock
+  0.75 +0.25 s the arm down her right side to the quiver, +0.45 s the hand coming up in front of her chest; level
+  +0.10 s the kick out at shoulder height by the face, +0.30 s the hand at the quiver. Crouched 0.75 and 0 raise +0.28 s:
+  the bow up in front, the draw hand down at the quiver, fist y −6.1 / −5.6 (far under the skull). No hand at the
+  side, back or top of the head; no forearm across the face. Max per sim step: elbow 0.051 / wrist 0.046 m standing,
+  0.060 / 0.051 crouched (the crouch's body sink in it).
+- **`F-cord-loose-seq`** (`F1`; the judges' +0.085 / +0.100 / +0.164 / +0.382 s, front-right 3/4 raised and front
+  from below): the fist (∴ showing) at her right jaw at +0.085 and +0.100 with the cord's V below the knuckles, out
+  to her right and down at +0.164, at the quiver side at +0.382; elbow 0.017–0.050 m per step. The judges' frames had
+  the fist at the nape and on the top-back of the head.
+- **`F-renock-snap`** (game camera + front-right 3/4, the frames round the largest elbow move 0.06–0.30 s after the
+  loose): the largest move is 0.050 m (round 2: 0.411); the arm out at shoulder height, the fist at the jaw.
+- **`F-level-renock`** (pitch 0 and 0.75, +0.104 / +0.25 s, game camera + 3/4): level +0.104 the fist in front of her
+  right shoulder by the collar, +0.25 at the quiver; 0.75 +0.104 the fist at the jaw side, +0.25 out and down her right
+  side. Round 2: the elbow dropped from out-horizontal to her side in one frame (0.412 m).
+- **`F-aimstart-crouch`** (`V2`): aim 0.75 from a sprint-stop, the largest elbow move 0.057 m (0.40 s, the hand at the
+  hip quiver; round 2: 0.204 m at drawS 0.68); crouched 0.75 raise at the hand's closest approach to a head root
+  (0.535 s): the draw hand by the quiver at her side, nothing over the head (round 2: the right arm straight up, the
+  fist over the back of the head).
+- **`F-crouch-j2`** (`V2`): crouched 0.75 and 0 raise +0.270 s (adversarial-b's moment) from the back-right 3/4 and the
+  game camera — the hand holding the arrow at the quiver at her right hip; J2 row A (+0.106 s after the 0.75 loose,
+  her right, front-right 3/4, game camera) — the fist at the jaw side under the ear, ventral of the neck, the elbow
+  back; round 2's frame had the fist over the right shoulder, dorsal of the neck.
+- **V24, V24-draw-down, V4, V13** (`L1`) unchanged: V24-draw-down knuckle 0.052 / fingertip 0.048 m, forearm 15.8° off
+  the arrow, the fist on the jaw under the wrap; V24 the ∴ fist at the jaw, elbow level and back, bow arm straight.
 
 ## T2. W0b targeted fix round 2 (Oct 30) — A-wrap-clear at the 0.75 loose
 
@@ -1308,7 +1381,7 @@ comparison: 46 PASS · 1 FAIL (A31c) · 13 NEEDS-JUDGE of 60.
 | **A13-no-skate (R27)** | **PASS 5/5** | worst stance windows 0.0071 / 0.0039 / 0.0031 / 0.0067 / 0.0024 m (bar 0.06), 6.8 m/s |
 | A15-foot-flat | PASS | 1.91° idle, 1.90° aim |
 | **A16-draw-anchor** | **PASS under R52 (targeted fix §T.1: `F1` 6 / 6, the R52 reading −0.017…−0.006 m; the row below is fix round 5's)** — fix round 5: FAIL, the 0.75 row only | 6 rows: nock-to-wrist 0.064–0.069 m (bar 0.09); knuckle 0.052–0.054, fingertip 0.044–0.050 m from the bow's nock; headClear 1.83–1.95; launch 0.0°; elbow over the shoulder joint (character height) −0.006 / −0.064 / −0.067 / −0.007 / −0.008 m at level / −0.4 / −0.55 / strafing — and **+0.093 m at 0.75** (aim frame: **+0.006**, reported as `elbowAboveShoulderAimFrame`) |
-| A17-draw-beats (R11) | PASS | hand-to-quiver 0.080 m, flourish 22 SIM frames (9 rendered), loose 0.054 m rearward |
+| A17-draw-beats (R11) | PASS | targeted fix 3 (`w7/L1`): hand-to-quiver 0.053 m, 36 SIM frames (the beat is 0.5 s), loose 0.0705 m rearward. Fix round 5: hand-to-quiver 0.080 m, flourish 22 SIM frames (9 rendered), loose 0.054 m rearward |
 | A18-slope-conform / A18b@hero | PASS / PASS | ball clear ≤ 0.0001 m at 10/20/30°; moving p90 0.0023 m |
 | A19-secondary-motion | PASS | hair 48°, cloth 43°, gear 42° range at a sprint |
 | A28-run-cadence | PASS | jog 2.94 steps/s, flight 0.26; sprint 3.60 |
@@ -1325,8 +1398,8 @@ comparison: 46 PASS · 1 FAIL (A31c) · 13 NEEDS-JUDGE of 60.
 | A36-hit-react-visible@hero | PASS | 17.8° lean, decay 0.58 s, hit clip 0.82 |
 | A26-one-convention@hero | PASS | identical to BoneSpace |
 | A-lmax-solve | PASS | Lmax 0.527 / 0.520 / 0.530 / 0.527 m; bows 0.582 vs solution 0.585 (±0.01) |
-| **A-draw-elbow-level (R35 + on-the-string + fix round 5)** | **PASS** | 8 rows; **forearm 17.5 / 15.2 / 18.3 / 17.7° off the arrow at −0.55 / −0.4 / 0 / 0.75 (bar 20)**; **the wrist ≤ 0.021 m from the level row's height over the Head joint and ≤ 0.010 m from its place in the head's frame (bars 0.03)**; elbow aim-frame height −0.013…+0.005 m, 0.226–0.232 m behind the hand; hand ≤ −0.061 m; elbow ≤ 0.149 m behind the head plane; loose hand ≤ −0.012, loose elbow ≤ 0.189 m; knuckle ≤ 0.056 / fingertip ≤ 0.050 m from the nock |
-| **A-wrap-clear (M10)** | **targeted fix round 2 (§T2): PASS 16 / 16** (`w6/L1` ×6, `i1`–`i5` ×2) | every chain ≥ 0.0550 m from the draw hand/forearm at every row of every run (bar 0.05); the 0.75 loose minimum 0.0550–0.0555 m; the draw arm keeps off the cord knot (keep 0.0588 m, 1–4 frames per cycle, draw strength ≤ 0.093); hand capsule active. Round 1's "≥ 0.055" held on the builder's runs only (judges 0.0494 / 0.0512 / 0.0514) |
+| **A-draw-elbow-level (R35 + on-the-string + fix round 5 + targeted fix 3)** | **targeted fix 3 (§T3): PASS 10 / 10** (`w7/L1` ×6, `i1`–`i4`): 10 rows (+ crouched 0 / 0.75), the 0.75 loose elbow 0.158–0.176 m, the arm's step at the four pitches 0.052–0.056 m (bar 0.06), the raise clause on every row. Fix round 5: **PASS** | 8 rows; **forearm 17.5 / 15.2 / 18.3 / 17.7° off the arrow at −0.55 / −0.4 / 0 / 0.75 (bar 20)**; **the wrist ≤ 0.021 m from the level row's height over the Head joint and ≤ 0.010 m from its place in the head's frame (bars 0.03)**; elbow aim-frame height −0.013…+0.005 m, 0.226–0.232 m behind the hand; hand ≤ −0.061 m; elbow ≤ 0.149 m behind the head plane; loose hand ≤ −0.012, loose elbow ≤ 0.189 m; knuckle ≤ 0.056 / fingertip ≤ 0.050 m from the nock |
+| **A-wrap-clear (M10)** | **targeted fix 3 (§T3): PASS 7 / 7 with the crouched rows** (`w7/L1` ×3, `i1`–`i4`), every row ≥ 0.0550 m. Targeted fix round 2 (§T2): **PASS 16 / 16** (`w6/L1` ×6, `i1`–`i5` ×2) | every chain ≥ 0.0550 m from the draw hand/forearm at every row of every run (bar 0.05); the 0.75 loose minimum 0.0550–0.0555 m; the draw arm keeps off the cord knot (keep 0.0588 m, 1–4 frames per cycle, draw strength ≤ 0.093); hand capsule active. Round 1's "≥ 0.055" held on the builder's runs only (judges 0.0494 / 0.0512 / 0.0514) |
 | A-alidade-pose | PASS | tube 0.015 m from the right eye (idle / jog / crouch), elbow under and ahead, lowered in 0.20–0.21 s |
 | A-run-arms | PASS | wrists ≥ 0.229 m off the midline, ≥ 0.27 m under the shoulder, fore-aft 0.488 m/cycle, pelvis 0.072 m p-p, knee never above hip, 6.80 m/s |
 | **A-lance-stow** | **PASS 4/4** (`f5lane2`: plain ×3, a loaded 19 fps clock ×1) | crouch-walk ≤ 38.82°; every state but the climb ≤ 39.14° (R10 32–40); the climb 36.6–58.1° (A100 in motion 30–60); midpoint ≤ 0.281 m (0.30); tails ≥ 0.086 m from the shaft (0.06); blade ≤ 0.651 m over the shoulder (0.70) |
@@ -1433,6 +1506,22 @@ exactly these overlays; standalone:
 
 ## 6. Honest gaps and W0 bridges
 
+- **Targeted fix round 3 (Oct 31): seen, not this round's findings** (§T3, numbers there).
+  - **Crouched at 0.75 the full draw is off the string**: the bow arm cannot reach the draw (Lmax 0.46 m against the
+    0.527 the bows are cut to: the crouch clip's lean and the bent T add up, the reach clamp falls back to its radial
+    pull-in), knuckle / fingertip 0.176–0.181 / 0.208–0.213 m from the nock, forearm ~61° off the arrow. It was worse
+    before this round (0.246 / 0.278 m with the crouch-aim pose solved after the arms, probe `w7/G2`). The crouched
+    rows report the full-draw form instead of grading it; crouched at 0 it holds (knuckle 0.052, fingertip 0.021–0.025
+    m). The fix is the T bend net of the crouch's own lean — the next owner of the crouch-aim pose (§7).
+  - **The crouch-aim body sink**: ~0.3 s into a crouched aim the ground conform drops the whole body 0.08–0.10 m in a
+    step (it did so before this round). It is body motion, not the arm: the crouched rows' character-space step reads
+    0.056–0.068 m, the arm's own ≤ 0.055 on the final code (0.060–0.068 in 4 of 6 `L1` repeats, the crouched re-nock's
+    return past the cord's knot). On the move the run cycle carries the shoulders: character space 0.05–0.078 m, the
+    arm's own ≤ 0.055.
+  - **The root keep-out works more often**: 8–20 frames per standing draw cycle (round 2: 1–4), 30–31 crouched at
+    0.75, draw strength ≤ 0.565 — the elbow now lifts on the outside and the forearm passes the cord's knot on the draw
+    ramp. A-wrap-clear holds 0.0550 m everywhere; `_armRate` keeps the keep-out's turn inside the 0.05 m step.
+
 - **Targeted fix round 2 (Oct 30): two things seen, not in this round's findings** (§T2, numbers there).
   - (a) A-draw-elbow-level's loose clause at 0.75 sits at R35's 0.20 bar: 4 of 8 samples in probe `w6/p2` read
     0.2006–0.2034 m, and the lane runs read 0.185–0.193 m. The peak comes 0.25–0.28 s after the loose, while the hand
@@ -1495,6 +1584,10 @@ exactly these overlays; standalone:
 
 ## 7. Requests to other lanes and the orchestrator
 
+- **Targeted fix round 3 (Oct 31), for the orchestrator / the crouch-aim pose's next owner** (§6): crouched at the
+  0.75 down aim the full draw is off the string (Lmax 0.46 m, the reach clamp's radial fallback; pre-existing, better
+  than before this round). The bent T should turn by the aim pitch net of the crouch's own trunk lean. The crouched
+  rows of A-draw-elbow-level report the full-draw form so the fix can be graded when it lands.
 - **Targeted fix round 2 (Oct 30), for the orchestrator.** Two follow-through defects this round measured but did not
   fix, because they were outside its two A-wrap-clear findings (§T2, §6). (a) A-draw-elbow-level's 0.75 loose elbow
   sits at the 0.20 bar (probe 0.185–0.203 m, 4 / 8 over). (b) The draw elbow snaps 0.2–0.4 m per frame at the start

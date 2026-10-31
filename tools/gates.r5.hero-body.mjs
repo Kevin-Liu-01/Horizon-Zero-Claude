@@ -9040,8 +9040,12 @@ const NEW_VISUALS = [
         const w = new T3(Q.hand.x, Q.hand.y, Q.hand.z), el = new T3(Q.elbow.x, Q.elbow.y, Q.elbow.z);
         const kn = new T3(), ft = new T3(); an.debugDrawHand?.(kn, ft);
         const f = CH(ft);
+        // a point's place against the back of the skull, counted where it is at the skull's height (head-ellipsoid
+        // unit y >= -1, as A-draw-elbow-level's raise clause counts it); lower down (the hip quiver, bent over) the
+        // skull's back plane says nothing about the head, and the panel says 'below the skull'
+        const at = (P) => { an._headFrame(); const u = an._headUnit(P, new T3()); return u.y >= -1 ? +an.behindHead(P).toFixed(3) : 'below'; };
         an._headFrame(); const hu = an._headUnit(f, new T3());
-        return { wrist: +an.behindHead(w).toFixed(3), fingertip: +an.behindHead(f).toFixed(3), fistUnitY: +hu.y.toFixed(2), elbow: +an.behindHead(el).toFixed(3) };
+        return { wrist: at(w), fingertip: at(f), fistUnitY: +hu.y.toFixed(2), elbow: +an.behindHead(el).toFixed(3) };
       };
       const cycle = async (sc) => {
         release(); p.setCrouch?.(false); standAt(p, 'openGround'); p.velocity?.set?.(0, 0, 0); await simWait(0.4, 4000);
@@ -9098,19 +9102,19 @@ const NEW_VISUALS = [
       cv.style.cssText = 'position:fixed;left:0;top:0;width:1600px;height:900px;z-index:2147483646;background:#f4f1ea';
       document.body.appendChild(cv);
       const g = cv.getContext('2d'); g.fillStyle = '#f4f1ea'; g.fillRect(0, 0, 1600, 900);
-      const txt = (t, x, y) => { g.fillStyle = '#2a2420'; g.font = '600 12px ui-monospace, Menlo, monospace'; g.fillText(t, x, y); };
-      g.font = '600 14px ui-monospace, Menlo, monospace'; g.fillStyle = '#2a2420';
-      g.fillText('THE LOOSE, THE RE-NOCK, THE CROUCHED RAISE (W0b targeted fix 3) - each panel frozen at its moment; behind = m behind the back of the skull (< 0 in front), fist unit y > 1 = over the skull', 10, 18);
+      const txt = (t, x, y) => { g.fillStyle = '#2a2420'; g.font = '600 11px ui-monospace, Menlo, monospace'; g.fillText(t, x, y, 390); };
+      g.font = '600 13px ui-monospace, Menlo, monospace'; g.fillStyle = '#2a2420';
+      g.fillText('LOOSE / RE-NOCK / CROUCHED RAISE (tfix3), each frozen at its moment. skull: m behind the back of the skull (<0 in front; below = under it); fist y > 1 = over it; steps per SIM step (m)', 10, 18);
       panels.slice(0, 8).forEach((P, k) => {
         const col = k % 4, row = (k / 4) | 0, x = 8 + col * 398, y = 26 + row * 436;
         const t = document.createElement('canvas'); t.width = W; t.height = H; t.getContext('2d').putImageData(P.img, 0, 0); g.drawImage(t, x, y);
-        txt(P.m.tag + ' (' + P.lens + ')' + (P.m.crouching ? ' crouching' : '') + '  drawS ' + P.m.drawS.toFixed(2), x, y + H + 13);
-        txt('per sim step: elbow ' + P.m.jump.toFixed(3) + ' m; max so far elbow ' + P.m.eMax.toFixed(3) + ' wrist ' + P.m.wMax.toFixed(3), x, y + H + 26);
-        txt('behind skull: wrist ' + P.m.st.wrist + ' tip ' + P.m.st.fingertip + ' elbow ' + P.m.st.elbow + ' | fist y ' + P.m.st.fistUnitY, x, y + H + 39);
+        txt(P.m.tag + ' (' + P.lens + ')' + (P.m.crouching ? ', crouched' : ''), x, y + H + 13);
+        txt('sim step: elbow ' + P.m.jump.toFixed(3) + ' | max: elbow ' + P.m.eMax.toFixed(3) + ' wrist ' + P.m.wMax.toFixed(3), x, y + H + 26);
+        txt('skull: wr ' + P.m.st.wrist + ' tip ' + P.m.st.fingertip + ' elb ' + P.m.st.elbow + ' fist y ' + P.m.st.fistUnitY, x, y + H + 39);
       });
       return { panels: panels.map((P) => ({ tag: P.m.tag, lens: P.lens, dt: +P.m.dt.toFixed(3), elbowStep: +P.m.jump.toFixed(4), elbowStepMax: +P.m.eMax.toFixed(4), wristStepMax: +P.m.wMax.toFixed(4), crouching: P.m.crouching, ...P.m.st })) };
     })()`),
-    criteria: 'Eight panels (judge against the licence-clean draw-side reference and Kevin\'s bar "never an arm behind the head"). PASS requires ALL of: (1) 0.75 loose +0.10 s, from her RIGHT and in the game camera: the draw hand is at or below her jaw beside the face, or moving down her right side — NOT raised over the shoulder, NOT at the nape or the side / back of the head, NOT above the head; the forearm does not cross her face or throat; the elbow is back or out beside her, not swung up behind the head; (2) the re-nock panels in the game camera (0.75 at +0.25 / +0.45 s, 0 at +0.10 / +0.30 s): the hand travels down her right side to the hip quiver or back up in front of her to the string; no hand at the side or back of the head, no forearm across the face; (3) the crouched raise panels (0.75 and 0, game camera): the draw hand is in front of and below the head — at the hip quiver, on its way, or at the string in front — never over the top or the back of the head; the bow is held in front. The printed numbers must agree (behind < 0 for the wrist and the fingertip, fist y <= 1). FAIL if any panel shows a hand at the side, back or top of the head, an arm behind the head, or a forearm across the face.',
+    criteria: 'Eight panels (judge against the licence-clean draw-side reference and Kevin\'s bar "never an arm behind the head"). PASS requires ALL of: (1) 0.75 loose +0.10 s, from her RIGHT and in the game camera: the draw hand is at or below her jaw beside the face, or moving down her right side — NOT raised over the shoulder, NOT at the nape or the side / back of the head, NOT above the head; the forearm does not cross her face or throat; the elbow is back or out beside her, not swung up behind the head; (2) the re-nock panels in the game camera (0.75 at +0.25 / +0.45 s, 0 at +0.10 / +0.30 s): the hand travels down her right side to the hip quiver or back up in front of her to the string; no hand at the side or back of the head, no forearm across the face; (3) the crouched raise panels (0.75 and 0, game camera): the draw hand is in front of and below the head — at the hip quiver, on its way, or at the string in front — never over the top or the back of the head; the bow is held in front. The printed numbers must agree: for the wrist and the fingertip, behind < 0 (in front of the back of the skull) or "below" (under the skull, where the back plane says nothing), and fist y <= 1 (not over the top of the skull); the elbow is graded by A-draw-elbow-level (R35, <= 0.20). FAIL if any panel shows a hand at the side, back or top of the head, an arm behind the head, or a forearm across the face.',
   },
   {
     id: 'V-traversal', kind: 'visual', lane: 'hero-body', settle: 400, timeout: 60000,
