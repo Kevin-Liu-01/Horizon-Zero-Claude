@@ -185,6 +185,13 @@ const _afV = new THREE.Vector3();
 const _afP = new THREE.Vector3();   // a candidate elbow / scratch
 const _afF = new THREE.Vector3();   // the head's live forward
 const _afQ = new THREE.Quaternion();
+const _afQ2 = new THREE.Quaternion();
+const _afT = new THREE.Vector3();   // the fingertip, char
+const _afG = new THREE.Vector3();   // a candidate fingertip / scratch
+const _afH = new THREE.Vector3();
+const _afJ = new THREE.Vector3();   // the fingertip's offset across the swivel axis, and that crossed with the axis
+const _afK = new THREE.Vector3();
+const _afL = new THREE.Vector3();   // a candidate fingertip
 
 
 // (ball- and ankle-bone rest heights are MEASURED off the bind pose in the
@@ -678,6 +685,8 @@ export class PlayerAnimator {
         if (keep > 0) this._hcRoots.push({ bone: c.links[0].bone, name: c.links[0].name, keep });
       }
     }
+    // W0b targeted fix 3: the roots' places each step, for the elbow flow's swivel (`_elbowFlow`), allocated once
+    this._afRootP = this._hcRoots.map(() => new THREE.Vector3());
     /* R5 fix round 4 — THE WORLD WIND the cloth chains feel (see `DYN_CLASSES`
      * 'wrap' / `DYN_WIND`): air velocity in WORLD m/s (x, z), `gust` (0..1,
      * slow swell of the speed) and `flutter` (0..1, the fast cross-wind shake
@@ -817,6 +826,7 @@ export class PlayerAnimator {
      * where it is until the reach to the quiver takes it; `_rnL`: the current
      * reach is that re-nock) */
     this._afOn = false; this._wrT = new THREE.Vector3(); this._elbP = new THREE.Vector3();
+    this._wrP = new THREE.Vector3(); this._shP = new THREE.Vector3();   // ...and the achieved wrist / shoulder
     this._rnHold = false; this._rnL = false;
     // ...and crouched, the rest hold's and the hip quiver's live places (`armFlow.crouchBody`)
     this._rgOff = new THREE.Vector3(); this._quivT = new THREE.Vector3();
@@ -850,6 +860,7 @@ export class PlayerAnimator {
       anchor: new THREE.Vector3(), nock: new THREE.Vector3(), wristT: new THREE.Vector3(), headAt: new THREE.Vector3(),
       shYaw0: 0, bladeCorr: 0, looseClamp: 0, elbowScan: 0,
       afWristCut: 0, afElbowTurn: 0,   // W0b targeted fix 3: the wrist limiter's cut, the elbow flow's turn (m / rad)
+      afPre: new THREE.Vector3(),      // ...and the wrist target before the limiter (char)
     };
 
     /* ------------- Round 4 · reactions, traversal, interaction ------------- */
@@ -1559,7 +1570,11 @@ export class PlayerAnimator {
     // window guarantees nine rendered frames however slow the host is, and at
     // any frame rate above ~24 fps the cap never binds, so the beat is exactly
     // the 0.34 s it was before.
-    this._quiverT = Math.min(this._quiverT + Math.min(dt / QUIVER_T, 1 / 9), 1);
+    // (W0b targeted fix 3, `armFlow.quiverT`: the beat's length — at 0.34 s the
+    // reach down and the return each crossed 0.4-0.5 m in 0.06-0.13 s, faster
+    // than the draw hand's `wristV`, so the limited hand cut the return's bow
+    // out to her right and crossed the cord knot at her throat)
+    this._quiverT = Math.min(this._quiverT + Math.min(dt / (this.T.armFlow?.quiverT ?? QUIVER_T), 1 / 9), 1);
     this._looseT = Math.min(this._looseT + dt / 0.15, 1);
 
     // heavy pickup weapon (disc launcher): two-hand waist carry replaces the
@@ -3875,9 +3890,13 @@ export class PlayerAnimator {
     }
 
     // loose follow-through kick: fast attack, ~0.15s decay
+    // (W0b targeted fix 3, `armFlow.kickIn`: the kick's rise over that share of
+    // the follow-through — over 0.25 it moved the wrist 0.045 m in the first
+    // step and took the elbow 0.05 m further behind the head plane with it)
+    const kIn = this.T.armFlow?.kickIn ?? 0.25;
     const lk = this._looseT < 1
-      ? (this._looseT < 0.25 ? this._looseT / 0.25
-        : 1 - smoothstep(this._looseT, 0.25, 1))
+      ? (this._looseT < kIn ? smoothstep(this._looseT, 0, kIn)
+        : 1 - smoothstep(this._looseT, kIn, 1))
       : 0;
 
     // ---- LEFT ARM: bow arm, 2-bone IK to the grip; pole firmly DOWN so the
@@ -3976,6 +3995,7 @@ export class PlayerAnimator {
     if (afFull && !this._afOn) {
       this._charOf(b.handR.bone, this._wrT);       // the clip's wrist and elbow, this step
       this._charOf(b.loArmR.bone, this._elbP);
+      this._wrP.copy(this._wrT); this._charOf(b.upArmR.bone, this._shP);
       this._afOn = true;
     } else if (!afFull) this._afOn = false;
     const wDA = afFull ? 1 : aimW;                 // the draw arm's IK weight
@@ -3993,10 +4013,14 @@ export class PlayerAnimator {
      * hand is and the reach carries it from there, down her right side.
      */
     if (AF?.renock && this._rnHold) {
-      if (this._prevRawDraw > 0.02 || (this._rnL && this._quiverT >= 0.62)) this._rnHold = false;
+      const qB = AF.qBack ?? 0.62;
+      if (this._prevRawDraw > 0.02 || (this._rnL && this._quiverT >= qB)) this._rnHold = false;
       else if (this._afOn) {
-        const hb = (this._looseT < 1 ? smoothstep(this._looseT, 0.2, 0.3) : 1)
-          * (this._rnL && this._quiverT < 1 ? 1 - smoothstep(this._quiverT, 0.45, 0.62) : 1);
+        // (from the release itself: the un-clamped string line the base jumps
+        // to when the anchor clamp lets go sat 0.04-0.09 m behind the anchor
+        // crouched, a backward step of the whole arm; the kick still reaches
+        // its full length at its peak, where lw = 1)
+        const hb = this._rnL && this._quiverT < 1 ? 1 - smoothstep(this._quiverT, qB - 0.17, qB) : 1;
         if (hb > 1e-4) _v7.lerp(this._wrT, hb);
       }
     }
@@ -4056,7 +4080,9 @@ export class PlayerAnimator {
        * Up in the first 18 %, HELD to 62 %, back over the rest.
        */
       const tq = this._quiverT;
-      const reach = smoothstep(tq, 0, 0.18) * (1 - smoothstep(tq, 0.62, 1));
+      // (W0b targeted fix 3, `armFlow.qUp` / `qBack`: with the longer beat, down
+      // over the first third, held to half, back over the second half)
+      const reach = smoothstep(tq, 0, AF?.qUp ?? 0.18) * (1 - smoothstep(tq, AF?.qBack ?? 0.62, 1));
       // W0b targeted fix 3 (`armFlow.renock`): the string is slack the instant
       // the arrow leaves (combat's draw is 0), so the reach after a loose is
       // gated on the lesser of the smoothed and the raw draw — the smoothed one
@@ -4074,7 +4100,14 @@ export class PlayerAnimator {
        * her RIGHT (character -X, in the aim's turned frame) on the way, 0.09 m
        * at the middle of the reach and none at the quiver (A17's hand-to-quiver
        * is untouched). */
-      _v7.addScaledVector(this._latT, -0.09 * 4 * qw * (1 - qw));
+      _v7.addScaledVector(this._latT, -(AF?.bowOut ?? 0.09) * 4 * qw * (1 - qw));
+      // (W0b targeted fix 3, `armFlow.bowDown`: and down the trunk, away from
+      // the neck — the return from the quiver to the ready string rose through
+      // the cord knot's height at her throat, 0.00-0.03 m off its keep-out at
+      // every pitch, and the keep-out's turn jerked the arm 0.07-0.17 m)
+      if (AF?.bowDown) _v7.addScaledVector(this._upT, -AF.bowDown * 4 * qw * (1 - qw));
+      // (...and `armFlow.bowFwd` out in front of her chest, off the knot itself)
+      if (AF?.bowFwd) _v7.addScaledVector(this._fwdT, AF.bowFwd * 4 * qw * (1 - qw));
       qOpen = 0.45 + 0.55 * Math.max(this._quiverT, smoothstep(drawS, 0.02, 0.14));
     }
     // Hard guard: the string hand may never enter the head. The keep-out is an
@@ -4103,6 +4136,7 @@ export class PlayerAnimator {
      * edge, so both head guards run again on it. Nothing here moves at full
      * draw or through the draw ramp (<= 0.02 m per step). */
     D.afWristCut = 0;
+    D.afPre.copy(_v7);
     if (this._afOn && AF.wristV) {
       _afD.subVectors(_v7, this._wrT);
       const lim = AF.wristV * Math.max(1e-4, this._dtA || 0), dl = _afD.length();
@@ -4323,10 +4357,78 @@ export class PlayerAnimator {
     this._curlFingers(this._fingerR,
       (0.45 + 0.3 * drawS) * aimW * qOpen * (1 - 0.9 * lk),
       0.25 * aimW * (1 - 0.7 * lk));
+    // W0b targeted fix 3: the whole arm's step from last step's, before the root keep-out
+    if (this._afOn) this._armRate();
     // W0b targeted fix 2: last, on the arm's final pose this frame
     this._clearArmOfRoots(drawS);
-    // W0b targeted fix 3: the elbow as it ends this step (char, as solved) — next step's continuity
-    if (this._afOn) this._charOf(b.loArmR.bone, this._elbP);
+    // W0b targeted fix 3: the arm as it ends this step (char, as solved) — next step's continuity
+    if (this._afOn) {
+      this._charOf(b.loArmR.bone, this._elbP);
+      this._charOf(b.handR.bone, this._wrP);
+      this._charOf(b.upArmR.bone, this._shP);
+      this._wrT.copy(this._wrP);                   // the next target steps from where the wrist is
+    }
+  }
+
+  /**
+   * W0b targeted fix 3 — THE DRAW ARM'S STEP (profile `armFlow.armStep`). The
+   * wrist target and the elbow's swivel are limited above, but the elbow also
+   * moves with the wrist through the arm's own geometry: with the forearm
+   * along the shoulder -> wrist line (a loose from a part draw, a re-draw in
+   * the follow-through) a 0.045 m wrist step carried the elbow 0.10 m (probe
+   * `w7/T5`, rapid re-fire). Here, if the elbow or the wrist moved more than
+   * `armStep` (per 1/60 s) relative to the shoulder since last step, the upper
+   * arm's and the forearm's directions are taken back toward last step's by
+   * the least fraction that holds both (bisection; the shoulder's own motion,
+   * the body's, is not the arm's). It binds only on those outliers; never at
+   * full draw. A fraction that would put the arm in the skull is not taken.
+   */
+  _armRate() {
+    const AF = this.T.armFlow, b = this.b, D = this._aimDbg;
+    D.afArmRate = 1;
+    if (!AF?.armStep || !b.upArmR || !b.loArmR || !b.handR) return;
+    const lim = AF.armStep * Math.min(1, Math.max(1e-3, (this._dtA || 0) * 60));
+    this._charOf(b.upArmR.bone, _afS); this._charOf(b.loArmR.bone, _afE); this._charOf(b.handR.bone, _afW);
+    // this step's arm and last step's, both from their own shoulder
+    _afU.subVectors(_afE, _afS); _afV.subVectors(_afW, _afE);           // upper arm, forearm (now)
+    _afA.subVectors(this._elbP, this._shP); _afC.subVectors(this._wrP, this._elbP);   // (then)
+    const relE = _afH.copy(_afU).sub(_afA).length();
+    const relW = _afH.copy(_afU).add(_afV).sub(_afA).sub(_afC).length();
+    if (relE <= lim && relW <= lim) return;
+    const L1 = _afU.length(), L2 = _afV.length(), l1 = _afA.length(), l2 = _afC.length();
+    if (L1 < 1e-3 || L2 < 1e-3 || l1 < 1e-3 || l2 < 1e-3) return;
+    _afU.divideScalar(L1); _afV.divideScalar(L2); _afA.divideScalar(l1); _afC.divideScalar(l2);
+    const dirAt = (a, c, al, out) => {            // slerp of two unit directions (then a -> now c)
+      const cw = clamp(a.dot(c), -1, 1), om = Math.acos(cw);
+      if (om < 1e-4) return out.copy(c);
+      const so = Math.sin(om);
+      return out.copy(a).multiplyScalar(Math.sin((1 - al) * om) / so).addScaledVector(c, Math.sin(al * om) / so);
+    };
+    const ok = (al) => {
+      dirAt(_afA, _afU, al, _afP); dirAt(_afC, _afV, al, _afG);
+      // positions relative to the shoulder: elbow L1*u, wrist L1*u + L2*f
+      const eE = _afH.copy(_afP).multiplyScalar(L1).addScaledVector(_afA, -l1).length();
+      const eW = _afH.copy(_afP).multiplyScalar(L1).addScaledVector(_afG, L2)
+        .addScaledVector(_afA, -l1).addScaledVector(_afC, -l2).length();
+      return eE <= lim && eW <= lim;
+    };
+    let lo = 0, hi = 1;
+    if (!ok(0)) return;                            // the arm's length changed under it: leave the solve alone
+    for (let i = 0; i < 10; i++) { const m = (lo + hi) * 0.5; if (ok(m)) lo = m; else hi = m; }
+    // apply: upper arm onto u(lo), then the forearm (carried) onto f(lo)
+    dirAt(_afA, _afU, lo, _afP); dirAt(_afC, _afV, lo, _afG);
+    _afQ.setFromUnitVectors(_afU, _afP);
+    this._rotQL(b.upArmR, _afQ);
+    _afH.copy(_afV).applyQuaternion(_afQ);
+    _afQ2.setFromUnitVectors(_afH, _afG);
+    this._rotQL(b.loArmR, _afQ2);
+    this._headFrame();
+    if (this._armInHead()) {                      // never into the skull: undo
+      _afQ2.invert(); this._rotQL(b.loArmR, _afQ2);
+      _afQ.invert(); this._rotQL(b.upArmR, _afQ);
+      return;
+    }
+    D.afArmRate = Math.round(lo * 1e4) / 1e4;
   }
 
   /** W0b targeted fix 3: hold a char-space wrist target `looseClear` in front of the back of the skull (`_headFrame` current); returns the push (m). */
@@ -4371,7 +4473,22 @@ export class PlayerAnimator {
     this._charOf(b.handR.bone, _afW);
     _afA.subVectors(_afW, _afS);
     const len = _afA.length();
-    if (len < 0.08) return;
+    const step = (AF.elbowStep ?? 0.05) * Math.min(1, Math.max(1e-3, (this._dtA || 0) * 60));
+    if (len < 0.08) {
+      // folded (the wrist at the shoulder: crouched, the quiver sits there):
+      // no circle to speak of, the elbow can be anywhere round the shoulder —
+      // turn the upper arm toward last step's elbow until it is within `step`
+      _afU.subVectors(_afE, _afS); _afV.subVectors(this._elbP, _afS);
+      const lu = _afU.length(), lv = _afV.length();
+      if (lu < 1e-3 || lv < 1e-3 || _afE.distanceTo(this._elbP) <= step) return;
+      const ang = Math.acos(clamp(_afU.dot(_afV) / (lu * lv), -1, 1)), keep = Math.min(ang, step / lu);
+      _afA.crossVectors(_afU, _afV);
+      if (_afA.lengthSq() < 1e-10) return;
+      _afQ.setFromAxisAngle(_afA.normalize(), ang - keep);
+      this._rotQL(b.upArmR, _afQ);
+      D.afElbowTurn = Math.round((ang - keep) * 1e4) / 1e4;
+      return;
+    }
     _afA.divideScalar(len);
     _afU.subVectors(_afE, _afS);
     const along = _afU.dot(_afA);
@@ -4386,7 +4503,6 @@ export class PlayerAnimator {
     const h = _afP.dot(_afA), px = _afP.dot(_afU), py = _afP.dot(_afV);
     const rho = Math.hypot(px, py);
     const tc = rho > 1e-4 ? Math.atan2(py, px) : 0;
-    const step = (AF.elbowStep ?? 0.05) * Math.min(1, Math.max(1e-3, (this._dtA || 0) * 60));
     let half = Math.PI;                            // the feasible arc's half-width about tc
     if (rho > 1e-4) {
       const k = (h * h + rho * rho + r * r - step * step) / (2 * r * rho);
@@ -4395,6 +4511,21 @@ export class PlayerAnimator {
     this._headFrame();
     _afF.set(0, 0, 1).applyQuaternion(_hdQ);
     const hdF = _hd.dot(_afF), hR = this.T.headR.z, cap = AF.elbowBack ?? 9;
+    // the chain roots the M10 keep-out guards (`_hcRoots`): the swivel keeps the
+    // forearm (elbow -> wrist) and the hand (wrist -> fingertip, turned with the
+    // swivel) `rootPad` m further off them when it can — continuously, before
+    // the keep-out has to turn the whole arm (it jerked it 0.06-0.15 m a step)
+    const R = AF.rootPad != null ? this._hcRoots : null, Hc = this._handCol;
+    let nR = 0;
+    if (R && R.length && Hc?.c) {
+      nR = R.length;
+      for (let k = 0; k < nR; k++) this._charOf(R[k].bone, this._afRootP[k]);
+      this._charOf(Hc.c, _afT).sub(_afS);
+      const tp = _afT.dot(_afA);
+      _afJ.copy(_afT).addScaledVector(_afA, -tp);  // across the axis
+      _afK.crossVectors(_afA, _afJ);
+      _afT.copy(_afS).addScaledVector(_afA, tp);   // ...and its foot on the axis
+    }
     const wrapA = (a) => (a > Math.PI ? a - 2 * Math.PI : (a < -Math.PI ? a + 2 * Math.PI : a));
     // candidates: the solve's own pick (0) if it is on the arc, the arc's two
     // ends and 16 points across it; scored by depth over the cap, then by how
@@ -4410,7 +4541,16 @@ export class PlayerAnimator {
       if (i === -2 && Math.abs(wrapA(th - tc)) > half + 1e-6) continue;
       _afP.copy(_afC).addScaledVector(_afU, Math.cos(th) * r).addScaledVector(_afV, Math.sin(th) * r);
       const dep = hdF - _afP.dot(_afF) - hR;
-      const c = Math.max(0, dep - cap) * 1000 + Math.abs(th);
+      let c = Math.max(0, dep - cap) * 1000 + Math.abs(th);
+      if (nR) {
+        _afL.copy(_afT).addScaledVector(_afJ, Math.cos(th)).addScaledVector(_afK, Math.sin(th));
+        for (let k = 0; k < nR; k++) {
+          const P = this._afRootP[k];
+          const d = Math.min(this._segDist(P, _afP, _afW), this._segDist(P, _afW, _afL));
+          const def = R[k].keep + AF.rootPad - d;
+          if (def > 0) c += def * 1000;
+        }
+      }
       if (c >= bestC) continue;
       if (this._segInHead(_afS, _afP) || this._segInHead(_afP, _afW)) continue;
       best = th; bestC = c;
@@ -4973,6 +5113,7 @@ export class PlayerAnimator {
     for (let s = 0; s < 2; s++) {
       const up = s === 0 ? b.upArmL : b.upArmR, lo = s === 0 ? b.loArmL : b.loArmR, ha = s === 0 ? b.handL : b.handR;
       const sgn = s === 0 ? 1 : -1;                     // +x is her left
+      if (s === 1 && this._afOn) continue;              // W0b targeted fix 3: the draw arm is the aim solve's (`armFlow`)
       // (0) swing centre (fix round 1, V12 "one elbow driven back past the hip
       // line"): the UAL1 jog/sprint swing is centred forward on this rig —
       // the wrist reached 0.47 m ahead of the hip and never got behind it, the
