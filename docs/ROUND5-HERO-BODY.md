@@ -36,6 +36,87 @@ clock, max 0.044 m); **A-lance-stow** — a pattern search with the lance slidin
 A-no-override PASS; A21 FAIL on median GPU (77–96 ms against 20; listed under R33 b, R45's quiet run); A81 /
 A-ID-ip-assets-gone / A-licence-manifest / A-assets-tracked fail on other lanes' unmerged rows (R39, R47; §4.5).
 
+## T3. W0b targeted fix round 3 (Oct 30–31) — the loose, the re-nock and the crouched raise
+
+Five findings, one family: the draw arm was solved afresh on every sim step with nothing tying a step to the last
+one, the loose took a detour behind her neck on its way to the quiver, and crouched the arms were solved before the
+pose that moved her head. Every number below was measured in this tree on port 5252 under `nice -n 10` (R53), one
+Chrome at a time inside a machine slot after the memory / pressure / load / disk checks (`scratchpad/r5/hero-body/w7/`,
+`run7.sh`): the per-step trace probe `T1b` (round 2's code) and `T2`–`T11`, gate runs `G1`–`G7`, the lane run
+**`L1`**, four independent runs `i1`–`i4`, the films `F1`.
+
+*Traced* (`T1b`, the gates' own staging, every sim step, the elbow after each stage of the solve):
+- **The draw onset, every pitch** (the judges' 0.44–0.46 m "before the loose"). Between drawS 0.2 and 0.6
+  `_elbowForm`'s whole-circle scan turned the elbow 2.0–2.9 rad round its shoulder → wrist circle to the far side —
+  up ACROSS her chest, 0.12 m inboard of the draw shoulder joint — and at drawS ≈ 0.6 flipped it back out: **0.45 m
+  in one step** (the two window edges tied on the other bars).
+- **The 0.75 loose** (finding 2's fist at the nape, finding 4's 0.36–0.47 m snap). Once the kick decayed, the wrist
+  target fell back to the SLACK STRING at the bow (in front of her, to her left) for ~0.05 s before the reach to the
+  quiver took over. From the jaw corner at the skull's back plane that line runs behind her neck, and the head guards
+  slid the fist round it: the wrist crossed the head's midline behind it (head frame x −0.11 → +0.10 m at
+  0.08–0.12 s after the loose), the fist at the nape and then the back of the head. On the same steps
+  `_clearArmOfHead`'s high-elbow pole kick re-solved the elbow 0.33–0.38 m. The same detour ran at every pitch.
+- **The R35 peak** (findings 1 and 3: 0.199–0.2014 m). It fell 0.23–0.28 s after the loose with the hand at the hip
+  quiver: the reach's pole (−0.5, −0.95, −0.3 in the bent T's frame) is nearly parallel to a shoulder → hip-quiver
+  reach, so the elbow plane was decided by a small residual and swung the elbow up behind the bent T.
+- **The reach itself**: 0.4–0.5 m in 0.06 s, 0.13–0.19 m per step at the raise and at the re-nock.
+- **Crouched** (finding 5). `_crouchAimLayer` ran AFTER the arm solve and pitched the pelvis, spine, neck and head
+  under hands already placed against the head (the wrist 0.03–0.05 m behind the back of the skull through the raise
+  and the loose). And the rest hold (1.42 m up) and the hip quiver (1.205 m) are standing character-space points:
+  crouched, the draw shoulder sits 0.3–0.5 m up at solve time, so the rest hold was over her head — the arm straight
+  up, the fist over the top and back of the head and through the topknot / wrap-knot roots, as the judge filmed.
+
+*Fix* — `src/entities/playerAnimator.js`, profile `tune.armFlow` (`src/entities/anim/rigs/ubc.js` l. 245):
+- **The draw arm is solved in full from the first aimed step** (`afFull`, l. 4006): its wrist target starts where the
+  clip left the wrist and moves at most **`wristV` 2.7 m/s** (0.045 m per 1/60 s step; l. 4180; both head guards run
+  again on a limited step, `_wristClear` l. 4508). The aim weight's 13/s blend toward the IK had moved the wrist
+  0.13–0.19 m in a step at the raise. Lowering the bow still blends out by the aim weight.
+- **`_elbowFlow`** (l. 4540, called l. 4277): the elbow is turned on its circle to the point nearest the solve's that
+  lies within **`elbowStep` 0.05 m** of last step's elbow (closed-form arc), held no more than **`elbowBack` 0.16 m**
+  behind the back of the skull (R35's bar is 0.20 — this is the clamp the judge asked for, the hand's 0.012 guard's
+  twin), never into the skull. The solve's own pick wins whenever it is allowed: a still pose is never touched.
+- **`_armRate`** (l. 4435, called l. 4406 after the M10 root keep-out): the whole arm moves at most **`armStep`
+  0.05 m** per step relative to the draw shoulder (bisection back toward last step's arm), never into the skull and
+  never more than 0.012 m inside a chain root's keep (the cord can still be pushed ≥ 0.05 m clear up to 0.0198 m
+  inside). It catches the arm's own geometry (a 0.045 m wrist step along the forearm carried the elbow 0.10 m in a
+  rapid re-fire) and the root keep-out's own turn (0.02–0.04 m on the step it began, the −0.55 raise ending at the
+  cord's knot).
+- **The form scan looks ±0.6 rad either side of the solve** (`formWin`, l. 4854; at full draw its pick is within
+  0.06 rad standing, 0.19 crouched, so the full-draw form is unchanged), **never inboard of the draw shoulder joint**
+  (`outside`, a hard term in `_efCost` l. 4903), and `_rollElbow` takes the roll that leaves the elbow further to her
+  right (l. 4770): the elbow lifts on the OUTSIDE of the arm through the draw.
+- **The loose goes straight to the quiver** (`renock`): from the release until the reach holds the quiver the target's
+  base is the hand's own last target (`_rnHold`, l. 4027 — the kick still reaches its full length at its peak), the
+  reach is gated on the raw draw (the string is slack the instant the arrow leaves; l. 4104) and lets in only as the
+  kick lets go (× (1 − lk)); at the quiver the elbow points out and down (`quiverPole` −0.9, −0.3, 0.15); the nock beat
+  is 0.5 s (`quiverT`; down over the first 0.34, back from 0.5) and its bow — out to her right 0.09, down the trunk
+  0.08, out in front of the chest 0.06 — follows the HAND's progress, not the beat's (`bowHand`, l. 4136), so the
+  limited hand does not cut across the cord's knot. The kick rises over 0.45 of the follow-through (`kickIn`,
+  smoothstep, l. 3908) and the chest blade holds through it before opening with the draw (`holdBlade`, l. 3489; it
+  unwound from the release and carried the skull's back plane 0.02 m forward — A17's rearward fell to 0.045 m).
+- **Crouched**: the crouch-aim pose is applied before the arm solve (`crouchBody`, l. 1976), and by the crouch weight
+  the rest hold rides the chest (spine_03) and the quiver the pelvis (l. 3544).
+- The running-arm clamp leaves the draw arm to the aim solve while it is solved in full (l. 5186).
+- No allocation per frame: module scratch `_af*`; per-animator state `_wrT` / `_elbP` / `_wrP` / `_shP` / `_qbS` /
+  `_qbQ` / `_rgOff` / `_quivT` and the roots' `_afRootP` allocated once at bind.
+
+*Gate* (`tools/gates.r5.hero-body.mjs`):
+- **A-draw-elbow-level** (l. 7544): + **two crouched rows** (0, 0.75; a real crouch, `player.crouching` asserted);
+  every row is tracked on every sim step from the aim to 0.65 s after the release. New clauses: on every row the aim
+  **raise** has the hand (wrist and middle fingertip) in front of the back of the skull wherever it is at the skull's
+  height, and the fist never over the top of the head; at the four pitches **the elbow and the wrist move ≤ 0.06 m per
+  sim step** (character space) through the raise, the draw, the loose and the re-nock (l. 7762); the other rows report
+  it with the arm's own step (relative to the draw shoulder). The crouched rows grade R35 (hand and elbow against the
+  head through the draw and the loose), the raise and the crouch, and report the full-draw form (l. 7736; §6). No bar
+  moved; the R35 loose window is still 0.3 s.
+- **A-wrap-clear** (l. 7791): + crouched rows at 0 and 0.75 (the judge's staging, crouched 0.4 s after the
+  sprint-stop). Pass test unchanged.
+- **New `V-loose-renock`** (l. 9014): 0.10 s after the 0.75 loose from her right and in the game camera; the re-nock
+  in the game camera at 0.75 (+0.25 / +0.45 s) and 0 (+0.10 / +0.30 s); the crouched 0.75 and 0 raise (+0.28 s) in
+  the game camera; each panel frozen at its moment with the arm's numbers printed under it.
+
+@@MEASURED@@
+
 ## T2. W0b targeted fix round 2 (Oct 30) — A-wrap-clear at the 0.75 loose
 
 Two findings, one defect: A-wrap-clear's 0.75 row on round 1's code read **0.0494 m (J1, FAIL)**, 0.0512 (J2) and
@@ -133,11 +214,11 @@ worst run, i.e. the bound. The spread between runs is the frame clock sampling d
   - The maximum falls 0.25–0.28 s after the loose, while the hand is held at the hip quiver.
   - The keep-out does not raise it: on ≤ off in 4 / 4 pairs. Its turn comes earlier, at 0.17 s.
 - **(b) The draw elbow snaps at the start of every re-nock**, at all four pitches (`p1`). On the first frame the reach
-  restarts (~0.1 s after the loose), the elbow moves 0.23–0.38 m, and 0.25–0.43 m on the next frame. It crosses in
-  front of her chest to her left of the midline and back within ~0.1 s, while the wrist follows the slack string
-  forward (−0.55 / −0.4 / 0 / 0.75: 0.243 + 0.417, 0.231 + 0.422, 0.227 + 0.430, 0.375 + 0.254 m).
-  - The cause is not traced. The likely candidate is `_elbowForm`'s whole-circle argmin jumping as the loose weights
-    change.
+  restarts (~0.1 s after the loose), the elbow moves 0.23–0.38 m, and 0.25–0.43 m on the next frame.
+  - **Corrected in targeted fix round 3 (§T3):** the description above ("crosses in front of her chest") was wrong.
+    The judges' films and the round-3 trace show the fist going first UP behind her neck and over the back of the
+    head — the target fell back to the slack string at the bow, whose line from the jaw corner runs behind the neck —
+    and the elbow snapping on `_clearArmOfHead`'s pole kick there; the forearm then crossed her face. Fixed in §T3.
 
 ## T. W0b targeted fix round 1 (Oct 30) — what changed, by finding
 
@@ -1356,12 +1437,12 @@ exactly these overlays; standalone:
   - (a) A-draw-elbow-level's loose clause at 0.75 sits at R35's 0.20 bar: 4 of 8 samples in probe `w6/p2` read
     0.2006–0.2034 m, and the lane runs read 0.185–0.193 m. The peak comes 0.25–0.28 s after the loose, while the hand
     is held at the hip quiver from the bent T. The cord keep-out does not raise it (on ≤ off in 4 / 4 pairs).
-  - (b) At the start of every re-nock the draw elbow snaps 0.2–0.4 m in a frame across the front of her chest and
-    back, at every pitch. The cause is not traced; the likely candidate is `_elbowForm`'s whole-circle argmin.
-  - Both are left as they were. This round was scoped to A-wrap-clear (§7).
-- **The re-nock reach still sweeps the fist across her sternum after a loose** at the down aims (the hand follows the
-  slack string forward first). The cord keep-out turns the arm off the knot by ≤ 0.0215 m when it comes inside 0.0588 m.
-  It does not re-route the path.
+  - (b) At the start of every re-nock the draw elbow snaps 0.2–0.4 m in a frame, at every pitch. (Corrected in §T3:
+    not "across the front of her chest" — the fist went up behind her neck and over the back of the head first.)
+  - Both were left as they were in round 2; **both fixed in targeted fix round 3 (§T3).**
+- **The re-nock reach (round 2: "still sweeps the fist across her sternum")** — re-routed in targeted fix round 3
+  (§T3): the hand goes from where the loose's kick leaves it straight down her right side to the quiver, and back up
+  in front on a bow that follows the hand.
 - **Targeted fix (Oct 30) — the wrap tail's residuals, measured, not graded away.** (a) On the final cloth 1 trade-wind
   moment in 680 fell under A-tail-legible's bar (`c1`: front reach 3) — ≈ 3.5 % per 24-moment run; the front / back
   reach is 4–6 px because the tail's end crosses the stowed bow's upper limb, and no cloth knob moved it (§T.2); the
@@ -1417,8 +1498,7 @@ exactly these overlays; standalone:
 - **Targeted fix round 2 (Oct 30), for the orchestrator.** Two follow-through defects this round measured but did not
   fix, because they were outside its two A-wrap-clear findings (§T2, §6). (a) A-draw-elbow-level's 0.75 loose elbow
   sits at the 0.20 bar (probe 0.185–0.203 m, 4 / 8 over). (b) The draw elbow snaps 0.2–0.4 m per frame at the start
-  of every re-nock. A judge re-running A-draw-elbow-level may see (a) fail; a scoped follow-up on the loose / re-nock
-  elbow would close both.
+  of every re-nock. **Both closed in targeted fix round 3 (§T3).**
 0. **orchestrator (fix round 5, A16's down row) — RULED (R52, Oct 30), encoded in the targeted fix (§T.1).** Kept for
    the record: rule how A16's "elbow not above the shoulder" reads at a PITCHED aim. The judge-r2 fix of V24-draw-down (the whole T bent with the arrow, the forearm on the arrow line)
    puts the draw elbow +0.093 m over the draw shoulder joint in character height at camPitch 0.75 (A16 FAILS that
@@ -1469,6 +1549,17 @@ Fix round 4 changes in the file: §000.11. Fix round 5: §0000.6.
 
 ## 9. Files changed
 
+Targeted fix round 3 (Oct 30–31; vs checkpoint `538bc3d`, the orchestrator's later checkpoints committing parts as
+they went): `src/entities/playerAnimator.js` (`armFlow`: the full draw-arm solve and the wrist limiter, `_elbowFlow`,
+`_armRate` / `_armRateOk` / `_armRateRoots`, `_wristClear`, the form scan's window and the outside rule in `_efCost` /
+`_rollElbow`, the loose → re-nock base hold `_rnHold` / `_rnL`, the raw-draw reach gate, the hand-progress bow
+`_qbS` / `_qbQ` / `_qbOn`, the beat length / phases, the kick attack, the blade hold, the crouch-aim pose before the arm
+solve, the crouched rest hold / quiver `_rgOff` / `_quivT`, the run-arm clamp's skip, `debugAim().afWristCut` /
+`afElbowTurn` / `afOn`, module helpers `afSlerpDir` / `afWrap` and scratch `_af*`), `src/entities/anim/rigs/ubc.js`
+(`UBC_TUNE.armFlow`), `tools/gates.r5.hero-body.mjs` (A-draw-elbow-level: crouched rows, the raise, the arm step;
+A-wrap-clear: crouched rows; new `V-loose-renock`), `docs/ROUND5-HERO-BODY.md` (§T3, status, §T2 (b), §4.1, §6, §7,
+§9, §10).
+
 Targeted fix round 2 (Oct 30; vs checkpoint `e00b5e9`): `src/entities/playerAnimator.js` (`_clearArmOfRoots`,
 `_hcRoots` / `_hcFix*` at bind, `_hcMinAxis`, the M10 last-resort candidates, `debugHandCollider().rootKeep`, module
 scratch `_hc*` / `_cr*`), `src/entities/anim/rigs/ubc.js` (`UBC_HAND_COLLIDER.rootMargin` 0.015),
@@ -1516,6 +1607,11 @@ the sheets staged in the trade wind), `tools/build/recipes/brea.mjs` (the alidad
 The orchestrator's checkpoints committed parts as they went; `git -C <tree> diff --stat d019db8` lists the set.
 
 ## 10. Process hygiene
+
+Targeted fix round 3 (Oct 30–31): `w7/run7.sh` — every Vite and gate run under `nice -n 10` (never `taskpolicy -b`),
+each Chrome run in one machine slot after the memory (≥ 40 % free, pressure level 1), load (< 12) and disk (≥ 3 GB)
+checks, released at the end; one Chrome at a time; Vite and this lane's Chrome killed after each run; 0 Chrome
+profiles left; probes, films and logs under `scratchpad/r5/hero-body/w7/`, never in the tree.
 
 Vite only as `npx vite --port 5252 --strictPort` from this tree; Chrome only through `tools/gates.mjs` /
 `tools/screenshot.mjs` on 5252, one at a time, each run inside the machine-wide slot (`chrome-slots/slot{1,2}`, plan

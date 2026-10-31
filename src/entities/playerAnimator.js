@@ -188,6 +188,10 @@ const _afQ = new THREE.Quaternion();
 const _afQ2 = new THREE.Quaternion();
 const _afG = new THREE.Vector3();   // the arm step's scratch (`_armRate`)
 const _afH = new THREE.Vector3();
+const _afT = new THREE.Vector3();   // ...the fingertip off the wrist
+const _afJ = new THREE.Vector3();   // ...a candidate elbow, wrist, fingertip
+const _afK = new THREE.Vector3();
+const _afL = new THREE.Vector3();
 
 
 // (ball- and ankle-bone rest heights are MEASURED off the bind pose in the
@@ -672,15 +676,14 @@ export class PlayerAnimator {
      * capsule radius gets a keep-out round its root: keep = r - link + margin,
      * in character metres (the links were measured in world units). */
     this._hcRoots = [];
-    // W0b targeted fix 3: the cord's knot (`armFlow.knotAvoid`)
-    this._afKnot = this.bones.dyn_alidadeCord_01 || null;
+    this._afRootP = [];   // W0b targeted fix 3: the roots' places for `_armRate`'s guard (filled once below)
     this._hcFixN = 0; this._hcFixMax = 0; this._hcFixDraw = 0; this._hcFixHead = 0;
     const hcM = this._handCol ? prof?.handCollider?.rootMargin : null;
     if (hcM != null && Number.isFinite(hcM)) {
       const ws = this.model.matrixWorld.getMaxScaleOnAxis() || 1;
       for (const c of this._chains) {
         const keep = (this._handCol.r - c.seg[0] + hcM) / ws;
-        if (keep > 0) this._hcRoots.push({ bone: c.links[0].bone, name: c.links[0].name, keep });
+        if (keep > 0) { this._hcRoots.push({ bone: c.links[0].bone, name: c.links[0].name, keep }); this._afRootP.push(new THREE.Vector3()); }
       }
     }
 
@@ -4143,7 +4146,7 @@ export class PlayerAnimator {
           this._charOf(b.spine1.bone, _afG); this._charOf(b.neck1.bone, _afH);
           _afH.sub(_afG).normalize();                                   // the trunk's up
           _afG.crossVectors(this._latT, _afH).normalize();              // ...and its forward
-          _v7.addScaledVector(this._latT, -(AF.bowOut ?? 0.09) * (1 + (AF.bowOutCrouch ?? 0) * this._crouchW) * bw)
+          _v7.addScaledVector(this._latT, -(AF.bowOut ?? 0.09) * bw)
             .addScaledVector(_afH, -(AF.bowDown ?? 0) * bw)
             .addScaledVector(_afG, (AF.bowFwd ?? 0) * bw);
         }
@@ -4174,31 +4177,6 @@ export class PlayerAnimator {
      * A limited step between two guarded points can cut the skull ellipsoid's
      * edge, so both head guards run again on it. Nothing here moves at full
      * draw or through the draw ramp (<= 0.02 m per step). */
-    /* W0b targeted fix 3 (`armFlow.knotAvoid` m): off the string (the raise,
-     * the reach to the quiver and back, the re-nock) the wrist target is eased
-     * out in front of her trunk where it comes within that distance of the
-     * cord's knot at her throat — the M10 root keep-out only turns the arm
-     * once it is already inside its keep, a whole-arm turn at the shoulder
-     * that jerked the wrist 0.06-0.18 m in a step (probes `w7/T11`, `G5`).
-     * Smooth in the distance, before the limiter; faded out as the draw
-     * builds (the hand rides the nock then, A32). */
-    D.afKnot = 0;
-    if (this._afOn && AF.knotAvoid && this._afKnot) {
-      const kw = 1 - smoothstep(drawS, 0.12, 0.3);
-      if (kw > 1e-3) {
-        this._charOf(this._afKnot, _afP);
-        const dk = _afP.distanceTo(_v7), R = AF.knotAvoid;
-        if (dk < R) {
-          this._charOf(b.spine1.bone, _afG); this._charOf(b.neck1.bone, _afH);
-          _afH.sub(_afG).normalize();                                   // the trunk's up
-          _afG.crossVectors(this._latT, _afH).normalize();              // ...and its forward
-          const push = (R - dk) * kw;
-          _v7.addScaledVector(_afG, push);
-          D.afKnot = Math.round(push * 1e4) / 1e4;
-          this._pushOutOfHead(_v7, this.T.handIn);
-        }
-      }
-    }
     D.afWristCut = 0;
     D.afPre.copy(_v7);
     if (this._afOn && AF.wristV) {
@@ -4421,10 +4399,11 @@ export class PlayerAnimator {
     this._curlFingers(this._fingerR,
       (0.45 + 0.3 * drawS) * aimW * qOpen * (1 - 0.9 * lk),
       0.25 * aimW * (1 - 0.7 * lk));
-    // W0b targeted fix 3: the whole arm's step from last step's, before the root keep-out
-    if (this._afOn) this._armRate();
-    // W0b targeted fix 2: last, on the arm's final pose this frame
+    // W0b targeted fix 2: on the arm's final pose this frame
     this._clearArmOfRoots(drawS);
+    // W0b targeted fix 3: then the whole arm's step from last step's — the
+    // keep-out's own turn included — held off the chain roots (see `_armRate`)
+    if (this._afOn) this._armRate();
     // W0b targeted fix 3: the arm as it ends this step (char, as solved) — next step's continuity
     if (this._afOn) {
       this._charOf(b.loArmR.bone, this._elbP);
@@ -4445,7 +4424,13 @@ export class PlayerAnimator {
    * arm's and the forearm's directions are taken back toward last step's by
    * the least fraction that holds both (bisection; the shoulder's own motion,
    * the body's, is not the arm's). It binds only on those outliers; never at
-   * full draw. A fraction that would put the arm in the skull is not taken.
+   * full draw. A fraction that would put the arm in the skull is not taken,
+   * nor one that brings the forearm or the hand back within `rootGive` m inside
+   * a chain root's keep-out: it runs after `_clearArmOfRoots`, whose whole-arm
+   * turn is the other source of a jump (0.02-0.04 m on the step it began, the
+   * -0.55 raise ending at the string by the cord's knot, probes `G3`-`G6`); the
+   * cord can still be pushed >= 0.05 m clear with the arm up to 0.0198 m inside
+   * its keep (keep = r - link + 0.015).
    */
   _armRate() {
     const AF = this.T.armFlow, b = this.b, D = this._aimDbg;
@@ -4468,6 +4453,10 @@ export class PlayerAnimator {
       const so = Math.sin(om);
       return out.copy(a).multiplyScalar(Math.sin((1 - al) * om) / so).addScaledVector(c, Math.sin(al * om) / so);
     };
+    // the roots and the fingertip's offset off the wrist, for the root guard
+    const R = this._hcRoots, Hc = this._handCol, give = AF.rootGive ?? 0.012;
+    const nR = R && Hc?.c ? R.length : 0;
+    if (nR) { for (let k = 0; k < nR; k++) this._charOf(R[k].bone, this._afRootP[k]); this._charOf(Hc.c, _afT).sub(_afW); }
     const ok = (al) => {
       dirAt(_afA, _afU, al, _afP); dirAt(_afC, _afV, al, _afG);
       // positions relative to the shoulder: elbow L1*u, wrist L1*u + L2*f
@@ -4476,9 +4465,29 @@ export class PlayerAnimator {
         .addScaledVector(_afA, -l1).addScaledVector(_afC, -l2).length();
       return eE <= lim && eW <= lim;
     };
+    const rootsOk = (al) => {
+      if (!nR || al >= 1) return true;
+      dirAt(_afA, _afU, al, _afP); dirAt(_afC, _afV, al, _afG);
+      _afJ.copy(_afS).addScaledVector(_afP, L1);                 // elbow
+      _afK.copy(_afJ).addScaledVector(_afG, L2);                 // wrist
+      _afL.copy(_afK).add(_afT);                                 // fingertip (the hand carried as it is)
+      for (let k = 0; k < nR; k++) {
+        const P = this._afRootP[k];
+        const d = Math.min(this._segDist(P, _afJ, _afK), this._segDist(P, _afK, _afL));
+        if (d < R[k].keep - give) return false;
+      }
+      return true;
+    };
     let lo = 0, hi = 1;
     if (!ok(0)) return;                            // the arm's length changed under it: leave the solve alone
     for (let i = 0; i < 10; i++) { const m = (lo + hi) * 0.5; if (ok(m)) lo = m; else hi = m; }
+    // ...and no nearer a root than the guard allows (back toward the solve's pose until it holds)
+    if (!rootsOk(lo)) {
+      let a = lo, b2 = 1;
+      for (let i = 0; i < 10; i++) { const m = (a + b2) * 0.5; if (rootsOk(m)) b2 = m; else a = m; }
+      lo = b2;
+      if (lo >= 1 - 1e-4) return;
+    }
     // apply: upper arm onto u(lo), then the forearm (carried) onto f(lo)
     dirAt(_afA, _afU, lo, _afP); dirAt(_afC, _afV, lo, _afG);
     _afQ.setFromUnitVectors(_afU, _afP);

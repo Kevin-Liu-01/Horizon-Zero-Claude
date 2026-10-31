@@ -243,7 +243,7 @@ export const UBC_TUNE = {
   // the rest hold / quiver ride the chest / pelvis (`crouchBody`)
   // (`quiverT` s: the nock beat — down over `qUp` of it, back from `qBack`)
   armFlow: { wristV: 2.7, elbowStep: 0.05, elbowBack: 0.16, formWin: 0.6, renock: true, quiverPole: [-0.9, -0.3, 0.15], crouchBody: true,
-    quiverT: 0.5, qUp: 0.34, qBack: 0.5, bowOut: 0.09, bowDown: 0.08, bowFwd: 0.06, bowHand: true, kickIn: 0.45, armStep: 0.05, outside: true, holdBlade: true, knotAvoid: 0.13, bowOutCrouch: 1.2 },
+    quiverT: 0.5, qUp: 0.34, qBack: 0.5, bowOut: 0.09, bowDown: 0.08, bowFwd: 0.06, bowHand: true, kickIn: 0.45, armStep: 0.05, outside: true, holdBlade: true, rootGive: 0.012 },
   // the string hand's roll at full draw (0..1 of the way to back-of-hand out,
   // palm to the neck): the hooked fingers stand on the vertical string and the
   // ∴ on the back of the right hand faces a side camera (V24)
