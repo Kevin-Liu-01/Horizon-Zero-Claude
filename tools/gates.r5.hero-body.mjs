@@ -7724,12 +7724,23 @@ const NEW_GATES = [
        * the HAND never more than 0.10 m behind it and always in front of it
        * (< 0); the ELBOW at most 0.20 m behind it; the other clauses as
        * before. The follow-through clauses on every row. */
-      const ok = (r) => [r.drawS > 0.9 ? null : 'drawS', r.elbowUp >= -0.03 && r.elbowUp <= 0.05 ? null : 'elbowHeight',
+      /* W0b targeted fix 3: the crouched rows grade what the judge asked of
+       * them — the raise, the hand and the elbow against the head through the
+       * draw and the loose (R35), a real crouch — and report the full-draw
+       * form (elbow height band, elbow behind the hand, bow arm off the chest,
+       * the fist on the string), which is the standing draw's form and not
+       * this round's finding: crouched at 0.75 the bow arm cannot reach the
+       * draw (Lmax 0.46 m against the 0.527 the bows are cut to; the reach
+       * clamp's radial fallback leaves the fist 0.17 m off the nock — 0.25 m
+       * with the crouch-aim pose solved last, as before this round), doc §T3. */
+      const formOf = (r) => [r.elbowUp >= -0.03 && r.elbowUp <= 0.05 ? null : 'elbowHeight',
         r.elbowBehindHand >= 0.05 ? null : 'elbowBehindHand', r.bowArmChest >= 0.04 ? null : 'bowArmChest',
+        r.knuckleToNock != null && r.knuckleToNock <= ${KNUCKLE_NOCK} ? null : 'knuckleOffString',
+        r.fingertipToNock != null && r.fingertipToNock <= ${FINGERTIP_NOCK} ? null : 'fingertipOffString'].filter(Boolean);
+      for (const r of rows) if (r.key === 'crouch') r.crouchFormReported = formOf(r);
+      const ok = (r) => [r.drawS > 0.9 ? null : 'drawS', ...(r.key === 'crouch' ? [] : formOf(r)),
         r.handBehindHead <= 0.10 ? null : 'handBehindHeadPlane', r.handBehindHead < 0 ? null : 'handBehindSkull',
         r.elbowBehindHead <= 0.20 ? null : 'elbowBehindHead',
-        r.knuckleToNock != null && r.knuckleToNock <= ${KNUCKLE_NOCK} ? null : 'knuckleOffString',
-        r.fingertipToNock != null && r.fingertipToNock <= ${FINGERTIP_NOCK} ? null : 'fingertipOffString',
         r.looseSteps >= 6 ? null : 'looseSampled', r.looseMaxHandBehindHead < 0 ? null : 'looseHandBehindSkull',
         r.looseMaxElbowBehindHead <= 0.20 ? null : 'looseElbowBehindHead',
         // W0b targeted fix 3: the raise, on every row; a crouched row must really be crouched

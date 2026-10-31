@@ -672,6 +672,8 @@ export class PlayerAnimator {
      * capsule radius gets a keep-out round its root: keep = r - link + margin,
      * in character metres (the links were measured in world units). */
     this._hcRoots = [];
+    // W0b targeted fix 3: the cord's knot (`armFlow.knotAvoid`)
+    this._afKnot = this.bones.dyn_alidadeCord_01 || null;
     this._hcFixN = 0; this._hcFixMax = 0; this._hcFixDraw = 0; this._hcFixHead = 0;
     const hcM = this._handCol ? prof?.handCollider?.rootMargin : null;
     if (hcM != null && Number.isFinite(hcM)) {
@@ -3475,7 +3477,17 @@ export class PlayerAnimator {
     // extra degree of it carries the bow shoulder around toward the arrow line
     // — which is the only lever that shortens shoulder->grip without shortening
     // the draw, and the reach deficit was costing 12cm of slide per frame.
-    const chestYaw = -(0.22 + 0.80 * drawS) * aimW;
+    // (W0b targeted fix 3, `armFlow.holdBlade`: through the loose's kick the
+    // blade holds — an archer's follow-through keeps the stance — and then
+    // opens back with the draw. It unwound with the smoothed draw (16/s) from
+    // the release, which carried the head and the skull's back plane 0.02 m
+    // forward before the kick, now rate-limited, reached it: A17's rearward
+    // travel 0.045 m against its 0.05)
+    let bladeS = drawS;
+    if (this.T.armFlow?.holdBlade && this._looseT < 1) {
+      bladeS = Math.max(drawS, (this._looseDraw ?? 0) * (1 - smoothstep(this._looseT, this.T.armFlow.kickIn ?? 0.25, 1)));
+    }
+    const chestYaw = -(0.22 + 0.80 * bladeS) * aimW;
     const spineYaw = (chestYaw + 0.3 * stanceW) / 3;
     this._rotL(b.spine1, Y_AXIS, spineYaw);
     this._rotL(b.spine2, Y_AXIS, spineYaw);
@@ -4131,7 +4143,7 @@ export class PlayerAnimator {
           this._charOf(b.spine1.bone, _afG); this._charOf(b.neck1.bone, _afH);
           _afH.sub(_afG).normalize();                                   // the trunk's up
           _afG.crossVectors(this._latT, _afH).normalize();              // ...and its forward
-          _v7.addScaledVector(this._latT, -(AF.bowOut ?? 0.09) * bw)
+          _v7.addScaledVector(this._latT, -(AF.bowOut ?? 0.09) * (1 + (AF.bowOutCrouch ?? 0) * this._crouchW) * bw)
             .addScaledVector(_afH, -(AF.bowDown ?? 0) * bw)
             .addScaledVector(_afG, (AF.bowFwd ?? 0) * bw);
         }
@@ -4162,6 +4174,31 @@ export class PlayerAnimator {
      * A limited step between two guarded points can cut the skull ellipsoid's
      * edge, so both head guards run again on it. Nothing here moves at full
      * draw or through the draw ramp (<= 0.02 m per step). */
+    /* W0b targeted fix 3 (`armFlow.knotAvoid` m): off the string (the raise,
+     * the reach to the quiver and back, the re-nock) the wrist target is eased
+     * out in front of her trunk where it comes within that distance of the
+     * cord's knot at her throat — the M10 root keep-out only turns the arm
+     * once it is already inside its keep, a whole-arm turn at the shoulder
+     * that jerked the wrist 0.06-0.18 m in a step (probes `w7/T11`, `G5`).
+     * Smooth in the distance, before the limiter; faded out as the draw
+     * builds (the hand rides the nock then, A32). */
+    D.afKnot = 0;
+    if (this._afOn && AF.knotAvoid && this._afKnot) {
+      const kw = 1 - smoothstep(drawS, 0.12, 0.3);
+      if (kw > 1e-3) {
+        this._charOf(this._afKnot, _afP);
+        const dk = _afP.distanceTo(_v7), R = AF.knotAvoid;
+        if (dk < R) {
+          this._charOf(b.spine1.bone, _afG); this._charOf(b.neck1.bone, _afH);
+          _afH.sub(_afG).normalize();                                   // the trunk's up
+          _afG.crossVectors(this._latT, _afH).normalize();              // ...and its forward
+          const push = (R - dk) * kw;
+          _v7.addScaledVector(_afG, push);
+          D.afKnot = Math.round(push * 1e4) / 1e4;
+          this._pushOutOfHead(_v7, this.T.handIn);
+        }
+      }
+    }
     D.afWristCut = 0;
     D.afPre.copy(_v7);
     if (this._afOn && AF.wristV) {
