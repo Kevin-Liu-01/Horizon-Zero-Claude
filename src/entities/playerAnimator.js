@@ -186,12 +186,8 @@ const _afP = new THREE.Vector3();   // a candidate elbow / scratch
 const _afF = new THREE.Vector3();   // the head's live forward
 const _afQ = new THREE.Quaternion();
 const _afQ2 = new THREE.Quaternion();
-const _afT = new THREE.Vector3();   // the fingertip, char
-const _afG = new THREE.Vector3();   // a candidate fingertip / scratch
+const _afG = new THREE.Vector3();   // the arm step's scratch (`_armRate`)
 const _afH = new THREE.Vector3();
-const _afJ = new THREE.Vector3();   // the fingertip's offset across the swivel axis, and that crossed with the axis
-const _afK = new THREE.Vector3();
-const _afL = new THREE.Vector3();   // a candidate fingertip
 
 
 // (ball- and ankle-bone rest heights are MEASURED off the bind pose in the
@@ -685,8 +681,7 @@ export class PlayerAnimator {
         if (keep > 0) this._hcRoots.push({ bone: c.links[0].bone, name: c.links[0].name, keep });
       }
     }
-    // W0b targeted fix 3: the roots' places each step, for the elbow flow's swivel (`_elbowFlow`), allocated once
-    this._afRootP = this._hcRoots.map(() => new THREE.Vector3());
+
     /* R5 fix round 4 — THE WORLD WIND the cloth chains feel (see `DYN_CLASSES`
      * 'wrap' / `DYN_WIND`): air velocity in WORLD m/s (x, z), `gust` (0..1,
      * slow swell of the speed) and `flutter` (0..1, the fast cross-wind shake
@@ -830,6 +825,8 @@ export class PlayerAnimator {
     this._rnHold = false; this._rnL = false;
     // ...and crouched, the rest hold's and the hip quiver's live places (`armFlow.crouchBody`)
     this._rgOff = new THREE.Vector3(); this._quivT = new THREE.Vector3();
+    // ...and the reach's bow by the hand's progress (`armFlow.bowHand`): its string and quiver ends
+    this._qbS = new THREE.Vector3(); this._qbQ = new THREE.Vector3(); this._qbOn = false;
     this._holdT = 0;                         // full-draw hold time -> tremble
     this._plantT = 1;                        // plant-and-turn overlay timeline
     this._stableX = 0; this._stableZ = 1;    // recent stable travel direction
@@ -4091,7 +4088,12 @@ export class PlayerAnimator {
       // solved in full (`afFull`) the reach is not scaled by the aim weight.
       const dG = AF?.renock ? Math.min(drawS, this._prevRawDraw) : drawS;
       qw = reach * (afFull ? 1 : aimW) * (1 - smoothstep(dG, 0.02, 0.14));
+      // (...and only as the loose's kick lets go: the reach starts 0.06 s after
+      // the release, and pulling the hand down to the quiver while the kick
+      // still ran cut the loose's rearward travel to 0.046 m — A17's 0.05)
+      if (AF?.renock && lk > 0) qw *= 1 - lk;
       _v6.copy(this._quivT);
+      if (AF?.bowHand) { this._qbS.copy(_v7); this._qbQ.copy(_v6); this._qbOn = true; }
       _v7.lerp(_v6, qw * 0.92);
       /* R5 fix round 5 (A-wrap-clear on the judges' re-runs: the alidade
        * cord's root 0.029-0.042 m from the forearm, 0.35 s after a loose, probe
@@ -4100,15 +4102,40 @@ export class PlayerAnimator {
        * her RIGHT (character -X, in the aim's turned frame) on the way, 0.09 m
        * at the middle of the reach and none at the quiver (A17's hand-to-quiver
        * is untouched). */
-      _v7.addScaledVector(this._latT, -(AF?.bowOut ?? 0.09) * 4 * qw * (1 - qw));
-      // (W0b targeted fix 3, `armFlow.bowDown`: and down the trunk, away from
-      // the neck — the return from the quiver to the ready string rose through
-      // the cord knot's height at her throat, 0.00-0.03 m off its keep-out at
-      // every pitch, and the keep-out's turn jerked the arm 0.07-0.17 m)
-      if (AF?.bowDown) _v7.addScaledVector(this._upT, -AF.bowDown * 4 * qw * (1 - qw));
-      // (...and `armFlow.bowFwd` out in front of her chest, off the knot itself)
-      if (AF?.bowFwd) _v7.addScaledVector(this._fwdT, AF.bowFwd * 4 * qw * (1 - qw));
+      if (!AF?.bowHand) _v7.addScaledVector(this._latT, -(AF?.bowOut ?? 0.09) * 4 * qw * (1 - qw));
       qOpen = 0.45 + 0.55 * Math.max(this._quiverT, smoothstep(drawS, 0.02, 0.14));
+    }
+    /*
+     * W0b targeted fix 3 (`armFlow.bowHand`): the reach's bow — out to her
+     * right (fix round 5), and (new) down the trunk and out in front of the
+     * chest, away from the cord knot at her throat — follows the HAND's own
+     * progress between the string and the quiver, not the beat's: the wrist
+     * target moves at most `wristV`, so on a long reach (crouched: 0.49 m) the
+     * hand lagged the beat by up to 0.2 m, a bow keyed to the beat had already
+     * gone when the hand got there, and the hand cut straight across the knot
+     * (probe `w7/T9`: inside its keep-out, the keep-out's turn undone by the
+     * skull check, a 0.09 m jerk). It holds after the beat ends until the hand
+     * is back at the string. The trunk's own axes (spine_01 -> neck) carry the
+     * crouch's lean as well as the aim's bend.
+     */
+    if (AF?.bowHand && this._qbOn) {
+      if (!this._afOn) this._qbOn = false;
+      else {
+        _afD.subVectors(this._qbQ, this._qbS).multiplyScalar(0.92);      // string -> the reach's end
+        const L2 = _afD.lengthSq();
+        const sP = L2 > 1e-6 ? clamp(_afG.subVectors(this._wrT, this._qbS).dot(_afD) / L2, 0, 1) : 0;
+        if (this._quiverT >= 1) this._qbS.copy(_v7);                  // after the beat: the string is where it is now
+        if (this._quiverT >= 1 && sP < 0.02) this._qbOn = false;
+        else {
+          const bw = 4 * sP * (1 - sP);
+          this._charOf(b.spine1.bone, _afG); this._charOf(b.neck1.bone, _afH);
+          _afH.sub(_afG).normalize();                                   // the trunk's up
+          _afG.crossVectors(this._latT, _afH).normalize();              // ...and its forward
+          _v7.addScaledVector(this._latT, -(AF.bowOut ?? 0.09) * bw)
+            .addScaledVector(_afH, -(AF.bowDown ?? 0) * bw)
+            .addScaledVector(_afG, (AF.bowFwd ?? 0) * bw);
+        }
+      }
     }
     // Hard guard: the string hand may never enter the head. The keep-out is an
     // ELLIPSOID fitted to the actual skull (see HEAD_R) — the Round-4 0.21m
@@ -4503,30 +4530,18 @@ export class PlayerAnimator {
     const h = _afP.dot(_afA), px = _afP.dot(_afU), py = _afP.dot(_afV);
     const rho = Math.hypot(px, py);
     const tc = rho > 1e-4 ? Math.atan2(py, px) : 0;
+    const wrapA = (a) => (a > Math.PI ? a - 2 * Math.PI : (a < -Math.PI ? a + 2 * Math.PI : a));
     let half = Math.PI;                            // the feasible arc's half-width about tc
     if (rho > 1e-4) {
       const k = (h * h + rho * rho + r * r - step * step) / (2 * r * rho);
       half = k >= 1 ? 0 : Math.acos(Math.max(-1, k));
+      // (while the circle itself moves with the wrist the arc closes up; the
+      // elbow may still turn 0.6 of a step on it — `_armRate` bounds the total)
+      half = Math.max(half, Math.min(Math.PI, (0.6 * step) / r));
     }
     this._headFrame();
     _afF.set(0, 0, 1).applyQuaternion(_hdQ);
     const hdF = _hd.dot(_afF), hR = this.T.headR.z, cap = AF.elbowBack ?? 9;
-    // the chain roots the M10 keep-out guards (`_hcRoots`): the swivel keeps the
-    // forearm (elbow -> wrist) and the hand (wrist -> fingertip, turned with the
-    // swivel) `rootPad` m further off them when it can — continuously, before
-    // the keep-out has to turn the whole arm (it jerked it 0.06-0.15 m a step)
-    const R = AF.rootPad != null ? this._hcRoots : null, Hc = this._handCol;
-    let nR = 0;
-    if (R && R.length && Hc?.c) {
-      nR = R.length;
-      for (let k = 0; k < nR; k++) this._charOf(R[k].bone, this._afRootP[k]);
-      this._charOf(Hc.c, _afT).sub(_afS);
-      const tp = _afT.dot(_afA);
-      _afJ.copy(_afT).addScaledVector(_afA, -tp);  // across the axis
-      _afK.crossVectors(_afA, _afJ);
-      _afT.copy(_afS).addScaledVector(_afA, tp);   // ...and its foot on the axis
-    }
-    const wrapA = (a) => (a > Math.PI ? a - 2 * Math.PI : (a < -Math.PI ? a + 2 * Math.PI : a));
     // candidates: the solve's own pick (0) if it is on the arc, the arc's two
     // ends and 16 points across it; scored by depth over the cap, then by how
     // far they turn from the solve's pick; a skull-crossing one is skipped
@@ -4541,16 +4556,7 @@ export class PlayerAnimator {
       if (i === -2 && Math.abs(wrapA(th - tc)) > half + 1e-6) continue;
       _afP.copy(_afC).addScaledVector(_afU, Math.cos(th) * r).addScaledVector(_afV, Math.sin(th) * r);
       const dep = hdF - _afP.dot(_afF) - hR;
-      let c = Math.max(0, dep - cap) * 1000 + Math.abs(th);
-      if (nR) {
-        _afL.copy(_afT).addScaledVector(_afJ, Math.cos(th)).addScaledVector(_afK, Math.sin(th));
-        for (let k = 0; k < nR; k++) {
-          const P = this._afRootP[k];
-          const d = Math.min(this._segDist(P, _afP, _afW), this._segDist(P, _afW, _afL));
-          const def = R[k].keep + AF.rootPad - d;
-          if (def > 0) c += def * 1000;
-        }
-      }
+      const c = Math.max(0, dep - cap) * 1000 + Math.abs(th);
       if (c >= bestC) continue;
       if (this._segInHead(_afS, _afP) || this._segInHead(_afP, _afW)) continue;
       best = th; bestC = c;
@@ -4707,6 +4713,19 @@ export class PlayerAnimator {
     const wrap = (a) => (a > Math.PI ? a - 2 * Math.PI : (a < -Math.PI ? a + 2 * Math.PI : a));
     const t1 = wrap(phi + d), t2 = wrap(phi - d);
     let th = Math.abs(t2) < Math.abs(t1) ? t2 : t1;   // the shorter way round
+    /* W0b targeted fix 3 (`armFlow.outside`): the draw elbow lifts on the
+     * OUTSIDE of the arm. Mid-draw the hand is in front of her chest and the
+     * pole's elbow hangs under the shoulder -> wrist line, so the shorter way
+     * up was often the inside one: the elbow rose across her chest (0.12 m
+     * inboard of the shoulder joint at drawS 0.4-0.45, probe `w7/T5`) and the
+     * form scan flipped it out at ~0.47 — the draw onset's 0.45 m jump. Of the
+     * two rolls the one that leaves the elbow further to her right wins
+     * (clamped like the other, so a far one is approached over steps). */
+    if (side === 'r' && this.T.armFlow?.outside) {
+      const o1 = Math.cos(t1) * _reU.dot(this._latT) + Math.sin(t1) * _reV.dot(this._latT);
+      const o2 = Math.cos(t2) * _reU.dot(this._latT) + Math.sin(t2) * _reV.dot(this._latT);
+      th = o1 < o2 ? t1 : t2;
+    }
     th = clamp(th, -0.45, 0.45) * w;
     if (Math.abs(th) < 0.004) return;
     _q3.setFromAxisAngle(_reAx, th);
@@ -4762,7 +4781,8 @@ export class PlayerAnimator {
     _efUp.set(0, 1, 0).addScaledVector(_dA, -_dA.y);
     if (_efUp.lengthSq() < 1e-6) return;
     _efUp.normalize();
-    const S = this._efS || (this._efS = { r: 0, shU: 0, shY: 0, hR: 0, hdF: 0, hD: 0, lo: 0, hi: 0, bh: 0, bd: 0, drop: 0, r52: 1 });   // once
+    const S = this._efS || (this._efS = { r: 0, shU: 0, shY: 0, hR: 0, hdF: 0, hD: 0, lo: 0, hi: 0, bh: 0, bd: 0, drop: 0, r52: 1, out: 0, shL: 0 });   // once
+    S.out = this.T.armFlow?.outside ? 1 : 0; S.shL = _sg0.dot(this._latT);
     S.r = r; S.shU = _sg0.dot(_efUp); S.shY = _sg0.dot(this._upT); S.hR = this.T.headR.z; S.hdF = _hd.dot(_efF);
     S.hD = _sg2.dot(_dA); S.lo = EF.up[0]; S.hi = EF.up[1]; S.bh = EF.behindHand; S.bd = EF.behindHead;
     // through the LOOSE the elbow may drop under the full-draw height band
@@ -4830,7 +4850,11 @@ export class PlayerAnimator {
     // plane (`u`, the frame A16 and A-draw-elbow-level read; at a level aim the
     // two coincide, at a pitched aim the T's half arrow-roll parts them)
     const hard = Math.max(0, -0.026 - S.drop - u) + Math.max(0, u - 0.046) + Math.max(0, 0.055 - bhd)
-      + Math.max(0, dep - 0.195) + Math.max(0, above + 0.002) + S.r52 * Math.max(0, u + 0.002);
+      + Math.max(0, dep - 0.195) + Math.max(0, above + 0.002) + S.r52 * Math.max(0, u + 0.002)
+      // (W0b targeted fix 3, `armFlow.outside`: never inboard of the draw
+      // shoulder joint, across her chest — the scan's two window edges tied on
+      // the other bars mid-draw and it flipped between them)
+      + S.out * Math.max(0, _efE.dot(this._latT) - S.shL);
     // ...and the form TARGETS inside them, soft (x100)
     const soft = Math.max(0, S.lo - S.drop - u) + Math.max(0, u - S.hi) + Math.max(0, S.bh - bhd)
       + Math.max(0, dep - S.bd) + Math.max(0, above + 0.006) + S.r52 * Math.max(0, u + 0.006);

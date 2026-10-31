@@ -242,8 +242,8 @@ export const UBC_TUNE = {
   // frame); crouched, the crouch-aim pose is applied before the arms solve and
   // the rest hold / quiver ride the chest / pelvis (`crouchBody`)
   // (`quiverT` s: the nock beat — down over `qUp` of it, back from `qBack`)
-  armFlow: { wristV: 2.7, elbowStep: 0.05, elbowBack: 0.17, formWin: 0.6, renock: true, quiverPole: [-0.75, -0.65, -0.05], crouchBody: true,
-    quiverT: 0.5, qUp: 0.34, qBack: 0.5, bowOut: 0.09, bowDown: 0.08, bowFwd: 0.05, kickIn: 0.45, armStep: 0.05, rootPad: 0.01 },
+  armFlow: { wristV: 2.7, elbowStep: 0.05, elbowBack: 0.16, formWin: 0.6, renock: true, quiverPole: [-0.9, -0.3, 0.15], crouchBody: true,
+    quiverT: 0.5, qUp: 0.34, qBack: 0.5, bowOut: 0.09, bowDown: 0.08, bowFwd: 0.06, bowHand: true, kickIn: 0.45, armStep: 0.05, outside: true },
   // the string hand's roll at full draw (0..1 of the way to back-of-hand out,
   // palm to the neck): the hooked fingers stand on the vertical string and the
   // ∴ on the back of the right hand faces a side camera (V24)

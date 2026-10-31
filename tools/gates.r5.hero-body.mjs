@@ -7542,7 +7542,7 @@ const NEW_GATES = [
   /* -------------------------------------------------- A-draw-elbow-level */
   {
     id: 'A-draw-elbow-level', kind: 'action', lane: 'hero-body', timeout: 120000,
-    title: 'Full draw, four pitches + strafing (and from a jog / a sprint): draw elbow within [shoulder - 0.03, shoulder + 0.05] m (aim frame), >= 0.05 m behind the hand along the arrow, bow arm >= 0.04 m clear of the chest surface (torso-skinned outfit vertices); R35: the draw HAND never > 0.10 m behind the head plane and always in front of the back of the skull, the draw ELBOW <= 0.20 m behind it; the hand ON the string: middle knuckle <= 0.06 m and middle fingertip <= 0.06 m from the bow nock (fix round 4); at the four pitches the forearm within 20 deg of the arrow and the wrist within 0.03 m of the level draw\'s height over the Head joint and of its place in the head\'s frame (fix round 5) — and through the LOOSE, on every sim step from the release until 0.3 s after it, the hand still in front of the back of the skull and the elbow <= 0.20 m',
+    title: 'Full draw, four pitches + strafing (and from a jog / a sprint): draw elbow within [shoulder - 0.03, shoulder + 0.05] m (aim frame), >= 0.05 m behind the hand along the arrow, bow arm >= 0.04 m clear of the chest surface (torso-skinned outfit vertices); R35: the draw HAND never > 0.10 m behind the head plane and always in front of the back of the skull, the draw ELBOW <= 0.20 m behind it; the hand ON the string: middle knuckle <= 0.06 m and middle fingertip <= 0.06 m from the bow nock (fix round 4); at the four pitches the forearm within 20 deg of the arrow and the wrist within 0.03 m of the level draw\'s height over the Head joint and of its place in the head\'s frame (fix round 5) — and through the LOOSE, on every sim step from the release until 0.3 s after it, the hand still in front of the back of the skull and the elbow <= 0.20 m; W0b targeted fix 3: + two CROUCHED rows (0, 0.75); on every row, every sim step of the aim RAISE (aim to draw) has the hand (wrist and middle fingertip) in front of the back of the skull wherever it is at the skull\'s height, and the fist never over the top of the head; at the four pitches the elbow and the wrist move <= 0.06 m per sim step (character space) from the aim through the draw, the loose and the re-nock (0.65 s after the release); the other rows report it, and the arm\'s own step (relative to the draw shoulder)',
     setup: INPUT_ON, settle: 400,
     assert: placed(['openGround'], `(async () => {${HB}${DRAW}
       freeze(); standAt(p, 'openGround'); await wait(300);
@@ -7571,16 +7571,66 @@ const NEW_GATES = [
        * clause below; the judge's trace found the loose behind the skull from
        * both). A row re-stands her at the place, runs 1 s first if it moves,
        * aims, draws and holds; keys are held through the loose. */
-      const runs = ${JSON.stringify(GATE_PITCHES.map((p) => [p, null]))}.concat([[0, 'KeyD'], [0, 'KeyA'], [0, 'KeyW'], [0, 'KeyW+ShiftLeft']]);
-      const LOOSE_TAIL = 0.3;
+      /* W0b targeted fix 3 (judge: "add a crouched-draw row at 0 and 0.75 ...
+       * every frame of the raise has the hand in front of the back of the
+       * skull"; "gate it: the maximum elbow and wrist displacement per sim
+       * step through the draw, loose and re-nock stays at or under about
+       * 0.06 m at all four pitches"): + the two crouched rows (a real crouch,
+       * player.crouching asserted), and every row is tracked on every sim step
+       * from the aim (RMB) to 0.65 s after the release (the re-nock's 0.5 s
+       * beat and its return) — see \`fl\` below. */
+      const runs = ${JSON.stringify(GATE_PITCHES.map((p) => [p, null]))}.concat([[0, 'KeyD'], [0, 'KeyA'], [0, 'KeyW'], [0, 'KeyW+ShiftLeft'], [0, 'crouch'], [0.75, 'crouch']]);
+      const LOOSE_TAIL = 0.3, FLOW_TAIL = 0.65;
       for (const [pitch, key] of runs) {
         release(); await wait(350);
+        p.setCrouch?.(false);
         standAt(p, 'openGround'); p.velocity.set(0, 0, 0); await simWait(0.3, 4000);
+        const crouchRow = key === 'crouch';
+        if (crouchRow) { p.setCrouch(true); await simWait(0.5, 4000); }
         p.camPitch = pitch;
-        if (key) for (const k of key.split('+')) keys.add(k);
+        if (key && !crouchRow) for (const k of key.split('+')) keys.add(k);
         if (key && key.includes('KeyW')) await simWait(1.0, 8000);
+        /* the draw arm on every sim step from the aim on: per-step travel of
+         * the elbow and the wrist (character space, and relative to the draw
+         * shoulder: the arm's own step, with the body's motion taken out), and
+         * through the RAISE the hand against the back of the skull (behindHead,
+         * counted where the point is at the skull's height: head-ellipsoid
+         * unit y >= -1) and the fist's height over the top of the skull (unit
+         * y <= 1) */
+        const fl = { steps: 0, stepMax: 0, stepAt: null, relMax: 0, relAt: null, raiseSteps: 0, raiseHand: -9, raiseHandAt: null, raiseFistUp: -9, crouching: null };
+        let fPrev = null, phase = 'raise';
+        const tFlow0 = E.simTime, updF = an.update;
+        const fk = new T3(), ft = new T3(), hu = new T3();
+        an.update = function (dt, t) {
+          const r = updF.call(this, dt, t);
+          if (dt > 0) {
+            const Q = this.debugArm('r');
+            const e = new T3(Q.elbow.x, Q.elbow.y, Q.elbow.z), w = new T3(Q.hand.x, Q.hand.y, Q.hand.z), s = new T3(Q.shoulder.x, Q.shoulder.y, Q.shoulder.z);
+            const tt = (E.simTime - tFlow0).toFixed(3);
+            if (fPrev) {
+              const dE = e.distanceTo(fPrev.e), dW = w.distanceTo(fPrev.w);
+              const rE = e.clone().sub(s).distanceTo(fPrev.e.clone().sub(fPrev.s)), rW = w.clone().sub(s).distanceTo(fPrev.w.clone().sub(fPrev.s));
+              if (Math.max(dE, dW) > fl.stepMax) { fl.stepMax = Math.max(dE, dW); fl.stepAt = phase + ' ' + tt + 's ' + (dE >= dW ? 'elbow' : 'wrist'); }
+              if (Math.max(rE, rW) > fl.relMax) { fl.relMax = Math.max(rE, rW); fl.relAt = phase + ' ' + tt + 's ' + (rE >= rW ? 'elbow' : 'wrist'); }
+            }
+            fPrev = { e, w, s }; fl.steps++;
+            if (phase === 'raise' && this.debugDrawHand && this.debugDrawHand(fk, ft)) {
+              const fC = CH(ft);
+              for (const P of [w, fC]) {
+                this._headFrame();
+                if (this._headUnit(P, hu).y >= -1) { const bh = this.behindHead(P); if (bh > fl.raiseHand) { fl.raiseHand = bh; fl.raiseHandAt = tt + 's ' + (P === w ? 'wrist' : 'fingertip'); } }
+              }
+              this._headFrame();
+              fl.raiseFistUp = Math.max(fl.raiseFistUp, this._headUnit(fC, hu).y);
+              fl.raiseSteps++;
+            }
+          }
+          return r;
+        };
         C.input.mouse.buttons |= 4;
         await simWait(0.6, 4000);
+        fl.crouching = !!p.crouching;
+        phase = 'draw';
         C.input.mouse.buttons |= 1;
         await simWait(2.0, 15000);
         p.camPitch = pitch; await frame(); await frame();
@@ -7656,12 +7706,17 @@ const NEW_GATES = [
           return r;
         };
         try {
-          tRel = E.simTime; C.input.mouse.buttons &= ~1;
+          tRel = E.simTime; C.input.mouse.buttons &= ~1; phase = 'loose';
           await simWait(LOOSE_TAIL + 0.05, 8000);
         } finally { an.update = upd; }
+        // ...the re-nock's return, still tracked (the R35 loose clauses above keep their 0.3 s)
+        try { await simWait(FLOW_TAIL - LOOSE_TAIL - 0.05, 8000); } finally { an.update = updF; }
         Object.assign(row, { looseSteps: lN, looseMaxHandBehindHead: +lH.toFixed(4), looseMaxElbowBehindHead: +lE.toFixed(4),
-          looseMaxForearmMidBehindHead: +lF.toFixed(4), looseRearM: +lBack.toFixed(4) });
-        release();
+          looseMaxForearmMidBehindHead: +lF.toFixed(4), looseRearM: +lBack.toFixed(4),
+          crouching: fl.crouching, flowSteps: fl.steps, armStepMaxM: +fl.stepMax.toFixed(4), armStepAt: fl.stepAt,
+          armStepRelMaxM: +fl.relMax.toFixed(4), armStepRelAt: fl.relAt,
+          raiseSteps: fl.raiseSteps, raiseMaxHandBehindHead: +fl.raiseHand.toFixed(4), raiseHandAt: fl.raiseHandAt, raiseMaxFistHeadUnitY: +fl.raiseFistUp.toFixed(3) });
+        release(); p.setCrouch?.(false);
       }
       release();
       /* head plane = the back of the skull (the head ellipsoid's back, along
@@ -7676,7 +7731,10 @@ const NEW_GATES = [
         r.knuckleToNock != null && r.knuckleToNock <= ${KNUCKLE_NOCK} ? null : 'knuckleOffString',
         r.fingertipToNock != null && r.fingertipToNock <= ${FINGERTIP_NOCK} ? null : 'fingertipOffString',
         r.looseSteps >= 6 ? null : 'looseSampled', r.looseMaxHandBehindHead < 0 ? null : 'looseHandBehindSkull',
-        r.looseMaxElbowBehindHead <= 0.20 ? null : 'looseElbowBehindHead'].filter(Boolean);
+        r.looseMaxElbowBehindHead <= 0.20 ? null : 'looseElbowBehindHead',
+        // W0b targeted fix 3: the raise, on every row; a crouched row must really be crouched
+        r.raiseSteps >= 8 ? null : 'raiseSampled', r.raiseMaxHandBehindHead < 0 ? null : 'raiseHandBehindSkull',
+        r.raiseMaxFistHeadUnitY <= 1 ? null : 'raiseFistOverHead', r.key !== 'crouch' || r.crouching === true ? null : 'notCrouched'].filter(Boolean);
       // fix round 5: at each of the four gate pitches (no strafe key) the forearm
       // within 20 deg of the arrow, and the wrist held where the LEVEL draw holds
       // it on the head: its height over the Head joint within 0.03 m of the
@@ -7688,7 +7746,9 @@ const NEW_GATES = [
         r.wristHeadFrameOffLevelM = +Math.hypot(...r.wristInHead.map((v, i) => v - lvl.wristInHead[i])).toFixed(4);
       }
       const okT = (r) => r.key ? [] : [r.forearmToArrowDeg <= 20 ? null : 'forearmOffArrow',
-        r.wristHeadYOffLevelM <= 0.03 ? null : 'wristHeightOffLevel', r.wristHeadFrameOffLevelM <= 0.03 ? null : 'wristOffLevelAnchor'].filter(Boolean);
+        r.wristHeadYOffLevelM <= 0.03 ? null : 'wristHeightOffLevel', r.wristHeadFrameOffLevelM <= 0.03 ? null : 'wristOffLevelAnchor',
+        // W0b targeted fix 3: the arm's per-step travel at the four pitches
+        r.flowSteps >= 60 && r.armStepMaxM <= 0.06 ? null : 'armStep'].filter(Boolean);
       const ok0 = ok;
       const okAll = (r) => [...ok0(r), ...okT(r)];
       const bad = rows.filter((r) => okAll(r).length);
@@ -7706,14 +7766,19 @@ const NEW_GATES = [
       margin.forearmToArrowMaxDeg = +Math.max(...rows.filter((r) => !r.key).map((r) => r.forearmToArrowDeg)).toFixed(2);
       margin.wristHeadYOffLevelMax = +Math.max(...rows.filter((r) => !r.key).map((r) => r.wristHeadYOffLevelM)).toFixed(4);
       margin.wristHeadFrameOffLevelMax = +Math.max(...rows.filter((r) => !r.key).map((r) => r.wristHeadFrameOffLevelM)).toFixed(4);
-      return { pass: bad.length === 0 && idx.length > 20, detail: { rule: 'R35 + fix round 5 (forearm on the arrow, wrist at the level anchor)', rows, margin, failing: bad.map((r) => r.pitch + (r.key || '') + ':' + okAll(r).join('+')) } };
+      margin.armStepMaxPitches = +Math.max(...rows.filter((r) => !r.key).map((r) => r.armStepMaxM)).toFixed(4);
+      margin.armStepMaxAllRows = +Math.max(...rows.map((r) => r.armStepMaxM)).toFixed(4);
+      margin.armStepRelMaxAllRows = +Math.max(...rows.map((r) => r.armStepRelMaxM)).toFixed(4);
+      margin.raiseHandBehindHeadMax = +Math.max(...rows.map((r) => r.raiseMaxHandBehindHead)).toFixed(4);
+      margin.looseElbowBehindHead075 = rows.find((r) => r.pitch === 0.75 && !r.key)?.looseMaxElbowBehindHead ?? null;
+      return { pass: bad.length === 0 && idx.length > 20, detail: { rule: 'R35 + fix round 5 (forearm on the arrow, wrist at the level anchor) + W0b targeted fix 3 (crouched rows, the raise, the arm step)', rows, margin, failing: bad.map((r) => r.pitch + (r.key || '') + ':' + okAll(r).join('+')) } };
     })()`),
   },
 
   /* --------------------------------------------------------- A-wrap-clear */
   {
     id: 'A-wrap-clear', kind: 'action', lane: 'hero-body', timeout: 120000,
-    title: 'M10: every dyn_ chain (wrap tail, knot tail, sash end, alidade cord) >= 0.05 m from the draw hand/forearm through a full draw cycle from a sprint-stop at four pitches; the hand capsule reported active',
+    title: 'M10: every dyn_ chain (wrap tail, knot tail, sash end, alidade cord) >= 0.05 m from the draw hand/forearm through a full draw cycle from a sprint-stop at four pitches, and (W0b targeted fix 3) crouched after the sprint-stop at 0 and 0.75; the hand capsule reported active',
     setup: INPUT_ON, settle: 400,
     assert: placed(['openGround'], `(async () => {${HB}
       freeze();
@@ -7721,10 +7786,15 @@ const NEW_GATES = [
       if (!an.debugHandCollider) return { pass: false, detail: 'no M10 collider on the animator' };
       const chains = (an._chains || []).map((c) => c.links[0].name);
       const rows = [];
-      for (const pitch of ${JSON.stringify(GATE_PITCHES)}) {
-        release(); standAt(p, 'openGround'); await wait(300);
+      // W0b targeted fix 3 (judge: the crouched aim raise put the hand through
+      // the topknot and wrap-knot roots): + crouched rows at 0 and 0.75 — the
+      // judge's own staging, crouched 0.4 s after the sprint-stop
+      for (const [pitch, crouch] of ${JSON.stringify(GATE_PITCHES.map((x) => [x, false]).concat([[0, true], [0.75, true]]))}) {
+        release(); p.setCrouch?.(false); standAt(p, 'openGround'); await wait(300);
         keys.add('KeyW'); keys.add('ShiftLeft'); await simWait(1.2, 8000);
         keys.clear();                                       // sprint-stop
+        if (crouch) { p.setCrouch(true); await simWait(0.4, 4000); }
+        const crouching = crouch ? !!p.crouching : null;
         p.camPitch = pitch; C.input.mouse.buttons |= 4;
         let minAxis = 9, frames = 0, inactive = 0, drawMax = 0, at = null, fullFrames = 0;
         // W0b targeted fix 2 (reported, not graded separately): the same minimum
@@ -7748,12 +7818,12 @@ const NEW_GATES = [
           if (cmb.drawStrength > 0.9) fullFrames++;
         }
         const fix1 = an.debugHandCollider().rootKeep?.fixFrames ?? 0;
-        rows.push({ pitch, frames, minClearM: +(minAxis - half).toFixed(4), closest: at,
+        rows.push({ pitch, crouch, crouching, frames, minClearM: +(minAxis - half).toFixed(4), closest: at,
           looseMinClearM: +(looseMin - half).toFixed(4), looseClosest: looseAt, looseFrames,
           rootKeepFrames: fix1 - fix0, inactiveFrames: inactive, drawMax: +drawMax.toFixed(2), fullDrawFrames: fullFrames });
       }
-      release();
-      const pass = rows.every((r) => r.minClearM >= 0.05 && r.inactiveFrames === 0 && r.frames > 30 && r.drawMax > 0.9 && r.fullDrawFrames > 10);
+      release(); p.setCrouch?.(false);
+      const pass = rows.every((r) => r.minClearM >= 0.05 && r.inactiveFrames === 0 && r.frames > 30 && r.drawMax > 0.9 && r.fullDrawFrames > 10 && (!r.crouch || r.crouching === true));
       return { pass, detail: { rows, chains, collider: an.debugHandCollider() } };
     })()`),
   },
@@ -8922,6 +8992,100 @@ const NEW_VISUALS = [
       return { drawS: C.combat.drawStrength, knuckleToNock: +kn.distanceTo(nk).toFixed(4), fingertipToNock: +ft.distanceTo(nk).toFixed(4), forearmToArrowDeg: +foreDeg.toFixed(2) };
     })()`),
     criteria: 'Full draw aimed steeply DOWN (camPitch 0.75, 43 deg), two views: from her right, and from her front-right three-quarter. Judge against the licence-clean archery side reference: the hand must hold the same relation to the face as a level draw. PASS requires ALL of: the drawing hand is ON the string at the nock — the hooked fingers on the string and the knuckles at her jaw / cheek beside the mouth corner, not up on the headwrap, at the temple or above the ear; the nock and the string meet the fingers at the jaw corner (not at the chin away from the hand); the drawing forearm runs back from the hand roughly along the arrow with the elbow level or back; the bow arm straight; no part of the hand inside the face. FAIL if the fist sits above the cheekbone (on the wrap or the temple), if the string runs through the back of the hand or the wrist instead of into the fingers, or if the forearm crosses her face.',
+  },
+  {
+    /* W0b targeted fix 3 (judges: "film the 0.10 s moment at 0.75 from her
+     * right as a V row"; "film the re-nock in the game camera at 0 and 0.75,
+     * with no hand at the side or back of the head"; the crouched 0.75 aim
+     * raise, "film it in the game camera"). One sheet, eight panels, each
+     * frozen at its moment (the sim held while it renders) with the draw arm's
+     * numbers printed under it. */
+    id: 'V-loose-renock', kind: 'visual', lane: 'hero-body', settle: 600, timeout: 150000,
+    title: 'The loose and the re-nock, and the crouched aim raise: 0.10 s after a 0.75 loose from her right and in the game camera; the re-nock in the game camera at 0.75 (+0.25 / +0.45 s) and at 0 (+0.10 / +0.30 s); the crouched 0.75 and 0 aim raise (0.28 s after the aim) in the game camera',
+    reference: 'reference/r5/gates-perf/draw-side (licence-clean archery side reference: at the loose the hand stays at the face with the elbow back; the reach for the next arrow runs down the archer\'s side)',
+    setup: placedSetup(['openGround'], `(async () => {${FILM_PRE}
+      C.input.enabled = true; C.state = 'playing';
+      const frame = () => new Promise((r) => requestAnimationFrame(r));
+      const E = C.engine, an = p.animator, T3 = p.position.constructor, keys = C.input.keys;
+      const simWait = async (sec, capMs = 25000) => { const s0 = E.simTime, w0 = performance.now(); while (E.simTime - s0 < sec && performance.now() - w0 < capMs) await frame(); return E.simTime - s0; };
+      const release = () => { keys.clear(); C.input.mouse.buttons = 0; };
+      const S = await import('/src/hero/sheets.js');
+      const WP = (b) => b.getWorldPosition(new T3());
+      const CH = (v) => p.model.worldToLocal(v.clone());
+      const W = 392, H = 400;
+      const view = (kind) => {
+        if (kind === 'GAME') {
+          const cp = C.camera.getWorldPosition(new T3()), cd = C.camera.getWorldDirection(new T3());
+          const t2 = cp.clone().addScaledVector(cd, 4);
+          return S.liveView(C, [cp.x, cp.y, cp.z], [t2.x, t2.y, t2.z], { width: W, height: H, fov: C.camera.fov || 50 });
+        }
+        // her RIGHT, level, square to her heading, framed on the head / draw elbow / draw wrist
+        const h = p.heading, rx = -Math.cos(h), rz = Math.sin(h);
+        const tgt = WP(an.b.head.bone).add(WP(an.b.loArmR.bone)).add(WP(an.b.handR.bone)).multiplyScalar(1 / 3);
+        return S.liveView(C, [tgt.x + rx * 1.5, tgt.y + 0.05, tgt.z + rz * 1.5], [tgt.x, tgt.y, tgt.z], { width: W, height: H, fov: 40 });
+      };
+      const handStats = () => {
+        const Q = an.debugArm('r');
+        const w = new T3(Q.hand.x, Q.hand.y, Q.hand.z), el = new T3(Q.elbow.x, Q.elbow.y, Q.elbow.z);
+        const kn = new T3(), ft = new T3(); an.debugDrawHand?.(kn, ft);
+        const f = CH(ft);
+        an._headFrame(); const hu = an._headUnit(f, new T3());
+        return { wrist: +an.behindHead(w).toFixed(3), fingertip: +an.behindHead(f).toFixed(3), fistUnitY: +hu.y.toFixed(2), elbow: +an.behindHead(el).toFixed(3) };
+      };
+      const cycle = async (sc) => {
+        release(); p.setCrouch?.(false); standAt(p, 'openGround'); p.velocity?.set?.(0, 0, 0); await simWait(0.4, 4000);
+        if (sc.crouch) { p.setCrouch(true); await simWait(0.5, 4000); }
+        p.camPitch = sc.pitch; C.input.mouse.buttons |= 4;
+        const t0 = E.simTime; let tL = null, drew = false, ePrev = null, eJump = 0, eMax = 0;
+        while (E.simTime - t0 < sc.T) {
+          const t = E.simTime - t0;
+          if (sc.draw && !drew && t > 0.6) { C.input.mouse.buttons |= 1; drew = true; }
+          if (drew && tL === null && t > 2.6) { C.input.mouse.buttons &= ~1; tL = E.simTime; }
+          p.camPitch = sc.pitch;
+          await frame();
+          const e = CH(WP(an.b.loArmR.bone)); eJump = ePrev ? e.distanceTo(ePrev) : 0; ePrev = e; eMax = Math.max(eMax, eJump);
+          for (const m of sc.moments) {
+            if (m.imgs) continue;
+            const ref = m.ref === 'loose' ? tL : t0;
+            if (ref === null || E.simTime - ref < m.at) continue;
+            E.requestTimeScale('studio', 0);
+            m.dt = E.simTime - ref; m.jump = eJump; m.eMax = eMax; m.st = handStats(); m.crouching = !!p.crouching; m.drawS = C.combat.drawStrength;
+            m.imgs = m.views.map((k) => view(k));
+            await frame();                                  // the render's wall time is spent frozen
+            E.requestTimeScale('studio', null);
+          }
+        }
+        release(); p.setCrouch?.(false);
+      };
+      const A = { pitch: 0.75, draw: true, T: 3.15, moments: [
+        { ref: 'loose', at: 0.10, views: ['RIGHT', 'GAME'], tag: '0.75 loose +0.10 s' },
+        { ref: 'loose', at: 0.25, views: ['GAME'], tag: '0.75 re-nock +0.25 s' },
+        { ref: 'loose', at: 0.45, views: ['GAME'], tag: '0.75 re-nock +0.45 s' }] };
+      const B = { pitch: 0, draw: true, T: 3.0, moments: [
+        { ref: 'loose', at: 0.10, views: ['GAME'], tag: '0 loose +0.10 s' },
+        { ref: 'loose', at: 0.30, views: ['GAME'], tag: '0 re-nock +0.30 s' }] };
+      const Cr = { pitch: 0.75, crouch: true, T: 0.4, moments: [{ ref: 'rmb', at: 0.28, views: ['GAME'], tag: 'CROUCHED 0.75 raise +0.28 s' }] };
+      const D = { pitch: 0, crouch: true, T: 0.4, moments: [{ ref: 'rmb', at: 0.28, views: ['GAME'], tag: 'CROUCHED 0 raise +0.28 s' }] };
+      for (const sc of [A, B, Cr, D]) await cycle(sc);
+      const panels = [];
+      for (const sc of [A, B, Cr, D]) for (const m of sc.moments) (m.imgs || []).forEach((img, i) => panels.push({ img, m, lens: m.views[i] === 'GAME' ? 'GAME camera' : 'her RIGHT' }));
+      const cv = document.createElement('canvas'); cv.width = 1600; cv.height = 900;
+      cv.style.cssText = 'position:fixed;left:0;top:0;width:1600px;height:900px;z-index:2147483646;background:#f4f1ea';
+      document.body.appendChild(cv);
+      const g = cv.getContext('2d'); g.fillStyle = '#f4f1ea'; g.fillRect(0, 0, 1600, 900);
+      const txt = (t, x, y) => { g.fillStyle = '#2a2420'; g.font = '600 12px ui-monospace, Menlo, monospace'; g.fillText(t, x, y); };
+      g.font = '600 14px ui-monospace, Menlo, monospace'; g.fillStyle = '#2a2420';
+      g.fillText('THE LOOSE, THE RE-NOCK, THE CROUCHED RAISE (W0b targeted fix 3) - each panel frozen at its moment; behind = m behind the back of the skull (< 0 in front), fist unit y > 1 = over the skull', 10, 18);
+      panels.slice(0, 8).forEach((P, k) => {
+        const col = k % 4, row = (k / 4) | 0, x = 8 + col * 398, y = 28 + row * 436;
+        const t = document.createElement('canvas'); t.width = W; t.height = H; t.getContext('2d').putImageData(P.img, 0, 0); g.drawImage(t, x, y);
+        txt(P.m.tag + ' (' + P.lens + ')' + (P.m.crouching ? ' crouching' : ''), x, y + H + 14);
+        txt('elbow step ' + P.m.jump.toFixed(3) + ' m (max so far ' + P.m.eMax.toFixed(3) + ')  drawS ' + P.m.drawS.toFixed(2), x, y + H + 27);
+        txt('behind: wrist ' + P.m.st.wrist + ' tip ' + P.m.st.fingertip + ' elbow ' + P.m.st.elbow + ' | fist y ' + P.m.st.fistUnitY, x, y + H + 40);
+      });
+      return { panels: panels.map((P) => ({ tag: P.m.tag, lens: P.lens, dt: +P.m.dt.toFixed(3), elbowStep: +P.m.jump.toFixed(4), elbowStepMax: +P.m.eMax.toFixed(4), crouching: P.m.crouching, ...P.m.st })) };
+    })()`),
+    criteria: 'Eight panels (judge against the licence-clean draw-side reference and Kevin\'s bar "never an arm behind the head"). PASS requires ALL of: (1) 0.75 loose +0.10 s, from her RIGHT and in the game camera: the draw hand is at or below her jaw beside the face, or moving down her right side — NOT raised over the shoulder, NOT at the nape or the side / back of the head, NOT above the head; the forearm does not cross her face or throat; the elbow is back or out beside her, not swung up behind the head; (2) the re-nock panels in the game camera (0.75 at +0.25 / +0.45 s, 0 at +0.10 / +0.30 s): the hand travels down her right side to the hip quiver or back up in front of her to the string; no hand at the side or back of the head, no forearm across the face; (3) the crouched raise panels (0.75 and 0, game camera): the draw hand is in front of and below the head — at the hip quiver, on its way, or at the string in front — never over the top or the back of the head; the bow is held in front. The printed numbers must agree (behind < 0 for the wrist and the fingertip, fist y <= 1). FAIL if any panel shows a hand at the side, back or top of the head, an arm behind the head, or a forearm across the face.',
   },
   {
     id: 'V-traversal', kind: 'visual', lane: 'hero-body', settle: 400, timeout: 60000,
