@@ -220,7 +220,8 @@ export const UBC_TUNE = {
   // (Oct 22 sweep); while aiming on the move the trunk is turned back to it
   // (the strafe / aim-walk loops left it 0.2-0.6 rad short, and the reach
   // clamp slid the draw 8.6-9.0 cm off the anchor)
-  bladeLock: { ref: -0.311, gain: 1 },
+  // (W0b targeted fix 4: the correction turns at most `rate` rad/s)
+  bladeLock: { ref: -0.311, gain: 1, rate: 4 },
   // the draw elbow's form scan (fix round 3; A-draw-elbow-level, R35): the
   // elbow is rolled on its shoulder -> wrist circle to the nearest point
   // inside the aim-frame height band `up` (m about the shoulder line), at
@@ -243,7 +244,20 @@ export const UBC_TUNE = {
   // the rest hold / quiver ride the chest / pelvis (`crouchBody`)
   // (`quiverT` s: the nock beat — down over `qUp` of it, back from `qBack`)
   armFlow: { wristV: 2.7, elbowStep: 0.05, elbowBack: 0.16, formWin: 0.6, renock: true, quiverPole: [-0.9, -0.3, 0.15], crouchBody: true,
-    quiverT: 0.5, qUp: 0.34, qBack: 0.5, bowOut: 0.09, bowDown: 0.08, bowFwd: 0.06, bowHand: true, kickIn: 0.45, armStep: 0.05, outside: true, holdBlade: true, rootGive: 0.012 },
+    quiverT: 0.5, qUp: 0.34, qBack: 0.5, bowOut: 0.09, bowDown: 0.08, bowFwd: 0.06, bowHand: true, kickIn: 0.45, armStep: 0.05, outside: true, holdBlade: true, rootGive: 0.012,
+    // W0b targeted fix 4: the limiters live whenever the aim layer runs and on
+    // the arm's final pose until the free pose is reached (`_armContinuity`);
+    // the draw arm's IK weight eases at `wdaRate`/s between 1 and the aim
+    // weight; a rising draw is followed exactly (`drawRaw`); the bent T comes
+    // in and out at most `tRate` of its turn per second
+    // and the arm is lowered by its target, not its IK weight (`lowerByTarget`)
+    wdaRate: 4, drawRaw: true, tRate: 4, lowerByTarget: true },
+  // W0b targeted fix 4: the aim's trunk starts upright — the pelvis -> neck
+  // line's forward pitch under the aim (radians, character space), standing /
+  // crouched; only an excess is given back (the clip's fold: crouch 45-50 deg,
+  // the jog's lean after a dodge), spread up the spine, the neck and head
+  // taking `gaze` of it back so the gaze holds
+  aimTrunk: { up: 0.12, crouch: 0.22, gain: 1, share: [0.25, 0.35, 0.40], shareCrouch: [0.15, 0.35, 0.50], gaze: [0.5, 0.45] },
   // the string hand's roll at full draw (0..1 of the way to back-of-hand out,
   // palm to the neck): the hooked fingers stand on the vertical string and the
   // ∴ on the back of the right hand faces a side camera (V24)

@@ -837,6 +837,21 @@ export class PlayerAnimator {
     this._afOn = false; this._wrT = new THREE.Vector3(); this._elbP = new THREE.Vector3();
     this._wrP = new THREE.Vector3(); this._shP = new THREE.Vector3();   // ...and the achieved wrist / shoulder
     this._rnHold = false; this._rnL = false;
+    /* W0b targeted fix 4 (r3 judges: the draw arm snapped 0.27-0.42 m at every
+     * aim-weight transition — RMB up after a loose, a draw cancel, a re-aim, a
+     * dodge with the aim held, a raise after a cancel, crouch / stand at full
+     * draw). Continuity is a property of the draw arm, not of `p.aiming`:
+     * `_armCapN` counts the steps whose final pose was captured (`_wrP` /
+     * `_elbP` / `_shP` are the arm AS LAST RENDERED, every step); `_afEng`: the
+     * continuity limiter is engaged (from the first aimed step until the free
+     * pose needs no limiting after the aim layer has stopped); `_wDA`: the draw
+     * arm's IK weight, eased between 1 (aim held) and the aim weight (lowering);
+     * `_afFull`: the aim is held this step; `_wrRef`: the point the wrist
+     * target rides between steps (the draw shoulder, blended to the hand's
+     * anchor on the head as the draw builds — body motion carries the hand) */
+    this._armCapN = 0; this._afEng = false; this._wDA = 0; this._afFull = false; this._tW = 0;
+    this._wrRef = new THREE.Vector3(); this._wrRefA = new THREE.Vector3(); this._wrRefOk = false;
+    this._clipWr = new THREE.Vector3(); this._clipEl = new THREE.Vector3();   // (`armFlow.lowerByTarget`)
     // ...and crouched, the rest hold's and the hip quiver's live places (`armFlow.crouchBody`)
     this._rgOff = new THREE.Vector3(); this._quivT = new THREE.Vector3();
     // ...and the reach's bow by the hand's progress (`armFlow.bowHand`): its string and quiver ends
@@ -1545,7 +1560,12 @@ export class PlayerAnimator {
     this._crouchW = damp(this._crouchW, p.crouching ? 1 : 0, 10, dt);
     this._aimW = damp(this._aimW, p.aiming && !dead ? 1 : 0, 13, dt);
     this._deadW = damp(this._deadW, dead ? 1 : 0, dead ? 12 : 10, dt);
-    this._drawS = damp(this._drawS, clamp(draw, 0, 1), 16, dt);
+    // (W0b targeted fix 4, `armFlow.drawRaw`: a RISING draw is followed exactly —
+    // the bow renders combat's draw, and the 16/s lag left the string hand
+    // 0.05 m behind the nock as the draw came up, the knuckle 0.06-0.08 m off it
+    // at drawS 0.90-0.98; the release still decays at 16/s for the follow-through)
+    const dRaw = clamp(draw, 0, 1);
+    this._drawS = this.T.armFlow?.drawRaw && dRaw > this._drawS ? dRaw : damp(this._drawS, dRaw, 16, dt);
     this._hit = damp(this._hit, 0, 9, dt);
 
     if (dead && !this._wasDead) this._dieT = 0;
@@ -1569,7 +1589,10 @@ export class PlayerAnimator {
       this._reNock = false;
       this._rnL = true;
     }
-    if (!aimUp) this._rnHold = false;
+    // (W0b targeted fix 4: never cleared mid follow-through — on RMB up after a
+    // loose the target fell back to the slack string, the arm jaw -> hip in one
+    // step; it ends with the follow-through once the aim layer has stopped)
+    if (!aimUp && this._looseT >= 1 && this._aimW < 0.02) this._rnHold = false;
     this._prevAiming = aimUp;
     this._prevRawDraw = draw;
     // MINIMUM FRAME COUNT. The reach is a cosmetic beat whose whole job is to
@@ -1985,7 +2008,11 @@ export class PlayerAnimator {
     const cbFirst = !!this.T.armFlow?.crouchBody;
     if (cbFirst && this._crouchAimW > 0.01) this._crouchAimLayer(this._crouchAimW * aimW, p);
     if (aimW > 0.01) this._aimLayer(aimW, this._drawS, p, moveW, t);
-    else { this._tOff = true; this._afOn = false; }   // fix round 5: the next aim's T ray starts from its own ray
+    // fix round 5: the next aim's T ray starts from its own ray. W0b targeted
+    // fix 4: ...and from a ray off HER, not off the grip she had when the layer
+    // stopped (a dodge rolls her 3 m on: that stale world grip aimed the
+    // restarted ray and the bent T up behind her — the bow held overhead)
+    else { this._tOff = true; this._tW = 0; this._bcS = 0; this._afOn = false; this._afFull = false; this._gripValid = false; }
     if (!cbFirst && this._crouchAimW > 0.01) this._crouchAimLayer(this._crouchAimW * aimW, p);
     if (carryW > 0.01) this._carryLayer(carryW, p, t);
     // wielded-but-not-aiming: the bow rides LOW in the LEFT hand and the left
@@ -2066,6 +2093,14 @@ export class PlayerAnimator {
     /* ---- R5: the run's pelvis bounce, compressed (A-run-arms, no prance) -- */
     if (this.T.runBob) this._runBob(dt, speed, dodgeW, aimW);
     this._lateCapture();
+
+    /* --- W0b targeted fix 4: the draw arm's continuity, on its final pose --- */
+    // after every layer that moves it (aim, carry, run clamp, melee, react) and
+    // before the chains hang off it: the arm moves at most `armStep` per step
+    // relative to the draw shoulder from where it was RENDERED last step, and
+    // the arm as it ends this step is captured for the next
+    if (this._afEng) this._armContinuity(aimW > 0.01);
+    this._armCapture();
 
     /* --- twist joints: redistribute limb roll across the 26 twist bones ---- */
     // after every solve that can roll a wrist, an ankle or a shoulder (IK, the
@@ -3453,6 +3488,38 @@ export class PlayerAnimator {
      * is turned so it starts from `ref`, as it does standing; the neck turns
      * back by the same amount so the head keeps its own facing.
      */
+    /* W0b targeted fix 4 — THE AIM'S TRUNK STARTS UPRIGHT (profile
+     * `tune.aimTrunk`). The trunk posture correction (`tune.trunk`) stands
+     * down while aiming, so every aim inherited whatever forward fold the clip
+     * underneath carried, and the bent T then pitched THAT onto the aim: the
+     * crouch clip's 45-50 deg fold under a 0.75 down aim put her face near the
+     * ground (r3 judges: the crouched draw off the string, the hand behind the
+     * skull on the crouched raise and draw ramp — the shoulders sat behind the
+     * head's back plane), and the jog clip's lean still running in the 0.8 s
+     * after a dodge folded her past 90 deg (the bow overhead, the hand over and
+     * behind the head). The pelvis -> neck line (character space) is brought
+     * back to `up` (`crouch` crouched) by the aim weight before anything is
+     * derived from it — never pushed forward — the neck and head taking it back
+     * so the gaze holds; the bent T then pitches the standing form. */
+    const ATK = this.T.aimTrunk;
+    if (ATK && b.pelvis && b.neck1) {
+      const want = ATK.up + ((ATK.crouch ?? ATK.up) - ATK.up) * this._crouchW;
+      const S = this._crouchW > 0.5 && ATK.shareCrouch ? ATK.shareCrouch : ATK.share;
+      let tot = 0;
+      for (let it = 0; it < 2; it++) {
+        this._charOf(b.pelvis.bone, _tp0); this._charOf(b.neck1.bone, _tp1);
+        _tp1.sub(_tp0);
+        const err = Math.max(0, Math.atan2(_tp1.z, _tp1.y) - want) * aimW * (ATK.gain ?? 1);
+        if (err < 1e-4) break;
+        this._rotL(b.spine1, X_AXIS, -err * S[0]);
+        this._rotL(b.spine2, X_AXIS, -err * S[1]);
+        this._rotL(b.spine3, X_AXIS, -err * S[2]);
+        this._rotL(b.neck1, X_AXIS, err * ATK.gaze[0]);
+        this._rotL(b.head, X_AXIS, err * ATK.gaze[1]);
+        tot += err;
+      }
+      this._aimDbg.aimTrunk = tot;
+    }
     let bladeCorr = 0;
     const BL = this.T.bladeLock;
     if (BL && b.upArmL && b.upArmR && b.spine3) {
@@ -3462,6 +3529,15 @@ export class PlayerAnimator {
       let dy = (BL.ref ?? 0) - y0;
       if (dy > Math.PI) dy -= 2 * Math.PI; else if (dy < -Math.PI) dy += 2 * Math.PI;
       bladeCorr = clamp(dy, -0.9, 0.9) * (BL.gain ?? 1) * aimW;
+      // (W0b targeted fix 4, `bladeLock.rate`: the correction turns at most
+      // `rate` rad/s — the clip's shoulder line swings 0.5-0.7 rad in a few
+      // steps when a gait starts or stops under the aim, after a dodge most
+      // of all, and the whole upper body went with it in one step)
+      if (BL.rate) {
+        const r = BL.rate * (this._dtA || 0.016), c0 = this._bcS ?? 0;
+        bladeCorr = c0 + clamp(bladeCorr - c0, -r, r);
+        this._bcS = bladeCorr;
+      }
       if (Math.abs(bladeCorr) > 1e-4) this._rotL(b.spine3, Y_AXIS, bladeCorr);
       this._aimDbg.bladeCorr = bladeCorr;
     }
@@ -3712,7 +3788,15 @@ export class PlayerAnimator {
       // +0.025 m, forearm 16 deg off the arrow, Lmax 0.529)
       const rk = this.T.downTRoll ?? 0;
       if (rk > 0) { _v7.set(0, -Math.sin(fp), Math.cos(fp)); _tq2.setFromUnitVectors(_v7, _dT); _tq.slerp(_tq2, rk); }
-      this._qT.slerpQuaternions(Q_IDENT, _tq, tS * aimW);
+      /* W0b targeted fix 4 (`armFlow.tRate`): the bend comes in and goes out at
+       * most `tRate` of its full turn per second. By the aim weight alone (13/s)
+       * the whole upper body swung 0.15 rad in the first step of a raise or a
+       * lower at the 0.75 aim (the draw shoulder 0.07 m in one step, the arm
+       * with it); never more than three times the weight, so a layer that
+       * stops fast (a dodge: 9 steps) stops with no bend left. */
+      const tWant = tS * aimW, tR = (this.T.armFlow?.tRate ?? 99) * (this._dtA || 0.016);
+      this._tW = Math.min(tWant > (this._tW ?? 0) ? Math.min(tWant, (this._tW ?? 0) + tR) : Math.max(tWant, (this._tW ?? 0) - tR), Math.max(tWant, 3 * aimW));
+      this._qT.slerpQuaternions(Q_IDENT, _tq, this._tW);
       this._charOf(b.spine1.bone, _v7);            // the turn's pivot (spine_01 does not move)
       this._rotQL(b.spine1, this._qT);
       this._upT.copy(Y_AXIS).applyQuaternion(this._qT);
@@ -3720,7 +3804,7 @@ export class PlayerAnimator {
       this._latT.set(1, 0, 0).applyQuaternion(this._qT);
       this._restGripT.copy(this.T.restGrip).add(this._rgOff).sub(_v7).applyQuaternion(this._qT).add(_v7);
       this._tOff = false;
-    } else this._tOff = true;
+    } else { this._tOff = true; this._tW = 0; }
     this._aimDbg.tBend = 2 * Math.acos(Math.min(1, Math.abs(this._qT.w)));
 
     // breathing sway (steadier under Concentration) + draw-hold tremble
@@ -4013,13 +4097,62 @@ export class PlayerAnimator {
      */
     const AF = this.T.armFlow;
     const afFull = !!AF && p.aiming && this._dodgeW < 0.02 && this._deadW < 0.02 && this._carryW < 0.02;
-    if (afFull && !this._afOn) {
-      this._charOf(b.handR.bone, this._wrT);       // the clip's wrist and elbow, this step
-      this._charOf(b.loArmR.bone, this._elbP);
-      this._wrP.copy(this._wrT); this._charOf(b.upArmR.bone, this._shP);
-      this._afOn = true;
-    } else if (!afFull) this._afOn = false;
-    const wDA = afFull ? 1 : aimW;                 // the draw arm's IK weight
+    /* W0b targeted fix 4 (r3 judges: every aim-weight transition snapped the
+     * arm 0.27-0.42 m in one step — `afFull` needed `p.aiming`, so on RMB up
+     * the IK weight stepped 1 -> aimW and the limiters switched off, and every
+     * re-aim re-seeded them from the CLIP pose). The limiters are live
+     * whenever this layer runs (the draw arm has IK weight); they are seeded
+     * once, from the arm as last RENDERED (`_armCapture`), never from the
+     * clip; the IK weight eases between 1 (aim held) and the aim weight
+     * (lowering, a dodge) at `wdaRate` per second; and `_armContinuity` keeps
+     * carrying the arm after this layer stops until the free pose is reached. */
+    if (AF && !this._afOn) {
+      if (!this._armCapN) this._armCapture();       // (first step ever: the clip's arm)
+      this._wDA = afFull ? 1 : aimW;
+      this._afOn = true; this._afEng = true; this._wrRefOk = false;
+    } else if (!AF) this._afOn = false;
+    /* ...the references are the arm as last rendered, RELATIVE TO THE DRAW
+     * SHOULDER (`_armCapture` runs after the pelvis offset and the ground
+     * conform, which move the whole body 5-7 cm between this layer and the
+     * render): last step's wrist, rebuilt on this step's shoulder, is where
+     * the wrist target steps from — so a crouch, a stand, a bob or a dodge
+     * carries the hand with her; as the draw builds, by the hand's own anchor
+     * on the head instead (r3 judge: crouch -> stand at full draw left the
+     * knuckle 0.155-0.160 m off the nock with drawS > 0.9). */
+    if (this._afOn) {
+      this._charOf(b.upArmR.bone, _afS);
+      this._wrT.copy(this._wrP).sub(this._shP).add(_afS);
+      const kA = smoothstep(drawS, 0.5, 0.9) * aimW;
+      if (this._wrRefOk && kA > 1e-3) {
+        _afG.subVectors(_anW, this._wrRefA).sub(_afH.subVectors(_afS, this._wrRef));
+        this._wrT.addScaledVector(_afG, kA);
+      }
+      this._wrRef.copy(_afS); this._wrRefA.copy(_anW); this._wrRefOk = true;
+    }
+    this._afFull = afFull;
+    if (AF) {
+      const wr = (AF.wdaRate ?? 4) * (this._dtA || 0.016), want = afFull ? 1 : aimW;
+      this._wDA = clamp(this._wDA + clamp(want - this._wDA, -wr, wr), 0, 1);
+    }
+    /* ...and the arm is LOWERED by its target, not by its IK weight: blending
+     * bone rotations between the drawn arm and the clip's hanging one swung
+     * the hand through the back of her neck on a draw cancel (the knuckle
+     * 0.14 m behind the nape, matrix probe), because the two rotations are
+     * more than 90 deg apart. With `armFlow.lowerByTarget` the arm stays solved
+     * in full while this layer runs; its wrist target is carried from the aim's
+     * toward the clip's own wrist by `_wDA` (and its pole toward the clip's
+     * elbow), through every head guard and limiter below, so the hand travels
+     * down in front of her, and when the layer stops the arm already sits where
+     * the clip puts it. */
+    const lowerT = !!AF?.lowerByTarget;
+    const wDA = AF ? (lowerT ? 1 : this._wDA) : aimW;  // the draw arm's IK weight
+    const wTg = AF ? this._wDA : 1;                     // ...and the aim target's share
+    if (lowerT && wTg < 0.999) {
+      this._charOf(b.handR.bone, this._clipWr);        // the clip's arm this step (before the IK)
+      this._charOf(b.loArmR.bone, this._clipEl);
+      this._charOf(b.upArmR.bone, _afS);
+      this._clipEl.sub(_afS).normalize();
+    }
     /*
      * ...AND THE LOOSE GOES STRAIGHT TO THE QUIVER (judge: at the 0.75 loose
      * the fist rose to the back of her neck and the elbow snapped). Once the
@@ -4166,6 +4299,7 @@ export class PlayerAnimator {
     // sphere about the head bone swallowed the cheek anchor itself and shoved
     // the hand 21cm down under her chin on every shot, while a sphere small
     // enough to allow a cheek anchor lets the wrist sink into the jaw.
+    if (lowerT && wTg < 0.999) _v7.lerp(this._clipWr, 1 - wTg);
     this._headFrame();
     this._pushOutOfHead(_v7, this.T.handIn);
     /*
@@ -4189,6 +4323,14 @@ export class PlayerAnimator {
     D.afWristCut = 0;
     D.afPre.copy(_v7);
     if (this._afOn && AF.wristV) {
+      /* W0b targeted fix 4 (r3 judge: crouch -> stand at full draw left the
+       * knuckle 0.155-0.160 m off the nock with drawS > 0.9). Last step's
+       * target is carried with the body before it is limited — by the draw
+       * shoulder, and by the hand's own anchor on the head as the draw builds —
+       * so the limit is on the hand's motion against her, not against the
+       * ground: a crouch, a stand or a bob carries the drawn hand on the
+       * string. */
+      // (carried with her at the top of the arm solve, above)
       _afD.subVectors(_v7, this._wrT);
       const lim = AF.wristV * Math.max(1e-4, this._dtA || 0), dl = _afD.length();
       if (dl > lim) {
@@ -4225,6 +4367,7 @@ export class PlayerAnimator {
       _pole.lerp(QP ? _v5.set(QP[0], QP[1], QP[2]) : _v5.set(-0.5, -0.95, -0.3), qw);
     }
     _pole.applyQuaternion(this._qT);              // fix round 5: in the down aim's turned frame
+    if (lowerT && wTg < 0.999) _pole.lerp(this._clipEl, 1 - wTg).normalize();
     this._ikArm('r', _v7, _pole, wDA, null);
     // ---- draw-arm head clearance. The hand target is already pushed out of
     // the skull sphere, but the upper arm and FOREARM are segments: aiming
@@ -4411,15 +4554,10 @@ export class PlayerAnimator {
     // W0b targeted fix 2: on the arm's final pose this frame
     this._clearArmOfRoots(drawS);
     // W0b targeted fix 3: then the whole arm's step from last step's — the
-    // keep-out's own turn included — held off the chain roots (see `_armRate`)
-    if (this._afOn) this._armRate();
-    // W0b targeted fix 3: the arm as it ends this step (char, as solved) — next step's continuity
-    if (this._afOn) {
-      this._charOf(b.loArmR.bone, this._elbP);
-      this._charOf(b.handR.bone, this._wrP);
-      this._charOf(b.upArmR.bone, this._shP);
-      this._wrT.copy(this._wrP);                   // the next target steps from where the wrist is
-    }
+    // keep-out's own turn included — held off the chain roots (see `_armRate`).
+    // W0b targeted fix 4: on the arm's FINAL pose, after every later layer
+    // (`_armContinuity` in `update`), from the arm as last rendered; the
+    // capture there sets the next step's references (`_wrT` included)
   }
 
   /**
@@ -4444,46 +4582,112 @@ export class PlayerAnimator {
   _armRate() {
     const AF = this.T.armFlow, b = this.b, D = this._aimDbg;
     D.afArmRate = 1;
-    if (!AF?.armStep || !b.upArmR || !b.loArmR || !b.handR) return;
+    if (!AF?.armStep || !b.upArmR || !b.loArmR || !b.handR) return false;
     const lim = AF.armStep * Math.min(1, Math.max(1e-3, (this._dtA || 0) * 60));
     this._charOf(b.upArmR.bone, _afS); this._charOf(b.loArmR.bone, _afE); this._charOf(b.handR.bone, _afW);
     // this step's arm and last step's, both from their own shoulder
     _afU.subVectors(_afE, _afS); _afV.subVectors(_afW, _afE);           // upper arm, forearm (now)
-    _afA.subVectors(this._elbP, this._shP); _afC.subVectors(this._wrP, this._elbP);   // (then)
+    _afA.subVectors(this._elbP, this._shP); _afC.subVectors(this._wrP, this._elbP);   // (then: as rendered)
     const relE = _afH.copy(_afU).sub(_afA).length();
     const relW = _afH.copy(_afU).add(_afV).sub(_afA).sub(_afC).length();
-    if (relE <= lim && relW <= lim) return;
+    if (relE <= lim && relW <= lim) return false;
     const L1 = _afU.length(), L2 = _afV.length(), l1 = _afA.length(), l2 = _afC.length();
-    if (L1 < 1e-3 || L2 < 1e-3 || l1 < 1e-3 || l2 < 1e-3) return;
+    if (L1 < 1e-3 || L2 < 1e-3 || l1 < 1e-3 || l2 < 1e-3) return false;
     _afU.divideScalar(L1); _afV.divideScalar(L2); _afA.divideScalar(l1); _afC.divideScalar(l2);
     // the roots and the fingertip's offset off the wrist, for the root guard
     const R = this._hcRoots, Hc = this._handCol, give = AF.rootGive ?? 0.012;
     const nR = R && Hc?.c ? R.length : 0;
     if (nR) { for (let k = 0; k < nR; k++) this._charOf(R[k].bone, this._afRootP[k]); this._charOf(Hc.c, _afT).sub(_afW); }
+    /* W0b targeted fix 4 (r3 judge: "when a limiter exits early, keep the best
+     * limited pose found, not the unlimited solve" — the raise after a cancel
+     * snapped 0.17-0.34 m on its 2nd step through these exits). The fraction
+     * back toward last step's arm that holds the step is bisected (0 = last
+     * step's directions, always within it); a fraction that brings the
+     * forearm or hand inside a chain root's keep is traded for the nearest
+     * one that does not on EITHER side — toward last step's arm first (the
+     * step still holds), then toward the solve; one that puts the arm in the
+     * skull or the hand behind the back of the skull for the same, in the same
+     * order. Only when no candidate holds the head does the solve stand. */
     let lo = 0, hi = 1;
-    if (!this._armRateOk(0, L1, L2, l1, l2, lim)) return;   // the arm's length changed under it: leave the solve alone
-    for (let i = 0; i < 10; i++) { const m = (lo + hi) * 0.5; if (this._armRateOk(m, L1, L2, l1, l2, lim)) lo = m; else hi = m; }
-    // ...and no nearer a root than the guard allows (back toward the solve's pose until it holds)
-    if (nR && !this._armRateRoots(lo, L1, L2, nR, give)) {
-      let a = lo, b2 = 1;
-      for (let i = 0; i < 10; i++) { const m = (a + b2) * 0.5; if (this._armRateRoots(m, L1, L2, nR, give)) b2 = m; else a = m; }
-      lo = b2;
-      if (lo >= 1 - 1e-4) return;
+    if (this._armRateOk(0, L1, L2, l1, l2, lim)) {
+      for (let i = 0; i < 10; i++) { const m = (lo + hi) * 0.5; if (this._armRateOk(m, L1, L2, l1, l2, lim)) lo = m; else hi = m; }
     }
-    // apply: upper arm onto u(lo), then the forearm (carried) onto f(lo)
-    afSlerpDir(_afA, _afU, lo, _afP); afSlerpDir(_afC, _afV, lo, _afG);
+    // ...no nearer a root than the guard allows
+    if (nR && !this._armRateRoots(lo, L1, L2, nR, give)) {
+      if (this._armRateRoots(0, L1, L2, nR, give)) {
+        let a = 0, b2 = lo;                                        // largest fraction <= lo that holds
+        for (let i = 0; i < 10; i++) { const m = (a + b2) * 0.5; if (this._armRateRoots(m, L1, L2, nR, give)) a = m; else b2 = m; }
+        lo = a;
+      } else {
+        let a = lo, b2 = 1;                                        // ...else the least step past it toward the solve
+        for (let i = 0; i < 10; i++) { const m = (a + b2) * 0.5; if (this._armRateRoots(m, L1, L2, nR, give)) b2 = m; else a = m; }
+        lo = b2;
+      }
+    }
+    if (lo >= 1 - 1e-4) return false;
+    // apply, then the head test; candidates in order of preference
+    this._headFrame();
+    const lo0 = lo;
+    for (let k = 0; k < 9; k++) {
+      const f = k === 0 ? lo0 : k <= 4 ? lo0 * (1 - k / 4) : lo0 + (1 - lo0) * ((k - 4) / 4);
+      if (k === 8) break;                                          // (f = 1: the solve stands)
+      if (this._armRateApply(f, L1)) { lo = f; D.afArmRate = Math.round(lo * 1e4) / 1e4; return true; }
+    }
+    D.afArmRate = 1;
+    return false;
+  }
+
+  /** `_armRate`: apply fraction `f` (upper arm onto u(f), the forearm carried onto f(f)); kept if the arm clears the head, else undone (returns false). */
+  _armRateApply(f, L1) {
+    const b = this.b;
+    afSlerpDir(_afA, _afU, f, _afP); afSlerpDir(_afC, _afV, f, _afG);
     _afQ.setFromUnitVectors(_afU, _afP);
     this._rotQL(b.upArmR, _afQ);
     _afH.copy(_afV).applyQuaternion(_afQ);
     _afQ2.setFromUnitVectors(_afH, _afG);
     this._rotQL(b.loArmR, _afQ2);
-    this._headFrame();
-    if (this._armInHead()) {                      // never into the skull: undo
-      _afQ2.invert(); this._rotQL(b.loArmR, _afQ2);
-      _afQ.invert(); this._rotQL(b.upArmR, _afQ);
-      return;
-    }
-    D.afArmRate = Math.round(lo * 1e4) / 1e4;
+    if (!this._armInHead() && !this._handBehindSkull()) return true;
+    _afQ2.invert(); this._rotQL(b.loArmR, _afQ2);
+    _afQ.invert(); this._rotQL(b.upArmR, _afQ);
+    return false;
+  }
+
+  /** The draw wrist or middle fingertip behind the back of the skull at skull height (`_headFrame` current; module scratch). */
+  _handBehindSkull() {
+    const b = this.b, Hc = this._handCol;
+    this._charOf(b.handR.bone, _afJ);
+    _efF.set(0, 0, 1).applyQuaternion(_hdQ);
+    const back = (P) => this._headUnit(P, _hp1).y >= -1 && -_afK.subVectors(P, _hd).dot(_efF) - this.T.headR.z >= 0;
+    if (back(_afJ)) return true;
+    if (Hc?.c) { this._charOf(Hc.c, _afL); if (back(_afL)) return true; }
+    return false;
+  }
+
+  /**
+   * W0b targeted fix 4 — THE DRAW ARM'S CONTINUITY, ON ITS FINAL POSE. Called
+   * every step the limiter is engaged (from the first aimed step), after every
+   * layer that moves the arm: `_armRate` limits the arm's step relative to the
+   * draw shoulder from where it was rendered last step. Once the aim layer has
+   * stopped (`aimRan` false) and a step needs no limiting, the free pose (the
+   * clip, the run clamp, ...) has been reached and the limiter lets go.
+   */
+  _armContinuity(aimRan) {
+    if (!this.T.armFlow?.armStep || !this._armCapN) { this._afEng = false; return; }
+    const meleeOn = this.melee?.ok && this.ctx.combat?.melee?.stance && this.ctx.combat.melee.stance !== 'holstered';
+    if (!aimRan && meleeOn) { this._afEng = false; return; }   // the lance's swing is the melee layer's
+    const bound = this._armRate();
+    this._aimDbg.afPost = bound ? 1 : 0;
+    if (!aimRan && !bound) this._afEng = false;
+  }
+
+  /** W0b targeted fix 4: the draw arm as it ends this step (char) — every limiter's reference next step. */
+  _armCapture() {
+    const b = this.b;
+    if (!b.upArmR || !b.loArmR || !b.handR) return;
+    this._charOf(b.upArmR.bone, this._shP);
+    this._charOf(b.loArmR.bone, this._elbP);
+    this._charOf(b.handR.bone, this._wrP);
+    this._armCapN++;
   }
 
   /** `_armRate`: the arm at fraction `al` back toward last step's moves <= lim relative to the shoulder (module scratch). */
@@ -4554,13 +4758,15 @@ export class PlayerAnimator {
     _afA.subVectors(_afW, _afS);
     const len = _afA.length();
     const step = (AF.elbowStep ?? 0.05) * Math.min(1, Math.max(1e-3, (this._dtA || 0) * 60));
+    // (W0b targeted fix 4: last step's elbow as rendered, rebuilt on this step's shoulder)
+    _afL.copy(this._elbP).sub(this._shP).add(_afS);
     if (len < 0.08) {
       // folded (the wrist at the shoulder: crouched, the quiver sits there):
       // no circle to speak of, the elbow can be anywhere round the shoulder —
       // turn the upper arm toward last step's elbow until it is within `step`
-      _afU.subVectors(_afE, _afS); _afV.subVectors(this._elbP, _afS);
+      _afU.subVectors(_afE, _afS); _afV.subVectors(_afL, _afS);
       const lu = _afU.length(), lv = _afV.length();
-      if (lu < 1e-3 || lv < 1e-3 || _afE.distanceTo(this._elbP) <= step) return;
+      if (lu < 1e-3 || lv < 1e-3 || _afE.distanceTo(_afL) <= step) return;
       const ang = Math.acos(clamp(_afU.dot(_afV) / (lu * lv), -1, 1)), keep = Math.min(ang, step / lu);
       _afA.crossVectors(_afU, _afV);
       if (_afA.lengthSq() < 1e-10) return;
@@ -4579,7 +4785,7 @@ export class PlayerAnimator {
     _afV.crossVectors(_afA, _afU);
     _afC.copy(_afS).addScaledVector(_afA, along);
     // last step's elbow on this circle's frame
-    _afP.subVectors(this._elbP, _afC);
+    _afP.subVectors(_afL, _afC);
     const h = _afP.dot(_afA), px = _afP.dot(_afU), py = _afP.dot(_afV);
     const rho = Math.hypot(px, py);
     const tc = rho > 1e-4 ? Math.atan2(py, px) : 0;
@@ -5190,7 +5396,10 @@ export class PlayerAnimator {
     for (let s = 0; s < 2; s++) {
       const up = s === 0 ? b.upArmL : b.upArmR, lo = s === 0 ? b.loArmL : b.loArmR, ha = s === 0 ? b.handL : b.handR;
       const sgn = s === 0 ? 1 : -1;                     // +x is her left
-      if (s === 1 && this._afOn) continue;              // W0b targeted fix 3: the draw arm is the aim solve's (`armFlow`)
+      // W0b targeted fix 3: the draw arm is the aim solve's (`armFlow`) while
+      // the aim is held (fix 4: as the bow lowers the clamp blends back in by
+      // its own (1 - aimW) weight, and `_armContinuity` carries the arm)
+      if (s === 1 && this._afOn && this._afFull) continue;
       // (0) swing centre (fix round 1, V12 "one elbow driven back past the hip
       // line"): the UAL1 jog/sprint swing is centred forward on this rig —
       // the wrist reached 0.47 m ahead of the hip and never got behind it, the

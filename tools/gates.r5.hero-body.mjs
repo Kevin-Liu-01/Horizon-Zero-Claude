@@ -7461,6 +7461,12 @@ const DRAW = `
       };`;
 
 const GATE_PITCHES = [-0.55, -0.4, 0, 0.75];
+/* W0b targeted fix round 4: A-draw-arm-continuity's matrix — every aim pitch the game reaches (camPitch
+ * clamps -1.15 / 1.02, player.js PITCH_UP / PITCH_DOWN) x every way she can be moving; the per-step bar */
+const CONT_PITCHES = [-1.15, -0.55, 0, 0.75, 1.02];
+const CONT_LOCOS = ['standing', 'jog', 'strafeR', 'strafeL', 'crouched'];
+const CONT_CELLS = CONT_PITCHES.flatMap((p) => CONT_LOCOS.map((l) => [p, l]));
+const CONT_STEP = 0.06;
 /** Fix round 4 (judge r1: knuckle 0.109 m from the nock at the 0.75 down aim): the hand ON the string, at every pitch. */
 const KNUCKLE_NOCK = 0.06, FINGERTIP_NOCK = 0.06;
 
@@ -7783,6 +7789,177 @@ const NEW_GATES = [
       margin.raiseHandBehindHeadMax = +Math.max(...rows.map((r) => r.raiseMaxHandBehindHead)).toFixed(4);
       margin.looseElbowBehindHead075 = rows.find((r) => r.pitch === 0.75 && !r.key)?.looseMaxElbowBehindHead ?? null;
       return { pass: bad.length === 0 && idx.length > 20, detail: { rule: 'R35 + fix round 5 (forearm on the arrow, wrist at the level anchor) + W0b targeted fix 3 (crouched rows, the raise, the arm step)', rows, margin, failing: bad.map((r) => r.pitch + (r.key || '') + ':' + okAll(r).join('+')) } };
+    })()`),
+  },
+
+  /* ------------------------------------------------ A-draw-arm-continuity */
+  /* W0b targeted fix round 4 (r3 judges, blocker: "continuity and head
+   * clearance hold only in the states a gate stages" — the RMB release after a
+   * loose, a draw cancel, a re-aim, aim held through a dodge, a raise after a
+   * cancel, crouch / stand at full draw). A MATRIX: every aim pitch the game
+   * reaches (the two clamps included) x every way she can be moving x every
+   * aim-weight transition, chained on one input timeline per cell, and graded
+   * on EVERY sim step from the first RMB to the end (so every step through
+   * 0.6 s after each transition is graded, and more): the draw elbow and wrist
+   * move <= 0.06 m per step in character space AND relative to the draw
+   * shoulder; no hand point (wrist, middle knuckle, middle fingertip) behind
+   * the back of the skull at skull height, nor behind it within the head's
+   * width at neck-to-crown height (the nape), nor over the crown; and the
+   * knuckle <= 0.06 m from the bow's nock whenever the draw is > 0.9. */
+  {
+    id: 'A-draw-arm-continuity', kind: 'action', lane: 'hero-body', timeout: 1500000,
+    title: 'The draw arm across every aim-weight transition, as a matrix: camPitch {-1.15, -0.55, 0, 0.75, 1.02} x {standing, jog, strafe right, strafe left, crouched} x one timeline per cell (raise; draw; loose; RMB up 0.05 s after the loose; re-aim 0.05-0.2 s after the lower; again with RMB up at +0.12 and +0.25 s; a draw cancelled by RMB at full draw; the raise after the cancel; crouch->stand and stand->crouch at full draw; a loose and a rapid re-fire 0.12 s after it; a dodge with RMB+LMB held at full draw and the draw completing after it; the last loose and lower). Every sim step from the first RMB: draw elbow and wrist travel <= 0.06 m (character space AND relative to the draw shoulder); wrist / middle knuckle / middle fingertip in front of the back of the skull wherever they are at skull height (head-ellipsoid unit y >= -1), and within the head\'s width (|x| < 1) from the neck (y >= -2.4) up; never over the crown (y > 1 within the skull\'s footprint, |x| < 1.3, -1.4 < z < 1.3); middle knuckle <= 0.06 m from the bow nock whenever the draw is > 0.9',
+    setup: INPUT_ON, settle: 400,
+    assert: placed(['openGround'], `(async () => {${HB}${FLAT_STRIP}
+      freeze();
+      const CELLS = ${JSON.stringify(CONT_CELLS)};
+      const STEP = ${CONT_STEP}, KN = ${KNUCKLE_NOCK};
+      const r4 = (v) => Math.round(v * 1e4) / 1e4;
+      const strip = flatStrip(46);
+      const kn = new T3(), ft = new T3(), nk = new T3(), hu = new T3();
+      // the input timeline of one cell (sim seconds from its start); rd = the re-aim delay after a lower
+      const timeline = (rd) => {
+        const ev = []; let s = 0;
+        const add = (t, a, tag) => ev.push([+(s + t).toFixed(3), a, tag || null]);
+        add(0, 'rmb+', 'raise'); add(0.45, 'lmb+'); add(1.40, 'lmb-', 'loose'); add(1.45, 'rmb-', 'up+0.05');
+        s += 1.45 + rd;
+        add(0, 'rmb+', 'reaim+' + rd); add(0.45, 'lmb+'); add(1.40, 'lmb-', 'loose'); add(1.52, 'rmb-', 'up+0.12');
+        s += 1.52 + rd;
+        add(0, 'rmb+', 'reaim+' + rd); add(0.45, 'lmb+'); add(1.40, 'lmb-', 'loose'); add(1.65, 'rmb-', 'up+0.25');
+        s += 2.25;
+        add(0, 'rmb+', 'raise'); add(0.45, 'lmb+'); add(1.40, 'rmb-', 'cancel'); add(1.60, 'lmb-');
+        s += 2.0;
+        add(0, 'rmb+', 'raiseAfterCancel'); add(0.45, 'lmb+'); add(1.45, 'crouch', 'crouchToggle'); add(2.05, 'crouch', 'crouchBack');
+        add(2.65, 'lmb-', 'loose'); add(2.77, 'lmb+', 'rapidRefire'); add(4.0, 'lmb-', 'loose2'); add(4.2, 'lmb+');
+        add(5.4, 'dodge', 'dodgeDrawn'); add(7.9, 'lmb-', 'looseAfterDodge'); add(8.0, 'rmb-', 'up+0.10'); add(8.6, 'end');
+        return ev;
+      };
+      const cells = [];
+      for (let ci = 0; ci < CELLS.length; ci++) {
+        const [pitch, loco] = CELLS[ci];
+        const rd = [0.05, 0.125, 0.2][ci % 3];
+        release(); await wait(300); p.setCrouch?.(false);
+        // the cell's ground: the flat strip, run along it whichever key moves her (else the W0 open ground)
+        if (strip) {
+          p.position.set(strip.x, 0, strip.z); p.velocity.set(0, 0, 0); p._snapToGround();
+          const dx = strip.dx, dz = strip.dz;
+          p.camYaw = loco === 'strafeR' ? Math.atan2(-dz, dx) : loco === 'strafeL' ? Math.atan2(dz, -dx) : strip.yaw;
+          p.heading = p.camYaw + Math.PI;
+        } else { standAt(p, 'openGround'); p.velocity.set(0, 0, 0); }
+        await simWait(0.35, 4000);
+        if (loco === 'crouched') { p.setCrouch(true); await simWait(0.5, 4000); }
+        const hold = loco === 'jog' ? ['KeyW'] : loco === 'strafeR' ? ['KeyD'] : loco === 'strafeL' ? ['KeyA'] : [];
+        for (const k of hold) keys.add(k);
+        if (hold.length) await simWait(0.5, 4000);
+        const ev = timeline(rd).map(([t, a, tag]) => ({ t, a, tag, done: false }));
+        const T = ev[ev.length - 1].t;
+        const M = { pitch, loco, reaimDelay: rd, steps: 0, travel: 0, travelAt: null, rel: 0, relAt: null, shoulderStepMax: 0,
+          skull: -9, skullAt: null, nape: -9, napeAt: null, crown: -9, crownAt: null, knFull: 0, knAt: null, fullSteps: 0,
+          drawsOver09: 0, dodged: false, crouchSeen: false, standSeen: false, fails: [], byTag: {} };
+        let label = 'start', tLab = 0, prev = null, wasFull = false;
+        const t0 = E.simTime, upd = an.update;
+        const failAdd = (k, msg) => { if (M.fails.length < 12) M.fails.push(k + ' ' + msg); };
+        an.update = function (dt, t) {
+          const r = upd.call(this, dt, t);
+          if (!(dt > 0)) return r;
+          const Q = this.debugArm('r');
+          const e = new T3(Q.elbow.x, Q.elbow.y, Q.elbow.z), w = new T3(Q.hand.x, Q.hand.y, Q.hand.z), s = new T3(Q.shoulder.x, Q.shoulder.y, Q.shoulder.z);
+          const lab = label + '+' + (E.simTime - t0 - tLab).toFixed(3);
+          const B = M.byTag[label] || (M.byTag[label] = { travel: 0, rel: 0, skull: -9, crown: -9, kn: 0 });
+          if (prev) {
+            const dE = e.distanceTo(prev.e), dW = w.distanceTo(prev.w);
+            const rE = e.clone().sub(s).distanceTo(prev.e.clone().sub(prev.s)), rW = w.clone().sub(s).distanceTo(prev.w.clone().sub(prev.s));
+            const tr = Math.max(dE, dW), rl = Math.max(rE, rW);
+            const dS = s.distanceTo(prev.s);
+            if (dS > M.shoulderStepMax) { M.shoulderStepMax = dS; M.shoulderAt = lab + (p.dodging ? ' dodging' : '') + ' aimW ' + this.aimWeight.toFixed(2); }
+            if (tr > M.travel) { M.travel = tr; M.travelAt = lab + ' ' + (dE >= dW ? 'elbow' : 'wrist'); }
+            if (rl > M.rel) { M.rel = rl; M.relAt = lab + ' ' + (rE >= rW ? 'elbow' : 'wrist'); }
+            B.travel = Math.max(B.travel, r4(tr)); B.rel = Math.max(B.rel, r4(rl));
+            if (tr > STEP) failAdd('travel', r4(tr) + ' @' + lab);
+            else if (rl > STEP) failAdd('travelRel', r4(rl) + ' @' + lab);
+          }
+          prev = { e, w, s }; M.steps++;
+          if (this.debugDrawHand(kn, ft)) {
+            const pts = [[w, 'wrist'], [CH(kn), 'knuckle'], [CH(ft), 'fingertip']];
+            for (const [P, nm] of pts) {
+              this._headFrame(); this._headUnit(P, hu);
+              const bh = this.behindHead(P);
+              const us = nm + ' u(' + hu.x.toFixed(2) + ',' + hu.y.toFixed(2) + ',' + hu.z.toFixed(2) + ')';
+              if (hu.y >= -1) {
+                if (bh > M.skull) { M.skull = r4(bh); M.skullAt = lab + ' ' + us; }
+                B.skull = Math.max(B.skull, r4(bh));
+                if (bh >= 0) failAdd('behindSkull', r4(bh) + ' @' + lab + ' ' + us);
+              } else if (hu.y >= -2.4 && Math.abs(hu.x) < 1) {
+                if (bh > M.nape) { M.nape = r4(bh); M.napeAt = lab + ' ' + us; }
+                if (bh >= 0) failAdd('nape', r4(bh) + ' @' + lab + ' ' + us);
+              }
+              // over the crown: above the top of the skull and within its footprint (the r3 judges' 'over the top' test)
+              if (Math.abs(hu.x) < 1.3 && hu.z > -1.4 && hu.z < 1.3) {
+                if (hu.y > M.crown) { M.crown = r4(hu.y); M.crownAt = lab + ' ' + us; }
+                B.crown = Math.max(B.crown, r4(hu.y));
+                if (hu.y > 1) failAdd('overCrown', hu.y.toFixed(2) + ' @' + lab + ' ' + us);
+              }
+            }
+            const ds = cmb.drawStrength;
+            if (ds > 0.9) {
+              cmb.bow.getNockWorld(ds, nk);
+              const d = kn.distanceTo(nk); M.fullSteps++;
+              if (d > M.knFull) { M.knFull = r4(d); M.knAt = lab; }
+              B.kn = Math.max(B.kn, r4(d));
+              if (d > KN) failAdd('knuckleOffString', r4(d) + ' @' + lab + ' drawS ' + ds.toFixed(2));
+            }
+            if (ds > 0.9 && !wasFull) M.drawsOver09++;
+            wasFull = ds > 0.9;
+          }
+          if (p.dodging) M.dodged = true;
+          if (p.crouching) M.crouchSeen = true; else M.standSeen = true;
+          return r;
+        };
+        try {
+          while (E.simTime - t0 < T) {
+            const tt = E.simTime - t0;
+            for (const x of ev) {
+              if (x.done || tt < x.t) continue;
+              x.done = true;
+              if (x.tag) { label = x.tag; tLab = tt; }
+              if (x.a === 'rmb+') C.input.mouse.buttons |= 4;
+              else if (x.a === 'rmb-') C.input.mouse.buttons &= ~4;
+              else if (x.a === 'lmb+') C.input.mouse.buttons |= 1;
+              else if (x.a === 'lmb-') C.input.mouse.buttons &= ~1;
+              else if (x.a === 'crouch') p.setCrouch(!p.crouching);
+              else if (x.a === 'dodge') p.dodge();
+            }
+            p.camPitch = pitch;
+            for (const k of hold) keys.add(k);
+            await frame();
+          }
+        } finally { an.update = upd; }
+        release(); p.setCrouch?.(false);
+        M.travel = r4(M.travel); M.rel = r4(M.rel); M.shoulderStepMax = r4(M.shoulderStepMax);
+        // staging sanity: the cell really drew (five full draws incl. the one through the dodge), dodged, crouched and stood
+        if (M.drawsOver09 < 5) M.fails.push('staging: only ' + M.drawsOver09 + ' full draws');
+        if (!M.dodged) M.fails.push('staging: no dodge');
+        if (!M.crouchSeen || !M.standSeen) M.fails.push('staging: crouch ' + M.crouchSeen + ' stand ' + M.standSeen);
+        if (M.steps < 600) M.fails.push('staging: ' + M.steps + ' steps');
+        cells.push(M);
+      }
+      release(); p.setCrouch?.(false);
+      // per transition, the worst over every cell
+      const byTag = {};
+      for (const M of cells) for (const [k, v] of Object.entries(M.byTag)) {
+        const K = k.replace(/\\+[0-9.]+$/, (m) => (k.startsWith('reaim') ? '' : m));
+        const o = byTag[K] || (byTag[K] = { travel: 0, rel: 0, skull: -9, crown: -9, kn: 0 });
+        o.travel = Math.max(o.travel, v.travel); o.rel = Math.max(o.rel, v.rel); o.skull = Math.max(o.skull, v.skull); o.crown = Math.max(o.crown, v.crown); o.kn = Math.max(o.kn, v.kn);
+      }
+      const failing = cells.filter((M) => M.fails.length).map((M) => M.pitch + '/' + M.loco + ': ' + M.fails.slice(0, 3).join(' | '));
+      const worst = {
+        travelMax: Math.max(...cells.map((M) => M.travel)), relMax: Math.max(...cells.map((M) => M.rel)),
+        skullMax: Math.max(...cells.map((M) => M.skull)), napeMax: Math.max(...cells.map((M) => M.nape)), crownMax: Math.max(...cells.map((M) => M.crown)),
+        knuckleFullMax: Math.max(...cells.map((M) => M.knFull)),
+      };
+      for (const M of cells) delete M.byTag;
+      return { pass: cells.length === CELLS.length && failing.length === 0,
+        detail: { bars: { stepM: STEP, knuckleNockM: KN }, strip: strip ? { x: +strip.x.toFixed(1), z: +strip.z.toFixed(1) } : null, worst, byTransition: byTag, failing, cells } };
     })()`),
   },
 
