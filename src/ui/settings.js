@@ -295,13 +295,17 @@ export class SettingsPanel {
   mount(host) {
     this.root = el('div', 'mn-settings', host);
     this._rowEls.clear();
+    // three columns: how it handles, how it sounds and restores, the keys. Every row on the page.
+    const colA = el('div', 'mn-set-col', this.root);
+    const colB = el('div', 'mn-set-col', this.root);
+    const colC = el('div', 'mn-set-col', this.root);
     for (const group of SCHEMA) {
-      const sec = el('section', 'mn-set-group', this.root);
+      const sec = el('section', 'mn-set-group', group.group === 'AUDIO' ? colB : colA);
       el('h3', 'mn-set-title', sec, group.group);
       for (const row of group.rows) this._buildRow(sec, row);
     }
-    this._buildBinds();
-    const foot = el('div', 'mn-set-foot', this.root);
+    this._buildBinds(colC);
+    const foot = el('div', 'mn-set-foot', colB);
     const reset = el('button', 'mn-btn small', foot, 'RESTORE DEFAULTS');
     reset.addEventListener('click', () => { this.store.reset(); this.refresh(); });
     el('div', 'mn-set-note', foot,
@@ -312,7 +316,7 @@ export class SettingsPanel {
   _buildRow(sec, row) {
     const r = el('div', `mn-set-row ${row.kind}`, sec);
     const label = el('label', 'mn-set-label', r, row.label);
-    if (row.pending) el('span', 'mn-set-pending', label, 'STORED');
+    if (row.pending) el('span', 'mn-set-pending', label, 'NOT LIVE YET');
     const ctrl = el('div', 'mn-set-ctrl', r);
     let read;
 
@@ -366,11 +370,11 @@ export class SettingsPanel {
    * THE KEYS: every action `input.js` names, rebindable through its own `bind()`.
    * Listing them here is `A-input-actions`' settings clause (R38). Click, then press.
    */
-  _buildBinds() {
+  _buildBinds(host) {
     const input = this.ctx.input;
     if (!input?.bind) return;
     const names = ACTIONS;
-    const sec = el('section', 'mn-set-group mn-set-binds', this.root);
+    const sec = el('section', 'mn-set-group mn-set-binds', host);
     sec.dataset.rebind = 'list';
     el('h3', 'mn-set-title', sec, 'KEYS');
     const word = (a) => BIND_WORD[a] ?? a.replace(/([A-Z])/g, ' $1').replace(/^./, (c) => c.toUpperCase());

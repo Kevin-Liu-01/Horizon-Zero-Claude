@@ -48,6 +48,58 @@ const el = (tag, cls, parent, html) => {
 const clamp = (v, lo, hi) => (v < lo ? lo : v > hi ? hi : v);
 
 /** Hub tabs. `open` delegates to the owning lane; absent = rendered here. */
+/**
+ * The book's one plate: an engraved theodolite on its tripod, drawn from arithmetic (no
+ * asset, no provenance row), in the ink of the page at the strength of a printed tint.
+ * Returned as a CSS url() for `--cal-plate`; built once.
+ */
+function theodolitePlate() {
+  const f = (v) => v.toFixed(1);
+  let fine = '', med = '', heavy = '';
+  // the vertical circle: two rings, a tick every 5 degrees, spokes
+  const VC = { x: 150, y: 96, r: 46 };
+  for (const r of [VC.r, VC.r - 7, 11]) med += `M${VC.x - r} ${VC.y}a${r} ${r} 0 1 0 ${2 * r} 0a${r} ${r} 0 1 0 ${-2 * r} 0`;
+  for (let a = 0; a < 360; a += 5) {
+    const c = Math.cos(a * Math.PI / 180), n = Math.sin(a * Math.PI / 180), k = a % 30 === 0 ? 7 : 4;
+    fine += `M${f(VC.x + c * VC.r)} ${f(VC.y + n * VC.r)}L${f(VC.x + c * (VC.r - k))} ${f(VC.y + n * (VC.r - k))}`;
+  }
+  for (let a = 45; a < 360; a += 90) {
+    const c = Math.cos(a * Math.PI / 180), n = Math.sin(a * Math.PI / 180);
+    med += `M${f(VC.x + c * 11)} ${f(VC.y + n * 11)}L${f(VC.x + c * (VC.r - 7))} ${f(VC.y + n * (VC.r - 7))}`;
+  }
+  // the telescope: object end right, the eyepiece left, hatched along its underside
+  heavy += 'M58 88H204L236 83V109L204 104H58Z M236 80V112H246V80Z M58 90H44V102H58Z M44 88H36V104H44Z';
+  for (let x = 62; x < 204; x += 5) fine += `M${x} 104L${x + 4} 99`;
+  // the level on the tube: its vial and two posts
+  heavy += 'M112 70H188V78H112Z M122 78V88M178 78V88';
+  fine += 'M146 70V78M154 70V78';
+  // the standards
+  heavy += 'M108 170L114 118H124L122 170Z M192 170L186 118H176L178 170Z';
+  // the horizontal limb: two ellipses, ticks between them
+  const H = { x: 150, y: 172, rx: 66, ry: 14 };
+  const ell = (rx, ry) => `M${H.x - rx} ${H.y}a${rx} ${ry} 0 1 0 ${2 * rx} 0a${rx} ${ry} 0 1 0 ${-2 * rx} 0`;
+  heavy += ell(H.rx, H.ry);
+  med += ell(H.rx - 8, H.ry - 3);
+  for (let a = 0; a < 360; a += 6) {
+    const c = Math.cos(a * Math.PI / 180), n = Math.sin(a * Math.PI / 180);
+    fine += `M${f(H.x + c * H.rx)} ${f(H.y + n * H.ry)}L${f(H.x + c * (H.rx - 8))} ${f(H.y + n * (H.ry - 3))}`;
+  }
+  // the levelling base and its three screws
+  heavy += 'M112 186H188V194H112Z M118 194V204H126V194M174 194V204H182V194M146 194V206H154V194';
+  heavy += `M92 208a58 8 0 1 0 116 0a58 8 0 1 0 -116 0`;
+  // the tripod: three tapered legs, shoes, a chain between them
+  heavy += 'M108 214L48 408L56 410L120 216Z M192 214L252 408L244 410L180 216Z M144 216L146 418H154L156 216Z';
+  heavy += 'M48 408L42 420M252 408L258 420M150 418V428';
+  med += 'M87 316Q150 340 213 316';
+  for (let y = 226; y < 400; y += 9) { fine += `M${f(149)} ${y}H${f(152)}`; }
+  // the plumb line and its bob
+  const bob = 'M150 204V352M150 352L144 362L150 382L156 362Z';
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 300 432" width="600" height="864"><g fill="none" stroke="#26343F" stroke-linecap="square" opacity="0.2">`
+    + `<path d="${heavy}" stroke-width="1.5"/><path d="${med}" stroke-width="1"/><path d="${fine}" stroke-width="0.6"/></g>`
+    + `<path d="${bob}" fill="none" stroke="#D2452E" stroke-width="1" opacity="0.36"/></svg>`;
+  return `url("data:image/svg+xml,${encodeURIComponent(svg)}")`;
+}
+
 const TABS = [
   { id: 'map', key: 'KeyM', hint: 'M', label: 'MAP' },
   { id: 'quests', key: 'KeyJ', hint: 'J', label: 'FIELD LOG',
@@ -335,6 +387,8 @@ export class Menus {
       b.addEventListener('click', () => this.setTab(t.id));
       this._tabBtns.set(t.id, b);
     });
+    this._marginData = el('div', 'mn-hub-data', margin);
+    document.documentElement.style.setProperty('--cal-plate', theodolitePlate());
 
     const head = el('header', 'mn-hub-head cal-page', shell);
     this._hubTitle = el('div', 'mn-hub-title', head, 'MAP');
@@ -1070,6 +1124,7 @@ export class Menus {
     if (this.tab === id && !force && this.delegated === id) return true;
 
     this.tab = id;
+    this.hub.dataset.tab = id;
     for (const [tid, b] of this._tabBtns) b.classList.toggle('on', tid === id);
     this._hubTitle.textContent = tab.label;
     if (this.settings.get('menuTips')) this._tipEl.innerHTML = this.tips.pick(id);
@@ -1159,6 +1214,21 @@ export class Menus {
     const salt = this.ctx.inventory?.count?.('metal-shards');
     if (salt != null) bits.push(rd('SALT', pad(salt)));
     this._hubStatus.innerHTML = bits.map((b) => `<div>${b}</div>`).join('');
+
+    // the field data: hour, weather, where she stands, which way she faces
+    const env = this.ctx.environment;
+    const rows = [];
+    if (Number.isFinite(env?.time)) {
+      const hh = Math.floor(env.time) % 24, mm = Math.floor((env.time % 1) * 60);
+      rows.push(['HOUR', `${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`]);
+    }
+    if (env?.weather) rows.push(['SKY', String(env.weather).toUpperCase(), 'word']);
+    if (p) {
+      const coord = (v) => `${v < 0 ? '-' : ''}${String(Math.abs(Math.round(v))).padStart(3, '0')}`;
+      const brg = Math.round((((-(p.camYaw ?? 0) * 180 / Math.PI) % 360) + 360) % 360) % 360;
+      rows.push(['E', coord(p.position.x)], ['N', coord(-p.position.z)], ['BRG', String(brg).padStart(3, '0')]);
+    }
+    this._marginData.innerHTML = rows.map(([k, v, c]) => `<span>${k}</span><b${c ? ` class="${c}"` : ''}>${v}</b>`).join('');
   }
 
   saveGame() {

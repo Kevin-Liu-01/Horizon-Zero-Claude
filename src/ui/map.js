@@ -298,7 +298,9 @@ export class MapBake {
     g.font = `400 ${10.5 * K}px ${FONT_MONO}`;
     g.fillText('survey sheet, contours 5 m', cx + 19 * K, cy + 39 * K);
     // the scale: a little levelling staff, 0 to 200 m
-    const barM = 200, bw = (barM / WORLD_SIZE) * MAP_PX, bx = cx + 19 * K, by = cy + 49 * K, bh = 5 * K;
+    // ...as long as the scale fits the cartouche: a 720 m sheet draws 200 m wider than the box
+    const barM = (200 / WORLD_SIZE) * MAP_PX > cw - 30 * K ? 100 : 200;
+    const bw = (barM / WORLD_SIZE) * MAP_PX, bx = cx + 19 * K, by = cy + 49 * K, bh = 5 * K;
     for (let i = 0; i < 4; i++) {
       g.fillStyle = i % 2 ? STAFF : VERMILION;
       g.fillRect(bx + (bw / 4) * i, by, bw / 4, bh);
@@ -307,7 +309,7 @@ export class MapBake {
     g.strokeRect(bx, by, bw, bh);
     g.fillStyle = INK; g.font = `400 ${9.5 * K}px ${FONT_MONO}`;
     g.textAlign = 'left'; g.fillText('0', bx, by + bh + 10 * K);
-    g.textAlign = 'right'; g.fillText('200 m', bx + bw, by + bh + 10 * K);
+    g.textAlign = 'right'; g.fillText(`${barM} m`, bx + bw, by + bh + 10 * K);
     g.restore();
   }
 
@@ -575,6 +577,7 @@ export class WorldMap {
     this.fog = new FogOfWar(this._storeApi);
     this.pillars = pillarTable();
     this._pillarById = new Map(this.pillars.map((p) => [p.id, p]));
+    this._labelBoxes = [];      // x0,y0,x1,y1 of everything lettered on the sheet this draw
     this.waypoint = null;
     this.root = null;
     this.canvas = null;
@@ -813,10 +816,12 @@ export class WorldMap {
     g.closePath();
   }
 
-  draw() {
+  /** @param opts.washOnly  paint only the triangles' wash + ink: what `A-map-triangles` measures against the geometry */
+  draw(opts = null) {
     const g = this.canvas?.getContext('2d');
     if (!g) return;
     g.clearRect(0, 0, MAP_PX, MAP_PX);
+    this._labelBoxes.length = 0;
 
     if (!this.bake.base) {
       g.fillStyle = PAPER;
@@ -843,8 +848,9 @@ export class WorldMap {
       g.drawImage(this.bake.ink, 0, 0);
       painted.ink = true;
       // 3: the Datum Line in vermilion, only where the survey has reached
-      painted.datum = this._drawDatum(g);
+      painted.datum = opts?.washOnly ? 0 : this._drawDatum(g);
       g.restore();
+      if (opts?.washOnly) { this._lastPainted = painted; return; }
 
       // 4: sight lines and the pillars that made them
       g.save();
@@ -864,7 +870,11 @@ export class WorldMap {
 
     // 5-7: sites, objectives, Flags
     const marks = this.bake.ready ? this.visibleMarkers() : [];
-    for (const m of marks) { this._drawMarker(g, m); painted.sites += (m.kind !== 'quest' && m.kind !== 'machine') ? 1 : 0; }
+    // every glyph claims its ground first, so no name can land on a mark
+    for (const m of marks) { const pt = this.worldToMap(m.x, m.z); this._claim(pt.x - 8 * K, pt.y - 8 * K, pt.x + 8 * K, pt.y + 8 * K); }
+    // settlements are named first: a site gives way to them
+    const named = marks.slice().sort((a, b) => (a.kind === 'settlement' ? 0 : 1) - (b.kind === 'settlement' ? 0 : 1));
+    for (const m of named) { this._drawMarker(g, m); painted.sites += (m.kind !== 'quest' && m.kind !== 'machine') ? 1 : 0; }
     this._lastPainted = painted;
 
     // 8: Brea: a broad arrow on her heading
@@ -953,6 +963,43 @@ export class WorldMap {
     if ('letterSpacing' in g) g.letterSpacing = '0px';
   }
 
+  _claim(x0, y0, x1, y1) { this._labelBoxes.push(x0, y0, x1, y1); }
+
+  _free(x0, y0, x1, y1) {
+    const b = this._labelBoxes;
+    if (x0 < 26 * K || y0 < 4 * K || x1 > MAP_PX - 4 * K || y1 > MAP_PX - 14 * K) return false;
+    for (let i = 0; i < b.length; i += 4) {
+      if (x0 < b[i + 2] && x1 > b[i] && y0 < b[i + 3] && y1 > b[i + 1]) return false;
+    }
+    return true;
+  }
+
+  /**
+   * A name beside its mark, on whichever side is free: right, left, above, below. A name
+   * with no free side stays off the sheet and reads on hover, rather than lying on another.
+   */
+  _name(g, text, pt, off, size = 11, weight = 600, fill = INK, must = false) {
+    g.font = `${weight} ${size * K}px ${FONT_LABEL}`;
+    if ('letterSpacing' in g) g.letterSpacing = `${(0.06 * size * K).toFixed(2)}px`;
+    const w = g.measureText(text).width + 2 * K;
+    if ('letterSpacing' in g) g.letterSpacing = '0px';
+    const h = (size + 3) * K;
+    const tries = [
+      [pt.x + off, pt.y, 'left', pt.x + off, pt.y - h / 2, pt.x + off + w, pt.y + h / 2],
+      [pt.x - off, pt.y, 'right', pt.x - off - w, pt.y - h / 2, pt.x - off, pt.y + h / 2],
+      [pt.x, pt.y - off - h / 2, 'center', pt.x - w / 2, pt.y - off - h, pt.x + w / 2, pt.y - off],
+      [pt.x, pt.y + off + h / 2, 'center', pt.x - w / 2, pt.y + off, pt.x + w / 2, pt.y + off + h],
+    ];
+    for (const t of tries) {
+      if (!this._free(t[3], t[4], t[5], t[6])) continue;
+      this._claim(t[3], t[4], t[5], t[6]);
+      this._letter(g, text, t[0], t[1], size, weight, t[2], fill);
+      return true;
+    }
+    if (must) { this._letter(g, text, tries[0][0], tries[0][1], size, weight, 'left', fill); return true; }
+    return false;
+  }
+
   _drawPillar(g, q) {
     const pt = this.worldToMap(q.x, q.z);
     g.save();
@@ -961,7 +1008,8 @@ export class WorldMap {
     g.beginPath(); g.moveTo(pt.x, pt.y + 7 * K); g.lineTo(pt.x, pt.y - 7 * K); g.moveTo(pt.x - 5 * K, pt.y + 2 * K); g.lineTo(pt.x, pt.y - 7 * K); g.lineTo(pt.x + 5 * K, pt.y + 2 * K); g.stroke();
     g.strokeStyle = INK; g.lineWidth = 1.8 * K;
     g.beginPath(); g.moveTo(pt.x, pt.y + 7 * K); g.lineTo(pt.x, pt.y - 7 * K); g.moveTo(pt.x - 5 * K, pt.y + 2 * K); g.lineTo(pt.x, pt.y - 7 * K); g.lineTo(pt.x + 5 * K, pt.y + 2 * K); g.stroke();
-    this._letter(g, q.id, pt.x, pt.y - 15 * K, 11, 700, 'center');
+    this._claim(pt.x - 8 * K, pt.y - 9 * K, pt.x + 8 * K, pt.y + 9 * K);
+    this._name(g, q.id, { x: pt.x, y: pt.y - 6 * K }, 12 * K, 11, 700, INK, true);
     g.restore();
   }
 
@@ -974,7 +1022,7 @@ export class WorldMap {
       g.strokeRect(pt.x - r, pt.y - r, r * 2, r * 2);
       g.fillStyle = m.done ? 'rgba(38,52,63,0.5)' : INK;
       g.fillRect(pt.x - r, pt.y - r, r * 2, r * 2);
-      this._letter(g, String(m.name).toUpperCase(), pt.x + r + 5 * K, pt.y, 12.5, 700);
+      this._name(g, String(m.name).toUpperCase(), pt, r + 5 * K, 12.5, 700, INK, true);
     } else if (m.kind === 'quest') {
       g.lineCap = 'square';
       g.strokeStyle = PAPER; g.lineWidth = 4.2 * K;
@@ -991,16 +1039,16 @@ export class WorldMap {
       g.fillStyle = '#2B2C30'; g.fill();
       g.strokeStyle = INK; g.lineWidth = 1 * K; g.stroke();
       if (ap > 0) { g.beginPath(); g.arc(pt.x, pt.y, d * 0.55 * ap + 0.5, 0, Math.PI * 2); g.fillStyle = col; g.fill(); }
-      this._letter(g, String(m.name).toUpperCase(), pt.x + d + 4 * K, pt.y, 11);
+      this._name(g, String(m.name).toUpperCase(), pt, d + 4 * K, 11, 600, INK, true);
     } else if (m.kind === 'benchmark') {
       g.beginPath(); g.moveTo(pt.x, pt.y - r); g.lineTo(pt.x + r, pt.y + r); g.lineTo(pt.x - r, pt.y + r); g.closePath();
       g.fillStyle = INK; g.fill();
-      this._letter(g, String(m.name).toUpperCase(), pt.x + r + 5 * K, pt.y, 11);
+      this._name(g, String(m.name).toUpperCase(), pt, r + 5 * K, 11);
     } else {
       g.beginPath(); g.arc(pt.x, pt.y, r * 0.86, 0, Math.PI * 2);
       g.lineWidth = 3.4 * K; g.strokeStyle = 'rgba(232,221,192,0.94)'; g.stroke();
       g.lineWidth = 1.5 * K; g.strokeStyle = m.done ? 'rgba(38,52,63,0.5)' : INK; g.stroke();
-      this._letter(g, String(m.name).toUpperCase(), pt.x + r + 4 * K, pt.y, 11, 500);
+      this._name(g, String(m.name).toUpperCase(), pt, r + 4 * K, 11, 500);
     }
     g.restore();
   }

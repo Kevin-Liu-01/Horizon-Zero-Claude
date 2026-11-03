@@ -66,6 +66,7 @@ const WORD_ROWS = [
   ['tallneck', 'Trig Pillar'],
   ['hunting grounds?', 'Salt Trial'],
   ['override', 'Pry'],
+  ['nora', 'Guild'],
 ].map(([w, rep]) => [new RegExp(`\\b(?:${w})\\b`, 'gi'), rep]);
 
 /** Keep the case of the source: an upper-case label stays upper-case. */

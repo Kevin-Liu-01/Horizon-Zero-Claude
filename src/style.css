@@ -180,6 +180,9 @@
 
 /* the families ship 400-700 (Chakra Petch) and 400-600 (Plex Mono): never fake a weight */
 html { font-synthesis-weight: none; }
+/* no element falls back to a UA face (R55) */
+button, input, select, textarea { font-family: inherit; }
+kbd, code { font-family: var(--cal-font-mono); }
 
 html, body {
   width: 100%; height: 100%;
@@ -387,6 +390,9 @@ body.cal-calima-live #cal-calima { display: none; }   /* the renderer draws cali
 .cal-menus-root, .cal-inv, #cal-prog .pg-overlay, #cal-prog .sk-overlay, #cal-dlg .dlg-stage,
 #title .title-inner, #loading .load-inner { zoom: var(--ui-z); }
 
+/* The book is open: the instruments rest. Opacity, because plates and pips carry an inline visibility. */
+body.cal-hub-open #hud, body.cal-hub-open #calf-layer { opacity: 0; }
+
 /* Under the death card the gameplay HUD is noise. */
 body.cal-dead #hud {
   opacity: 0.14;
@@ -568,10 +574,10 @@ body.cal-title-live #title.overlay {
 .mn-title-item:hover, .mn-title-item:focus-visible { padding-left: 18px; background: rgba(28, 27, 30, 0.30); outline: none; }
 .mn-title-item:hover::before, .mn-title-item:focus-visible::before { transform: scaleY(1); }
 .mn-title-item:hover .cal-stn, .mn-title-item:focus-visible .cal-stn { color: var(--cal-staff); }
-.mn-title-item.disabled { color: var(--cal-staff-30); cursor: not-allowed; }
+.mn-title-item.disabled { color: var(--cal-staff-55); text-shadow: none; font-weight: 500; cursor: not-allowed; }
 .mn-title-item.disabled:hover { padding-left: 12px; background: none; }
 .mn-title-item.disabled::before { display: none; }
-.mn-title-item.disabled .cal-stn { color: var(--cal-staff-30); }
+.mn-title-item.disabled .cal-stn { color: var(--cal-staff-55); }
 
 .mn-title-save {
   margin-top: 14px;
@@ -620,6 +626,12 @@ body.cal-title-live #title.overlay {
   grid-template-rows: var(--mn-head-h) 1fr var(--mn-foot-h);
   grid-template-areas: 'margin head' 'margin body' 'margin foot';
   animation: mn-page-in 0.22s var(--cal-ease-out) both;
+  /* the block of pages under this one: two offset edges, and the book's shadow on the world */
+  box-shadow:
+    0 0 0 1px var(--cal-ink),
+    3px 3px 0 0 #CDBD97, 3px 3px 0 1px var(--cal-ink-62),
+    6px 6px 0 0 #C2B28C, 6px 6px 0 1px var(--cal-ink-40),
+    0 22px 70px rgba(14, 13, 15, 0.62);
 }
 @keyframes mn-page-in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
 
@@ -628,10 +640,37 @@ body.cal-title-live #title.overlay {
   grid-area: margin;
   position: relative;
   display: flex; flex-direction: column;
-  padding: 18px 16px 14px 18px;
+  padding: 18px 16px 14px 26px;
   border-right: 3px double var(--cal-c-staff);
   pointer-events: auto;
 }
+/* the book's fore-edge: a levelling staff cut down the page, the same E as the health staff */
+.mn-hub-margin::before {
+  content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 11px;
+  background:
+    repeating-linear-gradient(180deg, transparent 0 8px, var(--cal-paper) 8px 11px, transparent 11px 19px, var(--cal-paper) 19px 22px, transparent 22px 30px) 5px 0 / 6px 100% no-repeat,
+    repeating-linear-gradient(180deg, var(--cal-c-staff) 0 30px, var(--cal-staff) 30px 60px);
+  border-right: 1px solid var(--cal-ink);
+}
+/* the field data at the foot of the index: what a surveyor heads a page with */
+.mn-hub-data {
+  flex: none;
+  margin-top: 10px; padding-top: 8px;
+  border-top: 1px solid var(--cal-ink);
+  display: grid; grid-template-columns: auto 1fr; gap: 2px 12px; align-items: baseline;
+}
+.mn-hub-data span {
+  font-family: var(--cal-font-ui); font-weight: 600;
+  font-size: var(--cal-type-micro); letter-spacing: var(--cal-track-caps);
+  color: var(--cal-ink-62);
+}
+.mn-hub-data b {
+  font-family: var(--cal-font-mono); font-weight: 500;
+  font-size: var(--cal-type-note); text-align: right;
+  font-variant-numeric: tabular-nums;
+  color: var(--cal-ink);
+}
+.mn-hub-data b.word { font-family: var(--cal-font-ui); font-weight: 600; font-size: var(--cal-type-micro); letter-spacing: var(--cal-track-caps); }
 .mn-hub-brand { padding-bottom: 12px; border-bottom: 1px solid var(--cal-rule); margin-bottom: 8px; }
 .mn-hub-kicker {
   font-family: var(--cal-font-display);
@@ -685,9 +724,19 @@ body.cal-title-live #title.overlay {
 .mn-hub-head {
   grid-area: head;
   display: flex; align-items: flex-end; justify-content: space-between; gap: 26px;
-  padding: 0 26px 10px 28px;
+  position: relative;
+  padding: 0 26px 14px 28px;
   border-bottom: 1px solid var(--cal-ink);
   pointer-events: auto;
+}
+/* the graduated tick, under every page's title: a tenth every 10 px, a long tick every 100 */
+.mn-hub-head::after {
+  content: ''; position: absolute; left: 0; right: 0; bottom: 0; height: 9px;
+  background:
+    repeating-linear-gradient(90deg, var(--cal-ink-80) 0 1px, transparent 1px 100px) 28px 100% / 100% 9px no-repeat,
+    repeating-linear-gradient(90deg, var(--cal-ink-62) 0 1px, transparent 1px 50px) 28px 100% / 100% 6px no-repeat,
+    repeating-linear-gradient(90deg, var(--cal-ink-40) 0 1px, transparent 1px 10px) 28px 100% / 100% 3px no-repeat;
+  pointer-events: none;
 }
 .mn-hub-title {
   font-family: var(--cal-font-display);
@@ -707,6 +756,20 @@ body.cal-title-live #title.overlay {
 .mn-hub-status span { font-family: var(--cal-font-ui); font-weight: 600; font-size: var(--cal-type-micro); letter-spacing: var(--cal-track-caps); color: var(--cal-ink-62); }
 
 .mn-hub-body { grid-area: body; min-height: 0; padding: 14px 26px 10px 28px; overflow: hidden; pointer-events: auto; }
+/* The plate: an engraved theodolite (menu.js draws it once into --cal-plate) at the foot of
+   a page, under the ink. Same paper layers as .cal-page, one more on top. */
+.mn-hub-body, body.cal-hub-open .cal-inv-shell, body.cal-hub-open #cal-prog .pg-panel, body.cal-hub-open #cal-prog .sk-panel {
+  background-image:
+    var(--cal-plate, none),
+    var(--cal-paper-grain),
+    var(--cal-paper-foxing),
+    repeating-linear-gradient(180deg, transparent 0 27px, var(--cal-rule-ruled) 27px 28px);
+  background-repeat: no-repeat, repeat, no-repeat, no-repeat, no-repeat, repeat;
+  background-position: right 30px bottom 8px, 0 0, 0 0, 0 0, 0 0, 0 0;
+  background-size: 268px auto, auto, auto, auto, auto, auto;
+  background-attachment: scroll, fixed, fixed, fixed, fixed, fixed;
+}
+.mn-hub[data-tab='settings'] .mn-hub-body { --cal-plate: none; }
 .mn-hub.delegated .mn-hub-body { visibility: hidden; pointer-events: none; background: none; }
 
 .mn-hub-foot {
@@ -792,7 +855,7 @@ body.cal-title-live #title.overlay {
 /* the trig stations: a surveyor's table */
 .mn-map-stations { width: 100%; border-collapse: collapse; font-family: var(--cal-font-mono); font-size: var(--cal-type-note); }
 .mn-map-stations th {
-  padding: 0 0 3px; text-align: left;
+  padding: 0 10px 3px 0; text-align: left;
   font-family: var(--cal-font-ui); font-weight: 600; font-size: var(--cal-type-micro); letter-spacing: var(--cal-track-caps);
   color: var(--cal-ink-62);
   border-bottom: 1px solid var(--cal-ink);
@@ -837,8 +900,17 @@ body.cal-title-live #title.overlay {
 
 /* ============================================================== settings */
 
-.mn-settings { height: 100%; overflow-y: auto; padding-right: 12px; columns: 2; column-gap: 44px; }
-.mn-set-group { break-inside: avoid; margin-bottom: 20px; }
+.mn-settings {
+  height: 100%; overflow-y: auto; padding-right: 8px;
+  display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr) minmax(0, 0.92fr); column-gap: 38px;
+  align-items: start;
+}
+.mn-set-col { min-width: 0; }
+.mn-set-group { margin-bottom: 18px; }
+.mn-set-binds .mn-set-row { padding: 3px 0 2px; }
+.mn-range { flex: 1 1 auto; min-width: 96px; }
+.mn-set-row.slider .mn-set-ctrl { width: min(58%, 250px); justify-self: end; }
+.mn-modal .mn-settings { display: block; }
 .mn-set-title {
   font-family: var(--cal-font-ui);
   font-weight: 600;
@@ -1080,7 +1152,7 @@ body.cal-title-live #title.overlay {
 .mn-victory-bar i { display: block; height: 100%; width: 0%; background: var(--cal-c-staff); }
 
 @media (max-width: 1180px) {
-  .mn-settings { columns: 1; }
+  .mn-settings { display: block; }
   .mn-map { flex-direction: column; }
   .mn-map-frame { height: auto; width: min(100%, 60vh); }
 }
@@ -1100,9 +1172,11 @@ body #cal-dlg {
   --dlg-gold: var(--cal-c-staff);
   --dlg-teal: var(--cal-c-weak);
 }
-body #cal-dlg .dlg-name { font-family: var(--cal-font-display); font-weight: 600; font-size: var(--cal-type-head); letter-spacing: 0.14em; text-indent: 0; color: var(--cal-staff); text-shadow: var(--cal-engrave); }
-body #cal-dlg .dlg-role { font-family: var(--cal-font-mono); font-size: var(--cal-type-micro); letter-spacing: 0.02em; text-indent: 0; text-transform: none; color: var(--cal-staff-80); text-shadow: var(--cal-engrave); }
-body #cal-dlg .dlg-mark { filter: none; }
+/* the speaker: an ink tab standing on the page's top edge, at the margin rule */
+body #cal-dlg .dlg-who { display: inline-flex; align-items: baseline; gap: 12px; margin-left: 22px; padding: 4px 14px 3px 12px; background: var(--cal-ink); }
+body #cal-dlg .dlg-name { font-family: var(--cal-font-display); font-weight: 600; font-size: var(--cal-type-head); letter-spacing: 0.12em; text-indent: 0; color: var(--cal-staff); text-shadow: none; }
+body #cal-dlg .dlg-role { font-family: var(--cal-font-mono); font-size: var(--cal-type-micro); letter-spacing: 0.02em; text-indent: 0; text-transform: none; color: var(--cal-staff-80); text-shadow: none; }
+body #cal-dlg .dlg-mark { display: none; }
 body #cal-dlg .dlg-card {
   position: relative;
   padding-left: 40px;
@@ -1127,7 +1201,8 @@ body #cal-dlg .dlg-choice:hover, body #cal-dlg .dlg-choice.sel { background: var
 body #cal-dlg .dlg-key { font-family: var(--cal-font-mono); font-size: var(--cal-type-micro); border-color: var(--cal-ink-62); color: var(--cal-ink); }
 body #cal-dlg .dlg-choice:hover .dlg-key, body #cal-dlg .dlg-choice.sel .dlg-key { background: var(--cal-staff); color: var(--cal-ink); border-color: var(--cal-staff); }
 body #cal-dlg .dlg-hint { font-family: var(--cal-font-ui); font-weight: 600; font-size: var(--cal-type-micro); letter-spacing: var(--cal-track-caps); text-indent: 0; color: var(--cal-ink-62); }
-body #cal-dlg .dlg-foot { font-family: var(--cal-font-mono); font-size: var(--cal-type-micro); letter-spacing: 0; text-indent: 0; text-transform: none; color: var(--cal-staff-80); text-shadow: var(--cal-engrave); }
+body #cal-dlg .dlg-foot { font-family: var(--cal-font-mono); font-size: var(--cal-type-micro); letter-spacing: 0; text-indent: 0; text-transform: none; color: var(--cal-staff); text-shadow: var(--cal-engrave); }
+body #cal-dlg .dlg-foot kbd { color: var(--cal-ink); background: var(--cal-staff); border-color: var(--cal-ink); text-shadow: none; }
 
 /* ---------------------------------- the log and the skill pages (hub panels) */
 body #cal-prog { font-family: var(--cal-font-mono); --pg-gold: var(--cal-ink); --pg-teal: var(--cal-c-weak); --pg-panel: var(--cal-paper); }
@@ -1162,6 +1237,9 @@ body #cal-prog .pg-quest { background: transparent; border: 0; border-bottom: 1p
 body #cal-prog .pg-quest.tracked, body #cal-prog .pg-quest.sel { background: var(--cal-ink-10); }
 body #cal-prog .pg-q-title { font-family: var(--cal-font-ui); font-weight: 600; font-size: var(--cal-type-label); letter-spacing: 0.06em; color: var(--cal-ink); }
 body #cal-prog .pg-q-tag { font-family: var(--cal-font-ui); font-weight: 600; font-size: var(--cal-type-micro); letter-spacing: var(--cal-track-caps); color: var(--cal-staff); background: var(--cal-ink); border-color: var(--cal-ink); }
+body #cal-prog .pg-q-tag:empty { display: none; }
+body #cal-prog .pg-foot kbd, body #cal-prog .sk-foot kbd { color: var(--cal-ink); background: rgba(241, 238, 230, 0.52); border: 1px solid var(--cal-ink-62); border-bottom-width: 2px; }
+body #cal-prog .pg-trial-time { font-family: var(--cal-font-mono); }
 body #cal-prog .pg-q-sum { font-family: var(--cal-font-mono); font-size: var(--cal-type-note); line-height: 1.5; color: var(--cal-ink-80); }
 body #cal-prog .pg-obj { font-family: var(--cal-font-mono); font-size: var(--cal-type-note); color: var(--cal-ink); }
 body #cal-prog .pg-obj .mark, body #cal-prog .pg-obj.next .mark { color: var(--cal-ink); }

@@ -116,10 +116,11 @@ const FACE = `
   };`;
 
 /** Sighting on the herd kind at 15 m: frozen, composed, the card up. */
-const SIGHT_STAGE = (on) => `
+const SIGHT_STAGE = (on, hideHero = false) => `
   ${FRAMES}${FACE}
   const ctx = __CTX__;
   ctx.input.enabled = true;
+  ${hideHero ? 'if (ctx.player.model) ctx.player.model.visible = false;   /* her violet cloth is the people\'s colour, not the overlay\'s: bible §9.1 */' : ''}
   const m = (await stageRole('herd')) || stagedPicks()[0] || null;
   if (!m) return null;
   m.update = () => {};
@@ -250,7 +251,7 @@ const A_SIGHTING_OFF = {
   id: 'A-sighting-off', kind: 'action', lane: LANE, timeout: 120000, settle: 600,
   title: 'A-sighting, control frame: the same stage with the alidade down (A-sighting-hue subtracts it)',
   assert: staged(['herd'], `(async () => {
-    const m = await (async () => { ${SIGHT_STAGE(false)} })();
+    const m = await (async () => { ${SIGHT_STAGE(false, true)} })();
     return { pass: m ? true : null, detail: { kind: m?.kind ?? null, role: 'control frame for A-sighting-hue' } };
   })()`),
 };
@@ -259,7 +260,7 @@ const A_SIGHTING = {
   id: 'A-sighting', kind: 'action', lane: LANE, timeout: 120000, settle: 600,
   title: 'Sighting on a herd kind at 15 m: named components with loot, cobalt rings, white transect dashes, a <= 20 % sepia vignette; no violet or teal anywhere in the overlay',
   assert: staged(['herd'], `(async () => {
-    const m = await (async () => { ${SIGHT_STAGE(true)} })();
+    const m = await (async () => { ${SIGHT_STAGE(true, true)} })();
     if (!m) return { pass: null, detail: 'SKIP-R18: no herd kind stands' };
     const ctx = __CTX__, S = ctx.sighting;
     const a = S.audit();
@@ -282,8 +283,7 @@ const A_SIGHTING = {
     /* every colour the overlay's 3D shells paint */
     const col3d = [];
     const pick = (mat, names) => { for (const nm of names) { const u = mat?.uniforms?.[nm]?.value; if (u?.isColor) col3d.push({ nm, hex: u.getHexString() }); } };
-    pick(S._partMat, ['uInk', 'uPaper']); pick(S._ringMat, ['uColor']);
-    for (const e of S._hulls.values()) pick(e.mat, ['uColor']);
+    pick(S._figureMat, ['uInk', 'uPaper']); pick(S._ringMat, ['uColor']);
     for (const e of S._paths.values()) pick(e.mat, ['uPaper', 'uInk']);
     if (S._gatherMat?.color) col3d.push({ nm: 'gather', hex: S._gatherMat.color.getHexString() });
     const hits3d = col3d.filter((c) => { const v = parseInt(c.hex, 16); return banned(v >> 16, (v >> 8) & 255, v & 255); });
@@ -292,6 +292,17 @@ const A_SIGHTING = {
     const comps = a.card?.components ?? [];
     const withLoot = comps.filter((c) => (c.loot?.length ?? 0) > 0);
     const hasParts = Array.isArray(m.parts) && m.parts.some((p) => p && (p.weak || p.tearable || p.tearHp > 0));
+    /* the drawn figure: its mask holds coverage over the staged Instrument, none in the far corner */
+    const figure = (() => {
+      const r = ctx.renderer, rt = S._figureRT;
+      if (!S._figure.visible || !S._hulls.size || rt.width < 16) return { pass: false, visible: S._figure.visible, hulls: S._hulls.size, w: rt.width };
+      const px = new Uint8Array(rt.width * rt.height * 4);
+      r.readRenderTargetPixels(rt, 0, 0, rt.width, rt.height, px);
+      let covered = 0;
+      for (let i = 0; i < px.length; i += 4) if (px[i] > 127) covered++;
+      const frac = covered / (rt.width * rt.height);
+      return { pass: frac > 0.0005 && frac < 0.5 && (px[0] === 0), covered, frac: +frac.toFixed(5), hulls: S._hulls.size, size: [rt.width, rt.height] };
+    })();
     const carries = (document.querySelector('.calf-card')?.innerText || '').includes('CARRIES');
     const pendingClauses = [];
     if (!hasParts) pendingClauses.push('components with loot: the staged kind (' + m.kind + ') has no named parts yet (R18; instruments-a W1 merges them); its weak points and carried loot are graded instead');
@@ -308,9 +319,10 @@ const A_SIGHTING = {
       shaderNoBannedHue: hits3d.length === 0,
       readouts: /^\\d{3}$/.test(a.readouts.bearing) && /^(\\d{3,}|---)$/.test(a.readouts.distance),
       transectsWhite: !a.paths.count || [...S._paths.values()].every((e) => e.mat.uniforms.uPaper.value.getHexString() === 'dbd3c5' || e.mat.uniforms.uPaper.value.r > 0.8),
+      figureDrawn: figure.pass === true,
     };
     const failed = Object.entries(checks).filter(([, v]) => !v).map(([k]) => k);
-    return { pass: failed.length === 0, detail: { failed, kind: m.kind, components: comps.map((c) => c.name), rings, leaders: a.leaders, vignette: a.vignette, paths: a.paths, readouts: a.readouts, domHits: domHits.slice(0, 8), col3d, pendingClauses } };
+    return { pass: failed.length === 0, detail: { failed, figure, kind: m.kind, components: comps.map((c) => c.name), rings, leaders: a.leaders, vignette: a.vignette, paths: a.paths, readouts: a.readouts, domHits: domHits.slice(0, 8), col3d, pendingClauses } };
   })()`),
 };
 
@@ -475,12 +487,15 @@ const A_MAP = {
       const s3 = (pa.x - pd.x) * (y - pd.y) - (pa.y - pd.y) * (x - pd.x);
       return (s1 >= 0 && s2 >= 0 && s3 >= 0) || (s1 <= 0 && s2 <= 0 && s3 <= 0);
     };
+    M.draw({ washOnly: true });      // the wash and the ink, without the pillars, names and marks that stand on the vertices
+    await frames(2);
     const r1 = read();
+    M.draw();
     let painted = 0, inside = 0;
     for (let y = 0; y < r1.W; y += 2) for (let x = 0; x < r1.W; x += 2) {
       const i = (y * r1.W + x) * 4;
       const diff = Math.abs(r1.cur[i] - r1.base[i]) > 3 || Math.abs(r1.cur[i + 1] - r1.base[i + 1]) > 3 || Math.abs(r1.cur[i + 2] - r1.base[i + 2]) > 3;
-      if (diff && !nearMarks(x, y)) painted += 4;
+      if (diff) painted += 4;
       if (inTri(x, y)) inside += 4;
     }
     const after = M.audit();
@@ -598,6 +613,27 @@ const A_UI_WORDS = {
   })()`,
 };
 
+/** Every settings row on the page, none clipped: a third column the book cannot show is a broken page. */
+const A_SETTINGS_ROWS = {
+  id: 'A-settings-rows-visible', kind: 'action', lane: LANE, timeout: 120000, settle: 900,
+  title: 'The settings page shows every row and every rebind inside the page at 1600x900, without a scroll',
+  assert: `(async () => {${FRAMES}
+    const m = __CTX__.menus;
+    __CTX__.input.enabled = true;
+    m.openHub('settings');
+    await frames(10);
+    const host = m.hubBody.getBoundingClientRect();
+    const rows = [...m.hubBody.querySelectorAll('.mn-set-row')];
+    const binds = [...m.hubBody.querySelectorAll('[data-rebind]')].filter((e) => e.tagName === 'BUTTON');
+    const out = rows.filter((e) => { const r = e.getBoundingClientRect(); return r.right > host.right + 1 || r.bottom > host.bottom + 1 || r.width < 8; });
+    const ACTIONS = (await import('/src/core/input.js')).ACTIONS;
+    const scroller = m.hubBody.querySelector('.mn-settings');
+    m.closeHub(true);
+    return { pass: rows.length >= 20 && out.length === 0 && binds.length === ACTIONS.length, detail: { rows: rows.length, binds: binds.length, actions: ACTIONS.length,
+      clipped: out.slice(0, 8).map((e) => e.innerText.slice(0, 40)), scrollOverflowPx: scroller ? scroller.scrollHeight - scroller.clientHeight : null } };
+  })()`,
+};
+
 const A_LAMP_UI = {
   id: 'A-lamp-canon-distance-ui', kind: 'runner', lane: LANE, timeout: 120000,
   title: 'instruments-core\'s A-lamp-canon-distance over this lane\'s CSS tokens: every lamp, beam, scanner and compass-pip colour dE2000 >= 20 from canon',
@@ -663,6 +699,9 @@ const A_UI_TYPE = {
         if (cs.display === 'none' || cs.visibility === 'hidden') continue;
         const r = el.getBoundingClientRect();
         if (r.width <= 0 || r.height <= 0) continue;
+        let eff = 1;
+        for (let a = el; a && a !== document.body; a = a.parentElement) eff *= parseFloat(getComputedStyle(a).opacity) || 0;
+        if (eff < 0.02) continue;
         total++;
         const fam = cs.fontFamily.split(',')[0].replace(/["']/g, '').trim();
         const at = where + ' <' + el.tagName.toLowerCase() + ' ' + (el.className?.baseVal ?? el.className ?? '') + '> ' + t.slice(0, 30);
@@ -836,6 +875,7 @@ export const GATES = [
   A_UI_STATIC,
   A_UI_WORDS,
   A_UI_TYPE,
+  A_SETTINGS_ROWS,
   A_LAMP_UI,
   A71,
   A71B,
