@@ -168,14 +168,15 @@ const ASH_PAINTERS = {
   default(t, o) { put(o, [200, 0, 200]); },
 };
 
-export async function build({ out = ROOT } = {}) {
+/** Every part of the set, before the sheet: `build` paints them, the offline checks read them. */
+export async function ashParts() {
   const base = await panBase({
     trim: ashTrim,
     buckle: false,
     // a diagonal wrap: long at her left (+X), rising to her right, the front panel crossing
     skirt: { yHem: 0.60, rows: 8, flare: 0.06, ripA: 0.006, colsPer: 16 },
     skirtHem: (th, y0) => y0 + 0.085 * (1 - Math.cos(th - 0.2)) * 0.9,
-    under: { yTop: 0.76, yHem: 0.545, off: -0.034, floorY: 0.70 },
+    under: { yTop: 0.76, yHem: 0.545, off: -0.024, floorY: 0.70 },
   });
   const { doc, parts, W, H, bodyPart, skinOf, clothField } = base;
   const added = [];
@@ -244,6 +245,12 @@ export async function build({ out = ROOT } = {}) {
   void KEEP_TORSO; void V; void mix; void clamp; void salted; void cloth;
   const all = [...parts, ...added];
   for (const p of added) recomputeNormals(p);
+  return { base, all };
+}
+
+export async function build({ out = ROOT } = {}) {
+  const { base, all } = await ashParts();
+  const { doc, W, H } = base;
   const layout = await panLayout(all, base.trim, W, H);
   const srcNormal = await loadRaw(path.join(MCO_DIR(srcRoot()), 'T_Peasant_Normal.png'), 1024);
   const tex = await paintAtlas(all, layout, { painters: ASH_PAINTERS, srcNormal, trim: base.trim, salt: [150, 144, 132], curv: { crease: 0.8, ridge: 0.5 }, q: { base: 90, normal: 88, orm: 84 } });
