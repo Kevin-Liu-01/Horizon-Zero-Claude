@@ -495,7 +495,7 @@ export const GATES = [
             }
             out.push({ t, stance: d.stance, phase: d.phase, k: M._phaseEnd > 1e-4 ? M._t / M._phaseEnd : 0,
               carryB: d.carryBlend, done: d.handoverDone, gfn: d.gripFracNow, gf, held: d.held });
-            if (d.stance === 'swing') { if (firstSwingT == null) { firstSwingT = t; firstSwingG = C.engine.wallTime - g0; heavy = !!M.heavy; } seen = true; }
+            if (d.stance === 'swing') { if (firstSwingT == null) { firstSwingT = t; firstSwingG = C.engine.wallTime - g0; } if (heavy == null || M.phase === 'strike') heavy = !!M.heavy; seen = true; }
             if (seen && !M.active && M.stance !== 'swing') break;
           }
           C.input.mouse.buttons &= ~1;
@@ -601,7 +601,12 @@ export const GATES = [
         /* TWO HANDS (R1, R12, bible §5.3): every held frame of light-1, light-2 and
          * the heavy, and light-3's cock: the left palm on the haft, off the live
          * knuckle bones against the prop's matrix. */
-        const twoF = held.filter((x) => x.beat !== 'light-3' || (x.phase === 'windup' && x.k <= 0.58));
+        /* ...from the cock on: a beat chained off light-3's free hand spends its opening
+         * bringing that hand back (the cock key is reached at 0.58 of the windup), and
+         * the guard frame that ends light-3's row is that same hand on its way home */
+        const twoF = held.filter((x) => (x.stance === 'swing' && !(x.phase === 'windup' && x.k < 0.58) && x.beat !== 'light-3')
+          || (x.beat === 'light-3' && x.phase === 'windup' && x.k >= 0.30 && x.k <= 0.58)
+          || (x.stance === 'ready' && label !== 'light-3'));
         const lpMax = twoF.length ? Math.max(...twoF.map((x) => x.lp ?? 9)) : null;
         rows[rows.length - 1].leftPalmToHaftMax = lpMax == null ? null : +lpMax.toFixed(4);
         if (lpMax != null && !(lpMax <= 0.05)) bad.push(label + ': a two-handed frame had the left palm ' + lpMax.toFixed(3) + ' m off the haft');
@@ -1395,7 +1400,9 @@ export const GATES = [
           while (performance.now() - t0 < 4500) {
             await fr();
             if (!up && performance.now() - t0 > holdMs) { C.input.mouse.buttons &= ~1; up = true; }
-            if (M.stance === 'swing') { seen = true; if (heavy == null) heavy = !!M.heavy; }
+            /* the beat that STRIKES is the beat played: a held press opens as a light's
+             * cock and turns into the heavy at chargeTime (the press starts the swing) */
+            if (M.stance === 'swing') { seen = true; if (heavy == null || M.phase === 'strike') heavy = !!M.heavy; }
             if (seen && !M.active) break;
           }
           C.input.mouse.buttons &= ~1;
