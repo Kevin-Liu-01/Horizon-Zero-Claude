@@ -11,6 +11,7 @@ import { ROOT, MCO_DIR, hex, srcRoot } from '../lib/face.mjs';
 import { KEEP_TORSO, cloth, panBase, panLayout, PAN_SET, seam, salted } from '../outfit-pan-1.mjs';
 import { Trim, fbm, loadRaw, paintAtlas } from './lib/atlas.mjs';
 import { orientOut, ring, strapAlong, TAU } from './lib/garment.mjs';
+import { tubeInto } from './lib/smock.mjs';
 import { clamp, emptyPart, Field, gridInto, mix, recomputeNormals, sstep, V } from './lib/part.mjs';
 import { outfitDoc, writeOutfit } from './lib/output.mjs';
 
@@ -40,11 +41,13 @@ function ashTrim(W, H, trimH) {
   };
   // the same cell names and sizes as the Pan sheet, so the base pieces map unchanged
   T.cell('girdle', 620, 46, (t, o) => {
-    // a rope belt: thick twist, undyed esparto gone grey
-    // rope: fine twist, grey with ash, the strands' valleys only a little darker
-    const f = (t.x * 0.16 + t.y * 0.3) % 1, r = Math.sin(f * Math.PI);
-    const m = fbm(t.ax * 0.04, t.ay * 0.1, 2.2, 2);
-    put(o, sc(COL.cord, (0.72 + 0.22 * r) * (0.8 + 0.3 * m))); o.h = 0.002 * r; o.rough = 0.94; o.det = 0;
+    // the wool wrap the rope cinches: a band of the tunic's own black, its edges rolled
+    t.X = t.ax * 0.012; t.Y = t.ay * 0.012; t.Z = 0;
+    wool(t, o, COL.wool, 16);
+    const e = Math.min(t.y, t.h - 1 - t.y);
+    if (e < 3) { const q = 0.8; o.r *= q; o.g *= q; o.b *= q; o.h -= 0.0008; }
+    const c = Math.abs(2 * fbm(t.ax * 0.03, t.y * 0.12, 4.1, 2) - 1);
+    o.h += 0.002 * (c - 0.6); const q2 = 0.9 + 0.14 * c; o.r *= q2; o.g *= q2; o.b *= q2;
   });
   T.cell('strap', 404, 24, (t, o) => {
     t.X = t.ax * 0.012; t.Y = t.ay * 0.012; t.Z = 0;
@@ -68,8 +71,10 @@ function ashTrim(W, H, trimH) {
     wool(t, o, sc(COL.rust, 0.7), 6);
   });
   T.cell('rope', 96, 30, (t, o) => {
-    const f = (t.x * 0.28 + t.y * 0.42) % 1, r = Math.sin(f * Math.PI);
-    put(o, sc(COL.cord, 0.6 + 0.5 * r)); o.h = 0.0018 * r; o.rough = 0.9;
+    // three twisted strands, grey with ash
+    const f = (t.x * 0.2 + t.y * 0.34) % 1, r = Math.sin(f * Math.PI);
+    const m = fbm(t.ax * 0.05, t.ay * 0.12, 2.2, 2);
+    put(o, sc(COL.cord, (0.62 + 0.42 * r) * (0.82 + 0.3 * m))); o.h = 0.0018 * r; o.rough = 0.92; o.det = 0;
   });
   // reserved for Calima Veil / Lattice Quilt (W3)
   T.cell('palm', 110, 90, (t, o) => { t.X = t.ax * 0.012; t.Y = t.ay * 0.012; t.Z = 0; wool(t, o, COL.undyed, 8); });
@@ -166,6 +171,7 @@ const ASH_PAINTERS = {
 export async function build({ out = ROOT } = {}) {
   const base = await panBase({
     trim: ashTrim,
+    buckle: false,
     // a diagonal wrap: long at her left (+X), rising to her right, the front panel crossing
     skirt: { yHem: 0.60, rows: 8, flare: 0.06, ripA: 0.006, colsPer: 16 },
     skirtHem: (th, y0) => y0 + 0.085 * (1 - Math.cos(th - 0.2)) * 0.9,
@@ -204,6 +210,37 @@ export async function build({ out = ROOT } = {}) {
     orientOut(w, 0, -0.02, 1.25);
     added.push(w);
   }
+  // ---- the rope belt: two turns round the wool band and a knot with its ends hanging
+  {
+    const girdle = parts.find((p) => p.slot === 'girdle');
+    const belt = new Field([girdle], 0.04);
+    const rope = emptyPart('ropebelt', { trim: true });
+    const rr = base.trim.rect('rope');
+    for (const [y, tilt, ph] of [[1.139, 0.006, 0.4], [1.108, -0.005, 2.1]]) {
+      const rad = ring(belt, y, 40, { dy: 0.02, dth: 0.2, smooth: 3 });
+      const path = [];
+      for (let c = 0; c < 40; c++) {
+        const th = -Math.PI / 2 + (c / 40) * TAU;
+        const r = rad[c] + 0.0052;
+        path.push([Math.cos(th) * r, y + tilt * Math.sin(th + ph), -0.02 + Math.sin(th) * r]);
+      }
+      tubeInto(rope, path, 0.0072, { sides: 5, closed: true, rect: rr, skin: skinOf, tile: 0.09 });
+    }
+    // the knot at her left front, the two ends falling from it
+    const thK = Math.PI / 2 - 0.5, rK = belt.radial(1.122, thK, 0, -0.02, 0.03, 0.14) + 0.009;
+    const k = [Math.cos(thK) * rK, 1.122, -0.02 + Math.sin(thK) * rK];
+    const jK = base.J('spine_01');
+    { // an overhand knot: a tight coil of the same rope
+      const coil = [];
+      for (let i = 0; i <= 12; i++) { const a2 = (i / 12) * TAU * 1.6; coil.push(V.add(k, [Math.cos(a2) * 0.0105, 0.012 - 0.024 * (i / 12), 0.004 + Math.sin(a2) * 0.0095])); }
+      tubeInto(rope, coil, 0.0072, { sides: 5, rect: rr, joint: jK, tile: 0.06 });
+    }
+    for (const [dx, len] of [[-0.012, 0.15], [0.013, 0.2]]) {
+      tubeInto(rope, [V.add(k, [dx * 0.5, -0.008, 0.002]), V.add(k, [dx, -len * 0.4, 0.008]), V.add(k, [dx * 1.3, -len, 0.012])], 0.0066, { sides: 5, rect: rr, joint: base.J('pelvis'), tile: 0.09, radiusAt: (u) => (u > 0.92 ? 1.4 : 1) });
+    }
+    recomputeNormals(rope);
+    added.push(rope);
+  }
   void KEEP_TORSO; void V; void mix; void clamp; void salted; void cloth;
   const all = [...parts, ...added];
   for (const p of added) recomputeNormals(p);
@@ -213,6 +250,6 @@ export async function build({ out = ROOT } = {}) {
   outfitDoc(doc, all, { name: 'Outfit_Ash_1', matName: 'MI_Ash_1', tex, texPrefix: 'ash' });
   return writeOutfit(doc, path.join(out, OUTPUTS[0]), {
     recipe: RECIPE, sources: ['mco-fantasy-standard', 'ubc-standard', 'brea-generated'], licence: 'CC0-1.0',
-    r5Outfit: { ...PAN_SET, set: 'ash', variant: 'ash-1', name: 'Ash Wraps I — Pit Wraps', density: +layout.D.toFixed(1), detailRep: +((W / layout.D) / 0.026).toFixed(1), pieces: ['wrap skirt', 'rust under-layer', 'cowl', 'chest wraps', 'puttees'] },
+    r5Outfit: { ...PAN_SET, set: 'ash', variant: 'ash-1', name: 'Ash Wraps I — Pit Wraps', density: +layout.D.toFixed(1), detailRep: +((W / layout.D) / 0.026).toFixed(1), pieces: ['wrap skirt', 'rust under-layer', 'cowl', 'chest wraps', 'rope belt', 'puttees'] },
   });
 }

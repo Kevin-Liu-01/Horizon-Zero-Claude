@@ -621,16 +621,17 @@ export async function panBase(opt = {}) {
   const brass = trim.rect('brass');
   const jB = joints.spine_01;
   const off = (dx, dy, dz) => V.add(V.add(V.add(bk, V.mul(basis[0], dx)), V.mul(basis[1], dy)), V.mul(basis[2], dz));
-  tubeInto(buckle, roundRect(off(0, 0, 0.0005), basis[0], basis[1], 0.0235, 0.0355, 0.008, 2), 0.0027, { sides: 6, closed: true, rect: brass, joint: jB });
-  tubeInto(buckle, [off(0.0235, 0, 0.0005), off(0, 0, 0.0018), off(-0.0235, 0, 0.0005)], 0.0021, { sides: 5, rect: brass, joint: jB });          // the bar the prong turns on
-  tubeInto(buckle, [off(0.0, 0, 0.0012), off(-0.013, 0, 0.0052), off(-0.0272, 0, 0.0034)], 0.0019, { sides: 5, rect: brass, joint: jB, radiusAt: (u) => mix(1.15, 0.72, u) });
-  // the keeper: a band of the same leather the tongue runs through
-  boxInto(buckle, off(-0.046, 0, -0.0006), [0.0072, 0.0345, 0.0034], basis, trim.rect('strapB'), jB);
-  recomputeNormals(buckle);
-  for (let i = 0; i < buckle.nrm.length; i += 3) void i;
+  if (opt.buckle !== false) {
+    tubeInto(buckle, roundRect(off(0, 0, 0.0005), basis[0], basis[1], 0.0235, 0.0355, 0.008, 2), 0.0027, { sides: 6, closed: true, rect: brass, joint: jB });
+    tubeInto(buckle, [off(0.0235, 0, 0.0005), off(0, 0, 0.0018), off(-0.0235, 0, 0.0005)], 0.0021, { sides: 5, rect: brass, joint: jB });          // the bar the prong turns on
+    tubeInto(buckle, [off(0.0, 0, 0.0012), off(-0.013, 0, 0.0052), off(-0.0272, 0, 0.0034)], 0.0019, { sides: 5, rect: brass, joint: jB, radiusAt: (u) => mix(1.15, 0.72, u) });
+    // the keeper: a band of the same leather the tongue runs through
+    boxInto(buckle, off(-0.046, 0, -0.0006), [0.0072, 0.0345, 0.0034], basis, trim.rect('strapB'), jB);
+    recomputeNormals(buckle);
+  }
   // the belt's tongue: through the keeper, hanging past it, a rounded pierced end
   const tongue = mk('tongue', { trim: true });
-  strapAlong(tongue, clothField, skinOf, [off(-0.028, 0.0, 0.0028), off(-0.1, -0.006, 0.0012), off(-0.142, -0.03, -0.001), off(-0.158, -0.078, -0.004)], { width: 0.047, margin: 0.0145, segs: 9, cols: 2, rect: trim.rect('tongue'), tile: 0.62, crown: 0.001, widthAt: (u) => (u > 0.86 ? Math.sqrt(Math.max(0.04, 1 - ((u - 0.86) / 0.14) ** 2)) : 1) });
+  if (opt.buckle !== false) strapAlong(tongue, clothField, skinOf, [off(-0.028, 0.0, 0.0028), off(-0.1, -0.006, 0.0012), off(-0.142, -0.03, -0.001), off(-0.158, -0.078, -0.004)], { width: 0.047, margin: 0.0145, segs: 9, cols: 2, rect: trim.rect('tongue'), tile: 0.62, crown: 0.001, widthAt: (u) => (u > 0.86 ? Math.sqrt(Math.max(0.04, 1 - ((u - 0.86) / 0.14) ** 2)) : 1) });
 
   // ---- the sling strap: right shoulder, across the chest to the left hip, and round the back
   const sling = mk('sling', { trim: true });
@@ -810,7 +811,7 @@ export async function panBase(opt = {}) {
   }
   recomputeNormals(tab);
 
-  const parts = [underYoke, smock, binds, ...skirt, ...undr, sleeves, trousers, boots, girdle, sashBand, buckle, tongue, sling, sling.extra, pouch, sash, tie, cuffs, straps, tab];
+  const parts = [underYoke, smock, binds, ...skirt, ...undr, sleeves, trousers, boots, girdle, sashBand, ...(buckle.pos.length ? [buckle, tongue] : []), sling, sling.extra, pouch, sash, tie, cuffs, straps, tab];
   return { doc, trim, parts, joints, body, bodyPart, clothField, skinOf, W, H, TRIM_H, J, drape };
 }
 
