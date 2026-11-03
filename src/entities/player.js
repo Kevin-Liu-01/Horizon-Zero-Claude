@@ -166,6 +166,16 @@ const PIVOT_H_CROUCH = 1.06;              // A31 wants <= 1.2 while crouch-aimin
  * at rest.
  */
 const PIVOT_CROUCH_MAX = 1.2;
+/**
+ * W0b targeted fix 4 (r3 eng judge, A-draw-arm-continuity's crouch toggles at
+ * full draw): the crouch moves the pivot at this rate (m/s), 0.2 s end to end.
+ * It stepped: the target 0.39 m in one step, which the delivered cap below passed
+ * straight on (the lens 0.25 m down in one frame; standing up the damp's lead took
+ * it as 23 m/s, 0.14 m up in one frame). Everything aimed from the lens jumped with
+ * it: at the 0.75 aim the crosshair's ground hit 0.27 m, combat's bow 0.15 rad, the
+ * nock 0.12 m off the hand on that step and the next.
+ */
+const PIVOT_CROUCH_RATE = 2.0;
 const PITCH_UP = -1.15;                   // 66 deg of forward pitch (A32)
 const PITCH_DOWN = 1.02;
 /**
@@ -2616,7 +2626,8 @@ void main() {
    */
   _capCrouchPivot(feetY) {
     if (!this.crouching) return;
-    const ceil = feetY + PIVOT_CROUCH_MAX;
+    // (while the crouch's own move is still bringing the pivot down, the cap rides it)
+    const ceil = feetY + Math.max(PIVOT_CROUCH_MAX, this.pivotHeight);
     if (this._pivotPos.y > ceil) this._pivotPos.y = ceil;
   }
 
@@ -3960,7 +3971,10 @@ void main() {
      */
     let wantFlat = wantDist;
 
-    this.pivotHeight = this.crouching ? PIVOT_H_CROUCH : PIVOT_H;
+    {
+      const pvT = this.crouching ? PIVOT_H_CROUCH : PIVOT_H, pvS = PIVOT_CROUCH_RATE * Math.max(dt, 0);
+      this.pivotHeight = this._pivotSeeded ? this.pivotHeight + THREE.MathUtils.clamp(pvT - this.pivotHeight, -pvS, pvS) : pvT;
+    }
     /**
      * FIX (judge: "aim + look-up ghosts Aloy with no occluder").
      *
