@@ -113,7 +113,7 @@ export function lanceGeo(cell, { lod = 0 } = {}) {
   haft(g2 - 0.075 + 0, g1 + 0.075, 'pine', [0.14, 0.14], 0.0001 ? 1 : 1);
   haft(g1 + 0.075, g2 - 0.075, 'pine', [0.14, 0.55], 2);
   haft(g2 + 0.075, 1.0, 'pine', [0.55, 0.8], 1);
-  haft(1.0, 1.312, 'graduated', [0, 1], lod ? 1 : 3);   // 3 bands: vermilion / white / vermilion, 0.1 m each
+  haft(1.0, 1.274, 'graduated', [0, 1], lod ? 1 : 3);   // 3 bands: vermilion / white / vermilion, a ranging rod's
   // esparto wraps, a ridged cord: real relief
   const wrap = (cy, h = 0.075) => {
     const prof = [], rows = lod ? 4 : 10;
@@ -125,30 +125,30 @@ export function lanceGeo(cell, { lod = 0 } = {}) {
     merge(g, lathe(prof, { sides, rect: cell('esparto'), uAlong: false, vRange: [0, 1] }));
   };
   wrap(g1); wrap(g2);
-  // carmine binding at the socket, the bronze socket with its moulded rings
+  // carmine binding below the socket, then the long cast socket running up into the midrib (the reference's own form)
   const lash = [];
-  for (let i = 0; i <= (lod ? 2 : 5); i++) { const y = 1.296 + 0.016 * i * (lod ? 2.5 : 1); lash.push([hr(y) + (i % 2 ? 0.0028 : 0.0014), y]); }
+  for (let i = 0; i <= (lod ? 2 : 5); i++) { const y = 1.272 + 0.0052 * i * (lod ? 2.5 : 1); lash.push([hr(y) + (i % 2 ? 0.0024 : 0.0013), y]); }
   merge(g, lathe(lash, { sides, rect: cell('carmine'), uAlong: false }));
-  merge(g, lathe([[r * 0.86 + 0.0012, 1.312], [r * 0.86 + 0.0042, 1.316], [r * 0.86 + 0.0042, 1.322], [r * 0.86 + 0.0022, 1.326], [r * 0.86 + 0.0024, 1.348], [r * 0.86 + 0.0044, 1.351], [r * 0.86 + 0.0044, 1.356], [0.0085, 1.362], [0.0065, 1.372]],
+  merge(g, lathe([[r * 0.86 + 0.0008, 1.296], [r * 0.86 + 0.0036, 1.2995], [r * 0.86 + 0.0036, 1.3055], [r * 0.86 + 0.0021, 1.309], [0.0118, 1.336], [0.0098, 1.362], [0.0078, 1.384], [0.0052, 1.402]],
     { sides: lod ? 6 : 10, rect: cell('bronzeCast') }));
   // the leaf: midrib, flat, ground bevel. Two faces x two halves x two strips, sharp edges
-  const yb = 1.358, ln = L.blade - 0.008;
+  const yb = 1.358, ln = L.blade - 0.008;   // wings from the socket's upper third to the point
   const stations = lod ? [0, 0.05, 0.11, 0.17, 1] : [0, 0.018, 0.042, 0.075, 0.11, 0.145, 0.176, 0.2, 1];
   const prof = stations.map((f) => {
     const y = f === 1 ? ln : f;
     const wid = f === 1 ? 0 : (0.0075 + 0.0215 * Math.pow(Math.sin(Math.min(1, y / 0.075) * Math.PI / 2), 0.8)) * (1 - Math.pow(Math.max(0, (y - 0.06) / (ln - 0.06)), 1.9));
     return [wid, y];
   });
-  const mid = 0.0052, bevel = 0.72;
+  const mid = 0.0088, bevel = 0.72;
   const bladeRect = cell('bronzeBlade');
   for (const s of [1, -1]) for (const f of [1, -1]) {
     const A = [], B = [], C = [], n1 = [], n2 = [];
     for (const [w, y] of prof) {
       const yy = yb + y;
-      A.push([0, yy, f * mid * (1 - 0.72 * (y / ln))]);
+      A.push([0, yy, f * mid * Math.pow(1 - y / ln * 0.86, 1.15)]);
       B.push([s * w * bevel, yy, f * 0.0026 * (1 - 0.55 * (y / ln))]);
       C.push([s * w, yy, 0]);
-      n1.push(V.norm([s * 0.13, 0.02, f * 1]));
+      n1.push(V.norm([s * 0.3, 0.03, f * 1]));
       n2.push(V.norm([s * 0.62, 0.05, f * 1]));
     }
     const strip = (P, Q, nn, v0, v1) => {

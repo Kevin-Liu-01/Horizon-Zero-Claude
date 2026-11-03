@@ -19,7 +19,7 @@ const put = (o, c, k = 1) => { o.r = c[0] * k; o.g = c[1] * k; o.b = c[2] * k; }
 const over = (o, c, a) => { o.r += (c[0] - o.r) * a; o.g += (c[1] - o.g) * a; o.b += (c[2] - o.b) * a; };
 
 const WOOD = {
-  sap: hex('#D8C49A'), heart: hex('#6E3F2A'), pine: hex('#3A2A1E'), esparto: hex('#B59A62'), horn: hex('#2E2622'),
+  sap: hex('#D6BC8C'), heart: hex('#6A3A26'), pine: hex('#3A2A1E'), esparto: hex('#B59A62'), horn: hex('#2E2622'),
   bronze: hex('#B08A45'), cane: hex('#C9B27A'), node: hex('#8E7748'), palm: hex('#A88F5A'), leather: hex('#4A3020'),
   lapilli: hex('#1C1B1E'), string: hex('#E8E0CC'), verm: hex('#D8432B'), white: hex('#EDEAE2'), carmine: hex('#A3213A'), brass: hex('#C29A52'),
 };
@@ -44,7 +44,7 @@ export function weaponTrim() {
     const stripe = 1 - sstep(0.12, 0.2, Math.abs(v - 0.75) + 0.04 * (fbm(t.ax * 0.03, 2.2, 3.3, 2) - 0.5));
     const thin = 1 - sstep(0.012, 0.03, Math.abs(v - 0.25) + 0.02 * (fbm(t.ax * 0.04, 5.2, 3.3, 2) - 0.5));
     const base = [mix(WOOD.sap[0], WOOD.heart[0], Math.max(stripe, thin)), mix(WOOD.sap[1], WOOD.heart[1], Math.max(stripe, thin)), mix(WOOD.sap[2], WOOD.heart[2], Math.max(stripe, thin))];
-    grain(t, o, base, { seed: 2, cross: 0.8 + 0.5 * stripe, ring: 0.26 + 0.2 * stripe });
+    grain(t, o, base, { seed: 2, cross: 0.8 + 0.5 * stripe, ring: 0.13 + 0.16 * stripe });
     // knots of wind-twisted wood, burned dark
     for (const [ku, kv] of [[0.17, 0.3], [0.31, 0.78], [0.66, 0.2], [0.83, 0.68]]) {
       const d = Math.hypot((t.u - ku) * t.w / 7, (t.v - kv) * t.h / 5);
@@ -73,10 +73,10 @@ export function weaponTrim() {
   });
   T.cell('esparto', 128, 64, (t, o) => {
     // cord wound round: rows across v, a twist in each
-    const f = (t.y / 3.2) % 1, r = Math.sin(f * Math.PI), tw = Math.abs(Math.sin((t.x * 0.42 + t.y * 0.9)));
-    const row = noise3(Math.floor(t.y / 3.2) * 1.37, t.ax * 0.03, 4.2);
-    put(o, WOOD.esparto, (0.7 + 0.36 * r) * (0.88 + 0.16 * tw) * (0.88 + 0.26 * row));
-    o.h = 0.0009 * r; o.rough = 0.92; o.det = 0;
+    const f = (t.y / 4.2) % 1, r = Math.sin(f * Math.PI), tw = Math.abs(Math.sin((t.x * 0.42 + t.y * 0.9)));
+    const row = noise3(Math.floor(t.y / 4.2) * 1.37, t.ax * 0.03, 4.2);
+    put(o, WOOD.esparto, (0.58 + 0.5 * r) * (0.88 + 0.16 * tw) * (0.86 + 0.28 * row));
+    o.h = 0.0012 * r; o.rough = 0.92; o.det = 0;
   });
   T.cell('bronzeBlade', 128, 128, (t, o) => {
     // v across the blade (0 midrib, 1 edge), u along. The cell is 8x denser across than along, so the
@@ -84,8 +84,11 @@ export function weaponTrim() {
     const wx = t.u * 210, wy = t.v * 28;
     const hm = fbm(wx * 0.11, wy * 0.11, 3.1, 3), pl = noise3(wx * 0.32, wy * 0.32, 6.2), pat = fbm(wx * 0.035, wy * 0.05, 9.3, 3);
     const edge = sstep(0.74, 0.96, t.v);
-    put(o, WOOD.bronze, 0.86 + 0.26 * hm + 0.08 * (pl - 0.5));
-    if (pat < 0.46 && edge < 0.5) over(o, [58, 76, 60], (0.46 - pat) * 1.9 * (1 - edge * 2));
+    put(o, WOOD.bronze, 0.72 + 0.26 * hm + 0.08 * (pl - 0.5));
+    if (pat < 0.52 && edge < 0.5) over(o, [52, 62, 48], (0.52 - pat) * 2.1 * (1 - edge * 2));
+    // the patina rubbed through along the midrib
+    const rub = sstep(0.2, 0.0, t.v) * sstep(0.42, 0.62, hm);
+    over(o, [206, 170, 110], rub * 0.5);
     // dark in the hollow beside the midrib
     if (t.v < 0.2) { const q = 0.82 + 0.9 * t.v; o.r *= q; o.g *= q; o.b *= q; }
     over(o, [232, 200, 136], edge * 0.72);
@@ -93,8 +96,8 @@ export function weaponTrim() {
   });
   T.cell('bronzeCast', 96, 96, (t, o) => {
     const hm = fbm(t.ax * 0.2, t.ay * 0.2, 5.1, 3), pat = fbm(t.ax * 0.06, t.ay * 0.06, 2.3, 3);
-    put(o, WOOD.bronze, 0.72 + 0.44 * hm);
-    if (pat < 0.45) over(o, [62, 84, 68], (0.45 - pat) * 2.2);
+    put(o, WOOD.bronze, 0.66 + 0.4 * hm);
+    if (pat < 0.5) over(o, [54, 64, 50], (0.5 - pat) * 2.2);
     const rub = sstep(0.55, 0.8, pat);
     over(o, [214, 182, 120], rub * 0.35);
     o.metal = pat < 0.36 ? 0.4 : 1; o.rough = 0.34 + 0.3 * (1 - rub); o.h = 0.0012 * (hm - 0.5); o.det = 0; o.wear = 0.3;

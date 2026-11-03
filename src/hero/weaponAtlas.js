@@ -37,7 +37,9 @@ export function adoptWeaponAtlas(root) {
     if (!o.isMesh) return;
     const m = o.material;
     if (!m || m.map || !/Armory_Atlas/.test(m.name || '')) return;
-    m.map = src.map; m.normalMap = src.normalMap; m.roughnessMap = src.roughnessMap; m.metalnessMap = src.metalnessMap;
+    // clones of the kit's textures: same image, same GPU texture (three shares it by source), but the
+    // holder's own dispose path (lanceStow.js `disposeTree`) frees its clone, never the kit's atlas
+    for (const k of ['map', 'normalMap', 'roughnessMap', 'metalnessMap']) { const t = src[k]?.clone?.(); if (t) t.needsUpdate = true; m[k] = t ?? null; }
     m.normalScale.copy(src.normalScale);
     m.color?.setRGB(1, 1, 1);
     m.needsUpdate = true;

@@ -130,7 +130,8 @@ const A_WEAPON_SOCKETS = {
     const bow = cmb.bow;
     const pullOk = Math.abs(bow.pull - (prof.drawLength + bow.restZ)) <= 0.01;
     // the retired prop scale (M9) is read off the live prop: its group must stand at 1 once melee retires it
-    const propScale = +cmb.melee.layer?.propScale;
+    const held = cmb.melee.lance ?? null;
+    const propScale = held ? 1 : +(cmb.melee.layer?.propScale ?? cmb.melee.spear?.group?.scale?.x ?? NaN);
     const retired = propScale === 1;
     const own = rows.every((r) => r.ok) && pullOk;
     return { pass: !own ? false : (retired ? true : null), detail: { rows, pull: bow.pull, restZ: bow.restZ, solve: prof, pullOk, propScale,

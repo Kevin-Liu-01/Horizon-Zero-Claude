@@ -88,8 +88,11 @@ export class HeroRig {
     const ml = this.player.animator?.melee;
     const sp = this._lanceProp = ml?.lance ?? ml?.spear ?? null;
     if (sp) sp.visible = sp.parent !== ml.socketBone;
-    // melee's held prop (lanceStow.js, once merged) loads the GLB itself: give it the atlas
-    const LI = this.ctx.combat?.melee?.lance?.inner ?? null;
+    // melee's held prop (lanceStow.js, once merged) loads the GLB itself: point it at the
+    // final Shepherd's Lance (plan §1.2, W3 variants go through the same call), give it the atlas
+    const HL = this.ctx.combat?.melee?.lance;
+    if (HL?.setUrl && HL.url !== HERO_ROWS.armoryLanceShepherd.url) HL.setUrl(HERO_ROWS.armoryLanceShepherd.url);
+    const LI = HL?.inner ?? null;
     if (LI !== this._lanceInner) { this._lanceInner = LI; if (LI) adoptWeaponAtlas(LI); }
     const cmb = this.ctx.combat;
     const stance = cmb?.melee?.stance;

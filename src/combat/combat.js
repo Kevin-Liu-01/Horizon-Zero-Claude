@@ -1040,7 +1040,8 @@ export class Combat {
      * the spear in her right (~0.5 s of both, the r5 skeptic). Aim still wins:
      * melee cuts the recover and stows the spear fast, and the bow comes up
      * the frame the spear is back on its socket. */
-    const spearOut = !!this.melee && !!this.melee.spearInHand;
+    // lanceStow.js `lanceOut(melee)` once melee's module is on main (plan §1.2; the two read the same flag)
+    const spearOut = !!this.melee && !!(this.melee.lanceInHand ?? this.melee.spearInHand);
     if (aiming || this._drawing) this._holsterT = HOLSTER_TIME;
     else this._holsterT = Math.max(0, this._holsterT - realDt);
 

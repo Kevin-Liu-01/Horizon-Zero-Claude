@@ -41,8 +41,10 @@ function ashTrim(W, H, trimH) {
   // the same cell names and sizes as the Pan sheet, so the base pieces map unchanged
   T.cell('girdle', 620, 46, (t, o) => {
     // a rope belt: thick twist, undyed esparto gone grey
-    const f = (t.x * 0.07 + t.y * 0.1) % 1, r = Math.sin(f * Math.PI);
-    put(o, sc(COL.cord, 0.62 + 0.36 * r)); o.h = 0.003 * r; o.rough = 0.92; o.det = 0;
+    // rope: fine twist, grey with ash, the strands' valleys only a little darker
+    const f = (t.x * 0.16 + t.y * 0.3) % 1, r = Math.sin(f * Math.PI);
+    const m = fbm(t.ax * 0.04, t.ay * 0.1, 2.2, 2);
+    put(o, sc(COL.cord, (0.72 + 0.22 * r) * (0.8 + 0.3 * m))); o.h = 0.002 * r; o.rough = 0.94; o.det = 0;
   });
   T.cell('strap', 404, 24, (t, o) => {
     t.X = t.ax * 0.012; t.Y = t.ay * 0.012; t.Z = 0;
@@ -75,8 +77,9 @@ function ashTrim(W, H, trimH) {
   T.cell('celadon', 110, 60, (t, o) => { const m = fbm(t.ax * 0.1, t.ay * 0.1, 6.6, 3); put(o, sc(COL.mica, 0.5 + 0.9 * m)); o.rough = 0.22; });
   T.cell('crust', 96, 60, (t, o) => { const m = fbm(t.ax * 0.2, t.ay * 0.2, 3.3, 3); put(o, sc(COL.felt, 0.74 + 0.5 * m)); o.rough = 0.97; });
   T.cell('tongue', 240, 46, (t, o) => {
-    const f = (t.x * 0.07 + t.y * 0.1) % 1, r = Math.sin(f * Math.PI);
-    put(o, sc(COL.cord, 0.62 + 0.36 * r)); o.h = 0.003 * r; o.rough = 0.92; o.det = 0;
+    const f = (t.x * 0.16 + t.y * 0.3) % 1, r = Math.sin(f * Math.PI);
+    const m = fbm(t.ax * 0.04, t.ay * 0.1, 2.2, 2);
+    put(o, sc(COL.cord, (0.72 + 0.22 * r) * (0.8 + 0.3 * m))); o.h = 0.002 * r; o.rough = 0.94; o.det = 0;
   });
   T.cell('sash', 300, 44, (t, o) => {
     t.X = t.ax * 0.012; t.Y = t.ay * 0.012; t.Z = 0;

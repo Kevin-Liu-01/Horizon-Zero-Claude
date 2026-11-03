@@ -496,12 +496,14 @@ export async function panCloseupOverlay(ctx, refs = []) {
   const { c, g } = overlay(W, H, '#e9e4d8');
   label(g, 'PAN WHITES I — close-up, in-engine material, neutral light (left) beside the references (right)', 20, 28, 16);
   const shots = [
-    ['torso, 1.1 m', { pos: [0.34, 1.32, 0.92], target: [0.0, 1.14, 0], fov: 34 }, 0, 40, 560, 540],
-    ['girdle + pouch, 0.6 m', { pos: [0.24, 1.1, 0.48], target: [0.04, 1.02, 0.06], fov: 34 }, 570, 40, 380, 268],
-    ['sleeve + cuff', { pos: [-0.62, 1.24, 0.42], target: [-0.26, 1.2, 0.0], fov: 30 }, 570, 312, 380, 268],
-    ['hem + trousers', { pos: [0.3, 0.72, 0.72], target: [0.04, 0.68, 0.04], fov: 34 }, 960, 40, 300, 268],
-    ['shin wraps + boot', { pos: [0.34, 0.34, 0.66], target: [0.1, 0.24, 0.02], fov: 36 }, 960, 312, 300, 268],
-    ['back', { pos: [-0.36, 1.28, -1.08], target: [0, 1.12, 0], fov: 36 }, 1270, 40, 320, 540],
+    ['torso, 1.1 m', { pos: [0.34, 1.32, 0.92], target: [0.0, 1.14, 0], fov: 34 }, 0, 40, 400, 540],
+    ['neck: bound keyhole, linen collar, tie', { pos: [0.1, 1.47, 0.5], target: [0.0, 1.41, 0.04], fov: 30 }, 402, 40, 296, 268],
+    ['girdle, buckle, pouch, 0.6 m', { pos: [0.24, 1.1, 0.48], target: [0.04, 1.03, 0.06], fov: 34 }, 402, 312, 296, 268],
+    ['sleeve, armhole, cuff', { pos: [-0.72, 1.3, 0.42], target: [-0.24, 1.14, 0.0], fov: 30 }, 700, 40, 296, 268],
+    ['sash knot and tails', { pos: [0.5, 0.95, 0.42], target: [0.14, 0.88, 0.04], fov: 30 }, 700, 312, 296, 268],
+    ['hem, under-tunic, trousers', { pos: [0.3, 0.72, 0.72], target: [0.04, 0.68, 0.04], fov: 34 }, 998, 40, 296, 268],
+    ['shin wraps, sole', { pos: [0.34, 0.3, 0.66], target: [0.1, 0.2, 0.02], fov: 36 }, 998, 312, 296, 268],
+    ['back', { pos: [-0.36, 1.28, -1.08], target: [0, 1.12, 0], fov: 36 }, 1296, 40, 300, 540],
   ];
   for (const [name, cam, x, y, w, h] of shots) {
     const shot = renderIsolated(ctx, model, { width: w * 2, height: h * 2, cam, background: '#b9b2a2' });

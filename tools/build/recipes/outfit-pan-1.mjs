@@ -33,7 +33,7 @@
 import path from 'node:path';
 import {
   ROOT, srcRoot, UBC_DIR, MCO_DIR, readGltf, cleanDoc, nodeByName, graft, addChain, jointIndex,
-  newGeo, appendGeo, stripAlong, bun, hex, noise3, writeSkinned,
+  newGeo, appendGeo, stripAlong, bun, hex, noise3, jointPos,
 } from './lib/face.mjs';
 import { CHAINS } from './brea.mjs';
 import { Field, V, clamp, compact, conform, cutTris, emptyPart, mix, partFromPrim, recomputeNormals, sstep } from './armor/lib/part.mjs';
@@ -271,8 +271,8 @@ export function panTrim(W, H, trimH) {
   T.cell('crust', 96, 60, (t, o) => {
     // stiffened hide under dried brine: a fine pale crust, grey leather only at the low spots
     const m = fbm(t.ax * 0.34, t.ay * 0.34, 3.3, 3), m2 = fbm(t.ax * 0.9, t.ay * 0.9, 8.3, 2);
-    put(o, sc(COL.salt, 0.70 + 0.2 * m + 0.1 * m2));
-    over(o, [104, 94, 80], sstep(0.46, 0.30, m) * 0.7);
+    put(o, sc(COL.salt, 0.72 + 0.16 * m + 0.08 * m2));
+    over(o, [132, 120, 102], sstep(0.44, 0.26, m) * 0.5);
     const e = Math.min(t.x, t.y, t.w - 1 - t.x, t.h - 1 - t.y);
     if (e < 4) { const q = 0.72 + 0.07 * e; o.r *= q; o.g *= q; o.b *= q; }
     o.h = 0.0035 * m; o.rough = 0.95; o.det = 0;
@@ -743,7 +743,43 @@ export async function panBase(opt = {}) {
   }
   recomputeNormals(straps);
 
-  const parts = [underYoke, smock, binds, ...skirt, ...undr, sleeves, trousers, boots, girdle, sashBand, buckle, tongue, sling, sling.extra, pouch, sash, tie, cuffs, straps];
+  // ---- the archer's finger tab on her right hand (bible §3.9): a leather pad under the three
+  // string fingers, the back of the hand left bare (the ∴)
+  const tab = mk('tab', { trim: true });
+  {
+    const hand = jointPos(doc, 'hand_r');
+    const hP = bodyPart;
+    // the palm's frame off the finger joints: along the fingers, across them, and out of the palm
+    const mid1 = jointPos(doc, 'middle_01_r'), mid2 = jointPos(doc, 'middle_02_r'), idx1 = jointPos(doc, 'index_01_r'), rng1 = jointPos(doc, 'ring_01_r');
+    const along = V.norm(V.sub(mid2, mid1));
+    const across = V.norm(V.sub(idx1, rng1));
+    let palm = V.norm(V.cross(across, along));
+    const thumb = jointPos(doc, 'thumb_01_r');
+    if (V.dot(palm, V.sub(thumb, mid1)) < 0) palm = V.mul(palm, -1);     // the thumb sits on the palm's side of the knuckles
+    // how far the skin stands off that plane under the first finger bones
+    let out = 0;
+    for (let i = 0; i < hP.pos.length; i += 3) {
+      const d = [hP.pos[i] - mid1[0], hP.pos[i + 1] - mid1[1], hP.pos[i + 2] - mid1[2]];
+      const a1 = V.dot(d, along), c1 = V.dot(d, across);
+      if (a1 > -0.012 && a1 < 0.05 && Math.abs(c1) < 0.028) out = Math.max(out, V.dot(d, palm));
+    }
+    const cTab = V.add(V.add(mid1, V.mul(along, 0.016)), V.mul(palm, out + 0.0016));
+    const rectT = trim.rect('pouch');
+    const base = tab.pos.length / 3;
+    const NX = 3, NZ = 3;
+    for (let a2 = 0; a2 <= NX; a2++) for (let b2 = 0; b2 <= NZ; b2++) {
+      const u = -1 + 2 * a2 / NX, v = -1 + 2 * b2 / NZ;
+      const q = V.add(V.add(V.add(cTab, V.mul(along, u * 0.031)), V.mul(across, v * 0.0265 * (u > 0.3 ? mix(1, 0.78, (u - 0.3) / 0.7) : 1))), V.mul(palm, 0.0012 * (1 - v * v)));
+      const sk = skinOf.skin(q[0] - palm[0] * 0.008, q[1] - palm[1] * 0.008, q[2] - palm[2] * 0.008, 3);
+      tab.pos.push(...q); tab.nrm.push(...palm);
+      tab.uv.push(rectT[0] + rectT[2] * (a2 / NX), rectT[1] + rectT[3] * (b2 / NZ));
+      tab.jnt.push(...sk.j); tab.wgt.push(...sk.w);
+    }
+    for (let a2 = 0; a2 < NX; a2++) for (let b2 = 0; b2 < NZ; b2++) { const a3 = base + a2 * (NZ + 1) + b2; tab.idx.push(a3, a3 + 1, a3 + NZ + 1, a3 + 1, a3 + NZ + 2, a3 + NZ + 1); }
+  }
+  recomputeNormals(tab);
+
+  const parts = [underYoke, smock, binds, ...skirt, ...undr, sleeves, trousers, boots, girdle, sashBand, buckle, tongue, sling, sling.extra, pouch, sash, tie, cuffs, straps, tab];
   return { doc, trim, parts, joints, body, bodyPart, clothField, skinOf, W, H, TRIM_H, J, drape };
 }
 
@@ -810,7 +846,7 @@ export async function build({ out = ROOT } = {}) {
     recipe: RECIPE, sources: ['mco-fantasy-standard', 'ubc-standard', 'brea-generated'], licence: 'CC0-1.0',
     r5Outfit: {
       ...PAN_SET, variant: 'pan-1', name: "Pan Whites I — Raker's Whites", density: +layout.D.toFixed(1), detailRep: +((W / layout.D) / 0.026).toFixed(1),
-      pieces: ['underyoke', 'smock', 'binds', 'skirt', 'under', 'sleeves', 'trousers', 'boots', 'girdle', 'sashband', 'buckle', 'tongue', 'sling', 'slider', 'pouch', 'sash', 'tie', 'cuffs', 'straps'],
+      pieces: ['underyoke', 'smock', 'binds', 'skirt', 'under', 'sleeves', 'trousers', 'boots', 'girdle', 'sashband', 'buckle', 'tongue', 'sling', 'slider', 'pouch', 'sash', 'tie', 'cuffs', 'straps', 'tab'],
     },
   });
 }
