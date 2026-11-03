@@ -327,6 +327,9 @@ const KITLINES = `
   const segSeg = (A, B, Cc, D) => { let m = 9; for (let i = 0; i <= 16; i++) { const qq = A.clone().lerp(B, i / 16); m = Math.min(m, segPt(qq, Cc, D)); } return m; };
 `;
 
+/** The film helpers, for a builder's or a judge's extra film rows (`--extra`). */
+export const FILM_KIT = { NOHUD, FILM, FREEZE, STAGE, AIMLOCK, LOCKCAM, PIN, READY, gridOf };
+
 export const GATES = [
 
   {
