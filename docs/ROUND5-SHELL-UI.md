@@ -48,7 +48,7 @@ Consumed: `ctx.water.seaLevel`, `ctx.terrain.getHeight`, `island/sites.js` (`TRI
 
 ## 3. Gates
 
-Measured on 5265, `nice -n 10`, machine care per R53. Lane run: 27 PASS, 0 FAIL, 4 PENDING, 16 for the judge (49 rows once the two 4K hub rows are counted).
+Measured on 5265, `nice -n 10`, machine care per R53. Lane run (49 rows): 27 PASS, 0 FAIL, 4 PENDING, 18 for the judge.
 
 | row | result | numbers |
 |---|---|---|
@@ -79,7 +79,7 @@ Global green list on this tree (5265, one Chrome):
 | A9 | PASS | 59.9 fps median, 241 draws, quiet box |
 | A21 | counters PASS, timing not graded here | 275 draws worst of 350, 3.93 M triangles of 6.5 M. medianGpuMs 19.6 / 38.6 / 20.5 against 14 reads FAIL; R58 moves that term to the W1 exit and nothing in the shell draws in the world except while the alidade is up |
 | A90-memory-stability, A90b, A90-rig-reclaim | PASS | objects -33, heap -2.8 %, 30 kills; rig 0 geo / 0 tex growth over 30 cycles |
-| A90-memory-stability-expansion | SEE BELOW | A90X_RESULT |
+| A90-memory-stability-expansion | PASS, intermittent | PASS on the last run: `nonMachineGrowth` 0, heap +2 %. **Intermittent:** 2 of 5 runs on this tree read +1, one `Sprite` directly under the Scene, unnamed, with no Instrument root above it. No file under `src/ui` makes a sprite, and the three diagnostic runs that wrapped `scene.add` to catch its stack came back clean, so its owner is not identified. The orchestrator's W0b run on main read 0 in its one run |
 | A90-abs | PASS | post-GC heap 82.35 MB (450), GPU process 1220.94 MB (1500) |
 | A-alloc-rate | scheduled bars PASS; baseline guard offenders are not this lane's | shell-ui row 208.75 KB/s against a baseline of 588.51 (0.355x). Offenders: combat-kit 1.12x, instruments-a 1.69x (src of neither changed in this tree) |
 | A-vram-ledger | PASS | textures 63.39, targets 127.27, geometry 79.25, total 269.91 MB of 450; 0 unattributed |
@@ -92,7 +92,7 @@ Global green list on this tree (5265, one Chrome):
 
 ## 4. Honest gaps
 
-- **Per-function allocation.** The shell's row fell to 0.355x of its baseline, but 12 functions are still over the 4 KB/s bar that binds at the W2 exit (`_updateCompass` 36, `_updateQuestPips` 34, `_scanMachines` 27, `Menus._raf` 27, `_updateObjectiveMark` 21, `_updateMachineBars` 18 KB/s). Round-3 `fieldWord`, damage-number, plate and awareness strings are gone; what is left is double boxing and the menus' own rAF. Second pass due at W2.
+- **Per-function allocation.** The shell's row fell to 0.355x of its baseline, but 12 functions are still over the 4 KB/s bar that binds at the W2 exit (`_updateCompass` 36, `_updateQuestPips` 34, `_scanMachines` 27, `Menus._raf` 27, `_updateObjectiveMark` 21, `_updateMachineBars` 18 KB/s). The `fieldWord`, damage-number, plate and awareness strings are gone; what is left is double boxing and the menus' own rAF. Second pass due at W2.
 - **Soundings read inland on this tree.** The Round-4 terrain's basin sits below sea level, so V-map shows soundings inside the outline. The bake reads `ctx.water.seaLevel`, which world-ground's island publishes; re-film V-map when it merges, and judge "soundings offshore" then.
 - **Round-4 words the shell cannot reach:** log and skills text (progression W3), item names such as FIRE ARROW, TRIPWIRE, BLAST BOMB and VIGOUR DRAUGHT (combat-kit W2), `Varl`, `the campfire`, `Lessons of the Valley` (progression W3). `ITEM_DESC` in `inventory.js` holds the one catalogue line `fieldWord` cannot word-swap without spelling a forbidden word. Round-4 prop landmarks and activity marks are off the sheet, so the sheet shows `sites.js` only.
 - **The Kit Rack** still reads its Round-4 smoked-glass sheet (`wheel.css`): combat-kit W2, as ordered. Not filmed as a surface here.
@@ -101,6 +101,7 @@ Global green list on this tree (5265, one Chrome):
 - **The drawn figure on a bright background.** Paper dashes with an ink casing read well on dark ground and through cover; over sunlit grass they are thinner. A close herd overlaps into a busy patch of dashes. Brea is now knocked out of it, so it never crosses her.
 - **Damage numbers** are world-anchored and can land on the vial or a plate for their 1 s life. Left on purpose: they belong to the part that was hit.
 - **Bow wording:** TIPS say what the bow does today (RMB aims, LMB draws, release looses); the bible's card says `RMB draw, LMB loose`. They reconcile when the bow control changes.
+- **Independent judges have not seen any of this.** Every V row above is the builder's own reading, which R29 makes advisory.
 - **World under the UI.** Tree shadows, the Round-4 camp and the valley are what the frames sit on; every world lane's work changes how these frames read.
 
 ## 5. For other lanes and the orchestrator
