@@ -98,8 +98,13 @@ export const CHAINS = {
     // 0.25 rad back toward the vertical): in calm air the tail now stands
     // 0.12 m off the side of the head and 0.23 m behind it, outside the bow's
     // limb line, and the trade wind streams the free end out from there
-    points: [[0.052, 1.678, -0.116], [0.113, 1.664, -0.184], [0.169, 1.639, -0.243], [0.201, 1.577, -0.284],
-      [0.226, 1.510, -0.314], [0.246, 1.439, -0.336], [0.260, 1.366, -0.350]],
+    // W0b targeted fix 4 (r1 eng judge: "A-tail-legible passes at the bar's edge"): the free
+    // strip 0.052 m longer, each of its four links by a sixth: with the stowed bow stood off the
+    // front and back views (kit-v0), the side views' reach was the last at the bar: the tail
+    // flies flat at the trade wind's 45 deg, tip 0.27 m behind her, and the stowed kit's line
+    // stands 0.13 m behind her there. 0.054 m along that line is 1-2 px at the sheet's 64 px
+    points: [[0.052, 1.678, -0.116], [0.113, 1.664, -0.184], [0.169, 1.639, -0.243], [0.206, 1.567, -0.291],
+      [0.235, 1.489, -0.326], [0.258, 1.406, -0.352], [0.274, 1.321, -0.368]],
   },
   sashEnd: {
     parent: 'pelvis',
@@ -327,7 +332,7 @@ export async function build({ out = ROOT } = {}) {
   // the wrap knot the tail leaves from, back-left
   const k0 = CHAINS.wrapSash.points[0];
   appendGeo(geo, bun([k0[0] - 0.006, k0[1] + 0.012, k0[2] + 0.014], { rx: 0.026, ry: 0.022, rz: 0.020, seg: 8, rings: 5, joint: head, uvRect: R.violetDeep, ridges: 2 }));
-  // the wrap tail: 0.49 x 0.10 m cloth strip, violet out, carmine lining in.
+  // the wrap tail: 0.54 x 0.10 m cloth strip, violet out, carmine lining in.
   // Fix round 5: the width leans UP across the level root (side vector half
   // vertical) so the knotted root shows its face, not its edge, to a front or
   // a side lens; down the hanging strip it spans left-rear (the vertical share

@@ -8154,7 +8154,7 @@ const NEW_GATES = [
         rows.push({ pitch, crouch, crouching, strafe: key, slowClock: !!slow, fps: +fps.toFixed(1), ticksPerFrame: +((H1.ticks - tick0) / Math.max(1, frames)).toFixed(2), frames,
           minClearM: +(minAxis - half).toFixed(4), closest: at, segMinClearM: +(segMin - half).toFixed(4), segClosest: segAt, rootLinkClearM: +(rootLink - half).toFixed(4),
           looseMinClearM: +(looseMin - half).toFixed(4), looseClosest: looseAt, looseFrames,
-          rootKeepFrames: fix1 - fix0, inactiveFrames: inactive, drawMax: +drawMax.toFixed(2), fullDrawFrames: fullFrames,
+          rootKeepFrames: fix1 - fix0, rootKeepMaxDrawS: H1.rootKeep?.maxDrawS ?? null, rootKeepMaxDeficitM: H1.rootKeep?.maxDeficitM ?? null, inactiveFrames: inactive, drawMax: +drawMax.toFixed(2), fullDrawFrames: fullFrames,
           perRoot: perRoot.map((k) => k.root.replace('dyn_', '').replace('_01', '') + ': min ' + k.minAxis + ' keep ' + k.keep + ' inKeep ' + k.inKeepFrames + ' unmet ' + k.unmetFrames + (k.unmetFrames ? ' (draw ' + k.unmetDrawS + ')' : '')),
           unmetHeadRoots: unmetHead.map((k) => k.root + ' ' + k.unmetFrames + ' frames, min ' + k.minAxis + ' < ' + k.keep) });
       }

@@ -871,7 +871,7 @@ export class PlayerAnimator {
      * anchor on the head as the draw builds — body motion carries the hand) */
     this._armCapN = 0; this._afEng = false; this._afLimK = 1; this._mlHush = false; this._wDA = 0; this._afFull = false; this._tW = 0;
     this._aimHold = false; this._atW = 0; this._bcS = 0; this._afTail = 0; this._afViol = 0; this._afInHd = false;
-    this._knW0 = 0; this._caT = 0; this._caLift = 0; this._qbF = 1; this._hcHit = 0; this._hcHitLast = 0;
+    this._knW0 = 0; this._caT = 0; this._caLift = 0; this._caY = 0; this._caYOk = false; this._qbF = 1; this._hcHit = 0; this._hcHitLast = 0;
     this._wrRef = new THREE.Vector3(); this._wrRefA = new THREE.Vector3(); this._wrRefOk = false;
     this._clipWr = new THREE.Vector3(); this._clipEl = new THREE.Vector3();   // (`armFlow.lowerByTarget`)
     this._elbC = new THREE.Vector3(); this._wrC = new THREE.Vector3(); this._armCapC = false;   // (the arm in the chest's frame)
@@ -2058,9 +2058,13 @@ export class PlayerAnimator {
       const CA = this.T.crouchAim, rs = dt / ((CA?.rampS ?? 0.11) * (1 + 0.4 * smoothstep(p.camPitch ?? 0, 0.75, 1.02))), want = p.crouchAim && !dead ? 1 : 0;
       this._caT = clamp((this._caT ?? 0) + clamp(want - (this._caT ?? 0), -rs, rs), 0, 1);
       // (a crouch toggled under the aim: the pose follows the crouch blend itself, or the
-      // pelvis drops to the clip's and comes back up)
-      if (CA && p.crouchAim && this._crouchW < 0.98) this._caT = Math.max(this._caT, this._crouchW);
-      else if (CA && !p.crouching && this._aimHold) this._caT = Math.min(this._caT, this._crouchW);
+      // pelvis drops to the clip's and comes back up. Four times over: the lift holds her
+      // at the pose's height from a quarter of the way down: halfway through the blend she
+      // stood 0.2 m under both of her end poses, and at the down clamp the bow came within
+      // the 0.5 m of the crosshair's ground hit where combat stops aiming at it: the bow
+      // flickered 0.2 rad, the knuckle 0.19 m off the string, every other step)
+      if (CA && p.crouchAim && this._crouchW < 0.98) this._caT = Math.max(this._caT, Math.min(1, this._crouchW * 4));
+      else if (CA && !p.crouching && this._aimHold) this._caT = Math.min(this._caT, Math.min(1, this._crouchW * 4));
       const ct = this._caT;
       this._crouchAimW = CA ? ct * ct * ct * (ct * (ct * 6 - 15) + 10) : damp(this._crouchAimW, want, 9, dt);
     }
@@ -2557,14 +2561,15 @@ export class PlayerAnimator {
     const CA = this.T.crouchAim, b = this.b, pe = b.pelvis;
     const w = CA ? this._crouchAimW * (1 - dodgeW) * (1 - this._deadW) : 0;
     this._caLift = 0;
-    if (w < 1e-3 || !pe || !b.thighL || !b.thighR) return;
+    if (w < 1e-3 || !pe || !b.thighL || !b.thighR) { this._caYOk = false; return; }
     pe.bone.updateMatrixWorld(true);
     this._charOf(pe.bone, _v3);
     // (higher at the down clamp: the ray's ground hit is 0.65 m ahead of her there,
     // and combat stops aiming the bow at it from nearer than 0.5 m)
     const pc = this.ctx.player?.camPitch ?? 0;
     let dy = (CA.pelvisY + (CA.pelvisDown ?? 0) * smoothstep(pc, 0.75, 1.02) - _v3.y) * w;
-    if (dy < 1e-4) return;
+    const y0 = _v3.y;
+    if (dy < 1e-4) { this._caY = y0; this._caYOk = true; return; }
     for (let s = 0; s < 2; s++) {
       const th = s === 0 ? b.thighL : b.thighR, ca = s === 0 ? b.calfL : b.calfR, ft = s === 0 ? b.footL : b.footR;
       this._charOf(ft.bone, _rbT[s]);
@@ -2581,7 +2586,16 @@ export class PlayerAnimator {
       const dyMax = h2 > 0 ? vy + Math.sqrt(h2) : 0;
       if (dy > dyMax) dy = Math.max(0, dyMax);
     }
-    if (dy < 1e-4) return;
+    /* (...and her height moves at most `liftStep` per 1/60 s, wherever that reach limit
+     * or the clip underneath puts it: a stance step's foot swinging out cut the reach
+     * for two or three steps, and the whole body dropped 0.04-0.08 m and came back, the
+     * arm's shoulder with it. Past the limit a leg is straight for those steps) */
+    if (this._caYOk && CA.liftStep) {
+      const yS = CA.liftStep * Math.min(1, Math.max(1e-3, (this._dtA || 0) * 60));
+      dy = clamp(y0 + dy, this._caY - yS, this._caY + yS) - y0;
+    }
+    if (dy < 1e-4) { this._caY = y0; this._caYOk = true; return; }
+    this._caY = y0 + dy; this._caYOk = true;
     _v2.set(0, dy, 0).applyMatrix3(this._pelvisM3);
     pe.bone.position.add(_v2);
     // (`_charOf` reads through the moved pelvis, so the solve takes no shift)
@@ -6135,6 +6149,7 @@ export class PlayerAnimator {
   /** W0b targeted fix 4: zero the per-root keep audit (a gate row's start). */
   resetRootKeep() {
     for (const k of this._hcRoots || []) { k.frames = 0; k.inKeep = 0; k.unmet = 0; k.minAxis = Infinity; k.unmetDraw = 0; }
+    this._hcFixMax = 0; this._hcFixDraw = 0;           // ...and the keep-out's envelope with them
   }
 
   /**
