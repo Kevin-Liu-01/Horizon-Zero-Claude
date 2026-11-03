@@ -9175,9 +9175,11 @@ const NEW_GATES = [
       const below = (list) => { const o = []; for (const m of list) for (const r of m.rows) if (VIEWS.includes(r.view) && !r.ok) o.push(m.at + (m.yaw != null ? ' (head ' + m.yaw + ' deg)' : '') + ' ' + r.view + ': ' + r.clear3 + ' px >= 3 clear, reach ' + r.reach); return o; };
       const failMoments = [...new Set(bad.map((b) => b.split(' ')[0]))];
       const short = (rows) => rows.map((r) => r.view[0] + (r.view.includes('right') ? 'R' : r.view.includes('left') ? 'L' : '') + ':' + r.clear3 + '/' + r.reach).join(' ');
-      return { pass: bad.length === 0 && graded.length === 24, detail: {
-        graded: 'the sheet instant + 23 gust moments (every 0.35 s sim) x 4 views: clear3 >= 4 and reach >= 4',
-        moments: graded.length, failingMoments: failMoments.length, bad, summaryMinMedMax: summary,
+      // W0b targeted fix 4 (r1 eng judge: "passes at the bar's edge"): the margin is graded as well: the median reach of each view >= 6 px
+      const thin = VIEWS.filter((v) => !(summary[v].graded.reach?.[1] >= 6));
+      return { pass: bad.length === 0 && graded.length === 24 && thin.length === 0, detail: {
+        graded: 'the sheet instant + 23 gust moments (every 0.35 s sim) x 4 views: clear3 >= 4 and reach >= 4; the median reach of each view >= 6',
+        medianReachBelow6: thin, moments: graded.length, failingMoments: failMoments.length, bad, summaryMinMedMax: summary,
         headScanBelowBar: below(scan), headScanMomentsBelow: scan.filter((m) => m.rows.some((r) => VIEWS.includes(r.view) && !r.ok)).length + ' of ' + scan.length,
         calmBelowBar: below(calm),
         gradedMoments: graded.map((m) => ({ at: m.at, t: m.t, headYawDeg: m.yaw, v: short(m.rows) })),
@@ -9581,6 +9583,16 @@ const NEW_VISUALS = [
       await holdUntil(td + 1.55); await shot('dodge +1.55 s', ['GAME', 'RIGHT']);
       await holdUntil(td + 1.78); await shot('dodge +1.78 s', ['GAME', 'RIGHT']);`,
     'Eight panels. PASS requires ALL of: after the roll the bow comes up in FRONT of her, never over her head; the draw hand stays in front of the back of the skull and under the crown in every panel (never up behind or over the head); whenever the printed draw is > 0.9 the hand is on the string (the printed knuckle -> nock <= 0.06 m). FAIL if either arm is above her head or the bow is horizontal over her head.'),
+  transFilm('V-draw-dodge-aim0',
+    'W0b targeted fix 4: the same at the level aim: drawn at 0, dodge with RMB + LMB held: +1.24, +1.37, +1.55 and +1.78 s after the dodge, in the game camera and from her right (r3 eng judge at 0: the draw reaching 0.87-1.0 with the knuckle 0.25-0.56 m off the string)',
+    `await scene({ pitch: 0 });
+      await hold(0.6); C.input.mouse.buttons |= 1; await hold(1.5);
+      p.dodge(); const td = E.simTime;
+      await holdUntil(td + 1.24); await shot('dodge +1.24 s', ['GAME', 'RIGHT']);
+      await holdUntil(td + 1.37); await shot('dodge +1.37 s', ['GAME', 'RIGHT']);
+      await holdUntil(td + 1.55); await shot('dodge +1.55 s', ['GAME', 'RIGHT']);
+      await holdUntil(td + 1.78); await shot('dodge +1.78 s', ['GAME', 'RIGHT']);`,
+    'Eight panels. PASS requires ALL of: after the roll the bow comes up in FRONT of her, never over her head; the draw hand stays in front of the back of the skull and under the crown in every panel; whenever the printed draw is > 0.9 the hand is on the string (the printed knuckle -> nock <= 0.06 m). FAIL if either arm is above her head or the bow is horizontal over her head.'),
   transFilm('V-crouched-draw',
     'W0b targeted fix 4: the crouched -0.4 raise (+0.53 s) and the crouched 0 draw ramp (LMB +0.25 s) from her chest side and from behind along the arrow; the crouched full draw at 0 and at 0.75 in the game camera and from her right',
     `await scene({ pitch: -0.4, crouch: true });

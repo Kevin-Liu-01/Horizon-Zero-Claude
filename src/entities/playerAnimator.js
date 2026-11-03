@@ -1591,7 +1591,7 @@ export class PlayerAnimator {
     if (this.T.crouchAim?.toggleRate && aimHold) this._crouchW = crouchPrev + clamp(this._crouchW - crouchPrev, -this.T.crouchAim.toggleRate * dt, this.T.crouchAim.toggleRate * dt);
     // (crouched the aim comes in a little slower: its first steps turn and settle the whole
     // body, <= 0.03 m per 1/60 s with the crouch-aim pose's own ramp)
-    this._aimW = damp(this._aimW, aimHold && !dead ? 1 : 0, this.T.crouchAim && aimHold ? 13 - 5 * this._crouchW : 13, dt);
+    this._aimW = damp(this._aimW, aimHold && !dead ? 1 : 0, this.T.crouchAim && aimHold ? 13 - 6.5 * this._crouchW : 13, dt);
     this._deadW = damp(this._deadW, dead ? 1 : 0, dead ? 12 : 10, dt);
     // (W0b targeted fix 4, `armFlow.drawRaw`: a RISING draw is followed exactly —
     // the bow renders combat's draw, and the 16/s lag left the string hand

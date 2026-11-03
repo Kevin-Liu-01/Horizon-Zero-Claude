@@ -257,7 +257,7 @@ export const UBC_TUNE = {
     // of that); a hand stalled under the cord's knot goes round it (`knotRound` m a
     // step); the rest hold and the quiver ride the chest and the pelvis, read against
     // the standing aim's own offsets (`bodyRef`)
-    wdaRate: 4, drawRaw: true, tRate: 3, lowerByTarget: true, armStepChar: 0.055, tSpeed: 3.6, tSpeedCrouch: 0.55, tailMin: 0.35, lanceOpen: 30, knotRound: 0.035, violStep: 0.002,
+    wdaRate: 4, drawRaw: true, tRate: 3, lowerByTarget: true, armStepChar: 0.055, tSpeed: 3.6, tSpeedCrouch: 0.6, tailMin: 0.35, lanceOpen: 30, knotRound: 0.035, violStep: 0.002,
     bodyRef: { chest: [-0.006, -0.032, -0.063], pelvis: [0.002, -0.035, -0.036] } },
   // W0b targeted fix 4: the aim's trunk starts upright — the pelvis -> neck
   // line's forward pitch under the aim (radians, character space), standing /
