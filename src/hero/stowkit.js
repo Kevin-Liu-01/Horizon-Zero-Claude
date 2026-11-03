@@ -28,7 +28,7 @@ const LANCE_SOCKET_PARENT = 'spine_02';
  */
 export const QUIVER_SOCKET = 'stow_quiver';
 const QUIVER_SOCKET_PARENT = 'pelvis';
-const QUIVER_HOLD = 0.72;              // how much of the pelvis's turn the strap takes out at full speed
+const QUIVER_HOLD = 1.0;              // how much of the pelvis's turn the strap takes out at full speed
 const _qA = new THREE.Quaternion(), _qB = new THREE.Quaternion(), _qC = new THREE.Quaternion(), _qId = new THREE.Quaternion();
 const _vA = new THREE.Vector3();
 

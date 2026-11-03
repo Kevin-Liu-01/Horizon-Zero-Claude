@@ -22,7 +22,7 @@ export async function build({ out = ROOT } = {}) {
         case 'skirt': return sstep(0.90, 0.74, y) * 0.86;
         case 'under': return 0.92;
         case 'trousers': return sstep(0.6, 0.45, y) * 0.62;
-        case 'boots': return sstep(0.2, 0.03, y) * 0.66;
+        case 'boots': return sstep(0.13, 0.02, y) * 0.56;
         case 'sleeves': return sstep(0.33, 0.41, Math.abs(x)) * 0.72;
         case 'cuffs': return 0.8;
         case 'smock': return sstep(1.46, 1.52, y) * 0.5;
@@ -39,12 +39,12 @@ export async function build({ out = ROOT } = {}) {
         const j = J(side > 0 ? 'clavicle_l' : 'clavicle_r');
         // four tiles along the shoulder, the outer lapping the inner, each a curved plate
         for (let i = 0; i < 4; i++) {
-          const x0 = 0.103 + i * 0.036, x1 = x0 + 0.052;
+          const x0 = 0.116 + i * 0.034, x1 = x0 + 0.05;
           const COLS = 5;
           const inner = [], outer = [];
           for (let c = 0; c <= COLS; c++) {
             const a = -1.05 + 2.1 * (c / COLS);       // around the shoulder's top, front to back
-            const yy = 1.47 - i * 0.004, r = 0.062 - i * 0.002;
+            const yy = 1.464 - i * 0.004, r = 0.062 - i * 0.002;
             const zc = -0.03;
             inner.push([side * x0, yy - r * (1 - Math.cos(a)), zc + r * Math.sin(a)]);
             outer.push([side * x1, yy - r * (1 - Math.cos(a)) - 0.008, zc + (r + 0.004) * Math.sin(a)]);

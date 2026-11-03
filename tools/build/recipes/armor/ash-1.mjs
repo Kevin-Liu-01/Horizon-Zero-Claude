@@ -183,7 +183,7 @@ export async function build({ out = ROOT } = {}) {
   const cowl = emptyPart('cowl', { density: 1 });
   const neckF = new Field([bodyPart], 0.04);
   const COLS = 40;
-  const rowsC = [[1.538, 0.012], [1.525, 0.03], [1.5, 0.04], [1.472, 0.042], [1.448, 0.05], [1.425, 0.062], [1.408, 0.064]];
+  const rowsC = [[1.532, 0.006], [1.517, 0.018], [1.496, 0.026], [1.472, 0.034], [1.448, 0.046], [1.425, 0.06], [1.408, 0.064]];
   const keepN = (q) => Math.abs(q.x) < 0.14 && q.y > 1.38;
   const neck = rowsC.map(([y]) => ring(neckF, Math.max(y, 1.46), COLS, { cx: 0, cz: -0.035, keep: keepN, dy: 0.03, dth: 0.22, smooth: 3 }));
   gridInto(cowl, rowsC.length - 1, COLS, (_a, _b, r, c) => {

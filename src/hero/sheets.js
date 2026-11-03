@@ -581,18 +581,18 @@ export async function weaponSheetOverlay(ctx, refs = []) {
   bow.setDraw(0, true);
   const bowG = bow.model, lanceG = sp.model;
   const bm = 1.7;           // metres of frame height
-  const b1 = await shoot(bowG, { pos: [2.6, 0, 0.1], target: [0, 0, -0.08], ortho: { h: bm } }, 380, 760);
+  const b1 = await shoot(bowG, { pos: [2.6, 0.06, 0.1], target: [0, 0.06, -0.08], ortho: { h: bm } }, 380, 760);
   g.drawImage(canvasOf(b1), 20, 40, 190, 380 * 2);
   label(g, 'bow, side, braced', 30, 56, 11);
   bow.setDraw(1, true);
-  const b2 = await shoot(bowG, { pos: [2.6, 0, -0.1], target: [0, 0, -0.14], ortho: { h: bm } }, 380, 760);
+  const b2 = await shoot(bowG, { pos: [2.6, 0.06, -0.1], target: [0, 0.06, -0.14], ortho: { h: bm } }, 380, 760);
   g.drawImage(canvasOf(b2), 210, 40, 190, 380 * 2);
   label(g, 'bow, side, full draw', 220, 56, 11);
   bow.setDraw(0, false);
-  const b3 = await shoot(bowG, { pos: [0.34, 0.02, -0.44], target: [0, 0.0, 0.03], fov: 30 }, 460, 400);
+  const b3 = await shoot(bowG, { pos: [0.34, 0.11, -0.44], target: [0, 0.095, 0.03], fov: 30 }, 460, 400);
   g.drawImage(canvasOf(b3), 410, 40, 330, 287);
   label(g, 'grip: esparto, carmine', 420, 56, 11);
-  const b4 = await shoot(bowG, { pos: [0.34, 0.6, -0.5], target: [0, 0.6, -0.1], fov: 28 }, 460, 400);
+  const b4 = await shoot(bowG, { pos: [0.34, 0.74, -0.46], target: [0, 0.76, -0.1], fov: 28 }, 460, 400);
   g.drawImage(canvasOf(b4), 410, 330, 330, 287);
   label(g, 'upper limb, horn nock', 420, 346, 11);
   const sc0 = lanceG.scale.clone();
@@ -659,5 +659,31 @@ export async function gearInHandOverlay(ctx) {
   label(g, 'the lance in her hands', 1120, 20, 13, '#efe8da');
   E.timeScale = ts0;
   void an;
+  return c.toDataURL('image/png');
+}
+
+/**
+ * The bow carried at a jog (the V29 staging without a machine: a live alert kind lands with the
+ * Plumb, W1): the combat hold keeps it in her left hand. Film from her left, in the world's light.
+ */
+export async function bowCarryOverlay(ctx) {
+  const p = ctx.player, E = ctx.engine, cmb = ctx.combat, T3 = p.position.constructor;
+  const frame = () => new Promise((r) => requestAnimationFrame(r));
+  const W = 1600, H = 900;
+  const { c, g } = overlay(W, H, '#14120f');
+  const toW = (x, y, z) => p.model.localToWorld(new T3(x, y, z));
+  ctx.input.keys.clear(); ctx.input.keys.add('KeyW');
+  const shots = [[2.3, 1.15, 0.2, 0, 800], [0.9, 1.3, 2.3, 800, 800]];
+  const s0 = E.simTime, w0 = performance.now();
+  while (E.simTime - s0 < 1.4 && performance.now() - w0 < 12000) { cmb.noteCombatAction?.(); await frame(); }
+  const ts0 = E.timeScale;
+  E.timeScale = 0; await frame(); await frame();
+  for (const [x, y, z, ox, w] of shots) {
+    const img = liveView(ctx, toW(x, y, z).toArray(), toW(0, 0.95, 0.05).toArray(), { width: w, height: 860, fov: 34 });
+    g.drawImage(canvasOf(img), ox, 30, w, 860);
+  }
+  label(g, 'the bow carried at a jog: low in her LEFT hand, top limb forward', 10, 20, 13, '#efe8da');
+  E.timeScale = ts0;
+  ctx.input.keys.clear();
   return c.toDataURL('image/png');
 }

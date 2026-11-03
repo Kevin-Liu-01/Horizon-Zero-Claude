@@ -152,7 +152,7 @@ export function skirtPanels(mk, surf, joints, { yTop = 1.025, yHem = 0.74, off =
       const rad = profs[r][c] + ripA * sstep(0.05, 0.9, t) * (0.5 + 0.5 * ripple(th, seed + i, [7, 11, 17])) + (isLip ? -lip : 0);
       const p = [Math.cos(th) * rad, y, cz + Math.sin(th) * rad];
       // by height when asked: a short layer under a long one must move with the long one, not shear across its own span
-      const w = weightY ? weightY(y) : thighW * sstep(0.02, 0.85, t);
+      const w = weightY ? weightY(y) : thighW * sstep(0.02, 0.72, t);
       const thigh = joints[`thigh_${side}`], pel = joints.pelvis;
       return { p, uv: [(c / colsPer) * span * 0.2, yTop - y + (isLip ? 0.008 : 0)], j: [pel, thigh, 0, 0], w: [1 - w, w, 0, 0] };
     });

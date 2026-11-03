@@ -1113,7 +1113,8 @@ export class Combat {
     } else {
       // low carry: point the arrow line down and across, off HER heading
       const h = this.ctx.player?.heading ?? 0;
-      _carry.set(-0.62, h + 0.30, -0.55, 'YXZ');
+      // (a 1.45 m stave: carried in the left hand at the trail, top limb forward, clear of her legs)
+      _carry.set(0.92, h + 0.12, -0.16, 'YXZ');
       _qDes.setFromEuler(_carry);
     }
     _wq.invert();

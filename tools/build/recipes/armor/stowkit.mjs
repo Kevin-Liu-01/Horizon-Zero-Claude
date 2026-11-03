@@ -280,7 +280,7 @@ export async function build({ out = ROOT } = {}) {
     const butt = [0.262, 0.64, 0];
     const L = LANCE.length;
     const need = [];
-    for (let t = 0.05; t <= 0.85; t += 0.05) need.push([t, backZ(butt[0] + d[0] * L * t, butt[1] + d[1] * L * t) - 0.025 - LANCE.r - 0.004]);
+    for (let t = 0.05; t <= 0.85; t += 0.05) need.push([t, backZ(butt[0] + d[0] * L * t, butt[1] + d[1] * L * t) - 0.04 - LANCE.r - 0.004]);
     let best = null;
     for (let i = 0; i < need.length; i++) for (let j = i + 1; j < need.length; j++) {
       const [ta, za] = need[i], [tb, zb] = need[j];
@@ -316,7 +316,7 @@ export async function build({ out = ROOT } = {}) {
   {
     const ang = 20 * Math.PI / 180;
     const d = [0, Math.cos(ang), Math.sin(ang)];
-    const ctr = [-0.286, 0.915, -0.060];
+    const ctr = [-0.292, 0.925, -0.135];
     const foot = v3.sub(ctr, v3.mul(d, QUIVER.length / 2));
     const [X, Y, Z] = basisY(d, [0, 0, 1]);
     pieces.push({ g: place(quiverGeo(cell), X, Y, Z, foot), joint: QUIVER_SOCKET, bit: PIECE.quiver });

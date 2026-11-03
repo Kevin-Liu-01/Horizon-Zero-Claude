@@ -564,6 +564,18 @@ const V_ROWS = [
     criteria: 'Kevin: bow draw hand at the cheek outside the hair, elbow level/back, bow arm clear of the chest, never an arm behind the head. Plus this lane: the limbs are visibly flexed, the string runs tip to nock to tip straight, the arrow lies on the string at the hand, the grip sits in the bow hand, the stowed bow is gone from her back and the stowed lance and quiver are in place.',
   },
 ];
+V_ROWS.push({
+  id: 'V-bow-carry', kind: 'visual', lane: LANE, settle: 900, timeout: 90000,
+  title: 'The Sabina carried at a jog (V29 staged without a machine until an alert kind is live): low in her left hand',
+  reference: 'reference/r5/gates-perf/bow-in-hand.jpg',
+  setup: placedSetup(['openGround'], `(async () => {${FILM_PRE}
+    C.input.enabled = true; C.state = 'playing';
+    standAt(p, 'openGround'); p.camPitch = 0;
+    const s = await import('/src/hero/sheets.js');
+    await s.bowCarryOverlay(C);
+  })()`),
+  criteria: 'Plan V29: bow low in the LEFT hand, left-arm swing damped; FAIL if on her back. Plus: the grip in the fist, neither limb through her legs, skirt or pouch.',
+});
 const V29 = asArmory('V29-wielded-carry');
 if (V29 && !V29.reference) Object.defineProperty(V29, 'reference', { value: 'reference/r5/gates-perf/bow-in-hand.jpg', enumerable: true });
 

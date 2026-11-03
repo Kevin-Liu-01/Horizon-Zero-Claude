@@ -247,6 +247,86 @@ export function conform(part, body, { margin = () => 0.004, transfer = 1, smooth
   return part;
 }
 
+/**
+ * Diffuse a part's skin over its own surface. A skin transferred from the nearest body
+ * vertices steps wherever the body's does, and a 4 mm edge across such a step tears at
+ * any bend (A-variant-swap-matrix). `filter(x, y, z)` limits it; `drop[jointIndex]` moves
+ * a joint's share to another joint first (`{ upperarm: clavicle }`).
+ */
+export function smoothSkin(part, { its = 4, k = 0.5, filter = null, drop = null } = {}) {
+  const { pos, idx, jnt, wgt } = part;
+  const n = pos.length / 3;
+  const ids = new Map(), weld = new Int32Array(n);
+  for (let i = 0; i < n; i++) { const key = `${Math.round(pos[i * 3] * 1e4)},${Math.round(pos[i * 3 + 1] * 1e4)},${Math.round(pos[i * 3 + 2] * 1e4)}`; if (!ids.has(key)) ids.set(key, ids.size); weld[i] = ids.get(key); }
+  const m = ids.size;
+  const W = Array.from({ length: m }, () => new Map()), cnt = new Int32Array(m);
+  for (let i = 0; i < n; i++) {
+    const w = W[weld[i]]; cnt[weld[i]]++;
+    for (let c = 0; c < 4; c++) if (wgt[i * 4 + c] > 0) { const j = drop && drop[jnt[i * 4 + c]] != null ? drop[jnt[i * 4 + c]] : jnt[i * 4 + c]; w.set(j, (w.get(j) || 0) + wgt[i * 4 + c]); }
+  }
+  for (let o = 0; o < m; o++) { const s = [...W[o].values()].reduce((a, b) => a + b, 0) || 1; for (const j of W[o].keys()) W[o].set(j, W[o].get(j) / s); }
+  const nb = Array.from({ length: m }, () => new Set());
+  for (let t = 0; t < idx.length; t += 3) { const a = weld[idx[t]], b = weld[idx[t + 1]], c = weld[idx[t + 2]]; if (a !== b) { nb[a].add(b); nb[b].add(a); } if (b !== c) { nb[b].add(c); nb[c].add(b); } if (a !== c) { nb[a].add(c); nb[c].add(a); } }
+  const free = new Uint8Array(m).fill(1);
+  if (filter) for (let i = 0; i < n; i++) if (!filter(pos[i * 3], pos[i * 3 + 1], pos[i * 3 + 2])) free[weld[i]] = 0;
+  let cur = W;
+  for (let it = 0; it < its; it++) {
+    const next = cur.map((w) => new Map(w));
+    for (let o = 0; o < m; o++) {
+      if (!free[o] || !nb[o].size) continue;
+      const avg = new Map();
+      for (const q of nb[o]) for (const [j, v] of cur[q]) avg.set(j, (avg.get(j) || 0) + v / nb[o].size);
+      const out = new Map();
+      for (const [j, v] of cur[o]) out.set(j, v * (1 - k));
+      for (const [j, v] of avg) out.set(j, (out.get(j) || 0) + v * k);
+      next[o] = out;
+    }
+    cur = next;
+  }
+  for (let i = 0; i < n; i++) {
+    const top = [...cur[weld[i]].entries()].sort((a, b) => b[1] - a[1] || a[0] - b[0]).slice(0, 4);
+    const s = top.reduce((a, e) => a + e[1], 0) || 1;
+    for (let c = 0; c < 4; c++) { jnt[i * 4 + c] = top[c] ? top[c][0] : 0; wgt[i * 4 + c] = top[c] ? top[c][1] / s : 0; }
+  }
+  return part;
+}
+
+/**
+ * Collapse edges shorter than `eps` (metres) whose ends share a UV island: slivers from a
+ * cut or a dense source. At a bend such an edge reads as a huge stretch for no visible gain.
+ * The vertex of lower index survives. Unused vertices are dropped.
+ */
+export function collapseShort(part, eps = 0.005, keepVertex = null) {
+  const { pos, uv, idx } = part;
+  const n = pos.length / 3;
+  const to = new Int32Array(n).map((_, i) => i);
+  const find = (a) => { while (to[a] !== a) { to[a] = to[to[a]]; a = to[a]; } return a; };
+  for (let t = 0; t < idx.length; t += 3) {
+    for (const [a0, b0] of [[idx[t], idx[t + 1]], [idx[t + 1], idx[t + 2]], [idx[t + 2], idx[t]]]) {
+      const a = find(a0), b = find(b0);
+      if (a === b) continue;
+      const L = Math.hypot(pos[a * 3] - pos[b * 3], pos[a * 3 + 1] - pos[b * 3 + 1], pos[a * 3 + 2] - pos[b * 3 + 2]);
+      if (L > eps) continue;
+      if (keepVertex && keepVertex(b) && !keepVertex(a)) to[a] = b; else to[b] = a;
+    }
+  }
+  const out = [];
+  for (let t = 0; t < idx.length; t += 3) {
+    const a = find(idx[t]), b = find(idx[t + 1]), c = find(idx[t + 2]);
+    if (a === b || b === c || a === c) continue;
+    out.push(a, b, c);
+  }
+  part.idx = out;
+  void uv;
+  return compact(part);
+}
+
+/** Every vertex on one joint. */
+export function rigidSkin(part, joint) {
+  for (let i = 0; i < part.pos.length / 3; i++) { part.jnt.splice(i * 4, 4, joint, 0, 0, 0); part.wgt.splice(i * 4, 4, 1, 0, 0, 0); }
+  return part;
+}
+
 /** Append a vertex grid: rows x cols of [x,y,z], given metric uv and skin function. */
 export function gridInto(part, rows, cols, fn, { closed = false, flip = false } = {}) {
   const base = part.pos.length / 3;

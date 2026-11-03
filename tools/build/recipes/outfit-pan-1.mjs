@@ -36,7 +36,7 @@ import {
   newGeo, appendGeo, stripAlong, bun, hex, noise3, jointPos,
 } from './lib/face.mjs';
 import { CHAINS } from './brea.mjs';
-import { Field, V, clamp, compact, conform, cutTris, emptyPart, mix, partFromPrim, recomputeNormals, sstep } from './armor/lib/part.mjs';
+import { Field, V, clamp, collapseShort, compact, conform, cutTris, emptyPart, mix, partFromPrim, recomputeNormals, smoothSkin, sstep } from './armor/lib/part.mjs';
 import { Trim, fbm, loadRaw, packAtlas, paintAtlas } from './armor/lib/atlas.mjs';
 import { TAU, beltRing, boxInto, limbStrap, orientOut, ring, skirtPanels, strapAlong } from './armor/lib/garment.mjs';
 import { bindingAlong, draftSmock, drapeTable, openEdges, radialTable, roundRect, softSheet, tableAt, tubeInto } from './armor/lib/smock.mjs';
@@ -498,7 +498,7 @@ const TRIM_H = 214;
 const BELT_Y = 1.122;
 export const KEEP_TORSO = (q) => Math.abs(q.x) < 0.3;
 /** Where the smock's armholes are cut (bind space): just outside the sleeve at the shoulder joint. */
-export const ARMHOLE = { y: 1.414, z: -0.055, ry: 0.066, rz: 0.062, xMin: 0.12 };
+export const ARMHOLE = { y: 1.4, z: -0.055, ry: 0.079, rz: 0.069, xMin: 0.12 };
 
 /** Everything of the set's base (shared by the variants): parts, trim, chains, joints. */
 export async function panBase(opt = {}) {
@@ -511,7 +511,7 @@ export async function panBase(opt = {}) {
   // ---- the MCO pieces, re-cut and pushed out of THIS body
   // the bodice survives only as the linen under-tunic's stand collar and yoke: everything
   // the smock hangs over, kept so nothing shows the skin the body's hide bit culled
-  const underYoke = cutTris(partFromPrim(prim('smock'), 'underyoke', { axis: [0, 1, 0], density: 0.62, nScale: 0.3 }), (cx, cy, cz) => cy > 1.345 && Math.abs(cx) < 0.145 && (cz > -0.015 || cy > 1.468));
+  const underYoke = cutTris(partFromPrim(prim('smock'), 'underyoke', { axis: [0, 1, 0], density: 0.62, nScale: 0.3 }), (cx, cy, cz) => (cy > 1.462 && Math.abs(cx) < 0.1) || (cz > 0 && ((cy > 1.42 && Math.abs(cx) < 0.09) || (cy > 1.345 && Math.abs(cx) < 0.04))));
   conform(underYoke, body, { margin: () => 0.004 });
   recomputeNormals(underYoke);
   // the collar rides the trunk and eases onto the neck by height, not by whichever body vertex is nearest
@@ -523,20 +523,12 @@ export async function panBase(opt = {}) {
       underYoke.jnt.splice(i * 4, 4, jS, jN, 0, 0); underYoke.wgt.splice(i * 4, 4, 1 - w, w, 0, 0);
     }
   }
-  // the sleeve starts inside the smock's armhole: anything further in would only poke through the shoulder
-  const sleeves = cutTris(partFromPrim(prim('sleeves'), 'sleeves', { density: 0.85, nScale: 0.5 }), (cx) => Math.abs(cx) > 0.152);
+  const sleeves = compact(partFromPrim(prim('sleeves'), 'sleeves', { density: 0.85, nScale: 0.5 }));
   sleeves.axis = [1, 0, 0];
   conform(sleeves, body, { margin: () => 0.0045 });
-  // the sleeve eases in as it goes up under the smock's edge, so the arm can drop without its
-  // cap coming out through the shoulder (the body under it is culled: nothing shows through)
-  for (let i = 0; i < sleeves.pos.length; i += 3) {
-    const ax = Math.abs(sleeves.pos[i]), k = sstep(0.24, 0.175, ax);
-    if (k <= 0) continue;
-    const dy = sleeves.pos[i + 1] - ARMHOLE.y, dz = sleeves.pos[i + 2] - ARMHOLE.z;
-    const l = Math.hypot(dy, dz) || 1, cut = Math.min(l * 0.55, 0.024 * k);
-    sleeves.pos[i + 1] -= (dy / l) * cut; sleeves.pos[i + 2] -= (dz / l) * cut;
-  }
   recomputeNormals(sleeves);
+  collapseShort(sleeves, 0.004);
+  smoothSkin(sleeves, { its: 7, k: 0.5 });
   const trousers = partFromPrim(prim('trousers'), 'trousers', { density: 0.76, nScale: 0.7 });
   conform(trousers, body, {
     margin: () => 0.005,
@@ -544,6 +536,20 @@ export async function panBase(opt = {}) {
     smooth: 3,
   });
   recomputeNormals(trousers);
+  // the inseam: the source splits left and right thigh across a 3 mm edge at the crotch, which a stride tears
+  // open. Under the skirt nobody sees how it creases; so a wide blend, by place, across the middle of the legs
+  {
+    const jL = J('thigh_l'), jR = J('thigh_r'), jP = J('pelvis');
+    for (let i = 0; i < trousers.pos.length / 3; i++) {
+      const x = trousers.pos[i * 3], y = trousers.pos[i * 3 + 1];
+      if (Math.abs(x) > 0.062 || y < 0.72 || y > 1.0) continue;
+      const pel = 0.85 * sstep(0.8, 0.95, y), l = sstep(-0.062, 0.062, x) * (1 - pel), r = (1 - sstep(-0.062, 0.062, x)) * (1 - pel);
+      trousers.jnt.splice(i * 4, 4, jP, jL, jR, 0); trousers.wgt.splice(i * 4, 4, pel, l, r, 0);
+    }
+  }
+  collapseShort(trousers, 0.0042);
+  // baggy cloth: the knee's blend runs a hand's width each way
+  smoothSkin(trousers, { its: 16, k: 0.5 });
   const boots = partFromPrim(prim('boots'), 'boots', { density: 0.98, nScale: 0.2 });
   conform(boots, body, {
     margin: () => 0.006,
@@ -551,6 +557,8 @@ export async function panBase(opt = {}) {
     smooth: 2,
   });
   recomputeNormals(boots);
+  collapseShort(boots, 0.004);
+  smoothSkin(boots, { its: 10, k: 0.5 });
 
   // ---- surfaces the lofts read
   const under = new Field([bodyPart, trousers], 0.04);
@@ -571,6 +579,9 @@ export async function panBase(opt = {}) {
     armholes: [{ side: 1, ...ARMHOLE }, { side: -1, ...ARMHOLE }],
   });
   compact(smock);      // the armholes' cut quads leave vertices no triangle uses
+  collapseShort(smock, 0.007, (i) => Math.abs(smock.pos[i * 3]) > ARMHOLE.xMin && Math.abs(Math.hypot((smock.pos[i * 3 + 1] - ARMHOLE.y) / ARMHOLE.ry, (smock.pos[i * 3 + 2] - ARMHOLE.z) / ARMHOLE.rz) - 1) < 0.02);
+  // the smock rides the trunk: the arm moves under its cap. Its skin diffused, so no edge crosses a step
+  smoothSkin(smock, { its: 8, k: 0.5, drop: { [J('upperarm_l')]: J('clavicle_l'), [J('upperarm_r')]: J('clavicle_r'), [J('Head')]: J('neck_01') } });
   orientOut(smock, 0, -0.02, 1.25);
   // the cap stands proud of the sleeve round the armhole: the arm moves under it, never through it
   for (let i = 0; i < smock.pos.length; i += 3) {
@@ -585,16 +596,17 @@ export async function panBase(opt = {}) {
   // its cut edges, bound
   const bindRect = trim.rect('bind');
   const binds = mk('binds', { trim: true });
+  const smockSkin = new Field([smock], 0.04);
   for (const run of openEdges(smock)) {
     const cy = run.reduce((s, q) => s + q.p[1], 0) / run.length, cx = run.reduce((s, q) => s + q.p[0], 0) / run.length;
     if (cy < 1.2) continue;     // the bottom row: under the belt
     if (Math.abs(cx) > 0.1) {
       const c = [Math.sign(cx) * 0.19, ARMHOLE.y, ARMHOLE.z];
-      bindingAlong(binds, run, skinOf, { rect: bindRect, closed: true, center: () => c, w: 0.0095, lift: 0.0026, segEvery: 2 });
+      bindingAlong(binds, run, smockSkin, { rect: bindRect, closed: true, center: () => c, w: 0.0095, lift: 0.0026, segEvery: 2 });
     } else {
       // neckline and keyhole: the cloth lies away from the slit below the scoop, down and out above it
       const center = (q) => (q[1] < 1.43 && Math.abs(q[0]) < 0.03 ? [0, q[1], q[2]] : [0, 1.57, -0.02]);
-      bindingAlong(binds, run, skinOf, { rect: bindRect, closed: true, center, w: 0.0095, lift: 0.0026 });
+      bindingAlong(binds, run, smockSkin, { rect: bindRect, closed: true, center, w: 0.0095, lift: 0.0026 });
     }
   }
   // the skirt, then the under-tunic inside it: four panels, four slits, offset from each other
@@ -638,11 +650,11 @@ export async function panBase(opt = {}) {
   const slingCtl = [
     [-0.105, 1.462, 0.04], [-0.06, 1.395, 0.09], [-0.012, 1.325, 0.105], [0.035, 1.25, 0.122], [0.082, 1.195, 0.106], [0.118, 1.15, 0.07],
   ];
-  strapAlong(sling, clothField, skinOf, slingCtl, { width: 0.0245, margin: 0.0065, segs: 18, cols: 2, rect: trim.rect('strap'), tile: 0.42 });
+  strapAlong(sling, clothField, clothField, slingCtl, { width: 0.0245, margin: 0.0065, segs: 18, cols: 2, rect: trim.rect('strap'), tile: 0.42 });
   const slingBack = [
     [-0.105, 1.462, 0.04], [-0.12, 1.488, -0.03], [-0.10, 1.43, -0.125], [-0.03, 1.30, -0.118], [0.06, 1.20, -0.09], [0.118, 1.145, -0.08],
   ];
-  strapAlong(sling, clothField, skinOf, slingBack, { width: 0.0245, margin: 0.0065, segs: 18, cols: 2, rect: trim.rect('strap'), tile: 0.42 });
+  strapAlong(sling, clothField, clothField, slingBack, { width: 0.0245, margin: 0.0065, segs: 18, cols: 2, rect: trim.rect('strap'), tile: 0.42 });
   orientOut(sling, 0, -0.02, 1.2);
   // a brass slider where the strap crosses her ribs, so its length reads as adjustable
   {
@@ -652,7 +664,7 @@ export async function panBase(opt = {}) {
     let n = [0, 0, 0]; for (const q of near) n = V.add(n, [q.p.nx, q.p.ny, q.p.nz]); n = V.norm(n);
     const ctr = V.add(near[0].p.x !== undefined ? [near[0].p.x, near[0].p.y, near[0].p.z] : c0, V.mul(n, 0.0095));
     const along = V.norm(V.sub(b, a)), acr = V.norm(V.cross(n, along));
-    const s = skinOf.skin(ctr[0], ctr[1], ctr[2], 4);
+    const s = clothField.skin(ctr[0], ctr[1], ctr[2], 4);
     const slider = mk('slider', { trim: true });
     tubeInto(slider, roundRect(ctr, acr, along, 0.0168, 0.0092, 0.004, 2), 0.0019, { sides: 5, closed: true, rect: brass, joint: s.j[0] });
     recomputeNormals(slider);

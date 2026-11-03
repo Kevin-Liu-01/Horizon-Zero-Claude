@@ -57,7 +57,7 @@ export async function build({ out = ROOT } = {}) {
       for (let c = 0; c <= COLS; c++) {
         const th = Math.PI / 2 + oOpen + (TAU - 2 * oOpen) * (c / COLS);
         const cx = Math.cos(th), sx = Math.sin(th);
-        inner.push([cx * 0.094, 1.474, -0.04 + sx * 0.104]);
+        inner.push([cx * 0.102, 1.462, -0.04 + sx * 0.11]);
         const side = Math.abs(cx);
         const rr = mix(0.135, 0.226, side), yy = mix(1.335, 1.462, Math.pow(side, 1.6));
         outer.push([cx * rr, yy, -0.022 + sx * mix(0.135, 0.1, side)]);
