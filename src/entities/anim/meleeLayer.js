@@ -235,7 +235,7 @@ const AXIAL_PREFIX = ['spine_', 'neck_', 'head_'];
  *            the head line, the reach from spine pitch and the lunge.
  */
 const READY = {
-  hand: [-0.21, 1.09, -0.12], shaft: [0.36, -0.385, 0.85],
+  hand: [-0.21, 1.15, -0.12], shaft: [0.36, -0.385, 0.85],
   lh: [0.22, 0.95, 0.20], lhW: 1, lhOn: 0.5425, yaw: -0.36, py: -0.26, pitch: 0.24, roll: 0.02, dz: 0.0,
 };
 /**
@@ -280,13 +280,13 @@ const BEATS = [
   {
     id: 'light-1', clip: [0.10, 0.62], mirror: false, clipW: 0.16,
     cock: { hand: [-0.27, 1.16, -0.25], shaft: [0.34, 0.30, 0.89], lh: [0.2, 0.95, 0.2], lhW: 1, lhOn: 0.44, yaw: -0.46, py: -0.34, pitch: 0.02, roll: 0.05, dz: -0.07 },
-    contact: { hand: [-0.14, 1.11, 0.30], shaft: [0.10, -0.03, 0.995], lh: [0.2, 0.95, 0.2], lhW: 1, lhOn: 0.27, yaw: -0.12, py: 0.02, pitch: 0.20, roll: -0.04, dz: 0.15 },
+    contact: { hand: [-0.14, 1.13, 0.20], shaft: [0.10, -0.03, 0.995], lh: [0.2, 0.95, 0.2], lhW: 1, lhOn: 0.27, yaw: -0.12, py: 0.02, pitch: 0.20, roll: -0.04, dz: 0.15 },
     follow: { hand: [-0.17, 1.03, 0.28], shaft: [0.24, -0.40, 0.88], lh: [0.2, 0.95, 0.2], lhW: 1, lhOn: 0.32, yaw: -0.12, py: 0.08, pitch: 0.24, roll: -0.08, dz: 0.12 },
   },
   {
     id: 'light-2', clip: [0.10, 0.62], mirror: true, clipW: 0.16,
     cock: { hand: [-0.28, 1.21, -0.02], shaft: [0.76, 0.20, 0.62], lh: [0.2, 0.95, 0.2], lhW: 1, lhOn: 0.44, yaw: 0.26, py: 0.22, pitch: 0.06, roll: 0.04, dz: -0.04 },
-    contact: { hand: [-0.20, 1.17, 0.27], shaft: [-0.14, 0.02, 0.99], lh: [0.2, 0.95, 0.2], lhW: 1, lhOn: 0.27, yaw: -0.12, py: -0.06, pitch: 0.18, roll: 0.04, dz: 0.10 },
+    contact: { hand: [-0.20, 1.19, 0.19], shaft: [-0.14, 0.02, 0.99], lh: [0.2, 0.95, 0.2], lhW: 1, lhOn: 0.27, yaw: -0.12, py: -0.06, pitch: 0.18, roll: 0.04, dz: 0.10 },
     follow: { hand: [-0.25, 1.03, 0.14], shaft: [-0.66, -0.20, 0.72], lh: [0.2, 0.95, 0.2], lhW: 1, lhOn: 0.28, yaw: -0.34, py: -0.24, pitch: 0.20, roll: 0.06, dz: 0.08 },
   },
   {
@@ -300,7 +300,7 @@ const BEATS = [
 const HEAVY = {
   id: 'heavy', clip: [0.0, 0.92], mirror: false, clipW: 0.18,
   cock: { hand: [-0.28, 1.31, -0.14], shaft: [0.32, 0.46, 0.83], lh: [0.2, 0.95, 0.2], lhW: 1, lhOn: 0.38, yaw: -0.46, py: -0.36, pitch: -0.10, roll: 0.08, dz: -0.10 },
-  contact: { hand: [-0.22, 1.33, 0.36], shaft: [0.12, -0.05, 0.992], lh: [0.2, 0.95, 0.2], lhW: 1, lhOn: 0.30, yaw: -0.14, py: 0.04, pitch: 0.30, roll: -0.05, dz: 0.20 },
+  contact: { hand: [-0.22, 1.35, 0.25], shaft: [0.12, -0.05, 0.992], lh: [0.2, 0.95, 0.2], lhW: 1, lhOn: 0.30, yaw: -0.14, py: 0.04, pitch: 0.30, roll: -0.05, dz: 0.20 },
   follow: { hand: [-0.20, 1.12, 0.32], shaft: [0.26, -0.46, 0.85], lh: [0.2, 0.95, 0.2], lhW: 1, lhOn: 0.34, yaw: -0.10, py: 0.10, pitch: 0.32, roll: -0.08, dz: 0.16 },
 };
 /** How far before `CONTACT_K` the contact key is reached; it is then HELD for

@@ -3060,7 +3060,7 @@ export const GATES = [
       const camRows = [];
       /* the kit's triangles in the head's screen box, nearer than the head */
       const idx = g.index;
-      const raster = (headW, hr) => {
+      const raster = (headW, hr, only = 7) => {
         const pts = (x) => x.project(cam);
         const hc = headW.clone(); const hcn = pts(hc.clone());
         const sc = new V3().copy(headW); sc.y += hr;
@@ -3076,7 +3076,7 @@ export const GATES = [
           const i0 = idx.getX(t), i1 = idx.getX(t + 1), i2 = idx.getX(t + 2);
           const hide = kit.hidden | 0;
           if (Math.round(P.getX(i0)) & hide) continue;
-          if (!((Math.round(P.getX(i0)) & 7))) continue;
+          if (!((Math.round(P.getX(i0)) & only))) continue;
           proj(i0, vA); proj(i1, vB); proj(i2, vC);
           if (vA.w > camD && vB.w > camD && vC.w > camD) continue;
           if (Math.max(vA.x, vB.x, vC.x) < box.x0 || Math.min(vA.x, vB.x, vC.x) > box.x1 || Math.max(vA.y, vB.y, vC.y) < box.y0 || Math.min(vA.y, vB.y, vC.y) > box.y1) continue;
@@ -3113,7 +3113,12 @@ export const GATES = [
           const R = an.skull ? an.skull(a, b) : null;
           const hr = R ? Math.max(R.x, R.y, R.z) : 0.12;
           if (R) hW.copy(a).applyMatrix4(p.model.matrixWorld);
-          camRows.push({ yaw: y, moving, boomPen: +boomPen.toFixed(3), headCover: +raster(hW, hr).toFixed(3) });
+          const cover = raster(hW, hr);
+          /* who covers it, and from where (0 = the lens straight behind her) */
+          const camRel = Math.atan2(cam.position.x - p.position.x, cam.position.z - p.position.z) - (p.heading ?? 0);
+          const rel = ((camRel * 180 / Math.PI + 180 + 720) % 360) - 180;
+          camRows.push({ yaw: y, moving, boomPen: +boomPen.toFixed(3), headCover: +cover.toFixed(3), relDeg: +((rel + 540) % 360 - 180).toFixed(0),
+            by: cover > 0.02 ? { lance: +raster(hW, hr, 1).toFixed(3), bow: +raster(hW, hr, 2).toFixed(3), quiver: +raster(hW, hr, 4).toFixed(3) } : null });
         }
       }
       keys.clear(); p.velocity.set(0, 0, 0);
