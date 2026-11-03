@@ -93,6 +93,10 @@ class HeldLance {
   _releaseInner() {
     if (!this.inner) return;
     this.inner.removeFromParent();
+    /* the Player's fade pass cloned this mesh's material: give the clone back */
+    const meshes = [];
+    this.inner.traverse((o) => { if (o.isMesh) meshes.push(o); });
+    this.ctx.player?.releaseMaterialsOf?.(meshes);
     disposeTree(this.inner);
     this.inner = null;
   }

@@ -1599,7 +1599,7 @@ export const GATES = [
         const elbow = Math.max(...live.map((x) => x.elbow ?? -9));
         const worstHair = live.reduce((b, x) => ((x.hair ?? 9) < (b.hair ?? 9) ? x : b), live[0]);
 
-        const two = live.filter((x) => typeof x.lh === 'number' && x.lh <= 0.05
+        const two = live.filter((x) => typeof x.lp === 'number' && x.lp <= 0.05
           && typeof x.toSpineL === 'number');
         const spineL = two.length ? Math.min(...two.map((x) => x.toSpineL)) : null;
         const spineLAll = live.filter((x) => typeof x.toSpineL === 'number');
@@ -1749,7 +1749,7 @@ export const GATES = [
         for (let side = 0; side < 2; side++) {
           const e = f[side], w = e.world;
 
-          const on = e.planted && (w.y - Tj.getHeight(w.x, w.z)) <= 0.012;
+          const on = e.planted && (w.y - Tj.getHeight(w.x, w.z) - (__CTX__.player.animator._ballRest || 0)) <= 0.012;
           const win = W.open[e.name];
 
           if (on) {
@@ -1952,7 +1952,7 @@ export const GATES = [
         const hitch = fdt > 45 && fdt > 2.2 * stEma;
         for (const f of an.debugFeet()) {
           const h = T.getHeight(f.world.x, f.world.z);
-          const on = f.planted && (f.world.y - h) <= 0.012;
+          const on = f.planted && (f.world.y - h - (__CTX__.player.animator._ballRest || 0)) <= 0.012;
           if (!f.planted) stLift = Math.max(stLift, f.world.y - h);
           const w = stOpen[f.name];
           if (on) {
@@ -2875,7 +2875,9 @@ export const GATES = [
         if (r.aboveSh > st.aboveShMax) st.aboveShMax = r.aboveSh;
         if (r.over > st.overMax) { st.overMax = r.over; st.overAt = tag + ' ' + phase; }
         if (r.behind > st.behindAnyMax) st.behindAnyMax = r.behind;
-        if (r.aboveSh > 0) {
+        /* M4: the band has to evaluate. Elbow within 0.12 m under the shoulder and up:
+         * more frames graded than Round 4's "over the shoulder", the same 0.10 m bar. */
+        if (r.aboveSh > 0 || (r.aboveSh > -0.12 && (an.melee?._dbg?.w ?? 0) >= 0.5)) {
           st.bandFrames++;
           if (r.behind > st.behindBandMax) { st.behindBandMax = r.behind; st.behindAt = tag + ' ' + phase; }
         }

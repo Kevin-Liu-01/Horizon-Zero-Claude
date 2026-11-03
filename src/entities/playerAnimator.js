@@ -132,6 +132,8 @@ const _spAcc = new THREE.Quaternion();
 // _pushOutOfCapsule's OWN scratch — the caller hands it `_spC` as the point to
 // move, so it may not borrow any `_sp*` vector (see the note on the method).
 const _cp0 = new THREE.Vector3();
+/** `_segDistN`'s result: a number `_springs` reads without a boxed return. */
+const _spNum = new Float64Array(1);
 const _cp1 = new THREE.Vector3();
 const _cp2 = new THREE.Vector3();
 // W0b targeted fix 2: the M10 fallback's candidates (`_springs`) and the draw
@@ -5920,10 +5922,12 @@ export class PlayerAnimator {
       { a: new THREE.Vector3(), b: new THREE.Vector3(), r: 0.105 },
       { a: new THREE.Vector3(), b: new THREE.Vector3(), r: 0.105 },
     ]);
-    const at = (e, out) => { if (e) out.setFromMatrixPosition(e.bone.matrixWorld); };
-    at(b.pelvis, C[0].a); at(b.head, C[0].b);
-    at(b.thighL, C[1].a); at(b.calfL, C[1].b);
-    at(b.thighR, C[2].a); at(b.calfR, C[2].b);
+    if (b.pelvis) C[0].a.setFromMatrixPosition(b.pelvis.bone.matrixWorld);
+    if (b.head) C[0].b.setFromMatrixPosition(b.head.bone.matrixWorld);
+    if (b.thighL) C[1].a.setFromMatrixPosition(b.thighL.bone.matrixWorld);
+    if (b.calfL) C[1].b.setFromMatrixPosition(b.calfL.bone.matrixWorld);
+    if (b.thighR) C[2].a.setFromMatrixPosition(b.thighR.bone.matrixWorld);
+    if (b.calfR) C[2].b.setFromMatrixPosition(b.calfR.bone.matrixWorld);
     return C;
   }
 
@@ -5956,6 +5960,28 @@ export class PlayerAnimator {
   }
 
   /** W0b targeted fix 2: a point's distance to the nearer of the M10 capsule's `n` axis segments (clobbers _cp0 / _cp1). */
+  /** `_segDist` / `_hcMinAxis` with the result in `_spNum[0]`: `_springs` must not
+   *  box a double per link (R48 c: the function's bar is 4 KB/s). */
+  _segDistN(p, a, b) {
+    _cp0.subVectors(b, a);
+    const l2 = _cp0.x * _cp0.x + _cp0.y * _cp0.y + _cp0.z * _cp0.z;
+    _cp1.subVectors(p, a);
+    let t = l2 > 1e-9 ? (_cp1.x * _cp0.x + _cp1.y * _cp0.y + _cp1.z * _cp0.z) / l2 : 0;
+    t = t < 0 ? 0 : t > 1 ? 1 : t;
+    _cp1.x -= _cp0.x * t; _cp1.y -= _cp0.y * t; _cp1.z -= _cp0.z * t;
+    _spNum[0] = Math.sqrt(_cp1.x * _cp1.x + _cp1.y * _cp1.y + _cp1.z * _cp1.z);
+  }
+
+  _hcMinAxisN(p, H, n) {
+    let d = Infinity;
+    for (let q = 0; q < n; q++) {
+      this._segDistN(p, H.caps[q].a, H.caps[q].b);
+      const e = _spNum[0];
+      if (e < d) d = e;
+    }
+    _spNum[0] = d;
+  }
+
   _hcMinAxis(p, H, n) {
     let d = Infinity;
     for (let q = 0; q < n; q++) { const e = this._segDist(p, H.caps[q].a, H.caps[q].b); if (e < d) d = e; }
@@ -6048,7 +6074,7 @@ export class PlayerAnimator {
     // nor the MAX_SUB loop below can bind under the current loop; see the note
     // above MAX_SUB. Sanitising still matters: every force below multiplies
     // into a quaternion the skinned mesh reads.
-    dt = Number.isFinite(dt) ? clamp(dt, 1 / 480, 0.05) : 1 / 60;
+    dt = Number.isFinite(dt) ? (dt < 1 / 480 ? 1 / 480 : dt > 0.05 ? 0.05 : dt) : 1 / 60;
     t = Number.isFinite(t) ? t : 0;
     speed = Number.isFinite(speed) ? speed : 0;
     moveW = Number.isFinite(moveW) ? moveW : 0;
@@ -6117,8 +6143,8 @@ export class PlayerAnimator {
       for (let j = 0; j < N; j++) {
         const bone = c.links[j].bone;
         _spQ.multiply(bone.quaternion);              // Wanim[j] = Wanim[j-1] * L
-        c.wq[j * 4] = _spQ.x; c.wq[j * 4 + 1] = _spQ.y;
-        c.wq[j * 4 + 2] = _spQ.z; c.wq[j * 4 + 3] = _spQ.w;
+        c.wq[j * 4] = _spQ._x; c.wq[j * 4 + 1] = _spQ._y;
+        c.wq[j * 4 + 2] = _spQ._z; c.wq[j * 4 + 3] = _spQ._w;
         _spA.setFromMatrixPosition(bone.matrixWorld);
         anim[j * 3] = _spA.x; anim[j * 3 + 1] = _spA.y; anim[j * 3 + 2] = _spA.z;
       }
@@ -6172,7 +6198,8 @@ export class PlayerAnimator {
       // walk, x(1 + runFl) at a sprint). The extra phase is accumulated per
       // chain (`flX`), so the wave never jumps; standing it adds nothing and
       // the idle's tail is the trade wind's alone
-      const rf = cls.runFl > 0 ? cls.runFl * clamp((speed - 1) / 5.8, 0, 1) : 0;
+      const rfk = (speed - 1) / 5.8;
+      const rf = cls.runFl > 0 ? cls.runFl * (rfk < 0 ? 0 : rfk > 1 ? 1 : rfk) : 0;
       if (rf > 0) c.flX += dt * rf;
       const tf = t + c.flX;
       const flA = cw > 0 ? (this.wind.flutter || 0) * windS * (1 + rf) : 0, sd = c.seed;
@@ -6210,14 +6237,26 @@ export class PlayerAnimator {
       for (let j = 0; j < N; j++) {
         const i0 = j * 3, i1 = i0 + 3;
         // animated direction of this segment, carried by the parent's rotation
-        _spB.set(anim[i1] - anim[i0], anim[i1 + 1] - anim[i0 + 1], anim[i1 + 2] - anim[i0 + 2]);
-        if (_spB.lengthSq() < 1e-12) _spB.set(0, -1, 0); else _spB.normalize();
+        {
+          const bx = anim[i1] - anim[i0], by = anim[i1 + 1] - anim[i0 + 1], bz = anim[i1 + 2] - anim[i0 + 2];
+          const b2 = bx * bx + by * by + bz * bz;
+          if (b2 < 1e-12) { _spB.x = 0; _spB.y = -1; _spB.z = 0; } else {
+            const bi = 1 / Math.sqrt(b2);
+            _spB.x = bx * bi; _spB.y = by * bi; _spB.z = bz * bi;
+          }
+        }
         _spB.applyQuaternion(_spAcc);                      // reference direction
         // where the free integration wants the child
-        _spA.set(pos[i1] - pos[i0], pos[i1 + 1] - pos[i0 + 1], pos[i1 + 2] - pos[i0 + 2]);
-        if (_spA.lengthSq() < 1e-12) _spA.copy(_spB); else _spA.normalize();
+        {
+          const ax = pos[i1] - pos[i0], ay = pos[i1 + 1] - pos[i0 + 1], az = pos[i1 + 2] - pos[i0 + 2];
+          const a2 = ax * ax + ay * ay + az * az;
+          if (a2 < 1e-12) { _spA.x = _spB.x; _spA.y = _spB.y; _spA.z = _spB.z; } else {
+            const ai = 1 / Math.sqrt(a2);
+            _spA.x = ax * ai; _spA.y = ay * ai; _spA.z = az * ai;
+          }
+        }
         // bend limit, relative to the parent's achieved rotation
-        const dot = _spA.dot(_spB);
+        const dot = _spA.x * _spB.x + _spA.y * _spB.y + _spA.z * _spB.z;
         if (dot < cosMax) {
           if (dot < -0.9999) _spA.copy(_spB);
           else {
@@ -6229,16 +6268,22 @@ export class PlayerAnimator {
           }
         }
         // place the child at the bind segment length, then bounce it off the body
-        _spC.set(pos[i0], pos[i0 + 1], pos[i0 + 2]).addScaledVector(_spA, c.seg[j]);
+        { const sg = c.seg[j]; _spC.x = pos[i0] + _spA.x * sg; _spC.y = pos[i0 + 1] + _spA.y * sg; _spC.z = pos[i0 + 2] + _spA.z * sg; }
         if (cls.collide) {
           const nc = cls.collide === 2 ? 3 : 1;
           // the child's ANIMATED rest, so a capsule can only stop a strand
           // sinking further in than the artist drew it (see _pushOutOfCapsule)
-          _spE.set(anim[i1], anim[i1 + 1], anim[i1 + 2]);
+          _spE.x = anim[i1]; _spE.y = anim[i1 + 1]; _spE.z = anim[i1 + 2];
           for (let q = 0; q < nc; q++) this._pushOutOfCapsule(_spC, caps[q], _spE);
-          _spA.set(_spC.x - pos[i0], _spC.y - pos[i0 + 1], _spC.z - pos[i0 + 2]);
-          if (_spA.lengthSq() < 1e-12) _spA.copy(_spB); else _spA.normalize();
-          _spC.set(pos[i0], pos[i0 + 1], pos[i0 + 2]).addScaledVector(_spA, c.seg[j]);
+          {
+            const ax = _spC.x - pos[i0], ay = _spC.y - pos[i0 + 1], az = _spC.z - pos[i0 + 2];
+            const a2 = ax * ax + ay * ay + az * az;
+            if (a2 < 1e-12) { _spA.x = _spB.x; _spA.y = _spB.y; _spA.z = _spB.z; } else {
+              const ai = 1 / Math.sqrt(a2);
+              _spA.x = ax * ai; _spA.y = ay * ai; _spA.z = az * ai;
+            }
+          }
+          { const sg = c.seg[j]; _spC.x = pos[i0] + _spA.x * sg; _spC.y = pos[i0 + 1] + _spA.y * sg; _spC.z = pos[i0 + 2] + _spA.z * sg; }
         }
         if (hcN) {
           // push out, put the particle back at its segment length, and repeat:
@@ -6253,9 +6298,15 @@ export class PlayerAnimator {
             if (!hit) { inside = false; break; }
             inside = true;
             if (it === 0) H.pushes++;
-            _spA.set(_spC.x - pos[i0], _spC.y - pos[i0 + 1], _spC.z - pos[i0 + 2]);
-            if (_spA.lengthSq() < 1e-12) _spA.copy(_spB); else _spA.normalize();
-            _spC.set(pos[i0], pos[i0 + 1], pos[i0 + 2]).addScaledVector(_spA, c.seg[j]);
+            {
+              const ax = _spC.x - pos[i0], ay = _spC.y - pos[i0 + 1], az = _spC.z - pos[i0 + 2];
+              const a2 = ax * ax + ay * ay + az * az;
+              if (a2 < 1e-12) { _spA.x = _spB.x; _spA.y = _spB.y; _spA.z = _spB.z; } else {
+                const ai = 1 / Math.sqrt(a2);
+                _spA.x = ax * ai; _spA.y = ay * ai; _spA.z = az * ai;
+              }
+            }
+            { const sg = c.seg[j]; _spC.x = pos[i0] + _spA.x * sg; _spC.y = pos[i0 + 1] + _spA.y * sg; _spC.z = pos[i0 + 2] + _spA.z * sg; }
           }
           if (inside) {
             // still in after four passes: the best place on the parent's
@@ -6265,30 +6316,39 @@ export class PlayerAnimator {
             // the candidates are now straight away from each segment's
             // nearest point and from their mean, and the one farthest from
             // BOTH axes wins (where the passes left it, if that is farther)
-            _spE.set(pos[i0], pos[i0 + 1], pos[i0 + 2]);
-            let bestD = this._hcMinAxis(_spC, H, hcN);
+            _spE.x = pos[i0]; _spE.y = pos[i0 + 1]; _spE.z = pos[i0 + 2];
+            this._hcMinAxisN(_spC, H, hcN);
+            let bestD = _spNum[0];
             _hcB.copy(_spC);
-            _spD.set(0, 0, 0);
+            _spD.x = 0; _spD.y = 0; _spD.z = 0;
             for (let q = 0; q <= hcN; q++) {
               if (q < hcN) {
-                this._segDist(_spE, H.caps[q].a, H.caps[q].b);   // leaves parent - axis point in _cp1
-                if (_cp1.lengthSq() < 1e-10) continue;
+                this._segDistN(_spE, H.caps[q].a, H.caps[q].b);   // leaves parent - axis point in _cp1
+                if (_cp1.x * _cp1.x + _cp1.y * _cp1.y + _cp1.z * _cp1.z < 1e-10) continue;
                 _hcU.copy(_cp1).normalize();
                 _spD.add(_hcU);
               } else {
-                if (_spD.lengthSq() < 1e-10) continue;
+                if (_spD.x * _spD.x + _spD.y * _spD.y + _spD.z * _spD.z < 1e-10) continue;
                 _hcU.copy(_spD).normalize();
               }
-              _hcC.copy(_spE).addScaledVector(_hcU, c.seg[j]);
-              const dc = this._hcMinAxis(_hcC, H, hcN);
+              { const sg = c.seg[j]; _hcC.x = _spE.x + _hcU.x * sg; _hcC.y = _spE.y + _hcU.y * sg; _hcC.z = _spE.z + _hcU.z * sg; }
+              this._hcMinAxisN(_hcC, H, hcN);
+              const dc = _spNum[0];
               if (dc > bestD) { bestD = dc; _hcB.copy(_hcC); }
             }
             _spC.copy(_hcB);
-            _spA.subVectors(_spC, _spE);
-            if (_spA.lengthSq() < 1e-12) _spA.copy(_spB); else _spA.normalize();
+            {
+              const ax = _spC.x - _spE.x, ay = _spC.y - _spE.y, az = _spC.z - _spE.z;
+              const a2 = ax * ax + ay * ay + az * az;
+              if (a2 < 1e-12) { _spA.x = _spB.x; _spA.y = _spB.y; _spA.z = _spB.z; } else {
+                const ai = 1 / Math.sqrt(a2);
+                _spA.x = ax * ai; _spA.y = ay * ai; _spA.z = az * ai;
+              }
+            }
           }
           for (let q = 0; q < hcN; q++) {
-            const d = this._segDist(_spC, H.caps[q].a, H.caps[q].b);
+            this._segDistN(_spC, H.caps[q].a, H.caps[q].b);
+            const d = _spNum[0];
             if (d < H.minAxis) { H.minAxis = d; H.minCi = ci; H.minJ = j + 1; }
           }
         }
@@ -6301,9 +6361,15 @@ export class PlayerAnimator {
         if (SC.on) {
           for (let it = 0; it < 2; it++) {
             if (!this._pushOutOfCapsule(_spC, SC, null)) break;
-            _spA.set(_spC.x - pos[i0], _spC.y - pos[i0 + 1], _spC.z - pos[i0 + 2]);
-            if (_spA.lengthSq() < 1e-12) _spA.copy(_spB); else _spA.normalize();
-            _spC.set(pos[i0], pos[i0 + 1], pos[i0 + 2]).addScaledVector(_spA, c.seg[j]);
+            {
+              const ax = _spC.x - pos[i0], ay = _spC.y - pos[i0 + 1], az = _spC.z - pos[i0 + 2];
+              const a2 = ax * ax + ay * ay + az * az;
+              if (a2 < 1e-12) { _spA.x = _spB.x; _spA.y = _spB.y; _spA.z = _spB.z; } else {
+                const ai = 1 / Math.sqrt(a2);
+                _spA.x = ax * ai; _spA.y = ay * ai; _spA.z = az * ai;
+              }
+            }
+            { const sg = c.seg[j]; _spC.x = pos[i0] + _spA.x * sg; _spC.y = pos[i0 + 1] + _spA.y * sg; _spC.z = pos[i0 + 2] + _spA.z * sg; }
           }
         }
         // Constraint velocity correction (position-based dynamics), CLAMPED.
@@ -6312,17 +6378,18 @@ export class PlayerAnimator {
         // still, and the chain saturates its bend limit and stays there. The
         // clamp keeps the constraint able to absorb a real impact without ever
         // being a power source.
-        const cvx = clamp((_spC.x - pos[i1]) * invDt * 0.5, -PBD_V_MAX, PBD_V_MAX);
-        const cvy = clamp((_spC.y - pos[i1 + 1]) * invDt * 0.5, -PBD_V_MAX, PBD_V_MAX);
-        const cvz = clamp((_spC.z - pos[i1 + 2]) * invDt * 0.5, -PBD_V_MAX, PBD_V_MAX);
+        const pvx = (_spC.x - pos[i1]) * invDt * 0.5, pvy = (_spC.y - pos[i1 + 1]) * invDt * 0.5, pvz = (_spC.z - pos[i1 + 2]) * invDt * 0.5;
+        const cvx = pvx < -PBD_V_MAX ? -PBD_V_MAX : pvx > PBD_V_MAX ? PBD_V_MAX : pvx;
+        const cvy = pvy < -PBD_V_MAX ? -PBD_V_MAX : pvy > PBD_V_MAX ? PBD_V_MAX : pvy;
+        const cvz = pvz < -PBD_V_MAX ? -PBD_V_MAX : pvz > PBD_V_MAX ? PBD_V_MAX : pvz;
         vel[i1] += cvx; vel[i1 + 1] += cvy; vel[i1 + 2] += cvz;
         pos[i1] = _spC.x; pos[i1 + 1] = _spC.y; pos[i1 + 2] = _spC.z;
 
         // ---- write back: rotate the bone from its reference to the solved dir
         _spQ2.setFromUnitVectors(_spB, _spA);
-        if (Math.abs(_spQ2.w) < 0.999999) {
+        if (Math.abs(_spQ2._w) < 0.999999) {
           // the bone's ACTUAL world orientation right now = qAcc * Wanim[j]
-          _spQ.set(c.wq[j * 4], c.wq[j * 4 + 1], c.wq[j * 4 + 2], c.wq[j * 4 + 3]);
+          _spQ._x = c.wq[j * 4]; _spQ._y = c.wq[j * 4 + 1]; _spQ._z = c.wq[j * 4 + 2]; _spQ._w = c.wq[j * 4 + 3];
           _spQ.premultiply(_spAcc);
           _spQ3.copy(_spQ).invert().multiply(_spQ2).multiply(_spQ);
           c.links[j].bone.quaternion.multiply(_spQ3);

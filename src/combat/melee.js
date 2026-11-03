@@ -707,6 +707,7 @@ export class Melee {
   holsterLance(fast = false) {
     if (this.stance === 'holstered' || this.stance === 'holster') return;
     if (this.active) return;
+    this._keyGuard = false;
     this._holsterDur = fast ? HOLSTER_T_AIM : HOLSTER_T;
     this._drawT = this.stance === 'draw'
       ? Math.max(0, this._holsterDur * (1 - this._drawT / DRAW_T)) : 0;
@@ -792,7 +793,7 @@ export class Melee {
       this._readyT -= realDt;
       /* a sprint does not carry a guard: the arms go back to running beside her
        * body (Kevin's bar) unless a caller asked to hold it */
-      const running = (p?.moveSpeed ?? 0) > SPRINT_STOW && !this._charging && !this._queued && this._readyT <= READY_HOLD;
+      const running = (p?.moveSpeed ?? 0) > SPRINT_STOW && !this._charging && !this._queued && !this._keyGuard && this._readyT <= READY_HOLD;
       this._sprintT = running ? (this._sprintT || 0) + realDt : 0;
       if (this._readyT <= 0 || this._sprintT > SPRINT_STOW_T) this.holsterLance();
     } else if (this.stance === 'swing') {
@@ -1489,7 +1490,7 @@ export class Melee {
     // same path a real key press does (only `input.press()` fires handlers).
     const keyNow = playing && !wheelOpen && !!ctx.input?.keys?.has?.(MELEE_KEY);
     if (keyNow && !this._keyWas && !aiming && (p?.health ?? 1) > 0) {
-      if (this.stance === 'holstered' || this.stance === 'holster') this.drawLance();
+      if (this.stance === 'holstered' || this.stance === 'holster') { this.drawLance(); this._keyGuard = true; }
       else this.holsterLance();
     }
     this._keyWas = keyNow;
@@ -2421,6 +2422,7 @@ export class Melee {
    */
   dispose() {
     try { this.ctx.player?.animator?.disposeMelee?.(); } catch { /* torn down */ }
+    this.lance?.dispose?.();
     this.layer = null;
     this._queued = null;
     this._sneak.disabled = true;

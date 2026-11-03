@@ -141,6 +141,9 @@ const _ahB = new THREE.Vector3();
 const _ahG = new THREE.Vector3();
 const _ahQi = new THREE.Quaternion();
 const _ident = new THREE.Quaternion();
+const _hTab = new THREE.Vector3();
+const _hOff = new THREE.Vector3();
+const _hOffD = new THREE.Vector3();
 /** The identity, as a value (never mutated). */
 function _qi() { return _ident; }
 
@@ -274,15 +277,15 @@ const STANCE_ENV = (cu) => (
 const BEATS = [
   {
     id: 'light-1', clip: [0.10, 0.62], mirror: false, clipW: 0.20,
-    cock: { hand: [-0.24, 1.12, -0.22], shaft: [0.38, 0.28, 0.88], lh: [0.2, 0.95, 0.2], lhW: 1, lhOn: 0.46, yaw: -0.50, pitch: 0.06, roll: 0.05 },
+    cock: { hand: [-0.24, 1.12, -0.22], shaft: [0.40, 0.42, 0.81], lh: [0.2, 0.95, 0.2], lhW: 1, lhOn: 0.44, yaw: -0.50, pitch: 0.04, roll: 0.05 },
     contact: { hand: [-0.13, 1.10, 0.33], shaft: [0.10, -0.04, 0.995], lh: [0.2, 0.95, 0.2], lhW: 1, lhOn: 0.30, yaw: -0.12, pitch: 0.46, roll: -0.04 },
-    follow: { hand: [-0.18, 1.02, 0.30], shaft: [0.30, -0.34, 0.89], lh: [0.2, 0.95, 0.2], lhW: 1, lhOn: 0.32, yaw: -0.06, pitch: 0.36, roll: -0.08 },
+    follow: { hand: [-0.18, 1.02, 0.30], shaft: [0.24, -0.42, 0.87], lh: [0.2, 0.95, 0.2], lhW: 1, lhOn: 0.34, yaw: -0.06, pitch: 0.36, roll: -0.08 },
   },
   {
     id: 'light-2', clip: [0.10, 0.62], mirror: true, clipW: 0.20,
-    cock: { hand: [-0.27, 1.14, 0.08], shaft: [0.76, 0.16, 0.63], lh: [0.2, 0.95, 0.2], lhW: 1, lhOn: 0.44, yaw: 0.42, pitch: 0.12, roll: 0.04 },
+    cock: { hand: [-0.30, 1.20, 0.00], shaft: [0.76, 0.20, 0.62], lh: [0.2, 0.95, 0.2], lhW: 1, lhOn: 0.44, yaw: 0.42, pitch: 0.12, roll: 0.04 },
     contact: { hand: [-0.20, 1.14, 0.26], shaft: [-0.14, 0.02, 0.99], lh: [0.2, 0.95, 0.2], lhW: 1, lhOn: 0.30, yaw: -0.16, pitch: 0.30, roll: 0.04 },
-    follow: { hand: [-0.20, 1.04, 0.16], shaft: [-0.66, -0.12, 0.74], lh: [0.2, 0.95, 0.2], lhW: 1, lhOn: 0.28, yaw: -0.50, pitch: 0.24, roll: 0.06 },
+    follow: { hand: [-0.24, 0.98, 0.12], shaft: [-0.66, -0.20, 0.72], lh: [0.2, 0.95, 0.2], lhW: 1, lhOn: 0.28, yaw: -0.50, pitch: 0.26, roll: 0.06 },
   },
   {
     id: 'light-3', clip: [0.05, 0.80], mirror: false, clipW: 0.24,
@@ -455,7 +458,7 @@ const SHAFT_CLEAR = 0.150;
  * with the braid already clear at 0.113). 0.095 is above A104's 0.05 hair bar
  * and below the axial target, so the skull and the spine win ties again.
  */
-const HAIR_CLEAR = 0.095;
+const HAIR_CLEAR = 0.07;
 /**
  * How far the free LEFT arm's axis (upper arm, forearm + hand) is kept from
  * the stowed bow's limb axis, metres (round 5 fix pass 1, `_clearLeftArmOfBow`).
@@ -506,7 +509,12 @@ const ELBOW_ROLL = 1.9;
  * The STANCE legs/pelvis drop is already 0 at a jog (`_stanceW`), so nothing
  * there stacks.
  */
-const JOG_TORSO_CAP = 40 * Math.PI / 180;
+const JOG_TORSO_CAP = 30 * Math.PI / 180;
+const STRIDE_FWD = 0.15;
+/** How much of the shaft's rise a cock keeps on the move (y of the unit shaft). */
+const STRIDE_SHAFT_RISE = 0.18;
+/** The most the arm guards' push may change in one animator step (m). */
+const GUARD_STEP = 0.055;
 /** The stride weight's speed ramp (m/s): above a standing swing's step-in
  *  drive (1.15), full by a slow jog. See `_stridePitch`. */
 const STRIDE_V0 = 1.6;
@@ -550,7 +558,7 @@ const HEAD_STAB_MAX = 0.055;
 const ELB_OVER_HEAD = -0.01;
 const ELB_BEHIND = 0.07;
 /** "Above the shoulder" for the plane clause: elbow.y > shoulder.y + this. */
-const ELB_BAND = -0.03;
+const ELB_BAND = -0.12;
 /** Elbow-circle samples the guard searches (every 10 deg). */
 const ELB_SAMPLES = 36;
 /** How much of the upper body the draw turns TOWARD the drawing hand: + is
@@ -603,6 +611,8 @@ const TIP_GROUND_CLEAR = 0.10;
 /** R9: the drive forearm's axis kept this far off her pelvis->neck axis on
  *  every swing frame (contact with the belly mesh starts at about 0.19). */
 const FORE_CLEAR = 0.15;
+/** The haft's daylight to the skull's largest semi-axis (m). */
+const SKULL_CLEAR = 0.04;
 /** S5: the forearm/fist capsule radius, and the daylight kept to a hull. */
 const ARM_R = 0.05;
 const ARM_CLEAR = 0.06;
@@ -880,6 +890,7 @@ export class MeleeLayer {
     /** where on the haft the hand actually took it (fraction from the butt) */
     this._grabFrac = GRAB_FRAC;
     this._recoil = 0;
+    this._guardOff = new THREE.Vector3();
     this._windFrom = null;
     this._windOn = false;
     this._prevBeat = null;
@@ -1176,8 +1187,8 @@ export class MeleeLayer {
       // residual — and therefore the duration — can finally be measured
       const span = this._carrySpan();
       this._carryDur = clamp(span / CARRY_RATE, CARRY_T, CARRY_MAX);
-      this._dbg.carrySpan = +span.toFixed(3);
-      this._dbg.carryDur = +this._carryDur.toFixed(3);
+      this._dbg.carrySpan = span;
+      this._dbg.carryDur = this._carryDur;
     }
     const k = this._carryB;
     g.position.lerp(this._carryP, 1 - k);
@@ -1304,7 +1315,7 @@ export class MeleeLayer {
     this.w = damp(this.w, want, stance === 'holstered' ? 9 : (stance === 'draw' ? 30 : 16), dt);
     if (want === 0 && this.w < 0.01) this.w = 0;
     const w = this.w;
-    D.w = +w.toFixed(3);
+    D.w = w;
 
     /* --- swing direction: melee aims down the camera, so the pose does too - */
     const wantYaw = clamp(st?.aimYaw ?? 0, -0.7, 0.7);
@@ -1314,6 +1325,7 @@ export class MeleeLayer {
       // `_stance` never ran, so withdraw last frame's pelvis offset rather than
       // leaving the animator adding a stale one for ever
       this.pelvisDx = 0; this.pelvisDy = 0; this._stanceW = 0; this._stanceA = 0;
+      this._guardOff.set(0, 0, 0);
       this._clipWeights(null, 0, 0); this._settleLance(stance, st); return;
     }
 
@@ -1390,7 +1402,10 @@ export class MeleeLayer {
      * 6, R7): reach comes from the spine and the step (canon, R3), so when
      * the aimed hull point is beyond this beat's reach the spine pitches in by
      * up to `AIM_LEAN_MAX` over the release and the contact. */
-    const pitch = this._stridePitch(u.pitch * w + (stance === 'swing' ? this._aimLean(st, beat, w) : 0), dt);
+    /* the guard's forward lean is for standing: on the move the stride already
+     * carries the trunk, and the lance rides lower and closer */
+    const guardK = stance === 'swing' ? 1 : 1 - 0.8 * (this._strideW || 0);
+    const pitch = this._stridePitch(u.pitch * w * guardK + (stance === 'swing' ? this._aimLean(st, beat, w) : 0), dt);
     an._rotL(b.spine1, Y_AXIS, yaw * 0.30);
     an._rotL(b.spine2, Y_AXIS, yaw * 0.36);
     an._rotL(b.spine3, Y_AXIS, yaw * 0.34);
@@ -1426,6 +1441,14 @@ export class MeleeLayer {
     this._guardOn = stance === 'ready' || stance === 'swing'
       || (this._held && (stance === 'draw' || stance === 'holster'));
     this._strideHand(st, stance);
+    /* A table is written over a standing trunk; a stride carries the chest and
+     * the head well forward of it (0.2 m at a jog). The hands go with them. */
+    if ((this._strideW || 0) > 0.01 && (stance === 'swing' || stance === 'ready')) {
+      _hand.z += STRIDE_FWD * this._strideW;
+      _lh.z += STRIDE_FWD * this._strideW;
+      const rise = 1 - (1 - STRIDE_SHAFT_RISE) * this._strideW;
+      if (_shaft.y > rise) { _shaft.y = rise; _shaft.normalize(); }
+    }
     this._solveRight(w, u);
     /* THE CONTACT LANDS WHERE IT WAS AIMED (round 6, R7): the aim above bent
      * the beat's KEY toward the target, but the arm does not reach every key
@@ -1468,7 +1491,7 @@ export class MeleeLayer {
       if ((this._pullNow || 0) < 0.02) {
         this._reachSeen[i] = this._reachSeen[i] > 0 ? this._reachSeen[i] * 0.5 + r * 0.5 : r;
       }
-      D.reachSeen = +r.toFixed(3);
+      D.reachSeen = r;
     }
   }
 
@@ -1606,8 +1629,8 @@ export class MeleeLayer {
     // NOT `D.stance` — that is the melee STATE ('swing' / 'ready' / 'holstered')
     // and every gate keys its swing frames off it (clobbering it read as "0
     // swing frames" on A102 and 0 deg of torso on A105).
-    D.legW = +this._stanceW.toFixed(3);
-    D.legAmp = +a.toFixed(3);
+    D.legW = this._stanceW;
+    D.legAmp = a;
     D.legBeat = live ? beat.id : (key ? 'unwind' : null);
     if (!key || a <= 0.002) { this.pelvisDx = 0; this.pelvisDy = 0; return; }
     an._rot(b.thighL, X_AXIS, key.thighL * a);
@@ -1647,7 +1670,7 @@ export class MeleeLayer {
     const p = this.ctx.player;
     const want = p && !p.dodging ? smoothstep(p.moveSpeed ?? 0, STRIDE_V0, STRIDE_V1) : 0;
     const mv = this._strideW = damp(this._strideW || 0, want, 10, dt);
-    D.strideW = +mv.toFixed(3);
+    D.strideW = mv;
     if (mv < 0.01 || !b.pelvis || !b.head) {
       D.strideLeanDeg = null; D.stridePitchCut = 0;
       return pitch;
@@ -1658,8 +1681,8 @@ export class MeleeLayer {
     const lean = Math.atan2(_b.z - _a.z, Math.max(1e-3, _b.y - _a.y));
     const over = lean + pitch - JOG_TORSO_CAP;
     const cut = over > 0 ? clamp(over, 0, Math.max(0, pitch + JOG_COUNTER_MAX)) * mv : 0;
-    D.strideLeanDeg = +(lean * 180 / Math.PI).toFixed(1);
-    D.stridePitchCut = +cut.toFixed(3);
+    D.strideLeanDeg = lean * 180 / Math.PI;
+    D.stridePitchCut = cut;
     return pitch - cut;
   }
 
@@ -1691,7 +1714,7 @@ export class MeleeLayer {
     if (over <= 0) return;
     const cut = over * mv * pw;
     _hand.y -= cut;
-    D.strideHandCut = +cut.toFixed(3);
+    D.strideHandCut = cut;
   }
 
   /**
@@ -1787,7 +1810,7 @@ export class MeleeLayer {
       steps++;
     }
     D.armHullBack = steps;
-    D.armHullLeft = +worst.toFixed(3);
+    D.armHullLeft = worst;
   }
 
   _armHullPasses(w, st) {
@@ -1822,7 +1845,7 @@ export class MeleeLayer {
       if (pass > 0) _ahX.copy(_ahDir);          // last pass's escape, to spot a flip
       const worst = this._armDeficit(hulls, M);
       if (pass === 0) {
-        D.armHullDeficit = +worst.toFixed(3);
+        D.armHullDeficit = worst;
         /* INSIDE IS NOT A TRIM (round 6, Oct 2). The strike's taper above is
          * for an arm that brushes the `ARM_CLEAR` margin on its way to the
          * aimed skin; a fist actually INSIDE a hull is not what any aim is
@@ -1836,9 +1859,9 @@ export class MeleeLayer {
         D.armHullFull = worst > ARM_CLEAR ? 1 : 0;
         if (worst > ARM_CLEAR) { pushMax = ARM_PUSH_MAX; retractMax = ARM_RETRACT_INSIDE; rollMax = Math.PI; }
       }
-      D.armHullLeft = +worst.toFixed(3);
+      D.armHullLeft = worst;
       if (worst <= 1e-4) return;
-      D.armHullT = +(this._ahT || 0).toFixed(2);
+      D.armHullT = this._ahT || 0;
       /* an ELBOW-end contact (a head that overhangs the arm) is not taken out
        * by moving the wrist — the IK keeps the elbow on its plane — so the
        * elbow is rolled round its circle about shoulder -> wrist instead (the
@@ -1868,7 +1891,7 @@ export class MeleeLayer {
         push = Math.min(retractMax - retrUsed, worst + 0.01, lx - 0.25);
         if (!(push > 0.002)) return;
         retrUsed += push;
-        D.armHullRetract = +retrUsed.toFixed(3);
+        D.armHullRetract = retrUsed;
       } else {
         _ahX.copy(_ahDir).applyQuaternion(_ahQi);      // world -> char
         push = Math.min(pushMax - pushUsed, (worst + 0.01) / Math.max(0.35, this._ahT));
@@ -1878,7 +1901,7 @@ export class MeleeLayer {
       _hand.addScaledVector(_ahX, push);
       an._ikArm('r', _hand, _pole, w, null);
       this._alignHaft(w);
-      D.armHullPush = +(D.armHullPush + push).toFixed(3);
+      D.armHullPush = D.armHullPush + push;
     }
   }
 
@@ -1977,7 +2000,7 @@ export class MeleeLayer {
     if (bestPhi === 0) return false;
     _eQ.setFromAxisAngle(_eAx, bestPhi);
     an._rotQL(b.upArmR, _eQ);
-    this._dbg.armHullRoll = +(bestPhi * 180 / Math.PI).toFixed(0);
+    this._dbg.armHullRoll = bestPhi * 180 / Math.PI;
     return true;
   }
 
@@ -2011,7 +2034,7 @@ export class MeleeLayer {
     const reach = this._reachSeen[i] > 0.3 ? this._reachSeen[i] : 1.6;
     const short = _eT.distanceTo(_eS) - reach;
     const lean = clamp(short * AIM_LEAN_GAIN, 0, AIM_LEAN_MAX) * aw;
-    this._dbg.aimLean = +lean.toFixed(3);
+    this._dbg.aimLean = lean;
     return lean;
   }
 
@@ -2045,7 +2068,7 @@ export class MeleeLayer {
     const over = _eU.length() - _eV.length();     // > 0: the tip would pass through
     _eU.normalize(); _eV.normalize();
     const ang = Math.acos(clamp(_eU.dot(_eV), -1, 1));
-    this._dbg.aimResidDeg = +(ang * 180 / Math.PI).toFixed(1);
+    this._dbg.aimResidDeg = ang * 180 / Math.PI;
     if (ang < 0.01 && !(Math.abs(over) > 0.02)) return false;
     _eQ.setFromUnitVectors(_eU, _eV);
     const k2 = cw * Math.min(1, AIM_RESID_MAX / Math.max(ang, 1e-3));
@@ -2078,7 +2101,7 @@ export class MeleeLayer {
       const e = this.an.b[CLEAR_BONES[i]];
       if (!e) continue;
       e.bone.getWorldPosition(_eU);
-      const d = segPoint(_eC, _eV, _eU);
+      segPointN(_eC, _eV, _eU); const d = _sgNum[0];
       if (d < best) best = d;
     }
     return best;
@@ -2122,7 +2145,7 @@ export class MeleeLayer {
   _strikeAim(st, beat, w) {
     const D = this._dbg;
     const want = this._aimPhaseW(st) * w;
-    D.aimW = +want.toFixed(3);
+    D.aimW = want;
     this._pullNow = 0;
     if (want < 1e-3) { D.aimPitchDeg = 0; D.aimYawDeg = 0; return; }
     const an = this.an, b = an.b;
@@ -2171,8 +2194,8 @@ export class MeleeLayer {
       _hand.addScaledVector(_eV, -pull / lv);
       this._pullNow += pull;
     }
-    D.aimPitchDeg = +(dp * 180 / Math.PI).toFixed(1);
-    D.aimYawDeg = +(dy * 180 / Math.PI).toFixed(1);
+    D.aimPitchDeg = dp * 180 / Math.PI;
+    D.aimYawDeg = dy * 180 / Math.PI;
   }
 
   /**
@@ -2197,7 +2220,7 @@ export class MeleeLayer {
     _eC.sub(_eD);
     const gy = terr.getHeight(_eT.x, _eT.z);
     const lack = gy + TIP_GROUND_CLEAR - _eT.y;
-    D.tipGroundLack = +lack.toFixed(3);
+    D.tipGroundLack = lack;
     if (!(lack > 0)) return;
     an._charOf(b.upArmR.bone, _eS);
     _eU.subVectors(_eC, _eS);
@@ -2213,7 +2236,7 @@ export class MeleeLayer {
     _eQ.setFromAxisAngle(_eAx, ang);
     _hand.sub(_eS).applyQuaternion(_eQ).add(_eS);
     _shaft.applyQuaternion(_eQ);
-    D.tipGroundLift = +(ang * 180 / Math.PI).toFixed(1);
+    D.tipGroundLift = ang * 180 / Math.PI;
   }
 
   /** The pose a holster starts from: last frame's solved wrist and grip axis
@@ -2279,7 +2302,7 @@ export class MeleeLayer {
     _eQ.setFromAxisAngle(_eAx, ang);
     _hand.sub(_eS).applyQuaternion(_eQ).add(_eS);
     _shaft.applyQuaternion(_eQ);
-    D.tipGroundResid = +(ang * 180 / Math.PI).toFixed(1);
+    D.tipGroundResid = ang * 180 / Math.PI;
     return true;
   }
 
@@ -2333,16 +2356,16 @@ export class MeleeLayer {
      * `grabReach` above and is a reach quality, not a discontinuity. */
     const changing = this._held === holstered;   // this frame flips the parent
     if (changing) this._preHandover(_hoPos);
-    if (holstered) { this._toBack(); this._poseHolstered(); }
+    if (holstered) { this._toBack(); if (stance !== 'holstered' || changing) this._poseHolstered(); }
     else { this._toHand(); this._poseHeld(frac); }
     if (changing) {
       this.lance.updateWorldMatrix(true, false);
       _a.set(0, 0, 0).applyMatrix4(this.lance.matrixWorld);
-      D.grabGap = +_a.distanceTo(_hoPos).toFixed(4);
+      D.grabGap = _a.distanceTo(_hoPos);
     }
-    D.carryBlend = +this._carryB.toFixed(3);
+    D.carryBlend = this._carryB;
     this._fracNow = holstered ? gf : frac;
-    D.gripFracNow = +this._fracNow.toFixed(4);
+    D.gripFracNow = this._fracNow;
     D.handoverDone = this.handoverDone;
 
     /* HOW FAST THE PROP MOVES INSIDE THE HAND (A102's hand-over clause).
@@ -2699,7 +2722,7 @@ export class MeleeLayer {
     let best = 9;
     for (let i = 0, j = 0; i < this._hairN; i++, j += 3) {
       _hgP.set(P[j], P[j + 1], P[j + 2]);
-      const g = segPoint(_hgA, _hgB, _hgP);
+      segPointN(_hgA, _hgB, _hgP); const g = _sgNum[0];
       if (g < best) best = g;
     }
     return best;
@@ -2790,6 +2813,7 @@ export class MeleeLayer {
    */
   _solveRight(w, u) {
     const an = this.an, b = an.b;
+    _hTab.copy(_hand);
     // elbow pole: down-and-back, opened outward as the hand rises, so the
     // elbow stays BESIDE the ribs (canon) instead of lifting over the shoulder
     const lift = clamp((_hand.y - 1.02) * 2.2, -0.4, 1);
@@ -2843,6 +2867,22 @@ export class MeleeLayer {
     }
     if (path) this._pathGuard(w);
     else if (this._guardOn) this._foreGuard(w);
+    /* THE GUARDS MAY NOT POP: what they added to the table's hand changes by at
+     * most GUARD_STEP a step, so a clearance that wakes up is a push and not a
+     * jump of the far end of a 1.55 m lance (filmed: 0.66 m in a frame at a jog). */
+    if (!path) {
+      _hOff.subVectors(_hand, _hTab);
+      _hOffD.subVectors(_hOff, this._guardOff);
+      const m = Math.sqrt(_hOffD.x * _hOffD.x + _hOffD.y * _hOffD.y + _hOffD.z * _hOffD.z);
+      if (m > GUARD_STEP) {
+        _hOffD.multiplyScalar(GUARD_STEP / m);
+        this._guardOff.add(_hOffD);
+        _hand.copy(_hTab).add(this._guardOff);
+        an._ikArm('r', _hand, _pole, w, null);
+        an._clearArmOfHead(b.upArmR, b.loArmR, b.handR, _hand, _pole, w);
+        this._alignHaft(w);
+      } else this._guardOff.copy(_hOff);
+    } else this._guardOff.subVectors(_hand, _hTab);
     this._rollOff = false;
   }
 
@@ -2864,7 +2904,7 @@ export class MeleeLayer {
       an._charOf(b.handR.bone, _eH);
       an._charOf(b.pelvis.bone, _eS);
       an._charOf(b.neck1.bone, _eD);
-      const g = segSegDir(_eE, _eH, _eS, _eD, _eU);   // _eU: from the axis to the forearm
+      segSegDirN(_eE, _eH, _eS, _eD, _eU); const g = _sgNum[0];   // _eU: from the axis to the forearm
       if (!(g < FORE_CLEAR)) { if (i === 0) D.foreGuard = 0; return; }
       _eU.y = 0;
       if (_eU.lengthSq() < 1e-8) _eU.set(-1, 0, 0);
@@ -2872,7 +2912,7 @@ export class MeleeLayer {
       _hand.addScaledVector(_eU, FORE_CLEAR - g + 0.01);
       an._ikArm('r', _hand, _pole, w, null);
       this._alignHaft(w);
-      D.foreGuard = +(FORE_CLEAR - g).toFixed(3);
+      D.foreGuard = FORE_CLEAR - g;
     }
   }
 
@@ -3014,7 +3054,7 @@ export class MeleeLayer {
         _d.normalize();
         if (this._twistAbout(_q2, _d, _q3)) {
           const ang = 2 * Math.acos(clamp(Math.abs(_q3.w), -1, 1));
-          this._dbg.foreTwistDeg = +(ang * 180 / Math.PI).toFixed(1);
+          this._dbg.foreTwistDeg = ang * 180 / Math.PI;
           let k = w;
           if (ang > FORE_TWIST) k *= FORE_TWIST / ang;
           _q1.copy(_q3);
@@ -3028,7 +3068,7 @@ export class MeleeLayer {
 
       // --- 3. the residual, on the wrist
       const ang = 2 * Math.acos(clamp(Math.abs(_q2.w), -1, 1));
-      this._dbg.wristSwingDeg = +(ang * 180 / Math.PI).toFixed(1);
+      this._dbg.wristSwingDeg = ang * 180 / Math.PI;
       let k = w;
       if (ang > WRIST_SWING) k *= WRIST_SWING / ang;
       if (k < 0.999) _q2.slerp(_qi(), 1 - k);
@@ -3036,7 +3076,7 @@ export class MeleeLayer {
     }
     an._liveW(ha.bone, _q1);
     _a.copy(this.gripDirL).applyQuaternion(_q1);
-    this._dbg.shaftErrDeg = +(Math.acos(clamp(_a.dot(_shaft), -1, 1)) * 180 / Math.PI).toFixed(1);
+    this._dbg.shaftErrDeg = Math.acos(clamp(_a.dot(_shaft), -1, 1)) * 180 / Math.PI;
   }
 
   /**
@@ -3075,7 +3115,7 @@ export class MeleeLayer {
   _solveLeft(w, u) {
     const an = this.an, b = an.b, D = this._dbg;
     const on = clamp(u.lhW || 0, 0, 1) * w;
-    if (on > 1e-3) _pole.set(0.62 - 0.1 * on, -0.76, -0.16).normalize();
+    if (on > 1e-3) _pole.set(0.82, -0.54, 0.16).normalize();
     else _pole.set(0.72, -0.62, -0.18).normalize();
     if (on <= 1e-3) {
       an._ikArm('l', _lh, _pole, w, null);
@@ -3094,7 +3134,7 @@ export class MeleeLayer {
     const sFar = disc >= 0 ? -bd + Math.sqrt(disc) : -bd;
     if (sOn > sFar) sOn = sFar;
     if (sOn < LH_ON_MIN) sOn = LH_ON_MIN;
-    D.lhOnNow = +sOn.toFixed(3);
+    D.lhOnNow = sOn;
     _d.copy(_grip).addScaledVector(_a, sOn);          // the palm goal
     _eT.copy(_lh);                                    // the free goal (world of the blend)
     for (let pass = 0; pass < 2; pass++) {
@@ -3118,7 +3158,7 @@ export class MeleeLayer {
     an._charOf(b.handL.bone, _c);
     an._liveW(b.handL.bone, _q1);
     _b.copy(this.palmOffLL).applyQuaternion(_q1).add(_c);
-    D.lhPalmErr = +_b.distanceTo(_d).toFixed(3);
+    D.lhPalmErr = _b.distanceTo(_d);
   }
 
   /**
@@ -3138,8 +3178,8 @@ export class MeleeLayer {
       const fl = _lbF.length();
       if (fl > 1e-6) _lbF.multiplyScalar(0.09 / fl);
       _lbF.add(_lbH);
-      const gU = segSegDir(_lbS, _lbE, _lbA, _lbB, _lbU);
-      const gF = segSegDir(_lbE, _lbF, _lbA, _lbB, _lbV);
+      segSegDirN(_lbS, _lbE, _lbA, _lbB, _lbU); const gU = _sgNum[0];
+      segSegDirN(_lbE, _lbF, _lbA, _lbB, _lbV); const gF = _sgNum[0];
       g = Math.min(gU, gF);
       if (g >= BOW_ARM_CLEAR || it === 3) break;
       const push = BOW_ARM_CLEAR - g + 0.01;
@@ -3153,7 +3193,7 @@ export class MeleeLayer {
       an._ikArm('l', _lh, _pole, w, null);
       an._clearArmOfHead(b.upArmL, b.loArmL, b.handL, _lh, _pole, w);
     }
-    D.leftArmToBow = +g.toFixed(4);
+    D.leftArmToBow = g;
   }
 
   _twistDeg() {
@@ -3204,7 +3244,7 @@ export class MeleeLayer {
       const e = an.b[name];
       if (!e) continue;
       an._charOf(e.bone, _d);
-      const g = segPoint(_butt, _tip, _d);
+      segPointN(_butt, _tip, _d); const g = _sgNum[0];
       if (g < best) {
         best = g;
         if (where) { _gapBone.copy(_d); _gapPt.copy(_segNear); }
@@ -3226,17 +3266,29 @@ export class MeleeLayer {
   _clearDeficit() {
     const axial = this._shaftGap(true);
     let worst = SHAFT_CLEAR - axial;
+    /* THE SKULL, not its joint: \`Head\` is the skull's base, and the haft of a cock
+     * can pass over that joint and through her face (filmed at a jog: the head
+     * rides 0.2 m forward of where the table was written). */
+    const an = this.an;
+    if (an.skull) {
+      const R = an.skull(_skA, _skB);
+      const rr = Math.max(R.x, R.y, R.z) + SKULL_CLEAR;
+      segPointN(_butt, _tip, _skA);
+      const g = _sgNum[0];
+      this._dbg.skullGap = g - rr + SKULL_CLEAR;
+      if (rr - g > worst) { worst = rr - g; _gapBone.copy(_skA); _gapPt.copy(_segNear); }
+    }
     let hair = 9, argmin = -1;
     const P = this._hairPos;
     for (let i = 0, j = 0; i < this._hairN; i++, j += 3) {
       _d.set(P[j], P[j + 1], P[j + 2]);
-      const g = segPoint(_butt, _tip, _d);
+      segPointN(_butt, _tip, _d); const g = _sgNum[0];
       if (g < hair) {
         hair = g; argmin = i;
         if (HAIR_CLEAR - g > worst) { worst = HAIR_CLEAR - g; _gapBone.copy(_d); _gapPt.copy(_segNear); }
       }
     }
-    this._dbg.hairClearGuard = +hair.toFixed(4);
+    this._dbg.hairClearGuard = hair;
     this._hairArgmin = argmin;
     return worst;
   }
@@ -3290,12 +3342,12 @@ export class MeleeLayer {
    */
   _measure() {
     const an = this.an, D = this._dbg;
-    D.shaftClear = +this._shaftGap().toFixed(4);
+    D.shaftClear = this._shaftGap();
     an._charOf(an.b.loArmR.bone, _a);
     an._charOf(an.b.handR.bone, _b);
     an._charOf(an.b.head.bone, _d);
-    D.elbowOverHead = +(_a.y - _d.y).toFixed(3);
-    D.forearmCross = +Math.max(_a.x, _b.x).toFixed(3);
+    D.elbowOverHead = _a.y - _d.y;
+    D.forearmCross = Math.max(_a.x, _b.x);
     /* THE CROSSING THAT MATTERS IS THE ONE INTO HER BODY.
      *
      * A104 says "the swinging forearm never crosses the body midline by more
@@ -3310,7 +3362,7 @@ export class MeleeLayer {
      * is the literal x read and `forearmToSpine` the physical one. */
     an._charOf(an.b.pelvis.bone, _c);
     an._charOf(an.b.neck1.bone, _d);
-    D.forearmToSpine = +segSeg(_a, _b, _c, _d).toFixed(3);
+    segSegN(_a, _b, _c, _d); D.forearmToSpine = _sgNum[0];
     /* AND THE OTHER FOREARM (fix round 4, finding F7).
      *
      * Kevin's complaint — "arms crossing into her body" — is about ARMS, and
@@ -3322,8 +3374,8 @@ export class MeleeLayer {
      * (`leftHandToShaft <= 0.05`), at the same 0.10 m bar as the right. */
     an._charOf(an.b.loArmL.bone, _sgA);
     an._charOf(an.b.handL.bone, _sgB);
-    D.forearmToSpineL = +segSeg(_sgA, _sgB, _c, _d).toFixed(3);
-    D.torsoYawDeg = +this._twistDeg().toFixed(2);
+    segSegN(_sgA, _sgB, _c, _d); D.forearmToSpineL = _sgNum[0];
+    D.torsoYawDeg = this._twistDeg();
     // the SOLVED hand orientation, for next frame's reach target (see _reachPose)
     an._liveW(an.b.handR.bone, this._handQ);
     // ...and the solved wrist, for a draw that reverses a holster (`_captureFrom`)
@@ -3346,6 +3398,7 @@ export class MeleeLayer {
     an.model.updateMatrixWorld(true);
     const out = { ...D, held: this._held, gripFrac: this.gripFrac, length: this.length };
     if (!this.lance) return out;
+    if (D.stance === 'holstered' && !this._held) this._poseHolstered();  // the hot path leaves it
     this.lance.updateWorldMatrix(true, false);
     _m4.copy(an.model.matrixWorld).invert().multiply(this.lance.matrixWorld);
     _butt.set(0, 0, 0).applyMatrix4(_m4);
@@ -3603,7 +3656,7 @@ export class MeleeLayer {
      * the stowed prop again here, off the final matrices, makes the bound and
      * the measurement the same statement. It is an absolute local write, so
      * doing it twice costs one `_liveSocket` and changes nothing else. */
-    if (this.lance && !this._held) this._poseHolstered();
+    if (this.lance && !this._held && this._dbg.stance !== 'holstered') this._poseHolstered();
     /* the pelvis shift the animator really applied after this layer this
      * frame (stance offset + conform clamp), for next frame's arm checks */
     if (this.w > 0.001 && this.an.b.upArmR) {
@@ -3622,7 +3675,7 @@ export class MeleeLayer {
      * Filmed with the order the other way round: `_hairOffHaft` pushed the
      * braid clear, then the hand guard rotated the haft back into it, and
      * light 3 measured 0.048 m of ponytail against A104's 0.05 bar. */
-    this._dbg.shaftClear = +this._shaftGap().toFixed(4);
+    if (this._held) this._dbg.shaftClear = this._shaftGap();
     /* THE CARRY SERVO MEASURES THE FINAL POSE, NOT THE RAW CLIP (fix round 2).
      * Round 1 ran it at the top of `update`, where the animator has just reset
      * every non-clip bone and re-applied the mixer: `spine_03` — which the
@@ -3699,7 +3752,7 @@ export class MeleeLayer {
       worst = this._armDeficit(hulls, M);
     }
     this._dbg.armHullFinal = steps + rolls * 100 + backs * 1000;
-    this._dbg.armHullFinalLeft = +worst.toFixed(3);
+    this._dbg.armHullFinalLeft = worst;
   }
 
   /** The hand guard's three passes (see `postFix`). */
@@ -3761,6 +3814,9 @@ export class MeleeLayer {
  * `_segNear` — the haft guard pushes along (P -> that point), so it needs both.
  */
 const _segNear = new THREE.Vector3();
+/** The hot paths read a distance from here: a double returned across a call is
+ *  a heap number (R48 c). `segPointN`, `segSegN`, `segSegDirN` fill it. */
+const _sgNum = new Float64Array(1);
 function segPoint(A, B, P) {
   _seg.subVectors(B, A);
   const l2 = _seg.lengthSq();
@@ -3779,8 +3835,8 @@ function segSeg(A, B, C, D) {
   let lo = 0, hi = 1;
   for (let i = 0; i < 12; i++) {
     const a = lo + (hi - lo) / 3, b = hi - (hi - lo) / 3;
-    const fa = segPoint(C, D, _lerp3(A, B, a, _ss));
-    const fb = segPoint(C, D, _lerp3(A, B, b, _ss));
+    segPointN(C, D, _lerp3(A, B, a, _ss)); const fa = _sgNum[0];
+    segPointN(C, D, _lerp3(A, B, b, _ss)); const fb = _sgNum[0];
     if (fa < fb) hi = b; else lo = a;
   }
   return segPoint(C, D, _lerp3(A, B, (lo + hi) * 0.5, _ss));
@@ -3798,8 +3854,51 @@ function segSeg(A, B, C, D) {
  * 0.0274 m with the -Z servo at its ceiling the whole time. The mutual
  * perpendicular is the direction that actually buys clearance.
  */
+function segPointN(A, B, P) {
+  const ax = A.x, ay = A.y, az = A.z;
+  const ex = B.x - ax, ey = B.y - ay, ez = B.z - az;
+  const l2 = ex * ex + ey * ey + ez * ez;
+  let t = l2 > 1e-9 ? ((P.x - ax) * ex + (P.y - ay) * ey + (P.z - az) * ez) / l2 : 0;
+  t = t < 0 ? 0 : t > 1 ? 1 : t;
+  const nx = ax + ex * t, ny = ay + ey * t, nz = az + ez * t;
+  _segNear.x = nx; _segNear.y = ny; _segNear.z = nz;
+  const dx = nx - P.x, dy = ny - P.y, dz = nz - P.z;
+  _sgNum[0] = Math.sqrt(dx * dx + dy * dy + dz * dz);
+}
+/** Closest points of segments AB and CD (closed form): `_ss` on AB, `_segNear` on CD. */
+function segSegN(A, B, C, D) {
+  const d1x = B.x - A.x, d1y = B.y - A.y, d1z = B.z - A.z;
+  const d2x = D.x - C.x, d2y = D.y - C.y, d2z = D.z - C.z;
+  const rx = A.x - C.x, ry = A.y - C.y, rz = A.z - C.z;
+  const a = d1x * d1x + d1y * d1y + d1z * d1z, e = d2x * d2x + d2y * d2y + d2z * d2z;
+  const f = d2x * rx + d2y * ry + d2z * rz;
+  let s = 0, t = 0;
+  if (a > 1e-9 || e > 1e-9) {
+    if (a <= 1e-9) { t = f / e; t = t < 0 ? 0 : t > 1 ? 1 : t; } else {
+      const c = d1x * rx + d1y * ry + d1z * rz;
+      if (e <= 1e-9) { s = -c / a; s = s < 0 ? 0 : s > 1 ? 1 : s; } else {
+        const b = d1x * d2x + d1y * d2y + d1z * d2z, den = a * e - b * b;
+        if (den > 1e-12) { s = (b * f - c * e) / den; s = s < 0 ? 0 : s > 1 ? 1 : s; }
+        t = (b * s + f) / e;
+        if (t < 0) { t = 0; s = -c / a; s = s < 0 ? 0 : s > 1 ? 1 : s; } else if (t > 1) { t = 1; s = (b - c) / a; s = s < 0 ? 0 : s > 1 ? 1 : s; }
+      }
+    }
+  }
+  const px = A.x + d1x * s, py = A.y + d1y * s, pz = A.z + d1z * s;
+  const qx = C.x + d2x * t, qy = C.y + d2y * t, qz = C.z + d2z * t;
+  _ss.x = px; _ss.y = py; _ss.z = pz;
+  _segNear.x = qx; _segNear.y = qy; _segNear.z = qz;
+  const dx = px - qx, dy = py - qy, dz = pz - qz;
+  _sgNum[0] = Math.sqrt(dx * dx + dy * dy + dz * dz);
+}
+function segSegDirN(A, B, C, D, out) {
+  segSegN(A, B, C, D);
+  const x = _ss.x - _segNear.x, y = _ss.y - _segNear.y, z = _ss.z - _segNear.z;
+  const l2 = x * x + y * y + z * z;
+  if (l2 > 1e-12) { const i = 1 / Math.sqrt(l2); out.x = x * i; out.y = y * i; out.z = z * i; } else out.set(0, 0, -1);
+}
 function segSegDir(A, B, C, D, out) {
-  const d = segSeg(A, B, C, D);
+  segSegN(A, B, C, D); const d = _sgNum[0];
   // segSeg leaves the closest point on AB in `_ss` and the one on CD in
   // `_segNear` (segPoint's own out-param, written by its final call)
   out.subVectors(_ss, _segNear);
