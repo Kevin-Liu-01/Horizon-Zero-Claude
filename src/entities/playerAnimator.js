@@ -134,6 +134,8 @@ const _spAcc = new THREE.Quaternion();
 const _cp0 = new THREE.Vector3();
 /** `_segDistN`'s result: a number `_springs` reads without a boxed return. */
 const _spNum = new Float64Array(1);
+/** `_springParentQ`'s rotation matrix. */
+const _spMq = new THREE.Matrix4();
 const _cp1 = new THREE.Vector3();
 const _cp2 = new THREE.Vector3();
 // W0b targeted fix 2: the M10 fallback's candidates (`_springs`) and the draw
@@ -323,7 +325,14 @@ const HAND_IN = 0.90;
 // 0.985 read as a soft 156 deg arm. Gate A35-cheek-anchor asserts 165-172.
 const BOW_ARM_LOCK = 0.9945;
 
-const { damp, clamp, smoothstep } = THREE.MathUtils;
+/* The three hot-path helpers, written small on purpose (R48 c, melee W1). THREE's
+ * own go through Math.max/min and lerp, and the optimiser's cumulative inlining
+ * budget runs out long before the end of `update`: a double returned across a call
+ * that is not inlined is a fresh HeapNumber. These are small enough to be inlined
+ * whatever the budget, and read the same values. */
+const clamp = (v, lo, hi) => (v < lo ? lo : v > hi ? hi : v);
+const damp = (x, y, l, dt) => { const t = 1 - Math.exp(-l * dt); return (1 - t) * x + t * y; };
+const smoothstep = (x, a, b) => { if (x <= a) return 0; if (x >= b) return 1; const u = (x - a) / (b - a); return u * u * (3 - 2 * u); };
 
 const KEY = {
   pelvis: 'pelvis_05',
@@ -862,6 +871,8 @@ export class PlayerAnimator {
     // R5 fix round 5: the stowed lance's shaft as a spring-side capsule (world;
     // HeroStowKit.solve writes it after the carry solve, `on` false while drawn)
     this._stowCap = { a: new THREE.Vector3(), b: new THREE.Vector3(), r: 0.11, on: false };
+    this._springsWarm = false;      // see `_warmSprings`
+    this._springsSeen = 0;
     this._latT = new THREE.Vector3(1, 0, 0); this._restGripT = new THREE.Vector3();
     this._dTs = new THREE.Vector3(0, 0, 1); this._tOff = true;   // the T ray, low-passed (snapped when the turn starts)
     this._gripValid = false;
@@ -2076,6 +2087,7 @@ export class PlayerAnimator {
     this._twistLayer();
 
     /* ------------------ secondary motion: dyn_ spring chains --------------- */
+    if (!this._springsWarm && ++this._springsSeen >= 40) { this._springsWarm = true; this._warmSprings(t, ph); }
     this._springs(dt, t, ph, speed, moveW, runW);
     if (this._ali) this._alidadePlace();
 
@@ -6064,6 +6076,48 @@ export class PlayerAnimator {
    * the world rotation each bone needs. Because the accumulated rotation is
    * carried down the sweep, no bone matrix is recomputed inside the loop.
    */
+  /**
+   * A bone's world rotation off its matrix, with no `updateWorldMatrix` walk and no
+   * `decompose` (melee W1, R48 c): `_springs` opens with `model.updateMatrixWorld(true)`,
+   * so a parent that is not itself a simulated strand is current here, and a strand's
+   * own parent keeps three's path (it was rewritten by the chain before this one).
+   */
+  _springParentQ(bone, out) {
+    if (bone.name.charCodeAt(0) === 100 && bone.name.startsWith('dyn_')) { bone.getWorldQuaternion(out); return; }
+    const e = bone.matrixWorld.elements, m = _spMq.elements;
+    const sx = Math.sqrt(e[0] * e[0] + e[1] * e[1] + e[2] * e[2]);
+    const sy = Math.sqrt(e[4] * e[4] + e[5] * e[5] + e[6] * e[6]);
+    const sz = Math.sqrt(e[8] * e[8] + e[9] * e[9] + e[10] * e[10]);
+    const det = e[0] * (e[5] * e[10] - e[6] * e[9]) - e[4] * (e[1] * e[10] - e[2] * e[9]) + e[8] * (e[1] * e[6] - e[2] * e[5]);
+    const ix = (det < 0 ? -1 : 1) / sx, iy = 1 / sy, iz = 1 / sz;
+    m[0] = e[0] * ix; m[1] = e[1] * ix; m[2] = e[2] * ix;
+    m[4] = e[4] * iy; m[5] = e[5] * iy; m[6] = e[6] * iy;
+    m[8] = e[8] * iz; m[9] = e[9] * iz; m[10] = e[10] * iz;
+    out.setFromRotationMatrix(_spMq);
+  }
+
+  /**
+   * Every branch of the solver, once, before anyone is looking (melee W1, R48 c).
+   * The solver is optimised while she stands; a branch that first runs at her first
+   * sprint or step throws the optimised code away ("insufficient type feedback") and
+   * the next seconds run in the baseline tier, where every double is a HeapNumber:
+   * measured 0.76 KB/frame standing, 28 KB/frame in the first sprint. So the strides
+   * are rehearsed at boot and the chains re-seated on their rest pose. No allocation.
+   */
+  _warmSprings(t, ph) {
+    const SC = this._stowCap, scOn = SC ? SC.on : false;
+    const sL0 = this._stL, sR0 = this._stR, pL0 = this._prevStL, pR0 = this._prevStR;
+    for (let i = 0; i < 48; i++) {
+      const v = (i % 4) * 2.3;
+      this._stL = i % 2; this._stR = 1 - (i % 2);
+      if (SC) SC.on = i % 3 === 0;
+      this._springs(1 / 60, t + i / 60, ph, v, Math.min(1, v), Math.min(1, v / 5));
+    }
+    if (SC) SC.on = scOn;
+    this._stL = sL0; this._stR = sR0; this._prevStL = pL0; this._prevStR = pR0;
+    for (let i = 0; i < this._chains.length; i++) this._chains[i].seeded = false;
+  }
+
   _springs(dt, t, ph, speed, moveW, runW) {
     // Sanitise, then integrate. Every force below multiplies into a quaternion
     // the skinned mesh reads, so ONE non-finite input does not produce a
@@ -6130,7 +6184,7 @@ export class PlayerAnimator {
     const W0 = this.wind;
     const gust = 1 + (W0.gust || 0) * (0.55 * Math.sin(0.83 * t) + 0.3 * Math.sin(1.97 * t + 1.3) + 0.15 * Math.sin(4.1 * t + 0.7));
     const windX = (Number.isFinite(W0.x) ? W0.x : 0) * gust, windZ = (Number.isFinite(W0.z) ? W0.z : 0) * gust;
-    const windS = Math.hypot(windX, windZ);
+    const windS = Math.sqrt(windX * windX + windZ * windZ);
     const wux = windS > 1e-6 ? windX / windS : 0, wuz = windS > 1e-6 ? windZ / windS : 0;
 
     for (let ci = 0; ci < this._chains.length; ci++) {
@@ -6140,7 +6194,7 @@ export class PlayerAnimator {
 
       /* ---- 1. animated rest pose: positions (matrices) + world quats ---- */
       const rootBone = c.links[0].bone;
-      if (rootBone.parent) rootBone.parent.getWorldQuaternion(_spQ); else _spQ.identity();
+      if (rootBone.parent) this._springParentQ(rootBone.parent, _spQ); else _spQ.identity();
       for (let j = 0; j < N; j++) {
         const bone = c.links[j].bone;
         _spQ.multiply(bone.quaternion);              // Wanim[j] = Wanim[j-1] * L
@@ -6179,7 +6233,7 @@ export class PlayerAnimator {
       const aB = c.acc;
 
       /* ---- 4. foot-strike impulse (one frame, deeper links get more) ---- */
-      if (strike > 0 && cls.strike > 0) {
+      if (cls.strike > 0) {     // (with no strike this adds zero: no branch that first runs at her first step)
         for (let j = 1; j < n; j++) {
           const w = (0.4 + 0.6 * (j / N)) * cls.strike;
           vel[j * 3] += rx * lat * w;
@@ -6201,7 +6255,7 @@ export class PlayerAnimator {
       // the idle's tail is the trade wind's alone
       const rfk = (speed - 1) / 5.8;
       const rf = cls.runFl > 0 ? cls.runFl * (rfk < 0 ? 0 : rfk > 1 ? 1 : rfk) : 0;
-      if (rf > 0) c.flX += dt * rf;
+      c.flX += dt * rf;
       const tf = t + c.flX;
       const flA = cw > 0 ? (this.wind.flutter || 0) * windS * (1 + rf) : 0, sd = c.seed;
       for (let s = 0; s < steps; s++) {

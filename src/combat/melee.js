@@ -569,8 +569,21 @@ export class Melee {
      * pinned poses.
      */
     const trailGeo = new THREE.RingGeometry(1.36, 1.72, 22, 1, 0, 1.55);
+    /* the smear fades along the sweep and toward the haft, so it reads as the
+     * blade's light on the air and not as a strip of card (melee W1, filmed);
+     * additive, so a black vertex is simply no light */
+    {
+      const P = trailGeo.getAttribute('position'), col = new Float32Array(P.count * 3);
+      for (let i = 0; i < P.count; i++) {
+        const x = P.getX(i), y = P.getY(i);
+        const th = Math.atan2(y, x) / 1.55, r = (Math.hypot(x, y) - 1.36) / 0.36;
+        const a = (1 - th) * (1 - th) * (0.35 + 0.65 * r);
+        col[i * 3] = a; col[i * 3 + 1] = a; col[i * 3 + 2] = a;
+      }
+      trailGeo.setAttribute('color', new THREE.BufferAttribute(col, 3));
+    }
     this._trail = new THREE.Mesh(trailGeo, new THREE.MeshBasicMaterial({
-      color: 0xfff0d0, transparent: true, opacity: 0, depthWrite: false,
+      color: 0xfff0d0, transparent: true, opacity: 0, depthWrite: false, vertexColors: true,
       side: THREE.DoubleSide, blending: THREE.AdditiveBlending, toneMapped: false,
     }));
     this._trail.visible = false;

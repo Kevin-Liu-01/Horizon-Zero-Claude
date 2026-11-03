@@ -3348,8 +3348,8 @@ export const GATES = [
       C.engine.timeScale = 0;
       ${STRIPS}
       /* at 6 m (plan §9), on a long lens */
-      await strip(() => lockCam(-5.9, 1.0, 1.30, 0.92, 27, 0.25));
-      await strip(() => lockCam(-3.6, -4.8, 1.45, 0.92, 27, 0.25));
+      await strip(() => lockCam(-5.9, 1.0, 1.30, 0.86, 17, 0.25));
+      await strip(() => lockCam(-3.6, -4.8, 1.45, 0.86, 17, 0.25));
       show();
       return got;
     })()`),

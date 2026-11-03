@@ -34,7 +34,10 @@ import { register } from './registry.js';
  * Owner: melee. Numbers and history: docs/ROUND5-MELEE.md.
  */
 
-const { clamp, damp, smoothstep } = THREE.MathUtils;
+/* small enough to be inlined whatever the budget (R48 c; see playerAnimator.js) */
+const clamp = (v, lo, hi) => (v < lo ? lo : v > hi ? hi : v);
+const damp = (x, y, l, dt) => { const t = 1 - Math.exp(-l * dt); return (1 - t) * x + t * y; };
+const smoothstep = (x, a, b) => { if (x <= a) return 0; if (x >= b) return 1; const u = (x - a) / (b - a); return u * u * (3 - 2 * u); };
 
 const X_AXIS = new THREE.Vector3(1, 0, 0);
 const Y_AXIS = new THREE.Vector3(0, 1, 0);
@@ -279,20 +282,20 @@ const STANCE_ENV = (cu) => (
 const BEATS = [
   {
     id: 'light-1', clip: [0.10, 0.62], mirror: false, clipW: 0.16,
-    cock: { hand: [-0.27, 1.16, -0.18], shaft: [0.38, 0.40, 0.83], lh: [0.2, 0.95, 0.2], lhW: 1, lhOn: 0.50, yaw: -0.46, py: -0.34, pitch: 0.02, roll: 0.05, dz: -0.07 },
+    cock: { hand: [-0.29, 1.24, -0.24], shaft: [0.38, 0.40, 0.83], lh: [0.2, 0.95, 0.2], lhW: 1, lhOn: 0.50, yaw: -0.46, py: -0.34, pitch: 0.02, roll: 0.05, dz: -0.07 },
     contact: { hand: [-0.15, 1.13, 0.23], shaft: [0.10, -0.03, 0.995], lh: [0.2, 0.95, 0.2], lhW: 1, lhOn: 0.27, yaw: -0.12, py: 0.02, pitch: 0.20, roll: -0.04, dz: 0.10 },
-    follow: { hand: [-0.20, 1.05, 0.18], shaft: [0.24, -0.40, 0.88], lh: [0.2, 0.95, 0.2], lhW: 1, lhOn: 0.34, yaw: -0.12, py: 0.08, pitch: 0.24, roll: -0.08, dz: 0.08 },
+    follow: { hand: [-0.19, 1.09, 0.22], shaft: [0.24, -0.34, 0.91], lh: [0.2, 0.95, 0.2], lhW: 1, lhOn: 0.30, yaw: -0.22, py: 0.0, pitch: 0.14, roll: -0.08, dz: 0.05 },
   },
   {
     id: 'light-2', clip: [0.10, 0.62], mirror: true, clipW: 0.16,
-    cock: { hand: [-0.27, 1.25, -0.02], shaft: [0.66, 0.22, 0.72], lh: [0.2, 0.95, 0.2], lhW: 1, lhOn: 0.40, yaw: 0.26, py: 0.22, pitch: 0.06, roll: 0.04, dz: -0.04 },
+    cock: { hand: [-0.27, 1.25, 0.00], shaft: [0.60, 0.22, 0.77], lh: [0.2, 0.95, 0.2], lhW: 1, lhOn: 0.36, yaw: 0.26, py: 0.22, pitch: 0.06, roll: 0.04, dz: -0.04 },
     contact: { hand: [-0.21, 1.19, 0.22], shaft: [-0.14, 0.02, 0.99], lh: [0.2, 0.95, 0.2], lhW: 1, lhOn: 0.27, yaw: -0.12, py: -0.06, pitch: 0.18, roll: 0.04, dz: 0.07 },
     follow: { hand: [-0.28, 1.03, 0.20], shaft: [-0.54, -0.22, 0.81], lh: [0.2, 0.95, 0.2], lhW: 1, lhOn: 0.30, yaw: -0.34, py: -0.24, pitch: 0.20, roll: 0.06, dz: 0.06 },
   },
   {
     id: 'light-3', clip: [0.05, 0.80], mirror: false, clipW: 0.20,
     release: [0.05, 0.42],
-    cock: { hand: [-0.28, 1.28, -0.10], shaft: [0.34, 0.42, 0.84], lh: [0.28, 1.02, 0.20], lhW: 1, lhOn: 0.40, yaw: -0.40, py: -0.26, pitch: -0.06, roll: 0.04, dz: -0.06 },
+    cock: { hand: [-0.31, 1.28, -0.10], shaft: [0.34, 0.42, 0.84], lh: [0.28, 1.02, 0.20], lhW: 1, lhOn: 0.40, yaw: -0.40, py: -0.26, pitch: -0.06, roll: 0.04, dz: -0.06 },
     contact: { hand: [-0.22, 1.34, 0.62], shaft: [0.14, -0.26, 0.955], lh: [0.40, 0.98, -0.20], lhW: 0, lhOn: 0.40, yaw: 0.24, py: 0.20, pitch: 0.26, roll: 0.02, dz: 0.12 },
     follow: { hand: [-0.21, 1.06, 0.46], shaft: [0.26, -0.44, 0.86], lh: [0.38, 0.92, -0.24], lhW: 0, lhOn: 0.40, yaw: 0.18, py: 0.20, pitch: 0.26, roll: -0.04, dz: 0.10 },
   },
@@ -3179,7 +3182,7 @@ export class MeleeLayer {
       _q2.setFromUnitVectors(_b, _a);
       const ang = 2 * Math.acos(clamp(Math.abs(_q2.w), -1, 1));
       let k = on;
-      if (ang > 1.6) k *= 1.6 / ang;
+      if (ang > 2.6) k *= 2.6 / ang;
       if (k < 0.999) _q2.slerp(_qi(), 1 - k);
       an._rotQL(b.handL, _q2);
     }
