@@ -235,8 +235,8 @@ const AXIAL_PREFIX = ['spine_', 'neck_', 'head_'];
  *            the head line, the reach from spine pitch and the lunge.
  */
 const READY = {
-  hand: [-0.21, 1.13, -0.12], shaft: [0.36, -0.405, 0.84],
-  lh: [0.22, 0.95, 0.20], lhW: 1, lhOn: 0.5425, yaw: -0.36, py: -0.26, pitch: 0.24, roll: 0.02, dz: 0.0,
+  hand: [-0.25, 1.10, -0.05], shaft: [0.36, -0.405, 0.84],
+  lh: [0.22, 0.95, 0.20], lhW: 1, lhOn: 0.52, yaw: -0.36, py: -0.26, pitch: 0.27, roll: 0.02, dz: 0.0,
 };
 /**
  * Her legs, per beat. Rotations are char-space radians on thigh, calf and
@@ -263,11 +263,11 @@ const RECOIL_RATE = 11;
  *  snap her hips; see `_stance`). */
 const STANCE_STEP_MAX = 0.10;
 const STANCE = {
-  ready: { thighL: -0.50, thighR: 0.14, calfL: 0.66, calfR: 0.30, footL: -0.16, footR: -0.30, abd: 0.07, dx: 0.0, dy: -0.105 },
-  'light-1': { thighL: -0.62, thighR: 0.26, calfL: 0.74, calfR: 0.14, footL: -0.12, footR: -0.26, abd: 0.05, dx: 0.02, dy: -0.115 },
-  'light-2': { thighL: -0.30, thighR: -0.42, calfL: 0.46, calfR: 0.62, footL: -0.16, footR: -0.20, abd: 0.16, dx: -0.09, dy: -0.145 },
-  'light-3': { thighL: -0.66, thighR: 0.30, calfL: 0.70, calfR: 0.10, footL: -0.04, footR: -0.26, abd: 0.05, dx: 0.05, dy: -0.150 },
-  heavy: { thighL: -0.78, thighR: 0.28, calfL: 1.02, calfR: 0.34, footL: -0.24, footR: -0.40, abd: 0.14, dx: -0.03, dy: -0.215 },
+  ready: { thighL: -0.50, thighR: 0.14, calfL: 0.66, calfR: 0.30, footL: -0.16, footR: -0.30, abd: 0.15, dx: 0.0, dy: -0.105 },
+  'light-1': { thighL: -0.62, thighR: 0.26, calfL: 0.74, calfR: 0.14, footL: -0.12, footR: -0.26, abd: 0.11, dx: 0.02, dy: -0.125 },
+  'light-2': { thighL: -0.30, thighR: -0.42, calfL: 0.46, calfR: 0.62, footL: -0.16, footR: -0.20, abd: 0.20, dx: -0.09, dy: -0.15 },
+  'light-3': { thighL: -0.66, thighR: 0.30, calfL: 0.70, calfR: 0.10, footL: -0.04, footR: -0.26, abd: 0.11, dx: 0.05, dy: -0.155 },
+  heavy: { thighL: -0.78, thighR: 0.28, calfL: 1.02, calfR: 0.34, footL: -0.24, footR: -0.40, abd: 0.18, dx: -0.03, dy: -0.215 },
 };
 /** How much of a beat's stance is on at clip progress `cu` (0 cock .. 1 end). */
 const STANCE_ENV = (cu) => (
@@ -280,28 +280,28 @@ const BEATS = [
   {
     id: 'light-1', clip: [0.10, 0.62], mirror: false, clipW: 0.16,
     cock: { hand: [-0.27, 1.16, -0.18], shaft: [0.38, 0.40, 0.83], lh: [0.2, 0.95, 0.2], lhW: 1, lhOn: 0.50, yaw: -0.46, py: -0.34, pitch: 0.02, roll: 0.05, dz: -0.07 },
-    contact: { hand: [-0.14, 1.13, 0.20], shaft: [0.10, -0.03, 0.995], lh: [0.2, 0.95, 0.2], lhW: 1, lhOn: 0.27, yaw: -0.12, py: 0.02, pitch: 0.20, roll: -0.04, dz: 0.15 },
-    follow: { hand: [-0.17, 1.03, 0.28], shaft: [0.24, -0.40, 0.88], lh: [0.2, 0.95, 0.2], lhW: 1, lhOn: 0.32, yaw: -0.12, py: 0.08, pitch: 0.24, roll: -0.08, dz: 0.12 },
+    contact: { hand: [-0.15, 1.13, 0.23], shaft: [0.10, -0.03, 0.995], lh: [0.2, 0.95, 0.2], lhW: 1, lhOn: 0.27, yaw: -0.12, py: 0.02, pitch: 0.20, roll: -0.04, dz: 0.10 },
+    follow: { hand: [-0.20, 1.05, 0.18], shaft: [0.24, -0.40, 0.88], lh: [0.2, 0.95, 0.2], lhW: 1, lhOn: 0.34, yaw: -0.12, py: 0.08, pitch: 0.24, roll: -0.08, dz: 0.08 },
   },
   {
     id: 'light-2', clip: [0.10, 0.62], mirror: true, clipW: 0.16,
-    cock: { hand: [-0.27, 1.21, 0.04], shaft: [0.66, 0.22, 0.72], lh: [0.2, 0.95, 0.2], lhW: 1, lhOn: 0.40, yaw: 0.26, py: 0.22, pitch: 0.06, roll: 0.04, dz: -0.04 },
-    contact: { hand: [-0.20, 1.19, 0.19], shaft: [-0.14, 0.02, 0.99], lh: [0.2, 0.95, 0.2], lhW: 1, lhOn: 0.27, yaw: -0.12, py: -0.06, pitch: 0.18, roll: 0.04, dz: 0.10 },
-    follow: { hand: [-0.25, 1.03, 0.14], shaft: [-0.66, -0.20, 0.72], lh: [0.2, 0.95, 0.2], lhW: 1, lhOn: 0.28, yaw: -0.34, py: -0.24, pitch: 0.20, roll: 0.06, dz: 0.08 },
+    cock: { hand: [-0.27, 1.25, -0.02], shaft: [0.66, 0.22, 0.72], lh: [0.2, 0.95, 0.2], lhW: 1, lhOn: 0.40, yaw: 0.26, py: 0.22, pitch: 0.06, roll: 0.04, dz: -0.04 },
+    contact: { hand: [-0.21, 1.19, 0.22], shaft: [-0.14, 0.02, 0.99], lh: [0.2, 0.95, 0.2], lhW: 1, lhOn: 0.27, yaw: -0.12, py: -0.06, pitch: 0.18, roll: 0.04, dz: 0.07 },
+    follow: { hand: [-0.28, 1.03, 0.20], shaft: [-0.54, -0.22, 0.81], lh: [0.2, 0.95, 0.2], lhW: 1, lhOn: 0.30, yaw: -0.34, py: -0.24, pitch: 0.20, roll: 0.06, dz: 0.06 },
   },
   {
     id: 'light-3', clip: [0.05, 0.80], mirror: false, clipW: 0.20,
     release: [0.05, 0.42],
     cock: { hand: [-0.28, 1.28, -0.10], shaft: [0.34, 0.42, 0.84], lh: [0.28, 1.02, 0.20], lhW: 1, lhOn: 0.40, yaw: -0.40, py: -0.26, pitch: -0.06, roll: 0.04, dz: -0.06 },
-    contact: { hand: [-0.22, 1.34, 0.62], shaft: [0.14, -0.26, 0.955], lh: [0.40, 0.98, -0.20], lhW: 0, lhOn: 0.40, yaw: 0.24, py: 0.20, pitch: 0.26, roll: 0.02, dz: 0.17 },
-    follow: { hand: [-0.13, 1.06, 0.50], shaft: [0.26, -0.44, 0.86], lh: [0.38, 0.92, -0.24], lhW: 0, lhOn: 0.40, yaw: 0.18, py: 0.20, pitch: 0.26, roll: -0.04, dz: 0.14 },
+    contact: { hand: [-0.22, 1.34, 0.62], shaft: [0.14, -0.26, 0.955], lh: [0.40, 0.98, -0.20], lhW: 0, lhOn: 0.40, yaw: 0.24, py: 0.20, pitch: 0.26, roll: 0.02, dz: 0.12 },
+    follow: { hand: [-0.21, 1.06, 0.46], shaft: [0.26, -0.44, 0.86], lh: [0.38, 0.92, -0.24], lhW: 0, lhOn: 0.40, yaw: 0.18, py: 0.20, pitch: 0.26, roll: -0.04, dz: 0.10 },
   },
 ];
 const HEAVY = {
   id: 'heavy', clip: [0.0, 0.92], mirror: false, clipW: 0.18,
-  cock: { hand: [-0.28, 1.31, -0.14], shaft: [0.32, 0.46, 0.83], lh: [0.2, 0.95, 0.2], lhW: 1, lhOn: 0.38, yaw: -0.46, py: -0.36, pitch: -0.10, roll: 0.08, dz: -0.10 },
-  contact: { hand: [-0.22, 1.35, 0.25], shaft: [0.12, -0.05, 0.992], lh: [0.2, 0.95, 0.2], lhW: 1, lhOn: 0.30, yaw: -0.14, py: 0.04, pitch: 0.30, roll: -0.05, dz: 0.20 },
-  follow: { hand: [-0.20, 1.12, 0.32], shaft: [0.26, -0.46, 0.85], lh: [0.2, 0.95, 0.2], lhW: 1, lhOn: 0.34, yaw: -0.10, py: 0.10, pitch: 0.32, roll: -0.08, dz: 0.16 },
+  cock: { hand: [-0.28, 1.31, -0.12], shaft: [0.32, 0.46, 0.83], lh: [0.2, 0.95, 0.2], lhW: 1, lhOn: 0.38, yaw: -0.46, py: -0.36, pitch: -0.10, roll: 0.08, dz: -0.10 },
+  contact: { hand: [-0.22, 1.35, 0.27], shaft: [0.12, -0.05, 0.992], lh: [0.2, 0.95, 0.2], lhW: 1, lhOn: 0.30, yaw: -0.14, py: 0.04, pitch: 0.30, roll: -0.05, dz: 0.13 },
+  follow: { hand: [-0.21, 1.12, 0.24], shaft: [0.26, -0.46, 0.85], lh: [0.2, 0.95, 0.2], lhW: 1, lhOn: 0.34, yaw: -0.10, py: 0.10, pitch: 0.32, roll: -0.08, dz: 0.10 },
 };
 /** How far before `CONTACT_K` the contact key is reached; it is then HELD for
  *  the rest of the strike window. See `_blend`. 0.16 -> 0.10 in fix pass 1: the
@@ -1599,7 +1599,7 @@ export class MeleeLayer {
      * rotations below are authored on the turned pelvis. Standing only: a stride
      * owns its hips (`_stanceW` is 0 at a jog). */
     {
-      const hw = w * this._stanceW;
+      const hw = w * this._stanceW * (1 - (an._crouchW || 0));
       this._pelvisYawNow = (u.py || 0) * hw;
       this.pelvisDz = (u.dz || 0) * hw;
       if (this._pelvisYawNow !== 0 && b.pelvis) an._rot(b.pelvis, Y_AXIS, this._pelvisYawNow);
@@ -1617,7 +1617,7 @@ export class MeleeLayer {
      * to this beat's: nothing through the cock's opening, full at the contact, gone
      * by the end of the recover. Round 4 scaled one key by an envelope, so the
      * knees straightened at the top of every swing and bent again for the strike. */
-    const want = live ? w * this._stanceW * (1 - 0.8 * tall) : 0;
+    const want = live ? w * this._stanceW * (1 - 0.8 * tall) * (1 - (an._crouchW || 0)) : 0;
     const mixT = stance === 'swing' ? STANCE_ENV(u.clipU) : 0;
     /* THE KEY OUTLIVES THE SWING BY AS LONG AS THE UNWIND TAKES: the rate limit
      * below is in RENDERED frames, so on a loaded box the mix can still be finite
@@ -2850,7 +2850,10 @@ export class MeleeLayer {
        * chooses the side of the elbow circle; `_elbowGuard` holds the bound. */
       _pole.set(-0.50, -0.30, 0.81).normalize();
     } else {
-      _pole.set(-0.55 - 0.35 * Math.max(0, lift), -0.80 + 0.28 * Math.max(0, lift), -0.34).normalize();
+      /* a low hand's elbow goes BACK beside the ribs, a raised hand's opens outward:
+       * "out" at the guard stood the upper arm level with her shoulder (filmed) */
+      const up = Math.max(0, lift);
+      _pole.set(-0.36 - 0.54 * up, -0.80 + 0.28 * up, -0.62 + 0.28 * up).normalize();
     }
     an._ikArm('r', _hand, _pole, w, null);
     an._clearArmOfHead(b.upArmR, b.loArmR, b.handR, _hand, _pole, w);

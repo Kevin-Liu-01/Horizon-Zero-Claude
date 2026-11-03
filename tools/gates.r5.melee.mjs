@@ -3118,8 +3118,8 @@ export const GATES = [
           const cover = raster(hW, hr);
           /* who covers it, and from where (0 = the lens straight behind her) */
           const camRel = Math.atan2(cam.position.x - p.position.x, cam.position.z - p.position.z) - (p.heading ?? 0);
-          const rel = ((camRel * 180 / Math.PI + 180 + 720) % 360) - 180;
-          camRows.push({ yaw: y, moving, boomPen: +boomPen.toFixed(3), headCover: +cover.toFixed(3), relDeg: +((rel + 540) % 360 - 180).toFixed(0),
+          const rel = (((camRel * 180 / Math.PI) % 360) + 720) % 360 - 180;
+          camRows.push({ yaw: y, moving, boomPen: +boomPen.toFixed(3), headCover: +cover.toFixed(3), offBackDeg: +rel.toFixed(0),
             by: cover > 0.02 ? { lance: +raster(hW, hr, 1).toFixed(3), bow: +raster(hW, hr, 2).toFixed(3), quiver: +raster(hW, hr, 4).toFixed(3) } : null });
         }
       }
@@ -3177,11 +3177,15 @@ export const GATES = [
        * 1.50 m haft and marks, on its slower clock. The prop in her hand stands in for the model. */
       const M = C.combat.melee, lay = an.melee, T0 = M.lance.tuning;
       const VAR = await import('/src/combat/lanceStow.js');
+      const backToBack = async () => { M.holsterLance(); const tq = performance.now(); while (M.stance !== 'holstered' && performance.now() - tq < 3000) await frame(); for (let i = 0; i < 6; i++) await frame(); };
+      await backToBack();
       M.lance.tuning = VAR.LANCE_VARIANTS.counterweight;
       lay.attachLance(M.lance.group, 1.50, 1, { grip: 0.20, grip2: 0.55 });
-      if (M.stance !== 'ready') await toReady(C);
+      await toReady(C);
       for (let i = 0; i < 30; i++) await frame();
       const counterRows = await heavyRow('counterweight');
+      for (let i = 0; i < 20; i++) await frame();
+      await backToBack();
       M.lance.tuning = T0;
       lay.attachLance(M.lance.group, M.lance.length, 1, { grip: M.lance.grip, grip2: M.lance.grip2 });
       const w0 = rows.windup ? rows.windup.tMax - rows.windup.tMin : 0, w1 = counterRows.windup ? counterRows.windup.tMax - counterRows.windup.tMin : 0;
