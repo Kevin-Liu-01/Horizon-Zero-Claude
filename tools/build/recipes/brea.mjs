@@ -348,12 +348,13 @@ export async function build({ out = ROOT } = {}) {
     // the hair and padding the cloth rides on: thin over the brow, fuller over the crown and the back
     // and it is pulled in hard at the temple, where the form bridges the cut-out ear and would otherwise stand off the skull
     lift: (dx, dy, dz) => 0.0034 + 0.0052 * smooth(0.0, 0.75, dy) + 0.0032 * smooth(0.1, -0.85, dz) - 0.0042 * smooth(0.7, 0.95, Math.abs(dx)) * (1 - smooth(0.02, 0.3, dy)),
+    lowTuck: (dx, dy, dz) => 0.0085 * smooth(0.68, 0.94, Math.abs(dx)) * (1 - smooth(0.05, 0.36, dy)) * (1 - smooth(-0.08, 0.24, dz)),
     // the base turn: low edge at +13 deg over the brow, +9 deg over the ears, -27 deg on the nape
-    base: { tiltDeg: 20, warpDeg: -7.5, lowDeg: -0.8, w: 0.232 },
+    base: { tiltDeg: 20, warpDeg: -9.5, lowDeg: -0.2, w: 0.232 },
     // two turns crossing over the forehead
     turns: [
-      { phiDeg: 82, tauDeg: 19, oDeg: 27.5, w: 0.215, along: 34, lift: 0.0064, pillow: 0.0026, creaseAmp: 0.0012, seed: 8, flip: true },
-      { phiDeg: -74, tauDeg: 17, oDeg: 37.5, w: 0.215, along: 30, lift: 0.0092, pillow: 0.0028, creaseAmp: 0.0012, seed: 15 },
+      { phiDeg: 82, tauDeg: 14.5, oDeg: 30, w: 0.2, along: 34, lift: 0.0082, hemDrop: 0.0046, pillow: 0.0026, creaseAmp: 0.0012, seed: 8, flip: true },
+      { phiDeg: -74, tauDeg: 17, oDeg: 37.5, w: 0.215, along: 30, lift: 0.0114, hemDrop: 0.0068, pillow: 0.0028, creaseAmp: 0.0012, seed: 15 },
     ],
     // the topknot; its top is the bbox top that assets.specs.js's targetHeight is computed from
     bun: { c: [0, 1.7605, -0.100], axis: [0, 0.70, -0.71], r: 0.0605, topY: 1.82756 },

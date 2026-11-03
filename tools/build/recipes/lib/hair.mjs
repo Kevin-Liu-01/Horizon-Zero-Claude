@@ -207,7 +207,8 @@ export function hairlineLayer({ coverage, sampler, flowUV, hair = '#15110F', ski
     const col = coilColour(hv, tv, C);
     T.r = mix(T.r, col[0] * 1.05, edge); T.g = mix(T.g, col[1] * 1.05, edge); T.b = mix(T.b, col[2] * 1.05, edge);
     T.h += edge * hv * heightM;
-    T.rough = mix(T.rough, 0.8 + 0.12 * (1 - hv), edge);
+    T.rough = mix(T.rough, 0.84 + 0.12 * (1 - hv), edge);
+    T.metal = mix(T.metal, 0.7, edge);            // near-black coils: at the dielectric 4 % a strong sun turns them grey (the material's metal factor is 1)
   };
 }
 

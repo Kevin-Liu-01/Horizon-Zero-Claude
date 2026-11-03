@@ -1,7 +1,24 @@
 # ROUND 5 — character-art (W1; R54, R56, R58)
 
-Brea's close-up, rebuilt in the recipe, and the kit settlements builds NPCs on. WIP: the API below
-is published early for settlements (R56, R57 c); the gate table is filled in at the lane's exit.
+Brea's close-up, rebuilt in the recipe, and the kit settlements builds NPCs on (R56, R57 c). Budgets did not move.
+
+## 1. What was built
+
+All of it is procedural, in `tools/build/recipes/brea.mjs` and `tools/build/recipes/lib/{face,skin,skin-human,hair,wrap,wrap-head}.mjs`,
+from the CC0 UBC sources only. Nothing was downloaded.
+
+| brief | now |
+|---|---|
+| blocky paper band, torn alpha, no folds | Wound cloth on the measured head form (`woundHeadwrap`): a base turn, two crossing turns, a gathered crown, a wound topknot with a carmine cord binding, a wrap knot. Each ribbon has a pillow section, a rolled hem, long tension folds and a fold + weave normal. Hems tuck into the layer under them (FrontSide rendering would otherwise show the sky through a lifted edge). The alpha edge is a worn hem, not a comb; the panel's outer texels stay out of bilinear reach, so no hairline runs along a hem |
+| dark helmet shell | The shell is gone (a coverage guide only). Coil cards at the nape with a broken outline; close coils painted into the skin atlas at the temple and above the ear, which dissolve through the coil field and carry a metal mask so a strong sun does not turn them grey. The knot tail is now a cloth end with a frayed fringe on the same `dyn_hairKnotTail` chain |
+| blunt, oversized nose; weak jaw | Tip lifted and pulled back, bridge straightened, alae and side walls slimmed; chin, mandible and neck reshaped; 260 silhouette edges refined along the jaw. The face field also tucks the ears and rounds the lobes, and adds a slight asymmetry (a dry mouth corner) |
+| flat skin | Ray-cast AO (head, wrap and collar occlude) baked into albedo and ORM, convexity shading, seamless tone across UV seams, colour zones, pores in height and ORM, creases. The source's superhero make-up is off the lids. A small hero fill through the emissive slot (same image, no new map or draw) keeps the shadow side's form on dark skin |
+| flat salt stripe | A finger-wiped chalky stroke: fat through the middle, thin and broken at its edges and ends, overlapping on the bridge, with a slight crackle only where it dried thick, and real relief in the normal |
+| ∴ as three white blobs | Three small dark ink dots on the back of the right hand |
+| eyes without depth | 160 px procedural eye patch: fibred iris, limbal ring, catch-lights on the visible iris, sclera that shades to the corners and under the lid, cornea bulge and low roughness. `eyeOpening` now uses two grids, which put the lash cards and the painted lid line on the true margin (they floated 3 mm up on the lid before). Brows are a soft mass with combed hairs |
+| (found in the first live frame) | A hole through the neck inside the collar: the outfit's hide mask culled the neck. The mask now never hides a vertex inside the collar's opening |
+
+The wrap tail's root is gathered and rolled into a half tube, so its stiff first third no longer reads as a flat plate; its chain rig and points are hero-body's and are untouched.
 
 ## 3. API (reusable: `tools/build/recipes/lib/**`, Node only, deterministic, no clocks or `Math.random`)
 
@@ -80,7 +97,7 @@ is published early for settlements (R56, R57 c); the gate table is filled in at 
 
 ### The material contract
 - Skin: opaque, 1024² base, 512² normal, 512² ORM used as both occlusion and metallic-roughness (R AO,
-  G roughness, B metal 0). The emissive slot points at the same base image with a small factor (`paintHumanSkin({ fill })`,
+  G roughness, B metal: 0 on skin, 0.7 on painted hair, metallic factor 1). The emissive slot points at the same base image with a small factor (`paintHumanSkin({ fill })`,
   default [0.05, 0.036, 0.03]; the wrap [0.03, 0.03, 0.03]): the hero fill, in place of a subsurface pass, so a shadow side keeps
   its form on dark skin. No new map, no new draw. WebP normals are 4:2:0, so keep pore relief bold enough to survive it, and do not
   print it into the albedo as well, or it reads as freckles or stubble.

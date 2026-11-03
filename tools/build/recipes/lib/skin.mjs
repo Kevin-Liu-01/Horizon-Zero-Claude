@@ -416,7 +416,7 @@ export const fbm3 = (x, y, z, f) => (noise3(x * f, y * f, z * f) * 0.57 + noise3
 /* ================================================================ layers */
 
 /** The one record every paint layer sees per texel (reused, never reallocated). */
-class Texel { constructor() { this.br = 0; this.bg = 0; this.bb = 0; this.sr = 0; this.sg = 0; this.sb = 0; this.conv = 0; this.X = 0; this.Y = 0; this.Z = 0; this.nx = 0; this.ny = 0; this.nz = 0; this.r = 0; this.g = 0; this.b = 0; this.h = 0; this.rough = 0.6; this.ao = 1; this.island = -1; this.mPerPx = 0.001; this.x = 0; this.y = 0; this.lum = 0; } }
+class Texel { constructor() { this.br = 0; this.bg = 0; this.bb = 0; this.sr = 0; this.sg = 0; this.sb = 0; this.conv = 0; this.X = 0; this.Y = 0; this.Z = 0; this.nx = 0; this.ny = 0; this.nz = 0; this.r = 0; this.g = 0; this.b = 0; this.h = 0; this.rough = 0.6; this.metal = 0; this.ao = 1; this.island = -1; this.mPerPx = 0.001; this.x = 0; this.y = 0; this.lum = 0; } }
 
 /**
  * Pores, fine creasing and pigment mottling, weighted by `zone(T)` (0..1). Skin is never
@@ -790,6 +790,7 @@ export async function paintSkinAtlas({ prim, islands, stock, W = 1024, tone = '#
   const out = new Float32Array(W * W * 3);
   const rough = new Float32Array(W * W).fill(baseRough);
   const aoOut = new Float32Array(W * W).fill(1);
+  const metalOut = new Float32Array(W * W);
   const height = new Float32Array(W * W);
   const nrm = new Float32Array(W * W * 2);
   const filled = new Uint8Array(W * W);
@@ -835,6 +836,7 @@ export async function paintSkinAtlas({ prim, islands, stock, W = 1024, tone = '#
       T.br = s3[0] * gain[0]; T.bg = s3[1] * gain[1]; T.bb = s3[2] * gain[2];
     }
     T.h = 0;
+    T.metal = 0;
     T.rough = baseRough * (0.55 + 0.45 * (s2[0] / 255) / 0.72);
     // the baked form: AO (a reddened multiply, light through skin is warm) + convexity
     let a = 1;
@@ -859,7 +861,7 @@ export async function paintSkinAtlas({ prim, islands, stock, W = 1024, tone = '#
       T.b *= mix(0.54, 1, ak) * (1 - dent * 1.02) * (1 + ridge * 0.8);
     }
     out[o] = T.r; out[o + 1] = T.g; out[o + 2] = T.b;
-    rough[i] = T.rough; aoOut[i] = T.ao; height[i] = T.h;
+    rough[i] = T.rough; aoOut[i] = T.ao; height[i] = T.h; metalOut[i] = T.metal;
     nrm[i * 2] = s1[0] / 127.5 - 1; nrm[i * 2 + 1] = s1[1] / 127.5 - 1;
     filled[i] = 1;
     stats.texels++;
@@ -887,7 +889,7 @@ export async function paintSkinAtlas({ prim, islands, stock, W = 1024, tone = '#
     for (let k = 0; k < 3; k++) base[o + k] = Math.max(0, Math.min(255, Math.round(out[o + k])));
     if (filled[i]) {
       normal[o] = Math.round((nOut[o] * 0.5 + 0.5) * 255); normal[o + 1] = Math.round((nOut[o + 1] * 0.5 + 0.5) * 255); normal[o + 2] = Math.round((nOut[o + 2] * 0.5 + 0.5) * 255);
-      orm[o] = Math.round(clamp01(aoOut[i]) * 255); orm[o + 1] = Math.round(clamp01(rough[i]) * 255); orm[o + 2] = 0;
+      orm[o] = Math.round(clamp01(aoOut[i]) * 255); orm[o + 1] = Math.round(clamp01(rough[i]) * 255); orm[o + 2] = Math.round(clamp01(metalOut[i]) * 255);
     } else { normal[o] = 128; normal[o + 1] = 128; normal[o + 2] = 255; orm[o] = 255; orm[o + 1] = 160; orm[o + 2] = 0; }
   }
   dilate(base, W, W, 3, filled);

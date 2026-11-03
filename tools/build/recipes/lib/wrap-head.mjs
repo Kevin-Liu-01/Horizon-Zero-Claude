@@ -19,6 +19,7 @@ export const DEG = Math.PI / 180;
  *   headSoup     flat triangles of the head (no ears)
  *   center       the form's centre (raw metres)
  *   lift(d)      the hair and padding the cloth rides on, by unit direction
+ *   lowTuck(d)   metres the lower hems pull in by unit direction (over a cut-out ear), or null
  *   base         { tiltDeg, warpDeg, lowDeg, w } the base turn: its low edge sits at lowDeg, + tilt up the
  *                front and down the nape, warpDeg lifting it over the ears
  *   turns        [{ phiDeg, tauDeg, oDeg, w, lift, seed, along, flip }] each rises toward azimuth phi
@@ -30,7 +31,7 @@ export const DEG = Math.PI / 180;
  *   tuft         { points, joints, count, along, width, side } or null (a coil tuft on a chain)
  * Returns { geo, parts, covers(p), lowEdge(p), soup, center }.
  */
-export function woundHeadwrap({ headSoup, joint, center, lift, base: B, turns, bun: bunSpec = null, knot: knotAt = null, tail = null, tail2 = null, tuft = null }) {
+export function woundHeadwrap({ headSoup, joint, center, lift, lowTuck = null, base: B, turns, bun: bunSpec = null, knot: knotAt = null, tail = null, tail2 = null, tuft = null }) {
   const A = WRAP_ATLAS, W = A.W;
   const head = joint;
   const form = headForm(headSoup, { center, lift, blur: 2 });
@@ -45,10 +46,10 @@ export function woundHeadwrap({ headSoup, joint, center, lift, base: B, turns, b
   const baseW = B.w;
   const baseO = (B.lowDeg * DEG) + baseW;
   const baseWarp = (s) => B.warpDeg * DEG * Math.cos(2 * s);
-  add('cap', crownCap(form, { elMin: 18 * DEG, rings: 3, seg: 14, lift: 0.0074, joint: head, uv: { rect: [A.clothB.rect[0], A.clothB.rect[1], A.clothB.period, A.clothB.rect[3]], W }, tiltAxis: [0, 0.94, -0.34] }));
-  add('turn1', ribbon(form, { n: baseN, o0: baseO, w: baseW, warp: baseWarp, along: 36, rowsT: rowsBase, lift: 0.0026, pillow: 0.0024, creases: 3, creaseAmp: 0.0012, seed: 3, joint: head, uv: uvA([0, 1]) }));
+  add('cap', crownCap(form, { elMin: 18 * DEG, rings: 3, seg: 14, lift: 0.0066, joint: head, uv: { rect: [A.clothB.rect[0], A.clothB.rect[1], A.clothB.period, A.clothB.rect[3]], W }, tiltAxis: [0, 0.94, -0.34] }));
+  add('turn1', ribbon(form, { n: baseN, o0: baseO, w: baseW, warp: baseWarp, along: 36, rowsT: rowsBase, lift: 0.0026, pillow: 0.0024, lowTuck, creases: 3, creaseAmp: 0.0012, seed: 3, joint: head, uv: uvA([0, 1]) }));
   // the crossing turns: each rises across the forehead toward its own side
-  turns.forEach((t, i) => add(`turn${i + 2}`, ribbon(form, { n: rising(t.phiDeg * DEG, t.tauDeg * DEG), o0: t.oDeg * DEG, w: t.w, along: t.along ?? 32, rowsT: rowsBase, lift: t.lift, pillow: t.pillow ?? 0.0026, hemDrop: t.hemDrop ?? 0.0024, hemDropUp: t.hemDropUp ?? (t.lift + 0.002), creases: 3, creaseAmp: t.creaseAmp ?? 0.0013, seed: t.seed, joint: head, uv: uvA(t.flip ? [1, 0] : [0, 1]) })));
+  turns.forEach((t, i) => add(`turn${i + 2}`, ribbon(form, { n: rising(t.phiDeg * DEG, t.tauDeg * DEG), o0: t.oDeg * DEG, w: t.w, along: t.along ?? 32, rowsT: rowsBase, lift: t.lift, pillow: t.pillow ?? 0.0026, hemDrop: t.hemDrop ?? 0.0024, hemDropUp: t.hemDropUp ?? (t.lift + 0.002), lowTuck, creases: 3, creaseAmp: t.creaseAmp ?? 0.0013, seed: t.seed, joint: head, uv: uvA(t.flip ? [1, 0] : [0, 1]) })));
 
   if (bunSpec) {
     // the topknot: the same cloth wound round an egg; the top height is fixed by TOP_Y

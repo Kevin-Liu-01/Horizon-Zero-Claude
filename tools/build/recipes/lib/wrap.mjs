@@ -109,7 +109,7 @@ function pushV(g, p, n, u, v, joint, c = null) {
  * panel's U period so a repeating strip of atlas covers any length.
  *   uv: { rect: [x, y, w, h] px, period px, W atlas px, pxPerM, v: [bottom, top] in 0..1 of rect }
  */
-export function ribbon(form, { n, o0, w, along = 32, s0 = 0, s1 = TAU, rowsT = [-1, -0.93, -0.66, -0.3, 0.1, 0.5, 0.82, 1], warp = null, lift = 0.003, pillow = 0.0022, hemDrop = 0.0035, hemDropUp = null, creases = 3, creaseAmp = 0.0011, wander = 0.04, seed = 1, joint = 0, uv, flip = false }) {
+export function ribbon(form, { n, o0, w, along = 32, s0 = 0, s1 = TAU, rowsT = [-1, -0.93, -0.66, -0.3, 0.1, 0.5, 0.82, 1], warp = null, lift = 0.003, pillow = 0.0022, hemDrop = 0.0035, hemDropUp = null, lowTuck = null, creases = 3, creaseAmp = 0.0011, wander = 0.04, seed = 1, joint = 0, uv, flip = false }) {
   const g = { pos: [], nrm: [], uv: [], jnt: [], wgt: [], idx: [] };
   const axis = norm(n);
   const fwd = Math.abs(axis[2]) > 0.95 ? [1, 0, 0] : [0, 0, 1];
@@ -137,6 +137,7 @@ export function ribbon(form, { n, o0, w, along = 32, s0 = 0, s1 = TAU, rowsT = [
       if (x > -2.2 && x < 2.2) off += f.amp * Math.exp(-x * x) * (0.55 + 0.45 * Math.sin(f.m2 * s + f.ph2));
     }
     off += 0.0009 * (noise3(d[0] * 9 + seed, d[1] * 9, d[2] * 9) - 0.5);
+    if (lowTuck) off -= lowTuck(d[0], d[1], d[2]) * smooth(-0.3, -1, t);       // the lower hem pulled in where the form bridges a gap (a cut-out ear)
     const r = form.R(d[0], d[1], d[2]) + off;
     return [c[0] + d[0] * r, c[1] + d[1] * r, c[2] + d[2] * r];
   };

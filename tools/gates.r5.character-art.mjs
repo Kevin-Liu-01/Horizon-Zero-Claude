@@ -74,10 +74,12 @@ const STAGE = (hour, weather, sunOffDeg) => `
 
 /** The three angles at 0.8 m, full height, at DPR 1.25 like the game: all on her left, the sun's side. */
 const CLOSEUP = (name, hour, weather, sunOff) => `(async () => {${STAGE(hour, weather, sunOff)}
-      const cen = brow.clone().add(chin).multiplyScalar(0.5).add(U1.clone().multiplyScalar(0.078)).sub(F0.clone().multiplyScalar(0.075));
+      const cen = brow.clone().add(chin).multiplyScalar(0.5).add(U1.clone().multiplyScalar(0.05)).sub(F0.clone().multiplyScalar(0.07));
       const W = 1600, H = 900, PW = Math.floor(W / 3);
       const c = overlay(W, H), g = c.getContext('2d');
       const views = [['FRONT', 0], ['3/4', Math.PI / 5], ['PROFILE (HER LEFT)', Math.PI / 2]];
+      // the stowed lance and bow cross these lenses: the sheet is the head (the mask holds until the next update)
+      p.hero?.kit?.setHidden(31);
       views.forEach(([nm, yaw], i) => {
         const d = view(yaw);
         const img = S.liveView(C, [cen.x + d.x * 0.8, cen.y + d.y * 0.8, cen.z + d.z * 0.8], [cen.x, cen.y, cen.z], { width: Math.round(PW * 1.25), height: Math.round(H * 1.25), fov: 29 });

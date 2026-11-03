@@ -215,7 +215,7 @@ export function compactPrim(prim) {
   prim.getIndices().setArray(out);
 }
 /** Coil cards on the scalp below the wrap, around the ears and down the nape. */
-export function scalpCards({ bodyPrim, headW, shellGrid, wrapped, skinJ, skinW, hairShape: shape = hairShape, temples = true }) {
+export function scalpCards({ bodyPrim, headW, shellGrid, wrapped, skinJ, skinW, hairShape: shape = hairShape, temples = false }) {
   const A = WRAP_ATLAS;
   const P = bodyPrim.getAttribute('POSITION');
   const verts = [];
@@ -280,9 +280,9 @@ export function faceLayers({ L, eyes, cheek }) {
     if (Math.abs(T.X) > 0.02 || T.Y > noseT[1] + 0.004 || T.Y < noseT[1] - 0.026 || T.Z < noseT[2] - 0.05) return;
     const k = smooth(-0.15, -0.65, T.ny);
     if (k <= 0) return;
-    const m = 1 - 0.68 * k;
+    const m = 1 - 0.4 * k;
     T.r *= m; T.g *= m * 0.96; T.b *= m * 0.96;
-    T.ao *= 1 - 0.5 * k;
+    T.ao *= 1 - 0.3 * k;
   };
   return [
     smoothSkin({ zone: notFeature }),
@@ -291,12 +291,12 @@ export function faceLayers({ L, eyes, cheek }) {
     lipTone({ center: [0, L.upperLip[1] - 0.011, L.upperLip[2] - 0.006], r: [0.036, 0.024, 0.03] }),
     colourZones([
       { at: [0, 1.70, 0.08], s: [0.05, 0.024, 0.05], gain: [1.03, 1.03, 0.98], rough: -0.12 },           // the forehead, warm and yellow, a soft sheen
-      { at: cheek, s: [0.024, 0.02, 0.03], gain: [1.05, 0.98, 0.95], rough: -0.16 },                     // the cheek, red through
-      { at: [-cheek[0], cheek[1], cheek[2]], s: [0.024, 0.02, 0.03], gain: [1.05, 0.98, 0.95], rough: -0.16 },
+      { at: cheek, s: [0.024, 0.02, 0.03], gain: [1.13, 1.05, 1.01], rough: -0.16 },                     // the cheek, red through, the bone catching light
+      { at: [-cheek[0], cheek[1], cheek[2]], s: [0.024, 0.02, 0.03], gain: [1.13, 1.05, 1.01], rough: -0.16 },
       { at: noseT, s: [0.014, 0.02, 0.02], gain: [1.0, 1.01, 1.02], rough: -0.16 },                       // the nose, sun-reddened and oily
       { at: L.noseBridge, s: [0.012, 0.022, 0.02], gain: [1.02, 1.0, 0.98], rough: -0.14 },
       { at: [0, L.chin[1] + 0.024, L.chin[2]], s: [0.04, 0.02, 0.03], gain: [0.95, 0.94, 0.96] },         // the muzzle, cooler and greyer
-      { at: L.chin, s: [0.018, 0.012, 0.016], gain: [1.05, 0.97, 0.94], rough: -0.1 },
+      { at: L.chin, s: [0.018, 0.012, 0.016], gain: [1.1, 1.03, 0.99], rough: -0.1 },
       { at: [0.074, 1.635, -0.03], s: [0.016, 0.03, 0.028], gain: [1.05, 0.96, 0.93] },                     // the ears
       { at: [-0.074, 1.635, -0.03], s: [0.016, 0.03, 0.028], gain: [1.05, 0.96, 0.93] },
       { at: [eyes[0][0], eyes[0][1] - 0.0145, eyes[0][2] + 0.008], s: [0.017, 0.0065, 0.02], gain: [0.93, 0.9, 0.91] },   // under the eyes
@@ -402,7 +402,7 @@ export async function paintHumanSkin({ bodyPrim, skinMat, layout, eyeR, EYE_PX, 
   baseTex.setImage(await webp(painted.base, W, { quality: 96 })).setMimeType('image/webp').setURI(`${names}-skin-base.webp`);
   nTex.setImage(await webp(painted.normal, W, { to: 512, quality: 96, kernel: 'lanczos3' })).setMimeType('image/webp').setURI(`${names}-skin-normal.webp`);
   rTex.setImage(await webp(painted.orm, W, { to: 512, quality: 90, kernel: 'mitchell' })).setMimeType('image/webp').setURI(`${names}-skin-orm.webp`);
-  skinMat.setRoughnessFactor(1).setMetallicFactor(0).setDoubleSided(false);
+  skinMat.setRoughnessFactor(1).setMetallicFactor(1).setDoubleSided(false);
   skinMat.setOcclusionTexture(rTex);
   skinMat.setOcclusionStrength(1);
   // the hero fill: light that went into the skin comes back out of it (no subsurface pass here), so the
