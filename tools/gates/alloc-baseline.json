@@ -1,0 +1,1982 @@
+{
+ "rule": "R48 (c): the per-owner allocation of the W0b global run; no owner may exceed it by more than 10 % at a later wave exit (an owner exceeds it when EITHER its KB/frame OR its KB/s is > 1.10 x)",
+ "recordedAt": "2026-11-03T08:51:52.008Z",
+ "port": 5270,
+ "runId": "p5270-18694-1793695388554",
+ "wave": "W0b",
+ "box": {
+  "loadAverage": [
+   5.75,
+   5.02,
+   4.56
+  ],
+  "fps": [
+   {
+    "phase": "staged fight",
+    "fps": 56.8
+   },
+   {
+    "phase": "sprint and draw",
+    "fps": 57.8
+   }
+  ]
+ },
+ "runs": [
+  {
+   "runId": "p5270-18694-1793695388554",
+   "recordedAt": "2026-11-03T08:51:52.008Z",
+   "box": {
+    "loadAverage": [
+     5.75,
+     5.02,
+     4.56
+    ],
+    "fps": [
+     {
+      "phase": "staged fight",
+      "fps": 56.8
+     },
+     {
+      "phase": "sprint and draw",
+      "fps": 57.8
+     }
+    ]
+   }
+  }
+ ],
+ "gitHead": "2b77560c974c5b5b47b437714c54d65e64318ee3",
+ "owners": {
+  "terrain": {
+   "lane": "world-ground",
+   "barsFrom": "W1",
+   "phase": "staged fight",
+   "kbPerFrame": 434.76,
+   "measuredKBps": 24703.31,
+   "gradedKBps": 26085.69
+  },
+  "frozen-spatial": {
+   "lane": "FROZEN kept movement: §11 W1 perf-hygiene grant (bit-identical outputs)",
+   "barsFrom": null,
+   "phase": "staged fight",
+   "kbPerFrame": 322.64,
+   "measuredKBps": 18332.43,
+   "gradedKBps": 19358.3
+  },
+  "engine": {
+   "lane": "engine (no lane after W0b): §11 engine follow-up grant, assigned at W1 launch",
+   "barsFrom": null,
+   "phase": "staged fight",
+   "kbPerFrame": 208.74,
+   "measuredKBps": 11860.86,
+   "gradedKBps": 12524.59
+  },
+  "armory": {
+   "lane": "armory",
+   "barsFrom": "W1",
+   "phase": "sprint and draw",
+   "kbPerFrame": 108.47,
+   "measuredKBps": 6274,
+   "gradedKBps": 6508.49
+  },
+  "frozen-rigging": {
+   "lane": "FROZEN kept rigging: §11 W1 perf-hygiene grant (bit-identical outputs)",
+   "barsFrom": null,
+   "phase": "staged fight",
+   "kbPerFrame": 51.33,
+   "measuredKBps": 2916.75,
+   "gradedKBps": 3079.97
+  },
+  "playerAnimator": {
+   "lane": "melee (hero-body until W1)",
+   "barsFrom": "W1",
+   "phase": "sprint and draw",
+   "kbPerFrame": 47.3,
+   "measuredKBps": 2735.87,
+   "gradedKBps": 2838.12
+  },
+  "world-ground": {
+   "lane": "world-ground",
+   "barsFrom": "W1",
+   "phase": "sprint and draw",
+   "kbPerFrame": 37.31,
+   "measuredKBps": 2157.96,
+   "gradedKBps": 2238.61
+  },
+  "frozen-machine-rig": {
+   "lane": "FROZEN kept machine rig: §11 W1 perf-hygiene grant (bit-identical outputs)",
+   "barsFrom": null,
+   "phase": "staged fight",
+   "kbPerFrame": 24.62,
+   "measuredKBps": 1398.74,
+   "gradedKBps": 1477.01
+  },
+  "fauna": {
+   "lane": "world-props",
+   "barsFrom": "W1",
+   "phase": "sprint and draw",
+   "kbPerFrame": 15.82,
+   "measuredKBps": 915.11,
+   "gradedKBps": 949.31
+  },
+  "settlements": {
+   "lane": "settlements",
+   "barsFrom": "W2",
+   "phase": "staged fight",
+   "kbPerFrame": 11.82,
+   "measuredKBps": 671.77,
+   "gradedKBps": 709.37
+  },
+  "shell-ui": {
+   "lane": "shell-ui",
+   "barsFrom": "W2",
+   "phase": "staged fight",
+   "kbPerFrame": 9.79,
+   "measuredKBps": 556.48,
+   "gradedKBps": 587.62
+  },
+  "melee": {
+   "lane": "melee",
+   "barsFrom": "W1",
+   "phase": "sprint and draw",
+   "kbPerFrame": 8.89,
+   "measuredKBps": 514.39,
+   "gradedKBps": 533.62
+  },
+  "frozen-control": {
+   "lane": "FROZEN control (plan §1.1: input.js, events.js, player.js outside the hero-body W0 grant; melee's W1 <= 15-line player.js grant re-grades it, R46): §11 W1 perf-hygiene grant",
+   "barsFrom": null,
+   "phase": "sprint and draw",
+   "kbPerFrame": 7.16,
+   "measuredKBps": 414.15,
+   "gradedKBps": 429.63
+  },
+  "frozen-machine-ai": {
+   "lane": "FROZEN machine AI engine (plan §1.1, after instruments-core W0)",
+   "barsFrom": null,
+   "phase": "staged fight",
+   "kbPerFrame": 6.47,
+   "measuredKBps": 367.88,
+   "gradedKBps": 388.47
+  },
+  "frozen-ui-engines": {
+   "lane": "FROZEN UI engines (plan §1.1): §11 W1 perf-hygiene grant",
+   "barsFrom": null,
+   "phase": "sprint and draw",
+   "kbPerFrame": 4.4,
+   "measuredKBps": 254.22,
+   "gradedKBps": 263.72
+  },
+  "audio": {
+   "lane": "audio",
+   "barsFrom": "W3",
+   "phase": "sprint and draw",
+   "kbPerFrame": 3.69,
+   "measuredKBps": 213.52,
+   "gradedKBps": 221.5
+  },
+  "world-props": {
+   "lane": "world-props",
+   "barsFrom": "W1",
+   "phase": "sprint and draw",
+   "kbPerFrame": 3.58,
+   "measuredKBps": 207.23,
+   "gradedKBps": 214.97
+  },
+  "kept-machines": {
+   "lane": "KEPT machine plumbing (instruments-core edited it at W0 only through its §1.2 grants; no lane after W0b; A-alloc-machines grades per frame owner, R46)",
+   "barsFrom": null,
+   "phase": "staged fight",
+   "kbPerFrame": 3.51,
+   "measuredKBps": 199.65,
+   "gradedKBps": 210.82
+  },
+  "world-sky": {
+   "lane": "world-sky",
+   "barsFrom": "W1",
+   "phase": "sprint and draw",
+   "kbPerFrame": 2.7,
+   "measuredKBps": 155.88,
+   "gradedKBps": 161.71
+  },
+  "combat-kit": {
+   "lane": "combat-kit",
+   "barsFrom": "W2",
+   "phase": "staged fight",
+   "kbPerFrame": 0.97,
+   "measuredKBps": 55.06,
+   "gradedKBps": 58.14
+  },
+  "progression": {
+   "lane": "progression",
+   "barsFrom": "W3",
+   "phase": "staged fight",
+   "kbPerFrame": 0.83,
+   "measuredKBps": 47.27,
+   "gradedKBps": 49.92
+  },
+  "legacy-species": {
+   "lane": "instruments-b (deletes them at the W2 exit, plan §6; R46 d)",
+   "barsFrom": "W2",
+   "phase": "sprint and draw",
+   "kbPerFrame": 0.81,
+   "measuredKBps": 46.77,
+   "gradedKBps": 48.52
+  },
+  "frame-loop": {
+   "lane": "FROZEN frame loop (main.js, plan §1.1 engine row): orchestrator",
+   "barsFrom": null,
+   "phase": "staged fight",
+   "kbPerFrame": 0.21,
+   "measuredKBps": 12.02,
+   "gradedKBps": 12.7
+  },
+  "instruments-a": {
+   "lane": "instruments-a",
+   "barsFrom": "W1",
+   "phase": "sprint and draw",
+   "kbPerFrame": 0.08,
+   "measuredKBps": 4.53,
+   "gradedKBps": 4.7
+  },
+  "instruments-core": {
+   "lane": "instruments-core (W0a, W0b: instruments/{lamps,roles,registry}.js, instruments/lib/**, legacy-free machine files): no lane after W0b; A-alloc-machines grades per frame owner (R46)",
+   "barsFrom": null,
+   "phase": "staged fight",
+   "kbPerFrame": 0.07,
+   "measuredKBps": 3.92,
+   "gradedKBps": 4.14
+  },
+  "studio": {
+   "lane": "brand",
+   "barsFrom": "W4",
+   "phase": "sprint and draw",
+   "kbPerFrame": 0.01,
+   "measuredKBps": 0.37,
+   "gradedKBps": 0.38
+  }
+ },
+ "functions": {
+  "src.onended /src/audio/audio.js:829": {
+   "owner": "audio",
+   "kbPerFrame": 0.11,
+   "measuredKBps": 6.19,
+   "gradedKBps": 6.53
+  },
+  "Menus._raf /src/ui/menu.js:317": {
+   "owner": "shell-ui",
+   "kbPerFrame": 0.68,
+   "measuredKBps": 38.77,
+   "gradedKBps": 40.94
+  },
+  "_frame /src/main.js:272": {
+   "owner": "frame-loop",
+   "kbPerFrame": 0.14,
+   "measuredKBps": 7.74,
+   "gradedKBps": 8.17
+  },
+  "interpolate /src/world/vegetation.js:2861": {
+   "owner": "world-ground",
+   "kbPerFrame": 0.07,
+   "measuredKBps": 3.87,
+   "gradedKBps": 4.09
+  },
+  "update /src/world/environment.js:807": {
+   "owner": "world-sky",
+   "kbPerFrame": 1.07,
+   "measuredKBps": 62.11,
+   "gradedKBps": 64.43
+  },
+  "registerMaterial /src/world/environment.js:658": {
+   "owner": "world-sky",
+   "kbPerFrame": 0.92,
+   "measuredKBps": 52.07,
+   "gradedKBps": 54.98
+  },
+  "_applyTime /src/world/environment.js:914": {
+   "owner": "world-sky",
+   "kbPerFrame": 0.14,
+   "measuredKBps": 7.74,
+   "gradedKBps": 8.17
+  },
+  "_updateNightLights /src/world/environment.js:1086": {
+   "owner": "world-sky",
+   "kbPerFrame": 0.65,
+   "measuredKBps": 37.71,
+   "gradedKBps": 39.12
+  },
+  "update /src/world/camp.js:1153": {
+   "owner": "settlements",
+   "kbPerFrame": 0.07,
+   "measuredKBps": 3.87,
+   "gradedKBps": 4.09
+  },
+  "windAt /src/world/vegetation.js:2785": {
+   "owner": "world-ground",
+   "kbPerFrame": 0.12,
+   "measuredKBps": 6.97,
+   "gradedKBps": 7.36
+  },
+  "update /src/items/tools.js:322": {
+   "owner": "combat-kit",
+   "kbPerFrame": 0.15,
+   "measuredKBps": 8.81,
+   "gradedKBps": 9.14
+  },
+  "update /src/entities/player.js:1936": {
+   "owner": "frozen-control",
+   "kbPerFrame": 0.52,
+   "measuredKBps": 29.89,
+   "gradedKBps": 31.01
+  },
+  "_stepVertical /src/entities/player.js:2176": {
+   "owner": "frozen-control",
+   "kbPerFrame": 0.16,
+   "measuredKBps": 8.98,
+   "gradedKBps": 9.32
+  },
+  "noise2D /src/world/terrain.js:78": {
+   "owner": "terrain",
+   "kbPerFrame": 222.52,
+   "measuredKBps": 12643.88,
+   "gradedKBps": 13351.43
+  },
+  "fbm /src/world/terrain.js:114": {
+   "owner": "terrain",
+   "kbPerFrame": 3.24,
+   "measuredKBps": 184.02,
+   "gradedKBps": 194.32
+  },
+  "slopeFast /src/world/terrain.js:2126": {
+   "owner": "terrain",
+   "kbPerFrame": 4.7,
+   "measuredKBps": 271.68,
+   "gradedKBps": 281.83
+  },
+  "_stationAt /src/world/water.js:197": {
+   "owner": "world-ground",
+   "kbPerFrame": 0.16,
+   "measuredKBps": 9.23,
+   "gradedKBps": 9.57
+  },
+  "getHeight /src/world/terrain.js:1860": {
+   "owner": "terrain",
+   "kbPerFrame": 194.55,
+   "measuredKBps": 11054.52,
+   "gradedKBps": 11673.13
+  },
+  "getNormal /src/world/terrain.js:2095": {
+   "owner": "terrain",
+   "kbPerFrame": 0.25,
+   "measuredKBps": 14.13,
+   "gradedKBps": 14.92
+  },
+  "raycast /src/core/collision.js:888": {
+   "owner": "frozen-spatial",
+   "kbPerFrame": 89,
+   "measuredKBps": 5057.25,
+   "gradedKBps": 5340.25
+  },
+  "_finishFrame /src/entities/player.js:2297": {
+   "owner": "frozen-control",
+   "kbPerFrame": 0.36,
+   "measuredKBps": 20.56,
+   "gradedKBps": 21.33
+  },
+  "_updateCamera /src/entities/player.js:3923": {
+   "owner": "frozen-control",
+   "kbPerFrame": 3.26,
+   "measuredKBps": 188.56,
+   "gradedKBps": 195.61
+  },
+  "_terrainReachFrom /src/entities/player.js:2430": {
+   "owner": "frozen-control",
+   "kbPerFrame": 0.27,
+   "measuredKBps": 15.82,
+   "gradedKBps": 16.41
+  },
+  "_runFraming /src/entities/player.js:2655": {
+   "owner": "frozen-control",
+   "kbPerFrame": 0.24,
+   "measuredKBps": 13.74,
+   "gradedKBps": 14.51
+  },
+  "_groundRotFor /src/entities/player.js:3731": {
+   "owner": "frozen-control",
+   "kbPerFrame": 0.13,
+   "measuredKBps": 7.42,
+   "gradedKBps": 7.7
+  },
+  "_clearAlong /src/entities/player.js:3689": {
+   "owner": "frozen-control",
+   "kbPerFrame": 0.25,
+   "measuredKBps": 14.45,
+   "gradedKBps": 14.99
+  },
+  "(anonymous) /src/entities/player.js:1367": {
+   "owner": "frozen-control",
+   "kbPerFrame": 0.23,
+   "measuredKBps": 13.02,
+   "gradedKBps": 13.75
+  },
+  "cameraBoom /src/core/collision.js:1139": {
+   "owner": "frozen-spatial",
+   "kbPerFrame": 1.33,
+   "measuredKBps": 75.47,
+   "gradedKBps": 79.69
+  },
+  "update /src/entities/playerAnimator.js:1487": {
+   "owner": "playerAnimator",
+   "kbPerFrame": 16.53,
+   "measuredKBps": 955.94,
+   "gradedKBps": 991.67
+  },
+  "poseState /src/combat/melee.js:674": {
+   "owner": "melee",
+   "kbPerFrame": 0.09,
+   "measuredKBps": 5.22,
+   "gradedKBps": 5.52
+  },
+  "_idleLife /src/entities/playerAnimator.js:2218": {
+   "owner": "playerAnimator",
+   "kbPerFrame": 0.9,
+   "measuredKBps": 51.12,
+   "gradedKBps": 53.98
+  },
+  "_headStabilise /src/entities/playerAnimator.js:2318": {
+   "owner": "playerAnimator",
+   "kbPerFrame": 0.4,
+   "measuredKBps": 23.08,
+   "gradedKBps": 23.94
+  },
+  "_bowCarryLayer /src/entities/playerAnimator.js:2393": {
+   "owner": "playerAnimator",
+   "kbPerFrame": 0.42,
+   "measuredKBps": 23.99,
+   "gradedKBps": 25.34
+  },
+  "_ikArm /src/entities/playerAnimator.js:5637": {
+   "owner": "playerAnimator",
+   "kbPerFrame": 0.38,
+   "measuredKBps": 21.88,
+   "gradedKBps": 22.69
+  },
+  "_liveW /src/entities/playerAnimator.js:1471": {
+   "owner": "playerAnimator",
+   "kbPerFrame": 0.11,
+   "measuredKBps": 6.64,
+   "gradedKBps": 6.89
+  },
+  "_lookLayer /src/entities/playerAnimator.js:2467": {
+   "owner": "playerAnimator",
+   "kbPerFrame": 0.43,
+   "measuredKBps": 24.81,
+   "gradedKBps": 25.73
+  },
+  "_lookAt /src/entities/playerAnimator.js:2511": {
+   "owner": "playerAnimator",
+   "kbPerFrame": 0.11,
+   "measuredKBps": 6.19,
+   "gradedKBps": 6.54
+  },
+  "_applyChar /src/entities/anim/boneSpace.js:318": {
+   "owner": "frozen-rigging",
+   "kbPerFrame": 2.6,
+   "measuredKBps": 147.62,
+   "gradedKBps": 155.88
+  },
+  "_groundConform /src/entities/playerAnimator.js:2533": {
+   "owner": "playerAnimator",
+   "kbPerFrame": 1.34,
+   "measuredKBps": 77.66,
+   "gradedKBps": 80.56
+  },
+  "_footLock /src/entities/playerAnimator.js:2912": {
+   "owner": "playerAnimator",
+   "kbPerFrame": 0.37,
+   "measuredKBps": 20.9,
+   "gradedKBps": 22.07
+  },
+  "_legToPoint /src/entities/playerAnimator.js:2986": {
+   "owner": "playerAnimator",
+   "kbPerFrame": 0.51,
+   "measuredKBps": 28.83,
+   "gradedKBps": 30.44
+  },
+  "_stanceStep /src/entities/playerAnimator.js:3094": {
+   "owner": "playerAnimator",
+   "kbPerFrame": 0.1,
+   "measuredKBps": 5.67,
+   "gradedKBps": 5.88
+  },
+  "_runBob /src/entities/playerAnimator.js:5072": {
+   "owner": "playerAnimator",
+   "kbPerFrame": 0.34,
+   "measuredKBps": 19.66,
+   "gradedKBps": 20.4
+  },
+  "_springs /src/entities/playerAnimator.js:6040": {
+   "owner": "playerAnimator",
+   "kbPerFrame": 18.73,
+   "measuredKBps": 1083.34,
+   "gradedKBps": 1123.83
+  },
+  "_segDist /src/entities/playerAnimator.js:5949": {
+   "owner": "playerAnimator",
+   "kbPerFrame": 0.37,
+   "measuredKBps": 21.48,
+   "gradedKBps": 22.29
+  },
+  "_pushOutOfCapsule /src/entities/playerAnimator.js:5965": {
+   "owner": "playerAnimator",
+   "kbPerFrame": 0.07,
+   "measuredKBps": 4.06,
+   "gradedKBps": 4.29
+  },
+  "update /src/entities/anim/locomotion.js:236": {
+   "owner": "frozen-rigging",
+   "kbPerFrame": 3.58,
+   "measuredKBps": 207.17,
+   "gradedKBps": 214.91
+  },
+  "_gaitWeights /src/entities/anim/locomotion.js:206": {
+   "owner": "frozen-rigging",
+   "kbPerFrame": 0.12,
+   "measuredKBps": 6.6,
+   "gradedKBps": 6.97
+  },
+  "update /src/entities/anim/clipLayer.js:417": {
+   "owner": "frozen-rigging",
+   "kbPerFrame": 45.69,
+   "measuredKBps": 2595.91,
+   "gradedKBps": 2741.17
+  },
+  "_settleSpear /src/entities/anim/meleeLayer.js:2836": {
+   "owner": "melee",
+   "kbPerFrame": 0.11,
+   "measuredKBps": 6.2,
+   "gradedKBps": 6.54
+  },
+  "_poseHolstered /src/entities/anim/meleeLayer.js:1627": {
+   "owner": "melee",
+   "kbPerFrame": 0.09,
+   "measuredKBps": 4.84,
+   "gradedKBps": 5.11
+  },
+  "_liveSocket /src/entities/anim/meleeLayer.js:3225": {
+   "owner": "melee",
+   "kbPerFrame": 0.97,
+   "measuredKBps": 56.05,
+   "gradedKBps": 58.15
+  },
+  "_setTilt /src/entities/anim/meleeLayer.js:3763": {
+   "owner": "melee",
+   "kbPerFrame": 0.17,
+   "measuredKBps": 9.68,
+   "gradedKBps": 10.22
+  },
+  "_bowNode /src/entities/anim/meleeLayer.js:4620": {
+   "owner": "melee",
+   "kbPerFrame": 0.27,
+   "measuredKBps": 15.66,
+   "gradedKBps": 16.24
+  },
+  "(anonymous) /src/entities/anim/meleeLayer.js:4629": {
+   "owner": "melee",
+   "kbPerFrame": 0.12,
+   "measuredKBps": 6.99,
+   "gradedKBps": 7.38
+  },
+  "_clipWeights /src/entities/anim/meleeLayer.js:4666": {
+   "owner": "melee",
+   "kbPerFrame": 0.11,
+   "measuredKBps": 6.26,
+   "gradedKBps": 6.5
+  },
+  "_shaftGap /src/entities/anim/meleeLayer.js:4272": {
+   "owner": "melee",
+   "kbPerFrame": 0.31,
+   "measuredKBps": 18,
+   "gradedKBps": 18.67
+  },
+  "segPoint /src/entities/anim/meleeLayer.js:5003": {
+   "owner": "melee",
+   "kbPerFrame": 2.7,
+   "measuredKBps": 156.45,
+   "gradedKBps": 162.29
+  },
+  "update /src/hero/carry.js:230": {
+   "owner": "armory",
+   "kbPerFrame": 18.2,
+   "measuredKBps": 1052.74,
+   "gradedKBps": 1092.08
+  },
+  "_report /src/hero/carry.js:360": {
+   "owner": "armory",
+   "kbPerFrame": 0.29,
+   "measuredKBps": 16.6,
+   "gradedKBps": 17.22
+  },
+  "ptSeg /src/hero/carry.js:141": {
+   "owner": "armory",
+   "kbPerFrame": 3.23,
+   "measuredKBps": 186.72,
+   "gradedKBps": 193.7
+  },
+  "segSeg /src/hero/carry.js:114": {
+   "owner": "armory",
+   "kbPerFrame": 29.58,
+   "measuredKBps": 1710.75,
+   "gradedKBps": 1774.69
+  },
+  "_viol /src/hero/carry.js:541": {
+   "owner": "armory",
+   "kbPerFrame": 15.75,
+   "measuredKBps": 910.94,
+   "gradedKBps": 944.98
+  },
+  "resolveCapsule /src/core/collision.js:720": {
+   "owner": "frozen-spatial",
+   "kbPerFrame": 0.96,
+   "measuredKBps": 54.37,
+   "gradedKBps": 57.42
+  },
+  "tick /src/entities/machines/ai/attacks.js:543": {
+   "owner": "kept-machines",
+   "kbPerFrame": 0.15,
+   "measuredKBps": 8.73,
+   "gradedKBps": 9.22
+  },
+  "update /src/entities/machines/scrapper.js:147": {
+   "owner": "legacy-species",
+   "kbPerFrame": 0.08,
+   "measuredKBps": 4.78,
+   "gradedKBps": 5.04
+  },
+  "_statePatrol /src/entities/machines/machine.js:2196": {
+   "owner": "kept-machines",
+   "kbPerFrame": 0.99,
+   "measuredKBps": 57.25,
+   "gradedKBps": 59.39
+  },
+  "steer /src/core/nav.js:579": {
+   "owner": "frozen-spatial",
+   "kbPerFrame": 12.62,
+   "measuredKBps": 729.95,
+   "gradedKBps": 757.23
+  },
+  "rayCapsule /src/core/collision.js:354": {
+   "owner": "frozen-spatial",
+   "kbPerFrame": 0.82,
+   "measuredKBps": 46.55,
+   "gradedKBps": 49.16
+  },
+  "sphereQuery /src/core/collision.js:679": {
+   "owner": "frozen-spatial",
+   "kbPerFrame": 18.87,
+   "measuredKBps": 1072.33,
+   "gradedKBps": 1132.34
+  },
+  "_surfaceNormal /src/core/collision.js:927": {
+   "owner": "frozen-spatial",
+   "kbPerFrame": 4.13,
+   "measuredKBps": 234.53,
+   "gradedKBps": 247.65
+  },
+  "_clearance /src/core/nav.js:605": {
+   "owner": "frozen-spatial",
+   "kbPerFrame": 3.5,
+   "measuredKBps": 199.09,
+   "gradedKBps": 210.23
+  },
+  "playAt /src/audio/audio.js:791": {
+   "owner": "audio",
+   "kbPerFrame": 0.2,
+   "measuredKBps": 11.43,
+   "gradedKBps": 12.07
+  },
+  "safeEmit /src/entities/machines/ai/emit.js:118": {
+   "owner": "frozen-machine-ai",
+   "kbPerFrame": 0.07,
+   "measuredKBps": 4.08,
+   "gradedKBps": 4.3
+  },
+  "updateCheap /src/entities/machines/gait.js:1322": {
+   "owner": "frozen-machine-rig",
+   "kbPerFrame": 2.79,
+   "measuredKBps": 161.35,
+   "gradedKBps": 167.38
+  },
+  "updateRigLOD /src/entities/machines/rig/lod.js:1371": {
+   "owner": "frozen-machine-rig",
+   "kbPerFrame": 1.38,
+   "measuredKBps": 78.18,
+   "gradedKBps": 82.56
+  },
+  "(anonymous) /src/entities/machines/rig/bounds.js:102": {
+   "owner": "frozen-machine-rig",
+   "kbPerFrame": 1.07,
+   "measuredKBps": 60.59,
+   "gradedKBps": 63.98
+  },
+  "(anonymous) /src/entities/machines/rig/ground.js:391": {
+   "owner": "frozen-machine-rig",
+   "kbPerFrame": 2.38,
+   "measuredKBps": 137.89,
+   "gradedKBps": 143.05
+  },
+  "tickComponents /src/entities/machines/rig/components.js:996": {
+   "owner": "frozen-machine-rig",
+   "kbPerFrame": 2.2,
+   "measuredKBps": 127.18,
+   "gradedKBps": 131.94
+  },
+  "_statePatrol /src/entities/machines/glinthawk.js:157": {
+   "owner": "legacy-species",
+   "kbPerFrame": 0.1,
+   "measuredKBps": 5.66,
+   "gradedKBps": 5.88
+  },
+  "_fly /src/entities/machines/glinthawk.js:152": {
+   "owner": "legacy-species",
+   "kbPerFrame": 0.17,
+   "measuredKBps": 9.48,
+   "gradedKBps": 10.01
+  },
+  "animate /src/entities/machines/glinthawk.js:393": {
+   "owner": "legacy-species",
+   "kbPerFrame": 0.1,
+   "measuredKBps": 5.42,
+   "gradedKBps": 5.72
+  },
+  "get _speed /src/entities/machines/machine.js:1192": {
+   "owner": "kept-machines",
+   "kbPerFrame": 0.26,
+   "measuredKBps": 14.71,
+   "gradedKBps": 15.53
+  },
+  "animate /src/entities/machines/longleg.js:620": {
+   "owner": "legacy-species",
+   "kbPerFrame": 0.21,
+   "measuredKBps": 12.11,
+   "gradedKBps": 12.56
+  },
+  "wallPerSim /src/entities/machines/gait.js:271": {
+   "owner": "frozen-machine-rig",
+   "kbPerFrame": 0.29,
+   "measuredKBps": 16.26,
+   "gradedKBps": 17.17
+  },
+  "cadCeilK /src/entities/machines/gait.js:405": {
+   "owner": "frozen-machine-rig",
+   "kbPerFrame": 0.21,
+   "measuredKBps": 12,
+   "gradedKBps": 12.67
+  },
+  "step /src/entities/machines/gait.js:525": {
+   "owner": "frozen-machine-rig",
+   "kbPerFrame": 0.79,
+   "measuredKBps": 44.7,
+   "gradedKBps": 47.2
+  },
+  "update /src/entities/machines/rig/footlock.js:268": {
+   "owner": "frozen-machine-rig",
+   "kbPerFrame": 0.37,
+   "measuredKBps": 20.91,
+   "gradedKBps": 22.08
+  },
+  "terrace /src/world/terrain.js:329": {
+   "owner": "terrain",
+   "kbPerFrame": 1.24,
+   "measuredKBps": 70.48,
+   "gradedKBps": 74.42
+  },
+  "_ridged /src/world/terrain.js:1847": {
+   "owner": "terrain",
+   "kbPerFrame": 9.44,
+   "measuredKBps": 536.2,
+   "gradedKBps": 566.21
+  },
+  "_solveHandle /src/entities/machines/rig/footlock.js:579": {
+   "owner": "frozen-machine-rig",
+   "kbPerFrame": 0.53,
+   "measuredKBps": 29.94,
+   "gradedKBps": 31.62
+  },
+  "emitFootfall /src/entities/machines/rig/footfall.js:30": {
+   "owner": "frozen-machine-rig",
+   "kbPerFrame": 0.29,
+   "measuredKBps": 16.68,
+   "gradedKBps": 17.3
+  },
+  "(anonymous) /src/audio/audio.js:2763": {
+   "owner": "audio",
+   "kbPerFrame": 0.08,
+   "measuredKBps": 4.89,
+   "gradedKBps": 5.08
+  },
+  "now /src/audio/clock.js:92": {
+   "owner": "frozen-ui-engines",
+   "kbPerFrame": 0.23,
+   "measuredKBps": 13.48,
+   "gradedKBps": 13.98
+  },
+  "stepFlee /src/entities/machines/ai/squad.js:253": {
+   "owner": "frozen-machine-ai",
+   "kbPerFrame": 0.07,
+   "measuredKBps": 4.06,
+   "gradedKBps": 4.29
+  },
+  "get heading /src/entities/machines/machine.js:1190": {
+   "owner": "kept-machines",
+   "kbPerFrame": 0.11,
+   "measuredKBps": 6.45,
+   "gradedKBps": 6.69
+  },
+  "_engageFrame /src/entities/machines/machine.js:2295": {
+   "owner": "kept-machines",
+   "kbPerFrame": 0.4,
+   "measuredKBps": 22.64,
+   "gradedKBps": 23.91
+  },
+  "pick /src/entities/machines/ai/attacks.js:777": {
+   "owner": "kept-machines",
+   "kbPerFrame": 0.16,
+   "measuredKBps": 8.91,
+   "gradedKBps": 9.41
+  },
+  "believable /src/entities/machines/ai/engage.js:444": {
+   "owner": "frozen-machine-ai",
+   "kbPerFrame": 0.09,
+   "measuredKBps": 5.03,
+   "gradedKBps": 5.31
+  },
+  "leashed /src/entities/machines/ai/engage.js:624": {
+   "owner": "frozen-machine-ai",
+   "kbPerFrame": 0.23,
+   "measuredKBps": 13.22,
+   "gradedKBps": 13.96
+  },
+  "update /src/entities/machines/ai/engage.js:635": {
+   "owner": "frozen-machine-ai",
+   "kbPerFrame": 2.54,
+   "measuredKBps": 144.16,
+   "gradedKBps": 152.23
+  },
+  "_pickRing /src/entities/machines/ai/engage.js:229": {
+   "owner": "frozen-machine-ai",
+   "kbPerFrame": 0.08,
+   "measuredKBps": 4.65,
+   "gradedKBps": 4.91
+  },
+  "_ringWindow /src/entities/machines/ai/engage.js:205": {
+   "owner": "frozen-machine-ai",
+   "kbPerFrame": 0.14,
+   "measuredKBps": 7.95,
+   "gradedKBps": 8.39
+  },
+  "_reachable /src/entities/machines/ai/attacks.js:863": {
+   "owner": "kept-machines",
+   "kbPerFrame": 0.16,
+   "measuredKBps": 9.29,
+   "gradedKBps": 9.81
+  },
+  "_noteOwed /src/entities/machines/ai/engage.js:288": {
+   "owner": "frozen-machine-ai",
+   "kbPerFrame": 0.3,
+   "measuredKBps": 17.03,
+   "gradedKBps": 17.98
+  },
+  "_covers /src/entities/machines/ai/attacks.js:913": {
+   "owner": "kept-machines",
+   "kbPerFrame": 0.13,
+   "measuredKBps": 7.16,
+   "gradedKBps": 7.56
+  },
+  "pursue /src/entities/machines/ai/engage.js:786": {
+   "owner": "frozen-machine-ai",
+   "kbPerFrame": 0.86,
+   "measuredKBps": 50,
+   "gradedKBps": 51.87
+  },
+  "_updateAttack /src/entities/machines/machine.js:2483": {
+   "owner": "kept-machines",
+   "kbPerFrame": 0.42,
+   "measuredKBps": 23.99,
+   "gradedKBps": 25.34
+  },
+  "onUpdate /src/entities/machines/ai/attacks.js:109": {
+   "owner": "kept-machines",
+   "kbPerFrame": 0.29,
+   "measuredKBps": 16.25,
+   "gradedKBps": 17.16
+  },
+  "occluded /src/core/collision.js:1099": {
+   "owner": "frozen-spatial",
+   "kbPerFrame": 31.11,
+   "measuredKBps": 1767.87,
+   "gradedKBps": 1866.8
+  },
+  "update /src/entities/machines/gait.js:889": {
+   "owner": "frozen-machine-rig",
+   "kbPerFrame": 7.28,
+   "measuredKBps": 413.7,
+   "gradedKBps": 436.85
+  },
+  "get _accelPitch /src/entities/machines/machine.js:1194": {
+   "owner": "kept-machines",
+   "kbPerFrame": 0.13,
+   "measuredKBps": 7.42,
+   "gradedKBps": 7.7
+  },
+  "_clampReach /src/entities/machines/gait.js:1369": {
+   "owner": "frozen-machine-rig",
+   "kbPerFrame": 0.63,
+   "measuredKBps": 36.52,
+   "gradedKBps": 37.89
+  },
+  "_updateLook /src/entities/machines/gait.js:1385": {
+   "owner": "frozen-machine-rig",
+   "kbPerFrame": 3.64,
+   "measuredKBps": 210.43,
+   "gradedKBps": 218.3
+  },
+  "_footfall /src/entities/machines/gait.js:1484": {
+   "owner": "frozen-machine-rig",
+   "kbPerFrame": 0.18,
+   "measuredKBps": 10.31,
+   "gradedKBps": 10.89
+  },
+  "tallGrassDensity /src/world/terrain.js:2162": {
+   "owner": "terrain",
+   "kbPerFrame": 8.22,
+   "measuredKBps": 475.39,
+   "gradedKBps": 493.16
+  },
+  "applyDistance /src/audio/spatial.js:164": {
+   "owner": "frozen-ui-engines",
+   "kbPerFrame": 1.48,
+   "measuredKBps": 83.98,
+   "gradedKBps": 88.68
+  },
+  "puff /src/entities/machines/rig/fx.js:349": {
+   "owner": "frozen-machine-rig",
+   "kbPerFrame": 0.09,
+   "measuredKBps": 5.25,
+   "gradedKBps": 5.54
+  },
+  "_solveLeg /src/entities/machines/gait.js:1507": {
+   "owner": "frozen-machine-rig",
+   "kbPerFrame": 2.49,
+   "measuredKBps": 143.82,
+   "gradedKBps": 149.2
+  },
+  "_updateConvoys /src/entities/machines/ai/squad.js:325": {
+   "owner": "frozen-machine-ai",
+   "kbPerFrame": 0.35,
+   "measuredKBps": 19.64,
+   "gradedKBps": 20.74
+  },
+  "_updateHerds /src/entities/machines/ai/squad.js:440": {
+   "owner": "frozen-machine-ai",
+   "kbPerFrame": 1.13,
+   "measuredKBps": 65.2,
+   "gradedKBps": 67.64
+  },
+  "_updateBaskings /src/entities/machines/ai/squad.js:532": {
+   "owner": "frozen-machine-ai",
+   "kbPerFrame": 0.29,
+   "measuredKBps": 16.75,
+   "gradedKBps": 17.69
+  },
+  "update /src/entities/machines/ai/sites.js:193": {
+   "owner": "frozen-machine-ai",
+   "kbPerFrame": 0.74,
+   "measuredKBps": 41.88,
+   "gradedKBps": 44.23
+  },
+  "update /src/combat/combat.js:764": {
+   "owner": "armory",
+   "kbPerFrame": 0.53,
+   "measuredKBps": 30.91,
+   "gradedKBps": 32.07
+  },
+  "update /src/combat/combat.js:273": {
+   "owner": "armory",
+   "kbPerFrame": 0.09,
+   "measuredKBps": 5.29,
+   "gradedKBps": 5.48
+  },
+  "_updateWield /src/combat/combat.js:1031": {
+   "owner": "armory",
+   "kbPerFrame": 0.73,
+   "measuredKBps": 42.47,
+   "gradedKBps": 44.05
+  },
+  "_placeInHand /src/combat/combat.js:1086": {
+   "owner": "armory",
+   "kbPerFrame": 0.11,
+   "measuredKBps": 6.64,
+   "gradedKBps": 6.89
+  },
+  "_pollWeaponPickups /src/combat/combat.js:2344": {
+   "owner": "armory",
+   "kbPerFrame": 0.69,
+   "measuredKBps": 39.75,
+   "gradedKBps": 41.23
+  },
+  "update /src/combat/particles.js:361": {
+   "owner": "frozen-ui-engines",
+   "kbPerFrame": 0.25,
+   "measuredKBps": 14.29,
+   "gradedKBps": 14.82
+  },
+  "update /src/combat/arrows.js:851": {
+   "owner": "armory",
+   "kbPerFrame": 0.59,
+   "measuredKBps": 33.74,
+   "gradedKBps": 35.63
+  },
+  "update /src/combat/arrows.js:1078": {
+   "owner": "armory",
+   "kbPerFrame": 0.35,
+   "measuredKBps": 20.17,
+   "gradedKBps": 21.29
+  },
+  "_advanceStance /src/combat/melee.js:748": {
+   "owner": "melee",
+   "kbPerFrame": 0.24,
+   "measuredKBps": 13.67,
+   "gradedKBps": 14.18
+  },
+  "_scanSneak /src/combat/melee.js:2157": {
+   "owner": "melee",
+   "kbPerFrame": 0.16,
+   "measuredKBps": 9.2,
+   "gradedKBps": 9.54
+  },
+  "surfaceGap /src/combat/melee.js:147": {
+   "owner": "melee",
+   "kbPerFrame": 0.34,
+   "measuredKBps": 19.92,
+   "gradedKBps": 20.67
+  },
+  "_updateRopes /src/combat/traps.js:306": {
+   "owner": "combat-kit",
+   "kbPerFrame": 0.55,
+   "measuredKBps": 31.41,
+   "gradedKBps": 33.17
+  },
+  "_updateWires /src/combat/traps.js:326": {
+   "owner": "combat-kit",
+   "kbPerFrame": 0.19,
+   "measuredKBps": 10.77,
+   "gradedKBps": 11.17
+  },
+  "_updateDamageNumbers /src/ui/hud.js:1345": {
+   "owner": "shell-ui",
+   "kbPerFrame": 0.48,
+   "measuredKBps": 27.15,
+   "gradedKBps": 28.66
+  },
+  "_scanMachines /src/ui/hud.js:1425": {
+   "owner": "shell-ui",
+   "kbPerFrame": 1.68,
+   "measuredKBps": 97.07,
+   "gradedKBps": 100.7
+  },
+  "state /src/core/progression.js:1398": {
+   "owner": "progression",
+   "kbPerFrame": 0.26,
+   "measuredKBps": 15.01,
+   "gradedKBps": 15.85
+  },
+  "(anonymous) /src/core/progression.js:1404": {
+   "owner": "progression",
+   "kbPerFrame": 0.32,
+   "measuredKBps": 18.65,
+   "gradedKBps": 19.34
+  },
+  "_updateCompass /src/ui/hud.js:1686": {
+   "owner": "shell-ui",
+   "kbPerFrame": 2.84,
+   "measuredKBps": 161.5,
+   "gradedKBps": 170.54
+  },
+  "_updateQuestPips /src/ui/hud.js:1792": {
+   "owner": "shell-ui",
+   "kbPerFrame": 0.2,
+   "measuredKBps": 11.53,
+   "gradedKBps": 11.96
+  },
+  "_updateAwareness /src/ui/hud.js:1902": {
+   "owner": "shell-ui",
+   "kbPerFrame": 2.04,
+   "measuredKBps": 116.11,
+   "gradedKBps": 122.6
+  },
+  "_updateMachineBars /src/ui/hud.js:1981": {
+   "owner": "shell-ui",
+   "kbPerFrame": 0.6,
+   "measuredKBps": 33.92,
+   "gradedKBps": 35.82
+  },
+  "_renderAware /src/ui/hud.js:2066": {
+   "owner": "shell-ui",
+   "kbPerFrame": 0.08,
+   "measuredKBps": 4.27,
+   "gradedKBps": 4.5
+  },
+  "_renderElems /src/ui/hud.js:2087": {
+   "owner": "shell-ui",
+   "kbPerFrame": 0.68,
+   "measuredKBps": 38.62,
+   "gradedKBps": 40.78
+  },
+  "_updateWeapon /src/ui/hud.js:2181": {
+   "owner": "shell-ui",
+   "kbPerFrame": 0.08,
+   "measuredKBps": 4.27,
+   "gradedKBps": 4.51
+  },
+  "_updateTools /src/ui/hud.js:2244": {
+   "owner": "shell-ui",
+   "kbPerFrame": 0.12,
+   "measuredKBps": 6.61,
+   "gradedKBps": 6.98
+  },
+  "_updateObjectiveMark /src/ui/hud.js:2416": {
+   "owner": "shell-ui",
+   "kbPerFrame": 0.64,
+   "measuredKBps": 37.21,
+   "gradedKBps": 38.6
+  },
+  "update /src/audio/audio.js:3196": {
+   "owner": "audio",
+   "kbPerFrame": 1.25,
+   "measuredKBps": 72.2,
+   "gradedKBps": 74.9
+  },
+  "_musicSelect /src/audio/audio.js:974": {
+   "owner": "audio",
+   "kbPerFrame": 0.16,
+   "measuredKBps": 9.46,
+   "gradedKBps": 9.81
+  },
+  "_breathLayer /src/audio/audio.js:1268": {
+   "owner": "audio",
+   "kbPerFrame": 0.16,
+   "measuredKBps": 9.26,
+   "gradedKBps": 9.61
+  },
+  "_updateSpatial /src/audio/audio.js:3072": {
+   "owner": "audio",
+   "kbPerFrame": 1.42,
+   "measuredKBps": 80.69,
+   "gradedKBps": 85.21
+  },
+  "_zoneScan /src/audio/audio.js:1062": {
+   "owner": "audio",
+   "kbPerFrame": 0.15,
+   "measuredKBps": 8.6,
+   "gradedKBps": 8.92
+  },
+  "_statusScan /src/audio/audio.js:1109": {
+   "owner": "audio",
+   "kbPerFrame": 0.18,
+   "measuredKBps": 10.36,
+   "gradedKBps": 10.74
+  },
+  "update /src/audio/zones.js:162": {
+   "owner": "frozen-ui-engines",
+   "kbPerFrame": 0.11,
+   "measuredKBps": 6.4,
+   "gradedKBps": 6.76
+  },
+  "pump /src/audio/spatial.js:335": {
+   "owner": "frozen-ui-engines",
+   "kbPerFrame": 0.21,
+   "measuredKBps": 12.19,
+   "gradedKBps": 12.87
+  },
+  "syncListener /src/audio/spatial.js:43": {
+   "owner": "frozen-ui-engines",
+   "kbPerFrame": 0.17,
+   "measuredKBps": 9.67,
+   "gradedKBps": 10.22
+  },
+  "updateOcclusion /src/audio/spatial.js:181": {
+   "owner": "frozen-ui-engines",
+   "kbPerFrame": 0.11,
+   "measuredKBps": 6.39,
+   "gradedKBps": 6.74
+  },
+  "update /src/audio/buses.js:208": {
+   "owner": "frozen-ui-engines",
+   "kbPerFrame": 0.18,
+   "measuredKBps": 10.06,
+   "gradedKBps": 10.62
+  },
+  "update /src/ui/wheel.js:317": {
+   "owner": "combat-kit",
+   "kbPerFrame": 0.1,
+   "measuredKBps": 5.61,
+   "gradedKBps": 5.92
+  },
+  "update /src/core/progression.js:3203": {
+   "owner": "progression",
+   "kbPerFrame": 0.11,
+   "measuredKBps": 6.45,
+   "gradedKBps": 6.69
+  },
+  "_pollInventory /src/core/progression.js:2507": {
+   "owner": "progression",
+   "kbPerFrame": 0.13,
+   "measuredKBps": 7.6,
+   "gradedKBps": 8.02
+  },
+  "update /src/world/fauna.js:833": {
+   "owner": "fauna",
+   "kbPerFrame": 13.46,
+   "measuredKBps": 778.57,
+   "gradedKBps": 807.66
+  },
+  "_sampleGrid /src/world/terrain.js:582": {
+   "owner": "terrain",
+   "kbPerFrame": 0.46,
+   "measuredKBps": 26.32,
+   "gradedKBps": 27.79
+  },
+  "pathSmooth /src/world/terrain.js:602": {
+   "owner": "terrain",
+   "kbPerFrame": 0.11,
+   "measuredKBps": 6.44,
+   "gradedKBps": 6.69
+  },
+  "northBenchFactor /src/world/terrain.js:896": {
+   "owner": "terrain",
+   "kbPerFrame": 1.04,
+   "measuredKBps": 59.02,
+   "gradedKBps": 62.32
+  },
+  "_ellipseD /src/world/terrain.js:879": {
+   "owner": "terrain",
+   "kbPerFrame": 0.24,
+   "measuredKBps": 13.74,
+   "gradedKBps": 14.51
+  },
+  "marshFactor /src/world/terrain.js:925": {
+   "owner": "terrain",
+   "kbPerFrame": 2.86,
+   "measuredKBps": 165.43,
+   "gradedKBps": 171.61
+  },
+  "_standable /src/world/fauna.js:678": {
+   "owner": "fauna",
+   "kbPerFrame": 2.5,
+   "measuredKBps": 142.23,
+   "gradedKBps": 150.18
+  },
+  "update /src/world/npc/npc.js:1497": {
+   "owner": "settlements",
+   "kbPerFrame": 1.44,
+   "measuredKBps": 82.05,
+   "gradedKBps": 86.64
+  },
+  "_pushOut /src/core/collision.js:752": {
+   "owner": "frozen-spatial",
+   "kbPerFrame": 2.01,
+   "measuredKBps": 113.98,
+   "gradedKBps": 120.36
+  },
+  "_meshPush /src/core/collision.js:835": {
+   "owner": "frozen-spatial",
+   "kbPerFrame": 106.75,
+   "measuredKBps": 6065.33,
+   "gradedKBps": 6404.74
+  },
+  "_watchProgress /src/world/npc/npc.js:1649": {
+   "owner": "settlements",
+   "kbPerFrame": 0.36,
+   "measuredKBps": 20.71,
+   "gradedKBps": 21.86
+  },
+  "_brain /src/world/npc/npc.js:1775": {
+   "owner": "settlements",
+   "kbPerFrame": 0.93,
+   "measuredKBps": 52.83,
+   "gradedKBps": 55.78
+  },
+  "_tickWalk /src/world/npc/npc.js:1908": {
+   "owner": "settlements",
+   "kbPerFrame": 0.12,
+   "measuredKBps": 6.58,
+   "gradedKBps": 6.95
+  },
+  "_steer /src/world/npc/npc.js:2048": {
+   "owner": "settlements",
+   "kbPerFrame": 0.78,
+   "measuredKBps": 44.12,
+   "gradedKBps": 46.59
+  },
+  "_blockedAt /src/world/npc/npc.js:953": {
+   "owner": "settlements",
+   "kbPerFrame": 0.11,
+   "measuredKBps": 6.22,
+   "gradedKBps": 6.57
+  },
+  "turn /src/world/npc/npcAnim.js:874": {
+   "owner": "settlements",
+   "kbPerFrame": 0.57,
+   "measuredKBps": 32.12,
+   "gradedKBps": 33.92
+  },
+  "_tickSit /src/world/npc/npc.js:1974": {
+   "owner": "settlements",
+   "kbPerFrame": 0.11,
+   "measuredKBps": 6.19,
+   "gradedKBps": 6.54
+  },
+  "_fidget /src/world/npc/npc.js:2025": {
+   "owner": "settlements",
+   "kbPerFrame": 0.07,
+   "measuredKBps": 4.06,
+   "gradedKBps": 4.29
+  },
+  "_dodge /src/world/npc/npc.js:2276": {
+   "owner": "settlements",
+   "kbPerFrame": 1.2,
+   "measuredKBps": 68.11,
+   "gradedKBps": 71.92
+  },
+  "_settle /src/world/npc/npc.js:2083": {
+   "owner": "settlements",
+   "kbPerFrame": 0.5,
+   "measuredKBps": 28.64,
+   "gradedKBps": 30.24
+  },
+  "_separate /src/world/npc/npc.js:2187": {
+   "owner": "settlements",
+   "kbPerFrame": 0.39,
+   "measuredKBps": 22.41,
+   "gradedKBps": 23.25
+  },
+  "_ensureRegistered /src/world/npc/npc.js:2544": {
+   "owner": "settlements",
+   "kbPerFrame": 0.3,
+   "measuredKBps": 17.08,
+   "gradedKBps": 18.04
+  },
+  "_bounds /src/core/collision.js:540": {
+   "owner": "frozen-spatial",
+   "kbPerFrame": 0.89,
+   "measuredKBps": 50.51,
+   "gradedKBps": 53.33
+  },
+  "_solveLeg /src/world/npc/npcAnim.js:1300": {
+   "owner": "settlements",
+   "kbPerFrame": 0.81,
+   "measuredKBps": 46.25,
+   "gradedKBps": 48.84
+  },
+  "_lockFeet /src/world/npc/npcAnim.js:1396": {
+   "owner": "settlements",
+   "kbPerFrame": 0.26,
+   "measuredKBps": 14.51,
+   "gradedKBps": 15.33
+  },
+  "_stance /src/world/npc/npcAnim.js:1562": {
+   "owner": "settlements",
+   "kbPerFrame": 2.69,
+   "measuredKBps": 152.68,
+   "gradedKBps": 161.22
+  },
+  "syncFrame /src/entities/anim/boneSpace.js:234": {
+   "owner": "frozen-rigging",
+   "kbPerFrame": 0.38,
+   "measuredKBps": 21.48,
+   "gradedKBps": 22.68
+  },
+  "_look /src/world/npc/npcAnim.js:1622": {
+   "owner": "settlements",
+   "kbPerFrame": 0.47,
+   "measuredKBps": 26.51,
+   "gradedKBps": 27.99
+  },
+  "update /src/entities/anim/clipLayer.js:216": {
+   "owner": "frozen-rigging",
+   "kbPerFrame": 0.86,
+   "measuredKBps": 49.81,
+   "gradedKBps": 51.67
+  },
+  "render /src/core/engine.js:2281": {
+   "owner": "engine",
+   "kbPerFrame": 0.7,
+   "measuredKBps": 39.5,
+   "gradedKBps": 41.71
+  },
+  "_cullPass /src/core/engine.js:1947": {
+   "owner": "engine",
+   "kbPerFrame": 0.96,
+   "measuredKBps": 54.74,
+   "gradedKBps": 57.8
+  },
+  "(anonymous) /src/core/engine.js:1975": {
+   "owner": "engine",
+   "kbPerFrame": 58.37,
+   "measuredKBps": 3316.8,
+   "gradedKBps": 3502.4
+  },
+  "(anonymous) /src/core/engine.js:2062": {
+   "owner": "engine",
+   "kbPerFrame": 1.88,
+   "measuredKBps": 106.81,
+   "gradedKBps": 112.79
+  },
+  "render /src/core/engine.js:237": {
+   "owner": "engine",
+   "kbPerFrame": 0.21,
+   "measuredKBps": 12.02,
+   "gradedKBps": 12.47
+  },
+  "render /src/core/engine.js:419": {
+   "owner": "engine",
+   "kbPerFrame": 144.53,
+   "measuredKBps": 8212.42,
+   "gradedKBps": 8671.98
+  },
+  "syncComponents /src/entities/machines/rig/components.js:940": {
+   "owner": "frozen-machine-rig",
+   "kbPerFrame": 0.18,
+   "measuredKBps": 10.55,
+   "gradedKBps": 10.94
+  },
+  "componentsSubPixel /src/entities/machines/rig/components.js:1030": {
+   "owner": "frozen-machine-rig",
+   "kbPerFrame": 0.82,
+   "measuredKBps": 47.46,
+   "gradedKBps": 49.24
+  },
+  "scene.onBeforeRender /src/entities/machines/rig/components.js:371": {
+   "owner": "frozen-machine-rig",
+   "kbPerFrame": 0.56,
+   "measuredKBps": 32.49,
+   "gradedKBps": 33.7
+  },
+  "scene.onAfterRender /src/entities/machines/rig/components.js:386": {
+   "owner": "frozen-machine-rig",
+   "kbPerFrame": 0.53,
+   "measuredKBps": 30.25,
+   "gradedKBps": 31.95
+  },
+  "b.render /src/core/engine.js:967": {
+   "owner": "engine",
+   "kbPerFrame": 1.97,
+   "measuredKBps": 114.17,
+   "gradedKBps": 118.44
+  },
+  "g.render /src/core/engine.js:1107": {
+   "owner": "engine",
+   "kbPerFrame": 0.62,
+   "measuredKBps": 35.88,
+   "gradedKBps": 37.22
+  },
+  "_keyAt /src/world/environment.js:1024": {
+   "owner": "world-sky",
+   "kbPerFrame": 0.11,
+   "measuredKBps": 6.19,
+   "gradedKBps": 6.54
+  },
+  "steerAlongS /src/entities/machines/machine.js:230": {
+   "owner": "kept-machines",
+   "kbPerFrame": 0.61,
+   "measuredKBps": 34.64,
+   "gradedKBps": 36.57
+  },
+  "_holdingSetup /src/entities/machines/ai/attacks.js:750": {
+   "owner": "kept-machines",
+   "kbPerFrame": 0.1,
+   "measuredKBps": 5.81,
+   "gradedKBps": 6.13
+  },
+  "_anchor /src/entities/machines/ai/engage.js:618": {
+   "owner": "frozen-machine-ai",
+   "kbPerFrame": 0.08,
+   "measuredKBps": 4.65,
+   "gradedKBps": 4.91
+  },
+  "noteHeld /src/entities/machines/ai/engage.js:343": {
+   "owner": "frozen-machine-ai",
+   "kbPerFrame": 0.11,
+   "measuredKBps": 6.19,
+   "gradedKBps": 6.54
+  },
+  "airCutoff /src/audio/spatial.js:36": {
+   "owner": "frozen-ui-engines",
+   "kbPerFrame": 0.15,
+   "measuredKBps": 8.32,
+   "gradedKBps": 8.79
+  },
+  "wrapPi /src/world/npc/npc.js:270": {
+   "owner": "settlements",
+   "kbPerFrame": 0.08,
+   "measuredKBps": 4.64,
+   "gradedKBps": 4.9
+  },
+  "add /src/entities/anim/clipLayer.js:372": {
+   "owner": "frozen-rigging",
+   "kbPerFrame": 0.11,
+   "measuredKBps": 6.26,
+   "gradedKBps": 6.61
+  },
+  "_look /src/world/npc/npc.js:2470": {
+   "owner": "settlements",
+   "kbPerFrame": 0.33,
+   "measuredKBps": 19.34,
+   "gradedKBps": 20.06
+  },
+  "_syncCollider /src/world/npc/npc.js:2570": {
+   "owner": "settlements",
+   "kbPerFrame": 0.16,
+   "measuredKBps": 9.18,
+   "gradedKBps": 9.53
+  },
+  "_stepFeet /src/world/npc/npcAnim.js:1105": {
+   "owner": "settlements",
+   "kbPerFrame": 0.14,
+   "measuredKBps": 7.82,
+   "gradedKBps": 8.26
+  },
+  "forEachTriangle /src/core/collision.js:611": {
+   "owner": "frozen-spatial",
+   "kbPerFrame": 47.59,
+   "measuredKBps": 2703.92,
+   "gradedKBps": 2855.23
+  },
+  "Nav._triStamp /src/core/nav.js:124": {
+   "owner": "frozen-spatial",
+   "kbPerFrame": 6.43,
+   "measuredKBps": 365.14,
+   "gradedKBps": 385.58
+  },
+  "massifAt /src/world/terrain.js:313": {
+   "owner": "terrain",
+   "kbPerFrame": 0.52,
+   "measuredKBps": 29.8,
+   "gradedKBps": 31.47
+  },
+  "_legal /src/entities/machines/ai/attacks.js:687": {
+   "owner": "kept-machines",
+   "kbPerFrame": 0.09,
+   "measuredKBps": 5.03,
+   "gradedKBps": 5.31
+  },
+  "_fillChunk /src/world/vegetation.js:889": {
+   "owner": "world-ground",
+   "kbPerFrame": 14.18,
+   "measuredKBps": 820.31,
+   "gradedKBps": 850.97
+  },
+  "heightFast /src/world/terrain.js:2111": {
+   "owner": "terrain",
+   "kbPerFrame": 1.81,
+   "measuredKBps": 104.69,
+   "gradedKBps": 108.6
+  },
+  "(anonymous) /src/world/vegetation.js:117": {
+   "owner": "world-ground",
+   "kbPerFrame": 16.24,
+   "measuredKBps": 939.15,
+   "gradedKBps": 974.25
+  },
+  "decorated /src/world/props/clearings.js:390": {
+   "owner": "world-props",
+   "kbPerFrame": 1.51,
+   "measuredKBps": 87.5,
+   "gradedKBps": 90.77
+  },
+  "riverFactor /src/world/terrain.js:424": {
+   "owner": "terrain",
+   "kbPerFrame": 3.26,
+   "measuredKBps": 188.48,
+   "gradedKBps": 195.52
+  },
+  "biomeWeights /src/world/terrain.js:1012": {
+   "owner": "terrain",
+   "kbPerFrame": 0.08,
+   "measuredKBps": 4.82,
+   "gradedKBps": 5
+  },
+  "stealthField /src/world/terrain.js:802": {
+   "owner": "terrain",
+   "kbPerFrame": 0.24,
+   "measuredKBps": 14.06,
+   "gradedKBps": 14.59
+  },
+  "grassDensityAt /src/world/vegetation.js:666": {
+   "owner": "world-ground",
+   "kbPerFrame": 4.09,
+   "measuredKBps": 236.72,
+   "gradedKBps": 245.57
+  },
+  "biomeGrassDamp /src/world/terrain.js:1057": {
+   "owner": "terrain",
+   "kbPerFrame": 0.2,
+   "measuredKBps": 11.33,
+   "gradedKBps": 11.75
+  },
+  "_resortTrees /src/world/vegetation.js:1805": {
+   "owner": "world-ground",
+   "kbPerFrame": 1.89,
+   "measuredKBps": 109.38,
+   "gradedKBps": 113.46
+  },
+  "_updateActors /src/world/vegetation.js:2799": {
+   "owner": "world-ground",
+   "kbPerFrame": 0.1,
+   "measuredKBps": 5.86,
+   "gradedKBps": 6.08
+  },
+  "_updateButterflies /src/world/vegetation.js:2257": {
+   "owner": "world-ground",
+   "kbPerFrame": 0.55,
+   "measuredKBps": 32.03,
+   "gradedKBps": 33.23
+  },
+  "_wishDir /src/entities/player.js:1783": {
+   "owner": "frozen-control",
+   "kbPerFrame": 0.15,
+   "measuredKBps": 8.4,
+   "gradedKBps": 8.71
+  },
+  "_gradeScale /src/entities/player.js:2110": {
+   "owner": "frozen-control",
+   "kbPerFrame": 0.29,
+   "measuredKBps": 16.6,
+   "gradedKBps": 17.22
+  },
+  "materialAt /src/world/terrain.js:2217": {
+   "owner": "terrain",
+   "kbPerFrame": 0.13,
+   "measuredKBps": 7.42,
+   "gradedKBps": 7.7
+  },
+  "_sampleGround /src/entities/player.js:1801": {
+   "owner": "frozen-control",
+   "kbPerFrame": 0.11,
+   "measuredKBps": 6.25,
+   "gradedKBps": 6.48
+  },
+  "_waterDepth /src/entities/player.js:1868": {
+   "owner": "frozen-control",
+   "kbPerFrame": 0.3,
+   "measuredKBps": 17.58,
+   "gradedKBps": 18.24
+  },
+  "_latchFacing /src/entities/player.js:2393": {
+   "owner": "frozen-control",
+   "kbPerFrame": 0.12,
+   "measuredKBps": 7.22,
+   "gradedKBps": 7.49
+  },
+  "_orbitLiftFor /src/entities/player.js:2461": {
+   "owner": "frozen-control",
+   "kbPerFrame": 0.39,
+   "measuredKBps": 22.46,
+   "gradedKBps": 23.3
+  },
+  "_updateFov /src/entities/player.js:4901": {
+   "owner": "frozen-control",
+   "kbPerFrame": 0.23,
+   "measuredKBps": 13.46,
+   "gradedKBps": 13.97
+  },
+  "charQ /src/entities/anim/boneSpace.js:251": {
+   "owner": "frozen-rigging",
+   "kbPerFrame": 0.07,
+   "measuredKBps": 3.9,
+   "gradedKBps": 4.05
+  },
+  "_runArmClamp /src/entities/playerAnimator.js:5185": {
+   "owner": "playerAnimator",
+   "kbPerFrame": 0.43,
+   "measuredKBps": 24.64,
+   "gradedKBps": 25.56
+  },
+  "sp /src/entities/anim/locomotion.js:209": {
+   "owner": "frozen-rigging",
+   "kbPerFrame": 0.1,
+   "measuredKBps": 5.86,
+   "gradedKBps": 6.08
+  },
+  "setW /src/entities/anim/locomotion.js:383": {
+   "owner": "frozen-rigging",
+   "kbPerFrame": 0.24,
+   "measuredKBps": 13.67,
+   "gradedKBps": 14.18
+  },
+  "_bowSolve /src/entities/anim/meleeLayer.js:3624": {
+   "owner": "melee",
+   "kbPerFrame": 0.71,
+   "measuredKBps": 41.21,
+   "gradedKBps": 42.75
+  },
+  "_bowClearDir /src/entities/anim/meleeLayer.js:3512": {
+   "owner": "melee",
+   "kbPerFrame": 0.09,
+   "measuredKBps": 5.09,
+   "gradedKBps": 5.28
+  },
+  "_bowSeg /src/entities/anim/meleeLayer.js:3572": {
+   "owner": "melee",
+   "kbPerFrame": 0.09,
+   "measuredKBps": 5.27,
+   "gradedKBps": 5.47
+  },
+  "segSeg /src/entities/anim/meleeLayer.js:5017": {
+   "owner": "melee",
+   "kbPerFrame": 2.09,
+   "measuredKBps": 121.09,
+   "gradedKBps": 125.62
+  },
+  "_tailGap /src/hero/carry.js:608": {
+   "owner": "armory",
+   "kbPerFrame": 1.2,
+   "measuredKBps": 69.14,
+   "gradedKBps": 71.72
+  },
+  "_pose /src/hero/carry.js:640": {
+   "owner": "armory",
+   "kbPerFrame": 0.12,
+   "measuredKBps": 7.23,
+   "gradedKBps": 7.5
+  },
+  "moveCapsule /src/core/collision.js:1007": {
+   "owner": "frozen-spatial",
+   "kbPerFrame": 0.26,
+   "measuredKBps": 15.23,
+   "gradedKBps": 15.8
+  },
+  "emit /src/entities/machines/ai/stimulus.js:44": {
+   "owner": "frozen-machine-ai",
+   "kbPerFrame": 0.37,
+   "measuredKBps": 21.31,
+   "gradedKBps": 22.11
+  },
+  "update /src/items/interactables.js:198": {
+   "owner": "frozen-ui-engines",
+   "kbPerFrame": 2.55,
+   "measuredKBps": 147.27,
+   "gradedKBps": 152.77
+  },
+  "update /src/combat/melee.js:1477": {
+   "owner": "melee",
+   "kbPerFrame": 0.07,
+   "measuredKBps": 3.91,
+   "gradedKBps": 4.05
+  },
+  "_sneakOk /src/combat/melee.js:2140": {
+   "owner": "melee",
+   "kbPerFrame": 0.1,
+   "measuredKBps": 6.05,
+   "gradedKBps": 6.28
+  },
+  "_updateHealth /src/ui/hud.js:1540": {
+   "owner": "shell-ui",
+   "kbPerFrame": 0.11,
+   "measuredKBps": 6.25,
+   "gradedKBps": 6.48
+  },
+  "_syncServoLoop /src/audio/audio.js:1382": {
+   "owner": "audio",
+   "kbPerFrame": 0.09,
+   "measuredKBps": 5.08,
+   "gradedKBps": 5.27
+  },
+  "angleTo /src/world/fauna.js:1051": {
+   "owner": "fauna",
+   "kbPerFrame": 0.07,
+   "measuredKBps": 3.91,
+   "gradedKBps": 4.05
+  },
+  "update /src/world/props/places.js:2489": {
+   "owner": "world-props",
+   "kbPerFrame": 1.82,
+   "measuredKBps": 105.08,
+   "gradedKBps": 109.01
+  },
+  "refreshVisibility /src/world/props/places.js:2457": {
+   "owner": "world-props",
+   "kbPerFrame": 0.22,
+   "measuredKBps": 12.89,
+   "gradedKBps": 13.37
+  },
+  "_aimLayer /src/entities/playerAnimator.js:3435": {
+   "owner": "playerAnimator",
+   "kbPerFrame": 1.8,
+   "measuredKBps": 104.22,
+   "gradedKBps": 108.11
+  },
+  "gripFor /src/entities/playerAnimator.js:3828": {
+   "owner": "playerAnimator",
+   "kbPerFrame": 0.07,
+   "measuredKBps": 4.1,
+   "gradedKBps": 4.26
+  },
+  "_armRate /src/entities/playerAnimator.js:4444": {
+   "owner": "playerAnimator",
+   "kbPerFrame": 0.08,
+   "measuredKBps": 4.61,
+   "gradedKBps": 4.79
+  },
+  "afSlerpDir /src/entities/playerAnimator.js:196": {
+   "owner": "playerAnimator",
+   "kbPerFrame": 0.1,
+   "measuredKBps": 5.86,
+   "gradedKBps": 6.08
+  },
+  "_headUnit /src/entities/playerAnimator.js:5568": {
+   "owner": "playerAnimator",
+   "kbPerFrame": 0.12,
+   "measuredKBps": 6.84,
+   "gradedKBps": 7.09
+  },
+  "_elbowFlow /src/entities/playerAnimator.js:4547": {
+   "owner": "playerAnimator",
+   "kbPerFrame": 1.07,
+   "measuredKBps": 61.72,
+   "gradedKBps": 64.03
+  },
+  "_segInHead /src/entities/playerAnimator.js:5592": {
+   "owner": "playerAnimator",
+   "kbPerFrame": 0.16,
+   "measuredKBps": 9.18,
+   "gradedKBps": 9.52
+  },
+  "_clearArmOfRoots /src/entities/playerAnimator.js:4647": {
+   "owner": "playerAnimator",
+   "kbPerFrame": 0.1,
+   "measuredKBps": 5.67,
+   "gradedKBps": 5.89
+  },
+  "_rollElbow /src/entities/playerAnimator.js:4738": {
+   "owner": "playerAnimator",
+   "kbPerFrame": 0.16,
+   "measuredKBps": 8.99,
+   "gradedKBps": 9.32
+  },
+  "_elbowForm /src/entities/playerAnimator.js:4814": {
+   "owner": "playerAnimator",
+   "kbPerFrame": 0.35,
+   "measuredKBps": 20.3,
+   "gradedKBps": 21.06
+  },
+  "_efCost /src/entities/playerAnimator.js:4892": {
+   "owner": "playerAnimator",
+   "kbPerFrame": 2.07,
+   "measuredKBps": 119.53,
+   "gradedKBps": 124
+  },
+  "_legTo /src/entities/playerAnimator.js:5139": {
+   "owner": "playerAnimator",
+   "kbPerFrame": 0.11,
+   "measuredKBps": 6.25,
+   "gradedKBps": 6.48
+  },
+  "_place /src/hero/carry.js:214": {
+   "owner": "armory",
+   "kbPerFrame": 0.13,
+   "measuredKBps": 7.42,
+   "gradedKBps": 7.7
+  },
+  "_dir /src/hero/carry.js:206": {
+   "owner": "armory",
+   "kbPerFrame": 0.55,
+   "measuredKBps": 32.03,
+   "gradedKBps": 33.23
+  },
+  "_camGap /src/hero/carry.js:621": {
+   "owner": "armory",
+   "kbPerFrame": 36.49,
+   "measuredKBps": 2110.75,
+   "gradedKBps": 2189.63
+  },
+  "applyShadowRings /src/entities/machines/rig/lod.js:1459": {
+   "owner": "frozen-machine-rig",
+   "kbPerFrame": 0.28,
+   "measuredKBps": 16.21,
+   "gradedKBps": 16.82
+  },
+  "publishDrawnBounds /src/entities/machines/rig/bounds.js:86": {
+   "owner": "frozen-machine-rig",
+   "kbPerFrame": 0.07,
+   "measuredKBps": 4.11,
+   "gradedKBps": 4.26
+  },
+  "update /src/entities/machines/ai/search.js:86": {
+   "owner": "frozen-machine-ai",
+   "kbPerFrame": 0.55,
+   "measuredKBps": 31.64,
+   "gradedKBps": 32.82
+  },
+  "animate /src/instruments/kinds/tiller.js:102": {
+   "owner": "instruments-a",
+   "kbPerFrame": 0.08,
+   "measuredKBps": 4.53,
+   "gradedKBps": 4.7
+  },
+  "_findName /src/entities/playerAnimator.js:1443": {
+   "owner": "playerAnimator",
+   "kbPerFrame": 0.1,
+   "measuredKBps": 5.72,
+   "gradedKBps": 5.94
+  },
+  "_updateAimPoint /src/combat/combat.js:1207": {
+   "owner": "armory",
+   "kbPerFrame": 0.18,
+   "measuredKBps": 10.6,
+   "gradedKBps": 11
+  },
+  "raycast /src/core/hitHulls.js:664": {
+   "owner": "frozen-spatial",
+   "kbPerFrame": 2,
+   "measuredKBps": 115.82,
+   "gradedKBps": 120.15
+  },
+  "raySphereT /src/core/hitHulls.js:78": {
+   "owner": "frozen-spatial",
+   "kbPerFrame": 0.29,
+   "measuredKBps": 16.99,
+   "gradedKBps": 17.63
+  },
+  "_updateReticle /src/ui/hud.js:2123": {
+   "owner": "shell-ui",
+   "kbPerFrame": 0.07,
+   "measuredKBps": 3.91,
+   "gradedKBps": 4.06
+  },
+  "bowSetFor /src/audio/audio.js:99": {
+   "owner": "audio",
+   "kbPerFrame": 0.07,
+   "measuredKBps": 3.92,
+   "gradedKBps": 4.06
+  },
+  "save /src/ui/map.js:194": {
+   "owner": "shell-ui",
+   "kbPerFrame": 0.54,
+   "measuredKBps": 31.51,
+   "gradedKBps": 32.68
+  },
+  "hitscan /src/world/fauna.js:722": {
+   "owner": "fauna",
+   "kbPerFrame": 0.51,
+   "measuredKBps": 29.69,
+   "gradedKBps": 30.8
+  }
+ },
+ "noSrcBuckets": {
+  "browser / V8 runtime": {
+   "measuredKBps": 8.43,
+   "kbPerFrame": 0.15
+  }
+ }
+}
