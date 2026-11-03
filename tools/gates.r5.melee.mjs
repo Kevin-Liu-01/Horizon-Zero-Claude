@@ -649,6 +649,7 @@ export const GATES = [
           parents: [...new Set(f.map((x) => x.bowP))], wieldedFrames: wd.length,
           bowToLeftHandMinM: lh.length ? +Math.min(...lh).toFixed(3) : null,
           haftToBowMinM: cl.length ? +Math.min(...cl).toFixed(3) : null };
+        if (cl.length) { const w = f.reduce((b, x) => ((x.bowClear ?? 9) < (b.bowClear ?? 9) ? x : b), f[0]); r.haftToBowAt = [w.stance, w.phase, +(w.k ?? 0).toFixed(2), w.beat]; }
         if (!(f.length >= 6)) bowBad.push(label + ': only ' + f.length + ' swing frames sampled');
         if (off.length) bowBad.push(label + ': the bow was OFF her back on ' + off.length + ' of ' + f.length
           + ' swing frames (parent ' + r.parents.join('/') + ') — canon finding 2: the left hand is empty');
@@ -1613,7 +1614,8 @@ export const GATES = [
           && typeof x.toSpineL === 'number');
         const spineL = two.length ? Math.min(...two.map((x) => x.toSpineL)) : null;
         const spineLAll = live.filter((x) => typeof x.toSpineL === 'number');
-        rows.push({ label, frames: live.length, shaftClearMin: +clear.toFixed(3),
+        const atOf = (key) => { const w = live.reduce((b, x) => ((x[key] ?? 9) < (b[key] ?? 9) ? x : b), live[0]); return [w.stance, w.phase, +(w.k ?? 0).toFixed(2)]; };
+        rows.push({ label, frames: live.length, toSpineAt: atOf('toSpine'), toSpineLAt: atOf('toSpineL'), shaftClearMin: +clear.toFixed(3),
           hairClearMin: +hair.toFixed(3), hairArgmin: worstHair.hairArg ?? null,
           forearmToSpineMin: +spine.toFixed(3),
           twoHandFrames: two.length,
@@ -3341,8 +3343,9 @@ export const GATES = [
 
       C.engine.timeScale = 0;
       ${STRIPS}
-      await strip(() => lockCam(-3.0, 0.7, 1.20, 0.95, 52));
-      await strip(() => lockCam(-2.05, -2.55, 1.22, 1.00, 46));
+      /* at 6 m (plan §9), on a long lens */
+      await strip(() => lockCam(-5.9, 1.0, 1.30, 0.92, 27, 0.25));
+      await strip(() => lockCam(-3.6, -4.8, 1.45, 0.92, 27, 0.25));
       show();
       return got;
     })()`),
@@ -3362,9 +3365,9 @@ export const GATES = [
       ${NOHUD} ${FILM} ${FREEZE} ${STAGE} ${AIMLOCK} ${LOCKCAM} ${PIN} ${READY}
       await toReady(C);
       await pin({ stance: 'ready' }, 500);
-      const SIDE = () => lockCam(-3.6, 0.5, 1.35, 1.10, 58);
+      const SIDE = () => lockCam(-3.4, 0.55, 1.25, 0.98, 40, 0.55);
 
-      const Q34 = () => lockCam(-0.70, -3.00, 2.15, 0.95, 52, 0.75);
+      const Q34 = () => lockCam(-1.7, -2.5, 1.45, 0.95, 40, 0.45);
       SIDE();
       const M = C.combat.melee;
 

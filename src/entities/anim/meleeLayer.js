@@ -235,7 +235,7 @@ const AXIAL_PREFIX = ['spine_', 'neck_', 'head_'];
  *            the head line, the reach from spine pitch and the lunge.
  */
 const READY = {
-  hand: [-0.21, 1.15, -0.12], shaft: [0.36, -0.385, 0.85],
+  hand: [-0.21, 1.13, -0.12], shaft: [0.36, -0.405, 0.84],
   lh: [0.22, 0.95, 0.20], lhW: 1, lhOn: 0.5425, yaw: -0.36, py: -0.26, pitch: 0.24, roll: 0.02, dz: 0.0,
 };
 /**
@@ -279,13 +279,13 @@ const STANCE_ENV = (cu) => (
 const BEATS = [
   {
     id: 'light-1', clip: [0.10, 0.62], mirror: false, clipW: 0.16,
-    cock: { hand: [-0.27, 1.16, -0.25], shaft: [0.34, 0.30, 0.89], lh: [0.2, 0.95, 0.2], lhW: 1, lhOn: 0.44, yaw: -0.46, py: -0.34, pitch: 0.02, roll: 0.05, dz: -0.07 },
+    cock: { hand: [-0.27, 1.16, -0.18], shaft: [0.38, 0.40, 0.83], lh: [0.2, 0.95, 0.2], lhW: 1, lhOn: 0.50, yaw: -0.46, py: -0.34, pitch: 0.02, roll: 0.05, dz: -0.07 },
     contact: { hand: [-0.14, 1.13, 0.20], shaft: [0.10, -0.03, 0.995], lh: [0.2, 0.95, 0.2], lhW: 1, lhOn: 0.27, yaw: -0.12, py: 0.02, pitch: 0.20, roll: -0.04, dz: 0.15 },
     follow: { hand: [-0.17, 1.03, 0.28], shaft: [0.24, -0.40, 0.88], lh: [0.2, 0.95, 0.2], lhW: 1, lhOn: 0.32, yaw: -0.12, py: 0.08, pitch: 0.24, roll: -0.08, dz: 0.12 },
   },
   {
     id: 'light-2', clip: [0.10, 0.62], mirror: true, clipW: 0.16,
-    cock: { hand: [-0.28, 1.21, -0.02], shaft: [0.76, 0.20, 0.62], lh: [0.2, 0.95, 0.2], lhW: 1, lhOn: 0.44, yaw: 0.26, py: 0.22, pitch: 0.06, roll: 0.04, dz: -0.04 },
+    cock: { hand: [-0.27, 1.21, 0.04], shaft: [0.66, 0.22, 0.72], lh: [0.2, 0.95, 0.2], lhW: 1, lhOn: 0.40, yaw: 0.26, py: 0.22, pitch: 0.06, roll: 0.04, dz: -0.04 },
     contact: { hand: [-0.20, 1.19, 0.19], shaft: [-0.14, 0.02, 0.99], lh: [0.2, 0.95, 0.2], lhW: 1, lhOn: 0.27, yaw: -0.12, py: -0.06, pitch: 0.18, roll: 0.04, dz: 0.10 },
     follow: { hand: [-0.25, 1.03, 0.14], shaft: [-0.66, -0.20, 0.72], lh: [0.2, 0.95, 0.2], lhW: 1, lhOn: 0.28, yaw: -0.34, py: -0.24, pitch: 0.20, roll: 0.06, dz: 0.08 },
   },
@@ -294,7 +294,7 @@ const BEATS = [
     release: [0.05, 0.42],
     cock: { hand: [-0.28, 1.28, -0.10], shaft: [0.34, 0.42, 0.84], lh: [0.28, 1.02, 0.20], lhW: 1, lhOn: 0.40, yaw: -0.40, py: -0.26, pitch: -0.06, roll: 0.04, dz: -0.06 },
     contact: { hand: [-0.22, 1.34, 0.62], shaft: [0.14, -0.26, 0.955], lh: [0.40, 0.98, -0.20], lhW: 0, lhOn: 0.40, yaw: 0.24, py: 0.20, pitch: 0.26, roll: 0.02, dz: 0.17 },
-    follow: { hand: [-0.08, 1.06, 0.52], shaft: [0.26, -0.44, 0.86], lh: [0.38, 0.92, -0.24], lhW: 0, lhOn: 0.40, yaw: 0.18, py: 0.20, pitch: 0.26, roll: -0.04, dz: 0.14 },
+    follow: { hand: [-0.13, 1.06, 0.50], shaft: [0.26, -0.44, 0.86], lh: [0.38, 0.92, -0.24], lhW: 0, lhOn: 0.40, yaw: 0.18, py: 0.20, pitch: 0.26, roll: -0.04, dz: 0.14 },
   },
 ];
 const HEAVY = {
@@ -1628,7 +1628,7 @@ export class MeleeLayer {
     /* A NEW KEY UNDER A LOADED STANCE IS A STEP TOO (round 5 fix pass 1): the feet
      * go where the new stance puts them. `rekey` re-captures the home off the new
      * key and a foot re-places once it is `STEP_TRIGGER_REKEY` out of it. */
-    if (stance === 'swing' && this._stanceKey && live !== this._stanceKey && this._stanceMix > 0.02) an.beginMeleeStep?.(true);
+    if (stance === 'swing' && this._stanceKey && live !== this._stanceKey && this._stanceMix > 0.02 && this._stanceA > 0.02) an.beginMeleeStep?.(true);
     if (stance === 'swing') this._stanceKey = live;
     /* RATE-LIMITED PER RENDERED FRAME (see `STANCE_STEP_MAX`): one budget per drawn
      * frame, not per sim sub-step, shared by the two numbers. */
@@ -1644,7 +1644,7 @@ export class MeleeLayer {
     /* A STANCE CHANGE IS A STEP, SO SAY SO: `_stanceStep` unplants, lifts and
      * replants the foot the body has left behind (A105). Armed only while the
      * stance is actively loading: a settled stance must not hold a foot in flight. */
-    if (Math.abs(dA) > 0.02 || Math.abs(dM) > 0.02) an.beginMeleeStep?.();
+    if (Math.abs(dA) > 0.02 || (a > 0.02 && Math.abs(dM) > 0.02)) an.beginMeleeStep?.();
     // NOT `D.stance` — that is the melee STATE ('swing' / 'ready' / 'holstered')
     // and every gate keys its swing frames off it.
     D.legW = this._stanceW;
