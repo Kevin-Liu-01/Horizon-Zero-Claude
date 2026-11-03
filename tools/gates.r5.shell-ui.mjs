@@ -641,6 +641,87 @@ const A_UI_STATIC = {
   },
 };
 
+/** R55 on what actually renders: the sheets can be clean and a canvas or an inline style still not. */
+const A_UI_TYPE = {
+  id: 'A-ui-type-only', kind: 'action', lane: LANE, timeout: 180000, settle: 900,
+  title: 'R55 on the rendered DOM: every visible text node on every surface is Chakra Petch or IBM Plex Mono, every pure numeral is Plex Mono, and only those two families load',
+  assert: `(async () => {${FRAMES}${STORAGE_GUARD}
+    const snap = snapStorage();
+    const c = __CTX__, m = c.menus, hud = window.__HUD_DEBUG__;
+    c.input.enabled = true;
+    const bad = [], badNum = [], perSurface = {};
+    const FAM = new Set(['Chakra Petch', 'IBM Plex Mono']);
+    const walk = (where) => {
+      const tw = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+      let n, total = 0;
+      while ((n = tw.nextNode())) {
+        const t = n.nodeValue.trim();
+        if (!t) continue;
+        const el = n.parentElement;
+        if (!el || el.tagName === 'SCRIPT' || el.tagName === 'STYLE') continue;
+        const cs = getComputedStyle(el);
+        if (cs.display === 'none' || cs.visibility === 'hidden') continue;
+        const r = el.getBoundingClientRect();
+        if (r.width <= 0 || r.height <= 0) continue;
+        total++;
+        const fam = cs.fontFamily.split(',')[0].replace(/["']/g, '').trim();
+        const at = where + ' <' + el.tagName.toLowerCase() + ' ' + (el.className?.baseVal ?? el.className ?? '') + '> ' + t.slice(0, 30);
+        if (!FAM.has(fam)) bad.push(fam + ': ' + at);
+        else if (/\\d/.test(t) && /^[\\d\\s.,:%+\\-\\u2212\\u00b0\\/\\u00d7]+$/.test(t) && fam !== 'IBM Plex Mono') badNum.push(at);
+      }
+      perSurface[where] = total;
+    };
+    try {
+      document.getElementById('hud').classList.add('reveal');
+      await frames(4);
+      walk('hud');
+      for (const id of ['map', 'settings', 'inventory', 'crafting', 'notebook', 'quests', 'skills']) {
+        m.openHub(id); await frames(8);
+        walk('hub:' + id);
+      }
+      m.closeHub(true);
+      await frames(4);
+      const list = c.machines.list.filter((x) => x.alive !== false);
+      if (list[0]) {
+        const q = list[0].position;
+        c.player.position.set(q.x + 10, 0, q.z + 10); c.player._snapToGround?.();
+        c.player.camYaw = Math.atan2(10, 10);
+        c.sighting.toggle(true);
+        await wait(1000);
+        walk('sighting');
+        c.sighting.toggle(false);
+      }
+      const prog = c.progression;
+      const npc = prog && Object.keys(prog.NPCS || {})[0];
+      if (npc && prog.dialogueUI.open(npc)) { await frames(4); walk('dialogue'); prog.dialogueUI.close(); await frames(2); }
+      hud.resetTips();
+      c.hud._tipQueue.length = 0; c.hud._tipT = 0; c.hud._tipGap = 0;
+      hud.showTip('sighting');
+      const t1 = performance.now();
+      while (!c.hud._tipEl.classList.contains('show') && performance.now() - t1 < 6000) await wait(100);
+      walk('tip');
+      c.events.emit('player-damage', { from: { displayName: 'Tiller', kind: 'tiller' }, amount: 12 });
+      c.player.takeDamage(9999);
+      const t0 = performance.now();
+      while (m.audit().death.state !== 'choice' && performance.now() - t0 < 6000) await wait(100);
+      walk('death');
+      m.respawn('checkpoint');
+    } finally { restoreStorage(snap); }
+    await document.fonts.ready;
+    const loaded = [...document.fonts].filter((f) => f.status === 'loaded').map((f) => f.family.replace(/["']/g, '') + ' ' + f.weight + ' ' + f.style);
+    const families = [...new Set(loaded.map((l) => l.replace(/ \\d+ \\w+$/, '')))];
+    const checks = {
+      everyTextNode: bad.length === 0,
+      numeralsArePlex: badNum.length === 0,
+      bothLoaded: families.includes('Chakra Petch') && families.includes('IBM Plex Mono'),
+      onlyThoseTwo: families.every((f) => FAM.has(f)),
+      surfacesWalked: Object.values(perSurface).filter((n) => n > 0).length >= 10,
+    };
+    const failed = Object.entries(checks).filter(([, v]) => !v).map(([k]) => k);
+    return { pass: failed.length === 0, detail: { failed, bad: bad.slice(0, 30), badNum: badNum.slice(0, 30), perSurface, loaded } };
+  })()`,
+};
+
 /* --------------------------------------------------- the contact sheet rows */
 
 const UI_ROW = (id, title, setup, extra = {}) => ({
@@ -705,6 +786,12 @@ const V_UI = [
     while (c.menus.audit().death.state !== 'choice' && performance.now() - t0 < 15000) await wait(100);
     await wait(900);
   })()`),
+  UI_ROW('V-ui-dialogue', 'A conversation: settlements\' panel in the shared paper and type', `(async () => {${FRAMES}
+    __CTX__.input.enabled = true;
+    const prog = __CTX__.progression;
+    prog.dialogueUI.open(Object.keys(prog.NPCS)[0]);
+    await frames(10);
+  })()`),
 ];
 
 /** 4K, at true pixels: the HUD laid out for 3840x2160, shifted so each corner falls in the 1600x900 frame. */
@@ -748,6 +835,7 @@ export const GATES = [
   /* actions */
   A_UI_STATIC,
   A_UI_WORDS,
+  A_UI_TYPE,
   A_LAMP_UI,
   A71,
   A71B,
