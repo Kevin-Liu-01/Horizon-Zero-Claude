@@ -716,8 +716,9 @@ body.cal-title-live #title.overlay {
 .mn-tab.on { background: var(--cal-ink); color: var(--cal-staff); }
 .mn-tab.on .cal-stn { color: var(--cal-staff-80); }
 .mn-tab.on kbd { border-color: var(--cal-staff-55); color: var(--cal-staff); }
+.mn-tab.on { border-bottom-color: var(--cal-ink); }
 .mn-tab.on::after {
-  content: ''; position: absolute; right: -16px; top: 0; bottom: 0; width: 16px;
+  content: ''; position: absolute; right: -16px; top: 0; bottom: -1px; width: 16px;
   background: var(--cal-ink);
 }
 
