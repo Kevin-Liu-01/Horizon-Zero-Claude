@@ -172,12 +172,12 @@ export const UBC_TUNE = {
   // dropped the down-aim draw elbow to -0.0307 m against A-draw-elbow-level's
   // -0.03 floor (run f4b)
   behindNockDownY: null,
-  knuckleNock: 0.052,
+  knuckleNock: 0.046,
   // R5 fix round 5 (judge r2, V24-draw-down): a down aim is the LEVEL draw's
   // form turned rigidly onto the aim ray at spine_01 — the archer bending at
   // the hips (playerAnimator `_aimLayer`, `tS`)
   downT: true,
-  downTRoll: 0.5,                                  // (the turn's share of the arrow-roll; see `_aimLayer`)
+  downTRoll: 0,                                    // (the turn's share of the arrow-roll; see `_aimLayer`)
   // ...and an UP aim the same way (judge r2's clauses at all four pitches: at
   // -0.55 the old form put the wrist 0.035 m under the level draw's height at
   // the Head joint): the level form, leaned back rigidly onto the ray
@@ -251,20 +251,20 @@ export const UBC_TUNE = {
     // weight; a rising draw is followed exactly (`drawRaw`); the bent T comes
     // in and out at most `tRate` of its turn per second
     // and the arm is lowered by its target, not its IK weight (`lowerByTarget`)
-    wdaRate: 4, drawRaw: true, tRate: 4, lowerByTarget: true, armStepChar: 0.055 },
+    wdaRate: 4, drawRaw: true, tRate: 3, lowerByTarget: true, armStepChar: 0.055, tSpeed: 3.6, tSpeedCrouch: 0.55, tailMin: 0.35, knotRound: 0.035, violStep: 0.002, bodyRef: { chest: [-0.006, -0.032, -0.063], pelvis: [0.002, -0.035, -0.036] } },
   // W0b targeted fix 4: the aim's trunk starts upright — the pelvis -> neck
   // line's forward pitch under the aim (radians, character space), standing /
   // crouched; only an excess is given back (the clip's fold: crouch 45-50 deg,
   // the jog's lean after a dodge), spread up the spine, the neck and head
   // taking `gaze` of it back so the gaze holds
-  aimTrunk: { up: 0.12, crouch: 0.22, gain: 1, share: [0.25, 0.35, 0.40], shareCrouch: [0.15, 0.35, 0.50], gaze: [0.5, 0.45] },
+  aimTrunk: { up: 0.12, crouch: 0.22, gain: 1, share: [0.25, 0.35, 0.40], shareCrouch: [0.15, 0.35, 0.50], gaze: [0.5, 0.45], chestRef: 0.44, headRef: 0.22 },
   // W0b targeted fix 4: the crouched aim's body: the pelvis `pelvisY` m up
   // (character space; the UAL1 crouch stands it at 0.35), tipped `pelvisTilt`
   // rad, coming in over `rampS` s (see `_crouchAimLayer`, `_crouchAimLift`)
-  crouchAim: { pelvisY: 0.52, pelvisTilt: 0.10, rampS: 0.35 },
+  crouchAim: { pelvisY: 0.52, pelvisDown: 0.28, pelvisTilt: 0.10, rampS: 0.7, toggleRate: 2.5 },
   // W0b targeted fix 4: the bent T's reach at the pitch clamps (rad): the turn's
   // caps, and how much of its pitch the hips carry, the upper back the rest
-  tClamp: { up: 1.2, down: 1.25, yaw: 0.9, hipUp: 0.6, hipDown: 0.95 },
+  tClamp: { up: 1.2, down: 1.25, yaw: 0.9, hipUp: 0.6, hipDown: 0.95, hipBack: 1.5 },
   // the string hand's roll at full draw (0..1 of the way to back-of-hand out,
   // palm to the neck): the hooked fingers stand on the vertical string and the
   // ∴ on the back of the right hand faces a side camera (V24)

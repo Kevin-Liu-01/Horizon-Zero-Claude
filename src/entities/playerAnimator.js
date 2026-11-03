@@ -192,8 +192,10 @@ const _afT = new THREE.Vector3();   // ...the fingertip off the wrist
 const _afJ = new THREE.Vector3();   // ...a candidate elbow, wrist, fingertip
 const _afK = new THREE.Vector3();
 const _afL = new THREE.Vector3();
+const _knM = new THREE.Matrix4(), _knZ = new THREE.Vector3(), _knQ2 = new THREE.Quaternion();   // W0b targeted fix 4: the bow as combat aims it
 const _hcD1 = new THREE.Vector3(), _hcD2 = new THREE.Vector3(), _hcD3 = new THREE.Vector3();   // W0b targeted fix 4: `_hcSegMin`
 const _hcP = new THREE.Vector3(), _hcQ = new THREE.Vector3(), _hcP2 = new THREE.Vector3(), _hcQ2 = new THREE.Vector3();
+const _afQu0 = new THREE.Quaternion(), _afQl0 = new THREE.Quaternion();   // W0b targeted fix 4: `_armRate`: the solve's upper arm and forearm
 const _afJ2 = new THREE.Vector3();  // W0b targeted fix 4: `_armRatePose`'s root test (elbow, wrist, fingertip)
 const _afK2 = new THREE.Vector3();
 const _afL2 = new THREE.Vector3();
@@ -854,6 +856,7 @@ export class PlayerAnimator {
     this._afOn = false; this._wrT = new THREE.Vector3(); this._elbP = new THREE.Vector3();
     this._wrP = new THREE.Vector3(); this._shP = new THREE.Vector3();   // ...and the achieved wrist / shoulder
     this._rnHold = false; this._rnL = false;
+    this._aimPrev = new THREE.Vector3(); this._aimPrevOk = false; this._gripP = new THREE.Vector3(); this._aimDp = new THREE.Vector3(); this._bodyShW = new THREE.Vector3(); this._qTs = new THREE.Quaternion(); this._hcHitP = new THREE.Vector3();   // (W0b targeted fix 4: the ray one step on, the turn's rate, the knot)
     /* W0b targeted fix 4 (r3 judges: the draw arm snapped 0.27-0.42 m at every
      * aim-weight transition — RMB up after a loose, a draw cancel, a re-aim, a
      * dodge with the aim held, a raise after a cancel, crouch / stand at full
@@ -1575,6 +1578,7 @@ export class PlayerAnimator {
     this._moveW = damp(this._moveW,
       holdMove ? Math.min(wantMove, this._moveW) : wantMove, 12, dt);
     this._runW = damp(this._runW, smoothstep(locoSpeed, 4.9, 7.9), 9, dt);
+    const crouchPrev = this._crouchW;
     this._crouchW = damp(this._crouchW, p.crouching ? 1 : 0, 10, dt);
     /* W0b targeted fix 4: the animator runs before combat, so on the step the aim
      * ends (RMB up, a dodge) the bow still renders the full draw: the aim layer
@@ -1582,6 +1586,7 @@ export class PlayerAnimator {
      * out from under the hand a step early (knuckle 0.12-0.16 m at drawS 1). */
     const aimHold = p.aiming || (!dead && !!this.T.armFlow && draw > 0.9);
     this._aimHold = aimHold;
+    if (this.T.crouchAim?.toggleRate && aimHold) this._crouchW = crouchPrev + clamp(this._crouchW - crouchPrev, -this.T.crouchAim.toggleRate * dt, this.T.crouchAim.toggleRate * dt);
     this._aimW = damp(this._aimW, aimHold && !dead ? 1 : 0, 13, dt);
     this._deadW = damp(this._deadW, dead ? 1 : 0, dead ? 12 : 10, dt);
     // (W0b targeted fix 4, `armFlow.drawRaw`: a RISING draw is followed exactly —
@@ -1591,7 +1596,8 @@ export class PlayerAnimator {
     // (...and with the step combat is about to add: the animator runs first, so the
     // string it renders stands one step ahead of `draw`, 0.014 m at 0.7 s of draw)
     const dRaw = clamp(draw, 0, 1);
-    if (this.T.armFlow?.drawRaw && dRaw > this._drawS) this._drawS = Math.min(1, dRaw + Math.max(0, dRaw - (this._prevRawDraw ?? 0)));
+    if (this.T.armFlow?.drawRaw && dRaw > (this._prevRawDraw ?? 0)) this._drawS = Math.min(1, dRaw + (dRaw - (this._prevRawDraw ?? 0)));
+    else if (this.T.armFlow?.drawRaw && dRaw >= this._drawS) this._drawS = dRaw;
     else this._drawS = damp(this._drawS, dRaw, 16, dt);
     this._hit = damp(this._hit, 0, 9, dt);
 
@@ -1747,6 +1753,17 @@ export class PlayerAnimator {
 
     if (this.loco) {
       this.rest.applyClip();
+      /* W0b targeted fix 4 (r3 eng judge: crouch -> stand at full draw, knuckle
+       * 0.155-0.160 m off the nock): while she aims, the clip's crouch blend moves at
+       * most `crouchAim.toggleRate` per second (the mixer's 10/s dropped her 0.05 m a
+       * step, faster than the arm's limiter lets the hand follow the string). The
+       * blend's own damp stays in locomotion.js; this feeds it the value that lands
+       * it on the limited step. */
+      if (this.T.crouchAim?.toggleRate && this._aimHold && this.loco.crouchW != null) {
+        const wc = p.crouching && !dead ? 1 : 0, rc = this.T.crouchAim.toggleRate * dt, fc = 1 - Math.exp(-10 * dt);
+        const nx = this.loco.crouchW + clamp(wc - this.loco.crouchW, -rc, rc);
+        this.loco.crouchW = (nx - wc * fc) / (1 - fc);
+      }
       this.loco.update(dt, {
         speed, moveAngle, crouch: p.crouching && !dead, dodging: p.dodging, dodgeK,
         dead, dieT: this._dieT, aimW,
@@ -2031,6 +2048,10 @@ export class PlayerAnimator {
     {
       const CA = this.T.crouchAim, rs = dt / (CA?.rampS ?? 0.11), want = p.crouchAim && !dead ? 1 : 0;
       this._caT = clamp((this._caT ?? 0) + clamp(want - (this._caT ?? 0), -rs, rs), 0, 1);
+      // (a crouch toggled under the aim: the pose follows the crouch blend itself, or the
+      // pelvis drops to the clip's and comes back up)
+      if (CA && p.crouchAim && this._crouchW < 0.98) this._caT = Math.max(this._caT, this._crouchW);
+      else if (CA && !p.crouching && this._aimHold) this._caT = Math.min(this._caT, this._crouchW);
       const ct = this._caT;
       this._crouchAimW = CA ? ct * ct * ct * (ct * (ct * 6 - 15) + 10) : damp(this._crouchAimW, want, 9, dt);
     }
@@ -2047,7 +2068,7 @@ export class PlayerAnimator {
     // fix 4: ...and from a ray off HER, not off the grip she had when the layer
     // stopped (a dodge rolls her 3 m on: that stale world grip aimed the
     // restarted ray and the bent T up behind her — the bow held overhead)
-    else { this._tOff = true; this._tW = 0; this._atW = 0; this._bcS = 0; this._afOn = false; this._afFull = false; this._gripValid = false; }
+    else { this._tOff = true; this._tW = 0; this._qTs.identity(); this._atW = 0; this._bcS = 0; this._afOn = false; this._afFull = false; this._gripValid = false; this._aimPrevOk = false; }
     if (!cbFirst && this._crouchAimW > 0.01) this._crouchAimLayer(this._crouchAimW * aimW, p);
     if (carryW > 0.01) this._carryLayer(carryW, p, t);
     // wielded-but-not-aiming: the bow rides LOW in the LEFT hand and the left
@@ -2139,7 +2160,34 @@ export class PlayerAnimator {
     this._armCapture();
     if (aimW > 0.01) {
       this._rootKeepAudit(this._drawS);
-      if (this.T.armFlow && b.handL) b.handL.bone.getWorldPosition(this._gripW);
+      /* W0b targeted fix 4 (r1 eng judge, the down clamp; A32-draw-ramp `down105`
+       * "ran away to a fold"): the aim ray started at last step's GRIP, which the
+       * ray itself places (grip = anchor - draw * ray): at a near ground hit the
+       * loop's gain is draw / aim distance, 0.7 at 1.02 and past 1 as she bends
+       * over it. The arrow is the line anchor -> aim point, so with `armFlow` the
+       * ray starts at the ANCHOR, as rendered (it rides the head, which the ray
+       * barely moves): no runaway at any range, and the bow combat aims from the
+       * grip lies on the same line. */
+      if (this.T.armFlow && b.head) {
+        const D = this._aimDbg;
+        this._charOf(b.head.bone, _afH);
+        // (what the body did after the aim layer this step, world)
+        this._bodyShW.subVectors(_afH, D.headAt).transformDirection(this.model.matrixWorld).multiplyScalar(_afG.subVectors(_afH, D.headAt).length());
+        _afH.add(_afG.subVectors(D.anchor, D.headAt));
+        this._gripW.copy(_afH);
+        this.model.localToWorld(this._gripW);
+        this._gripP.copy(p.position);
+        // ...and the bow's own hand point sits off that line (its node in the palm,
+        // 0.07-0.09 m): the ray starts off the anchor by the same offset across the
+        // arrow, so the line it draws is the very line combat aims the bow along
+        const node = this.ctx.combat?.bow?.group?.parent;
+        if (node) {
+          node.getWorldPosition(_afG);
+          _afG.sub(this._gripW);
+          _afH.copy(_dA).transformDirection(this.model.matrixWorld);
+          this._gripW.add(_afG.addScaledVector(_afH, -_afG.dot(_afH)));
+        }
+      }
     }
 
     /* --- twist joints: redistribute limb roll across the 26 twist bones ---- */
@@ -2489,14 +2537,22 @@ export class PlayerAnimator {
     if (w < 1e-3 || !pe || !b.thighL || !b.thighR) return;
     pe.bone.updateMatrixWorld(true);
     this._charOf(pe.bone, _v3);
-    let dy = (CA.pelvisY - _v3.y) * w;
+    // (higher at the down clamp: the ray's ground hit is 0.65 m ahead of her there,
+    // and combat stops aiming the bow at it from nearer than 0.5 m)
+    const pc = this.ctx.player?.camPitch ?? 0;
+    let dy = (CA.pelvisY + (CA.pelvisDown ?? 0) * smoothstep(pc, 0.75, 1.02) - _v3.y) * w;
     if (dy < 1e-4) return;
     for (let s = 0; s < 2; s++) {
       const th = s === 0 ? b.thighL : b.thighR, ca = s === 0 ? b.calfL : b.calfR, ft = s === 0 ? b.footL : b.footR;
       this._charOf(ft.bone, _rbT[s]);
+      // (the ground conform's per-foot clamp had slid the foot bone up its shin, up to
+      // 0.2 m crouched: the shin short by that much. Back to its length: the solve below
+      // puts the ankle where it stood)
+      ft.bone.position.lerp(ft.bindP, w);
       // the raise never asks a leg for more than 97 % of its length
       this._charOf(th.bone, _rbH); this._charOf(ca.bone, _rbK);
-      const Lmax = 0.97 * (_rbH.distanceTo(_rbK) + _rbK.distanceTo(_rbT[s]));
+      this._charOf(ft.bone, _rbA);
+      const Lmax = 0.97 * (_rbH.distanceTo(_rbK) + _rbK.distanceTo(_rbA));
       const vx = _rbT[s].x - _rbH.x, vy = _rbT[s].y - _rbH.y, vz = _rbT[s].z - _rbH.z;
       const h2 = Lmax * Lmax - vx * vx - vz * vz;
       const dyMax = h2 > 0 ? vy + Math.sqrt(h2) : 0;
@@ -3598,8 +3654,11 @@ export class PlayerAnimator {
       // (its weight follows the aim weight at most `tRate` per second, like the
       // bent T's, and never more than three times it: at 13/s the unfold of a
       // crouched trunk swung the shoulders 0.05 m in the first step of a raise)
+      // (crouched it unfolds over the crouch-aim pose's own ramp: the two together are the
+      // body's whole move from the crouch to the aim, <= 0.03 m per 1/60 s)
       const tR = (this.T.armFlow?.tRate ?? 99) * (this._dtA || 0.016), w0 = this._atW ?? 0;
       this._atW = Math.min(aimW > w0 ? Math.min(aimW, w0 + tR) : Math.max(aimW, w0 - tR), 3 * aimW);
+      if (this.T.crouchAim) this._atW = Math.min(this._atW, 1 - this._crouchW * 0.9 * (1 - this._crouchAimW));
       const want = ATK.up + ((ATK.crouch ?? ATK.up) - ATK.up) * this._crouchW;
       const S = this._crouchW > 0.5 && ATK.shareCrouch ? ATK.shareCrouch : ATK.share;
       let tot = 0;
@@ -3616,6 +3675,24 @@ export class PlayerAnimator {
         tot += err;
       }
       this._aimDbg.aimTrunk = tot;
+      /* ...and the chest and the head come to the standing draw's own pitch (the
+       * crouch clip keeps her chest down and her eyes on the floor, 0.2 and 0.6
+       * rad under the standing form), so the whole form above the waist is the
+       * standing draw's: the same shoulders under the same anchor. By the crouch
+       * weight; the neck takes the head's share. Pitch here: the bone's bind
+       * forward, its forward lean in character space. */
+      const cw = this._atW * this._crouchW;
+      if (ATK.chestRef != null && cw > 1e-3) {
+        this._liveW(b.spine3.bone, _q1); _q1.multiply(b.spine3.invW);
+        _v7.set(0, 0, 1).applyQuaternion(_q1);
+        const eC = (ATK.chestRef - Math.atan2(-_v7.y, _v7.z)) * cw;
+        this._rotL(b.spine3, X_AXIS, eC);
+        this._liveW(b.head.bone, _q1); _q1.multiply(b.head.invW);
+        _v7.set(0, 0, 1).applyQuaternion(_q1);
+        const eH = (ATK.headRef - Math.atan2(-_v7.y, _v7.z)) * cw;
+        this._rotL(b.neck1, X_AXIS, eH * 0.5);
+        this._rotL(b.head, X_AXIS, eH * 0.5);
+      }
     }
     let bladeCorr = 0;
     const BL = this.T.bladeLock;
@@ -3723,12 +3800,22 @@ export class PlayerAnimator {
      * Standing (crouch weight 0) nothing changes. */
     this._restGripT.copy(this.T.restGrip);
     this._quivT.copy(this.T.quiverHip);
-    const cbW = this.T.armFlow?.crouchBody ? this._crouchW : 0;
+    /* (W0b targeted fix 4: and not only crouched: on a jog, and most of all coming
+     * out of a roll, the body at solve time stands 0.1-0.2 m off its place at a
+     * standstill, so the rest hold fell under the shoulders and the draw ramp ran
+     * under the cord's knot instead of over it, where the keep-out stalled it, the
+     * draw completing 0.12-0.19 m off the string. The offsets are read against the
+     * standing aim's own, `armFlow.bodyRef`, so a standing draw does not change.) */
+    const BR = this.T.armFlow?.bodyRef;
+    const cbW = this.T.armFlow?.crouchBody ? (BR ? 1 : this._crouchW) : 0;
     this._rgOff.set(0, 0, 0);
     if (cbW > 1e-3 && b.spine3 && b.pelvis) {
-      this._charOf(b.spine3.bone, this._rgOff).sub(b.spine3.bindChar).multiplyScalar(cbW);
+      this._charOf(b.spine3.bone, this._rgOff).sub(b.spine3.bindChar);
+      if (BR) { this._rgOff.x -= BR.chest[0]; this._rgOff.y -= BR.chest[1]; this._rgOff.z -= BR.chest[2]; }
+      this._rgOff.multiplyScalar(cbW);
       this._restGripT.add(this._rgOff);
       this._charOf(b.pelvis.bone, _afP).sub(b.pelvis.bindChar);
+      if (BR) { _afP.x -= BR.pelvis[0]; _afP.y -= BR.pelvis[1]; _afP.z -= BR.pelvis[2]; }
       this._quivT.addScaledVector(_afP, cbW);
     }
     rotP(b.spine2, fp * PS[0] * aimW);
@@ -3806,6 +3893,15 @@ export class PlayerAnimator {
       const sy = Math.sin(hy), cy = Math.cos(hy);
       if (this._gripValid) {
         _v7.subVectors(cmb.aimPoint, this._gripW);
+        /* W0b targeted fix 4: the ray combat will aim the bow along THIS step: the
+         * aim point (it moves with the camera) one step on, the origin carried with
+         * her. Strafing at a near ground hit that step is 0.02-0.05 m in about a
+         * metre, 0.03-0.04 m at the nock. */
+        if (this.T.armFlow) {
+          if (this._aimPrevOk) { _v7.add(_afG.subVectors(cmb.aimPoint, this._aimPrev)); this._aimDp.copy(_afG); } else this._aimDp.set(0, 0, 0);
+          _v7.sub(_afG.subVectors(p.position, this._gripP));
+          this._aimPrev.copy(cmb.aimPoint); this._aimPrevOk = true;
+        }
       } else {
         _v7.copy(cmb.aimPoint);
         _v7.x -= p.position.x + sy * this.T.rayFwd;
@@ -3849,13 +3945,12 @@ export class PlayerAnimator {
       // point, which has no feedback (the 1.05 aim: hand 0.07 m from the nock
       // on the fixed ray, run f5c10; 0.53 on the capped grip ray, run f5t2)
       _dT.copy(_dA);
-      const kFix = smoothstep(pitch, 0.8, 1.0);
+      const kFix = this.T.armFlow ? 0 : smoothstep(pitch, 0.8, 1.0);   // (W0b targeted fix 4: the ray has no feedback now)
       if (kFix > 0 && this._aimHold && cmb?.aimPoint && p.position) {
         const hy = p.heading ?? 0, sy = Math.sin(hy), cy = Math.cos(hy);
         _v7.copy(cmb.aimPoint);
         _v7.x -= p.position.x + sy * this.T.rayFwd;
-        // (W0b targeted fix 4: crouched the fixed point rides the chest down with the body)
-        _v7.y -= p.position.y + this.T.rayH + this._rgOff.y + (this.T.crouchAim ? this._crouchAimW * (this.T.crouchAim.rayLift ?? 0) : 0);
+        _v7.y -= p.position.y + this.T.rayH;
         _v7.z -= p.position.z + cy * this.T.rayFwd;
         if (_v7.lengthSq() > 0.25) {
           _v7.normalize();
@@ -3878,7 +3973,10 @@ export class PlayerAnimator {
        * turn to the rays the clamps reach, and what her hips cannot carry (`hipUp` /
        * `hipDown`) the upper back does, below. */
       const TC = this.T.tClamp;
-      const yawR = clamp(Math.atan2(_dT.x, _dT.z), -(TC?.yaw ?? 0.45), TC?.yaw ?? 0.45), pitR = clamp(Math.asin(clamp(-_dT.y, -1, 1)), -(TC?.up ?? 0.6), TC?.down ?? 0.95);
+      // (a ray near the vertical has no yaw to speak of: it fades, so a near ground hit
+      // under her cannot swing the turn across her in a step; never read off a ray behind her)
+      const hzT = Math.hypot(_dT.x, _dT.z);
+      const yawR = clamp(Math.atan2(_dT.x, Math.max(_dT.z, 0.3 * hzT)) * (TC ? smoothstep(hzT, 0.1, 0.3) : 1), -(TC?.yaw ?? 0.45), TC?.yaw ?? 0.45), pitR = clamp(Math.asin(clamp(-_dT.y, -1, 1)), -(TC?.up ?? 0.6), TC?.down ?? 0.95);
       _dT.set(Math.sin(yawR) * Math.cos(pitR), -Math.sin(pitR), Math.cos(yawR) * Math.cos(pitR));
       _tq.setFromAxisAngle(Y_AXIS, yawR);
       _tq2.setFromAxisAngle(X_AXIS, pitR - fp);
@@ -3902,22 +4000,44 @@ export class PlayerAnimator {
       const tWant = tS * aimW, tR = (this.T.armFlow?.tRate ?? 99) * (this._dtA || 0.016);
       this._tW = Math.min(tWant > (this._tW ?? 0) ? Math.min(tWant, (this._tW ?? 0) + tR) : Math.max(tWant, (this._tW ?? 0) - tR), Math.max(tWant, 3 * aimW));
       this._qT.slerpQuaternions(Q_IDENT, _tq, this._tW);
+      // (...and the turn itself moves at most `tSpeed` rad/s, whatever its ray does:
+      // a strafe's start swings a near ground hit's yaw 0.1 rad a step)
+      if (this.T.armFlow?.tSpeed) {
+        if (this._tOff) this._qTs.identity();
+        // (crouched and raising it takes the body's own slower pace; going out it is done
+        // before the layer stops, 0.35 s after the aim ends, whatever the angle)
+        // (...and once the string is coming back it hurries to the arrow: coming out of a
+        // roll the draw starts at once, and an upright T under a steep arrow runs the
+        // string back through her throat)
+        const AFt = this.T.armFlow, tSp = this._aimHold ? Math.max(AFt.tSpeed * (1 - (AFt.tSpeedCrouch ?? 0) * this._crouchW), 6 * smoothstep(drawS, 0.03, 0.3)) : Math.max(AFt.tSpeed, 5);
+        this._qT.copy(this._qTs.rotateTowards(this._qT, tSp * (this._dtA || 0.016)));
+      }
       this._charOf(b.spine1.bone, _v7);            // the turn's pivot (spine_01 does not move)
       // ...the hips carry `hipUp` / `hipDown` of the pitch, the upper back (spine_03) the rest
-      const pitAbs = Math.abs(pitR - fp), hipM = TC ? (pitR < fp ? TC.hipUp : TC.hipDown) : 9;
+      // (past its own share the hips give some back, `hipBack` per radian: at the down
+      // clamp the bow must stay > 0.5 m off the ground hit, where combat stops aiming at it)
+      const pitAbs = Math.abs(pitR - fp), hipM = TC ? (pitR < fp ? TC.hipUp : TC.hipDown - (TC.hipBack ?? 0) * Math.max(0, pitAbs - TC.hipDown)) : 9;
+      // (the rest hold rides the same two turns, or crouched-free at the clamps the bow would
+      // hang off the chest's line and the draw ramp run through the cord's knot)
+      this._restGripT.copy(this.T.restGrip).add(this._rgOff).sub(_v7);
       if (pitAbs > hipM + 1e-3) {
         const kH = hipM / pitAbs;
         _tq2.slerpQuaternions(Q_IDENT, this._qT, kH);
         this._rotQL(b.spine1, _tq2);
+        this._restGripT.applyQuaternion(_tq2).add(_v7);
         _tq2.invert().premultiply(this._qT);       // the rest: qT * hips^-1
+        this._charOf(b.spine3.bone, _afG);
         this._rotQL(b.spine3, _tq2);
-      } else this._rotQL(b.spine1, this._qT);
+        this._restGripT.sub(_afG).applyQuaternion(_tq2).add(_afG);
+      } else {
+        this._rotQL(b.spine1, this._qT);
+        this._restGripT.applyQuaternion(this._qT).add(_v7);
+      }
       this._upT.copy(Y_AXIS).applyQuaternion(this._qT);
       this._fwdT.copy(Z_AXIS).applyQuaternion(this._qT);
       this._latT.set(1, 0, 0).applyQuaternion(this._qT);
-      this._restGripT.copy(this.T.restGrip).add(this._rgOff).sub(_v7).applyQuaternion(this._qT).add(_v7);
       this._tOff = false;
-    } else { this._tOff = true; this._tW = 0; }
+    } else { this._tOff = true; this._tW = 0; this._qTs.identity(); }
     this._aimDbg.tBend = 2 * Math.acos(Math.min(1, Math.abs(this._qT.w)));
 
     // breathing sway (steadier under Concentration) + draw-hold tremble
@@ -4186,7 +4306,10 @@ export class PlayerAnimator {
     // in, so the arrow line through the cheek is preserved and only the error
     // is removed. Skipped while the loose follow-through is carrying the hand
     // rearward on purpose.
-    const anchorPull = smoothstep(drawS, this.T.handAnchorFrom, 0.96) * aimW * (1 - lk);
+    // (W0b targeted fix 4: with `armFlow`, from the draw's last 4 %: from 0.72 it
+    // pulled the hand to her face ahead of the string, the knuckle 0.08 m off the
+    // nock at drawS 0.93)
+    const anchorPull = (this.T.armFlow ? smoothstep(drawS, 0.96, 1) : smoothstep(drawS, this.T.handAnchorFrom, 0.96)) * aimW * (1 - lk);
     if (anchorPull > 0.01 && hold <= 0) {
       _v6.subVectors(_v7, _anW);
       const dh = _v6.length();
@@ -4212,7 +4335,7 @@ export class PlayerAnimator {
     // (W0b targeted fix 4: ...or while combat's bow is still drawn — the
     // animator runs before combat, so on the step RMB comes up the string is
     // still at full draw, and the hand left it a step early: knuckle 0.11 m)
-    const afFull = !!AF && this._aimHold && this._dodgeW < 0.02 && this._deadW < 0.02 && this._carryW < 0.02;
+    const afFull = !!AF && this._aimHold && this._dodgeW < 0.25 && this._deadW < 0.02 && this._carryW < 0.02;
     /* W0b targeted fix 4 (r3 judges: every aim-weight transition snapped the
      * arm 0.27-0.42 m in one step — `afFull` needed `p.aiming`, so on RMB up
      * the IK weight stepped 1 -> aimW and the limiters switched off, and every
@@ -4398,9 +4521,15 @@ export class PlayerAnimator {
         const L2 = _afD.lengthSq();
         const sP = L2 > 1e-6 ? clamp(_afG.subVectors(this._wrT, this._qbS).dot(_afD) / L2, 0, 1) : 0;
         if (this._quiverT >= 1) this._qbS.copy(_v7);                  // after the beat: the string is where it is now
-        if (this._quiverT >= 1 && sP < 0.02) this._qbOn = false;
+        /* (W0b targeted fix 4: after the beat the bow fades over 0.25 s. It held
+         * until the hand's progress read ~0, but the progress is read off a target
+         * the bow itself displaces: at the clamps that loop sat at a fixed point,
+         * the wrist 0.10 m off the string at full draw, `wrNock` 0.13-0.16 m, for
+         * as long as the aim lasted.) */
+        this._qbF = this._quiverT < 1 ? 1 : Math.max(0, (this._qbF ?? 1) - (this._dtA || 0.016) / 0.25);
+        if (this._quiverT >= 1 && (sP < 0.02 || this._qbF <= 0)) this._qbOn = false;
         else {
-          const bw = 4 * sP * (1 - sP);
+          const bw = 4 * sP * (1 - sP) * this._qbF;
           this._charOf(b.spine1.bone, _afG); this._charOf(b.neck1.bone, _afH);
           _afH.sub(_afG).normalize();                                   // the trunk's up
           _afG.crossVectors(this._latT, _afH).normalize();              // ...and its forward
@@ -4447,6 +4576,21 @@ export class PlayerAnimator {
        * ground: a crouch, a stand or a bob carries the drawn hand on the
        * string. */
       // (carried with her at the top of the arm solve, above)
+      /* W0b targeted fix 4 (r3 eng judge: drawn, dodge, RMB + LMB held, the draw
+       * completing 0.45-0.78 m off the string): a hand that comes up onto the string
+       * from under the cord's knot stalls there: the keep-out (`_clearArmOfRoots`) turns
+       * the arm straight back out and the next target pulls it straight back in,
+       * until the string has come back past the knot (0.12-0.19 m off at drawS 0.9).
+       * On those steps the target goes round the knot instead: out from it and up. */
+      if (AF.knotRound && this._hcHitLast) {
+        this._charOf(b.handR.bone, _afG).sub(this._hcHitP);
+        _afG.addScaledVector(this._upT, -_afG.dot(this._upT));
+        if (_afG.lengthSq() > 1e-6) {
+          _afG.normalize();
+          // (only under the knot, with the target above it)
+          if (_v7.dot(this._upT) > this._wrT.dot(this._upT)) _v7.copy(this._wrT).addScaledVector(_afG, AF.knotRound).addScaledVector(this._upT, AF.knotRound);
+        }
+      }
       _afD.subVectors(_v7, this._wrT);
       const lim = AF.wristV * Math.max(1e-4, this._dtA || 0), dl = _afD.length();
       if (dl > lim) {
@@ -4640,6 +4784,27 @@ export class PlayerAnimator {
         let N = D.nock;
         const bowO = this.ctx.combat?.bow;
         if (bowO?.getNockWorld && bowO.group?.visible !== false) {
+          /* W0b targeted fix 4: the bow as combat will aim it this step. Its group
+           * still carries last step's hand-relative turn, and the bow hand turns as
+           * the draw builds: 1 deg of it is 1 cm at the nock, and the turn below
+           * saw the knuckle on the nock (0.024 m) with the rendered one 0.082 m
+           * off, at drawS 0.9-1. Combat re-writes the same turn after this. */
+          const node = bowO.group.parent;
+          if (node && this._aimHold && cmb?.aimPoint) {
+            node.updateWorldMatrix(true, false);
+            node.matrixWorld.decompose(_knA, _knQ, _knB);
+            // (the aim point one step on, `_aimPrev` was just set to it: the hand
+            // is the final pose's less what the body has yet to do: the ray's offset)
+            // (...and the node where this step's pelvis offset and ground conform will
+            // leave it, last step's shift: 0.1 m in a strafe, 0.1 rad at a near aim)
+            _knA.add(this._bodyShW).negate().add(cmb.aimPoint).add(this._aimDp);
+            if (_knA.lengthSq() >= 0.25) {
+              _knA.normalize().negate();
+              _knM.lookAt(_knZ, _knA, Y_AXIS);
+              _knQ2.setFromRotationMatrix(_knM);
+              bowO.group.quaternion.copy(_knQ.invert().multiply(_knQ2));
+            }
+          }
           bowO.getNockWorld(drawS, _knN);
           this.model.worldToLocal(_knN);
           if (Number.isFinite(_knN.x)) N = _knN;
@@ -4751,6 +4916,7 @@ export class PlayerAnimator {
     const nR = R && Hc?.c ? R.length : 0;
     if (nR) { for (let k = 0; k < nR; k++) this._charOf(R[k].bone, this._afRootP[k]); this._charOf(Hc.c, _afT).sub(_afW); }
     this._headFrame();
+    _afQu0.copy(b.upArmR.bone.quaternion); _afQl0.copy(b.loArmR.bone.quaternion);
     let f = Math.min(1, lim / Math.max(dE, dW, 1e-6));
     if (this._armRateTry(f, L1, L2, nR, give) > lim * 1.02) {
       let lo = 0, hi = f;
@@ -4758,11 +4924,14 @@ export class PlayerAnimator {
       f = lo;
     }
     this._armRateTry(0, L1, L2, nR, give);
-    const v0 = this._afViol;
+    // (no worse than holding still, into the skull never, and by at most `violStep` m a
+    // step against the back of the skull and the keeps: with no slack an arm a hair inside
+    // a keep could not move at all, and sat there 0.15 m off the string)
+    const v0 = this._afViol, h0 = this._afInHd;
     for (let k = 0; k <= 4; k++) {
       const fk = f * (1 - k / 4);
       this._armRateTry(fk, L1, L2, nR, give);
-      if (this._afViol <= v0 + 1e-4 || k === 4) {
+      if ((this._afViol <= v0 + (AF.violStep ?? 1e-4) && (h0 || !this._afInHd)) || k === 4) {
         this._armRatePose(fk, L1, L2);
         D.afArmRate = Math.round(fk * 1e4) / 1e4;
         return true;
@@ -4777,7 +4946,8 @@ export class PlayerAnimator {
     if (!this._armRatePose(f, L1, L2)) { this._afViol = 9; return 9; }
     this._charOf(b.loArmR.bone, _afJ2); this._charOf(b.handR.bone, _afK2);
     const step = Math.max(_afJ2.distanceTo(_afJ), _afK2.distanceTo(_afK));
-    let v = this._armInHead() ? 1 : 0;
+    this._afInHd = this._armInHead();
+    let v = 0;
     _efF.set(0, 0, 1).applyQuaternion(_hdQ);
     v += Math.max(0, this._behindSkullPt(_afK2));
     if (this._handCol?.c) {
@@ -4789,8 +4959,9 @@ export class PlayerAnimator {
       }
     }
     this._afViol = v;
-    _afQ2.invert(); this._rotQL(b.loArmR, _afQ2);
-    _afQ.invert(); this._rotQL(b.upArmR, _afQ);
+    // (back to the solve exactly: undoing the two turns left 0.01 m a pass, and the
+    // pose finally applied stood 0.07 m off the one the bisection had measured)
+    b.upArmR.bone.quaternion.copy(_afQu0); b.loArmR.bone.quaternion.copy(_afQl0);
     return step;
   }
 
@@ -4803,20 +4974,18 @@ export class PlayerAnimator {
     const b = this.b;
     _afP.copy(_afK).lerp(_afW, f);                         // the wrist's point
     _afG.copy(_afJ).lerp(_afE, f);                         // the elbow's point
-    _afA.subVectors(_afP, _afS);
-    let d = _afA.length();
+    // the elbow on its sphere about the shoulder, the wrist on its sphere about
+    // the elbow: a solve on the shoulder -> wrist circle is ill-conditioned near a
+    // straight arm (a 0.02 m wrist step threw the elbow 0.14-0.32 m on a lower)
+    _afH.subVectors(_afG, _afS);
+    let d = _afH.length();
     if (d < 1e-4) return false;
-    _afA.divideScalar(d);
-    d = clamp(d, Math.abs(L1 - L2) + 1e-3, (L1 + L2) * 0.999);
-    const al = (L1 * L1 - L2 * L2 + d * d) / (2 * d), h = Math.sqrt(Math.max(0, L1 * L1 - al * al));
-    _afH.subVectors(_afG, _afS); _afH.addScaledVector(_afA, -_afH.dot(_afA));
-    if (_afH.lengthSq() < 1e-10) _afH.copy(_afU).addScaledVector(_afA, -_afU.dot(_afA));
-    if (_afH.lengthSq() < 1e-10) return false;
-    _afH.normalize();
-    _afC.copy(_afS).addScaledVector(_afA, al).addScaledVector(_afH, h);   // the elbow
-    _afL.copy(_afS).addScaledVector(_afA, d);                             // the wrist
-    _afH.subVectors(_afC, _afS).divideScalar(L1);                         // upper arm dir
-    _afD.subVectors(_afL, _afC).divideScalar(L2);                         // forearm dir
+    _afH.divideScalar(d);                                  // upper arm dir
+    _afC.copy(_afS).addScaledVector(_afH, L1);             // the elbow
+    _afD.subVectors(_afP, _afC);
+    d = _afD.length();
+    if (d < 1e-4) return false;
+    _afD.divideScalar(d);                                  // forearm dir
     _afQ.setFromUnitVectors(_afU, _afH);
     this._rotQL(b.upArmR, _afQ);
     _afG.copy(_afV).applyQuaternion(_afQ);
@@ -4855,11 +5024,13 @@ export class PlayerAnimator {
     if (!this.T.armFlow?.armStep || !this._armCapN) { this._afEng = false; return; }
     // (after the aim layer stops it carries the arm at most `tail` s — a melee
     // draw or swing that follows a lowered bow is the melee layer's after that)
-    this._afTail = aimRan ? 0 : (this._afTail || 0) + (this._dtA || 0.016);
+    // (...and through a roll, in the chest's frame, however long it runs)
+    const rolling = !!this.ctx.player?.dodging || this._dodgeW > 0.05;
+    this._afTail = aimRan || rolling ? 0 : (this._afTail || 0) + (this._dtA || 0.016);
     if (!aimRan && this._afTail > (this.T.armFlow.tail ?? 0.6)) { this._afEng = false; return; }
     const bound = this._armRate();
     this._aimDbg.afPost = bound ? 1 : 0;
-    if (!aimRan && !bound) this._afEng = false;
+    if (!aimRan && !rolling && !bound && this._afTail > (this.T.armFlow.tailMin ?? 0)) this._afEng = false;
   }
 
   /** W0b targeted fix 4: the draw arm as it ends this step (char) — every limiter's reference next step. */
@@ -5018,6 +5189,7 @@ export class PlayerAnimator {
   _clearArmOfRoots(drawS) {
     const R = this._hcRoots, H = this._handCol, b = this.b;
     if (!R || R.length === 0 || !H || !H.a || !H.b || !b.upArmR) return;
+    this._hcHitLast = this._hcHit || 0; this._hcHit = 0;
     let headIn = -1;
     for (let it = 0; it < 3; it++) {
       this._charOf(b.upArmR.bone, _crS);
@@ -5035,6 +5207,7 @@ export class PlayerAnimator {
         const useHand = d1 < d0;
         const d = useHand ? d1 : d0;
         if (K.keep - d <= need) continue;
+        this._hcHitP.copy(_crR);
         if (useHand) _crP.subVectors(_crR, _cp1); else _crP.copy(_hcB);
         // straight out from the root, across her up axis (`_upT`, the bent T's at a down aim)
         _crN.subVectors(_crP, _crR);
@@ -5050,6 +5223,7 @@ export class PlayerAnimator {
       }
       if (need <= 0) break;
       if (it === 0) {
+        this._hcHit = (this._hcHit || 0) + 1;
         this._hcFixN++;
         if (need > this._hcFixMax) this._hcFixMax = need;
         if (drawS > this._hcFixDraw) this._hcFixDraw = drawS;
