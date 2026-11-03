@@ -165,6 +165,17 @@ export function scatterStatic(R) {
       }
     }
   }
+  // the cones: the harvest piled on the main dykes beside the town, the Pans' one white silhouette
+  const CONES = [[-74, 39, 3], [-40, 39, 2], [-8, 39, 4], [30, 39, 3], [10, 1, 3], [58, 1, 2]];
+  for (const [cu, cv, count] of CONES) {
+    let u = cu;
+    for (let k = 0; k < count; k++) {
+      const s = 2.1 + r() * 0.9;
+      fieldToWorld(u, cv + (r() - 0.5) * 1.1, P);
+      heaps.push(P.x, R.hAt(P.x, P.z) - 0.06, P.z, r() * 6.28, s, s * (0.96 + r() * 0.2), s, 0, 1.02);
+      u += s * 2 + 0.3 + r() * 1.5;
+    }
+  }
   return {
     rocks: Float32Array.from(rocks), columns: Float32Array.from(columns),
     walls: Float32Array.from(walls), heaps: Float32Array.from(heaps),

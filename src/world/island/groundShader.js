@@ -64,7 +64,20 @@ uniform highp sampler2DArray tA2;
 uniform highp sampler2DArray tN2;
 uniform vec3 uScale1;   // 1/tile: sand, salt, basalt
 uniform vec2 uScale2;   // 1/tile: silt, shingle
-vec3 gN; float gRough; float gAO; float gLiquid;
+uniform sampler2D tHzA;
+uniform sampler2D tHzB;
+uniform vec4 uHzW0;     // the light's bearing as weights over the 8 horizon channels
+uniform vec4 uHzW1;
+uniform float uSunTan;  // tan(elevation) of the sun or moon
+uniform float uHzWorldInv;
+vec3 gN; float gRough; float gAO; float gLiquid; float gSunVis = 1.0;
+/** Is the light above the terrain's horizon here? Long soft shadows from one lookup. */
+float gHorizonVis(vec2 xz) {
+  vec2 uv = xz * uHzWorldInv + 0.5;
+  float a = dot(texture2D(tHzA, uv), uHzW0) + dot(texture2D(tHzB, uv), uHzW1);
+  a = a * a * 0.9;
+  return smoothstep(a - 0.016, a + 0.034, uSunTan);
+}
 float gHash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
 float gNoise(vec2 p) {
   vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
@@ -90,6 +103,7 @@ uniform vec3 uPanBox;      // x0, z0, 1/size
 uniform float uWorldInv;
 uniform float uTime;
 uniform float uSea;
+uniform vec2 uSunXZ;       // unit, toward the light
 `;
 
 /** Accumulates one layer: albedo into col, world normal offset, rough + AO, height blend. */
@@ -239,6 +253,16 @@ export const TERRAIN_COLOR = /* glsl */ `
   gAO = mix(1.0, clamp(aoSum, 0.0, 1.0), 0.78);
   col *= mix(1.0, clamp(aoSum * 1.08, 0.0, 1.0), 0.4);
 
+  /* -- the long shadows: the land's own, and past the cascades the dykes' ------ */
+  gSunVis = gHorizonVis(xz);
+  if (pan.a > 0.01 && dCam > 70.0) {
+    // a dyke is ≈ 0.55 m tall: a band of shadow on the side away from the light
+    float L = min(0.55 / max(uSunTan, 0.08), 5.5);
+    vec2 toSun = uSunXZ * L * uPanBox.z;
+    float behind = min(texture2D(tPan, puv + toSun).a, texture2D(tPan, puv + toSun * 0.5).a);
+    gSunVis *= mix(1.0, smoothstep(0.1, 0.72, behind), smoothstep(70.0, 110.0, dCam));
+  }
+
   /* -- rain (world-sky's calWeather.x): the flats darken and shine ----------- */
   #ifdef USE_FOG
   {
@@ -276,6 +300,7 @@ export const ROCK_COLOR = /* glsl */ `
   c = mix(c, vec3(0.62, 0.6, 0.55), rime);
   float wetK = 1.0 - smoothstep(0.1, 1.1, vWPos.y);
   c *= mix(1.0, 0.42, wetK);
+  gSunVis = gHorizonVis(vWPos.xz);
   diffuseColor.rgb = c * diffuseColor.rgb;
   gN = (vec3(0.0, tx.y, tx.x) * bw.x + vec3(ty.x, 0.0, ty.y) * bw.y + vec3(tz.x, tz.y, 0.0) * bw.z) * 1.1;
   gRough = mix(nx.z * bw.x + ny.z * bw.y + nz.z * bw.z, 0.22, wetK * 0.8);

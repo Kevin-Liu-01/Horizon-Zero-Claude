@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { WORLD_SIZE, WORLD_HALF, PLAY_RADIUS, MESH_SPAN, MESH_SEGS } from './island/extent.js';
 import { REST_SITE, TUBES } from './island/sites.js';
 import { BIOMES, CURRENT_DEPTH, biomesAt, heightAt, coverAt } from './island/recipe.js';
-import { GRID, MASK_N, PAN_N, PAN_BOX, SHORE_ENC, bakeShade, maskTexel } from './island/bake.js';
+import { GRID, MASK_N, PAN_N, PAN_BOX, SHORE_ENC, HORIZON_N, bakeShade, maskTexel } from './island/bake.js';
 import { bakeIsland } from './island/pool.js';
 import { LAYER_FILES, LAYER_SIZE } from './island/layers.js';
 import {
@@ -156,6 +156,8 @@ const SURFACES = Object.freeze([...new Set(Object.values(SURFACE_EMIT))]);
 /** Applied after the lights: AO on the sky term, and the mirror. */
 export const GROUND_AO = /* glsl */ `
 #include <aomap_fragment>
+reflectedLight.directDiffuse *= gSunVis;
+reflectedLight.directSpecular *= gSunVis;
 reflectedLight.indirectDiffuse *= gAO;
 reflectedLight.indirectSpecular *= mix(1.0, gAO, 0.6);
 #ifdef USE_FOG
@@ -405,6 +407,14 @@ export class Terrain {
       shore: mkMask(BAKE.shore, MASK_N), pan: mkMask(BAKE.pan, PAN_N),
     };
     this._maskData.tex = [this._maskTextures.a, this._maskTextures.b, this._maskTextures.shore];
+    const mkHz = (data) => {
+      const t = mkMask(data, HORIZON_N);
+      t.minFilter = THREE.LinearMipmapLinearFilter;
+      t.generateMipmaps = true;
+      return t;
+    };
+    this._maskTextures.hzA = mkHz(BAKE.horizonA);
+    this._maskTextures.hzB = mkHz(BAKE.horizonB);
     /* Layers as texture arrays: every layer of the wave costs two samplers per size. They
      * stay NoColorSpace on purpose (the shader decodes sRGB): engine.js's anisotropy sweep
      * caps colour-role textures through TEXTURE_2D, and these are arrays. */
@@ -430,6 +440,10 @@ export class Terrain {
       tA2: { value: this._layerTextures.a2 }, tN2: { value: this._layerTextures.n2 },
       uScale1: { value: new THREE.Vector3(1 / 3.0, 1 / 6.0, 1 / 7.0) },
       uScale2: { value: new THREE.Vector2(1 / 3.5, 1 / 2.6) },
+      tHzA: { value: this._maskTextures.hzA }, tHzB: { value: this._maskTextures.hzB },
+      uHzW0: { value: new THREE.Vector4(0, 1, 0, 0) }, uHzW1: { value: new THREE.Vector4() },
+      uSunTan: { value: 1 }, uSunXZ: { value: new THREE.Vector2(0, -1) },
+      uHzWorldInv: { value: 1 / WORLD_SIZE },
     };
   }
 
@@ -716,6 +730,21 @@ export class Terrain {
     return true;
   }
 
+  /** The light (sun or moon) as the horizon map reads it: bearing weights + elevation. No allocation. */
+  _updateSunUniforms() {
+    const L = this.ctx.environment?.lightDir;
+    if (!L) return;
+    const U = this.groundUniforms, hyp = Math.hypot(L.x, L.z) || 1e-3;
+    U.uSunTan.value = L.y / hyp;
+    U.uSunXZ.value.set(L.x / hyp, L.z / hyp);
+    let b = Math.atan2(L.x, -L.z) / (Math.PI / 4);
+    if (b < 0) b += 8;
+    const i0 = b | 0, f = b - i0, i1 = (i0 + 1) % 8;
+    const w0 = U.uHzW0.value.set(0, 0, 0, 0), w1 = U.uHzW1.value.set(0, 0, 0, 0);
+    if (i0 < 4) w0.setComponent(i0, 1 - f); else w1.setComponent(i0 - 4, 1 - f);
+    if (i1 < 4) w0.setComponent(i1, f); else w1.setComponent(i1 - 4, f);
+  }
+
   update(dt, t) {
     if (!this._colliderIds && this._colliderTries < 600) {
       this._colliderTries++;
@@ -733,6 +762,7 @@ export class Terrain {
       }
     }
     if (_stampPending.length) this._drainStamps();
+    this._updateSunUniforms();
     const env = this.ctx.environment;
     if (env) {
       /* world-sky's mainland ridges are from the old valley: an island's horizon is the

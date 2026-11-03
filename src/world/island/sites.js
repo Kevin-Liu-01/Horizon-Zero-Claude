@@ -143,7 +143,7 @@ export const GROUND = Object.freeze({
     pans: Object.freeze({ x: -405, z: 96, eye: 1.8, look: Object.freeze({ x: -300, y: -10, z: 360 }), fov: 46,
       note: 'the crater rim: the Glass below, salt grid, black beach, white surf, the Ring on the beach' }),
     /** The same ground from a walker's eye on Saltrow's rise, over the pans to the sea. */
-    pansRise: Object.freeze({ x: -240, z: 200, eye: 1.8, look: Object.freeze({ x: -350, y: -2, z: 345 }), fov: 46,
+    pansRise: Object.freeze({ x: -226, z: 186, eye: 1.8, look: Object.freeze({ x: -350, y: -2, z: 345 }), fov: 46,
       note: 'Saltrow\'s rise, eye height' }),
   }),
 });

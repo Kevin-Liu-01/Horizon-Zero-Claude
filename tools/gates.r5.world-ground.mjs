@@ -146,6 +146,7 @@ const ROWS = [
       const identical = {
         H: eq(again.H, single.H), normals: eq(again.normals, single.normals), tint: eq(again.tint, single.tint),
         maskA: eq(again.maskA, single.maskA), maskB: eq(again.maskB, single.maskB), shore: eq(again.shore, single.shore), pan: eq(again.pan, single.pan),
+        horizon: eq(again.horizonA, single.horizonA) && eq(again.horizonB, single.horizonB),
         scatter: eq(again.scatter.kinds.marram.rec, single.scatter.kinds.marram.rec) && eq(again.scatter.static.walls, single.scatter.static.walls),
       };
       const over = runs.filter((m) => m > 600).length;
@@ -945,6 +946,24 @@ function vistaSetup({ hour, weather, shot = 'vista' }) {
     env?.setWeather?.(states.includes(want) ? want : fb, 0);
     env?.setTime?.(${hour});
     if (env) env.timeFrozen = true;
+    /* Until world-sky's calima merges: its bible values forced over the old 'overcast' each
+     * frame, so the ground can be read under the right light. Named in the caption below. */
+    if (want === 'calima' && !states.includes(want) && env) {
+      const orig = env._applyTime.bind(env);
+      const C = (h) => new (env.u.calFogHorizon.value.constructor)(h);
+      const fogH = C('#C98B4E'), fogZ = C('#A9713F'), fogS = C('#E8A06A'), sunC = C('#F2C09A'), mid = C('#B98450'), zen = C('#9A6A3E');
+      env._applyTime = (dt) => {
+        orig(dt);
+        const u = env.u, su = env.sky.material.uniforms;
+        u.calFogA.value.x = 0.00133 * 3.2;
+        u.calFogHorizon.value.copy(fogH); u.calFogZenith.value.copy(fogZ); u.calFogSun.value.copy(fogS);
+        su.uHorizon.value.copy(fogH); su.uMid.value.copy(mid); su.uZenith.value.copy(zen); su.uCloud.value.set(0, 0, 0, 0);
+        env.sun.color.copy(sunC); env.sun.intensity = 2.3;
+        for (const L of (env.csm?.lights || [])) { L.color.copy(sunC); L.intensity = 2.3; }
+        env.hemi.color.set('#D9B48A'); env.hemi.groundColor.set('#6B5236'); env.hemi.intensity = 0.62;
+        ctx.scene.fog.color.copy(fogH); ctx.scene.fog.density = u.calFogA.value.x;
+      };
+    }
     const p = ctx.player; p._updateCamera = () => {};
     if (ctx.studio) ctx.studio.update = () => {};
     ctx.state = 'playing';

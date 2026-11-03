@@ -208,13 +208,36 @@ function saltGeo() {
 
 /* -------------------------------------------------------------------- flora ---- */
 const FLORA_VERT = /* glsl */ `
+varying vec2 vFloraXZ;
 uniform float uTime;
 uniform vec2 uWind;
 uniform vec3 uFade;      // fade start, fade end, sway
 uniform vec4 uActors[4];
 `;
+const FLORA_FRAG_PARS = /* glsl */ `
+varying vec2 vFloraXZ;
+uniform sampler2D tHzA;
+uniform sampler2D tHzB;
+uniform vec4 uHzW0;
+uniform vec4 uHzW1;
+uniform float uSunTan;
+uniform float uHzWorldInv;
+`;
+/** The land's long shadow falls on the plants too (groundShader.js gHorizonVis). */
+const FLORA_AO = /* glsl */ `
+#include <aomap_fragment>
+{
+  vec2 hzUv = vFloraXZ * uHzWorldInv + 0.5;
+  float hzA = dot(texture2D(tHzA, hzUv), uHzW0) + dot(texture2D(tHzB, hzUv), uHzW1);
+  hzA = hzA * hzA * 0.9;
+  float hzV = smoothstep(hzA - 0.016, hzA + 0.034, uSunTan);
+  reflectedLight.directDiffuse *= hzV;
+  reflectedLight.directSpecular *= hzV;
+}
+`;
 const FLORA_PROJECT = /* glsl */ `
 vec4 iw = instanceMatrix * vec4(transformed, 1.0);
+vFloraXZ = iw.xz;
 {
   vec3 o = instanceMatrix[3].xyz;
   float d = distance(o, cameraPosition);
@@ -280,10 +303,30 @@ export class Vegetation {
     if (ctx.environment && !ctx.environment.water) ctx.environment.water = ctx.water;
     /* The world's props (world-props). Built after the scatter: their keepouts thin it. */
     this.props = new Props(ctx);
+    this._retireRound4Props();
     this._applyKeepouts();
     const st = ctx.props || this.props;
     this.forceStream(st?.spawnX ?? -284, st?.spawnZ ?? 247);
     this.buildMs = performance.now() - t0;
+  }
+
+  /**
+   * THE ROUND-4 VALLEY'S PROPS MUST NOT STAND ON THE ISLAND (plan §6: world-props deletes them
+   * at its W1 exit). Until that merge their art, colliders and ledges are retired here, once,
+   * so nothing from the old map is seen from the Pans or walked into: `seedWorld` finds the
+   * group by name, `registerColliders` is what hands over the rest. The check is the old
+   * class's own signature, so world-props' rewrite makes this a no-op; then this method goes.
+   */
+  _retireRound4Props() {
+    const P = this.props;
+    if (!P?.megaMeshes) return;
+    P.group.visible = false;
+    P.group.name = 'world-props-retired';
+    for (const part of [P.tallneck, P.rockworks, P.activities]) if (part?.group) part.group.visible = false;
+    P.registerColliders = () => 0;
+    if (P.rockworks?.ledges) P.rockworks.ledges.length = 0;
+    if (P.placeSystem?.ledges) P.placeSystem.ledges.length = 0;
+    this.round4PropsRetired = true;
   }
 
   /* ---------------------------------- flora ---------------------------------- */
@@ -295,10 +338,17 @@ export class Vegetation {
       shader.uniforms.uWind = this._uWind;
       shader.uniforms.uFade = { value: fade };
       shader.uniforms.uActors = this._uActors;
+      const U = this.ctx.terrain.groundUniforms;
+      shader.uniforms.tHzA = U.tHzA; shader.uniforms.tHzB = U.tHzB;
+      shader.uniforms.uHzW0 = U.uHzW0; shader.uniforms.uHzW1 = U.uHzW1;
+      shader.uniforms.uSunTan = U.uSunTan; shader.uniforms.uHzWorldInv = U.uHzWorldInv;
       shader.vertexShader = shader.vertexShader
         .replace('#include <common>', `#include <common>\n${FLORA_VERT}`)
         .replace('#include <project_vertex>', FLORA_PROJECT)
         .replace('#include <worldpos_vertex>', FLORA_WORLD);
+      shader.fragmentShader = shader.fragmentShader
+        .replace('#include <common>', `#include <common>\n${FLORA_FRAG_PARS}`)
+        .replace('#include <aomap_fragment>', FLORA_AO);
     };
     mat.customProgramCacheKey = () => 'cal-flora';
     this._owned.mat.push(mat);
@@ -479,7 +529,7 @@ export class Vegetation {
   _armCasterRadii() {
     if (this._radiiArmed || !this.ctx.collision) return;
     this._radiiArmed = true;
-    for (const m of [this.rocks, this.columns, this.dykes]) {
+    for (const m of [this.rocks, this.columns, this.dykes, this.rakes]) {
       if (m) m.geometry.boundingSphere = new THREE.Sphere(new THREE.Vector3(), m.userData.__castRadius);
     }
   }
@@ -489,7 +539,7 @@ export class Vegetation {
     this.rocks = this._staticMesh('rocks-basalt', rockGeo(), this._rockMaterial('rock', 0.3, false), S.rocks, true);
     this.columns = this._staticMesh('rocks-columns', columnGeo(), this._rockMaterial('col', 0.2, false), S.columns, true);
     this.dykes = this._staticMesh('pan-dykes', wallGeo(), this._rockMaterial('wall', 0.5, false), S.walls, true);
-    this.rakes = this._staticMesh('salt-rakes', saltGeo(), this._rockMaterial('salt', 0, true), S.heaps, false);
+    this.rakes = this._staticMesh('salt-rakes', saltGeo(), this._rockMaterial('salt', 0, true), S.heaps, true);
     this._columnData = S.columns;
   }
 

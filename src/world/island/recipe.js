@@ -311,15 +311,20 @@ export function ensureMacro(shared = null) {
       }
     }
   };
+  /* A ray's correction is low-passed before it lands on the grid: taken cell by cell it copies
+   * the relief's noise onto an 8 m lattice, and that reads as a comb along the notch. */
+  const carveDelta = new Float32Array(GN * GN);
+  const carveTmp = new Float32Array(GN * GN);
   const carveRays = () => {
     for (const r of rays) {
+      carveDelta.fill(0);
       const len = Math.hypot(r.be - r.ae, r.bn - r.an);
-      for (let j = 0; j < GN; j++) {
+      const iLo = Math.max(1, Math.floor((Math.min(r.ae, r.be) - 56 + GH) / GC)), iHi = Math.min(GN - 2, Math.ceil((Math.max(r.ae, r.be) + 56 + GH) / GC));
+      const jLo = Math.max(1, Math.floor((Math.min(r.an, r.bn) - 56 + GH) / GC)), jHi = Math.min(GN - 2, Math.ceil((Math.max(r.an, r.bn) + 56 + GH) / GC));
+      for (let j = jLo; j <= jHi; j++) {
         const n = -GH + j * GC;
-        if (n < Math.min(r.an, r.bn) - 40 || n > Math.max(r.an, r.bn) + 40) continue;
-        for (let i = 0; i < GN; i++) {
+        for (let i = iLo; i <= iHi; i++) {
           const e = -GH + i * GC;
-          if (e < Math.min(r.ae, r.be) - 40 || e > Math.max(r.ae, r.be) + 40) continue;
           const q = distToSeg(e, n, r.ae, r.an, r.be, r.bn);
           if (q.d > 40) continue;
           const along = q.t * len;
@@ -329,8 +334,28 @@ export function ensureMacro(shared = null) {
           M.quiet[o] = Math.min(M.quiet[o], 1 - k);
           const cap = r.ah + (r.bh - r.ah) * q.t - 3.0 + Math.max(0, q.d - 12) * 2.1;
           const h = heightAuthored(e, n);
-          if (h > cap) M.h[o] -= (h - cap) * k;
+          if (h > cap) carveDelta[o] = (h - cap) * k;
         }
+      }
+      // one 3x3 max (never under-cut the bar), then two 3x3 box passes
+      for (let j = jLo; j <= jHi; j++) for (let i = iLo; i <= iHi; i++) {
+        const o = j * GN + i;
+        let m = 0;
+        for (let b = -1; b <= 1; b++) for (let a = -1; a <= 1; a++) m = Math.max(m, carveDelta[o + b * GN + a]);
+        carveTmp[o] = m;
+      }
+      for (let pass = 0; pass < 2; pass++) {
+        const src = pass === 0 ? carveTmp : carveDelta, dst = pass === 0 ? carveDelta : carveTmp;
+        for (let j = jLo; j <= jHi; j++) for (let i = iLo; i <= iHi; i++) {
+          const o = j * GN + i;
+          let t = 0;
+          for (let b = -1; b <= 1; b++) for (let a = -1; a <= 1; a++) t += src[o + b * GN + a];
+          dst[o] = t / 9;
+        }
+      }
+      for (let j = jLo; j <= jHi; j++) for (let i = iLo; i <= iHi; i++) {
+        const o = j * GN + i;
+        M.h[o] -= carveTmp[o];
       }
     }
   };
@@ -339,9 +364,10 @@ export function ensureMacro(shared = null) {
   anchorSites();
   carveRays();
   carveRays();
-  // a site a ray's notch shouldered down (the Fundamental, 27 m from T3-T4) stands back up on a tight plug
+  // a site or a pillar a ray's notch shouldered down (the Fundamental, 27 m from T3-T4) stands back up on a tight plug
   for (let it = 0; it < 3; it++) {
-    for (const s of SITES) {
+    for (const s of [...SITES, ...TRIG]) {
+      if (s.id === 'T3' || s.id === 'T1') continue;
       const res = s.h - heightAuthored(s.e, s.n);
       if (Math.abs(res) < 0.8) continue;
       const i0 = Math.max(0, Math.floor((s.e - 24 + GH) / GC)), i1 = Math.min(GN - 1, Math.ceil((s.e + 24 + GH) / GC));
@@ -392,8 +418,24 @@ function bicubic(g, e, n) {
 /* --------------------------------------------------------- the salt field ---- */
 const FU = (e, n) => (e - SF.e) * SF.ue + (n - SF.n) * SF.un;
 const FV = (e, n) => (e - SF.e) * SF.ve + (n - SF.n) * SF.vn;
-/** The dykes are hand-laid: long shallow bends, not ruled lines (the Janubio reference). */
-const skew = (u) => 0.042 * u + 2.4 * Math.sin(u * 0.021 + 0.7);
+/**
+ * The dykes are hand-laid: long shallow bends, rows that are not quite parallel and cross
+ * walls that lean, never a ruled brick pattern (the Janubio reference). Field coordinates
+ * (U, W) are the straight frame the cells are cut in; `fieldUW` warps a real (u, v) into it,
+ * `fieldInv` undoes that. Both warps have |slope| ≪ 1, so the map stays one-to-one.
+ */
+const skewV = (u, v) => 0.042 * u + 2.4 * Math.sin(u * 0.021 + 0.7)
+  + 0.8 * Math.sin(u * 0.026 + v * 0.019 + 1.1) + 0.017 * u * Math.sin(v * 0.04 + 0.5);
+const skewU = (u, v) => 0.075 * v * Math.sin(u * 0.037 + 1.0) + 0.9 * Math.sin(v * 0.06 + 2.0);
+const _uv = { u: 0, v: 0 };
+/** Field coords → real (u, v) along/across the field. Shared record: read at once. */
+function fieldInv(U, W) {
+  let u = U, v = W - skewV(U, W);
+  for (let i = 0; i < 5; i++) { const u2 = U - skewU(u, v), v2 = W - skewV(u, v); u = u2; v = v2; }
+  _uv.u = u; _uv.v = v;
+  return _uv;
+}
+const FIELD_APRON = 42;  // metres over which the country falls to the field's floor
 const WALL = 0.42;       // half width of an ordinary stone dyke, m
 const DYKE = 1.25;       // half width of a walkable main dyke, m
 const ROW_V = [-28, -14, 1, 15, 27, 39, 50, 59, 67, 75, 84];
@@ -452,8 +494,8 @@ function buildField() {
       for (let k = 0; k < odds.length; k++) { p -= odds[k]; if (p <= 0) { kind = k; break; } kind = k; }
       const cu = u + w * 0.5, cv = (v0 + v1) * 0.5;
       const dry = (cu2, cv2) => {
-        const vv = cv2 - skew(cu2);
-        return polySigned(SF.e + cu2 * SF.ue + vv * SF.ve, SF.n + cu2 * SF.un + vv * SF.vn) > 13;
+        const q = fieldInv(cu2, cv2);
+        return polySigned(SF.e + q.u * SF.ue + q.v * SF.ve, SF.n + q.u * SF.un + q.v * SF.vn) > 13;
       };
       const keep = !inTown(cu, cv) && !inTown(u, cv) && !inTown(u + w, cv)
         && dry(u, v0) && dry(u + w, v0) && dry(u, v1) && dry(u + w, v1);
@@ -490,9 +532,9 @@ const _pan = { inside: 0, edge: 9, salt: 0, brine: 0, hue: 0, level: 0, kind: -1
 export function panAt(e, n) {
   const P = _pan;
   P.inside = 0; P.edge = 9; P.salt = 0; P.brine = 0; P.hue = 0; P.level = 0; P.kind = -1;
-  const u = FU(e, n), v = FV(e, n);
-  if (u < SF.uMin - 2 || u > SF.uMax + 2 || v < SF.vMin - 16 || v > SF.vMax + 20) return P;
-  const vw = v + skew(u);
+  const u0 = FU(e, n), v0 = FV(e, n);
+  if (u0 < SF.uMin - 8 || u0 > SF.uMax + 8 || v0 < SF.vMin - 16 || v0 > SF.vMax + 20) return P;
+  const u = u0 + skewU(u0, v0), vw = v0 + skewV(u0, v0);
   const c = cellAt(u, vw);
   if (!c) return P;
   const ri = ROW_V.indexOf(c.v0);
@@ -555,32 +597,38 @@ export function fieldWalls() {
 
 /** Field coords (u, skewed v) → engine (x, z). */
 export function fieldToWorld(u, vw, out) {
-  const v = vw - skew(u);
-  const e = SF.e + u * SF.ue + v * SF.ve, n = SF.n + u * SF.un + v * SF.vn;
+  const q = fieldInv(u, vw);
+  const e = SF.e + q.u * SF.ue + q.v * SF.ve, n = SF.n + q.u * SF.un + q.v * SF.vn;
   out.x = e * S; out.z = -n * S;
   return out;
 }
 
-/** 0..1 how much of (e, n) belongs to the field: flat ground, dykes included. */
-function fieldK(e, n) {
-  const u = FU(e, n), v = FV(e, n);
-  if (u < SF.uMin - 18 || u > SF.uMax + 18 || v < SF.vMin - 22 || v > SF.vMax + 22) return 0;
-  const vw = v + skew(u);
+/** Metres from (e, n) to the nearest kept cell of the field, capped at `reach`. */
+function fieldDist(e, n, reach) {
+  const u0 = FU(e, n), v0 = FV(e, n);
+  if (u0 < SF.uMin - reach - 8 || u0 > SF.uMax + reach + 8 || v0 < SF.vMin - reach - 8 || v0 > SF.vMax + reach + 8) return reach;
+  const u = u0 + skewU(u0, v0), vw = v0 + skewV(u0, v0);
   buildField();
-  let best = 0;
+  let best = reach;
   for (let r = 0; r < _rows.length; r++) {
     const row = _rows[r];
-    if (vw < row.v0 - 13 || vw > row.v1 + 13) continue;
+    if (vw < row.v0 - best || vw > row.v1 + best) continue;
     const cs = row.cells;
     for (let i = 0; i < cs.length; i++) {
       const c = cs[i];
       if (!c.keep) continue;
       const dx = Math.max(c.u0 - u, u - c.u1, 0), dv = Math.max(c.v0 - vw, vw - c.v1, 0);
-      const k = 1 - ss(0.6, 12, Math.hypot(dx, dv));
-      if (k > best) best = k;
+      const d = Math.hypot(dx, dv);
+      if (d < best) best = d;
     }
   }
   return best;
+}
+
+/** 0..1 how much of (e, n) belongs to the field: flat ground, dykes included. */
+function fieldK(e, n) {
+  const d = fieldDist(e, n, 12);
+  return d >= 12 ? 0 : 1 - ss(0.6, 12, d);
 }
 
 /** Packed salt tracks + dyke paths [(e, n)...], bible §8.6: Saltrow's working paths. */
@@ -619,17 +667,24 @@ function trackAt(e, n) {
 }
 
 /* ---------------------------------------------------------- stamps (authored) ---- */
-const SHELF = { e: -158, n: -352, he: 58, hn: 50, c: Math.cos(0.32), s: Math.sin(0.32) };
+/** The Organ Shelf's plan: overlapping lobes [e, n, r], warped below (a lava flow's front, not a box). */
+const SHELF_LOBES = [[-188, -351, 23], [-168, -346, 35], [-132, -362, 34], [-156, -386, 20], [-104, -338, 20], [-214, -372, 15]];
 const CRATER = { e: -398, n: -158, R: 66 };
 const CONE = { e: 283, n: -101, r: 98, h: 146 };
 
-/** Organ Shelf: signed distance inside its rounded box, m (+ inside). */
+/** Organ Shelf: signed distance inside its lobed plan, m (+ inside). */
 function shelfD(e, n) {
-  const dx = e - SHELF.e, dz = n - SHELF.n;
-  const lx = dx * SHELF.c + dz * SHELF.s, lz = -dx * SHELF.s + dz * SHELF.c;
-  const qx = Math.abs(lx) - SHELF.he, qz = Math.abs(lz) - SHELF.hn;
-  const out = Math.hypot(Math.max(qx, 0), Math.max(qz, 0)) + Math.min(Math.max(qx, qz), 0);
-  return -out + (fbm(e * 0.05 + 40, n * 0.05, 3) - 0.5) * 16;
+  if (e < -280 || e > -40 || n < -440 || n > -270) return -60;
+  // the flow front wanders: big lobes from the warp, small embayments from the second octave
+  const we = e + (fbm(e * 0.021 + 3, n * 0.021, 2) - 0.5) * 34 + (fbm(e * 0.07, n * 0.07 + 8, 2) - 0.5) * 11;
+  const wn = n + (fbm(e * 0.021, n * 0.021 + 13, 2) - 0.5) * 34 + (fbm(e * 0.07 + 5, n * 0.07, 2) - 0.5) * 11;
+  // smooth union of the lobes (exponential smooth-min of the distances)
+  let acc = 0;
+  for (let i = 0; i < SHELF_LOBES.length; i++) {
+    const L = SHELF_LOBES[i];
+    acc += Math.exp(-(Math.hypot(we - L[0], wn - L[1]) - L[2]) / 7);
+  }
+  return acc > 1e-12 ? 7 * Math.log(acc) : -60;
 }
 
 /** The half-eroded red crater over the Glass: 0..1 rim weight (reads red in the tint). */
@@ -737,8 +792,8 @@ function heightAuthored(e, n) {
       h += crest * (1.0 + 2.6 * fbm(e * 0.02, n * 0.02, 2)) * duneZone;
     }
     // Saltrow's rise: a low tuff knoll behind the town, the vantage over the pans
-    const dk0 = Math.hypot(e + 238, n + 196);
-    if (dk0 < 110) h += 12.5 * Math.exp(-(dk0 * dk0) / (2 * 30 * 30));
+    const dk0 = Math.hypot(e + 222, n + 183);
+    if (dk0 < 100) h += 12 * Math.exp(-(dk0 * dk0) / (2 * 26 * 26));
     // storm-beach ridge at the top of the swash: shingle thrown up by winter seas
     const berm = ss(3, 12, c) * (1 - ss(14, 34, c));
     h += berm * 1.25 * pans;
@@ -756,7 +811,9 @@ function heightAuthored(e, n) {
     let hc = CONE.h * Math.pow(Math.max(0, 1 - dk / CONE.r), 1.12) * gul;
     const dk2 = Math.hypot(e - CONE.e - 26, n - CONE.n + 12);
     hc -= 22 * (1 - ss(6, 25, dk2));
-    if (hc > h) h = hc;
+    // a smooth union: the cone's skirt spreads onto the shelf, no circular crease at its foot
+    const sk = 16, gap = Math.max(sk - Math.abs(h - hc), 0);
+    h = Math.max(h, hc) + gap * gap / (4 * sk);
   }
   // the Organ Shelf: a low basalt table, stepped at its seaward foot (columns are world-props')
   const sd = shelfD(e, n);
@@ -768,12 +825,14 @@ function heightAuthored(e, n) {
     if (hs > h) h = hs;
   }
   // the salt field: cell floors planed flat, dykes raised (the stone is instanced on them)
-  const fk = fieldK(e, n);
-  if (fk > 0.002) {
+  const fd = fieldDist(e, n, FIELD_APRON);
+  if (fd < FIELD_APRON) {
     const P = panAt(e, n);
     const floor = P.kind >= 0 ? P.level - 0.12 * P.inside : 0.72;
     const crown = P.kind >= 0 ? (1 - P.inside) * 0.24 : 0.2;
-    h += (floor + crown - h) * fk;
+    // planed flat in the field and its first metres, then a long apron up to the country
+    const fk = 1 - ss(0.6, FIELD_APRON, fd);
+    h += (floor + crown - h) * (fd < 1.2 ? 1 : fk * fk * (3 - 2 * fk) * 0.35 + fk * 0.65);
   }
   // the Glass: a still shallow lagoon behind the barrier
   const gu = (e - GLASS.e) / GLASS.re, gv = (n - GLASS.n) / GLASS.rn;
