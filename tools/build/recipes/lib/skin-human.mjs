@@ -319,7 +319,7 @@ export function faceLayers({ L, eyes, cheek }) {
  * lib/hair.mjs, with the eye patch blitted in. `marks` are the character's own layers (a salt
  * line, a scar, a tattoo), painted last. `collar` = flat triangles of the outfit near the neck.
  */
-export async function paintHumanSkin({ bodyPrim, skinMat, layout, eyeR, EYE_PX, L, eyes, brows, shellGrid, occluders, collar = [], opens, marks = [], scar = null, tone = '#8A5A3C', iris = '#3B2A20', amber = '#5E3A20', hairColor = '#15110F', hairShape: shape = hairShape, names = 'human' }) {
+export async function paintHumanSkin({ bodyPrim, skinMat, layout, eyeR, EYE_PX, L, eyes, brows, shellGrid, occluders, collar = [], opens, marks = [], scar = null, tone = '#8A5A3C', iris = '#3B2A20', amber = '#5E3A20', hairColor = '#15110F', hairShape: shape = hairShape, names = 'human', fill = [0.05, 0.036, 0.03] }) {
   const W = 1024, AOW = 512;
   const baseTex = skinMat.getBaseColorTexture(), nTex = skinMat.getNormalTexture(), rTex = skinMat.getMetallicRoughnessTexture();
   const stock = await decodeStockSkin(baseTex.getImage(), nTex.getImage(), rTex.getImage());
@@ -395,6 +395,9 @@ export async function paintHumanSkin({ bodyPrim, skinMat, layout, eyeR, EYE_PX, 
   skinMat.setRoughnessFactor(1).setMetallicFactor(0).setDoubleSided(false);
   skinMat.setOcclusionTexture(rTex);
   skinMat.setOcclusionStrength(1);
+  // the hero fill: light that went into the skin comes back out of it (no subsurface pass here), so the
+  // shadow side keeps its form instead of going to a black mask. Same image, no new map, no new draw
+  skinMat.setEmissiveTexture(baseTex).setEmissiveFactor(fill);
   return { stats: painted.stats };
 }
 

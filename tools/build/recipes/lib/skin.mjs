@@ -655,7 +655,7 @@ export function lidLines({ open, side, ink = '#1A100C', w = 0.00092, crease = 0.
 }
 
 /** Lips from the source's lipstick to a natural deep rose: `center`, `r` the ellipsoid; `gain` and a matte `rough`. */
-export function lipTone({ center, r, gain = [0.96, 0.76, 0.75], rough = 0.5, sat = 0.74, upperLift = 1.28, aoFloor = 0.62 } = {}) {
+export function lipTone({ center, r, gain = [0.86, 0.68, 0.65], rough = 0.52, sat = 0.68, upperLift = 1.32, aoFloor = 0.62 } = {}) {
   return (T) => {
     const dx = (T.X - center[0]) / r[0], dy = (T.Y - center[1]) / r[1], dz = (T.Z - center[2]) / r[2];
     const d2 = dx * dx + dy * dy + dz * dz;

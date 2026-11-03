@@ -343,8 +343,8 @@ export async function build({ out = ROOT } = {}) {
     base: { tiltDeg: 20, warpDeg: -7.5, lowDeg: 1.5, w: 0.232 },
     // two turns crossing over the forehead
     turns: [
-      { phiDeg: 82, tauDeg: 19, oDeg: 29, w: 0.215, along: 34, lift: 0.0052, pillow: 0.0026, creaseAmp: 0.0013, seed: 8, flip: true },
-      { phiDeg: -74, tauDeg: 17, oDeg: 39, w: 0.215, along: 30, lift: 0.0078, pillow: 0.0028, creaseAmp: 0.0014, seed: 15 },
+      { phiDeg: 82, tauDeg: 19, oDeg: 29, w: 0.215, along: 34, lift: 0.0064, pillow: 0.0026, creaseAmp: 0.0012, seed: 8, flip: true },
+      { phiDeg: -74, tauDeg: 17, oDeg: 39, w: 0.215, along: 30, lift: 0.0102, pillow: 0.0028, creaseAmp: 0.0012, seed: 15 },
     ],
     // the topknot; its top is the bbox top that assets.specs.js's targetHeight is computed from
     bun: { c: [0, 1.7605, -0.100], axis: [0, 0.70, -0.71], r: 0.0605, topY: 1.82756 },
@@ -411,7 +411,7 @@ export async function build({ out = ROOT } = {}) {
   const hideArr = new Uint8Array(bodyPrim.getAttribute('POSITION').getCount());
   // the collar stands off the neck: a look down inside it meets skin, never a hole through her, so
   // the neck and the top of the chest stay whatever the normal-ray test says
-  const insideCollar = (x, y) => y > 1.385 && Math.abs(x) < 0.115;
+  const insideCollar = (x, y) => y > 1.42 && Math.abs(x) < 0.088;
   {
     const P = bodyPrim.getAttribute('POSITION'), q = [0, 0, 0];
     for (let i = 0; i < hideArr.length; i++) { P.getElement(i, q); hideArr[i] = hide[i] && !insideCollar(q[0], q[1]) ? 1 : 0; }

@@ -109,7 +109,7 @@ function pushV(g, p, n, u, v, joint, c = null) {
  * panel's U period so a repeating strip of atlas covers any length.
  *   uv: { rect: [x, y, w, h] px, period px, W atlas px, pxPerM, v: [bottom, top] in 0..1 of rect }
  */
-export function ribbon(form, { n, o0, w, along = 32, s0 = 0, s1 = TAU, rowsT = [-1, -0.93, -0.66, -0.3, 0.1, 0.5, 0.82, 1], warp = null, lift = 0.003, pillow = 0.0022, hemDrop = 0.0035, creases = 3, creaseAmp = 0.0011, wander = 0.04, seed = 1, joint = 0, uv, flip = false }) {
+export function ribbon(form, { n, o0, w, along = 32, s0 = 0, s1 = TAU, rowsT = [-1, -0.93, -0.66, -0.3, 0.1, 0.5, 0.82, 1], warp = null, lift = 0.003, pillow = 0.0022, hemDrop = 0.0035, hemDropUp = null, creases = 3, creaseAmp = 0.0011, wander = 0.04, seed = 1, joint = 0, uv, flip = false }) {
   const g = { pos: [], nrm: [], uv: [], jnt: [], wgt: [], idx: [] };
   const axis = norm(n);
   const fwd = Math.abs(axis[2]) > 0.95 ? [1, 0, 0] : [0, 0, 1];
@@ -131,7 +131,7 @@ export function ribbon(form, { n, o0, w, along = 32, s0 = 0, s1 = TAU, rowsT = [
     const at = Math.abs(t);
     off += pillow * (1 - at * at * at * at);                                   // the pillow
     off += 0.00075 * smooth(0.62, 0.86, at) * (1 - smooth(0.88, 0.97, at));   // the rolled hem stands proud
-    off -= hemDrop * smooth(0.93, 1.0, at);                                    // and turns under
+    off -= (t > 0 && hemDropUp !== null ? hemDropUp : hemDrop) * smooth(0.93, 1.0, at);   // and turns under
     for (const f of folds) {
       const x = (t - f.c - f.a * Math.sin(f.m * s + f.ph)) / f.s;
       if (x > -2.2 && x < 2.2) off += f.amp * Math.exp(-x * x) * (0.55 + 0.45 * Math.sin(f.m2 * s + f.ph2));

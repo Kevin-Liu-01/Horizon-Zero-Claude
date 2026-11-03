@@ -39,16 +39,16 @@ export function woundHeadwrap({ headSoup, joint, center, lift, base: B, turns, b
 
   const parts = [];
   const add = (name, g) => { g.part = name; parts.push(g); return g; };
-  const rowsBase = [-1, -0.94, -0.74, -0.42, -0.06, 0.32, 0.68, 0.92, 1];
+  const rowsBase = [-1, -0.94, -0.62, -0.18, 0.28, 0.7, 0.93, 1];
   // base turn: low edge at +13 deg over the brow, +9 deg over the ears, -27 deg on the nape
   const baseN = rising(0, B.tiltDeg * DEG);
   const baseW = B.w;
   const baseO = (B.lowDeg * DEG) + baseW;
   const baseWarp = (s) => B.warpDeg * DEG * Math.cos(2 * s);
-  add('cap', crownCap(form, { elMin: 18 * DEG, rings: 4, seg: 20, lift: 0.0046, joint: head, uv: { rect: [A.clothB.rect[0], A.clothB.rect[1], A.clothB.period, A.clothB.rect[3]], W }, tiltAxis: [0, 0.94, -0.34] }));
+  add('cap', crownCap(form, { elMin: 18 * DEG, rings: 3, seg: 14, lift: 0.0046, joint: head, uv: { rect: [A.clothB.rect[0], A.clothB.rect[1], A.clothB.period, A.clothB.rect[3]], W }, tiltAxis: [0, 0.94, -0.34] }));
   add('turn1', ribbon(form, { n: baseN, o0: baseO, w: baseW, warp: baseWarp, along: 36, rowsT: rowsBase, lift: 0.0026, pillow: 0.0024, creases: 3, creaseAmp: 0.0012, seed: 3, joint: head, uv: uvA([0, 1]) }));
   // the crossing turns: each rises across the forehead toward its own side
-  turns.forEach((t, i) => add(`turn${i + 2}`, ribbon(form, { n: rising(t.phiDeg * DEG, t.tauDeg * DEG), o0: t.oDeg * DEG, w: t.w, along: t.along ?? 32, rowsT: rowsBase, lift: t.lift, pillow: t.pillow ?? 0.0026, creases: 3, creaseAmp: t.creaseAmp ?? 0.0013, seed: t.seed, joint: head, uv: uvA(t.flip ? [1, 0] : [0, 1]) })));
+  turns.forEach((t, i) => add(`turn${i + 2}`, ribbon(form, { n: rising(t.phiDeg * DEG, t.tauDeg * DEG), o0: t.oDeg * DEG, w: t.w, along: t.along ?? 32, rowsT: rowsBase, lift: t.lift, pillow: t.pillow ?? 0.0026, hemDrop: t.hemDrop ?? 0.0024, hemDropUp: t.hemDropUp ?? (t.lift + 0.002), creases: 3, creaseAmp: t.creaseAmp ?? 0.0013, seed: t.seed, joint: head, uv: uvA(t.flip ? [1, 0] : [0, 1]) })));
 
   if (bunSpec) {
     // the topknot: the same cloth wound round an egg; the top height is fixed by TOP_Y
@@ -180,6 +180,7 @@ export async function paintWrapAtlas(doc, wrapMat, { deep = '#5A2E66', violet = 
   wrapMat.setMetallicRoughnessTexture(ormTex);
   wrapMat.setRoughnessFactor(1).setMetallicFactor(1).setDoubleSided(true).setBaseColorFactor([1, 1, 1, 1]);
   wrapMat.setAlphaMode('MASK').setAlphaCutoff(0.5);
+  wrapMat.setEmissiveTexture(baseTex).setEmissiveFactor([0.03, 0.03, 0.03]);      // the same fill as the skin: dark cloth keeps its folds in shade
   return { ok: true };
 }
 

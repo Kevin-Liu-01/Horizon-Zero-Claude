@@ -25,7 +25,11 @@ is published early for settlements (R56, R57 c); the gate table is filled in at 
 - Layers: `smoothSkin({ zone })`, `eyeSocketClean({ eyes })`, `lipTone({ center, r, gain })`,
   `colourZones([{ at, s, gain, rough }])`, `pores({ zone, depth })`, `creases([{ pts, w, depth, dark }])`,
   `lidLines({ open, side })` (`open = eyeOpening(faceGrid, eyeCentre, { eyeR })`),
-  `saltPaste({ y(X), half(X), xMax })`, `scarSeam({ a, b })`, `inkDots({ dots, r, where })`.
+  `saltPaste({ y(X), half(X), xMax, salt, thick, cell })` (a finger-wiped chalky stroke: fat in the middle, thin
+  at its edges, a slight crackle only where it dried thick), `scarSeam({ a, b })`, `inkDots({ dots, r, where })`.
+- `eyeOpening(skinGrid, eyeCentre, { eyeR, ballGrid })`: pass `ballGrid` (a TriGrid of the eye mesh alone, `skinGrid` being the
+  skin alone): a lid can lie within a hair of the ball, and without two grids the opening reads 3 mm too tall, which floats the
+  lash card and the painted lid line up onto the lid.
 - `paintEye(N, { span, iris, amber, rIris, rPupil, lidY }) -> { base, normal, orm }`, `blit(dst, W, patch, pw, ph, x, y)`,
   `webp(buf, W, { to, quality, channels, alphaQuality })`.
 
@@ -44,13 +48,16 @@ is published early for settlements (R56, R57 c); the gate table is filled in at 
 - `hairCoverage(pm, shellGrid, { W, want })`, `hairlineLayer({ coverage(T), sampler, flowUV(T, uv) })`:
   close hair painted into the skin atlas, dissolving through the coils at its edge.
 - `scatterAnchors(grid, { center, step, keep(p, d) })`, `coilCards(anchors, { flow(a, R), skinOf(p), rect, length, width, liftTip })`.
-- `coilTuft(points, joints, { count, along, width, uv })` a tuft on a dyn_ chain.
-- `browLayer({ x0, x1, line(x), side, strokes, scar })` brows hair by hair (a paint layer).
+- `coilTuft(points, joints, { count, along, width, uv })` a tuft on a dyn_ chain (kept for NPCs; Brea's knot tail is cloth now).
+- `browLayer({ x0, x1, line(x), side, strokes, scar, mass })` a soft mass with hairs combed over it, herringbone, tapering to the tail (a paint layer).
 - `lashCard(open, { side, joint, zAt, rect })` upper lash cards.
 
 ### `lib/wrap-head.mjs` (a whole headwrap from a spec)
-- `woundHeadwrap({ headSoup, joint, center, lift(dx,dy,dz), base: { tiltDeg, warpDeg, lowDeg, w }, turns: [{ phiDeg, tauDeg, oDeg, w, lift, seed, along, flip }], bun: { c, axis, r, topY } | null, knot: [x,y,z] | null, tail: { points, joints, width(u), side, curl, twist, gather, fold } | null, tuft: { points, joints, count, along, width, side } | null })`
-  `-> { geo, parts, covers(p), lowEdge(p), soup, center }`. Spec for Brea: `tools/build/recipes/brea.mjs`.
+- `woundHeadwrap({ headSoup, joint, center, lift(dx,dy,dz), base: { tiltDeg, warpDeg, lowDeg, w }, turns: [{ phiDeg, tauDeg, oDeg, w, lift, hemDrop, hemDropUp, seed, along, flip }], bun: { c, axis, r, topY } | null, knot: [x,y,z] | null, tail: { points, joints, width(u), side, curl, twist, gather, gatherTo, roll, fold, along, across } | null, tail2: { points, joints, width(u), side, curl, twist, gather, fold, along, across } | null, tuft: { points, joints, count, along, width, side } | null })`
+  `-> { geo, parts, covers(p), lowEdge(p), soup, center }`. Spec for Brea: `tools/build/recipes/brea.mjs`. `gatherTo` + `roll`: the
+  tail's root is gathered and rolled into a half tube up to that fraction of its length, so a stiff root never reads as a flat plate.
+  `tail2` is the other end of the knot, a narrow cloth end. Each crossing turn's upper hem tucks down to the layer under it (`hemDropUp`,
+  default lift + 2 mm): models render FrontSide, so a hem left in the air is a slit you can see the sky through.
 - `paintWrapAtlas(doc, material, { deep, violet, dark, mid, stripe, lining: [a, b, c] })`: paints the standard
   512² atlas (cloth in those dyes, the coil tile, fringe, lock tile, lashes) and sets the material
   (`MASK` 0.5, double-sided, metallic-roughness from a new ORM). A faction wrap is new dye hexes.
@@ -62,17 +69,21 @@ is published early for settlements (R56, R57 c); the gate table is filled in at 
 2. `woundHeadwrap(...)` or your own hair, then `cullUnderWrap(prim, covers, isEar)`, `cullEyeBacks(eyesPrim, eyes)`,
    `simplifyHands(prim)`, `compactPrim(prim)`: these are what pay for the cloth (≈ 1.7 k tris).
 3. `relayoutSkinUV(prim, { density: humanDensity, reserve: [{ id: 'eye', w, h }], pad: 0.009, elastic: 0.7 })`, `remapEyeUV(eyesPrim, eyes, rect)`.
-4. `eyeOpening(...)` per eye, `lashCard(open, { side, joint, zAt, rect })`.
+4. `eyeOpening(skinGrid, eye, { eyeR, ballGrid })` per eye, `lashCard(open, { side, joint, zAt, rect })`.
 5. `paintHumanSkin({ bodyPrim, skinMat, layout, eyeR, EYE_PX, L, eyes, brows: browLines(browPrim), shellGrid, occluders: wrapped.soup, collar: outfitTris, opens, marks: [...], scar, tone, iris, amber, hairColor, hairShape, names }) -> { stats }`.
 6. `scalpCards({ bodyPrim, headW, shellGrid, wrapped, skinJ, skinW, hairShape, temples })`, `primFromGeo(doc, joinGeos([...]))`.
 - `faceLayers({ L, eyes, cheek })` the standard layers; `hairShape(X, Y, Z)` the default hairline (pass your own for
   another head); `vertexWeightOf`, `eyeCentres`, `eyeFrontZ`, `movedMask`, `compactPrim`, `primFromGeo`, `EYE_SPAN`.
 - A skin tone other than Brea's: `tone` (`#rrggbb` at the mid-cheek). The source layout and the stock tone stay; all paint is 3-D.
-- The landmarks' rigid sockets, the eye mesh and the `_HIDEMASK` rule are unchanged from W0b.
+- The landmarks' rigid sockets and the eye mesh are unchanged from W0b. The `_HIDEMASK` rule changed in one way: a body vertex
+  inside the collar's opening (`insideCollar`, brea.mjs) is never hidden, or the neck ends in a hole you can see the ground through.
 
 ### The material contract
 - Skin: opaque, 1024² base, 512² normal, 512² ORM used as both occlusion and metallic-roughness (R AO,
-  G roughness, B metal 0).
-- Hair + wrap: `alphaMode MASK` cutoff 0.5, double-sided, `COLOR_0` (u8 RGBA, linear: RGB contact shade,
+  G roughness, B metal 0). The emissive slot points at the same base image with a small factor (`paintHumanSkin({ fill })`,
+  default [0.05, 0.036, 0.03]; the wrap [0.03, 0.03, 0.03]): the hero fill, in place of a subsurface pass, so a shadow side keeps
+  its form on dark skin. No new map, no new draw. WebP normals are 4:2:0, so keep pore relief bold enough to survive it, and do not
+  print it into the albedo as well, or it reads as freckles or stubble.
+- Hair + wrap: `alphaMode MASK` cutoff 0.5, FrontSide at runtime (`src/core/assets.js` forces every model's material to it, whatever the glTF says: geometry must carry both faces of anything seen from both sides, and `fixWinding` must have run), `COLOR_0` (u8 RGBA, linear: RGB contact shade,
   A multiplies the alpha cut), `metallicFactor 1` with the ORM's B channel (0 on cloth, 0.35 on hair, so
   near-black coils do not go grey in a strong sun). The ORM is a third 512² map; §4.4's "hair 512²" counted one.
