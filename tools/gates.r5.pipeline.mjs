@@ -14,9 +14,10 @@
  * the first" per gate; nothing runs twice).
  *
  * W0a gates (plan §3.1): A-ID-ip-assets-gone, A-assets-tracked,
- * A-specs-data-driven. Global list items owned here: A-licence-manifest
- * (complete at W0b: SHA-256 re-fetch + brand's credits wiring are PENDING
- * clauses until then). Loader grant check: A-loader-fixes. Lane guards (not
+ * A-specs-data-driven. W0b gates (plan §9 pipeline): A-sources-staged,
+ * A-build-deterministic, A-build-only-lane, A-glb-budget, A-human-bind,
+ * A-poc-promoted (W0 exit), A-loader-fixes. Global list items owned here:
+ * A-licence-manifest, A-ID-ip-assets-gone, A-assets-tracked. Lane guards (not
  * §9 ids): A-pipeline-boot-rows (every boot row loads; no placeholder body
  * exists anywhere), A-pipeline-r30-merge-order (fix round 3: every R30 file
  * and the class that reads it are in the tree together or gone together —
@@ -24,9 +25,50 @@
  * instruments-core's §6 deletion of the four machine GLBs is in;
  * docs/ROUND5-PIPELINE.md §4.1).
  *
- * ORDER MATTERS: A-specs-data-driven launches its own headless Chrome, so it
- * runs before any page gate of this file (the harness launches its browser
- * lazily, on the first page gate) — one Chrome alive at a time.
+ * ORDER MATTERS: A-specs-data-driven, A-poc-promoted and A-pipeline-hero-swap launch their own
+ * headless Chrome (in a child process), so they run before any page gate of
+ * this file (the harness launches its browser lazily, on the first page
+ * gate) — one Chrome alive at a time. A-build-deterministic runs two full
+ * builds (~1 min CPU each; minutes of wall on a loaded box).
+ *
+ * W0b fix round 1: A-licence-manifest is a PAGE gate (its in-game credits
+ * clause is graded on the rendered credits modal, never on menu.js source);
+ * A-poc-promoted grades the literal bar (never PASS with a file left in
+ * tools/r5-poc/ or public/models/r5-poc/; every string-literal reference to
+ * them is classified); the licence gates grade against the TRUE wave (lane
+ * branch r5/<wave>-<lane>, R5_WAVE, or the lane-report lower bound with the
+ * §2-named report files counted).
+ *
+ * W0b fix round 2 (after the Oct 22 reboot emptied models-staging/r5-src):
+ * build:assets keeps going past a failing recipe and lists it with
+ * `missingSource`; A-build-deterministic / A-build-only-lane report PENDING
+ * `blockedBy: 'A-sources-staged'` (never PASS) only when every failure is a
+ * missing staged source AND A-sources-staged itself reports the files missing
+ * (classification has its own negative control); any other recipe failure is
+ * FAIL. `tools/build/sources.mjs restore` puts the lock's files back.
+ *
+ * W0b fix round 3: A-sources-staged also runs the ARCHIVE IDENTITY controls
+ * (tools/build/pipeline/archive-controls.mjs, 14 cases in scratch since fix
+ * round 4, on a synthetic scratch-only source, against the current records AND
+ * two simulated post-fetch record sets; any of the three not ok === true is a
+ * FAIL): a re-zip of
+ * the staged subset, a size-forged re-zip, a renamed zip, a changed member and
+ * a keep-all stage-zip are refused with the lock and row untouched; the
+ * positive cases record a name- and size-checked hash with its member listing;
+ * hand-edited lock/row records are caught by the shared `archiveAgreement`
+ * term that status() and tools/licences/check.mjs (third-party) grade.
+ * A-poc-promoted grades the orchestrator's ruling once it is recorded in the
+ * plan (`<!-- r5-ruling poc-closure=w1-exit|literal -->`, the marker form
+ * engine-gpu's gates read); with no marker the literal bar stands (at best
+ * PENDING) and both options are projected on the current tree. Symlinks inside
+ * the POC folders now count as left on disk (a symlinked dir kept the folder).
+ *
+ * W0b fix round 5: new lane guard A-pipeline-hero-swap (R39: the SPECS.hero swap with the outfit, stow-kit and
+ * UAL2 rows is a data patch, tools/build/pipeline/hero-swap.mjs, applied in the R39 merge window; the gate
+ * proves it on a scratch merge trial with hero-body's branch and boots the copy in its own Chrome, in a child,
+ * before any page gate). A-licence-manifest's credits clause FAILs a surface showing none of the attributions
+ * once ANY W0-exit signal holds (the wave, incl. a lane-report lower bound at or past it; SPECS.hero no longer
+ * aloy.glb; aloy.glb gone), with a negative control (check.mjs creditsExitControl) that must hold.
  */
 import os from 'node:os';
 import path from 'node:path';
@@ -95,26 +137,31 @@ async function assetsTracked() {
   };
   const ignoredRefs = ignore(live);
   // 3. the rules themselves, on synthetic paths (they need not exist). The
-  //    Tiller fixture's URL (/models/r5-poc/tiller.glb, read by
-  //    src/instruments/kinds/tiller.js once instruments-core merges) is the one
-  //    tracked file under r5-poc/; every other proof output stays ignored.
+  //    two ?poc=biome closure GLBs under r5-poc/ are tracked (the Tiller copy is
+  //    also what src/instruments/kinds/tiller.js reads until instruments-core
+  //    re-points it); every other proof output stays ignored.
   const mustTrack = ['public/models/hero/brea-body.glb', 'public/models/instruments/tiller.glb', 'public/models/a/b/c.glb', 'public/models/pipeline/probe.glb',
-    'public/models/r5-poc/tiller.glb'];
+    'public/models/r5-poc/tiller.glb', 'public/models/r5-poc/sounding-ring.glb'];
   const mustIgnore = ['public/models/x.baked.glb', 'public/models/hero/x.baked.glb', 'public/models/x.orig', 'public/models/a/b/x.orig',
     'models-staging/r5-src', 'models-staging/r5-src/ubc/x.glb', 'models-staging/r5-src/ual2.zip',
-    'public/models/r5-poc/sounding-ring.glb', 'public/models/r5-poc/x.glb', 'public/models/r5-poc/tiller.baked.glb'];
+    'public/models/r5-poc/proof-output.glb', 'public/models/r5-poc/x.glb', 'public/models/r5-poc/tiller.baked.glb'];
   const wronglyIgnored = ignore(mustTrack);
   const ig = new Set(ignore(mustIgnore));
   const notIgnored = mustIgnore.filter((p) => !ig.has(p));
   // 4. NEGATIVE CONTROL (fix round 2, the judge's merged-tree defect): a src
   //    URL literal that names an ignored proof output is caught by the same
   //    reference pipeline — a fresh clone would not have that file
-  const CONTROL = 'public/models/r5-poc/sounding-ring.glb';
+  const CONTROL = 'public/models/r5-poc/proof-output.glb';
   const controlCaught = ignore([...live, CONTROL]).includes(CONTROL);
-  const fixtureUrl = 'public/models/r5-poc/tiller.glb';
-  const fixture = { exists: existsSync(path.join(ROOT, fixtureUrl)), ignored: ignore([fixtureUrl]).length > 0, referencedBy: refs.get(fixtureUrl) ?? null };
+  // the Tiller fixture's model, wherever instruments-core's kind file points it (W0a: /models/r5-poc/tiller.glb;
+  // after the W0-exit re-point: /models/instruments/tiller.glb) — read from the file, not assumed
+  const tillerSrc = path.join(ROOT, 'src/instruments/kinds/tiller.js');
+  const tillerUrl = existsSync(tillerSrc) ? (/['"`](\/models\/[^'"`]+\.glb)['"`]/.exec(readFileSync(tillerSrc, 'utf8'))?.[1] ?? null) : null;
+  const fixtureUrl = tillerUrl ? `public${tillerUrl}` : null;
+  const fixture = fixtureUrl ? { url: tillerUrl, exists: existsSync(path.join(ROOT, fixtureUrl)), ignored: ignore([fixtureUrl]).length > 0, referencedBy: refs.get(fixtureUrl) ?? null }
+    : { url: null, note: 'no Tiller kind file in this tree' };
   const pass = !ignoredRefs.length && !missing.length && !wronglyIgnored.length && !notIgnored.length && controlCaught
-    && fixture.exists && !fixture.ignored;
+    && (!fixtureUrl || (fixture.exists && !fixture.ignored));
   return {
     pass,
     detail: {
@@ -387,9 +434,199 @@ async function r30MergeOrder() {
   return { pass: !problems.length, detail };
 }
 
+
+/* ---------------------------------------------------------------- */
+/* W0b: A-sources-staged (+ negative control), child-process Chrome   */
+/* ---------------------------------------------------------------- */
+const scratchRoot = () => process.env.R5_SCRATCH || path.join(os.tmpdir(), 'calima-r5-scratch', 'pipeline');
+
+async function sourcesStaged() {
+  const S = await imp('tools/build/sources.mjs');
+  const r = await S.status();
+  // NEGATIVE CONTROL: a copy-on-write clone of r5-src with one staged byte changed and one stray file must FAIL
+  let control = { ok: null };
+  const src = S.srcDir();
+  if (existsSync(src)) {
+    const { mkdirSync, rmSync, appendFileSync, writeFileSync, realpathSync } = await import('node:fs');
+    mkdirSync(scratchRoot(), { recursive: true });
+    const tamper = path.join(realpathSync(scratchRoot()), `r5-src-control-${process.pid}`);
+    rmSync(tamper, { recursive: true, force: true });
+    try {
+      execFileSync('cp', ['-cR', realpathSync(src), tamper]);
+      const lock = S.loadLock();
+      // fix round 2: tamper with a file that IS staged (after the Oct 22 reboot only ual1 is; the first lock entry's
+      // files were missing and the control threw ENOENT instead of grading)
+      const pick = Object.entries(lock.sources).flatMap(([row, ent]) => Object.keys(ent.files).sort()
+        .map((f) => ({ row, dir: ent.dir || row, f }))).find((x) => existsSync(path.join(tamper, x.dir, x.f)));
+      if (!pick) control = { ok: null, why: 'no staged file on disk to tamper with (every lock file is missing)' };
+      else {
+        appendFileSync(path.join(tamper, pick.dir, pick.f), 'x');
+        writeFileSync(path.join(tamper, pick.dir, 'stray.bin'), 'stray');
+        const c = await S.status({ env: { ...process.env, R5_SRC: tamper } });
+        const caught = c.pass === false && c.detail.problems.some((x) => x.includes(`${pick.row}: 1 staged file(s) differ`)) && c.detail.problems.some((x) => x.includes('not in the lock'));
+        control = { ok: caught, tampered: `${pick.row}/${pick.f}`, problems: c.detail.problems.filter((x) => x.startsWith(pick.row)).slice(0, 3) };
+      }
+    } finally { rmSync(tamper, { recursive: true, force: true }); }
+  }
+  // fix round 3 — ARCHIVE IDENTITY controls (judge: a self-made zip's hash was recorded as the upstream archive's), in
+  // scratch on the real restore / verify-zip / stage-zip / record-per-file / archiveAgreement code (refusals leave the
+  // lock and the row untouched; the positive cases record name-checked hash + size + listing).
+  // fix round 4 (judge: the suite threw ENOENT, or returned ok:null and was skipped, once the real records were
+  // post-fetch): the cases run on a synthetic scratch-only source, so they do not depend on the real records; the suite
+  // runs on the CURRENT records and on two simulated POST-FETCH record sets (UAL1 per-file / UAL1 first-fetch), and
+  // the gate FAILs unless all three are ok === true (null or a throw is a FAIL, never skipped).
+  const AC = await imp('tools/build/pipeline/archive-controls.mjs');
+  const runSet = async (fn) => { try { return await fn(); } catch (e) { return { ok: false, error: String(e?.stack || e).slice(0, 400), cases: [] }; } };
+  const sets = {
+    current: await runSet(() => AC.archiveControls({ scratch: scratchRoot() })),
+    postFetchUal1PerFile: await runSet(() => AC.archiveControlsPostFetch({ scratch: scratchRoot(), ual1: 'per-file' })),
+    postFetchUal1FirstFetch: await runSet(() => AC.archiveControlsPostFetch({ scratch: scratchRoot(), ual1: 'first-fetch' })),
+  };
+  const summarise = (x) => ({ ok: x.ok, records: x.records, row: x.row, passed: `${x.passed ?? 0}/${x.of ?? AC.N_CASES}`, error: x.error, ...(x.shape ? { shape: x.shape } : {}),
+    cases: (x.cases || []).map((c) => ({ case: c.case, ok: c.ok, ...(c.error ? { error: c.error } : {}), ...(c.why ? { why: c.why } : {}),
+      ...(c.restore ? { restore: c.restore.ok, problems: (c.restore.problems || []).length } : {}),
+      ...(c.verifyZip ? { verifyZip: c.verifyZip.ok } : {}), ...(c.stageZip ? { stageZip: c.stageZip.ok } : {}), ...(c.tampered ? { tampered: c.tampered } : {}) })) });
+  const archiveSummary = { ok: Object.values(sets).every((x) => x.ok === true), ...Object.fromEntries(Object.entries(sets).map(([k, x]) => [k, summarise(x)])) };
+  const pass = control.ok === false || archiveSummary.ok !== true ? false : r.pass;
+  return { pass, detail: { ...r.detail, negativeControl: control, archiveIdentityControls: archiveSummary } };
+}
+
+function childJson(script, args, timeoutMs) {
+  return new Promise((resolve) => {
+    const child = spawn(process.execPath, [path.join(ROOT, script), ...args], { cwd: ROOT, stdio: ['ignore', 'pipe', 'inherit'] });
+    let out = '';
+    child.stdout.on('data', (d) => { out += d; });
+    const kill = setTimeout(() => child.kill('SIGTERM'), timeoutMs);
+    child.on('close', (code) => {
+      clearTimeout(kill);
+      try { resolve(JSON.parse(out.trim().split('\n').pop())); } catch { resolve({ pass: false, detail: { error: `${script} exited ${code} with no result` } }); }
+    });
+  });
+}
+
+/**
+ * Lane guard (fix round 5, judges: "R39 hero swap incomplete"): the R39 data patch
+ * (tools/build/pipeline/hero-swap.mjs) applied to a merge trial in scratch = this tree + hero-body's branch
+ * (git show, read-only) + the LICENSES.json fold. PASS needs: no overlay conflict, fold ok, the patch applies
+ * once and is idempotent, --verify ok (four files, one non-IP licence row each, aloy.glb gone, none ignored,
+ * hero-body's rows.js a proven no-op with its negative control), and A1, A20b, A-pipeline-boot-rows and the
+ * hero-rows check PASS on the booted copy (one Chrome, in a child; filmed). A-human-bind on the copy is
+ * reported as advisory only (unsealed). Never PASS in place of the plan's gates on main after the R39 window.
+ */
+async function heroSwap({ PORT }) {
+  const res = await childJson('tools/build/pipeline/hero-swap.mjs', ['--trial', '--scratch', scratchRoot(), '--port', String(PORT),
+    '--shot', path.join(ROOT, 'shots/gates/A-pipeline-hero-swap.png')], 840000);
+  const d = res.detail || {};
+  const boot = (d.boot || []).map((g) => ({ id: g.id, pass: g.pass, error: g.error, consoleErrors: g.consoleErrors, shot: g.shot ? path.relative(ROOT, g.shot) : undefined,
+    ...(g.id === 'hero-swap-rows' || g.id === 'A-pipeline-boot-rows' ? { detail: g.detail } : {}) }));
+  return { pass: res.pass, detail: { trial: d.trial, patch: d.patch && { ok: d.patch.ok, changed: d.patch.changed, specs: d.patch.specs, lib: d.patch.lib, problems: d.patch.problems },
+    idempotent: d.patchAgain ? { ok: d.patchAgain.ok, changed: d.patchAgain.changed } : null, verify: d.verify, viteProbe: d.viteProbe, boot,
+    humanBindAdvisory: d.humanBindAdvisory, error: d.error, pending: d.pending, ms: d.ms, copyRemoved: d.copyRemoved } };
+}
+
+async function pocPromoted({ PORT }) {
+  const W = await imp('tools/build/pipeline/w0b-checks.mjs');
+  const st = W.pocPromotedStatic();
+  // dynamic: ?poc=biome still serves (its own Chrome, in a child, before any page gate)
+  // fix round 4: the child films the asserted biome state (shots/gates/A-poc-promoted-biome.png, 1600×900)
+  const dyn = await childJson('tools/build/pipeline/biome-check.mjs', ['--scratch', scratchRoot(), '--port', String(PORT), '--shot', path.join(ROOT, 'shots/gates/A-poc-promoted-biome.png')], 600000);
+  // literal: PASS needs (a) + (b) absent folders + (c) biome serving; the static half is null (ruling) at best while
+  // the closure files exist, so the gate cannot PASS with anything left in either folder
+  // fix round 3: under the recorded ruling poc-closure=literal clause (c) is struck (the probe is reported, not graded);
+  // with no ruling or poc-closure=w1-exit it is graded. No ruling = the literal bar, at best PENDING (w0b-checks.mjs)
+  const struck = st.detail.ruling === 'poc-closure=literal';
+  const pass = st.pass === false || (!struck && dyn.pass === false) ? false : st.pass === true && (struck || dyn.pass === true) ? true : null;
+  return { pass, detail: { clauseC: struck ? 'struck by ruling poc-closure=literal (probe reported only)' : 'graded', static: st.detail, biome: dyn.detail?.gate ? { pass: dyn.detail.gate.pass, ...dyn.detail.gate.detail, consoleErrors: dyn.detail.gate.consoleErrors, error: dyn.detail.gate.error, shot: dyn.detail.gate.shot ? path.relative(ROOT, dyn.detail.gate.shot) : null } : dyn.detail, biomeMs: dyn.detail?.ms } };
+}
+
+/* ---------------------------------------------------------------- */
+/* A-licence-manifest: node clauses + the RENDERED in-game credits     */
+/* ---------------------------------------------------------------- */
+/**
+ * W0b fix round 1 (judge: "the in-game credits clause can be satisfied by a
+ * comment"). The gate is a PAGE gate now. Its node half — every clause of
+ * `tools/licences/check.mjs` — runs once per process in a child
+ * (`check.mjs --json-line`, synchronous, ~1 s) when the harness first reads
+ * `assert`; the page half clicks the CREDITS button, waits for the modal and
+ * grades the modal's DOM text with the SAME `gradeCredits` function check.mjs
+ * uses (its source is embedded). menu.js's source text is never read. The
+ * harness then films the open credits modal (shots/gates/A-licence-manifest.png).
+ * A getter (not a value) so the node half is computed when the gate runs:
+ * gates-perf's registry keeps accessors (withProps); main's harness spreads
+ * rows at import, which evaluates it once at import — also correct.
+ */
+let licenceNodeHalf = null;
+function licenceNode() {
+  if (licenceNodeHalf) return licenceNodeHalf;
+  try {
+    const out = execFileSync(process.execPath, [path.join(ROOT, 'tools/licences/check.mjs'), '--json-line'],
+      { cwd: ROOT, encoding: 'utf8', timeout: 180000, maxBuffer: 64 * 2 ** 20, stdio: ['ignore', 'pipe', 'pipe'] });
+    licenceNodeHalf = JSON.parse(out.trim().split('\n').pop());
+  } catch (e) {
+    // check.mjs exits 1 on a FAIL verdict and still prints its report
+    try { licenceNodeHalf = JSON.parse(String(e.stdout || '').trim().split('\n').pop()); } catch { licenceNodeHalf = { error: `check.mjs did not report: ${String(e.stderr || e.message).slice(0, 300)}` }; }
+  }
+  return licenceNodeHalf;
+}
+let gradeCreditsSrc = null;
+async function loadGradeCredits() { gradeCreditsSrc = (await imp('tools/licences/check.mjs')).gradeCredits.toString(); }
+await loadGradeCredits();
+function licenceAssert() {
+  const node = licenceNode();
+  return `(async () => {
+  const NODE = ${JSON.stringify(node)};
+  if (NODE.error || !NODE.clauses) return { pass: false, detail: { error: NODE.error || 'no clauses from check.mjs' } };
+  const gradeCredits = ${gradeCreditsSrc};
+  const M = __CTX__.menus;
+  let how = null, error = null;
+  try {
+    // the player's path: the CREDITS button of the menus (hub footer / title); the menus API only if no button exists
+    const btn = [...document.querySelectorAll('button')].find((b) => b.textContent.trim().toUpperCase() === 'CREDITS');
+    if (btn) { btn.click(); how = 'CREDITS button'; } else if (M && M.openModal) { M.openModal('credits'); how = 'menus.openModal (no CREDITS button in the DOM)'; }
+    else error = 'no CREDITS button and no menus.openModal';
+  } catch (e) { error = String(e && e.message || e); }
+  await new Promise((r) => setTimeout(r, 400));
+  const body = (M && M.modalBody) || document.querySelector('.mn-modal-body');
+  const modal = (M && M.modalEl) || (body && body.closest('.mn-modal'));
+  const cs = modal ? getComputedStyle(modal) : null;
+  const rect = body ? body.getBoundingClientRect() : null;
+  const title = (M && M._modalTitle && M._modalTitle.textContent) || '';
+  const visible = !!(cs && cs.display !== 'none' && cs.visibility !== 'hidden' && +cs.opacity > 0 && rect && rect.width > 0 && rect.height > 0
+    && (!M || M.modal === 'credits'));
+  const text = body ? body.textContent : '';
+  const rendered = { how, visible, text, error };
+  const nodeCredits = NODE.clauses.credits || {};
+  const credits = { ...gradeCredits({ ...NODE.creditsInput, rendered }), w0Exit: nodeCredits.w0Exit ?? null, exitControl: nodeCredits.exitControl ?? null };
+  // fix round 5: the exit rule's negative control (check.mjs creditsExitControl) must hold, or the clause FAILs
+  if (!credits.exitControl || credits.exitControl.ok !== true) credits.status = 'FAIL';
+  const clauses = { ...NODE.clauses, credits };
+  const st = Object.values(clauses).map((c) => c.status);
+  const pass = st.includes('FAIL') ? false : st.includes('PENDING') ? null : true;
+  return { pass, detail: { summary: Object.fromEntries(Object.entries(clauses).map(([k, c]) => [k, c.status])), wave: NODE.wave,
+    renderedCredits: { how, visible, modalTitle: title, chars: text.length, box: rect ? [Math.round(rect.width), Math.round(rect.height)] : null }, clauses } };
+})()`;
+}
+
+/** A-human-bind: the hero body's rig profile binds every UAL clip bone (plan §9: 52/52, no missing source/target). */
+const HUMAN_BIND = `(async () => {
+  const A = __CTX__.assets, p = __CTX__.player, an = p?.animator, lib = an?.lib, rt = lib?.retargeter;
+  const prof = p?.model?.userData?.rigProfile || A.models.hero?.root?.userData?.rigProfile || null;
+  if (!prof) return { pass: null, detail: { pending: 'SKIP-pending (hero-body W0b): the hero body carries no rig profile yet (SPECS.hero still serves the Round-4 body); graded on the merged tree once Brea is the hero row', heroUrl: A.specs.hero?.url ?? null } };
+  if (!an || !rt) return { pass: false, detail: { error: 'no animator / retargeter on the player' } };
+  const mapSize = Object.keys(prof.map || {}).length;
+  const keyMissing = Object.entries(an.KEY).filter(([k]) => !an.b[k]).map(([k]) => k);
+  const allowed = /^(neck2|eye[LR]|lid(UL|LL|UR|LR))$/;
+  const extraMissing = keyMissing.filter((k) => !allowed.test(k));
+  const pairs = rt.pairs.length;
+  const pass = pairs === 52 && mapSize === 52 && !rt.missingSource.length && !rt.missingTarget.length && !extraMissing.length;
+  return { pass, detail: { rig: prof.name, heroUrl: A.specs.hero?.url ?? null, pairs, mapSize, missingSource: rt.missingSource, missingTarget: rt.missingTarget,
+    keyMissing, extraMissing, animated: lib.animatedNames.size, hipScale: +rt.hipScale.toFixed(4) } };
+})()`;
+export const HUMAN_BIND_ASSERT = HUMAN_BIND;
+
 export const GATES = [
   {
-    id: 'A-ID-ip-assets-gone', kind: 'runner', lane: 'pipeline', timeout: 120000,
+    id: 'A-ID-ip-assets-gone', kind: 'runner', lane: 'pipeline', timeout: 400000,
     title: 'No IP/NC asset in the working tree: every public GLB read with gltf-transform, provenance licence in the allowed set, no NC/ND declared in any manifest (R30)',
     check: async () => {
       const { scan, selfTest } = await imp('tools/licences/ip-scan.mjs');
@@ -406,14 +643,24 @@ export const GATES = [
     check: assetsTracked,
   },
   {
-    id: 'A-licence-manifest', kind: 'runner', lane: 'pipeline', timeout: 60000,
-    title: 'public/LICENSES.json covers every public file exactly once; rows valid; MIT code rows; CC-BY attributions in README + in-game credits; public/ <= 60 MB',
-    check: async () => {
-      const { check } = await imp('tools/licences/check.mjs');
-      const r = await check();
-      const summary = Object.fromEntries(Object.entries(r.clauses).map(([k, c]) => [k, c.status]));
-      return { pass: r.pass, detail: { summary, clauses: r.clauses } };
-    },
+    id: 'A-sources-staged', kind: 'runner', lane: 'pipeline', timeout: 120000,
+    title: 'models-staging/r5-src holds the trimmed UBC, MCO, UAL1, UAL2 (+ any scan/font source row) <= 150 MB, every file equal to the lock, archive SHA-256s equal to LICENSES.json, no transient zip',
+    check: sourcesStaged,
+  },
+  {
+    id: 'A-glb-budget', kind: 'runner', lane: 'pipeline', timeout: 120000,
+    title: 'Every generated GLB under public/models is inside its plan 4.1 class budget (tris, draws, materials, bones, file size)',
+    check: async () => (await imp('tools/build/pipeline/w0b-checks.mjs')).glbBudget(),
+  },
+  {
+    id: 'A-build-only-lane', kind: 'runner', lane: 'pipeline', timeout: 1800000,
+    title: 'build:assets --only <lane> for each lane writes only that lane\'s output paths (mtime audit of public/ + tools/build/), <= 60 s each',
+    check: async () => (await imp('tools/build/pipeline/w0b-checks.mjs')).buildOnlyLane(),
+  },
+  {
+    id: 'A-build-deterministic', kind: 'runner', lane: 'pipeline', timeout: 2400000,
+    title: 'build:assets twice into two scratch dirs with the network denied: byte-identical GLB/WebP, <= 180 s, <= 2 GB peak RSS, sources from r5-src only',
+    check: async () => (await imp('tools/build/pipeline/w0b-checks.mjs')).buildDeterministic(),
   },
   {
     id: 'A-specs-data-driven', kind: 'runner', lane: 'pipeline', timeout: 900000,
@@ -421,9 +668,24 @@ export const GATES = [
     check: specsDataDriven,
   },
   {
+    id: 'A-poc-promoted', kind: 'runner', lane: 'pipeline', timeout: 900000,
+    title: 'W0 exit (literal): no ?poc=human|creature path in src/main.js; tools/r5-poc/ and public/models/r5-poc/ absent; ?poc=biome still serves A-gpu-tier. Never PASS with a file left in either folder; no reference to them outside the biome hook',
+    check: pocPromoted,
+  },
+  {
+    id: 'A-pipeline-hero-swap', kind: 'runner', lane: 'pipeline', timeout: 900000,
+    title: 'Lane guard (R39): the SPECS.hero swap data patch (hero, outfit, stow-kit, UAL2 rows; aloy.glb out of SCHEDULED_IP) applies to a scratch merge trial with hero-body\'s branch, verifies, and the copy boots clean with every hero row loaded',
+    check: heroSwap,
+  },
+  {
     id: 'A-loader-fixes', kind: 'action', lane: 'pipeline', timeout: 90000, settle: 1500,
     title: 'Shared loader on a quantised generated GLB: dequantised error <= 1 mm, fold through rig/lod.js moves no vertex > 1 mm, labels via getX, lamp casts no shadow, entry disposes',
     assert: LOADER_FIXES,
+  },
+  {
+    id: 'A-licence-manifest', kind: 'action', lane: 'pipeline', timeout: 60000, settle: 3000,
+    title: 'public/LICENSES.json covers every public file exactly once; rows valid; archive SHA-256s; legacy rows sourced; MIT code rows; every CC-BY/MIT attribution verbatim in README Credits AND in the rendered in-game credits modal; public/ <= 60 MB',
+    get assert() { return licenceAssert(); },
   },
   {
     id: 'A-pipeline-boot-rows', kind: 'action', lane: 'pipeline', timeout: 60000, settle: 6000,
@@ -434,5 +696,10 @@ export const GATES = [
     id: 'A-pipeline-r30-merge-order', kind: 'runner', lane: 'pipeline', timeout: 30000,
     title: 'Lane guard: every R30 file and the class that reads it are present together or gone together (no half state, no orphaned IP file); npc.glb gone; licence table agrees',
     check: r30MergeOrder,
+  },
+  {
+    id: 'A-human-bind', kind: 'action', lane: 'pipeline', timeout: 60000, settle: 2000,
+    title: 'The hero body binds through its rig profile: 52/52 UAL pairs, missingSource and missingTarget empty, missing animator keys within {neck2, eyes, lids}',
+    assert: HUMAN_BIND,
   },
 ];

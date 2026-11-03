@@ -5,7 +5,9 @@ import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPa
 import { ShaderPass } from 'three/examples/jsm/postprocessing/ShaderPass.js';
 import { SMAAPass } from 'three/examples/jsm/postprocessing/SMAAPass.js';
 import { GTAOPass } from 'three/examples/jsm/postprocessing/GTAOPass.js';
+import { SimplexNoise } from 'three/examples/jsm/math/SimplexNoise.js';
 import { CSM } from 'three/examples/jsm/csm/CSM.js';
+import { CSMFrustum } from 'three/examples/jsm/csm/CSMFrustum.js';
 
 /**
  * Renderer + scene + camera + post stack + the perf/quality plumbing every
@@ -38,27 +40,86 @@ import { CSM } from 'three/examples/jsm/csm/CSM.js';
  *   engine.glTally                           `?rtTally=1` only: GL allocation tally from boot (census)
  * PMREMGenerator outputs are remembered by texture (WeakRef to the target) so
  * the ledger counts scene.environment with the depth renderbuffer fromScene made.
+ *
+ * ROUND 5 (engine-gpu W0b) — THE GPU TIER DECISION, gates A-gpu-tier and
+ * A-rt-ledger, numbers in docs/ROUND5-ENGINE.md §3. The shipped default tier
+ * (`high`) takes the plan's levers: DPR cap 1.25, SMAA-only (no MSAA; R25),
+ * GTAO at quarter resolution, SMAA targets RGBA8, and per-cascade shadow-map
+ * caps applied inside enableCSM (world-sky still asks for its own size).
+ * Fix round 1 (the vista GPU term): the direct post topology (no MSAA ->
+ * no resolve copy; renderTarget2 holds the grade's RGBA8 output), GTAO's
+ * multiply and bloom's composite folded into the grade, far cascades on
+ * alternate frames, and an anisotropic-filtering cap.
+ *   QUALITY_TIERS.<tier>.smaaHalfFloat / .csmMapCaps   W0b levers
+ *   QUALITY_TIERS.<tier>.postFold / .csmFarCadence / .maxAnisotropy   fix-round-1 levers
+ *   ROUND4_HIGH                              the Round-4 `high` row, for before/after
+ *   engine.applyTier(row, name)              apply any tier row at runtime (setQuality's body)
+ *   engine.csmMapSizes                       the per-cascade map sizes in force
+ *   engine.postDirect                        the direct topology is in force (no MSAA)
+ *   engine.anisotropyCap                     the anisotropic-filtering cap in force (colour textures)
+ * Fix round 2: the cap is split by texture role.
+ *   QUALITY_TIERS.<tier>.maxAnisotropyData   cap on data textures (normal / rough / AO maps)
+ *   engine.anisotropyCapData                 the data-texture cap in force
  */
 
-/** Quality tiers (perf-tech-05). `?q=low|medium|high|ultra`, default high. */
+/**
+ * Quality tiers (perf-tech-05). `?q=low|medium|high|ultra`, default high.
+ *
+ * `csmMapCaps[i]` caps cascade i's shadow map (the last entry repeats); null =
+ * every cascade at the size world-sky asks for. `smaaHalfFloat: false` stores
+ * the SMAA edge and blend-weight targets as RGBA8, which is the format the
+ * SMAA reference implementation uses for both (three r169 allocates them as
+ * HalfFloat: 18 MB for nothing at 2000 x 1125).
+ * `postFold`: GTAO's multiply and bloom's composite run inside the grade pass
+ * instead of as two full-resolution blends (false = Round 4's chain).
+ * `csmFarCadence`: cascades >= 1 render every Nth frame, staggered (1 = every
+ * frame); cascade 0 always renders. `maxAnisotropy`: cap on the anisotropic
+ * filtering of COLOUR (sRGB) textures; `maxAnisotropyData`: the cap on DATA
+ * textures (normal maps, roughness / AO packs: everything not sRGB);
+ * undefined = the colour cap; null = the GPU's maximum, i.e. as authored.
+ */
 export const QUALITY_TIERS = {
   low: {
-    dprCap: 1.0, msaa: 2, gtao: false, gtaoScale: 0.5, smaa: true, bloom: true, sizeCullPx: 11,
+    dprCap: 1.0, msaa: 0, gtao: false, gtaoScale: 0.25, smaa: true, smaaHalfFloat: false, csmMapCaps: [1024],
+    postFold: true, csmFarCadence: 2, maxAnisotropy: 1, maxAnisotropyData: 1,
+    bloom: true, sizeCullPx: 11,
     shadowCullDistance: 70, shadowCasterBudget: 60, shadowType: THREE.PCFShadowMap, drs: true, drsFloor: 0.55,
   },
   medium: {
-    dprCap: 1.25, msaa: 4, gtao: false, gtaoScale: 0.5, smaa: true, bloom: true, sizeCullPx: 9,
+    dprCap: 1.25, msaa: 0, gtao: false, gtaoScale: 0.25, smaa: true, smaaHalfFloat: false, csmMapCaps: [2048, 1024],
+    postFold: true, csmFarCadence: 2, maxAnisotropy: 1, maxAnisotropyData: 4,
+    bloom: true, sizeCullPx: 9,
     shadowCullDistance: 95, shadowCasterBudget: 95, shadowType: THREE.PCFShadowMap, drs: true, drsFloor: 0.65,
   },
+  /** THE SHIPPED DEFAULT (W0b decision, A-gpu-tier / A-rt-ledger). */
   high: {
-    dprCap: 1.5, msaa: 4, gtao: true, gtaoScale: 0.5, smaa: true, bloom: true, sizeCullPx: 7,
+    dprCap: 1.25, msaa: 0, gtao: true, gtaoScale: 0.25, smaa: true, smaaHalfFloat: false, csmMapCaps: [2048, 1024],
+    postFold: true, csmFarCadence: 2, maxAnisotropy: 1, maxAnisotropyData: 4,
+    bloom: true, sizeCullPx: 7,
     shadowCullDistance: 120, shadowCasterBudget: 150, shadowType: THREE.PCFSoftShadowMap, drs: true, drsFloor: 0.7,
   },
   ultra: {
-    dprCap: 2.0, msaa: 4, gtao: true, gtaoScale: 1.0, smaa: true, bloom: true, sizeCullPx: 4,
+    dprCap: 2.0, msaa: 4, gtao: true, gtaoScale: 1.0, smaa: true, smaaHalfFloat: true, csmMapCaps: null,
+    postFold: true, csmFarCadence: 1, maxAnisotropy: null, maxAnisotropyData: null,
+    bloom: true, sizeCullPx: 4,
     shadowCullDistance: 190, shadowCasterBudget: 260, shadowType: THREE.PCFSoftShadowMap, drs: false, drsFloor: 0.85,
   },
 };
+
+/** The tier a fresh install boots into (main.js: `?q=` or this). */
+export const DEFAULT_TIER = 'high';
+
+/**
+ * Round 4's `high` row, kept for the before/after measurement of the W0b
+ * decision (A-gpu-tier applies it through engine.applyTier on the same frame).
+ * Not a selectable tier.
+ */
+export const ROUND4_HIGH = Object.freeze({
+  dprCap: 1.5, msaa: 4, gtao: true, gtaoScale: 0.5, smaa: true, smaaHalfFloat: true, csmMapCaps: null,
+  postFold: false, csmFarCadence: 1, maxAnisotropy: null, maxAnisotropyData: null,
+  bloom: true, sizeCullPx: 7,
+  shadowCullDistance: 120, shadowCasterBudget: 150, shadowType: THREE.PCFSoftShadowMap, drs: true, drsFloor: 0.7,
+});
 
 /** Highest wins. Anything not listed sorts just above `legacy`. */
 const TS_PRIORITY = ['studio', 'wheel', 'hitstop', 'concentration', 'legacy'];
@@ -86,6 +147,12 @@ const OutputGradeShader = {
     uVigInner: { value: 0.34 },
     uVigOuter: { value: 0.92 },
     uAspect: { value: 16 / 9 },
+    // W0b fix round 1 (A-gpu-tier): GTAO's multiply and bloom's additive
+    // composite folded into this pass (engine._postFold). 0 = not this frame.
+    tAO: { value: null },
+    uAOMix: { value: 0 },
+    tBloom: { value: null },
+    uBloomOn: { value: 0 },
   },
   vertexShader: /* glsl */`
     varying vec2 vUv;
@@ -93,6 +160,9 @@ const OutputGradeShader = {
   `,
   fragmentShader: /* glsl */`
     uniform sampler2D tDiffuse;
+    uniform sampler2D tAO;
+    uniform sampler2D tBloom;
+    uniform float uAOMix, uBloomOn;
     uniform float uContrast, uSaturation, uVignette, uVigInner, uVigOuter, uAspect, uGradeMix;
     uniform vec3 uLift, uShadowTint, uHighlightTint;
     varying vec2 vUv;
@@ -104,6 +174,20 @@ const OutputGradeShader = {
 
     void main() {
       vec4 src = texture2D(tDiffuse, vUv);
+      // the two in-place blends that used to run as full-resolution passes
+      // before this one, same arithmetic, same order: GTAO's multiply
+      // (GTAOBlendShader + DstColor x Zero) then bloom's additive composite
+      // (CopyShader + SrcAlpha x One). Uniform branches: coherent, no recompile.
+      if (uAOMix > 0.0) {
+        vec4 ao = texture2D(tAO, vUv);
+        src.rgb *= mix(vec3(1.0), ao.rgb, uAOMix);
+        src.a *= ao.a;
+      }
+      if (uBloomOn > 0.0) {
+        vec4 bl = texture2D(tBloom, vUv);
+        src.rgb += bl.rgb * bl.a;
+        src.a += bl.a * bl.a;
+      }
 
       #ifdef ACES_FILMIC_TONE_MAPPING
         src.rgb = ACESFilmicToneMapping(src.rgb);
@@ -204,13 +288,25 @@ const GTAO_FADE_END = 120;
  * band 0.765 in odd-parity rows against 0.983 in even ones. Runs of columns x
  * runs of rows = the screen-locked plaid on every distant vista.
  *
- * Fix: fetch ONE deterministic texel (the one under the first quarter of the AO
- * texel's footprint, robust at any AO:depth ratio incl. 1:1 on ultra and DRS
- * sizes) and rebuild the centre position and normal at THAT texel's centre, so
- * depth and position always describe the same point. Measured at tier high,
- * DPR 1 / 1.5, V33 camera: the far-massif autocorrelation peak 0.19-0.38 drops
- * to the GTAO-off control's 0.05-0.10. Replacing the noise texture (candidate a)
- * or only the normal (candidate d) left the lattice untouched.
+ * Fix: fetch ONE deterministic texel and rebuild the centre position and
+ * normal at THAT texel's centre, so depth and position always describe the
+ * same point. Measured at tier high, DPR 1 / 1.5, V33 camera: the far-massif
+ * autocorrelation peak 0.19-0.38 drops to the GTAO-off control's 0.05-0.10.
+ * Replacing the noise texture (candidate a) or only the normal (candidate d)
+ * left the lattice untouched.
+ *
+ * WHICH texel (Round 5 W0b, quarter-resolution GTAO). Round 4 took
+ * `floor(uv * depthSize - 0.25 * k)` with k = depth px per AO px: k*i + 0.25
+ * at k = 1 and k*i + 0.5 at k = 2, both mid-texel. At k = 4 (the W0b tier)
+ * that is k*i + 1.0, exactly on a texel boundary, so float rounding picks
+ * 4i or 4i + 1 in runs of columns. Because the position is rebuilt at
+ * whichever texel is fetched, that is a one-depth-texel jitter of the sample
+ * point, NOT the Round-4 depth/position mismatch: A108 on the Pans POC reads
+ * the same with Round 4's formula as with this one (W0b negative control,
+ * docs/ROUND5-ENGINE.md §3.5). The texel is now picked from the AO texel's own
+ * index i = floor(uv * resolution), floor((i + 0.125) * k): the SAME texel as
+ * Round 4 at k = 1 and 2 (i, 2i) and mid-texel at k = 4 (4i + 0.5), so which
+ * texel is sampled no longer depends on float rounding at the shipped tier.
  *
  * Returns false (and leaves the stock shader) if three's source moved under an
  * anchor; `engine.gtaoPatched` carries the answer and A108 asserts it.
@@ -222,7 +318,8 @@ function patchGtaoShader(material) {
       'uniform float scale;\n\t\tuniform float aoFadeStart;\n\t\tuniform float aoFadeEnd;'],
     [/float depth = getDepth\(vUv\.xy\);/,
       'vec2 depthSize = vec2(textureSize(tDepth, 0));\n'
-      + '\t\t\tivec2 centerTexel = ivec2(floor(vUv * depthSize - 0.25 * depthSize / resolution));\n'
+      + '\t\t\tvec2 aoTexel = floor(vUv * resolution);\n'
+      + '\t\t\tivec2 centerTexel = ivec2(floor((aoTexel + 0.125) * depthSize / resolution));\n'
       + '\t\t\tvec2 centerUv = (vec2(centerTexel) + 0.5) / depthSize;\n'
       + '\t\t\tfloat depth = texelFetch(tDepth, centerTexel, 0).DEPTH_SWIZZLING;'],
     [/vec3 viewPos = getViewPosition\(vUv, depth\);\s*vec3 viewNormal = getViewNormal\(vUv\);/,
@@ -246,6 +343,55 @@ function patchGtaoShader(material) {
   material.uniforms.aoFadeEnd = { value: GTAO_FADE_END };
   material.needsUpdate = true;
   return true;
+}
+
+/**
+ * THE DENOISE NOISE IS SEEDED (W0b fix round 4, gate A108). three r169's
+ * GTAOPass builds the Poisson denoise's per-texel rotation texture (64 x 64
+ * RGBA8, repeat-wrapped, NEAREST) with `new SimplexNoise()`, whose permutation
+ * table comes from Math.random: every page load denoised the AO with a
+ * different pattern, so the same camera gave different pixels on each boot
+ * (gate frames are meant to be bit-deterministic) and A108's sensitivity
+ * witness saw the stock-shader lattice on some boots and not on others (the
+ * W0b judge's probe: 5 of 8 noise draws). The engine replaces that texture at
+ * construction with one built the SAME way (same simplex, same four
+ * channels, same size, format, wrap and filter) from a seeded RNG, so its cost
+ * is the stock one and only its texel values are fixed. The seed was set
+ * before any measurement; what the noise does to A108 (a survey of 70
+ * textures) is in docs/ROUND5-ENGINE.md §3.6.
+ */
+export const GTAO_NOISE_SEED = 0xCA11A;
+
+function mulberry32(seed) {
+  let a = seed >>> 0;
+  return () => {
+    a |= 0; a = (a + 0x6d2b79f5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+/** GTAOPass.generateNoise(size) with a seeded simplex: byte-identical layout to three r169's, deterministic per seed. */
+export function makeGtaoDenoiseNoise(seed, size = 64) {
+  const simplex = new SimplexNoise({ random: mulberry32(seed) });
+  const data = new Uint8Array(size * size * 4);
+  for (let i = 0; i < size; i++) {
+    for (let j = 0; j < size; j++) {
+      const o = (i * size + j) * 4;
+      data[o] = (simplex.noise(i, j) * 0.5 + 0.5) * 255;
+      data[o + 1] = (simplex.noise(i + size, j) * 0.5 + 0.5) * 255;
+      data[o + 2] = (simplex.noise(i, j + size) * 0.5 + 0.5) * 255;
+      data[o + 3] = (simplex.noise(i + size, j + size) * 0.5 + 0.5) * 255;
+    }
+  }
+  const tex = new THREE.DataTexture(data, size, size, THREE.RGBAFormat, THREE.UnsignedByteType);
+  tex.wrapS = THREE.RepeatWrapping;
+  tex.wrapT = THREE.RepeatWrapping;
+  tex.name = 'CAL.gtaoDenoiseNoise';
+  tex.userData.seed = seed >>> 0;
+  tex.needsUpdate = true;
+  return tex;
 }
 
 /**
@@ -275,6 +421,10 @@ class ScenePass extends Pass {
     renderer.setRenderTarget(target);
     renderer.clear(true, true, true);
     renderer.render(this.scene, this.camera);
+    // DIRECT (W0b fix round 1, no MSAA): the scene target IS the composer's
+    // read buffer — there is no multisample buffer to resolve, so the copy
+    // into the ping-pong pair was a full-resolution HalfFloat pass for nothing.
+    if (readBuffer === target && !this.renderToScreen) return;
     // reading target.texture is what resolves the multisample buffer — once
     this.material.uniforms.tDiffuse.value = target.texture;
     renderer.setRenderTarget(this.renderToScreen ? null : readBuffer);
@@ -294,6 +444,21 @@ class ScenePass extends Pass {
 }
 
 const _wp = new THREE.Vector3();
+
+/*
+ * Scratch for Engine._csmUpdate (the per-cascade, allocation-free CSM.update).
+ * three r169's CSM.update() runs every frame and builds `new Vector3()` for its
+ * lookAt origin each call; these are the same objects CSM.js keeps at module
+ * scope, plus that origin.
+ */
+const _csmOrigin = new THREE.Vector3();
+const _csmUp = new THREE.Vector3(0, 1, 0);
+const _csmCenter = new THREE.Vector3();
+const _csmBox = new THREE.Box3();
+const _csmCamToLight = new THREE.Matrix4();
+const _csmLightOri = new THREE.Matrix4();
+const _csmLightOriInv = new THREE.Matrix4();
+const _csmLightFrustum = new CSMFrustum();
 
 /** Bytes per texel of a texture as the GPU stores it (render-target ledger). */
 function _texelBytes(t) {
@@ -526,8 +691,9 @@ function _glows(mat) {
 export class Engine {
   constructor(container, opts = {}) {
     this.opts = opts;
-    this.quality = QUALITY_TIERS[opts.quality] ? opts.quality : 'high';
-    const tier = QUALITY_TIERS[this.quality];
+    this.quality = QUALITY_TIERS[opts.quality] ? opts.quality : DEFAULT_TIER;
+    // a per-engine copy: a gate or a probe that moves one lever on `engine.tier` never edits the table
+    const tier = { ...QUALITY_TIERS[this.quality] };
     this.tier = tier;
     /** Screenshots/gates must be bit-deterministic: no dynamic resolution there. */
     this.drsEnabled = tier.drs && opts.dynamicResolution !== false;
@@ -576,9 +742,13 @@ export class Engine {
     this.stepMode = 'substep';
 
     this._buildComposer();
+    this._applyAnisotropyCap();
 
     // ---- CSM plumbing (world-01 / perf-tech-03) ----
     this.csm = null;
+    this._csmFrame = 0;
+    /** per-cascade shadow-map sizes in force (tier csmMapCaps applied), or null without CSM */
+    this.csmMapSizes = null;
     this._csmMaterials = new Set();
 
     // ---- distance caster culling (perf-tech-03) ----
@@ -688,6 +858,8 @@ export class Engine {
     // GTAO (world-03) — half-res cone tracing off the shared depth, denoised,
     // blended multiplicatively in HDR before bloom.
     this.gtao = new GTAOPass(this.scene, this.camera, w, h);
+    // three's denoise noise is Math.random-seeded per boot; swap in the seeded one (see makeGtaoDenoiseNoise)
+    this.setGtaoNoiseSeed(GTAO_NOISE_SEED);
     this._attachGtaoDepth();
     // depth-consistent centre sample + view-distance fade (see patchGtaoShader)
     this.gtaoPatched = patchGtaoShader(this.gtao.gtaoMaterial);
@@ -699,6 +871,7 @@ export class Engine {
     });
     this.gtao.updatePdMaterial({ lumaPhi: 10, depthPhi: 2, normalPhi: 3, radius: 4, radiusExponent: 1, rings: 2, samples: 4 });
     this.gtao.enabled = this.tier.gtao;
+    this._gtaoInPlace();
     this.composer.addPass(this.gtao);
 
     this.bloom = new UnrealBloomPass(
@@ -713,6 +886,7 @@ export class Engine {
       bloomSetSize(Math.max(2, Math.round(bw * s)), Math.max(2, Math.round(bh * s)));
     };
     this.bloom.enabled = this.tier.bloom;
+    this._bloomFold();
     this.composer.addPass(this.bloom);
 
     // tonemap + sRGB + grade + vignette, one pass (see OutputGradeShader)
@@ -722,7 +896,141 @@ export class Engine {
 
     this.smaa = new SMAAPass(w, h);
     this.smaa.enabled = this.tier.smaa;
+    this._applySmaaType();
     this.composer.addPass(this.smaa);
+
+    // The composer's swap never hands the scene target out as a WRITE buffer:
+    // in the direct topology it is the read buffer the chain starts from, and
+    // it carries the depth texture GTAO and the studio pass sample. After the
+    // first swapping pass the pair is renderTarget2 <-> postTarget, as before.
+    const composer = this.composer;
+    composer.swapBuffers = () => {
+      const tmp = composer.readBuffer;
+      composer.readBuffer = composer.writeBuffer;
+      composer.writeBuffer = tmp === this.sceneTarget ? this.postTarget : tmp;
+    };
+    this._applyPostTopology();
+  }
+
+  /**
+   * POST TOPOLOGY (W0b fix round 1, A-gpu-tier). With no MSAA the scene
+   * target is the composer's read buffer (no resolve copy) and renderTarget2
+   * only ever receives the grade's output — tonemapped, sRGB-encoded, clamped
+   * to [0, 1] — so it is stored RGBA8 (the format SMAA's reference reads)
+   * instead of HalfFloat, and postTarget is released until a pass after the
+   * grade (the studio pass) needs a write target. With MSAA, Round 4's
+   * topology: resolve copy into a HalfFloat renderTarget2. Returns whether
+   * the direct topology is in force.
+   */
+  _applyPostTopology() {
+    const direct = this.sceneTarget.samples === 0;
+    const rt2 = this.composer.renderTarget2;
+    const want = direct ? THREE.UnsignedByteType : THREE.HalfFloatType;
+    if (rt2.texture.type !== want) { rt2.texture.type = want; rt2.dispose(); }
+    if (direct && this.postTarget) this.postTarget.dispose();
+    this.postDirect = direct;
+    return direct;
+  }
+
+  /**
+   * Whether GTAO's multiply and bloom's composite are folded into the grade
+   * pass this frame: the tier asks for it (`postFold`), the grade runs, and
+   * neither pass is the one drawing to the screen. Otherwise both blend in
+   * place exactly as in Round 4.
+   */
+  _postFold() {
+    return this.postFoldReady === true && this.tier.postFold !== false && this.grade.enabled === true;
+  }
+
+  /**
+   * Bloom without its full-resolution additive composite when the grade
+   * folds it (`_postFold`): three r169's UnrealBloomPass.render up to and
+   * including the mip composite, then the composite texture is handed to the
+   * grade instead of being blended over the read buffer. The bright pass also
+   * applies GTAO's multiply when GTAO is folded (it used to read the frame
+   * after GTAO's in-place blend). Otherwise three's own render.
+   */
+  _bloomFold() {
+    const b = this.bloom, engine = this;
+    const stock = UnrealBloomPass.prototype.render;
+    const hp = b.materialHighPassFilter;
+    const A1 = 'uniform sampler2D tDiffuse;', A2 = 'vec4 texel = texture2D( tDiffuse, vUv );';
+    // three moved an anchor: no folding at all (both passes blend in place, Round 4's chain)
+    this.postFoldReady = hp.fragmentShader.includes(A1) && hp.fragmentShader.includes(A2);
+    if (!this.postFoldReady) { console.warn('[CAL] bloom high-pass anchors missing: post fold off'); return false; }
+    hp.uniforms.tAO = { value: null };
+    hp.uniforms.uAOMix = { value: 0 };
+    hp.fragmentShader = hp.fragmentShader
+      .replace(A1, A1 + '\n\t\tuniform sampler2D tAO;\n\t\tuniform float uAOMix;')
+      .replace(A2, A2 + '\n\t\t\tif (uAOMix > 0.0) { vec4 ao = texture2D(tAO, vUv); texel.rgb *= mix(vec3(1.0), ao.rgb, uAOMix); texel.a *= ao.a; }');
+    hp.needsUpdate = true;
+    b.render = function (renderer, writeBuffer, readBuffer, deltaTime, maskActive) {
+      const gu = engine.grade.uniforms;
+      const fold = !this.renderToScreen && engine._postFold();
+      if (this.highPassUniforms.uAOMix) {
+        this.highPassUniforms.uAOMix.value = fold ? gu.uAOMix.value : 0;
+        this.highPassUniforms.tAO.value = fold ? gu.tAO.value : null;
+      }
+      if (!fold) { stock.call(this, renderer, writeBuffer, readBuffer, deltaTime, maskActive); return; }
+      renderer.getClearColor(this._oldClearColor);
+      this.oldClearAlpha = renderer.getClearAlpha();
+      const oldAutoClear = renderer.autoClear;
+      renderer.autoClear = false;
+      renderer.setClearColor(this.clearColor, 0);
+      if (maskActive) renderer.state.buffers.stencil.setTest(false);
+      this.highPassUniforms.tDiffuse.value = readBuffer.texture;
+      this.highPassUniforms.luminosityThreshold.value = this.threshold;
+      this.fsQuad.material = this.materialHighPassFilter;
+      renderer.setRenderTarget(this.renderTargetBright);
+      renderer.clear();
+      this.fsQuad.render(renderer);
+      let input = this.renderTargetBright;
+      for (let i = 0; i < this.nMips; i++) {
+        const m = this.separableBlurMaterials[i];
+        this.fsQuad.material = m;
+        m.uniforms.colorTexture.value = input.texture;
+        m.uniforms.direction.value = UnrealBloomPass.BlurDirectionX;
+        renderer.setRenderTarget(this.renderTargetsHorizontal[i]);
+        renderer.clear();
+        this.fsQuad.render(renderer);
+        m.uniforms.colorTexture.value = this.renderTargetsHorizontal[i].texture;
+        m.uniforms.direction.value = UnrealBloomPass.BlurDirectionY;
+        renderer.setRenderTarget(this.renderTargetsVertical[i]);
+        renderer.clear();
+        this.fsQuad.render(renderer);
+        input = this.renderTargetsVertical[i];
+      }
+      this.fsQuad.material = this.compositeMaterial;
+      this.compositeMaterial.uniforms.bloomStrength.value = this.strength;
+      this.compositeMaterial.uniforms.bloomRadius.value = this.radius;
+      this.compositeMaterial.uniforms.bloomTintColors.value = this.bloomTintColors;
+      renderer.setRenderTarget(this.renderTargetsHorizontal[0]);
+      renderer.clear();
+      this.fsQuad.render(renderer);
+      if (maskActive) renderer.state.buffers.stencil.setTest(true);
+      gu.tBloom.value = this.renderTargetsHorizontal[0].texture;
+      gu.uBloomOn.value = 1;
+      renderer.setClearColor(this._oldClearColor, this.oldClearAlpha);
+      renderer.autoClear = oldAutoClear;
+    };
+    return true;
+  }
+
+  /**
+   * SMAA edge + blend-weight targets: RGBA8 unless the tier asks for HalfFloat
+   * (`smaaHalfFloat`). Both hold values in [0, 1] that the reference SMAA
+   * stores in RGBA8; three r169 makes them HalfFloat. Changing the type of an
+   * allocated target disposes it, and three re-allocates it at the new type on
+   * its next bind. Returns the type in force.
+   */
+  _applySmaaType() {
+    const type = this.tier.smaaHalfFloat === false ? THREE.UnsignedByteType : THREE.HalfFloatType;
+    for (const rt of [this.smaa?.edgesRT, this.smaa?.weightsRT]) {
+      if (!rt || rt.texture.type === type) continue;
+      rt.texture.type = type;
+      rt.dispose();
+    }
+    return type;
   }
 
   _makePostTarget(w, h, name) {
@@ -736,6 +1044,22 @@ export class Engine {
     });
     t.texture.name = name;
     return t;
+  }
+
+  /**
+   * GTAO's Poisson-denoise noise from `seed` (makeGtaoDenoiseNoise). The
+   * constructor installs GTAO_NOISE_SEED; a probe that surveys other seeds
+   * calls it again and must restore GTAO_NOISE_SEED. The texture it replaces
+   * is disposed here; the installed one is `gtao.pdNoiseTexture`, which
+   * GTAOPass.dispose() disposes. Not a per-frame call (it builds a texture).
+   */
+  setGtaoNoiseSeed(seed) {
+    const g = this.gtao;
+    const tex = makeGtaoDenoiseNoise(seed);
+    g.pdNoiseTexture.dispose();
+    g.pdNoiseTexture = tex;
+    g.pdMaterial.uniforms.tNoise.value = tex;
+    this.gtaoNoiseSeed = seed >>> 0;
   }
 
   /**
@@ -758,10 +1082,75 @@ export class Engine {
     g.setSize(g.width, g.height);
   }
 
+  /**
+   * GTAO multiplies its AO into the frame IN PLACE (W0b, A-gpu-tier). three
+   * r169's GTAOPass `Default` output copies the whole read buffer into the
+   * write buffer and then multiplies the AO into the copy: two full-resolution
+   * HalfFloat passes, the first a plain copy. Multiply-blending the AO straight
+   * into the read buffer (no swap) is the same arithmetic in one pass: the
+   * blend shader samples only the denoised AO target, and the destination is
+   * read by the fixed-function blend (dst * mix(1, ao, intensity); alpha
+   * kept), so no texture is sampled from the target being written. Any other
+   * `output` (the debug views) takes three's own render with its swap.
+   *
+   * FOLDED (W0b fix round 1, tier `postFold`): when the grade pass runs, even
+   * that blend is skipped — the grade multiplies the denoised AO in on its way
+   * past (same GTAOBlendShader arithmetic) and bloom's bright pass applies it
+   * to what it extracts (engine._postFold, _bloomFold). Measured on the Pans
+   * POC (X-equiv2): 0.4-1.9 % of output channels move by 1 (float instead of
+   * a HalfFloat intermediate) and up to 108 channels by more (SMAA edge
+   * decisions flipping on near-threshold edges).
+   */
+  _gtaoInPlace() {
+    const g = this.gtao, engine = this;
+    const stock = GTAOPass.prototype.render;
+    g.render = function (renderer, writeBuffer, readBuffer, deltaTime, maskActive) {
+      if (this.output !== GTAOPass.OUTPUT.Default || this._renderGBuffer) {
+        this.needsSwap = true;
+        stock.call(this, renderer, writeBuffer, readBuffer, deltaTime, maskActive);
+        return;
+      }
+      this.needsSwap = false;
+      const u = this.gtaoMaterial.uniforms, cam = this.camera;
+      u.cameraNear.value = cam.near;
+      u.cameraFar.value = cam.far;
+      u.cameraProjectionMatrix.value.copy(cam.projectionMatrix);
+      u.cameraProjectionMatrixInverse.value.copy(cam.projectionMatrixInverse);
+      u.cameraWorldMatrix.value.copy(cam.matrixWorld);
+      this.renderPass(renderer, this.gtaoMaterial, this.gtaoRenderTarget, 0xffffff, 1.0);
+      this.pdMaterial.uniforms.cameraProjectionMatrixInverse.value.copy(cam.projectionMatrixInverse);
+      this.renderPass(renderer, this.pdMaterial, this.pdRenderTarget, 0xffffff, 1.0);
+      // folded (W0b fix round 1): the grade multiplies the denoised AO in on
+      // its way past, and bloom's bright pass does the same (engine._postFold)
+      if (!this.renderToScreen && engine._postFold()) {
+        const gu = engine.grade.uniforms;
+        gu.tAO.value = this.pdRenderTarget.texture;
+        gu.uAOMix.value = this.blendIntensity;
+        return;
+      }
+      this.blendMaterial.uniforms.intensity.value = this.blendIntensity;
+      this.blendMaterial.uniforms.tDiffuse.value = this.pdRenderTarget.texture;
+      this.renderPass(renderer, this.blendMaterial, this.renderToScreen ? null : readBuffer);
+    };
+    g.needsSwap = false;
+  }
+
   /** Swap quality tier at runtime (settings screen / F3 cycling). */
   setQuality(name) {
     const tier = QUALITY_TIERS[name];
     if (!tier || name === this.quality) return this.quality;
+    return this.applyTier(tier, name);
+  }
+
+  /**
+   * Apply a tier ROW (any object shaped like a QUALITY_TIERS entry) at
+   * runtime: every lever, render targets rebuilt in place. setQuality's body;
+   * A-gpu-tier also uses it to measure ROUND4_HIGH against the shipped tier on
+   * the same frame. The engine keeps its own copy of the row.
+   */
+  applyTier(row, name = 'custom') {
+    if (!row) return this.quality;
+    const tier = { ...row };
     this.quality = name;
     this.tier = tier;
     this.basePixelRatio = Math.min(window.devicePixelRatio || 1, tier.dprCap);
@@ -774,12 +1163,154 @@ export class Engine {
     this.gtao.enabled = tier.gtao;
     this.bloom.enabled = tier.bloom;
     this.smaa.enabled = tier.smaa;
+    this._applySmaaType();
+    this._applyCsmCaps();
     this.drsEnabled = tier.drs && this.opts.dynamicResolution !== false;
     // MSAA sample count is a render-target property: rebuild in place.
-    this.sceneTarget.samples = tier.msaa;
-    this.sceneTarget.dispose();
+    if (this.sceneTarget.samples !== tier.msaa) {
+      this.sceneTarget.samples = tier.msaa;
+      this.sceneTarget.dispose();
+    }
+    this._applyPostTopology();
+    this._applyAnisotropyCap();
     this.resize();
     return this.quality;
+  }
+
+  /**
+   * The tier's texture-filtering caps, split by texture ROLE (W0b fix round 2):
+   * `maxAnisotropy` caps COLOUR textures (sRGB: albedo, emissive, decals) and
+   * `maxAnisotropyData` caps DATA textures (everything three does not decode
+   * from sRGB: normal maps, roughness / AO packs, masks); undefined = the same
+   * cap as colour, null = the GPU's maximum (as authored).
+   *
+   * three clamps every texture's `anisotropy` to
+   * `capabilities.getMaxAnisotropy()` when it uploads it (one global value), so
+   * the engine answers that call with the HIGHER of the two caps and lowers the
+   * other role's textures itself, right after three's upload, with one
+   * `texParameterf` on the texture three already made (`_anisoRoles`, run at
+   * the top of render(): an integer compare per frame, the sweep only when the
+   * renderer's texture count changes). Textures already uploaded under other
+   * caps are re-uploaded once when a cap changes. Returns the colour cap.
+   */
+  _applyAnisotropyCap() {
+    const r = this.renderer, caps = r.capabilities;
+    if (this._anisoHw === undefined) {
+      this._anisoHw = caps.getMaxAnisotropy();
+      this._anisoExt = r.extensions.has('EXT_texture_filter_anisotropic') ? r.extensions.get('EXT_texture_filter_anisotropic') : null;
+      this._anisoLow = [];
+      this._anisoStamp = 0;
+      this._anisoTexCount = -1;
+      this._anisoVisit = (o) => {
+        const m = o.material;
+        if (!m) return;
+        if (Array.isArray(m)) { for (let i = 0; i < m.length; i++) this._anisoMat(m[i]); } else this._anisoMat(m);
+      };
+    }
+    const hw = this._anisoHw;
+    const clamp = (v) => (v ? Math.max(1, Math.min(v, hw)) : hw);
+    const colour = clamp(this.tier.maxAnisotropy);
+    const data = this.tier.maxAnisotropyData === undefined ? colour : clamp(this.tier.maxAnisotropyData);
+    if (colour === this.anisotropyCap && data === this.anisotropyCapData) return colour;
+    const first = this.anisotropyCap === undefined;
+    const hi = Math.max(colour, data);
+    this.anisotropyCap = colour;
+    this.anisotropyCapData = data;
+    caps.getMaxAnisotropy = () => hi;
+    /** the role three's upload over-filters, and its cap; null = no split */
+    this._anisoLowRole = colour < data ? 'colour' : data < colour ? 'data' : null;
+    this._anisoLowCap = Math.min(colour, data);
+    this._anisoLow.length = 0;
+    this._anisoTexCount = -1;
+    if (!first) {
+      const props = r.properties;
+      const bump = (t) => { if (t && t.isTexture && t.anisotropy > 1 && t.version > 0 && !t.isRenderTargetTexture) t.needsUpdate = true; };
+      this.scene.traverse((o) => {
+        if (!o.material) return;
+        const mats = Array.isArray(o.material) ? o.material : [o.material];
+        for (const m of mats) {
+          for (const k in m) bump(m[k]);
+          const u = props.has(m) ? props.get(m).uniforms : null;
+          if (u) for (const k in u) bump(u[k]?.value);
+        }
+      });
+    }
+    return colour;
+  }
+
+  /**
+   * Per frame, before the composer (no allocation): when a cap is split by
+   * role, sweep the scene for the low role's textures whenever the renderer's
+   * texture count moved (a texture was uploaded or disposed), and re-apply the
+   * low cap to any tracked texture three re-uploaded since (three sets the
+   * global cap on every upload).
+   */
+  _anisoRoles() {
+    if (this._anisoLowRole === null || !this._anisoExt) return;
+    const props = this.renderer.properties;
+    const n = this.renderer.info.memory.textures;
+    if (n !== this._anisoTexCount) {
+      this._anisoTexCount = n;
+      this._anisoStamp = (this._anisoStamp + 1) % 1e9;
+      this._anisoLow.length = 0;
+      this.scene.traverse(this._anisoVisit);
+      return;
+    }
+    const L = this._anisoLow;
+    for (let i = L.length - 1; i >= 0; i--) {
+      const t = L[i];
+      if (!props.has(t)) { L[i] = L[L.length - 1]; L.length--; continue; }   // disposed
+      const p = props.get(t);
+      if (p.__calAnisoVer !== p.__version) this._anisoSet(t, p);
+    }
+  }
+
+  /** one material of the sweep: its texture slots and its program's uniforms, once per sweep */
+  _anisoMat(m) {
+    const props = this.renderer.properties;
+    if (!props.has(m)) return;           // never rendered: its textures are not uploaded yet
+    const mp = props.get(m);
+    if (mp.__calAnisoStamp === this._anisoStamp) return;
+    mp.__calAnisoStamp = this._anisoStamp;
+    for (const k in m) this._anisoTex(m[k]);
+    const u = mp.uniforms;
+    if (u) for (const k in u) { const v = u[k]; if (v) this._anisoTex(v.value); }
+  }
+
+  /** a texture of the low role that three has uploaded: track it and lower its cap */
+  _anisoTex(t) {
+    if (!t || t.isTexture !== true || t.isRenderTargetTexture || !(t.anisotropy > 1)) return;
+    if ((t.colorSpace === THREE.SRGBColorSpace) !== (this._anisoLowRole === 'colour')) return;
+    const props = this.renderer.properties;
+    if (!props.has(t)) return;
+    const p = props.get(t);
+    if (p.__webglTexture === undefined) return;
+    if (p.__calAnisoStamp === this._anisoStamp) return;
+    p.__calAnisoStamp = this._anisoStamp;
+    this._anisoLow.push(t);
+    if (p.__calAnisoVer !== p.__version || p.__calAniso !== Math.min(t.anisotropy, this._anisoLowCap)) this._anisoSet(t, p);
+  }
+
+  /**
+   * TEXTURE_MAX_ANISOTROPY on the GL texture three made for `t`, under the
+   * same conditions three's setTextureParameters applies it (mipmapped linear
+   * minification, non-nearest magnification, filterable type), bound through
+   * three's state so its binding cache stays true.
+   */
+  _anisoSet(t, p) {
+    p.__calAnisoVer = p.__version;
+    const T3 = THREE;
+    if (t.magFilter === T3.NearestFilter) return;
+    if (t.minFilter !== T3.NearestMipmapLinearFilter && t.minFilter !== T3.LinearMipmapLinearFilter) return;
+    if (t.type === T3.FloatType && !this.renderer.extensions.has('OES_texture_float_linear')) return;
+    const gl = this.renderer.getContext();
+    const target = t.isCubeTexture ? gl.TEXTURE_CUBE_MAP
+      : (t.isDataArrayTexture || t.isCompressedArrayTexture) ? gl.TEXTURE_2D_ARRAY
+        : t.isData3DTexture ? gl.TEXTURE_3D : gl.TEXTURE_2D;
+    const want = Math.min(t.anisotropy, this._anisoLowCap);
+    this.renderer.state.bindTexture(target, p.__webglTexture);
+    gl.texParameterf(target, this._anisoExt.TEXTURE_MAX_ANISOTROPY_EXT, want);
+    p.__calAniso = want;
   }
 
   /**
@@ -842,6 +1373,14 @@ export class Engine {
     if (!rt || !rt.isRenderTarget) return rt;
     const owners = this._rtOwners || (this._rtOwners = new WeakMap());
     const refs = this._rtRefs || (this._rtRefs = new Set());
+    // Sweep first (W0a judge): a WeakRef whose target was collected, or that
+    // was unregistered, is dead weight in the Set until the ledger next runs —
+    // and a lane that registers per spawn without ever reading the ledger would
+    // grow it without bound. On demand only (registration), never per frame.
+    for (const ref of refs) {
+      const t = ref.deref();
+      if (!t || !owners.has(t)) refs.delete(ref);
+    }
     const had = owners.get(rt);
     if (!had) refs.add(new WeakRef(rt));
     owners.set(rt, String(owner));
@@ -1055,8 +1594,91 @@ export class Engine {
       light.castShadow = false;
       for (const l of this.csm.lights) l.color.copy(light.color);
     }
+    this._applyCsmCaps();
     this.csm.updateFrustums();
     return this.csm;
+  }
+
+  /**
+   * The tier's per-cascade shadow-map caps (W0b, A-rt-ledger). world-sky asks
+   * enableCSM for a size (2048); cascade i gets min(that, tier.csmMapCaps[i]),
+   * the last cap repeating. `csm.shadowMapSize` stays the requested size, which
+   * is cascade 0's at every tier that caps only the far cascades (A56 reads the
+   * near texel from it). A map whose size changes is disposed; three allocates
+   * it again at the new size on the next shadow render. Returns the sizes.
+   */
+  _applyCsmCaps() {
+    const csm = this.csm;
+    if (!csm) { this.csmMapSizes = null; return null; }
+    const caps = this.tier.csmMapCaps;
+    const sizes = [];
+    for (let i = 0; i < csm.lights.length; i++) {
+      const cap = caps && caps.length ? caps[Math.min(i, caps.length - 1)] : Infinity;
+      const size = Math.max(1, Math.min(csm.shadowMapSize, cap));
+      const sh = csm.lights[i].shadow;
+      if (sh.mapSize.x !== size || sh.mapSize.y !== size) {
+        sh.mapSize.set(size, size);
+        if (sh.map) { sh.map.dispose(); sh.map = null; }
+      }
+      sizes.push(size);
+    }
+    this.renderer.shadowMap.needsUpdate = true;
+    this.csmMapSizes = sizes;
+    return sizes;
+  }
+
+  /**
+   * CSM.update() (three r169) with two changes and nothing else: each cascade
+   * snaps its light to ITS OWN texel grid (`shadow.mapSize`, which
+   * _applyCsmCaps may have made smaller than `csm.shadowMapSize`; snapping a
+   * 1024 map on a 2048 grid moves it by half texels and the far shadows
+   * shimmer), and nothing is allocated (CSM.update builds a Vector3 per call,
+   * every frame). With every cascade at csm.shadowMapSize it places the lights
+   * exactly where CSM.update does.
+   */
+  _csmUpdate() {
+    const csm = this.csm;
+    if (!csm) return;
+    const frustums = csm.frustums;
+    // FAR-CASCADE CADENCE (tier `csmFarCadence`, W0b fix round 1): cascade 0
+    // renders every frame; cascade i >= 1 renders on the frames where
+    // (frame + i) % cadence === 0, so with cadence 2 the two far cascades
+    // alternate and every frame renders two of the three maps. A cascade that
+    // skips a frame keeps its map AND its shadow matrix from the frame it was
+    // drawn (three updates both only when it renders), so receivers stay
+    // registered to the map; a moving caster's far shadow trails by one frame.
+    // A map that does not exist yet (just created or re-sized) renders at once.
+    const cad = Math.max(1, this.tier.csmFarCadence | 0 || 1);
+    this._csmFrame = (this._csmFrame + 1) % 65536 || 0;
+    for (let i = 0; i < csm.lights.length; i++) {
+      const sh = csm.lights[i].shadow;
+      if (i === 0 || cad === 1) { sh.autoUpdate = true; continue; }
+      sh.autoUpdate = false;
+      if (!sh.map || (this._csmFrame + i) % cad === 0) sh.needsUpdate = true;
+    }
+    _csmLightOri.lookAt(_csmOrigin, csm.lightDirection, _csmUp);
+    _csmLightOriInv.copy(_csmLightOri).invert();
+    for (let i = 0; i < frustums.length; i++) {
+      const light = csm.lights[i];
+      const sc = light.shadow.camera;
+      const tw = (sc.right - sc.left) / (light.shadow.mapSize.x || csm.shadowMapSize);
+      const th = (sc.top - sc.bottom) / (light.shadow.mapSize.y || csm.shadowMapSize);
+      _csmCamToLight.multiplyMatrices(_csmLightOriInv, csm.camera.matrixWorld);
+      frustums[i].toSpace(_csmCamToLight, _csmLightFrustum);
+      const nv = _csmLightFrustum.vertices.near, fv = _csmLightFrustum.vertices.far;
+      _csmBox.makeEmpty();
+      for (let j = 0; j < 4; j++) { _csmBox.expandByPoint(nv[j]); _csmBox.expandByPoint(fv[j]); }
+      _csmBox.getCenter(_csmCenter);
+      _csmCenter.z = _csmBox.max.z + csm.lightMargin;
+      _csmCenter.x = Math.floor(_csmCenter.x / tw) * tw;
+      _csmCenter.y = Math.floor(_csmCenter.y / th) * th;
+      _csmCenter.applyMatrix4(_csmLightOri);
+      light.position.copy(_csmCenter);
+      light.target.position.copy(_csmCenter);
+      light.target.position.x += csm.lightDirection.x;
+      light.target.position.y += csm.lightDirection.y;
+      light.target.position.z += csm.lightDirection.z;
+    }
   }
 
   disableCSM() {
@@ -1067,6 +1689,7 @@ export class Engine {
     this.csm.dispose?.();
     if (this.csmSourceLight) this.csmSourceLight.castShadow = this._csmLightShadowWas ?? true;
     this.csm = null;
+    this.csmMapSizes = null;
   }
 
   /**
@@ -1659,13 +2282,26 @@ export class Engine {
     this.renderer.info.reset();
     const t0 = performance.now();
     this._cullPass(realDt);
-    this.csm?.update();
+    this._csmUpdate();
+    this._anisoRoles();
     // Deterministic ping-pong: ScenePass always resolves into renderTarget2 and
     // the chain alternates rt2 <-> postTarget from there. Without re-seating,
     // the composer's swap parity drifts frame to frame and the multisampled
     // scene target gets picked up as a post write target again.
-    this.composer.readBuffer = this.composer.renderTarget2;
-    this.composer.writeBuffer = this.postTarget;
+    // DIRECT topology (no MSAA): the chain starts FROM the scene target and the
+    // first swapping pass (the grade) writes renderTarget2 (_applyPostTopology).
+    if ((this.sceneTarget.samples === 0) !== this.postDirect) this._applyPostTopology();
+    if (this.postDirect) {
+      this.composer.readBuffer = this.sceneTarget;
+      this.composer.writeBuffer = this.composer.renderTarget2;
+    } else {
+      this.composer.readBuffer = this.composer.renderTarget2;
+      this.composer.writeBuffer = this.postTarget;
+    }
+    // folded blends are re-armed by the passes that run this frame (_postFold)
+    const gu = this.grade.uniforms;
+    gu.uAOMix.value = 0;
+    gu.uBloomOn.value = 0;
     let query = null;
     if (this.gpuTimerOn) {
       query = this._gl.createQuery();

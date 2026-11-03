@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { LAMP_HEX } from '../../instruments/lamps.js';
 import { rollLoot } from './machine.js';
 import { lensMesh } from './parts.js';
 import { buildRig, RIGS } from './autorig.js';
@@ -90,7 +91,7 @@ export class Snapmaw extends ExpansionMachine {
       { id: 'machine-heart', n: 1, chance: 0.12 },
     ]);
 
-    buildShell(this, SNAPMAW_SHELL, { rig: RIGS.snapmaw });
+    buildShell(this, SNAPMAW_SHELL, { rig: RIGS.snapmaw, sensorColor: LAMP_HEX.calm });
     attachRigRuntime(this);
     buildRig(this, RIGS.snapmaw);
 

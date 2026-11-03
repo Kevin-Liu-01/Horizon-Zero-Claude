@@ -1,197 +1,63 @@
-# Aloy Animation Reference — Manifest
+# reference/ — licence-clean reference images (never shipped)
 
-All images are from the actual Guerrilla Games title (Horizon Zero Dawn / Complete Edition):
-official Steam store screenshots, frames extracted from the official Steam store trailers
-(movie_max.mp4 on Steam's CDN), one official Frozen Wilds press screenshot, and two YouTube
-gameplay-video thumbnails. All ≥1280x720; most are 1920x1080. Downloaded 2026-08-05 for
-animation-pose comparison (fan project).
+Owner: gates-perf (plan §2; top-level file). Every visual gate is judged by an R29 judge against a licence-clean
+reference that a lane keeps under `reference/r5/<lane>/` with its own `MANIFEST.md` (plan §10.2 item 4):
 
----
+- **stored** rows: PD, CC0-1.0, CC-BY-x.y (with the exact attribution string, in an `attribution` column or as a
+  `(attribution: …)` note in the licence cell), own photo, or a project-original render of the live build; plan §10.2
+  item 4 requires the **source URL, author, licence and retrieved date** of each (a project-original render names what made
+  it instead of a URL; a CC0 source off Commons gives its URL); `slot`, `gates`, `subject`, `sha256` and `attribution`
+  columns are optional, and a row without a `sha256` is hashed at verify time and the hash reported;
+- **URL-only** rows: share-alike or unclear sources, recorded as a link and never stored;
+- nothing from Horizon / Sony / Guerrilla / Epic / Fortnite, no ripped or fan material (plan §0 rule 9).
 
-## RUNNING
+Each lane keeps its own table layout. `tools/r5-refs/manifest.mjs` reads every Markdown table of a lane's `MANIFEST.md` **by
+column name** (author; source / source URL; licence; retrieved / made; file; gates / used by; …) and normalises the
+licence cell (`Public domain` → PD, `CC BY 3.0 (attribution: …)` → CC-BY-3.0 + its attribution, `project-original`, …);
+`tools/r5-refs/fetch.mjs` holds every stored row to one rule set (`storedRowProblems`), whose own negative controls
+(`rowRulesSelfTest`) must reject a bad row.
 
-### run-side.jpg — full sprint, true side/profile view (1920x1080)
-Source: frame @ 28.0s of official "Horizon Zero Dawn Complete Edition" 2022 story trailer,
-https://cdn.akamai.steamstatic.com/steam/apps/256899640/movie_max.mp4
-Scene: endgame jungle battlefield (stealth headwrap outfit), sprinting left-to-right past tracer fire.
-- Deep forward torso lean; head leads the chest, eye-line level despite lean.
-- Front (right) leg reaching well ahead, knee still bent at contact; rear leg trailing bent ~90°, heel high toward glute.
-- Arms compact and pumping: lead elbow bent ~90° crossing the ribcage, hands relaxed (not fists); bow stays stowed on back.
+Fetch and verify with `tools/r5-refs/fetch.mjs` (Wikimedia Commons API, filtered to PD / CC0 / CC BY; `--verify` is
+offline and prints the per-folder counts; `--selftest` runs the classifier, parser and row-rule controls). Gates:
+`A-reference-clean`, `A-reference-set` (`tools/gates/gates-perf.w0b.mjs`).
 
-### run-back.jpg — full sprint, back / rear 3/4 view (1920x1080)
-Source: frame @ 29.25s, same trailer as above.
-- Shoulders rotated counter to hips (left arm swings back as right leg extends behind) — clear counter-rotation through the spine from behind.
-- Trailing-leg sole visible facing the camera at push-off; stride is long, feet land near center-line.
-- Elbows stay tucked close to the torso; hair and quiver strap trail with momentum — good secondary-motion reference.
+## Lane folders
 
-### run-back-2-walking.jpg — WALKING, exact chase-camera angle (3840x2160)
-Source: official The Frozen Wilds press screenshot,
-https://www.gematsu.com/wp-content/uploads/2017/10/zp-73993_Horizon-Zero-Dawn_2017_10-18-17_003.jpg
-Caveat: walk (not run), but it is the standard third-person follow-camera framing (character low-center, ~2.5m behind).
-- Arms hang relaxed with slight elbow bend; almost no arm swing captured — neutral upper body.
-- Weight centered between hips; shoulders level, no torso lean (contrast with the sprint frames).
-- Shows default camera height (just above her head) and her scale in frame for the chase cam.
+Counts as `tools/r5-refs/fetch.mjs --verify` reads them (Oct 30, W0b targeted fix round 1).
 
-### run-front.jpg — sprint toward camera, front 3/4 view (1920x1080)
-Source: frame @ 31.0s of the 2022 trailer (Nora outfit, machine charging behind her through a dust cloud).
-- Torso leans into the run and slightly toward camera; shoulders ahead of hips.
-- Right arm punches forward across the body mid-swing, left arm driving back — arm swing crosses subtly toward center-line, not straight fore-aft.
-- Front knee drives high with foot still airborne; hair and pouches thrown forward, selling deceleration-free top speed.
+| folder | lane | where it lives | layout (header) | rows | serves |
+|---|---|---|---|---|---|
+| `reference/r5/gates-perf/` | gates-perf | this branch | `file \| slot \| gates \| subject \| author \| licence \| source \| retrieved \| sha256 \| attribution` + URL-only `slot \| gates \| source \| licence \| why` | 37 stored (22 PD, 5 CC0, 8 CC BY 2.0, 1 CC BY 3.0, 1 CC BY 4.0), 0 URL-only | every visual row of the carried suite (38 gate ids: V1–V14, V20–V33b, V36–V38, V44–V49, V79), incl. the kept animator rows V1–V4, V12–V14, V21 (R33 c), V22 (`run-rear`), V24, the lance slots V46–V49 |
+| `reference/r5/brand/` | brand | main (`d0f583b`) | `file \| used by \| what to compare \| author \| source URL \| licence \| retrieved` | 4 stored (2 PD, 1 CC BY 3.0, 1 CC BY 2.0; attributions in the licence cell), 1 URL-only (CC BY-SA 4.0), 1 spec note | V-logo, V-logo-4k, V38-title |
+| `reference/r5/hero/` | hero-body | `r5/w0b-hero-body` | `file \| gates \| what \| source \| licence \| made \| sha256` (+ a `gate \| reference` pointer table, not rows) | 4 stored (2 project-original renders, 2 CC0 renders of the Quaternius UBC base, itch.io source) | V-brea-one-glance, V-brea-face, A-face-delta |
 
-### run-front-2.jpg — sprint, front 3/4 view, second angle (1920x1080)
-Source: frame @ 30.5s of the 2022 trailer (stealth outfit, explosion behind).
-- Both elbows bent ~90°, hands open; lead hand rises to sternum height at the top of the swing.
-- Support leg vertical under the pelvis at mid-stance while the free leg folds under the hip — good single-support reference.
-- Chin tucked, gaze locked ahead; torso lean reads mostly in the neck/upper back from a front view.
+Other lanes add `reference/r5/<lane>/` with any table layout that carries those columns.
 
----
+## Deleted at W0b (R30): the Round-4 stills
 
-## FULL BOW DRAW
+These 19 files were Guerrilla Games / Sony Interactive Entertainment marketing stills and trailer frames used as
+pose references in Rounds 3–4. They were deleted from the working tree at W0b (plan §6). Their sha256 stays here so
+`A-reference-clean` can refuse them under any name. **They remain in the repository's git history** (plan §11,
+decision 2: a history rewrite or a fresh repository is Kevin's action).
 
-### draw-side.jpg — full draw, side profile (slightly behind-left), night (1920x1080)
-Source: official Steam store screenshot #3 for app 1151640,
-https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/1151640/ss_f7cf51f1ccd909264f2c5814f328e3f72e7b62bd.1920x1080.jpg
-- Draw-hand anchored at the cheek/jaw corner; forearm continues the arrow line almost exactly (arrow parallel to ground).
-- Draw elbow sits fractionally BELOW the shoulder line, pointing straight back — no chicken-wing.
-- Bow arm fully extended but the elbow is soft (not hyper-locked); shoulders stay down, scapula squeezed; slight forward lean into the bow.
-
-### draw-side-2.jpg — full draw, side profile, daylight gameplay (1920x1080)
-Source: frame @ 8.5s of official "HZD Complete Edition — PC features" trailer,
-https://cdn.akamai.steamstatic.com/steam/apps/256794480/movie_max.mp4
-Caveat: marketing text overlays at frame edges ("Unlocked Framerates"), Aloy herself is unobstructed. Fire arrow, aiming slightly uphill at a Thunderjaw.
-- Aiming up: she tilts from the waist rather than raising the draw arm; the cheek anchor is preserved.
-- String hand at the jawline, index knuckle brushing the cheek; draw elbow just under shoulder height.
-- Bow arm wrist neutral (knuckles ~45°); bow canted a few degrees off vertical during aim.
-
-### draw-side-3.jpg — full draw, side view vs lunging Sawtooth (1280x720)
-Source: YouTube thumbnail (HZD gameplay), https://i.ytimg.com/vi/yKLwbkbWQpc/maxresdefault.jpg
-- Point-blank shot: elbows and anchor unchanged even at close range — pose is target-distance invariant.
-- Draw-side shoulder blade pulled hard back; chest opens toward the target only ~10-15°, hips stay bladed side-on.
-- Feet staggered roughly shoulder-width, weight slightly on the front foot as the machine closes.
-
-### draw-back.jpg — full draw, back view (Tallneck), no HUD (1920x1080)
-Source: official Steam store screenshot #0 for app 1151640,
-https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/1151640/ss_d09106060fb7de8bf342c23df18b14debc8a15a3.1920x1080.jpg
-- Aiming steeply upward: back arches and both shoulders rotate up-left; the bow, not the head, tilts to meet the target line.
-- From behind, draw elbow reads high and wide of the spine; triceps line points at the camera.
-- Stance bladed: rear foot turned out, front shoulder/hip aimed at the target; quiver arrows clear the draw path.
-
-### draw-back-2-hud.jpg — full draw, over-shoulder AIMING CAMERA with HUD reticle (1280x720)
-Source: YouTube thumbnail, "Horizon Zero Dawn Gameplay — Tutorial — Shadow Hunter Bow",
-https://i.ytimg.com/vi/n--0-MaJKCA/maxresdefault.jpg
-This is the in-game aim camera: Aloy offset lower-left, reticle at screen center.
-- Camera sits over her right shoulder; her draw elbow points at the viewer, forearm foreshortened.
-- Head drops slightly to the string (she brings eye to arrow, not bow to eye).
-- Useful for HUD framing: reticle, weapon wheel arc and arrow count placement around the pose.
-
-### draw-front.jpg — full draw, front 3/4 view (1920x1080)
-Source: frame @ 31.0s of official PC announcement trailer (PS4 Pro capture),
-https://cdn.akamai.steamstatic.com/steam/apps/256777357/movie_max.mp4
-Scene: young-adult Aloy at the Proving grounds, Rost behind her; in-engine cutscene using the standard draw rig.
-- From the front: bow arm extended toward camera-left, its shoulder protracted; you can see the bow-arm elbow's soft bend from the inside.
-- Draw forearm stacks behind the arrow — from this angle the string hand disappears behind the jaw, elbow tip just visible past her ribs.
-- Torso stays upright, weight 50/50; the fletching sits at the corner of her mouth (consistent cheek anchor across angles).
-
----
-
-## SPEAR — carry, grip and melee (added 2026-09-17, lane `player-melee`)
-
-Sources are the same class as the rest of this file: official Guerrilla / PlayStation video and
-store assets. Frames were extracted at native 1920x1080 from the publisher's own MP4s (Steam CDN
-`movie_max.mp4`, and the official PlayStation YouTube upload of the E3 2015 demo). All
-**reference-only, not shipped** — comparison stills for animation review, no asset is derived
-from them.
-
-**READ THIS BEFORE USING THE HOLSTER STILL.** In *Horizon Zero Dawn* the spear is **not visible on
-Aloy's body when she is not attacking** — it is hidden and materialises in her right hand on the
-attack, then disappears again. Verified across every back/profile view found: `ce4.jpg` crouch-walk
-(Steam CE screenshot #4), Story-Trailer 46 s / 48 s, Remastered-trailer 36 s / 93 s / 97 s / 110 s,
-and the E3 2015 demo at 147 s. It is also what players complain about
-(https://steamcommunity.com/app/1151640/discussions/0/2943620809086713056/ — "a spear sized
-pocket"). The two `-hfw` stills below are *Horizon Forbidden West* (same studio, same character,
-spear genuinely worn on the back) and are the only honest reference for gate A100's back socket.
-
-### spear-ready-side.jpg — melee guard / recover, spear low in the right hand (1920x1080)
-Source: frame @ 69.90s of the official "Horizon Zero Dawn Remastered Launch trailer",
-https://cdn.akamai.steamstatic.com/steam/apps/257069627/movie_max.mp4
-Scene: Frozen-Wilds snow, Aloy 3/4-front facing a Scrounger at ~3 m, burning ground between them.
-- Spear held ONE-handed in the RIGHT hand, hand at hip height, shaft angled DOWN-FORWARD
-  ~25-30 deg below horizontal, blade forward-and-down, red feather hanging off the head.
-- Hand sits in the rear quarter of the shaft; only a short butt stub projects behind the wrist.
-- LEFT hand is empty and swung back/out for balance — this is not a two-handed guard.
-- Elbow stays beside the ribs, forearm outside the torso line; knees soft, weight forward.
-
-### spear-light-windup.jpg — light attack, windup / cocked (1920x1080)
-Source: frame @ 70.35s, same trailer.
-- Right hand has drawn UP to sternum height, shaft now angled UP-FORWARD ~35-40 deg above
-  horizontal, blade high and forward of the head — the shaft never goes behind the head or
-  across the face.
-- Left arm reaches forward-down, open palm at hip height, as the counterweight.
-- Torso rotated right-shoulder-back; the cock is an arm+spine load, not a wrist flick.
-
-### spear-light-strike.jpg — light attack, contact (1920x1080)
-Source: frame @ 70.50s, same trailer (0.15 s after the windup frame).
-- Right arm extended forward, hand at chest height; shaft has swung down to roughly HORIZONTAL
-  (0 to -5 deg) and the blade is driving into the machine's head/shoulder.
-- Torso has squared to the target; left arm has swung back behind the hip.
-- So the beat is a down-and-forward diagonal chop that flattens into a thrust at contact,
-  about 40-45 deg of shaft rotation in ~0.15 s.
-
-### spear-light-follow.jpg — light attack, follow-through (1920x1080)
-Source: frame @ 70.70s, same trailer (0.20 s after contact).
-- Right hand has dropped back to waist height, shaft ~10-15 deg BELOW horizontal, tip past the
-  machine's near shoulder; spine pitched forward over the lead foot.
-- Left arm trails low and behind. Nothing crosses the body midline at any point of the beat.
-
-### spear-grip-closeup.jpg — close-up of the hand on the shaft (1920x1080)
-Source: frame @ 41.05s, same trailer.
-Caveat: this is the OVERRIDE animation (spear driven into a machine's port), not a swing — but it
-is the only frame in the official material where the camera is right on the grip.
-- Right hand wraps the shaft in the rear ~20% of its length, thumb over, knuckles up.
-- Shaft rises forward at ~30 deg; blade (teal-and-bone head) forward of the hand; the red feather
-  binding sits just above the grip, i.e. the grip is BELOW the feather.
-- Forearm is roughly in line with the shaft — the wrist is not cocked.
-
-### spear-thrust-front.jpg — spear driven into a downed Watcher, 3/4 front, HUD on (1920x1080)
-Source: frame @ 177.00s of "Horizon Zero Dawn - E3 2015 Trailer | PS4" (official PlayStation
-channel), https://www.youtube.com/watch?v=Fkg5UVTsKCE
-Caveat: E3 2015 pre-release build; HUD and ammo counter visible; this is the kill/finisher beat.
-- Aloy down on one knee, right hand low at waist, shaft running up-forward ~20 deg into the
-  machine's head — the finisher commits the whole body, not just the arm.
-- Shows the front/three-quarter read of the same one-handed rear-of-shaft grip.
-
-### spear-holster-back-hfw.jpg — spear STOWED on the back (HORIZON FORBIDDEN WEST) (1920x1080)
-Source: official Steam store screenshot #0 for Horizon Forbidden West Complete Edition (app
-2420110), https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/2420110/ss_7c1ead4b3d952fd0fb92735397945bd8732bba53.1920x1080.jpg
-NOT Horizon Zero Dawn — used because HZD hides the spear entirely (see the note above).
-- Aloy in left profile; the spear rides diagonally across her back, butt cap low at the RIGHT
-  hip/lower back, shaft climbing toward the RIGHT shoulder at roughly 20-30 deg from vertical.
-- The head end is occluded by her hair/shoulder in this still — the shoulder it clears is inferred
-  from the shaft line, not directly seen. Treat "blade above the right shoulder" as probable, not
-  proven, from this image.
-- The bow is the orange-wrapped CURVED limb sweeping down-back; do not mistake it for the spear.
-
-### spear-sweep-back-hfw.jpg — horizontal sweep at shoulder height, back view (HORIZON FORBIDDEN WEST) (1920x1080)
-Source: frame @ 60.00s of the official "Horizon Forbidden West Complete Edition full launch
-trailer EN_US", https://cdn.akamai.steamstatic.com/steam/apps/257007287/movie_max.mp4
-NOT Horizon Zero Dawn — included because HZD's official material has no clean back-view swing.
-- Chase-camera back view mid-swing: the shaft is horizontal at shoulder height across the frame,
-  RIGHT hand on the shaft with the blade forward-left, left arm thrown forward for counter-rotation.
-- Confirms the arc is driven by shoulder+spine rotation with the hand OUTSIDE the torso silhouette.
-
----
-
-## Rejected during search (for the record)
-Steam/GOG official sets share the same 5 stills (2 lack Aloy, 1 is a crouch-walk). Fandom wiki
-galleries are cutscene stills (no run/draw cycles). Steam Community top-rated shots are photo-mode
-poses. Most 4K walkthrough YouTube thumbnails are title cards. No clean HUD-on chase-camera RUN
-still was found; run-back.jpg (trailer, back view run) + run-back-2-walking.jpg (chase-cam framing)
-together cover that slot.
-
-### Rejected during the SPEAR search (2026-09-17)
-No official HZD still or frame shows the spear on Aloy's back (see the SPEAR note). No official HZD
-material found shows an unambiguous HEAVY attack (the two-vertical-slash sequence the Fextralife and
-Fandom wikis describe) — the Remastered-trailer beat above is a single downward chop and could be
-either a standing light or the first slash of the heavy. No official still shows a two-handed low
-guard; every HZD melee frame found is one-handed, right hand, left hand free. The E3 2016 gameplay
-video (PlayStation, T5Xx3MdqdgM) 403'd on every downloadable format and was not searched.
+| file | sha256 | bytes | source | deleted |
+|---|---|---|---|---|
+| `draw-back-2-hud.jpg` | `ecfaf53cc51cf1416897182ef47fa201a9fd87e321ae32ceb5350ba9b5ed13bb` | 197211 | Guerrilla Games / Sony Interactive Entertainment (Horizon Zero Dawn marketing still or trailer frame) | 2026-10-19 (gates-perf W0b) |
+| `draw-back.jpg` | `8028b04ad21836970cd2a6659d29f25b3953e25b9460e2e08bfd7addd8c41eca` | 635014 | Guerrilla Games / Sony Interactive Entertainment (Horizon Zero Dawn marketing still or trailer frame) | 2026-10-19 (gates-perf W0b) |
+| `draw-front.jpg` | `c53f294578f4e7bd41087f01885e92e6c3ea9918baf12d1849a44666ed6b666f` | 452538 | Guerrilla Games / Sony Interactive Entertainment (Horizon Zero Dawn marketing still or trailer frame) | 2026-10-19 (gates-perf W0b) |
+| `draw-side-2.jpg` | `0bc555c9b14d48f8afabad30961fb4e5062f601a964820054e879aa962004837` | 589891 | Guerrilla Games / Sony Interactive Entertainment (Horizon Zero Dawn marketing still or trailer frame) | 2026-10-19 (gates-perf W0b) |
+| `draw-side-3.jpg` | `216b75d225aed5068947c1a9338c61bca27c3df4e8813761be501fe469c63e7e` | 219284 | Guerrilla Games / Sony Interactive Entertainment (Horizon Zero Dawn marketing still or trailer frame) | 2026-10-19 (gates-perf W0b) |
+| `draw-side.jpg` | `67b888c8d9ef08d340cba811e4429436b568782868e2869ae3c02325f836013d` | 736187 | Guerrilla Games / Sony Interactive Entertainment (Horizon Zero Dawn marketing still or trailer frame) | 2026-10-19 (gates-perf W0b) |
+| `run-back-2-walking.jpg` | `4d40353b45f0a68ecfb8931f4b47e447f8ecc98754b94bd6ff1ae03aa2c3e99f` | 1604378 | Guerrilla Games / Sony Interactive Entertainment (Horizon Zero Dawn marketing still or trailer frame) | 2026-10-19 (gates-perf W0b) |
+| `run-back.jpg` | `1e5f60fee3380f6ba40df77e9255d2968d5b0b42eb10c95b42af9d31b7942386` | 409884 | Guerrilla Games / Sony Interactive Entertainment (Horizon Zero Dawn marketing still or trailer frame) | 2026-10-19 (gates-perf W0b) |
+| `run-front-2.jpg` | `711d53215a91faba350a8fd521a23ffe1e9aa48d25ac1b62b3c31470775a6de3` | 460600 | Guerrilla Games / Sony Interactive Entertainment (Horizon Zero Dawn marketing still or trailer frame) | 2026-10-19 (gates-perf W0b) |
+| `run-front.jpg` | `ba6ef84b3acb3da3556b7a4ca86596d41a1f0c2ec9b8f8b501848d901ad03da5` | 573610 | Guerrilla Games / Sony Interactive Entertainment (Horizon Zero Dawn marketing still or trailer frame) | 2026-10-19 (gates-perf W0b) |
+| `run-side.jpg` | `03ebe86b0ab7c81720187bbc173dd1e405319a8f729e20899ccd88ce9c778c0a` | 491763 | Guerrilla Games / Sony Interactive Entertainment (Horizon Zero Dawn marketing still or trailer frame) | 2026-10-19 (gates-perf W0b) |
+| `spear-grip-closeup.jpg` | `1423efcdb41cc953f16b22910b091aabec60d2979577523f05713fbb897f005f` | 318167 | Guerrilla Games / Sony Interactive Entertainment (Horizon Zero Dawn marketing still or trailer frame) | 2026-10-19 (gates-perf W0b) |
+| `spear-holster-back-hfw.jpg` | `d3c18c4ef614540fd296d4673bce1d35158e20ffd622f08701bfd8e3c46e7d4d` | 969188 | Guerrilla Games / Sony Interactive Entertainment (Horizon Forbidden West marketing still or trailer frame) | 2026-10-19 (gates-perf W0b) |
+| `spear-light-follow.jpg` | `74ab53e539d33940ebab89bfca55582b58b1f35b552bfcfb98ce734bdbe13268` | 419963 | Guerrilla Games / Sony Interactive Entertainment (Horizon Zero Dawn marketing still or trailer frame) | 2026-10-19 (gates-perf W0b) |
+| `spear-light-strike.jpg` | `2cf8951b48a47eae054d31f9d578e89c4ffc0c3f2950f6bd9ac262b65c1791d3` | 393941 | Guerrilla Games / Sony Interactive Entertainment (Horizon Zero Dawn marketing still or trailer frame) | 2026-10-19 (gates-perf W0b) |
+| `spear-light-windup.jpg` | `df0720ee8a9dcbe1451bd3fc0b0b6ac44699990f165a751bdfd8921fe3ffecfa` | 354921 | Guerrilla Games / Sony Interactive Entertainment (Horizon Zero Dawn marketing still or trailer frame) | 2026-10-19 (gates-perf W0b) |
+| `spear-ready-side.jpg` | `03fbbe301df6004899962faacd4c1e94479edd00d045ab6b6b709631577c5678` | 322497 | Guerrilla Games / Sony Interactive Entertainment (Horizon Zero Dawn marketing still or trailer frame) | 2026-10-19 (gates-perf W0b) |
+| `spear-sweep-back-hfw.jpg` | `13d4443dd07e7b1ac1a636e63bf5ba006ef96162c03a5f915a92d32c510b6eec` | 365497 | Guerrilla Games / Sony Interactive Entertainment (Horizon Forbidden West marketing still or trailer frame) | 2026-10-19 (gates-perf W0b) |
+| `spear-thrust-front.jpg` | `8fe2190cedab06722f3e5c567398543b67ac700944a94fcbc8860823b9bdd823` | 551006 | Guerrilla Games / Sony Interactive Entertainment (Horizon Zero Dawn marketing still or trailer frame) | 2026-10-19 (gates-perf W0b) |

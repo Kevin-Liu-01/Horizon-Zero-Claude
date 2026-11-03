@@ -32,7 +32,7 @@ const STYLE_ID = 'cal-prog-style';
 const CSS = `
 #cal-prog {
   position: fixed; inset: 0; pointer-events: none; z-index: 60;
-  font-family: var(--font, 'Rajdhani', system-ui, sans-serif);
+  font-family: var(--font, system-ui, sans-serif);
   color: var(--cal-text, #efe6d5);
   --pg-gold: #c8a24b;
   --pg-teal: var(--cal-accent, #59c1c6);
@@ -49,7 +49,7 @@ const CSS = `
 #cal-prog .pg-pip {
   width: 30px; height: 30px; flex: 0 0 30px;
   display: flex; align-items: center; justify-content: center;
-  font-family: var(--font-display, 'Michroma', sans-serif);
+  font-family: var(--font-display, sans-serif);
   font-size: 12px; color: #0b0e11; background: var(--pg-gold);
   clip-path: polygon(50% 0, 100% 50%, 50% 100%, 0 50%);
   text-shadow: none;
@@ -118,7 +118,7 @@ const CSS = `
   margin-top: 3px;
 }
 #cal-prog .pg-trial-time {
-  font-family: var(--font-display, 'Michroma', sans-serif);
+  font-family: var(--font-display, sans-serif);
   font-size: 23px; line-height: 1.1; color: #FAF9F5;
   font-variant-numeric: tabular-nums;
   text-shadow: 0 2px 14px rgba(0,0,0,0.8);
@@ -148,7 +148,7 @@ const CSS = `
   animation: pgBanner 3.4s cubic-bezier(0.2,0.8,0.3,1) forwards;
 }
 #cal-prog .pg-banner .b-title {
-  font-family: var(--font-display, 'Michroma', sans-serif);
+  font-family: var(--font-display, sans-serif);
   font-size: 21px; letter-spacing: 0.34em; text-indent: 0.34em;
   color: #FAF9F5; text-shadow: 0 2px 22px rgba(0,0,0,0.8);
 }
@@ -177,7 +177,7 @@ const CSS = `
   text-align: center;
 }
 #cal-prog .pg-toast {
-  font-family: var(--font-display, 'Michroma', sans-serif);
+  font-family: var(--font-display, sans-serif);
   font-size: 15px; letter-spacing: 0.16em; color: var(--pg-gold);
   text-shadow: 0 2px 14px rgba(0,0,0,0.8);
   animation: pgToast 1.5s ease-out forwards;
@@ -207,7 +207,7 @@ const CSS = `
 }
 #cal-prog .pg-panel.narrow { width: min(560px, 88vw); }
 #cal-prog .pg-head {
-  font-family: var(--font-display, 'Michroma', sans-serif);
+  font-family: var(--font-display, sans-serif);
   font-size: 13px; letter-spacing: 0.5em; text-indent: 0.5em;
   color: var(--pg-gold); padding-bottom: 12px;
   border-bottom: 1px solid rgba(239,230,213,0.16);
@@ -280,7 +280,7 @@ const CSS = `
 
 /* dialogue */
 #cal-prog .pg-dlg-name {
-  font-family: var(--font-display, 'Michroma', sans-serif);
+  font-family: var(--font-display, sans-serif);
   font-size: 16px; letter-spacing: 0.3em; color: var(--pg-gold);
 }
 #cal-prog .pg-dlg-title { font-size: 11px; letter-spacing: 0.24em; color: rgba(239,230,213,0.5); text-transform: uppercase; margin-top: 4px; }

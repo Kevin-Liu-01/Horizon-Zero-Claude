@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { LAMP_HEX } from '../../instruments/lamps.js';
 import { rollLoot } from './machine.js';
 import { lensMesh } from './parts.js';
 import { buildRig, RIGS } from './autorig.js';
@@ -94,7 +95,7 @@ export class Grazer extends ExpansionMachine {
       { id: 'machine-heart', n: 1, chance: 0.12 },
     ]);
 
-    buildShell(this, GRAZER_SHELL, { rig: RIGS.grazer });
+    buildShell(this, GRAZER_SHELL, { rig: RIGS.grazer, sensorColor: LAMP_HEX.calm });
     attachRigRuntime(this);
     buildRig(this, RIGS.grazer);
 

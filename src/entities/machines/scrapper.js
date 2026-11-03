@@ -1,4 +1,6 @@
 import * as THREE from 'three';
+import { LAMP_HEX } from '../../instruments/lamps.js';
+import { VFX_COLORS } from '../../instruments/lib/vfx.js';
 import { Machine, rollLoot, glowTexture } from './machine.js';
 import { radarMesh, powerCellMesh, pulseGlow } from './parts.js';
 import { buildRig } from './autorig.js';
@@ -134,7 +136,7 @@ export class Scrapper extends Machine {
     // --- components (roster-v2 §4 Scrapper)
     // 1. Radar dish on the jetpack: spins during scan pauses. Torn ->
     //    scanning blinded + detection cut.
-    const radar = radarMesh({ accent: 0x9fd8ff });
+    const radar = radarMesh({ accent: VFX_COLORS.sensorPing });
     radar.scale.setScalar(0.3);
     this._radarPart = this.addPart({
       name: 'radar', displayName: 'Radar',
@@ -169,7 +171,7 @@ export class Scrapper extends Machine {
     ]);
 
     // --- silhouette pass: front legs, low head, dorsal plate (V26)
-    buildShell(this, SCRAPPER_SHELL, { rig: SCRAPPER_RIG });
+    buildShell(this, SCRAPPER_SHELL, { rig: SCRAPPER_RIG, sensorColor: LAMP_HEX.calm });
     attachRigRuntime(this);
 
     // --- auto-rig + four-legged scavenger lope
@@ -266,7 +268,7 @@ export class Scrapper extends Machine {
   /** Expanding radar ping ring above the dish. */
   _pingRing() {
     const mat = new THREE.SpriteMaterial({
-      map: glowTexture(), color: 0x9fd8ff, transparent: true, opacity: 0.55,
+      map: glowTexture(), color: VFX_COLORS.sensorPing, transparent: true, opacity: 0.55,
       blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false,
     });
     const s = new THREE.Sprite(mat);

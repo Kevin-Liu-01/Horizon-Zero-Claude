@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { LAMP_HEX } from '../../instruments/lamps.js';
 import { rollLoot } from './machine.js';
 import { lensMesh } from './parts.js';
 import { buildRig, RIGS } from './autorig.js';
@@ -122,7 +123,7 @@ export class Stormbird extends ExpansionMachine {
       { id: 'machine-heart', n: 1, chance: 0.3 },
     ]);
 
-    buildShell(this, STORMBIRD_SHELL, { rig: RIGS.stormbird });
+    buildShell(this, STORMBIRD_SHELL, { rig: RIGS.stormbird, sensorColor: LAMP_HEX.calm });
     attachRigRuntime(this);
     buildRig(this, RIGS.stormbird);
     /**

@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { VFX_COLORS } from '../../../instruments/lib/vfx.js';   // VFX palette defaults (instruments-core W0b grant)
 
 /**
  * MachineFx — ONE instanced billboard pool for every machine particle
@@ -367,7 +368,7 @@ export class MachineFx {
   }
 
   /** Additive spark / arc flash. */
-  spark(x, y, z, scale = 0.3, color = 0xbfe8ff, dur = 0.35) {
+  spark(x, y, z, scale = 0.3, color = VFX_COLORS.bronzeChip, dur = 0.35) {
     this.hot.spawn(x, y, z, {
       color, size: scale, grow: 0.2, peak: 0.95, dur, flicker: true,
       vx: (Math.random() - 0.5) * 2.4, vy: 0.6 + Math.random() * 2.2, vz: (Math.random() - 0.5) * 2.4,
@@ -438,7 +439,7 @@ export function attachFxPool(machine) {
       });
     }
   };
-  machine._arcFlash = function (color = 0xbfe8ff) {
+  machine._arcFlash = function (color = VFX_COLORS.bronzeChip) {
     pool.spark(
       this.position.x + (Math.random() - 0.5) * this.bodyRadius * 1.5,
       this.position.y + this.height * (0.25 + Math.random() * 0.6),

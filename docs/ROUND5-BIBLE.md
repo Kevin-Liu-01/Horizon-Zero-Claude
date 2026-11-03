@@ -35,7 +35,7 @@ heroine and Horizon distance with C's feasibility discipline.
 
 | # | must-fix (judge) | applied as | § |
 |---|---|---|---|
-| D1 | replace Julius Sans One, Rajdhani, Chakra Petch; ship OFL.txt; OFL in the manifest | **Bodoni Moda + IBM Plex Sans Condensed + IBM Plex Mono** (C's stack), all OFL-1.1 | 9.7 |
+| D1 | replace Julius Sans One, Rajdhani; ship OFL.txt; OFL in the manifest | **Chakra Petch + IBM Plex Mono** (Kevin, plan R55), both OFL-1.1 | 9.7 |
 | D2 | calm/wary off override-teal and Focus-violet; ΔE2000 ≥ 20 gate | new lamp tokens, measured ΔE ≥ 24.7 from all five canon colours; gate `A-lamp-canon-distance` | 7.2 |
 | D3 | drop DATUM as a fallback title | fallback is **SALT & SPARK** only | 1.1 |
 | D4 | re-stage the title shot: the Pans, not the Transit on a sunset skyline | title = the Pans in calima; the Transit is never key art on a low-sun skyline | 1.1, 8.9, 9.8 |
@@ -44,7 +44,7 @@ heroine and Horizon distance with C's feasibility discipline.
 | D7 | recolour the waist sash; keep the quiver a distinct cane tube | sash is undyed linen, no red at the hip; quiver is a rigid capped cane tube | 3.4, 3.6 |
 | D8 | merge B's lexicon into A's, add Brittle and Impact, lint role ids / table keys / UI | union lexicon (417 tokens) ran over all 179 proposed names: **0 hard hits** | 10.3 |
 | D9 | delete or rename `ai/override.js`, the OVERRIDE table and the `overridden` state in P0 | deleted in wave 0; design rule 7.1-R7 | 7.1 |
-| D10 | change the logo font; drop the wide-tracked tagline under the hairline | Bodoni Moda wordmark, no second line, no tagline | 9.8 |
+| D10 | change the logo font; drop the wide-tracked tagline under the hairline | Chakra Petch wordmark (plan R55), no second line, no tagline | 9.8 |
 | D11 | trademark search for CALIMA; Anthropic brand terms for the spark | release-blocking checklist, PLAN §11 | 1.1 |
 | F1 | upright lance fails A100/R8 — re-stow on a 30–60° diagonal or get a ruling + new draw path | **diagonal re-stow (ruling R10)**; the upright carry was measured against heel kick, arm swing and camera boom and rejected | 3.6 |
 | F2 | replace OverhandThrow (lance, pots, net) with a constrained cast | **no lance throw**; pots and net use C's pendulum / spin cast; gate `A-cast-pendulum` | 5.3, 5.6, 5.7 |
@@ -68,13 +68,13 @@ heroine and Horizon distance with C's feasibility discipline.
 
 | from | graft | § |
 |---|---|---|
-| C | Bodoni Moda / IBM Plex type stack with OFL.txt | 9.7 |
+| C | ~~Bodoni Moda / IBM Plex type stack~~ superseded by plan R55 (Chakra Petch + IBM Plex Mono, Kevin) | 9.7 |
 | C | `A-ID-ip-assets-gone` + licence manifest with zip SHA-256s | PLAN §10 |
 | C | title-collision findings (DATUM, Tidemark struck) | 1.1 |
 | C | world-scale survey paint: **the Datum Line** (region-local, shows the Screed's cut height) | 8.8 |
 | C | the pendulum cast; visible-gear rule (≤ 2 back, ≤ 2 hip); merged outfit + skeleton dispose; no movement modifiers on armor | 3.6, 4.1, 5.5 |
 | C | grey-box colossus de-risk (30 k tris through the full seam before detailing); solid legs, no lattice at melee height | 7.4 #12 |
-| C | Admiralty-chart cues on the field-book map (soundings, Bodoni italic place names) | 9.7 |
+| C | Admiralty-chart cues on the field-book map (soundings, Chakra Petch place names) | 9.7 |
 | B | mechanic words Pry / Steady / Flagged / Undercut / Felling blow | 5.8, 10 |
 | B | `names-check.mjs` lexicon (Saltbite, Call of the Mountain) unioned into the lint | 10.3 |
 | B | shape-first lamp states (iris 100/50/20 %), one instanced beam draw in fog | 7.2 |
@@ -1256,11 +1256,10 @@ one fire-scarred pine with green shoots.
 
 ### 9.7 UI language: the field book
 
-- **Fonts (all SIL OFL-1.1, woff2 subsets ≈ 0.4 MB, each with its `OFL.txt`):** **Bodoni Moda**
-  (display, wordmark, place names — italic on the map, the hydrographic convention), **IBM Plex Sans
-  Condensed** 500/600 (HUD, menus), **IBM Plex Mono** 500 (numerals, bearings, damage numbers).
-  **Removed:** Julius Sans One, Rajdhani, Chakra Petch, Michroma, Orbitron (chosen in Round 3
-  *because* they read as Horizon).
+- **Fonts (R55, Kevin Nov 3; all SIL OFL-1.1, woff2 subsets ≈ 0.1 MB, each with its `OFL.txt`):** **Chakra Petch**
+  400–700 (wordmark, display, HUD labels, menus, place names), **IBM Plex Mono** 400–600 + italic
+  (numerals, bearings, damage numbers, body text, dialogue, cards). Removed: Julius Sans One, Rajdhani,
+  Michroma, Orbitron, Bodoni Moda, IBM Plex Sans Condensed.
 - **Surfaces:** field-book paper `#E2D3B0` at 92 % over the scrim; hairline 1 px rules; right angles;
   **no hexagons, no pills, no smoked-glass cut corners**. Motif: the graduated tick.
 - **Health:** a horizontal **levelling staff**: alternating survey-vermilion and paper graduations at
@@ -1268,13 +1267,13 @@ one fire-scarred pine with green shoots.
 - **Compass:** a **theodolite circle strip** 000–359; ticks every 5°, numerals every 30° (Plex Mono),
   a 3-digit bearing readout. Markers: settlement ■, site ●, benchmark ▲ (broad arrow), Instrument ◆
   in its lamp-state colour **and iris shape**; Flagged = a vermilion pennant over Brea's marker.
-- **Instrument card:** `TILLER · SOIL CORE · TRANSECT 14` in Plex Sans Condensed caps with a graduated bar.
+- **Instrument card:** `TILLER · SOIL CORE · TRANSECT 14` in Chakra Petch caps with a graduated bar.
 - **Sighting (alidade overlay):** a sepia paper vignette ≤ 20 % (world keeps its colour), a crosshair
   with **stadia hairlines**, bearing and distance readouts, weak points as **cobalt-ink rings**,
   components as dashed ink outlines with leader lines, transects as white dashes on the ground. Not
   violet, not teal, not holographic.
 - **Map:** field-book paper with hand-inked contours every 5 m and depth soundings offshore; only the
-  coastline until triangles are revealed; place names in Bodoni italic; the Datum Line regions in vermilion.
+  coastline until triangles are revealed; place names in Chakra Petch; the Datum Line regions in vermilion.
 - **Menus:** field-book pages with a red margin rule; entries numbered as stations (STN 01).
 - **Damage numbers:** Plex Mono — paper-white for Blunt, cobalt-on-paper chip for weak points,
   carmine for Pry.
@@ -1284,7 +1283,7 @@ one fire-scarred pine with green shoots.
 
 ### 9.8 Logo
 
-- **Wordmark:** **CALIMA** in Bodoni Moda 500 caps, tracking 0.18 em (engraved-chart Didone; not thin
+- **Wordmark:** **CALIMA** in Chakra Petch 600 caps, tracking 0.18 em (engraved-instrument, plan R55; not thin
   wide-tracked caps).
 - **The I** is a **plumb line**: a thin stroke ending in a bob.
 - **The Claude spark** (Round-3 geometry, `#DA7756`, unchanged) is the dot of the I: **full,
@@ -1414,8 +1413,8 @@ Tiller/Tinker, Screed/Sacred, Davit/Devil. The lexicon and script become `tools/
 
 | element | Horizon does | CALIMA does |
 |---|---|---|
-| title / logo | HORIZON thin wide caps, sun cresting a horizon rule, tracked sub-line | CALIMA in Bodoni Moda; spark full and **above** the word as the dot of a plumb-line I; one datum rule; no sub-line |
-| typography | Julius / Rajdhani / Chakra-style techno caps (fan HUDs) | Bodoni Moda + IBM Plex Sans Condensed + Plex Mono |
+| title / logo | HORIZON thin wide caps, sun cresting a horizon rule, tracked sub-line | CALIMA in Chakra Petch; spark full and **above** the word as the dot of a plumb-line I; one datum rule; no sub-line |
+| typography | Julius / Rajdhani techno caps (fan HUDs) | Chakra Petch + IBM Plex Mono (plan R55): engraved-instrument, right angles, no hexagons |
 | setting | post-collapse western USA; **HFW Burning Shores is a volcanic archipelago with live lava** | one fictional Atlantic island modelled on the Canaries; **no live lava**; led by salt grids, white surf on black sand, crescent walls, laurel cloud forest, calima |
 | premise | extinction, terraforming AI, a mystery about the Old Ones | no apocalypse: an abandoned survey still running; slow geological collapse; map vs territory |
 | people and the past | tribes mythologising old tech | literate guilds; the old world is history |

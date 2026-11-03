@@ -1,4 +1,6 @@
 import * as THREE from 'three';
+import { LAMP_HEX } from '../../instruments/lamps.js';
+import { VFX_COLORS } from '../../instruments/lib/vfx.js';
 import { Machine, rollLoot, glowTexture } from './machine.js';
 import { canisterMesh, pulseGlow } from './parts.js';
 import { ClipLayerSet } from '../anim/index.js';
@@ -97,7 +99,7 @@ export class Glinthawk extends Machine {
     // it; torn = freeze spit disabled (roster). Fragile on purpose.
     this.addPart({
       name: 'freeze-sac', displayName: 'Freeze Sac',
-      mesh: canisterMesh({ color: 0x9fe8ff, r: 0.1, h: 0.26 }),
+      mesh: canisterMesh({ color: VFX_COLORS.brineMid, r: 0.1, h: 0.26 }),
       pos: [0, 0.42, 0.5], snap: true, snapTarget: [0, 0.55, 0],
       tearHp: 14, elemental: 'freeze', settleY: 0.16,
       weak: true, weakMult: 2,
@@ -116,7 +118,7 @@ export class Glinthawk extends Machine {
     // --- silhouette pass (V26 / machine-rig-01): the sculpt is a
     // see-through armature; a Glinthawk has WINGS. Three swept panels a
     // side, a leading spar, primary blades, a keel and a tail fan.
-    buildShell(this, GLINTHAWK_SHELL, {});
+    buildShell(this, GLINTHAWK_SHELL, { sensorColor: LAMP_HEX.calm });
     attachRigRuntime(this);
     // the SHELL is the machine now (machine-rig-01): retire the donor
     // sculpt AFTER the rig binds and the merge pass runs, and BEFORE the
@@ -342,7 +344,7 @@ export class Glinthawk extends Machine {
       (tgt.z - start.z) / T,
     );
     const mat = new THREE.SpriteMaterial({
-      map: glowTexture(), color: 0xaef2ff, transparent: true, opacity: 0.95,
+      map: glowTexture(), color: VFX_COLORS.brineMid, transparent: true, opacity: 0.95,
       blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false,
     });
     const s = new THREE.Sprite(mat);
@@ -362,7 +364,7 @@ export class Glinthawk extends Machine {
         if (near || s.position.y <= gy + 0.1 || t > 2.4) {
           // ice burst: chill patch + shatter glints
           _v2.set(s.position.x, Math.max(s.position.y, gy) + 0.3, s.position.z);
-          this._sparkBurst(_v2, 8, 0xbfefff);
+          this._sparkBurst(_v2, 8, VFX_COLORS.saltGlint);
           if (p2 && Math.hypot(p2.position.x - s.position.x, p2.position.z - s.position.z) < 1.9) {
             this.ctx.events.emit('player-damage', { amount: 7, from: this });
           }

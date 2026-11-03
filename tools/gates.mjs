@@ -19,7 +19,7 @@ import { fileURLToPath, pathToFileURL } from 'url';
 import net from 'net';
 import { GATES as BASE_GATES } from './gates.config.mjs';
 import {
-  sweepProfiles, profileDir, disposeProfile, installProfileCleanup, countProfiles,
+  sweepProfiles, profileDir, disposeProfile, installProfileCleanup, countProfiles, guardPort, acquireChromeSlot,
 } from './chrome-profile.mjs';
 import { formatVerdict, writeLine } from './gate-verdict.mjs';
 
@@ -94,7 +94,7 @@ const GATES = merged;
 // old line listed every file it TRIED, including the ones that threw.
 if (loadedFiles.length) console.log(`[gates] merged ${loadedFiles.length} lane file(s): ${loadedFiles.join(', ')}`);
 
-const PORT = parseInt(getFlag('--port', process.env.SHOT_PORT || '5173'), 10);
+const PORT = guardPort(getFlag('--port', process.env.SHOT_PORT));
 const only = getFlag('--only', null)?.split(',').map((s) => s.trim());
 const lane = getFlag('--lane', null);
 
@@ -217,6 +217,7 @@ let currentProfile = null;
  * costs us the ability to retry.
  */
 async function launchBrowser() {
+  await acquireChromeSlot();
   const dir = profileDir(PORT);
   const b = await puppeteer.launch({ protocolTimeout: 900000,  headless: 'new', args: LAUNCH_ARGS, userDataDir: dir });
   const stale = currentProfile;

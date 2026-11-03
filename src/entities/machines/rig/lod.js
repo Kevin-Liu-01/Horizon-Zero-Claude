@@ -52,6 +52,18 @@ const PALETTE = [
   new THREE.Color(0x1d2126), // synthetic muscle
 ];
 
+/**
+ * THE INSTRUMENT PALETTE (instruments-core W0b grant; bible §7.1 / §9.1, the
+ * 8 x 1 hull palette of plan §4.1): bone, celadon, oxblood glaze over bronze,
+ * verdigris, graphite, survey vermilion on staff white. `quantise: 'instrument'`
+ * snaps plate colours onto it; `quantise: true` (default) keeps the Round-4
+ * family palette above for the legacy kinds; `quantise: false` keeps a
+ * generated kind's own vertex palette untouched.
+ */
+export const INSTRUMENT_PALETTE = [0xe6dcc8, 0xa9c4b0, 0x6e2421, 0xa07a3f, 0x4f8f7e, 0x2b2c30, 0xd2452e, 0xf1eee6]
+  .map((h) => new THREE.Color(h));
+export const PALETTES = { legacy: PALETTE, instrument: INSTRUMENT_PALETTE };
+
 const _hsl = { h: 0, s: 0, l: 0 };
 const _v = new THREE.Vector3();
 /** Scratch for the shadow-caster ranking (never allocates per frame). */
@@ -59,8 +71,17 @@ const _cv = new THREE.Vector3();
 
 const PALETTE_L = PALETTE.map((c) => { c.getHSL(_hsl); return _hsl.l; });
 
-/** Nearest family tone for a material colour, matched on luminance. */
-function quantise(color) {
+/** Nearest family tone for a material colour, matched on luminance (legacy) or RGB distance (instrument). */
+function quantise(color, which = 'legacy') {
+  if (which === 'instrument') {
+    let best = 0, bd = 1e9;
+    for (let i = 0; i < INSTRUMENT_PALETTE.length; i++) {
+      const c = INSTRUMENT_PALETTE[i];
+      const d = (c.r - color.r) ** 2 + (c.g - color.g) ** 2 + (c.b - color.b) ** 2;
+      if (d < bd) { bd = d; best = i; }
+    }
+    return INSTRUMENT_PALETTE[best];
+  }
   color.getHSL(_hsl);
   const l = _hsl.l;
   let best = 0, bd = 1e9;
@@ -143,7 +164,7 @@ export function unifyMaterials(machine, opts = {}) {
       // family tones is what makes `mergeByMaterial` able to do its job, and
       // it is the roster-v2 §1 look besides: white-grey plate over dark
       // muscle, with the shells' vertex-colour edge wear carrying the detail.
-      m.color.copy(quantise(m.color.clone()));
+      m.color.copy(quantise(m.color.clone(), opts.quantise === 'instrument' ? 'instrument' : 'legacy'));
       if (m.metalness !== undefined) m.metalness = Math.round(m.metalness * 4) / 4;
       if (m.roughness !== undefined) m.roughness = Math.round(m.roughness * 4) / 4;
     }
@@ -182,6 +203,7 @@ function normalizeAttrs(geo, wants) {
   for (const name of Object.keys(g.attributes)) {
     if (name === 'position' || name === 'normal') continue;
     if (name === 'uv' && wants.uv) continue;
+    if (name === 'uv1' && wants.uv1) continue;   // W0b: the decal/trim atlas channel survives when the group samples it
     if (name === 'color' && wants.color) continue;
     if ((name === 'skinIndex' || name === 'skinWeight') && wants.skin) continue;
     g.deleteAttribute(name);
@@ -190,6 +212,7 @@ function normalizeAttrs(geo, wants) {
   if (wants.uv && !g.attributes.uv) {
     g.setAttribute('uv', new THREE.BufferAttribute(new Float32Array(n * 2), 2));
   }
+  if (wants.uv1 && !g.attributes.uv1) g.setAttribute('uv1', new THREE.BufferAttribute(new Float32Array(n * 2), 2));
   if (wants.color && !g.attributes.color) {
     const c = new Float32Array(n * 3).fill(1);
     g.setAttribute('color', new THREE.BufferAttribute(c, 3));
@@ -236,6 +259,9 @@ function normalizeAttrs(geo, wants) {
   g.morphAttributes = {};
   return g;
 }
+
+/** Does this material sample the second UV set (a decal/trim map on `channel` 1)? */
+const usesUv1 = (m) => !!m && (m.userData?.uv1 === true || Object.values(m).some((t) => t?.isTexture && t.channel === 1));
 
 /**
  * Merge every group of meshes under `model` that share one material AND one
@@ -396,7 +422,7 @@ export function mergeByMaterial(model, opts = {}) {
     const bake = skinned && tones.size > 1 && !!flatColourSig(src.material, opts.locked);
 
     // union of the attributes present anywhere in the group
-    const wants = { uv: false, color: false, skin: false };
+    const wants = { uv: false, color: false, skin: false, uv1: usesUv1(src.material) };
     let verts = 0;
     for (const mesh of list) {
       const a = mesh.geometry.attributes;

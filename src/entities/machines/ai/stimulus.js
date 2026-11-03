@@ -34,8 +34,15 @@ export class StimulusBus {
     this.last = null;
   }
 
+  /** Perk hook (instruments-core W0b, plan §3.2): `fn(ev)` sees every stimulus first; `false` drops it, edits to `ev` stand. Returns a remover. */
+  addNoiseFilter(fn) {
+    (this._filters || (this._filters = [])).push(fn);
+    return () => { const i = this._filters.indexOf(fn); if (i >= 0) this._filters.splice(i, 1); };
+  }
+
   /** Fire one stimulus into the world. Returns how many machines heard it. */
   emit(ev) {
+    if (this._filters) for (let i = 0; i < this._filters.length; i++) if (this._filters[i](ev) === false) return 0;
     const kind = ev.kind || 'noise';
     const def = NOISE.kinds[kind] || NOISE.kinds.noise;
     const x = ev.x ?? ev.pos?.x ?? 0;

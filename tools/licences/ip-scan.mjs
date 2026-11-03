@@ -259,8 +259,13 @@ export async function selfTest(dir, { planFile = path.join(ROOT, 'docs/ROUND5-PL
     writeRows([heroRow]);
     r = await scan(dir, { env: {} });
     let c = await check(dir, { env: {} });
-    out.scheduledAlone = { ok: r.pass === true && r.scheduledExceptions.length === 1 && c.clauses['legacy-source'].status === 'PENDING',
-      scanPass: r.pass, exceptions: r.scheduledExceptions.length, legacySource: c.clauses['legacy-source'].status };
+    // after the R39 hero swap the hero body is no longer a scheduled exception (SCHEDULED_IP), so at the W0 exit
+    // and later the same file must FAIL: the control flips with the schedule instead of going stale
+    const heroScheduled = !!SCHEDULED_IP['public/models/aloy.glb'];
+    out.scheduledAlone = { ok: heroScheduled
+        ? r.pass === true && r.scheduledExceptions.length === 1 && c.clauses['legacy-source'].status === 'PENDING'
+        : r.pass === false && r.scheduledExceptions.length === 0 && c.clauses['legacy-source'].status === 'FAIL',
+      heroScheduled, scanPass: r.pass, exceptions: r.scheduledExceptions.length, legacySource: c.clauses['legacy-source'].status };
 
     // fanRip: the judge's planted control (a second IP GLB under a legacy ip:true row)
     copyFileSync(path.join(dir, 'public/models/aloy.glb'), path.join(dir, 'public/models/another-fan-rip.glb'));
@@ -293,18 +298,40 @@ export async function selfTest(dir, { planFile = path.join(ROOT, 'docs/ROUND5-PL
 
     // expiry, three independent triggers
     r = await scan(dir, { env: { R5_WAVE: 'W1' } });
-    const byEnv = r.pass === false && /EXPIRED/.test(r.ipHits[0]?.exception || '');
+    const stillCaught = (x, re) => x.pass === false && (heroScheduled ? re.test(x.ipHits[0]?.exception || '') : x.ipHits.length > 0);
+    const byEnv = stillCaught(r, /EXPIRED/);
     writeFileSync(path.join(dir, 'docs/ROUND5-MELEE.md'), 'report\n');                // a W1 lane has merged
     r = await scan(dir, { env: {} });
-    const byReports = r.pass === false && /EXPIRED/.test(r.ipHits[0]?.exception || '') && r.wave.wave === 'W1';
+    const byReports = stillCaught(r, /EXPIRED/) && r.wave.wave === 'W1';
     c = await check(dir, { env: {} });
     const checkByReports = c.clauses['legacy-source'].status === 'FAIL';
     rm(path.join(dir, 'docs/ROUND5-MELEE.md'));
     writeSpecs('/models/hero/brea-body.glb');                                          // the replacement has landed
     r = await scan(dir, { env: {} });
-    const bySpecs = r.pass === false && /SPECS\.hero no longer points/.test(r.ipHits[0]?.exception || '');
+    const bySpecs = stillCaught(r, /SPECS\.hero no longer points/);
     out.expiry = { ok: byEnv && byReports && checkByReports && bySpecs, byEnv, byReports, checkByReports, bySpecs };
     writeSpecs('/models/aloy.glb');
+
+    // waveSources (W0b fix round 1): the §2-named report file counts (hero-body's row names
+    // docs/ROUND5-HERO.md, its default is ROUND5-HERO-BODY.md: both reach W0b), and a lane
+    // branch r5/<wave>-<lane> names the wave exactly; a W0a-deadline exception is EXPIRED at W0b
+    const { currentWave: cw, parseBranchWave } = await import('./lib.mjs');
+    const atW0bBy = (name) => { writeFileSync(path.join(dir, name), 'report\n'); const w = cw(dir, {}); rm(path.join(dir, name)); return w.wave === 'W0b'; };
+    const hero2Named = atW0bBy('docs/ROUND5-HERO.md'), heroDefault = atW0bBy('docs/ROUND5-HERO-BODY.md');
+    const branch = parseBranchWave('r5/w0b-pipeline') === 'W0b' && parseBranchWave('r5/w0a-gates-perf') === 'W0a' && parseBranchWave('main') === null;
+    const anims = 'public/anims-hybrid/aloy-ual.json';
+    const animsRow = { id: 'lab-bake', paths: [anims], title: 'Round-4 lab bake (aloy rig)', author: 'x', source_url: 'x', licence: 'CC0-1.0',
+      legacy: 'r4', ip: true, delete_at: 'W0a', delete_owner: 'gates-perf' };
+    mkdirSync(path.dirname(path.join(dir, anims)), { recursive: true });
+    writeFileSync(path.join(dir, anims), '{}');
+    writeRows([heroRow, animsRow]);
+    r = await scan(dir, { env: {} });
+    const validAtW0a = r.pass === true;
+    r = await scan(dir, { env: { R5_WAVE: 'W0b' } });
+    const expiredAtW0b = r.pass === false && /EXPIRED.*gates-perf deletes it/.test(r.ipHits.find((h) => h.file === anims)?.exception || '');
+    rm(path.join(dir, 'public/anims-hybrid'), { recursive: true, force: true });
+    writeRows([heroRow]);
+    out.waveSources = { ok: hero2Named && heroDefault && branch && validAtW0a && expiredAtW0b, hero2Named, heroDefault, branch, validAtW0a, expiredAtW0b };
 
     // pendingOtherLane (fix round 3): an R30 machine GLB another lane deletes this wave with its
     // reader class, shipped WITHOUT a row. Honoured in-wave only; an IP hit when (a) the wave

@@ -1,4 +1,6 @@
 import * as THREE from 'three';
+import { LAMP_HEX } from '../../instruments/lamps.js';
+import { VFX_COLORS } from '../../instruments/lib/vfx.js';
 import { rollLoot } from './machine.js';
 import { lensMesh, canisterMesh, pulseGlow } from './parts.js';
 import { buildRig, RIGS } from './autorig.js';
@@ -85,7 +87,7 @@ export class Ravager extends ExpansionMachine {
      */
     this.addPart({
       name: 'chillwater', displayName: 'Chillwater Canister',
-      mesh: canisterMesh({ color: 0xbfe9ff, r: 0.16, h: 0.48 }),
+      mesh: canisterMesh({ color: VFX_COLORS.brineMid, r: 0.16, h: 0.48 }),
       pos: [0, 2.10, 1.62], snap: true, snapTarget: [0, 2.20, 0.6],
       orient: false, proud: 0.06,
       tearHp: 70, elemental: 'freeze', settleY: 0.22,
@@ -105,7 +107,7 @@ export class Ravager extends ExpansionMachine {
       { id: 'machine-heart', n: 1, chance: 0.16 },
     ]);
 
-    buildShell(this, RAVAGER_SHELL, { rig: RIGS.ravager });
+    buildShell(this, RAVAGER_SHELL, { rig: RIGS.ravager, sensorColor: LAMP_HEX.calm });
     attachRigRuntime(this);
     buildRig(this, RIGS.ravager);
 

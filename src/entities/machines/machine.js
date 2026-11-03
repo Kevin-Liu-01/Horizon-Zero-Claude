@@ -8,6 +8,9 @@ import { safeEmit, machineCtx } from './ai/emit.js';
 import {
   perceptionCfg, engageCfg, elemThreshold, alarmRadius,
 } from './ai/tables.js';
+import { LAMP_STATES, lampStateFor, LAMP_RHYTHM } from '../../instruments/lamps.js';
+import { VFX_COLORS } from '../../instruments/lib/vfx.js';
+import { HOT, playerBoxes, refreshHot, mutableFromBirth } from '../../instruments/lib/hot.js';
 
 /**
  * Base Machine: state machine, perception, terrain-conforming steering,
@@ -18,13 +21,33 @@ import {
 const CAMP = REST_SITE;            // { x, z, r }: the Instrument no-spawn ring
 const WORLD_LIMIT = PLAY_RADIUS + EXTENT.machineRim;
 
+/**
+ * Sensor colours by state — THE LAMP GRAMMAR (bible §7.2, `src/instruments/
+ * lamps.js` LAMP_STATES; Round 5 W0b). The Round-4 values were Horizon's own
+ * sensor canon; every machine (legacy kinds included, until they go at W2)
+ * now glows in the CALIMA lamp tokens, and `_updateEyes` runs the lamp
+ * rhythm from `lampStateFor` / `lampGain` (calm steady, wary 1 Hz pulse,
+ * hostile 4 Hz flicker, dark sputter-then-out). An Instrument kind also
+ * registers an iris lens + beam with `addLamp()`, drawn by `machines.lamps`.
+ */
 export const EYE_COLORS = {
-  calm: new THREE.Color('#38c6ff'),
-  wary: new THREE.Color('#ffb31f'),
-  hostile: new THREE.Color('#ff2413'),
-  dead: new THREE.Color('#050505'),
+  calm: new THREE.Color(LAMP_STATES.calm.token),
+  wary: new THREE.Color(LAMP_STATES.wary.token),
+  hostile: new THREE.Color(LAMP_STATES.hostile.token),
+  dead: new THREE.Color(LAMP_STATES.dark.token),
   flash: new THREE.Color(3.0, 3.0, 2.55), // white-hot attack telegraph
 };
+
+/**
+ * The same five colours as plain numbers (calm 0, wary 3, hostile 6, dark 9, flash 12), for `updateEyesM`: a
+ * function that reads module-constant THREE.Color objects depends on the Color class's map staying stable, so
+ * any Color anywhere in the game gaining a property deoptimises it (W0b fix round 2).
+ */
+const EYE_RGB = new Float64Array(15);
+['calm', 'wary', 'hostile', 'dead', 'flash'].forEach((k, i) => { const c = EYE_COLORS[k]; EYE_RGB[i * 3] = c.r; EYE_RGB[i * 3 + 1] = c.g; EYE_RGB[i * 3 + 2] = c.b; });
+
+/** VFX palette (A-vfx-palette): `src/instruments/lib/vfx.js`, re-exported here for older imports. */
+export { VFX_COLORS };
 
 /**
  * THE MACHINE FSM, CLOSED (Round 5, R17). These nine are every state the
@@ -38,9 +61,17 @@ export const MACHINE_STATES = Object.freeze([
 ]);
 const STATE_SET = new Set(MACHINE_STATES);
 
-const FROST_COLOR = new THREE.Color(0xbfe9ff);
+const FROST_COLOR = new THREE.Color(VFX_COLORS.seizedTint);
+const _flameLate = new THREE.Color(VFX_COLORS.flameLate);
 const ELEM_DECAY = 7;      // buildup meter decay per second
-const TELEGRAPH_T = 0.4;   // eye-flash duration at attack windup (canon dodge cue)
+const TELEGRAPH_T = 0.4;   // eye-flash duration at attack windup (legacy kinds' dodge cue)
+/** Dark: the last colour sputters this long, then the lamp is out (bible §7.2). */
+const LAMP_SPUTTER_S = 0.55;
+const RHY_PULSE = LAMP_RHYTHM.pulseLow, RHY_FLICKER = LAMP_RHYTHM.flickerLow;
+/** Bible §7.2 / §10: lamp glass emissive x2.5 (an Instrument's flat lens materials). */
+const LAMP_GLASS_GAIN = 2.5;
+/** A precise hit on the lamp darkens it this long (bible §7.3). */
+const LAMP_DARK_S = 6;
 
 /** Roll a loot spec [{id, n | min/max, chance?}] into concrete [{id, n}]. */
 export function rollLoot(spec) {
@@ -61,6 +92,11 @@ const _v3 = new THREE.Vector3();
 const _q1 = new THREE.Quaternion();
 const _q2 = new THREE.Quaternion();
 const _UP = new THREE.Vector3(0, 1, 0);
+/* `navTowardS` writes `radius` with each machine's body radius. Born 1.2, the field stayed CONSTANT until the first
+ * machine with another radius steered through the navgrid, and that write lazily deoptimised every function that had
+ * folded it (`dependent field type constness changed`: navTowardS 3.4 s after the staging, R5_IC_DEOPTMARK, W0b
+ * targeted fix). Written with a different value and back once, here, so it is never a constant. */
+const _steerOpts = mutableFromBirth({ radius: 1.2, look: 5 });
 const _snapRay = new THREE.Raycaster();
 
 let _glowTex = null;
@@ -84,8 +120,741 @@ const _ringGeo = new THREE.TorusGeometry(1, 0.09, 8, 48);
 const _ringGeoSoft = new THREE.TorusGeometry(1, 0.16, 8, 48);
 const _sphereGeo = new THREE.SphereGeometry(1, 10, 8);
 
+
+/**
+ * STEERING SCRATCH. Doubles handed between the steering helpers travel through
+ * this ONE monomorphic object, never as call arguments or return values: a
+ * double that crosses a call V8 does not inline is boxed (a HeapNumber per
+ * argument and per return), which on the staged fight was most of what the
+ * steering frames allocated. Each helper copies its inputs to locals on entry
+ * and writes its outputs on exit, so the nested calls may reuse the fields.
+ *   want -> d          _turnS     (heading wanted -> signed difference before the step)
+ *   x, z               _faceS     (face a point)
+ *   x, z, speed -> out _moveTowardS / _navTowardS (point, speed -> distance)
+ *   x, z, fx, fz, speed -> out _steerAlongS (direction, face point, speed -> metres)
+ *   sx, sz             stepRootS  (the root step)
+ */
+export const _st = mutableFromBirth({ want: 0.5, d: 0.5, x: 0.5, z: 0.5, fx: 0.5, fz: 0.5, speed: 0.5, out: 0.5, sx: 0.5, sz: 0.5 });   // (never a folded constant: see _steerOpts)
+
+/**
+ * The root step every mover shares — hunter-camp safe ring and world rim —
+ * reading (`_st.sx`, `_st.sz`): allocation-free whether or not it is inlined.
+ */
+export function stepRootS(m) {
+  const p = m.position;
+  let nx = p.x + _st.sx;
+  let nz = p.z + _st.sz;
+  // hunter camp is a safe zone
+  // the camp push-out and the world rim, every operation run on every call (a machine first reaching the camp
+  // edge or the rim mid-session must not deoptimise this: fix round 3); same values as the branchy form
+  const cx = nx - CAMP.x, cz = nz - CAMP.z;
+  const cd = Math.sqrt(cx * cx + cz * cz);
+  const minR = CAMP.r + m.bodyRadius;
+  const inCamp = cd < minR && cd > 0.001, cdS = cd > 0.001 ? cd : 1;
+  const pcx = CAMP.x + (cx / cdS) * minR, pcz = CAMP.z + (cz / cdS) * minR;
+  nx = inCamp ? pcx : nx; nz = inCamp ? pcz : nz;
+  const r = Math.sqrt(nx * nx + nz * nz);
+  const over = r > WORLD_LIMIT, kw = WORLD_LIMIT / (r > 0 ? r : 1);
+  const rx = nx * kw, rz = nz * kw;
+  p.x = over ? rx : nx;
+  p.z = over ? rz : nz;
+}
+/** The same step with arguments (kept for callers outside the hot paths). */
+export function stepRoot(m, dx, dz) { _st.sx = dx; _st.sz = dz; stepRootS(m); }
+
+
+/**
+ * HOT PATHS, NO PROTOTYPE LOADS (memory rule; instruments-core W0b fix round 1).
+ * `this._turnS(dt)` on a machine is a megamorphic load of a PROTOTYPE property;
+ * the game's megamorphic stub cache is far over capacity (a dozen machine
+ * classes, three.js, every lane), and a miss on a prototype-held property
+ * allocates a load handler — measured in node: 5.1 KB per frame for 7,200
+ * such loads under that pressure, 3 B without it. The per-frame helpers are
+ * therefore module functions called directly (`turnS(m, dt)`), monomorphic
+ * calls with no property load; the `Machine` methods of the same names stay as
+ * one-line wrappers for every other caller (species files, engage, squads,
+ * search, gates).
+ */
+/** `Machine._updateFx` as a module function (see HOT PATHS, NO PROTOTYPE LOADS). */
+export function updateFxM(m, dt) {
+  // finished effects are compacted out in place (`splice` returned a fresh array per removal); an effect
+  // spawned during the pass (pushed past `n`) is kept, un-stepped, after the survivors — as before
+  const fx = m._fx, n = fx.length;
+  if (n === 0) return;
+  let w = 0;
+  for (let i = 0; i < n; i++) { const f = fx[i]; if (f.update(dt)) fx[w++] = f; }
+  for (let i = n; i < fx.length; i++) fx[w++] = fx[i];
+  fx.length = w;
+}
+
+/** `Machine._turnS` as a module function (see HOT PATHS, NO PROTOTYPE LOADS). */
+export function turnS(m, dt) {
+  const sc = m.sc;
+  let d = _st.want - sc.heading;
+  while (d > Math.PI) d -= Math.PI * 2;
+  while (d < -Math.PI) d += Math.PI * 2;
+  const lim = m.turnRate * dt;
+  // facing within 1e-5 rad (0.0006°) is facing: the heading is left alone instead of being re-written in its
+  // last bits every frame (frozen gait / collision re-box `m.heading` on every change; see `get heading`)
+  if (d > 1e-5 || d < -1e-5) sc.heading += d < -lim ? -lim : d > lim ? lim : d;
+  _st.d = d;
+}
+
+/** `Machine._faceS` as a module function (see HOT PATHS, NO PROTOTYPE LOADS). */
+export function faceS(m, dt) {
+  const p = m.position;
+  _st.want = Math.atan2(_st.x - p.x, _st.z - p.z);
+  turnS(m, dt);
+}
+
+/** `Machine._moveTowardS` as a module function (see HOT PATHS, NO PROTOTYPE LOADS). */
+export function moveTowardS(m, dt) {
+  const sc = m.sc, p = m.position;
+  const dx = _st.x - p.x, dz = _st.z - p.z, speed = _st.speed;
+  const dist = Math.sqrt(dx * dx + dz * dz);
+  _st.out = dist;                 // (stored before the arrival test: one store site, run on every call)
+  if (dist < 0.01) return;
+  _st.want = Math.atan2(dx, dz);
+  turnS(m, dt);
+  const align = Math.cos(_st.d);
+  const target = align > 0.25 ? speed * (align > 1 ? 1 : align) : 0;
+  sc._speed += (target - sc._speed) * (1 - Math.exp(-5 * dt));
+  const v = sc._speed * dt;
+  const step = v < dist ? v : dist;
+  _st.sx = Math.sin(sc.heading) * step; _st.sz = Math.cos(sc.heading) * step;
+  stepRootS(m);
+  _st.out = dist;
+}
+
+/** `Machine._steerAlongS` as a module function (see HOT PATHS, NO PROTOTYPE LOADS). */
+export function steerAlongS(m, dt) {
+  const sc = m.sc, p = m.position;
+  let dx = _st.x, dz = _st.z;
+  const faceX = _st.fx, faceZ = _st.fz, speed = _st.speed;
+  const l = Math.sqrt(dx * dx + dz * dz);
+  // no direction: ease to a stop. Its loads, arithmetic and stores run on every call (a store site never run has no
+  // feedback either: fix round 3); a direction carries on below
+  const zero = l < 1e-5, sp0 = sc._speed, e6 = 1 - Math.exp(-6 * dt);
+  sc._speed = zero ? sp0 + (0 - sp0) * e6 : sp0;
+  _st.out = 0;
+  if (zero) return;
+  dx /= l; dz /= l;
+  _st.want = Math.atan2(faceX - p.x, faceZ - p.z);
+  turnS(m, dt);
+  const fx = Math.sin(sc.heading), fz = Math.cos(sc.heading);
+  const align = dx * fx + dz * fz;                 // 1 forward, 0 sideways
+  const lx = dx - fx * align, lz = dz - fz * align;
+  const lat = Math.sqrt(lx * lx + lz * lz);
+  const lateral = lat < 1 ? lat : 1;
+  const target = speed * (1 - 0.42 * lateral) * (align < -0.25 ? 0.55 : 1);
+  sc._speed += (target - sc._speed) * (1 - Math.exp(-5 * dt));
+  const step = sc._speed * dt;
+  _st.sx = dx * step; _st.sz = dz * step;
+  stepRootS(m);
+  const md = m.moveDir;
+  md.x = dx; md.y = 0; md.z = dz;
+  sc.strafeK = (dz * fx - dx * fz);
+  _st.out = step;
+}
+
+/** `Machine._navTowardS` as a module function (see HOT PATHS, NO PROTOTYPE LOADS). */
+export function navTowardS(m, dt) {
+  const nav = HOT.nav, p = m.position;   // never through m.ctx (a prototype view: see lib/hot.js)
+  const x = _st.x, z = _st.z, speed = _st.speed;
+  const dx = x - p.x, dz = z - p.z;
+  const dist = Math.sqrt(dx * dx + dz * dz);
+  _st.out = dist;                 // (stored before the arrival test: one store site, run on every call)
+  if (dist < 0.01) return;
+  if (nav && nav.ready && nav.steer) {
+    _v3.x = dx / dist; _v3.y = 0; _v3.z = dz / dist;
+    _steerOpts.radius = m.bodyRadius;               // reused: nav.steer reads it and keeps nothing
+    nav.steer(p, _v3, _v3, _steerOpts);
+    _st.x = _v3.x; _st.z = _v3.z; _st.fx = p.x + _v3.x * 4; _st.fz = p.z + _v3.z * 4; _st.speed = speed;
+    steerAlongS(m, dt);
+    _st.out = dist;
+    return;
+  }
+  moveTowardS(m, dt);
+}
+
+/**
+ * STEERING, WARMED AT SPAWN (W0b targeted fix; judge: "fight-start allocation transient in the steering helpers":
+ * gates-perf's A-alloc-rate staged fight charged `steerAlongS` 133.6 KB/s after its 3 s warm-up).
+ *
+ * MEASURED (R5_IC_GPSEQ + R5_IC_DEOPTMARK, gates-perf's sequence): `steerAlongS` and `navTowardS` deoptimised in the
+ * fight window on "wrong map" at their first load from the machine (`m.sc`, bytecode 0; `m.bodyRadius`, bytecode
+ * 165): the steering helpers are shared by every machine class (the Instrument kinds and, until W2, eleven legacy
+ * classes), and a class whose machines reached a helper for the first time only when the staged fight reset the
+ * world to patrol threw the optimised code away; each time the helpers then ran 0.2-0.6 s in the baseline tier,
+ * where every double is a heap allocation (24-60 B per operation measured, R5_IC_MATHTEST).
+ *
+ * So every machine runs every steering helper through every branch ONCE, at spawn (and every live machine once more
+ * when the navgrid first reports ready, for the nav branch of `navTowardS`): each class's map reaches every load
+ * site at boot, where the sites go megamorphic (> 4 classes) before any fight, and every compare and arithmetic
+ * operation has type feedback before the first optimisation. The machine's state is saved first and restored
+ * exactly after (position, heading, speed, strafe, travel direction, the steering scratch), so the warm-up moves
+ * nothing. Allocation-free after the first call (locals only); called once per spawn, never per frame.
+ */
+export function warmSteering(m, navOnly = false) {
+  const sc = m.sc, p = m.position, md = m.moveDir;
+  if (!sc || !p || !md) return false;
+  const px = p.x, py = p.y, pz = p.z, h0 = sc.heading, sp0 = sc._speed, sk0 = sc.strafeK, mx = md.x, my = md.y, mz = md.z;
+  const s0 = _st.want, s1 = _st.d, s2 = _st.x, s3 = _st.z, s4 = _st.fx, s5 = _st.fz, s6 = _st.speed, s7 = _st.out, s8 = _st.sx, s9 = _st.sz;
+  const dt = 0.016, nav = HOT.nav;
+  const reset = () => { p.x = px; p.y = py; p.z = pz; sc.heading = h0; sc._speed = sp0; sc.strafeK = sk0; md.x = mx; md.y = my; md.z = mz; };
+  try {
+    if (!navOnly) {
+      // turnS: wrap both ways (the while bodies), clamp both ways, inside the step, and the "already facing" case
+      const wants = [h0 + 4.1, h0 - 4.1, h0 + 1.3, h0 - 1.3, h0 + 0.01, h0 - 0.01, h0];
+      for (let i = 0; i < wants.length; i++) { _st.want = wants[i]; turnS(m, dt); reset(); }
+      // faceS
+      _st.x = px + 3.5; _st.z = pz - 2.5; faceS(m, dt); reset();
+      // moveTowardS: arrived, ahead (aligned), behind (align <= 0.25), a step longer than the distance
+      _st.speed = 1.5;
+      _st.x = px; _st.z = pz; moveTowardS(m, dt); reset();
+      _st.x = px + Math.sin(h0) * 6.5; _st.z = pz + Math.cos(h0) * 6.5; moveTowardS(m, dt); reset();
+      _st.x = px - Math.sin(h0) * 6.5; _st.z = pz - Math.cos(h0) * 6.5; moveTowardS(m, dt); reset();
+      sc._speed = 900.5; _st.x = px + Math.sin(h0) * 0.5; _st.z = pz + Math.cos(h0) * 0.5; moveTowardS(m, dt); reset();
+      // steerAlongS: no direction; forward; backward (align < -0.25); sideways
+      _st.x = 0; _st.z = 0; _st.fx = px + 1.5; _st.fz = pz + 1.5; _st.speed = 2.5; steerAlongS(m, dt); reset();
+      const fx = Math.sin(h0), fz = Math.cos(h0);
+      _st.x = fx; _st.z = fz; _st.fx = px + fx * 4.5; _st.fz = pz + fz * 4.5; _st.speed = 2.5; steerAlongS(m, dt); reset();
+      _st.x = -fx; _st.z = -fz; _st.fx = px + fx * 4.5; _st.fz = pz + fz * 4.5; _st.speed = 2.5; steerAlongS(m, dt); reset();
+      _st.x = fz; _st.z = -fx; _st.fx = px + fx * 4.5; _st.fz = pz + fz * 4.5; _st.speed = 2.5; steerAlongS(m, dt); reset();
+      // stepRootS: open ground, inside the camp ring, past the world rim
+      _st.sx = 0.05; _st.sz = -0.05; stepRootS(m); reset();
+      p.x = CAMP.x + 0.75; p.z = CAMP.z - 0.5; _st.sx = 0.05; _st.sz = 0.05; stepRootS(m); reset();
+      p.x = WORLD_LIMIT + 3.5; p.z = 0.5; _st.sx = 0.05; _st.sz = 0.05; stepRootS(m); reset();
+      // navTowardS without a navgrid (the plain chase) and arrived
+      HOT.nav = null;
+      _st.x = px + 5.5; _st.z = pz + 5.5; _st.speed = 1.5; navTowardS(m, dt); reset();
+      _st.x = px; _st.z = pz; _st.speed = 1.5; navTowardS(m, dt); reset();
+      HOT.nav = nav;
+    }
+    // navTowardS through the navgrid's whiskers (once it is ready)
+    if (nav && nav.ready && nav.steer) { _st.x = px + 5.5; _st.z = pz - 4.5; _st.speed = 1.5; navTowardS(m, dt); reset(); }
+  } finally {
+    HOT.nav = nav;
+    reset();
+    _st.want = s0; _st.d = s1; _st.x = s2; _st.z = s3; _st.fx = s4; _st.fz = s5; _st.speed = s6; _st.out = s7; _st.sx = s8; _st.sz = s9;
+  }
+  return true;
+}
+
+/** `Machine._conform` as a module function (see HOT PATHS, NO PROTOTYPE LOADS). */
+export function conformM(m, dt) {
+  const sc = m.sc, pos = m.position;
+  const t = HOT.terrain;                 // never through m.ctx (a prototype view: see lib/hot.js)
+  /* The terrain is sampled only when the root moved since the last sample (a
+   * standing machine re-uses it exactly).
+   * W0b FIX ROUND 2 — the body sits on the DRAWN ground, read through a 1 m lattice:
+   *   - `terrain.heightFast`, the published bilinear read of the render mesh's own grid (terrain.js: "agrees
+   *     with the DRAWN surface"; plan §8.3 binds `getHeight` itself to serve that grid at W1), is sampled
+   *     only at the integer-metre corners of the 1 m cell under the root (`latticeM`), when the root enters a
+   *     new cell — the corners it shares with the last cell are kept — and the height and the ground normal
+   *     are the bilinear patch over those four corners (the analytic gradient of the patch for the normal).
+   *   - integer corners are passed as Smis: a call with them boxes nothing, whatever V8 tier runs this code
+   *     (the analytic `getHeight(x, z)` every frame boxed both doubles for every moving machine, 24 B per
+   *     machine per frame: this function's whole allocation, measured).
+   *   - the patch agrees with `heightFast` to the corner samples; between them, within the curvature of a
+   *     1.94 m mesh cell over 1 m (measured p50 1 cm vs `getHeight` on the play disc). */
+  /* EVERY OPERATION RUNS ON EVERY FRAME (W0b fix round 3; judge: a conformM spike in one window, own bytes with
+   * inlining off 0 — a deopt, not an allocator). The terrain read stays conditional (a new lattice cell only); every
+   * compare and every arithmetic operation of the patch, the normal and the ground ease runs whether or not the root
+   * moved, and the stores select between the new value and the held one. Values identical to the branchy form. */
+  const x = pos.x, z = pos.z;
+  const cgOk = sc._cgOk, cgx = sc._cgx, cgz = sc._cgz, cgy = sc._cgy;
+  const c0 = cgOk === 0, cxm = x !== cgx, czm = z !== cgz;
+  const moved = c0 || cxm || czm;
+  const ni = Math.floor(x) | 0, nj = Math.floor(z) | 0;
+  const lOk = sc._lOk, li = sc._li, lj = sc._lj;
+  const l0 = lOk === 0, lni = ni !== li, lnj = nj !== lj;
+  if (moved && (l0 || lni || lnj)) latticeM(m, t, ni, nj);
+  const u = x - ni, v = z - nj;
+  const h00 = sc._h00, h10 = sc._h10, h01 = sc._h01, h11 = sc._h11;
+  const a = h00 + (h10 - h00) * u, b = h01 + (h11 - h01) * u;
+  const gyNew = a + (b - a) * v;
+  const gy = moved ? gyNew : cgy;
+  sc._cgy = gy;
+  // the patch's gradient (1 m cells): the ground normal is (-dh/dx, 1, -dh/dz), normalised
+  const align = !!m.alignToTerrain;
+  const gx = (h10 - h00) * (1 - v) + (h11 - h01) * v, gz = b - a;
+  const gl = Math.sqrt(gx * gx + 1 + gz * gz);
+  const ngx = -gx / gl, ngy = 1 / gl, ngz = -gz / gl;
+  const gN = m._gN, setN = moved && align;
+  const gnx = gN.x, gny = gN.y, gnz = gN.z;
+  gN.x = setN ? ngx : gnx; gN.y = setN ? ngy : gny; gN.z = setN ? ngz : gnz;
+  sc._cgx = x; sc._cgz = z; sc._cgOk = 1;
+  // the ground ease (an airborne root is left to its own arc)
+  const air = !!m._airborne;
+  const py = pos.y, dy = py - gy, big = dy > 4, small = dy < -4;
+  const k12 = 1 - Math.exp(-12 * dt);
+  const pyEase = py + (gy - py) * k12;
+  pos.y = air ? py : (big || small) ? gy : pyEase;
+  // the body normal eases toward the ground normal (or up), written out: no Vector3 call takes a double
+  const n = m._normal, g = m.alignToTerrain ? m._gN : _UP;
+  const k = dt * 3.5 < 1 ? dt * 3.5 : 1;
+  const nx = n.x + (g.x - n.x) * k, ny = n.y + (g.y - n.y) * k, nz = n.z + (g.z - n.z) * k;
+  const nl = Math.sqrt(nx * nx + ny * ny + nz * nz) || 1;
+  n.x = nx / nl; n.y = ny / nl; n.z = nz / nl;
+  const hh = sc.heading * 0.5, sy = Math.sin(hh), cy = Math.cos(hh);
+  const rq = m.root.quaternion, re = m.root.rotation, r1 = n.y + 1;
+  if (r1 > 1e-6 && re._order === 'XYZ') {
+    /* tilt(UP -> n) x yaw(heading), written out (W0b fix round 2). `quaternion.copy(q1).multiply(q2)` fired
+     * Object3D's quaternion -> Euler sync twice per machine per frame (makeRotationFromQuaternion,
+     * setFromRotationMatrix, MathUtils.clamp: three.js calls handing doubles across, which allocate in this
+     * frame), so the same arithmetic is done here: setFromUnitVectors((0,1,0), n) = normalize(n.z, 0, -n.x,
+     * n.y + 1), Hamilton product with (0, sin h/2, 0, cos h/2), and three's own XYZ Euler extraction, stored
+     * into the private fields so no callback re-derives either. Identical values to the three.js path. */
+    const ql = Math.sqrt(n.z * n.z + n.x * n.x + r1 * r1);
+    const ax = n.z / ql, az = -n.x / ql, aw = r1 / ql;
+    const x = ax * cy - az * sy, y = aw * sy, z = az * cy + ax * sy, w = aw * cy;
+    rq._x = x; rq._y = y; rq._z = z; rq._w = w;
+    const x2 = x + x, y2 = y + y, z2 = z + z;
+    const xx = x * x2, xy = x * y2, xz = x * z2, yy = y * y2, yz = y * z2, zz = z * z2, wx = w * x2, wy = w * y2, wz = w * z2;
+    const m11 = 1 - (yy + zz), m12 = xy - wz, m13 = xz + wy, m22 = 1 - (xx + zz), m23 = yz - wx, m32 = yz + wx, m33 = 1 - (xx + yy);
+    re._y = Math.asin(m13 < -1 ? -1 : m13 > 1 ? 1 : m13);
+    /* three's XYZ extraction has a gimbal case (|m13| ~ 1), which a pure yaw meets whenever a machine faces within
+     * 0.03 deg of +-90 deg: its call ran for the first time mid-session and deoptimised this function ("Insufficient
+     * type feedback for call", measured; 94 KB/s in that window). Both cases are computed on every frame and the
+     * result selected (fix round 3). */
+    const gimbal = !(m13 < 0.9999999 && m13 > -0.9999999);
+    const exN = Math.atan2(-m23, m33), ezN = Math.atan2(-m12, m11), exG = Math.atan2(m32, m22);
+    re._x = gimbal ? exG : exN; re._z = gimbal ? 0 : ezN;
+  } else {
+    _q1.setFromUnitVectors(_UP, n);
+    _q2._x = 0; _q2._y = sy; _q2._z = 0; _q2._w = cy;   // setFromAxisAngle(UP, heading)
+    rq.copy(_q1).multiply(_q2);
+  }
+  // smoothed acceleration → pitch cue for subclass body motion
+  /* SETTLED VALUES SETTLE (W0b fix round 2): every ease above is exponential, so a machine standing still
+   * kept changing `_speed` and `_accelPitch` in the last bits for ever — and frozen gait / collision read both
+   * through the published boxes every frame (`get _speed`: one HeapNumber per change). Inside 1 mm/s they
+   * snap to their target, which nothing can see. (Every compare runs every frame: fix round 3.) */
+  const ap = sc._accelPitch, spd = sc._speed;
+  const ap2 = ap + (spd - ap) * (1 - Math.exp(-4 * dt));
+  const sLo = spd < 1e-3, sHi = spd > -1e-3, sNz = spd !== 0;
+  const spd2 = sLo && sHi && sNz ? 0 : spd;
+  sc._speed = spd2;
+  const dap = spd2 - ap2, dLo = dap < 1e-3, dHi = dap > -1e-3, dNz = dap !== 0;
+  sc._accelPitch = dLo && dHi && dNz ? spd2 : ap2;
+}
+
+/**
+ * `Machine.update`'s own arithmetic, in two leaves (W0b fix round 3). `update` is the per-machine dispatcher: a
+ * rare path it meets for the first time (a stun, a burn, a reaction) can deoptimise it, and in the tier it then
+ * runs in every double it computes is a heap allocation (measured: 238 KB/s in one window). With its arithmetic
+ * here, a deoptimised `update` only makes calls; these leaves stay optimised on their own. Branch-free.
+ */
+export function tickTimersM(sc, dt) {
+  const a = sc._alarmCd - dt, aPos = a > 0;
+  sc._alarmCd = aPos ? a : 0;
+  const ld = sc.lampDarkT, ldOn = ld > 0, d = ld - dt, dPos = d > 0;
+  sc.lampDarkT = ldOn ? (dPos ? d : 0) : ld;
+}
+export function stateClockM(sc, dt) { sc._stateT += dt; }
+
+/**
+ * ONE SHAPE FOR EVERY LENS RECORD (W0b fix round 2). `_eyeMats` held object literals of four shapes (and the
+ * frozen shells push a fifth, without `last`), so `updateEyesM`'s loads were polymorphic and its first store of
+ * `last` on a shell record was a map transition mid-session. Every record is now this class, fields in a fixed
+ * order, doubles born Double; a record of any other shape is converted the first time `updateEyesM` meets it.
+ */
+export class EyeRecord {
+  constructor(mat, base, kind, part) {
+    this.mat = mat;
+    this.base = 0.5; this.base = typeof base === 'number' ? base : 1;
+    this.kind = kind;
+    this.last = 0.5; this.last = -1;
+    this.part = part || null;
+    /* fix round 3: the colour this record writes, cached (the material's `emissive` for a lens, its `color` for a
+     * sprite / basic eye) so `updateEyesM` touches only THREE.Color objects per frame, never a material of one of a
+     * dozen classes; `mode` 0 sprite, 1 basic (opacity follows death), 2 emissive (intensity held at 1); `op` the
+     * opacity / intensity last written (-1: never) */
+    this.mode = kind === 'emissive' ? 2 : kind === 'basic' ? 1 : 0;
+    this.col = (this.mode === 2 ? mat && mat.emissive : mat && mat.color) || new THREE.Color();
+    this.op = -1;
+    mutableFromBirth(this);
+  }
+}
+
+/**
+ * The four corner heights of the 1 m lattice cell (ni, nj) under a machine's root (see `conformM`): a corner the
+ * last cell shares is kept, the others are sampled from `terrain.heightFast` at integer metres (Smi arguments:
+ * the call boxes nothing). Each corner is stored straight into its field (no double merges across branches).
+ */
+function latticeM(m, t, ni, nj) {
+  const sc = m.sc;
+  const ok = sc._lOk === 1;
+  const di = ok ? (ni - sc._li) | 0 : 9, dj = ok ? (nj - sc._lj) | 0 : 9;
+  const o00 = sc._h00, o10 = sc._h10, o01 = sc._h01, o11 = sc._h11;
+  // new corner (a, b) at (ni + a, nj + b) is the old corner (a + di, b + dj) when both are 0 or 1
+  if (di === 0 && dj === 0) sc._h00 = o00; else if (di === 1 && dj === 0) sc._h00 = o10;
+  else if (di === 0 && dj === 1) sc._h00 = o01; else if (di === 1 && dj === 1) sc._h00 = o11;
+  else sc._h00 = t.heightFast(ni, nj);
+  if (di === -1 && dj === 0) sc._h10 = o00; else if (di === 0 && dj === 0) sc._h10 = o10;
+  else if (di === -1 && dj === 1) sc._h10 = o01; else if (di === 0 && dj === 1) sc._h10 = o11;
+  else sc._h10 = t.heightFast(ni + 1, nj);
+  if (di === 0 && dj === -1) sc._h01 = o00; else if (di === 1 && dj === -1) sc._h01 = o10;
+  else if (di === 0 && dj === 0) sc._h01 = o01; else if (di === 1 && dj === 0) sc._h01 = o11;
+  else sc._h01 = t.heightFast(ni, nj + 1);
+  if (di === -1 && dj === -1) sc._h11 = o00; else if (di === 0 && dj === -1) sc._h11 = o10;
+  else if (di === -1 && dj === 0) sc._h11 = o01; else if (di === 0 && dj === 0) sc._h11 = o11;
+  else sc._h11 = t.heightFast(ni + 1, nj + 1);
+  sc._li = ni; sc._lj = nj; sc._lOk = 1;
+}
+
+/** Every lens record of `m` as an EyeRecord (called by the manager right after a machine is constructed). */
+export function normalizeEyeRecords(m) {
+  const eyes = m._eyeMats;
+  if (!eyes) return;
+  for (let i = 0; i < eyes.length; i++) {
+    const o = eyes[i];
+    if (!(o instanceof EyeRecord)) eyes[i] = new EyeRecord(o.mat, o.base, o.kind, o.part);
+  }
+}
+
+/** `Machine._updateEyes` as a module function (see HOT PATHS, NO PROTOTYPE LOADS). */
+export function updateEyesM(m, dt, t) {
+  const sc = m.sc;
+  // the engine's sim clock, copied once per frame (lib/hot.js). Read unconditionally: a value merged from a double
+  // (the clock) and a tagged parameter (`t`) is boxed on every call in V8's optimised code
+  const tt = HOT.simTime;
+  const s = lampStateFor(m);
+  /* EVERY OPERATION RUNS ON EVERY FRAME (W0b fix round 3). An operation V8 has never run has no type feedback,
+   * and optimised code that reaches one deoptimises there; this function runs ~2,400 times a second, so after a
+   * deopt it allocated hundreds of KB/s until it was optimised again (`A-alloc-machines`: 609-1,187 KB/s in one
+   * window, three runs of five). So every load, compare and arithmetic operation below executes whatever the lamp
+   * state, the rhythm phase or the machine's kind; branches only select between locals. The lens colours are
+   * written through the THREE.Color each record caches (`EyeRecord.col`: one class, no material load), and the
+   * two rare material writes (a basic eye's opacity, an emissive lens's intensity) go through `eyeMatSetM`, only
+   * when they change. Values are identical to the branchy form (same expressions, same order). */
+  const ls = m._lampState, lp = m._lampPrev, since0 = sc._lampSince;
+  const chg = s !== ls;
+  const prev = chg ? (ls || 'calm') : lp;
+  m._lampPrev = prev;
+  m._lampState = s;
+  const since = chg ? tt : since0;
+  sc._lampSince = since;
+  // the rhythm phase, drawn once per machine when its scalars are built (MachineScalars): no branch here. Drawing it
+  // on a machine's first frame was a `lp0 < 0` test whose taken side ran only for a NEW machine, and a respawn
+  // mid-session deoptimised this function there ("lost precision or NaN" at that load, measured in gates-perf's
+  // sprint-and-draw sequence); Math.random() also boxes its result in every tier of this Chrome (12 B per call)
+  const phase = sc._lampPhase;
+  // the target colour as an index into EYE_RGB (0 calm, 3 wary, 6 hostile, 9 dark, 12 flash) and the rhythm
+  const isDark = s === 'dark', isCalm = s === 'calm', isWary = s === 'wary', isHost = s === 'hostile';
+  const pvDark = prev === 'dark', pvCalm = prev === 'calm', pvWary = prev === 'wary', pvHost = prev === 'hostile';
+  const age = tt - since, young = age < LAMP_SPUTTER_S;
+  const sputter = isDark && young && !pvDark;          // dark: the previous colour sputters, then out
+  const tiPrev = pvCalm ? 0 : pvWary ? 3 : pvHost ? 6 : 9;
+  const sputOn = Math.sin(tt * 97 + phase * 13) > 0.1;
+  // lampGain(s, tt, phase) written out: a double returned from a call is boxed
+  const tp = tt + phase;
+  const wave = RHY_PULSE + (1 - RHY_PULSE) * (0.5 + 0.5 * Math.cos(2 * Math.PI * tp));
+  const tp4 = tp * 4, flickOn = tp4 - Math.floor(tp4) < 0.5;
+  let ti = isDark ? (sputter ? tiPrev : 9) : isCalm ? 0 : isWary ? 3 : 6;
+  let pulse = isDark ? (sputter ? (sputOn ? 0.9 : 0.15) : 0) : isWary ? wave : isHost ? (flickOn ? 1 : RHY_FLICKER) : 1;
+  // legacy kinds' cues: the eye flare and the attack-windup telegraph (eye burns white-hot for ~0.4 s)
+  const lampRec = m.lamp, legacyCue = !lampRec;
+  const flare = sc._eyeFlare, flareOn = flare > 0, pulseFl = pulse * (1 + flare);
+  pulse = legacyCue && flareOn ? pulseFl : pulse;
+  sc._eyeFlare = 0;
+  const tel = sc._telegraphT, telOn = tel > 0, alive = !!m.alive, telDec = tel - dt, telAct = telOn && alive;
+  sc._telegraphT = telAct ? telDec : tel;
+  const telCue = telAct && legacyCue, pLow = pulse < 2.6;
+  ti = telCue ? 12 : ti;
+  pulse = telCue && pLow ? 2.6 : pulse;
+  // the colour eases toward the target (calm may be the machine's own variety tint, `_eyeCalm`)
+  const ec = m._eyeColor, ecm = m._eyeCalm;
+  const useTint = ti === 0 && !!ecm;
+  const er = EYE_RGB[ti], eg = EYE_RGB[ti + 1], eb = EYE_RGB[ti + 2];
+  const cr = ecm ? ecm.r : 0, cg = ecm ? ecm.g : 0, cb = ecm ? ecm.b : 0;
+  const tr = useTint ? cr : er, tg = useTint ? cg : eg, tb = useTint ? cb : eb;
+  const flash = ti === 12, ea0 = dt * (flash ? 25 : 12), eaLo = ea0 < 1, ea = eaLo ? ea0 : 1;
+  const ecr = ec.r, ecg = ec.g, ecb = ec.b;
+  const dr = tr - ecr, dg = tg - ecg, db = tb - ecb;
+  const easing = dr * dr + dg * dg + db * db > 1e-12;
+  const nr = ecr + dr * ea, ng = ecg + dg * ea, nb = ecb + db * ea;
+  const rr = easing ? nr : ecr, gg = easing ? ng : ecg, bb = easing ? nb : ecb;
+  ec.r = rr; ec.g = gg; ec.b = bb;
+  const dT = sc._deathT, lk0 = 1 - dT * 0.55, lkPos = lk0 > 0, isDeadS = m.state === 'dead';
+  const lightK = isDeadS ? (lkPos ? lk0 : 0) : 1;
+  const eyes = m._eyeMats, nE = eyes.length;
+  const ePulse = sc._ePulse, eLight = sc._eLight, eN = sc._eN;
+  const samePulse = pulse === ePulse, sameLight = lightK === eLight, sameN = nE === eN;
+  if (!sameN) normEyesM(eyes);           // a record was added (a shell's lens): one class for every record
+  // nothing a lens shows changed (steady calm, a settled colour): no lens is touched
+  const unchanged = !easing && samePulse && sameLight && sameN;
+  sc._ePulse = pulse; sc._eLight = lightK; sc._eN = nE;
+  const ek = (0.6 + pulse * 0.7) * lightK;
+  const eEm = sc._eEmis, sameEk = ek === eEm;
+  if (!unchanged) {
+    // an Instrument's lamp glass is the state colour at emissive x2.5 (bible §7.2 / §10 "lamp glass ... emissive
+    // x2.5"): it clears the bloom threshold, so a lens reads at noon. The pulse is folded into the colour and the
+    // intensity held at 1 (three uploads emissive x intensity: lit exactly as before)
+    const gainL = LAMP_GLASS_GAIN * pulse;
+    for (let i = 0; i < nE; i++) {
+      const e = eyes[i];
+      const mode = e.mode, base = e.base, col = e.col, op = e.op;
+      const kC = pulse * base, kE = legacyCue ? base * pulse : gainL;
+      const k = mode === 2 ? kE : kC;
+      col.r = rr * k; col.g = gg * k; col.b = bb * k;
+      // solid eye cores would linger as black balls on a dead machine
+      const want = mode === 1 ? (isDeadS ? 0 : 1) : 1;
+      if (want !== op) eyeMatSetM(e, want);
+    }
+    // death: EVERY light dies out (research 0.4) — body strips fade with the eyes, and identity-colored part glows
+    // (canisters/loaders/vents) gutter (lightK above)
+    if (!sameEk) {
+      sc._eEmis = ek;
+      // the same fold for the body strips: their own emissive colour (`_emisBase`, captured when first pulsed) x the
+      // pulse, intensity 1 — three stores into the THREE.Color each strip caches (`_emisCols`)
+      const emis = m._emisMats;
+      let base = m._emisBase, cols = m._emisCols;
+      if (base === null || base.length !== emis.length * 3) { base = emisBaseOf(m); cols = m._emisCols; }
+      for (let i = 0; i < cols.length; i++) {
+        const c = cols[i], j = i * 3;
+        c.r = base[j] * ek; c.g = base[j + 1] * ek; c.b = base[j + 2] * ek;
+      }
+    }
+    if (lightK < 1) dimPartGlowsM(m, lightK);
+  }
+}
+
+/** A lens record's material write, only when it changes (`updateEyesM`): a basic eye's opacity, an emissive lens's intensity 1. */
+function eyeMatSetM(e, want) {
+  e.op = want;
+  if (e.mode === 1) e.mat.opacity = want;
+  else if (e.mode === 2) { e.mat.emissiveIntensity = 1; e.last = 1; }
+}
+
+/** Every lens record as an `EyeRecord` (frozen rig/shells.js pushes plain `{ mat, base, kind }`): run when the count changes. */
+function normEyesM(eyes) {
+  for (let i = 0; i < eyes.length; i++) {
+    const o = eyes[i];
+    if (!(o instanceof EyeRecord)) eyes[i] = new EyeRecord(o.mat, o.base, o.kind, o.part);
+  }
+}
+
+/** A dying machine's part glows gutter with its lamp (`updateEyesM`, lightK < 1). */
+function dimPartGlowsM(m, lightK) {
+  for (let i = 0; i < m._partGlows.length; i++) {
+    const g = m._partGlows[i];
+    if (g.sprite) g.mat.opacity = g.base * lightK;
+    else g.mat.emissiveIntensity = g.base * lightK;
+  }
+}
+
+/**
+ * The body strips' own emissive colours, captured ONCE per material (`userData.emisBase`, the colour
+ * the model carried) when the strip is first pulsed, with its intensity set to 1: from then on
+ * `updateEyesM` pulses the colour, not the intensity (see there). The per-machine table is rebuilt only
+ * if the strip list changed size (dispose). `_emisCols` caches each strip's emissive THREE.Color (fix round 3).
+ */
+function emisBaseOf(m) {
+  const emis = m._emisMats, base = new Float32Array(emis.length * 3), cols = new Array(emis.length);
+  for (let i = 0; i < emis.length; i++) {
+    const mat = emis[i], ud = mat.userData;
+    let b = ud.emisBase;
+    if (!b) { const c = mat.emissive; b = ud.emisBase = [c.r, c.g, c.b]; mat.emissiveIntensity = 1; }
+    base[i * 3] = b[0]; base[i * 3 + 1] = b[1]; base[i * 3 + 2] = b[2];
+    cols[i] = mat.emissive;
+  }
+  m._emisBase = base;
+  m._emisCols = cols;
+  return base;
+}
+
+/**
+ * `lastKnown` x / z as two Tagged own fields (`_lkxB`, `_lkzB`), re-boxed only when the belief moved:
+ * frozen `engage.update` / `pursue` take (x, z) numbers, and a double handed to a call that is not
+ * inlined is boxed at the call — per machine, per frame. A megamorphic load of a Tagged field returns
+ * the stored box as-is, so a machine working the band against a fixed belief allocates nothing.
+ */
+export function lkBoxes(m) {
+  const sc = m.sc, lk = m.lastKnown;
+  if (sc._lkx === lk.x && sc._lkz === lk.z && m._lkxB !== null) return;
+  sc._lkx = lk.x; sc._lkz = lk.z;
+  m._lkxB = lk.x; m._lkzB = lk.z;
+}
+
+/** `Machine._updateParts` as a module function (see HOT PATHS, NO PROTOTYPE LOADS). */
+export function updatePartsM(m, dt, t) {
+  const parts = m.parts;
+  for (let i = 0; i < parts.length; i++) {
+    const p = parts[i];
+    if (p.attached && p.update) p.update(dt, t, p);
+  }
+}
+
+/** `Machine._updateElemental` as a module function (see HOT PATHS, NO PROTOTYPE LOADS). */
+export function updateElementalM(m, dt) {
+  const sc = m.sc;
+  if (sc._elemHold > 0) {
+    sc._elemHold -= dt;
+  } else {
+    const e = m.elemental;
+    if (e.fire > 0) e.fire = Math.max(0, e.fire - ELEM_DECAY * dt);
+    if (e.shock > 0) e.shock = Math.max(0, e.shock - ELEM_DECAY * dt);
+    if (e.freeze > 0) e.freeze = Math.max(0, e.freeze - ELEM_DECAY * dt);
+  }
+  if (sc.brittleT > 0) {
+    sc.brittleT -= dt;
+    sc._iceClock -= dt;
+    if (sc._iceClock <= 0 && !m.lowLOD) {
+      sc._iceClock = 0.22;
+      m._arcFlash(VFX_COLORS.saltGlint); // salt-crust glints crawling over seized plates
+    }
+  }
+  const k = sc._frostK + ((sc.brittleT > 0 ? 1 : 0) - sc._frostK) * (1 - Math.exp(-5 * dt));
+  if (Math.abs(k - sc._frostK) > 1e-4 || k > 0.003) {
+    sc._frostK = k;
+    m._applyFrost();
+  }
+}
+
+/**
+ * MONOMORPHIC HOT SCALARS — the memory rule (plan §0 rule 5, `A-alloc-rate`;
+ * instruments-core W0b fix round 1, measured by `A-alloc-machines`).
+ *
+ * A machine is an instance of one of a dozen classes (every Instrument kind, the
+ * legacy kinds until W2), so every `this.heading` read inside a shared `Machine`
+ * method sees a dozen receiver maps: the access goes MEGAMORPHIC, and V8's
+ * megamorphic load/store of a double field boxes the value — a fresh HeapNumber
+ * per read and per write, measured at ~240 B per 40-machine pass in node and at
+ * 1.8 MB/s in `Machines.update` + 0.6 MB/s in `_updateEyes` on the staged fight.
+ * The per-frame doubles therefore live on ONE monomorphic object per machine,
+ * `machine.sc` (this class, every field initialised in a fixed order), and the
+ * hot paths read `const sc = this.sc; sc.heading` — a megamorphic load of an
+ * OBJECT (no box) followed by monomorphic double loads (no box).
+ *
+ * Every other reader keeps the old name: `Machine.prototype` carries a get/set
+ * pair per field (`m.heading` / `m.heading = x` read and write `m.sc.heading`),
+ * so frozen files (gait, engage, squad, collision ...), species files, gates and
+ * other lanes see no change. A field is moved here only if it is a number on
+ * every machine at every time (never null / undefined), so its representation
+ * stays Double, and only if it CHANGES per frame: the read-mostly doubles
+ * (body radius, speeds, sight, height ...) stay own fields with a Tagged
+ * representation instead (see the constructor), which every reader, frozen
+ * files included, loads without a box.
+ */
+export const MACHINE_SCALARS = Object.freeze(['heading', '_speed', '_accelPitch', 'strafeK', 'suspicion', '_unseenT', '_stateT', 'playerDist', 'detectFill', 'scanOffset', 'health', 'lampDarkT', 'stunT', 'burnT', '_burnDps', '_flameClock', '_arcClock', 'brittleT', '_frostK', '_iceClock', '_elemHold', '_eyeFlare', '_telegraphT', '_deathT', '_waitT', '_lodAccum', '_lampSince', '_lampPhase', '_alarmCd', '_attackCd']);
+export class MachineScalars {
+  constructor() {
+    /* DOUBLE FIELDS ARE BORN DOUBLE (W0b fix round 2). A field first stored as an integer has V8's Smi
+     * representation; its first fractional value then GENERALISES it to Double — a map deprecation that
+     * deoptimises every function that touched this class, mid-session (the first wary pulse, the first
+     * telegraph, the first stun ...). Each double field is therefore stored as 0.5 first, then its value:
+     * the map is final from the constructor on. Flags and counts (`_cgOk`, `_eN`) stay Smi. */
+    this._cgOk = 0;     // _conform terrain sample cache: valid?
+    this._cgx = 0.5;    //   at x
+    this._cgz = 0.5;    //   at z
+    this._cgy = 0.5;    //   ground height there
+    this._lOk = 0;      // conformM's 1 m lattice cell: valid?
+    this._li = 0.5; this._li = 0;   //   cell indices (integer metres)
+    this._lj = 0.5; this._lj = 0;
+    this._h00 = 0.5; this._h10 = 0.5; this._h01 = 0.5; this._h11 = 0.5;   //   its corner heights
+    this._lkx = 0.5;    // lkBoxes: the lastKnown the boxes below hold
+    this._lkz = 0.5;
+    this._ePulse = 0.5; this._ePulse = -1;  // _updateEyes: the pulse, light and lens count last written to the materials
+    this._eLight = 0.5; this._eLight = -1;
+    this._eN = -1;
+    this._eEmis = 0.5; this._eEmis = -1;   //   ...and the body-strip emissive last written
+    /*
+     * PUBLISHED BOXES for the doubles that frozen files read every frame through
+     * the old names (`m.heading` in collision / gait / melee, `m._speed` and
+     * `m._accelPitch` in gait / footlock): the getter returns ONE boxed copy per
+     * change (`_pb*`, a Tagged field: returning it allocates nothing) instead of
+     * a fresh HeapNumber per read. `_pv*` is the value that box holds.
+     * FIX ROUND 3 (judge: a first read of exactly 0.5 returned the seed box's 0): `_pv*` is born NaN, which no
+     * value equals, so the FIRST read of every name always re-boxes the real value. (NaN is a double: the field
+     * is Double from the constructor on, as before.) `A-published-scalars` reads every name back through its
+     * getter after writing 0.5, 0, -1, 1e-7 and 99 through its setter on a fresh machine.
+     */
+    this._pbheading = null; this._pbheading = 0; this._pvheading = NaN;
+    this._pb_speed = null; this._pb_speed = 0; this._pv_speed = NaN;
+    this._pb_accelPitch = null; this._pb_accelPitch = 0; this._pv_accelPitch = NaN;
+    this._pbstrafeK = null; this._pbstrafeK = 0; this._pvstrafeK = NaN;
+    /* ...and the same one-box-per-change publication for every other scalar (W0b fix round 2): frozen engage /
+     * squad / HUD code reads `m.suspicion`, `m._unseenT`, `m.health` ... every frame, and a plain getter
+     * returned a fresh HeapNumber per READ; now a read of an unchanged value allocates nothing. */
+    this._pbsuspicion = null; this._pbsuspicion = 0; this._pvsuspicion = NaN;
+    this._pb_unseenT = null; this._pb_unseenT = 0; this._pv_unseenT = NaN;
+    this._pb_stateT = null; this._pb_stateT = 0; this._pv_stateT = NaN;
+    this._pbplayerDist = null; this._pbplayerDist = 0; this._pvplayerDist = NaN;
+    this._pbdetectFill = null; this._pbdetectFill = 0; this._pvdetectFill = NaN;
+    this._pbscanOffset = null; this._pbscanOffset = 0; this._pvscanOffset = NaN;
+    this._pbhealth = null; this._pbhealth = 0; this._pvhealth = NaN;
+    this._pblampDarkT = null; this._pblampDarkT = 0; this._pvlampDarkT = NaN;
+    this._pbstunT = null; this._pbstunT = 0; this._pvstunT = NaN;
+    this._pbburnT = null; this._pbburnT = 0; this._pvburnT = NaN;
+    this._pb_burnDps = null; this._pb_burnDps = 0; this._pv_burnDps = NaN;
+    this._pb_flameClock = null; this._pb_flameClock = 0; this._pv_flameClock = NaN;
+    this._pb_arcClock = null; this._pb_arcClock = 0; this._pv_arcClock = NaN;
+    this._pbbrittleT = null; this._pbbrittleT = 0; this._pvbrittleT = NaN;
+    this._pb_frostK = null; this._pb_frostK = 0; this._pv_frostK = NaN;
+    this._pb_iceClock = null; this._pb_iceClock = 0; this._pv_iceClock = NaN;
+    this._pb_elemHold = null; this._pb_elemHold = 0; this._pv_elemHold = NaN;
+    this._pb_eyeFlare = null; this._pb_eyeFlare = 0; this._pv_eyeFlare = NaN;
+    this._pb_telegraphT = null; this._pb_telegraphT = 0; this._pv_telegraphT = NaN;
+    this._pb_deathT = null; this._pb_deathT = 0; this._pv_deathT = NaN;
+    this._pb_waitT = null; this._pb_waitT = 0; this._pv_waitT = NaN;
+    this._pb_lodAccum = null; this._pb_lodAccum = 0; this._pv_lodAccum = NaN;
+    this._pb_lampSince = null; this._pb_lampSince = 0; this._pv_lampSince = NaN;
+    this._pb_lampPhase = null; this._pb_lampPhase = 0; this._pv_lampPhase = NaN;
+    this._pb_alarmCd = null; this._pb_alarmCd = 0; this._pv_alarmCd = NaN;
+    this._pb_attackCd = null; this._pb_attackCd = 0; this._pv_attackCd = NaN;
+    this.heading = 0.5; this.heading = 0;
+    this._speed = 0.5; this._speed = 0;
+    this._accelPitch = 0.5; this._accelPitch = 0;
+    this.strafeK = 0.5; this.strafeK = 0;
+    this.suspicion = 0.5; this.suspicion = 0;
+    this._unseenT = 0.5; this._unseenT = 99;
+    this._stateT = 0.5; this._stateT = 0;
+    this.playerDist = 0.5; this.playerDist = 999;
+    this.detectFill = 0.5; this.detectFill = 0;
+    this.scanOffset = 0.5; this.scanOffset = 0;
+    this.health = 0.5; this.health = 0;
+    this.lampDarkT = 0.5; this.lampDarkT = 0;
+    this.stunT = 0.5; this.stunT = 0;
+    this.burnT = 0.5; this.burnT = 0;
+    this._burnDps = 0.5; this._burnDps = 0;
+    this._flameClock = 0.5; this._flameClock = 0;
+    this._arcClock = 0.5; this._arcClock = 0;
+    this.brittleT = 0.5; this.brittleT = 0;
+    this._frostK = 0.5; this._frostK = 0;
+    this._iceClock = 0.5; this._iceClock = 0;
+    this._elemHold = 0.5; this._elemHold = 0;
+    this._eyeFlare = 0.5; this._eyeFlare = 0;
+    this._telegraphT = 0.5; this._telegraphT = 0;
+    this._deathT = 0.5; this._deathT = 0;
+    this._waitT = 0.5; this._waitT = 0;
+    this._lodAccum = 0.5; this._lodAccum = 0;
+    this._lampSince = 0.5; this._lampSince = 0;
+    this._lampPhase = 0.5; this._lampPhase = Math.random();   // the lamp rhythm's phase, drawn here (fix round 3: not on a first frame)
+    this._alarmCd = 0.5; this._alarmCd = 0;
+    this._attackCd = 0.5; this._attackCd = 0;
+  }
+}
+
 export class Machine {
   constructor(ctx, manager, opts) {
+    /** The per-frame doubles (`MachineScalars`): FIRST, so every setter below lands in it. */
+    this.sc = new MachineScalars();
+    /**
+     * READ-MOSTLY DOUBLES ARE TAGGED FIELDS. These are set once (spawn / species
+     * / a gate) and read every frame by this file AND by frozen ones (gait,
+     * collision, engage, the rig). Added with `null` first, each field takes V8's
+     * Tagged representation: a megamorphic load then returns the stored number
+     * as-is, with no HeapNumber copy — a Double-representation field is boxed on
+     * every megamorphic read (measured: 122 B vs 1.6 B per 40-machine pass in
+     * node). A write allocates once, which for these is never per frame.
+     */
+    this.turnRate = null; this.bodyRadius = null; this.walkSpeed = null; this.runSpeed = null;
+    this.sightRange = null; this.sightHalf = null; this.eyeHeight = null; this.height = null;
+    this.standoffHalfLen = null; this.hearRange = null; this.attackRange = null; this.maxHealth = null;
+    /** lkBoxes(): `lastKnown` x / z boxed once per change, and the pursuit speed (Tagged; see lkBoxes) */
+    this._lkxB = null; this._lkzB = null; this._pursueRs = null; this._pursueV = null;
     /**
      * NOT the root ctx: a read-only, prototype-chained view of it whose
      * `events.emit` is `safeEmit` (see ai/emit.js). Species files write the
@@ -98,6 +867,8 @@ export class Machine {
     this.ctx = machineCtx(ctx);
     /** The un-facaded ctx, for anything that needs bus identity. */
     this.rootCtx = ctx;
+    // the per-frame paths read lib/hot.js, never this.ctx (a prototype view); valid before the first frame
+    if (HOT.root === null && ctx) refreshHot(ctx);
     this.manager = manager;
 
     this.kind = opts.kind;
@@ -275,6 +1046,8 @@ export class Machine {
     /** Never leaves `patrol` — see `setState` (casting-v4 §2.8, Tallneck). */
     this.docile = !!opts.docile;
     this.scavenge = null;
+    /** 1 on a legacy kind (machines/index.js `spawn`): `_moveToward` returns the distance only while scavenging. */
+    this._mtOnDemand = 0;
     this._site = opts._site ?? null;
     this._frozen = false;
     this._disposed = false;
@@ -287,6 +1060,10 @@ export class Machine {
     this._burnAnchorSet = false;
     this._arcClock = 0;
     this._eyeFlare = 0; // one-frame sensor flare (attack telegraphs)
+    this.lampDarkT = 0; // a hit lamp is dark this long (bible §7.3)
+    this.lamp = null;   // the iris lamp record (`addLamp`, `machines.lamps`)
+    this.flagMark = null; // the Flag this machine is searching toward (`machines.perception`)
+    this.dustOccluded = false; // Dust hides it from the player (Dust-sight outline flag)
     this._attack = null;
     this._attackCd = 1 + Math.random() * 2;
     this._speed = 0;
@@ -317,6 +1094,8 @@ export class Machine {
     this._eyeColor = this._eyeCalm.clone();
     this._eyeMats = [];   // sprite/basic materials fully colored by state
     this._emisMats = [];  // model emissive materials tinted by state
+    this._emisBase = null; // their own emissive colours (emisBaseOf), built when first pulsed
+    this._emisCols = null; // ...and each strip's emissive THREE.Color (emisBaseOf)
     this._collectEmissive();
 
     this.weakPoints = [];
@@ -352,6 +1131,53 @@ export class Machine {
     this._lootRegistered = false;
 
     this._normal = new THREE.Vector3(0, 1, 0);
+    // read every frame by the manager / engage frame on EVERY machine: own fields, never a
+    // prototype-chain lookup of a missing name (see HOT PATHS, NO PROTOTYPE LOADS)
+    this.meleeStandoffHalfLen = null;          // collision.js publishes the melee term here
+    this._lampState = null;                    // _updateEyes: the lamp state last shown, and the one before
+    this._lampPrev = 'calm';
+    this._partsHidden = false;
+    this._fleeing = false;
+    this._downT = null; this._downT = 0;       // (Tagged: a flier's crit window, read on every machine)
+    /* FIELDS OTHER CODE ADDS LATER, DECLARED HERE (W0b fix round 3; R5_IC_DEOPTMARK shape report: live machines
+     * carried keys a fresh one lacks, so a machine's map CHANGED mid-session and the per-machine code that had seen
+     * the old map deoptimised on "wrong map" — `_statePatrol` 33 KB/s in one window). Declared undefined / null, the
+     * values every reader already treats as "not set yet" (`?? 0`, `||`, `??=`, `typeof === 'function'`):
+     *   `_doctrineSnapped`   rig/expansion-base.js, set in a microtask after construction
+     *   `onAlerted`, `_flee` ai/doctrine.js, herd kinds
+     * and the legacy species' own lazily-added fields (deleted with the legacy kinds at W2, plan §6):
+     *   glinthawk `_soar`; longleg `_pingClock` `_cadBand` `_cadLoop` `_cadence`; stormbird `_groundHold` `_perchPhase` */
+    this._doctrineSnapped = undefined;
+    this.onAlerted = null;
+    this._flee = null;
+    this._soar = undefined; this._pingClock = undefined; this._cadBand = undefined; this._cadLoop = undefined;
+    this._cadence = undefined; this._groundHold = undefined; this._perchPhase = undefined;
+    this._hasTickCd = typeof this.tickCooldowns === 'function';
+    this._hasAnimate = typeof this.animate === 'function';
+    /*
+     * OWN-FIELD METHOD SLOTS (W0b fix round 2, the memory rule; judge: "cache the per-machine tick function
+     * as an own field, so they depend on no prototype-chain loads"). The per-frame dispatch — `m.update` in
+     * the manager, the state methods and `animate` / `tickCooldowns` in `update` — loads a method off a dozen
+     * class prototypes: a megamorphic load of a PROTOTYPE property, whose stub-cache miss allocates a load
+     * handler and whose code depends on every prototype on the chain. Each is copied here, at construction,
+     * into an own data field of the same name (the subclass override when there is one, since `this`
+     * already has the subclass prototype): an own-field load misses into a Smi handler (no allocation) and
+     * depends on no prototype. Behaviour is identical — `super.update(...)` still resolves on the home
+     * object's prototype, and an instance override (`m.update = () => {}` in a gate, then putting the
+     * saved one back) still replaces the field it always replaced.
+     */
+    this.update = this.update;
+    this._statePatrol = this._statePatrol;
+    this._stateSuspicious = this._stateSuspicious;
+    this._stateAlert = this._stateAlert;
+    this._engageFrame = this._engageFrame;
+    this._stateSearch = this._stateSearch;
+    this._stateReturn = this._stateReturn;
+    this._stateStagger = this._stateStagger;
+    this._stateDowned = this._stateDowned;
+    if (this._hasAnimate) this.animate = this.animate;
+    if (this._hasTickCd) this.tickCooldowns = this.tickCooldowns;
+    this._gN = new THREE.Vector3(0, 1, 0);   // ground normal at the last terrain sample (_conform)
 
     this.root.traverse((o) => { o.userData.machine = this; });
     ctx.scene.add(this.root);
@@ -359,6 +1185,68 @@ export class Machine {
     // the brain: senses, footwork, search, move selection, hit reactions
     this.ai = new MachineAI(this);
   }
+
+  /* --------- the hot scalars by their old names (see MachineScalars) --------- */
+  get heading() { const sc = this.sc; if (sc.heading !== sc._pvheading) { sc._pbheading = sc.heading; sc._pvheading = sc.heading; } return sc._pbheading; }
+  set heading(v) { this.sc.heading = v; }
+  get _speed() { const sc = this.sc; if (sc._speed !== sc._pv_speed) { sc._pb_speed = sc._speed; sc._pv_speed = sc._speed; } return sc._pb_speed; }
+  set _speed(v) { this.sc._speed = v; }
+  get _accelPitch() { const sc = this.sc; if (sc._accelPitch !== sc._pv_accelPitch) { sc._pb_accelPitch = sc._accelPitch; sc._pv_accelPitch = sc._accelPitch; } return sc._pb_accelPitch; }
+  set _accelPitch(v) { this.sc._accelPitch = v; }
+  get strafeK() { const sc = this.sc; if (sc.strafeK !== sc._pvstrafeK) { sc._pbstrafeK = sc.strafeK; sc._pvstrafeK = sc.strafeK; } return sc._pbstrafeK; }
+  set strafeK(v) { this.sc.strafeK = v; }
+  get suspicion() { const sc = this.sc; if (sc.suspicion !== sc._pvsuspicion) { sc._pbsuspicion = sc.suspicion; sc._pvsuspicion = sc.suspicion; } return sc._pbsuspicion; }
+  set suspicion(v) { this.sc.suspicion = v; }
+  get _unseenT() { const sc = this.sc; if (sc._unseenT !== sc._pv_unseenT) { sc._pb_unseenT = sc._unseenT; sc._pv_unseenT = sc._unseenT; } return sc._pb_unseenT; }
+  set _unseenT(v) { this.sc._unseenT = v; }
+  get _stateT() { const sc = this.sc; if (sc._stateT !== sc._pv_stateT) { sc._pb_stateT = sc._stateT; sc._pv_stateT = sc._stateT; } return sc._pb_stateT; }
+  set _stateT(v) { this.sc._stateT = v; }
+  get playerDist() { const sc = this.sc; if (sc.playerDist !== sc._pvplayerDist) { sc._pbplayerDist = sc.playerDist; sc._pvplayerDist = sc.playerDist; } return sc._pbplayerDist; }
+  set playerDist(v) { this.sc.playerDist = v; }
+  get detectFill() { const sc = this.sc; if (sc.detectFill !== sc._pvdetectFill) { sc._pbdetectFill = sc.detectFill; sc._pvdetectFill = sc.detectFill; } return sc._pbdetectFill; }
+  set detectFill(v) { this.sc.detectFill = v; }
+  get scanOffset() { const sc = this.sc; if (sc.scanOffset !== sc._pvscanOffset) { sc._pbscanOffset = sc.scanOffset; sc._pvscanOffset = sc.scanOffset; } return sc._pbscanOffset; }
+  set scanOffset(v) { this.sc.scanOffset = v; }
+  get health() { const sc = this.sc; if (sc.health !== sc._pvhealth) { sc._pbhealth = sc.health; sc._pvhealth = sc.health; } return sc._pbhealth; }
+  set health(v) { this.sc.health = v; }
+  get lampDarkT() { const sc = this.sc; if (sc.lampDarkT !== sc._pvlampDarkT) { sc._pblampDarkT = sc.lampDarkT; sc._pvlampDarkT = sc.lampDarkT; } return sc._pblampDarkT; }
+  set lampDarkT(v) { this.sc.lampDarkT = v; }
+  get stunT() { const sc = this.sc; if (sc.stunT !== sc._pvstunT) { sc._pbstunT = sc.stunT; sc._pvstunT = sc.stunT; } return sc._pbstunT; }
+  set stunT(v) { this.sc.stunT = v; }
+  get burnT() { const sc = this.sc; if (sc.burnT !== sc._pvburnT) { sc._pbburnT = sc.burnT; sc._pvburnT = sc.burnT; } return sc._pbburnT; }
+  set burnT(v) { this.sc.burnT = v; }
+  get _burnDps() { const sc = this.sc; if (sc._burnDps !== sc._pv_burnDps) { sc._pb_burnDps = sc._burnDps; sc._pv_burnDps = sc._burnDps; } return sc._pb_burnDps; }
+  set _burnDps(v) { this.sc._burnDps = v; }
+  get _flameClock() { const sc = this.sc; if (sc._flameClock !== sc._pv_flameClock) { sc._pb_flameClock = sc._flameClock; sc._pv_flameClock = sc._flameClock; } return sc._pb_flameClock; }
+  set _flameClock(v) { this.sc._flameClock = v; }
+  get _arcClock() { const sc = this.sc; if (sc._arcClock !== sc._pv_arcClock) { sc._pb_arcClock = sc._arcClock; sc._pv_arcClock = sc._arcClock; } return sc._pb_arcClock; }
+  set _arcClock(v) { this.sc._arcClock = v; }
+  get brittleT() { const sc = this.sc; if (sc.brittleT !== sc._pvbrittleT) { sc._pbbrittleT = sc.brittleT; sc._pvbrittleT = sc.brittleT; } return sc._pbbrittleT; }
+  set brittleT(v) { this.sc.brittleT = v; }
+  get _frostK() { const sc = this.sc; if (sc._frostK !== sc._pv_frostK) { sc._pb_frostK = sc._frostK; sc._pv_frostK = sc._frostK; } return sc._pb_frostK; }
+  set _frostK(v) { this.sc._frostK = v; }
+  get _iceClock() { const sc = this.sc; if (sc._iceClock !== sc._pv_iceClock) { sc._pb_iceClock = sc._iceClock; sc._pv_iceClock = sc._iceClock; } return sc._pb_iceClock; }
+  set _iceClock(v) { this.sc._iceClock = v; }
+  get _elemHold() { const sc = this.sc; if (sc._elemHold !== sc._pv_elemHold) { sc._pb_elemHold = sc._elemHold; sc._pv_elemHold = sc._elemHold; } return sc._pb_elemHold; }
+  set _elemHold(v) { this.sc._elemHold = v; }
+  get _eyeFlare() { const sc = this.sc; if (sc._eyeFlare !== sc._pv_eyeFlare) { sc._pb_eyeFlare = sc._eyeFlare; sc._pv_eyeFlare = sc._eyeFlare; } return sc._pb_eyeFlare; }
+  set _eyeFlare(v) { this.sc._eyeFlare = v; }
+  get _telegraphT() { const sc = this.sc; if (sc._telegraphT !== sc._pv_telegraphT) { sc._pb_telegraphT = sc._telegraphT; sc._pv_telegraphT = sc._telegraphT; } return sc._pb_telegraphT; }
+  set _telegraphT(v) { this.sc._telegraphT = v; }
+  get _deathT() { const sc = this.sc; if (sc._deathT !== sc._pv_deathT) { sc._pb_deathT = sc._deathT; sc._pv_deathT = sc._deathT; } return sc._pb_deathT; }
+  set _deathT(v) { this.sc._deathT = v; }
+  get _waitT() { const sc = this.sc; if (sc._waitT !== sc._pv_waitT) { sc._pb_waitT = sc._waitT; sc._pv_waitT = sc._waitT; } return sc._pb_waitT; }
+  set _waitT(v) { this.sc._waitT = v; }
+  get _lodAccum() { const sc = this.sc; if (sc._lodAccum !== sc._pv_lodAccum) { sc._pb_lodAccum = sc._lodAccum; sc._pv_lodAccum = sc._lodAccum; } return sc._pb_lodAccum; }
+  set _lodAccum(v) { this.sc._lodAccum = v; }
+  get _lampSince() { const sc = this.sc; if (sc._lampSince !== sc._pv_lampSince) { sc._pb_lampSince = sc._lampSince; sc._pv_lampSince = sc._lampSince; } return sc._pb_lampSince; }
+  set _lampSince(v) { this.sc._lampSince = v; }
+  get _lampPhase() { const sc = this.sc; if (sc._lampPhase !== sc._pv_lampPhase) { sc._pb_lampPhase = sc._lampPhase; sc._pv_lampPhase = sc._lampPhase; } return sc._pb_lampPhase; }
+  set _lampPhase(v) { this.sc._lampPhase = v; }
+  get _alarmCd() { const sc = this.sc; if (sc._alarmCd !== sc._pv_alarmCd) { sc._pb_alarmCd = sc._alarmCd; sc._pv_alarmCd = sc._alarmCd; } return sc._pb_alarmCd; }
+  set _alarmCd(v) { this.sc._alarmCd = v; }
+  get _attackCd() { const sc = this.sc; if (sc._attackCd !== sc._pv_attackCd) { sc._pb_attackCd = sc._attackCd; sc._pv_attackCd = sc._attackCd; } return sc._pb_attackCd; }
+  set _attackCd(v) { this.sc._attackCd = v; }
 
   /* ------------------------- setup helpers ------------------------- */
 
@@ -376,10 +1264,10 @@ export class Machine {
         // color shows. Body strips keep their map and only pulse intensity.
         const n = (m.name || '').toLowerCase();
         if (!m.emissiveMap) {
-          this._eyeMats.push({ mat: c, base: 1.6, kind: 'emissive' });
+          this._eyeMats.push(new EyeRecord(c, 1.6, 'emissive', null));
         } else if (n.includes('lense') || n.includes('lens') || n.includes('light')) {
           c.emissiveMap = null;
-          this._eyeMats.push({ mat: c, base: 2.2, kind: 'emissive' });
+          this._eyeMats.push(new EyeRecord(c, 2.2, 'emissive', null));
         } else {
           this._emisMats.push(c);
         }
@@ -412,7 +1300,7 @@ export class Machine {
     spr.userData.machine = this;
     spr.raycast = () => {}; // glow is FX, not a hitbox (weak hits must hit the model)
     parent.add(spr);
-    this._eyeMats.push({ mat, base: intensity, kind: 'sprite' });
+    this._eyeMats.push(new EyeRecord(mat, intensity, 'sprite', null));
     if (core > 0) {
       const cm = new THREE.MeshBasicMaterial({ toneMapped: false, transparent: true });
       const mesh = new THREE.Mesh(_sphereGeo, cm);
@@ -421,9 +1309,38 @@ export class Machine {
       mesh.userData.machine = this;
       mesh.raycast = () => {};
       parent.add(mesh);
-      this._eyeMats.push({ mat: cm, base: 1, kind: 'basic' });
+      this._eyeMats.push(new EyeRecord(cm, 1, 'basic', null));
     }
     return spr;
+  }
+
+  /**
+   * THE IRIS LAMP (bible §7.2, instruments-core W0b; gates `A-lamp-states`,
+   * `A-beams-one-draw`). Registers this machine's lens with `machines.lamps`,
+   * which draws every lamp of every Instrument in ONE instanced draw (iris
+   * aperture 100/50/20 %, closed when dark) and every beam in one more.
+   *
+   *   at    an Object3D whose origin is the lens centre and whose +Z is the
+   *         lens axis, or a BODY-space [x, y, z] (an anchor facing +Z is made
+   *         under `this.body`, so `buildRig` carries it on the nearest bone —
+   *         call this BEFORE `buildRig`)
+   *   opts  { radius = 0.13 } lens radius in metres
+   * Returns the lamp record (`machine.lamp`), or null when no lamp system is
+   * installed (a studio cast, a probe). The record is released on dispose.
+   */
+  addLamp(at, opts = {}) {
+    let anchor = at;
+    if (Array.isArray(at)) {
+      const s = this._worldScale(this.body);
+      anchor = new THREE.Object3D();
+      anchor.name = 'lamp-anchor';
+      anchor.position.set(at[0] / s, at[1] / s, at[2] / s);
+      anchor.userData.machine = this;
+      anchor.userData.lampAnchor = true;
+      this.body.add(anchor);
+    }
+    this._lampAnchor = anchor;
+    return this.manager?.lamps?.attach(this, anchor, opts) ?? null;
   }
 
   /** Weak-point sphere. Offset in meters; radius is in world meters.
@@ -544,7 +1461,7 @@ export class Machine {
           this._partGlows.push({ part, mat: m, sprite: true, base: m.opacity });
         } else if (m.emissive && m.emissive.r + m.emissive.g + m.emissive.b > 0.05) {
           if (m.userData?.sensor) {
-            this._eyeMats.push({ mat: m, base: m.emissiveIntensity, kind: 'emissive', part });
+            this._eyeMats.push(new EyeRecord(m, m.emissiveIntensity, 'emissive', part));
           } else {
             this._partGlows.push({ part, mat: m, sprite: false, base: m.emissiveIntensity });
           }
@@ -631,7 +1548,9 @@ export class Machine {
    */
   attackDisabled(id) {
     let linked = false;
-    for (const p of this.parts) {
+    const parts = this.parts;   // (indexed: a for-of builds an array iterator in V8's mid tier; per frame per row)
+    for (let i = 0; i < parts.length; i++) {
+      const p = parts[i];
       if (p.linkedAttack !== id) continue;
       linked = true;
       if (p.attached) return false;
@@ -639,11 +1558,7 @@ export class Machine {
     return linked;
   }
 
-  _updateParts(dt, t) {
-    for (const p of this.parts) {
-      if (p.attached && p.update) p.update(dt, t, p);
-    }
-  }
+  _updateParts(dt, t) { updatePartsM(this, dt, t); }
 
   _disposeSubtree(obj) {
     obj.traverse((o) => {
@@ -761,6 +1676,8 @@ export class Machine {
           const wm = wp.mult ?? 3;
           mult = Math.max(mult, wm);
           if (wm >= 2) weak = true;
+          // bible §7.3: a precise hit on the LAMP darkens it for 6 s (sight off)
+          if (wp.name === 'lamp' && this.alive) this.lampDarkT = LAMP_DARK_S;
         }
       }
     }
@@ -881,7 +1798,7 @@ export class Machine {
       this.brittleT = 8;
       _v1.copy(point ?? this.position);
       if (!point) _v1.y += this.height * 0.5;
-      this._sparkBurst(_v1, 26, 0xbfefff); // icy shatter glints
+      this._sparkBurst(_v1, 26, VFX_COLORS.saltGlint); // seized-crust shatter glints
     }
   }
 
@@ -1033,9 +1950,10 @@ export class Machine {
 
   /** Elemental explosion FX: fireball/ice-burst + ring + sparks + smoke. */
   _explosionFX(pos, el) {
-    const hot = new THREE.Color(el === 'fire' ? 0xfff1d8 : el === 'freeze' ? 0xf2ffff : 0xffffff);
-    const mid = new THREE.Color(el === 'fire' ? 0xff7a1e : el === 'freeze' ? 0x63d8ff : 0x8fb8ff);
-    const late = new THREE.Color(el === 'fire' ? 0xc23a10 : el === 'freeze' ? 0x2a7ab8 : 0x4a5fb8);
+    const V = VFX_COLORS;
+    const hot = new THREE.Color(el === 'fire' ? V.cinderHot : el === 'freeze' ? V.brineHot : V.dustHot);
+    const mid = new THREE.Color(el === 'fire' ? V.cinderMid : el === 'freeze' ? V.brineMid : V.dustMid);
+    const late = new THREE.Color(el === 'fire' ? V.cinderLate : el === 'freeze' ? V.brineLate : V.dustLate);
     this.spawnShockRing(pos.x, pos.z, 5.5, 0.5, 0, 0);
     this._sparkBurst(pos, 34, mid.getHex());
     if (el === 'fire') this._smokeBurst(pos, 8);
@@ -1093,6 +2011,7 @@ export class Machine {
   /* ------------------------- state machine ------------------------- */
 
   setState(name) {
+    const sc = this.sc;
     /**
      * DOCILE MACHINES NEVER LEAVE THE LOOP (casting-v4.md §2.8, the Tallneck).
      *
@@ -1111,11 +2030,20 @@ export class Machine {
     const wasCalm = this.state === 'patrol' || this.state === 'return' || this.state === 'suspicious';
     const prev = this.state;
     this.state = name;
-    this._stateT = 0;
+    sc._stateT = 0;
     if ((name === 'alert' || name === 'attack') && !this._alertEpisode) {
       this._alertEpisode = true;
       this.emit('machine-alerted', { machine: this });
       this.onAlerted?.(wasCalm);
+      /**
+       * THE FLAG (bible §7.4 Sightline, §4.7 "Shrug"; instruments-core W0b):
+       * a machine whose perception row says `flags: true` (or one staged with
+       * `flagsOnSight`) that goes hostile BY SIGHT with a lit lamp marks her
+       * for `machines.perception.flagDuration` seconds.
+       */
+      if (this._visible && (this.flagsOnSight ?? this.perceptCfg?.flags) && !(sc.lampDarkT > 0)) {
+        this.manager?.perception?.flagPlayer(this);
+      }
     }
     if (name === 'patrol' || name === 'return') {
       this._alertEpisode = false;
@@ -1144,32 +2072,33 @@ export class Machine {
   }
 
   update(dt, t) {
+    const sc = this.sc;
     if (this._disposed) return;
     if (this.state === 'dead') {
       // perf-tech-08: a frozen wreck costs nothing. The site manager flips
       // `_frozen` 10 s after death and disposes it entirely at ~82 s.
       if (this._frozen) return;
       this._updateDeath(dt);
-      this._updateFx(dt);
-      this._updateEyes(dt, t);
+      updateFxM(this, dt);
+      updateEyesM(this, dt, t);
       return;
     }
 
     this.ai.tick(dt);
-    this._alarmCd = Math.max(0, this._alarmCd - dt);
+    tickTimersM(sc, dt);   // the alarm cooldown and the darkened-lamp clock (a leaf: see tickTimersM)
 
     // attack-timer cooldowns tick unconditionally (lowLOD coarse steps and
     // stun must not freeze them — subclasses implement tickCooldowns)
-    this.tickCooldowns?.(dt);
+    if (this._hasTickCd) this.tickCooldowns(dt);
 
     // burn DoT ticks even while stunned — sustained flames + smoke at the
     // stuck-arrow point (SPEC: "orange flame particles")
-    if (this.burnT > 0) {
-      this.burnT -= dt;
-      this.health -= this._burnDps * dt;
-      this._flameClock -= dt;
-      if (this._flameClock <= 0 && !this.lowLOD) {
-        this._flameClock = 0.07;
+    if (sc.burnT > 0) {
+      sc.burnT -= dt;
+      sc.health -= sc._burnDps * dt;
+      sc._flameClock -= dt;
+      if (sc._flameClock <= 0 && !this.lowLOD) {
+        sc._flameClock = 0.07;
         if (this._burnAnchorSet) {
           _v1.copy(this._burnAnchor);
           this.body.localToWorld(_v1);
@@ -1183,38 +2112,38 @@ export class Machine {
         this._flamePuff(_v1);
         if (Math.random() < 0.3) this._burnSmoke(_v1);
       }
-      if (this.health <= 0) { this._die(); return; }
+      if (sc.health <= 0) { this._die(); return; }
     }
 
     // elemental buildup decay + brittle/frost status (runs through stun too)
-    this._updateElemental(dt);
+    updateElementalM(this, dt);
 
-    if (this.stunT > 0) {
-      this.stunT -= dt;
+    if (sc.stunT > 0) {
+      sc.stunT -= dt;
       // shock: frozen — shiver + jittering electric arcs (SPEC: "electric arcs")
       this.body.position.x = (Math.random() - 0.5) * 0.035;
-      this._arcClock -= dt;
-      if (this._arcClock <= 0 && !this.lowLOD) {
-        this._arcClock = 0.09;
+      sc._arcClock -= dt;
+      if (sc._arcClock <= 0 && !this.lowLOD) {
+        sc._arcClock = 0.09;
         this._arcFlash();
       }
-      this._speed = 0;
-      this._conform(dt);
-      this._updateFx(dt);
-      this._updateEyes(dt, t);
+      sc._speed = 0;
+      conformM(this, dt);
+      updateFxM(this, dt);
+      updateEyesM(this, dt, t);
       return;
     }
     this.body.position.x = 0;
 
-    this._stateT += dt;
-    this._perceive(dt);
+    stateClockM(sc, dt);
+    this.ai.perception.update(dt);       // (`_perceive`, without the prototype load)
 
     // hit reactions own the frame while a stagger / downed window runs
     if (this.ai.reactions.update(dt)) {
-      this._conform(dt);
-      if (!this.lowLOD) { this.animate?.(dt, t); this._updateParts(dt, t); }
-      this._updateFx(dt);
-      this._updateEyes(dt, t);
+      conformM(this, dt);
+      if (!this.lowLOD) { if (this._hasAnimate) this.animate(dt, t); updatePartsM(this, dt, t); }
+      updateFxM(this, dt);
+      updateEyesM(this, dt, t);
       return;
     }
 
@@ -1229,38 +2158,16 @@ export class Machine {
       case 'downed': this._stateDowned(dt); break;
     }
 
-    this._conform(dt);
+    conformM(this, dt);
     if (!this.lowLOD) {
-      this.animate?.(dt, t);
-      this._updateParts(dt, t); // radar spin, canister glow pulses, …
+      if (this._hasAnimate) this.animate(dt, t);
+      updatePartsM(this, dt, t); // radar spin, canister glow pulses, …
     }
-    this._updateFx(dt);
-    this._updateEyes(dt, t);
+    updateFxM(this, dt);
+    updateEyesM(this, dt, t);
   }
 
-  _updateElemental(dt) {
-    if (this._elemHold > 0) {
-      this._elemHold -= dt;
-    } else {
-      const e = this.elemental;
-      if (e.fire > 0) e.fire = Math.max(0, e.fire - ELEM_DECAY * dt);
-      if (e.shock > 0) e.shock = Math.max(0, e.shock - ELEM_DECAY * dt);
-      if (e.freeze > 0) e.freeze = Math.max(0, e.freeze - ELEM_DECAY * dt);
-    }
-    if (this.brittleT > 0) {
-      this.brittleT -= dt;
-      this._iceClock -= dt;
-      if (this._iceClock <= 0 && !this.lowLOD) {
-        this._iceClock = 0.22;
-        this._arcFlash(0xaef2ff); // icy glints crawling over frozen plates
-      }
-    }
-    const k = THREE.MathUtils.damp(this._frostK, this.brittleT > 0 ? 1 : 0, 5, dt);
-    if (Math.abs(k - this._frostK) > 1e-4 || k > 0.003) {
-      this._frostK = k;
-      this._applyFrost();
-    }
-  }
+  _updateElemental(dt) { updateElementalM(this, dt); }
 
   /** BRITTLE visual: whole-body frost tint (lazy per-machine material list).
    *  Entries remember their owning part so tear-off debris is un-tinted and
@@ -1287,8 +2194,9 @@ export class Machine {
   /* ------------------------- state machine ------------------------- */
 
   _statePatrol(dt) {
+    const sc = this.sc;
     const c = this.perceptCfg;
-    if (this.suspicion > c.susEnter) { this.setState('suspicious'); return; }
+    if (sc.suspicion > c.susEnter) { this.setState('suspicious'); return; }
     // ecosystem overrides of the plain waypoint loop (machine-ai-14)
     if (this.scavenge && Squads.stepScavenge(this, dt)) return;
     if (this.escort && Squads.stepEscort(this, dt)) return;
@@ -1306,22 +2214,24 @@ export class Machine {
       const b = this._basking;
       if (b) {
         b.t += dt;
-        this._speed = THREE.MathUtils.damp(this._speed, 0, 8, dt);
-        this.heading += Math.sin(b.t * 0.35 + b.phase) * dt * 0.12;
+        sc._speed += (0 - sc._speed) * (1 - Math.exp(-8 * dt));
+        sc.heading += Math.sin(b.t * 0.35 + b.phase) * dt * 0.12;
         this.aiPose.forage = 0.15 + 0.15 * Math.sin(b.t * 0.9 + b.phase);
         return;
       }
     }
-    if (this._waitT > 0) {
-      this._waitT -= dt;
-      this._speed = THREE.MathUtils.damp(this._speed, 0, 6, dt);
+    if (sc._waitT > 0) {
+      sc._waitT -= dt;
+      sc._speed += (0 - sc._speed) * (1 - Math.exp(-6 * dt));
       return;
     }
     const wp = this.route[this._wpIndex];
-    const d = this._navToward(wp.x, wp.z, this.walkSpeed, dt);
+    _st.x = wp.x; _st.z = wp.z; _st.speed = this.walkSpeed;
+    navTowardS(this, dt);
+    const d = _st.out;
     if (d < this.bodyRadius + 0.6) {
       this._wpIndex = (this._wpIndex + 1) % this.route.length;
-      this._waitT = 1.2 + Math.random() * 2.4;
+      sc._waitT = 1.2 + Math.random() * 2.4;
     }
   }
 
@@ -1330,34 +2240,39 @@ export class Machine {
    * where the NOISE was, never where the player is. A lure holds it there.
    */
   _stateSuspicious(dt) {
+    const sc = this.sc;
     const c = this.perceptCfg;
-    if (this.suspicion >= c.alertAt) { this.setState('alert'); return; }
-    if (this.suspicion < 0.06 && this.ai.lureT <= 0) { this.setState('return'); return; }
+    if (sc.suspicion >= c.alertAt) { this.setState('alert'); return; }
+    if (sc.suspicion < 0.06 && this.ai.lureT <= 0) { this.setState('return'); return; }
     const lk = this.ai.lureT > 0 ? this.ai.lurePos : this.lastKnown;
-    if (this._stateT < 0.9) {
-      this._face(lk.x, lk.z, dt);
-      this._speed = THREE.MathUtils.damp(this._speed, 0, 6, dt);
+    if (sc._stateT < 0.9) {
+      _st.x = lk.x; _st.z = lk.z;
+      faceS(this, dt);
+      sc._speed += (0 - sc._speed) * (1 - Math.exp(-6 * dt));
       return;
     }
-    const d = this._navToward(lk.x, lk.z, this.walkSpeed * 0.7, dt);
+    _st.x = lk.x; _st.z = lk.z; _st.speed = this.walkSpeed * 0.7;
+    navTowardS(this, dt);
+    const d = _st.out;
     if (d < 2.5) {
-      this._speed = THREE.MathUtils.damp(this._speed, 0, 6, dt);
-      this.heading += Math.sin(this._stateT * 1.6) * dt * 0.9;
-      if (this.ai.lureT <= 0) this.suspicion = Math.max(0, this.suspicion - dt * 0.3);
+      sc._speed += (0 - sc._speed) * (1 - Math.exp(-6 * dt));
+      sc.heading += Math.sin(sc._stateT * 1.6) * dt * 0.9;
+      if (this.ai.lureT <= 0) { const sv = sc.suspicion - dt * 0.3; sc.suspicion = sv > 0 ? sv : 0; }
     }
     // nothing found where the noise was: sweep the area properly
-    if (this._stateT > 6 && this.ai.lureT <= 0) {
+    if (sc._stateT > 6 && this.ai.lureT <= 0) {
       this.ai.beginSearch();
       this.setState('search');
     }
   }
 
   _stateAlert(dt) {
-    const p = this.ctx.player;
-    const face = this._visible && p ? p.position : this.lastKnown;
-    this._face(face.x, face.z, dt);
-    this._speed = THREE.MathUtils.damp(this._speed, 0, 6, dt);
-    if (this._stateT > 0.65) this.setState('attack');
+    const sc = this.sc;
+    const face = this._visible && HOT.pOk === 1 ? HOT.ppos : this.lastKnown;   // (her position this frame, lib/hot.js)
+    _st.x = face.x; _st.z = face.z;
+    faceS(this, dt);
+    sc._speed += (0 - sc._speed) * (1 - Math.exp(-6 * dt));
+    if (sc._stateT > 0.65) this.setState('attack');
   }
 
   /**
@@ -1378,10 +2293,12 @@ export class Machine {
    * filed to `machine-rig` to delete the now-dead `_stateAttack` overrides.
    */
   _engageFrame(dt) {
+    const sc = this.sc;
     if (this._attack) { this._updateAttack(dt); return; }
-    this._attackCd -= dt;
-    const p = this.ctx.player;
-    if (!p) { this.setState('return'); return; }
+    sc._attackCd -= dt;
+    // her position this frame (lib/hot.js): never her own object, whose shape changes deoptimise its readers
+    if (HOT.pOk !== 1) { this.setState('return'); return; }
+    const pp = HOT.ppos;
 
     /**
      * KNIFE-RANGE CONTACT (fix round 1, `A41b-attack-coverage`).
@@ -1402,20 +2319,21 @@ export class Machine {
      * earned), and a machine that has genuinely lost her — stale belief —
      * gets nothing and keeps searching. See PERCEPTION.contactRange notes.
      */
-    _v1.set(p.position.x - this.position.x, 0, p.position.z - this.position.z);
-    const distNow = Math.hypot(_v1.x, _v1.z);
+    const mp = this.position;
+    const ddx = pp.x - mp.x, ddz = pp.z - mp.z;
+    const distNow = Math.sqrt(ddx * ddx + ddz * ddz);
     const cr = this.perceptCfg.contactRange ?? 0;
     let contact = false;
     if (!this._visible && cr > 0 && distNow <= cr + this.bodyRadius) {
-      const bx = this.lastKnown.x - p.position.x, bz = this.lastKnown.z - p.position.z;
+      const bx = this.lastKnown.x - pp.x, bz = this.lastKnown.z - pp.z;
       const slack = this.perceptCfg.contactSlack ?? 2;
       contact = bx * bx + bz * bz <= slack * slack;
     }
     // in contact it has NOT lost her: the search countdown cannot mature
-    if (contact) this._unseenT = Math.min(this._unseenT, 1.5);
+    if (contact && sc._unseenT > 1.5) sc._unseenT = 1.5;   // (no Math.* call takes a double)
     const engaged = this._visible || contact;
 
-    if (this._unseenT > 4.5) { this.ai.beginSearch(); this.setState('search'); return; }
+    if (sc._unseenT > 4.5) { this.ai.beginSearch(); this.setState('search'); return; }
     // soft leash (machine-ai-18): dragged too far from home, it disengages —
     // its senses keep working the whole way, only the pursuit gives up
     if (this.ai.engage.leashed()) { this.setState('return'); return; }
@@ -1424,13 +2342,17 @@ export class Machine {
     if (this._fleeing && typeof this._flee === 'function') { this._flee(dt); return; }
     // a burn-grounded flier flops toward her: pure Critical Hit window
     if (this._downT > 0) {
-      this._moveToward(p.position.x, p.position.z, 1.4, dt);
+      _st.x = pp.x; _st.z = pp.z; _st.speed = 1.4;
+      moveTowardS(this, dt);
       return;
     }
 
     if (engaged) {
       this.ai.engage.noteSeen();
-      this.ai.engage.update(dt, p.position.x, p.position.z);
+      // the player's x / z as this frame's two shared boxes (lib/hot.js): a double handed to frozen
+      // engage.update is otherwise boxed per call, per machine, per frame
+      playerBoxes();
+      this.ai.engage.update(dt, HOT.playerX, HOT.playerZ);
     } else if (this.ai.engage.noteBlind(dt)) {
       /**
        * A LOST SIGHTLINE IS NOT A LOST FIGHT (FIX ROUND 3,
@@ -1464,17 +2386,20 @@ export class Machine {
        * the band still owns the frame. Past `beliefHold` it says no and the
        * pursuit below takes over; past `_unseenT > 4.5` the fight is a search.
        */
-      this.ai.engage.update(dt, this.lastKnown.x, this.lastKnown.z);
+      lkBoxes(this);
+      this.ai.engage.update(dt, this._lkxB, this._lkzB);
     } else {
       // it knows roughly where she was; it does not know where she IS
-      this.ai.engage.pursue(dt, this.lastKnown.x, this.lastKnown.z, this.runSpeed * 0.9);
+      lkBoxes(this);
+      if (this._pursueRs !== this.runSpeed) { this._pursueRs = this.runSpeed; this._pursueV = this.runSpeed * 0.9; }
+      this.ai.engage.pursue(dt, this._lkxB, this._lkzB, this._pursueV);
     }
     // a flier holds its cruise altitude while it works the band (the flight
     // model owns y; `_steerAlong` only ever moves it in XZ)
     if (this._airborne && typeof this._fly === 'function') {
       this._fly(this.flyCruise ?? 11, dt);
     }
-    if (engaged && this._attackCd <= 0) {
+    if (engaged && sc._attackCd <= 0) {
       /**
        * Selection distance is measured HERE, not read from `playerDist`.
        *
@@ -1488,8 +2413,8 @@ export class Machine {
        * gate exists for, arriving by a different road. One hypot, and only on
        * the frames the machine is actually off its global attack cooldown.
        */
-      _v1.set(p.position.x - this.position.x, 0, p.position.z - this.position.z);
-      const a = this.ai.chooseAttack(Math.hypot(_v1.x, _v1.z));
+      const sx = pp.x - mp.x, sz = pp.z - mp.z;   // after this frame's footwork moved it
+      const a = this.ai.chooseAttack(Math.sqrt(sx * sx + sz * sz));
       if (a) this._startAttack(a);
     }
   }
@@ -1499,8 +2424,9 @@ export class Machine {
 
   /** 12-20 s sweep of the cover around the last contact (machine-ai-11). */
   _stateSearch(dt) {
+    const sc = this.sc;
     const c = this.perceptCfg;
-    if (this.suspicion >= c.alertAt) { this.ai.search.stop(); this.setState('alert'); return; }
+    if (sc.suspicion >= c.alertAt) { this.ai.search.stop(); this.setState('alert'); return; }
     if (!this.ai.search.active) this.ai.beginSearch();
     if (!this.ai.search.update(dt)) {
       this.ai.search.stop();
@@ -1509,13 +2435,16 @@ export class Machine {
   }
 
   _stateReturn(dt) {
+    const sc = this.sc;
     const c = this.perceptCfg;
-    if (this.suspicion >= c.alertAt) { this.setState('alert'); return; }
-    if (this.suspicion > c.susEnter) { this.setState('suspicious'); return; }
+    if (sc.suspicion >= c.alertAt) { this.setState('alert'); return; }
+    if (sc.suspicion > c.susEnter) { this.setState('suspicious'); return; }
     const wp = this.route[this._wpIndex];
-    const d = this._navToward(wp.x, wp.z, this.walkSpeed * 1.25, dt);
+    _st.x = wp.x; _st.z = wp.z; _st.speed = this.walkSpeed * 1.25;
+    navTowardS(this, dt);
+    const d = _st.out;
     if (d < this.bodyRadius + 1) {
-      this.suspicion = 0;
+      sc.suspicion = 0;
       this.ai.engage.reset();
       this.setState('patrol');
     }
@@ -1523,24 +2452,28 @@ export class Machine {
 
   /** Planted while a hit lands home (`machine-ai-10`); the rig reads `_react`. */
   _stateStagger(dt) {
-    this._speed = THREE.MathUtils.damp(this._speed, 0, 8, dt);
+    const sc = this.sc;
+    sc._speed += (0 - sc._speed) * (1 - Math.exp(-8 * dt));
   }
 
   /** Down: the Critical Hit window. Reactions owns the timer. */
   _stateDowned(dt) {
-    this._speed = THREE.MathUtils.damp(this._speed, 0, 8, dt);
+    const sc = this.sc;
+    sc._speed += (0 - sc._speed) * (1 - Math.exp(-8 * dt));
   }
 
   /* ------------------------- attacks ------------------------- */
 
   _startAttack(a) {
-    a.t = 0;
+    const sc = this.sc;
+    a.t = 0.5; a.t = 0;                  // (born Double: a.t / a.phaseT are written every frame; W0b fix round 2)
     a.struck = false;
     a.phase = 'windup';
     a.hit = false;
+    a.phaseT = 0.5; a.phaseT = 0;
     this._attack = a;
     // canon dodge cue: white-hot eye flash at every attack windup
-    this._telegraphT = TELEGRAPH_T;
+    sc._telegraphT = TELEGRAPH_T;
     this.emit('machine-telegraph', { machine: this });
     this.emit('machine-attack', { machine: this, kind: a.kind });
     this.emit('machine-attack-phase', { machine: this, kind: a.kind, attack: a.kind, phase: 'windup' });
@@ -1548,6 +2481,7 @@ export class Machine {
   }
 
   _updateAttack(dt) {
+    const sc = this.sc;
     const a = this._attack;
     a.t += dt;
     const w = a.windup, s = a.strike, r = a.recover;
@@ -1556,9 +2490,9 @@ export class Machine {
       a.phase = 'windup'; a.phaseT = a.t / w;
       if (a.track !== false) {
         // track the target it can actually see; otherwise commit to lastKnown
-        const p = this._visible ? this.ctx.player : null;
-        const tgt = p ? p.position : this.lastKnown;
-        this._face(tgt.x, tgt.z, dt);
+        const tgt = this._visible && HOT.pOk === 1 ? HOT.ppos : this.lastKnown;
+        _st.x = tgt.x; _st.z = tgt.z;
+        faceS(this, dt);
       }
     } else if (a.t < w + s) {
       if (!a.struck) { a.struck = true; a.onStrike?.(a); }
@@ -1577,7 +2511,7 @@ export class Machine {
       const planted = plant === 'windup'
         ? a.phase === 'windup' || a.phase === 'recover'
         : true;
-      if (planted) this._speed = THREE.MathUtils.damp(this._speed, 0, 10, dt);
+      if (planted) sc._speed += (0 - sc._speed) * (1 - Math.exp(-10 * dt));
     }
     if (a.phase !== was) {
       this.emit('machine-attack-phase', { machine: this, kind: a.kind, attack: a.kind, phase: a.phase });
@@ -1585,7 +2519,7 @@ export class Machine {
     a.onUpdate?.(a, dt);
     if (a.t >= w + s + r) {
       a.cleanup?.(a);
-      this._attackCd = a.cooldown ?? 2.5;
+      sc._attackCd = a.cooldown ?? 2.5;
       // miss recovery (machine-ai-08): a whiff backs it off and is remembered
       this.ai.picker.finish(a);
       // ...and the footwork re-chooses its standoff for the NEXT move, which
@@ -1599,23 +2533,25 @@ export class Machine {
   }
 
   _cancelAttack() {
+    const sc = this.sc;
     if (!this._attack) return;
     const a = this._attack;
     a.cleanup?.(a);
     this._attack = null;
-    this._attackCd = Math.max(this._attackCd, 1.2);
+    sc._attackCd = Math.max(sc._attackCd, 1.2);
     this.emit('machine-attack-phase', { machine: this, kind: a.kind, attack: a.kind, phase: 'cancel' });
   }
 
   /** Deal damage to the player if within range (and optionally in front arc). */
   damagePlayer(amount, maxRange, arcCos = -2) {
+    const sc = this.sc;
     const p = this.ctx.player;
     if (!p) return false;
     _v1.subVectors(p.position, this.position);
-    const d = Math.hypot(_v1.x, _v1.z);
+    const d = Math.sqrt(_v1.x * _v1.x + _v1.z * _v1.z);
     if (d > maxRange) return false;
     if (arcCos > -1.5 && d > 0.01) {
-      const fx = Math.sin(this.heading), fz = Math.cos(this.heading);
+      const fx = Math.sin(sc.heading), fz = Math.cos(sc.heading);
       if ((_v1.x * fx + _v1.z * fz) / d < arcCos) return false;
     }
     this.emit('player-damage', { amount, from: this });
@@ -1630,7 +2566,7 @@ export class Machine {
     const p = this.ctx.player;
     if (!p) return false;
     _v1.subVectors(p.position, this.position);
-    const d = Math.hypot(_v1.x, _v1.z);
+    const d = Math.sqrt(_v1.x * _v1.x + _v1.z * _v1.z);
     if (d > maxRange) return false;
     if (d > 0.01) {
       const fx = Math.sin(bearing), fz = Math.cos(bearing);
@@ -1641,11 +2577,12 @@ export class Machine {
   }
 
   knockbackPlayer(strength) {
+    const sc = this.sc;
     const p = this.ctx.player;
     if (!p || p.dodging) return;
     _v1.subVectors(p.position, this.position);
     _v1.y = 0;
-    if (_v1.lengthSq() < 0.01) _v1.set(Math.sin(this.heading), 0, Math.cos(this.heading));
+    if (_v1.lengthSq() < 0.01) _v1.set(Math.sin(sc.heading), 0, Math.cos(sc.heading));
     _v1.normalize();
     p.velocity.x += _v1.x * strength;
     p.velocity.z += _v1.z * strength;
@@ -1674,77 +2611,67 @@ export class Machine {
 
   /* ------------------------- steering ------------------------- */
 
-  _turnToward(want, dt) {
-    let d = want - this.heading;
-    while (d > Math.PI) d -= Math.PI * 2;
-    while (d < -Math.PI) d += Math.PI * 2;
-    const step = THREE.MathUtils.clamp(d, -this.turnRate * dt, this.turnRate * dt);
-    this.heading += step;
-    return d;
-  }
+  /* The steering helpers. The `S` forms read and write `_st` (see STEERING
+   * SCRATCH) and take only `dt`; the named forms below keep their signatures
+   * for every other caller (engage, squads, search, the species files). */
 
-  _face(x, z, dt) {
-    return this._turnToward(Math.atan2(x - this.position.x, z - this.position.z), dt);
-  }
+  /** Turn toward `_st.want` at `turnRate`; `_st.d` = the signed difference before the step. */
+  _turnS(dt) { turnS(this, dt); }
 
+  /** Face the point (`_st.x`, `_st.z`). */
+  _faceS(dt) { faceS(this, dt); }
+
+  /** Plain heading chase to (`_st.x`, `_st.z`) at `_st.speed`; `_st.out` = distance. */
+  _moveTowardS(dt) { moveTowardS(this, dt); }
+
+  /**
+   * Combat footwork primitive (`machine-ai-02`): translate along (`_st.x`,
+   * `_st.z`) while the heading turns toward (`_st.fx`, `_st.fz`). Sideways
+   * travel costs speed, which is what keeps a circling predator readable rather
+   * than a hovercraft. Publishes `moveDir` / `strafeK` for `machine-rig`'s gait.
+   * `_st.out` = metres actually covered this frame.
+   */
+  _steerAlongS(dt) { steerAlongS(this, dt); }
+
+  /**
+   * Waypoint travel with the navgrid's whiskers applied (`machine-ai-01`) to
+   * (`_st.x`, `_st.z`) at `_st.speed`; `_st.out` = distance. Falls back to the
+   * plain heading chase when `ctx.nav` is not installed.
+   */
+  _navTowardS(dt) { navTowardS(this, dt); }
+
+  _turnToward(want, dt) { _st.want = want; turnS(this, dt); return _st.d; }
+
+  _face(x, z, dt) { _st.x = x; _st.z = z; faceS(this, dt); return _st.d; }
+
+  /**
+   * Plain heading chase to (x, z) at `speed`. @returns the distance to the point — on an Instrument always; on a
+   * legacy kind (`_mtOnDemand` 1) only while it is scavenging (W0b targeted fix; judge: "`_moveToward` reached 4.38
+   * KB/s in A-alloc-machines' paired no-inline run"). MEASURED (a census of every call in A-alloc-machines' staging,
+   * 405 frames): 4.89 calls per frame, all on legacy kinds — 3.67 from `Glinthawk._orbit` (glinthawk.js:144), 1.22
+   * from the frozen convoy step (`Squads.stepConvoy`, squad.js:289) walking the ShellWalkers — and every one DISCARDS
+   * the result. A double returned from a call that is not inlined is a fresh HeapNumber (12 B), so those calls cost
+   * 3.35 / 3.43 / 4.26 / 2.42 / 3.02 / 2.95 KB/s with inlining off: not a deopt, the return. The only caller that reads
+   * the value is the frozen scavenger step (`Squads.stepScavenge`, squad.js:501, `d < cfg.arrive`), which calls it
+   * only while `m.scavenge` is set, so it reads the same value as before. Legacy kinds go at the W2 exit, and the flag
+   * with them.
+   */
   _moveToward(x, z, speed, dt) {
-    const dx = x - this.position.x, dz = z - this.position.z;
-    const dist = Math.hypot(dx, dz);
-    if (dist < 0.01) return dist;
-    const diff = this._turnToward(Math.atan2(dx, dz), dt);
-    const align = Math.cos(diff);
-    const target = align > 0.25 ? speed * THREE.MathUtils.clamp(align, 0, 1) : 0;
-    this._speed = THREE.MathUtils.damp(this._speed, target, 5, dt);
-    const step = Math.min(this._speed * dt, dist);
-    this._applyStep(Math.sin(this.heading) * step, Math.cos(this.heading) * step);
-    return dist;
+    _st.x = x; _st.z = z; _st.speed = speed;
+    moveTowardS(this, dt);
+    if (this._mtOnDemand === 0 || this.scavenge) return _st.out;
+    return undefined;
   }
 
-  /**
-   * Combat footwork primitive (`machine-ai-02`): translate along `dx,dz`
-   * while the heading turns toward `faceX,faceZ`. Sideways travel costs speed,
-   * which is what keeps a circling predator readable rather than a hovercraft.
-   * Publishes `moveDir` / `strafeK` for `machine-rig`'s gait.
-   * @returns metres actually covered this frame.
-   */
+  /** See `_steerAlongS`. @returns metres actually covered this frame. */
   _steerAlong(dx, dz, faceX, faceZ, speed, dt) {
-    const l = Math.hypot(dx, dz);
-    if (l < 1e-5) {
-      this._speed = THREE.MathUtils.damp(this._speed, 0, 6, dt);
-      return 0;
-    }
-    dx /= l; dz /= l;
-    this._turnToward(Math.atan2(faceX - this.position.x, faceZ - this.position.z), dt);
-    const fx = Math.sin(this.heading), fz = Math.cos(this.heading);
-    const align = dx * fx + dz * fz;                 // 1 forward, 0 sideways
-    const lateral = Math.min(1, Math.hypot(dx - fx * align, dz - fz * align));
-    const target = speed * (1 - 0.42 * lateral) * (align < -0.25 ? 0.55 : 1);
-    this._speed = THREE.MathUtils.damp(this._speed, target, 5, dt);
-    const step = this._speed * dt;
-    this._applyStep(dx * step, dz * step);
-    this.moveDir.set(dx, 0, dz);
-    this.strafeK = (dz * fx - dx * fz);
-    return step;
+    _st.x = dx; _st.z = dz; _st.fx = faceX; _st.fz = faceZ; _st.speed = speed;
+    steerAlongS(this, dt);
+    return _st.out;
   }
 
-  /**
-   * Waypoint travel with the navgrid's whiskers applied (`machine-ai-01`).
-   * Falls back to the plain heading chase when `ctx.nav` is not installed.
-   */
-  _navToward(x, z, speed, dt) {
-    const nav = this.ctx.nav;
-    const dx = x - this.position.x, dz = z - this.position.z;
-    const dist = Math.hypot(dx, dz);
-    if (dist < 0.01) return dist;
-    if (nav && nav.ready && nav.steer) {
-      _v3.set(dx / dist, 0, dz / dist);
-      nav.steer(this.position, _v3, _v3, { radius: this.bodyRadius, look: 5 });
-      this._steerAlong(_v3.x, _v3.z,
-        this.position.x + _v3.x * 4, this.position.z + _v3.z * 4, speed, dt);
-      return dist;
-    }
-    return this._moveToward(x, z, speed, dt);
-  }
+  /** See `_navTowardS`. @returns the distance to the point. */
+  _navToward(x, z, speed, dt) { _st.x = x; _st.z = z; _st.speed = speed; navTowardS(this, dt); return _st.out; }
 
   /** Move the root directly (attack root-motion). Respects camp/world limits. */
   moveRoot(dx, dz) {
@@ -1752,47 +2679,18 @@ export class Machine {
   }
 
   _applyStep(dx, dz) {
-    let nx = this.position.x + dx;
-    let nz = this.position.z + dz;
-    // hunter camp is a safe zone
-    const cx = nx - CAMP.x, cz = nz - CAMP.z;
-    const cd = Math.hypot(cx, cz);
-    const minR = CAMP.r + this.bodyRadius;
-    if (cd < minR && cd > 0.001) {
-      nx = CAMP.x + (cx / cd) * minR;
-      nz = CAMP.z + (cz / cd) * minR;
-    }
-    const r = Math.hypot(nx, nz);
-    if (r > WORLD_LIMIT) { nx *= WORLD_LIMIT / r; nz *= WORLD_LIMIT / r; }
-    this.position.x = nx;
-    this.position.z = nz;
+    _st.sx = dx; _st.sz = dz;
+    stepRootS(this);
   }
 
-  _conform(dt) {
-    const t = this.ctx.terrain;
-    const gy = t.getHeight(this.position.x, this.position.z);
-    if (!this._airborne) {
-      this.position.y = Math.abs(this.position.y - gy) > 4
-        ? gy : THREE.MathUtils.damp(this.position.y, gy, 12, dt);
-    }
-    if (this.alignToTerrain) {
-      t.getNormal(this.position.x, this.position.z, _v2);
-      this._normal.lerp(_v2, Math.min(1, dt * 3.5)).normalize();
-    } else {
-      this._normal.lerp(_UP, Math.min(1, dt * 3.5)).normalize();
-    }
-    _q1.setFromUnitVectors(_UP, this._normal);
-    _q2.setFromAxisAngle(_UP, this.heading);
-    this.root.quaternion.copy(_q1).multiply(_q2);
-    // smoothed acceleration → pitch cue for subclass body motion
-    this._accelPitch = THREE.MathUtils.damp(this._accelPitch, this._speed, 4, dt);
-  }
+  _conform(dt) { conformM(this, dt); }
 
   /* ------------------------- death / fx ------------------------- */
 
   _updateDeath(dt) {
-    this._deathT += dt;
-    const k = THREE.MathUtils.smoothstep(Math.min(this._deathT / 1.15, 1), 0, 1);
+    const sc = this.sc;
+    sc._deathT += dt;
+    const k = THREE.MathUtils.smoothstep(Math.min(sc._deathT / 1.15, 1), 0, 1);
     // crash onto the side with a yaw twist — a wreck, not a parked machine.
     // Rigged subclasses shrink _deathRoll/_deathSink: their skeletons buckle
     // instead of the whole body sinking into the terrain as a blob.
@@ -1800,8 +2698,8 @@ export class Machine {
     this.body.rotation.x = 0.15 * k;
     this.body.rotation.y = this._deathTwist * k;
     this.body.position.y = -this.height * (this._deathSink ?? 0.1) * k;
-    this.onDeathPose?.(k, this._deathT); // subclass crumple (bones etc.)
-    if (!this._beaconSpawned && this._deathT > 1.4) {
+    this.onDeathPose?.(k, sc._deathT); // subclass crumple (bones etc.)
+    if (!this._beaconSpawned && sc._deathT > 1.4) {
       this._beaconSpawned = true;
       this._spawnBeacon();
     }
@@ -1826,7 +2724,7 @@ export class Machine {
     const h = Math.max(4, this.height * 1.4);
     const geo = new THREE.CylinderGeometry(0.09, 0.16, h, 8, 1, true);
     const mat = new THREE.MeshBasicMaterial({
-      color: 0x7fe8ff, transparent: true, opacity: 0.35,
+      color: VFX_COLORS.beacon, transparent: true, opacity: 0.35,
       blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false,
       side: THREE.DoubleSide,
     });
@@ -1958,7 +2856,7 @@ export class Machine {
         s.position.y += dt * 1.6;
         s.scale.multiplyScalar(1 - dt * 0.8);
         mat.opacity = 0.85 * (1 - t / 0.55);
-        mat.color.lerp(EYE_COLORS.hostile, dt * 2);
+        mat.color.lerp(_flameLate, dt * 2);
         if (t > 0.55) { this._fxDrop(s); mat.dispose(); return false; }
         return true;
       },
@@ -1992,7 +2890,7 @@ export class Machine {
   }
 
   /** Jittering electric arc streak across the body while shock-stunned. */
-  _arcFlash(color = 0xbfe8ff) {
+  _arcFlash(color = VFX_COLORS.bronzeChip) {
     const mat = new THREE.SpriteMaterial({
       map: glowTexture(), color, transparent: true, opacity: 0.95,
       blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false,
@@ -2116,12 +3014,7 @@ export class Machine {
     });
   }
 
-  _updateFx(dt) {
-    const fx = this._fx;
-    for (let i = fx.length - 1; i >= 0; i--) {
-      if (!fx[i].update(dt)) fx.splice(i, 1);
-    }
-  }
+  _updateFx(dt) { updateFxM(this, dt); }
 
   /**
    * Raise a world event WITHOUT letting a subscriber take the machine loop
@@ -2200,6 +3093,80 @@ export class Machine {
       for (const rec of [...this._tornRecs]) this._removeTornPart(rec);
       this._tornRecs.length = 0;
     }
+    if (this._disposed) this._releaseOnDispose();
+  }
+
+  /**
+   * THE LAST STEP OF A DISPOSED MACHINE (R34, instruments-core W0b;
+   * `A90b-memory-attribution` with the role-based workload).
+   *
+   * `ai/sites.js` dispose frees the geometries and materials it can see and
+   * `rig/lod.js` `disposeRig` the skeletons. What was left held after the
+   * corpse lifecycle was the MODEL CLONE (this constructor's
+   * `src.root.clone()`) and the AUTO-RIG BONES (`autorig.js` `makeBone`):
+   * anything still pointing at the Machine reached both through `model`,
+   * `body`, `rig` and `gait`. So the machine lets go of its own body:
+   *   - its lamp record and any Flag mark are released;
+   *   - every SkinnedMesh's skeleton is disposed (idempotent with `disposeRig`)
+   *     and unbound; every bone array is emptied;
+   *   - the subtree is cut from `root` and the body-side fields are nulled, so
+   *     a stale reference to the Machine retains a shell, not a sculpt.
+   * Geometries shared with the species' source asset are never touched here.
+   * Idempotent.
+   */
+  _releaseOnDispose() {
+    if (this._released) return;
+    this._released = true;
+    try { this.disposeRig?.(); } catch (e) { /* rig never built */ }
+    this.manager?.lamps?.detach(this);
+    this.lamp = null;
+    this._lampAnchor = null;
+    this.flagMark = null;
+    const bones = [];
+    const drop = (sk) => {
+      if (!sk) return;
+      try { sk.dispose(); } catch (e) { /* already gone */ }
+      for (const b of sk.bones) bones.push(b);
+      sk.bones.length = 0;
+      sk.boneInverses.length = 0;
+    };
+    this.root?.traverse((o) => {
+      if (o.isSkinnedMesh) { drop(o.skeleton); o.skeleton = null; }
+    });
+    drop(this.rig?.skeleton);
+    for (const b of bones) { b.parent?.remove(b); b.userData = {}; }
+    if (this.rig) {
+      for (const k of Object.keys(this.rig)) this.rig[k] = null;
+    }
+    this.root?.clear();
+    this.model = null;
+    this.holder = null;
+    this.body = null;
+    this.rig = null;
+    this.gait = null;
+    // the rig's other handles on the bones and the clone: the rest-pose Map
+    // (Bone -> Quaternion), the bone-space rotator, the socket proxy (it keeps
+    // `model`), the shared FX pool handle
+    this._rest = null;
+    this._rot = null;
+    this.hullProxy = null;
+    this._hullProxy = null;
+    this._fxPool = null;
+    // ...and any other field still pointing INTO the released subtree (a node,
+    // a skeleton, a Map keyed by nodes): measured, not assumed — a disposed
+    // machine that something still holds must hold a shell, not a sculpt
+    for (const k of Object.keys(this)) {
+      const v = this[k];
+      if (!v || typeof v !== 'object' || v === this.root || k === 'ctx' || k === 'rootCtx' || k === 'manager') continue;
+      if (v.isObject3D || v.isSkeleton || (v instanceof Map && v.size && [...v.keys()][0]?.isObject3D)) this[k] = null;
+    }
+    this.parts.length = 0;
+    this.weakPoints.length = 0;
+    this._eyeMats.length = 0;
+    this._emisMats.length = 0;
+    this._partGlows.length = 0;
+    this._frostMats = null;
+    this._fadeMats = null;
   }
 
   /**
@@ -2234,51 +3201,17 @@ export class Machine {
 
   /* ------------------------- sensor glow ------------------------- */
 
-  _updateEyes(dt, t) {
-    let target;
-    let pulse = 1;
-    switch (this.state) {
-      case 'dead': target = EYE_COLORS.dead; pulse = Math.max(0, 1 - this._deathT * 1.5) * (Math.random() < 0.3 ? 1 : 0.15); break;
-      case 'suspicious':
-      case 'search': target = EYE_COLORS.wary; pulse = 0.85 + 0.3 * Math.sin(t * 7); break;
-      case 'alert':
-      case 'stagger':
-      case 'attack': target = EYE_COLORS.hostile; pulse = 1.1 + 0.15 * Math.sin(t * 11); break;
-      // downed: the sensor guts out and stutters — the Critical Hit window
-      case 'downed': target = EYE_COLORS.hostile; pulse = Math.random() < 0.4 ? 1.5 : 0.25; break;
-      default: target = this._eyeCalm || EYE_COLORS.calm; pulse = 0.85 + 0.2 * Math.sin(t * 2.1);
-    }
-    if (this.stunT > 0) pulse = Math.random() < 0.5 ? 1.6 : 0.2;
-    if (this._eyeFlare > 0) { pulse *= 1 + this._eyeFlare; this._eyeFlare = 0; }
-    if (this._telegraphT > 0 && this.alive) {
-      // attack-windup telegraph: eye burns white-hot for ~0.4s
-      this._telegraphT -= dt;
-      target = EYE_COLORS.flash;
-      pulse = Math.max(pulse, 2.6);
-      this._eyeColor.lerp(target, Math.min(1, dt * 25));
-    } else {
-      this._eyeColor.lerp(target, Math.min(1, dt * 7));
-    }
-
-    for (const e of this._eyeMats) {
-      if (e.kind === 'sprite' || e.kind === 'basic') {
-        e.mat.color.copy(this._eyeColor).multiplyScalar(pulse * (e.base ?? 1));
-        // solid eye cores would linger as black balls on a dead machine
-        if (e.kind === 'basic') e.mat.opacity = this.state === 'dead' ? 0 : 1;
-      } else {
-        e.mat.emissive.copy(this._eyeColor);
-        e.mat.emissiveIntensity = e.base * pulse;
-      }
-    }
-    // death: EVERY light dies out (research 0.4) — body strips fade with the
-    // eyes, and identity-colored part glows (canisters/loaders/vents) gutter
-    const lightK = this.state === 'dead' ? Math.max(0, 1 - this._deathT * 0.55) : 1;
-    for (const m of this._emisMats) m.emissiveIntensity = (0.6 + pulse * 0.7) * lightK;
-    if (lightK < 1) {
-      for (const g of this._partGlows) {
-        if (g.sprite) g.mat.opacity = g.base * lightK;
-        else g.mat.emissiveIntensity = g.base * lightK;
-      }
-    }
-  }
+  /**
+   * THE LAMP RHYTHM (bible §7.2, instruments-core W0b): `lampStateFor(this)`
+   * names the state, `lampGain` the brightness on the SIM clock — calm steady,
+   * wary a 1 Hz pulse, hostile a 4 Hz flicker, dark (dead, a lamp hit, Clouded)
+   * a 0.55 s sputter of the last colour and then out. Every glow this machine
+   * owns follows it: eye sprites, flat emissive lens materials, shell sensor
+   * strips. An Instrument's iris + beam (`addLamp`) are drawn by
+   * `machines.lamps` from the same two functions. The white-hot windup flash
+   * (`_telegraphT`) is the Round-4 dodge cue and stays on machines WITHOUT an
+   * iris lamp only (the legacy kinds, gone at W2): an Instrument's lamp never
+   * leaves the grammar.
+   */
+  _updateEyes(dt, t) { updateEyesM(this, dt, t); }
 }

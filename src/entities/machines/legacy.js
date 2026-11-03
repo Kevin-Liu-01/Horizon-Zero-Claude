@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { VFX_COLORS } from '../../instruments/lib/vfx.js';
 import { Strider } from './strider.js';
 import { Scrapper } from './scrapper.js';
 import { Glinthawk } from './glinthawk.js';
@@ -446,7 +447,7 @@ export const LEGACY = {
           params: { damage: 36, windup: 0.5, strike: 0.3, recover: 0.8, dash: 5.0, range: 6.4 } },
         // min 13 -> 11: the shell has to start inside the radii a 3 m/s croc holds
         { id: 'freeze-mortar', min: 11, max: 42, cd: 7.5, score: 0.85, generic: 'volley',
-          params: { damage: 30, windup: 0.7, strike: 0.5, recover: 0.9, range: 42, shots: 2, arcDeg: 18, color: 0xbfe9ff } },
+          params: { damage: 30, windup: 0.7, strike: 0.5, recover: 0.9, range: 42, shots: 2, arcDeg: 18, color: VFX_COLORS.brineMid } },
       ],
       react: { staggerFrac: 0.12, downedFrac: 0.30 },
       elem: 170,
@@ -462,7 +463,7 @@ export const LEGACY = {
       components: (m) => {
         m.addPart({
           name: 'freeze-sac', displayName: 'Chillwater Sac',
-          mesh: canisterMesh({ color: 0xbfe9ff, r: 0.24, h: 0.55 }),
+          mesh: canisterMesh({ color: VFX_COLORS.brineMid, r: 0.24, h: 0.55 }),
           pos: [0, m.eyeHeight * 0.75, 1.1], tearHp: 70,
           elemental: 'freeze', weak: true, weakMult: 2.5,
           linkedAttack: 'freeze-mortar',
@@ -586,10 +587,10 @@ export const LEGACY = {
         { id: 'shock-nova', min: 0, max: 11, cd: 10, score: 0.85, generic: 'sweep',
           params: { damage: 44, windup: 1.1, strike: 0.35, recover: 1.2, range: 11, arcDeg: 360, knock: 14 } },
         { id: 'shock-volley', min: 9, max: 34, cd: 5.0, score: 0.8, generic: 'volley', needPart: 'lightning-gun',
-          params: { damage: 28, windup: 0.6, strike: 0.5, recover: 0.8, range: 34, shots: 3, arcDeg: 12, color: 0xbfe8ff } },
+          params: { damage: 28, windup: 0.6, strike: 0.5, recover: 0.8, range: 34, shots: 3, arcDeg: 12, color: VFX_COLORS.dustMid } },
         // min 13 -> 9.5: measured, this chassis holds 5.9-10.1 m on its own ground
         { id: 'homing-blast', min: 9.5, max: 48, cd: 8, score: 0.9, generic: 'volley', needPart: 'lightning-gun',
-          params: { damage: 38, windup: 0.8, strike: 0.5, recover: 1.0, range: 48, shots: 1, arcDeg: 22, color: 0x9fd8ff } },
+          params: { damage: 38, windup: 0.8, strike: 0.5, recover: 1.0, range: 48, shots: 1, arcDeg: 22, color: VFX_COLORS.dustMid } },
       ],
       react: { staggerFrac: 0.12, downedFrac: 0.34, impulse: 0.7, pushBack: 0.22 },
       elem: 230,
@@ -610,14 +611,14 @@ export const LEGACY = {
         });
         m.addPart({
           name: 'lightning-gun', displayName: 'Lightning Gun',
-          mesh: cannonMesh({ accent: 0xbfe8ff }),
+          mesh: cannonMesh({ accent: VFX_COLORS.dustMid }),
           pos: [0.75, m.eyeHeight * 0.8, 0.6], tearHp: 150,
           linkedAttack: 'shock-volley', pickupWeapon: 'shellwalker-gun',
           sparkleWhileTorn: true,
         });
         m.addPart({
           name: 'shield-projector', displayName: 'Shield Projector',
-          mesh: coreMesh({ color: 0x9fd8ff, r: 0.24 }),
+          mesh: coreMesh({ color: VFX_COLORS.bronzeChip, r: 0.24 }),
           pos: [-0.75, m.eyeHeight * 0.8, 0.6], tearHp: 130,
         });
       },
@@ -727,9 +728,9 @@ export const LEGACY = {
        */
       attacks: [
         { id: 'thunder-clash', min: 12, max: 90, cd: 11, score: 1.0, generic: 'volley', needPart: 'engine',
-          params: { damage: 60, windup: 0.9, strike: 0.6, recover: 1.1, range: 90, shots: 3, arcDeg: 14, color: 0xbfe8ff, knock: 8 } },
+          params: { damage: 60, windup: 0.9, strike: 0.6, recover: 1.1, range: 90, shots: 3, arcDeg: 14, color: VFX_COLORS.dustMid, knock: 8 } },
         { id: 'shock-blast', min: 14, max: 70, cd: 6, score: 0.9, generic: 'volley', needPart: 'lightning-gun',
-          params: { damage: 34, windup: 0.6, strike: 0.5, recover: 0.9, range: 70, shots: 2, arcDeg: 12, color: 0x9fd8ff } },
+          params: { damage: 34, windup: 0.6, strike: 0.5, recover: 0.9, range: 70, shots: 2, arcDeg: 12, color: VFX_COLORS.dustMid } },
         { id: 'bomb-run', min: 25, max: 80, cd: 13, score: 0.85, generic: 'volley',
           params: { damage: 46, windup: 0.8, strike: 0.7, recover: 1.0, range: 80, shots: 4, arcDeg: 20, color: 0xff9a3d } },
         /**
@@ -767,14 +768,14 @@ export const LEGACY = {
           const k = i % 3;
           m.addPart({
             name: 'engine', displayName: 'Feather Jet',
-            mesh: canisterMesh({ color: 0x9fd8ff, r: 0.18, h: 0.5 }),
+            mesh: canisterMesh({ color: VFX_COLORS.bronzeChip, r: 0.18, h: 0.5 }),
             pos: [side * (0.9 + k * 0.5), m.eyeHeight * 0.75, -0.2 - k * 0.35],
             tearHp: 120, elemental: null, sparkleWhileTorn: true,
           });
         }
         m.addPart({
           name: 'lightning-gun', displayName: 'Lightning Gun',
-          mesh: cannonMesh({ accent: 0x9fd8ff }),
+          mesh: cannonMesh({ accent: VFX_COLORS.dustMid }),
           pos: [0, m.eyeHeight * 0.55, 0.8], tearHp: 180,
           linkedAttack: 'shock-blast', sparkleWhileTorn: true,
         });

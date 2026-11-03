@@ -23,8 +23,8 @@ import { itemDef, rarityDef } from '../items/items.js';
  * While on: activation pulse (ground ring + wave), persistent violet
  * through-wall machine silhouettes, cool purple screen tint, YELLOW additive
  * shells on weak/tearable machine.parts (linger 6s after Focus off, canon),
- * glowing ground-hugging patrol path lines with flowing dashes, a Chakra
- * Petch holo info card after 0.4s crosshair dwell (name / LV / elemental
+ * glowing ground-hugging patrol path lines with flowing dashes, a Plex Mono
+ * holo info card after 0.4s crosshair dwell (name / LV / elemental
  * weakness glyphs / component count), T tags the crosshair machine with a
  * persistent screen-projected yellow diamond marker (edge-clamped, distance
  * in meters) until that machine dies, and green-cyan glow points over GATHER

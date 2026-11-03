@@ -136,7 +136,7 @@ merging.
 | **pipeline** | 5250 | 0a, 0b | `tools/build/**` except `tools/build/recipes/**`, `tools/build/instruments/gen-*.mjs` and `tools/build/settlements/**` (promoted from `tools/r5-poc/`: `humans.mjs`, `lib/{hs,glb}.mjs`, `instruments/lib/**`, `landmarks/lib/**`, `ground/lib/**`, `weapons/lib/**`; the POC Tiller generator is promoted to `tools/build/instruments/gen-tiller.mjs` and handed to instruments-a at W1); `tools/licences/**`; `public/LICENSES.json`, `public/licences/**`; `src/core/assets.js`, new `src/core/assets.specs.js`; `.gitignore`; `models-staging/**` (cleanup + `r5-src/`) | deterministic `npm run build:assets` with `--only <lane>`; data-driven SPECS; shared loader fixes; the W0 re-fetch that records archive SHA-256s, then trimmed sources in `models-staging/r5-src/`; licence manifest + credits generator incl. code (MIT) rows; IP/NC + `npc.glb` deletion (R30); `A-ID-ip-assets-gone`, `A-assets-tracked` |
 | **engine-gpu** | 5251 | 0a, 0b | `src/core/engine.js` (post / tiers / DPR), `tools/r5-probes/terrain1024.js`, `tools/r5-probes/rt-ledger.mjs`, `docs/ROUND5-ENGINE.md`, `tools/gates.r5.engine-gpu.mjs` | the GPU decision (DPR 1.25 cap / quarter-res GTAO / SMAA-only) as a measured exit gate; 1024 m terrain + nav probe; the render-target ledger |
 | **hero-body** | 5252 | 0b | `src/entities/anim/rigs/**` (new), `playerAnimator.js`, `player.js`, `anim/{clipLibrary,boneMap,registry,index,locomotion}.js` (per grant), `input.js` (grant), new `src/hero/**` (**W0**; handed to armory at W1 day 1), `tools/build/recipes/{brea,outfit-pan-1}.mjs` (the pan atlas recipe goes to armory at W1 day 1), `tools/build/recipes/lib/face.mjs`, `tools/build/recipes/weapons/kit-v0*.mjs`, `public/models/hero/**`, `reference/r5/hero/**`, `tools/gates.r5.hero-body.mjs`, `docs/ROUND5-HERO.md` | Brea v1 on the kept rig (body, face, wrap, default outfit); **outfit merge + skeleton dispose, merged stow kit with `pieceId` mask, v0 kit GLBs** (Shepherd's Lance with the bob cap, cane quiver, archer's crescent bracer, Sabina blockout); Lmax solve, ~12 aim constants, M10 collider, alidade overlay; `player.mods`, climb, slide, `ride`; new input actions; face library for NPCs; delete `aloy.glb` at exit |
-| **brand** | 5253 | 0-day1, 0b, 4 | W0: `index.html`, `src/style.css`, `src/main.js` (log tag, loading copy), `src/ui/menu.js` (title + credits blocks), `public/favicon.svg`, `public/fonts/**`, `package.json`, `README.md`, `tools/lint/**` (lexicon, `namecheck.mjs`, `engine-allow.json`, `hzd-verbs.json`), `docs/archive/**` (moves); the day-1 stubs (handed to world-ground at W1). W4: same + `src/studio/**`, `docs/media/**`, comment grant | CALIMA wordmark + logo; Bodoni Moda / Plex fonts with OFL.txt; `--cal-*` tokens; `cal.*.v5` keys; union lexicon, player-facing and code lints; W4 comment scrub, studio renames, re-filmed media |
+| **brand** | 5253 | 0-day1, 0b, 4 | W0: `index.html`, `src/style.css`, `src/main.js` (log tag, loading copy), `src/ui/menu.js` (title + credits blocks), `public/favicon.svg`, `public/fonts/**`, `package.json`, `README.md`, `tools/lint/**` (lexicon, `namecheck.mjs`, `engine-allow.json`, `hzd-verbs.json`), `docs/archive/**` (moves); the day-1 stubs (handed to world-ground at W1). W4: same + `src/studio/**`, `docs/media/**`, comment grant | CALIMA wordmark + logo; Chakra Petch / IBM Plex Mono fonts with OFL.txt (R55); `--cal-*` tokens; `cal.*.v5` keys; union lexicon, player-facing and code lints; W4 comment scrub, studio renames, re-filmed media |
 | **instruments-core** | 5254 | 0a, 0b | `src/entities/machines/**` per grant (incl. new `legacy.js`); the W0a removal-only grant; new `src/instruments/{lamps,roles,registry}.js`, `src/instruments/lib/**`, **`src/instruments/kinds/tiller.js` as the W0 fixture** (handed to instruments-a at W1), `tools/gates.r5.kind-block.mjs` (handed to the orchestrator at W1), `tools/gates.r5.instruments-core.mjs` | delete Override + corruption; legacy collapse; IP kinds deleted (R30); `LAMP_STATES` (iris + beam, one instanced draw); kind auto-registration; per-kind tables; perception weather + perk hooks; `ctx.machines.roles`; `uv1` through the fold; VFX palette; A90-rig-reclaim 5/5 |
 | **gates-perf** | 5255 | 0a, 0b | `tools/gates.config.mjs`, `tools/gates.round4.*.mjs` (re-stage, then archive to `tools/gates/archive/`), new `tools/gates.r5.carried.mjs` (handed to the orchestrator at W1), `tools/gate-roster.mjs`, `tools/gate-places.mjs`, `tools/budgets.mjs`, `tools/r5-refs/**` (Commons fetcher), `reference/MANIFEST.md` (top level) + deletion of `reference/*.jpg`, the harness grant, `tools/gates.r5.gates-perf.mjs` | role- and place-based preludes; the carried Round-4 suite; auto-discovery of `tools/gates.r5.*.mjs`; port guard, Chrome semaphore, preflight; `A-alloc-rate`, `A-vram-ledger`, `A90-abs`; unattributed-draw cap; licence-clean reference set |
 | **melee** | 5256 | 1, 2 | `anim/meleeLayer.js`, new `anim/{clipMelee,castLayer}.js`, `combat/melee.js`, `combat/lanceStow.js`, `playerAnimator.js` (W1–W2), grant lines in `collision.js`/`player.js`, `reference/r5/melee/**`, `tools/gates.r5.melee.mjs` (absorbs `gates.round4.player-melee.mjs`) | W1: lance tables on Brea, A100–A107 + R1–R32, stow clearance, Counterweight heavy, melee latency. W2: gaff, Windwall, pendulum + spin cast, per-clip elbow audit |
@@ -168,7 +168,7 @@ folder's `MANIFEST.md`).
 | **W0-day1 — mechanical pass** | brand alone | — | `A-identifiers-renamed`, `A-extent-refactor`, `A-single-rest` (grep half), `A1`, `A20b` |
 | **W0a — foundations (1–2 days)** | pipeline, gates-perf, instruments-core, engine-gpu (probes only) | W0-day1 | data-driven SPECS + `SPECS.hero`; `legacy.js` collapse; removal-only Override + corruption pass; **IP/NC + `npc.glb` deleted (R30)**; `.gitignore` fixed; port guard, semaphore, preflight; carried Round-4 suite live; Tiller fixture registered. Gates: `A1`, `A20b`, `A-no-override`, `A-no-corruption`, `A-legacy-collapse`, `A-specs-data-driven`, `A-port-guard`, `A-chrome-semaphore`, `A-assets-tracked`, `A-ID-ip-assets-gone`, `A-carried-suite` |
 | **W0b — protagonist on the kept rig** | pipeline, engine-gpu, hero-body, brand, instruments-core, gates-perf | W0a | Brea passes the kept movement + draw gates on the real v0 loadout; GPU tier chosen and render targets measured; lamps + roles + perk hooks live; licence manifest complete with SHA-256s; `aloy.glb`, anim duplicates, labs spikes, HZD reference stills, old fonts and the `?poc=human` and `?poc=creature` hooks deleted; **Brea's silhouette and face sheets shown to Kevin** (§11, decision 1) |
-| **W1 — vertical slice: The Pans** | melee, armory, instruments-a, world-ground, world-props, world-sky | W0 | the Pans vista passes against real reference; `REST` at Saltrow and the 1024 m extents live (`A-reach-all-sites`); Tiller/Plumb/Peg pass per-species gates; lance melee passes A100–A107; `?poc=biome` removed |
+| **W1 — vertical slice: The Pans** | melee, armory, instruments-a, world-ground, world-props, world-sky, **shell-ui, hero-body, settlements (NPC half)** (R57) | W0 | the Pans vista passes against real reference; `REST` at Saltrow and the 1024 m extents live (`A-reach-all-sites`); Tiller/Plumb/Peg pass per-species gates; lance melee passes A100–A107; `?poc=biome` removed |
 | **W2 — the first hour's content** | instruments-b, melee, combat-kit, settlements, shell-ui, world-ground | W1 | Ninewalls + Saltrow alive; Sickle/Screed/Gauge pass; gaff, Windwall, pots, net pass; field-book UI passes; remaining legacy species, camp and `legacy.js` gone (`A-legacy-gone`); W0-era saves load clean |
 | **W3 — breadth** | progression, audio, instruments-c, world-ground, world-props, armory | W2 | `A-first-hour` passes **provisionally** (Plumb generator at `scale` 6.5 for the 0:55 walker); 4 biomes at fidelity; 10 kinds; all 12 armor variants pass the swap matrix; `A-weapon-role` passes; save v6; fauna; music; A21 at each biome vista + the Kiln Yard fight |
 | **W4 — apex + final** | instruments-d, world-ground, world-props, settlements, world-sky, brand | W3 | 6 biomes; 12 kinds (or 11 with the Dredge cut, named); 13 archetypes; **final `A-first-hour` with the Transit** (orchestrator run); `A-no-horizon-terms-player` = 0; code allowlist at its cap; comment scrub; credits match the manifest |
@@ -243,7 +243,7 @@ where `ctx.datum.regionTrue` is true (`A-screed-reads-datum`).
 | stow kit (all stowed gear) | **≤ 9 k** | — | — | **1** (`pieceId` mask) | 1 caster | weapon atlas 1024² | ≤ 0.6 MB |
 | held weapon | **≤ 3 k** (bow ≤ 3 k, lance ≤ 1.5 k, gaff ≤ 1.1 k, Windwall ≤ 2.5 k, pot ≤ 0.3 k, net ≤ 1.2 k) | — | Windwall 9 slats | 1–2 | — | weapon atlas | ≤ 0.15 MB each |
 | **Brea total** | **≤ 40 k (caps sum to 39.5 k)** | | | **≤ 5 main** | **≤ 2 casters × 3** | | |
-| NPC | ≤ 12 k | ≤ 4 k beyond 25 m | 65 | ≤ 2 | nearest 4 only | 1 atlas per body type + faction (**≤ 4 resident**) | body ≤ 0.4 MB |
+| NPC, **near tier (R56: the 6 nearest within 18 m, Brea's construction)** | **≤ 20 k** (body + head + hair + outfit) | LOD1 ≤ 8 k at 18–35 m, LOD2 ≤ 4 k beyond | 65 + dyn chains near only | **≤ 4 near**, ≤ 2 LOD1/LOD2 | nearest 4 only | skin 1024² per body type + 1024² faction atlas + shared 512² normal/ORM (**≤ 4 faction atlases resident**) | body ≤ 0.7 MB, outfit ≤ 0.4 MB |
 | settlement (whole kit, instanced per material) | ≤ 150 k | module LOD1 beyond 120 m | — | **≤ 12 incl. casters** | in the 12 | 1–2 kit atlases (1024²) | ≤ 1.2 MB |
 | Instrument small (≤ 2.5 m) | ≤ 15 k | — | ≤ 20 | ≤ 3 | 1 caster | hull + lamp; 8×1 palette; shared decal atlas (`uv1`) | ≤ 200 KB |
 | Instrument medium (2.5–6 m) | ≤ 35 k | optional | ≤ 30 | ≤ 3 | 1 | " | ≤ 400 KB |
@@ -269,10 +269,10 @@ where `ctx.datum.regionTrue` is true (`A-screed-reads-datum`).
 | Peg transects (instanced) | 1 | 1 | 0 | 1 | 0 |
 | lamp beams | 1 | 0 | 1 | 1 | 1 |
 | Brea + gear | 11 (5 + 2 × 3) | 11 | 11 | 11 | 11 |
-| NPCs | 8 × 2 + 4 casters × 3 = 28 | 10 × 2 + 12 = 32 | 0 | 0 | 2 × 2 = 4 |
+| NPCs (R56) | 6 × 4 + 2 × 2 + 4 casters × 3 = 40 | 6 × 4 + 4 × 2 + 12 = 44 | 0 | 0 | 2 × 4 = 8 |
 | VFX, UI, pooled (fumaroles, fire pools, mortar shells, fog drips) | 25 | 20 | 30 | 35 | 20 |
 | unattributed scene children (**measured at W0, capped ≤ 30 by W2**, `A-unattributed-cap`) | 30 | 30 | 30 | 30 | 30 |
-| **total** | **301** (49 headroom) | **245** | **245** | **257** | **256** |
+| **total** | **313** (37 headroom) | **257** | **245** | **257** | **260** |
 | triangles (bar 6.5 M) | ≈ 3.5 M | ≈ 2.85 M | ≈ 3.2 M | ≈ 3.3 M | ≈ 4.2 M |
 
 `A21` stages the Screed fight at every wave exit. At the W3 and W4 exits it also runs at **each biome
@@ -295,14 +295,14 @@ each).
 | ground (5 × 1024² + 5 × 512², 2 RGBA each, mips) | ≈ 70 | |
 | masks (512² biome + 256² stealth/wet) | ≈ 4 | |
 | Brea (skin 1024² + 2 × 512², hair 512², outfit 1024² + 2 × 512²) | ≈ 18 | |
-| NPC faction atlases, **≤ 4 resident** (4 × 1024² base + shared 512² normal/ORM), streamed per settlement | ≈ 25 | `A-npc-atlas-resident` |
+| NPC atlases (R56): **≤ 4 faction resident** + 2 skin (6 × 1024² base + shared 512² normal/ORM), streamed per settlement | ≈ 40 | `A-npc-atlas-resident` |
 | weapon + Instrument decal atlases | ≈ 11 | |
 | landmark/prop trim + settlement kit atlases | ≈ 14 | |
 | UI | ≈ 4 | |
-| **textures** | **≈ 146** | **≤ 160** |
+| **textures** | **≈ 161** | **≤ 175** (R56) |
 | render targets: CSM 3 × 2048² + sun 2048² (`engine.js:636`, `environment.js:431`), HalfFloat MSAA scene RT (`engine.js:437`), GTAO, bloom chain, at DPR 1.25 and 1600×900 | ≈ 150 (estimate; **measured by engine-gpu at W0**, `A-rt-ledger`) | measured + 10 %, **≤ 170** |
 | geometry buffers (1024 m terrain ≈ 471 k vertices, instances, skinned, Instruments) | ≈ 80 | ≤ 120 |
-| **total GPU memory (textures + RTs + geometry)** | **≈ 376** | **≤ 450** |
+| **total GPU memory (textures + RTs + geometry)** | **≈ 391** | **≤ 450** |
 
 KTX2/Basis is the lever if A90 tightens; measure an encoder's disk cost (`toktx` or WASM) before
 adopting one.
@@ -315,7 +315,7 @@ adopting one.
 | UAL2 trimmed to the ~22 clips used | ≈ 3.5 |
 | Brea + 4 armor sets | ≈ 4.0 |
 | weapons (**18 variants** as data in ~8 GLBs) + stow kit + v0 kit | ≈ 1.7 |
-| NPC bodies, faction outfits, per-archetype head textures | ≈ 3.6 |
+| NPC bodies, faction outfits, per-archetype head textures (R56) | ≈ 9 |
 | 12 Instruments | ≈ 5.0 |
 | landmarks | ≈ 2.5 |
 | settlement kits (3 × ≤ 1.2 MB + minor sites) | ≈ 4.0 |
@@ -323,9 +323,9 @@ adopting one.
 | decal/trim atlases | ≈ 1.0 |
 | fauna (6 kinds) | ≈ 0.3 |
 | audio incl. regenerated music | ≈ 3.2 |
-| fonts (3 OFL families, woff2) | ≈ 0.4 |
+| fonts (2 OFL families, woff2, R55) | ≈ 0.1 |
 | UI, `LICENSES.json`, licence texts | ≈ 0.4 |
-| **total** | **≈ 41 MB** |
+| **total** | **≈ 46 MB** |
 
 ### 4.6 Local disk ledger (not shipped; floor **≥ 3 GB free** at every lane exit and before every Chrome launch)
 
@@ -623,6 +623,14 @@ Blunt, Charred, Seized, Clouded, Field Book, Gourd, Kit Rack, salt, certificatio
 - **R52 — A16's elbow at pitched aims (Oct 30).** In correct archery form, a pitched shot is the level draw rotated as one piece at the hips onto the aim line, so "elbow level" means level with the arrow, not with the world horizon. `A16`'s draw-elbow height check is therefore measured perpendicular to the arrow in the draw plane at every aim pitch, as `A-draw-elbow-level` already measures it; at the level aim the two readings coincide and nothing changes. The world-height reading cannot coexist with the forearm-within-20°-of-the-arrow clause that the V24-draw-down judge requires, and the old pose met it only because the forearm climbed to the hand (the defect Kevin's bar forbids). Kevin's bar is unchanged and stays binding: the draw hand at the cheek outside the hair, the elbow level with or behind the arrow line, the bow arm clear of the chest, never an arm behind the head. The orchestrator reads the V24 and V24-draw-down frames before accepting hero-body.
 <!-- r5-ruling gate-priority=nice -->
 - **R53 — gate runs under machine care (Oct 30).** After three forced restarts of Kevin's Mac (Oct 29–30), gate work runs with at most one gate Chrome machine-wide, only at memory free ≥ 40 % and 1-minute load < 12, with Chrome runs batched. **Gate and screenshot runs use `nice -n 10` (CPU priority only), NOT `taskpolicy -b`.** gates-perf measured that background QoS throttles a gate Chrome to 1.5–6 fps (59.9 fps before), so frame-bound rows (A20b's frame count, the A90 kill floor, A13, A9, A21) fail for reasons that are not the code's. This supersedes any orchestrator note telling an agent to run gates under `taskpolicy -b`; Vite may keep `taskpolicy -b`. A row that failed only under `taskpolicy -b` is re-run under `nice -n 10` before it is graded. Two gates-perf merge-time items are settled: (a) A90-abs's loop continues past 150 s until the unchanged 25-kill floor is met, capped at 300 s. This is accepted; the floor did not move. (b) `A-carried-suite`'s run ledger lived in scratch and was wiped by the restarts. The suite is graded by the orchestrator on port 5270 after the merges (R48 d), with the ledger kept under ~/.calima-r5/orch/ledger. A lane run with no sealed carried run reports PENDING-orchestrator, which is not a lane failure. Owner rows with `barsFrom: null` that are not frozen (engine.js, assets(.specs).js, anim/rigs/**, instruments-core's machine files) get their absolute bars at the first wave in which a lane is granted them.
+<!-- r5-ruling kevin-nov3=answers -->
+- **R54 — Kevin's Nov 3 answers.** Verbatim: "continue everything!!!! get a lot of work done make the game look incredible and play really well with new custom ui using ibm plex mono and chakra petch, and make the characters weapons armor etc great. continue everything. other characters should get breas level of detail. the downward aim frame is fine". (a) `V24-draw-down` is accepted as filmed: at hip-bent down aims the draw elbow may rise above the crown, because the trunk bend carries it; no trunk clamp. This does not touch "never an arm behind the head" for the hand and forearm, or R35's 0.20 m elbow bar. (b) R55. (c) R56. (d) From now on every judge also asks whether the frame looks incredible next to its reference: a frame that passes the words and looks cheap is a major finding.
+<!-- r5-ruling ui-type=chakra-plex -->
+- **R55 — UI type (Nov 3, Kevin).** The UI uses **Chakra Petch** (400–700: wordmark, display, HUD labels, menus, place names) and **IBM Plex Mono** (400–600 + italic: numerals, bearings, damage numbers, body text, dialogue, cards), both SIL OFL-1.1, self-hosted latin-subset woff2. This supersedes bible D1, D10 and §9.7's font list and its anti-reference row. Bodoni Moda and IBM Plex Sans Condensed are removed. The other §9.7 motifs stand (levelling staff, theodolite compass, the graduated tick). Chakra Petch's chamfers should read as engraved surveying instruments, not a fan HUD: right angles, hairlines, no hexagons.
+<!-- r5-ruling npc-fidelity=brea -->
+- **R56 — NPCs at Brea's fidelity (Nov 3, Kevin).** Near-tier NPCs (the 6 nearest within 18 m) are built like Brea: UBC body, face displacement field + paint from the face library, separate hair or headwrap with live dyn_ chains, layered faction outfit, the same skin and eye treatment, ≤ 20 k tris, ≤ 4 draws. LOD1 ≤ 8 k / ≤ 2 draws at 18–35 m, LOD2 ≤ 4 k beyond; chains freeze off the near tier; nearest 4 cast. §4.1, §4.2 (worst frame 313 of 350), §4.4 (textures ≤ 175 MB, total stays ≤ 450 MB), §4.5 (≈ 46 of 60 MB) and §9 (`A-npc-fidelity`, `V-npc-vs-brea`, `A-npc-draws` ≤ 44) are updated. Adolescent and adult builds, atlas streaming and A90 bars stand.
+<!-- r5-ruling w0b-close=two-stage -->
+- **R57 — closing W0b and the shape of W1 (Nov 3).** (a) hero-body merged at 869954b, the commit both r3 judges measured: its lane block and visual rows pass and Brea replaces the fan-art model, which the public repo should not keep carrying. Its 15 open findings (hero-body targeted findings, Oct 30) stay **binding**: hero-body stays an active lane through W1 on its existing branch, owns the draw-arm solve and crouch-aim code in `playerAnimator.js`, and W1 cannot exit until they pass. melee owns the rest of that file (§2); each lane keeps out of the other's functions. (b) **shell-ui is pulled forward to W1** because Kevin asked for the new UI now; gates that need W2 content stay PENDING until W2 and shell-ui stays active there. (c) **settlements starts its NPC half in W1** (`tools/build/recipes/npc/**`, `src/world/npc/**`, `public/models/npc/**`, the R56 gates, archetypes 1–9 on a neutral staging place); Saltrow, Ninewalls and placement stay W2. (d) W1 runs up to 4 agents at once plus hero-body's 2, still one gate Chrome machine-wide (R53). W1 may start while the W0b global green list runs on 5270: the list holds the Chrome slot, lanes wait for it, and any regression it finds is fixed on main and merged into the lanes.
 - **R30 completion.** The orchestrator deleted the four IP machine GLBs (`watcher`, `sawtooth`, `behemoth`, `thunderjaw`) on main after instruments-core's code removal and pipeline's loader rows merged; `aloy.glb` goes at hero-body's W0b exit as planned.
 
 ## 9. GATE SPEC — the literal acceptance bar per lane
@@ -717,10 +725,10 @@ W0-day1:
 W0b:
 - **A-no-horizon-terms-player** — `tools/lint/namecheck.mjs --player`: the union lexicon (A's 331 + B's 235 + 46 phrases + Brittle, Impact, Tear, Frost, Lens, Shards, Stalker, Watcher, Grazer, Charger, Burrower, Rollerback, Saltbite, Call of the Mountain, Camp) with exact / substring ≥ 5 / edit ≤ 1 rules, over the **rendered DOM text** (title, loading, HUD, every hub tab, every tip and tutorial card, dialogue, credits), every content id (kind, role, item, quest, place, faction, event, audio set), every key of every exported content table, and `public/**/*.{json,md,txt}` → pass: count ≤ the W0b ratchet; non-increasing every wave; **0 at W4 exit** (allowlist: bible §10.4 GENERIC nouns).
 - **A-no-horizon-terms-code** — `namecheck.mjs --code` over identifiers and strings in `src/**`, `index.html`, `tools/**` (excluding `tools/lint/**` and comments) → pass: every hit matches an entry of `tools/lint/engine-allow.json`; no entry exceeds its count cap; the total is non-increasing every wave.
-- **A-fonts-licensed** — pass: `public/fonts/` holds only Bodoni Moda, IBM Plex Sans Condensed, IBM Plex Mono (woff2) and one `OFL.txt` per family; each has a `LICENSES.json` row `OFL-1.1`; computed styles of the wordmark, a HUD label and a numeral resolve to those families; 0 references to Julius, Rajdhani, Chakra Petch, Michroma, Orbitron in CSS/JS.
+- **A-fonts-licensed** — pass: `public/fonts/` holds only Chakra Petch and IBM Plex Mono (woff2) and one `OFL.txt` per family; each has a `LICENSES.json` row `OFL-1.1`; computed styles of the wordmark, a HUD label and a numeral resolve to those families; 0 references to Julius, Rajdhani, Michroma, Orbitron, Bodoni Moda, IBM Plex Sans Condensed in CSS/JS.
 - **A-storage-keys** — `save, change settings, open the map, dismiss a tip, reload` → pass: every localStorage key written matches `/^cal\..*\.v5$/` (v6 for the save after W3); a planted `hzc.save.v4` is ignored (fresh start, 0 console errors). The W0-era v5 plant is re-run by `A-items-ids` (W2: loads, unknown ids dropped) and `A-save-schema` (W3: refused).
 - **A-ui-words** (brand surfaces at W0; all surfaces at W2 via shell-ui) — pass: rendered strings contain none of `/\b(tear|impact|brittle|focus|override|concentration|silent strike|critical (strike|hit)|datapoints?|shards?|medicine|tallneck|cauldron|hunting grounds?|tag(ged)?|machines?|camp)\b/i` (the word "machine" is replaced by "Instrument" in UI).
-- **V-logo** — shot: title screen after settle at 1600×900, plus a 4K crop of the lockup. Pass: CALIMA in Bodoni Moda caps; the I is a plumb line whose dot is the **full, unclipped** spark above the word; one hairline datum rule under the word with a small coral broad-arrow under the I; FAIL on any second line of text, tagline, "A CLAUDE GAME", spark on/under/clipped by a rule, reflection dashes, thin wide-tracked caps, or the words HORIZON / ZERO.
+- **V-logo** — shot: title screen after settle at 1600×900, plus a 4K crop of the lockup. Pass: CALIMA in Chakra Petch caps (R55); the I is a plumb line whose dot is the **full, unclipped** spark above the word; one hairline datum rule under the word with a small coral broad-arrow under the I; FAIL on any second line of text, tagline, "A CLAUDE GAME", spark on/under/clipped by a rule, reflection dashes, thin wide-tracked caps, or the words HORIZON / ZERO.
 - **V38-title** (re-staged) — shot: title screen after settle. Pass: one logo over a live **Pans vista in calima** (salt grid, white surf on black sand, coral disc sun), vertical menu; FAIL on a double logo, a tall walker silhouette on a low-sun skyline, or live lava in frame.
 - **V-loading** — shot: loading screen at 40 % and 100 %. Pass: the datum rule fills as progress; copy "Reading the benchmarks…"; no "Waking the machines".
 W4:
@@ -1023,14 +1031,16 @@ W4 (Flank, Caldera):
 
 ### settlements (W2, W4)
 - **A95-npc-roster** (R23) — pass: ≥ 10 NPCs registered and ≥ 4 body variants by mesh/material signature at W2; ≥ 13 archetypes island-wide at W4.
-- **A-npc-variety** — pass: ≥ 10 archetypes; **≥ 3 distinct silhouettes among the Saltrow NPCs** (height-normalised mask IoU ≤ 0.85 pairwise at 10 m); every archetype wears ≥ 1 procedural faction piece; ≥ 8 distinct archetypes in one Saltrow frame; ≤ 2 draws each; LOD1 ≤ 4 k tris beyond 25 m; only the nearest 4 cast.
+- **A-npc-variety** — pass: ≥ 10 archetypes; **≥ 3 distinct silhouettes among the Saltrow NPCs** (height-normalised mask IoU ≤ 0.85 pairwise at 10 m); every archetype wears ≥ 1 procedural faction piece; ≥ 8 distinct archetypes in one Saltrow frame; near tier ≤ 4 draws and ≤ 20 k tris, LOD1 ≤ 2 draws and ≤ 8 k tris at 18–35 m, LOD2 ≤ 4 k beyond; only the nearest 4 cast.
 - **A-npc-face-delta** — pass: pairwise between archetypes of the same sex, ≥ 4 mm on ≥ 4 face landmarks; no archetype face equals stock UBC (≥ 6 mm on ≥ 3 landmarks).
 - **A-npc-atlas-resident** — walk Saltrow → Ninewalls → Saltrow → pass: ≤ 4 faction atlases resident at every sample; atlases of the settlement left behind are disposed (textures back within +2 of baseline).
 - **A96-npc-animated** — 60 sim s → pass: every mixer advances; ≥ 3 distinct clips per NPC; ≥ 4 NPCs traverse ≥ 8 m.
 - **A97-npc-no-skate** — pass: planted drift ≤ 0.08 m on a walking NPC.
 - **A97b-npc-talk-freeze** — pass: talk freezes the world correctly; seated speakers stand, turn and talk, then return to the seat.
 - **A-npc-dispose** — spawn/despawn 20 NPCs ×3 → pass: geometries, textures and skeletons back to baseline.
-- **A-npc-draws** — Saltrow at dusk, 10 NPCs → pass: NPC owner ≤ 32 draws incl. casters.
+- **A-npc-draws** — Saltrow at dusk, 10 NPCs → pass: NPC owner ≤ 44 draws incl. casters (R56).
+- **A-npc-fidelity** (R56) — 2 m from a near-tier NPC of each archetype → pass: 15–20 k tris; a face displacement field + paint layer from the face library (not stock UBC); separate hair or headwrap geometry with live dyn_ chains whose tips move ≥ the same order as Brea's in `A19`; an outfit of ≥ 3 layered pieces with its own normal/ORM; skin at 1024² with a normal map; tier change at 18 m with no visible pop (≤ 0.02 m silhouette jump, cross-faded).
+- **V-npc-vs-brea** (R56) — Brea and one near-tier NPC of each archetype side by side, front, 3/4 and profile at 2 m, same light. Pass: an independent judge cannot tell from detail alone which is the hero: same skin, eye, hair and cloth treatment, same outfit depth; FAIL if the NPC reads a tier below her (flat skin, stock face, single-mesh clothes, no secondary motion).
 - **A-settlement-draws** — each settlement in view (Saltrow, Ninewalls W2; Mistfold W4) → pass: its kit ≤ 12 draws incl. casters, ≤ 150 k tris, kit files ≤ 1.2 MB.
 - **A61-settlement-colliders** — pass: ≥ 95 % of each settlement's collidable modules registered; Brea cannot pass through any wall (16 sprint probes per settlement).
 - **A-settlement-dispose** — load/unload each settlement ×3 → pass: geometries, textures, collider ids and NPC skeletons back to baseline.
@@ -1057,9 +1067,9 @@ W4 (Flank, Caldera):
 - **A62-sighting-components / A63-loot-reveals** (renamed) — pass: Round-4 bars.
 - **A68-no-softlock / A69-death-choice / A70-hub-tabs / A72-settings-persist / A72b-accessibility** — pass: Round-4 bars.
 - **A-map-triangles** — pass: only the coastline before any reveal; revealing T1 + T2 + T6 paints that triangle's area within 5 % of its geometry; state survives reload.
-- **V10-hud / V37-hud-language** — 40 % HP, aiming, Instrument engaged, tool slot full. Pass: levelling-staff health with 10 % graduations, theodolite compass with a 3-digit bearing, paper chips, hairlines, Bodoni/Plex; no hexes, pills, smoked-glass cut corners, red 4-segment bar or green pouch; legible at 1600×900 and 4K.
+- **V10-hud / V37-hud-language** — 40 % HP, aiming, Instrument engaged, tool slot full. Pass: levelling-staff health with 10 % graduations, theodolite compass with a 3-digit bearing, paper chips, hairlines, Chakra Petch labels + Plex Mono numerals (R55); no hexes, pills, smoked-glass cut corners, red 4-segment bar or green pouch; legible at 1600×900 and 4K.
 - **V36-sighting-scan** — Sighting on a Tiller at 15 m. Pass: sepia paper vignette, stadia hairlines, cobalt weak-point rings, dashed component outlines with leader lines; not violet, not teal, not holographic.
-- **V-map** — Pass: field-book paper, inked contours, soundings offshore, Bodoni italic place names, revealed triangles, Datum Line regions in vermilion.
+- **V-map** — Pass: field-book paper, inked contours, soundings offshore, Chakra Petch place names, revealed triangles, Datum Line regions in vermilion.
 - must stay green: global list.
 
 ### progression (W3)
@@ -1148,11 +1158,11 @@ block is counted once and runs once per kind owned.
       "attribution": null
     },
     {
-      "id": "font-bodoni-moda",
-      "paths": ["public/fonts/BodoniModa-*.woff2"],
-      "title": "Bodoni Moda", "author": "Owen Earl (indestructible type*)",
-      "source_url": "https://fonts.google.com/specimen/Bodoni+Moda",
-      "licence": "OFL-1.1", "licence_text": "public/fonts/BodoniModa-OFL.txt",
+      "id": "font-chakra-petch",
+      "paths": ["public/fonts/ChakraPetch-*.woff2"],
+      "title": "Chakra Petch", "author": "Cadson Demak",
+      "source_url": "https://fonts.google.com/specimen/Chakra+Petch",
+      "licence": "OFL-1.1", "licence_text": "public/fonts/ChakraPetch-OFL.txt",
       "archive_sha256": "<sha256>", "retrieved": "<date>", "modified": "woff2 subset",
       "attribution": null
     },
@@ -1218,6 +1228,7 @@ Rules:
 | GPU frame at the shipped tier | `A-gpu-tier` is a W0 exit; fog/calima frames cull at 140 m; five worst-frame ledgers incl. the Kiln Yard and the Cloudline |
 | the machine crashes again (memory, swap, disk) | ≤ 2 gate Chromes machine-wide, a disk/memory preflight, a 3 GB floor, `A90-abs` absolute ceilings, `A-vram-ledger` with render targets and a 450 MB total, one worktree per lane |
 | a half-finished lane breaks Kevin's preview or another lane | one worktree per lane; main changes only at orchestrator commits; port guard on the gate tools |
+| the R48(c) allocation baseline is taken with a known machine-plumbing transient | documented in `docs/ROUND5-INSTRUMENTS-CORE.md` ("Known transient"): `_statePatrol` and `updateEyesM` are carried, and instruments-a finds the deopt at W1 |
 | NPCs blow the draw or VRAM budget | atlas + LOD1 + nearest-4 shadows mandatory; ≤ 4 faction atlases resident |
 | Sonde / Dredge locomotion | spikes with numeric exits and named cut lines (moored balloon; 3-segment train or 11 kinds) |
 | Transit at scale | Plumb `scale` tests, then a 30 k grey box through the seam before art |

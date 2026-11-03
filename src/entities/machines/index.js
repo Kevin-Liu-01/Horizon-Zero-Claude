@@ -1,10 +1,21 @@
 import * as THREE from 'three';
 import { installInstruments } from '../../instruments/registry.js';
+import { LampSystem } from '../../instruments/lamps.js';
 import { installMachineAI } from './ai/index.js';
 import { ECOSYSTEM } from './ai/tables.js';
 import { setAiRng, seededRng, aiRngSeeded } from './ai/rng.js';
 import { REST_SITE } from '../../world/island/sites.js';
 import { PLAY_RADIUS, EXTENT } from '../../world/island/extent.js';
+import { _st, stepRootS, normalizeEyeRecords, warmSteering } from './machine.js';
+import { HOT, refreshHot, mutableFromBirth } from '../../instruments/lib/hot.js';
+const REFRESH_ARGS = [null];
+/** The node count `Object3D.traverse` would visit (the object and every descendant), with no callback. */
+function countNodes(o) {
+  let n = 1;
+  const ch = o.children;
+  for (let i = 0; i < ch.length; i++) n += countNodes(ch[i]);
+  return n;
+}
 import {
   BODY as EXPANSION_BODY, CHASSIS, installDoctrine, installExpansionDoctrine,
   spawnExpansion, doctrineAudit,
@@ -40,6 +51,8 @@ import {
  */
 const LEGACY_MODULE = import.meta.glob('./legacy.js', { eager: true })['./legacy.js'] || null;
 const NO_LEGACY = { kinds: [], boot: [], ready: Promise.resolve({ loaded: [], failed: [] }) };
+/** The legacy kind ids (empty once `legacy.js` is gone): their `_moveToward` returns on demand (machine.js). */
+const LEGACY_KIND_SET = new Set(LEGACY_MODULE?.LEGACY_KINDS || []);
 
 const CAMP = REST_SITE;            // { x, z, r }: the Instrument no-spawn ring
 const ROUTE_RIM = PLAY_RADIUS + EXTENT.routeRim;
@@ -52,13 +65,42 @@ const _frustum = new THREE.Frustum();
 const _projScreen = new THREE.Matrix4();
 const _sph = new THREE.Sphere(new THREE.Vector3(), 1);
 
+/**
+ * R34 (instruments-core W0b, `A90b-memory-attribution` with the role-based
+ * workload). `autorig.buildRig` leaves ONE closure on the machine,
+ * `machine._rot = (bone, axis, angle) => rig.space.rotLocal(...)`, and a V8
+ * closure keeps its whole enclosing scope alive: buildRig's `meshes` list (the
+ * cloned Meshes it REPLACED with SkinnedMeshes, now detached), its capsule
+ * segments and spec. Measured: 2 detached Meshes held per live auto-rigged
+ * machine (45 off-scene objects with 20 live Tillers). The same forward is
+ * rebuilt here over the rig alone, so buildRig's scope can be collected; the
+ * behaviour is identical (`_rot` is the anim registry's probe surface).
+ * A free function, so the new closure captures nothing but `rig`.
+ */
+function releaseBuildScope(m) {
+  const rig = m.rig;
+  if (!rig || !rig.space || typeof m._rot !== 'function') return;
+  m._rot = (bone, axis, angle) => rig.space.rotLocal(bone, axis, angle);
+}
+
 export class Machines {
   constructor(ctx) {
     this.ctx = ctx;
     this.list = [];
+    /** 0 until the navgrid's first ready frame has warmed every live machine's nav steering (update, `_warmNav`) */
+    this._navWarm = 0;
+    refreshHot(ctx);   // lib/hot.js: valid before the first update (re-copied every frame)
 
-    // AI services: stimulus bus, site lifecycle, squad doctrine
+    // AI services: stimulus bus, site lifecycle, squad doctrine, perception hooks
     installMachineAI(this);
+    /**
+     * THE LAMP GRAMMAR (instruments-core W0b, bible §7.2): every Instrument's
+     * iris lens and every beam are TWO instanced draws owned here
+     * (`src/instruments/lamps.js`). A kind registers its lens with
+     * `machine.addLamp(anchor, opts)`; `interpolate()` writes the instances once
+     * per rendered frame; `dispose()` frees both draws.
+     */
+    this.lamps = new LampSystem(ctx);
     // ...and the Round-4 expansion doctrine (one manager-side listener)
     installExpansionDoctrine(this);
     this._shots = [];      // recent shot origins (see shotOrigin())
@@ -165,13 +207,13 @@ export class Machines {
       let z = cz + Math.cos(a) * rr;
       // keep waypoints out of the hunter camp
       const dx = x - CAMP.x, dz = z - CAMP.z;
-      const d = Math.hypot(dx, dz);
+      const d = Math.sqrt(dx * dx + dz * dz);
       if (d < CAMP.r + 6) {
         x = CAMP.x + (dx / (d || 1)) * (CAMP.r + 6);
         z = CAMP.z + (dz / (d || 1)) * (CAMP.r + 6);
       }
       // ... and inside the playable valley
-      const wr = Math.hypot(x, z);
+      const wr = Math.sqrt(x * x + z * z);
       if (wr > ROUTE_RIM) { x *= ROUTE_RIM / wr; z *= ROUTE_RIM / wr; }
       pts.push(new THREE.Vector3(x, 0, z));
     }
@@ -180,6 +222,11 @@ export class Machines {
 
   _spawnCls(Cls, x, z, opts = {}) {
     const m = new Cls(this.ctx, this, { spawn: { x, z }, ...opts });
+    releaseBuildScope(m);
+    // the lens records the species shells pushed as plain literals become EyeRecords HERE, at construction:
+    // `updateEyesM` then never meets their shape, so its optimised code embeds no map that dies when the
+    // shell builder's code is flushed (a GC "embedded weak objects cleared" deopt; W0b fix round 2)
+    normalizeEyeRecords(m);
     this.list.push(m);
     // expansion kinds get their components + doctrine here, so a SITE RESPAWN
     // gets them back too (the site replays the same opts through `spawn`)
@@ -210,6 +257,18 @@ export class Machines {
      * die permanently on the first respawn; see `ai/squad.js:_remember`.
      */
     this.squads?.adopt?.(m);
+    /* MUTABLE FROM BIRTH (W0b fix round 3; lib/hot.js): every own field of the machine, its scalars and its AI is
+     * written with a different value and back, once, here — after the site, doctrine and squad wiring above added
+     * theirs — so the first fractional value, the first `alive = false`, the first state string or the first lamp
+     * record mid-session is never a constness change that throws away the per-machine code that read it. */
+    // a legacy kind's `_moveToward` returns the distance only while it scavenges (machine.js `_moveToward`)
+    if (LEGACY_KIND_SET.has(m.kind)) m._mtOnDemand = 1;
+    mutableFromBirth(m);
+    if (m.sc) mutableFromBirth(m.sc);
+    if (m.ai) mutableFromBirth(m.ai);
+    // every steering helper through every branch once with THIS machine (its class's map at every load site, at
+    // spawn, never first in a fight: machine.js `warmSteering`, W0b targeted fix); state restored exactly
+    warmSteering(m);
     return m;
   }
 
@@ -260,7 +319,7 @@ export class Machines {
     for (let i = this._shots.length - 1; i >= 0; i--) {
       const s = this._shots[i];
       const dx = hit.point.x - s.x, dz = hit.point.z - s.z;
-      const l = Math.hypot(dx, dz);
+      const l = Math.sqrt(dx * dx + dz * dz);
       if (l < 0.5) { best = s; break; }
       const dl = Math.hypot(hit.dir.x, hit.dir.z) || 1;
       const dot = (dx / l) * (hit.dir.x / dl) + (dz / l) * (hit.dir.z / dl);
@@ -404,10 +463,13 @@ export class Machines {
 
   /** Scene nodes the whole live machine population currently occupies. */
   _machineNodes() {
+    // (no closure per machine, no array iterator: counted by `countNodes`, the same walk as `traverse`; fix round 3)
     let n = 0;
-    for (const m of this.list) {
+    const list = this.list;
+    for (let i = 0; i < list.length; i++) {
+      const m = list[i];
       if (m._disposed) continue;
-      m.root.traverse(() => n++);
+      n += countNodes(m.root);
     }
     return n;
   }
@@ -530,10 +592,40 @@ export class Machines {
     return this.stimulus.alarm(source, radius);
   }
 
+  /**
+   * Once per RENDERED frame (main.js calls every system's `interpolate` after
+   * the sim steps): the lamp instances follow their lenses. Allocation-free.
+   */
+  interpolate() {
+    this.lamps?.update();
+  }
+
+  /** Once, on the navgrid's first ready frame: `navTowardS`'s whisker branch for every live machine (machine.js `warmSteering`). */
+  _warmNav() {
+    const L = this.list;
+    for (let i = 0; i < L.length; i++) { const m = L[i]; if (m && m.alive && !m._disposed) warmSteering(m, true); }
+  }
+
+  /** Free the manager-owned GPU resources (the two lamp draws). */
+  dispose() {
+    this.lamps?.dispose();
+    this.lamps = null;
+  }
+
   update(dt, t) {
-    const p = this.ctx.player;
-    // world stimuli (player footsteps), corpse lifecycle, squad doctrine
+    /* the services every per-frame machine path reads, copied off the root ctx once (lib/hot.js). Called through
+     * Reflect.apply (fix round 3): the optimiser does not inline it, so its loads off the root ctx — a PROTOTYPE
+     * object (every machine's ctx view inherits from it), whose map other systems change mid-session — stay in
+     * `refreshHot` and never deoptimise this function (measured: a "dependent prototype chain changed" wave at her
+     * first sprint dropped `update` into the baseline tier for 8 s). Her position comes from HOT, not `ctx.player`. */
+    REFRESH_ARGS[0] = this.ctx;
+    Reflect.apply(refreshHot, null, REFRESH_ARGS);
+    // the navgrid's first ready frame: every live machine runs `navTowardS`'s whisker branch once (warmSteering;
+    // machines spawned after this frame run it at spawn). A Smi flag: one compare per frame afterwards
+    if (this._navWarm === 0) { const nv = HOT.nav; if (nv && nv.ready) { this._navWarm = 1; this._warmNav(); } }
+    // world stimuli (player footsteps), perk/weather/Flag hooks, corpse lifecycle, squad doctrine
     this.stimulus.update(dt);
+    this.perception.update(dt);
     this.sites.update(dt);
     this.squads.update(dt);
 
@@ -573,31 +665,61 @@ export class Machines {
       this._recycleForBudget(null, true);
     }
 
-    for (let i = this.list.length - 1; i >= 0; i--) {
-      const m = this.list[i];
+    const pp = HOT.pOk === 1 ? HOT.ppos : null;
+    this._stepMachines(dt, t, pp);
+    if (pp) this._standoffPass(pp);
+    this._separationPass();
+  }
+
+  /** Step every machine (distance LOD: far machines tick coarsely). */
+  _stepMachines(dt, t, pp) {
+    const list = this.list;
+    for (let i = list.length - 1; i >= 0; i--) {
+      const m = list[i];
       if (m._disposed) continue;
-      if (p) {
-        const far = m.position.distanceToSquared(p.position) > LOD_DIST * LOD_DIST;
+      if (pp) {
+        const mp = m.position;
+        const ddx = mp.x - pp.x, ddy = mp.y - pp.y, ddz = mp.z - pp.z;
+        const far = ddx * ddx + ddy * ddy + ddz * ddz > LOD_DIST * LOD_DIST;
         m.lowLOD = far;
         // part meshes are sub-pixel beyond LOD range — drop their draw calls
         if (far !== m._partsHidden) {
           m._partsHidden = far;
-          for (const part of m.parts) {
+          for (let k = 0; k < m.parts.length; k++) {
+            const part = m.parts[k];
             if (part.attached) part.mesh.visible = !far;
           }
         }
         if (far) {
-          // coarse tick: batch time and step a few times per second
-          m._lodAccum = (m._lodAccum ?? 0) + dt;
-          if (m._lodAccum < LOD_TICK) continue;
-          m.update(Math.min(m._lodAccum, 0.4), t);
-          m._lodAccum = 0;
+          /* coarse tick: a FIXED step of LOD_TICK seconds a few times per second, the remainder carried
+           * (W0b fix round 2). It used to pass `Math.min(accum, 0.4)` — a fresh double handed to a
+           * megamorphic call, boxed per far machine per tick; LOD_TICK is a module constant, already a
+           * box. Same simulated time: the carry keeps every elapsed second (capped at one extra step,
+           * as the 0.4 s cap capped it before). */
+          const ms = m.sc;
+          ms._lodAccum += dt;
+          if (ms._lodAccum < LOD_TICK) continue;
+          const left = ms._lodAccum - LOD_TICK;
+          ms._lodAccum = left < LOD_TICK ? left : LOD_TICK;
+          m.update(LOD_TICK, t);
           continue;
         }
       }
       m.update(dt, t);
     }
+  }
 
+  /** Hard standoff between the player and every machine body (see the notes inside). */
+  _standoffPass(pp) {
+    const list = this.list;
+    /**
+     * ALLOCATION-FREE (memory rule; W0b fix round 1). Both loops below read every
+     * machine's doubles through `m.sc` (machine.js MachineScalars): a dozen
+     * machine classes make `m.heading` / `m.bodyRadius` megamorphic, and a
+     * megamorphic double load boxes a HeapNumber — 2 per pair of the O(n^2)
+     * separation pass, 1.8 MB/s on the staged fight. `moveRoot` is replaced by the
+     * same clamp as a module function fed through `_st` (machine.js `stepRootS`): no double crosses a call.
+     */
     // hard standoff: machines never interpenetrate the player — in EVERY
     // state (patrol/return wander included: a behemoth must not stroll
     // through an idle Aloy) and along the whole BODY, not just the center:
@@ -613,46 +735,51 @@ export class Machines {
      * drawn-spear case A25 cannot see). Everything that reads the machine's
      * GEOMETRY — strider/behemoth charge reach, the Silent Strike prompt —
      * keeps `standoffHalfLen` itself, which this term never writes. */
-    if (p) {
-      for (const m of this.list) {
+    {
+      for (let i = 0; i < list.length; i++) {
+        const m = list[i];
         if (!m.alive || m._disposed) continue;
+        const ms = m.sc, mp = m.position;
         const min = m.bodyRadius + 0.6;
-        const L = m.meleeStandoffHalfLen ?? m.standoffHalfLen ?? 0;
-        const fx = Math.sin(m.heading), fz = Math.cos(m.heading);
+        const mel = m.meleeStandoffHalfLen;
+        const L = (mel !== null && mel !== undefined) ? +mel : m.standoffHalfLen;
+        const fx = Math.sin(ms.heading), fz = Math.cos(ms.heading);
         for (let s = -1; s <= 1; s++) {
           const off = s * L;
-          _v.set(
-            m.position.x + fx * off - p.position.x, 0,
-            m.position.z + fz * off - p.position.z,
-          );
-          const d2 = _v.lengthSq();
+          const vx = mp.x + fx * off - pp.x, vz = mp.z + fz * off - pp.z;
+          const d2 = vx * vx + vz * vz;
           if (d2 < min * min && d2 > 1e-6) {
             const d = Math.sqrt(d2);
-            _v.multiplyScalar((min - d) / d);
-            m.moveRoot(_v.x, _v.z);
+            const k = (min - d) / d;
+            _st.sx = vx * k; _st.sz = vz * k; stepRootS(m);
           }
           if (L === 0) break;
         }
       }
     }
+  }
 
+  /** Soft separation so machines don't interpenetrate (O(n^2) over the live list). */
+  _separationPass() {
+    const list = this.list;
     // soft separation so machines don't interpenetrate
-    const n = this.list.length;
+    const n = list.length;
     for (let i = 0; i < n; i++) {
-      const a = this.list[i];
+      const a = list[i];
       if (!a.alive) continue;
+      const ap = a.position, ar = a.bodyRadius;
       for (let j = i + 1; j < n; j++) {
-        const b = this.list[j];
+        const b = list[j];
         if (!b.alive) continue;
-        _v.subVectors(b.position, a.position);
-        _v.y = 0;
-        const min = a.bodyRadius + b.bodyRadius;
-        const d2 = _v.lengthSq();
+        const bp = b.position;
+        const vx = bp.x - ap.x, vz = bp.z - ap.z;
+        const min = ar + b.bodyRadius;
+        const d2 = vx * vx + vz * vz;
         if (d2 > min * min || d2 < 1e-6) continue;
         const d = Math.sqrt(d2);
-        _v.multiplyScalar(((min - d) / d) * 0.5);
-        b.moveRoot(_v.x, _v.z);
-        a.moveRoot(-_v.x, -_v.z);
+        const k = ((min - d) / d) * 0.5;
+        _st.sx = vx * k; _st.sz = vz * k; stepRootS(b);
+        _st.sx = -vx * k; _st.sz = -vz * k; stepRootS(a);
       }
     }
   }
