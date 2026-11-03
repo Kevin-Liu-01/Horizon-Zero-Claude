@@ -478,7 +478,7 @@ export function preflight(env = process.env) {   // CAL_PREFLIGHT_FREE_GB / CAL_
   const why = gb < 3 ? `free disk ${gb.toFixed(2)} GB < 3 GB` : pct < 25 ? `memory_pressure free ${pct} % < 25 %` : null;
   return { ok: !why, why, freeGB: +gb.toFixed(2), memFreePct: pct };
 }
-export const SEMAPHORE_DIR = path.join(PROFILE_ROOT, 'chrome-semaphore'), CHROME_SLOTS = Math.min(2, Math.max(1, Number(process.env.CAL_CHROME_SLOTS) || 2));
+export const SEMAPHORE_DIR = path.join(PROFILE_ROOT, 'chrome-semaphore'), CHROME_SLOTS = Math.min(2, Math.max(1, Number(process.env.CAL_CHROME_SLOTS) || 1));   // R60: one gate Chrome machine-wide unless a run asks for two
 let ticket = null;
 const born = (pid) => spawnSync('ps', ['-o', 'lstart=', '-p', String(pid)], { encoding: 'utf8' }).stdout?.trim() || null;
 export async function acquireChromeSlot() {   // FIFO tickets `<n>` = `pid|start`: the first CHROME_SLOTS live tickets may run a Chrome; a SIGKILLed or recycled pid's ticket is dead
