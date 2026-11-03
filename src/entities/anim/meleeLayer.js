@@ -235,14 +235,18 @@ const AXIAL_PREFIX = ['spine_', 'neck_', 'head_'];
  *            the head line, the reach from spine pitch and the lunge.
  */
 const READY = {
-  hand: [-0.20, 1.04, -0.16], shaft: [0.32, -0.36, 0.876],
-  lh: [0.22, 0.95, 0.20], lhW: 1, lhOn: 0.5425, yaw: -0.30, pitch: 0.34, roll: 0.02,
+  hand: [-0.21, 1.09, -0.12], shaft: [0.36, -0.385, 0.85],
+  lh: [0.22, 0.95, 0.20], lhW: 1, lhOn: 0.5425, yaw: -0.36, py: -0.26, pitch: 0.24, roll: 0.02, dz: 0.0,
 };
 /**
  * Her legs, per beat. Rotations are char-space radians on thigh, calf and
  * foot; `dx/dy` the pelvis offset. Read with STANCE_ENV: nothing in a windup's
  * opening, full at the contact, gone by the end of the recover.
  */
+/** How much of the trunk's turn the head keeps, and how much of its lean the
+ *  neck and skull take out (see `update`). */
+const HEAD_LEAD = 0.14;
+const HEAD_LEVEL = 0.92;
 /** The wrap and knot tails: the two simulated chains near the haft (A104). */
 const TAIL_RE = /^dyn_(wrapSash|sashEnd|hairKnotTail)/;
 /** `lhOn` is authored on the 1.55 m lance at the guard's 0.20 -> 0.55. */
@@ -255,51 +259,49 @@ const LH_ON_MIN = 0.14;
 const RECOIL_LIGHT = 0.045;
 const RECOIL_HEAVY = 0.085;
 const RECOIL_RATE = 11;
-/** Her knees stay in the guard's bend through a swing's opening and close. */
-const READY_LEGS = 0.30;
 /** How much of a stance one RENDERED frame may take on (a loaded box must not
  *  snap her hips; see `_stance`). */
 const STANCE_STEP_MAX = 0.10;
 const STANCE = {
-  ready: { thighL: -0.22, thighR: -0.20, calfL: 0.38, calfR: 0.36, footL: -0.16, footR: -0.16, abd: 0.05, dx: 0.0, dy: -0.060 },
-  'light-1': { thighL: -0.34, thighR: -0.06, calfL: 0.42, calfR: 0.16, footL: -0.12, footR: -0.03, abd: 0.05, dx: 0.04, dy: -0.085 },
-  'light-2': { thighL: -0.14, thighR: -0.50, calfL: 0.22, calfR: 0.66, footL: -0.06, footR: -0.26, abd: 0.12, dx: -0.11, dy: -0.140 },
-  'light-3': { thighL: -0.46, thighR: 0.14, calfL: 0.52, calfR: 0.06, footL: -0.18, footR: 0.18, abd: 0.05, dx: 0.09, dy: -0.170 },
-  heavy: { thighL: -0.50, thighR: -0.30, calfL: 0.86, calfR: 0.76, footL: -0.34, footR: -0.28, abd: 0.22, dx: -0.06, dy: -0.230 },
+  ready: { thighL: -0.50, thighR: 0.14, calfL: 0.66, calfR: 0.30, footL: -0.16, footR: -0.30, abd: 0.07, dx: 0.0, dy: -0.105 },
+  'light-1': { thighL: -0.62, thighR: 0.26, calfL: 0.74, calfR: 0.14, footL: -0.12, footR: -0.26, abd: 0.05, dx: 0.02, dy: -0.115 },
+  'light-2': { thighL: -0.30, thighR: -0.42, calfL: 0.46, calfR: 0.62, footL: -0.16, footR: -0.20, abd: 0.16, dx: -0.09, dy: -0.145 },
+  'light-3': { thighL: -0.66, thighR: 0.30, calfL: 0.70, calfR: 0.10, footL: -0.04, footR: -0.26, abd: 0.05, dx: 0.05, dy: -0.150 },
+  heavy: { thighL: -0.78, thighR: 0.28, calfL: 1.02, calfR: 0.34, footL: -0.24, footR: -0.40, abd: 0.14, dx: -0.03, dy: -0.215 },
 };
 /** How much of a beat's stance is on at clip progress `cu` (0 cock .. 1 end). */
 const STANCE_ENV = (cu) => (
-  cu <= 0.30 ? 0.55 * smoothstep(cu / 0.30, 0, 1)
-    : cu <= 0.68 ? 0.55 + 0.45 * smoothstep((cu - 0.30) / 0.38, 0, 1)
+  cu <= 0.30 ? 0.20 * smoothstep(cu / 0.30, 0, 1)
+    : cu <= 0.68 ? 0.20 + 0.80 * smoothstep((cu - 0.30) / 0.38, 0, 1)
       : cu <= 0.82 ? 1
         : 1 - smoothstep((cu - 0.82) / 0.18, 0, 1)
 );
 const BEATS = [
   {
-    id: 'light-1', clip: [0.10, 0.62], mirror: false, clipW: 0.20,
-    cock: { hand: [-0.24, 1.12, -0.22], shaft: [0.40, 0.42, 0.81], lh: [0.2, 0.95, 0.2], lhW: 1, lhOn: 0.44, yaw: -0.50, pitch: 0.04, roll: 0.05 },
-    contact: { hand: [-0.13, 1.04, 0.33], shaft: [0.10, -0.03, 0.995], lh: [0.2, 0.95, 0.2], lhW: 1, lhOn: 0.30, yaw: -0.12, pitch: 0.46, roll: -0.04 },
-    follow: { hand: [-0.18, 0.98, 0.30], shaft: [0.24, -0.42, 0.87], lh: [0.2, 0.95, 0.2], lhW: 1, lhOn: 0.34, yaw: -0.06, pitch: 0.36, roll: -0.08 },
+    id: 'light-1', clip: [0.10, 0.62], mirror: false, clipW: 0.16,
+    cock: { hand: [-0.27, 1.16, -0.25], shaft: [0.34, 0.30, 0.89], lh: [0.2, 0.95, 0.2], lhW: 1, lhOn: 0.44, yaw: -0.46, py: -0.34, pitch: 0.02, roll: 0.05, dz: -0.07 },
+    contact: { hand: [-0.14, 1.11, 0.30], shaft: [0.10, -0.03, 0.995], lh: [0.2, 0.95, 0.2], lhW: 1, lhOn: 0.27, yaw: -0.12, py: 0.02, pitch: 0.20, roll: -0.04, dz: 0.15 },
+    follow: { hand: [-0.17, 1.03, 0.28], shaft: [0.24, -0.40, 0.88], lh: [0.2, 0.95, 0.2], lhW: 1, lhOn: 0.32, yaw: -0.12, py: 0.08, pitch: 0.24, roll: -0.08, dz: 0.12 },
   },
   {
-    id: 'light-2', clip: [0.10, 0.62], mirror: true, clipW: 0.20,
-    cock: { hand: [-0.30, 1.20, 0.00], shaft: [0.76, 0.20, 0.62], lh: [0.2, 0.95, 0.2], lhW: 1, lhOn: 0.44, yaw: 0.42, pitch: 0.12, roll: 0.04 },
-    contact: { hand: [-0.20, 1.14, 0.26], shaft: [-0.14, 0.02, 0.99], lh: [0.2, 0.95, 0.2], lhW: 1, lhOn: 0.30, yaw: -0.16, pitch: 0.30, roll: 0.04 },
-    follow: { hand: [-0.24, 0.98, 0.12], shaft: [-0.66, -0.20, 0.72], lh: [0.2, 0.95, 0.2], lhW: 1, lhOn: 0.28, yaw: -0.50, pitch: 0.26, roll: 0.06 },
+    id: 'light-2', clip: [0.10, 0.62], mirror: true, clipW: 0.16,
+    cock: { hand: [-0.28, 1.21, -0.02], shaft: [0.76, 0.20, 0.62], lh: [0.2, 0.95, 0.2], lhW: 1, lhOn: 0.44, yaw: 0.26, py: 0.22, pitch: 0.06, roll: 0.04, dz: -0.04 },
+    contact: { hand: [-0.20, 1.17, 0.27], shaft: [-0.14, 0.02, 0.99], lh: [0.2, 0.95, 0.2], lhW: 1, lhOn: 0.27, yaw: -0.12, py: -0.06, pitch: 0.18, roll: 0.04, dz: 0.10 },
+    follow: { hand: [-0.25, 1.03, 0.14], shaft: [-0.66, -0.20, 0.72], lh: [0.2, 0.95, 0.2], lhW: 1, lhOn: 0.28, yaw: -0.34, py: -0.24, pitch: 0.20, roll: 0.06, dz: 0.08 },
   },
   {
-    id: 'light-3', clip: [0.05, 0.80], mirror: false, clipW: 0.24,
+    id: 'light-3', clip: [0.05, 0.80], mirror: false, clipW: 0.20,
     release: [0.05, 0.42],
-    cock: { hand: [-0.27, 1.26, -0.08], shaft: [0.34, 0.42, 0.84], lh: [0.28, 1.02, 0.20], lhW: 1, lhOn: 0.40, yaw: -0.46, pitch: -0.06, roll: 0.04 },
-    contact: { hand: [-0.24, 1.36, 0.70], shaft: [0.14, -0.26, 0.955], lh: [0.40, 0.98, -0.20], lhW: 0, lhOn: 0.40, yaw: 0.34, pitch: 0.42, roll: 0.02 },
-    follow: { hand: [-0.08, 1.04, 0.58], shaft: [0.26, -0.44, 0.86], lh: [0.38, 0.92, -0.24], lhW: 0, lhOn: 0.40, yaw: 0.26, pitch: 0.34, roll: -0.04 },
+    cock: { hand: [-0.28, 1.28, -0.10], shaft: [0.34, 0.42, 0.84], lh: [0.28, 1.02, 0.20], lhW: 1, lhOn: 0.40, yaw: -0.40, py: -0.26, pitch: -0.06, roll: 0.04, dz: -0.06 },
+    contact: { hand: [-0.22, 1.34, 0.62], shaft: [0.14, -0.26, 0.955], lh: [0.40, 0.98, -0.20], lhW: 0, lhOn: 0.40, yaw: 0.24, py: 0.20, pitch: 0.26, roll: 0.02, dz: 0.17 },
+    follow: { hand: [-0.08, 1.06, 0.52], shaft: [0.26, -0.44, 0.86], lh: [0.38, 0.92, -0.24], lhW: 0, lhOn: 0.40, yaw: 0.18, py: 0.20, pitch: 0.26, roll: -0.04, dz: 0.14 },
   },
 ];
 const HEAVY = {
-  id: 'heavy', clip: [0.0, 0.92], mirror: false, clipW: 0.24,
-  cock: { hand: [-0.27, 1.27, -0.12], shaft: [0.32, 0.46, 0.83], lh: [0.2, 0.95, 0.2], lhW: 1, lhOn: 0.38, yaw: -0.58, pitch: -0.16, roll: 0.08 },
-  contact: { hand: [-0.22, 1.31, 0.36], shaft: [0.12, -0.03, 0.992], lh: [0.2, 0.95, 0.2], lhW: 1, lhOn: 0.32, yaw: -0.10, pitch: 0.58, roll: -0.05 },
-  follow: { hand: [-0.20, 1.10, 0.32], shaft: [0.26, -0.46, 0.85], lh: [0.2, 0.95, 0.2], lhW: 1, lhOn: 0.34, yaw: -0.04, pitch: 0.56, roll: -0.08 },
+  id: 'heavy', clip: [0.0, 0.92], mirror: false, clipW: 0.18,
+  cock: { hand: [-0.28, 1.31, -0.14], shaft: [0.32, 0.46, 0.83], lh: [0.2, 0.95, 0.2], lhW: 1, lhOn: 0.38, yaw: -0.46, py: -0.36, pitch: -0.10, roll: 0.08, dz: -0.10 },
+  contact: { hand: [-0.22, 1.33, 0.36], shaft: [0.12, -0.05, 0.992], lh: [0.2, 0.95, 0.2], lhW: 1, lhOn: 0.30, yaw: -0.14, py: 0.04, pitch: 0.30, roll: -0.05, dz: 0.20 },
+  follow: { hand: [-0.20, 1.12, 0.32], shaft: [0.26, -0.46, 0.85], lh: [0.2, 0.95, 0.2], lhW: 1, lhOn: 0.34, yaw: -0.10, py: 0.10, pitch: 0.32, roll: -0.08, dz: 0.16 },
 };
 /** How far before `CONTACT_K` the contact key is reached; it is then HELD for
  *  the rest of the strike window. See `_blend`. 0.16 -> 0.10 in fix pass 1: the
@@ -689,11 +691,14 @@ export class MeleeLayer {
      * frame so the ground conform's pelvis clamp plants the feet against it */
     this._stanceW = 0;
     this._stanceA = 0;          // rate-limited stance amplitude (STANCE_STEP_MAX)
+    this._stanceMix = 0;        // ...and how far from the guard's stance to the beat's
     this._stanceKey = null;     // the beat whose stance is currently applied
     this._saFrame = -1;
     this._saBudget = 1;
     this.pelvisDx = 0;
     this.pelvisDy = 0;
+    this.pelvisDz = 0;
+    this._pelvisYawNow = 0;
     this._held = false;         // is the lance parented to the hand right now?
     this._grabK = 0.55;         // drawK at which the hand actually took it
     this._handQ = new THREE.Quaternion();  // last SOLVED hand orientation (char)
@@ -1081,7 +1086,10 @@ export class MeleeLayer {
 
   /** The stowed bow's line, char space; false with no kit. */
   _bowChar(a, b) {
-    if (!this._bowLine) return false;
+    /* the kit is worn after this layer is built: look again until it is there */
+    if (!this._bowLine) { this._bowLine = this._stowBowInit(); if (!this._bowLine) return false; }
+    const kit = this.ctx.player?.hero?.kit;
+    if (kit && (kit.hidden & 2)) return false;   // the bow is in her hand
     const bone = this.socketBone, an = this.an;
     bone.updateWorldMatrix(true, false);
     _m4.copy(an.model.matrixWorld).invert().multiply(bone.matrixWorld);
@@ -1324,7 +1332,7 @@ export class MeleeLayer {
     if (w <= 0.001) {
       // `_stance` never ran, so withdraw last frame's pelvis offset rather than
       // leaving the animator adding a stale one for ever
-      this.pelvisDx = 0; this.pelvisDy = 0; this._stanceW = 0; this._stanceA = 0;
+      this.pelvisDx = 0; this.pelvisDy = 0; this.pelvisDz = 0; this._pelvisYawNow = 0; this._stanceW = 0; this._stanceA = 0; this._stanceMix = 0;
       this._guardOff.set(0, 0, 0);
       this._clipWeights(null, 0, 0); this._settleLance(stance, st); return;
     }
@@ -1343,7 +1351,7 @@ export class MeleeLayer {
           const f = this._windFrom || (this._windFrom = { hand: [0, 0, 0], shaft: [0, 0, 1], lh: [0, 0, 0], lhOn: 0, lhW: 0, yaw: 0, pitch: 0, roll: 0 });
           const so = this._swingOut;
           for (let i = 0; i < 3; i++) { f.hand[i] = so.hand[i]; f.shaft[i] = so.shaft[i]; f.lh[i] = so.lh[i]; }
-          f.lhOn = so.lhOn; f.lhW = so.lhW; f.yaw = so.yaw; f.pitch = so.pitch; f.roll = so.roll;
+          f.lhOn = so.lhOn; f.lhW = so.lhW; f.yaw = so.yaw; f.pitch = so.pitch; f.roll = so.roll; f.py = so.py; f.dz = so.dz;
           this._windOn = true;
         } else this._windOn = false;
       }
@@ -1414,10 +1422,19 @@ export class MeleeLayer {
     an._rot(b.spine3, X_AXIS, pitch * 0.32);
     an._rot(b.spine2, Z_AXIS, roll * 0.5);
     an._rot(b.spine3, Z_AXIS, roll * 0.5);
-    // the head leads the swing: she looks where the blade is going
-    an._rotL(b.neck1, Y_AXIS, yaw * 0.18);
-    an._rotL(b.head, Y_AXIS, yaw * 0.22);
-    an._rot(b.head, X_AXIS, pitch * 0.18);
+    /* HER EYES STAY ON WHAT SHE IS FIGHTING (melee W1, filmed: the trunk's turn and
+     * lean carried the head with them, and the guard and every contact read as a
+     * woman looking at her own feet). The neck and the skull take out most of the
+     * chest's turn and lean, so she faces down the haft however bladed she stands;
+     * `HEAD_LEAD` of the turn stays, because the head does lead the swing. */
+    {
+      const ty = (yaw + (this._pelvisYawNow || 0) * w) * (1 - HEAD_LEAD);
+      const tp = pitch;
+      an._rot(b.neck1, Y_AXIS, -ty * 0.42);
+      an._rot(b.head, Y_AXIS, -ty * 0.50);
+      an._rot(b.neck1, X_AXIS, -tp * HEAD_LEVEL * 0.45);
+      an._rot(b.head, X_AXIS, -tp * HEAD_LEVEL * 0.55);
+    }
     // shoulder girdle follows the drive arm
     // (and further when the swing is aimed up at a tall machine: the girdle
     // rises into a reach over the head — round 6, R7)
@@ -1568,7 +1585,7 @@ export class MeleeLayer {
   _stance(dt, w, u, beat, stance) {
     const an = this.an, b = an.b, D = this._dbg;
     if (!b.thighL || !b.thighR || !b.calfL || !b.calfR) {
-      this.pelvisDx = 0; this.pelvisDy = 0; this._stanceA = 0; return;
+      this.pelvisDx = 0; this.pelvisDy = 0; this.pelvisDz = 0; this._pelvisYawNow = 0; this._stanceA = 0; return;
     }
     /* The gate, one frame stale on purpose: `_stanceStep` writes `_strideT`
      * from inside `_groundConform`, which runs after this layer. A frame of
@@ -1576,6 +1593,17 @@ export class MeleeLayer {
      * would mean running the conform first. */
     const welded = (an._strideT || 0) > 0.10 ? 1 : 0;
     this._stanceW = damp(this._stanceW || 0, welded, 7, dt);
+    /* THE HIPS TURN AND TRAVEL WITH THE BEAT (melee W1; `py` and `dz` on the pose
+     * keys, continuous with them). The feet are planted by the conform, so a
+     * turned and driven pelvis loads the legs instead of skating them, and the leg
+     * rotations below are authored on the turned pelvis. Standing only: a stride
+     * owns its hips (`_stanceW` is 0 at a jog). */
+    {
+      const hw = w * this._stanceW;
+      this._pelvisYawNow = (u.py || 0) * hw;
+      this.pelvisDz = (u.dz || 0) * hw;
+      if (this._pelvisYawNow !== 0 && b.pelvis) an._rot(b.pelvis, Y_AXIS, this._pelvisYawNow);
+    }
     const live = stance === 'swing' ? STANCE[beat.id] : (stance === 'ready' ? STANCE.ready : null);
     /* ...and she stands TALL to stab up at a tall machine (round 6, R7): a
      * swing the aim has bent up past ~12 deg (a Thunderjaw's jaw, a Longleg's
@@ -1584,67 +1612,59 @@ export class MeleeLayer {
      * 0.1 m of reach it did not have. Standing swings with no target, and
      * every gate staging them, are untouched (`aimPitchDeg` is 0). */
     const tall = clamp(((D.aimPitchDeg || 0) - 12) / 25, 0, 1);
-    const want = live ? w * this._stanceW * (stance === 'swing' ? Math.max(STANCE_ENV(u.clipU), READY_LEGS) : 1) * (1 - 0.8 * tall) : 0;
-    /* THE KEY OUTLIVES THE SWING BY AS LONG AS THE UNWIND TAKES. `STANCE_ENV`
-     * is already 0 at the end of `recover`, so on a normal frame `a` is spent
-     * before `stance` leaves 'swing' — but the rate limit below is in RENDERED
-     * frames, so on a loaded box the amplitude can still be finite when the
-     * state machine returns to the guard. Dropping the key there would snap the
-     * legs to neutral in one frame, which is the same class of defect the rate
-     * limit exists to prevent. The last beat's key is held until `a` is gone. */
-    const key = live || (this._stanceA > 0.002 ? this._stanceKey : null);
-    /* A NEW KEY UNDER A LOADED STANCE IS A STEP TOO (round 5 fix pass 1). The
-     * arming below fires on AMPLITUDE change only, so a key swapped while the
-     * amplitude is already up (V47 pins light-3 then the heavy at full
-     * amplitude; a fast combo can hand one beat to the next before the first
-     * has unwound) kept the feet locked where the OLD stance put them, and the
-     * ground conform's pelvis clamp then held the hips up to reach them:
-     * A102 read the pinned heavy's pelvis at 0.686-0.723 m on most runs and
-     * 0.799 m on the runs where the feet were left too far apart (two in
-     * twenty). The swap arms the animator's stance step with `rekey`: the
-     * home is re-captured off the NEW key and a foot re-places once it is
-     * `STEP_TRIGGER_REKEY` (3 cm) out of it, so the feet go where the new
-     * stance puts them. */
-    if (live && this._stanceKey && live !== this._stanceKey && this._stanceA > 0.02) an.beginMeleeStep?.(true);
-    if (live) this._stanceKey = live;
-    /* RATE-LIMITED PER RENDERED FRAME (see `STANCE_STEP_MAX` for the measured
-     * failure this exists for). One budget per drawn frame, not per sim
-     * sub-step, because the sub-steps are what made the unbounded version
-     * frame-rate dependent in the first place. */
+    /* THE LEGS LIVE IN THE GUARD AND LOAD INTO THE BEAT (melee W1). `want` is how
+     * much of a melee stance is on at all; `mixT` how far from the guard's stance
+     * to this beat's: nothing through the cock's opening, full at the contact, gone
+     * by the end of the recover. Round 4 scaled one key by an envelope, so the
+     * knees straightened at the top of every swing and bent again for the strike. */
+    const want = live ? w * this._stanceW * (1 - 0.8 * tall) : 0;
+    const mixT = stance === 'swing' ? STANCE_ENV(u.clipU) : 0;
+    /* THE KEY OUTLIVES THE SWING BY AS LONG AS THE UNWIND TAKES: the rate limit
+     * below is in RENDERED frames, so on a loaded box the mix can still be finite
+     * when the state machine returns to the guard, and dropping the key there
+     * would snap the legs in one frame. The last beat's key is held until it is
+     * spent. */
+    const key = stance === 'swing' ? live : (this._stanceMix > 0.002 ? this._stanceKey : STANCE.ready);
+    /* A NEW KEY UNDER A LOADED STANCE IS A STEP TOO (round 5 fix pass 1): the feet
+     * go where the new stance puts them. `rekey` re-captures the home off the new
+     * key and a foot re-places once it is `STEP_TRIGGER_REKEY` out of it. */
+    if (stance === 'swing' && this._stanceKey && live !== this._stanceKey && this._stanceMix > 0.02) an.beginMeleeStep?.(true);
+    if (stance === 'swing') this._stanceKey = live;
+    /* RATE-LIMITED PER RENDERED FRAME (see `STANCE_STEP_MAX`): one budget per drawn
+     * frame, not per sim sub-step, shared by the two numbers. */
     const fid = this.ctx.renderer?.info?.render?.frame;
     const fnow = typeof fid === 'number' ? fid : Math.floor(performance.now() / 8);
     if (fnow !== this._saFrame) { this._saFrame = fnow; this._saBudget = STANCE_STEP_MAX; }
     const dA = clamp(want - this._stanceA, -this._saBudget, this._saBudget);
     this._saBudget = Math.max(0, this._saBudget - Math.abs(dA));
     this._stanceA += dA;
-    const a = this._stanceA;
-    /* A STANCE CHANGE IS A STEP, SO SAY SO. The animator already owns the only
-     * honest way to move a planted foot — `_stanceStep` unplants, lifts and
-     * replants the foot the body has left behind, and A105 gates it. Arming it
-     * while the stance is actively loading means the feet RE-PLACE for the new
-     * base instead of being dragged against the lock; the rate limit above
-     * bounds what is left. Threshold, not every frame: a settled stance must
-     * not hold a foot in flight for ever. */
-    if (Math.abs(dA) > 0.02) an.beginMeleeStep?.();
+    const dM = clamp(mixT - this._stanceMix, -this._saBudget, this._saBudget);
+    this._stanceMix += dM;
+    const a = this._stanceA, m = this._stanceMix;
+    /* A STANCE CHANGE IS A STEP, SO SAY SO: `_stanceStep` unplants, lifts and
+     * replants the foot the body has left behind (A105). Armed only while the
+     * stance is actively loading: a settled stance must not hold a foot in flight. */
+    if (Math.abs(dA) > 0.02 || Math.abs(dM) > 0.02) an.beginMeleeStep?.();
     // NOT `D.stance` — that is the melee STATE ('swing' / 'ready' / 'holstered')
-    // and every gate keys its swing frames off it (clobbering it read as "0
-    // swing frames" on A102 and 0 deg of torso on A105).
+    // and every gate keys its swing frames off it.
     D.legW = this._stanceW;
     D.legAmp = a;
-    D.legBeat = live ? beat.id : (key ? 'unwind' : null);
-    if (!key || a <= 0.002) { this.pelvisDx = 0; this.pelvisDy = 0; return; }
-    an._rot(b.thighL, X_AXIS, key.thighL * a);
-    an._rot(b.thighR, X_AXIS, key.thighR * a);
-    an._rot(b.calfL, X_AXIS, key.calfL * a);
-    an._rot(b.calfR, X_AXIS, key.calfR * a);
-    if (b.footL) an._rot(b.footL, X_AXIS, key.footL * a);
-    if (b.footR) an._rot(b.footR, X_AXIS, key.footR * a);
+    D.legBeat = stance === 'swing' ? beat.id : (m > 0.002 ? 'unwind' : (a > 0.002 ? 'ready' : null));
+    if (a <= 0.002) { this.pelvisDx = 0; this.pelvisDy = 0; return; }
+    const R = STANCE.ready, K = key || R, n = 1 - m;
+    an._rot(b.thighL, X_AXIS, (R.thighL * n + K.thighL * m) * a);
+    an._rot(b.thighR, X_AXIS, (R.thighR * n + K.thighR * m) * a);
+    an._rot(b.calfL, X_AXIS, (R.calfL * n + K.calfL * m) * a);
+    an._rot(b.calfR, X_AXIS, (R.calfR * n + K.calfR * m) * a);
+    if (b.footL) an._rot(b.footL, X_AXIS, (R.footL * n + K.footL * m) * a);
+    if (b.footR) an._rot(b.footR, X_AXIS, (R.footR * n + K.footR * m) * a);
     // track width: +Z on her left thigh and -Z on her right both swing the
     // knee OUTBOARD (the animator's own wide-track term uses the same signs)
-    an._rotL(b.thighL, Z_AXIS, key.abd * a);
-    an._rotL(b.thighR, Z_AXIS, -key.abd * a);
-    this.pelvisDx = key.dx * a;
-    this.pelvisDy = key.dy * a;
+    const abd = (R.abd * n + K.abd * m) * a;
+    an._rotL(b.thighL, Z_AXIS, abd);
+    an._rotL(b.thighR, Z_AXIS, -abd);
+    this.pelvisDx = (R.dx * n + K.dx * m) * a;
+    this.pelvisDy = (R.dy * n + K.dy * m) * a;
   }
 
   /**
@@ -1750,7 +1770,7 @@ export class MeleeLayer {
     const beat = heavy ? HEAVY : BEATS[clamp(combo | 0, 0, BEATS.length - 1)];
     const c = beat.contact;
     const L = (1 - this.gripFrac) * this.length;
-    out.set(c.hand[0] + c.shaft[0] * L, c.hand[1] + c.shaft[1] * L, c.hand[2] + c.shaft[2] * L);
+    out.set(c.hand[0] + c.shaft[0] * L, c.hand[1] + c.shaft[1] * L, c.hand[2] + c.shaft[2] * L + (c.dz || 0));
     if (Math.abs(this._aimYaw) > 1e-3) out.applyAxisAngle(Y_AXIS, this._aimYaw);
     this.an.model.updateWorldMatrix(true, false);
     out.applyMatrix4(this.an.model.matrixWorld);
@@ -2127,7 +2147,7 @@ export class MeleeLayer {
     if (!this.ok) return false;
     const beat = heavy ? HEAVY : BEATS[clamp(combo | 0, 0, BEATS.length - 1)];
     const c = beat.contact;
-    out.set(c.hand[0], c.hand[1], c.hand[2]);
+    out.set(c.hand[0], c.hand[1], c.hand[2] + (c.dz || 0));
     if (Math.abs(this._aimYaw) > 1e-3) out.applyAxisAngle(Y_AXIS, this._aimYaw);
     this.an.model.updateWorldMatrix(true, false);
     out.applyMatrix4(this.an.model.matrixWorld);
@@ -2247,7 +2267,7 @@ export class MeleeLayer {
     if (!this._handLastOk || this.w < 0.5) {
       // not the layer's arm last frame: the guard key is as good as anything
       for (let i = 0; i < 3; i++) { f.hand[i] = READY.hand[i]; f.shaft[i] = READY.shaft[i]; f.lh[i] = READY.lh[i]; }
-      f.yaw = READY.yaw; f.pitch = READY.pitch; f.roll = READY.roll;
+      f.yaw = READY.yaw; f.pitch = READY.pitch; f.roll = READY.roll; f.py = READY.py; f.dz = READY.dz;
       f.lhW = 1; f.lhOn = READY.lhOn;
       return;
     }
@@ -2257,6 +2277,7 @@ export class MeleeLayer {
     this.an._charOf(this.an.b.handL.bone, _c);
     f.lh[0] = _c.x; f.lh[1] = _c.y; f.lh[2] = _c.z;
     f.yaw = u ? u.yaw : READY.yaw; f.pitch = u ? u.pitch : READY.pitch; f.roll = u ? u.roll : READY.roll;
+    f.py = u ? u.py : READY.py; f.dz = u ? u.dz : READY.dz;
     f.lhW = u ? u.lhW : 1; f.lhOn = u ? u.lhOn : READY.lhOn;
     // the capture is already in the swing bearing: undo `_lerpPose`'s turn
     const y = this._aimYaw;
@@ -2457,7 +2478,7 @@ export class MeleeLayer {
   /** Interpolate the beat into `_hand` / `_shaft` / `_lh` + torso scalars. */
   _blend(stance, st, beat) {
     const out = this._u || (this._u = {
-      yaw: 0, pitch: 0, roll: 0, lhOn: 0, lhW: 0, clipU: 0, armLift: 0,
+      yaw: 0, pitch: 0, roll: 0, py: 0, dz: 0, lhOn: 0, lhW: 0, clipU: 0, armLift: 0,
     });
     const phase = st.phase || 'idle';
     const k = clamp(st.k ?? 0, 0, 1);
@@ -2583,6 +2604,8 @@ export class MeleeLayer {
     out.yaw = A.yaw + (B.yaw - A.yaw) * t;
     out.pitch = A.pitch + (B.pitch - A.pitch) * t;
     out.roll = A.roll + (B.roll - A.roll) * t;
+    out.py = (A.py || 0) + ((B.py || 0) - (A.py || 0)) * t;
+    out.dz = (A.dz || 0) + ((B.dz || 0) - (A.dz || 0)) * t;
     out.lhOn = (A.lhOn || 0) + ((B.lhOn || 0) - (A.lhOn || 0)) * t;
     out.lhW = (A.lhW || 0) + ((B.lhW || 0) - (A.lhW || 0)) * t;
     /* light-3 (R1): the left hand lets go on its own schedule, off the haft
@@ -2608,7 +2631,7 @@ export class MeleeLayer {
   _snapPose(A, B, t) {
     const s = this._swingOut || (this._swingOut = {
       hand: [0, 0, 0], shaft: [0, 0, 1], lh: [0.30, 0.98, 0.04], lhOn: 0, lhW: 0,
-      yaw: 0, pitch: 0, roll: 0,
+      yaw: 0, pitch: 0, roll: 0, py: 0, dz: 0,
     });
     const q = 1 - t;
     const la = A.lh || B.lh || READY.lh, lb = B.lh || A.lh || READY.lh;
@@ -2623,6 +2646,8 @@ export class MeleeLayer {
     s.yaw = A.yaw + (B.yaw - A.yaw) * t;
     s.pitch = A.pitch + (B.pitch - A.pitch) * t;
     s.roll = A.roll + (B.roll - A.roll) * t;
+    s.py = (A.py || 0) + ((B.py || 0) - (A.py || 0)) * t;
+    s.dz = (A.dz || 0) + ((B.dz || 0) - (A.dz || 0)) * t;
   }
 
   /**
@@ -3196,6 +3221,18 @@ export class MeleeLayer {
     D.leftArmToBow = g;
   }
 
+  /** The left arm to the stowed bow, read only (a hand on the haft; cold path). */
+  _leftArmBowGap() {
+    if (!this._bowChar(_lbA, _lbB)) return null;
+    const an = this.an, b = an.b;
+    an._charOf(b.upArmL.bone, _lbS);
+    an._charOf(b.loArmL.bone, _lbE);
+    an._charOf(b.handL.bone, _lbH);
+    segSegN(_lbS, _lbE, _lbA, _lbB); const gU = _sgNum[0];
+    segSegN(_lbE, _lbH, _lbA, _lbB); const gF = _sgNum[0];
+    return gU < gF ? gU : gF;
+  }
+
   _twistDeg() {
     const an = this.an, b = an.b;
     if (!b.clavL || !b.clavR || !b.thighL || !b.thighR) return 0;
@@ -3440,6 +3477,7 @@ export class MeleeLayer {
     out.backCentre = f3(_d);
     out.midToBack = +mid.distanceTo(_d).toFixed(3);
     out.bowClear = this._bowChar(_bwA, _bwB) ? +segSeg(_butt, _tip, _bwA, _bwB).toFixed(4) : null;
+    { const g = this._leftArmBowGap(); out.leftArmToBow = g == null ? null : +g.toFixed(4); }
     // which node that number is about — null when the bow is in her hand, so
     // a gate can tell "clear" from "not stowed, nothing to be clear of"
     { const kit = this.ctx.player?.hero?.kit;

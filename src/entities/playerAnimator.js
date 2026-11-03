@@ -2034,6 +2034,7 @@ export class PlayerAnimator {
        * route every other procedural leg pose in this file takes. */
       pdx += this.melee.pelvisDx || 0;
       pdy += this.melee.pelvisDy || 0;
+      pdz += this.melee.pelvisDz || 0;
     }
 
     /* ================ OVERLAY 5: hit react / death / weary ================ */
