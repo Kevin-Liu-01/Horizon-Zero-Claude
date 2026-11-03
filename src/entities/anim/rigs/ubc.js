@@ -246,21 +246,32 @@ export const UBC_TUNE = {
   armFlow: { wristV: 2.7, elbowStep: 0.05, elbowBack: 0.16, formWin: 0.6, renock: true, quiverPole: [-0.9, -0.3, 0.15], crouchBody: true,
     quiverT: 0.5, qUp: 0.34, qBack: 0.5, bowOut: 0.09, bowDown: 0.08, bowFwd: 0.06, bowHand: true, kickIn: 0.45, armStep: 0.05, outside: true, holdBlade: true, rootGive: 0.009,
     // W0b targeted fix 4: the limiters live whenever the aim layer runs and on
-    // the arm's final pose until the free pose is reached (`_armContinuity`);
-    // the draw arm's IK weight eases at `wdaRate`/s between 1 and the aim
-    // weight; a rising draw is followed exactly (`drawRaw`); the bent T comes
-    // in and out at most `tRate` of its turn per second
-    // and the arm is lowered by its target, not its IK weight (`lowerByTarget`)
-    wdaRate: 4, drawRaw: true, tRate: 3, lowerByTarget: true, armStepChar: 0.055, tSpeed: 3.6, tSpeedCrouch: 0.55, tailMin: 0.35, knotRound: 0.035, violStep: 0.002, bodyRef: { chest: [-0.006, -0.032, -0.063], pelvis: [0.002, -0.035, -0.036] } },
+    // the arm's final pose until the free pose is reached (`_armContinuity`,
+    // at least `tailMin` s after the layer stops): the arm steps at most `armStep`
+    // against the draw shoulder and `armStepChar` in character space, its head and
+    // keep violation growing by at most `violStep` a step; the draw arm's target
+    // share eases at `wdaRate`/s between 1 and the aim weight, and the arm is lowered
+    // by its target, not its IK weight (`lowerByTarget`); a rising draw is followed
+    // exactly from drawS 0.88 (`drawRaw`); the bent T comes in at most `tRate` of its
+    // turn per second and turns at most `tSpeed` rad/s (crouched less `tSpeedCrouch`
+    // of that); a hand stalled under the cord's knot goes round it (`knotRound` m a
+    // step); the rest hold and the quiver ride the chest and the pelvis, read against
+    // the standing aim's own offsets (`bodyRef`)
+    wdaRate: 4, drawRaw: true, tRate: 3, lowerByTarget: true, armStepChar: 0.055, tSpeed: 3.6, tSpeedCrouch: 0.55, tailMin: 0.35, lanceOpen: 30, knotRound: 0.035, violStep: 0.002,
+    bodyRef: { chest: [-0.006, -0.032, -0.063], pelvis: [0.002, -0.035, -0.036] } },
   // W0b targeted fix 4: the aim's trunk starts upright — the pelvis -> neck
   // line's forward pitch under the aim (radians, character space), standing /
   // crouched; only an excess is given back (the clip's fold: crouch 45-50 deg,
   // the jog's lean after a dodge), spread up the spine, the neck and head
-  // taking `gaze` of it back so the gaze holds
+  // taking `gaze` of it back so the gaze holds. Crouched, the chest and the head
+  // also come to the standing draw's own pitch (`chestRef`, `headRef`, the bone's
+  // bind forward in character space), so the form above the waist is the standing
+  // draw's
   aimTrunk: { up: 0.12, crouch: 0.22, gain: 1, share: [0.25, 0.35, 0.40], shareCrouch: [0.15, 0.35, 0.50], gaze: [0.5, 0.45], chestRef: 0.44, headRef: 0.22 },
   // W0b targeted fix 4: the crouched aim's body: the pelvis `pelvisY` m up
-  // (character space; the UAL1 crouch stands it at 0.35), tipped `pelvisTilt`
-  // rad, coming in over `rampS` s (see `_crouchAimLayer`, `_crouchAimLift`)
+  // (character space; the UAL1 crouch stands it at 0.35), `pelvisDown` higher at the
+  // down clamp, tipped `pelvisTilt` rad, coming in over `rampS` s; a crouch toggled
+  // under the aim moves at most `toggleRate` /s (see `_crouchAimLayer`, `_crouchAimLift`)
   crouchAim: { pelvisY: 0.52, pelvisDown: 0.28, pelvisTilt: 0.10, rampS: 0.7, toggleRate: 2.5 },
   // W0b targeted fix 4: the bent T's reach at the pitch clamps (rad): the turn's
   // caps, and how much of its pitch the hips carry, the upper back the rest

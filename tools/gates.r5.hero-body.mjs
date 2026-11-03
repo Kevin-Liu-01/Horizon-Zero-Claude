@@ -7892,11 +7892,16 @@ const NEW_GATES = [
         s += 1.52 + rd;
         add(0, 'rmb+', 'reaim+' + rd); add(0.45, 'lmb+'); add(1.40, 'lmb-', 'loose'); add(1.65, 'rmb-', 'up+0.25');
         s += 2.25;
-        add(0, 'rmb+', 'raise'); add(0.45, 'lmb+'); add(1.40, 'rmb-', 'cancel'); add(1.60, 'lmb-');
+        add(0, 'rmb+', 'raise'); add(0.45, 'lmb+'); add(1.40, 'both-', 'cancel');
         s += 2.0;
         add(0, 'rmb+', 'raiseAfterCancel'); add(0.45, 'lmb+'); add(1.45, 'crouch', 'crouchToggle'); add(2.05, 'crouch', 'crouchBack');
         add(2.65, 'lmb-', 'loose'); add(2.77, 'lmb+', 'rapidRefire'); add(4.0, 'lmb-', 'loose2'); add(4.2, 'lmb+');
-        add(5.4, 'dodge', 'dodgeDrawn'); add(7.9, 'lmb-', 'looseAfterDodge'); add(8.0, 'rmb-', 'up+0.10'); add(8.6, 'end');
+        add(5.4, 'dodge', 'dodgeDrawn'); add(7.9, 'lmb-', 'looseAfterDodge'); add(8.0, 'rmb-', 'up+0.10');
+        s += 8.7;
+        /* RMB up with LMB still down: \`melee.js\` reads that as a spear press. The arm is
+         * still graded step by step across the hand-over; the lance's own reach over her
+         * shoulder is the melee lane's (printed as lanceHead, section 7 of the lane doc) */
+        add(0, 'rmb+', 'raise'); add(0.45, 'lmb+'); add(1.40, 'rmb-', 'cancelHeld'); add(1.60, 'lmb-'); add(2.4, 'end');
         return ev;
       };
       const cells = [];
@@ -7904,6 +7909,9 @@ const NEW_GATES = [
         const [pitch, loco] = CELLS[ci];
         const rd = [0.05, 0.125, 0.2][ci % 3];
         release(); await wait(300); p.setCrouch?.(false);
+        // the last cell's lance back on her back, its swing over; a full quiver (the matrix looses five arrows a cell)
+        for (let i = 0; i < 40 && (cmb.melee?.active || cmb.melee?.stance !== 'holstered'); i++) { cmb.melee?.holsterSpear?.(true); await simWait(0.1, 2000); }
+        { const am = cmb.activeWeapon?.activeAmmo; if (am) cmb.ammo[am] = 99; }
         // the cell's ground: the flat strip, run along it whichever key moves her (else the W0 open ground)
         if (strip) {
           p.position.set(strip.x, 0, strip.z); p.velocity.set(0, 0, 0); p._snapToGround();
@@ -7920,7 +7928,8 @@ const NEW_GATES = [
         const T = ev[ev.length - 1].t;
         const M = { pitch, loco, reaimDelay: rd, steps: 0, travel: 0, travelAt: null, rel: 0, relAt: null, shoulderStepMax: 0,
           skull: -9, skullAt: null, nape: -9, napeAt: null, crown: -9, crownAt: null, knFull: 0, knAt: null, fullSteps: 0,
-          drawsOver09: 0, dodged: false, crouchSeen: false, standSeen: false, fails: [], byTag: {}, kinds: {}, rawTravel: 0, rawAt: null };
+          drawsOver09: 0, dodged: false, crouchSeen: false, standSeen: false, fails: [], byTag: {}, kinds: {}, rawTravel: 0, rawAt: null,
+          lanceHead: -9, lanceHeadAt: null, lanceCrown: -9, lanceStepMax: 0, lanceStepAt: null, lanceInRoll: 0 };
         let label = 'start', tLab = 0, prev = null, wasFull = false;
         const t0 = E.simTime, upd = an.update;
         const failAdd = (k, msg) => { if (M.fails.length < 12) M.fails.push(k + ' ' + msg); };
@@ -7943,6 +7952,9 @@ const NEW_GATES = [
            * spine_01. The kind is printed with every reading. */
           const inf = !!this._afEng || this.aimWeight > 0.01;
           const roll = !!p.dodging || this._dodgeW > 0.05;
+          // the lance layer has the arm (only ever RMB up with LMB down, in cancelHeld; never through a roll or an aim)
+          const lanceArm = !!this.melee?.ok && this.melee.w > 0.02;
+          if (lanceArm && (roll || label !== 'cancelHeld')) M.lanceInRoll++;
           if (prev) {
             const dE = e.distanceTo(prev.e), dW = w.distanceTo(prev.w);
             const rE = e.clone().sub(s).distanceTo(prev.e.clone().sub(prev.s)), rW = w.clone().sub(s).distanceTo(prev.w.clone().sub(prev.s));
@@ -7959,6 +7971,7 @@ const NEW_GATES = [
             const gTr = kind === 'aim' || kind === 'clip' ? tr : kind === 'body' ? bo : ch;
             const gRl = kind === 'roll' ? 0 : rl;
             if (kind === 'clip') M.clipTravelMax = Math.max(M.clipTravelMax || 0, r4(tr));
+            if (lanceArm && tr > M.lanceStepMax) { M.lanceStepMax = r4(tr); M.lanceStepAt = lab; }
             if (gTr > M.travel) { M.travel = gTr; M.travelAt = lab + ' ' + kind + ' ' + ((kind === 'aim' || kind === 'clip' ? dE >= dW : kind === 'body' ? bE >= bW : cE >= cW) ? 'elbow' : 'wrist'); }
             if (gRl > M.rel) { M.rel = gRl; M.relAt = lab + ' ' + kind + ' ' + (rE >= rW ? 'elbow' : 'wrist'); }
             if (inf && tr > M.rawTravel) { M.rawTravel = r4(tr); M.rawAt = lab + ' ' + kind; }
@@ -7973,6 +7986,11 @@ const NEW_GATES = [
               this._headFrame(); this._headUnit(P, hu);
               const bh = this.behindHead(P);
               const us = nm + ' u(' + hu.x.toFixed(2) + ',' + hu.y.toFixed(2) + ',' + hu.z.toFixed(2) + ')';
+              if (lanceArm && label === 'cancelHeld') {
+                if (bh > M.lanceHead) { M.lanceHead = r4(bh); M.lanceHeadAt = lab + ' ' + us; }
+                M.lanceCrown = Math.max(M.lanceCrown, r4(hu.y));
+                continue;
+              }
               if (hu.y >= -1) {
                 if (bh > M.skull) { M.skull = r4(bh); M.skullAt = lab + ' ' + us; }
                 B.skull = Math.max(B.skull, r4(bh));
@@ -8026,6 +8044,7 @@ const NEW_GATES = [
               else if (x.a === 'rmb-') C.input.mouse.buttons &= ~4;
               else if (x.a === 'lmb+') C.input.mouse.buttons |= 1;
               else if (x.a === 'lmb-') C.input.mouse.buttons &= ~1;
+              else if (x.a === 'both-') C.input.mouse.buttons &= ~5;
               else if (x.a === 'crouch') p.setCrouch(!p.crouching);
               else if (x.a === 'dodge') p.dodge();
             }
@@ -8038,6 +8057,8 @@ const NEW_GATES = [
         M.travel = r4(M.travel); M.rel = r4(M.rel); M.shoulderStepMax = r4(M.shoulderStepMax); M.bodyStepMax = r4(M.bodyStepMax || 0);
         // staging sanity: the cell really drew (five full draws incl. the one through the dodge), dodged, crouched and stood
         if (M.drawsOver09 < 5) M.fails.push('staging: only ' + M.drawsOver09 + ' full draws');
+        if (M.lanceInRoll) M.fails.push('lance posed outside cancelHeld: ' + M.lanceInRoll + ' steps');
+        if (!(M.lanceStepMax > 0)) M.fails.push('staging: cancelHeld never reached the lance layer');
         if (!M.dodged) M.fails.push('staging: no dodge');
         if (!M.crouchSeen || !M.standSeen) M.fails.push('staging: crouch ' + M.crouchSeen + ' stand ' + M.standSeen);
         if (M.steps < 600) M.fails.push('staging: ' + M.steps + ' steps');
@@ -8053,6 +8074,7 @@ const NEW_GATES = [
       }
       const failing = cells.filter((M) => M.fails.length).map((M) => M.pitch + '/' + M.loco + ': ' + M.fails.slice(0, 3).join(' | '));
       const worst = {
+        lanceHeadReported: Math.max(...cells.map((M) => M.lanceHead)), lanceStepMax: Math.max(...cells.map((M) => M.lanceStepMax)),
         travelMax: Math.max(...cells.map((M) => M.travel)), relMax: Math.max(...cells.map((M) => M.rel)),
         skullMax: Math.max(...cells.map((M) => M.skull)), napeMax: Math.max(...cells.map((M) => M.nape)), crownMax: Math.max(...cells.map((M) => M.crown)),
         knuckleFullMax: Math.max(...cells.map((M) => M.knFull)),

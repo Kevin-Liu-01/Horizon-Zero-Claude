@@ -869,7 +869,7 @@ export class PlayerAnimator {
      * `_afFull`: the aim is held this step; `_wrRef`: the point the wrist
      * target rides between steps (the draw shoulder, blended to the hand's
      * anchor on the head as the draw builds — body motion carries the hand) */
-    this._armCapN = 0; this._afEng = false; this._wDA = 0; this._afFull = false; this._tW = 0;
+    this._armCapN = 0; this._afEng = false; this._afLimK = 1; this._mlHush = false; this._wDA = 0; this._afFull = false; this._tW = 0;
     this._aimHold = false; this._atW = 0; this._bcS = 0; this._afTail = 0; this._afViol = 0; this._afInHd = false;
     this._knW0 = 0; this._caT = 0; this._caLift = 0; this._qbF = 1; this._hcHit = 0; this._hcHitLast = 0;
     this._wrRef = new THREE.Vector3(); this._wrRefA = new THREE.Vector3(); this._wrRefOk = false;
@@ -2054,7 +2054,8 @@ export class PlayerAnimator {
      * body 0.08-0.10 m in one sim step"): the pose comes in over `rampS` s on a
      * smooth ramp, not a 9/s damp (its first step alone was 14 % of the pose). */
     {
-      const CA = this.T.crouchAim, rs = dt / (CA?.rampS ?? 0.11), want = p.crouchAim && !dead ? 1 : 0;
+      // (the down clamp's pose stands higher: the same ramp's pace, so a little longer)
+      const CA = this.T.crouchAim, rs = dt / ((CA?.rampS ?? 0.11) * (1 + 0.4 * smoothstep(p.camPitch ?? 0, 0.75, 1.02))), want = p.crouchAim && !dead ? 1 : 0;
       this._caT = clamp((this._caT ?? 0) + clamp(want - (this._caT ?? 0), -rs, rs), 0, 1);
       // (a crouch toggled under the aim: the pose follows the crouch blend itself, or the
       // pelvis drops to the clip's and comes back up)
@@ -2113,7 +2114,19 @@ export class PlayerAnimator {
     // BEFORE the react layer, so a hit still folds the torso over the swing.
     if (this.melee?.ok) {
       this.melee.step(dt);
-      this.melee.update(dt, this.ctx.combat?.melee?.poseState?.() ?? null);
+      /* AIM WINS THROUGH A ROLL TOO (W0b targeted fix 4, finding 3). A roll drops
+       * `player.aiming` for its length, so an LMB held on a drawn bow reads to
+       * `melee.js` as a spear press: draw, charge, and a swing fired on the step
+       * the aim comes back — the bow arm thrown overhead with the string being
+       * drawn under it (the 0.45-0.78 m off the string). RMB never left: the lance
+       * is not posed from a roll that began with it stowed and RMB down until
+       * melee has stowed it again or RMB comes up. (The state machine is the melee
+       * lane's: ROUND5-HERO-BODY.md section 7 asks for the input edge there.) */
+      const mlSt = this.ctx.combat?.melee?.poseState?.() ?? null;
+      const mlRmb = !!this.ctx.input?.mouseDown?.(2), mlAway = (mlSt?.stance ?? 'holstered') === 'holstered';
+      if (this._mlHush) { if (!mlRmb || (mlAway && !p?.dodging)) this._mlHush = false; }
+      else if (mlRmb && mlAway && p?.dodging) this._mlHush = true;
+      this.melee.update(dt, this._mlHush ? null : mlSt);
       /* THE SPEAR'S OWN STANCE ASKS FOR A PELVIS OFFSET (fix pass 2, melee
        * `STANCE`). The melee layer bends the knees for the beat it is playing;
        * a bent knee with the hips held up lifts the foot off the floor, so the
@@ -4885,7 +4898,7 @@ export class PlayerAnimator {
     const AF = this.T.armFlow, b = this.b, D = this._aimDbg;
     D.afArmRate = 1;
     if (!AF?.armStep || !b.upArmR || !b.loArmR || !b.handR) return false;
-    let lim = AF.armStep * Math.min(1, Math.max(1e-3, (this._dtA || 0) * 60));
+    let lim = AF.armStep * (this._afLimK || 1) * Math.min(1, Math.max(1e-3, (this._dtA || 0) * 60));
     this._charOf(b.upArmR.bone, _afS); this._charOf(b.loArmR.bone, _afE); this._charOf(b.handR.bone, _afW);
     // last step's arm as rendered, rebuilt on this step's shoulder — in a roll,
     // in the chest's frame: the roll turns her whole trunk 0.1-0.2 rad a step,
@@ -4901,7 +4914,7 @@ export class PlayerAnimator {
        * about a point part way along it, by the radius that holds both
        * bars (`armStepChar` in character space, `armStep` against the shoulder). */
       const s = _afH.subVectors(_afS, this._shP).length();
-      const limC = (AF.armStepChar ?? 9) * Math.min(1, Math.max(1e-3, (this._dtA || 0) * 60));
+      const limC = (AF.armStepChar ?? 9) * (this._afLimK || 1) * Math.min(1, Math.max(1e-3, (this._dtA || 0) * 60));
       const be = s > 1e-5 ? clamp((limC - lim + s) / (2 * s), 0, 1) : 1;
       lim = Math.max(lim - (1 - be) * s, 0.2 * lim);
       _afH.multiplyScalar(be);
@@ -5060,21 +5073,27 @@ export class PlayerAnimator {
    */
   _armContinuity(aimRan) {
     if (!this.T.armFlow?.armStep || !this._armCapN) { this._afEng = false; return; }
-    // (after the aim layer stops it carries the arm at most `tail` s — a melee
-    // draw or swing that follows a lowered bow is the melee layer's after that)
-    // (a layer that wants the arm for itself takes it at once: the lance's stance and swing
-    // (melee's), the alidade, a climb, a ride, a death)
+    // (after the aim layer stops it carries the arm at most `tail` s; a layer that
+    // wants the arm for itself takes it at once: the alidade, a climb, a ride, a death)
     if (!aimRan) {
-      const p = this.ctx.player, ms = this.ctx.combat?.melee?.stance;
-      if ((this.melee?.ok && ms && ms !== 'holstered') || (this._ali?.w ?? 0) > 0.02 || p?.mantling || p?.riding || this._deadW > 0.02) { this._afEng = false; return; }
+      const p = this.ctx.player;
+      if ((this._ali?.w ?? 0) > 0.02 || p?.mantling || p?.riding || this._deadW > 0.02) { this._afEng = false; return; }
     }
     // (...and through a roll, in the chest's frame, however long it runs)
+    const AF = this.T.armFlow, tail = AF.tail ?? 0.6;
     const rolling = !!this.ctx.player?.dodging || this._dodgeW > 0.05;
     this._afTail = aimRan || rolling ? 0 : (this._afTail || 0) + (this._dtA || 0.016);
-    if (!aimRan && this._afTail > (this.T.armFlow.tail ?? 0.6)) { this._afEng = false; return; }
+    /* A lance drawn out of a lowered bow (RMB up with LMB still held) is handed
+     * the arm without a jump: limited through the whole tail, then the limit
+     * OPENS (`lanceOpen` per second) until the step no longer needs it; that
+     * release used to be immediate, 0.25-0.56 m in one step. */
+    const lance = !aimRan && !!this.melee?.ok && this.melee.w > 0.01;
+    this._afLimK = lance && this._afTail > tail ? 1 + (this._afTail - tail) * (AF.lanceOpen ?? 30) : 1;
+    if (!aimRan && !lance && this._afTail > tail) { this._afEng = false; return; }
     const bound = this._armRate();
     this._aimDbg.afPost = bound ? 1 : 0;
-    if (!aimRan && !rolling && !bound && this._afTail > (this.T.armFlow.tailMin ?? 0)) this._afEng = false;
+    if (!aimRan && !rolling && !bound && this._afTail > (lance ? tail : (AF.tailMin ?? 0))) this._afEng = false;
+    if (!this._afEng) this._afLimK = 1;
   }
 
   /** W0b targeted fix 4: the draw arm as it ends this step (char) — every limiter's reference next step. */
