@@ -901,8 +901,9 @@ export async function panBase(opt = {}) {
     void nrm;
     for (let t = 0; t < idx.length; t += 3) {
       const a = idx[t], b = idx[t + 1], c = idx[t + 2];
-      const cx = Math.abs(pos[a * 3] + pos[b * 3] + pos[c * 3]) / 3, cy = (pos[a * 3 + 1] + pos[b * 3 + 1] + pos[c * 3 + 1]) / 3;
-      if (cx < 0.125 || cx > 0.25 || cy < 1.29 || cy > 1.5) continue;
+      const cx = Math.abs(pos[a * 3] + pos[b * 3] + pos[c * 3]) / 3, cy = (pos[a * 3 + 1] + pos[b * 3 + 1] + pos[c * 3 + 1]) / 3, cz = (pos[a * 3 + 2] + pos[b * 3 + 2] + pos[c * 3 + 2]) / 3;
+      // only inside the armhole's rim, and on its upper half: under the arm the crease closes anyway
+      if (cx < 0.15 || cx > 0.235 || cy < 1.39 || Math.hypot((cy - ARMHOLE.y) / ARMHOLE.ry, (cz - ARMHOLE.z) / ARMHOLE.rz) > 0.98) continue;
       lining.idx.push(vert(a), vert(b), vert(c));
     }
     lining.keepNormals = true;

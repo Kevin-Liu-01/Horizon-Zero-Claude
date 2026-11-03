@@ -150,7 +150,7 @@ function edgesOf(part, weld) {
 export function romFit(parts, base, {
   target = 1.46, targetShort = 1.34, shortL = 0.012, relaxIts = 14,
   easeIts = 12, deepTo = -0.0022, slack = 0.0014, radius = 0.032, maxPush = 0.014, giveUp = 0.016,
-  skip = new Set(['hat', 'lining']), stiff = new Set(['buckle', 'tongue', 'slider', 'clasp', 'tab', 'scutes']), rom = null,
+  skip = new Set(['hat']), noEase = new Set(['lining']), stiff = new Set(['buckle', 'tongue', 'slider', 'clasp', 'tab', 'scutes']), rom = null,
   easeTags = /^(idle|sprint|jog|draw|light|heavy)/, smoothPasses = 2,
   over = { sling: ['smock', 'binds'], slider: ['smock', 'binds'], sashband: ['skirt'], girdle: ['smock', 'skirt'], straps: ['boots'], tie: ['underyoke'], sash: ['skirt'], capelet: ['smock', 'sling', 'binds'], ropebelt: ['smock', 'skirt', 'wrap', 'sashband'] },
 } = {}) {
@@ -265,7 +265,7 @@ export function romFit(parts, base, {
         posed(f.p, M, f.Q);
         for (let i = 0; i < f.n; i++) {
           const q = G.height(f.Q[i * 3], f.Q[i * 3 + 1], f.Q[i * 3 + 2]);
-          if (q && q.dist < 0.05 && q.h < deepTo) {
+          if (q && q.dist < 0.05 && q.h < deepTo && !noEase.has(f.p.slot)) {
             c++;
             const d = deepTo - q.h + slack;
             if (d <= need[fi][i]) continue;
