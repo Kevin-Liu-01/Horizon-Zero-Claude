@@ -187,7 +187,7 @@
         "public/models/hero/brea.glb",
         "public/models/hero/licences/quaternius-ubc-License_Standard.txt"
       ],
-      "title": "Universal Base Characters [Standard] (Superhero_Female, Hair_BuzzedFemale, eye and hair textures) -> Brea's body",
+      "title": "Universal Base Characters [Standard] (Superhero_Female; the Eyebrows and Hair_BuzzedFemale meshes read as guides only) -> Brea's body",
       "author": "Quaternius",
       "source_url": "https://quaternius.itch.io/universal-base-characters",
       "licence": "CC0-1.0",
@@ -198,7 +198,7 @@
         "ubc-standard"
       ],
       "retrieved": "2026-10-22",
-      "modified": "tools/build/recipes/brea.mjs: face displacement field + paint layer (salt-line, brow scar, the therefore-mark), skin retone, brows reshaped and simplified, procedural headwrap/topknot/knot tail/wrap tail and dyn_ chains added, outfit hide mask, atlased to two materials, WebP + meshopt",
+      "modified": "tools/build/recipes/brea.mjs + lib/{face,skin,skin-human,wrap,wrap-head,hair}.mjs: face displacement field, lids and jaw refined; UV islands re-packed by density; skin re-painted in 3-D from the source (seamless tone, baked AO, pores, salt paste, brow scar, the therefore-mark, brows and hairline hair by hair, procedural eye patch); procedural wound headwrap, topknot, knot, tail, coil cards, coil tuft and lash cards with dyn_ chains; outfit hide mask; two materials, WebP + meshopt",
       "attribution": null
     },
     {

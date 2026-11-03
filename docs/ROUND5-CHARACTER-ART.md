@@ -48,9 +48,31 @@ is published early for settlements (R56, R57 c); the gate table is filled in at 
 - `browLayer({ x0, x1, line(x), side, strokes, scar })` brows hair by hair (a paint layer).
 - `lashCard(open, { side, joint, zAt, rect })` upper lash cards.
 
+### `lib/wrap-head.mjs` (a whole headwrap from a spec)
+- `woundHeadwrap({ headSoup, joint, center, lift(dx,dy,dz), base: { tiltDeg, warpDeg, lowDeg, w }, turns: [{ phiDeg, tauDeg, oDeg, w, lift, seed, along, flip }], bun: { c, axis, r, topY } | null, knot: [x,y,z] | null, tail: { points, joints, width(u), side, curl, twist, gather, fold } | null, tuft: { points, joints, count, along, width, side } | null })`
+  `-> { geo, parts, covers(p), lowEdge(p), soup, center }`. Spec for Brea: `tools/build/recipes/brea.mjs`.
+- `paintWrapAtlas(doc, material, { deep, violet, dark, mid, stripe, lining: [a, b, c] })`: paints the standard
+  512² atlas (cloth in those dyes, the coil tile, fringe, lock tile, lashes) and sets the material
+  (`MASK` 0.5, double-sided, metallic-roughness from a new ORM). A faction wrap is new dye hexes.
+- `joinGeos(list)` joins buckets with `fixWinding` + a default COLOR_0; `rising(phi, tau)`, `rotAbout`, `DEG`.
+
+### `lib/skin-human.mjs` (what every human recipe does the same way; call order = brea.mjs `build`)
+1. Field: `findLandmarks` -> bumps -> `faceField` -> `applyField` (face.mjs) -> `recomputeNormals` -> `refineEdges(prim, { want, minLen, maxEdges })`
+   (the jaw silhouette) -> `smoothNormals`.
+2. `woundHeadwrap(...)` or your own hair, then `cullUnderWrap(prim, covers, isEar)`, `cullEyeBacks(eyesPrim, eyes)`,
+   `simplifyHands(prim)`, `compactPrim(prim)`: these are what pay for the cloth (≈ 1.7 k tris).
+3. `relayoutSkinUV(prim, { density: humanDensity, reserve: [{ id: 'eye', w, h }], pad: 0.009, elastic: 0.7 })`, `remapEyeUV(eyesPrim, eyes, rect)`.
+4. `eyeOpening(...)` per eye, `lashCard(open, { side, joint, zAt, rect })`.
+5. `paintHumanSkin({ bodyPrim, skinMat, layout, eyeR, EYE_PX, L, eyes, brows: browLines(browPrim), shellGrid, occluders: wrapped.soup, collar: outfitTris, opens, marks: [...], scar, tone, iris, amber, hairColor, hairShape, names }) -> { stats }`.
+6. `scalpCards({ bodyPrim, headW, shellGrid, wrapped, skinJ, skinW, hairShape, temples })`, `primFromGeo(doc, joinGeos([...]))`.
+- `faceLayers({ L, eyes, cheek })` the standard layers; `hairShape(X, Y, Z)` the default hairline (pass your own for
+  another head); `vertexWeightOf`, `eyeCentres`, `eyeFrontZ`, `movedMask`, `compactPrim`, `primFromGeo`, `EYE_SPAN`.
+- A skin tone other than Brea's: `tone` (`#rrggbb` at the mid-cheek). The source layout and the stock tone stay; all paint is 3-D.
+- The landmarks' rigid sockets, the eye mesh and the `_HIDEMASK` rule are unchanged from W0b.
+
 ### The material contract
 - Skin: opaque, 1024² base, 512² normal, 512² ORM used as both occlusion and metallic-roughness (R AO,
   G roughness, B metal 0).
 - Hair + wrap: `alphaMode MASK` cutoff 0.5, double-sided, `COLOR_0` (u8 RGBA, linear: RGB contact shade,
   A multiplies the alpha cut), `metallicFactor 1` with the ORM's B channel (0 on cloth, 0.35 on hair, so
-  near-black coils do not go grey in a strong sun).
+  near-black coils do not go grey in a strong sun). The ORM is a third 512² map; §4.4's "hair 512²" counted one.

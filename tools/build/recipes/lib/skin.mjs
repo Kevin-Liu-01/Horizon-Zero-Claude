@@ -749,7 +749,7 @@ function dilate(buf, W, H, c, filled, passes = 12) {
  *   patches    [{ x, y, w, h, base(RGB bytes), normal(RGB bytes), orm(RGB bytes) }] in atlas px of NW / W scales (the eye)
  * Returns { base, normal, orm } raw RGB buffers + stats.
  */
-export async function paintSkinAtlas({ prim, islands, stock, W = 1024, tone = '#8A5A3C', toneAt, toneR = 0.014, ao = null, aoW = 512, conv = null, layers = [], formK = 1, baseRough = 0.62, pm: pmIn = null, toneMaps = null } = {}) {
+export async function paintSkinAtlas({ prim, islands, stock, W = 1024, tone = '#8A5A3C', toneAt, toneR = 0.014, ao = null, aoW = 512, conv = null, layers = [], formK = 1, baseRough = 0.62, pm: pmIn = null, toneMaps = null, toneK = [1, 1, 1] } = {}) {
   const pm = pmIn || positionMap(prim, W, W);
   // which island each texel belongs to: rasterise the island id
   const islandTex = new Int16Array(W * W).fill(-1);
@@ -797,7 +797,7 @@ export async function paintSkinAtlas({ prim, islands, stock, W = 1024, tone = '#
     sample(stock.base, stock.W, stock.H, 3, u, v, s0);
     acc[0] += s0[0]; acc[1] += s0[1]; acc[2] += s0[2]; n++;
   }
-  const gain = n ? target.map((t, k) => t / Math.max(1, acc[k] / n)) : [1, 1, 1];
+  const gain = n ? target.map((t, k) => toneK[k] * t / Math.max(1, acc[k] / n)) : [1, 1, 1];
   const T = new Texel();
   const stats = { gain: gain.map((g) => +g.toFixed(4)), texels: 0 };
   for (let y = 0; y < W; y++) for (let x = 0; x < W; x++) {

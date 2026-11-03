@@ -5,10 +5,13 @@
  * API: docs/ROUND5-CHARACTER-ART.md §3.
  */
 import { MeshoptSimplifier } from 'meshoptimizer';
-import { noise3, smooth } from './face.mjs';
-import { uvIslands, TriGrid, triSoup } from './skin.mjs';
+import { noise3, smooth, positionMap } from './face.mjs';
+import {
+  uvIslands, TriGrid, triSoup, bakeAOTexels, blurMasked, convexity, scalarMap, seamlessTone, paintSkinAtlas, decodeStockSkin, webp, blit, paintEye,
+  pores, colourZones, creases, smoothSkin, eyeSocketClean, lipTone, lidLines,
+} from './skin.mjs';
 import { rng, WRAP_ATLAS } from './wrap.mjs';
-import { scatterAnchors, coilCards } from './hair.mjs';
+import { scatterAnchors, coilCards, coilField, coilSampler, hairCoverage, hairlineLayer, browLayer } from './hair.mjs';
 
 /** The texel density a human body wants (against the source layout): the face first, hidden body last. */
 export function humanDensity(s) {
@@ -257,5 +260,141 @@ export function scalpCards({ bodyPrim, headW, shellGrid, wrapped, skinJ, skinW, 
     return f;
   };
   return coilCards(anchors, { flow, skinOf, rect: A.coilFringe.rect, W: A.W, length: [0.012, 0.02], width: [0.011, 0.018], liftTip: [0.0016, 0.0042] });
+}
+
+/**
+ * The face layers every human gets, in paint order: the source's strokes smoothed, the make-up
+ * off the eyes, the lips toned, the colour zones, pores, squint creases, the nasolabial fold.
+ */
+export function faceLayers({ L, eyes, cheek }) {
+  const noseT = L.noseTip;
+  const faceZone = (T) => (T.Y > 1.45 && Math.abs(T.X) < 0.1 ? 1 : 0);
+  const notFeature = (T) => {
+    // smooth the source's strokes on the open skin, not on the lips or inside the nostrils
+    const lip = Math.hypot((T.X) / 0.032, (T.Y - (L.upperLip[1] - 0.011)) / 0.02);
+    const nostril = Math.hypot(T.X / 0.024, (T.Y - (noseT[1] - 0.012)) / 0.012);
+    return faceZone(T) * smooth(0.95, 1.3, lip) * smooth(0.9, 1.25, nostril);
+  };
+  return [
+    smoothSkin({ zone: notFeature }),
+    eyeSocketClean({ eyes }),
+    lipTone({ center: [0, L.upperLip[1] - 0.011, L.upperLip[2] - 0.006], r: [0.036, 0.024, 0.03] }),
+    colourZones([
+      { at: [0, 1.70, 0.08], s: [0.05, 0.024, 0.05], gain: [1.03, 1.03, 0.98], rough: -0.12 },           // the forehead, warm and yellow, a soft sheen
+      { at: cheek, s: [0.024, 0.02, 0.03], gain: [1.05, 0.98, 0.95], rough: -0.16 },                     // the cheek, red through
+      { at: [-cheek[0], cheek[1], cheek[2]], s: [0.024, 0.02, 0.03], gain: [1.05, 0.98, 0.95], rough: -0.16 },
+      { at: noseT, s: [0.014, 0.02, 0.02], gain: [0.95, 0.95, 0.97], rough: -0.16 },                       // the nose, sun-reddened and oily
+      { at: L.noseBridge, s: [0.012, 0.022, 0.02], gain: [1.03, 0.99, 0.96], rough: -0.14 },
+      { at: [0, L.chin[1] + 0.024, L.chin[2]], s: [0.04, 0.02, 0.03], gain: [0.95, 0.94, 0.96] },         // the muzzle, cooler and greyer
+      { at: L.chin, s: [0.018, 0.012, 0.016], gain: [1.05, 0.97, 0.94], rough: -0.1 },
+      { at: [0.074, 1.635, -0.03], s: [0.016, 0.03, 0.028], gain: [1.05, 0.96, 0.93] },                     // the ears
+      { at: [-0.074, 1.635, -0.03], s: [0.016, 0.03, 0.028], gain: [1.05, 0.96, 0.93] },
+      { at: [eyes[0][0], eyes[0][1] - 0.0145, eyes[0][2] + 0.008], s: [0.017, 0.0065, 0.02], gain: [0.93, 0.9, 0.91] },   // under the eyes
+      { at: [eyes[1][0], eyes[1][1] - 0.0145, eyes[1][2] + 0.008], s: [0.017, 0.0065, 0.02], gain: [0.93, 0.9, 0.91] },
+      { at: [0, 1.50, 0.03], s: [0.05, 0.03, 0.06], gain: [0.94, 0.93, 0.93] },                           // under the jaw
+    ]),
+    pores({ zone: (T) => (T.Y > 1.42 && Math.abs(T.X) < 0.2 ? 1 : Math.abs(T.X) > 0.4 ? 0.6 : 0.4) }),
+    creases([
+      // sun creases at the outer eye corners: she squints for a living
+      ...[1, -1].flatMap((sx) => {
+        const e = eyes[sx > 0 ? 0 : 1];
+        const z = e[2] - 0.006;
+        return [
+          { pts: [[e[0] + sx * 0.0225, e[1] + 0.0025, z - 0.002], [e[0] + sx * 0.0305, e[1] + 0.0065, z - 0.012]], w: 0.0009, depth: 0.00016, dark: 0.13 },
+          { pts: [[e[0] + sx * 0.0235, e[1] - 0.0005, z - 0.002], [e[0] + sx * 0.0325, e[1] + 0.0005, z - 0.014]], w: 0.001, depth: 0.00018, dark: 0.15 },
+          { pts: [[e[0] + sx * 0.0225, e[1] - 0.004, z - 0.002], [e[0] + sx * 0.0305, e[1] - 0.0065, z - 0.012]], w: 0.0009, depth: 0.00016, dark: 0.12 },
+        ];
+      }),
+      // the fold from the wing of the nose toward the mouth corner
+      ...[1, -1].map((sx) => ({ pts: [[sx * 0.0215, noseT[1] - 0.006, noseT[2] - 0.034], [sx * 0.0315, noseT[1] - 0.024, noseT[2] - 0.044], [sx * 0.0375, noseT[1] - 0.041, noseT[2] - 0.050]], w: 0.0026, depth: 0.00022, dark: 0.1 })),
+      // two soft lines across the neck
+      { pts: [[-0.05, 1.525, 0.035], [0, 1.519, 0.062], [0.05, 1.525, 0.035]], w: 0.0022, depth: 0.00016, dark: 0.08 },
+    ]),
+  ];
+}
+
+/**
+ * A human skin atlas (1024² base, 512² normal + ORM), composited from the stock layout, the baked
+ * form (ray-cast AO against skin + `occluders` + collar) and the layers of lib/skin.mjs +
+ * lib/hair.mjs, with the eye patch blitted in. `marks` are the character's own layers (a salt
+ * line, a scar, a tattoo), painted last. `collar` = flat triangles of the outfit near the neck.
+ */
+export async function paintHumanSkin({ bodyPrim, skinMat, layout, eyeR, EYE_PX, L, eyes, brows, shellGrid, occluders, collar = [], opens, marks = [], scar = null, tone = '#8A5A3C', iris = '#3B2A20', amber = '#5E3A20', hairColor = '#15110F', hairShape: shape = hairShape, names = 'human' }) {
+  const W = 1024, AOW = 512;
+  const baseTex = skinMat.getBaseColorTexture(), nTex = skinMat.getNormalTexture(), rTex = skinMat.getMetallicRoughnessTexture();
+  const stock = await decodeStockSkin(baseTex.getImage(), nTex.getImage(), rTex.getImage());
+  // the AO: skin (head, neck, shoulders), wrap, collar
+  const pan = collar;
+  const soup = [];
+  triSoup(bodyPrim, null, soup);
+  const headOnly = soup.filter((_, i) => true);
+  for (let i = 0; i < occluders.length; i++) headOnly.push(occluders[i]);
+  for (let t = 0; t + 8 < pan.length; t += 9) if (pan[t + 1] > 1.3 && pan[t + 4] > 1.3 && pan[t + 7] > 1.3 && Math.abs(pan[t]) < 0.3) headOnly.push(pan[t], pan[t + 1], pan[t + 2], pan[t + 3], pan[t + 4], pan[t + 5], pan[t + 6], pan[t + 7], pan[t + 8]);
+  const grid = new TriGrid(new Float32Array(headOnly), 0.012);
+  const pmA = positionMap(bodyPrim, AOW, AOW);
+  const valid = (i) => !Number.isNaN(pmA.pos[i * 3]);
+  const headTexel = (i) => { const o = i * 3; return pmA.pos[o + 1] > 1.40 && Math.abs(pmA.pos[o]) < 0.26; };
+  const rawAO = bakeAOTexels(pmA, grid, { rays: 48, maxD: 0.07, lift: 0.0014, want: headTexel });
+  const ao = blurMasked(rawAO, AOW, AOW, valid, 3);
+  // the convexity, broad
+  const convMap = scalarMap(bodyPrim, convexity(bodyPrim), W, W, 0);
+  // the coil field (the same drawing the cards use)
+  const coilF = coilField(192, 192, { count: 340, seed: 21 });
+  const sampler = coilSampler(coilF, 0.058);
+  // the hair coverage, blurred: a texel array over the 1024 layout
+  const pm = positionMap(bodyPrim, W, W);
+  const headish = (i) => pm.pos[i * 3 + 1] > 1.52 && Math.abs(pm.pos[i * 3]) < 0.1;
+  const validT = (i) => !Number.isNaN(pm.pos[i * 3]);
+  const rawCov = hairCoverage(pm, shellGrid, { W, want: headish, maxD: 0.03 });
+  const cov = blurMasked(rawCov, W, W, validT, 5);
+  const cheek = [L.cheekL[0] - 0.004, L.cheekL[1] - 0.004, L.cheekL[2] + 0.004];
+  const layers = [
+    ...faceLayers({ L, eyes, cheek }),
+    hairlineLayer({
+      sampler, hair: hairColor,
+      coverage: (T) => {
+        if (T.Y < 1.52 || Math.abs(T.X) > 0.1) return 0;
+        return cov[T.y * W + T.x] * shape(T.X, T.Y, T.Z);
+      },
+      flowUV: (T, uv) => { uv[0] = Math.atan2(T.X, -T.Z + 0.001) * 0.09; uv[1] = T.Y; },
+    }),
+    lidLines({ open: opens[0], side: 1 }),
+    lidLines({ open: opens[1], side: -1 }),
+    browLayer({ x0: brows[1].x0, x1: brows[1].x1, line: brows[1].line, side: 1, seed: 17, scar, hair: hairColor }),
+    browLayer({ x0: brows[-1].x1, x1: brows[-1].x0, line: brows[-1].line, side: -1, seed: 19, hair: hairColor }),
+    ...marks,
+  ];
+  const toneMaps = seamlessTone(bodyPrim, layout.islands, layout.islandOf, stock, W);
+  // the tone actually painted at the mid-cheek: the zones, grain and form all moved it, so the
+  // first pass measures it and the second lands on `tone`
+  const cheekMean = (P) => {
+    let acc = [0, 0, 0], n = 0;
+    for (let i = 0; i < W * W; i++) {
+      const o = i * 3;
+      if (!P.filled[i] || Number.isNaN(pm.pos[o])) continue;
+      if (Math.hypot(pm.pos[o] - cheek[0], pm.pos[o + 1] - cheek[1], pm.pos[o + 2] - cheek[2]) >= 0.014) continue;
+      acc[0] += P.base[o]; acc[1] += P.base[o + 1]; acc[2] += P.base[o + 2]; n++;
+    }
+    return acc.map((v) => v / Math.max(1, n));
+  };
+  const args = { prim: bodyPrim, islands: layout.islands, stock, W, tone, toneAt: cheek, ao, aoW: AOW, conv: convMap, layers, pm, toneMaps };
+  const first = await paintSkinAtlas(args);
+  const want = [parseInt(tone.slice(1, 3), 16), parseInt(tone.slice(3, 5), 16), parseInt(tone.slice(5, 7), 16)];
+  const m0 = cheekMean(first);
+  const painted = await paintSkinAtlas({ ...args, toneK: want.map((t, k) => t / Math.max(1, m0[k])) });
+  painted.stats.cheekPainted = '#' + cheekMean(painted).map((v) => Math.round(v).toString(16).padStart(2, '0')).join('');
+  // the eye patch
+  const eyeP = paintEye(EYE_PX, { span: EYE_SPAN, iris, amber });
+  const ex = Math.round(eyeR.x * W), ey = Math.round(eyeR.y * W);
+  blit(painted.base, W, eyeP.base, EYE_PX, EYE_PX, ex, ey);
+  blit(painted.normal, W, eyeP.normal, EYE_PX, EYE_PX, ex, ey);
+  blit(painted.orm, W, eyeP.orm, EYE_PX, EYE_PX, ex, ey);
+  baseTex.setImage(await webp(painted.base, W, { quality: 93 })).setMimeType('image/webp').setURI(`${names}-skin-base.webp`);
+  nTex.setImage(await webp(painted.normal, W, { to: 512, quality: 92, kernel: 'mitchell' })).setMimeType('image/webp').setURI(`${names}-skin-normal.webp`);
+  rTex.setImage(await webp(painted.orm, W, { to: 512, quality: 84, kernel: 'mitchell' })).setMimeType('image/webp').setURI(`${names}-skin-orm.webp`);
+  skinMat.setRoughnessFactor(1).setMetallicFactor(0).setDoubleSided(false);
+  skinMat.setOcclusionTexture(rTex);
+  skinMat.setOcclusionStrength(1);
+  return { stats: painted.stats };
 }
 
