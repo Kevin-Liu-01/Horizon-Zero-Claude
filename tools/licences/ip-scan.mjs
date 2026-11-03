@@ -259,8 +259,13 @@ export async function selfTest(dir, { planFile = path.join(ROOT, 'docs/ROUND5-PL
     writeRows([heroRow]);
     r = await scan(dir, { env: {} });
     let c = await check(dir, { env: {} });
-    out.scheduledAlone = { ok: r.pass === true && r.scheduledExceptions.length === 1 && c.clauses['legacy-source'].status === 'PENDING',
-      scanPass: r.pass, exceptions: r.scheduledExceptions.length, legacySource: c.clauses['legacy-source'].status };
+    // after the R39 hero swap the hero body is no longer a scheduled exception (SCHEDULED_IP), so at the W0 exit
+    // and later the same file must FAIL: the control flips with the schedule instead of going stale
+    const heroScheduled = !!SCHEDULED_IP['public/models/aloy.glb'];
+    out.scheduledAlone = { ok: heroScheduled
+        ? r.pass === true && r.scheduledExceptions.length === 1 && c.clauses['legacy-source'].status === 'PENDING'
+        : r.pass === false && r.scheduledExceptions.length === 0 && c.clauses['legacy-source'].status === 'FAIL',
+      heroScheduled, scanPass: r.pass, exceptions: r.scheduledExceptions.length, legacySource: c.clauses['legacy-source'].status };
 
     // fanRip: the judge's planted control (a second IP GLB under a legacy ip:true row)
     copyFileSync(path.join(dir, 'public/models/aloy.glb'), path.join(dir, 'public/models/another-fan-rip.glb'));
@@ -293,16 +298,17 @@ export async function selfTest(dir, { planFile = path.join(ROOT, 'docs/ROUND5-PL
 
     // expiry, three independent triggers
     r = await scan(dir, { env: { R5_WAVE: 'W1' } });
-    const byEnv = r.pass === false && /EXPIRED/.test(r.ipHits[0]?.exception || '');
+    const stillCaught = (x, re) => x.pass === false && (heroScheduled ? re.test(x.ipHits[0]?.exception || '') : x.ipHits.length > 0);
+    const byEnv = stillCaught(r, /EXPIRED/);
     writeFileSync(path.join(dir, 'docs/ROUND5-MELEE.md'), 'report\n');                // a W1 lane has merged
     r = await scan(dir, { env: {} });
-    const byReports = r.pass === false && /EXPIRED/.test(r.ipHits[0]?.exception || '') && r.wave.wave === 'W1';
+    const byReports = stillCaught(r, /EXPIRED/) && r.wave.wave === 'W1';
     c = await check(dir, { env: {} });
     const checkByReports = c.clauses['legacy-source'].status === 'FAIL';
     rm(path.join(dir, 'docs/ROUND5-MELEE.md'));
     writeSpecs('/models/hero/brea-body.glb');                                          // the replacement has landed
     r = await scan(dir, { env: {} });
-    const bySpecs = r.pass === false && /SPECS\.hero no longer points/.test(r.ipHits[0]?.exception || '');
+    const bySpecs = stillCaught(r, /SPECS\.hero no longer points/);
     out.expiry = { ok: byEnv && byReports && checkByReports && bySpecs, byEnv, byReports, checkByReports, bySpecs };
     writeSpecs('/models/aloy.glb');
 
