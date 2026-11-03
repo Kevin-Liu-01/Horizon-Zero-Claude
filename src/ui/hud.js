@@ -85,6 +85,8 @@ const MHB_TOP_BASE = 96;
 const MHB_EYE_BASE = 142;
 const MHB_PLATE_H = 41;
 const MHB_SAFE_L = 412;
+const MHB_COL_B = 178;            // the column's foot with the field note up
+const MHB_GAP = 4;                // what the plate resolver leaves between two plates
 const MHB_EYE_HALF = 70;
 
 const AWARE_MIN_SUSPICION = 0.04;
@@ -113,6 +115,7 @@ const STRIP_W = 640;              // base width of the visible window
 const COMPASS_HALF_DEG = 80;      // pips are drawn inside this (the window's ends fade)
 const COMPASS_SPRING_K = 150;     // the limb's inertia: under-damped, a little overshoot
 const COMPASS_SPRING_C = 19;
+const PIP_LABEL_PX = 36;          // two marks closer than this share one distance reading
 
 /** 000 .. 359, preallocated: the readout never builds a string. */
 const BEARING_STR = Array.from({ length: 360 }, (_, i) => String(i).padStart(3, '0'));
@@ -141,7 +144,7 @@ const CLIP_R = Array.from({ length: 101 }, (_, i) => `inset(0 ${100 - i}% 0 0)`)
  */
 function buildStrip() {
   const W = (STRIP_TO - STRIP_FROM) * PX_PER_DEG;
-  const base = 2;                  // the baseline's y in the strip
+  const base = 14;                 // the limb's y in the strip: the cardinals ride above it, the marks' band stays clear under the numerals
   let t5 = '', t10 = '', t30 = '', nums = '', cards = '';
   for (let a = STRIP_FROM; a <= STRIP_TO; a += 5) {
     const x = ((a - STRIP_FROM) * PX_PER_DEG).toFixed(1);
@@ -151,12 +154,12 @@ function buildStrip() {
       const cls = norm === 0 ? 'n north' : 'n';
       nums += `<text class="${cls}" x="${x}" y="${base + 28}">${BEARING_STR[norm]}</text>`;
       const c = norm === 0 ? 'N' : norm === 90 ? 'E' : norm === 180 ? 'S' : norm === 270 ? 'W' : '';
-      if (c) cards += `<text class="c" x="${x}" y="${base + 42}">${c}</text>`;
+      if (c) cards += `<text class="${norm === 0 ? 'c north' : 'c'}" x="${x}" y="${base - 3}">${c}</text>`;
     } else if (norm % 10 === 0) t10 += `M${x} ${base}V${base + 9}`;
     else t5 += `M${x} ${base}V${base + 5}`;
   }
   const line = `M0 ${base}H${W.toFixed(0)}`;
-  return `<svg class="cal-strip" viewBox="0 0 ${W.toFixed(0)} 50" width="${W.toFixed(0)}" height="50" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">`
+  return `<svg class="cal-strip" viewBox="0 0 ${W.toFixed(0)} 52" width="${W.toFixed(0)}" height="52" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">`
     + `<path class="u" d="${line}${t5}${t10}${t30}"/>`
     + `<path class="t line" d="${line}"/><path class="t t5" d="${t5}"/><path class="t t10" d="${t10}"/><path class="t t30" d="${t30}"/>`
     + nums + cards + '</svg>';
@@ -324,6 +327,10 @@ export class HUD {
     this._mhbSlots = [];           // pooled projected plates
     this._mhbPick = [null, null, null];   // preallocated cap-3 selection
     this._mhbPickW = [0, 0, 0];
+    this._mhbX = [NaN, NaN, NaN];  // the plate resolver's scratch: painted px, never reallocated
+    this._mhbY = [0, 0, 0];
+    this._mhbC = [0, 0, 0];
+    this._pipVis = [];             // the marks on the circle this frame (reused)
     this._anyHostile = false;      // any Instrument alert/attack this frame
     this._nearestHostileDist = Infinity;
     this._nearestInstrumentDist = Infinity;
@@ -1308,7 +1315,7 @@ export class HUD {
         const o = s.current;
         obj = o ? o.label : 'Report back';
         if (o && o.need > 1) meta = `${o.have} / ${o.need}`;
-        else if (s.progress != null) meta = `${Math.round(s.progress * 100)}%`;
+        else if (s.progress > 0) meta = `${Math.round(s.progress * 100)}%`;
       }
     }
     const sig = `${title}|${obj}|${meta}`;
@@ -1405,6 +1412,8 @@ export class HUD {
       }
       this._questTarget = questTarget;
 
+      const pipVis = this._pipVis;
+      let pipN = 0;
       for (let i = 0; i < list.length; i++) {
         const m = list[i];
         const flagged = !!tags?.has?.(m);
@@ -1420,7 +1429,7 @@ export class HUD {
         if (!pip) {
           const el = div('cal-pip', this._pipLayer);
           div('cal-iris', el, '<i></i>');
-          pip = { el, lab: div('cal-pip-dist', el), s: null, vis: null, dist: -1, k: null, x: NaN };
+          pip = { el, lab: div('cal-pip-dist', el), s: null, vis: null, dist: -1, k: null, x: NaN, labOn: true };
           this._pips.set(m, pip);
         }
         const pos = m.position ?? m.root?.position;
@@ -1437,6 +1446,7 @@ export class HUD {
           continue;
         }
         if (pip.vis !== true) { pip.el.style.visibility = 'visible'; pip.vis = true; }
+        pipVis[pipN++] = pip;
         const px = d * PX_PER_DEG * this._scale;
         if (Math.abs(px - pip.x) >= 0.5 || pip.x !== pip.x) {
           pip.x = px;
@@ -1448,6 +1458,18 @@ export class HUD {
         if (pip.k !== k) { pip.k = k; pip.el.dataset.k = k; }
         const di = Math.round(dist);
         if (di !== pip.dist) { pip.dist = di; pip.lab.textContent = di < 360 ? BEARING_STR[di] : String(di); }
+      }
+      // marks that crowd share one reading: the nearest Instrument's
+      const near = PIP_LABEL_PX * this._scale;
+      for (let a = 0; a < pipN; a++) {
+        const pa = pipVis[a];
+        let show = true;
+        for (let b = 0; b < pipN; b++) {
+          if (a === b) continue;
+          const pb = pipVis[b];
+          if (Math.abs(pa.x - pb.x) < near && (pb.dist < pa.dist || (pb.dist === pa.dist && b < a))) { show = false; break; }
+        }
+        if (show !== pa.labOn) { pa.labOn = show; pa.lab.style.visibility = show ? '' : 'hidden'; }
       }
     }
 
@@ -1636,7 +1658,7 @@ export class HUD {
 
       let mode = null;
       let frac = 0;
-      if (m.alive !== false) {
+      if (m.alive !== false && m !== this._mhbPick[0] && m !== this._mhbPick[1] && m !== this._mhbPick[2]) {
         const sus = clamp01(m.suspicion ?? 0);
         if (this._attackFlash.has(m)) {
           mode = 'attack';
@@ -1707,9 +1729,17 @@ export class HUD {
    */
   _updateMachineBars(dt) {
     const cam = this.ctx.camera;
+    const ws = this._wscale;
+    const halfW = MHB_W * 0.5 * ws;
+    const sc = this._scale;
+    const X = this._mhbX, Y = this._mhbY, C = this._mhbC;
+    let any = false;
+
+    /* 1. where each plate wants to be, in painted pixels: bottom-centre on the head point */
     for (let i = 0; i < MHB_CAP; i++) {
       const slot = this._mhbSlots[i];
       const m = this._mhbPick[i];
+      X[i] = NaN;
       if (!m) {
         if (slot.vis !== false) { slot.el.style.visibility = 'hidden'; slot.vis = false; slot.m = null; }
         continue;
@@ -1729,30 +1759,56 @@ export class HUD {
         if (slot.vis !== false) { slot.el.style.visibility = 'hidden'; slot.vis = false; }
         continue;
       }
-      /**
-       * The plate is drawn bottom-centre on (x, y): `transform-origin: 0 0` plus
-       * `translate(x,y) scale(ws) translate(-50%,-100%)` puts its painted box at
-       * [x - halfW, x + halfW] x [y - h*ws, y]. Every number here is PAINTED pixels.
-       */
-      const ws = this._wscale;
       if (!slot.h) slot.h = slot.el.offsetHeight || MHB_PLATE_H;
-      const halfW = MHB_W * 0.5 * ws;
       const plateH = slot.h * ws;
-      const topFloor = MHB_TOP_BASE * this._scale + plateH;
-      const clamped = y < topFloor;
-      if (clamped) {
-        const safeL = MHB_SAFE_L * this._scale + halfW;   // LEFT EDGE clears the column
-        if (x < safeL) x = safeL;
-        const overEye = Math.abs(x - this._vw * 0.5) < halfW + MHB_EYE_HALF * this._scale;
-        y = overEye ? MHB_EYE_BASE * this._scale + plateH : topFloor;
+      const topFloor = MHB_TOP_BASE * sc + plateH;
+      let moved = y < topFloor;
+      if (moved) y = topFloor;
+      // the fixed instruments keep their place: the column (the staff, the gourd, the note)...
+      const colB = (this._trackEl.classList.contains('off') ? 90 : MHB_COL_B) * sc;
+      const colR = MHB_SAFE_L * sc;
+      if (x - halfW < colR && y - plateH < colB) {
+        const toRight = colR + halfW - x, toBelow = colB + plateH - y;
+        if (toRight <= toBelow) x += toRight; else y += toBelow;
+        moved = true;
       }
+      // ...and the circle with its vial
+      if (Math.abs(x - this._vw * 0.5) < halfW + MHB_EYE_HALF * sc && y - plateH < MHB_EYE_BASE * sc) {
+        y = MHB_EYE_BASE * sc + plateH;
+        moved = true;
+      }
+      X[i] = x; Y[i] = y; C[i] = moved ? 1 : 0;
+      any = true;
+    }
+    if (!any) return;
+
+    /* 2. a plate never lies on another: the most recently hit holds its place, the others step down */
+    const gap = MHB_GAP * sc;
+    for (let i = 1; i < MHB_CAP; i++) {
+      if (X[i] !== X[i]) continue;
+      const hi = (this._mhbSlots[i].h || MHB_PLATE_H) * ws;
+      for (let j = 0; j < i; j++) {
+        if (X[j] !== X[j]) continue;
+        const hj = (this._mhbSlots[j].h || MHB_PLATE_H) * ws;
+        const overlapX = Math.abs(X[i] - X[j]) < halfW * 2 + gap;
+        const overlapY = Y[i] > Y[j] - hj - gap && Y[i] - hi - gap < Y[j];
+        if (overlapX && overlapY) { Y[i] = Y[j] + hi + gap; C[i] = 1; }
+      }
+    }
+
+    /* 3. paint */
+    for (let i = 0; i < MHB_CAP; i++) {
+      if (X[i] !== X[i]) continue;
+      const slot = this._mhbSlots[i];
+      const m = this._mhbPick[i];
+      const clamped = C[i] === 1;
       if (clamped !== slot.clamped) {
         slot.clamped = clamped;
         slot.el.classList.toggle('clamped', clamped);
       }
       if (slot.vis !== true) { slot.el.style.visibility = 'visible'; slot.vis = true; }
       slot.el.style.transform =
-        `translate(${x.toFixed(1)}px, ${y.toFixed(1)}px) scale(${ws.toFixed(3)}) translate(-50%, -100%)`;
+        `translate(${X[i].toFixed(1)}px, ${Y[i].toFixed(1)}px) scale(${ws.toFixed(3)}) translate(-50%, -100%)`;
 
       if (slot.m !== m) {
         slot.m = m;
@@ -1776,6 +1832,9 @@ export class HUD {
 
       const s = lampStateOf(m);
       if (s !== slot.awareS) { slot.awareS = s; slot.aware.dataset.s = s; }
+      // the mark an Instrument with no plate wears for its attack flashes on the plate instead
+      const atk = this._attackFlash.has(m);
+      if (atk !== slot.atk) { slot.atk = atk; slot.el.classList.toggle('attack', atk); }
       this._renderElems(slot, m);
     }
   }
@@ -2318,8 +2377,9 @@ export class HUD {
         count: this._wpnCount.textContent,
         dots: this._wpnDots.childElementCount, art: this._wpnArt.querySelector('svg') != null },
       reticle: (() => {
+        // the arm is a hairline: 1 px tall on purpose, so its width is what says it is painted
         const brkOn = parseFloat(getComputedStyle(this._brackets).opacity) > 0.04
-          && vis(this._brkArm);
+          && this._brkArm.getBoundingClientRect().width > 1;
         return {
           visible: vis(this._dotEl) || brkOn,
           dot: vis(this._dotEl),

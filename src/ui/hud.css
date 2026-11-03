@@ -273,7 +273,7 @@
   mask-image: linear-gradient(90deg, transparent 0, #000 22%, #000 78%, transparent 100%);
 }
 .cal-compass-window {
-  position: absolute; left: 0; right: 0; top: calc(26px * var(--s));
+  position: absolute; left: 0; right: 0; top: calc(14px * var(--s));
   height: calc(52px * var(--s));
   overflow: hidden;
   -webkit-mask-image: linear-gradient(90deg, transparent 0, #000 10%, #000 90%, transparent 100%);
@@ -306,10 +306,11 @@
 .cal-strip .n.north { fill: #FF8A73; font-weight: 600; }
 .cal-strip .c {
   font-family: var(--cal-font-ui);
-  font-weight: 600;
-  font-size: 13px;
-  fill: var(--cal-staff-80);
+  font-weight: 700;
+  font-size: 11.5px;
+  fill: var(--cal-staff);
 }
+.cal-strip .c.north { fill: #FF8A73; }
 
 /* the reading window: a paper chip over the index */
 .cal-bearing {
@@ -350,7 +351,7 @@
 .cal-pennant .flag { fill: var(--cal-c-staff); stroke: var(--cal-staff); stroke-width: 1; }
 
 /* marks ride a band under the numerals */
-.cal-compass-pips { position: absolute; left: 50%; top: calc(66px * var(--s)); width: 0; height: 0; }
+.cal-compass-pips { position: absolute; left: 50%; top: calc(69px * var(--s)); width: 0; height: 0; }
 .cal-pip {
   position: absolute; left: 0; top: 0;
   width: 0;
@@ -418,35 +419,38 @@
 .cal-iris[data-s='dark'], [data-s='dark'] > .cal-iris { --lamp: var(--cal-lamp-dark); --ap: 0; }
 
 /* ----------------------------- the exposure vial ----------------------------- */
+/* A spirit level: dark glass, graduated, the two index lines at its centre. The world
+   never sees a full bar of lamp colour: only the bubble wears the state. */
 .cal-vial {
-  position: absolute; top: calc(100px * var(--s)); left: 50%;
+  position: absolute; top: calc(104px * var(--s)); left: 50%;
   transform: translateX(-50%);
   width: calc(118px * var(--s));
   --run: 0;
-  --vial: var(--cal-staff-30);
+  --bubble: var(--cal-staff);
 }
 .cal-vial-tube {
   position: relative;
   height: calc(11px * var(--s));
-  background: var(--vial);
-  outline: 1px solid var(--cal-staff);
+  background:
+    repeating-linear-gradient(90deg, var(--cal-staff-30) 0 1px, transparent 1px 10%),
+    rgba(28, 27, 30, 0.58);
+  outline: 1px solid var(--cal-staff-80);
   box-shadow: 0 0 0 2px var(--cal-under);
-  transition: background 0.18s ease;
 }
 /* the level's two index lines */
 .cal-vial-mid {
   position: absolute; left: 50%; top: 0; bottom: 0;
   width: calc(14px * var(--s)); margin-left: calc(-7px * var(--s));
-  border-left: 1px solid var(--cal-staff-80); border-right: 1px solid var(--cal-staff-80);
+  border-left: 1px solid var(--cal-staff); border-right: 1px solid var(--cal-staff);
 }
 .cal-vial-bubble {
-  position: absolute; top: 12%; bottom: 12%;
+  position: absolute; top: 10%; bottom: 10%;
   left: calc(50% + var(--run) * 44%);
-  width: calc(11px * var(--s)); margin-left: calc(-5.5px * var(--s));
-  background: var(--cal-staff);
+  width: calc(12px * var(--s)); margin-left: calc(-6px * var(--s));
+  background: var(--bubble);
   border: 1px solid var(--cal-ink);
   border-radius: 50%;
-  transition: left 0.22s var(--cal-ease-settle);
+  transition: left 0.22s var(--cal-ease-settle), background 0.18s ease;
 }
 .cal-vial-row {
   display: flex; align-items: center; justify-content: space-between;
@@ -475,9 +479,9 @@
 .cal-eye-bars i:nth-child(3) { height: 100%; }
 .cal-eye-bars i.on { background: var(--cal-staff); }
 .cal-vial[data-m='clear'] { opacity: 0.78; }
-.cal-vial[data-m='hidden'] { --vial: rgba(79, 143, 126, 0.55); }
-.cal-vial[data-m='watch'] { --vial: color-mix(in srgb, var(--cal-c-wary) 62%, transparent); }
-.cal-vial[data-m='seen'] { --vial: color-mix(in srgb, var(--cal-c-hostile) 74%, transparent); }
+.cal-vial[data-m='hidden'] { --bubble: #7FC4B2; }
+.cal-vial[data-m='watch'] { --bubble: var(--cal-c-wary); }
+.cal-vial[data-m='seen'] { --bubble: var(--cal-c-hostile); }
 .cal-vial[data-m='seen'] .cal-vial-tube { animation: calVialSeen 0.6s steps(2, jump-none) infinite; }
 @keyframes calVialSeen { 0% { outline-color: var(--cal-staff); } 100% { outline-color: var(--cal-c-hostile); } }
 
@@ -555,6 +559,8 @@
   box-shadow: 0 0 0 1px var(--cal-under);
 }
 .cal-mhb.clamped .cal-mhb-leader { display: none; }
+/* her attack is coming from this one: its iris flashes on the plate */
+.cal-mhb.attack .cal-iris { animation: calAwareFlash 0.3s steps(2, jump-none) infinite; }
 
 /* --------------------------- the objective's broad arrow ---------------------- */
 .cal-objmark {
