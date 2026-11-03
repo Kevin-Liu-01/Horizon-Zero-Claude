@@ -1599,7 +1599,8 @@ export class MeleeLayer {
      * rotations below are authored on the turned pelvis. Standing only: a stride
      * owns its hips (`_stanceW` is 0 at a jog). */
     {
-      const hw = w * this._stanceW * (1 - (an._crouchW || 0));
+      /* (nor a crouch's, nor a roll's) */
+      const hw = w * this._stanceW * (1 - (an._crouchW || 0)) * (1 - (an._dodgeW || 0));
       this._pelvisYawNow = (u.py || 0) * hw;
       this.pelvisDz = (u.dz || 0) * hw;
       if (this._pelvisYawNow !== 0 && b.pelvis) an._rot(b.pelvis, Y_AXIS, this._pelvisYawNow);
@@ -1617,7 +1618,7 @@ export class MeleeLayer {
      * to this beat's: nothing through the cock's opening, full at the contact, gone
      * by the end of the recover. Round 4 scaled one key by an envelope, so the
      * knees straightened at the top of every swing and bent again for the strike. */
-    const want = live ? w * this._stanceW * (1 - 0.8 * tall) * (1 - (an._crouchW || 0)) : 0;
+    const want = live ? w * this._stanceW * (1 - 0.8 * tall) * (1 - (an._crouchW || 0)) * (1 - (an._dodgeW || 0)) : 0;
     const mixT = stance === 'swing' ? STANCE_ENV(u.clipU) : 0;
     /* THE KEY OUTLIVES THE SWING BY AS LONG AS THE UNWIND TAKES: the rate limit
      * below is in RENDERED frames, so on a loaded box the mix can still be finite
