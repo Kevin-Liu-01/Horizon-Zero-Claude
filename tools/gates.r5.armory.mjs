@@ -30,6 +30,7 @@ const PRE = `
       const release = () => { keys.clear(); C.input.mouse.buttons = 0; };
       const mem = () => { const i = C.renderer.info.memory; return { geo: i.geometries, tex: i.textures }; };
       const frames = async (n = 4) => { for (let i = 0; i < n; i++) await frame(); };
+      const inHand = (M) => !M.layer?.ok || !!M.layer._held;   /* melee's own test: the layer's re-parent, not the stance clock */
       /* the lance through its own path: a swing from holstered draws it; aiming stows it fast (R8, R5) */
       const lanceOut = async () => {
         const M = cmb.melee;
@@ -37,7 +38,7 @@ const PRE = `
         M.swing({});
         const w0 = performance.now();
         // out of the draw and physically in her hand, not merely asked for
-        while (performance.now() - w0 < 5000) { await frame(); if (H._lanceOut && (M.lanceInHand ?? M.spearInHand) && M.stance === 'ready' && M.poseState().phase === 'idle') break; }
+        while (performance.now() - w0 < 5000) { await frame(); if (H._lanceOut && inHand(M) && M.stance === 'ready' && M.poseState().phase === 'idle') break; }
         await frames(3);
       };
       const lanceAway = async () => {

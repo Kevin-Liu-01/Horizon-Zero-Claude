@@ -14,6 +14,7 @@ import { orientOut, ring, strapAlong, TAU } from './lib/garment.mjs';
 import { tubeInto } from './lib/smock.mjs';
 import { clamp, emptyPart, Field, gridInto, mix, recomputeNormals, sstep, V } from './lib/part.mjs';
 import { outfitDoc, writeOutfit } from './lib/output.mjs';
+import { romFit } from './lib/romfit.mjs';
 
 export const LANE = 'armory';
 export const OUTPUTS = ['public/models/armory/armor-ash-1.glb'];
@@ -254,6 +255,7 @@ export async function build({ out = ROOT } = {}) {
   const layout = await panLayout(all, base.trim, W, H);
   const srcNormal = await loadRaw(path.join(MCO_DIR(srcRoot()), 'T_Peasant_Normal.png'), 1024);
   const tex = await paintAtlas(all, layout, { painters: ASH_PAINTERS, srcNormal, trim: base.trim, salt: [150, 144, 132], curv: { crease: 0.8, ridge: 0.5 }, q: { base: 90, normal: 88, orm: 84 } });
+  romFit(all, base);
   outfitDoc(doc, all, { name: 'Outfit_Ash_1', matName: 'MI_Ash_1', tex, texPrefix: 'ash' });
   return writeOutfit(doc, path.join(out, OUTPUTS[0]), {
     recipe: RECIPE, sources: ['mco-fantasy-standard', 'ubc-standard', 'brea-generated'], licence: 'CC0-1.0',

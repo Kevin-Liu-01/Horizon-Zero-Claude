@@ -41,6 +41,7 @@ import { Trim, fbm, loadRaw, packAtlas, paintAtlas } from './armor/lib/atlas.mjs
 import { TAU, beltRing, boxInto, limbStrap, orientOut, ring, skirtPanels, strapAlong } from './armor/lib/garment.mjs';
 import { bindingAlong, draftSmock, drapeTable, openEdges, radialTable, roundRect, softSheet, tableAt, tubeInto } from './armor/lib/smock.mjs';
 import { outfitDoc, writeOutfit } from './armor/lib/output.mjs';
+import { romFit } from './armor/lib/romfit.mjs';
 
 export const LANE = 'armory';
 export const OUTPUTS = ['public/models/hero/outfit-pan-1.glb'];
@@ -511,25 +512,25 @@ export async function panBase(opt = {}) {
   // ---- the MCO pieces, re-cut and pushed out of THIS body
   // the bodice survives only as the linen under-tunic's stand collar and yoke: everything
   // the smock hangs over, kept so nothing shows the skin the body's hide bit culled
-  const underYoke = cutTris(partFromPrim(prim('smock'), 'underyoke', { axis: [0, 1, 0], density: 0.62, nScale: 0.3 }), (cx, cy, cz) => (cy > 1.462 && Math.abs(cx) < 0.1) || (cz > 0 && ((cy > 1.42 && Math.abs(cx) < 0.09) || (cy > 1.345 && Math.abs(cx) < 0.04))));
-  conform(underYoke, body, { margin: () => 0.014 });
+  const underYoke = cutTris(partFromPrim(prim('smock'), 'underyoke', { axis: [0, 1, 0], density: 0.62, nScale: 0.3 }), (cx, cy, cz) => (cy > 1.462 && Math.abs(cx) < 0.1 && (cz > -0.07 || cy > 1.53)) || (cz > 0 && ((cy > 1.42 && Math.abs(cx) < 0.09) || (cy > 1.345 && Math.abs(cx) < 0.04))));
+  conform(underYoke, body, { margin: () => 0.0085, smooth: 4 });
   recomputeNormals(underYoke);
   // the collar rides the trunk and eases onto the neck by height, not by whichever body vertex is nearest
   // (head turn and draw shear a nearest-vertex skin apart at these short edges)
   {
     const jN = J('neck_01'), jS = J('spine_03');
-    collapseShort(underYoke, 0.0055);
     for (let i = 0; i < underYoke.pos.length / 3; i++) {
       const w = 0.75 * sstep(1.45, 1.515, underYoke.pos[i * 3 + 1]);
       underYoke.jnt.splice(i * 4, 4, jS, jN, 0, 0); underYoke.wgt.splice(i * 4, 4, 1 - w, w, 0, 0);
     }
   }
-  // (its inner end, deep under the cap, is only ever inside her: gone)
-  const sleeves = cutTris(partFromPrim(prim('sleeves'), 'sleeves', { density: 0.85, nScale: 0.5 }), (cx) => Math.abs(cx) > 0.146);
+  // (its inner end, past the armhole's rim, lies under the smock where arm and ribs share the space: gone)
+  const sleeves = cutTris(partFromPrim(prim('sleeves'), 'sleeves', { density: 0.85, nScale: 0.5 }), (cx, cy, cz) => !(Math.abs(cx) < 0.2 && Math.hypot((cy - ARMHOLE.y) / ARMHOLE.ry, (cz - ARMHOLE.z) / ARMHOLE.rz) > 1.2));
   sleeves.axis = [1, 0, 0];
-  conform(sleeves, body, { margin: () => 0.015 });
+  conform(sleeves, body, { margin: () => 0.012 });
   recomputeNormals(sleeves);
-  collapseShort(sleeves, 0.004, null, (x) => (Math.abs(x) < 0.24 ? 0.012 : 0.004));
+  // the crease under the arm: never seen, and arm and ribs share that space in every arms-down pose
+  collapseShort(sleeves, 0.004, null, (x, y) => (Math.abs(x) < 0.22 && y < 1.375 ? 0.023 : Math.abs(x) < 0.24 && y < 1.375 ? 0.016 : Math.abs(x) < 0.24 ? 0.012 : Math.abs(x) > 0.34 ? 0.0065 : 0.004));
   smoothSkin(sleeves, { its: 8, k: 0.5, filter: (x) => Math.abs(x) < 0.26 || Math.abs(x) > 0.33 });
   // (the inseam's top, between her thighs and under the skirt: never seen, always inside her at a stride)
   const trousers = cutTris(partFromPrim(prim('trousers'), 'trousers', { density: 0.76, nScale: 0.7 }), (cx, cy) => !((Math.abs(cx) < 0.04 && cy > 0.78 && cy < 0.96) || (Math.abs(cx) < 0.022 && cy > 0.69 && cy <= 0.78)));
@@ -561,7 +562,7 @@ export async function panBase(opt = {}) {
       trousers.jnt.splice(i * 4, 4, jP, jL, jR, 0); trousers.wgt.splice(i * 4, 4, pel, l, r, 0);
     }
   }
-  collapseShort(trousers, 0.0042, null, (x, y) => (Math.abs(x) < 0.05 && y > 0.8 ? 0.016 : y > 0.44 && y < 0.62 ? 0.012 : 0.0042));
+  collapseShort(trousers, 0.0042, null, (x, y, z) => (Math.abs(x) < 0.05 && y > 0.8 ? 0.016 : y > 0.44 && y < 0.62 ? (z < -0.1 ? 0.019 : 0.012) : 0.0042));
   // baggy cloth: the knee's blend runs a hand's width each way
   smoothSkin(trousers, { its: 12, k: 0.5 });
   smoothSkin(trousers, { its: 14, k: 0.5, filter: (x, y) => y > 0.42 && y < 0.68 });
@@ -577,14 +578,16 @@ export async function panBase(opt = {}) {
       if (m > 0) { if (slot >= 0) trousers.wgt[i * 4 + slot] += m; else for (let c = 0; c < 4; c++) if (trousers.wgt[i * 4 + c] === 0) { trousers.jnt[i * 4 + c] = own; trousers.wgt[i * 4 + c] = m; break; } }
     }
   }
-  const boots = partFromPrim(prim('boots'), 'boots', { density: 0.98, nScale: 0.2 });
+  // (cut lower behind the knee: at a stride the calf folds shut against the hamstring there)
+  const boots = cutTris(partFromPrim(prim('boots'), 'boots', { density: 0.98, nScale: 0.2 }), (cx, cy, cz) => !(cy > 0.452 && cz < -0.11));
   conform(boots, body, {
     margin: () => 0.016,
     field: (x, y) => 0.014 * sstep(0.28, 0.45, y) + 0.006 * sstep(0.06, 0.12, y) * sstep(0.26, 0.18, y),
     smooth: 2,
   });
   recomputeNormals(boots);
-  collapseShort(boots, 0.0085);
+  // (the top at the back of the calf and the ankle's front fold shut with the joint: fewer points there)
+  collapseShort(boots, 0.0085, null, (x, y, z) => ((y > 0.4 && z < -0.12) || (y > 0.11 && y < 0.2 && z > -0.03) ? 0.015 : 0.0085));
   smoothSkin(boots, { its: 18, k: 0.5 });
 
   // ---- surfaces the lofts read
@@ -606,7 +609,11 @@ export async function panBase(opt = {}) {
     armholes: [{ side: 1, ...ARMHOLE }, { side: -1, ...ARMHOLE }],
   });
   compact(smock);      // the armholes' cut quads leave vertices no triangle uses
-  collapseShort(smock, 0.0095, (i) => Math.abs(smock.pos[i * 3]) > ARMHOLE.xMin && Math.abs(Math.hypot((smock.pos[i * 3 + 1] - ARMHOLE.y) / ARMHOLE.ry, (smock.pos[i * 3 + 2] - ARMHOLE.z) / ARMHOLE.rz) - 1) < 0.02);
+  collapseShort(smock, 0.0095, (i) => smock.pos[i * 3 + 1] > 1.345 && Math.abs(smock.pos[i * 3]) > ARMHOLE.xMin && Math.abs(Math.hypot((smock.pos[i * 3 + 1] - ARMHOLE.y) / ARMHOLE.ry, (smock.pos[i * 3 + 2] - ARMHOLE.z) / ARMHOLE.rz) - 1) < 0.02, (x, y, z) => {
+    if (Math.abs(x) < 0.135 || y < 1.2 || y > 1.345) return 0.0095;
+    // the crease under the arm: the rim stays a curve (a point every 1.6 cm), the side behind it goes coarse
+    return Math.abs(Math.hypot((y - ARMHOLE.y) / ARMHOLE.ry, (z - ARMHOLE.z) / ARMHOLE.rz) - 1) < 0.14 ? 0.012 : 0.022;
+  });
   // the smock rides the trunk: the arm moves under its cap. Its skin diffused, so no edge crosses a step
   // (the clavicle lifts with a drawn arm: below the armpit the ribs carry the cloth, not the shoulder)
   {
@@ -641,7 +648,10 @@ export async function panBase(opt = {}) {
     if (cy < 1.2) continue;     // the bottom row: under the belt
     if (Math.abs(cx) > 0.1) {
       const c = [Math.sign(cx) * 0.19, ARMHOLE.y, ARMHOLE.z];
-      bindingAlong(binds, run, smockSkin, { rect: bindRect, closed: true, center: () => c, w: 0.0095, lift: 0.0026, segEvery: 2 });
+      // (under the arm a rim point every few cm is plenty: the crease closes over it)
+      let lastU = -1e9;
+      const rim = run.filter((q, i) => { if (q.p[1] > 1.375) return i % 2 === 0; if (i - lastU < 4) return false; lastU = i; return true; });
+      bindingAlong(binds, rim, smockSkin, { rect: bindRect, closed: true, center: () => c, w: 0.0095, lift: 0.0026 });
     } else {
       // neckline and keyhole: the cloth lies away from the slit below the scoop, down and out above it
       const center = (q) => (q[1] < 1.43 && Math.abs(q[0]) < 0.03 ? [0, q[1], q[2]] : [0, 1.57, -0.02]);
@@ -713,9 +723,9 @@ export async function panBase(opt = {}) {
 
   // ---- the salt pouch at the left front hip, rigid on the pelvis, hung off the belt
   // on the side of the hip, just behind the seam: out of the thigh's swing and of the arm's
-  const pouchThA = -0.42;
-  const POUCH_Y = BELT_Y - 0.104;
-  const pr = ring(clothField, POUCH_Y, 64, { keep: KEEP_TORSO, dth: 0.14 })[Math.round(64 * ((pouchThA + Math.PI / 2) / TAU))] + 0.012;
+  const pouchThA = -1.75;
+  const POUCH_Y = BELT_Y - 0.092;
+  const pr = ring(clothField, POUCH_Y, 64, { keep: KEEP_TORSO, dth: 0.14 })[Math.round(64 * (((pouchThA + Math.PI / 2 + TAU) % TAU) / TAU)) % 64] + 0.016;
   const pc = [Math.cos(pouchThA) * pr, POUCH_Y, -0.02 + Math.sin(pouchThA) * pr];
   const pX = V.norm([Math.sin(pouchThA), 0, -Math.cos(pouchThA)]), pZ = V.norm([Math.cos(pouchThA), 0, Math.sin(pouchThA)]);
   const pY = [0, 1, 0];
@@ -723,13 +733,12 @@ export async function panBase(opt = {}) {
   const pPel = joints.pelvis;
   const pRect = trim.rect('pouch');
   const PW = 0.041, PH = 0.047, PD = 0.0115;
-  // the body: soft belly over a flat back, joined by a gusset round the rim
-  softSheet(pouch, pc, [pX, pY, pZ], { hw: PW, hh: PH, belly: 0.0105, edge: PD * 0.35, nu: 6, nv: 6, rect: pRect, joint: pPel, round: 0.62 });
-  softSheet(pouch, pc, [pX, pY, V.mul(pZ, -1)], { hw: PW, hh: PH, belly: 0.001, edge: PD * 0.6, nu: 2, nv: 2, rect: pRect, joint: pPel, round: 0.62, flip: false });
+  // the body: a soft belly and a gusset round its rim, closing on the skirt it lies against
+  softSheet(pouch, pc, [pX, pY, pZ], { hw: PW, hh: PH, belly: 0.0105, edge: PD * 0.35, nu: 5, nv: 5, rect: pRect, joint: pPel, round: 0.62 });
   {
     // the gusset: the squircle's rim, front edge to back edge
     const rim = [];
-    const Nr = 18;
+    const Nr = 14;
     for (let k = 0; k < Nr; k++) {
       const a = (k / Nr) * TAU, u = Math.cos(a), v = Math.sin(a);
       const m = Math.max(Math.abs(u), Math.abs(v)); const uu = u / m, vv = v / m;
@@ -748,7 +757,7 @@ export async function panBase(opt = {}) {
   // the flap: comes over the top and hangs to below the middle, its corners rounded
   const flapC = V.add(V.add(pc, V.mul(pY, PH * 0.42)), V.mul(pZ, PD * 0.35 + 0.0125));
   const fZ = V.norm(V.add(pZ, V.mul(pY, 0.16)));
-  softSheet(pouch, flapC, [pX, V.norm(V.cross(fZ, pX)), fZ], { hw: PW * 1.05, hh: PH * 0.62, belly: 0.0042, nu: 6, nv: 4, rect: pRect, joint: pPel, round: 0.28, bottomRound: 0.9 });
+  softSheet(pouch, flapC, [pX, V.norm(V.cross(fZ, pX)), fZ], { hw: PW * 1.05, hh: PH * 0.62, belly: 0.0042, nu: 5, nv: 3, rect: pRect, joint: pPel, round: 0.28, bottomRound: 0.9 });
   // two belt loops off the back, up over the girdle
   for (const s of [-1, 1]) {
     const lp = V.add(V.add(pc, V.mul(pX, s * 0.025)), V.add(V.mul(pY, PH + 0.019), V.mul(pZ, -0.004)));
@@ -757,8 +766,16 @@ export async function panBase(opt = {}) {
   // a bronze toggle through a leather loop, under the flap's lip
   const tgC = V.add(V.add(pc, V.mul(pY, -PH * 0.14)), V.mul(pZ, PD * 0.35 + 0.0155));
   tubeInto(pouch, [V.add(tgC, V.mul(pX, -0.0088)), tgC, V.add(tgC, V.mul(pX, 0.0088))], 0.0041, { sides: 6, rect: brass, joint: pPel, radiusAt: (u) => 0.74 + 0.5 * Math.sin(u * Math.PI) });
-  const pouchRecompute = pouch;
-  recomputeNormals(pouchRecompute);
+  recomputeNormals(pouch);
+  // it rides on the skirt, which gives to the thigh: one skin for the whole bag, the loops stay on the belt
+  {
+    const sk = skirtField.skin(pc[0], pc[1] - 0.012, pc[2], 4);
+    const top = pc[1] + PH + 0.004;
+    for (let i = 0; i < pouch.pos.length / 3; i++) {
+      if (pouch.pos[i * 3 + 1] > top) continue;
+      for (let c = 0; c < 4; c++) { pouch.jnt[i * 4 + c] = sk.j[c]; pouch.wgt[i * 4 + c] = sk.w[c]; }
+    }
+  }
 
   // ---- sash knot + hanging end on dyn_sashEnd
   const sashJ = addChain(doc, CHAINS.sashEnd.names, CHAINS.sashEnd.points, CHAINS.sashEnd.parent);
@@ -862,7 +879,9 @@ export async function panBase(opt = {}) {
   }
   recomputeNormals(tab);
 
-  const parts = [underYoke, smock, binds, ...skirt, ...undr, sleeves, trousers, boots, girdle, sashBand, ...(buckle.pos.length ? [buckle, tongue] : []), sling, sling.extra, pouch, sash, tie, cuffs, straps, tab];
+  // (the lofts above read the whole garment; its top, hip-high under the skirt's yoke and always covered, need not ship)
+  const trousersCut = cutTris(trousers, (cx, cy) => cy < 0.94 && cy > 0.42);
+  const parts = [underYoke, smock, binds, ...skirt, ...undr, sleeves, trousersCut, boots, girdle, sashBand, ...(buckle.pos.length ? [buckle, tongue] : []), sling, sling.extra, pouch, sash, tie, cuffs, straps, tab];
   return { doc, trim, parts, joints, body, bodyPart, clothField, skinOf, W, H, TRIM_H, J, drape };
 }
 
@@ -873,7 +892,7 @@ function cuffRing(part, sleeves, sgn, uvLinen, uvCarmine, skinOf) {
   let cx = 0, cy = 0, cz = 0, m = 0;
   for (let i = 0; i < n; i++) if (Math.sign(pos[i * 3]) === sgn && Math.abs(pos[i * 3]) > SLEEVE_CUT - 0.02) { cx += pos[i * 3]; cy += pos[i * 3 + 1]; cz += pos[i * 3 + 2]; m++; }
   cx /= m; cy /= m; cz /= m;
-  const SEG = 16;
+  const SEG = 12;
   const radAt = new Float64Array(SEG + 1);
   for (let i = 0; i < n; i++) {
     if (Math.sign(pos[i * 3]) !== sgn || Math.abs(pos[i * 3]) < SLEEVE_CUT - 0.03) continue;
@@ -883,7 +902,7 @@ function cuffRing(part, sleeves, sgn, uvLinen, uvCarmine, skinOf) {
   }
   for (let k = 0; k < SEG; k++) if (!radAt[k]) radAt[k] = radAt[(k + 1) % SEG] || radAt[(k + SEG - 1) % SEG] || 0.05;
   radAt[SEG] = radAt[0];
-  const profile = [[-0.022, 0.011, 'l'], [-0.016, 0.0175, 'l'], [-0.004, 0.0215, 'l'], [0.008, 0.0195, 'l'], [0.0115, 0.013, 'c'], [0.0085, 0.007, 'c']];
+  const profile = [[-0.019, 0.004, 'l'], [-0.004, 0.012, 'l'], [0.008, 0.01, 'l'], [0.0115, 0.004, 'c'], [0.0085, -0.002, 'c']];
   const base = part.pos.length / 3;
   for (let r = 0; r < profile.length; r++) {
     const [dx, dr, m2] = profile[r];
@@ -922,6 +941,7 @@ export async function build({ out = ROOT } = {}) {
   const tex = await paintAtlas(parts, layout, {
     painters: PAN_PAINTERS, srcNormal, trim, salt: COL.salt, curv: { crease: 1, ridge: 0.7 }, q: { base: 95, normal: 88, orm: 84 },
   });
+  romFit(parts, base);
   const { node, material } = outfitDoc(doc, parts, { name: 'Outfit_Pan_1', matName: 'MI_Pan_1', tex, texPrefix: 'pan' });
   void node; void material;
   const file = path.join(out, OUTPUTS[0]);

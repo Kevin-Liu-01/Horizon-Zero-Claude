@@ -226,12 +226,12 @@ export function measurePose(ctx, snap, opts = {}) {
       const q = OG.height(v.x, v.y, v.z);
       if (q && q.dist < 0.05 && q.h < 0) {
         heldDeep = Math.min(heldDeep, q.h);
-        if (q.h < -0.005) { heldOver++; if (opts.offenders) heldOff.push([+q.h.toFixed(3), +(bw ? bw.getY(i) : 0).toFixed(2), ...at(q.i)]); }
+        if (q.h < -0.005) { heldOver++; heldOff.push([+q.h.toFixed(3), +(bw ? bw.getY(i) : 0).toFixed(2), ...at(q.i)]); }
       }
     }
   }
   row.heldDeep = +heldDeep.toFixed(4); row.heldOver = heldOver; row.heldMeshes = heldMesh.length;
-  if (opts.offenders) row.heldOffenders = heldOff.sort((x, y) => x[0] - y[0]).slice(0, 24);
+  if (heldOff.length) row.heldOffenders = heldOff.sort((x, y) => x[0] - y[0]).slice(0, opts.offenders ? 24 : 3);
   // (d) pauldron / capelet / collar vs the draw hand and the head, at full draw
   if (opts.draw) {
     const a = new THREE.Vector3(), b = new THREE.Vector3();

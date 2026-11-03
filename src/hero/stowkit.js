@@ -31,6 +31,9 @@ const QUIVER_SOCKET_PARENT = 'pelvis';
 const QUIVER_HOLD = 1.0;              // how much of the pelvis's turn the strap takes out at full speed
 const _qA = new THREE.Quaternion(), _qB = new THREE.Quaternion(), _qC = new THREE.Quaternion(), _qId = new THREE.Quaternion();
 const _vA = new THREE.Vector3();
+const _qS = new THREE.Quaternion(), _qD = new THREE.Quaternion();
+const QUIVER_LANCE_SWING = 0.52;       // radians: the right elbow, lance in hand, pushes the mouth back past upright
+const QUIVER_SWING_RATE = 7;           // per second, toward that hold
 
 /** Install the piece mask on a (source) material, once. Returns the shared uniform. */
 export function installPieceMask(material) {
@@ -61,6 +64,7 @@ export class HeroStowKit {
     this.entry = entry;
     this.meshes = [];
     this.hidden = 0;
+    this._quiverSwing = 0;
     this.u = null;
     this.attached = false;
     this.socket = null;
@@ -128,7 +132,7 @@ export class HeroStowKit {
   }
 
   /** Per frame, no allocation: turn the hanger back by QUIVER_HOLD of what the pelvis turned, about the band. */
-  _solveQuiver() {
+  _solveQuiver(dt = 0) {
     const sock = this.quiverSocket, h = this._quiverHang, bind = this._pelvisBindQ;
     if (!sock || !h || !bind) return;
     const par = sock.parent, model = this.player.model;
@@ -141,6 +145,13 @@ export class HeroStowKit {
     // crouched, the pelvis's tilt is what lifts the foot off the ground: let her fold over it
     const crouch = this.player.animator?._crouchW ?? 0;
     sock.quaternion.copy(_qId).slerp(_qB, (this.quiverHold ?? QUIVER_HOLD) * (1 - Math.min(1, crouch)));
+    // lance in hand she leads with that hip, and the elbow would stand in the arrows: it shoves the mouth back
+    const swingTo = (this.hidden & PIECE.lance) ? 1 : 0;
+    this._quiverSwing += (swingTo - this._quiverSwing) * Math.min(1, dt * QUIVER_SWING_RATE);
+    if (this._quiverSwing > 0.001) {
+      _vA.set(1, 0, 0).applyQuaternion(_qD.copy(bind).invert());   // character X, in the pelvis's bind frame
+      sock.quaternion.multiply(_qS.setFromAxisAngle(_vA, -QUIVER_LANCE_SWING * this._quiverSwing));
+    }
     // about the band: p' = q p + t, with t = h - q h
     _vA.copy(h).applyQuaternion(sock.quaternion);
     sock.position.copy(h).sub(_vA);
@@ -200,7 +211,7 @@ export class HeroStowKit {
   solve(an, dt) {
     const SC = an?._stowCap;
     if (SC) SC.on = false;
-    if (this.attached && this.quiverSocket) this._solveQuiver();
+    if (this.attached && this.quiverSocket) this._solveQuiver(dt);
     if (!this.carry || !this.attached || !an?.skull) return;
     if (this.hidden & PIECE.lance) { if (this.carry.out.active) this.carry.reset(); return; }
     const aimW = an.aimWeight ?? 0;

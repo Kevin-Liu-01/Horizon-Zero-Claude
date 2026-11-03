@@ -262,7 +262,7 @@
         "mco-fantasy-standard"
       ],
       "retrieved": "2026-10-22",
-      "modified": "tools/build/recipes/outfit-pan-1.mjs: sleeves cut at the elbow, recoloured per piece into the pan atlas, procedural sash and rolled cuffs added, merged to one mesh, WebP + meshopt",
+      "modified": "tools/build/recipes/outfit-pan-1.mjs: MCO sleeves, trousers, boots and bodice re-cut and re-fitted; the over-smock, skirt panels, girdle, sling, pouch, sash and cuffs lofted procedurally (project-original, no third-party source), re-painted into the Pan atlas, merged to one mesh, fitted to a range of motion, WebP + meshopt",
       "attribution": null
     },
     {

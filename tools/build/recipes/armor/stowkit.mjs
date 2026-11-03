@@ -316,7 +316,7 @@ export async function build({ out = ROOT } = {}) {
   {
     const ang = 20 * Math.PI / 180;
     const d = [0, Math.cos(ang), Math.sin(ang)];
-    const ctr = [-0.292, 0.925, -0.135];
+    const ctr = [-0.305, 0.9, -0.135];
     const foot = v3.sub(ctr, v3.mul(d, QUIVER.length / 2));
     const [X, Y, Z] = basisY(d, [0, 0, 1]);
     pieces.push({ g: place(quiverGeo(cell), X, Y, Z, foot), joint: QUIVER_SOCKET, bit: PIECE.quiver });
