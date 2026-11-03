@@ -1152,7 +1152,7 @@ const CTX_LANES = { engine: 'engine-gpu', camera: 'engine-gpu', assets: 'pipelin
 const VRAM_CONTROL = `(async () => {
   ${FRAMES}
   const ctx = __CTX__, e = ctx.engine, r = e.renderer, scene = ctx.scene, C = window.__glCensus;
-  const url = performance.getEntriesByType('resource').map((x) => x.name).find((n) => /\\/node_modules\\/\\.vite\\/deps\\/three\\.js/.test(n));
+  const url = performance.getEntriesByType('resource').map((x) => x.name).find((n) => /\\/deps\\/three\\.js/.test(n));   // any Vite cacheDir (the orchestrator's 5270 server keeps its own)
   if (!url) return { ok: false, why: 'the page did not load three from the Vite dependency bundle (no resource entry): the control cannot use the page\\'s own three module' };
   const T = await import(url);                                            // the SAME module instance the game uses (same URL)
   const cfg = window.__w0bAttrCfg;
@@ -1577,7 +1577,7 @@ const GPU_CONTROL = (phase) => `(async () => {
   const ctx = __CTX__, e = ctx.engine, r = e.renderer;
   if (${JSON.stringify(phase)} === 'pin') { window.__w0bState0 = ctx.state; ctx.state = 'gate-pinned'; await __frames(30); return { held: ctx.state === 'gate-pinned' }; }
   if (${JSON.stringify(phase)} === 'alloc') {
-    const url = performance.getEntriesByType('resource').map((x) => x.name).find((n) => /\\/node_modules\\/\\.vite\\/deps\\/three\\.js/.test(n));
+    const url = performance.getEntriesByType('resource').map((x) => x.name).find((n) => /\\/deps\\/three\\.js/.test(n));   // any Vite cacheDir (the orchestrator's 5270 server keeps its own)
     if (!url) return { ok: false, why: 'three dependency bundle not found among the page resources' };
     const T = await import(url);
     const rt = new T.WebGLRenderTarget(4096, 4096, { type: T.UnsignedByteType, depthBuffer: false, stencilBuffer: false, samples: 0 });
