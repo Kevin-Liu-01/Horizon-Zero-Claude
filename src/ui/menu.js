@@ -1,64 +1,39 @@
 /**
- * SHELL / MENUS  —  lane `shell-menus`  (port 5215)
+ * THE FIELD BOOK'S SHELL  —  lane `shell-ui` (bible §9.7, plan R55, R57)
  * ===========================================================================
- * The frame around the game: title flow, tabbed pause hub, world map, death and
- * victory cards, settings, credits.
- *
- * Findings closed here: `ui-01` (pause was one Resume button), `ui-02` (no map),
- * `ui-13` (victory soft-locked the session, death lasted 0.7 s), `ui-18` (title
- * was a button and a keybind wall), `progression-003` (shell half: save /
- * continue / no-reload endgame), `progression-014` (title menu + difficulty),
- * `camera-feel-13` (settings-driven sensitivity / invert / FOV),
- * `audio-14` (persisted volume sliders), `missing-systems-accessibility`
- * (HUD scale, colourblind palettes, reduced motion, hold-vs-toggle),
- * `missing-systems-title-save-campfire-flow` and the shell half of
- * `onboarding-loop-title-screen` / `-death-no-stakes`.
+ * The frame around the game: title flow, the hub (a page of the book: a station index
+ * in the margin, the red margin rule, the open page), the survey sheet, death and
+ * victory pages, settings, credits.
  *
  * ---------------------------------------------------------------- ownership
- * This lane owns `src/ui/{menu,map,settings,tips}.js` and `src/style.css`. It
- * touches no other lane's file, and the three places where it has to cooperate
- * with someone else's pixels are all done through published surfaces:
- *
- *   · the hub ROUTES to the owning lane's panel — `progression.openQuestLog()`,
- *     `openSkills()`, `items.openInventory(pocket)`, `items.openNotebook()` —
- *     and keeps its own tab bar above them, so the tabs stay live while the
- *     lane's screen is up. Nothing is re-implemented here.
- *   · `shell-hud` already yields: `hud.js` returns early from its pause card,
- *     death card and victory card when `ctx.menus` exists. The CSS rule in this
- *     lane's own `style.css` (keyed on `body.cal-menus`) is the belt to that
- *     brace — remove the install and the Round-3 shell comes back untouched.
- *   · the waypoint is published as data (`ctx.menus.waypoint` +
- *     `waypoint-set` / `waypoint-cleared`) for `shell-hud`'s compass, and
- *     drawn by this lane's own beacon ONLY while that lane has no
- *     `hud.setWaypoint` (see map.js).
+ * The hub ROUTES to the owning lane's panel (`progression.openQuestLog()`,
+ * `openSkills()`, `items.openInventory(pocket)`, `items.openNotebook()`) and keeps its
+ * margin, head and foot above them; the panel sits in the page body (see
+ * `body.cal-hub-open` in style.css and inventory.css). Nothing is re-implemented here.
+ * The waypoint is published as data (`ctx.menus.map.waypoint` + `waypoint-set` /
+ * `waypoint-cleared`) and rides the theodolite circle (`ctx.hud.setWaypoint`).
  *
  * -------------------------------------------------------------- state model
  * `main.js` simulates `playing | title | dead | victory | studio`; anything else
- * freezes the world. That is the whole pause mechanism and this lane uses it as
- * published:
+ * freezes the world. That is the whole pause mechanism:
  *
- *   'paused'      the hub (the same value the Round-3 HUD used, so its own
- *                 Escape handler stays consistent with ours)
- *   'death-menu'  the death card. NOT 'dead' — and that is load-bearing:
- *                 `player._die()` schedules a 3.2 s `setTimeout` respawn that
- *                 begins `if (this.ctx.state !== 'dead') return;`. Parking the
- *                 state elsewhere is what turns the auto-respawn into a CHOICE
- *                 (`A69-death-choice`) without editing player.js.
- *   'victory'     kept for exactly 3 s, then handed back to 'playing'
- *                 (`A68-no-softlock`).
+ *   'paused'      the hub
+ *   'death-menu'  the death page. NOT 'dead', and that is load-bearing:
+ *                 `player._die()` schedules a 3.2 s `setTimeout` respawn that begins
+ *                 `if (this.ctx.state !== 'dead') return;`. Parking the state elsewhere
+ *                 is what turns the auto-respawn into a CHOICE (`A69-death-choice`).
+ *   'victory'     kept for exactly 3 s, then handed back to 'playing' (`A68-no-softlock`).
  *
  * ------------------------------------------------------------------- input
- * Every menu key is read in the WINDOW CAPTURE phase, before `input.js`'s own
- * window listener, and consumed with `stopImmediatePropagation()` when this
- * lane acts on it. Two reasons: `input.enabled` is false on the title screen
- * (so `input.onDown` cannot see the "press any key"), and `KeyI` / `KeyJ` /
- * `KeyK` already have owners whose handlers would toggle the panel back shut
- * the moment the hub opened it.
+ * Every menu key is read in the WINDOW CAPTURE phase, before `input.js`'s own window
+ * listener, and consumed with `stopImmediatePropagation()` when this lane acts on it:
+ * `input.enabled` is false on the title screen, and `KeyI` / `KeyJ` / `KeyK` already
+ * have owners whose handlers would toggle the panel back shut.
  */
 
 import { SettingsStore, SettingsPanel } from './settings.js';
 import { WorldMap, WaypointBeacon } from './map.js';
-import { Tips } from './tips.js';
+import { Tips, fieldWord } from './tips.js';
 import * as THREE from 'three';
 import { REST } from '../world/island/sites.js';
 
@@ -75,15 +50,15 @@ const clamp = (v, lo, hi) => (v < lo ? lo : v > hi ? hi : v);
 /** Hub tabs. `open` delegates to the owning lane; absent = rendered here. */
 const TABS = [
   { id: 'map', key: 'KeyM', hint: 'M', label: 'MAP' },
-  { id: 'quests', key: 'KeyJ', hint: 'J', label: 'QUESTS',
+  { id: 'quests', key: 'KeyJ', hint: 'J', label: 'FIELD LOG',
     open: (ctx) => ctx.progression?.openQuestLog?.() },
-  { id: 'inventory', key: 'KeyI', hint: 'I', label: 'INVENTORY',
+  { id: 'inventory', key: 'KeyI', hint: 'I', label: 'SATCHEL',
     open: (ctx) => ctx.items?.openInventory?.('resources') },
-  { id: 'crafting', key: 'KeyO', hint: 'O', label: 'CRAFTING',
+  { id: 'crafting', key: 'KeyO', hint: 'O', label: 'MAKING',
     open: (ctx) => ctx.items?.openInventory?.('crafting') },
   { id: 'skills', key: 'KeyK', hint: 'K', label: 'SKILLS',
     open: (ctx) => ctx.progression?.openSkills?.() },
-  { id: 'notebook', key: 'KeyN', hint: 'N', label: 'NOTEBOOK',
+  { id: 'notebook', key: 'KeyN', hint: 'N', label: 'FIELD BOOKS',
     open: (ctx) => ctx.items?.openNotebook?.() },
   { id: 'settings', key: 'Comma', hint: ',', label: 'SETTINGS' },
 ];
@@ -308,6 +283,10 @@ export class Menus {
     this._log = [];
     this._logCap = 64;
 
+    this._applyZoom();
+    this._onResize = () => this._applyZoom();
+    window.addEventListener('resize', this._onResize);
+
     this._build();
     this._bindKeys();
     this._bindEvents();
@@ -328,32 +307,42 @@ export class Menus {
   /* DOM                                                                   */
   /* ===================================================================== */
 
+  /** The menus keep their proportions at any window: `--ui-z` drives CSS `zoom` on every menu surface. */
+  _applyZoom() {
+    const z = clamp(Math.min(window.innerWidth / 1600, window.innerHeight / 900), 0.75, 2.6);
+    document.documentElement.style.setProperty('--ui-z', z.toFixed(3));
+  }
+
   _build() {
     this.root = el('div', 'cal-menus-root', document.body);
     this.root.id = 'cal-menus';
 
-    /* ---- hub ---- */
+    /* ---- the hub: [ margin index | head / page / foot ] ---- */
     this.hub = el('div', 'mn-hub', this.root);
     el('div', 'mn-hub-scrim', this.hub);
     const shell = el('div', 'mn-hub-shell', this.hub);
 
-    const head = el('header', 'mn-hub-head', shell);
-    const brand = el('div', 'mn-hub-brand', head);
+    const margin = el('aside', 'mn-hub-margin cal-page', shell);
+    const brand = el('div', 'mn-hub-brand', margin);
     el('div', 'mn-hub-kicker', brand, 'CALIMA');
-    this._hubTitle = el('div', 'mn-hub-title', brand, 'MAP');
-    this._tabsEl = el('nav', 'mn-tabs', head);
+    el('div', 'mn-hub-sheet', brand, 'Orchil survey');
+    this._tabsEl = el('nav', 'mn-tabs', margin);
     this._tabBtns = new Map();
-    for (const t of TABS) {
-      const b = el('button', 'mn-tab', this._tabsEl, `<span>${t.label}</span><kbd>${t.hint}</kbd>`);
+    TABS.forEach((t, i) => {
+      const b = el('button', 'mn-tab', this._tabsEl,
+        `<span class="cal-stn">STN ${String(i + 1).padStart(2, '0')}</span><span>${t.label}</span><kbd>${t.hint}</kbd>`);
       b.dataset.tab = t.id;
       b.addEventListener('click', () => this.setTab(t.id));
       this._tabBtns.set(t.id, b);
-    }
+    });
+
+    const head = el('header', 'mn-hub-head cal-page', shell);
+    this._hubTitle = el('div', 'mn-hub-title', head, 'MAP');
     this._hubStatus = el('div', 'mn-hub-status', head);
 
-    this.hubBody = el('div', 'mn-hub-body', shell);
+    this.hubBody = el('div', 'mn-hub-body cal-page', shell);
 
-    const foot = el('footer', 'mn-hub-foot', shell);
+    const foot = el('footer', 'mn-hub-foot cal-page', shell);
     this._tipEl = el('div', 'mn-tip', foot);
     const acts = el('div', 'mn-hub-acts', foot);
     this._mkBtn(acts, 'SAVE', () => this.saveGame(), 'small');
@@ -362,11 +351,11 @@ export class Menus {
     this._mkBtn(acts, 'QUIT TO TITLE', () => this.quitToTitle(), 'small danger');
     this._mkBtn(acts, 'RESUME', () => this.closeHub(), 'small primary');
 
-    /* ---- death ---- */
+    /* ---- death: a page torn from the book ---- */
     this.deathEl = el('div', 'mn-death', this.root);
-    const dInner = el('div', 'mn-death-inner', this.deathEl);
-    el('div', 'mn-death-kicker', dInner, 'THE VALLEY TAKES ITS OWN');
-    el('div', 'mn-death-title', dInner, 'YOU DIED');
+    const dInner = el('div', 'mn-death-inner cal-page', this.deathEl);
+    el('div', 'mn-death-kicker', dInner, 'FIELD BOOK, LAST ENTRY');
+    el('div', 'mn-death-title', dInner, 'BREA IS DOWN');
     this._deathKillerEl = el('div', 'mn-death-killer', dInner);
     el('div', 'mn-death-rule', dInner);
     this._deathTip = el('div', 'mn-death-tip', dInner);
@@ -374,20 +363,19 @@ export class Menus {
 
     /* ---- victory ---- */
     this.victoryEl = el('div', 'mn-victory', this.root);
-    const vInner = el('div', 'mn-victory-inner', this.victoryEl);
-    el('div', 'mn-victory-kicker', vInner, 'QUEST COMPLETE');
-    el('div', 'mn-victory-title', vInner, 'VALLEY RECLAIMED');
-    el('div', 'mn-death-rule', vInner);
-    el('div', 'mn-victory-sub', vInner, 'THE HUNT GOES ON — RETURNING YOU TO THE VALLEY');
+    const vInner = el('div', 'mn-victory-inner cal-page', this.victoryEl);
+    el('div', 'mn-victory-kicker', vInner, 'FIELD BOOK');
+    el('div', 'mn-victory-title', vInner, 'SURVEY CLOSED');
+    el('div', 'mn-victory-sub', vInner, 'The island is still there. Returning you to it.');
     this._victoryBar = el('div', 'mn-victory-bar', vInner);
     this._victoryFill = el('i', null, this._victoryBar);
 
-    /* ---- modal (credits / manual / difficulty / settings) ---- */
+    /* ---- modal (credits / manual / new game / settings) ---- */
     this.modalEl = el('div', 'mn-modal', this.root);
-    const mShell = el('div', 'mn-modal-shell', this.modalEl);
+    const mShell = el('div', 'mn-modal-shell cal-page', this.modalEl);
     const mHead = el('header', 'mn-modal-head', mShell);
     this._modalTitle = el('div', 'mn-modal-title', mHead, 'CREDITS');
-    const mClose = el('button', 'mn-x', mHead, '✕');
+    const mClose = el('button', 'mn-x', mHead, 'ESC');
     mClose.addEventListener('click', () => this.closeModal());
     this.modalBody = el('div', 'mn-modal-body', mShell);
     this.modalEl.addEventListener('mousedown', (e) => { if (e.target === this.modalEl) this.closeModal(); });
@@ -452,13 +440,13 @@ export class Menus {
       const it = items[i];
       // field-book stations (bible §9.7): a Plex Mono station number, then the label
       const b = el('button', `mn-title-item${it.disabled ? ' disabled' : ''}`, this.titleMenu,
-        `<span class="cal-stn" aria-hidden="true">${String(i + 1).padStart(2, '0')}</span>${it.label}`);
+        `<span class="cal-stn" aria-hidden="true">STN ${String(i + 1).padStart(2, '0')}</span>${it.label}`);
       if (it.disabled) b.disabled = true;
       else b.addEventListener('click', () => { this._emit('ui-confirm', { label: it.label }); it.fn(); });
     }
     this._titleSave.textContent = info
-      ? `LAST SAVE · LEVEL ${info.level ?? 1} · ${String(info.quest || 'THE VALLEY').toUpperCase()}`
-      : 'NO SAVED HUNT — START A NEW ONE';
+      ? `last entry: ${String(info.quest || 'Orchil').toLowerCase()}`
+      : 'no field book open';
     if (this._titleTip) {
       // the title's own line (brand): CALIMA's words, one per visit, never the
       // shared tip feed (whose Round-4 lines still name the old mechanics)
@@ -1000,6 +988,7 @@ export class Menus {
   newGame(difficulty) {
     this.ctx.progression?.newGame?.(difficulty);
     this.map.fog.clear();
+    this.map.setTriangles([]);
     this.map.clearWaypoint();
     this._startGame();
     this._log.push({ what: 'new-game', difficulty: difficulty || null });
@@ -1162,14 +1151,14 @@ export class Menus {
 
   _paintStatus() {
     if (!this._hubStatus) return;
-    const prog = this.ctx.progression;
     const p = this.ctx.player;
+    const rd = (label, v) => `<span>${label}</span> <b>${v}</b>`;
+    const pad = (n) => String(Math.max(0, Math.round(n))).padStart(3, '0');
     const bits = [];
-    if (prog) bits.push(`<b>LVL ${prog.level}</b>`, `${prog.skillPoints} SP`);
-    if (p) bits.push(`${Math.round(p.health)}/${Math.round(p.maxHealth)} HP`);
-    const shards = this.ctx.inventory?.count?.('metal-shards');
-    if (shards != null) bits.push(`${shards} SHARDS`);
-    this._hubStatus.innerHTML = bits.join('<i>·</i>');
+    if (p) bits.push(rd('HEALTH', `${pad(p.health)}/${Math.round(p.maxHealth)}`), rd('GOURD', pad(p.gourd ?? 0)));
+    const salt = this.ctx.inventory?.count?.('metal-shards');
+    if (salt != null) bits.push(rd('SALT', pad(salt)));
+    this._hubStatus.innerHTML = bits.map((b) => `<div>${b}</div>`).join('');
   }
 
   saveGame() {
@@ -1213,12 +1202,12 @@ export class Menus {
       this._modalTitle.textContent = 'NEW GAME';
       const list = this.ctx.progression?.DIFFICULTIES || [{ id: 'normal', name: 'Normal' }];
       el('p', 'mn-modal-lead', this.modalBody,
-        'Difficulty scales the damage you take and deal, what the Instruments drop and how fast they notice you. It can be changed later.');
+        'Difficulty scales the damage you take and deal, what the Instruments drop and how fast they notice you.');
       for (const d of list) {
         const row = el('button', 'mn-diff', this.modalBody);
         el('b', null, row, String(d.name).toUpperCase());
         el('span', null, row,
-          `DAMAGE TAKEN ×${(d.damageIn ?? 1).toFixed(2)} · DAMAGE DEALT ×${(d.damageOut ?? 1).toFixed(2)} · XP ×${(d.xp ?? 1).toFixed(2)}`);
+          `damage taken ×${(d.damageIn ?? 1).toFixed(2)} · damage dealt ×${(d.damageOut ?? 1).toFixed(2)}`);
         row.addEventListener('click', () => this.newGame(d.id));
       }
     }
@@ -1274,27 +1263,29 @@ export class Menus {
     const killer = this.deathKiller ?? ctx.progression?.lastKiller ?? this._lastDamageFrom ?? null;
     this.deathKiller = killer;
     this._deathKillerEl.innerHTML = killer
-      ? `KILLED BY <b>${String(killer).toUpperCase()}</b>`
-      : 'THE VALLEY CLAIMED YOU';
+      ? `felled by <b>${fieldWord(String(killer)).toUpperCase()}</b>`
+      : 'the island took her';
     this._deathTip.innerHTML = this.tips.forDeath(killer);
 
     const prog = ctx.progression;
     const info = prog?.hasSave?.() ? prog.saveInfo?.() : null;
     this._deathOpts.innerHTML = '';
     const opts = [
-      { label: 'RELOAD CHECKPOINT',
-        sub: info ? `LEVEL ${info.level ?? 1} · ${String(info.reason || 'checkpoint').toUpperCase()}` : 'NO SAVE — RESPAWN AT CAMP',
+      { label: 'RELOAD THE LAST ENTRY',
+        sub: info ? `from: ${String(info.reason || 'the last entry').toLowerCase()}` : 'no save yet: she wakes at the cistern',
         fn: () => this.respawn('checkpoint') },
-      { label: 'RESPAWN AT CAMP', sub: 'KEEP CHECKPOINT PROGRESS · START AT MOTHER’S WATCH',
+      { label: 'RETURN TO THE CISTERN', mode: 'rest', sub: 'keep what the last entry holds, and start from the rest',
         fn: () => this.respawn('camp') },
-      { label: 'QUIT TO TITLE', sub: 'THE HUNT WAITS', fn: () => this.quitToTitle() },
+      { label: 'QUIT TO TITLE', sub: 'the book stays open', fn: () => this.quitToTitle() },
     ];
-    for (const o of opts) {
+    opts.forEach((o, i) => {
       const b = el('button', 'mn-death-opt', this._deathOpts);
+      if (o.mode) b.dataset.mode = o.mode;
+      el('span', 'cal-stn', b, `STN ${String(i + 1).padStart(2, '0')}`);
       el('b', null, b, o.label);
       el('span', null, b, o.sub);
       b.addEventListener('click', () => { this._emit('ui-confirm', { label: o.label }); o.fn(); });
-    }
+    });
     this.deathEl.classList.add('show');
     this._emit('ui-open', { screen: 'death', killer });
   }
@@ -1703,7 +1694,9 @@ export class Menus {
     window.removeEventListener('keydown', this._onKey, true);
     window.removeEventListener('keyup', this._onKeyUp, true);
     window.removeEventListener('mousedown', this._onClickAnywhere, true);
+    window.removeEventListener('resize', this._onResize);
     this.beacon.dispose();
+    this.map.dispose();
     this.root?.remove();
     document.body.classList.remove('cal-menus', 'cal-hub-open', 'cal-dead', 'cal-title-live');
     if (this.ctx.menus === this) this.ctx.menus = null;

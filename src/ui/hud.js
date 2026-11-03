@@ -116,6 +116,19 @@ const COMPASS_SPRING_C = 19;
 
 /** 000 .. 359, preallocated: the readout never builds a string. */
 const BEARING_STR = Array.from({ length: 360 }, (_, i) => String(i).padStart(3, '0'));
+/**
+ * translate3d(x,0,0) strings by half-pixel, built once each. The strip and the pips move
+ * every frame the camera turns; this keeps that path free of string churn. Bounded by the
+ * strip's width in half-pixels, and cleared when the HUD scale changes.
+ */
+const TX_MEMO = new Map();
+function txString(x) {
+  const k = Math.round(x * 2);
+  let v = TX_MEMO.get(k);
+  if (v === undefined) { v = `translate3d(${k / 2}px,0,0)`; TX_MEMO.set(k, v); }
+  return v;
+}
+
 /** Transform and clip strings for 0..100 %, preallocated (the fills never build one). */
 const SCALE_X = Array.from({ length: 101 }, (_, i) => `scaleX(${(i / 100).toFixed(2)})`);
 const SCALE_Y = Array.from({ length: 101 }, (_, i) => `scaleY(${(i / 100).toFixed(2)})`);
@@ -267,13 +280,17 @@ export class HUD {
     this._lastBreath = -1;
     this._lastBreathOn = null;
     this._lastBreathActive = null;
-    this._lastWpnSig = '';
+    this._lastW = undefined;
+    this._lastAmmoId = undefined;
+    this._lastCount = undefined;
+    this._lastDots = undefined;
+    this._lastDotN = -1;
     this._lastIntLabel = '';
     this._lastIntHold = -1;
     this._lastIntOn = null;
     this._lastBearing = -1;
     this._lastVin = -1;
-    this._lastToolSig = '';
+    this._lastToolSig = null;
     this._lastTrackSig = '';
     this._lastVialMode = '';
     this._lastVialBubble = -1;
@@ -600,6 +617,7 @@ export class HUD {
     this._scale = v;
     this._wscale = Math.max(WORLD_SCALE_MIN, v);
     this.rootEl.style.setProperty('--hud-scale', v.toFixed(3));
+    TX_MEMO.clear();
     this._lastStripX = NaN;
   }
 
@@ -786,8 +804,8 @@ export class HUD {
     on('tutorial-tip', (e) => this.showTip(e?.tip ?? e));
 
     /* --------------------------- tool chips -------------------------------- */
-    on('tool-selected', () => { this._lastToolSig = ''; this._emitUi('ui-nav'); });
-    on('tool-used', () => { this._lastToolSig = ''; });
+    on('tool-selected', () => { this._lastToolSig = null; this._emitUi('ui-nav'); });
+    on('tool-used', () => { this._lastToolSig = null; });
 
     /* ---------------------------- Flagged ---------------------------------- */
     // the pennant over Brea's mark on the circle (perception.js)
@@ -854,10 +872,16 @@ export class HUD {
 
   /** The hub owns pause (menu.js); this routes the published call to it. */
   setPaused(on) {
-    const m = this.ctx.menus;
-    if (!m) return;
-    if (on) m.openHub?.();
-    else m.closeHub?.();
+    const ctx = this.ctx, m = ctx.menus;
+    if (on) {
+      if (ctx.state === 'playing') m?.openHub?.();
+      return;
+    }
+    if (m?.hubOpen) { m.closeHub(); return; }
+    if (ctx.state === 'paused') {
+      ctx.state = 'playing';
+      if (!ctx.params.has('shot')) ctx.input.requestPointerLock();
+    }
   }
 
   _onKill(e) {
@@ -1042,6 +1066,7 @@ export class HUD {
     if (this._marksT <= 0) {
       this._marksT = 0.25;
       this._marks = this.ctx.progression?.getMarkers?.() ?? null;
+      this._questKind = this._trackedKillKind();
     }
     this._scanMachines(dt, p);
     this._updateHealth(dt, p);
@@ -1305,7 +1330,8 @@ export class HUD {
 
   /** Dynamic hide: the note recedes when nothing has changed for a while. */
   _updateTracker(dt) {
-    this._renderTracker(false);
+    this._trackRenderT = (this._trackRenderT ?? 0) - dt;
+    if (this._trackRenderT <= 0) { this._trackRenderT = 0.5; this._renderTracker(false); }
     const busy = this._anyHostile || this._reveal > 0.01 || this._trackIdleT < TRACK_IDLE_S;
     this._trackIdleT += dt;
     const idle = !busy;
@@ -1346,7 +1372,7 @@ export class HUD {
     const x = (-(this._cAngle - STRIP_FROM) * PX_PER_DEG + STRIP_W * 0.5) * this._scale;
     if (Math.abs(x - this._lastStripX) >= 0.25 || this._lastStripX !== this._lastStripX) {
       this._lastStripX = x;
-      this._stripEl.style.transform = `translate3d(${x.toFixed(1)}px,0,0) scale(${this._scale.toFixed(3)})`;
+      this._stripEl.style.transform = txString(x);
     }
 
     const bi = Math.round(camB) % 360;
@@ -1361,7 +1387,6 @@ export class HUD {
       this._pennantEl.classList.toggle('show', flag);
     }
 
-    this._questKind = this._trackedKillKind();
     const list = this.ctx.machines?.list;
     if (Array.isArray(list)) {
       const tags = this.ctx.sighting?.tags;
@@ -1415,7 +1440,7 @@ export class HUD {
         const px = d * PX_PER_DEG * this._scale;
         if (Math.abs(px - pip.x) >= 0.5 || pip.x !== pip.x) {
           pip.x = px;
-          pip.el.style.transform = `translate3d(${px.toFixed(1)}px,0,0)`;
+          pip.el.style.transform = txString(px);
         }
         const s = lampStateOf(m);
         if (pip.s !== s) { pip.s = s; pip.el.dataset.s = s; }
@@ -1479,7 +1504,7 @@ export class HUD {
       const px = d * PX_PER_DEG * this._scale;
       if (Math.abs(px - q.x) >= 0.5 || q.x !== q.x) {
         q.x = px;
-        q.el.style.transform = `translate3d(${px.toFixed(1)}px,0,0)`;
+        q.el.style.transform = txString(px);
       }
       const shape = mk.shape ?? (mk.kind === 'settlement' || mk.kind === 'camp' ? 'settlement'
         : mk.kind === 'benchmark' ? 'benchmark' : i < nQ ? 'objective' : 'site');
@@ -1498,7 +1523,7 @@ export class HUD {
     const d = wrap180(Math.atan2(dx, -dz) * RAD2DEG - this._cAngle);
     const clamped = Math.max(-this._halfWinDeg, Math.min(this._halfWinDeg, d));
     if (q.vis !== true) { q.el.style.visibility = 'visible'; q.vis = true; }
-    q.el.style.transform = `translate3d(${(clamped * PX_PER_DEG * this._scale).toFixed(1)}px,0,0)`;
+    q.el.style.transform = txString(clamped * PX_PER_DEG * this._scale);
     const di = Math.round(Math.hypot(dx, dz));
     if (di !== q.dist) { q.dist = di; q.lab.textContent = String(di); }
   }
@@ -1870,21 +1895,20 @@ export class HUD {
     }
     this._ammoEmpty = typeof count === 'number' && count <= 0;
 
+    const dots = Array.isArray(w?.mods) ? w.mods
+      : Array.isArray(w?.ammoTypes) ? w.ammoTypes : null;
+    // the dirty check is identity + numbers: nothing below runs until one of them moves
+    if (w === this._lastW && ammo === this._lastAmmoId && count === this._lastCount
+      && dots === this._lastDots && (dots?.length ?? 0) === this._lastDotN) return;
+    this._lastW = w; this._lastAmmoId = ammo; this._lastCount = count;
+    this._lastDots = dots; this._lastDotN = dots?.length ?? 0;
+
     const wid = String(w?.id ?? 'bow');
     const wName = fieldWord(String(w?.name ?? w?.displayName ?? 'Sabina Bow')).toUpperCase();
     const ammoName = fieldWord(String(
       (ammoObj && typeof ammoObj === 'object' ? ammoObj.name : null) ?? prettify(ammo),
     )).toUpperCase();
-    const countText = count === Infinity ? '---' : count == null ? '---' : String(count | 0).padStart(3, '0');
-
-    const dots = Array.isArray(w?.mods) ? w.mods
-      : Array.isArray(w?.ammoTypes) ? w.ammoTypes : [];
-    let dotSig = '';
-    for (const d of dots) dotSig += (typeof d === 'string' ? d : d?.id ?? '') + ',';
-
-    const sig = `${wid}|${wName}|${ammo}|${countText}|${ammoName}|${dotSig}`;
-    if (sig === this._lastWpnSig) return;
-    this._lastWpnSig = sig;
+    const countText = count === Infinity || count == null ? '---' : String(count | 0).padStart(3, '0');
 
     if (this._lastWid !== wid) {
       this._lastWid = wid;
@@ -1896,7 +1920,7 @@ export class HUD {
     this._wpnCount.classList.toggle('empty', this._ammoEmpty);
 
     let html = '';
-    for (const d of dots) {
+    for (const d of dots ?? []) {
       const id = typeof d === 'string' ? d : d?.id ?? '';
       html += `<i class="${id === ammo ? 'on' : ''}"></i>`;
     }
@@ -1919,8 +1943,12 @@ export class HUD {
     this._toolsReady = true;
     const idx = tools.index | 0;
     const cd = Math.round(clamp01(tools.cooldown ?? 0) * 20);
-    let sig = `${idx}|${cd}|${keyGlyph(tools.useKey)}`;
-    for (const s of tools.slots) sig += `|${s.id}:${s.count}:${s.ready ? 1 : 0}:${s.blocked ? 1 : 0}`;
+    // a rolling number, not a string: this samples at 10 Hz for the whole session
+    let sig = idx * 31 + cd;
+    for (let i = 0; i < tools.slots.length; i++) {
+      const q = tools.slots[i];
+      sig = (Math.imul(sig, 33) + (q.count | 0) * 4 + (q.ready ? 2 : 0) + (q.blocked ? 1 : 0)) | 0;
+    }
     if (sig === this._lastToolSig) return;
     this._lastToolSig = sig;
     this._toolsEl.classList.add('show');

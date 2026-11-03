@@ -1,58 +1,46 @@
 /**
- * SETTINGS  —  lane `shell-menus`  (camera-feel-13, ui-15, audio-14,
- *              missing-systems-accessibility)
+ * SETTINGS  —  lane `shell-ui` (bible §9.7, gates A72, A72b; the rebind list closes
+ * `A-input-actions`' settings clause, R38)
  * ===========================================================================
- * One persisted settings store, one apply path, one panel.
+ * One persisted settings store, one apply path, one panel. The store is NOT a second
+ * source of truth: every value lands on an object another lane already reads:
  *
- * The store is deliberately NOT a second source of truth: every value lands on
- * an object another lane already reads every frame —
+ *   ctx.settings.*          `player.js` reads `fov`, `cameraShake`, `cameraSmoothing`;
+ *                           `input.js` reads `sensitivity`, `padSensitivity`, `invertY`,
+ *                           `padDeadzone` (`ctx.input.settings === ctx.settings`).
+ *   ctx.audio.setVolume()   the audio lane owns the six bus gains; we drive its setter.
+ *   ctx.input.bind()        the input's own rebind path and its `cal.binds.v5` key.
+ *   CSS custom properties   `--hud-scale` and the semantic `--cal-c-*` colours.
  *
- *   ctx.settings.*          `player.js` reads `fov`, `cameraShake`,
- *                           `cameraSmoothing` inside its update; `input.js`
- *                           reads `sensitivity`, `padSensitivity`, `invertY`,
- *                           `padDeadzone` through `opt()` on every look sample.
- *                           `ctx.input.settings === ctx.settings` (player.js
- *                           assigns it), so a write here is live on the next
- *                           mouse move — no re-apply hook needed and no lane
- *                           has to change a line.
- *   ctx.audio.setVolume()   the `audio` lane owns the six bus gains and its own
- *                           localStorage key; we only drive its published
- *                           setter (SPEC §13.3: "shell-menus owns the sliders,
- *                           audio owns the values").
- *   CSS custom properties   `--hud-scale` and the six `--cal-*` palette vars
- *                           live in `src/style.css` (this lane's file) and are
- *                           consumed 76× by hud.css, 15× by inventory.css and
- *                           7× by wheel.css, so a palette swap repaints the
- *                           whole interface without touching another lane.
+ * Persistence is `localStorage['cal.settings.v5']`, written on every change and read
+ * once at install, BEFORE the first look sample and after `Player`'s constructor has
+ * seeded its `??=` defaults (`A72-settings-persist` reloads the page to prove it).
  *
- * Persistence is `localStorage['cal.settings.v5']`, written on every change
- * (debounced) and read once at install — BEFORE the first look sample, and
- * after `Player`'s constructor has seeded its `??=` defaults, so a restored
- * value wins over the default instead of being clobbered by it (gate
- * `A72-settings-persist` reloads the page to prove exactly that).
- *
- * Values this lane cannot honestly apply on its own are still stored and
- * published (`holdAim`, `holdSprint`, `holdCrouch`) — see §Requests in
- * docs/ROUND4-SHELL-MENUS.md. They are marked `pending` in the schema and the
+ * Values this lane cannot honestly apply alone are stored and marked `pending`, and the
  * panel prints that, so the screen never claims an effect it does not have.
  */
 
+import { ACTIONS, ACTION_PAD } from '../core/input.js';
+
 const STORE_KEY = 'cal.settings.v5';
 
-/** Okabe-Ito derived palettes: every pair is separable under the named CVD. */
+/**
+ * Okabe-Ito derived palettes, re-pointing only the semantic `--cal-c-*` colours the
+ * whole UI reads: staff + margin, weak point, Pry, wary and hostile pips, gain.
+ */
 export const PALETTES = {
   off: null,
   protanopia: {
-    '--cal-accent': '#56b4e9', '--cal-warn': '#f0e442', '--cal-danger': '#d55e00',
-    '--cal-med': '#009e73', '--cal-focus': '#cc79a7', '--cal-hostile': '#e69f00',
+    '--cal-c-staff': '#E69F00', '--cal-c-weak': '#0072B2', '--cal-c-pry': '#56B4E9',
+    '--cal-c-wary': '#F0E442', '--cal-c-hostile': '#CC79A7', '--cal-c-good': '#009E73',
   },
   deuteranopia: {
-    '--cal-accent': '#4fa8dd', '--cal-warn': '#f5e35b', '--cal-danger': '#cf5b1c',
-    '--cal-med': '#0072b2', '--cal-focus': '#c07ec0', '--cal-hostile': '#e0a01a',
+    '--cal-c-staff': '#E08A00', '--cal-c-weak': '#0072B2', '--cal-c-pry': '#4FA8DD',
+    '--cal-c-wary': '#F5E35B', '--cal-c-hostile': '#C07EC0', '--cal-c-good': '#56B4E9',
   },
   tritanopia: {
-    '--cal-accent': '#1fa06a', '--cal-warn': '#e8654f', '--cal-danger': '#b3201f',
-    '--cal-med': '#6fce8e', '--cal-focus': '#d0417a', '--cal-hostile': '#ef8a3c',
+    '--cal-c-staff': '#D55E00', '--cal-c-weak': '#1FA06A', '--cal-c-pry': '#B3201F',
+    '--cal-c-wary': '#E8654F', '--cal-c-hostile': '#D0417A', '--cal-c-good': '#6FCE8E',
   },
 };
 
@@ -81,18 +69,14 @@ export const SCHEMA = [
     { id: 'holdSprint', kind: 'choice', label: 'Sprint', dflt: 'hold', pending: true,
       options: [['hold', 'HOLD'], ['toggle', 'TOGGLE']],
       apply: (v, ctx) => { ctx.settings.holdSprint = v; } },
-    // LIVE, not stored: `menu.js` releases the crouch on the KeyC up-edge when
-    // this reads 'hold'. The down-edge still runs player.js's own
-    // `toggleCrouch()`, so TOGGLE is byte-for-byte the shipped behaviour.
+    // LIVE: `menu.js` releases the crouch on the KeyC up-edge when this reads 'hold'.
     { id: 'holdCrouch', kind: 'choice', label: 'Crouch', dflt: 'toggle',
       options: [['hold', 'HOLD'], ['toggle', 'TOGGLE']],
-      note: 'Toggle is the default (camera-feel-04); HOLD releases her on key-up.',
+      note: 'Toggle is the default; HOLD releases her on key-up.',
       apply: (v, ctx) => { ctx.settings.holdCrouch = v; } },
   ] },
   { group: 'CAMERA', rows: [
-    // dflt 55 = player.js FOV_BASE (and combat's FOV_HIP): the slider's
-    // neutral position must be the value the build ships with, or a player who
-    // never touches it still gets a different camera after one visit here.
+    // dflt 55 = player.js FOV_BASE: the neutral position is the value the build ships with
     { id: 'fov', kind: 'slider', label: 'Field of view', min: 50, max: 95, step: 1, dflt: 55,
       fmt: (v) => `${v | 0}°`, apply: (v, ctx) => { ctx.settings.fov = v; } },
     { id: 'cameraShake', kind: 'slider', label: 'Camera shake', min: 0, max: 1.5, step: 0.05, dflt: 1,
@@ -102,10 +86,7 @@ export const SCHEMA = [
       fmt: (v) => `${Math.round(v * 100)}%`, apply: (v, ctx) => { ctx.settings.cameraSmoothing = v; } },
   ] },
   { group: 'INTERFACE', rows: [
-    // `shell-hud` published `hud.setHudScale(mult)`, which folds this multiplier
-    // into its own viewport-derived auto scale and writes `--hud-scale` on the
-    // HUD root. Drive that, and keep a :root token in step for anything (this
-    // lane's own panels included) that reads the preference directly.
+    // `hud.setHudScale(mult)` folds this into its viewport auto scale and writes `--hud-scale`
     { id: 'hudScale', kind: 'slider', label: 'HUD scale', min: 0.8, max: 1.4, step: 0.05, dflt: 1,
       fmt: (v) => `${Math.round(v * 100)}%`,
       apply: (v, ctx) => {
@@ -117,7 +98,7 @@ export const SCHEMA = [
       options: [['off', 'DEFAULT'], ['protanopia', 'PROTAN'], ['deuteranopia', 'DEUTAN'], ['tritanopia', 'TRITAN']],
       apply: (v) => applyPalette(v) },
     { id: 'reducedMotion', kind: 'toggle', label: 'Reduced motion', dflt: false,
-      note: 'Stills the camera shake and every menu animation.',
+      note: 'Stills the camera shake, the compass inertia and every UI animation.',
       apply: (v, ctx, s) => {
         ctx.settings.reducedMotion = !!v;
         ctx.settings.cameraShake = v ? 0 : s.get('cameraShake');
@@ -266,7 +247,7 @@ export class SettingsStore {
         hudScale: this.ctx.settings?.hudScale,
         hudScaleVar: (this.ctx.hud?.rootEl ?? document.getElementById('hud'))?.style
           ?.getPropertyValue?.('--hud-scale')?.trim?.() ?? '',
-        accent: getComputedStyle(document.documentElement).getPropertyValue('--cal-accent').trim(),
+        accent: getComputedStyle(document.documentElement).getPropertyValue('--cal-c-weak').trim(),
         audio: this.ctx.audio?.volumes?.() ?? null,
       },
       raw: (() => { try { return localStorage.getItem(STORE_KEY); } catch { return null; } })(),
@@ -285,6 +266,18 @@ const el = (tag, cls, parent, html) => {
   if (parent) parent.appendChild(n);
   return n;
 };
+
+/** Player words for `input.js`'s action names (bible §5.9). */
+const BIND_WORD = {
+  forward: 'Forward', back: 'Back', left: 'Left', right: 'Right', jump: 'Jump and mantle', dodge: 'Dodge roll',
+  sprint: 'Sprint / Steady', walk: 'Walk', crouch: 'Crouch', heal: 'Drink from the Gourd', interact: 'Interact',
+  focus: 'Raise the Alidade', plant: 'Plant the Windwall', cast: 'Cast', tool: 'Hook-rip', slot1: 'Quick slot 1', slot2: 'Quick slot 2',
+  slot3: 'Quick slot 3', slot4: 'Quick slot 4',
+};
+const PAD_WORD = { b5: 'RB', b12: 'UP', b13: 'DOWN', b14: 'LEFT', b15: 'RIGHT', b16: 'HOME' };
+const padWord = (pad) => String(pad).split('+').map((b) => PAD_WORD[b] ?? b.toUpperCase()).join(' + ');
+const keyCap = (code) => String(code ?? '---').replace(/^Key/, '').replace(/^Digit/, '')
+  .replace(/Left$|Right$/, (m) => (/^(Shift|Control|Alt)/.test(String(code)) ? '' : m)).toUpperCase();
 
 /**
  * Renders the schema into `host`. Rebuilt on mount (cheap: ~20 rows) so the
@@ -307,6 +300,7 @@ export class SettingsPanel {
       el('h3', 'mn-set-title', sec, group.group);
       for (const row of group.rows) this._buildRow(sec, row);
     }
+    this._buildBinds();
     const foot = el('div', 'mn-set-foot', this.root);
     const reset = el('button', 'mn-btn small', foot, 'RESTORE DEFAULTS');
     reset.addEventListener('click', () => { this.store.reset(); this.refresh(); });
@@ -368,7 +362,52 @@ export class SettingsPanel {
     read();
   }
 
+  /**
+   * THE KEYS: every action `input.js` names, rebindable through its own `bind()`.
+   * Listing them here is `A-input-actions`' settings clause (R38). Click, then press.
+   */
+  _buildBinds() {
+    const input = this.ctx.input;
+    if (!input?.bind) return;
+    const names = ACTIONS;
+    const sec = el('section', 'mn-set-group mn-set-binds', this.root);
+    sec.dataset.rebind = 'list';
+    el('h3', 'mn-set-title', sec, 'KEYS');
+    const word = (a) => BIND_WORD[a] ?? a.replace(/([A-Z])/g, ' $1').replace(/^./, (c) => c.toUpperCase());
+    for (const action of names) {
+      const r = el('div', 'mn-set-row', sec);
+      el('label', 'mn-set-label', r, word(action));
+      const ctrl = el('div', 'mn-set-ctrl', r);
+      if (ACTION_PAD[action]) el('span', 'mn-set-pad', ctrl, padWord(ACTION_PAD[action]));
+      const btn = el('button', 'mn-bind', ctrl);
+      btn.dataset.rebind = action;
+      const paint = () => { btn.textContent = keyCap(input.codeFor(action)); btn.classList.remove('wait'); };
+      btn.addEventListener('click', () => this._captureBind(action, btn, paint));
+      this._rowEls.set(`bind:${action}`, paint);
+      paint();
+    }
+  }
+
+  _captureBind(action, btn, paint) {
+    if (this._capture) this._capture();
+    btn.textContent = 'press a key';
+    btn.classList.add('wait');
+    const onKey = (e) => {
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      done();
+      if (e.code !== 'Escape') this.ctx.input.bind(action, e.code);
+      paint();
+    };
+    const done = () => {
+      window.removeEventListener('keydown', onKey, true);
+      this._capture = null;
+    };
+    this._capture = () => { done(); paint(); };
+    window.addEventListener('keydown', onKey, true);
+  }
+
   refresh() { for (const paint of this._rowEls.values()) paint(); }
 
-  dispose() { this._unsub?.(); this.root?.remove(); this.root = null; }
+  dispose() { this._capture?.(); this._unsub?.(); this.root?.remove(); this.root = null; }
 }
