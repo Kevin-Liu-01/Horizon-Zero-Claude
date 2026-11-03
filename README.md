@@ -72,20 +72,21 @@ file matched to a licence row.
 
 **Typefaces (SIL Open Font License 1.1)**
 
-- Bodoni Moda — Owen Earl (indestructible type*) (https://fonts.google.com/specimen/Bodoni+Moda)
+- Chakra Petch — Cadson Demak (https://fonts.google.com/specimen/Chakra+Petch)
 - IBM Plex Mono — IBM Corp. (Mike Abbink, Bold Monday) (https://fonts.google.com/specimen/IBM+Plex+Mono)
-- IBM Plex Sans Condensed — IBM Corp. (Mike Abbink, Bold Monday) (https://fonts.google.com/specimen/IBM+Plex+Sans+Condensed)
 
 **Thanks (CC0, no attribution required)**
 
 - Birb (Ultimate Monsters pack) — Quaternius (https://quaternius.com/packs/ultimatemonsters.html)
 - Bull (Ultimate Animated Animal pack) — Quaternius (https://quaternius.com/packs/ultimateanimatedanimals.html)
 - Deer (Ultimate Animated Animal pack) — Quaternius (https://quaternius.com/packs/ultimateanimatedanimals.html)
+- Modular Character Outfits - Fantasy [Standard] — Quaternius (https://quaternius.itch.io/modular-character-outfits-fantasy)
 - Robot Enemy Flying — Quaternius (https://poly.pizza/m/lF3jeRJwiH)
 - Rock Face (1K scan, repacked) — Poly Haven (https://polyhaven.com/a/rock_face)
-- Round-4 lab copies of the Universal Animation Library — Quaternius (https://quaternius.itch.io/universal-animation-library)
 - Spider — Quaternius (https://poly.pizza/m/yRYJiAJyiM)
 - Universal Animation Library [Standard] (Godot export) — Quaternius (https://quaternius.itch.io/universal-animation-library)
+- Universal Animation Library 2 [Standard] — Quaternius (https://quaternius.itch.io/universal-animation-library-2)
+- Universal Base Characters [Standard] — Quaternius (https://quaternius.itch.io/universal-base-characters)
 
 Full manifest: `public/LICENSES.json`; licence texts: `public/licences/`.
 

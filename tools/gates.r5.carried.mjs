@@ -23965,7 +23965,7 @@ const GATES = [
     setup: `window.dispatchEvent(new KeyboardEvent('keydown', { code: 'Space', key: ' ', bubbles: true, cancelable: true }));`,
     // R5 (fix round 2): the Round-4 criteria named the old wordmark. The game is CALIMA (bible §9.8);
     // brand re-stages this row at W0b (one logo over a live Pans vista). Until then the old title FAILs here.
-    criteria: 'Exactly ONE wordmark, and it reads CALIMA as bible §9.8 draws it: Bodoni-style caps, the I a '
+    criteria: 'Exactly ONE wordmark, and it reads CALIMA as bible §9.8 draws it: Chakra Petch caps (plan R55), the I a '
       + 'plumb line whose dot is the coral spark ABOVE the wordmark, one hairline datum rule beneath, no '
       + 'tagline or second line. Any other wordmark (the Round-4 title) is a FAIL. '
       + 'Behind it, the valley from the air — terrain, sky and the rest site legible, not a flat gradient. '

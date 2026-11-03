@@ -332,11 +332,10 @@ const OLD_FAMILIES = (() => {
 const OLD_FAMILY_RE = OLD_FAMILIES.length
   ? new RegExp(OLD_FAMILIES.map((f) => f.split(/\s+/).join('\\s*')).join('|'), 'i') : /$^/;
 
-/** The three CALIMA families (bible §9.7) and their files' stems. */
+/** The two CALIMA families (plan R55) and their files' stems. */
 const FAMILIES = [
-  { family: 'Bodoni Moda', stem: 'BodoniModa', role: 'display, wordmark, place names' },
-  { family: 'IBM Plex Sans Condensed', stem: 'IBMPlexSansCondensed', role: 'HUD, menus' },
-  { family: 'IBM Plex Mono', stem: 'IBMPlexMono', role: 'numerals, bearings' },
+  { family: 'Chakra Petch', stem: 'ChakraPetch', role: 'wordmark, display, HUD labels, menus, place names' },
+  { family: 'IBM Plex Mono', stem: 'IBMPlexMono', role: 'numerals, bearings, body text' },
 ];
 
 /**
@@ -580,7 +579,7 @@ const W0B = [
   /* ---------------------------------------------------------------- fonts */
   {
     id: 'A-fonts-licensed', kind: 'action', lane: 'brand', plain: true, settle: 1200, timeout: 90000,
-    title: 'public/fonts holds only Bodoni Moda, IBM Plex Sans Condensed, IBM Plex Mono (woff2) + one OFL.txt each, each with an OFL-1.1 LICENSES.json row; the wordmark, a HUD label and a numeral resolve to those families; 0 references to the retired families in CSS/JS',
+    title: 'public/fonts holds only Chakra Petch, IBM Plex Mono (woff2) + one OFL.txt each, each with an OFL-1.1 LICENSES.json row; the wordmark, a HUD label and a numeral resolve to those families; 0 references to the retired families in CSS/JS',
     get assert() {
       const F = fontsNode();
       return `(async () => {
@@ -639,7 +638,7 @@ const W0B = [
       const hudEls = [...document.querySelectorAll('#hud *')].filter((el) => [...el.childNodes].some((n) => n.nodeType === 3 && /[A-Za-z]{3,}/.test(n.textContent)));
       const hudLabel = hudEls[0];
       const numeral = document.querySelector('#title .cal-stn');
-      const LICENSED = ['Bodoni Moda', 'IBM Plex Sans Condensed', 'IBM Plex Mono'];
+      const LICENSED = ['Chakra Petch', 'IBM Plex Mono'];
       const hudFamilies = {}; const hudUnlicensed = [];
       for (const el of hudEls) {
         const res = await resolve(el);
@@ -653,10 +652,10 @@ const W0B = [
       for (const ff of oldFaceObjs) { try { await ff.load(); } catch { /* status 'error' */ } }
       const oldFaces = oldFaceObjs.map((ff) => ff.family.replace(/["']/g, '') + ':' + ff.status);
       const checks = {
-        onlyTheThreeFamilies: F.stray.length === 0 && F.families.every((f) => f.woff2.length >= 1 && f.woff2Magic),
+        onlyTheTwoFamilies: F.stray.length === 0 && F.families.every((f) => f.woff2.length >= 1 && f.woff2Magic),
         oneOflPerFamily: F.families.every((f) => f.oflTexts === 1),
         oflRowPerFamily: F.families.every((f) => f.rowOk),
-        wordmarkBodoni: r.wordmark.family === 'Bodoni Moda',
+        wordmarkChakra: r.wordmark.family === 'Chakra Petch',
         hudLabelLicensed: LICENSED.includes(r.hudLabel.family),
         everyHudLabelLicensed: hudEls.length > 0 && hudUnlicensed.length === 0,
         numeralPlexMono: r.numeral.family === 'IBM Plex Mono',
@@ -705,7 +704,7 @@ const W0B = [
   /* ------------------------------------------------- the lockup, literally */
   {
     id: 'A-logo-construction', kind: 'action', lane: 'brand', plain: true, settle: 1500, timeout: 60000,
-    title: 'the title lockup measured: ONE logo; the word is CALIMA in Bodoni Moda 500, tracking 0.18 em; the spark is unclipped, inside the frame, above the cap line and centred on the plumb line; ONE hairline datum rule under the word spanning it; the coral broad-arrow centred under the I, below the rule; nothing else in the lockup',
+    title: 'the title lockup measured: ONE logo; the word is CALIMA in Chakra Petch 600, tracking 0.18 em; the spark is unclipped, inside the frame, above the cap line and centred on the plumb line; ONE hairline datum rule under the word spanning it; the coral broad-arrow centred under the I, below the rule; nothing else in the lockup',
     assert: `(async () => {
       await document.fonts.ready;
       const logo = [...document.querySelectorAll('.cal-logo')].filter((n) => { const r = n.getBoundingClientRect(); return r.width > 2 && r.height > 2 && +getComputedStyle(n).opacity > 0.05; });
@@ -731,7 +730,7 @@ const W0B = [
       const checks = {
         oneLogo: logo.length === 1,
         wordIsCalima: word.textContent.replace(/\\s+/g, '') === 'CALIMA' && text === 'CALIMA',
-        bodoni500: /Bodoni Moda/.test(ws.fontFamily) && ws.fontWeight === '500' && ws.textTransform === 'none',
+        chakra600: /Chakra Petch/.test(ws.fontFamily) && ws.fontWeight === '600' && ws.textTransform === 'none',
         tracking018: Math.abs(ls / fs - 0.18) < 0.005,
         sparkInFrame: sp.x >= 0 && sp.y >= 0 && sp.r <= innerWidth && sp.b <= innerHeight,
         sparkUnclipped: clipped.length === 0 && getComputedStyle(spark).overflow === 'visible',
@@ -1165,14 +1164,14 @@ const W0B = [
   {
     id: 'V-logo', kind: 'visual', lane: 'brand', plain: true, settle: 2600,
     title: 'Title screen at 1600x900 after settle (press beat): the CALIMA lockup',
-    reference: ['reference/r5/brand/bodoni-manuale-tipografico-1818.jpg', 'reference/r5/brand/os-benchmark-broad-arrow.jpg'],
+    reference: ['reference/r5/brand/os-benchmark-broad-arrow.jpg'],
     criteria: 'Bible 9.8. The LOCKUP is the wordmark, the spark, the rule and the arrow; the PRESS ANY KEY line, the field-note line and the save line '
-      + 'below it are the title menu, not the lockup. PASS: CALIMA in Didone (Bodoni) caps with real thick/thin contrast, comparable to the Bodoni 1818 caps in the reference; '
+      + 'below it are the title menu, not the lockup. PASS: CALIMA in Chakra Petch SemiBold caps with crisp chamfered corners (plan R55); '
       + 'the I is a thin plumb line ending in a pointed bob, and its dot is the FULL coral spark (ten rays, none cut) floating ABOVE the word; '
       + 'ONE hairline datum rule under the word, as wide as the word; under the I, below that rule, a small coral broad-arrow '
       + 'pointing UP at the spark, shaped like the benchmark arrow in the reference. '
       + 'FAIL on: any second line of text or tagline, a kicker naming another brand, the spark on, under, behind or clipped by a rule, '
-      + 'reflection dashes, thin wide-tracked sans caps, or the words HORIZON or ZERO anywhere.',
+      + 'reflection dashes, or the words HORIZON or ZERO anywhere.',
   },
   {
     id: 'V-logo-4k', kind: 'visual', lane: 'brand', plain: true, settle: 2600,
@@ -1181,11 +1180,11 @@ const W0B = [
     setup: `(() => { const L = document.querySelector('#title .cal-logo'); L.style.setProperty('--cal-lk', (92 * 2.4) + 'px');
       for (const s of ['.mn-title', '#btn-start']) document.querySelectorAll('#title ' + s).forEach((n) => { n.style.visibility = 'hidden'; });
       __CTX__.menus._titleReframe({ disc: false }); })()`,
-    reference: ['reference/r5/brand/bodoni-manuale-tipografico-1818.jpg', 'reference/r5/brand/os-benchmark-broad-arrow.jpg'],
+    reference: ['reference/r5/brand/os-benchmark-broad-arrow.jpg'],
     criteria: 'The V-logo construction up close. PASS: the spark is whole (ten round-capped rays, none clipped or overlapped), clear of the cap line; '
       + 'the plumb line is a single thin stroke from the cap line to a pointed bob whose tip sits on the baseline; the datum rule is one hairline, '
       + 'straight, edge to edge of the word; the broad-arrow is three coral strokes meeting at an apex just under the rule, centred on the plumb line; '
-      + 'the Bodoni caps show hairline serifs and vertical stress like the reference. FAIL on jagged or broken strokes, a misplaced or doubled part, '
+      + 'the Chakra Petch caps show clean chamfered corners and an even stroke. FAIL on jagged or broken strokes, a misplaced or doubled part, '
       + 'or any text besides CALIMA.',
   },
   {
