@@ -172,7 +172,7 @@
   --hud-scale-pref: 1;           /* the player's multiplier, written by settings.js */
   --mn-inset-x: 34px;
   --mn-inset-y: 26px;
-  --mn-margin-w: 226px;
+  --mn-margin-w: 238px;
   --mn-head-h: 74px;
   --mn-foot-h: 52px;
   --mn-z: 70;
@@ -662,6 +662,7 @@ body.cal-title-live #title.overlay {
   color: var(--cal-ink-80);
   transition: color 0.12s ease, background 0.12s ease;
 }
+.mn-tab > span { white-space: nowrap; }
 .mn-tab .cal-stn {
   white-space: nowrap;
   font-family: var(--cal-font-mono);
@@ -763,7 +764,7 @@ body.cal-title-live #title.overlay {
 .mn-map-tip u { text-decoration: none; margin-left: 8px; color: var(--cal-staff-80); }
 
 .mn-map-side { flex: 1; min-width: 210px; display: flex; flex-direction: column; gap: 14px; overflow-y: auto; }
-.mn-map-stats { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 14px; }
+.mn-map-stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px 14px; }
 .mn-map-stats div { display: flex; flex-direction: column; gap: 1px; }
 .mn-map-stats b {
   font-family: var(--cal-font-mono);
@@ -788,7 +789,20 @@ body.cal-title-live #title.overlay {
 .mn-map-wp-site { font-family: var(--cal-font-ui); font-size: var(--cal-type-micro); letter-spacing: var(--cal-track-caps); color: var(--cal-ink-80); }
 .mn-map-wp-site b { font-weight: 600; }
 
-.mn-map-legend { display: grid; grid-template-columns: 1fr; gap: 5px; }
+/* the trig stations: a surveyor's table */
+.mn-map-stations { width: 100%; border-collapse: collapse; font-family: var(--cal-font-mono); font-size: var(--cal-type-note); }
+.mn-map-stations th {
+  padding: 0 0 3px; text-align: left;
+  font-family: var(--cal-font-ui); font-weight: 600; font-size: var(--cal-type-micro); letter-spacing: var(--cal-track-caps);
+  color: var(--cal-ink-62);
+  border-bottom: 1px solid var(--cal-ink);
+}
+.mn-map-stations td { padding: 3px 10px 2px 0; border-bottom: 1px solid var(--cal-ink-10); white-space: nowrap; }
+.mn-map-stations td.n { width: 100%; font-family: var(--cal-font-ui); font-weight: 600; letter-spacing: 0.05em; }
+.mn-map-stations tr.unread td { color: var(--cal-ink-40); }
+.mn-map-stations tr.unread td.n { font-family: var(--cal-font-mono); font-weight: 400; font-style: italic; letter-spacing: 0; }
+
+.mn-map-legend { display: grid; grid-template-columns: 1fr 1fr; gap: 5px 14px; }
 .mn-map-leg-row { display: flex; align-items: center; gap: 10px; }
 .mn-map-leg-icon { width: 16px; height: 14px; flex: none; }
 .mn-map-leg-icon svg { width: 100%; height: 100%; display: block; overflow: visible; }

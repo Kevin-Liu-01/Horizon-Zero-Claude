@@ -679,6 +679,7 @@ export class WorldMap {
     const side = el('aside', 'mn-map-side', this.root);
     this._stats = el('div', 'mn-map-stats', side);
     this._wpBox = el('div', 'mn-map-wp', side);
+    this._stations = el('table', 'mn-map-stations', side);
     this._legend = el('div', 'mn-map-legend', side);
     for (const [key, label] of LEGEND) {
       const row = el('div', 'mn-map-leg-row', this._legend);
@@ -1014,6 +1015,13 @@ export class WorldMap {
       + `<div><b>${String(marks.filter((m) => m.kind !== 'machine' && m.kind !== 'quest').length).padStart(2, '0')}</b><span>SITES FOUND</span></div>`
       + `<div><b>${pad(E)}</b><span>EASTING</span></div>`
       + `<div><b>${pad(N)}</b><span>NORTHING</span></div>`;
+    // the trig stations, as a surveyor's table: a pillar reads only once a triangle has used it
+    const used = new Set(this._triangles.flat());
+    this._stations.innerHTML = '<thead><tr><th>STN</th><th>STATION</th><th>E</th><th>N</th></tr></thead><tbody>'
+      + this.pillars.map((q) => (used.has(q.id)
+        ? `<tr><td>${q.id}</td><td class="n">${String(q.name).toUpperCase()}</td><td>${pad(Math.round(q.x))}</td><td>${pad(Math.round(-q.z))}</td></tr>`
+        : `<tr class="unread"><td>${q.id}</td><td class="n">not yet sighted</td><td></td><td></td></tr>`)).join('')
+      + '</tbody>';
     this._paintWaypointBox();
   }
 
