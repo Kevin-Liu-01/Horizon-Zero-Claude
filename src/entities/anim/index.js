@@ -28,4 +28,4 @@ export {
 export { Retargeter, collectBones } from './retargeter.js';
 export { ClipLibrary, CLIPS, GAIT_SLOTS, analyzeGait, analyzeRoot } from './clipLibrary.js';
 export { LocomotionBlend } from './locomotion.js';
-export { UAL_TO_ALOY, UAL_HIP, AIM_RULES, CONTACT_BONES } from './boneMap.js';
+export { UAL_TO_HERO, UAL_HIP, AIM_RULES, CONTACT_BONES } from './boneMap.js';

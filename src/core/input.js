@@ -35,7 +35,8 @@ const PAD_BUTTONS = {
   12: 'KeyR',        // D-up   craft/reload
   13: 'KeyT',        // D-down tag
   14: 'KeyZ',        // D-left  cycle ammo -
-  15: 'KeyX',        // D-right cycle ammo +
+  15: 'KeyX',        // D-right cycle ammo + / plant (guard)
+  16: 'KeyF',        // Home   cast (R5, bible §5.9)
 };
 /** Triggers drive mouse buttons so combat/aim need no pad-specific code. */
 const PAD_TRIGGER = { 6: 2, 7: 0 };   // LT -> RMB (aim), RT -> LMB (draw/fire)
@@ -47,7 +48,11 @@ const DEFAULT_BINDS = {
   forward: 'KeyW', back: 'KeyS', left: 'KeyA', right: 'KeyD',
   jump: 'Space', dodge: 'ControlLeft', sprint: 'ShiftLeft', walk: 'AltLeft',
   crouch: 'KeyC', heal: 'KeyQ', interact: 'KeyE', focus: 'KeyV',
+  plant: 'KeyX', cast: 'KeyF', tool: 'KeyR', slot1: 'Digit1', slot2: 'Digit2', slot3: 'Digit3', slot4: 'Digit4',
 };
+/** R5 actions (bible §5.9) -> pad: D-right, Home, D-up; quick slots = RB (Kit Rack) + D-pad. */
+export const ACTION_PAD = { plant: 'b15', cast: 'b16', tool: 'b12', slot1: 'b5+b12', slot2: 'b5+b15', slot3: 'b5+b13', slot4: 'b5+b14' };
+export const ACTIONS = Object.keys(DEFAULT_BINDS);
 
 const DEFAULTS = {
   sensitivity: 1,
@@ -70,6 +75,7 @@ export class Input {
     /** Assigned by Player from ctx.settings; defaults until then. */
     this.settings = null;
     this.binds = { ...DEFAULT_BINDS };
+    try { Object.assign(this.binds, JSON.parse(localStorage.getItem('cal.binds.v5') || '{}')); } catch { /* none */ }
 
     /** code -> wallclock seconds of the most recent press (the press buffer). */
     this._pressT = new Map();
@@ -145,7 +151,11 @@ export class Input {
   }
 
   /** Rebind one action (`settings.binds` is honoured first, then this). */
-  bind(action, code) { this.binds[action] = code; }
+  bind(action, code) {
+    this.binds[action] = code;
+    const o = {}; for (const k of ACTIONS) if (this.binds[k] !== DEFAULT_BINDS[k]) o[k] = this.binds[k];
+    try { localStorage.setItem('cal.binds.v5', JSON.stringify(o)); } catch { /* private mode */ }
+  }
   codeFor(action) {
     const s = this.settings && this.settings.binds;
     return (s && s[action]) || this.binds[action] || null;

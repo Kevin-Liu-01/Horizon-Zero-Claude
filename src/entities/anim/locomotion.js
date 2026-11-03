@@ -141,7 +141,7 @@ export class LocomotionBlend {
 
     // anim-core layer view: the blend tree keeps authorship of the weights
     // (external: true), ClipLayer owns every .time write + the audit.
-    this.set = new ClipLayerSet(mixer, { name: 'aloy-locomotion', owner: 'anim-core' });
+    this.set = new ClipLayerSet(mixer, { name: 'hero-locomotion', owner: 'anim-core' });
     for (const slot of Object.keys(this.actions)) {
       this.set.add(slot, this.actions[slot], {
         external: true,
@@ -156,7 +156,7 @@ export class LocomotionBlend {
     this.set.base('idle');
     register({
       id: 'anim/locomotion', file: 'src/entities/anim/locomotion.js',
-      owner: 'anim-core', rig: 'aloy', convention: 'ClipLayer',
+      owner: 'anim-core', rig: 'hero', convention: 'ClipLayer',
       status: 'migrated', layers: this.set.order.length,
     });
 

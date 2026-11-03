@@ -18,8 +18,8 @@ import { RigDebug } from './rigDebug.js';
  * module whose private helper is proved bit-identical to BoneSpace is
  * `BoneSpace/verified` — the migration is a pure import swap and cannot change
  * a single frame. A module that DIVERGES is `legacy` and fails the audit —
- * for the ALOY rig and for the MACHINE rigs alike (`audit().ok` carries an
- * `aloy.ok` term and a `machines.ok` term, and `legacyModules` is derived from
+ * for the HERO rig and for the MACHINE rigs alike (`audit().ok` carries an
+ * `hero.ok` term and a `machines.ok` term, and `legacyModules` is derived from
  * the KNOWN_MODULES table below rather than from who volunteered to register).
  * That is the regression detector the two animation lanes need while they
  * migrate in Waves 1 and 2.
@@ -46,12 +46,12 @@ const KNOWN_MODULES = [
   { id: 'anim/restPose', file: 'src/entities/anim/restPose.js', owner: 'anim-core', rig: 'shared', convention: 'BoneSpace', status: 'migrated' },
   { id: 'anim/clipLayer', file: 'src/entities/anim/clipLayer.js', owner: 'anim-core', rig: 'shared', convention: 'ClipLayer', status: 'migrated' },
   { id: 'anim/rigDebug', file: 'src/entities/anim/rigDebug.js', owner: 'anim-core', rig: 'shared', convention: 'BoneSpace', status: 'migrated' },
-  { id: 'anim/retargeter', file: 'src/entities/anim/retargeter.js', owner: 'anim-core', rig: 'aloy', convention: 'BoneSpace', status: 'migrated' },
-  { id: 'anim/clipLibrary', file: 'src/entities/anim/clipLibrary.js', owner: 'anim-core', rig: 'aloy', convention: 'BoneSpace', status: 'migrated' },
-  { id: 'anim/locomotion', file: 'src/entities/anim/locomotion.js', owner: 'anim-core', rig: 'aloy', convention: 'ClipLayer', status: 'migrated' },
+  { id: 'anim/retargeter', file: 'src/entities/anim/retargeter.js', owner: 'anim-core', rig: 'hero', convention: 'BoneSpace', status: 'migrated' },
+  { id: 'anim/clipLibrary', file: 'src/entities/anim/clipLibrary.js', owner: 'anim-core', rig: 'hero', convention: 'BoneSpace', status: 'migrated' },
+  { id: 'anim/locomotion', file: 'src/entities/anim/locomotion.js', owner: 'anim-core', rig: 'hero', convention: 'ClipLayer', status: 'migrated' },
   {
     id: 'playerAnimator', file: 'src/entities/playerAnimator.js', owner: 'player-anim', wave: 2,
-    rig: 'aloy', convention: 'BoneSpace (private _rot/_rotQ/_rotL/_rotQL)',
+    rig: 'hero', convention: 'BoneSpace (private _rot/_rotQ/_rotL/_rotQL)',
     status: 'import-swap', probe: 'playerAnimator',
     recipe: `BoneSpace.adopt(this._entries, model) then _rot->rotCharBind, _rotQ->rotCharBindQ, _rotL->rotChar, _rotQL->rotCharQ (${MIGRATION_DOC} §2)`,
   },
@@ -150,7 +150,11 @@ function compare(bone, legacyFn, boneSpaceFn) {
 function probePlayerAnimator(ctx) {
   const an = ctx?.player?.animator;
   if (!an || !an._entries || !an.model) return { reachable: false, why: 'no ctx.player.animator' };
-  const names = ['spine_01_06', 'head_0104', 'upperarm_r_043', 'thigh_l_0185', 'hand_l_014'];
+  // R5 (hero-body): the probe bones by ANIMATOR KEY, so the probe runs on
+  // whatever rig the profile bound (the Round-4 literals named Aloy's bones and
+  // probed 0 bones on Brea, which read as DIVERGENT)
+  const names = ['spine1', 'head', 'upArmR', 'thighL', 'handL']
+    .map((k) => an.b?.[k]?.name || an.KEY?.[k]).filter(Boolean);
   const bs = BoneSpace.adopt(an._entries, an.model);
   // use the animator's OWN cached frame inverse so the live-space comparison
   // is not a frame off (it refreshes _invModelQ at the top of each update)
@@ -383,15 +387,15 @@ export function audit(ctx) {
   const legacyModules = rows.filter((r) => r.status === 'legacy')
     .map((r) => ({ id: r.id, owner: r.owner, convention: r.convention }));
 
-  const aloyRows = rows.filter((r) => r.rig === 'aloy');
-  const aloyDivergent = aloyRows.filter((r) => /DIVERGENT/.test(r.convention) || r.status === 'legacy');
+  const heroRows = rows.filter((r) => r.rig === 'hero');
+  const heroDivergent = heroRows.filter((r) => /DIVERGENT/.test(r.convention) || r.status === 'legacy');
   const anProbe = probeCache.playerAnimator ?? runProbe('playerAnimator');
-  const aloy = {
-    rows: aloyRows.map((r) => `${r.id}: ${r.convention}`),
-    boneSpaceRouted: aloyRows.length - aloyDivergent.length,
-    divergent: aloyDivergent.map((r) => r.id),
+  const hero = {
+    rows: heroRows.map((r) => `${r.id}: ${r.convention}`),
+    boneSpaceRouted: heroRows.length - heroDivergent.length,
+    divergent: heroDivergent.map((r) => r.id),
     animatorProbe: anProbe,
-    ok: aloyDivergent.length === 0 && (!anProbe?.reachable || anProbe.identical === true),
+    ok: heroDivergent.length === 0 && (!anProbe?.reachable || anProbe.identical === true),
   };
 
   const pendingMigration = rows
@@ -411,7 +415,7 @@ export function audit(ctx) {
   const machines = {
     local: machineLocal,
     mixer: machineMixer,
-    // Health, on the same footing as `aloy.ok`. A machine rig that is still
+    // Health, on the same footing as `hero.ok`. A machine rig that is still
     // pending is fine (its lane has not started); one that is reachable and
     // DIVERGENT is not, and neither is one claiming ClipLayerSet while a
     // wall-clock restore is still in its source.
@@ -421,9 +425,9 @@ export function audit(ctx) {
         : true),
   };
 
-  return {
+  const out = {
     ok: modulesPresent && algebra.pass && legacyModules.length === 0
-      && aloy.ok && machines.ok,
+      && hero.ok && machines.ok,
     version: ANIM_VERSION,
     doc: MIGRATION_DOC,
     modules, modulesPresent,
@@ -433,10 +437,15 @@ export function audit(ctx) {
     registered: registered().map((r) => ({ id: r.id, owner: r.owner, convention: r.convention, rig: r.rig })),
     legacyModules,
     selfDeclaredForeign,
-    aloy,
+    // R5: the protagonist's section is `hero` (the rig profile id names the
+    // body: `rigProfile`). The Round-4 `aloy` alias is gone (W0b targeted
+    // fix): A26-one-convention@hero finds the section by shape, not by name.
+    hero,
+    rigProfile: c?.player?.model?.userData?.rigProfile?.name ?? null,
     machines,
     pendingMigration,
   };
+  return out;
 }
 
 /** RestPose + RigDebug smoke test on a throwaway 2-bone rig. */
@@ -498,26 +507,26 @@ export function selftest(timeScale = 0.02) {
  * cache its debugger, so the skeleton overlay, the per-bone probes and
  * `debugFeet()` are one call away for every lane:
  *
- *   __CTX__.anim.overlay('aloy')            // skeleton on, on the live scene
+ *   __CTX__.anim.overlay('hero')            // skeleton on, on the live scene
  *   __CTX__.anim.debug('watcher').probe('hipsBone_03')
- *   __CTX__.anim.overlay('aloy', false)
+ *   __CTX__.anim.overlay('hero', false)
  *
  * Cold path: it allocates, walks the scene graph and refreshes the char frame
  * on every call. Never call it from a hot loop.
  */
 const _debuggers = new Map();
 
-/** Resolve 'aloy' | 'player' | a machine kind | an Object3D | a machine. */
+/** Resolve 'hero' | 'player' | a machine kind | an Object3D | a machine. */
 function resolveRig(target) {
   const c = anim.ctx || (typeof window !== 'undefined' ? window.__CTX__ : null);
-  if (!target || target === 'aloy' || target === 'player') {
+  if (!target || target === 'hero' || target === 'player') {
     const an = c?.player?.animator;
     if (!an?.model) return null;
     // adopt the animator's own entry table so probes carry bind + deltaDeg,
     // and its own cached frame inverse so char values are not a frame stale
     const space = BoneSpace.adopt(an._entries || {}, an.model);
     if (an._invModelQ) space.setFrameInv(an._invModelQ); else space.syncFrame();
-    return { key: 'aloy', space, root: an.model };
+    return { key: 'hero', space, root: an.model };
   }
   if (typeof target === 'string') {
     const m = (c?.machines?.list || []).find((x) => x?.kind === target && x?.root);
@@ -537,11 +546,11 @@ function resolveRig(target) {
  * Cached `RigDebug` for a rig (see resolveRig for what `target` accepts).
  * Returns null when the rig is not in the scene yet.
  */
-export function debug(target = 'aloy') {
+export function debug(target = 'hero') {
   const r = resolveRig(target);
   if (!r) return null;
   const had = _debuggers.get(r.key);
-  // an Aloy debugger caches a stale frame inverse between frames; refresh it
+  // the hero's debugger caches a stale frame inverse between frames; refresh it
   if (had) { had.space.syncFrame?.(); return had; }
   const d = new RigDebug({ space: r.space, root: r.root, label: String(r.key) });
   _debuggers.set(r.key, d);
@@ -552,7 +561,7 @@ export function debug(target = 'aloy') {
  * Toggle a rig's skeleton overlay on the live scene (`ctx.scene`).
  * @returns {boolean|null} the resulting visibility, or null if unreachable
  */
-export function overlay(target = 'aloy', on = true) {
+export function overlay(target = 'hero', on = true) {
   const c = anim.ctx || (typeof window !== 'undefined' ? window.__CTX__ : null);
   const d = debug(target);
   if (!d || !c?.scene) return null;

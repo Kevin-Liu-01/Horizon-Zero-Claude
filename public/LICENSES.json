@@ -19,6 +19,21 @@
       "attribution": null
     },
     {
+      "id": "brea-kit-v0",
+      "paths": [
+        "public/models/hero/kit/*.glb"
+      ],
+      "title": "Brea's v0 kit: merged stow kit, Shepherd's Lance, Sabina Bow blockout, cane quiver, crescent bracer, alidade",
+      "author": "CALIMA project",
+      "source_url": "tools/build/recipes/weapons/kit-v0.mjs",
+      "licence": "project-original",
+      "licence_text": null,
+      "archive_sha256": null,
+      "retrieved": null,
+      "modified": null,
+      "attribution": null
+    },
+    {
       "id": "calima-favicon",
       "paths": [
         "public/favicon.svg"
@@ -203,6 +218,66 @@
           "bytes": 4456
         }
       ]
+    },
+    {
+      "id": "hero-brea-body",
+      "paths": [
+        "public/models/hero/brea.glb",
+        "public/models/hero/licences/quaternius-ubc-License_Standard.txt"
+      ],
+      "title": "Universal Base Characters [Standard] (Superhero_Female, Hair_BuzzedFemale, eye and hair textures) -> Brea's body",
+      "author": "Quaternius",
+      "source_url": "https://quaternius.itch.io/universal-base-characters",
+      "licence": "CC0-1.0",
+      "licence_text": "public/models/hero/licences/quaternius-ubc-License_Standard.txt",
+      "archive_sha256": "fdbf1804c90dfc1ea03e992bff7da2dfd1a79318e13270a660180f9308455f40",
+      "archive_bytes": 128968391,
+      "derived_from": [
+        "ubc-standard"
+      ],
+      "retrieved": "2026-10-22",
+      "modified": "tools/build/recipes/brea.mjs: face displacement field + paint layer (salt-line, brow scar, the therefore-mark), skin retone, brows reshaped and simplified, procedural headwrap/topknot/knot tail/wrap tail and dyn_ chains added, outfit hide mask, atlased to two materials, WebP + meshopt",
+      "attribution": null
+    },
+    {
+      "id": "hero-clips-ual2",
+      "paths": [
+        "public/models/hero/brea-clips-ual2.glb",
+        "public/models/hero/licences/quaternius-ual2-License.txt"
+      ],
+      "title": "Universal Animation Library 2 [Standard] (ClimbUp_1m, Slide_*, Consume, Hit_Knockback) -> Brea's native clips",
+      "author": "Quaternius",
+      "source_url": "https://quaternius.itch.io/universal-animation-library-2",
+      "licence": "CC0-1.0",
+      "licence_text": "public/models/hero/licences/quaternius-ual2-License.txt",
+      "archive_sha256": "4008ea208a604773a2b2177d965f0f5d3195498b5bf838c3f5785d68e95f2a68",
+      "archive_bytes": 18735003,
+      "derived_from": [
+        "ual2-standard"
+      ],
+      "retrieved": "2026-10-22",
+      "modified": "tools/build/recipes/brea.mjs: six clips kept, rotation tracks (+ pelvis translation) only, mesh removed, resampled",
+      "attribution": null
+    },
+    {
+      "id": "hero-outfit-pan-1",
+      "paths": [
+        "public/models/hero/outfit-pan-1.glb",
+        "public/models/hero/licences/quaternius-mco-License_Standard.txt"
+      ],
+      "title": "Modular Character Outfits - Fantasy [Standard] (Female_Peasant body/arms/legs/feet) -> Pan Whites I",
+      "author": "Quaternius",
+      "source_url": "https://quaternius.itch.io/modular-character-outfits-fantasy",
+      "licence": "CC0-1.0",
+      "licence_text": "public/models/hero/licences/quaternius-mco-License_Standard.txt",
+      "archive_sha256": "c3468b18871cc8c8f05ab14df7712baf22cb9f389cbd870babf130e595187f70",
+      "archive_bytes": 294347394,
+      "derived_from": [
+        "mco-fantasy-standard"
+      ],
+      "retrieved": "2026-10-22",
+      "modified": "tools/build/recipes/outfit-pan-1.mjs: sleeves cut at the elbow, recoloured per piece into the pan atlas, procedural sash and rolled cuffs added, merged to one mesh, WebP + meshopt",
+      "attribution": null
     },
     {
       "id": "instrument-tiller",
@@ -458,27 +533,6 @@
       "legacy": "r4",
       "delete_at": "W2 exit",
       "delete_owner": "instruments-b"
-    },
-    {
-      "id": "legacy-hero-body",
-      "paths": [
-        "public/models/aloy.glb"
-      ],
-      "title": "Round-4 hero body: \"Aloy - Fortnite\" (third-party game IP)",
-      "author": "Yxboireal (https://sketchfab.com/Yeboireal), as uploaded to Sketchfab",
-      "source_url": "https://sketchfab.com/3d-models/aloy-fortnite-96b484dee22d487fa3ad40f14f4f277b",
-      "licence": "CC-BY-4.0",
-      "licence_text": null,
-      "licence_url": "http://creativecommons.org/licenses/by/4.0/",
-      "archive_sha256": null,
-      "retrieved": null,
-      "modified": null,
-      "attribution": "\"Aloy - Fortnite\" by Yxboireal (https://sketchfab.com/Yeboireal), CC-BY-4.0",
-      "legacy": "r4",
-      "ip": true,
-      "delete_at": "W0 exit (R30)",
-      "delete_owner": "hero-body",
-      "ip_note": "The uploader's CC-BY licence cannot cover a Sony/Guerrilla character in an Epic rig: IP whatever the licence says (docs/ROUND5-INVENTORY.md section 0.2). Recorded here as provenance of a file that must go; never credited (plan section 10.2)."
     },
     {
       "id": "mco-fantasy-standard",
