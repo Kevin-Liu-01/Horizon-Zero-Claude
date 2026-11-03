@@ -256,14 +256,19 @@ export class MapBake {
     g.fillStyle = 'rgba(38,52,63,0.62)';
     g.textBaseline = 'alphabetic';
     for (let m = from; m <= WORLD_HALF; m += 100) {
-      if (m === -WORLD_HALF || m === WORLD_HALF) continue;
       const p = toPx(m);
+      if (p < 24 * K || p > MAP_PX - 24 * K) continue;
       g.textAlign = 'left';
       g.fillText(String(m), p + 2 * K, MAP_PX - 3 * K);                      // E
       g.fillText(String(-m), 3 * K, p - 2 * K);                               // N (engine z = -N)
     }
     g.restore();
 
+  }
+
+  /** North and the cartouche, painted last, over the soundings. */
+  _paintFurniture() {
+    const g = this.base.getContext('2d');
     // north: a broad arrow, as the benchmarks are cut
     g.save();
     g.translate(MAP_PX - 30 * K, 40 * K);
@@ -279,7 +284,7 @@ export class MapBake {
     g.restore();
 
     // the cartouche
-    const cw = 204 * K, ch = 72 * K, cx = 12 * K, cy = MAP_PX - ch - 24 * K;
+    const cw = 204 * K, ch = 72 * K, cx = 34 * K, cy = 12 * K;   // top left: open sea on Orchil
     g.save();
     g.fillStyle = 'rgba(226,211,176,0.94)';
     g.fillRect(cx, cy, cw, ch);
@@ -451,6 +456,7 @@ export class MapBake {
       gb.stroke();
       gb.restore();
     }
+    this._paintFurniture();
     this._h = null;
     this._running = false;
     this.rows = this.total;
@@ -954,7 +960,7 @@ export class WorldMap {
     g.beginPath(); g.moveTo(pt.x, pt.y + 7 * K); g.lineTo(pt.x, pt.y - 7 * K); g.moveTo(pt.x - 5 * K, pt.y + 2 * K); g.lineTo(pt.x, pt.y - 7 * K); g.lineTo(pt.x + 5 * K, pt.y + 2 * K); g.stroke();
     g.strokeStyle = INK; g.lineWidth = 1.8 * K;
     g.beginPath(); g.moveTo(pt.x, pt.y + 7 * K); g.lineTo(pt.x, pt.y - 7 * K); g.moveTo(pt.x - 5 * K, pt.y + 2 * K); g.lineTo(pt.x, pt.y - 7 * K); g.lineTo(pt.x + 5 * K, pt.y + 2 * K); g.stroke();
-    this._letter(g, q.id, pt.x + 8 * K, pt.y - 7 * K, 11, 700);
+    this._letter(g, q.id, pt.x, pt.y - 15 * K, 11, 700, 'center');
     g.restore();
   }
 

@@ -72,7 +72,7 @@ const PROMPT_H = 1.1;             // metres above an interactable the [E] prompt
 const MHB_CAP = 3;
 const MHB_HOLD_S = 5;             // seconds a plate survives after its last hit
 const MHB_RANGE = 120;            // metres past which a plate is not worth drawing
-const MHB_W = 264;                // the plate's base width (CSS); `TILLER · SOIL CORE · TRANSECT 14` on one line
+const MHB_W = 280;                // the plate's base width (CSS); `TILLER · SOIL CORE · TRANSECT 14` on one line
 /**
  * The melee clamp is in PAINTED pixels, and the two things it has to clear scale
  * by different multipliers: the HUD furniture with `_scale`, the plate with
@@ -565,18 +565,18 @@ export class HUD {
     this._tipBody = this._tipEl.querySelector('.cal-tip-body');
   }
 
-  /** One staff face: ten graduations, vermilion and paper, with the E-pattern's comb on the lower edge. */
+  /**
+   * One staff face: ten graduations, vermilion and paper, each cut as the E of a real
+   * levelling staff lying on its side: a solid head with two slots out of its lower edge.
+   */
   _staffFace(cls) {
-    let cells = '', comb = '';
+    let cells = '', cuts = '';
     for (let i = 0; i < 10; i++) {
       const x = i * 30;
       cells += `<rect class="${i % 2 ? 'p' : 'v'}" x="${x}" y="0" width="30" height="18"/>`;
-      // the E: three teeth off the block's lower half, cut in the other colour
-      for (let k = 0; k < 3; k++) {
-        comb += `<rect class="${i % 2 ? 'v' : 'p'}" x="${x + 3 + k * 9}" y="9" width="6" height="${k === 1 ? 5 : 9}"/>`;
-      }
+      for (const k of [8, 19]) cuts += `<rect class="${i % 2 ? 'v' : 'p'}" x="${x + k}" y="9" width="3" height="9"/>`;
     }
-    return `<svg class="${cls}" viewBox="0 0 300 18" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">${cells}${comb}</svg>`;
+    return `<svg class="${cls}" viewBox="0 0 300 18" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">${cells}${cuts}</svg>`;
   }
 
   /** One pooled projected plate: `NAME · WORK · TRANSECT nn`, a graduated bar, status gauges, a leader. */

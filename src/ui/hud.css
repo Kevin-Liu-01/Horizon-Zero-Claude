@@ -92,7 +92,7 @@
 #hud.reveal .cal-vitals.idle,
 #hud.reveal .cal-track.idle { opacity: 1; }
 
-.cal-staffrow { display: flex; align-items: flex-end; gap: calc(10px * var(--s)); }
+.cal-staffrow { display: flex; align-items: center; gap: calc(8px * var(--s)); }
 
 /* The staff: ten graduations, vermilion and paper, E-pattern comb on the lower edge.
    Damage eats from the right; what is left of the scale stays engraved in the dark. */
@@ -129,26 +129,32 @@
 @keyframes calIndexLow { 0% { background: var(--cal-staff); } 100% { background: var(--cal-c-staff); } }
 .cal-topleft.healing .cal-staff { box-shadow: 0 0 0 2px var(--cal-c-good); }
 
-/* the reading: a 3-digit Plex numeral, engraved */
+/* the reading window: a paper chip at the staff's end, like the bearing's */
 .cal-staff-num {
   flex: 0 0 auto;
-  line-height: 1;
-  color: var(--cal-staff);
-  text-shadow: var(--cal-engrave-s);
+  display: flex; align-items: baseline;
+  height: calc(20px * var(--s));
+  padding: 0 calc(6px * var(--s));
+  line-height: calc(19px * var(--s));
+  color: var(--cal-ink);
+  background: var(--cal-paper-92);
+  border: 1px solid var(--cal-ink);
+  box-shadow: var(--cal-chip-edge);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
 .cal-staff-num b {
-  font-size: max(16px, calc(23px * var(--s)));
-  font-weight: 600; letter-spacing: -0.01em;
+  font-size: max(14px, calc(16px * var(--s)));
+  font-weight: 600; letter-spacing: 0;
 }
 .cal-staff-num span {
-  font-size: max(11px, calc(12px * var(--s)));
+  font-size: max(11px, calc(11px * var(--s)));
   font-weight: 400;
-  color: var(--cal-staff-80);
+  color: var(--cal-ink-80);
   margin-left: calc(2px * var(--s));
 }
-.cal-topleft.low .cal-staff-num b { color: #FF8A73; }
+.cal-topleft.low .cal-staff-num { background: var(--cal-c-staff); color: var(--cal-staff); }
+.cal-topleft.low .cal-staff-num span { color: var(--cal-staff-80); }
 
 /* the hairline beneath the staff */
 .cal-gourdline {
@@ -176,6 +182,7 @@
   color: var(--cal-ink);
   background: var(--cal-paper-92);
   border: 1px solid var(--cal-ink);
+  box-shadow: var(--cal-chip-edge);
   animation: calChipIn 0.2s var(--cal-ease-out) both;
 }
 .cal-chip-l {
@@ -206,6 +213,7 @@
   color: var(--cal-ink);
   background: var(--cal-paper-92);
   border: 1px solid var(--cal-ink);
+  box-shadow: var(--cal-chip-edge);
   transition: opacity 0.8s ease;
 }
 .cal-track::before {
@@ -260,7 +268,7 @@
   content: ''; position: absolute;
   left: calc(-80px * var(--s)); right: calc(-80px * var(--s));
   top: calc(-10px * var(--s)); height: calc(84px * var(--s));
-  background: linear-gradient(180deg, rgba(28, 27, 30, 0.36), rgba(28, 27, 30, 0));
+  background: linear-gradient(180deg, rgba(28, 27, 30, 0.2), rgba(28, 27, 30, 0));
   -webkit-mask-image: linear-gradient(90deg, transparent 0, #000 22%, #000 78%, transparent 100%);
   mask-image: linear-gradient(90deg, transparent 0, #000 22%, #000 78%, transparent 100%);
 }
@@ -312,6 +320,7 @@
   color: var(--cal-ink);
   background: var(--cal-paper-92);
   border: 1px solid var(--cal-ink);
+  box-shadow: var(--cal-chip-edge);
   font-family: var(--cal-font-mono);
   font-weight: 600;
   font-size: max(14px, calc(17px * var(--s)));
@@ -488,7 +497,7 @@
    is deliberately no margin: a half-width margin ON TOP OF the -50% centres it twice. */
 .cal-mhb {
   position: absolute; left: 0; top: 0;
-  width: 264px;
+  width: 280px;
   transform-origin: 0 0;
   visibility: hidden;
 }
@@ -498,6 +507,7 @@
   color: var(--cal-ink);
   background: var(--cal-paper-92);
   border: 1px solid var(--cal-ink);
+  box-shadow: var(--cal-chip-edge);
 }
 .cal-mhb-head { display: flex; align-items: center; gap: 7px; height: 18px; }
 .cal-mhb-head .cal-iris { flex: none; width: 11px; height: 11px; margin: 0 1px; border-width: 1.25px; box-shadow: none; }
@@ -646,7 +656,7 @@
 .cal-hair {
   position: absolute;
   background: var(--cal-staff);
-  box-shadow: 0 0 0 1px var(--cal-under);
+  box-shadow: 0 0 0 1px var(--cal-under), 0 0 0 2px rgba(20, 22, 26, 0.16);
 }
 .cal-hair.hl { top: -0.5px; height: 1px; right: calc(11px * var(--s)); width: calc(30px * var(--s)); }
 .cal-hair.hr { top: -0.5px; height: 1px; left: calc(11px * var(--s)); width: calc(30px * var(--s)); }
@@ -792,11 +802,17 @@
 .cal-weapon {
   position: absolute; right: calc(30px * var(--s)); bottom: calc(26px * var(--s));
   width: calc(262px * var(--s));
-  padding: calc(5px * var(--s)) calc(9px * var(--s)) calc(5px * var(--s)) calc(7px * var(--s));
+  padding: calc(5px * var(--s)) calc(9px * var(--s)) calc(7px * var(--s)) calc(7px * var(--s));
   color: var(--cal-ink);
   background: var(--cal-paper-92);
   border: 1px solid var(--cal-ink);
+  box-shadow: var(--cal-chip-edge);
   transition: opacity 0.45s ease;
+}
+.cal-weapon::after {   /* the tag's foot: a graduated edge */
+  content: ''; position: absolute; left: 0; right: 0; bottom: 0;
+  height: calc(3px * var(--s));
+  background: repeating-linear-gradient(90deg, var(--cal-ink-62) 0 1px, transparent 1px calc(10px * var(--s)));
 }
 .cal-weapon.idle { opacity: 0; }
 .cal-wpn-row { display: flex; align-items: center; gap: calc(9px * var(--s)); }

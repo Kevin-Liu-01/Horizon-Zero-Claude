@@ -364,7 +364,7 @@ const A71 = re('A71-compass-truth', {
 
 const A71B = re('A71b-hud-scale-floor', {
   patch: [
-    ['Math.abs(r.plateW - 224 * r.world) <= 2', 'Math.abs(r.plateW - 264 * r.world) <= 2'],
+    ['Math.abs(r.plateW - 224 * r.world) <= 2', 'Math.abs(r.plateW - 280 * r.world) <= 2'],
     ['const notABanner = plateSeen.every(r => r.plateW <= window.innerWidth * 0.35);',
       /* the bar is the row's own (35 % of the window); a simulated viewport row is graded against the window it simulates */
       'const notABanner = plateSeen.every(r => r.plateW <= (parseInt(r.vp, 10) > 1000 ? parseInt(r.vp, 10) : window.innerWidth) * 0.35);'],
@@ -385,7 +385,7 @@ const A71C = re('A71c-hud-surfaces', {
     [`xpBar: s.xp.visible === true,`, ``],
     [`health: s.health, pouch: s.pouch, bars: s.machineBars, eye: s.eye,`, `health: s.health, gourd: s.gourd, bars: s.machineBars, eye: s.eye,`],
     [`tools: s.tools, xp: s.xp, weapon: s.weapon, reticle: s.reticle,`, `tools: s.tools, weapon: s.weapon, reticle: s.reticle, pendingClauses: ['the combat-kit Kit Rack and tool slots (W2)', 'XP retired from the HUD: certifications replace it at W3 (A-certifications)'],`],
-    [`Math.abs(r.plateW - 224 * r.world) <= 2`, `Math.abs(r.plateW - 264 * r.world) <= 2`],
+    [`Math.abs(r.plateW - 224 * r.world) <= 2`, `Math.abs(r.plateW - 280 * r.world) <= 2`],
   ],
 });
 

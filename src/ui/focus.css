@@ -54,7 +54,7 @@ body.cal-sighting .cal-cross { opacity: 0; }
 .calf-reticle.on { opacity: 1; transform: none; }
 .calf-reticle svg { position: absolute; inset: 0; width: 100%; height: 100%; display: block; overflow: visible; }
 .calf-reticle path { fill: none; }
-.calf-reticle .u { stroke: rgba(20, 22, 26, 0.5); stroke-width: 2.4; }
+.calf-reticle .u { stroke: rgba(20, 22, 26, 0.58); stroke-width: 2.8; }
 .calf-reticle .t { stroke: var(--cal-staff); stroke-width: 1; }
 
 /* the readouts: a small paper chip off the crosshair's lower right */
@@ -149,7 +149,8 @@ body.cal-sighting .cal-cross { opacity: 0; }
   font-size: calc(11px * var(--s));
   letter-spacing: var(--cal-track-caps);
   color: var(--cal-ink-62);
-  width: calc(60px * var(--s));
+  width: calc(72px * var(--s));
+  white-space: nowrap;
   flex: none;
 }
 .calf-lamp { display: inline-flex; align-items: center; gap: calc(9px * var(--s)); }

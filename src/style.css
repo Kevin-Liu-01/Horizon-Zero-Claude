@@ -107,6 +107,7 @@
   --cal-engrave: 0 1px 0 rgba(20, 22, 26, 0.85), 0 0 3px rgba(20, 22, 26, 0.55);  /* staff white on salt AND on black sand */
   --cal-engrave-s: 0 1px 0 rgba(20, 22, 26, 0.9), 0 0 2px rgba(20, 22, 26, 0.7);
   --cal-under: rgba(20, 22, 26, 0.62);          /* the ink under a hairline */
+  --cal-chip-edge: inset 0 0 0 1px rgba(255, 250, 235, 0.3), 0 1px 0 rgba(20, 22, 26, 0.42);  /* a label's inner rule + the shadow of its edge */
 
   /* ---- semantic colours: the ONLY colours the accessibility palettes re-point ---- */
   --cal-c-staff: var(--cal-vermilion);         /* the levelling staff, the margin rule, full draw */
@@ -171,7 +172,7 @@
   --hud-scale-pref: 1;           /* the player's multiplier, written by settings.js */
   --mn-inset-x: 34px;
   --mn-inset-y: 26px;
-  --mn-margin-w: 208px;
+  --mn-margin-w: 226px;
   --mn-head-h: 74px;
   --mn-foot-h: 52px;
   --mn-z: 70;
@@ -648,7 +649,7 @@ body.cal-title-live #title.overlay {
 .mn-tab {
   position: relative;
   display: grid;
-  grid-template-columns: 48px 1fr auto;
+  grid-template-columns: 58px 1fr auto;
   align-items: baseline;
   background: transparent; border: 0;
   border-bottom: 1px solid var(--cal-ink-10);
@@ -662,6 +663,7 @@ body.cal-title-live #title.overlay {
   transition: color 0.12s ease, background 0.12s ease;
 }
 .mn-tab .cal-stn {
+  white-space: nowrap;
   font-family: var(--cal-font-mono);
   font-weight: 400;
   font-size: var(--cal-type-micro);
@@ -675,7 +677,7 @@ body.cal-title-live #title.overlay {
 .mn-tab.on .cal-stn { color: var(--cal-staff-80); }
 .mn-tab.on kbd { border-color: var(--cal-staff-55); color: var(--cal-staff); }
 .mn-tab.on::after {
-  content: ''; position: absolute; right: -19px; top: 0; bottom: 0; width: 16px;
+  content: ''; position: absolute; right: -16px; top: 0; bottom: 0; width: 16px;
   background: var(--cal-ink);
 }
 
