@@ -109,7 +109,7 @@ export class HeroStowKit {
     if (!sock || !m || this._quiverHang) return;
     const P = m.geometry.getAttribute('_piece'), pos = m.geometry.getAttribute('position');
     if (!P) return;
-    // the tube's foot and the arrows' top, off the skinned kit: the band is 0.47 of the 0.71 m between them
+    // the tube's foot and the arrows' top, off the skinned kit: the recipe says how far up that span its band sits
     let lo = -1, hi = -1;
     for (let i = 0; i < pos.count; i++) {
       if ((Math.round(P.getX(i)) & PIECE.quiver) === 0) continue;
@@ -122,7 +122,7 @@ export class HeroStowKit {
     const a = new THREE.Vector3(), b = new THREE.Vector3();
     m.getVertexPosition(lo, a); m.localToWorld(a);
     m.getVertexPosition(hi, b); m.localToWorld(b);
-    this._quiverHang = par.worldToLocal(a.lerp(b, 0.47 / 0.71));
+    this._quiverHang = par.worldToLocal(a.lerp(b, this.entry?.extras?.r5StowKit?.stow?.quiver?.hangK ?? 0.65));
     const Qm = model.getWorldQuaternion(new THREE.Quaternion()).invert();
     this._pelvisBindQ = par.getWorldQuaternion(new THREE.Quaternion()).premultiply(Qm);
   }

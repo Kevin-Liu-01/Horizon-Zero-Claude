@@ -569,7 +569,8 @@ export async function weaponSheetOverlay(ctx, refs = []) {
     const parent = src.parent, p0 = src.position.clone(), q0 = src.quaternion.clone(), s0 = src.scale.clone(), vis = src.visible;
     const grp = new THREE.Group();
     grp.add(src); src.position.set(0, 0, 0); src.quaternion.identity(); src.scale.setScalar(1); src.visible = true;
-    if (stand) src.rotation.x = -Math.PI / 2;        // the lance model lies along +Z: stand it up, tip to the sky
+    // stand the lance up, tip to the sky (a GLB directly under `src` is authored along +Y already: melee's held prop)
+    if (stand && Math.abs(src.children[0]?.rotation?.x ?? 0) > 0.1) src.rotation.x = -Math.PI / 2;
     src.traverse((o) => { o.userData.__v = o.visible; if (o.isMesh && o.userData.heroPart === 'held') o.visible = true; });
     const shot = renderIsolated(ctx, grp, { width: w, height: h, cam, background: '#e4dfd2', env: true });
     src.traverse((o) => { o.visible = o.userData.__v; delete o.userData.__v; });

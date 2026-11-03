@@ -514,6 +514,15 @@ export async function panBase(opt = {}) {
   const underYoke = cutTris(partFromPrim(prim('smock'), 'underyoke', { axis: [0, 1, 0], density: 0.62, nScale: 0.3 }), (cx, cy, cz) => cy > 1.345 && Math.abs(cx) < 0.145 && (cz > -0.015 || cy > 1.468));
   conform(underYoke, body, { margin: () => 0.004 });
   recomputeNormals(underYoke);
+  // the collar rides the trunk and eases onto the neck by height, not by whichever body vertex is nearest
+  // (head turn and draw shear a nearest-vertex skin apart at these short edges)
+  {
+    const jN = J('neck_01'), jS = J('spine_03');
+    for (let i = 0; i < underYoke.pos.length / 3; i++) {
+      const w = 0.75 * sstep(1.45, 1.515, underYoke.pos[i * 3 + 1]);
+      underYoke.jnt.splice(i * 4, 4, jS, jN, 0, 0); underYoke.wgt.splice(i * 4, 4, 1 - w, w, 0, 0);
+    }
+  }
   // the sleeve starts inside the smock's armhole: anything further in would only poke through the shoulder
   const sleeves = cutTris(partFromPrim(prim('sleeves'), 'sleeves', { density: 0.85, nScale: 0.5 }), (cx) => Math.abs(cx) > 0.152);
   sleeves.axis = [1, 0, 0];

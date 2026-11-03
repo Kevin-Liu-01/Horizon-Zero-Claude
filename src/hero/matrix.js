@@ -90,7 +90,7 @@ class Grid {
  * The bind snapshot: edges and their T-pose lengths for the current outfit, plus the
  * weight audit, read off the source row at rest.
  */
-export function bindSnapshot(ctx) {
+export function bindSnapshot(ctx, opts = {}) {
   const { outfit, hero } = heroMeshes(ctx);
   // The rest pose off the SOURCE row, whose bones are never animated: `skeleton.pose()` would land in the
   // quantizer's normalised space (the GLB's inverse binds carry its decode), not in metres.
@@ -100,12 +100,16 @@ export function bindSnapshot(ctx) {
   root.updateMatrixWorld(true);
   src.skeleton.update();
   const P = worldPositions(src);
-  // the row's own normalisation out (raw bind metres, for reading a vertex's place), her scale for the lengths
+  // The row's own normalisation out: a bone's world scale (the row is normalised to its own height, the
+  // body to its): `bindL` = metres over the row's pelvis at her raw scale; lengths at her live scale.
   const nV = P.length / 3;
   const bindL = new Float32Array(P.length);
-  const rs = root.scale.x || 1;
-  for (let i = 0; i < nV; i++) { bindL[i * 3] = (P[i * 3] - root.position.x) / rs; bindL[i * 3 + 1] = (P[i * 3 + 1] - root.position.y) / rs; bindL[i * 3 + 2] = (P[i * 3 + 2] - root.position.z) / rs; }
-  const heroScale = ctx.player.model.getWorldScale(v).x;
+  const pelvis = src.skeleton.bones.find((b) => b.name === 'pelvis');
+  const po = pelvis.getWorldPosition(new THREE.Vector3());
+  const rs = pelvis.getWorldScale(new THREE.Vector3()).x || 1;
+  const heroScale = outfit.skeleton.bones.find((b) => b.name === 'pelvis').getWorldScale(new THREE.Vector3()).x;
+  const hipY = opts.pelvisRawY ?? 0.944;     // the UBC pelvis's raw height (so `bindL.y` reads like the recipes' y)
+  for (let i = 0; i < nV; i++) { bindL[i * 3] = (P[i * 3] - po.x) / rs; bindL[i * 3 + 1] = (P[i * 3 + 1] - po.y) / rs + hipY; bindL[i * 3 + 2] = (P[i * 3 + 2] - po.z) / rs; }
   const tri = triList(outfit.geometry);
   // winding says outward only if a part was authored that way: keep the sign that agrees with its stored normal
   const NB = vertexNormals(bindL, tri, nV);
@@ -156,7 +160,11 @@ export function measurePose(ctx, snap, opts = {}) {
     if (s > 1.6) { over++; if (opts.offenders) badEdges.push([s, a, b, L]); }
   }
   row.stretch = +maxS.toFixed(3); row.stretchOver = over;
-  if (opts.offenders) row.edgeOffenders = badEdges.sort((x, y) => y[0] - x[0]).filter((_, i) => i % Math.max(1, Math.floor(badEdges.length / 60)) === 0).slice(0, 60).map(([q, a, b, L]) => ({ s: +q.toFixed(2), a: at(a), b: at(b), L: +L.toFixed(4) }));
+  if (opts.offenders) {
+    const SIo = outfit.geometry.getAttribute('skinIndex'), SWo = outfit.geometry.getAttribute('skinWeight'), bn = outfit.skeleton.bones.map((b) => b.name);
+    const sk = (i) => [0, 1, 2, 3].filter((k) => SWo.getComponent(i, k) > 0.02).map((k) => bn[SIo.getComponent(i, k)] + ':' + SWo.getComponent(i, k).toFixed(2)).join(' ');
+    row.edgeOffenders = badEdges.sort((x, y) => y[0] - x[0]).filter((_, i) => i % Math.max(1, Math.floor(badEdges.length / 40)) === 0).slice(0, 40).map(([q, a, b, L]) => ({ s: +q.toFixed(2), a: at(a), b: at(b), L: +L.toFixed(4), ja: sk(a), jb: sk(b) }));
+  }
   // (b) body penetration (all body triangles, hidden ones too)
   const BP = worldPositions(body);
   const bTri = triList(body.geometry);

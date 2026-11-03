@@ -31,7 +31,7 @@ export const PIECE = { lance: 1, bow: 2, quiver: 4, bracer: 8, alidade: 16 };
 export const LANCE_SOCKET = 'stow_lance';
 /** The quiver's hanger joint, a child of `pelvis` at the identity: src/hero/stowkit.js lets it hang from its upper band. */
 export const QUIVER_SOCKET = 'stow_quiver';
-export const QUIVER = { length: 0.60, r: 0.040, arrows: 12, arrowOut: 0.11 };
+export const QUIVER = { length: 0.52, r: 0.040, arrows: 12, arrowOut: 0.11 };
 
 function addSocket(doc, name, parentName) {
   const skin = doc.getRoot().listSkins()[0];
@@ -53,7 +53,7 @@ function quiverGeo(cell) {
   // the tube: real swelling at each node, the cut mouth slightly bevelled
   const prof = [];
   for (let n = 0; n < 4; n++) {
-    const y0 = n * 0.15;
+    const y0 = n * 0.13;
     prof.push([Q.r, y0 + 0.006], [Q.r + 0.0045, y0 + 0.012], [Q.r + 0.0055, y0 + 0.018], [Q.r + 0.001, y0 + 0.026], [Q.r - 0.0004, y0 + 0.08]);
   }
   prof.push([Q.r, Q.length - 0.004], [Q.r - 0.003, Q.length]);
@@ -72,7 +72,7 @@ function quiverGeo(cell) {
   for (let i = 1; i < cap.pos.length; i += 3) cap.pos[i] += Q.length - 0.024;
   merge(g, cap);
   // two leather bands and their hanger loop
-  for (const y of [0.17, 0.47]) {
+  for (const y of [0.15, 0.41]) {
     merge(g, lathe([[Q.r + 0.0012, y - 0.016], [Q.r + 0.0042, y - 0.013], [Q.r + 0.0042, y + 0.013], [Q.r + 0.0012, y + 0.016]], { sides: 12, rect: cell('leatherDark'), uAlong: true, vRange: [0.1, 0.9] }));
   }
   // arrows: reed shafts with gull fletching, nocks above the mouth, the front half
@@ -298,9 +298,11 @@ export async function build({ out = ROOT } = {}) {
   }
   // ---- bow: the opposite diagonal beneath the lance, belly to her back, strung
   {
-    const ang = 28 * Math.PI / 180;
+    // low and flatter than the lance: only the limb's thin upper end reaches head height, so the
+    // chase camera (A-stow-clearance) and the wrap tail (A-tail-legible) have the head clear of the stave
+    const ang = 36 * Math.PI / 180;
     const d = [Math.sin(ang), Math.cos(ang), 0];
-    const ctr = [-0.03, 1.40, 0];
+    const ctr = [-0.02, 1.24, 0];
     const half = 1.45 / 2;
     let z = 0;
     for (let t = -0.85; t <= 0.85; t += 0.1) z = Math.min(z, backZ(ctr[0] + d[0] * half * t, ctr[1] + d[1] * half * t));
@@ -308,20 +310,20 @@ export async function build({ out = ROOT } = {}) {
     const [X, Y, Z] = basisY(d, [0, 0, 1]);
     const g = merge(bowGeo(cell, { lod: 1 }), stringGeo(cell, { lod: 1, live: false }));
     pieces.push({ g: place(g, X, Y, Z, c), joint: 'spine_02', bit: PIECE.bow });
-    stowInfo.bow = { centre: c, degFromVertical: 28, joint: 'spine_02' };
+    stowInfo.bow = { centre: c, degFromVertical: 36, joint: 'spine_02' };
   }
   // ---- quiver: right hip, tilted 20° forward, out past the skirt
   {
     const ang = 20 * Math.PI / 180;
     const d = [0, Math.cos(ang), Math.sin(ang)];
-    const ctr = [-0.276, 0.885, -0.060];
+    const ctr = [-0.286, 0.915, -0.060];
     const foot = v3.sub(ctr, v3.mul(d, QUIVER.length / 2));
     const [X, Y, Z] = basisY(d, [0, 0, 1]);
     pieces.push({ g: place(quiverGeo(cell), X, Y, Z, foot), joint: QUIVER_SOCKET, bit: PIECE.quiver });
     const mouth = v3.add(foot, v3.mul(d, QUIVER.length + QUIVER.arrowOut * 0.6));
     // it hangs from the upper band (0.47 up the tube): the mouth barely moves, so the nock reach holds
-    const hang = v3.add(foot, v3.mul(d, 0.47));
-    stowInfo.quiver = { foot, mouth, nocks: mouth, hang, joint: QUIVER_SOCKET, parent: 'pelvis' };
+    const hang = v3.add(foot, v3.mul(d, 0.41));
+    stowInfo.quiver = { foot, mouth, nocks: mouth, hang, hangK: +(0.41 / (QUIVER.length + QUIVER.arrowOut)).toFixed(4), joint: QUIVER_SOCKET, parent: 'pelvis' };
   }
   // ---- bracer: left forearm, dorsal
   {
