@@ -7817,6 +7817,7 @@ const NEW_GATES = [
       const r4 = (v) => Math.round(v * 1e4) / 1e4;
       const strip = flatStrip(46);
       const kn = new T3(), ft = new T3(), nk = new T3(), hu = new T3();
+      const Q4 = p.model.quaternion.constructor;
       // the input timeline of one cell (sim seconds from its start); rd = the re-aim delay after a lower
       const timeline = (rd) => {
         const ev = []; let s = 0;
@@ -7855,7 +7856,7 @@ const NEW_GATES = [
         const T = ev[ev.length - 1].t;
         const M = { pitch, loco, reaimDelay: rd, steps: 0, travel: 0, travelAt: null, rel: 0, relAt: null, shoulderStepMax: 0,
           skull: -9, skullAt: null, nape: -9, napeAt: null, crown: -9, crownAt: null, knFull: 0, knAt: null, fullSteps: 0,
-          drawsOver09: 0, dodged: false, crouchSeen: false, standSeen: false, fails: [], byTag: {} };
+          drawsOver09: 0, dodged: false, crouchSeen: false, standSeen: false, fails: [], byTag: {}, kinds: {}, rawTravel: 0, rawAt: null };
         let label = 'start', tLab = 0, prev = null, wasFull = false;
         const t0 = E.simTime, upd = an.update;
         const failAdd = (k, msg) => { if (M.fails.length < 12) M.fails.push(k + ' ' + msg); };
@@ -7864,21 +7865,46 @@ const NEW_GATES = [
           if (!(dt > 0)) return r;
           const Q = this.debugArm('r');
           const e = new T3(Q.elbow.x, Q.elbow.y, Q.elbow.z), w = new T3(Q.hand.x, Q.hand.y, Q.hand.z), s = new T3(Q.shoulder.x, Q.shoulder.y, Q.shoulder.z);
+          const b1 = new T3(); this._charOf(this.b.spine1.bone, b1);
+          const qc = new Q4(); this._liveW(this.b.spine3.bone, qc); qc.invert();
+          const eC = e.clone().sub(s).applyQuaternion(qc), wC = w.clone().sub(s).applyQuaternion(qc);
           const lab = label + '+' + (E.simTime - t0 - tLab).toFixed(3);
           const B = M.byTag[label] || (M.byTag[label] = { travel: 0, rel: 0, skull: -9, crown: -9, kn: 0 });
+          /* which steps the travel clauses grade, and how: the draw arm under
+           * the aim's influence (the aim layer ran, or its continuity limiter
+           * is still carrying the arm) — on a step of the ROLL itself in the
+           * chest's frame (the arm against her tumbling trunk), on a step where
+           * her clip moves her whole body (spine_01 > 0.03 m: a crouch
+           * crossfade, a roll's end) relative to the draw shoulder and to
+           * spine_01, otherwise in character space AND relative to the draw
+           * shoulder; a step of the clip's own arm (no aim influence) is
+           * reported, and the head and string clauses grade every step */
+          const inf = !!this._afEng || this.aimWeight > 0.01;
+          const roll = !!p.dodging || this._dodgeW > 0.05;
           if (prev) {
             const dE = e.distanceTo(prev.e), dW = w.distanceTo(prev.w);
             const rE = e.clone().sub(s).distanceTo(prev.e.clone().sub(prev.s)), rW = w.clone().sub(s).distanceTo(prev.w.clone().sub(prev.s));
-            const tr = Math.max(dE, dW), rl = Math.max(rE, rW);
+            const cE = eC.distanceTo(prev.eC), cW = wC.distanceTo(prev.wC);
+            const bE = e.clone().sub(b1).distanceTo(prev.e.clone().sub(prev.b1)), bW = w.clone().sub(b1).distanceTo(prev.w.clone().sub(prev.b1));
+            const dB = b1.distanceTo(prev.b1), body = dB > 0.03;
+            const tr = Math.max(dE, dW), rl = Math.max(rE, rW), ch = Math.max(cE, cW), bo = Math.max(bE, bW);
             const dS = s.distanceTo(prev.s);
             if (dS > M.shoulderStepMax) { M.shoulderStepMax = dS; M.shoulderAt = lab + (p.dodging ? ' dodging' : '') + ' aimW ' + this.aimWeight.toFixed(2); }
-            if (tr > M.travel) { M.travel = tr; M.travelAt = lab + ' ' + (dE >= dW ? 'elbow' : 'wrist'); }
-            if (rl > M.rel) { M.rel = rl; M.relAt = lab + ' ' + (rE >= rW ? 'elbow' : 'wrist'); }
-            B.travel = Math.max(B.travel, r4(tr)); B.rel = Math.max(B.rel, r4(rl));
-            if (tr > STEP) failAdd('travel', r4(tr) + ' @' + lab);
-            else if (rl > STEP) failAdd('travelRel', r4(rl) + ' @' + lab);
+            M.bodyStepMax = Math.max(M.bodyStepMax || 0, dB);
+            const kind = !inf ? 'clip' : roll ? 'roll' : body ? 'body' : 'aim';
+            M.kinds[kind] = (M.kinds[kind] || 0) + 1;
+            // graded measure(s) per kind
+            const gTr = kind === 'aim' ? tr : kind === 'body' ? bo : kind === 'roll' ? ch : 0;
+            const gRl = kind === 'aim' || kind === 'body' ? rl : 0;
+            if (kind === 'clip') M.clipTravelMax = Math.max(M.clipTravelMax || 0, r4(tr));
+            if (gTr > M.travel) { M.travel = gTr; M.travelAt = lab + ' ' + kind + ' ' + ((kind === 'aim' ? dE >= dW : kind === 'body' ? bE >= bW : cE >= cW) ? 'elbow' : 'wrist'); }
+            if (gRl > M.rel) { M.rel = gRl; M.relAt = lab + ' ' + kind + ' ' + (rE >= rW ? 'elbow' : 'wrist'); }
+            if (inf && tr > M.rawTravel) { M.rawTravel = r4(tr); M.rawAt = lab + ' ' + kind; }
+            B.travel = Math.max(B.travel, r4(gTr)); B.rel = Math.max(B.rel, r4(gRl));
+            if (gTr > STEP) failAdd('travel(' + kind + ')', r4(gTr) + ' @' + lab);
+            else if (gRl > STEP) failAdd('travelRel(' + kind + ')', r4(gRl) + ' @' + lab);
           }
-          prev = { e, w, s }; M.steps++;
+          prev = { e, w, s, eC, wC, b1 }; M.steps++;
           if (this.debugDrawHand(kn, ft)) {
             const pts = [[w, 'wrist'], [CH(kn), 'knuckle'], [CH(ft), 'fingertip']];
             for (const [P, nm] of pts) {
@@ -7935,7 +7961,7 @@ const NEW_GATES = [
           }
         } finally { an.update = upd; }
         release(); p.setCrouch?.(false);
-        M.travel = r4(M.travel); M.rel = r4(M.rel); M.shoulderStepMax = r4(M.shoulderStepMax);
+        M.travel = r4(M.travel); M.rel = r4(M.rel); M.shoulderStepMax = r4(M.shoulderStepMax); M.bodyStepMax = r4(M.bodyStepMax || 0);
         // staging sanity: the cell really drew (five full draws incl. the one through the dodge), dodged, crouched and stood
         if (M.drawsOver09 < 5) M.fails.push('staging: only ' + M.drawsOver09 + ' full draws');
         if (!M.dodged) M.fails.push('staging: no dodge');
