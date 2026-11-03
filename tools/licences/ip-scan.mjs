@@ -306,6 +306,27 @@ export async function selfTest(dir, { planFile = path.join(ROOT, 'docs/ROUND5-PL
     out.expiry = { ok: byEnv && byReports && checkByReports && bySpecs, byEnv, byReports, checkByReports, bySpecs };
     writeSpecs('/models/aloy.glb');
 
+    // waveSources (W0b fix round 1): the §2-named report file counts (hero-body's row names
+    // docs/ROUND5-HERO.md, its default is ROUND5-HERO-BODY.md: both reach W0b), and a lane
+    // branch r5/<wave>-<lane> names the wave exactly; a W0a-deadline exception is EXPIRED at W0b
+    const { currentWave: cw, parseBranchWave } = await import('./lib.mjs');
+    const atW0bBy = (name) => { writeFileSync(path.join(dir, name), 'report\n'); const w = cw(dir, {}); rm(path.join(dir, name)); return w.wave === 'W0b'; };
+    const hero2Named = atW0bBy('docs/ROUND5-HERO.md'), heroDefault = atW0bBy('docs/ROUND5-HERO-BODY.md');
+    const branch = parseBranchWave('r5/w0b-pipeline') === 'W0b' && parseBranchWave('r5/w0a-gates-perf') === 'W0a' && parseBranchWave('main') === null;
+    const anims = 'public/anims-hybrid/aloy-ual.json';
+    const animsRow = { id: 'lab-bake', paths: [anims], title: 'Round-4 lab bake (aloy rig)', author: 'x', source_url: 'x', licence: 'CC0-1.0',
+      legacy: 'r4', ip: true, delete_at: 'W0a', delete_owner: 'gates-perf' };
+    mkdirSync(path.dirname(path.join(dir, anims)), { recursive: true });
+    writeFileSync(path.join(dir, anims), '{}');
+    writeRows([heroRow, animsRow]);
+    r = await scan(dir, { env: {} });
+    const validAtW0a = r.pass === true;
+    r = await scan(dir, { env: { R5_WAVE: 'W0b' } });
+    const expiredAtW0b = r.pass === false && /EXPIRED.*gates-perf deletes it/.test(r.ipHits.find((h) => h.file === anims)?.exception || '');
+    rm(path.join(dir, 'public/anims-hybrid'), { recursive: true, force: true });
+    writeRows([heroRow]);
+    out.waveSources = { ok: hero2Named && heroDefault && branch && validAtW0a && expiredAtW0b, hero2Named, heroDefault, branch, validAtW0a, expiredAtW0b };
+
     // pendingOtherLane (fix round 3): an R30 machine GLB another lane deletes this wave with its
     // reader class, shipped WITHOUT a row. Honoured in-wave only; an IP hit when (a) the wave
     // reaches its deadline, (b) its reader class is gone (orphaned), (c) a row appears for it

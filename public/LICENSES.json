@@ -39,9 +39,9 @@
       "paths": [
         "public/licences/*"
       ],
-      "title": "Licence texts of shipped third-party code",
+      "title": "Licence texts of shipped third-party code and of the staged CC0 packs",
       "author": "the respective authors (see each file)",
-      "source_url": "node_modules/{three,three-mesh-bvh,meshoptimizer}/LICENSE*",
+      "source_url": "node_modules/{three,three-mesh-bvh,meshoptimizer}/LICENSE*; models-staging/r5-src/{ubc,mco,ual2}/License*.txt",
       "licence": "project-original",
       "licence_text": null,
       "archive_sha256": null,
@@ -219,6 +219,23 @@
       "retrieved": null,
       "modified": null,
       "attribution": null
+    },
+    {
+      "id": "landmark-sounding-ring-poc",
+      "paths": [
+        "public/models/r5-poc/sounding-ring.glb"
+      ],
+      "title": "Sounding Ring (biome-vista landmark for ?poc=biome; goes with the ?poc=biome hook at the W1 exit)",
+      "author": "CALIMA project",
+      "source_url": "tools/build/landmarks/gen-sounding-ring.mjs",
+      "licence": "project-original",
+      "licence_text": null,
+      "archive_sha256": null,
+      "retrieved": null,
+      "modified": null,
+      "attribution": null,
+      "delete_at": "W1 exit",
+      "delete_owner": "world-ground"
     },
     {
       "id": "legacy-anims-duplicates",
@@ -504,6 +521,23 @@
       "ip_note": "The uploader's CC-BY licence cannot cover a Sony/Guerrilla character in an Epic rig: IP whatever the licence says (docs/ROUND5-INVENTORY.md section 0.2). Recorded here as provenance of a file that must go; never credited (plan section 10.2)."
     },
     {
+      "id": "mco-fantasy-standard",
+      "paths": [
+        "models-staging/r5-src/mco/**"
+      ],
+      "title": "Modular Character Outfits - Fantasy [Standard]",
+      "author": "Quaternius",
+      "source_url": "https://quaternius.itch.io/modular-character-outfits-fantasy",
+      "licence": "CC0-1.0",
+      "licence_text": "public/licences/quaternius-mco-fantasy-License_Standard.txt",
+      "archive_sha256": "c3468b18871cc8c8f05ab14df7712baf22cb9f389cbd870babf130e595187f70",
+      "archive_bytes": 294347394,
+      "archive_name": "Modular Character Outfits - Fantasy[Standard].zip",
+      "retrieved": "2026-10-22",
+      "modified": "source archive: staged subset (Modular Parts) in models-staging/r5-src/mco; shipped GLBs built from it carry derived_from: [\"mco-fantasy-standard\"]",
+      "attribution": null
+    },
+    {
       "id": "pipeline-probe",
       "paths": [
         "public/models/pipeline/probe.glb"
@@ -566,11 +600,46 @@
       "source_url": "https://quaternius.itch.io/universal-animation-library",
       "licence": "CC0-1.0",
       "licence_text": "public/anims/LICENSE",
-      "archive_sha256": null,
-      "retrieved": null,
+      "archive_sha256": "45e8f8fa658fb615eb46bbac0dbee3c852c0f37e54ba6fe63590db695915069a",
+      "archive_name": "Universal Animation Library[Standard].zip",
+      "archive_note": "per-file SHA-256 manifest of the 3 staged files (ruling archive-per-file-ual1=accepted): the upstream archive of this version can no longer be fetched",
+      "retrieved": "2026-10-22",
       "modified": null,
-      "attribution": null,
-      "pending": "archive_sha256 + retrieved: recorded by the W0b re-fetch (plan section 10.1, E32)"
+      "attribution": null
+    },
+    {
+      "id": "ual2-standard",
+      "paths": [
+        "models-staging/r5-src/ual2/**"
+      ],
+      "title": "Universal Animation Library 2 [Standard]",
+      "author": "Quaternius",
+      "source_url": "https://quaternius.itch.io/universal-animation-library-2",
+      "licence": "CC0-1.0",
+      "licence_text": "public/licences/quaternius-ual2-License.txt",
+      "archive_sha256": "4008ea208a604773a2b2177d965f0f5d3195498b5bf838c3f5785d68e95f2a68",
+      "archive_bytes": 18735003,
+      "archive_name": "Universal Animation Library 2[Standard].zip",
+      "retrieved": "2026-10-22",
+      "modified": "source archive: staged subset (UAL2_Standard.glb) in models-staging/r5-src/ual2; shipped clip files built from it carry derived_from: [\"ual2-standard\"]",
+      "attribution": null
+    },
+    {
+      "id": "ubc-standard",
+      "paths": [
+        "models-staging/r5-src/ubc/**"
+      ],
+      "title": "Universal Base Characters [Standard]",
+      "author": "Quaternius",
+      "source_url": "https://quaternius.itch.io/universal-base-characters",
+      "licence": "CC0-1.0",
+      "licence_text": "public/licences/quaternius-ubc-License_Standard.txt",
+      "archive_sha256": "fdbf1804c90dfc1ea03e992bff7da2dfd1a79318e13270a660180f9308455f40",
+      "archive_bytes": 128968391,
+      "archive_name": "Universal Base Characters[Standard].zip",
+      "retrieved": "2026-10-22",
+      "modified": "source archive: staged subset (Base Characters/Godot - UE, Base Characters/Textures, Hairstyles/Rigged to Head Bone/glTF) in models-staging/r5-src/ubc; shipped GLBs built from it carry derived_from: [\"ubc-standard\"]",
+      "attribution": null
     }
   ]
 }

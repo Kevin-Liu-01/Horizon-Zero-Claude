@@ -2,17 +2,25 @@
  * Credits generator (pipeline lane; plan §10.2). One source, two surfaces:
  *
  *   node tools/licences/credits.mjs --md     README "Credits" section body
- *   node tools/licences/credits.mjs --json   rows for src/ui/menu.js CREDITS
+ *   node tools/licences/credits.mjs --json   the grouped rows (what src/ui/menu.js CREDITS is built from)
  *
- * Every CC-BY and MIT `attribution` string is emitted VERBATIM (A-licence-
- * manifest checks both surfaces for it); CC0 sources are thanked; OFL fonts
- * are listed with their licence. Rows marked `ip: true` are never credited
- * (they are deleted at their R30 wave, not licensed). Output is sorted and
- * deterministic, so brand can diff it (A-credits, W4).
+ * Brand's `tools/lint/credits-sync.mjs` pastes `creditsMarkdown()` into README
+ * "## Credits" and `creditRows()` into menu.js between its
+ * `// <credits:generated>` markers, so both surfaces carry the strings
+ * verbatim at build time (plan §10.2 item 2). A-licence-manifest grades the
+ * README text and the RENDERED in-game credits modal (page DOM), never the
+ * menu.js source. W0b fix round 1: the `--write` data file
+ * (public/licences/credits.json) is gone — it shipped with no reader.
+ *
+ * Every CC-BY and MIT `attribution` string is emitted VERBATIM; CC0 sources
+ * are thanked; OFL fonts are listed with their licence. Rows marked
+ * `ip: true` are never credited (they are deleted at their R30 wave, not
+ * licensed). Output is sorted and deterministic, so brand can diff it
+ * (A-credits, W4).
  */
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { loadManifest } from './lib.mjs';
+import { loadManifest, ROOT } from './lib.mjs';
 
 const GROUPS = [
   { key: 'cc-by', head: 'Attribution required (CC BY)', test: (r) => /^CC-BY-/.test(r.licence) },
@@ -22,7 +30,9 @@ const GROUPS = [
 ];
 
 export function creditRows(manifest = loadManifest()) {
-  const rows = (manifest?.rows || []).filter((r) => !r.ip);
+  // a row built FROM staged sources (`derived_from`) is thanked through its source rows; it is listed itself only
+  // when its own licence needs an attribution (CC-BY / MIT), so a CC0 source is never thanked twice
+  const rows = (manifest?.rows || []).filter((r) => !r.ip && !(Array.isArray(r.derived_from) && r.derived_from.length && !r.attribution));
   const out = [];
   for (const g of GROUPS) {
     const lines = [];
@@ -48,6 +58,12 @@ export function creditsMarkdown(manifest = loadManifest()) {
   }
   parts.push('Full manifest: `public/LICENSES.json`; licence texts: `public/licences/`.');
   return `${parts.join('\n')}\n`;
+}
+
+/** The rows every credits surface must show verbatim: each CC-BY and MIT attribution (ip rows are never credited). */
+export function requiredAttributions(manifest = loadManifest()) {
+  return (manifest?.rows || []).filter((r) => r.attribution && r.ip !== true)
+    .map((r) => ({ id: r.id, licence: r.licence, attribution: r.attribution }));
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

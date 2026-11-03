@@ -148,35 +148,73 @@ export function deadlineOf(deleteAt) {
 export const waveRank = (w) => WAVES.indexOf(w);
 
 /**
- * The wave the repository is in, from two independent sources (the later wins):
+ * Report files a lane may write: the default `docs/ROUND5-<LANE>.md` (plan §2,
+ * last line) PLUS every `docs/ROUND5-*.md` its §2 row names in its "owns" cell
+ * (hero-body's row says `docs/ROUND5-HERO.md`, engine-gpu's
+ * `docs/ROUND5-ENGINE.md`). W0b fix round 1: matching the default name only
+ * meant a lane that used the §2 name was never seen, so the tree could not
+ * reach W0b by itself.
+ */
+export function laneReportNames(lane, ownsCell = '') {
+  const names = new Set([`docs/ROUND5-${lane.toUpperCase()}.md`]);
+  for (const m of String(ownsCell).matchAll(/docs\/ROUND5-[A-Z0-9-]+\.md/g)) names.add(m[0]);
+  return [...names];
+}
+
+/** The wave a lane branch names: the orchestrator creates `r5/<wave>-<lane>` (e.g. `r5/w0b-pipeline` -> W0b). */
+export function parseBranchWave(branch) {
+  const m = /^r5\/(w(?:0-day1|0a|0b|[1-4]))-[a-z][a-z0-9-]*$/i.exec(String(branch ?? ''));
+  return m ? parseWave(m[1]) : null;
+}
+/** The checked-out branch of `root` and the wave it names (null outside a lane worktree, e.g. on main). */
+export function branchWave(root = ROOT) {
+  let branch = null;
+  try {
+    branch = execFileSync('git', ['rev-parse', '--abbrev-ref', 'HEAD'], { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
+  } catch { return { branch: null, wave: null }; }
+  return { branch, wave: parseBranchWave(branch) };
+}
+
+/**
+ * The wave the repository is in, from three independent sources (the LATEST wins):
  *   1. `R5_WAVE` (the orchestrator sets it on its wave-exit runs, e.g.
  *      R5_WAVE='W0a exit'); malformed values are reported, never guessed;
- *   2. a lower bound read from the tree itself: every lane writes
- *      `docs/ROUND5-<LANE>.md` from its first wave on (plan §2), so the
- *      latest FIRST wave among the lanes whose report exists is a wave the
- *      repo has certainly reached. Nobody has to remember to bump anything:
- *      the first W1 lane report to merge moves this past the W0 exit.
+ *   2. the lane worktree's branch `r5/<wave>-<lane>` (a lane tree IS in the
+ *      wave its branch names; W0b fix round 1: without this a W0b lane tree
+ *      inferred W0a from the reports and graded W0a-deadline exceptions as
+ *      still valid);
+ *   3. a lower bound read from the tree itself: every lane writes its report
+ *      from its first wave on (plan §2; both the default and the §2-named file
+ *      count, `laneReportNames`), so the latest FIRST wave among the lanes
+ *      whose report exists is a wave the repo has certainly reached.
+ * `exact` is false when only the report lower bound spoke (main between merges
+ * without R5_WAVE): exit runs must set R5_WAVE.
  */
 export function currentWave(root = ROOT, env = process.env) {
-  const out = { wave: null, source: null, env: env.R5_WAVE ?? null, envWave: null, inferred: null, reports: [] };
+  const out = { wave: null, source: null, exact: false, env: env.R5_WAVE ?? null, envWave: null, branch: null, branchWave: null, inferred: null, reports: [] };
   if (env.R5_WAVE) out.envWave = parseWave(env.R5_WAVE);
+  const bw = branchWave(root);
+  out.branch = bw.branch; out.branchWave = bw.wave;
   const plan = path.join(root, 'docs/ROUND5-PLAN.md');
   if (existsSync(plan)) {
     const text = readFileSync(plan, 'utf8');
-    const lanes = [...text.matchAll(/^\|\s*\*\*([a-z][a-z0-9-]*)\*\*\s*\|\s*\d{4}\s*\|\s*([^|]+)\|/gm)]
-      .map(([, lane, ws]) => ({ lane, first: parseWave(String(ws).split(/[,–-]\s*(?=\d)/)[0].trim()) }));
+    const lanes = [...text.matchAll(/^\|\s*\*\*([a-z][a-z0-9-]*)\*\*\s*\|\s*\d{4}\s*\|\s*([^|]+)\|([^|]*)\|/gm)]
+      .map(([, lane, ws, owns]) => ({ lane, owns, first: parseWave(String(ws).split(/[,–-]\s*(?=\d)/)[0].trim()) }));
     let best = null;
-    for (const { lane, first } of lanes) {
-      if (!first || !existsSync(path.join(root, `docs/ROUND5-${lane.toUpperCase()}.md`))) continue;
-      out.reports.push(`${lane}:${first}`);
+    for (const { lane, first, owns } of lanes) {
+      if (!first) continue;
+      const found = laneReportNames(lane, owns).find((f) => existsSync(path.join(root, f)));
+      if (!found) continue;
+      out.reports.push(`${lane}:${first}:${path.basename(found)}`);
       if (best === null || waveRank(first) > waveRank(best)) best = first;
     }
     out.inferred = best;
   }
-  const cands = [out.envWave, out.inferred].filter(Boolean);
-  if (cands.length) {
-    out.wave = cands.reduce((a, b) => (waveRank(b) > waveRank(a) ? b : a));
-    out.source = out.wave === out.envWave ? 'R5_WAVE' : 'lane reports (lower bound)';
+  const named = [['R5_WAVE', out.envWave], ['branch', out.branchWave], ['lane reports (lower bound)', out.inferred]].filter(([, w]) => w);
+  if (named.length) {
+    const [src, w] = named.reduce((a, b) => (waveRank(b[1]) > waveRank(a[1]) ? b : a));
+    out.wave = w; out.source = src === 'branch' ? `branch ${out.branch}` : src;
+    out.exact = src !== 'lane reports (lower bound)';
   }
   return out;
 }
@@ -283,7 +321,7 @@ export function scheduledStatus(file, rows, { wave, specs, root = ROOT }) {
   if (disagree.length) return { ...base, valid: false, why: `row delete_at disagrees with the scheduled deadline ${deadline} (${disagree.join('; ')})` };
   if (!wave?.wave) return { ...base, valid: false, why: 'current wave unknown (no R5_WAVE and no lane report): an exception is only graded against a known wave' };
   if (waveRank(wave.wave) >= waveRank(deadline)) {
-    return { ...base, valid: false, why: `EXPIRED: deadline ${deadline}, repository at ${wave.wave} (${wave.source})` };
+    return { ...base, valid: false, why: `EXPIRED: deadline ${deadline}, repository at ${wave.wave} (${wave.source}); ${entry.owner} deletes it (plan §6)` };
   }
   if (entry.liveRow) {
     const url = specs?.[entry.liveRow]?.url ?? null;
