@@ -343,26 +343,28 @@ export async function build({ out = ROOT } = {}) {
     return (a, b, c) => (headW[a] > 0.5 || headW[b] > 0.5 || headW[c] > 0.5) && !(ear[a] || ear[b] || ear[c]);
   })();
   const headSoup = new Float32Array(triSoup(bodyPrim, headKeep));
+  // the true skin from inside the head, ears included: where a hem goes under
+  const skinCenter = [0, 1.672, -0.012];
+  const skinGridAll = new TriGrid(new Float32Array(triSoup(bodyPrim, (a, b, c) => headW[a] > 0.5 || headW[b] > 0.5 || headW[c] > 0.5)), 0.016);
+  const skinFrom = (dx, dy, dz) => { const t = skinGridAll.cast(skinCenter[0], skinCenter[1], skinCenter[2], dx, dy, dz, 0.2, 0.01); return t >= 0 ? t : null; };
   const wrapped = woundHeadwrap({
-    headSoup, joint: head, center: [0, 1.672, -0.012],
+    headSoup, skin: skinFrom, joint: head, center: skinCenter,
     // the hair and padding the cloth rides on: thin over the brow, fuller over the crown and the back
-    // and it is pulled in hard at the temple, where the form bridges the cut-out ear and would otherwise stand off the skull
-    lift: (dx, dy, dz) => 0.0034 + 0.0052 * smooth(0.0, 0.75, dy) + 0.0032 * smooth(0.1, -0.85, dz) - 0.0042 * smooth(0.7, 0.95, Math.abs(dx)) * (1 - smooth(0.02, 0.3, dy)),
-    lowTuck: (dx, dy, dz) => 0.0085 * smooth(0.68, 0.94, Math.abs(dx)) * (1 - smooth(0.05, 0.36, dy)) * (1 - smooth(-0.08, 0.24, dz)),
-    // the base turn: low edge at +13 deg over the brow, +9 deg over the ears, -27 deg on the nape
-    base: { tiltDeg: 20, warpDeg: -9.5, lowDeg: -0.2, w: 0.232 },
-    // two turns crossing over the forehead
+    lift: (dx, dy, dz) => 0.0028 + 0.0052 * smooth(0.0, 0.75, dy) + 0.0032 * smooth(0.1, -0.85, dz),
+    // the base turn: low edge at +7 deg over the brow, +7 deg over the ears, -29 deg on the nape
+    base: { tiltDeg: 18, warpDeg: -9.5, lowDeg: -2.2, w: 0.25, lift: 0.0012 },
+    // two turns crossing over the forehead, each lying on what is under it
     turns: [
-      { phiDeg: 82, tauDeg: 14.5, oDeg: 30, w: 0.2, along: 34, lift: 0.0082, hemDrop: 0.0046, pillow: 0.0026, creaseAmp: 0.0012, seed: 8, flip: true },
-      { phiDeg: -74, tauDeg: 17, oDeg: 37.5, w: 0.215, along: 30, lift: 0.0114, hemDrop: 0.0068, pillow: 0.0028, creaseAmp: 0.0012, seed: 15 },
+      { phiDeg: 82, tauDeg: 14.5, oDeg: 34, w: 0.2, along: 34, lift: 0.0009, pillow: 0.0026, creaseAmp: 0.0012, seed: 8, flip: true },
+      { phiDeg: -74, tauDeg: 17, oDeg: 39, w: 0.215, along: 30, lift: 0.0009, pillow: 0.0028, creaseAmp: 0.0012, seed: 15 },
     ],
     // the topknot; its top is the bbox top that assets.specs.js's targetHeight is computed from
     bun: { c: [0, 1.7605, -0.100], axis: [0, 0.70, -0.71], r: 0.0605, topY: 1.82756 },
     knot: CHAINS.wrapSash.points[0],
     // the tail: same width, side, cup and twist as hero-body's strip (A-tail-legible grades it)
-    tail: { points: CHAINS.wrapSash.points, joints: chainIdx.wrapSash.slice(0, -1), width: (u) => 0.100 * (1 - 0.2 * u), side: [0.55, 0.65, 0.5], curl: 0.12, twist: Math.PI / 2, gather: 0.42, gatherTo: 0.44, roll: 0.55, fold: 0.0105, along: 18, across: 5 },
+    tail: { points: CHAINS.wrapSash.points, joints: chainIdx.wrapSash.slice(0, -1), width: (u) => 0.100 * (1 - 0.2 * u), side: [0.55, 0.65, 0.5], curl: 0.12, twist: Math.PI / 2, gather: 0.25, gatherTo: 0.44, roll: 0.6, fold: 0.0085, along: 18, across: 5, rootBack: 0.014 },
     // the other end of the topknot's cloth rides the knot-tail chain (A33-hair-bounce reads the chain): no coil tuft
-    tail2: { points: CHAINS.hairKnotTail.points, joints: chainIdx.hairKnotTail.slice(0, -1), width: (u) => 0.040 * (1 - 0.25 * u), side: [1, 0, 0.2], twist: 0.9, curl: 0.14, gather: 0.5 },
+    tail2: { points: CHAINS.hairKnotTail.points, joints: chainIdx.hairKnotTail.slice(0, -1), width: (u) => 0.040 * (1 - 0.25 * u), side: [1, 0, 0.2], twist: 0.9, curl: 0.14, gather: 0.5, rootBack: 0.012 },
   });
 
   // ---- the skull under the wrap and the backs of the eyes are never seen: they pay for the cloth

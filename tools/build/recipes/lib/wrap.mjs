@@ -7,7 +7,9 @@
  * API (docs/ROUND5-CHARACTER-ART.md §3)
  *   headForm(soup, { center, lift })     radial map of a head: form.R(dx,dy,dz)
  *   ellipsoidForm(center, r, axis, egg)  the same API for a bun or a knot
- *   ribbon(form, opts)                   one turn of cloth (a small circle on the form)
+ *   clothStack(form, { skin })           what is already wound on a form, as a radial height field
+ *   ribbon(form, opts)                   one turn of cloth (a small circle on the form); given a stack it
+ *                                        lies on the layers under it and its hems go under them
  *   crownCap(form, opts)                 the gathered cloth under the turns
  *   cordRing(center, axis, R, r, opts)   a binding cord
  *   clothTail(points, joints, opts)      the free end on a dyn_ chain: both faces, gathered
@@ -92,6 +94,73 @@ export function ellipsoidForm(center, { r, rAxis, axis = [0, 1, 0], egg = 0, bum
   };
 }
 
+/**
+ * What is already wound on a form, as a radial height field over directions from its centre: `top`
+ * is the outer surface (the form with its padding, then each layer added), `cloth` the cloth alone
+ * over the bare `skin(d)`. A ribbon given a stack rides on `top` and sends both hems to just under
+ * `cloth`: no hem stands in the air (models render FrontSide, so a lifted hem is a slit straight
+ * through the head), and where two turns cross, the line they meet on is the upper one's hem, not a
+ * zigzag between two low-poly surfaces.
+ *   skin(dx, dy, dz)  the true surface under the cloth (radius from form.center), or null: form.R
+ */
+export function clothStack(form, { azN = 360, elN = 180, skin = null } = {}) {
+  const top = new Float32Array(azN * elN), cloth = new Float32Array(azN * elN), bare = new Float32Array(azN * elN);
+  const dirs = new Float32Array(azN * elN * 3);
+  for (let j = 0; j < elN; j++) for (let i = 0; i < azN; i++) {
+    const az = (i / azN) * TAU - Math.PI, el = ((j + 0.5) / elN) * Math.PI - Math.PI / 2;
+    const dx = Math.sin(az) * Math.cos(el), dy = Math.sin(el), dz = Math.cos(az) * Math.cos(el);
+    const o = j * azN + i;
+    dirs[o * 3] = dx; dirs[o * 3 + 1] = dy; dirs[o * 3 + 2] = dz;
+    const f = form.R(dx, dy, dz);
+    const b = skin ? skin(dx, dy, dz) : f;
+    bare[o] = b; cloth[o] = b; top[o] = Math.max(f, b);
+  }
+  const read = (A, dx, dy, dz) => {
+    const az = Math.atan2(dx, dz), el = Math.asin(Math.max(-1, Math.min(1, dy)));
+    const fi = ((az + Math.PI) / TAU) * azN, fj = ((el + Math.PI / 2) / Math.PI) * elN - 0.5;
+    const i0 = Math.floor(fi), j0 = Math.max(0, Math.min(elN - 1, Math.floor(fj)));
+    const i1 = (i0 + 1) % azN, j1 = Math.min(elN - 1, j0 + 1);
+    const fx = fi - i0, fy = Math.max(0, Math.min(1, fj - j0));
+    const ii = ((i0 % azN) + azN) % azN;
+    return (A[j0 * azN + ii] * (1 - fx) + A[j0 * azN + i1] * fx) * (1 - fy) + (A[j1 * azN + ii] * (1 - fx) + A[j1 * azN + i1] * fx) * fy;
+  };
+  const topAt = (dx, dy, dz) => read(top, dx, dy, dz);
+  const clothAt = (dx, dy, dz) => read(cloth, dx, dy, dz);
+  const skinAt = (dx, dy, dz) => read(bare, dx, dy, dz);
+  /** The surface a cloth lying across steps rides on: the highest of the point and a ring round it. */
+  const bridged = (dx, dy, dz, spread) => {
+    let m = topAt(dx, dy, dz);
+    if (spread <= 0) return m;
+    const ux = Math.abs(dy) > 0.9 ? 1 : 0, uy = Math.abs(dy) > 0.9 ? 0 : 1;
+    let e1x = uy * dz, e1y = -ux * dz, e1z = ux * dy - uy * dx;
+    const l = Math.hypot(e1x, e1y, e1z) || 1; e1x /= l; e1y /= l; e1z /= l;
+    const e2x = dy * e1z - dz * e1y, e2y = dz * e1x - dx * e1z, e2z = dx * e1y - dy * e1x;
+    for (let k = 0; k < 6; k++) {
+      const a = (k / 6) * TAU, c = Math.cos(a) * spread, s = Math.sin(a) * spread;
+      const x = dx + e1x * c + e2x * s, y = dy + e1y * c + e2y * s, z = dz + e1z * c + e2z * s, q = Math.hypot(x, y, z) || 1;
+      m = Math.max(m, topAt(x / q, y / q, z / q));
+    }
+    return m;
+  };
+  /** Lay a finished ribbon into the field. */
+  const add = (g) => {
+    // read first, then write: a ribbon's radius reads the field it is being laid into
+    const next = new Float32Array(azN * elN).fill(-1);
+    for (let o = 0; o < azN * elN; o++) {
+      const r = g.radiusAt(dirs[o * 3], dirs[o * 3 + 1], dirs[o * 3 + 2]);
+      if (r !== null) next[o] = r;
+    }
+    for (let o = 0; o < azN * elN; o++) {
+      if (next[o] > top[o]) top[o] = next[o];
+      if (next[o] > cloth[o]) cloth[o] = next[o];
+    }
+    return g;
+  };
+  /** The cloth reaches this direction when it stands proud of the bare skin. */
+  const coveredAt = (dx, dy, dz) => clothAt(dx, dy, dz) > skinAt(dx, dy, dz) + 0.0004;
+  return { form, center: form.center, topAt, clothAt, skinAt, bridged, add, coveredAt };
+}
+
 /* ================================================================= ribbons */
 
 function pushV(g, p, n, u, v, joint, c = null) {
@@ -109,7 +178,7 @@ function pushV(g, p, n, u, v, joint, c = null) {
  * panel's U period so a repeating strip of atlas covers any length.
  *   uv: { rect: [x, y, w, h] px, period px, W atlas px, pxPerM, v: [bottom, top] in 0..1 of rect }
  */
-export function ribbon(form, { n, o0, w, along = 32, s0 = 0, s1 = TAU, rowsT = [-1, -0.93, -0.66, -0.3, 0.1, 0.5, 0.82, 1], warp = null, lift = 0.003, pillow = 0.0022, hemDrop = 0.0035, hemDropUp = null, lowTuck = null, creases = 3, creaseAmp = 0.0011, wander = 0.04, seed = 1, joint = 0, uv, flip = false }) {
+export function ribbon(form, { n, o0, w, along = 32, s0 = 0, s1 = TAU, rowsT = [-1, -0.93, -0.66, -0.3, 0.1, 0.5, 0.82, 1], warp = null, lift = 0.003, pillow = 0.0022, hemDrop = 0.0035, hemDropUp = null, lowTuck = null, creases = 3, creaseAmp = 0.0011, wander = 0.04, seed = 1, joint = 0, uv, flip = false, stack = null, bridge = 0.05, hemSink = 0.0012, hemStart = 0.9, clearSkin = 0.0014 }) {
   const g = { pos: [], nrm: [], uv: [], jnt: [], wgt: [], idx: [] };
   const axis = norm(n);
   const fwd = Math.abs(axis[2]) > 0.95 ? [1, 0, 0] : [0, 0, 1];
@@ -122,23 +191,31 @@ export function ribbon(form, { n, o0, w, along = 32, s0 = 0, s1 = TAU, rowsT = [
   const rows = rowsT.length;
   const P = [];
   const c = form.center;
-  const point = (s, t) => {
-    const wob = wander * Math.sin(s * 2 + seed) + wander * 0.5 * Math.sin(s * 5 + seed * 2.1);
-    const o = o0 + wob + (warp ? warp(s) : 0) + t * w * (1 + 0.06 * Math.sin(s * 3 + seed * 3.3));
-    const co = Math.cos(o), so = Math.sin(o), cs = Math.cos(s), ss = Math.sin(s);
-    const d = [co * (cs * e1[0] + ss * e2[0]) + so * axis[0], co * (cs * e1[1] + ss * e2[1]) + so * axis[1], co * (cs * e1[2] + ss * e2[2]) + so * axis[2]];
+  const wobAt = (s) => wander * Math.sin(s * 2 + seed) + wander * 0.5 * Math.sin(s * 5 + seed * 2.1) + (warp ? warp(s) : 0);
+  const halfAt = (s) => w * (1 + 0.06 * Math.sin(s * 3 + seed * 3.3));
+  const radius = (d, s, t) => {
     let off = lift;
     const at = Math.abs(t);
     off += pillow * (1 - at * at * at * at);                                   // the pillow
     off += 0.00075 * smooth(0.62, 0.86, at) * (1 - smooth(0.88, 0.97, at));   // the rolled hem stands proud
-    off -= (t > 0 && hemDropUp !== null ? hemDropUp : hemDrop) * smooth(0.93, 1.0, at);   // and turns under
+    if (!stack) off -= (t > 0 && hemDropUp !== null ? hemDropUp : hemDrop) * smooth(0.93, 1.0, at);   // and turns under
     for (const f of folds) {
       const x = (t - f.c - f.a * Math.sin(f.m * s + f.ph)) / f.s;
       if (x > -2.2 && x < 2.2) off += f.amp * Math.exp(-x * x) * (0.55 + 0.45 * Math.sin(f.m2 * s + f.ph2));
     }
     off += 0.0009 * (noise3(d[0] * 9 + seed, d[1] * 9, d[2] * 9) - 0.5);
+    if (stack) {
+      const ride = Math.max(stack.bridged(d[0], d[1], d[2], bridge), stack.skinAt(d[0], d[1], d[2]) + clearSkin) + off;
+      return mix(ride, stack.clothAt(d[0], d[1], d[2]) - hemSink, smooth(hemStart, 1, at));
+    }
     if (lowTuck) off -= lowTuck(d[0], d[1], d[2]) * smooth(-0.3, -1, t);       // the lower hem pulled in where the form bridges a gap (a cut-out ear)
-    const r = form.R(d[0], d[1], d[2]) + off;
+    return form.R(d[0], d[1], d[2]) + off;
+  };
+  const point = (s, t) => {
+    const o = o0 + wobAt(s) + t * halfAt(s);
+    const co = Math.cos(o), so = Math.sin(o), cs = Math.cos(s), ss = Math.sin(s);
+    const d = [co * (cs * e1[0] + ss * e2[0]) + so * axis[0], co * (cs * e1[1] + ss * e2[1]) + so * axis[1], co * (cs * e1[2] + ss * e2[2]) + so * axis[2]];
+    const r = radius(d, s, t);
     return [c[0] + d[0] * r, c[1] + d[1] * r, c[2] + d[2] * r];
   };
   for (let j = 0; j <= along; j++) {
@@ -182,20 +259,34 @@ export function ribbon(form, { n, o0, w, along = 32, s0 = 0, s1 = TAU, rowsT = [
   }
   void base;
   g.rows = rows;
+  /** The ribbon's radius in direction d, or null where it does not reach. */
+  g.radiusAt = (dx, dy, dz) => {
+    const so = dx * axis[0] + dy * axis[1] + dz * axis[2];
+    const s = Math.atan2(dx * e2[0] + dy * e2[1] + dz * e2[2], dx * e1[0] + dy * e1[1] + dz * e1[2]);
+    if (!closed && (s < s0 || s > s1)) return null;
+    const t = (Math.asin(Math.max(-1, Math.min(1, so))) - o0 - wobAt(s)) / halfAt(s);
+    if (t < -1 || t > 1) return null;
+    return radius([dx, dy, dz], s, t);
+  };
+  g.center = c;
+  if (stack) stack.add(g);
   return g;
 }
 
 /** The gathered cloth under the turns: a dome on the form from `elMin` to the pole, with creases converging on the crown. */
-export function crownCap(form, { elMin = 0.3, rings = 4, seg = 20, lift = 0.0012, joint = 0, uv, gather = 0.0014, tiltAxis = [0, 1, 0] } = {}) {
+export function crownCap(form, { elMin = 0.3, rings = 4, seg = 20, lift = 0.0012, joint = 0, uv, gather = 0.0014, tiltAxis = [0, 1, 0], pleats = 11, stack = null, uvRadial = false } = {}) {
   const g = { pos: [], nrm: [], uv: [], jnt: [], wgt: [], idx: [] };
   const axis = norm(tiltAxis);
   const fwd = [0, 0, 1];
   const e1 = norm(sub(fwd, mul(axis, dot(fwd, axis)))), e2 = cross(axis, e1);
   const c = form.center;
+  const rOf = (d, a, e) => {
+    const b = stack ? stack.topAt(d[0], d[1], d[2]) : form.R(d[0], d[1], d[2]);
+    return b + lift + gather * Math.sin(a * pleats) * (0.3 + 0.7 * smooth(elMin, Math.PI / 2, e));
+  };
   const P = (a, e) => {
     const d = add(mul(axis, Math.sin(e)), add(mul(e1, Math.cos(e) * Math.cos(a)), mul(e2, Math.cos(e) * Math.sin(a))));
-    const r = form.R(d[0], d[1], d[2]) + lift + gather * Math.sin(a * 11) * (0.3 + 0.7 * smooth(elMin, Math.PI / 2, e));
-    return add(c, mul(d, r));
+    return add(c, mul(d, rOf(d, a, e)));
   };
   const { rect, W } = uv;
   for (let k = 0; k <= seg; k++) {
@@ -206,11 +297,20 @@ export function crownCap(form, { elMin = 0.3, rings = 4, seg = 20, lift = 0.0012
       pushV(g, p, n, (rect[0] + (k / seg) * rect[2]) / W, (rect[1] + (0.16 + 0.68 * i / rings) * rect[3]) / W, joint);
     }
   }
+  g.radiusAt = (dx, dy, dz) => {
+    const e = Math.asin(Math.max(-1, Math.min(1, dx * axis[0] + dy * axis[1] + dz * axis[2])));
+    if (e < elMin) return null;
+    const a = Math.atan2(dx * e2[0] + dy * e2[1] + dz * e2[2], dx * e1[0] + dy * e1[1] + dz * e1[2]);
+    return rOf([dx, dy, dz], a, e);
+  };
+  g.center = c;
+  void uvRadial;
   const col = rings + 1;
   for (let k = 0; k < seg; k++) for (let i = 0; i < rings; i++) {
     const a = k * col + i, b = (k + 1) * col + i;
     g.idx.push(a, b, a + 1, b, b + 1, a + 1);
   }
+  if (stack) stack.add(g);
   return g;
 }
 
@@ -239,13 +339,68 @@ export function cordRing(center, axis, R, r, { seg = 14, sides = 4, joint = 0, u
 }
 
 /**
+ * A closed low-poly shell on a stack, from the height `oMin(s)` above the plane through the centre
+ * normal to `axis` up to the pole: what the eye meets if it finds its way under the cloth, instead of
+ * the sky through a head whose skull was culled. `at(d)` is its radius. Dark, opaque, never lit by much.
+ */
+export function underShell(form, { axis, oMin, seg = 12, rings = 4, at, joint = 0, uv, W = 512 } = {}) {
+  const g = { pos: [], nrm: [], uv: [], jnt: [], wgt: [], idx: [] };
+  const up = norm(axis);
+  const fwd = Math.abs(up[2]) > 0.95 ? [1, 0, 0] : [0, 0, 1];
+  const e1 = norm(sub(fwd, mul(up, dot(fwd, up)))), e2 = cross(up, e1);
+  const c = form.center;
+  const P = (s, f) => {
+    const lo = oMin(s), o = mix(lo, Math.PI / 2, f), co = Math.cos(o), so = Math.sin(o), cs = Math.cos(s), ss = Math.sin(s);
+    const d = [co * (cs * e1[0] + ss * e2[0]) + so * up[0], co * (cs * e1[1] + ss * e2[1]) + so * up[1], co * (cs * e1[2] + ss * e2[2]) + so * up[2]];
+    return { p: add(c, mul(d, at(d[0], d[1], d[2]))), d };
+  };
+  const u = (uv[0] + uv[2] / 2) / W, v = (uv[1] + uv[3] / 2) / W;
+  for (let k = 0; k < seg; k++) for (let i = 0; i < rings; i++) {
+    const q = P((k / seg) * TAU, i / rings);
+    g.pos.push(...q.p); g.nrm.push(...q.d); g.uv.push(u, v); g.jnt.push(joint, 0, 0, 0); g.wgt.push(1, 0, 0, 0);
+  }
+  const top = P(0, 1);
+  g.pos.push(...top.p); g.nrm.push(...top.d); g.uv.push(u, v); g.jnt.push(joint, 0, 0, 0); g.wgt.push(1, 0, 0, 0);
+  const pole = seg * rings;
+  for (let k = 0; k < seg; k++) {
+    const kn = (k + 1) % seg;
+    for (let i = 0; i < rings - 1; i++) {
+      const a = k * rings + i, b = kn * rings + i;
+      g.idx.push(a, b, a + 1, b, b + 1, a + 1);
+    }
+    g.idx.push(k * rings + rings - 1, kn * rings + rings - 1, pole);
+  }
+  return g;
+}
+
+/**
+ * Drop every triangle of a part that lies wholly under what is wound over it: what pays for the
+ * shell, the cheek and the ear. `depth(p)` > 0 is how far under the covering a point is.
+ */
+export function cullCovered(g, depth, margin = 0.0009) {
+  const out = [];
+  const P = (i) => [g.pos[i * 3], g.pos[i * 3 + 1], g.pos[i * 3 + 2]];
+  const lerp3 = (a, b, c, u, v) => [a[0] * u + b[0] * v + c[0] * (1 - u - v), a[1] * u + b[1] * v + c[1] * (1 - u - v), a[2] * u + b[2] * v + c[2] * (1 - u - v)];
+  const samples = [[1, 0], [0, 1], [0, 0], [0.5, 0.5], [0.5, 0], [0, 0.5], [1 / 3, 1 / 3], [0.7, 0.15], [0.15, 0.7], [0.15, 0.15]];
+  let cut = 0;
+  for (let t = 0; t < g.idx.length; t += 3) {
+    const a = P(g.idx[t]), b = P(g.idx[t + 1]), c = P(g.idx[t + 2]);
+    let hidden = true;
+    for (const [u, v] of samples) { if (depth(lerp3(a, b, c, u, v)) < margin) { hidden = false; break; } }
+    if (hidden) cut++; else out.push(g.idx[t], g.idx[t + 1], g.idx[t + 2]);
+  }
+  g.idx = out;
+  return cut;
+}
+
+/**
  * The free end of a wrap on a dyn_ chain. Same width, side vector, cup and twist rules as
  * `stripAlong` (A-tail-legible grades the silhouette), but with a real section: long folds
  * across it, gathered to `gather` of its width at the knot, both faces (violet out, lining
  * in), and the last `fray` of its length mapped to a frayed end cell.
  *   uvFront / uvBack: { rect, period, W, pxPerM, v:[a,b] }, uvEnd: [x, y, w, h] px
  */
-export function clothTail(P, joints, { along = 16, across = 4, width = () => 0.09, side = [1, 0, 0], thick = 0.004, curl = 0.1, twist = 0, gather = 0.62, gatherTo = 0.16, roll = 0, fold = 0.006, uvFront, uvBack, uvEnd = null, fray = 0.08, seed = 7 } = {}) {
+export function clothTail(P, joints, { along = 16, across = 4, width = () => 0.09, side = [1, 0, 0], thick = 0.004, curl = 0.1, twist = 0, gather = 0.62, gatherTo = 0.16, roll = 0, fold = 0.006, uvFront, uvBack, uvEnd = null, fray = 0.08, seed = 7, rootBack = 0 } = {}) {
   const g = { pos: [], nrm: [], uv: [], jnt: [], wgt: [], idx: [] };
   const pl = polyline(P);
   const R = rng(seed * 40503);
@@ -261,17 +416,24 @@ export function clothTail(P, joints, { along = 16, across = 4, width = () => 0.0
       if (twist) { const n0 = norm(cross(sd, t)), a2 = twist * u; sd = norm(add(mul(sd, Math.cos(a2)), mul(n0, Math.sin(a2)))); }
       const nrm = norm(cross(sd, t));
       const rootK = 1 - smooth(gatherTo * 0.55, gatherTo, u);        // 1 at the knot, 0 on the free strip
-      const hw = width(u) * 0.5 * (gather + (1 - gather) * smooth(gatherTo * 0.5, gatherTo, u));
+      const hw = width(u) * 0.5 * (gather + (1 - gather) * smooth(gatherTo * 0.34, gatherTo, u));
+      // the cloth starts inside the knot: nothing shows a cut edge where it leaves
+      const back = rootBack * (1 - smooth(0, 0.07, u));
+      const p0 = sub(p, mul(t, back));
       const weights = chainW(joints, seg, f);
       for (let k = 0; k <= across; k++) {
         const x = (k / across) * 2 - 1;
-        // the root is gathered and rolled into a half tube (`roll`), its pleats running along it; the free strip is flat, with folds
-        const cup = (curl + roll * rootK) * (1 - x * x) * hw;
+        // the root is gathered into a closed roll (`roll`: the two faces bulge apart, so it reads as a rope of cloth from
+        // both sides under FrontSide), its pleats running along it; the free strip is flat, with folds
+        const cup = curl * (1 - x * x) * hw;
+        const lens = sgn * roll * rootK * (1 - x * x) * hw;
         let w = 0;
         for (const q of waves) w += q.a * Math.sin(x * q.f * Math.PI + q.ph + u * q.m) * (0.5 + 0.5 * Math.sin(u * q.m * 2 + q.ph2));
-        const pleat = rootK * hw * 0.2 * Math.sin(x * 7.3 + u * 9 + 1.1);
-        const off = sgn * thick * 0.5 + cup + pleat + w * (0.45 + 0.55 * smooth(0, 0.25, 1 - Math.abs(x)));
-        pts.push(add(add(p, mul(sd, x * hw)), mul(nrm, off)));
+        const pleat = rootK * hw * 0.16 * Math.sin(x * 7.3 + u * 9 + 1.1);
+        // the two faces meet at the selvedges: no slit to see through along the strip's edge
+        const seal = 1 - x * x * x * x;
+        const off = sgn * thick * 0.5 * seal + cup + lens + pleat + w * (1 - rootK * 0.7) * (0.45 + 0.55 * smooth(0, 0.25, 1 - Math.abs(x)));
+        pts.push(add(add(p0, mul(sd, x * hw)), mul(nrm, off)));
         frames.push({ u, x, sd, t, nrm, weights });
       }
     }
