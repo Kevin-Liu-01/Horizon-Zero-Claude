@@ -46,13 +46,26 @@
  *
  * TWO RUNNERS. Under gates-perf's registry (`gates.config.mjs` auto-discovers
  * `tools/gates.r5.*.mjs`), every row here shadows the carried row of the same
- * id (plan §3.3) and `--extra` is redundant. Under the Round-4 runner (main
- * until gates-perf merges) the base `gates.config.mjs` and the round4 lane
+ * id (plan §3.3) and `--extra` is redundant. Under the Round-4 layout (main
+ * until gates-perf merged) the base `gates.config.mjs` and the round4 lane
  * files are merged BEFORE `--extra`, and a duplicate id keeps the FIRST row; so
  * this module shadows in place instead: a base gates.config row with the same
  * id is REPLACED in its own array object (the runner shares those objects), and
  * a round4-file row (already copied by the runner) is run here under
  * `<id>@hero` so `--lane hero-body` still runs this lane's version.
+ * W0b targeted fix 4 (r1 eng judge: deleting the registry's `aloy` alias makes
+ * the Round-4 A26-one-convention throw on `a.aloy.animatorProbe`): that row now
+ * lives only in tools/gates/archive/gates.round4.anim-core.mjs. A Round-4 row
+ * loaded on today's runner (`--extra <archive file>`) arrives after the
+ * registry, so it is dropped by id for this file's A26-one-convention, which
+ * finds the hero section by its shape and names no rig. No `aloy` identifier
+ * came back. Doc §T4 has both runs.
+ *
+ * W0b targeted fix 4 (Nov 3): A-draw-arm-continuity (the state matrix); A-draw-elbow-level
+ * and A16 on both pitch clamps, the 0.75 and clamp strafes and the crouched pitches with
+ * every clause graded, the forearm against the real arrow; A-wrap-clear on every tick, on
+ * segments, per root; the films V-draw-lower-reaim, V-draw-dodge-aim, V-crouched-draw,
+ * V-draw-clamps; V-loose-renock's numbers under the skull.
  *
  * The vendored helpers below (gate-roster, gate-places, budgets) are copies of
  * gates-perf's W0a files, which are not in main yet; drop them for imports once
@@ -7550,7 +7563,7 @@ const NEW_GATES = [
   /* -------------------------------------------------- A-draw-elbow-level */
   {
     id: 'A-draw-elbow-level', kind: 'action', lane: 'hero-body', timeout: 600000,
-    title: 'Full draw at the four pitches and both clamps (-1.15, 1.02), strafing left and right at 0, 0.75 and both clamps, from a jog and a sprint at 0, and CROUCHED at the four pitches and both clamps: draw elbow within [shoulder - 0.03, shoulder + 0.05] m (aim frame), >= 0.05 m behind the hand along the arrow, bow arm >= 0.04 m clear of the chest surface (torso-skinned outfit vertices); R35: the draw HAND never > 0.10 m behind the head plane and always in front of the back of the skull, the draw ELBOW <= 0.20 m behind it; the hand ON the string: middle knuckle <= 0.06 m and middle fingertip <= 0.06 m from the bow nock; the forearm within 20 deg of the REAL arrow (the bow\'s own draw axis; the old nock -> bow-wrist reading printed beside it), jog and sprint rows reported; the wrist within 0.03 m of the level draw\'s height over the Head joint and of its place in the head\'s frame (no-strafe rows); through the LOOSE, on every sim step from the release until 0.3 s after it, the elbow <= 0.20 m; W0b targeted fix 4: on EVERY row and EVERY sim step from the aim through the raise, the draw ramp, the loose and the whole re-nock return (0.85 s after the release): the hand (wrist, middle knuckle, middle fingertip) in front of the back of the skull wherever it is at skull height and within the head\'s width from the neck up (the nape), and never over the crown; the elbow and the wrist move <= 0.06 m per sim step relative to the draw shoulder on every row and in character space on the no-key rows; crouched, the pelvis and the head move <= 0.03 m per 1/60 s from the aim on',
+    title: 'Full draw at the four pitches and both clamps (-1.15, 1.02), strafing left and right at 0, 0.75 and both clamps, from a jog and a sprint at 0, and CROUCHED at the four pitches and both clamps: draw elbow within [shoulder - 0.03, shoulder + 0.05] m (aim frame), >= 0.05 m behind the hand along the arrow, bow arm >= 0.04 m clear of the chest surface (torso-skinned outfit vertices); R35: the draw HAND never > 0.10 m behind the head plane and always in front of the back of the skull, the draw ELBOW <= 0.20 m behind it; the hand ON the string: middle knuckle <= 0.06 m and middle fingertip <= 0.06 m from the bow nock; the forearm within 20 deg of the REAL arrow (the bow\'s own draw axis; the old nock -> bow-wrist reading printed beside it), jog and sprint rows reported; the wrist within 0.03 m of the level draw\'s height over the Head joint and of its place in the head\'s frame (no-strafe rows); through the LOOSE, on every sim step from the release until 0.3 s after it, the elbow <= 0.20 m; W0b targeted fix 4: on EVERY row and EVERY sim step from the aim through the raise, the draw ramp, the loose and the whole re-nock return (0.85 s after the release): the hand (wrist, middle knuckle, middle fingertip) in front of the back of the skull wherever it is at skull height and within the head\'s width from the neck up (the nape), and never over the crown; the elbow and the wrist move <= 0.06 m per sim step relative to the draw shoulder on every row and in character space on the no-key rows; crouched, the pelvis and the head move <= 0.03 m per 1/60 s from the aim on, and the head stays above the line of the shoulders',
     setup: INPUT_ON, settle: 400,
     assert: placed(['openGround'], `(async () => {${HB}${DRAW}
       freeze(); standAt(p, 'openGround'); await wait(300);
@@ -7716,6 +7729,7 @@ const NEW_GATES = [
           forearmToWristBoneAxisDeg: deg(foreDir, arrowDir), realArrowToAimDirDeg: deg(realDir, aimDw),
           elbowOffWristOutOfPlaneM: +elW.clone().sub(wrW).dot(arrowOutW).toFixed(4), elbowOffWristUpM: +elW.clone().sub(wrW).dot(arrowUpW).toFixed(4),
           elbowOffNockOutOfPlaneM: +elW.clone().sub(nkW).dot(arrowOutW).toFixed(4),
+          headOverShouldersM: +(hdW.y - (WP(an.b.upArmL.bone).y + WP(an.b.upArmR.bone).y) / 2).toFixed(4),
           wristOverHeadJointM: +(wrW.y - hdW.y).toFixed(4), wristInHead: wrHead.toArray().map((v) => +v.toFixed(4)),
           elbowAboveShoulderWorld: +(elW.y - WP(an.b.upArmR.bone).y).toFixed(4),
           knuckleToNock: hasHand ? +knW.distanceTo(nkW).toFixed(4) : null,
@@ -7787,7 +7801,9 @@ const NEW_GATES = [
         r.napeMaxBehindSkull < 0 ? null : 'handAtNape@' + r.napeAt, r.crownMaxUnitY <= 1 ? null : 'handOverCrown@' + r.crownAt,
         r.armStepRelMaxM <= ${CONT_STEP} ? null : 'armStepRel@' + r.armStepRelAt,
         r.key !== 'crouch' || r.crouching === true ? null : 'notCrouched',
-        r.key !== 'crouch' || r.bodyStepMax60 <= 0.03 ? null : 'bodyStep@' + r.bodyStepAt].filter(Boolean);
+        r.key !== 'crouch' || r.bodyStepMax60 <= 0.03 ? null : 'bodyStep@' + r.bodyStepAt,
+        // (r3 judges: the crouched body folded with the face near the ground)
+        r.key !== 'crouch' || r.headOverShouldersM >= 0 ? null : 'headUnderShoulders'].filter(Boolean);
       // fix round 5: at each of the no-strafe pitches the forearm within 20 deg of the
       // arrow, and the wrist held where the LEVEL draw holds it on the head: its height
       // over the Head joint within 0.03 m of the level row's, and its position in the
@@ -7801,8 +7817,12 @@ const NEW_GATES = [
         r.wristHeadFrameOffLevelM = +Math.hypot(...r.wristInHead.map((v, i) => v - lvl.wristInHead[i])).toFixed(4);
       }
       const onMove = (r) => !!r.key && r.key.includes('KeyW');
+      // (the height over the Head joint is a world reading of the same rigid form: graded at
+      // the four pitches, as before; past them the bent T tips it by geometry and the head
+      // frame's reading is the cheek: reported)
+      const four = (r) => ${JSON.stringify(GATE_PITCHES)}.includes(r.pitch);
       const okT = (r) => [onMove(r) || r.forearmToArrowDeg <= 20 ? null : 'forearmOffArrow',
-        ...(still(r) ? [r.wristHeadYOffLevelM <= 0.03 ? null : 'wristHeightOffLevel', r.wristHeadFrameOffLevelM <= 0.03 ? null : 'wristOffLevelAnchor'] : []),
+        ...(still(r) ? [!four(r) || r.wristHeadYOffLevelM <= 0.03 ? null : 'wristHeightOffLevel', r.wristHeadFrameOffLevelM <= 0.03 ? null : 'wristOffLevelAnchor'] : []),
         // the arm's per-step travel in character space where the body stands (the no-key and crouched rows)
         !still(r) || (r.flowSteps >= 60 && r.armStepMaxM <= ${CONT_STEP}) ? null : 'armStep@' + r.armStepAt].filter(Boolean);
       const ok0 = ok;
@@ -7821,7 +7841,7 @@ const NEW_GATES = [
       };
       margin.forearmToArrowMaxDeg = +Math.max(...rows.filter((r) => !onMove(r)).map((r) => r.forearmToArrowDeg)).toFixed(2);
       margin.forearmWristBoneAxisMaxDeg = +Math.max(...rows.filter((r) => !onMove(r)).map((r) => r.forearmToWristBoneAxisDeg)).toFixed(2);
-      margin.wristHeadYOffLevelMax = +Math.max(...rows.filter(still).map((r) => r.wristHeadYOffLevelM)).toFixed(4);
+      margin.wristHeadYOffLevelMax = +Math.max(...rows.filter((r) => still(r) && four(r)).map((r) => r.wristHeadYOffLevelM)).toFixed(4);
       margin.wristHeadFrameOffLevelMax = +Math.max(...rows.filter(still).map((r) => r.wristHeadFrameOffLevelM)).toFixed(4);
       margin.armStepMaxPitches = +Math.max(...rows.filter(still).map((r) => r.armStepMaxM)).toFixed(4);
       margin.handBehindSkullMaxAllSteps = +Math.max(...rows.map((r) => r.handMaxBehindSkull)).toFixed(4);
@@ -7852,7 +7872,7 @@ const NEW_GATES = [
    * knuckle <= 0.06 m from the bow's nock whenever the draw is > 0.9. */
   {
     id: 'A-draw-arm-continuity', kind: 'action', lane: 'hero-body', timeout: 1500000,
-    title: 'The draw arm across every aim-weight transition, as a matrix: camPitch {-1.15, -0.55, 0, 0.75, 1.02} x {standing, jog, strafe right, strafe left, crouched} x one timeline per cell (raise; draw; loose; RMB up 0.05 s after the loose; re-aim 0.05-0.2 s after the lower; again with RMB up at +0.12 and +0.25 s; a draw cancelled by RMB at full draw; the raise after the cancel; crouch->stand and stand->crouch at full draw; a loose and a rapid re-fire 0.12 s after it; a dodge with RMB+LMB held at full draw and the draw completing after it; the last loose and lower). Every sim step from the first RMB: draw elbow and wrist travel <= 0.06 m (character space AND relative to the draw shoulder); wrist / middle knuckle / middle fingertip in front of the back of the skull wherever they are at skull height (head-ellipsoid unit y >= -1), and within the head\'s width (|x| < 1) from the neck (y >= -2.4) up; never over the crown (y > 1 within the skull\'s footprint, |x| < 1.3, -1.4 < z < 1.3); middle knuckle <= 0.06 m from the bow nock whenever the draw is > 0.9',
+    title: 'The draw arm across every aim-weight transition, as a matrix: camPitch {-1.15, -0.55, 0, 0.75, 1.02} x {standing, jog, strafe right, strafe left, crouched} x one timeline per cell (raise; draw; loose; RMB up 0.05 s after the loose; re-aim 0.05-0.2 s after the lower; again with RMB up at +0.12 and +0.25 s; a draw cancelled by RMB at full draw; the raise after the cancel; crouch->stand and stand->crouch at full draw; a loose and a rapid re-fire 0.12 s after it; a dodge with RMB+LMB held at full draw and the draw completing after it; the last loose and lower). Every sim step from the first RMB: draw elbow and wrist travel <= 0.06 m (character space AND relative to the draw shoulder; through the roll itself in the chest\'s frame, on a step her clip moves her whole body > 0.03 m relative to the draw shoulder and to spine_01, each reading printed with its kind); wrist / middle knuckle / middle fingertip in front of the back of the skull wherever they are at skull height (head-ellipsoid unit y >= -1), and within the head\'s width (|x| < 1) from the neck (y >= -2.4) up; never over the crown (y > 1 within the skull\'s footprint, |x| < 1.3, -1.4 < z < 1.3); middle knuckle <= 0.06 m from the bow nock whenever the draw is > 0.9 (the pair the frame renders: read after combat\'s update of the same tick)',
     setup: INPUT_ON, settle: 400,
     assert: placed(['openGround'], `(async () => {${HB}${FLAT_STRIP}
       freeze();
@@ -7914,15 +7934,13 @@ const NEW_GATES = [
           const eC = e.clone().sub(s).applyQuaternion(qc), wC = w.clone().sub(s).applyQuaternion(qc);
           const lab = label + '+' + (E.simTime - t0 - tLab).toFixed(3);
           const B = M.byTag[label] || (M.byTag[label] = { travel: 0, rel: 0, skull: -9, crown: -9, kn: 0 });
-          /* which steps the travel clauses grade, and how: the draw arm under
-           * the aim's influence (the aim layer ran, or its continuity limiter
-           * is still carrying the arm) — on a step of the ROLL itself in the
-           * chest's frame (the arm against her tumbling trunk), on a step where
-           * her clip moves her whole body (spine_01 > 0.03 m: a crouch
-           * crossfade, a roll's end) relative to the draw shoulder and to
-           * spine_01, otherwise in character space AND relative to the draw
-           * shoulder; a step of the clip's own arm (no aim influence) is
-           * reported, and the head and string clauses grade every step */
+          /* which steps the travel clauses grade, and how: EVERY step. In
+           * character space AND relative to the draw shoulder, except: on a step of
+           * the ROLL itself in the chest's frame (her whole trunk tumbles 0.1-0.2 rad
+           * a step in character space: the arm against her), and on a step where her
+           * clip moves her whole body (spine_01 > 0.03 m: a roll's end, the step a
+           * moving dodge cancels into the gait) relative to the draw shoulder and to
+           * spine_01. The kind is printed with every reading. */
           const inf = !!this._afEng || this.aimWeight > 0.01;
           const roll = !!p.dodging || this._dodgeW > 0.05;
           if (prev) {
@@ -7935,13 +7953,13 @@ const NEW_GATES = [
             const dS = s.distanceTo(prev.s);
             if (dS > M.shoulderStepMax) { M.shoulderStepMax = dS; M.shoulderAt = lab + (p.dodging ? ' dodging' : '') + ' aimW ' + this.aimWeight.toFixed(2); }
             M.bodyStepMax = Math.max(M.bodyStepMax || 0, dB);
-            const kind = !inf ? 'clip' : roll ? 'roll' : body ? 'body' : 'aim';
+            const kind = roll ? 'roll' : body ? 'body' : !inf ? 'clip' : 'aim';
             M.kinds[kind] = (M.kinds[kind] || 0) + 1;
             // graded measure(s) per kind
-            const gTr = kind === 'aim' ? tr : kind === 'body' ? bo : kind === 'roll' ? ch : 0;
-            const gRl = kind === 'aim' || kind === 'body' ? rl : 0;
+            const gTr = kind === 'aim' || kind === 'clip' ? tr : kind === 'body' ? bo : ch;
+            const gRl = kind === 'roll' ? 0 : rl;
             if (kind === 'clip') M.clipTravelMax = Math.max(M.clipTravelMax || 0, r4(tr));
-            if (gTr > M.travel) { M.travel = gTr; M.travelAt = lab + ' ' + kind + ' ' + ((kind === 'aim' ? dE >= dW : kind === 'body' ? bE >= bW : cE >= cW) ? 'elbow' : 'wrist'); }
+            if (gTr > M.travel) { M.travel = gTr; M.travelAt = lab + ' ' + kind + ' ' + ((kind === 'aim' || kind === 'clip' ? dE >= dW : kind === 'body' ? bE >= bW : cE >= cW) ? 'elbow' : 'wrist'); }
             if (gRl > M.rel) { M.rel = gRl; M.relAt = lab + ' ' + kind + ' ' + (rE >= rW ? 'elbow' : 'wrist'); }
             if (inf && tr > M.rawTravel) { M.rawTravel = r4(tr); M.rawAt = lab + ' ' + kind; }
             B.travel = Math.max(B.travel, r4(gTr)); B.rel = Math.max(B.rel, r4(gRl));
@@ -7970,19 +7988,31 @@ const NEW_GATES = [
                 if (hu.y > 1) failAdd('overCrown', hu.y.toFixed(2) + ' @' + lab + ' ' + us);
               }
             }
-            const ds = cmb.drawStrength;
-            if (ds > 0.9) {
-              cmb.bow.getNockWorld(ds, nk);
-              const d = kn.distanceTo(nk); M.fullSteps++;
-              if (d > M.knFull) { M.knFull = r4(d); M.knAt = lab; }
-              B.kn = Math.max(B.kn, r4(d));
-              if (d > KN) failAdd('knuckleOffString', r4(d) + ' @' + lab + ' drawS ' + ds.toFixed(2));
-            }
-            if (ds > 0.9 && !wasFull) M.drawsOver09++;
-            wasFull = ds > 0.9;
           }
           if (p.dodging) M.dodged = true;
           if (p.crouching) M.crouchSeen = true; else M.standSeen = true;
+          return r;
+        };
+        /* the hand on the string, on the pair the frame renders: the animator runs
+         * before combat, so the string's reading is taken after combat's own update of
+         * the same tick (its aim, its draw): the draw that has just gone to 0 on a
+         * release or a roll has no string to be off, and a draw still ramping stands
+         * the step ahead that the player sees */
+        const cmbU = cmb.update;
+        cmb.update = function (...a) {
+          const r = cmbU.apply(this, a);
+          if (this !== cmb || !(a[0] > 0)) return r;
+          const ds = cmb.drawStrength;
+          if (ds > 0.9 && an.debugDrawHand(kn, ft)) {
+            cmb.bow.getNockWorld(ds, nk);
+            const d = kn.distanceTo(nk), lab = label + '+' + (E.simTime - t0 - tLab).toFixed(3); M.fullSteps++;
+            if (d > M.knFull) { M.knFull = r4(d); M.knAt = lab; }
+            const B = M.byTag[label] || (M.byTag[label] = { travel: 0, rel: 0, skull: -9, crown: -9, kn: 0 });
+            B.kn = Math.max(B.kn, r4(d));
+            if (d > KN) failAdd('knuckleOffString', r4(d) + ' @' + lab + ' drawS ' + ds.toFixed(2));
+          }
+          if (ds > 0.9 && !wasFull) M.drawsOver09++;
+          wasFull = ds > 0.9;
           return r;
         };
         try {
@@ -8003,7 +8033,7 @@ const NEW_GATES = [
             for (const k of hold) keys.add(k);
             await frame();
           }
-        } finally { an.update = upd; }
+        } finally { an.update = upd; cmb.update = cmbU; }
         release(); p.setCrouch?.(false);
         M.travel = r4(M.travel); M.rel = r4(M.rel); M.shoulderStepMax = r4(M.shoulderStepMax); M.bodyStepMax = r4(M.bodyStepMax || 0);
         // staging sanity: the cell really drew (five full draws incl. the one through the dodge), dodged, crouched and stood
@@ -9900,7 +9930,10 @@ const byId = (id) => carried.find((g) => g.id === id);
         rows[rows.length - 1].crouching = !!p.crouching;
         p.setCrouch(false);
       }`;
-  Object.defineProperty(g, 'assert', { value: a.replace(LAST, MORE).replace(hook, loose).replace(ELBOW_OLD, ELBOW_R52).replace(DET_OLD, DET_R52).replace('&& r.headClear >= 0.98', '&& r.headClear >= 0.98 && r.launchOffDeg !== null && r.launchOffDeg <= 0.3 && r.knuckleToNock !== null && r.knuckleToNock <= ' + KNUCKLE_NOCK + ' && r.fingertipToNock !== null && r.fingertipToNock <= ' + FINGERTIP_NOCK), enumerable: true, configurable: true, writable: true });
+  // (a crouched row must really be crouched)
+  const BAD0 = 'const bad = rows.filter(r => !(r.drawS > 0.9';
+  if (!a.includes(BAD0)) throw new Error('A16 bad shape changed');
+  Object.defineProperty(g, 'assert', { value: a.replace(BAD0, 'const bad = rows.filter(r => !(r.crouching !== false && r.drawS > 0.9').replace(LAST, MORE).replace(hook, loose).replace(ELBOW_OLD, ELBOW_R52).replace(DET_OLD, DET_R52).replace('&& r.headClear >= 0.98', '&& r.headClear >= 0.98 && r.launchOffDeg !== null && r.launchOffDeg <= 0.3 && r.knuckleToNock !== null && r.knuckleToNock <= ' + KNUCKLE_NOCK + ' && r.fingertipToNock !== null && r.fingertipToNock <= ' + FINGERTIP_NOCK), enumerable: true, configurable: true, writable: true });
   g.timeout = 300000;
   g.title = 'Full draw at -0.55 / -0.4 / 0 / 0.75 and strafing (W0b targeted fix 4: + 0.75 strafing left and right, both clamps 1.02 / -1.15 standing and strafing, crouched at the four pitches and both clamps): string hand on the nock (wrist <= 0.09 m; middle knuckle and fingertip <= 0.06 m), draw elbow not above the shoulder measured perpendicular to the arrow in the draw plane at every pitch (R52; character height also at camPitch 0), arm clear of the head (>= 0.98), and the loosed arrow leaves within 0.3 deg of the crosshair ray';
 }

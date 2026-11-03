@@ -105,7 +105,7 @@ export const UBC_ORBIT_CHAINS = { cloth: '^dyn_(wrapSash|sashEnd)', hair: '^dyn_
  * capsule axis (r - link + rootMargin) off every such root (the animator's
  * `_clearArmOfRoots`); null turns that guard off.
  */
-export const UBC_HAND_COLLIDER = { from: 'lowerarm_r', to: 'hand_r', tip: 'middle_04_leaf_r', r: 0.09, rootMargin: 0.015 };
+export const UBC_HAND_COLLIDER = { from: 'lowerarm_r', to: 'hand_r', tip: 'middle_04_leaf_r', r: 0.09, rootMargin: 0.007 };
 /** The hand/forearm's own half-thickness: A-wrap-clear's clearance is axis distance minus this. */
 export const UBC_HAND_HALF = 0.035;
 
@@ -160,7 +160,7 @@ export const UBC_TUNE = {
   // (fix round 3: 0.020 -> 0.026, the wrist a little further out of the face:
   // A35's hand-to-Head-joint read 0.1035 at the level aim with the draw no
   // longer sliding back, 3.5 mm over its 0.10 floor)
-  anchorNock: true, handOut: 0.05,
+  anchorNock: true, handOut: 0.04,
   // ...and the wrist bent back this much (radians) at full draw, so the
   // knuckles ride outside the jaw and the hooked fingers curl in to the string
   drawWristExt: 0.35,
@@ -244,7 +244,7 @@ export const UBC_TUNE = {
   // the rest hold / quiver ride the chest / pelvis (`crouchBody`)
   // (`quiverT` s: the nock beat — down over `qUp` of it, back from `qBack`)
   armFlow: { wristV: 2.7, elbowStep: 0.05, elbowBack: 0.16, formWin: 0.6, renock: true, quiverPole: [-0.9, -0.3, 0.15], crouchBody: true,
-    quiverT: 0.5, qUp: 0.34, qBack: 0.5, bowOut: 0.09, bowDown: 0.08, bowFwd: 0.06, bowHand: true, kickIn: 0.45, armStep: 0.05, outside: true, holdBlade: true, rootGive: 0.012,
+    quiverT: 0.5, qUp: 0.34, qBack: 0.5, bowOut: 0.09, bowDown: 0.08, bowFwd: 0.06, bowHand: true, kickIn: 0.45, armStep: 0.05, outside: true, holdBlade: true, rootGive: 0.009,
     // W0b targeted fix 4: the limiters live whenever the aim layer runs and on
     // the arm's final pose until the free pose is reached (`_armContinuity`);
     // the draw arm's IK weight eases at `wdaRate`/s between 1 and the aim

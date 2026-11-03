@@ -199,7 +199,7 @@ const _afQu0 = new THREE.Quaternion(), _afQl0 = new THREE.Quaternion();   // W0b
 const _afJ2 = new THREE.Vector3();  // W0b targeted fix 4: `_armRatePose`'s root test (elbow, wrist, fingertip)
 const _afK2 = new THREE.Vector3();
 const _afL2 = new THREE.Vector3();
-const _afM = new THREE.Vector3();   // ...`_handBehindSkull`'s scratch
+const _afM = new THREE.Vector3();   // ...`_behindSkullPt`'s scratch
 const _afM2 = new THREE.Vector3();
 /** W0b targeted fix 3: an angle wrapped to [-pi, pi]. */
 const afWrap = (a) => (a > Math.PI ? a - 2 * Math.PI : (a < -Math.PI ? a + 2 * Math.PI : a));
@@ -870,6 +870,8 @@ export class PlayerAnimator {
      * target rides between steps (the draw shoulder, blended to the hand's
      * anchor on the head as the draw builds — body motion carries the hand) */
     this._armCapN = 0; this._afEng = false; this._wDA = 0; this._afFull = false; this._tW = 0;
+    this._aimHold = false; this._atW = 0; this._bcS = 0; this._afTail = 0; this._afViol = 0; this._afInHd = false;
+    this._knW0 = 0; this._caT = 0; this._caLift = 0; this._qbF = 1; this._hcHit = 0; this._hcHitLast = 0;
     this._wrRef = new THREE.Vector3(); this._wrRefA = new THREE.Vector3(); this._wrRefOk = false;
     this._clipWr = new THREE.Vector3(); this._clipEl = new THREE.Vector3();   // (`armFlow.lowerByTarget`)
     this._elbC = new THREE.Vector3(); this._wrC = new THREE.Vector3(); this._armCapC = false;   // (the arm in the chest's frame)
@@ -1587,7 +1589,9 @@ export class PlayerAnimator {
     const aimHold = p.aiming || (!dead && !!this.T.armFlow && draw > 0.9);
     this._aimHold = aimHold;
     if (this.T.crouchAim?.toggleRate && aimHold) this._crouchW = crouchPrev + clamp(this._crouchW - crouchPrev, -this.T.crouchAim.toggleRate * dt, this.T.crouchAim.toggleRate * dt);
-    this._aimW = damp(this._aimW, aimHold && !dead ? 1 : 0, 13, dt);
+    // (crouched the aim comes in a little slower: its first steps turn and settle the whole
+    // body, <= 0.03 m per 1/60 s with the crouch-aim pose's own ramp)
+    this._aimW = damp(this._aimW, aimHold && !dead ? 1 : 0, this.T.crouchAim && aimHold ? 13 - 5 * this._crouchW : 13, dt);
     this._deadW = damp(this._deadW, dead ? 1 : 0, dead ? 12 : 10, dt);
     // (W0b targeted fix 4, `armFlow.drawRaw`: a RISING draw is followed exactly —
     // the bow renders combat's draw, and the 16/s lag left the string hand
@@ -1596,8 +1600,12 @@ export class PlayerAnimator {
     // (...and with the step combat is about to add: the animator runs first, so the
     // string it renders stands one step ahead of `draw`, 0.014 m at 0.7 s of draw)
     const dRaw = clamp(draw, 0, 1);
-    if (this.T.armFlow?.drawRaw && dRaw > (this._prevRawDraw ?? 0)) this._drawS = Math.min(1, dRaw + (dRaw - (this._prevRawDraw ?? 0)));
-    else if (this.T.armFlow?.drawRaw && dRaw >= this._drawS) this._drawS = dRaw;
+    // (through the ramp's first part the lag stays: the fist rides a little ahead of the
+    // string past the cord's knot, A32's 0.09 m; by drawS 0.88 it is on it)
+    if (this.T.armFlow?.drawRaw && dRaw > (this._prevRawDraw ?? 0)) {
+      const lag = damp(this._drawS, dRaw, 16, dt), pred = Math.min(1, dRaw + (dRaw - (this._prevRawDraw ?? 0)));
+      this._drawS = Math.max(lag, lag + (pred - lag) * smoothstep(dRaw, 0.6, 0.88));
+    } else if (this.T.armFlow?.drawRaw && dRaw >= this._drawS) this._drawS = dRaw;
     else this._drawS = damp(this._drawS, dRaw, 16, dt);
     this._hit = damp(this._hit, 0, 9, dt);
 
@@ -2158,6 +2166,8 @@ export class PlayerAnimator {
     // the arm as it ends this step is captured for the next
     if (this._afEng) this._armContinuity(aimW > 0.01);
     this._armCapture();
+    if (aimW > 0.01 && this._knW0 > 0.01 && this.T.armFlow) { _knZ.set(0, 0, 0); this._knuckleTurn(this._knW0, this._drawS, _knZ); }
+    if (this._afEng && this.T.armFlow) this._handInFront();
     if (aimW > 0.01) {
       this._rootKeepAudit(this._drawS);
       /* W0b targeted fix 4 (r1 eng judge, the down clamp; A32-draw-ramp `down105`
@@ -3898,7 +3908,8 @@ export class PlayerAnimator {
          * her. Strafing at a near ground hit that step is 0.02-0.05 m in about a
          * metre, 0.03-0.04 m at the nock. */
         if (this.T.armFlow) {
-          if (this._aimPrevOk) { _v7.add(_afG.subVectors(cmb.aimPoint, this._aimPrev)); this._aimDp.copy(_afG); } else this._aimDp.set(0, 0, 0);
+          // (a look near the level moves a far ground hit metres a step: nothing to extrapolate)
+          if (this._aimPrevOk && _afG.subVectors(cmb.aimPoint, this._aimPrev).lengthSq() < 0.25) { _v7.add(_afG); this._aimDp.copy(_afG); } else this._aimDp.set(0, 0, 0);
           _v7.sub(_afG.subVectors(p.position, this._gripP));
           this._aimPrev.copy(cmb.aimPoint); this._aimPrevOk = true;
         }
@@ -3924,7 +3935,9 @@ export class PlayerAnimator {
     // fix round 5: the down aim's rigid turn of the whole upper body (see `tS`
     // above) — the form's arrow onto the ray, at spine_01, before anything is
     // derived from the anchor or the shoulders
-    if (tS > 1e-4) {
+    // (W0b targeted fix 4: and while the turn is still on its way out: a look through the
+    // level, where tS is 0, snapped what was left of it, the arm 0.1 m, the bow 0.9 m)
+    if (tS > 1e-4 || (this.T.armFlow?.tSpeed && this._qTs.w < 1 - 1e-6)) {
       // yaw about the vertical, then pitch about her lateral axis: no roll of
       // the T about the arrow (the shoulder-arc from the form's arrow to the
       // ray would cant it when the ray also turns — a near ground hit pulls
@@ -4581,8 +4594,9 @@ export class PlayerAnimator {
        * from under the cord's knot stalls there: the keep-out (`_clearArmOfRoots`) turns
        * the arm straight back out and the next target pulls it straight back in,
        * until the string has come back past the knot (0.12-0.19 m off at drawS 0.9).
-       * On those steps the target goes round the knot instead: out from it and up. */
-      if (AF.knotRound && this._hcHitLast) {
+       * On those steps (the hand well behind its target: a draw ramp passing the knot on
+       * the string is not one) the target goes round the knot instead: out from it and up. */
+      if (AF.knotRound && this._hcHitLast && _afD.subVectors(_v7, this._wrT).length() > 0.09) {
         this._charOf(b.handR.bone, _afG).sub(this._hcHitP);
         _afG.addScaledVector(this._upT, -_afG.dot(this._upT));
         if (_afG.lengthSq() > 1e-6) {
@@ -4772,66 +4786,9 @@ export class PlayerAnimator {
      * that bar. No allocation (module scratch).
      */
     if (this.T.knuckleNock != null && this._knuckleR && aimW > 0.02) {
-      const kw = aimW * smoothstep(drawS, 0.3, 0.9) * (1 - lk) * (1 - qw);
-      if (kw > 0.01) {
-        this._charOf(b.handR.bone, _knW);
-        this._charOf(this._knuckleR.bone, _knK);
-        const tgt = this.T.knuckleNock;
-        // the bow's OWN string nock as it will render this frame (its group
-        // hangs off the left hand just posed; `getNockWorld` walks the parents)
-        // — `D.nock` is the arm solve's estimate, measured 0.07-0.09 m off it
-        // (the bow node's offset in the palm), so the turn is aimed at the real one
-        let N = D.nock;
-        const bowO = this.ctx.combat?.bow;
-        if (bowO?.getNockWorld && bowO.group?.visible !== false) {
-          /* W0b targeted fix 4: the bow as combat will aim it this step. Its group
-           * still carries last step's hand-relative turn, and the bow hand turns as
-           * the draw builds: 1 deg of it is 1 cm at the nock, and the turn below
-           * saw the knuckle on the nock (0.024 m) with the rendered one 0.082 m
-           * off, at drawS 0.9-1. Combat re-writes the same turn after this. */
-          const node = bowO.group.parent;
-          if (node && this._aimHold && cmb?.aimPoint) {
-            node.updateWorldMatrix(true, false);
-            node.matrixWorld.decompose(_knA, _knQ, _knB);
-            // (the aim point one step on, `_aimPrev` was just set to it: the hand
-            // is the final pose's less what the body has yet to do: the ray's offset)
-            // (...and the node where this step's pelvis offset and ground conform will
-            // leave it, last step's shift: 0.1 m in a strafe, 0.1 rad at a near aim)
-            _knA.add(this._bodyShW).negate().add(cmb.aimPoint).add(this._aimDp);
-            if (_knA.lengthSq() >= 0.25) {
-              _knA.normalize().negate();
-              _knM.lookAt(_knZ, _knA, Y_AXIS);
-              _knQ2.setFromRotationMatrix(_knM);
-              bowO.group.quaternion.copy(_knQ.invert().multiply(_knQ2));
-            }
-          }
-          bowO.getNockWorld(drawS, _knN);
-          this.model.worldToLocal(_knN);
-          if (Number.isFinite(_knN.x)) N = _knN;
-        }
-        const dKN = _knK.distanceTo(N);
-        if (dKN > tgt) {
-          _knA.subVectors(_knK, _knW); _knB.subVectors(N, _knW);
-          const a = _knA.length(), bb = _knB.length();
-          if (a > 1e-4 && bb > 1e-4) {
-            const cphi = clamp(_knA.dot(_knB) / (a * bb), -1, 1), phi = Math.acos(cphi);
-            const cw0 = clamp((a * a + bb * bb - tgt * tgt) / (2 * a * bb), -1, 1);
-            const phiT = Math.acos(cw0);
-            const turn = (phi - phiT) * kw;
-            D.knuckleTurn = Math.round(turn * 1e4) / 1e4;
-            if (turn > 1e-4) {
-              _knA.cross(_knB);
-              if (_knA.lengthSq() > 1e-10) {
-                _knA.normalize();
-                _knQ.setFromAxisAngle(_knA, turn);
-                this._rotQL(b.handR, _knQ);
-              }
-            }
-          }
-        }
-        D.knuckleNock = Math.round(dKN * 1e4) / 1e4;   // before the turn (no per-frame string)
-      }
-    }
+      this._knW0 = aimW * smoothstep(drawS, 0.3, 0.9) * (1 - lk) * (1 - qw);
+      if (this._knW0 > 0.01) this._knuckleTurn(this._knW0, drawS, this._bodyShW);
+    } else this._knW0 = 0;
     this._curlFingers(this._fingerR,
       (0.45 + 0.3 * drawS) * aimW * qOpen * (1 - 0.9 * lk),
       0.25 * aimW * (1 - 0.7 * lk));
@@ -4845,23 +4802,84 @@ export class PlayerAnimator {
   }
 
   /**
-   * W0b targeted fix 3 — THE DRAW ARM'S STEP (profile `armFlow.armStep`). The
-   * wrist target and the elbow's swivel are limited above, but the elbow also
-   * moves with the wrist through the arm's own geometry: with the forearm
-   * along the shoulder -> wrist line (a loose from a part draw, a re-draw in
-   * the follow-through) a 0.045 m wrist step carried the elbow 0.10 m (probe
-   * `w7/T5`, rapid re-fire). Here, if the elbow or the wrist moved more than
-   * `armStep` (per 1/60 s) relative to the shoulder since last step, the upper
-   * arm's and the forearm's directions are taken back toward last step's by
-   * the least fraction that holds both (bisection; the shoulder's own motion,
-   * the body's, is not the arm's). It binds only on those outliers; never at
-   * full draw. A fraction that would put the arm in the skull is not taken,
-   * nor one that brings the forearm or the hand back within `rootGive` m inside
-   * a chain root's keep-out: it runs after `_clearArmOfRoots`, whose whole-arm
-   * turn is the other source of a jump (0.02-0.04 m on the step it began, the
-   * -0.55 raise ending at the string by the cord's knot, probes `G3`-`G6`); the
-   * cord can still be pushed >= 0.05 m clear with the arm up to 0.0198 m inside
-   * its keep (keep = r - link + 0.015).
+   * The hand turned about the wrist onto the string (see the call in `_aimLayer`). `sh`:
+   * what the body will still do to the bow's hand this step, world (W0b targeted fix 4:
+   * the turn runs twice: there, so the capsule the keep-out reads is right, and on the
+   * arm's FINAL pose, `update`, where the limiter may have held the wrist back and the
+   * body's offsets are in, with `sh` zero. The hand turn adds no arm travel.)
+   */
+  _knuckleTurn(kw, drawS, sh) {
+    const b = this.b, D = this._aimDbg, cmb = this.ctx.combat;
+    this._charOf(b.handR.bone, _knW);
+    this._charOf(this._knuckleR.bone, _knK);
+    const tgt = this.T.knuckleNock;
+    // the bow's OWN string nock as it will render this frame (its group
+    // hangs off the left hand just posed; `getNockWorld` walks the parents)
+    // — `D.nock` is the arm solve's estimate, measured 0.07-0.09 m off it
+    // (the bow node's offset in the palm), so the turn is aimed at the real one
+    let N = D.nock;
+    const bowO = cmb?.bow;
+    if (bowO?.getNockWorld && bowO.group?.visible !== false) {
+      /* W0b targeted fix 4: the bow as combat will aim it this step. Its group
+       * still carries last step's hand-relative turn, and the bow hand turns as
+       * the draw builds: 1 deg of it is 1 cm at the nock, and the turn saw the
+       * knuckle on the nock (0.024 m) with the rendered one 0.082 m off, at drawS
+       * 0.9-1. Combat re-writes the same turn after this. */
+      const node = bowO.group.parent;
+      if (node && this._aimHold && cmb?.aimPoint) {
+        node.updateWorldMatrix(true, false);
+        node.matrixWorld.decompose(_knA, _knQ, _knB);
+        // (the aim point one step on; the node where this step's pelvis offset and ground
+        // conform will leave it: 0.1 m in a strafe, 0.1 rad at a near aim)
+        _knA.add(sh).negate().add(cmb.aimPoint).add(this._aimDp);
+        if (_knA.lengthSq() >= 0.25) {
+          _knA.normalize().negate();
+          _knM.lookAt(_knZ, _knA, Y_AXIS);
+          _knQ2.setFromRotationMatrix(_knM);
+          bowO.group.quaternion.copy(_knQ.invert().multiply(_knQ2));
+        }
+      }
+      bowO.getNockWorld(drawS, _knN);
+      this.model.worldToLocal(_knN);
+      if (Number.isFinite(_knN.x)) N = _knN;
+    }
+    const dKN = _knK.distanceTo(N);
+    if (dKN > tgt) {
+      _knA.subVectors(_knK, _knW); _knB.subVectors(N, _knW);
+      const a = _knA.length(), bb = _knB.length();
+      if (a > 1e-4 && bb > 1e-4) {
+        const cphi = clamp(_knA.dot(_knB) / (a * bb), -1, 1), phi = Math.acos(cphi);
+        const cw0 = clamp((a * a + bb * bb - tgt * tgt) / (2 * a * bb), -1, 1);
+        const phiT = Math.acos(cw0);
+        const turn = (phi - phiT) * kw;
+        D.knuckleTurn = Math.round(turn * 1e4) / 1e4;
+        if (turn > 1e-4) {
+          _knA.cross(_knB);
+          if (_knA.lengthSq() > 1e-10) {
+            _knA.normalize();
+            _knQ.setFromAxisAngle(_knA, turn);
+            this._rotQL(b.handR, _knQ);
+          }
+        }
+      }
+    }
+    D.knuckleNock = Math.round(dKN * 1e4) / 1e4;   // before the turn (no per-frame string)
+  }
+
+  /**
+   * W0b targeted fix 3 — THE DRAW ARM'S STEP (profile `armFlow.armStep`), on the
+   * arm's final pose (fix 4: `_armContinuity`). The wrist target and the elbow's swivel
+   * are limited above, but the elbow also moves with the wrist through the arm's own
+   * geometry: with the forearm along the shoulder -> wrist line (a loose from a part
+   * draw, a re-draw in the follow-through) a 0.045 m wrist step carried the elbow 0.10 m
+   * (probe `w7/T5`, rapid re-fire). If the elbow or the wrist would step more than
+   * `armStep` (per 1/60 s) against the draw shoulder and `armStepChar` in character
+   * space, the arm is taken from where it was rendered toward the solve by the largest
+   * fraction that holds both. A fraction that would put the arm in the skull, or take it
+   * further behind the back of the skull or into a chain root's keep than holding still
+   * would (past `violStep` a step), is not taken: it runs after `_clearArmOfRoots`, whose
+   * whole-arm turn is the other source of a jump. The cord can still be pushed >= 0.05 m
+   * clear with the arm up to 0.0198 m inside its keep (keep = r - link + 0.015).
    */
   _armRate() {
     const AF = this.T.armFlow, b = this.b, D = this._aimDbg;
@@ -4900,10 +4918,10 @@ export class PlayerAnimator {
      * places — on a draw cancel straight through the back of her neck (the
      * wrist 0.33 m behind the skull's back plane at neck height, probe
      * `w8/T5`). Here the wrist and the elbow each move along the straight line
-     * from where they were rendered toward the solve, and the arm is re-solved
-     * on them (the wrist on its point, the elbow on its circle nearest its
-     * point); the fraction is the largest whose re-solved elbow AND wrist both
-     * step <= `armStep` (bisected on the solved pose, not the points). It is
+     * from where they were rendered toward the solve, and the arm is laid on
+     * them (`_armRatePose`: the elbow on its sphere about the shoulder, the wrist
+     * on its sphere about the elbow); the fraction is the largest whose elbow AND
+     * wrist both step <= the limit (bisected on that pose, not the points). It is
      * then taken back toward last step's arm until the arm is no deeper in the
      * skull, behind the back of the skull (at skull height, or within the
      * head's width at the nape) or inside a chain root's keep (past
@@ -4994,17 +5012,37 @@ export class PlayerAnimator {
     return true;
   }
 
-  /** The draw wrist or middle fingertip behind the back of the skull at skull height (`_headFrame` current; module scratch). */
-  _handBehindSkull() {
-    const b = this.b, Hc = this._handCol;
+  /**
+   * W0b targeted fix 4 (Kevin: "never an arm behind the head"; R35 "the hand always in
+   * front of the back of the skull"): on the final pose the hand's own points, the middle
+   * knuckle and the fingertip, kept in front of the skull's back plane wherever it counts.
+   * The wrist has its guards and limiter; a kick or a lag can still leave the fist's far
+   * end over the plane by a centimetre, and turning the hand about the wrist takes it
+   * back with no arm travel. No allocation.
+   */
+  _handInFront() {
+    const b = this.b, Hc = this._handCol, K = this._knuckleR;
+    if (!Hc?.c || !K) return;
+    this._headFrame();
     _efF.set(0, 0, 1).applyQuaternion(_hdQ);
-    this._charOf(b.handR.bone, _afM2);
-    if (this._behindSkullPt(_afM2) >= 0) return true;
-    if (Hc?.c) { this._charOf(Hc.c, _afM2); if (this._behindSkullPt(_afM2) >= 0) return true; }
-    return false;
+    this._charOf(b.handR.bone, _afJ2);
+    for (let i = 0; i < 2; i++) {
+      this._charOf(i === 0 ? K.bone : Hc.c, _afK2);
+      const dep = this._behindSkullPt(_afK2);
+      if (dep < -0.004) continue;
+      _afL2.subVectors(_afK2, _afJ2);
+      const l = _afL2.length();
+      _afM2.copy(_afL2).addScaledVector(_efF, -_afL2.dot(_efF));     // its lever across the head's forward
+      const lp = _afM2.length();
+      if (l < 1e-3 || lp < 0.02) continue;
+      _afL2.cross(_efF);
+      if (_afL2.lengthSq() < 1e-10) continue;
+      _knQ.setFromAxisAngle(_afL2.normalize(), Math.min(0.5, (dep + 0.006) / lp));
+      this._rotQL(b.handR, _knQ);
+    }
   }
 
-  /** `_handBehindSkull`: char point P's depth behind the skull's back plane where that counts — at skull height, or within the head's width from the neck up (the nape) — else -1; `_efF` = the head's forward. */
+  /** Char point P's depth behind the skull's back plane where that counts — at skull height, or within the head's width from the neck up (the nape) — else -1; `_efF` = the head's forward. */
   _behindSkullPt(P) {
     this._headUnit(P, _hp1);
     if (!(_hp1.y >= -1 || (_hp1.y >= -2.4 && Math.abs(_hp1.x) < 1))) return -1;
@@ -5024,6 +5062,12 @@ export class PlayerAnimator {
     if (!this.T.armFlow?.armStep || !this._armCapN) { this._afEng = false; return; }
     // (after the aim layer stops it carries the arm at most `tail` s — a melee
     // draw or swing that follows a lowered bow is the melee layer's after that)
+    // (a layer that wants the arm for itself takes it at once: the lance's stance and swing
+    // (melee's), the alidade, a climb, a ride, a death)
+    if (!aimRan) {
+      const p = this.ctx.player, ms = this.ctx.combat?.melee?.stance;
+      if ((this.melee?.ok && ms && ms !== 'holstered') || (this._ali?.w ?? 0) > 0.02 || p?.mantling || p?.riding || this._deadW > 0.02) { this._afEng = false; return; }
+    }
     // (...and through a roll, in the chest's frame, however long it runs)
     const rolling = !!this.ctx.player?.dodging || this._dodgeW > 0.05;
     this._afTail = aimRan || rolling ? 0 : (this._afTail || 0) + (this._dtA || 0.016);
