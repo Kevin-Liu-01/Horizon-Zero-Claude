@@ -176,6 +176,14 @@ const PIVOT_CROUCH_MAX = 1.2;
  * nock 0.12 m off the hand on that step and the next.
  */
 const PIVOT_CROUCH_RATE = 2.0;
+const PIVOT_CROUCH_RATE_AIM = 1.1;        // ...under the aim with the body's own move (crouchAim.toggleRate, 0.4 s)
+/**
+ * W0b targeted fix 4: crouch-aiming steeply down the pivot stands this much higher, to A31's bar
+ * and no further. The crouch's lower lens brought the crosshair's ground hit 0.25 m nearer her,
+ * and combat stops aiming the bow at a point within 0.5 m of her bow hand: at the down clamp,
+ * on a strafe's dip, it crossed that for a step or two and the bow flicked 0.3 rad off the hand.
+ */
+const PIVOT_CROUCH_STEEP = 0.14;
 const PITCH_UP = -1.15;                   // 66 deg of forward pitch (A32)
 const PITCH_DOWN = 1.02;
 /**
@@ -3972,7 +3980,7 @@ void main() {
     let wantFlat = wantDist;
 
     {
-      const pvT = this.crouching ? PIVOT_H_CROUCH : PIVOT_H, pvS = PIVOT_CROUCH_RATE * Math.max(dt, 0);
+      const pvT = this.crouching ? PIVOT_H_CROUCH + (this.aiming ? PIVOT_CROUCH_STEEP * THREE.MathUtils.smoothstep(this.camPitch, 0.75, 1.02) : 0) : PIVOT_H, pvS = (this.aiming ? PIVOT_CROUCH_RATE_AIM : PIVOT_CROUCH_RATE) * Math.max(dt, 0);
       this.pivotHeight = this._pivotSeeded ? this.pivotHeight + THREE.MathUtils.clamp(pvT - this.pivotHeight, -pvS, pvS) : pvT;
     }
     /**

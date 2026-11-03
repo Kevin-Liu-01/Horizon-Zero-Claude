@@ -8026,6 +8026,8 @@ const NEW_GATES = [
           const r = cmbU.apply(this, a);
           if (this !== cmb || !(a[0] > 0)) return r;
           const ds = cmb.drawStrength;
+          // (reported: the bow's hand to the crosshair's ground hit: combat aims the bow along the camera instead from nearer than 0.5 m)
+          if (ds > 0.5) { const bn = cmb.bow.group?.parent; if (bn) { const d0 = bn.getWorldPosition(nk).distanceTo(cmb.aimPoint); if (d0 < (M.bowToHitMin ?? 99)) { M.bowToHitMin = r4(d0); M.bowToHitAt = label; } } }
           if (ds > 0.9 && an.debugDrawHand(kn, ft)) {
             cmb.bow.getNockWorld(ds, nk);
             const d = kn.distanceTo(nk), lab = label + '+' + (E.simTime - t0 - tLab).toFixed(3); M.fullSteps++;
@@ -8083,6 +8085,7 @@ const NEW_GATES = [
         travelMax: Math.max(...cells.map((M) => M.travel)), relMax: Math.max(...cells.map((M) => M.rel)),
         skullMax: Math.max(...cells.map((M) => M.skull)), napeMax: Math.max(...cells.map((M) => M.nape)), crownMax: Math.max(...cells.map((M) => M.crown)),
         knuckleFullMax: Math.max(...cells.map((M) => M.knFull)),
+        bowToHitMinReported: Math.min(...cells.map((M) => M.bowToHitMin ?? 99)),
       };
       for (const M of cells) delete M.byTag;
       return { pass: cells.length === CELLS.length && failing.length === 0,
