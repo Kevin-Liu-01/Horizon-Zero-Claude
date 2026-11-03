@@ -311,6 +311,7 @@ export async function selfTest(dir, { planFile = path.join(ROOT, 'docs/ROUND5-PL
     const bySpecs = stillCaught(r, /SPECS\.hero no longer points/);
     out.expiry = { ok: byEnv && byReports && checkByReports && bySpecs, byEnv, byReports, checkByReports, bySpecs };
     writeSpecs('/models/aloy.glb');
+    if (!heroScheduled) rm(path.join(dir, 'public/models/aloy.glb'));                 // past the swap it can only fail: the controls below grade other files
 
     // waveSources (W0b fix round 1): the §2-named report file counts (hero-body's row names
     // docs/ROUND5-HERO.md, its default is ROUND5-HERO-BODY.md: both reach W0b), and a lane
