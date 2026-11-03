@@ -48,7 +48,14 @@ export function fieldReader(F) {
     const iz = fz < 0 ? 0 : fz >= N - 1 ? N - 1 : fz + 0.5 | 0;
     const o = (iz * N + ix) * 4;
     R.salt = maskA[o] / 255; R.rock = maskA[o + 1] / 255; R.shingle = maskA[o + 2] / 255; R.silt = maskA[o + 3] / 255;
-    R.cover = maskB[o] / 255; R.track = maskB[o + 1] / 255; R.damp = maskB[o + 2] / 255;
+    R.track = maskB[o + 1] / 255; R.damp = maskB[o + 2] / 255;
+    // cover bilinear: the same read as terrain.tallGrassDensity, so the field and the plants agree
+    {
+      const bx = fx < 0 ? 0 : fx >= N - 1 ? N - 2 : fx | 0, bz = fz < 0 ? 0 : fz >= N - 1 ? N - 2 : fz | 0;
+      const tx = fx - bx, tz = fz - bz, q = (bz * N + bx) * 4;
+      const c0 = maskB[q] + (maskB[q + 4] - maskB[q]) * tx, c1 = maskB[q + N * 4] + (maskB[q + N * 4 + 4] - maskB[q + N * 4]) * tx;
+      R.cover = (c0 + (c1 - c0) * tz) / 255;
+    }
     R.coast = SHORE_ENC.dMin + (shore[o] / 255) * (SHORE_ENC.dMax - SHORE_ENC.dMin);
     R.glass = shore[o + 2] / 255;
     return R;

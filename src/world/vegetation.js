@@ -159,7 +159,18 @@ function weldedIco(detail) {
 }
 
 function rockGeo() {
-  const g = displaced(weldedIco(2), 77, 0.22);
+  /* A broken boulder: a lump with planes sawn off it, soft where the planes meet. 180 tris. */
+  const g = displaced(weldedIco(2), 77, 0.16);
+  const p = g.attributes.position, R = rng(211);
+  for (let c = 0; c < 7; c++) {
+    const z = R() * 2 - 1, a = R() * 6.2832, xy = Math.sqrt(1 - z * z);
+    const nx = xy * Math.cos(a), ny = z, nz = xy * Math.sin(a), d = 0.5 + R() * 0.3;
+    for (let i = 0; i < p.count; i++) {
+      const v = p.getX(i) * nx + p.getY(i) * ny + p.getZ(i) * nz - d;
+      if (v > 0) p.setXYZ(i, p.getX(i) - nx * v, p.getY(i) - ny * v, p.getZ(i) - nz * v);
+    }
+  }
+  g.computeVertexNormals();
   g.computeBoundingSphere();
   return g;
 }
@@ -491,21 +502,22 @@ export class Vegetation {
   }
 
   /* --------------------------------- static kinds --------------------------------- */
-  _rockMaterial(key, rime, saltLayer, scale = 1.7) {
+  _rockMaterial(key, rime, saltLayer, scale = 1.7, lift = 1) {
     const mat = new THREE.MeshStandardMaterial({ roughness: 1, metalness: 0 });
     const U = this.ctx.terrain.groundUniforms;
-    const uRime = { value: rime }, uRockScale = { value: scale };
+    const uRime = { value: rime }, uRockScale = { value: scale }, uRockLift = { value: lift };
     const color = saltLayer ? ROCK_COLOR.replace(/gA\(2,/g, 'gA(1,').replace(/gNm\(2,/g, 'gNm(1,')
       .replace('float wetK = 1.0 - smoothstep(0.1, 1.1, vWPos.y);', 'float wetK = 0.0;') : ROCK_COLOR;
     mat.onBeforeCompile = (shader) => {
       Object.assign(shader.uniforms, U);
       shader.uniforms.uRime = uRime;
       shader.uniforms.uRockScale = uRockScale;
+      shader.uniforms.uRockLift = uRockLift;
       shader.vertexShader = shader.vertexShader
         .replace('#include <common>', ROCK_VERT_PARS)
         .replace('#include <worldpos_vertex>', ROCK_VERT_WORLD);
       shader.fragmentShader = shader.fragmentShader
-        .replace('#include <common>', `${GROUND_FRAG_PARS}\nuniform float uRime;\nuniform float uRockScale;`)
+        .replace('#include <common>', `${GROUND_FRAG_PARS}\nuniform float uRime;\nuniform float uRockScale;\nuniform float uRockLift;`)
         .replace('#include <color_fragment>', color)
         .replace('#include <roughnessmap_fragment>', GROUND_ROUGH)
         .replace('#include <normal_fragment_begin>', GROUND_NORMAL)
@@ -570,9 +582,9 @@ export class Vegetation {
 
   _buildStatic() {
     const S = this._bake.static;
-    this.rocks = this._staticMesh('rocks-basalt', rockGeo(), this._rockMaterial('rock', 0.3, false, 2.2), S.rocks, true);
+    this.rocks = this._staticMesh('rocks-basalt', rockGeo(), this._rockMaterial('rock', 0.3, false, 2.2, 1.5), S.rocks, true);
     this.columns = this._staticMesh('rocks-columns', columnGeo(), this._rockMaterial('col', 0.2, false), S.columns, true);
-    this.dykes = this._staticMesh('pan-dykes', wallGeo(), this._rockMaterial('wall', 0.32, false, 4.1), S.walls, true);
+    this.dykes = this._staticMesh('pan-dykes', wallGeo(), this._rockMaterial('wall', 0.32, false, 4.1, 1.9), S.walls, true);
     this.rakes = this._staticMesh('salt-rakes', saltGeo(), this._rockMaterial('salt', 0, true), S.heaps, true);
     this._columnData = S.columns;
   }

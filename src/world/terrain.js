@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { WORLD_SIZE, WORLD_HALF, PLAY_RADIUS, MESH_SPAN, MESH_SEGS } from './island/extent.js';
 import { REST_SITE, TUBES } from './island/sites.js';
-import { BIOMES, CURRENT_DEPTH, biomesAt, heightAt, coverAt } from './island/recipe.js';
+import { BIOMES, CURRENT_DEPTH, biomesAt, heightAt, coverAt, authored } from './island/recipe.js';
 import { GRID, MASK_N, PAN_N, PAN_BOX, SHORE_ENC, HORIZON_N, bakeShade, maskTexel } from './island/bake.js';
 import { bakeIsland } from './island/pool.js';
 import { LAYER_FILES, LAYER_SIZE } from './island/layers.js';
@@ -217,6 +217,18 @@ export function pathSmooth(x, z) { return maskRead(BAKE.maskB, 1, x, z); }
 const _stamps = new Uint8Array(MASK_N * MASK_N);
 const _stampPending = [];
 
+/** Cover may only be stamped where the marram scatter can stand: the field never claims plants it cannot have. */
+function stampable(x, z) {
+  const c = (WORLD_HALF + z) / MCELL | 0, i = (WORLD_HALF + x) / MCELL | 0, o = (c * MASK_N + i) * 4;
+  if (BAKE.shore[o + 2] > 12) return false;                       // the Glass and its margin
+  if (BAKE.maskA[o + 1] > 120 || BAKE.maskB[o + 1] > 90) return false;   // rock, tracks
+  const h = gridHeight(x, z);
+  if (h < 0.1) return false;
+  const gx = (gridHeight(x + 2, z) - gridHeight(x - 2, z)) / 4, gzz = (gridHeight(x, z + 2) - gridHeight(x, z - 2)) / 4;
+  if (gx * gx + gzz * gzz > 0.7) return false;                    // steeper than the scatter's limit
+  return authored.pan(x, z).kind < 0 && SHORE_ENC.dMin + (BAKE.shore[o] / 255) * (SHORE_ENC.dMax - SHORE_ENC.dMin) > 2;
+}
+
 export function stampStealthDisc(x, z, r) {
   _stampPending.push(x, z, r);
   const M = BAKE.maskB;
@@ -231,6 +243,7 @@ export function stampStealthDisc(x, z, r) {
       const gx = -WORLD_HALF + (i + 0.5) * MCELL;
       const d = Math.hypot(gx - x, gz - z);
       if (d >= r) continue;
+      if (!stampable(gx, gz)) continue;
       const t = (d - inner) / (r - inner);
       const k = t <= 0 ? 1 : t >= 1 ? 0 : 1 - t * t * (3 - 2 * t);
       const v = (k * 255) | 0;

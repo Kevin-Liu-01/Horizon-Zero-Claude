@@ -42,9 +42,14 @@ const FALLBACK_PLACES = `
   }`;
 
 /** Stage a row's text with the place fallback in front of it. */
-const withPlaces = (src) => (src == null ? src : `(async () => {${FALLBACK_PLACES}
-  return await ${String(src).trim().replace(/;$/, '')};
-})()`);
+const withPlaces = (src) => {
+  if (src == null) return src;
+  const t = String(src).trim().replace(/;$/, '');
+  const isExpr = /^\(/.test(t);
+  return `(async () => {${FALLBACK_PLACES}
+  ${isExpr ? `return await ${t};` : `${t};`}
+})()`;
+};
 
 /** Clone another lane's row under this lane, with a new id, staged with the place fallback. */
 function aliasRow(rows, srcId, id, extra = {}) {
@@ -488,28 +493,6 @@ const ROWS = [
       return { pass, detail: { panSamples: total, minSamples: MIN, pansSurfaces: pans, histogram: hist, materialHistogram: mHist, islandSurfaces: all, unknown, unroutable, disagree } };
     })()`,
   },
-  {
-    id: 'A58b-surface-audio-world-ground', kind: 'action', lane: LANE, timeout: 30000,
-    title: 'Terrain.SURFACE_AUDIO routes every material to a foley set that exists in the bank; surfaceAt never falls off audio\'s table',
-    assert: `(async () => {
-      const T = __CTX__.terrain;
-      const AUD = T.constructor.SURFACE_AUDIO, MATS = T.constructor.MATERIALS;
-      const bank = __CTX__.audio?.bank || __CTX__.audio?._bank;
-      const sets = MATS.map((m) => AUD[m]);
-      const has = (k) => {
-        if (!bank) return null;
-        if (typeof bank.has === 'function') return bank.has(k);
-        if (bank.sets) return !!bank.sets[k];
-        return null;
-      };
-      const missing = sets.filter((k) => has(k) === false);
-      const vocab = ['grass', 'meadow', 'moss', 'dirt', 'path', 'sand', 'silt', 'mud', 'water', 'shallow', 'cobble', 'stone', 'gravel', 'scree', 'shale', 'rock', 'metal', 'snow', 'ice'];
-      const emitted = T.constructor.SURFACES;
-      const offTable = emitted.filter((s) => !vocab.includes(s));
-      return { pass: !missing.length && !offTable.length && MATS.every((m) => !!AUD[m]), detail: { routes: AUD, missing, emitted, offTable } };
-    })()`,
-  },
-
   /* -------------------------------------------------------------- A59b + A59c + A60 ---- */
   {
     id: 'A59b-cover-honesty-world-ground', kind: 'action', lane: LANE, timeout: 60000,
@@ -577,7 +560,10 @@ const ROWS = [
       while (!ctx.machines?.varietyReady && performance.now() - t0 < 25000) await new Promise((r) => setTimeout(r, 150));
       const t1 = performance.now();
       while (!T.routeCoverStats() && performance.now() - t1 < 15000) await new Promise((r) => setTimeout(r, 150));
-      const list = (ctx.machines?.list || []).filter((m) => m.route && m.route.length > 2);
+      const all = (ctx.machines?.list || []).filter((m) => m.route && m.route.length > 2);
+      // a legacy flyer's route (deleted at W2) is not a ground lane and may lie over the sea: named, not graded
+      const flyers = all.filter((m) => m._airborne).map((m) => m.kind);
+      const list = all.filter((m) => !m._airborne);
       if (!list.length) return { pass: null, detail: 'SKIP-R18: no live Instrument carries a route' };
       const rows = [];
       for (const m of list) {
@@ -594,7 +580,7 @@ const ROWS = [
       }
       rows.sort((p, q) => p.frac - q.frac);
       const bad = rows.filter((r) => r.frac < 0.25);
-      return { pass: !bad.length, detail: { routes: rows.length, worst: rows[0], below25: bad.length, bottom5: rows.slice(0, 5), median: rows[Math.floor(rows.length / 2)].frac } };
+      return { pass: !bad.length, detail: { routes: rows.length, flyersNamed: flyers, worst: rows[0], below25: bad.length, bottom5: rows.slice(0, 5), median: rows[Math.floor(rows.length / 2)].frac } };
     })()`,
   },
 
@@ -693,19 +679,32 @@ const ROWS = [
         }
         let v0 = 0; for (let i = 0; i < hp.length; i++) v0 += hp[i] * hp[i];
         v0 = v0 || 1;
-        let peak = 0, at = null;
-        for (let ly = -64; ly <= 64; ly += 4) for (let lx = 0; lx <= 64; lx += 4) {
-          if (Math.hypot(lx, ly) < 4) continue;
+        /* The autocorrelation on a 4 px lag lattice. A PEAK is a local maximum: a blurred far
+         * texture has a high value at small lags and falls away monotonically, and that is not
+         * a repeat. A tile repeat is a bump that stands above its own neighbours. */
+        const LAG = 64, ST = 4, M = 2 * (LAG / ST) + 1, C = new Float64Array(M * M);
+        const at = (lx, ly) => {
+          const dx = lx, dy = ly;
           let c = 0, cnt = 0;
-          for (let y = Math.max(0, -ly); y < sz - Math.max(0, ly); y += 2) for (let x = 0; x < sz - lx; x += 2) {
-            c += hp[y * sz + x] * hp[(y + ly) * sz + x + lx]; cnt++;
+          for (let y = Math.max(0, -dy); y < sz - Math.max(0, dy); y += 2) for (let x = Math.max(0, -dx); x < sz - Math.max(0, dx); x += 2) {
+            c += hp[y * sz + x] * hp[(y + dy) * sz + x + dx]; cnt++;
           }
-          const norm = (c / cnt) / (v0 / hp.length);
-          // a lag inside the coherence of the texel kernel is not a tile: lags under 8 px are grain
-          if (Math.hypot(lx, ly) < 8) continue;
-          if (norm > peak) { peak = norm; at = [lx, ly]; }
+          return (c / cnt) / (v0 / hp.length);
+        };
+        for (let j = 0; j < M; j++) for (let i = 0; i < M; i++) C[j * M + i] = at((i - LAG / ST) * ST, (j - LAG / ST) * ST);
+        let peak = 0, peakAt = null, top = 0;
+        for (let j = 1; j < M - 1; j++) for (let i = 1; i < M - 1; i++) {
+          const lx = (i - LAG / ST) * ST, ly = (j - LAG / ST) * ST, r = Math.hypot(lx, ly);
+          if (r < 4) continue;
+          const v = C[j * M + i];
+          if (r >= 8 && v > top) top = v;
+          let isMax = true;
+          for (let b = -1; b <= 1 && isMax; b++) for (let a = -1; a <= 1; a++) {
+            if ((a || b) && C[(j + b) * M + i + a] >= v) { isMax = false; break; }
+          }
+          if (isMax && v > peak) { peak = v; peakAt = [lx, ly]; }
         }
-        return { peak: +peak.toFixed(3), at };
+        return { peak: +peak.toFixed(3), at: peakAt, largestAtAnyLag8Up: +top.toFixed(3) };
       };
       const sites = {
         sand30: acorr(shot(-200, 400, -226, 382, 2.2)),

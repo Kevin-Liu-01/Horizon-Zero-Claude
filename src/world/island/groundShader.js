@@ -249,7 +249,7 @@ export const TERRAIN_COLOR = /* glsl */ `
   }
 
   /* -- liquid: brine mirrors, the swash zone is wet black glass -------------- */
-  float coast = sh.r * 128.0 - 48.0;
+  float coast = sh.r * 64.0 - 48.0;
   float tide = uSea + 0.26 + 0.09 * sin(uTime * 0.42 + xz.x * 0.03 + xz.y * 0.021);
   float wetSea = (1.0 - smoothstep(tide, tide + 0.34, vWPos.y)) * (1.0 - smoothstep(7.0, 17.0, coast));
   float wetGlass = sh.b * (1.0 - smoothstep(0.34, 0.78, vWPos.y));
@@ -264,6 +264,8 @@ export const TERRAIN_COLOR = /* glsl */ `
     col = mix(col, water * (0.72 + 0.4 * macA), brine * 0.62);
   }
   pert *= 1.0 - gLiquid * 0.86;
+  // fine black sand has a sheen at a low angle: the sky in it, and the ripples through it
+  gLiquid = max(gLiquid, 0.085 * smoothstep(0.1, 0.7, w[0]));
   gRough = mix(clamp(rSum, 0.25, 1.0), mix(0.3, 0.07, smoothstep(0.3, 0.9, brine)), gLiquid);
   gAO = mix(1.0, clamp(aoSum, 0.0, 1.0), 0.78);
   col *= mix(1.0, clamp(aoSum * 1.08, 0.0, 1.0), 0.4);
@@ -309,7 +311,7 @@ export const ROCK_COLOR = /* glsl */ `
   vec2 tx = nx.xy * 2.0 - 1.0, ty = ny.xy * 2.0 - 1.0, tz = nz.xy * 2.0 - 1.0;
   vec3 c = pow(a.rgb, vec3(2.2));
   float mac = gNoise(vWPos.xz * 0.37 + vWPos.y * 0.21);
-  c *= 0.78 + 0.5 * mac;
+  c *= (0.78 + 0.5 * mac) * uRockLift;
   // salt rime settles on what faces up; the foot in the swash is wet and black
   float rime = smoothstep(0.78, 0.99, wn.y) * uRime * smoothstep(0.42, 0.72, mac);
   c = mix(c, vec3(0.5, 0.48, 0.44), rime);

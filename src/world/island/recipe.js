@@ -688,10 +688,31 @@ function trackAt(e, n) {
   return f;
 }
 
+/* ------------------------------------------------------- walkable ground at sites ---- */
+/**
+ * A site you can stand on and walk to (`A-reach-all-sites`: frozen nav.js blocks any 2 m cell
+ * steeper than 45°). PADS level a small disc at the site's stated height and ease out to the
+ * country. The Rust Cone's flanks stand at the angle of repose, so a cinder track climbs a third
+ * of the way round it to T3 on the rim.
+ */
+const PADS = Object.freeze(['rust-cone', 'mistfold', 'pinned-cliff', 'the-fundamental', 'T4']
+  .map((id) => [...SITES, ...TRIG].find((s) => s.id === id))
+  .map((s) => ({ e: s.e, n: s.n, h: s.h, r0: s.id === 'pinned-cliff' || s.id === 'the-fundamental' ? 16 : 8, r1: s.id === 'pinned-cliff' || s.id === 'the-fundamental' ? 52 : 34 })));
+
+function padHeight(e, n, h) {
+  for (let i = 0; i < PADS.length; i++) {
+    const P = PADS[i], dx = e - P.e, dz = n - P.n;
+    if (dx > P.r1 || dx < -P.r1 || dz > P.r1 || dz < -P.r1) continue;
+    const d = Math.hypot(dx, dz);
+    if (d < P.r1) h += (P.h - h) * (1 - ss(P.r0, P.r1, d));
+  }
+  return h;
+}
+
 /* ---------------------------------------------------------- stamps (authored) ---- */
 /** The Organ Shelf's plan: overlapping lobes [e, n, r], warped below (a lava flow's front, not a box). */
 const SHELF_LOBES = [[-188, -351, 23], [-168, -346, 35], [-132, -362, 34], [-156, -386, 20], [-104, -338, 20], [-214, -372, 15]];
-const CRATER = { e: -388, n: -160, R: 72, H: 45, squash: 1.5 };
+const CRATER = { e: -388, n: -160, R: 72, H: 41, squash: 1.5 };
 const CONE = { e: 283, n: -101, r: 98, h: 146 };
 
 /** Organ Shelf: signed distance inside its lobed plan, m (+ inside). */
@@ -730,18 +751,18 @@ function craterField(e, n) {
   const Rr = CRATER.R + (fbm(cs * 1.2 + 4, sn * 1.2, 3) - 0.5) * 18;
   // the crest runs nearly level, with the odd notch where a gully has eaten back
   const notch = ss(0.16, 0.36, ridged(cs * 5 + 7, sn * 5 + 2, 2));
-  const Hr = CRATER.H * (0.84 + 0.26 * fbm(cs * 3.3 + 9, sn * 3.3 + 2, 2)) * (0.8 + 0.2 * notch) * open;
+  const Hr = CRATER.H * (0.92 + 0.14 * fbm(cs * 3.3 + 9, sn * 3.3 + 2, 2)) * (0.86 + 0.14 * notch) * open * (0.3 + 0.7 * ss(4, 66, coastD(e, n)));
   // the talus reaches out in fans
   const fan = (ridged(cs * 7 + 1, sn * 7 + 5, 2) - 0.3) * 0.16;
-  const ti = clamp01((d - (Rr - 40)) / 40 + fan), to = clamp01((d - (Rr + 7)) / 52);
+  const ti = clamp01((d - (Rr - 40)) / 40 + fan), to = clamp01((d - (Rr + 12)) / 52);
   let p;
   if (d <= Rr) p = 0.26 * ss(0, 0.66, ti) * (0.62 + 0.38 * ti * ti) + 0.74 * Math.pow(ss(0.5, 1, ti), 1.1);
-  else if (d <= Rr + 7) p = 1 - 0.03 * (d - Rr) / 7;      // the flat cap
-  else p = 0.97 * Math.pow(1 - to, 1.5);
+  else if (d <= Rr + 12) p = 1 - 0.04 * (d - Rr) / 12;    // the flat cap
+  else p = 0.96 * Math.pow(1 - to, 1.5);
   let hc = Hr * p;
   // gullies: V cuts down the wall, deepest mid-height, fainter on the back
   const g = ridged(cs * 13 + 11 + d * 0.012, sn * 13 + 3 + d * 0.012, 2);
-  const cut = (g - 0.42) * (d <= Rr ? ss(0.1, 0.5, ti) * (1 - ss(0.86, 1, ti)) * 11 : ss(0.02, 0.3, to) * (1 - ss(0.6, 1, to)) * 6);
+  const cut = (g - 0.42) * (d <= Rr ? ss(0.1, 0.5, ti) * (1 - ss(0.78, 0.96, ti)) * 9 : ss(0.02, 0.3, to) * (1 - ss(0.6, 1, to)) * 6);
   hc = Math.max(0, hc + cut * open);
   // the beds: benches on the cliff that dip seaward
   const K = ss(0.46, 0.74, ti) * (d <= Rr ? 1 : 0);
@@ -778,6 +799,36 @@ function seaDepth(d, e, n) {
 }
 
 /* -------------------------------------------------------- the height recipe ---- */
+/** The Glass's plan: 1 on its shoreline, warped so the lagoon has bays and points, never an oval. */
+function glassD(e, n) {
+  const gu = (e - GLASS.e) / GLASS.re, gv = (n - GLASS.n) / GLASS.rn;
+  const r = Math.hypot(gu, gv);
+  if (r > 2.4) return r;
+  return r + (fbm(e * 0.017 + 4, n * 0.017, 2) - 0.5) * 0.7 + (fbm(e * 0.055, n * 0.055 + 4, 2) - 0.5) * 0.24;
+}
+
+const CONE_PROFILE = (dk) => CONE.h * Math.pow(Math.max(0, 1 - dk / CONE.r), 1.12);
+/** The cinder track up the Rust Cone: a bench cut across the flank, level from side to side. */
+const CONE_TRACK = (() => {
+  const pts = [];
+  for (let i = 0; i <= 18; i++) {
+    const t = i / 18;
+    const dk = 92 * (1 - t) + 4 * t, phi = (205 - 200 * t) * Math.PI / 180;       // climbs from the SW round by the E
+    pts.push([CONE.e + Math.cos(phi) * dk, CONE.n + Math.sin(phi) * dk, CONE_PROFILE(dk)]);
+  }
+  return pts;
+})();
+function coneTrack(e, n, h) {
+  if (Math.hypot(e - CONE.e, n - CONE.n) > CONE.r + 14) return h;
+  let best = 1e9, hl = h;
+  for (let i = 0; i < CONE_TRACK.length - 1; i++) {
+    const a = CONE_TRACK[i], b = CONE_TRACK[i + 1];
+    const q = distToSeg(e, n, a[0], a[1], b[0], b[1]);
+    if (q.d < best) { best = q.d; hl = a[2] + (b[2] - a[2]) * q.t; }
+  }
+  return best > 12 ? h : h + (hl - h) * (1 - ss(3.2, 12, best));
+}
+
 /** Signed distance to the shoreline with its noise: + inland, metres (authored frame). */
 export function coastD(e, n) {
   if (!M.ready) ensureMacro();
@@ -877,8 +928,7 @@ function heightAuthored(e, n) {
   const sd = shelfD(e, n);
   if (sd > -14) {
     const top = 9.4 + (fbm(e * 0.06, n * 0.06, 2) - 0.5) * 1.4;
-    const stepK = Math.floor(ss(-5, 8, sd) * 3 + vnoise(e * 0.16, n * 0.16) * 0.6) / 3;
-    const k = ss(-5, 8, sd) * 0.6 + stepK * 0.4;
+    const k = ss(-6 + vnoise(e * 0.11, n * 0.11) * 5, 9, sd);
     const hs = h + (top - h) * k;
     if (hs > h) h = hs;
   }
@@ -893,13 +943,14 @@ function heightAuthored(e, n) {
     h += (floor + crown - h) * (fd < 1.2 ? 1 : fk * fk * (3 - 2 * fk) * 0.35 + fk * 0.65);
   }
   // the Glass: a still shallow lagoon behind the barrier
-  const gu = (e - GLASS.e) / GLASS.re, gv = (n - GLASS.n) / GLASS.rn;
-  const gd = Math.hypot(gu, gv) + (fbm(e * 0.035, n * 0.035 + 4, 2) - 0.5) * 0.3;
+  const gd = glassD(e, n);
   if (gd < 1.42) {
     const bed = GLASS_LEVEL - 0.78 * (1 - ss(0.2, 1.0, gd)) + 0.14;
     const k = 1 - ss(0.9, 1.42, gd);
     h += (bed - h) * k;
   }
+  h = coneTrack(e, n, h);
+  h = padHeight(e, n, h);
   // a track is a hand's depth into the ground
   const tr = trackAt(e, n);
   if (tr > 0.05) h -= 0.07 * tr;
@@ -945,10 +996,7 @@ export const authored = Object.freeze({
   crater: (x, z) => craterAt(x / S, -z / S),
   shelf: (x, z) => shelfD(x / S, -z / S),
   fieldK: (x, z) => fieldK(x / S, -z / S),
-  glass: (x, z) => {
-    const e = x / S, n = -z / S;
-    return Math.hypot((e - GLASS.e) / GLASS.re, (n - GLASS.n) / GLASS.rn);
-  },
+  glass: (x, z) => glassD(x / S, -z / S),
 });
 
 /** The cistern in the field's frame, for the check script. */
@@ -971,8 +1019,8 @@ export function coverAt(x, z) {
   const colony = ss(-0.06, 0.2, fbm(e * 0.024 + 11, n * 0.024 - 4, 3) - 0.5 + (fbm(e * 0.09, n * 0.09, 2) - 0.5) * 0.3);
   if (colony <= 0) return 0;
   const zone = ss(7, 20, c) * (1 - ss(95, 170, c));
-  const glass = Math.hypot((e - GLASS.e) / GLASS.re, (n - GLASS.n) / GLASS.rn);
-  const reed = (1 - ss(1.05, 1.9, glass)) * ss(0.92, 1.05, glass);
+  const glass = glassD(e, n);
+  const reed = (1 - ss(1.1, 1.9, glass)) * ss(1.04, 1.14, glass);
   const k = Math.max(zone * 0.96, reed) * pans * colony;
   if (k <= 0.01) return 0;
   const fk = fieldK(e, n);

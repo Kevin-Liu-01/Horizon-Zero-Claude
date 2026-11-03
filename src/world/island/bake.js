@@ -8,7 +8,7 @@
  *   masks          Uint8 RGBA ×3 at 512² over the world square
  *                    maskA  R salt beyond the field  G basalt  B shingle  A wet silt
  *                    maskB  R marram cover  G packed track  B damp ground  A wind-pale sand
- *                    shore  R signed coast distance  G ground height  B the Glass  A along-shore ramp
+ *                    shore  R signed coast distance, saturating 16 m inland (¼ m steps)  G ground height near the water (2 cm steps)  B the Glass  A free
  *   pan            Uint8 RGBA at 512² over PAN_BOX
  *                    R salt crust  G brine (mirror)  B hue (white..pink..rust)  A cell interior
  *   horizon        Uint8 RGBA ×2 at 512²: the terrain's horizon toward 8 bearings, so the sun
@@ -24,7 +24,7 @@ export const PAN_N = 512;
 /** World box of the pan texture (x0, z0, size), metres. */
 export const PAN_BOX = Object.freeze({ x0: -434 * S, z0: 144 * S, size: 244 * S });
 /** Encodings shared with the shaders (groundShader.js) and terrain.js. */
-export const SHORE_ENC = Object.freeze({ dMin: -48, dMax: 80, hMin: -2, hMax: 2.5 });
+export const SHORE_ENC = Object.freeze({ dMin: -48, dMax: 16, hMin: -2, hMax: 2.5 });
 
 export const GRID = Object.freeze({
   span: MESH_SPAN, segs: MESH_SEGS, side: MESH_SEGS + 1, step: MESH_SPAN / MESH_SEGS, half: MESH_SPAN / 2,
@@ -189,11 +189,7 @@ export function maskTexel(H, x, z, out) {
   const track = authored.track(x, z);
   const nA = fbm(x * 0.06 + 3, z * 0.06, 3), nB = fbm(x * 0.19, z * 0.19 + 5, 2);
 
-  // salt beyond the cells: efflorescence blowing off the field, and white rime on low flats
-  const fieldRime = pans * ss(0.56, 0.7, nA + nB * 0.5) * ss(0.55, 0.97, fk) * (1 - ss(0.95, 1, fk)) * 0.42;
-  // and the Glass leaves a thin pale ring as it dries back
-  const glassRim = ss(1.02, 1.1, glass) * (1 - ss(1.14, 1.3, glass)) * ss(0.36, 0.56, nA + nB * 0.3);
-  const rime = Math.max(fieldRime, glassRim * 0.8);
+  const rime = 0;
   // basalt: the Shelf's table, steep ground, the reef at the tide line, the crater's crags
   const shelf = ss(-3, 4, sd);
   const reef = pans * (1 - ss(-1.5, 4, Math.abs(c + 3))) * ss(0.56, 0.68, fbm(x * 0.035 + 21, z * 0.035, 3));
@@ -220,9 +216,7 @@ export function maskTexel(H, x, z, out) {
   out[8] = clamp255(((c - SHORE_ENC.dMin) / (SHORE_ENC.dMax - SHORE_ENC.dMin)) * 255);
   out[9] = clamp255(((h - SHORE_ENC.hMin) / (SHORE_ENC.hMax - SHORE_ENC.hMin)) * 255);
   out[10] = clamp255((1 - ss(1.1, 1.5, glass)) * 255);
-  // metres along the shore as a mirrored ramp (no wrap seam under bilinear), period 512 m
-  const arc = authored.coastArc(x, z) * S / 512, fr = arc - Math.floor(arc);
-  out[11] = clamp255((fr < 0.5 ? fr * 2 : 2 - fr * 2) * 255);
+  out[11] = 0;
   return out;
 }
 const clamp01 = (x) => (x < 0 ? 0 : x > 1 ? 1 : x);

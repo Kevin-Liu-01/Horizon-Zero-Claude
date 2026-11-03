@@ -49,12 +49,13 @@ const SEA_COLOR = /* glsl */ `
   vec2 muv = p * uWorldInv + 0.5;
   float inMap = step(max(abs(muv.x - 0.5), abs(muv.y - 0.5)), 0.4985);
   vec4 sh = texture2D(tShore, clamp(muv, 0.0, 1.0));
-  // signed coast distance (+ inland), ground height, metres along the shore (a mirrored ramp)
-  float coast = mix(-48.0, sh.r * 128.0 - 48.0, inMap);
+  // signed coast distance (+ inland), ground height, metres along the shore (the island is
+  // near enough round for its bearing to serve, and that needs no texture and has no steps)
+  float coast = mix(-48.0, sh.r * 64.0 - 48.0, inMap);
   if (coast > 9.0) discard;                 // the sea never stands inland: the Glass has its own surface
   float off = max(-coast, 0.0);
   float ground = mix(-2.0, sh.g * 4.5 - 2.0, inMap);
-  float sA = sh.a * 256.0 + p.x * 0.012 + p.y * 0.009;
+  float sA = abs(atan(p.x, p.y)) * 460.0;
 
   /* the set: three trains of fronts with their own speed, wandering along the shore */
   float along = texture2D(tRipple, vec2(sA * 0.0066, 0.31)).a * 3.6 + texture2D(tRipple, vec2(sA * 0.027, 0.77)).a * 1.0;
@@ -67,7 +68,7 @@ const SEA_COLOR = /* glsl */ `
   float set2 = 0.5 + 0.5 * sin(id2 * 3.7 + 0.4);
 
   /* where the waves stand up and break: wider off points, narrower in the coves */
-  float breakW = 13.0 + 24.0 * texture2D(tRipple, vec2(sA * 0.0041, 0.13)).a;
+  float breakW = 15.0 + 26.0 * texture2D(tRipple, vec2(sA * 0.0041, 0.13)).a;
   float brk = 1.0 - smoothstep(breakW * 0.62, breakW, off);
   float swellK = smoothstep(0.0, 6.0, off) * (1.0 - smoothstep(breakW * 1.3, breakW * 2.8, off));
   // a crest breaks in sections: each wave has its own gaps
@@ -134,10 +135,10 @@ const SEA_COLOR = /* glsl */ `
   vec2 r1 = texture2D(tRipple, p * 0.042 + drift * 1.3).xy * 2.0 - 1.0;
   vec2 r2 = texture2D(tRipple, p.yx * 0.11 - drift * 2.1).xy * 2.0 - 1.0;
   vec2 rip = (r1 * 0.34 + r2 * 0.2 * nFade) * (0.1 + 0.9 * nFade);
-  // three trains from the W-NW, 90, 55 and 34 m
-  float a1 = dot(p, vec2(0.0577, 0.0334)) - uTime * 0.42, a2 = dot(p, vec2(0.1043, 0.0436)) - uTime * 0.53, a3 = dot(p, vec2(0.1660, 0.0950)) - uTime * 0.71;
-  float swF = 0.35 + 0.65 * (1.0 - smoothstep(150.0, 900.0, dCam));
-  rip += (vec2(0.866, 0.5) * cos(a1) * 0.055 + vec2(0.92, 0.385) * cos(a2) * 0.042 + vec2(0.868, 0.497) * cos(a3) * 0.03) * swF;
+  // three trains from the W-NW, 90, 55 and 34 m; each fades out as it nears a pixel a wave
+  float a1 = dot(p, vec2(0.0604, 0.0349)) - uTime * 0.42, a2 = dot(p, vec2(0.1050, 0.0439)) - uTime * 0.53, a3 = dot(p, vec2(0.1604, 0.0918)) - uTime * 0.71;
+  float aa1 = 1.0 - smoothstep(0.25, 0.9, fwidth(a1)), aa2 = 1.0 - smoothstep(0.25, 0.9, fwidth(a2)), aa3 = 1.0 - smoothstep(0.25, 0.9, fwidth(a3));
+  rip += vec2(0.866, 0.5) * cos(a1) * 0.05 * aa1 + vec2(0.92, 0.385) * cos(a2) * 0.036 * aa2 + vec2(0.868, 0.497) * cos(a3) * 0.024 * aa3;
   vec2 slopeDir = normalize(vec2(sh.r - texture2D(tShore, clamp(muv + vec2(0.004, 0.0), 0.0, 1.0)).r,
                                  sh.r - texture2D(tShore, clamp(muv + vec2(0.0, 0.004), 0.0, 1.0)).r) + vec2(1e-4));
   float waveS = (exp(-w1 * 4.0) - 0.42 * wall) * swellK * (0.4 + 0.6 * set1) + (exp(-w2 * 5.0) - 0.3 * wall2) * swellK * 0.32;
