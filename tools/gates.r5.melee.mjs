@@ -3148,27 +3148,45 @@ export const GATES = [
       if (!an?.debugMelee) return { pass: null, detail: 'SKIP: no animator.debugMelee' };
       ${FREEZE} ${STAGE} ${AIMLOCK} ${SWING} ${READY}
       if (await toReady(C) !== 'ready') return { pass: null, detail: 'SKIP: the guard never came up' };
-      const r = await rec({ heavy: true });
-      const s = r.samples.filter((x) => x.beat === 'heavy' && x.stance === 'swing');
       const k = (x) => (x.phase === 'windup' ? 'windup' : x.phase === 'strike' ? 'contact' : (x.k <= 0.62 ? 'follow' : 'return'));
-      const rows = {};
-      for (const x of s) {
-        const t = k(x), o = rows[t] || (rows[t] = { frames: 0, rightMax: 0, leftMax: 0, leftFracMin: 9, leftFracMax: -9 });
-        o.frames++;
-        o.rightMax = Math.max(o.rightMax, x.knuckle ?? 9);
-        o.leftMax = Math.max(o.leftMax, x.lp ?? 9);
-        if (typeof x.lgf === 'number') { o.leftFracMin = Math.min(o.leftFracMin, x.lgf); o.leftFracMax = Math.max(o.leftFracMax, x.lgf); }
-      }
       const bad = [];
-      for (const t of ['windup', 'contact', 'follow']) {
-        const o = rows[t];
-        if (!o || o.frames < 2) { bad.push(t + ': only ' + (o?.frames ?? 0) + ' frames'); continue; }
-        if (!(o.rightMax <= 0.05)) bad.push(t + ': right hand ' + o.rightMax + ' m from the shaft');
-        if (!(o.leftMax <= 0.05)) bad.push(t + ': left hand ' + o.leftMax + ' m from the shaft');
-      }
+      const heavyRow = async (tag) => {
+        const r = await rec({ heavy: true });
+        const s = r.samples.filter((x) => x.beat === 'heavy' && x.stance === 'swing');
+        const rows = {};
+        for (const x of s) {
+          const t = k(x), o = rows[t] || (rows[t] = { frames: 0, rightMax: 0, leftMax: 0, leftFracMin: 9, leftFracMax: -9, tMin: 9e9, tMax: 0 });
+          o.frames++;
+          o.rightMax = Math.max(o.rightMax, x.knuckle ?? 9);
+          o.leftMax = Math.max(o.leftMax, x.lp ?? 9);
+          o.tMin = Math.min(o.tMin, x.t); o.tMax = Math.max(o.tMax, x.t);
+          if (typeof x.lgf === 'number') { o.leftFracMin = Math.min(o.leftFracMin, x.lgf); o.leftFracMax = Math.max(o.leftFracMax, x.lgf); }
+        }
+        for (const t of ['windup', 'contact', 'follow']) {
+          const o = rows[t];
+          if (!o || o.frames < 2) { bad.push(tag + ' ' + t + ': only ' + (o?.frames ?? 0) + ' frames'); continue; }
+          if (!(o.rightMax <= 0.05)) bad.push(tag + ' ' + t + ': right hand ' + o.rightMax + ' m from the shaft');
+          if (!(o.leftMax <= 0.05)) bad.push(tag + ' ' + t + ': left hand ' + o.leftMax + ' m from the shaft');
+        }
+        return rows;
+      };
+      const rows = await heavyRow('shepherd');
+      /* THE COUNTERWEIGHT'S HEAVY (bible §5.3; its GLB is armory's W3): the same two-handed beats on its
+       * 1.50 m haft and marks, on its slower clock. The prop in her hand stands in for the model. */
+      const M = C.combat.melee, lay = an.melee, T0 = M.lance.tuning;
+      const VAR = await import('/src/combat/lanceStow.js');
+      M.lance.tuning = VAR.LANCE_VARIANTS.counterweight;
+      lay.attachLance(M.lance.group, 1.50, 1, { grip: 0.20, grip2: 0.55 });
+      if (M.stance !== 'ready') await toReady(C);
+      for (let i = 0; i < 30; i++) await frame();
+      const counterRows = await heavyRow('counterweight');
+      M.lance.tuning = T0;
+      lay.attachLance(M.lance.group, M.lance.length, 1, { grip: M.lance.grip, grip2: M.lance.grip2 });
+      const w0 = rows.windup ? rows.windup.tMax - rows.windup.tMin : 0, w1 = counterRows.windup ? counterRows.windup.tMax - counterRows.windup.tMin : 0;
+      if (!(w1 > w0 * 1.08)) bad.push('the counterweight heavy is not slower: cock ' + w1.toFixed(3) + ' s against ' + w0.toFixed(3) + ' s');
       const banned = (an.melee?.set?.order || []).filter((l) => /Heavy_Combo/i.test(l.action?.getClip?.()?.__maskedFrom || l.action?.getClip?.()?.name || ''));
       if (banned.length) bad.push('the banned combo clip is in the layer: ' + banned.map((l) => l.name).join(','));
-      return { pass: bad.length === 0, detail: { bad, rows, clips: (an.melee?.set?.order || []).map((l) => l.action?.getClip?.()?.__maskedFrom || l.name) } };
+      return { pass: bad.length === 0, detail: { bad, rows, counterRows, clips: (an.melee?.set?.order || []).map((l) => l.action?.getClip?.()?.__maskedFrom || l.name) } };
     })()`),
   },
 

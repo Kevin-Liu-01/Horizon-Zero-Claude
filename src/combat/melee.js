@@ -1594,12 +1594,15 @@ export class Melee {
     else this._queued = { heavy };
   }
 
+  /** What the lance in her hand does to the heavy's clock (bible §5.3, the Counterweight). */
+  _heavyTime() { return this.lance?.tuning?.heavyTime || 1; }
+
   /** The held light becomes the heavy: `meleeLayer` opens its cock from the pose. */
   _toHeavy() {
     this.heavy = true;
     this._i = 0;
     this._t = 0;
-    this._phaseEnd = MELEE.heavy.windup * WINDUP_K * HEAVY_AFTER_HOLD;
+    this._phaseEnd = MELEE.heavy.windup * this._heavyTime() * WINDUP_K * HEAVY_AFTER_HOLD;
     this._struck = false;
     this._charging = false;
     this._chargeHold = false;
@@ -1620,7 +1623,7 @@ export class Melee {
     this._readyT = READY_HOLD;
     this.phase = 'windup';
     // the cock, at the length the canon films it (see WINDUP_K)
-    this._phaseEnd = (heavy ? c.windup : c.windup[i]) * WINDUP_K;
+    this._phaseEnd = (heavy ? c.windup * this._heavyTime() : c.windup[i]) * WINDUP_K;
     this._i = i;
     this._stats.swings++;
     // start the tip trace on this swing, not on the last one's leftovers
@@ -1770,7 +1773,7 @@ export class Melee {
     if (this.phase === 'strike') {
       this.phase = 'recover';
       this._t = 0;
-      this._phaseEnd = heavy ? c.recover : c.recover[i];
+      this._phaseEnd = heavy ? c.recover * this._heavyTime() : c.recover[i];
       return;
     }
     // recover done
@@ -2141,6 +2144,9 @@ export class Melee {
     } catch { res = null; }
 
     this._stats.hits++;
+    /* the Counterweight's bronze bob behind a heavy knocks what it lands on off
+     * its feet (bible §5.3); a machine already down stays a felling blow */
+    if (heavy && !crit && !res?.killed && this.lance?.tuning?.knockdown && machine.alive !== false) machine.forceState?.('stagger');
     if (crit) {
       this._stats.crits++;
       ctx.events.emit('felling-blow', { machine, damage: res?.damage ?? impact });
