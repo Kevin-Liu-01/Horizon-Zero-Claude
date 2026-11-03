@@ -44,10 +44,20 @@ import path from 'node:path';
 import { MeshoptSimplifier } from 'meshoptimizer';
 import { joinPrimitives } from '@gltf-transform/functions';
 import {
-  ROOT, srcRoot, UBC_DIR, HAIR_DIR, readGltf, cleanDoc, nodeByName, graft, addChain, jointIndex, jointPos,
-  newGeo, appendGeo, tubeAlong, stripAlong, bun, band, findLandmarks, GRADED, faceField, applyField,
+  ROOT, srcRoot, UBC_DIR, HAIR_DIR, readGltf, cleanDoc, nodeByName, graft, addChain, jointIndex,
+  findLandmarks, GRADED, faceField, applyField,
   recomputeNormals, positionMap, noise3, hex, smooth, profileMask, iou, rle, writeSkinned, v3,
 } from './lib/face.mjs';
+import {
+  relayoutSkinUV, uvIslands, TriGrid, triSoup, bakeAOTexels, blurMasked, convexity, scalarMap, paintSkinAtlas, decodeStockSkin, webp, blit, paintEye,
+  pores, colourZones, creases, saltPaste, scarSeam, inkDots, smoothSkin, eyeSocketClean, lipTone,
+} from './lib/skin.mjs';
+import {
+  rng, headForm, ellipsoidForm, ribbon, crownCap, cordRing, clothTail, vertexAO, WRAP_ATLAS, paintClothPanel, paintFrayEnd,
+} from './lib/wrap.mjs';
+import {
+  coilField, coilSampler, paintCoilTile, paintCoilFringe, paintLockTile, hairCoverage, hairlineLayer, scatterAnchors, coilCards, coilLocks, browLayer,
+} from './lib/hair.mjs';
 
 export const LANE = 'hero-body';
 export const OUTPUTS = ['public/models/hero/brea.glb', 'public/models/hero/brea-clips-ual2.glb'];
@@ -122,15 +132,23 @@ export const CHAINS = {
   },
 };
 
-/** Face bumps in GAME millimetres (bible §3.5), turned into raw-unit bumps below. */
+/**
+ * Face bumps in GAME millimetres (bible §3.5), turned into raw-unit bumps below.
+ * character-art (W1, R54): the same seven landmarks, re-shaped. The W0b field
+ * pushed the nose tip 7 mm forward and DOWN with a wide sigma (a blunt, drooping
+ * nose) and pulled the chin down into a point; now the bridge rises, the tip lifts
+ * and narrows, the alae come in, the chin is broad and square, and the mandible
+ * carries one continuous line from the gonion to the chin. Every graded landmark
+ * still moves >= 6 mm (A-face-delta); the eye sockets stay rigid.
+ */
 const FACE_MM = {
-  noseBridge: { d: [0, 0.4, 6.4], s: 0.013 },
-  noseTip: { d: [0, -2.4, 7.0], s: 0.013 },
-  cheek: { d: [6.0, 0.0, 3.0], s: 0.016 },     // mirrored for the right side
-  jaw: { d: [6.8, -1.6, 0.0], s: 0.017 },      // mirrored
-  chin: { d: [0, -3.2, 5.6], s: 0.014 },
-  brow: { d: [0, 0.6, 4.2], s: 0.016 },
-  upperLip: { d: [0, 0.0, -2.0], s: 0.008 },
+  noseBridge: { d: [0, 0.6, 6.2], s: 0.0125 },
+  noseTip: { d: [0, 3.0, 5.6], s: 0.0098 },
+  cheek: { d: [5.2, 1.4, 3.4], s: 0.0165 },     // mirrored for the right side
+  jaw: { d: [6.2, -2.2, 0.6], s: 0.0235 },      // mirrored
+  chin: { d: [0, -1.6, 6.2], sx: 0.0215, sy: 0.0125, sz: 0.016 },
+  brow: { d: [0, 0.8, 4.4], s: 0.0165 },
+  upperLip: { d: [0, -0.4, -1.2], s: 0.0085 },
 };
 
 export async function build({ out = ROOT } = {}) {
@@ -168,19 +186,32 @@ export async function build({ out = ROOT } = {}) {
 
   // ---- the face field
   const bumps = [];
-  const B = (at, d, s) => bumps.push({ at, d: d.map(mm), s: s / S });
-  B(L.noseBridge, FACE_MM.noseBridge.d, FACE_MM.noseBridge.s);
-  B(L.noseTip, FACE_MM.noseTip.d, FACE_MM.noseTip.s);
-  B(L.cheekL, FACE_MM.cheek.d, FACE_MM.cheek.s);
-  B(L.cheekR, [-FACE_MM.cheek.d[0], FACE_MM.cheek.d[1], FACE_MM.cheek.d[2]], FACE_MM.cheek.s);
-  B(L.jawL, FACE_MM.jaw.d, FACE_MM.jaw.s);
-  B(L.jawR, [-FACE_MM.jaw.d[0], FACE_MM.jaw.d[1], FACE_MM.jaw.d[2]], FACE_MM.jaw.s);
-  B(L.chin, FACE_MM.chin.d, FACE_MM.chin.s);
-  B(L.brow, FACE_MM.brow.d, FACE_MM.brow.s);
+  const B = (at, d, s, ax = null) => bumps.push({ at, d: d.map(mm), s: s / S, ...(ax ? { sx: ax[0] / S, sy: ax[1] / S, sz: ax[2] / S } : {}) });
+  const FM = FACE_MM;
+  B(L.noseBridge, FM.noseBridge.d, FM.noseBridge.s, [0.0095, 0.019, 0.016]);
+  B(L.noseTip, FM.noseTip.d, FM.noseTip.s, [0.0105, 0.0088, 0.012]);
+  B(L.cheekL, FM.cheek.d, FM.cheek.s);
+  B(L.cheekR, [-FM.cheek.d[0], FM.cheek.d[1], FM.cheek.d[2]], FM.cheek.s);
+  B(L.jawL, FM.jaw.d, FM.jaw.s);
+  B(L.jawR, [-FM.jaw.d[0], FM.jaw.d[1], FM.jaw.d[2]], FM.jaw.s);
+  B(L.chin, FM.chin.d, 0.016, [FM.chin.sx, FM.chin.sy, FM.chin.sz]);
+  B(L.brow, FM.brow.d, FM.brow.s);
   // the brow ridge runs across both brows, not only the glabella
   B([L.brow[0] + 0.032, L.brow[1] - 0.004, L.brow[2] - 0.016], [0.6, 0.4, 3.4], 0.014);
   B([L.brow[0] - 0.032, L.brow[1] - 0.004, L.brow[2] - 0.016], [-0.6, 0.4, 3.4], 0.014);
-  B(L.upperLip, FACE_MM.upperLip.d, FACE_MM.upperLip.s);
+  B(L.upperLip, FM.upperLip.d, FM.upperLip.s);
+  // the alae come in and the columella lifts with the tip (no blunt ball nose)
+  const ty = L.noseTip[1], tz = L.noseTip[2];
+  B([0.0175, ty - 0.003, tz - 0.022], [-2.6, 1.2, -0.8], 0.0072);
+  B([-0.0175, ty - 0.003, tz - 0.022], [2.6, 1.2, -0.8], 0.0072);
+  B([0, ty - 0.012, tz - 0.012], [0, 1.6, -1.0], 0.0062);
+  // the mandible: one line from the gonion to the chin, a little below the stock edge
+  for (const sx of [1, -1]) {
+    B([sx * 0.040, L.chin[1] + 0.012, 0.030], [sx * 3.0, -2.4, 0.4], 0.0165);
+    B([sx * 0.024, L.chin[1] + 0.004, 0.066], [sx * 2.6, -1.2, 1.2], 0.0135);
+  }
+  // the neck takes a little more body under the jaw, so the head does not sit on a stalk
+  for (const sx of [1, -1]) B([sx * 0.036, 1.515, -0.010], [sx * 4.4, 0, 0.4], 0.021);
   // head-only region: nothing below the jaw line or behind the ears moves
   const region = (p) => smooth(1.47, 1.505, p[1]) * smooth(-0.075, -0.02, p[2]);
   const field = faceField(bumps, { rigid: eyes, r0: mm(15), r1: mm(33), region });   // the eye ball reaches ~14 mm from its centre: rigid to 15, 18 mm falloff
