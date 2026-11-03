@@ -248,10 +248,6 @@ export function currentWave(root = ROOT, env = process.env) {
  * Remove an entry together with its file (and, for a row-backed entry, its row).
  */
 export const SCHEDULED_IP = {
-  'public/models/aloy.glb': {
-    delete_at: 'W0 exit', owner: 'hero-body', liveRow: 'hero',
-    why: 'Round-4 hero body, kept until Brea passes the hero-body block (plan §6, R30)',
-  },
   'public/anims-hybrid/aloy-ual.json': {
     delete_at: 'W0a', owner: 'gates-perf',
     why: 'Round-4 lab bake keyed to the IP hero rig\'s bones; deleted with public/anims-hybrid/** at W0a (plan §6)',

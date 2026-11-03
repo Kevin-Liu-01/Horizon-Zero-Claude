@@ -108,6 +108,7 @@
       "licence_text": "public/fonts/BodoniModa-OFL.txt",
       "archive_sha256": "0854f8df59047ff85cdac23551b2acd2ba03ed52990f20f17c9bf2a546bb62c5",
       "archive_bytes": 104288,
+      "archive_note": "archive_sha256 = SHA-256 of the sorted `sha256  filename` manifest of the files below (no single archive: Google Fonts serves one woff2 per subset); each file keeps its own source_url + sha256",
       "retrieved": "2026-10-19",
       "modified": "unmodified: the Google Fonts latin-subset woff2 (Version 2.005, axes wght 400..900 + opsz 6..96), roman and italic; renamed only",
       "attribution": null,
@@ -130,8 +131,7 @@
           "sha256": "931dfe2e0cd3c9443295f5c1d754b8a8403bf060df50c1d5900267ade83d0046",
           "bytes": 4400
         }
-      ],
-      "archive_note": "archive_sha256 = SHA-256 of the sorted `sha256  filename` manifest of the files below (no single archive: Google Fonts serves one woff2 per subset); each file keeps its own source_url + sha256"
+      ]
     },
     {
       "id": "font-ibm-plex-mono",
@@ -146,6 +146,7 @@
       "licence_text": "public/fonts/IBMPlexMono-OFL.txt",
       "archive_sha256": "eb0ab81349423cd0dbbc13bd7fc461a64fa7019d88730b19980755c6cb3670da",
       "archive_bytes": 14516,
+      "archive_note": "archive_sha256 = SHA-256 of the sorted `sha256  filename` manifest of the files below (no single archive: Google Fonts serves one woff2 per subset); each file keeps its own source_url + sha256",
       "retrieved": "2026-10-19",
       "modified": "unmodified: the Google Fonts latin-subset woff2 (Version 2.3), weight 500; renamed only",
       "attribution": null,
@@ -162,8 +163,7 @@
           "sha256": "7e6b2818edbd8f6a01ae80641cc8f16a51080d08fb4e532be3a0b6f74adb07da",
           "bytes": 4456
         }
-      ],
-      "archive_note": "archive_sha256 = SHA-256 of the sorted `sha256  filename` manifest of the files below (no single archive: Google Fonts serves one woff2 per subset); each file keeps its own source_url + sha256"
+      ]
     },
     {
       "id": "font-ibm-plex-sans-condensed",
@@ -179,6 +179,7 @@
       "licence_text": "public/fonts/IBMPlexSansCondensed-OFL.txt",
       "archive_sha256": "3d1dc2e3ebe18b05c0b9412750cd5ae7b0454b658fada899489b2c946e1d07c6",
       "archive_bytes": 33940,
+      "archive_note": "archive_sha256 = SHA-256 of the sorted `sha256  filename` manifest of the files below (no single archive: Google Fonts serves one woff2 per subset); each file keeps its own source_url + sha256",
       "retrieved": "2026-10-19",
       "modified": "unmodified: the Google Fonts latin-subset woff2 (Version 1.3), weights 500 and 600; renamed only",
       "attribution": null,
@@ -201,8 +202,7 @@
           "sha256": "7e6b2818edbd8f6a01ae80641cc8f16a51080d08fb4e532be3a0b6f74adb07da",
           "bytes": 4456
         }
-      ],
-      "archive_note": "archive_sha256 = SHA-256 of the sorted `sha256  filename` manifest of the files below (no single archive: Google Fonts serves one woff2 per subset); each file keeps its own source_url + sha256"
+      ]
     },
     {
       "id": "instrument-tiller",
@@ -236,46 +236,6 @@
       "attribution": null,
       "delete_at": "W1 exit",
       "delete_owner": "world-ground"
-    },
-    {
-      "id": "legacy-anims-duplicates",
-      "paths": [
-        "public/anims-hybrid/ual/**",
-        "public/anims-reskin/**",
-        "public/anims-retarget/**"
-      ],
-      "title": "Round-4 lab copies of the Universal Animation Library",
-      "author": "Quaternius",
-      "source_url": "https://quaternius.itch.io/universal-animation-library",
-      "licence": "CC0-1.0",
-      "licence_text": "public/anims/LICENSE",
-      "archive_sha256": null,
-      "retrieved": null,
-      "modified": null,
-      "attribution": null,
-      "legacy": "r4",
-      "delete_at": "W0a",
-      "delete_owner": "gates-perf"
-    },
-    {
-      "id": "legacy-anims-lab-bake",
-      "paths": [
-        "public/anims-hybrid/aloy-ual.json"
-      ],
-      "title": "Round-4 lab bake of the CC0 clips onto the Round-4 hero rig",
-      "author": "CALIMA project (tools/spike-hybrid-bake.mjs)",
-      "source_url": "tools/spike-hybrid-bake.mjs",
-      "licence": "project-original",
-      "licence_text": null,
-      "archive_sha256": null,
-      "retrieved": null,
-      "modified": null,
-      "attribution": null,
-      "legacy": "r4",
-      "ip": true,
-      "delete_at": "W0a",
-      "delete_owner": "gates-perf",
-      "ip_note": "Our bake, but keyed to the IP hero rig: per-bone rest directions of that rig (aloyBindDir on its bone names). Treated as IP-derived (R30); gates-perf deletes it with public/anims-hybrid/** at W0a."
     },
     {
       "id": "legacy-audio",
