@@ -692,12 +692,21 @@ function trackAt(e, n) {
 /**
  * A site you can stand on and walk to (`A-reach-all-sites`: frozen nav.js blocks any 2 m cell
  * steeper than 45°). PADS level a small disc at the site's stated height and ease out to the
- * country. The Rust Cone's flanks stand at the angle of repose, so a cinder track climbs a third
- * of the way round it to T3 on the rim.
+ * country. RAMPS join a site that stands on a steep spur to the nearest walkable ground: a bench
+ * level from side to side, the spur a Rust Cone flank at the angle of repose runs down, a
+ * shoulder on the Cloudline ridge. All blockout, re-sculpted with their biomes (W3, W4).
  */
-const PADS = Object.freeze(['rust-cone', 'mistfold', 'pinned-cliff', 'the-fundamental', 'T4']
-  .map((id) => [...SITES, ...TRIG].find((s) => s.id === id))
-  .map((s) => ({ e: s.e, n: s.n, h: s.h, r0: s.id === 'pinned-cliff' || s.id === 'the-fundamental' ? 16 : 8, r1: s.id === 'pinned-cliff' || s.id === 'the-fundamental' ? 52 : 34 })));
+const PADS = Object.freeze([['rust-cone', 6, 12], ['mistfold', 4, 9], ['pinned-cliff', 14, 44], ['the-fundamental', 7, 20], ['T4', 3, 11]]
+  .map(([id, r0, r1]) => {
+    const s = [...SITES, ...TRIG].find((q) => q.id === id);
+    return { e: s.e, n: s.n, h: s.h, r0, r1 };
+  }));
+const RAMPS = Object.freeze([
+  [282.2, -95, 145, 272, -10, 105],       // Rust Cone, T3
+  [64, 320, 214, 64, 304, 211.8],        // T4
+  [128, 144, 233, 100, 144, 240],        // the Fundamental
+  [236, 261, 66, 206, 262, 72],          // Mistfold
+]);
 
 function padHeight(e, n, h) {
   for (let i = 0; i < PADS.length; i++) {
@@ -705,6 +714,18 @@ function padHeight(e, n, h) {
     if (dx > P.r1 || dx < -P.r1 || dz > P.r1 || dz < -P.r1) continue;
     const d = Math.hypot(dx, dz);
     if (d < P.r1) h += (P.h - h) * (1 - ss(P.r0, P.r1, d));
+  }
+  return h;
+}
+
+function rampHeight(e, n, h) {
+  for (let i = 0; i < RAMPS.length; i++) {
+    const R = RAMPS[i];
+    if (e < Math.min(R[0], R[3]) - 14 || e > Math.max(R[0], R[3]) + 14 || n < Math.min(R[1], R[4]) - 14 || n > Math.max(R[1], R[4]) + 14) continue;
+    const q = distToSeg(e, n, R[0], R[1], R[3], R[4]);
+    if (q.d >= 13) continue;
+    const hl = R[2] + (R[5] - R[2]) * q.t;
+    h += (hl - h) * (1 - ss(3.4, 13, q.d));
   }
   return h;
 }
@@ -805,28 +826,6 @@ function glassD(e, n) {
   const r = Math.hypot(gu, gv);
   if (r > 2.4) return r;
   return r + (fbm(e * 0.017 + 4, n * 0.017, 2) - 0.5) * 0.7 + (fbm(e * 0.055, n * 0.055 + 4, 2) - 0.5) * 0.24;
-}
-
-const CONE_PROFILE = (dk) => CONE.h * Math.pow(Math.max(0, 1 - dk / CONE.r), 1.12);
-/** The cinder track up the Rust Cone: a bench cut across the flank, level from side to side. */
-const CONE_TRACK = (() => {
-  const pts = [];
-  for (let i = 0; i <= 18; i++) {
-    const t = i / 18;
-    const dk = 92 * (1 - t) + 4 * t, phi = (205 - 200 * t) * Math.PI / 180;       // climbs from the SW round by the E
-    pts.push([CONE.e + Math.cos(phi) * dk, CONE.n + Math.sin(phi) * dk, CONE_PROFILE(dk)]);
-  }
-  return pts;
-})();
-function coneTrack(e, n, h) {
-  if (Math.hypot(e - CONE.e, n - CONE.n) > CONE.r + 14) return h;
-  let best = 1e9, hl = h;
-  for (let i = 0; i < CONE_TRACK.length - 1; i++) {
-    const a = CONE_TRACK[i], b = CONE_TRACK[i + 1];
-    const q = distToSeg(e, n, a[0], a[1], b[0], b[1]);
-    if (q.d < best) { best = q.d; hl = a[2] + (b[2] - a[2]) * q.t; }
-  }
-  return best > 12 ? h : h + (hl - h) * (1 - ss(3.2, 12, best));
 }
 
 /** Signed distance to the shoreline with its noise: + inland, metres (authored frame). */
@@ -949,15 +948,13 @@ function heightAuthored(e, n) {
     const k = 1 - ss(0.9, 1.42, gd);
     h += (bed - h) * k;
   }
-  h = coneTrack(e, n, h);
-  h = padHeight(e, n, h);
   // a track is a hand's depth into the ground
   const tr = trackAt(e, n);
   if (tr > 0.05) h -= 0.07 * tr;
 
   /* ---------- meeting the sea ---------- */
   const shoreW = 11 + 6 * pans + 8 * cloud;
-  return h * (1 - Math.exp(-c / shoreW));
+  return padHeight(e, n, rampHeight(e, n, h * (1 - Math.exp(-c / shoreW))));
 }
 
 /** Full-detail island height at an engine point. Baked once onto the render grid. */
