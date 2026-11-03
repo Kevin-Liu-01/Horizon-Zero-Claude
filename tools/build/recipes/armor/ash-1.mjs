@@ -74,13 +74,36 @@ function ashTrim(W, H, trimH) {
   T.cell('capelet', 150, 90, (t, o) => { t.X = t.ax * 0.012; t.Y = t.ay * 0.012; t.Z = 0; wool(t, o, COL.wool, 9); });
   T.cell('celadon', 110, 60, (t, o) => { const m = fbm(t.ax * 0.1, t.ay * 0.1, 6.6, 3); put(o, sc(COL.mica, 0.5 + 0.9 * m)); o.rough = 0.22; });
   T.cell('crust', 96, 60, (t, o) => { const m = fbm(t.ax * 0.2, t.ay * 0.2, 3.3, 3); put(o, sc(COL.felt, 0.74 + 0.5 * m)); o.rough = 0.97; });
+  T.cell('tongue', 240, 46, (t, o) => {
+    const f = (t.x * 0.07 + t.y * 0.1) % 1, r = Math.sin(f * Math.PI);
+    put(o, sc(COL.cord, 0.62 + 0.36 * r)); o.h = 0.003 * r; o.rough = 0.92; o.det = 0;
+  });
+  T.cell('sash', 300, 44, (t, o) => {
+    t.X = t.ax * 0.012; t.Y = t.ay * 0.012; t.Z = 0;
+    wool(t, o, COL.rust, 13);
+    const c = Math.abs(2 * fbm(t.ax * 0.02, t.y * 0.16, 2.9, 2) - 1);
+    o.h += 0.0024 * (c - 0.6);
+    const q = 0.84 + 0.22 * c; o.r *= q; o.g *= q; o.b *= q;
+  });
+  T.cell('bind', 240, 18, (t, o) => {
+    t.X = t.ax * 0.012; t.Y = t.ay * 0.012; t.Z = 0;
+    wool(t, o, sc(COL.rust, 0.72), 14);
+    const b = 1 - clamp(Math.abs(t.y - 5) / 0.8);
+    if (b > 0 && ((t.x / 4) % 1) < 0.58) over(o, [150, 110, 80], b * 0.5);
+  });
   // the cowl and the chest wraps: thick black wool with a stitched edge
   return T;
 }
 
 const ASH_PAINTERS = {
-  yoke(t, o) { wool(t, o, COL.black, 1); seam(t, o, { threads: false, groove: 0.82 }); },
-  smockbody(t, o) { wool(t, o, COL.black, 1); seam(t, o, { thread: [90, 62, 44], d0: 3.6, a: 0.5 }); const f1 = fbm(t.X * 19, t.Y * 2.4, t.Z * 19, 3); o.h += 0.0075 * (f1 - 0.5); o.ao *= 1 - 0.3 * sstep(1.178, 1.148, t.Y); },
+  underyoke(t, o) { wool(t, o, sc(COL.rust, 0.9), 15); o.ao *= 0.62 + 0.38 * sstep(1.40, 1.49, t.Y); seam(t, o, { threads: false, groove: 0.82 }); o.crease = 0.4; },
+  smock(t, o) {
+    wool(t, o, COL.black, 1);
+    const f1 = fbm(t.X * 19, t.Y * 2.4, t.Z * 19, 3);
+    const gw = sstep(1.26, 1.165, t.Y);
+    o.h += 0.0055 * (f1 - 0.5) + 0.004 * gw * (fbm(Math.atan2(t.Z + 0.02, t.X) * 6, t.Y * 3, 3.1, 3) - 0.5);
+    o.ao *= 1 - 0.3 * sstep(1.178, 1.148, t.Y);
+  },
   skirt(t, o) {
     wool(t, o, COL.black, 2);
     seam(t, o, { thread: [120, 76, 48], d0: 3.6, line2: 3, a: 0.6 });

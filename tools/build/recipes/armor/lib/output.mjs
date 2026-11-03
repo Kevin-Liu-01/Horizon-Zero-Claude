@@ -27,7 +27,7 @@ export function outfitDoc(doc, parts, { name, matName, tex = null, texPrefix = '
     .setAttribute('POSITION', acc('VEC3', new Float32Array(m.pos)))
     .setAttribute('NORMAL', acc('VEC3', nrm))
     .setAttribute('TEXCOORD_0', acc('VEC2', new Float32Array(m.uv)))
-    .setAttribute('JOINTS_0', acc('VEC4', new Uint16Array(m.jnt)))
+    .setAttribute('JOINTS_0', acc('VEC4', new Uint8Array(m.jnt)))
     .setAttribute('WEIGHTS_0', acc('VEC4', wgt))
     .setIndices(acc('SCALAR', new Uint32Array(m.idx)));
   if (pieces) prim.setAttribute('_PIECE', acc('SCALAR', new Uint8Array(m.piece)));
@@ -65,9 +65,9 @@ export async function writeOutfit(doc, file, { recipe, sources, licence, r5Outfi
   await MeshoptEncoder.ready;
   await doc.transform(
     reorder({ encoder: MeshoptEncoder }),
-    quantize({ pattern: /^(POSITION|NORMAL|TEXCOORD_0|WEIGHTS_0)$/, quantizationVolume: 'scene', quantizePosition: 13, quantizeNormal: 8, quantizeTexcoord: 11, quantizeWeight: 8 }),
+    quantize({ pattern: /^(POSITION|NORMAL|TEXCOORD_0|WEIGHTS_0)$/, quantizationVolume: 'scene', quantizePosition: 12, quantizeNormal: 8, quantizeTexcoord: 11, quantizeWeight: 8 }),
   );
-  doc.createExtension(EXTMeshoptCompression).setRequired(true).setEncoderOptions({ method: EXTMeshoptCompression.EncoderMethod.QUANTIZE });
+  doc.createExtension(EXTMeshoptCompression).setRequired(true).setEncoderOptions({ method: EXTMeshoptCompression.EncoderMethod.FILTER });
   const stats = { tris, verts, materials: doc.getRoot().listMaterials().length, meshes: doc.getRoot().listMeshes().length, textures: doc.getRoot().listTextures().length, bones: doc.getRoot().listSkins().reduce((n, s) => n + s.listJoints().length, 0) };
   const asset = doc.getRoot().getAsset();
   asset.generator = GENERATOR;

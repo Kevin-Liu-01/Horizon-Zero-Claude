@@ -101,7 +101,7 @@ export function lanceGeo(cell, { lod = 0 } = {}) {
   const sides = lod ? 6 : 8;
   // the bob: a cast plumb bob, point down, a collar and a knop at its neck
   merge(g, lathe([[0.0005, 0], [0.007, 0.006], [0.019, 0.018], [0.036, 0.040], [0.045, 0.060], [0.0445, 0.070], [0.038, 0.082], [0.027, 0.094], [0.021, 0.098], [0.0215, 0.102], [r + 0.0045, 0.105], [r + 0.0045, 0.112], [r + 0.0015, 0.116]],
-    { sides: lod ? 10 : 12, rect: cell('bronzeCast'), uAlong: true }));
+    { sides: lod ? 10 : 14, rect: cell('bronzeCast'), uAlong: true }));
   const hr = (y) => r * (1.0 - 0.14 * Math.max(0, (y - 0.3) / 1.0));   // a shaved taper toward the head
   const haft = (y0, y1, name, uR, rows = 1, fat = 0) => {
     const prof = [];
@@ -119,7 +119,7 @@ export function lanceGeo(cell, { lod = 0 } = {}) {
     const prof = [], rows = lod ? 4 : 10;
     for (let i = 0; i <= rows; i++) {
       const y = cy - h + (2 * h) * (i / rows);
-      const bump = i === 0 || i === rows ? 0.0008 : (i % 2 ? 0.0034 : 0.0018);
+      const bump = i === 0 || i === rows ? 0.0008 : (i % 2 ? 0.0028 : 0.0021);
       prof.push([hr(y) + bump, y]);
     }
     merge(g, lathe(prof, { sides, rect: cell('esparto'), uAlong: false, vRange: [0, 1] }));
@@ -236,7 +236,7 @@ export function bowGeo(cell, { lod = 0 } = {}) {
     const prof = [];
     for (let i = 0; i <= n; i++) {
       const y = y0 + (y1 - y0) * (i / n);
-      const bump = i === 0 || i === n ? 0.0004 : (i % 2 ? 0.0038 : 0.0018);
+      const bump = i === 0 || i === n ? 0.0004 : (i % 2 ? 0.0031 : 0.0024);
       prof.push([base + bump, y]);
     }
     return tag(lathe(prof, { sides, rect: cell(name), uAlong: false, ry: () => 1.06 }), 0, (x, y) => stStave(y));

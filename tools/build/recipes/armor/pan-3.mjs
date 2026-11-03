@@ -25,14 +25,14 @@ export async function build({ out = ROOT } = {}) {
         case 'boots': return sstep(0.32, 0.05, y) * 0.92;
         case 'sleeves': return sstep(0.33, 0.41, Math.abs(x)) * 0.72;
         case 'cuffs': return 0.8;
-        case 'yoke': return sstep(1.46, 1.52, y) * 0.5;
+        case 'smock': return sstep(1.46, 1.52, y) * 0.5;
         case 'sash': return 0.6;
         default: return 0;
       }
     },
     add: async (base) => {
       const { trim, J, bodyPart } = base;
-      const surf = new Field([bodyPart, ...base.parts.filter((q) => q.slot === 'yoke' || q.slot === 'sling' || q.slot === 'sleeves')], 0.04);
+      const surf = new Field(base.parts.filter((q) => q.slot === 'smock' || q.slot === 'sling' || q.slot === 'sleeves'), 0.04);
       const scutes = emptyPart('scutes', { trim: true });
       const rc = trim.rect('celadon');
       for (const side of [1, -1]) {

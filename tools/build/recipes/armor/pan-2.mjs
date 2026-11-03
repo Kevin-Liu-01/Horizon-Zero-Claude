@@ -17,7 +17,7 @@ export const HAT = { brimR: 0.21, brimY: 1.722, tiltX: -0.10, crown: 0.105, topY
 
 /** The hat, local: brim plane y = 0, crown up. Two faces come from the double-sided material. */
 function hatInto(part, X, Y, Z, T, rect, joint, bit) {
-  const SIDES = 18;
+  const SIDES = 16;
   // [radius, y]: brim edge rolled, brim, crown base, crown shoulder, a flat woven top
   const prof = [[HAT.brimR, -0.012], [HAT.brimR - 0.004, -0.004], [HAT.brimR - 0.05, 0.006], [HAT.crown + 0.012, 0.016], [HAT.crown, 0.04], [HAT.crown * 0.92, 0.10], [HAT.crown * 0.62, 0.155], [0.0005, HAT.topY]];
   const base = part.pos.length / 3;
@@ -46,12 +46,12 @@ export async function build({ out = ROOT } = {}) {
     out, file: OUTPUTS[0], recipe: RECIPE, variant: 'pan-2', name: 'Pan Whites II — Guild Whites', pieces: ['capelet', 'clasp', 'hat'],
     add: async (base) => {
       const { trim, J, bodyPart, clothField } = base;
-      const surf = new Field([bodyPart, ...base.parts.filter((p) => p.slot === 'yoke' || p.slot === 'sling')], 0.04);
+      const surf = new Field(base.parts.filter((p) => p.slot === 'smock' || p.slot === 'sling'), 0.04);
       const jS3 = J('spine_03'), jCl = J('clavicle_l'), jCr = J('clavicle_r');
       // the capelet: rigid across the shoulders (spine_03 easing onto the clavicles), never on the upper arm
       const cap = emptyPart('capelet', { trim: true });
       const rectC = trim.rect('capelet');
-      const COLS = 40;
+      const COLS = 32;
       const inner = [], outer = [];
       const oOpen = 0.16;          // the front opening, radians either side of +Z, closed by the clasp
       for (let c = 0; c <= COLS; c++) {

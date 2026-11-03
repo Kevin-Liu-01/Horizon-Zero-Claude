@@ -113,7 +113,7 @@ export function smockBody(part, surf, skin, { yTop = 1.215, yBelt = 1.095, rBelt
  * the skirt opens. Panels follow pelvis near the belt and their thigh toward the
  * hem, each panel its own side, so the legs never stretch a panel across them.
  */
-export function skirtPanels(mk, surf, joints, { yTop = 1.025, yHem = 0.74, off = 0.008, flare = 0.14, slits, rows = 6, colsPer = 16, ripA = 0.007, seed = 3, density = 1, overlap = 0.05, thighW = 0.92, keep = null, slot = 'skirt', hem = null, floorY = null, ringDth = null } = {}) {
+export function skirtPanels(mk, surf, joints, { yTop = 1.025, yHem = 0.74, off = 0.008, flare = 0.14, slits, rows = 6, colsPer = 16, ripA = 0.007, seed = 3, density = 1, overlap = 0.05, thighW = 0.92, keep = null, slot = 'skirt', hem = null, floorY = null, ringDth = null, lip = 0 } = {}) {
   const cz = -0.02;
   const n = slits.length;
   const made = [];
@@ -138,16 +138,21 @@ export function skirtPanels(mk, surf, joints, { yTop = 1.025, yHem = 0.74, off =
     const part = mk(slot);
     const mid = start + span / 2;
     const side = Math.cos(mid) >= 0 ? 'l' : 'r';
-    gridInto(part, rows, colsPer, (_a, _b, r, c) => {
+    // a lip is one more row: the hem turned inward, so the edge has a thickness
+    const R2 = rows + (lip ? 1 : 0);
+    gridInto(part, R2, colsPer, (_a, _b, r0, c) => {
+      const isLip = r0 > rows;
+      const r = Math.min(r0, rows);
       const t = r / rows;
       const th = start + span * (c / colsPer);
       const hemY = hem ? hem(th, yHem) : yHem;
-      const y = mix(yTop, hemY, t);
-      const rad = profs[r][c] + ripA * sstep(0.05, 0.9, t) * ripple(th, seed + i, [7, 11, 17]);
+      const y = mix(yTop, hemY, t) + (isLip ? 0.004 : 0);
+      // deeper folds low on the skirt: the hem's outline is what reads from across a pan
+      const rad = profs[r][c] + ripA * sstep(0.05, 0.9, t) * ripple(th, seed + i, [7, 11, 17]) + (isLip ? -lip : 0);
       const p = [Math.cos(th) * rad, y, cz + Math.sin(th) * rad];
       const w = thighW * sstep(0.02, 0.85, t);
       const thigh = joints[`thigh_${side}`], pel = joints.pelvis;
-      return { p, uv: [(c / colsPer) * span * 0.2, yTop - y], j: [pel, thigh, 0, 0], w: [1 - w, w, 0, 0] };
+      return { p, uv: [(c / colsPer) * span * 0.2, yTop - y + (isLip ? 0.008 : 0)], j: [pel, thigh, 0, 0], w: [1 - w, w, 0, 0] };
     });
     part.density = density;
     orientOut(part);
@@ -162,7 +167,7 @@ export function beltRing(part, surf, skin, { y = 1.06, h = 0.07, off = 0.013, co
   const cz = -0.02;
   // profile of the widest of the belt's rows, so it reads as one stiff strap
   const rows = [
-    [-0.5, -lip * 0.5], [-0.5, thick * 0.7], [-0.38, thick], [0, thick], [0.38, thick], [0.5, thick * 0.7], [0.5, -lip * 0.5],
+    [-0.5, -lip * 0.5], [-0.5, thick * 0.7], [-0.38, thick], [0.38, thick], [0.5, thick * 0.7], [0.5, -lip * 0.5],
   ];
   // stiff: one straight line between its two edges, read from the surface UNDER the belt
   const rTop = ring(surf, y + h / 2, cols, { keep, dy, dth: 0.16, smooth: 3 }), rBot = ring(surf, y - h / 2, cols, { keep, dy, dth: 0.16, smooth: 3 });

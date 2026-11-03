@@ -227,7 +227,7 @@ export async function paintAtlas(parts, layout, { painters, srcNormal = null, tr
   }
 
   const R = new Float32Array(NT * 3), ROUGH = new Float32Array(NT).fill(0.85), METAL = new Float32Array(NT), DET = new Float32Array(NT), HT = new Float32Array(NT), SALT = new Float32Array(NT), AO = new Float32Array(NT).fill(1);
-  const WEAR = new Float32Array(NT).fill(1);
+  const WEAR = new Float32Array(NT).fill(1), CREASE = new Float32Array(NT).fill(1);
   const nX = new Float32Array(NT), nY = new Float32Array(NT);
   const o = { r: 128, g: 128, b: 128, rough: 0.85, metal: 0, det: 0, h: 0, salt: 0, ao: 1, wear: 1 };
   const t = { x: 0, y: 0, X: 0, Y: 0, Z: 0, nx: 0, ny: 0, nz: 0, d: 0, slot: '', part: null, isl: null, D };
@@ -241,11 +241,11 @@ export async function paintAtlas(parts, layout, { painters, srcNormal = null, tr
     t.nx = N[i * 3] / nl; t.ny = N[i * 3 + 1] / nl; t.nz = N[i * 3 + 2] / nl;
     t.d = dist[i]; t.slot = isl.part.slot; t.part = isl.part; t.isl = isl;
     t.dm = dist[i] / (D * isl.density);    // edge distance in metres
-    o.salt = 0; o.ao = 1; o.h = 0; o.metal = 0; o.det = 0; o.rough = 0.85; o.wear = 1;
+    o.salt = 0; o.ao = 1; o.h = 0; o.metal = 0; o.det = 0; o.rough = 0.85; o.wear = 1; o.crease = 1;
     const fn = painters[t.slot] || painters.default;
     fn(t, o);
     R[i * 3] = o.r; R[i * 3 + 1] = o.g; R[i * 3 + 2] = o.b;
-    ROUGH[i] = o.rough; METAL[i] = o.metal; DET[i] = o.det; HT[i] = o.h; SALT[i] = o.salt; AO[i] = o.ao; WEAR[i] = o.wear;
+    ROUGH[i] = o.rough; METAL[i] = o.metal; DET[i] = o.det; HT[i] = o.h; SALT[i] = o.salt; AO[i] = o.ao; WEAR[i] = o.wear; CREASE[i] = o.crease;
     if (srcNormal && !isl.part.metricUV) {
       readRGB(srcNormal, S[i * 2], S[i * 2 + 1], sn);
       const a = (sn[0] / 127.5 - 1) * (isl.part.nScale ?? 1), b = (sn[1] / 127.5 - 1) * (isl.part.nScale ?? 1);
@@ -287,7 +287,7 @@ export async function paintAtlas(parts, layout, { painters, srcNormal = null, tr
     const wearK = WEAR[i];
     let r = R[i * 3], g = R[i * 3 + 1], b = R[i * 3 + 2];
     const lift = 1 + ridge * ridgeK * 0.35 * wearK;
-    const dark = (1 - crease * creaseK * 0.42) * ao;
+    const dark = (1 - crease * creaseK * 0.42 * CREASE[i]) * ao;
     r *= lift * dark; g *= lift * dark; b *= lift * dark;
     const sm = clamp(SALT[i] * (0.65 + crease * 1.4));
     if (sm > 0) { const s2 = sstep(0.18, 0.62, sm); r += (salt[0] - r) * s2; g += (salt[1] - g) * s2; b += (salt[2] - b) * s2; }

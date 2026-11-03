@@ -50,14 +50,14 @@ export function weaponTrim() {
       const d = Math.hypot((t.u - ku) * t.w / 7, (t.v - kv) * t.h / 5);
       if (d < 1.3) { const q = 1 - 0.62 * (1 - d / 1.3); o.r *= q; o.g *= q; o.b *= q; o.h -= 0.0006 * (1 - d / 1.3); }
     }
-    o.rough = 0.5 + 0.14 * stripe; o.det = 0;
+    o.rough = 0.62 + 0.1 * stripe; o.det = 0;
   });
   // resin-dark pine haft: u along. Rubbed paler where hands go
   T.cell('pine', 384, 36, (t, o) => {
     grain(t, o, WOOD.pine, { seed: 6, cross: 1.2, ring: 0.42 });
     const resin = fbm(t.ax * 0.02, t.ay * 0.2, 8.8, 2);
     if (resin > 0.58) { const q = 0.82; o.r *= q; o.g *= q; o.b *= q; }
-    o.rough = 0.38 + 0.3 * (1 - sstep(0.5, 0.66, resin)); o.det = 0;
+    o.rough = 0.46 + 0.26 * (1 - sstep(0.5, 0.66, resin)); o.det = 0;
   });
   /* ---- row 2 ---- */
   // lance haft, the graduated upper third: vermilion / white 0.1 m bands, hand-painted, chipped (u along)
@@ -73,18 +73,23 @@ export function weaponTrim() {
   });
   T.cell('esparto', 128, 64, (t, o) => {
     // cord wound round: rows across v, a twist in each
-    const f = (t.y / 6.4) % 1, r = Math.sin(f * Math.PI), tw = Math.abs(Math.sin((t.x * 0.42 + t.y * 0.9)));
-    put(o, WOOD.esparto, (0.6 + 0.5 * r) * (0.86 + 0.2 * tw) * (0.94 + 0.14 * fbm(t.ax * 0.1, t.ay * 0.1, 1.1, 2)));
-    o.h = 0.0018 * r; o.rough = 0.92; o.det = 0;
+    const f = (t.y / 3.2) % 1, r = Math.sin(f * Math.PI), tw = Math.abs(Math.sin((t.x * 0.42 + t.y * 0.9)));
+    const row = noise3(Math.floor(t.y / 3.2) * 1.37, t.ax * 0.03, 4.2);
+    put(o, WOOD.esparto, (0.7 + 0.36 * r) * (0.88 + 0.16 * tw) * (0.88 + 0.26 * row));
+    o.h = 0.0009 * r; o.rough = 0.92; o.det = 0;
   });
   T.cell('bronzeBlade', 128, 128, (t, o) => {
-    // v across the blade (0 midrib, 1 edge), u along. Hammered, patina low, ground bright at the edge
-    const hm = fbm(t.ax * 0.14, t.ay * 0.14, 3.1, 3), pat = fbm(t.ax * 0.05, t.ay * 0.07, 9.3, 3);
-    const edge = sstep(0.72, 0.97, t.v);
-    put(o, WOOD.bronze, 0.82 + 0.36 * hm);
-    if (pat < 0.42 && edge < 0.5) over(o, [68, 88, 66], (0.42 - pat) * 1.7);
-    over(o, [226, 192, 124], edge * 0.8);
-    o.metal = 1; o.rough = mix(0.46, 0.22, edge) + 0.14 * (hm - 0.5); o.h = 0.0012 * (hm - 0.5); o.det = 0; o.wear = 0.3;
+    // v across the blade (0 midrib, 1 edge), u along. The cell is 8x denser across than along, so the
+    // noise runs in the blade's metres or it streaks into a feather. Planished, patina low, honed at the edge
+    const wx = t.u * 210, wy = t.v * 28;
+    const hm = fbm(wx * 0.11, wy * 0.11, 3.1, 3), pl = noise3(wx * 0.32, wy * 0.32, 6.2), pat = fbm(wx * 0.035, wy * 0.05, 9.3, 3);
+    const edge = sstep(0.74, 0.96, t.v);
+    put(o, WOOD.bronze, 0.86 + 0.26 * hm + 0.08 * (pl - 0.5));
+    if (pat < 0.46 && edge < 0.5) over(o, [58, 76, 60], (0.46 - pat) * 1.9 * (1 - edge * 2));
+    // dark in the hollow beside the midrib
+    if (t.v < 0.2) { const q = 0.82 + 0.9 * t.v; o.r *= q; o.g *= q; o.b *= q; }
+    over(o, [232, 200, 136], edge * 0.72);
+    o.metal = pat < 0.38 && edge < 0.3 ? 0.55 : 1; o.rough = mix(0.44, 0.2, edge) + 0.16 * (hm - 0.5); o.h = 0.0006 * (pl - 0.5) + 0.0005 * (hm - 0.5); o.det = 0; o.wear = 0.3;
   });
   T.cell('bronzeCast', 96, 96, (t, o) => {
     const hm = fbm(t.ax * 0.2, t.ay * 0.2, 5.1, 3), pat = fbm(t.ax * 0.06, t.ay * 0.06, 2.3, 3);
@@ -139,8 +144,8 @@ export function weaponTrim() {
     o.rough = 0.55 + 0.2 * m; o.det = 0;
   });
   T.cell('carmine', 48, 48, (t, o) => {
-    const f = (t.y / 4.2) % 1, r = Math.sin(f * Math.PI);
-    put(o, WOOD.carmine, 0.68 + 0.42 * r); o.h = 0.0008 * r; o.rough = 0.8; o.det = 0;
+    const f = (t.y / 2.4) % 1, r = Math.sin(f * Math.PI);
+    put(o, WOOD.carmine, 0.72 + 0.34 * r); o.h = 0.0005 * r; o.rough = 0.82; o.det = 0;
   });
   T.cell('brass', 48, 48, (t, o) => {
     const m = fbm(t.ax * 0.12, t.ay * 0.12, 2.2, 3);
