@@ -109,13 +109,13 @@ const put = (o, c) => { o.r = c[0]; o.g = c[1]; o.b = c[2]; };
 const over = (o, c, a) => { o.r += (c[0] - o.r) * a; o.g += (c[1] - o.g) * a; o.b += (c[2] - o.b) * a; };
 
 /** Woven cloth: every thread its own shade along warp and weft, slubs, soft 3-D mottling continuous over seams. */
-export function cloth(t, o, col, { slub = 0.1, mottle = 0.12, seed = 0, rough = 0.92, thread = 0.1 } = {}) {
+export function cloth(t, o, col, { slub = 0.1, mottle = 0.12, seed = 0, rough = 0.92, thread = 0.065 } = {}) {
   // single threads differ: 1 texel across, long along their run
   const wa = noise3(t.x * 0.62 + seed * 3.1, t.y * 0.016, 1.7), we = noise3(t.x * 0.016, t.y * 0.62 + seed * 3.1, 9.1);
   // slubs: a thread thick for a few cm, then thin again; never a band (bands read as plaid)
   const sa = sstep(0.72, 0.9, noise3(t.x * 0.41 + seed, t.y * 0.03, 4.4)), sb = sstep(0.74, 0.92, noise3(t.x * 0.035, t.y * 0.41 + seed, 6.2));
   const m = fbm(t.X * 6, t.Y * 6, t.Z * 6 + seed, 3);
-  const k = 1 + thread * ((wa - 0.5) * 1.1 + (we - 0.5) * 0.8) + slub * (sa * 0.9 + sb * 0.7) + mottle * 2 * (m - 0.5);
+  const k = 1 + thread * ((wa - 0.5) * 1.1 + (we - 0.5) * 0.55) + slub * (sa * 0.8 + sb * 0.32) + mottle * 2 * (m - 0.5);
   put(o, sc(col, k));
   o.rough = rough; o.metal = 0; o.det = 1;      // weave
   o.h += 0.0005 * (sa + sb);
@@ -288,7 +288,7 @@ export function panTrim(W, H, trimH) {
   T.cell('sash', 300, 44, (t, o) => {
     // linen wound round: long creases along the band, deep where it goes under the belt
     t.X = t.ax * 0.012; t.Y = t.ay * 0.012; t.Z = 0; t.d = 99;
-    cloth(t, o, sc(COL.linen, 0.98), { slub: 0.09, mottle: 0.08, seed: 13 });
+    cloth(t, o, sc(COL.linen, 0.98), { slub: 0.05, mottle: 0.08, seed: 13, thread: 0.03 });
     const c = fold01(noise3(t.ax * 0.018, t.y * 0.16, 2.9)), c2 = fold01(noise3(t.ax * 0.04, t.y * 0.34, 7.3));
     const f = c * 0.7 + c2 * 0.3;
     o.h += 0.0022 * (f - 0.6);
@@ -311,7 +311,7 @@ function smockDye(t, o, seed = 1) {
   const blot = fbm(t.X * 3.6, t.Y * 1.1, t.Z * 3.6 + 7, 3);
   const fade = sun + 0.16 * sstep(0.46, 0.68, blot);
   const c = [mix(COL.smock[0], 142, fade), mix(COL.smock[1], 108, fade), mix(COL.smock[2], 136, fade)];
-  cloth(t, o, c, { slub: 0.1, mottle: 0.1, seed, thread: 0.13 });
+  cloth(t, o, c, { slub: 0.07, mottle: 0.1, seed, thread: 0.075 });
   const d = fbm(t.X * 4.2, t.Y * 1.2, t.Z * 4.2 + 17, 2);
   const k = 0.9 + 0.2 * d; o.r *= k; o.g *= k; o.b *= k;
 }
@@ -410,8 +410,10 @@ export const PAN_PAINTERS = {
     const sweat = sstep(0.24, 0.17, ax);
     if (sweat > 0) over(o, [178, 164, 134], sweat * 0.34);
     // soft drag folds along the arm
-    const f = fold01(noise3(ax * 12, t.Y * 40, t.Z * 40));
-    o.h += 0.0028 * (f - 0.55); o.ao *= 1 - 0.12 * sstep(0.34, 0.08, f);
+    // long soft folds along the arm (never across it: crossed bands read as plaid)
+    const ang = Math.atan2(t.Z + 0.055, t.Y - 1.414);
+    const f = fold01(noise3(ax * 3.2, ang * 1.5, 3.1)), f2 = fold01(noise3(ax * 7, ang * 3.2, 6.4));
+    o.h += 0.0026 * (f * 0.7 + f2 * 0.3 - 0.55); o.ao *= 1 - 0.1 * sstep(0.3, 0.06, f);
     o.wear = 0.6; o.crease = 0.35;
   },
   trousers(t, o) {
@@ -516,6 +518,15 @@ export async function panBase(opt = {}) {
   const sleeves = cutTris(partFromPrim(prim('sleeves'), 'sleeves', { density: 0.85, nScale: 0.5 }), (cx) => Math.abs(cx) > 0.152);
   sleeves.axis = [1, 0, 0];
   conform(sleeves, body, { margin: () => 0.0045 });
+  // the sleeve eases in as it goes up under the smock's edge, so the arm can drop without its
+  // cap coming out through the shoulder (the body under it is culled: nothing shows through)
+  for (let i = 0; i < sleeves.pos.length; i += 3) {
+    const ax = Math.abs(sleeves.pos[i]), k = sstep(0.24, 0.175, ax);
+    if (k <= 0) continue;
+    const dy = sleeves.pos[i + 1] - ARMHOLE.y, dz = sleeves.pos[i + 2] - ARMHOLE.z;
+    const l = Math.hypot(dy, dz) || 1, cut = Math.min(l * 0.55, 0.024 * k);
+    sleeves.pos[i + 1] -= (dy / l) * cut; sleeves.pos[i + 2] -= (dz / l) * cut;
+  }
   recomputeNormals(sleeves);
   const trousers = partFromPrim(prim('trousers'), 'trousers', { density: 0.76, nScale: 0.7 });
   conform(trousers, body, {
@@ -552,6 +563,16 @@ export async function panBase(opt = {}) {
   });
   compact(smock);      // the armholes' cut quads leave vertices no triangle uses
   orientOut(smock, 0, -0.02, 1.25);
+  // the cap stands proud of the sleeve round the armhole: the arm moves under it, never through it
+  for (let i = 0; i < smock.pos.length; i += 3) {
+    const x = Math.abs(smock.pos[i]);
+    if (x < ARMHOLE.xMin) continue;
+    const e = Math.hypot((smock.pos[i + 1] - ARMHOLE.y) / ARMHOLE.ry, (smock.pos[i + 2] - ARMHOLE.z) / ARMHOLE.rz);
+    const k = 0.008 * sstep(1.7, 1.05, e);
+    if (k <= 0) continue;
+    smock.pos[i] += smock.nrm[i] * k; smock.pos[i + 1] += smock.nrm[i + 1] * k; smock.pos[i + 2] += smock.nrm[i + 2] * k;
+  }
+  recomputeNormals(smock);
   // its cut edges, bound
   const bindRect = trim.rect('bind');
   const binds = mk('binds', { trim: true });

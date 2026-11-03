@@ -102,14 +102,16 @@ float clothK = 0.0; float clothCav = 0.0; float saltK = 0.0;`);
     f = f.replace('#include <normal_fragment_maps>', `#include <normal_fragment_maps>
   {
     float cls = texture2D( roughnessMap, vRoughnessMapUv ).r;
-    float dist = length( vClothView );
-    float fadeD = 1.0 - smoothstep( 2.2, 7.5, dist );
-    vec4 tile = texture2D( uDetail, vNormalMapUv * uDetailRep );
-    vec4 tileG = texture2D( uDetail, vNormalMapUv * uDetailRep * 0.61 );
+    // the threads only exist where a pixel can see one: past that the tile beats against the
+    // pixel grid in rings, and the atlas's own thread streaks carry the cloth instead
+    vec2 tileUv = vNormalMapUv * uDetailRep;
+    float threadsPerPixel = max( length( dFdx( tileUv ) ), length( dFdy( tileUv ) ) ) * 16.0;
+    float fadeD = 1.0 - smoothstep( 0.2, 0.5, threadsPerPixel );
+    vec4 tile = texture2D( uDetail, tileUv );
+    vec4 tileG = texture2D( uDetail, tileUv * 0.61 );
     float weaveW = smoothstep( 0.45, 0.8, cls );
     float grainW = smoothstep( 0.12, 0.3, cls ) * ( 1.0 - weaveW );
-    vec2 d = ( tile.rg - 0.5 ) * 2.0 * weaveW * 0.95 + ( tileG.ba - 0.5 ) * 2.0 * grainW * 0.14;
-    d *= fadeD;
+    vec2 d = ( tile.rg - 0.5 ) * 2.0 * weaveW * 0.95 * fadeD + ( tileG.ba - 0.5 ) * 2.0 * grainW * 0.14 * ( 1.0 - smoothstep( 2.2, 7.5, length( vClothView ) ) );
     clothCav = ( d.x + d.y ) * 0.5;
     clothK = max( weaveW, grainW * 0.35 ) ;
     normal = normalize( normal + tbn[ 0 ] * d.x + tbn[ 1 ] * d.y );${salt ? `

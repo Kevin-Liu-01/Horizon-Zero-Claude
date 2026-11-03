@@ -27,9 +27,11 @@ const NEUTRAL = (scene) => {
  * W x H RGBA pixel buffer (top row first). `fill` = '#rrggbb' renders a black
  * silhouette in that colour; `background` sets the clear colour (null = 0 alpha).
  */
-export function renderIsolated(ctx, object, { width = 400, height = 600, cam, background = '#ffffff', fill = null } = {}) {
+export function renderIsolated(ctx, object, { width = 400, height = 600, cam, background = '#ffffff', fill = null, env = false } = {}) {
   const R = ctx.renderer;
   const scene = new THREE.Scene();
+  // metal needs something to reflect: the armory sheets borrow the world's environment map
+  if (env) { scene.environment = ctx.scene?.environment ?? null; scene.environmentIntensity = ctx.scene?.environmentIntensity ?? 1; }
   const undo = NEUTRAL(scene);
   const parent = object.parent, pos = object.position.clone(), rotY = object.rotation.y;
   scene.add(object);
@@ -509,7 +511,7 @@ export async function panCloseupOverlay(ctx, refs = []) {
   const kit = ctx.player.hero?.kit, hid0 = kit?.hidden ?? 0;
   kit?.setHidden(31);
   for (const [name, cam, x, y, w, h] of shots) {
-    const shot = renderIsolated(ctx, model, { width: w * 2, height: h * 2, cam, background: '#b9b2a2' });
+    const shot = renderIsolated(ctx, model, { width: w * 2, height: h * 2, cam, background: '#b9b2a2', env: true });
     g.drawImage(canvasOf(shot), x + 8, y, w, h);
     g.fillStyle = 'rgba(233,228,216,0.82)'; g.fillRect(x + 8, y, w, 20);
     label(g, name, x + 14, y + 15, 12, '#1a1612');
@@ -569,7 +571,7 @@ export async function weaponSheetOverlay(ctx, refs = []) {
     grp.add(src); src.position.set(0, 0, 0); src.quaternion.identity(); src.scale.setScalar(1); src.visible = true;
     if (stand) src.rotation.x = -Math.PI / 2;        // the lance model lies along +Z: stand it up, tip to the sky
     src.traverse((o) => { o.userData.__v = o.visible; if (o.isMesh && o.userData.heroPart === 'held') o.visible = true; });
-    const shot = renderIsolated(ctx, grp, { width: w, height: h, cam, background: '#e4dfd2' });
+    const shot = renderIsolated(ctx, grp, { width: w, height: h, cam, background: '#e4dfd2', env: true });
     src.traverse((o) => { o.visible = o.userData.__v; delete o.userData.__v; });
     if (parent) parent.add(src); src.position.copy(p0); src.quaternion.copy(q0); src.scale.copy(s0); src.visible = vis;
     return shot;
@@ -589,23 +591,23 @@ export async function weaponSheetOverlay(ctx, refs = []) {
   const b3 = await shoot(bowG, { pos: [0.34, 0.02, -0.44], target: [0, 0.0, 0.03], fov: 30 }, 460, 400);
   g.drawImage(canvasOf(b3), 410, 40, 330, 287);
   label(g, 'grip: esparto, carmine', 420, 56, 11);
-  const b4 = await shoot(bowG, { pos: [0.2, 0.62, -0.42], target: [0, 0.64, -0.12], fov: 28 }, 460, 400);
+  const b4 = await shoot(bowG, { pos: [0.34, 0.6, -0.5], target: [0, 0.6, -0.1], fov: 28 }, 460, 400);
   g.drawImage(canvasOf(b4), 410, 330, 330, 287);
   label(g, 'upper limb, horn nock', 420, 346, 11);
   const sc0 = lanceG.scale.clone();
   lanceG.scale.setScalar(1);
-  const l1 = await shoot(lanceG, { pos: [2.8, 0.775, 0], target: [0, 0.775, 0], ortho: { h: bm } }, 380, 760, true);
+  const l1 = await shoot(lanceG, { pos: [0, 0.775, 2.8], target: [0, 0.775, 0], ortho: { h: bm } }, 380, 760, true);
   g.drawImage(canvasOf(l1), 750, 40, 190, 380 * 2);
   label(g, 'lance, whole', 760, 56, 11);
-  const l2 = await shoot(lanceG, { pos: [0.34, 1.42, 0.1], target: [0, 1.42, 0], fov: 30 }, 460, 400, true);
+  const l2 = await shoot(lanceG, { pos: [0.16, 1.43, 0.72], target: [0, 1.43, 0], fov: 30 }, 460, 400, true);
   g.drawImage(canvasOf(l2), 950, 40, 310, 270);
   label(g, 'leaf blade, socket, carmine lash', 960, 56, 11);
-  const l3 = await shoot(lanceG, { pos: [0.3, 0.08, 0.1], target: [0, 0.06, 0], fov: 30 }, 460, 400, true);
+  const l3 = await shoot(lanceG, { pos: [0.1, 0.1, 0.34], target: [0, 0.06, 0], fov: 30 }, 460, 400, true);
   g.drawImage(canvasOf(l3), 950, 314, 310, 270);
   label(g, 'bob-shaped butt cap', 960, 330, 11);
-  const l4 = await shoot(lanceG, { pos: [0.3, 1.1, 0.08], target: [0, 1.1, 0], fov: 30 }, 460, 400, true);
+  const l4 = await shoot(lanceG, { pos: [0.1, 1.14, 0.62], target: [0, 1.14, 0], fov: 30 }, 460, 400, true);
   g.drawImage(canvasOf(l4), 950, 588, 310, 270);
-  label(g, 'graduations', 960, 604, 11);
+  label(g, 'vermilion / white graduations', 960, 604, 11);
   lanceG.scale.copy(sc0);
   void rows;
   let ry = 40;

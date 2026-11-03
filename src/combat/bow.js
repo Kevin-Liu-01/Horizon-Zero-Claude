@@ -436,6 +436,19 @@ class RecurveBow extends WeaponModel {
 const SABINA_ROW = 'armoryBowSabina';
 const GRIP_Z = 0.035;              // the stave's belly at the old riser line, in the palm
 const NOCK_Y = 0.018;
+/**
+ * Where the bow rides off the left hand's joint (the group's origin), measured on Brea: her
+ * palm stands 0.03 m over the wrist joint in the bow's up. The arrow must lie just over her
+ * fist, on the knuckles, and the esparto grip inside it:
+ *   MODEL_Y  the model's origin (and so the nock line, +NOCK_Y) over the wrist joint. The
+ *            animator reads this LIVE (`bow.model.position`, playerAnimator "nock offset") and
+ *            places the bow hand at anchor - nockOffset, so this one number sets how high the
+ *            bow hand stands against the arrow. The base class's -0.1 (Round 4's "in the palm")
+ *            put her fist 0.12-0.15 m ABOVE the arrow and her arm climbing to it.
+ *   GRIP_Y   the stave's centre in the model: the wrap's centre back in the palm.
+ */
+const MODEL_Y = 0.057;
+const GRIP_Y = -0.027;
 const AMMO_TINT = {
   hunter: [0xffffff, 0xffffff], hardpoint: [0xffc890, 0xffd8a8], fire: [0xff9050, 0xffa070],
   precision: [0xd8f4ff, 0xe4f8ff], tearblast: [0x90e8e0, 0xb0f0e8], shock: [0x90d8ff, 0xb0e0ff], freeze: [0xd8f0ff, 0xe8f6ff],
@@ -454,7 +467,7 @@ class SabinaBow extends WeaponModel {
     this._tipK = X.tipK; this._tipC = X.tipC;
     const U = {
       uFlex: { value: 0 }, uStrZ: { value: X.braceZ }, uTip0Z: { value: X.braceZ }, uTipK: { value: X.tipK }, uTipC: { value: X.tipC },
-      uNockY: { value: NOCK_Y }, uArrowOn: { value: 1 }, uArrowPos: { value: new THREE.Vector3(0, NOCK_Y, X.braceZ) },
+      uNockY: { value: NOCK_Y - GRIP_Y }, uArrowOn: { value: 1 }, uArrowPos: { value: new THREE.Vector3(0, NOCK_Y - GRIP_Y, X.braceZ) },
       uHeadT: { value: new THREE.Color(0xffffff) }, uFletchT: { value: new THREE.Color(0xffffff) },
     };
     this.U = U;
@@ -495,7 +508,9 @@ varying vec3 vBwTint;`)
     this.material = material;
     this.mesh = new THREE.Mesh(src.geometry, material);
     this.mesh.name = 'bow-sabina';
+    this.mesh.position.y = GRIP_Y;
     this.mesh.position.z = GRIP_Z;
+    this.model.position.y = MODEL_Y;
     this.mesh.castShadow = false;
     this.mesh.frustumCulled = false;
     this.mesh.userData.heroPart = 'held';
@@ -534,6 +549,7 @@ varying vec3 vBwTint;`)
     const flex = nz < rest ? Math.min(1, (rest - nz) / (rest - full)) : 0;
     U.uFlex.value = flex;
     U.uStrZ.value = Math.min(rest, nz) - GRIP_Z;
+    U.uNockY.value = NOCK_Y - GRIP_Y;                   // the string's nocking point, mesh space
     U.uArrowOn.value = showArrow ? 1 : 0;
     const G = this.nockArrow.group;
     G.visible = !!showArrow;
@@ -546,7 +562,8 @@ varying vec3 vBwTint;`)
       if (Number.isFinite(_rideL.x) && _rideL.lengthSq() < 4) { x = _rideL.x; y = _rideL.y; z = _rideL.z; }
     }
     G.position.set(x, y, z);
-    U.uArrowPos.value.set(x, y, z - GRIP_Z);
+    U.uArrowPos.value.set(x, y - GRIP_Y, z - GRIP_Z);
+    U.uNockY.value = y - GRIP_Y;
   }
 
   setArrowType(type) {

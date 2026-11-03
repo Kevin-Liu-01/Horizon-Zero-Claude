@@ -3,8 +3,7 @@
  * A-variant-swap-matrix). A dev / gate module: nothing in the game imports it, and
  * it allocates freely. Everything is measured off the live skeleton in world metres.
  *
- *   bindSnapshot(ctx)                     the T-pose edge lengths of the outfit + piece masks (poses the
- *                                         skeleton for one call, then restores every bone)
+ *   bindSnapshot(ctx)                     the T-pose edge lengths of the outfit + piece masks
  *   measurePose(ctx, snap)                one pose: stretch, weights, penetration, gear clearance
  */
 import * as THREE from 'three';
@@ -89,24 +88,24 @@ class Grid {
 
 /**
  * The bind snapshot: edges and their T-pose lengths for the current outfit, plus the
- * weight audit. Poses the skeleton once, in one call (no frame runs between), and
- * restores every bone's local transform.
+ * weight audit, read off the source row at rest.
  */
 export function bindSnapshot(ctx) {
-  const { outfit } = heroMeshes(ctx);
-  const bones = outfit.skeleton.bones;
-  const saved = bones.map((b) => [b.position.clone(), b.quaternion.clone(), b.scale.clone()]);
-  outfit.skeleton.pose();
-  ctx.player.model.updateMatrixWorld(true);
-  const P = worldPositions(outfit);
-  // model-local bind: the place a vertex belongs to, wherever she stands
+  const { outfit, hero } = heroMeshes(ctx);
+  // The rest pose off the SOURCE row, whose bones are never animated: `skeleton.pose()` would land in the
+  // quantizer's normalised space (the GLB's inverse binds carry its decode), not in metres.
+  let src = null;
+  const root = ctx.assets.models[hero.outfit.row]?.root;
+  root?.traverse((o) => { if (!src && o.isSkinnedMesh) src = o; });
+  root.updateMatrixWorld(true);
+  src.skeleton.update();
+  const P = worldPositions(src);
+  // the row's own normalisation out (raw bind metres, for reading a vertex's place), her scale for the lengths
   const nV = P.length / 3;
   const bindL = new Float32Array(P.length);
-  const inv = ctx.player.model.matrixWorld.clone().invert();
-  for (let i = 0; i < nV; i++) { v.set(P[i * 3], P[i * 3 + 1], P[i * 3 + 2]).applyMatrix4(inv); bindL[i * 3] = v.x; bindL[i * 3 + 1] = v.y; bindL[i * 3 + 2] = v.z; }
-  bones.forEach((b, i) => { b.position.copy(saved[i][0]); b.quaternion.copy(saved[i][1]); b.scale.copy(saved[i][2]); });
-  ctx.player.model.updateMatrixWorld(true);
-  outfit.skeleton.update();
+  const rs = root.scale.x || 1;
+  for (let i = 0; i < nV; i++) { bindL[i * 3] = (P[i * 3] - root.position.x) / rs; bindL[i * 3 + 1] = (P[i * 3 + 1] - root.position.y) / rs; bindL[i * 3 + 2] = (P[i * 3 + 2] - root.position.z) / rs; }
+  const heroScale = ctx.player.model.getWorldScale(v).x;
   const tri = triList(outfit.geometry);
   // winding says outward only if a part was authored that way: keep the sign that agrees with its stored normal
   const NB = vertexNormals(bindL, tri, nV);
@@ -120,7 +119,7 @@ export function bindSnapshot(ctx) {
       const k = a < b ? a * n + b : b * n + a;
       if (seen.has(k)) continue;
       seen.add(k);
-      const L = Math.hypot(P[a * 3] - P[b * 3], P[a * 3 + 1] - P[b * 3 + 1], P[a * 3 + 2] - P[b * 3 + 2]);
+      const L = Math.hypot(bindL[a * 3] - bindL[b * 3], bindL[a * 3 + 1] - bindL[b * 3 + 1], bindL[a * 3 + 2] - bindL[b * 3 + 2]) * heroScale;
       if (L > 0.002) edges.push(a, b, L);
     }
   }
