@@ -160,7 +160,7 @@ export const UBC_TUNE = {
   // (fix round 3: 0.020 -> 0.026, the wrist a little further out of the face:
   // A35's hand-to-Head-joint read 0.1035 at the level aim with the draw no
   // longer sliding back, 3.5 mm over its 0.10 floor)
-  anchorNock: true, handOut: 0.026,
+  anchorNock: true, handOut: 0.05,
   // ...and the wrist bent back this much (radians) at full draw, so the
   // knuckles ride outside the jaw and the hooked fingers curl in to the string
   drawWristExt: 0.35,
@@ -251,13 +251,20 @@ export const UBC_TUNE = {
     // weight; a rising draw is followed exactly (`drawRaw`); the bent T comes
     // in and out at most `tRate` of its turn per second
     // and the arm is lowered by its target, not its IK weight (`lowerByTarget`)
-    wdaRate: 4, drawRaw: true, tRate: 4, lowerByTarget: true },
+    wdaRate: 4, drawRaw: true, tRate: 4, lowerByTarget: true, armStepChar: 0.055 },
   // W0b targeted fix 4: the aim's trunk starts upright — the pelvis -> neck
   // line's forward pitch under the aim (radians, character space), standing /
   // crouched; only an excess is given back (the clip's fold: crouch 45-50 deg,
   // the jog's lean after a dodge), spread up the spine, the neck and head
   // taking `gaze` of it back so the gaze holds
   aimTrunk: { up: 0.12, crouch: 0.22, gain: 1, share: [0.25, 0.35, 0.40], shareCrouch: [0.15, 0.35, 0.50], gaze: [0.5, 0.45] },
+  // W0b targeted fix 4: the crouched aim's body: the pelvis `pelvisY` m up
+  // (character space; the UAL1 crouch stands it at 0.35), tipped `pelvisTilt`
+  // rad, coming in over `rampS` s (see `_crouchAimLayer`, `_crouchAimLift`)
+  crouchAim: { pelvisY: 0.52, pelvisTilt: 0.10, rampS: 0.35 },
+  // W0b targeted fix 4: the bent T's reach at the pitch clamps (rad): the turn's
+  // caps, and how much of its pitch the hips carry, the upper back the rest
+  tClamp: { up: 1.2, down: 1.25, yaw: 0.9, hipUp: 0.6, hipDown: 0.95 },
   // the string hand's roll at full draw (0..1 of the way to back-of-hand out,
   // palm to the neck): the hooked fingers stand on the vertical string and the
   // ∴ on the back of the right hand faces a side camera (V24)

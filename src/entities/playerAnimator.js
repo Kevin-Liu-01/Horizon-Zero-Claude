@@ -192,6 +192,8 @@ const _afT = new THREE.Vector3();   // ...the fingertip off the wrist
 const _afJ = new THREE.Vector3();   // ...a candidate elbow, wrist, fingertip
 const _afK = new THREE.Vector3();
 const _afL = new THREE.Vector3();
+const _hcD1 = new THREE.Vector3(), _hcD2 = new THREE.Vector3(), _hcD3 = new THREE.Vector3();   // W0b targeted fix 4: `_hcSegMin`
+const _hcP = new THREE.Vector3(), _hcQ = new THREE.Vector3(), _hcP2 = new THREE.Vector3(), _hcQ2 = new THREE.Vector3();
 const _afJ2 = new THREE.Vector3();  // W0b targeted fix 4: `_armRatePose`'s root test (elbow, wrist, fingertip)
 const _afK2 = new THREE.Vector3();
 const _afL2 = new THREE.Vector3();
@@ -627,16 +629,27 @@ export class PlayerAnimator {
       // W0b targeted fix 3 (null = before it): the draw arm's continuity and
       // the loose -> re-nock path (see `_aimLayer`, `_elbowFlow`)
       armFlow: tn?.armFlow ?? null,
+      // W0b targeted fix 4 (null = before it): the aim's trunk starts upright (see `_aimLayer`)
+      aimTrunk: tn?.aimTrunk ?? null,
+      // ...and the crouched aim's body (null = the Round-4 pose; see `_crouchAimLayer`)
+      crouchAim: tn?.crouchAim ?? null,
+      // ...and the turn's reach at the pitch clamps (null = its caps before it)
+      tClamp: tn?.tClamp ?? null,
     };
     this.bowSolve = prof?.bow || null;
     /* M10 (E3): the spring-side capsule on the DRAW hand + forearm. */
     const hc = prof?.handCollider || null;
     this._handCol = hc ? {
       a: this.bones[hc.from] || null, b: this.bones[hc.to] || null, c: this.bones[hc.tip] || null,
-      r: hc.r, caps: [
+      r: hc.r, segR: hc.r - 0.005, caps: [
         { a: new THREE.Vector3(), b: new THREE.Vector3(), r: hc.r },
         { a: new THREE.Vector3(), b: new THREE.Vector3(), r: hc.r },
       ], active: false, pushes: 0, minAxis: Infinity,
+      // W0b targeted fix 4: the running minima since the last `debugHandCollider()`
+      // read, so a gate grades EVERY sim tick at any frame rate (a rendered frame
+      // can carry up to three): particles, and the strands' segments between them
+      minSinceRead: Infinity, minCiSR: -1, minJSR: 0,
+      segMin: Infinity, segSinceRead: Infinity, segCiSR: -1, segJSR: 0, rootSegSinceRead: Infinity, ticks: 0,
     } : null;
     this._hairChainRoot = prof?.hairChain || null;
     /* E5: the alidade rides `dyn_alidadeCord_02`; the raise moves that bone so
@@ -690,7 +703,13 @@ export class PlayerAnimator {
       const ws = this.model.matrixWorld.getMaxScaleOnAxis() || 1;
       for (const c of this._chains) {
         const keep = (this._handCol.r - c.seg[0] + hcM) / ws;
-        if (keep > 0) { this._hcRoots.push({ bone: c.links[0].bone, name: c.links[0].name, keep }); this._afRootP.push(new THREE.Vector3()); }
+        if (keep > 0) {
+          // (`onHead`: hung off the head — the topknot's and the wrap's roots; the alidade cord hangs at her throat)
+          let hd = false;
+          for (let q = c.links[0].bone.parent; q; q = q.parent) if (q === this.b.head?.bone) { hd = true; break; }
+          this._hcRoots.push({ bone: c.links[0].bone, name: c.links[0].name, keep, onHead: hd, frames: 0, inKeep: 0, unmet: 0, minAxis: Infinity, unmetDraw: 0 });
+          this._afRootP.push(new THREE.Vector3());
+        }
       }
     }
 
@@ -1557,14 +1576,23 @@ export class PlayerAnimator {
       holdMove ? Math.min(wantMove, this._moveW) : wantMove, 12, dt);
     this._runW = damp(this._runW, smoothstep(locoSpeed, 4.9, 7.9), 9, dt);
     this._crouchW = damp(this._crouchW, p.crouching ? 1 : 0, 10, dt);
-    this._aimW = damp(this._aimW, p.aiming && !dead ? 1 : 0, 13, dt);
+    /* W0b targeted fix 4: the animator runs before combat, so on the step the aim
+     * ends (RMB up, a dodge) the bow still renders the full draw: the aim layer
+     * holds for that step (`_aimHold`), and the bow arm does not let the nock go
+     * out from under the hand a step early (knuckle 0.12-0.16 m at drawS 1). */
+    const aimHold = p.aiming || (!dead && !!this.T.armFlow && draw > 0.9);
+    this._aimHold = aimHold;
+    this._aimW = damp(this._aimW, aimHold && !dead ? 1 : 0, 13, dt);
     this._deadW = damp(this._deadW, dead ? 1 : 0, dead ? 12 : 10, dt);
     // (W0b targeted fix 4, `armFlow.drawRaw`: a RISING draw is followed exactly —
     // the bow renders combat's draw, and the 16/s lag left the string hand
     // 0.05 m behind the nock as the draw came up, the knuckle 0.06-0.08 m off it
     // at drawS 0.90-0.98; the release still decays at 16/s for the follow-through)
+    // (...and with the step combat is about to add: the animator runs first, so the
+    // string it renders stands one step ahead of `draw`, 0.014 m at 0.7 s of draw)
     const dRaw = clamp(draw, 0, 1);
-    this._drawS = this.T.armFlow?.drawRaw && dRaw > this._drawS ? dRaw : damp(this._drawS, dRaw, 16, dt);
+    if (this.T.armFlow?.drawRaw && dRaw > this._drawS) this._drawS = Math.min(1, dRaw + Math.max(0, dRaw - (this._prevRawDraw ?? 0)));
+    else this._drawS = damp(this._drawS, dRaw, 16, dt);
     this._hit = damp(this._hit, 0, 9, dt);
 
     if (dead && !this._wasDead) this._dieT = 0;
@@ -1997,7 +2025,15 @@ export class PlayerAnimator {
     /* ================ OVERLAY 4: aim/draw + heavy carry ================ */
     // crouch-aim (stealth-aim-cancels-crouch, pose half): player-control keeps
     // the crouch toggle through an aim now, so there has to be a pose for it.
-    this._crouchAimW = damp(this._crouchAimW, p.crouchAim && !dead ? 1 : 0, 9, dt);
+    /* W0b targeted fix 4 (fix r3 builder: "the crouch-aim pose drops her whole
+     * body 0.08-0.10 m in one sim step"): the pose comes in over `rampS` s on a
+     * smooth ramp, not a 9/s damp (its first step alone was 14 % of the pose). */
+    {
+      const CA = this.T.crouchAim, rs = dt / (CA?.rampS ?? 0.11), want = p.crouchAim && !dead ? 1 : 0;
+      this._caT = clamp((this._caT ?? 0) + clamp(want - (this._caT ?? 0), -rs, rs), 0, 1);
+      const ct = this._caT;
+      this._crouchAimW = CA ? ct * ct * ct * (ct * (ct * 6 - 15) + 10) : damp(this._crouchAimW, want, 9, dt);
+    }
     /* W0b targeted fix 3 (judge: the crouched 0.75 aim raise put the draw hand
      * over the top and back of her head). The crouch-aim pose pitches the
      * pelvis, spine, neck and head; run AFTER the arm solve, it moved her head
@@ -2091,6 +2127,7 @@ export class PlayerAnimator {
 
     /* ---- R5: the run's pelvis bounce, compressed (A-run-arms, no prance) -- */
     if (this.T.runBob) this._runBob(dt, speed, dodgeW, aimW);
+    this._crouchAimLift(dodgeW);
     this._lateCapture();
 
     /* --- W0b targeted fix 4: the draw arm's continuity, on its final pose --- */
@@ -2100,6 +2137,10 @@ export class PlayerAnimator {
     // the arm as it ends this step is captured for the next
     if (this._afEng) this._armContinuity(aimW > 0.01);
     this._armCapture();
+    if (aimW > 0.01) {
+      this._rootKeepAudit(this._drawS);
+      if (this.T.armFlow && b.handL) b.handL.bone.getWorldPosition(this._gripW);
+    }
 
     /* --- twist joints: redistribute limb roll across the 26 twist bones ---- */
     // after every solve that can roll a wrist, an ankle or a shoulder (IK, the
@@ -2402,20 +2443,72 @@ export class PlayerAnimator {
    */
   _crouchAimLayer(w, p) {
     const b = this.b;
-    this._rot(b.pelvis, X_AXIS, 0.22 * w);
-    this._rot(b.thighL, X_AXIS, -0.30 * w);
-    this._rot(b.thighR, X_AXIS, -0.24 * w);
-    this._rot(b.calfL, X_AXIS, 0.34 * w);
-    this._rot(b.calfR, X_AXIS, 0.28 * w);
-    this._rot(b.footL, X_AXIS, -0.14 * w);
-    this._rot(b.footR, X_AXIS, -0.12 * w);
-    this._rot(b.spine1, X_AXIS, -0.10 * w);
-    this._rot(b.spine2, X_AXIS, -0.09 * w);
-    this._rot(b.neck1, X_AXIS, 0.10 * w);
-    this._rot(b.head, X_AXIS, 0.09 * w);
+    /* W0b targeted fix 4 — THE CROUCHED ARCHER IS NOT SITTING ON THE GROUND. This
+     * pose (Round 4, on Aloy's taller crouch) flexed the hips and knees further
+     * and tipped the pelvis on top of the crouch clip: on Brea the UAL1 crouch
+     * already stands the pelvis 0.35 m off the ground, and the ground conform
+     * followed the feet down to 0.15 m (under the knees), the trunk folded 53 deg
+     * forward, the head 0.44 m up looking at the floor — the r3 judges' "face near
+     * the ground", the nock at her knee, the hand behind the skull in every
+     * crouched raise. With `tune.crouchAim` the legs are not rotated here: the
+     * pelvis is raised to `pelvisY` on the final pose and both legs re-solved
+     * under it (`_crouchAimLift`), and the trunk comes upright in the aim layer
+     * (`tune.aimTrunk`). */
+    const CA = this.T.crouchAim;
+    this._rot(b.pelvis, X_AXIS, (CA ? CA.pelvisTilt ?? 0 : 0.22) * w);
+    if (!CA) {
+      this._rot(b.thighL, X_AXIS, -0.30 * w);
+      this._rot(b.thighR, X_AXIS, -0.24 * w);
+      this._rot(b.calfL, X_AXIS, 0.34 * w);
+      this._rot(b.calfR, X_AXIS, 0.28 * w);
+      this._rot(b.footL, X_AXIS, -0.14 * w);
+      this._rot(b.footR, X_AXIS, -0.12 * w);
+      this._rot(b.spine1, X_AXIS, -0.10 * w);
+      this._rot(b.spine2, X_AXIS, -0.09 * w);
+      this._rot(b.neck1, X_AXIS, 0.10 * w);
+      this._rot(b.head, X_AXIS, 0.09 * w);
+    }
     // elbows in: a crouched archer is compact
     this._rot(b.clavL, Z_AXIS, 0.05 * w);
     this._rot(b.clavR, Z_AXIS, -0.05 * w);
+  }
+
+  /**
+   * W0b targeted fix 4: the crouch-aim's height, on the final pose (after the
+   * ground conform and the run bob): the pelvis comes up to `crouchAim.pelvisY`
+   * (character metres) by the pose's ramp, the ankles stay where they are and
+   * both legs are re-solved under it (the same solve the run bob's planted legs
+   * use; a swing foot is held in character space too, so a crouched side-step does
+   * not lift it the pelvis's height). The upper body rides the pelvis rigidly, so
+   * nothing the arms solved against moves. No allocation.
+   */
+  _crouchAimLift(dodgeW) {
+    const CA = this.T.crouchAim, b = this.b, pe = b.pelvis;
+    const w = CA ? this._crouchAimW * (1 - dodgeW) * (1 - this._deadW) : 0;
+    this._caLift = 0;
+    if (w < 1e-3 || !pe || !b.thighL || !b.thighR) return;
+    pe.bone.updateMatrixWorld(true);
+    this._charOf(pe.bone, _v3);
+    let dy = (CA.pelvisY - _v3.y) * w;
+    if (dy < 1e-4) return;
+    for (let s = 0; s < 2; s++) {
+      const th = s === 0 ? b.thighL : b.thighR, ca = s === 0 ? b.calfL : b.calfR, ft = s === 0 ? b.footL : b.footR;
+      this._charOf(ft.bone, _rbT[s]);
+      // the raise never asks a leg for more than 97 % of its length
+      this._charOf(th.bone, _rbH); this._charOf(ca.bone, _rbK);
+      const Lmax = 0.97 * (_rbH.distanceTo(_rbK) + _rbK.distanceTo(_rbT[s]));
+      const vx = _rbT[s].x - _rbH.x, vy = _rbT[s].y - _rbH.y, vz = _rbT[s].z - _rbH.z;
+      const h2 = Lmax * Lmax - vx * vx - vz * vz;
+      const dyMax = h2 > 0 ? vy + Math.sqrt(h2) : 0;
+      if (dy > dyMax) dy = Math.max(0, dyMax);
+    }
+    if (dy < 1e-4) return;
+    _v2.set(0, dy, 0).applyMatrix3(this._pelvisM3);
+    pe.bone.position.add(_v2);
+    // (`_charOf` reads through the moved pelvis, so the solve takes no shift)
+    for (let s = 0; s < 2; s++) this._legTo(s, _rbT[s], 0);
+    pe.bone.updateMatrixWorld(true);
+    this._caLift = dy;
   }
 
   /**
@@ -3708,7 +3801,7 @@ export class PlayerAnimator {
     // chest" guess) puts the animator's nock line on the rendered string line.
     // Reading the bow group's own orientation back instead is a direct
     // feedback loop and diverges — this one's gain is |dGrip| / aimDistance.
-    if (p.aiming && cmb?.aimPoint && p.position) {
+    if (this._aimHold && cmb?.aimPoint && p.position) {
       const hy = p.heading ?? 0;
       const sy = Math.sin(hy), cy = Math.cos(hy);
       if (this._gripValid) {
@@ -3757,11 +3850,12 @@ export class PlayerAnimator {
       // on the fixed ray, run f5c10; 0.53 on the capped grip ray, run f5t2)
       _dT.copy(_dA);
       const kFix = smoothstep(pitch, 0.8, 1.0);
-      if (kFix > 0 && p.aiming && cmb?.aimPoint && p.position) {
+      if (kFix > 0 && this._aimHold && cmb?.aimPoint && p.position) {
         const hy = p.heading ?? 0, sy = Math.sin(hy), cy = Math.cos(hy);
         _v7.copy(cmb.aimPoint);
         _v7.x -= p.position.x + sy * this.T.rayFwd;
-        _v7.y -= p.position.y + this.T.rayH;
+        // (W0b targeted fix 4: crouched the fixed point rides the chest down with the body)
+        _v7.y -= p.position.y + this.T.rayH + this._rgOff.y + (this.T.crouchAim ? this._crouchAimW * (this.T.crouchAim.rayLift ?? 0) : 0);
         _v7.z -= p.position.z + cy * this.T.rayFwd;
         if (_v7.lengthSq() > 0.25) {
           _v7.normalize();
@@ -3777,7 +3871,14 @@ export class PlayerAnimator {
       if (this._tOff) this._dTs.copy(_dT);
       else this._dTs.lerp(_dT, 1 - Math.exp(-(this._dtA || 0.016) / 0.35)).normalize();
       _dT.copy(this._dTs);
-      const yawR = clamp(Math.atan2(_dT.x, _dT.z), -0.45, 0.45), pitR = clamp(Math.asin(clamp(-_dT.y, -1, 1)), -0.6, 0.95);
+      /* W0b targeted fix 4 (r1 eng judge: the bars broke at both pitch clamps: at 1.02
+       * the forearm 41 deg off the arrow, the elbow 0.12 m under its line; at -1.15
+       * the fist at the throat). The caps stood at 0.6 up, 0.95 down and 0.45 of yaw,
+       * and past them the arms took the rest of the pitch. `tune.tClamp` extends the
+       * turn to the rays the clamps reach, and what her hips cannot carry (`hipUp` /
+       * `hipDown`) the upper back does, below. */
+      const TC = this.T.tClamp;
+      const yawR = clamp(Math.atan2(_dT.x, _dT.z), -(TC?.yaw ?? 0.45), TC?.yaw ?? 0.45), pitR = clamp(Math.asin(clamp(-_dT.y, -1, 1)), -(TC?.up ?? 0.6), TC?.down ?? 0.95);
       _dT.set(Math.sin(yawR) * Math.cos(pitR), -Math.sin(pitR), Math.cos(yawR) * Math.cos(pitR));
       _tq.setFromAxisAngle(Y_AXIS, yawR);
       _tq2.setFromAxisAngle(X_AXIS, pitR - fp);
@@ -3802,7 +3903,15 @@ export class PlayerAnimator {
       this._tW = Math.min(tWant > (this._tW ?? 0) ? Math.min(tWant, (this._tW ?? 0) + tR) : Math.max(tWant, (this._tW ?? 0) - tR), Math.max(tWant, 3 * aimW));
       this._qT.slerpQuaternions(Q_IDENT, _tq, this._tW);
       this._charOf(b.spine1.bone, _v7);            // the turn's pivot (spine_01 does not move)
-      this._rotQL(b.spine1, this._qT);
+      // ...the hips carry `hipUp` / `hipDown` of the pitch, the upper back (spine_03) the rest
+      const pitAbs = Math.abs(pitR - fp), hipM = TC ? (pitR < fp ? TC.hipUp : TC.hipDown) : 9;
+      if (pitAbs > hipM + 1e-3) {
+        const kH = hipM / pitAbs;
+        _tq2.slerpQuaternions(Q_IDENT, this._qT, kH);
+        this._rotQL(b.spine1, _tq2);
+        _tq2.invert().premultiply(this._qT);       // the rest: qT * hips^-1
+        this._rotQL(b.spine3, _tq2);
+      } else this._rotQL(b.spine1, this._qT);
       this._upT.copy(Y_AXIS).applyQuaternion(this._qT);
       this._fwdT.copy(Z_AXIS).applyQuaternion(this._qT);
       this._latT.set(1, 0, 0).applyQuaternion(this._qT);
@@ -4103,7 +4212,7 @@ export class PlayerAnimator {
     // (W0b targeted fix 4: ...or while combat's bow is still drawn — the
     // animator runs before combat, so on the step RMB comes up the string is
     // still at full draw, and the hand left it a step early: knuckle 0.11 m)
-    const afFull = !!AF && (p.aiming || (this.ctx.combat?.drawStrength ?? 0) > 0.9) && this._dodgeW < 0.02 && this._deadW < 0.02 && this._carryW < 0.02;
+    const afFull = !!AF && this._aimHold && this._dodgeW < 0.02 && this._deadW < 0.02 && this._carryW < 0.02;
     /* W0b targeted fix 4 (r3 judges: every aim-weight transition snapped the
      * arm 0.27-0.42 m in one step — `afFull` needed `p.aiming`, so on RMB up
      * the IK weight stepped 1 -> aimW and the limiters switched off, and every
@@ -4494,6 +4603,9 @@ export class PlayerAnimator {
     }
     // remember the achieved grip in WORLD space: next frame's aim ray starts
     // where combat will actually read the bow from
+    // (W0b targeted fix 4: re-read on the final pose, `update`: the ground conform
+    // and the crouch-aim lift move her 0.1-0.4 m after this layer, and a ray from
+    // the grip's place before them is not the arrow combat renders)
     this._gripW.copy(_hand);
     this.model.localToWorld(this._gripW);
     this._gripValid = true;
@@ -4590,7 +4702,7 @@ export class PlayerAnimator {
     const AF = this.T.armFlow, b = this.b, D = this._aimDbg;
     D.afArmRate = 1;
     if (!AF?.armStep || !b.upArmR || !b.loArmR || !b.handR) return false;
-    const lim = AF.armStep * Math.min(1, Math.max(1e-3, (this._dtA || 0) * 60));
+    let lim = AF.armStep * Math.min(1, Math.max(1e-3, (this._dtA || 0) * 60));
     this._charOf(b.upArmR.bone, _afS); this._charOf(b.loArmR.bone, _afE); this._charOf(b.handR.bone, _afW);
     // last step's arm as rendered, rebuilt on this step's shoulder — in a roll,
     // in the chest's frame: the roll turns her whole trunk 0.1-0.2 rad a step,
@@ -4601,8 +4713,17 @@ export class PlayerAnimator {
       _afJ.copy(this._elbC).applyQuaternion(_afQ).add(_afS);
       _afK.copy(this._wrC).applyQuaternion(_afQ).add(_afS);
     } else {
-      _afJ.copy(this._elbP).sub(this._shP).add(_afS);
-      _afK.copy(this._wrP).sub(this._shP).add(_afS);
+      /* ...and in CHARACTER space too (r3 judges: "character AND shoulder
+       * space"): the shoulder moved `s` this step, so the arm's step is limited
+       * about a point part way along it, by the radius that holds both
+       * bars (`armStepChar` in character space, `armStep` against the shoulder). */
+      const s = _afH.subVectors(_afS, this._shP).length();
+      const limC = (AF.armStepChar ?? 9) * Math.min(1, Math.max(1e-3, (this._dtA || 0) * 60));
+      const be = s > 1e-5 ? clamp((limC - lim + s) / (2 * s), 0, 1) : 1;
+      lim = Math.max(lim - (1 - be) * s, 0.2 * lim);
+      _afH.multiplyScalar(be);
+      _afJ.copy(this._elbP).add(_afH);
+      _afK.copy(this._wrP).add(_afH);
     }
     const dE = _afE.distanceTo(_afJ), dW = _afW.distanceTo(_afK);
     if (dE <= lim && dW <= lim) return false;
@@ -5757,8 +5878,51 @@ export class PlayerAnimator {
     // the roots and their keep, and since boot: frames the arm was turned
     // clear, the largest deficit, the highest draw it ever fired at, head undos
     const roots = (this._hcRoots || []).map((k) => ({ root: k.name, keep: +k.keep.toFixed(4) }));
-    return { active: H.active, r: H.r, minAxis: +H.minAxis.toFixed(4), pushes: H.pushes, at,
-      rootKeep: { roots, fixFrames: this._hcFixN, maxDeficitM: +this._hcFixMax.toFixed(4), maxDrawS: +this._hcFixDraw.toFixed(3), headUndo: this._hcFixHead } };
+    /* W0b targeted fix 4 (r2 eng judge: `_springs` resets `minAxis` every call and
+     * main.js allows 3 ticks a rendered frame, so a once-per-rAF read missed 2 of
+     * 3 at 27 fps): the running minima since the LAST READ — a read resets them,
+     * so every sim tick is graded at any frame rate — particles and segments;
+     * and each root's keep as the arm's final pose met it (`_rootKeepAudit`):
+     * `unmet` frames below keep - rootGive and the worst reach, since the last
+     * `resetRootKeep()`. */
+    const name = (ci, j) => { const k = this._chains[ci]; return k ? k.links[0].name + '#' + j : null; };
+    const out = { active: H.active, r: H.r, ticks: H.ticks, minAxis: +H.minAxis.toFixed(4), pushes: H.pushes, at,
+      minAxisSinceRead: +H.minSinceRead.toFixed(4), minAtSinceRead: name(H.minCiSR, H.minJSR),
+      segAxisSinceRead: +H.segSinceRead.toFixed(4), segAtSinceRead: name(H.segCiSR, H.segJSR), rootLinkAxisSinceRead: +H.rootSegSinceRead.toFixed(4),
+      rootKeep: { roots, fixFrames: this._hcFixN, maxDeficitM: +this._hcFixMax.toFixed(4), maxDrawS: +this._hcFixDraw.toFixed(3), headUndo: this._hcFixHead,
+        perRoot: (this._hcRoots || []).map((k) => ({ root: k.name, head: !!k.onHead, keep: +k.keep.toFixed(4), give: +(this.T.armFlow?.rootGive ?? 0).toFixed(4), frames: k.frames, inKeepFrames: k.inKeep, unmetFrames: k.unmet, minAxis: +k.minAxis.toFixed(4), unmetDrawS: +k.unmetDraw.toFixed(3) })) } };
+    H.minSinceRead = Infinity; H.segSinceRead = Infinity; H.rootSegSinceRead = Infinity;
+    return out;
+  }
+
+  /** W0b targeted fix 4: zero the per-root keep audit (a gate row's start). */
+  resetRootKeep() {
+    for (const k of this._hcRoots || []) { k.frames = 0; k.inKeep = 0; k.unmet = 0; k.minAxis = Infinity; k.unmetDraw = 0; }
+  }
+
+  /**
+   * W0b targeted fix 4 (r2 eng judge: "unmet keeps are invisible to gates": crouched
+   * hairKnotTail_01 stood 0.0257 m from the axis against a keep of 0.0538): the
+   * draw arm's FINAL pose against every root's keep, per root, every step the aim
+   * layer ran. `inKeep`: inside the keep; `unmet`: inside it by more than
+   * `rootGive` (the most the cord can be pushed clear from, see `_armRate`).
+   * A-wrap-clear fails by name on an unmet head root. No allocation.
+   */
+  _rootKeepAudit(drawS) {
+    const R = this._hcRoots, H = this._handCol;
+    if (!R || !R.length || !H?.a || !H.b) return;
+    const give = this.T.armFlow?.rootGive ?? 0;
+    this._charOf(H.a, _crE); this._charOf(H.b, _crW);
+    if (H.c) this._charOf(H.c, _crF); else _crF.copy(_crW);
+    for (let k = 0; k < R.length; k++) {
+      const K = R[k];
+      this._charOf(K.bone, _crR);
+      const d = Math.min(this._segDist(_crR, _crE, _crW), this._segDist(_crR, _crW, _crF));
+      K.frames++;
+      if (d < K.minAxis) K.minAxis = d;
+      if (d < K.keep) K.inKeep++;
+      if (d < K.keep - give - 1e-3) { K.unmet++; if (drawS > K.unmetDraw) K.unmetDraw = drawS; }
+    }
   }
 
   _clearArmOfHead(upE, loE, haE, target, pole, w) {
@@ -6215,6 +6379,42 @@ export class PlayerAnimator {
     return d;
   }
 
+  /**
+   * W0b targeted fix 4: the least distance of segment [p0, p1] to the M10
+   * capsule's `n` axis segments (closest points between two segments, closed
+   * form). Leaves the nearest points in `_hcP` (on [p0, p1]) / `_hcQ` (on the axis)
+   * and the parameter along [p0, p1] in `this._hcS`. No allocation.
+   */
+  _hcSegMin(p0, p1, H, n) {
+    let best = Infinity;
+    _hcD1.subVectors(p1, p0);
+    const a = _hcD1.lengthSq();
+    for (let q = 0; q < n; q++) {
+      const A = H.caps[q].a, B = H.caps[q].b;
+      _hcD2.subVectors(B, A);
+      _hcD3.subVectors(p0, A);
+      const e = _hcD2.lengthSq(), f = _hcD2.dot(_hcD3);
+      let s = 0, t = 0;
+      if (a < 1e-10) { t = e > 1e-10 ? clamp(f / e, 0, 1) : 0; }
+      else {
+        const c0 = _hcD1.dot(_hcD3);
+        if (e < 1e-10) s = clamp(-c0 / a, 0, 1);
+        else {
+          const b0 = _hcD1.dot(_hcD2), den = a * e - b0 * b0;
+          s = den > 1e-10 ? clamp((b0 * f - c0 * e) / den, 0, 1) : 0;
+          t = (b0 * s + f) / e;
+          if (t < 0) { t = 0; s = clamp(-c0 / a, 0, 1); }
+          else if (t > 1) { t = 1; s = clamp((b0 - c0) / a, 0, 1); }
+        }
+      }
+      _hcP2.copy(p0).addScaledVector(_hcD1, s);
+      _hcQ2.copy(A).addScaledVector(_hcD2, t);
+      const d = _hcP2.distanceTo(_hcQ2);
+      if (d < best) { best = d; _hcP.copy(_hcP2); _hcQ.copy(_hcQ2); this._hcS = s; }
+    }
+    return best;
+  }
+
   _pushOutOfCapsule(p, cap, rest) {
     // PRIVATE scratch only. The caller passes `_spC` as `p`, and the first
     // drop of this method wrote its working vectors into `_spC` — so `p` and
@@ -6327,7 +6527,7 @@ export class PlayerAnimator {
       H.caps[1].a.copy(H.caps[0].b);
       if (H.c) H.caps[1].b.setFromMatrixPosition(H.c.matrixWorld); else H.caps[1].b.copy(H.caps[0].b);
       hcN = 2;
-      H.active = true; H.pushes = 0; H.minAxis = Infinity;
+      H.active = true; H.pushes = 0; H.minAxis = Infinity; H.segMin = Infinity; H.ticks++;
     }
     const SC = this._stowCap;
 
@@ -6540,10 +6740,43 @@ export class PlayerAnimator {
             _spA.subVectors(_spC, _spE);
             if (_spA.lengthSq() < 1e-12) _spA.copy(_spB); else _spA.normalize();
           }
+          /* W0b targeted fix 4 (r2 gate judge: a strand's SEGMENT between two
+           * clear particles came 0.0494 m from the capsule surface, every
+           * particle >= 0.0550): the segment parent -> child against the capsule
+           * axes, closed form. Nearer than `segR` (0.085 axis = 0.05 m off a
+           * 0.035 hand), the child is turned out on its parent's sphere; a move of
+           * the child moves the nearest segment point by its parameter along the
+           * segment. A chain's first link hangs off a fixed root, whose keep-out
+           * is the arm's (`_clearArmOfRoots`): it is reported, not pushed. */
+          _spE.set(pos[i0], pos[i0 + 1], pos[i0 + 2]);
+          if (j > 0) {
+            for (let it = 0; it < 3; it++) {
+              const ds = this._hcSegMin(_spE, _spC, H, hcN);   // leaves the nearest points in _hcP / _hcQ, the parameter in _hcS
+              if (ds >= H.segR) break;
+              _spA.subVectors(_hcP, _hcQ);
+              if (_spA.lengthSq() < 1e-10) break;
+              _spA.normalize();
+              _spC.addScaledVector(_spA, (H.segR - ds + 1e-4) / Math.max(0.3, this._hcS));
+              _spA.subVectors(_spC, _spE);
+              if (_spA.lengthSq() < 1e-12) { _spA.copy(_spB); break; }
+              _spA.normalize();
+              _spC.copy(_spE).addScaledVector(_spA, c.seg[j]);
+            }
+          }
           for (let q = 0; q < hcN; q++) {
             const d = this._segDist(_spC, H.caps[q].a, H.caps[q].b);
             if (d < H.minAxis) { H.minAxis = d; H.minCi = ci; H.minJ = j + 1; }
+            if (d < H.minSinceRead) { H.minSinceRead = d; H.minCiSR = ci; H.minJSR = j + 1; }
           }
+          const dSeg = this._hcSegMin(_spE, _spC, H, hcN);
+          if (j === 0) { if (dSeg < H.rootSegSinceRead) H.rootSegSinceRead = dSeg; }
+          else {
+            if (dSeg < H.segMin) H.segMin = dSeg;
+            if (dSeg < H.segSinceRead) { H.segSinceRead = dSeg; H.segCiSR = ci; H.segJSR = j + 1; }
+          }
+          // (the bend limit's direction for the write-back below)
+          _spA.subVectors(_spC, _spE);
+          if (_spA.lengthSq() < 1e-12) _spA.copy(_spB); else _spA.normalize();
         }
         // R5 fix round 5: the STOWED LANCE's shaft (`_stowCap`, written by the
         // hero's carry solve each frame — last frame's pose) is a capsule too:
