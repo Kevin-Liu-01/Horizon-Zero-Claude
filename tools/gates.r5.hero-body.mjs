@@ -64,8 +64,8 @@
  * W0b targeted fix 4 (Nov 3): A-draw-arm-continuity (the state matrix); A-draw-elbow-level
  * and A16 on both pitch clamps, the 0.75 and clamp strafes and the crouched pitches with
  * every clause graded, the forearm against the real arrow; A-wrap-clear on every tick, on
- * segments, per root; the films V-draw-lower-reaim, V-draw-dodge-aim, V-crouched-draw,
- * V-draw-clamps; V-loose-renock's numbers under the skull.
+ * segments, per root; the films V-draw-lower-reaim, V-draw-dodge-aim, V-draw-dodge-aim0,
+ * V-crouched-draw, V-draw-clamps; V-loose-renock's numbers under the skull.
  *
  * The vendored helpers below (gate-roster, gate-places, budgets) are copies of
  * gates-perf's W0a files, which are not in main yet; drop them for imports once
@@ -7910,7 +7910,7 @@ const NEW_GATES = [
         const rd = [0.05, 0.125, 0.2][ci % 3];
         release(); await wait(300); p.setCrouch?.(false);
         // the last cell's lance back on her back, its swing over; a full quiver (the matrix looses five arrows a cell)
-        for (let i = 0; i < 40 && (cmb.melee?.active || cmb.melee?.stance !== 'holstered'); i++) { cmb.melee?.holsterSpear?.(true); await simWait(0.1, 2000); }
+        for (let i = 0; i < 40 && (cmb.melee?.active || cmb.melee?.stance !== 'holstered' || an.melee?.w > 0.02); i++) { cmb.melee?.holsterSpear?.(true); await simWait(0.1, 2000); }
         { const am = cmb.activeWeapon?.activeAmmo; if (am) cmb.ammo[am] = 99; }
         // the cell's ground: the flat strip, run along it whichever key moves her (else the W0 open ground)
         if (strip) {
@@ -7954,7 +7954,7 @@ const NEW_GATES = [
           const roll = !!p.dodging || this._dodgeW > 0.05;
           // the lance layer has the arm (only ever RMB up with LMB down, in cancelHeld; never through a roll or an aim)
           const lanceArm = !!this.melee?.ok && this.melee.w > 0.02;
-          if (lanceArm && (roll || label !== 'cancelHeld')) M.lanceInRoll++;
+          if (lanceArm && (roll || label !== 'cancelHeld')) { M.lanceInRoll++; M.lanceOutAt = M.lanceOutAt || (label + '+' + (E.simTime - t0 - tLab).toFixed(3) + (roll ? ' roll' : '')); }
           if (prev) {
             const dE = e.distanceTo(prev.e), dW = w.distanceTo(prev.w);
             const rE = e.clone().sub(s).distanceTo(prev.e.clone().sub(prev.s)), rW = w.clone().sub(s).distanceTo(prev.w.clone().sub(prev.s));
@@ -8057,7 +8057,7 @@ const NEW_GATES = [
         M.travel = r4(M.travel); M.rel = r4(M.rel); M.shoulderStepMax = r4(M.shoulderStepMax); M.bodyStepMax = r4(M.bodyStepMax || 0);
         // staging sanity: the cell really drew (five full draws incl. the one through the dodge), dodged, crouched and stood
         if (M.drawsOver09 < 5) M.fails.push('staging: only ' + M.drawsOver09 + ' full draws');
-        if (M.lanceInRoll) M.fails.push('lance posed outside cancelHeld: ' + M.lanceInRoll + ' steps');
+        if (M.lanceInRoll) M.fails.push('lance posed outside cancelHeld: ' + M.lanceInRoll + ' steps from ' + M.lanceOutAt);
         if (!(M.lanceStepMax > 0)) M.fails.push('staging: cancelHeld never reached the lance layer');
         if (!M.dodged) M.fails.push('staging: no dodge');
         if (!M.crouchSeen || !M.standSeen) M.fails.push('staging: crouch ' + M.crouchSeen + ' stand ' + M.standSeen);
