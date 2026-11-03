@@ -29,6 +29,8 @@ export const OUTPUTS = ['public/models/armory/stowkit.glb'];
 const RECIPE = 'tools/build/recipes/armor/stowkit.mjs';
 export const PIECE = { lance: 1, bow: 2, quiver: 4, bracer: 8, alidade: 16 };
 export const LANCE_SOCKET = 'stow_lance';
+/** The quiver's hanger joint, a child of `pelvis` at the identity: src/hero/stowkit.js lets it hang from its upper band. */
+export const QUIVER_SOCKET = 'stow_quiver';
 export const QUIVER = { length: 0.60, r: 0.040, arrows: 12, arrowOut: 0.11 };
 
 function addSocket(doc, name, parentName) {
@@ -106,7 +108,7 @@ function quiverGeo(cell) {
  * +Y. Stiff leather, three laces under the arm, and a true bronze crescent standing
  * on the dorsal ridge: outer and inner arcs (it was a fin in v0, it read as a wing).
  */
-function bracerGeo(cell, r = 0.036, len = 0.17) {
+function bracerGeo(cell, r = 0.036, len = 0.17, skinR = null) {
   const g = G();
   const SEG = 12, ROWS = 8;
   const rect = cell('leather');
@@ -117,8 +119,10 @@ function bracerGeo(cell, r = 0.036, len = 0.17) {
     for (let k = 0; k <= SEG; k++) {
       const th = -0.2 * Math.PI + (k / SEG) * 1.4 * Math.PI;
       const y = Math.sin(th), z = Math.cos(th);
-      const lip = i === 0 || i === ROWS ? 1.012 : 1;
-      shell.pos.push(x, y * r * flare * lip, z * r * flare * lip);
+      const lip = i === 0 || i === ROWS ? 1.0015 : 0;
+      // a stiff cuff, but it stands off the forearm under it everywhere: the skin never comes through
+      const rr = skinR ? Math.max(skinR(f, th) + 0.003, r * 0.8) * (1 + 0.04 * Math.pow(Math.abs(f - 0.12), 1.5)) + lip * 0.002 : r * flare * (lip ? 1.012 : 1);
+      shell.pos.push(x, y * rr, z * rr);
       shell.nrm.push(0, y, z);
       shell.uv.push(rect[0] + f * rect[2], rect[1] + (k / SEG) * rect[3]);
     }
@@ -264,6 +268,7 @@ export async function build({ out = ROOT } = {}) {
   for (const part of [base.bodyPart, ...base.parts]) for (let i = 0; i < part.pos.length; i += 3) surf.push([part.pos[i], part.pos[i + 1], part.pos[i + 2]]);
   addChain(doc, CHAINS.alidadeCord.names, CHAINS.alidadeCord.points, CHAINS.alidadeCord.parent);
   addSocket(doc, LANCE_SOCKET, 'spine_02');
+  addSocket(doc, QUIVER_SOCKET, 'pelvis');
   const backZ = (x, y) => { let z = 0; for (const q of surf) if (Math.abs(q[0] - x) < 0.03 && Math.abs(q[1] - y) < 0.03 && q[2] < z) z = q[2]; return z; };
 
   const pieces = [];
@@ -312,13 +317,39 @@ export async function build({ out = ROOT } = {}) {
     const ctr = [-0.276, 0.885, -0.060];
     const foot = v3.sub(ctr, v3.mul(d, QUIVER.length / 2));
     const [X, Y, Z] = basisY(d, [0, 0, 1]);
-    pieces.push({ g: place(quiverGeo(cell), X, Y, Z, foot), joint: 'pelvis', bit: PIECE.quiver });
+    pieces.push({ g: place(quiverGeo(cell), X, Y, Z, foot), joint: QUIVER_SOCKET, bit: PIECE.quiver });
     const mouth = v3.add(foot, v3.mul(d, QUIVER.length + QUIVER.arrowOut * 0.6));
-    stowInfo.quiver = { foot, mouth, nocks: mouth, joint: 'pelvis' };
+    // it hangs from the upper band (0.47 up the tube): the mouth barely moves, so the nock reach holds
+    const hang = v3.add(foot, v3.mul(d, 0.47));
+    stowInfo.quiver = { foot, mouth, nocks: mouth, hang, joint: QUIVER_SOCKET, parent: 'pelvis' };
   }
   // ---- bracer: left forearm, dorsal
   {
-    const g = place(bracerGeo(cell, forearm.r + 0.005, 0.17), forearm.X, forearm.Y, forearm.Z, forearm.at);
+    // the forearm's radius per (along, around), low-passed: what the stiff cuff has to clear
+    const NF = 9, NT = 13;
+    const tab = new Float64Array(NF * NT);
+    {
+      const bp = base.bodyPart.pos;
+      for (let i = 0; i < bp.length; i += 3) {
+        const rel = v3.sub([bp[i], bp[i + 1], bp[i + 2]], forearm.at);
+        const t = v3.dot(rel, forearm.X) / 0.17;
+        if (t < -0.15 || t > 1.15) continue;
+        const y = v3.dot(rel, forearm.Y), z = v3.dot(rel, forearm.Z), rr = Math.hypot(y, z);
+        if (rr > 0.08) continue;
+        const ph = Math.atan2(y, z);
+        for (let a = 0; a < NF; a++) for (let b = 0; b < NT; b++) {
+          const f = a / (NF - 1), th = -0.2 * Math.PI + (b / (NT - 1)) * 1.4 * Math.PI;
+          let dA = Math.abs(ph - th); dA = Math.min(dA % (2 * Math.PI), 2 * Math.PI - (dA % (2 * Math.PI)));
+          if (Math.abs(t - f) < 0.16 && dA < 0.5 && rr > tab[a * NT + b]) tab[a * NT + b] = rr;
+        }
+      }
+    }
+    const skinR = (f, th) => {
+      const a = Math.min(NF - 1, Math.max(0, Math.round(f * (NF - 1))));
+      const b = Math.min(NT - 1, Math.max(0, Math.round(((th + 0.2 * Math.PI) / (1.4 * Math.PI)) * (NT - 1))));
+      return tab[a * NT + b] || forearm.r;
+    };
+    const g = place(bracerGeo(cell, forearm.r + 0.005, 0.17, skinR), forearm.X, forearm.Y, forearm.Z, forearm.at);
     pieces.push({ g, joint: 'lowerarm_l', bit: PIECE.bracer });
     stowInfo.bracer = { at: forearm.at, r: forearm.r, joint: 'lowerarm_l' };
   }

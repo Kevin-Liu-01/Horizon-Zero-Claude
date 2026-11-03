@@ -99,10 +99,20 @@ export function bindSnapshot(ctx) {
   outfit.skeleton.pose();
   ctx.player.model.updateMatrixWorld(true);
   const P = worldPositions(outfit);
+  // model-local bind: the place a vertex belongs to, wherever she stands
+  const nV = P.length / 3;
+  const bindL = new Float32Array(P.length);
+  const inv = ctx.player.model.matrixWorld.clone().invert();
+  for (let i = 0; i < nV; i++) { v.set(P[i * 3], P[i * 3 + 1], P[i * 3 + 2]).applyMatrix4(inv); bindL[i * 3] = v.x; bindL[i * 3 + 1] = v.y; bindL[i * 3 + 2] = v.z; }
   bones.forEach((b, i) => { b.position.copy(saved[i][0]); b.quaternion.copy(saved[i][1]); b.scale.copy(saved[i][2]); });
   ctx.player.model.updateMatrixWorld(true);
   outfit.skeleton.update();
   const tri = triList(outfit.geometry);
+  // winding says outward only if a part was authored that way: keep the sign that agrees with its stored normal
+  const NB = vertexNormals(bindL, tri, nV);
+  const NA = outfit.geometry.getAttribute('normal');
+  const flip = new Int8Array(nV);
+  for (let i = 0; i < nV; i++) flip[i] = NB[i * 3] * NA.getX(i) + NB[i * 3 + 1] * NA.getY(i) + NB[i * 3 + 2] * NA.getZ(i) < 0 ? -1 : 1;
   const seen = new Set(), edges = [];
   const n = P.length / 3;
   for (let t = 0; t < tri.length; t += 3) {
@@ -119,7 +129,7 @@ export function bindSnapshot(ctx) {
   let worst = 0;
   for (let i = 0; i < W.count; i++) worst = Math.max(worst, Math.abs(W.getX(i) + W.getY(i) + W.getZ(i) + W.getW(i) - 1));
   const piece = outfit.geometry.getAttribute('_piece');
-  return { edges, n, weightSumErr: +worst.toFixed(4), bindY: P.filter((_, i) => i % 3 === 1), piece: piece ? Array.from({ length: piece.count }, (_, i) => Math.round(piece.getX(i))) : null };
+  return { edges, n, weightSumErr: +worst.toFixed(4), bindL, flip, piece: piece ? Array.from({ length: piece.count }, (_, i) => Math.round(piece.getX(i))) : null };
 }
 
 const segDist = (x, y, z, a, b) => {
@@ -138,13 +148,16 @@ export function measurePose(ctx, snap, opts = {}) {
   // (a) tearing
   let maxS = 0, over = 0;
   const E = snap.edges;
+  const at = (i) => [+snap.bindL[i * 3].toFixed(3), +snap.bindL[i * 3 + 1].toFixed(3), +snap.bindL[i * 3 + 2].toFixed(3)];
+  const badEdges = [];
   for (let e = 0; e < E.length; e += 3) {
     const a = E[e], b = E[e + 1], L = E[e + 2];
     const s = Math.hypot(P[a * 3] - P[b * 3], P[a * 3 + 1] - P[b * 3 + 1], P[a * 3 + 2] - P[b * 3 + 2]) / L;
     if (s > maxS) maxS = s;
-    if (s > 1.6) over++;
+    if (s > 1.6) { over++; if (opts.offenders) badEdges.push([s, a, b, L]); }
   }
   row.stretch = +maxS.toFixed(3); row.stretchOver = over;
+  if (opts.offenders) row.edgeOffenders = badEdges.sort((x, y) => y[0] - x[0]).filter((_, i) => i % Math.max(1, Math.floor(badEdges.length / 60)) === 0).slice(0, 60).map(([q, a, b, L]) => ({ s: +q.toFixed(2), a: at(a), b: at(b), L: +L.toFixed(4) }));
   // (b) body penetration (all body triangles, hidden ones too)
   const BP = worldPositions(body);
   const bTri = triList(body.geometry);
@@ -154,6 +167,7 @@ export function measurePose(ctx, snap, opts = {}) {
   const SI = body.geometry.getAttribute('skinIndex'), SW = body.geometry.getAttribute('skinWeight');
   const G = new Grid(BP, BN, bn);
   let inside = 0, headIn = 0, deepest = 0;
+  const inOff = [];
   for (let i = 0; i < n; i++) {
     const q = G.height(P[i * 3], P[i * 3 + 1], P[i * 3 + 2]);
     if (!q) continue;
@@ -161,13 +175,18 @@ export function measurePose(ctx, snap, opts = {}) {
       inside++;
       deepest = Math.min(deepest, q.h);
       if (SI.getX(q.i) === headJ && SW.getX(q.i) > 0.5) headIn++;
+      if (opts.offenders) inOff.push([q.h, i]);
     }
   }
   row.insideFrac = +(inside / n).toFixed(4); row.inside = inside; row.headIn = headIn; row.deepest = +deepest.toFixed(4);
+  if (opts.offenders) row.insideOffenders = inOff.sort((x, y) => x[0] - y[0]).filter((_, i) => i % Math.max(1, Math.floor(inOff.length / 60)) === 0).slice(0, 60).map(([h, i]) => [...at(i), +h.toFixed(3)]);
   // (c) stow kit and the held weapon vs the outfit
   const ON = vertexNormals(P, triList(outfit.geometry), n);
-  const OG = new Grid(P, ON, n);
+  for (let i = 0; i < n; i++) if (snap.flip[i] < 0) { ON[i * 3] *= -1; ON[i * 3 + 1] *= -1; ON[i * 3 + 2] *= -1; }
+  // the finger tab is held against the shaft by the hand itself: it is not a garment a weapon can clip
+  const OG = new Grid(P, ON, n, (i) => Math.abs(snap.bindL[i * 3]) < 0.55);
   let stowDeep = 0, stowOver = 0, kitN = 0;
+  const stowOff = [];
   const PIECE = kit?.geometry.getAttribute('_piece');
   const hidden = hero.kit?.hidden ?? 0;
   let KP = null;
@@ -179,11 +198,16 @@ export function measurePose(ctx, snap, opts = {}) {
       if (bit & 24) continue;          // the bracer and the alidade lie on the arm and the chest by design
       kitN++;
       const q = OG.height(KP[i * 3], KP[i * 3 + 1], KP[i * 3 + 2]);
-      if (q && q.dist < 0.05 && q.h < 0) { stowDeep = Math.min(stowDeep, q.h); if (q.h < -0.005) stowOver++; }
+      if (q && q.dist < 0.05 && q.h < 0) {
+        stowDeep = Math.min(stowDeep, q.h);
+        if (q.h < -0.005) { stowOver++; if (opts.offenders) stowOff.push([+q.h.toFixed(3), bit, ...at(q.i)]); }
+      }
     }
   }
   row.stowDeep = +stowDeep.toFixed(4); row.stowOver = stowOver;
+  if (opts.offenders) row.stowOffenders = stowOff.sort((x, y) => x[0] - y[0]).slice(0, 24);
   let heldDeep = 0, heldOver = 0;
+  const heldOff = [];
   const heldMesh = [];
   ctx.player.model.traverse((o) => { if (o.isMesh && o.userData.heroPart === 'held') { let vis = true; for (let p = o; p; p = p.parent) if (!p.visible) { vis = false; break; } if (vis) heldMesh.push(o); } });
   for (const m of heldMesh) {
@@ -193,10 +217,14 @@ export function measurePose(ctx, snap, opts = {}) {
       if (bw && bw.getX(i) > 0.5) continue;    // the stave is what can touch her; string and arrow are drawn in the vertex stage
       v.fromBufferAttribute(pos, i).applyMatrix4(m.matrixWorld);
       const q = OG.height(v.x, v.y, v.z);
-      if (q && q.dist < 0.05 && q.h < 0) { heldDeep = Math.min(heldDeep, q.h); if (q.h < -0.005) heldOver++; }
+      if (q && q.dist < 0.05 && q.h < 0) {
+        heldDeep = Math.min(heldDeep, q.h);
+        if (q.h < -0.005) { heldOver++; if (opts.offenders) heldOff.push([+q.h.toFixed(3), +(bw ? bw.getY(i) : 0).toFixed(2), ...at(q.i)]); }
+      }
     }
   }
   row.heldDeep = +heldDeep.toFixed(4); row.heldOver = heldOver; row.heldMeshes = heldMesh.length;
+  if (opts.offenders) row.heldOffenders = heldOff.sort((x, y) => x[0] - y[0]).slice(0, 24);
   // (d) pauldron / capelet / collar vs the draw hand and the head, at full draw
   if (opts.draw) {
     const a = new THREE.Vector3(), b = new THREE.Vector3();
@@ -206,17 +234,19 @@ export function measurePose(ctx, snap, opts = {}) {
     const R = an.skull(hc, hf);
     const hcW = ctx.player.model.localToWorld(hc.clone());
     const headR = Math.max(R.x, R.y, R.z);
-    let toHand = 9, toHead = 9;
+    let toHand = 9, toHead = 9, handAt = null, headAt = null;
     for (let i = 0; i < n; i++) {
       const isPiece = snap.piece ? (snap.piece[i] & 1) !== 0 : false;
-      const isCollar = snap.bindY[i] > 1.44;
+      const isCollar = snap.bindL[i * 3 + 1] > 1.44 && Math.abs(snap.bindL[i * 3]) < 0.2;
       if (!isPiece && !isCollar) continue;
       if (snap.piece && (snap.piece[i] & 96)) continue;
       const x = P[i * 3], y = P[i * 3 + 1], z = P[i * 3 + 2];
-      toHand = Math.min(toHand, segDist(x, y, z, a, b));
-      if (isPiece) toHead = Math.min(toHead, Math.hypot(x - hcW.x, y - hcW.y, z - hcW.z) - headR);
+      const d = segDist(x, y, z, a, b);
+      if (d < toHand) { toHand = d; handAt = i; }
+      if (isPiece) { const e = Math.hypot(x - hcW.x, y - hcW.y, z - hcW.z) - headR; if (e < toHead) { toHead = e; headAt = i; } }
     }
     row.pieceToHand = +toHand.toFixed(3); row.pieceToHead = toHead < 9 ? +toHead.toFixed(3) : null;
+    if (opts.offenders) { row.handAt = handAt != null ? at(handAt) : null; row.headAt = headAt != null ? at(headAt) : null; }
   }
   // (e) the Guild Whites hat in its back socket vs the lance
   if (snap.piece && snap.piece.some((b) => b & 64) && KP && !(hidden & 1)) {
@@ -229,72 +259,91 @@ export function measurePose(ctx, snap, opts = {}) {
   return row;
 }
 
-/** Stowed gear vs the legs and ground, one frame (A-stow-clearance). */
+/**
+ * The vertices that can be each stowed piece's lowest point: the bottom 6 % of its bind
+ * height (plan §9 A-stow-clearance "every stowed item's lowest point"; melee's row reads the same).
+ */
+function kitLowPoints(kit) {
+  if (kit.userData.__low) return kit.userData.__low;
+  const g = kit.geometry, P = g.getAttribute('_piece'), pos = g.getAttribute('position');
+  const low = {};
+  for (const [name, bit] of Object.entries({ lance: 1, bow: 2, quiver: 4 })) {
+    let lo = 9, hi = -9; const ids = [];
+    for (let i = 0; i < pos.count; i++) { if ((Math.round(P.getX(i)) & bit) === 0) continue; const y = pos.getY(i); if (y < lo) lo = y; if (y > hi) hi = y; }
+    const cut = lo + (hi - lo) * 0.06;
+    for (let i = 0; i < pos.count; i++) { if ((Math.round(P.getX(i)) & bit) !== 0 && pos.getY(i) <= cut) ids.push(i); }
+    low[name] = { bit, ids };
+  }
+  Object.defineProperty(kit.userData, '__low', { value: low, enumerable: false });
+  return low;
+}
+
+/** Stowed gear vs the legs and ground, one frame (A-stow-clearance). `dCalf`: capsule 0.05 on calf-foot, 0.04 on the heel. */
 export function stowFrame(ctx) {
   const { hero, kit } = heroMeshes(ctx);
   const an = ctx.player.animator;
   if (!kit) return null;
-  const P = worldPositions(kit);
-  const PIECE = kit.geometry.getAttribute('_piece');
-  const hidden = hero.kit.hidden;
-  const legs = [];
-  for (const k of ['thighL', 'thighR', 'calfL', 'calfR', 'footL', 'footR']) legs.push(an.b[k]?.bone || null);
-  const a = new THREE.Vector3(), b = new THREE.Vector3();
-  let dCalf = 9, low = 1e9, lowX = 0, lowZ = 0;
-  const segs = [];
-  for (const [p, q] of [['calfL', 'footL'], ['calfR', 'footR']]) {
-    if (!an.b[p] || !an.b[q]) continue;
-    an.b[p].bone.getWorldPosition(a); an.b[q].bone.getWorldPosition(b);
-    segs.push([a.clone(), b.clone()]);
+  kit.updateWorldMatrix(true, false);
+  if (kit.skeleton) kit.skeleton.update();
+  const low = kitLowPoints(kit);
+  const a = new THREE.Vector3(), b = new THREE.Vector3(), c = new THREE.Vector3(), w = new THREE.Vector3();
+  const caps = [];
+  for (const [ca, fo] of [[an.b.calfL, an.b.footL], [an.b.calfR, an.b.footR]]) {
+    ca.bone.getWorldPosition(a); fo.bone.getWorldPosition(b);
+    caps.push([a.clone(), b.clone(), 0.05]);
+    const ball = fo.bone.children.find((x) => x.isBone);
+    if (ball) { ball.getWorldPosition(c); caps.push([b.clone(), c.clone(), 0.04]); }
   }
-  for (let i = 0; i < P.length / 3; i += 2) {
-    const bit = Math.round(PIECE.getX(i));
-    if (bit & hidden) continue;
-    if (bit & 24) continue;
-    const x = P[i * 3], y = P[i * 3 + 1], z = P[i * 3 + 2];
-    if (y < low) { low = y; lowX = x; lowZ = z; }
-    for (const [s0, s1] of segs) dCalf = Math.min(dCalf, segDist(x, y, z, s0, s1) - 0.055);   // calf capsule radius
+  let dCalf = 9, dPiece = null, lowAbove = 9, lowPiece = null;
+  for (const [name, L] of Object.entries(low)) {
+    if (hero.kit.hidden & L.bit) continue;
+    for (const i of L.ids) {
+      kit.getVertexPosition(i, w); kit.localToWorld(w);
+      const gy = ctx.terrain?.getHeight?.(w.x, w.z) ?? 0;
+      if (w.y - gy < lowAbove) { lowAbove = w.y - gy; lowPiece = name; }
+      for (const [s0, s1, r] of caps) { const d = segDist(w.x, w.y, w.z, s0, s1) - r; if (d < dCalf) { dCalf = d; dPiece = name; } }
+    }
   }
-  const ground = ctx.terrain?.getHeight?.(lowX, lowZ) ?? 0;
-  return { dCalf: +dCalf.toFixed(3), lowAboveGround: +(low - ground).toFixed(3) };
+  return { dCalf: +dCalf.toFixed(3), dPiece, lowAboveGround: +lowAbove.toFixed(3), lowPiece };
 }
 
-/** The share of the head's screen box covered by stowed gear, from the live camera. */
+/** The share of the head's screen box covered by stowed gear nearer than the head, from the live camera. By piece. */
 export function headCover(ctx) {
   const { hero, kit } = heroMeshes(ctx);
   const an = ctx.player.animator;
   const cam = ctx.camera;
+  cam.updateMatrixWorld();
   const hc = new THREE.Vector3(), hf = new THREE.Vector3();
   const R = an.skull(hc, hf);
-  const c = ctx.player.model.localToWorld(hc.clone());
-  const r = Math.max(R.x, R.y, R.z);
-  const nv = c.clone().project(cam);
-  const dist = cam.position.distanceTo(c);
-  const scale = 1 / (Math.tan((cam.fov * Math.PI) / 360) * dist);
-  const rx = (r * scale) / cam.aspect, ry = r * scale;
-  const P = worldPositions(kit), PIECE = kit.geometry.getAttribute('_piece'), tri = kit.geometry.getIndex().array;
-  const hidden = hero.kit.hidden;
-  const N = 24;
-  const grid = new Uint8Array(N * N);
-  const px = (i) => { v.set(P[i * 3], P[i * 3 + 1], P[i * 3 + 2]).project(cam); return [(v.x - nv.x) / (2 * rx) + 0.5, (v.y - nv.y) / (2 * ry) + 0.5, v.z]; };
-  let boom = 0;
-  for (let t = 0; t < tri.length; t += 3) {
-    const a = tri[t], b = tri[t + 1], cc = tri[t + 2];
-    const bit = Math.round(PIECE.getX(a));
-    if (bit & hidden || bit & 24) continue;
-    const pa = px(a), pb = px(b), pc = px(cc);
-    if (pa[2] > nv.z && pb[2] > nv.z && pc[2] > nv.z) continue;      // behind the head from here
-    const x0 = Math.max(0, Math.floor(Math.min(pa[0], pb[0], pc[0]) * N)), x1 = Math.min(N - 1, Math.ceil(Math.max(pa[0], pb[0], pc[0]) * N));
-    const y0 = Math.max(0, Math.floor(Math.min(pa[1], pb[1], pc[1]) * N)), y1 = Math.min(N - 1, Math.ceil(Math.max(pa[1], pb[1], pc[1]) * N));
-    for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) {
-      const sx = (x + 0.5) / N, sy = (y + 0.5) / N;
-      const d = (pb[0] - pa[0]) * (pc[1] - pa[1]) - (pc[0] - pa[0]) * (pb[1] - pa[1]);
-      if (Math.abs(d) < 1e-9) continue;
-      const w0 = ((pb[0] - sx) * (pc[1] - sy) - (pc[0] - sx) * (pb[1] - sy)) / d, w1 = ((pc[0] - sx) * (pa[1] - sy) - (pa[0] - sx) * (pc[1] - sy)) / d, w2 = 1 - w0 - w1;
-      if (w0 >= 0 && w1 >= 0 && w2 >= 0) grid[y * N + x] = 1;
+  const headW = ctx.player.model.localToWorld(hc.clone());
+  const hr = Math.max(R.x, R.y, R.z);
+  const ctr = headW.clone().project(cam);
+  const top = headW.clone(); top.y += hr; top.project(cam);
+  const hh = Math.abs(top.y - ctr.y);
+  const hw = hh * cam.projectionMatrix.elements[0] / cam.projectionMatrix.elements[5];
+  const box = { x0: ctr.x - hw, x1: ctr.x + hw, y0: ctr.y - hh, y1: ctr.y + hh };
+  const camD = cam.position.distanceTo(headW);
+  const g = kit.geometry, P = g.getAttribute('_piece'), idx = g.getIndex();
+  const N = 28, hit = new Uint8Array(N * N), byBit = { 1: new Uint8Array(N * N), 2: new Uint8Array(N * N), 4: new Uint8Array(N * N) };
+  const A = new THREE.Vector3(), B = new THREE.Vector3(), C = new THREE.Vector3();
+  const proj = (i, o) => { kit.getVertexPosition(i, o); kit.localToWorld(o); o.w = o.distanceTo(cam.position); o.project(cam); return o; };
+  const hid = hero.kit.hidden | 0;
+  for (let t = 0; t < idx.count; t += 3) {
+    const i0 = idx.getX(t), i1 = idx.getX(t + 1), i2 = idx.getX(t + 2);
+    const bit = Math.round(P.getX(i0));
+    if ((bit & hid) || !(bit & 7)) continue;
+    proj(i0, A); proj(i1, B); proj(i2, C);
+    if (A.w > camD && B.w > camD && C.w > camD) continue;
+    if (Math.max(A.x, B.x, C.x) < box.x0 || Math.min(A.x, B.x, C.x) > box.x1 || Math.max(A.y, B.y, C.y) < box.y0 || Math.min(A.y, B.y, C.y) > box.y1) continue;
+    const area = (B.x - A.x) * (C.y - A.y) - (B.y - A.y) * (C.x - A.x);
+    if (Math.abs(area) < 1e-9) continue;
+    for (let iy = 0; iy < N; iy++) for (let ix = 0; ix < N; ix++) {
+      const px = box.x0 + (ix + 0.5) / N * (box.x1 - box.x0), py = box.y0 + (iy + 0.5) / N * (box.y1 - box.y0);
+      const u = ((px - A.x) * (C.y - A.y) - (py - A.y) * (C.x - A.x)) / area;
+      const w = ((py - A.y) * (B.x - A.x) - (px - A.x) * (B.y - A.y)) / area;
+      if (u >= 0 && w >= 0 && u + w <= 1) { hit[iy * N + ix] = 1; if (byBit[bit]) byBit[bit][iy * N + ix] = 1; }
     }
   }
-  void boom;
-  let n = 0; for (let i = 0; i < N * N; i++) n += grid[i];
-  return +(n / (N * N)).toFixed(3);
+  const frac = (q) => { let n = 0; for (let i = 0; i < q.length; i++) n += q[i]; return +(n / q.length).toFixed(3); };
+  return { cover: frac(hit), lance: frac(byBit[1]), bow: frac(byBit[2]), quiver: frac(byBit[4]) };
 }

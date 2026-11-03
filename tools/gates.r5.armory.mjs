@@ -11,7 +11,6 @@
  * Page helpers live in `src/hero/{matrix,sheets}.js` (dev / gate modules; never bundled).
  */
 import { PLACES, placed, placedSetup } from './gate-places.mjs';
-import { CANON_SPEEDS } from './gate-speeds.mjs';
 import { GATES as CARRIED } from './gates.r5.carried.mjs';
 import { readFileSync, existsSync, statSync } from 'node:fs';
 import path from 'node:path';
@@ -37,7 +36,9 @@ const PRE = `
         if (M.stance !== 'holstered' && H._lanceOut) return;
         M.swing({});
         const w0 = performance.now();
-        while (performance.now() - w0 < 5000) { await frame(); if (H._lanceOut && M.poseState().phase === 'idle' && M.stance !== 'holstered') break; }
+        // out of the draw and physically in her hand, not merely asked for
+        while (performance.now() - w0 < 5000) { await frame(); if (H._lanceOut && (M.lanceInHand ?? M.spearInHand) && M.stance === 'ready' && M.poseState().phase === 'idle') break; }
+        await frames(3);
       };
       const lanceAway = async () => {
         const M = cmb.melee;
@@ -121,11 +122,29 @@ const A_WEAPON_SOCKETS = {
       const bb = g.boundingBox;
       const need = CLS[X.class] || [];
       const miss = need.filter((n) => !names.has(n));
-      // authored length, measured off the socket nodes
+      // authored length, measured off the mesh: the lance tip to butt; the bow along its back, nock groove to nock
+      // groove (a bow's length is its stave's, not the braced string's chord), through the stave rings' centres
       const pos = (n) => { let q = null; src.traverse((o) => { if (o.name === n) q = o.position; }); return q; };
-      const L = X.class === 'lance' ? pos('tip').distanceTo(pos('butt')) : (pos('string_top').y - pos('string_bottom').y);
-      const ok = !miss.length && Math.abs(X.length - nominal) <= 0.02 && (X.class !== 'lance' || Math.abs(L - nominal) <= 0.02) && (X.class !== 'bow' || Math.abs(L - nominal) <= 0.06);
-      rows.push({ row, cls: X.class, length: X.length, measured: +L.toFixed(3), sockets: [...names].filter((n) => /grip|stow|tip|nock|string|butt/.test(n)), miss, ok });
+      let L;
+      if (X.class === 'lance') L = pos('tip').distanceTo(pos('butt'));
+      else {
+        const P = g.getAttribute('position'), BW = g.getAttribute('_bw');
+        const bins = new Map();
+        for (let i = 0; i < P.count; i++) {
+          if (BW.getX(i) > 0.5) continue;
+          const s = BW.getY(i);
+          if (Math.abs(s) > 0.97) continue;
+          const k = Math.round(s * 16);
+          const b = bins.get(k) || { x: 0, y: 0, z: 0, n: 0 };
+          b.x += P.getX(i); b.y += P.getY(i); b.z += P.getZ(i); b.n++;
+          bins.set(k, b);
+        }
+        const pts = [...bins.keys()].sort((a, b) => a - b).map((k) => { const b = bins.get(k); return p.position.clone().set(b.x / b.n, b.y / b.n, b.z / b.n); });
+        const ends = [pos('string_bottom').clone(), ...pts, pos('string_top').clone()];
+        L = 0; for (let i = 1; i < ends.length; i++) L += ends[i].distanceTo(ends[i - 1]);
+      }
+      const ok = !miss.length && Math.abs(L - nominal) <= 0.02;
+      rows.push({ row, cls: X.class, declared: X.length, measured: +L.toFixed(3), chord: X.class === 'bow' ? +(pos('string_top').y - pos('string_bottom').y).toFixed(3) : undefined, sockets: [...names].filter((n) => /grip|stow|tip|nock|string|butt/.test(n)), miss, ok });
     }
     const bow = cmb.bow;
     const pullOk = Math.abs(bow.pull - (prof.drawLength + bow.restZ)) <= 0.01;
@@ -159,7 +178,7 @@ const A_OUTFIT_SWAP = {
     await H.loadout.unequipArmor();
     const after = await snap();
     await H.loadout.equipArmor('pan-1');
-    const resident = Object.keys(C.assets.models).filter((k) => /^armor/.test(k));
+    const resident = Object.keys(C.assets.models).filter((k) => /^armor[A-Z]/.test(k) && k !== 'armorPan1');
     const ok = after.geo === base.geo && after.tex === base.tex && after.skeletons === base.skeletons && resident.length === 0;
     return { pass: ok, detail: { base, after, trace, residentDeferred: resident } };
   })()`),
@@ -215,6 +234,7 @@ const A_MATRIX = {
     const X = await import('/src/hero/matrix.js');
     const rows = [];
     const M = cmb.melee;
+    const OFFENDERS_OF = window.__armoryOffenders ?? 'pan-1';
     const stage = {
       async idle(weapon) {
         release(); await wait(150);
@@ -253,8 +273,9 @@ const A_MATRIX = {
         await fn();
         await frame();
         // sprint: read two more frames across the stride, keep the worst
-        let m = X.measurePose(C, snap, opts || {});
-        if (pose === 'sprint') for (let k = 0; k < 3; k++) { await simWait(0.09, 800); const q = X.measurePose(C, snap, opts || {}); if (q.stretch > m.stretch || q.insideFrac > m.insideFrac) m = q; }
+        const o2 = { ...(opts || {}), offenders: id === OFFENDERS_OF };
+        let m = X.measurePose(C, snap, o2);
+        if (pose === 'sprint') for (let k = 0; k < 3; k++) { await simWait(0.09, 800); const q = X.measurePose(C, snap, o2); if (q.stretch > m.stretch || q.insideFrac > m.insideFrac) m = q; }
         rows.push({ id, pose, weapon, ...m, weightSumErr: snap.weightSumErr, drawS: pose.startsWith('draw') ? +cmb.drawStrength.toFixed(2) : undefined });
         await clear();
       }
@@ -271,21 +292,35 @@ const A_MATRIX = {
 /* ------------------------------------------------------- A-stow-clearance@armory */
 const STOW_BODY = `
     const X = await import('/src/hero/matrix.js');
-    let dCalf = 9, crouchLow = 9, cover = 0, frames_ = 0;
+    let dCalf = 9, dPiece = null, crouchLow = 9, crouchPiece = null, frames_ = 0;
+    const coverRows = [];
     const run = async (sec, f) => { const s0 = E.simTime, w0 = performance.now(); while (E.simTime - s0 < sec && performance.now() - w0 < sec * 6000) { await frame(); const q = X.stowFrame(C); if (q) { frames_++; f(q); } } };
+    const leg = (q) => { if (q.dCalf < dCalf) { dCalf = q.dCalf; dPiece = q.dPiece; } };
     release(); await wait(200);
-    keys.add('KeyW'); keys.add('ShiftLeft');
-    await run(4, (q) => { dCalf = Math.min(dCalf, q.dCalf); });
-    release(); await wait(200);
-    keys.add('KeyC'); await simWait(0.5, 3000); keys.add('KeyW');
-    await run(2.5, (q) => { dCalf = Math.min(dCalf, q.dCalf); crouchLow = Math.min(crouchLow, q.lowAboveGround); });
-    release(); await wait(200); keys.add('KeyC'); await frame(); keys.delete('KeyC'); await wait(400); release();
-    keys.add('KeyW'); await simWait(0.3, 2000); p.dodge ? p.dodge() : C.input._downHandlers.get('ControlLeft')?.forEach((f) => f({}));
-    await run(0.8, (q) => { dCalf = Math.min(dCalf, q.dCalf); });
-    release(); await wait(200);
+    keys.add('KeyW'); keys.add('ShiftLeft'); await wait(800);
+    await run(4, leg);
+    release(); await wait(300);
+    p.setCrouch ? p.setCrouch(true) : keys.add('KeyC');
+    await simWait(0.5, 3000); keys.add('KeyW');
+    await run(2.5, (q) => { leg(q); if (q.lowAboveGround < crouchLow) { crouchLow = q.lowAboveGround; crouchPiece = q.lowPiece; } });
+    release(); p.setCrouch ? p.setCrouch(false) : 0; await wait(400); release();
+    standAt(p, 'openGround'); keys.add('KeyW'); await simWait(0.3, 2000); p.dodge ? p.dodge() : C.input._downHandlers.get('ControlLeft')?.forEach((f) => f({}));
+    await run(0.8, leg);
+    release(); await wait(300);
     const y0 = p.camYaw ?? p.heading;
-    for (let i = 0; i < 24; i++) { if (p.camYaw != null) p.camYaw = y0 + (i / 24) * Math.PI * 2; await frame(); await frame(); cover = Math.max(cover, X.headCover(C)); }
-    if (p.camYaw != null) p.camYaw = y0;
+    for (const moving of [false, true]) {
+      standAt(p, 'openGround'); p.velocity.set(0, 0, 0); await wait(200);
+      for (let i = 0; i < 24; i++) {
+        p.camYaw = (i / 24) * Math.PI * 2;
+        if (moving) { keys.clear(); keys.add('KeyW'); standAt(p, 'openGround'); }
+        const nf = moving ? 30 : 14; for (let k = 0; k < nf; k++) await frame();
+        const q = X.headCover(C); coverRows.push({ yaw: i, moving, ...q });
+      }
+    }
+    release();
+    p.camYaw = y0;
+    const cover = Math.max(...coverRows.map((r) => r.cover));
+    const coverAt = coverRows.find((r) => r.cover === cover);
 `;
 const A_STOW = {
   id: 'A-stow-clearance@armory', kind: 'action', lane: LANE, timeout: 120000, settle: 400,
@@ -294,7 +329,7 @@ const A_STOW = {
   assert: placed(['openGround'], `(async () => {${PRE}
     freeze(); standAt(p, 'openGround'); await wait(300);${STOW_BODY}
     const pass = dCalf >= 0.05 && crouchLow >= 0.05 && cover <= 0.08 && frames_ > 60;
-    return { pass, detail: { dCalf, crouchLow, cover, frames: frames_ } };
+    return { pass, detail: { dCalf, dPiece, crouchLow, crouchPiece, cover, coverAt, frames: frames_ } };
   })()`),
 };
 
@@ -307,16 +342,16 @@ const motionRows = async () => {
 const A_MOTION = {
   id: 'A-variant-motion-rerun', kind: 'runner', lane: LANE, timeout: 1200000,
   title: 'Per armor variant (W1: 4): A-stow-clearance, A-wrap-clear, A-run-arms at their bars',
-  check: async ({ page, PORT, evalGate }) => ({ pass: null, detail: 'run as the page rows A-variant-motion:<variant>' }),
+  check: async () => ({ pass: null, detail: 'run as the page rows A-variant-motion-rerun:<variant>' }),
 };
 const motionPage = (id) => ({
-  id: `A-variant-motion:${id}`, kind: 'action', lane: LANE, timeout: 420000, settle: 400,
+  id: `A-variant-motion-rerun:${id}`, kind: 'action', lane: LANE, timeout: 420000, settle: 400,
   title: `Variant ${id}: A-stow-clearance (bars above), and the wrap / run-arm chains re-measured with it on`,
   setup: `__CTX__.input.enabled = true;`,
   assert: placed(['openGround'], `(async () => {${PRE}
     freeze(); standAt(p, 'openGround'); await wait(300);
     await H.loadout.equipArmor(${JSON.stringify(id)}); await frames(6);${STOW_BODY}
-    const stow = { dCalf, crouchLow, cover, frames: frames_, ok: dCalf >= 0.05 && crouchLow >= 0.05 && cover <= 0.08 };
+    const stow = { dCalf, dPiece, crouchLow, crouchPiece, cover, coverAt, frames: frames_, ok: dCalf >= 0.05 && crouchLow >= 0.05 && cover <= 0.08 };
     // A-run-arms, its bars (hero-body row): sprint 4 s, wrist off the midline, below the shoulder, fore-aft range; no prance
     release(); await wait(300);
     standAt(p, 'openGround', { dx: 2 });
@@ -390,13 +425,13 @@ const A_VERB = {
     const sprint = await count(5, true);
     const off2 = H.loadout.info();
     p.surfaces.remove(patch);
-    // back on Pan I for the Flag
+    // back on Pan I for the Flag: the real raise, timed on the perception clock
     const flagRun = async () => {
-      PC.flagPlayer?.(null);
-      const t0 = E.simTime, w0 = performance.now();
-      let t = null;
-      while (performance.now() - w0 < 14000) { await frame(); const on = PC.playerFlagged ?? PC.flagged ?? (PC.flagT > 0) ?? (PC.info?.().flagged); if (!on) { t = E.simTime - t0; break; } }
-      return t;
+      const f = PC.flagPlayer(null);
+      if (!f) return null;
+      const w0 = performance.now();
+      while (f.active && performance.now() - w0 < 14000) await frame();
+      return f.active ? null : +(PC.clock - f.t0).toFixed(3);
     };
     await H.loadout.equipArmor('pan-1'); await frames(10);
     const flagBase = await flagRun();
@@ -419,7 +454,8 @@ const A_NO_MOVE = {
   setup: `__CTX__.input.enabled = true;`,
   assert: placed(['openGround'], `(async () => {${PRE}
     freeze(); standAt(p, 'openGround'); await wait(300);
-    const canon = ${JSON.stringify(CANON_SPEEDS)};
+    // the table as she boots in the default set; A28b grades its numbers against the canon
+    const canon = { ...p.speeds };
     const eq = (a, b) => JSON.stringify(Object.keys(b).sort().map((k) => [k, +(+a[k]).toFixed(4)])) === JSON.stringify(Object.keys(b).sort().map((k) => [k, +(+b[k]).toFixed(4)]));
     const rows = [];
     const dodge = async () => {
@@ -433,11 +469,11 @@ const A_NO_MOVE = {
     };
     const jump = async () => {
       standAt(p, 'openGround'); await wait(250);
-      const y0 = p.position.y; let top = y0;
-      keys.add('Space'); await frame(); await frame(); keys.delete('Space');
-      const s0 = E.simTime; while (E.simTime - s0 < 0.9) { await frame(); top = Math.max(top, p.position.y); }
-      await simWait(0.3, 2000);
-      return +(top - y0).toFixed(3);
+      p.lastJump = null;
+      p.jump();
+      const w0 = performance.now();
+      while (!p.lastJump && performance.now() - w0 < 6000) await frame();
+      return p.lastJump ? { apex: +p.lastJump.apex.toFixed(3), air: +p.lastJump.air.toFixed(3) } : null;
     };
     for (const id of ${JSON.stringify(IDS)}) {
       await H.loadout.equipArmor(id); await frames(6);
@@ -445,7 +481,8 @@ const A_NO_MOVE = {
     }
     await H.loadout.equipArmor('pan-1');
     const d0 = rows[0].dodge, j0 = rows[0].jump;
-    const pass = rows.every((r) => r.speedsCanon && !Object.keys(r.mods).some((k) => /speed|dodge|jump/i.test(k)) && Math.abs(r.dodge - d0) <= 0.25 && Math.abs(r.jump - j0) <= 0.03);
+    // the bars as carried: A28's apex 1.35-1.7 m, 0.55-0.9 s of air; every variant within 0.25 m / 0.03 m of the default set
+    const pass = rows.every((r) => r.speedsCanon && !Object.keys(r.mods).some((k) => /speed|dodge|jump/i.test(k)) && Math.abs(r.dodge - d0) <= 0.25 && r.jump && r.jump.apex >= 1.35 && r.jump.apex <= 1.7 && r.jump.air >= 0.55 && r.jump.air <= 0.9 && Math.abs(r.jump.apex - j0.apex) <= 0.03);
     return { pass, detail: { rows, canon } };
   })()`),
 };

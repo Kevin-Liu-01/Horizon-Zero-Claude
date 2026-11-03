@@ -134,8 +134,8 @@ export function weaponTrim() {
     put(o, WOOD.leather, 0.8 + 0.4 * m);
     if (sc1 > 0.66) over(o, [106, 84, 62], (sc1 - 0.66) * 1.7);
     const e = Math.min(t.x, t.y, t.w - 1 - t.x, t.h - 1 - t.y);
-    const band = 1 - clamp(Math.abs(e - 6) / 1.1);
-    if (band > 0) { const f = ((t.x + t.y) / 5.5) % 1; if (f < 0.6) over(o, [186, 160, 118], band * 0.8); o.h -= 0.0004 * band; }
+    const band = 1 - clamp(Math.abs(e - 5) / 0.8);
+    if (band > 0) { const f = ((t.x + t.y) / 4.2) % 1; if (f < 0.58) over(o, [142, 118, 88], band * 0.62); else { const q = 1 - 0.3 * band; o.r *= q; o.g *= q; o.b *= q; } o.h -= 0.0003 * band; }
     if (e < 3) over(o, [118, 92, 68], (1 - e / 3) * 0.7);
     o.rough = 0.55 + 0.2 * m; o.det = 0;
   });

@@ -94,7 +94,7 @@ export async function build({ out = ROOT } = {}) {
       const palm = trim.rect('palm');
       const hat1 = hatInto(emptyPart('hat', { trim: true }), [1, 0, 0], V.norm([0, Math.cos(HAT.tiltX), Math.sin(HAT.tiltX)]), V.norm([0, -Math.sin(HAT.tiltX), Math.cos(HAT.tiltX)]), [0, HAT.brimY, -0.02], palm, J('Head'), HAT_ON_HEAD);
       // back socket: crown OUT, the brim's plane 0.145 m behind the spine: past the lance and bow on the diagonal
-      const backZ = -0.235;
+      const backZ = -0.262;
       const hat2 = hatInto(emptyPart('hat', { trim: true }), [1, 0, 0], V.norm([0, 0.20, -1]), V.norm([0, 1, 0.20]), [0.01, 1.27, backZ], palm, jS3, HAT_ON_BACK);
       void clothField;
       return [cap, clasp, hat1, hat2];

@@ -499,17 +499,22 @@ export async function panCloseupOverlay(ctx, refs = []) {
     ['torso, 1.1 m', { pos: [0.34, 1.32, 0.92], target: [0.0, 1.14, 0], fov: 34 }, 0, 40, 400, 540],
     ['neck: bound keyhole, linen collar, tie', { pos: [0.1, 1.47, 0.5], target: [0.0, 1.41, 0.04], fov: 30 }, 402, 40, 296, 268],
     ['girdle, buckle, pouch, 0.6 m', { pos: [0.24, 1.1, 0.48], target: [0.04, 1.03, 0.06], fov: 34 }, 402, 312, 296, 268],
-    ['sleeve, armhole, cuff', { pos: [-0.72, 1.3, 0.42], target: [-0.24, 1.14, 0.0], fov: 30 }, 700, 40, 296, 268],
-    ['sash knot and tails', { pos: [0.5, 0.95, 0.42], target: [0.14, 0.88, 0.04], fov: 30 }, 700, 312, 296, 268],
+    ['sleeve, armhole, cuff', { pos: [-0.66, 1.34, 0.5], target: [-0.2, 1.2, 0.0], fov: 26 }, 700, 40, 296, 268],
+    ['sash knot and tails', { pos: [0.22, 0.98, 0.8], target: [0.13, 0.88, 0.06], fov: 26 }, 700, 312, 296, 268],
     ['hem, under-tunic, trousers', { pos: [0.3, 0.72, 0.72], target: [0.04, 0.68, 0.04], fov: 34 }, 998, 40, 296, 268],
     ['shin wraps, sole', { pos: [0.34, 0.3, 0.66], target: [0.1, 0.2, 0.02], fov: 36 }, 998, 312, 296, 268],
     ['back', { pos: [-0.36, 1.28, -1.08], target: [0, 1.12, 0], fov: 36 }, 1296, 40, 300, 540],
   ];
+  // the outfit, not the gear: the kit collapses for these renders (one synchronous pass, no frame runs)
+  const kit = ctx.player.hero?.kit, hid0 = kit?.hidden ?? 0;
+  kit?.setHidden(31);
   for (const [name, cam, x, y, w, h] of shots) {
     const shot = renderIsolated(ctx, model, { width: w * 2, height: h * 2, cam, background: '#b9b2a2' });
     g.drawImage(canvasOf(shot), x + 8, y, w, h);
-    label(g, name, x + 14, y + 16, 12, '#1a1612');
+    g.fillStyle = 'rgba(233,228,216,0.82)'; g.fillRect(x + 8, y, w, 20);
+    label(g, name, x + 14, y + 15, 12, '#1a1612');
   }
+  kit?.setHidden(hid0);
   let rx = 8;
   for (const r of refs) {
     try { const i = await imgOf(`/${r.file}`); fitInto(g, i, rx, 590, 390, 290, r.cropY ?? 0.5); label(g, r.note, rx + 6, 606, 11, '#fff'); } catch { label(g, `missing ${r.file}`, rx + 6, 606, 12); }
@@ -558,10 +563,11 @@ export async function weaponSheetOverlay(ctx, refs = []) {
   const { c, g } = overlay(W, H, '#e4dfd2');
   label(g, "WEAPONS (W1) — Sabina Bow 1.45 m, Shepherd's Lance 1.55 m, on the shared atlas, at one scale (1 m bar)", 16, 22, 15);
   const cmb = ctx.combat, bow = cmb.bow, sp = ctx.player.hero.heldLance();
-  const shoot = async (src, cam, w, h) => {
+  const shoot = async (src, cam, w, h, stand = false) => {
     const parent = src.parent, p0 = src.position.clone(), q0 = src.quaternion.clone(), s0 = src.scale.clone(), vis = src.visible;
     const grp = new THREE.Group();
     grp.add(src); src.position.set(0, 0, 0); src.quaternion.identity(); src.scale.setScalar(1); src.visible = true;
+    if (stand) src.rotation.x = -Math.PI / 2;        // the lance model lies along +Z: stand it up, tip to the sky
     src.traverse((o) => { o.userData.__v = o.visible; if (o.isMesh && o.userData.heroPart === 'held') o.visible = true; });
     const shot = renderIsolated(ctx, grp, { width: w, height: h, cam, background: '#e4dfd2' });
     src.traverse((o) => { o.visible = o.userData.__v; delete o.userData.__v; });
@@ -588,18 +594,18 @@ export async function weaponSheetOverlay(ctx, refs = []) {
   label(g, 'upper limb, horn nock', 420, 346, 11);
   const sc0 = lanceG.scale.clone();
   lanceG.scale.setScalar(1);
-  const l1 = await shoot(lanceG, { pos: [2.8, 0, 0.775], target: [0, 0, 0.775], ortho: { h: bm }, }, 380, 760);
+  const l1 = await shoot(lanceG, { pos: [2.8, 0.775, 0], target: [0, 0.775, 0], ortho: { h: bm } }, 380, 760, true);
   g.drawImage(canvasOf(l1), 750, 40, 190, 380 * 2);
   label(g, 'lance, whole', 760, 56, 11);
-  const l2 = await shoot(lanceG, { pos: [0.22, 0.10, 1.40], target: [0, 0, 1.42], fov: 30 }, 460, 400);
+  const l2 = await shoot(lanceG, { pos: [0.34, 1.42, 0.1], target: [0, 1.42, 0], fov: 30 }, 460, 400, true);
   g.drawImage(canvasOf(l2), 950, 40, 310, 270);
-  label(g, 'leaf blade, socket, graduations', 960, 56, 11);
-  const l3 = await shoot(lanceG, { pos: [0.22, 0.08, 0.10], target: [0, 0, 0.09], fov: 30 }, 460, 400);
+  label(g, 'leaf blade, socket, carmine lash', 960, 56, 11);
+  const l3 = await shoot(lanceG, { pos: [0.3, 0.08, 0.1], target: [0, 0.06, 0], fov: 30 }, 460, 400, true);
   g.drawImage(canvasOf(l3), 950, 314, 310, 270);
   label(g, 'bob-shaped butt cap', 960, 330, 11);
-  const l4 = await shoot(lanceG, { pos: [0.16, 0.06, 0.32], target: [0, 0, 0.31], fov: 30 }, 460, 400);
+  const l4 = await shoot(lanceG, { pos: [0.3, 1.1, 0.08], target: [0, 1.1, 0], fov: 30 }, 460, 400, true);
   g.drawImage(canvasOf(l4), 950, 588, 310, 270);
-  label(g, 'esparto wrap at the 20 % hand', 960, 604, 11);
+  label(g, 'graduations', 960, 604, 11);
   lanceG.scale.copy(sc0);
   void rows;
   let ry = 40;

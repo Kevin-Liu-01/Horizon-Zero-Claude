@@ -21,8 +21,8 @@ export async function build({ out = ROOT } = {}) {
       switch (p.slot) {
         case 'skirt': return sstep(0.90, 0.74, y) * 0.86;
         case 'under': return 0.92;
-        case 'trousers': return sstep(0.72, 0.46, y) * 0.80;
-        case 'boots': return sstep(0.32, 0.05, y) * 0.92;
+        case 'trousers': return sstep(0.6, 0.45, y) * 0.62;
+        case 'boots': return sstep(0.2, 0.03, y) * 0.66;
         case 'sleeves': return sstep(0.33, 0.41, Math.abs(x)) * 0.72;
         case 'cuffs': return 0.8;
         case 'smock': return sstep(1.46, 1.52, y) * 0.5;

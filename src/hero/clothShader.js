@@ -108,7 +108,7 @@ float clothK = 0.0; float clothCav = 0.0; float saltK = 0.0;`);
     vec4 tileG = texture2D( uDetail, vNormalMapUv * uDetailRep * 0.61 );
     float weaveW = smoothstep( 0.45, 0.8, cls );
     float grainW = smoothstep( 0.12, 0.3, cls ) * ( 1.0 - weaveW );
-    vec2 d = ( tile.rg - 0.5 ) * 2.0 * weaveW * 0.95 + ( tileG.ba - 0.5 ) * 2.0 * grainW * 0.5;
+    vec2 d = ( tile.rg - 0.5 ) * 2.0 * weaveW * 0.95 + ( tileG.ba - 0.5 ) * 2.0 * grainW * 0.14;
     d *= fadeD;
     clothCav = ( d.x + d.y ) * 0.5;
     clothK = max( weaveW, grainW * 0.35 ) ;

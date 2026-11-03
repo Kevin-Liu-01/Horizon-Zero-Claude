@@ -113,7 +113,7 @@ export function smockBody(part, surf, skin, { yTop = 1.215, yBelt = 1.095, rBelt
  * the skirt opens. Panels follow pelvis near the belt and their thigh toward the
  * hem, each panel its own side, so the legs never stretch a panel across them.
  */
-export function skirtPanels(mk, surf, joints, { yTop = 1.025, yHem = 0.74, off = 0.008, flare = 0.14, slits, rows = 6, colsPer = 16, ripA = 0.007, seed = 3, density = 1, overlap = 0.05, thighW = 0.92, keep = null, slot = 'skirt', hem = null, floorY = null, ringDth = null, lip = 0 } = {}) {
+export function skirtPanels(mk, surf, joints, { yTop = 1.025, yHem = 0.74, off = 0.008, flare = 0.14, slits, rows = 6, colsPer = 16, ripA = 0.007, seed = 3, density = 1, overlap = 0.05, thighW = 0.92, keep = null, slot = 'skirt', hem = null, floorY = null, ringDth = null, lip = 0, weightY = null } = {}) {
   const cz = -0.02;
   const n = slits.length;
   const made = [];
@@ -148,9 +148,11 @@ export function skirtPanels(mk, surf, joints, { yTop = 1.025, yHem = 0.74, off =
       const hemY = hem ? hem(th, yHem) : yHem;
       const y = mix(yTop, hemY, t) + (isLip ? 0.004 : 0);
       // deeper folds low on the skirt: the hem's outline is what reads from across a pan
-      const rad = profs[r][c] + ripA * sstep(0.05, 0.9, t) * ripple(th, seed + i, [7, 11, 17]) + (isLip ? -lip : 0);
+      // outward only: a fold never dips back through what it hangs over
+      const rad = profs[r][c] + ripA * sstep(0.05, 0.9, t) * (0.5 + 0.5 * ripple(th, seed + i, [7, 11, 17])) + (isLip ? -lip : 0);
       const p = [Math.cos(th) * rad, y, cz + Math.sin(th) * rad];
-      const w = thighW * sstep(0.02, 0.85, t);
+      // by height when asked: a short layer under a long one must move with the long one, not shear across its own span
+      const w = weightY ? weightY(y) : thighW * sstep(0.02, 0.85, t);
       const thigh = joints[`thigh_${side}`], pel = joints.pelvis;
       return { p, uv: [(c / colsPer) * span * 0.2, yTop - y + (isLip ? 0.008 : 0)], j: [pel, thigh, 0, 0], w: [1 - w, w, 0, 0] };
     });

@@ -291,8 +291,8 @@ export function panTrim(W, H, trimH) {
     cloth(t, o, sc(COL.linen, 0.98), { slub: 0.09, mottle: 0.08, seed: 13 });
     const c = fold01(noise3(t.ax * 0.018, t.y * 0.16, 2.9)), c2 = fold01(noise3(t.ax * 0.04, t.y * 0.34, 7.3));
     const f = c * 0.7 + c2 * 0.3;
-    o.h += 0.0028 * (f - 0.6);
-    const q = 0.82 + 0.24 * sstep(0.16, 0.7, f); o.r *= q; o.g *= q; o.b *= q;
+    o.h += 0.0022 * (f - 0.6);
+    const q = 0.9 + 0.13 * sstep(0.16, 0.7, f); o.r *= q; o.g *= q; o.b *= q;
   });
   T.cell('bind', 240, 18, (t, o) => {
     // bias tape in the deep dye, one running stitch
@@ -468,7 +468,7 @@ export const PAN_PAINTERS = {
       put(o, sc(COL.leatherBrown, 0.68 + 0.42 * n)); o.rough = 0.56 + 0.2 * n; o.det = 0.33;
       if (t.Y < 0.036) {
         const s = ((th * 0.09 / 0.0125) % 1 + 1) % 1;
-        if (s < 0.36) { over(o, [214, 204, 182], 0.85); o.h += 0.0008; }
+        if (s < 0.3) { over(o, [206, 196, 174], 0.72); o.h += 0.0006; }
       }
     }
     // salt and dust rising from the ground
@@ -512,7 +512,8 @@ export async function panBase(opt = {}) {
   const underYoke = cutTris(partFromPrim(prim('smock'), 'underyoke', { axis: [0, 1, 0], density: 0.62, nScale: 0.3 }), (cx, cy, cz) => cy > 1.345 && Math.abs(cx) < 0.145 && (cz > -0.015 || cy > 1.468));
   conform(underYoke, body, { margin: () => 0.004 });
   recomputeNormals(underYoke);
-  const sleeves = compact(partFromPrim(prim('sleeves'), 'sleeves', { density: 0.85, nScale: 0.5 }));
+  // the sleeve starts inside the smock's armhole: anything further in would only poke through the shoulder
+  const sleeves = cutTris(partFromPrim(prim('sleeves'), 'sleeves', { density: 0.85, nScale: 0.5 }), (cx) => Math.abs(cx) > 0.152);
   sleeves.axis = [1, 0, 0];
   conform(sleeves, body, { margin: () => 0.0045 });
   recomputeNormals(sleeves);
@@ -572,7 +573,7 @@ export async function panBase(opt = {}) {
   const skirt = skirtPanels(mk, under, joints, { slot: 'skirt', yTop: BELT_Y - 0.024, yHem: 0.748, off: 0.008, flare: 0.078, slits, rows: 8, colsPer: 20, ripA: 0.0115, seed: 3, density: 1.08, keep: KEEP_TORSO, hem: hemS, overlap: 0.055, lip: 0.0035, ...opt.skirt });
   const skirtField = new Field(skirt, 0.04);
   const underY = opt.skirt?.yHem ?? 0.748;
-  const undr = skirtPanels(mk, skirtField, joints, { slot: 'under', yTop: underY + 0.05, yHem: underY - 0.04, off: -0.034, flare: 0, slits: slits.map((a) => a + 0.45), rows: 2, colsPer: 12, ripA: 0.004, seed: 9, density: 0.72, hem: (th, y0) => y0 + 0.008 * Math.cos(3 * th) + 0.003 * Math.cos(11 * th + 1.3), overlap: 0.3, floorY: underY + 0.03, ringDth: 0.12, lip: 0.002, ...opt.under });
+  const undr = skirtPanels(mk, skirtField, joints, { slot: 'under', yTop: underY + 0.05, yHem: underY - 0.04, off: -0.034, flare: 0, slits: slits.map((a) => a + 0.2), rows: 2, colsPer: 12, ripA: 0.004, seed: 9, density: 0.72, hem: (th, y0) => y0 + 0.008 * Math.cos(3 * th) + 0.003 * Math.cos(11 * th + 1.3), overlap: 0.22, floorY: underY + 0.03, ringDth: 0.12, lip: 0.002, weightY: (y) => 0.92 * sstep(1.068, 0.75, y), ...opt.under });
 
   // what lies on the cloth reads the cloth: never the body hidden under it
   const clothField = new Field([smock, trousers, ...skirt], 0.04);
@@ -581,7 +582,7 @@ export async function panBase(opt = {}) {
   const beltY = BELT_Y, beltH = 0.058;
   const girdle = beltRing(mk('girdle', { trim: true }), under, skinOf, { y: beltY, h: beltH, off: 0.0135, cols: 48, rect: trim.rect('girdle'), keep: KEEP_TORSO, thick: 0.0042, lip: 0.003 });
   // the linen sash under it: a creased band showing just below the belt
-  const sashBand = beltRing(mk('sashband', { trim: true }), under, skinOf, { y: BELT_Y - 0.040, h: 0.03, off: 0.0125, cols: 26, rect: trim.rect('sash'), keep: KEEP_TORSO, thick: 0.003, lip: 0.002, tilt: 0.003 });
+  const sashBand = beltRing(mk('sashband', { trim: true }), skirtField, skinOf, { y: BELT_Y - 0.040, h: 0.03, off: 0.0034, cols: 26, rect: trim.rect('sash'), thick: 0.003, lip: 0.002, tilt: 0.003, dy: 0.02 });
   // the buckle stands on the belt, front and a touch to her left, rigid on spine_01
   const fr = new Field([girdle], 0.04).radial(beltY, Math.PI / 2 - 0.12, 0, -0.02, 0.03, 0.14) + 0.0035;
   const bk = [Math.cos(Math.PI / 2 - 0.12) * fr, beltY, -0.02 + Math.sin(Math.PI / 2 - 0.12) * fr];

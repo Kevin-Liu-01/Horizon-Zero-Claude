@@ -518,6 +518,14 @@ varying vec3 vBwTint;`)
     this._ride.copy(p);
   }
 
+  /**
+   * Where the grip is, in the world (hero-body's handover: the animator's nock estimate is
+   * 0.07-0.09 m off the rendered nock; the arm solve can anchor on this instead). No allocation.
+   */
+  getGripWorld(out) {
+    return this.mesh.localToWorld(out.copy(this.sockets.grip));
+  }
+
   setDraw(draw, showArrow) {
     const U = this.U;
     const nz = this.restZ - draw * this.pull;          // model space (the contract)

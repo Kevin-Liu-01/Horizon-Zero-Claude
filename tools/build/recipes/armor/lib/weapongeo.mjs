@@ -100,7 +100,9 @@ export function lanceGeo(cell, { lod = 0 } = {}) {
   const L = LANCE, r = L.r;
   const sides = lod ? 6 : 8;
   // the bob: a cast plumb bob, point down, a collar and a knop at its neck
-  merge(g, lathe([[0.0005, 0], [0.007, 0.006], [0.019, 0.018], [0.036, 0.040], [0.045, 0.060], [0.0445, 0.070], [0.038, 0.082], [0.027, 0.094], [0.021, 0.098], [0.0215, 0.102], [r + 0.0045, 0.105], [r + 0.0045, 0.112], [r + 0.0015, 0.116]],
+  merge(g, lathe(lod
+    ? [[0.0005, 0], [0.007, 0.006], [0.019, 0.018], [0.036, 0.040], [0.045, 0.060], [0.0445, 0.070], [0.038, 0.082], [0.027, 0.094], [0.021, 0.098], [0.0215, 0.102], [r + 0.0045, 0.105], [r + 0.0045, 0.112], [r + 0.0015, 0.116]]
+    : [[0.0005, 0], [0.0035, 0.0028], [0.009, 0.008], [0.019, 0.018], [0.0285, 0.029], [0.0365, 0.041], [0.0425, 0.052], [0.0452, 0.062], [0.0444, 0.071], [0.0395, 0.08], [0.0315, 0.0885], [0.0245, 0.0945], [0.0208, 0.0985], [0.0218, 0.1015], [r + 0.0047, 0.1045], [r + 0.0047, 0.1115], [r + 0.0015, 0.116]],
     { sides: lod ? 10 : 14, rect: cell('bronzeCast'), uAlong: true }));
   const hr = (y) => r * (1.0 - 0.14 * Math.max(0, (y - 0.3) / 1.0));   // a shaved taper toward the head
   const haft = (y0, y1, name, uR, rows = 1, fat = 0) => {
@@ -177,7 +179,7 @@ export const BOW = { length: 1.45, brace: 0.16, tipK: 0.13, tipC: 0.06 };
 /** The stave's centre line: t in [-1, 1], y up, z toward the target (+) / archer (-). */
 export function stave(t) {
   const a = Math.abs(t);
-  const half = BOW.length / 2;
+  const half = (BOW.length / 2) * 1.0267;       // nock groove to nock groove along the back = BOW.length (bible: 1.45 m)
   const y = t * half * (1 - 0.05 * a * a);
   const z = -BOW.brace * Math.pow(a, 1.9) + 0.022 * Math.pow(a, 6);
   // wind-twisted: a small S out of the plane, zero at the grip and the tips
@@ -299,11 +301,13 @@ export function stringGeo(cell, { lod = 0, live = true } = {}) {
  */
 export function arrowGeo(cell, len = 0.782) {
   const g = G();
-  const shaft = lathe([[0.0034, 0], [0.0036, 0.02], [0.0036, len - 0.05], [0.0032, len - 0.04]], { sides: 6, rect: cell('shaft') });
+  // lathe's axis is +Y: the arrow lies along +Z, nock at the origin, flying +Z
+  const toZ = (q) => place(q, [1, 0, 0], [0, 0, 1], [0, -1, 0]);
+  const shaft = toZ(lathe([[0.0034, 0], [0.0036, 0.02], [0.0036, len - 0.05], [0.0032, len - 0.04]], { sides: 6, rect: cell('shaft') }));
   merge(g, tag(shaft, 2));
-  const nk = lathe([[0.0026, -0.006], [0.0044, 0.0], [0.0042, 0.012]], { sides: 6, rect: cell('horn') });
+  const nk = toZ(lathe([[0.0026, -0.006], [0.0044, 0.0], [0.0042, 0.012]], { sides: 6, rect: cell('horn') }));
   merge(g, tag(nk, 2));
-  const head = lathe([[0.0034, len - 0.05], [0.0056, len - 0.046], [0.0052, len - 0.038], [0.0105, len - 0.03], [0.0078, len - 0.012], [0.0004, len]], { sides: 4, rect: cell('bronzeCast'), ry: (y) => (y > len - 0.035 ? 0.34 : 1) });
+  const head = toZ(lathe([[0.0034, len - 0.05], [0.0056, len - 0.046], [0.0052, len - 0.038], [0.0105, len - 0.03], [0.0078, len - 0.012], [0.0004, len]], { sides: 4, rect: cell('bronzeCast'), ry: (y) => (y > len - 0.035 ? 0.34 : 1) }));
   merge(g, tag(head, 3));
   // three gull vanes, cock feather black; a real curved edge
   const fl = [[0.0, 0.002], [0.05, 0.010], [0.085, 0.0115], [0.105, 0.0095], [0.118, 0.0035]];
