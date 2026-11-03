@@ -126,7 +126,8 @@
      "tools/gates.r5.pipeline.mjs",
      "tools/gates.r5.engine-gpu.mjs",
      "tools/gates.r5.gates-perf.mjs",
-     "tools/gates.r5.carried.mjs"
+     "tools/gates.r5.carried.mjs",
+     "tools/gates/alloc-baseline.json"
     ],
     "owner": "gates-perf",
     "reason": "gate files that grep for the deleted IP names"
@@ -313,7 +314,7 @@
  "ratchet": {
   "wave": "W0b",
   "recorded": "2026-11-03",
-  "total": 1365,
+  "total": 1371,
   "initialRecord": true
  },
  "entries": [
@@ -553,12 +554,15 @@
     "Datapoint",
     "Disc Launcher",
     "Forager",
+    "Glinthawk",
+    "Grazer",
     "HFW",
     "HZD",
     "Hardpoint",
     "Horizon",
     "Hunter Bow",
     "Karst",
+    "Longleg",
     "Medicine",
     "Medicine Pouch",
     "Metal Shards",
@@ -570,6 +574,7 @@
     "Prowler",
     "Ropecaster",
     "Ropes",
+    "Scrapper",
     "Shards",
     "Sharpshot",
     "Silent Strike",
@@ -585,10 +590,11 @@
     "tools/gates.r5.pipeline.mjs",
     "tools/gates.r5.engine-gpu.mjs",
     "tools/gates.r5.gates-perf.mjs",
-    "tools/gates.r5.carried.mjs"
+    "tools/gates.r5.carried.mjs",
+    "tools/gates/alloc-baseline.json"
    ],
    "reason": "gate files that grep for the deleted IP names",
-   "cap": 89
+   "cap": 95
   },
   {
    "id": "scheduled:instruments-b:src/entities/machines/**",
