@@ -2387,3 +2387,7 @@ back to the default voice set.
 
 **world-props (W1)** — `activities.revealList()` and `props.revealed` lost their only writer; the
 cauldron terminal mesh is now an inert prop.
+
+## Known transient for the R48(c) allocation baseline (orchestrator note, Nov 3)
+
+Recorded before `A-alloc-rate --record-baseline`, so the 1.10× guard does not charge it to the no-lane machine plumbing. The r1 eng judge's GPSEQ staging (8 freshly spawned Tillers, 3 s warm-up, 10 s window) measured, inside the fight window: `steerAlongS` 40.5 KB/s, `navTowardS` 19.5, the lamps update 37.1, `updateEyesM` 50.2, `_statePatrol` 51.8. It follows "dependent prototype chain changed" deopts 8-12 s after staging; the source is not found. `A-alloc-rate`'s real staging (a world-resident cast, `resetAll` then `pinAll`) does not hit the steering helpers: they stay under 4 KB/s. It does list `_statePatrol` at 95.0 / 81.3 KB/s and `updateEyesM` at 38.5 / 37.3 KB/s, and `updateEyesM` is absent from the first run of a session and present in later ones. The baseline therefore records these two frames as carried machine plumbing with a known session-order transient. instruments-a holds this file at W1 and owns finding the deopt (`R5_IC_DEOPTMARK`).

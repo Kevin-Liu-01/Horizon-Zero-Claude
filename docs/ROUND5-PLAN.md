@@ -1228,6 +1228,7 @@ Rules:
 | GPU frame at the shipped tier | `A-gpu-tier` is a W0 exit; fog/calima frames cull at 140 m; five worst-frame ledgers incl. the Kiln Yard and the Cloudline |
 | the machine crashes again (memory, swap, disk) | ≤ 2 gate Chromes machine-wide, a disk/memory preflight, a 3 GB floor, `A90-abs` absolute ceilings, `A-vram-ledger` with render targets and a 450 MB total, one worktree per lane |
 | a half-finished lane breaks Kevin's preview or another lane | one worktree per lane; main changes only at orchestrator commits; port guard on the gate tools |
+| the R48(c) allocation baseline is taken with a known machine-plumbing transient | documented in `docs/ROUND5-INSTRUMENTS-CORE.md` ("Known transient"): `_statePatrol` and `updateEyesM` are carried, and instruments-a finds the deopt at W1 |
 | NPCs blow the draw or VRAM budget | atlas + LOD1 + nearest-4 shadows mandatory; ≤ 4 faction atlases resident |
 | Sonde / Dredge locomotion | spikes with numeric exits and named cut lines (moored balloon; 3-segment train or 11 kinds) |
 | Transit at scale | Plumb `scale` tests, then a 30 k grey box through the seam before art |
