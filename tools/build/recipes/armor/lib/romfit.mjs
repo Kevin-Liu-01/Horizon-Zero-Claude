@@ -149,8 +149,9 @@ function edgesOf(part, weld) {
  */
 export function romFit(parts, base, {
   target = 1.46, targetShort = 1.34, shortL = 0.012, relaxIts = 14,
-  easeIts = 6, deepTo = -0.0022, slack = 0.0014, radius = 0.032, maxPush = 0.014, giveUp = 0.016,
+  easeIts = 12, deepTo = -0.0022, slack = 0.0014, radius = 0.032, maxPush = 0.014, giveUp = 0.016,
   skip = new Set(['hat']), stiff = new Set(['buckle', 'tongue', 'slider', 'clasp', 'tab', 'scutes']), rom = null,
+  over = { sling: ['smock', 'binds'], slider: ['smock', 'binds'], sashband: ['skirt'], girdle: ['smock', 'skirt'], straps: ['boots'], tie: ['underyoke'], sash: ['skirt'], capelet: ['smock', 'sling', 'binds'], ropebelt: ['smock', 'skirt', 'wrap', 'sashband'] },
 } = {}) {
   const R = rom || ROM();
   const skin = base.doc.getRoot().listSkins()[0];
@@ -242,15 +243,13 @@ export function romFit(parts, base, {
   const body = base.bodyPart;
   const bn = body.pos.length / 3;
   const BQ = new Float64Array(bn * 3), BN = new Float64Array(bn * 3);
-  const bind3 = new Float64Array(body.pos);
-  const bindN = vertexNormals(bind3, body.idx, bn);
-  const bindG = new Grid(bind3, bindN, bn, 0.06);
   const pushed = new Map(info.map((f) => [f.p, new Float64Array(f.n)]));
   const ease = () => {
     const pts = new Map();
     const cell = radius;
     let count = 0, worstCount = 0;
     const need = info.map((f) => new Float64Array(f.n));
+    const dirs = info.map((f) => new Float64Array(f.n * 3));
     for (const M of poses) {
       posed(body, M, BQ);
       vertexNormals(BQ, body.idx, bn, BN);
@@ -260,7 +259,26 @@ export function romFit(parts, base, {
         posed(f.p, M, f.Q);
         for (let i = 0; i < f.n; i++) {
           const q = G.height(f.Q[i * 3], f.Q[i * 3 + 1], f.Q[i * 3 + 2]);
-          if (q && q.dist < 0.05 && q.h < deepTo) { c++; const d = deepTo - q.h + slack; if (d > need[fi][i]) need[fi][i] = d; }
+          if (q && q.dist < 0.05 && q.h < deepTo) {
+            c++;
+            const d = deepTo - q.h + slack;
+            if (d <= need[fi][i]) continue;
+            need[fi][i] = d;
+            // out of the skin in THIS pose, brought back to bind through the vertex's own blended bones
+            let nx = 0, ny = 0, nz = 0;
+            const nX = BN[q.i * 3], nY = BN[q.i * 3 + 1], nZ = BN[q.i * 3 + 2];
+            for (let k = 0; k < 4; k++) {
+              const w = f.p.wgt[i * 4 + k];
+              if (w <= 0) continue;
+              const m = M[f.p.jnt[i * 4 + k]];
+              if (!m) continue;
+              nx += w * (m[0] * nX + m[1] * nY + m[2] * nZ);
+              ny += w * (m[3] * nX + m[4] * nY + m[5] * nZ);
+              nz += w * (m[6] * nX + m[7] * nY + m[8] * nZ);
+            }
+            const l = Math.hypot(nx, ny, nz) || 1;
+            dirs[fi][i * 3] = nx / l; dirs[fi][i * 3 + 1] = ny / l; dirs[fi][i * 3 + 2] = nz / l;
+          }
         }
       });
       if (c > worstCount) worstCount = c;
@@ -274,13 +292,14 @@ export function romFit(parts, base, {
         const k = key3(Math.floor(f.p.pos[i * 3] / cell), Math.floor(f.p.pos[i * 3 + 1] / cell), Math.floor(f.p.pos[i * 3 + 2] / cell));
         let a = pts.get(k);
         if (!a) { a = []; pts.set(k, a); }
-        a.push(f.p.pos[i * 3], f.p.pos[i * 3 + 1], f.p.pos[i * 3 + 2], need[fi][i]);
+        a.push(f.p.pos[i * 3], f.p.pos[i * 3 + 1], f.p.pos[i * 3 + 2], need[fi][i], dirs[fi][i * 3], dirs[fi][i * 3 + 1], dirs[fi][i * 3 + 2]);
       }
     });
     if (!count) return { verts: 0, worstPose: 0 };
     for (const f of info) {
       const pos = f.p.pos, P = pushed.get(f.p);
       const off = new Float64Array(f.n);
+      const dir = new Float64Array(f.n * 3);
       for (let i = 0; i < f.n; i++) {
         const x = pos[i * 3], y = pos[i * 3 + 1], z = pos[i * 3 + 2];
         const cx = Math.floor(x / cell), cy = Math.floor(y / cell), cz = Math.floor(z / cell);
@@ -288,34 +307,60 @@ export function romFit(parts, base, {
         for (let a = -1; a <= 1; a++) for (let b = -1; b <= 1; b++) for (let c = -1; c <= 1; c++) {
           const L = pts.get(key3(cx + a, cy + b, cz + c));
           if (!L) continue;
-          for (let q = 0; q < L.length; q += 4) {
+          for (let q = 0; q < L.length; q += 7) {
             const d2 = (L[q] - x) ** 2 + (L[q + 1] - y) ** 2 + (L[q + 2] - z) ** 2;
             if (d2 >= radius * radius) continue;
             const t = 1 - d2 / (radius * radius);
             const v = L[q + 3] * t * t;
-            if (v > o) o = v;
+            if (v > o) { o = v; dir[i * 3] = L[q + 4]; dir[i * 3 + 1] = L[q + 5]; dir[i * 3 + 2] = L[q + 6]; }
           }
         }
         off[i] = Math.min(o, maxPush - P[i]);
       }
       if (stiff.has(f.p.slot)) {
         // one body: the mean of what it was asked to move
-        let s = 0;
-        for (let i = 0; i < f.n; i++) s += off[i];
+        let s = 0, dx = 0, dy = 0, dz = 0;
+        for (let i = 0; i < f.n; i++) { s += off[i]; dx += dir[i * 3] * off[i]; dy += dir[i * 3 + 1] * off[i]; dz += dir[i * 3 + 2] * off[i]; }
         off.fill(s / f.n);
+        const l = Math.hypot(dx, dy, dz) || 1;
+        for (let i = 0; i < f.n; i++) { dir[i * 3] = dx / l; dir[i * 3 + 1] = dy / l; dir[i * 3 + 2] = dz / l; }
       }
       for (let i = 0; i < f.n; i++) {
         if (off[i] <= 0) continue;
-        const q = bindG.height(pos[i * 3], pos[i * 3 + 1], pos[i * 3 + 2]);
-        if (!q) continue;
-        pos[i * 3] += bindN[q.i * 3] * off[i];
-        pos[i * 3 + 1] += bindN[q.i * 3 + 1] * off[i];
-        pos[i * 3 + 2] += bindN[q.i * 3 + 2] * off[i];
+        pos[i * 3] += dir[i * 3] * off[i];
+        pos[i * 3 + 1] += dir[i * 3 + 1] * off[i];
+        pos[i * 3 + 2] += dir[i * 3 + 2] * off[i];
         P[i] += off[i];
       }
     }
     return { verts: count, worstPose: worstCount };
   };
+
+  // ---- what lies on what, before anything moves: the ease must not sink a strap into its cloth
+  const surfOf = (names) => {
+    const ps = parts.filter((p) => names.includes(p.slot) && p.pos.length);
+    let n = 0;
+    for (const p of ps) n += p.pos.length / 3;
+    const P = new Float64Array(n * 3), N = new Float64Array(n * 3);
+    let o = 0;
+    for (const p of ps) {
+      const m = p.pos.length / 3;
+      const pn = vertexNormals(p.pos, p.idx, m);
+      for (let i = 0; i < m * 3; i++) { P[o * 3 + i] = p.pos[i]; N[o * 3 + i] = pn[i]; }
+      o += m;
+    }
+    return new Grid(P, N, n, 0.04);
+  };
+  const lying = [];
+  for (const [slot, under] of Object.entries(over)) {
+    const G = surfOf(under);
+    for (const p of parts) {
+      if (p.slot !== slot) continue;
+      const n = p.pos.length / 3, h0 = new Float64Array(n);
+      for (let i = 0; i < n; i++) { const q = G.height(p.pos[i * 3], p.pos[i * 3 + 1], p.pos[i * 3 + 2]); h0[i] = q && q.dist < 0.03 ? q.h : NaN; }
+      lying.push({ p, h0, under });
+    }
+  }
 
   const log = [];
   log.push(['relax', relax(relaxIts)]);
@@ -323,5 +368,23 @@ export function romFit(parts, base, {
   log.push(['relax', relax(relaxIts)]);
   log.push(['ease', ease()]);
   log.push(['relax', relax(6)]);
+  let lifted = 0;
+  for (const { p, h0, under } of lying) {
+    const G = surfOf(under), n = p.pos.length / 3, stiffOne = stiff.has(p.slot);
+    let mx = 0, my = 0, mz = 0, big = 0;
+    for (let i = 0; i < n; i++) {
+      if (!(h0[i] > 0)) continue;
+      const q = G.height(p.pos[i * 3], p.pos[i * 3 + 1], p.pos[i * 3 + 2]);
+      if (!q) continue;
+      const lack = Math.min(h0[i], 0.008) - q.h;
+      if (lack <= 0.0004) continue;
+      lifted++;
+      const nx = G.N[q.i * 3], ny = G.N[q.i * 3 + 1], nz = G.N[q.i * 3 + 2];
+      if (stiffOne) { if (lack > big) { big = lack; mx = nx * lack; my = ny * lack; mz = nz * lack; } continue; }
+      p.pos[i * 3] += nx * lack; p.pos[i * 3 + 1] += ny * lack; p.pos[i * 3 + 2] += nz * lack;
+    }
+    if (stiffOne && big) for (let i = 0; i < n; i++) { p.pos[i * 3] += mx; p.pos[i * 3 + 1] += my; p.pos[i * 3 + 2] += mz; }
+  }
+  log.push(['lifted', lifted]);
   return log;
 }
