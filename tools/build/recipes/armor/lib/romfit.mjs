@@ -150,8 +150,9 @@ function edgesOf(part, weld) {
 export function romFit(parts, base, {
   target = 1.46, targetShort = 1.34, shortL = 0.012, relaxIts = 14,
   easeIts = 12, deepTo = -0.0022, slack = 0.0014, radius = 0.032, maxPush = 0.014, giveUp = 0.016,
-  skip = new Set(['hat']), noEase = new Set(['lining']), stiff = new Set(['buckle', 'tongue', 'slider', 'clasp', 'tab', 'scutes']), rom = null,
+  skip = new Set(['hat']), noEase = new Set(), stiff = new Set(['buckle', 'tongue', 'slider', 'clasp', 'tab', 'scutes']), rom = null,
   easeTags = /^(idle|sprint|jog|draw|light|heavy)/, smoothPasses = 2,
+  capAt = null,
   over = { sling: ['smock', 'binds'], slider: ['smock', 'binds'], sashband: ['skirt'], girdle: ['smock', 'skirt'], straps: ['boots'], tie: ['underyoke'], sash: ['skirt'], capelet: ['smock', 'sling', 'binds'], ropebelt: ['smock', 'skirt', 'wrap', 'sashband'] },
 } = {}) {
   const R = rom || ROM();
@@ -321,7 +322,7 @@ export function romFit(parts, base, {
             if (v > o) { o = v; dir[i * 3] = L[q + 4]; dir[i * 3 + 1] = L[q + 5]; dir[i * 3 + 2] = L[q + 6]; }
           }
         }
-        off[i] = Math.min(o, maxPush - P[i]);
+        off[i] = Math.max(0, Math.min(o, (capAt ? capAt(x, y, z, f.p.slot, maxPush) : maxPush) - P[i]));
       }
       if (stiff.has(f.p.slot)) {
         // one body: the mean of what it was asked to move

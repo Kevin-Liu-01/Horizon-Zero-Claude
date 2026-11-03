@@ -8,11 +8,11 @@
  */
 import path from 'node:path';
 import { ROOT, MCO_DIR, hex, srcRoot } from '../lib/face.mjs';
-import { KEEP_TORSO, cloth, panBase, panLayout, PAN_SET, seam, salted } from '../outfit-pan-1.mjs';
+import { KEEP_TORSO, cloth, panBase, panLayout, PAN_FIT, PAN_SET, seam, salted } from '../outfit-pan-1.mjs';
 import { Trim, fbm, loadRaw, paintAtlas } from './lib/atlas.mjs';
 import { orientOut, ring, strapAlong, TAU } from './lib/garment.mjs';
 import { tubeInto } from './lib/smock.mjs';
-import { clamp, emptyPart, Field, gridInto, mix, recomputeNormals, sstep, V } from './lib/part.mjs';
+import { clamp, emptyPart, Field, gridInto, mix, recomputeNormals, sstep, V, cutTris } from './lib/part.mjs';
 import { outfitDoc, writeOutfit } from './lib/output.mjs';
 import { romFit } from './lib/romfit.mjs';
 
@@ -193,7 +193,10 @@ export async function ashParts() {
     const th = -Math.PI / 2 + TAU * (c % COLS) / COLS;
     const lump = 0.006 * Math.sin(th * 3 + y * 40);
     const rad = neck[r][c] + off + lump;
-    const p = [Math.cos(th) * rad, y - 0.012 * Math.sin(th - 1.0) * (r / 6), -0.035 + Math.sin(th) * rad];
+    // her shoulders are wider than she is deep: the loose turn lies on them and falls against the chest and the back,
+    // it is no brim standing out in front of her
+    const kz = 1 - 0.36 * (r / (rowsC.length - 1));
+    const p = [Math.cos(th) * rad, y - 0.012 * Math.sin(th - 1.0) * (r / 6), -0.035 + Math.sin(th) * rad * kz];
     const w = Math.max(0, Math.min(1, (y - 1.42) / 0.09));
     return { p, uv: [(c / COLS) * 0.72, (r / (rowsC.length - 1)) * 0.2], j: [base.J('neck_01'), base.J('spine_03'), 0, 0], w: [w, 1 - w, 0, 0] };
   });
@@ -244,7 +247,8 @@ export async function ashParts() {
     added.push(rope);
   }
   void KEEP_TORSO; void V; void mix; void clamp; void salted; void cloth;
-  const all = [...parts, ...added];
+  // (the smock's bound neck lies under the cowl here: its rim would only come through the wool)
+  const all = [...parts.map((p) => (p.slot === 'binds' ? cutTris(p, (cx, cy) => cy < 1.43) : p)), ...added];
   for (const p of added) recomputeNormals(p);
   return { base, all };
 }
@@ -255,7 +259,7 @@ export async function build({ out = ROOT } = {}) {
   const layout = await panLayout(all, base.trim, W, H);
   const srcNormal = await loadRaw(path.join(MCO_DIR(srcRoot()), 'T_Peasant_Normal.png'), 1024);
   const tex = await paintAtlas(all, layout, { painters: ASH_PAINTERS, srcNormal, trim: base.trim, salt: [150, 144, 132], curv: { crease: 0.8, ridge: 0.5 }, q: { base: 90, normal: 88, orm: 84 } });
-  romFit(all, base);
+  romFit(all, base, PAN_FIT);
   outfitDoc(doc, all, { name: 'Outfit_Ash_1', matName: 'MI_Ash_1', tex, texPrefix: 'ash' });
   return writeOutfit(doc, path.join(out, OUTPUTS[0]), {
     recipe: RECIPE, sources: ['mco-fantasy-standard', 'ubc-standard', 'brea-generated'], licence: 'CC0-1.0',

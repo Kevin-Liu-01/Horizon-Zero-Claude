@@ -7,7 +7,7 @@
  */
 import path from 'node:path';
 import { ROOT } from '../../lib/face.mjs';
-import { panBase, panLayout, PAN_SET } from '../../outfit-pan-1.mjs';
+import { panBase, panLayout, PAN_SET, PAN_FIT } from '../../outfit-pan-1.mjs';
 import { outfitDoc, writeOutfit } from './output.mjs';
 import { recomputeNormals } from './part.mjs';
 import { romFit } from './romfit.mjs';
@@ -25,7 +25,7 @@ export async function panVariant({ out = ROOT, file, recipe, variant, name, add,
     for (const p of all) { const n = p.pos.length / 3; for (let i = 0; i < n; i++) arr.push(Math.round(255 * Math.min(1, Math.max(0, salt(p, p.pos[i * 3], p.pos[i * 3 + 1], p.pos[i * 3 + 2]))))); }
     extra = { _SALT: ['SCALAR', new Uint8Array(arr)] };
   }
-  romFit(all, base);
+  romFit(all, base, PAN_FIT);
   const hasPieces = added.some((p) => p.pieceBit);
   const { material } = outfitDoc(doc, all, { name: `Outfit_${variant.replace('-', '_')}`, matName: `MI_${variant}`, tex: null, pieces: hasPieces, extra });
   void material;
