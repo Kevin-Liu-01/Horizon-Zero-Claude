@@ -483,53 +483,74 @@ export function creases(list) {
 
 /**
  * The salt-line: a finger-wiped paste with real thickness (bible: #EDEAE2, 8 mm, "slight crackle").
- * The band is a cheek-to-cheek ribbon (`y(X)` centre, `half(X)` half-height). The wipe sets its
- * thickness: fat along the middle of the stroke, thin toward both edges and both ends, where it
- * goes chalky and the skin comes through. A fine crackle opens only where the paste dried thick,
- * in pale hairlines, never in dark tile joints; a few flakes have lifted along its border. The relief
- * goes in the height, so the sun catches its top edge and it casts a soft contact line on the skin.
+ * The band is a cheek-to-cheek ribbon (`y(X)` centre, `half(X)` half-height), of uneven width. The wipe
+ * sets its thickness: fat along the middle of the stroke, thin toward both edges and both ends, where it
+ * goes chalky and the skin comes through. The whole stroke has dried and cracked: a fine fissure network
+ * with plates that lift along it, carried in the ALBEDO as well as the height, because full sun clips the
+ * paste's value and a crack that lived only in the normal would vanish on the lit cheek. Its thickness
+ * is painted too (a light top edge, a shaded bottom one, a contact line on the skin under it).
  */
-export function saltPaste({ y, half, xMax, salt = '#EDEAE2', thick = 0.00075, cell = 400, front = (T) => T.nz > 0.0 && T.Z > 0.015 } = {}) {
+export function saltPaste({ y, half, xMax, salt = '#EDEAE2', thick = 0.00085, cell = 300, front = (T) => T.nz > 0.0 && T.Z > 0.015 } = {}) {
   const S = hex(salt);
-  const w = [0, 0, 0];
+  const w = [0, 0, 0], w2 = [0, 0, 0];
+  // the stroke's thickness at a point, 0..1
+  const thickAt = (X, Y, cy, hh) => {
+    const widen = 1 + 0.42 * (noise3(X * 62, 4.3, 1.9) - 0.5) + 0.22 * (noise3(X * 190, 8.1, 2.7) - 0.5);
+    const streak = noise3(X * 26, Y * 620, 1.7) - 0.5;
+    const edgeSlow = noise3(X * 95, Y * 40, 4.1) - 0.5, edgeFine = noise3(X * 520, Y * 520, 9.3) - 0.5;
+    const r = Math.abs(Y - cy + edgeSlow * hh * 0.75) / (hh * widen);
+    const prof = 1 - smooth(0.3 + streak * 0.7, 1.2 + edgeFine * 0.55 + streak * 0.3, r);
+    const endK = 1 - smooth(xMax * 0.6, xMax * (1.04 + 0.16 * edgeSlow), Math.abs(X));
+    const bridge = 1 - smooth(0.004, 0.017, Math.abs(X));
+    return clamp01(prof * mix(0.5, 1, endK) * (1 + 0.28 * bridge));
+  };
   return (T) => {
     if (Math.abs(T.X) > xMax + 0.012 || !front(T)) return;
     const cy = y(T.X);
     const hh = half(T.X);
     const dy = T.Y - cy;
-    if (Math.abs(dy) > hh * 2.1) return;
+    if (Math.abs(dy) > hh * 2.3) return;
     const X = T.X, Y = T.Y;
-    // where the two fingers met on the bridge the stroke overlaps and sits fat
-    const bridge = 1 - smooth(0.004, 0.017, Math.abs(X));
-    // streaks run along the stroke; the edge wanders slowly, then breaks up finely
     const streak = noise3(X * 26, Y * 620, 1.7) - 0.5, streak2 = noise3(X * 48 + 5, Y * 1150, 3.3) - 0.5;
     const edgeSlow = noise3(X * 95, Y * 40, 4.1) - 0.5, edgeFine = noise3(X * 520, Y * 520, 9.3) - 0.5;
-    const r = Math.abs(dy + edgeSlow * hh * 0.7) / hh;
-    const prof = 1 - smooth(0.34 + streak * 0.7, 1.22 + edgeFine * 0.5 + streak * 0.3, r);       // 1 mid-stroke, 0 past the edge
-    const endK = 1 - smooth(xMax * 0.62, xMax * (1.04 + 0.16 * edgeSlow), Math.abs(X));
-    const thickK = clamp01(prof * mix(0.5, 1, endK) * (1 + 0.3 * bridge));
+    const endK = 1 - smooth(xMax * 0.6, xMax * (1.04 + 0.16 * edgeSlow), Math.abs(X));
+    const thickK = thickAt(X, Y, cy, hh);
     // the paste thins to a chalky drag: skin comes through between the streaks long before the edge
-    let cov = smooth(0.1, 0.5, thickK * (0.82 + 0.62 * (streak2 + 0.5)) + edgeFine * 0.1);
+    let cov = smooth(0.1, 0.46, thickK * (0.82 + 0.62 * (streak2 + 0.5)) + edgeFine * 0.1);
     cov *= smooth(0.0, 0.5, endK + (edgeFine + 0.08) * 0.34) * (1 - smooth(xMax * 0.96, xMax * 1.08, Math.abs(X)));
+    // the contact line it casts on the skin under its lower edge, whatever the light
+    const under = smooth(0.9, 1.25, -dy / hh) * (1 - smooth(1.45, 2.0, -dy / hh)) * smooth(0.25, 0.7, endK);
+    if (under > 0) { const f = 1 - 0.2 * under * (1 - cov); T.r *= f; T.g *= f * 0.98; T.b *= f * 0.97; }
     if (cov <= 0.003) return;
-    // the crackle: cells that open only where the paste dried fat, and not everywhere
-    worley2(X * cell + noise3(X * 300, Y * 300, 0.3) * 0.6, Y * cell * 1.1 + noise3(X * 300, Y * 300, 7.7) * 0.6, w);
-    const border = w[1] - w[0];
-    const crackMask = smooth(0.5, 0.8, thickK) * smooth(0.42, 0.62, noise3(X * 110, Y * 170, 2.2));
-    const crack = (1 - smooth(0.03, 0.13, border)) * crackMask;
-    // a few flakes lifted off the border of the stroke
-    const flake = w[2] > mix(0.45, 1.25, smooth(0.14, 0.55, thickK)) ? 1 : 0;
-    const a = cov * (1 - flake) * (1 - crack * 0.6);
+    // the fissures: a coarse network over everything but the thinnest drag, and a finer one where it dried thick
+    const wx = X + (noise3(X * 300, Y * 300, 0.3) - 0.5) * 0.0028, wy = Y + (noise3(X * 300, Y * 300, 7.7) - 0.5) * 0.0028;
+    worley2(wx * cell, wy * cell * 1.15, w);
+    worley2(wx * cell * 2.3 + 5, wy * cell * 2.6 + 3, w2);
+    const widthK = mix(0.035, 0.075, thickK);
+    const coarse = (1 - smooth(widthK * 0.35, widthK, w[1] - w[0])) * smooth(0.2, 0.42, thickK);
+    const fine = (1 - smooth(0.035, 0.1, w2[1] - w2[0])) * smooth(0.45, 0.75, thickK) * smooth(0.36, 0.58, noise3(X * 140, Y * 210, 2.2));
+    const crack = Math.max(coarse, fine * 0.55);
+    // a few flakes gone altogether, at the border of the stroke
+    const flake = w[2] > mix(0.5, 1.3, smooth(0.14, 0.55, thickK)) ? 1 : 0;
+    // each plate sits at its own height and takes its own tone
+    const plate = w[2] - 0.5;
+    const a = cov * (1 - flake);
     if (a <= 0.003) return;
     // chalk: soft lumps, whiter on the fat ridges, warm and grey where it is thin
     const lump = noise3(X * 240, Y * 380, 5.5), grain = noise3(X * 1100, Y * 1100, 6.1);
-    const tone = 0.56 + 0.2 * lump + 0.05 * grain + 0.16 * thickK;
-    const warm = mix(0.9, 1, thickK);
-    T.r = mix(T.r, S[0] * tone, a); T.g = mix(T.g, S[1] * tone * warm, a); T.b = mix(T.b, S[2] * tone * warm * warm, a);
-    // thickness: the stroke's section, its slow lumps, the crackle's lifted plate edges
-    T.h += a * thickK * thick + a * (lump - 0.5) * thick * 0.9 + a * (grain - 0.5) * thick * 0.14 - crack * a * thick * 0.5;
+    // the painted relief: the stroke's own slope, lit from above
+    const dH = thickAt(X, Y + 0.0009, y(X), hh) - thickAt(X, Y - 0.0009, y(X), hh);
+    const tone = (0.58 + 0.17 * lump + 0.06 * grain + 0.14 * thickK + 0.1 * plate) * (1 + 0.32 * Math.max(-0.6, Math.min(0.6, dH)));
+    const warm = mix(0.88, 1, thickK);
+    let cr = S[0] * tone, cg = S[1] * tone * warm, cb = S[2] * tone * warm * warm;
+    // in a fissure the paste is gone or in deep shade: a dark warm line that survives a clipping sun
+    const dk = crack * 0.8;
+    cr = mix(cr, T.r * 0.42, dk); cg = mix(cg, T.g * 0.4, dk); cb = mix(cb, T.b * 0.38, dk);
+    T.r = mix(T.r, cr, a); T.g = mix(T.g, cg, a); T.b = mix(T.b, cb, a);
+    // thickness: the stroke's section, its slow lumps, the plates' lifted edges
+    T.h += a * thickK * thick + a * (lump - 0.5) * thick * 0.8 + a * plate * thick * 0.4 + a * (grain - 0.5) * thick * 0.12 - crack * a * thick * 0.9;
     T.rough = mix(T.rough, 0.96, a);
-    T.ao *= 1 - crack * 0.3 * a;
+    T.ao *= 1 - crack * 0.45 * a;
   };
 }
 
@@ -550,7 +571,7 @@ export function smoothSkin({ zone = () => 1 } = {}) {
  * to a warm brown of the skin's own hue, the winged liner is cut back, and only a thin dark
  * line stays on the lid margin. `eyes` = eye centres.
  */
-export function eyeSocketClean({ eyes, rx = 0.0285, ry = 0.0175, lid = [0.97, 0.9, 0.87], keepLiner = 0.12, aoFloor = 0.74 } = {}) {
+export function eyeSocketClean({ eyes, rx = 0.0285, ry = 0.0175, lid = [1.0, 0.95, 0.92], keepLiner = 0.12, aoFloor = 0.84 } = {}) {
   return (T) => {
     if (T.nz < 0.05) return;
     for (const e of eyes) {
@@ -643,6 +664,14 @@ export function lidLines({ open, side, ink = '#1A100C', w = 0.00092, crease = 0.
       const k = (1 - smooth(0.0003, 0.0015, dc)) * 0.36;
       T.r *= 1 - k * 0.8; T.g *= 1 - k; T.b *= 1 - k; T.h -= k * 0.00028;
     }
+    // the rim of the lower lid is wet skin in shade, a low warm tone: a pale band there makes her stare
+    if (f > 0.0 && f < 1.04) {
+      const dr = lo - T.Y;
+      if (dr > -0.0006 && dr < 0.0026) {
+        const k = (1 - smooth(0.0012, 0.0026, dr)) * smooth(-0.0006, -0.0001, dr) * 0.38;
+        T.r *= 1 - k * 0.9; T.g *= 1 - k; T.b *= 1 - k;
+      }
+    }
     // the lower line, outer half
     if (f > 0.25 && f < 1.02) {
       const dl = lo - 0.0002 - T.Y;
@@ -673,20 +702,29 @@ export function lipTone({ center, r, gain = [0.86, 0.68, 0.65], rough = 0.52, sa
   };
 }
 
-/** A healed seam: pale, slightly sunk, between two x/y points on the front of the face. */
-export function scarSeam({ a, b, color = [164, 122, 100], w = 0.00105 } = {}) {
+/**
+ * A healed seam: a pale sunk channel between two x/y points on the front of the face, its lips raised
+ * and darker (dark skin scars that way), so it reads as a cut with relief and not as a painted line.
+ */
+export function scarSeam({ a, b, color = [178, 130, 106], rim = 0.74, w = 0.00095, depth = 0.00042 } = {}) {
   return (T) => {
     if (T.nz < 0.1 || T.Y < Math.min(a[1], b[1]) - 0.006 || T.Y > Math.max(a[1], b[1]) + 0.006 || Math.abs(T.X - (a[0] + b[0]) / 2) > Math.abs(a[0] - b[0]) / 2 + 0.008) return;
     const ax = b[0] - a[0], ay = b[1] - a[1];
     const t = clamp01(((T.X - a[0]) * ax + (T.Y - a[1]) * ay) / (ax * ax + ay * ay));
     const wob = (noise3(T.Y * 180, 2.2, 1.1) - 0.5) * 0.0011;
     const d = Math.hypot(T.X - (a[0] + ax * t) + wob, T.Y - (a[1] + ay * t));
-    const taper = smooth(0, 0.16, t) * smooth(0, 0.16, 1 - t);
-    const k = (1 - smooth(w * 0.45, w * (0.7 + taper * 0.6), d)) * (0.45 + 0.55 * taper);
-    if (k <= 0.004) return;
-    T.r = mix(T.r, color[0], k * 0.72); T.g = mix(T.g, color[1], k * 0.72); T.b = mix(T.b, color[2], k * 0.72);
-    T.h -= k * 0.00022;
-    T.rough = mix(T.rough, 0.42, k * 0.8);
+    const taper = smooth(0, 0.14, t) * smooth(0, 0.14, 1 - t);
+    const width = w * (0.72 + 0.5 * taper) * (0.85 + 0.3 * noise3(T.Y * 420, 7.1, 3.2));
+    const k = (1 - smooth(width * 0.5, width * 1.05, d)) * (0.5 + 0.5 * taper);
+    // the lips of the cut
+    const lip = smooth(width * 0.7, width * 1.25, d) * (1 - smooth(width * 1.5, width * 2.7, d)) * (0.35 + 0.65 * taper);
+    if (k <= 0.004 && lip <= 0.004) return;
+    const f = 1 - (1 - rim) * lip;
+    T.r *= f; T.g *= f * 0.98; T.b *= f * 0.97;
+    T.h += lip * depth * 0.55;
+    T.r = mix(T.r, color[0], k * 0.8); T.g = mix(T.g, color[1], k * 0.8); T.b = mix(T.b, color[2], k * 0.8);
+    T.h -= k * depth;
+    T.rough = mix(T.rough, 0.38, k * 0.8);
   };
 }
 
@@ -856,9 +894,9 @@ export async function paintSkinAtlas({ prim, islands, stock, W = 1024, tone = '#
     if (formK > 0) {
       const ak = Math.pow(clamp01(T.ao), 1.15);
       const dent = clamp01(c / 0.0016) * 0.22 * formK, ridge = clamp01(-c / 0.0016) * 0.11 * formK;
-      T.r *= mix(0.70, 1, ak) * (1 - dent * 0.8) * (1 + ridge);
-      T.g *= mix(0.58, 1, ak) * (1 - dent) * (1 + ridge * 0.9);
-      T.b *= mix(0.54, 1, ak) * (1 - dent * 1.02) * (1 + ridge * 0.8);
+      T.r *= mix(0.74, 1, ak) * (1 - dent * 0.8) * (1 + ridge);
+      T.g *= mix(0.62, 1, ak) * (1 - dent) * (1 + ridge * 0.9);
+      T.b *= mix(0.58, 1, ak) * (1 - dent * 1.02) * (1 + ridge * 0.8);
     }
     out[o] = T.r; out[o + 1] = T.g; out[o + 2] = T.b;
     rough[i] = T.rough; aoOut[i] = T.ao; height[i] = T.h; metalOut[i] = T.metal;
@@ -920,7 +958,7 @@ export function blit(dst, W, patch, pw, ph, x, y) {
  * shadow painted from above, and a small window catch-light; the cornea's bulge goes in
  * the normal and its wetness in the roughness.
  */
-export function paintEye(N, { span, iris = '#3B2A20', amber = '#5E3A20', rIris = 0.0064, rPupil = 0.0024, lidY = 0.0048, sclera = [188, 176, 160] } = {}) {
+export function paintEye(N, { span, iris = '#3B2A20', amber = '#5E3A20', rIris = 0.0064, rPupil = 0.0024, lidY = 0.0048, sclera = [182, 168, 150] } = {}) {
   const base = Buffer.alloc(N * N * 3), normal = Buffer.alloc(N * N * 3), orm = Buffer.alloc(N * N * 3);
   const Ic = hex(iris), Am = hex(amber);
   for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
@@ -928,10 +966,11 @@ export function paintEye(N, { span, iris = '#3B2A20', amber = '#5E3A20', rIris =
     const r = Math.hypot(mx, my), ang = Math.atan2(my, mx);
     let R, G, B;
     // sclera
-    const dimEdge = (1 - 0.5 * smooth(0.0066, 0.0118, Math.abs(mx))) * (1 - 0.55 * smooth(0.0118, 0.0172, Math.abs(mx))) - 0.26 * smooth(0.0052, 0.0115, Math.abs(my));
+    const dimEdge = (1 - 0.56 * smooth(0.0064, 0.0112, Math.abs(mx))) * (1 - 0.55 * smooth(0.0112, 0.0165, Math.abs(mx))) - 0.26 * smooth(0.0052, 0.0115, Math.abs(my));
     const vein = smooth(0.62, 0.9, noise3(ang * 7, r * 300, 1.5)) * smooth(0.0075, 0.0145, r) * 0.1;
-    const pink = smooth(0.0085, 0.0155, Math.abs(mx)) * 0.16;
-    R = sclera[0] * dimEdge * (1 + pink * 0.1); G = sclera[1] * dimEdge * (1 - pink * 0.55 - vein * 0.9); B = sclera[2] * dimEdge * (1 - pink * 0.6 - vein);
+    // toward the corners the white goes warm and low: from the side the ball is a wet warm form, not a flat grey wedge
+    const pink = smooth(0.0072, 0.0142, Math.abs(mx));
+    R = sclera[0] * dimEdge * (1 + pink * 0.12); G = sclera[1] * dimEdge * (1 - pink * 0.24 - vein * 0.9); B = sclera[2] * dimEdge * (1 - pink * 0.42 - vein);
     // iris
     if (r < rIris * 1.14) {
       const t = r / rIris;
@@ -953,6 +992,9 @@ export function paintEye(N, { span, iris = '#3B2A20', amber = '#5E3A20', rIris =
     const lidS = smooth(lidY - 0.0058, lidY + 0.0005, my);
     const shade = 1 - lidS * 0.74 - 0.14 * smooth(0.0035, 0.0075, -my);
     R *= shade; G *= shade * 0.985; B *= shade * 0.975;
+    // a wet line along the white, under the upper lid, that a side view catches
+    const wet = (1 - smooth(0.0004, 0.0014, Math.abs(my - 0.0009 - 0.00004 * Math.abs(mx) * 1000 * 0.2))) * smooth(0.0078, 0.0102, Math.abs(mx)) * (1 - smooth(0.0135, 0.0165, Math.abs(mx)));
+    R = mix(R, 222, wet * 0.42); G = mix(G, 208, wet * 0.42); B = mix(B, 190, wet * 0.42);
     // catch-lights: a tight sun glint and a soft sky window, up and to one side
     const gl = Math.hypot(mx + 0.00165, my - 0.00105);
     const glint = 1 - smooth(0.00036, 0.00066, gl);
@@ -971,7 +1013,7 @@ export function paintEye(N, { span, iris = '#3B2A20', amber = '#5E3A20', rIris =
     const nl = Math.hypot(sx, sy, 1);
     normal[o] = Math.round((sx / nl * 0.5 + 0.5) * 255); normal[o + 1] = Math.round((sy / nl * 0.5 + 0.5) * 255); normal[o + 2] = Math.round((1 / nl * 0.5 + 0.5) * 255);
     orm[o] = Math.round((1 - lidS * 0.8) * 255);
-    orm[o + 1] = Math.round((r < rC ? 0.07 : 0.16) * 255);
+    orm[o + 1] = Math.round((r < rC ? 0.07 : 0.12) * 255);
     orm[o + 2] = 0;
   }
   return { base, normal, orm };

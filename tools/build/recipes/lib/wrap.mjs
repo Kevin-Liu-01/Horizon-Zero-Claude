@@ -178,7 +178,7 @@ function pushV(g, p, n, u, v, joint, c = null) {
  * panel's U period so a repeating strip of atlas covers any length.
  *   uv: { rect: [x, y, w, h] px, period px, W atlas px, pxPerM, v: [bottom, top] in 0..1 of rect }
  */
-export function ribbon(form, { n, o0, w, along = 32, s0 = 0, s1 = TAU, rowsT = [-1, -0.93, -0.66, -0.3, 0.1, 0.5, 0.82, 1], warp = null, lift = 0.003, pillow = 0.0022, hemDrop = 0.0035, hemDropUp = null, lowTuck = null, creases = 3, creaseAmp = 0.0011, wander = 0.04, seed = 1, joint = 0, uv, flip = false, stack = null, bridge = 0.05, hemSink = 0.0012, hemStart = 0.9, clearSkin = 0.0014 }) {
+export function ribbon(form, { n, o0, w, along = 32, s0 = 0, s1 = TAU, rowsT = [-1, -0.93, -0.66, -0.3, 0.1, 0.5, 0.82, 1], warp = null, lift = 0.003, pillow = 0.0022, hemDrop = 0.0035, hemDropUp = null, lowTuck = null, creases = 3, creaseAmp = 0.0011, wander = 0.04, seed = 1, joint = 0, uv, flip = false, stack = null, bridge = 0.05, hemSink = 0.0012, hemStart = 0.9, clearSkin = 0.0014, hemDive = true }) {
   const g = { pos: [], nrm: [], uv: [], jnt: [], wgt: [], idx: [] };
   const axis = norm(n);
   const fwd = Math.abs(axis[2]) > 0.95 ? [1, 0, 0] : [0, 0, 1];
@@ -206,7 +206,7 @@ export function ribbon(form, { n, o0, w, along = 32, s0 = 0, s1 = TAU, rowsT = [
     off += 0.0009 * (noise3(d[0] * 9 + seed, d[1] * 9, d[2] * 9) - 0.5);
     if (stack) {
       const ride = Math.max(stack.bridged(d[0], d[1], d[2], bridge), stack.skinAt(d[0], d[1], d[2]) + clearSkin) + off;
-      return mix(ride, stack.clothAt(d[0], d[1], d[2]) - hemSink, smooth(hemStart, 1, at));
+      return hemDive ? mix(ride, stack.clothAt(d[0], d[1], d[2]) - hemSink, smooth(hemStart, 1, at)) : ride;
     }
     if (lowTuck) off -= lowTuck(d[0], d[1], d[2]) * smooth(-0.3, -1, t);       // the lower hem pulled in where the form bridges a gap (a cut-out ear)
     return form.R(d[0], d[1], d[2]) + off;
@@ -274,7 +274,7 @@ export function ribbon(form, { n, o0, w, along = 32, s0 = 0, s1 = TAU, rowsT = [
 }
 
 /** The gathered cloth under the turns: a dome on the form from `elMin` to the pole, with creases converging on the crown. */
-export function crownCap(form, { elMin = 0.3, rings = 4, seg = 20, lift = 0.0012, joint = 0, uv, gather = 0.0014, tiltAxis = [0, 1, 0], pleats = 11, stack = null, uvRadial = false } = {}) {
+export function crownCap(form, { elMin = 0.3, rings = 4, seg = 20, lift = 0.0012, joint = 0, uv, gather = 0.0014, tiltAxis = [0, 1, 0], pleats = 11, stack = null, uvRadial = false, hem = 0 } = {}) {
   const g = { pos: [], nrm: [], uv: [], jnt: [], wgt: [], idx: [] };
   const axis = norm(tiltAxis);
   const fwd = [0, 0, 1];
@@ -282,7 +282,9 @@ export function crownCap(form, { elMin = 0.3, rings = 4, seg = 20, lift = 0.0012
   const c = form.center;
   const rOf = (d, a, e) => {
     const b = stack ? stack.topAt(d[0], d[1], d[2]) : form.R(d[0], d[1], d[2]);
-    return b + lift + gather * Math.sin(a * pleats) * (0.3 + 0.7 * smooth(elMin, Math.PI / 2, e));
+    const r = b + lift + gather * Math.sin(a * pleats) * (0.3 + 0.7 * smooth(elMin, Math.PI / 2, e));
+    // its edge goes under what it lies on, like every hem
+    return stack && hem > 0 ? mix(stack.clothAt(d[0], d[1], d[2]) - hem, r, smooth(elMin, elMin + (Math.PI / 2 - elMin) * 0.2, e)) : r;
   };
   const P = (a, e) => {
     const d = add(mul(axis, Math.sin(e)), add(mul(e1, Math.cos(e) * Math.cos(a)), mul(e2, Math.cos(e) * Math.sin(a))));
@@ -294,7 +296,9 @@ export function crownCap(form, { elMin = 0.3, rings = 4, seg = 20, lift = 0.0012
       const a = (k / seg) * TAU, e = mix(elMin, Math.PI / 2 - 0.03, i / rings);
       const p = P(a, e);
       const n = norm(cross(sub(P(a + 0.08, e), P(a - 0.08, e)), sub(P(a, e + 0.05), P(a, e - 0.05))));
-      pushV(g, p, n, (rect[0] + (k / seg) * rect[2]) / W, (rect[1] + (0.16 + 0.68 * i / rings) * rect[3]) / W, joint);
+      // uvRadial: the panel's long creases run up to the crown as pleats, never round it in rings (V mirrors, so no seam)
+      if (uvRadial) pushV(g, p, n, (rect[0] + (i / rings) * rect[2]) / W, (rect[1] + (0.16 + 0.68 * Math.abs(2 * k / seg - 1)) * rect[3]) / W, joint);
+      else pushV(g, p, n, (rect[0] + (k / seg) * rect[2]) / W, (rect[1] + (0.16 + 0.68 * i / rings) * rect[3]) / W, joint);
     }
   }
   g.radiusAt = (dx, dy, dz) => {
@@ -304,7 +308,6 @@ export function crownCap(form, { elMin = 0.3, rings = 4, seg = 20, lift = 0.0012
     return rOf([dx, dy, dz], a, e);
   };
   g.center = c;
-  void uvRadial;
   const col = rings + 1;
   for (let k = 0; k < seg; k++) for (let i = 0; i < rings; i++) {
     const a = k * col + i, b = (k + 1) * col + i;
@@ -343,7 +346,7 @@ export function cordRing(center, axis, R, r, { seg = 14, sides = 4, joint = 0, u
  * normal to `axis` up to the pole: what the eye meets if it finds its way under the cloth, instead of
  * the sky through a head whose skull was culled. `at(d)` is its radius. Dark, opaque, never lit by much.
  */
-export function underShell(form, { axis, oMin, seg = 12, rings = 4, at, joint = 0, uv, W = 512 } = {}) {
+export function underShell(form, { axis, oMin, seg = 12, rings = 4, at, joint = 0, uv, W = 512, cloth = false } = {}) {
   const g = { pos: [], nrm: [], uv: [], jnt: [], wgt: [], idx: [] };
   const up = norm(axis);
   const fwd = Math.abs(up[2]) > 0.95 ? [1, 0, 0] : [0, 0, 1];
@@ -357,10 +360,12 @@ export function underShell(form, { axis, oMin, seg = 12, rings = 4, at, joint = 
   const u = (uv[0] + uv[2] / 2) / W, v = (uv[1] + uv[3] / 2) / W;
   for (let k = 0; k < seg; k++) for (let i = 0; i < rings; i++) {
     const q = P((k / seg) * TAU, i / rings);
-    g.pos.push(...q.p); g.nrm.push(...q.d); g.uv.push(u, v); g.jnt.push(joint, 0, 0, 0); g.wgt.push(1, 0, 0, 0);
+    g.pos.push(...q.p); g.nrm.push(...q.d); g.jnt.push(joint, 0, 0, 0); g.wgt.push(1, 0, 0, 0);
+    // `cloth`: it is seen, so it carries the panel (U mirrored, so no seam), not one dark texel
+    if (cloth) g.uv.push((uv[0] + Math.abs(2 * k / seg - 1) * uv[2]) / W, (uv[1] + (0.14 + 0.72 * i / Math.max(1, rings - 1)) * uv[3]) / W); else g.uv.push(u, v);
   }
   const top = P(0, 1);
-  g.pos.push(...top.p); g.nrm.push(...top.d); g.uv.push(u, v); g.jnt.push(joint, 0, 0, 0); g.wgt.push(1, 0, 0, 0);
+  g.pos.push(...top.p); g.nrm.push(...top.d); g.uv.push(cloth ? (uv[0] + uv[2] / 2) / W : u, cloth ? (uv[1] + uv[3] * 0.86) / W : v); g.jnt.push(joint, 0, 0, 0); g.wgt.push(1, 0, 0, 0);
   const pole = seg * rings;
   for (let k = 0; k < seg; k++) {
     const kn = (k + 1) % seg;
@@ -529,6 +534,14 @@ export function vertexAO(g, grid, { rays = 40, maxD = 0.035, floor = 0.32, tint 
   // a ribbon's hem rows turn under, so they are always occluded: they read their neighbour instead
   if (g.rows) {
     const R = g.rows, cols = n / R;
+    // ray noise on a coarse grid reads as tiles of tone: smooth it along the turn and across it
+    for (let pass = 0; pass < 2; pass++) {
+      const src = g.col.slice();
+      for (let c = 0; c < cols; c++) for (let r = 0; r < R; r++) for (let k = 0; k < 3; k++) {
+        const at = (cc, rr) => src[(((cc + cols) % cols) * R + Math.max(0, Math.min(R - 1, rr))) * 4 + k];
+        g.col[(c * R + r) * 4 + k] = 0.4 * at(c, r) + 0.2 * (at(c - 1, r) + at(c + 1, r)) + 0.1 * (at(c, r - 1) + at(c, r + 1));
+      }
+    }
     for (let c = 0; c < cols; c++) for (const [e, nb] of [[0, 2], [1, 2], [R - 1, R - 3], [R - 2, R - 3]]) {
       const a = (c * R + e) * 4, b = (c * R + nb) * 4;
       for (let k = 0; k < 3; k++) g.col[a + k] = Math.max(g.col[a + k], g.col[b + k] * 0.92);
@@ -619,9 +632,13 @@ export function paintClothPanel(buf, { rect, period, W = 512, dye, dye2, dye3, s
     const thread = over ? warpRound : weftRound;
     const tt = over ? warpTone[px] : weftTone[y];
     const weaveH = (over ? 1 : 0.55) * thread * 0.00011;
-    const drift = pnoise2(px / P * 5, y / h * 3 + seed, 5, 1000), drift2 = pnoise2(px / P * 11 + 3, y / h * 7, 11, 1000);
-    let r = mix(D[0], D2[0], smooth(0.3, 0.75, drift)), g = mix(D[1], D2[1], smooth(0.3, 0.75, drift)), b = mix(D[2], D2[2], smooth(0.3, 0.75, drift));
-    r = mix(r, D3[0], smooth(0.55, 0.9, drift2) * 0.55); g = mix(g, D3[1], smooth(0.55, 0.9, drift2) * 0.55); b = mix(b, D3[2], smooth(0.55, 0.9, drift2) * 0.55);
+    // the hand-dyed drift: warped so no value-noise cell ever reads as a block of tone on a turn of cloth
+    const warpX = 0.55 * Math.sin(TAU * (px / P * 2 + y / h * 1.3 + seed * 0.17)), warpY = 0.55 * Math.sin(TAU * (px / P * 3 - y / h * 0.7 + seed * 0.29));
+    const drift = pnoise2(px / P * 5 + warpX, y / h * 3 + seed + warpY, 5, 1000) * 0.6 + pnoise2(px / P * 10 + warpY * 2, y / h * 7 + warpX * 2 + 9, 10, 1000) * 0.4;
+    const drift2 = pnoise2(px / P * 11 + 3 + warpY * 2, y / h * 7 - warpX * 2, 11, 1000);
+    const dk1 = smooth(0.25, 0.8, drift) * 0.7, dk2 = smooth(0.5, 0.95, drift2) * 0.4;
+    let r = mix(D[0], D2[0], dk1), g = mix(D[1], D2[1], dk1), b = mix(D[2], D2[2], dk1);
+    r = mix(r, D3[0], dk2); g = mix(g, D3[1], dk2); b = mix(b, D3[2], dk2);
     const shade = (0.8 + 0.22 * lift * shadeK + (1 - shadeK) * 0.2) * (1 + weave * (0.1 * thread - 0.07)) * (1 + weave * (0.1 * tt - 0.05));
     r *= shade; g *= shade; b *= shade;
     // hems: slightly darker and denser, then the stripe

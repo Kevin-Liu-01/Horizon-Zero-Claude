@@ -46,15 +46,15 @@ import { joinPrimitives } from '@gltf-transform/functions';
 import {
   ROOT, srcRoot, UBC_DIR, HAIR_DIR, readGltf, cleanDoc, nodeByName, graft, addChain, jointIndex,
   findLandmarks, GRADED, faceField, applyField,
-  recomputeNormals, refineEdges, smoothNormals, smooth, profileMask, iou, rle, writeSkinned, v3,
+  recomputeNormals, refineEdges, smoothNormals, smoothPositions, smooth, profileMask, iou, rle, writeSkinned, v3,
 } from './lib/face.mjs';
-import { relayoutSkinUV, saltPaste, scarSeam, inkDots, eyeOpening, TriGrid, triSoup } from './lib/skin.mjs';
+import { relayoutSkinUV, saltPaste, scarSeam, inkDots, eyeOpening, TriGrid, triSoup, bakeAOPoints } from './lib/skin.mjs';
 import { WRAP_ATLAS } from './lib/wrap.mjs';
 import { woundHeadwrap, joinGeos, paintWrapAtlas } from './lib/wrap-head.mjs';
 import { lashCard } from './lib/hair.mjs';
 import {
   humanDensity, vertexWeightOf, eyeCentres, eyeFrontZ, movedMask, primFromGeo, browLines, remapEyeUV,
-  cullUnderWrap, cullEyeBacks, simplifyHands, compactPrim, scalpCards, paintHumanSkin,
+  cullUnderWrap, cullEyeBacks, simplifyHands, compactPrim, scalpCards, paintHumanSkin, hairBandUnderHem,
 } from './lib/skin-human.mjs';
 
 export const LANE = 'hero-body';
@@ -142,8 +142,8 @@ export const CHAINS = {
 const FACE_MM = {
   noseBridge: { d: [0, 0.6, 6.4], s: 0.0125 },
   noseTip: { d: [0, 3.2, -3.4], s: 0.0098 },
-  cheek: { d: [5.2, 1.4, 3.4], s: 0.0165 },     // mirrored for the right side
-  jaw: { d: [6.2, -2.2, 0.6], s: 0.0235 },      // mirrored
+  cheek: { d: [2.6, 3.0, 5.0], s: 0.0165 },     // mirrored for the right side: the bone comes up and forward, not out
+  jaw: { d: [1.7, -5.9, 1.4], s: 0.0235 },      // mirrored: the angle comes down, so the face reads longer and not wider
   chin: { d: [0, -1.6, 6.2], sx: 0.0175, sy: 0.0125, sz: 0.016 },
   brow: { d: [0, 0.8, 4.4], s: 0.0165 },
   upperLip: { d: [0, 1.2, -1.0], s: 0.0085 },
@@ -206,6 +206,11 @@ export async function build({ out = ROOT } = {}) {
   B([-0.0175, ty - 0.003, tz - 0.022], [3.0, 1.3, -1.0], 0.0088);
   B([0.0105, ty + 0.018, tz - 0.024], [-1.2, 0, -0.4], 0.0085);
   B([-0.0105, ty + 0.018, tz - 0.024], [1.2, 0, -0.4], 0.0085);
+  // the tip narrows and takes a plane: a small break above it, the columella drawn up under it, no ball
+  for (const sx of [1, -1]) B([sx * 0.0105, ty - 0.004, tz - 0.007], [-sx * 2.0, 0.3, -0.9], 0.0062);
+  for (const sx of [1, -1]) B([sx * 0.0165, ty - 0.006, tz - 0.02], [-sx * 1.1, 0.4, -0.2], 0.0062);
+  B([0, ty + 0.0105, tz - 0.004], [0, 0, -0.8], 0.0058);
+  B([0, ty - 0.0085, tz - 0.009], [0, 1.1, -0.7], 0.0058);
   // the mandible: one line from the gonion to the chin, a little below the stock edge
   for (const sx of [1, -1]) {
     B([sx * 0.040, L.chin[1] + 0.012, 0.030], [sx * 1.6, -2.4, 0.2], 0.0165);
@@ -264,14 +269,28 @@ export async function build({ out = ROOT } = {}) {
   // the jaw line and the chin are the silhouette a close-up reads: split their long edges on the curve
   const stockN = bodyPrim.getAttribute('POSITION').getCount();
   const refined = refineEdges(bodyPrim, {
-    minLen: 0.0066, maxEdges: 260,
+    minLen: 0.0062, maxEdges: 380,
     want: (p) => {
       const ax = Math.abs(p[0]);
-      if (p[1] < 1.515 || p[1] > 1.625 || ax > 0.082 || p[2] < -0.05) return false;
+      // the ear's rim, its lobe and the far cheek's outline from the temple to the chin
+      if (ax > 0.064 && p[1] > 1.585 && p[1] < 1.705 && p[2] > -0.07 && p[2] < 0.03) return true;
+      if (p[1] > 1.625 && p[1] < 1.71 && ax > 0.048 && ax < 0.09 && p[2] > -0.02) return true;
+      if (p[1] < 1.515 || p[1] > 1.625 || ax > 0.09 || p[2] < -0.05) return false;
       // not the mouth or the nose, which carry their own density
       return !(p[1] > 1.565 && ax < 0.03 && p[2] > 0.07);
     },
   });
+  // the ear's facets and its pointed helix round off, and so do the last corners of the cheek's outline
+  smoothPositions(bodyPrim, {
+    iters: 3,
+    weight: (p) => {
+      const ax = Math.abs(p[0]);
+      const ear = smooth(0.068, 0.074, ax) * smooth(1.59, 1.6, p[1]) * (1 - smooth(1.70, 1.71, p[1])) * smooth(-0.075, -0.065, p[2]) * (1 - smooth(0.012, 0.024, p[2]));
+      const cheek = 0.35 * smooth(0.05, 0.062, ax) * (1 - smooth(0.086, 0.092, ax)) * smooth(1.545, 1.56, p[1]) * (1 - smooth(1.66, 1.68, p[1])) * smooth(-0.01, 0.01, p[2]);
+      return Math.max(ear, cheek);
+    },
+  });
+  { const P = bodyPrim.getAttribute('POSITION'), q = [0, 0, 0], m = new Uint8Array(P.getCount()); for (let i = 0; i < m.length; i++) { P.getElement(i, q); m[i] = q[1] > 1.5 ? 1 : 0; } recomputeNormals(bodyPrim, m); }
   headW = vertexWeightOf(bodyPrim, headSet);
   // the face stops printing its polygons on the terminator; lips, lids and nostrils keep their edge
   smoothNormals(bodyPrim, {
@@ -281,8 +300,7 @@ export async function build({ out = ROOT } = {}) {
       const lid = Math.min(Math.hypot((Math.abs(p[0]) - eyes[0][0]) / 0.024, (p[1] - eyes[0][1]) / 0.0125), 1.6);
       const lip = Math.hypot(p[0] / 0.032, (p[1] - (L.upperLip[1] - 0.011)) / 0.017);
       const nose = Math.hypot(p[0] / 0.022, (p[1] - (L.noseTip[1] - 0.012)) / 0.013);
-      const ear = Math.abs(p[0]) > 0.068 && p[2] < 0.03 && p[1] > 1.59 && p[1] < 1.71 ? 0.55 : 1;
-      return smooth(0.85, 1.25, lid) * smooth(0.8, 1.2, lip) * smooth(0.75, 1.15, nose) * ear;
+      return smooth(0.85, 1.25, lid) * smooth(0.8, 1.2, lip) * smooth(0.75, 1.15, nose);
     },
   });
   applyField(browPrim, field);
@@ -291,6 +309,22 @@ export async function build({ out = ROOT } = {}) {
   let eyeMax = 0;
   { const a = eyesPrim.getAttribute('POSITION').getArray(); for (let i = 0; i < a.length; i += 3) eyeMax = Math.max(eyeMax, Math.hypot(a[i] - eyeStock[i], a[i + 1] - eyeStock[i + 1], a[i + 2] - eyeStock[i + 2])); }
 
+  // the cornea stands proud of the ball: from the side the iris and a wet dome read, not a flat grey wedge
+  // (after the socket's measure above: the ball itself stays rigid, this is the eye's own form)
+  {
+    const P = eyesPrim.getAttribute('POSITION'), a = P.getArray(), cz = eyeSphereZ;
+    let n25 = 0;
+    for (let i = 0; i < P.getCount(); i++) {
+      const e = eyes[a[i * 3] > 0 ? 0 : 1];
+      const dx = a[i * 3] - e[0], dy = a[i * 3 + 1] - e[1], dz = a[i * 3 + 2] - cz;
+      if (dz <= 0) continue;
+      const r = Math.hypot(dx, dy), k = 1 - smooth(0.0035, 0.0095, r);
+      if (r < 0.0095) n25++;
+      a[i * 3 + 2] += 0.0021 * k;
+    }
+    P.setArray(a);
+    if (process.env.WRAP_DEBUG) console.log('eye verts', P.getCount(), 'in the cornea', n25);
+  }
   // measure what the field did at each landmark (game mm), and the profile IoU
   const disp = {};
   const faceRec = { landmarks: {}, graded: GRADED };
@@ -320,8 +354,14 @@ export async function build({ out = ROOT } = {}) {
   faceRec.eyeSocketMaxMm = +(eyeMax * S * 1000).toFixed(3);   // the eye mesh's largest move (rigid socket mask)
 
   // ---- the guide meshes: the stock brows and the stock hair shell are read, not shipped
-  const scar = { a: [0.0405, 1.699], b: [0.0315, 1.671] };        // left brow (+x), x/y, raw
   const brows = browLines(browPrim);
+  // the scar: 3 cm, down from under the wrap, THROUGH the left brow (+x) and out of its lower edge toward the lid (bible §3.5)
+  const scar = (() => {
+    const xc = 0.0355, l = brows[1].line(xc);
+    const tiltX = 0.27;               // it leans toward the nose as it comes down
+    const below = l.half * 1.1 + 0.0026, above = 0.0300 / S - below;
+    return { a: [xc + tiltX * above, l.y + above], b: [xc - tiltX * below, l.y - below] };
+  })();
   const hairDoc = await readGltf(path.join(HAIR_DIR(SRC), 'Hair_BuzzedFemale.gltf'));
   cleanDoc(hairDoc);
   const hairNodes = graft(base, hairDoc, 'Hair_BuzzedFemale');
@@ -350,7 +390,7 @@ export async function build({ out = ROOT } = {}) {
   const wrapped = woundHeadwrap({
     headSoup, skin: skinFrom, joint: head, center: skinCenter,
     // the hair and padding the cloth rides on: thin over the brow, fuller over the crown and the back
-    lift: (dx, dy, dz) => 0.0028 + 0.0052 * smooth(0.0, 0.75, dy) + 0.0032 * smooth(0.1, -0.85, dz),
+    lift: (dx, dy, dz) => 0.0028 + 0.0052 * smooth(0.0, 0.75, dy) + 0.0032 * smooth(0.1, -0.85, dz) + 0.0045 * smooth(0.62, 0.95, dy),
     // the base turn: low edge at +7 deg over the brow, +7 deg over the ears, -29 deg on the nape
     base: { tiltDeg: 18, warpDeg: -9.5, lowDeg: -2.2, w: 0.25, lift: 0.0012 },
     // two turns crossing over the forehead, each lying on what is under it
@@ -405,25 +445,68 @@ export async function build({ out = ROOT } = {}) {
   const panTris = await panBindTriangles();
   const skinImg = await paintHumanSkin({
     bodyPrim, skinMat, layout, eyeR, EYE_PX, L, eyes, brows, shellGrid, opens, scar, names: 'brea',
-    occluders: wrapped.soup, collar: panTris,
+    occluders: wrapped.soup, collar: panTris, hairBand: hairBandUnderHem(wrapped.hemGap),
     marks: [
       saltPaste({
         y: (X) => yS + 0.004 * (X * X) / 0.004,
         half: (X) => (0.0041 / S) * (1 - 0.1 * smooth(0.02, 0.058, Math.abs(X))),
         xMax: 0.059,
       }),
-      scarSeam({ a: scar.a, b: scar.b }),
+      scarSeam({ a: scar.a, b: scar.b, color: [156, 110, 90], w: 0.00078, depth: 0.0005 }),
       inkDots({ dots: [[-0.7075, -0.0445], [-0.6895, -0.0555], [-0.6895, -0.0335]], r: 0.00265, where: (T) => T.X < -0.66 && T.ny > 0.4 }),
     ],
   });
   const wrapTex = await paintWrapAtlas(base, wrapMat);
+
+  // what faces INTO the head never sees the sun: the shadow pass renders back faces, so an inner wall facing a sun behind her
+  // has no caster in front of it and lights up inside the nose and along the lips. Its normal now points straight down,
+  // where no sun ever is. Read from a baked sky visibility, after the paint (which reads the true normals)
+  {
+    const P = bodyPrim.getAttribute('POSITION'), N = bodyPrim.getAttribute('NORMAL');
+    const pos = P.getArray(), nrm = Float32Array.from(N.getArray());
+    const pick = [];
+    for (let i = 0; i < P.getCount(); i++) { const x = pos[i * 3], y = pos[i * 3 + 1], z = pos[i * 3 + 2]; if (y > 1.53 && y < 1.72 && Math.abs(x) < 0.075 && z > 0.03) pick.push(i); }
+    const pts = new Float32Array(pick.length * 3), ns = new Float32Array(pick.length * 3);
+    pick.forEach((v, i) => { for (let k = 0; k < 3; k++) { pts[i * 3 + k] = pos[v * 3 + k]; ns[i * 3 + k] = nrm[v * 3 + k]; } });
+    const soup = triSoup(bodyPrim);
+    for (const v of triSoup(eyesPrim)) soup.push(v);
+    const ao = bakeAOPoints(pts, ns, new TriGrid(new Float32Array(soup), 0.012), { rays: 64, maxD: 0.03, lift: 0.0006 });
+    let bent = 0;
+    pick.forEach((v, i) => {
+      const inward = ns[i * 3 + 2] < 0.45 ? 1 : 0.35;
+      // on the front of the face, a surface facing back at all is one of these, whatever the rays found
+      const x = pts[i * 3], y = pts[i * 3 + 1];
+      const onLip = Math.abs(x) < 0.04 && y < L.upperLip[1] + 0.002 && y > L.upperLip[1] - 0.04;
+      const k = onLip ? 1 - smooth(0.1, 0.2, ao[i]) : Math.max((1 - smooth(0.16, 0.42, ao[i])) * inward, Math.abs(x) < 0.05 ? 1 - smooth(-0.04, 0.2, ns[i * 3 + 2]) : 0);
+      if (k <= 0.01) return;
+      const nx = nrm[v * 3] * (1 - k), ny = nrm[v * 3 + 1] * (1 - k) - k, nz = nrm[v * 3 + 2] * (1 - k) + 0.12 * k, l = Math.hypot(nx, ny, nz) || 1;
+      nrm[v * 3] = nx / l; nrm[v * 3 + 1] = ny / l; nrm[v * 3 + 2] = nz / l;
+      bent++;
+    });
+    // the rim of the lower lid and the top of the lower lip face up: with the sun behind her nothing in front of them casts, and
+    // they burn white in a face in shade. Their normals lean forward enough to stay out of any sun behind the head
+    pick.forEach((v) => {
+      const x = pos[v * 3], y = pos[v * 3 + 1];
+      const e = eyes[x > 0 ? 0 : 1];
+      const lid = Math.abs(x - e[0]) < 0.027 && y < e[1] - 0.001 && y > e[1] - 0.017;
+      const lip = Math.abs(x) < 0.04 && y < L.noseTip[1] - 0.003 && y > L.upperLip[1] - 0.04;
+      if (!lid && !lip) return;
+      const ny = nrm[v * 3 + 1], nz = nrm[v * 3 + 2];
+      if (ny <= 0.3 * Math.max(nz, 0.01)) return;
+      const yz = Math.hypot(ny, nz), a = Math.atan2(0.3, 1), sc = Math.sign(nz) >= 0 ? 1 : -1;
+      nrm[v * 3 + 1] = yz * Math.sin(a) * sc; nrm[v * 3 + 2] = yz * Math.cos(a);
+      bent++;
+    });
+    N.setArray(nrm);
+    if (process.env.WRAP_DEBUG) console.log('inward normals bent', bent, 'of', pick.length);
+  }
 
   // ---- hide mask (Pan Whites I covers which body vertices)
   const hide = coverageMask(bodyPrim, panTris, 0.08);
   const hideArr = new Uint8Array(bodyPrim.getAttribute('POSITION').getCount());
   // the collar stands off the neck: a look down inside it meets skin, never a hole through her, so
   // the neck and the top of the chest stay whatever the normal-ray test says
-  const insideCollar = (x, y) => y > 1.42 && Math.abs(x) < 0.088;
+  const insideCollar = (x, y) => y > 1.40 && Math.abs(x) < 0.112;
   {
     const P = bodyPrim.getAttribute('POSITION'), q = [0, 0, 0];
     for (let i = 0; i < hideArr.length; i++) { P.getElement(i, q); hideArr[i] = hide[i] && !insideCollar(q[0], q[1]) ? 1 : 0; }
@@ -433,7 +516,7 @@ export async function build({ out = ROOT } = {}) {
   eyesPrim.setAttribute('_HIDEMASK', base.createAccessor().setType('SCALAR').setArray(new Uint8Array(eyesPrim.getAttribute('POSITION').getCount())).setBuffer(buf));
 
   // ---- the hair + wrap primitive (cloth, cards, locks: one material on the 512² atlas)
-  const cards = scalpCards({ bodyPrim, headW, shellGrid, wrapped, skinJ, skinW, temples: false });
+  const cards = scalpCards({ bodyPrim, headW, shellGrid, wrapped, skinJ, skinW, temples: true });
   const hairGeo = joinGeos([wrapped.geo, cards, ...lashes]);
   const wrapPrim = primFromGeo(base, hairGeo);
 

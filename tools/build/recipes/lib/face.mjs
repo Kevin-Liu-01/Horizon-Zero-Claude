@@ -816,6 +816,41 @@ export function smoothNormals(prim, { iters = 2, weight = () => 1 } = {}) {
  * sign of the minor ones, so archetypes of one sex differ by >= 4 mm on >= 4
  * landmarks (A-npc-face-delta) without any random state.
  */
+/**
+ * Taubin smoothing of positions, welded by position, weighted by `weight(p)` (0 keeps a vertex): rounds a
+ * faceted form (an ear's rim, a cheek's outline) without shrinking it. Recompute or soften the normals after.
+ */
+export function smoothPositions(prim, { iters = 2, weight = () => 1, lambda = 0.5, mu = -0.53 } = {}) {
+  const P = prim.getAttribute('POSITION');
+  const idx = prim.getIndices().getArray(), n = P.getCount();
+  const pos = Float32Array.from(P.getArray());
+  const key = (i) => `${Math.round(pos[i * 3] * 1e5)},${Math.round(pos[i * 3 + 1] * 1e5)},${Math.round(pos[i * 3 + 2] * 1e5)}`;
+  const weld = new Map(), rep = new Int32Array(n);
+  for (let i = 0; i < n; i++) { const k = key(i); if (!weld.has(k)) weld.set(k, i); rep[i] = weld.get(k); }
+  const nb = new Map();
+  const link = (a, b) => { const r = rep[a], s = rep[b]; if (r === s) return; let l = nb.get(r); if (!l) { l = new Set(); nb.set(r, l); } l.add(s); };
+  for (let t = 0; t < idx.length; t += 3) { const a = idx[t], b = idx[t + 1], c = idx[t + 2]; link(a, b); link(b, a); link(b, c); link(c, b); link(a, c); link(c, a); }
+  const w = new Float32Array(n);
+  { const p = [0, 0, 0]; for (let i = 0; i < n; i++) { p[0] = pos[i * 3]; p[1] = pos[i * 3 + 1]; p[2] = pos[i * 3 + 2]; w[i] = weight(p); } }
+  const step = (k) => {
+    const next = Float32Array.from(pos);
+    for (let i = 0; i < n; i++) {
+      if (rep[i] !== i || w[i] <= 0) continue;
+      const l = nb.get(i); if (!l) continue;
+      let x = 0, y = 0, z = 0;
+      for (const s of l) { x += pos[s * 3]; y += pos[s * 3 + 1]; z += pos[s * 3 + 2]; }
+      const m = 1 / l.size;
+      next[i * 3] = pos[i * 3] + (x * m - pos[i * 3]) * k * w[i];
+      next[i * 3 + 1] = pos[i * 3 + 1] + (y * m - pos[i * 3 + 1]) * k * w[i];
+      next[i * 3 + 2] = pos[i * 3 + 2] + (z * m - pos[i * 3 + 2]) * k * w[i];
+    }
+    for (let i = 0; i < n; i++) { const r = rep[i]; if (r !== i) { next[i * 3] = next[r * 3]; next[i * 3 + 1] = next[r * 3 + 1]; next[i * 3 + 2] = next[r * 3 + 2]; } }
+    pos.set(next);
+  };
+  for (let it = 0; it < iters; it++) { step(lambda); step(mu); }
+  P.setArray(pos);
+}
+
 export function archetypeDeltas(seed, base) {
   let h = 2166136261;
   for (const c of String(seed)) h = Math.imul(h ^ c.charCodeAt(0), 16777619) >>> 0;

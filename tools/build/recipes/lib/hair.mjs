@@ -26,9 +26,10 @@ const mix = (a, b, t) => a + (b - a) * t;
 const clampB = (v) => (v < 0 ? 0 : v > 255 ? 255 : Math.round(v));
 /**
  * Coiled hair is near-black and matte: at the dielectric 4 % reflectance a strong sun turns it
- * grey. A partial metalness (the ORM's B) drops the reflectance toward its dark albedo.
+ * grey. A small metalness (the ORM's B) takes the worst of that off; much more and the diffuse goes
+ * with it and the nape reads as a black shell.
  */
-const HAIR_METAL = 165;
+const HAIR_METAL = 48;
 
 /* ======================================================= the drawn coils */
 
@@ -75,9 +76,10 @@ export function coilField(W, H, { count = 320, seed = 11, r = [4.2, 7.2], len = 
 
 /** The strand colour for a field height: near-black with a warm brown crown. */
 function coilColour(hv, tv, C) {
-  const k = 0.42 + 1.1 * hv;
-  const warm = smooth(0.5, 0.95, hv) * (0.5 + 0.5 * tv);
-  return [C[0] * k + warm * 18, C[1] * k + warm * 12, C[2] * k + warm * 9];
+  // deep in the gaps it is the bible's near-black; the coil crowns carry a dark warm brown, so the hair has value and shape
+  const k = 0.55 + 1.25 * hv;
+  const warm = smooth(0.38, 0.9, hv) * (0.55 + 0.45 * tv);
+  return [C[0] * k + warm * 34, C[1] * k + warm * 23, C[2] * k + warm * 17];
 }
 
 const fieldNormal = (f, x, y, kN) => {
@@ -122,7 +124,7 @@ export function paintCoilFringe(buf, { rect, W = 512, hair = '#15110F', seed = 3
     const hv = f.h[s], tv = f.tone[s];
     const col = coilColour(hv, tv, C);
     const root = smooth(0.55, 1, y / h);
-    const shade = mix(1, 0.55, root);                              // roots sit in shade
+    const shade = mix(1, 0.72, root);                              // roots sit in shade
     const o = ((y0 + y) * W + x0 + x) * 4;
     buf.base[o] = clampB(col[0] * shade); buf.base[o + 1] = clampB(col[1] * shade); buf.base[o + 2] = clampB(col[2] * shade);
     const solid = hv > 0.1 || root > 0.92;
@@ -208,7 +210,8 @@ export function hairlineLayer({ coverage, sampler, flowUV, hair = '#15110F', ski
     T.r = mix(T.r, col[0] * 1.05, edge); T.g = mix(T.g, col[1] * 1.05, edge); T.b = mix(T.b, col[2] * 1.05, edge);
     T.h += edge * hv * heightM;
     T.rough = mix(T.rough, 0.84 + 0.12 * (1 - hv), edge);
-    T.metal = mix(T.metal, 0.7, edge);            // near-black coils: at the dielectric 4 % a strong sun turns them grey (the material's metal factor is 1)
+    T.metal = mix(T.metal, 0.18, edge);           // near-black coils: at the dielectric 4 % a strong sun turns them grey (the material's metal factor is 1)
+    T.ao = mix(T.ao, Math.max(T.ao, 0.62), edge);  // the hair is lit by its own crowns: no black band under the hem
   };
 }
 
@@ -272,7 +275,7 @@ export function coilCards(anchors, { flow, skinOf, length = [0.014, 0.024], widt
         g.nrm.push(...nn);
         g.uv.push((u0 + k * windowW) / W, (vTop + (1 - t) * windowH) / W);
         g.jnt.push(...skin.j); g.wgt.push(...skin.w);
-        const shade = mix(0.55, 1, t);
+        const shade = mix(0.74, 1, t);
         g.col.push(shade, shade, shade, 1);
       }
     }
@@ -411,7 +414,7 @@ export function browLayer({ x0, x1, line, strokes = 260, seed = 17, hair = '#151
   // f: 0 inner end, 1 outer tail. The brow's own height tapers along it
   const fOf = (x) => clamp01((x - x0) / (x1 - x0));
   const taper = (f) => mix(0.84, 0.98, smooth(0, 0.18, f)) * mix(1, 0.32, smooth(0.5, 1, f));
-  const scarD = 0.0017;
+  const scarD = 0.0019;
   for (let n = 0; n < strokes; n++) {
     const f = Math.pow(R(), 0.86);                       // a little denser toward the inner two thirds
     const x = mix(x0, x1, f);
@@ -425,7 +428,12 @@ export function browLayer({ x0, x1, line, strokes = 260, seed = 17, hair = '#151
     const dirX = side * Math.cos(ang), dirY = Math.sin(ang);
     const L = mix(length[0], length[1], R()) * mix(0.74, 1, smooth(0, 0.22, f)) * mix(1, 0.7, smooth(0.78, 1, f));
     const a = [x - dirX * L * 0.5, yy - dirY * L * 0.5], b = [x + dirX * L * 0.5, yy + dirY * L * 0.5];
-    if (scar && Math.min(seg(scar.a, scar.b, a), seg(scar.a, scar.b, b), seg(scar.a, scar.b, [x, yy])) < scarD) continue;
+    if (scar) {
+      // the scar cuts the brow clean: no hair crosses it, anywhere along the hair
+      let near = 9;
+      for (let q = 0; q <= 4; q++) near = Math.min(near, seg(scar.a, scar.b, [mix(a[0], b[0], q / 4), mix(a[1], b[1], q / 4)]));
+      if (near < scarD) continue;
+    }
     list.push({ a, b, w: width * (0.82 + 0.44 * R()), d: 0.7 + 0.3 * R(), warm: R() });
   }
   const C = hex(hair);
@@ -442,7 +450,7 @@ export function browLayer({ x0, x1, line, strokes = 260, seed = 17, hair = '#151
     const { y, half } = line(Math.max(xLo, Math.min(xHi, T.X)));
     const hh = half * taper(f);
     const inX = 1 - smooth(0, 0.0032, Math.max(xLo - T.X, T.X - xHi));
-    const nearScar = scar ? 1 - smooth(scarD * 0.5, scarD * 1.3, seg(scar.a, scar.b, [T.X, T.Y])) : 0;
+    const nearScar = scar ? 1 - smooth(scarD * 0.7, scarD * 1.25, seg(scar.a, scar.b, [T.X, T.Y])) : 0;
     const body = (1 - smooth(hh * 0.3, hh * 1.05, Math.abs(T.Y - y + 0.00025))) * inX * (1 - nearScar) * mix(0.85, 1, noise3(T.X * 900, T.Y * 900, 1.3));
     const sk = 1 - body * mass;
     T.r = mix(T.r, C[0] * 1.9, body * mass); T.g = mix(T.g, C[1] * 1.9, body * mass); T.b = mix(T.b, C[2] * 1.9, body * mass);
@@ -481,8 +489,9 @@ export function lashCard(open, { side, joint, zAt, segments = 7, length = 0.0062
     const x = inner + (outer - inner) * Math.min(1.02, f);
     const y = open.upper(Math.max(Math.min(open.x0, open.x1), Math.min(Math.max(open.x0, open.x1), x)));
     const z = zAt(x, y);
-    const L = length * mix(0.62, 1.08, smooth(0.0, 0.75, f));
-    const out = side * mix(0.02, 0.5, f);
+    // longest at two thirds, short and thin into the outer corner: from the side a lash is hair, not a slab
+    const L = length * mix(0.62, 1.04, smooth(0.0, 0.62, f)) * mix(1, 0.56, smooth(0.72, 1.02, f));
+    const out = side * mix(0.02, 0.62, f);
     const up = [out * 0.8, Math.cos(lean * 0.72), Math.sin(lean)];
     const ul = Math.hypot(up[0], up[1], up[2]);
     const a = [x, y + 0.0001, z + 0.0002], b = [x + up[0] / ul * L, y + up[1] / ul * L, z + up[2] / ul * L];
@@ -505,16 +514,19 @@ export function paintLashes(buf, { rect, W = 512, hair = '#0E0A09', seed = 61, r
   const [x0, y0, w, h] = rect;
   const R = rng(seed * 2654435761);
   const cov = new Float32Array(w * h);
-  const n = Math.floor(w / 1.25);
+  const n = Math.floor(w / 1.7);
   for (let i = 0; i < n; i++) {
     const xr = (i + R()) * w / n;
-    const lean = (R() - 0.5) * 7 + (xr / w - 0.5) * 8;
-    const L = h * (0.62 + 0.38 * R());
+    const xf = xr / w;
+    // the lash thins toward its ends: a soft fan at the inner corner, separate hairs at the outer one
+    if (R() > mix(0.5, 1, smooth(0, 0.22, xf)) * mix(1, 0.34, smooth(0.62, 1, xf))) continue;
+    const lean = (R() - 0.5) * 6 + (xf - 0.5) * 10;
+    const L = h * (0.58 + 0.42 * R());
     const steps = Math.ceil(L * 2);
     for (let s = 0; s <= steps; s++) {
       const t = s / steps;
       const x = xr + lean * t * t, y = h - 1 - t * L;
-      const rad = mix(1.05, 0.34, t);
+      const rad = mix(0.86, 0.3, t);
       for (let yy = Math.floor(y - rad); yy <= Math.ceil(y + rad); yy++) for (let xx = Math.floor(x - rad); xx <= Math.ceil(x + rad); xx++) {
         if (xx < 0 || yy < 0 || xx >= w || yy >= h) continue;
         const d = Math.hypot(xx + 0.5 - x, yy + 0.5 - y);

@@ -95,6 +95,28 @@ export function hairShape(X, Y, Z) {
   return Math.max(burn, behind, over) * onEar;
 }
 
+/**
+ * The close coils a wrap leaves showing at the temples: a band under the first hem above a point, as wide as
+ * `width(az)` by azimuth (0 at the forehead corner, widest before the ear), both sides alike, clear of the ear.
+ * `hemGap(p, max)` comes from woundHeadwrap. The coil field itself breaks the band's lower edge.
+ */
+export function hairBandUnderHem(hemGap, { center = [0, 1.672, -0.012], az0 = 0.62, az1 = 1.05, azEnd = 2.6, width = 0.019, max = 0.03 } = {}) {
+  const q = [0, 0, 0];
+  return (X, Y, Z) => {
+    if (Y < 1.6) return 0;
+    const ax = Math.abs(X);
+    if (ax > 0.0715 && Z > -0.052 && Z < 0.006 && Y < 1.671) return 0;       // not on the ear
+    const az = Math.atan2(ax, Z - center[2]);
+    if (az < az0 || az > azEnd) return 0;
+    const wob = (noise3(X * 170, Y * 170, Z * 170) - 0.5) * 0.0065 + (noise3(X * 60, Y * 60, Z * 60) - 0.5) * 0.006;
+    const w = width * smooth(az0, az1, az) + wob;
+    if (w <= 0) return 0;
+    q[0] = X; q[1] = Y; q[2] = Z;
+    const g = hemGap(q, max);
+    return 1 - smooth(w * 0.5, w * 1.25, g);
+  };
+}
+
 /** Brow centre lines from the stock brow cards (raw, after the field), flattened 40 % (bible §3.5). */
 export function browLines(prim) {
   const P = prim.getAttribute('POSITION'), p = [0, 0, 0];
@@ -240,12 +262,12 @@ export function scalpCards({ bodyPrim, headW, shellGrid, wrapped, skinJ, skinW, 
   if (temples) for (const side of [1, -1]) for (let i = 0; i < 9; i++) {
     const az = side * (0.62 + i * 0.105 + (R0() - 0.5) * 0.06);
     let found = null;
-    for (let el = 0.5; el > -0.3; el -= 0.012) {
+    for (let el = 0.5; el > -0.3; el -= 0.006) {
       const d = [Math.sin(az) * Math.cos(el), Math.sin(el), Math.cos(az) * Math.cos(el)];
       const t = grid.cast(center[0] + d[0] * far, center[1] + d[1] * far, center[2] + d[2] * far, -d[0], -d[1], -d[2], far, 0.0001);
       if (t < 0) continue;
       const q = [center[0] + d[0] * (far - t), center[1] + d[1] * (far - t), center[2] + d[2] * (far - t)];
-      if (wrapped.lowEdge(q) < 0.018 - i * 0.002) { found = { p: q, n: d, az, el, scale: 0.46 + R0() * 0.22 }; break; }
+      if (wrapped.hemGap(q, 0.006) < 0.004) { found = { p: q, n: d, az, el, scale: 0.42 + R0() * 0.2 }; break; }
     }
     if (found && Math.abs(found.p[0]) < 0.0735) anchors.push(found);
   }
@@ -268,7 +290,7 @@ export function scalpCards({ bodyPrim, headW, shellGrid, wrapped, skinJ, skinW, 
  * The face layers every human gets, in paint order: the source's strokes smoothed, the make-up
  * off the eyes, the lips toned, the colour zones, pores, squint creases, the nasolabial fold.
  */
-export function faceLayers({ L, eyes, cheek }) {
+export function faceLayers({ L, eyes, cheek, mouthBag = null }) {
   const noseT = L.noseTip;
   const faceZone = (T) => (T.Y > 1.45 && Math.abs(T.X) < 0.1 ? 1 : 0);
   const notFeature = (T) => {
@@ -277,20 +299,33 @@ export function faceLayers({ L, eyes, cheek }) {
     const nostril = Math.hypot(T.X / 0.024, (T.Y - (noseT[1] - 0.012)) / 0.012);
     return faceZone(T) * smooth(0.95, 1.3, lip) * smooth(0.9, 1.25, nostril);
   };
-  // the inside of a nostril is dark: it faces down and back, and its inner wall must not catch a pink highlight
+  // a nostril is a graded dark brown with a small dark core: never a black hole, never a pale wall in it
   const nostrils = (T) => {
     if (Math.abs(T.X) > 0.02 || T.Y > noseT[1] + 0.006 || T.Y < noseT[1] - 0.026 || T.Z < noseT[2] - 0.05) return;
-    const under = smooth(-0.15, -0.65, T.ny);
     const d = Math.hypot((Math.abs(T.X) - 0.0088) / 0.0072, (T.Y - (noseT[1] - 0.0087)) / 0.0062, (T.Z - (noseT[2] - 0.0076)) / 0.011);
-    const inner = 1 - smooth(0.55, 1.05, d);
+    const inner = 1 - smooth(0.42, 1.12, d), core = 1 - smooth(0.14, 0.52, d);
+    const under = smooth(-0.3, -0.85, T.ny) * (1 - smooth(1.0, 1.7, d));
     if (under <= 0 && inner <= 0) return;
-    const m = (1 - 0.3 * under) * (1 - 0.66 * inner);
-    T.r *= m; T.g *= m * 0.96; T.b *= m * 0.96;
-    T.ao *= 1 - 0.3 * Math.max(under, inner);
-    T.rough = mix(T.rough, 0.85, inner);
+    const m = (1 - 0.16 * under) * (1 - 0.42 * inner) * (1 - 0.6 * core);
+    T.r *= m; T.g *= m * 0.95; T.b *= m * 0.93;
+    T.ao = mix(T.ao, Math.max(T.ao, 0.5), inner);      // the hollow's shade is painted, soft: the baked AO would crush it to black
+    T.rough = mix(T.rough, 0.9, inner);
+  };
+  // anything that faces INTO the head (a nostril's inner wall, a lip's inside, a lid's wet line) never sees the sky and is
+  // near-black in the albedo, whatever the source painted: the shadow pass renders back faces, so with the sun behind her
+  // it would light up inside the nose and along the lips
+  const inward = (T) => {
+    // the inside of the mouth, teeth and all: she keeps it shut (the lips share that island: only what faces away from the light is inside)
+    if (mouthBag && mouthBag.has(T.island) && (T.nz < 0.05 || T.ao < 0.22)) { T.r = 8; T.g = 5; T.b = 5; T.rough = 0.98; T.ao = Math.min(T.ao, 0.3); return; }
+    if (T.Y < 1.45 || Math.abs(T.X) > 0.05 || T.Z < 0.02) return;
+    const k = (1 - smooth(0.12, 0.3, T.ao)) * (T.nz < 0.25 ? 1 : 0.6);
+    if (k <= 0) return;
+    T.r = mix(T.r, 26, k); T.g = mix(T.g, 14, k); T.b = mix(T.b, 11, k);
+    T.rough = mix(T.rough, 0.95, k);
   };
   return [
     smoothSkin({ zone: notFeature }),
+    inward,
     nostrils,
     eyeSocketClean({ eyes }),
     lipTone({ center: [0, L.upperLip[1] - 0.011, L.upperLip[2] - 0.006], r: [0.036, 0.024, 0.03] }),
@@ -334,7 +369,7 @@ export function faceLayers({ L, eyes, cheek }) {
  * lib/hair.mjs, with the eye patch blitted in. `marks` are the character's own layers (a salt
  * line, a scar, a tattoo), painted last. `collar` = flat triangles of the outfit near the neck.
  */
-export async function paintHumanSkin({ bodyPrim, skinMat, layout, eyeR, EYE_PX, L, eyes, brows, shellGrid, occluders, collar = [], opens, marks = [], scar = null, tone = '#8A5A3C', iris = '#3B2A20', amber = '#5E3A20', hairColor = '#15110F', hairShape: shape = hairShape, names = 'human', fill = [0.05, 0.036, 0.03] }) {
+export async function paintHumanSkin({ bodyPrim, skinMat, layout, eyeR, EYE_PX, L, eyes, brows, shellGrid, occluders, collar = [], opens, marks = [], scar = null, tone = '#8A5A3C', iris = '#3B2A20', amber = '#5E3A20', hairColor = '#15110F', hairShape: shape = hairShape, hairBand = null, names = 'human', fill = [0.15, 0.108, 0.09] }) {
   const W = 1024, AOW = 512;
   const baseTex = skinMat.getBaseColorTexture(), nTex = skinMat.getNormalTexture(), rTex = skinMat.getMetallicRoughnessTexture();
   const stock = await decodeStockSkin(baseTex.getImage(), nTex.getImage(), rTex.getImage());
@@ -364,12 +399,13 @@ export async function paintHumanSkin({ bodyPrim, skinMat, layout, eyeR, EYE_PX, 
   const cov = blurMasked(rawCov, W, W, validT, 5);
   const cheek = [L.cheekL[0] - 0.004, L.cheekL[1] - 0.004, L.cheekL[2] + 0.004];
   const layers = [
-    ...faceLayers({ L, eyes, cheek }),
+    ...faceLayers({ L, eyes, cheek, mouthBag: new Set(layout.islands.filter((q) => q.min[1] > 1.56 && q.max[1] < 1.6).map((q) => q.id)) }),
     hairlineLayer({
       sampler, hair: hairColor,
       coverage: (T) => {
         if (T.Y < 1.52 || Math.abs(T.X) > 0.1) return 0;
-        return cov[T.y * W + T.x] * shape(T.X, T.Y, T.Z);
+        const c = cov[T.y * W + T.x] * shape(T.X, T.Y, T.Z);
+        return hairBand ? Math.max(c, hairBand(T.X, T.Y, T.Z)) : c;
       },
       flowUV: (T, uv) => { uv[0] = Math.atan2(T.X, -T.Z + 0.001) * 0.09; uv[1] = T.Y; },
     }),
@@ -411,7 +447,8 @@ export async function paintHumanSkin({ bodyPrim, skinMat, layout, eyeR, EYE_PX, 
   skinMat.setOcclusionTexture(rTex);
   skinMat.setOcclusionStrength(1);
   // the hero fill: light that went into the skin comes back out of it (no subsurface pass here), so the
-  // shadow side keeps its form instead of going to a black mask. Same image, no new map, no new draw
+  // shadow side keeps its form instead of going to a black mask. Same image, no new map, no new draw.
+  // The runtime scales it with the scene's ambient (src/hero/index.js, R59 c), so it is gone at night
   skinMat.setEmissiveTexture(baseTex).setEmissiveFactor(fill);
   return { stats: painted.stats };
 }

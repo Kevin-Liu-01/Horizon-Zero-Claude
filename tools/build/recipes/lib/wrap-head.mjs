@@ -56,10 +56,10 @@ export function woundHeadwrap({ headSoup, skin = null, joint, center, lift, base
   const baseW = B.w;
   const baseO = (B.lowDeg * DEG) + baseW;
   const baseWarp = (s) => B.warpDeg * DEG * Math.cos(2 * s);
-  add('cap', crownCap(form, { elMin: 18 * DEG, rings: 3, seg: 14, lift: 0.0012, gather: 0.0012, joint: head, stack, uv: { rect: [A.clothB.rect[0], A.clothB.rect[1], A.clothB.period, A.clothB.rect[3]], W }, tiltAxis: [0, 0.94, -0.34] }));
-  add('turn1', ribbon(form, { n: baseN, o0: baseO, w: baseW, warp: baseWarp, along: 36, rowsT: rowsBase, lift: B.lift ?? 0.0012, pillow: 0.0024, stack, bridge: 0, creases: 3, creaseAmp: 0.0012, seed: 3, joint: head, uv: uvA([0, 1]) }));
+  add('cap', crownCap(form, { elMin: 18 * DEG, rings: 5, seg: 20, lift: 0.0012, gather: 0.0012, uvRadial: true, joint: head, stack, uv: { rect: [A.clothB.rect[0], A.clothB.rect[1], A.clothB.period, A.clothB.rect[3]], W }, tiltAxis: [0, 0.94, -0.34] }));
+  add('turn1', ribbon(form, { n: baseN, o0: baseO, w: baseW, warp: baseWarp, along: 36, rowsT: rowsBase, lift: B.lift ?? 0.0012, pillow: 0.0024, stack, bridge: 0, hemSink: 0.0028, creases: 3, creaseAmp: 0.0012, seed: 3, joint: head, uv: uvA([0, 1]) }));
   // the crossing turns: each rises across the forehead toward its own side, lying on what is under it
-  const turnParts = turns.map((t, i) => add(`turn${i + 2}`, ribbon(form, { n: rising(t.phiDeg * DEG, t.tauDeg * DEG), o0: t.oDeg * DEG, w: t.w, along: t.along ?? 32, rowsT: rowsBase, lift: t.lift, pillow: t.pillow ?? 0.0026, stack, bridge: t.bridge ?? 0.06, creases: 3, creaseAmp: t.creaseAmp ?? 0.0013, seed: t.seed, joint: head, uv: uvA(t.flip ? [1, 0] : [0, 1]) })));
+  const turnParts = turns.map((t, i) => add(`turn${i + 2}`, ribbon(form, { n: rising(t.phiDeg * DEG, t.tauDeg * DEG), o0: t.oDeg * DEG, w: t.w, along: t.along ?? 32, rowsT: rowsBase, lift: t.lift, pillow: t.pillow ?? 0.0026, stack, bridge: t.bridge ?? 0.06, hemSink: 0.0032, creases: 3, creaseAmp: t.creaseAmp ?? 0.0013, seed: t.seed, joint: head, uv: uvA(t.flip ? [1, 0] : [0, 1]) })));
   void turnParts;
   const headParts = parts.length;
 
@@ -79,7 +79,9 @@ export function woundHeadwrap({ headSoup, skin = null, joint, center, lift, base
       gs.push(ribbon(f, { n: rotAbout(tilt, [0.5, 0, 0.8], -0.22), o0: 4 * DEG, w: 0.46, along: 20, rowsT: rows, lift: 0.0008, pillow: 0.003, stack: st, bridge: 0.07, creases: 2, creaseAmp: 0.0011, seed: 27, joint: head, uv: uvA([1, 0]), wander: 0.05 }));
       gs.push(ribbon(f, { n: rotAbout(tilt, [-0.7, 0, 0.6], 0.2), o0: 40 * DEG, w: 0.46, along: 18, rowsT: rows, lift: 0.0008, pillow: 0.003, stack: st, bridge: 0.07, creases: 2, creaseAmp: 0.001, seed: 34, joint: head, uv: uvB([1, 0]), wander: 0.05 }));
       // the crown: the cloth's end pulled down into the centre in radial pleats
-      gs.push(crownCap(f, { elMin: 58 * DEG, rings: 2, seg: 18, lift: 0.0008, gather: 0.0017, pleats: 9, joint: head, stack: st, tiltAxis: tilt, uv: { rect: [A.knotFold.rect[0], A.knotFold.rect[1] + 6, A.knotFold.period, A.knotFold.rect[3] - 12], W } }));
+      gs.push(crownCap(f, { elMin: 46 * DEG, rings: 3, seg: 18, lift: 0.0008, gather: 0.0017, pleats: 9, hem: 0.002, uvRadial: true, joint: head, stack: st, tiltAxis: tilt, uv: { rect: [A.knotFold.rect[0], A.knotFold.rect[1] + 6, A.knotFold.period, A.knotFold.rect[3] - 12], W } }));
+      // nothing shows through under the turns: a closed dark egg inside them
+      gs.push(underShell(f, { axis: tilt, oMin: () => -82 * DEG, seg: 12, rings: 5, joint: head, W, uv: [A.clothB.rect[0], A.clothB.rect[1] + 40, 40, 40], at: (dx, dy, dz) => f.R(dx, dy, dz) - 0.0012 }));
       // the carmine binding where it meets the head: two turns of cord seated in the cloth
       const bindUV = { rect: liningMid, period: A.lining.period, W, pxPerM: 1 / 0.0012, v: [0.1, 0.9] };
       gs.push(ribbon(f, { n: tilt, o0: -35 * DEG, w: 0.052, along: 30, rowsT: [-1, 0, 1], lift: 0.0004, pillow: 0.0024, stack: st, bridge: 0, creases: 0, seed: 51, joint: head, uv: bindUV, wander: 0.012, hemStart: 0.55 }));
@@ -90,7 +92,7 @@ export function woundHeadwrap({ headSoup, skin = null, joint, center, lift, base
     let top = -9;
     for (const g of bunR.gs) for (let i = 1; i < g.pos.length; i += 3) top = Math.max(top, g.pos[i]);
     bunR = bunAt(bunSpec.topY - top);
-    const names = ['bun0', 'bun1', 'bun2', 'bun3', 'binding', 'binding2'];
+    const names = ['bun0', 'bun1', 'bun2', 'bun3', 'bunShell', 'binding', 'binding2'];
     bunR.gs.forEach((g, i) => add(names[i], g));
     bunParts = bunR.gs; bunForm = bunR.f;
   }
@@ -98,12 +100,14 @@ export function woundHeadwrap({ headSoup, skin = null, joint, center, lift, base
   let knotForm = null, knotParts = [];
   if (knotAt) {
     const k0 = knotAt;
-    knotForm = ellipsoidForm([k0[0] - 0.006, k0[1] + 0.012, k0[2] + 0.014], { r: 0.0235, rAxis: 0.022, axis: [0.3, 0.8, -0.5], egg: 0.05 });
+    knotForm = ellipsoidForm([k0[0] - 0.009, k0[1] + 0.011, k0[2] + 0.021], { r: 0.0265, rAxis: 0.024, axis: [0.3, 0.8, -0.5], egg: 0.05 });
     const kst = clothStack(knotForm, { azN: 120, elN: 60 });
     const rows = [-1, -0.85, -0.3, 0.3, 0.85, 1];
+    // a closed egg inside it: from behind, the far hems would otherwise hang in the air like wires
+    add('knotShell', underShell(knotForm, { axis: [0.3, 0.8, -0.5], oMin: () => -82 * DEG, seg: 12, rings: 5, joint: head, W, cloth: true, uv: [A.knotFold.rect[0], A.knotFold.rect[1], A.knotFold.period, A.knotFold.rect[3]], at: (dx, dy, dz) => knotForm.R(dx, dy, dz) - 0.0003 }));
     knotParts = [
-      add('knot', ribbon(knotForm, { n: [0.5, 0.6, -0.6], o0: -12 * DEG, w: 0.62, along: 10, rowsT: rows, lift: 0, pillow: 0.0015, stack: kst, bridge: 0, creases: 2, creaseAmp: 0.0007, seed: 41, joint: head, uv: { rect: A.knotFold.rect, period: A.knotFold.period, W, pxPerM: 1 / 0.0012, v: [0, 1] }, wander: 0.04 })),
-      add('knot2', ribbon(knotForm, { n: [-0.6, 0.7, 0.3], o0: 12 * DEG, w: 0.6, along: 10, rowsT: rows, lift: 0.0004, pillow: 0.0015, stack: kst, bridge: 0.1, creases: 2, creaseAmp: 0.0007, seed: 47, joint: head, uv: { rect: A.knotFold.rect, period: A.knotFold.period, W, pxPerM: 1 / 0.0012, v: [1, 0] }, wander: 0.04 })),
+      add('knot', ribbon(knotForm, { n: [0.5, 0.6, -0.6], o0: -14 * DEG, w: 0.86, along: 12, rowsT: rows, lift: 0, pillow: 0.0011, hemSink: 0.0002, stack: kst, bridge: 0, creases: 2, creaseAmp: 0.0007, seed: 41, joint: head, uv: { rect: A.knotFold.rect, period: A.knotFold.period, W, pxPerM: 1 / 0.0012, v: [0, 1] }, wander: 0.04 })),
+      add('knot2', ribbon(knotForm, { n: [-0.6, 0.7, 0.3], o0: 14 * DEG, w: 0.8, along: 12, rowsT: rows, lift: 0.0003, pillow: 0.0011, hemSink: 0.0002, stack: kst, bridge: 0.1, creases: 2, creaseAmp: 0.0007, seed: 47, joint: head, uv: { rect: A.knotFold.rect, period: A.knotFold.period, W, pxPerM: 1 / 0.0012, v: [1, 0] }, wander: 0.04 })),
     ];
   }
   // the free tail on its chain, with a real section
@@ -138,7 +142,7 @@ export function woundHeadwrap({ headSoup, skin = null, joint, center, lift, base
     const later = [];
     if (i < headParts) { for (let j = i + 1; j < headParts; j++) later.push(parts[j]); }
     const isBun = bunParts.includes(g), isKnot = knotParts.includes(g);
-    if (isBun) for (const h of bunParts.slice(bunParts.indexOf(g) + 1)) if (h.part !== 'binding' && h.part !== 'binding2') later.push(h);
+    if (isBun) for (const h of bunParts.slice(bunParts.indexOf(g) + 1)) if (h.part !== 'binding' && h.part !== 'binding2' && h.part !== 'bunShell') later.push(h);
     if (isKnot) for (const h of knotParts.slice(knotParts.indexOf(g) + 1)) later.push(h);
     const depth = (p) => {
       let d = -1;
@@ -164,9 +168,10 @@ export function woundHeadwrap({ headSoup, skin = null, joint, center, lift, base
   const grid = new TriGrid(new Float32Array(soup), 0.012);
   for (const g of parts) {
     if (g.part === 'locks') continue;                  // the tuft carries its own root shade and edge alpha
-    if (g.part === 'shell') { const n = g.pos.length / 3; g.col = []; for (let i = 0; i < n; i++) g.col.push(0.2, 0.15, 0.2, 1); continue; }
+    if (g.part === 'shell' || g.part === 'bunShell') { const n = g.pos.length / 3; g.col = []; for (let i = 0; i < n; i++) g.col.push(0.2, 0.15, 0.2, 1); continue; }
     vertexAO(g, grid, { rays: 48, maxD: 0.028, floor: 0.4 });
   }
+  if (process.env.WRAP_DROP) for (const g of parts) if (process.env.WRAP_DROP.split(',').includes(g.part)) g.idx = [];
   for (const g of parts) compactGeo(g);
   if (process.env.WRAP_DEBUG) for (const g of parts) { const n = g.pos.length / 3; let mi = [9, 9, 9], ma = [-9, -9, -9]; for (let i = 0; i < n; i++) for (let k = 0; k < 3; k++) { mi[k] = Math.min(mi[k], g.pos[i * 3 + k]); ma[k] = Math.max(ma[k], g.pos[i * 3 + k]); } console.log(g.part, n, mi.map((v) => v.toFixed(3)).join(','), ma.map((v) => v.toFixed(3)).join(','), g.uv.some((v) => !(v >= 0 && v <= 1))); }
   const geo = joinGeos(parts);
@@ -238,7 +243,26 @@ export function joinGeos(list) {
 }
 
 /** The hair + wrap atlas (512²): base RGBA, normal, ORM (lib/wrap.mjs WRAP_ATLAS). */
-export async function paintWrapAtlas(doc, wrapMat, { deep = '#5A2E66', violet = '#6B3F73', dark = '#4A2456', mid = '#63356F', stripe = '#A3213A', lining = ['#A3213A', '#8E1C33', '#B02A43'] } = {}) {
+function paintFacing(buf, rect, W, dye, frac) {
+  const [x0, y0, w, h] = rect;
+  const D = hexOf(dye);
+  for (let y = 0; y < h; y++) {
+    const v = (y + 0.5) / h, d = Math.min(v, 1 - v);
+    const k = 1 - smooth(frac - 0.012, frac + 0.012, d);
+    const stitch = 1 - 0.2 * (1 - smooth(0.004, 0.018, Math.abs(d - frac)));
+    for (let x = 0; x < w; x++) {
+      const o = ((y0 + y) * W + x0 + x) * 4;
+      const l = (buf.base[o] * 0.5 + buf.base[o + 1] + buf.base[o + 2] * 0.5) / (163 * 0.5 + 33 + 58 * 0.5);
+      const s = Math.max(0.7, Math.min(1.25, l));
+      buf.base[o] = Math.round((buf.base[o] + (D[0] * s - buf.base[o]) * k) * stitch);
+      buf.base[o + 1] = Math.round((buf.base[o + 1] + (D[1] * s - buf.base[o + 1]) * k) * stitch);
+      buf.base[o + 2] = Math.round((buf.base[o + 2] + (D[2] * s - buf.base[o + 2]) * k) * stitch);
+    }
+  }
+}
+const hexOf = (h) => [parseInt(h.slice(1, 3), 16), parseInt(h.slice(3, 5), 16), parseInt(h.slice(5, 7), 16)];
+
+export async function paintWrapAtlas(doc, wrapMat, { deep = '#5A2E66', violet = '#6B3F73', dark = '#4A2456', mid = '#63356F', stripe = '#A3213A', lining = ['#A3213A', '#8E1C33', '#B02A43'], facing = 0.3 } = {}) {
   const A = WRAP_ATLAS, W = A.W;
   const buf = { base: Buffer.alloc(W * W * 4), normal: Buffer.alloc(W * W * 3), orm: Buffer.alloc(W * W * 3) };
   for (let i = 0; i < W * W; i++) { buf.base[i * 4] = 40; buf.base[i * 4 + 1] = 22; buf.base[i * 4 + 2] = 48; buf.base[i * 4 + 3] = 2; buf.normal[i * 3] = 128; buf.normal[i * 3 + 1] = 128; buf.normal[i * 3 + 2] = 255; buf.orm[i * 3] = 255; buf.orm[i * 3 + 1] = 230; }
@@ -246,6 +270,9 @@ export async function paintWrapAtlas(doc, wrapMat, { deep = '#5A2E66', violet = 
   paintClothPanel(buf, { ...A.clothB, W, dye: deep, dye2: dark, dye3: mid, seed: 5, creases: 9, sigma: [0.022, 0.06], amp: [0.00022, 0.00055], fringe: 2, creaseWander: 0.28, drag: 0.35 });
   paintClothPanel(buf, { ...A.tailA, W, dye: deep, dye2: mid, dye3: violet, seed: 9, creases: 5, mmU: 0.9, mmV: 1.56, sigma: [0.05, 0.16], amp: [0.0006, 0.0014], fringe: 2, stripe, stripeAt: 5 });
   paintClothPanel(buf, { ...A.lining, W, dye: lining[0], dye2: lining[1], dye3: lining[2], seed: 13, creases: 3, mmU: 1.2, mmV: 1.56, fringe: 0, weave: 0.25 });
+  // the violet is turned back over the lining at both selvedges, a broad facing: the tail's inner face is mostly orchil with a
+  // carmine centre (bible §3.4: carmine is 6 % of her), and the binding reads the carmine centre
+  paintFacing(buf, A.lining.rect, W, deep, facing);
   paintClothPanel(buf, { ...A.knotFold, W, dye: deep, dye2: dark, dye3: dark, seed: 17, creases: 9, sigma: [0.03, 0.07], amp: [0.0005, 0.0011], mmU: 1.2, mmV: 0.7, fringe: 3 });
   paintFrayEnd(buf, { ...A.frayEnd, W, dye: deep });
   paintCoilTile(buf, { ...A.coilTile, W, seed: 21 });
@@ -260,7 +287,7 @@ export async function paintWrapAtlas(doc, wrapMat, { deep = '#5A2E66', violet = 
   wrapMat.setMetallicRoughnessTexture(ormTex);
   wrapMat.setRoughnessFactor(1).setMetallicFactor(1).setDoubleSided(true).setBaseColorFactor([1, 1, 1, 1]);
   wrapMat.setAlphaMode('MASK').setAlphaCutoff(0.5);
-  wrapMat.setEmissiveTexture(baseTex).setEmissiveFactor([0.03, 0.03, 0.03]);      // the same fill as the skin: dark cloth keeps its folds in shade
+  wrapMat.setEmissiveTexture(baseTex).setEmissiveFactor([0.09, 0.09, 0.09]);      // the same fill as the skin: dark cloth keeps its folds in shade
   return { ok: true };
 }
 
