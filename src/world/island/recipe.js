@@ -396,9 +396,9 @@ const FV = (e, n) => (e - SF.e) * SF.ve + (n - SF.n) * SF.vn;
 const skew = (u) => 0.042 * u + 2.4 * Math.sin(u * 0.021 + 0.7);
 const WALL = 0.42;       // half width of an ordinary stone dyke, m
 const DYKE = 1.25;       // half width of a walkable main dyke, m
-const ROW_V = [-28, -8, 14, 33, 50, 64, 74, 84];
+const ROW_V = [-28, -14, 1, 15, 27, 39, 50, 59, 67, 75, 84];
 /** Which row boundaries are main dykes (a raised walkable path). */
-const MAIN_DYKE = new Set([2, 4]);
+const MAIN_DYKE = new Set([2, 5]);
 
 /** Cell fill kinds: the salt-pan ladder from sea water to raked crust. */
 export const PAN = Object.freeze({ BRINE: 0, PINK: 1, WHITE: 2, CREAM: 3, RUST: 4, MUD: 5 });
@@ -414,14 +414,17 @@ const FILL = [
 /** Fill odds per row, sea to land [BRINE, PINK, WHITE, CREAM, RUST, MUD]. */
 const ROW_ODDS = [
   [0.40, 0.34, 0.08, 0.06, 0.00, 0.12],
-  [0.16, 0.42, 0.20, 0.14, 0.00, 0.08],
+  [0.26, 0.40, 0.14, 0.12, 0.00, 0.08],
+  [0.10, 0.30, 0.32, 0.22, 0.00, 0.06],
   [0.03, 0.14, 0.52, 0.27, 0.00, 0.04],
   [0.02, 0.12, 0.58, 0.24, 0.02, 0.02],
+  [0.02, 0.12, 0.48, 0.26, 0.10, 0.02],
   [0.00, 0.10, 0.34, 0.24, 0.26, 0.06],
+  [0.00, 0.08, 0.24, 0.22, 0.40, 0.06],
   [0.00, 0.06, 0.20, 0.20, 0.48, 0.06],
   [0.00, 0.06, 0.26, 0.20, 0.42, 0.06],
 ];
-const ROW_W = [[34, 54], [30, 48], [26, 42], [24, 38], [17, 26], [10, 15], [10, 14]];
+const ROW_W = [[26, 42], [24, 38], [22, 34], [20, 32], [18, 28], [16, 24], [12, 20], [10, 15], [9, 14], [9, 14]];
 
 let _rows = null;
 let _walls = null;
@@ -456,7 +459,7 @@ function buildField() {
         && dry(u, v0) && dry(u + w, v0) && dry(u, v1) && dry(u + w, v1);
       cells.push({
         u0: u, u1: u + w, v0, v1, kind, keep, seed: (R() * 65535) | 0,
-        level: 0.62 + (r / 6) * 0.3 + (R() - 0.5) * 0.08,
+        level: 0.62 + (r / 9) * 0.3 + (R() - 0.5) * 0.08,
       });
       u += w;
     }
@@ -733,6 +736,9 @@ function heightAuthored(e, n) {
       const crest = Math.pow(Math.abs(s), 1.6);
       h += crest * (1.0 + 2.6 * fbm(e * 0.02, n * 0.02, 2)) * duneZone;
     }
+    // Saltrow's rise: a low tuff knoll behind the town, the vantage over the pans
+    const dk0 = Math.hypot(e + 238, n + 196);
+    if (dk0 < 110) h += 12.5 * Math.exp(-(dk0 * dk0) / (2 * 30 * 30));
     // storm-beach ridge at the top of the swash: shingle thrown up by winter seas
     const berm = ss(3, 12, c) * (1 - ss(14, 34, c));
     h += berm * 1.25 * pans;

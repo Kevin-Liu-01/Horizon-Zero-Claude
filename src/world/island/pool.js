@@ -13,6 +13,7 @@
 import { ensureMacro, macroShared } from './recipe.js';
 import { GRID, MASK_N, PAN_N, bakeHeights, bakeShade, bakeMasks, bakePan } from './bake.js';
 import { LAYER_FILES, LAYER_SIZE, decodeLayer } from './layers.js';
+import { KINDS, STRIDE, TILE_N, fieldReader, scatterRows, scatterStatic } from './scatter.js';
 
 export const POOL = Object.freeze({ workers: 4, rowsPerJob: 32, maskRowsPerJob: 48, inflight: 2 });
 
@@ -28,9 +29,28 @@ function layerJobs() {
   return jobs;
 }
 
-function assemble(parts) {
-  const { H, normals, tint, maskA, maskB, shore, pan, layers, stats } = parts;
-  return { H, normals, tint, maskA, maskB, shore, pan, layers, stats };
+function assemble(parts) { return parts; }
+
+/** Stitch per-row scatter into one record array + tile offsets per kind. */
+function stitchScatter(rowParts, staticPart) {
+  const out = { static: staticPart, kinds: {} };
+  for (const kind of Object.keys(KINDS)) {
+    let total = 0;
+    for (const p of rowParts) total += p.part[kind].rec.length;
+    const rec = new Float32Array(total), start = new Uint32Array(TILE_N * TILE_N + 1);
+    let w = 0;
+    const counts = new Uint32Array(TILE_N * TILE_N);
+    for (const p of rowParts) {
+      rec.set(p.part[kind].rec, w);
+      w += p.part[kind].rec.length;
+      counts.set(p.part[kind].counts, p.tz0 * TILE_N);
+    }
+    let acc = 0;
+    for (let i = 0; i < TILE_N * TILE_N; i++) { start[i] = acc; acc += counts[i] * STRIDE; }
+    start[TILE_N * TILE_N] = acc;
+    out.kinds[kind] = { rec, start };
+  }
+  return out;
 }
 
 function newLayerStore() {
@@ -53,11 +73,13 @@ async function bakeSingle() {
   const { normals, tint } = bakeShade(H, 0, side);
   const [maskA, maskB, shore] = bakeMasks(H, 0, MASK_N);
   const pan = bakePan();
+  const F = { H, maskA, maskB, shore };
+  const scatter = stitchScatter([{ tz0: 0, part: scatterRows(F, 0, TILE_N) }], scatterStatic(fieldReader(F)));
   const t2 = performance.now();
   const layers = newLayerStore();
   for (const job of layerJobs()) storeLayer(layers, job, await decodeLayer(job.url));
   const t3 = performance.now();
-  return assemble({ H, normals, tint, maskA, maskB, shore, pan, layers,
+  return assemble({ H, normals, tint, maskA, maskB, shore, pan, layers, scatter,
     stats: { mode: 'single', workers: 0, segs, buildMs: t2 - t0, heightMs: t1 - t0, shadeMs: t2 - t1, layerMs: t3 - t2, totalMs: t3 - t0 } });
 }
 
@@ -146,12 +168,27 @@ async function bakePool() {
     jobs.push(run({ op: 'pan' }).then((out) => { pan = out; }));
     await Promise.all(jobs);
     const tBuild = performance.now();
+    // the scatter stands on the finished masks
+    await Promise.all(pool.map((_, k) => toWorker(k, { op: 'masksIn', maskA, maskB, shore })));
+    const rowParts = [], sJobs = [];
+    const ROWS = 6;
+    for (let tz = 0; tz < TILE_N; tz += ROWS) {
+      const tz1 = Math.min(TILE_N, tz + ROWS);
+      sJobs.push(run({ op: 'scatterRows', tz0: tz, tz1 }).then((part) => rowParts.push({ tz0: tz, part })));
+    }
+    let staticPart = null;
+    sJobs.push(run({ op: 'scatterStatic' }).then((part) => { staticPart = part; }));
+    await Promise.all(sJobs);
+    rowParts.sort((a, b) => a.tz0 - b.tz0);
+    const scatter = stitchScatter(rowParts, staticPart);
+    const tScatter = performance.now();
     await layerP;
     const tLayers = performance.now();
     done();
-    return assemble({ H, normals, tint, maskA, maskB, shore, pan, layers: store,
+    return assemble({ H, normals, tint, maskA, maskB, shore, pan, layers: store, scatter,
       stats: { mode: 'pool', workers: POOL.workers, segs, macroMs: tMacro - t0, spawnMs: tReady - tMacro,
-        heightMs: tH - tReady, shadeMs: tBuild - tH, buildMs: tBuild - t0, layerWaitMs: tLayers - tBuild, totalMs: tLayers - t0 } });
+        heightMs: tH - tReady, shadeMs: tBuild - tH, buildMs: tBuild - t0, scatterMs: tScatter - tBuild,
+        layerWaitMs: tLayers - tScatter, totalMs: tLayers - t0 } });
   } catch (err) {
     done();
     throw err;
@@ -171,3 +208,4 @@ export async function bakeIsland() {
 }
 
 export { PAN_N };
+export const bakeSingleThread = bakeSingle;

@@ -114,3 +114,31 @@ export const SALT_FIELD = Object.freeze({
   ue: 0.78, un: -0.626, ve: 0.626, vn: 0.78,
   uMin: -118, uMax: 96, vMin: -28, vMax: 84,
 });
+
+/**
+ * Named ground this lane authored into the heightfield (measured on the bake): the
+ * place table ctx.props.gatePlaces starts from. world-props owns gatePlaces (W1); until
+ * it is merged the world-ground gates fall back to this, and it can adopt any row as is.
+ * yaw is `player.camYaw`: camYaw π faces +z.
+ */
+export const GROUND = Object.freeze({
+  openGround: Object.freeze({ x: -164, z: 260, yaw: Math.PI, note: 'flat Pans strip, ±0.06 m over 70 m along +z' }),
+  runway: Object.freeze({ x: -164, z: 260, yaw: Math.PI, len: 50, note: 'the same strip, facing +z' }),
+  fightGround: Object.freeze({ x: -164, z: 258, yaw: Math.PI, pitch: 0.05, note: 'flat ground with room for an 8-machine arc' }),
+  duelGround: Object.freeze({ x: -158, z: 262, note: 'flat clear ground' }),
+  impactGround: Object.freeze({ x: -170, z: 266, note: 'flat clear ground, the impact/carry film spot' }),
+  rangeGround: Object.freeze({ x: -164, z: 236, note: 'flat ground with 55 m of open sight line along +z' }),
+  herdSite: Object.freeze({ x: -170, z: 256, note: 'open Pans ground for a herd' }),
+  steepFace: Object.freeze({ x: -14, z: -380, note: 'north-coast scarp, ≈ 55 deg' }),
+  hillside38: Object.freeze({ x: -212, z: -296, note: 'flank slope, ≈ 39 deg, uniform over 12 m' }),
+  slope10: Object.freeze({ x: -308, z: -194, note: 'uniform ≈ 9 deg face' }),
+  slope20: Object.freeze({ x: -290, z: -224, note: 'uniform ≈ 21 deg face' }),
+  slope30: Object.freeze({ x: -272, z: -272, note: 'uniform ≈ 29 deg face' }),
+  parkAway: Object.freeze({ x: -120, z: 230, note: 'open ground far from the Pans frames' }),
+  rockShelf: Object.freeze({ x: -170, z: 352, note: 'the Organ Shelf table' }),
+  waterFeature: Object.freeze({ x: -340, z: 208, yaw: 4.2, pitch: 0.12, note: 'the Glass, framed from its landward shore' }),
+  vistas: Object.freeze({
+    pans: Object.freeze({ x: -238, z: 196, y: 16.5, look: Object.freeze({ x: -340, y: -9, z: 330 }), fov: 50,
+      note: 'from Saltrow\'s rise: salt grid below, the Ring and the surf beyond' }),
+  }),
+});

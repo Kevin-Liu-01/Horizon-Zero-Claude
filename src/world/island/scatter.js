@@ -23,7 +23,6 @@ export const KINDS = Object.freeze({
   marram: { streamed: true, cap: 2.5 },
   glasswort: { streamed: true, cap: 1.6 },
   lavender: { streamed: true, cap: 0.7 },
-  shingle: { streamed: true, cap: 2.0 },
 });
 
 /** A field reader over the finished grids (shared record: read at once). */
@@ -64,7 +63,7 @@ function tileRng(tx, tz, salt) {
 /** Instances of a streamed kind on one tile, appended to `out` (a plain array). */
 export function scatterTile(kind, tx, tz, R, out) {
   const x0 = -HALF + tx * TILE, z0 = -HALF + tz * TILE;
-  const seed = kind === 'marram' ? 11 : kind === 'glasswort' ? 23 : kind === 'lavender' ? 37 : 51;
+  const seed = kind === 'marram' ? 11 : kind === 'glasswort' ? 23 : 37;
   const r = tileRng(tx, tz, seed);
   // the tile's corners and centre tell most tiles there is nothing to do
   const cap = KINDS[kind].cap, tries = Math.round(cap * TILE * TILE);
@@ -84,15 +83,11 @@ export function scatterTile(kind, tx, tz, R, out) {
       if (margin <= 0.08) continue;
       d = margin * 1.5 * ss(0.38, 0.62, fbm(x * 0.05 + 2, z * 0.05, 3));
       sc = 0.7 + c0 * 1.1; sy = 0.7 + c1 * 0.9;
-    } else if (kind === 'lavender') {
+    } else { // lavender
       if (F.slope > 0.45 || F.rock > 0.2 || F.track > 0.25 || F.coast < 14 || F.h > 7 || F.silt > 0.6 || F.salt > 0.6) continue;
       const patch = ss(0.5, 0.68, fbm(x * 0.032 + 40, z * 0.032 - 8, 3));
       d = patch * 0.62 * (1 - F.cover * 0.7);
       sc = 0.75 + c0 * 0.6; sy = 0.8 + c1 * 0.5;
-    } else { // shingle
-      if (F.shingle < 0.25) continue;
-      d = F.shingle * 1.9;
-      sc = 0.07 + c0 * c0 * 0.26; sy = 0.55 + c1 * 0.5; lean = c2;
     }
     if (d <= 0 || c3 * cap > d) continue;
     out.push(x, F.h - 0.015, z, c2 * 6.2832, sc, sc * sy, sc, lean, 0.78 + c0 * 0.44);
@@ -112,12 +107,12 @@ export function scatterStatic(R) {
     let keep = 0, sMin = 0.2, sMax = 0.9;
     if (F.coast < 3 && F.coast > -14 && F.rock > 0.3) { keep = 0.5; sMin = 0.5; sMax = 2.1; }            // reef
     else if (F.rock > 0.55 && F.slope < 1.2) { keep = 0.05; sMin = 0.3; sMax = 1.5; }                    // table, crags
-    else if (F.shingle > 0.2) { keep = 0.05; sMin = 0.22; sMax = 0.7; }
+    else if (F.shingle > 0.2) { keep = 0.09; sMin = 0.14; sMax = 0.62; }
     else if (F.coast > 8 && F.h > 0.1 && F.salt < 0.2 && F.track < 0.3) { keep = 0.012; sMin = 0.16; sMax = 0.7; }
     if (!keep || u0 > keep) continue;
     const s = sMin + u1 * u1 * (sMax - sMin);
     rocks.push(x, F.h - s * 0.2, z, u2 * 6.2832, s * (0.9 + u3 * 0.4), s * (0.62 + u1 * 0.4), s * (0.8 + u2 * 0.4), (u3 - 0.5) * 0.4, 0.8 + u3 * 0.35);
-    if (rocks.length / STRIDE > 1600) break;
+    if (rocks.length / STRIDE > 950) break;
   }
   // basalt column stubs on the Shelf's table edge
   for (let t = 0; t < 9000 && columns.length / STRIDE < 340; t++) {
@@ -174,4 +169,51 @@ export function scatterStatic(R) {
     rocks: Float32Array.from(rocks), columns: Float32Array.from(columns),
     walls: Float32Array.from(walls), heaps: Float32Array.from(heaps),
   };
+}
+
+/** Streamed kinds for tile rows [tz0, tz1): per kind, records + per-tile counts. */
+export function scatterRows(F, tz0, tz1) {
+  const R = fieldReader(F), out = {};
+  const { maskA, maskB, shore } = F, N = MASK_N, per = TILE / (WORLD_SIZE / N);
+  for (const kind of Object.keys(KINDS)) out[kind] = { rec: [], counts: new Uint32Array((tz1 - tz0) * TILE_N) };
+  for (let tz = tz0; tz < tz1; tz++) {
+    for (let tx = 0; tx < TILE_N; tx++) {
+      // a tile with no cover, no margin and no shingle in its texels is skipped outright
+      let cover = 0, wet = 0, land = 0;
+      const i0 = Math.floor(tx * per), j0 = Math.floor(tz * per), s = Math.ceil(per);
+      for (let j = j0; j < Math.min(N, j0 + s); j++) for (let i = i0; i < Math.min(N, i0 + s); i++) {
+        const o = (j * N + i) * 4;
+        if (maskB[o] > cover) cover = maskB[o];
+        if (maskB[o + 2] > wet) wet = maskB[o + 2];
+        if (maskA[o + 3] > wet) wet = maskA[o + 3];
+        if (shore[o] > land) land = shore[o];
+      }
+      const coastM = SHORE_ENC.dMin + (land / 255) * (SHORE_ENC.dMax - SHORE_ENC.dMin);
+      if (coastM < 1) continue;
+      const idx = (tz - tz0) * TILE_N + tx;
+      const run = (kind) => {
+        const a = out[kind].rec, n0 = a.length;
+        scatterTile(kind, tx, tz, R, a);
+        out[kind].counts[idx] = (a.length - n0) / STRIDE;
+      };
+      if (cover > 0) run('marram');
+      if (wet > 12) run('glasswort');
+      if (coastM > 12) run('lavender');
+    }
+  }
+  for (const kind of Object.keys(KINDS)) out[kind].rec = Float32Array.from(out[kind].rec);
+  return out;
+}
+
+/** Marram records for one tile, for a runtime re-bake after a cover stamp. */
+export function marramTile(tx, tz, R) {
+  const a = [];
+  scatterTile('marram', tx, tz, R, a);
+  return Float32Array.from(a);
+}
+
+/** Marram density at a point, tufts/m²: the same rule the scatter plants by. */
+export function marramDensity(F) {
+  if (F.h < 0.04 || F.coast < 1 || F.slope > 0.9 || F.rock > 0.5 || F.track > 0.4) return 0;
+  return F.cover > 0.45 ? 2.3 : F.cover > 0.02 ? 0.3 + F.cover * 1.5 : 0;
 }

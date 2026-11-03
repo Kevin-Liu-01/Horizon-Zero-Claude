@@ -182,6 +182,21 @@
       ]
     },
     {
+      "id": "ground-layers",
+      "paths": [
+        "public/textures/ground/*.webp"
+      ],
+      "title": "Ground layers: black sand, salt crust, basalt, wet silt, shingle (2 RGBA WebP each)",
+      "author": "CALIMA project",
+      "source_url": "tools/build/ground/gen-ground-layers.mjs",
+      "licence": "project-original",
+      "licence_text": null,
+      "archive_sha256": null,
+      "retrieved": null,
+      "modified": null,
+      "attribution": null
+    },
+    {
       "id": "hero-brea-body",
       "paths": [
         "public/models/hero/brea.glb",

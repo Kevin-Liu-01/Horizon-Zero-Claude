@@ -154,12 +154,9 @@ export const TERRAIN_COLOR = /* glsl */ `
       vec4 ax = gA(2, ux, dpxz.zy * sc, dpyz.zy * sc), ay = gA(2, uv + offA, gx, gy), az = gA(2, uz, dpxz.xy * sc, dpyz.xy * sc);
       a = ax * bw.x + ay * bw.y + az * bw.z;
       vec4 nx = gNm(2, ux, dpxz.zy * sc, dpyz.zy * sc), ny = gNm(2, uv + offA, gx, gy), nz = gNm(2, uz, dpxz.xy * sc, dpyz.xy * sc);
-      nn = nx * bw.x + ny * bw.y + nz * bw.z;
       vec2 tx = nx.xy * 2.0 - 1.0, ty = ny.xy * 2.0 - 1.0, tz = nz.xy * 2.0 - 1.0;
-      nn.xyz = vec3(nn.z, 0.0, 0.0);
-      nn.xy = vec2(0.0);
       pert += (vec3(0.0, tx.y, tx.x) * bw.x + vec3(ty.x, 0.0, ty.y) * bw.y + vec3(tz.x, tz.y, 0.0) * bw.z) * w[i] * 0.95;
-      nn.z = nx.z * bw.x + ny.z * bw.y + nz.z * bw.z;
+      nn = vec4(0.0, 0.0, nx.z * bw.x + ny.z * bw.y + nz.z * bw.z, nx.a * bw.x + ny.a * bw.y + nz.a * bw.z);
     } else {
       a = gA(i, uv + offA, gx, gy);
       nn = gNm(i, uv + offA, gx, gy);
@@ -215,10 +212,10 @@ export const TERRAIN_COLOR = /* glsl */ `
   // duff under marram: the ground darkens where the colonies stand
   col *= 1.0 - 0.24 * mB.r;
 
-  /* -- the override: red crater, and biomes 2-6 at blockout ------------------ */
+  /* -- the blockout tint: red crater, and biomes 2-6 ------------------------- */
   float tk0 = vTint.a;
   if (tk0 > 0.004) {
-    float g = clamp(dot(col, vec3(0.33)) / max(dot(pow(vec3(0.16), vec3(2.2)), vec3(1.0)), 1e-3), 0.55, 1.5);
+    float g = clamp(dot(col, vec3(0.33)) / 0.02, 0.55, 1.5);
     col = mix(col, vTint.rgb * g * (0.82 + 0.36 * macA), tk0 * (1.0 - 0.6 * wRock));
   }
 
@@ -295,24 +292,4 @@ roughnessFactor = clamp(gRough, 0.05, 1.0);
 export const GROUND_NORMAL = /* glsl */ `
 #include <normal_fragment_begin>
 normal = normalize(normal + (viewMatrix * vec4(gN, 0.0)).xyz);
-`;
-/** Applied after the lights: AO on the sky term, and the mirror. */
-export const GROUND_AO = /* glsl */ `
-#include <aomap_fragment>
-reflectedLight.indirectDiffuse *= gAO;
-reflectedLight.indirectSpecular *= mix(1.0, gAO, 0.6);
-#ifdef USE_FOG
-if (gLiquid > 0.004) {
-  vec3 gV = normalize(cameraPosition - vWPos);
-  vec3 gW = normalize(vWNorm + gN * 0.14);
-  vec3 gR = reflect(-gV, gW);
-  float gUp = clamp(gR.y * 1.8 + 0.08, 0.0, 1.0);
-  vec3 gSky = mix(calFogHorizon, calFogZenith, gUp * gUp);
-  float gSd = max(dot(gR, calSunDir), 0.0);
-  gSky += calFogSun * pow(gSd, 6.0) * 0.55;
-  float gF = 0.02 + 0.98 * pow(1.0 - max(dot(gV, gW), 0.0), 5.0);
-  reflectedLight.indirectSpecular += gSky * gF * gLiquid * 0.95;
-  diffuseColor.a = diffuseColor.a;
-}
-#endif
 `;

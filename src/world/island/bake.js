@@ -4,7 +4,7 @@
  * plan §8.3 pool-terrain-build). No THREE; all buffers are typed arrays.
  *
  *   heights        Float32  H[n²], the render grid; gameplay reads it bilinear
- *   shade          Int16 normals (xyz + pad), Uint8 aTint (sRGB rgb + override amount)
+ *   shade          Int16 normals (xyz + pad), Uint8 aTint (sRGB rgb + blockout amount)
  *   masks          Uint8 RGBA ×3 at 512² over the world square
  *                    maskA  R salt beyond the field  G basalt  B shingle  A wet silt
  *                    maskB  R marram cover  G packed track  B damp ground  A wind-pale sand
@@ -87,7 +87,7 @@ export function bakeShade(H, r0, r1) {
         g += _w[k] * (A[1] + (B[1] - A[1]) * m);
         b += _w[k] * (A[2] + (B[2] - A[2]) * m);
       }
-      // the override: full blockout tint outside the Pans, none on them, except the red crater
+      // full blockout tint outside the Pans, none on them, except the red crater
       let k = 1 - _w[0];
       const cr = authored.crater(x, z);
       if (cr > 0.01) {

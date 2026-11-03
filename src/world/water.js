@@ -1,650 +1,373 @@
 import * as THREE from 'three';
-import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
-import { riverCenterX, riverHalfWidth, marshFactor, MARSH_LEVEL } from './terrain.js';
+import { WORLD_SIZE } from './island/extent.js';
+import { COAST, GLASS, GLASS_LEVEL, SEA_LEVEL } from './island/recipe.js';
+import { ISLAND_SCALE as S } from './island/extent.js';
 
 /**
- * ROUND 4 — lane `world-ground`, finding `world-10` ("static reflection-less
- * puddles"). The channel now carries a real braided stream:
+ * THE SEA AND THE GLASS (world-ground W1, bible §9.5). The island's signature image is the
+ * white surf band on black sand, and it comes from one term: the baked coast distance in
+ * the single sea shader (1 draw) drives wave fronts that break, run up the beach and pull
+ * back. The Glass is the emerald lagoon behind its barrier: one more draw, still and
+ * mirror-like, wading depth. Pans brine is in the ground shader (0 draws). No rivers.
  *
- *   - a continuous RIBBON down the centre of the cut, its surface solved from
- *     the drawn bed so it is always in the water-worn part of the channel and
- *     always below the banks. Where the bed rises (the ford, the gravel bars)
- *     the ribbon pinches shut on its own — that is the braid.
- *   - the deep POOLS the Round-3 build had, kept as data (`water.pools` is the
- *     glinthawk flock's contract and gate V8's anchor) and widened into the
- *     ribbon so they read as slack water rather than separate discs.
- *   - sky reflection taken from `world-light`'s own aerial-perspective colours
- *     (calFogHorizon / calFogZenith / calFogSun), so the water reflects THIS
- *     sky at THIS hour instead of a hard-coded blue.
- *   - refraction: the view ray is bent at the surface and the bed is shaded
- *     through it, with Beer–Lambert extinction by depth. No second render
- *     target — a `Reflector`/`Refractor` pass would double the scene's draw
- *     calls against a 350 budget.
- *   - shore foam that tracks the real waterline, and riffle whitewater wherever
- *     the bed drops fast under the surface.
+ * Both are lit MeshStandardMaterials, so foam is white in sun and ochre in calima through
+ * the same lights as the sand, and the mirror is this sky at this hour from world-sky's
+ * aerial colours (no second render target).
  *
- * PUBLISHED (world-ground):
- *   water.pools           [{ x, z, level, rx, rz }]   (unchanged contract)
- *   water.levelAt(x, z)   surface height, or null off the water
- *   water.depthAt(x, z)   metres of water, 0 off the water
- *   water.flowAt(x, z, out) unit XZ flow direction (for the wade push / audio)
+ * PUBLISHED: water.levelAt(x, z)   surface height, or null off the water
+ *            water.depthAt(x, z)   metres of water, 0 off the water
+ *            water.flowAt(x, z, out)  unit XZ shoreward drift (the wade push, audio)
+ *            water.pools           [{ x, z, level, rx, rz }]: the Glass first, then the
+ *                                  coastal wading ring (player.js `_waterDepth`, nav.js)
+ *            water.seaLevel, water.tick(dt, t)
  *
- * One draw for the whole waterway, one for the reeds. Per-frame cost is a
- * single time uniform.
+ * Tide (E19, W2) slots in at `seaLevel`.
  */
 
-const SUN_DIR = new THREE.Vector3(-0.55, 0.38, -0.72).normalize();
-const Z0 = -238, Z1 = 238, ZSTEP = 2;
-const SURFACE_LIFT = 0.32;   // metres of water over the smoothed bed
-
-/** clamp01 with a smooth shoulder — the marsh level blend uses it. */
-function SS01(t) {
-  const x = t < 0 ? 0 : t > 1 ? 1 : t;
-  return x * x * (3 - 2 * x);
+const SEA_PARS = /* glsl */ `
+#include <common>
+varying vec3 vWPos;
+uniform sampler2D tShore;
+uniform sampler2D tRipple;
+uniform float uTime;
+uniform float uLevel;
+uniform float uWorldInv;
+uniform float uPlaneY;
+vec3 wN; float wRough; float wMirror;
+float wHash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+float wNoise(vec2 p) {
+  vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
+  return mix(mix(wHash(i), wHash(i + vec2(1, 0)), f.x), mix(wHash(i + vec2(0, 1)), wHash(i + vec2(1, 1)), f.x), f.y);
 }
+`;
 
-function mulberry32(seed) {
-  let a = seed >>> 0;
-  return () => {
-    a |= 0; a = (a + 0x6d2b79f5) | 0;
-    let t = Math.imul(a ^ (a >>> 15), 1 | a);
-    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
+const SEA_COLOR = /* glsl */ `
+#include <color_fragment>
+{
+  vec2 p = vWPos.xz;
+  float dCam = length(vWPos - cameraPosition);
+  vec2 muv = p * uWorldInv + 0.5;
+  float inMap = step(max(abs(muv.x - 0.5), abs(muv.y - 0.5)), 0.4985);
+  vec4 sh = texture2D(tShore, clamp(muv, 0.0, 1.0));
+  // signed coast distance (+ inland) and ground height, from the same bake the ground reads
+  float coast = mix(-48.0, sh.r * 128.0 - 48.0, inMap);
+  float off = max(-coast, 0.0);
+  float ground = mix(-6.0, sh.g * 18.0 - 6.0, inMap);
+
+  /* the set: three trains of fronts with their own speed, wandering along the shore */
+  float along = wNoise(p * 0.011) * 3.1 + wNoise(p * 0.037 + 4.0) * 0.8;
+  float ph1 = off * 0.052 + uTime * 0.150 + along;
+  float ph2 = off * 0.083 + uTime * 0.205 + along * 1.7 + 2.3;
+  float w1 = fract(ph1), w2 = fract(ph2);
+  float set1 = 0.55 + 0.45 * sin(floor(ph1) * 2.4 + 1.3);       // not every wave is big
+
+  /* where the waves stand up and break: wider off points, narrower in the coves */
+  float breakW = 14.0 + 24.0 * wNoise(p * 0.016 + 21.0);
+  float brk = 1.0 - smoothstep(breakW * 0.5, breakW, off);
+  float swellK = smoothstep(0.0, 6.0, off) * (1.0 - smoothstep(breakW * 1.4, breakW * 3.2, off));
+
+  /* the run-up: the waterline itself moves. s is the bore's age at this bit of shore */
+  float s = fract(along + uTime * 0.150);
+  float runup = 0.30 * exp(-s * 3.1) * (1.0 - smoothstep(0.92, 1.0, s)) * (0.62 + 0.38 * sin(floor(along + uTime * 0.150) * 2.4 + 1.3));
+  float level = uLevel + 0.03 + runup;
+  float depth = level - ground;
+  float alphaK = smoothstep(0.0, 0.035, depth);
+  if (alphaK <= 0.0 && inMap > 0.5) discard;
+
+  /* foam lace: advected ripple noise, thresholded by how much air the water holds */
+  float laceFar = 1.0 - smoothstep(90.0, 300.0, dCam);
+  vec2 drift = vec2(0.03, 0.02) * uTime;
+  float n1 = texture2D(tRipple, p * 0.055 + drift).b;
+  float n2 = texture2D(tRipple, p * 0.17 - drift * 1.6).b;
+  float lace = n1 * 0.62 + n2 * 0.38;
+  float lace2 = texture2D(tRipple, p * 0.024 - drift * 0.4).a;
+
+  float front1 = exp(-w1 * 5.2) * smoothstep(0.0, 0.016, w1) * set1;
+  float front2 = exp(-w2 * 7.5) * smoothstep(0.0, 0.02, w2) * 0.55;
+  float air = (front1 + front2) * brk;
+  // the carpet: spent bores lie on the water in the last metres, breaking up seaward
+  float carpet = (1.0 - smoothstep(0.0, 11.0 + 8.0 * lace2, off)) * (0.62 + 0.38 * exp(-s * 1.5));
+  float lip = (1.0 - smoothstep(0.0, 0.11, depth)) * (0.4 + 0.6 * exp(-s * 2.2));
+  float foamRaw = max(max(air * 1.5, carpet), lip);
+  float foam = smoothstep(0.42 - foamRaw * 0.52, 0.72 - foamRaw * 0.3, mix(0.5, lace, laceFar));
+  foam = max(foam * smoothstep(0.02, 0.22, foamRaw), smoothstep(0.75, 1.1, foamRaw));
+  // far out the odd whitecap
+  float cap = smoothstep(0.76, 0.86, lace2) * (1.0 - smoothstep(0.0, 1.0, swellK)) * smoothstep(40.0, 120.0, off)
+            * smoothstep(0.3, 0.8, wNoise(p * 0.019 + uTime * 0.05)) * 0.55;
+  foam = max(foam, cap);
+
+  /* water colour: Atlantic #1F4E66, turbid over black sand, glassy under the lip of a wave */
+  vec3 deep = vec3(0.0137, 0.0762, 0.1329);
+  vec3 turbid = vec3(0.0080, 0.0420, 0.0520);
+  vec3 body = mix(turbid, deep, smoothstep(0.6, 5.5, -ground));
+  // light through the back of a standing wave
+  float wall = smoothstep(0.72, 0.99, w1) * brk * set1;
+  body = mix(body, vec3(0.03, 0.17, 0.17), wall * 0.72);
+  // the thin sheet over the beach shows the black sand under it
+  float sheet = 1.0 - smoothstep(0.02, 0.5, depth);
+  body = mix(body, vec3(0.012, 0.012, 0.014), sheet * 0.86);
+
+  /* normals: ripple octaves + the wave's own slope */
+  float nFade = 1.0 - smoothstep(60.0, 420.0, dCam);
+  vec2 r1 = texture2D(tRipple, p * 0.042 + drift * 1.3).xy * 2.0 - 1.0;
+  vec2 r2 = texture2D(tRipple, p.yx * 0.11 - drift * 2.1).xy * 2.0 - 1.0;
+  vec2 r3 = texture2D(tRipple, p * 0.0067 + drift * 0.2).xy * 2.0 - 1.0;
+  vec2 rip = (r1 * 0.42 + r2 * 0.24 * nFade) * (0.3 + 0.7 * nFade) + r3 * 0.22;
+  float dirX = dFdx(off), dirY = dFdy(off);
+  vec2 slopeDir = normalize(vec2(sh.r - texture2D(tShore, clamp(muv + vec2(0.004, 0.0), 0.0, 1.0)).r,
+                                 sh.r - texture2D(tShore, clamp(muv + vec2(0.0, 0.004), 0.0, 1.0)).r) + vec2(1e-4));
+  float waveS = (exp(-w1 * 4.0) - 0.4 * wall) * swellK * set1;
+  wN = vec3(rip.x + slopeDir.x * waveS * 0.6, 0.0, rip.y + slopeDir.y * waveS * 0.6) * (1.0 - foam * 0.7);
+
+  vec3 foamC = vec3(0.86, 0.87, 0.85) * (0.86 + 0.14 * lace);
+  diffuseColor.rgb = mix(body, foamC, foam);
+  diffuseColor.a = alphaK * mix(0.92 + 0.08 * smoothstep(0.1, 1.2, depth), 1.0, foam);
+  wRough = mix(0.08 + 0.1 * (1.0 - nFade), 0.92, foam);
+  wMirror = (1.0 - foam);
 }
+`;
 
-export class RiverWater {
-  constructor(ctx) {
-    this.ctx = ctx;
-    this.group = new THREE.Group();
-    this.group.name = 'river-water';
+const GLASS_COLOR = /* glsl */ `
+#include <color_fragment>
+{
+  vec2 p = vWPos.xz;
+  vec2 muv = p * uWorldInv + 0.5;
+  vec4 sh = texture2D(tShore, clamp(muv, 0.0, 1.0));
+  float ground = sh.g * 18.0 - 6.0;
+  float depth = uLevel - ground;
+  float alphaK = smoothstep(0.0, 0.05, depth);
+  if (alphaK <= 0.0) discard;
+  vec2 drift = vec2(0.004, 0.003) * uTime;
+  vec2 r1 = texture2D(tRipple, p * 0.11 + drift).xy * 2.0 - 1.0;
+  vec2 r2 = texture2D(tRipple, p * 0.31 - drift * 1.7).xy * 2.0 - 1.0;
+  wN = vec3(r1.x * 0.022 + r2.x * 0.012, 0.0, r1.y * 0.022 + r2.y * 0.012);
+  // the Glass: emerald #2F8F6F over a pale bed, darkening fast with depth
+  vec3 emerald = vec3(0.028, 0.274, 0.159);
+  vec3 shallow = vec3(0.10, 0.32, 0.22);
+  diffuseColor.rgb = mix(shallow, emerald, smoothstep(0.02, 0.5, depth));
+  diffuseColor.a = alphaK * 0.97;
+  wRough = 0.06;
+  wMirror = 1.0;
+}
+`;
 
-    this._stations = this._solveChannel();
-    this.pools = this._findPools();
-    this._widenAtPools();
-    if (this._stations.length) {
-      this._buildWater();
-      this._buildReeds();
+const SEA_ROUGH = /* glsl */ `
+#include <roughnessmap_fragment>
+roughnessFactor = clamp(wRough, 0.05, 1.0);
+`;
+const SEA_NORMAL = /* glsl */ `
+#include <normal_fragment_begin>
+normal = normalize(normal + (viewMatrix * vec4(wN, 0.0)).xyz);
+`;
+const SEA_MIRROR = /* glsl */ `
+#include <aomap_fragment>
+#ifdef USE_FOG
+{
+  vec3 V = normalize(cameraPosition - vWPos);
+  vec3 W = normalize(vec3(0.0, 1.0, 0.0) + wN);
+  vec3 R = reflect(-V, W);
+  float up = clamp(R.y * 1.8 + 0.08, 0.0, 1.0);
+  vec3 sky = mix(calFogHorizon, calFogZenith, up * up);
+  float sd = max(dot(R, calSunDir), 0.0);
+  sky += calFogSun * pow(sd, 6.0) * 0.55;
+  float F = 0.02 + 0.98 * pow(1.0 - max(dot(V, W), 0.0), 5.0);
+  reflectedLight.indirectSpecular += sky * F * wMirror;
+}
+#endif
+`;
+
+function bakeRipple(N = 256) {
+  /* RG ripple normal (sums of periodic directional waves), B foam lace, A big-scale lace. */
+  const data = new Uint8Array(N * N * 4);
+  const W = [];
+  let s = 12345;
+  const rnd = () => { s = (s * 1664525 + 1013904223) >>> 0; return s / 4294967296; };
+  for (let i = 0; i < 26; i++) {
+    const f = 1 + Math.floor(rnd() * rnd() * 22), a = rnd() * 6.2832;
+    W.push([Math.round(Math.cos(a) * f), Math.round(Math.sin(a) * f), rnd() * 6.2832, 1 / (1 + f * 0.45)]);
+  }
+  const cells = (u, v, p, seed) => {
+    const x = u * p, y = v * p, ix = Math.floor(x), iy = Math.floor(y);
+    let f1 = 9, f2 = 9;
+    for (let j = -1; j <= 1; j++) for (let i = -1; i <= 1; i++) {
+      const cx = ((ix + i) % p + p) % p, cy = ((iy + j) % p + p) % p;
+      const hx = Math.abs(Math.sin(cx * 127.1 + cy * 311.7 + seed) * 43758.5453) % 1;
+      const hy = Math.abs(Math.sin(cx * 269.5 + cy * 183.3 + seed) * 43758.5453) % 1;
+      const d = Math.hypot(ix + i + hx - x, iy + j + hy - y);
+      if (d < f1) { f2 = f1; f1 = d; } else if (d < f2) f2 = d;
     }
+    return f2 - f1;
+  };
+  for (let y = 0; y < N; y++) {
+    const v = y / N;
+    for (let x = 0; x < N; x++) {
+      const u = x / N;
+      let dx = 0, dy = 0;
+      for (let i = 0; i < W.length; i++) {
+        const w = W[i], c = Math.cos((w[0] * u + w[1] * v) * 6.2832 + w[2]) * w[3];
+        dx += c * w[0] * 0.05; dy += c * w[1] * 0.05;
+      }
+      const o = (y * N + x) * 4;
+      data[o] = Math.max(0, Math.min(255, (dx * 0.5 + 0.5) * 255));
+      data[o + 1] = Math.max(0, Math.min(255, (dy * 0.5 + 0.5) * 255));
+      // foam lace is the network between bubbles: thin bright rims around dark cells
+      const l1 = 1 - Math.min(1, cells(u, v, 7, 1) * 3.2), l2 = 1 - Math.min(1, cells(u, v, 17, 5) * 2.6);
+      data[o + 2] = Math.max(0, Math.min(255, (l1 * 0.66 + l2 * 0.34) * 255));
+      data[o + 3] = Math.max(0, Math.min(255, (1 - Math.min(1, cells(u, v, 4, 9) * 1.9)) * 255));
+    }
+  }
+  const t = new THREE.DataTexture(data, N, N, THREE.RGBAFormat);
+  t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  t.minFilter = THREE.LinearMipmapLinearFilter; t.magFilter = THREE.LinearFilter;
+  t.generateMipmaps = true; t.anisotropy = 2;
+  t.needsUpdate = true;
+  return t;
+}
+
+export class IslandWater {
+  constructor(ctx, terrain) {
+    this.ctx = ctx;
+    this.terrain = terrain;
+    this.group = new THREE.Group();
+    this.group.name = 'water';
+    this.seaLevel = SEA_LEVEL;
+    this.glassLevel = GLASS_LEVEL;
+    this._uTime = { value: 0 };
+    this._uLevel = { value: SEA_LEVEL };
+    this._uGlassLevel = { value: GLASS_LEVEL };
+    this._ripple = bakeRipple();
+    this._glass = { x: GLASS.e * S, z: -GLASS.n * S, rx: GLASS.re * S, rz: GLASS.rn * S };
+    this.pools = this._buildPools();
+
+    const shore = terrain._maskTextures.shore;
+    const mk = (colorChunk, levelU, planeY, key) => {
+      const mat = new THREE.MeshStandardMaterial({ roughness: 0.1, metalness: 0, transparent: true, depthWrite: false });
+      mat.onBeforeCompile = (shader) => {
+        shader.uniforms.tShore = { value: shore };
+        shader.uniforms.tRipple = { value: this._ripple };
+        shader.uniforms.uTime = this._uTime;
+        shader.uniforms.uLevel = levelU;
+        shader.uniforms.uWorldInv = { value: 1 / WORLD_SIZE };
+        shader.uniforms.uPlaneY = { value: planeY };
+        shader.vertexShader = shader.vertexShader
+          .replace('#include <common>', '#include <common>\nvarying vec3 vWPos;')
+          .replace('#include <worldpos_vertex>', '#include <worldpos_vertex>\nvWPos = (modelMatrix * vec4(transformed, 1.0)).xyz;');
+        shader.fragmentShader = shader.fragmentShader
+          .replace('#include <common>', SEA_PARS)
+          .replace('#include <color_fragment>', colorChunk)
+          .replace('#include <roughnessmap_fragment>', SEA_ROUGH)
+          .replace('#include <normal_fragment_begin>', SEA_NORMAL)
+          .replace('#include <aomap_fragment>', SEA_MIRROR);
+      };
+      mat.customProgramCacheKey = () => key;
+      return mat;
+    };
+
+    /* The sea plane rides 0.34 m above sea level: the run-up has to reach above it, and a
+     * fragment over dry sand is discarded by its own depth term. Out to the far plane. */
+    const SEA_Y = this.seaLevel + 0.34;
+    const seaGeo = new THREE.PlaneGeometry(7000, 7000, 1, 1).rotateX(-Math.PI / 2);
+    this.sea = new THREE.Mesh(seaGeo, mk(SEA_COLOR, this._uLevel, SEA_Y, 'cal-sea'));
+    this.sea.position.y = SEA_Y;
+    this.sea.name = 'island-sea';
+    this.sea.renderOrder = 1;
+    this.sea.frustumCulled = false;
+    this.group.add(this.sea);
+
+    const gw = this._glass.rx * 2.9, gh = this._glass.rz * 2.9;
+    const glassGeo = new THREE.PlaneGeometry(gw, gh, 1, 1).rotateX(-Math.PI / 2);
+    this.glassMesh = new THREE.Mesh(glassGeo, mk(GLASS_COLOR, this._uGlassLevel, GLASS_LEVEL, 'cal-glass'));
+    this.glassMesh.position.set(this._glass.x, GLASS_LEVEL, this._glass.z);
+    this.glassMesh.name = 'the-glass-water';
+    this.glassMesh.renderOrder = 1;
+    this.group.add(this.glassMesh);
+
     ctx.scene.add(this.group);
   }
 
-  /* ------------------------------ the solve ------------------------------ */
-
   /**
-   * March the channel and solve, per 2 m station: centre, bed floor, water
-   * surface and the two waterline banks. This is the single source of truth
-   * for the mesh, `depthAt`, the foam band and the reed line.
+   * `pools[0]` is the Glass (the wading contract). The rest stand along the coast, centred
+   * offshore, so `player._waterDepth` wades her in the sea through the kept code; frozen
+   * nav.js marks their cells as standing water.
    */
-  _solveChannel() {
-    const terrain = this.ctx.terrain;
-    const gy = (x, z) => (terrain.heightFast ? terrain.heightFast(x, z) : terrain.getHeight(x, z));
-    const raw = [];
-    for (let z = Z0; z <= Z1; z += ZSTEP) {
-      const cx = riverCenterX(z);
-      const hw = riverHalfWidth(z);
-      if (Math.hypot(cx, z) > 262) { raw.push(null); continue; }
-      // lowest drawn point across the inner half of the cut
-      let bed = Infinity, bx = cx;
-      for (let t = -0.62; t <= 0.62; t += 0.08) {
-        const x = cx + t * hw;
-        const y = gy(x, z);
-        if (y < bed) { bed = y; bx = x; }
+  _buildPools() {
+    const G = this._glass;
+    const pools = [{ x: G.x, z: G.z, level: GLASS_LEVEL, rx: G.rx * 1.25, rz: G.rz * 1.25, kind: 'glass' }];
+    const SP = 62 * S, R = 46 * S, OUT = 30 * S;
+    const P = COAST, L = P.length;
+    let carry = 0;
+    let cx = 0, cz = 0;
+    for (const p of P) { cx += p[0]; cz += p[1]; }
+    cx /= L; cz /= L;
+    for (let i = 0; i < L; i++) {
+      const a = P[i], b = P[(i + 1) % L];
+      const dx = b[0] - a[0], dz = b[1] - a[1], len = Math.hypot(dx, dz);
+      let t = carry;
+      while (t < len) {
+        const e = a[0] + (dx * t) / len, n = a[1] + (dz * t) / len;
+        const rx = e - cx, rz = n - cz, rl = Math.hypot(rx, rz) || 1;
+        const ox = e + (rx / rl) * (OUT / S), oz = n + (rz / rl) * (OUT / S);
+        pools.push({ x: ox * S, z: -oz * S, level: this.seaLevel, rx: R, rz: R, kind: 'sea' });
+        t += SP / S;
       }
-      raw.push({ z, cx: bx, hw, bed });
+      carry = t - len;
     }
-
-    // smooth the bed profile over ±12 m so the surface is a water table, not a
-    // copy of every pebble in the heightfield
-    const W = 6;
-    const st = [];
-    for (let i = 0; i < raw.length; i++) {
-      const r = raw[i];
-      if (!r) continue;
-      let sum = 0, n = 0;
-      for (let k = -W; k <= W; k++) {
-        const q = raw[i + k];
-        if (!q) continue;
-        const wgt = 1 - Math.abs(k) / (W + 1);
-        sum += q.bed * wgt; n += wgt;
-      }
-      const level = sum / n + SURFACE_LIFT;
-      st.push({ z: r.z, cx: r.cx, hw: r.hw, bed: r.bed, level, wl: 0, wr: 0, extra: 0 });
-    }
-
-    /* Pin the marsh's surface to its water table before the waterline is
-     * solved (see MARSH_LEVEL in terrain.js): on a flat, the level is a
-     * plane, and the thalweg solve above would otherwise tilt it by the noise
-     * in the pan floor. Blended by the marsh weight, so the flat joins the
-     * running channel with no step. */
-    for (const s of st) {
-      const m = SS01((marshFactor(s.cx, s.z) - 0.15) / 0.45);
-      if (m > 0) s.level = s.level * (1 - m) + MARSH_LEVEL * m;
-    }
-
-    // waterline: march out from the centre until the ground breaks the surface
-    for (const s of st) {
-      /* THE MARSH IS WHY THIS LIMIT IS NOT JUST THE CHANNEL WIDTH.
-       * `terrain` planes a wading pan around the largest pool, 30 m of it,
-       * which is four times the cut's own half-width. Capping the march at
-       * 1.18 x hw would have drawn a 15 m ribbon down the middle of a 60 m
-       * flat and left the rest of the pan as dry ground sitting BELOW the
-       * water table. The march itself is still the authority — it stops at
-       * the first ground that breaks the surface — so the waterline is the
-       * real one and `depthAt` stays honest on both sides of it. */
-      s.marsh = marshFactor(s.cx, s.z);
-      const solve = (dir) => {
-        const lim = s.hw * 1.18 + 34 * s.marsh;
-        let d = 0;
-        for (let t = 0.25; t <= lim; t += 0.25) {
-          if (gy(s.cx + dir * t, s.z) > s.level) break;
-          d = t;
-        }
-        return d;
-      };
-      s.wl = solve(-1);
-      s.wr = solve(1);
-    }
-    // downstream direction (for flow scroll + riffles): whichever end is higher
-    const first = st[0], last = st[st.length - 1];
-    this._flowSign = (first && last && first.level > last.level) ? 1 : -1;
-    return st;
-  }
-
-  /**
-   * The deepest slack reaches. Same contract the Round-3 build published: the
-   * glinthawk flock circles `pools[0..1]` and gate V8 frames `pools[0]`.
-   */
-  _findPools() {
-    const st = this._stations;
-    if (!st.length) return [];
-    const scored = st
-      .map((s, i) => ({ i, s, depth: s.level - s.bed }))
-      .filter((e) => Math.hypot(e.s.cx, e.s.z) < 244);
-    scored.sort((a, b) => b.depth - a.depth);
-    const pools = [];
-    for (const e of scored) {
-      if (pools.length >= 5) break;
-      if (pools.some((p) => Math.abs(p.z - e.s.z) < 62)) continue;
-      pools.push({
-        x: e.s.cx, z: e.s.z,
-        level: e.s.level,
-        rx: Math.max(3.2, e.s.hw * 0.55),
-        rz: Math.max(6, e.s.hw * 1.05),
-        _i: e.i,
-      });
-    }
-    pools.sort((a, b) => b.z - a.z);
     return pools;
   }
 
-  /** Slack water: the ribbon opens out where a pool sits. */
-  _widenAtPools() {
-    const st = this._stations;
-    for (const p of this.pools) {
-      const span = Math.max(3, Math.round(p.rz / ZSTEP));
-      for (let k = -span; k <= span; k++) {
-        const s = st[p._i + k];
-        if (!s) continue;
-        const f = 1 - Math.abs(k) / (span + 1);
-        s.extra = Math.max(s.extra, p.rx * 0.9 * f * f);
-      }
-    }
-  }
-
-  /* ------------------------------ queries -------------------------------- */
-
-  _stationAt(z) {
-    const st = this._stations;
-    if (!st.length) return null;
-    const f = (z - st[0].z) / ZSTEP;
-    const i = Math.floor(f);
-    if (i < 0 || i >= st.length - 1) return null;
-    return { a: st[i], b: st[i + 1], t: f - i };
-  }
-
-  /** Surface height at (x,z), or null when the point is not on the water. */
+  /** Surface height at a point, or null off the water. */
   levelAt(x, z) {
-    const e = this._stationAt(z);
-    if (!e) return null;
-    const { a, b, t } = e;
-    const cx = a.cx + (b.cx - a.cx) * t;
-    const level = a.level + (b.level - a.level) * t;
-    const d = x - cx;
-    const wl = (a.wl + a.extra) + ((b.wl + b.extra) - (a.wl + a.extra)) * t;
-    const wr = (a.wr + a.extra) + ((b.wr + b.extra) - (a.wr + a.extra)) * t;
-    if (d < -wl || d > wr) return null;
-    return level;
+    const G = this._glass;
+    const gx = (x - G.x) / G.rx, gz = (z - G.z) / G.rz;
+    const h = this.terrain.getHeight(x, z);
+    if (gx * gx + gz * gz < 2.2 && h < GLASS_LEVEL) return GLASS_LEVEL;
+    return h < this.seaLevel ? this.seaLevel : null;
   }
 
-  /** Metres of standing water at (x,z); 0 on dry ground. */
+  /** Metres of water at a point, 0 off the water. */
   depthAt(x, z) {
-    const level = this.levelAt(x, z);
-    if (level === null) return 0;
-    const terrain = this.ctx.terrain;
-    const g = terrain.heightFast ? terrain.heightFast(x, z) : terrain.getHeight(x, z);
-    return Math.max(0, level - g);
+    const L = this.levelAt(x, z);
+    if (L === null) return 0;
+    const d = L - this.terrain.getHeight(x, z);
+    return d > 0 ? d : 0;
   }
 
-  /** Unit XZ flow direction — downstream along the channel. */
-  flowAt(x, z, out = new THREE.Vector3()) {
-    const e = this._stationAt(z);
-    if (!e) return out.set(0, 0, 0);
-    const { a, b } = e;
-    const dz = (b.z - a.z) * this._flowSign;
-    const dx = (b.cx - a.cx) * this._flowSign;
-    return out.set(dx, 0, dz).normalize();
+  /** Unit XZ drift: toward the island's centre on the sea (shoreward), still on the Glass. */
+  flowAt(x, z, out) {
+    const o = out || { x: 0, y: 0, z: 0 };
+    const G = this._glass;
+    const gx = (x - G.x) / G.rx, gz = (z - G.z) / G.rz;
+    if (gx * gx + gz * gz < 2.2) { o.x = 0; o.z = 0; return o; }
+    const r = Math.hypot(x, z) || 1;
+    o.x = -x / r; o.z = -z / r;
+    return o;
   }
 
-  /* ------------------------------- the mesh ------------------------------ */
-
-  _buildWater() {
-    const st = this._stations;
-    const positions = [];
-    const uvs = [];
-    const info = [];     // x: depth at the vertex, y: distance to the shore
-    const index = [];
-    // 5 columns across so the ribbon can hug a meander without shearing
-    const COLS = 5;
-    let arc = 0;
-    let prevC = null;
-    const rows = [];
-    for (let i = 0; i < st.length; i++) {
-      const s = st[i];
-      const wl = s.wl + s.extra, wr = s.wr + s.extra;
-      if (wl + wr < 0.5) { rows.push(null); prevC = null; continue; }
-      if (prevC) arc += Math.hypot(s.cx - prevC[0], s.z - prevC[1]);
-      prevC = [s.cx, s.z];
-      const base = positions.length / 3;
-      for (let c = 0; c < COLS; c++) {
-        const u = c / (COLS - 1);              // 0..1 across
-        const off = -wl + (wl + wr) * u;
-        const x = s.cx + off;
-        positions.push(x, s.level, s.z);
-        uvs.push(u, arc * 0.25);
-        const shore = Math.min(off + wl, wr - off) / Math.max(0.6, (wl + wr) * 0.5);
-        info.push(Math.max(0.02, s.level - s.bed), Math.min(1, shore));
-      }
-      rows.push(base);
-    }
-    for (let i = 0; i < rows.length - 1; i++) {
-      const a = rows[i], b = rows[i + 1];
-      if (a === null || b === null) continue;
-      for (let c = 0; c < COLS - 1; c++) {
-        index.push(a + c, b + c, a + c + 1, a + c + 1, b + c, b + c + 1);
-      }
-    }
-    if (!index.length) return;
-
-    const geo = new THREE.BufferGeometry();
-    geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(positions), 3));
-    geo.setAttribute('uv', new THREE.BufferAttribute(new Float32Array(uvs), 2));
-    geo.setAttribute('aInfo', new THREE.BufferAttribute(new Float32Array(info), 2));
-    geo.setIndex(index);
-    geo.computeVertexNormals();
-
-    this._waterMat = new THREE.ShaderMaterial({
-      transparent: true,
-      depthWrite: false,
-      fog: true,
-      // fog:true makes three's refreshFogUniforms write fogColor/fogDensity
-      // (FogExp2) or fogNear/fogFar (Fog) into these uniforms every frame —
-      // without UniformsLib.fog merged in, that read of `.value` on undefined
-      // threw inside Engine.render and black-screened the whole game.
-      uniforms: THREE.UniformsUtils.merge([THREE.UniformsLib.fog, {
-        uTime: { value: 0 },
-        uSunDir: { value: SUN_DIR.clone() },
-        uFlow: { value: new THREE.Vector2(0, this._flowSign) },
-        uDeep: { value: new THREE.Color('#16241d') },
-        uSilt: { value: new THREE.Color('#6f6248') },
-        uSky: { value: new THREE.Color('#7d97a0') },
-        uWarm: { value: new THREE.Color('#d9b384') },
-      }]),
-      vertexShader: /* glsl */ `
-        #include <common>
-        #include <fog_pars_vertex>
-        varying vec3 vWPos;
-        varying vec2 vUv;
-        varying vec2 vInfo;
-        attribute vec2 aInfo;
-        void main() {
-          vUv = uv;
-          vInfo = aInfo;
-          vec4 wp = modelMatrix * vec4(position, 1.0);
-          vWPos = wp.xyz;
-          vec4 mvPosition = viewMatrix * wp;
-          gl_Position = projectionMatrix * mvPosition;
-          #include <fog_vertex>
-        }
-      `,
-      fragmentShader: /* glsl */ `
-        #include <common>
-        #include <fog_pars_fragment>
-        varying vec3 vWPos;
-        varying vec2 vUv;
-        varying vec2 vInfo;
-        uniform float uTime;
-        uniform vec3 uSunDir;
-        uniform vec2 uFlow;
-        uniform vec3 uDeep;
-        uniform vec3 uSilt;
-        uniform vec3 uSky;
-        uniform vec3 uWarm;
-
-        float hash(vec2 p){ return fract(sin(dot(p, vec2(127.1,311.7)))*43758.5453); }
-        float noise(vec2 p){
-          vec2 i=floor(p), f=fract(p);
-          f=f*f*(3.-2.*f);
-          return mix(mix(hash(i),hash(i+vec2(1,0)),f.x),
-                     mix(hash(i+vec2(0,1)),hash(i+vec2(1,1)),f.x),f.y);
-        }
-
-        void main() {
-          float depth = vInfo.x;
-          float shore = vInfo.y;
-
-          // --- surface: two ripple fields advected DOWNSTREAM ---------------
-          vec2 fl = normalize(uFlow + vec2(1e-4));
-          vec2 p1 = vWPos.xz * 1.9  - fl * uTime * 0.9;
-          vec2 p2 = vWPos.xz * 4.6  - fl * uTime * 1.7 + 11.0;
-          vec2 p3 = vWPos.xz * 0.55 - fl * uTime * 0.25;
-          float w1 = noise(p1), w2 = noise(p2), w3 = noise(p3);
-          float chop = 0.35 + 0.65 * smoothstep(0.05, 0.9, depth);
-          vec3 n = normalize(vec3(
-            ((w1 - 0.5) * 0.55 + (w2 - 0.5) * 0.40 + (w3 - 0.5) * 0.22) * chop,
-            1.0,
-            ((w2 - 0.5) * 0.52 - (w1 - 0.5) * 0.30 + (w3 - 0.5) * 0.18) * chop
-          ));
-
-          vec3 view = normalize(cameraPosition - vWPos);
-          float fres = pow(1.0 - max(dot(view, n), 0.0), 4.0);
-          fres = clamp(0.03 + 0.97 * fres, 0.0, 1.0);
-
-          // --- refraction: bend the ray, shade the bed through it -----------
-          vec3 rdir = refract(-view, n, 0.75);
-          vec2 bedUv = vWPos.xz + rdir.xz * depth * 1.35;
-          float peb = noise(bedUv * 2.4) * 0.6 + noise(bedUv * 7.5) * 0.4;
-          vec3 bed = uSilt * (0.45 + 0.85 * peb);
-          // caustic banding on the bed where the surface focuses light
-          float caus = smoothstep(0.55, 1.0, noise(bedUv * 3.1 - fl * uTime * 0.6)
-                                            + noise(bedUv * 5.7 + fl * uTime * 0.4) * 0.6);
-          bed += vec3(0.9, 0.85, 0.6) * caus * 0.22 * (1.0 - smoothstep(0.2, 1.1, depth));
-          // Beer-Lambert extinction: red dies first, so shallow reads sandy and
-          // deep reads bottle-green
-          vec3 ext = exp(-vec3(2.6, 1.25, 1.7) * depth * 1.7);
-          vec3 through = mix(uDeep, bed, ext);
-
-          // --- sky reflection, taken from world-light's aerial colours -------
-          vec3 rv = reflect(-view, n);
-          vec3 sky = uSky;
-          vec3 warm = uWarm;
-          #ifdef USE_FOG
-            float up = clamp(rv.y * 1.8 + 0.08, 0.0, 1.0);
-            sky = mix(calFogHorizon, calFogZenith, up * up);
-            warm = calFogSun;
-            float sd = max(dot(rv, calSunDir), 0.0);
-            sky += warm * pow(sd, 6.0) * 0.55;
-          #endif
-          vec3 col = mix(through, sky, fres);
-
-          // --- sun glint -----------------------------------------------------
-          vec3 sdir = uSunDir;
-          #ifdef USE_FOG
-            sdir = calSunDir;
-          #endif
-          vec3 hv = normalize(view + normalize(sdir));
-          float spec = pow(max(dot(n, hv), 0.0), 220.0);
-          col += vec3(1.0, 0.82, 0.55) * spec * 2.1;
-
-          // --- riffles + shore foam ------------------------------------------
-          float riffle = smoothstep(0.24, 0.0, depth)
-            * smoothstep(0.45, 0.85, noise(vWPos.xz * 3.4 - fl * uTime * 2.2));
-          float lace = smoothstep(0.55, 1.0,
-            noise(vWPos.xz * 6.0 - fl * uTime * 1.4) * 0.6 + noise(vWPos.xz * 13.0 + uTime * 0.7) * 0.4);
-          /* "shore" is 0 at the waterline and 1 mid-channel, so a foam band of
-           * "shore < 0.42" is the outer 42 % of EACH bank — 84 % of a 26 m
-           * channel under lace. Filmed from the bank the river read as a solid
-           * milky sheet with no water in it. A real foam line is a metre or so
-           * of the margin: 0.20, and the whitening pulled back so the
-           * Beer-Lambert body and the sky reflection survive underneath it. */
-          float foam = (1.0 - smoothstep(0.03, 0.20, shore)) * lace;
-          float white = clamp(riffle * 0.85 + foam * 0.95, 0.0, 1.0);
-          col = mix(col, vec3(0.93, 0.95, 0.94), white * 0.62);
-
-          float a = clamp(0.34 + fres * 0.62 + white * 0.6 + smoothstep(0.0, 0.5, depth) * 0.35, 0.0, 0.97);
-          a *= smoothstep(0.0, 0.10, shore);
-          gl_FragColor = vec4(col, a);
-          #include <fog_fragment>
-        }
-      `,
-    });
-    const mesh = new THREE.Mesh(geo, this._waterMat);
-    mesh.name = 'river-ribbon';
-    mesh.renderOrder = 1;
-    mesh.receiveShadow = false;
-    mesh.frustumCulled = false;
-    this.group.add(mesh);
-    this.mesh = mesh;
+  /** Per frame: one time uniform. */
+  tick(dt, t) {
+    this._uTime.value = t;
+    this._uLevel.value = this.seaLevel;
   }
 
-  /* ------------------------------- reeds -------------------------------- */
+  /** Round-4 name, still called by environment.js until world-sky's W1 removes it. */
+  update(dt, t) { this.tick(dt, t); }
 
-  _reedGeometry() {
-    // a clump: 5 tapered blades + 2 cattail stalks with brown seed heads
-    const rng = mulberry32(4451);
-    const parts = [];
-    const paint = (g, c0, c1) => {
-      const pos = g.attributes.position;
-      const arr = new Float32Array(pos.count * 3);
-      const cA = new THREE.Color(c0), cB = new THREE.Color(c1), t = new THREE.Color();
-      const uv = g.attributes.uv;
-      for (let i = 0; i < pos.count; i++) {
-        t.copy(cA).lerp(cB, THREE.MathUtils.clamp(uv.getY(i), 0, 1));
-        const j = 1 + (rng() - 0.5) * 0.14;
-        arr[i * 3] = t.r * j; arr[i * 3 + 1] = t.g * j; arr[i * 3 + 2] = t.b * j;
-      }
-      g.setAttribute('color', new THREE.BufferAttribute(arr, 3));
-      return g;
-    };
-
-    for (let b = 0; b < 5; b++) {
-      const hgt = 0.9 + rng() * 0.7;
-      const g = new THREE.PlaneGeometry(0.055, hgt, 1, 3);
-      g.translate(0, hgt / 2, 0);
-      const pos = g.attributes.position;
-      const uv = g.attributes.uv;
-      const lean = (rng() - 0.5) * 0.35;
-      for (let i = 0; i < pos.count; i++) {
-        const f = pos.getY(i) / hgt;
-        uv.setY(i, f);
-        pos.setX(i, pos.getX(i) * (1 - f * 0.8) + lean * f * f);
-        pos.setZ(i, pos.getZ(i) + lean * 0.4 * f);
-      }
-      g.rotateY(rng() * Math.PI * 2);
-      g.translate((rng() - 0.5) * 0.24, 0, (rng() - 0.5) * 0.24);
-      parts.push(paint(g, '#4d5b2a', '#9a9a55'));
-    }
-    for (let s = 0; s < 2; s++) {
-      const hgt = 1.25 + rng() * 0.45;
-      const stalk = new THREE.CylinderGeometry(0.011, 0.02, hgt, 5);
-      stalk.translate(0, hgt / 2, 0);
-      const suv = stalk.attributes.uv;
-      const spos = stalk.attributes.position;
-      for (let i = 0; i < spos.count; i++) suv.setY(i, spos.getY(i) / hgt);
-      const head = new THREE.CapsuleGeometry(0.041, 0.22, 3, 7);
-      head.translate(0, hgt - 0.05, 0);
-      const huv = head.attributes.uv;
-      for (let i = 0; i < huv.count; i++) huv.setY(i, 1);
-      const tilt = (rng() - 0.5) * 0.22;
-      const ox = (rng() - 0.5) * 0.3, oz = (rng() - 0.5) * 0.3;
-      stalk.rotateZ(tilt); stalk.translate(ox, 0, oz);
-      head.rotateZ(tilt); head.translate(ox, 0, oz);
-      parts.push(paint(stalk, '#5d6435', '#8b8a50'));
-      parts.push(paint(head, '#4f3320', '#4f3320'));
-    }
-    return mergeGeometries(parts, false);
-  }
-
-  _buildReeds() {
-    const terrain = this.ctx.terrain;
-    const gy = (x, z) => (terrain.heightFast ? terrain.heightFast(x, z) : terrain.getHeight(x, z));
-    const rng = mulberry32(90210);
-    const geo = this._reedGeometry();
-    const items = [];
-    // reeds line the whole waterway now, thickest in the slack pools
-    for (let i = 0; i < this._stations.length; i += 2) {
-      const s = this._stations[i];
-      const wl = s.wl + s.extra, wr = s.wr + s.extra;
-      if (wl + wr < 1.2) continue;
-      const density = 0.55 + (s.extra > 0.5 ? 0.9 : 0);
-      const n = Math.round(density * (1 + rng() * 2));
-      for (let k = 0; k < n; k++) {
-        const side = rng() < 0.5 ? -1 : 1;
-        const w = side < 0 ? wl : wr;
-        const off = side * w * (0.72 + rng() * 0.5);
-        const x = s.cx + off;
-        const z = s.z + (rng() - 0.5) * 2;
-        const h = gy(x, z);
-        if (h < s.level - 0.45 || h > s.level + 0.85) continue;
-        items.push({
-          x, z, y: Math.min(h, s.level) - 0.04,
-          s: 0.75 + rng() * 0.55, yaw: rng() * Math.PI * 2,
-        });
-      }
-    }
-
-    /* --------------------------- the marsh bed ---------------------------
-     * The waterline pass above lines a CHANNEL: it walks stations and puts
-     * reeds on the two banks. A marsh is not a channel — it is a flat, and
-     * its reeds stand IN the water in clumps with open lanes between them,
-     * which is also what makes it readable from the ridge as a different
-     * biome rather than as a wide pond. So the pan gets its own scatter:
-     * clump centres on a Poisson-ish dart throw, stems around each centre,
-     * from shin-deep water out onto the mud fringe.
-     */
-    const marshSt = this._stations.filter((s) => s.marsh > 0.25);
-    if (marshSt.length) {
-      let cx = 0, cz = 0;
-      for (const s of marshSt) { cx += s.cx; cz += s.z; }
-      cx /= marshSt.length; cz /= marshSt.length;
-      const level = marshSt[Math.floor(marshSt.length / 2)].level;
-      const clumps = [];
-      for (let a = 0; a < 2600 && clumps.length < 210; a++) {
-        const rr = Math.sqrt(rng()) * 46;
-        const ang = rng() * Math.PI * 2;
-        const x = cx + Math.cos(ang) * rr, z = cz + Math.sin(ang) * rr;
-        if (marshFactor(x, z) < 0.22) continue;
-        const h = gy(x, z);
-        if (h > level + 0.55 || h < level - 1.5) continue;   // not a bank, not the deep
-        let near = false;
-        for (let i = 0; i < clumps.length; i++) {
-          const dx = clumps[i][0] - x, dz = clumps[i][1] - z;
-          if (dx * dx + dz * dz < 12) { near = true; break; }
-        }
-        if (near) continue;
-        clumps.push([x, z]);
-        const n = 3 + ((rng() * 5) | 0);
-        for (let k = 0; k < n; k++) {
-          const px = x + (rng() - 0.5) * 3.2, pz = z + (rng() - 0.5) * 3.2;
-          const ph = gy(px, pz);
-          if (ph > level + 0.6) continue;
-          items.push({
-            x: px, z: pz, y: Math.min(ph, level) - 0.04,
-            s: 0.85 + rng() * 0.75, yaw: rng() * Math.PI * 2,
-          });
-        }
-      }
-      this.marshReedClumps = clumps.length;
-    }
-
-    if (!items.length) { geo.dispose(); return; }
-
-    this._uTime = { value: 0 };
-    const mat = new THREE.MeshStandardMaterial({
-      vertexColors: true,
-      roughness: 0.9,
-      metalness: 0,
-      side: THREE.DoubleSide,
-    });
-    const uT = this._uTime;
-    mat.onBeforeCompile = (shader) => {
-      shader.uniforms.uTime = uT;
-      shader.vertexShader = shader.vertexShader
-        .replace('#include <common>', '#include <common>\nuniform float uTime;')
-        .replace('#include <begin_vertex>', /* glsl */ `
-          vec3 transformed = ( instanceMatrix * vec4( position, 1.0 ) ).xyz;
-          {
-            vec3 iOrigin = instanceMatrix[3].xyz;
-            float ph = iOrigin.x * 0.83 + iOrigin.z * 0.61;
-            float sway = sin(uTime * 1.45 + ph) * 0.55 + sin(uTime * 2.6 + ph * 1.7) * 0.25;
-            float hh = uv.y * uv.y;
-            transformed.xz += vec2(0.82, 0.57) * sway * 0.075 * hh;
-          }
-        `)
-        .replace('#include <project_vertex>', /* glsl */ `
-          vec4 mvPosition = modelViewMatrix * vec4( transformed, 1.0 );
-          gl_Position = projectionMatrix * mvPosition;
-        `)
-        .replace('#include <worldpos_vertex>', /* glsl */ `
-          vec4 worldPosition = modelMatrix * vec4( transformed, 1.0 );
-        `);
-      shader.fragmentShader = shader.fragmentShader.replace(
-        '#include <normal_fragment_begin>',
-        '#include <normal_fragment_begin>\nnormal = normalize( vNormal );',
-      );
-    };
-
-    const mesh = new THREE.InstancedMesh(geo, mat, items.length);
-    const m = new THREE.Matrix4();
-    const q = new THREE.Quaternion();
-    const e = new THREE.Euler();
-    const v = new THREE.Vector3();
-    const sc = new THREE.Vector3();
-    for (let i = 0; i < items.length; i++) {
-      const it = items[i];
-      e.set(0, it.yaw, 0);
-      q.setFromEuler(e);
-      v.set(it.x, it.y, it.z);
-      sc.setScalar(it.s);
-      m.compose(v, q, sc);
-      mesh.setMatrixAt(i, m);
-    }
-    mesh.name = 'pool-reeds';
-    mesh.castShadow = false;
-    mesh.receiveShadow = true;
-    mesh.frustumCulled = false; // instances span the channel
-    this.group.add(mesh);
-    this.reedCount = items.length;
-  }
-
-
-  /**
-   * Full teardown (round-4 memory rule): the waterway mesh, the reed
-   * instances and the two shader materials. Nothing calls it today; the rule
-   * is that the path exists and is correct if a level reload ever does.
-   */
   dispose() {
-    const seen = new Set();
-    this.group.traverse((o) => {
-      if (!o.isMesh && !o.isInstancedMesh) return;
-      if (o.geometry && !seen.has(o.geometry)) { seen.add(o.geometry); o.geometry.dispose(); }
-      const mats = Array.isArray(o.material) ? o.material : [o.material];
-      for (const m of mats) {
-        if (!m || seen.has(m)) continue;
-        seen.add(m);
-        if (m.map && !seen.has(m.map)) { seen.add(m.map); m.map.dispose(); }
-        m.dispose();
-      }
-    });
+    for (const m of [this.sea, this.glassMesh]) {
+      m.geometry.dispose();
+      m.material.dispose();
+    }
+    this._ripple.dispose();
+    this._ripple = null;
     this.group.parent?.remove(this.group);
     this.group.clear();
-    this._stations = [];
     this.pools = [];
-    this._waterMat = null;
-  }
-
-  update(dt, t) {
-    if (this._waterMat) this._waterMat.uniforms.uTime.value = t;
-    if (this._uTime) this._uTime.value = t;
   }
 }
+
+/**
+ * ALIAS UNTIL world-sky's W1 MERGE: environment.js still does `new RiverWater(ctx)` and its
+ * `.update`; the river is gone, so this hands back the island's one water. world-sky deletes
+ * the import (`A-no-river`), then this line goes.
+ */
+export class RiverWater { constructor(ctx) { return ctx.water; } }

@@ -7,8 +7,10 @@
 import { ensureMacro } from './recipe.js';
 import { bakeHeights, bakeShade, bakeMasks, bakePan } from './bake.js';
 import { decodeLayer } from './layers.js';
+import { KINDS, fieldReader, scatterRows, scatterStatic } from './scatter.js';
 
 let H = null;
+let F = null;
 
 self.onmessage = async (ev) => {
   const m = ev.data;
@@ -31,6 +33,17 @@ self.onmessage = async (ev) => {
     } else if (m.op === 'pan') {
       const out = bakePan();
       self.postMessage({ id: m.id, out }, [out.buffer]);
+    } else if (m.op === 'masksIn') {
+      F = { H, maskA: m.maskA, maskB: m.maskB, shore: m.shore };
+      self.postMessage({ id: m.id });
+    } else if (m.op === 'scatterRows') {
+      const out = scatterRows(F, m.tz0, m.tz1);
+      const xfer = [];
+      for (const k of Object.keys(KINDS)) xfer.push(out[k].rec.buffer, out[k].counts.buffer);
+      self.postMessage({ id: m.id, out }, xfer);
+    } else if (m.op === 'scatterStatic') {
+      const out = scatterStatic(fieldReader(F));
+      self.postMessage({ id: m.id, out }, Object.values(out).map((a) => a.buffer));
     } else if (m.op === 'layer') {
       const out = await decodeLayer(m.url);
       self.postMessage({ id: m.id, out }, [out.buffer]);
