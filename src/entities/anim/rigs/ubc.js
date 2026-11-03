@@ -271,9 +271,10 @@ export const UBC_TUNE = {
   // W0b targeted fix 4: the crouched aim's body: the pelvis `pelvisY` m up
   // (character space; the UAL1 crouch stands it at 0.35), `pelvisDown` higher at the
   // down clamp, tipped `pelvisTilt` rad, coming in over `rampS` s; a crouch toggled
-  // under the aim moves at most `toggleRate` /s, her height at most `liftStep` m per 1/60 s
-  // (see `_crouchAimLayer`, `_crouchAimLift`)
-  crouchAim: { pelvisY: 0.52, pelvisDown: 0.28, pelvisTilt: 0.10, rampS: 0.7, toggleRate: 2.5, liftStep: 0.028 },
+  // under the aim moves at most `toggleRate` /s, her height at most `liftStep` m per 1/60 s;
+  // at a steep aim she stands up `nearGain` x what the bow's hand is nearer than `nearBow` m to
+  // the crosshair's ground hit (see `_crouchAimLayer`, `_crouchAimLift`)
+  crouchAim: { pelvisY: 0.52, pelvisDown: 0.28, pelvisTilt: 0.10, rampS: 0.7, toggleRate: 2.5, liftStep: 0.022, nearBow: 0.6, nearGain: 1.25 },
   // W0b targeted fix 4: the bent T's reach at the pitch clamps (rad): the turn's
   // caps, and how much of its pitch the hips carry, the upper back the rest
   tClamp: { up: 1.2, down: 1.25, yaw: 0.9, hipUp: 0.6, hipDown: 0.95, hipBack: 1.5 },

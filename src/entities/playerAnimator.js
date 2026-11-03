@@ -2561,13 +2561,25 @@ export class PlayerAnimator {
     const CA = this.T.crouchAim, b = this.b, pe = b.pelvis;
     const w = CA ? this._crouchAimW * (1 - dodgeW) * (1 - this._deadW) : 0;
     this._caLift = 0;
-    if (w < 1e-3 || !pe || !b.thighL || !b.thighR) { this._caYOk = false; return; }
+    const pc = this.ctx.player?.camPitch ?? 0;
+    /* (...and at a steep aim, crouched or not, she stands up off the crosshair's ground hit
+     * as the bow's hand comes within `nearBow` of it: combat stops aiming the bow at a point
+     * nearer than 0.5 m (it takes the camera's direction, 0.3 rad off, in one step: the nock
+     * 0.2 m off the hand), and at the down clamp a strafe's dip, a crouch's blend or the end
+     * of a roll brought it to 0.50-0.55 m. Read off this step's pose before the lift, so it
+     * is no feedback loop.) */
+    let near = 0;
+    const cmbN = this.ctx.combat, nodeN = cmbN?.bow?.group?.parent;
+    if (CA?.nearBow && this._aimHold && pc > 0.6 && dodgeW < 0.5 && nodeN && cmbN.aimPoint) {
+      nodeN.updateWorldMatrix(true, false);
+      near = Math.max(0, CA.nearBow - _afG.setFromMatrixPosition(nodeN.matrixWorld).distanceTo(cmbN.aimPoint)) * (CA.nearGain ?? 1) * (1 - dodgeW);
+    }
+    if ((w < 1e-3 && near <= 0) || !pe || !b.thighL || !b.thighR) { this._caYOk = false; return; }
     pe.bone.updateMatrixWorld(true);
     this._charOf(pe.bone, _v3);
     // (higher at the down clamp: the ray's ground hit is 0.65 m ahead of her there,
     // and combat stops aiming the bow at it from nearer than 0.5 m)
-    const pc = this.ctx.player?.camPitch ?? 0;
-    let dy = (CA.pelvisY + (CA.pelvisDown ?? 0) * smoothstep(pc, 0.75, 1.02) - _v3.y) * w;
+    let dy = Math.max((CA.pelvisY + (CA.pelvisDown ?? 0) * smoothstep(pc, 0.75, 1.02) - _v3.y) * w, near);
     const y0 = _v3.y;
     if (dy < 1e-4) { this._caY = y0; this._caYOk = true; return; }
     for (let s = 0; s < 2; s++) {
