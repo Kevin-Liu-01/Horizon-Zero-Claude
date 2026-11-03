@@ -643,7 +643,7 @@ export class PlayerAnimator {
     const hc = prof?.handCollider || null;
     this._handCol = hc ? {
       a: this.bones[hc.from] || null, b: this.bones[hc.to] || null, c: this.bones[hc.tip] || null,
-      r: hc.r, segR: hc.r - 0.005, caps: [
+      r: hc.r, segR: hc.r - 0.003, caps: [
         { a: new THREE.Vector3(), b: new THREE.Vector3(), r: hc.r },
         { a: new THREE.Vector3(), b: new THREE.Vector3(), r: hc.r },
       ], active: false, pushes: 0, minAxis: Infinity,
@@ -3940,6 +3940,15 @@ export class PlayerAnimator {
           _v7.sub(_afG.subVectors(p.position, this._gripP));
           this._aimPrev.copy(cmb.aimPoint); this._aimPrevOk = true;
         }
+      } else if (this.T.armFlow) {
+        /* W0b targeted fix 4: the layer's first step. The animator runs before combat, so
+         * the aim point here is the LAST aim's, wherever she and the lens were then, and it
+         * seeded the bent T's low-passed ray (`_dTs`): after a turn the T leaned 0.3 rad off
+         * the arrow for a second (first aim at -1.15: 1.43 rad against 1.15, the camera's
+         * boom pushed out 0.15 m by her own shoulder, A31e's aim control in frame). This step
+         * the ray is the camera's own pitch (not the form's clamped one). */
+        const pr = p.camPitch ?? 0;
+        _v7.set(sy * Math.cos(pr), -Math.sin(pr), cy * Math.cos(pr));
       } else {
         _v7.copy(cmb.aimPoint);
         _v7.x -= p.position.x + sy * this.T.rayFwd;
@@ -6995,7 +7004,7 @@ export class PlayerAnimator {
           /* W0b targeted fix 4 (r2 gate judge: a strand's SEGMENT between two
            * clear particles came 0.0494 m from the capsule surface, every
            * particle >= 0.0550): the segment parent -> child against the capsule
-           * axes, closed form. Nearer than `segR` (0.085 axis = 0.05 m off a
+           * axes, closed form. Nearer than `segR` (0.087 axis = 0.052 m off a
            * 0.035 hand), the child is turned out on its parent's sphere; a move of
            * the child moves the nearest segment point by its parameter along the
            * segment. A chain's first link hangs off a fixed root, whose keep-out
