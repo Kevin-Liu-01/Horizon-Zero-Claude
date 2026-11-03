@@ -10,7 +10,7 @@
  * Record: x, y, z, yaw, sx, sy, sz, lean, tint (9 floats per instance).
  */
 import { WORLD_SIZE } from './extent.js';
-import { rng, ss, fbm, fieldWalls, fieldToWorld, fieldCells, PAN } from './recipe.js';
+import { rng, ss, fbm, fieldWalls, fieldToWorld, fieldCells, PAN, authored } from './recipe.js';
 import { GRID, MASK_N, SHORE_ENC } from './bake.js';
 
 export const STRIDE = 9;
@@ -79,12 +79,14 @@ export function scatterTile(kind, tx, tz, R, out) {
       sc = 0.72 + c0 * 0.62; sy = 0.78 + c1 * 0.6; lean = 0.14 + c2 * 0.2;
     } else if (kind === 'glasswort') {
       if (F.slope > 0.5 || F.rock > 0.3 || F.track > 0.3 || F.h > 2.8) continue;
+      if (authored.pan(x, z).kind >= 0) continue;      // the cells are worked ground: nothing grows in them
       const margin = Math.max(F.silt, F.damp * 1.1) * (1 - F.cover);
       if (margin <= 0.08) continue;
       d = margin * 1.5 * ss(0.38, 0.62, fbm(x * 0.05 + 2, z * 0.05, 3));
       sc = 0.7 + c0 * 1.1; sy = 0.7 + c1 * 0.9;
     } else { // lavender
       if (F.slope > 0.45 || F.rock > 0.2 || F.track > 0.25 || F.coast < 14 || F.h > 7 || F.silt > 0.6 || F.salt > 0.6) continue;
+      if (authored.pan(x, z).kind >= 0) continue;
       const patch = ss(0.5, 0.68, fbm(x * 0.032 + 40, z * 0.032 - 8, 3));
       d = patch * 0.62 * (1 - F.cover * 0.7);
       sc = 0.75 + c0 * 0.6; sy = 0.8 + c1 * 0.5;
@@ -146,8 +148,8 @@ export function scatterStatic(R) {
   // raked salt: long low windrows and small heaps in the crust cells nearest the town
   for (const c of fieldCells()) {
     if (c.kind !== PAN.WHITE && c.kind !== PAN.CREAM) continue;
-    if (r() > 0.42) continue;
-    const rows = 2 + Math.floor(r() * 3);
+    if (r() > 0.3) continue;
+    const rows = 1 + Math.floor(r() * 3);
     const heapLine = r() < 0.55;
     for (let k = 0; k < rows; k++) {
       const vw = c.v0 + 2.2 + ((k + 0.5) / rows) * (c.v1 - c.v0 - 4.4);
@@ -157,23 +159,23 @@ export function scatterStatic(R) {
         const hBase = R.hAt(P.x, P.z);
         const a = r(), b = r();
         if (heapLine) {
-          const s = 0.34 + a * 0.46;
-          heaps.push(P.x, hBase - 0.02, P.z, b * 6.28, s, s * (0.62 + b * 0.34), s, 0, 0.92 + a * 0.12);
+          const s = 0.3 + a * 0.34;
+          heaps.push(P.x, hBase - 0.02, P.z, b * 6.28, s, s * (0.52 + b * 0.3), s, 0, 0.92 + a * 0.12);
         } else {
           heaps.push(P.x, hBase - 0.03, P.z, Math.atan2(0.78, 0.626) + (b - 0.5) * 0.08, 0.52 + a * 0.24, 0.14 + b * 0.1, 2.6, 0, 0.9 + a * 0.14);
         }
       }
     }
   }
-  // the cones: the harvest piled on the main dykes beside the town, the Pans' one white silhouette
-  const CONES = [[-74, 39, 3], [-40, 39, 2], [-8, 39, 4], [30, 39, 3], [10, 1, 3], [58, 1, 2]];
+  // the cones: the harvest piled beside the main dykes near the town, the Pans' white silhouette
+  const CONES = [[-58, 37.2, 3], [24, 37.2, 3], [62, 3, 2]];
   for (const [cu, cv, count] of CONES) {
     let u = cu;
     for (let k = 0; k < count; k++) {
-      const s = 2.1 + r() * 0.9;
-      fieldToWorld(u, cv + (r() - 0.5) * 1.1, P);
-      heaps.push(P.x, R.hAt(P.x, P.z) - 0.06, P.z, r() * 6.28, s, s * (0.96 + r() * 0.2), s, 0, 1.02);
-      u += s * 2 + 0.3 + r() * 1.5;
+      const s = 2.0 + r() * 0.8;
+      fieldToWorld(u, cv + (r() - 0.5) * 0.5, P);
+      heaps.push(P.x, R.hAt(P.x, P.z) - 0.05, P.z, r() * 6.28, s, s * (1.0 + r() * 0.14), s, 0, 1.0);
+      u += s * 2.1 + 0.6 + r() * 2.2;
     }
   }
   return {

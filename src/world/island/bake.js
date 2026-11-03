@@ -24,7 +24,7 @@ export const PAN_N = 256;
 /** World box of the pan texture (x0, z0, size), metres. */
 export const PAN_BOX = Object.freeze({ x0: -434 * S, z0: 144 * S, size: 244 * S });
 /** Encodings shared with the shaders (groundShader.js) and terrain.js. */
-export const SHORE_ENC = Object.freeze({ dMin: -48, dMax: 80, hMin: -6, hMax: 12 });
+export const SHORE_ENC = Object.freeze({ dMin: -48, dMax: 80, hMin: -2, hMax: 2.5 });
 
 export const GRID = Object.freeze({
   span: MESH_SPAN, segs: MESH_SEGS, side: MESH_SEGS + 1, step: MESH_SPAN / MESH_SEGS, half: MESH_SPAN / 2,
@@ -56,7 +56,9 @@ const TINT = [
   [hex(0x45423f), hex(0x56603f)],       // flank       basalt, sparse grass
   [hex(0xb9ae98), hex(0xcfc6b4)],       // caldera     pumice
 ];
-const CRATER_T = hex(0x8e3b23), CRATER_T2 = hex(0x5e2a1c);
+/** The tuff ring's beds, bottom to top, repeating (bible: Rust Red #8E3B23 and its kin). */
+const CRATER_BEDS = [hex(0x8e3b23), hex(0x5e2a1c), hex(0xa8562e), hex(0x3a2622), hex(0x96452a), hex(0x6e3a26), hex(0xb0703e), hex(0x4a2c22)];
+const CRATER_TALUS = hex(0xa98f70), CRATER_CAP = hex(0x2a2220);
 
 const _w = new Float64Array(6);
 
@@ -94,12 +96,19 @@ export function bakeShade(H, r0, r1) {
       let k = 1 - _w[0];
       const cr = authored.crater(x, z);
       if (cr > 0.01) {
-        const t = ss(0.02, 0.5, cr), v = fbm(x * 0.05, z * 0.05 + 9, 3);
-        const cA = CRATER_T, cB = CRATER_T2;
-        r += ((cA[0] + (cB[0] - cA[0]) * v) - r) * t;
-        g += ((cA[1] + (cB[1] - cA[1]) * v) - g) * t;
-        b += ((cA[2] + (cB[2] - cA[2]) * v) - b) * t;
-        k = Math.max(k, t * 0.92);
+        const hv = H[i], nz1 = fbm(x * 0.05, z * 0.05 + 9, 3);
+        const band = (hv + x * 0.06 + (nz1 - 0.5) * 4.5) / 4.1;
+        const bi = Math.floor(band), bf = ss(0.3, 0.7, band - bi);
+        const L = CRATER_BEDS.length, A = CRATER_BEDS[((bi % L) + L) % L], B = CRATER_BEDS[((bi + 1) % L + L) % L];
+        let cR = A[0] + (B[0] - A[0]) * bf, cG = A[1] + (B[1] - A[1]) * bf, cB = A[2] + (B[2] - A[2]) * bf;
+        // pale talus at the foot, a dark flat cap on the crest
+        const foot = (1 - ss(5, 24, hv)) * (0.55 + 0.45 * nz1);
+        cR += (CRATER_TALUS[0] - cR) * foot; cG += (CRATER_TALUS[1] - cG) * foot; cB += (CRATER_TALUS[2] - cB) * foot;
+        const cap = ss(38, 52, hv) * 0.72;
+        cR += (CRATER_CAP[0] - cR) * cap; cG += (CRATER_CAP[1] - cG) * cap; cB += (CRATER_CAP[2] - cB) * cap;
+        const t = ss(0.02, 0.5, cr);
+        r += (cR - r) * t; g += (cG - g) * t; b += (cB - b) * t;
+        k = Math.max(k, t * 0.95);
       }
       tint[o] = r; tint[o + 1] = g; tint[o + 2] = b; tint[o + 3] = Math.min(255, k * 255);
     }
@@ -181,12 +190,12 @@ export function maskTexel(H, x, z, out) {
   const nA = fbm(x * 0.06 + 3, z * 0.06, 3), nB = fbm(x * 0.19, z * 0.19 + 5, 2);
 
   // salt beyond the cells: efflorescence blowing off the field, and white rime on low flats
-  const rime = pans * ss(0.46, 0.62, nA + nB * 0.15) * ss(0.2, 0.9, fk + (1 - ss(1.2, 2.6, h)) * 0.32) * (1 - ss(0.9, 1, fk));
+  const rime = pans * ss(0.5, 0.68, nA + nB * 0.42) * ss(0.45, 0.97, fk) * (1 - ss(0.95, 1, fk)) * 0.8;
   // basalt: the Shelf's table, steep ground, the reef at the tide line, the crater's crags
   const shelf = ss(-3, 4, sd);
   const reef = pans * (1 - ss(-1.5, 4, Math.abs(c + 3))) * ss(0.56, 0.68, fbm(x * 0.035 + 21, z * 0.035, 3));
   let rock = Math.max(ss(0.72, 1.15, slope), shelf * ss(0.28, 0.5, nA + 0.14), reef);
-  rock = Math.max(rock, cr * ss(0.5, 0.95, slope) * 0.7);
+  rock = Math.max(rock, cr * ss(0.95, 1.4, slope) * 0.34);
   // shingle: the storm berm, and a fringe at the shelf's foot
   const berm = pans * ss(2, 7, c) * (1 - ss(10, 22, c)) * ss(0.36, 0.54, fbm(x * 0.03 + 5, z * 0.03 + 2, 2) + nB * 0.12);
   const foot = pans * ss(-11, -5, sd) * (1 - ss(-1, 3, sd)) * ss(0.38, 0.6, nA);

@@ -669,7 +669,7 @@ function trackAt(e, n) {
 /* ---------------------------------------------------------- stamps (authored) ---- */
 /** The Organ Shelf's plan: overlapping lobes [e, n, r], warped below (a lava flow's front, not a box). */
 const SHELF_LOBES = [[-188, -351, 23], [-168, -346, 35], [-132, -362, 34], [-156, -386, 20], [-104, -338, 20], [-214, -372, 15]];
-const CRATER = { e: -398, n: -158, R: 66 };
+const CRATER = { e: -398, n: -158, R: 66, H: 58 };
 const CONE = { e: 283, n: -101, r: 98, h: 146 };
 
 /** Organ Shelf: signed distance inside its lobed plan, m (+ inside). */
@@ -687,18 +687,54 @@ function shelfD(e, n) {
   return acc > 1e-12 ? 7 * Math.log(acc) : -60;
 }
 
-/** The half-eroded red crater over the Glass: 0..1 rim weight (reads red in the tint). */
-function craterAt(e, n) {
+/**
+ * The half-eroded red tuff ring over the Glass (El Golfo, the wall behind Janubio): open to
+ * the sea, a pale talus apron at its foot, a stratified cliff above that, a dark flat cap, a
+ * long gentle back. Shared record: h metres above the country, k 0..1 how much of the ground
+ * is the ring's (the tint), ti 0 at the inner foot .. 1 on the crest.
+ */
+const _cr = { h: 0, k: 0, ti: 0 };
+function craterField(e, n) {
+  const C = _cr;
+  C.h = 0; C.k = 0; C.ti = 0;
   const dx = e - CRATER.e, dz = n - CRATER.n;
   const d = Math.hypot(dx, dz);
-  if (d > CRATER.R + 34) return 0;
-  const cosN = d > 1 ? (dx * -0.32 + dz * 0.947) / d : 0;       // 1 facing the rim's high side, N by W
-  const open = ss(-0.34, 0.42, cosN + (fbm(e * 0.02, n * 0.02, 2) - 0.5) * 0.5);
-  if (open <= 0) return 0;
-  const inner = ss(CRATER.R - 26, CRATER.R - 2, d);
-  const outer = 1 - ss(CRATER.R + 2, CRATER.R + 30, d);
-  return open * inner * outer;
+  if (d > CRATER.R + 78 || d < 1) return C;
+  const cs = dx / d, sn = dz / d;
+  const cosN = cs * -0.32 + sn * 0.947;                   // 1 facing the wall's high side, N by W
+  const open = ss(-0.42, 0.26, cosN + (fbm(e * 0.016, n * 0.016, 2) - 0.5) * 0.6);
+  if (open <= 0) return C;
+  const Rr = CRATER.R + (fbm(cs * 1.4 + 4, sn * 1.4, 3) - 0.5) * 26;
+  const Hr = CRATER.H * (0.74 + 0.5 * fbm(cs * 2.1 + 9, sn * 2.1 + 2, 2)) * open;
+  const ti = clamp01((d - (Rr - 44)) / 44), to = clamp01((d - Rr) / 62);
+  // inner: talus to a third of the height, then the cliff; outer: the long back
+  let p;
+  if (d <= Rr) {
+    const a = ti * ti;
+    p = 0.3 * ss(0, 0.62, ti) * (0.6 + 0.4 * a) + 0.7 * Math.pow(ss(0.46, 1, ti), 1.15);
+  } else p = Math.pow(1 - to, 1.7);
+  let hc = Hr * p;
+  // gullies: V cuts down the wall, deepest mid-height, fainter on the back
+  const g = ridged(cs * 11 + 11 + d * 0.012, sn * 11 + 3 + d * 0.012, 2);
+  const cut = (g - 0.42) * (d <= Rr ? ss(0.12, 0.55, ti) * (1 - ss(0.82, 1, ti)) * 13 : ss(0.02, 0.3, to) * (1 - ss(0.6, 1, to)) * 7);
+  hc = Math.max(0, hc + cut * open);
+  // the beds: benches on the cliff that dip seaward
+  const K = ss(0.42, 0.72, ti) * (d <= Rr ? 1 : 0);
+  if (K > 0.01 && hc > 2) {
+    const dip = dx * 0.06 + (fbm(e * 0.05, n * 0.05, 2) - 0.5) * 3, stepH = 5.4;
+    const t = (hc + dip) / stepH, fl = Math.floor(t), f = ss(0.24, 0.76, t - fl);
+    hc += ((fl + f) * stepH - dip - hc) * 0.62 * K;
+  }
+  // the Boilers' cove bites into the back of the ring
+  const db = Math.hypot(e + 368, n + 59);
+  if (db < 52) hc *= ss(16, 50, db);
+  C.h = hc;
+  C.ti = ti;
+  C.k = open * ss(Rr - 50, Rr - 40, d) * (1 - ss(Rr + 42, Rr + 64, d));
+  return C;
 }
+/** The ring's weight at a point, for the tint and the mask bake. */
+function craterAt(e, n) { return craterField(e, n).k; }
 
 /** 1 on the south-west arc, where the coast runs out to the Sounding Ring's bearing. */
 function stormArc(e, n) {
@@ -781,8 +817,9 @@ function heightAuthored(e, n) {
 
   /* ---------- the Pans at fidelity ---------- */
   if (pans > 0.02) {
-    // undulating coast plain, never quite flat
+    // undulating coast plain, never quite flat; hummocks a low sun can draw
     h += (fbm(e * 0.018, n * 0.018, 3) - 0.5) * 1.5 * pans * quiet;
+    h += (fbm(e * 0.13 + 7, n * 0.13, 2) - 0.5) * 0.85 * pans * quiet * ss(4, 16, c);
     // dunes behind the beach: long crests across the onshore wind, clear of the field and sites
     const duneZone = pans * ss(8, 26, c) * (1 - ss(70, 140, c)) * quiet;
     if (duneZone > 0.01) {
@@ -799,11 +836,7 @@ function heightAuthored(e, n) {
     h += berm * 1.25 * pans;
   }
   // the crater's rim, over the Glass
-  const cr = craterAt(e, n);
-  if (cr > 0.001) {
-    const gully = 1 + (ridged(e * 0.034, n * 0.034, 2) - 0.34) * 0.8;
-    h += cr * 52 * gully;
-  }
+  h += craterField(e, n).h;
   // the Rust Cone: a cinder cone at the angle of repose, crater on the far side of T3
   const dk = Math.hypot(e - CONE.e, n - CONE.n);
   if (dk < CONE.r + 8) {

@@ -33,7 +33,7 @@ uniform float uTime;
 uniform float uLevel;
 uniform float uWorldInv;
 uniform float uPlaneY;
-vec3 wN; float wRough; float wMirror;
+vec3 wN; float wRough; float wMirror; float wSkyBias = 0.26; float wFresnelMax = 0.5;
 float wHash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
 float wNoise(vec2 p) {
   vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
@@ -51,77 +51,91 @@ const SEA_COLOR = /* glsl */ `
   vec4 sh = texture2D(tShore, clamp(muv, 0.0, 1.0));
   // signed coast distance (+ inland) and ground height, from the same bake the ground reads
   float coast = mix(-48.0, sh.r * 128.0 - 48.0, inMap);
+  if (coast > 9.0) discard;                 // the sea never stands inland: the Glass has its own surface
   float off = max(-coast, 0.0);
-  float ground = mix(-6.0, sh.g * 18.0 - 6.0, inMap);
+  float ground = mix(-2.0, sh.g * 4.5 - 2.0, inMap);
 
   /* the set: three trains of fronts with their own speed, wandering along the shore */
   float along = wNoise(p * 0.011) * 3.1 + wNoise(p * 0.037 + 4.0) * 0.8;
   float ph1 = off * 0.052 + uTime * 0.150 + along;
   float ph2 = off * 0.083 + uTime * 0.205 + along * 1.7 + 2.3;
-  float w1 = fract(ph1), w2 = fract(ph2);
-  float set1 = 0.55 + 0.45 * sin(floor(ph1) * 2.4 + 1.3);       // not every wave is big
+  float ph3 = off * 0.137 + uTime * 0.262 + along * 2.3 + 5.1;
+  float w1 = fract(ph1), w2 = fract(ph2), w3 = fract(ph3);
+  float set1 = 0.5 + 0.5 * sin(floor(ph1) * 2.4 + 1.3);         // not every wave is big
+  float set2 = 0.5 + 0.5 * sin(floor(ph2) * 3.7 + 0.4);
 
   /* where the waves stand up and break: wider off points, narrower in the coves */
-  float breakW = 14.0 + 24.0 * wNoise(p * 0.016 + 21.0);
-  float brk = 1.0 - smoothstep(breakW * 0.5, breakW, off);
-  float swellK = smoothstep(0.0, 6.0, off) * (1.0 - smoothstep(breakW * 1.4, breakW * 3.2, off));
+  float breakW = 15.0 + 22.0 * wNoise(p * 0.016 + 21.0);
+  float brk = 1.0 - smoothstep(breakW * 0.62, breakW, off);
+  float swellK = smoothstep(0.0, 6.0, off) * (1.0 - smoothstep(breakW * 1.3, breakW * 2.8, off));
 
   /* the run-up: the waterline itself moves. s is the bore's age at this bit of shore */
-  float s = fract(along + uTime * 0.150);
-  float runup = 0.30 * exp(-s * 3.1) * (1.0 - smoothstep(0.92, 1.0, s)) * (0.62 + 0.38 * sin(floor(along + uTime * 0.150) * 2.4 + 1.3));
-  float level = uLevel + 0.03 + runup;
+  float s = fract(along * 0.5 + uTime * 0.125);
+  float big = 0.62 + 0.38 * sin(floor(along * 0.5 + uTime * 0.125) * 2.4 + 1.3);
+  float runup = 0.26 * exp(-s * 3.4) * (1.0 - smoothstep(0.92, 1.0, s)) * big;
+  float level = uLevel + 0.02 + runup + (wNoise(p * 0.55) - 0.5) * 0.035;
   float depth = level - ground;
-  float alphaK = smoothstep(0.0, 0.035, depth);
+  float alphaK = smoothstep(0.0, 0.03, depth);
   if (alphaK <= 0.0 && inMap > 0.5) discard;
 
-  /* foam lace: advected ripple noise, thresholded by how much air the water holds */
-  float laceFar = 1.0 - smoothstep(90.0, 300.0, dCam);
+  /* the foam's own structure, three scales, advected with the water */
+  float laceFar = 1.0 - smoothstep(70.0, 260.0, dCam);
+  float nearK = 1.0 - smoothstep(10.0, 46.0, dCam);
   vec2 drift = vec2(0.03, 0.02) * uTime;
-  float n1 = texture2D(tRipple, p * 0.055 + drift).b;
-  float n2 = texture2D(tRipple, p * 0.17 - drift * 1.6).b;
-  float lace = n1 * 0.62 + n2 * 0.38;
-  float lace2 = texture2D(tRipple, p * 0.024 - drift * 0.4).a;
+  vec2 warp = (texture2D(tRipple, p * 0.031 + drift * 0.3).xy - 0.5) * 0.14;
+  float n1 = texture2D(tRipple, p * 0.19 + warp + drift).b;
+  float n2 = texture2D(tRipple, p * 0.067 - warp - drift * 0.6).a;
+  float n3 = nearK > 0.0 ? texture2D(tRipple, p * 0.67 + warp * 3.0 - drift * 2.0).b : 0.5;
+  float lace = mix(n1 * 0.6 + n2 * 0.4, n1 * 0.46 + n2 * 0.26 + n3 * 0.28, nearK);
 
-  float front1 = exp(-w1 * 5.2) * smoothstep(0.0, 0.016, w1) * set1;
-  float front2 = exp(-w2 * 7.5) * smoothstep(0.0, 0.02, w2) * 0.55;
-  float air = (front1 + front2) * brk;
-  // the carpet: spent bores lie on the water in the last metres, breaking up seaward
-  float carpet = (1.0 - smoothstep(0.0, 11.0 + 8.0 * lace2, off)) * (0.62 + 0.38 * exp(-s * 1.5));
-  float lip = (1.0 - smoothstep(0.0, 0.11, depth)) * (0.4 + 0.6 * exp(-s * 2.2));
-  float foamRaw = max(max(air * 1.5, carpet), lip);
-  float foam = smoothstep(0.42 - foamRaw * 0.52, 0.72 - foamRaw * 0.3, mix(0.5, lace, laceFar));
-  foam = max(foam * smoothstep(0.02, 0.22, foamRaw), smoothstep(0.75, 1.1, foamRaw));
-  // far out the odd whitecap
-  float cap = smoothstep(0.76, 0.86, lace2) * (1.0 - smoothstep(0.0, 1.0, swellK)) * smoothstep(40.0, 120.0, off)
-            * smoothstep(0.3, 0.8, wNoise(p * 0.019 + uTime * 0.05)) * 0.55;
+  /* how much of the surface is white: a crest is nearly solid, what it leaves behind is lace */
+  float crest1 = exp(-w1 * 7.5) * smoothstep(0.0, 0.012, w1) * (0.42 + 0.58 * set1);
+  float crest2 = exp(-w2 * 9.5) * smoothstep(0.0, 0.016, w2) * (0.3 + 0.5 * set2);
+  float crest3 = exp(-w3 * 12.0) * smoothstep(0.0, 0.02, w3) * 0.45;
+  float trail = exp(-w1 * 2.4) * (0.42 + 0.58 * set1) * 0.72 + exp(-w2 * 3.2) * (0.3 + 0.5 * set2) * 0.46;
+  float cover = max(crest1 * 1.25, max(crest2 * 1.15, crest3)) * brk;
+  cover = max(cover, trail * brk * 0.68);
+  // the carpet: spent bores lie on the shallows, thinning seaward in fingers
+  float carpet = (1.0 - smoothstep(0.0, 7.0 + 15.0 * n2, off)) * (0.34 + 0.46 * exp(-s * 1.6));
+  cover = max(cover, carpet);
+  // the leading lip of the swash, a bright thin line
+  float lipLine = (1.0 - smoothstep(0.0, 0.05 + 0.05 * n1, depth)) * (0.45 + 0.55 * exp(-s * 2.6));
+  cover = max(cover, lipLine * 1.1);
+  float foamTex = mix(0.5, lace, laceFar);
+  float foam = smoothstep(1.02 - cover * 1.06, 1.2 - cover * 1.02, foamTex + 0.2);
+
+  // far out the odd whitecap: small, sparse, drawn out by the trade wind
+  vec2 capP = vec2(dot(p, vec2(0.7071, -0.7071)) * 0.21, dot(p, vec2(0.7071, 0.7071)) * 0.07);
+  float cap = smoothstep(0.84, 0.93, texture2D(tRipple, capP + drift * 0.8).a)
+            * smoothstep(0.55, 0.8, wNoise(p * 0.023 + uTime * 0.04)) * smoothstep(38.0, 48.0, off) * 0.6;
   foam = max(foam, cap);
 
-  /* water colour: Atlantic #1F4E66, turbid over black sand, glassy under the lip of a wave */
+  /* water colour: Atlantic #1F4E66, dark over black sand, lit through the back of a wave */
   vec3 deep = vec3(0.0137, 0.0762, 0.1329);
-  vec3 turbid = vec3(0.0080, 0.0420, 0.0520);
-  vec3 body = mix(turbid, deep, smoothstep(0.6, 5.5, -ground));
-  // light through the back of a standing wave
-  float wall = smoothstep(0.72, 0.99, w1) * brk * set1;
-  body = mix(body, vec3(0.03, 0.17, 0.17), wall * 0.72);
+  vec3 turbid = vec3(0.0095, 0.0430, 0.0560);
+  vec3 body = mix(turbid, deep, smoothstep(6.0, 46.0, off));
+  float wall = smoothstep(0.70, 0.985, w1) * brk * (0.3 + 0.7 * set1);
+  body = mix(body, vec3(0.035, 0.205, 0.195), wall * 0.82);
+  float wall2 = smoothstep(0.76, 0.99, w2) * brk * (0.2 + 0.5 * set2);
+  body = mix(body, vec3(0.03, 0.17, 0.165), wall2 * 0.6);
   // the thin sheet over the beach shows the black sand under it
-  float sheet = 1.0 - smoothstep(0.02, 0.5, depth);
-  body = mix(body, vec3(0.012, 0.012, 0.014), sheet * 0.86);
+  float sheet = 1.0 - smoothstep(0.02, 0.42, depth);
+  body = mix(body, vec3(0.012, 0.012, 0.014), sheet * 0.8);
 
   /* normals: ripple octaves + the wave's own slope */
   float nFade = 1.0 - smoothstep(60.0, 420.0, dCam);
   vec2 r1 = texture2D(tRipple, p * 0.042 + drift * 1.3).xy * 2.0 - 1.0;
   vec2 r2 = texture2D(tRipple, p.yx * 0.11 - drift * 2.1).xy * 2.0 - 1.0;
   vec2 r3 = texture2D(tRipple, p * 0.0067 + drift * 0.2).xy * 2.0 - 1.0;
-  vec2 rip = (r1 * 0.42 + r2 * 0.24 * nFade) * (0.3 + 0.7 * nFade) + r3 * 0.22;
-  float dirX = dFdx(off), dirY = dFdy(off);
+  vec2 rip = (r1 * 0.36 + r2 * 0.2 * nFade) * (0.3 + 0.7 * nFade) + r3 * 0.16;
   vec2 slopeDir = normalize(vec2(sh.r - texture2D(tShore, clamp(muv + vec2(0.004, 0.0), 0.0, 1.0)).r,
                                  sh.r - texture2D(tShore, clamp(muv + vec2(0.0, 0.004), 0.0, 1.0)).r) + vec2(1e-4));
-  float waveS = (exp(-w1 * 4.0) - 0.4 * wall) * swellK * set1;
-  wN = vec3(rip.x + slopeDir.x * waveS * 0.6, 0.0, rip.y + slopeDir.y * waveS * 0.6) * (1.0 - foam * 0.7);
+  float waveS = (exp(-w1 * 4.0) - 0.42 * wall) * swellK * (0.4 + 0.6 * set1) + (exp(-w2 * 5.0) - 0.3 * wall2) * swellK * 0.32;
+  wN = vec3(rip.x + slopeDir.x * waveS * 0.6, 0.0, rip.y + slopeDir.y * waveS * 0.6) * (1.0 - foam * 0.75);
 
-  vec3 foamC = vec3(0.86, 0.87, 0.85) * (0.86 + 0.14 * lace);
+  vec3 foamC = vec3(0.86, 0.87, 0.85) * (0.8 + 0.2 * lace);
   diffuseColor.rgb = mix(body, foamC, foam);
-  diffuseColor.a = alphaK * mix(0.92 + 0.08 * smoothstep(0.1, 1.2, depth), 1.0, foam);
+  diffuseColor.a = alphaK * mix(0.94 + 0.06 * smoothstep(0.05, 0.8, depth), 1.0, foam);
   wRough = mix(0.08 + 0.1 * (1.0 - nFade), 0.92, foam);
   wMirror = (1.0 - foam);
 }
@@ -133,7 +147,7 @@ const GLASS_COLOR = /* glsl */ `
   vec2 p = vWPos.xz;
   vec2 muv = p * uWorldInv + 0.5;
   vec4 sh = texture2D(tShore, clamp(muv, 0.0, 1.0));
-  float ground = sh.g * 18.0 - 6.0;
+  float ground = sh.g * 4.5 - 2.0;
   float depth = uLevel - ground;
   float alphaK = smoothstep(0.0, 0.05, depth);
   if (alphaK <= 0.0) discard;
@@ -148,6 +162,8 @@ const GLASS_COLOR = /* glsl */ `
   diffuseColor.a = alphaK * 0.97;
   wRough = 0.06;
   wMirror = 1.0;
+  wSkyBias = 0.06;
+  wFresnelMax = 1.0;
 }
 `;
 
@@ -166,11 +182,11 @@ const SEA_MIRROR = /* glsl */ `
   vec3 V = normalize(cameraPosition - vWPos);
   vec3 W = normalize(vec3(0.0, 1.0, 0.0) + wN);
   vec3 R = reflect(-V, W);
-  float up = clamp(R.y * 1.8 + 0.08, 0.0, 1.0);
-  vec3 sky = mix(calFogHorizon, calFogZenith, up * up);
+  float up = clamp(R.y * 1.6 + wSkyBias, 0.0, 1.0);
+  vec3 sky = mix(calFogHorizon, calFogZenith, up);
   float sd = max(dot(R, calSunDir), 0.0);
   sky += calFogSun * pow(sd, 6.0) * 0.55;
-  float F = 0.02 + 0.98 * pow(1.0 - max(dot(V, W), 0.0), 5.0);
+  float F = min(0.02 + 0.98 * pow(1.0 - max(dot(V, W), 0.0), 5.0), wFresnelMax);
   reflectedLight.indirectSpecular += sky * F * wMirror;
 }
 #endif

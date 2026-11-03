@@ -158,7 +158,7 @@ export const GROUND_AO = /* glsl */ `
 #include <aomap_fragment>
 reflectedLight.directDiffuse *= gSunVis;
 reflectedLight.directSpecular *= gSunVis;
-reflectedLight.indirectDiffuse *= gAO;
+reflectedLight.indirectDiffuse *= gAO * 2.3;   // open ground sees the whole sky: shade reads, black sand keeps its grain
 reflectedLight.indirectSpecular *= mix(1.0, gAO, 0.6);
 #ifdef USE_FOG
 if (gLiquid > 0.004) {
@@ -443,7 +443,7 @@ export class Terrain {
       tHzA: { value: this._maskTextures.hzA }, tHzB: { value: this._maskTextures.hzB },
       uHzW0: { value: new THREE.Vector4(0, 1, 0, 0) }, uHzW1: { value: new THREE.Vector4() },
       uSunTan: { value: 1 }, uSunXZ: { value: new THREE.Vector2(0, -1) },
-      uHzWorldInv: { value: 1 / WORLD_SIZE },
+      uHzWorldInv: { value: 1 / WORLD_SIZE }, uHzK: { value: 1 },
     };
   }
 
@@ -732,9 +732,10 @@ export class Terrain {
 
   /** The light (sun or moon) as the horizon map reads it: bearing weights + elevation. No allocation. */
   _updateSunUniforms() {
-    const L = this.ctx.environment?.lightDir;
+    const env = this.ctx.environment, L = env?.lightDir;
     if (!L) return;
     const U = this.groundUniforms, hyp = Math.hypot(L.x, L.z) || 1e-3;
+    U.uHzK.value = env.weather === 'calima' ? 0.45 : 1;
     U.uSunTan.value = L.y / hyp;
     U.uSunXZ.value.set(L.x / hyp, L.z / hyp);
     let b = Math.atan2(L.x, -L.z) / (Math.PI / 4);

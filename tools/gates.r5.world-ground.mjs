@@ -967,6 +967,9 @@ function vistaSetup({ hour, weather, shot = 'vista' }) {
     const p = ctx.player; p._updateCamera = () => {};
     if (ctx.studio) ctx.studio.update = () => {};
     ctx.state = 'playing';
+    /* the frame is the ground: no HUD, and no legacy flyer (deleted at W2) across the lens */
+    const hud = document.getElementById('hud'); if (hud) hud.style.display = 'none';
+    for (const m of (ctx.machines?.list || [])) { if (m.root) m.root.visible = false; else if (m.group) m.group.visible = false; m.frozen = true; }
     const G = (await import('/src/world/island/sites.js')).GROUND;
     const V = ctx.props.gatePlaces.vistas?.pans || G.vistas.pans, Rs = G.vistas.pansRise;
     const eyeOf = (P) => T.getHeight(P.x, P.z) + (P.eye ?? 1.8);

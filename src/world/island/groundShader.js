@@ -70,13 +70,14 @@ uniform vec4 uHzW0;     // the light's bearing as weights over the 8 horizon cha
 uniform vec4 uHzW1;
 uniform float uSunTan;  // tan(elevation) of the sun or moon
 uniform float uHzWorldInv;
+uniform float uHzK;     // shadow strength: 1, or the calima's 0.45
 vec3 gN; float gRough; float gAO; float gLiquid; float gSunVis = 1.0;
 /** Is the light above the terrain's horizon here? Long soft shadows from one lookup. */
 float gHorizonVis(vec2 xz) {
   vec2 uv = xz * uHzWorldInv + 0.5;
   float a = dot(texture2D(tHzA, uv), uHzW0) + dot(texture2D(tHzB, uv), uHzW1);
   a = a * a * 0.9;
-  return smoothstep(a - 0.016, a + 0.034, uSunTan);
+  return mix(1.0, smoothstep(a - 0.016, a + 0.034, uSunTan), uHzK);
 }
 float gHash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
 float gNoise(vec2 p) {
@@ -216,6 +217,20 @@ export const TERRAIN_COLOR = /* glsl */ `
   col *= 0.8 + 0.42 * macA;
   // wind-pale sand on crests, damp dark hollows
   col *= 1.0 + 0.5 * mB.a * w[0] - 0.42 * mB.b * w[0];
+  if (w[0] > 0.02) {
+    /* the black sand from far off: fabric drawn out along the trade wind, warmer ash in broad
+     * patches, and past the plants' range the colonies and the scrub as tone in the ground */
+    vec2 wv = vec2(dot(xz, vec2(0.7071, -0.7071)), dot(xz, vec2(0.7071, 0.7071)));
+    float streak = gNoise(vec2(wv.x * 0.085, wv.y * 0.011)) * 0.6 + gNoise(vec2(wv.x * 0.31, wv.y * 0.04) + 9.0) * 0.4;
+    float ash = smoothstep(0.42, 0.78, gNoise(xz * 0.0093 + 31.0) * 0.7 + gNoise(xz * 0.041) * 0.3);
+    vec3 sandTone = mix(vec3(1.0), vec3(1.7, 1.52, 1.3), ash) * (0.7 + 0.66 * streak);
+    float farK = smoothstep(40.0, 170.0, dCam);
+    float scrub = smoothstep(0.54, 0.8, gNoise(xz * 0.29 + 3.0) * 0.6 + gNoise(xz * 0.083 + 17.0) * 0.4);
+    vec3 sandCol = col * sandTone;
+    sandCol = mix(sandCol, vec3(0.05, 0.046, 0.03), scrub * 0.6 * farK);
+    sandCol = mix(sandCol, vec3(0.17, 0.15, 0.078), mB.r * farK * 0.8);
+    col = mix(col, sandCol, smoothstep(0.02, 0.5, w[0]));
+  }
   // packed tracks: pale, smooth, salt-dusted
   if (mB.g > 0.01) {
     float tr = smoothstep(0.1, 0.8, mB.g) * (0.6 + 0.4 * macA);
@@ -296,9 +311,9 @@ export const ROCK_COLOR = /* glsl */ `
   float mac = gNoise(vWPos.xz * 0.37 + vWPos.y * 0.21);
   c *= 0.78 + 0.5 * mac;
   // salt rime settles on what faces up; the foot in the swash is wet and black
-  float rime = smoothstep(0.72, 0.98, wn.y) * uRime * (0.45 + 0.55 * mac);
-  c = mix(c, vec3(0.62, 0.6, 0.55), rime);
-  float wetK = 1.0 - smoothstep(0.1, 1.1, vWPos.y);
+  float rime = smoothstep(0.78, 0.99, wn.y) * uRime * smoothstep(0.42, 0.72, mac);
+  c = mix(c, vec3(0.5, 0.48, 0.44), rime);
+  float wetK = 1.0 - smoothstep(0.02, 0.36, vWPos.y);
   c *= mix(1.0, 0.42, wetK);
   gSunVis = gHorizonVis(vWPos.xz);
   diffuseColor.rgb = c * diffuseColor.rgb;

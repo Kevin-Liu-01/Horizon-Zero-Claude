@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
+import { mergeGeometries, mergeVertices } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { WORLD_SIZE } from './island/extent.js';
 import { rng } from './island/recipe.js';
 import { STRIDE, TILE, TILE_N, fieldReader, marramTile, marramDensity } from './island/scatter.js';
@@ -108,20 +108,28 @@ function glasswortGeo(seed) {
 }
 
 function lavenderGeo(seed) {
+  /* Sea-lavender: a low grey-green rosette, wiry stems, a violet spray at each tip. 60 tris. */
   const R = rng(seed), P = [], C = [], N = [];
   const c0 = new THREE.Color(), c1 = new THREE.Color();
-  // a low leaf rosette, then wiry stems holding violet heads
-  for (let b = 0; b < 6; b++) {
+  for (let b = 0; b < 6; b++) {            // 6 leaves x 2 tris
     const a = (b / 6) * 6.2832 + R();
-    c0.set('#465a3a'); c1.set('#5e7048');
-    blade(P, C, N, Math.cos(a) * 0.03, Math.sin(a) * 0.03, Math.cos(a), Math.sin(a), 0.1 + R() * 0.06, 0.03, 1, c0, c1, 1.4);
+    c0.set('#56684c'); c1.set('#7a8c64');
+    blade(P, C, N, Math.cos(a) * 0.02, Math.sin(a) * 0.02, Math.cos(a), Math.sin(a), 0.06 + R() * 0.04, 0.034, 1, c0, c1, 2.4);
   }
-  for (let b = 0; b < 8; b++) {
-    const a = (b / 8) * 6.2832 + R();
-    const dx = Math.cos(a), dz = Math.sin(a), r0 = 0.03 + R() * 0.1;
-    c0.set('#4a5a3c');
-    c1.set(R() > 0.2 ? '#7a4f9e' : '#9a78ba').multiplyScalar(0.92 + R() * 0.32);
-    blade(P, C, N, dx * r0, dz * r0, dx, dz, 0.3 + R() * 0.2, 0.024 + R() * 0.012, 3, c0, c1, 0.34);
+  for (let b = 0; b < 6; b++) {            // 6 stems x 2 tris + a spray of 6 tris
+    const a = (b / 6) * 6.2832 + R();
+    const dx = Math.cos(a), dz = Math.sin(a), r0 = 0.02 + R() * 0.05;
+    const h = 0.26 + R() * 0.2, lean = 0.32;
+    c0.set('#6a7656'); c1.set('#8a8a68');
+    blade(P, C, N, dx * r0, dz * r0, dx, dz, h, 0.007, 1, c0, c1, lean);
+    const tx = dx * r0 + dx * lean * h, tz = dz * r0 + dz * lean * h;
+    c1.set(R() > 0.25 ? '#8d5fb6' : '#ae8ad0').multiplyScalar(0.95 + R() * 0.3);
+    for (let k = 0; k < 3; k++) {          // three small leaning petals of colour: 2 tris each
+      const ka = a + (k - 1) * 0.9;
+      c0.copy(c1).multiplyScalar(0.72);
+      blade(P, C, N, tx, tz, Math.cos(ka), Math.sin(ka), 0.075, 0.03, 1, c0, c1, 0.9);
+      for (let i = P.length - 18; i < P.length; i += 3) P[i + 1] += h - 0.02;
+    }
   }
   return geoFrom(P, C, N);
 }
@@ -140,9 +148,18 @@ function displaced(geo, seed, amp, flat = true) {
   return flat ? geo : geo;
 }
 
+/** An icosahedron with its seams welded: smooth normals, a stone and not a cut gem. */
+function weldedIco(detail) {
+  const raw = new THREE.IcosahedronGeometry(1, detail);
+  raw.deleteAttribute('uv');
+  raw.deleteAttribute('normal');
+  const g = mergeVertices(raw, 1e-4);
+  raw.dispose();
+  return g;
+}
+
 function rockGeo() {
-  const g = displaced(new THREE.IcosahedronGeometry(1, 2), 77, 0.2);
-  g.deleteAttribute('uv');
+  const g = displaced(weldedIco(2), 77, 0.22);
   g.computeBoundingSphere();
   return g;
 }
@@ -175,8 +192,7 @@ function wallGeo() {
   const lay = [[-0.17, 0.13, -0.56, 0.31, 0.2, 0.42], [0.15, 0.15, -0.2, 0.3, 0.22, 0.34], [-0.13, 0.14, 0.22, 0.32, 0.21, 0.38],
     [0.16, 0.13, 0.62, 0.3, 0.19, 0.3], [0.0, 0.34, -0.34, 0.27, 0.17, 0.36], [-0.03, 0.33, 0.38, 0.28, 0.16, 0.42]];
   for (const [x, y, z, sx, sy, sz] of lay) {
-    const g = displaced(new THREE.IcosahedronGeometry(1, 0), (R() * 1e6) | 0, 0.12);
-    g.deleteAttribute('uv');
+    const g = displaced(weldedIco(0), (R() * 1e6) | 0, 0.13);
     g.scale(sx, sy, sz);
     g.rotateY((R() - 0.5) * 0.6);
     g.translate(x, y, z);
@@ -190,20 +206,23 @@ function wallGeo() {
 }
 
 function saltGeo() {
-  // a raked heap: an irregular low cone, 24 triangles; stretched in the instance it is a windrow
-  const g = new THREE.ConeGeometry(1, 1, 8, 2, true);
+  // a raked heap: an irregular soft cone, 60 triangles; stretched in the instance it is a windrow
+  const g = new THREE.ConeGeometry(1, 1, 12, 3, true);
   g.translate(0, 0.5, 0);
-  const p = g.attributes.position, R = rng(5);
+  const p = g.attributes.position;
   for (let i = 0; i < p.count; i++) {
-    const y = p.getY(i), k = 0.88 + R() * 0.24;
-    p.setXYZ(i, p.getX(i) * k, y * (0.8 + 0.2 * k), p.getZ(i) * k);
+    const x = p.getX(i), y = p.getY(i), z = p.getZ(i);
+    const a = Math.atan2(z, x);
+    const k = 1 + 0.07 * Math.sin(a * 3 + 1.1) + 0.05 * Math.sin(a * 5 + 2.3);
+    // slumped: the profile bellies out near the foot, as loose salt does
+    const r = (1 - y) * (1 + 0.32 * y) * k;
+    const l = Math.hypot(x, z) > 1e-5 ? 1 : 0;
+    p.setXYZ(i, Math.cos(a) * r * l, y, Math.sin(a) * r * l);
   }
   g.deleteAttribute('uv');
-  const ni = g.toNonIndexed();
-  g.dispose();
-  ni.computeVertexNormals();
-  ni.computeBoundingSphere();
-  return ni;
+  g.computeVertexNormals();
+  g.computeBoundingSphere();
+  return g;
 }
 
 /* -------------------------------------------------------------------- flora ---- */
@@ -222,6 +241,7 @@ uniform vec4 uHzW0;
 uniform vec4 uHzW1;
 uniform float uSunTan;
 uniform float uHzWorldInv;
+uniform float uHzK;
 `;
 /** The land's long shadow falls on the plants too (groundShader.js gHorizonVis). */
 const FLORA_AO = /* glsl */ `
@@ -230,9 +250,10 @@ const FLORA_AO = /* glsl */ `
   vec2 hzUv = vFloraXZ * uHzWorldInv + 0.5;
   float hzA = dot(texture2D(tHzA, hzUv), uHzW0) + dot(texture2D(tHzB, hzUv), uHzW1);
   hzA = hzA * hzA * 0.9;
-  float hzV = smoothstep(hzA - 0.016, hzA + 0.034, uSunTan);
+  float hzV = mix(1.0, smoothstep(hzA - 0.016, hzA + 0.034, uSunTan), uHzK);
   reflectedLight.directDiffuse *= hzV;
   reflectedLight.directSpecular *= hzV;
+  reflectedLight.indirectDiffuse *= 1.7;   // the same open sky the ground sees
 }
 `;
 const FLORA_PROJECT = /* glsl */ `
@@ -341,13 +362,14 @@ export class Vegetation {
       const U = this.ctx.terrain.groundUniforms;
       shader.uniforms.tHzA = U.tHzA; shader.uniforms.tHzB = U.tHzB;
       shader.uniforms.uHzW0 = U.uHzW0; shader.uniforms.uHzW1 = U.uHzW1;
-      shader.uniforms.uSunTan = U.uSunTan; shader.uniforms.uHzWorldInv = U.uHzWorldInv;
+      shader.uniforms.uSunTan = U.uSunTan; shader.uniforms.uHzWorldInv = U.uHzWorldInv; shader.uniforms.uHzK = U.uHzK;
       shader.vertexShader = shader.vertexShader
         .replace('#include <common>', `#include <common>\n${FLORA_VERT}`)
         .replace('#include <project_vertex>', FLORA_PROJECT)
         .replace('#include <worldpos_vertex>', FLORA_WORLD);
       shader.fragmentShader = shader.fragmentShader
         .replace('#include <common>', `#include <common>\n${FLORA_FRAG_PARS}`)
+        .replace('#include <normal_fragment_begin>', '#include <normal_fragment_begin>\nnormal = normalize(vNormal);')
         .replace('#include <aomap_fragment>', FLORA_AO);
     };
     mat.customProgramCacheKey = () => 'cal-flora';
