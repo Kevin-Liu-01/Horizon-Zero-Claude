@@ -880,7 +880,7 @@ function heightAuthored(e, n) {
   if (tr > 0.05) h -= 0.07 * tr;
 
   /* ---------- meeting the sea ---------- */
-  const shoreW = 11 + 15 * pans + 8 * cloud;
+  const shoreW = 11 + 6 * pans + 8 * cloud;
   return h * (1 - Math.exp(-c / shoreW));
 }
 

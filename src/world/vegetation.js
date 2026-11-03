@@ -480,20 +480,21 @@ export class Vegetation {
   }
 
   /* --------------------------------- static kinds --------------------------------- */
-  _rockMaterial(key, rime, saltLayer) {
+  _rockMaterial(key, rime, saltLayer, scale = 1.7) {
     const mat = new THREE.MeshStandardMaterial({ roughness: 1, metalness: 0 });
     const U = this.ctx.terrain.groundUniforms;
-    const uRime = { value: rime };
+    const uRime = { value: rime }, uRockScale = { value: scale };
     const color = saltLayer ? ROCK_COLOR.replace(/gA\(2,/g, 'gA(1,').replace(/gNm\(2,/g, 'gNm(1,')
       .replace('float wetK = 1.0 - smoothstep(0.1, 1.1, vWPos.y);', 'float wetK = 0.0;') : ROCK_COLOR;
     mat.onBeforeCompile = (shader) => {
       Object.assign(shader.uniforms, U);
       shader.uniforms.uRime = uRime;
+      shader.uniforms.uRockScale = uRockScale;
       shader.vertexShader = shader.vertexShader
         .replace('#include <common>', ROCK_VERT_PARS)
         .replace('#include <worldpos_vertex>', ROCK_VERT_WORLD);
       shader.fragmentShader = shader.fragmentShader
-        .replace('#include <common>', `${GROUND_FRAG_PARS}\nuniform float uRime;`)
+        .replace('#include <common>', `${GROUND_FRAG_PARS}\nuniform float uRime;\nuniform float uRockScale;`)
         .replace('#include <color_fragment>', color)
         .replace('#include <roughnessmap_fragment>', GROUND_ROUGH)
         .replace('#include <normal_fragment_begin>', GROUND_NORMAL)
@@ -558,9 +559,9 @@ export class Vegetation {
 
   _buildStatic() {
     const S = this._bake.static;
-    this.rocks = this._staticMesh('rocks-basalt', rockGeo(), this._rockMaterial('rock', 0.3, false), S.rocks, true);
+    this.rocks = this._staticMesh('rocks-basalt', rockGeo(), this._rockMaterial('rock', 0.3, false, 2.2), S.rocks, true);
     this.columns = this._staticMesh('rocks-columns', columnGeo(), this._rockMaterial('col', 0.2, false), S.columns, true);
-    this.dykes = this._staticMesh('pan-dykes', wallGeo(), this._rockMaterial('wall', 0.5, false), S.walls, true);
+    this.dykes = this._staticMesh('pan-dykes', wallGeo(), this._rockMaterial('wall', 0.4, false, 3.6), S.walls, true);
     this.rakes = this._staticMesh('salt-rakes', saltGeo(), this._rockMaterial('salt', 0, true), S.heaps, true);
     this._columnData = S.columns;
   }

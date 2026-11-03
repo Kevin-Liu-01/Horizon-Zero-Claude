@@ -251,12 +251,12 @@ export const TERRAIN_COLOR = /* glsl */ `
   /* -- liquid: brine mirrors, the swash zone is wet black glass -------------- */
   float coast = sh.r * 128.0 - 48.0;
   float tide = uSea + 0.26 + 0.09 * sin(uTime * 0.42 + xz.x * 0.03 + xz.y * 0.021);
-  float wetSea = (1.0 - smoothstep(tide, tide + 0.75, vWPos.y)) * (1.0 - smoothstep(16.0, 34.0, coast));
+  float wetSea = (1.0 - smoothstep(tide, tide + 0.34, vWPos.y)) * (1.0 - smoothstep(7.0, 17.0, coast));
   float wetGlass = sh.b * (1.0 - smoothstep(0.34, 0.78, vWPos.y));
   float wet = max(wetSea, wetGlass);
   // a wet ground is dark and flat; brine is thin water on crust, pink where it evaporates
   col *= mix(1.0, 0.42, wet);
-  gLiquid = max(wet * 0.8, brine);
+  gLiquid = max(wet * 0.62, brine);
   if (brine > 0.004) {
     float hue = pan.b;
     vec3 water = mix(vec3(0.52, 0.56, 0.58), vec3(0.72, 0.5, 0.45), smoothstep(0.1, 0.5, hue));
@@ -301,7 +301,7 @@ export const ROCK_COLOR = /* glsl */ `
 {
   vec3 wn = normalize(vWNorm);
   vec3 bw = pow(abs(wn), vec3(4.0)); bw /= (bw.x + bw.y + bw.z);
-  float sc = uScale1.z * 1.7;
+  float sc = uScale1.z * uRockScale;
   vec2 ux = vWPos.zy * sc, uy = vWPos.xz * sc, uz = vWPos.xy * sc;
   vec3 dx = dFdx(vWPos) * sc, dy = dFdy(vWPos) * sc;
   vec4 a = gA(2, ux, dx.zy, dy.zy) * bw.x + gA(2, uy, dx.xz, dy.xz) * bw.y + gA(2, uz, dx.xy, dy.xy) * bw.z;
