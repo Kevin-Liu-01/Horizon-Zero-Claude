@@ -296,7 +296,7 @@ export function smoothSkin(part, { its = 4, k = 0.5, filter = null, drop = null 
  * cut or a dense source. At a bend such an edge reads as a huge stretch for no visible gain.
  * The vertex of lower index survives. Unused vertices are dropped.
  */
-export function collapseShort(part, eps = 0.005, keepVertex = null) {
+export function collapseShort(part, eps = 0.005, keepVertex = null, epsAt = null) {
   const { pos, uv, idx } = part;
   const n = pos.length / 3;
   const to = new Int32Array(n).map((_, i) => i);
@@ -306,7 +306,7 @@ export function collapseShort(part, eps = 0.005, keepVertex = null) {
       const a = find(a0), b = find(b0);
       if (a === b) continue;
       const L = Math.hypot(pos[a * 3] - pos[b * 3], pos[a * 3 + 1] - pos[b * 3 + 1], pos[a * 3 + 2] - pos[b * 3 + 2]);
-      if (L > eps) continue;
+      if (L > (epsAt ? epsAt(pos[a * 3], pos[a * 3 + 1], pos[a * 3 + 2]) : eps)) continue;
       if (keepVertex && keepVertex(b) && !keepVertex(a)) to[a] = b; else to[b] = a;
     }
   }

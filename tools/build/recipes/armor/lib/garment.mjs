@@ -113,7 +113,7 @@ export function smockBody(part, surf, skin, { yTop = 1.215, yBelt = 1.095, rBelt
  * the skirt opens. Panels follow pelvis near the belt and their thigh toward the
  * hem, each panel its own side, so the legs never stretch a panel across them.
  */
-export function skirtPanels(mk, surf, joints, { yTop = 1.025, yHem = 0.74, off = 0.008, flare = 0.14, slits, rows = 6, colsPer = 16, ripA = 0.007, seed = 3, density = 1, overlap = 0.05, thighW = 0.92, keep = null, slot = 'skirt', hem = null, floorY = null, ringDth = null, lip = 0, weightY = null } = {}) {
+export function skirtPanels(mk, surf, joints, { yTop = 1.025, yHem = 0.74, off = 0.008, flare = 0.14, slits, rows = 6, colsPer = 16, ripA = 0.007, seed = 3, density = 1, overlap = 0.05, thighW = 0.92, keep = null, slot = 'skirt', hem = null, floorY = null, ringDth = null, lip = 0, weightY = null, offTop = null } = {}) {
   const cz = -0.02;
   const n = slits.length;
   const made = [];
@@ -129,7 +129,8 @@ export function skirtPanels(mk, surf, joints, { yTop = 1.025, yHem = 0.74, off =
       const raw = ring(surf, floorY != null ? Math.max(y, floorY) : y, colsPer, { th0: start, span, keep, dy: 0.03, smooth: 3, dth: ringDth });
       const cur = new Float64Array(colsPer + 1);
       for (let c = 0; c <= colsPer; c++) {
-        cur[c] = raw[c] + off;
+        // (`offTop`: closer in under the belt, the full ease from a third of the way down)
+        cur[c] = raw[c] + (offTop != null ? mix(offTop, off, sstep(0, 0.35, t)) : off);
         if (prev) cur[c] = Math.max(cur[c], prev[c] + flare * (yTop - yHem) / rows);
       }
       profs.push(cur);
@@ -152,7 +153,7 @@ export function skirtPanels(mk, surf, joints, { yTop = 1.025, yHem = 0.74, off =
       const rad = profs[r][c] + ripA * sstep(0.05, 0.9, t) * (0.5 + 0.5 * ripple(th, seed + i, [7, 11, 17])) + (isLip ? -lip : 0);
       const p = [Math.cos(th) * rad, y, cz + Math.sin(th) * rad];
       // by height when asked: a short layer under a long one must move with the long one, not shear across its own span
-      const w = weightY ? weightY(y) : thighW * sstep(0.02, 0.72, t);
+      const w = weightY ? weightY(y) : thighW * sstep(0.0, 0.92, t);
       const thigh = joints[`thigh_${side}`], pel = joints.pelvis;
       return { p, uv: [(c / colsPer) * span * 0.2, yTop - y + (isLip ? 0.008 : 0)], j: [pel, thigh, 0, 0], w: [1 - w, w, 0, 0] };
     });
@@ -173,13 +174,15 @@ export function beltRing(part, surf, skin, { y = 1.06, h = 0.07, off = 0.013, co
   ];
   // stiff: one straight line between its two edges, read from the surface UNDER the belt
   const rTop = ring(surf, y + h / 2, cols, { keep, dy, dth: 0.16, smooth: 3 }), rBot = ring(surf, y - h / 2, cols, { keep, dy, dth: 0.16, smooth: 3 });
+  // one skin per column: a band's rows must not disagree across its 3 mm lip
+  const colSkin = new Array(cols + 1).fill(null);
   gridInto(part, rows.length - 1, cols, (_a, _b, r, c) => {
     const [f, o] = rows[r];
     const th = th0 + TAU * (c % cols) / cols;
     const rad = mix(rBot[c], rTop[c], f + 0.5) + off + o;
     const yy = y + f * h + tilt * Math.sin(th);
     const p = [Math.cos(th) * rad, yy, cz + Math.sin(th) * rad];
-    const s = skin.skin(p[0], y, p[2], 4);
+    const s = colSkin[c % cols] || (colSkin[c % cols] = skin.skin(Math.cos(th) * (mix(rBot[c], rTop[c], 0.5) + off), y, cz + Math.sin(th) * (mix(rBot[c], rTop[c], 0.5) + off), 4));
     const v = 1 - (f + 0.5);
     return { p, uv: [rect[0] + rect[2] * (c / cols), rect[1] + rect[3] * clamp(v)], j: s.j, w: s.w };
   });

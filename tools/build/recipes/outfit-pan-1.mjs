@@ -498,7 +498,7 @@ const TRIM_H = 214;
 const BELT_Y = 1.122;
 export const KEEP_TORSO = (q) => Math.abs(q.x) < 0.3;
 /** Where the smock's armholes are cut (bind space): just outside the sleeve at the shoulder joint. */
-export const ARMHOLE = { y: 1.4, z: -0.055, ry: 0.079, rz: 0.069, xMin: 0.12 };
+export const ARMHOLE = { y: 1.394, z: -0.055, ry: 0.086, rz: 0.069, xMin: 0.12 };
 
 /** Everything of the set's base (shared by the variants): parts, trim, chains, joints. */
 export async function panBase(opt = {}) {
@@ -512,12 +512,13 @@ export async function panBase(opt = {}) {
   // the bodice survives only as the linen under-tunic's stand collar and yoke: everything
   // the smock hangs over, kept so nothing shows the skin the body's hide bit culled
   const underYoke = cutTris(partFromPrim(prim('smock'), 'underyoke', { axis: [0, 1, 0], density: 0.62, nScale: 0.3 }), (cx, cy, cz) => (cy > 1.462 && Math.abs(cx) < 0.1) || (cz > 0 && ((cy > 1.42 && Math.abs(cx) < 0.09) || (cy > 1.345 && Math.abs(cx) < 0.04))));
-  conform(underYoke, body, { margin: () => 0.004 });
+  conform(underYoke, body, { margin: () => 0.014 });
   recomputeNormals(underYoke);
   // the collar rides the trunk and eases onto the neck by height, not by whichever body vertex is nearest
   // (head turn and draw shear a nearest-vertex skin apart at these short edges)
   {
     const jN = J('neck_01'), jS = J('spine_03');
+    collapseShort(underYoke, 0.0055);
     for (let i = 0; i < underYoke.pos.length / 3; i++) {
       const w = 0.75 * sstep(1.45, 1.515, underYoke.pos[i * 3 + 1]);
       underYoke.jnt.splice(i * 4, 4, jS, jN, 0, 0); underYoke.wgt.splice(i * 4, 4, 1 - w, w, 0, 0);
@@ -525,14 +526,14 @@ export async function panBase(opt = {}) {
   }
   const sleeves = compact(partFromPrim(prim('sleeves'), 'sleeves', { density: 0.85, nScale: 0.5 }));
   sleeves.axis = [1, 0, 0];
-  conform(sleeves, body, { margin: () => 0.0045 });
+  conform(sleeves, body, { margin: () => 0.011 });
   recomputeNormals(sleeves);
-  collapseShort(sleeves, 0.004);
-  smoothSkin(sleeves, { its: 7, k: 0.5 });
+  collapseShort(sleeves, 0.004, null, (x) => (Math.abs(x) < 0.24 ? 0.012 : 0.004));
+  smoothSkin(sleeves, { its: 8, k: 0.5, filter: (x) => Math.abs(x) < 0.26 || Math.abs(x) > 0.33 });
   const trousers = partFromPrim(prim('trousers'), 'trousers', { density: 0.76, nScale: 0.7 });
   conform(trousers, body, {
-    margin: () => 0.005,
-    field: (x, y) => 0.021 * sstep(1.0, 0.86, y) * (0.72 + 0.28 * sstep(0.8, 0.5, y)) * sstep(0.42, 0.5, y) + 0.008 * sstep(0.5, 0.42, y),
+    margin: () => 0.012,
+    field: (x, y) => 0.021 * sstep(1.0, 0.86, y) * (0.72 + 0.28 * sstep(0.8, 0.5, y)) * sstep(0.42, 0.5, y) + 0.008 * sstep(0.5, 0.42, y) + 0.006 * sstep(0.42, 0.5, y) * sstep(0.66, 0.58, y),
     smooth: 3,
   });
   recomputeNormals(trousers);
@@ -547,18 +548,18 @@ export async function panBase(opt = {}) {
       trousers.jnt.splice(i * 4, 4, jP, jL, jR, 0); trousers.wgt.splice(i * 4, 4, pel, l, r, 0);
     }
   }
-  collapseShort(trousers, 0.0042);
+  collapseShort(trousers, 0.0042, null, (x, y) => (Math.abs(x) < 0.05 && y > 0.8 ? 0.016 : y > 0.44 && y < 0.62 ? 0.012 : 0.0042));
   // baggy cloth: the knee's blend runs a hand's width each way
-  smoothSkin(trousers, { its: 16, k: 0.5 });
+  smoothSkin(trousers, { its: 12, k: 0.5 });
   const boots = partFromPrim(prim('boots'), 'boots', { density: 0.98, nScale: 0.2 });
   conform(boots, body, {
-    margin: () => 0.006,
-    field: (x, y) => 0.014 * sstep(0.28, 0.45, y),
+    margin: () => 0.012,
+    field: (x, y) => 0.014 * sstep(0.28, 0.45, y) + 0.006 * sstep(0.06, 0.12, y) * sstep(0.26, 0.18, y),
     smooth: 2,
   });
   recomputeNormals(boots);
-  collapseShort(boots, 0.004);
-  smoothSkin(boots, { its: 10, k: 0.5 });
+  collapseShort(boots, 0.0085);
+  smoothSkin(boots, { its: 12, k: 0.5 });
 
   // ---- surfaces the lofts read
   const under = new Field([bodyPart, trousers], 0.04);
@@ -568,9 +569,9 @@ export async function panBase(opt = {}) {
   const mk = (slot, extra = {}) => emptyPart(slot, extra);
 
   // ---- the over-smock: what cloth does over the body, from the neckline to the belt
-  const keepTorso = (x, y) => y < 1.535 && Math.abs(x) < (y > 1.345 ? 0.172 : 0.2);
+  const keepTorso = (x, y) => y < 1.535 && Math.abs(x) < (y > 1.32 ? 0.158 : 0.2);
   const raw = radialTable([bodyPart, underYoke, sleeves], { y0: 1.1, y1: 1.54, keep: keepTorso });
-  const drape = drapeTable(raw, { apex: [1.26, 1.4], fall: 0.34, margin: (y) => 0.0055 + 0.004 * sstep(1.3, 1.22, y) + 0.003 * sstep(1.47, 1.51, y) });
+  const drape = drapeTable(raw, { apex: [1.26, 1.4], fall: 0.34, minEase: 0.007, margin: (y) => 0.009 + 0.004 * sstep(1.3, 1.22, y) + 0.003 * sstep(1.47, 1.51, y) });
   const neckY = (d) => mix(1.432, 1.504, sstep(0.0, 1.3, d)) + 0.011 * sstep(1.7, 3.0, d);
   const smock = draftSmock(mk('smock'), drape, skinOf, {
     rows: 21, cols: 60, neckY, yBelt: 1.144, seed: 1, density: 1.08,
@@ -579,8 +580,19 @@ export async function panBase(opt = {}) {
     armholes: [{ side: 1, ...ARMHOLE }, { side: -1, ...ARMHOLE }],
   });
   compact(smock);      // the armholes' cut quads leave vertices no triangle uses
-  collapseShort(smock, 0.007, (i) => Math.abs(smock.pos[i * 3]) > ARMHOLE.xMin && Math.abs(Math.hypot((smock.pos[i * 3 + 1] - ARMHOLE.y) / ARMHOLE.ry, (smock.pos[i * 3 + 2] - ARMHOLE.z) / ARMHOLE.rz) - 1) < 0.02);
+  collapseShort(smock, 0.0095, (i) => Math.abs(smock.pos[i * 3]) > ARMHOLE.xMin && Math.abs(Math.hypot((smock.pos[i * 3 + 1] - ARMHOLE.y) / ARMHOLE.ry, (smock.pos[i * 3 + 2] - ARMHOLE.z) / ARMHOLE.rz) - 1) < 0.02);
   // the smock rides the trunk: the arm moves under its cap. Its skin diffused, so no edge crosses a step
+  // (the clavicle lifts with a drawn arm: below the armpit the ribs carry the cloth, not the shoulder)
+  {
+    const jC = [J('clavicle_l'), J('clavicle_r')], jS3 = J('spine_03');
+    for (let i = 0; i < smock.pos.length / 3; i++) {
+      const y = smock.pos[i * 3 + 1], k = sstep(1.42, 1.33, y);
+      if (k <= 0) continue;
+      let moved = 0;
+      for (let c = 0; c < 4; c++) if (jC.includes(smock.jnt[i * 4 + c]) || smock.jnt[i * 4 + c] === J('upperarm_l') || smock.jnt[i * 4 + c] === J('upperarm_r')) { const m = smock.wgt[i * 4 + c] * k; smock.wgt[i * 4 + c] -= m; moved += m; }
+      if (moved > 0) { let s3 = -1, empty = -1; for (let c = 0; c < 4; c++) { if (smock.jnt[i * 4 + c] === jS3) s3 = c; if (smock.wgt[i * 4 + c] <= 1e-5 && empty < 0) empty = c; } if (s3 >= 0) smock.wgt[i * 4 + s3] += moved; else { const q = empty >= 0 ? empty : 3; smock.jnt[i * 4 + q] = jS3; smock.wgt[i * 4 + q] = moved; } }
+    }
+  }
   smoothSkin(smock, { its: 8, k: 0.5, drop: { [J('upperarm_l')]: J('clavicle_l'), [J('upperarm_r')]: J('clavicle_r'), [J('Head')]: J('neck_01') } });
   orientOut(smock, 0, -0.02, 1.25);
   // the cap stands proud of the sleeve round the armhole: the arm moves under it, never through it
@@ -588,7 +600,8 @@ export async function panBase(opt = {}) {
     const x = Math.abs(smock.pos[i]);
     if (x < ARMHOLE.xMin) continue;
     const e = Math.hypot((smock.pos[i + 1] - ARMHOLE.y) / ARMHOLE.ry, (smock.pos[i + 2] - ARMHOLE.z) / ARMHOLE.rz);
-    const k = 0.008 * sstep(1.7, 1.05, e);
+    // (over the shoulder only: under the arm the cloth stays in against the ribs)
+    const k = 0.008 * sstep(1.7, 1.05, e) * sstep(ARMHOLE.y - 0.01, ARMHOLE.y + 0.03, smock.pos[i + 1]);
     if (k <= 0) continue;
     smock.pos[i] += smock.nrm[i] * k; smock.pos[i + 1] += smock.nrm[i + 1] * k; smock.pos[i + 2] += smock.nrm[i + 2] * k;
   }
@@ -612,10 +625,10 @@ export async function panBase(opt = {}) {
   // the skirt, then the under-tunic inside it: four panels, four slits, offset from each other
   const slits = [-Math.PI / 2, 0.02, Math.PI / 2, Math.PI - 0.02];
   const hemS = opt.skirtHem || ((th, y0) => y0 + 0.016 * Math.pow(Math.abs(Math.sin(th)), 3));
-  const skirt = skirtPanels(mk, under, joints, { slot: 'skirt', yTop: BELT_Y - 0.024, yHem: 0.748, off: 0.008, flare: 0.078, slits, rows: 8, colsPer: 20, ripA: 0.0115, seed: 3, density: 1.08, keep: KEEP_TORSO, hem: hemS, overlap: 0.055, lip: 0.0035, ...opt.skirt });
+  const skirt = skirtPanels(mk, under, joints, { slot: 'skirt', yTop: BELT_Y - 0.024, yHem: 0.748, off: 0.016, offTop: 0.006, flare: 0.078, slits, rows: 8, colsPer: 20, ripA: 0.0115, seed: 3, density: 1.08, keep: KEEP_TORSO, hem: hemS, overlap: 0.055, lip: 0.0035, ...opt.skirt });
   const skirtField = new Field(skirt, 0.04);
   const underY = opt.skirt?.yHem ?? 0.748;
-  const undr = skirtPanels(mk, skirtField, joints, { slot: 'under', yTop: underY + 0.05, yHem: underY - 0.04, off: -0.034, flare: 0, slits: slits.map((a) => a + 0.2), rows: 2, colsPer: 12, ripA: 0.004, seed: 9, density: 0.72, hem: (th, y0) => y0 + 0.008 * Math.cos(3 * th) + 0.003 * Math.cos(11 * th + 1.3), overlap: 0.22, floorY: underY + 0.03, ringDth: 0.12, lip: 0.002, weightY: (y) => 0.92 * sstep(1.068, 0.75, y), ...opt.under });
+  const undr = skirtPanels(mk, skirtField, joints, { slot: 'under', yTop: underY + 0.05, yHem: underY - 0.04, off: -0.024, flare: 0, slits: slits.map((a) => a + 0.2), rows: 2, colsPer: 12, ripA: 0.004, seed: 9, density: 0.72, hem: (th, y0) => y0 + 0.008 * Math.cos(3 * th) + 0.003 * Math.cos(11 * th + 1.3), overlap: 0.22, floorY: underY + 0.03, ringDth: 0.12, lip: 0.002, weightY: (y) => 0.92 * sstep(1.068, 0.75, y), ...opt.under });
 
   // what lies on the cloth reads the cloth: never the body hidden under it
   const clothField = new Field([smock, trousers, ...skirt], 0.04);
@@ -673,9 +686,10 @@ export async function panBase(opt = {}) {
   }
 
   // ---- the salt pouch at the left front hip, rigid on the pelvis, hung off the belt
-  const pouchThA = Math.PI / 2 - 0.86;
+  // on the side of the hip, just behind the seam: out of the thigh's swing and of the arm's
+  const pouchThA = -0.42;
   const POUCH_Y = BELT_Y - 0.104;
-  const pr = ring(clothField, POUCH_Y, 64, { keep: KEEP_TORSO, dth: 0.14 })[Math.round(64 * ((pouchThA + Math.PI / 2) / TAU))] + 0.022;
+  const pr = ring(clothField, POUCH_Y, 64, { keep: KEEP_TORSO, dth: 0.14 })[Math.round(64 * ((pouchThA + Math.PI / 2) / TAU))] + 0.007;
   const pc = [Math.cos(pouchThA) * pr, POUCH_Y, -0.02 + Math.sin(pouchThA) * pr];
   const pX = V.norm([Math.sin(pouchThA), 0, -Math.cos(pouchThA)]), pZ = V.norm([Math.cos(pouchThA), 0, Math.sin(pouchThA)]);
   const pY = [0, 1, 0];
@@ -727,7 +741,8 @@ export async function panBase(opt = {}) {
   const lin = trim.rect('sash');
   // the bones stay where brea.mjs put them; the cloth lies on the skirt that now covers them
   const outOnSkirt = (q) => {
-    const th = Math.atan2(q[2] + 0.02, q[0]);
+    // turned toward her side: the bones hang at the front of the hip, right where the thigh lifts
+    const th = Math.atan2(q[2] + 0.02, q[0]) - 0.34;
     const rr = Math.max(clothField.radial(q[1], th, 0, -0.02, 0.03, 0.14), Math.hypot(q[0], q[2] + 0.02)) + 0.011;
     return [Math.cos(th) * rr, q[1], -0.02 + Math.sin(th) * rr];
   };
@@ -735,19 +750,17 @@ export async function panBase(opt = {}) {
   const k1 = sashPts[0];
   const sashTh = Math.atan2(k1[2] + 0.02, k1[0]);
   const tang = [-Math.sin(sashTh), 0, Math.cos(sashTh)], outW = [Math.cos(sashTh), 0, Math.sin(sashTh)];
-  // a tied knot: the wrap of the band, and the two ears of the bow standing either side
-  appendGeo(g, bun(V.add(k1, [0, 0.022, 0]), { rx: 0.018, ry: 0.0235, rz: 0.015, seg: 10, rings: 6, joint: pelvis, uvRect: lin, ridges: 3, tilt: [0.25, 1, 0.1] }));
-  for (const s of [-1, 1]) {
-    appendGeo(g, bun(V.add(V.add(k1, [0, 0.026 + 0.004 * s, 0]), V.add(V.mul(tang, s * 0.0235), V.mul(outW, -0.003))), { rx: 0.0185, ry: 0.0128, rz: 0.0095, seg: 8, rings: 5, joint: pelvis, uvRect: lin, ridges: 2, tilt: V.norm([tang[0] * s * 0.3 + 0.05, 1, tang[2] * s * 0.3]) }));
-  }
+  // a tied knot: the wrap of the band over itself
+  appendGeo(g, bun(V.add(k1, [0, 0.02, 0]), { rx: 0.021, ry: 0.024, rz: 0.015, seg: 8, rings: 5, joint: pelvis, uvRect: lin, ridges: 2, tilt: [0.3, 1, 0.1] }));
   // the strip maps across u, along v; the sash cell runs along u: turn it
   const along = (geo, k = 1) => { for (let i = 0; i < geo.uv.length; i += 2) { const fu = (geo.uv[i] - lin[0]) / lin[2], fv = (geo.uv[i + 1] - lin[1]) / lin[3]; geo.uv[i] = lin[0] + lin[2] * fv * k; geo.uv[i + 1] = lin[1] + lin[3] * fu; } return geo; };
-  appendGeo(g, along(stripAlong(sashPts, sashJ.slice(0, -1), { along: 8, width: (u) => 0.058 - 0.018 * u, side: tang, uvFront: lin, uvBack: lin, thick: 0.004, curl: 0.045 })));
+  // the tail ends above the skirt's hem: a stride swings the skirt out and would swallow a longer one
+  appendGeo(g, along(stripAlong(sashPts.slice(0, 3), sashJ.slice(0, 2), { along: 4, width: (u) => 0.056 - 0.012 * u, side: tang, uvFront: lin, uvBack: lin, thick: 0.004, curl: 0.045 })));
   // the second tail, shorter, behind the first and a little forward (never on the chain)
   {
-    const p2 = [V.add(k1, V.add(V.mul(tang, 0.016), [0, 0.012, 0])), V.add(k1, V.add(V.mul(tang, 0.03), [0, -0.075, 0.002])), V.add(k1, V.add(V.mul(tang, 0.036), [0, -0.165, 0.004]))];
+    const p2 = [V.add(k1, V.add(V.mul(tang, 0.016), [0, 0.012, 0])), V.add(k1, V.add(V.mul(tang, 0.03), [0, -0.05, 0.002])), V.add(k1, V.add(V.mul(tang, 0.036), [0, -0.105, 0.004]))];
     const pts = p2.map((q) => { const th = Math.atan2(q[2] + 0.02, q[0]); const rr = Math.max(clothField.radial(q[1], th, 0, -0.02, 0.03, 0.14), Math.hypot(q[0], q[2] + 0.02)) + 0.0065; return [Math.cos(th) * rr, q[1], -0.02 + Math.sin(th) * rr]; });
-    const tail = stripAlong(pts, [pelvis, joints.thigh_l], { along: 5, width: (u) => 0.044 - 0.01 * u, side: tang, uvFront: lin, uvBack: lin, thick: 0.003, curl: 0.04 });
+    const tail = stripAlong(pts, [pelvis, joints.thigh_l], { along: 3, width: (u) => 0.044 - 0.01 * u, side: tang, uvFront: lin, uvBack: lin, thick: 0.003, curl: 0.04 });
     appendGeo(g, along(tail, 0.6));
   }
   const sash = mk('sash', { trim: true });
@@ -844,7 +857,7 @@ function cuffRing(part, sleeves, sgn, uvLinen, uvCarmine, skinOf) {
   }
   for (let k = 0; k < SEG; k++) if (!radAt[k]) radAt[k] = radAt[(k + 1) % SEG] || radAt[(k + SEG - 1) % SEG] || 0.05;
   radAt[SEG] = radAt[0];
-  const profile = [[-0.022, 0.002, 'l'], [-0.016, 0.0085, 'l'], [-0.004, 0.0125, 'l'], [0.008, 0.0105, 'l'], [0.0115, 0.004, 'c'], [0.0085, -0.002, 'c']];
+  const profile = [[-0.022, 0.008, 'l'], [-0.016, 0.0145, 'l'], [-0.004, 0.0185, 'l'], [0.008, 0.0165, 'l'], [0.0115, 0.01, 'c'], [0.0085, 0.004, 'c']];
   const base = part.pos.length / 3;
   for (let r = 0; r < profile.length; r++) {
     const [dx, dr, m2] = profile[r];
